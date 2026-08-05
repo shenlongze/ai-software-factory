@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-software-factory"
+version = "0.1.0"
+description = "AI Software Factory — Phase 1 Event Logger (Observation Layer)"
+readme = "README.md"
+requires-python = ">=3.12"
+# 运行依赖: 仅 pydantic (存储用标准库 sqlite3)
+dependencies = ["pydantic>=2"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[tool.setuptools.packages.find]
+# factory-core/ 为源码根目录, events 等子模块为独立顶层包
+where = ["factory-core"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# 使 tests/ 可直接 `from events import ...` (editable install 之外的双保险)
+pythonpath = ["factory-core"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"

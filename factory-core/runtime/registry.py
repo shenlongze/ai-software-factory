@@ -14,6 +14,7 @@ from typing import Any
 
 from events.logger import EventLogger
 from events.models import Event, EventType
+from runtimes.catalog import RuntimeCatalog
 
 from .models import RuntimeInfo, RuntimeStatus
 from .store import RuntimeStore
@@ -36,9 +37,15 @@ class RuntimeRegistry:
 
     SOURCE = "runtime_registry"  # event-model §2.1 source 取值
 
-    def __init__(self, store: RuntimeStore, logger: EventLogger | None = None):
+    def __init__(
+        self,
+        store: RuntimeStore,
+        logger: EventLogger | None = None,
+        catalog: RuntimeCatalog | None = None,
+    ):
         self._store = store
         self._logger = logger
+        self._catalog = catalog  # 可选: 能力目录 (resolve_definition 用, 不复制数据)
 
     @property
     def store(self) -> RuntimeStore:
@@ -129,3 +136,17 @@ class RuntimeRegistry:
         for runtime in self.list(status=RuntimeStatus.AVAILABLE):
             return runtime.id
         return None
+
+    # ------------------------------------------------------------------ Catalog 集成 (Phase 5A.1, ADR-0014)
+
+    def resolve_definition(self, runtime_id: str):
+        """经 RuntimeCatalog 查 runtime 的能力定义 (Catalog=能力描述, 不复制数据)。
+
+        边界: 注册表 (实例可用状态) 是派发解析的唯一事实源 — runtime 未注册或
+        catalog 未装配/无对应定义 → 返回 None (不抛错); 命中 → 返回
+        RuntimeDefinition (引用)。默认定义 (hermes/echo/mock) 为内建基线,
+        实例 id 与定义 id 同名时即可解析 (如注册 --id echo)。
+        """
+        if self._catalog is None or self.get(runtime_id) is None:
+            return None
+        return self._catalog.get(runtime_id)

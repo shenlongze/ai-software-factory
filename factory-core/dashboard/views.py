@@ -23,12 +23,14 @@ from rich.text import Text
 from .models import FactorySnapshot
 
 # 状态 → 颜色 (dashboard-design.md §1.4 颜色语义)
-_DONE = frozenset({"DONE", "SUCCESS", "COMPLETED", "PASS", "AVAILABLE", "OK", "RELEASED"})
+_DONE = frozenset({
+    "DONE", "SUCCESS", "COMPLETED", "PASS", "AVAILABLE", "OK", "RELEASED", "ACTIVE",
+})
 _RUNNING = frozenset({
     "RUNNING", "WORKING", "PENDING", "BACKLOG", "CREATED", "SKIP", "ARCHITECTURE",
     "DEVELOPMENT", "TESTING", "ASSIGNED",
 })
-_FAILED = frozenset({"FAILED", "FAIL", "ERROR", "OFFLINE", "BLOCKED", "DISABLED"})
+_FAILED = frozenset({"FAILED", "FAIL", "ERROR", "OFFLINE", "BLOCKED", "DISABLED", "DEPRECATED"})
 
 _COLOR_DONE = "green"
 _COLOR_RUNNING = "yellow"
@@ -212,6 +214,31 @@ def build_executions(snapshot: FactorySnapshot) -> Panel:
     if not snapshot.executions.items:
         table.add_row(_text("(no executions)", style="dim"), "", "", "", "")
     return _panel(table, "Executions", border="yellow")
+
+
+def build_catalog(snapshot: FactorySnapshot) -> Panel:
+    """Runtime Catalog 视图: Available Runtime Definitions 表 (默认定义基线 +
+    已注册定义, 只读; Phase 5A.1 / ADR-0014)。"""
+    c = snapshot.catalog
+    summary = _line(_text(f"{c.total} definitions", style="bold"))
+    if c.by_type:
+        summary.append("  ").append_text(
+            Text("types ", style="dim")
+        ).append_text(_status_counts_text(c.by_type))
+    table = Table(show_header=True, header_style="bold", box=box.SIMPLE_HEAVY, expand=True)
+    for col in ("Definition", "Type", "Capabilities", "Version", "Status"):
+        table.add_column(col)
+    for d in c.items:
+        table.add_row(
+            _text(d.get("id", "")),
+            _text(d.get("type", "")),
+            _text(", ".join(d.get("capabilities", [])) or "-"),
+            _text(d.get("version", "")),
+            _text(d.get("status", ""), style=_style_status(d.get("status"))),
+        )
+    if not c.items:
+        table.add_row(_text("(no definitions)", style="dim"), "", "", "", "")
+    return _panel(Group(summary, table), "Runtime Catalog", border="cyan")
 
 
 def build_recovery(snapshot: FactorySnapshot) -> Panel:

@@ -4,6 +4,7 @@
 - dashboard-design.md §3: Rich 实时表格; 非 TTY 自动退化为单次输出 (管道/CI 安全)
 - phase4c4-status.md: DashboardRenderer (Rich) 展示六视图
   (Overview/Tasks/Agents/Workflows/Executions/Recovery)
+- phase5a1-status.md: 新增第七视图 Runtime Catalog (ADR-0014 决策 6)
 
 render() 返回纯文本 (Console.export_text 剥离 ANSI 样式码) — 测试断言与管道输出
 均无转义码; TTY 下由 Rich 自动着色 (颜色语义见 views.py §1.4)。
@@ -22,8 +23,8 @@ from rich.console import Console, Group
 from . import views
 from .models import FactorySnapshot
 
-# 单视图名 (build_<name> 与 views.py 构建函数一一对应; "all" 为六视图同屏)
-VIEWS = ("overview", "tasks", "agents", "workflows", "executions", "recovery")
+# 单视图名 (build_<name> 与 views.py 构建函数一一对应; "all" 为七视图同屏)
+VIEWS = ("overview", "tasks", "agents", "workflows", "executions", "recovery", "catalog")
 
 _SINGLE = {
     "tasks": views.build_tasks,
@@ -31,11 +32,12 @@ _SINGLE = {
     "workflows": views.build_workflows,
     "executions": views.build_executions,
     "recovery": views.build_recovery,
+    "catalog": views.build_catalog,
 }
 
 
 class DashboardRenderer:
-    """Rich 渲染器: FactorySnapshot → 终端文本 (六视图同屏或单视图)。"""
+    """Rich 渲染器: FactorySnapshot → 终端文本 (七视图同屏或单视图)。"""
 
     def __init__(self, *, width: int = 100, limit: int = 10) -> None:
         self._width = max(40, width)
@@ -52,6 +54,7 @@ class DashboardRenderer:
                 views.build_agents(snapshot),
                 views.build_workflows(snapshot),
                 views.build_executions(snapshot),
+                views.build_catalog(snapshot),
                 views.build_recovery(snapshot),
                 views.build_recent_events(snapshot, limit=self._limit),
             )

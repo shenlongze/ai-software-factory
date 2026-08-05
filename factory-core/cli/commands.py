@@ -41,6 +41,8 @@ from runtime.adapters import BUILTIN_ADAPTERS
 from runtime.models import ExecutionRequest, ExecutionStatus, RuntimeInfo, RuntimeStatus
 from runtime.registry import RuntimeExistsError, RuntimeNotFoundError, RuntimeRegistry
 from runtime.store import RuntimeStore
+from runtimes.catalog import RuntimeCatalog
+from runtimes.store import CatalogStore
 from tasks.models import Task, TaskStatus
 from tasks.store import TaskExistsError, TaskStore
 from validation.engine import ValidationEngine
@@ -776,6 +778,54 @@ def cmd_runtime_test(ctx: FactoryContext, args: Any) -> dict:
     return data
 
 
+# ------------------------------------------------------------------ runtime catalog 子命令 (Phase 5A.1, ADR-0014)
+
+def _open_catalog_store(ctx: FactoryContext) -> CatalogStore:
+    """装配 CatalogStore (路径 = <root>/runtimes/catalog.json — 与实例库
+    runtimes.json 独立文件, phase5a1-status.md 注意; 目录由首次原子写自动创建)。"""
+    return CatalogStore(ctx.root / "runtimes")
+
+
+def cmd_runtime_catalog_list(ctx: FactoryContext, args: Any) -> dict:
+    """factory runtime catalog list — 能力目录列表 (默认定义基线 + 注册定义,
+    只读), 发 runtime.catalog.viewed。"""
+    with ctx.logger_scope() as logger:
+        catalog = RuntimeCatalog(_open_catalog_store(ctx), logger=logger)
+        definitions = catalog.list(type=args.type)
+        ev = logger.record(
+            EventType.RUNTIME_CATALOG_VIEWED, source=SOURCE,
+            action="list runtime catalog", result="OK",
+            payload={"count": len(definitions), "type": args.type},
+        )
+    return {
+        "ok": True, "count": len(definitions),
+        "definitions": [d.to_dict() for d in definitions], "event_seq": ev.seq,
+    }
+
+
+def cmd_runtime_catalog_show(ctx: FactoryContext, args: Any) -> dict:
+    """factory runtime catalog show <id> — 定义详情 (默认定义或已注册定义, 只读),
+    发 runtime.catalog.viewed; 未找到 → 退出码 7。"""
+    with ctx.logger_scope() as logger:
+        catalog = RuntimeCatalog(_open_catalog_store(ctx), logger=logger)
+        definition = catalog.get(args.definition_id)
+        if definition is None:
+            raise CliError(
+                f"runtime definition not found: {args.definition_id}", exit_code=7
+            )
+        ev = logger.record(
+            EventType.RUNTIME_CATALOG_VIEWED, source=SOURCE,
+            action="show runtime definition", result="OK",
+            payload={
+                "definition_id": definition.id,
+                "type": definition.type,
+                "version": definition.version,
+                "status": definition.status.value,
+            },
+        )
+    return {"ok": True, "definition": definition.to_dict(), "event_seq": ev.seq}
+
+
 # ------------------------------------------------------------------ execution 子命令
 
 def cmd_execution_list(ctx: FactoryContext, args: Any) -> dict:
@@ -971,6 +1021,7 @@ def cmd_dashboard(ctx: FactoryContext, args: Any) -> dict:
             agent_registry=AgentRegistry(ctx.open_agent_store()),
             workflow_store=WorkflowStore(ctx.workflows_dir),
             runtime_store=_open_runtime_store(ctx),
+            catalog_store=_open_catalog_store(ctx),
             event_store=logger.store,
             checkpoint_store=_open_checkpoint_store(ctx),
             project_id=args.project,
@@ -989,6 +1040,7 @@ def cmd_dashboard(ctx: FactoryContext, args: Any) -> dict:
                 "execution_success": snapshot.executions.success,
                 "execution_failed": snapshot.executions.failed,
                 "checkpoints_total": snapshot.checkpoints.total,
+                "catalog_definitions": snapshot.catalog.total,
                 "events_total": snapshot.metrics.event_count,
             },
         )

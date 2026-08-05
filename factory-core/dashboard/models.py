@@ -106,6 +106,23 @@ class ValidationSummary(BaseModel):
         return self.model_dump(mode="json")
 
 
+class RuntimeCatalogSnapshot(BaseModel):
+    """Runtime 能力目录汇总 (RuntimeCatalog, Phase 5A.1 / ADR-0014)。
+
+    Catalog=能力描述层: 与 ExecutionSnapshot (实例执行记录) 语义分离。
+    状态为 CatalogStatus 二态 (ACTIVE/DEPRECATED); items 含默认定义基线
+    (hermes/echo/mock) + 已注册定义 (读路径合并, 见 runtimes/catalog.py)。
+    """
+
+    total: int = 0
+    by_type: dict[str, int] = Field(default_factory=dict)
+    by_status: dict[str, int] = Field(default_factory=dict)
+    items: list[dict[str, Any]] = Field(default_factory=list)  # RuntimeDefinition.to_dict()
+
+    def to_dict(self) -> dict:
+        return self.model_dump(mode="json")
+
+
 class MetricsSnapshot(BaseModel):
     """指标汇总 (事件聚合, 不建统计表 — event-model.md §6 按需聚合原则)。"""
 
@@ -130,6 +147,7 @@ class FactorySnapshot(BaseModel):
     workflows: WorkflowSnapshot = Field(default_factory=WorkflowSnapshot)
     executions: ExecutionSnapshot = Field(default_factory=ExecutionSnapshot)
     checkpoints: CheckpointSnapshot = Field(default_factory=CheckpointSnapshot)
+    catalog: RuntimeCatalogSnapshot = Field(default_factory=RuntimeCatalogSnapshot)
     metrics: MetricsSnapshot = Field(default_factory=MetricsSnapshot)
     recent_events: list[dict[str, Any]] = Field(default_factory=list)
 

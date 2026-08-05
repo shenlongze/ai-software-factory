@@ -25,6 +25,8 @@ from events.models import EventType
 from events.store import EventStore
 from recovery.checkpoint import CheckpointStore
 from runtime.store import RuntimeStore
+from runtimes.catalog import RuntimeCatalog
+from runtimes.store import CatalogStore
 from tasks.store import TaskStore
 from workflows.store import WorkflowStore
 
@@ -34,6 +36,7 @@ from .models import (
     ExecutionSnapshot,
     FactorySnapshot,
     MetricsSnapshot,
+    RuntimeCatalogSnapshot,
     TaskSnapshot,
     ValidationSummary,
     WorkflowSnapshot,
@@ -50,6 +53,7 @@ class DashboardCollector:
         agent_registry: AgentRegistry,
         workflow_store: WorkflowStore,
         runtime_store: RuntimeStore,
+        catalog_store: CatalogStore | None = None,
         event_store: EventStore,
         checkpoint_store: CheckpointStore,
         project_id: str | None = None,
@@ -59,6 +63,7 @@ class DashboardCollector:
         self._agent_registry = agent_registry
         self._workflow_store = workflow_store
         self._runtime_store = runtime_store
+        self._catalog_store = catalog_store
         self._event_store = event_store
         self._checkpoint_store = checkpoint_store
         self._project_id = project_id
@@ -75,6 +80,7 @@ class DashboardCollector:
             workflows=self._collect_workflows(),
             executions=self._collect_executions(),
             checkpoints=self._collect_checkpoints(),
+            catalog=self._collect_catalog(),
             metrics=self._collect_metrics(),
             recent_events=self._collect_recent_events(),
         )
@@ -147,6 +153,25 @@ class DashboardCollector:
             total=len(checkpoints),
             tasks=[c.task_id for c in checkpoints],
             items=[c.to_dict() for c in checkpoints],
+        )
+
+    def _collect_catalog(self) -> RuntimeCatalogSnapshot:
+        """能力目录汇总 (RuntimeCatalog 读路径, 含默认定义基线; 未装配 → 空快照)。
+
+        只读: 仅调 catalog.list() 读接口; 不写 catalog.json、不发事件
+        (与 dashboard.viewed 由 CLI 命令层发出同款边界, ADR-0014 决策 6)。
+        """
+        if self._catalog_store is None:
+            return RuntimeCatalogSnapshot()
+        catalog = RuntimeCatalog(self._catalog_store)
+        definitions = catalog.list()
+        by_type = Counter(d.type for d in definitions)
+        by_status = Counter(d.status.value for d in definitions)
+        return RuntimeCatalogSnapshot(
+            total=len(definitions),
+            by_type=dict(sorted(by_type.items())),
+            by_status=dict(sorted(by_status.items())),
+            items=[d.to_dict() for d in definitions],
         )
 
     def _collect_metrics(self) -> MetricsSnapshot:

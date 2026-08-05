@@ -32,6 +32,8 @@ from .commands import (
     cmd_project_show,
     cmd_recover,
     cmd_runtime_add,
+    cmd_runtime_catalog_list,
+    cmd_runtime_catalog_show,
     cmd_runtime_list,
     cmd_runtime_test,
     cmd_skill_add,
@@ -214,6 +216,17 @@ def build_parser() -> Any:
     p_rt_test.add_argument("runtime_id", help="Runtime ID (如 hermes-runtime)")
     p_rt_test.add_argument("--instruction", default=None,
                            help="冒烟指令 (默认: Reply with exactly: OK)")
+    p_rt_catalog = rsub.add_parser(
+        "catalog", help="Runtime 能力目录: 默认定义 hermes/echo/mock + 注册定义 (发 runtime.catalog.viewed)"
+    )
+    json_opt(p_rt_catalog)
+    ctsub = p_rt_catalog.add_subparsers(dest="runtime_catalog_command", required=True)
+    p_rt_cat_list = ctsub.add_parser("list", help="Runtime 定义列表 (发 runtime.catalog.viewed)")
+    json_opt(p_rt_cat_list)
+    p_rt_cat_list.add_argument("--type", default=None, help="按类型过滤 (agent/mock)")
+    p_rt_cat_show = ctsub.add_parser("show", help="Runtime 定义详情 (发 runtime.catalog.viewed)")
+    json_opt(p_rt_cat_show)
+    p_rt_cat_show.add_argument("definition_id", help="定义 ID (如 hermes)")
 
     # factory execution <sub>
     p_exec = sub.add_parser("execution", help="执行记录查询 (发 execution.viewed)")
@@ -255,7 +268,7 @@ def build_parser() -> Any:
     json_opt(p_dashboard)
     p_dashboard.add_argument(
         "--view", default="all",
-        help="单视图: overview/tasks/agents/workflows/executions/recovery (默认 all 同屏)",
+        help="单视图: overview/tasks/agents/workflows/executions/recovery/catalog (默认 all 同屏)",
     )
     p_dashboard.add_argument("--limit", type=int, default=10, help="最近事件条数上限 (默认 10)")
     p_dashboard.add_argument("--project", default=None, help="按项目过滤 (任务/事件维度)")
@@ -381,7 +394,17 @@ def _dispatch_runtime(ctx: FactoryContext, args: Any) -> dict:
         return cmd_runtime_list(ctx, args)
     if args.runtime_command == "test":
         return cmd_runtime_test(ctx, args)
+    if args.runtime_command == "catalog":
+        return _dispatch_runtime_catalog(ctx, args)
     raise CliError(f"unknown runtime command: {args.runtime_command}", exit_code=2)
+
+
+def _dispatch_runtime_catalog(ctx: FactoryContext, args: Any) -> dict:
+    if args.runtime_catalog_command == "list":
+        return cmd_runtime_catalog_list(ctx, args)
+    if args.runtime_catalog_command == "show":
+        return cmd_runtime_catalog_show(ctx, args)
+    raise CliError(f"unknown runtime catalog command: {args.runtime_catalog_command}", exit_code=2)
 
 
 def _dispatch_execution(ctx: FactoryContext, args: Any) -> dict:
@@ -433,7 +456,7 @@ def _print_output(args: Any, result: dict) -> None:
     elif args.command == "workflow":
         _print_workflow(args.workflow_command, result)
     elif args.command == "runtime":
-        _print_runtime(args.runtime_command, result)
+        _print_runtime(args, result)
     elif args.command == "execution":
         _print_execution(args.execution_command, result)
     elif args.command == "checkpoint":
@@ -619,7 +642,11 @@ def _print_workflow_run_auto(r: dict) -> None:
         print(f"  事件      {' → '.join(r['events'])}")
 
 
-def _print_runtime(sub: str, r: dict) -> None:
+def _print_runtime(args: Any, r: dict) -> None:
+    sub = args.runtime_command
+    if sub == "catalog":
+        _print_runtime_catalog(args.runtime_catalog_command, r)
+        return
     if sub == "add":
         rt = r["runtime"]
         print(f"✔ Runtime {rt['id']} 已注册 (type: {rt['type']})")
@@ -638,6 +665,25 @@ def _print_runtime(sub: str, r: dict) -> None:
         else:
             stdout = (res.get("output") or {}).get("stdout", "")
             print(f"  stdout   {stdout.strip()[:200] or '(empty)'}")
+
+
+def _print_runtime_catalog(sub: str, r: dict) -> None:
+    if sub == "list":
+        rows = [
+            [d["id"], d["type"], ", ".join(d["capabilities"]) or "-",
+             d["version"], d["status"]]
+            for d in r["definitions"]
+        ]
+        print(_render_table(["Runtime", "Type", "Capabilities", "Version", "Status"], rows))
+        print(f"{r['count']} definitions")
+    elif sub == "show":
+        d = r["definition"]
+        print(f"{d['id']}  {d['name']}  [{d['type']}]  v{d['version']}  {d['status']}")
+        print(f"  description   {d['description'] or '-'}")
+        print(f"  capabilities  {', '.join(d['capabilities']) or '-'}")
+        print(f"  tasks         {', '.join(d['supported_tasks']) or '-'}")
+        if d.get("metadata"):
+            print(f"  metadata      {json.dumps(d['metadata'], ensure_ascii=False)}")
 
 
 def _print_execution(sub: str, r: dict) -> None:

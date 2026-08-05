@@ -153,6 +153,16 @@ class EventType(str, Enum):
     # 审计事件 (ADR-0002: 所有 CLI 行为必须产生 Event); 载荷含项目名/语言/各映射计数。
     PROJECT_VIEWED = "project.viewed"          # 项目配置被查看 (list/show, 只读)
 
+    # --- Phase 5A.1: Runtime Catalog 事件 (增量扩展, ADR-0014) ---
+    # 依 ADR-0001 决策 1 的扩展路径: 加枚举成员即可, 不改表结构/API。
+    # runtime.catalog.* 为能力目录 (RuntimeCatalog, source="runtime_catalog")
+    # 的审计事件: registered/removed 为写路径事件 (register/remove); viewed 为
+    # 读命令事件 (ADR-0002: 所有 CLI 行为必须产生 Event, 同 runtime/agent/viewed)。
+    # Catalog=能力描述层, 与 runtime.registered (实例注册表) 语义分离 (ADR-0014 决策 2)。
+    RUNTIME_CATALOG_REGISTERED = "runtime.catalog.registered"  # 定义注册入库
+    RUNTIME_CATALOG_REMOVED = "runtime.catalog.removed"        # 定义移除
+    RUNTIME_CATALOG_VIEWED = "runtime.catalog.viewed"          # 目录被查看 (list/show)
+
 
 class Event(BaseModel):
     """一条事件。append-only: 写入后永不修改、永不删除。"""

@@ -16,8 +16,17 @@ from typing import Any
 from agents.models import Agent, AgentStatus, Skill
 from agents.registry import AgentExistsError, AgentRegistry, SkillExistsError, SkillRegistry
 from events.models import EventType
+from execution.dispatcher import (
+    ExecutionDispatchError,
+    ExecutionDispatcherError,
+    NoAvailableRuntimeError,
+    RuntimeAdapterNotFoundError,
+)
+from execution.runner import ExecutionNotFoundError, ExecutionRunnerError, ExecutionStateError
+from execution.service import ExecutionService
+from runtime.adapters import BUILTIN_ADAPTERS
 from runtime.models import RuntimeInfo, RuntimeStatus
-from runtime.registry import RuntimeExistsError, RuntimeRegistry
+from runtime.registry import RuntimeExistsError, RuntimeNotFoundError, RuntimeRegistry
 from runtime.store import RuntimeStore
 from tasks.models import Task, TaskStatus
 from tasks.store import TaskExistsError, TaskStore
@@ -536,4 +545,76 @@ def cmd_execution_list(ctx: FactoryContext, args: Any) -> dict:
     return {
         "ok": True, "count": len(executions),
         "executions": executions, "event_seq": ev.seq,
+    }
+
+
+def _open_execution_service(ctx: FactoryContext, logger) -> ExecutionService:
+    """装配 ExecutionService: RuntimeStore + Registry (同事件库) + 内置 Adapter + Workflow 联动。
+
+    内置 Adapter (BUILTIN_ADAPTERS: echo) 提供实现; runtime 身份 (RuntimeInfo) 须
+    经 `factory runtime add` 显式注册 — registry 是派发解析的唯一事实源 (ADR-0007 决策 3)。
+    Workflow 联动经 _open_workflow_engine (complete_step/fail_workflow 不需 runtime_store)。
+    """
+    store = _open_runtime_store(ctx)
+    registry = RuntimeRegistry(store, logger=logger)
+    engine = _open_workflow_engine(ctx, logger)
+    return ExecutionService(
+        store, registry, adapters=BUILTIN_ADAPTERS, logger=logger, workflow_engine=engine,
+    )
+
+
+def _exec_cli_error(exc: Exception) -> CliError:
+    """execution 域异常 → CliError (cli-design §5: 7 未找到 / 1 状态冲突)。"""
+    if isinstance(exc, (ExecutionNotFoundError, RuntimeNotFoundError)):
+        return CliError(str(exc), exit_code=7)
+    return CliError(str(exc), exit_code=1)
+
+
+def cmd_execution_run(ctx: FactoryContext, args: Any) -> dict:
+    """factory execution run EXECUTION_ID — 执行 pending execution (发 execution.started/completed/failed)。
+
+    退出码: 0 成功 (含执行结果为 FAILED 的业务失败 — run 命令本身成功);
+    7 执行/runtime 未找到; 1 状态冲突 (非 PENDING / 无可用 runtime / 无 Adapter 实现)。
+    """
+    with ctx.logger_scope() as logger:
+        service = _open_execution_service(ctx, logger)
+        try:
+            outcome = service.run(args.execution_id)
+        except (ExecutionRunnerError, ExecutionDispatcherError, RuntimeNotFoundError) as exc:
+            raise _exec_cli_error(exc) from exc
+    return {
+        "ok": True,
+        "execution_id": args.execution_id,
+        "runtime": outcome.request.runtime_id,
+        "status": outcome.request.status.value,
+        "execution": outcome.request.to_dict(),
+        "result": outcome.result.to_dict() if outcome.result is not None else None,
+        "workflow": {
+            "step_completed": outcome.workflow_step_completed,
+            "workflow_failed": outcome.workflow_failed,
+            "error": outcome.workflow_error,
+        },
+        "events": [e.type.value for e in outcome.events],
+        "event_seq": outcome.events[-1].seq if outcome.events else None,
+    }
+
+
+def cmd_execution_status(ctx: FactoryContext, args: Any) -> dict:
+    """factory execution status EXECUTION_ID — 查看执行状态/结果 (发 execution.viewed)。"""
+    with ctx.logger_scope() as logger:
+        service = _open_execution_service(ctx, logger)
+        request, result = service.status(args.execution_id)
+        if request is None:
+            raise CliError(f"execution not found: {args.execution_id}", exit_code=7)
+        ev = logger.record(
+            EventType.EXECUTION_VIEWED, source=SOURCE, task_id=request.task_id,
+            stage=request.status.value.lower(), action="show execution status", result="OK",
+            payload={"execution_id": request.id},
+        )
+    return {
+        "ok": True,
+        "execution_id": args.execution_id,
+        "execution": request.to_dict(),
+        "result": result.to_dict() if result is not None else None,
+        "event_seq": ev.seq,
     }

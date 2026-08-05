@@ -19,6 +19,8 @@ from .commands import (
     cmd_agent_list,
     cmd_event_logs,
     cmd_execution_list,
+    cmd_execution_run,
+    cmd_execution_status,
     cmd_init,
     cmd_runtime_add,
     cmd_runtime_list,
@@ -181,6 +183,12 @@ def build_parser() -> Any:
     p_ex_list = xsub.add_parser("list", help="执行记录列表 (发 execution.viewed)")
     json_opt(p_ex_list)
     p_ex_list.add_argument("--task", default=None, help="按任务过滤")
+    p_ex_run = xsub.add_parser("run", help="执行 pending execution (发 execution.started/completed/failed)")
+    json_opt(p_ex_run)
+    p_ex_run.add_argument("execution_id", help="执行请求 ID (如 EX-001)")
+    p_ex_status = xsub.add_parser("status", help="查看执行状态/结果 (发 execution.viewed)")
+    json_opt(p_ex_status)
+    p_ex_status.add_argument("execution_id", help="执行请求 ID (如 EX-001)")
 
     return p
 
@@ -283,6 +291,10 @@ def _dispatch_runtime(ctx: FactoryContext, args: Any) -> dict:
 def _dispatch_execution(ctx: FactoryContext, args: Any) -> dict:
     if args.execution_command == "list":
         return cmd_execution_list(ctx, args)
+    if args.execution_command == "run":
+        return cmd_execution_run(ctx, args)
+    if args.execution_command == "status":
+        return cmd_execution_status(ctx, args)
     raise CliError(f"unknown execution command: {args.execution_command}", exit_code=2)
 
 
@@ -469,6 +481,38 @@ def _print_execution(sub: str, r: dict) -> None:
         ]
         print(_render_table(["Execution", "Task", "Workflow", "Step", "Agent", "Runtime", "Status"], rows))
         print(f"{r['count']} executions")
+    elif sub == "run":
+        print(f"✔ 执行 {r['execution_id']} 完成 (runtime: {r['runtime'] or '-'}, status: {r['status']})")
+        res = r["result"]
+        if res is not None:
+            print(f"  result    {res['status']}")
+            if res.get("error"):
+                print(f"  error     {res['error']}")
+            elif res.get("output"):
+                print(f"  output    {json.dumps(res['output'], ensure_ascii=False)}")
+        wf = r["workflow"]
+        if wf["step_completed"]:
+            print("  workflow  step completed")
+        if wf["workflow_failed"]:
+            print("  workflow  run failed")
+        if wf.get("error"):
+            print(f"  workflow  linkage error: {wf['error']}")
+        print(f"  事件      {' → '.join(r['events']) or '-'}")
+    elif sub == "status":
+        e = r["execution"]
+        print(f"{e['id']}  状态: {e['status']}  runtime: {e['runtime_id'] or '-'}")
+        print(f"  task      {e['task_id']}")
+        print(f"  workflow  {e['workflow_id'] or '-'}  step {e['step_id'] or '-'}")
+        print(f"  agent     {e['agent_id'] or '-'}")
+        res = r["result"]
+        if res is None:
+            print("  result    (尚无结果)")
+        else:
+            print(f"  result    {res['status']}")
+            if res.get("error"):
+                print(f"  error     {res['error']}")
+            elif res.get("output"):
+                print(f"  output    {json.dumps(res['output'], ensure_ascii=False)}")
 
 
 if __name__ == "__main__":

@@ -55,6 +55,7 @@ class DashboardRenderer:
                 views.build_agents(snapshot),
                 views.build_workflows(snapshot),
                 views.build_executions(snapshot),
+                views.build_projects(snapshot),  # Phase 6A Projects View (ADR-0016)
                 views.build_catalog(snapshot),
                 views.build_metrics(snapshot),
                 views.build_recovery(snapshot),

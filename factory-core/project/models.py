@@ -21,18 +21,26 @@ def _id_sane(value: str) -> str:
 
 
 class ProjectDef(BaseModel):
-    """project.yaml — 项目定义 (名称/语言/仓库/技术栈)。"""
+    """project.yaml — 项目定义 (名称/语言/仓库/技术栈 + Phase 6A 增强字段)。"""
 
     name: str
     language: str
     repository: str = ""
     description: str = ""
     tech_stack: list[str] = Field(default_factory=list)
+    runtime_preferences: dict[str, Any] = Field(default_factory=dict)  # 运行偏好 (可选, Phase 6A)
+    status: str = "active"  # 项目状态: active/archived/... (可选, Phase 6A)
 
     @field_validator("name")
     @classmethod
     def _name_sane(cls, v: str) -> str:
         return _id_sane(v)
+
+    @field_validator("status")
+    @classmethod
+    def _status_clean(cls, v: str) -> str:
+        v = v.strip().lower()
+        return v or "active"
 
     def to_dict(self) -> dict[str, Any]:
         return self.model_dump(mode="json")

@@ -125,6 +125,42 @@ class RuntimeCatalogSnapshot(BaseModel):
         return self.model_dump(mode="json")
 
 
+class ProjectSnapshot(BaseModel):
+    """单个项目的汇总 (Phase 6A Workspace Layer, ADR-0016)。
+
+    计数口径: task_count = 该项目任务数 (Task.project == id); workflow_count =
+    归属该项目的运行实例数 (run.task_id → task.project); execution_count/success/
+    failed = 归属该项目的执行请求数 (req.task_id → task.project); success_rate =
+    execution_success / execution_count (无执行 0.0, 同 ExecutionSnapshot 口径)。
+    项目 id 集 = workspace 定义 ∪ 任务中出现过的 project 值 (未定义项目 status
+    为 "unknown") — Projects View 完整呈现工厂内所有项目维度。
+    """
+
+    id: str
+    name: str = ""
+    language: str = ""
+    status: str = "active"
+    task_count: int = 0
+    workflow_count: int = 0
+    execution_count: int = 0
+    execution_success: int = 0
+    execution_failed: int = 0
+    success_rate: float = 0.0
+
+    def to_dict(self) -> dict:
+        return self.model_dump(mode="json")
+
+
+class ProjectsSnapshot(BaseModel):
+    """Projects View 汇总: 每项目计数 + success rate (Phase 6A)。"""
+
+    total: int = 0
+    items: list[ProjectSnapshot] = Field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return self.model_dump(mode="json")
+
+
 class MetricsSnapshot(BaseModel):
     """指标汇总 (事件聚合, 不建统计表 — event-model.md §6 按需聚合原则)。"""
 
@@ -150,6 +186,7 @@ class FactorySnapshot(BaseModel):
     executions: ExecutionSnapshot = Field(default_factory=ExecutionSnapshot)
     checkpoints: CheckpointSnapshot = Field(default_factory=CheckpointSnapshot)
     catalog: RuntimeCatalogSnapshot = Field(default_factory=RuntimeCatalogSnapshot)
+    projects: ProjectsSnapshot = Field(default_factory=ProjectsSnapshot)  # Phase 6A (ADR-0016)
     metrics: MetricsSnapshot = Field(default_factory=MetricsSnapshot)
     factory_metrics: FactoryMetrics = Field(default_factory=FactoryMetrics)  # Phase 5B (ADR-0015)
     recent_events: list[dict[str, Any]] = Field(default_factory=list)

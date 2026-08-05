@@ -170,6 +170,18 @@ class EventType(str, Enum):
     # (phase5b-status.md §Event 集成)。
     METRICS_VIEWED = "metrics.viewed"      # 工厂指标被查看 (只读聚合)
 
+    # --- Phase 6A: Multi Project Workspace 事件 (增量扩展, ADR-0016) ---
+    # 依 ADR-0001 决策 1 的扩展路径: 加枚举成员即可, 不改表结构/API。
+    # workspace.* 为 Workspace (workspace.yaml + 项目组织) 生命周期事件
+    # (source="workspace"): created 由 WorkspaceManager.create_workspace 发出;
+    # viewed 为读命令事件 (ADR-0002: 所有 CLI 行为必须产生 Event, 同 project.viewed)。
+    # project.registered/removed 为项目进出 workspace.projects 引用列表的
+    # 写路径事件 (manager 发出, 载荷含语言/状态/映射计数, phase6a-status.md)。
+    WORKSPACE_CREATED = "workspace.created"      # Workspace 创建 (workspace.yaml 落地)
+    WORKSPACE_VIEWED = "workspace.viewed"        # Workspace 被查看 (show, 只读)
+    PROJECT_REGISTERED = "project.registered"    # 项目加入 workspace.projects
+    PROJECT_REMOVED = "project.removed"          # 项目从 workspace.projects 移除
+
 
 class Event(BaseModel):
     """一条事件。append-only: 写入后永不修改、永不删除。"""

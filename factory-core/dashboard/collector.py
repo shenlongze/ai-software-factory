@@ -10,9 +10,10 @@
 由 CLI 命令层 (cmd_dashboard) 经 EventLogger 发出, 收集器自身不发事件
 (模块解耦, 同 RecoveryService 装配模式 — 依赖注入 store 对象)。
 
-project_id 过滤边界: Task/Execution/Event 有项目维度 (执行请求模型无 project 字段,
-过滤仅作用于任务与事件, 见 runtime/models.py ExecutionRequest); Agent/Workflow 定义
-无项目维度, 恒为全局。
+project_id 过滤边界 (Phase 6A 增强): Task/Event/Execution/Workflow 运行实例有
+项目维度 — Execution/WorkflowRun 无 project 字段, 经 task_id → task.project 归属
+过滤 (孤儿记录不计入); Agent/Workflow 定义无项目维度, 恒为全局。Projects View
+(Phase 6A) 按 workspace 项目定义 ∪ 任务 project 值聚合每项目计数。
 """
 
 from __future__ import annotations
@@ -38,6 +39,8 @@ from .models import (
     ExecutionSnapshot,
     FactorySnapshot,
     MetricsSnapshot,
+    ProjectSnapshot,
+    ProjectsSnapshot,
     RuntimeCatalogSnapshot,
     TaskSnapshot,
     ValidationSummary,
@@ -59,6 +62,7 @@ class DashboardCollector:
         event_store: EventStore,
         checkpoint_store: CheckpointStore,
         project_id: str | None = None,
+        projects: list | None = None,  # list[ProjectDefinition] (Phase 6A Projects View)
         recent_limit: int = 10,
     ) -> None:
         self._task_store = task_store
@@ -69,6 +73,7 @@ class DashboardCollector:
         self._event_store = event_store
         self._checkpoint_store = checkpoint_store
         self._project_id = project_id
+        self._projects = projects or []
         self._recent_limit = max(1, recent_limit)
 
     # ------------------------------------------------------------------ 主入口
@@ -83,6 +88,7 @@ class DashboardCollector:
             executions=self._collect_executions(),
             checkpoints=self._collect_checkpoints(),
             catalog=self._collect_catalog(),
+            projects=self._collect_projects(),
             metrics=self._collect_metrics(),
             factory_metrics=self._collect_factory_metrics(),
             recent_events=self._collect_recent_events(),
@@ -120,6 +126,10 @@ class DashboardCollector:
     def _collect_workflows(self) -> WorkflowSnapshot:
         definitions = self._workflow_store.list_workflows()
         runs = self._workflow_store.list_runs()
+        if self._project_id is not None:
+            # Phase 6A 项目隔离: 运行实例按 run.task_id → task.project 归属过滤
+            task_proj = self._task_project_map()
+            runs = [r for r in runs if task_proj.get(r.task_id) == self._project_id]
         by_status = Counter(r.status.value for r in runs)
         return WorkflowSnapshot(
             definitions=len(definitions),
@@ -131,6 +141,10 @@ class DashboardCollector:
 
     def _collect_executions(self) -> ExecutionSnapshot:
         requests = self._runtime_store.list_executions()
+        if self._project_id is not None:
+            # Phase 6A 项目隔离: 执行请求按 req.task_id → task.project 归属过滤
+            task_proj = self._task_project_map()
+            requests = [r for r in requests if task_proj.get(r.task_id) == self._project_id]
         results = {res.request_id: res for res in self._runtime_store.list_results()}
         by_status = Counter(req.status.value for req in requests)
         success = by_status.get("SUCCESS", 0)
@@ -157,6 +171,60 @@ class DashboardCollector:
             tasks=[c.task_id for c in checkpoints],
             items=[c.to_dict() for c in checkpoints],
         )
+
+    def _task_project_map(self) -> dict[str, str]:
+        """task_id → project 归属映射 (Projects View 与项目隔离共用, 只读)。"""
+        return {t.id: t.project for t in self._task_store.list()}
+
+    def _collect_projects(self) -> ProjectsSnapshot:
+        """Projects View (Phase 6A): workspace 定义 ∪ 任务 project 值的每项目计数。
+
+        计数口径 (与 models.ProjectSnapshot docstring 一致): task_count 直接按
+        Task.project; workflow/execution 经 task_id → project 归属 (无对应任务
+        的运行/执行不计入 — 孤儿记录无法归属, KISS); success_rate = 该项目
+        SUCCESS 执行 / 总执行。project_id 过滤时只保留该项目 (缺省补零行)。
+        """
+        rows: dict[str, dict] = {}
+        for pd in self._projects:  # workspace 项目定义 (含 0 计数种子)
+            rows[pd.id] = self._project_row(pd.id, name=pd.name, language=pd.language, status=pd.status)
+        task_proj = self._task_project_map()
+        for t in self._task_store.list():
+            pid = t.project or "default"
+            task_proj[t.id] = pid
+            rows.setdefault(pid, self._project_row(pid))["task_count"] += 1
+        for r in self._workflow_store.list_runs():
+            pid = task_proj.get(r.task_id)
+            if pid is not None:
+                rows.setdefault(pid, self._project_row(pid))["workflow_count"] += 1
+        for req in self._runtime_store.list_executions():
+            pid = task_proj.get(req.task_id)
+            if pid is None:
+                continue
+            row = rows.setdefault(pid, self._project_row(pid))
+            row["execution_count"] += 1
+            if req.status.value == "SUCCESS":
+                row["execution_success"] += 1
+            elif req.status.value == "FAILED":
+                row["execution_failed"] += 1
+        items = []
+        for pid in sorted(rows):
+            row = rows[pid]
+            total = row["execution_count"]
+            row["success_rate"] = (row["execution_success"] / total) if total else 0.0
+            items.append(ProjectSnapshot(**row))
+        if self._project_id is not None:
+            items = [p for p in items if p.id == self._project_id]
+            if not items:
+                items = [ProjectSnapshot(id=self._project_id, name=self._project_id, status="unknown")]
+        return ProjectsSnapshot(total=len(items), items=items)
+
+    @staticmethod
+    def _project_row(pid: str, *, name: str = "", language: str = "", status: str = "unknown") -> dict:
+        return {
+            "id": pid, "name": name or pid, "language": language, "status": status,
+            "task_count": 0, "workflow_count": 0, "execution_count": 0,
+            "execution_success": 0, "execution_failed": 0,
+        }
 
     def _collect_catalog(self) -> RuntimeCatalogSnapshot:
         """能力目录汇总 (RuntimeCatalog 读路径, 含默认定义基线; 未装配 → 空快照)。

@@ -80,6 +80,16 @@ from project.loader import (
     load_project,
 )
 
+from workspace.loader import resolve_projects_root
+from workspace.manager import (
+    ProjectExistsError,
+    ProjectNotFoundError,
+    WorkspaceConfigError,
+    WorkspaceExistsError,
+    WorkspaceManager,
+    WorkspaceNotFoundError,
+)
+
 from .context import FactoryContext
 
 SOURCE = "cli"
@@ -1018,6 +1028,12 @@ def cmd_dashboard(ctx: FactoryContext, args: Any) -> dict:
             exit_code=2,
         )
     with ctx.logger_scope() as logger:
+        # Phase 6A Projects View 数据源: workspace 项目定义 (无 workspace/损坏 →
+        # 空列表, Dashboard 永不因 workspace 配置问题失败 — 只读兜底)。
+        try:
+            ws_projects = _open_workspace_manager(ctx).list_projects()
+        except (WorkspaceNotFoundError, WorkspaceConfigError):
+            ws_projects = []
         collector = DashboardCollector(
             task_store=ctx.open_task_store(),
             agent_registry=AgentRegistry(ctx.open_agent_store()),
@@ -1027,6 +1043,7 @@ def cmd_dashboard(ctx: FactoryContext, args: Any) -> dict:
             event_store=logger.store,
             checkpoint_store=_open_checkpoint_store(ctx),
             project_id=args.project,
+            projects=ws_projects,
             recent_limit=args.limit,
         )
         snapshot = collector.collect()
@@ -1043,6 +1060,7 @@ def cmd_dashboard(ctx: FactoryContext, args: Any) -> dict:
                 "execution_failed": snapshot.executions.failed,
                 "checkpoints_total": snapshot.checkpoints.total,
                 "catalog_definitions": snapshot.catalog.total,
+                "projects_total": snapshot.projects.total,
                 "events_total": snapshot.metrics.event_count,
             },
         )
@@ -1099,48 +1117,138 @@ def cmd_metrics(ctx: FactoryContext, args: Any) -> dict:
     }
 
 
-# ------------------------------------------------------------------ project 子命令 (Phase 5A: Example Layer, ADR-0013)
+# ------------------------------------------------------------------ workspace 子命令 (Phase 6A, ADR-0016)
+
+def _open_workspace_manager(ctx: FactoryContext) -> WorkspaceManager:
+    """装配 WorkspaceManager (examples_dir = 内置示例源, FACTORY_EXAMPLES_DIR 覆盖)。"""
+    return WorkspaceManager(ctx.root, examples_dir=default_examples_dir())
+
+
+def _ws_cli_error(exc: Exception) -> CliError:
+    """workspace 域异常 → CliError (cli-design §5: 7 未找到 / 1 配置错误)。"""
+    if isinstance(exc, WorkspaceNotFoundError):
+        return CliError(str(exc), exit_code=7)
+    if isinstance(exc, (WorkspaceExistsError, ProjectExistsError, ProjectNotFoundError,
+                        WorkspaceConfigError)):
+        return CliError(str(exc), exit_code=1)
+    return CliError(str(exc), exit_code=1)
+
+
+def cmd_workspace_init(ctx: FactoryContext, args: Any) -> dict:
+    """factory workspace init — 创建 workspace.yaml (含示例项目引用), 发 workspace.created。
+
+    项目引用默认 = 自动发现 (managed projects 目录 ∪ examples 内置示例源);
+    已存在且未 --force → 退出码 1; 引用项目配置损坏 → 退出码 1 (先解析后落盘,
+    不留下半写配置)。只创建 workspace.yaml, 不复制/修改任何项目配置 (KISS)。
+    """
+    manager = _open_workspace_manager(ctx)
+    with ctx.logger_scope() as logger:
+        try:
+            workspace, ev = manager.create_workspace(
+                name=args.name, logger=logger, force=args.force,
+            )
+        except (WorkspaceExistsError, WorkspaceConfigError) as exc:
+            raise _ws_cli_error(exc) from exc
+    return {
+        "ok": True,
+        "workspace": workspace.to_dict(),
+        "workspace_file": str(manager.workspace_path),
+        "event_seq": ev.seq if ev else None,
+    }
+
+
+def cmd_workspace_show(ctx: FactoryContext, args: Any) -> dict:
+    """factory workspace show — Workspace 详情 + 项目列表 (含状态), 发 workspace.viewed。
+
+    退出码: 7 未初始化 (无 workspace.yaml); 1 配置损坏/引用项目缺失。
+    """
+    manager = _open_workspace_manager(ctx)
+    try:
+        workspace = manager.load_workspace()
+    except (WorkspaceNotFoundError, WorkspaceConfigError) as exc:
+        raise _ws_cli_error(exc) from exc
+    with ctx.logger_scope() as logger:
+        ev = logger.record(
+            EventType.WORKSPACE_VIEWED, source=SOURCE, stage="viewed",
+            action="show workspace", result="OK",
+            payload={
+                "name": workspace.name,
+                "version": workspace.version,
+                "projects": workspace.project_ids(),
+                "projects_count": len(workspace.projects),
+            },
+        )
+    return {
+        "ok": True,
+        "workspace": workspace.to_dict(),
+        "workspace_file": str(manager.workspace_path),
+        "event_seq": ev.seq,
+    }
+
+
+# ------------------------------------------------------------------ project 子命令 (Phase 5A + Phase 6A 增强)
 
 def cmd_project_list(ctx: FactoryContext, args: Any) -> dict:
-    """factory project list — 扫描 examples/*/project.yaml → 项目列表, 发 project.viewed。
+    """factory project list — 项目列表 (Project/Language/Status/Repository), 发 project.viewed。
 
-    只读 (ADR-0013): 仅解析项目定义, 不写工厂状态; examples 目录默认仓库根/examples
-    (FACTORY_EXAMPLES_DIR 环境变量覆盖)。配置损坏 → ProjectLoadError → 退出码 1 (不静默跳过)。
+    数据源 (Phase 6A 增强): 有 workspace → workspace.projects (注册列表, 含
+    status/runtime_preferences 增强字段); 无 workspace → 回落扫描 examples
+    (Phase 5A 兼容行为)。配置损坏 → 退出码 1 (不静默跳过)。
     """
-    examples_dir = default_examples_dir()
+    manager = _open_workspace_manager(ctx)
     try:
-        projects = discover_projects(examples_dir)
-    except ProjectLoadError as exc:
+        workspace = manager.load_workspace()
+        projects = workspace.projects
+        source, source_path = "workspace", str(manager.workspace_path)
+    except WorkspaceNotFoundError:
+        examples_dir = default_examples_dir()
+        try:
+            projects = discover_projects(examples_dir)
+        except ProjectLoadError as exc:
+            raise CliError(str(exc), exit_code=1) from exc
+        source, source_path = "examples", str(examples_dir)
+    except WorkspaceConfigError as exc:
         raise CliError(str(exc), exit_code=1) from exc
     with ctx.logger_scope() as logger:
         ev = logger.record(
             EventType.PROJECT_VIEWED, source=SOURCE, action="list projects", result="OK",
-            payload={"count": len(projects), "examples_dir": str(examples_dir)},
+            payload={
+                "count": len(projects),
+                "source": source,
+                "source_path": source_path,
+                "projects": [getattr(p, "id", None) or p.name for p in projects],
+            },
         )
     return {
         "ok": True, "count": len(projects),
         "projects": [p.to_dict() for p in projects],
-        "examples_dir": str(examples_dir), "event_seq": ev.seq,
+        "source": source, "source_path": source_path,
+        "examples_dir": source_path,  # 兼容 Phase 5A 输出键
+        "event_seq": ev.seq,
     }
 
 
 def cmd_project_show(ctx: FactoryContext, args: Any) -> dict:
-    """factory project show <name> — 项目详情: 技术栈/Agent/技能/工作流映射, 发 project.viewed。
+    """factory project show <name> — 项目详情: 技术栈/状态/运行偏好/Agent/技能/工作流。
 
-    退出码: 7 项目不存在 (examples/<name>/project.yaml 缺失); 1 配置解析/校验失败;
-    0 成功。只读 (ADR-0013): 不注册 agent/workflow, 注册仍走既有 CLI/引擎 API。
+    数据源 (Phase 6A 增强): managed projects 目录优先, examples 兜底 (workspace
+    是上层组织单位); 详情含 ProjectDef 增强字段 (status/runtime_preferences)。
+    退出码: 7 项目不存在; 1 配置解析/校验失败; 0 成功。只读 (ADR-0013)。
     """
     examples_dir = default_examples_dir()
-    try:
-        config = load_project(examples_dir, args.name)
-    except ProjectLoadError as exc:
-        raise CliError(str(exc), exit_code=1) from exc
-    if config is None:
+    src = resolve_projects_root(ctx.root, args.name, examples_dir)
+    if src is None:
         raise CliError(
             f"project not found: {args.name} "
-            f"(no project.yaml under {examples_dir / args.name})",
+            f"(no project.yaml in workspace projects or examples)",
             exit_code=7,
         )
+    try:
+        config = load_project(src, args.name)
+    except ProjectLoadError as exc:
+        raise CliError(str(exc), exit_code=1) from exc
+    if config is None:  # resolve 已确认 project.yaml 存在, 理论不可达
+        raise CliError(f"project not found: {args.name}", exit_code=7)
     with ctx.logger_scope() as logger:
         ev = logger.record(
             EventType.PROJECT_VIEWED, source=SOURCE, project_id=config.project.name,
@@ -1148,6 +1256,7 @@ def cmd_project_show(ctx: FactoryContext, args: Any) -> dict:
             payload={
                 "project": config.project.name,
                 "language": config.project.language,
+                "status": config.project.status,
                 "agents": len(config.agents),
                 "skills": len(config.skills),
                 "workflows": len(config.workflows),
@@ -1159,6 +1268,6 @@ def cmd_project_show(ctx: FactoryContext, args: Any) -> dict:
         "agents": [a.to_dict() for a in config.agents],
         "skills": [s.to_dict() for s in config.skills],
         "workflows": [w.to_dict() for w in config.workflows],
-        "examples_dir": str(examples_dir),
+        "examples_dir": str(src),
         "event_seq": ev.seq,
     }

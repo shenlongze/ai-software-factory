@@ -49,6 +49,8 @@ from .commands import (
     cmd_workflow_list,
     cmd_workflow_run,
     cmd_workflow_status,
+    cmd_workspace_init,
+    cmd_workspace_show,
 )
 from .context import DEFAULT_ROOT, FactoryContext
 
@@ -291,6 +293,24 @@ def build_parser() -> Any:
     json_opt(p_pr_show)
     p_pr_show.add_argument("name", help="项目名 (如 markpad)")
 
+    # factory workspace <sub> (Phase 6A, ADR-0016)
+    p_workspace = sub.add_parser(
+        "workspace", help="Workspace 管理: 多项目组织单位 (workspace.yaml, 发 workspace.* 事件)"
+    )
+    json_opt(p_workspace)
+    wsub = p_workspace.add_subparsers(dest="workspace_command", required=True)
+    p_ws_init = wsub.add_parser(
+        "init", help="初始化 workspace.yaml: 自动发现项目引用 (managed ∪ examples, 发 workspace.created)"
+    )
+    json_opt(p_ws_init)
+    p_ws_init.add_argument("--name", default=None, help="Workspace 名 (默认 = 工厂根目录名)")
+    p_ws_init.add_argument("--force", action="store_true",
+                           help="覆盖已存在的 workspace.yaml (先解析后落盘, 失败不半写)")
+    p_ws_show = wsub.add_parser(
+        "show", help="Workspace 详情 + 项目列表 (含状态, 发 workspace.viewed)"
+    )
+    json_opt(p_ws_show)
+
     return p
 
 
@@ -331,6 +351,8 @@ def main(argv: list[str] | None = None) -> int:
             result = cmd_metrics(ctx, args)
         elif args.command == "project":
             result = _dispatch_project(ctx, args)
+        elif args.command == "workspace":
+            result = _dispatch_workspace(ctx, args)
         else:  # pragma: no cover — argparse required=True 已拦截
             raise CliError(f"unknown command: {args.command}", exit_code=2)
     except CliError as exc:
@@ -443,6 +465,14 @@ def _dispatch_project(ctx: FactoryContext, args: Any) -> dict:
     raise CliError(f"unknown project command: {args.project_command}", exit_code=2)
 
 
+def _dispatch_workspace(ctx: FactoryContext, args: Any) -> dict:
+    if args.workspace_command == "init":
+        return cmd_workspace_init(ctx, args)
+    if args.workspace_command == "show":
+        return cmd_workspace_show(ctx, args)
+    raise CliError(f"unknown workspace command: {args.workspace_command}", exit_code=2)
+
+
 # ------------------------------------------------------------------ 输出
 
 def _print_output(args: Any, result: dict) -> None:
@@ -479,6 +509,8 @@ def _print_output(args: Any, result: dict) -> None:
         _print_metrics(result)
     elif args.command == "project":
         _print_project(args.project_command, result)
+    elif args.command == "workspace":
+        _print_workspace(args.workspace_command, result)
 
 
 def _render_table(headers: list[str], rows: list[list[str]]) -> str:
@@ -790,10 +822,10 @@ def _print_metrics(r: dict) -> None:
 
 def _print_project(sub: str, r: dict) -> None:
     if sub == "list":
-        rows = [[p["name"], p["language"], p["repository"] or "-",
+        rows = [[p["name"], p["status"], p["language"], p["repository"] or "-",
                  ", ".join(p["tech_stack"]) or "-"] for p in r["projects"]]
-        print(_render_table(["Project", "Language", "Repository", "Tech Stack"], rows))
-        print(f"{r['count']} projects (examples: {r['examples_dir']})")
+        print(_render_table(["Project", "Status", "Language", "Repository", "Tech Stack"], rows))
+        print(f"{r['count']} projects (source: {r['source']})")
     elif sub == "show":
         p = r["project"]
         print(f"{p['name']}  {p['description'] or ''}")
@@ -811,6 +843,26 @@ def _print_project(sub: str, r: dict) -> None:
         for w in r["workflows"]:
             steps = " → ".join(st["id"] for st in w["steps"])
             print(f"    {w['id']:<20} {w['name'] or '-'}  [{steps}]")
+
+
+def _print_workspace(sub: str, r: dict) -> None:
+    if sub == "init":
+        w = r["workspace"]
+        ids = [p["id"] for p in w["projects"]]
+        print(f"✔ Workspace 已初始化: {w['name']} v{w['version']}")
+        print(f"  file      {r['workspace_file']}")
+        print(f"  projects  {', '.join(ids) or '(none)'}")
+        print(f"  事件      workspace.created seq={r.get('event_seq')}")
+    elif sub == "show":
+        w = r["workspace"]
+        print(f"{w['name']}  v{w['version']}  (root: {w['root_path']})")
+        print(f"  file      {r['workspace_file']}")
+        if not w["projects"]:
+            print("  projects  (none)")
+        for p in w["projects"]:
+            print(f"    {p['id']:<16} {p['status']:<9} {p['language']:<8} "
+                  f"{p['description'][:60] or '-'}")
+        print(f"  事件      workspace.viewed seq={r.get('event_seq')}")
 
 
 if __name__ == "__main__":

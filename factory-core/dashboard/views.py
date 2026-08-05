@@ -241,6 +241,33 @@ def build_catalog(snapshot: FactorySnapshot) -> Panel:
     return _panel(Group(summary, table), "Runtime Catalog", border="cyan")
 
 
+def build_projects(snapshot: FactorySnapshot) -> Panel:
+    """Projects View (Phase 6A, ADR-0016): 每项目计数 + success rate。
+
+    数据源 = snapshot.projects (DashboardCollector 只读聚合, 同 --json 出口):
+    workspace 项目定义 ∪ 任务 project 值; 每项目任务数/工作流运行数/执行数/
+    成功率。status 未知 (任务中出现但未定义) → 中性色。
+    """
+    p = snapshot.projects
+    summary = _line(_text(f"{p.total} projects", style="bold"))
+    table = Table(show_header=True, header_style="bold", box=box.SIMPLE_HEAVY, expand=True)
+    for col in ("Project", "Language", "Status", "Tasks", "Workflows", "Executions", "Success Rate"):
+        table.add_column(col)
+    for item in p.items:
+        table.add_row(
+            _text(item.id),
+            _text(item.language or "-"),
+            _text(item.status, style=_style_status(item.status)),
+            _text(item.task_count),
+            _text(item.workflow_count),
+            _text(item.execution_count),
+            _text(f"{item.success_rate:.1%}"),
+        )
+    if not p.items:
+        table.add_row(_text("(no projects)", style="dim"), "", "", "", "", "", "")
+    return _panel(Group(summary, table), "Projects", border="cyan")
+
+
 def build_metrics(snapshot: FactorySnapshot) -> Panel:
     """Factory Metrics 视图 (Phase 5B, ADR-0015): 六域指标 + 失败原因直方图。
 

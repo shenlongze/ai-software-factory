@@ -9,8 +9,10 @@
   审计 (metrics.viewed) 由 CLI 命令层 (cmd_metrics) 经 EventLogger 发出, 收集器
   自身不发事件 (模块解耦, 同 DashboardCollector 模式)。
 
-project_id 过滤边界 (同 DashboardCollector): Task/Event 有项目维度; Execution/
-Agent/Workflow 定义无项目维度, 恒为全局。
+project_id 过滤边界 (Phase 6A 增强, ADR-0016): Task/Event/Execution/Workflow
+运行实例有项目维度 — Execution/WorkflowRun 无 project 字段, 经 task_id →
+task.project 归属过滤 (孤儿记录不计入, 完整项目隔离输出); Agent 注册表与
+Workflow 定义无项目维度, 恒为全局 (agents_total/definitions 为全局计数)。
 """
 
 from __future__ import annotations
@@ -55,13 +57,22 @@ class MetricsCollector:
     # ------------------------------------------------------------------ 主入口
 
     def collect(self) -> FactoryMetrics:
-        """聚合全部 store → FactoryMetrics (只读, 无副作用)。"""
+        """聚合全部 store → FactoryMetrics (只读, 无副作用)。
+
+        project_id 隔离 (Phase 6A): tasks/events 经 store 项目过滤; executions/
+        workflow runs 无 project 字段, 按 task_id → task.project 归属过滤 —
+        完整项目隔离输出 (metrics --project X 只见 X 的项目数据)。
+        """
         events = self._event_store.query(project_id=self._project_id)
         tasks = self._task_store.list(project=self._project_id)
         agents = self._agent_registry.list()
         runs = self._workflow_store.list_runs()
         definitions = self._workflow_store.list_workflows()
         requests = self._runtime_store.list_executions()
+        if self._project_id is not None:
+            task_proj = {t.id: t.project for t in self._task_store.list()}
+            requests = [r for r in requests if task_proj.get(r.task_id) == self._project_id]
+            runs = [r for r in runs if task_proj.get(r.task_id) == self._project_id]
 
         agent_metrics, agents_total = calculate_agent_metrics(agents, events)
         return FactoryMetrics(

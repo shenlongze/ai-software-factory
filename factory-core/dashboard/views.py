@@ -241,6 +241,81 @@ def build_catalog(snapshot: FactorySnapshot) -> Panel:
     return _panel(Group(summary, table), "Runtime Catalog", border="cyan")
 
 
+def build_metrics(snapshot: FactorySnapshot) -> Panel:
+    """Factory Metrics 视图 (Phase 5B, ADR-0015): 六域指标 + 失败原因直方图。
+
+    数据源 = snapshot.factory_metrics (MetricsCollector 只读聚合, 同 --json 出口)。
+    """
+    m = snapshot.factory_metrics
+    t, x, w, v = m.tasks, m.executions, m.workflows, m.validation
+
+    header = _line(Text("Factory Metrics", style="bold cyan"))
+    if m.project_id:
+        header.append(f"  [{m.project_id}]", style="magenta")
+    parts: list[Any] = [header]
+
+    tasks = _line(
+        Text("Tasks      ", style="bold"),
+        _text(f"total {t.total}  completed {t.completed}  failed {t.failed}  "
+              f"success_rate {t.success_rate:.1%}", style="dim"),
+    )
+    if t.by_status:
+        tasks.append("  ").append_text(_status_counts_text(t.by_status))
+    parts.append(tasks)
+
+    execs = _line(
+        Text("Executions ", style="bold"),
+        _text(f"total {x.total}  success {x.success}  failed {x.failed}  "
+              f"first_attempt_success_rate {x.first_attempt_success_rate:.1%}", style="dim"),
+    )
+    if x.by_status:
+        execs.append("  ").append_text(_status_counts_text(x.by_status))
+    parts.append(execs)
+
+    parts.append(_line(
+        Text("Workflows  ", style="bold"),
+        _text(f"{w.run_count} runs  completed {w.completed}  failed {w.failed}  "
+              f"success_rate {w.success_rate:.1%}  ({w.definitions} definitions)", style="dim"),
+    ))
+    parts.append(_line(
+        Text("Validation ", style="bold"),
+        _text(f"rules {v.total_rules}  PASS {v.pass_count}  FAIL {v.fail_count}  "
+              f"SKIP {v.skip_count}  ERROR {v.error_count}  pass_rate {v.pass_rate:.1%}  "
+              f"runs {v.runs}  failed_runs {v.failed_runs}", style="dim"),
+    ))
+
+    if m.agents:
+        agent_table = Table(show_header=True, header_style="bold", box=box.SIMPLE_HEAVY, expand=True)
+        for col in ("Agent", "Assignments", "Success", "Failed", "Rate"):
+            agent_table.add_column(col)
+        for agent_id, a in sorted(m.agents.items()):
+            agent_table.add_row(
+                _text(agent_id),
+                _text(a.assignment_count),
+                _text(a.success_count),
+                _text(a.failed_count),
+                _text(f"{a.success_rate:.1%}"),
+            )
+        parts.append(Group(
+            _line(Text(f"Agents ({m.agents_total} registered)", style="bold")),
+            agent_table,
+        ))
+    else:
+        parts.append(_line(Text("Agents     ", style="bold"), _text("(no agents)", style="dim")))
+
+    if m.failures.failure_reason_count:
+        reason_table = Table(show_header=True, header_style="bold", box=box.SIMPLE_HEAVY, expand=True)
+        for col in ("Reason", "Count"):
+            reason_table.add_column(col)
+        for reason, count in m.failures.failure_reason_count.items():
+            reason_table.add_row(_text(reason), _text(count))
+        parts.append(Group(Text("Failure Reasons", style="bold"), reason_table))
+    else:
+        parts.append(_line(Text("Failures    ", style="bold"), _text("(none)", style="dim")))
+
+    return _panel(Group(*parts), "Factory Metrics", border="cyan")
+
+
 def build_recovery(snapshot: FactorySnapshot) -> Panel:
     """恢复视图: recovery 事件计数 + Checkpoint 快照表。"""
     m = snapshot.metrics

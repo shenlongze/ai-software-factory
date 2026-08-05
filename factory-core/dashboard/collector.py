@@ -23,6 +23,8 @@ from typing import Any
 from agents.registry import AgentRegistry
 from events.models import EventType
 from events.store import EventStore
+from metrics.collectors import MetricsCollector
+from metrics.models import FactoryMetrics
 from recovery.checkpoint import CheckpointStore
 from runtime.store import RuntimeStore
 from runtimes.catalog import RuntimeCatalog
@@ -82,6 +84,7 @@ class DashboardCollector:
             checkpoints=self._collect_checkpoints(),
             catalog=self._collect_catalog(),
             metrics=self._collect_metrics(),
+            factory_metrics=self._collect_factory_metrics(),
             recent_events=self._collect_recent_events(),
         )
 
@@ -196,6 +199,21 @@ class DashboardCollector:
             recovery_completed=counts.get(EventType.RECOVERY_COMPLETED.value, 0),
             recovery_failed=counts.get(EventType.RECOVERY_FAILED.value, 0),
         )
+
+    def _collect_factory_metrics(self) -> FactoryMetrics:
+        """工厂生产指标 (Phase 5B, ADR-0015): 复用 MetricsCollector 只读聚合。
+
+        只读: 仅调各 store 读接口; 不发事件 (metrics.viewed 由 CLI 命令层发出,
+        同 dashboard.viewed 边界)。
+        """
+        return MetricsCollector(
+            event_store=self._event_store,
+            task_store=self._task_store,
+            agent_registry=self._agent_registry,
+            workflow_store=self._workflow_store,
+            runtime_store=self._runtime_store,
+            project_id=self._project_id,
+        ).collect()
 
     def _collect_recent_events(self) -> list[dict[str, Any]]:
         """最近事件 (最近优先, 上限 recent_limit)。项目过滤时按项目时间线取尾段。"""

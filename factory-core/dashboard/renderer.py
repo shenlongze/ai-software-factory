@@ -23,8 +23,8 @@ from rich.console import Console, Group
 from . import views
 from .models import FactorySnapshot
 
-# 单视图名 (build_<name> 与 views.py 构建函数一一对应; "all" 为七视图同屏)
-VIEWS = ("overview", "tasks", "agents", "workflows", "executions", "recovery", "catalog")
+# 单视图名 (build_<name> 与 views.py 构建函数一一对应; "all" 为八视图同屏)
+VIEWS = ("overview", "tasks", "agents", "workflows", "executions", "recovery", "catalog", "metrics")
 
 _SINGLE = {
     "tasks": views.build_tasks,
@@ -33,6 +33,7 @@ _SINGLE = {
     "executions": views.build_executions,
     "recovery": views.build_recovery,
     "catalog": views.build_catalog,
+    "metrics": views.build_metrics,
 }
 
 
@@ -55,6 +56,7 @@ class DashboardRenderer:
                 views.build_workflows(snapshot),
                 views.build_executions(snapshot),
                 views.build_catalog(snapshot),
+                views.build_metrics(snapshot),
                 views.build_recovery(snapshot),
                 views.build_recent_events(snapshot, limit=self._limit),
             )

@@ -70,10 +70,11 @@ class TestRendererBasics:
             DashboardRenderer().render(_snapshot(collector), view="nope")
 
     def test_view_names_exported(self):
-        # Phase 5A.1 新增第七视图 catalog (ADR-0014 决策 6) — 精确集合断言随视图集
+        # Phase 5B 新增第八视图 metrics (ADR-0015) — 精确集合断言随视图集
         # 扩展最小化更新 (行为观察点, 非 API; 见 ADR-0014 冲突消解)。
         assert set(VIEWS) == {
-            "overview", "tasks", "agents", "workflows", "executions", "recovery", "catalog",
+            "overview", "tasks", "agents", "workflows", "executions", "recovery",
+            "catalog", "metrics",
         }
 
     def test_render_views_iterates_all_single_views(self, collector):

@@ -19,6 +19,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from metrics.models import FactoryMetrics
+
 
 class TaskSnapshot(BaseModel):
     """任务汇总 (TaskStore)。状态为 TaskStatus 五态 (BACKLOG/ARCHITECTURE/DEVELOPMENT/TESTING/DONE)。"""
@@ -149,6 +151,7 @@ class FactorySnapshot(BaseModel):
     checkpoints: CheckpointSnapshot = Field(default_factory=CheckpointSnapshot)
     catalog: RuntimeCatalogSnapshot = Field(default_factory=RuntimeCatalogSnapshot)
     metrics: MetricsSnapshot = Field(default_factory=MetricsSnapshot)
+    factory_metrics: FactoryMetrics = Field(default_factory=FactoryMetrics)  # Phase 5B (ADR-0015)
     recent_events: list[dict[str, Any]] = Field(default_factory=list)
 
     def to_dict(self) -> dict:

@@ -71,6 +71,8 @@ from orchestration.pipeline import execute_workflow as run_orchestration
 from dashboard.collector import DashboardCollector
 from dashboard.renderer import VIEWS as DASHBOARD_VIEWS
 
+from metrics.collectors import MetricsCollector
+
 from project.loader import (
     ProjectLoadError,
     default_examples_dir,
@@ -1048,6 +1050,51 @@ def cmd_dashboard(ctx: FactoryContext, args: Any) -> dict:
         "ok": True,
         "view": view,
         "snapshot": snapshot.to_dict(),
+        "event_seq": ev.seq,
+    }
+
+
+# ------------------------------------------------------------------ metrics (Phase 5B, ADR-0015)
+
+def cmd_metrics(ctx: FactoryContext, args: Any) -> dict:
+    """factory metrics — 工厂生产指标 (六域 + 失败原因, 只读), 发 metrics.viewed。
+
+    只读铁律 (phase5b-status.md): 收集器只调用各 store 读接口 (query/list/count),
+    本命令唯一的副作用是 metrics.viewed 审计事件 (ADR-0002: 所有 CLI 行为必须
+    产生 Event, 同 dashboard.viewed)。指标纯计算不持久化 (ADR-0015 决策 2)。
+    """
+    project_id = getattr(args, "project", None)
+    with ctx.logger_scope() as logger:
+        collector = MetricsCollector(
+            event_store=logger.store,
+            task_store=ctx.open_task_store(),
+            agent_registry=AgentRegistry(ctx.open_agent_store()),
+            workflow_store=WorkflowStore(ctx.workflows_dir),
+            runtime_store=_open_runtime_store(ctx),
+            project_id=project_id,
+        )
+        metrics = collector.collect()
+        ev = logger.record(
+            EventType.METRICS_VIEWED, source=SOURCE, project_id=project_id,
+            stage="viewed", action="view metrics", result="OK",
+            payload={
+                "tasks_total": metrics.tasks.total,
+                "tasks_completed": metrics.tasks.completed,
+                "tasks_failed": metrics.tasks.failed,
+                "executions_total": metrics.executions.total,
+                "executions_success": metrics.executions.success,
+                "executions_failed": metrics.executions.failed,
+                "first_attempt_success_rate": metrics.executions.first_attempt_success_rate,
+                "agents_total": metrics.agents_total,
+                "workflow_runs": metrics.workflows.run_count,
+                "workflow_success_rate": metrics.workflows.success_rate,
+                "validation_pass_rate": metrics.validation.pass_rate,
+                "failure_reasons": len(metrics.failures.failure_reason_count),
+            },
+        )
+    return {
+        "ok": True,
+        "metrics": metrics.to_dict(),
         "event_seq": ev.seq,
     }
 

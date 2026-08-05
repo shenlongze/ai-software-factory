@@ -28,6 +28,7 @@ from .commands import (
     cmd_execution_run,
     cmd_execution_status,
     cmd_init,
+    cmd_metrics,
     cmd_project_list,
     cmd_project_show,
     cmd_recover,
@@ -273,6 +274,13 @@ def build_parser() -> Any:
     p_dashboard.add_argument("--limit", type=int, default=10, help="最近事件条数上限 (默认 10)")
     p_dashboard.add_argument("--project", default=None, help="按项目过滤 (任务/事件维度)")
 
+    # factory metrics (Phase 5B, ADR-0015)
+    p_metrics = sub.add_parser(
+        "metrics", help="工厂生产指标: 六域指标 + 失败原因 (只读, 发 metrics.viewed)"
+    )
+    json_opt(p_metrics)
+    p_metrics.add_argument("--project", default=None, help="按项目过滤 (任务/事件维度)")
+
     # factory project <sub> (Phase 5A: Example Layer, 只读)
     p_project = sub.add_parser("project", help="项目配置 (只读: examples/*/project.yaml)")
     json_opt(p_project)
@@ -319,6 +327,8 @@ def main(argv: list[str] | None = None) -> int:
             result = cmd_recover(ctx, args)
         elif args.command == "dashboard":
             result = cmd_dashboard(ctx, args)
+        elif args.command == "metrics":
+            result = cmd_metrics(ctx, args)
         elif args.command == "project":
             result = _dispatch_project(ctx, args)
         else:  # pragma: no cover — argparse required=True 已拦截
@@ -465,6 +475,8 @@ def _print_output(args: Any, result: dict) -> None:
         _print_recover(result)
     elif args.command == "dashboard":
         _print_dashboard(result)
+    elif args.command == "metrics":
+        _print_metrics(result)
     elif args.command == "project":
         _print_project(args.project_command, result)
 
@@ -767,6 +779,13 @@ def _print_dashboard(r: dict) -> None:
 
     snapshot = FactorySnapshot.model_validate(r["snapshot"])
     print(DashboardRenderer().render(snapshot, view=r.get("view") or "all"))
+
+
+def _print_metrics(r: dict) -> None:
+    from metrics.models import FactoryMetrics
+    from metrics.reports import format_metrics
+
+    print(format_metrics(FactoryMetrics.model_validate(r["metrics"])))
 
 
 def _print_project(sub: str, r: dict) -> None:

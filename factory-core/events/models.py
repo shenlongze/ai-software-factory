@@ -65,6 +65,19 @@ class EventType(str, Enum):
     VALIDATION_RULE_COMPLETED = "validation.rule.completed"  # 单条验证规则结束 (PASS/FAIL/SKIP/ERROR)
     VALIDATION_FAILED = "validation.failed"                # 验证失败 (result=FAIL)
 
+    # --- Phase 3B: Agent + Skill Registry 事件 (增量扩展, ADR-0004) ---
+    # 依 ADR-0001 决策 1 的扩展路径: 加枚举成员即可, 不改表结构/API。
+    # registered/updated/removed 为身份注册类事件, 与 event-model §3.2 的运行时事件
+    # (started/action/summary/stopped) 互补; viewed 为读命令事件 (ADR-0002: 所有 CLI
+    # 行为必须产生 Event)。
+    AGENT_REGISTERED = "agent.registered"   # Agent 注册入库
+    AGENT_UPDATED = "agent.updated"         # Agent 记录更新
+    AGENT_REMOVED = "agent.removed"         # Agent 移除
+    AGENT_VIEWED = "agent.viewed"           # Agent 列表被查看
+    SKILL_REGISTERED = "skill.registered"   # Skill 注册入库
+    SKILL_REMOVED = "skill.removed"         # Skill 移除
+    SKILL_VIEWED = "skill.viewed"           # Skill 列表被查看
+
 
 class Event(BaseModel):
     """一条事件。append-only: 写入后永不修改、永不删除。"""

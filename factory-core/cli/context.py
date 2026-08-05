@@ -1,11 +1,12 @@
 """cli/context.py — 工厂上下文: 根目录布局 + EventStore/EventLogger/TaskStore 装配。
 
-布局 (ADR-0002):
+布局 (ADR-0002 + ADR-0004):
 ```
 <root>/                 (默认 ~/.factory, --root 覆盖)
 ├── factory.db          SQLite EventStore (events 表, WAL)
 ├── tasks/              TaskStore JSON 文件
-├── agents/             Phase 3 占位
+├── agents/             AgentStore JSON (agents.json)  [Phase 3B]
+├── skills/             SkillStore JSON (skills.json)  [Phase 3B]
 ├── workflows/          Phase 3 占位
 └── events/             Phase 3 占位 (事件导出等)
 ```
@@ -20,14 +21,15 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
+from agents.store import AgentStore, SkillStore
 from events.logger import EventLogger
 from events.store import EventStore
 from tasks.store import TaskStore
 
 DEFAULT_ROOT = Path.home() / ".factory"
 
-# 目录骨架 (phase2-status 指令清单, 优先于 cli-design 的 projects/roles/skills/workflows)
-_SUBDIRS = ("tasks", "agents", "workflows", "events")
+# 目录骨架 (phase2-status 指令清单 + phase3b-status: skills/), 优先于 cli-design 的 projects/roles/skills/workflows
+_SUBDIRS = ("tasks", "agents", "skills", "workflows", "events")
 
 
 class FactoryContext:
@@ -45,6 +47,10 @@ class FactoryContext:
     @property
     def agents_dir(self) -> Path:
         return self.root / "agents"
+
+    @property
+    def skills_dir(self) -> Path:
+        return self.root / "skills"
 
     @property
     def workflows_dir(self) -> Path:
@@ -84,3 +90,11 @@ class FactoryContext:
 
     def open_task_store(self) -> TaskStore:
         return TaskStore(self.tasks_dir)
+
+    def open_agent_store(self) -> AgentStore:
+        """Agent 注册表存储 (JSON: <root>/agents/agents.json)。"""
+        return AgentStore(self.agents_dir)
+
+    def open_skill_store(self) -> SkillStore:
+        """Skill 注册表存储 (JSON: <root>/skills/skills.json)。"""
+        return SkillStore(self.skills_dir)

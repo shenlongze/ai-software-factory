@@ -13,6 +13,8 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any
 
+from agents.models import Agent, AgentStatus, Skill
+from agents.registry import AgentExistsError, AgentRegistry, SkillExistsError, SkillRegistry
 from events.models import EventType
 from tasks.models import Task, TaskStatus
 from tasks.store import TaskExistsError, TaskStore
@@ -41,6 +43,20 @@ def _parse_status(value: str | None) -> TaskStatus | None:
         return TaskStatus.parse(value)
     except ValueError as exc:
         raise CliError(str(exc), exit_code=2) from exc
+
+
+def _parse_agent_status(value: str | None) -> AgentStatus | None:
+    if value is None:
+        return None
+    try:
+        return AgentStatus.parse(value)
+    except ValueError as exc:
+        raise CliError(str(exc), exit_code=2) from exc
+
+
+def _parse_csv(value: str | None) -> list[str]:
+    """逗号分隔列表 → 去空串列表 (skills/capabilities 共用)。"""
+    return [s.strip() for s in (value or "").split(",") if s.strip()]
 
 
 # ------------------------------------------------------------------ factory init
@@ -225,4 +241,76 @@ def cmd_validate(ctx: FactoryContext, args: Any) -> dict:
         "exit_code": exit_code,
         "report": report.model_dump(mode="json"),
         "report_text": report.to_text(),
+    }
+
+
+# ------------------------------------------------------------------ agent 子命令
+
+def cmd_agent_add(ctx: FactoryContext, args: Any) -> dict:
+    """factory agent add — 注册 Agent, 发 agent.registered。"""
+    agent = Agent(
+        id=args.id,
+        name=args.name or args.id,
+        role=args.role,
+        description=args.description or "",
+        skills=_parse_csv(args.skills),
+    )
+    with ctx.logger_scope() as logger:
+        registry = AgentRegistry(ctx.open_agent_store(), logger=logger)
+        try:
+            agent, ev = registry.register(agent)
+        except AgentExistsError as exc:
+            raise CliError(str(exc), exit_code=1) from exc
+    return {"ok": True, "agent": agent.to_dict(), "event_seq": ev.seq if ev else None}
+
+
+def cmd_agent_list(ctx: FactoryContext, args: Any) -> dict:
+    """factory agent list — Agent 列表 (可过滤), 发 agent.viewed。"""
+    status = _parse_agent_status(args.status)
+    with ctx.logger_scope() as logger:
+        registry = AgentRegistry(ctx.open_agent_store(), logger=logger)
+        agents = registry.list(status=status, role=args.role, skill=args.skill)
+        ev = logger.record(
+            EventType.AGENT_VIEWED, source=SOURCE, action="list agents", result="OK",
+            payload={"count": len(agents), "status": args.status, "role": args.role, "skill": args.skill},
+        )
+    return {
+        "ok": True, "count": len(agents),
+        "agents": [a.to_dict() for a in agents], "event_seq": ev.seq,
+    }
+
+
+# ------------------------------------------------------------------ skill 子命令
+
+def cmd_skill_add(ctx: FactoryContext, args: Any) -> dict:
+    """factory skill add — 注册 Skill (能力目录), 发 skill.registered。"""
+    skill = Skill(
+        id=args.id,
+        name=args.name or args.id,
+        category=args.category or "general",
+        description=args.description or "",
+        capabilities=_parse_csv(args.capabilities),
+        version=args.version or "1.0.0",
+    )
+    with ctx.logger_scope() as logger:
+        registry = SkillRegistry(ctx.open_skill_store(), logger=logger)
+        try:
+            skill, ev = registry.register(skill)
+        except SkillExistsError as exc:
+            raise CliError(str(exc), exit_code=1) from exc
+    return {"ok": True, "skill": skill.to_dict(), "event_seq": ev.seq if ev else None}
+
+
+def cmd_skill_list(ctx: FactoryContext, args: Any) -> dict:
+    """factory skill list — Skill 列表 (可过滤), 发 skill.viewed。"""
+    with ctx.logger_scope() as logger:
+        registry = SkillRegistry(ctx.open_skill_store(), logger=logger)
+        skills = registry.list(category=args.category)
+        ev = logger.record(
+            EventType.SKILL_VIEWED, source=SOURCE, action="list skills", result="OK",
+            payload={"count": len(skills), "category": args.category},
+        )
+    return {
+        "ok": True, "count": len(skills),
+        "skills": [s.to_dict() for s in skills], "event_seq": ev.seq,
     }

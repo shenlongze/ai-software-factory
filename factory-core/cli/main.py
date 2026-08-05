@@ -13,7 +13,21 @@ import json
 import sys
 from typing import Any
 
-from .commands import CliError, cmd_event_logs, cmd_init, cmd_status, cmd_task_create, cmd_task_list, cmd_task_status, cmd_task_update, cmd_validate
+from .commands import (
+    CliError,
+    cmd_agent_add,
+    cmd_agent_list,
+    cmd_event_logs,
+    cmd_init,
+    cmd_skill_add,
+    cmd_skill_list,
+    cmd_status,
+    cmd_task_create,
+    cmd_task_list,
+    cmd_task_status,
+    cmd_task_update,
+    cmd_validate,
+)
 from .context import DEFAULT_ROOT, FactoryContext
 
 __all__ = ["main", "build_parser"]
@@ -87,6 +101,39 @@ def build_parser() -> Any:
     p_val.add_argument("--level", default="L2", choices=["L1", "L2", "L3"], help="验证级别 (事件标记, 默认 L2)")
     p_val.add_argument("--expect-status", default=None, help="期望状态, 不匹配则验证失败 (退出码 3)")
 
+    # factory agent <sub>
+    p_agent = sub.add_parser("agent", help="Agent 管理 (注册表, 发 agent.* 事件)")
+    json_opt(p_agent)
+    asub = p_agent.add_subparsers(dest="agent_command", required=True)
+    p_agent_add = asub.add_parser("add", help="注册 Agent (发 agent.registered)")
+    json_opt(p_agent_add)
+    p_agent_add.add_argument("--id", required=True, help="Agent ID (如 A-001)")
+    p_agent_add.add_argument("--role", required=True, help="角色 (如 backend-developer)")
+    p_agent_add.add_argument("--skills", required=True, help="技能列表, 逗号分隔 (如 backend,flutter)")
+    p_agent_add.add_argument("--name", default=None, help="显示名 (默认 = id)")
+    p_agent_add.add_argument("--description", default=None, help="描述")
+    p_agent_list = asub.add_parser("list", help="Agent 列表 (发 agent.viewed)")
+    json_opt(p_agent_list)
+    p_agent_list.add_argument("--status", default=None, help="按状态过滤 (AVAILABLE/WORKING/OFFLINE)")
+    p_agent_list.add_argument("--role", default=None, help="按角色过滤")
+    p_agent_list.add_argument("--skill", default=None, help="按技能过滤 (find_by_skill)")
+
+    # factory skill <sub>
+    p_skill = sub.add_parser("skill", help="Skill 管理 (能力目录, 发 skill.* 事件)")
+    json_opt(p_skill)
+    ssub = p_skill.add_subparsers(dest="skill_command", required=True)
+    p_skill_add = ssub.add_parser("add", help="注册 Skill (发 skill.registered)")
+    json_opt(p_skill_add)
+    p_skill_add.add_argument("--id", required=True, help="Skill ID (如 flutter)")
+    p_skill_add.add_argument("--category", default="general", help="技能类别 (默认 general)")
+    p_skill_add.add_argument("--capabilities", default=None, help="能力列表, 逗号分隔")
+    p_skill_add.add_argument("--version", default="1.0.0", help="版本 (默认 1.0.0)")
+    p_skill_add.add_argument("--name", default=None, help="技能名 (默认 = id)")
+    p_skill_add.add_argument("--description", default=None, help="描述")
+    p_skill_list = ssub.add_parser("list", help="Skill 列表 (发 skill.viewed)")
+    json_opt(p_skill_list)
+    p_skill_list.add_argument("--category", default=None, help="按类别过滤")
+
     return p
 
 
@@ -107,6 +154,10 @@ def main(argv: list[str] | None = None) -> int:
             result = cmd_status(ctx)
         elif args.command == "validate":
             result = cmd_validate(ctx, args)
+        elif args.command == "agent":
+            result = _dispatch_agent(ctx, args)
+        elif args.command == "skill":
+            result = _dispatch_skill(ctx, args)
         else:  # pragma: no cover — argparse required=True 已拦截
             raise CliError(f"unknown command: {args.command}", exit_code=2)
     except CliError as exc:
@@ -139,6 +190,22 @@ def _dispatch_event(ctx: FactoryContext, args: Any) -> dict:
     raise CliError(f"unknown event command: {args.event_command}", exit_code=2)
 
 
+def _dispatch_agent(ctx: FactoryContext, args: Any) -> dict:
+    if args.agent_command == "add":
+        return cmd_agent_add(ctx, args)
+    if args.agent_command == "list":
+        return cmd_agent_list(ctx, args)
+    raise CliError(f"unknown agent command: {args.agent_command}", exit_code=2)
+
+
+def _dispatch_skill(ctx: FactoryContext, args: Any) -> dict:
+    if args.skill_command == "add":
+        return cmd_skill_add(ctx, args)
+    if args.skill_command == "list":
+        return cmd_skill_list(ctx, args)
+    raise CliError(f"unknown skill command: {args.skill_command}", exit_code=2)
+
+
 # ------------------------------------------------------------------ 输出
 
 def _print_output(args: Any, result: dict) -> None:
@@ -155,6 +222,10 @@ def _print_output(args: Any, result: dict) -> None:
         _print_status(result)
     elif args.command == "validate":
         _print_validate(result)
+    elif args.command == "agent":
+        _print_agent(args.agent_command, result)
+    elif args.command == "skill":
+        _print_skill(args.skill_command, result)
 
 
 def _render_table(headers: list[str], rows: list[list[str]]) -> str:
@@ -232,6 +303,36 @@ def _print_validate(r: dict) -> None:
         print("✔ 验证通过 (退出码 0)")
     else:
         print(f"✘ 验证失败: {r['reason']} (退出码 {r['exit_code']})")
+
+
+def _print_agent(sub: str, r: dict) -> None:
+    if sub == "add":
+        a = r["agent"]
+        print(f"✔ Agent {a['id']} 已注册 (role: {a['role']})")
+        print(f"  name        {a['name']}")
+        print(f"  status      {a['status']}")
+        print(f"  skills      {', '.join(a['skills']) or '-'}")
+        print(f"  description {a['description'] or '-'}")
+    elif sub == "list":
+        rows = [[a["id"], a["name"], a["role"], a["status"], ", ".join(a["skills"]) or "-"]
+                for a in r["agents"]]
+        print(_render_table(["Agent", "Name", "Role", "Status", "Skills"], rows))
+        print(f"{r['count']} agents")
+
+
+def _print_skill(sub: str, r: dict) -> None:
+    if sub == "add":
+        s = r["skill"]
+        print(f"✔ Skill {s['id']} 已注册 (category: {s['category']})")
+        print(f"  name         {s['name']}")
+        print(f"  version      {s['version']}")
+        print(f"  capabilities {', '.join(s['capabilities']) or '-'}")
+        print(f"  description  {s['description'] or '-'}")
+    elif sub == "list":
+        rows = [[s["id"], s["name"], s["category"], s["version"], ", ".join(s["capabilities"]) or "-"]
+                for s in r["skills"]]
+        print(_render_table(["Skill", "Name", "Category", "Version", "Capabilities"], rows))
+        print(f"{r['count']} skills")
 
 
 if __name__ == "__main__":

@@ -233,7 +233,12 @@ class TestValidate:
         assert "验证通过" in out
         with open_events(cli_root) as store:
             types = event_types(store)
-            assert types[-2:] == ["validation.started", "validation.completed"]
+            # Phase 3A 事件流 (ADR-0003): started → rule.started/rule.completed(×规则) → completed
+            assert types[1] == "validation.started"            # started 紧随 task.created
+            assert types[-1] == "validation.completed"         # completed 收尾
+            assert "validation.rule.started" in types          # 每条规则成对事件
+            assert "validation.rule.completed" in types
+            assert "validation.failed" not in types            # 通过时不发 failed
             completed = store.query(event_type=EventType.VALIDATION_COMPLETED)[0]
             assert completed.result == "PASS"
             assert completed.payload["level"] == "L2"

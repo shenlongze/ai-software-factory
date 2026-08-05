@@ -57,6 +57,14 @@ class EventType(str, Enum):
     VALIDATION_STARTED = "validation.started"  # 独立验证开始
     VALIDATION_COMPLETED = "validation.completed"  # 独立验证结束 (result=PASS/FAIL)
 
+    # --- Phase 3A: Validation Engine 事件 (增量扩展) ---
+    # 依 ADR-0001 决策 1 的扩展路径: 加枚举成员即可, 不改表结构/API。
+    # 流程: validation.started → validation.rule.started → validation.rule.completed
+    #       → validation.completed; 失败追加 validation.failed (phase3a-status.md)。
+    VALIDATION_RULE_STARTED = "validation.rule.started"    # 单条验证规则开始
+    VALIDATION_RULE_COMPLETED = "validation.rule.completed"  # 单条验证规则结束 (PASS/FAIL/SKIP/ERROR)
+    VALIDATION_FAILED = "validation.failed"                # 验证失败 (result=FAIL)
+
 
 class Event(BaseModel):
     """一条事件。append-only: 写入后永不修改、永不删除。"""

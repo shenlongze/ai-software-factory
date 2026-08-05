@@ -81,10 +81,10 @@ def build_parser() -> Any:
     json_opt(sub.add_parser("status", help="工厂总览: Projects/Tasks/Agents/Events 计数 (发 system.status_viewed)"))
 
     # factory validate
-    p_val = sub.add_parser("validate", help="验证任务 — Validation Hook 占位 (发 validation.started/completed)")
+    p_val = sub.add_parser("validate", help="验证任务 — 三层验证引擎 L1/L2/L3 (发 validation.* 事件)")
     json_opt(p_val)
     p_val.add_argument("task_id")
-    p_val.add_argument("--level", default="L2", choices=["L1", "L2", "L3"], help="验证级别 (默认 L2)")
+    p_val.add_argument("--level", default="L2", choices=["L1", "L2", "L3"], help="验证级别 (事件标记, 默认 L2)")
     p_val.add_argument("--expect-status", default=None, help="期望状态, 不匹配则验证失败 (退出码 3)")
 
     return p
@@ -227,9 +227,7 @@ def _print_status(r: dict) -> None:
 
 
 def _print_validate(r: dict) -> None:
-    print(f"▶ 验证 {r['task_id']} (level: {r['level']})")
-    for c in r["checks"]:
-        print(f"  {c['id']:<18} {c['status']:<4} {c.get('name', '')}  {c.get('detail', '')}")
+    print(r["report_text"])
     if r["ok"]:
         print("✔ 验证通过 (退出码 0)")
     else:

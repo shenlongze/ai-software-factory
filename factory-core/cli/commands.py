@@ -16,6 +16,9 @@ from typing import Any
 from events.models import EventType
 from tasks.models import Task, TaskStatus
 from tasks.store import TaskExistsError, TaskStore
+from validation.engine import ValidationEngine
+from validation.models import ValidationStatus
+from validation.reports import render_checks
 
 from .context import FactoryContext
 
@@ -191,64 +194,35 @@ def cmd_status(ctx: FactoryContext, args: Any | None = None) -> dict:
 # ------------------------------------------------------------------ validate
 
 def cmd_validate(ctx: FactoryContext, args: Any) -> dict:
-    """factory validate <id> — Validation Hook 占位 (Phase 3 接真引擎)。
+    """factory validate <id> — 三层验证引擎 (L1 Factory / L2 Workflow / L3 Artifact Hook)。
 
-    流程: 发 validation.started → 跑占位检查 → 发 validation.completed (result=PASS/FAIL)。
-    退出码: 0 通过 / 3 验证失败 (--expect-status 不匹配) / 7 任务不存在。
+    流程 (铁律): validation.started → rule.started → rule.completed → validation.completed;
+    失败追加 validation.failed。所有验证行为经 EventLogger。
+    退出码 (cli-design §5): 0 通过 / 3 验证失败 / 7 任务不存在 / 1 规则内部错误。
     """
     expect_status = _parse_status(args.expect_status)
     level = args.level or "L2"
-    task = ctx.open_task_store().get(args.task_id)
-
+    store = ctx.open_task_store()
     with ctx.logger_scope() as logger:
-        logger.record(
-            EventType.VALIDATION_STARTED, source=SOURCE, project_id=task.project if task else None,
-            task_id=args.task_id, stage=level, result="started", action="run validation",
-            payload={"level": level, "expect_status": expect_status.value if expect_status else None},
-        )
-        if task is None:
-            checks = [
-                {"id": "L1.task_exists", "name": "任务存在", "status": "FAIL",
-                 "detail": f"task not found: {args.task_id}"},
-            ]
-            logger.record(
-                EventType.VALIDATION_COMPLETED, source=SOURCE, task_id=args.task_id,
-                stage=level, result="FAIL", action="validation completed",
-                payload={"level": level, "reason": "task_not_found", "checks": checks},
-            )
-            return {"ok": False, "task_id": args.task_id, "level": level, "checks": checks,
-                    "reason": "task_not_found", "exit_code": 7}
+        engine = ValidationEngine(task_store=store, logger=logger, source=SOURCE)
+        report = engine.validate(args.task_id, level=level, expect_status=expect_status)
 
-        checks = [
-            {"id": "L1.definition", "name": "任务定义完整", "status": "PASS",
-             "detail": f"id={task.id} title={task.title!r} project={task.project} type={task.type}"},
-            {"id": "L1.status", "name": "状态合法", "status": "PASS", "detail": task.status.value},
-            {"id": "L2.build_test", "name": "构建+测试", "status": "SKIP",
-             "detail": "validation engine 未实现, Phase 3 占位"},
-        ]
-        reason = None
-        if expect_status is not None and task.status is not expect_status:
-            reason = "status_mismatch"
-            checks.append(
-                {"id": "L2.expect_status", "name": "期望状态", "status": "FAIL",
-                 "detail": f"expected {expect_status.value}, got {task.status.value}"},
-            )
-        result = "FAIL" if reason else "PASS"
-        logger.record(
-            EventType.VALIDATION_COMPLETED, source=SOURCE, project_id=task.project, task_id=task.id,
-            stage=level, result=result, action="validation completed",
-            payload={
-                "level": level,
-                "expect_status": expect_status.value if expect_status else None,
-                "reason": reason,
-                "checks": checks,
-            },
-        )
+    if not report.task_found:
+        exit_code = 7   # 未找到 (cli-design §5) 优先于验证失败
+    elif report.result is ValidationStatus.FAIL:
+        exit_code = 3   # 验证失败
+    elif report.result is ValidationStatus.ERROR:
+        exit_code = 1   # 规则内部错误 → 一般错误
+    else:
+        exit_code = 0
     return {
-        "ok": result == "PASS",
-        "task_id": task.id,
-        "level": level,
-        "checks": checks,
-        "reason": reason,
-        "exit_code": 0 if result == "PASS" else 3,
+        "ok": report.passed,
+        "task_id": report.task_id,
+        "level": report.level,
+        "result": report.result.value,
+        "checks": render_checks(report.results),
+        "reason": report.reason,
+        "exit_code": exit_code,
+        "report": report.model_dump(mode="json"),
+        "report_text": report.to_text(),
     }

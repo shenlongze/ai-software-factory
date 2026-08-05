@@ -37,10 +37,23 @@ class TestFullWorkflow:
                 "task.viewed",            # status T-001
                 "system.logs_viewed",     # event logs
                 "system.status_viewed",   # status
-                "validation.started",     # validate
-                "validation.completed",   # validate
+                # validate: Phase 3A 事件流 (ADR-0003) — started → rule.* → completed
+                "validation.started",
+                "validation.rule.started",    # L1.task_exists
+                "validation.rule.completed",
+                "validation.rule.started",    # L1.task_data
+                "validation.rule.completed",
+                "validation.rule.started",    # L1.task_status
+                "validation.rule.completed",
+                "validation.rule.started",    # L1.task_files
+                "validation.rule.completed",
+                "validation.rule.started",    # L2.workflow
+                "validation.rule.completed",
+                "validation.rule.started",    # L3.artifact
+                "validation.rule.completed",
+                "validation.completed",
             ]
-            assert store.count() == 10
+            assert store.count() == 22
 
         # 任务文件持久化
         assert task_ids(cli_root) == ["T-001", "T-002"]

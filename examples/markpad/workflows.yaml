@@ -1,0 +1,70 @@
+# MarkPad 工作流映射 (Phase 5A Example Layer, ADR-0013)
+#
+# 约定: 步骤的 required_role/required_skill 与 agents.yaml 严格匹配
+# (role 精确 + skills 命中 >=1, ADR-0008), 保证 workflow run --auto 全链路可跑通。
+# 步骤 id 复用内置定义 (feature-delivery/bug-fix/release) 的骨架, 角色按 MarkPad
+# agent 集合 (developer/test-engineer/product-manager) 适配。
+workflows:
+  feature:
+    id: feature
+    name: 功能开发
+    description: "MarkPad 功能开发主干: 架构 → 开发 → 测试 → 独立验收"
+    steps:
+      - id: architecture
+        name: 架构设计
+        required_skill: architecture
+        required_role: product-manager
+      - id: development
+        name: 编码开发
+        required_skill: flutter
+        required_role: developer
+      - id: testing
+        name: 测试验证
+        required_skill: testing
+        required_role: test-engineer
+      - id: validation
+        name: 独立验收
+        required_skill: testing
+        required_role: test-engineer
+  bug-fix:
+    id: bug-fix
+    name: 缺陷修复
+    description: "MarkPad 缺陷修复主干: 复现 → 定位 → 修复 → 回归验证"
+    steps:
+      - id: reproduce
+        name: 复现缺陷
+        required_skill: testing
+        required_role: test-engineer
+      - id: diagnose
+        name: 定位根因
+        required_skill: flutter
+        required_role: developer
+      - id: fix
+        name: 修复代码
+        required_skill: dart
+        required_role: developer
+      - id: verify
+        name: 回归验证
+        required_skill: testing
+        required_role: test-engineer
+  release:
+    id: release
+    name: 版本发布
+    description: "MarkPad 发布主干: 构建 → 全量测试 → 预发布验证 → 正式发布"
+    steps:
+      - id: build
+        name: 构建产物
+        required_skill: flutter
+        required_role: developer
+      - id: test
+        name: 全量测试
+        required_skill: testing
+        required_role: test-engineer
+      - id: stage
+        name: 预发布验证
+        required_skill: flutter
+        required_role: developer
+      - id: publish
+        name: 正式发布
+        required_skill: dart
+        required_role: developer

@@ -69,6 +69,13 @@ from orchestration.pipeline import execute_workflow as run_orchestration
 from dashboard.collector import DashboardCollector
 from dashboard.renderer import VIEWS as DASHBOARD_VIEWS
 
+from project.loader import (
+    ProjectLoadError,
+    default_examples_dir,
+    discover_projects,
+    load_project,
+)
+
 from .context import FactoryContext
 
 SOURCE = "cli"
@@ -989,5 +996,70 @@ def cmd_dashboard(ctx: FactoryContext, args: Any) -> dict:
         "ok": True,
         "view": view,
         "snapshot": snapshot.to_dict(),
+        "event_seq": ev.seq,
+    }
+
+
+# ------------------------------------------------------------------ project 子命令 (Phase 5A: Example Layer, ADR-0013)
+
+def cmd_project_list(ctx: FactoryContext, args: Any) -> dict:
+    """factory project list — 扫描 examples/*/project.yaml → 项目列表, 发 project.viewed。
+
+    只读 (ADR-0013): 仅解析项目定义, 不写工厂状态; examples 目录默认仓库根/examples
+    (FACTORY_EXAMPLES_DIR 环境变量覆盖)。配置损坏 → ProjectLoadError → 退出码 1 (不静默跳过)。
+    """
+    examples_dir = default_examples_dir()
+    try:
+        projects = discover_projects(examples_dir)
+    except ProjectLoadError as exc:
+        raise CliError(str(exc), exit_code=1) from exc
+    with ctx.logger_scope() as logger:
+        ev = logger.record(
+            EventType.PROJECT_VIEWED, source=SOURCE, action="list projects", result="OK",
+            payload={"count": len(projects), "examples_dir": str(examples_dir)},
+        )
+    return {
+        "ok": True, "count": len(projects),
+        "projects": [p.to_dict() for p in projects],
+        "examples_dir": str(examples_dir), "event_seq": ev.seq,
+    }
+
+
+def cmd_project_show(ctx: FactoryContext, args: Any) -> dict:
+    """factory project show <name> — 项目详情: 技术栈/Agent/技能/工作流映射, 发 project.viewed。
+
+    退出码: 7 项目不存在 (examples/<name>/project.yaml 缺失); 1 配置解析/校验失败;
+    0 成功。只读 (ADR-0013): 不注册 agent/workflow, 注册仍走既有 CLI/引擎 API。
+    """
+    examples_dir = default_examples_dir()
+    try:
+        config = load_project(examples_dir, args.name)
+    except ProjectLoadError as exc:
+        raise CliError(str(exc), exit_code=1) from exc
+    if config is None:
+        raise CliError(
+            f"project not found: {args.name} "
+            f"(no project.yaml under {examples_dir / args.name})",
+            exit_code=7,
+        )
+    with ctx.logger_scope() as logger:
+        ev = logger.record(
+            EventType.PROJECT_VIEWED, source=SOURCE, project_id=config.project.name,
+            action="show project", result="OK",
+            payload={
+                "project": config.project.name,
+                "language": config.project.language,
+                "agents": len(config.agents),
+                "skills": len(config.skills),
+                "workflows": len(config.workflows),
+            },
+        )
+    return {
+        "ok": True,
+        "project": config.project.to_dict(),
+        "agents": [a.to_dict() for a in config.agents],
+        "skills": [s.to_dict() for s in config.skills],
+        "workflows": [w.to_dict() for w in config.workflows],
+        "examples_dir": str(examples_dir),
         "event_seq": ev.seq,
     }

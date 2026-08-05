@@ -1,0 +1,21 @@
+# MarkPad Agent 映射 (Phase 5A Example Layer, ADR-0013)
+#
+# 约定: 每个 agent 的 role/skills 必须与 workflows.yaml 步骤的
+# required_role/required_skill 严格匹配 (AgentMatcher 语义: role 精确匹配 +
+# skills 命中 >=1 个 required_skill, ADR-0008) — 否则 workflow run --auto 匹配失败。
+agents:
+  flutter-developer:
+    name: Flutter 开发者
+    role: developer
+    skills: [flutter, dart]
+    description: "Flutter/Dart 全栈开发: UI、状态管理、平台通道"
+  tester:
+    name: 测试工程师
+    role: test-engineer
+    skills: [testing, dart]
+    description: "功能/单元/Widget 测试编写与验收"
+  architect:
+    name: 架构师
+    role: product-manager
+    skills: [architecture, flutter]
+    description: "MarkPad 架构设计与技术选型"

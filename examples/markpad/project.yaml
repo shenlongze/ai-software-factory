@@ -1,0 +1,12 @@
+# MarkPad 项目定义 (Phase 5A Example Layer, ADR-0013)
+#
+# 字段说明:
+# - name:       项目 id (唯一, 供 factory project show <name> / task --project 引用)
+# - language:   主开发语言
+# - repository: 本地工作副本路径 (真实接入目标) 或远程仓库 URL
+# - tech_stack: 技术栈标签 (对应 skills.yaml 的技能 id)
+name: markpad
+language: dart
+repository: /Users/Shared/work/markpad
+description: "MarkPad — 跨平台 Markdown 编辑器 (Flutter/Dart, Typora-like)"
+tech_stack: [flutter, dart]

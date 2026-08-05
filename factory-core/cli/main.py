@@ -28,6 +28,8 @@ from .commands import (
     cmd_execution_run,
     cmd_execution_status,
     cmd_init,
+    cmd_project_list,
+    cmd_project_show,
     cmd_recover,
     cmd_runtime_add,
     cmd_runtime_list,
@@ -258,6 +260,16 @@ def build_parser() -> Any:
     p_dashboard.add_argument("--limit", type=int, default=10, help="最近事件条数上限 (默认 10)")
     p_dashboard.add_argument("--project", default=None, help="按项目过滤 (任务/事件维度)")
 
+    # factory project <sub> (Phase 5A: Example Layer, 只读)
+    p_project = sub.add_parser("project", help="项目配置 (只读: examples/*/project.yaml)")
+    json_opt(p_project)
+    prsub = p_project.add_subparsers(dest="project_command", required=True)
+    p_pr_list = prsub.add_parser("list", help="项目列表 (发 project.viewed)")
+    json_opt(p_pr_list)
+    p_pr_show = prsub.add_parser("show", help="项目详情: 技术栈/Agent/技能/工作流映射 (发 project.viewed)")
+    json_opt(p_pr_show)
+    p_pr_show.add_argument("name", help="项目名 (如 markpad)")
+
     return p
 
 
@@ -294,6 +306,8 @@ def main(argv: list[str] | None = None) -> int:
             result = cmd_recover(ctx, args)
         elif args.command == "dashboard":
             result = cmd_dashboard(ctx, args)
+        elif args.command == "project":
+            result = _dispatch_project(ctx, args)
         else:  # pragma: no cover — argparse required=True 已拦截
             raise CliError(f"unknown command: {args.command}", exit_code=2)
     except CliError as exc:
@@ -388,6 +402,14 @@ def _dispatch_checkpoint(ctx: FactoryContext, args: Any) -> dict:
     raise CliError(f"unknown checkpoint command: {args.checkpoint_command}", exit_code=2)
 
 
+def _dispatch_project(ctx: FactoryContext, args: Any) -> dict:
+    if args.project_command == "list":
+        return cmd_project_list(ctx, args)
+    if args.project_command == "show":
+        return cmd_project_show(ctx, args)
+    raise CliError(f"unknown project command: {args.project_command}", exit_code=2)
+
+
 # ------------------------------------------------------------------ 输出
 
 def _print_output(args: Any, result: dict) -> None:
@@ -420,6 +442,8 @@ def _print_output(args: Any, result: dict) -> None:
         _print_recover(result)
     elif args.command == "dashboard":
         _print_dashboard(result)
+    elif args.command == "project":
+        _print_project(args.project_command, result)
 
 
 def _render_table(headers: list[str], rows: list[list[str]]) -> str:
@@ -697,6 +721,31 @@ def _print_dashboard(r: dict) -> None:
 
     snapshot = FactorySnapshot.model_validate(r["snapshot"])
     print(DashboardRenderer().render(snapshot, view=r.get("view") or "all"))
+
+
+def _print_project(sub: str, r: dict) -> None:
+    if sub == "list":
+        rows = [[p["name"], p["language"], p["repository"] or "-",
+                 ", ".join(p["tech_stack"]) or "-"] for p in r["projects"]]
+        print(_render_table(["Project", "Language", "Repository", "Tech Stack"], rows))
+        print(f"{r['count']} projects (examples: {r['examples_dir']})")
+    elif sub == "show":
+        p = r["project"]
+        print(f"{p['name']}  {p['description'] or ''}")
+        print(f"  language    {p['language']}")
+        print(f"  repository  {p['repository'] or '-'}")
+        print(f"  tech_stack  {', '.join(p['tech_stack']) or '-'}")
+        print(f"  agents      {len(r['agents'])}")
+        for a in r["agents"]:
+            print(f"    {a['id']:<20} role={a['role']:<15} skills={', '.join(a['skills']) or '-'}")
+        print(f"  skills      {len(r['skills'])}")
+        for s in r["skills"]:
+            print(f"    {s['id']:<20} category={s['category']:<12} "
+                  f"{', '.join(s['capabilities']) or '-'}")
+        print(f"  workflows   {len(r['workflows'])}")
+        for w in r["workflows"]:
+            steps = " → ".join(st["id"] for st in w["steps"])
+            print(f"    {w['id']:<20} {w['name'] or '-'}  [{steps}]")
 
 
 if __name__ == "__main__":

@@ -8,9 +8,10 @@ version = "0.2.0"
 description = "AI Software Factory — Event Logger + Factory Control CLI (Phase 1/2)"
 readme = "README.md"
 requires-python = ">=3.12"
-# 运行依赖: pydantic (模型) + rich (Dashboard 渲染, Phase 4C-4); 存储用标准库
+# 运行依赖: pydantic (模型) + rich (Dashboard 渲染, Phase 4C-4) +
+# pyyaml (examples/*.yaml 项目配置解析, Phase 5A, ADR-0013); 存储用标准库
 # sqlite3/json, CLI 用 argparse
-dependencies = ["pydantic>=2", "rich>=13"]
+dependencies = ["pydantic>=2", "rich>=13", "pyyaml>=6"]
 
 [project.scripts]
 factory = "cli.main:main"

@@ -147,6 +147,12 @@ class EventType(str, Enum):
     # 载荷含 view 与各域计数汇总, 只读不写任何状态 (phase4c4-status.md §Event 集成)。
     DASHBOARD_VIEWED = "dashboard.viewed"      # Dashboard 被查看 (只读查询)
 
+    # --- Phase 5A: Project Example Layer 事件 (增量扩展, ADR-0013) ---
+    # 依 ADR-0001 决策 1 的扩展路径: 加枚举成员即可, 不改表结构/API。
+    # project.* 为项目配置示例层 (examples/*/project.yaml, 只读声明, ADR-0013) 的
+    # 审计事件 (ADR-0002: 所有 CLI 行为必须产生 Event); 载荷含项目名/语言/各映射计数。
+    PROJECT_VIEWED = "project.viewed"          # 项目配置被查看 (list/show, 只读)
+
 
 class Event(BaseModel):
     """一条事件。append-only: 写入后永不修改、永不删除。"""

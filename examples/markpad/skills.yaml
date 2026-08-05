@@ -1,0 +1,27 @@
+# MarkPad 技能定义 (Phase 5A Example Layer, ADR-0013)
+#
+# 能力目录 (Capability Catalog): 与 agents.yaml 的 skills 引用对应;
+# 供 skill add 注册与人工查阅, 不参与 matcher (matcher 只看 agent.skills, ADR-0008)。
+skills:
+  flutter:
+    name: Flutter 框架
+    category: framework
+    version: "3.0.0"
+    capabilities: [ui, widgets, state-management, platform-channels]
+    description: "Flutter 跨平台 UI 框架"
+  dart:
+    name: Dart 语言
+    category: language
+    version: "3.0.0"
+    capabilities: [language, vm, async, isolates]
+    description: "Dart 编程语言"
+  testing:
+    name: 软件测试
+    category: testing
+    capabilities: [unit, widget, integration, e2e]
+    description: "测试编写、执行与独立验收"
+  architecture:
+    name: 架构设计
+    category: architecture
+    capabilities: [design, review, tech-selection]
+    description: "架构设计与技术评审"

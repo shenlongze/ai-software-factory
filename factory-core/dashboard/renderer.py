@@ -1,0 +1,83 @@
+"""dashboard/renderer.py — DashboardRenderer: Rich 渲染 (FactorySnapshot → 文本)。
+
+设计依据:
+- dashboard-design.md §3: Rich 实时表格; 非 TTY 自动退化为单次输出 (管道/CI 安全)
+- phase4c4-status.md: DashboardRenderer (Rich) 展示六视图
+  (Overview/Tasks/Agents/Workflows/Executions/Recovery)
+
+render() 返回纯文本 (Console.export_text 剥离 ANSI 样式码) — 测试断言与管道输出
+均无转义码; TTY 下由 Rich 自动着色 (颜色语义见 views.py §1.4)。
+
+无状态渲染: 每次调用都是"快照 → 文本"纯函数, 不做事件订阅缓存 (KISS,
+dashboard-design.md §1.2)。
+"""
+
+from __future__ import annotations
+
+import io
+from typing import Any
+
+from rich.console import Console, Group
+
+from . import views
+from .models import FactorySnapshot
+
+# 单视图名 (build_<name> 与 views.py 构建函数一一对应; "all" 为六视图同屏)
+VIEWS = ("overview", "tasks", "agents", "workflows", "executions", "recovery")
+
+_SINGLE = {
+    "tasks": views.build_tasks,
+    "agents": views.build_agents,
+    "workflows": views.build_workflows,
+    "executions": views.build_executions,
+    "recovery": views.build_recovery,
+}
+
+
+class DashboardRenderer:
+    """Rich 渲染器: FactorySnapshot → 终端文本 (六视图同屏或单视图)。"""
+
+    def __init__(self, *, width: int = 100, limit: int = 10) -> None:
+        self._width = max(40, width)
+        self._limit = max(1, limit)
+
+    # ------------------------------------------------------------------ 构建
+
+    def build(self, snapshot: FactorySnapshot, view: str = "all") -> Any:
+        """构建 Rich renderable 树 (测试可复用; 非法 view 抛 ValueError)。"""
+        if view == "all":
+            return Group(
+                views.build_header(snapshot),
+                views.build_tasks(snapshot),
+                views.build_agents(snapshot),
+                views.build_workflows(snapshot),
+                views.build_executions(snapshot),
+                views.build_recovery(snapshot),
+                views.build_recent_events(snapshot, limit=self._limit),
+            )
+        if view == "overview":
+            return Group(
+                views.build_header(snapshot),
+                views.build_recent_events(snapshot, limit=self._limit),
+            )
+        builder = _SINGLE.get(view)
+        if builder is None:
+            raise ValueError(
+                f"unknown dashboard view: {view!r} (expected one of: all, {', '.join(VIEWS)})"
+            )
+        return builder(snapshot)
+
+    # ------------------------------------------------------------------ 渲染
+
+    def render(self, snapshot: FactorySnapshot, view: str = "all") -> str:
+        """渲染为纯文本 (无 ANSI 转义码, 管道/CI 安全)。
+
+        注意: Console 必须挂 StringIO 文件 — record=True 只负责录制, 不会抑制
+        写文件; 否则 console.print 会把内容同时打到真实 stdout, 与调用方
+        print(render(...)) 叠加成双份输出 (CLI 冒烟曾复现)。
+        """
+        console = Console(
+            record=True, width=self._width, color_system=None, file=io.StringIO()
+        )
+        console.print(self.build(snapshot, view=view))
+        return console.export_text()

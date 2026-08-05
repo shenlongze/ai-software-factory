@@ -66,6 +66,9 @@ from recovery.service import RecoveryError, RecoveryService, TaskNotFoundError
 
 from orchestration.pipeline import execute_workflow as run_orchestration
 
+from dashboard.collector import DashboardCollector
+from dashboard.renderer import VIEWS as DASHBOARD_VIEWS
+
 from .context import FactoryContext
 
 SOURCE = "cli"
@@ -937,4 +940,54 @@ def cmd_recover(ctx: FactoryContext, args: Any) -> dict:
         "task_id": result.task_id,
         "recovery": result.to_dict(),
         "event_seq": ev.seq if ev else None,
+    }
+
+
+# ------------------------------------------------------------------ dashboard
+
+def cmd_dashboard(ctx: FactoryContext, args: Any) -> dict:
+    """factory dashboard — 只读控制台总览 (Rich 六视图), 发 dashboard.viewed。
+
+    只读铁律 (phase4c4-status.md): 收集器只调用各 store 读接口, 本命令唯一的
+    副作用是 dashboard.viewed 审计事件 (ADR-0002: 所有 CLI 行为必须产生 Event)。
+    非法 --view → 用法错误 (退出码 2)。
+    """
+    view = args.view or "all"
+    if view != "all" and view not in DASHBOARD_VIEWS:
+        raise CliError(
+            f"invalid view: {view!r} (expected one of: all, {', '.join(DASHBOARD_VIEWS)})",
+            exit_code=2,
+        )
+    with ctx.logger_scope() as logger:
+        collector = DashboardCollector(
+            task_store=ctx.open_task_store(),
+            agent_registry=AgentRegistry(ctx.open_agent_store()),
+            workflow_store=WorkflowStore(ctx.workflows_dir),
+            runtime_store=_open_runtime_store(ctx),
+            event_store=logger.store,
+            checkpoint_store=_open_checkpoint_store(ctx),
+            project_id=args.project,
+            recent_limit=args.limit,
+        )
+        snapshot = collector.collect()
+        ev = logger.record(
+            EventType.DASHBOARD_VIEWED, source=SOURCE, project_id=args.project,
+            stage="viewed", action="view dashboard", result="OK",
+            payload={
+                "view": view,
+                "tasks_total": snapshot.tasks.total,
+                "agents_total": snapshot.agents.total,
+                "workflow_runs": snapshot.workflows.runs_total,
+                "executions_total": snapshot.executions.total,
+                "execution_success": snapshot.executions.success,
+                "execution_failed": snapshot.executions.failed,
+                "checkpoints_total": snapshot.checkpoints.total,
+                "events_total": snapshot.metrics.event_count,
+            },
+        )
+    return {
+        "ok": True,
+        "view": view,
+        "snapshot": snapshot.to_dict(),
+        "event_seq": ev.seq,
     }

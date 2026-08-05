@@ -141,6 +141,12 @@ class EventType(str, Enum):
     RECOVERY_COMPLETED = "recovery.completed"  # 恢复操作完成 (含 resume_ok/actions)
     RECOVERY_FAILED = "recovery.failed"        # 恢复失败 (异常/前置错误)
 
+    # --- Phase 4C-4: Dashboard 事件 (增量扩展, ADR-0012) ---
+    # 依 ADR-0001 决策 1 的扩展路径: 加枚举成员即可, 不改表结构/API。
+    # dashboard.* 为只读控制台审计事件 (ADR-0002: 所有 CLI 行为必须产生 Event);
+    # 载荷含 view 与各域计数汇总, 只读不写任何状态 (phase4c4-status.md §Event 集成)。
+    DASHBOARD_VIEWED = "dashboard.viewed"      # Dashboard 被查看 (只读查询)
+
 
 class Event(BaseModel):
     """一条事件。append-only: 写入后永不修改、永不删除。"""

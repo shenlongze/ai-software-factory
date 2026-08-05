@@ -22,6 +22,7 @@ from .commands import (
     cmd_agent_release,
     cmd_checkpoint_create,
     cmd_checkpoint_list,
+    cmd_dashboard,
     cmd_event_logs,
     cmd_execution_list,
     cmd_execution_run,
@@ -245,6 +246,18 @@ def build_parser() -> Any:
     json_opt(p_recover)
     p_recover.add_argument("task_id", help="任务 ID (如 T-001)")
 
+    # factory dashboard
+    p_dashboard = sub.add_parser(
+        "dashboard", help="只读控制台总览: Rich 六视图 (发 dashboard.viewed)"
+    )
+    json_opt(p_dashboard)
+    p_dashboard.add_argument(
+        "--view", default="all",
+        help="单视图: overview/tasks/agents/workflows/executions/recovery (默认 all 同屏)",
+    )
+    p_dashboard.add_argument("--limit", type=int, default=10, help="最近事件条数上限 (默认 10)")
+    p_dashboard.add_argument("--project", default=None, help="按项目过滤 (任务/事件维度)")
+
     return p
 
 
@@ -279,6 +292,8 @@ def main(argv: list[str] | None = None) -> int:
             result = _dispatch_checkpoint(ctx, args)
         elif args.command == "recover":
             result = cmd_recover(ctx, args)
+        elif args.command == "dashboard":
+            result = cmd_dashboard(ctx, args)
         else:  # pragma: no cover — argparse required=True 已拦截
             raise CliError(f"unknown command: {args.command}", exit_code=2)
     except CliError as exc:
@@ -403,6 +418,8 @@ def _print_output(args: Any, result: dict) -> None:
         _print_checkpoint(args.checkpoint_command, result)
     elif args.command == "recover":
         _print_recover(result)
+    elif args.command == "dashboard":
+        _print_dashboard(result)
 
 
 def _render_table(headers: list[str], rows: list[list[str]]) -> str:
@@ -672,6 +689,14 @@ def _print_recover(r: dict) -> None:
     print(f"  Resume      {rec['resume_ok']}")
     for action in rec["actions"]:
         print(f"  action      {action}")
+
+
+def _print_dashboard(r: dict) -> None:
+    from dashboard.models import FactorySnapshot
+    from dashboard.renderer import DashboardRenderer
+
+    snapshot = FactorySnapshot.model_validate(r["snapshot"])
+    print(DashboardRenderer().render(snapshot, view=r.get("view") or "all"))
 
 
 if __name__ == "__main__":

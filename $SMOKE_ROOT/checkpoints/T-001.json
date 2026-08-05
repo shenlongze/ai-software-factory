@@ -1,0 +1,11 @@
+{
+  "id": "CKPT-T-001",
+  "task_id": "T-001",
+  "workflow_id": null,
+  "event_seq": 3,
+  "workflow_state": null,
+  "current_step": "develop",
+  "agents": {},
+  "executions": {},
+  "created_at": "2026-08-05T17:37:56.329717Z"
+}

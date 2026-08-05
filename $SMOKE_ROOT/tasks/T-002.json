@@ -1,0 +1,11 @@
+{
+  "id": "T-002",
+  "title": "修 renderer",
+  "project": "P-1",
+  "type": "feature",
+  "status": "DONE",
+  "owner": null,
+  "workflow": "feature-delivery",
+  "created_at": "2026-08-05T17:37:56.327974Z",
+  "updated_at": "2026-08-05T17:37:56.327974Z"
+}

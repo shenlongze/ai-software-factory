@@ -214,6 +214,21 @@ class EventType(str, Enum):
     CHANGE_ANALYZED = "change.analyzed"                        # 变更路径分析完成
     CHANGE_VALIDATION_COMPLETED = "change.validation.completed"  # L4 Change 验证完成
 
+    # --- Phase 6E: Change Driven Workflow Layer 事件 (增量扩展, ADR-0020) ---
+    # 依 ADR-0001 决策 1 的扩展路径: 加枚举成员即可, 不改表结构/API。
+    # change.trigger.* 为触发器生命周期事件: created (register 写路径) / viewed
+    # (triggers list 读命令审计, ADR-0002) / evaluated (evaluate 评估完成,
+    # result=PASS/FAIL/SKIP/ERROR, 载荷含 rules/triggered_workflow/run_id)。
+    # change.workflow.* 为触发工作流生命周期事件: started (触发成功, run 已创建
+    # RUNNING) / completed (执行终态, result=COMPLETED/FAILED — 触发失败不级联,
+    # 失败恢复语义见 ADR-0020 决策 3)。全部只审计 + 触发既有 WorkflowEngine/
+    # OrchestrationPipeline (复用不复制, 不修改 workflow/execution 模块)。
+    CHANGE_TRIGGER_CREATED = "change.trigger.created"        # ChangeTrigger 注册
+    CHANGE_TRIGGER_VIEWED = "change.trigger.viewed"          # 触发器列表被查看 (只读)
+    CHANGE_TRIGGER_EVALUATED = "change.trigger.evaluated"    # 规则评估完成 (含触发结果)
+    CHANGE_WORKFLOW_STARTED = "change.workflow.started"      # 触发工作流启动 (run RUNNING)
+    CHANGE_WORKFLOW_COMPLETED = "change.workflow.completed"  # 触发工作流执行终态 (COMPLETED/FAILED)
+
 
 class Event(BaseModel):
     """一条事件。append-only: 写入后永不修改、永不删除。"""

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 from collections import Counter
+from functools import partial
 from typing import Any
 
 from agents.models import Agent, AgentStatus, Skill
@@ -76,6 +77,14 @@ from git.client import GitClient
 from git.service import GitChangeStore, GitService
 
 from change.service import ChangeService, ChangeStore  # Phase 6D (ADR-0019)
+
+from changeflow.engine import ChangeWorkflowEngine  # Phase 6E (ADR-0020)
+from changeflow.events import record_change_trigger_viewed  # Phase 6E (ADR-0020)
+from changeflow.models import ChangeTrigger  # Phase 6E (ADR-0020)
+from changeflow.triggers import (  # Phase 6E (ADR-0020)
+    ChangeTriggerExistsError,
+    ChangeTriggerRegistry,
+)
 
 from metrics.collectors import MetricsCollector
 from metrics.workspace import WorkspaceCollector
@@ -1111,6 +1120,12 @@ def cmd_dashboard(ctx: FactoryContext, args: Any) -> dict:
         # Phase 6D Change View: 仅 --view change 聚合 (include_change 默认关闭,
         # 数据源 = ChangeStore <root>/change/snapshots.json + change.validation 事件)。
         change_store = ChangeStore(ctx.root / "change") if view == "change" else None
+        # Phase 6E Change Flow View: 仅 --view changeflow 聚合 (include_changeflow
+        # 默认关闭, 数据源 = ChangeTriggerRegistry <root>/changeflow/triggers.json
+        # + change.trigger.evaluated / change.workflow.started|completed 事件)。
+        change_trigger_registry = (
+            ChangeTriggerRegistry(ctx.root / "changeflow") if view == "changeflow" else None
+        )
         collector = DashboardCollector(
             task_store=ctx.open_task_store(),
             agent_registry=AgentRegistry(ctx.open_agent_store()),
@@ -1127,6 +1142,8 @@ def cmd_dashboard(ctx: FactoryContext, args: Any) -> dict:
             include_git=view == "git",
             change_store=change_store,
             include_change=view == "change",
+            change_trigger_registry=change_trigger_registry,
+            include_changeflow=view == "changeflow",
         )
         snapshot = collector.collect()
         ev = logger.record(
@@ -1155,6 +1172,9 @@ def cmd_dashboard(ctx: FactoryContext, args: Any) -> dict:
                 "git_commits": len(snapshot.git.commits),
                 "change_snapshots": snapshot.change.total,  # Phase 6D (ADR-0019)
                 "change_validations": snapshot.change.validation_total,
+                "changeflow_triggers": snapshot.changeflow.trigger_total,  # Phase 6E (ADR-0020)
+                "changeflow_evaluations": snapshot.changeflow.evaluation_total,
+                "changeflow_links": snapshot.changeflow.workflow_links_total,
             },
         )
     return {
@@ -1659,5 +1679,137 @@ def cmd_change_validate(ctx: FactoryContext, args: Any) -> dict:
         "task_id": args.task_id,
         "result": result.to_dict(),
         "exit_code": exit_code,
+        "event_seq": event_seq,
+    }
+
+
+# ------------------------------------------------------------------ change triggers / evaluate / workflows (Phase 6E, ADR-0020)
+
+def _open_changeflow_engine(
+    ctx: FactoryContext, args: Any, logger: Any, *, execute: bool,
+) -> ChangeWorkflowEngine:
+    """装配 ChangeWorkflowEngine (Phase 6E, ADR-0020)。
+
+    复用不复制 (ADR-0020 决策 2): 规则输入 = ChangeService (L4 判定/关联提交/
+    变更文件, repo 缺省 = 工厂根 — 同 change validate 模式); 触发 = WorkflowEngine
+    /WorkflowStore (run 落盘 + 状态机校验); 执行 = orchestration.pipeline
+    .execute_workflow 部分应用 (run 已 RUNNING → OrchestrationEngine._ensure_run
+    续跑分支, 天然支持 target != task.workflow)。execute=False → 不装配 executor
+    (纯评估 / workflows 查询命令, 零执行副作用)。
+    """
+    executor = None
+    if execute:
+        executor = partial(
+            run_orchestration,
+            workflow_store=WorkflowStore(ctx.workflows_dir),
+            task_store=ctx.open_task_store(),
+            agent_store=ctx.open_agent_store(),
+            assignment_store=_open_assignment_store(ctx),
+            runtime_store=_open_runtime_store(ctx),
+            logger=logger,
+        )
+    return ChangeWorkflowEngine(
+        triggers=ChangeTriggerRegistry(ctx.root / "changeflow"),
+        task_store=ctx.open_task_store(),
+        change_service=_open_change_service(ctx, args, logger),
+        workflow_engine=_open_workflow_engine(ctx, logger),
+        workflow_store=WorkflowStore(ctx.workflows_dir),
+        runtime_registry=RuntimeRegistry(_open_runtime_store(ctx), logger=logger),
+        executor=executor,
+        logger=logger,
+    )
+
+
+def cmd_change_triggers_list(ctx: FactoryContext, args: Any) -> dict:
+    """factory change triggers list — 触发器列表 (只读), 发 change.trigger.viewed。
+
+    数据源 = ChangeTriggerRegistry (<root>/changeflow/triggers.json, 只读);
+    失败安全: 文件缺失/损坏 → 空列表 (失败安全, 同 registry 语义)。
+    """
+    with ctx.logger_scope() as logger:
+        registry = ChangeTriggerRegistry(ctx.root / "changeflow")
+        triggers = registry.list()
+        ev = record_change_trigger_viewed(logger, count=len(triggers))
+    return {
+        "ok": True,
+        "count": len(triggers),
+        "triggers": [t.to_dict() for t in triggers],
+        "event_seq": ev.seq,
+    }
+
+
+def cmd_change_triggers_register(ctx: FactoryContext, args: Any) -> dict:
+    """factory change triggers register — 注册变更触发器, 发 change.trigger.created。
+
+    声明式驱动规则: 事件类型 (workflow.completed 等) + 项目/任务类型限定 +
+    目标工作流; 目标工作流存在性在 evaluate 触发时校验 (注册只落盘, KISS)。
+    冲突 id → CliError 退出码 1。
+    """
+    trigger = ChangeTrigger(
+        id=args.id,
+        event_type=args.event_type,
+        project_id=args.project,
+        task_type=args.task_type,
+        required_validation=args.required_validation,
+        target_workflow=args.target_workflow,
+    )
+    with ctx.logger_scope() as logger:
+        registry = ChangeTriggerRegistry(ctx.root / "changeflow")
+        try:
+            trigger, ev = registry.register(trigger, logger=logger)
+        except ChangeTriggerExistsError as exc:
+            raise CliError(str(exc), exit_code=1) from exc
+    return {
+        "ok": True,
+        "trigger": trigger.to_dict(),
+        "event_seq": ev.seq if ev is not None else None,
+    }
+
+
+def cmd_change_evaluate(ctx: FactoryContext, args: Any) -> dict:
+    """factory change evaluate TASK_ID — Change 规则评估 + 触发执行, 发
+    change.trigger.evaluated (+ 触发成功 change.workflow.started/completed)。
+
+    装配 executor=orchestration pipeline (ADR-0020 决策 3): 4 规则全 PASS → 启动
+    target_workflow 运行实例并执行 (run 已 RUNNING 续跑分支); FAIL/SKIP/ERROR
+    不触发。失败恢复不级联: 触发/执行失败 → ERROR 评估 (含 error), 不抛。
+    退出码 (同 validate 契约): PASS/SKIP → 0 (SKIP = 无匹配触发器, 非失败) /
+    FAIL → 3 / ERROR → 1。
+    """
+    execute = None if args.execute else False  # 默认执行 (executor 已装配)
+    with ctx.logger_scope() as logger:
+        engine = _open_changeflow_engine(ctx, args, logger, execute=execute is not False)
+        evaluation = engine.evaluate(args.task_id)
+        event_seq = _change_last_seq(logger)  # 须在作用域内取 (退出即关库)
+    exit_code = (
+        0 if evaluation.status in ("PASS", "SKIP")
+        else (3 if evaluation.status == "FAIL" else 1)
+    )
+    return {
+        "ok": evaluation.status == "PASS",
+        "task_id": args.task_id,
+        "evaluation": evaluation.to_dict(),
+        "exit_code": exit_code,
+        "event_seq": event_seq,
+    }
+
+
+def cmd_change_workflows(ctx: FactoryContext, args: Any) -> dict:
+    """factory change workflows TASK_ID — 任务关联 workflow 链 (只读), 审计经
+    change.trigger.viewed 之外由 engine 查询 (无写路径, 不发业务事件)。
+
+    链 = 任务工作流 (task.workflow → 定义/运行实例) + 触发工作流
+    (change.workflow.started 事件: target workflow/run_id/状态)。无记录 → 空链
+    (CLI 输出占位)。失败安全: 任务不存在 → 空链。
+    """
+    with ctx.logger_scope() as logger:
+        engine = _open_changeflow_engine(ctx, args, logger, execute=False)
+        chain = engine.workflow_chain(args.task_id)
+        event_seq = _change_last_seq(logger)
+    return {
+        "ok": True,
+        "task_id": args.task_id,
+        "count": len(chain),
+        "chain": chain,
         "event_seq": event_seq,
     }

@@ -598,3 +598,70 @@ def build_change(snapshot: FactorySnapshot) -> Panel:
         val_table.add_row(_text("(no validations)", style="dim"), "", "", "")
 
     return _panel(Group(summary, snap_table, val_table), "Change", border="cyan")
+
+
+# ------------------------------------------------------------------ Change Flow View (Phase 6E, ADR-0020)
+
+def build_changeflow(snapshot: FactorySnapshot) -> Panel:
+    """Change Flow View (Phase 6E, ADR-0020): Triggers + Evaluations + Links。
+
+    数据源 = snapshot.changeflow (collector include_changeflow=True 聚合, 默认
+    关闭): Triggers 表 (id/event_type/project/task_type/required_validation/
+    target_workflow — 声明式驱动规则注册表), Evaluations 表
+    (change.trigger.evaluated: 最近评估判定 task_id/status/trigger/rules 数/
+    触发工作流/run_id/error — 状态着色同 validation 语义), Workflow Links 表
+    (started/completed 配对: task/workflow/run/trigger/终态 result)。
+    """
+    c = snapshot.changeflow
+    summary = _line(
+        _text(f"{c.trigger_total} triggers", style="bold"),
+        _text(f" · {c.evaluation_total} evaluations", style="bold"),
+        _text(f" · {c.workflow_links_total} workflow links", style="bold"),
+    )
+
+    trigger_table = Table(show_header=True, header_style="bold", box=box.SIMPLE_HEAVY, expand=True)
+    for col in ("Trigger", "Event", "Project", "Task Type", "Validation", "Target Workflow"):
+        trigger_table.add_column(col)
+    for t in c.triggers:
+        trigger_table.add_row(
+            _text(t.get("id", "")),
+            _text(t.get("event_type", "")),
+            _text(t.get("project_id") or "-"),
+            _text(t.get("task_type") or "-"),
+            _text(t.get("required_validation", ""), style=_style_status(t.get("required_validation"))),
+            _text(t.get("target_workflow", "")),
+        )
+    if not c.triggers:
+        trigger_table.add_row(_text("(no triggers)", style="dim"), "", "", "", "", "")
+
+    eval_table = Table(show_header=True, header_style="bold", box=box.SIMPLE_HEAVY, expand=True)
+    for col in ("Task", "Status", "Trigger", "Rules", "Workflow", "Run", "Error"):
+        eval_table.add_column(col)
+    for v in c.evaluations:
+        eval_table.add_row(
+            _text(v.get("task_id", "")),
+            _text(v.get("status", ""), style=_style_status(v.get("status"))),
+            _text(v.get("trigger_id") or "-"),
+            _text(v.get("rules", 0)),
+            _text(v.get("triggered_workflow") or "-"),
+            _text(v.get("run_id") or "-"),
+            _text((v.get("error") or "-")[:40]),
+        )
+    if not c.evaluations:
+        eval_table.add_row(_text("(no evaluations)", style="dim"), "", "", "", "", "", "")
+
+    link_table = Table(show_header=True, header_style="bold", box=box.SIMPLE_HEAVY, expand=True)
+    for col in ("Task", "Workflow", "Run", "Trigger", "Result"):
+        link_table.add_column(col)
+    for lk in c.workflow_links:
+        link_table.add_row(
+            _text(lk.get("task_id", "")),
+            _text(lk.get("workflow_id", "")),
+            _text(lk.get("run_id") or "-"),
+            _text(lk.get("trigger_id") or "-"),
+            _text(lk.get("status", ""), style=_style_status(lk.get("status"))),
+        )
+    if not c.workflow_links:
+        link_table.add_row(_text("(no workflow links)", style="dim"), "", "", "", "")
+
+    return _panel(Group(summary, trigger_table, eval_table, link_table), "Change Flow", border="cyan")

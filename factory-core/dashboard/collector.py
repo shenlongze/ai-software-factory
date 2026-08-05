@@ -36,6 +36,7 @@ from workflows.store import WorkflowStore
 
 from .models import (
     AgentSnapshot,
+    ChangeFlowSnapshot,
     ChangeSnapshot,
     CheckpointSnapshot,
     ExecutionSnapshot,
@@ -73,6 +74,8 @@ class DashboardCollector:
         git_commit_limit: int = 5,  # Phase 6C: 每仓库提交上限
         change_store: Any | None = None,  # Phase 6D: ChangeStore (Change View)
         include_change: bool = False,  # Phase 6D: Change View 聚合开关 (ADR-0019)
+        change_trigger_registry: Any | None = None,  # Phase 6E: ChangeTriggerRegistry
+        include_changeflow: bool = False,  # Phase 6E: Change Flow View 聚合开关 (ADR-0020)
     ) -> None:
         self._task_store = task_store
         self._agent_registry = agent_registry
@@ -107,6 +110,11 @@ class DashboardCollector:
         # 存储), 默认关闭 — 既有 dashboard 行为/成本完全不变 (同 include_git 模式)。
         self._change_store = change_store
         self._include_change = include_change
+        # Change Flow View (Phase 6E): 注入 ChangeTriggerRegistry (触发器只读
+        # 快照) + 事件库 change.* 事件聚合, 默认关闭 — 既有 dashboard 行为/成本
+        # 完全不变 (同 include_change 模式)。
+        self._change_trigger_registry = change_trigger_registry
+        self._include_changeflow = include_changeflow
 
     # ------------------------------------------------------------------ 主入口
 
@@ -128,6 +136,7 @@ class DashboardCollector:
             runtime_usage=self._collect_runtime_usage(),
             git=self._collect_git(),
             change=self._collect_change(),
+            changeflow=self._collect_changeflow(),
         )
 
     # ------------------------------------------------------------------ 分域聚合
@@ -396,4 +405,89 @@ class DashboardCollector:
                 }
                 for e in validations
             ],
+        )
+
+    # ------------------------------------------------------------------ Change Flow View (Phase 6E, ADR-0020)
+
+    def _collect_changeflow(self) -> ChangeFlowSnapshot:
+        """Change Flow View 聚合: Triggers + Evaluations + Workflow Links。
+
+        只读: 仅调 ChangeTriggerRegistry.list 读接口 + 事件库 query
+        (change.trigger.evaluated / change.workflow.started|completed); 不发
+        事件 (change.* 审计由 CLI 命令层发出, 同 dashboard.viewed 边界)。
+        失败安全: 未装配注册表 → 空快照; 事件缺失 → 对应段空。workflow_links
+        按 run_id 配对 started/completed (result 取最近终态, 未终态 = STARTED)。
+        默认关闭 — 既有 dashboard 行为/成本完全不变 (同 include_change 模式)。
+        """
+        if not self._include_changeflow or self._change_trigger_registry is None:
+            return ChangeFlowSnapshot()
+        triggers = self._change_trigger_registry.list()
+        evaluations = self._event_store.query(
+            event_type=EventType.CHANGE_TRIGGER_EVALUATED
+        )
+        started = self._event_store.query(
+            event_type=EventType.CHANGE_WORKFLOW_STARTED
+        )
+        completed = self._event_store.query(
+            event_type=EventType.CHANGE_WORKFLOW_COMPLETED
+        )
+        if self._project_id is not None:
+            # 项目隔离: change.trigger.evaluated 事件无 project_id 字段, 经
+            # task_id → task.project 归属过滤 (孤儿记录不计入, 同 run/exec 口径)
+            task_proj = self._task_project_map()
+            evaluations = [
+                e for e in evaluations if task_proj.get(e.task_id) == self._project_id
+            ]
+            started = [
+                e for e in started if (e.project_id or "") == self._project_id
+            ]
+            completed = [
+                e for e in completed if (e.project_id or "") == self._project_id
+            ]
+        by_status = Counter(e.result or "" for e in evaluations)
+        # workflow_links: started 事件 → 行; completed 事件按 run_id 合并终态
+        links: dict[str, dict] = {}
+        for e in started:
+            p = e.payload or {}
+            links[p.get("run_id") or e.task_id] = {
+                "task_id": e.task_id,
+                "workflow_id": p.get("workflow_id", ""),
+                "run_id": p.get("run_id"),
+                "trigger_id": p.get("trigger_id"),
+                "status": "STARTED",
+            }
+        for e in completed:
+            p = e.payload or {}
+            key = p.get("run_id") or e.task_id
+            row = links.get(key)
+            if row is None:
+                row = {
+                    "task_id": e.task_id,
+                    "workflow_id": p.get("workflow_id", ""),
+                    "run_id": p.get("run_id"),
+                    "trigger_id": p.get("trigger_id"),
+                    "status": "STARTED",
+                }
+                links[key] = row
+            row["status"] = p.get("result") or row["status"]
+        return ChangeFlowSnapshot(
+            trigger_total=len(triggers),
+            triggers=[t.to_dict() for t in triggers],
+            evaluation_total=len(evaluations),
+            evaluations=[
+                {
+                    "task_id": e.task_id,
+                    "trigger_id": e.payload.get("trigger_id") if e.payload else None,
+                    "status": e.result,
+                    "rules": len((e.payload or {}).get("rules", [])),
+                    "triggered_workflow": (e.payload or {}).get("triggered_workflow"),
+                    "run_id": (e.payload or {}).get("run_id"),
+                    "error": (e.payload or {}).get("error"),
+                    "seq": e.seq,
+                }
+                for e in evaluations
+            ],
+            workflow_links_total=len(links),
+            workflow_links=list(links.values()),
+            by_status=dict(sorted(by_status.items())),
         )

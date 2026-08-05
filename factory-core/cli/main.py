@@ -24,7 +24,11 @@ from .commands import (
     cmd_checkpoint_list,
     cmd_change_analyze,
     cmd_change_commits,
+    cmd_change_evaluate,
+    cmd_change_triggers_list,
+    cmd_change_triggers_register,
     cmd_change_validate,
+    cmd_change_workflows,
     cmd_dashboard,
     cmd_event_logs,
     cmd_execution_list,
@@ -375,6 +379,41 @@ def build_parser() -> Any:
     json_opt(p_ch_validate)
     p_ch_validate.add_argument("task_id", help="任务 ID (如 T-001 / MP-BUG-001)")
     p_ch_validate.add_argument("--repo", default=None, help="仓库路径 (默认工厂根目录)")
+    p_ch_triggers = csub.add_parser(
+        "triggers", help="Change Trigger 管理: 声明式变更驱动规则 (发 change.trigger.created/viewed)"
+    )
+    json_opt(p_ch_triggers)
+    tsub = p_ch_triggers.add_subparsers(dest="trigger_command", required=True)
+    p_tr_register = tsub.add_parser(
+        "register", help="注册触发器: 事件+项目/类型匹配 → 评估 PASS 启动 target-workflow (发 change.trigger.created)"
+    )
+    json_opt(p_tr_register)
+    p_tr_register.add_argument("--id", required=True, help="触发器 ID (如 TRIG-FEATURE-RELEASE)")
+    p_tr_register.add_argument("--event-type", default="workflow.completed",
+                               help="触发事件域 (默认 workflow.completed)")
+    p_tr_register.add_argument("--project", default=None, help="限定项目 (缺省任意)")
+    p_tr_register.add_argument("--task-type", default=None, help="限定任务类型 (缺省任意; 如 feature/bug)")
+    p_tr_register.add_argument("--required-validation", default="PASS",
+                               help="规则①要求的 L4 Change Validation 状态 (默认 PASS)")
+    p_tr_register.add_argument("--target-workflow", required=True,
+                               help="评估通过后启动的工作流 ID (须已注册, 如 release)")
+    p_tr_list = tsub.add_parser(
+        "list", help="触发器列表 (发 change.trigger.viewed)"
+    )
+    json_opt(p_tr_list)
+    p_ch_evaluate = csub.add_parser(
+        "evaluate", help="Change 规则评估: 匹配触发器 → 4 规则 → PASS 触发并执行目标工作流 (发 change.trigger.evaluated)"
+    )
+    json_opt(p_ch_evaluate)
+    p_ch_evaluate.add_argument("task_id", help="任务 ID (如 T-001 / MP-BUG-001)")
+    p_ch_evaluate.add_argument("--no-execute", action="store_false", dest="execute",
+                               default=True,
+                               help="只评估不触发 (纯评估模式, 零执行副作用)")
+    p_ch_workflows = csub.add_parser(
+        "workflows", help="任务关联 workflow 链: 任务工作流 + 触发工作流 (只读)"
+    )
+    json_opt(p_ch_workflows)
+    p_ch_workflows.add_argument("task_id", help="任务 ID (如 T-001 / MP-BUG-001)")
 
     return p
 
@@ -559,6 +598,16 @@ def _dispatch_change(ctx: FactoryContext, args: Any) -> dict:
         return cmd_change_analyze(ctx, args)
     if args.change_command == "validate":
         return cmd_change_validate(ctx, args)
+    if args.change_command == "triggers":
+        if args.trigger_command == "list":
+            return cmd_change_triggers_list(ctx, args)
+        if args.trigger_command == "register":
+            return cmd_change_triggers_register(ctx, args)
+        raise CliError(f"unknown change triggers command: {args.trigger_command}", exit_code=2)
+    if args.change_command == "evaluate":
+        return cmd_change_evaluate(ctx, args)
+    if args.change_command == "workflows":
+        return cmd_change_workflows(ctx, args)
     raise CliError(f"unknown change command: {args.change_command}", exit_code=2)
 
 
@@ -1001,7 +1050,8 @@ def _print_git(sub: str, r: dict) -> None:
 
 
 def _print_change(sub: str, r: dict) -> None:
-    """factory change 输出: commits 提交表; analyze 路径分析; validate L4 判定。"""
+    """factory change 输出: commits 提交表; analyze 路径分析; validate L4 判定;
+    triggers 注册/列表; evaluate 规则判定; workflows workflow 链。"""
     if sub == "commits":
         rows = [[c["hash"][:12], c["message"], c["branch"] or "-",
                  c["task_id"] or "-", c["created_at"]] for c in r["commits"]]
@@ -1035,6 +1085,45 @@ def _print_change(sub: str, r: dict) -> None:
             print(f"✘ 验证错误 (退出码 {r['exit_code']})")
         else:
             print(f"✔ 验证通过 (退出码 {r['exit_code']})")
+    elif sub == "triggers":
+        if r.get("trigger"):
+            t = r["trigger"]
+            print(f"✔ 触发器已注册 {t['id']}  (event={t['event_type']} "
+                  f"project={t['project_id'] or '-'} type={t['task_type'] or '-'} "
+                  f"validation={t['required_validation']} → {t['target_workflow']})")
+            if r.get("event_seq"):
+                print(f"  事件      change.trigger.created seq={r['event_seq']}")
+        else:
+            rows = [[t["id"], t["event_type"], t["project_id"] or "-",
+                     t["task_type"] or "-", t["required_validation"],
+                     t["target_workflow"]] for t in r["triggers"]]
+            print(_render_table(["Trigger", "Event", "Project", "Task Type", "Validation", "Target"], rows))
+            print(f"{r['count']} triggers")
+            if r.get("event_seq"):
+                print(f"  事件      change.trigger.viewed seq={r['event_seq']}")
+    elif sub == "evaluate":
+        ev = r["evaluation"]
+        status = ev["status"]
+        print(f"Change 评估 — {r['task_id']}  →  {status}"
+              f"  (trigger: {ev['trigger_id'] or '-'})")
+        for rule in ev.get("rules", []):
+            print(f"  {rule['rule_id']:<16} {rule['status']:<5} {rule['message']}")
+        if ev.get("triggered_workflow"):
+            print(f"  → 触发 {ev['triggered_workflow']} (run {ev['run_id']})")
+        if ev.get("error"):
+            print(f"  error     {ev['error']}")
+        if status == "FAIL":
+            print(f"✘ 评估失败 (退出码 {r['exit_code']})")
+        elif status == "ERROR":
+            print(f"✘ 评估错误 (退出码 {r['exit_code']})")
+        else:
+            print(f"✔ 评估完成 (退出码 {r['exit_code']})")
+    elif sub == "workflows":
+        rows = [[c["workflow_id"], c["workflow_name"] or "-", c["run_id"] or "-",
+                 c["status"], "triggered" if c.get("triggered") else "task"]
+                for c in r["chain"]]
+        print(_render_table(["Workflow", "Name", "Run", "Status", "Origin"], rows))
+        print(f"{r['count']} workflows in chain")
 
 
 if __name__ == "__main__":

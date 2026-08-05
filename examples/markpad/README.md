@@ -64,3 +64,45 @@ factory workflow run --auto T-101
 
 生产环境将 echo 换成 hermes-runtime (`runtime add --id hermes-runtime --type agent`,
 `FACTORY_HERMES_CMD` 指向 hermes CLI) 即接入真实 LLM 执行。
+
+## 变更驱动工作流 (changeflow, Phase 6E / ADR-0020)
+
+`factory change` 把 Git 变更与 4 规则评估串成"变更即发布"链路: 提交关联任务 ID 的
+代码 → L4 验证 PASS → evaluate 四规则 (验证/关联提交/必需文件/runtime) 全 PASS →
+自动启动并执行目标工作流 (如 release)。
+
+```bash
+# 1. 注册变更触发器 (事件 + 项目/类型限定 + 目标工作流; 声明式, 只落盘)
+factory change triggers register --id TRIG-FEATURE-RELEASE \
+  --event-type workflow.completed --project markpad --task-type feature \
+  --required-validation PASS --target-workflow release
+
+# 2. 查看已注册触发器 (发 change.trigger.viewed)
+factory change triggers list
+
+# 3. 创建 feature 任务 (task.workflow 与触发目标可不同 — 链式交付)
+factory task create --id T-201 --title "新增暗色主题" --project markpad \
+  --type feature --workflow feature-delivery
+
+# 4. 提交关联代码 (commit message 含任务 ID → git 三来源解析命中)
+git add . && git commit -m "T-201: add dark theme"
+
+# 5. L4 验证 → PASS (证据 = 关联提交 + 标题/路径重叠)
+factory change validate T-201
+
+# 6. evaluate: 4 规则 PASS → 启动 release 工作流并执行 (默认 --execute;
+#    缺省执行契约 = 装配 executor 才触发, 显式 execute=True 亦强制触发)
+factory change evaluate T-201
+factory change evaluate T-201 --no-execute   # 只评估不触发 (纯评估)
+
+# 7. 查看触发链: 任务工作流 (feature-delivery) + 触发工作流 (release)
+factory change workflows T-201
+
+# 8. Change Flow 仪表盘视图 (Triggers / Evaluations / Workflow Links 三表)
+factory dashboard --view changeflow
+```
+
+> 契约要点 (ADR-0020): evaluate 的 `execute` 缺省 = 引擎是否装配 executor —
+> CLI `change evaluate` 默认装配 (执行), `change workflows`/纯评估场景不装配;
+> 失败恢复不级联 (目标工作流未注册 / 任务已有 run → ERROR 评估, 不影响调用方);
+> 无匹配触发器 → SKIP (旧 Task 兼容)。

@@ -76,7 +76,8 @@ class TestChangeViewRender:
         from dashboard.renderer import VIEWS
 
         assert "change" in VIEWS
-        assert len(VIEWS) == 15  # Phase 6D: 第十五视图 (ADR-0019)
+        assert "changeflow" in VIEWS  # Phase 6E: 第十六视图 (ADR-0020)
+        assert len(VIEWS) == 16  # Phase 6D: 第十五视图 (ADR-0019) + Phase 6E 第十六视图
 
     def test_unknown_view_still_raises(self, factory_root, logger, event_store,
                                        task_store, agent_registry, workflow_store,

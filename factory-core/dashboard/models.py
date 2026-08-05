@@ -213,6 +213,29 @@ class ChangeSnapshot(BaseModel):
         return self.model_dump(mode="json")
 
 
+class ChangeFlowSnapshot(BaseModel):
+    """Change Flow View 汇总 (Phase 6E, ADR-0020): Triggers + Evaluations + Links。
+
+    数据源 = ChangeTriggerRegistry (collector include_changeflow=True 时装配,
+    默认关闭 — 既有 dashboard 行为/成本完全不变, 同 include_change 模式) +
+    事件库的 change.trigger.evaluated / change.workflow.started|completed 事件
+    聚合。triggers 为注册表快照 (只读); evaluations 为最近评估判定 (含
+    triggered_workflow/run_id); workflow_links 为触发工作流链 (started/completed
+    事件配对, result 取最近终态); by_status 为评估状态计数。
+    """
+
+    trigger_total: int = 0
+    triggers: list[dict[str, Any]] = Field(default_factory=list)  # ChangeTrigger.to_dict()
+    evaluation_total: int = 0
+    evaluations: list[dict[str, Any]] = Field(default_factory=list)  # 紧凑评估行
+    workflow_links_total: int = 0
+    workflow_links: list[dict[str, Any]] = Field(default_factory=list)  # 触发链行
+    by_status: dict[str, int] = Field(default_factory=dict)  # 评估状态计数
+
+    def to_dict(self) -> dict:
+        return self.model_dump(mode="json")
+
+
 class FactorySnapshot(BaseModel):
     """一次 Dashboard 查询的完整只读投影 (全 store 汇总 + 最近事件)。"""
 
@@ -238,6 +261,10 @@ class FactorySnapshot(BaseModel):
     # Phase 6D (ADR-0019): Change View — 仅 --view change 聚合 (collector
     # include_change=True), 默认空 (既有 dashboard 行为/成本完全一致)。
     change: ChangeSnapshot = Field(default_factory=ChangeSnapshot)
+    # Phase 6E (ADR-0020): Change Flow View — 仅 --view changeflow 聚合
+    # (collector include_changeflow=True), 默认空 (既有 dashboard 行为/成本
+    # 完全一致; 数据源 = ChangeTriggerRegistry + change.* 事件聚合)。
+    changeflow: ChangeFlowSnapshot = Field(default_factory=ChangeFlowSnapshot)
 
     def to_dict(self) -> dict:
         """JSON 友好序列化 (CLI --json 输出 / 测试断言共用)。"""

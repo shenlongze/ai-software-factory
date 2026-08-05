@@ -109,11 +109,13 @@ def build_parser() -> Any:
     p_event = sub.add_parser("event", help="事件查询")
     json_opt(p_event)
     esub = p_event.add_subparsers(dest="event_command", required=True)
-    p_logs = esub.add_parser("logs", help="事件日志查询, 倒序 (发 system.logs_viewed)")
+    p_logs = esub.add_parser("logs", help="事件日志查询, 倒序 (发 system.logs_viewed; --workspace 发 workspace.events.viewed)")
     json_opt(p_logs)
     p_logs.add_argument("--limit", type=int, default=20, help="条数上限 (默认 20)")
     p_logs.add_argument("--project", default=None, help="按项目过滤")
     p_logs.add_argument("--task", default=None, help="按任务过滤")
+    p_logs.add_argument("--workspace", action="store_true",
+                        help="跨项目事件时间线 (全量最近事件, 含 project 列, 发 workspace.events.viewed)")
 
     # factory status
     json_opt(sub.add_parser("status", help="工厂总览: Projects/Tasks/Agents/Events 计数 (发 system.status_viewed)"))
@@ -266,22 +268,28 @@ def build_parser() -> Any:
 
     # factory dashboard
     p_dashboard = sub.add_parser(
-        "dashboard", help="只读控制台总览: Rich 六视图 (发 dashboard.viewed)"
+        "dashboard", help="只读控制台总览: Rich 视图 (发 dashboard.viewed; --workspace 发 workspace.dashboard.viewed)"
     )
     json_opt(p_dashboard)
     p_dashboard.add_argument(
-        "--view", default="all",
-        help="单视图: overview/tasks/agents/workflows/executions/recovery/catalog (默认 all 同屏)",
+        "--view", default=None,
+        help="单视图: overview/tasks/agents/workflows/executions/recovery/catalog/metrics/"
+             "workspace/projects/agents_utilization/runtime_usage/workspace_events "
+             "(默认 all 同屏; --workspace 默认 workspace 视图组)",
     )
     p_dashboard.add_argument("--limit", type=int, default=10, help="最近事件条数上限 (默认 10)")
     p_dashboard.add_argument("--project", default=None, help="按项目过滤 (任务/事件维度)")
+    p_dashboard.add_argument("--workspace", action="store_true",
+                             help="Workspace Summary: 跨项目运营视图组 (Projects/Agent Utilization/Runtime/Metrics/Events)")
 
-    # factory metrics (Phase 5B, ADR-0015)
+    # factory metrics (Phase 5B, ADR-0015; Phase 6B --workspace, ADR-0017)
     p_metrics = sub.add_parser(
-        "metrics", help="工厂生产指标: 六域指标 + 失败原因 (只读, 发 metrics.viewed)"
+        "metrics", help="工厂生产指标: 六域指标 + 失败原因 (只读, 发 metrics.viewed; --workspace 发 workspace.metrics.viewed)"
     )
     json_opt(p_metrics)
     p_metrics.add_argument("--project", default=None, help="按项目过滤 (任务/事件维度)")
+    p_metrics.add_argument("--workspace", action="store_true",
+                           help="Workspace 项目对比表 (复用 MetricsCollector 每项目聚合)")
 
     # factory project <sub> (Phase 5A: Example Layer, 只读)
     p_project = sub.add_parser("project", help="项目配置 (只读: examples/*/project.yaml)")
@@ -814,9 +822,12 @@ def _print_dashboard(r: dict) -> None:
 
 
 def _print_metrics(r: dict) -> None:
-    from metrics.models import FactoryMetrics
-    from metrics.reports import format_metrics
+    from metrics.models import FactoryMetrics, WorkspaceComparison
+    from metrics.reports import format_metrics, format_workspace_comparison
 
+    if r.get("workspace"):  # metrics --workspace → 项目对比报告 (Phase 6B, ADR-0017)
+        print(format_workspace_comparison(WorkspaceComparison.model_validate(r["comparison"])))
+        return
     print(format_metrics(FactoryMetrics.model_validate(r["metrics"])))
 
 

@@ -367,3 +367,125 @@ def build_recovery(snapshot: FactorySnapshot) -> Panel:
     if not snapshot.checkpoints.items:
         table.add_row(_text("(no checkpoints)", style="dim"), "", "", "", "", "")
     return _panel(Group(counts, table), "Recovery", border="red")
+
+
+# ------------------------------------------------------------------ Workspace 视图 (Phase 6B, ADR-0017)
+
+def build_workspace(snapshot: FactorySnapshot) -> Group:
+    """Workspace Summary 视图组 (dashboard --workspace 默认): 跨项目运营总览。
+
+    组成: Workspace Summary 头面板 + Projects (项目对比) + Agent Utilization +
+    Runtime Usage + Factory Metrics + Workspace Events 时间线 — 全部数据来自
+    snapshot 只读投影 (collector workspace 模式聚合, ADR-0017 决策 3)。
+    """
+    return Group(
+        build_workspace_header(snapshot),
+        build_projects(snapshot),
+        build_agent_utilization(snapshot),
+        build_runtime_usage(snapshot),
+        build_metrics(snapshot),
+        build_workspace_events(snapshot),
+    )
+
+
+def build_workspace_header(snapshot: FactorySnapshot) -> Panel:
+    """Workspace Summary 头面板: 跨项目六域一句话汇总 (同 build_header 风格)。"""
+    title = Text("AI Software Factory Workspace", style="bold cyan")
+    t, a, x, w, m = (
+        snapshot.tasks, snapshot.agents, snapshot.executions,
+        snapshot.workflows, snapshot.metrics,
+    )
+    p = snapshot.projects
+    au = snapshot.agent_utilization
+    ru = snapshot.runtime_usage
+    body = Group(
+        title,
+        _line(Text("Projects    ", style="bold"), _text(f" {p.total}"),
+              _text(f"  ({len(snapshot.recent_events)} recent events)", style="dim")),
+        _line(Text("Tasks       ", style="bold"), _status_counts_text(t.by_status),
+              _text(f"  (total {t.total}, active {t.active}, done {t.done})", style="dim")),
+        _line(Text("Agents      ", style="bold"), _status_counts_text(a.by_status),
+              _text(f"  (total {a.total}, utilized {au.total})", style="dim")),
+        _line(Text("Executions  ", style="bold"), _status_counts_text(x.by_status),
+              _text(f"  (total {x.total}, rate {x.success_rate:.1%}, runtimes {ru.total})", style="dim")),
+        _line(Text("Workflows   ", style="bold"), _status_counts_text(w.runs_by_status),
+              _text(f"  ({w.definitions} definitions)", style="dim")),
+        _line(Text("Validation  ", style="bold"),
+              _text(f" PASS {m.validation.pass_count} / FAIL {m.validation.fail_count} / "
+                    f"SKIP {m.validation.skip_count}  (Events {m.event_count})", style="dim")),
+    )
+    return _panel(body, "Workspace Summary", border="cyan")
+
+
+def build_agent_utilization(snapshot: FactorySnapshot) -> Panel:
+    """Agent Utilization View (ADR-0017): 跨项目 Agent 使用统计表。
+
+    数据源 = snapshot.agent_utilization (collector workspace 模式聚合):
+    每 agent 参与项目 / 分配次数 / 成败 / 成功率。
+    """
+    au = snapshot.agent_utilization
+    summary = _line(_text(f"{au.total} agents", style="bold"),
+                    _text(f" · {sum(a.assignments for a in au.items)} assignments", style="bold"))
+    table = Table(show_header=True, header_style="bold", box=box.SIMPLE_HEAVY, expand=True)
+    for col in ("Agent", "Role", "Status", "Projects", "Assignments", "Success", "Failed", "Success Rate"):
+        table.add_column(col)
+    for a in au.items:
+        table.add_row(
+            _text(a.agent_id),
+            _text(a.role or "-"),
+            _text(a.status or "-", style=_style_status(a.status)),
+            _text(", ".join(a.projects) or "-"),
+            _text(a.assignments),
+            _text(a.success_count),
+            _text(a.failed_count),
+            _text(f"{a.success_rate:.1%}", style=_style_status("PASS" if a.success_rate >= 0.5 else "FAIL")),
+        )
+    if not au.items:
+        table.add_row(_text("(no agents)", style="dim"), "", "", "", "", "", "", "")
+    return _panel(Group(summary, table), "Agent Utilization", border="green")
+
+
+def build_runtime_usage(snapshot: FactorySnapshot) -> Panel:
+    """Runtime Usage View (ADR-0017): runtime/execution_count/success_rate 表。
+
+    数据源 = snapshot.runtime_usage (collector workspace 模式聚合, execution
+    记录请求状态为权威); projects = 使用该 runtime 的项目。
+    """
+    ru = snapshot.runtime_usage
+    summary = _line(_text(f"{ru.total} runtimes", style="bold"),
+                    _text(f" · {sum(r.execution_count for r in ru.items)} executions", style="bold"))
+    table = Table(show_header=True, header_style="bold", box=box.SIMPLE_HEAVY, expand=True)
+    for col in ("Runtime", "Executions", "Success", "Failed", "Success Rate", "Projects"):
+        table.add_column(col)
+    for r in ru.items:
+        table.add_row(
+            _text(r.runtime_id),
+            _text(r.execution_count),
+            _text(r.success),
+            _text(r.failed),
+            _text(f"{r.success_rate:.1%}", style=_style_status("PASS" if r.success_rate >= 0.5 else "FAIL")),
+            _text(", ".join(r.projects) or "-"),
+        )
+    if not ru.items:
+        table.add_row(_text("(no executions)", style="dim"), "", "", "", "", "")
+    return _panel(Group(summary, table), "Runtime Usage", border="yellow")
+
+
+def build_workspace_events(snapshot: FactorySnapshot) -> Panel:
+    """Workspace Events 时间线 (ADR-0017): 跨项目最近事件 (含 Project 列)。"""
+    table = Table(show_header=True, header_style="bold", box=box.SIMPLE_HEAVY, expand=True)
+    for col in ("seq", "timestamp", "type", "project", "task", "action", "result"):
+        table.add_column(col)
+    for e in snapshot.recent_events:
+        table.add_row(
+            _text(e.get("seq", "")),
+            _text(str(e.get("timestamp", ""))[:19]),
+            _text(e.get("type", "")),
+            _text(e.get("project_id") or "-"),
+            _text(e.get("task_id") or "-"),
+            _text(e.get("action") or "-"),
+            _text(e.get("result") or "-", style=_style_status(e.get("result"))),
+        )
+    if not snapshot.recent_events:
+        table.add_row(_text("(no events)", style="dim"), "", "", "", "", "", "")
+    return _panel(table, "Workspace Events", border="blue")

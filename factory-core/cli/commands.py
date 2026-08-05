@@ -72,6 +72,7 @@ from dashboard.collector import DashboardCollector
 from dashboard.renderer import VIEWS as DASHBOARD_VIEWS
 
 from metrics.collectors import MetricsCollector
+from metrics.workspace import WorkspaceCollector
 
 from project.loader import (
     ProjectLoadError,
@@ -222,19 +223,34 @@ def cmd_task_update(ctx: FactoryContext, args: Any) -> dict:
 # ------------------------------------------------------------------ event 子命令
 
 def cmd_event_logs(ctx: FactoryContext, args: Any) -> dict:
-    """factory event logs — 事件日志查询 (倒序, 可过滤), 发 system.logs_viewed。"""
+    """factory event logs — 事件日志查询 (倒序, 可过滤), 发 system.logs_viewed;
+    --workspace → 跨项目事件时间线 (全量最近事件, 含 project 列), 发 workspace.events.viewed。
+
+    workspace 时间线 = EventStore.recent 全量倒序 (跨项目, 不做 project 过滤),
+    project_id 为空的事件 (全局/未归属) 原样展示 — 事件时间线的完整投影。
+    """
     limit = args.limit or 20
+    workspace = getattr(args, "workspace", False)
     with ctx.logger_scope() as logger:
-        events = logger.store.query(project_id=args.project, task_id=args.task)
-        tail = events[-limit:][::-1]
-        ev = logger.record(
-            EventType.SYSTEM_LOGS_VIEWED, source=SOURCE, action="view event logs", result="OK",
-            payload={"limit": limit, "count": len(tail), "project": args.project, "task": args.task},
-        )
+        if workspace:
+            events = logger.store.recent(limit)  # 跨项目: 按 seq 倒序
+            ev = logger.record(
+                EventType.WORKSPACE_EVENTS_VIEWED, source=SOURCE,
+                action="view workspace timeline", result="OK",
+                payload={"limit": limit, "count": len(events)},
+            )
+        else:
+            events = logger.store.query(project_id=args.project, task_id=args.task)
+            events = events[-limit:][::-1]
+            ev = logger.record(
+                EventType.SYSTEM_LOGS_VIEWED, source=SOURCE, action="view event logs", result="OK",
+                payload={"limit": limit, "count": len(events), "project": args.project, "task": args.task},
+            )
     return {
         "ok": True,
-        "count": len(tail),
-        "events": [e.model_dump(mode="json") for e in tail],
+        "workspace": workspace,
+        "count": len(events),
+        "events": [e.model_dump(mode="json") for e in events],
         "event_seq": ev.seq,
     }
 
@@ -1015,23 +1031,32 @@ def cmd_recover(ctx: FactoryContext, args: Any) -> dict:
 # ------------------------------------------------------------------ dashboard
 
 def cmd_dashboard(ctx: FactoryContext, args: Any) -> dict:
-    """factory dashboard — 只读控制台总览 (Rich 六视图), 发 dashboard.viewed。
+    """factory dashboard — 只读控制台总览 (Rich 视图), 发 dashboard.viewed;
+    --workspace → Workspace Summary (跨项目运营视图组), 发 workspace.dashboard.viewed。
 
-    只读铁律 (phase4c4-status.md): 收集器只调用各 store 读接口, 本命令唯一的
-    副作用是 dashboard.viewed 审计事件 (ADR-0002: 所有 CLI 行为必须产生 Event)。
+    只读铁律 (phase4c4-status.md / ADR-0017): 收集器只调用各 store 读接口,
+    本命令唯一的副作用是审计事件 (ADR-0002: 所有 CLI 行为必须产生 Event)。
     非法 --view → 用法错误 (退出码 2)。
     """
-    view = args.view or "all"
+    workspace = getattr(args, "workspace", False)
+    view = args.view or ("workspace" if workspace else "all")
     if view != "all" and view not in DASHBOARD_VIEWS:
         raise CliError(
             f"invalid view: {view!r} (expected one of: all, {', '.join(DASHBOARD_VIEWS)})",
             exit_code=2,
         )
+    # workspace 专属视图 (workspace 组/agents_utilization/runtime_usage/workspace_events)
+    # 需要 collector workspace 模式聚合; 经 --view 单独指定时自动启用 (数据完整),
+    # 但事件类型仍按 --workspace 标志区分 (只读审计, ADR-0017 决策 4)。
+    workspace_views = {"workspace", "agents_utilization", "runtime_usage", "workspace_events"}
     with ctx.logger_scope() as logger:
         # Phase 6A Projects View 数据源: workspace 项目定义 (无 workspace/损坏 →
-        # 空列表, Dashboard 永不因 workspace 配置问题失败 — 只读兜底)。
+        # 空列表, Dashboard 永不因 workspace 配置问题失败 — 只读兜底)。用
+        # load_workspace() 而非 list_projects(): 后者在无 workspace.yaml 时自动
+        # 发现 (managed ∪ examples), 会把内置示例项目泄漏进 workspace 聚合 —
+        # 无 workspace 时项目集应完全由任务/事件数据推导 (ADR-0017 决策 6)。
         try:
-            ws_projects = _open_workspace_manager(ctx).list_projects()
+            ws_projects = _open_workspace_manager(ctx).load_workspace().projects
         except (WorkspaceNotFoundError, WorkspaceConfigError):
             ws_projects = []
         collector = DashboardCollector(
@@ -1045,19 +1070,26 @@ def cmd_dashboard(ctx: FactoryContext, args: Any) -> dict:
             project_id=args.project,
             projects=ws_projects,
             recent_limit=args.limit,
+            include_workspace=workspace or view in workspace_views,
         )
         snapshot = collector.collect()
         ev = logger.record(
-            EventType.DASHBOARD_VIEWED, source=SOURCE, project_id=args.project,
-            stage="viewed", action="view dashboard", result="OK",
+            EventType.WORKSPACE_DASHBOARD_VIEWED if workspace else EventType.DASHBOARD_VIEWED,
+            source=SOURCE, project_id=args.project,
+            stage="viewed",
+            action="view workspace dashboard" if workspace else "view dashboard",
+            result="OK",
             payload={
                 "view": view,
+                "workspace": workspace,
                 "tasks_total": snapshot.tasks.total,
                 "agents_total": snapshot.agents.total,
+                "agents_utilized": snapshot.agent_utilization.total,
                 "workflow_runs": snapshot.workflows.runs_total,
                 "executions_total": snapshot.executions.total,
                 "execution_success": snapshot.executions.success,
                 "execution_failed": snapshot.executions.failed,
+                "runtimes_used": snapshot.runtime_usage.total,
                 "checkpoints_total": snapshot.checkpoints.total,
                 "catalog_definitions": snapshot.catalog.total,
                 "projects_total": snapshot.projects.total,
@@ -1067,6 +1099,7 @@ def cmd_dashboard(ctx: FactoryContext, args: Any) -> dict:
     return {
         "ok": True,
         "view": view,
+        "workspace": workspace,
         "snapshot": snapshot.to_dict(),
         "event_seq": ev.seq,
     }
@@ -1075,12 +1108,15 @@ def cmd_dashboard(ctx: FactoryContext, args: Any) -> dict:
 # ------------------------------------------------------------------ metrics (Phase 5B, ADR-0015)
 
 def cmd_metrics(ctx: FactoryContext, args: Any) -> dict:
-    """factory metrics — 工厂生产指标 (六域 + 失败原因, 只读), 发 metrics.viewed。
+    """factory metrics — 工厂生产指标 (六域 + 失败原因, 只读), 发 metrics.viewed;
+    --workspace → 项目对比 (复用 MetricsCollector 每项目聚合), 发 workspace.metrics.viewed。
 
-    只读铁律 (phase5b-status.md): 收集器只调用各 store 读接口 (query/list/count),
-    本命令唯一的副作用是 metrics.viewed 审计事件 (ADR-0002: 所有 CLI 行为必须
+    只读铁律 (phase5b-status.md / ADR-0017): 收集器只调用各 store 读接口
+    (query/list/count), 本命令唯一的副作用是审计事件 (ADR-0002: 所有 CLI 行为必须
     产生 Event, 同 dashboard.viewed)。指标纯计算不持久化 (ADR-0015 决策 2)。
     """
+    if getattr(args, "workspace", False):
+        return _cmd_metrics_workspace(ctx, args)
     project_id = getattr(args, "project", None)
     with ctx.logger_scope() as logger:
         collector = MetricsCollector(
@@ -1113,6 +1149,57 @@ def cmd_metrics(ctx: FactoryContext, args: Any) -> dict:
     return {
         "ok": True,
         "metrics": metrics.to_dict(),
+        "event_seq": ev.seq,
+    }
+
+
+def _cmd_metrics_workspace(ctx: FactoryContext, args: Any) -> dict:
+    """metrics --workspace: 项目对比表 (WorkspaceComparison) + workspace.metrics.viewed。
+
+    项目集 = workspace 项目定义 ∪ 任务 project 值 ∪ 事件 project_id 值
+    (WorkspaceCollector.comparison 合并推导, 同 Dashboard Projects View 语义);
+    每项目行直接复用 MetricsCollector(project_id) 核心计算 (ADR-0017 决策 1),
+    汇总行 = 全局聚合。无 workspace/配置损坏 → 缺省推导 (任务/事件维度,
+    兼容 Phase 5A 无 workspace 场景, Dashboard 同款只读兜底)。
+    """
+    try:
+        # load_workspace() 而非 list_projects(): 无 workspace.yaml 时后者自动
+        # 发现 examples, 会把内置示例项目 (markpad) 泄漏进对比表 — 缺省推导
+        # (任务 project ∪ 事件 project_id) 才是无 workspace 的契约 (ADR-0017 决策 6)。
+        ws_projects = [p.id for p in _open_workspace_manager(ctx).load_workspace().projects]
+    except (WorkspaceNotFoundError, WorkspaceConfigError):
+        ws_projects = None
+    with ctx.logger_scope() as logger:
+        collector = WorkspaceCollector(
+            event_store=logger.store,
+            task_store=ctx.open_task_store(),
+            agent_registry=AgentRegistry(ctx.open_agent_store()),
+            workflow_store=WorkflowStore(ctx.workflows_dir),
+            runtime_store=_open_runtime_store(ctx),
+        )
+        comparison = collector.comparison(project_ids=ws_projects)
+        t = comparison.totals
+        ev = logger.record(
+            EventType.WORKSPACE_METRICS_VIEWED, source=SOURCE,
+            stage="viewed", action="view workspace metrics", result="OK",
+            payload={
+                "projects_total": comparison.total,
+                "tasks_total": t.tasks_total,
+                "tasks_completed": t.tasks_completed,
+                "tasks_failed": t.tasks_failed,
+                "task_success_rate": t.task_success_rate,
+                "executions_total": t.execution_count,
+                "executions_success": t.execution_success,
+                "executions_failed": t.execution_failed,
+                "workflow_runs": t.workflow_runs,
+                "validation_rules": t.validation_rules,
+                "validation_pass_rate": t.validation_pass_rate,
+            },
+        )
+    return {
+        "ok": True,
+        "workspace": True,
+        "comparison": comparison.to_dict(),
         "event_seq": ev.seq,
     }
 

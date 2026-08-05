@@ -125,3 +125,112 @@ class FactoryMetrics(BaseModel):
     def to_dict(self) -> dict:
         """JSON 友好序列化 (CLI --json 输出 / 测试断言共用)。"""
         return self.model_dump(mode="json")
+
+
+# ------------------------------------------------------------------ Phase 6B: Workspace 运营视图 (ADR-0017)
+
+class ProjectComparisonRow(BaseModel):
+    """单项目对比行 (metrics --workspace / Workspace Projects 视图)。
+
+    数据源 = 每项目 MetricsCollector(project_id) 的 FactoryMetrics 六域子模型
+    (复用核心计算, 不复制 — ADR-0017 决策 1)。口径与 ADR-0015 决策 3 完全一致:
+    task_success_rate = completed / (completed + failed); execution_success_rate =
+    success / total (全部执行); workflow_success_rate = completed / run_count;
+    validation_pass_rate = PASS / total_rules。
+    """
+
+    project: str                       # project_id (Workspace 定义 ∪ 任务 project 值)
+    tasks_total: int = 0
+    tasks_completed: int = 0
+    tasks_failed: int = 0
+    task_success_rate: float = 0.0
+    execution_count: int = 0
+    execution_success: int = 0
+    execution_failed: int = 0
+    execution_success_rate: float = 0.0
+    workflow_runs: int = 0
+    workflow_success_rate: float = 0.0
+    validation_rules: int = 0
+    validation_pass_rate: float = 0.0
+
+    def to_dict(self) -> dict:
+        return self.model_dump(mode="json")
+
+
+class WorkspaceComparison(BaseModel):
+    """Workspace 项目对比 (metrics --workspace): 每项目行 + 全局汇总行。
+
+    totals = 全局聚合 (project_id=None) 的同一组口径 — 供对比表底部汇总;
+    total = 项目行数 (含零数据项目种子, 与 tasks_by_project 同口径)。
+    """
+
+    projects: list[ProjectComparisonRow] = Field(default_factory=list)
+    total: int = 0
+    # 汇总行 (project="*" 标记全局聚合; default_factory 需构造完整行, 见 docstring)
+    totals: ProjectComparisonRow = Field(default_factory=lambda: ProjectComparisonRow(project="*"))
+
+    def to_dict(self) -> dict:
+        return self.model_dump(mode="json")
+
+
+class AgentUtilizationRow(BaseModel):
+    """单个 Agent 的跨项目使用统计 (Agent Utilization View, ADR-0017)。
+
+    数据源 = agent.assignment.* 事件 (created/completed/failed, 同
+    calculate_agent_metrics 口径); projects = 该 agent 参与过的任务所在项目
+    (assignment 事件 task_id → task.project, 无对应任务的孤儿事件不归属);
+    assignments = created 数; success_rate = completed / (completed + failed)。
+    注册表兜底: 未注册 agent_id (仅事件中出现) 也纳入, role/status 缺省。
+    """
+
+    agent_id: str
+    role: str = ""
+    status: str = ""
+    projects: list[str] = Field(default_factory=list)  # 参与项目 (排序去重)
+    projects_count: int = 0
+    assignments: int = 0          # agent.assignment.created 计数
+    success_count: int = 0        # agent.assignment.completed 计数
+    failed_count: int = 0         # agent.assignment.failed 计数
+    success_rate: float = 0.0
+
+    def to_dict(self) -> dict:
+        return self.model_dump(mode="json")
+
+
+class AgentUtilizationSummary(BaseModel):
+    """Agent Utilization 汇总 (跨项目, 排序输出)。"""
+
+    items: list[AgentUtilizationRow] = Field(default_factory=list)
+    total: int = 0
+
+    def to_dict(self) -> dict:
+        return self.model_dump(mode="json")
+
+
+class RuntimeUsageRow(BaseModel):
+    """单个 Runtime 的使用统计 (Runtime Usage View, ADR-0017)。
+
+    数据源 = execution 记录 (RuntimeStore, 请求状态为权威 — 同
+    calculate_execution_metrics 口径); projects = 使用该 runtime 的任务所在项目
+    (req.task_id → task.project, 孤儿执行不归属); success_rate = success / count。
+    """
+
+    runtime_id: str
+    execution_count: int = 0
+    success: int = 0
+    failed: int = 0
+    success_rate: float = 0.0
+    projects: list[str] = Field(default_factory=list)  # 使用该 runtime 的项目 (排序去重)
+
+    def to_dict(self) -> dict:
+        return self.model_dump(mode="json")
+
+
+class RuntimeUsageSummary(BaseModel):
+    """Runtime Usage 汇总 (排序输出)。"""
+
+    items: list[RuntimeUsageRow] = Field(default_factory=list)
+    total: int = 0
+
+    def to_dict(self) -> dict:
+        return self.model_dump(mode="json")

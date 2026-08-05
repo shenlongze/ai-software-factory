@@ -182,6 +182,15 @@ class EventType(str, Enum):
     PROJECT_REGISTERED = "project.registered"    # 项目加入 workspace.projects
     PROJECT_REMOVED = "project.removed"          # 项目从 workspace.projects 移除
 
+    # --- Phase 6B: Workspace Operations Dashboard 事件 (增量扩展, ADR-0017) ---
+    # 依 ADR-0001 决策 1 的扩展路径: 加枚举成员即可, 不改表结构/API。
+    # workspace.*.viewed 为跨项目只读运营视图的审计事件 (ADR-0002: 所有 CLI
+    # 行为必须产生 Event, 同 dashboard.viewed/metrics.viewed); 载荷含各视图
+    # 计数汇总, 只读不写任何状态 (phase6b-status.md §Event 集成)。
+    WORKSPACE_DASHBOARD_VIEWED = "workspace.dashboard.viewed"  # Workspace Summary 被查看 (--workspace)
+    WORKSPACE_METRICS_VIEWED = "workspace.metrics.viewed"      # 项目对比指标被查看 (metrics --workspace)
+    WORKSPACE_EVENTS_VIEWED = "workspace.events.viewed"        # 跨项目事件时间线被查看 (event logs --workspace)
+
 
 class Event(BaseModel):
     """一条事件。append-only: 写入后永不修改、永不删除。"""

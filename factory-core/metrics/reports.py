@@ -73,6 +73,50 @@ def format_metrics(metrics: FactoryMetrics) -> str:
     return "\n".join(lines)
 
 
+def format_workspace_comparison(comparison) -> str:
+    """WorkspaceComparison → 项目对比文本报告 (Phase 6B, ADR-0017)。
+
+    与 format_metrics 同为「模型 → str」纯函数, CLI 与测试共用; 无 ANSI,
+    管道/CI/测试断言安全。表格列: Project/Tasks/Executions/Workflows/Validation。
+    """
+    from .models import WorkspaceComparison
+
+    assert isinstance(comparison, WorkspaceComparison)
+    lines = ["Workspace Metrics", f"  projects  {comparison.total}"]
+    lines += ["", "Project Comparison"]
+    headers = [
+        "project", "tasks", "done", "failed", "task_rate",
+        "executions", "success", "failed", "exec_rate",
+        "workflow_runs", "wf_rate", "validation_rules", "val_rate",
+    ]
+    rows = [
+        [
+            p.project, p.tasks_total, p.tasks_completed, p.tasks_failed,
+            f"{p.task_success_rate:.1%}", p.execution_count, p.execution_success,
+            p.execution_failed, f"{p.execution_success_rate:.1%}",
+            p.workflow_runs, f"{p.workflow_success_rate:.1%}",
+            p.validation_rules, f"{p.validation_pass_rate:.1%}",
+        ]
+        for p in comparison.projects
+    ]
+    lines += _table(headers, rows)
+    if not rows:
+        lines.append("  (no projects)")
+    t = comparison.totals
+    lines += ["", "Totals (all projects)"]
+    lines += _table(
+        headers,
+        [[
+            t.project, t.tasks_total, t.tasks_completed, t.tasks_failed,
+            f"{t.task_success_rate:.1%}", t.execution_count, t.execution_success,
+            t.execution_failed, f"{t.execution_success_rate:.1%}",
+            t.workflow_runs, f"{t.workflow_success_rate:.1%}",
+            t.validation_rules, f"{t.validation_pass_rate:.1%}",
+        ]],
+    )
+    return "\n".join(lines)
+
+
 def _kv(d: dict[str, int]) -> str:
     """'STATUS n | STATUS n' 紧凑计数段; 空 → '-'. """
     return " | ".join(f"{k} {d[k]}" for k in sorted(d)) if d else "-"

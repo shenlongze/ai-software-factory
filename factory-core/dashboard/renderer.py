@@ -23,8 +23,13 @@ from rich.console import Console, Group
 from . import views
 from .models import FactorySnapshot
 
-# 单视图名 (build_<name> 与 views.py 构建函数一一对应; "all" 为八视图同屏)
-VIEWS = ("overview", "tasks", "agents", "workflows", "executions", "recovery", "catalog", "metrics")
+# 单视图名 (build_<name> 与 views.py 构建函数一一对应; "all" 为八视图同屏,
+# "workspace" 为 Phase 6B Workspace Summary 视图组 — dashboard --workspace 默认)
+VIEWS = (
+    "overview", "tasks", "agents", "workflows", "executions", "recovery", "catalog",
+    "metrics", "workspace", "projects", "agents_utilization", "runtime_usage",
+    "workspace_events",
+)
 
 _SINGLE = {
     "tasks": views.build_tasks,
@@ -34,6 +39,11 @@ _SINGLE = {
     "recovery": views.build_recovery,
     "catalog": views.build_catalog,
     "metrics": views.build_metrics,
+    "projects": views.build_projects,              # Phase 6A Projects View (ADR-0016)
+    "workspace": views.build_workspace,            # Phase 6B Workspace Summary (ADR-0017)
+    "agents_utilization": views.build_agent_utilization,  # Phase 6B (ADR-0017)
+    "runtime_usage": views.build_runtime_usage,           # Phase 6B (ADR-0017)
+    "workspace_events": views.build_workspace_events,     # Phase 6B (ADR-0017)
 }
 
 

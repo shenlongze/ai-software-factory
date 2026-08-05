@@ -19,7 +19,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from metrics.models import FactoryMetrics
+from metrics.models import AgentUtilizationSummary, FactoryMetrics, RuntimeUsageSummary
 
 
 class TaskSnapshot(BaseModel):
@@ -190,6 +190,10 @@ class FactorySnapshot(BaseModel):
     metrics: MetricsSnapshot = Field(default_factory=MetricsSnapshot)
     factory_metrics: FactoryMetrics = Field(default_factory=FactoryMetrics)  # Phase 5B (ADR-0015)
     recent_events: list[dict[str, Any]] = Field(default_factory=list)
+    # Phase 6B (ADR-0017): Workspace 运营视图 — 仅 workspace 模式聚合 (collector
+    # include_workspace=True), 默认空 (与既有 dashboard 行为/成本完全一致)。
+    agent_utilization: AgentUtilizationSummary = Field(default_factory=AgentUtilizationSummary)
+    runtime_usage: RuntimeUsageSummary = Field(default_factory=RuntimeUsageSummary)
 
     def to_dict(self) -> dict:
         """JSON 友好序列化 (CLI --json 输出 / 测试断言共用)。"""

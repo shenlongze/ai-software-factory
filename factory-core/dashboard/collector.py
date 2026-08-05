@@ -25,7 +25,8 @@ from agents.registry import AgentRegistry
 from events.models import EventType
 from events.store import EventStore
 from metrics.collectors import MetricsCollector
-from metrics.models import FactoryMetrics
+from metrics.models import AgentUtilizationSummary, FactoryMetrics, RuntimeUsageSummary
+from metrics.workspace import WorkspaceCollector
 from recovery.checkpoint import CheckpointStore
 from runtime.store import RuntimeStore
 from runtimes.catalog import RuntimeCatalog
@@ -64,6 +65,7 @@ class DashboardCollector:
         project_id: str | None = None,
         projects: list | None = None,  # list[ProjectDefinition] (Phase 6A Projects View)
         recent_limit: int = 10,
+        include_workspace: bool = False,  # Phase 6B: workspace 模式 (ADR-0017)
     ) -> None:
         self._task_store = task_store
         self._agent_registry = agent_registry
@@ -75,6 +77,20 @@ class DashboardCollector:
         self._project_id = project_id
         self._projects = projects or []
         self._recent_limit = max(1, recent_limit)
+        # Workspace 运营视图 (Agent Utilization / Runtime Usage): 复用
+        # metrics.workspace.WorkspaceCollector 只读聚合, 不复制核心逻辑;
+        # 默认关闭 — 既有 dashboard 行为与成本完全不变 (ADR-0017 决策 3)。
+        self._workspace = (
+            WorkspaceCollector(
+                event_store=event_store,
+                task_store=task_store,
+                agent_registry=agent_registry,
+                workflow_store=workflow_store,
+                runtime_store=runtime_store,
+            )
+            if include_workspace
+            else None
+        )
 
     # ------------------------------------------------------------------ 主入口
 
@@ -92,6 +108,8 @@ class DashboardCollector:
             metrics=self._collect_metrics(),
             factory_metrics=self._collect_factory_metrics(),
             recent_events=self._collect_recent_events(),
+            agent_utilization=self._collect_agent_utilization(),
+            runtime_usage=self._collect_runtime_usage(),
         )
 
     # ------------------------------------------------------------------ 分域聚合
@@ -291,3 +309,13 @@ class DashboardCollector:
         else:
             tail = self._event_store.recent(self._recent_limit)  # 已按 seq 倒序
         return [e.model_dump(mode="json") for e in tail]
+
+    # ------------------------------------------------------------------ Workspace 运营视图 (Phase 6B, ADR-0017)
+
+    def _collect_agent_utilization(self) -> AgentUtilizationSummary:
+        """跨项目 Agent 使用统计 (仅 workspace 模式; 复用 WorkspaceCollector)。"""
+        return self._workspace.agent_utilization() if self._workspace else AgentUtilizationSummary()
+
+    def _collect_runtime_usage(self) -> RuntimeUsageSummary:
+        """Runtime 使用统计 (仅 workspace 模式; 复用 WorkspaceCollector)。"""
+        return self._workspace.runtime_usage() if self._workspace else RuntimeUsageSummary()

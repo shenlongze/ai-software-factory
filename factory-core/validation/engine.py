@@ -38,14 +38,24 @@ _RULE_ORDER = (
 
 
 class ValidationEngine:
-    """三层验证引擎。构造需 TaskStore (任务文件) + EventLogger (事件铁律)。"""
+    """三层验证引擎。构造需 TaskStore (任务文件) + EventLogger (事件铁律)。
+
+    change_service (Phase 6D, ADR-0019): 可选注入 ChangeService — 装配时在
+    L1-L3 硬编码规则后追加 L4 Change Validation 规则 (rule_change)。缺省 None
+    → 行为与既有完全一致 (6 条规则, 既有测试断言 checks==6 不破坏)。
+    """
 
     def __init__(
-        self, task_store: TaskStore, logger: EventLogger, source: str = "validation_engine",
+        self,
+        task_store: TaskStore,
+        logger: EventLogger,
+        source: str = "validation_engine",
+        change_service: Any | None = None,
     ):
         self._tasks = task_store
         self._logger = logger
         self._source = source
+        self._change_service = change_service
         self._task_id = ""
         self._project_id: str | None = None
 
@@ -97,6 +107,12 @@ class ValidationEngine:
             else:  # artifact
                 args = (task_id,)
             results.append(self._run_rule(lvl, rule, fn, *args))
+
+        # L4 Change Validation (Phase 6D, ADR-0019): 仅装配 change_service 时追加,
+        # L1-L3 硬编码规则不动 (缺省 None → 既有 6 条规则行为完全一致)。
+        if self._change_service is not None:
+            ctx = self._change_service.change_context(task_id)
+            results.append(self._run_rule("L4", "change", rules.rule_change, ctx))
 
         report = ValidationReport(
             task_id=task_id, level=level, results=results,

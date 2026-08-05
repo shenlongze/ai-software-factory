@@ -551,3 +551,50 @@ def build_git(snapshot: FactorySnapshot) -> Panel:
         commit_table.add_row(_text("(no commits)", style="dim"), "", "", "", "")
 
     return _panel(Group(summary, repo_table, change_table, commit_table), "Git", border="green")
+
+
+# ------------------------------------------------------------------ Change View (Phase 6D, ADR-0019)
+
+def build_change(snapshot: FactorySnapshot) -> Panel:
+    """Change View (Phase 6D, ADR-0019): Execution Git Snapshots + L4 验证。
+
+    数据源 = snapshot.change (collector include_change=True 聚合, 默认关闭):
+    Snapshots 表 (执行↔git 关联: before/after commit + 变更文件数, 旧执行记录
+    无快照 → 空表), Validations 表 (change.validation.completed 事件: 最近 L4
+    判定 task_id/status/message — 状态着色同 validation 语义)。
+    """
+    c = snapshot.change
+    summary = _line(
+        _text(f"{c.total} execution snapshots", style="bold"),
+        _text(f" · {c.validation_total} validations", style="bold"),
+    )
+    snap_table = Table(show_header=True, header_style="bold", box=box.SIMPLE_HEAVY, expand=True)
+    for col in ("Execution", "Task", "Project", "Repository", "Before", "After", "Files"):
+        snap_table.add_column(col)
+    for s in c.snapshots:
+        snap_table.add_row(
+            _text(s.get("execution_id", "")),
+            _text(s.get("task_id") or "-"),
+            _text(s.get("project_id") or "-"),
+            _text(s.get("repository") or "-"),
+            _text((s.get("before_commit") or "(none)")[:12]),
+            _text((s.get("after_commit") or "(none)")[:12]),
+            _text(len(s.get("changed_files", []))),
+        )
+    if not c.snapshots:
+        snap_table.add_row(_text("(no snapshots)", style="dim"), "", "", "", "", "", "")
+
+    val_table = Table(show_header=True, header_style="bold", box=box.SIMPLE_HEAVY, expand=True)
+    for col in ("Task", "Status", "Message", "Seq"):
+        val_table.add_column(col)
+    for v in c.validations:
+        val_table.add_row(
+            _text(v.get("task_id", "")),
+            _text(v.get("status", ""), style=_style_status(v.get("status"))),
+            _text(v.get("message") or "-"),
+            _text(v.get("seq", "")),
+        )
+    if not c.validations:
+        val_table.add_row(_text("(no validations)", style="dim"), "", "", "")
+
+    return _panel(Group(summary, snap_table, val_table), "Change", border="cyan")

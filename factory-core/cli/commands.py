@@ -75,6 +75,8 @@ from dashboard.renderer import VIEWS as DASHBOARD_VIEWS
 from git.client import GitClient
 from git.service import GitChangeStore, GitService
 
+from change.service import ChangeService, ChangeStore  # Phase 6D (ADR-0019)
+
 from metrics.collectors import MetricsCollector
 from metrics.workspace import WorkspaceCollector
 
@@ -910,6 +912,10 @@ def cmd_execution_run(ctx: FactoryContext, args: Any) -> dict:
 
     退出码: 0 成功 (含执行结果为 FAILED 的业务失败 — run 命令本身成功);
     7 执行/runtime 未找到; 1 状态冲突 (非 PENDING / 无可用 runtime / 无 Adapter 实现)。
+
+    Phase 6D 快照钩子 (ADR-0019 决策 7): 执行完成后在 CLI 层关联 Execution Git
+    Snapshot (ChangeStore, <root>/change/snapshots.json) — 不改 execution 核心;
+    失败安全: git 查询/存储异常 → snapshot=None, run 结果不受影响 (快照是审计增强)。
     """
     with ctx.logger_scope() as logger:
         service = _open_execution_service(ctx, logger)
@@ -917,6 +923,21 @@ def cmd_execution_run(ctx: FactoryContext, args: Any) -> dict:
             outcome = service.run(args.execution_id)
         except (ExecutionRunnerError, ExecutionDispatcherError, RuntimeNotFoundError) as exc:
             raise _exec_cli_error(exc) from exc
+    # 快照钩子 (CLI 层, 执行核心零改动): 非 git 目录 → after_commit=None/files=[]
+    # 照常记录\"执行发生在无仓库环境\"的事实; 任何异常 → 快照 None (不破坏 run)。
+    snapshot = None
+    try:
+        change = ChangeService(
+            client=GitClient(str(ctx.root)),
+            change_store=ChangeStore(ctx.root / "change"),
+            git_changes_store=GitChangeStore(ctx.root / "git"),
+        )
+        snapshot = change.snapshot_execution(
+            execution_id=args.execution_id,
+            task_id=outcome.request.task_id,
+        )
+    except Exception:
+        snapshot = None  # 失败安全: 快照是审计增强, 不因 git 问题破坏 run
     return {
         "ok": True,
         "execution_id": args.execution_id,
@@ -931,6 +952,7 @@ def cmd_execution_run(ctx: FactoryContext, args: Any) -> dict:
         },
         "events": [e.type.value for e in outcome.events],
         "event_seq": outcome.events[-1].seq if outcome.events else None,
+        "snapshot": snapshot.to_dict() if snapshot is not None else None,
     }
 
 
@@ -1086,6 +1108,9 @@ def cmd_dashboard(ctx: FactoryContext, args: Any) -> dict:
         # Phase 6C Git View: 仅 --view git 聚合 (include_git 默认关闭, 既有
         # dashboard 行为/成本不变; 数据源 = 项目 repository 的 GitService 列表)。
         git_services = _open_git_services(ctx, ws_projects) if view == "git" else []
+        # Phase 6D Change View: 仅 --view change 聚合 (include_change 默认关闭,
+        # 数据源 = ChangeStore <root>/change/snapshots.json + change.validation 事件)。
+        change_store = ChangeStore(ctx.root / "change") if view == "change" else None
         collector = DashboardCollector(
             task_store=ctx.open_task_store(),
             agent_registry=AgentRegistry(ctx.open_agent_store()),
@@ -1100,6 +1125,8 @@ def cmd_dashboard(ctx: FactoryContext, args: Any) -> dict:
             include_workspace=workspace or view in workspace_views,
             git_services=git_services,
             include_git=view == "git",
+            change_store=change_store,
+            include_change=view == "change",
         )
         snapshot = collector.collect()
         ev = logger.record(
@@ -1126,6 +1153,8 @@ def cmd_dashboard(ctx: FactoryContext, args: Any) -> dict:
                 "git_repositories": snapshot.git.total,   # Phase 6C (ADR-0018)
                 "git_changes": len(snapshot.git.changes),
                 "git_commits": len(snapshot.git.commits),
+                "change_snapshots": snapshot.change.total,  # Phase 6D (ADR-0019)
+                "change_validations": snapshot.change.validation_total,
             },
         )
     return {
@@ -1526,4 +1555,109 @@ def cmd_git_commits(ctx: FactoryContext, args: Any) -> dict:
         "commits": [c.to_dict() for c in commits],
         "error": status.error,
         "event_seq": ev.seq,
+    }
+
+
+# ------------------------------------------------------------------ change 子命令 (Phase 6D, ADR-0019)
+
+def _open_change_service(
+    ctx: FactoryContext, args: Any, logger: Any = None,
+) -> ChangeService:
+    """装配 ChangeService (Commit 解析 / 路径分析 / L4 验证 / 快照关联)。
+
+    仓库路径: --repo 显式 > 缺省工厂根目录 (ctx.root) — Change Intelligence 以
+    任务为中心, 工厂根即仓库是单仓冒烟/常规场景; 非 git 目录由服务层失败安全
+    (is_repo=False → L4 SKIP / commits 空), 不抛错 (ADR-0019 决策 8)。
+    存储路径全部显式传 <root>/ 下 (change/snapshots.json + git/changes.json),
+    不依赖 cwd (backend-developer skill: store 默认路径禁用 cwd 相对)。
+    task_store 装配 → L4 路径匹配可读取任务标题; logger 装配 → 审计事件。
+    """
+    repo = getattr(args, "repo", None)
+    repository = os.path.expanduser(repo) if repo else str(ctx.root)
+    return ChangeService(
+        client=GitClient(repository),
+        task_store=ctx.open_task_store(),
+        logger=logger,
+        change_store=ChangeStore(ctx.root / "change"),
+        git_changes_store=GitChangeStore(ctx.root / "git"),
+    )
+
+
+def _change_last_seq(logger) -> int | None:
+    """当前事件库最后一条 seq (命令结果 event_seq 审计锚点)。"""
+    events = logger.store.query()
+    return events[-1].seq if events else None
+
+
+def cmd_change_commits(ctx: FactoryContext, args: Any) -> dict:
+    """factory change commits — 提交 + 任务关联解析 (message > execution > branch),
+    发 git.commit.linked (命中) + git.commit.viewed (审计)。
+
+    失败安全: 非 git 目录/空仓库 → commits 空, 退出码 0 (错误经 status 呈现)。
+    只读: 零仓库写命令 (Git 只读铁律)。
+    """
+    limit = getattr(args, "limit", None) or 20
+    with ctx.logger_scope() as logger:
+        service = _open_change_service(ctx, args, logger)
+        commits = service.parse_commits(limit=limit)
+        status = service.client.status()
+        ev = logger.record(
+            EventType.GIT_COMMIT_VIEWED, source=SOURCE, stage="viewed",
+            action="view change commits", result="OK",
+            payload={
+                "repository": service.client.repository,
+                "count": len(commits),
+                "limit": limit,
+                "hashes": [c.hash for c in commits[:20]],
+                "linked": [c.task_id for c in commits if c.task_id],
+                "error": status.error,
+            },
+        )
+    return {
+        "ok": True,
+        "count": len(commits),
+        "commits": [c.to_dict() for c in commits],
+        "error": status.error,
+        "event_seq": ev.seq,
+    }
+
+
+def cmd_change_analyze(ctx: FactoryContext, args: Any) -> dict:
+    """factory change analyze TASK_ID — 任务变更路径分析 (Files/Insertions/
+    Deletions/Affected modules), 发 git.commit.linked (命中) + change.analyzed。
+
+    禁 LLM (ADR-0019 决策 2): 全部确定性规则 (路径分段/模块推断/行数对账)。
+    失败安全: 非 git 目录 → 空分析, 退出码 0 (L4 语义: 无 git 关联 → SKIP)。
+    """
+    with ctx.logger_scope() as logger:
+        service = _open_change_service(ctx, args, logger)
+        analysis = service.analyze(args.task_id)
+        event_seq = _change_last_seq(logger)  # 须在作用域内取 (退出即关库)
+    return {
+        "ok": True,
+        "task_id": args.task_id,
+        "analysis": analysis.to_dict(),
+        "event_seq": event_seq,
+    }
+
+
+def cmd_change_validate(ctx: FactoryContext, args: Any) -> dict:
+    """factory change validate TASK_ID — L4 Change Validation (Task 描述 vs Git
+    变更证据 → PASS/FAIL/SKIP), 发 change.validation.completed。
+
+    退出码 (ADR-0019 决策 8): 0 PASS/SKIP (SKIP = 无 git 关联, 旧 Task 兼容,
+    非失败) / 3 FAIL (变更证据与任务不符) / 1 ERROR (规则内部错误)。
+    失败安全: 内部异常 → ERROR 结果 (不抛, 同 ValidationEngine 规则兜底语义)。
+    """
+    with ctx.logger_scope() as logger:
+        service = _open_change_service(ctx, args, logger)
+        result = service.validate(args.task_id)
+        event_seq = _change_last_seq(logger)  # 须在作用域内取 (退出即关库)
+    exit_code = 0 if result.status in ("PASS", "SKIP") else (3 if result.status == "FAIL" else 1)
+    return {
+        "ok": result.status == "PASS",
+        "task_id": args.task_id,
+        "result": result.to_dict(),
+        "exit_code": exit_code,
+        "event_seq": event_seq,
     }

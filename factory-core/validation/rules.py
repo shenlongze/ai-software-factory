@@ -30,6 +30,7 @@ RULE_NAMES: dict[str, str] = {
     "workflow": "流程事件历史",
     "expect_status": "期望状态",
     "artifact": "Artifact 验证 Hook",
+    "change": "变更证据",  # L4 Change Validation (Phase 6D, ADR-0019)
 }
 
 # L1 文件完整性必填键 (任务文件 JSON 顶层)
@@ -151,6 +152,27 @@ def rule_artifact(task_id: str) -> ValidationResult:
     """L3 Artifact 验证: Hook 占位 → SKIP (预留 Flutter/Java/Python 验证器接口)。"""
     return _res(task_id, "L3", "artifact", ValidationStatus.SKIP,
                 "Artifact 验证 Hook 未实现 (预留 Flutter/Java/Python 验证器)")
+
+
+# ------------------------------------------------------------------ L4 Change Validation (Phase 6D, ADR-0019)
+
+def rule_change(ctx: Any) -> ValidationResult:
+    """L4 Change Validation: Task 描述 vs Git Change 证据 → PASS/FAIL/SKIP。
+
+    输入 ChangeContext (change.service 装配的只读快照); 判定纯函数在
+    change.analyzer (l4_checks/l4_verdict), 本规则只做结果包装 — 与
+    ChangeService.validate 共用同一套判定, 不复制逻辑 (DRY)。
+    - 无 git 关联 (非仓库/无证据) → SKIP (旧 Task 兼容)。
+    - 有证据但无关联提交且标题与路径无重叠 → FAIL。
+    - 关联提交命中或标题与路径/模块重叠 → PASS。
+    """
+    from change.analyzer import l4_checks, l4_verdict  # 延迟导入: 避免模块加载环
+
+    checks = l4_checks(ctx)
+    verdict = l4_verdict(checks)
+    task_id = getattr(ctx, "task_id", "?")
+    detail = "；".join(c.get("message", "") for c in checks if c.get("status") != "SKIP") or "无 git 关联"
+    return _res(task_id, "L4", "change", ValidationStatus(verdict), detail)
 
 
 # ------------------------------------------------------------------ 加载辅助

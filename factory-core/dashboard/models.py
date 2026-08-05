@@ -195,6 +195,24 @@ class GitSnapshot(BaseModel):
         return self.model_dump(mode="json")
 
 
+class ChangeSnapshot(BaseModel):
+    """Change View 汇总 (Phase 6D, ADR-0019): Execution Git Snapshots + L4 验证。
+
+    数据源 = ChangeStore 关联存储 (collector include_change=True 时装配, 默认
+    关闭 — 既有 dashboard 行为/成本完全不变, 同 include_git 模式) + 事件库的
+    change.validation.completed 事件聚合。snapshots 为持久化关联 (旧执行记录
+    无快照 → 空, 兼容); validations 为最近 L4 判定 (含 task_id/status/message)。
+    """
+
+    total: int = 0                                     # Execution Git Snapshot 数
+    snapshots: list[dict[str, Any]] = Field(default_factory=list)  # ExecutionGitSnapshot.to_dict()
+    validation_total: int = 0                          # L4 change.validation.completed 数
+    validations: list[dict[str, Any]] = Field(default_factory=list)  # 紧凑判定行
+
+    def to_dict(self) -> dict:
+        return self.model_dump(mode="json")
+
+
 class FactorySnapshot(BaseModel):
     """一次 Dashboard 查询的完整只读投影 (全 store 汇总 + 最近事件)。"""
 
@@ -217,6 +235,9 @@ class FactorySnapshot(BaseModel):
     # Phase 6C (ADR-0018): Git View — 仅 --view git 聚合 (collector include_git=True),
     # 默认空 (既有 dashboard 行为/成本完全一致; Git 查询经 subprocess 只读)。
     git: GitSnapshot = Field(default_factory=GitSnapshot)
+    # Phase 6D (ADR-0019): Change View — 仅 --view change 聚合 (collector
+    # include_change=True), 默认空 (既有 dashboard 行为/成本完全一致)。
+    change: ChangeSnapshot = Field(default_factory=ChangeSnapshot)
 
     def to_dict(self) -> dict:
         """JSON 友好序列化 (CLI --json 输出 / 测试断言共用)。"""

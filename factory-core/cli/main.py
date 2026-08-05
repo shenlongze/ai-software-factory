@@ -22,6 +22,9 @@ from .commands import (
     cmd_agent_release,
     cmd_checkpoint_create,
     cmd_checkpoint_list,
+    cmd_change_analyze,
+    cmd_change_commits,
+    cmd_change_validate,
     cmd_dashboard,
     cmd_event_logs,
     cmd_execution_list,
@@ -348,6 +351,31 @@ def build_parser() -> Any:
     p_git_commits.add_argument("--repo", default=None, help="仓库路径 (显式指定, 优先于 --project)")
     p_git_commits.add_argument("--limit", type=int, default=20, help="条数上限 (默认 20)")
 
+    # factory change <sub> (Phase 6D, ADR-0019)
+    p_change = sub.add_parser(
+        "change", help="Change Intelligence: 提交任务关联/路径分析/L4 验证 (Git 只读 + 审计)"
+    )
+    json_opt(p_change)
+    csub = p_change.add_subparsers(dest="change_command", required=True)
+    p_ch_commits = csub.add_parser(
+        "commits", help="提交 + 任务关联解析 (message>execution>branch, 发 git.commit.linked/viewed)"
+    )
+    json_opt(p_ch_commits)
+    p_ch_commits.add_argument("--repo", default=None, help="仓库路径 (默认工厂根目录)")
+    p_ch_commits.add_argument("--limit", type=int, default=20, help="条数上限 (默认 20)")
+    p_ch_analyze = csub.add_parser(
+        "analyze", help="任务变更路径分析: Files/Insertions/Deletions/Modules (发 change.analyzed)"
+    )
+    json_opt(p_ch_analyze)
+    p_ch_analyze.add_argument("task_id", help="任务 ID (如 T-001 / MP-BUG-001)")
+    p_ch_analyze.add_argument("--repo", default=None, help="仓库路径 (默认工厂根目录)")
+    p_ch_validate = csub.add_parser(
+        "validate", help="L4 Change Validation: 任务 vs Git 变更证据 → PASS/FAIL/SKIP (发 change.validation.completed)"
+    )
+    json_opt(p_ch_validate)
+    p_ch_validate.add_argument("task_id", help="任务 ID (如 T-001 / MP-BUG-001)")
+    p_ch_validate.add_argument("--repo", default=None, help="仓库路径 (默认工厂根目录)")
+
     return p
 
 
@@ -392,6 +420,8 @@ def main(argv: list[str] | None = None) -> int:
             result = _dispatch_workspace(ctx, args)
         elif args.command == "git":
             result = _dispatch_git(ctx, args)
+        elif args.command == "change":
+            result = _dispatch_change(ctx, args)
         else:  # pragma: no cover — argparse required=True 已拦截
             raise CliError(f"unknown command: {args.command}", exit_code=2)
     except CliError as exc:
@@ -522,6 +552,16 @@ def _dispatch_git(ctx: FactoryContext, args: Any) -> dict:
     raise CliError(f"unknown git command: {args.git_command}", exit_code=2)
 
 
+def _dispatch_change(ctx: FactoryContext, args: Any) -> dict:
+    if args.change_command == "commits":
+        return cmd_change_commits(ctx, args)
+    if args.change_command == "analyze":
+        return cmd_change_analyze(ctx, args)
+    if args.change_command == "validate":
+        return cmd_change_validate(ctx, args)
+    raise CliError(f"unknown change command: {args.change_command}", exit_code=2)
+
+
 # ------------------------------------------------------------------ 输出
 
 def _print_output(args: Any, result: dict) -> None:
@@ -562,6 +602,8 @@ def _print_output(args: Any, result: dict) -> None:
         _print_workspace(args.workspace_command, result)
     elif args.command == "git":
         _print_git(args.git_command, result)
+    elif args.command == "change":
+        _print_change(args.change_command, result)
 
 
 def _render_table(
@@ -956,6 +998,43 @@ def _print_git(sub: str, r: dict) -> None:
         print(f"{r['count']} commits")
         if r.get("error"):
             print(f"  error     {r['error']}")
+
+
+def _print_change(sub: str, r: dict) -> None:
+    """factory change 输出: commits 提交表; analyze 路径分析; validate L4 判定。"""
+    if sub == "commits":
+        rows = [[c["hash"][:12], c["message"], c["branch"] or "-",
+                 c["task_id"] or "-", c["created_at"]] for c in r["commits"]]
+        print(_render_table(["Hash", "Message", "Branch", "Task", "Date"], rows))
+        print(f"{r['count']} commits")
+        if r.get("error"):
+            print(f"  error     {r['error']}")
+    elif sub == "analyze":
+        a = r["analysis"]
+        print(f"✔ 变更分析 {r['task_id']}  (commit 关联: {len(a['commits'])})")
+        print(f"  files       {len(a['files'])}")
+        for f in a["files"]:
+            print(f"    {f}")
+        print(f"  insertions  {a['insertions']}")
+        print(f"  deletions   {a['deletions']}")
+        print(f"  modules     {len(a['affected_modules'])}")
+        for m in a["affected_modules"]:
+            print(f"    {m}")
+        if a["commits"]:
+            print(f"  commits     {', '.join(h[:12] for h in a['commits'])}")
+    elif sub == "validate":
+        res = r["result"]
+        status = res["status"]
+        print(f"L4 Change Validation — {r['task_id']}  →  {status}")
+        print(f"  {res['message'] or '-'}")
+        for c in res.get("checks", []):
+            print(f"  {c['id']:<16} {c['status']:<5} {c['message']}")
+        if status == "FAIL":
+            print(f"✘ 验证失败 (退出码 {r['exit_code']})")
+        elif status == "ERROR":
+            print(f"✘ 验证错误 (退出码 {r['exit_code']})")
+        else:
+            print(f"✔ 验证通过 (退出码 {r['exit_code']})")
 
 
 if __name__ == "__main__":

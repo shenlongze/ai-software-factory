@@ -202,6 +202,18 @@ class EventType(str, Enum):
     GIT_CHANGE_DETECTED = "git.change.detected"    # 工作区变更被检测/与任务关联 (审计)
     GIT_COMMIT_VIEWED = "git.commit.viewed"        # 提交历史被查看 (只读)
 
+    # --- Phase 6D: Change Intelligence Layer 事件 (增量扩展, ADR-0019) ---
+    # 依 ADR-0001 决策 1 的扩展路径: 加枚举成员即可, 不改表结构/API。
+    # git.task.bound 在 Task↔分支/变更绑定成功时发出 (linker/bind); git.commit.linked
+    # 在 commit message/分支名解析出 task_id 并回填时发出 (commit parser); change.analyzed
+    # 在 ChangeAnalyzer 路径分析完成时发出; change.validation.completed 在 L4 Change
+    # Validation 判定完成时发出 (result=PASS/FAIL/SKIP)。全部只审计, 不触发任何仓库写
+    # 操作 (Git 只读铁律, phase6d-status.md)。
+    GIT_TASK_BOUND = "git.task.bound"                          # Task↔git 分支/变更绑定
+    GIT_COMMIT_LINKED = "git.commit.linked"                    # commit → task_id 关联
+    CHANGE_ANALYZED = "change.analyzed"                        # 变更路径分析完成
+    CHANGE_VALIDATION_COMPLETED = "change.validation.completed"  # L4 Change 验证完成
+
 
 class Event(BaseModel):
     """一条事件。append-only: 写入后永不修改、永不删除。"""

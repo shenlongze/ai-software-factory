@@ -17,10 +17,20 @@ capture_output + text + timeout 上限; git_bin 可注入 (测试命令缺失路
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
 from .models import GitChange, GitCommit, GitContext
+
+# git 输出稳定性: 强制 C locale (Phase 6D 修复, ADR-0019 决策 5) — 系统 locale
+# (如 zh_CN.UTF-8) 会让 git 错误信息中文化 ("致命错误：不是 Git 仓库"), 破坏
+# 错误摘要解析 (_error_text 的 'fatal:'/'error:' 前缀剥离) 与测试断言 (英文
+# 'not a git repository')。经 env 覆盖 LC_ALL/LANG 后所有 git 命令输出恒定英文。
+def _git_env() -> dict[str, str]:
+    """子进程 env: 系统环境 + 强制 C locale (每次调用取当前 os.environ, 测试可注入)。"""
+    return {**os.environ, "LC_ALL": "C", "LANG": "C"}
+
 
 # git 命令不存在 / 调用失败的返回码约定 (本模块内部, 非 CLI 退出码)
 _RC_NOT_FOUND = 127
@@ -67,6 +77,7 @@ class GitClient:
                 capture_output=True,
                 text=True,
                 timeout=self._timeout,
+                env=_git_env(),
             )
         except FileNotFoundError:
             return _RC_NOT_FOUND, "", f"git command not found: {self._git}"

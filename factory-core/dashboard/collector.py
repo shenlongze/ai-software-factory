@@ -36,6 +36,7 @@ from workflows.store import WorkflowStore
 
 from .models import (
     AgentSnapshot,
+    ChangeSnapshot,
     CheckpointSnapshot,
     ExecutionSnapshot,
     FactorySnapshot,
@@ -70,6 +71,8 @@ class DashboardCollector:
         git_services: list | None = None,  # Phase 6C: list[GitService] (Git View)
         include_git: bool = False,  # Phase 6C: Git View 聚合开关 (ADR-0018)
         git_commit_limit: int = 5,  # Phase 6C: 每仓库提交上限
+        change_store: Any | None = None,  # Phase 6D: ChangeStore (Change View)
+        include_change: bool = False,  # Phase 6D: Change View 聚合开关 (ADR-0019)
     ) -> None:
         self._task_store = task_store
         self._agent_registry = agent_registry
@@ -100,6 +103,10 @@ class DashboardCollector:
         self._git_services = git_services or []
         self._include_git = include_git
         self._git_commit_limit = max(1, git_commit_limit)
+        # Change View (Phase 6D): 注入 ChangeStore (ExecutionGitSnapshot 关联
+        # 存储), 默认关闭 — 既有 dashboard 行为/成本完全不变 (同 include_git 模式)。
+        self._change_store = change_store
+        self._include_change = include_change
 
     # ------------------------------------------------------------------ 主入口
 
@@ -120,6 +127,7 @@ class DashboardCollector:
             agent_utilization=self._collect_agent_utilization(),
             runtime_usage=self._collect_runtime_usage(),
             git=self._collect_git(),
+            change=self._collect_change(),
         )
 
     # ------------------------------------------------------------------ 分域聚合
@@ -355,4 +363,37 @@ class DashboardCollector:
             repos=repos,
             changes=changes,
             commits=commits[:self._git_commit_limit],
+        )
+
+    # ------------------------------------------------------------------ Change View (Phase 6D, ADR-0019)
+
+    def _collect_change(self) -> ChangeSnapshot:
+        """Change View 聚合: Execution Git Snapshots + L4 验证判定 (仅 include_change 模式)。
+
+        只读: 仅调 ChangeStore.list 读接口 + 事件库 query (change.validation.completed);
+        不发事件 (change.* 审计由 CLI 命令层发出, 同 dashboard.viewed 边界)。
+        失败安全: 未装配 change_store → 空快照; 事件缺失 → validations 空。
+        默认关闭 — 既有 dashboard 行为/成本完全不变 (同 include_git 模式)。
+        """
+        if not self._include_change or self._change_store is None:
+            return ChangeSnapshot()
+        snapshots = self._change_store.list(project_id=self._project_id)
+        validations = self._event_store.query(
+            event_type=EventType.CHANGE_VALIDATION_COMPLETED
+        )
+        if self._project_id is not None:
+            validations = [e for e in validations if (e.project_id or "") == self._project_id]
+        return ChangeSnapshot(
+            total=len(snapshots),
+            snapshots=[s.to_dict() for s in snapshots],
+            validation_total=len(validations),
+            validations=[
+                {
+                    "task_id": e.task_id,
+                    "status": e.result,
+                    "message": (e.payload or {}).get("message", ""),
+                    "seq": e.seq,
+                }
+                for e in validations
+            ],
         )

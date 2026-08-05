@@ -88,6 +88,37 @@ class AgentRegistry:
         )
         return agent, ev
 
+    # ------------------------------------------------------------------ 状态更新 (Phase 4B-3)
+
+    # 以下三个方法为分配层的状态原语 (AgentAllocator 独占使用): 只改 Agent 自身状态,
+    # 不发事件 — 状态变更的审计由 assignment 域事件承载 (agent.assignment.* / agent.released,
+    # ADR-0008 决策 3)。任务关联经 Agent.current_task 记录 (引用, 不复制任务数据)。
+
+    def set_status(self, agent_id: str, status: AgentStatus | str) -> Agent:
+        """设置 Agent 状态 (低层原语, 任意合法状态); 不存在抛 AgentNotFoundError。"""
+        want = AgentStatus.parse(status) if isinstance(status, str) else status
+        agent = self.get(agent_id)
+        if agent is None:
+            raise AgentNotFoundError(f"agent not found: {agent_id}")
+        agent.status = want
+        agent.updated_at = datetime.now(timezone.utc)
+        self._store.save(agent)
+        return agent
+
+    def mark_working(self, agent_id: str, task_id: str | None = None) -> Agent:
+        """标记工作中: AVAILABLE → WORKING, 记录当前任务 id (引用); 不发事件。"""
+        agent = self.set_status(agent_id, AgentStatus.WORKING)
+        agent.current_task = task_id
+        self._store.save(agent)
+        return agent
+
+    def mark_available(self, agent_id: str) -> Agent:
+        """标记空闲: → AVAILABLE, 清空当前任务引用; 不发事件。"""
+        agent = self.set_status(agent_id, AgentStatus.AVAILABLE)
+        agent.current_task = None
+        self._store.save(agent)
+        return agent
+
     def _emit(self, type_: EventType, agent: Agent, action: str, payload: dict[str, Any]) -> Event | None:
         if self._logger is None:
             return None

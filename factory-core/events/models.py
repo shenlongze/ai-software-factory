@@ -106,6 +106,19 @@ class EventType(str, Enum):
     EXECUTION_FAILED = "execution.failed"       # 执行失败 (FAILED, 终态)
     EXECUTION_VIEWED = "execution.viewed"       # 执行记录列表被查看
 
+    # --- Phase 4B-3: Agent Assignment 事件 (增量扩展, ADR-0008) ---
+    # 依 ADR-0001 决策 1 的扩展路径: 加枚举成员即可, 不改表结构/API。
+    # agent.assignment.* 为工作关系生命周期事件 (created→started→completed|failed);
+    # agent.released 为 Agent 回 AVAILABLE 的释放事件 (complete/fail/release 的后果,
+    # 事件序 completed→released / failed→released)。viewed 为读命令事件
+    # (ADR-0002: 所有 CLI 行为必须产生 Event, 同 agent/skill/workflow/execution)。
+    ASSIGNMENT_CREATED = "agent.assignment.created"    # 分配创建 (ASSIGNED, Agent→WORKING)
+    ASSIGNMENT_STARTED = "agent.assignment.started"    # 开始工作 (WORKING)
+    ASSIGNMENT_COMPLETED = "agent.assignment.completed"  # 完成 (终态, Agent→AVAILABLE)
+    ASSIGNMENT_FAILED = "agent.assignment.failed"      # 失败 (终态, Agent→AVAILABLE)
+    AGENT_RELEASED = "agent.released"                  # Agent 释放回 AVAILABLE
+    ASSIGNMENT_VIEWED = "agent.assignment.viewed"      # Assignment 列表被查看
+
 
 class Event(BaseModel):
     """一条事件。append-only: 写入后永不修改、永不删除。"""

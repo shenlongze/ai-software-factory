@@ -16,7 +16,10 @@ from typing import Any
 from .commands import (
     CliError,
     cmd_agent_add,
+    cmd_agent_assign,
+    cmd_agent_assignments,
     cmd_agent_list,
+    cmd_agent_release,
     cmd_event_logs,
     cmd_execution_list,
     cmd_execution_run,
@@ -126,6 +129,24 @@ def build_parser() -> Any:
     p_agent_list.add_argument("--status", default=None, help="按状态过滤 (AVAILABLE/WORKING/OFFLINE)")
     p_agent_list.add_argument("--role", default=None, help="按角色过滤")
     p_agent_list.add_argument("--skill", default=None, help="按技能过滤 (find_by_skill)")
+    p_agent_assign = asub.add_parser(
+        "assign", help="分配 Agent: 按步骤自动匹配或显式指定 (发 agent.assignment.created)"
+    )
+    json_opt(p_agent_assign)
+    p_agent_assign.add_argument("--task", required=True, help="任务 ID (如 T-001)")
+    p_agent_assign.add_argument("--step", default=None, help="工作流步骤 (按 role/skill 自动匹配)")
+    p_agent_assign.add_argument("--agent", default=None, help="显式指定 Agent ID (跳过匹配)")
+    p_agent_assign.add_argument("--execution", default=None, help="执行请求 ID (回填 agent_id)")
+    p_agent_assignments = asub.add_parser("assignments", help="Assignment 列表 (发 agent.assignment.viewed)")
+    json_opt(p_agent_assignments)
+    p_agent_assignments.add_argument("--task", default=None, help="按任务过滤")
+    p_agent_assignments.add_argument("--agent", default=None, help="按 Agent 过滤")
+    p_agent_assignments.add_argument("--status", default=None, help="按状态过滤 (ASSIGNED/WORKING/COMPLETED/FAILED/RELEASED)")
+    p_agent_release = asub.add_parser(
+        "release", help="解除分配: Agent 回 AVAILABLE (发 agent.released)"
+    )
+    json_opt(p_agent_release)
+    p_agent_release.add_argument("assignment_id", help="Assignment ID (如 ASG-001)")
 
     # factory skill <sub>
     p_skill = sub.add_parser("skill", help="Skill 管理 (能力目录, 发 skill.* 事件)")
@@ -257,6 +278,12 @@ def _dispatch_agent(ctx: FactoryContext, args: Any) -> dict:
         return cmd_agent_add(ctx, args)
     if args.agent_command == "list":
         return cmd_agent_list(ctx, args)
+    if args.agent_command == "assign":
+        return cmd_agent_assign(ctx, args)
+    if args.agent_command == "assignments":
+        return cmd_agent_assignments(ctx, args)
+    if args.agent_command == "release":
+        return cmd_agent_release(ctx, args)
     raise CliError(f"unknown agent command: {args.agent_command}", exit_code=2)
 
 
@@ -416,6 +443,23 @@ def _print_agent(sub: str, r: dict) -> None:
                 for a in r["agents"]]
         print(_render_table(["Agent", "Name", "Role", "Status", "Skills"], rows))
         print(f"{r['count']} agents")
+    elif sub == "assign":
+        a = r["agent"]
+        asg = r["assignment"]
+        print(f"Assigned: {a['name'] if a is not None else asg['agent_id']}")
+        print(f"  assignment  {asg['id']}")
+        print(f"  agent       {asg['agent_id']}  (status: {a['status'] if a is not None else '-'})")
+        print(f"  task        {asg['task_id']}")
+        print(f"  step        {asg['workflow_step_id'] or '-'}")
+        print(f"  status      {asg['status']}")
+    elif sub == "assignments":
+        rows = [[a["id"], a["agent_id"], a["task_id"], a["workflow_step_id"] or "-", a["status"]]
+                for a in r["assignments"]]
+        print(_render_table(["Assignment", "Agent", "Task", "Step", "Status"], rows))
+        print(f"{r['count']} assignments")
+    elif sub == "release":
+        asg = r["assignment"]
+        print(f"✔ 已释放 {asg['agent_id']} (assignment {asg['id']}) → AVAILABLE")
 
 
 def _print_skill(sub: str, r: dict) -> None:

@@ -14,7 +14,20 @@ from collections import Counter
 from typing import Any
 
 from agents.models import Agent, AgentStatus, Skill
-from agents.registry import AgentExistsError, AgentRegistry, SkillExistsError, SkillRegistry
+from agents.registry import (
+    AgentExistsError,
+    AgentNotFoundError,
+    AgentRegistry,
+    SkillExistsError,
+    SkillRegistry,
+)
+from assignment.allocator import (
+    AgentAllocator,
+    AgentAllocatorError,
+    AssignmentNotFoundError,
+)
+from assignment.models import AssignmentStatus
+from assignment.store import AssignmentStore
 from events.models import EventType
 from execution.dispatcher import (
     ExecutionDispatchError,
@@ -303,6 +316,128 @@ def cmd_agent_list(ctx: FactoryContext, args: Any) -> dict:
     return {
         "ok": True, "count": len(agents),
         "agents": [a.to_dict() for a in agents], "event_seq": ev.seq,
+    }
+
+
+# ------------------------------------------------------------------ agent assignment 子命令
+
+def _open_assignment_store(ctx: FactoryContext) -> AssignmentStore:
+    """装配 AssignmentStore (路径 = <root>/assignments, 目录由 store 首次原子写自动创建,
+    同 runtime 模式 ADR-0006 决策 5 — 不依赖 context.py 骨架)。"""
+    return AssignmentStore(ctx.root / "assignments")
+
+
+def _parse_assignment_status(value: str | None) -> AssignmentStatus | None:
+    if value is None:
+        return None
+    try:
+        return AssignmentStatus.parse(value)
+    except ValueError as exc:
+        raise CliError(str(exc), exit_code=2) from exc
+
+
+def _assignment_cli_error(exc: Exception) -> CliError:
+    """assignment 域异常 → CliError (cli-design §5: 7 未找到 / 1 状态冲突或不可用)。"""
+    if isinstance(exc, (AssignmentNotFoundError, AgentNotFoundError)):
+        return CliError(str(exc), exit_code=7)
+    return CliError(str(exc), exit_code=1)
+
+
+def _resolve_step(ctx: FactoryContext, task_id: str, step_id: str):
+    """解析任务关联工作流中的步骤定义 (task.workflow → 定义 → 步骤), 供分配匹配。"""
+    task = ctx.open_task_store().get(task_id)
+    if task is None:
+        raise CliError(f"task not found: {task_id}", exit_code=7)
+    workflow_id = task.workflow
+    if not workflow_id:
+        raise CliError(f"task has no workflow: {task_id}", exit_code=7)
+    engine = WorkflowEngine(WorkflowStore(ctx.workflows_dir), task_store=ctx.open_task_store())
+    workflow = engine.get_workflow(workflow_id)
+    if workflow is None:
+        raise CliError(
+            f"workflow not registered: {workflow_id!r} (task {task_id}; "
+            f"run 'factory workflow add' first)",
+            exit_code=7,
+        )
+    for step in workflow.steps:
+        if step.id == step_id:
+            return step
+    raise CliError(f"step not found: {step_id!r} in workflow {workflow_id!r}", exit_code=7)
+
+
+def cmd_agent_assign(ctx: FactoryContext, args: Any) -> dict:
+    """factory agent assign --task T-001 --step development [--agent A-001]
+    — 分配 Agent (自动匹配或显式指定), 发 agent.assignment.created (+ Agent→WORKING)。
+
+    退出码: 7 任务/工作流/步骤/Agent 未找到; 1 无可用 Agent / Agent 不可用 / 执行不存在。
+    """
+    if not args.step and not args.agent:
+        raise CliError("assign requires --step or --agent", exit_code=2)
+    task = ctx.open_task_store().get(args.task)
+    if task is None:
+        raise CliError(f"task not found: {args.task}", exit_code=7)
+    step = None
+    workflow_id = task.workflow
+    if args.step:
+        step = _resolve_step(ctx, args.task, args.step)
+    with ctx.logger_scope() as logger:
+        allocator = AgentAllocator(
+            _open_assignment_store(ctx),
+            AgentRegistry(ctx.open_agent_store(), logger=logger),
+            logger=logger,
+            runtime_store=_open_runtime_store(ctx),
+        )
+        try:
+            assignment, ev = allocator.assign(
+                args.task, step=step, agent_id=args.agent, workflow_id=workflow_id,
+                execution_id=args.execution,
+            )
+        except (AgentAllocatorError, AgentNotFoundError) as exc:
+            raise _assignment_cli_error(exc) from exc
+        agent = AgentRegistry(ctx.open_agent_store(), logger=logger).get(assignment.agent_id)
+    return {
+        "ok": True,
+        "assignment": assignment.to_dict(),
+        "agent": agent.to_dict() if agent is not None else None,
+        "event_seq": ev.seq if ev else None,
+    }
+
+
+def cmd_agent_assignments(ctx: FactoryContext, args: Any) -> dict:
+    """factory agent assignments — Assignment 列表 (可过滤), 发 agent.assignment.viewed。"""
+    status = _parse_assignment_status(args.status)
+    with ctx.logger_scope() as logger:
+        allocator = AgentAllocator(_open_assignment_store(ctx), AgentRegistry(ctx.open_agent_store()))
+        assignments = allocator.list(task_id=args.task, agent_id=args.agent, status=status)
+        ev = logger.record(
+            EventType.ASSIGNMENT_VIEWED, source=SOURCE, task_id=args.task,
+            action="list assignments", result="OK",
+            payload={"count": len(assignments), "task": args.task, "agent": args.agent,
+                     "status": args.status},
+        )
+    return {
+        "ok": True, "count": len(assignments),
+        "assignments": [a.to_dict() for a in assignments], "event_seq": ev.seq,
+    }
+
+
+def cmd_agent_release(ctx: FactoryContext, args: Any) -> dict:
+    """factory agent release ASSIGNMENT_ID — 解除分配, Agent 回 AVAILABLE, 发 agent.released。"""
+    with ctx.logger_scope() as logger:
+        allocator = AgentAllocator(
+            _open_assignment_store(ctx),
+            AgentRegistry(ctx.open_agent_store(), logger=logger),
+            logger=logger,
+        )
+        try:
+            assignment, ev = allocator.release(args.assignment_id)
+        except AgentAllocatorError as exc:
+            raise _assignment_cli_error(exc) from exc
+    return {
+        "ok": True,
+        "assignment": assignment.to_dict(),
+        "agent_id": assignment.agent_id,
+        "event_seq": ev.seq if ev else None,
     }
 
 

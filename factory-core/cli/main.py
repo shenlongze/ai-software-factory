@@ -27,6 +27,7 @@ from .commands import (
     cmd_init,
     cmd_runtime_add,
     cmd_runtime_list,
+    cmd_runtime_test,
     cmd_skill_add,
     cmd_skill_list,
     cmd_status,
@@ -196,6 +197,13 @@ def build_parser() -> Any:
     p_rt_list = rsub.add_parser("list", help="Runtime 列表 (发 runtime.viewed)")
     json_opt(p_rt_list)
     p_rt_list.add_argument("--status", default=None, help="按状态过滤 (AVAILABLE/DISABLED)")
+    p_rt_test = rsub.add_parser(
+        "test", help="Runtime smoke test: 内置 Adapter 执行最小 execution (发 runtime.viewed)"
+    )
+    json_opt(p_rt_test)
+    p_rt_test.add_argument("runtime_id", help="Runtime ID (如 hermes-runtime)")
+    p_rt_test.add_argument("--instruction", default=None,
+                           help="冒烟指令 (默认: Reply with exactly: OK)")
 
     # factory execution <sub>
     p_exec = sub.add_parser("execution", help="执行记录查询 (发 execution.viewed)")
@@ -312,6 +320,8 @@ def _dispatch_runtime(ctx: FactoryContext, args: Any) -> dict:
         return cmd_runtime_add(ctx, args)
     if args.runtime_command == "list":
         return cmd_runtime_list(ctx, args)
+    if args.runtime_command == "test":
+        return cmd_runtime_test(ctx, args)
     raise CliError(f"unknown runtime command: {args.runtime_command}", exit_code=2)
 
 
@@ -514,6 +524,14 @@ def _print_runtime(sub: str, r: dict) -> None:
         rows = [[rt["id"], rt["name"], rt["type"], rt["status"]] for rt in r["runtimes"]]
         print(_render_table(["Runtime", "Name", "Type", "Status"], rows))
         print(f"{r['count']} runtimes")
+    elif sub == "test":
+        res = r["result"]
+        print(f"Runtime {r['runtime']} smoke: {r['status']}  (execution {r['execution_id']})")
+        if res.get("error"):
+            print(f"  error    {res['error']}")
+        else:
+            stdout = (res.get("output") or {}).get("stdout", "")
+            print(f"  stdout   {stdout.strip()[:200] or '(empty)'}")
 
 
 def _print_execution(sub: str, r: dict) -> None:

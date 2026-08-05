@@ -38,7 +38,7 @@ from execution.dispatcher import (
 from execution.runner import ExecutionNotFoundError, ExecutionRunnerError, ExecutionStateError
 from execution.service import ExecutionService
 from runtime.adapters import BUILTIN_ADAPTERS
-from runtime.models import RuntimeInfo, RuntimeStatus
+from runtime.models import ExecutionRequest, ExecutionStatus, RuntimeInfo, RuntimeStatus
 from runtime.registry import RuntimeExistsError, RuntimeNotFoundError, RuntimeRegistry
 from runtime.store import RuntimeStore
 from tasks.models import Task, TaskStatus
@@ -656,6 +656,63 @@ def cmd_runtime_list(ctx: FactoryContext, args: Any) -> dict:
         "ok": True, "count": len(runtimes),
         "runtimes": [r.to_dict() for r in runtimes], "event_seq": ev.seq,
     }
+
+
+SMOKE_INSTRUCTION = "Reply with exactly: OK"  # runtime test 默认冒烟指令 (最小 Hermes 调用)
+
+
+def cmd_runtime_test(ctx: FactoryContext, args: Any) -> dict:
+    """factory runtime test <runtime_id> — smoke test: 构造最小 execution →
+    内置 Adapter.execute → 输出 Runtime/Status (SUCCESS/FAILED), 发 runtime.viewed。
+
+    前置 (ADR-0007 决策 3): runtime 身份须已注册 (registry 是派发解析的唯一事实源);
+    已注册但无 Adapter 实现 → 配置缺口 (rc 1, 同 cmd_execution_run 契约)。
+    退出码: 0 smoke SUCCESS / 1 smoke FAILED (runtime 不健康) 或配置缺口 /
+    7 runtime 未注册。
+    副作用边界: smoke 为临时执行 — 不落库 (runtimes.json 无 executions/results 残留)、
+    Adapter 不写 Event (ADR-0006 解耦铁律); 本命令仅发 runtime.viewed 审计事件
+    (ADR-0002: 所有 CLI 行为必须产生 Event)。
+    """
+    with ctx.logger_scope() as logger:
+        registry = RuntimeRegistry(_open_runtime_store(ctx), logger=logger)
+        runtime = registry.get(args.runtime_id)
+        if runtime is None:
+            raise CliError(f"runtime not found: {args.runtime_id}", exit_code=7)
+        adapter = BUILTIN_ADAPTERS.get(args.runtime_id)
+        if adapter is None:
+            raise CliError(
+                f"no adapter implementation for runtime: {args.runtime_id} "
+                f"(registered but not built-in)",
+                exit_code=1,
+            )
+        request = ExecutionRequest(
+            id=f"EX-SMOKE-{args.runtime_id}",
+            task_id="SMOKE",
+            runtime_id=args.runtime_id,
+            input={"instruction": args.instruction or SMOKE_INSTRUCTION},
+        )
+        result = adapter.execute(request)
+        ev = logger.record(
+            EventType.RUNTIME_VIEWED, source=SOURCE, task_id=request.task_id,
+            stage=runtime.status.value.lower(), action="test runtime", result="OK",
+            payload={
+                "runtime_id": args.runtime_id,
+                "execution_id": request.id,
+                "smoke_status": result.status.value,
+                "error": result.error,
+            },
+        )
+    data = {
+        "ok": result.status is ExecutionStatus.SUCCESS,
+        "runtime": args.runtime_id,
+        "status": result.status.value,
+        "execution_id": request.id,
+        "result": result.to_dict(),
+        "event_seq": ev.seq,
+    }
+    if result.status is not ExecutionStatus.SUCCESS:
+        data["exit_code"] = 1  # smoke FAILED = runtime 不健康 → rc 1
+    return data
 
 
 # ------------------------------------------------------------------ execution 子命令

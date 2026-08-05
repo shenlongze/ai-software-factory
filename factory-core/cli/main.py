@@ -27,6 +27,10 @@ from .commands import (
     cmd_task_status,
     cmd_task_update,
     cmd_validate,
+    cmd_workflow_add,
+    cmd_workflow_list,
+    cmd_workflow_run,
+    cmd_workflow_status,
 )
 from .context import DEFAULT_ROOT, FactoryContext
 
@@ -134,6 +138,25 @@ def build_parser() -> Any:
     json_opt(p_skill_list)
     p_skill_list.add_argument("--category", default=None, help="按类别过滤")
 
+    # factory workflow <sub>
+    p_workflow = sub.add_parser("workflow", help="工作流管理 (发 workflow.* 事件)")
+    json_opt(p_workflow)
+    wsub = p_workflow.add_subparsers(dest="workflow_command", required=True)
+    p_wf_list = wsub.add_parser("list", help="工作流定义列表 (发 workflow.viewed)")
+    json_opt(p_wf_list)
+    p_wf_add = wsub.add_parser("add", help="注册工作流定义: 内置或 --steps 自定义 (发 workflow.created)")
+    json_opt(p_wf_add)
+    p_wf_add.add_argument("--id", required=True, help="工作流 ID (如 feature-delivery)")
+    p_wf_add.add_argument("--name", default=None, help="显示名 (默认 = id 或内置名)")
+    p_wf_add.add_argument("--description", default=None, help="描述")
+    p_wf_add.add_argument("--steps", default=None, help="自定义步骤, 逗号分隔 (省略则用同名内置定义)")
+    p_wf_run = wsub.add_parser("run", help="启动任务对应工作流 (发 workflow.started)")
+    json_opt(p_wf_run)
+    p_wf_run.add_argument("task_id")
+    p_wf_status = wsub.add_parser("status", help="任务工作流进度: ✓ 完成 / ▶ 当前 / ○ 待办 (发 workflow.viewed)")
+    json_opt(p_wf_status)
+    p_wf_status.add_argument("task_id")
+
     return p
 
 
@@ -158,6 +181,8 @@ def main(argv: list[str] | None = None) -> int:
             result = _dispatch_agent(ctx, args)
         elif args.command == "skill":
             result = _dispatch_skill(ctx, args)
+        elif args.command == "workflow":
+            result = _dispatch_workflow(ctx, args)
         else:  # pragma: no cover — argparse required=True 已拦截
             raise CliError(f"unknown command: {args.command}", exit_code=2)
     except CliError as exc:
@@ -206,6 +231,18 @@ def _dispatch_skill(ctx: FactoryContext, args: Any) -> dict:
     raise CliError(f"unknown skill command: {args.skill_command}", exit_code=2)
 
 
+def _dispatch_workflow(ctx: FactoryContext, args: Any) -> dict:
+    if args.workflow_command == "list":
+        return cmd_workflow_list(ctx, args)
+    if args.workflow_command == "add":
+        return cmd_workflow_add(ctx, args)
+    if args.workflow_command == "run":
+        return cmd_workflow_run(ctx, args)
+    if args.workflow_command == "status":
+        return cmd_workflow_status(ctx, args)
+    raise CliError(f"unknown workflow command: {args.workflow_command}", exit_code=2)
+
+
 # ------------------------------------------------------------------ 输出
 
 def _print_output(args: Any, result: dict) -> None:
@@ -226,6 +263,8 @@ def _print_output(args: Any, result: dict) -> None:
         _print_agent(args.agent_command, result)
     elif args.command == "skill":
         _print_skill(args.skill_command, result)
+    elif args.command == "workflow":
+        _print_workflow(args.workflow_command, result)
 
 
 def _render_table(headers: list[str], rows: list[list[str]]) -> str:
@@ -333,6 +372,32 @@ def _print_skill(sub: str, r: dict) -> None:
                 for s in r["skills"]]
         print(_render_table(["Skill", "Name", "Category", "Version", "Capabilities"], rows))
         print(f"{r['count']} skills")
+
+
+def _print_workflow(sub: str, r: dict) -> None:
+    if sub == "add":
+        w = r["workflow"]
+        print(f"✔ 工作流 {w['id']} 已注册 ({len(w['steps'])} 步)")
+        print(f"  name        {w['name']}")
+        print(f"  description {w['description'] or '-'}")
+        print(f"  steps       {' → '.join(w['steps'][i]['id'] for i in range(len(w['steps'])))}")
+    elif sub == "list":
+        rows = [[w["id"], w["name"], " → ".join(w["steps"][i]["id"] for i in range(len(w["steps"])))]
+                for w in r["workflows"]]
+        print(_render_table(["Workflow", "Name", "Steps"], rows))
+        print(f"{r['count']} workflows")
+    elif sub == "run":
+        w = r["workflow"]
+        print(f"✔ 工作流已启动 (run {r['run']['run_id']})")
+        print(f"  Task      {r['task_id']}")
+        print(f"  Workflow  {w['id']} — {w['name']}")
+        print(f"  Current   {r['current_step'] or '-'}")
+    elif sub == "status":
+        run = r["run"]
+        print(f"{run['run_id']}  {run['workflow_id']} — {run['workflow_name']}  "
+              f"任务 {r['task_id']}  状态: {run['status']}")
+        for st in r["steps"]:
+            print(f"  {st['symbol']} {st['step_id']:<16} {st['status']}")
 
 
 if __name__ == "__main__":

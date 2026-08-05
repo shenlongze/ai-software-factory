@@ -21,6 +21,20 @@ from tasks.store import TaskExistsError, TaskStore
 from validation.engine import ValidationEngine
 from validation.models import ValidationStatus
 from validation.reports import render_checks
+from workflows.definitions import get_builtin
+from workflows.engine import (
+    StepNotReadyError,
+    StepNotFoundError,
+    WorkflowAlreadyStartedError,
+    WorkflowEngine,
+    WorkflowEngineError,
+    WorkflowExistsError,
+    WorkflowNotFoundError,
+    WorkflowRunNotFoundError,
+    WorkflowStateError,
+)
+from workflows.models import Workflow, WorkflowStep
+from workflows.store import WorkflowStore
 
 from .context import FactoryContext
 
@@ -313,4 +327,135 @@ def cmd_skill_list(ctx: FactoryContext, args: Any) -> dict:
     return {
         "ok": True, "count": len(skills),
         "skills": [s.to_dict() for s in skills], "event_seq": ev.seq,
+    }
+
+
+# ------------------------------------------------------------------ workflow 子命令
+
+def _open_workflow_engine(ctx: FactoryContext, logger) -> WorkflowEngine:
+    """装配 WorkflowEngine (store 路径 = <root>/workflows/workflows.json, 不经 context.py)。"""
+    return WorkflowEngine(
+        WorkflowStore(ctx.workflows_dir),
+        task_store=ctx.open_task_store(),
+        logger=logger,
+    )
+
+
+def _wf_cli_error(exc: WorkflowEngineError) -> CliError:
+    """engine 异常 → CliError (cli-design §5: 7 未找到 / 1 一般错误 / 2 用法)。"""
+    if isinstance(exc, (WorkflowRunNotFoundError, WorkflowNotFoundError)):
+        return CliError(str(exc), exit_code=7)
+    if isinstance(exc, (WorkflowExistsError, WorkflowAlreadyStartedError,
+                        WorkflowStateError, StepNotFoundError, StepNotReadyError)):
+        return CliError(str(exc), exit_code=1)
+    return CliError(str(exc), exit_code=1)
+
+
+def cmd_workflow_list(ctx: FactoryContext, args: Any) -> dict:
+    """factory workflow list — 工作流定义列表, 发 workflow.viewed。"""
+    with ctx.logger_scope() as logger:
+        engine = _open_workflow_engine(ctx, logger)
+        workflows = engine.list_workflows()
+        ev = logger.record(
+            EventType.WORKFLOW_VIEWED, source=SOURCE, action="list workflows", result="OK",
+            payload={"count": len(workflows)},
+        )
+    return {
+        "ok": True, "count": len(workflows),
+        "workflows": [w.to_dict() for w in workflows], "event_seq": ev.seq,
+    }
+
+
+def cmd_workflow_add(ctx: FactoryContext, args: Any) -> dict:
+    """factory workflow add — 注册工作流定义 (--steps 自定义或内置定义), 发 workflow.created。"""
+    if args.steps:
+        names = _parse_csv(args.steps)
+        if not names:
+            raise CliError("--steps requires at least one step", exit_code=2)
+        steps = [
+            WorkflowStep(id=s, name=s, order=i + 1) for i, s in enumerate(names)
+        ]
+        workflow = Workflow(
+            id=args.id, name=args.name or args.id,
+            description=args.description or "", steps=steps,
+        )
+    else:
+        builtin = get_builtin(args.id)
+        if builtin is None:
+            raise CliError(
+                f"no builtin workflow: {args.id} (pass --steps a,b,c to define custom)",
+                exit_code=2,
+            )
+        workflow = Workflow(
+            id=args.id, name=args.name or builtin.name,
+            description=args.description or builtin.description,
+            steps=builtin.steps,
+        )
+    with ctx.logger_scope() as logger:
+        engine = _open_workflow_engine(ctx, logger)
+        try:
+            wf, ev = engine.create_workflow(workflow)
+        except WorkflowExistsError as exc:
+            raise _wf_cli_error(exc) from exc
+    return {"ok": True, "workflow": wf.to_dict(), "event_seq": ev.seq if ev else None}
+
+
+def cmd_workflow_run(ctx: FactoryContext, args: Any) -> dict:
+    """factory workflow run TASK_ID — 启动任务对应工作流, 发 workflow.started。"""
+    with ctx.logger_scope() as logger:
+        engine = _open_workflow_engine(ctx, logger)
+        try:
+            run, ev = engine.start_workflow(args.task_id)
+        except WorkflowEngineError as exc:
+            raise _wf_cli_error(exc) from exc
+    return {
+        "ok": True,
+        "task_id": args.task_id,
+        "run": run.to_dict(),
+        "workflow": {"id": run.workflow_id, "name": run.workflow_name},
+        "current_step": run.current_step,
+        "event_seq": ev.seq if ev else None,
+    }
+
+
+def cmd_workflow_status(ctx: FactoryContext, args: Any) -> dict:
+    """factory workflow status TASK_ID — 步骤进度 (✓/▶/○/✘), 发 workflow.viewed。"""
+    with ctx.logger_scope() as logger:
+        engine = _open_workflow_engine(ctx, logger)
+        run = engine.status(args.task_id)
+        if run is None:
+            task = ctx.open_task_store().get(args.task_id)
+            if task is None:
+                raise CliError(f"task not found: {args.task_id}", exit_code=7)
+            raise CliError(
+                f"task has no workflow run: {args.task_id} "
+                f"(run 'factory workflow run {args.task_id}' first)",
+                exit_code=1,
+            )
+        ev = logger.record(
+            EventType.WORKFLOW_VIEWED, source=SOURCE, task_id=args.task_id,
+            stage=run.status.value.lower(), action="show workflow status", result="OK",
+            payload={"workflow_id": run.workflow_id, "run_id": run.run_id},
+        )
+    symbols = {  # ✓ 完成 / ▶ 当前 / ○ 待办 / ✘ 失败
+        "COMPLETED": "✓", "RUNNING": "▶", "PENDING": "○", "FAILED": "✘",
+    }
+    steps = [
+        {
+            "step_id": st.step_id,
+            "status": st.status.value,
+            "symbol": symbols.get(st.status.value, "?"),
+        }
+        for st in run.step_states
+    ]
+    # current_step 为 PENDING 时标记 ▶ (run 启动后第一步尚未 start_step, 仍属"当前待办")
+    for st in steps:
+        if st["status"] == "PENDING" and st["step_id"] == run.current_step:
+            st["symbol"] = "▶"
+    return {
+        "ok": True,
+        "task_id": args.task_id,
+        "run": run.to_dict(),
+        "steps": steps,
+        "event_seq": ev.seq,
     }

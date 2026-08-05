@@ -78,6 +78,19 @@ class EventType(str, Enum):
     SKILL_REMOVED = "skill.removed"         # Skill 移除
     SKILL_VIEWED = "skill.viewed"           # Skill 列表被查看
 
+    # --- Phase 4A: Workflow Engine 事件 (增量扩展, ADR-0005) ---
+    # 依 ADR-0001 决策 1 的扩展路径: 加枚举成员即可, 不改表结构/API。
+    # 运行时六事件 (phase4a-status.md §Event 集成): created → started → step.started →
+    # step.completed → completed; 失败走 failed (终态)。payload 均含 workflow_id/task_id/
+    # step_id/result。viewed 为读命令事件 (ADR-0002: 所有 CLI 行为必须产生 Event, 同 agent/skill)。
+    WORKFLOW_CREATED = "workflow.created"          # 工作流定义注册
+    WORKFLOW_STARTED = "workflow.started"          # 运行实例启动 (关联任务)
+    WORKFLOW_STEP_STARTED = "workflow.step.started"    # 步骤开始执行
+    WORKFLOW_STEP_COMPLETED = "workflow.step.completed"  # 步骤完成 (result=OK/FAIL/...)
+    WORKFLOW_COMPLETED = "workflow.completed"      # 全部步骤完成
+    WORKFLOW_FAILED = "workflow.failed"            # 运行失败 (终态)
+    WORKFLOW_VIEWED = "workflow.viewed"            # 工作流列表/进度被查看
+
 
 class Event(BaseModel):
     """一条事件。append-only: 写入后永不修改、永不删除。"""

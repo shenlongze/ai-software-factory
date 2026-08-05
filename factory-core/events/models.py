@@ -131,6 +131,16 @@ class EventType(str, Enum):
     ORCHESTRATION_COMPLETED = "orchestration.completed"      # 全部步骤完成 (Workflow COMPLETED)
     ORCHESTRATION_FAILED = "orchestration.failed"            # 流水线失败 (Workflow FAILED / 前置错误)
 
+    # --- Phase 4C-3: Checkpoint Recovery 事件 (增量扩展, ADR-0011) ---
+    # 依 ADR-0001 决策 1 的扩展路径: 加枚举成员即可, 不改表结构/API。
+    # recovery.* 为恢复域审计事件 (source="recovery_service"), 覆盖两个操作流:
+    # checkpoint: started (stage=checkpoint) → completed; recover: started →
+    # completed (result=OK 可恢复 / rejected 已终态拒绝) 或 failed (异常)。
+    # 载荷均含 task_id/state/resume_ok/actions (phase4c3-status.md §Event 集成)。
+    RECOVERY_STARTED = "recovery.started"      # 恢复操作开始 (checkpoint/recover)
+    RECOVERY_COMPLETED = "recovery.completed"  # 恢复操作完成 (含 resume_ok/actions)
+    RECOVERY_FAILED = "recovery.failed"        # 恢复失败 (异常/前置错误)
+
 
 class Event(BaseModel):
     """一条事件。append-only: 写入后永不修改、永不删除。"""

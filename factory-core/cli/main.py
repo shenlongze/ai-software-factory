@@ -20,11 +20,14 @@ from .commands import (
     cmd_agent_assignments,
     cmd_agent_list,
     cmd_agent_release,
+    cmd_checkpoint_create,
+    cmd_checkpoint_list,
     cmd_event_logs,
     cmd_execution_list,
     cmd_execution_run,
     cmd_execution_status,
     cmd_init,
+    cmd_recover,
     cmd_runtime_add,
     cmd_runtime_list,
     cmd_runtime_test,
@@ -223,6 +226,25 @@ def build_parser() -> Any:
     json_opt(p_ex_status)
     p_ex_status.add_argument("execution_id", help="执行请求 ID (如 EX-001)")
 
+    # factory checkpoint <sub>
+    p_checkpoint = sub.add_parser(
+        "checkpoint", help="Checkpoint 管理: 停靠点快照 (发 recovery.* 事件)"
+    )
+    json_opt(p_checkpoint)
+    csub = p_checkpoint.add_subparsers(dest="checkpoint_command", required=True)
+    p_cp_create = csub.add_parser("create", help="创建任务 checkpoint 快照 (发 recovery.started/completed)")
+    json_opt(p_cp_create)
+    p_cp_create.add_argument("task_id", help="任务 ID (如 T-001)")
+    p_cp_list = csub.add_parser("list", help="Checkpoint 列表 (发 recovery.started)")
+    json_opt(p_cp_list)
+
+    # factory recover
+    p_recover = sub.add_parser(
+        "recover", help="恢复中断任务: 事件回放重建 + 状态纠正 (发 recovery.started/completed/failed)"
+    )
+    json_opt(p_recover)
+    p_recover.add_argument("task_id", help="任务 ID (如 T-001)")
+
     return p
 
 
@@ -253,6 +275,10 @@ def main(argv: list[str] | None = None) -> int:
             result = _dispatch_runtime(ctx, args)
         elif args.command == "execution":
             result = _dispatch_execution(ctx, args)
+        elif args.command == "checkpoint":
+            result = _dispatch_checkpoint(ctx, args)
+        elif args.command == "recover":
+            result = cmd_recover(ctx, args)
         else:  # pragma: no cover — argparse required=True 已拦截
             raise CliError(f"unknown command: {args.command}", exit_code=2)
     except CliError as exc:
@@ -339,6 +365,14 @@ def _dispatch_execution(ctx: FactoryContext, args: Any) -> dict:
     raise CliError(f"unknown execution command: {args.execution_command}", exit_code=2)
 
 
+def _dispatch_checkpoint(ctx: FactoryContext, args: Any) -> dict:
+    if args.checkpoint_command == "create":
+        return cmd_checkpoint_create(ctx, args)
+    if args.checkpoint_command == "list":
+        return cmd_checkpoint_list(ctx, args)
+    raise CliError(f"unknown checkpoint command: {args.checkpoint_command}", exit_code=2)
+
+
 # ------------------------------------------------------------------ 输出
 
 def _print_output(args: Any, result: dict) -> None:
@@ -365,6 +399,10 @@ def _print_output(args: Any, result: dict) -> None:
         _print_runtime(args.runtime_command, result)
     elif args.command == "execution":
         _print_execution(args.execution_command, result)
+    elif args.command == "checkpoint":
+        _print_checkpoint(args.checkpoint_command, result)
+    elif args.command == "recover":
+        _print_recover(result)
 
 
 def _render_table(headers: list[str], rows: list[list[str]]) -> str:
@@ -602,6 +640,38 @@ def _print_execution(sub: str, r: dict) -> None:
                 print(f"  error     {res['error']}")
             elif res.get("output"):
                 print(f"  output    {json.dumps(res['output'], ensure_ascii=False)}")
+
+
+def _print_checkpoint(sub: str, r: dict) -> None:
+    if sub == "create":
+        c = r["checkpoint"]
+        print(f"✔ Checkpoint {c['id']} 已创建 (event_seq: {c['event_seq']})")
+        print(f"  task        {c['task_id']}")
+        print(f"  workflow    {c['workflow_id'] or '-'}")
+        print(f"  current     {c['current_step'] or '-'}")
+        if c.get("workflow_state"):
+            print(f"  run state   {c['workflow_state'].get('status', '-')}")
+    elif sub == "list":
+        rows = [
+            [c["id"], c["task_id"], c["workflow_id"] or "-", str(c["event_seq"]),
+             c["current_step"] or "-", c["created_at"]]
+            for c in r["checkpoints"]
+        ]
+        print(_render_table(["Checkpoint", "Task", "Workflow", "EventSeq", "CurrentStep", "CreatedAt"], rows))
+        print(f"{r['count']} checkpoints")
+
+
+def _print_recover(r: dict) -> None:
+    rec = r["recovery"]
+    if rec["resume_ok"]:
+        print(f"✔ 恢复完成 (task {rec['task_id']}) — 可继续")
+    else:
+        print(f"✘ 恢复被拒绝 (task {rec['task_id']}) — 不可继续")
+    print(f"  Last Event  {rec['last_event']}")
+    print(f"  State       {rec['state']}")
+    print(f"  Resume      {rec['resume_ok']}")
+    for action in rec["actions"]:
+        print(f"  action      {action}")
 
 
 if __name__ == "__main__":

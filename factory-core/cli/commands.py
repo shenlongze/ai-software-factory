@@ -61,6 +61,9 @@ from workflows.engine import (
 from workflows.models import Workflow, WorkflowStep
 from workflows.store import WorkflowStore
 
+from recovery.checkpoint import CheckpointStore
+from recovery.service import RecoveryError, RecoveryService, TaskNotFoundError
+
 from orchestration.pipeline import execute_workflow as run_orchestration
 
 from .context import FactoryContext
@@ -857,4 +860,81 @@ def cmd_execution_status(ctx: FactoryContext, args: Any) -> dict:
         "execution": request.to_dict(),
         "result": result.to_dict() if result is not None else None,
         "event_seq": ev.seq,
+    }
+
+
+# ------------------------------------------------------------------ checkpoint / recover 子命令
+
+def _open_checkpoint_store(ctx: FactoryContext) -> CheckpointStore:
+    """装配 CheckpointStore (路径 = <root>/checkpoints, 目录由 store 首次原子写自动创建,
+    同 runtime/assignments 模式 ADR-0006 决策 5 — 不依赖 context.py 骨架)。"""
+    return CheckpointStore(ctx.root / "checkpoints")
+
+
+def _open_recovery_service(ctx: FactoryContext, logger) -> RecoveryService:
+    """装配 RecoveryService: 事件库 (logger.store) + 全存储 + CheckpointStore + 同一 logger。"""
+    return RecoveryService(
+        task_store=ctx.open_task_store(),
+        workflow_store=WorkflowStore(ctx.workflows_dir),
+        assignment_store=_open_assignment_store(ctx),
+        runtime_store=_open_runtime_store(ctx),
+        agent_registry=AgentRegistry(ctx.open_agent_store(), logger=logger),
+        event_store=logger.store,
+        checkpoint_store=_open_checkpoint_store(ctx),
+        logger=logger,
+    )
+
+
+def _recovery_cli_error(exc: RecoveryError) -> CliError:
+    """recovery 域异常 → CliError (cli-design §5: 7 未找到 / 1 一般错误)。"""
+    if isinstance(exc, TaskNotFoundError):
+        return CliError(str(exc), exit_code=7)
+    return CliError(str(exc), exit_code=1)
+
+
+def cmd_checkpoint_create(ctx: FactoryContext, args: Any) -> dict:
+    """factory checkpoint create TASK_ID — 创建任务 checkpoint 快照
+    (发 recovery.started + recovery.completed)。退出码: 0 成功 / 7 任务不存在。"""
+    with ctx.logger_scope() as logger:
+        service = _open_recovery_service(ctx, logger)
+        try:
+            checkpoint, ev = service.checkpoint(args.task_id)
+        except RecoveryError as exc:
+            raise _recovery_cli_error(exc) from exc
+    return {"ok": True, "checkpoint": checkpoint.to_dict(), "event_seq": ev.seq if ev else None}
+
+
+def cmd_checkpoint_list(ctx: FactoryContext, args: Any) -> dict:
+    """factory checkpoint list — checkpoint 列表 (发 recovery.started 审计, ADR-0002 铁律)。"""
+    with ctx.logger_scope() as logger:
+        store = _open_checkpoint_store(ctx)
+        checkpoints = store.list()
+        ev = logger.record(
+            EventType.RECOVERY_STARTED, source=SOURCE, action="list checkpoints", result="OK",
+            payload={"count": len(checkpoints)},
+        )
+    return {
+        "ok": True, "count": len(checkpoints),
+        "checkpoints": [c.to_dict() for c in checkpoints], "event_seq": ev.seq,
+    }
+
+
+def cmd_recover(ctx: FactoryContext, args: Any) -> dict:
+    """factory recover TASK_ID — 恢复中断任务: 事件回放 + 状态纠正
+    (发 recovery.started → completed|failed)。
+
+    退出码 (同 execution run 契约): 0 恢复操作完成 — resume_ok 携带于结果
+    (True 可继续 / False 已终态拒绝, 操作本身成功); 7 任务不存在; 1 恢复内部错误。
+    """
+    with ctx.logger_scope() as logger:
+        service = _open_recovery_service(ctx, logger)
+        try:
+            result, ev = service.recover(args.task_id)
+        except RecoveryError as exc:
+            raise _recovery_cli_error(exc) from exc
+    return {
+        "ok": True,
+        "task_id": result.task_id,
+        "recovery": result.to_dict(),
+        "event_seq": ev.seq if ev else None,
     }

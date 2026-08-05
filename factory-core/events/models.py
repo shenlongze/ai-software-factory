@@ -45,6 +45,18 @@ class EventType(str, Enum):
     CHECKPOINT = "checkpoint"      # 停靠点落盘: 停靠点描述、落盘产物清单 (续跑生命线)
     SESSION_CLOSE = "session.close"  # 会话结束: 事件数、任务数、成败统计
 
+    # --- Phase 2: Factory Control CLI 事件 (增量扩展, ADR-0002) ---
+    # 依 ADR-0001 决策 1 的扩展路径: 加枚举成员即可, type 列存字符串, 不改表结构。
+    # 命名遵循 event-model.md §3 六类字典 (task.* / system.* / validation.*)。
+    SYSTEM_INIT = "system.init"                # 工厂初始化
+    SYSTEM_LOGS_VIEWED = "system.logs_viewed"  # 事件日志被查询
+    SYSTEM_STATUS_VIEWED = "system.status_viewed"  # 工厂状态总览被查看
+    TASK_CREATED = "task.created"              # 任务定义
+    TASK_VIEWED = "task.viewed"                # 任务被查看 (列表/详情)
+    TASK_UPDATED = "task.updated"              # 任务状态更新
+    VALIDATION_STARTED = "validation.started"  # 独立验证开始
+    VALIDATION_COMPLETED = "validation.completed"  # 独立验证结束 (result=PASS/FAIL)
+
 
 class Event(BaseModel):
     """一条事件。append-only: 写入后永不修改、永不删除。"""

@@ -13,10 +13,16 @@ from events.models import Event, EventType, format_timestamp, parse_timestamp
 
 class TestEventType:
     def test_six_event_type_members(self):
-        """六类最小事件齐全, 值为设计文档约定字符串。"""
-        assert [t.value for t in EventType] == [
-            "task.start", "task.end", "task.fail", "tool.call", "checkpoint", "session.close",
-        ]
+        """六类最小事件齐全 (Phase 1, ADR-0001); ADR-0002 增量扩展类别前缀存在。"""
+        values = [t.value for t in EventType]
+        # Phase 1 六类最小事件 (event-model.md §3 最小集) 全部保留
+        for v in ("task.start", "task.end", "task.fail", "tool.call", "checkpoint", "session.close"):
+            assert v in values
+        # ADR-0002 Phase 2 扩展: 类别前缀各至少 1 个 (task./tool./system./validation.)
+        for prefix in ("task.", "tool.", "system.", "validation."):
+            assert any(v.startswith(prefix) for v in values), f"缺少 {prefix!r} 前缀事件"
+        # 增量扩展后成员数 > 最小六类
+        assert len(values) > 6
 
     def test_event_type_is_str_enum(self):
         """str 枚举: 值可直接存 SQLite type 列。"""

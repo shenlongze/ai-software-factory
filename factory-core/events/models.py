@@ -91,6 +91,21 @@ class EventType(str, Enum):
     WORKFLOW_FAILED = "workflow.failed"            # 运行失败 (终态)
     WORKFLOW_VIEWED = "workflow.viewed"            # 工作流列表/进度被查看
 
+    # --- Phase 4B-1: Runtime Adapter 事件 (增量扩展, ADR-0006) ---
+    # 依 ADR-0001 决策 1 的扩展路径: 加枚举成员即可, 不改表结构/API。
+    # runtime.* 为运行时注册表事件 (registered/removed); execution.* 为执行生命周期事件
+    # (created → started → completed|failed, 对应 ExecutionStatus PENDING/RUNNING/SUCCESS/FAILED)。
+    # 本阶段无具体 Runtime: started/completed/failed 的发射点在 4B-2 派发层 (ADR-0006 决策 1)。
+    # viewed 为读命令事件 (ADR-0002: 所有 CLI 行为必须产生 Event, 同 agent/skill/workflow)。
+    RUNTIME_REGISTERED = "runtime.registered"   # Runtime 身份注册入库
+    RUNTIME_REMOVED = "runtime.removed"         # Runtime 移除
+    RUNTIME_VIEWED = "runtime.viewed"           # Runtime 列表被查看
+    EXECUTION_CREATED = "execution.created"     # 执行请求创建 (PENDING, 未派发)
+    EXECUTION_STARTED = "execution.started"     # 执行开始 (派发, RUNNING)
+    EXECUTION_COMPLETED = "execution.completed" # 执行成功 (SUCCESS, 终态)
+    EXECUTION_FAILED = "execution.failed"       # 执行失败 (FAILED, 终态)
+    EXECUTION_VIEWED = "execution.viewed"       # 执行记录列表被查看
+
 
 class Event(BaseModel):
     """一条事件。append-only: 写入后永不修改、永不删除。"""

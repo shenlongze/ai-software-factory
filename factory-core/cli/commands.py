@@ -16,6 +16,9 @@ from typing import Any
 from agents.models import Agent, AgentStatus, Skill
 from agents.registry import AgentExistsError, AgentRegistry, SkillExistsError, SkillRegistry
 from events.models import EventType
+from runtime.models import RuntimeInfo, RuntimeStatus
+from runtime.registry import RuntimeExistsError, RuntimeRegistry
+from runtime.store import RuntimeStore
 from tasks.models import Task, TaskStatus
 from tasks.store import TaskExistsError, TaskStore
 from validation.engine import ValidationEngine
@@ -458,4 +461,79 @@ def cmd_workflow_status(ctx: FactoryContext, args: Any) -> dict:
         "run": run.to_dict(),
         "steps": steps,
         "event_seq": ev.seq,
+    }
+
+
+# ------------------------------------------------------------------ runtime 子命令
+
+def _open_runtime_store(ctx: FactoryContext) -> RuntimeStore:
+    """装配 RuntimeStore (路径 = <root>/runtimes/runtimes.json, 不经 context.py;
+    目录由 store 首次原子写时自动创建, 见 ADR-0006 决策 5)。"""
+    return RuntimeStore(ctx.root / "runtimes")
+
+
+def _parse_runtime_status(value: str | None) -> RuntimeStatus | None:
+    if value is None:
+        return None
+    try:
+        return RuntimeStatus.parse(value)
+    except ValueError as exc:
+        raise CliError(str(exc), exit_code=2) from exc
+
+
+def cmd_runtime_add(ctx: FactoryContext, args: Any) -> dict:
+    """factory runtime add — 注册 Runtime 身份, 发 runtime.registered。"""
+    runtime = RuntimeInfo(
+        id=args.id,
+        name=args.name or args.id,
+        type=args.type,
+        description=args.description or "",
+    )
+    with ctx.logger_scope() as logger:
+        registry = RuntimeRegistry(_open_runtime_store(ctx), logger=logger)
+        try:
+            runtime, ev = registry.register(runtime)
+        except RuntimeExistsError as exc:
+            raise CliError(str(exc), exit_code=1) from exc
+    return {"ok": True, "runtime": runtime.to_dict(), "event_seq": ev.seq if ev else None}
+
+
+def cmd_runtime_list(ctx: FactoryContext, args: Any) -> dict:
+    """factory runtime list — Runtime 列表 (可过滤), 发 runtime.viewed。"""
+    status = _parse_runtime_status(args.status)
+    with ctx.logger_scope() as logger:
+        registry = RuntimeRegistry(_open_runtime_store(ctx), logger=logger)
+        runtimes = registry.list(status=status)
+        ev = logger.record(
+            EventType.RUNTIME_VIEWED, source=SOURCE, action="list runtimes", result="OK",
+            payload={"count": len(runtimes), "status": args.status},
+        )
+    return {
+        "ok": True, "count": len(runtimes),
+        "runtimes": [r.to_dict() for r in runtimes], "event_seq": ev.seq,
+    }
+
+
+# ------------------------------------------------------------------ execution 子命令
+
+def cmd_execution_list(ctx: FactoryContext, args: Any) -> dict:
+    """factory execution list — 执行记录列表 (可过滤), 发 execution.viewed。"""
+    with ctx.logger_scope() as logger:
+        store = _open_runtime_store(ctx)
+        requests = store.list_executions(task_id=args.task)
+        results = {res.request_id: res for res in store.list_results()}
+        executions = []
+        for req in requests:
+            item = req.to_dict()
+            res = results.get(req.id)
+            item["result"] = res.to_dict() if res is not None else None
+            executions.append(item)
+        ev = logger.record(
+            EventType.EXECUTION_VIEWED, source=SOURCE, task_id=args.task,
+            action="list executions", result="OK",
+            payload={"count": len(executions), "task": args.task},
+        )
+    return {
+        "ok": True, "count": len(executions),
+        "executions": executions, "event_seq": ev.seq,
     }

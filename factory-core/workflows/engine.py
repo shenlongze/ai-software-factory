@@ -30,8 +30,11 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
+from agents.registry import AgentRegistry
 from events.logger import EventLogger
 from events.models import Event, EventType
+from runtime.models import ExecutionRequest
+from runtime.store import RuntimeStore
 from tasks.models import Task
 from tasks.store import TaskStore
 
@@ -97,10 +100,14 @@ class WorkflowEngine:
         store: WorkflowStore,
         task_store: TaskStore | None = None,
         logger: EventLogger | None = None,
+        runtime_store: RuntimeStore | None = None,
+        agent_registry: AgentRegistry | None = None,
     ):
         self._store = store
         self._task_store = task_store
         self._logger = logger
+        self._runtime_store = runtime_store
+        self._agent_registry = agent_registry
 
     @property
     def store(self) -> WorkflowStore:
@@ -110,6 +117,16 @@ class WorkflowEngine:
     def task_store(self) -> TaskStore | None:
         """关联的 TaskStore (可为 None: 仅定义管理时无需任务维度)。"""
         return self._task_store
+
+    @property
+    def runtime_store(self) -> RuntimeStore | None:
+        """关联的 RuntimeStore (可为 None; 执行边界方法 execute_step 要求非 None)。"""
+        return self._runtime_store
+
+    @property
+    def agent_registry(self) -> AgentRegistry | None:
+        """关联的 AgentRegistry (可为 None; execute_step 的 agent_id 解析留空)。"""
+        return self._agent_registry
 
     # ------------------------------------------------------------------ 转换表 (审计/测试入口)
 
@@ -320,6 +337,76 @@ class WorkflowEngine:
             return run, done_ev if done_ev is not None else step_ev
         self._store.save_run(run)
         return run, step_ev
+
+    # ------------------------------------------------------------------ 运行: 执行边界 (Runtime 交接)
+
+    def execute_step(self, task_id: str, step_id: str) -> tuple[ExecutionRequest, Event | None]:
+        """为任务的当前步骤创建待执行请求 (PENDING), 不调用任何 Runtime。
+
+        Phase 4B-1 边界语义 (phase4b1-status.md §Workflow 集成边界):
+        - 前置: 任务有运行实例且 RUNNING; 步骤存在且为当前步骤 (按 order 顺序),
+          且未处于终态 (COMPLETED/FAILED)。
+        - 产物: ExecutionRequest 落 RuntimeStore (status=PENDING) + 发 execution.created;
+          步骤状态不变 — 不自动执行, 派发属 Phase 4B-2 (RuntimeRegistry + Adapter)。
+        - agent_id: 经 AgentRegistry 解析 — task.owner 精确引用命中已注册 Agent 则取,
+          否则留空 (ADR-0006 决策 4; 按角色/技能自动分配属后续 Phase)。
+        - runtime_id 本阶段恒为空: 尚无 Runtime 实现, 派发层 (4B-2) 解析填充。
+        """
+        if self._runtime_store is None:
+            raise WorkflowEngineError("engine has no runtime store: cannot create execution")
+        run = self._require_running(task_id)
+        step_state = self._require_step(run, step_id)
+        current = run.next_pending_step()
+        if current is None or current.step_id != step_id:
+            expected = current.step_id if current is not None else "none"
+            raise StepNotReadyError(
+                f"step {step_id!r} is not the current step (expected {expected!r}); "
+                f"steps must run in order"
+            )
+        if step_state.status in (StepStatus.COMPLETED, StepStatus.FAILED):
+            raise StepNotReadyError(
+                f"step {step_id!r} is in terminal state {step_state.status.value}; "
+                f"cannot create execution"
+            )
+        task = self._task_store.get(task_id) if self._task_store is not None else None
+        agent_id = self._resolve_agent_id(task) if task is not None else None
+        request = ExecutionRequest(
+            id=self._runtime_store.next_execution_id(),
+            task_id=task_id,
+            workflow_id=run.workflow_id,
+            step_id=step_id,
+            agent_id=agent_id,
+            runtime_id=None,
+            input={},
+        )
+        self._runtime_store.save_execution(request)
+        ev = self._emit(
+            EventType.EXECUTION_CREATED, task_id=task_id, stage="pending",
+            action=f"create execution for step {step_id}", result="OK",
+            payload={
+                "execution_id": request.id,
+                "run_id": run.run_id,
+                "workflow_id": run.workflow_id,
+                "task_id": task_id,
+                "step_id": step_id,
+                "agent_id": agent_id,
+                "runtime_id": request.runtime_id,
+                "status": request.status.value,
+            },
+        )
+        return request, ev
+
+    def _resolve_agent_id(self, task: Task) -> str | None:
+        """解析执行请求的 agent_id: task.owner 引用已注册 Agent 则取, 否则 None (留空)。
+
+        KISS (ADR-0006 决策 4): 只做 owner 精确引用解析; 按角色/技能自动分配
+        (如首个 AVAILABLE) 属 4B-2 派发层职责。
+        """
+        if self._agent_registry is None:
+            return None
+        if task.owner and self._agent_registry.get(task.owner) is not None:
+            return task.owner
+        return None
 
     # ------------------------------------------------------------------ 运行: 失败
 

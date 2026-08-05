@@ -18,7 +18,10 @@ from .commands import (
     cmd_agent_add,
     cmd_agent_list,
     cmd_event_logs,
+    cmd_execution_list,
     cmd_init,
+    cmd_runtime_add,
+    cmd_runtime_list,
     cmd_skill_add,
     cmd_skill_list,
     cmd_status,
@@ -157,6 +160,28 @@ def build_parser() -> Any:
     json_opt(p_wf_status)
     p_wf_status.add_argument("task_id")
 
+    # factory runtime <sub>
+    p_runtime = sub.add_parser("runtime", help="Runtime 管理 (适配器注册表, 发 runtime.* 事件)")
+    json_opt(p_runtime)
+    rsub = p_runtime.add_subparsers(dest="runtime_command", required=True)
+    p_rt_add = rsub.add_parser("add", help="注册 Runtime 身份 (发 runtime.registered)")
+    json_opt(p_rt_add)
+    p_rt_add.add_argument("--id", required=True, help="Runtime ID (如 R-001)")
+    p_rt_add.add_argument("--type", default="agent", help="运行时类型 (默认 agent)")
+    p_rt_add.add_argument("--name", default=None, help="显示名 (默认 = id)")
+    p_rt_add.add_argument("--description", default=None, help="描述")
+    p_rt_list = rsub.add_parser("list", help="Runtime 列表 (发 runtime.viewed)")
+    json_opt(p_rt_list)
+    p_rt_list.add_argument("--status", default=None, help="按状态过滤 (AVAILABLE/DISABLED)")
+
+    # factory execution <sub>
+    p_exec = sub.add_parser("execution", help="执行记录查询 (发 execution.viewed)")
+    json_opt(p_exec)
+    xsub = p_exec.add_subparsers(dest="execution_command", required=True)
+    p_ex_list = xsub.add_parser("list", help="执行记录列表 (发 execution.viewed)")
+    json_opt(p_ex_list)
+    p_ex_list.add_argument("--task", default=None, help="按任务过滤")
+
     return p
 
 
@@ -183,6 +208,10 @@ def main(argv: list[str] | None = None) -> int:
             result = _dispatch_skill(ctx, args)
         elif args.command == "workflow":
             result = _dispatch_workflow(ctx, args)
+        elif args.command == "runtime":
+            result = _dispatch_runtime(ctx, args)
+        elif args.command == "execution":
+            result = _dispatch_execution(ctx, args)
         else:  # pragma: no cover — argparse required=True 已拦截
             raise CliError(f"unknown command: {args.command}", exit_code=2)
     except CliError as exc:
@@ -243,6 +272,20 @@ def _dispatch_workflow(ctx: FactoryContext, args: Any) -> dict:
     raise CliError(f"unknown workflow command: {args.workflow_command}", exit_code=2)
 
 
+def _dispatch_runtime(ctx: FactoryContext, args: Any) -> dict:
+    if args.runtime_command == "add":
+        return cmd_runtime_add(ctx, args)
+    if args.runtime_command == "list":
+        return cmd_runtime_list(ctx, args)
+    raise CliError(f"unknown runtime command: {args.runtime_command}", exit_code=2)
+
+
+def _dispatch_execution(ctx: FactoryContext, args: Any) -> dict:
+    if args.execution_command == "list":
+        return cmd_execution_list(ctx, args)
+    raise CliError(f"unknown execution command: {args.execution_command}", exit_code=2)
+
+
 # ------------------------------------------------------------------ 输出
 
 def _print_output(args: Any, result: dict) -> None:
@@ -265,6 +308,10 @@ def _print_output(args: Any, result: dict) -> None:
         _print_skill(args.skill_command, result)
     elif args.command == "workflow":
         _print_workflow(args.workflow_command, result)
+    elif args.command == "runtime":
+        _print_runtime(args.runtime_command, result)
+    elif args.command == "execution":
+        _print_execution(args.execution_command, result)
 
 
 def _render_table(headers: list[str], rows: list[list[str]]) -> str:
@@ -398,6 +445,30 @@ def _print_workflow(sub: str, r: dict) -> None:
               f"任务 {r['task_id']}  状态: {run['status']}")
         for st in r["steps"]:
             print(f"  {st['symbol']} {st['step_id']:<16} {st['status']}")
+
+
+def _print_runtime(sub: str, r: dict) -> None:
+    if sub == "add":
+        rt = r["runtime"]
+        print(f"✔ Runtime {rt['id']} 已注册 (type: {rt['type']})")
+        print(f"  name        {rt['name']}")
+        print(f"  status      {rt['status']}")
+        print(f"  description {rt['description'] or '-'}")
+    elif sub == "list":
+        rows = [[rt["id"], rt["name"], rt["type"], rt["status"]] for rt in r["runtimes"]]
+        print(_render_table(["Runtime", "Name", "Type", "Status"], rows))
+        print(f"{r['count']} runtimes")
+
+
+def _print_execution(sub: str, r: dict) -> None:
+    if sub == "list":
+        rows = [
+            [e["id"], e["task_id"], e["workflow_id"] or "-", e["step_id"] or "-",
+             e["agent_id"] or "-", e["runtime_id"] or "-", e["status"]]
+            for e in r["executions"]
+        ]
+        print(_render_table(["Execution", "Task", "Workflow", "Step", "Agent", "Runtime", "Status"], rows))
+        print(f"{r['count']} executions")
 
 
 if __name__ == "__main__":

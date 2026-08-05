@@ -177,9 +177,13 @@ def build_parser() -> Any:
     p_wf_add.add_argument("--name", default=None, help="显示名 (默认 = id 或内置名)")
     p_wf_add.add_argument("--description", default=None, help="描述")
     p_wf_add.add_argument("--steps", default=None, help="自定义步骤, 逗号分隔 (省略则用同名内置定义)")
-    p_wf_run = wsub.add_parser("run", help="启动任务对应工作流 (发 workflow.started)")
+    p_wf_run = wsub.add_parser(
+        "run", help="启动任务对应工作流 (发 workflow.started); --auto 自动执行完整链路 (发 orchestration.*)"
+    )
     json_opt(p_wf_run)
     p_wf_run.add_argument("task_id")
+    p_wf_run.add_argument("--auto", action="store_true",
+                          help="自动执行完整链路: 匹配→分配→执行→推进 (失败 → Workflow FAILED)")
     p_wf_status = wsub.add_parser("status", help="任务工作流进度: ✓ 完成 / ▶ 当前 / ○ 待办 (发 workflow.viewed)")
     json_opt(p_wf_status)
     p_wf_status.add_argument("task_id")
@@ -500,17 +504,40 @@ def _print_workflow(sub: str, r: dict) -> None:
         print(_render_table(["Workflow", "Name", "Steps"], rows))
         print(f"{r['count']} workflows")
     elif sub == "run":
-        w = r["workflow"]
-        print(f"✔ 工作流已启动 (run {r['run']['run_id']})")
-        print(f"  Task      {r['task_id']}")
-        print(f"  Workflow  {w['id']} — {w['name']}")
-        print(f"  Current   {r['current_step'] or '-'}")
+        if r.get("auto"):
+            _print_workflow_run_auto(r)
+        else:
+            w = r["workflow"]
+            print(f"✔ 工作流已启动 (run {r['run']['run_id']})")
+            print(f"  Task      {r['task_id']}")
+            print(f"  Workflow  {w['id']} — {w['name']}")
+            print(f"  Current   {r['current_step'] or '-'}")
     elif sub == "status":
         run = r["run"]
         print(f"{run['run_id']}  {run['workflow_id']} — {run['workflow_name']}  "
               f"任务 {r['task_id']}  状态: {run['status']}")
         for st in r["steps"]:
             print(f"  {st['symbol']} {st['step_id']:<16} {st['status']}")
+
+
+def _print_workflow_run_auto(r: dict) -> None:
+    """workflow run --auto 输出: Workflow/Step/Agent/Runtime/Result (phase4c2-status §3)。"""
+    w = r["workflow"]
+    if r["status"] == "COMPLETED":
+        print(f"✔ 自动执行完成 (run {r['run_id']})")
+    else:
+        print(f"✘ 自动执行失败 (run {r['run_id'] or '-'})")
+    print(f"  Task      {r['task_id']}")
+    print(f"  Workflow  {w['id']} — {w['name'] or '-'}")
+    print(f"  Status    {r['status']}")
+    if r.get("error"):
+        print(f"  error     {r['error']}")
+    for st in r["steps"]:
+        print(f"  Step      {st['step_id']:<16} {st['status']:<10} "
+              f"Agent {st['agent_id'] or '-'}  Runtime {st['runtime_id'] or '-'}  "
+              f"Result {st['result'] or '-'}  ({st['execution_id'] or '-'})")
+    if r["events"]:
+        print(f"  事件      {' → '.join(r['events'])}")
 
 
 def _print_runtime(sub: str, r: dict) -> None:

@@ -61,6 +61,8 @@ from workflows.engine import (
 from workflows.models import Workflow, WorkflowStep
 from workflows.store import WorkflowStore
 
+from orchestration.pipeline import execute_workflow as run_orchestration
+
 from .context import FactoryContext
 
 SOURCE = "cli"
@@ -548,7 +550,11 @@ def cmd_workflow_add(ctx: FactoryContext, args: Any) -> dict:
 
 
 def cmd_workflow_run(ctx: FactoryContext, args: Any) -> dict:
-    """factory workflow run TASK_ID — 启动任务对应工作流, 发 workflow.started。"""
+    """factory workflow run TASK_ID [--auto] — 启动任务对应工作流 (发 workflow.started);
+    --auto 自动执行完整链路 (Workflow→Matcher→Allocator→Execution→Runner→推进),
+    发 orchestration.* 事件; 失败 → Workflow FAILED (无半完成状态)。"""
+    if getattr(args, "auto", False):
+        return _cmd_workflow_run_auto(ctx, args)
     with ctx.logger_scope() as logger:
         engine = _open_workflow_engine(ctx, logger)
         try:
@@ -563,6 +569,48 @@ def cmd_workflow_run(ctx: FactoryContext, args: Any) -> dict:
         "current_step": run.current_step,
         "event_seq": ev.seq if ev else None,
     }
+
+
+def _cmd_workflow_run_auto(ctx: FactoryContext, args: Any) -> dict:
+    """workflow run --auto: 完整自动执行链路 (经 orchestration.pipeline 单一组合根)。
+
+    输出 Workflow/Step/Agent/Runtime/Result (phase4c2-status §3 CLI)。
+    退出码: 0 COMPLETED; 7 任务未找到; 1 执行失败 (无 Agent/无 Runtime/执行 FAILED/
+    前置错误 → Workflow FAILED 或编排失败)。
+    """
+    task = ctx.open_task_store().get(args.task_id)
+    if task is None:
+        raise CliError(f"task not found: {args.task_id}", exit_code=7)
+    with ctx.logger_scope() as logger:
+        outcome = run_orchestration(
+            args.task_id,
+            workflow_store=WorkflowStore(ctx.workflows_dir),
+            task_store=ctx.open_task_store(),
+            agent_store=ctx.open_agent_store(),
+            assignment_store=_open_assignment_store(ctx),
+            runtime_store=_open_runtime_store(ctx),
+            logger=logger,
+        )
+    data = {
+        "ok": outcome.ok,
+        "auto": True,
+        "task_id": args.task_id,
+        "workflow": {
+            "id": outcome.workflow_id,
+            "name": outcome.run.workflow_name if outcome.run is not None else None,
+        },
+        "run_id": outcome.run_id,
+        "status": outcome.status.value,
+        "steps": [s.to_dict() for s in outcome.steps],
+        "error": outcome.error,
+        "events": [e.type.value for e in outcome.events],
+        "event_seq": outcome.events[-1].seq if outcome.events else None,
+    }
+    if outcome.run is not None:
+        data["run"] = outcome.run.to_dict()
+    if not outcome.ok:
+        data["exit_code"] = 1  # 执行失败: workflow 未能 COMPLETED (cli-design §5: 1 一般错误)
+    return data
 
 
 def cmd_workflow_status(ctx: FactoryContext, args: Any) -> dict:

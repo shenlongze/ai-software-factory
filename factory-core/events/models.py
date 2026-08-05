@@ -119,6 +119,18 @@ class EventType(str, Enum):
     AGENT_RELEASED = "agent.released"                  # Agent 释放回 AVAILABLE
     ASSIGNMENT_VIEWED = "agent.assignment.viewed"      # Assignment 列表被查看
 
+    # --- Phase 4C-2: Execution Orchestration 事件 (增量扩展, ADR-0010) ---
+    # 依 ADR-0001 决策 1 的扩展路径: 加枚举成员即可, 不改表结构/API。
+    # orchestration.* 为编排层 (OrchestrationEngine) 的高层流水线事件
+    # (source="orchestration_engine"), 与 workflow.*/assignment.*/execution.*
+    # 底层事件互补: started → (每步 step.started → step.completed) → completed;
+    # 任一步失败 → failed (Workflow FAILED, 无半完成状态, phase4c2-status.md)。
+    ORCHESTRATION_STARTED = "orchestration.started"          # 自动执行流水线开始
+    ORCHESTRATION_STEP_STARTED = "orchestration.step.started"    # 单步编排开始 (匹配/分配/执行)
+    ORCHESTRATION_STEP_COMPLETED = "orchestration.step.completed"  # 单步编排完成 (result=OK)
+    ORCHESTRATION_COMPLETED = "orchestration.completed"      # 全部步骤完成 (Workflow COMPLETED)
+    ORCHESTRATION_FAILED = "orchestration.failed"            # 流水线失败 (Workflow FAILED / 前置错误)
+
 
 class Event(BaseModel):
     """一条事件。append-only: 写入后永不修改、永不删除。"""

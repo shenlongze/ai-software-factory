@@ -21,6 +21,8 @@ from pydantic import BaseModel, Field
 
 from metrics.models import AgentUtilizationSummary, FactoryMetrics, RuntimeUsageSummary
 
+from git.models import GitChange, GitCommit, GitContext
+
 
 class TaskSnapshot(BaseModel):
     """任务汇总 (TaskStore)。状态为 TaskStatus 五态 (BACKLOG/ARCHITECTURE/DEVELOPMENT/TESTING/DONE)。"""
@@ -175,6 +177,24 @@ class MetricsSnapshot(BaseModel):
         return self.model_dump(mode="json")
 
 
+class GitSnapshot(BaseModel):
+    """Git View 汇总 (Phase 6C, ADR-0018): 每项目仓库状态 + 变更 + 提交。
+
+    数据源 = GitService 只读聚合 (collector include_git=True 时装配, 默认关闭
+    — 既有 dashboard 行为/成本完全不变, 同 ADR-0017 include_workspace 模式)。
+    repos 含失败安全上下文 (非 git 目录 → is_repo=False + error 行照常展示);
+    commits 跨项目按 created_at 倒序 (上限 git_commit_limit)。
+    """
+
+    total: int = 0                                    # 仓库数 (有 repository 的项目)
+    repos: list[GitContext] = Field(default_factory=list)    # 每项目 GitContext (含 changes)
+    changes: list[GitChange] = Field(default_factory=list)   # 全部工作区变更 (跨项目)
+    commits: list[GitCommit] = Field(default_factory=list)   # 最近提交 (跨项目)
+
+    def to_dict(self) -> dict:
+        return self.model_dump(mode="json")
+
+
 class FactorySnapshot(BaseModel):
     """一次 Dashboard 查询的完整只读投影 (全 store 汇总 + 最近事件)。"""
 
@@ -194,6 +214,9 @@ class FactorySnapshot(BaseModel):
     # include_workspace=True), 默认空 (与既有 dashboard 行为/成本完全一致)。
     agent_utilization: AgentUtilizationSummary = Field(default_factory=AgentUtilizationSummary)
     runtime_usage: RuntimeUsageSummary = Field(default_factory=RuntimeUsageSummary)
+    # Phase 6C (ADR-0018): Git View — 仅 --view git 聚合 (collector include_git=True),
+    # 默认空 (既有 dashboard 行为/成本完全一致; Git 查询经 subprocess 只读)。
+    git: GitSnapshot = Field(default_factory=GitSnapshot)
 
     def to_dict(self) -> dict:
         """JSON 友好序列化 (CLI --json 输出 / 测试断言共用)。"""

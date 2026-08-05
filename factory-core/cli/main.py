@@ -27,6 +27,9 @@ from .commands import (
     cmd_execution_list,
     cmd_execution_run,
     cmd_execution_status,
+    cmd_git_commits,
+    cmd_git_diff,
+    cmd_git_status,
     cmd_init,
     cmd_metrics,
     cmd_project_list,
@@ -274,7 +277,7 @@ def build_parser() -> Any:
     p_dashboard.add_argument(
         "--view", default=None,
         help="单视图: overview/tasks/agents/workflows/executions/recovery/catalog/metrics/"
-             "workspace/projects/agents_utilization/runtime_usage/workspace_events "
+             "workspace/projects/agents_utilization/runtime_usage/workspace_events/git "
              "(默认 all 同屏; --workspace 默认 workspace 视图组)",
     )
     p_dashboard.add_argument("--limit", type=int, default=10, help="最近事件条数上限 (默认 10)")
@@ -319,6 +322,32 @@ def build_parser() -> Any:
     )
     json_opt(p_ws_show)
 
+    # factory git <sub> (Phase 6C, ADR-0018)
+    p_git = sub.add_parser(
+        "git", help="Git 只读查询: status/diff/commits (Git 只读 + 审计, 发 git.* 事件)"
+    )
+    json_opt(p_git)
+    gsub = p_git.add_subparsers(dest="git_command", required=True)
+    p_git_status = gsub.add_parser(
+        "status", help="仓库状态: branch/current_commit/changes (发 git.status.viewed)"
+    )
+    json_opt(p_git_status)
+    p_git_status.add_argument("--project", default=None, help="项目 id (从 project.yaml 解析 repository)")
+    p_git_status.add_argument("--repo", default=None, help="仓库路径 (显式指定, 优先于 --project)")
+    p_git_diff = gsub.add_parser(
+        "diff", help="工作区变更列表 (逐文件 + 行数 + task 关联, 发 git.change.detected)"
+    )
+    json_opt(p_git_diff)
+    p_git_diff.add_argument("--project", default=None, help="项目 id (从 project.yaml 解析 repository)")
+    p_git_diff.add_argument("--repo", default=None, help="仓库路径 (显式指定, 优先于 --project)")
+    p_git_commits = gsub.add_parser(
+        "commits", help="提交历史 (hash/message/branch/task, 发 git.commit.viewed)"
+    )
+    json_opt(p_git_commits)
+    p_git_commits.add_argument("--project", default=None, help="项目 id (从 project.yaml 解析 repository)")
+    p_git_commits.add_argument("--repo", default=None, help="仓库路径 (显式指定, 优先于 --project)")
+    p_git_commits.add_argument("--limit", type=int, default=20, help="条数上限 (默认 20)")
+
     return p
 
 
@@ -361,6 +390,8 @@ def main(argv: list[str] | None = None) -> int:
             result = _dispatch_project(ctx, args)
         elif args.command == "workspace":
             result = _dispatch_workspace(ctx, args)
+        elif args.command == "git":
+            result = _dispatch_git(ctx, args)
         else:  # pragma: no cover — argparse required=True 已拦截
             raise CliError(f"unknown command: {args.command}", exit_code=2)
     except CliError as exc:
@@ -481,6 +512,16 @@ def _dispatch_workspace(ctx: FactoryContext, args: Any) -> dict:
     raise CliError(f"unknown workspace command: {args.workspace_command}", exit_code=2)
 
 
+def _dispatch_git(ctx: FactoryContext, args: Any) -> dict:
+    if args.git_command == "status":
+        return cmd_git_status(ctx, args)
+    if args.git_command == "diff":
+        return cmd_git_diff(ctx, args)
+    if args.git_command == "commits":
+        return cmd_git_commits(ctx, args)
+    raise CliError(f"unknown git command: {args.git_command}", exit_code=2)
+
+
 # ------------------------------------------------------------------ 输出
 
 def _print_output(args: Any, result: dict) -> None:
@@ -519,11 +560,22 @@ def _print_output(args: Any, result: dict) -> None:
         _print_project(args.project_command, result)
     elif args.command == "workspace":
         _print_workspace(args.workspace_command, result)
+    elif args.command == "git":
+        _print_git(args.git_command, result)
 
 
-def _render_table(headers: list[str], rows: list[list[str]]) -> str:
+def _render_table(
+    headers: list[str], rows: list[list[str]], *, empty: str | None = "  (无记录)",
+) -> str:
+    """渲染对齐表格; 空表 → empty 占位 (None 则仍渲染表头, 供恒定表头场景)。"""
     if not rows:
-        return "  (无记录)"
+        if empty is None:
+            widths = [len(h) for h in headers]
+            return "\n".join([
+                "  " + "  ".join(h.ljust(widths[i]) for i, h in enumerate(headers)),
+                "  " + "  ".join("-" * widths[i] for i in range(len(headers))),
+            ])
+        return empty
     widths = [len(h) for h in headers]
     for row in rows:
         for i, cell in enumerate(row):
@@ -874,6 +926,36 @@ def _print_workspace(sub: str, r: dict) -> None:
             print(f"    {p['id']:<16} {p['status']:<9} {p['language']:<8} "
                   f"{p['description'][:60] or '-'}")
         print(f"  事件      workspace.viewed seq={r.get('event_seq')}")
+
+
+def _print_git(sub: str, r: dict) -> None:
+    """factory git 输出: status 上下文 + 变更表; diff 变更表; commits 提交表。"""
+    if sub == "status":
+        st = r["status"]
+        if st.get("error"):
+            print(f"✘ {st['repository']} — {st['error']}")
+        else:
+            head = st.get("current_commit") or "(no commits)"
+            print(f"✔ {st['repository']}  [{st.get('branch') or 'detached'}]  {head[:12]}")
+        rows = [[", ".join(c["files"]), c["status"], str(c["insertions"]),
+                 str(c["deletions"]), c["task_id"] or "-"] for c in st.get("changes", [])]
+        print(_render_table(["File", "Status", "+", "-", "Task"], rows, empty=None))
+        if not st.get("changes"):
+            print("  (no changes)")
+    elif sub == "diff":
+        rows = [[", ".join(c["files"]), c["status"], str(c["insertions"]),
+                 str(c["deletions"]), c["task_id"] or "-"] for c in r["changes"]]
+        print(_render_table(["File", "Status", "+", "-", "Task"], rows))
+        print(f"{r['count']} changes")
+        if r.get("error"):
+            print(f"  error     {r['error']}")
+    elif sub == "commits":
+        rows = [[c["hash"][:12], c["message"], c["branch"] or "-",
+                 c["task_id"] or "-", c["created_at"]] for c in r["commits"]]
+        print(_render_table(["Hash", "Message", "Branch", "Task", "Date"], rows))
+        print(f"{r['count']} commits")
+        if r.get("error"):
+            print(f"  error     {r['error']}")
 
 
 if __name__ == "__main__":

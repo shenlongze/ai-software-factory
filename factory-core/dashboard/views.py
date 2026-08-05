@@ -489,3 +489,65 @@ def build_workspace_events(snapshot: FactorySnapshot) -> Panel:
     if not snapshot.recent_events:
         table.add_row(_text("(no events)", style="dim"), "", "", "", "", "", "")
     return _panel(table, "Workspace Events", border="blue")
+
+
+# ------------------------------------------------------------------ Git View (Phase 6C, ADR-0018)
+
+def build_git(snapshot: FactorySnapshot) -> Panel:
+    """Git View (Phase 6C, ADR-0018): Projects/Repositories/Changes/Commits。
+
+    数据源 = snapshot.git (collector include_git=True 聚合, GitService 只读):
+    Repositories 表 (每项目仓库上下文, 非 git 目录 → error 行照常展示 —
+    失败安全), Changes 表 (跨项目工作区变更 + task 关联), Commits 表
+    (跨项目最近提交, 按时间倒序)。
+    """
+    g = snapshot.git
+    summary = _line(
+        _text(f"{g.total} repositories", style="bold"),
+        _text(f" · {len(g.changes)} changes · {len(g.commits)} commits", style="bold"),
+    )
+    repo_table = Table(show_header=True, header_style="bold", box=box.SIMPLE_HEAVY, expand=True)
+    for col in ("Project", "Repository", "Branch", "Commit", "Changes", "Error"):
+        repo_table.add_column(col)
+    for r in g.repos:
+        repo_table.add_row(
+            _text(r.project_id or "-"),
+            _text(r.repository),
+            _text(r.branch or "-", style=_style_status("RUNNING" if r.branch else None)),
+            _text((r.current_commit or "(no commits)")[:12]),
+            _text(len(r.changes)),
+            _text(r.error or "-", style="red" if r.error else "dim"),
+        )
+    if not g.repos:
+        repo_table.add_row(_text("(no repositories)", style="dim"), "", "", "", "", "")
+
+    change_table = Table(show_header=True, header_style="bold", box=box.SIMPLE_HEAVY, expand=True)
+    for col in ("Repository", "File", "Status", "+", "-", "Task"):
+        change_table.add_column(col)
+    for c in g.changes:
+        change_table.add_row(
+            _text(c.repository),
+            _text(", ".join(c.files)),
+            _text(c.status, style=_style_status("RUNNING" if c.status != "deleted" else "FAILED")),
+            _text(c.insertions),
+            _text(c.deletions),
+            _text(c.task_id or "-"),
+        )
+    if not g.changes:
+        change_table.add_row(_text("(no changes)", style="dim"), "", "", "", "", "")
+
+    commit_table = Table(show_header=True, header_style="bold", box=box.SIMPLE_HEAVY, expand=True)
+    for col in ("Hash", "Message", "Branch", "Task", "Date"):
+        commit_table.add_column(col)
+    for c in g.commits:
+        commit_table.add_row(
+            _text(c.hash[:12]),
+            _text(c.message or "-"),
+            _text(c.branch or "-"),
+            _text(c.task_id or "-"),
+            _text(str(c.created_at)[:19]),
+        )
+    if not g.commits:
+        commit_table.add_row(_text("(no commits)", style="dim"), "", "", "", "")
+
+    return _panel(Group(summary, repo_table, change_table, commit_table), "Git", border="green")

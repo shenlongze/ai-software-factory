@@ -39,6 +39,7 @@ from .models import (
     CheckpointSnapshot,
     ExecutionSnapshot,
     FactorySnapshot,
+    GitSnapshot,
     MetricsSnapshot,
     ProjectSnapshot,
     ProjectsSnapshot,
@@ -66,6 +67,9 @@ class DashboardCollector:
         projects: list | None = None,  # list[ProjectDefinition] (Phase 6A Projects View)
         recent_limit: int = 10,
         include_workspace: bool = False,  # Phase 6B: workspace 模式 (ADR-0017)
+        git_services: list | None = None,  # Phase 6C: list[GitService] (Git View)
+        include_git: bool = False,  # Phase 6C: Git View 聚合开关 (ADR-0018)
+        git_commit_limit: int = 5,  # Phase 6C: 每仓库提交上限
     ) -> None:
         self._task_store = task_store
         self._agent_registry = agent_registry
@@ -91,6 +95,11 @@ class DashboardCollector:
             if include_workspace
             else None
         )
+        # Git View (Phase 6C): 注入 GitService 列表 (CLI 命令层按项目装配),
+        # 默认关闭 — 既有 dashboard 行为/成本完全不变 (同 include_workspace 模式)。
+        self._git_services = git_services or []
+        self._include_git = include_git
+        self._git_commit_limit = max(1, git_commit_limit)
 
     # ------------------------------------------------------------------ 主入口
 
@@ -110,6 +119,7 @@ class DashboardCollector:
             recent_events=self._collect_recent_events(),
             agent_utilization=self._collect_agent_utilization(),
             runtime_usage=self._collect_runtime_usage(),
+            git=self._collect_git(),
         )
 
     # ------------------------------------------------------------------ 分域聚合
@@ -319,3 +329,30 @@ class DashboardCollector:
     def _collect_runtime_usage(self) -> RuntimeUsageSummary:
         """Runtime 使用统计 (仅 workspace 模式; 复用 WorkspaceCollector)。"""
         return self._workspace.runtime_usage() if self._workspace else RuntimeUsageSummary()
+
+    # ------------------------------------------------------------------ Git View (Phase 6C, ADR-0018)
+
+    def _collect_git(self) -> GitSnapshot:
+        """Git View 聚合: 每项目仓库状态 + 跨项目变更/提交 (仅 include_git 模式)。
+
+        只读: 仅调 GitService 只读接口 (get_status/get_changes/get_commits,
+        subprocess git 读命令); 不发事件 (git.* 审计由 CLI 命令层发出, 同
+        dashboard.viewed 边界)。失败安全: 非 git 目录 → error 上下文照常入表,
+        聚合永不抛错。默认关闭 — 既有 dashboard 行为/成本完全不变。
+        """
+        if not self._include_git or not self._git_services:
+            return GitSnapshot()
+        repos: list = []
+        changes: list = []
+        commits: list = []
+        for service in self._git_services:
+            repos.append(service.get_status())
+            changes.extend(service.get_changes())
+            commits.extend(service.get_commits(limit=self._git_commit_limit))
+        commits.sort(key=lambda c: c.created_at, reverse=True)
+        return GitSnapshot(
+            total=len(repos),
+            repos=repos,
+            changes=changes,
+            commits=commits[:self._git_commit_limit],
+        )

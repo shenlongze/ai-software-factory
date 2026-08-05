@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import os
 from collections import Counter
 from typing import Any
 
@@ -71,6 +72,9 @@ from orchestration.pipeline import execute_workflow as run_orchestration
 from dashboard.collector import DashboardCollector
 from dashboard.renderer import VIEWS as DASHBOARD_VIEWS
 
+from git.client import GitClient
+from git.service import GitChangeStore, GitService
+
 from metrics.collectors import MetricsCollector
 from metrics.workspace import WorkspaceCollector
 
@@ -81,7 +85,7 @@ from project.loader import (
     load_project,
 )
 
-from workspace.loader import resolve_projects_root
+from workspace.loader import load_project_definition, resolve_projects_root
 from workspace.manager import (
     ProjectExistsError,
     ProjectNotFoundError,
@@ -1030,6 +1034,26 @@ def cmd_recover(ctx: FactoryContext, args: Any) -> dict:
 
 # ------------------------------------------------------------------ dashboard
 
+def _open_git_services(ctx: FactoryContext, projects: list) -> list[GitService]:
+    """按项目装配 GitService 列表 (Git View 数据源, Phase 6C, ADR-0018)。
+
+    只取有 repository 字段的项目 (本地路径或远程 URL 均可 — GitClient 失败
+    安全, 非 git/远程 URL → error 上下文照常入表); 无 repository 的项目跳过。
+    store = <root>/git/changes.json (关联持久化, 不依赖 cwd)。
+    """
+    services: list[GitService] = []
+    for p in projects:
+        repo = (getattr(p, "repository", "") or "").strip()
+        if not repo:
+            continue
+        services.append(GitService(
+            GitClient(os.path.expanduser(repo)),
+            project_id=getattr(p, "id", None) or getattr(p, "name", None),
+            changes_store=GitChangeStore(ctx.root / "git"),
+        ))
+    return services
+
+
 def cmd_dashboard(ctx: FactoryContext, args: Any) -> dict:
     """factory dashboard — 只读控制台总览 (Rich 视图), 发 dashboard.viewed;
     --workspace → Workspace Summary (跨项目运营视图组), 发 workspace.dashboard.viewed。
@@ -1059,6 +1083,9 @@ def cmd_dashboard(ctx: FactoryContext, args: Any) -> dict:
             ws_projects = _open_workspace_manager(ctx).load_workspace().projects
         except (WorkspaceNotFoundError, WorkspaceConfigError):
             ws_projects = []
+        # Phase 6C Git View: 仅 --view git 聚合 (include_git 默认关闭, 既有
+        # dashboard 行为/成本不变; 数据源 = 项目 repository 的 GitService 列表)。
+        git_services = _open_git_services(ctx, ws_projects) if view == "git" else []
         collector = DashboardCollector(
             task_store=ctx.open_task_store(),
             agent_registry=AgentRegistry(ctx.open_agent_store()),
@@ -1071,6 +1098,8 @@ def cmd_dashboard(ctx: FactoryContext, args: Any) -> dict:
             projects=ws_projects,
             recent_limit=args.limit,
             include_workspace=workspace or view in workspace_views,
+            git_services=git_services,
+            include_git=view == "git",
         )
         snapshot = collector.collect()
         ev = logger.record(
@@ -1094,6 +1123,9 @@ def cmd_dashboard(ctx: FactoryContext, args: Any) -> dict:
                 "catalog_definitions": snapshot.catalog.total,
                 "projects_total": snapshot.projects.total,
                 "events_total": snapshot.metrics.event_count,
+                "git_repositories": snapshot.git.total,   # Phase 6C (ADR-0018)
+                "git_changes": len(snapshot.git.changes),
+                "git_commits": len(snapshot.git.commits),
             },
         )
     return {
@@ -1356,5 +1388,142 @@ def cmd_project_show(ctx: FactoryContext, args: Any) -> dict:
         "skills": [s.to_dict() for s in config.skills],
         "workflows": [w.to_dict() for w in config.workflows],
         "examples_dir": str(src),
+        "event_seq": ev.seq,
+    }
+
+
+# ------------------------------------------------------------------ git 子命令 (Phase 6C, ADR-0018)
+
+_REMOTE_URL_PREFIXES = ("http://", "https://", "git@", "ssh://", "git://")
+
+
+def _is_remote_url(repository: str) -> bool:
+    """repository 是否远程 URL (仅本地路径可读; URL 失败安全转错误)。"""
+    return repository.startswith(_REMOTE_URL_PREFIXES)
+
+
+def _git_resolve_repository(ctx: FactoryContext, args: Any) -> str:
+    """解析仓库路径: --repo 显式 > --project 的 project.yaml repository。
+
+    退出码: 2 两者皆缺 (用法); 7 项目不存在; 1 无 repository / 远程 URL。
+    """
+    repo = getattr(args, "repo", None)
+    if repo:
+        return os.path.expanduser(repo)
+    project_id = getattr(args, "project", None)
+    if not project_id:
+        raise CliError("specify --project or --repo", exit_code=2)
+    definition = load_project_definition(ctx.root, project_id)
+    if definition is None:
+        raise CliError(f"project not found: {project_id}", exit_code=7)
+    if not definition.repository:
+        raise CliError(f"project has no repository configured: {project_id}", exit_code=1)
+    if _is_remote_url(definition.repository):
+        raise CliError(
+            f"repository is a remote URL, not a local path: {definition.repository}",
+            exit_code=1,
+        )
+    return os.path.expanduser(definition.repository)
+
+
+def _open_git_service(ctx: FactoryContext, args: Any) -> GitService:
+    """装配 GitService (只读 client + project 维度; store = <root>/git/changes.json)。
+
+    GitChangeStore 显式传路径 (不依赖 cwd); task_store 不装配 — CLI git 命令
+    是纯只读查询 (bind_task_change 关联经服务层 API, 任务校验由调用方负责)。
+    """
+    repository = _git_resolve_repository(ctx, args)
+    return GitService(
+        GitClient(repository),
+        project_id=getattr(args, "project", None),
+        changes_store=GitChangeStore(ctx.root / "git"),
+    )
+
+
+def cmd_git_status(ctx: FactoryContext, args: Any) -> dict:
+    """factory git status — 仓库状态 (branch/current_commit/changes), 发 git.status.viewed。
+
+    失败安全: 非 git 目录/命令缺失 → status.is_repo=False + error 摘要, 退出码
+    仍为 0 (只读查询执行成功, 错误经输出呈现 — phase6c-status.md §失败安全)。
+    唯一副作用 = 审计事件 (ADR-0002); Git 零写命令 (只读铁律)。
+    """
+    with ctx.logger_scope() as logger:
+        service = _open_git_service(ctx, args)
+        status = service.get_status()
+        ev = logger.record(
+            EventType.GIT_STATUS_VIEWED, source=SOURCE, project_id=args.project,
+            stage="viewed", action="view git status",
+            result="OK" if status.is_repo else "ERROR",
+            payload={
+                "repository": status.repository,
+                "branch": status.branch,
+                "current_commit": status.current_commit,
+                "changes": len(status.changes),
+                "is_repo": status.is_repo,
+                "error": status.error,
+            },
+        )
+    return {
+        "ok": True,
+        "status": status.to_dict(),
+        "error": status.error,
+        "event_seq": ev.seq,
+    }
+
+
+def cmd_git_diff(ctx: FactoryContext, args: Any) -> dict:
+    """factory git diff — 工作区变更列表 (逐文件 + 行数 + task 关联), 发 git.change.detected。
+
+    失败安全: 非 git 目录 → changes 空列表, 退出码 0 (错误经 status.error 输出
+    由 status 命令呈现; 此处记录 error 字段供审计)。只读 (零写命令)。
+    """
+    with ctx.logger_scope() as logger:
+        service = _open_git_service(ctx, args)
+        changes = service.get_changes()
+        status = service.get_status()
+        ev = logger.record(
+            EventType.GIT_CHANGE_DETECTED, source=SOURCE, project_id=args.project,
+            stage="detected", action="view git diff", result="OK",
+            payload={
+                "repository": service.client.repository,
+                "count": len(changes),
+                "error": status.error,
+            },
+        )
+    return {
+        "ok": True,
+        "count": len(changes),
+        "changes": [c.to_dict() for c in changes],
+        "error": status.error,
+        "event_seq": ev.seq,
+    }
+
+
+def cmd_git_commits(ctx: FactoryContext, args: Any) -> dict:
+    """factory git commits — 提交历史 (hash/message/branch/task), 发 git.commit.viewed。
+
+    失败安全: 非 git 目录/空仓库 → commits 空列表, 退出码 0。只读 (零写命令)。
+    """
+    limit = getattr(args, "limit", None) or 20
+    with ctx.logger_scope() as logger:
+        service = _open_git_service(ctx, args)
+        commits = service.get_commits(limit=limit)
+        status = service.get_status()
+        ev = logger.record(
+            EventType.GIT_COMMIT_VIEWED, source=SOURCE, project_id=args.project,
+            stage="viewed", action="view git commits", result="OK",
+            payload={
+                "repository": service.client.repository,
+                "count": len(commits),
+                "limit": limit,
+                "hashes": [c.hash for c in commits[:20]],
+                "error": status.error,
+            },
+        )
+    return {
+        "ok": True,
+        "count": len(commits),
+        "commits": [c.to_dict() for c in commits],
+        "error": status.error,
         "event_seq": ev.seq,
     }

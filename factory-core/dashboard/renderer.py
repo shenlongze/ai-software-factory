@@ -28,7 +28,7 @@ from .models import FactorySnapshot
 VIEWS = (
     "overview", "tasks", "agents", "workflows", "executions", "recovery", "catalog",
     "metrics", "workspace", "projects", "agents_utilization", "runtime_usage",
-    "workspace_events",
+    "workspace_events", "git",
 )
 
 _SINGLE = {
@@ -44,6 +44,7 @@ _SINGLE = {
     "agents_utilization": views.build_agent_utilization,  # Phase 6B (ADR-0017)
     "runtime_usage": views.build_runtime_usage,           # Phase 6B (ADR-0017)
     "workspace_events": views.build_workspace_events,     # Phase 6B (ADR-0017)
+    "git": views.build_git,                        # Phase 6C Git View (ADR-0018)
 }
 
 

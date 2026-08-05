@@ -191,6 +191,17 @@ class EventType(str, Enum):
     WORKSPACE_METRICS_VIEWED = "workspace.metrics.viewed"      # 项目对比指标被查看 (metrics --workspace)
     WORKSPACE_EVENTS_VIEWED = "workspace.events.viewed"        # 跨项目事件时间线被查看 (event logs --workspace)
 
+    # --- Phase 6C: Git Integration Layer 事件 (增量扩展, ADR-0018) ---
+    # 依 ADR-0001 决策 1 的扩展路径: 加枚举成员即可, 不改表结构/API。
+    # git.* 为仓库只读查询 + 变更审计事件 (source="cli"/"git"): status.viewed /
+    # commit.viewed 为读命令事件 (ADR-0002: 所有 CLI 行为必须产生 Event, 同
+    # dashboard.viewed); change.detected 在变更被检测/绑定 (bind_task_change)
+    # 时发出 — Git 只读铁律: 本域事件只审计, 不触发任何仓库写操作
+    # (phase6c-status.md §禁止: 无 push/merge/rebase)。
+    GIT_STATUS_VIEWED = "git.status.viewed"        # 仓库状态被查看 (branch/current_commit/changes)
+    GIT_CHANGE_DETECTED = "git.change.detected"    # 工作区变更被检测/与任务关联 (审计)
+    GIT_COMMIT_VIEWED = "git.commit.viewed"        # 提交历史被查看 (只读)
+
 
 class Event(BaseModel):
     """一条事件。append-only: 写入后永不修改、永不删除。"""

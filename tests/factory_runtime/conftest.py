@@ -47,8 +47,30 @@ runtime_pkg = _load_runtime_pkg()
 # --------------------------------------------------------------- fake 脚本
 
 FAKE_CORE = """
+# Core 命令执行器 fake (架构裁决 B: Core 非 daemon, 命令语义):
+#   --help/-h → 0 (命令可用性检查); status → 0; echo <...> → 0 (回显);
+#   fail/bogus → 2 (命令失败); 其他 → 常驻 (旧 daemon 语义测试兼容)
 import sys, time
+args = sys.argv[1:]
+if "--help" in args or "-h" in args:
+    print("fake factory core help")
+    sys.exit(0)
+if args and args[0] == "status":
+    print("fake status: ok")
+    sys.exit(0)
+if args and args[0] == "echo":
+    print(" ".join(args[1:]))
+    sys.exit(0)
+if args and args[0] in ("fail", "bogus", "badcmd"):
+    print("fake core failure", file=sys.stderr)
+    sys.exit(2)
 time.sleep(600)
+"""
+
+FAKE_CORE_FAIL = """
+# Core 命令一律失败 (exit 2) — 测"Core 命令不可用 ≠ runtime 崩溃"
+import sys
+sys.exit(2)
 """
 
 FAKE_CORE_CRASH_ONCE = """
@@ -142,6 +164,70 @@ import time
 time.sleep(600)
 """
 
+FAKE_CONSOLE_CRASH_ONCE = """
+# argv[1] = marker 路径: 首次运行服务 0.6s 后退出 2 (模拟崩溃), 之后常驻
+import sys, threading, time, pathlib
+from http.server import BaseHTTPRequestHandler, HTTPServer
+marker = pathlib.Path(sys.argv[1])
+port = 8011
+args = sys.argv[2:]
+for i, a in enumerate(args):
+    if a == "--port" and i + 1 < len(args):
+        port = int(args[i + 1])
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/api/dashboard":
+            body = b'{"ok": true}'
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            self.send_response(404)
+            self.end_headers()
+    def log_message(self, *args):
+        pass
+server = HTTPServer(("127.0.0.1", port), Handler)
+if marker.exists():
+    threading.Timer(600, server.shutdown).start()
+    server.serve_forever()
+else:
+    marker.write_text("1")
+    threading.Timer(0.6, server.shutdown).start()
+    server.serve_forever()
+    sys.exit(2)
+"""
+
+FAKE_CONSOLE_IGNORE_TERM = """
+# 服务 HTTP + 忽略 SIGTERM → 测 stop 超时强杀 (SIGKILL)
+import sys, signal, threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+port = 8011
+args = sys.argv[1:]
+for i, a in enumerate(args):
+    if a == "--port" and i + 1 < len(args):
+        port = int(args[i + 1])
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/api/dashboard":
+            body = b'{"ok": true}'
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            self.send_response(404)
+            self.end_headers()
+    def log_message(self, *args):
+        pass
+server = HTTPServer(("127.0.0.1", port), Handler)
+threading.Timer(600, server.shutdown).start()
+server.serve_forever()
+"""
+
 
 def _write_script(tmp_path: Path, name: str, src: str) -> str:
     path = tmp_path / name
@@ -175,6 +261,10 @@ def frt_root(tmp_path: Path) -> Path:
 @pytest.fixture
 def fake_core_cmd(tmp_path: Path) -> list[str]:
     return [sys.executable, _write_script(tmp_path, "fake_core.py", FAKE_CORE)]
+
+@pytest.fixture
+def fake_core_fail_cmd(tmp_path: Path) -> list[str]:
+    return [sys.executable, _write_script(tmp_path, "fake_core_fail.py", FAKE_CORE_FAIL)]
 
 
 @pytest.fixture
@@ -215,6 +305,26 @@ def fake_console_crash_cmd(tmp_path: Path) -> list[str]:
 @pytest.fixture
 def fake_console_slow_cmd(tmp_path: Path) -> list[str]:
     return [sys.executable, _write_script(tmp_path, "fake_console_slow.py", FAKE_CONSOLE_SLOW)]
+
+@pytest.fixture
+def fake_console_crash_once_cmd(tmp_path: Path) -> list[str]:
+    marker = tmp_path / "console_crash_marker"
+    return [
+        sys.executable,
+        _write_script(tmp_path, "fake_console_crash_once.py", FAKE_CONSOLE_CRASH_ONCE),
+        str(marker),
+        "--port",
+        "{port}",
+    ]
+
+@pytest.fixture
+def fake_console_ignore_term_cmd(tmp_path: Path) -> list[str]:
+    return [
+        sys.executable,
+        _write_script(tmp_path, "fake_console_ignore_term.py", FAKE_CONSOLE_IGNORE_TERM),
+        "--port",
+        "{port}",
+    ]
 
 
 @pytest.fixture

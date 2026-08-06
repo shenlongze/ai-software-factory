@@ -84,6 +84,31 @@ def test_status_before_start(rt_pkg, cli_root, capsys):
     assert rc == 0
     status = json.loads(capsys.readouterr().out)
     assert status["status"] == "idle"
+    assert status["core_exit_code"] is None  # Core 非 daemon
+    assert status["command_health"]["name"] == "core"
+    assert status["service_health"]["name"] == "console"
+
+
+def test_status_json_has_service_and_command_health(rt_pkg, cli_root, fake_core_cmd, fake_console_cmd, capsys):
+    """status --json: console ServiceHealth + core CommandHealth 明确区分。"""
+    factory_cmd = shlex.join(fake_core_cmd)
+    console_cmd = shlex.join(fake_console_cmd)
+    assert _run(
+        rt_pkg,
+        ["--root", str(cli_root), "start", "--factory-cmd", factory_cmd, "--console-cmd", console_cmd],
+    ) == 0
+    capsys.readouterr()
+    rc = _run(rt_pkg, ["--root", str(cli_root), "status", "--json"])
+    status = json.loads(capsys.readouterr().out)
+    assert rc == 0
+    assert status["status"] == "ready"
+    assert status["console_healthy"] is True
+    assert status["service_health"]["alive"] is True
+    assert status["core_available"] is True
+    assert status["command_health"]["available"] is True
+    assert status["core_exit_code"] is None
+    _run(rt_pkg, ["--root", str(cli_root), "stop"])
+    capsys.readouterr()
 
 
 def test_stop_when_not_running_rc0(rt_pkg, cli_root, capsys):
@@ -108,7 +133,12 @@ def test_restart_rc0(rt_pkg, cli_root, fake_core_cmd, fake_console_cmd, capsys):
 
 
 def test_cli_stop_kills_orphaned_children(rt_pkg, cli_root, fake_core_cmd, fake_console_cmd, capsys):
-    """CLI start 后管理器进程已退出 → stop 经 pid 文件跨进程终止子进程。"""
+    """CLI start 后管理器进程已退出 → stop 经 pid 文件跨进程终止子进程。
+
+    裁决 B (Core Command Model): Core 非 daemon → 无 core.pid, 无 core
+    进程; 孤儿清理只针对 managed service (Console)。core.cmd (命令
+    持久化) 替代 core.pid (进程持久化)。
+    """
     factory_cmd = shlex.join(fake_core_cmd)
     console_cmd = shlex.join(fake_console_cmd)
     assert _run(
@@ -116,17 +146,17 @@ def test_cli_stop_kills_orphaned_children(rt_pkg, cli_root, fake_core_cmd, fake_
         ["--root", str(cli_root), "start", "--factory-cmd", factory_cmd, "--console-cmd", console_cmd],
     ) == 0
     capsys.readouterr()
-    core_pid = int((cli_root / "config" / "core.pid").read_text().strip())
     console_pid = int((cli_root / "config" / "console.pid").read_text().strip())
     from frt_helpers import pid_alive
 
-    assert pid_alive(core_pid) and pid_alive(console_pid)
+    assert pid_alive(console_pid)
+    assert not (cli_root / "config" / "core.pid").exists()  # Core 非 daemon
+    assert (cli_root / "config" / "core.cmd").exists()  # 命令持久化替代进程持久化
     rc = _run(rt_pkg, ["--root", str(cli_root), "stop"])
     assert rc == 0
-    assert not pid_alive(core_pid)
     assert not pid_alive(console_pid)
-    assert not (cli_root / "config" / "core.pid").exists()
     assert not (cli_root / "config" / "console.pid").exists()
+    assert not (cli_root / "config" / "core.pid").exists()
 
 
 def test_logs_command(rt_pkg, cli_root, fake_core_cmd, fake_console_cmd, capsys):

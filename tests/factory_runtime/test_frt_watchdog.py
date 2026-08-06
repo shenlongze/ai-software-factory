@@ -1,7 +1,12 @@
-"""tests/factory_runtime/test_frt_watchdog.py — watchdog (崩溃恢复/重启上限/事件)。
+"""tests/factory_runtime/test_frt_watchdog.py — watchdog (managed services 崩溃恢复)。
 
-重点: crash recovery (Core 崩溃 → 自动重启, restart_count/事件) / 超限 →
-failed / stop 后不再重启 / 重启计数随新 start 重置。
+架构裁决 B (Core Command Model):
+- watchdog 只 watch managed services (当前 Console); Core 退出是预期,
+  不重启, 不报警为 crash。
+- 未来 Agent Worker/Scheduler 经 manager.managed_services 注册 → 自动覆盖。
+
+重点: console 崩溃 → 自动重启 (restart_count/事件) / 超限 → failed /
+Core 命令退出不触发重启 / stop 后不再重启 / 重启计数随新 start 重置。
 """
 
 from __future__ import annotations
@@ -24,74 +29,52 @@ def _fast(**overrides) -> dict:
     return kw
 
 
-def test_crash_recovery_restarts_core(
-    manager_factory, frt_root, tmp_path, fake_core_crash_once, fake_console_cmd
+def test_core_command_exit_does_not_trigger_watchdog(
+    manager_factory, frt_root, fake_core_cmd, fake_console_cmd
 ):
-    marker = tmp_path / "marker"
+    """Core 退出是预期: watchdog 只 watch managed services (Console), Core 不重启。"""
     mgr = manager_factory(
-        frt_root,
-        factory_cmd=fake_core_crash_once + [str(marker)],
-        console_cmd=fake_console_cmd,
-        **_fast(),
+        frt_root, factory_cmd=fake_core_cmd, console_cmd=fake_console_cmd, **_fast()
     )
     mgr.start()
-    first_pid = mgr.core_proc.pid
-
-    def recovered():
-        wd = mgr._watchdog
-        return (
-            wd is not None
-            and wd.restart_count >= 1
-            and mgr.core_proc is not None
-            and mgr.core_proc.pid != first_pid
-        )
-
-    assert wait_until(recovered, timeout=12)
+    wd = mgr._watchdog
+    result = mgr.run_command(["status"])  # Core 命令执行后退出 (正常完成)
+    assert result.returncode == 0
+    time.sleep(0.8)  # 给 watchdog 若干轮 — 若误 watch Core 必然触发重启
+    assert wd.restart_count == 0
     assert mgr.status()["status"] == "ready"
-    assert mgr.status()["core_alive"] is True
-    # 事件记录 (可定位)
-    log_text = (frt_root / "logs" / "runtime.log").read_text()
-    assert "restart" in log_text and "core" in log_text
 
 
-def test_restart_records_event_detail(
-    manager_factory, frt_root, tmp_path, fake_core_crash_once, fake_console_cmd
-):
-    marker = tmp_path / "marker"
-    mgr = manager_factory(
-        frt_root,
-        factory_cmd=fake_core_crash_once + [str(marker)],
-        console_cmd=fake_console_cmd,
-        **_fast(),
-    )
-    mgr.start()
-    assert wait_until(lambda: mgr._watchdog is not None and mgr._watchdog.restart_count >= 1, timeout=12)
-    record = mgr._watchdog.restarts[-1]
-    assert record["name"] == "core"
-    assert record["exit_code"] == 1
-    assert record["at"]
+def test_watchdog_polls_managed_services_list(rt_pkg):
+    """_check_once 只轮询 manager.managed_services (duck-typed manager 验证)。"""
+
+    class FakeManager:
+        managed_services = ["svc_a"]
+
+        def status(self):
+            return {"status": "ready"}
+
+        def service_proc(self, name):
+            assert name == "svc_a"
+            return None  # 无进程 → 跳过, 零重启
+
+    wd = rt_pkg.watchdog.Watchdog(FakeManager())
+    wd._check_once()
+    assert wd.restart_count == 0
 
 
-def test_restart_limit_exceeded_failed(manager_factory, frt_root, fake_core_crash_loop, fake_console_cmd):
-    mgr = manager_factory(
-        frt_root,
-        factory_cmd=fake_core_crash_loop,
-        console_cmd=fake_console_cmd,
-        **_fast(max_restarts=2),
-    )
-    mgr.start()
-    assert wait_until(lambda: mgr.status()["status"] == "failed", timeout=20)
-    assert mgr._watchdog.restart_count == 3  # 2 次重启后第 3 次退出超限
-    log_text = (frt_root / "logs" / "runtime.log").read_text()
-    assert "watchdog limit reached" in log_text
+def test_watchdog_ignores_core_without_managed_proc(rt_pkg, manager_factory, frt_root, monkeypatch):
+    """Core 无进程可 watch (非 managed service) → 零重启。"""
+    mgr = manager_factory(frt_root)
+    monkeypatch.setattr(mgr, "status", lambda: {"status": "ready"})
+    wd = rt_pkg.watchdog.Watchdog(mgr)
+    wd._check_once()
+    assert wd.restart_count == 0
 
 
 def test_console_crash_restart(manager_factory, frt_root, fake_core_cmd, fake_console_crash_cmd):
     mgr = manager_factory(
-        frt_root,
-        factory_cmd=fake_core_cmd,
-        console_cmd=fake_console_crash_cmd,
-        **_fast(),
+        frt_root, factory_cmd=fake_core_cmd, console_cmd=fake_console_crash_cmd, **_fast()
     )
     mgr.start()
     first_pid = mgr.console_proc.pid
@@ -110,6 +93,39 @@ def test_console_crash_restart(manager_factory, frt_root, fake_core_cmd, fake_co
     assert mgr.status()["console_alive"] is True
 
 
+def test_console_crash_once_restart_records_event(
+    manager_factory, frt_root, fake_core_cmd, fake_console_crash_once_cmd
+):
+    """console crash-once → watchdog 重启 1 次 → 常驻; 事件记录 (name/exit_code)。"""
+    mgr = manager_factory(
+        frt_root, factory_cmd=fake_core_cmd, console_cmd=fake_console_crash_once_cmd, **_fast()
+    )
+    mgr.start()
+    assert wait_until(lambda: mgr._watchdog is not None and mgr._watchdog.restart_count >= 1, timeout=12)
+    record = mgr._watchdog.restarts[-1]
+    assert record["name"] == "console"
+    assert record["exit_code"] == 2
+    assert record["at"]
+    assert mgr.status()["status"] == "ready"
+    # 事件记录 (可定位)
+    log_text = (frt_root / "logs" / "runtime.log").read_text()
+    assert "restart" in log_text and "console" in log_text
+
+
+def test_restart_limit_exceeded_failed(manager_factory, frt_root, fake_core_cmd, fake_console_crash_cmd):
+    mgr = manager_factory(
+        frt_root,
+        factory_cmd=fake_core_cmd,
+        console_cmd=fake_console_crash_cmd,
+        **_fast(max_restarts=2),
+    )
+    mgr.start()
+    assert wait_until(lambda: mgr.status()["status"] == "failed", timeout=20)
+    assert mgr._watchdog.restart_count == 3  # 2 次重启后第 3 次退出超限
+    log_text = (frt_root / "logs" / "runtime.log").read_text()
+    assert "watchdog limit reached" in log_text
+
+
 def test_watchdog_stops_on_stop(manager_factory, frt_root, fake_core_cmd, fake_console_cmd):
     mgr = manager_factory(
         frt_root, factory_cmd=fake_core_cmd, console_cmd=fake_console_cmd, **_fast()
@@ -122,11 +138,11 @@ def test_watchdog_stops_on_stop(manager_factory, frt_root, fake_core_cmd, fake_c
     assert wd._thread is None or not wd._thread.is_alive()
 
 
-def test_watchdog_no_restart_after_stop(manager_factory, frt_root, fake_core_crash_loop, fake_console_cmd):
+def test_watchdog_no_restart_after_stop(manager_factory, frt_root, fake_core_cmd, fake_console_crash_cmd):
     mgr = manager_factory(
         frt_root,
-        factory_cmd=fake_core_crash_loop,
-        console_cmd=fake_console_cmd,
+        factory_cmd=fake_core_cmd,
+        console_cmd=fake_console_crash_cmd,
         **_fast(max_restarts=2),
     )
     mgr.start()
@@ -139,14 +155,10 @@ def test_watchdog_no_restart_after_stop(manager_factory, frt_root, fake_core_cra
 
 
 def test_restart_count_reset_on_new_start(
-    manager_factory, frt_root, tmp_path, fake_core_crash_once, fake_console_cmd
+    manager_factory, frt_root, fake_core_cmd, fake_console_crash_once_cmd
 ):
-    marker = tmp_path / "marker"
     mgr = manager_factory(
-        frt_root,
-        factory_cmd=fake_core_crash_once + [str(marker)],
-        console_cmd=fake_console_cmd,
-        **_fast(),
+        frt_root, factory_cmd=fake_core_cmd, console_cmd=fake_console_crash_once_cmd, **_fast()
     )
     mgr.start()
     assert wait_until(lambda: mgr._watchdog.restart_count >= 1, timeout=12)
@@ -187,8 +199,14 @@ def test_max_restarts_configurable(rt_pkg, manager_factory, frt_root):
 
 def test_restart_process_unknown_name(rt_pkg, manager_factory, frt_root):
     mgr = manager_factory(frt_root)
-    with pytest.raises(ValueError, match="unknown process"):
+    with pytest.raises(ValueError, match="unknown managed service"):
         mgr.restart_process("bogus")
+
+
+def test_service_proc_unknown_name(rt_pkg, manager_factory, frt_root):
+    mgr = manager_factory(frt_root)
+    with pytest.raises(ValueError, match="unknown managed service"):
+        mgr.service_proc("bogus")
 
 
 def test_watchdog_survives_restart_exception(rt_pkg, manager_factory, frt_root):

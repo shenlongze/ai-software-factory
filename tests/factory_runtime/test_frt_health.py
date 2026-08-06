@@ -1,6 +1,8 @@
-"""tests/factory_runtime/test_frt_health.py — health 模块 (Console HTTP/Core 进程/等待)。
+"""tests/factory_runtime/test_frt_health.py — health 模块。
 
-重点: /api/dashboard 200 判定 / 失败安全 / wait_healthy 超时抛 RuntimeError。
+架构裁决 B: ServiceHealth (长期组件) vs CommandHealth (短命令) 明确区分。
+重点: /api/dashboard 200 判定 / check_process / service_health /
+command_health (命令可用性) / wait_healthy 超时抛 RuntimeError。
 """
 
 from __future__ import annotations
@@ -80,10 +82,10 @@ def test_check_console_timeout_false(rt_pkg, slow_server):
     assert rt_pkg.health.check_console(slow_server, timeout=0.2) is False
 
 
-def test_check_core_alive(rt_pkg):
+def test_check_process_alive(rt_pkg):
     proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
     try:
-        alive, code = rt_pkg.health.check_core(proc)
+        alive, code = rt_pkg.health.check_process(proc)
         assert alive is True
         assert code is None
     finally:
@@ -91,18 +93,100 @@ def test_check_core_alive(rt_pkg):
         proc.wait(timeout=5)
 
 
-def test_check_core_exited_code(rt_pkg):
+def test_check_process_exited_code(rt_pkg):
     proc = subprocess.Popen([sys.executable, "-c", "import sys; sys.exit(3)"])
     proc.wait(timeout=5)
-    alive, code = rt_pkg.health.check_core(proc)
+    alive, code = rt_pkg.health.check_process(proc)
     assert alive is False
     assert code == 3
 
 
-def test_check_core_none(rt_pkg):
-    alive, code = rt_pkg.health.check_core(None)
+def test_check_process_none(rt_pkg):
+    alive, code = rt_pkg.health.check_process(None)
     assert alive is False
     assert code is None
+
+
+# ------------------------------------------------------------ ServiceHealth
+
+def test_service_health_alive(rt_pkg):
+    proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+    try:
+        h = rt_pkg.health.service_health("console", proc)
+        assert h.name == "console"
+        assert h.alive is True
+        assert h.checked_at
+        d = h.to_dict()
+        assert d["name"] == "console" and d["alive"] is True
+    finally:
+        proc.terminate()
+        proc.wait(timeout=5)
+
+
+def test_service_health_down_for_none(rt_pkg):
+    h = rt_pkg.health.service_health("console", None)
+    assert h.alive is False
+
+
+def test_service_health_with_http_probe(rt_pkg, live_server):
+    """ServiceHealth 叠加 HTTP 探针: 进程存活 + /api/dashboard 200。"""
+    proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+    try:
+        h = rt_pkg.health.service_health("console", proc, base_url=live_server, timeout=2.0)
+        assert h.alive is True
+        assert "http=True" in h.detail
+    finally:
+        proc.terminate()
+        proc.wait(timeout=5)
+
+
+def test_service_health_http_probe_down(rt_pkg, live_server):
+    """进程存活但 HTTP 探针失败 → ServiceHealth alive False (服务不可用)。"""
+    h = rt_pkg.health.service_health("console", None, base_url=live_server, timeout=2.0)
+    assert h.alive is False
+    assert "http=True" in h.detail  # probe 本身通, 但无进程
+
+
+# ------------------------------------------------------------ CommandHealth
+
+def test_command_health_available(rt_pkg):
+    h = rt_pkg.health.command_health(
+        "core", [sys.executable, "-c", "import sys; sys.exit(0)"], timeout=5.0
+    )
+    assert h.name == "core"
+    assert h.available is True
+    assert h.returncode == 0
+
+
+def test_command_health_failure(rt_pkg):
+    """命令非零退出 → available False (命令失败, 非异常)。"""
+    h = rt_pkg.health.command_health(
+        "core", [sys.executable, "-c", "import sys; sys.exit(7)"], timeout=5.0
+    )
+    assert h.available is False
+    assert h.returncode == 7
+
+
+def test_command_health_missing_binary(rt_pkg):
+    h = rt_pkg.health.command_health("core", ["definitely-missing-bin-xyz"], timeout=2.0)
+    assert h.available is False
+    assert "not found" in h.detail
+
+
+def test_command_health_timeout(rt_pkg):
+    h = rt_pkg.health.command_health(
+        "core", [sys.executable, "-c", "import time; time.sleep(30)"], timeout=0.3
+    )
+    assert h.available is False
+    assert "timed out" in h.detail
+
+
+def test_command_health_to_dict(rt_pkg):
+    h = rt_pkg.health.CommandHealth(name="core", available=True, returncode=0)
+    d = h.to_dict()
+    assert d["name"] == "core"
+    assert d["available"] is True
+    assert d["returncode"] == 0
 
 
 def test_wait_healthy_immediate(rt_pkg):

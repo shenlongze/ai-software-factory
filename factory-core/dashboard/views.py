@@ -820,6 +820,19 @@ def build_product(snapshot: FactorySnapshot) -> Panel:
     ))
     if p.workflows_by_status:
         summary.append("  ").append_text(_status_counts_text(p.workflows_by_status))
+    # Phase 9B (ADR-0027): generation 状态列 (生成产物按 status 计数:
+    # completed/failed) + experience 计数 — 仅在存在生成/经验数据时追加
+    # (默认关零回归: 无数据时既有 Product View 输出逐位不变)。
+    if p.generation_total:
+        summary.append("  ").append_text(_line(
+            Text(f"generations {p.generation_total}", style="bold"),
+        ))
+        if p.generations_by_status:
+            summary.append("  ").append_text(_status_counts_text(p.generations_by_status))
+    if p.experience_total:
+        summary.append("  ").append_text(_line(
+            Text(f"experiences {p.experience_total}", style="bold"),
+        ))
 
     idea_table = Table(show_header=True, header_style="bold", box=box.SIMPLE_HEAVY, expand=True)
     for col in ("Idea", "Title", "Status", "Goals", "Created"):

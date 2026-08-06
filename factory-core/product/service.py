@@ -151,11 +151,15 @@ class ProductService:
         confidence: float = 0.0,
         status: str = "created",
         idea_id: str | None = None,
+        version: int | None = None,
     ) -> Artifact:
         """创建任意类型 Artifact (AI Artifact Lineage: provider/agent/source_events)。
 
         9a 骨架的通用写入口 (CLI 未暴露, 供 9b Provider 生成与测试使用);
         idea_id 非空时写入 content.idea_id (workflow 联动锚点, 同 idea 约定)。
+        version (Phase 9b, ADR-0027): 重生成版本覆盖 (None → 1, 既有调用零
+        影响 — 同 idea 同类型产物的版本递增由 ProductGenerator._next_version
+        负责, Lineage \"每次重生成 +1\" 语义)。
         """
         content = dict(content or {})
         if idea_id is not None:
@@ -170,6 +174,7 @@ class ProductService:
             agent_id=agent_id,
             source_events=list(source_events or []),
             confidence=confidence,
+            version=version if version is not None else 1,
         )
         self._store.save_artifact(artifact)
         return artifact

@@ -331,6 +331,14 @@ class ProductSnapshot(BaseModel):
     workflow_total: int = 0
     workflows_by_status: dict[str, int] = Field(default_factory=dict)    # status → 计数
     workflows: list[dict[str, Any]] = Field(default_factory=list)        # ProductWorkflow.to_dict()
+    # Phase 9B (ADR-0027): 生成框架 + 经验记录 — generation 状态列 (生成产物
+    # 按 status 计数: completed/failed) + experience 计数 (ExperienceStore 只读,
+    # 默认空 — 无生成数据时既有 Product View 逐位不变, 零回归)。
+    generation_total: int = 0                                            # 含 generation_context 的产物数
+    generations_by_status: dict[str, int] = Field(default_factory=dict)  # 产物 status → 计数
+    generations: list[dict[str, Any]] = Field(default_factory=list)      # 生成产物 Artifact.to_dict()
+    experience_total: int = 0
+    experiences: list[dict[str, Any]] = Field(default_factory=list)      # GenerationExperience.to_dict()
 
     def to_dict(self) -> dict:
         return self.model_dump(mode="json")

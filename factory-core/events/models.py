@@ -293,6 +293,20 @@ class EventType(str, Enum):
     PRODUCT_WORKFLOW_STARTED = "product.workflow.started"        # 产品工作流启动
     PRODUCT_WORKFLOW_STATUS_VIEWED = "product.workflow.status_viewed"  # 工作流状态被查看 (只读审计)
 
+    # --- Phase 9B: Product Provider Generation 事件 (增量扩展, ADR-0027) ---
+    # 依 ADR-0001 决策 1 的扩展路径: 加枚举成员即可, 不改表结构/API。
+    # product.generation.* 为 AI 生成生命周期事件 (ProductGenerator 编排, source=
+    # "product"): started (生成开始, 已选定 Provider) → completed (Artifact 产出 +
+    # Lineage 记录 + 自动审批请求) | failed (无 Provider/无 Adapter/生成失败,
+    # result=ERROR — 明确错误不静默)。product.experience.* 为人工经验记录事件
+    # (GenerationExperience 落盘): recorded 为写路径 (record_experience);
+    # viewed 为读命令审计 (ADR-0002: 所有 CLI 行为必须产生 Event, 同 idea.viewed)。
+    PRODUCT_GENERATION_STARTED = "product.generation.started"        # 生成开始 (Provider 已选定)
+    PRODUCT_GENERATION_COMPLETED = "product.generation.completed"    # 生成完成 (Artifact + Lineage)
+    PRODUCT_GENERATION_FAILED = "product.generation.failed"          # 生成失败 (明确错误, result=ERROR)
+    PRODUCT_EXPERIENCE_RECORDED = "product.experience.recorded"      # 人工经验记录落盘
+    PRODUCT_EXPERIENCE_VIEWED = "product.experience.viewed"          # 经验清单被查看 (只读审计)
+
 
 class Event(BaseModel):
     """一条事件。append-only: 写入后永不修改、永不删除。"""

@@ -2635,3 +2635,134 @@ def cmd_product_workflow_status(ctx: FactoryContext, args: Any) -> dict:
         record_workflow_status_viewed(logger, workflow=workflow)
         event_seq = _product_last_seq(logger, EventType.PRODUCT_WORKFLOW_STATUS_VIEWED)
     return {"ok": True, "workflow": workflow.to_dict(), "event_seq": event_seq}
+
+
+# ------------------------------------------------------------------ product generate/experience (Phase 9B, ADR-0027)
+
+
+def _open_product_generator(ctx: FactoryContext, logger: Any, *, experience_store: Any = None):
+    """装配 ProductGenerator (延迟导入 product + providers — Removal Isolation)。
+
+    生成编排复用 Phase 8: CostAwareSelector (默认能力/成本基线 + UsageStore 实测
+    统计) + BUILTIN_PROVIDER_ADAPTERS 实现映射; 删除 providers 包 → selector/
+    adapters/usage_store 为 None → generate 抛明确错误 (配置缺口响亮暴露, 同
+    dashboard --view provider 删包模式)。experience_store 独立装配 (product 包内,
+    删 providers 不影响经验记录)。
+    """
+    from product.experience import ExperienceStore
+    from product.generation import ProductGenerator
+    from product.service import ProductService
+    from product.store import ProductStore
+
+    service = ProductService(ProductStore(ctx.root / "product"), logger=logger)
+    try:
+        from providers.adapters import BUILTIN_PROVIDER_ADAPTERS
+        from providers.definitions import DEFAULT_CAPABILITY_PROFILES, DEFAULT_COST_MODELS
+        from providers.registry import ProviderRegistry
+        from providers.selector import CostAwareSelector
+        from providers.usage import UsageStore, stats_by_provider
+
+        registry = ProviderRegistry(_open_provider_store(ctx), logger=logger)
+        selector = CostAwareSelector(
+            registry, DEFAULT_CAPABILITY_PROFILES, DEFAULT_COST_MODELS,
+            usage_stats=stats_by_provider(
+                _open_provider_usage_store(ctx).list(), period="all",
+            ),
+        )
+        adapters = dict(BUILTIN_PROVIDER_ADAPTERS)
+        usage_store = _open_provider_usage_store(ctx)
+    except ImportError:
+        selector = adapters = usage_store = None
+    return ProductGenerator(
+        service, logger=logger,
+        selector=selector, adapters=adapters, usage_store=usage_store,
+        experience_store=experience_store if experience_store is not None else ExperienceStore(ctx.root / "product"),
+    )
+
+
+def cmd_product_generate(ctx: FactoryContext, args: Any) -> dict:
+    """factory product generate <idea_id> --type research|prd|ui [--provider <id>]
+    — AI 生成产品 Artifact (TaskRequirement → CostAwareSelector → ProviderAdapter)。
+
+    选择: --provider 显式覆盖 (未注册/禁用 → 退出码 1); 缺省经 CostAwareSelector
+    推荐 (能力过滤 + 配置优先 + 成本排序, 复用 Phase 8, 禁硬编码)。产出 Artifact
+    (GeneratedArtifactContext + Lineage) + PRD/UI 自动申请审批 (mandatory, 生成后
+    等待人工批准)。事件链: product.generation.started → provider.selected →
+    provider.execution.started|completed → product.generation.completed →
+    approval.required。退出码: 0 成功 / 1 无 Provider/无 Adapter/生成失败/无效类型
+    / 2 用法 / 7 idea 未找到。无 Provider 可用 → 明确错误 (不静默)。
+    """
+    ProductError, ProductNotFoundError = _product_errors()
+    with ctx.logger_scope() as logger:
+        generator = _open_product_generator(ctx, logger)
+        try:
+            result = generator.generate(
+                args.idea_id,
+                args.type,
+                provider_id=getattr(args, "provider", None),
+                created_by="cli",
+            )
+        except ProductNotFoundError as exc:
+            raise CliError(str(exc), exit_code=7) from exc
+        except ProductError as exc:
+            raise CliError(str(exc), exit_code=1) from exc
+        event_seq = _product_last_seq(logger, EventType.PRODUCT_GENERATION_COMPLETED)
+    return {
+        "ok": True,
+        "artifact": result.artifact.to_dict(),
+        "context": result.context.to_dict(),
+        "approval": result.approval_request.to_dict() if result.approval_request is not None else None,
+        "provider_id": result.provider_id,
+        "recommendation": result.recommendation,
+        "event_seq": event_seq,
+    }
+
+
+def cmd_product_experience_list(ctx: FactoryContext, args: Any) -> dict:
+    """factory product experience list [--artifact-type X] — 生成经验清单 (发
+    product.experience.viewed 审计; ADR-0002: 所有 CLI 行为必须产生 Event)。"""
+    from product.events import record_experience_viewed
+
+    with ctx.logger_scope() as logger:
+        generator = _open_product_generator(ctx, logger)
+        experiences = generator.list_experiences(
+            artifact_type=getattr(args, "artifact_type", None),
+        )
+        record_experience_viewed(
+            logger, count=len(experiences),
+            artifact_type=getattr(args, "artifact_type", None),
+        )
+        event_seq = _product_last_seq(logger, EventType.PRODUCT_EXPERIENCE_VIEWED)
+    return {
+        "ok": True,
+        "count": len(experiences),
+        "experiences": [e.to_dict() for e in experiences],
+        "event_seq": event_seq,
+    }
+
+
+def cmd_product_experience_record(ctx: FactoryContext, args: Any) -> dict:
+    """factory product experience record <artifact_id> --rating 1-5 [--comment]
+    [--approved true|false] — 记录人工对生成产物的经验 (数据接口, 不实现优化逻辑)。
+
+    从 Artifact Lineage 推导 provider_id/confidence/generated_at; 落 ExperienceStore
+    + 发 product.experience.recorded。artifact 不存在 → 退出码 7; 经验库未装配 →
+    退出码 1。rating 越界 (非 1-5) → 模型校验错误 → 退出码 1。
+    """
+    ProductError, ProductNotFoundError = _product_errors()
+    with ctx.logger_scope() as logger:
+        generator = _open_product_generator(ctx, logger)
+        try:
+            experience = generator.record_experience(
+                args.artifact_id,
+                rating=args.rating,
+                comment=getattr(args, "comment", None) or "",
+                approved=getattr(args, "approved", None),
+                by=getattr(args, "by", None) or "cli",
+            )
+        except ProductNotFoundError as exc:
+            raise CliError(str(exc), exit_code=7) from exc
+        except ProductError as exc:
+            raise CliError(str(exc), exit_code=1) from exc
+        event_seq = _product_last_seq(logger, EventType.PRODUCT_EXPERIENCE_RECORDED)
+    return {"ok": True, "experience": experience.to_dict(), "event_seq": event_seq}

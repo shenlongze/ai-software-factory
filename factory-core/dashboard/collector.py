@@ -87,6 +87,7 @@ class DashboardCollector:
         usage_store: Any | None = None,  # Phase 8B-2: UsageStore (Provider View 使用/成本/性能列)
         product_store: Any | None = None,  # Phase 9A: ProductStore (Product View)
         include_product: bool = False,  # Phase 9A: Product View 聚合开关 (ADR-0026)
+        experience_store: Any | None = None,  # Phase 9B: ExperienceStore (Product View 经验计数)
     ) -> None:
         self._task_store = task_store
         self._agent_registry = agent_registry
@@ -140,9 +141,11 @@ class DashboardCollector:
         # Product View (Phase 9A): 注入 ProductStore (独立空间 <root>/product/
         # 只读: ideas/artifacts/approvals/workflows), 默认关闭 — 既有 dashboard
         # 行为/成本完全不变 (同 include_provider 模式); 本模块零顶层 imports
-        # product (Removal Isolation)。
+        # product (Removal Isolation)。Phase 9B: experience_store (ExperienceStore,
+        # 生成经验计数, 默认 None — 零回归)。
         self._product_store = product_store
         self._include_product = include_product
+        self._experience_store = experience_store
 
     # ------------------------------------------------------------------ 主入口
 
@@ -682,6 +685,20 @@ class DashboardCollector:
             return ProductSnapshot()  # 失败安全: 产品数据异常不影响整视图
         by_type = Counter(a.type for a in artifacts)
         by_status = Counter(w.status for w in workflows)
+        # Phase 9B: 生成产物 = 含 generation_context 的 Artifact (生成框架
+        # 上下文记录), 按 status 计数 (completed/failed — generation 状态列);
+        # experience 计数来自注入的 ExperienceStore (默认 None → 0, 零回归)。
+        generations = [
+            a for a in artifacts
+            if isinstance(a.content, dict) and "generation_context" in a.content
+        ]
+        generations_by_status = Counter(a.status for a in generations)
+        experiences: list = []
+        if self._experience_store is not None:
+            try:
+                experiences = self._experience_store.list()
+            except Exception:
+                experiences = []  # 失败安全: 经验数据异常不影响整视图
         return ProductSnapshot(
             idea_total=len(ideas),
             ideas=[i.to_dict() for i in ideas],
@@ -696,4 +713,9 @@ class DashboardCollector:
             workflow_total=len(workflows),
             workflows_by_status=dict(sorted(by_status.items())),
             workflows=[w.to_dict() for w in workflows],
+            generation_total=len(generations),
+            generations_by_status=dict(sorted(generations_by_status.items())),
+            generations=[a.to_dict() for a in generations],
+            experience_total=len(experiences),
+            experiences=[e.to_dict() for e in experiences],
         )

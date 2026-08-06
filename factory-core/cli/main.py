@@ -51,6 +51,9 @@ from .commands import (
     cmd_product_approval_decide,
     cmd_product_approval_list,
     cmd_product_approval_request,
+    cmd_product_experience_list,
+    cmd_product_experience_record,
+    cmd_product_generate,
     cmd_product_idea_create,
     cmd_product_idea_list,
     cmd_product_idea_show,
@@ -81,6 +84,21 @@ from .commands import (
 from .context import DEFAULT_ROOT, FactoryContext
 
 __all__ = ["main", "build_parser"]
+
+
+def _parse_optional_bool(v: str) -> bool:
+    """--approved true|false 解析 (argparse type 转换, 仅在传参时调用)。
+
+    argparse 内置 type=bool 会把 "false" 转成 True — 必须用显式字符串解析。
+    """
+    import argparse
+
+    low = str(v).strip().lower()
+    if low in ("true", "1", "yes", "y"):
+        return True
+    if low in ("false", "0", "no", "n"):
+        return False
+    raise argparse.ArgumentTypeError(f"expected true/false, got {v!r}")
 
 
 def build_parser() -> Any:
@@ -453,6 +471,38 @@ def build_parser() -> Any:
     )
     json_opt(p_pw_status)
     p_pw_status.add_argument("idea_id", help="想法 ID (如 PI-001)")
+    # product generate (Phase 9B, ADR-0027: Provider 生成编排)
+    p_pg = psub.add_parser(
+        "generate", help="AI 生成产品 Artifact: TaskRequirement → CostAwareSelector → ProviderAdapter (发 product.generation.* 事件)"
+    )
+    json_opt(p_pg)
+    p_pg.add_argument("idea_id", help="想法 ID (如 PI-001)")
+    p_pg.add_argument("--type", required=True, choices=["research", "prd", "ui"],
+                      help="生成类型 (research 无默认门; prd/ui 生成后自动申请审批等待人工批准)")
+    p_pg.add_argument("--provider", default=None,
+                      help="Provider ID 显式覆盖 (缺省经 CostAwareSelector 推荐; 未注册/禁用 → 退出码 1)")
+    # product experience <sub> (Phase 9B, ADR-0027: 生成经验记录)
+    p_pe = psub.add_parser(
+        "experience", help="生成经验记录: 人工对生成产物的反馈 (发 product.experience.* 事件)"
+    )
+    json_opt(p_pe)
+    pesub = p_pe.add_subparsers(dest="experience_command", required=True)
+    p_pe_list = pesub.add_parser(
+        "list", help="经验清单 (发 product.experience.viewed 审计)"
+    )
+    json_opt(p_pe_list)
+    p_pe_list.add_argument("--artifact-type", default=None,
+                           help="按生成类型过滤 (research/prd/ui)")
+    p_pe_record = pesub.add_parser(
+        "record", help="记录人工经验: 从 Artifact Lineage 推导 provider/confidence (发 product.experience.recorded)"
+    )
+    json_opt(p_pe_record)
+    p_pe_record.add_argument("artifact_id", help="Artifact ID (如 ART-001)")
+    p_pe_record.add_argument("--rating", type=int, default=None, help="评分 1-5")
+    p_pe_record.add_argument("--comment", default=None, help="反馈文本")
+    p_pe_record.add_argument("--approved", default=None, type=_parse_optional_bool,
+                             help="人工批准判定 (true/false; None = 未判定)")
+    p_pe_record.add_argument("--by", default=None, help="记录人 (默认 cli)")
 
     # factory workspace <sub> (Phase 6A, ADR-0016)
     p_workspace = sub.add_parser(
@@ -792,7 +842,7 @@ def _dispatch_change(ctx: FactoryContext, args: Any) -> dict:
 
 
 def _dispatch_product(ctx: FactoryContext, args: Any) -> dict:
-    """product idea/approval/workflow 分发 (Phase 9A, ADR-0026)。"""
+    """product idea/approval/workflow/generate/experience 分发 (Phase 9A ADR-0026 + 9B ADR-0027)。"""
     if args.product_command == "idea":
         if args.idea_command == "create":
             return cmd_product_idea_create(ctx, args)
@@ -815,6 +865,14 @@ def _dispatch_product(ctx: FactoryContext, args: Any) -> dict:
         if args.workflow_command == "status":
             return cmd_product_workflow_status(ctx, args)
         raise CliError(f"unknown product workflow command: {args.workflow_command}", exit_code=2)
+    if args.product_command == "generate":
+        return cmd_product_generate(ctx, args)
+    if args.product_command == "experience":
+        if args.experience_command == "list":
+            return cmd_product_experience_list(ctx, args)
+        if args.experience_command == "record":
+            return cmd_product_experience_record(ctx, args)
+        raise CliError(f"unknown product experience command: {args.experience_command}", exit_code=2)
     raise CliError(f"unknown product command: {args.product_command}", exit_code=2)
 
 
@@ -1491,7 +1549,8 @@ def _print_understand(args: Any, r: dict) -> None:
 
 def _print_product(args: Any, r: dict) -> None:
     """factory product 输出: idea create/list/show + approval request/decide/list
-    + workflow start/status (发对应 idea.*/approval.*/product.* 审计事件)。"""
+    + workflow start/status + generate + experience list/record (发对应
+    idea.*/approval.*/product.* 审计事件; Phase 9A ADR-0026 + 9B ADR-0027)。"""
     if args.product_command == "idea":
         if args.idea_command == "list":
             _print_product_idea_list(r)
@@ -1506,6 +1565,13 @@ def _print_product(args: Any, r: dict) -> None:
             _print_product_approval_request(r)
     elif args.product_command == "workflow":
         _print_product_workflow(args, r)
+    elif args.product_command == "generate":
+        _print_product_generate(r)
+    elif args.product_command == "experience":
+        if args.experience_command == "list":
+            _print_product_experience_list(r)
+        else:  # record
+            _print_product_experience_record(r)
 
 
 def _print_product_idea_list(r: dict) -> None:
@@ -1575,6 +1641,52 @@ def _print_product_workflow(args: Any, r: dict) -> None:
     if r.get("event_seq"):
         event_name = "started" if args.workflow_command == "start" else "status_viewed"
         print(f"  事件      product.workflow.{event_name} seq={r['event_seq']}")
+
+
+# ------------------------------------------------------------------ product generate/experience 输出 (Phase 9B, ADR-0027)
+
+def _print_product_generate(r: dict) -> None:
+    a, c = r["artifact"], r["context"]
+    print(f"✔ 生成 {a['type']} Artifact {a['id']}  (provider: {r['provider_id']})")
+    print(f"  status     {a['status']}  |  version {a['version']}  |  confidence {a['confidence']}")
+    content = (a.get("content") or {}).get("content") or "(empty)"
+    print(f"  content    {str(content)[:120]}")
+    if c.get("generation_time"):
+        print(f"  generated  {c['generation_time']}")
+    ap = r.get("approval")
+    if ap:
+        print(f"  approval   {ap['id']}  (gate: {ap['gate']}, status: {ap['status']}) — 等待人工批准")
+    rec = r.get("recommendation")
+    if rec:
+        print(f"  推荐       {rec['provider_id']}  (score: {rec['score']})")
+    if r.get("event_seq"):
+        print(f"  事件      product.generation.completed seq={r['event_seq']}")
+
+
+def _print_product_experience_list(r: dict) -> None:
+    rows = [
+        [e["id"][:8], e["artifact_type"], e["provider_id"] or "-",
+         str(e["rating"]) if e["rating"] is not None else "-",
+         "✓" if e["approved"] is True else ("✗" if e["approved"] is False else "-"),
+         (e["human_feedback"] or "-")[:40], e["recorded_at"]]
+        for e in r["experiences"]
+    ]
+    print(_render_table(
+        ["Experience", "Type", "Provider", "Rating", "Approved", "Feedback", "Recorded"], rows,
+    ))
+    print(f"{r['count']} experiences")
+
+
+def _print_product_experience_record(r: dict) -> None:
+    e = r["experience"]
+    print(f"✔ 经验已记录 {e['id'][:8]}  (artifact_type: {e['artifact_type']}, "
+          f"provider: {e['provider_id'] or '-'})")
+    print(f"  rating     {e['rating'] if e['rating'] is not None else '-'}")
+    print(f"  approved   {e['approved'] if e['approved'] is not None else '-'}")
+    if e.get("human_feedback"):
+        print(f"  feedback   {e['human_feedback']}")
+    if r.get("event_seq"):
+        print(f"  事件      product.experience.recorded seq={r['event_seq']}")
 
 
 if __name__ == "__main__":

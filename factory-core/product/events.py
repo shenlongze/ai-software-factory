@@ -248,3 +248,166 @@ def record_workflow_status_viewed(
             "product_decision": workflow.product_decision,
         },
     )
+
+
+def record_generation_started(
+    logger: Any,
+    *,
+    artifact_type: str,
+    source_artifact_id: str,
+    idea_id: str | None = None,
+    provider_id: str | None = None,
+    task_requirement: dict[str, Any] | None = None,
+    source: str = "product",
+) -> Event | None:
+    """生成开始 (ProductGenerator.generate 选定 Provider 后; product.generation.started)。
+
+    payload: artifact_type/source_artifact_id/idea_id/provider_id/task_requirement
+    — 与 GeneratedArtifactContext.task_requirement 同源 (审计: 什么需求经什么
+    选择逻辑选了哪个 Provider)。result=OK (开始不是终态)。
+    """
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.PRODUCT_GENERATION_STARTED,
+        source=source,
+        stage="running",
+        action="generate product artifact",
+        result="OK",
+        payload={
+            "artifact_type": artifact_type,
+            "source_artifact_id": source_artifact_id,
+            "idea_id": idea_id,
+            "provider_id": provider_id,
+            "task_requirement": dict(task_requirement or {}),
+        },
+    )
+
+
+def record_generation_completed(
+    logger: Any,
+    *,
+    artifact: Any,
+    context: Any = None,
+    provider_id: str | None = None,
+    approval_request: Any = None,
+    source: str = "product",
+) -> Event | None:
+    """生成完成 (Artifact 产出 + Lineage 记录; product.generation.completed)。
+
+    payload: artifact_id/artifact_type/provider_id/confidence/source_events
+    (Lineage 摘要) + approval_request_id (PRD/UI mandatory 自动审批锚点,
+    生成后等待人工批准)。result=OK。
+    """
+    if logger is None:
+        return None
+    payload: dict[str, Any] = {
+        "artifact_id": artifact.id,
+        "artifact_type": artifact.type,
+        "provider_id": provider_id or artifact.provider_id,
+        "confidence": artifact.confidence,
+        "source_events": artifact.source_events,
+        "idea_id": (
+            artifact.content.get("idea_id")
+            if isinstance(artifact.content, dict) else None
+        ),
+    }
+    if context is not None:
+        payload["generation_time"] = getattr(context, "generation_time", None)
+    if approval_request is not None:
+        payload["approval_request_id"] = approval_request.id
+        payload["approval_status"] = approval_request.status
+    return logger.record(
+        EventType.PRODUCT_GENERATION_COMPLETED,
+        source=source,
+        stage=artifact.status,
+        action="generate product artifact",
+        result="OK",
+        payload=payload,
+    )
+
+
+def record_generation_failed(
+    logger: Any,
+    *,
+    artifact_type: str,
+    source_artifact_id: str,
+    error: str,
+    idea_id: str | None = None,
+    provider_id: str | None = None,
+    source: str = "product",
+) -> Event | None:
+    """生成失败 (无 Provider/无 Adapter/生成失败; product.generation.failed)。
+
+    payload: artifact_type/source_artifact_id/idea_id/provider_id/error —
+    明确错误不静默 (CLI 退出码 1 + 事件审计双通道)。result=ERROR。
+    """
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.PRODUCT_GENERATION_FAILED,
+        source=source,
+        stage="failed",
+        action="generate product artifact",
+        result="ERROR",
+        payload={
+            "artifact_type": artifact_type,
+            "source_artifact_id": source_artifact_id,
+            "idea_id": idea_id,
+            "provider_id": provider_id,
+            "error": error,
+        },
+    )
+
+
+def record_experience_recorded(
+    logger: Any,
+    *,
+    experience: Any,
+    by: str = "cli",
+    source: str = "product",
+) -> Event | None:
+    """人工经验记录落盘 (ProductGenerator.record_experience; product.experience.recorded)。
+
+    payload: experience_id/artifact_type/provider_id/approved/confidence/rating/
+    human_feedback/by — 经验数据接口只记录不消费 (Provider 自动优化预留)。
+    """
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.PRODUCT_EXPERIENCE_RECORDED,
+        source=source,
+        stage="recorded",
+        action="record generation experience",
+        result="OK",
+        payload={
+            "experience_id": experience.id,
+            "artifact_type": experience.artifact_type,
+            "provider_id": experience.provider_id,
+            "approved": experience.approved,
+            "confidence": experience.confidence,
+            "rating": experience.rating,
+            "human_feedback": experience.human_feedback,
+            "by": by,
+        },
+    )
+
+
+def record_experience_viewed(
+    logger: Any,
+    *,
+    count: int,
+    artifact_type: str | None = None,
+    source: str = "cli",
+) -> Event | None:
+    """经验清单被查看 (CLI 读命令审计, ADR-0002; source 缺省 cli)。"""
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.PRODUCT_EXPERIENCE_VIEWED,
+        source=source,
+        stage="viewed",
+        action="view generation experiences",
+        result="OK",
+        payload={"count": count, "artifact_type": artifact_type},
+    )

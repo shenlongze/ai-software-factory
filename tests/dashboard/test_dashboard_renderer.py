@@ -74,12 +74,14 @@ class TestRendererBasics:
         # (ADR-0016); Phase 6B 新增 workspace 组四视图 workspace/agents_utilization/
         # runtime_usage/workspace_events (ADR-0017); Phase 6C 新增第十四视图 git
         # (ADR-0018); Phase 6D 新增第十五视图 change (ADR-0019); Phase 6E 新增
-        # 第十六视图 changeflow (ADR-0020) — 精确集合断言随视图集扩展最小化更新
+        # 第十六视图 changeflow (ADR-0020); Phase 7 新增第十七视图 understanding
+        # (ADR-0021) — 精确集合断言随视图集扩展最小化更新
         # (行为观察点, 非 API; 见 ADR-0014 冲突消解)。
         assert set(VIEWS) == {
             "overview", "tasks", "agents", "workflows", "executions", "recovery",
             "catalog", "metrics", "projects", "workspace", "agents_utilization",
             "runtime_usage", "workspace_events", "git", "change", "changeflow",
+            "understanding",
         }
 
     def test_render_views_iterates_all_single_views(self, collector):

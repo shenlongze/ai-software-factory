@@ -47,6 +47,8 @@ from .models import (
     ProjectsSnapshot,
     RuntimeCatalogSnapshot,
     TaskSnapshot,
+    UnderstandingItem,
+    UnderstandingSnapshot,
     ValidationSummary,
     WorkflowSnapshot,
 )
@@ -76,6 +78,8 @@ class DashboardCollector:
         include_change: bool = False,  # Phase 6D: Change View 聚合开关 (ADR-0019)
         change_trigger_registry: Any | None = None,  # Phase 6E: ChangeTriggerRegistry
         include_changeflow: bool = False,  # Phase 6E: Change Flow View 聚合开关 (ADR-0020)
+        understanding_paths: list | None = None,  # Phase 7: list[(project_id, path)]
+        include_understanding: bool = False,  # Phase 7: Understanding View 聚合开关 (ADR-0021)
     ) -> None:
         self._task_store = task_store
         self._agent_registry = agent_registry
@@ -115,6 +119,11 @@ class DashboardCollector:
         # 完全不变 (同 include_change 模式)。
         self._change_trigger_registry = change_trigger_registry
         self._include_changeflow = include_changeflow
+        # Understanding View (Phase 7): 注入 (project_id, path) 分析对
+        # (CLI 命令层按 workspace 项目 repository 本地目录装配), 默认关闭 —
+        # 既有 dashboard 行为/成本完全不变 (同 include_git 模式)。
+        self._understanding_paths = understanding_paths or []
+        self._include_understanding = include_understanding
 
     # ------------------------------------------------------------------ 主入口
 
@@ -137,6 +146,7 @@ class DashboardCollector:
             git=self._collect_git(),
             change=self._collect_change(),
             changeflow=self._collect_changeflow(),
+            understanding=self._collect_understanding(),
         )
 
     # ------------------------------------------------------------------ 分域聚合
@@ -491,3 +501,34 @@ class DashboardCollector:
             workflow_links=list(links.values()),
             by_status=dict(sorted(by_status.items())),
         )
+
+    # ------------------------------------------------------------------ Understanding View (Phase 7, ADR-0021)
+
+    def _collect_understanding(self) -> UnderstandingSnapshot:
+        """Understanding View 聚合: 每项目阶段 + 置信度 + 缺失 (仅 include 模式)。
+
+        只读: 每项目跑一次 UnderstandingService.analyze (无 logger — 收集器
+        不发事件, 同 git/change view 边界); 失败安全: 目录缺失/分析异常 →
+        跳过该项目, 聚合永不抛错。默认关闭 — 既有 dashboard 行为/成本完全
+        不变 (同 include_git 模式)。
+        """
+        if not self._include_understanding or not self._understanding_paths:
+            return UnderstandingSnapshot()
+        from understanding.service import UnderstandingService  # 延迟导入: 零 Core 依赖
+
+        items: list[UnderstandingItem] = []
+        for project_id, path in self._understanding_paths:
+            try:
+                report = UnderstandingService().analyze(path)
+            except Exception:
+                continue  # 失败安全: 单项目分析失败不影响整视图
+            items.append(UnderstandingItem(
+                project=project_id,
+                path=report.path,
+                stage=report.stage.stage,
+                confidence=report.stage.confidence,
+                present=[a.artifact for a in report.artifacts if a.present],
+                missing=list(report.missing.missing),
+            ))
+        items.sort(key=lambda it: it.project)
+        return UnderstandingSnapshot(total=len(items), items=items)

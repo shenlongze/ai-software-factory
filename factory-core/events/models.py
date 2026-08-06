@@ -229,6 +229,19 @@ class EventType(str, Enum):
     CHANGE_WORKFLOW_STARTED = "change.workflow.started"      # 触发工作流启动 (run RUNNING)
     CHANGE_WORKFLOW_COMPLETED = "change.workflow.completed"  # 触发工作流执行终态 (COMPLETED/FAILED)
 
+    # --- Phase 7: Project Understanding Layer 事件 (增量扩展, ADR-0021) ---
+    # 依 ADR-0001 决策 1 的扩展路径: 加枚举成员即可, 不改表结构/API。
+    # understanding.* 为项目理解层 (UnderstandingService, source="understanding")
+    # 的分析生命周期事件: started (分析开始) → completed (成功, payload 含
+    # path/stage/confidence/artifacts/missing) | failed (异常/路径无效, payload
+    # 含 path/error)。viewed 为读命令审计事件 (ADR-0002: 所有 CLI 行为必须产生
+    # Event, 同 dashboard.viewed — CLI 经 source="cli" 发出)。只读分析:
+    # 本域事件只审计, 不触发任何写操作 (phase7-plan.md §Core 边界)。
+    UNDERSTANDING_STARTED = "understanding.started"      # 项目分析开始
+    UNDERSTANDING_COMPLETED = "understanding.completed"  # 分析完成 (stage/artifacts)
+    UNDERSTANDING_FAILED = "understanding.failed"        # 分析失败 (异常/路径无效)
+    UNDERSTANDING_VIEWED = "understanding.viewed"        # 理解报告被查看 (CLI 只读审计)
+
 
 class Event(BaseModel):
     """一条事件。append-only: 写入后永不修改、永不删除。"""

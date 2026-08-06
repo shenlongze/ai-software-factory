@@ -86,6 +86,9 @@ from changeflow.triggers import (  # Phase 6E (ADR-0020)
     ChangeTriggerRegistry,
 )
 
+from understanding.events import record_understanding_viewed  # Phase 7 (ADR-0021)
+from understanding.service import UnderstandingError, UnderstandingService  # Phase 7 (ADR-0021)
+
 from metrics.collectors import MetricsCollector
 from metrics.workspace import WorkspaceCollector
 
@@ -1126,6 +1129,18 @@ def cmd_dashboard(ctx: FactoryContext, args: Any) -> dict:
         change_trigger_registry = (
             ChangeTriggerRegistry(ctx.root / "changeflow") if view == "changeflow" else None
         )
+        # Phase 7 Understanding View: 仅 --view understanding 聚合
+        # (include_understanding 默认关闭, 数据源 = workspace 项目 repository
+        # 本地目录, 每项目跑一次只读理解分析; 失败安全 — 缺失/非本地目录跳过)。
+        understanding_paths: list[tuple[str, str]] = []
+        if view == "understanding":
+            for p in ws_projects:
+                repo = (getattr(p, "repository", "") or "").strip()
+                if not repo:
+                    continue
+                expanded = os.path.expanduser(repo)
+                if os.path.isdir(expanded):
+                    understanding_paths.append((p.id, expanded))
         collector = DashboardCollector(
             task_store=ctx.open_task_store(),
             agent_registry=AgentRegistry(ctx.open_agent_store()),
@@ -1144,6 +1159,8 @@ def cmd_dashboard(ctx: FactoryContext, args: Any) -> dict:
             include_change=view == "change",
             change_trigger_registry=change_trigger_registry,
             include_changeflow=view == "changeflow",
+            understanding_paths=understanding_paths,
+            include_understanding=view == "understanding",
         )
         snapshot = collector.collect()
         ev = logger.record(
@@ -1175,6 +1192,7 @@ def cmd_dashboard(ctx: FactoryContext, args: Any) -> dict:
                 "changeflow_triggers": snapshot.changeflow.trigger_total,  # Phase 6E (ADR-0020)
                 "changeflow_evaluations": snapshot.changeflow.evaluation_total,
                 "changeflow_links": snapshot.changeflow.workflow_links_total,
+                "understanding_projects": snapshot.understanding.total,  # Phase 7 (ADR-0021)
             },
         )
     return {
@@ -1811,5 +1829,52 @@ def cmd_change_workflows(ctx: FactoryContext, args: Any) -> dict:
         "task_id": args.task_id,
         "count": len(chain),
         "chain": chain,
+        "event_seq": event_seq,
+    }
+
+
+# ------------------------------------------------------------------ understand (Phase 7, ADR-0021)
+
+def cmd_understand(ctx: FactoryContext, args: Any) -> dict:
+    """factory understand <path> — 项目理解报告 (只读, 规则分析, 禁 LLM)。
+
+    编排 = UnderstandingService.analyze (基本信息 → 文档检测 → 产物检测 →
+    阶段识别 → 缺失分析 → 建议); 服务层发 understanding.started/completed
+    (失败 → failed), 命令层发 understanding.viewed (ADR-0002 读命令审计,
+    source="cli", 经 events.py 辅助 — 载荷键契约与 CLI --json 出口一致)。
+    退出码: 0 成功 / 1 路径无效或内部错误 (UnderstandingError → CliError)。
+    --stage: 仅输出阶段识别 (--json 时结果只含 stage 段)。
+    只读铁律: 分析不写任何文件 (字节级只读性由 tests/understanding 守住)。
+    """
+    path = os.path.expanduser(args.path)
+    with ctx.logger_scope() as logger:
+        service = UnderstandingService(logger=logger)
+        try:
+            report = service.analyze(path)
+        except UnderstandingError as exc:
+            raise CliError(str(exc), exit_code=1) from exc
+        present = [a.artifact for a in report.artifacts if a.present]
+        record_understanding_viewed(
+            logger,
+            path=report.path,
+            stage=report.stage.stage,
+            confidence=report.stage.confidence,
+            present=len(present),
+            missing=len(report.missing.missing),
+        )
+        event_seq = _change_last_seq(logger)  # 须在作用域内取 (退出即关库)
+    if getattr(args, "stage", False):
+        return {
+            "ok": True,
+            "path": path,
+            "stage": report.stage.to_dict(),
+            "stage_only": True,
+            "event_seq": event_seq,
+        }
+    return {
+        "ok": True,
+        "path": path,
+        "report": report.to_dict(),
+        "stage_only": False,
         "event_seq": event_seq,
     }

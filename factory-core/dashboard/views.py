@@ -665,3 +665,45 @@ def build_changeflow(snapshot: FactorySnapshot) -> Panel:
         link_table.add_row(_text("(no workflow links)", style="dim"), "", "", "", "")
 
     return _panel(Group(summary, trigger_table, eval_table, link_table), "Change Flow", border="cyan")
+
+
+# ------------------------------------------------------------------ Understanding View (Phase 7, ADR-0021)
+
+def _style_confidence(confidence: float) -> str:
+    """置信度 → 颜色 (0.8+ 绿 / 0.6+ 黄 / 其余红)。"""
+    if confidence >= 0.8:
+        return "green"
+    if confidence >= 0.6:
+        return "yellow"
+    return "red"
+
+
+def build_understanding(snapshot: FactorySnapshot) -> Panel:
+    """Understanding View (Phase 7, ADR-0021): 项目阶段 + 置信度 + 缺失产物。
+
+    数据源 = snapshot.understanding (collector include_understanding=True 聚合,
+    默认关闭): Projects 表 (每项目 path/stage/confidence/present/missing —
+    阶段着色同 validation 语义, 置信度按强度着色), 每行对应一次只读理解分析
+    (UnderstandingService, 规则推断禁 LLM)。
+    """
+    u = snapshot.understanding
+    summary = _line(
+        _text(f"{u.total} projects analyzed", style="bold"),
+        _text(" · Understanding = 只读规则分析 (禁 LLM)", style="dim"),
+    )
+    table = Table(show_header=True, header_style="bold", box=box.SIMPLE_HEAVY, expand=True)
+    for col in ("Project", "Path", "Stage", "Confidence", "Present", "Missing"):
+        table.add_column(col)
+    for item in u.items:
+        table.add_row(
+            _text(item.project),
+            _text(item.path),
+            _text(item.stage, style=_style_status(item.stage)),
+            _text(f"{item.confidence:.2f}", style=_style_confidence(item.confidence)),
+            _text(", ".join(item.present) or "-"),
+            _text(", ".join(item.missing) or "-"),
+        )
+    if not u.items:
+        table.add_row(_text("(no projects analyzed)", style="dim"), "", "", "", "", "")
+
+    return _panel(Group(summary, table), "Understanding", border="magenta")

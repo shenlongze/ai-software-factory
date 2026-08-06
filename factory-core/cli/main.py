@@ -54,6 +54,7 @@ from .commands import (
     cmd_task_list,
     cmd_task_status,
     cmd_task_update,
+    cmd_understand,
     cmd_validate,
     cmd_workflow_add,
     cmd_workflow_list,
@@ -415,6 +416,17 @@ def build_parser() -> Any:
     json_opt(p_ch_workflows)
     p_ch_workflows.add_argument("task_id", help="任务 ID (如 T-001 / MP-BUG-001)")
 
+    # factory understand (Phase 7, ADR-0021)
+    p_understand = sub.add_parser(
+        "understand",
+        help="项目理解报告: 阶段识别/产物检测/缺失分析/建议 (只读规则分析, 禁 LLM, "
+             "发 understanding.* 事件)",
+    )
+    json_opt(p_understand)
+    p_understand.add_argument("--stage", action="store_true",
+                              help="仅输出阶段识别 (stage/confidence/evidence)")
+    p_understand.add_argument("path", help="项目路径 (目录)")
+
     return p
 
 
@@ -461,6 +473,8 @@ def main(argv: list[str] | None = None) -> int:
             result = _dispatch_git(ctx, args)
         elif args.command == "change":
             result = _dispatch_change(ctx, args)
+        elif args.command == "understand":
+            result = cmd_understand(ctx, args)
         else:  # pragma: no cover — argparse required=True 已拦截
             raise CliError(f"unknown command: {args.command}", exit_code=2)
     except CliError as exc:
@@ -653,6 +667,8 @@ def _print_output(args: Any, result: dict) -> None:
         _print_git(args.git_command, result)
     elif args.command == "change":
         _print_change(args.change_command, result)
+    elif args.command == "understand":
+        _print_understand(args, result)
 
 
 def _render_table(
@@ -1124,6 +1140,43 @@ def _print_change(sub: str, r: dict) -> None:
                 for c in r["chain"]]
         print(_render_table(["Workflow", "Name", "Run", "Status", "Origin"], rows))
         print(f"{r['count']} workflows in chain")
+
+
+def _print_understand(args: Any, r: dict) -> None:
+    """factory understand 输出: 阶段识别 + 基本信息 + 产物表 + 缺失 + 建议。
+
+    --stage: 仅阶段行 + 证据列表 (--json 时结果只含 stage 段, 命令层已切分)。
+    """
+    if r.get("stage_only"):
+        stage = r["stage"]
+        print(f"✔ 阶段识别: {stage['stage']}  (confidence: {stage['confidence']:.2f})")
+        for line in stage.get("evidence", []):
+            print(f"    - {line}")
+        return
+    report = r["report"]
+    stage = report["stage"]
+    bi = report["basic_info"]
+    print(f"✔ 项目理解报告: {r['path']}")
+    print(f"  阶段       {stage['stage']}  (confidence: {stage['confidence']:.2f})")
+    print(f"  类型       {bi['type']}  |  规模 {bi['scale']} "
+          f"({bi['file_count']} files, {bi['dir_count']} dirs)  |  状态 {bi['status']}")
+    print(f"  语言       {', '.join(bi['languages']) or '-'}")
+    print(f"  技术栈     {', '.join(bi['tech_stack']) or '-'}")
+    print("  证据:")
+    for line in stage.get("evidence", []):
+        print(f"    - {line}")
+    rows = [[a["artifact"], "✓" if a["present"] else "✗", a["detail"] or "-"]
+            for a in report["artifacts"]]
+    print(_render_table(["Artifact", "Present", "Detail"], rows, empty=None))
+    m = report["missing"]
+    print(f"  缺失       {', '.join(m['missing']) or '(无)'}")
+    print(f"  已存在     {', '.join(m['present']) or '(无)'}")
+    print("  建议 (仅建议, 不自动执行):")
+    for na in report["next_actions"]:
+        flag = "  [需人工批准]" if na["approval_required"] else ""
+        print(f"    - {na['action']}{flag}")
+        print(f"      理由: {na['reason']}")
+        print(f"      风险: {na['risk']}")
 
 
 if __name__ == "__main__":

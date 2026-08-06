@@ -236,6 +236,41 @@ class ChangeFlowSnapshot(BaseModel):
         return self.model_dump(mode="json")
 
 
+class UnderstandingItem(BaseModel):
+    """单个项目的理解行 (Phase 7 Understanding View, ADR-0021)。
+
+    数据源 = UnderstandingService.analyze 只读分析 (规则推断, 禁 LLM);
+    stage 来自 STAGES 注册表; confidence 为证据强度; present/missing 为
+    7 类产物按 ARTIFACT_KEYS 序分列。
+    """
+
+    project: str = ""
+    path: str = ""
+    stage: str = ""
+    confidence: float = 0.0
+    present: list[str] = Field(default_factory=list)
+    missing: list[str] = Field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return self.model_dump(mode="json")
+
+
+class UnderstandingSnapshot(BaseModel):
+    """Understanding View 汇总 (Phase 7, ADR-0021): 每项目阶段 + 置信度 + 缺失。
+
+    数据源 = collector include_understanding=True 时装配 (默认关闭 — 既有
+    dashboard 行为/成本完全不变, 同 include_git 模式): CLI 命令层按 workspace
+    项目 repository 本地目录注入 (project_id, path) 对, 每项目跑一次只读
+    理解分析; 失败安全 (目录缺失/分析异常 → 跳过该项目)。
+    """
+
+    total: int = 0
+    items: list[UnderstandingItem] = Field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return self.model_dump(mode="json")
+
+
 class FactorySnapshot(BaseModel):
     """一次 Dashboard 查询的完整只读投影 (全 store 汇总 + 最近事件)。"""
 
@@ -265,6 +300,10 @@ class FactorySnapshot(BaseModel):
     # (collector include_changeflow=True), 默认空 (既有 dashboard 行为/成本
     # 完全一致; 数据源 = ChangeTriggerRegistry + change.* 事件聚合)。
     changeflow: ChangeFlowSnapshot = Field(default_factory=ChangeFlowSnapshot)
+    # Phase 7 (ADR-0021): Understanding View — 仅 --view understanding 聚合
+    # (collector include_understanding=True), 默认空 (既有 dashboard 行为/成本
+    # 完全一致; 数据源 = UnderstandingService 只读分析, 每项目一条)。
+    understanding: UnderstandingSnapshot = Field(default_factory=UnderstandingSnapshot)
 
     def to_dict(self) -> dict:
         """JSON 友好序列化 (CLI --json 输出 / 测试断言共用)。"""

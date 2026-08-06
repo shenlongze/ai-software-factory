@@ -72,15 +72,16 @@ say "== 2/4 editable install factory-core =="
 "$VENV_PY" -m pip install --quiet -e .
 
 say "== 3/4 frontend (可选) =="
-if [ -d frontend ] && [ -f frontend/package.json ]; then
+FRONTEND_DIR="factory-console/web/frontend"
+if [ -d "$FRONTEND_DIR" ] && [ -f "$FRONTEND_DIR/package.json" ]; then
     if command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1; then
-        warn "  frontend/ 检测到 node/npm, 执行: (cd frontend && npm install)"
-        (cd frontend && npm install)
+        warn "  $FRONTEND_DIR 检测到 node/npm, 执行: (cd $FRONTEND_DIR && npm install)"
+        (cd "$FRONTEND_DIR" && npm install)
     else
-        warn "  frontend/ 存在但未检测到 node/npm — 跳过 (不影响 factory 核心)"
+        warn "  $FRONTEND_DIR 存在但未检测到 node/npm — 跳过 (不影响 factory 核心)"
     fi
 else
-    warn "  未检测到 frontend/ — 跳过 (纯后端可用)"
+    warn "  未检测到 $FRONTEND_DIR — 跳过 (纯后端可用)"
 fi
 
 say "== 4/4 factory init 冒烟 =="

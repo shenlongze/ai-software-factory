@@ -44,6 +44,7 @@ function statusLabel(st) {
     case "stopping": return "STOPPING";
     case "stopped": return "STOPPED";
     case "failed": return "FAILED";
+    case "idle": return "IDLE";
     default: return (st || "IDLE").toUpperCase();
   }
 }

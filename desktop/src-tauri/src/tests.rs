@@ -17,6 +17,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 
+use crate::launcher::{friendly_error, status_label};
 use crate::runtime::{self, Bridge, BridgeError};
 use crate::{
     error_html, html_escape, launch_flow, percent_encode, resolve_runtime_cmd, shutdown_flow,
@@ -1063,4 +1064,568 @@ fn runtime_status_is_running_helper() {
         ..Default::default()
     };
     assert!(!st3.is_running());
+}
+
+// ================================================================ 15A-3b
+// runtime_restart (stop+start 组合)
+// ================================================================
+
+#[test]
+fn restart_returns_ready_with_port() {
+    let dir = TestDir::new("restart_ok");
+    let port = free_port();
+    let b = bridge_for(&dir, &[("FAKE_RUNTIME_PORT", &port.to_string())]);
+    let st = b.runtime_restart(dir.path()).unwrap();
+    assert_eq!(st.status, "ready");
+    assert_eq!(st.port, Some(port));
+    assert!(st.console_alive && st.core_alive);
+    cleanup_children(dir.path());
+}
+
+#[test]
+fn restart_stops_old_process_then_starts() {
+    // 组合语义: stop 终止旧 server (SIGTERM) → start 起新 server 且健康
+    let dir = TestDir::new("restart_seq");
+    let port = free_port();
+    let b = bridge_for(&dir, &[("FAKE_RUNTIME_PORT", &port.to_string())]);
+    b.runtime_start(dir.path()).unwrap();
+    let root = dir.path();
+    let old_pid: i32 = fs::read_to_string(root.join("config/console.pid"))
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    assert!(pid_alive(old_pid), "restart 前旧进程应存活");
+    let st = b.runtime_restart(root).unwrap();
+    assert_eq!(st.status, "ready");
+    assert!(
+        runtime::http_health(port, Duration::from_secs(2)),
+        "restart 后 Console 应健康可达"
+    );
+    let deadline = std::time::Instant::now() + Duration::from_secs(3);
+    while pid_alive(old_pid) && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert!(!pid_alive(old_pid), "restart 应终止旧进程");
+    cleanup_children(root);
+}
+
+#[test]
+fn restart_recovers_from_failed() {
+    // start 进入 failed → restart (stop 归位 + start) → ready
+    let dir = TestDir::new("restart_failed");
+    let b_fail = bridge_for(&dir, &[("FAKE_RUNTIME_FAIL", "status_failed")]);
+    let e = b_fail.runtime_start(dir.path()).unwrap_err();
+    assert!(
+        matches!(e, BridgeError::RuntimeFailed(_)),
+        "前置: start 应 failed"
+    );
+    let b = bridge_for(&dir, &[]);
+    let st = b.runtime_restart(dir.path()).unwrap();
+    assert_eq!(st.status, "ready");
+    assert!(st.console_alive);
+    cleanup_children(dir.path());
+}
+
+#[test]
+fn restart_when_idle_ok() {
+    let dir = TestDir::new("restart_idle");
+    let b = bridge_for(&dir, &[]);
+    let st = b.runtime_restart(dir.path()).unwrap();
+    assert_eq!(st.status, "ready");
+    cleanup_children(dir.path());
+}
+
+#[test]
+fn restart_failure_propagates() {
+    let dir = TestDir::new("restart_exit");
+    let b = bridge_for(&dir, &[("FAKE_RUNTIME_FAIL", "exit")]);
+    let e = b.runtime_restart(dir.path()).unwrap_err();
+    assert!(matches!(e, BridgeError::Exit { code: 1, .. }), "got {e:?}");
+}
+
+// ================================================================ 15A-3b
+// health_detail 解析 (fake status JSON)
+// ================================================================
+
+/// 构造 RuntimeStatus (测试 helper)。
+fn status_with(status: &str, core: bool, console: bool) -> runtime::RuntimeStatus {
+    runtime::RuntimeStatus {
+        status: status.into(),
+        version: "1.2.3".into(),
+        port: Some(8123),
+        core_alive: core,
+        console_alive: console,
+        started_at: Some("2026-08-07T00:00:00Z".into()),
+        ..Default::default()
+    }
+}
+
+#[test]
+fn health_detail_ready_all_ok() {
+    let hd = runtime::health_detail(&status_with("ready", true, true));
+    assert!(hd.overall);
+    assert_eq!(hd.version, "1.2.3");
+    assert_eq!(hd.port, Some(8123));
+    assert!(hd.uptime_secs.is_some());
+    assert_eq!(hd.components.len(), 3);
+    assert!(hd.components.iter().all(|c| c.ok));
+}
+
+#[test]
+fn health_detail_runtime_failed() {
+    let hd = runtime::health_detail(&status_with("failed", false, false));
+    assert!(!hd.overall);
+    let rt = &hd.components[0];
+    assert_eq!(rt.name, "Runtime");
+    assert!(!rt.ok);
+    assert_eq!(rt.status, "failed");
+    assert!(rt.reason.as_deref().unwrap().contains("运行异常"));
+    assert!(rt.suggestion.as_deref().unwrap().contains("系统恢复"));
+}
+
+#[test]
+fn health_detail_core_down_reason_suggestion() {
+    let hd = runtime::health_detail(&status_with("ready", false, true));
+    assert!(!hd.overall);
+    let core = &hd.components[1];
+    assert_eq!(core.name, "Core");
+    assert!(!core.ok);
+    assert_eq!(core.status, "down");
+    assert_eq!(core.reason.as_deref(), Some("核心服务未运行"));
+    assert!(core.suggestion.is_some());
+}
+
+#[test]
+fn health_detail_console_down() {
+    let hd = runtime::health_detail(&status_with("ready", true, false));
+    assert!(!hd.overall);
+    let console = &hd.components[2];
+    assert_eq!(console.name, "Console");
+    assert!(!console.ok);
+    assert_eq!(console.status, "down");
+}
+
+#[test]
+fn health_detail_starting() {
+    let hd = runtime::health_detail(&status_with("starting", false, false));
+    assert!(!hd.overall);
+    let rt = &hd.components[0];
+    assert!(!rt.ok);
+    assert_eq!(rt.status, "starting");
+    assert_eq!(rt.reason.as_deref(), Some("工厂正在初始化"));
+}
+
+#[test]
+fn health_detail_stopped_suggestion() {
+    let hd = runtime::health_detail(&status_with("stopped", false, false));
+    assert!(!hd.overall);
+    let rt = &hd.components[0];
+    assert_eq!(rt.status, "stopped");
+    assert!(rt.suggestion.is_some());
+}
+
+#[test]
+fn health_detail_component_order_names() {
+    let hd = runtime::health_detail(&status_with("ready", true, true));
+    let names: Vec<&str> = hd.components.iter().map(|c| c.name).collect();
+    assert_eq!(names, vec!["Runtime", "Core", "Console"]);
+}
+
+// ================================================================ 15A-3b
+// uptime / ISO8601 解析
+// ================================================================
+
+#[test]
+fn parse_iso8601_valid() {
+    let t = runtime::parse_iso8601_secs("2026-08-07T00:00:00Z").unwrap();
+    assert_eq!(t % 86400, 0, "整点 UTC 秒");
+    let t2 = runtime::parse_iso8601_secs("2026-08-07T01:02:03.123Z").unwrap();
+    assert_eq!(t2 - t, 3600 + 120 + 3, "小数秒截断");
+}
+
+#[test]
+fn parse_iso8601_malformed_rejected() {
+    for bad in [
+        "",
+        "not-a-date",
+        "2026-13-01T00:00:00Z", // 月越界
+        "2026-08-07",           // 无时间
+        "2026-08-07T25:00:00Z", // 时越界
+        "2026-08-07T00:00",     // 无秒
+    ] {
+        assert!(
+            runtime::parse_iso8601_secs(bad).is_none(),
+            "应拒绝非法时间戳: {bad}"
+        );
+    }
+}
+
+#[test]
+fn uptime_secs_at_computes() {
+    let base = runtime::parse_iso8601_secs("2026-08-07T00:00:00Z").unwrap();
+    assert_eq!(
+        runtime::uptime_secs_at(Some("2026-08-07T00:00:00Z"), base + 125),
+        Some(125)
+    );
+    assert_eq!(
+        runtime::uptime_secs_at(None, base),
+        None,
+        "无 started_at → None"
+    );
+    assert_eq!(
+        runtime::uptime_secs_at(Some("2026-08-07T00:00:00Z"), base - 10),
+        Some(0),
+        "未来时间 → 0"
+    );
+}
+
+// ================================================================ 15A-3b
+// friendly_error — 用户语言, 无技术细节
+// ================================================================
+
+/// 用户语言断言: 禁暴露 Python/Rust/uvicorn/subprocess/exit code 等。
+fn assert_no_tech_terms(s: &str) {
+    for t in [
+        "python",
+        "Python",
+        "rust",
+        "Rust",
+        "uvicorn",
+        "subprocess",
+        "pip ",
+        "stdout",
+        "stderr",
+        "exit=",
+        "spawn",
+        ".py",
+        "exit code",
+        "traceback",
+    ] {
+        assert!(!s.contains(t), "用户语言禁含技术细节 '{t}': {s}");
+    }
+}
+
+#[test]
+fn friendly_error_all_start_with_factory_startup_failed() {
+    let cases = [
+        BridgeError::SpawnFailed("x".into()),
+        BridgeError::Exit {
+            code: 1,
+            stdout: "".into(),
+            stderr: "".into(),
+        },
+        BridgeError::Timeout(Duration::from_secs(1)),
+        BridgeError::Parse("bad".into()),
+        BridgeError::DataRoot("bad".into()),
+        BridgeError::Health("bad".into()),
+        BridgeError::RuntimeFailed("bad".into()),
+    ];
+    for e in cases {
+        let m = friendly_error(&e);
+        assert!(m.starts_with("Factory startup failed"), "got: {m}");
+        assert_no_tech_terms(&m);
+    }
+}
+
+#[test]
+fn friendly_error_spawn_mentions_install() {
+    let m = friendly_error(&BridgeError::SpawnFailed("no such file".into()));
+    assert_no_tech_terms(&m);
+    assert!(m.contains("未安装") || m.contains("无法启动"), "got: {m}");
+}
+
+#[test]
+fn friendly_error_exit_strips_command_output() {
+    let e = BridgeError::Exit {
+        code: 1,
+        stdout: "boom stdout".into(),
+        stderr: "Traceback (most recent call last)".into(),
+    };
+    let m = friendly_error(&e);
+    assert_no_tech_terms(&m);
+    assert!(!m.contains("boom"), "禁透传 stdout: {m}");
+    assert!(!m.contains("Traceback"), "禁透传 stderr: {m}");
+}
+
+#[test]
+fn friendly_error_dataroot_user_language() {
+    let m = friendly_error(&BridgeError::DataRoot("unwritable".into()));
+    assert_no_tech_terms(&m);
+    assert!(m.contains("数据目录"), "got: {m}");
+}
+
+#[test]
+fn friendly_error_health_user_language() {
+    let m = friendly_error(&BridgeError::Health("unreachable".into()));
+    assert_no_tech_terms(&m);
+    assert!(m.contains("控制台") || m.contains("未就绪"), "got: {m}");
+}
+
+#[test]
+fn friendly_error_runtime_failed_suggests_recovery() {
+    let m = friendly_error(&BridgeError::RuntimeFailed("crash".into()));
+    assert_no_tech_terms(&m);
+    assert!(m.contains("系统恢复"), "got: {m}");
+}
+
+// ================================================================ 15A-3b
+// status_label — UI 状态徽章文案
+// ================================================================
+
+#[test]
+fn status_label_known_statuses() {
+    assert_eq!(status_label("ready"), "READY");
+    assert_eq!(status_label("starting"), "STARTING");
+    assert_eq!(status_label("stopping"), "STOPPING");
+    assert_eq!(status_label("stopped"), "STOPPED");
+    assert_eq!(status_label("failed"), "FAILED");
+    assert_eq!(status_label("idle"), "IDLE");
+}
+
+#[test]
+fn status_label_unknown_uppercase_failsafe() {
+    assert_eq!(status_label("weird"), "WEIRD");
+}
+
+// ================================================================ 15A-3b
+// launcher UI 资源静态断言 (内嵌 Tauri 资源, 原生 JS)
+// ================================================================
+
+/// launcher UI 目录 (crate 编译时路径 = desktop/src-tauri)。
+fn ui_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../src/ui")
+}
+
+fn ui_file(name: &str) -> String {
+    fs::read_to_string(ui_dir().join(name))
+        .unwrap_or_else(|e| panic!("读取 launcher 资源 {name} 失败: {e}"))
+}
+
+#[test]
+fn launcher_html_has_factory_header() {
+    let html = ui_file("launcher.html");
+    assert!(
+        html.contains("AI Organization Factory"),
+        "Factory Header 品牌名"
+    );
+    assert!(html.contains("factory-header"));
+    assert!(html.contains("构建 · 运行 · 管理你的 AI 企业组织"));
+}
+
+#[test]
+fn launcher_html_has_workspace_placeholder() {
+    let html = ui_file("launcher.html");
+    assert!(html.contains("Workspace 即将上线"), "Workspace 预留占位");
+    assert!(html.contains("workspace-panel"));
+    assert!(html.contains("CEO"), "预留 CEO 模块");
+    assert!(html.contains("Approval"), "预留 Approval 模块");
+}
+
+#[test]
+fn launcher_html_has_system_status_panel() {
+    let html = ui_file("launcher.html");
+    assert!(html.contains("System Status"));
+    assert!(html.contains("status-badge"));
+    assert!(html.contains("st-uptime"));
+    assert!(html.contains("st-port"));
+    assert!(html.contains("st-version"));
+}
+
+#[test]
+fn launcher_html_has_three_log_tabs() {
+    let html = ui_file("launcher.html");
+    for tab in ["runtime.log", "core.log", "console.log"] {
+        assert!(html.contains(tab), "日志 tab 缺失: {tab}");
+    }
+    assert!(html.contains("Logs"), "Log Viewer 定位 (Troubleshooting)");
+}
+
+#[test]
+fn launcher_html_has_recovery_section() {
+    let html = ui_file("launcher.html");
+    assert!(html.contains("System Recovery"));
+    assert!(html.contains("Restart Runtime"));
+    assert!(html.contains("recovery-panel"));
+}
+
+#[test]
+fn launcher_js_poll_interval_two_seconds() {
+    let js = ui_file("launcher.js");
+    assert!(js.contains("STATUS_POLL_MS = 2000"), "状态轮询应为 2s");
+    assert!(js.contains("setInterval(pollTick, STATUS_POLL_MS)"));
+}
+
+#[test]
+fn launcher_js_invokes_required_commands() {
+    let js = ui_file("launcher.js");
+    for cmd in [
+        "runtime_status",
+        "runtime_logs",
+        "runtime_restart",
+        "health_detail",
+        "open_console",
+        "runtime_start",
+    ] {
+        assert!(
+            js.contains(&format!("\"{cmd}\"")),
+            "launcher.js 应调用 {cmd}"
+        );
+    }
+}
+
+#[test]
+fn launcher_js_no_business_command() {
+    let js = ui_file("launcher.js");
+    for cmd in [
+        "create_agent",
+        "create_project",
+        "assign_task",
+        "create_company",
+        "save_knowledge",
+        "create_org",
+    ] {
+        assert!(!js.contains(cmd), "launcher.js 禁 business command: {cmd}");
+    }
+}
+
+#[test]
+fn launcher_ui_no_tech_terms() {
+    let html = ui_file("launcher.html");
+    let js = ui_file("launcher.js");
+    for t in ["uvicorn", "subprocess", "python", "pip install"] {
+        assert!(!html.contains(t), "launcher.html 禁技术细节: {t}");
+        assert!(!js.contains(t), "launcher.js 禁技术细节: {t}");
+    }
+}
+
+#[test]
+fn launcher_css_embedded_and_referenced() {
+    let html = ui_file("launcher.html");
+    assert!(html.contains("launcher.css"), "html 应引用 launcher.css");
+    let css = ui_file("launcher.css");
+    assert!(css.contains("factory-header"));
+    assert!(css.contains("--bg"));
+    assert!(css.contains(".tab"), "日志 tab 样式");
+}
+
+#[test]
+fn ui_status_label_js_rust_alignment() {
+    // launcher.js statusLabel 映射必须与 Rust status_label 一致
+    let js = ui_file("launcher.js");
+    for st in ["ready", "starting", "stopping", "stopped", "failed", "idle"] {
+        let pat = format!("case \"{st}\": return \"{}\"", status_label(st));
+        assert!(js.contains(&pat), "launcher.js statusLabel({st}) 缺: {pat}");
+    }
+}
+
+// ================================================================ 15A-3b
+// 产品级流程 (Fresh Launch / Failure Recovery / Shutdown)
+// ================================================================
+
+#[test]
+fn product_fresh_launch_ready_console() {
+    // Fresh Launch: launch → ready → health 全绿 → console 可导航 → shutdown
+    let dir = TestDir::new("prod_fresh");
+    let port = free_port();
+    let b = bridge_for(&dir, &[("FAKE_RUNTIME_PORT", &port.to_string())]);
+    let launched = launch_flow(&b, dir.path(), Duration::from_secs(5)).unwrap();
+    assert_eq!(launched.status.status, "ready");
+    let hd = runtime::health_detail(&launched.status);
+    assert!(hd.overall, "Fresh Launch: 三组件应全绿");
+    assert_eq!(hd.port, Some(port));
+    // console URL (open_console 导航目标) 可达
+    assert!(runtime::http_health(port, Duration::from_secs(2)));
+    let st = shutdown_flow(&b, dir.path()).unwrap();
+    assert_eq!(st.status, "stopped");
+    cleanup_children(dir.path());
+}
+
+#[test]
+fn product_failure_recovery_restart() {
+    // Failure Recovery: start 失败 → 用户语言错误 → restart → 恢复 ready
+    let dir = TestDir::new("prod_recover");
+    let port = free_port();
+    let b_fail = bridge_for(&dir, &[("FAKE_RUNTIME_FAIL", "exit")]);
+    let e = b_fail.runtime_start(dir.path()).unwrap_err();
+    let msg = friendly_error(&e);
+    assert!(msg.starts_with("Factory startup failed"));
+    assert_no_tech_terms(&msg);
+    let b = bridge_for(&dir, &[("FAKE_RUNTIME_PORT", &port.to_string())]);
+    let st = b.runtime_restart(dir.path()).unwrap();
+    assert_eq!(st.status, "ready");
+    assert_eq!(st.port, Some(port));
+    let hd = runtime::health_detail(&st);
+    assert!(hd.overall, "恢复后健康应全绿");
+    shutdown_flow(&b, dir.path()).unwrap();
+    cleanup_children(dir.path());
+}
+
+#[test]
+fn product_shutdown_graceful_after_launch() {
+    // Shutdown: launch → close (graceful stop) → 无残留 + health 显示 stopped
+    let dir = TestDir::new("prod_shutdown");
+    let port = free_port();
+    let b = bridge_for(&dir, &[("FAKE_RUNTIME_PORT", &port.to_string())]);
+    let launched = launch_flow(&b, dir.path(), Duration::from_secs(5)).unwrap();
+    let root = dir.path();
+    let console_pid: i32 = fs::read_to_string(root.join("config/console.pid"))
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    let st = shutdown_flow(&b, root).unwrap();
+    assert_eq!(st.status, "stopped");
+    let hd = runtime::health_detail(&st);
+    assert!(!hd.overall, "关闭后 health 不应 overall");
+    let rt = &hd.components[0];
+    assert_eq!(rt.status, "stopped");
+    assert!(!rt.ok);
+    assert!(rt.suggestion.is_some(), "stopped 应有用户语言建议");
+    let deadline = std::time::Instant::now() + Duration::from_secs(3);
+    while pid_alive(console_pid) && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert!(!pid_alive(console_pid), "graceful shutdown: 无残留进程");
+    assert!(!root.join("config/console.pid").exists());
+    assert!(!root.join("config/core.pid").exists());
+}
+
+#[test]
+fn product_restart_after_crash_recovers() {
+    // runtime 启动即崩溃 (crash_after_start) → restart 恢复 → ready + health 绿
+    let dir = TestDir::new("prod_crash");
+    let b_crash = bridge_for(&dir, &[("FAKE_RUNTIME_FAIL", "crash_after_start")]);
+    let e = b_crash.runtime_start(dir.path()).unwrap_err();
+    assert!(
+        matches!(e, BridgeError::Exit { code: 1, .. }),
+        "前置: 启动应崩溃"
+    );
+    let b = bridge_for(&dir, &[]);
+    let st = b.runtime_restart(dir.path()).unwrap();
+    assert_eq!(st.status, "ready");
+    assert!(runtime::health_detail(&st).overall, "崩溃恢复后健康应全绿");
+    shutdown_flow(&b, dir.path()).unwrap();
+    cleanup_children(dir.path());
+}
+
+#[test]
+fn product_error_user_language_end_to_end() {
+    // 全链路: fake CLI 输出技术错误 (stderr traceback) → friendly_error 只含用户语言
+    let dir = TestDir::new("prod_lang");
+    let b = bridge_for(&dir, &[("FAKE_RUNTIME_FAIL", "exit")]);
+    let e = b.runtime_start(dir.path()).unwrap_err();
+    let raw = e.to_string();
+    assert!(
+        raw.contains("exit=1") || raw.contains("fake runtime exit failure"),
+        "底层错误仍保留技术信息 (bridge 层)"
+    );
+    let msg = friendly_error(&e);
+    assert_no_tech_terms(&msg);
+    assert!(msg.contains("Factory startup failed"));
+    // error_html (兜底页) 也不含技术词
+    let html = error_html(&msg);
+    assert!(!html.contains("pip install"));
+    assert!(!html.contains("python"));
+    assert!(html.contains("启动失败"));
 }

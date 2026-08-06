@@ -71,3 +71,17 @@ Human Leadership → AI 组织 → Human 最终负责（Approval Gate 铁律）�
 4. 透明可控 (19 治理: 一切可见, 高危必经人)
 5. 经验是资产 (Experience Loop: 每次执行都让组织更聪明)
 ```
+
+## Desktop 定位 (15A-3b)
+
+**Desktop = AI Organization Factory Application Entry (入口层), 不是业务系统。**
+
+- Launcher UI (原生 JS 内嵌): Factory Header → Workspace Area (预留 CEO/
+  Manager/Employee/Approval/Knowledge, Phase 16+) → System Status (底层状态,
+  非首页唯一内容) → Log Viewer (Troubleshooting) → System Recovery。
+- 业务 (创建公司/部门/员工/审批/知识) 全部由未来 Organization/Intelligence/
+  Extension 层经 Runtime 提供; Desktop 无任何 business command, 不保存
+  Company/Agent/Knowledge 数据 (数据全部在 `<data_root>`, 未来公司隔离经
+  Runtime/Organization Layer)。
+- 错误用用户语言 ("Factory startup failed: <原因>"), 禁暴露技术细节。
+- 详见 [docs/architecture/desktop-product-entry.md](./architecture/desktop-product-entry.md)。

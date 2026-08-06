@@ -1,0 +1,168 @@
+/* Phase 11B Human Console Web — 轻量样式 (无 UI 框架依赖) */
+
+:root {
+  --bg: #0f1115;
+  --panel: #171a21;
+  --panel-2: #1d212b;
+  --border: #2a2f3a;
+  --text: #e6e8ee;
+  --muted: #9aa1ae;
+  --accent: #5b8cff;
+  --ok: #3ecf8e;
+  --warn: #f5b94e;
+  --danger: #ff6b6b;
+  --radius: 10px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+/* ---------- 壳 ---------- */
+.console-shell { min-height: 100vh; display: flex; flex-direction: column; }
+.console-header {
+  display: flex; align-items: center; gap: 20px; padding: 10px 24px;
+  border-bottom: 1px solid var(--border); background: var(--panel); position: sticky; top: 0; z-index: 10;
+}
+.brand { display: flex; align-items: baseline; gap: 8px; white-space: nowrap; }
+.brand-mark { color: var(--accent); }
+.brand-name { font-weight: 700; font-size: 15px; }
+.brand-sub { color: var(--muted); font-size: 12px; }
+.console-nav { display: flex; gap: 4px; flex: 1; }
+.nav-link {
+  background: none; border: none; color: var(--muted); cursor: pointer;
+  padding: 6px 12px; border-radius: 8px; font-size: 13.5px;
+}
+.nav-link:hover { color: var(--text); background: var(--panel-2); }
+.nav-link.active { color: var(--text); background: var(--panel-2); font-weight: 600; }
+
+.mode-toggle { display: flex; background: var(--panel-2); border-radius: 8px; padding: 3px; }
+.mode-option {
+  border: none; background: none; color: var(--muted); cursor: pointer;
+  padding: 4px 12px; border-radius: 6px; font-size: 12.5px;
+}
+.mode-option.active { background: var(--accent); color: #fff; }
+
+.console-main { flex: 1; padding: 24px; max-width: 1200px; width: 100%; margin: 0 auto; }
+.console-footer {
+  border-top: 1px solid var(--border); color: var(--muted); font-size: 12px;
+  text-align: center; padding: 12px;
+}
+
+.page h2 { margin: 0 0 4px; }
+.page-subtitle { color: var(--muted); margin: 0 0 18px; }
+.muted { color: var(--muted); }
+code { background: var(--panel-2); padding: 1px 6px; border-radius: 4px; font-size: 12px; }
+
+/* ---------- Dashboard ---------- */
+.dashboard-hero {
+  background: linear-gradient(135deg, #1a2233, #18202e); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 24px; margin-bottom: 20px;
+}
+.dashboard-hero h2 { font-size: 22px; margin: 0 0 6px; }
+.hero-actions { display: flex; gap: 10px; margin-top: 14px; }
+button {
+  background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+  border-radius: 8px; padding: 7px 14px; cursor: pointer; font-size: 13px;
+}
+button:hover { border-color: var(--accent); }
+.dashboard-grid, .intelligence-grid, .lifecycle-grid, .decision-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.dashboard-grid > .card { grid-column: span 2; }
+.decision-list, .agent-list, .activity-list, .experience-list, .provider-list,
+.agent-capability-list, .recommendation-list, .option-list { list-style: none; margin: 0; padding: 0; }
+.decision-item, .activity-item, .experience-item, .recommendation-item { padding: 8px 0; border-bottom: 1px solid var(--border); }
+.decision-link { background: none; border: none; text-align: left; display: flex; flex-direction: column; gap: 2px; padding: 0; }
+.decision-desc { font-weight: 600; }
+.decision-reason { color: var(--muted); font-size: 12.5px; }
+.activity-type { font-family: ui-monospace, monospace; font-size: 12px; color: var(--accent); margin-right: 8px; }
+
+/* ---------- Card ---------- */
+.card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+.card-header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 10px; }
+.card-title { margin: 0; font-size: 15px; }
+.card-subtitle { color: var(--muted); font-size: 12px; }
+
+/* ---------- Table ---------- */
+.data-table { width: 100%; border-collapse: collapse; }
+.data-table th { text-align: left; color: var(--muted); font-weight: 500; font-size: 12px; padding: 8px; border-bottom: 1px solid var(--border); }
+.data-table td { padding: 10px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+tr.clickable { cursor: pointer; }
+tr.clickable:hover td { background: var(--panel-2); }
+
+/* ---------- Badge / ScoreBar ---------- */
+.badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; border: 1px solid transparent; }
+.badge-ok { color: var(--ok); border-color: var(--ok); }
+.badge-warn { color: var(--warn); border-color: var(--warn); }
+.badge-danger { color: var(--danger); border-color: var(--danger); }
+.badge-neutral { color: var(--muted); border-color: var(--border); }
+
+.score-bar { display: grid; grid-template-columns: 110px 1fr 44px; align-items: center; gap: 8px; margin: 5px 0; }
+.score-label { color: var(--muted); font-size: 12px; }
+.score-track { background: var(--panel-2); border-radius: 999px; height: 8px; overflow: hidden; }
+.score-fill { background: var(--accent); height: 100%; border-radius: 999px; }
+.score-value { font-size: 12px; text-align: right; color: var(--muted); }
+
+/* ---------- Evidence / 空态 ---------- */
+.evidence-chain { font-size: 12.5px; }
+.evidence-count { color: var(--muted); }
+.evidence-list { margin: 6px 0 0; padding-left: 18px; }
+.evidence-item { font-family: ui-monospace, monospace; font-size: 12px; color: var(--muted); }
+.evidence-more { color: var(--muted); font-size: 12px; }
+.evidence-empty { color: var(--muted); font-size: 12.5px; }
+.empty-state, .loading-state, .error-state { color: var(--muted); padding: 18px; text-align: center; }
+.error-state { color: var(--danger); }
+.loading-state { color: var(--accent); }
+
+/* ---------- Approval ---------- */
+.approval-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.approval-meta { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.approval-actions { display: flex; gap: 8px; margin-top: 12px; }
+.btn-approve { background: var(--ok); border-color: var(--ok); color: #0b1c14; font-weight: 600; }
+.btn-reject { background: var(--danger); border-color: var(--danger); color: #2b0d0d; font-weight: 600; }
+.approval-comment { color: var(--muted); font-size: 12.5px; }
+
+/* ---------- Lifecycle ---------- */
+.lifecycle-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 18px; }
+.back-link { background: none; border: none; color: var(--accent); padding: 0 0 6px; }
+.lifecycle-status { padding-top: 6px; }
+.stage-name { font-size: 18px; font-weight: 700; }
+.stage-status { color: var(--muted); }
+.stage-details { display: grid; grid-template-columns: 1fr; gap: 4px; }
+.stage-detail { display: flex; gap: 8px; }
+.stage-detail dt { color: var(--muted); min-width: 90px; }
+.next-actions, .reasoning-list, .completed-stages { margin: 0; padding-left: 20px; }
+
+/* ---------- Decisions ---------- */
+.decision-selector { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.decision-tab.active { border-color: var(--accent); }
+.option-item { padding: 10px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 10px; }
+.option-item.recommended { border-color: var(--ok); }
+.option-head { display: flex; align-items: center; gap: 12px; }
+.option-name { font-weight: 600; min-width: 140px; }
+.rec-tag { color: var(--ok); font-size: 12px; border: 1px solid var(--ok); border-radius: 999px; padding: 1px 8px; margin-left: 8px; }
+.option-reasoning { color: var(--muted); font-size: 12.5px; margin: 6px 0 0; }
+.recommendation-line { font-size: 15px; }
+
+/* ---------- Intelligence ---------- */
+.skill-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.skill-tag { background: var(--panel-2); border-radius: 6px; padding: 2px 8px; font-size: 12px; color: var(--muted); }
+.recommendation-head { display: flex; align-items: center; gap: 12px; }
+.recommendation-candidate { font-weight: 600; }
+.recommendation-explanation { color: var(--muted); font-size: 12.5px; }
+
+/* ---------- Modal ---------- */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55);
+  display: flex; align-items: center; justify-content: center; z-index: 100;
+}
+.modal { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; max-width: 460px; width: 90%; }
+.modal-title { margin: 0 0 10px; }
+.modal-close { margin-top: 14px; }

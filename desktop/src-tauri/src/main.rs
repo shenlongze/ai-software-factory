@@ -1,16 +1,22 @@
-//! main.rs — AI Software Factory Desktop Shell 入口 (Phase 15A-3a)。
+//! main.rs — AI Software Factory Desktop Shell 入口 (Phase 15A-3a + 15A-3b)。
+//!
+//! 产品定位 (用户强制): Desktop = AI Organization Factory Application Entry,
+//! 不是 Runtime 管理工具 / 不是业务系统。业务 (Organization/Intelligence/
+//! Extension) 由未来层提供 — 本壳只有 launcher UI + 状态桥。
 //!
 //! 最小 lifecycle (架构约束):
-//!   on_setup:     resolve data_root → runtime start (经 factory-runtime CLI)
-//!                → 状态轮询 ready → Console 健康检查 (/api/dashboard)
-//!                → WebView 加载 http://127.0.0.1:<port>
-//!   on_window_close: runtime stop (graceful) → 退出
-//!   崩溃:        status 非 ready / 健康失败 → 简单错误提示窗口
+//!   on_setup:      resolve data_root → 加载内嵌 launcher UI (src/ui)
+//!                 (launcher.js 负责首次启动流程, 经 Tauri bridge 调 runtime)
+//!   commands:      runtime_start/stop/status/logs/restart + health_detail
+//!                  + open_console (仅 UI 导航; 无任何 business command)
+//!   on_window_close: launcher 关闭 → runtime stop (graceful) → 退出
+//!                 console 窗口关闭 → 仅关窗 (runtime 保持运行)
 //!
 //! Desktop 永远不是业务层 — 无任何 business command; 唯一入口 factory-runtime CLI。
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod launcher;
 mod runtime;
 #[cfg(test)]
 mod tests;
@@ -163,7 +169,7 @@ pub fn html_escape(input: &str) -> String {
         .replace('>', "&gt;")
 }
 
-/// 简单错误提示页 (启动失败 / 崩溃时展示)。
+/// 简单错误提示页 (启动失败 / 崩溃时兜底展示, 用户语言, 无技术细节)。
 pub fn error_html(message: &str) -> String {
     let body = html_escape(message);
     format!(
@@ -171,50 +177,94 @@ pub fn error_html(message: &str) -> String {
          body{{font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#1e1e1e;\
          color:#eee;padding:40px;line-height:1.6}}h1{{font-size:20px}}pre{{white-space:pre-wrap;\
          background:#2a2a2a;padding:16px;border-radius:8px;font-size:13px}}\
-         </style></head><body><h1>AI Software Factory — 启动失败</h1><pre>{body}</pre>\
-         <p>请确认 factory-runtime 已安装 (pip install -e factory-runtime) 且数据目录可写, \
-         然后关闭窗口重试。</p></body></html>"
+         </style></head><body><h1>AI Organization Factory — 启动失败</h1><pre>{body}</pre>\
+         <p>请关闭窗口后重新打开应用重试。</p></body></html>"
     )
 }
 
 // --------------------------------------------------------------------------
-// Tauri commands — 最小桥 (start/stop/status/logs, 无 business command)
+// Tauri commands — 最小桥 (start/stop/status/logs/restart/health_detail/
+// open_console; 无任何 business command)
 // --------------------------------------------------------------------------
+//
+// 全部命令从 AppState 读 data_root (JS 不传路径); 错误统一经 friendly_error
+// 转为用户语言 (禁暴露 Python/Rust/uvicorn/subprocess 等细节)。
 
-#[tauri::command]
-fn cmd_runtime_start(data_root: String) -> Result<String, String> {
-    let bridge = Bridge::from_env();
-    let st = bridge
-        .runtime_start(Path::new(&data_root))
-        .map_err(|e| e.to_string())?;
-    serde_json::to_string(&st).map_err(|e| e.to_string())
+/// 序列化错误兜底 (不可达路径 — serde_json 对固定结构不会失败)。
+fn json_err(e: serde_json::Error) -> String {
+    format!("Factory startup failed: 数据编码错误 ({e})")
 }
 
 #[tauri::command]
-fn cmd_runtime_stop(data_root: String) -> Result<String, String> {
-    let bridge = Bridge::from_env();
+fn cmd_runtime_start(state: tauri::State<AppState>) -> Result<String, String> {
+    let bridge = state.bridge.clone();
     let st = bridge
-        .runtime_stop(Path::new(&data_root))
-        .map_err(|e| e.to_string())?;
-    serde_json::to_string(&st).map_err(|e| e.to_string())
+        .runtime_start(&state.data_root)
+        .map_err(|e| launcher::friendly_error(&e))?;
+    serde_json::to_string(&st).map_err(json_err)
 }
 
 #[tauri::command]
-fn cmd_runtime_status(data_root: String) -> Result<String, String> {
-    let bridge = Bridge::from_env();
+fn cmd_runtime_stop(state: tauri::State<AppState>) -> Result<String, String> {
+    let bridge = state.bridge.clone();
     let st = bridge
-        .runtime_status(Path::new(&data_root))
-        .map_err(|e| e.to_string())?;
-    serde_json::to_string(&st).map_err(|e| e.to_string())
+        .runtime_stop(&state.data_root)
+        .map_err(|e| launcher::friendly_error(&e))?;
+    serde_json::to_string(&st).map_err(json_err)
 }
 
 #[tauri::command]
-fn cmd_runtime_logs(data_root: String, lines: Option<usize>) -> Result<String, String> {
-    let bridge = Bridge::from_env();
+fn cmd_runtime_status(state: tauri::State<AppState>) -> Result<String, String> {
+    let bridge = state.bridge.clone();
+    let st = bridge
+        .runtime_status(&state.data_root)
+        .map_err(|e| launcher::friendly_error(&e))?;
+    serde_json::to_string(&st).map_err(json_err)
+}
+
+#[tauri::command]
+fn cmd_runtime_logs(state: tauri::State<AppState>, lines: Option<usize>) -> Result<String, String> {
+    let bridge = state.bridge.clone();
     let bundle = bridge
-        .runtime_logs(Path::new(&data_root), lines.unwrap_or(50))
-        .map_err(|e| e.to_string())?;
-    serde_json::to_string(&bundle).map_err(|e| e.to_string())
+        .runtime_logs(&state.data_root, lines.unwrap_or(200))
+        .map_err(|e| launcher::friendly_error(&e))?;
+    serde_json::to_string(&bundle).map_err(json_err)
+}
+
+/// System Recovery: stop (幂等) → start (健康等待)。
+#[tauri::command]
+fn cmd_runtime_restart(state: tauri::State<AppState>) -> Result<String, String> {
+    let bridge = state.bridge.clone();
+    let st = bridge
+        .runtime_restart(&state.data_root)
+        .map_err(|e| launcher::friendly_error(&e))?;
+    serde_json::to_string(&st).map_err(json_err)
+}
+
+/// 产品级健康视图: Runtime/Core/Console 组件状态 + uptime/version/port。
+#[tauri::command]
+fn cmd_health_detail(state: tauri::State<AppState>) -> Result<String, String> {
+    let bridge = state.bridge.clone();
+    let st = bridge
+        .runtime_status(&state.data_root)
+        .map_err(|e| launcher::friendly_error(&e))?;
+    let hd = runtime::health_detail(&st);
+    serde_json::to_string(&hd).map_err(json_err)
+}
+
+/// 打开 Factory Console 窗口 (加载 http://127.0.0.1:<port>)。
+/// 纯 UI 导航命令 — 不触碰任何业务数据。
+#[tauri::command]
+fn cmd_open_console(app: tauri::AppHandle, port: u16) -> Result<(), String> {
+    let url = format!("http://127.0.0.1:{port}");
+    let parsed: tauri::Url = url.parse().map_err(|e| format!("无法打开控制台 ({e})"))?;
+    WebviewWindowBuilder::new(&app, "console", WebviewUrl::External(parsed))
+        .title("AI Organization Factory — Console")
+        .inner_size(1280.0, 800.0)
+        .min_inner_size(960.0, 600.0)
+        .build()
+        .map(|_| ())
+        .map_err(|e| format!("无法打开控制台窗口 ({e})"))
 }
 
 // --------------------------------------------------------------------------
@@ -227,7 +277,10 @@ fn main() {
             cmd_runtime_start,
             cmd_runtime_stop,
             cmd_runtime_status,
-            cmd_runtime_logs
+            cmd_runtime_logs,
+            cmd_runtime_restart,
+            cmd_health_detail,
+            cmd_open_console
         ])
         .setup(|app| {
             let data_root = resolve_data_root(app);
@@ -237,44 +290,29 @@ fn main() {
                 data_root.display(),
                 bridge.cmd()
             );
-
-            match launch_flow(&bridge, &data_root, LAUNCH_TIMEOUT) {
-                Ok(launched) => {
-                    eprintln!("desktop: runtime ready, console on port {}", launched.port);
-                    let url = format!("http://127.0.0.1:{}", launched.port);
-                    let parsed: tauri::Url = url
-                        .parse()
-                        .map_err(|e| format!("WebView URL 解析失败 {url}: {e}"))?;
-                    WebviewWindowBuilder::new(app, "main", WebviewUrl::External(parsed))
-                        .title("AI Software Factory")
-                        .inner_size(1280.0, 800.0)
-                        .min_inner_size(960.0, 600.0)
-                        .build()?;
-                }
-                Err(e) => {
-                    // 崩溃 / 启动失败 → 简单错误提示窗口
-                    eprintln!("desktop: runtime launch failed: {e}");
-                    let html = error_html(&format!("Runtime 启动失败\n\n{e}"));
-                    let url = format!("data:text/html,{}", percent_encode(&html));
-                    let parsed: tauri::Url = url
-                        .parse()
-                        .map_err(|e| format!("错误页 URL 解析失败: {e}"))?;
-                    WebviewWindowBuilder::new(app, "error", WebviewUrl::External(parsed))
-                        .title("AI Software Factory — 启动失败")
-                        .inner_size(680.0, 420.0)
-                        .build()?;
-                }
-            }
             app.manage(AppState {
                 bridge,
                 data_root,
                 shutting_down: Mutex::new(false),
             });
+
+            // Launcher 窗口 (内嵌资源 src/ui) — 首次启动流程由 launcher.js 驱动
+            WebviewWindowBuilder::new(app, "launcher", WebviewUrl::App("launcher.html".into()))
+                .title("AI Organization Factory")
+                .inner_size(1120.0, 780.0)
+                .min_inner_size(900.0, 640.0)
+                .build()?;
             Ok(())
         })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 let state = window.app_handle().state::<AppState>();
+                let label = window.label().to_string();
+                if label != "launcher" {
+                    // Console 窗口关闭 → 仅关窗, runtime 保持运行 (回到 launcher)
+                    return;
+                }
+                // Launcher 关闭 → graceful stop (SIGTERM 语义在 factory-runtime 内) → 退出
                 let mut shutting_down = state.shutting_down.lock().unwrap();
                 if *shutting_down {
                     return; // 已触发 graceful, 放行关闭
@@ -284,15 +322,11 @@ fn main() {
                 let bridge = state.bridge.clone();
                 let data_root = state.data_root.clone();
                 let app_handle = window.app_handle().clone();
-                let label = window.label().to_string();
                 std::thread::spawn(move || {
-                    // graceful stop (SIGTERM 语义在 factory-runtime 内), 完成后再关窗
                     if let Err(e) = shutdown_flow(&bridge, &data_root) {
                         eprintln!("desktop: shutdown error: {e}");
                     }
-                    if let Some(w) = app_handle.get_webview_window(&label) {
-                        let _ = w.close();
-                    }
+                    app_handle.exit(0);
                 });
             }
         })

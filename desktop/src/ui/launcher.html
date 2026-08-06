@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Organization Factory</title>
+  <link rel="stylesheet" href="launcher.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- Factory Header -->
+  <header class="factory-header">
+    <div class="brand">
+      <div class="logo">AI</div>
+      <div class="brand-text">
+        <h1>AI Organization Factory</h1>
+        <p class="tagline">构建 · 运行 · 管理你的 AI 企业组织</p>
+      </div>
+    </div>
+    <div class="header-meta">
+      <span id="status-badge" class="badge idle" data-status="idle">IDLE</span>
+      <span id="runtime-version" class="version">—</span>
+    </div>
+  </header>
+
+  <main class="layout">
+
+    <!-- Workspace Area (预留, Phase 16+: CEO/Manager/Employee/Approval/Knowledge) -->
+    <section class="panel workspace-panel">
+      <h2>Workspace</h2>
+      <div class="placeholder">
+        <p class="placeholder-title">Workspace 即将上线</p>
+        <p class="placeholder-desc">
+          CEO · Manager · Employee · Approval · Knowledge 模块将在后续版本陆续提供。<br>
+          当前版本请通过下方 System Status 进入 Factory Console 使用工厂功能。
+        </p>
+      </div>
+    </section>
+
+    <!-- System Status (底层状态, 非首页唯一内容) -->
+    <section class="panel status-panel">
+      <h2>System Status</h2>
+      <div class="status-grid">
+        <div class="status-item"><span class="label">Runtime</span><span id="st-runtime" class="value">—</span></div>
+        <div class="status-item"><span class="label">Uptime</span><span id="st-uptime" class="value">—</span></div>
+        <div class="status-item"><span class="label">Console Port</span><span id="st-port" class="value">—</span></div>
+        <div class="status-item"><span class="label">Version</span><span id="st-version" class="value">—</span></div>
+      </div>
+
+      <!-- 首次启动流程 -->
+      <div id="first-launch" class="first-launch">
+        <p id="launch-message" class="launch-message">Initializing Factory…</p>
+        <div id="launch-error" class="launch-error" hidden></div>
+        <div id="launch-actions" class="launch-actions">
+          <button id="btn-open-console" class="btn primary" hidden>打开 Factory Console</button>
+          <button id="btn-retry" class="btn" hidden>重试</button>
+        </div>
+      </div>
+
+      <!-- Health view -->
+      <div class="health-view">
+        <h3>Health</h3>
+        <ul id="health-list" class="health-list">
+          <li class="health-loading">正在检查…</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- System Recovery (定位: 系统恢复, 非用户操作流程) -->
+    <section id="recovery-panel" class="panel recovery-panel" hidden>
+      <h2>System Recovery</h2>
+      <p class="recovery-desc">工厂服务运行异常。可尝试重启运行时以恢复。</p>
+      <div class="recovery-actions">
+        <button id="btn-restart" class="btn warn">Restart Runtime</button>
+      </div>
+      <p id="recovery-result" class="recovery-result" hidden></p>
+    </section>
+
+    <!-- Log Viewer (Troubleshooting 定位, 未来由 Analysis Agent 负责日志分析) -->
+    <section class="panel logs-panel">
+      <h2>Logs <span class="hint">(故障排查)</span></h2>
+      <div class="tabs" role="tablist">
+        <button class="tab active" data-tab="runtime" role="tab" aria-selected="true">runtime.log</button>
+        <button class="tab" data-tab="core" role="tab" aria-selected="false">core.log</button>
+        <button class="tab" data-tab="console" role="tab" aria-selected="false">console.log</button>
+        <button id="btn-refresh-logs" class="btn small">刷新</button>
+      </div>
+      <pre id="log-view" class="log-view">(尚未加载日志)</pre>
+    </section>
+
+  </main>
+
+  <footer class="factory-footer">AI Organization Factory · Desktop Entry · 数据仅存于本地运行时</footer>
+</div>
+<script src="launcher.js"></script>
+</body>
+</html>

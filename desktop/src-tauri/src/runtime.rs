@@ -257,6 +257,19 @@ impl Bridge {
         parse_status(&out.stdout)
     }
 
+    /// 重启: `stop` (幂等) → `start` (健康等待)。用于 System Recovery。
+    /// 组合语义, 不经 CLI restart — 保证 stop 失败/残留可被 start 覆盖。
+    pub fn runtime_restart(&self, data_root: &Path) -> Result<RuntimeStatus, BridgeError> {
+        let _ = self.runtime_stop(data_root)?;
+        let st = self.runtime_start(data_root)?;
+        if st.status == "failed" {
+            return Err(BridgeError::RuntimeFailed(
+                "重启后 runtime 进入 failed 状态".into(),
+            ));
+        }
+        Ok(st)
+    }
+
     /// 日志: 直接 tail <data_root>/logs/{runtime,core,console}.log
     /// (缺失文件 → 空; 不可读 → Err)。不调用 CLI — logs 属本地文件读取。
     pub fn runtime_logs(&self, data_root: &Path, lines: usize) -> Result<LogBundle, BridgeError> {
@@ -444,6 +457,164 @@ pub fn read_tail(path: &Path, lines: usize) -> std::io::Result<Vec<String>> {
     let all: Vec<String> = content.lines().map(|s| s.to_string()).collect();
     let start = all.len().saturating_sub(lines);
     Ok(all[start..].to_vec())
+}
+
+// --------------------------------------------------------------------------
+// health_detail (Phase 15A-3b: 产品级健康视图)
+// --------------------------------------------------------------------------
+
+/// 健康组件 (Runtime/Core/Console — 已实现)。
+/// 未来项 Organization/Agents/Knowledge/Learning 由 UI 预留占位, 不在此解析。
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct ComponentHealth {
+    pub name: &'static str,
+    pub ok: bool,
+    pub status: String,
+    pub reason: Option<String>,
+    pub suggestion: Option<String>,
+}
+
+/// 产品级健康视图 (health_detail command 输出)。
+/// 全部从 status JSON 解析 — Desktop 不维护任何自身状态。
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct HealthDetail {
+    /// 全部组件健康 (Runtime ready + Core alive + Console alive)。
+    pub overall: bool,
+    pub version: String,
+    pub port: Option<u16>,
+    /// 运行时长 (秒, 自 started_at)。
+    pub uptime_secs: Option<u64>,
+    /// 组件顺序固定: Runtime → Core → Console。
+    pub components: Vec<ComponentHealth>,
+}
+
+/// 从 RuntimeStatus 生成健康视图 (reason/suggestion 用用户语言)。
+pub fn health_detail(st: &RuntimeStatus) -> HealthDetail {
+    let (rt_ok, rt_reason, rt_suggestion) = match st.status.as_str() {
+        "ready" => (true, None, None),
+        "starting" => (false, Some("工厂正在初始化".into()), Some("请稍候…".into())),
+        "stopping" => (false, Some("工厂正在关闭".into()), None),
+        "stopped" => (
+            false,
+            Some("工厂服务已停止".into()),
+            Some("点击「打开 Factory Console」或使用「系统恢复」重启".into()),
+        ),
+        "failed" => (
+            false,
+            Some("工厂服务运行异常".into()),
+            Some("请使用「系统恢复」重启工厂".into()),
+        ),
+        _ => (
+            false,
+            Some("工厂尚未启动".into()),
+            Some("请点击「打开 Factory Console」启动工厂".into()),
+        ),
+    };
+    let runtime = ComponentHealth {
+        name: "Runtime",
+        ok: rt_ok,
+        status: st.status.clone(),
+        reason: rt_reason,
+        suggestion: rt_suggestion,
+    };
+    let core = ComponentHealth {
+        name: "Core",
+        ok: st.core_alive,
+        status: if st.core_alive {
+            "alive".into()
+        } else {
+            "down".into()
+        },
+        reason: if st.core_alive {
+            None
+        } else {
+            Some("核心服务未运行".into())
+        },
+        suggestion: if st.core_alive {
+            None
+        } else {
+            Some("请重启工厂服务".into())
+        },
+    };
+    let console = ComponentHealth {
+        name: "Console",
+        ok: st.console_alive,
+        status: if st.console_alive {
+            "alive".into()
+        } else {
+            "down".into()
+        },
+        reason: if st.console_alive {
+            None
+        } else {
+            Some("控制台未运行".into())
+        },
+        suggestion: if st.console_alive {
+            None
+        } else {
+            Some("请重启工厂服务".into())
+        },
+    };
+    let components = vec![runtime, core, console];
+    let overall = components.iter().all(|c| c.ok);
+    HealthDetail {
+        overall,
+        version: st.version.clone(),
+        port: st.port,
+        uptime_secs: uptime_secs_at(st.started_at.as_deref(), now_unix()),
+        components,
+    }
+}
+
+/// 当前 Unix 秒 (测试可用 uptime_secs_at 注入 now)。
+pub fn now_unix() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+/// uptime 秒数: started_at (ISO8601) 相对 now_unix 的差值 (纯函数, 可测)。
+pub fn uptime_secs_at(started_at: Option<&str>, now_unix: i64) -> Option<u64> {
+    let t = parse_iso8601_secs(started_at?)?;
+    Some((now_unix - t).max(0) as u64)
+}
+
+/// 解析最小 ISO8601 时间戳 "YYYY-MM-DDTHH:MM:SS" (+ 可选 Z / 秒小数截断)。
+/// 无外部依赖 (std 手写)。解析失败 → None。
+pub fn parse_iso8601_secs(s: &str) -> Option<i64> {
+    let t = s
+        .strip_suffix('Z')
+        .or_else(|| s.strip_suffix("+00:00"))
+        .unwrap_or(s);
+    let t = t.split('.').next().unwrap_or(t); // 截断小数秒
+    if t.len() < 19 || t.as_bytes()[10] != b'T' {
+        return None;
+    }
+    let (date, time) = t.split_at(10);
+    let mut dit = date.split('-');
+    let y: i64 = dit.next()?.parse().ok()?;
+    let m: i64 = dit.next()?.parse().ok()?;
+    let d: i64 = dit.next()?.parse().ok()?;
+    let mut tit = time[1..].split(':');
+    let hh: i64 = tit.next()?.parse().ok()?;
+    let mm: i64 = tit.next()?.parse().ok()?;
+    let ss: i64 = tit.next()?.parse().ok()?;
+    if !(1..=12).contains(&m) || !(1..=31).contains(&d) || hh > 23 || mm > 59 || ss > 61 {
+        return None;
+    }
+    Some(days_from_civil(y, m, d) * 86400 + hh * 3600 + mm * 60 + ss)
+}
+
+/// 公历 → 1970-01-01 起天数 (Howard Hinnant 算法)。
+fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = y - era * 400;
+    let mp = (m + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146097 + doe - 719468
 }
 
 #[cfg(test)]

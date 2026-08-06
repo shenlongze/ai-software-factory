@@ -1,12 +1,13 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "AI Software Factory",
+  "productName": "AI Organization Factory",
   "version": "0.1.0",
-  "identifier": "ai-software-factory",
+  "identifier": "ai-organization-factory",
   "build": {
-    "frontendDist": "../ui"
+    "frontendDist": "../src/ui"
   },
   "app": {
+    "withGlobalTauri": true,
     "security": {
       "csp": null
     }

@@ -3385,3 +3385,140 @@ def cmd_intelligence_experience_evaluate(ctx: FactoryContext, args: Any) -> dict
         "evaluation": evaluation.to_dict(),
         "event_seq": event_seq,
     }
+
+
+# ------------------------------------------------------------------ Phase 11A: Human Console (ADR-0034)
+
+
+def _open_console_service(ctx: FactoryContext) -> Any:
+    """装配 ConsoleService (延迟 import factory-console — Removal Isolation)。
+
+    factory-console/ 是独立顶层包 (目录名含连字符, 无法用 import 语句导入),
+    经 importlib.import_module 按路径加载: 包所在目录 (仓库根) 动态挂到
+    sys.path。未安装/已删除 → None (调用方报 CliError 7 未找到; Factory
+    其余命令零感知 — 同 provider/product/intelligence 延迟导入模式)。
+    全部 store 依赖可选 (失败安全): 缺任一 store → ConsoleService 按空数据
+    处理, Console 永不因数据缺失失败 (phase11a-status.md §架构)。
+    """
+    import importlib
+    import sys
+    from pathlib import Path
+
+    console_dir = Path(__file__).resolve().parents[2] / "factory-console"
+    if not console_dir.is_dir():
+        return None
+    root = console_dir.parent
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    try:
+        module = importlib.import_module("factory-console")
+    except Exception:
+        return None
+    # 只读聚合装配 (全部可选; 延迟导入 Core 包保 Removal Isolation: 删除
+    # 任一 Core 包不影响 Console 加载 — 与 service.py 内部延迟导入同模式)。
+    from agents.registry import AgentRegistry
+
+    from intelligence.store import DecisionStore, ExperienceStore, RecommendationStore
+
+    from product.store import ProductStore
+
+    from providers.registry import ProviderRegistry
+
+    return module.ConsoleService(
+        workspace_manager=_open_workspace_manager(ctx),
+        task_store=ctx.open_task_store(),
+        agent_registry=AgentRegistry(ctx.open_agent_store()),
+        product_store=ProductStore(ctx.root / "product"),
+        decision_store=DecisionStore(ctx.root / "intelligence"),
+        recommendation_store=RecommendationStore(ctx.root / "intelligence"),
+        experience_store=ExperienceStore(ctx.root / "intelligence"),
+        usage_store=_open_provider_usage_store(ctx),
+        provider_registry=ProviderRegistry(_open_provider_store(ctx)),
+    )
+
+
+def cmd_console_dashboard(ctx: FactoryContext, args: Any) -> dict:
+    """factory console dashboard — Human Console 七域汇总 (只读, 发
+    console.dashboard.viewed 审计)。
+
+    七域 (phase11a-status.md §范围): projects / approvals / agents /
+    decisions / cost / experience / activity — ConsoleService.dashboard()
+    一次装配只读快照。只读铁律: 本命令唯一的副作用是审计事件, 不自动
+    执行/不自动批准 (决策权永远在 9c Approval 状态机)。
+    """
+    from events.models import EventType
+
+    with ctx.logger_scope() as logger:
+        service = _open_console_service(ctx)
+        if service is None:
+            raise CliError("factory-console 未安装 (缺 factory-console/ 包)", exit_code=7)
+        dashboard = service.dashboard(recent_limit=getattr(args, "limit", 10))
+        event_seq = None
+        ev = logger.record(
+            EventType.CONSOLE_DASHBOARD_VIEWED,
+            source=SOURCE,
+            stage="viewed",
+            action="view console dashboard",
+            result="OK",
+            payload={
+                "projects": len(dashboard.projects),
+                "pending_approvals": len(dashboard.pending_approvals),
+                "running_agents": len(dashboard.running_agents),
+                "decisions": len(dashboard.decisions),
+                "total_cost": round(dashboard.cost.total_cost, 6),
+                "experiences": dashboard.experience.total,
+                "events": len(dashboard.activity),
+            },
+        )
+        if ev is not None:
+            event_seq = ev.seq
+    return {
+        "ok": True,
+        "dashboard": dashboard.to_dict(),
+        "event": "console.dashboard.viewed",
+        "event_seq": event_seq,
+    }
+
+
+def cmd_console_approvals(ctx: FactoryContext, args: Any) -> dict:
+    """factory console approvals — 待人工审批清单 (只读, 发 console.viewed 审计)。
+
+    Console 只读不决定: 打开审批 ≠ 决定审批 — approve/reject/
+    changes_requested/delegated 决策权永远在 9c Approval 状态机
+    (product approval decide), 本命令零写操作。
+    """
+    from events.models import EventType
+
+    with ctx.logger_scope() as logger:
+        service = _open_console_service(ctx)
+        if service is None:
+            raise CliError("factory-console 未安装 (缺 factory-console/ 包)", exit_code=7)
+        approvals = service.list_approvals()
+        pending_only = bool(getattr(args, "pending", False))
+        if pending_only:
+            approvals = [a for a in approvals if a.status == "pending"]
+        event_seq = None
+        ev = logger.record(
+            EventType.CONSOLE_VIEWED,
+            source=SOURCE,
+            stage="viewed",
+            action="view console approvals",
+            result="OK",
+            payload={
+                "view": "approvals",
+                "count": len(approvals),
+                "pending": sum(1 for a in approvals if a.status == "pending"),
+                "pending_only": pending_only,
+            },
+        )
+        if ev is not None:
+            event_seq = ev.seq
+    return {
+        "ok": True,
+        "approvals": [a.to_dict() for a in approvals],
+        "count": len(approvals),
+        "pending": sum(1 for a in approvals if a.status == "pending"),
+        "pending_only": pending_only,
+        "event": "console.viewed",
+        "event_seq": event_seq,
+    }

@@ -29,6 +29,8 @@ from .commands import (
     cmd_change_triggers_register,
     cmd_change_validate,
     cmd_change_workflows,
+    cmd_console_approvals,
+    cmd_console_dashboard,
     cmd_dashboard,
     cmd_event_logs,
     cmd_execution_list,
@@ -744,6 +746,26 @@ def build_parser() -> Any:
                               help="仅输出阶段识别 (stage/confidence/evidence)")
     p_understand.add_argument("path", help="项目路径 (目录)")
 
+    # factory console (Phase 11A, ADR-0034: Human Console Layer — 统一只读视图)
+    p_console = sub.add_parser(
+        "console", help="Human Console: 统一只读视图 (Human Layer, 零写操作; 发 console.* 审计事件)"
+    )
+    json_opt(p_console)
+    csub = p_console.add_subparsers(dest="console_command", required=True)
+    p_c_dash = csub.add_parser(
+        "dashboard", help="Console Dashboard 七域汇总 (projects/approvals/agents/"
+                          "decisions/cost/experience/activity; 发 console.dashboard.viewed)"
+    )
+    json_opt(p_c_dash)
+    p_c_dash.add_argument("--limit", type=int, default=10,
+                          help="最近决策/活动条数上限 (默认 10)")
+    p_c_ap = csub.add_parser(
+        "approvals", help="待人工审批清单 (只读不决定 — 决策权在 product approval "
+                          "decide; 发 console.viewed)"
+    )
+    json_opt(p_c_ap)
+    p_c_ap.add_argument("--pending", action="store_true", help="只列待办 (pending)")
+
     return p
 
 
@@ -798,6 +820,8 @@ def main(argv: list[str] | None = None) -> int:
             result = _dispatch_product(ctx, args)
         elif args.command == "intelligence":
             result = _dispatch_intelligence(ctx, args)
+        elif args.command == "console":
+            result = _dispatch_console(ctx, args)
         else:  # pragma: no cover — argparse required=True 已拦截
             raise CliError(f"unknown command: {args.command}", exit_code=2)
     except CliError as exc:
@@ -1042,6 +1066,15 @@ def _dispatch_intelligence(ctx: FactoryContext, args: Any) -> dict:
     )
 
 
+def _dispatch_console(ctx: FactoryContext, args: Any) -> dict:
+    """console dashboard/approvals 分发 (Phase 11A, ADR-0034: Human Console 只读)。"""
+    if args.console_command == "dashboard":
+        return cmd_console_dashboard(ctx, args)
+    if args.console_command == "approvals":
+        return cmd_console_approvals(ctx, args)
+    raise CliError(f"unknown console command: {args.console_command}", exit_code=2)
+
+
 # ------------------------------------------------------------------ 输出
 
 def _print_output(args: Any, result: dict) -> None:
@@ -1092,6 +1125,8 @@ def _print_output(args: Any, result: dict) -> None:
         _print_product(args, result)
     elif args.command == "intelligence":
         _print_intelligence(args, result)
+    elif args.command == "console":
+        _print_console(args, result)
 
 
 def _render_table(
@@ -2051,6 +2086,70 @@ def _print_intelligence_experience_evaluate(r: dict) -> None:
             print(f"    - {risk}")
     if r.get("event_seq"):
         print(f"  事件      intelligence.task.evaluated seq={r['event_seq']}")
+
+
+# ------------------------------------------------------------------ Phase 11A: Human Console 输出 (ADR-0034)
+
+
+def _print_console(args: Any, r: dict) -> None:
+    """factory console 输出: dashboard 七域汇总 / approvals 待审批清单。
+
+    --json 已在 _print_output 前置处理; 本函数只渲染人类可读文本。
+    Console 只读视图 (Human Layer): 输出不携带任何执行/审批指令
+    (决策权永远在 9c Approval 状态机 product approval decide)。
+    """
+    if args.console_command == "dashboard":
+        _print_console_dashboard(r)
+    elif args.console_command == "approvals":
+        _print_console_approvals(r)
+
+
+def _print_console_dashboard(r: dict) -> None:
+    """console dashboard 输出: 七域汇总 (项目/待审批/Agent/决策/成本/经验/活动)。"""
+    d = r["dashboard"]
+    projects = d.get("projects") or []
+    approvals = d.get("approvals") or []
+    agents = d.get("agents") or []
+    decisions = d.get("decisions") or []
+    cost = d.get("cost") or {}
+    experience = d.get("experience") or {}
+    activity = d.get("activity") or []
+    print("Human Console — Dashboard 七域汇总 (只读)")
+    print(
+        f"  项目        {len(projects)}  "
+        f"(active: {sum(1 for p in projects if p.get('status') == 'active')})"
+    )
+    print(
+        f"  待审批      {sum(1 for a in approvals if a.get('status') == 'pending')}  "
+        f"(共 {len(approvals)})"
+    )
+    print(
+        f"  运行中 Agent {sum(1 for a in agents if a.get('status') == 'WORKING')}  "
+        f"(共 {len(agents)})"
+    )
+    print(f"  最近决策    {len(decisions)}")
+    print(f"  成本        ${cost.get('total_cost', 0.0):.6f}  ({cost.get('calls', 0)} calls)")
+    print(
+        f"  经验        {experience.get('total', 0)} 条  "
+        f"(success_rate: {experience.get('success_rate', 0.0):.0%})"
+    )
+    print(f"  最近活动    {len(activity)} 条")
+    if r.get("event_seq"):
+        print(f"  事件      console.dashboard.viewed seq={r['event_seq']}")
+
+
+def _print_console_approvals(r: dict) -> None:
+    """console approvals 输出: 审批清单 (只读不决定)。"""
+    rows = [
+        [a["id"], a["artifact_id"], a["gate"], a["status"],
+         f"{a['confidence']:.2f}", a.get("risk") or "-",
+         a.get("idea_id") or "-"]
+        for a in r["approvals"]
+    ]
+    print(_render_table(["Request", "Artifact", "Gate", "Status", "Conf", "Risk", "Idea"], rows))
+    print(f"{r['count']} approvals (pending: {r['pending']})")
+    if r.get("event_seq"):
+        print(f"  事件      console.viewed seq={r['event_seq']} (view=approvals)")
 
 
 if __name__ == "__main__":

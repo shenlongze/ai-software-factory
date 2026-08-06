@@ -1,0 +1,499 @@
+"""factory-console/models.py — Human Console 领域模型 (Pydantic v2)。
+
+设计依据:
+- phase11a-status.md: Console = Human Layer 产品入口 — 统一只读 API (为未来
+  Web UI 11B 准备), Core → Extension → Console 分层。
+- 只读铁律 (phase11a-status.md §禁止 + phase10a-plan.md §Q1 边界铁律):
+  Console 只读各域状态 (Event/Artifact/Decision/Recommendation/Experience/
+  Approval/Provider), **零写操作** — 本模块全部模型是只读投影 (响应模型),
+  不携带任何执行/修改指令 (不自动批准/不修改 Decision/权重, 替代 Human 的
+  决策权永远在 Approval 状态机)。
+- 模型风格参照 product/models.py + intelligence/models.py: to_dict() =
+  model_dump(mode="json") 供 CLI --json/测试断言/未来 FastAPI 薄层共用;
+  时间戳统一 UTC 字符串 (events.models.format_timestamp 格式, 字符串排序
+  == 时间排序)。
+- 本模块只 import events.models (公共接口) — Removal Isolation: 删除
+  factory-console/ 不影响 Factory (Core 零感知); 反向删除 product/ 等 Core
+  包也不影响本层 (纯 stdlib + pydantic + Core 公共接口, 同 intelligence
+  模型层铁律)。
+
+ConsoleDashboard 七域 (phase11a-status.md §范围):
+1. active_projects    活跃项目 (ProjectSummary 列表)
+2. pending_approvals  待人工审批 (ApprovalSummary 列表 — 人工闸门 9c)
+3. running_agents     运行中 Agent (AgentSummary 列表)
+4. recent_decisions   最近决策 (DecisionSummary 列表 — AI 推荐产物, 只读)
+5. cost_summary       成本汇总 (CostSummary — Provider usage 估算计量)
+6. experience_summary 经验汇总 (ExperienceSummaryModel — 六域统计)
+7. activity           最近活动 (EventSummary 列表 — 事件审计流)
+
+API 响应模型 (api/ 路由函数返回值, 未来挂 FastAPI 薄层):
+GET /projects → ProjectSummary; GET /projects/{id}/lifecycle → LifecycleSummary;
+GET /approvals → ApprovalSummary; GET /decisions/{id} → DecisionSummary;
+GET /recommendations → RecommendationSummary; GET /experience → ExperienceSummary;
+GET /providers → ProviderSummary。
+"""
+
+from __future__ import annotations
+
+from typing import Any, ClassVar
+
+from pydantic import BaseModel, Field, field_validator
+
+
+def _now_str() -> str:
+    """统一 UTC 时间戳 (与 Event 存储格式一致, 字符串排序 == 时间排序)。"""
+    from events.models import format_timestamp
+    from datetime import datetime, timezone
+
+    return format_timestamp(datetime.now(timezone.utc))
+
+
+def _coerce_str_list(v: Any) -> list[str]:
+    """字符串/可迭代 → 去空串列表 (capability 等清单字段共用, 同 intelligence 模式)。"""
+    if v is None:
+        return []
+    if isinstance(v, str):
+        return [s.strip() for s in v.split(",") if s.strip()]
+    return [str(s).strip() for s in v if str(s).strip()]
+
+
+def _coerce_str_map(v: Any) -> dict[str, float]:
+    """dict 字段归一 (因素/成本分项等; None → {}; 值转 float)。"""
+    if v is None:
+        return {}
+    out: dict[str, float] = {}
+    for key, value in v.items():
+        try:
+            out[str(key)] = float(value)
+        except (TypeError, ValueError):
+            continue  # 非数值分项忽略 (只读投影宽容)
+    return out
+
+
+class ProjectSummary(BaseModel):
+    """GET /projects — 项目只读投影: id/name/lifecycle stage/status/last activity。
+
+    lifecycle_stage: 该项目关联生命周期的当前阶段名 (无生命周期 → None);
+    pending_approvals: 该项目维度待审批数; tasks: 任务状态计数 (按五状态);
+    last_activity: 最近活动时间 (项目维度事件最新时间戳, 无 → None)。
+    """
+
+    id: str
+    name: str = ""
+    description: str = ""
+    language: str = ""
+    repository: str = ""
+    tech_stack: list[str] = Field(default_factory=list)
+    status: str = "active"
+    lifecycle_stage: str | None = None
+    lifecycle_status: str | None = None
+    pending_approvals: int = Field(default=0, ge=0)
+    tasks: dict[str, int] = Field(default_factory=dict)
+    last_activity: str | None = None
+
+    @field_validator("tech_stack", mode="before")
+    @classmethod
+    def _coerce_tech_stack(cls, v: Any) -> list[str]:
+        return _coerce_str_list(v)
+
+    @field_validator("tasks", mode="before")
+    @classmethod
+    def _coerce_tasks(cls, v: Any) -> dict[str, int]:
+        if v is None:
+            return {}
+        return {str(k): int(val) for k, val in v.items()}
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json")
+
+
+class LifecycleSummary(BaseModel):
+    """GET /projects/{id}/lifecycle — 生命周期只读快照。
+
+    current_stage: 当前阶段运行记录 (status/completed 后为 None, 同 9d
+    engine.status 口径); completed_stages: 已完成的阶段名列表 (按序);
+    pending_approval: 待审批请求摘要 (ApprovalSummary 投影, 无 → None);
+    next_actions: 下一步动作清单 (引擎 status() 输出投影)。
+    """
+
+    project_id: str
+    lifecycle_id: str | None = None
+    idea_id: str | None = None
+    template_name: str = ""
+    status: str = ""
+    current_stage: dict[str, Any] | None = None
+    completed_stages: list[str] = Field(default_factory=list)
+    pending_approval: "ApprovalSummary | None" = None
+    next_actions: list[str] = Field(default_factory=list)
+
+    @field_validator("completed_stages", "next_actions", mode="before")
+    @classmethod
+    def _coerce_str_lists(cls, v: Any) -> list[str]:
+        return _coerce_str_list(v)
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json")
+
+
+class ApprovalSummary(BaseModel):
+    """GET /approvals — 审批请求只读投影 (9c 状态机, Console 只读不决定)。
+
+    artifact_type: 申请 Artifact 类型 (prd/ui/architecture/...); gate: 审批门 id;
+    confidence: Artifact 置信度 (0-1, 审核优先级数据接口); risk: 风险等级
+    (low/medium/high — 决策链绑定时的风险信号, 无 → None); evidence: 决策依据
+    摘要 (approval 决策链 evidence 引用, 无 → []); status: 9c 状态机
+    (pending/approved/rejected/changes_requested/delegated)。
+    """
+
+    id: str
+    artifact_id: str
+    artifact_type: str = ""
+    gate: str = ""
+    status: str = "pending"
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    risk: str | None = None
+    evidence: list[str] = Field(default_factory=list)
+    idea_id: str | None = None
+    by: str = "human"
+    comment: str | None = None
+    requested_at: str | None = None
+    artifact_version: int | None = None
+
+    @field_validator("evidence", mode="before")
+    @classmethod
+    def _coerce_evidence(cls, v: Any) -> list[str]:
+        return _coerce_str_list(v)
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json")
+
+
+class DecisionSummary(BaseModel):
+    """GET /decisions/{id} — 智能决策只读投影 (AI 推荐产物, ≠ Approval)。
+
+    options: 选项快照 (id/name/score/factors/reasoning 摘要 — 引擎产物全链
+    可追溯, 只读不修改); recommendation: 推荐选项 id (None = 未推荐);
+    score: 推荐选项综合评分; reasoning: 推荐解释 (逐条为什么);
+    evidence: 决策依据证据链 (lineage_ref 字符串列表, 可追溯);
+    risk/risk_level/requires_approval: 风险量化 (9c ApprovalGate 复用信号);
+    status: DecisionStatus (open/recommended/accepted/rejected — 人工决定回写
+    由既有引擎负责, Console 只读)。
+    """
+
+    id: str
+    decision_type: str = "general"
+    subject_id: str = ""
+    description: str = ""
+    status: str = "open"
+    options: list[dict[str, Any]] = Field(default_factory=list)
+    recommendation: str | None = None
+    score: float = Field(default=0.0, ge=0.0, le=1.0)
+    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+    reasoning: list[str] = Field(default_factory=list)
+    evidence: list[str] = Field(default_factory=list)
+    risk: float = Field(default=0.0, ge=0.0, le=1.0)
+    risk_level: str = "low"
+    requires_approval: bool = False
+    approval_request_id: str | None = None
+    created_at: str | None = None
+
+    @field_validator("options", mode="before")
+    @classmethod
+    def _coerce_options(cls, v: Any) -> list[dict[str, Any]]:
+        if v is None:
+            return []
+        out: list[dict[str, Any]] = []
+        for opt in v:
+            if isinstance(opt, dict):
+                item = dict(opt)
+                item["factors"] = _coerce_str_map(item.get("factors"))
+                out.append(item)
+            else:
+                out.append(dict(opt))  # type: ignore[arg-type]
+        return out
+
+    @field_validator("reasoning", "evidence", mode="before")
+    @classmethod
+    def _coerce_str_lists(cls, v: Any) -> list[str]:
+        return _coerce_str_list(v)
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json")
+
+
+class RecommendationSummary(BaseModel):
+    """GET /recommendations — 推荐产物只读投影 (只推荐不执行)。
+
+    candidate: 推荐目标 (f"{target_type}:{target_id}" — provider/agent/skill/
+    workflow 统一抽象); factors: 分项得分 (capability/performance/cost/
+    experience); explanation: 逐条解释 (reasoning 文本); evidence: 依据证据链;
+    confidence/risk: 量化不确定度。
+    """
+
+    id: str
+    target_type: str = ""
+    candidate: str = ""
+    score: float = Field(ge=0.0, le=1.0)
+    factors: dict[str, float] = Field(default_factory=dict)
+    explanation: list[str] = Field(default_factory=list)
+    evidence: list[str] = Field(default_factory=list)
+    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+    risk: float = Field(default=0.0, ge=0.0, le=1.0)
+    created_at: str | None = None
+
+    @field_validator("factors", mode="before")
+    @classmethod
+    def _coerce_factors(cls, v: Any) -> dict[str, float]:
+        return _coerce_str_map(v)
+
+    @field_validator("explanation", "evidence", mode="before")
+    @classmethod
+    def _coerce_str_lists(cls, v: Any) -> list[str]:
+        return _coerce_str_list(v)
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json")
+
+
+class ExperienceSummary(BaseModel):
+    """GET /experience — 经验记录只读投影 (六域 provider/agent/skill/workflow/
+    project/decision)。
+
+    subject: 经验主体 (f"{subject_type}:{subject_id}"); result: success/failure
+    (负样本 = 反事实记录); score/confidence: 表现分与可靠度; task_type/
+    capability: 聚合过滤维度; freshness: 当前新鲜度 (0-1, 历史经验不永久有效)。
+    """
+
+    id: str
+    domain: str = ""
+    subject: str = ""
+    result: str = "success"
+    score: float = Field(ge=0.0, le=1.0)
+    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+    freshness: float = Field(default=1.0, ge=0.0, le=1.0)
+    task_type: str = ""
+    capability: list[str] = Field(default_factory=list)
+    created_at: str | None = None
+
+    @field_validator("capability", mode="before")
+    @classmethod
+    def _coerce_capability(cls, v: Any) -> list[str]:
+        return _coerce_str_list(v)
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json")
+
+
+class ProviderSummary(BaseModel):
+    """GET /providers — Provider 目录只读投影 (能力/成本/性能/经验)。
+
+    capability: 能力标签 (capabilities 投影); cost/performance/experience:
+    经验聚合维度打分 (来自 usage 统计 + experience 记录; 无数据 → None,
+    不臆造); models: 可用模型; status: ACTIVE/DISABLED; usage_calls:
+    usage 记录调用数 (估算计量)。
+    """
+
+    id: str
+    name: str = ""
+    type: str = "cloud"
+    status: str = "ACTIVE"
+    capabilities: list[str] = Field(default_factory=list)
+    models: list[str] = Field(default_factory=list)
+    version: str = "1.0.0"
+    cost: float | None = Field(default=None, ge=0.0, le=1.0)
+    performance: float | None = Field(default=None, ge=0.0, le=1.0)
+    experience: float | None = Field(default=None, ge=0.0, le=1.0)
+    usage_calls: int = Field(default=0, ge=0)
+
+    @field_validator("capabilities", "models", mode="before")
+    @classmethod
+    def _coerce_str_lists(cls, v: Any) -> list[str]:
+        return _coerce_str_list(v)
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json")
+
+
+class CostSummary(BaseModel):
+    """Console Dashboard cost_summary — Provider usage 成本汇总 (估算计量)。
+
+    total_cost: 估算成本累计 (USD, 非真实计费); calls: 调用数; success_rate:
+    成功率; avg_cost: 单次平均成本; total_tokens: 全部 token 和; by_provider:
+    按 Provider 分项 (provider_id → {calls, total_cost, success_rate})。
+    """
+
+    total_cost: float = Field(default=0.0, ge=0.0)
+    calls: int = Field(default=0, ge=0)
+    success_rate: float = Field(default=0.0, ge=0.0, le=1.0)
+    avg_cost: float = Field(default=0.0, ge=0.0)
+    total_tokens: int = Field(default=0, ge=0)
+    by_provider: dict[str, dict[str, Any]] = Field(default_factory=dict)
+
+    @field_validator("by_provider", mode="before")
+    @classmethod
+    def _coerce_by_provider(cls, v: Any) -> dict[str, dict[str, Any]]:
+        if v is None:
+            return {}
+        return {str(k): dict(val) for k, val in v.items()}
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json")
+
+
+class ExperienceSummaryModel(BaseModel):
+    """Console Dashboard experience_summary — 经验汇总 (六域统计)。
+
+    total: 记录总数; by_domain: 各域计数; success_rate: 总体成功率;
+    avg_score: 平均表现分; avg_confidence: 平均可靠度。
+    """
+
+    total: int = Field(default=0, ge=0)
+    by_domain: dict[str, int] = Field(default_factory=dict)
+    success_rate: float = Field(default=0.0, ge=0.0, le=1.0)
+    avg_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    avg_confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+
+    @field_validator("by_domain", mode="before")
+    @classmethod
+    def _coerce_by_domain(cls, v: Any) -> dict[str, int]:
+        if v is None:
+            return {}
+        return {str(k): int(val) for k, val in v.items()}
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json")
+
+
+class AgentSummary(BaseModel):
+    """Console Dashboard running_agents — Agent 运行投影 (只读状态)。
+
+    id/name/role/skills: 身份与能力; status: AVAILABLE/WORKING/OFFLINE;
+    current_task: 当前任务 id (Task.owner 引用, 不自动分配)。
+    """
+
+    id: str
+    name: str = ""
+    role: str = ""
+    status: str = "AVAILABLE"
+    skills: list[str] = Field(default_factory=list)
+    current_task: str | None = None
+
+    @field_validator("skills", mode="before")
+    @classmethod
+    def _coerce_skills(cls, v: Any) -> list[str]:
+        return _coerce_str_list(v)
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json")
+
+
+class EventSummary(BaseModel):
+    """Console Dashboard activity — 最近事件活动 (事件审计流只读投影)。
+
+    type/timestamp/source/project_id/task_id/action/result: Event 语义列投影
+    (append-only 审计, Console 只读不写)。
+    """
+
+    seq: int = Field(default=0, ge=0)
+    type: str = ""
+    timestamp: str = ""
+    source: str = ""
+    project_id: str | None = None
+    task_id: str | None = None
+    action: str | None = None
+    result: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json")
+
+
+class ConsoleDashboard(BaseModel):
+    """Console Dashboard 七域汇总 (factory console dashboard / GET /dashboard)。
+
+    只读聚合快照: 各域由 ConsoleService 从各 store 读接口装配, 本模型
+    不携带任何执行/修改指令 (Human Layer 只读铁律)。空工厂 → 全空域,
+    Console 永不因数据缺失失败 (失败安全, 同 dashboard/metrics 哲学)。
+    """
+
+    projects: list[ProjectSummary] = Field(default_factory=list)
+    approvals: list[ApprovalSummary] = Field(default_factory=list)
+    agents: list[AgentSummary] = Field(default_factory=list)
+    decisions: list[DecisionSummary] = Field(default_factory=list)
+    cost: CostSummary = Field(default_factory=CostSummary)
+    experience: ExperienceSummaryModel = Field(default_factory=ExperienceSummaryModel)
+    activity: list[EventSummary] = Field(default_factory=list)
+
+    #: 七域字段名 (文档/CLI/事件 payload 共用; 键序即域序)。ClassVar —
+    #: pydantic v2 会把带注解的类属性当 model field 处理 (类级访问被隐藏,
+    #: 且会泄漏进 model_dump), ClassVar 保持常量语义。
+    SECTIONS: ClassVar[tuple[str, ...]] = (
+        "projects", "approvals", "agents", "decisions", "cost", "experience", "activity",
+    )
+
+    @field_validator("cost", mode="before")
+    @classmethod
+    def _coerce_cost(cls, v: Any) -> CostSummary:
+        if v is None:
+            return CostSummary()
+        return v if isinstance(v, CostSummary) else CostSummary.model_validate(v)
+
+    @field_validator("experience", mode="before")
+    @classmethod
+    def _coerce_experience(cls, v: Any) -> ExperienceSummaryModel:
+        if v is None:
+            return ExperienceSummaryModel()
+        return v if isinstance(v, ExperienceSummaryModel) else ExperienceSummaryModel.model_validate(v)
+
+    @property
+    def active_projects(self) -> list[ProjectSummary]:
+        """活跃项目 (七域 1): status == active 的项目投影。"""
+        return [p for p in self.projects if p.status == "active"]
+
+    @property
+    def pending_approvals(self) -> list[ApprovalSummary]:
+        """待人工审批 (七域 2): status == pending 的审批请求。"""
+        return [a for a in self.approvals if a.status == "pending"]
+
+    @property
+    def running_agents(self) -> list[AgentSummary]:
+        """运行中 Agent (七域 3): status == WORKING 的 Agent。"""
+        return [a for a in self.agents if a.status == "WORKING"]
+
+    @property
+    def recent_decisions(self) -> list[DecisionSummary]:
+        """最近决策 (七域 4): 全部决策投影 (service 侧已按最近排序截断)。"""
+        return self.decisions
+
+    @property
+    def cost_summary(self) -> CostSummary:
+        """成本汇总 (七域 5)。"""
+        return self.cost
+
+    @property
+    def experience_summary(self) -> ExperienceSummaryModel:
+        """经验汇总 (七域 6)。"""
+        return self.experience
+
+    @property
+    def activity_summary(self) -> list[EventSummary]:
+        """最近活动 (七域 7)。"""
+        return self.activity
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json")
+
+
+__all__ = [
+    "AgentSummary",
+    "ApprovalSummary",
+    "ConsoleDashboard",
+    "CostSummary",
+    "DecisionSummary",
+    "EventSummary",
+    "ExperienceSummary",
+    "ExperienceSummaryModel",
+    "LifecycleSummary",
+    "ProjectSummary",
+    "ProviderSummary",
+    "RecommendationSummary",
+]

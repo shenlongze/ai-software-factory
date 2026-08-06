@@ -397,6 +397,18 @@ class EventType(str, Enum):
     INTELLIGENCE_TASK_EVALUATED = "intelligence.task.evaluated"                # 任务评估完成 (推荐执行资源)
     INTELLIGENCE_FEEDBACK_LEARNED = "intelligence.feedback.learned"            # 反馈闭环 (执行结果→经验记录)
 
+    # --- Phase 11A: Human Console Layer 事件 (增量扩展, ADR-0034) ---
+    # 依 ADR-0001 决策 1 的扩展路径: 加枚举成员即可, 不改表结构/API。
+    # console.* 为 Human Console (factory-console/, source="console"/"cli") 的
+    # 只读审计事件: console.viewed (Console 任意视图被查看 — API 路由函数/CLI
+    # 通用, 载荷含 view/计数汇总)、console.approval.opened (审批详情被打开 —
+    # 只读打开, 不产生任何审批决定)、console.dashboard.viewed (Console Dashboard
+    # 七域汇总被查看)。全部只读不写任何状态 (Human Layer 铁律, phase11a-status.md:
+    # 不自动执行/不自动批准, 与既有 dashboard.viewed/metrics.viewed 同语义)。
+    CONSOLE_VIEWED = "console.viewed"                    # Console 视图被查看 (只读审计)
+    CONSOLE_APPROVAL_OPENED = "console.approval.opened"  # 审批详情被打开 (只读, 非决定)
+    CONSOLE_DASHBOARD_VIEWED = "console.dashboard.viewed"  # Console Dashboard 被查看 (七域汇总)
+
 
 class Event(BaseModel):
     """一条事件。append-only: 写入后永不修改、永不删除。"""

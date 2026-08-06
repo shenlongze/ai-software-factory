@@ -181,9 +181,11 @@ class TestEventTypeEnumExtension:
         # 124 (10A-1) → 127: 10A-2 决策链 +3 (analysis.started/analysis.completed/
         # option.evaluated); 127 → 131: 10A-3 推荐链 +4 (recommendation.started/
         # candidate.evaluated/explained/completed); 131 → 134: 10A-4 经验闭环 +3
-        # (experience.analyzed / task.evaluated / feedback.learned, ADR-0033)。
+        # (experience.analyzed / task.evaluated / feedback.learned, ADR-0033);
+        # 134 → 137: 11A Human Console +3 (console.viewed / console.approval.opened
+        # / console.dashboard.viewed, ADR-0034)。
         # 纯增量扩展 (ADR-0001 决策 1 路径, 既有值零改动)
-        assert len(EventType) == 134
+        assert len(EventType) == 137
 
     def test_event_accepts_new_type_string(self):
         from events.models import Event

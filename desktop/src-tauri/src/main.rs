@@ -119,15 +119,52 @@ pub fn shutdown_flow(
 }
 
 // --------------------------------------------------------------------------
-// 解析 (env 覆盖)
+// 解析 (env 覆盖 + embedded + PATH 回退链, Phase 15A-3c-2)
 // --------------------------------------------------------------------------
 
-/// runtime 命令路径: env DESKTOP_RUNTIME_CMD 覆盖, 否则默认。
-pub fn resolve_runtime_cmd() -> String {
-    match std::env::var("DESKTOP_RUNTIME_CMD") {
-        Ok(c) if !c.trim().is_empty() => c,
-        _ => runtime::DEFAULT_RUNTIME_CMD.to_string(),
+/// 未来 remote runtime 扩展点 (Phase 16+ Organization/Cloud Runtime):
+/// 预留 env 名 + 注释, 本阶段不实现 — Desktop 只经本地命令桥。
+/// 接入时在 resolve_runtime_cmd_at 增加第 0 优先级 (remote endpoint 探测)。
+pub const RUNTIME_REMOTE_ENDPOINT_ENV: &str = "DESKTOP_RUNTIME_REMOTE_ENDPOINT";
+
+/// App bundle 内嵌 runtime 可执行文件探测。
+///
+/// Tauri 打包后资源落在 resource_dir (macOS: Contents/Resources; Linux:
+/// /usr/lib/<app>; Windows: 安装目录), tauri.conf bundle.resources 指向
+/// dist/factory-runtime-bundle/ → resource_dir/factory-runtime-bundle/。
+/// dev 模式 resource_dir 通常无 bundle → None (回退 PATH)。
+pub fn embedded_runtime_cmd(resource_dir: &Path) -> Option<String> {
+    for name in ["factory-runtime-bundle", "factory-runtime-bundle.exe"] {
+        let candidate = resource_dir.join("factory-runtime-bundle").join(name);
+        if candidate.is_file() {
+            return Some(candidate.to_string_lossy().into_owned());
+        }
     }
+    None
+}
+
+/// runtime 命令解析 (discovery 优先级, 用户强制):
+///   1. env DESKTOP_RUNTIME_CMD (显式覆盖, 测试注入)
+///   2. App bundle 内嵌 runtime (resource_dir 探测)
+///   3. PATH factory-runtime (默认命令, Command::new 走 PATH)
+/// 未来 remote runtime endpoint 在此扩展 (第 0 优先级, 见 RUNTIME_REMOTE_ENDPOINT_ENV)。
+pub fn resolve_runtime_cmd_at(resource_dir: Option<&Path>) -> String {
+    match std::env::var("DESKTOP_RUNTIME_CMD") {
+        Ok(c) if !c.trim().is_empty() => return c,
+        _ => {}
+    }
+    if let Some(dir) = resource_dir {
+        if let Some(cmd) = embedded_runtime_cmd(dir) {
+            return cmd;
+        }
+    }
+    runtime::DEFAULT_RUNTIME_CMD.to_string()
+}
+
+/// runtime 命令路径: 无 resource_dir 上下文 (测试/纯函数路径) — 等价
+/// resolve_runtime_cmd_at(None) (env > PATH)。
+pub fn resolve_runtime_cmd() -> String {
+    resolve_runtime_cmd_at(None)
 }
 
 /// 数据根: env DESKTOP_DATA_ROOT 覆盖, 否则平台规范应用数据目录
@@ -284,7 +321,9 @@ fn main() {
         ])
         .setup(|app| {
             let data_root = resolve_data_root(app);
-            let bridge = Bridge::from_env();
+            // discovery: env > embedded (resource_dir) > PATH (15A-3c-2)
+            let resource_dir = app.path().resource_dir().ok();
+            let bridge = Bridge::new(resolve_runtime_cmd_at(resource_dir.as_deref()));
             eprintln!(
                 "desktop: data_root={} runtime_cmd={}",
                 data_root.display(),

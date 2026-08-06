@@ -1,11 +1,16 @@
-"""runtime/watchdog.py — 子进程退出检测 + 自动重启 (独立模块)。
+"""runtime/watchdog.py — managed service 退出检测 + 自动重启 (独立模块)。
 
-设计依据: phase15-runtime-design.md §1.6 (崩溃: watchdog 检测退出码 →
-自动重启, 最多 N 次, 记录) / §3 崩溃恢复 (Core/Console 崩溃 → watchdog
-重启 ≤3 次 → 事件记录; 超限置 failed)。
+架构裁决 B (Core Command Model):
+- watchdog 只 watch **managed services** (当前 Console; manager.managed_services
+  注册点, 未来 Agent Worker/Scheduler 在此扩展 — watchdog 本体零改动)。
+- Core 是命令执行器 (短生命周期): 退出是**预期**, 不重启, 不报警为 crash。
+
+设计依据: phase15-runtime-design.md §1.6/§3 (崩溃恢复, 修正后: 仅 managed
+service 崩溃 → 重启 ≤3 次 → 事件记录; 超限置 failed) + docs/architecture/
+runtime-service-model.md。
 
 与 manager 解耦: Watchdog 只依赖 manager 的稳定协作 API
-(core_proc/console_proc/status/restart_process/mark_failed) —
+(managed_services/status/service_proc/restart_process/mark_failed) —
 不触碰 manager 内部字段。后台守护线程, stop() 事件退出并 join。
 """
 
@@ -15,7 +20,7 @@ import logging
 import threading
 import time
 
-from .health import check_core
+from .health import check_process
 from .logging import log_event
 
 
@@ -24,7 +29,7 @@ def _now_iso() -> str:
 
 
 class Watchdog:
-    """子进程存活轮询 → 非预期退出自动重启 (≤ max_restarts, 超限 failed)。"""
+    """managed service 存活轮询 → 非预期退出自动重启 (≤ max_restarts, 超限 failed)。"""
 
     def __init__(
         self,
@@ -78,11 +83,12 @@ class Watchdog:
         status = self.manager.status()["status"]
         if status not in ("starting", "ready"):
             return
-        for name in ("core", "console"):
-            proc = getattr(self.manager, f"{name}_proc")
+        # 只 watch managed services (当前 Console); Core 命令退出是预期, 不 watch
+        for name in self.manager.managed_services:
+            proc = self.manager.service_proc(name)
             if proc is None:
                 continue
-            alive, code = check_core(proc)
+            alive, code = check_process(proc)
             if not alive:
                 self._on_exit(name, code)
 

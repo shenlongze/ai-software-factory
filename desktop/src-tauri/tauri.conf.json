@@ -14,6 +14,7 @@
   },
   "bundle": {
     "active": false,
-    "targets": "all"
+    "targets": "all",
+    "resources": ["../../dist/factory-runtime-bundle/"]
   }
 }

@@ -20,7 +20,8 @@ use std::time::Duration;
 use crate::launcher::{friendly_error, status_label};
 use crate::runtime::{self, Bridge, BridgeError};
 use crate::{
-    error_html, html_escape, launch_flow, percent_encode, resolve_runtime_cmd, shutdown_flow,
+    embedded_runtime_cmd, error_html, html_escape, launch_flow, percent_encode,
+    resolve_runtime_cmd, resolve_runtime_cmd_at, shutdown_flow, RUNTIME_REMOTE_ENDPOINT_ENV,
 };
 
 /// 进程全局 env 锁: 仅 DESKTOP_RUNTIME_CMD 相关测试需要
@@ -990,6 +991,144 @@ fn resolve_runtime_cmd_override() {
     set_env("DESKTOP_RUNTIME_CMD", "");
     assert_eq!(resolve_runtime_cmd(), runtime::DEFAULT_RUNTIME_CMD);
     remove_env("DESKTOP_RUNTIME_CMD");
+}
+
+// ================================================================ discovery
+// Phase 15A-3c-2 Runtime Command Discovery:
+//   env > embedded (resource_dir) > PATH; remote endpoint 扩展点 (预留)。
+// 纯函数 (embedded_runtime_cmd / resolve_runtime_cmd_at) — 无需子进程。
+
+/// 构造 resource_dir: 内嵌 bundle 可执行文件 (POSIX / Windows 名)。
+fn embedded_dir(tag: &str, exe: &str) -> TestDir {
+    let dir = TestDir::new(tag);
+    let bundle = dir.path().join("factory-runtime-bundle");
+    fs::create_dir_all(&bundle).unwrap();
+    fs::write(bundle.join(exe), "#!/bin/sh\nexit 0\n").unwrap();
+    dir
+}
+
+#[test]
+fn embedded_runtime_cmd_detects_posix_bundle() {
+    let dir = embedded_dir("emb_posix", "factory-runtime-bundle");
+    let cmd = embedded_runtime_cmd(dir.path()).unwrap();
+    assert!(cmd.ends_with("factory-runtime-bundle/factory-runtime-bundle"));
+    assert!(Path::new(&cmd).is_file());
+}
+
+#[test]
+fn embedded_runtime_cmd_detects_windows_bundle() {
+    let dir = embedded_dir("emb_win", "factory-runtime-bundle.exe");
+    let cmd = embedded_runtime_cmd(dir.path()).unwrap();
+    assert!(cmd.ends_with("factory-runtime-bundle.exe"));
+}
+
+#[test]
+fn embedded_runtime_cmd_prefers_posix_over_exe() {
+    let dir = embedded_dir("emb_both", "factory-runtime-bundle");
+    let bundle = dir.path().join("factory-runtime-bundle");
+    fs::write(bundle.join("factory-runtime-bundle.exe"), "x").unwrap();
+    let cmd = embedded_runtime_cmd(dir.path()).unwrap();
+    assert!(!cmd.ends_with(".exe"), "POSIX 名优先, got: {cmd}");
+}
+
+#[test]
+fn embedded_runtime_cmd_none_when_bundle_missing() {
+    let dir = TestDir::new("emb_missing");
+    assert_eq!(embedded_runtime_cmd(dir.path()), None);
+}
+
+#[test]
+fn embedded_runtime_cmd_none_when_only_dir() {
+    // bundle 目录存在但无可执行文件 (corrupted / 未打包) → None → 回退 PATH
+    let dir = TestDir::new("emb_dironly");
+    fs::create_dir_all(dir.path().join("factory-runtime-bundle")).unwrap();
+    assert_eq!(embedded_runtime_cmd(dir.path()), None);
+}
+
+#[test]
+fn resolve_runtime_cmd_at_embedded_preferred_over_path() {
+    let _g = ENV_LOCK.lock().unwrap();
+    remove_env("DESKTOP_RUNTIME_CMD");
+    let dir = embedded_dir("disc_embedded", "factory-runtime-bundle");
+    let cmd = resolve_runtime_cmd_at(Some(dir.path()));
+    assert!(
+        cmd.contains("factory-runtime-bundle"),
+        "embedded 应优先于 PATH, got: {cmd}"
+    );
+}
+
+#[test]
+fn resolve_runtime_cmd_at_env_overrides_embedded() {
+    let _g = ENV_LOCK.lock().unwrap();
+    set_env("DESKTOP_RUNTIME_CMD", "/env/override/runtime");
+    let dir = embedded_dir("disc_env", "factory-runtime-bundle");
+    assert_eq!(
+        resolve_runtime_cmd_at(Some(dir.path())),
+        "/env/override/runtime",
+        "env 是最高优先级 (测试注入/运维覆盖)"
+    );
+    remove_env("DESKTOP_RUNTIME_CMD");
+}
+
+#[test]
+fn resolve_runtime_cmd_at_empty_env_falls_back_embedded() {
+    let _g = ENV_LOCK.lock().unwrap();
+    set_env("DESKTOP_RUNTIME_CMD", "   ");
+    let dir = embedded_dir("disc_envblank", "factory-runtime-bundle");
+    let cmd = resolve_runtime_cmd_at(Some(dir.path()));
+    assert!(cmd.contains("factory-runtime-bundle"), "空 env → embedded, got: {cmd}");
+    remove_env("DESKTOP_RUNTIME_CMD");
+}
+
+#[test]
+fn resolve_runtime_cmd_at_no_resource_dir_falls_back_path() {
+    let _g = ENV_LOCK.lock().unwrap();
+    remove_env("DESKTOP_RUNTIME_CMD");
+    assert_eq!(resolve_runtime_cmd_at(None), runtime::DEFAULT_RUNTIME_CMD);
+}
+
+#[test]
+fn resolve_runtime_cmd_at_resource_dir_without_bundle_falls_back_path() {
+    let _g = ENV_LOCK.lock().unwrap();
+    remove_env("DESKTOP_RUNTIME_CMD");
+    let dir = TestDir::new("disc_emptydir");
+    assert_eq!(
+        resolve_runtime_cmd_at(Some(dir.path())),
+        runtime::DEFAULT_RUNTIME_CMD
+    );
+}
+
+#[test]
+fn remote_endpoint_extension_point_reserved() {
+    // Phase 16+ remote runtime 扩展点契约: env 名已预留, 解析链第 0 优先级
+    assert_eq!(RUNTIME_REMOTE_ENDPOINT_ENV, "DESKTOP_RUNTIME_REMOTE_ENDPOINT");
+    // 未实现: 设置该 env 不影响当前解析 (Local Embedded 阶段)
+    let _g = ENV_LOCK.lock().unwrap();
+    remove_env("DESKTOP_RUNTIME_CMD");
+    set_env(RUNTIME_REMOTE_ENDPOINT_ENV, "https://runtime.example.com");
+    let dir = TestDir::new("disc_remote");
+    assert_eq!(
+        resolve_runtime_cmd_at(Some(dir.path())),
+        runtime::DEFAULT_RUNTIME_CMD,
+        "remote 未实现 → 不改变 Local 解析"
+    );
+    remove_env(RUNTIME_REMOTE_ENDPOINT_ENV);
+}
+
+#[test]
+fn embedded_runtime_detected_then_missing_spawn_friendly() {
+    // discovery 解析到 embedded 路径, 但可执行文件被删 (corrupted bundle)
+    // → spawn 报友好错误 (含路径), 不 panic
+    let dir = embedded_dir("disc_corrupt", "factory-runtime-bundle");
+    let cmd = embedded_runtime_cmd(dir.path()).unwrap();
+    fs::remove_file(&cmd).unwrap();
+    let b = Bridge::new(cmd.clone());
+    let e = b.runtime_status(dir.path()).unwrap_err();
+    assert!(
+        matches!(e, BridgeError::SpawnFailed(_)),
+        "corrupted bundle → SpawnFailed, got {e:?}"
+    );
+    assert!(e.to_string().contains("factory-runtime-bundle"));
 }
 
 #[test]

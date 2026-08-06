@@ -44,6 +44,10 @@ from .commands import (
     cmd_provider_list,
     cmd_provider_show,
     cmd_provider_test,
+    cmd_provider_usage,
+    cmd_provider_stats,
+    cmd_provider_compare,
+    cmd_provider_recommend,
     cmd_recover,
     cmd_runtime_add,
     cmd_runtime_catalog_list,
@@ -343,6 +347,39 @@ def build_parser() -> Any:
     p_pv_test.add_argument("--prompt", default=None,
                            help="冒烟提示词 (默认: Reply with exactly: OK)")
     p_pv_test.add_argument("--model", default=None, help="模型 (默认 Provider 默认模型)")
+    # Phase 8B-2 (ADR-0024): 能力/成本/使用层读命令
+    p_pv_usage = pvsub.add_parser(
+        "usage", help="使用记录 (估算成本, 非真实计费; 发 provider.viewed)"
+    )
+    json_opt(p_pv_usage)
+    p_pv_usage.add_argument("--provider", default=None, help="按 Provider ID 过滤")
+    p_pv_usage.add_argument("--period", default="all", choices=["day", "week", "all"],
+                            help="聚合周期 (day=今天 / week=最近 7 天 / all, 默认 all)")
+    p_pv_stats = pvsub.add_parser(
+        "stats", help="性能聚合 (provider/model/version/period 维度; 发 provider.viewed)"
+    )
+    json_opt(p_pv_stats)
+    p_pv_stats.add_argument("--provider", default=None, help="按 Provider ID 过滤")
+    p_pv_stats.add_argument("--period", default="all", choices=["day", "week", "all"],
+                            help="聚合周期 (day=今天 / week=最近 7 天 / all, 默认 all)")
+    p_pv_compare = pvsub.add_parser(
+        "compare", help="能力/成本对比 (估算模型, 非真实计费; 发 provider.viewed)"
+    )
+    json_opt(p_pv_compare)
+    p_pv_compare.add_argument("a", help="Provider A ID (如 hermes)")
+    p_pv_compare.add_argument("b", help="Provider B ID")
+    p_pv_recommend = pvsub.add_parser(
+        "recommend", help="TaskRequirement → 能力匹配 + 成本感知推荐 (只推荐不自动切换)"
+    )
+    json_opt(p_pv_recommend)
+    p_pv_recommend.add_argument("--task", required=True,
+                                help="任务类型 (如 development)")
+    p_pv_recommend.add_argument("--capabilities", default="",
+                                help="逗号分隔能力列表 (如 code,reasoning)")
+    p_pv_recommend.add_argument("--min-quality", type=float, default=0.0,
+                                help="能力质量门槛 0-1 (默认 0.0 = 存在即可)")
+    p_pv_recommend.add_argument("--budget", type=float, default=None,
+                                help="估算成本上限 USD (默认不设上限)")
 
     # factory workspace <sub> (Phase 6A, ADR-0016)
     p_workspace = sub.add_parser(
@@ -622,13 +659,22 @@ def _dispatch_project(ctx: FactoryContext, args: Any) -> dict:
 
 
 def _dispatch_provider(ctx: FactoryContext, args: Any) -> dict:
-    """provider list/show/test 三分发 (Phase 8A, ADR-0022)。"""
+    """provider list/show/test/usage/stats/compare/recommend 分发 (Phase 8A
+    ADR-0022 + 8B-2 ADR-0024)。"""
     if args.provider_command == "list":
         return cmd_provider_list(ctx, args)
     if args.provider_command == "show":
         return cmd_provider_show(ctx, args)
     if args.provider_command == "test":
         return cmd_provider_test(ctx, args)
+    if args.provider_command == "usage":
+        return cmd_provider_usage(ctx, args)
+    if args.provider_command == "stats":
+        return cmd_provider_stats(ctx, args)
+    if args.provider_command == "compare":
+        return cmd_provider_compare(ctx, args)
+    if args.provider_command == "recommend":
+        return cmd_provider_recommend(ctx, args)
     raise CliError(f"unknown provider command: {args.provider_command}", exit_code=2)
 
 
@@ -1093,6 +1139,78 @@ def _print_provider(sub: str, r: dict) -> None:
             content = (r.get("response") or {}).get("content", "")
             print(f"  output   {content.strip()[:200] or '(empty)'}")
         print(f"  事件      {' → '.join(r.get('events') or []) or '-'}")
+    elif sub == "usage":
+        rows = [
+            [u["provider_id"], u["model"] or "-", str(u["prompt_tokens"]),
+             str(u["completion_tokens"]), f"{u['estimated_cost']:.6f}",
+             f"{u['latency_ms']}ms", "OK" if u["success"] else "FAIL", u["recorded_at"]]
+            for u in r["records"]
+        ]
+        print(_render_table(
+            ["Provider", "Model", "In", "Out", "Cost", "Latency", "Result", "Recorded"], rows,
+            empty=None,
+        ))
+        if not r["records"]:
+            print("  (no usage records)")
+        else:
+            total = round(sum(u["estimated_cost"] for u in r["records"]), 6)
+            print(f"{r['count']} records (estimated total cost: {total})  "
+                  f"[period={r['period']}, provider={r.get('provider') or 'all'}]")
+    elif sub == "stats":
+        rows = [
+            [s["provider_id"], s["model"] or "-", s["version"] or "-", str(s["calls"]),
+             f"{s['success_rate'] * 100:.1f}%", f"{s['avg_latency_ms']:.1f}ms",
+             str(s["total_tokens"]), f"{s['total_cost']:.6f}"]
+            for s in r["stats"]
+        ]
+        print(_render_table(
+            ["Provider", "Model", "Version", "Calls", "Success", "Avg Latency",
+             "Tokens", "Cost"], rows, empty=None,
+        ))
+        if not r["stats"]:
+            print("  (no stats — 无 usage 记录)")
+        else:
+            total = round(sum(s["total_cost"] for s in r["stats"]), 6)
+            print(f"{r['count']} stats (estimated total cost: {total})  "
+                  f"[period={r['period']}, provider={r.get('provider') or 'all'}]")
+    elif sub == "compare":
+        a, b = r["providers"][0], r["providers"][1]
+        print(f"{a['id']}  vs  {b['id']}")
+        print(f"  type        {a['type']:<10} {b['type']}")
+        print(f"  version     {a['version']:<10} {b['version']}")
+        print(f"  capabilities {', '.join(a['capabilities']) or '-':<24} "
+              f"{', '.join(b['capabilities']) or '-'}")
+        print(f"  models       {', '.join(a['models']) or '-':<24} "
+              f"{', '.join(b['models']) or '-'}")
+        for pid in (a["id"], b["id"]):
+            profile = r["capability"].get(pid)
+            cost = r["cost"].get(pid)
+            est = r["estimated_call_cost"].get(pid)
+            print(f"  [{pid}]")
+            if profile:
+                matrix = ", ".join(f"{k}={v}" for k, v in sorted(profile["matrix"].items()))
+                print(f"    matrix     {matrix or '-'}")
+                if profile.get("evidence"):
+                    print(f"    evidence   {'; '.join(profile['evidence'])}")
+            else:
+                print("    matrix     (无能力数据)")
+            if cost:
+                print(f"    cost       mode={cost['mode']} pricing={cost['pricing']} "
+                      f"free={cost['free']}")
+            else:
+                print("    cost       (无成本模型)")
+            print(f"    est/call   {est if est is not None else '-'}")
+    elif sub == "recommend":
+        rec = r.get("recommended")
+        if rec is None:
+            print(f"No recommendation for task '{r['task']}' (无能力匹配的 Provider)")
+        else:
+            print(f"推荐: {rec['provider_id']}  (score: {rec['score']}, "
+                  f"est cost: {rec.get('estimated_cost') or '-'})")
+            for reason in rec["reasons"]:
+                print(f"  - {reason}")
+        print(f"  事件      provider.viewed"
+              + (" + provider.selected (source=recommendation)" if rec else ""))
 
 
 def _print_workspace(sub: str, r: dict) -> None:

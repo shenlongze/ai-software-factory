@@ -143,6 +143,13 @@ class ProviderSnapshot(BaseModel):
     by_status: dict[str, int] = Field(default_factory=dict)
     default: str | None = None
     items: list[dict[str, Any]] = Field(default_factory=list)  # ProviderDefinition.to_dict()
+    # Phase 8B-2 (ADR-0024): 使用/成本/性能聚合 (UsageStore 只读, 默认空 —
+    # 无 usage 数据时既有 Provider View 逐位不变, 零回归)。
+    usage_total_calls: int = 0
+    usage_total_cost: float = 0.0
+    usage_success_rate: float = 0.0
+    usage_avg_latency_ms: float = 0.0
+    usage_by_provider: dict[str, dict[str, Any]] = Field(default_factory=dict)  # id → stats dict
 
     def to_dict(self) -> dict:
         return self.model_dump(mode="json")

@@ -42,8 +42,32 @@ from .registry import (
     ProviderRegistry,
     ProviderRegistryError,
 )
-from .selector import SELECTION_SOURCES, ProviderSelection, ProviderSelector
+from .selector import (
+    RECOMMENDATION_SOURCE,
+    SELECTION_SOURCES,
+    CostAwareSelector,
+    ProviderSelection,
+    ProviderSelector,
+    Recommendation,
+)
 from .store import CorruptProviderStoreError, ProviderStore, ProviderStoreError
+from .capability import ProviderCapabilityProfile, find_best_for_task, rank_for_task
+from .costs import (
+    COST_MODES,
+    ESTIMATED_DURATION_SECONDS,
+    ESTIMATED_TOKENS,
+    ProviderCostModel,
+    estimate_call_cost,
+)
+from .usage import (
+    PERIODS,
+    ProviderPerformanceStats,
+    ProviderUsage,
+    UsageStore,
+    filter_by_period,
+    stats_from_usage,
+)
+from .models import TaskRequirement
 
 __all__ = [
     "ProviderAdapter",
@@ -70,4 +94,23 @@ __all__ = [
     "parse_runtime_preferences",
     "preferred_provider",
     "runtime_default_provider",
+    # --- Phase 8B-2 (ADR-0024): 能力 + 成本 + 使用层 ---
+    "TaskRequirement",
+    "ProviderCapabilityProfile",
+    "find_best_for_task",
+    "rank_for_task",
+    "COST_MODES",
+    "ESTIMATED_TOKENS",
+    "ESTIMATED_DURATION_SECONDS",
+    "ProviderCostModel",
+    "estimate_call_cost",
+    "PERIODS",
+    "ProviderUsage",
+    "ProviderPerformanceStats",
+    "UsageStore",
+    "filter_by_period",
+    "stats_from_usage",
+    "CostAwareSelector",
+    "Recommendation",
+    "RECOMMENDATION_SOURCE",
 ]

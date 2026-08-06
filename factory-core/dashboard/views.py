@@ -242,13 +242,16 @@ def build_catalog(snapshot: FactorySnapshot) -> Panel:
 
 
 def build_provider(snapshot: FactorySnapshot) -> Panel:
-    """Provider 目录视图 (Phase 8A, ADR-0022): 智能来源定义表 (默认定义基线
-    + 已注册定义, 只读)。
+    """Provider 目录视图 (Phase 8A, ADR-0022 + 8B-2 增强): 智能来源定义表
+    (默认定义基线 + 已注册定义, 只读)。
 
     数据源 = snapshot.providers (collector include_provider=True 聚合, 默认
     关闭): 与 Runtime Catalog 语义平行 — Provider = 智能来源目录, Runtime =
     执行机制目录, 两者数据空间完全分离。Default 列以 ★ 标记默认 Provider
     (registry.default(); 未设置 → 无星标)。
+    Phase 8B-2 (ADR-0024) 增强: 装配 usage_store 且存在使用记录时, 追加
+    使用/成本/性能列 (Calls/Success/Cost — 估算计量, 非真实计费); 无 usage
+    数据 → 列集合与 Phase 8A 逐位一致 (默认关, 零回归)。
     """
     p = snapshot.providers
     summary = _line(_text(f"{p.total} providers", style="bold"))
@@ -260,21 +263,44 @@ def build_provider(snapshot: FactorySnapshot) -> Panel:
         summary.append("  ").append_text(
             Text(f"default {p.default}", style="bold cyan")
         )
+    if p.usage_total_calls:
+        summary.append("  ").append_text(
+            Text(
+                f"usage {p.usage_total_calls} calls, ${p.usage_total_cost:.4f} "
+                f"({(p.usage_success_rate * 100):.1f}% success, "
+                f"{p.usage_avg_latency_ms:.0f}ms avg)",
+                style="dim",
+            )
+        )
     table = Table(show_header=True, header_style="bold", box=box.SIMPLE_HEAVY, expand=True)
-    for col in ("Provider", "Type", "Models", "Version", "Status", "Default"):
+    columns = ["Provider", "Type", "Models", "Version", "Status", "Default"]
+    if p.usage_total_calls:
+        columns += ["Calls", "Success", "Cost"]
+    for col in columns:
         table.add_column(col)
     for d in p.items:
         is_default = p.default is not None and d.get("id") == p.default
-        table.add_row(
+        row = [
             _text(d.get("id", "")),
             _text(d.get("type", "")),
             _text(", ".join(d.get("models", [])) or "-"),
             _text(d.get("version", "")),
             _text(d.get("status", ""), style=_style_status(d.get("status"))),
             _text("★", style="bold cyan") if is_default else _text(""),
-        )
+        ]
+        if p.usage_total_calls:
+            u = p.usage_by_provider.get(d.get("id", "")) or {}
+            row += [
+                _text(str(u.get("calls", 0))),
+                _text(f"{(u.get('success_rate', 0.0) * 100):.0f}%" if u else "-"),
+                _text(f"{u.get('total_cost', 0.0):.4f}" if u else "-"),
+            ]
+        table.add_row(*row)
     if not p.items:
-        table.add_row(_text("(no providers)", style="dim"), "", "", "", "", "")
+        table.add_row(
+            _text("(no providers)", style="dim"),
+            *([""] * (len(columns) - 1)),
+        )
     return _panel(Group(summary, table), "Provider Catalog", border="cyan")
 
 

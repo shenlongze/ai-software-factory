@@ -258,6 +258,14 @@ class EventType(str, Enum):
     PROVIDER_EXECUTION_COMPLETED = "provider.execution.completed"  # Provider 调用成功 (终态)
     PROVIDER_EXECUTION_FAILED = "provider.execution.failed"      # Provider 调用失败 (终态)
 
+    # --- Phase 8B-2: Provider Capability & Cost Layer 事件 (增量扩展) ---
+    # 依 ADR-0001 决策 1 的扩展路径: 加枚举成员即可, 不改表结构/API。
+    # provider.usage.recorded 在使用记录落盘 (UsageStore.record / 集成层) 时
+    # 发出: payload 含 provider_id/execution_id/tokens/estimated_cost/latency_ms/
+    # success (phase8b2-plan.md §6) — 估算计量 (非真实计费), 与 provider.*
+    # 既有事件互补 (usage 是调用后的计量审计, selected 是调用前的选择审计)。
+    PROVIDER_USAGE_RECORDED = "provider.usage.recorded"  # 使用记录落盘 (估算成本)
+
 
 class Event(BaseModel):
     """一条事件。append-only: 写入后永不修改、永不删除。"""

@@ -885,7 +885,7 @@ def cmd_runtime_catalog_show(ctx: FactoryContext, args: Any) -> dict:
     return {"ok": True, "definition": definition.to_dict(), "event_seq": ev.seq}
 
 
-# ------------------------------------------------------------------ provider 子命令 (Phase 8A, ADR-0022)
+# ------------------------------------------------------------------ provider 子命令 (Phase 8A, ADR-0022 / 8B-2, ADR-0024)
 
 PROVIDER_SMOKE_INSTRUCTION = "Reply with exactly: OK"  # provider test 默认冒烟提示词
 
@@ -901,6 +901,17 @@ def _open_provider_store(ctx: FactoryContext):
     from providers.store import ProviderStore
 
     return ProviderStore(ctx.root / "providers")
+
+
+def _open_provider_usage_store(ctx: FactoryContext):
+    """装配 UsageStore (路径 = <root>/providers/usage.json — 独立数据空间,
+    与 Provider 定义 catalog.json 同目录不同文件, phase8b2-plan.md §7)。
+
+    延迟导入 providers.usage: 删除 providers 不影响本模块加载 (Removal Isolation)。
+    """
+    from providers.usage import UsageStore
+
+    return UsageStore(ctx.root / "providers")
 
 
 def _parse_provider_status(value: str | None):
@@ -1056,6 +1067,170 @@ def cmd_provider_test(ctx: FactoryContext, args: Any) -> dict:
     if not response.ok:
         data["exit_code"] = 1  # smoke FAILED = provider 不健康 → rc 1
     return data
+
+
+def cmd_provider_usage(ctx: FactoryContext, args: Any) -> dict:
+    """factory provider usage [--provider X] [--period day|week|all] — 使用记录
+    (估算成本, 非真实计费), 发 provider.viewed (只读审计, ADR-0002)。
+
+    数据源 = <root>/providers/usage.json (UsageStore 独立数据空间); 记录按
+    recorded_at 升序; --provider 过滤 provider 维度; --period 过滤聚合周期
+    (day=今天 / week=最近 7 天 / all=全部)。
+    """
+    from providers.usage import filter_by_period
+
+    with ctx.logger_scope() as logger:
+        store = _open_provider_usage_store(ctx)
+        records = store.list()
+        if args.provider is not None:
+            records = [r for r in records if r.provider_id == args.provider]
+        records = filter_by_period(records, args.period)
+        ev = logger.record(
+            EventType.PROVIDER_VIEWED, source=SOURCE, action="list provider usage", result="OK",
+            payload={
+                "count": len(records), "provider": args.provider, "period": args.period,
+                "total_cost": round(sum(r.estimated_cost for r in records), 6),
+            },
+        )
+    return {
+        "ok": True, "count": len(records),
+        "records": [r.to_dict() for r in records],
+        "provider": args.provider, "period": args.period, "event_seq": ev.seq,
+    }
+
+
+def cmd_provider_stats(ctx: FactoryContext, args: Any) -> dict:
+    """factory provider stats [--provider X] [--period day|week|all] — 性能聚合
+    (provider/model/version/period 维度: calls/success_rate/avg_latency/total_cost),
+    发 provider.viewed (只读审计)。
+
+    聚合从 usage 记录计算 (不落库, phase8b2-plan.md §7 存储边界); 统计口径见
+    providers/usage.py stats_from_usage docstring。
+    """
+    from providers.usage import stats_from_usage
+
+    with ctx.logger_scope() as logger:
+        store = _open_provider_usage_store(ctx)
+        stats = stats_from_usage(store.list(), provider_id=args.provider, period=args.period)
+        ev = logger.record(
+            EventType.PROVIDER_VIEWED, source=SOURCE, action="view provider stats", result="OK",
+            payload={
+                "count": len(stats), "provider": args.provider, "period": args.period,
+                "total_cost": round(sum(s.total_cost for s in stats), 6),
+            },
+        )
+    return {
+        "ok": True, "count": len(stats),
+        "stats": [s.to_dict() for s in stats],
+        "provider": args.provider, "period": args.period, "event_seq": ev.seq,
+    }
+
+
+def cmd_provider_compare(ctx: FactoryContext, args: Any) -> dict:
+    """factory provider compare <a> <b> — 能力/成本对比 (估算模型, 非真实计费),
+    发 provider.viewed; 任一未找到 → 退出码 7。
+
+    对比列: 定义 (capabilities/models/type) + 能力矩阵 (默认基线, 无 → None) +
+    成本模式 (默认基线, 无 → None) + 估算调用成本 (estimate_call_cost 归一)。
+    """
+    from providers.costs import estimate_call_cost
+    from providers.definitions import DEFAULT_CAPABILITY_PROFILES, DEFAULT_COST_MODELS
+    from providers.registry import ProviderRegistry
+
+    with ctx.logger_scope() as logger:
+        registry = ProviderRegistry(_open_provider_store(ctx), logger=logger)
+        a = registry.get(args.a)
+        if a is None:
+            raise CliError(f"provider not found: {args.a}", exit_code=7)
+        b = registry.get(args.b)
+        if b is None:
+            raise CliError(f"provider not found: {args.b}", exit_code=7)
+        pa = DEFAULT_CAPABILITY_PROFILES.get(a.id)
+        pb = DEFAULT_CAPABILITY_PROFILES.get(b.id)
+        ca = DEFAULT_COST_MODELS.get(a.id)
+        cb = DEFAULT_COST_MODELS.get(b.id)
+        ev = logger.record(
+            EventType.PROVIDER_VIEWED, source=SOURCE, action="compare providers", result="OK",
+            payload={
+                "a": a.id, "b": b.id,
+                "a_estimated_cost": estimate_call_cost(ca),
+                "b_estimated_cost": estimate_call_cost(cb),
+            },
+        )
+    return {
+        "ok": True,
+        "providers": [a.to_dict(), b.to_dict()],
+        "capability": {
+            a.id: pa.to_dict() if pa is not None else None,
+            b.id: pb.to_dict() if pb is not None else None,
+        },
+        "cost": {
+            a.id: ca.to_dict() if ca is not None else None,
+            b.id: cb.to_dict() if cb is not None else None,
+        },
+        "estimated_call_cost": {
+            a.id: estimate_call_cost(ca),
+            b.id: estimate_call_cost(cb),
+        },
+        "event_seq": ev.seq,
+    }
+
+
+def cmd_provider_recommend(ctx: FactoryContext, args: Any) -> dict:
+    """factory provider recommend --task <type> [--capabilities a,b] [--min-quality F]
+    [--budget F] — TaskRequirement → 能力匹配 + 成本感知推荐 (只推荐不自动切换),
+    发 provider.viewed + provider.selected (source=recommendation)。
+
+    选择流程 (phase8b2-plan.md §4): 能力过滤 (quality >= min_quality, budget 上限)
+    → 配置优先 (默认基线外无项目配置; 未来接 Project>Agent>Runtime>Default 链)
+    → 成本感知排序 (token/request/time/free 模式归一估算)。推荐不修改任何配置
+    (评审调整 4); 采纳与否由用户决定。无通过候选 → 推荐为空 (rc 0)。
+    """
+    from providers.definitions import DEFAULT_CAPABILITY_PROFILES, DEFAULT_COST_MODELS
+    from providers.models import TaskRequirement
+    from providers.registry import ProviderRegistry
+    from providers.selector import CostAwareSelector
+
+    capabilities = [c.strip() for c in args.capabilities.split(",") if c.strip()]
+    with ctx.logger_scope() as logger:
+        registry = ProviderRegistry(_open_provider_store(ctx), logger=logger)
+        selector = CostAwareSelector(
+            registry, DEFAULT_CAPABILITY_PROFILES, DEFAULT_COST_MODELS,
+        )
+        requirement = TaskRequirement(
+            task_type=args.task,
+            required_capabilities=capabilities,
+            min_quality=args.min_quality or 0.0,
+            budget=args.budget,
+        )
+        recommendation = selector.recommend(requirement)
+        ev = logger.record(
+            EventType.PROVIDER_VIEWED, source=SOURCE, action="recommend provider", result="OK",
+            payload={
+                "task_type": args.task,
+                "capabilities": capabilities,
+                "recommended": recommendation.provider_id if recommendation is not None else None,
+            },
+        )
+        if recommendation is not None:
+            # 推荐审计: provider.selected (source=recommendation) — 只审计,
+            # 不自动切换任何配置 (评审调整 4)
+            logger.record(
+                EventType.PROVIDER_SELECTED, source=SOURCE, stage="recommended",
+                action="recommend provider", result="OK",
+                payload={
+                    "provider_id": recommendation.provider_id,
+                    "source": "recommendation",
+                    "score": recommendation.score,
+                    "estimated_cost": recommendation.estimated_cost,
+                },
+            )
+    return {
+        "ok": True,
+        "task": args.task,
+        "recommended": recommendation.to_dict() if recommendation is not None else None,
+        "event_seq": ev.seq,
+    }
 
 
 # ------------------------------------------------------------------ execution 子命令

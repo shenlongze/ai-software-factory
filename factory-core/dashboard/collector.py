@@ -83,6 +83,7 @@ class DashboardCollector:
         include_understanding: bool = False,  # Phase 7: Understanding View 聚合开关 (ADR-0021)
         provider_registry: Any | None = None,  # Phase 8A: ProviderRegistry (Provider View)
         include_provider: bool = False,  # Phase 8A: Provider View 聚合开关 (ADR-0022)
+        usage_store: Any | None = None,  # Phase 8B-2: UsageStore (Provider View 使用/成本/性能列)
     ) -> None:
         self._task_store = task_store
         self._agent_registry = agent_registry
@@ -127,12 +128,12 @@ class DashboardCollector:
         # 既有 dashboard 行为/成本完全不变 (同 include_git 模式)。
         self._understanding_paths = understanding_paths or []
         self._include_understanding = include_understanding
-        # Provider View (Phase 8A): 注入 ProviderRegistry (智能来源目录只读
-        # 合并视图), 默认关闭 — 既有 dashboard 行为/成本完全不变 (同
-        # include_changeflow 模式); 本模块零顶层 imports providers (Removal
-        # Isolation: 删除 providers 不影响 Factory, CLI 命令层延迟装配)。
+        # Provider View (Phase 8A/8B-2): registry + usage 数据源注入, 默认
+        # 关闭 — 既有 dashboard 行为/成本完全不变 (同 include_git 模式);
+        # 本模块零顶层 imports providers (Removal Isolation)。
         self._provider_registry = provider_registry
         self._include_provider = include_provider
+        self._usage_store = usage_store
 
     # ------------------------------------------------------------------ 主入口
 
@@ -551,6 +552,9 @@ class DashboardCollector:
         只读: 仅调 registry.list()/default() 读接口 (合并视图 = 默认定义基线
         hermes + 已持久化定义, 见 providers/registry.py); 不发事件
         (provider.viewed 由 CLI 命令层发出, 同 dashboard.viewed 边界)。
+        Phase 8B-2 (ADR-0024) 增强: 装配 usage_store 时聚合使用/成本/性能
+        汇总 (UsageStore.list + stats_from_usage 只读计算) — 默认空 (无
+        usage 数据 → 既有 Provider View 逐位不变, 零回归)。
         失败安全: 未装配 registry / include_provider 关闭 → ProviderSnapshot()
         空快照, 聚合永不抛错; registry 异常 (如损坏 catalog.json) → 空快照
         (同 include_git 失败安全哲学)。默认关闭 — 既有 dashboard 行为/成本
@@ -566,10 +570,36 @@ class DashboardCollector:
             return ProviderSnapshot()  # 失败安全: 目录异常不影响整视图
         by_type = Counter(d.type for d in definitions)
         by_status = Counter(d.status.value for d in definitions)
-        return ProviderSnapshot(
+        snapshot = ProviderSnapshot(
             total=len(definitions),
             by_type=dict(sorted(by_type.items())),
             by_status=dict(sorted(by_status.items())),
             default=default.id if default is not None else None,
             items=[d.to_dict() for d in definitions],
         )
+        self._collect_provider_usage(snapshot)
+        return snapshot
+
+    def _collect_provider_usage(self, snapshot: ProviderSnapshot) -> None:
+        """Provider View 使用/成本/性能汇总 (Phase 8B-2, 可选列默认空)。
+
+        只读: UsageStore.list() + stats_from_usage() (从 usage 计算不落库);
+        未装配 usage_store → 空 (默认, 零回归); 任何异常 → 空 (失败安全,
+        usage 是审计增强数据, 不影响 Provider 目录视图)。
+        """
+        if self._usage_store is None:
+            return
+        try:
+            from providers.usage import stats_from_usage
+
+            stats = stats_from_usage(self._usage_store.list(), period="all")
+        except Exception:
+            return  # 失败安全: usage 聚合异常不影响整视图
+        snapshot.usage_by_provider = {s.provider_id: s.to_dict() for s in stats}
+        snapshot.usage_total_calls = sum(s.calls for s in stats)
+        snapshot.usage_total_cost = round(sum(s.total_cost for s in stats), 6)
+        calls = snapshot.usage_total_calls
+        ok = sum(round(s.success_rate * s.calls) for s in stats)
+        snapshot.usage_success_rate = round(ok / calls, 4) if calls else 0.0
+        weighted_latency = sum(s.avg_latency_ms * s.calls for s in stats)
+        snapshot.usage_avg_latency_ms = round(weighted_latency / calls, 2) if calls else 0.0

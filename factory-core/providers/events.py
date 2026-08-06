@@ -150,6 +150,48 @@ def record_provider_selected(
     )
 
 
+def record_provider_usage(
+    logger: Any,
+    *,
+    usage: Any,
+    source: str = "provider_registry",
+) -> Event | None:
+    """使用记录落盘审计 (UsageStore.record / 集成层调用后发出, Phase 8B-2)。
+
+    payload 契约 (phase8b2-plan.md §6): provider_id/execution_id/tokens
+    ({prompt, completion})/estimated_cost/latency_ms/success (+ model/version/
+    error 可选) — 估算计量 (非真实计费), 只审计不触碰任何业务状态。
+    """
+    if logger is None:
+        return None
+    payload: dict[str, Any] = {
+        "provider_id": usage.provider_id,
+        "tokens": {
+            "prompt": usage.prompt_tokens,
+            "completion": usage.completion_tokens,
+        },
+        "estimated_cost": usage.estimated_cost,
+        "latency_ms": usage.latency_ms,
+        "success": usage.success,
+    }
+    if usage.execution_id is not None:
+        payload["execution_id"] = usage.execution_id
+    if usage.model is not None:
+        payload["model"] = usage.model
+    if usage.version is not None:
+        payload["version"] = usage.version
+    if usage.error is not None:
+        payload["error"] = usage.error
+    return logger.record(
+        EventType.PROVIDER_USAGE_RECORDED,
+        source=source,
+        stage="recorded",
+        action="record provider usage",
+        result="OK",
+        payload=payload,
+    )
+
+
 def record_provider_execution_started(
     logger: Any,
     *,

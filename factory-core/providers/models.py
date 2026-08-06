@@ -140,6 +140,54 @@ class ProviderDefinition(BaseModel):
         return self.model_dump(mode="json")
 
 
+class TaskRequirement(BaseModel):
+    """Agent Task Requirement → Provider Capability 匹配输入 (Phase 8B-2, 评审调整 5)。
+
+    - task_type: 任务类型键 (development/testing/analysis/docs..., 与
+      runtime_preferences.<task_type> 键同构)。
+    - required_capabilities: 任务所需能力标签 (如 code/reasoning/vision...);
+      能力匹配语义见 capability.py (质量分 >= min_quality 才通过)。
+    - min_quality: 能力质量门槛 0-1 (缺省 0.0 = 能力存在即可)。
+    - budget: 估算成本上限 (USD, 非真实计费 — 超出上限的候选被过滤,
+      None = 不设上限)。
+    """
+
+    task_type: str = "development"
+    required_capabilities: list[str] = Field(default_factory=list)
+    min_quality: float = 0.0
+    budget: float | None = None
+
+    @field_validator("task_type")
+    @classmethod
+    def _task_type_nonempty(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("task_type must not be empty")
+        return v
+
+    @field_validator("required_capabilities", mode="before")
+    @classmethod
+    def _capabilities_normalized(cls, v: list[str] | None) -> list[str]:
+        return _normalize_list(v)
+
+    @field_validator("min_quality")
+    @classmethod
+    def _min_quality_range(cls, v: float) -> float:
+        if v < 0.0 or v > 1.0:
+            raise ValueError(f"min_quality out of range [0,1]: {v}")
+        return v
+
+    @field_validator("budget")
+    @classmethod
+    def _budget_nonnegative(cls, v: float | None) -> float | None:
+        if v is not None and v < 0.0:
+            raise ValueError(f"budget must be non-negative: {v}")
+        return v
+
+    def to_dict(self) -> dict:
+        return self.model_dump(mode="json")
+
+
 class ProviderRequest(BaseModel):
     """一次 Provider 调用请求 (统一 I/O 输入契约, 不绑 OpenAI 格式)。
 

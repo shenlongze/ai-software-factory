@@ -11,7 +11,20 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-PYTHON_BIN="${PYTHON_BIN:-python3}"
+PYTHON_BIN="${PYTHON_BIN:-}"
+# 自动选择 Python 3.12+ (pyproject requires-python >=3.12); 显式 PYTHON_BIN 优先
+if [ -z "$PYTHON_BIN" ]; then
+    for cand in python3.13 python3.12 python3.11; do
+        if command -v "$cand" >/dev/null 2>&1 && "$cand" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 12) else 1)' 2>/dev/null; then
+            PYTHON_BIN="$cand"; break
+        fi
+    done
+    PYTHON_BIN="${PYTHON_BIN:-python3}"
+fi
+if ! "$PYTHON_BIN" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 12) else 1)' 2>/dev/null; then
+    warn "需要 Python 3.12+ (当前 $("$PYTHON_BIN" --version 2>&1)) — 请设置 PYTHON_BIN=python3.12 或安装 Python 3.12+"
+    exit 1
+fi
 VENV_DIR=".venv"
 VENV_PY="$VENV_DIR/bin/python"
 VENV_FACTORY="$VENV_DIR/bin/factory"

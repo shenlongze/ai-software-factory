@@ -43,23 +43,37 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     cmd_init = sub.add_parser("init", help="初始化数据目录 (7 子目录 + token + 状态文件)")
-    cmd_init.add_argument("--json", dest="json_init", action="store_true", help=argparse.SUPPRESS)
+    cmd_init.add_argument(
+        "--json", action="store_true", default=argparse.SUPPRESS, help="JSON 输出"
+    )
 
     cmd_start = sub.add_parser("start", help="启动 Core + Console")
     cmd_start.add_argument("--port", type=int, default=0, help="Console 端口 (0 = 动态分配)")
     cmd_start.add_argument("--factory-cmd", default=None, help="Core 启动命令 (默认: factory)")
     cmd_start.add_argument("--console-cmd", default=None, help="Console 启动命令 (支持 {port})")
-    cmd_start.add_argument("--json", dest="json_start", action="store_true", help=argparse.SUPPRESS)
+    cmd_start.add_argument(
+        "--json", action="store_true", default=argparse.SUPPRESS, help="JSON 输出"
+    )
 
     sub.add_parser("stop", help="停止 (Console → Core 逆序 graceful)")
-    sub.add_parser("restart", help="stop + start")
+    cmd_restart = sub.add_parser("restart", help="stop + start")
+    cmd_restart.add_argument("--port", type=int, default=0, help="Console 端口 (0 = 动态分配)")
+    cmd_restart.add_argument("--factory-cmd", default=None, help="Core 启动命令 (默认: factory)")
+    cmd_restart.add_argument("--console-cmd", default=None, help="Console 启动命令 (支持 {port})")
+    cmd_restart.add_argument(
+        "--json", action="store_true", default=argparse.SUPPRESS, help="JSON 输出"
+    )
 
     cmd_status = sub.add_parser("status", help="查看状态")
-    cmd_status.add_argument("--json", dest="json_status", action="store_true", help=argparse.SUPPRESS)
+    cmd_status.add_argument(
+        "--json", action="store_true", default=argparse.SUPPRESS, help="JSON 输出"
+    )
 
     cmd_logs = sub.add_parser("logs", help="查看日志尾部")
     cmd_logs.add_argument("--lines", type=int, default=50, help="每个文件行数 (默认 50)")
-    cmd_logs.add_argument("--json", dest="json_logs", action="store_true", help=argparse.SUPPRESS)
+    cmd_logs.add_argument(
+        "--json", action="store_true", default=argparse.SUPPRESS, help="JSON 输出"
+    )
     return parser
 
 
@@ -99,7 +113,7 @@ def _dispatch(args: argparse.Namespace) -> int:
         from .manager import RuntimeManager
 
         kwargs = {}
-        if command == "start":
+        if command in ("start", "restart"):
             if args.port:
                 kwargs["console_port"] = args.port
             if args.factory_cmd:

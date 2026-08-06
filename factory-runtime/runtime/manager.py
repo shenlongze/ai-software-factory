@@ -22,6 +22,7 @@ from __future__ import annotations
 import os
 import secrets
 import shlex
+import signal
 import socket
 import subprocess
 import sys
@@ -184,13 +185,19 @@ class RuntimeManager:
     def stop(self) -> dict:
         """停止: watchdog 先停 → 逆序 graceful (Console → Core) → stopped。
 
-        幂等: 未运行 (idle/stopped + 无子进程) → 记 not running, 状态不变。
+        幂等: 未运行 (idle/stopped + 无子进程 + 无 pid 文件) → 记 not running。
+        跨进程视角 (CLI): 本实例无 proc 引用时, 按 config/{core,console}.pid
+        终止孤儿子进程 (状态文件不含子进程 pid, 设计字段契约保持 6 键)。
         """
         state = load_state(self.data_root)
         logger = setup_runtime_logger(self.data_root)
+        console_pid = self._read_pid_file("console")
+        core_pid = self._read_pid_file("core")
         if (
             self._core_proc is None
             and self._console_proc is None
+            and not console_pid
+            and not core_pid
             and state.status in ("idle", "stopped")
         ):
             log_event(logger, "stop", "not running")
@@ -205,10 +212,12 @@ class RuntimeManager:
         log_event(logger, "stopping")
 
         # 逆序: Console 先, Core 后 (设计 §1.6)
-        self._terminate(self._console_proc, self.terminate_timeout)
-        self._terminate(self._core_proc, self.terminate_timeout)
+        self._terminate_one(self._console_proc, console_pid, self.terminate_timeout)
+        self._terminate_one(self._core_proc, core_pid, self.terminate_timeout)
         self._core_proc = None
         self._console_proc = None
+        self._remove_pid_file("console")
+        self._remove_pid_file("core")
         self._close_child_logs()
 
         state.status = "stopped"
@@ -223,12 +232,16 @@ class RuntimeManager:
         return self.start()
 
     def status(self) -> dict:
-        """状态: state 文件 + 活进程 (本进程 proc 优先, 跨进程 pid 存活兜底)。"""
+        """状态: state 文件 + 活进程 (本进程 proc 优先, 跨进程 pid 文件兜底)。"""
         state = load_state(self.data_root)
         core_alive, core_code = check_core(self._core_proc)
         console_alive, console_code = check_core(self._console_proc)
-        if self._core_proc is None and state.status in RUNNING_STATUSES:
-            core_alive = _pid_alive(state.pid)
+        if self._core_proc is None:
+            core_alive = _pid_alive(self._read_pid_file("core")) or (
+                state.status in RUNNING_STATUSES and _pid_alive(state.pid)
+            )
+        if self._console_proc is None:
+            console_alive = _pid_alive(self._read_pid_file("console"))
         result = state.to_dict()
         result["core_alive"] = core_alive
         result["console_alive"] = console_alive
@@ -284,6 +297,7 @@ class RuntimeManager:
             stderr=subprocess.STDOUT,
             cwd=str(self.data_root),
         )
+        self._write_pid_file("core", self._core_proc.pid)
         log_event(
             setup_runtime_logger(self.data_root),
             "core started",
@@ -303,6 +317,7 @@ class RuntimeManager:
             stderr=subprocess.STDOUT,
             cwd=str(self.data_root),
         )
+        self._write_pid_file("console", self._console_proc.pid)
         log_event(
             setup_runtime_logger(self.data_root),
             "console started",
@@ -341,11 +356,73 @@ class RuntimeManager:
             proc.kill()
             proc.wait(timeout=5.0)
 
+    def _terminate_one(
+        self,
+        proc: subprocess.Popen | None,
+        pid: int | None,
+        timeout: float,
+    ) -> None:
+        """终止单个子进程: 有 proc 引用 → proc 路径; 否则按 pid 文件路径。"""
+        if proc is not None:
+            self._terminate(proc, timeout)
+        else:
+            self._terminate_pid(pid, timeout)
+
+    def _terminate_pid(self, pid: int | None, timeout: float) -> None:
+        """跨进程终止: SIGTERM → 轮询 → SIGKILL (pid 复用风险可接受)。"""
+        if not pid or not _pid_alive(pid):
+            return
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            return
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if not _pid_alive(pid):
+                return
+            time.sleep(0.05)
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except OSError:
+            pass
+
+    # ------------------------------------------------------------- pid 文件
+
+    def _pid_path(self, name: str) -> Path:
+        return self.data_root / "config" / f"{name}.pid"
+
+    def _write_pid_file(self, name: str, pid: int) -> None:
+        """写子进程 pid 文件 (600) — CLI 跨进程 stop/status 依据。"""
+        path = self._pid_path(name)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+        tmp.write_text(f"{pid}\n", encoding="utf-8")
+        os.replace(tmp, path)
+        chmod(path, FILE_MODE)
+
+    def _read_pid_file(self, name: str) -> int | None:
+        try:
+            return int(self._pid_path(name).read_text(encoding="utf-8").strip())
+        except (OSError, ValueError):
+            return None
+
+    def _remove_pid_file(self, name: str) -> None:
+        try:
+            self._pid_path(name).unlink()
+        except OSError:
+            pass
+
     def _cleanup_children(self) -> None:
-        self._terminate(self._console_proc, self.terminate_timeout)
-        self._terminate(self._core_proc, self.terminate_timeout)
+        self._terminate_one(
+            self._console_proc, self._read_pid_file("console"), self.terminate_timeout
+        )
+        self._terminate_one(
+            self._core_proc, self._read_pid_file("core"), self.terminate_timeout
+        )
         self._core_proc = None
         self._console_proc = None
+        self._remove_pid_file("console")
+        self._remove_pid_file("core")
         self._close_child_logs()
 
     def _close_core_log(self) -> None:

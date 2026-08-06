@@ -33,6 +33,7 @@ DEFAULT_BACKUP_COUNT = 3
 
 #: 进程级单例 (每进程一个 runtime logger; 测试经 reset_runtime_logger 重置)
 _runtime_logger: logging.Logger | None = None
+_runtime_handler: RotatingFileHandler | None = None
 
 
 def logs_dir(data_root: str | Path) -> Path:
@@ -46,7 +47,7 @@ def setup_runtime_logger(
     backup_count: int = DEFAULT_BACKUP_COUNT,
 ) -> logging.Logger:
     """装配 runtime.log (RotatingFileHandler, 单例)。"""
-    global _runtime_logger
+    global _runtime_logger, _runtime_handler
     if _runtime_logger is not None:
         return _runtime_logger
     d = logs_dir(data_root)
@@ -63,17 +64,21 @@ def setup_runtime_logger(
     logger.addHandler(handler)
     logger.propagate = False  # 不泄漏到根 logger
     _runtime_logger = logger
+    _runtime_handler = handler
     return logger
 
 
 def reset_runtime_logger() -> None:
     """关闭并清空单例 (测试隔离用)。"""
-    global _runtime_logger
-    if _runtime_logger is not None:
-        for handler in list(_runtime_logger.handlers):
-            handler.close()
-            _runtime_logger.removeHandler(handler)
-        _runtime_logger = None
+    global _runtime_logger, _runtime_handler
+    if _runtime_logger is not None and _runtime_handler is not None:
+        try:
+            _runtime_handler.close()
+            _runtime_logger.removeHandler(_runtime_handler)
+        except (OSError, ValueError):
+            pass
+    _runtime_logger = None
+    _runtime_handler = None
 
 
 def log_event(logger: logging.Logger, event: str, detail: str = "") -> None:
@@ -100,6 +105,11 @@ def open_child_log(
             if backup.exists():
                 backup.unlink()
             path.rename(backup)
+    except OSError:
+        pass
+    # 保证文件存在 (三文件契约: 启动前即就位)
+    try:
+        path.touch(exist_ok=True)
     except OSError:
         pass
     return path

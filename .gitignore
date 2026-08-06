@@ -11,6 +11,11 @@ build/
 *.sqlite3
 *.db
 
+# Node (Phase 11B Web UI)
+node_modules/
+factory-console/web/frontend/node_modules/
+factory-console/web/frontend/dist/
+
 # IDE
 .idea/
 .vscode/

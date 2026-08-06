@@ -1,8 +1,8 @@
 # Phase 15 Architecture Design — Product Runtime & Desktop Edition
 
-> 日期: 2026-08-07 | 状态: 架构评审, 待确认
-> 前置: Phase 1-14B + Roadmap 15-21 (5195385)
+> 日期: 2026-08-07 | 状态: 架构已确认 (裁决 B, 15A-3c) | 前置: Phase 1-14B + Roadmap 15-21 (5195385)
 > 原则: Core 零修改 / Extension 化 / 安全·可控·透明·可扩展 / 默认安全
+> 修订: 15A-3c-2 — §1.6/§3 修正 Core daemon → Command Model (详见 runtime-service-model.md)
 
 ## 1. factory-runtime 架构设计
 
@@ -88,16 +88,24 @@ Windows: %APPDATA%\ai-software-factory\
 
 ### 1.6 进程管理方案？
 
-```
-RuntimeManager (单父进程):
-  ├── Core CLI 子进程 (factory daemon/命令)
-  └── Console 子进程 (uvicorn)
+**架构裁决 B (15A-3c, 用户确认) — Service vs Command 双模型**
+(详见 docs/architecture/runtime-service-model.md):
 
-- 启动: 顺序 (Core → Console), 健康检查通过才报 READY
-- 停止: 逆序 graceful (Console → Core), 超时强杀
-- 崩溃: watchdog 检测退出码 → 自动重启 (最多 N 次, 记录)
-- 状态: runtime status → JSON (pid/uptime/health/log tail)
-- 日志: 各自独立文件 + 统一事件
+```text
+RuntimeManager (Managed Services + Command Execution):
+  ├── Managed Services  (常驻): Console (uvicorn) — 当前唯一
+  │     未来: Agent Worker / Scheduler (managed_services 注册)
+  └── Command Execution (短生命周期): Core (factory CLI 每次调用即起即退)
+
+- 启动: init datadir → token → Console 常驻 → 健康检查 (HTTP 200) → READY
+  (Core 不参与启动; 命令可用性 `factory --help` rc 0 独立报告)
+- 停止: watchdog 先停 → Console graceful (SIGTERM) → 超时强杀 (SIGKILL)
+- 崩溃: watchdog 只 watch managed services (Console) → 自动重启 (≤3 次, 记录,
+  超限 failed); Core 命令退出是预期, 非 crash — 不重启不报警
+- 状态: runtime status → JSON (pid/uptime/health + console service health +
+  core command availability; core.cmd 持久化 → 跨进程 status 可见)
+- 日志: runtime.log + console.log; Core 命令 stdout/stderr 经 run_command
+  返回 (core.log 保留目录兼容)
 ```
 
 ## 2. Desktop Shell 技术评估
@@ -133,8 +141,8 @@ RuntimeManager (单父进程):
 ├─────────────────────────────────────────────┤
 │ factory-runtime (PyInstaller 捆绑 Python)   │
 │  └── RuntimeManager                         │
-│       ├── Core CLI 子进程                   │
-│       └── Console uvicorn 子进程            │
+│       ├── Managed Services: Console uvicorn │
+│       └── Command Execution: Core CLI 短命令 │
 ├─────────────────────────────────────────────┤
 │ 数据目录 <data_root>/ (config/logs/data)    │
 └─────────────────────────────────────────────┘
@@ -144,19 +152,21 @@ RuntimeManager (单父进程):
 ```
 用户双击 → Tauri 壳 → 启动 runtime (捆绑 Python) → RuntimeManager
   → 检查/初始化数据目录 (首次: 默认配置 + demo 数据)
-  → 启动 Core (后台) → 启动 Console (uvicorn 127.0.0.1:<port>)
-  → 健康检查 → WebView 加载 Console → UI READY
+  → 启动 Console (managed service, uvicorn 127.0.0.1:<port>)
+  → 健康检查 (HTTP 200) → WebView 加载 Console → UI READY
+  (Core = 命令执行器, 按需调用, 不常驻)
 ```
 
 ### 停止流程
 ```
-窗口关闭 → Tauri 确认 → runtime 停止 (Console graceful → Core graceful)
+窗口关闭 → Tauri 确认 → runtime 停止 (Console graceful → 超时强杀)
 → 数据 flush → 退出
 ```
 
 ### 崩溃恢复
 ```
-Core/Console 崩溃 → watchdog 重启 (≤3 次) → 事件记录
+Console (managed service) 崩溃 → watchdog 重启 (≤3 次) → 事件记录, 超限 failed
+Core 命令退出是预期 (非 crash) → 不重启不报警
 UI 崩溃 → WebView 重载
 Runtime 崩溃 → 系统重启后数据完整 (原子写已保证 1-14 全部 store)
 ```

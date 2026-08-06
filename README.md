@@ -7,6 +7,70 @@
 
 ---
 
+## 一句话定位 (One-liner)
+
+> **AI Software Factory is not a code generator. It is an AI-driven software production system.**
+>
+> **AI Software Factory 不是代码生成器, 而是一套 AI 驱动的软件生产系统。** 管理 AI 员工 (Agent)、组织软件生产流程 (Workflow)、连接各种 Agent Runtime 与 LLM Provider, 让软件项目从 Idea 到交付/运维的**全生命周期**处于可管理、可观察、可验证、可积累的状态。
+
+## Architecture — 四层, 单向依赖
+
+```
+┌─ Human Console ──────────────────────────────────────────────┐
+│ factory-console/  Web UI 人类审核台 (React 7 页 + FastAPI)    │
+│                    8 只读 GET 路由 · 零写 API                  │
+└───────────────────────────────┬──────────────────────────────┘
+                                │ 只读聚合 (零写 API)
+┌───────────────────────────────▼──────────────────────────────┐
+│ Intelligence    intelligence/ 决策 · 推荐 · 经验               │
+│                 (只复用 events + product, 只读)               │
+└───────────────────────────────┬──────────────────────────────┘
+                                │ 事件 + 只读复用
+┌───────────────────────────────▼──────────────────────────────┐
+│ Extension       understanding/ product/ providers/ git/       │
+│                 change/ changeflow/  (声明式注册, 零 Core 破坏)│
+└───────────────────────────────┬──────────────────────────────┘
+                                │ 只 import events (Core)
+┌───────────────────────────────▼──────────────────────────────┐
+│ Core (冻结)     events/ tasks/ workflows/ agents/ execution/  │
+│                 runtime/ recovery/ validation/ metrics/ cli/  │
+│                 — 零领域依赖, 新能力一律走 Extension           │
+└──────────────────────────────────────────────────────────────┘
+```
+
+> 依赖单向向下: 上层只读复用下层; 事件是唯一事实源 (append-only SQLite)。详见 [docs/project-structure.md](./docs/project-structure.md)。
+
+## Lifecycle — 一个想法如何变成产品
+
+```
+Idea → Research → PRD → Approval → UI → Architecture → Task → Development → Experience
+   ▲                                                                               │
+   └─────────────────────── 经验回流, 指导下一次选择 ───────────────────────────────┘
+```
+
+> MarkPad 真实项目即走通此链路 (34 事件 / 6 Artifacts / 2 经验 / 2 次人工审批, Core 零修改): [docs/real-world-validation.md](./docs/real-world-validation.md)。完整 12 阶段模型见 [docs/lifecycle-model.md](./docs/lifecycle-model.md)。
+
+## Demo — 一键演示
+
+```bash
+bash scripts/setup.sh   # 1. 环境: venv + editable install + 冒烟 (幂等, 可重复执行)
+bash scripts/demo.sh    # 2. 一键跑 MarkPad 完整生命周期 (等价于 factory demo markpad)
+```
+
+> `scripts/demo.sh` 是脚本化终端演示 (8 阶段日志 + 汇总), 支持 `--json` (供管道消费) 与 `--keep-root` (保留临时工厂根), 可用 `script` / asciinema 录制为 terminal recording 展示。分步手工演示见下文 [Demo — 真实项目验证 (MarkPad)](#demo--真实项目验证-markpad)。
+
+## Feature Matrix — v1.0 全量 Done
+
+| 能力域 | 状态 | 落地 |
+|:-------|:----:|:-----|
+| **Lifecycle** | ✅ Done | 12 阶段模型; 6–9 完整实现, 1–5 由 Product Intelligence 承接, 10–11 部分支撑 (Phase 9) |
+| **Decision Intelligence** | ✅ Done | 决策链 + Evidence 六来源强制 + Risk R1–R5 + Approval 状态机绑定 (Phase 9c / 10A) |
+| **Provider Intelligence** | ✅ Done | 四因素可解释推荐 0.35/0.30/0.20/0.15 + Cost/Usage/Performance 聚合 (Phase 8) |
+| **Human Console** | ✅ Done | 7 页面 Web UI + 8 只读 API + Simple/Expert 双模式, 人在环上 (Phase 11) |
+| **Experience Loop** | ✅ Done | 五域经验 + 新鲜度衰减 (半衰期 30 天) + 推荐回馈, 影响但不支配 (Phase 10A-4) |
+
+---
+
 ## Vision — 为什么存在
 
 > **"AI Software Factory is not a tool that generates software. It is a system that grows with capabilities and helps humans accomplish goals."**

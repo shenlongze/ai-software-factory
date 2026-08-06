@@ -28,3 +28,6 @@ factory-console/web/frontend/dist/
 .factory/
 logs/
 *.log
+
+# 冒烟测试残留防护
+$SMOKE_ROOT/

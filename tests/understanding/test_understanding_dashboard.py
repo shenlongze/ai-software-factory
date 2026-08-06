@@ -30,8 +30,8 @@ class TestViewRegistry:
         from dashboard.renderer import VIEWS
 
         assert "understanding" in VIEWS
-        assert VIEWS[-1] == "understanding"
-        assert len(VIEWS) == 17
+        assert VIEWS[-2] == "understanding"  # Phase 8A: 第十八视图 provider 追加在后
+        assert len(VIEWS) == 18
 
     def test_build_understanding_wired_in_renderer(self):
         from dashboard.renderer import _SINGLE

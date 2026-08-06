@@ -78,7 +78,8 @@ class TestChangeViewRender:
         assert "change" in VIEWS
         assert "changeflow" in VIEWS  # Phase 6E: 第十六视图 (ADR-0020)
         assert "understanding" in VIEWS  # Phase 7: 第十七视图 (ADR-0021)
-        assert len(VIEWS) == 17  # Phase 6D 第十五 + 6E 第十六 + Phase 7 第十七
+        assert "provider" in VIEWS  # Phase 8A: 第十八视图 (ADR-0022)
+        assert len(VIEWS) == 18  # 6D 第十五 + 6E 第十六 + Phase 7 第十七 + 8A 第十八
 
     def test_unknown_view_still_raises(self, factory_root, logger, event_store,
                                        task_store, agent_registry, workflow_store,

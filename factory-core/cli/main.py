@@ -41,6 +41,9 @@ from .commands import (
     cmd_metrics,
     cmd_project_list,
     cmd_project_show,
+    cmd_provider_list,
+    cmd_provider_show,
+    cmd_provider_test,
     cmd_recover,
     cmd_runtime_add,
     cmd_runtime_catalog_list,
@@ -312,6 +315,28 @@ def build_parser() -> Any:
     json_opt(p_pr_show)
     p_pr_show.add_argument("name", help="项目名 (如 markpad)")
 
+    # factory provider <sub> (Phase 8A, ADR-0022)
+    p_provider = sub.add_parser(
+        "provider", help="LLM Provider 管理: 智能来源目录 (默认 hermes + 注册定义, 发 provider.* 事件)"
+    )
+    json_opt(p_provider)
+    pvsub = p_provider.add_subparsers(dest="provider_command", required=True)
+    p_pv_list = pvsub.add_parser("list", help="Provider 目录列表 (发 provider.viewed)")
+    json_opt(p_pv_list)
+    p_pv_list.add_argument("--type", default=None, help="按类型过滤 (cloud/local/agent)")
+    p_pv_list.add_argument("--status", default=None, help="按状态过滤 (ACTIVE/DISABLED)")
+    p_pv_show = pvsub.add_parser("show", help="Provider 定义详情 (发 provider.viewed)")
+    json_opt(p_pv_show)
+    p_pv_show.add_argument("provider_id", help="Provider ID (如 hermes)")
+    p_pv_test = pvsub.add_parser(
+        "test", help="Provider smoke test: 最小生成调用 (发 provider.selected/execution.*)"
+    )
+    json_opt(p_pv_test)
+    p_pv_test.add_argument("provider_id", help="Provider ID (如 hermes)")
+    p_pv_test.add_argument("--prompt", default=None,
+                           help="冒烟提示词 (默认: Reply with exactly: OK)")
+    p_pv_test.add_argument("--model", default=None, help="模型 (默认 Provider 默认模型)")
+
     # factory workspace <sub> (Phase 6A, ADR-0016)
     p_workspace = sub.add_parser(
         "workspace", help="Workspace 管理: 多项目组织单位 (workspace.yaml, 发 workspace.* 事件)"
@@ -467,6 +492,8 @@ def main(argv: list[str] | None = None) -> int:
             result = cmd_metrics(ctx, args)
         elif args.command == "project":
             result = _dispatch_project(ctx, args)
+        elif args.command == "provider":
+            result = _dispatch_provider(ctx, args)
         elif args.command == "workspace":
             result = _dispatch_workspace(ctx, args)
         elif args.command == "git":
@@ -587,6 +614,17 @@ def _dispatch_project(ctx: FactoryContext, args: Any) -> dict:
     raise CliError(f"unknown project command: {args.project_command}", exit_code=2)
 
 
+def _dispatch_provider(ctx: FactoryContext, args: Any) -> dict:
+    """provider list/show/test 三分发 (Phase 8A, ADR-0022)。"""
+    if args.provider_command == "list":
+        return cmd_provider_list(ctx, args)
+    if args.provider_command == "show":
+        return cmd_provider_show(ctx, args)
+    if args.provider_command == "test":
+        return cmd_provider_test(ctx, args)
+    raise CliError(f"unknown provider command: {args.provider_command}", exit_code=2)
+
+
 def _dispatch_workspace(ctx: FactoryContext, args: Any) -> dict:
     if args.workspace_command == "init":
         return cmd_workspace_init(ctx, args)
@@ -661,6 +699,8 @@ def _print_output(args: Any, result: dict) -> None:
         _print_metrics(result)
     elif args.command == "project":
         _print_project(args.project_command, result)
+    elif args.command == "provider":
+        _print_provider(args.provider_command, result)
     elif args.command == "workspace":
         _print_workspace(args.workspace_command, result)
     elif args.command == "git":
@@ -1013,6 +1053,39 @@ def _print_project(sub: str, r: dict) -> None:
         for w in r["workflows"]:
             steps = " → ".join(st["id"] for st in w["steps"])
             print(f"    {w['id']:<20} {w['name'] or '-'}  [{steps}]")
+
+
+def _print_provider(sub: str, r: dict) -> None:
+    """factory provider 输出: list 目录表 / show 定义详情 / test smoke 结果
+    (Phase 8A, ADR-0022; --json 出口在 _print_output 前置处理)。"""
+    if sub == "list":
+        rows = [
+            [p["id"], p["type"], ", ".join(p["capabilities"]) or "-",
+             p["version"], p["status"], "*" if p["id"] == r.get("default") else ""]
+            for p in r["providers"]
+        ]
+        print(_render_table(["Provider", "Type", "Capabilities", "Version", "Status", "Default"], rows))
+        print(f"{r['count']} providers (default: {r.get('default') or 'not set'})")
+    elif sub == "show":
+        p = r["provider"]
+        print(f"{p['id']}  {p['name']}  [{p['type']}]  v{p['version']}  {p['status']}"
+              + ("  (default)" if r.get("default") else ""))
+        print(f"  description   {p['description'] or '-'}")
+        print(f"  capabilities  {', '.join(p['capabilities']) or '-'}")
+        print(f"  models        {', '.join(p['models']) or '-'}")
+        if p.get("config_schema"):
+            keys = ", ".join(sorted(p["config_schema"])) or "-"
+            print(f"  config        {keys}")
+        if p.get("metadata"):
+            print(f"  metadata      {json.dumps(p['metadata'], ensure_ascii=False)}")
+    elif sub == "test":
+        print(f"Provider {r['provider']} smoke: {r['status']}  (model: {r['model'] or '-'})")
+        if r.get("response", {}).get("error"):
+            print(f"  error    {r['response']['error']}")
+        else:
+            content = (r.get("response") or {}).get("content", "")
+            print(f"  output   {content.strip()[:200] or '(empty)'}")
+        print(f"  事件      {' → '.join(r.get('events') or []) or '-'}")
 
 
 def _print_workspace(sub: str, r: dict) -> None:

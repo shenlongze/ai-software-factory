@@ -872,6 +872,179 @@ def cmd_runtime_catalog_show(ctx: FactoryContext, args: Any) -> dict:
     return {"ok": True, "definition": definition.to_dict(), "event_seq": ev.seq}
 
 
+# ------------------------------------------------------------------ provider 子命令 (Phase 8A, ADR-0022)
+
+PROVIDER_SMOKE_INSTRUCTION = "Reply with exactly: OK"  # provider test 默认冒烟提示词
+
+
+def _open_provider_store(ctx: FactoryContext):
+    """装配 ProviderStore (路径 = <root>/providers/catalog.json — 独立数据空间,
+    与 runtime catalog (runtimes/catalog.json) / 实例库 (runtimes/runtimes.json)
+    完全分离; 目录由首次原子写自动创建)。
+
+    延迟导入 providers.store: 删除 providers 不影响本模块加载 (Removal Isolation
+    — 核心命令不依赖 Provider 层, phase8a-status.md 冻结约束)。
+    """
+    from providers.store import ProviderStore
+
+    return ProviderStore(ctx.root / "providers")
+
+
+def _parse_provider_status(value: str | None):
+    if value is None:
+        return None
+    from providers.models import ProviderStatus
+
+    try:
+        return ProviderStatus.parse(value)
+    except ValueError as exc:
+        raise CliError(str(exc), exit_code=2) from exc
+
+
+def cmd_provider_list(ctx: FactoryContext, args: Any) -> dict:
+    """factory provider list — Provider 目录列表 (默认定义基线 + 注册定义, 可过滤),
+    发 provider.viewed; 结果含 default 标记。"""
+    from providers.registry import ProviderRegistry
+
+    status = _parse_provider_status(args.status)
+    with ctx.logger_scope() as logger:
+        registry = ProviderRegistry(_open_provider_store(ctx), logger=logger)
+        providers = registry.list(type=args.type, status=status)
+        default = registry.default()
+        default_id = default.id if default is not None else None
+        ev = logger.record(
+            EventType.PROVIDER_VIEWED, source=SOURCE, action="list providers", result="OK",
+            payload={"count": len(providers), "type": args.type,
+                     "status": args.status, "default": default_id},
+        )
+    return {
+        "ok": True, "count": len(providers),
+        "providers": [p.to_dict() for p in providers],
+        "default": default_id, "event_seq": ev.seq,
+    }
+
+
+def cmd_provider_show(ctx: FactoryContext, args: Any) -> dict:
+    """factory provider show <id> — Provider 定义详情 (默认定义或已注册定义, 只读),
+    发 provider.viewed; 未找到 → 退出码 7。"""
+    from providers.registry import ProviderRegistry
+
+    with ctx.logger_scope() as logger:
+        registry = ProviderRegistry(_open_provider_store(ctx), logger=logger)
+        definition = registry.get(args.provider_id)
+        if definition is None:
+            raise CliError(f"provider not found: {args.provider_id}", exit_code=7)
+        default = registry.default()
+        is_default = default is not None and default.id == definition.id
+        ev = logger.record(
+            EventType.PROVIDER_VIEWED, source=SOURCE, action="show provider", result="OK",
+            payload={
+                "provider_id": definition.id,
+                "type": definition.type,
+                "version": definition.version,
+                "status": definition.status.value,
+                "default": is_default,
+            },
+        )
+    return {
+        "ok": True, "provider": definition.to_dict(),
+        "default": is_default, "event_seq": ev.seq,
+    }
+
+
+def cmd_provider_test(ctx: FactoryContext, args: Any) -> dict:
+    """factory provider test <id> — smoke test: 最小生成调用 (adapter.generate),
+    发 provider.selected → provider.execution.started → completed|failed →
+    provider.viewed。
+
+    前置: provider 定义须在目录合并视图中 (默认 hermes 常驻; 自定义经注册);
+    已注册但无内置实现 → 配置缺口 rc 1 (同 cmd_runtime_test 契约)。
+    退出码: 0 smoke SUCCESS / 1 smoke FAILED (provider 不健康) 或配置缺口 /
+    7 provider 未找到。
+    副作用边界: smoke 为临时调用 — 不落任何 Provider 状态 (目录零残留);
+    Adapter 不写 Event (ADR-0006 解耦铁律); 本命令的事件全部经 EventLogger
+    (ADR-0002: 所有 CLI 行为必须产生 Event)。
+    """
+    from providers.adapters import BUILTIN_PROVIDER_ADAPTERS
+    from providers.models import ProviderRequest, ProviderResponse
+    from providers.registry import ProviderRegistry
+
+    with ctx.logger_scope() as logger:
+        registry = ProviderRegistry(_open_provider_store(ctx), logger=logger)
+        definition = registry.get(args.provider_id)
+        if definition is None:
+            raise CliError(f"provider not found: {args.provider_id}", exit_code=7)
+        adapter = BUILTIN_PROVIDER_ADAPTERS.get(args.provider_id)
+        if adapter is None:
+            raise CliError(
+                f"no adapter implementation for provider: {args.provider_id} "
+                f"(registered but not built-in)",
+                exit_code=1,
+            )
+        model = args.model or (definition.models[0] if definition.models else None)
+        request = ProviderRequest(
+            provider_id=args.provider_id,
+            prompt=args.prompt or PROVIDER_SMOKE_INSTRUCTION,
+            model=model,
+            metadata={"smoke": True, "task_id": "SMOKE"},
+        )
+        # 事件序 (provider.* 生命周期): selected → execution.started →
+        # completed|failed → viewed (审计)
+        logger.record(
+            EventType.PROVIDER_SELECTED, source=SOURCE, stage="selected",
+            action="select provider", result="OK",
+            payload={"provider_id": args.provider_id, "model": model},
+        )
+        logger.record(
+            EventType.PROVIDER_EXECUTION_STARTED, source=SOURCE, stage="running",
+            action="execute provider", result="OK",
+            payload={"provider_id": args.provider_id, "model": model},
+        )
+        try:
+            response = adapter.generate(request)
+        except Exception as exc:  # 意外异常 → 稳定响应 (不抛, 同 ADR-0007 决策 4)
+            response = ProviderResponse(
+                provider_id=args.provider_id, model=model,
+                error=f"{type(exc).__name__}: {exc}",
+            )
+        if response.ok:
+            logger.record(
+                EventType.PROVIDER_EXECUTION_COMPLETED, source=SOURCE, stage="completed",
+                action="execute provider", result="OK",
+                payload={"provider_id": args.provider_id, "model": response.model,
+                         "usage": response.usage},
+            )
+        else:
+            logger.record(
+                EventType.PROVIDER_EXECUTION_FAILED, source=SOURCE, stage="failed",
+                action="execute provider", result="ERROR",
+                payload={"provider_id": args.provider_id, "model": response.model,
+                         "error": response.error},
+            )
+        ev = logger.record(
+            EventType.PROVIDER_VIEWED, source=SOURCE, action="test provider", result="OK",
+            payload={"provider_id": args.provider_id, "model": response.model,
+                     "smoke_status": "SUCCESS" if response.ok else "FAILED",
+                     "error": response.error},
+        )
+    data = {
+        "ok": response.ok,
+        "provider": args.provider_id,
+        "status": "SUCCESS" if response.ok else "FAILED",
+        "model": response.model,
+        "response": response.to_dict(),
+        "events": [
+            "provider.selected", "provider.execution.started",
+            "provider.execution.completed" if response.ok else "provider.execution.failed",
+            "provider.viewed",
+        ],
+        "event_seq": ev.seq,
+    }
+    if not response.ok:
+        data["exit_code"] = 1  # smoke FAILED = provider 不健康 → rc 1
+    return data
+
+
 # ------------------------------------------------------------------ execution 子命令
 
 def cmd_execution_list(ctx: FactoryContext, args: Any) -> dict:
@@ -1141,6 +1314,15 @@ def cmd_dashboard(ctx: FactoryContext, args: Any) -> dict:
                 expanded = os.path.expanduser(repo)
                 if os.path.isdir(expanded):
                     understanding_paths.append((p.id, expanded))
+        # Phase 8A Provider View: 仅 --view provider 聚合 (include_provider 默认
+        # 关闭, 数据源 = ProviderRegistry <root>/providers 只读合并视图: 默认
+        # 定义基线 hermes + 已持久化定义)。延迟导入 providers (Removal Isolation
+        # — 删除 providers 不影响本模块加载, phase8a-status.md 冻结约束)。
+        provider_registry = None
+        if view == "provider":
+            from providers.registry import ProviderRegistry
+
+            provider_registry = ProviderRegistry(_open_provider_store(ctx))
         collector = DashboardCollector(
             task_store=ctx.open_task_store(),
             agent_registry=AgentRegistry(ctx.open_agent_store()),
@@ -1161,6 +1343,8 @@ def cmd_dashboard(ctx: FactoryContext, args: Any) -> dict:
             include_changeflow=view == "changeflow",
             understanding_paths=understanding_paths,
             include_understanding=view == "understanding",
+            provider_registry=provider_registry,
+            include_provider=view == "provider",
         )
         snapshot = collector.collect()
         ev = logger.record(
@@ -1193,6 +1377,8 @@ def cmd_dashboard(ctx: FactoryContext, args: Any) -> dict:
                 "changeflow_evaluations": snapshot.changeflow.evaluation_total,
                 "changeflow_links": snapshot.changeflow.workflow_links_total,
                 "understanding_projects": snapshot.understanding.total,  # Phase 7 (ADR-0021)
+                "providers_total": snapshot.providers.total,  # Phase 8A (ADR-0022)
+                "providers_default": snapshot.providers.default,
             },
         )
     return {

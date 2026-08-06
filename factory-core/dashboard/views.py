@@ -241,6 +241,43 @@ def build_catalog(snapshot: FactorySnapshot) -> Panel:
     return _panel(Group(summary, table), "Runtime Catalog", border="cyan")
 
 
+def build_provider(snapshot: FactorySnapshot) -> Panel:
+    """Provider 目录视图 (Phase 8A, ADR-0022): 智能来源定义表 (默认定义基线
+    + 已注册定义, 只读)。
+
+    数据源 = snapshot.providers (collector include_provider=True 聚合, 默认
+    关闭): 与 Runtime Catalog 语义平行 — Provider = 智能来源目录, Runtime =
+    执行机制目录, 两者数据空间完全分离。Default 列以 ★ 标记默认 Provider
+    (registry.default(); 未设置 → 无星标)。
+    """
+    p = snapshot.providers
+    summary = _line(_text(f"{p.total} providers", style="bold"))
+    if p.by_type:
+        summary.append("  ").append_text(
+            Text("types ", style="dim")
+        ).append_text(_status_counts_text(p.by_type))
+    if p.default:
+        summary.append("  ").append_text(
+            Text(f"default {p.default}", style="bold cyan")
+        )
+    table = Table(show_header=True, header_style="bold", box=box.SIMPLE_HEAVY, expand=True)
+    for col in ("Provider", "Type", "Models", "Version", "Status", "Default"):
+        table.add_column(col)
+    for d in p.items:
+        is_default = p.default is not None and d.get("id") == p.default
+        table.add_row(
+            _text(d.get("id", "")),
+            _text(d.get("type", "")),
+            _text(", ".join(d.get("models", [])) or "-"),
+            _text(d.get("version", "")),
+            _text(d.get("status", ""), style=_style_status(d.get("status"))),
+            _text("★", style="bold cyan") if is_default else _text(""),
+        )
+    if not p.items:
+        table.add_row(_text("(no providers)", style="dim"), "", "", "", "", "")
+    return _panel(Group(summary, table), "Provider Catalog", border="cyan")
+
+
 def build_projects(snapshot: FactorySnapshot) -> Panel:
     """Projects View (Phase 6A, ADR-0016): 每项目计数 + success rate。
 

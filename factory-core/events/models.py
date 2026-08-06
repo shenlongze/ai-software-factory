@@ -242,6 +242,22 @@ class EventType(str, Enum):
     UNDERSTANDING_FAILED = "understanding.failed"        # 分析失败 (异常/路径无效)
     UNDERSTANDING_VIEWED = "understanding.viewed"        # 理解报告被查看 (CLI 只读审计)
 
+    # --- Phase 8A: LLM Provider Abstraction 事件 (增量扩展, ADR-0022) ---
+    # 依 ADR-0001 决策 1 的扩展路径: 加枚举成员即可, 不改表结构/API。
+    # provider.* 为智能来源层 (providers/, source="provider_registry"/"cli") 的
+    # 审计事件: 生命周期 provider.registered / provider.removed / provider.viewed;
+    # 执行 provider.selected → provider.execution.started → completed|failed
+    # (phase8-plan.md §Q6)。viewed 为读命令事件 (ADR-0002: 所有 CLI 行为必须产生
+    # Event, 同 runtime.catalog.viewed)。与 runtime.*/execution.* (执行机制) 语义
+    # 分离 — Provider=智能来源, Runtime=执行机制 (phase8-plan.md §Q1)。
+    PROVIDER_REGISTERED = "provider.registered"          # Provider 定义注册入库
+    PROVIDER_REMOVED = "provider.removed"                # Provider 定义移除
+    PROVIDER_VIEWED = "provider.viewed"                  # Provider 目录被查看 (list/show)
+    PROVIDER_SELECTED = "provider.selected"              # Provider 被选中 (执行选择/设默认)
+    PROVIDER_EXECUTION_STARTED = "provider.execution.started"    # Provider 调用开始
+    PROVIDER_EXECUTION_COMPLETED = "provider.execution.completed"  # Provider 调用成功 (终态)
+    PROVIDER_EXECUTION_FAILED = "provider.execution.failed"      # Provider 调用失败 (终态)
+
 
 class Event(BaseModel):
     """一条事件。append-only: 写入后永不修改、永不删除。"""

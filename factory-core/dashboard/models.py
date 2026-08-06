@@ -127,6 +127,27 @@ class RuntimeCatalogSnapshot(BaseModel):
         return self.model_dump(mode="json")
 
 
+class ProviderSnapshot(BaseModel):
+    """Provider 目录汇总 (ProviderRegistry, Phase 8A / ADR-0022)。
+
+    数据源 = ProviderRegistry 只读合并视图 (默认定义基线 hermes + 已持久化
+    定义, 见 providers/registry.py): 与 RuntimeCatalogSnapshot 语义平行 —
+    Provider = 智能来源目录, Runtime Catalog = 执行机制目录, 两者数据空间
+    完全分离 (providers/catalog.json vs runtimes/catalog.json)。状态为
+    ProviderStatus 二态 (ACTIVE/DISABLED); default 为默认 Provider id
+    (未设置 → None); items 含默认定义 + 已注册定义 (合并视图)。
+    """
+
+    total: int = 0
+    by_type: dict[str, int] = Field(default_factory=dict)
+    by_status: dict[str, int] = Field(default_factory=dict)
+    default: str | None = None
+    items: list[dict[str, Any]] = Field(default_factory=list)  # ProviderDefinition.to_dict()
+
+    def to_dict(self) -> dict:
+        return self.model_dump(mode="json")
+
+
 class ProjectSnapshot(BaseModel):
     """单个项目的汇总 (Phase 6A Workspace Layer, ADR-0016)。
 
@@ -282,6 +303,10 @@ class FactorySnapshot(BaseModel):
     executions: ExecutionSnapshot = Field(default_factory=ExecutionSnapshot)
     checkpoints: CheckpointSnapshot = Field(default_factory=CheckpointSnapshot)
     catalog: RuntimeCatalogSnapshot = Field(default_factory=RuntimeCatalogSnapshot)
+    # Phase 8A (ADR-0022): Provider View — 仅 --view provider 聚合 (collector
+    # include_provider=True), 默认空 (既有 dashboard 行为/成本完全一致;
+    # 数据源 = ProviderRegistry 只读合并视图, 智能来源目录)。
+    providers: ProviderSnapshot = Field(default_factory=ProviderSnapshot)
     projects: ProjectsSnapshot = Field(default_factory=ProjectsSnapshot)  # Phase 6A (ADR-0016)
     metrics: MetricsSnapshot = Field(default_factory=MetricsSnapshot)
     factory_metrics: FactoryMetrics = Field(default_factory=FactoryMetrics)  # Phase 5B (ADR-0015)

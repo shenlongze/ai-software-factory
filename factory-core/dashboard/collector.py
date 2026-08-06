@@ -45,6 +45,7 @@ from .models import (
     MetricsSnapshot,
     ProjectSnapshot,
     ProjectsSnapshot,
+    ProviderSnapshot,
     RuntimeCatalogSnapshot,
     TaskSnapshot,
     UnderstandingItem,
@@ -80,6 +81,8 @@ class DashboardCollector:
         include_changeflow: bool = False,  # Phase 6E: Change Flow View 聚合开关 (ADR-0020)
         understanding_paths: list | None = None,  # Phase 7: list[(project_id, path)]
         include_understanding: bool = False,  # Phase 7: Understanding View 聚合开关 (ADR-0021)
+        provider_registry: Any | None = None,  # Phase 8A: ProviderRegistry (Provider View)
+        include_provider: bool = False,  # Phase 8A: Provider View 聚合开关 (ADR-0022)
     ) -> None:
         self._task_store = task_store
         self._agent_registry = agent_registry
@@ -124,6 +127,12 @@ class DashboardCollector:
         # 既有 dashboard 行为/成本完全不变 (同 include_git 模式)。
         self._understanding_paths = understanding_paths or []
         self._include_understanding = include_understanding
+        # Provider View (Phase 8A): 注入 ProviderRegistry (智能来源目录只读
+        # 合并视图), 默认关闭 — 既有 dashboard 行为/成本完全不变 (同
+        # include_changeflow 模式); 本模块零顶层 imports providers (Removal
+        # Isolation: 删除 providers 不影响 Factory, CLI 命令层延迟装配)。
+        self._provider_registry = provider_registry
+        self._include_provider = include_provider
 
     # ------------------------------------------------------------------ 主入口
 
@@ -147,6 +156,7 @@ class DashboardCollector:
             change=self._collect_change(),
             changeflow=self._collect_changeflow(),
             understanding=self._collect_understanding(),
+            providers=self._collect_providers(),
         )
 
     # ------------------------------------------------------------------ 分域聚合
@@ -532,3 +542,34 @@ class DashboardCollector:
             ))
         items.sort(key=lambda it: it.project)
         return UnderstandingSnapshot(total=len(items), items=items)
+
+    # ------------------------------------------------------------------ Provider View (Phase 8A, ADR-0022)
+
+    def _collect_providers(self) -> ProviderSnapshot:
+        """Provider 目录汇总 (ProviderRegistry 只读合并视图; 未装配/未开启 → 空快照)。
+
+        只读: 仅调 registry.list()/default() 读接口 (合并视图 = 默认定义基线
+        hermes + 已持久化定义, 见 providers/registry.py); 不发事件
+        (provider.viewed 由 CLI 命令层发出, 同 dashboard.viewed 边界)。
+        失败安全: 未装配 registry / include_provider 关闭 → ProviderSnapshot()
+        空快照, 聚合永不抛错; registry 异常 (如损坏 catalog.json) → 空快照
+        (同 include_git 失败安全哲学)。默认关闭 — 既有 dashboard 行为/成本
+        完全不变 (同 include_git 模式); 本模块零顶层 imports providers
+        (Removal Isolation: 删除 providers 不影响 Factory)。
+        """
+        if not self._include_provider or self._provider_registry is None:
+            return ProviderSnapshot()
+        try:
+            definitions = self._provider_registry.list()
+            default = self._provider_registry.default()
+        except Exception:
+            return ProviderSnapshot()  # 失败安全: 目录异常不影响整视图
+        by_type = Counter(d.type for d in definitions)
+        by_status = Counter(d.status.value for d in definitions)
+        return ProviderSnapshot(
+            total=len(definitions),
+            by_type=dict(sorted(by_type.items())),
+            by_status=dict(sorted(by_status.items())),
+            default=default.id if default is not None else None,
+            items=[d.to_dict() for d in definitions],
+        )

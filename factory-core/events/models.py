@@ -355,6 +355,19 @@ class EventType(str, Enum):
     INTELLIGENCE_EXPERIENCE_RECORDED = "intelligence.experience.recorded"    # 经验记录落库 (只记录不消费)
     INTELLIGENCE_VIEWED = "intelligence.viewed"                              # Intelligence 数据被查看 (只读审计)
 
+    # --- Phase 10A-2: Decision Intelligence 事件 (增量扩展, ADR-0031) ---
+    # 依 ADR-0001 决策 1 的扩展路径: 加枚举成员即可, 不改表结构/API。
+    # intelligence.decision.* 为 DecisionIntelligence 引擎 (decision.py) 的决策链
+    # 生命周期事件 (source="intelligence" 写路径): analysis.started (分析开始,
+    # 载荷含 subject/decision_type/option_count/evidence_count) → analysis.completed
+    # (分析完成, 载荷含 factors/observations_count/confidence) → option.evaluated
+    # (逐选项规则评分完成, 每选项一条, 载荷含 option_id/name/score/factors) →
+    # decision.created (10A-1 既有, Decision 落库 — 链终事件, 载荷回填
+    # approval_request_id)。payload 契约见 intelligence/events.py。
+    INTELLIGENCE_DECISION_ANALYSIS_STARTED = "intelligence.decision.analysis.started"      # 决策分析开始
+    INTELLIGENCE_DECISION_ANALYSIS_COMPLETED = "intelligence.decision.analysis.completed"  # 决策分析完成
+    INTELLIGENCE_DECISION_OPTION_EVALUATED = "intelligence.decision.option.evaluated"      # 选项规则评分完成
+
 
 class Event(BaseModel):
     """一条事件。append-only: 写入后永不修改、永不删除。"""

@@ -2974,3 +2974,178 @@ def cmd_product_lifecycle_templates(ctx: FactoryContext, args: Any) -> dict:
         "templates": templates,
         "event_seq": event_seq,
     }
+
+
+# ------------------------------------------------------------------ Phase 10A-2: Intelligence Decision (ADR-0031)
+
+
+def _open_intelligence_engine(ctx: FactoryContext, logger: Any, approval_service: Any = None):
+    """装配 DecisionIntelligence (延迟导入 intelligence 包 — Removal Isolation:
+    删除 intelligence/ 不影响本模块加载, 同 product/provider 延迟导入模式)。"""
+    from intelligence.decision import DecisionIntelligence
+
+    from intelligence.store import DecisionStore
+
+    return DecisionIntelligence(
+        DecisionStore(ctx.root / "intelligence"),
+        logger=logger,
+        approval_service=approval_service,
+    )
+
+
+def _intelligence_last_seq(logger: Any, type_: Any) -> int | None:
+    """最后一条指定类型事件的 seq (写命令 event_seq 审计锚点)。"""
+    events = logger.store.query(event_type=type_)
+    return events[-1].seq if events else None
+
+
+def _parse_evidence_spec(spec: str) -> dict:
+    """解析证据规格 TYPE:ID[:DESC] (六来源: artifact/event/experience/
+    external_data/human_input/provider_output) → Evidence 字段 dict。"""
+    parts = spec.split(":", 2)
+    if len(parts) < 2 or not parts[0] or not parts[1]:
+        raise CliError(
+            f"evidence must be TYPE:ID[:DESC], got {spec!r} "
+            f"(types: artifact/event/experience/external_data/human_input/provider_output)",
+            exit_code=2,
+        )
+    return {
+        "source_type": parts[0],
+        "source_id": parts[1],
+        "description": parts[2] if len(parts) > 2 else "",
+    }
+
+
+def _parse_option_spec(spec: str) -> dict:
+    """解析选项规格 NAME:SCORE[:reason[:EVIDENCE]]。
+
+    - SCORE: 0-1 单值 (context 评估分) 或四因素逗号分隔
+      capability,cost,performance,experience (规则评分输入, 每项 0-1)。
+    - reason: 选项描述/理由 (可选)。
+    - EVIDENCE: 可选证据引用 TYPE:ID[:DESC] (缺省继承 context 证据链)。
+    """
+    parts = spec.split(":", 3)
+    if len(parts) < 2 or not parts[0] or not parts[1]:
+        raise CliError(
+            f"option must be NAME:SCORE[:reason[:EVIDENCE]], got {spec!r} "
+            f"(SCORE = 0-1 or capability,cost,performance,experience)",
+            exit_code=2,
+        )
+    name, score_part = parts[0], parts[1]
+    reason = parts[2] if len(parts) > 2 else ""
+    evidence_ref = parts[3] if len(parts) > 3 else None
+    option: dict = {"id": name, "name": name, "description": reason}
+    if "," in score_part:
+        values = [float(v) for v in score_part.split(",")]
+        if len(values) != 4:
+            raise CliError(
+                f"option {name!r}: SCORE must be 0-1 or 4 factors "
+                f"capability,cost,performance,experience, got {score_part!r}",
+                exit_code=2,
+            )
+        option["factors"] = dict(zip(("capability", "cost", "performance", "experience"), values))
+    else:
+        option["score"] = float(score_part)
+    if evidence_ref:
+        option["evidence"] = [_parse_evidence_spec(evidence_ref)]
+    return option
+
+
+def _build_decision_context(args: Any) -> dict:
+    """组装 DecisionContext 字段 dict (CLI 输入 → 模型):
+
+    - --context FILE: JSON 基座 (subject/decision_type/objective/constraints/
+      options/evidence_sources/approval), CLI 显式标志逐字段覆盖, 列表标志
+      (--option/--evidence/--constraint) 追加。
+    - --option/--evidence/--constraint: 追加式。
+    - --approval-artifact: 9c 审批绑定点 (高风险时经 ApprovalGate 提交请求)。
+    """
+    base: dict = {}
+    context_file = getattr(args, "context", None)
+    if context_file:
+        import json
+
+        from pathlib import Path
+
+        path = Path(context_file)
+        if not path.exists():
+            raise CliError(f"context file not found: {context_file}", exit_code=7)
+        try:
+            base = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise CliError(f"invalid context file {context_file}: {exc}", exit_code=1) from exc
+        if not isinstance(base, dict):
+            raise CliError(f"context file must contain a JSON object: {context_file}", exit_code=1)
+
+    fields: dict = dict(base)
+    if args.type:
+        fields["decision_type"] = args.type
+    if args.subject:
+        fields["subject"] = args.subject
+    if args.objective:
+        fields["objective"] = args.objective
+
+    options = list(fields.get("available_options") or [])
+    options.extend(_parse_option_spec(s) for s in getattr(args, "option", None) or [])
+    if options:
+        fields["available_options"] = options
+
+    constraints = list(fields.get("constraints") or [])
+    constraints.extend(getattr(args, "constraint", None) or [])
+    if constraints:
+        fields["constraints"] = constraints
+
+    evidence = list(fields.get("evidence_sources") or [])
+    evidence.extend(_parse_evidence_spec(s) for s in getattr(args, "evidence", None) or [])
+    if evidence:
+        fields["evidence_sources"] = evidence
+
+    artifact = getattr(args, "approval_artifact", None)
+    if artifact:
+        binding = dict(fields.get("approval") or {})
+        binding["artifact_id"] = artifact
+        if getattr(args, "gate", None):
+            binding["gate"] = args.gate
+        fields["approval"] = binding
+    return fields
+
+
+def cmd_intelligence_decision_create(ctx: FactoryContext, args: Any) -> dict:
+    """factory intelligence decision create — 决策链: 分析→选项→评分→推荐→
+    风险→Approval (发 intelligence.decision.* 事件; 高风险经 9c ApprovalGate
+    提交审批, approval_request_id 回填)。
+
+    选项评分: 规则四因素加权 (capability/cost/performance/experience, 不绑定
+    LLM); 禁无证据: context 无证据 → 拒绝创建。--approval-artifact 指定
+    product Artifact id 作为 9c 审批绑定点 (仅高风险决策提交请求)。
+    """
+    from intelligence.decision import DecisionIntelligenceError, NoEvidenceError
+
+    from intelligence.models import DecisionContext
+
+    with ctx.logger_scope() as logger:
+        approval_service = None
+        if getattr(args, "approval_artifact", None):
+            from product.service import ProductService
+
+            from product.store import ProductStore
+
+            approval_service = ProductService(
+                ProductStore(ctx.root / "product"), logger=logger
+            )
+        engine = _open_intelligence_engine(ctx, logger, approval_service)
+        try:
+            context = DecisionContext.model_validate(_build_decision_context(args))
+            decision = engine.decide(context)
+        except NoEvidenceError as exc:
+            raise CliError(str(exc), exit_code=1) from exc
+        except DecisionIntelligenceError as exc:
+            raise CliError(str(exc), exit_code=1) from exc
+        result = engine.result(decision)
+        event_seq = _intelligence_last_seq(logger, EventType.INTELLIGENCE_DECISION_CREATED)
+    return {
+        "ok": True,
+        "decision": decision.to_dict(),
+        "result": result.to_dict(),
+        "event_seq": event_seq,
+    }

@@ -38,6 +38,7 @@ from .commands import (
     cmd_git_diff,
     cmd_git_status,
     cmd_init,
+    cmd_intelligence_decision_create,
     cmd_metrics,
     cmd_project_list,
     cmd_project_show,
@@ -554,6 +555,36 @@ def build_parser() -> Any:
     )
     json_opt(p_pl_templates)
 
+    # factory intelligence decision <sub> (Phase 10A-2, ADR-0031: Decision Intelligence)
+    p_intel = sub.add_parser(
+        "intelligence", help="Intelligence Layer: 决策智能 — 分析/评分/推荐/风险/Approval (独立空间 .factory/intelligence/, 发 intelligence.* 事件)"
+    )
+    json_opt(p_intel)
+    isub = p_intel.add_subparsers(dest="intelligence_command", required=True)
+    p_intel_decision = isub.add_parser(
+        "decision", help="决策链: Context→Analysis→Options→Evaluation→Recommendation→Risk→Decision Artifact (规则评分四因素, 不绑定 LLM)"
+    )
+    json_opt(p_intel_decision)
+    dsub = p_intel_decision.add_subparsers(dest="decision_command", required=True)
+    p_dc_create = dsub.add_parser(
+        "create", help="创建决策: 分析→选项→规则评分→推荐→风险→Approval (发 intelligence.decision.* 事件; 高风险经 9c ApprovalGate 提交审批)"
+    )
+    json_opt(p_dc_create)
+    p_dc_create.add_argument("--type", required=True,
+                             help="决策类型 (provider_selection/architecture_change/deployment_strategy/provider_migration/...)")
+    p_dc_create.add_argument("--subject", required=True, help="决策对象 id (task/project/idea/artifact)")
+    p_dc_create.add_argument("--objective", default="", help="决策目标描述")
+    p_dc_create.add_argument("--constraint", action="append", default=[], help="约束 (可多次; 高风险关键词检测输入)")
+    p_dc_create.add_argument("--option", action="append", default=[],
+                             help="选项 NAME:SCORE[:reason[:EVIDENCE]] — SCORE=0-1 单值或四因素 capability,cost,performance,experience (可多次)")
+    p_dc_create.add_argument("--evidence", action="append", default=[],
+                             help="证据 TYPE:ID[:DESC] (六来源: artifact/event/experience/external_data/human_input/provider_output; 可多次, 必须 ≥1)")
+    p_dc_create.add_argument("--context", default=None,
+                             help="决策上下文 JSON 文件 (基座; CLI 标志逐字段覆盖, 列表标志追加)")
+    p_dc_create.add_argument("--approval-artifact", default=None,
+                             help="9c 审批绑定点: 已存在的 product Artifact id (仅高风险决策提交审批请求)")
+    p_dc_create.add_argument("--gate", default=None, help="审批门 id (默认按 artifact.type 解析 9c 默认门)")
+
     # factory workspace <sub> (Phase 6A, ADR-0016)
     p_workspace = sub.add_parser(
         "workspace", help="Workspace 管理: 多项目组织单位 (workspace.yaml, 发 workspace.* 事件)"
@@ -721,6 +752,8 @@ def main(argv: list[str] | None = None) -> int:
             result = cmd_understand(ctx, args)
         elif args.command == "product":
             result = _dispatch_product(ctx, args)
+        elif args.command == "intelligence":
+            result = _dispatch_intelligence(ctx, args)
         else:  # pragma: no cover — argparse required=True 已拦截
             raise CliError(f"unknown command: {args.command}", exit_code=2)
     except CliError as exc:
@@ -940,6 +973,20 @@ def _dispatch_product(ctx: FactoryContext, args: Any) -> dict:
     raise CliError(f"unknown product command: {args.product_command}", exit_code=2)
 
 
+def _dispatch_intelligence(ctx: FactoryContext, args: Any) -> dict:
+    """Intelligence 命令派发 (Phase 10A-2, ADR-0031: Decision Intelligence)。"""
+    if args.intelligence_command == "decision":
+        if args.decision_command == "create":
+            return cmd_intelligence_decision_create(ctx, args)
+        raise CliError(
+            f"unknown intelligence decision command: {args.decision_command}",
+            exit_code=2,
+        )
+    raise CliError(
+        f"unknown intelligence command: {args.intelligence_command}", exit_code=2
+    )
+
+
 # ------------------------------------------------------------------ 输出
 
 def _print_output(args: Any, result: dict) -> None:
@@ -988,6 +1035,8 @@ def _print_output(args: Any, result: dict) -> None:
         _print_understand(args, result)
     elif args.command == "product":
         _print_product(args, result)
+    elif args.command == "intelligence":
+        _print_intelligence(args, result)
 
 
 def _render_table(
@@ -1842,6 +1891,32 @@ def _print_product_lifecycle_status(r: dict) -> None:
         print(f"    - {action}")
     if r.get("event_seq"):
         print(f"  事件      product.lifecycle.status_viewed seq={r['event_seq']}")
+
+
+# ------------------------------------------------------------------ Phase 10A-2: Intelligence (ADR-0031)
+
+
+def _print_intelligence(args: Any, r: dict) -> None:
+    """Intelligence 命令输出 (决策智能; --json 已在 _print_output 前置处理)。"""
+    if args.intelligence_command == "decision":
+        _print_intelligence_decision_create(r)
+
+
+def _print_intelligence_decision_create(r: dict) -> None:
+    """decision create 输出: Decision Artifact + 推荐/置信度/风险/Approval 绑定。"""
+    d, res = r["decision"], r["result"]
+    print(f"✔ 决策 {d['id']} 已创建 (status: {d['status']})")
+    print(f"  type        {d['decision_type']}")
+    print(f"  subject     {d['subject_id']}")
+    print(f"  推荐        {res['recommendation']}")
+    alts = ", ".join(res["alternatives"]) if res["alternatives"] else "-"
+    print(f"  备选        {alts}")
+    print(f"  置信度      {res['confidence']:.3f}")
+    print(f"  风险        {res['risk_level']}  (requires_approval: {str(res['requires_approval']).lower()})")
+    if res.get("approval_request_id"):
+        print(f"  审批        {res['approval_request_id']} (9c ApprovalGate 绑定)")
+    if r.get("event_seq"):
+        print(f"  事件      intelligence.decision.created seq={r['event_seq']}")
 
 
 if __name__ == "__main__":

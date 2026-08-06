@@ -41,9 +41,13 @@ def _core_py_files() -> list[Path]:
 
 class TestCoreDoesNotImportIntelligence:
     def test_no_core_module_imports_intelligence(self):
-        """Core 零感知: 任何 Core 模块源码无 import intelligence (含注释外注释,
-        只查 import 语句 — 文档里 "Intelligence" 单词不算)。"""
-        pattern = re.compile(r"(?m)^\s*(?:import intelligence\b|from intelligence\b)")
+        """Core 零感知: 任何 Core 模块**顶层**无 import intelligence。
+
+        只禁顶层 (行首零缩进) — 函数内延迟导入允许 (10A-2 CLI 装配方,
+        Removal Isolation 同 product/provider 模式: 删除 intelligence/ 不影响
+        模块加载)。注释/文档里 \"Intelligence\" 单词不算 import 语句。
+        """
+        pattern = re.compile(r"(?m)^(?:import intelligence\b|from intelligence\b)")
         offenders = []
         for p in _core_py_files():
             if pattern.search(p.read_text(encoding="utf-8")):
@@ -51,9 +55,14 @@ class TestCoreDoesNotImportIntelligence:
         assert offenders == []
 
     def test_intelligence_dir_not_imported_by_cli(self):
-        """CLI 装配零引用 (10A-1 无 CLI 命令, 10A-5 接入时才需延迟导入)。"""
+        """CLI 顶层零引用: 装配命令经函数内延迟导入 (同 product/provider 模式)。
+
+        10A-1 无 CLI 命令; 10A-2 起 intelligence decision create 走
+        `_open_intelligence_engine` 延迟导入 — 删除 intelligence/ 不影响 CLI
+        模块加载 (命令调用时响亮失败, 装配点不静默降级)。
+        """
         root = Path(__file__).resolve().parents[2] / "factory-core" / "cli"
-        pattern = re.compile(r"(?m)^\s*(?:import intelligence\b|from intelligence\b)")
+        pattern = re.compile(r"(?m)^(?:import intelligence\b|from intelligence\b)")
         for p in root.rglob("*.py"):
             assert not pattern.search(p.read_text(encoding="utf-8")), p
 

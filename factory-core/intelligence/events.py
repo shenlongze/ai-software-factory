@@ -26,7 +26,11 @@ def record_decision_created(
     decision: Any,
     source: str = "intelligence",
 ) -> Event | None:
-    """Decision 落库 (intelligence.decision.created; AI 推荐产物, ≠ approval.*)。"""
+    """Decision 落库 (intelligence.decision.created; AI 推荐产物, ≠ approval.*)。
+
+    10A-2 扩展: payload 追加 risk_level/requires_approval (决策链终事件 —
+    事件唯一事实源: 从 payload 可重建风险等级与审批需求)。
+    """
     if logger is None:
         return None
     return logger.record(
@@ -42,8 +46,89 @@ def record_decision_created(
             "recommendation": decision.recommendation,
             "confidence": decision.confidence,
             "risk": decision.risk,
+            "risk_level": decision.risk_level,
+            "requires_approval": decision.requires_approval,
             "evidence_count": len(decision.evidence),
             "approval_request_id": decision.approval_request_id,
+        },
+    )
+
+
+def record_decision_analysis_started(
+    logger: Any,
+    *,
+    context: Any,
+    source: str = "intelligence",
+) -> Event | None:
+    """决策分析开始 (intelligence.decision.analysis.started; 决策链第 1 事件)。"""
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.INTELLIGENCE_DECISION_ANALYSIS_STARTED,
+        source=source,
+        stage="analysis",
+        action="start decision analysis",
+        result="OK",
+        payload={
+            "subject_id": context.subject,
+            "decision_type": context.decision_type,
+            "option_count": len(context.available_options),
+            "evidence_count": len(context.evidence_sources),
+        },
+    )
+
+
+def record_decision_analysis_completed(
+    logger: Any,
+    *,
+    analysis: Any,
+    context: Any,
+    source: str = "intelligence",
+) -> Event | None:
+    """决策分析完成 (intelligence.decision.analysis.completed; 载荷含因素/观察/置信度)。"""
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.INTELLIGENCE_DECISION_ANALYSIS_COMPLETED,
+        source=source,
+        stage="analysis",
+        action="complete decision analysis",
+        result="OK",
+        payload={
+            "subject_id": context.subject,
+            "decision_type": context.decision_type,
+            "factors": analysis.factors,
+            "observations_count": len(analysis.observations),
+            "confidence": analysis.confidence,
+            "evidence_count": len(analysis.evidence),
+        },
+    )
+
+
+def record_decision_option_evaluated(
+    logger: Any,
+    *,
+    option: Any,
+    context: Any,
+    source: str = "intelligence",
+) -> Event | None:
+    """选项规则评分完成 (intelligence.decision.option.evaluated; 每选项一条)。"""
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.INTELLIGENCE_DECISION_OPTION_EVALUATED,
+        source=source,
+        stage="evaluation",
+        action="evaluate decision option",
+        result="OK",
+        payload={
+            "subject_id": context.subject,
+            "option_id": option.id,
+            "name": option.name,
+            "score": option.score,
+            "factors": option.factors,
+            "reasoning_count": len(option.reasoning),
+            "evidence_count": len(option.evidence),
         },
     )
 

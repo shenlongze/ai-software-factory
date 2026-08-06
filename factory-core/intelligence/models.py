@@ -111,6 +111,20 @@ class DecisionStatus(str, Enum):
     REJECTED = "rejected"
 
 
+class RiskLevel(str, Enum):
+    """决策风险等级 (10A-2 规则检测输出, ADR-0031): low/medium/high。
+
+    high = 触发高风险规则 (架构变更/部署策略/Provider 迁移/成本上升) →
+    requires_approval=true (复用 9c ApprovalGate); medium = 竞争激烈或置信度
+    低 (需人工确认); low = 未触发任何风险规则。等级 → 数值风险
+    (Decision.risk 0-1) 映射见 decision.RISK_LEVEL_TO_NUMERIC。
+    """
+
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
 class Evidence(BaseModel):
     """单条证据: 支撑 Decision/Recommendation 的事实引用 (可追溯/可审计)。
 
@@ -139,32 +153,220 @@ class Evidence(BaseModel):
         return self.model_dump(mode="json")
 
 
+class ApprovalBinding(BaseModel):
+    """9c Approval 绑定点 (10A-2, ADR-0031): 高风险决策 → 复用 ApprovalGate。
+
+    只描述"往哪个 Artifact 绑审批", 不携带任何审批状态机 (9c 本体不复制):
+    artifact_id = 已存在的 product Artifact id (request_approval 前置条件 —
+    任何 Artifact 可申请, 门不绑定 PRD/UI); gate 缺省按 artifact.type 解析
+    默认门; by = 申请人 (缺省 "intelligence"); note = 申请备注。
+    """
+
+    artifact_id: str
+    gate: str | None = None
+    by: str = "intelligence"
+    note: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """JSON 友好序列化 (store/CLI --json/测试断言共用)。"""
+        return self.model_dump(mode="json")
+
+
+class DecisionOption(BaseModel):
+    """决策候选选项 (10A-2 引擎输入/输出, ADR-0031)。
+
+    - factors: 四因素评估数据 (capability/cost/performance/experience, 每项
+      0-1) — 来自 context 提供的评估数据 (规则评分输入, 不绑定 LLM)。
+    - score (0-1): 综合评分 — 引擎按四因素加权计算回填 (无 factors 时取
+      context 提供的评估分); reasoning: 评分解释 (逐条为什么, 可审计)。
+    - evidence: 该选项的证据链 (禁无证据推荐 — 引擎强制每选项 ≥1 证据)。
+    """
+
+    id: str
+    name: str
+    description: str = ""
+    score: float = Field(default=0.0, ge=0.0, le=1.0)
+    factors: dict[str, float] = Field(default_factory=dict)
+    reasoning: list[str] = Field(default_factory=list)
+    advantages: list[str] = Field(default_factory=list)
+    disadvantages: list[str] = Field(default_factory=list)
+    risks: list[str] = Field(default_factory=list)
+    evidence: list[Evidence] = Field(default_factory=list)
+
+    @field_validator("factors")
+    @classmethod
+    def _factors_in_range(cls, v: dict[str, float]) -> dict[str, float]:
+        for key, value in v.items():
+            if not 0.0 <= value <= 1.0:
+                raise ValueError(f"factor {key!r} must be in [0, 1], got {value}")
+        return v
+
+    @field_validator("evidence", mode="before")
+    @classmethod
+    def _coerce_evidence(cls, v: Any) -> list[Evidence]:
+        if v is None:
+            return []
+        return [e if isinstance(e, Evidence) else Evidence.model_validate(e) for e in v]
+
+    def to_dict(self) -> dict[str, Any]:
+        """JSON 友好序列化 (store/CLI --json/测试断言共用)。"""
+        return self.model_dump(mode="json")
+
+
+class DecisionContext(BaseModel):
+    """决策上下文 (10A-2 引擎输入): 只读事实快照, 引擎只消费不修改。
+
+    - subject: 决策对象 id (task/project/idea/artifact); decision_type 受控
+      词汇 (provider_selection/architecture_change/deployment_strategy/
+      provider_migration/... — 高风险规则按此分类)。
+    - objective/constraints: 决策目标与约束 (规则分析观察来源 + 风险关键词
+      检测输入)。
+    - available_options: 候选选项 (携带四因素评估数据或 context 评估分)。
+    - evidence_sources: 证据链 (六来源, 必须 ≥1 — 禁无证据决策)。
+    - approval: 可选 9c Approval 绑定点 (高风险 + 已装配审批服务时提交请求)。
+    """
+
+    subject: str
+    decision_type: str = "general"
+    objective: str = ""
+    constraints: list[str] = Field(default_factory=list)
+    available_options: list[DecisionOption] = Field(default_factory=list)
+    evidence_sources: list[Evidence] = Field(default_factory=list)
+    approval: ApprovalBinding | None = None
+    created_at: str = Field(default_factory=_now)
+
+    @field_validator("available_options", mode="before")
+    @classmethod
+    def _coerce_options(cls, v: Any) -> list[DecisionOption]:
+        if v is None:
+            return []
+        return [o if isinstance(o, DecisionOption) else DecisionOption.model_validate(o) for o in v]
+
+    @field_validator("constraints", mode="before")
+    @classmethod
+    def _coerce_constraints(cls, v: Any) -> list[str]:
+        # 容器字段 None → 默认空 (CLI --context JSON 可能带 null, before 模式
+        # 在类型检查前归一 — 同 available_options/evidence_sources 模式)
+        if v is None:
+            return []
+        return list(v)
+
+    @field_validator("evidence_sources", mode="before")
+    @classmethod
+    def _coerce_evidence(cls, v: Any) -> list[Evidence]:
+        if v is None:
+            return []
+        return [e if isinstance(e, Evidence) else Evidence.model_validate(e) for e in v]
+
+    def to_dict(self) -> dict[str, Any]:
+        """JSON 友好序列化 (store/CLI --json/测试断言共用)。"""
+        return self.model_dump(mode="json")
+
+
+class DecisionAnalysis(BaseModel):
+    """分析产物 (10A-2 流程第 1 步, ADR-0031): Context → Analysis。
+
+    - factors: 决策因素聚合评估 (四因素 0-1 归一, 来自选项因素均值/中性分)。
+    - observations: 分析观察 (决策类型/目标/约束/候选数 — 逐条规则生成)。
+    - confidence (0-1): 分析置信度 (证据量规则计算); evidence: 分析依据证据链。
+    """
+
+    decision_type: str = "general"
+    subject: str = ""
+    factors: dict[str, float] = Field(default_factory=dict)
+    observations: list[str] = Field(default_factory=list)
+    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+    evidence: list[Evidence] = Field(default_factory=list)
+
+    @field_validator("evidence", mode="before")
+    @classmethod
+    def _coerce_evidence(cls, v: Any) -> list[Evidence]:
+        if v is None:
+            return []
+        return [e if isinstance(e, Evidence) else Evidence.model_validate(e) for e in v]
+
+    def to_dict(self) -> dict[str, Any]:
+        """JSON 友好序列化 (store/CLI --json/测试断言共用)。"""
+        return self.model_dump(mode="json")
+
+
+class RiskAssessment(BaseModel):
+    """风险检测产物 (10A-2 流程第 4 步, ADR-0031): 规则检测输出。
+
+    - risk_level: low/medium/high (高风险触发: 架构变更/部署策略/Provider
+      迁移/成本上升; medium: 竞争激烈或低置信度)。
+    - requires_approval: high 或 低置信度 → True (复用 9c ApprovalGate)。
+    - reasons: 逐条风险解释 (可读); rules_triggered: 命中的规则锚点
+      (decision_type:<t> / option:<id>:<risk> / context:<text>, 可审计)。
+    """
+
+    risk_level: str = RiskLevel.LOW.value
+    requires_approval: bool = False
+    reasons: list[str] = Field(default_factory=list)
+    rules_triggered: list[str] = Field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        """JSON 友好序列化 (store/CLI --json/测试断言共用)。"""
+        return self.model_dump(mode="json")
+
+
+class DecisionResult(BaseModel):
+    """决策结果 (10A-2 流程输出, ADR-0031): 推荐 + 备选 + 置信度 + 风险 + 审批。
+
+    由 Decision 派生 (decision_result), 不独立持久化 — 落库事实是 Decision
+    Artifact (options/recommendation/confidence/risk_level/evidence 全链可追溯)。
+    """
+
+    decision_id: str
+    recommendation: str
+    alternatives: list[str] = Field(default_factory=list)
+    confidence: float = Field(ge=0.0, le=1.0)
+    risk_level: str = RiskLevel.LOW.value
+    requires_approval: bool = False
+    approval_request_id: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """JSON 友好序列化 (store/CLI --json/测试断言共用)。"""
+        return self.model_dump(mode="json")
+
+
 class Decision(BaseModel):
     """智能决策产物: 分析 + 选项 + 推荐 + 证据 + 评分 (AI 推荐, 不自动执行)。
 
-    - options (list[dict]): 选项集合, 结构由 10A-2 Decision Intelligence 引擎
-      定义 (如 id/title/pros/cons), 本层只做容器校验 (KISS, 不绑定引擎)。
-    - recommendation: 推荐选项标识 (options 内 id/title key, 引擎定义); None =
-      尚未给出推荐。
-    - evidence: 决策依据证据链 (Evidence 六来源, 可追溯)。
-    - confidence (0-1): 推荐置信度; risk (0-1): 推荐风险。低 confidence →
-      应降级为"需要人工"而非自动采纳 (§Q4 机制 5)。
+    - options (list[dict]): 选项集合, 10A-2 引擎写入 DecisionOption.to_dict()
+      (id/name/score/factors/reasoning/evidence 全链可追溯)。
+    - recommendation: 推荐选项标识 (options 内 id); None = 尚未给出推荐。
+    - evidence: 决策依据证据链 (Evidence 六来源, 可追溯) — 禁无证据决策。
+    - confidence (0-1): 推荐置信度; risk (0-1): 推荐风险 (risk_level 等级 →
+      数值映射, low=0.2/medium=0.5/high=0.8)。低 confidence → 应降级为
+      "需要人工"而非自动采纳 (§Q4 机制 5)。
+    - risk_level (low/medium/high) + requires_approval (10A-2): 规则风险检测
+      输出 — high → requires_approval=true (复用 9c ApprovalGate)。
+    - analysis: DecisionAnalysis.to_dict() 快照 (分析全链可审计)。
     - status: DecisionStatus (open/recommended/accepted/rejected) — Decision
-      ≠ Approval: approval_request_id 可绑定 9c 审批请求 (可选, 本阶段预留字段)。
+      ≠ Approval: approval_request_id 可绑定 9c 审批请求 (可选)。
     """
 
     id: str = Field(default_factory=_new_id)
-    decision_type: str = "general"      # provider_selection/task_plan/... (10A-2 受控词汇)
+    decision_type: str = "general"      # provider_selection/architecture_change/... (10A-2 受控词汇)
     subject_id: str                     # 决策对象 id (task/project/idea/artifact)
     description: str = ""               # 决策问题描述 (分析对象)
     options: list[dict[str, Any]] = Field(default_factory=list)
     recommendation: str | None = None   # 推荐选项标识 (引擎定义 options 内 key)
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
     risk: float = Field(default=0.0, ge=0.0, le=1.0)
+    risk_level: str = RiskLevel.LOW.value  # low/medium/high (10A-2 规则检测输出)
+    requires_approval: bool = False        # high 风险 / 低置信度 → True (9c 复用)
+    analysis: dict[str, Any] | None = None  # DecisionAnalysis.to_dict() 快照 (10A-2)
     evidence: list[Evidence] = Field(default_factory=list)
     status: DecisionStatus = DecisionStatus.OPEN
     approval_request_id: str | None = None  # 可选: 绑定 9c Approval 请求 (复用不复制)
     created_at: str = Field(default_factory=_now)
+
+    @field_validator("risk_level", mode="before")
+    @classmethod
+    def _coerce_risk_level(cls, v: Any) -> str:
+        return RiskLevel(v).value if isinstance(v, str) else v.value if isinstance(v, RiskLevel) else v
 
     @field_validator("status", mode="before")
     @classmethod

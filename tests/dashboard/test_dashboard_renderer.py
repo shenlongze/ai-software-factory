@@ -77,12 +77,13 @@ class TestRendererBasics:
         # 第十六视图 changeflow (ADR-0020); Phase 7 新增第十七视图 understanding
         # (ADR-0021) — 精确集合断言随视图集扩展最小化更新
         # (行为观察点, 非 API; 见 ADR-0014 冲突消解)。Phase 8A 新增第十八视图
-        # provider (ADR-0022); Phase 9A 新增第十九视图 product (ADR-0026)。
+        # provider (ADR-0022); Phase 9A 新增第十九视图 product (ADR-0026);
+        # Phase 9d 新增第二十视图 lifecycle (ADR-0029)。
         assert set(VIEWS) == {
             "overview", "tasks", "agents", "workflows", "executions", "recovery",
             "catalog", "metrics", "projects", "workspace", "agents_utilization",
             "runtime_usage", "workspace_events", "git", "change", "changeflow",
-            "understanding", "provider", "product",
+            "understanding", "provider", "product", "lifecycle",
         }
 
     def test_render_views_iterates_all_single_views(self, collector):

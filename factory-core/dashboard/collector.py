@@ -42,6 +42,7 @@ from .models import (
     ExecutionSnapshot,
     FactorySnapshot,
     GitSnapshot,
+    LifecycleSnapshot,
     MetricsSnapshot,
     ProjectSnapshot,
     ProjectsSnapshot,
@@ -68,6 +69,37 @@ def _required_action(status: str) -> str:
     if status == "delegated":
         return "await delegate"
     return "revise & re-request"
+
+
+def _lifecycle_next_actions(idea_id: str, status: str, stage: dict | None,
+                            pending: dict | None) -> list[str]:
+    """生命周期下一步动作 (与 engine._next_actions 同构的纯函数副本 — collector
+    零 product imports 铁律, 不跨包引用; Phase 9d ADR-0029)。Lifecycle View 与
+    CLI status 共用同一形状 (idea 锚点进文案)。"""
+    if status == "completed":
+        return ["lifecycle completed — tasks are ready for Core Workflow execution"]
+    if status == "paused":
+        if pending is not None:
+            return [
+                f"decide approval {pending.get('id')} (product approval decide "
+                f"{pending.get('id')} approve|reject|changes_requested|delegate)"
+            ]
+        if stage is not None and stage.get("kind") == "approval":
+            return ["waiting for approval outcome (already decided — lifecycle will advance)"]
+        return ["resume lifecycle (product lifecycle resume is engine API)"]
+    if stage is None:
+        return ["no current stage"]
+    if stage.get("kind") == "approval":
+        return ["approval stage entered — lifecycle paused"]
+    if stage.get("kind") == "artifact_generation":
+        return [
+            f"generate {stage.get('artifact_type') or 'artifact'} artifact "
+            f"(product generate --type {stage.get('artifact_type')} {idea_id}), "
+            f"then advance (product lifecycle advance {idea_id})"
+        ]
+    if stage.get("kind") == "decision":
+        return [f"advance to produce architecture decision (product lifecycle advance {idea_id})"]
+    return [f"advance to produce task plan + tasks (product lifecycle advance {idea_id})"]
 
 
 class DashboardCollector:
@@ -102,6 +134,7 @@ class DashboardCollector:
         product_store: Any | None = None,  # Phase 9A: ProductStore (Product View)
         include_product: bool = False,  # Phase 9A: Product View 聚合开关 (ADR-0026)
         experience_store: Any | None = None,  # Phase 9B: ExperienceStore (Product View 经验计数)
+        include_lifecycle: bool = False,  # Phase 9d: Lifecycle View 聚合开关 (ADR-0029)
     ) -> None:
         self._task_store = task_store
         self._agent_registry = agent_registry
@@ -160,6 +193,7 @@ class DashboardCollector:
         self._product_store = product_store
         self._include_product = include_product
         self._experience_store = experience_store
+        self._include_lifecycle = include_lifecycle
 
     # ------------------------------------------------------------------ 主入口
 
@@ -693,8 +727,12 @@ class DashboardCollector:
         + 终态计数 + approval_history 联表 (请求 + 决定, 与 service.approval_history
         同构) — 默认空/0, 无 9c 数据时既有 Product View 输出逐位不变。
         """
-        if not self._include_product or self._product_store is None:
+        if self._product_store is None:
             return ProductSnapshot()
+        if not self._include_product:
+            # Phase 9d: include_lifecycle 独立开关 — Lifecycle View 不依赖
+            # include_product (默认关, 零回归; 仅聚合生命周期段)。
+            return ProductSnapshot(lifecycle=self._collect_lifecycle())
         try:
             ideas = self._product_store.list_ideas()
             artifacts = self._product_store.list_artifacts()
@@ -760,4 +798,73 @@ class DashboardCollector:
             generations=[a.to_dict() for a in generations],
             experience_total=len(experiences),
             experiences=[e.to_dict() for e in experiences],
+            lifecycle=self._collect_lifecycle(),
+        )
+
+    def _collect_lifecycle(self) -> LifecycleSnapshot:
+        """生命周期编排汇总 (Phase 9d, ADR-0029; lifecycle.json 双节只读)。
+
+        只读: 仅调 ProductStore 读接口 (list_lifecycles/list_decision_artifacts/
+        list_requests/list_artifacts); 不发事件 (product.lifecycle.* 审计由 CLI
+        命令层发出, 同 dashboard.viewed 边界)。失败安全: 未装配 product_store /
+        include_lifecycle 关闭 → LifecycleSnapshot() 空快照; store 异常 → 空
+        快照 (同 include_product 失败安全哲学)。默认关闭 — 既有 dashboard 行为/
+        成本完全不变; 本模块零顶层 imports product (Removal Isolation 源码级
+        断言, 不跨包引用 — next_actions 与 engine._next_actions 同构的纯函数副本)。
+        """
+        if not self._include_lifecycle or self._product_store is None:
+            return LifecycleSnapshot()
+        try:
+            lifecycles = self._product_store.list_lifecycles()
+            decisions = self._product_store.list_decision_artifacts()
+            requests = self._product_store.list_requests()
+            artifacts = self._product_store.list_artifacts()
+        except Exception:
+            return LifecycleSnapshot()  # 失败安全: 生命周期数据异常不影响整视图
+        by_status = Counter(lc.status for lc in lifecycles)
+        idea_ids = {lc.idea_id for lc in lifecycles}
+        request_by_id = {r.id: r for r in requests}
+        current_stages: list[dict[str, Any]] = []
+        pending_approvals: list[dict[str, Any]] = []
+        next_actions: list[dict[str, Any]] = []
+        for lc in lifecycles:
+            stage = lc.current_stage
+            stage_dict = stage.to_dict() if stage is not None else None
+            pending = None
+            if stage is not None and stage.kind == "approval":
+                req = None
+                if stage.approval_request_id is not None:
+                    req = request_by_id.get(stage.approval_request_id)
+                if req is not None and req.status == "pending":
+                    pending = req.to_dict()
+            # completed → 无当前阶段 (与 engine.status 同口径; 已交 Core 执行)。
+            if stage is not None and lc.status != "completed":
+                current_stages.append({
+                    "lifecycle_id": lc.id,
+                    "idea_id": lc.idea_id,
+                    **(stage.to_dict()),
+                })
+            if pending is not None:
+                pending_approvals.append(pending)
+            next_actions.append({
+                "idea_id": lc.idea_id,
+                "lifecycle_id": lc.id,
+                "status": lc.status,
+                "current_stage": stage.name if stage is not None else None,
+                "actions": _lifecycle_next_actions(lc.idea_id, lc.status, stage_dict, pending),
+            })
+        lifecycle_artifacts = [
+            a for a in artifacts
+            if isinstance(a.content, dict) and a.content.get("idea_id") in idea_ids
+        ]
+        lifecycle_decisions = [d for d in decisions if d.idea_id in idea_ids]
+        return LifecycleSnapshot(
+            lifecycle_total=len(lifecycles),
+            by_status=dict(sorted(by_status.items())),
+            lifecycles=[lc.to_dict() for lc in lifecycles],
+            current_stages=current_stages,
+            pending_approvals=pending_approvals,
+            artifacts=[a.to_dict() for a in lifecycle_artifacts],
+            decisions=[d.to_dict() for d in lifecycle_decisions],
+            next_actions=next_actions,
         )

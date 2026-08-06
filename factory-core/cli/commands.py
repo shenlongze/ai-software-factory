@@ -1680,10 +1680,12 @@ def cmd_dashboard(ctx: FactoryContext, args: Any) -> dict:
             provider_registry = ProviderRegistry(_open_provider_store(ctx))
         # Phase 9A Product View: 仅 --view product 聚合 (include_product 默认
         # 关闭, 数据源 = ProductStore 独立空间 <root>/product/ 只读:
-        # ideas/artifacts/approvals/workflows)。延迟导入 product (Removal
-        # Isolation — 删除 product 不影响本模块加载, 同 provider 模式)。
+        # ideas/artifacts/approvals/workflows)。Phase 9d Lifecycle View: 同数据源
+        # (include_lifecycle 默认关闭, 复用 ProductStore 读接口聚合生命周期)。
+        # 延迟导入 product (Removal Isolation — 删除 product 不影响本模块加载,
+        # 同 provider 模式; 显式 --view lifecycle 时装配点响亮 rc 1)。
         product_store = None
-        if view == "product":
+        if view in ("product", "lifecycle"):
             from product.store import ProductStore
 
             product_store = ProductStore(ctx.root / "product")
@@ -1711,6 +1713,7 @@ def cmd_dashboard(ctx: FactoryContext, args: Any) -> dict:
             include_provider=view == "provider",
             product_store=product_store,
             include_product=view == "product",
+            include_lifecycle=view == "lifecycle",  # Phase 9d (ADR-0029)
         )
         snapshot = collector.collect()
         ev = logger.record(
@@ -1749,6 +1752,9 @@ def cmd_dashboard(ctx: FactoryContext, args: Any) -> dict:
                 "product_artifacts": snapshot.product.artifact_total,
                 "product_approvals_pending": snapshot.product.approval_pending,
                 "product_workflows": snapshot.product.workflow_total,
+                "lifecycle_total": snapshot.product.lifecycle.lifecycle_total,  # Phase 9d (ADR-0029)
+                "lifecycle_paused": snapshot.product.lifecycle.by_status.get("paused", 0),
+                "lifecycle_completed": snapshot.product.lifecycle.by_status.get("completed", 0),
             },
         )
     return {
@@ -2586,6 +2592,11 @@ def cmd_product_approval_decide(ctx: FactoryContext, args: Any) -> dict:
             raise CliError(str(exc), exit_code=7) from exc
         except ProductError as exc:
             raise CliError(str(exc), exit_code=1) from exc
+        # Phase 9d (ADR-0029): 生命周期联动 — 审批终态同步生命周期 (approval 阶段
+        # approved → 决策链记录 + 阶段完成 + 推进; 非 approved → 停留)。无生命
+        # 周期 → no-op (9c 既有流程不变, 零回归)。
+        engine = _open_lifecycle_engine(ctx, logger)
+        lifecycle = engine.handle_approval_outcome(request.idea_id)
         # 9c 终态事件 (approval.approved/rejected/changes_requested/delegated) 为
         # CLI 审计锚点; 9a 兼容事件 (granted/denied) 由服务层同时发出, 不在此取序
         event_seq = _product_last_seq(logger, _DECISION_EVENT[decision.decision])
@@ -2594,6 +2605,7 @@ def cmd_product_approval_decide(ctx: FactoryContext, args: Any) -> dict:
         "approval": request.to_dict(),
         "decision": decision.to_dict(),
         "product_decision": decision_artifact.to_dict() if decision_artifact is not None else None,
+        "lifecycle": lifecycle.to_dict() if lifecycle is not None else None,
         "event_seq": event_seq,
     }
 
@@ -2830,3 +2842,135 @@ def cmd_product_experience_record(ctx: FactoryContext, args: Any) -> dict:
             raise CliError(str(exc), exit_code=1) from exc
         event_seq = _product_last_seq(logger, EventType.PRODUCT_EXPERIENCE_RECORDED)
     return {"ok": True, "experience": experience.to_dict(), "event_seq": event_seq}
+
+
+# ------------------------------------------------------------------ product lifecycle (Phase 9d, ADR-0029)
+
+
+def _open_lifecycle_engine(ctx: FactoryContext, logger: Any, *, task_store: Any = None):
+    """装配 ProductLifecycleEngine (延迟导入 product + tasks — Removal Isolation)。
+
+    task_store: task 阶段经 TaskStore.create 生成 Core Task (复用既有 API, 禁
+    修改 Core); 缺省按 ctx.root/tasks 装配 — task 阶段无 task_store 时引擎
+    响亮报错 (配置缺口, 同 9b 装配点模式)。
+    """
+    from product.lifecycle import ProductLifecycleEngine
+    from product.service import ProductService
+    from product.store import ProductStore
+
+    service = ProductService(ProductStore(ctx.root / "product"), logger=logger)
+    ts = task_store if task_store is not None else TaskStore(ctx.root / "tasks")
+    return ProductLifecycleEngine(
+        ProductStore(ctx.root / "product"), service, task_store=ts, logger=logger,
+    )
+
+
+def cmd_product_lifecycle_start(ctx: FactoryContext, args: Any) -> dict:
+    """factory product lifecycle start <idea_id> [--template software_project]
+    — 启动生命周期 (发 product.lifecycle.started + product.stage.entered)。
+
+    idea 不存在 → 退出码 7; 已启动/模板未注册 → 退出码 1。启动后当前阶段 =
+    首阶段 (idea — product_idea Artifact 已存在, 可直接 advance)。
+    """
+    ProductError, ProductNotFoundError = _product_errors()
+    with ctx.logger_scope() as logger:
+        engine = _open_lifecycle_engine(ctx, logger)
+        try:
+            lifecycle = engine.start_lifecycle(
+                args.idea_id,
+                template=getattr(args, "template", None) or "software_project",
+                by="cli",
+            )
+        except ProductNotFoundError as exc:
+            raise CliError(str(exc), exit_code=7) from exc
+        except ProductError as exc:
+            raise CliError(str(exc), exit_code=1) from exc
+        event_seq = _product_last_seq(logger, EventType.PRODUCT_LIFECYCLE_STARTED)
+    return {
+        "ok": True,
+        "lifecycle": lifecycle.to_dict(),
+        "current_stage": (
+            lifecycle.current_stage.to_dict() if lifecycle.current_stage is not None else None
+        ),
+        "event_seq": event_seq,
+    }
+
+
+def cmd_product_lifecycle_status(ctx: FactoryContext, args: Any) -> dict:
+    """factory product lifecycle status <idea_id> — 生命周期状态: 当前阶段/
+    待审批/产物/决策链/下一步动作 (发 product.lifecycle.status_viewed 审计)。
+
+    无生命周期 → 退出码 7。Dashboard Lifecycle View 与 CLI status 消费同一
+    快照形状 (engine.status)。
+    """
+    from product.events import record_lifecycle_status_viewed
+
+    ProductError, ProductNotFoundError = _product_errors()
+    with ctx.logger_scope() as logger:
+        engine = _open_lifecycle_engine(ctx, logger)
+        try:
+            snapshot = engine.status(args.idea_id)
+        except ProductNotFoundError as exc:
+            raise CliError(str(exc), exit_code=7) from exc
+        record_lifecycle_status_viewed(
+            logger, lifecycle=snapshot["lifecycle"]["id"] and _load_lifecycle_for_view(ctx, logger, args.idea_id),
+        )
+        event_seq = _product_last_seq(logger, EventType.PRODUCT_LIFECYCLE_STATUS_VIEWED)
+    return {"ok": True, **snapshot, "event_seq": event_seq}
+
+
+def _load_lifecycle_for_view(ctx: FactoryContext, logger: Any, idea_id: str):
+    """status 读审计的 lifecycle 对象 (从 store 重取, 事件 payload 需领域对象)。"""
+    from product.store import ProductStore
+
+    return ProductStore(ctx.root / "product").get_lifecycle_by_idea(idea_id)
+
+
+def cmd_product_lifecycle_advance(ctx: FactoryContext, args: Any) -> dict:
+    """factory product lifecycle advance <idea_id> — 手动推进当前阶段 (非 approval
+    阶段; 发 product.stage.completed + product.stage.entered)。
+
+    artifact_generation 阶段须先有产物 (product generate --type <type>); decision
+    阶段须前序决策链完整; task 阶段生成 task_plan + Core Task (TaskStore.create)
+    并完成生命周期。approval 阶段 → 退出码 1 (经审批决定推进, 见 decide 联动);
+    无生命周期 → 退出码 7; 生命周期非 running → 退出码 1。
+    """
+    ProductError, ProductNotFoundError = _product_errors()
+    with ctx.logger_scope() as logger:
+        engine = _open_lifecycle_engine(ctx, logger)
+        try:
+            lifecycle = engine.advance(args.idea_id, by="cli")
+        except ProductNotFoundError as exc:
+            raise CliError(str(exc), exit_code=7) from exc
+        except ProductError as exc:
+            raise CliError(str(exc), exit_code=1) from exc
+        event_seq = _product_last_seq(logger, EventType.PRODUCT_STAGE_COMPLETED)
+    return {
+        "ok": True,
+        "lifecycle": lifecycle.to_dict(),
+        "current_stage": (
+            lifecycle.current_stage.to_dict() if lifecycle.current_stage is not None else None
+        ),
+        "event_seq": event_seq,
+    }
+
+
+def cmd_product_lifecycle_templates(ctx: FactoryContext, args: Any) -> dict:
+    """factory product lifecycle templates — 生命周期模板列表 (声明式解析; 发
+    product.lifecycle.templates_viewed 审计, ADR-0002)。"""
+    from product.events import record_lifecycle_templates_viewed
+
+    with ctx.logger_scope() as logger:
+        engine = _open_lifecycle_engine(ctx, logger)
+        templates = engine.templates()
+        record_lifecycle_templates_viewed(
+            logger, count=len(templates),
+            template_names=[t["name"] for t in templates],
+        )
+        event_seq = _product_last_seq(logger, EventType.PRODUCT_LIFECYCLE_TEMPLATES_VIEWED)
+    return {
+        "ok": True,
+        "count": len(templates),
+        "templates": templates,
+        "event_seq": event_seq,
+    }

@@ -917,3 +917,93 @@ def build_product(snapshot: FactorySnapshot) -> Panel:
         "Product Intelligence",
         border="cyan",
     )
+
+
+# ------------------------------------------------------------------ Product Lifecycle View (Phase 9d, ADR-0029)
+
+def build_lifecycle(snapshot: FactorySnapshot) -> Panel:
+    """Product Lifecycle View (Phase 9d, ADR-0029, 第二十视图): 生命周期编排。
+
+    数据源 = snapshot.product.lifecycle (collector include_lifecycle=True 聚合,
+    默认关闭 — 无数据时零回归): Lifecycles 表 (ProductLifecycle — 状态
+    running/paused/completed 着色, 当前阶段列), Pending Approvals 表 (当前
+    approval 阶段的 pending 审批请求), Decisions 表 (决策链 Product →
+    Architecture → Task Plan), Next Actions 列表 (每生命周期下一步人工动作,
+    与 engine.status / CLI status 同构)。
+    """
+    lc = snapshot.product.lifecycle
+    summary = _line(
+        _text(f"{lc.lifecycle_total} lifecycles", style="bold"),
+    )
+    if lc.by_status:
+        summary.append("  ").append_text(_status_counts_text(lc.by_status))
+    summary.append("  ").append_text(_line(
+        Text(
+            f"{len(lc.decisions)} decisions · {len(lc.pending_approvals)} pending approvals",
+            style="dim",
+        ),
+    ))
+
+    lifecycle_table = Table(show_header=True, header_style="bold", box=box.SIMPLE_HEAVY, expand=True)
+    for col in ("Lifecycle", "Idea", "Template", "Status", "Current Stage", "Kind"):
+        lifecycle_table.add_column(col)
+    for l in lc.lifecycles:
+        cur = l.get("current_stage") or {}
+        lifecycle_table.add_row(
+            _text(l.get("id", "")),
+            _text(l.get("idea_id", "")),
+            _text(l.get("template_name", "")),
+            _text(l.get("status", ""), style=_style_status(l.get("status"))),
+            _text(cur.get("name") or "-"),
+            _text(cur.get("kind") or "-"),
+        )
+    if not lc.lifecycles:
+        lifecycle_table.add_row(_text("(no lifecycles)", style="dim"), "", "", "", "", "")
+
+    approval_table = Table(show_header=True, header_style="bold", box=box.SIMPLE_HEAVY, expand=True)
+    for col in ("Request", "Artifact", "Gate", "Status", "Idea", "By"):
+        approval_table.add_column(col)
+    for a in lc.pending_approvals:
+        approval_table.add_row(
+            _text(a.get("id", "")),
+            _text(a.get("artifact_id", "")),
+            _text(a.get("gate", "")),
+            _text(a.get("status", ""), style=_style_status(a.get("status"))),
+            _text(a.get("idea_id") or "-"),
+            _text(a.get("by") or "-"),
+        )
+    if not lc.pending_approvals:
+        approval_table.add_row(_text("(no pending approvals)", style="dim"), "", "", "", "", "")
+
+    decision_table = Table(show_header=True, header_style="bold", box=box.SIMPLE_HEAVY, expand=True)
+    for col in ("Decision", "Type", "Idea", "Source", "Reference"):
+        decision_table.add_column(col)
+    for d in lc.decisions:
+        decision_table.add_row(
+            _text(d.get("id", "")),
+            _text(d.get("type", "")),
+            _text(d.get("idea_id") or "-"),
+            _text(d.get("source_artifact_id") or "-"),
+            _text(d.get("approved_reference") or "-"),
+        )
+    if not lc.decisions:
+        decision_table.add_row(_text("(no decisions)", style="dim"), "", "", "", "")
+
+    actions: list[Any] = []
+    for a in lc.next_actions:
+        header = Text(f"{a.get('idea_id')}", style="bold")
+        header.append(f"  ({a.get('status') or '-'}", style="dim")
+        if a.get("current_stage"):
+            header.append(f" — {a.get('current_stage')}", style="dim")
+        header.append(")", style="dim")
+        actions.append(header)
+        for action in a.get("actions") or []:
+            actions.append(_text(f"    - {action}"))
+    if not actions:
+        actions.append(_text("(no lifecycles)", style="dim"))
+
+    return _panel(
+        Group(summary, lifecycle_table, approval_table, decision_table, Group(*actions)),
+        "Product Lifecycle",
+        border="cyan",
+    )

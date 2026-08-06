@@ -31,7 +31,7 @@ class TestViewRegistry:
 
         assert "understanding" in VIEWS
         assert VIEWS[16] == "understanding"  # 第十七视图 (index 16)
-        assert len(VIEWS) == 19  # Phase 9A: 第十九视图 product (ADR-0026)
+        assert len(VIEWS) == 20  # Phase 9A: 第十九视图 product (ADR-0026); Phase 9d: 第二十视图 lifecycle (ADR-0029)
 
     def test_build_understanding_wired_in_renderer(self):
         from dashboard.renderer import _SINGLE

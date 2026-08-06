@@ -58,6 +58,10 @@ from .commands import (
     cmd_product_idea_create,
     cmd_product_idea_list,
     cmd_product_idea_show,
+    cmd_product_lifecycle_advance,
+    cmd_product_lifecycle_start,
+    cmd_product_lifecycle_status,
+    cmd_product_lifecycle_templates,
     cmd_product_workflow_resume,
     cmd_product_workflow_start,
     cmd_product_workflow_status,
@@ -522,6 +526,34 @@ def build_parser() -> Any:
                              help="人工批准判定 (true/false; None = 未判定)")
     p_pe_record.add_argument("--by", default=None, help="记录人 (默认 cli)")
 
+    # product lifecycle <sub> (Phase 9d, ADR-0029: 生命周期编排)
+    p_pl = psub.add_parser(
+        "lifecycle", help="产品生命周期编排: Idea→Research→PRD→Approval→UI→Architecture→Task (发 product.lifecycle.*/stage.*/decision.* 事件)"
+    )
+    json_opt(p_pl)
+    plsub = p_pl.add_subparsers(dest="lifecycle_command", required=True)
+    p_pl_start = plsub.add_parser(
+        "start", help="启动生命周期: 声明式模板阶段链 + 首阶段 (发 product.lifecycle.started)"
+    )
+    json_opt(p_pl_start)
+    p_pl_start.add_argument("idea_id", help="想法 ID (如 PI-001)")
+    p_pl_start.add_argument("--template", default=None,
+                            help="生命周期模板 (默认 software_project; 多 lifecycle 类型: automation/business 预留)")
+    p_pl_status = plsub.add_parser(
+        "status", help="生命周期状态: 当前阶段/待审批/产物/决策链/下一步动作 (发 product.lifecycle.status_viewed 审计)"
+    )
+    json_opt(p_pl_status)
+    p_pl_status.add_argument("idea_id", help="想法 ID (如 PI-001)")
+    p_pl_advance = plsub.add_parser(
+        "advance", help="手动推进当前阶段 (非 approval 阶段; 发 product.stage.completed/entered)"
+    )
+    json_opt(p_pl_advance)
+    p_pl_advance.add_argument("idea_id", help="想法 ID (如 PI-001)")
+    p_pl_templates = plsub.add_parser(
+        "templates", help="生命周期模板列表 (声明式解析; 发 product.lifecycle.templates_viewed 审计)"
+    )
+    json_opt(p_pl_templates)
+
     # factory workspace <sub> (Phase 6A, ADR-0016)
     p_workspace = sub.add_parser(
         "workspace", help="Workspace 管理: 多项目组织单位 (workspace.yaml, 发 workspace.* 事件)"
@@ -895,6 +927,16 @@ def _dispatch_product(ctx: FactoryContext, args: Any) -> dict:
         if args.experience_command == "record":
             return cmd_product_experience_record(ctx, args)
         raise CliError(f"unknown product experience command: {args.experience_command}", exit_code=2)
+    if args.product_command == "lifecycle":  # Phase 9d (ADR-0029)
+        if args.lifecycle_command == "start":
+            return cmd_product_lifecycle_start(ctx, args)
+        if args.lifecycle_command == "status":
+            return cmd_product_lifecycle_status(ctx, args)
+        if args.lifecycle_command == "advance":
+            return cmd_product_lifecycle_advance(ctx, args)
+        if args.lifecycle_command == "templates":
+            return cmd_product_lifecycle_templates(ctx, args)
+        raise CliError(f"unknown product lifecycle command: {args.lifecycle_command}", exit_code=2)
     raise CliError(f"unknown product command: {args.product_command}", exit_code=2)
 
 
@@ -1596,6 +1638,8 @@ def _print_product(args: Any, r: dict) -> None:
             _print_product_experience_list(r)
         else:  # record
             _print_product_experience_record(r)
+    elif args.product_command == "lifecycle":  # Phase 9d (ADR-0029)
+        _print_product_lifecycle(args, r)
 
 
 def _print_product_idea_list(r: dict) -> None:
@@ -1735,6 +1779,69 @@ def _print_product_experience_record(r: dict) -> None:
         print(f"  feedback   {e['human_feedback']}")
     if r.get("event_seq"):
         print(f"  事件      product.experience.recorded seq={r['event_seq']}")
+
+
+# ------------------------------------------------------------------ product lifecycle 输出 (Phase 9d, ADR-0029)
+
+def _print_product_lifecycle(args: Any, r: dict) -> None:
+    """factory product lifecycle 输出: start/advance 生命周期详情; status 快照
+    (当前阶段/待审批/产物/决策链/下一步动作); templates 模板表 (Phase 9d,
+    ADR-0029; --json 出口在 _print_output 前置处理)。"""
+    sub = args.lifecycle_command
+    if sub == "templates":
+        rows = [[t["name"], t["description"] or "-",
+                 " → ".join(s["name"] for s in t["stages"])] for t in r["templates"]]
+        print(_render_table(["Template", "Description", "Stages"], rows))
+        print(f"{r['count']} lifecycle templates")
+        if r.get("event_seq"):
+            print(f"  事件      product.lifecycle.templates_viewed seq={r['event_seq']}")
+        return
+    if sub == "status":
+        _print_product_lifecycle_status(r)
+        return
+    # start / advance: 生命周期详情
+    lc = r["lifecycle"]
+    print(f"✔ 生命周期 {lc['id']}  (idea: {lc['idea_id']}, template: {lc['template_name']})")
+    print(f"  status        {lc['status']}")
+    cur = r.get("current_stage")
+    if cur is not None:
+        print(f"  current_stage {cur['name']}  ({cur['kind']}, status: {cur['status']})")
+    else:
+        print("  current_stage (none)")
+    if lc.get("completed_at"):
+        print(f"  completed_at  {lc['completed_at']}")
+    if r.get("event_seq"):
+        event_label = "product.lifecycle.started" if sub == "start" else "product.stage.completed"
+        print(f"  事件      {event_label} seq={r['event_seq']}")
+
+
+def _print_product_lifecycle_status(r: dict) -> None:
+    """lifecycle status 快照输出: 生命周期 + 当前阶段 + 待审批 + 产物表 +
+    决策链表 + 下一步动作 (与 engine.status 同形状, Dashboard Lifecycle View 同源)。"""
+    lc = r["lifecycle"]
+    cur = r.get("current_stage")
+    print(f"生命周期 {lc['id']}  (idea: {lc['idea_id']}, template: {lc['template_name']})")
+    print(f"  status        {lc['status']}")
+    if cur is not None:
+        print(f"  current_stage {cur['name']}  ({cur['kind']})")
+        if cur.get("entered_at"):
+            print(f"  entered_at    {cur['entered_at']}")
+    pa = r.get("pending_approval")
+    if pa is not None:
+        print(f"  pending       {pa['id']}  (gate: {pa['gate']}, artifact: {pa['artifact_id']})")
+    rows = [[a["id"], a["type"], a["status"], f"v{a['version']}", str(a["created_at"])[:19]]
+            for a in r.get("artifacts") or []]
+    print(_render_table(["Artifact", "Type", "Status", "Version", "Created"], rows,
+                        empty="  (no artifacts)"))
+    drows = [[d["id"], d["type"], d.get("source_artifact_id") or "-",
+              d.get("approved_reference") or "-"] for d in r.get("decisions") or []]
+    print(_render_table(["Decision", "Type", "Source", "Reference"], drows,
+                        empty="  (no decisions)"))
+    print("  下一步:")
+    for action in r.get("next_actions") or []:
+        print(f"    - {action}")
+    if r.get("event_seq"):
+        print(f"  事件      product.lifecycle.status_viewed seq={r['event_seq']}")
 
 
 if __name__ == "__main__":

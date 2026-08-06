@@ -36,7 +36,9 @@ from .models import (
     ApprovalRequest,
     ApprovalStatus,
     Artifact,
+    DecisionArtifact,
     ProductIdea,
+    ProductLifecycle,
     ProductWorkflow,
 )
 
@@ -50,6 +52,11 @@ _SECTIONS: dict[str, dict[str, type[BaseModel]]] = {
         "decisions": ApprovalDecision,
     },
     "workflows.json": {"workflows": ProductWorkflow},
+    # Phase 9d (ADR-0029): 生命周期编排数据空间 (lifecycles + decision_artifacts)
+    "lifecycle.json": {
+        "lifecycles": ProductLifecycle,
+        "decision_artifacts": DecisionArtifact,
+    },
 }
 
 
@@ -216,3 +223,33 @@ class ProductStore:
 
     def list_workflows(self) -> list[ProductWorkflow]:
         return self._list("workflows.json", "workflows", ProductWorkflow)  # type: ignore[return-value]
+
+    # ------------------------------------------------------------------ lifecycle (Phase 9d)
+
+    def save_lifecycle(self, lifecycle: ProductLifecycle) -> None:
+        """upsert 生命周期实例 (状态流转经 model_copy 新实例)。"""
+        self._save("lifecycle.json", "lifecycles", lifecycle)
+
+    def get_lifecycle(self, lifecycle_id: str) -> ProductLifecycle | None:
+        return self._get("lifecycle.json", "lifecycles", ProductLifecycle, lifecycle_id)  # type: ignore[return-value]
+
+    def get_lifecycle_by_idea(self, idea_id: str) -> ProductLifecycle | None:
+        """按 idea_id 取生命周期 (一个 idea 至多一个 run); 不存在返回 None。"""
+        for data in self._read_all("lifecycle.json")["lifecycles"].values():
+            lc = self._load("lifecycle.json", ProductLifecycle, data)
+            if lc.idea_id == idea_id:  # type: ignore[attr-defined]
+                return lc  # type: ignore[return-value]
+        return None
+
+    def list_lifecycles(self) -> list[ProductLifecycle]:
+        return self._list("lifecycle.json", "lifecycles", ProductLifecycle)  # type: ignore[return-value]
+
+    def save_decision_artifact(self, decision: DecisionArtifact) -> None:
+        """追加决策链记录 (不可变; 链按 idea_id 查询)。"""
+        self._save("lifecycle.json", "decision_artifacts", decision)
+
+    def get_decision_artifact(self, decision_id: str) -> DecisionArtifact | None:
+        return self._get("lifecycle.json", "decision_artifacts", DecisionArtifact, decision_id)  # type: ignore[return-value]
+
+    def list_decision_artifacts(self) -> list[DecisionArtifact]:
+        return self._list("lifecycle.json", "decision_artifacts", DecisionArtifact)  # type: ignore[return-value]

@@ -304,6 +304,35 @@ class UnderstandingSnapshot(BaseModel):
         return self.model_dump(mode="json")
 
 
+class LifecycleSnapshot(BaseModel):
+    """生命周期编排汇总 (Phase 9d, ADR-0029): Product Lifecycle View 数据源。
+
+    数据源 = ProductStore 独立空间 (lifecycle.json: lifecycles + decision_artifacts,
+    与 ProductSnapshot 同边界): lifecycles 为 ProductLifecycle.to_dict() (含
+    current_stage 派生); by_status 按生命周期状态 (running/paused/completed)
+    计数; current_stages 为每实例当前阶段运行记录 (lifecycle_id/idea_id 锚点 +
+    ProductStageRun 字段); pending_approvals 为当前 approval 阶段的 pending
+    审批请求 (ApprovalRequest.to_dict(), 与 engine.status 同构); artifacts 为
+    生命周期绑定想法 (idea 锚点) 的 Artifact 全列表; decisions 为决策链记录
+    (DecisionArtifact — Product → Architecture → Task Plan); next_actions 为
+    每生命周期的人类可读下一步动作 (idea_id/status/current_stage/actions, 与
+    engine._next_actions 同构)。只读投影: collector include_lifecycle=True 时
+    聚合 (默认关闭 — 既有 dashboard 行为/成本完全不变, 同 include_product 模式)。
+    """
+
+    lifecycle_total: int = 0
+    by_status: dict[str, int] = Field(default_factory=dict)             # status → 计数
+    lifecycles: list[dict[str, Any]] = Field(default_factory=list)      # ProductLifecycle.to_dict()
+    current_stages: list[dict[str, Any]] = Field(default_factory=list)  # 当前阶段运行记录 (含锚点)
+    pending_approvals: list[dict[str, Any]] = Field(default_factory=list)  # ApprovalRequest.to_dict()
+    artifacts: list[dict[str, Any]] = Field(default_factory=list)       # 生命周期想法 Artifact.to_dict()
+    decisions: list[dict[str, Any]] = Field(default_factory=list)       # DecisionArtifact.to_dict()
+    next_actions: list[dict[str, Any]] = Field(default_factory=list)    # {idea_id, status, current_stage, actions}
+
+    def to_dict(self) -> dict:
+        return self.model_dump(mode="json")
+
+
 class ProductSnapshot(BaseModel):
     """Product Intelligence 汇总 (Phase 9A, ADR-0026): Idea/Artifact/Approval/Workflow。
 
@@ -348,6 +377,10 @@ class ProductSnapshot(BaseModel):
     generations: list[dict[str, Any]] = Field(default_factory=list)      # 生成产物 Artifact.to_dict()
     experience_total: int = 0
     experiences: list[dict[str, Any]] = Field(default_factory=list)      # GenerationExperience.to_dict()
+    # Phase 9d (ADR-0029): 生命周期编排汇总 — 仅 --view lifecycle 聚合 (collector
+    # include_lifecycle=True), 默认空 (无 9d 数据时既有 Product View 输出逐位
+    # 不变, 零回归; 数据源 = lifecycle.json 双节只读, 同 ProductSnapshot 边界)。
+    lifecycle: LifecycleSnapshot = Field(default_factory=LifecycleSnapshot)
 
     def to_dict(self) -> dict:
         return self.model_dump(mode="json")

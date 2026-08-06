@@ -192,6 +192,132 @@ class ApprovalDecision(BaseModel):
         return self.model_dump(mode="json")
 
 
+class LifecycleStatus(str, Enum):
+    """产品生命周期状态机 (Phase 9d): running → paused (审批等待/手动暂停) → running |
+    completed (全部阶段完成) | failed (预留异常终态)。与 9c WorkflowStatus 语义
+    平行但独立 — 生命周期编排 (9d) 与 9c 产品工作流骨架 (业务生命周期 vs
+    任务执行) 分离, 两者并存不互相依赖。"""
+
+    RUNNING = "running"
+    PAUSED = "paused"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class StageKind(str, Enum):
+    """生命周期阶段类型分类 (Phase 9d): 声明式模板按此分类驱动引擎行为。
+
+    - artifact_generation: 阶段产物 = 某类型 Artifact (存在性校验, 生成由 9b
+      ProductGenerator 负责 — 编排层不复制生成逻辑)。
+    - approval: 审批等待阶段 (复用 9c request_approval/decide; 进入即暂停)。
+    - decision: 决策阶段 (校验前序决策链 + 产生决策 Artifact + DecisionArtifact)。
+    - task: 任务生成阶段 (产生 task_plan 决策 + 经 TaskStore.create 生成 Task,
+      衔接 Core Workflow 执行 — 不复制 Workflow Core)。
+    """
+
+    ARTIFACT_GENERATION = "artifact_generation"
+    APPROVAL = "approval"
+    DECISION = "decision"
+    TASK = "task"
+
+
+class DecisionType(str, Enum):
+    """决策链节点类型 (Phase 9d): Product Decision → Architecture Decision → Task Plan。
+
+    决策链产物不直接进 Development: Product (产品决策, prd 审批通过) →
+    Architecture (架构决策, architecture 阶段) → Task Plan (任务计划, task 阶段
+    → 生成 Task 才衔接 Core Workflow 执行)。
+    """
+
+    PRODUCT = "product"
+    ARCHITECTURE = "architecture"
+    TASK_PLAN = "task_plan"
+
+
+class ProductStageRun(BaseModel):
+    """生命周期内单个阶段的运行记录 (Phase 9d)。
+
+    模板定义 (name/kind/artifact_type/gate/decision_type) 复制进运行记录 —
+    生命周期实例自洽 (模板后续变更不影响已启动实例)。status: pending → running →
+    completed。产物回填: artifact_id (产物 Artifact) / approval_request_id (审批
+    请求) / decision_id (决策 Artifact) / task_id (生成的 Core Task)。
+    """
+
+    name: str
+    kind: str = StageKind.ARTIFACT_GENERATION.value
+    status: str = "pending"              # pending/running/completed
+    artifact_type: str | None = None     # artifact_generation/decision: 产物类型
+    gate: str | None = None              # approval: 审批门 id (== artifact_type)
+    decision_type: str | None = None     # approval(决策链)/decision/task: 决策类型
+    entered_at: str | None = None
+    completed_at: str | None = None
+    artifact_id: str | None = None       # 阶段产物 Artifact id (回填)
+    approval_request_id: str | None = None  # approval 阶段: 审批请求 id (回填)
+    decision_id: str | None = None       # decision/task 阶段: 决策 Artifact id (回填)
+    task_id: str | None = None           # task 阶段: 生成的 Core Task id (回填)
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json")
+
+
+class ProductLifecycle(BaseModel):
+    """产品生命周期实例 (Phase 9d 编排核心): 一个 idea 至多一个生命周期。
+
+    状态机: running (阶段推进中) ↔ paused (审批等待 — 复用 9c Pause/Resume 语义,
+    或手动暂停); 全部阶段完成 → completed。current_stage_index 定位当前阶段;
+    stages 为 ProductStageRun 链 (模板快照)。ID 前缀 LC-001。
+    """
+
+    id: str
+    idea_id: str
+    template_name: str = "software_project"
+    status: str = LifecycleStatus.RUNNING.value
+    stages: list[ProductStageRun] = Field(default_factory=list)
+    current_stage_index: int = 0
+    created_at: str = Field(default_factory=_now)
+    completed_at: str | None = None
+
+    @property
+    def current_stage(self) -> ProductStageRun | None:
+        """当前阶段运行记录 (越界/空 → None)。"""
+        if not self.stages or not (0 <= self.current_stage_index < len(self.stages)):
+            return None
+        return self.stages[self.current_stage_index]
+
+    def to_dict(self) -> dict[str, Any]:
+        """JSON 友好序列化; current_stage 为派生值 (property 不入 model_dump,
+        显式附加 — Dashboard/CLI 消费同一形状)。"""
+        data = self.model_dump(mode="json")
+        data["current_stage"] = (
+            self.current_stage.to_dict() if self.current_stage is not None else None
+        )
+        return data
+
+
+class DecisionArtifact(BaseModel):
+    """决策链记录 (Phase 9d): Product → Architecture → Task Plan 的链上节点。
+
+    与 Artifact (9a 抽象) 分离: 决策链索引记录, 引用决策产物 Artifact 而不
+    复制其内容 — type (product/architecture/task_plan) 标识链位置; decision_id
+    为驱动决策的 ApprovalDecision id (无审批驱动阶段 → None); source_artifact_id
+    为决策依据的源 Artifact (被审批/被决策产物); approved_reference 为决策产物
+    Artifact id (product_decision / architecture_decision / task_plan — 9c
+    decide 或本层引擎产生)。idea_id 锚点: 按想法查链 (同 ApprovalRequest 扩展
+    字段约定)。ID 前缀 DEC-001。
+    """
+
+    id: str
+    type: str = DecisionType.PRODUCT.value     # product/architecture/task_plan
+    decision_id: str | None = None             # ApprovalDecision id (驱动决策)
+    source_artifact_id: str | None = None      # 决策依据源 Artifact id
+    approved_reference: str | None = None      # 决策产物 Artifact id (链产物)
+    idea_id: str | None = None                 # 想法锚点 (链查询)
+    created_at: str = Field(default_factory=_now)
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json")
+
+
 class ProductWorkflow(BaseModel):
     """产品工作流骨架 (约束 5): stages 链 + current_stage + 状态机。
 

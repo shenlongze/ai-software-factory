@@ -32,6 +32,7 @@ import pytest
 
 from agents.registry import AgentRegistry
 from agents.store import AgentStore
+from dashboard.collector import DashboardCollector
 from events.logger import EventLogger
 from events.store import EventStore
 from recovery.checkpoint import CheckpointStore
@@ -144,6 +145,27 @@ def runtime_store(runtimes_dir: Path) -> RuntimeStore:
 @pytest.fixture
 def checkpoint_store(checkpoints_dir: Path) -> CheckpointStore:
     return CheckpointStore(checkpoints_dir)
+
+
+@pytest.fixture
+def collector(
+    task_store: TaskStore,
+    agent_registry: AgentRegistry,
+    workflow_store: WorkflowStore,
+    runtime_store: RuntimeStore,
+    event_store: EventStore,
+    checkpoint_store: CheckpointStore,
+) -> DashboardCollector:
+    """默认装配的 DashboardCollector (全 store, 只读; 与 tests/dashboard 同构 —
+    Phase 9d Lifecycle View 渲染器测试需要)。"""
+    return DashboardCollector(
+        task_store=task_store,
+        agent_registry=agent_registry,
+        workflow_store=workflow_store,
+        runtime_store=runtime_store,
+        event_store=event_store,
+        checkpoint_store=checkpoint_store,
+    )
 
 
 @pytest.fixture

@@ -657,3 +657,212 @@ def record_experience_viewed(
         result="OK",
         payload={"count": count, "artifact_type": artifact_type},
     )
+
+
+# ------------------------------------------------------------------ Phase 9d: 生命周期编排事件 (ADR-0029)
+
+def record_lifecycle_started(
+    logger: Any,
+    *,
+    lifecycle: Any,
+    source: str = "product",
+) -> Event | None:
+    """生命周期启动 (ProductLifecycleEngine.start_lifecycle; product.lifecycle.started)。
+
+    payload: lifecycle_id/idea_id/template_name/status/current_stage — 编排
+    起点审计 (什么想法经什么模板开始生命周期)。
+    """
+    if logger is None:
+        return None
+    stage = lifecycle.current_stage
+    return logger.record(
+        EventType.PRODUCT_LIFECYCLE_STARTED,
+        source=source,
+        stage=lifecycle.status,
+        action="start product lifecycle",
+        result="OK",
+        payload={
+            "lifecycle_id": lifecycle.id,
+            "idea_id": lifecycle.idea_id,
+            "template_name": lifecycle.template_name,
+            "stages": [s.name for s in lifecycle.stages],
+            "current_stage": stage.name if stage is not None else None,
+        },
+    )
+
+
+def record_stage_entered(
+    logger: Any,
+    *,
+    lifecycle: Any,
+    stage: Any,
+    source: str = "product",
+) -> Event | None:
+    """阶段进入 (引擎推进/启动时; product.stage.entered)。
+
+    payload: lifecycle_id/idea_id/stage/kind/artifact_type/gate/decision_type —
+    阶段类型分类驱动编排 (artifact_generation/approval/decision/task)。
+    """
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.PRODUCT_STAGE_ENTERED,
+        source=source,
+        stage=stage.status,
+        action=f"enter lifecycle stage {stage.name}",
+        result="OK",
+        payload={
+            "lifecycle_id": lifecycle.id,
+            "idea_id": lifecycle.idea_id,
+            "stage": stage.name,
+            "kind": stage.kind,
+            "artifact_type": stage.artifact_type,
+            "gate": stage.gate,
+            "decision_type": stage.decision_type,
+        },
+    )
+
+
+def record_stage_completed(
+    logger: Any,
+    *,
+    lifecycle: Any,
+    stage: Any,
+    source: str = "product",
+) -> Event | None:
+    """阶段完成 (引擎推进/审批通过时; product.stage.completed)。
+
+    payload 含阶段产物回填 (artifact_id/approval_request_id/decision_id/
+    task_id — 阶段完成时已产生的产物锚点, 事件唯一事实源可重建阶段结果)。
+    """
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.PRODUCT_STAGE_COMPLETED,
+        source=source,
+        stage=stage.status,
+        action=f"complete lifecycle stage {stage.name}",
+        result="OK",
+        payload={
+            "lifecycle_id": lifecycle.id,
+            "idea_id": lifecycle.idea_id,
+            "stage": stage.name,
+            "kind": stage.kind,
+            "artifact_id": stage.artifact_id,
+            "approval_request_id": stage.approval_request_id,
+            "decision_id": stage.decision_id,
+            "task_id": stage.task_id,
+        },
+    )
+
+
+def record_decision_created(
+    logger: Any,
+    *,
+    decision: Any,
+    source: str = "product",
+) -> Event | None:
+    """决策链记录落库 (引擎/service; product.decision.created)。
+
+    payload: decision_id/type/idea_id/decision_id(ApprovalDecision)/source_artifact_id/
+    approved_reference — 决策链 (Product → Architecture → Task Plan) 节点审计,
+    Artifact lineage 闭环 (决策依据 → 决策产物可追溯)。
+    """
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.PRODUCT_DECISION_CREATED,
+        source=source,
+        stage="created",
+        action="record decision artifact",
+        result="OK",
+        payload={
+            "decision_artifact_id": decision.id,
+            "type": decision.type,
+            "idea_id": decision.idea_id,
+            "decision_id": decision.decision_id,
+            "source_artifact_id": decision.source_artifact_id,
+            "approved_reference": decision.approved_reference,
+        },
+    )
+
+
+def record_lifecycle_completed(
+    logger: Any,
+    *,
+    lifecycle: Any,
+    source: str = "product",
+) -> Event | None:
+    """生命周期完成 (全部阶段完成; product.lifecycle.completed)。
+
+    payload: lifecycle_id/idea_id/template_name/status/completed_at —
+    编排终态审计 (阶段链全部 completed 后发出, 终态事件单一)。
+    """
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.PRODUCT_LIFECYCLE_COMPLETED,
+        source=source,
+        stage=lifecycle.status,
+        action="complete product lifecycle",
+        result="OK",
+        payload={
+            "lifecycle_id": lifecycle.id,
+            "idea_id": lifecycle.idea_id,
+            "template_name": lifecycle.template_name,
+            "completed_at": lifecycle.completed_at,
+            "stages_completed": sum(
+                1 for s in lifecycle.stages if s.status == "completed"
+            ),
+        },
+    )
+
+
+def record_lifecycle_status_viewed(
+    logger: Any,
+    *,
+    lifecycle: Any,
+    source: str = "cli",
+) -> Event | None:
+    """生命周期状态被查看 (CLI 读命令审计, ADR-0002; source 缺省 cli)。
+
+    payload 与 lifecycle.started 同构 (lifecycle_id/idea_id/template_name/
+    current_stage) — 只读审计锚点, 不修改状态。
+    """
+    if logger is None:
+        return None
+    stage = lifecycle.current_stage
+    return logger.record(
+        EventType.PRODUCT_LIFECYCLE_STATUS_VIEWED,
+        source=source,
+        stage=lifecycle.status,
+        action="view product lifecycle status",
+        result="OK",
+        payload={
+            "lifecycle_id": lifecycle.id,
+            "idea_id": lifecycle.idea_id,
+            "template_name": lifecycle.template_name,
+            "status": lifecycle.status,
+            "current_stage": stage.name if stage is not None else None,
+        },
+    )
+
+
+def record_lifecycle_templates_viewed(
+    logger: Any,
+    *,
+    count: int,
+    template_names: list[str] | None = None,
+    source: str = "cli",
+) -> Event | None:
+    """生命周期模板列表被查看 (CLI 读命令审计, ADR-0002; source 缺省 cli)。"""
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.PRODUCT_LIFECYCLE_TEMPLATES_VIEWED,
+        source=source,
+        stage="viewed",
+        action="view lifecycle templates",
+        result="OK",
+        payload={"count": count, "templates": template_names or []},
+    )

@@ -65,6 +65,8 @@ from .models import (
     ApprovalRequest,
     ApprovalStatus,
     Artifact,
+    DecisionArtifact,
+    DecisionType,
     ProductIdea,
     ProductWorkflow,
     WorkflowStatus,
@@ -601,6 +603,70 @@ class ProductService:
             and a.content.get("idea_id") == idea_id
         ]
         return sorted(chain, key=lambda a: a.version)
+
+    # ------------------------------------------------------------------ Decision Artifact 链 (Phase 9d)
+
+    def create_decision_artifact(
+        self,
+        artifact_type: str,
+        *,
+        decision_id: str | None = None,
+        source_artifact_id: str | None = None,
+        approved_reference: str | None = None,
+        idea_id: str | None = None,
+    ) -> DecisionArtifact:
+        """落 DecisionArtifact (决策链记录: Product → Architecture → Task Plan)。
+
+        决策链索引记录 (与 Artifact 分离): type 标识链位置, decision_id 为驱动
+        决策的 ApprovalDecision id (无审批驱动 → None), source_artifact_id 为
+        决策依据源 Artifact, approved_reference 为决策产物 Artifact id (9c
+        decide 产的 product_decision / 引擎产的 architecture_decision /
+        task_plan)。idea_id 锚点供按想法查链。写路径事件 (product.decision.
+        created) 由引擎层经 record_decision_created 发出。
+        """
+        decision = DecisionArtifact(
+            id=_next_id("DEC", self._store.list_decision_artifacts()),
+            type=artifact_type,
+            decision_id=decision_id,
+            source_artifact_id=source_artifact_id,
+            approved_reference=approved_reference,
+            idea_id=idea_id,
+        )
+        self._store.save_decision_artifact(decision)
+        return decision
+
+    def list_decision_artifacts(
+        self,
+        idea_id: str | None = None,
+        artifact_type: str | None = None,
+    ) -> list[DecisionArtifact]:
+        """决策链记录清单 (可按 idea 锚点 / 链节点类型过滤, 按 id 排序)。"""
+        records = self._store.list_decision_artifacts()
+        if idea_id is not None:
+            records = [d for d in records if d.idea_id == idea_id]
+        if artifact_type is not None:
+            records = [d for d in records if d.type == artifact_type]
+        return records
+
+    def get_decision_chain(self, idea_id: str) -> list[DecisionArtifact]:
+        """决策链 (Product → Architecture → Task Plan 类型序; 每类型多条取最新)。
+
+        决策链产物不直接进 Development: 链完整 (product + architecture +
+        task_plan) 才生成 Task 衔接 Core Workflow 执行。引擎/Dashboard/CLI 消费
+        同一链序。
+        """
+        by_type: dict[str, DecisionArtifact] = {}
+        for d in self._store.list_decision_artifacts():
+            if d.idea_id != idea_id:
+                continue
+            if d.type not in by_type or d.created_at > by_type[d.type].created_at:
+                by_type[d.type] = d
+        order = [
+            DecisionType.PRODUCT.value,
+            DecisionType.ARCHITECTURE.value,
+            DecisionType.TASK_PLAN.value,
+        ]
+        return [by_type[t] for t in order if t in by_type]
 
     # ------------------------------------------------------------------ 内部 (workflow 联动)
 

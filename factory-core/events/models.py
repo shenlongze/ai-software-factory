@@ -325,6 +325,23 @@ class EventType(str, Enum):
     APPROVAL_RESUMED = "approval.resumed"                      # 工作流恢复 (paused → running)
     PRODUCT_APPROVAL_EXPERIENCE_RECORDED = "product.approval_experience.recorded"  # 审批经验落盘
 
+    # --- Phase 9D: Product Lifecycle Orchestration 事件 (增量扩展, ADR-0029) ---
+    # 依 ADR-0001 决策 1 的扩展路径: 加枚举成员即可, 不改表结构/API。
+    # product.lifecycle.* / product.stage.* / product.decision.* 为生命周期编排
+    # 事件 (ProductLifecycleEngine, source="product"): lifecycle.started (启动)
+    # → stage.entered (阶段进入) → ... → stage.completed (阶段完成) →
+    # decision.created (决策链记录落库: Product → Architecture → Task Plan) →
+    # lifecycle.completed (全部阶段完成, 终态事件单一)。payload 契约见
+    # product/events.py — 事件唯一事实源: 阶段产物回填 (artifact_id/
+    # approval_request_id/decision_id/task_id) 可从事件 payload 重建编排进度。
+    PRODUCT_LIFECYCLE_STARTED = "product.lifecycle.started"            # 生命周期启动
+    PRODUCT_STAGE_ENTERED = "product.stage.entered"                    # 阶段进入
+    PRODUCT_STAGE_COMPLETED = "product.stage.completed"                # 阶段完成
+    PRODUCT_DECISION_CREATED = "product.decision.created"              # 决策链记录落库
+    PRODUCT_LIFECYCLE_COMPLETED = "product.lifecycle.completed"        # 生命周期完成 (终态)
+    PRODUCT_LIFECYCLE_STATUS_VIEWED = "product.lifecycle.status_viewed"    # 生命周期状态被查看 (只读审计)
+    PRODUCT_LIFECYCLE_TEMPLATES_VIEWED = "product.lifecycle.templates_viewed"  # 模板列表被查看 (只读审计)
+
 
 class Event(BaseModel):
     """一条事件。append-only: 写入后永不修改、永不删除。"""

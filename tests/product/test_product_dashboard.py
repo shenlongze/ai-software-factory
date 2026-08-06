@@ -34,7 +34,13 @@ class TestViewRegistry:
         from dashboard.renderer import VIEWS
 
         assert "product" in VIEWS
-        assert VIEWS[-1] == "product"
+        assert VIEWS[-2] == "product"  # Phase 9d 追加第二十视图 lifecycle (ADR-0029)
+
+    def test_lifecycle_is_20th_view(self):
+        from dashboard.renderer import VIEWS
+
+        assert "lifecycle" in VIEWS
+        assert VIEWS[-1] == "lifecycle"
 
     def test_build_product_wired_in_renderer(self):
         assert _SINGLE["product"] is build_product

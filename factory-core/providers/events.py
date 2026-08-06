@@ -21,6 +21,10 @@ payload 契约 (Dashboard Provider View 事件聚合与 CLI --json 出口一致)
 - provider.execution.started: provider_id/model/request_id (+ execution_id, 8B-1)
 - provider.execution.completed: provider_id/model/usage/result=OK (+ execution_id, 8B-1)
 - provider.execution.failed: provider_id/model/error/result=ERROR (+ execution_id, 8B-1)
+- provider.usage.recorded: provider_id/tokens/estimated_cost/latency_ms/success
+  (+ execution_id/task_id/model/version/error 可选, 8B-2 + 8B-3)
+- provider.feedback.created: provider_id/rating/approved (+ execution_id/task_id/
+  comment 可选, 8B-3 人工反馈预留)
 """
 
 from __future__ import annotations
@@ -176,6 +180,8 @@ def record_provider_usage(
     }
     if usage.execution_id is not None:
         payload["execution_id"] = usage.execution_id
+    if usage.task_id is not None:
+        payload["task_id"] = usage.task_id
     if usage.model is not None:
         payload["model"] = usage.model
     if usage.version is not None:
@@ -187,6 +193,41 @@ def record_provider_usage(
         source=source,
         stage="recorded",
         action="record provider usage",
+        result="OK",
+        payload=payload,
+    )
+
+
+def record_provider_feedback(
+    logger: Any,
+    *,
+    feedback: Any,
+    source: str = "provider_registry",
+) -> Event | None:
+    """人工反馈落盘审计 (FeedbackStore.add 之后由集成层/调用方发, Phase 8B-3)。
+
+    payload 契约 (phase8b3-status.md §4): provider_id/rating/approved (+
+    execution_id/task_id/comment 可选) — 执行经验只记录不消费 (本阶段数据
+    接口预留); 只审计不触碰任何业务状态。
+    """
+    if logger is None:
+        return None
+    payload: dict[str, Any] = {
+        "provider_id": feedback.provider_id,
+        "rating": feedback.rating,
+        "approved": feedback.approved,
+    }
+    if feedback.execution_id is not None:
+        payload["execution_id"] = feedback.execution_id
+    if feedback.task_id is not None:
+        payload["task_id"] = feedback.task_id
+    if feedback.comment is not None:
+        payload["comment"] = feedback.comment
+    return logger.record(
+        EventType.PROVIDER_FEEDBACK_CREATED,
+        source=source,
+        stage="created",
+        action="create provider feedback",
         result="OK",
         payload=payload,
     )

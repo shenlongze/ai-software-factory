@@ -266,6 +266,14 @@ class EventType(str, Enum):
     # 既有事件互补 (usage 是调用后的计量审计, selected 是调用前的选择审计)。
     PROVIDER_USAGE_RECORDED = "provider.usage.recorded"  # 使用记录落盘 (估算成本)
 
+    # --- Phase 8B-3: Provider Execution Intelligence 事件 (增量扩展) ---
+    # 依 ADR-0001 决策 1 的扩展路径: 加枚举成员即可, 不改表结构/API。
+    # provider.feedback.created 在人工反馈落盘 (FeedbackStore.add / 集成层) 时
+    # 发出: payload 含 provider_id/execution_id/task_id/rating/approved/comment
+    # (phase8b3-status.md §4) — 执行经验 (Human Feedback) 是 Intelligence
+    # Loop 的最后一环, 本阶段只记录 (数据接口), 不消费/不自动切换。
+    PROVIDER_FEEDBACK_CREATED = "provider.feedback.created"  # 人工反馈落盘
+
 
 class Event(BaseModel):
     """一条事件。append-only: 写入后永不修改、永不删除。"""

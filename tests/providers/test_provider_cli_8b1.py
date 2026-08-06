@@ -137,14 +137,16 @@ class TestExecutionRunExplicit:
             assert _provider_events(store)[0].payload["provider_id"] == "hermes"
 
     def test_provider_event_chain(self, capsys, cli_root):
-        """成功链路: execution.started → selected → started → completed → execution.completed。"""
+        """成功链路: execution.started → selected → started → completed →
+        usage.recorded (终态后, Phase 8B-3) → execution.completed。"""
         exec_id = _seed_cli_execution(capsys, cli_root)
         run_cli(capsys, cli_root, "execution", "run", exec_id, "--provider", "hermes")
         with open_events(cli_root) as store:
             types = event_types(store)
-            assert types[-7:] == [
+            assert types[-8:] == [
                 "execution.started", "provider.selected", "provider.execution.started",
-                "provider.execution.completed", "execution.completed",
+                "provider.execution.completed", "provider.usage.recorded",
+                "execution.completed",
                 "workflow.step.completed", "workflow.completed",
             ]
 
@@ -192,9 +194,10 @@ class TestExecutionRunExplicit:
         assert rc == 0  # run 命令本身成功; 业务结果 FAILED
         with open_events(cli_root) as store:
             types = event_types(store)
-            assert types[-6:] == [
+            assert types[-7:] == [
                 "execution.started", "provider.selected", "provider.execution.started",
-                "provider.execution.failed", "execution.failed", "workflow.failed",
+                "provider.execution.failed", "provider.usage.recorded",
+                "execution.failed", "workflow.failed",
             ]
 
     def test_failed_payload_error(self, capsys, cli_root):
@@ -245,7 +248,9 @@ class TestExecutionRunExplicit:
         assert rc == 1
         assert "expected PENDING" in err
         with open_events(cli_root) as store:
-            assert len(_provider_events(store)) == 3  # 仅首次派发点的事件
+            # 仅首次派发点的事件: selected/started/completed + usage.recorded
+            # (Phase 8B-3 终态后追加); 冲突 rerun 零新增
+            assert len(_provider_events(store)) == 4
 
     def test_explicit_wins_over_registry_default(self, capsys, cli_root):
         """默认层已设置 hermes 时, 显式 --provider 仍标 source=explicit。"""
@@ -276,7 +281,7 @@ class TestExecutionRunProjectConfig:
             types = [e.type.value for e in _provider_events(store)]
             assert types == [
                 "provider.selected", "provider.execution.started",
-                "provider.execution.completed",
+                "provider.execution.completed", "provider.usage.recorded",
             ]
 
     def test_project_config_input_persisted(self, capsys, cli_root):
@@ -374,7 +379,8 @@ class TestExecutionRunDefaultLayer:
         exec_id = _seed_cli_execution(capsys, cli_root)
         run_cli(capsys, cli_root, "execution", "run", exec_id)
         with open_events(cli_root) as store:
-            assert len(_provider_events(store)) == 3
+            # selected/started/completed + usage.recorded (Phase 8B-3 终态后)
+            assert len(_provider_events(store)) == 4
 
     def test_project_config_wins_over_default(self, capsys, cli_root):
         """项目层 > 默认层 (source=project)。"""
@@ -451,7 +457,7 @@ class TestWorkflowRunAuto:
             types = [e.type.value for e in _provider_events(store)]
             assert types == [
                 "provider.selected", "provider.execution.started",
-                "provider.execution.completed",
+                "provider.execution.completed", "provider.usage.recorded",
             ]
 
     def test_auto_all_provider_events_have_execution_id(self, capsys, cli_root):

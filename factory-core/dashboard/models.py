@@ -150,6 +150,11 @@ class ProviderSnapshot(BaseModel):
     usage_success_rate: float = 0.0
     usage_avg_latency_ms: float = 0.0
     usage_by_provider: dict[str, dict[str, Any]] = Field(default_factory=dict)  # id → stats dict
+    # Phase 8B-3 (ADR-0025): 失败率/平均时长 + 综合推荐 (默认空 — 零回归)。
+    usage_failure_rate: float = 0.0
+    usage_avg_duration_ms: float = 0.0
+    usage_recommended: str | None = None  # 三分数加权综合推荐 (只展示, 不自动切换)
+    usage_recommended_score: float = 0.0
 
     def to_dict(self) -> dict:
         return self.model_dump(mode="json")

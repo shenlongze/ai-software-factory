@@ -581,16 +581,19 @@ class DashboardCollector:
         return snapshot
 
     def _collect_provider_usage(self, snapshot: ProviderSnapshot) -> None:
-        """Provider View 使用/成本/性能汇总 (Phase 8B-2, 可选列默认空)。
+        """Provider View 使用/成本/性能汇总 + 综合推荐 (Phase 8B-2/8B-3, 可选列默认空)。
 
         只读: UsageStore.list() + stats_from_usage() (从 usage 计算不落库);
         未装配 usage_store → 空 (默认, 零回归); 任何异常 → 空 (失败安全,
         usage 是审计增强数据, 不影响 Provider 目录视图)。
+        Phase 8B-3 (ADR-0025): 追加失败率/平均时长聚合 + 三分数加权综合推荐
+        (CostAwareSelector 空需求推荐 — 能力矩阵平均 + 成本分 + 实测性能分,
+        只展示不自动切换); 能力/成本基线缺失或 usage 不足 → 推荐 None。
         """
         if self._usage_store is None:
             return
         try:
-            from providers.usage import stats_from_usage
+            from providers.usage import stats_from_usage, stats_by_provider
 
             stats = stats_from_usage(self._usage_store.list(), period="all")
         except Exception:
@@ -601,5 +604,46 @@ class DashboardCollector:
         calls = snapshot.usage_total_calls
         ok = sum(round(s.success_rate * s.calls) for s in stats)
         snapshot.usage_success_rate = round(ok / calls, 4) if calls else 0.0
+        snapshot.usage_failure_rate = round(1.0 - (ok / calls), 4) if calls else 0.0
         weighted_latency = sum(s.avg_latency_ms * s.calls for s in stats)
         snapshot.usage_avg_latency_ms = round(weighted_latency / calls, 2) if calls else 0.0
+        snapshot.usage_avg_duration_ms = snapshot.usage_avg_latency_ms  # 同口径别名
+        if not calls:
+            return  # 无执行经验 → 不推荐 (无性能证据)
+        self._collect_provider_recommendation(snapshot, stats)
+
+    def _collect_provider_recommendation(
+        self, snapshot: ProviderSnapshot, stats: list,
+    ) -> None:
+        """Provider View 综合推荐 (Phase 8B-3, 默认关零回归)。
+
+        复用 CostAwareSelector (空 TaskRequirement): capability 矩阵平均 +
+        cost_score (默认成本基线) + performance_score (实测统计) 加权排序,
+        取最优候选展示 — 只展示不自动切换 (评审调整 4)。能力/成本基线经
+        providers.definitions 默认值 (自定义 Provider 无基线 → 不参与,
+        无能力证据不推荐); 任何异常 → 推荐 None (失败安全)。
+        """
+        try:
+            from providers.definitions import DEFAULT_CAPABILITY_PROFILES, DEFAULT_COST_MODELS
+            from providers.models import TaskRequirement
+            from providers.selector import CostAwareSelector
+            from providers.usage import stats_by_provider
+
+            if self._usage_store is None:
+                return  # 未装配 usage_store → 不推荐 (调用方已前置, 防御性)
+            selector = CostAwareSelector(
+                self._provider_registry,
+                DEFAULT_CAPABILITY_PROFILES,
+                DEFAULT_COST_MODELS,
+                usage_stats=stats_by_provider(
+                    self._usage_store.list(), period="all",
+                ),
+            )
+            recommendation = selector.recommend(
+                TaskRequirement(task_type="dashboard", required_capabilities=[]),
+            )
+            if recommendation is not None:
+                snapshot.usage_recommended = recommendation.provider_id
+                snapshot.usage_recommended_score = recommendation.score
+        except Exception:
+            return  # 失败安全: 推荐是展示增强, 不影响 Provider 视图

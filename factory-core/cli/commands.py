@@ -661,7 +661,7 @@ def _cmd_workflow_run_auto(ctx: FactoryContext, args: Any) -> dict:
             runtime_store=_open_runtime_store(ctx),
             logger=logger,
             adapters=(
-                _provider_carrier_adapters(provider_context, logger)
+                _provider_carrier_adapters(ctx, provider_context, logger)
                 if provider_context is not None else None
             ),
         )
@@ -1178,24 +1178,32 @@ def cmd_provider_compare(ctx: FactoryContext, args: Any) -> dict:
 
 def cmd_provider_recommend(ctx: FactoryContext, args: Any) -> dict:
     """factory provider recommend --task <type> [--capabilities a,b] [--min-quality F]
-    [--budget F] — TaskRequirement → 能力匹配 + 成本感知推荐 (只推荐不自动切换),
-    发 provider.viewed + provider.selected (source=recommendation)。
+    [--budget F] — TaskRequirement → 能力匹配 + 成本感知 + 性能感知推荐
+    (只推荐不自动切换), 发 provider.viewed + provider.selected (source=recommendation)。
 
-    选择流程 (phase8b2-plan.md §4): 能力过滤 (quality >= min_quality, budget 上限)
-    → 配置优先 (默认基线外无项目配置; 未来接 Project>Agent>Runtime>Default 链)
-    → 成本感知排序 (token/request/time/free 模式归一估算)。推荐不修改任何配置
-    (评审调整 4); 采纳与否由用户决定。无通过候选 → 推荐为空 (rc 0)。
+    选择流程 (phase8b2-plan.md §4 + phase8b3-status.md §3): 能力过滤 (quality >=
+    min_quality, budget 上限) → 配置优先 (默认基线外无项目配置; 未来接
+    Project>Agent>Runtime>Default 链) → 三分数加权 (capability 0.4 + cost 0.3 +
+    performance 0.3) → 成本感知排序 (token/request/time/free 模式归一估算,
+    同成本性能分降序)。Phase 8B-3 (ADR-0025): 注入 UsageStore 实测统计
+    (stats_by_provider 合并桶) — 有 usage 数据时 performance_score 反映实测
+    表现, 无数据 → 0.5 中性 (8B-2 兼容)。推荐不修改任何配置 (评审调整 4);
+    无通过候选 → 推荐为空 (rc 0)。
     """
     from providers.definitions import DEFAULT_CAPABILITY_PROFILES, DEFAULT_COST_MODELS
     from providers.models import TaskRequirement
     from providers.registry import ProviderRegistry
     from providers.selector import CostAwareSelector
+    from providers.usage import stats_by_provider
 
     capabilities = [c.strip() for c in args.capabilities.split(",") if c.strip()]
     with ctx.logger_scope() as logger:
         registry = ProviderRegistry(_open_provider_store(ctx), logger=logger)
         selector = CostAwareSelector(
             registry, DEFAULT_CAPABILITY_PROFILES, DEFAULT_COST_MODELS,
+            usage_stats=stats_by_provider(
+                _open_provider_usage_store(ctx).list(), period="all",
+            ),
         )
         requirement = TaskRequirement(
             task_type=args.task,
@@ -1276,7 +1284,7 @@ def _open_execution_service(
     engine = _open_workflow_engine(ctx, logger)
     adapters = BUILTIN_ADAPTERS
     if provider_context is not None:
-        adapters = _provider_carrier_adapters(provider_context, logger)
+        adapters = _provider_carrier_adapters(ctx, provider_context, logger)
     return ExecutionService(
         store, registry, adapters=adapters, logger=logger, workflow_engine=engine,
     )
@@ -1351,15 +1359,25 @@ def _resolve_provider_selection(
         raise CliError(str(exc), exit_code=7) from exc
 
 
-def _provider_carrier_adapters(provider_context, logger) -> dict:
-    """装配 Provider 载波 Adapter 映射 (Phase 8B-1); 仅 provider_context 非 None 时调用。
+def _provider_carrier_adapters(ctx: FactoryContext, provider_context, logger) -> dict:
+    """装配 Provider 载波 Adapter 映射 (Phase 8B-1/8B-3); 仅 provider_context
+    非 None 时调用。
 
     provider_context 非 None ⇒ providers 层必然可导入 (选择已成功) — 延迟导入
     保持 Removal Isolation (删除 providers 不影响其他命令)。
+
+    Phase 8B-3 (ADR-0025): 注入 usage_store + DEFAULT_COST_MODELS — 每次
+    执行自动落库 usage 记录 (provider.usage.recorded 事件, 终态后追加);
+    estimated_cost 用默认成本基线估算 (非真实计费)。
     """
+    from providers.definitions import DEFAULT_COST_MODELS
     from providers.integration import wrap_adapters_with_provider
 
-    return wrap_adapters_with_provider(BUILTIN_ADAPTERS, provider_context, logger=logger)
+    return wrap_adapters_with_provider(
+        BUILTIN_ADAPTERS, provider_context, logger=logger,
+        usage_store=_open_provider_usage_store(ctx),
+        cost_models=DEFAULT_COST_MODELS,
+    )
 
 
 def _provider_context_from_selection(selection):

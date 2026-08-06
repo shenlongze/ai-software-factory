@@ -1158,14 +1158,16 @@ def _print_provider(sub: str, r: dict) -> None:
                   f"[period={r['period']}, provider={r.get('provider') or 'all'}]")
     elif sub == "stats":
         rows = [
-            [s["provider_id"], s["model"] or "-", s["version"] or "-", str(s["calls"]),
-             f"{s['success_rate'] * 100:.1f}%", f"{s['avg_latency_ms']:.1f}ms",
-             str(s["total_tokens"]), f"{s['total_cost']:.6f}"]
+            [s["provider_id"], s["model"] or "-", s["version"] or "-",
+             str(s["execution_count"]), f"{s['success_rate'] * 100:.1f}%",
+             f"{s['failure_rate'] * 100:.1f}%", f"{s['avg_cost']:.6f}",
+             f"{s['avg_duration_ms']:.1f}ms", str(s["total_tokens"]),
+             f"{s['total_cost']:.6f}"]
             for s in r["stats"]
         ]
         print(_render_table(
-            ["Provider", "Model", "Version", "Calls", "Success", "Avg Latency",
-             "Tokens", "Cost"], rows, empty=None,
+            ["Provider", "Model", "Version", "Executions", "Success", "Failure",
+             "Avg Cost", "Avg Dur", "Tokens", "Cost"], rows, empty=None,
         ))
         if not r["stats"]:
             print("  (no stats — 无 usage 记录)")
@@ -1205,8 +1207,12 @@ def _print_provider(sub: str, r: dict) -> None:
         if rec is None:
             print(f"No recommendation for task '{r['task']}' (无能力匹配的 Provider)")
         else:
-            print(f"推荐: {rec['provider_id']}  (score: {rec['score']}, "
-                  f"est cost: {rec.get('estimated_cost') or '-'})")
+            print(f"推荐: {rec['provider_id']}  (score: {rec['score']})")
+            print(
+                f"  三分数    capability {rec['capability_score']}  "
+                f"cost {rec['cost_score']}  performance {rec['performance_score']}  "
+                f"(est cost: {rec.get('estimated_cost') or '-'})"
+            )
             for reason in rec["reasons"]:
                 print(f"  - {reason}")
         print(f"  事件      provider.viewed"

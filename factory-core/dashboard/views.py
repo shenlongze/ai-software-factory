@@ -252,6 +252,9 @@ def build_provider(snapshot: FactorySnapshot) -> Panel:
     Phase 8B-2 (ADR-0024) 增强: 装配 usage_store 且存在使用记录时, 追加
     使用/成本/性能列 (Calls/Success/Cost — 估算计量, 非真实计费); 无 usage
     数据 → 列集合与 Phase 8A 逐位一致 (默认关, 零回归)。
+    Phase 8B-3 (ADR-0025) 增强: 追加 Failure/AvgDur 列 + 综合推荐行
+    (capability+cost+performance 三分数加权, 只展示不自动切换) — 仍只在
+    存在 usage 数据时出现, 无数据逐位不变 (零回归)。
     """
     p = snapshot.providers
     summary = _line(_text(f"{p.total} providers", style="bold"))
@@ -267,15 +270,24 @@ def build_provider(snapshot: FactorySnapshot) -> Panel:
         summary.append("  ").append_text(
             Text(
                 f"usage {p.usage_total_calls} calls, ${p.usage_total_cost:.4f} "
-                f"({(p.usage_success_rate * 100):.1f}% success, "
-                f"{p.usage_avg_latency_ms:.0f}ms avg)",
+                f"({(p.usage_success_rate * 100):.1f}% success / "
+                f"{(p.usage_failure_rate * 100):.1f}% failure, "
+                f"{p.usage_avg_duration_ms:.0f}ms avg dur)",
                 style="dim",
+            )
+        )
+    if p.usage_recommended:
+        summary.append("  ").append_text(
+            Text(
+                f"推荐 {p.usage_recommended} "
+                f"(score {p.usage_recommended_score:.3f})",
+                style="bold green",
             )
         )
     table = Table(show_header=True, header_style="bold", box=box.SIMPLE_HEAVY, expand=True)
     columns = ["Provider", "Type", "Models", "Version", "Status", "Default"]
     if p.usage_total_calls:
-        columns += ["Calls", "Success", "Cost"]
+        columns += ["Calls", "Success", "Failure", "Avg Dur", "Cost"]
     for col in columns:
         table.add_column(col)
     for d in p.items:
@@ -293,6 +305,8 @@ def build_provider(snapshot: FactorySnapshot) -> Panel:
             row += [
                 _text(str(u.get("calls", 0))),
                 _text(f"{(u.get('success_rate', 0.0) * 100):.0f}%" if u else "-"),
+                _text(f"{(u.get('failure_rate', 0.0) * 100):.0f}%" if u else "-"),
+                _text(f"{u.get('avg_duration_ms', 0.0):.0f}ms" if u else "-"),
                 _text(f"{u.get('total_cost', 0.0):.4f}" if u else "-"),
             ]
         table.add_row(*row)

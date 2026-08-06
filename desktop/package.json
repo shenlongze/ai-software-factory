@@ -1,0 +1,14 @@
+{
+  "name": "ai-software-factory-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI Software Factory Desktop Shell (Tauri 2 + factory-runtime bridge)",
+  "scripts": {
+    "tauri": "tauri",
+    "desktop:dev": "tauri dev",
+    "desktop:build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4"
+  }
+}

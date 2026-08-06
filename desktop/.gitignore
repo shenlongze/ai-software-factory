@@ -1,0 +1,10 @@
+# Rust / Tauri 构建产物
+/src-tauri/target/
+/src-tauri/gen/
+
+# Node (仅 @tauri-apps/cli)
+/node_modules/
+package-lock.json
+
+# 本地开发
+.DS_Store

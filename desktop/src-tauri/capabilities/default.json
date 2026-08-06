@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Desktop Shell 最小权限 (Phase 15A-3a): 仅 core:default, 无任何业务插件",
+  "windows": ["main", "error"],
+  "permissions": ["core:default"]
+}

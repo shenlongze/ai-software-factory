@@ -328,6 +328,15 @@ class ProductSnapshot(BaseModel):
     approval_approved: int = 0
     approval_denied: int = 0
     approvals: list[dict[str, Any]] = Field(default_factory=list)        # ApprovalRequest.to_dict()
+    # Phase 9C (ADR-0028): 审批决策状态机 — approvals 行富化 (artifact_type/
+    # artifact_version/confidence/required_action, 与 service.approval_queue 同构)
+    # + 终态计数 (rejected/changes_requested/delegated) + approval_history 联表
+    # (请求 + 决定记录, 与 service.approval_history 同构)。全部默认空/0 — 无 9c
+    # 数据时既有 Product View 输出逐位不变 (零回归)。
+    approval_rejected: int = 0
+    approval_changes_requested: int = 0
+    approval_delegated: int = 0
+    approval_history: list[dict[str, Any]] = Field(default_factory=list)
     workflow_total: int = 0
     workflows_by_status: dict[str, int] = Field(default_factory=dict)    # status → 计数
     workflows: list[dict[str, Any]] = Field(default_factory=list)        # ProductWorkflow.to_dict()

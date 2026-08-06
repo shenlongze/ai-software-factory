@@ -810,11 +810,22 @@ def build_product(snapshot: FactorySnapshot) -> Panel:
     ))
     summary.append("  ").append_text(_line(
         Text(
-            f"approvals {p.approval_pending} pending / {p.approval_approved} approved / "
-            f"{p.approval_denied} denied",
+            f"approvals {p.approval_pending} pending / {p.approval_approved} approved",
             style="dim",
         ),
     ))
+    # Phase 9C (ADR-0028): 终态计数仅在 > 0 时追加 (无 9c 数据 → 既有输出不变)
+    _approval_extras = []
+    if p.approval_rejected:
+        _approval_extras.append(f"{p.approval_rejected} rejected")
+    if p.approval_changes_requested:
+        _approval_extras.append(f"{p.approval_changes_requested} changes")
+    if p.approval_delegated:
+        _approval_extras.append(f"{p.approval_delegated} delegated")
+    if p.approval_denied:
+        _approval_extras.append(f"{p.approval_denied} denied")
+    if _approval_extras:
+        summary.append("  ").append_text(Text(" / ".join(_approval_extras), style="dim"))
     summary.append("  ").append_text(_line(
         Text(f"workflows {p.workflow_total}", style="bold"),
     ))
@@ -849,19 +860,42 @@ def build_product(snapshot: FactorySnapshot) -> Panel:
         idea_table.add_row(_text("(no ideas)", style="dim"), "", "", "", "")
 
     approval_table = Table(show_header=True, header_style="bold", box=box.SIMPLE_HEAVY, expand=True)
-    for col in ("Request", "Artifact", "Gate", "Status", "Idea", "By"):
+    # Phase 9C (ADR-0028): Ver/Conf/Action 列 = Approval Queue 上下文 (版本绑定 /
+    # 置信度审核优先级 / required_action 人工下一步)
+    for col in ("Request", "Artifact", "Gate", "Status", "Ver", "Conf", "Action", "Idea", "By"):
         approval_table.add_column(col)
     for a in p.approvals:
+        confidence = a.get("confidence", 0.0)
         approval_table.add_row(
             _text(a.get("id", "")),
             _text(a.get("artifact_id", "")),
             _text(a.get("gate", "")),
             _text(a.get("status", ""), style=_style_status(a.get("status"))),
+            _text(str(a.get("artifact_version") or "-")),
+            _text(f"{confidence:.2f}" if isinstance(confidence, (int, float)) else "-"),
+            _text(a.get("required_action") or "-"),
             _text(a.get("idea_id") or "-"),
             _text(a.get("by") or "-"),
         )
     if not p.approvals:
-        approval_table.add_row(_text("(no approvals)", style="dim"), "", "", "", "", "")
+        approval_table.add_row(_text("(no approvals)", style="dim"), "", "", "", "", "", "", "", "")
+
+    # Phase 9C (ADR-0028): 审批历史联表 (请求 + 决定; 无决定数据 → 不渲染, 零回归)
+    history_table = Table(show_header=True, header_style="bold", box=box.SIMPLE_HEAVY, expand=True)
+    for col in ("Request", "Status", "Ver", "Decision", "By", "Comment"):
+        history_table.add_column(col)
+    for h in p.approval_history:
+        d = h.get("decision")
+        history_table.add_row(
+            _text(h.get("id", "")),
+            _text(h.get("status", ""), style=_style_status(h.get("status"))),
+            _text(str(h.get("artifact_version") or "-")),
+            _text(d.get("decision", "") if d else "-"),
+            _text(d.get("decided_by", "") if d else "-"),
+            _text((d.get("comment") or "-") if d else "-"),
+        )
+    if not p.approval_history:
+        history_table.add_row(_text("(no history)", style="dim"), "", "", "", "", "")
 
     workflow_table = Table(show_header=True, header_style="bold", box=box.SIMPLE_HEAVY, expand=True)
     for col in ("Workflow", "Idea", "Status", "Current Stage", "Stages", "Product Decision"):
@@ -879,7 +913,7 @@ def build_product(snapshot: FactorySnapshot) -> Panel:
         workflow_table.add_row(_text("(no workflows)", style="dim"), "", "", "", "", "")
 
     return _panel(
-        Group(summary, idea_table, approval_table, workflow_table),
+        Group(summary, idea_table, approval_table, history_table, workflow_table),
         "Product Intelligence",
         border="cyan",
     )

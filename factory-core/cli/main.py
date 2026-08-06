@@ -49,6 +49,7 @@ from .commands import (
     cmd_provider_compare,
     cmd_provider_recommend,
     cmd_product_approval_decide,
+    cmd_product_approval_history,
     cmd_product_approval_list,
     cmd_product_approval_request,
     cmd_product_experience_list,
@@ -57,6 +58,7 @@ from .commands import (
     cmd_product_idea_create,
     cmd_product_idea_list,
     cmd_product_idea_show,
+    cmd_product_workflow_resume,
     cmd_product_workflow_start,
     cmd_product_workflow_status,
     cmd_recover,
@@ -445,16 +447,27 @@ def build_parser() -> Any:
     p_pa_request.add_argument("--by", default=None, help="申请人 (默认 cli)")
     p_pa_request.add_argument("--note", default=None, help="申请备注")
     p_pa_decide = pasub.add_parser(
-        "decide", help="审批决定 approve|deny: 终态不可逆 (发 approval.granted/denied; granted 产生 Product Decision Artifact)"
+        "decide", help="审批决定 approve|reject|changes_requested|delegate (deny=9a 兼容别名): 终态不可逆 (发 approval.approved/rejected/changes_requested/delegated; approved 产生 Product Decision Artifact)"
     )
     json_opt(p_pa_decide)
     p_pa_decide.add_argument("request_id", help="审批请求 ID (如 APR-001)")
-    p_pa_decide.add_argument("decision", choices=["approve", "deny"], help="决定")
-    p_pa_decide.add_argument("--comment", default=None, help="决定理由 (deny 必填建议)")
+    p_pa_decide.add_argument(
+        "decision",
+        choices=["approve", "reject", "changes_requested", "delegate", "deny"],
+        help="决定 (deny 为 9a 兼容别名 → rejected)",
+    )
+    p_pa_decide.add_argument("--comment", default=None, help="决定理由 (reject/changes_requested 必填建议)")
     p_pa_decide.add_argument("--by", default=None, help="决策人 (默认 cli)")
     p_pa_list = pasub.add_parser("list", help="审批清单 (发 approval.viewed 审计)")
     json_opt(p_pa_list)
     p_pa_list.add_argument("--pending", action="store_true", help="只列待办 (pending)")
+    p_pa_list.add_argument("--status", default=None,
+                           help="按终态过滤 (pending|approved|rejected|changes_requested|delegated; denied 兼容)")
+    p_pa_history = pasub.add_parser(
+        "history", help="Artifact 审批历史: 全部请求 + 决定联表 (发 approval.viewed 审计)"
+    )
+    json_opt(p_pa_history)
+    p_pa_history.add_argument("artifact_id", help="Artifact ID (如 ART-001)")
     # product workflow <sub>
     p_pw = psub.add_parser(
         "workflow", help="产品工作流骨架 (发 product.* 事件)"
@@ -471,6 +484,11 @@ def build_parser() -> Any:
     )
     json_opt(p_pw_status)
     p_pw_status.add_argument("idea_id", help="想法 ID (如 PI-001)")
+    p_pw_resume = pwsub.add_parser(
+        "resume", help="手动恢复暂停的工作流 paused → running (发 approval.resumed reason=manual)"
+    )
+    json_opt(p_pw_resume)
+    p_pw_resume.add_argument("idea_id", help="想法 ID (如 PI-001)")
     # product generate (Phase 9B, ADR-0027: Provider 生成编排)
     p_pg = psub.add_parser(
         "generate", help="AI 生成产品 Artifact: TaskRequirement → CostAwareSelector → ProviderAdapter (发 product.generation.* 事件)"
@@ -858,12 +876,16 @@ def _dispatch_product(ctx: FactoryContext, args: Any) -> dict:
             return cmd_product_approval_decide(ctx, args)
         if args.approval_command == "list":
             return cmd_product_approval_list(ctx, args)
+        if args.approval_command == "history":
+            return cmd_product_approval_history(ctx, args)
         raise CliError(f"unknown product approval command: {args.approval_command}", exit_code=2)
     if args.product_command == "workflow":
         if args.workflow_command == "start":
             return cmd_product_workflow_start(ctx, args)
         if args.workflow_command == "status":
             return cmd_product_workflow_status(ctx, args)
+        if args.workflow_command == "resume":
+            return cmd_product_workflow_resume(ctx, args)
         raise CliError(f"unknown product workflow command: {args.workflow_command}", exit_code=2)
     if args.product_command == "generate":
         return cmd_product_generate(ctx, args)
@@ -1561,6 +1583,8 @@ def _print_product(args: Any, r: dict) -> None:
             _print_product_approval_list(r)
         elif args.approval_command == "decide":
             _print_product_approval_decide(r)
+        elif args.approval_command == "history":
+            _print_product_approval_history(r)
         else:  # request
             _print_product_approval_request(r)
     elif args.product_command == "workflow":
@@ -1619,8 +1643,26 @@ def _print_product_approval_decide(r: dict) -> None:
         print(f"  product_decision  {pd['id']}  (status: {pd['status']}, "
               f"confidence: {pd['confidence']})")
     if r.get("event_seq"):
-        print(f"  事件      approval.{'granted' if d['decision'] == 'approved' else 'denied'} "
-              f"seq={r['event_seq']}")
+        print(f"  事件      approval.{d['decision']} seq={r['event_seq']}")
+
+
+def _print_product_approval_history(r: dict) -> None:
+    rows = []
+    for h in r["history"]:
+        decision = h.get("decision")
+        rows.append([
+            h["id"], h["artifact_id"], h["gate"], h["status"],
+            str(h.get("artifact_version") or "-"),
+            h.get("idea_id") or "-",
+            decision["decision"] if decision else "-",
+            decision["decided_by"] if decision else "-",
+            (decision["comment"] or "-") if decision else "-",
+        ])
+    print(_render_table(
+        ["Request", "Artifact", "Gate", "Status", "Version", "Idea", "Decision", "By", "Comment"],
+        rows,
+    ))
+    print(f"{r['count']} history entries")
 
 
 def _print_product_approval_list(r: dict) -> None:
@@ -1639,8 +1681,14 @@ def _print_product_workflow(args: Any, r: dict) -> None:
     if w.get("product_decision"):
         print(f"  product_decision {w['product_decision']}")
     if r.get("event_seq"):
-        event_name = "started" if args.workflow_command == "start" else "status_viewed"
-        print(f"  事件      product.workflow.{event_name} seq={r['event_seq']}")
+        if args.workflow_command == "resume":
+            event_label = "approval.resumed"  # 手动恢复 (reason=manual)
+        else:
+            event_label = (
+                f"product.workflow."
+                f"{'started' if args.workflow_command == 'start' else 'status_viewed'}"
+            )
+        print(f"  事件      {event_label} seq={r['event_seq']}")
 
 
 # ------------------------------------------------------------------ product generate/experience 输出 (Phase 9B, ADR-0027)

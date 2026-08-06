@@ -2461,6 +2461,16 @@ def _product_errors():
     return ProductError, ProductNotFoundError
 
 
+#: 9c 终态决定值 → CLI 审计锚点事件 (decide 命令 event_seq; 9a 兼容事件
+#: granted/denied 由服务层同时发出, 不参与 CLI 取序)。
+_DECISION_EVENT = {
+    "approved": EventType.APPROVAL_APPROVED,
+    "rejected": EventType.APPROVAL_REJECTED,
+    "changes_requested": EventType.APPROVAL_CHANGES_REQUESTED,
+    "delegated": EventType.APPROVAL_DELEGATED,
+}
+
+
 def cmd_product_idea_create(ctx: FactoryContext, args: Any) -> dict:
     """factory product idea create — 创建想法 (发 idea.created, source=product)。
 
@@ -2546,18 +2556,26 @@ def cmd_product_approval_request(ctx: FactoryContext, args: Any) -> dict:
 
 
 def cmd_product_approval_decide(ctx: FactoryContext, args: Any) -> dict:
-    """factory product approval decide <request_id> approve|deny [--comment] [--by]
-    — 审批决定 (发 approval.granted|denied; granted 产生 Product Decision Artifact)。
+    """factory product approval decide <request_id> approve|reject|changes_requested|delegate
+    [--comment] [--by] — 审批决定 (发 approval.approved/rejected/changes_requested/delegated;
+    approved 产生 Product Decision Artifact)。
 
-    状态机: pending → approved|denied (终态不可逆, 重复决定 → 退出码 1);
-    request 不存在 → 退出码 7。
+    CLI 动词 → 服务层终态值映射 (Phase 9a 教训: 动词 ≠ 领域终态值); "deny" 为 9a
+    兼容别名 → denied → 服务层映射 rejected (ADR-0028 决策 1)。状态机: pending →
+    终态 (不可重复 decide, 重复决定 → 退出码 1); request 不存在 → 退出码 7。
     """
     ProductError, ProductNotFoundError = _product_errors()
+    # CLI 动词 → 服务层语义终态值 (状态机契约; deny 保留 9a 兼容别名)
+    decision_value = {
+        "approve": "approved",
+        "reject": "rejected",
+        "changes_requested": "changes_requested",
+        "delegate": "delegated",
+        "deny": "denied",  # 9a 遗留别名 → 服务层映射 rejected
+    }[args.decision]
     with ctx.logger_scope() as logger:
         service = _open_product_service(ctx, logger)
         try:
-            # CLI 动词 approve|deny → 服务层语义 approved|denied (状态机终态值)
-            decision_value = "approved" if args.decision == "approve" else "denied"
             request, decision, decision_artifact = service.decide_approval(
                 args.request_id,
                 decision_value,
@@ -2568,10 +2586,9 @@ def cmd_product_approval_decide(ctx: FactoryContext, args: Any) -> dict:
             raise CliError(str(exc), exit_code=7) from exc
         except ProductError as exc:
             raise CliError(str(exc), exit_code=1) from exc
-        event_seq = _product_last_seq(
-            logger,
-            EventType.APPROVAL_GRANTED if decision.decision == "approved" else EventType.APPROVAL_DENIED,
-        )
+        # 9c 终态事件 (approval.approved/rejected/changes_requested/delegated) 为
+        # CLI 审计锚点; 9a 兼容事件 (granted/denied) 由服务层同时发出, 不在此取序
+        event_seq = _product_last_seq(logger, _DECISION_EVENT[decision.decision])
     return {
         "ok": True,
         "approval": request.to_dict(),
@@ -2582,20 +2599,47 @@ def cmd_product_approval_decide(ctx: FactoryContext, args: Any) -> dict:
 
 
 def cmd_product_approval_list(ctx: FactoryContext, args: Any) -> dict:
-    """factory product approval list [--pending] — 审批清单 (发 approval.viewed 审计)。"""
+    """factory product approval list [--pending] [--status <status>] — 审批清单
+    (发 approval.viewed 审计; --status 过滤 = Approval Queue 视图)。"""
     from product.events import record_approval_viewed
 
+    status = getattr(args, "status", None)
+    pending_only = getattr(args, "pending", False)
     with ctx.logger_scope() as logger:
         service = _open_product_service(ctx, logger)
-        requests = service.list_approvals(pending_only=getattr(args, "pending", False))
-        record_approval_viewed(
-            logger, count=len(requests), pending_only=getattr(args, "pending", False)
-        )
+        requests = service.list_approvals(pending_only=pending_only, status=status)
+        record_approval_viewed(logger, count=len(requests), pending_only=pending_only, status=status)
         event_seq = _product_last_seq(logger, EventType.APPROVAL_VIEWED)
     return {
         "ok": True,
         "count": len(requests),
         "approvals": [r.to_dict() for r in requests],
+        "event_seq": event_seq,
+    }
+
+
+def cmd_product_approval_history(ctx: FactoryContext, args: Any) -> dict:
+    """factory product approval history <artifact_id> — Artifact 审批历史
+    (全部请求 + 决定联表, 按 requested_at 升序; 发 approval.viewed 审计)。
+
+    artifact 不存在 → 退出码 7; 无请求 → 空历史 (count 0)。
+    """
+    from product.events import record_approval_viewed
+
+    ProductError, ProductNotFoundError = _product_errors()
+    with ctx.logger_scope() as logger:
+        service = _open_product_service(ctx, logger)
+        try:
+            history = service.approval_history(args.artifact_id)
+        except ProductNotFoundError as exc:
+            raise CliError(str(exc), exit_code=7) from exc
+        record_approval_viewed(logger, count=len(history), artifact_id=args.artifact_id)
+        event_seq = _product_last_seq(logger, EventType.APPROVAL_VIEWED)
+    return {
+        "ok": True,
+        "artifact_id": args.artifact_id,
+        "count": len(history),
+        "history": history,
         "event_seq": event_seq,
     }
 
@@ -2634,6 +2678,26 @@ def cmd_product_workflow_status(ctx: FactoryContext, args: Any) -> dict:
             raise CliError(str(exc), exit_code=7) from exc
         record_workflow_status_viewed(logger, workflow=workflow)
         event_seq = _product_last_seq(logger, EventType.PRODUCT_WORKFLOW_STATUS_VIEWED)
+    return {"ok": True, "workflow": workflow.to_dict(), "event_seq": event_seq}
+
+
+def cmd_product_workflow_resume(ctx: FactoryContext, args: Any) -> dict:
+    """factory product workflow resume <idea_id> — 手动恢复暂停的工作流
+    paused → running (发 approval.resumed reason=manual)。
+
+    通用决策系统的恢复入口: 审批终态 (rejected/changes_requested) 后用户决定
+    不重审直接推进时使用。无工作流 → 退出码 7; 未暂停 → 退出码 1。
+    """
+    ProductError, ProductNotFoundError = _product_errors()
+    with ctx.logger_scope() as logger:
+        service = _open_product_service(ctx, logger)
+        try:
+            workflow = service.workflow_resume(args.idea_id)
+        except ProductNotFoundError as exc:
+            raise CliError(str(exc), exit_code=7) from exc
+        except ProductError as exc:
+            raise CliError(str(exc), exit_code=1) from exc
+        event_seq = _product_last_seq(logger, EventType.APPROVAL_RESUMED)
     return {"ok": True, "workflow": workflow.to_dict(), "event_seq": event_seq}
 
 

@@ -140,7 +140,7 @@ class TestApprovalCommands:
         assert rc == 0
         assert "APPROVED" in out
         assert "product_decision" in out
-        assert "approval.granted seq=" in out
+        assert "approval.approved seq=" in out  # 9c 事件锚点 (granted 兼容事件由服务层同时发出)
 
     def test_decide_approve_json(self, capsys, cli_root):
         run_cli(capsys, cli_root, "product", "idea", "create", "--title", "t")
@@ -155,6 +155,7 @@ class TestApprovalCommands:
         assert data["product_decision"]["type"] == "product_decision"
 
     def test_decide_deny(self, capsys, cli_root):
+        # 9c 状态机: deny 为 9a 兼容别名 → 服务层 rejected (终态值映射, ADR-0028)
         run_cli(capsys, cli_root, "product", "idea", "create", "--title", "t")
         run_cli(capsys, cli_root, "product", "approval", "request", "ART-001", "--gate", "prd")
         rc, out, _ = run_cli(
@@ -162,8 +163,8 @@ class TestApprovalCommands:
             "--comment", "重做",
         )
         assert rc == 0
-        assert "DENIED" in out
-        assert "approval.denied seq=" in out
+        assert "REJECTED" in out
+        assert "approval.rejected seq=" in out
         assert "product_decision" not in out
 
     def test_decide_twice_rc1(self, capsys, cli_root):
@@ -317,7 +318,7 @@ class TestFullChain:
         run_cli(capsys, cli_root, "product", "workflow", "start", "PI-001")
         run_cli(capsys, cli_root, "product", "approval", "request", "ART-001", "--gate", "prd")
         rc, out, _ = run_cli(capsys, cli_root, "--json", "product", "workflow", "status", "PI-001")
-        assert json.loads(out)["workflow"]["status"] == "awaiting_approval"
+        assert json.loads(out)["workflow"]["status"] == "paused"  # 9c: awaiting_approval → paused 细化
         rc, out, _ = run_cli(
             capsys, cli_root, "--json", "product", "approval", "decide", "APR-001", "approve"
         )

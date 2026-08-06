@@ -48,20 +48,31 @@ class ApprovalRequired(str, Enum):
 
 
 class ApprovalStatus(str, Enum):
-    """审批请求状态机: pending → approved | denied (终态, 不可逆)。"""
+    """审批请求状态机 (Phase 9c): pending → approved | rejected | changes_requested | delegated。
+
+    终态可逆: rejected/changes_requested/delegated 后可重新提交 (新请求, 同
+    version 允许再申请); approved 后仅当 Artifact version 递增 (v1→v2) 才需
+    重新审批 (禁覆盖历史 — 见 service.revise_artifact)。DENIED 为 9a 遗留
+    别名 (只读兼容旧数据; 新写入一律 rejected, 输入 denied → rejected 映射)。
+    """
 
     PENDING = "pending"
     APPROVED = "approved"
-    DENIED = "denied"
+    REJECTED = "rejected"
+    CHANGES_REQUESTED = "changes_requested"
+    DELEGATED = "delegated"
+    DENIED = "denied"  # 9a 遗留 (读兼容; 不参与新流转)
 
 
 class WorkflowStatus(str, Enum):
-    """产品工作流状态: running / awaiting_approval (审批门暂停) / completed / failed。"""
+    """产品工作流状态: running / paused (审批门暂停 — 9a awaiting_approval 细化) /
+    completed / failed。AWAITING_APPROVAL 为 9a 遗留成员 (只读兼容旧数据)。"""
 
     RUNNING = "running"
-    AWAITING_APPROVAL = "awaiting_approval"
+    PAUSED = "paused"
     COMPLETED = "completed"
     FAILED = "failed"
+    AWAITING_APPROVAL = "awaiting_approval"  # 9a 遗留 (读兼容旧数据)
 
 
 class Artifact(BaseModel):
@@ -83,6 +94,7 @@ class Artifact(BaseModel):
     version: int = 1                # Lineage: 重生成递增
     confidence: float = 0.0         # Confidence Model: 0-1
     created_at: str = Field(default_factory=_now)
+    supersedes: str | None = None   # Phase 9c: 版本链前驱 Artifact id (revise 递增, 禁覆盖历史)
 
     @field_validator("confidence")
     @classmethod
@@ -137,11 +149,13 @@ class ApprovalGate(BaseModel):
 
 
 class ApprovalRequest(BaseModel):
-    """审批请求: 任何 Artifact 可申请 (artifact_id → gate 门)。pending → approved/denied。
+    """审批请求: 任何 Artifact 可申请 (artifact_id → gate 门)。pending → 终态。
 
     idea_id (扩展字段): 审批涉及的产品想法 — 用于 workflow 联动 (approval.required
-    时 workflow → awaiting_approval; granted 时推进 stage)。CLI 未显式传时由
-    service 从 artifact.content["idea_id"] 推导 (Idea 即 Artifact 约定)。
+    时 workflow → paused; 终态时推进/resume)。CLI 未显式传时由 service 从
+    artifact.content["idea_id"] 推导 (Idea 即 Artifact 约定)。
+    artifact_version (Phase 9c): 申请时点 Artifact.version 快照 — Approval 绑定
+    版本 (禁覆盖历史: v1 已批准后修改 → v2 需重新审批; 队列/历史按版本追溯)。
     decided_by/decided_at/comment: 决策回填 (决定后由 decide_approval 更新)。
     """
 
@@ -155,20 +169,24 @@ class ApprovalRequest(BaseModel):
     comment: str | None = None      # 申请备注 (deny 理由在 decision.comment)
     decided_by: str | None = None   # 决策人 (decide 回填)
     decided_at: str | None = None   # 决策时间 (decide 回填)
+    artifact_version: int | None = None  # Phase 9c: Artifact version 快照 (绑定版本)
 
     def to_dict(self) -> dict[str, Any]:
         return self.model_dump(mode="json")
 
 
 class ApprovalDecision(BaseModel):
-    """审批决定 (不可变记录): request_id → decision approved|denied + 决策人/理由。"""
+    """审批决定 (不可变记录): request_id → decision (approved|rejected|
+    changes_requested|delegated) + 决策人/理由。created_at (Phase 9c): 记录创建
+    时间 (与 decided_at 同值, 模型契约字段); decided_at 保留 9a 兼容。"""
 
     id: str
     request_id: str
-    decision: str = ApprovalStatus.APPROVED.value  # approved/denied
+    decision: str = ApprovalStatus.APPROVED.value  # approved/rejected/changes_requested/delegated
     decided_by: str = "human"
     comment: str = ""
     decided_at: str = Field(default_factory=_now)
+    created_at: str = Field(default_factory=_now)
 
     def to_dict(self) -> dict[str, Any]:
         return self.model_dump(mode="json")
@@ -177,10 +195,12 @@ class ApprovalDecision(BaseModel):
 class ProductWorkflow(BaseModel):
     """产品工作流骨架 (约束 5): stages 链 + current_stage + 状态机。
 
-    状态流转 (9a 骨架, phase9-plan §4): start → running; 关联 Artifact 申请审批
-    (approval.required) → awaiting_approval; granted → running + 推进 current_stage
-    + 产生 Product Decision Artifact (product_decision 字段记录其 id); denied →
-    running (回退重生成, 记录 comment)。completed/failed 为 9d 编排预留终态。
+    状态流转 (9a 骨架 + 9c Pause/Resume, phase9-plan §4): start → running; 关联
+    Artifact 申请审批 (approval.required) → paused (9a awaiting_approval 细化);
+    approved → running + 推进 current_stage + 产生 Product Decision Artifact
+    (product_decision 字段记录其 id) + approval.resumed; rejected/changes_requested
+    → running (回退重生成/修改, 停留当前 stage); 手动 workflow resume 同款恢复。
+    completed/failed 为 9d 编排预留终态。
     """
 
     id: str

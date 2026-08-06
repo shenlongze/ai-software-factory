@@ -56,6 +56,20 @@ from .models import (
 )
 
 
+def _required_action(status: str) -> str:
+    """Approval Queue 的 required action (与 service._required_action 同构的纯函数
+    副本 — collector 零 product imports 铁律 (Removal Isolation 源码级断言),
+    不跨包引用; 通用决策系统: pending → decide / approved → none /
+    rejected|changes_requested|denied → revise & re-request / delegated → await delegate。"""
+    if status == "pending":
+        return "decide"
+    if status == "approved":
+        return "none"
+    if status == "delegated":
+        return "await delegate"
+    return "revise & re-request"
+
+
 class DashboardCollector:
     """只读聚合器: 输入各 store, 输出 FactorySnapshot (查询时刻投影)。"""
 
@@ -667,12 +681,17 @@ class DashboardCollector:
         """Product Intelligence 汇总 (ProductStore 独立空间只读; 未装配/未开启 → 空快照)。
 
         只读: 仅调 ProductStore 读接口 (list_ideas/list_artifacts/list_requests/
-        list_workflows); 不发事件 (idea.*/approval.* 审计由 CLI 命令层发出,
+        list_workflows/list_decisions); 不发事件 (idea.*/approval.* 审计由 CLI 命令层发出,
         同 dashboard.viewed 边界)。失败安全: 未装配 product_store /
         include_product 关闭 → ProductSnapshot() 空快照; store 异常 (如损坏
         文件) → 空快照 (同 include_git 失败安全哲学)。默认关闭 — 既有
         dashboard 行为/成本完全不变; 本模块零顶层 imports product (Removal
         Isolation: 删除 product 不影响 Factory)。
+
+        Phase 9C (ADR-0028): approvals 行富化 artifact_type/artifact_version/
+        confidence/required_action (与 service.approval_queue 同构, 纯只读联表)
+        + 终态计数 + approval_history 联表 (请求 + 决定, 与 service.approval_history
+        同构) — 默认空/0, 无 9c 数据时既有 Product View 输出逐位不变。
         """
         if not self._include_product or self._product_store is None:
             return ProductSnapshot()
@@ -681,6 +700,7 @@ class DashboardCollector:
             artifacts = self._product_store.list_artifacts()
             requests = self._product_store.list_requests()
             workflows = self._product_store.list_workflows()
+            decisions = self._product_store.list_decisions()
         except Exception:
             return ProductSnapshot()  # 失败安全: 产品数据异常不影响整视图
         by_type = Counter(a.type for a in artifacts)
@@ -699,6 +719,24 @@ class DashboardCollector:
                 experiences = self._experience_store.list()
             except Exception:
                 experiences = []  # 失败安全: 经验数据异常不影响整视图
+        # Phase 9C: 审批行富化 + 历史联表 (纯只读, artifact 缺失失败安全)。
+        artifact_by_id = {a.id: a for a in artifacts}
+        approvals: list[dict[str, Any]] = []
+        history_rows: list[dict[str, Any]] = []
+        decision_by_request = {d.request_id: d for d in decisions}
+        for rq in requests:
+            art = artifact_by_id.get(rq.artifact_id)
+            approvals.append({
+                **rq.to_dict(),
+                "artifact_type": art.type if art is not None else None,
+                "artifact_version": art.version if art is not None else rq.artifact_version,
+                "confidence": art.confidence if art is not None else 0.0,
+                "required_action": _required_action(rq.status),
+            })
+            row = rq.to_dict()
+            decision = decision_by_request.get(rq.id)
+            row["decision"] = decision.to_dict() if decision is not None else None
+            history_rows.append(row)
         return ProductSnapshot(
             idea_total=len(ideas),
             ideas=[i.to_dict() for i in ideas],
@@ -709,7 +747,11 @@ class DashboardCollector:
             approval_pending=sum(1 for r in requests if r.status == "pending"),
             approval_approved=sum(1 for r in requests if r.status == "approved"),
             approval_denied=sum(1 for r in requests if r.status == "denied"),
-            approvals=[r.to_dict() for r in requests],
+            approvals=approvals,
+            approval_rejected=sum(1 for r in requests if r.status == "rejected"),
+            approval_changes_requested=sum(1 for r in requests if r.status == "changes_requested"),
+            approval_delegated=sum(1 for r in requests if r.status == "delegated"),
+            approval_history=history_rows,
             workflow_total=len(workflows),
             workflows_by_status=dict(sorted(by_status.items())),
             workflows=[w.to_dict() for w in workflows],

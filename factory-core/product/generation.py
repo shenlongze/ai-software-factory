@@ -40,12 +40,13 @@ from providers.models import ProviderRequest, ProviderResponse, TaskRequirement 
 from providers.usage import ProviderUsage  # noqa: F401  (经验积累计量, 失败安全)
 
 from .events import (
+    record_approval_experience_recorded,
     record_experience_recorded,
     record_generation_completed,
     record_generation_failed,
     record_generation_started,
 )
-from .experience import ExperienceStore, GenerationExperience
+from .experience import ApprovalExperience, ExperienceStore, GenerationExperience
 from .models import ApprovalRequest, Artifact, ProductIdea, _now
 from .service import ProductError, ProductNotFoundError, ProductService
 
@@ -446,6 +447,41 @@ class ProductGenerator:
         if self._experience_store is None:
             return []
         return self._experience_store.list(artifact_type)
+
+    def record_approval_experience(
+        self,
+        artifact_id: str,
+        decision: str,
+        *,
+        comment: str = "",
+        improvement_signal: str = "",
+        by: str = "cli",
+    ) -> ApprovalExperience:
+        """记录一次人工审批决定经验 (Phase 9c, ADR-0028; 数据接口, 不实现优化逻辑)。
+
+        从 Artifact Lineage 推导 artifact_type/provider_id/agent_id/confidence
+        (审批经验绑定生成来源 — Input→Agent→Provider→Artifact→Approval 链路
+        闭环); 落 ExperienceStore.approval_records 节 + 发
+        product.approval_experience.recorded (source=product)。
+        artifact 不存在 → ProductNotFoundError (CLI 退出码 7); 经验库未装配 →
+        ProductGenerationError; decision 非法 → 模型校验错误。
+        """
+        artifact = self._service.get_artifact(artifact_id)
+        if self._experience_store is None:
+            raise ProductGenerationError("experience store not configured")
+        experience = ApprovalExperience(
+            artifact_type=artifact.type,
+            provider_id=artifact.provider_id,
+            agent_id=artifact.agent_id,
+            confidence=artifact.confidence,
+            decision=decision,
+            human_comment=comment or "",
+            improvement_signal=improvement_signal or "",
+            decided_by=by,
+        )
+        self._experience_store.record_approval(experience)
+        record_approval_experience_recorded(self._logger, experience=experience, by=by)
+        return experience
 
     # ------------------------------------------------------------------ 内部
 

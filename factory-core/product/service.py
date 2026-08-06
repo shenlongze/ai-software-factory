@@ -17,11 +17,27 @@
 - 无 Database/Web API (phase9a-status 范围): 纯本地 JSON store + 事件审计。
 - ID 生成: 前缀 + 3 位序号 (PI-001/ART-001/APR-001/APD-001/PW-001, 同任务/执行风格)。
 
-状态机 (本阶段骨架):
-- ApprovalRequest: pending → approved | denied (终态不可逆, 重复 decide 抛错)
-- ProductWorkflow: running ↔ awaiting_approval (approval.required 进入 /
-  granted|denied 退出); granted 额外推进 current_stage + 记录 product_decision
+状态机 (9a 骨架 + 9c 完整状态机, ADR-0028):
+- ApprovalRequest: pending → approved | rejected | changes_requested | delegated
+  (终态可逆: rejected/changes_requested/delegated 后可重新提交新请求; approved
+  仅当 Artifact version 递增才需重新审批 — 禁覆盖历史)。输入 "denied" 为 9a
+  遗留别名 → rejected (兼容 9a CLI deny 动词与旧调用)。
+- ProductWorkflow: running ↔ paused (9a awaiting_approval 细化); approval 申请 →
+  paused; 终态决定 → running (approved 额外推进 current_stage + 记录
+  product_decision + approval.resumed; rejected/changes_requested 停留当前 stage
+  进入修改流程); 手动 workflow_resume 同款恢复 (approval.resumed, reason=manual)。
 - ProductWorkflow 不绑定 PRD/UI: stages 为声明式列表, 门按 Artifact type 匹配
+
+Phase 9c 新增 (Human Decision Intelligence, ADR-0028):
+- Artifact Version: revise_artifact (v1 → v2 新 Artifact, supersedes 指向前版,
+  禁覆盖历史) + artifact_version_history; ApprovalRequest.artifact_version 绑定
+  申请时点版本 — 新 version 需重新审批。
+- Approval Queue: approval_queue (request + artifact type/version/confidence +
+  required_action) + list_approvals(status=...) 过滤。
+- Approval History: approval_history (request + decision 联表)。
+- 事件 (经 EventLogger): approval.created/pending 申请时, approved/rejected/
+  changes_requested/delegated 终态时, approval.resumed 工作流恢复时; 9a 既有
+  approval.required/granted/denied 保留 (兼容语义映射, ADR-0028 决策 1)。
 """
 
 from __future__ import annotations
@@ -30,9 +46,16 @@ import re
 from typing import Any
 
 from .events import (
+    record_approval_approved,
+    record_approval_changes_requested,
+    record_approval_created,
+    record_approval_delegated,
     record_approval_denied,
     record_approval_granted,
+    record_approval_pending,
+    record_approval_rejected,
     record_approval_required,
+    record_approval_resumed,
     record_idea_created,
     record_workflow_started,
 )
@@ -40,6 +63,7 @@ from .models import (
     ApprovalDecision,
     ApprovalGate,
     ApprovalRequest,
+    ApprovalStatus,
     Artifact,
     ProductIdea,
     ProductWorkflow,
@@ -60,6 +84,13 @@ DEFAULT_GATES: dict[str, tuple[str, str]] = {
     "architecture": ("recommended", "架构设计建议经人工批准 (recommended, 可跳过记录)"),
 }
 
+#: Phase 9c 状态机: 合法终态决策值 (decide_approval 输入, 大小写不敏感)。
+#: "denied" 为 9a 遗留输入别名 → rejected (兼容 9a CLI deny 动词与旧调用)。
+VALID_DECISIONS: tuple[str, ...] = (
+    "approved", "rejected", "changes_requested", "delegated",
+)
+DECISION_ALIASES: dict[str, str] = {"denied": "rejected"}
+
 
 class ProductError(Exception):
     """产品层业务错误 (CLI 映射 → 退出码 1)。"""
@@ -77,6 +108,22 @@ def _next_id(prefix: str, existing: list[Any]) -> str:
         if m:
             max_n = max(max_n, int(m.group(1)))
     return f"{prefix}-{max_n + 1:03d}"
+
+
+def _required_action(status: str) -> str:
+    """Approval Queue 的 required action (通用决策系统 — 人工下一步动作提示)。
+
+    pending → decide (待人工决定); approved → none (已通过);
+    rejected/changes_requested (含 9a 遗留 denied) → revise & re-request
+    (修改后重新审批, 终态可逆); delegated → await delegate (待被转派人决定)。
+    """
+    if status == ApprovalStatus.PENDING.value:
+        return "decide"
+    if status == ApprovalStatus.APPROVED.value:
+        return "none"
+    if status == ApprovalStatus.DELEGATED.value:
+        return "await delegate"
+    return "revise & re-request"  # rejected / changes_requested / denied (遗留)
 
 
 class ProductService:
@@ -234,11 +281,18 @@ class ProductService:
     ) -> ApprovalRequest:
         """申请审批: 任何 Artifact 可申请 (门按 gate_id 或 artifact.type 解析)。
 
-        流程 (phase9-plan §4): 落 pending 请求 → approval.required → 关联
-        workflow (若有) 进入 awaiting_approval (未批准不自动推进)。
+        流程 (phase9-plan §4 + 9c 状态机): 落 pending 请求 (artifact_version
+        快照绑定) → approval.created → approval.pending → approval.required (9a
+        兼容) → 关联 workflow (若有) 进入 paused (未批准不自动推进)。
+
+        Phase 9c 队列守卫 (通用决策系统 — 禁重复申请/禁覆盖历史):
+        - 同 Artifact 已有 pending 请求 → ProductError (重复申请)。
+        - 同 Artifact 同 version 已 approved → ProductError (需 v2 重新审批)。
+        - rejected/changes_requested/delegated 终态 → 允许重新提交 (终态可逆)。
         """
         artifact = self.get_artifact(artifact_id)
         gate = self.get_or_create_gate(gate_id or artifact.type)
+        self._guard_request_duplicate(artifact)
         idea = idea_id or (
             artifact.content.get("idea_id") if isinstance(artifact.content, dict) else None
         )
@@ -249,11 +303,37 @@ class ProductService:
             idea_id=idea,
             by=by,
             comment=note,
+            artifact_version=artifact.version,
         )
         self._store.save_request(request)
-        record_approval_required(self._logger, request=request, gate=gate, artifact=artifact)
+        record_approval_created(self._logger, request=request, gate=gate, artifact=artifact)
+        record_approval_pending(self._logger, request=request, gate=gate, artifact=artifact)
+        record_approval_required(self._logger, request=request, gate=gate, artifact=artifact)  # 9a 兼容
         self._pause_workflow_for(idea)
         return request
+
+    def _guard_request_duplicate(self, artifact: Artifact) -> None:
+        """审批队列唯一性守卫: 同 artifact pending 或同 version approved 拒重复申请。
+
+        终态可逆: rejected/changes_requested/delegated (含 9a 遗留 denied) 后可
+        重新提交 (同 version 允许再申请); approved 仅 version 递增后可再申请。
+        """
+        for existing in self._store.list_requests():
+            if existing.artifact_id != artifact.id:
+                continue
+            if existing.status == ApprovalStatus.PENDING.value:
+                raise ProductError(
+                    f"approval already pending for artifact {artifact.id} "
+                    f"(request {existing.id})"
+                )
+            if (
+                existing.status == ApprovalStatus.APPROVED.value
+                and existing.artifact_version == artifact.version
+            ):
+                raise ProductError(
+                    f"artifact {artifact.id} version {artifact.version} already approved "
+                    f"(request {existing.id}); revise to a new version and re-approve"
+                )
 
     def decide_approval(
         self,
@@ -263,20 +343,31 @@ class ProductService:
         by: str = "human",
         comment: str = "",
     ) -> tuple[ApprovalRequest, ApprovalDecision, Artifact | None]:
-        """审批决定: pending → approved|denied (终态不可逆)。
+        """审批决定 (9c 状态机): pending → approved | rejected | changes_requested | delegated。
 
-        approved: approval.granted + Product Decision Artifact (source_events 锚定
-        granted 事件, Lineage 闭环) + workflow 推进下一 stage + product_decision
-        回填; denied: approval.denied + workflow 回 running (回退重生成)。
+        - approved: approval.approved + approval.granted (9a 兼容) + Product
+          Decision Artifact (source_events 锚定 granted 事件, Lineage 闭环) +
+          workflow 恢复并推进下一 stage (approval.resumed, reason=approved)。
+        - rejected: approval.rejected + approval.denied (9a 兼容) + workflow 恢复
+          停留当前 stage (进入修改流程, approval.resumed, reason=rejected)。
+        - changes_requested: approval.changes_requested + workflow 恢复 (修改后
+          重新审批); delegated: approval.delegated + workflow 恢复 (待被转派人决定)。
+        - 输入 "denied" (9a 遗留) → rejected (状态机终态值映射, ADR-0028)。
+        终态不可重复 decide (重复决定抛错); 终态可逆 = 重新提交新请求。
         """
         request = self._store.get_request(request_id)
         if request is None:
             raise ProductNotFoundError(f"approval request not found: {request_id}")
-        if request.status != "pending":
+        if request.status != ApprovalStatus.PENDING.value:
             raise ProductError(f"approval request {request_id} already {request.status}")
         decision_value = decision.lower()
-        if decision_value not in ("approved", "denied"):
-            raise ProductError(f"invalid approval decision: {decision!r} (expected approved|denied)")
+        if decision_value in DECISION_ALIASES:
+            decision_value = DECISION_ALIASES[decision_value]  # denied → rejected (9a 兼容)
+        if decision_value not in VALID_DECISIONS:
+            raise ProductError(
+                f"invalid approval decision: {decision!r} "
+                f"(expected approved|rejected|changes_requested|delegated)"
+            )
 
         decided_at = _now()
         request2 = request.model_copy(
@@ -300,24 +391,51 @@ class ProductService:
         artifact = self._store.get_artifact(request.artifact_id)
 
         if decision_value == "approved":
-            ev = record_approval_granted(
+            record_approval_approved(
+                self._logger, request=request2, decision=decision_record, artifact=artifact
+            )
+            ev = record_approval_granted(  # 9a 兼容 (Product Decision 锚点)
                 self._logger, request=request2, decision=decision_record, artifact=artifact
             )
             decision_artifact = self._make_product_decision(request2, decision_record, artifact, ev)
             self._store.save_artifact(decision_artifact)  # Product Decision 落库 (Artifact 抽象)
             self._advance_workflow_for(request.idea_id, decision_artifact.id)
             return request2, decision_record, decision_artifact
-        record_approval_denied(
-            self._logger, request=request2, decision=decision_record, artifact=artifact
-        )
-        self._resume_workflow_for(request.idea_id)
+        if decision_value == "rejected":
+            record_approval_rejected(
+                self._logger, request=request2, decision=decision_record, artifact=artifact
+            )
+            record_approval_denied(  # 9a 兼容 (语义映射 denied → rejected)
+                self._logger, request=request2, decision=decision_record, artifact=artifact
+            )
+        elif decision_value == "changes_requested":
+            record_approval_changes_requested(
+                self._logger, request=request2, decision=decision_record, artifact=artifact
+            )
+        else:  # delegated
+            record_approval_delegated(
+                self._logger, request=request2, decision=decision_record, artifact=artifact
+            )
+        self._resume_workflow_for(request.idea_id, reason=decision_value)
         return request2, decision_record, None
 
-    def list_approvals(self, pending_only: bool = False) -> list[ApprovalRequest]:
-        """审批请求清单 (pending_only=True 只列待办)。"""
+    def list_approvals(
+        self,
+        pending_only: bool = False,
+        status: str | None = None,
+    ) -> list[ApprovalRequest]:
+        """审批请求清单 (pending_only=True 只列待办; status 按终态值过滤)。
+
+        Phase 9c: --status 过滤 (Approval Queue); "denied" (9a 遗留) → rejected
+        归一 (状态机语义映射)。
+        """
+        requests = self._store.list_requests()
+        if status is not None:
+            status_value = DECISION_ALIASES.get(status.lower(), status.lower())
+            requests = [r for r in requests if r.status == status_value]
         if pending_only:
-            return self._store.list_pending_requests()
-        return self._store.list_requests()
+            requests = [r for r in requests if r.status == ApprovalStatus.PENDING.value]
+        return requests
 
     def get_approval_request(self, request_id: str) -> ApprovalRequest:
         """按 id 取审批请求; 不存在 → ProductNotFoundError。"""
@@ -325,6 +443,47 @@ class ProductService:
         if request is None:
             raise ProductNotFoundError(f"approval request not found: {request_id}")
         return request
+
+    # ------------------------------------------------------------------ Approval Queue / History (Phase 9c)
+
+    def approval_queue(self, status: str | None = None) -> list[dict[str, Any]]:
+        """待审核队列 (通用决策系统): request + artifact 上下文 + required_action。
+
+        每行 = ApprovalRequest dict 扩展 artifact_type/artifact_version/confidence
+        (来自 Artifact 只读联表; artifact 缺失 → None/0.0 失败安全) +
+        required_action (pending → decide; approved → none; rejected/
+        changes_requested → revise & re-request; delegated → await delegate)。
+        """
+        rows: list[dict[str, Any]] = []
+        for request in self.list_approvals(status=status):
+            artifact = self._store.get_artifact(request.artifact_id)
+            rows.append({
+                **request.to_dict(),
+                "artifact_type": artifact.type if artifact is not None else None,
+                "artifact_version": (
+                    artifact.version if artifact is not None else request.artifact_version
+                ),
+                "confidence": artifact.confidence if artifact is not None else 0.0,
+                "required_action": _required_action(request.status),
+            })
+        return rows
+
+    def approval_history(self, artifact_id: str) -> list[dict[str, Any]]:
+        """Artifact 审批历史: 全部请求 (按 requested_at 升序) + 决定记录联表。
+
+        artifact 不存在 → ProductNotFoundError; 无请求 → 空列表。
+        """
+        self.get_artifact(artifact_id)
+        decisions = {d.request_id: d for d in self._store.list_decisions()}
+        rows: list[dict[str, Any]] = []
+        for request in self._store.list_requests():
+            if request.artifact_id != artifact_id:
+                continue
+            row = request.to_dict()
+            decision = decisions.get(request.id)
+            row["decision"] = decision.to_dict() if decision is not None else None
+            rows.append(row)
+        return rows
 
     # ------------------------------------------------------------------ Workflow
 
@@ -357,23 +516,114 @@ class ProductService:
             raise ProductNotFoundError(f"no product workflow for idea {idea_id}")
         return workflow
 
+    def workflow_resume(self, idea_id: str) -> ProductWorkflow:
+        """手动恢复暂停的工作流 (Phase 9c): paused → running, 停留当前 stage。
+
+        发 approval.resumed (reason=manual); 未暂停 (running/completed/failed) →
+        ProductError; 无工作流 → ProductNotFoundError。通用决策系统的恢复入口:
+        审批终态 (rejected/changes_requested) 后用户决定不重审直接推进时使用。
+        """
+        workflow = self.workflow_status(idea_id)  # 无工作流 → ProductNotFoundError
+        if workflow.status not in (
+            WorkflowStatus.PAUSED.value,
+            WorkflowStatus.AWAITING_APPROVAL.value,  # 9a 遗留
+        ):
+            raise ProductError(
+                f"workflow for idea {idea_id} is not paused (status: {workflow.status})"
+            )
+        updated = workflow.model_copy(update={"status": WorkflowStatus.RUNNING.value})
+        self._store.save_workflow(updated)
+        record_approval_resumed(self._logger, workflow=updated, reason="manual")
+        return updated
+
+    # ------------------------------------------------------------------ Artifact Version (Phase 9c)
+
+    def revise_artifact(
+        self,
+        artifact_id: str,
+        content: dict[str, Any] | None = None,
+        *,
+        by: str = "human",
+        provider_id: str | None = None,
+        agent_id: str | None = None,
+        source_events: list[str] | None = None,
+        confidence: float | None = None,
+        status: str = "revised",
+        note: str | None = None,
+    ) -> Artifact:
+        """修改 Artifact → 新版本 (禁覆盖历史): v1 → v2 新 Artifact (supersedes=v1)。
+
+        Artifact 不可变 (id 即版本身份): revise 产出**新 id** 的 Artifact
+        (version = 前版 +1, Lineage 继承 provider/agent/source_events/confidence,
+        supersedes 指向前版), 旧版本原样保留 (versioned store — 历史可追溯)。
+        content 为增量更新 (旧 content 之上覆盖, idea_id 锚点自然保留)。
+        v2 需重新审批: request_approval 的 artifact_version 守卫拒绝\"同版本
+        重复批准\", 新版本申请走全新 pending 流程。
+        """
+        old = self.get_artifact(artifact_id)
+        new_content = dict(old.content)
+        new_content.update(dict(content or {}))
+        if note is not None:
+            new_content["revision_note"] = note
+        artifact = Artifact(
+            id=_next_id("ART", self._store.list_artifacts()),
+            type=old.type,
+            content=new_content,
+            status=status,
+            created_by=by,
+            provider_id=provider_id if provider_id is not None else old.provider_id,
+            agent_id=agent_id if agent_id is not None else old.agent_id,
+            source_events=list(source_events or old.source_events),
+            version=old.version + 1,
+            confidence=confidence if confidence is not None else old.confidence,
+            supersedes=old.id,
+        )
+        self._store.save_artifact(artifact)
+        return artifact
+
+    def artifact_version_history(self, artifact_id: str) -> list[Artifact]:
+        """Artifact 版本链历史 (禁覆盖历史): 同 idea 同类型全部版本, 按 version 升序。
+
+        无 idea 锚点 (content.idea_id 缺失) → 仅自身 (KISS: 无法归族)。返回的
+        首条即 v1, 末条为当前版本 — 与 approval 绑定 (artifact_version) 对照
+        即可还原\"哪个版本经哪次审批\"。
+        """
+        artifact = self.get_artifact(artifact_id)
+        idea_id = (
+            artifact.content.get("idea_id") if isinstance(artifact.content, dict) else None
+        )
+        if idea_id is None:
+            return [artifact]
+        chain = [
+            a for a in self._store.list_artifacts()
+            if a.type == artifact.type
+            and isinstance(a.content, dict)
+            and a.content.get("idea_id") == idea_id
+        ]
+        return sorted(chain, key=lambda a: a.version)
+
     # ------------------------------------------------------------------ 内部 (workflow 联动)
 
     def _pause_workflow_for(self, idea_id: str | None) -> None:
-        """approval.required → 关联 workflow 进入 awaiting_approval (暂停不推进)。"""
+        """approval.required → 关联 workflow 进入 paused (暂停不推进; 9a
+        awaiting_approval 细化 — 仅 running 可暂停, 非 running 不动)。"""
         if idea_id is None:
             return
         workflow = self._store.get_workflow_by_idea(idea_id)
         if workflow is not None and workflow.status == WorkflowStatus.RUNNING.value:
-            updated = workflow.model_copy(update={"status": WorkflowStatus.AWAITING_APPROVAL.value})
+            updated = workflow.model_copy(update={"status": WorkflowStatus.PAUSED.value})
             self._store.save_workflow(updated)
 
     def _advance_workflow_for(self, idea_id: str | None, decision_artifact_id: str) -> None:
-        """granted → workflow 回 running + 推进 current_stage + 记录 product_decision。"""
+        """approved → workflow 回 running + 推进 current_stage + 记录 product_decision
+        + approval.resumed (reason=approved)。"""
         if idea_id is None:
             return
         workflow = self._store.get_workflow_by_idea(idea_id)
-        if workflow is None or workflow.status != WorkflowStatus.AWAITING_APPROVAL.value:
+        if workflow is None or workflow.status not in (
+            WorkflowStatus.PAUSED.value,
+            WorkflowStatus.AWAITING_APPROVAL.value,  # 9a 遗留
+        ):
             return
         idx = workflow.stages.index(workflow.current_stage) if workflow.current_stage in workflow.stages else -1
         next_stage = workflow.stages[idx + 1] if 0 <= idx < len(workflow.stages) - 1 else workflow.current_stage
@@ -385,15 +635,21 @@ class ProductService:
             }
         )
         self._store.save_workflow(updated)
+        record_approval_resumed(self._logger, workflow=updated, reason="approved")
 
-    def _resume_workflow_for(self, idea_id: str | None) -> None:
-        """denied → workflow 回 running (回退重生成, 停留在当前 stage)。"""
+    def _resume_workflow_for(self, idea_id: str | None, *, reason: str = "rejected") -> None:
+        """终态非批准 (rejected/changes_requested/delegated) → workflow 回 running
+        (进入修改流程, 停留当前 stage) + approval.resumed。"""
         if idea_id is None:
             return
         workflow = self._store.get_workflow_by_idea(idea_id)
-        if workflow is not None and workflow.status == WorkflowStatus.AWAITING_APPROVAL.value:
+        if workflow is not None and workflow.status in (
+            WorkflowStatus.PAUSED.value,
+            WorkflowStatus.AWAITING_APPROVAL.value,  # 9a 遗留
+        ):
             updated = workflow.model_copy(update={"status": WorkflowStatus.RUNNING.value})
             self._store.save_workflow(updated)
+            record_approval_resumed(self._logger, workflow=updated, reason=reason)
 
     def _make_product_decision(
         self,

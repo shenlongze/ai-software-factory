@@ -307,6 +307,24 @@ class EventType(str, Enum):
     PRODUCT_EXPERIENCE_RECORDED = "product.experience.recorded"      # 人工经验记录落盘
     PRODUCT_EXPERIENCE_VIEWED = "product.experience.viewed"          # 经验清单被查看 (只读审计)
 
+    # --- Phase 9C: Human Decision Intelligence 事件 (增量扩展, ADR-0028) ---
+    # 依 ADR-0001 决策 1 的扩展路径: 加枚举成员即可, 不改表结构/API。
+    # approval.* 为审批决策状态机生命周期事件 (source="product" 写路径): created
+    # (请求落库) → pending (进入待审队列, workflow → paused) → approved|rejected|
+    # changes_requested|delegated (终态决定) + resumed (workflow paused → running,
+    # 自动恢复或 CLI workflow resume)。9a 既有 approval.required/granted/denied
+    # 保留 (兼容: granted↔approved, denied↔rejected 语义映射, ADR-0028 决策 1)。
+    # product.approval_experience.recorded 为审批经验记录事件 (ApprovalExperience
+    # 落盘 — Provider/Agent 优化数据接口, 本阶段只记录不消费)。
+    APPROVAL_CREATED = "approval.created"                      # 审批请求创建 (落库)
+    APPROVAL_PENDING = "approval.pending"                      # 请求进入待审队列 (等待人工)
+    APPROVAL_APPROVED = "approval.approved"                    # 审批通过 (终态, Product Decision)
+    APPROVAL_REJECTED = "approval.rejected"                    # 审批拒绝 (终态, 回退重生成)
+    APPROVAL_CHANGES_REQUESTED = "approval.changes_requested"  # 要求修改 (终态, 修改后重新审批)
+    APPROVAL_DELEGATED = "approval.delegated"                  # 审批转派他人 (终态, 待被转派人决定)
+    APPROVAL_RESUMED = "approval.resumed"                      # 工作流恢复 (paused → running)
+    PRODUCT_APPROVAL_EXPERIENCE_RECORDED = "product.approval_experience.recorded"  # 审批经验落盘
+
 
 class Event(BaseModel):
     """一条事件。append-only: 写入后永不修改、永不删除。"""

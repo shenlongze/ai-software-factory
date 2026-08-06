@@ -114,7 +114,7 @@ class TestCollectorEnabled:
                        runtime_store, event_store, checkpoint_store,
                        service._store, include_product=True)
         p = c.collect().product
-        assert p.workflows_by_status == {"awaiting_approval": 1}
+        assert p.workflows_by_status == {"paused": 1}  # 9c: awaiting_approval → paused 细化
 
     def test_unassembled_store_fail_safe(self, task_store, agent_registry, workflow_store,
                                          runtime_store, event_store, checkpoint_store):

@@ -104,12 +104,13 @@ class TestDecideApproval:
         assert decision.comment == "ok"
 
     def test_deny_transitions_request(self, service):
+        # 9c 状态机: "denied" 为 9a 遗留输入别名 → rejected (终态值映射, ADR-0028)
         a = seed_artifact(service, "prd")
         request = service.request_approval(a.id)
         request2, decision, artifact = service.decide_approval(request.id, "denied", comment="no")
-        assert request2.status == "denied"
-        assert decision.decision == "denied"
-        assert artifact is None  # denied 不产生 Product Decision
+        assert request2.status == "rejected"
+        assert decision.decision == "rejected"
+        assert artifact is None  # rejected 不产生 Product Decision
 
     def test_deny_accepts_uppercase(self, service):
         a = seed_artifact(service, "prd")

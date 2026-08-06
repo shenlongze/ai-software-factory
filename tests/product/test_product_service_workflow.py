@@ -75,7 +75,7 @@ class TestApprovalLinking:
         a = seed_artifact(service, "prd", idea_id=idea.id)
         service.request_approval(a.id)
         wf = service.workflow_status(idea.id)
-        assert wf.status == WorkflowStatus.AWAITING_APPROVAL.value
+        assert wf.status == WorkflowStatus.PAUSED.value  # 9c: awaiting_approval → paused 细化
 
     def test_approve_resumes_and_advances_stage(self, service):
         idea = seed_idea(service)

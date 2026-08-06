@@ -186,18 +186,264 @@ def record_approval_viewed(
     *,
     count: int,
     pending_only: bool = False,
+    status: str | None = None,
+    artifact_id: str | None = None,
     source: str = "cli",
 ) -> Event | None:
-    """审批清单被查看 (CLI 读命令审计, ADR-0002; source 缺省 cli)。"""
+    """审批清单被查看 (CLI 读命令审计, ADR-0002; source 缺省 cli)。
+
+    Phase 9c: --status 过滤 (approval list) / approval history 复用本事件
+    (payload 携带 status 与 artifact_id 上下文)。
+    """
     if logger is None:
         return None
+    payload: dict[str, Any] = {"count": count, "pending_only": pending_only}
+    if status is not None:
+        payload["status"] = status
+    if artifact_id is not None:
+        payload["artifact_id"] = artifact_id
     return logger.record(
         EventType.APPROVAL_VIEWED,
         source=source,
         stage="viewed",
         action="view approvals",
         result="OK",
-        payload={"count": count, "pending_only": pending_only},
+        payload=payload,
+    )
+
+
+def _record_approval_lifecycle(
+    logger: Any,
+    type_: EventType,
+    *,
+    request: Any,
+    gate: Any = None,
+    artifact: Any = None,
+    source: str = "product",
+    action: str,
+) -> Event | None:
+    """approval.created / approval.pending 共用 (请求生命周期事件)。
+
+    payload 与 approval.required 同构 (request_id/artifact_id/gate/status/
+    idea_id/artifact_version + artifact_type/required/source_events) — 事件
+    唯一事实源: 队列/历史/审计从事件 payload 即可重建上下文。
+    """
+    if logger is None:
+        return None
+    payload: dict[str, Any] = {
+        "request_id": request.id,
+        "artifact_id": request.artifact_id,
+        "gate": request.gate,
+        "status": request.status,
+        "idea_id": request.idea_id,
+        "artifact_version": getattr(request, "artifact_version", None),
+    }
+    if gate is not None:
+        payload["artifact_type"] = gate.artifact_type
+        payload["required"] = gate.required
+    if artifact is not None:
+        payload["artifact_type"] = payload.get("artifact_type") or artifact.type
+        payload["source_events"] = artifact.source_events  # Lineage 摘要
+    return logger.record(
+        type_,
+        source=source,
+        stage=request.status,
+        action=action,
+        result="OK",
+        payload=payload,
+    )
+
+
+def record_approval_created(
+    logger: Any,
+    *,
+    request: Any,
+    gate: Any = None,
+    artifact: Any = None,
+    source: str = "product",
+) -> Event | None:
+    """审批请求创建 (approval.created; request 落库后发出, 状态机起点)。"""
+    return _record_approval_lifecycle(
+        logger, EventType.APPROVAL_CREATED,
+        request=request, gate=gate, artifact=artifact, source=source,
+        action="create approval request",
+    )
+
+
+def record_approval_pending(
+    logger: Any,
+    *,
+    request: Any,
+    gate: Any = None,
+    artifact: Any = None,
+    source: str = "product",
+) -> Event | None:
+    """请求进入待审队列 (approval.pending; 等待人工决定, workflow → paused)。"""
+    return _record_approval_lifecycle(
+        logger, EventType.APPROVAL_PENDING,
+        request=request, gate=gate, artifact=artifact, source=source,
+        action="queue approval request",
+    )
+
+
+def _record_approval_decision_9c(
+    logger: Any,
+    type_: EventType,
+    *,
+    request: Any,
+    decision: Any,
+    artifact: Any = None,
+    source: str = "product",
+    action: str,
+) -> Event | None:
+    """approval.approved/rejected/changes_requested/delegated 共用 (终态决定)。"""
+    if logger is None:
+        return None
+    return logger.record(
+        type_,
+        source=source,
+        stage=request.status,
+        action=action,
+        result=decision.decision.upper(),
+        payload={
+            "request_id": request.id,
+            "artifact_id": request.artifact_id,
+            "gate": request.gate,
+            "decision": decision.decision,
+            "decided_by": decision.decided_by,
+            "comment": decision.comment,
+            "idea_id": request.idea_id,
+            "artifact_type": artifact.type if artifact is not None else None,
+            "artifact_version": getattr(request, "artifact_version", None),
+        },
+    )
+
+
+def record_approval_approved(
+    logger: Any,
+    *,
+    request: Any,
+    decision: Any,
+    artifact: Any = None,
+    source: str = "product",
+) -> Event | None:
+    """审批通过 (approval.approved; 终态, 产生 Product Decision Artifact)。"""
+    return _record_approval_decision_9c(
+        logger, EventType.APPROVAL_APPROVED,
+        request=request, decision=decision, artifact=artifact, source=source,
+        action="approve artifact",
+    )
+
+
+def record_approval_rejected(
+    logger: Any,
+    *,
+    request: Any,
+    decision: Any,
+    artifact: Any = None,
+    source: str = "product",
+) -> Event | None:
+    """审批拒绝 (approval.rejected; 终态, 回退重生成 — 9a denied 语义映射)。"""
+    return _record_approval_decision_9c(
+        logger, EventType.APPROVAL_REJECTED,
+        request=request, decision=decision, artifact=artifact, source=source,
+        action="reject artifact",
+    )
+
+
+def record_approval_changes_requested(
+    logger: Any,
+    *,
+    request: Any,
+    decision: Any,
+    artifact: Any = None,
+    source: str = "product",
+) -> Event | None:
+    """要求修改 (approval.changes_requested; 终态, 修改后重新审批)。"""
+    return _record_approval_decision_9c(
+        logger, EventType.APPROVAL_CHANGES_REQUESTED,
+        request=request, decision=decision, artifact=artifact, source=source,
+        action="request artifact changes",
+    )
+
+
+def record_approval_delegated(
+    logger: Any,
+    *,
+    request: Any,
+    decision: Any,
+    artifact: Any = None,
+    source: str = "product",
+) -> Event | None:
+    """审批转派 (approval.delegated; 终态, 待被转派人决定 — 通用决策系统: 审批
+    可委托给其他决策人, 被转派人经新请求重新决定)。"""
+    return _record_approval_decision_9c(
+        logger, EventType.APPROVAL_DELEGATED,
+        request=request, decision=decision, artifact=artifact, source=source,
+        action="delegate approval",
+    )
+
+
+def record_approval_resumed(
+    logger: Any,
+    *,
+    workflow: Any,
+    reason: str = "manual",
+    source: str = "product",
+) -> Event | None:
+    """工作流恢复 (approval.resumed; paused → running — 终态决定自动恢复或
+    CLI workflow resume 手动恢复, reason: approved/rejected/changes_requested/manual)。"""
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.APPROVAL_RESUMED,
+        source=source,
+        stage=workflow.status,
+        action="resume product workflow",
+        result="OK",
+        payload={
+            "workflow_id": workflow.id,
+            "idea_id": workflow.idea_id,
+            "current_stage": workflow.current_stage,
+            "status": workflow.status,
+            "reason": reason,
+        },
+    )
+
+
+def record_approval_experience_recorded(
+    logger: Any,
+    *,
+    experience: Any,
+    by: str = "cli",
+    source: str = "product",
+) -> Event | None:
+    """审批经验记录落盘 (ProductGenerator.record_approval_experience;
+    product.approval_experience.recorded)。
+
+    payload: experience_id/artifact_type/provider_id/agent_id/confidence/decision/
+    human_comment/improvement_signal/by — Provider/Agent 优化数据接口 (只记录
+    不消费, 同 product.experience.recorded 语义)。
+    """
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.PRODUCT_APPROVAL_EXPERIENCE_RECORDED,
+        source=source,
+        stage="recorded",
+        action="record approval experience",
+        result="OK",
+        payload={
+            "experience_id": experience.id,
+            "artifact_type": experience.artifact_type,
+            "provider_id": experience.provider_id,
+            "agent_id": experience.agent_id,
+            "confidence": experience.confidence,
+            "decision": experience.decision,
+            "human_comment": experience.human_comment,
+            "improvement_signal": experience.improvement_signal,
+            "by": by,
+        },
     )
 
 

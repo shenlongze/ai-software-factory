@@ -90,17 +90,74 @@ class ExperienceStoreError(Exception):
     """ExperienceStore 基础异常。"""
 
 
+class ApprovalExperience(BaseModel):
+    """一次人工审批决定的经验记录 (Phase 9c, ADR-0028; 只记录不消费)。
+
+    - artifact_type/provider_id/agent_id/confidence: 继承自被审批 Artifact
+      Lineage (AI Artifact Lineage 闭环 — 审批经验绑定生成来源)。
+    - decision: 终态决策 approved/rejected/changes_requested/delegated
+      (与 ApprovalRequest 终态一致)。
+    - human_comment: 人工决策理由; improvement_signal: 改进信号 (如
+      "content too shallow", 供未来 Provider/Agent 优化 — 不实现优化逻辑)。
+    - decided_by: 决策人; recorded_at: 记录时间; id: uuid hex (存储层回填)。
+    """
+
+    id: str = Field(default_factory=lambda: uuid4().hex)
+    artifact_type: str
+    provider_id: str | None = None
+    agent_id: str | None = None
+    confidence: float = 0.0
+    decision: str
+    human_comment: str = ""
+    improvement_signal: str = ""
+    decided_by: str = "human"
+    recorded_at: str = Field(default_factory=_now)
+
+    @field_validator("artifact_type")
+    @classmethod
+    def _type_nonempty(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("artifact_type must not be empty")
+        return v
+
+    @field_validator("confidence")
+    @classmethod
+    def _confidence_range(cls, v: float) -> float:
+        if not 0.0 <= v <= 1.0:
+            raise ValueError(f"confidence must be in [0, 1], got {v}")
+        return v
+
+    @field_validator("decision")
+    @classmethod
+    def _decision_value(cls, v: str) -> str:
+        v = v.strip().lower()
+        if v not in ("approved", "rejected", "changes_requested", "delegated"):
+            raise ValueError(
+                f"decision must be one of approved|rejected|changes_requested|delegated, got {v!r}"
+            )
+        return v
+
+    def to_dict(self) -> dict[str, Any]:
+        """JSON 友好序列化 (store/CLI --json/测试断言共用)。"""
+        return self.model_dump(mode="json")
+
+
 class ExperienceStore:
-    """生成经验记录 JSON 文件库 (独立文件 <product_dir>/experience.json)。
+    """生成经验 + 审批经验记录 JSON 文件库 (独立文件 <product_dir>/experience.json)。
 
     - 独立数据空间: 与 artifacts.json 等 Product 核心文件同目录但独立文件,
       删除 experience.json 不影响 Product 目录 (审计增强数据, 同 UsageStore)。
     - 原子写: 临时文件 + os.replace (同 ProductStore 模式)。
     - 损坏失败安全: 文件损坏/单条校验失败 → 跳过 (list 返回可读部分/空),
       record 在损坏文件上从空重建 — 读命令永不因 experience 文件失败。
-    - 文件格式 (KISS, 单节):
+    - Phase 9c (ADR-0028): 双节文件 — "records" (GenerationExperience) +
+      "approval_records" (ApprovalExperience, 审批经验 — Provider/Agent 优化
+      数据接口, 只记录不消费)。旧文件无 approval_records 节 → 空 (零回归)。
+    - 文件格式 (KISS, 双节):
       ```json
-      {"records": [ {GenerationExperience dict}, ... ]}
+      {"records": [ {GenerationExperience dict}, ... ],
+       "approval_records": [ {ApprovalExperience dict}, ... ]}
       ```
     """
 
@@ -120,20 +177,27 @@ class ExperienceStore:
     # ------------------------------------------------------------------ 写
 
     def record(self, experience: GenerationExperience) -> GenerationExperience:
-        """追加一条经验记录 (原子写); 返回带存储层回填 id 的记录。"""
+        """追加一条生成经验记录 (原子写); 返回带存储层回填 id 的记录。"""
         records = self._read_all()
         records.append(experience)
-        self._write_all(records)
+        self._write_all(records, self._read_all_approval())
+        return experience
+
+    def record_approval(self, experience: ApprovalExperience) -> ApprovalExperience:
+        """追加一条审批经验记录 (Phase 9c; 原子写, 与生成经验同文件分节)。"""
+        records = self._read_all_approval()
+        records.append(experience)
+        self._write_all(self._read_all(), records)
         return experience
 
     def clear(self) -> None:
-        """清空全部经验记录 (重建空库)。"""
-        self._write_all([])
+        """清空全部经验记录 (重建空库, 双节)。"""
+        self._write_all([], [])
 
     # ------------------------------------------------------------------ 读
 
     def list(self, artifact_type: str | None = None) -> list[GenerationExperience]:
-        """全部经验记录 (按 recorded_at 升序; 可按 artifact_type 过滤)。"""
+        """全部生成经验记录 (按 recorded_at 升序; 可按 artifact_type 过滤)。"""
         records = sorted(self._read_all(), key=lambda r: r.recorded_at)
         if artifact_type is None:
             return records
@@ -142,32 +206,57 @@ class ExperienceStore:
     def count(self, artifact_type: str | None = None) -> int:
         return len(self.list(artifact_type))
 
+    def list_approval(self, artifact_type: str | None = None) -> list[ApprovalExperience]:
+        """全部审批经验记录 (Phase 9c; 按 recorded_at 升序; 可按类型过滤)。"""
+        records = sorted(self._read_all_approval(), key=lambda r: r.recorded_at)
+        if artifact_type is None:
+            return records
+        return [r for r in records if r.artifact_type == artifact_type]
+
+    def count_approval(self, artifact_type: str | None = None) -> int:
+        return len(self.list_approval(artifact_type))
+
     # ------------------------------------------------------------------ 内部
 
     def _read_all(self) -> list[GenerationExperience]:
-        """读整库; 文件不存在 → 空; 损坏 (JSON/结构/单条校验) → 失败安全跳过。"""
+        """读生成经验节; 文件不存在 → 空; 损坏 (JSON/结构/单条校验) → 失败安全跳过。"""
+        return self._read_section("records", GenerationExperience)
+
+    def _read_all_approval(self) -> list[ApprovalExperience]:
+        """读审批经验节 (Phase 9c); 旧文件无该节 → 空 (零回归); 损坏 → 失败安全。"""
+        return self._read_section("approval_records", ApprovalExperience)
+
+    def _read_section(self, section: str, model: type[BaseModel]) -> list[Any]:
+        """读单节为模型列表; 文件缺失/损坏/节缺失 → 空 (损坏失败安全语义)。"""
         if not self.path.exists():
             return []
         try:
             raw = json.loads(self.path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             return []  # 损坏失败安全: 解析失败 → 空库
-        if not isinstance(raw, dict) or not isinstance(raw.get("records"), list):
+        if not isinstance(raw, dict) or not isinstance(raw.get(section), list):
             return []
-        records: list[GenerationExperience] = []
-        for item in raw["records"]:
+        records: list[Any] = []
+        for item in raw[section]:
             try:
-                records.append(GenerationExperience.model_validate(item))
+                records.append(model.model_validate(item))
             except Exception:
                 continue  # 单条损坏 → 跳过 (不拖垮整库)
         return records
 
-    def _write_all(self, records: list[GenerationExperience]) -> None:
-        """原子写整库: 临时文件 + os.replace (同 ProductStore 模式)。"""
+    def _write_all(
+        self,
+        records: list[GenerationExperience],
+        approval_records: list[ApprovalExperience],
+    ) -> None:
+        """原子写整库 (双节): 临时文件 + os.replace (同 ProductStore 模式)。"""
         self._dir.mkdir(parents=True, exist_ok=True)
         tmp = self._dir / f".{self.filename}.{os.getpid()}.tmp"
         payload = {
-            "records": [r.to_dict() for r in sorted(records, key=lambda r: r.recorded_at)]
+            "records": [r.to_dict() for r in sorted(records, key=lambda r: r.recorded_at)],
+            "approval_records": [
+                r.to_dict() for r in sorted(approval_records, key=lambda r: r.recorded_at)
+            ],
         }
         tmp.write_text(
             json.dumps(payload, ensure_ascii=False, indent=2) + "\n",

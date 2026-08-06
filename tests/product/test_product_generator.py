@@ -112,13 +112,13 @@ class TestApprovalAutoRequest:
         assert result.approval_request.gate == "ui"
 
     def test_prd_approval_workflow_pause_linkage(self, product_dir):
-        """生成 → approval pending → 关联 workflow 进入 awaiting_approval (9a 联动)。"""
+        """生成 → approval pending → 关联 workflow 进入 paused (9c: awaiting_approval 细化)。"""
         gen = make_generator(product_dir)
         idea_id = _seed(gen)
         gen.service.start_workflow(idea_id)
         gen.generate(idea_id, "prd")
         wf = gen.service.workflow_status(idea_id)
-        assert wf.status == "awaiting_approval"
+        assert wf.status == "paused"
 
 
 class TestValidationFailures:

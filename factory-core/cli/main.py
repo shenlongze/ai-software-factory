@@ -32,6 +32,7 @@ from .commands import (
     cmd_console_approvals,
     cmd_console_dashboard,
     cmd_dashboard,
+    cmd_demo_markpad,
     cmd_event_logs,
     cmd_execution_list,
     cmd_execution_run,
@@ -766,6 +767,29 @@ def build_parser() -> Any:
     json_opt(p_c_ap)
     p_c_ap.add_argument("--pending", action="store_true", help="只列待办 (pending)")
 
+    # factory demo (Phase 13A: Demo Productization — 一键跑通完整生命周期)
+    p_demo = sub.add_parser(
+        "demo", help="产品化演示: 一键跑通完整生命周期 (Mock Provider 只生成内容, 生命周期/审批/决策真实, 临时工厂根)"
+    )
+    json_opt(p_demo)
+    dsub = p_demo.add_subparsers(dest="demo_command", required=True)
+    p_demo_markpad = dsub.add_parser(
+        "markpad", help="MarkPad 表格编辑器增强: idea→research→prd→[审批]→ui→[审批]→architecture→task→experience (输出每阶段 Artifact/Event/Decision 日志)"
+    )
+    json_opt(p_demo_markpad)
+    p_demo_markpad.add_argument(
+        "--demo-dir", default=None,
+        help="idea.json/requirements.json 目录 (默认 examples/markpad-demo)",
+    )
+    p_demo_markpad.add_argument(
+        "--approver", default=None,
+        help="人工审批人 (demo 自动批准, 9c 审批状态机真实; 默认 shenlongze)",
+    )
+    p_demo_markpad.add_argument(
+        "--keep-root", action="store_true",
+        help="保留临时工厂根目录 (默认退出清理; tempfile 创建, 不依赖 /tmp 固定路径)",
+    )
+
     return p
 
 
@@ -822,6 +846,8 @@ def main(argv: list[str] | None = None) -> int:
             result = _dispatch_intelligence(ctx, args)
         elif args.command == "console":
             result = _dispatch_console(ctx, args)
+        elif args.command == "demo":
+            result = _dispatch_demo(ctx, args)
         else:  # pragma: no cover — argparse required=True 已拦截
             raise CliError(f"unknown command: {args.command}", exit_code=2)
     except CliError as exc:
@@ -1127,6 +1153,15 @@ def _print_output(args: Any, result: dict) -> None:
         _print_intelligence(args, result)
     elif args.command == "console":
         _print_console(args, result)
+    elif args.command == "demo":
+        _print_demo(args, result)
+
+
+def _dispatch_demo(ctx: FactoryContext, args: Any) -> dict:
+    """factory demo 命令分发 (Phase 13A: Demo Productization)。"""
+    if args.demo_command == "markpad":
+        return cmd_demo_markpad(ctx, args)
+    raise CliError(f"unknown demo command: {args.demo_command}", exit_code=2)
 
 
 def _render_table(
@@ -2150,6 +2185,87 @@ def _print_console_approvals(r: dict) -> None:
     print(f"{r['count']} approvals (pending: {r['pending']})")
     if r.get("event_seq"):
         print(f"  事件      console.viewed seq={r['event_seq']} (view=approvals)")
+
+
+# ------------------------------------------------------------------ Phase 13A: Demo 输出 (Demo Productization)
+
+
+def _print_demo(args: Any, r: dict) -> None:
+    """factory demo 输出: markpad 完整生命周期日志 (阶段/Artifact/Event/Decision/推荐/经验)。
+
+    --json 已在 _print_output 前置处理 (全局 JSON); 本函数只渲染人类可读文本。
+    """
+    if args.demo_command == "markpad":
+        _print_demo_markpad(r)
+    else:
+        print(f"✔ demo {r.get('demo', '-')} 完成")
+
+
+def _print_demo_markpad(r: dict) -> None:
+    """markpad demo 人类可读输出: 8 阶段日志 (Artifact/Event/Decision 三要素) + 汇总。"""
+    idea = r.get("idea") or {}
+    lifecycle = r.get("lifecycle") or {}
+    print("✔ MarkPad Demo 完整生命周期完成")
+    print(f"  idea       {idea.get('id', '-')}  {idea.get('title', '-')}")
+    print(
+        f"  lifecycle  {lifecycle.get('id', '-')}  "
+        f"template={lifecycle.get('template', '-')}  status={lifecycle.get('status', '-')}"
+    )
+    if lifecycle.get("completed_at"):
+        print(f"  completed  {lifecycle['completed_at']}")
+    print(
+        f"  root       {r.get('root', '-')}  "
+        f"(临时工厂根, kept: {str(r.get('kept', False)).lower()})"
+    )
+    print(f"  approver   {r.get('approver', '-')}")
+    print()
+    for i, step in enumerate(r.get("stages") or [], start=1):
+        print(f"[{i}] {step['stage']} — {step['action']}")
+        artifact = step.get("artifact")
+        if artifact:
+            print(
+                f"    Artifact  {artifact.get('id', '-')}  "
+                f"{artifact.get('type', '-')}  v{artifact.get('version', '-')}  "
+                f"status={artifact.get('status', '-')}"
+            )
+        approval = step.get("approval")
+        if approval:
+            print(
+                f"    Decision  {approval.get('status', '-')}  "
+                f"request={approval.get('id', '-')}  gate={approval.get('gate', '-')}  "
+                f"by={approval.get('decided_by') or approval.get('by', '-')}"
+            )
+        for ev in step.get("events") or []:
+            print(
+                f"    Event     {ev.get('type', '-')}  "
+                f"action={ev.get('action', '-')}  result={ev.get('result', '-')}  "
+                f"seq={ev.get('seq', '-')}"
+            )
+    decisions = r.get("decisions") or []
+    tasks = r.get("tasks") or []
+    approvals = r.get("approvals") or []
+    experiences = r.get("experiences") or []
+    approval_experiences = r.get("approval_experiences") or []
+    print()
+    print("  汇总")
+    print(f"    Decisions  {len(decisions)}")
+    for d in decisions:
+        print(f"      {d.get('id', '-')}  {d.get('type', '-')}  {d.get('status', '-')}")
+    print(f"    Tasks      {len(tasks)}")
+    for t in tasks:
+        print(f"      {t.get('id', '-')}  {t.get('title', '-')}  {t.get('status', '-')}")
+    print(
+        f"    Approvals  {len(approvals)}  "
+        f"(pending: {sum(1 for a in approvals if a.get('status') == 'pending')})"
+    )
+    print(
+        f"    经验       {len(experiences)} 条 + 审批经验 {len(approval_experiences)} 条"
+    )
+    print(
+        f"    Events     {r.get('events_count', 0)}  "
+        f"({', '.join(r.get('event_types') or [])})"
+    )
+    print("    推荐       mock (score 0.90, MockSelector — 只生成内容, 生命周期/审批/决策真实)")
 
 
 if __name__ == "__main__":

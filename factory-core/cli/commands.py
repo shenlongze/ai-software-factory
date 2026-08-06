@@ -3522,3 +3522,30 @@ def cmd_console_approvals(ctx: FactoryContext, args: Any) -> dict:
         "event": "console.viewed",
         "event_seq": event_seq,
     }
+
+
+# ------------------------------------------------------------------ demo (Phase 13A: Demo Productization)
+
+
+def cmd_demo_markpad(ctx: FactoryContext, args: Any) -> dict:
+    """factory demo markpad — MarkPad 完整生命周期演示 (Phase 13A)。
+
+    从 examples/markpad-demo/ 读 idea.json/requirements.json → 临时工厂根
+    (tempfile.mkdtemp, 不依赖 /tmp 固定路径) → 注入 Mock Provider (Phase 12B
+    模式, MockSelector + MockAdapter 只生成内容) → 跑完整生命周期
+    (idea→research→prd→[approve]→ui→[approve]→architecture→task→experience)。
+
+    生命周期/审批/决策/Task/经验全部走真实逻辑 (demo 是调用链, 不是新架构);
+    输出每个阶段 Artifact/Event/Decision 日志; --json 输出完整摘要。
+    退出码: 0 成功 / 1 演示失败 (输入缺失/编排失败) / 2 用法。
+    """
+    from demo.markpad import DemoError, run_markpad_demo
+
+    try:
+        return run_markpad_demo(
+            demo_dir=getattr(args, "demo_dir", None),
+            approver=getattr(args, "approver", None) or "shenlongze",
+            keep_root=bool(getattr(args, "keep_root", False)),
+        )
+    except DemoError as exc:
+        raise CliError(str(exc), exit_code=1) from exc

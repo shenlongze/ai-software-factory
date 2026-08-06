@@ -1,0 +1,10 @@
+{
+  "title": "MarkPad 表格编辑器增强",
+  "description": "MarkPad 当前仅支持整表编辑 (整表重写 markdown 源码), 缺少表格单元格级别的编辑体验。本需求为 MarkPad 补齐逐格编辑、Tab 键单元格导航与 Typora 极简风格的内联编辑能力, 让表格编辑与正文编辑体验一致。",
+  "goals": [
+    "cell-edit: 表格单元格逐格编辑 (当前仅整表编辑)",
+    "tab-nav: Tab 键在单元格间导航",
+    "inline-edit: 单元格内联编辑, 无需进入源码模式",
+    "typora-minimal: 保持 Typora 极简风格交互"
+  ]
+}

@@ -76,20 +76,52 @@ Idea → Research → PRD → Approval → Architecture → Development → Test
 
 ---
 
-## Architecture — 一句话
+## Current Status — AI Software Factory v1.0
 
-**三区架构 (2026-08 冻结)**: **Core** (12 项通用原语: 事件/任务/工作流/Agent/Runtime/验证/恢复/观测/指标等, 零领域依赖) + **Extension** (Git/Change/Understanding/Provider/Product/Intelligence 等能力一律声明式注册, 不修改 Core) + **Human Layer** (Approval Console Web UI 人类审核台, 只读 + 审批动作)。
+> **v1.0 里程碑达成**: Core + Extensions + Intelligence + Human Console 全部落地, 真实项目验证通过, 4000+ 测试全绿。
+
+- **交付**: Phase 1–12B, **43 次提交**, 每阶段独立可交付、可回退
+  - Core (冻结): 事件/任务/工作流/Agent/执行/Runtime/恢复/编排/验证/指标/Dashboard/CLI — 零领域依赖
+  - Extension: Git / Change / Understanding / Provider / Product — 声明式注册, 不修改 Core
+  - Intelligence: Decision / Recommendation / Experience — 四因素可解释推荐 + 经验回馈
+  - Human Console: Web UI 人类审核台 (只读聚合 + 人工审批) + 8 个只读 API
+- **真实项目验证**: MarkPad (Flutter/Dart 编辑器) 完整生命周期闭环 — Idea→Research→PRD→审批→UI→审批→Architecture→Task→Experience, 34 事件 / 6 Artifacts / 2 经验 / 人工审批 2 次, Core 零修改 (见 [docs/real-world-validation.md](./docs/real-world-validation.md))
+- **测试**: **4090 pytest 全绿** (24 个域, 基线只增不减) + **92 Vitest** (Web UI)
+- **决策记录**: ADR-0001–0035 (docs/adr/), 设计文档 30+ 篇
+- **规模**: CLI 23 命令组 / 77 叶子命令 · Dashboard 20 视图 · 六域指标 · 12 阶段生命周期中 6–9 完整实现, 1–5 由 Product Intelligence 承接, 10–11 部分支撑
+
+## Architecture — 三区 + Human Layer
+
+```
+┌─ Human Layer ──────────────────────────────────────────────┐
+│ factory-console/  Web UI 人类审核台 (React + FastAPI)      │
+│   7 页面 · 8 只读 GET 路由 · Simple/Expert 切换             │
+└───────────────────────────┬───────────────────────────────┘
+                            │ 只读聚合 (零写 API)
+┌───────────────────────────▼───────────────────────────────┐
+│ Intelligence   intelligence/ 决策 · 推荐 · 经验            │
+│               (只复用 events + product, 只读)               │
+└───────────────────────────┬───────────────────────────────┘
+                            │ 事件 + 只读复用
+┌───────────────────────────▼───────────────────────────────┐
+│ Extension      understanding/ product/ providers/ git/     │
+│                change/ changeflow/  (只 import events)     │
+└───────────────────────────┬───────────────────────────────┘
+                            │ 只 import events (Core)
+┌───────────────────────────▼───────────────────────────────┐
+│ Core (冻结)    events/ tasks/ workflows/ agents/           │
+│                assignment/ execution/ runtime/ recovery/   │
+│                orchestration/ validation/ metrics/         │
+│                dashboard/ project/ workspace/ runtimes/    │
+│                cli/ — 零领域依赖                            │
+└────────────────────────────────────────────────────────────┘
+```
 
 - 统一抽象: `Agent (角色) ── Skills (能力) ── MCP (工具) ── Runtime (执行) ── Provider (LLM)` — 上层编排不关心底层 AI 是谁, 换工具 = 改配置
 - 事件是唯一事实源 (append-only SQLite, 可回放重建状态); 恢复 = checkpoint + 事件回放, 断点续跑零丢失
+- **Core 冻结**: 新能力一律走 Extension 声明式注册, 零核心破坏 (见 [docs/core-boundary.md](./docs/core-boundary.md) / [docs/extension-model.md](./docs/extension-model.md))
 - 设计原则 9 条 (事件唯一事实源 / 一切可观测 / AI 可替换 / 人类审核台 / 三层分离 / 恢复=回放 / 增量演进零破坏 / Git 可选 / 任意阶段接入): [docs/design-principles.md](./docs/design-principles.md)
-
-## Status — 现状
-
-- **交付**: Phase 1–6E (核心执行闭环) + Phase 7 (Project Understanding) + Phase 8 (LLM Provider 抽象) + Phase 9 (Product Intelligence + 人工决策) + Phase 10A (Intelligence Layer: Decision / Recommendation / Experience) + Phase 11 (Human Console API + Web UI), **41 次提交**, 每阶段独立可交付、可回退
-- **测试**: **4090 pytest 全绿** (EventType 纯增量扩展, 基线只增不减) + 92 Vitest (Web UI)
-- **决策记录**: ADR-0001–0035 (docs/adr/), 设计文档齐全 (docs/vision.md · design-principles.md · lifecycle-model.md · capability-architecture.md · roadmap.md 等)
-- **规模**: CLI 20+ 命令组 · Dashboard 20 视图 · 六域指标 · 12 阶段生命周期中 6–9 (Task Planning→Release) 完整实现, 1–5 由 Product Intelligence 承接, 10–11 (Deployment/Monitoring) 部分支撑
+- 目录结构: [docs/project-structure.md](./docs/project-structure.md) · 配置模型: [docs/configuration-model.md](./docs/configuration-model.md) · 质量报告: [docs/quality-report.md](./docs/quality-report.md)
 
 ## Quick Start
 
@@ -107,11 +139,52 @@ python3.12 -m venv .venv
 # 4. 自动执行完整链路 (工作流 → 匹配 Agent → 执行 → 验证)
 .venv/bin/factory workflow run T-001 --auto
 
-# 5. 观察工厂
+# 5. 观察工厂 (Dashboard 20 视图)
 .venv/bin/factory dashboard --view all
 ```
 
 > 首次自动执行前需先注册 Agent 与 Runtime (`factory agent add` / `factory runtime add`), 完整命令参考: `factory --help`、[docs/vision.md](./docs/vision.md) 与 [docs/use-cases.md](./docs/use-cases.md)。
+
+## Demo — 真实项目验证 (MarkPad)
+
+用内置示例项目跑通"任务 → 工作流 → 分配 → 执行 → 验证"完整链路:
+
+```bash
+# 1. 查看 Factory 认识的项目
+factory project list
+factory project show markpad
+
+# 2. 注册 MarkPad 角色与 echo runtime (冒烟)
+factory agent add --id flutter-developer --role developer --skills flutter,dart
+factory agent add --id tester            --role test-engineer --skills testing,dart
+factory agent add --id architect         --role product-manager --skills architecture,flutter
+factory runtime add --id echo --type mock
+
+# 3. 创建 bug fix 任务并跑完整链路
+factory task create --id T-101 --title "修复编辑器光标位置错乱" --project markpad \
+  --type bug --workflow bug-fix
+factory workflow run --auto T-101
+
+# 4. 变更驱动工作流: 提交关联代码 → L4 验证 → 四规则评估 → 触发 release
+factory change validate T-101
+factory change evaluate T-101
+```
+
+> 生产环境将 echo 换成 hermes-runtime (`runtime add --id hermes-runtime --type agent`,
+> `FACTORY_HERMES_CMD` 指向 hermes CLI) 即接入真实 LLM 执行。完整用法见
+> [examples/markpad/README.md](./examples/markpad/README.md)。
+> 真实项目全生命周期验证 (审批/决策/推荐/经验) 见 [docs/real-world-validation.md](./docs/real-world-validation.md)。
+
+## Contribution — 贡献指南
+
+欢迎贡献! 三条铁律:
+
+1. **不修改 Core 行为** — Core 是冻结的 8 项通用原语。新能力先自问: 通用原语还是领域能力?
+   领域能力一律走 Extension 声明式注册 (新 Skill / MCP / Runtime / Provider / 工作流), 判定流程见 [docs/core-boundary.md](./docs/core-boundary.md) §4。
+2. **测试先行, 只增不减** — 每个变更必须带测试 (pytest / Vitest); 全量跑通: `pytest` (4090) + `cd factory-console/web/frontend && npx vitest run` (92); 基线用例数只增不减。
+3. **依赖单向向下** — 新代码禁止反向依赖与循环 import; 跨包引用一律函数内延迟导入; 领域包不得进入冻结原语层的顶层 import。
+
+流程: Fork → 分支 (`feature/<phase>-<描述>`) → 变更 + 测试 → 提交信息含阶段号 (如 `Phase 13: ... + pytest 计数`) → PR。设计决策先写 ADR (docs/adr/), 新模型先补设计文档 (docs/), 再写代码。
 
 ## 应用场景
 
@@ -119,4 +192,4 @@ python3.12 -m venv .venv
 
 ---
 
-*文档: [docs/vision.md](./docs/vision.md) (愿景) · [docs/design-principles.md](./docs/design-principles.md) (9 原则) · [docs/lifecycle-model.md](./docs/lifecycle-model.md) (12 阶段生命周期) · [docs/capability-architecture.md](./docs/capability-architecture.md) (能力架构) · [docs/roadmap.md](./docs/roadmap.md) (路线图) · [docs/use-cases.md](./docs/use-cases.md) (应用场景) · [docs/adr/](./docs/adr/) (决策记录)*
+*文档: [docs/vision.md](./docs/vision.md) (愿景) · [docs/design-principles.md](./docs/design-principles.md) (9 原则) · [docs/lifecycle-model.md](./docs/lifecycle-model.md) (12 阶段生命周期) · [docs/capability-architecture.md](./docs/capability-architecture.md) (能力架构) · [docs/roadmap.md](./docs/roadmap.md) (路线图) · [docs/use-cases.md](./docs/use-cases.md) (应用场景) · [docs/project-structure.md](./docs/project-structure.md) (项目结构) · [docs/configuration-model.md](./docs/configuration-model.md) (配置模型) · [docs/quality-report.md](./docs/quality-report.md) (质量报告) · [docs/adr/](./docs/adr/) (决策记录)*

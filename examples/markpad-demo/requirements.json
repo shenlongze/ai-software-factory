@@ -1,0 +1,14 @@
+{
+  "task_type": "development",
+  "capabilities": ["code", "reasoning", "generation"],
+  "constraints": [
+    "不引入重型表格框架 (保持 MarkPad 轻量)",
+    "兼容既有 GFM markdown 表格语法 (不破坏现有文档)",
+    "Tab 键导航不得与编辑器的焦点/缩进语义冲突",
+    "内联编辑须与 Typora 极简风格一致 (无多余控件)"
+  ],
+  "lifecycle": "software_project",
+  "approver": "shenlongze",
+  "project": "markpad",
+  "expected_flow": "idea -> research -> prd -> [approval prd] -> ui -> [approval ui] -> architecture -> task -> experience"
+}

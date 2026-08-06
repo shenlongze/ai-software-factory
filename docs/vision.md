@@ -1,32 +1,68 @@
 # AI Software Factory — Vision
 
-> 版本: v2.0 | 日期: 2026-08-06 | 状态: 与 Phase 6E 实现对齐
+> 版本: v3.0 | 日期: 2026-08-06 | 状态: 与 2026-08 架构评审对齐 (20 Phase, 2159 tests)
 > 关联文档: [design-principles.md](./design-principles.md) · [lifecycle-model.md](./lifecycle-model.md) · [architecture.md](./architecture.md)
 
 ## 愿景
 
-建设 **AI 驱动的软件生命周期工厂** —— 一个能够理解软件项目在任何阶段的状态、并驱动 AI 员工持续把它推进到下一阶段的平台。它管理 AI 员工、组织软件生产流程、连接各种 Agent Runtime，覆盖从 Idea 到 Optimization 的完整软件生命周期。
+建设 **AI 工作生命周期管理平台** —— 一个管理 AI 员工完成"真实工作"的平台: 它理解任何项目/工作在任何阶段的状态, 调度合适的 AI 能力 (不同 Agent、不同模型、不同外部工具) 持续把它推进到下一阶段, 并在每个关键决策点保留人类审核权。
+
+软件是第一个落地的领域 (覆盖从 Idea 到 Optimization 的完整软件生命周期), 但平台的抽象 —— 任务、工作流、事件、验证、人工审核 —— 面向一切可被 AI 驱动的知识工作。
 
 ## 定位
 
 ```
-AI Software Factory = AI 软件生命周期工厂
+AI Software Factory = AI 工作生命周期管理平台
 
-不是 AI Coding Assistant      —— 不替代编码工具, 而是组织生产
-不是自动生成代码的工具        —— 代码只是中间产物, 生命周期才是对象
-不是聊天机器人 / 单个 Agent   —— 是管理 Agent 的工厂
+不是 AI 开发助手 / Coding Assistant —— 不替代编码工具, 而是组织生产
+不是自动生成代码的工具            —— 代码只是中间产物, 工作生命周期才是对象
+不是聊天机器人 / 单个 Agent       —— 是管理 Agent 的平台
+不绑定任何 AI 工具               —— 是统一抽象层, 用户不需要学习每个 AI 工具
 ```
 
 对应传统软件体系:
 
 | 传统 | AI Software Factory |
 |:-----|:--------------------|
-| Jira | Task Management |
-| Jenkins | Workflow Engine |
-| K8s Dashboard | Agent Management + Dashboard |
-| Confluence | Knowledge System |
-| CI/CD | Validation System |
-| GitOps / CD 流水线 | Change Intelligence + Change Driven Workflow |
+| Jira | Task Management (任务生命周期) |
+| Jenkins | Workflow Engine (流程编排) |
+| K8s Dashboard | Agent Management + Dashboard (可观测) |
+| Confluence | Knowledge System (决策历史沉淀) |
+| CI/CD | Validation System (证据链验证) |
+| GitOps / CD 流水线 | Change Intelligence + Change Driven Workflow (变更驱动交付) |
+
+## 统一抽象: 不绑定任何 AI 工具
+
+平台对 AI 能力的抽象分五层, 用户只面对抽象, 不面对具体工具:
+
+```
+Agent (角色) ── Skills (能力)
+     │
+     ├── MCP Tools (外部工具: GitHub / Jira / Figma / AWS ...)
+     │
+     └── Runtime (执行方式: Hermes / Codex / Claude / Local)
+              │
+              └── LLM Provider (模型: claude / codex / gpt ...)
+```
+
+| 抽象层 | 职责 | 当前状态 |
+|:-------|:-----|:---------|
+| Agent | 角色与职责 (role/skills/status) | ✅ AgentRegistry (Phase 4B) |
+| Skill | 能力声明 (SKILL.md + meta.json) | ✅ SkillRegistry |
+| MCP | 外部工具接入 (GitHub / Jira / Figma / AWS) | 🚧 mcp/ 目录已预留, 规划中 |
+| Runtime | 执行方式 (echo/hermes 适配器实跑) | ✅ RuntimeAdapter, Catalog/Registry/Adapter 三层分离 |
+| LLM Provider | 模型抽象 (claude / codex / gpt ...) | 🚧 未抽象, Phase 8 核心 |
+
+**per-role 执行偏好**: `runtime_preferences` 字段 (Phase 6A 已建) 承载每个角色的执行偏好 —— 同一个平台上, 架构师用 Claude 思考、开发者用 Codex 写码、测试员用 Hermes 跑验证:
+
+```yaml
+runtime_preferences:
+  architect:  { provider: claude }
+  developer:  { provider: codex }
+  tester:     { provider: hermes }
+```
+
+用户声明"要什么能力" (角色/技能/偏好), 平台负责"找谁执行"。换工具 = 改配置, 不是改流程。
 
 ## 核心理念: 任意阶段接入
 
@@ -54,36 +90,42 @@ Workspace → Project → Task → Workflow → Agent → Assignment → Executi
     → Metrics → Git → Change Intelligence → Change Driven Workflow
 ```
 
-- **Workspace / Project** (Phase 6A): 多项目组织, 每项目独立仓库与定义。
+- **Workspace / Project** (Phase 6A): 多项目组织, 每项目独立仓库与定义 (含 runtime_preferences)。
 - **Task / Workflow** (Phase 3-4): 任务状态机 + 声明式流程引擎 (feature-delivery / bug-fix / release 等内置定义)。
 - **Agent / Assignment / Execution** (Phase 4B): 注册表、分配器、执行派发, 全链路事件审计。
 - **Runtime Adapter** (Phase 4B1/4C1/5A1): 执行出口唯一, Hermes 适配器实跑, Catalog/Registry/Adapter 三层分离。
 - **Validation** (Phase 3A/6D): L1 Factory / L2 Workflow / L3 Artifact / L4 Change, 独立于 Agent 的证据链验证。
 - **Recovery** (Phase 4C3): checkpoint + 事件回放, 断点续跑不依赖对话记忆。
 - **Dashboard / Metrics** (Phase 4C4/5B/6B): 16 个视图 + 项目维度指标聚合。
-- **Git / Change Intelligence / Change Driven Workflow** (Phase 6C/6D/6E): git 只读接入、提交任务关联、L4 判定、触发器驱动 "提交即发布" 链式交付。
+- **Git / Change Intelligence / Change Driven Workflow** (Phase 6C/6D/6E): git 只读接入 (可选能力)、提交任务关联、L4 判定、触发器驱动 "提交即发布" 链式交付。
 
 ## 核心价值
 
-1. **可管理** — 管理 AI 员工 (Agent) 的生命周期、职责、可靠性 (Agent Registry + Assignment)
-2. **可观察** — 任何时刻知道每个任务/Agent/执行在做什么、进度、阻塞 (Event 唯一事实源 + Dashboard)
-3. **可验证** — Agent 自报告 ≠ 完成, Validation L1-L4 结果 = 事实 (证据链可回查)
-4. **可恢复** — 截断/失败从 checkpoint 回放续跑, 零丢失 (Recovery by replay)
-5. **可替换** — 不绑定任何 Agent 框架, Runtime 可插拔 (Hermes/Claude Code/LangGraph/OpenHands...)
-6. **可积累** — 知识沉淀 (ADR/缺陷/经验 = 企业资产), 指标驱动持续优化
-7. **可复制** — 一套平台支持多项目并行 (markpad/scorepocket/timeon...), 任意阶段接入
+| # | 价值 | 含义 | 工程锚点 |
+|:--|:-----|:-----|:---------|
+| 1 | 管理项目上下文 | 每个项目的定义、状态、历史有唯一事实源, 多项目不串扰 | Event 唯一事实源 + Workspace Layer (Phase 6A) |
+| 2 | 理解项目当前状态 | 任何时刻知道项目/任务处于生命周期的哪个节点、卡在哪 | Change Intelligence + L4 Validation (Phase 6C/6D) |
+| 3 | 调度不同 AI 能力 | 按角色偏好把工作派给合适的 Agent / 模型 / 工具 | Runtime + Orchestration + runtime_preferences |
+| 4 | 管理任务生命周期 | 任务从创建到交付的完整状态机, 全程可追踪可恢复 | Task→Workflow→Assignment→Execution→Validation→Recovery |
+| 5 | 保存过程和决策历史 | 过程与决策可审计, 知识沉淀为企业资产 | Event + ADR + Checkpoint |
+| 6 | 人工审核节点 | 产品决策的最终裁决权在人, 平台提供审核台 | 三挡板 + Decision Gate + validate 退出码 |
+| 7 | 任意阶段接入 | 项目带任何已有状态进入, 从当前节点继续而非重建 | 12 阶段生命周期 + 4 类接入点 (Idea/已有代码/开发中/生产) |
+
+> 7 项价值在工程上落实为可落地特性: **可管理 / 可观察 / 可验证 / 可恢复 / 可替换 / 可积累 / 可复制** (见 design-principles.md)。
 
 ## 用户
 
 - **工程师** — CLI 主入口: 创建任务、跑流程、看状态、恢复断点
 - **技术负责人** — Dashboard 观察工厂运行、Agent 健康、质量指标、变更流
 - **管理层** — 项目进度、风险、交付质量总览 (Projects View + Metrics)
+- **人类审核员** — (Web UI 规划) 审核台: 确认 PRD/UI、审核 AI 输出、批准产品决策
 
 ## 成功标准
 
 - 一个任务从创建到交付全程可观察、可恢复、可验证
 - 项目可带任意已有状态接入, 从当前节点继续推进而非重建
 - 多项目并行生产, 知识跨项目复用
-- 新 Runtime / 新角色 / 新 Skill / 新工作流声明式接入 (零核心代码改动)
+- 新 Runtime / 新 Provider / 新角色 / 新 Skill / 新 MCP / 新工作流声明式接入 (零核心代码改动)
 - 自动化指标达标: first_attempt_success > 95%、path_errors = 0、human_intervention 最小化
 - 变更可驱动交付: git 提交 → L4 验证 → 触发器 → 目标工作流 (提交即发布)
+- 换掉任何 AI 工具 (Hermes / Codex / Claude) 不影响平台运转

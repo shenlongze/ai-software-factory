@@ -1,9 +1,9 @@
 # AI Software Factory — Design Principles
 
-> 版本: v1.0 | 日期: 2026-08-06 | 状态: 与 Phase 6E 实现对齐
+> 版本: v2.0 | 日期: 2026-08-06 | 状态: 与 2026-08 架构评审对齐 (20 Phase, 2159 tests)
 > 关联文档: [vision.md](./vision.md) · [lifecycle-model.md](./lifecycle-model.md) · [architecture.md](./architecture.md)
 >
-> 本文档归纳 AI Software Factory 的 7 条核心设计原则。每条原则给出**含义**(为什么)、
+> 本文档归纳 AI Software Factory 的 9 条核心设计原则。每条原则给出**含义**(为什么)、
 > **工程体现**(在 factory-core 里怎么落地)与**实例**(项目中的真实模式)。
 > 原则是"魂": 代码可以重构, 原则不能破坏。
 
@@ -51,32 +51,41 @@
 
 ---
 
-## ③ AI execution must be replaceable — AI 执行必须可替换
+## ③ AI 能力必须可替换 — AI must be replaceable
 
 ### 含义
 
-Factory 不绑定任何 Agent 框架或模型。**执行 Agent 是可插拔的部件**: 换 Runtime = 换 Adapter, 核心零改动。模型会变、框架会变, 工厂的组织能力不变。
+Factory 不绑定任何 Agent 框架、模型或工具。**AI 可替换分两层**: 执行层 (Runtime —— 谁去干活) 与智能层 (LLM Provider —— 用什么脑子)。模型会变、框架会变、工具会换, 工厂的组织能力不变。
 
 ### 工程体现
 
 - **执行出口唯一**: 任何"启动 Agent / 跑命令 / 调工具"只能走 `RuntimeAdapter` 协议 (或 Validation/MCP 封装), 不裸调 subprocess 散落各处 (architecture.md 三条硬规则之一)。
 - `runtimes/` 可插拔目录: hermes 适配器 (默认, 实跑) + mock (测试) + 预留 claude_code 等; `runtime/registry.py` 注册, `config` 选默认, CLI `--runtime` 可覆盖 (ADR-0006/0009)。
 - **三层分离** (Phase 5A1, ADR-0014): `runtimes/` Catalog = 能力描述 (catalog.json), `runtime/` Registry = 实例可用状态 (runtimes.json), Adapter = 执行器。目录不派发、注册不执行。
+- **LLM Provider 抽象 (评审确认, Phase 8 核心差距)**: 智能层经 Provider 接口接入, 不硬绑定 Hermes; per-role 偏好经 `runtime_preferences` 字段 (project.yaml, Phase 6A 已建) 声明, Assignment/Execution 已按 runtime_id 解析 —— 只差 Provider 层实现。
 - 分配器 (AgentAllocator) 按运行时偏好与可用性选执行器, 同一任务换 Runtime 零核心改动。
 
 ### 实例
 
 - `factory runtime add/list/test` + `runtime catalog list/show`: 注册、测试、查看能力目录全走声明式数据。
-- 收尾契约: Change 规则④ (runtime.pref) 的输入是 `RuntimeRegistry` AVAILABLE 集合 —— 规则只看"有什么执行器可用", 不管执行器内部是什么。
+- `runtime_preferences` 声明 per-role 执行偏好 —— 换工具 = 改配置, 不是改流程:
+
+```yaml
+runtime_preferences:
+  architect:  { provider: claude }
+  developer:  { provider: codex }
+  tester:     { provider: hermes }
+```
+
 - ADR-0006 测试约束: 同一任务通过 ≥2 种 Runtime 执行, 核心代码零改动。
 
 ---
 
-## ④ Human approval at product decisions — 人工批准产品决策
+## ④ 人类审核台 — Human approval at product decisions
 
 ### 含义
 
-**产品决策 (做什么、要不要、能不能上线) 的最终裁决权在人。** AI 可以执行、可以建议, 但涉及产品冲突、架构变更、Scope 扩展的闸口必须由人拍板。自动化不能静默改变产品方向。
+**产品决策 (做什么、要不要、能不能上线) 的最终裁决权在人。** AI 可以执行、可以建议, 但涉及产品冲突、架构变更、Scope 扩展的闸口必须由人拍板。自动化不能静默改变产品方向。平台为此提供专门的**人类审核台** (Approval Console) —— 给人审核用, 不是给 AI 用。
 
 ### 工程体现
 
@@ -84,23 +93,26 @@ Factory 不绑定任何 Agent 框架或模型。**执行 Agent 是可插拔的�
 - **三挡板** (产品冲突 / 架构变更 / Scope 扩展): 命中挡板 → `task.blocked` + 上报, 人裁决后才继续。
 - 所有人类决策发 `human.*` 事件 (`human.decision`), 构成 human_intervention 指标的原始数据。
 - 验证失败不是自动"重试到过", 而是打回三选一: 1 修复 / 2 换法 / 3 上报 (validation-model.md §2)。
+- **Web UI 方向 (评审确认)**: CLI 保留为工程师主入口; 未来 Web UI 即人类审核台 —— 查看状态 / 审核 AI 输出 / 确认 PRD / 确认 UI / 审核执行 / 查看 Metrics。架构: Factory API (FastAPI 薄层: 只读 + 审批动作) → Core; 前端 React/Vue 或轻量 HTML+JS。不实现, 仅设计 (规划入 roadmap)。
 
 ### 实例
 
 - Validation 越权写 → `validation.blocked` → 人工核查证据链 → approve (继续) / reject (返工回路)。
 - `change evaluate` 的触发与执行解耦: 规则 PASS 可启动目标工作流, 但执行失败只审计不误报 —— 判定是机器的, 最终交付决策链上仍保留人工环节。
 - 决策门 (Decision Gate): 无决策记录不进入开发 (validation-model.md §3.1), 决策记录本身是产品判断的证据。
+- Dashboard 16 视图是审核台的 CLI 阶段形态: 给人看、给人审, 全部事件聚合、无写入口。
 
 ---
 
-## ⑤ Runtime separated from intelligence — 运行时与智能分离
+## ⑤ 智能、编排、执行三层分离 — Runtime separated from intelligence
 
 ### 含义
 
-**"思考" (决策/编排) 与"干活" (执行/工具) 是两层, 必须分离。** 智能层决定做什么、怎么做、由谁做; 运行时层只负责执行委派并报告结果。两者通过契约 (事件 + 结果) 通信, 不互相渗透。
+**"思考" (智能), "决策" (编排) 与 "干活" (执行) 是三层, 必须分离。** 智能层 (LLM Provider) 提供判断能力, 编排层 (Orchestrator / Workflow Engine) 决定做什么、怎么做、由谁做, 运行时层只负责执行委派并报告结果。三层通过契约 (事件 + 结果) 通信, 不互相渗透: 换 Provider 不换编排, 换 Runtime 不换智能。
 
 ### 工程体现
 
+- **智能侧**: LLM Provider 接口 (Phase 8) —— 供编排层调用, 不直接接触执行细节; 角色 → (provider, runtime) 偏好经 `runtime_preferences` 声明, 编排层只读偏好、不实现执行。
 - **决策侧**: Orchestrator (人/LLM) + Workflow Engine (流程状态机) + AgentAllocator (分配策略) + ChangeWorkflowEngine (触发规则) —— 全部是纯逻辑, 不直接执行。
 - **执行侧**: ExecutionService 管理执行请求生命周期 (`execution.created → started → completed/failed`), 派发给 Runtime Adapter 执行, 结果以事件 + 产物返回。
 - **复用不复制** (ADR-0020): changeflow 只组装既有 WorkflowEngine / WorkflowStore / OrchestrationPipeline, 不修改 workflows/execution/orchestration 核心; 规则输入 = ChangeService, 不复制 L4 判定逻辑。
@@ -155,3 +167,54 @@ Factory 不绑定任何 Agent 框架或模型。**执行 Agent 是可插拔的�
 - ADR-0020 收尾裁定: 10 个失败测试中 9 个是"测试期望与新契约矛盾"→ 修测试不修核心; 1 个是测试用了不存在的 API → 修测试。
 - VIEWS 精确集合断言随视图扩展 (15→16) 数学上必然失败 —— 第五犯先例时最小化更新 + ADR 记录, 而非改断言框架。
 - 一个 Phase 一个 ADR, 每个 ADR 记录"收尾失败测试的契约裁定", 演进过程本身就是可审计的决策历史。
+
+---
+
+## ⑧ Git 是可选能力 — Git is optional
+
+### 含义
+
+**Git 不是平台的心脏。** 平台的心脏是事件流与任务/工作流状态机; Git 只是项目上下文的一种来源。一个项目可以完全不依赖 Git 被 Factory 管理 (只有 Idea / 只有文档也行)。**Core 零 Git 依赖**, Git 经接口注入而非硬编码, 未来可作为 Skill/MCP/Integration 注册。
+
+### 工程体现
+
+- **Core 零 Git 依赖 (评审确认 ✅)**: `git/` 是独立模块 (Phase 6C); change/changeflow 依赖 git, 但 task/workflow/execution/event 核心路径零 Git 依赖。
+- **默认关闭**: `include_git` / `include_change` / `include_changeflow` 缺省关, 不开 Git 平台照常运转, 零回归。
+- **只读接入**: git status/diff/commits 全部只读查询 + 审计事件, 平台不写仓库、不强制约定。
+- **未来方向**: git 作为 Skill/MCP/Integration 注册 (如 github MCP), Change Intelligence 经接口注入而非硬依赖 —— 换版本控制系统不改核心。
+
+### 实例
+
+- 旧 Task 无 git 关联 → L4 判定 SKIP (不是 FAIL): 缺 Git 上下文不是错误, 只是少一类证据。
+- `workspace create` 不要求 git 仓库: 项目可以"带任意状态进入" (空仓库、仅文档、无版本控制)。
+- `git status/diff/commits` 可整体停用 (`include_git=false`), 任务/工作流/执行/验证闭环不受影响。
+
+---
+
+## ⑨ 任意阶段接入 — Lifecycle entry at any stage
+
+### 含义
+
+**Factory 不是"从零开始的脚手架"。** 一个项目/工作可以带着它已有的任何状态进入: 只有一个 Idea、已有 PRD/设计稿、正在开发的代码库、还是生产运行的系统。Factory 的核心能力是: **理解当前处于生命周期的哪个阶段, 补齐缺失上下文, 然后继续推进** —— 接入是"挂载"不是"导入"。
+
+### 工程体现
+
+- **12 阶段生命周期 + 4 类接入点** (评审确认): Idea / 已有代码 / 开发中 / 生产, 每类接入点都有明确的输入、输出与归属 Layer。
+- **接入 = 挂载**: workspace/project 挂载真实状态 (workspace.yaml + project.yaml), task 表达推进目标, workflow 选择从当前节点开始的路径。
+- **Phase 9 Product Intelligence** (规划): Idea → Market Research → Product Analysis → PRD → [Human Approval] → UI → Architecture → Tasks; 复用 Core 原语 (task.create / workflow.run / event.log / validation / dashboard), 人工批准 = 既有 validate 退出码 / 三挡板语义。
+- **Phase 7 Project Understanding** (规划): 已有代码 → Understanding Report (阶段/技术栈/架构/缺失/风险/建议)。
+- **Phase 10 Operations** (规划): 生产系统 → Monitoring / Alert / Maintenance。
+- 与 orchestration/changeflow 同模式接入: 新模块 + CLI 扩展 + Dashboard 视图 + 复用 Core API —— 不破坏 Core。
+
+### 实例
+
+| 接入点 | 输入 | Factory 输出 | Layer |
+|:-------|:-----|:-------------|:------|
+| Idea 阶段 | 一个想法 | 市场分析 / PRD / UI / 任务 | Phase 9 Product Intelligence |
+| 已有代码 | Git 项目 | Understanding Report | Phase 7 Project Understanding |
+| 开发中项目 | 任务/仓库 | 继续 Task/Workflow | ✅ 已有 (Core) |
+| 生产项目 | 服务 | Monitoring/Alert/Maintenance | Phase 10 Operations |
+
+- `task create` 定义探索/调研任务, 项目描述即上下文 (Idea 阶段接入)。
+- `git diff` → `change analyze` → L4 验证, 从变更点继续推进 (开发中项目接入)。
+- Product Intelligence 的"人工批准"节点复用三挡板/Decision Gate 语义, 不新造审核机制。

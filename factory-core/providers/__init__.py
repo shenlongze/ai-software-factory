@@ -6,8 +6,12 @@
 - registry.py: ProviderRegistry (register/get/list/remove/find_by_capability/default)
 - store.py: ProviderStore — catalog.json 原子写 (独立数据空间 .factory/providers/)
 - definitions.py: 默认定义 (hermes, 内建基线)
-- events.py: provider.* 事件辅助 (经 EventLogger)
-- config.py: runtime_preferences.provider 字段语义 (Phase 8c 实现选择)
+- events.py: provider.* 事件辅助 (经 EventLogger; 8B-1 增 execution_id/source)
+- config.py: runtime_preferences.provider 字段语义 (parse_runtime_preferences)
+- selector.py: ProviderSelector — 四层优先级选择 (Phase 8B-1, Project > Agent >
+  Runtime > Default, 无硬编码)
+- integration.py: Provider × Execution 集成 (input 携带 provider_id + provider.*
+  执行审计事件, ProviderCarrierAdapter 载波, Phase 8B-1)
 - adapters/: BUILTIN_PROVIDER_ADAPTERS (hermes — 与 runtime/adapters 并存不替换)
 
 冻结约束 (phase8a-status.md): Core 零修改 / Runtime 与 Provider 分离 / Hermes
@@ -17,6 +21,14 @@ CLI/dashboard 均延迟导入本包)。
 
 from __future__ import annotations
 
+from .config import parse_runtime_preferences, preferred_provider, runtime_default_provider
+from .integration import (
+    ProviderCarrierAdapter,
+    ProviderContext,
+    carry_provider_input,
+    provider_context_from_selection,
+    wrap_adapters_with_provider,
+)
 from .models import (
     ProviderDefinition,
     ProviderRequest,
@@ -30,6 +42,7 @@ from .registry import (
     ProviderRegistry,
     ProviderRegistryError,
 )
+from .selector import SELECTION_SOURCES, ProviderSelection, ProviderSelector
 from .store import CorruptProviderStoreError, ProviderStore, ProviderStoreError
 
 __all__ = [
@@ -45,4 +58,16 @@ __all__ = [
     "ProviderStore",
     "ProviderStoreError",
     "CorruptProviderStoreError",
+    # --- Phase 8B-1 (ADR-0023): 选择 + 执行集成 ---
+    "SELECTION_SOURCES",
+    "ProviderSelection",
+    "ProviderSelector",
+    "ProviderContext",
+    "ProviderCarrierAdapter",
+    "carry_provider_input",
+    "provider_context_from_selection",
+    "wrap_adapters_with_provider",
+    "parse_runtime_preferences",
+    "preferred_provider",
+    "runtime_default_provider",
 ]

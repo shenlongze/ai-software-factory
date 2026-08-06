@@ -638,11 +638,20 @@ def _cmd_workflow_run_auto(ctx: FactoryContext, args: Any) -> dict:
     输出 Workflow/Step/Agent/Runtime/Result (phase4c2-status §3 CLI)。
     退出码: 0 COMPLETED; 7 任务未找到; 1 执行失败 (无 Agent/无 Runtime/执行 FAILED/
     前置错误 → Workflow FAILED 或编排失败)。
+
+    Phase 8B-1 Provider 集成 (ADR-0023, 可选注入): 装配 execute_workflow 时经
+    context 传递 provider 选择 (Executor 注入模式, Phase 6E) — 项目配置选中
+    provider 时, adapters 参数注入 ProviderCarrierAdapter 载波映射 (引擎创建的
+    每次执行在派发点注入 input.provider_id + 发 provider.* 事件); 无 provider
+    配置 → adapters=None → 既有 --auto 行为逐位不变。
     """
     task = ctx.open_task_store().get(args.task_id)
     if task is None:
         raise CliError(f"task not found: {args.task_id}", exit_code=7)
     with ctx.logger_scope() as logger:
+        provider_context = _provider_context_from_selection(
+            _resolve_provider_selection(ctx, task=task)
+        )
         outcome = run_orchestration(
             args.task_id,
             workflow_store=WorkflowStore(ctx.workflows_dir),
@@ -651,6 +660,10 @@ def _cmd_workflow_run_auto(ctx: FactoryContext, args: Any) -> dict:
             assignment_store=_open_assignment_store(ctx),
             runtime_store=_open_runtime_store(ctx),
             logger=logger,
+            adapters=(
+                _provider_carrier_adapters(provider_context, logger)
+                if provider_context is not None else None
+            ),
         )
     data = {
         "ok": outcome.ok,
@@ -1070,19 +1083,155 @@ def cmd_execution_list(ctx: FactoryContext, args: Any) -> dict:
     }
 
 
-def _open_execution_service(ctx: FactoryContext, logger) -> ExecutionService:
+def _open_execution_service(
+    ctx: FactoryContext, logger, provider_context=None,
+) -> ExecutionService:
     """装配 ExecutionService: RuntimeStore + Registry (同事件库) + 内置 Adapter + Workflow 联动。
 
     内置 Adapter (BUILTIN_ADAPTERS: echo) 提供实现; runtime 身份 (RuntimeInfo) 须
     经 `factory runtime add` 显式注册 — registry 是派发解析的唯一事实源 (ADR-0007 决策 3)。
     Workflow 联动经 _open_workflow_engine (complete_step/fail_workflow 不需 runtime_store)。
+
+    Phase 8B-1 (ADR-0023): provider_context 非 None 时全部内置 Adapter 经
+    ProviderCarrierAdapter 载波包装 (派发时注入 input.provider_id + 发 provider.*
+    审计事件); None → 原装配 (旧链路零变化)。
     """
     store = _open_runtime_store(ctx)
     registry = RuntimeRegistry(store, logger=logger)
     engine = _open_workflow_engine(ctx, logger)
+    adapters = BUILTIN_ADAPTERS
+    if provider_context is not None:
+        adapters = _provider_carrier_adapters(provider_context, logger)
     return ExecutionService(
-        store, registry, adapters=BUILTIN_ADAPTERS, logger=logger, workflow_engine=engine,
+        store, registry, adapters=adapters, logger=logger, workflow_engine=engine,
     )
+
+
+# ------------------------------------------------------------------ Phase 8B-1: Provider 选择 + 执行集成 (ADR-0023)
+
+
+def _project_runtime_preferences(ctx: FactoryContext, task) -> dict | None:
+    """project.yaml runtime_preferences (Phase 6A 字段, 8B-1 生效); 任务/项目
+    缺失或配置损坏 → None (选择链降级, 不破坏执行)。"""
+    if task is None or not getattr(task, "project", None):
+        return None
+    try:
+        definition = load_project_definition(ctx.root, task.project)
+    except WorkspaceConfigError:
+        return None
+    if definition is None:
+        return None
+    prefs = getattr(definition, "runtime_preferences", None)
+    return prefs if isinstance(prefs, dict) else None
+
+
+def _runtime_definition(ctx: FactoryContext, runtime_id: str | None):
+    """Runtime 目录定义 (runtime_default 层数据源); 未指定/未注册 → None (降级)。"""
+    if not runtime_id:
+        return None
+    return RuntimeCatalog(_open_catalog_store(ctx)).get(runtime_id)
+
+
+def _resolve_provider_selection(
+    ctx: FactoryContext,
+    *,
+    task,
+    explicit: str | None = None,
+    preferred_runtime: str | None = None,
+):
+    """四层优先级选择 (Phase 8B-1, ADR-0023): explicit > 项目 > Agent > Runtime > Default。
+
+    - 无任何 provider 配置 → None (旧链路行为不变, 零 provider 事件)。
+    - 显式 --provider 未注册/禁用 → CliError rc 7 (同 cmd_provider_test 契约,
+      在 CLI 层转换 — 选择层抛 ProviderNotFoundError)。
+    - Agent 层: Agent 模型无 runtime_preferences 字段 (角色级偏好留待未来),
+      恒 None — 选择链自动降级到 Runtime/Default 层。
+    - Removal Isolation: 延迟导入 providers + ImportError 兜底 → 无 providers
+      层时等同无配置, Factory 正常。
+    """
+    try:
+        from providers.config import parse_runtime_preferences, runtime_default_provider
+        from providers.registry import ProviderNotFoundError, ProviderRegistry
+        from providers.selector import ProviderSelector
+    except ImportError:
+        return None  # Removal Isolation: 无 providers 层 → 旧链路
+    project_prefs = _project_runtime_preferences(ctx, task)
+    task_type = getattr(task, "type", None) or "feature"
+    prefs = parse_runtime_preferences(project_prefs, task_type)
+    registry = ProviderRegistry(_open_provider_store(ctx))
+    default_def = registry.default()
+    selector = ProviderSelector(registry)
+    try:
+        return selector.resolve(
+            task_type=task_type,
+            explicit=explicit,
+            project_prefs=project_prefs,
+            agent_prefs=None,  # Agent 角色级偏好 (模型无此字段, 未来扩展)
+            runtime_default=runtime_default_provider(
+                _runtime_definition(ctx, preferred_runtime or prefs["runtime"])
+            ),
+            registry_default=default_def.id if default_def is not None else None,
+        )
+    except ProviderNotFoundError as exc:
+        raise CliError(str(exc), exit_code=7) from exc
+
+
+def _provider_carrier_adapters(provider_context, logger) -> dict:
+    """装配 Provider 载波 Adapter 映射 (Phase 8B-1); 仅 provider_context 非 None 时调用。
+
+    provider_context 非 None ⇒ providers 层必然可导入 (选择已成功) — 延迟导入
+    保持 Removal Isolation (删除 providers 不影响其他命令)。
+    """
+    from providers.integration import wrap_adapters_with_provider
+
+    return wrap_adapters_with_provider(BUILTIN_ADAPTERS, provider_context, logger=logger)
+
+
+def _provider_context_from_selection(selection):
+    """ProviderSelection → ProviderContext (延迟导入, 供装配点消费)。
+
+    Removal Isolation: providers 层不可导入 → None (等同无配置, 旧链路 —
+    与 _resolve_provider_selection 的 ImportError 兜底对称; --auto 装配点
+    对 None 直接跳过载波)。
+    """
+    try:
+        from providers.integration import provider_context_from_selection
+    except ImportError:
+        return None
+
+    return provider_context_from_selection(selection)
+
+
+def _resolve_execution_provider(
+    ctx: FactoryContext, logger, execution_id: str, explicit: str | None = None,
+):
+    """执行前 Provider 选择 + input 携带 (Phase 8B-1, ADR-0023)。
+
+    - 执行请求不存在 → ExecutionNotFoundError (rc 7, 同 runner 契约)。
+    - 无 provider 配置 → None (旧链路: 零 provider 事件、input 零注入)。
+    - 选中 → 选择结果经 ExecutionRequest.input dict 携带 provider_id (调用方
+      构造, 不改模型; HermesRuntimeAdapter 忽略未知键, 兼容) + 返回
+      ProviderContext (ExecutionService 载波装配 — 派发点发 provider.selected →
+      provider.execution.started → completed|failed, payload 含 execution_id)。
+    - 仅 PENDING 请求做 input 携带 (非 PENDING 由 runner 拒执行 rc 1, 不改写
+      已落盘请求)。
+    """
+    store = _open_runtime_store(ctx)
+    request = store.get_execution(execution_id)
+    if request is None:
+        raise ExecutionNotFoundError(f"execution not found: {execution_id}")
+    task = ctx.open_task_store().get(request.task_id) if request.task_id else None
+    selection = _resolve_provider_selection(
+        ctx, task=task, explicit=explicit, preferred_runtime=request.runtime_id,
+    )
+    if selection is None:
+        return None
+    if request.status is ExecutionStatus.PENDING:
+        request = request.model_copy(update={
+            "input": {**request.input, "provider_id": selection.provider_id},
+        })
+        store.save_execution(request)
+    return _provider_context_from_selection(selection)
 
 
 def _exec_cli_error(exc: Exception) -> CliError:
@@ -1093,18 +1242,31 @@ def _exec_cli_error(exc: Exception) -> CliError:
 
 
 def cmd_execution_run(ctx: FactoryContext, args: Any) -> dict:
-    """factory execution run EXECUTION_ID — 执行 pending execution (发 execution.started/completed/failed)。
+    """factory execution run EXECUTION_ID [--provider ID] — 执行 pending execution
+    (发 execution.started/completed/failed)。
 
     退出码: 0 成功 (含执行结果为 FAILED 的业务失败 — run 命令本身成功);
-    7 执行/runtime 未找到; 1 状态冲突 (非 PENDING / 无可用 runtime / 无 Adapter 实现)。
+    7 执行/runtime 未找到 / --provider 未注册; 1 状态冲突 (非 PENDING /
+    无可用 runtime / 无 Adapter 实现)。
+
+    Phase 8B-1 Provider 集成 (ADR-0023): --provider 显式指定或项目配置
+    (runtime_preferences.<task_type>.provider) 选中后, 选择结果经
+    ExecutionRequest.input dict 携带 provider_id (调用方构造, 不改模型 —
+    HermesRuntimeAdapter 忽略未知键, 兼容), 执行派发点发 provider.selected →
+    provider.execution.started → completed|failed 审计事件 (payload 含
+    execution_id); 无 provider 配置 → 旧链路零变化。
 
     Phase 6D 快照钩子 (ADR-0019 决策 7): 执行完成后在 CLI 层关联 Execution Git
     Snapshot (ChangeStore, <root>/change/snapshots.json) — 不改 execution 核心;
     失败安全: git 查询/存储异常 → snapshot=None, run 结果不受影响 (快照是审计增强)。
     """
     with ctx.logger_scope() as logger:
-        service = _open_execution_service(ctx, logger)
         try:
+            provider_context = _resolve_execution_provider(
+                ctx, logger, args.execution_id,
+                explicit=getattr(args, "provider", None),
+            )
+            service = _open_execution_service(ctx, logger, provider_context=provider_context)
             outcome = service.run(args.execution_id)
         except (ExecutionRunnerError, ExecutionDispatcherError, RuntimeNotFoundError) as exc:
             raise _exec_cli_error(exc) from exc

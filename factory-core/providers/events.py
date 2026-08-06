@@ -15,10 +15,12 @@ payload 契约 (Dashboard Provider View 事件聚合与 CLI --json 出口一致)
 - provider.registered: name/type/version/status/capabilities/models
 - provider.removed: name/type/version/status
 - provider.viewed: provider_id/action/count/type/status/default
-- provider.selected: provider_id/model/default (stage=selected 或 default)
-- provider.execution.started: provider_id/model/request_id
-- provider.execution.completed: provider_id/model/usage (result=OK)
-- provider.execution.failed: provider_id/model/error (result=ERROR)
+- provider.selected: provider_id/model/default (stage=selected 或 default);
+  Phase 8B-1 (ADR-0023) 增量: execution_id (关联执行) + source (选择层来源,
+  explicit|project|agent|runtime|default)
+- provider.execution.started: provider_id/model/request_id (+ execution_id, 8B-1)
+- provider.execution.completed: provider_id/model/usage/result=OK (+ execution_id, 8B-1)
+- provider.execution.failed: provider_id/model/error/result=ERROR (+ execution_id, 8B-1)
 """
 
 from __future__ import annotations
@@ -117,8 +119,16 @@ def record_provider_selected(
     source: str = "provider_registry",
     stage: str = "selected",
     action: str = "select provider",
+    execution_id: str | None = None,
+    selection_source: str | None = None,
 ) -> Event | None:
-    """Provider 被选中 (执行前选择 / set_default 持久化默认, stage 区分)。"""
+    """Provider 被选中 (执行前选择 / set_default 持久化默认, stage 区分)。
+
+    Phase 8B-1 (ADR-0023) 增强: execution_id 关联具体执行 (payload 键
+    execution_id); selection_source 为选择链来源层 (payload 键 source,
+    explicit|project|agent|runtime|default, 见 providers/selector.py) — 两个
+    键都是可选的增量 payload, 不破坏 Phase 8A 既有载荷契约。
+    """
     if logger is None:
         return None
     payload: dict[str, Any] = {"provider_id": provider_id}
@@ -126,6 +136,10 @@ def record_provider_selected(
         payload["model"] = model
     if default is not None:
         payload["default"] = default
+    if execution_id is not None:
+        payload["execution_id"] = execution_id
+    if selection_source is not None:
+        payload["source"] = selection_source
     return logger.record(
         EventType.PROVIDER_SELECTED,
         source=source,
@@ -143,8 +157,13 @@ def record_provider_execution_started(
     model: str | None = None,
     request_id: str | None = None,
     source: str = "provider_registry",
+    execution_id: str | None = None,
 ) -> Event | None:
-    """Provider 执行开始 (adapter.generate/chat 调用前)。"""
+    """Provider 执行开始 (adapter.generate/chat 调用前)。
+
+    Phase 8B-1 (ADR-0023) 增强: execution_id 关联具体执行 (payload 键
+    execution_id, 可选增量, 不破坏 Phase 8A 载荷契约)。
+    """
     if logger is None:
         return None
     payload: dict[str, Any] = {"provider_id": provider_id}
@@ -152,6 +171,8 @@ def record_provider_execution_started(
         payload["model"] = model
     if request_id is not None:
         payload["request_id"] = request_id
+    if execution_id is not None:
+        payload["execution_id"] = execution_id
     return logger.record(
         EventType.PROVIDER_EXECUTION_STARTED,
         source=source,
@@ -169,8 +190,12 @@ def record_provider_execution_completed(
     model: str | None = None,
     usage: dict[str, Any] | None = None,
     source: str = "provider_registry",
+    execution_id: str | None = None,
 ) -> Event | None:
-    """Provider 执行成功 (response.ok, 终态)。"""
+    """Provider 执行成功 (response.ok, 终态)。
+
+    Phase 8B-1 (ADR-0023) 增强: execution_id 关联具体执行 (可选增量 payload)。
+    """
     if logger is None:
         return None
     payload: dict[str, Any] = {"provider_id": provider_id}
@@ -178,6 +203,8 @@ def record_provider_execution_completed(
         payload["model"] = model
     if usage:
         payload["usage"] = usage
+    if execution_id is not None:
+        payload["execution_id"] = execution_id
     return logger.record(
         EventType.PROVIDER_EXECUTION_COMPLETED,
         source=source,
@@ -195,13 +222,19 @@ def record_provider_execution_failed(
     error: str,
     model: str | None = None,
     source: str = "provider_registry",
+    execution_id: str | None = None,
 ) -> Event | None:
-    """Provider 执行失败 (response.error 或意外异常, 终态 result=ERROR)。"""
+    """Provider 执行失败 (response.error 或意外异常, 终态 result=ERROR)。
+
+    Phase 8B-1 (ADR-0023) 增强: execution_id 关联具体执行 (可选增量 payload)。
+    """
     if logger is None:
         return None
     payload: dict[str, Any] = {"provider_id": provider_id, "error": error}
     if model is not None:
         payload["model"] = model
+    if execution_id is not None:
+        payload["execution_id"] = execution_id
     return logger.record(
         EventType.PROVIDER_EXECUTION_FAILED,
         source=source,

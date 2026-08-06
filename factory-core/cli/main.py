@@ -254,9 +254,16 @@ def build_parser() -> Any:
     p_ex_list = xsub.add_parser("list", help="执行记录列表 (发 execution.viewed)")
     json_opt(p_ex_list)
     p_ex_list.add_argument("--task", default=None, help="按任务过滤")
-    p_ex_run = xsub.add_parser("run", help="执行 pending execution (发 execution.started/completed/failed)")
+    p_ex_run = xsub.add_parser(
+        "run", help="执行 pending execution (发 execution.started/completed/failed; "
+                    "--provider 选择 Provider 并经 input 携带, 发 provider.* 事件)"
+    )
     json_opt(p_ex_run)
     p_ex_run.add_argument("execution_id", help="执行请求 ID (如 EX-001)")
+    p_ex_run.add_argument(
+        "--provider", default=None,
+        help="显式指定 Provider id (覆盖项目配置; 优先级链: 项目 > Agent > Runtime > Default)",
+    )
     p_ex_status = xsub.add_parser("status", help="查看执行状态/结果 (发 execution.viewed)")
     json_opt(p_ex_status)
     p_ex_status.add_argument("execution_id", help="执行请求 ID (如 EX-001)")

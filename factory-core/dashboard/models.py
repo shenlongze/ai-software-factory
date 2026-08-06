@@ -304,6 +304,38 @@ class UnderstandingSnapshot(BaseModel):
         return self.model_dump(mode="json")
 
 
+class ProductSnapshot(BaseModel):
+    """Product Intelligence 汇总 (Phase 9A, ADR-0026): Idea/Artifact/Approval/Workflow。
+
+    数据源 = ProductStore 独立空间 (<root>/product/, 与 tasks/agents/workflows/
+    providers 完全分离 — 删除 product/ 不影响 Factory): ideas 为 ProductIdea
+    (Idea 即 Artifact 约定, 每条 idea 同步落 product_idea Artifact);
+    artifacts 为 Artifact 抽象全类型 (含 product_decision — Approval Gate
+    闭环产物); approvals 为 ApprovalRequest (pending/approved/denied 计数,
+    任何 Artifact 可申请); workflows 为 ProductWorkflow 骨架 (running/
+    awaiting_approval/completed/failed 计数, awaiting_approval = 审批门暂停)。
+    只读投影: collector include_product=True 时聚合 (默认关闭 — 既有 dashboard
+    行为/成本完全不变, 同 include_provider 模式)。
+    """
+
+    idea_total: int = 0
+    ideas: list[dict[str, Any]] = Field(default_factory=list)            # ProductIdea.to_dict()
+    artifact_total: int = 0
+    artifacts_by_type: dict[str, int] = Field(default_factory=dict)      # type → 计数
+    artifacts: list[dict[str, Any]] = Field(default_factory=list)        # Artifact.to_dict()
+    product_decisions: int = 0                                           # product_decision 类型数
+    approval_pending: int = 0
+    approval_approved: int = 0
+    approval_denied: int = 0
+    approvals: list[dict[str, Any]] = Field(default_factory=list)        # ApprovalRequest.to_dict()
+    workflow_total: int = 0
+    workflows_by_status: dict[str, int] = Field(default_factory=dict)    # status → 计数
+    workflows: list[dict[str, Any]] = Field(default_factory=list)        # ProductWorkflow.to_dict()
+
+    def to_dict(self) -> dict:
+        return self.model_dump(mode="json")
+
+
 class FactorySnapshot(BaseModel):
     """一次 Dashboard 查询的完整只读投影 (全 store 汇总 + 最近事件)。"""
 
@@ -341,6 +373,10 @@ class FactorySnapshot(BaseModel):
     # (collector include_understanding=True), 默认空 (既有 dashboard 行为/成本
     # 完全一致; 数据源 = UnderstandingService 只读分析, 每项目一条)。
     understanding: UnderstandingSnapshot = Field(default_factory=UnderstandingSnapshot)
+    # Phase 9A (ADR-0026): Product View — 仅 --view product 聚合 (collector
+    # include_product=True), 默认空 (既有 dashboard 行为/成本完全一致; 数据源 =
+    # ProductStore 独立空间 <root>/product/ 只读, Idea/Artifact/Approval/Workflow)。
+    product: ProductSnapshot = Field(default_factory=ProductSnapshot)
 
     def to_dict(self) -> dict:
         """JSON 友好序列化 (CLI --json 输出 / 测试断言共用)。"""

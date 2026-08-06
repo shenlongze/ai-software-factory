@@ -48,6 +48,14 @@ from .commands import (
     cmd_provider_stats,
     cmd_provider_compare,
     cmd_provider_recommend,
+    cmd_product_approval_decide,
+    cmd_product_approval_list,
+    cmd_product_approval_request,
+    cmd_product_idea_create,
+    cmd_product_idea_list,
+    cmd_product_idea_show,
+    cmd_product_workflow_start,
+    cmd_product_workflow_status,
     cmd_recover,
     cmd_runtime_add,
     cmd_runtime_catalog_list,
@@ -381,6 +389,71 @@ def build_parser() -> Any:
     p_pv_recommend.add_argument("--budget", type=float, default=None,
                                 help="估算成本上限 USD (默认不设上限)")
 
+    # factory product <sub> (Phase 9A, ADR-0026: Product Intelligence 基础)
+    p_product = sub.add_parser(
+        "product", help="Product Intelligence: Idea/Artifact/Approval/Workflow (独立空间 .factory/product/, 发 idea.*/approval.*/product.* 事件)"
+    )
+    json_opt(p_product)
+    psub = p_product.add_subparsers(dest="product_command", required=True)
+    # product idea <sub>
+    p_pi = psub.add_parser("idea", help="产品想法管理 (发 idea.* 事件)")
+    json_opt(p_pi)
+    pisub = p_pi.add_subparsers(dest="idea_command", required=True)
+    p_pi_create = pisub.add_parser(
+        "create", help="创建想法: 落 ProductIdea + product_idea Artifact (发 idea.created)"
+    )
+    json_opt(p_pi_create)
+    p_pi_create.add_argument("--title", required=True, help="想法标题")
+    p_pi_create.add_argument("--description", default=None, help="想法描述")
+    p_pi_create.add_argument("--goals", default=None, help="目标列表, 逗号分隔")
+    p_pi_list = pisub.add_parser("list", help="想法列表 (发 idea.viewed 审计)")
+    json_opt(p_pi_list)
+    p_pi_show = pisub.add_parser("show", help="想法详情 + 关联 Artifact (发 idea.viewed 审计)")
+    json_opt(p_pi_show)
+    p_pi_show.add_argument("idea_id", help="想法 ID (如 PI-001)")
+    # product approval <sub>
+    p_pa = psub.add_parser(
+        "approval", help="审批门管理: 任何 Artifact 可申请 (发 approval.* 事件)"
+    )
+    json_opt(p_pa)
+    pasub = p_pa.add_subparsers(dest="approval_command", required=True)
+    p_pa_request = pasub.add_parser(
+        "request", help="申请审批: artifact 落 pending 请求 (发 approval.required; 关联 workflow 暂停)"
+    )
+    json_opt(p_pa_request)
+    p_pa_request.add_argument("artifact_id", help="Artifact ID (如 ART-001)")
+    p_pa_request.add_argument("--gate", default=None,
+                              help="审批门 id (默认 prd|ui|architecture 之一; 门 id == artifact_type)")
+    p_pa_request.add_argument("--by", default=None, help="申请人 (默认 cli)")
+    p_pa_request.add_argument("--note", default=None, help="申请备注")
+    p_pa_decide = pasub.add_parser(
+        "decide", help="审批决定 approve|deny: 终态不可逆 (发 approval.granted/denied; granted 产生 Product Decision Artifact)"
+    )
+    json_opt(p_pa_decide)
+    p_pa_decide.add_argument("request_id", help="审批请求 ID (如 APR-001)")
+    p_pa_decide.add_argument("decision", choices=["approve", "deny"], help="决定")
+    p_pa_decide.add_argument("--comment", default=None, help="决定理由 (deny 必填建议)")
+    p_pa_decide.add_argument("--by", default=None, help="决策人 (默认 cli)")
+    p_pa_list = pasub.add_parser("list", help="审批清单 (发 approval.viewed 审计)")
+    json_opt(p_pa_list)
+    p_pa_list.add_argument("--pending", action="store_true", help="只列待办 (pending)")
+    # product workflow <sub>
+    p_pw = psub.add_parser(
+        "workflow", help="产品工作流骨架 (发 product.* 事件)"
+    )
+    json_opt(p_pw)
+    pwsub = p_pw.add_subparsers(dest="workflow_command", required=True)
+    p_pw_start = pwsub.add_parser(
+        "start", help="启动工作流: stages 链 + current_stage (发 product.workflow.started)"
+    )
+    json_opt(p_pw_start)
+    p_pw_start.add_argument("idea_id", help="想法 ID (如 PI-001)")
+    p_pw_status = pwsub.add_parser(
+        "status", help="工作流状态: 阶段/待批准/Product Decision (发 product.workflow.status_viewed 审计)"
+    )
+    json_opt(p_pw_status)
+    p_pw_status.add_argument("idea_id", help="想法 ID (如 PI-001)")
+
     # factory workspace <sub> (Phase 6A, ADR-0016)
     p_workspace = sub.add_parser(
         "workspace", help="Workspace 管理: 多项目组织单位 (workspace.yaml, 发 workspace.* 事件)"
@@ -546,6 +619,8 @@ def main(argv: list[str] | None = None) -> int:
             result = _dispatch_change(ctx, args)
         elif args.command == "understand":
             result = cmd_understand(ctx, args)
+        elif args.command == "product":
+            result = _dispatch_product(ctx, args)
         else:  # pragma: no cover — argparse required=True 已拦截
             raise CliError(f"unknown command: {args.command}", exit_code=2)
     except CliError as exc:
@@ -716,6 +791,33 @@ def _dispatch_change(ctx: FactoryContext, args: Any) -> dict:
     raise CliError(f"unknown change command: {args.change_command}", exit_code=2)
 
 
+def _dispatch_product(ctx: FactoryContext, args: Any) -> dict:
+    """product idea/approval/workflow 分发 (Phase 9A, ADR-0026)。"""
+    if args.product_command == "idea":
+        if args.idea_command == "create":
+            return cmd_product_idea_create(ctx, args)
+        if args.idea_command == "list":
+            return cmd_product_idea_list(ctx, args)
+        if args.idea_command == "show":
+            return cmd_product_idea_show(ctx, args)
+        raise CliError(f"unknown product idea command: {args.idea_command}", exit_code=2)
+    if args.product_command == "approval":
+        if args.approval_command == "request":
+            return cmd_product_approval_request(ctx, args)
+        if args.approval_command == "decide":
+            return cmd_product_approval_decide(ctx, args)
+        if args.approval_command == "list":
+            return cmd_product_approval_list(ctx, args)
+        raise CliError(f"unknown product approval command: {args.approval_command}", exit_code=2)
+    if args.product_command == "workflow":
+        if args.workflow_command == "start":
+            return cmd_product_workflow_start(ctx, args)
+        if args.workflow_command == "status":
+            return cmd_product_workflow_status(ctx, args)
+        raise CliError(f"unknown product workflow command: {args.workflow_command}", exit_code=2)
+    raise CliError(f"unknown product command: {args.product_command}", exit_code=2)
+
+
 # ------------------------------------------------------------------ 输出
 
 def _print_output(args: Any, result: dict) -> None:
@@ -762,6 +864,8 @@ def _print_output(args: Any, result: dict) -> None:
         _print_change(args.change_command, result)
     elif args.command == "understand":
         _print_understand(args, result)
+    elif args.command == "product":
+        _print_product(args, result)
 
 
 def _render_table(
@@ -1381,6 +1485,96 @@ def _print_understand(args: Any, r: dict) -> None:
         print(f"    - {na['action']}{flag}")
         print(f"      理由: {na['reason']}")
         print(f"      风险: {na['risk']}")
+
+
+# ------------------------------------------------------------------ product 输出 (Phase 9A, ADR-0026)
+
+def _print_product(args: Any, r: dict) -> None:
+    """factory product 输出: idea create/list/show + approval request/decide/list
+    + workflow start/status (发对应 idea.*/approval.*/product.* 审计事件)。"""
+    if args.product_command == "idea":
+        if args.idea_command == "list":
+            _print_product_idea_list(r)
+        else:  # create / show 共用想法 + 关联 Artifact 段
+            _print_product_idea_detail(args, r)
+    elif args.product_command == "approval":
+        if args.approval_command == "list":
+            _print_product_approval_list(r)
+        elif args.approval_command == "decide":
+            _print_product_approval_decide(r)
+        else:  # request
+            _print_product_approval_request(r)
+    elif args.product_command == "workflow":
+        _print_product_workflow(args, r)
+
+
+def _print_product_idea_list(r: dict) -> None:
+    rows = [[i["id"], i["title"], i["status"], ", ".join(i["goals"]) or "-",
+             i["description"] or "-"] for i in r["ideas"]]
+    print(_render_table(["Idea", "Title", "Status", "Goals", "Description"], rows))
+    print(f"{r['count']} ideas")
+
+
+def _print_product_idea_detail(args: Any, r: dict) -> None:
+    i, a = r["idea"], r["artifact"]
+    print(f"✔ 想法 {i['id']}  ({i['title']})")
+    print(f"  status    {i['status']}")
+    print(f"  goals     {', '.join(i['goals']) or '-'}")
+    if a is not None:
+        print(f"  artifact  {a['id']}  (type: {a['type']}, status: {a['status']})")
+    if i.get("description"):
+        print(f"  描述      {i['description']}")
+    if r.get("event_seq"):
+        event_name = "created" if args.idea_command == "create" else "viewed"
+        print(f"  事件      idea.{event_name} seq={r['event_seq']}")
+
+
+def _print_product_approval_request(r: dict) -> None:
+    a = r["approval"]
+    print(f"✔ 审批请求 {a['id']} 已提交 (gate: {a['gate']}, status: {a['status']})")
+    print(f"  artifact  {a['artifact_id']}")
+    if a.get("idea_id"):
+        print(f"  idea      {a['idea_id']}")
+    if a.get("comment"):
+        print(f"  note      {a['comment']}")
+    if r.get("event_seq"):
+        print(f"  事件      approval.required seq={r['event_seq']}")
+
+
+def _print_product_approval_decide(r: dict) -> None:
+    a, d = r["approval"], r["decision"]
+    mark = "✔" if d["decision"] == "approved" else "✘"
+    print(f"{mark} 审批 {a['id']} → {d['decision'].upper()}  (by {d['decided_by']})")
+    print(f"  artifact  {a['artifact_id']}  (gate: {a['gate']})")
+    if d["comment"]:
+        print(f"  comment   {d['comment']}")
+    pd = r.get("product_decision")
+    if pd:
+        print(f"  product_decision  {pd['id']}  (status: {pd['status']}, "
+              f"confidence: {pd['confidence']})")
+    if r.get("event_seq"):
+        print(f"  事件      approval.{'granted' if d['decision'] == 'approved' else 'denied'} "
+              f"seq={r['event_seq']}")
+
+
+def _print_product_approval_list(r: dict) -> None:
+    rows = [[a["id"], a["artifact_id"], a["gate"], a["status"],
+             a.get("idea_id") or "-", a.get("by") or "-"] for a in r["approvals"]]
+    print(_render_table(["Request", "Artifact", "Gate", "Status", "Idea", "By"], rows))
+    print(f"{r['count']} approvals")
+
+
+def _print_product_workflow(args: Any, r: dict) -> None:
+    w = r["workflow"]
+    print(f"✔ 工作流 {w['id']}  (idea: {w['idea_id']})")
+    print(f"  status        {w['status']}")
+    print(f"  current_stage {w['current_stage'] or '-'}")
+    print(f"  stages        {' → '.join(w['stages']) or '-'}")
+    if w.get("product_decision"):
+        print(f"  product_decision {w['product_decision']}")
+    if r.get("event_seq"):
+        event_name = "started" if args.workflow_command == "start" else "status_viewed"
+        print(f"  事件      product.workflow.{event_name} seq={r['event_seq']}")
 
 
 if __name__ == "__main__":

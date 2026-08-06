@@ -46,6 +46,7 @@ from .models import (
     ProjectSnapshot,
     ProjectsSnapshot,
     ProviderSnapshot,
+    ProductSnapshot,
     RuntimeCatalogSnapshot,
     TaskSnapshot,
     UnderstandingItem,
@@ -84,6 +85,8 @@ class DashboardCollector:
         provider_registry: Any | None = None,  # Phase 8A: ProviderRegistry (Provider View)
         include_provider: bool = False,  # Phase 8A: Provider View 聚合开关 (ADR-0022)
         usage_store: Any | None = None,  # Phase 8B-2: UsageStore (Provider View 使用/成本/性能列)
+        product_store: Any | None = None,  # Phase 9A: ProductStore (Product View)
+        include_product: bool = False,  # Phase 9A: Product View 聚合开关 (ADR-0026)
     ) -> None:
         self._task_store = task_store
         self._agent_registry = agent_registry
@@ -134,6 +137,12 @@ class DashboardCollector:
         self._provider_registry = provider_registry
         self._include_provider = include_provider
         self._usage_store = usage_store
+        # Product View (Phase 9A): 注入 ProductStore (独立空间 <root>/product/
+        # 只读: ideas/artifacts/approvals/workflows), 默认关闭 — 既有 dashboard
+        # 行为/成本完全不变 (同 include_provider 模式); 本模块零顶层 imports
+        # product (Removal Isolation)。
+        self._product_store = product_store
+        self._include_product = include_product
 
     # ------------------------------------------------------------------ 主入口
 
@@ -158,6 +167,7 @@ class DashboardCollector:
             changeflow=self._collect_changeflow(),
             understanding=self._collect_understanding(),
             providers=self._collect_providers(),
+            product=self._collect_product(),
         )
 
     # ------------------------------------------------------------------ 分域聚合
@@ -647,3 +657,43 @@ class DashboardCollector:
                 snapshot.usage_recommended_score = recommendation.score
         except Exception:
             return  # 失败安全: 推荐是展示增强, 不影响 Provider 视图
+
+    # ------------------------------------------------------------------ Product View (Phase 9A, ADR-0026)
+
+    def _collect_product(self) -> ProductSnapshot:
+        """Product Intelligence 汇总 (ProductStore 独立空间只读; 未装配/未开启 → 空快照)。
+
+        只读: 仅调 ProductStore 读接口 (list_ideas/list_artifacts/list_requests/
+        list_workflows); 不发事件 (idea.*/approval.* 审计由 CLI 命令层发出,
+        同 dashboard.viewed 边界)。失败安全: 未装配 product_store /
+        include_product 关闭 → ProductSnapshot() 空快照; store 异常 (如损坏
+        文件) → 空快照 (同 include_git 失败安全哲学)。默认关闭 — 既有
+        dashboard 行为/成本完全不变; 本模块零顶层 imports product (Removal
+        Isolation: 删除 product 不影响 Factory)。
+        """
+        if not self._include_product or self._product_store is None:
+            return ProductSnapshot()
+        try:
+            ideas = self._product_store.list_ideas()
+            artifacts = self._product_store.list_artifacts()
+            requests = self._product_store.list_requests()
+            workflows = self._product_store.list_workflows()
+        except Exception:
+            return ProductSnapshot()  # 失败安全: 产品数据异常不影响整视图
+        by_type = Counter(a.type for a in artifacts)
+        by_status = Counter(w.status for w in workflows)
+        return ProductSnapshot(
+            idea_total=len(ideas),
+            ideas=[i.to_dict() for i in ideas],
+            artifact_total=len(artifacts),
+            artifacts_by_type=dict(sorted(by_type.items())),
+            artifacts=[a.to_dict() for a in artifacts],
+            product_decisions=by_type.get("product_decision", 0),
+            approval_pending=sum(1 for r in requests if r.status == "pending"),
+            approval_approved=sum(1 for r in requests if r.status == "approved"),
+            approval_denied=sum(1 for r in requests if r.status == "denied"),
+            approvals=[r.to_dict() for r in requests],
+            workflow_total=len(workflows),
+            workflows_by_status=dict(sorted(by_status.items())),
+            workflows=[w.to_dict() for w in workflows],
+        )

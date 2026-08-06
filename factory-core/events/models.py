@@ -274,6 +274,25 @@ class EventType(str, Enum):
     # Loop 的最后一环, 本阶段只记录 (数据接口), 不消费/不自动切换。
     PROVIDER_FEEDBACK_CREATED = "provider.feedback.created"  # 人工反馈落盘
 
+    # --- Phase 9A: Product Intelligence Layer 事件 (增量扩展, ADR-0026) ---
+    # 依 ADR-0001 决策 1 的扩展路径: 加枚举成员即可, 不改表结构/API。
+    # idea.* 为产品想法生命周期事件 (created 写路径 / viewed 读命令审计 /
+    # updated 状态流转); approval.* 为审批门生命周期事件 (required = 申请落库,
+    # granted/denied = 终态决定, viewed 读命令审计 — 任何 Artifact 可申请,
+    # 门不绑定 PRD/UI); product.* 为产品工作流事件 (started 启动 / status_viewed
+    # 读命令审计)。全部经 product/events.py 辅助发出 (source="product" 写路径,
+    # source="cli" 读命令, ADR-0002); payload 契约见 product/events.py 与
+    # phase9a-status.md §Event 集成。
+    IDEA_CREATED = "idea.created"                    # 产品想法创建 (含 product_idea Artifact)
+    IDEA_VIEWED = "idea.viewed"                      # 想法列表/详情被查看 (只读审计)
+    IDEA_UPDATED = "idea.updated"                    # 想法更新 (status 流转)
+    APPROVAL_REQUIRED = "approval.required"          # 审批请求创建 (workflow → awaiting_approval)
+    APPROVAL_GRANTED = "approval.granted"            # 审批通过 (产生 Product Decision Artifact)
+    APPROVAL_DENIED = "approval.denied"              # 审批拒绝 (回退重生成)
+    APPROVAL_VIEWED = "approval.viewed"              # 审批清单被查看 (只读审计)
+    PRODUCT_WORKFLOW_STARTED = "product.workflow.started"        # 产品工作流启动
+    PRODUCT_WORKFLOW_STATUS_VIEWED = "product.workflow.status_viewed"  # 工作流状态被查看 (只读审计)
+
 
 class Event(BaseModel):
     """一条事件。append-only: 写入后永不修改、永不删除。"""

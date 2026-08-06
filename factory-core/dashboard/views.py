@@ -784,3 +784,89 @@ def build_understanding(snapshot: FactorySnapshot) -> Panel:
         table.add_row(_text("(no projects analyzed)", style="dim"), "", "", "", "", "")
 
     return _panel(Group(summary, table), "Understanding", border="magenta")
+
+
+# ------------------------------------------------------------------ Product View (Phase 9A, ADR-0026)
+
+def build_product(snapshot: FactorySnapshot) -> Panel:
+    """Product Intelligence View (Phase 9A, ADR-0026): Idea/Artifact/Approval/Workflow。
+
+    数据源 = snapshot.product (collector include_product=True 聚合, 默认关闭):
+    Ideas 表 (ProductIdea — Idea 即 Artifact 约定), Approvals 表
+    (ApprovalRequest: 任何 Artifact 可申请, 状态 pending/approved/denied 着色),
+    Workflows 表 (ProductWorkflow 骨架: running/awaiting_approval —
+    awaiting_approval 即审批门暂停, yellow 强调)。Summary 行含 Artifact 抽象
+    全类型计数 (含 product_decision — Approval Gate 闭环产物)。
+    """
+    p = snapshot.product
+    summary = _line(
+        _text(f"{p.idea_total} ideas", style="bold"),
+        _text(f" · {p.artifact_total} artifacts", style="bold"),
+    )
+    if p.artifact_total:
+        summary.append("  ").append_text(_status_counts_text(p.artifacts_by_type))
+    summary.append("  ").append_text(_line(
+        Text(f"{p.product_decisions} product decisions", style="bold"),
+    ))
+    summary.append("  ").append_text(_line(
+        Text(
+            f"approvals {p.approval_pending} pending / {p.approval_approved} approved / "
+            f"{p.approval_denied} denied",
+            style="dim",
+        ),
+    ))
+    summary.append("  ").append_text(_line(
+        Text(f"workflows {p.workflow_total}", style="bold"),
+    ))
+    if p.workflows_by_status:
+        summary.append("  ").append_text(_status_counts_text(p.workflows_by_status))
+
+    idea_table = Table(show_header=True, header_style="bold", box=box.SIMPLE_HEAVY, expand=True)
+    for col in ("Idea", "Title", "Status", "Goals", "Created"):
+        idea_table.add_column(col)
+    for i in p.ideas:
+        idea_table.add_row(
+            _text(i.get("id", "")),
+            _text(i.get("title", "")),
+            _text(i.get("status", ""), style=_style_status(i.get("status"))),
+            _text(", ".join(i.get("goals", [])) or "-"),
+            _text(str(i.get("created_at", ""))[:19]),
+        )
+    if not p.ideas:
+        idea_table.add_row(_text("(no ideas)", style="dim"), "", "", "", "")
+
+    approval_table = Table(show_header=True, header_style="bold", box=box.SIMPLE_HEAVY, expand=True)
+    for col in ("Request", "Artifact", "Gate", "Status", "Idea", "By"):
+        approval_table.add_column(col)
+    for a in p.approvals:
+        approval_table.add_row(
+            _text(a.get("id", "")),
+            _text(a.get("artifact_id", "")),
+            _text(a.get("gate", "")),
+            _text(a.get("status", ""), style=_style_status(a.get("status"))),
+            _text(a.get("idea_id") or "-"),
+            _text(a.get("by") or "-"),
+        )
+    if not p.approvals:
+        approval_table.add_row(_text("(no approvals)", style="dim"), "", "", "", "", "")
+
+    workflow_table = Table(show_header=True, header_style="bold", box=box.SIMPLE_HEAVY, expand=True)
+    for col in ("Workflow", "Idea", "Status", "Current Stage", "Stages", "Product Decision"):
+        workflow_table.add_column(col)
+    for w in p.workflows:
+        workflow_table.add_row(
+            _text(w.get("id", "")),
+            _text(w.get("idea_id", "")),
+            _text(w.get("status", ""), style=_style_status(w.get("status"))),
+            _text(w.get("current_stage") or "-"),
+            _text(" → ".join(w.get("stages", [])) or "-"),
+            _text(w.get("product_decision") or "-"),
+        )
+    if not p.workflows:
+        workflow_table.add_row(_text("(no workflows)", style="dim"), "", "", "", "", "")
+
+    return _panel(
+        Group(summary, idea_table, approval_table, workflow_table),
+        "Product Intelligence",
+        border="cyan",
+    )

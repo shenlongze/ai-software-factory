@@ -29,6 +29,7 @@ VIEWS = (
     "overview", "tasks", "agents", "workflows", "executions", "recovery", "catalog",
     "metrics", "workspace", "projects", "agents_utilization", "runtime_usage",
     "workspace_events", "git", "change", "changeflow", "understanding", "provider",
+    "product",
 )
 
 _SINGLE = {
@@ -49,6 +50,7 @@ _SINGLE = {
     "changeflow": views.build_changeflow,          # Phase 6E Change Flow View (ADR-0020)
     "understanding": views.build_understanding,    # Phase 7 Understanding View (ADR-0021)
     "provider": views.build_provider,              # Phase 8A Provider View (ADR-0022)
+    "product": views.build_product,                # Phase 9A Product View (ADR-0026)
 }
 
 

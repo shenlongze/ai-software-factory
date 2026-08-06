@@ -171,3 +171,7 @@ def _cmd_logs(root: Path, lines: int, use_json: bool) -> int:
         for line in files[name]:
             print(line)
     return 0
+
+
+if __name__ == "__main__":  # pragma: no cover — python -m runtime.cli 入口
+    sys.exit(main())

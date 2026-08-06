@@ -216,3 +216,23 @@ def test_token_not_in_status_output(rt_pkg, cli_root, fake_core_cmd, fake_consol
     assert token not in out
     _run(rt_pkg, ["--root", str(cli_root), "stop"])
     capsys.readouterr()
+
+
+def test_python_m_entrypoint(cli_root):
+    """python -m runtime.cli 入口可用 (__main__ 块) — 冒烟同形态。"""
+    import os
+    import subprocess
+    import sys
+
+    repo_root = Path(__file__).resolve().parents[2]
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(repo_root / "factory-runtime")
+    result = subprocess.run(
+        [sys.executable, "-m", "runtime.cli", "--root", str(cli_root), "init"],
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=str(repo_root),
+    )
+    assert result.returncode == 0, result.stderr
+    assert "initialized" in result.stdout

@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "factory-runtime"
+version = "0.1.0"
+description = "AI Software Factory — Product Runtime (Phase 15A: 进程生命周期/数据目录/日志/健康检查/watchdog/CLI)"
+requires-python = ">=3.12"
+# 仅 runtime 侧依赖 platformdirs (平台规范路径映射); 不污染 factory-core
+dependencies = ["platformdirs"]
+
+[project.scripts]
+factory-runtime = "runtime.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["runtime*"]

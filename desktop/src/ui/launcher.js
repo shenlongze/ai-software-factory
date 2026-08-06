@@ -263,15 +263,24 @@ function openConsole() {
   tauriInvoke("open_console", { port: currentStatus.port }).catch(function () {});
 }
 
-/* ---------- 事件绑定 (阶段 1: status/health; logs/recovery 阶段 2 启用) ---------- */
+/* ---------- 事件绑定 (阶段 2: logs 3-tab + recovery + 首次启动完整流程) ---------- */
 function bindEvents() {
   $("btn-open-console").addEventListener("click", openConsole);
   $("btn-retry").addEventListener("click", startFactory);
+  $("btn-restart").addEventListener("click", restartRuntime);
+  $("btn-refresh-logs").addEventListener("click", loadLogs);
+  var tabs = document.querySelectorAll(".tab");
+  for (var i = 0; i < tabs.length; i++) {
+    tabs[i].addEventListener("click", function () {
+      switchTab(this.getAttribute("data-tab"));
+    });
+  }
 }
 
 /* ---------- 初始化: 已有 runtime 直接渲染, 否则首次启动 ---------- */
 function init() {
   bindEvents();
+  loadLogs();
   tauriInvoke("runtime_status")
     .then(function (raw) {
       var st = JSON.parse(raw);

@@ -31,13 +31,15 @@ Agent Registry + Capability Model + Experience Model
 验收: 组织建模 + AI 员工注册/分配 (≥120 tests)
 ```
 
-### Phase 17 — Planning Intelligence
+### Phase 17 — AI Professional Organization MVP
 ```
-目标: AI Project Manager
-能力: 分析目标/创建计划/选择管理模式 (Scrum/Kanban/Waterfall/Hybrid/MVP)
-Task Graph: dependency/parallel/critical path
-动态: 监控进度/发现风险/重新规划
-验收: 计划生成 + 调度 + 重规划 (≥130 tests)
+目标: 创建第一个完整 AI 团队 (MarkPad AI Software Company)
+组织: Company/Department/Role + Employee (Agent Profile/Capability/Authority)
+Workflow: Goal → CEO → Product → Project Manager (拆解/规划/分配)
+         → Architect → Developer → QA → Review → Experience
+原则: 能力 != 角色; Agent 角色化 (Identity/Responsibility/Capability/
+      Knowledge/Authority/Experience/Performance); 禁超级 Agent
+验收: MarkPad 公司组织实例化 + 全岗位协作链 (≥130 tests)
 ```
 
 ### Phase 18 — Execution & Sandbox

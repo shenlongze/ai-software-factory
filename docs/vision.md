@@ -37,19 +37,21 @@ Experience Learning
 
 ## Agent 是什么？
 
-**Agent 不是 prompt。Agent 是专业 AI 员工。**
+**Agent 不是 prompt。Agent 是专业 AI 员工（角色化，非万能）。**
 
 ```
-专业 AI 员工 = Role (职位) + Capability (能力) + Experience (履历) + Responsibility (职责)
+专业 AI 员工 = Identity (职位) + Responsibility (职责) + Capability (能力)
+             + Knowledge (知识) + Authority (权限) + Experience (履历) + Performance (绩效)
 ```
 
-- 有职位（Developer/Architect/Tester/Security/Deploy）
-- 有专业能力（声明式 capability.yaml）
+- 有职位（CEO/Product/PM/Architect/Developer/QA/Review — 不同专业不同员工）
+- 有能力但**能力 != 角色**：每岗位只配岗位所需能力（禁超级 Agent）
 - 有工作经验（ExperienceRecord 五域）
-- 有职责边界（Permission 矩阵）
+- 有职责边界（Authority 矩阵，默认 deny）
 - 行为可审计（做了什么/为什么/进度/Token/成本/结果）
 
 Factory 不实现 Agent 能力，Factory 管理 Agent（雇佣、分配、考核、解雇）。
+分析岗（Analysis Agent）与管理岗（Project Manager Agent）是不同职业：分析提供事实和建议，经理组织执行。
 
 ## Human 与 AI 的关系
 

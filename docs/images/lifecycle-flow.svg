@@ -1,0 +1,111 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="700" viewBox="0 0 1200 700" font-family="'PingFang SC','Hiragino Sans GB','Microsoft YaHei','Noto Sans SC',sans-serif">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0c1424"/>
+      <stop offset="100%" stop-color="#080e1a"/>
+    </linearGradient>
+    <linearGradient id="nodeGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#16294d"/>
+      <stop offset="100%" stop-color="#101d3a"/>
+    </linearGradient>
+    <linearGradient id="gateGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#b45309"/>
+      <stop offset="100%" stop-color="#92400e"/>
+    </linearGradient>
+    <marker id="arrowRight" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#7dd3fc"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="700" fill="url(#bgGrad)"/>
+  <rect x="0" y="0" width="1200" height="4" fill="#22d3ee" opacity="0.5"/>
+
+  <!-- 标题 -->
+  <text x="60" y="32" font-size="21" font-weight="bold" fill="#e5f6ff">AI Software Factory — 产品生命周期流 (Idea → Experience)</text>
+  <text x="1140" y="28" font-size="11.5" fill="#64748b" text-anchor="end">8 阶段链 · 2 个人工审批门禁 · 每阶段产出 Artifact + Event + Evidence</text>
+  <line x1="60" y1="45" x2="1140" y2="45" stroke="#1e3a5f" stroke-width="1"/>
+
+  <!-- 阶段分组带 -->
+  <rect x="61" y="280" width="418" height="24" rx="12" fill="#ffffff" fill-opacity="0.05" stroke="#3b82f6" stroke-opacity="0.5"/>
+  <text x="270" y="297" font-size="11.5" fill="#93c5fd" text-anchor="middle">定义 Definition (Idea → PRD)</text>
+  <rect x="500" y="280" width="309" height="24" rx="12" fill="#ffffff" fill-opacity="0.05" stroke="#0ea5e9" stroke-opacity="0.5"/>
+  <text x="654" y="297" font-size="11.5" fill="#7dd3fc" text-anchor="middle">设计 Design (UI → Architecture)</text>
+  <rect x="830" y="280" width="310" height="24" rx="12" fill="#ffffff" fill-opacity="0.05" stroke="#2dd4bf" stroke-opacity="0.5"/>
+  <text x="985" y="297" font-size="11.5" fill="#5eead4" text-anchor="middle">交付 Delivery + 学习 Learning</text>
+
+  <!-- 节点 0: Idea -->
+  <rect x="61" y="319" width="88" height="62" rx="10" fill="url(#nodeGrad)" stroke="#3b82f6" stroke-opacity="0.6"/>
+  <text x="105" y="346" font-size="15" font-weight="bold" fill="#e0f7ff" text-anchor="middle">Idea</text>
+  <text x="105" y="367" font-size="11" fill="#7dd3fc" text-anchor="middle">产品创意</text>
+  <line x1="153" y1="350" x2="167" y2="350" stroke="#7dd3fc" stroke-width="1.8" marker-end="url(#arrowRight)"/>
+
+  <!-- 节点 1: Research -->
+  <rect x="171" y="319" width="88" height="62" rx="10" fill="url(#nodeGrad)" stroke="#3b82f6" stroke-opacity="0.6"/>
+  <text x="215" y="346" font-size="15" font-weight="bold" fill="#e0f7ff" text-anchor="middle">Research</text>
+  <text x="215" y="367" font-size="11" fill="#7dd3fc" text-anchor="middle">市场研究</text>
+  <line x1="263" y1="350" x2="277" y2="350" stroke="#7dd3fc" stroke-width="1.8" marker-end="url(#arrowRight)"/>
+
+  <!-- 节点 2: PRD -->
+  <rect x="281" y="319" width="88" height="62" rx="10" fill="url(#nodeGrad)" stroke="#3b82f6" stroke-opacity="0.6"/>
+  <text x="325" y="346" font-size="15" font-weight="bold" fill="#e0f7ff" text-anchor="middle">PRD</text>
+  <text x="325" y="367" font-size="11" fill="#7dd3fc" text-anchor="middle">需求文档</text>
+  <line x1="373" y1="350" x2="387" y2="350" stroke="#7dd3fc" stroke-width="1.8" marker-end="url(#arrowRight)"/>
+
+  <!-- 门禁 1: PRD Approval -->
+  <rect x="391" y="296" width="88" height="18" rx="9" fill="#f59e0b"/>
+  <text x="435" y="309" font-size="10" font-weight="bold" fill="#0b1220" text-anchor="middle">GATE · 门禁</text>
+  <polygon points="435,313 479,350 435,387 391,350" fill="url(#gateGrad)" stroke="#f59e0b" stroke-width="1.8"/>
+  <text x="435" y="346" font-size="12.5" font-weight="bold" fill="#fffbeb" text-anchor="middle">Approval</text>
+  <text x="435" y="364" font-size="10" fill="#fcd34d" text-anchor="middle">人工审批 · PRD</text>
+  <line x1="483" y1="350" x2="497" y2="350" stroke="#7dd3fc" stroke-width="1.8" marker-end="url(#arrowRight)"/>
+
+  <!-- 节点 4: UI -->
+  <rect x="501" y="319" width="88" height="62" rx="10" fill="url(#nodeGrad)" stroke="#0ea5e9" stroke-opacity="0.6"/>
+  <text x="545" y="346" font-size="15" font-weight="bold" fill="#e0f7ff" text-anchor="middle">UI</text>
+  <text x="545" y="367" font-size="11" fill="#7dd3fc" text-anchor="middle">界面设计</text>
+  <line x1="593" y1="350" x2="607" y2="350" stroke="#7dd3fc" stroke-width="1.8" marker-end="url(#arrowRight)"/>
+
+  <!-- 门禁 2: UI Approval -->
+  <rect x="611" y="296" width="88" height="18" rx="9" fill="#f59e0b"/>
+  <text x="655" y="309" font-size="10" font-weight="bold" fill="#0b1220" text-anchor="middle">GATE · 门禁</text>
+  <polygon points="655,313 699,350 655,387 611,350" fill="url(#gateGrad)" stroke="#f59e0b" stroke-width="1.8"/>
+  <text x="655" y="346" font-size="12.5" font-weight="bold" fill="#fffbeb" text-anchor="middle">Approval</text>
+  <text x="655" y="364" font-size="10" fill="#fcd34d" text-anchor="middle">人工审批 · UI</text>
+  <line x1="703" y1="350" x2="717" y2="350" stroke="#7dd3fc" stroke-width="1.8" marker-end="url(#arrowRight)"/>
+
+  <!-- 节点 6: Architecture -->
+  <rect x="721" y="319" width="88" height="62" rx="10" fill="url(#nodeGrad)" stroke="#0ea5e9" stroke-opacity="0.6"/>
+  <text x="765" y="346" font-size="15" font-weight="bold" fill="#e0f7ff" text-anchor="middle">Architecture</text>
+  <text x="765" y="367" font-size="11" fill="#7dd3fc" text-anchor="middle">架构决策</text>
+  <line x1="813" y1="350" x2="827" y2="350" stroke="#7dd3fc" stroke-width="1.8" marker-end="url(#arrowRight)"/>
+
+  <!-- 节点 7: Task -->
+  <rect x="831" y="319" width="88" height="62" rx="10" fill="url(#nodeGrad)" stroke="#2dd4bf" stroke-opacity="0.6"/>
+  <text x="875" y="346" font-size="15" font-weight="bold" fill="#e0f7ff" text-anchor="middle">Task</text>
+  <text x="875" y="367" font-size="11" fill="#5eead4" text-anchor="middle">任务计划</text>
+  <line x1="923" y1="350" x2="937" y2="350" stroke="#7dd3fc" stroke-width="1.8" marker-end="url(#arrowRight)"/>
+
+  <!-- 节点 8: Development -->
+  <rect x="941" y="319" width="88" height="62" rx="10" fill="url(#nodeGrad)" stroke="#2dd4bf" stroke-opacity="0.6"/>
+  <text x="985" y="346" font-size="15" font-weight="bold" fill="#e0f7ff" text-anchor="middle">Development</text>
+  <text x="985" y="367" font-size="11" fill="#5eead4" text-anchor="middle">开发执行</text>
+  <line x1="1033" y1="350" x2="1047" y2="350" stroke="#7dd3fc" stroke-width="1.8" marker-end="url(#arrowRight)"/>
+
+  <!-- 节点 9: Experience -->
+  <rect x="1051" y="319" width="88" height="62" rx="10" fill="url(#nodeGrad)" stroke="#22d3ee" stroke-opacity="0.75"/>
+  <text x="1095" y="346" font-size="15" font-weight="bold" fill="#e0f7ff" text-anchor="middle">Experience</text>
+  <text x="1095" y="367" font-size="11" fill="#67e8f9" text-anchor="middle">经验沉淀</text>
+
+  <!-- 图例 -->
+  <rect x="61" y="452" width="16" height="16" rx="4" fill="url(#nodeGrad)" stroke="#3b82f6" stroke-opacity="0.6"/>
+  <text x="85" y="465" font-size="11.5" fill="#94a3b8">Artifact 阶段 (产品阶段链产物 + 事件审计)</text>
+  <polygon points="205,460 217,452 229,460 217,468" fill="url(#gateGrad)" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="238" y="465" font-size="11.5" fill="#94a3b8">人工审批门禁 (ApprovalGate · mandatory)</text>
+
+  <!-- 说明 -->
+  <text x="61" y="510" font-size="12" fill="#cbd5e1">① PRD / UI 产物生成后自动申请审批 (product 9b 机制) — 人工 decide 后才进入下一阶段</text>
+  <text x="61" y="536" font-size="12" fill="#cbd5e1">② 未批准 → changes_requested: revise_artifact 修订 (supersedes 版本链, 禁覆盖历史) 后重新申请</text>
+  <text x="61" y="562" font-size="12" fill="#cbd5e1">③ Architecture → Task 为决策链产物 (Decision Artifact, 证据强制 + 可解释推荐)</text>
+  <text x="61" y="588" font-size="12" fill="#cbd5e1">④ Development 交 Core Workflow (feature-delivery) 执行; 终点 Experience 沉淀成功/失败经验 (负样本反事实记录)</text>
+  <text x="61" y="614" font-size="12" fill="#cbd5e1">⑤ 经验进入 Intelligence Loop, 影响下一次任务的推荐与评估 — 见 intelligence-loop.svg</text>
+</svg>

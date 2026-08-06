@@ -1,6 +1,6 @@
 # Security Policy — 安全策略
 
-> 归属: Phase 14A | 状态: 生效 (仓库开放前须替换所有 `TODO` 占位)
+> 归属: Phase 14B | 状态: 生效 (placeholder 已清理, 渠道见下)
 
 ## 支持的版本 (Supported Versions)
 
@@ -17,7 +17,13 @@
 
 1. **GitHub Security Advisory**: 在仓库 `Security → Report a vulnerability` 提交
    (推荐, 支持私密讨论与联合修复)。
-2. **Email**: `TODO: security@example.com` (替换为实际邮箱, 建议使用维护者 PGP 公钥)。
+2. **贡献渠道**: 一般问题 / 公开讨论走 [CONTRIBUTING.md](./CONTRIBUTING.md) 的贡献流程
+   (GitHub Issues / PR); 涉及潜在安全问题时仍请先通过 Security Advisory 私密提交,
+   修复发布前请不要公开漏洞细节。
+
+> 说明: 项目未对外发布独立的安全联系邮箱, 所有安全报告统一经 **GitHub Security
+> Advisory** 受理 (维护者会收到通知)。如不便使用 GitHub, 可在 Advisory 中注明需要
+> 其他联系方式, 维护者会在私密讨论中提供; 此处不虚构邮箱占位。
 
 请在报告中包含 (KISS):
 

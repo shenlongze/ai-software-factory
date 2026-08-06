@@ -1,0 +1,80 @@
+# Changelog
+
+> AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
+> 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
+
+---
+
+## [v1.0.0-rc1] — 2026-08-07
+
+首个发布候选: **AI Software Factory v1.0 全能力落地**。Core + Extension + Intelligence
++ Human Console 四层齐备, 真实项目 (MarkPad) 走通完整生命周期, 4111 后端测试 +
+92 前端测试全绿。
+
+### Architecture
+
+- **Core 冻结 (8 项通用原语)**: 状态管理 · 生命周期 · 调度 · 执行抽象 · 事件审计 ·
+  恢复 · 观测基础 · 组织 — `events/ tasks/ workflows/ agents/ assignment/ execution/
+  runtime/ runtimes/ recovery/ orchestration/ validation/ metrics/ dashboard/ project/
+  workspace/ cli/`。冻结后不修改 Core 行为, 新能力一律走 Extension 声明式注册。
+  冻结审查: [docs/architecture-freeze-2026-08.md](./docs/architecture-freeze-2026-08.md)。
+- **Extension 系统 (声明式注册, 零 Core 破坏)**: `understanding/ product/ providers/
+  git/ change/ changeflow/` — 依赖面仅 `events` + 区内, 删除任一 Extension 不影响
+  Core 运行 (有测试断言, 如 `test_product_removal.py`)。
+- **Intelligence 层 (只读复用, 决策/推荐/经验)**: `intelligence/` — Decision
+  (决策链 + Evidence 六来源强制 + Risk R1–R5 + Approval 绑定)、Recommendation
+  (四因素可解释评分 0.35/0.30/0.20/0.15)、Experience (五域 + 30 天半衰期衰减)。
+- **Human Console (人在环上)**: `factory-console/` — React 7 页面 + FastAPI
+  8 只读 GET 路由, Simple/Expert 双模式, 零写 API (人工审批走 CLI 决策动词)。
+
+### Capabilities
+
+- **Idea → Development 生命周期**: 12 阶段模型 (docs/lifecycle-model.md) 中 6–9
+  完整实现, 1–5 由 Product Intelligence 承接, 10–11 部分支撑。software_project
+  8 阶段链: `idea → research → prd → [approval] → ui → [approval] → architecture
+  → task`。`factory demo markpad` 一键走通 (docs/demo-guide.md)。
+- **Decision Intelligence (Phase 9c / 10A-2)**: 决策链 (Product → Architecture →
+  Task Plan)、Evidence 六来源强制、Approval 状态机 (5 态终态可逆, 高风险自动绑定
+  人工审批)、三类挡板 (产品冲突/架构变更/Scope 扩展)。
+- **Provider Intelligence (Phase 8A–8B3)**: LLM Provider 抽象 (统一 I/O + Adapter +
+  Registry)、四因素可解释推荐 (Capability/Cost/Performance/Experience)、Cost/Usage/
+  Performance 聚合, 换 Provider = 改配置。
+- **Experience Loop (Phase 10A-4)**: 成功/失败/审批经验五域沉淀, 30 天半衰期新鲜度
+  衰减, 推荐回馈 "影响但不支配" (冷启动中性分, 不惩罚新候选)。
+- **可观测与恢复**: 事件是唯一事实源 (append-only SQLite), Dashboard 20 视图,
+  六域指标, checkpoint + 事件回放断点续跑。
+- **CLI**: 23 命令组 / 77 叶子命令。
+
+### Validation
+
+- **MarkPad 真实项目验证 (Phase 12B)**: 表格编辑器增强需求走通
+  `Idea→Research→PRD→[审批]→UI→[审批]→Architecture→Task→Experience` 完整闭环 —
+  **34 事件 / 6 Artifacts / 2 经验 / 2 次人工审批 / Core 零修改**。
+  详见 [docs/real-world-validation.md](./docs/real-world-validation.md)。
+- **测试**: **4111 pytest 全绿** (24 个域, 基线只增不减) + **92 Vitest** (Web UI
+  12 文件)。分域明细见 [docs/quality-report.md](./docs/quality-report.md)。
+- **架构冻结审计 (2026-08-06)**: 四层依赖单向向下、无循环 import、Extension 隔离
+  复核通过 (docs/system-architecture-review.md)。
+- **流程**: Phase 0 → 14B, **48 次提交**, 每阶段独立可交付、可回退;
+  ADR-0001–0035 (docs/adr/), 设计文档 30+ 篇。
+
+### Known limitations (v1.0.0-rc1 边界)
+
+本版本为**单机、单人、开源核心**里程碑, 以下能力明确不在 v1.0 范围:
+
+- **无 SaaS / 多租户托管**: 无云端托管服务, 无租户隔离、无账号体系; 部署与运维由使用者自理。
+- **无身份认证/授权**: CLI 与 Human Console 均为本机信任模型, 无登录、无 RBAC;
+  请勿直接暴露到公网。
+- **无支付/计费**: 不包含用量计费、账单、订阅; Provider 成本仅用于推荐评分与观测。
+- **无市场 (Marketplace)**: 无 Skill/Agent/Workflow 的在线分发市场; 共享靠 git 分发
+  + Extension 声明式注册。
+- **反馈闭环为设计稿**: docs/feedback-model.md 定义接口契约, 采集/分类后台留待未来
+  Feedback 阶段实现 (本阶段不落库、不建服务)。
+
+---
+
+## 版本记录约定
+
+- 自 v1.0.0-rc1 起维护本文件; 每阶段交付追加一节 (Keep a Changelog:
+  Added / Changed / Fixed / Removed)。
+- 测试基线随阶段只增不减 (pytest 全量绿 + Vitest 全量绿为合入门槛)。

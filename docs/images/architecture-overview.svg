@@ -1,0 +1,169 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="700" viewBox="0 0 1200 700" font-family="'PingFang SC','Hiragino Sans GB','Microsoft YaHei','Noto Sans SC',sans-serif">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0c1424"/>
+      <stop offset="100%" stop-color="#080e1a"/>
+    </linearGradient>
+    <linearGradient id="coreGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#17284d"/>
+      <stop offset="100%" stop-color="#101d3a"/>
+    </linearGradient>
+    <linearGradient id="extGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0d3a4d"/>
+      <stop offset="100%" stop-color="#0a2b3b"/>
+    </linearGradient>
+    <linearGradient id="intGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0c4658"/>
+      <stop offset="100%" stop-color="#093545"/>
+    </linearGradient>
+    <linearGradient id="humGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0b5368"/>
+      <stop offset="100%" stop-color="#083e4f"/>
+    </linearGradient>
+    <marker id="arrowDown" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#67e8f9"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="700" fill="url(#bgGrad)"/>
+  <rect x="0" y="0" width="1200" height="4" fill="#22d3ee" opacity="0.5"/>
+
+  <!-- 标题 -->
+  <text x="60" y="32" font-size="21" font-weight="bold" fill="#e5f6ff">AI Software Factory — 四层架构总览</text>
+  <text x="1140" y="28" font-size="11.5" fill="#64748b" text-anchor="end">v1.0.0-rc1 · 依赖单向向下 · 禁止反向依赖</text>
+  <line x1="60" y1="45" x2="1140" y2="45" stroke="#1e3a5f" stroke-width="1"/>
+
+  <!-- ==================== L4 Human Console ==================== -->
+  <rect x="40" y="60" width="1120" height="110" rx="10" fill="url(#humGrad)" stroke="#22d3ee" stroke-opacity="0.55" stroke-width="1.5"/>
+  <rect x="40" y="60" width="145" height="110" rx="10" fill="#04222c" opacity="0.85"/>
+  <text x="112" y="92" font-size="21" font-weight="bold" fill="#67e8f9" text-anchor="middle">L4</text>
+  <text x="112" y="112" font-size="11.5" fill="#a5f3fc" text-anchor="middle">Human Console</text>
+  <text x="112" y="130" font-size="10.5" fill="#5eead4" text-anchor="middle">人类控制台</text>
+  <g>
+    <rect x="200" y="82" width="300" height="66" rx="8" fill="#0e1b2e" fill-opacity="0.6" stroke="#22d3ee" stroke-opacity="0.4"/>
+    <text x="350" y="106" font-size="14" font-weight="bold" fill="#e0f7ff" text-anchor="middle">ConsoleService</text>
+    <text x="350" y="125" font-size="10.5" fill="#7dd3fc" text-anchor="middle">七域只读聚合 · 项目隔离</text>
+    <text x="350" y="139" font-size="10" fill="#5b7a99" text-anchor="middle">零写 API · 不自动执行 · 不自动批准</text>
+    <rect x="520" y="82" width="300" height="66" rx="8" fill="#0e1b2e" fill-opacity="0.6" stroke="#22d3ee" stroke-opacity="0.4"/>
+    <text x="670" y="106" font-size="14" font-weight="bold" fill="#e0f7ff" text-anchor="middle">API 路由</text>
+    <text x="670" y="125" font-size="10.5" fill="#7dd3fc" text-anchor="middle">8 个只读 GET (approvals/decisions/…)</text>
+    <text x="670" y="139" font-size="10" fill="#5b7a99" text-anchor="middle">FastAPI 薄层 · 与 CLI 同事件/状态机</text>
+    <rect x="840" y="82" width="300" height="66" rx="8" fill="#0e1b2e" fill-opacity="0.6" stroke="#22d3ee" stroke-opacity="0.4"/>
+    <text x="990" y="106" font-size="14" font-weight="bold" fill="#e0f7ff" text-anchor="middle">Web UI</text>
+    <text x="990" y="125" font-size="10.5" fill="#7dd3fc" text-anchor="middle">React + TypeScript · 7 页面</text>
+    <text x="990" y="139" font-size="10" fill="#5b7a99" text-anchor="middle">Simple/Expert 切换 · 92 Vitest</text>
+  </g>
+
+  <!-- 箭头 L4→L3 -->
+  <line x1="600" y1="172" x2="600" y2="202" stroke="#67e8f9" stroke-width="1.8" marker-end="url(#arrowDown)"/>
+  <text x="616" y="192" font-size="11" fill="#7dd3fc">只读查询 Event / Artifact / Decision / Experience</text>
+
+  <!-- ==================== L3 Intelligence ==================== -->
+  <rect x="40" y="205" width="1120" height="110" rx="10" fill="url(#intGrad)" stroke="#2dd4bf" stroke-opacity="0.5" stroke-width="1.5"/>
+  <rect x="40" y="205" width="145" height="110" rx="10" fill="#04231f" opacity="0.85"/>
+  <text x="112" y="237" font-size="21" font-weight="bold" fill="#5eead4" text-anchor="middle">L3</text>
+  <text x="112" y="257" font-size="11.5" fill="#99f6e4" text-anchor="middle">Intelligence</text>
+  <text x="112" y="275" font-size="10.5" fill="#5eead4" text-anchor="middle">认知层</text>
+  <g>
+    <rect x="200" y="227" width="300" height="66" rx="8" fill="#0e1b2e" fill-opacity="0.6" stroke="#2dd4bf" stroke-opacity="0.4"/>
+    <text x="350" y="251" font-size="14" font-weight="bold" fill="#e0fbf5" text-anchor="middle">DecisionIntelligence</text>
+    <text x="350" y="270" font-size="10.5" fill="#5eead4" text-anchor="middle">决策链 + Evidence 强制 · Risk R1–R5</text>
+    <text x="350" y="284" font-size="10" fill="#5b7a99" text-anchor="middle">无证据 → NoEvidenceError 拒绝 (零事件)</text>
+    <rect x="520" y="227" width="300" height="66" rx="8" fill="#0e1b2e" fill-opacity="0.6" stroke="#2dd4bf" stroke-opacity="0.4"/>
+    <text x="670" y="251" font-size="14" font-weight="bold" fill="#e0fbf5" text-anchor="middle">RecommendationEngine</text>
+    <text x="670" y="270" font-size="10.5" fill="#5eead4" text-anchor="middle">四因素评分 0.35/0.30/0.20/0.15</text>
+    <text x="670" y="284" font-size="10" fill="#5b7a99" text-anchor="middle">+ Reasoning 解释 + 风险 · 可逐项复算</text>
+    <rect x="840" y="227" width="300" height="66" rx="8" fill="#0e1b2e" fill-opacity="0.6" stroke="#2dd4bf" stroke-opacity="0.4"/>
+    <text x="990" y="251" font-size="14" font-weight="bold" fill="#e0fbf5" text-anchor="middle">ExperienceAnalyzer</text>
+    <text x="990" y="270" font-size="10.5" fill="#5eead4" text-anchor="middle">半衰期衰减 + 正负聚合 (只读)</text>
+    <text x="990" y="284" font-size="10" fill="#5b7a99" text-anchor="middle">只记录事实 · 不自动修改自身</text>
+  </g>
+
+  <!-- 箭头 L3→L2 -->
+  <line x1="600" y1="317" x2="600" y2="347" stroke="#5eead4" stroke-width="1.8" marker-end="url(#arrowDown)"/>
+  <text x="616" y="337" font-size="11" fill="#5eead4">只读消费事件 · 推荐由人/编排采纳</text>
+
+  <!-- ==================== L2 Extension ==================== -->
+  <rect x="40" y="350" width="1120" height="120" rx="10" fill="url(#extGrad)" stroke="#0ea5e9" stroke-opacity="0.5" stroke-width="1.5"/>
+  <rect x="40" y="350" width="145" height="120" rx="10" fill="#041c2e" opacity="0.85"/>
+  <text x="112" y="384" font-size="21" font-weight="bold" fill="#7dd3fc" text-anchor="middle">L2</text>
+  <text x="112" y="404" font-size="11.5" fill="#bae6fd" text-anchor="middle">Extension</text>
+  <text x="112" y="422" font-size="10.5" fill="#7dd3fc" text-anchor="middle">领域能力</text>
+  <text x="112" y="440" font-size="9.5" fill="#5b7a99" text-anchor="middle">声明式注册</text>
+  <g>
+    <rect x="200" y="368" width="300" height="37" rx="7" fill="#0e1b2e" fill-opacity="0.6" stroke="#0ea5e9" stroke-opacity="0.4"/>
+    <text x="215" y="385" font-size="13" font-weight="bold" fill="#e0f2fe" text-anchor="start">git</text>
+    <text x="250" y="385" font-size="10.5" fill="#7dd3fc" text-anchor="start">Git 只读审计 · 零仓库写</text>
+    <text x="215" y="399" font-size="10" fill="#5b7a99" text-anchor="start">失败安全永不抛 (LC_ALL=C)</text>
+    <rect x="520" y="368" width="300" height="37" rx="7" fill="#0e1b2e" fill-opacity="0.6" stroke="#0ea5e9" stroke-opacity="0.4"/>
+    <text x="535" y="385" font-size="13" font-weight="bold" fill="#e0f2fe" text-anchor="start">change</text>
+    <text x="590" y="385" font-size="10.5" fill="#7dd3fc" text-anchor="start">变更智能 · commit→task 关联</text>
+    <text x="535" y="399" font-size="10" fill="#5b7a99" text-anchor="start">无 LLM · L4 Change 验证</text>
+    <rect x="840" y="368" width="300" height="37" rx="7" fill="#0e1b2e" fill-opacity="0.6" stroke="#0ea5e9" stroke-opacity="0.4"/>
+    <text x="855" y="385" font-size="13" font-weight="bold" fill="#e0f2fe" text-anchor="start">changeflow</text>
+    <text x="926" y="385" font-size="10.5" fill="#7dd3fc" text-anchor="start">变更驱动工作流 · 触发器</text>
+    <text x="855" y="399" font-size="10" fill="#5b7a99" text-anchor="start">evaluate → workflow run</text>
+    <rect x="200" y="413" width="300" height="37" rx="7" fill="#0e1b2e" fill-opacity="0.6" stroke="#0ea5e9" stroke-opacity="0.4"/>
+    <text x="215" y="430" font-size="13" font-weight="bold" fill="#e0f2fe" text-anchor="start">providers</text>
+    <text x="280" y="430" font-size="10.5" fill="#7dd3fc" text-anchor="start">LLM Provider 抽象 · 不绑定厂商</text>
+    <text x="215" y="444" font-size="10" fill="#5b7a99" text-anchor="start">注册表/选择器/用量/成本/能力目录</text>
+    <rect x="520" y="413" width="300" height="37" rx="7" fill="#0e1b2e" fill-opacity="0.6" stroke="#0ea5e9" stroke-opacity="0.4"/>
+    <text x="535" y="430" font-size="13" font-weight="bold" fill="#e0f2fe" text-anchor="start">product</text>
+    <text x="590" y="430" font-size="10.5" fill="#7dd3fc" text-anchor="start">产品智能 · Idea→Artifact→审批</text>
+    <text x="535" y="444" font-size="10" fill="#5b7a99" text-anchor="start">ApprovalGate + Lifecycle 编排</text>
+    <rect x="840" y="413" width="300" height="37" rx="7" fill="#0e1b2e" fill-opacity="0.6" stroke="#0ea5e9" stroke-opacity="0.4"/>
+    <text x="855" y="430" font-size="13" font-weight="bold" fill="#e0f2fe" text-anchor="start">understanding</text>
+    <text x="948" y="430" font-size="10.5" fill="#7dd3fc" text-anchor="start">项目理解 · 只读分析</text>
+    <text x="855" y="444" font-size="10" fill="#5b7a99" text-anchor="start">10 阶段 + 7 Artifact 注册化</text>
+  </g>
+
+  <!-- 箭头 L2→L1 -->
+  <line x1="600" y1="472" x2="600" y2="502" stroke="#7dd3fc" stroke-width="1.8" marker-end="url(#arrowDown)"/>
+  <text x="616" y="492" font-size="11" fill="#7dd3fc">唯一执行出口: RuntimeAdapter (只 import events)</text>
+
+  <!-- ==================== L1 Core ==================== -->
+  <rect x="40" y="505" width="1120" height="160" rx="10" fill="url(#coreGrad)" stroke="#3b82f6" stroke-opacity="0.55" stroke-width="1.5"/>
+  <rect x="40" y="505" width="145" height="160" rx="10" fill="#0a1428" opacity="0.85"/>
+  <text x="112" y="540" font-size="21" font-weight="bold" fill="#93c5fd" text-anchor="middle">L1</text>
+  <text x="112" y="560" font-size="11.5" fill="#bfdbfe" text-anchor="middle">Core</text>
+  <text x="112" y="578" font-size="10.5" fill="#93c5fd" text-anchor="middle">冻结原语</text>
+  <text x="112" y="596" font-size="9.5" fill="#5b7a99" text-anchor="middle">2026-08 冻结</text>
+  <text x="112" y="612" font-size="9.5" fill="#5b7a99" text-anchor="middle">零领域依赖</text>
+  <g>
+    <rect x="200" y="528" width="232" height="27" rx="5" fill="#0e1b2e" fill-opacity="0.55" stroke="#3b82f6" stroke-opacity="0.35"/>
+    <text x="212" y="546" font-size="12" fill="#dbeafe">events · 事件日志 (唯一事实源)</text>
+    <rect x="442" y="528" width="232" height="27" rx="5" fill="#0e1b2e" fill-opacity="0.55" stroke="#3b82f6" stroke-opacity="0.35"/>
+    <text x="454" y="546" font-size="12" fill="#dbeafe">tasks · 任务状态机</text>
+    <rect x="684" y="528" width="232" height="27" rx="5" fill="#0e1b2e" fill-opacity="0.55" stroke="#3b82f6" stroke-opacity="0.35"/>
+    <text x="696" y="546" font-size="12" fill="#dbeafe">workflows · 流程状态机</text>
+    <rect x="926" y="528" width="232" height="27" rx="5" fill="#0e1b2e" fill-opacity="0.55" stroke="#3b82f6" stroke-opacity="0.35"/>
+    <text x="938" y="546" font-size="12" fill="#dbeafe">agents · Agent/技能注册</text>
+    <rect x="200" y="562" width="232" height="27" rx="5" fill="#0e1b2e" fill-opacity="0.55" stroke="#3b82f6" stroke-opacity="0.35"/>
+    <text x="212" y="580" font-size="12" fill="#dbeafe">assignment · 分配状态机</text>
+    <rect x="442" y="562" width="232" height="27" rx="5" fill="#0e1b2e" fill-opacity="0.55" stroke="#3b82f6" stroke-opacity="0.35"/>
+    <text x="454" y="580" font-size="12" fill="#dbeafe">execution · 执行生命周期</text>
+    <rect x="684" y="562" width="232" height="27" rx="5" fill="#0e1b2e" fill-opacity="0.55" stroke="#3b82f6" stroke-opacity="0.35"/>
+    <text x="696" y="580" font-size="12" fill="#dbeafe">runtime · 执行抽象 (Adapter)</text>
+    <rect x="926" y="562" width="232" height="27" rx="5" fill="#0e1b2e" fill-opacity="0.55" stroke="#3b82f6" stroke-opacity="0.35"/>
+    <text x="938" y="580" font-size="12" fill="#dbeafe">recovery · 断点续跑</text>
+    <rect x="200" y="596" width="232" height="27" rx="5" fill="#0e1b2e" fill-opacity="0.55" stroke="#3b82f6" stroke-opacity="0.35"/>
+    <text x="212" y="614" font-size="12" fill="#dbeafe">orchestration · 自动编排</text>
+    <rect x="442" y="596" width="232" height="27" rx="5" fill="#0e1b2e" fill-opacity="0.55" stroke="#3b82f6" stroke-opacity="0.35"/>
+    <text x="454" y="614" font-size="12" fill="#dbeafe">validation · 三层验证 (L1–L3)</text>
+    <rect x="684" y="596" width="232" height="27" rx="5" fill="#0e1b2e" fill-opacity="0.55" stroke="#3b82f6" stroke-opacity="0.35"/>
+    <text x="696" y="614" font-size="12" fill="#dbeafe">metrics · 六域指标</text>
+    <rect x="926" y="596" width="232" height="27" rx="5" fill="#0e1b2e" fill-opacity="0.55" stroke="#3b82f6" stroke-opacity="0.35"/>
+    <text x="938" y="614" font-size="12" fill="#dbeafe">dashboard · 只读快照</text>
+    <rect x="200" y="630" width="232" height="27" rx="5" fill="#0e1b2e" fill-opacity="0.55" stroke="#3b82f6" stroke-opacity="0.35"/>
+    <text x="212" y="648" font-size="12" fill="#dbeafe">project · 项目配置</text>
+    <rect x="442" y="630" width="232" height="27" rx="5" fill="#0e1b2e" fill-opacity="0.55" stroke="#3b82f6" stroke-opacity="0.35"/>
+    <text x="454" y="648" font-size="12" fill="#dbeafe">workspace · 工作区组织</text>
+    <rect x="684" y="630" width="232" height="27" rx="5" fill="#0e1b2e" fill-opacity="0.55" stroke="#3b82f6" stroke-opacity="0.35"/>
+    <text x="696" y="648" font-size="12" fill="#dbeafe">runtimes · Runtime 实现</text>
+    <rect x="926" y="630" width="232" height="27" rx="5" fill="#0e1b2e" fill-opacity="0.55" stroke="#3b82f6" stroke-opacity="0.35"/>
+    <text x="938" y="648" font-size="12" fill="#dbeafe">cli · 组合根 (23 命令组)</text>
+  </g>
+
+  <!-- 底部说明 -->
+  <text x="60" y="682" font-size="11" fill="#64748b">Core 冻结 (2026-08) · 新能力一律 Extension 声明式注册 (零 Core 改动) · Intelligence 只分析+推荐+解释 · Console 只读 + 人工审批</text>
+</svg>

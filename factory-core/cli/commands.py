@@ -3149,3 +3149,157 @@ def cmd_intelligence_decision_create(ctx: FactoryContext, args: Any) -> dict:
         "result": result.to_dict(),
         "event_seq": event_seq,
     }
+
+
+# ------------------------------------------------------------------ Phase 10A-3: Intelligence Recommend (ADR-0032)
+
+
+def _parse_candidate_spec(spec: str) -> dict:
+    """解析候选规格 ID:CAP:PERF:COST:EXP[:TYPE]。
+
+    - 前 4 值: 四因素 0-1 (capability/performance/cost/experience — 规则评分
+      输入, 每项 0-1)。
+    - 可选第 6 段 TYPE: 四类型 (provider/agent/skill/workflow, 缺省 provider)。
+    """
+    parts = spec.split(":")
+    if len(parts) < 5 or not parts[0].strip():
+        raise CliError(
+            f"candidate must be ID:CAP:PERF:COST:EXP[:TYPE], got {spec!r} "
+            f"(four factors 0-1; TYPE = provider/agent/skill/workflow, default provider)",
+            exit_code=2,
+        )
+    cid = parts[0].strip()
+    try:
+        cap, perf, cost, exp = (float(v) for v in parts[1:5])
+    except ValueError as exc:
+        raise CliError(
+            f"candidate {cid!r}: factors must be numbers, got {spec!r}", exit_code=2
+        ) from exc
+    candidate: dict = {
+        "id": cid,
+        "capability": cap,
+        "performance": perf,
+        "cost": cost,
+        "experience": exp,
+    }
+    if len(parts) > 5:
+        ctype = parts[5].strip()
+        if ctype not in ("provider", "agent", "skill", "workflow"):
+            raise CliError(
+                f"candidate {cid!r}: unknown type {ctype!r} "
+                f"(provider/agent/skill/workflow)",
+                exit_code=2,
+            )
+        candidate["type"] = ctype
+    return candidate
+
+
+def _parse_weights(spec: str | None) -> dict[str, float] | None:
+    """解析推荐权重 W1:W2:W3:W4 (capability:performance:cost:experience)。
+
+    None → 缺省 0.35:0.30:0.20:0.15 (引擎 normalize 归一)。
+    """
+    if not spec:
+        return None
+    parts = spec.split(":")
+    if len(parts) != 4:
+        raise CliError(
+            f"--weights must be W1:W2:W3:W4 "
+            f"(capability:performance:cost:experience), got {spec!r}",
+            exit_code=2,
+        )
+    try:
+        values = [float(v) for v in parts]
+    except ValueError as exc:
+        raise CliError(f"--weights must be numbers, got {spec!r}", exit_code=2) from exc
+    return dict(zip(("capability", "performance", "cost", "experience"), values))
+
+
+def _build_recommendation_context(args: Any) -> dict:
+    """组装 RecommendationContext 字段 dict (CLI 输入 → 模型)。"""
+    fields: dict = {"task_type": args.task}
+    caps = getattr(args, "capability", "") or ""
+    if caps.strip():
+        fields["required_capabilities"] = [
+            c.strip() for c in caps.split(",") if c.strip()
+        ]
+    constraints = getattr(args, "constraint", None) or []
+    if constraints:
+        fields["constraints"] = list(constraints)
+    candidates = [
+        _parse_candidate_spec(s) for s in getattr(args, "candidate", None) or []
+    ]
+    if candidates:
+        fields["candidates"] = candidates
+    if getattr(args, "budget", None) is not None:
+        fields["budget"] = args.budget
+    if getattr(args, "quality", None) is not None:
+        fields["quality_target"] = args.quality
+    artifact = getattr(args, "approval_artifact", None)
+    if artifact:
+        binding: dict = {"artifact_id": artifact}
+        if getattr(args, "gate", None):
+            binding["gate"] = args.gate
+        fields["approval"] = binding
+    return fields
+
+
+def cmd_intelligence_recommend(ctx: FactoryContext, args: Any) -> dict:
+    """factory intelligence recommend — 多因素评分推荐 (能力/性能/成本/经验,
+    权重配置化; Reasoning 解释正负向; 冷启动中性; **只推荐不执行**)。
+
+    - 候选: --candidate ID:CAP:PERF:COST:EXP[:TYPE] (四类型统一抽象, 缺省
+      provider); 过滤: --quality 能力门槛 / --budget 成本分门槛。
+    - 权重: --weights W1:W2:W3:W4 (capability:performance:cost:experience,
+      缺省 0.35:0.30:0.20:0.15)。
+    - Decision 集成 (10A-2 复用): 生成 Decision Artifact (recommendation 类型);
+      高风险 (requires_approval) + --approval-artifact → 9c ApprovalGate 提交
+      审批请求, approval_request_id 回填。
+    - 发 intelligence.recommendation.* 事件链 (started → candidate.evaluated×N
+      → explained → completed; 落库时含 recommendation.created)。
+    """
+    from intelligence.models import RecommendationContext
+
+    from intelligence.recommend import RecommendationEngine, RecommendationEngineError
+
+    from intelligence.decision import DecisionIntelligenceError
+
+    from intelligence.store import DecisionStore, RecommendationStore
+
+    with ctx.logger_scope() as logger:
+        approval_service = None
+        if getattr(args, "approval_artifact", None):
+            from product.service import ProductService
+
+            from product.store import ProductStore
+
+            approval_service = ProductService(
+                ProductStore(ctx.root / "product"), logger=logger
+            )
+        engine = RecommendationEngine(
+            RecommendationStore(ctx.root / "intelligence"),
+            logger=logger,
+            weights=_parse_weights(getattr(args, "weights", None)),
+            approval_service=approval_service,
+        )
+        try:
+            context = RecommendationContext.model_validate(
+                _build_recommendation_context(args)
+            )
+            result = engine.recommend(context)
+            decision = engine.to_decision(result, context)
+            if decision is not None:
+                DecisionStore(ctx.root / "intelligence").save(decision)
+        except (RecommendationEngineError, DecisionIntelligenceError) as exc:
+            # DecisionIntelligenceError = to_decision 审批绑定失败 (9c 集成,
+            # 独立异常层级) — 同为推荐链可预期错误, 响亮转 CLI rc 1
+            raise CliError(str(exc), exit_code=1) from exc
+        event_seq = _intelligence_last_seq(
+            logger, EventType.INTELLIGENCE_RECOMMENDATION_COMPLETED
+        )
+    return {
+        "ok": True,
+        "recommendation": result.to_dict(),
+        "decision": decision.to_dict() if decision is not None else None,
+        "event_seq": event_seq,
+    }

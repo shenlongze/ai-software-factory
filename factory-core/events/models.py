@@ -368,6 +368,21 @@ class EventType(str, Enum):
     INTELLIGENCE_DECISION_ANALYSIS_COMPLETED = "intelligence.decision.analysis.completed"  # 决策分析完成
     INTELLIGENCE_DECISION_OPTION_EVALUATED = "intelligence.decision.option.evaluated"      # 选项规则评分完成
 
+    # --- Phase 10A-3: Recommendation Engine 事件 (增量扩展, ADR-0032) ---
+    # 依 ADR-0001 决策 1 的扩展路径: 加枚举成员即可, 不改表结构/API。
+    # intelligence.recommendation.* 为 RecommendationEngine 引擎 (recommend.py)
+    # 的推荐链生命周期事件 (source="intelligence" 写路径): started (推荐开始,
+    # 载荷含 task_type/required_capabilities/candidate_count) →
+    # candidate.evaluated (逐候选评分, 每候选一条, 载荷含 candidate_id/type/
+    # score/factors) → explained (解释生成, 载荷含 reasoning 分项计数) →
+    # [recommendation.created (10A-1 既有, 落库时)] → completed (链终, 载荷含
+    # top_candidate_id/score/confidence/risk_level/decision_id)。payload 契约
+    # 见 intelligence/events.py。
+    INTELLIGENCE_RECOMMENDATION_STARTED = "intelligence.recommendation.started"            # 推荐开始
+    INTELLIGENCE_RECOMMENDATION_COMPLETED = "intelligence.recommendation.completed"        # 推荐完成 (链终)
+    INTELLIGENCE_RECOMMENDATION_CANDIDATE_EVALUATED = "intelligence.recommendation.candidate.evaluated"  # 候选评分完成
+    INTELLIGENCE_RECOMMENDATION_EXPLAINED = "intelligence.recommendation.explained"        # 推荐解释生成
+
 
 class Event(BaseModel):
     """一条事件。append-only: 写入后永不修改、永不删除。"""

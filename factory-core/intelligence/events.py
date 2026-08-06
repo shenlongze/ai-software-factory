@@ -205,3 +205,117 @@ def record_intelligence_viewed(
         result="OK",
         payload={"view": view, "count": count},
     )
+
+
+def record_recommendation_started(
+    logger: Any,
+    *,
+    context: Any,
+    source: str = "intelligence",
+) -> Event | None:
+    """推荐开始 (intelligence.recommendation.started; 推荐链第 1 事件)。"""
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.INTELLIGENCE_RECOMMENDATION_STARTED,
+        source=source,
+        stage="recommending",
+        action="start recommendation",
+        result="OK",
+        payload={
+            "task_type": context.task_type,
+            "required_capabilities": list(context.required_capabilities),
+            "candidate_count": len(context.candidates),
+            "budget": context.budget,
+            "quality_target": context.quality_target,
+            "constraint_count": len(context.constraints),
+        },
+    )
+
+
+def record_recommendation_candidate_evaluated(
+    logger: Any,
+    *,
+    evaluation: Any,
+    context: Any,
+    source: str = "intelligence",
+) -> Event | None:
+    """候选评分完成 (intelligence.recommendation.candidate.evaluated; 每候选一条)。"""
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.INTELLIGENCE_RECOMMENDATION_CANDIDATE_EVALUATED,
+        source=source,
+        stage="evaluating",
+        action="evaluate recommendation candidate",
+        result="OK",
+        payload={
+            "task_type": context.task_type,
+            "candidate_id": evaluation.candidate_id,
+            "candidate_type": evaluation.candidate_type,
+            "score": evaluation.score,
+            "factors": evaluation.factors,
+            "experience_records": evaluation.experience_records,
+            "experience_source": evaluation.experience_source,
+        },
+    )
+
+
+def record_recommendation_explained(
+    logger: Any,
+    *,
+    result: Any,
+    source: str = "intelligence",
+) -> Event | None:
+    """推荐解释生成 (intelligence.recommendation.explained; 载荷含分项计数)。"""
+    if logger is None:
+        return None
+    positives = sum(1 for r in result.reasoning if r.direction.value == "positive")
+    negatives = sum(1 for r in result.reasoning if r.direction.value == "negative")
+    neutrals = sum(1 for r in result.reasoning if r.direction.value == "neutral")
+    return logger.record(
+        EventType.INTELLIGENCE_RECOMMENDATION_EXPLAINED,
+        source=source,
+        stage="explained",
+        action="explain recommendation",
+        result="OK",
+        payload={
+            "top_candidate_id": result.top_candidate_id,
+            "score": result.score,
+            "reasoning_count": len(result.reasoning),
+            "positive_count": positives,
+            "negative_count": negatives,
+            "neutral_count": neutrals,
+            "risk_reason_count": len(result.risk_reasons),
+        },
+    )
+
+
+def record_recommendation_completed(
+    logger: Any,
+    *,
+    result: Any,
+    decision_id: str | None = None,
+    source: str = "intelligence",
+) -> Event | None:
+    """推荐完成 (intelligence.recommendation.completed; 链终事件)。"""
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.INTELLIGENCE_RECOMMENDATION_COMPLETED,
+        source=source,
+        stage="recommended",
+        action="complete recommendation",
+        result="OK",
+        payload={
+            "recommendation_id": result.id,
+            "top_candidate_id": result.top_candidate_id,
+            "score": result.score,
+            "confidence": result.confidence,
+            "risk_level": result.risk_level,
+            "requires_approval": result.requires_approval,
+            "candidate_count": len(result.evaluations),
+            "filtered_count": len(result.filtered_candidates),
+            "decision_id": decision_id,
+        },
+    )

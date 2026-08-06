@@ -498,3 +498,284 @@ class ExperienceRecord(BaseModel):
     def to_dict(self) -> dict[str, Any]:
         """JSON 友好序列化 (store/CLI --json/测试断言共用)。"""
         return self.model_dump(mode="json")
+
+
+# ==========================================================================
+# Phase 10A-3: Recommendation Engine 模型 (ADR-0032) — 追加, 不改既有
+# ==========================================================================
+
+
+class CandidateType(str, Enum):
+    """候选四类型抽象 (10A-3, ADR-0032): provider/agent/skill/workflow。
+
+    "专业的人做专业的事": 同一推荐引擎对四类执行资源统一评分 — Provider
+    (外部模型服务) / Agent (角色化执行者) / Skill (能力技能包) / Workflow
+    (编排工作流)。类型只是候选属性, 评分公式与类型无关 (KISS)。
+    """
+
+    PROVIDER = "provider"
+    AGENT = "agent"
+    SKILL = "skill"
+    WORKFLOW = "workflow"
+
+
+class Candidate(BaseModel):
+    """统一候选抽象 (10A-3, ADR-0032): 四类型 × 四因素 (各 0-1)。
+
+    - id: 候选唯一标识; type: 四类型 (缺省 provider)。
+    - capability (0-1): 能力匹配分 (覆盖任务所需能力程度); performance (0-1):
+      性能分 (延迟/吞吐/成功率); cost (0-1): 成本效益分 (高 = 单位产出成本低,
+      与 decision.py 因素语义一致); experience (0-1): 经验基线分, **缺省 0.5
+      中性分** — 冷启动不惩罚新候选 (phase10a-plan §Q3 保护)。
+    - evidence: 候选自身证据链 (可选; 推荐/决策产物可携带)。
+    """
+
+    id: str
+    type: CandidateType = CandidateType.PROVIDER
+    capability: float = Field(ge=0.0, le=1.0)
+    performance: float = Field(ge=0.0, le=1.0)
+    cost: float = Field(ge=0.0, le=1.0)
+    experience: float = Field(default=0.5, ge=0.0, le=1.0)  # 中性缺省 (冷启动)
+    description: str = ""
+    evidence: list[Evidence] = Field(default_factory=list)
+
+    @field_validator("type", mode="before")
+    @classmethod
+    def _coerce_type(cls, v: Any) -> CandidateType:
+        return CandidateType(v) if isinstance(v, str) else v
+
+    @field_validator("evidence", mode="before")
+    @classmethod
+    def _coerce_evidence(cls, v: Any) -> list[Evidence]:
+        if v is None:
+            return []
+        return [e if isinstance(e, Evidence) else Evidence.model_validate(e) for e in v]
+
+    def factors(self) -> dict[str, float]:
+        """四因素 dict (评分/事件 payload 共用, 键序同 recommend.RECOMMEND_FACTOR_KEYS)。"""
+        return {
+            "capability": self.capability,
+            "performance": self.performance,
+            "cost": self.cost,
+            "experience": self.experience,
+        }
+
+    def to_dict(self) -> dict[str, Any]:
+        """JSON 友好序列化 (store/CLI --json/测试断言共用)。"""
+        return self.model_dump(mode="json")
+
+
+class ReasoningDirection(str, Enum):
+    """解释方向 (10A-3, ADR-0032): 正向原因 / 负向因素 / 中性说明 / 风险提示。
+
+    解释系统三态 + 风险: positive = 该因素支撑推荐 (高分原因); negative =
+    该因素是短板 (扣分因素); neutral = 中性分 (冷启动/无证据, 不褒不贬 —
+    无经验不惩罚的表达); risk = 风险提示 (等级 + 需人工确认的理由)。
+    """
+
+    POSITIVE = "positive"
+    NEGATIVE = "negative"
+    NEUTRAL = "neutral"
+    RISK = "risk"
+
+
+class ReasoningItem(BaseModel):
+    """单条解释 (10A-3, ADR-0032): 因素 + 方向 + 可读文本。
+
+    结构化解释 (factor/direction 可机读过滤) + 文本 (可审计展示), 例:
+    ReasoningItem(factor="capability", direction="positive",
+    text="+ code capability 0.92") — 正向原因; 负向例: text="- 延迟较高
+    (performance 0.31)"。
+    """
+
+    factor: str                          # capability/performance/cost/experience/risk/...
+    direction: ReasoningDirection
+    text: str
+
+    @field_validator("direction", mode="before")
+    @classmethod
+    def _coerce_direction(cls, v: Any) -> ReasoningDirection:
+        return ReasoningDirection(v) if isinstance(v, str) else v
+
+    def to_dict(self) -> dict[str, Any]:
+        """JSON 友好序列化 (store/CLI --json/测试断言共用)。"""
+        return self.model_dump(mode="json")
+
+
+class RecommendationContext(BaseModel):
+    """推荐上下文 (10A-3 引擎输入): 只读输入, 引擎只消费不修改。
+
+    - task_type: 任务类型 (如 development/testing); required_capabilities:
+      任务要求能力清单 (解释/过滤上下文, 如 code,reasoning)。
+    - constraints: 约束清单; candidates: 候选集 (四类型统一抽象)。
+    - budget (0-1, 可选): 成本分门槛 — 候选 cost 分 < budget → 过滤 (成本
+      不可接受即"超预算"; 缺省 None 不过滤)。
+    - quality_target (0-1, 可选): 能力分门槛 — 候选 capability 分 <
+      quality_target → 过滤 (能力不达标不推荐, 同 8B 能力过滤语义; 缺省
+      None 不过滤)。
+    - historical_context: 历史经验记录 (candidate_id → ExperienceRecord 列表,
+      可选 — 引擎集成 effective_score = score×confidence×freshness; 无记录
+      → 候选声明经验分 (缺省中性 0.5), 冷启动不惩罚)。
+    - approval: 可选 9c Approval 绑定点 (Decision 集成时高风险提交审批请求)。
+    """
+
+    task_type: str
+    required_capabilities: list[str] = Field(default_factory=list)
+    constraints: list[str] = Field(default_factory=list)
+    candidates: list[Candidate] = Field(default_factory=list)
+    budget: float | None = Field(default=None, ge=0.0, le=1.0)
+    quality_target: float | None = Field(default=None, ge=0.0, le=1.0)
+    historical_context: dict[str, list[ExperienceRecord]] = Field(default_factory=dict)
+    approval: ApprovalBinding | None = None
+    created_at: str = Field(default_factory=_now)
+
+    @field_validator("candidates", mode="before")
+    @classmethod
+    def _coerce_candidates(cls, v: Any) -> list[Candidate]:
+        if v is None:
+            return []
+        return [c if isinstance(c, Candidate) else Candidate.model_validate(c) for c in v]
+
+    @field_validator("required_capabilities", "constraints", mode="before")
+    @classmethod
+    def _coerce_str_lists(cls, v: Any) -> list[str]:
+        if v is None:
+            return []
+        return list(v)
+
+    @field_validator("historical_context", mode="before")
+    @classmethod
+    def _coerce_historical(cls, v: Any) -> dict[str, list[ExperienceRecord]]:
+        if v is None:
+            return {}
+        out: dict[str, list[ExperienceRecord]] = {}
+        for key, records in v.items():
+            out[key] = [
+                r if isinstance(r, ExperienceRecord) else ExperienceRecord.model_validate(r)
+                for r in records
+            ]
+        return out
+
+    def to_dict(self) -> dict[str, Any]:
+        """JSON 友好序列化 (store/CLI --json/测试断言共用)。"""
+        return self.model_dump(mode="json")
+
+
+class CandidateEvaluation(BaseModel):
+    """单候选评分结果 (10A-3 引擎中间产物, ADR-0032): 评分快照 + 解释。
+
+    - factors: 四因素最终分 (experience 已集成 — 经验记录 effective_score
+      聚合或候选声明/中性); score: 加权总分 (0-1); score_components: 各因素
+      加权贡献 (可审计)。
+    - reasoning: 该候选解释 (ReasoningItem 列表, 正负向 + 中性)。
+    - experience_records: 命中的经验记录数 (0 = 冷启动); experience_source:
+      records (经验记录集成) / declared (候选声明) / neutral (中性缺省)。
+    """
+
+    candidate_id: str
+    candidate_type: str = CandidateType.PROVIDER.value
+    score: float = Field(ge=0.0, le=1.0)
+    factors: dict[str, float] = Field(default_factory=dict)
+    score_components: dict[str, float] = Field(default_factory=dict)
+    reasoning: list[ReasoningItem] = Field(default_factory=list)
+    experience_records: int = Field(default=0, ge=0)
+    experience_source: str = "neutral"   # records/declared/neutral
+
+    @field_validator("reasoning", mode="before")
+    @classmethod
+    def _coerce_reasoning(cls, v: Any) -> list[ReasoningItem]:
+        if v is None:
+            return []
+        return [r if isinstance(r, ReasoningItem) else ReasoningItem.model_validate(r) for r in v]
+
+    def to_dict(self) -> dict[str, Any]:
+        """JSON 友好序列化 (store/CLI --json/测试断言共用)。"""
+        return self.model_dump(mode="json")
+
+
+class RecommendationResult(BaseModel):
+    """推荐结果 (10A-3 引擎输出, ADR-0032): 推荐 + 分项解释 + 风险。
+
+    - top_candidate_id: 最高分候选 (None = 无候选通过过滤, 无法推荐 —
+      宁缺毋滥, 同 8B "无能力证据不推荐" 语义)。
+    - evaluations: 全部候选评分快照 (CandidateEvaluation.to_dict(), 排序后 —
+      CLI 展示 + Decision 集成复用)。
+    - score: top 候选总分; factor_scores: top 候选四因素分项。
+    - reasoning: top 候选解释 (正向原因 + 负向因素 + 中性说明); risk_reasons:
+      风险提示 (竞争激烈/短板/冷启动/低置信度)。
+    - confidence (0-1): 推荐置信度 (分数差距/经验覆盖/候选深度); risk_level:
+      low/medium/high; requires_approval: high 或低置信度 → True (9c 复用)。
+    - filtered_candidates: 被 quality_target/budget 过滤掉的候选 id (可审计)。
+    - 只推荐不执行: 本产物不携带任何执行指令; 执行决策权在人 (Approval)。
+    """
+
+    id: str = Field(default_factory=_new_id)
+    task_type: str
+    top_candidate_id: str | None = None
+    score: float = Field(default=0.0, ge=0.0, le=1.0)
+    factor_scores: dict[str, float] = Field(default_factory=dict)
+    evaluations: list[CandidateEvaluation] = Field(default_factory=list)
+    reasoning: list[ReasoningItem] = Field(default_factory=list)
+    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+    risk_level: str = RiskLevel.LOW.value
+    risk_reasons: list[str] = Field(default_factory=list)
+    requires_approval: bool = False
+    filtered_candidates: list[str] = Field(default_factory=list)
+    created_at: str = Field(default_factory=_now)
+
+    @field_validator("evaluations", mode="before")
+    @classmethod
+    def _coerce_evaluations(cls, v: Any) -> list[CandidateEvaluation]:
+        if v is None:
+            return []
+        return [
+            e if isinstance(e, CandidateEvaluation) else CandidateEvaluation.model_validate(e)
+            for e in v
+        ]
+
+    @field_validator("reasoning", mode="before")
+    @classmethod
+    def _coerce_reasoning(cls, v: Any) -> list[ReasoningItem]:
+        if v is None:
+            return []
+        return [r if isinstance(r, ReasoningItem) else ReasoningItem.model_validate(r) for r in v]
+
+    def positive_reasons(self) -> list[ReasoningItem]:
+        """正向原因 (支撑推荐的理由, CLI 展示/测试断言)。"""
+        return [r for r in self.reasoning if r.direction is ReasoningDirection.POSITIVE]
+
+    def negative_reasons(self) -> list[ReasoningItem]:
+        """负向因素 (推荐候选的短板, 不黑箱)。"""
+        return [r for r in self.reasoning if r.direction is ReasoningDirection.NEGATIVE]
+
+    def reasons_by_factor(self, factor: str) -> list[ReasoningItem]:
+        """按因素过滤解释 (capability/performance/cost/experience 分项)。"""
+        return [r for r in self.reasoning if r.factor == factor]
+
+    def to_dict(self) -> dict[str, Any]:
+        """JSON 友好序列化 (store/CLI --json/测试断言共用)。"""
+        return self.model_dump(mode="json")
+
+    def to_artifact(
+        self,
+        target_type: str = "recommendation",
+        evidence: list[Evidence] | None = None,
+    ) -> Recommendation:
+        """结果 → 10A-1 Recommendation Artifact (reasoning 扁平化为字符串)。
+
+        target_type 缺省 "recommendation" (本产物对象类型); 调用方可按 top
+        候选类型传 provider/agent/skill/workflow (四类型推荐产物可追溯)。
+        evidence: top 候选证据链 (引擎传入; 模型层不持有候选引用)。
+        """
+        # risk 数值映射 (与 decision.RISK_LEVEL_TO_NUMERIC 同值, 模型层不
+        # import decision — 避免循环依赖; 常量即文档: low 0.2/medium 0.5/high 0.8)
+        risk_numeric = {"low": 0.2, "medium": 0.5, "high": 0.8}.get(self.risk_level, 0.2)
+        return Recommendation(
+            target_type=target_type,
+            target_id=self.top_candidate_id or "",
+            score=self.score,
+            reasoning=[r.text for r in self.reasoning],
+            evidence=list(evidence or []),
+            confidence=self.confidence,
+            risk=risk_numeric,
+        )

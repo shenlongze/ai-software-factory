@@ -39,6 +39,7 @@ from .commands import (
     cmd_git_status,
     cmd_init,
     cmd_intelligence_decision_create,
+    cmd_intelligence_recommend,
     cmd_metrics,
     cmd_project_list,
     cmd_project_show,
@@ -585,6 +586,27 @@ def build_parser() -> Any:
                              help="9c 审批绑定点: 已存在的 product Artifact id (仅高风险决策提交审批请求)")
     p_dc_create.add_argument("--gate", default=None, help="审批门 id (默认按 artifact.type 解析 9c 默认门)")
 
+    p_intel_recommend = isub.add_parser(
+        "recommend", help="推荐引擎: 多因素评分 (Capability×0.35+Performance×0.30+Cost×0.20+Experience×0.15, 权重配置化) + Reasoning 解释 + Risk (只推荐不执行; 高风险经 9c ApprovalGate)"
+    )
+    json_opt(p_intel_recommend)
+    p_intel_recommend.add_argument("--task", required=True, help="任务类型 (如 development/testing)")
+    p_intel_recommend.add_argument("--capability", default="",
+                                   help="任务要求能力 (逗号分隔, 如 code,reasoning)")
+    p_intel_recommend.add_argument("--constraint", action="append", default=[],
+                                   help="约束 (可多次)")
+    p_intel_recommend.add_argument("--candidate", action="append", default=[],
+                                   help="候选 ID:CAP:PERF:COST:EXP[:TYPE] — 四因素 0-1, TYPE=provider/agent/skill/workflow (可多次, 缺省 provider)")
+    p_intel_recommend.add_argument("--budget", type=float, default=None,
+                                   help="成本分门槛 0-1 (候选 cost 分低于此值 → 过滤, 成本不可接受)")
+    p_intel_recommend.add_argument("--quality", type=float, default=None,
+                                   help="能力分门槛 0-1 (候选 capability 分低于此值 → 过滤, 能力不达标)")
+    p_intel_recommend.add_argument("--weights", default=None,
+                                   help="权重 W1:W2:W3:W4 (capability:performance:cost:experience; 缺省 0.35:0.30:0.20:0.15)")
+    p_intel_recommend.add_argument("--approval-artifact", default=None,
+                                   help="9c 审批绑定点: 已存在的 product Artifact id (仅高风险推荐提交审批请求)")
+    p_intel_recommend.add_argument("--gate", default=None, help="审批门 id (默认按 artifact.type 解析 9c 默认门)")
+
     # factory workspace <sub> (Phase 6A, ADR-0016)
     p_workspace = sub.add_parser(
         "workspace", help="Workspace 管理: 多项目组织单位 (workspace.yaml, 发 workspace.* 事件)"
@@ -974,7 +996,7 @@ def _dispatch_product(ctx: FactoryContext, args: Any) -> dict:
 
 
 def _dispatch_intelligence(ctx: FactoryContext, args: Any) -> dict:
-    """Intelligence 命令派发 (Phase 10A-2, ADR-0031: Decision Intelligence)。"""
+    """Intelligence 命令派发 (Phase 10A-2/10A-3, ADR-0031/0032)。"""
     if args.intelligence_command == "decision":
         if args.decision_command == "create":
             return cmd_intelligence_decision_create(ctx, args)
@@ -982,6 +1004,8 @@ def _dispatch_intelligence(ctx: FactoryContext, args: Any) -> dict:
             f"unknown intelligence decision command: {args.decision_command}",
             exit_code=2,
         )
+    if args.intelligence_command == "recommend":
+        return cmd_intelligence_recommend(ctx, args)
     raise CliError(
         f"unknown intelligence command: {args.intelligence_command}", exit_code=2
     )
@@ -1897,9 +1921,35 @@ def _print_product_lifecycle_status(r: dict) -> None:
 
 
 def _print_intelligence(args: Any, r: dict) -> None:
-    """Intelligence 命令输出 (决策智能; --json 已在 _print_output 前置处理)。"""
+    """Intelligence 命令输出 (决策智能/推荐引擎; --json 已在 _print_output 前置处理)。"""
     if args.intelligence_command == "decision":
         _print_intelligence_decision_create(r)
+    elif args.intelligence_command == "recommend":
+        _print_intelligence_recommend(r)
+
+
+def _print_intelligence_recommend(r: dict) -> None:
+    """recommend 输出: Recommendation (score + Reasons 分项 + Risk) + Decision 绑定。"""
+    rec = r["recommendation"]
+    print(f"✔ 推荐 {rec['id']} (task: {rec['task_type']})")
+    print(f"  推荐        {rec['top_candidate_id']}  score {rec['score']:.3f}")
+    print("  Reasons")
+    for item in rec["reasoning"]:
+        print(f"    {item['text']}")
+    print(
+        f"  风险        {rec['risk_level']}  "
+        f"(requires_approval: {str(rec['requires_approval']).lower()})"
+    )
+    for reason in rec["risk_reasons"]:
+        print(f"    - {reason}")
+    if rec.get("filtered_candidates"):
+        print(f"  过滤        {', '.join(rec['filtered_candidates'])}")
+    if r.get("decision"):
+        print(f"  Decision    {r['decision']['id']} (status: {r['decision']['status']})")
+        if r["decision"].get("approval_request_id"):
+            print(f"  审批        {r['decision']['approval_request_id']} (9c ApprovalGate 绑定)")
+    if r.get("event_seq"):
+        print(f"  事件      intelligence.recommendation.completed seq={r['event_seq']}")
 
 
 def _print_intelligence_decision_create(r: dict) -> None:

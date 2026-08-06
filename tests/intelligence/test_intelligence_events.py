@@ -179,8 +179,10 @@ class TestEventTypeEnumExtension:
 
     def test_total_member_count(self):
         # 124 (10A-1) → 127: 10A-2 决策链 +3 (analysis.started/analysis.completed/
-        # option.evaluated), 纯增量扩展 (ADR-0001 决策 1 路径, 既有值零改动)
-        assert len(EventType) == 127
+        # option.evaluated); 127 → 131: 10A-3 推荐链 +4 (recommendation.started/
+        # candidate.evaluated/explained/completed)。纯增量扩展 (ADR-0001 决策 1
+        # 路径, 既有值零改动)
+        assert len(EventType) == 131
 
     def test_event_accepts_new_type_string(self):
         from events.models import Event

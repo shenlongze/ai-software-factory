@@ -342,6 +342,19 @@ class EventType(str, Enum):
     PRODUCT_LIFECYCLE_STATUS_VIEWED = "product.lifecycle.status_viewed"    # 生命周期状态被查看 (只读审计)
     PRODUCT_LIFECYCLE_TEMPLATES_VIEWED = "product.lifecycle.templates_viewed"  # 模板列表被查看 (只读审计)
 
+    # --- Phase 10A-1: Intelligence Layer 事件 (增量扩展, ADR-0030) ---
+    # 依 ADR-0001 决策 1 的扩展路径: 加枚举成员即可, 不改表结构/API。
+    # intelligence.* 为认知层 (factory-core/intelligence/, source="intelligence"
+    # 写路径 / "cli" 读命令审计) 的审计事件: decision.created (Decision 落库 —
+    # AI 推荐产物, 与 approval.* 人工确认语义分离, phase10a1-status.md §范围)、
+    # recommendation.created (推荐 + 解释落库, 不自动执行)、experience.recorded
+    # (经验记录落库 — 只记录不消费, 学习算法属 10A-4)、viewed (读命令审计,
+    # ADR-0002: 所有 CLI 行为必须产生 Event)。payload 契约见 intelligence/events.py。
+    INTELLIGENCE_DECISION_CREATED = "intelligence.decision.created"          # Decision 落库 (AI 推荐产物)
+    INTELLIGENCE_RECOMMENDATION_CREATED = "intelligence.recommendation.created"  # Recommendation 落库 (推荐+解释)
+    INTELLIGENCE_EXPERIENCE_RECORDED = "intelligence.experience.recorded"    # 经验记录落库 (只记录不消费)
+    INTELLIGENCE_VIEWED = "intelligence.viewed"                              # Intelligence 数据被查看 (只读审计)
+
 
 class Event(BaseModel):
     """一条事件。append-only: 写入后永不修改、永不删除。"""

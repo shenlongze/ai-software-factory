@@ -108,8 +108,9 @@ def make_experience(
     last_used: str | None = None,
     usage_count: int = 0,
     freshness: float = 1.0,
+    **kw,
 ) -> ExperienceRecord:
-    return ExperienceRecord(
+    base = dict(
         id=exp_id,
         domain=domain,
         subject_id=subject_id,
@@ -121,6 +122,8 @@ def make_experience(
         usage_count=usage_count,
         freshness=freshness,
     )
+    base.update(kw)
+    return ExperienceRecord(**base)
 
 
 def assert_decision_equal(got: Decision, expected: Decision) -> None:

@@ -41,14 +41,26 @@ from .events import (
     record_decision_analysis_started,
     record_decision_created,
     record_decision_option_evaluated,
+    record_experience_analyzed,
     record_experience_recorded,
+    record_feedback_learned,
     record_intelligence_viewed,
     record_recommendation_candidate_evaluated,
     record_recommendation_completed,
     record_recommendation_created,
     record_recommendation_explained,
     record_recommendation_started,
+    record_task_evaluated,
 )
+from .experience import (
+    MAX_RECOMMENDED_PER_TYPE,
+    RECOMMEND_THRESHOLD,
+    ExperienceAnalyzer,
+    aggregate_experience_factor,
+    aggregate_records,
+    matches_experience,
+)
+from .evaluate import TaskEvaluator
 from .models import (
     DEFAULT_HALF_LIFE_DAYS,
     ApprovalBinding,
@@ -63,6 +75,8 @@ from .models import (
     DecisionStatus,
     Evidence,
     EvidenceSource,
+    ExperienceAggregation,
+    ExperienceAnalysis,
     ExperienceDomain,
     ExperienceRecord,
     ExperienceResult,
@@ -73,6 +87,8 @@ from .models import (
     ReasoningItem,
     RiskAssessment,
     RiskLevel,
+    TaskEvaluation,
+    TaskRequirement,
     decay_freshness,
 )
 from .recommend import (
@@ -117,6 +133,11 @@ __all__ = [
     "EvidenceSource",
     "decay_freshness",
     "DEFAULT_HALF_LIFE_DAYS",
+    # experience loop models (10A-4)
+    "ExperienceAggregation",
+    "ExperienceAnalysis",
+    "TaskRequirement",
+    "TaskEvaluation",
     # recommendation engine models (10A-3)
     "Candidate",
     "CandidateType",
@@ -155,6 +176,14 @@ __all__ = [
     "NEGATIVE_THRESHOLD",
     "LOW_FACTOR_THRESHOLD",
     "CRITICAL_FACTOR_THRESHOLD",
+    # experience loop (10A-4)
+    "ExperienceAnalyzer",
+    "TaskEvaluator",
+    "aggregate_experience_factor",
+    "aggregate_records",
+    "matches_experience",
+    "RECOMMEND_THRESHOLD",
+    "MAX_RECOMMENDED_PER_TYPE",
     # store
     "DecisionStore",
     "RecommendationStore",
@@ -172,5 +201,8 @@ __all__ = [
     "record_recommendation_candidate_evaluated",
     "record_recommendation_explained",
     "record_experience_recorded",
+    "record_experience_analyzed",
+    "record_task_evaluated",
+    "record_feedback_learned",
     "record_intelligence_viewed",
 ]

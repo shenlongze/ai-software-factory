@@ -319,3 +319,102 @@ def record_recommendation_completed(
             "decision_id": decision_id,
         },
     )
+
+
+# ------------------------------------------------------------------ 10A-4 Experience Loop 事件 (ADR-0033)
+
+
+def record_experience_analyzed(
+    logger: Any,
+    *,
+    analysis: Any,
+    source: str = "intelligence",
+) -> Event | None:
+    """经验分析完成 (intelligence.experience.analyzed; ExperienceAnalyzer 只读聚合)。
+
+    载荷含 subject 维度 + 聚合统计 (record_count/success_rate/effective_score)
+    — 事件唯一事实源: 从 payload 可重建单主体经验分析结果的关键字段。
+    """
+    if logger is None:
+        return None
+    agg = analysis.aggregation
+    return logger.record(
+        EventType.INTELLIGENCE_EXPERIENCE_ANALYZED,
+        source=source,
+        stage="analyzed",
+        action="analyze intelligence experience",
+        result="OK",
+        payload={
+            "subject_id": analysis.subject_id,
+            "subject_type": analysis.subject_type,
+            "task_type": analysis.task_type,
+            "capability": list(analysis.capability),
+            "record_count": agg.record_count,
+            "success_count": agg.success_count,
+            "failure_count": agg.failure_count,
+            "success_rate": agg.success_rate,
+            "effective_score": agg.effective_score,
+        },
+    )
+
+
+def record_task_evaluated(
+    logger: Any,
+    *,
+    evaluation: Any,
+    source: str = "intelligence",
+) -> Event | None:
+    """任务评估完成 (intelligence.task.evaluated; TaskEvaluator 推荐执行资源)。"""
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.INTELLIGENCE_TASK_EVALUATED,
+        source=source,
+        stage="evaluated",
+        action="evaluate task",
+        result="OK",
+        payload={
+            "task_type": evaluation.task_type,
+            "required_capabilities": list(evaluation.required_capabilities),
+            "recommended_agent_count": len(evaluation.recommended_agents),
+            "recommended_provider_count": len(evaluation.recommended_providers),
+            "recommended_skill_count": len(evaluation.recommended_skills),
+            "confidence": evaluation.confidence,
+            "risk_count": len(evaluation.risks),
+        },
+    )
+
+
+def record_feedback_learned(
+    logger: Any,
+    *,
+    experience: Any,
+    source: str = "intelligence",
+) -> Event | None:
+    """反馈闭环 (intelligence.feedback.learned; 执行结果 → 经验记录落库)。
+
+    Feedback Loop 链终事件: Task→Recommendation→Execution→Result→Experience
+    (经验是未来推荐的依据; 只记录不执行, 不修改任何权重/配置 — 经验分析
+    非自我修改)。
+    """
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.INTELLIGENCE_FEEDBACK_LEARNED,
+        source=source,
+        stage="learned",
+        action="learn from execution feedback",
+        result=experience.result.value.upper(),
+        payload={
+            "experience_id": experience.id,
+            "domain": experience.domain.value,
+            "subject_type": experience.subject_type,
+            "subject_id": experience.subject_id,
+            "task_type": experience.task_type,
+            "capability": list(experience.capability),
+            "result": experience.result.value,
+            "score": experience.score,
+            "confidence": experience.confidence,
+            "negative_signal": experience.negative_signal,
+        },
+    )

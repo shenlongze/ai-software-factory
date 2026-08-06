@@ -209,24 +209,28 @@ class TestRecommendationModel:
 
 
 class TestExperienceRecordModel:
-    def test_domain_five_values(self):
+    def test_domain_six_values(self):
+        # 10A-4 (ADR-0033) 增补 skill: 五域 → 六域 (subject_type 五类执行资源
+        # provider/agent/skill/workflow/project 全部落位 + decision, 与 10A-3
+        # CandidateType 四类型同源 — 经验与推荐候选类型对齐)
         assert [e.value for e in ExperienceDomain] == [
             "provider",
             "agent",
+            "skill",
             "workflow",
             "project",
             "decision",
         ]
 
     @pytest.mark.parametrize(
-        "domain", ["provider", "agent", "workflow", "project", "decision"]
+        "domain", ["provider", "agent", "skill", "workflow", "project", "decision"]
     )
     def test_domain_accepted(self, domain):
         assert make_experience(domain=domain).domain == ExperienceDomain(domain)
 
     def test_domain_invalid_rejected(self):
         with pytest.raises(ValidationError):
-            make_experience(domain="skill")
+            make_experience(domain="memory")
 
     def test_result_success_failure(self):
         assert make_experience(result="failure").result == ExperienceResult.FAILURE

@@ -39,6 +39,8 @@ from .commands import (
     cmd_git_status,
     cmd_init,
     cmd_intelligence_decision_create,
+    cmd_intelligence_experience_evaluate,
+    cmd_intelligence_experience_list,
     cmd_intelligence_recommend,
     cmd_metrics,
     cmd_project_list,
@@ -607,6 +609,26 @@ def build_parser() -> Any:
                                    help="9c 审批绑定点: 已存在的 product Artifact id (仅高风险推荐提交审批请求)")
     p_intel_recommend.add_argument("--gate", default=None, help="审批门 id (默认按 artifact.type 解析 9c 默认门)")
 
+    p_intel_experience = isub.add_parser(
+        "experience", help="经验闭环: 历史经验清单 + 任务评估 (10A-4, ADR-0033; 只读不执行)"
+    )
+    json_opt(p_intel_experience)
+    esub = p_intel_experience.add_subparsers(dest="experience_command", required=True)
+    p_ie_list = esub.add_parser(
+        "list", help="经验记录清单 (六域 provider/agent/skill/workflow/project/decision; 发 intelligence.viewed 审计)"
+    )
+    json_opt(p_ie_list)
+    p_ie_list.add_argument("--subject-type", default=None,
+                           help="按主体类型过滤 (provider/agent/skill/workflow/project/decision)")
+    p_ie_list.add_argument("--subject-id", default=None, help="按经验对象 id 过滤")
+    p_ie_eval = esub.add_parser(
+        "evaluate", help="任务评估: 基于历史经验推荐执行资源 (agent/provider/skill; 发 intelligence.task.evaluated)"
+    )
+    json_opt(p_ie_eval)
+    p_ie_eval.add_argument("--task", required=True, help="任务类型 (如 development/testing)")
+    p_ie_eval.add_argument("--capability", default="",
+                           help="任务要求能力 (逗号分隔, 如 code,reasoning)")
+
     # factory workspace <sub> (Phase 6A, ADR-0016)
     p_workspace = sub.add_parser(
         "workspace", help="Workspace 管理: 多项目组织单位 (workspace.yaml, 发 workspace.* 事件)"
@@ -1006,6 +1028,15 @@ def _dispatch_intelligence(ctx: FactoryContext, args: Any) -> dict:
         )
     if args.intelligence_command == "recommend":
         return cmd_intelligence_recommend(ctx, args)
+    if args.intelligence_command == "experience":
+        if args.experience_command == "list":
+            return cmd_intelligence_experience_list(ctx, args)
+        if args.experience_command == "evaluate":
+            return cmd_intelligence_experience_evaluate(ctx, args)
+        raise CliError(
+            f"unknown intelligence experience command: {args.experience_command}",
+            exit_code=2,
+        )
     raise CliError(
         f"unknown intelligence command: {args.intelligence_command}", exit_code=2
     )
@@ -1926,6 +1957,11 @@ def _print_intelligence(args: Any, r: dict) -> None:
         _print_intelligence_decision_create(r)
     elif args.intelligence_command == "recommend":
         _print_intelligence_recommend(r)
+    elif args.intelligence_command == "experience":
+        if args.experience_command == "list":
+            _print_intelligence_experience_list(r)
+        elif args.experience_command == "evaluate":
+            _print_intelligence_experience_evaluate(r)
 
 
 def _print_intelligence_recommend(r: dict) -> None:
@@ -1967,6 +2003,54 @@ def _print_intelligence_decision_create(r: dict) -> None:
         print(f"  审批        {res['approval_request_id']} (9c ApprovalGate 绑定)")
     if r.get("event_seq"):
         print(f"  事件      intelligence.decision.created seq={r['event_seq']}")
+
+
+def _print_intelligence_experience_list(r: dict) -> None:
+    """experience list 输出: 经验记录清单 (subject 维度 + 结果/分数/置信度)。"""
+    print(f"✔ 经验记录 {r['count']} 条")
+    for e in r["experiences"]:
+        print(
+            f"  {e['id']}  {e['subject_type']}:{e['subject_id']}  "
+            f"{e['result']}  score {e['score']:.2f}  conf {e['confidence']:.2f}"
+        )
+        if e.get("task_type") or e.get("capability"):
+            tags = []
+            if e.get("task_type"):
+                tags.append(f"task={e['task_type']}")
+            if e.get("capability"):
+                tags.append(f"cap={','.join(e['capability'])}")
+            print(f"      {' '.join(tags)}")
+    if r.get("event_seq"):
+        print(f"  事件      intelligence.viewed seq={r['event_seq']}")
+
+
+def _print_intelligence_experience_evaluate(r: dict) -> None:
+    """experience evaluate 输出: TaskEvaluation (推荐执行资源 + 置信度 + 风险)。"""
+    ev = r["evaluation"]
+    print(f"✔ 任务评估 (task: {ev['task_type']})")
+    caps = ", ".join(ev["required_capabilities"]) if ev["required_capabilities"] else "-"
+    print(f"  能力        {caps}")
+    for label, key in (
+        ("Agent", "recommended_agents"),
+        ("Provider", "recommended_providers"),
+        ("Skill", "recommended_skills"),
+    ):
+        entries = ev[key]
+        if not entries:
+            continue
+        print(f"  推荐 {label}")
+        for entry in entries:
+            print(
+                f"    {entry['id']}  score {entry['score']:.3f}  "
+                f"({entry['records']} 条, 成功率 {entry['success_rate']:.0%})"
+            )
+    print(f"  置信度      {ev['confidence']:.3f}")
+    if ev["risks"]:
+        print("  风险")
+        for risk in ev["risks"]:
+            print(f"    - {risk}")
+    if r.get("event_seq"):
+        print(f"  事件      intelligence.task.evaluated seq={r['event_seq']}")
 
 
 if __name__ == "__main__":

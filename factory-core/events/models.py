@@ -383,6 +383,20 @@ class EventType(str, Enum):
     INTELLIGENCE_RECOMMENDATION_CANDIDATE_EVALUATED = "intelligence.recommendation.candidate.evaluated"  # 候选评分完成
     INTELLIGENCE_RECOMMENDATION_EXPLAINED = "intelligence.recommendation.explained"        # 推荐解释生成
 
+    # --- Phase 10A-4: Experience Loop 事件 (增量扩展, ADR-0033) ---
+    # 依 ADR-0001 决策 1 的扩展路径: 加枚举成员即可, 不改表结构/API。
+    # intelligence.experience.analyzed (经验分析完成 — ExperienceAnalyzer 只读
+    # 聚合, 载荷含 subject/record_count/success_rate/effective_score) →
+    # intelligence.task.evaluated (任务评估完成 — TaskEvaluator, 载荷含推荐
+    # agents/providers/skills 计数/置信度/风险数) → intelligence.feedback.learned
+    # (反馈闭环 — record_experience 把执行结果落库为经验, 载荷含 experience_id/
+    # subject/result/score)。三事件构成 Feedback Loop: Task→Recommendation→
+    # Execution→Result→Experience→更好推荐 (经验分析非自我修改: 只读聚合+记录,
+    # 不自动改权重/生成 Skill/复制 Agent)。payload 契约见 intelligence/events.py。
+    INTELLIGENCE_EXPERIENCE_ANALYZED = "intelligence.experience.analyzed"      # 经验分析完成 (只读聚合)
+    INTELLIGENCE_TASK_EVALUATED = "intelligence.task.evaluated"                # 任务评估完成 (推荐执行资源)
+    INTELLIGENCE_FEEDBACK_LEARNED = "intelligence.feedback.learned"            # 反馈闭环 (执行结果→经验记录)
+
 
 class Event(BaseModel):
     """一条事件。append-only: 写入后永不修改、永不删除。"""

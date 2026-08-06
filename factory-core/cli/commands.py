@@ -3303,3 +3303,85 @@ def cmd_intelligence_recommend(ctx: FactoryContext, args: Any) -> dict:
         "decision": decision.to_dict() if decision is not None else None,
         "event_seq": event_seq,
     }
+
+
+# ------------------------------------------------------------------ Phase 10A-4: Intelligence Experience (ADR-0033)
+
+
+def _open_experience_analyzer(ctx: FactoryContext, logger: Any):
+    """装配 ExperienceAnalyzer (延迟导入 intelligence 包 — Removal Isolation:
+    删除 intelligence/ 不影响模块加载, 命令调用时响亮失败, 同 product/provider
+    模式)。"""
+    from intelligence.experience import ExperienceAnalyzer
+
+    from intelligence.store import ExperienceStore
+
+    return ExperienceAnalyzer(
+        ExperienceStore(ctx.root / "intelligence"),
+        logger=logger,
+    )
+
+
+def cmd_intelligence_experience_list(ctx: FactoryContext, args: Any) -> dict:
+    """factory intelligence experience list [--subject-type X] [--subject-id Y]
+    — 经验记录清单 (只读查询, 发 intelligence.viewed 审计; ADR-0002: 所有 CLI
+    行为必须产生 Event)。
+
+    - 过滤: --subject-type (六域 provider/agent/skill/workflow/project/decision)
+      / --subject-id (经验对象 id, 如 hermes)。
+    - 只读不执行: 列表不修改任何状态/权重/配置 (经验分析 ≠ 自我修改)。
+    """
+    from intelligence.events import record_intelligence_viewed
+
+    with ctx.logger_scope() as logger:
+        analyzer = _open_experience_analyzer(ctx, logger)
+        experiences = analyzer.records(
+            subject_type=getattr(args, "subject_type", None),
+            subject_id=getattr(args, "subject_id", None),
+        )
+        record_intelligence_viewed(
+            logger, view="experience", count=len(experiences)
+        )
+        event_seq = _intelligence_last_seq(logger, EventType.INTELLIGENCE_VIEWED)
+    return {
+        "ok": True,
+        "count": len(experiences),
+        "experiences": [e.to_dict() for e in experiences],
+        "event_seq": event_seq,
+    }
+
+
+def cmd_intelligence_experience_evaluate(ctx: FactoryContext, args: Any) -> dict:
+    """factory intelligence experience evaluate --task T [--capability C] —
+    任务评估: 基于历史经验推荐执行资源 (发 intelligence.task.evaluated)。
+
+    - --task: 任务类型 (如 development/testing); --capability: 逗号分隔能力
+      清单 (如 code,reasoning) — 按 task_type+capability 过滤历史经验。
+    - 输出 TaskEvaluation: 按 subject_type 分组的推荐 (agent/provider/skill,
+      有效分 ≥ 0.5 中性门槛, 每类封顶 5 个) + 置信度 + 风险 (冷启动/负经验
+      主导/低置信度)。
+    - 只读评估: 不触发任何任务/Provider 切换/执行 (经验分析 ≠ 自我修改)。
+    """
+    from intelligence.evaluate import TaskEvaluator
+
+    from intelligence.models import TaskRequirement
+
+    with ctx.logger_scope() as logger:
+        caps = [
+            c.strip() for c in (getattr(args, "capability", "") or "").split(",") if c.strip()
+        ]
+        from intelligence.store import ExperienceStore
+
+        store = ExperienceStore(ctx.root / "intelligence")
+        evaluator = TaskEvaluator(store, logger=logger)
+        requirement = TaskRequirement(
+            task_type=args.task,
+            required_capabilities=caps,
+        )
+        evaluation = evaluator.evaluate(requirement)
+        event_seq = _intelligence_last_seq(logger, EventType.INTELLIGENCE_TASK_EVALUATED)
+    return {
+        "ok": True,
+        "evaluation": evaluation.to_dict(),
+        "event_seq": event_seq,
+    }

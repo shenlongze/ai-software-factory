@@ -444,7 +444,12 @@ class TestExperienceInfluence:
         assert ev_a["experience"] > ev_b["experience"]
 
     def test_historical_context_preferred_over_store(self):
-        """historical_context 优先于 ExperienceStore (显式上下文是唯一事实源)。"""
+        """historical_context 优先于 ExperienceStore (显式上下文是唯一事实源)。
+
+        候选 capability=0.8 → experience 分受能力上限约束 (10A-4, ADR-0033:
+        经验不覆盖真实能力) → min(0.9, 0.8) = 0.8 — 若误用 store 记录 (0.1)
+        则为 0.1, 0.8 仍能区分 ctx 优先。
+        """
         rec_in_ctx = make_experience(score=0.9, confidence=1.0, created_at=TS_LATE, subject_id="cand")
         rec_in_store = make_experience(score=0.1, confidence=1.0, created_at=TS_LATE, subject_id="cand")
 
@@ -458,7 +463,7 @@ class TestExperienceInfluence:
             historical_context={"cand": [rec_in_ctx]},
         )
         result = engine.recommend(context)
-        assert result.evaluations[0].factors["experience"] == pytest.approx(0.9)
+        assert result.evaluations[0].factors["experience"] == pytest.approx(0.8)
 
     def test_experience_store_fallback(self):
         """无 historical_context → ExperienceStore.find 兜底。"""

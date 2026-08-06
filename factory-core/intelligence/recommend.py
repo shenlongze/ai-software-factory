@@ -61,6 +61,7 @@ from .events import (
     record_recommendation_started,
     record_recommendation_created,
 )
+from .experience import aggregate_experience_factor
 from .models import (
     DEFAULT_HALF_LIFE_DAYS,
     Candidate,
@@ -161,12 +162,16 @@ def evaluate_factors(
     now: str | None = None,
     half_life_days: float = DEFAULT_HALF_LIFE_DAYS,
 ) -> tuple[dict[str, float], int, str]:
-    """四因素最终分 (纯函数): experience 集成 effective_score 聚合。
+    """四因素最终分 (纯函数): experience 集成正负聚合 (10A-4)。
 
     - capability/performance/cost: 候选声明分 (0-1 归一)。
-    - experience: 有记录 → 平均 effective_score (score×confidence×freshness,
-      ExperienceRecord.effective_score — 历史经验不永久有效); 无记录 → 候选
-      声明分 (缺省 0.5 中性 — **冷启动不惩罚**); 声明恰为中性 → neutral。
+    - experience: 有记录 → 正负聚合有效分 (clamp01(mean(sign × effective_score)),
+      ExperienceAnalyzer.aggregate_experience_factor 复用 — 成功提高/失败降低,
+      30 天半衰期衰减; **失败经验为负信号**); 无记录 → 候选声明分 (缺省 0.5
+      中性 — **冷启动不惩罚**); 声明恰为中性 → neutral。
+    - **Experience 不允许覆盖真实能力 (capability 权重优先)**: 经验分上限 =
+      能力分 (min(experience, capability)) — 历史经验是对能力的背书, 不是能力
+      的替代; 叠加最低权重 0.15, 可证实的失败/弱能力候选无法靠经验翻身。
     - 返回 (factors, 记录数, 来源: records/declared/neutral)。
     """
     factors = {
@@ -175,11 +180,13 @@ def evaluate_factors(
         "cost": _clamp01(float(candidate.cost)),
     }
     if records:
-        effective = [r.effective_score(now, half_life_days) for r in records]
-        factors["experience"] = _clamp01(sum(effective) / len(effective))
+        experience = aggregate_experience_factor(records, now, half_life_days)
+        # Experience 不允许覆盖真实能力 (10A-4, ADR-0033): 经验分 ≤ 能力分
+        factors["experience"] = _clamp01(min(experience, factors["capability"]))
         return factors, len(records), "records"
     declared = _clamp01(float(candidate.experience))
-    factors["experience"] = declared
+    # 声明经验分同样受能力上限约束 (规则统一, 声明 ≠ 豁免)
+    factors["experience"] = _clamp01(min(declared, factors["capability"]))
     if abs(declared - NEUTRAL_FACTOR) > 1e-9:
         return factors, 0, "declared"
     return factors, 0, "neutral"

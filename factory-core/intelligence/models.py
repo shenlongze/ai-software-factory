@@ -30,7 +30,7 @@ from enum import Enum
 from typing import Any
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from events.models import TS_FORMAT, format_timestamp, parse_timestamp
 
@@ -46,6 +46,23 @@ def _now() -> str:
 def _new_id() -> str:
     """全局唯一 id (store 持久化主键)。"""
     return uuid4().hex
+
+
+def _coerce_csv_list(v: Any) -> list[str]:
+    """字符串/可迭代 → 去空串列表 (capability 等清单字段共用)。
+
+    - None → []
+    - str → split(",") 去空白过滤空段 ("code,reasoning" → ["code", "reasoning"];
+      单值 "code" → ["code"] — 修复单字符拆分 bug: list("code") 会把字符串
+      拆成 ['c','o','d','e'])。
+    - 其他可迭代 (list/tuple/set) → list(v) 原样转换 (保持既有行为)。
+    """
+    if v is None:
+        return []
+    if isinstance(v, str):
+        return [s.strip() for s in v.split(",") if s.strip()]
+    return list(v)
+
 
 
 def decay_freshness(age_seconds: float, half_life_seconds: float) -> float:
@@ -81,10 +98,16 @@ class EvidenceSource(str, Enum):
 
 
 class ExperienceDomain(str, Enum):
-    """统一经验模型五域 (phase10a-plan §Q3): provider/agent/workflow/project/decision。"""
+    """统一经验模型六域 (phase10a-plan §Q3): provider/agent/workflow/project/decision。
+
+    10A-4 (ADR-0033) 增补 skill: ExperienceRecord 全字段 subject_type 五类执行资源
+    provider/agent/skill/workflow/project 全部落位 (skill = 能力技能包, 与 10A-3
+    CandidateType 四类型同源 — 经验与推荐候选类型对齐, 纯增量枚举扩展)。
+    """
 
     PROVIDER = "provider"
     AGENT = "agent"
+    SKILL = "skill"
     WORKFLOW = "workflow"
     PROJECT = "project"
     DECISION = "decision"
@@ -422,12 +445,19 @@ class Recommendation(BaseModel):
 
 
 class ExperienceRecord(BaseModel):
-    """统一经验记录 (五域 + freshness/decay)。
+    """统一经验记录 (六域 + 全字段 + freshness/decay + negative_signal)。
 
-    - domain 五域 + subject_id 定位经验对象 (provider:<provider_id> 等)。
+    - domain/subject_type 六域 + subject_id 定位经验对象 (provider:<provider_id>
+      等); subject_type 为显式过滤字段, 缺省派生自 domain (10A-4 全字段)。
+    - task_type/capability: 任务分类 + 能力清单 (按 task_type+capability 聚合的
+      检索键 — 10A-4 ExperienceAnalyzer 聚合维度)。
     - result: success/failure (负样本 = 反事实记录, §Q4 机制 4 — 失败经验同样
-      记录, 防"只记成功"的自我循环偏差)。
-    - score (0-1): 该次表现分 (performance); confidence (0-1): 记录可靠度。
+      记录, 防"只记成功"的自我循环偏差); negative_signal 派生属性: 失败经验
+      为负信号, 聚合时扣分 (成功提高/失败降低未来推荐)。
+    - score (0-1): 该次表现分 (performance); quality_score (0-1, 可选): 产出
+      质量分; cost (0-1, 可选): 成本效益分 (高 = 单位产出成本低, 与推荐因素
+      语义一致); duration (秒, 可选): 耗时; confidence (0-1): 记录可靠度。
+    - evidence: 该次执行证据链 (六来源, 可追溯)。
     - freshness (0-1): 当前新鲜度 (记录/使用时 = 1.0, 之后按半衰期指数衰减 —
       历史经验不永久有效); 未来评分 = score × confidence × freshness
       (effective_score)。
@@ -438,9 +468,16 @@ class ExperienceRecord(BaseModel):
     id: str = Field(default_factory=_new_id)
     domain: ExperienceDomain
     subject_id: str
+    subject_type: str | None = None    # 显式主体类型 (缺省派生自 domain.value, 便于过滤)
+    task_type: str = ""                # 任务类型 (如 development/testing)
+    capability: list[str] = Field(default_factory=list)  # 本次任务锻炼/验证的能力
     result: ExperienceResult = ExperienceResult.SUCCESS
     score: float = Field(ge=0.0, le=1.0)
+    quality_score: float | None = Field(default=None, ge=0.0, le=1.0)  # 产出质量分 (可选)
+    cost: float | None = Field(default=None, ge=0.0, le=1.0)           # 成本效益分 (高=好, 可选)
+    duration: float | None = Field(default=None, ge=0.0)               # 耗时 (秒, 可选)
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+    evidence: list[Evidence] = Field(default_factory=list)
     created_at: str = Field(default_factory=_now)
     last_used: str | None = None        # 最近使用时间 (None = 从未被使用)
     usage_count: int = Field(default=0, ge=0)
@@ -455,6 +492,34 @@ class ExperienceRecord(BaseModel):
     @classmethod
     def _coerce_result(cls, v: Any) -> ExperienceResult:
         return ExperienceResult(v) if isinstance(v, str) else v
+
+    @field_validator("capability", mode="before")
+    @classmethod
+    def _coerce_capability(cls, v: Any) -> list[str]:
+        return _coerce_csv_list(v)
+
+    @field_validator("evidence", mode="before")
+    @classmethod
+    def _coerce_evidence(cls, v: Any) -> list[Evidence]:
+        if v is None:
+            return []
+        return [e if isinstance(e, Evidence) else Evidence.model_validate(e) for e in v]
+
+    @model_validator(mode="after")
+    def _derive_subject_type(self) -> ExperienceRecord:
+        """subject_type 缺省派生自 domain (显式字段便于按类型过滤查询)。"""
+        if self.subject_type is None:
+            self.subject_type = self.domain.value
+        return self
+
+    @property
+    def negative_signal(self) -> bool:
+        """负经验信号: result == failure (反事实记录 — 失败经验降低未来评分)。
+
+        单一事实源派生属性 (不落库, 与 result 永不失配); ExperienceAnalyzer
+        聚合时按 negative_signal 扣分 (成功提高/失败降低)。
+        """
+        return self.result is ExperienceResult.FAILURE
 
     def current_freshness(
         self,
@@ -639,9 +704,7 @@ class RecommendationContext(BaseModel):
     @field_validator("required_capabilities", "constraints", mode="before")
     @classmethod
     def _coerce_str_lists(cls, v: Any) -> list[str]:
-        if v is None:
-            return []
-        return list(v)
+        return _coerce_csv_list(v)
 
     @field_validator("historical_context", mode="before")
     @classmethod
@@ -779,3 +842,148 @@ class RecommendationResult(BaseModel):
             confidence=self.confidence,
             risk=risk_numeric,
         )
+
+
+# ==========================================================================
+# Phase 10A-4: Experience Loop 模型 (ADR-0033) — 追加, 不改既有
+# ==========================================================================
+
+
+class ExperienceAggregation(BaseModel):
+    """经验聚合统计 (10A-4, ADR-0033): 记录集 → 统计 + 正负聚合有效分。
+
+    - subject_id/subject_type/task_type/capability: 聚合维度 (谁 / 什么任务 /
+      什么能力); record_count: 记录数; success_count/failure_count: 正负样本
+      计数 (negative_signal 落位); success_rate: 成功率。
+    - avg_score/avg_confidence/avg_freshness: 记录均值 (avg_freshness 按聚合
+      时刻计算 — 历史经验不永久有效); avg_cost: 平均成本效益分 (None = 记录
+      未携带成本)。
+    - effective_score (0-1): 正负聚合有效分 = clamp01(mean(sign × score×
+      confidence×freshness)), 成功 + / 失败 − (失败经验降低评分, 成功提高);
+      全失败 → 0.0, 无记录 → 0.0 (调用方处理冷启动中性 0.5)。
+    - reasoning: 逐条聚合解释 (可审计展示)。
+    """
+
+    subject_id: str = ""
+    subject_type: str = ""
+    task_type: str = ""
+    capability: list[str] = Field(default_factory=list)
+    record_count: int = Field(default=0, ge=0)
+    success_count: int = Field(default=0, ge=0)
+    failure_count: int = Field(default=0, ge=0)
+    success_rate: float = Field(default=0.0, ge=0.0, le=1.0)
+    avg_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    avg_confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    avg_freshness: float = Field(default=0.0, ge=0.0, le=1.0)
+    avg_cost: float | None = Field(default=None, ge=0.0, le=1.0)
+    effective_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    reasoning: list[str] = Field(default_factory=list)
+
+    @field_validator("capability", mode="before")
+    @classmethod
+    def _coerce_capability(cls, v: Any) -> list[str]:
+        return _coerce_csv_list(v)
+
+    def to_dict(self) -> dict[str, Any]:
+        """JSON 友好序列化 (store/CLI --json/测试断言共用)。"""
+        return self.model_dump(mode="json")
+
+
+class ExperienceAnalysis(BaseModel):
+    """单主体经验分析产物 (10A-4 分析器输出): 谁 + 什么任务 + 聚合结果 + 推理。
+
+    - subject_id/subject_type: 经验主体 (provider:<id> / agent:<id> / ...)。
+    - task_type/capability: 聚合过滤维度 (空 = 未过滤)。
+    - aggregation: ExperienceAggregation 快照 (统计 + 正负聚合有效分)。
+    - 只读分析: 不携带任何执行/修改指令 (经验分析 ≠ 自我修改)。
+    """
+
+    subject_id: str
+    subject_type: str = ""
+    task_type: str = ""
+    capability: list[str] = Field(default_factory=list)
+    aggregation: ExperienceAggregation = Field(default_factory=ExperienceAggregation)
+    created_at: str = Field(default_factory=_now)
+
+    @field_validator("capability", mode="before")
+    @classmethod
+    def _coerce_capability(cls, v: Any) -> list[str]:
+        return _coerce_csv_list(v)
+
+    @field_validator("aggregation", mode="before")
+    @classmethod
+    def _coerce_aggregation(cls, v: Any) -> ExperienceAggregation:
+        if v is None:
+            return ExperienceAggregation()
+        return v if isinstance(v, ExperienceAggregation) else ExperienceAggregation.model_validate(v)
+
+    def to_dict(self) -> dict[str, Any]:
+        """JSON 友好序列化 (store/CLI --json/测试断言共用)。"""
+        return self.model_dump(mode="json")
+
+
+class TaskRequirement(BaseModel):
+    """任务需求 (10A-4 TaskEvaluator 输入): 任务类型 + 能力要求 + 门槛 + 约束。
+
+    - task_type: 任务类型 (如 development/testing); required_capabilities:
+      任务要求能力清单 (如 code,reasoning) — 与推荐上下文同源词汇。
+    - quality_target (0-1, 可选): 能力分门槛; budget (0-1, 可选): 成本分门槛
+      (评估上下文过滤语义, 与推荐过滤一致 — 本阶段只读经验, 门槛预留)。
+    - constraints: 约束清单 (评估风险观察来源, 预留)。
+    """
+
+    task_type: str
+    required_capabilities: list[str] = Field(default_factory=list)
+    quality_target: float | None = Field(default=None, ge=0.0, le=1.0)
+    budget: float | None = Field(default=None, ge=0.0, le=1.0)
+    constraints: list[str] = Field(default_factory=list)
+
+    @field_validator("required_capabilities", "constraints", mode="before")
+    @classmethod
+    def _coerce_str_lists(cls, v: Any) -> list[str]:
+        return _coerce_csv_list(v)
+
+    def to_dict(self) -> dict[str, Any]:
+        """JSON 友好序列化 (store/CLI --json/测试断言共用)。"""
+        return self.model_dump(mode="json")
+
+
+class TaskEvaluation(BaseModel):
+    """任务评估产物 (10A-4 TaskEvaluator 输出): 推荐执行资源 + 置信度 + 风险。
+
+    - recommended_agents/recommended_providers/recommended_skills: 按历史经验
+      正负聚合有效分排序的推荐主体 (各条目 dict: id/score/records/
+      success_rate/reasoning; 有效分 ≥ 0.5 中性门槛才推荐, 封顶 5 个/类)。
+      workflow/project/decision 域记录不参与执行资源推荐 (非执行候选)。
+    - reasoning: 逐条评估解释 (基于多少条经验 / 为什么推荐谁, 可审计)。
+    - confidence (0-1): 评估置信度 (分数差距/类型覆盖/候选深度规则);
+      risks: 风险清单 (冷启动/负经验主导/低置信度)。
+    - 只读评估: 不触发任何执行/修改 (经验分析 ≠ 自我修改)。
+    """
+
+    task_type: str
+    required_capabilities: list[str] = Field(default_factory=list)
+    recommended_agents: list[dict[str, Any]] = Field(default_factory=list)
+    recommended_providers: list[dict[str, Any]] = Field(default_factory=list)
+    recommended_skills: list[dict[str, Any]] = Field(default_factory=list)
+    reasoning: list[str] = Field(default_factory=list)
+    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+    risks: list[str] = Field(default_factory=list)
+    created_at: str = Field(default_factory=_now)
+
+    @field_validator("required_capabilities", "reasoning", "risks", mode="before")
+    @classmethod
+    def _coerce_str_lists(cls, v: Any) -> list[str]:
+        return _coerce_csv_list(v)
+
+    def recommended_count(self) -> int:
+        """推荐主体总数 (CLI 展示/测试断言)。"""
+        return (
+            len(self.recommended_agents)
+            + len(self.recommended_providers)
+            + len(self.recommended_skills)
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        """JSON 友好序列化 (store/CLI --json/测试断言共用)。"""
+        return self.model_dump(mode="json")

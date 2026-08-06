@@ -1,15 +1,21 @@
-# AI Software Factory — 架构总览 (11 层)
+# AI Software Factory — 架构总览 (三区 · 11 层)
 
-> 版本: v2.0 | 日期: 2026-08-06 | 状态: 与当前代码一致 (Phase 1–6E, 2159 tests)
-> 关联文档: [roadmap.md](./roadmap.md)(路线图) · [architecture.md](./architecture.md)(工程化落地版) · [design/architecture.md](./design/architecture.md)(设计稿) · `docs/adr/0001..0020`(决策记录)
+> 版本: v2.1 | 日期: 2026-08-06 | 状态: 与当前代码一致 (Phase 1–6E, 2159 tests); 三区划分 (Core/Extension/Human Layer) 经 [architecture-freeze-2026-08.md](./architecture-freeze-2026-08.md) 冻结确认
+> 关联文档: [roadmap.md](./roadmap.md)(路线图) · [architecture.md](./architecture.md)(工程化落地版) · [design/architecture.md](./design/architecture.md)(设计稿) · `docs/adr/0001..0020`(决策记录) · [architecture-freeze-2026-08.md](./architecture-freeze-2026-08.md)(冻结报告)
 >
-> 本文档描述**当前已实现**的系统分层。每层 = 一组 `factory-core/` 包 + 对应 CLI 命令 + 事件词汇。所有事实均与仓库代码、git 提交历史、ADR 一致。
+> 本文档描述**当前已实现**的系统分层。每层 = 一组 `factory-core/` 包 + 对应 CLI 命令 + 事件词汇。所有事实均与仓库代码、git 提交历史、ADR 一致。三区归属: **Core** = ①–⑩ (通用原语) · **Extension** = ⑪ 及未来领域能力 · **Human Layer** = Phase 11 Approval Console。
 
 ---
 
-## 1. 全景图:11 层架构
+## 1. 全景图:三区 · 11 层架构
 
 ```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  ▓ Human Layer (Phase 11 · 可并行): Approval Console — Web UI 人类审核台      │
+│    查看状态 / 审核 AI 输出 / 批准·驳回 / 查看 Metrics — 只读 + 审批动作        │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                        │ Factory API 薄层 (只读查询 + approve/reject)
+                                        ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │  入口层 CLI (factory-core/cli)  —  18 组命令: init/task/event/status/       │
 │  validate/agent/skill/workflow/runtime/execution/checkpoint/recover/        │
@@ -18,6 +24,9 @@
 └─────────────────────────────────────────────────────────────────────────────┘
                                         │ 命令调用 (单向向下)
                                         ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  ▓ Core 区 — 通用原语 (冻结确认: 零领域依赖, 不修改行为)  =  ①–⑩ 层           │
+└─────────────────────────────────────────────────────────────────────────────┘
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │  ① Workspace Layer       workspace/   (6A/6B)   多项目工作区组织层            │
 │     管理 workspace.yaml, 按目录发现项目, 项目注册/移除                        │
@@ -48,7 +57,10 @@
 ├─────────────────────────────────────────────────────────────────────────────┤
 │  ⑩ Observation Layer     events/ + dashboard/ + metrics/ (1/4C-4/5B/6B)      │
 │     append-only 事件库 (唯一事实源) + 只读 Dashboard (16 视图) + 六域指标      │
-├─────────────────────────────────────────────────────────────────────────────┤
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  ▓ Extension 区 — 领域能力 (Skill/MCP/Runtime/Provider 声明式注册, 不修改 Core)│
+└─────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
 │  ⑪ Git Intelligence Layer git/ + change/ + changeflow/ (6C/6D/6E)           │
 │     Git 只读审计 (status/diff/commits) → 变更智能 (analyze/validate/关联)     │
 │     → 变更驱动工作流 (trigger 规则 → 评估 → 触发 workflow run)                │
@@ -65,10 +77,71 @@
 3. **所有状态变更必须发事件** (ADR-0002):领域写方法返回 `(obj, Event | None)`,经 `EventLogger` 写入 ⑩ 的事件库;读命令也要发 `.viewed` 事件。
 4. **执行出口唯一**:任何"启动 Agent / 跑命令"只能走 RuntimeAdapter(⑦);Git 只读铁律:零仓库写命令 (6C)。
 5. **JSON store 原子写**:tmp + `os.replace`,损坏文件抛 `Corrupt*StoreError` 不静默返回空(唯一例外:git changes.json 审计增强 → 失败安全 `[]`)。
+6. **三区纪律 (冻结 2026-08)**:Core 只含通用原语,零领域依赖;领域能力一律 Extension 声明式注册 (Skill/MCP/Runtime/Provider);Human Layer 只读 + 审批动作,不建第二条执行路径。
 
 ---
 
-## 2. 各层详解
+## 2. 三区边界与 Extension 注册模型 (冻结确认 2026-08)
+
+> 依据 [architecture-freeze-2026-08.md](./architecture-freeze-2026-08.md): Core 边界清晰, 扩展体系完整, **冻结有效, 无需重构**。冻结后: 不修改 Core 行为; 新能力一律走 Extension 注册。
+
+### 2.1 三区定义
+
+| 区 | 组成 | 原则 |
+|:---|:-----|:-----|
+| **Core** | ①–⑩ 层 + CLI 入口 + 存储 (SQLite 事件 + JSON 状态) | 通用原语 (状态/流程/事件/验证/抽象/组织), **零领域依赖**, 冻结后不修改行为 |
+| **Extension** | ⑪ Git Intelligence + 未来领域能力 (MCP/Skills/Provider/Product Intelligence/Operations) | 领域能力, 经 **Skill / MCP / Runtime / Provider 声明式注册**接入, 不修改 Core |
+| **Human Layer** | Approval Console — Web UI 人类审核台 (Phase 11, 可并行) | 人类审核入口: 只读查询 + 审批动作, **无第二条执行路径** |
+
+**边界原则**: Core = 通用原语; Extension = 领域能力。具体领域一律不进 Core —— Git/GitHub → Skill/MCP; Jira/Figma/AWS/Database → MCP; 市场/UI/Office/SEO → Skill; Monitoring/Incident → Operations; 具体 LLM → Provider。
+
+### 2.2 Extension 注册模型 (Agent = Skills + MCP + Runtime)
+
+```
+Agent (角色配置实例)
+  ├── Skills     能力声明   (flutter-development / market-analysis / excel-report / seo)
+  ├── MCP Tools  外部工具   (GitHub / Jira / Figma / AWS / Google Drive)
+  └── Runtime    执行方式   (Hermes CLI / Codex CLI / Claude API / Local Model)
+        └── Provider      LLM 来源 (OpenAI API / Anthropic / Local)
+```
+
+- **Skill**: 能力声明, 独立于 Agent (SkillRegistry 已有); Agent = 角色 + skill 集 + MCP 工具集 + runtime 偏好
+- **MCP**: 外部工具接入 (当前 `mcp/` 目录占位, 规划中)
+- **Runtime**: 执行器 (⑦ RuntimeAdapter 已抽象; 执行出口唯一)
+- **Provider**: LLM 来源 (Phase 8 实现; Runtime 可对接多 Provider)
+- **注册方式**: 新增任何能力不修改 Core —— OpenClaw skill / Codex plugin / MCP server / 第三方 Agent = **声明式注册 (JSON)**
+
+### 2.3 Event 唯一事实源与 Namespace 扩展
+
+确认: **未来所有层 (含 Extension 与 Human Layer) 都产生 Event**, 复用 Core Event Logger (SQLite append-only)。EventType 枚举纯增量扩展 (ADR-0002 路径: 加成员不改表):
+
+```
+现有:   task.* / workflow.* / agent.* / assignment.* / execution.* / runtime.* / validation.*
+        recovery.* / dashboard.* / metrics.* / workspace.* / project.* / git.* / change.* / system.*
+未来:   idea.* / research.* / prd.* / ui.* / deployment.* / incident.* / approval.*
+```
+
+### 2.4 Approval Gate 模型 (Human Layer 核心)
+
+```
+ApprovalGate = { phase, required: mandatory|recommended|optional, approver, evidence, status: pending|approved|denied }
+```
+
+| 节点 | 级别 | 说明 |
+|:-----|:----:|:-----|
+| Idea | optional | 想法收集可自动 |
+| PRD | **mandatory** | 产品方向确认 |
+| UI Design | **mandatory** | 视觉方向确认 |
+| Architecture | recommended | 大重构必须, 小改动可选 |
+| Code | optional | AI 自主, 人工抽查 |
+| Deploy | **mandatory** | 发布授权 |
+| Incident | optional | 告警自动, 重大事故人工 |
+
+实现: Approval 为 Gate 原语 (pending→approved/denied→Event); CLI validate 退出码语义 + Web UI 审核台 (Phase 11) 等价, 走同一事件/状态机。
+
+---
+
+## 3. 各层详解
 
 ### ① Workspace Layer — 多项目工作区组织层
 
@@ -202,7 +275,7 @@
 |---|---|
 | 阶段 / 提交 | Phase 6C (`974e371`) git;6D (`6e965f1`) change;6E (`2d596c7`) changeflow, ADR-0018/0019/0020 |
 | 包 | `factory-core/git/` + `factory-core/change/` + `factory-core/changeflow/` |
-| 职责 | ① Git 只读审计 (status/diff/commits, 零仓库写命令);② 变更智能:commit 消息解析 (MP-XXX→task_id)、路径级变更分析 (无 LLM)、L4 变更验证、task↔git 自动关联;③ 变更驱动工作流:ChangeTrigger 规则 → evaluate → 创建 workflow run → 执行 |
+| 职责 | (**Extension 区**, 可选接入) ① Git 只读审计 (status/diff/commits, 零仓库写命令); ② 变更智能:commit 消息解析 (MP-XXX→task_id)、路径级变更分析 (无 LLM)、L4 变更验证、task↔git 自动关联; ③ 变更驱动工作流:ChangeTrigger 规则 → evaluate → 创建 workflow run → 执行 |
 | 关键 API | `GitClient`(subprocess 只读, **失败安全永不抛**: FileNotFoundError→"git command not found"/超时→"git timed out";子进程 env 强制 `LC_ALL=C`+`LANG=C` 每次现算);`GitService.get_status/get_changes/get_commits/bind_task_change`;`GitChangeStore`(`git/changes.json` 追加式, 损坏读→`[]` 失败安全);`CommitLinker`(三来源: message > execution context > branch, `parse_task_id`/`normalize_task_id`);`ChangeAnalyzer`(模块链推断 + `l4_checks`/`l4_verdict` 纯函数);`ChangeService`(`snapshots.json`);`ChangeWorkflowEngine.evaluate(task_id, trigger=None, execute=None)`(execute 缺省=按 executor 装配判定;PASS/SKIP→0, FAIL→3, ERROR→1;`change workflows` 列触发链) |
 | 关键事件 | `git.status_viewed` / `git.diff_viewed` / `git.commits_viewed` / `git.task.bound` / `git.commit.linked` / `change.analyzed` / `change.validation.completed` / `change.trigger.created` / `change.trigger.evaluated` / `change.workflow.started` / `change.workflow.completed` / `change.viewed` |
 | CLI | `factory git status|diff|commits`;`factory change commits|analyze|validate|triggers register|list|evaluate|workflows` |
@@ -210,7 +283,7 @@
 
 ---
 
-## 3. 端到端数据流 (一条完整链路)
+## 4. 端到端数据流 (一条完整链路)
 
 ```
 factory task create MP-BUG-001                → ③ Task (task.created)
@@ -237,7 +310,7 @@ factory git status --project markpad          → ⑪ 只读 Git 审计
 
 ---
 
-## 4. 阶段 → 层 映射表
+## 5. 阶段 → 层 映射表
 
 | Phase | 名称 | 层 | 测试基线 |
 |:--:|---|:--:|:--:|
@@ -262,4 +335,5 @@ factory git status --project markpad          → ⑪ 只读 Git 审计
 | 6D | Change Intelligence Layer | ⑪ + ⑧ | 2015 |
 | 6E | Change Driven Workflow Layer | ⑪ + ④ | **2159** |
 
-> 后续演进方向 (Phase 7–10) 见 [roadmap.md](./roadmap.md)。
+> 区归属: Phase 1–6E 全部阶段中, ①–⑩ 层相关 = **Core 区**; Phase 6C/6D/6E (Git 集成) = **Extension 区** (可选能力, Core 零依赖)。
+> 后续演进方向 (Phase 7–11, 冻结确认: Phase 8 与 Phase 11 可并行) 见 [roadmap.md](./roadmap.md); 三区边界与 Extension 注册模型见上文 §2, 冻结结论见 [architecture-freeze-2026-08.md](./architecture-freeze-2026-08.md)。

@@ -4,6 +4,8 @@
 > 不是聊天机器人, 不是单个 Agent, 不是代码生成工具 — 是管理 Agent 的工厂。
 > 类比: Jira (任务) + Jenkins (流程) + K8s Dashboard (可观测) + Confluence (知识) + CI/CD (验证) 的 AI 时代对应。
 
+> **三区架构 (2026-08 冻结确认)**: **Core** — 12 项通用原语能力 (状态/流程/事件/验证/抽象, 零领域依赖); **Extension** — 领域能力 (Git/Change 已实现; MCP/Skills/Provider/Product Intelligence/Operations 规划中), 一律声明式注册, 不修改 Core; **Human Layer** — Approval Console Web UI 人类审核台 (Phase 11, 可并行启动)。
+
 ## Vision
 
 让软件生产从"靠人盯着 AI 干活"升级为**可管理、可观察、可验证、可恢复、可替换、可积累、可复制**的工厂化运转:
@@ -25,7 +27,7 @@ Agent (角色) ── Skills (能力)
      │
      └── Runtime (执行方式: Hermes / Codex / Claude / Local)
              │
-             └── LLM Provider (Phase 8 规划: 解除单一绑定, 可插拔)
+             └── Provider (LLM 来源: OpenAI / Claude / Local — Phase 8 实现, 可插拔)
 ```
 
 | 抽象 | 当前实现 | 状态 |
@@ -34,9 +36,9 @@ Agent (角色) ── Skills (能力)
 | **Skills 能力** | SkillRegistry (category / capabilities) | ✅ 已实现 |
 | **Runtime 执行** | RuntimeAdapter (echo / hermes) + Catalog/Registry/Adapter 三层分离 | ✅ 已实现 (per-agent runtime 偏好字段已建) |
 | **MCP 工具** | mcp/ 目录占位 | 🚧 规划中 |
-| **LLM Provider** | 当前唯一真实实现 HermesRuntimeAdapter | 🚧 Phase 8 核心 |
+| **LLM Provider** | 当前唯一真实实现 HermesRuntimeAdapter | 🚧 Phase 8 (冻结确认: 可并行) |
 
-**Git 是可选能力**: Core (task / workflow / execution / validation) 零 Git 依赖; git/ 独立模块, change/changeflow 经接口接入 — 未来可注册为 Skill/MCP/Integration。
+**三区归属**: 上表 12 项能力构成 **Core 区** (通用原语, 冻结确认后不修改行为)。**Git/Change 属 Extension 区** — Git 是可选能力: Core 零 Git 依赖, git/ 独立模块, change/changeflow 经接口接入, 未来可注册为 Skill/MCP/Integration。**Human Layer** = Approval Console Web UI (Phase 11 人类审核台)。
 
 **成功标准**: 一个任务从创建到交付全程可观察、可恢复、可验证; 多项目并行生产、知识跨项目复用; 新 Runtime / 角色 / Skill / Provider 声明式接入 (零核心代码改动); 指标达标 (first_attempt_success > 95%, path_errors = 0, human_intervention 最小化)。
 
@@ -63,6 +65,14 @@ Agent (角色) ── Skills (能力)
 
 ```
                             ┌──────────────────────────────────────────────┐
+                            │  Human Layer (Phase 11 · 可并行)              │
+                            │  Approval Console — Web UI 人类审核台          │
+                            │  (查看状态/审核 AI 输出/批准·驳回/Metrics;      │
+                            │   只读 + 审批动作, 无第二条执行路径)            │
+                            └───────────────────┬──────────────────────────┘
+                                                │ Factory API 薄层 (只读 + approve/reject)
+                                                ▼
+                            ┌──────────────────────────────────────────────┐
                             │  CLI (argparse) —  factory <command>          │
                             │  init task event status validate agent skill  │
                             │  workflow runtime execution checkpoint        │
@@ -73,6 +83,10 @@ Agent (角色) ── Skills (能力)
         ┌───────────────────────────────────────┼───────────────────────────────────────┐
         │            组合根 (只装配现有模块, 不重新实现)                                    │
         │    orchestration.pipeline · ChangeWorkflowEngine · RecoveryService             │
+        └──────┬───────────┬───────────┬─────────────┬────────────┬───────────┬──────────┘
+               │           │           │             │            │           │
+        ┌──────▼───────────▼───────────▼─────────────▼────────────▼───────────▼──────────┐
+        │ ▓ Core 区 (通用原语 · 冻结)             ▓ Extension 区 (git/change · 声明式注册) │
         └──────┬───────────┬───────────┬─────────────┬────────────┬───────────┬──────────┘
                │           │           │             │            │           │
      ┌─────────▼───┐ ┌─────▼────┐ ┌───▼──────┐ ┌─────▼─────┐ ┌───▼─────┐ ┌───▼────────┐
@@ -94,26 +108,30 @@ Agent (角色) ── Skills (能力)
 - **域模块**: 每个包只干一件事 (KISS), 读写分离 — 观察域与集成域只读不写状态
 - **统一抽象**: Agent = Skills + MCP + Runtime; 上层 Orchestration 只面向抽象, 不绑定具体 AI 框架
 - **存储**: 事件走 SQLite (append-only, 可回放重建状态); 状态走 JSON (原子写, 损坏即报错不静默)
-- **Git 可选**: git/change/changeflow 是独立集成域, Core 零 Git 依赖
+- **Git 可选**: git/change/changeflow 是独立集成域 (Extension 区), Core 零 Git 依赖
+- **三区划分 (冻结 2026-08)**: Core (通用原语, 零领域依赖) / Extension (Skill/MCP/Runtime/Provider 声明式注册) / Human Layer (Approval Console); 新能力一律走 Extension, 不修改 Core
 
 ## Current Status
 
 - **20 个 Phase 全部交付** (Phase 0 设计稿 → Phase 1 观察层 → ... → Phase 6E Change Driven Workflow), 每条主线独立可交付、可回退
 - **2159 tests 全绿, 零核心破坏** — EventType 纯增量扩展 (ADR-0001), 每阶段基线只增不减
 - **ADR 决策记录 0001–0020** (docs/adr/), 设计文档齐全 (docs/design/, docs/vision.md, docs/roadmap.md, docs/lifecycle-model.md)
+- **2026-08-06 架构冻结确认** (docs/architecture-freeze-2026-08.md): 三区划分 (Core/Extension/Human Layer) 有效, Core 零领域依赖, Event 唯一事实源 + Approval Gate 模型就绪 — **冻结后不修改 Core 行为, 新能力一律走 Extension 注册**
 - 技术栈: **Python 3.12+ / Pydantic v2 / SQLite (事件) / JSON (状态) / Rich (Dashboard) / argparse (CLI) / PyYAML (示例配置)** — 单进程, 零数据库 ORM
 
 ## Future Roadmap
 
+> **冻结确认 (2026-08, 冻结报告 §5)**: Phase 7–11 排序合理; Phase 8 独立性强**可并行**; Phase 11 (Approval Console) 为核心价值, **建议可并行启动**。五阶段全部属于 **Extension / Human Layer** 区, 复用 Core 原语, **零 Core 破坏**。
+
 | 方向 | 目标 |
 |:-----|:-----|
-| **Project Understanding** (Phase 7) | 项目理解 — 输入任意 git 仓库, 自动产出事实清单/阶段判定/缺失分析/下一步建议, 从静态示例配置升级为运行时理解项目 |
-| **LLM Provider** (Phase 8) | LLM 提供方抽象 — LLM Interface 协议 + 可插拔 Providers (Hermes / Codex / OpenAI 兼容 / Claude / Local), 解除 Hermes 单一绑定, 核心零改动 |
-| **Product Intelligence** (Phase 9) | 产品智能 — Idea → Research → PRD → [人工批准] → UI/架构 → 任务拆解, 复用 Core 原语 (task/workflow/event/validation) |
-| **Operations** (Phase 10) | 运营闭环 — 部署/监控/健康检查/故障诊断/巡检, 运维动作与开发一样可审计、可回放、可恢复 (默认建议模式, 破坏性操作必须人工确认) |
-| **Human Approval Console** (Web UI) | 人类审核台 — Factory API (FastAPI 薄层: 只读 + 审批动作) → Core; Frontend (React/Vue 或轻量 HTML+JS)。给**人**审核用: 查看状态 / 审核 AI 输出 / 确认 PRD / 确认 UI / 审核执行 / 查看 Metrics。CLI 保留为工程师主入口 |
+| **Project Understanding** (Phase 7) ✅ | 项目理解 — 输入任意 git 仓库, 自动产出事实清单/阶段判定/缺失分析/下一步建议, 从静态示例配置升级为运行时理解项目 (冻结确认: 优先 · Extension 区) |
+| **LLM Provider** (Phase 8) ✅ | LLM 提供方抽象 — LLM Interface 协议 + 可插拔 Providers (Hermes / Codex / OpenAI 兼容 / Claude / Local), 解除 Hermes 单一绑定, 核心零改动 (冻结确认: **可并行** · Extension 区) |
+| **Product Intelligence** (Phase 9) ✅ | 产品智能 — Idea → Research → PRD → [人工批准] → UI/架构 → 任务拆解, 复用 Core 原语 (task/workflow/event/validation) (冻结确认: 依赖 Phase 7 · Extension 区) |
+| **Operations** (Phase 10) ✅ | 运营闭环 — 部署/监控/健康检查/故障诊断/巡检, 运维动作与开发一样可审计、可回放、可恢复 (默认建议模式, 破坏性操作必须人工确认) (冻结确认: 依赖部署/Provider · Extension 区) |
+| **Human Approval Console** (Phase 11) ✅ | 人类审核台 — Factory API (FastAPI 薄层: 只读 + 审批动作) → Core; Frontend (React/Vue 或轻量 HTML+JS)。给**人**审核用: 查看状态 / 审核 AI 输出 / 确认 PRD / 确认 UI / 审核执行 / 查看 Metrics。CLI 保留为工程师主入口 (冻结确认: **可并行启动** · Human Layer) |
 
-> 路线图原则: Core 提供通用原语 (Task/Workflow/Event/Validation), 新 Layer 是使用原语的高层编排 — 不破坏 Core; 人工审核节点 (三挡板 / validate 退出码) 语义贯穿始终。
+> 路线图原则: Core 提供通用原语 (Task/Workflow/Event/Validation), 新 Layer 是使用原语的高层编排 — **不破坏 Core** (冻结结论); 人工审核节点 (三挡板 / validate 退出码 / Approval Gate) 语义贯穿始终。
 
 ## Quick Start
 

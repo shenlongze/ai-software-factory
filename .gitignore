@@ -31,3 +31,6 @@ logs/
 
 # 冒烟测试残留防护
 $SMOKE_ROOT/
+
+# 验证运行数据 (含嵌套 git 副本)
+docs/validation/run-data/

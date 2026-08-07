@@ -1,0 +1,9 @@
+[PASS] syntax
+语法检查通过 (0 个 .py 文件)
+[PASS] command: python3 /Users/Shared/work/ai-software-factory/docs/validation/tools/verify_search_fix.py
+[PASS] replaceCurrent 签名含全文参数 + 回调 — params: String fullContent, void Function(String) onContentChanged
+[PASS] 方法体使用 replaceRange (局部替换)
+[PASS] 不得整体替换文档 (onContentChanged(_replaceQuery) 反模式)
+[PASS] 括号配平 — delta=0
+
+RESULT: PASS — replaceCurrent 修复语义 已就位 (0 项失败)

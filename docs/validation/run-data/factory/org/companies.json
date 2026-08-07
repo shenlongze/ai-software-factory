@@ -1,0 +1,13 @@
+{
+  "companies": {
+    "C-8ea260e4": {
+      "id": "C-8ea260e4",
+      "name": "MarkPad Dev Co",
+      "template": "solo",
+      "parent_company": null,
+      "departments": [],
+      "knowledge_space": "C-8ea260e4",
+      "created_at": "2026-08-07T06:24:12.784240Z"
+    }
+  }
+}

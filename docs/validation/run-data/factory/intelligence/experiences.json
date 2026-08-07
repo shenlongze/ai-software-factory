@@ -1,0 +1,49 @@
+{
+  "experiences": {
+    "97bef89b00b94b3fb0f67c8697b7d796": {
+      "id": "97bef89b00b94b3fb0f67c8697b7d796",
+      "domain": "agent",
+      "subject_id": "dev-1",
+      "subject_type": "agent",
+      "task_type": "T-MKP-001",
+      "capability": [
+        "development",
+        "python",
+        "dart"
+      ],
+      "result": "success",
+      "score": 0.8,
+      "quality_score": 1.0,
+      "cost": 0.990454,
+      "duration": 0.23811916692648083,
+      "confidence": 0.8,
+      "evidence": [
+        {
+          "source_type": "artifact",
+          "source_id": "ART-cd1585b8",
+          "description": "patch artifact",
+          "confidence": 1.0,
+          "timestamp": "2026-08-07T06:24:13.078382Z"
+        },
+        {
+          "source_type": "artifact",
+          "source_id": "ART-90b80efe",
+          "description": "test_result artifact",
+          "confidence": 1.0,
+          "timestamp": "2026-08-07T06:24:13.078390Z"
+        },
+        {
+          "source_type": "artifact",
+          "source_id": "ART-2c7ccf70",
+          "description": "report artifact",
+          "confidence": 1.0,
+          "timestamp": "2026-08-07T06:24:13.078394Z"
+        }
+      ],
+      "created_at": "2026-08-07T06:24:13.078348Z",
+      "last_used": null,
+      "usage_count": 0,
+      "freshness": 1.0
+    }
+  }
+}

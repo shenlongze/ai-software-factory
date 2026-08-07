@@ -1,0 +1,136 @@
+{
+  "provider": {
+    "status": "BLOCKED",
+    "reason": "anthropic api key missing: ANTHROPIC_API_KEY 未设置 (export ANTHROPIC_API_KEY=... 或构造 AnthropicProvider(api_key=...))",
+    "model_configured": "claude-sonnet-4-5",
+    "endpoint": "https://api.anthropic.com/v1/messages",
+    "latency_s": 0.0,
+    "tokens": null,
+    "cost_usd": null
+  },
+  "human_experience": [
+    {
+      "step": "company create",
+      "ok": true,
+      "id": "C-8ea260e4"
+    },
+    {
+      "step": "employee hire",
+      "ok": true,
+      "id": "dev-1"
+    },
+    {
+      "step": "exec run",
+      "ok": true,
+      "status": "success",
+      "result_id": "EXS-b33f5d62",
+      "error": ""
+    },
+    {
+      "step": "exec status",
+      "ok": true
+    },
+    {
+      "step": "approval request",
+      "ok": true,
+      "approval_id": "APR-ada36e6b"
+    },
+    {
+      "step": "approval list",
+      "ok": true,
+      "approval_id": "APR-ada36e6b"
+    },
+    {
+      "step": "approval approve",
+      "ok": true
+    },
+    {
+      "step": "approval apply",
+      "ok": true,
+      "patch_lines": 25
+    },
+    {
+      "step": "duplicate apply rejected",
+      "ok": true
+    }
+  ],
+  "sandbox": {
+    "prod_manifest_before_sha256": "bb130e91d486f4598e4f152852570aae717e3b31cc03341edb71ea940327b13e",
+    "replica_fixed": true,
+    "verifier_rc_replica": 0,
+    "c1_direct_proof": {
+      "sandbox_copy": "/var/folders/mb/p_k7v3f10dn0ng900ystfzbm0000gp/T/exec-sandbox-g7zwcfvh/project",
+      "sandbox_diff_contains_fix": true,
+      "prod_unchanged_during_sandbox_write": true
+    },
+    "c2_full_chain": {
+      "prod_unchanged_after_full_chain": true
+    },
+    "hard_reject": {
+      "attempted": true,
+      "ok": false,
+      "error": "patch apply requires approved approval (current: pending) — 应用 patch 前必批",
+      "exit_code": 1
+    }
+  },
+  "steps": [
+    {
+      "step": "company create",
+      "ok": true,
+      "id": "C-8ea260e4"
+    },
+    {
+      "step": "employee hire",
+      "ok": true,
+      "id": "dev-1"
+    },
+    {
+      "step": "exec run",
+      "ok": true,
+      "status": "success",
+      "result_id": "EXS-b33f5d62",
+      "error": ""
+    },
+    {
+      "step": "exec status",
+      "ok": true
+    },
+    {
+      "step": "approval request",
+      "ok": true,
+      "approval_id": "APR-ada36e6b"
+    },
+    {
+      "step": "approval list",
+      "ok": true,
+      "approval_id": "APR-ada36e6b"
+    },
+    {
+      "step": "approval approve",
+      "ok": true
+    },
+    {
+      "step": "approval apply",
+      "ok": true,
+      "patch_lines": 25
+    },
+    {
+      "step": "duplicate apply rejected",
+      "ok": true
+    }
+  ],
+  "human_experience_total_s": 0.37,
+  "meta": {
+    "task_id": "T-MKP-001",
+    "objective": "MarkPad 编辑器的查找/替换面板中,「替换当前匹配项」(Replace current match) 功能行为异常: 用户点击替换按钮后, 整个文档内容被替换成了替换文本, 而不是只替换当前选中的那一个匹配。请定位并修复此缺陷。修复后, 单次替换应只改变当前匹配位置对应的文本, 文档其余部分原样保留。",
+    "requirement": "验收标准: 1) 单次替换只作用于当前匹配范围, 文档其余部分不变; 2) 与全部替换(replaceAll) 的 offset 保护语义对齐; 3) 最小改动, 不重构无关代码; 4) 保持现有代码风格与注释语言。",
+    "project": "markpad lib/editor (30 files / 8071 lines)",
+    "replica": "/Users/Shared/work/ai-software-factory/docs/validation/run-data/projects/markpad-editor",
+    "mock_usage": {
+      "input_tokens": 1842,
+      "output_tokens": 268,
+      "estimated_cost_usd": 0.009546
+    },
+    "provider_note": "真实 LLM 质量待 ANTHROPIC_API_KEY; mock 为链路演示夹具"
+  }
+}

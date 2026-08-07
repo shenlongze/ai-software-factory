@@ -1,0 +1,43 @@
+{
+  "artifacts": {
+    "ART-2c7ccf70": {
+      "id": "ART-2c7ccf70",
+      "type": "report",
+      "task_id": "T-MKP-001",
+      "employee_id": "dev-1",
+      "agent_id": "developer-1",
+      "event_refs": [
+        "20",
+        "21"
+      ],
+      "path": "/Users/Shared/work/ai-software-factory/docs/validation/run-data/factory/exec/EXS-b33f5d62.report.md",
+      "created_at": "2026-08-07T06:24:13.077038Z"
+    },
+    "ART-90b80efe": {
+      "id": "ART-90b80efe",
+      "type": "test_result",
+      "task_id": "T-MKP-001",
+      "employee_id": "dev-1",
+      "agent_id": "developer-1",
+      "event_refs": [
+        "20",
+        "21"
+      ],
+      "path": "/Users/Shared/work/ai-software-factory/docs/validation/run-data/factory/exec/EXS-b33f5d62.test.txt",
+      "created_at": "2026-08-07T06:24:13.076925Z"
+    },
+    "ART-cd1585b8": {
+      "id": "ART-cd1585b8",
+      "type": "patch",
+      "task_id": "T-MKP-001",
+      "employee_id": "dev-1",
+      "agent_id": "developer-1",
+      "event_refs": [
+        "20",
+        "21"
+      ],
+      "path": "/Users/Shared/work/ai-software-factory/docs/validation/run-data/factory/exec/patches/EXS-b33f5d62.patch",
+      "created_at": "2026-08-07T06:24:13.076780Z"
+    }
+  }
+}

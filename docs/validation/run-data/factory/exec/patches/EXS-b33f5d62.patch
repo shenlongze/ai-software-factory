@@ -1,0 +1,25 @@
+diff --git a/services/search_service.dart b/services/search_service.dart
+index cac99fd..8b2db8b 100644
+--- a/services/search_service.dart
++++ b/services/search_service.dart
+@@ -97,14 +97,14 @@ class SearchService extends ChangeNotifier {
+     notifyListeners();
+   }
+ 
+-  void replaceCurrent(void Function(String) onContentChanged) {
++  /// 替换当前匹配项: 只在当前匹配 [match] 的范围内替换 (offset 保护), 保留文档其余部分。
++  /// 与 [replaceAll] 同语义的单匹配版本。
++  void replaceCurrent(String fullContent, void Function(String) onContentChanged) {
+     if (_totalMatches == 0 || _findMatches.isEmpty) return;
+     final match = _findMatches[_currentMatchIndex];
+-    if (match.start < 0) return;
+-    onContentChanged(_replaceQuery);
+-    WidgetsBinding.instance.addPostFrameCallback((_) {
+-      // Will be re-called by the editor after the content is updated
+-    });
++    if (match.start < 0 || match.end > fullContent.length) return;
++    final newContent = fullContent.replaceRange(match.start, match.end, _replaceQuery);
++    onContentChanged(newContent);
+   }
+ 
+   void replaceAll(void Function(String) onContentChanged, String fullContent) {

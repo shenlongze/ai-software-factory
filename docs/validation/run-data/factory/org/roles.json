@@ -1,0 +1,68 @@
+{
+  "roles": {
+    "R-2c830f50": {
+      "id": "R-2c830f50",
+      "company_id": "C-8ea260e4",
+      "department_id": "",
+      "name": "Product Manager",
+      "responsibility": "需求/计划/调度",
+      "authority_policy": {
+        "task.schedule": "allow",
+        "planning.decide": "allow"
+      },
+      "human": false,
+      "created_at": "2026-08-07T06:24:12.786673Z"
+    },
+    "R-82b3468e": {
+      "id": "R-82b3468e",
+      "company_id": "C-8ea260e4",
+      "department_id": "",
+      "name": "Architect",
+      "responsibility": "架构决策",
+      "authority_policy": {
+        "architecture.decide": "allow"
+      },
+      "human": false,
+      "created_at": "2026-08-07T06:24:12.787836Z"
+    },
+    "R-86542013": {
+      "id": "R-86542013",
+      "company_id": "C-8ea260e4",
+      "department_id": "",
+      "name": "CEO",
+      "responsibility": "最终批准权 (Human, 一人兼多职)",
+      "authority_policy": {
+        "company.manage": "allow",
+        "employee.hire": "allow",
+        "release.approve": "allow"
+      },
+      "human": true,
+      "created_at": "2026-08-07T06:24:12.784926Z"
+    },
+    "R-87cff083": {
+      "id": "R-87cff083",
+      "company_id": "C-8ea260e4",
+      "department_id": "",
+      "name": "QA",
+      "responsibility": "测试验证与评审",
+      "authority_policy": {
+        "test.execute": "allow",
+        "review.approve": "allow"
+      },
+      "human": false,
+      "created_at": "2026-08-07T06:24:12.789363Z"
+    },
+    "R-abf5bf77": {
+      "id": "R-abf5bf77",
+      "company_id": "C-8ea260e4",
+      "department_id": "",
+      "name": "Developer",
+      "responsibility": "技术实现",
+      "authority_policy": {
+        "code.modify": "allow"
+      },
+      "human": false,
+      "created_at": "2026-08-07T06:24:12.788592Z"
+    }
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "results": {
+    "EXS-b33f5d62": {
+      "id": "EXS-b33f5d62",
+      "request_id": "EXR-26be606a",
+      "status": "success",
+      "artifacts": [
+        {
+          "id": "ART-cd1585b8",
+          "type": "patch",
+          "task_id": "T-MKP-001",
+          "employee_id": "dev-1",
+          "agent_id": "developer-1",
+          "event_refs": [
+            "20",
+            "21"
+          ],
+          "path": "/Users/Shared/work/ai-software-factory/docs/validation/run-data/factory/exec/patches/EXS-b33f5d62.patch",
+          "created_at": "2026-08-07T06:24:13.076780Z"
+        },
+        {
+          "id": "ART-90b80efe",
+          "type": "test_result",
+          "task_id": "T-MKP-001",
+          "employee_id": "dev-1",
+          "agent_id": "developer-1",
+          "event_refs": [
+            "20",
+            "21"
+          ],
+          "path": "/Users/Shared/work/ai-software-factory/docs/validation/run-data/factory/exec/EXS-b33f5d62.test.txt",
+          "created_at": "2026-08-07T06:24:13.076925Z"
+        },
+        {
+          "id": "ART-2c7ccf70",
+          "type": "report",
+          "task_id": "T-MKP-001",
+          "employee_id": "dev-1",
+          "agent_id": "developer-1",
+          "event_refs": [
+            "20",
+            "21"
+          ],
+          "path": "/Users/Shared/work/ai-software-factory/docs/validation/run-data/factory/exec/EXS-b33f5d62.report.md",
+          "created_at": "2026-08-07T06:24:13.077038Z"
+        }
+      ],
+      "usage": {
+        "input_tokens": 1842,
+        "output_tokens": 268,
+        "estimated_cost_usd": 0.009546
+      },
+      "report": "# Execution Report — EXR-26be606a\n- task_id: T-MKP-001\n- objective: MarkPad 编辑器的查找/替换面板中,「替换当前匹配项」(Replace current match) 功能行为异常: 用户点击替换按钮后, 整个文档内容被替换成了替换文本, 而不是只替换当前选中的那一个匹配。请定位并修复此缺陷。修复后, 单次替换应只改变当前匹配位置对应的文本, 文档其余部分原样保留。\n\n## What the agent did\nI found the defect in `services/search_service.dart`: `SearchService.replaceCurrent` passed the replacement string directly to `onContentChanged`, which replaces the *entire* document content with the replace query instead of replacing only the current match. I fixed it by accepting the full document text as a parameter and using `replaceRange` on the current match range with offset guards, mirroring `replaceAll`.\n\n## Patch\ndiff lines: 25\nhuman review required before apply (execution.approved gate)\n\n## Usage\n{'input_tokens': 1842, 'output_tokens': 268, 'estimated_cost_usd': 0.009546}\n\n## Cost & duration\nduration: 0.06s",
+      "error": "",
+      "duration": 0.23811916692648083,
+      "created_at": "2026-08-07T06:24:13.077056Z"
+    }
+  }
+}

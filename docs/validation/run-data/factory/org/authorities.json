@@ -1,0 +1,58 @@
+{
+  "authorities": {
+    "AUTH-021e2973": {
+      "id": "AUTH-021e2973",
+      "role_id": "R-86542013",
+      "permission": "company.manage",
+      "effect": "allow"
+    },
+    "AUTH-387b2b86": {
+      "id": "AUTH-387b2b86",
+      "role_id": "R-82b3468e",
+      "permission": "architecture.decide",
+      "effect": "allow"
+    },
+    "AUTH-3a2f54ab": {
+      "id": "AUTH-3a2f54ab",
+      "role_id": "R-86542013",
+      "permission": "employee.hire",
+      "effect": "allow"
+    },
+    "AUTH-5082a6a2": {
+      "id": "AUTH-5082a6a2",
+      "role_id": "R-87cff083",
+      "permission": "test.execute",
+      "effect": "allow"
+    },
+    "AUTH-73c0edec": {
+      "id": "AUTH-73c0edec",
+      "role_id": "R-87cff083",
+      "permission": "review.approve",
+      "effect": "allow"
+    },
+    "AUTH-959ca991": {
+      "id": "AUTH-959ca991",
+      "role_id": "R-2c830f50",
+      "permission": "task.schedule",
+      "effect": "allow"
+    },
+    "AUTH-d2b55bcf": {
+      "id": "AUTH-d2b55bcf",
+      "role_id": "R-abf5bf77",
+      "permission": "code.modify",
+      "effect": "allow"
+    },
+    "AUTH-d964c51f": {
+      "id": "AUTH-d964c51f",
+      "role_id": "R-86542013",
+      "permission": "release.approve",
+      "effect": "allow"
+    },
+    "AUTH-f399a74c": {
+      "id": "AUTH-f399a74c",
+      "role_id": "R-2c830f50",
+      "permission": "planning.decide",
+      "effect": "allow"
+    }
+  }
+}

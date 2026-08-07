@@ -1,0 +1,22 @@
+{
+  "employees": {
+    "dev-1": {
+      "id": "dev-1",
+      "company_id": "C-8ea260e4",
+      "name": "Dev One",
+      "role_ids": [
+        "R-abf5bf77"
+      ],
+      "capabilities": [
+        "python",
+        "dart"
+      ],
+      "knowledge_scope": [],
+      "experience_ref": "",
+      "performance": 0.0,
+      "status": "active",
+      "joined_at": "2026-08-07T06:24:12.793440Z",
+      "left_at": null
+    }
+  }
+}

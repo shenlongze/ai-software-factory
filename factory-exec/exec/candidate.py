@@ -32,6 +32,15 @@ SequentialRunner.select_result() 升级为经 Evaluator 的正式选择 (评估�
 regression_risk_result / requirement_coverage_result — 缺省 {} 中性,
 产线不提供则评估层按 0 分处理, 不臆造)。
 
+T5.4 边界 (Model Capability Registry, exec/capability.py):
+- ExecutionCandidate.model_capability_snapshot: 候选保存时冻结 registry
+  中该模型当前能力评分 ({"provider","model","scores","captured_at"}) —
+  历史结果可解释 (模型能力后续变化不影响已保存候选; 无 registry/无该
+  模型 → {} 中性, 不臆造);
+- SequentialRunner 可选接线: capability_registry (→ 候选快照) +
+  experience_stats (→ 每候选成功/失败计数 — 只统计不评分, 禁自动改分;
+  复用 experience_ctx 词汇) — 缺省 None, 行为逐位不变 (不改执行流程)。
+
 KISS 边界: 本模块只依赖 stdlib + pydantic + 本层 models/experience_ctx
 (零 Core 导入); 不跑真实 Benchmark / 不接 Model Selection / 不改 Benchmark;
 不落数据库 (Run 状态在内存, 审计走候选对象 + 既有事件链; Evaluator 评估
@@ -49,6 +58,7 @@ from typing import Any, Callable
 
 from pydantic import BaseModel, Field, field_validator
 
+from .capability import capability_snapshot
 from .experience_ctx import (
     FAILURE_CONTEXT_INSUFFICIENT,
     FAILURE_OPERATION,
@@ -160,6 +170,9 @@ class ExecutionCandidate(_ExecModel):
       requirement_coverage_result: T5.3 Evaluator 各层评分证据 dict
       (② git apply/check 结果 / ③ 修改范围 / ④ 回归风险 / ⑤ 验收标准覆盖;
       缺省 {} — 产线不提供则评估层按 0 分中性处理, 不臆造);
+    - model_capability_snapshot: T5.4 能力快照 dict (保存时冻结 registry
+      中该模型当前能力评分 {"provider","model","scores","captured_at"} —
+      历史结果可解释; 缺省 {} — 无 registry/无该模型中性, 不臆造);
     - created_at: UTC 时间戳 (序列化 round-trip 保留)。
 
     校验: id/run_id 必填; 容器字段 None → 默认; quality_score clamp [0,100];
@@ -185,6 +198,7 @@ class ExecutionCandidate(_ExecModel):
     scope_result: dict[str, Any] = Field(default_factory=dict)
     regression_risk_result: dict[str, Any] = Field(default_factory=dict)
     requirement_coverage_result: dict[str, Any] = Field(default_factory=dict)
+    model_capability_snapshot: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=utcnow)
 
     @field_validator(
@@ -196,6 +210,7 @@ class ExecutionCandidate(_ExecModel):
         "scope_result",
         "regression_risk_result",
         "requirement_coverage_result",
+        "model_capability_snapshot",
         mode="before",
     )
     @classmethod
@@ -258,6 +273,7 @@ def candidate_from_result(
     quality_score: float | None = None,
     failure_reason: str = "",
     latency: float = 0.0,
+    capability_registry: Any = None,
 ) -> ExecutionCandidate:
     """ExecutionResult → ExecutionCandidate (Run 产出物化)。
 
@@ -269,7 +285,9 @@ def candidate_from_result(
       在 test_result Artifact 与 T4.4 记录中);
     - quality_score: 显式传入优先; 缺省 80 (成功) / 0 (失败);
     - failure_reason: 显式传入优先; 失败结果缺省按 error 文本归类
-      (classify_candidate_failure — 失败必带结构化原因, 禁静默)。
+      (classify_candidate_failure — 失败必带结构化原因, 禁静默);
+    - capability_registry: T5.4 可选 — 保存时冻结该模型能力快照
+      (capability_snapshot; 无 registry/无该模型 → {} 中性, 不臆造)。
     """
     success = bool(getattr(result, "is_success", False))
     task_id = getattr(request, "task_id", "") if request is not None else ""
@@ -316,6 +334,9 @@ def candidate_from_result(
         validation_result=vresult,
         quality_score=qscore,
         failure_reason=reason,
+        model_capability_snapshot=capability_snapshot(
+            capability_registry, provider, model
+        ),
     )
 
 
@@ -464,7 +485,11 @@ class SequentialRunner:
       (禁 LLM/随机), 返回 EvaluationResult (last_evaluation 可审计);
     - select_result(): 经 Evaluator 的正式选择 — 选中候选对应执行结果;
       全失败/无合格 → 最后一个失败结果 (如实返回, 拒绝理由经
-      last_evaluation 审计, 不静默)。
+      last_evaluation 审计, 不静默);
+    - capability_registry (T5.4 可选): 每候选保存时冻结该模型能力快照
+      (model_capability_snapshot — 历史可解释; None → 快照 {} 中性);
+    - experience_stats (T5.4 可选): 每候选成功/失败喂入统计 (只统计不
+      评分 — 禁自动改分; None → 不记录, 行为逐位不变)。
 
     executor: Callable[[int], ExecutionResult] — 第 index 次 Run 的独立执行
     (1-based); 返回 ExecutionResult (失败也返回结果对象 — 失败安全契约,
@@ -478,6 +503,8 @@ class SequentialRunner:
         runs: int = 3,
         provider: str = "",
         model: str = "",
+        capability_registry: Any = None,
+        experience_stats: Any = None,
     ) -> None:
         if not callable(executor):
             raise TypeError("executor must be callable")
@@ -485,6 +512,8 @@ class SequentialRunner:
         self._runs_count = max(1, int(runs))
         self._provider = provider
         self._model = model
+        self._capability_registry = capability_registry
+        self._experience_stats = experience_stats
         self._run_states: list[ExecutionRun] = []
         self._results: list[Any] = []
         self._candidates: list[ExecutionCandidate] = []
@@ -536,6 +565,7 @@ class SequentialRunner:
                     provider=self._provider,
                     model=self._model,
                     latency=time.monotonic() - started,
+                    capability_registry=self._capability_registry,
                 )
                 if candidate.is_success:
                     run.complete(candidate.id)
@@ -551,6 +581,9 @@ class SequentialRunner:
                     provider=self._provider,
                     model=self._model,
                     failure_reason=classify_candidate_failure(str(exc)),
+                    model_capability_snapshot=capability_snapshot(
+                        self._capability_registry, self._provider, self._model
+                    ),
                 )
                 # 结果占位对齐: 候选与结果索引一一对应 (select_result 按索引回取)
                 self._results.append(None)
@@ -560,6 +593,12 @@ class SequentialRunner:
             collector.add(candidate)
             for signal in candidate.to_experience_signals():
                 self._signals.append((signal, run.run_id))
+            # T5.4 经验统计: 每候选成功/失败喂入 (只统计不评分, 禁自动改分;
+            # 复用 experience_ctx 词汇 — 缺省 None 不记录, 行为逐位不变)。
+            if self._experience_stats is not None:
+                recorder = getattr(self._experience_stats, "record_candidate", None)
+                if callable(recorder):
+                    recorder(candidate)
         self._candidates = collector.candidates
         return self._candidates
 

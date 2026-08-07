@@ -21,12 +21,16 @@ from typing import Any
 import pytest
 
 from exec.context import ContextAssembler
+from exec.progressive import ProgressiveLoader, StageSpec
 from exec.ranking import (
+    CODE_PROGRESSIVE_STAGES,
     LEVEL_FULL,
     LEVEL_SYMBOL,
+    CodeProgressiveProvider,
     RankingPipeline,
     normalize_weights,
 )
+from exec.repo_intelligence import RepositoryIntelligence
 from exec_helpers import FakeProvider, make_request, write_files  # noqa: E402
 
 # ================================================================ fixtures
@@ -454,3 +458,331 @@ class TestAgentRuntimeRankingSwitch:
             monkey.undo()
         assert result.status.value == "success"  # 上下文失败不破坏执行链
         assert result.context_score is None  # 组装失败 → 诚实 None (不臆造分数)
+
+
+# ================================================================ 8. T4.2 Progressive 集成
+
+class TestProgressivePipelineChain:
+    """T4.2: RankingPipeline.run(progressive=True) 3 阶段渐进全链 (集成)。"""
+
+    def test_progressive_true_three_stage_chain(self, mini_project: Path) -> None:
+        """progressive=True → 3 阶段 (overview/symbol/detail) + 审计 Trace + 组装产物。"""
+        res = RankingPipeline(mini_project).run(_replace_task(), progressive=True)
+        prog = res.progressive
+        assert prog is not None
+        assert prog.stages == ["overview", "symbol", "detail"]
+        # 每阶段一个审计条目 (含末阶段 stop)
+        assert [e.stage for e in prog.trace.entries] == ["overview", "symbol", "detail"]
+        assert prog.trace.entries[-1].decision == "stop"
+        assert prog.total_chars > 0
+        # 组装产物可直接渲染 (6 节语义)
+        assert prog.assembled is not None
+        prompt = prog.assembled.render_prompt()
+        assert "## Task" in prompt
+        assert "## Relevant source files" in prompt
+
+    def test_progressive_result_audit_dict(self, mini_project: Path) -> None:
+        """RankingPipelineResult.to_dict 含渐进 Trace (可审计); 阶段条目字段完整。"""
+        res = RankingPipeline(mini_project).run(_replace_task(), progressive=True)
+        d = res.to_dict()
+        assert "progressive" in d
+        pd = d["progressive"]
+        assert pd["stages"] == ["overview", "symbol", "detail"]
+        assert "trace" in pd and "entries" in pd["trace"]
+        assert len(pd["trace"]["entries"]) == 3
+        entry = pd["trace"]["entries"][0]
+        for key in ("stage", "loaded_items", "reason", "token_cost",
+                    "decision", "decision_reason", "final_usage"):
+            assert key in entry
+        assert pd["total_chars"] == res.progressive.total_chars  # to_dict 与对象一致
+
+    def test_progressive_symbol_miss_signal_and_advice(self, miss_project: Path) -> None:
+        """渐进路径同样处理 symbol miss: Trace 信号 + line_range 建议进经验节。"""
+        res = RankingPipeline(miss_project).run(
+            _Task("修复 my_widget 渲染异常", source_files=["widgets/my_widget.dart"]),
+            progressive=True,
+        )
+        prog = res.progressive
+        assert prog.trace.symbol_miss == ["my_widget"]
+        assert "symbol_miss:my_widget" in prog.trace.to_experience_signals()
+        advice = prog.assembled.experience.advice
+        assert any("line_range" in a for a in advice)
+        assert any("my_widget" in a for a in advice)
+
+    def test_progressive_budget_overflow_marked(self, mini_project: Path) -> None:
+        """渐进路径预算超限 → Trace context_overflow 诚实标记 (不静默) + 降级警示。"""
+        long_req = "1. 修复; " * 200  # ~1200 chars — 超 overview 阶段预算 (hard_cap 500)
+        res = RankingPipeline(mini_project, hard_cap=500).run(
+            _Task("修复 run 函数", long_req, source_files=["app/main.py"]),
+            progressive=True,
+        )
+        prog = res.progressive
+        assert prog is not None
+        assert prog.trace.context_overflow  # 锚点超预算 → 降级重试仍超 → 诚实标记
+        assert any("超限降级" in w for w in prog.trace.warnings)
+        assert "context_overflow" in prog.trace.to_experience_signals()
+
+
+class TestProgressiveFallback:
+    """T4.2: 渐进路径异常 → 回退一次性组装 (执行链不破坏)。"""
+
+    def test_progressive_provider_error_falls_back(self, mini_project: Path) -> None:
+        """CodeProgressiveProvider 装配抛错 → progressive=None + 一次性组装兜底。"""
+        import exec.ranking as ranking_mod
+
+        class _BrokenProvider:
+            def __init__(self, *a: Any, **kw: Any) -> None:
+                raise RuntimeError("provider broken")
+
+        monkey = pytest.MonkeyPatch()
+        monkey.setattr(ranking_mod, "CodeProgressiveProvider", _BrokenProvider)
+        try:
+            res = RankingPipeline(mini_project).run(_replace_task(), progressive=True)
+        finally:
+            monkey.undo()
+        assert res.progressive is None  # 回退: 无渐进产物
+        assert res.assembled is not None and res.assembled.render_prompt()
+        # 回退后审计字段仍在 (一次性路径语义完整)
+        assert res.budget is not None and res.ranked
+
+    def test_progressive_loader_error_falls_back(self, mini_project: Path) -> None:
+        """ProgressiveLoader.run 抛错 → 同样回退一次性组装 (progressive=None)。"""
+        import exec.ranking as ranking_mod
+
+        class _BrokenLoader:
+            def __init__(self, *a: Any, **kw: Any) -> None:
+                pass
+
+            def run(self, *a: Any, **kw: Any) -> Any:
+                raise RuntimeError("loader broken")
+
+        monkey = pytest.MonkeyPatch()
+        monkey.setattr(ranking_mod, "ProgressiveLoader", _BrokenLoader)
+        try:
+            res = RankingPipeline(mini_project).run(_replace_task(), progressive=True)
+        finally:
+            monkey.undo()
+        assert res.progressive is None
+        assert "## Task" in res.assembled.render_prompt()
+
+
+class TestProgressiveStageSpecGeneric:
+    """T4.2: StageSpec 声明式配置 — 引擎通用, 阶段表可替换。"""
+
+    def test_code_progressive_stages_declarative(self) -> None:
+        """CODE_PROGRESSIVE_STAGES = 3 个 StageSpec (overview 必载 1-2K / symbol 3-5K / detail 剩余)。"""
+        assert [s.stage for s in CODE_PROGRESSIVE_STAGES] == ["overview", "symbol", "detail"]
+        assert CODE_PROGRESSIVE_STAGES[0].required is True
+        assert CODE_PROGRESSIVE_STAGES[0].max_chars > 0
+        assert CODE_PROGRESSIVE_STAGES[1].max_chars > 0
+        # detail 是末阶段: max_chars=0 → loader 给剩余预算
+        assert CODE_PROGRESSIVE_STAGES[2].max_chars == 0
+
+    def test_custom_stage_spec_drives_engine(self, mini_project: Path) -> None:
+        """自定义 2 阶段 StageSpec 驱动同一引擎 (Agent 通用化 — Finance 语义照常)。"""
+        res = RankingPipeline(mini_project).run(_replace_task())
+        provider = CodeProgressiveProvider(
+            mini_project,
+            ri=RepositoryIntelligence(mini_project).analyze(),
+            profile=res.profile, batch=res.batch, budget=res.budget,
+            symbol_miss=res.symbol_miss,
+        )
+        custom = [
+            StageSpec(stage="overview", label="Overview", max_chars=1500,
+                      extractor="overview", required=True),
+            StageSpec(stage="detail", label="Detail", max_chars=0,
+                      extractor="detail", required=False),
+        ]
+        loader = ProgressiveLoader(
+            stages=custom, extractor=provider.extract,
+            finalizer=provider.finalize, hard_cap=30_000,
+        )
+        result = loader.run(task_type=res.profile.task_type)
+        assert result.stages == ["overview", "detail"]  # 引擎按配置走, 不硬编码 3 阶段
+        assert result.assembled is not None
+
+    def test_unknown_stage_extract_safe(self, mini_project: Path) -> None:
+        """未知 stage 提取 → 空结果 (candidates_found=False + missing_info — 引擎兜底)。"""
+        res = RankingPipeline(mini_project).run(_replace_task())
+        provider = CodeProgressiveProvider(
+            mini_project,
+            ri=RepositoryIntelligence(mini_project).analyze(),
+            profile=res.profile, batch=res.batch, budget=res.budget,
+            symbol_miss=res.symbol_miss,
+        )
+        load = provider.extract(StageSpec(stage="unknown", label="?", max_chars=100,
+                                          extractor="?", required=False))
+        assert load.items == []
+        assert load.candidates_found is False
+        assert load.missing_info is True
+
+
+class TestProgressiveRankingAssemble:
+    """T4.2: context.ranking_assemble progressive 参数 (默认 False 旧路径兼容)。"""
+
+    def test_default_false_passes_false(self, mini_project: Path) -> None:
+        """默认 (不传) → RankingPipeline.run(progressive=False) — 旧路径逐位兼容。"""
+        import exec.ranking as ranking_mod
+
+        seen: list[Any] = []
+
+        class _RecordingPipeline:
+            def __init__(self, *a: Any, **kw: Any) -> None:
+                pass
+
+            def run(self, task: Any, **kw: Any) -> Any:
+                seen.append(kw.get("progressive"))
+                return RankingPipeline(mini_project).run(task, progressive=False)
+
+        monkey = pytest.MonkeyPatch()
+        monkey.setattr(ranking_mod, "RankingPipeline", _RecordingPipeline)
+        try:
+            ctx = ContextAssembler(mini_project).ranking_assemble(_replace_task())
+        finally:
+            monkey.undo()
+        assert seen == [False]
+        assert ctx is not None and ctx.render_prompt()
+
+    def test_true_passes_true(self, mini_project: Path) -> None:
+        """progressive=True → run(progressive=True) — 渐进路径透传。"""
+        import exec.ranking as ranking_mod
+
+        seen: list[Any] = []
+
+        class _RecordingPipeline:
+            def __init__(self, *a: Any, **kw: Any) -> None:
+                pass
+
+            def run(self, task: Any, **kw: Any) -> Any:
+                seen.append(kw.get("progressive"))
+                return RankingPipeline(mini_project).run(task, progressive=True)
+
+        monkey = pytest.MonkeyPatch()
+        monkey.setattr(ranking_mod, "RankingPipeline", _RecordingPipeline)
+        try:
+            ctx = ContextAssembler(mini_project).ranking_assemble(_replace_task(), progressive=True)
+        finally:
+            monkey.undo()
+        assert seen == [True]
+        assert ctx is not None and ctx.render_prompt()
+
+    def test_progressive_true_real_chain(self, mini_project: Path) -> None:
+        """progressive=True 真实链 → AssembledContext 正常产出 (非 monkeypatch)。"""
+        ctx = ContextAssembler(mini_project).ranking_assemble(_replace_task(), progressive=True)
+        assert ctx is not None
+        assert 0.0 <= ctx.context_score <= 1.0
+        assert "## Task" in ctx.render_prompt()
+
+    def test_progressive_true_pipeline_error_falls_back(self, mini_project: Path) -> None:
+        """progressive=True 且新路径异常 → 回退旧 assemble (既有 fallback 语义保持)。"""
+        import exec.ranking as ranking_mod
+
+        fallback_called: list[str] = []
+
+        class _BrokenPipeline:
+            def run(self, *a: Any, **kw: Any) -> Any:
+                raise RuntimeError("pipeline broken")
+
+        orig_assemble = ContextAssembler.assemble
+
+        def _record_assemble(self: Any, task: Any) -> Any:
+            fallback_called.append("assemble")
+            return orig_assemble(self, task)
+
+        monkey = pytest.MonkeyPatch()
+        monkey.setattr(ranking_mod, "RankingPipeline", _BrokenPipeline)
+        monkey.setattr(ContextAssembler, "assemble", _record_assemble)
+        try:
+            ctx = ContextAssembler(mini_project).ranking_assemble(
+                _replace_task(), progressive=True
+            )
+        finally:
+            monkey.undo()
+        assert fallback_called == ["assemble"]
+        assert ctx is not None and ctx.render_prompt()
+
+
+class TestProgressiveAgentRuntime:
+    """T4.2: ranking_enabled 开关与渐进参数互不干扰 (集成)。"""
+
+    def test_ranking_enabled_calls_assemble_without_progressive(self,
+                                                                mini_project: Path,
+                                                                tmp_path: Path) -> None:
+        """ranking_enabled=True → ranking_assemble 收到默认 progressive=False (无参调用兼容)。"""
+        from exec.agent_runtime import AgentRuntime
+
+        import exec.context as context_mod
+
+        seen: list[Any] = []
+        orig_ranking = ContextAssembler.ranking_assemble
+
+        def _ranking(self: Any, task: Any, **kw: Any) -> Any:
+            seen.append(kw)  # 记录实际收到 kwargs
+            return orig_ranking(self, task)
+
+        provider = FakeProvider(content="<operations>[]</operations>")
+        (tmp_path / "wrprog").mkdir(exist_ok=True)
+        rt = AgentRuntime(
+            provider, work_root=str(tmp_path / "wrprog"), ranking_enabled=True
+        )
+        monkey = pytest.MonkeyPatch()
+        monkey.setattr(context_mod.ContextAssembler, "ranking_assemble", _ranking)
+        try:
+            req = make_request(project_dir=mini_project, objective="fix the run function bug")
+            result = rt.execute(req)
+        finally:
+            monkey.undo()
+        assert result.status.value == "success"
+        assert seen == [{}]  # agent_runtime 不传 progressive → 参数缺省 (默认 False 生效)
+
+    def test_ranking_disabled_still_old_path(self, mini_project: Path, tmp_path: Path) -> None:
+        """ranking_enabled=False → assemble 旧路径 (ranking_assemble 零调用, 含渐进参数零影响)。"""
+        from exec.agent_runtime import AgentRuntime
+
+        import exec.context as context_mod
+
+        calls: list[str] = []
+        orig_assemble = ContextAssembler.assemble
+        orig_ranking = ContextAssembler.ranking_assemble
+
+        def _assemble(self: Any, task: Any) -> Any:
+            calls.append("assemble")
+            return orig_assemble(self, task)
+
+        def _ranking(self: Any, task: Any, **kw: Any) -> Any:
+            calls.append("ranking_assemble")
+            return orig_ranking(self, task)
+
+        provider = FakeProvider(content="<operations>[]</operations>")
+        (tmp_path / "wrold").mkdir(exist_ok=True)
+        rt = AgentRuntime(
+            provider, work_root=str(tmp_path / "wrold"), ranking_enabled=False
+        )
+        monkey = pytest.MonkeyPatch()
+        monkey.setattr(context_mod.ContextAssembler, "assemble", _assemble)
+        monkey.setattr(context_mod.ContextAssembler, "ranking_assemble", _ranking)
+        try:
+            req = make_request(project_dir=mini_project, objective="fix the run function bug")
+            result = rt.execute(req)
+        finally:
+            monkey.undo()
+        assert result.status.value == "success"
+        assert calls == ["assemble"]
+
+
+class TestProgressiveRegression:
+    """T4.2 Regression: 旧路径 (progressive 缺省 False) 逐位不变。"""
+
+    def test_default_run_progressive_none(self, mini_project: Path) -> None:
+        """缺省 run() → progressive=None + to_dict 无 progressive 键 (一次性组装语义)。"""
+        res = RankingPipeline(mini_project).run(_replace_task())
+        assert res.progressive is None
+        assert "progressive" not in res.to_dict()
+        assert res.assembled is not None and res.assembled.render_prompt()
+
+    def test_old_path_identical_quality_semantics(self, mini_project: Path) -> None:
+        """旧路径上下文质量分语义不变 (0-1 区间 + 可渲染)。"""
+        res = RankingPipeline(mini_project).run(_replace_task())
+        assert 0.0 <= res.assembled.context_score <= 1.0
+        assert res.assembled.total_chars > 0
+        assert "## Experience" in res.assembled.render_prompt()

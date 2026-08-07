@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "factory-exec"
+version = "0.1.0"
+description = "AI Software Factory — Execution Extension (ExecutionRequest/AgentRuntime/Provider Adapter/Developer Agent/Sandbox/Validation/Approval Gate/Experience + org.execution.* 事件)"
+readme = "README.md"
+requires-python = ">=3.12"
+# 依赖: pydantic (模型) + httpx (Anthropic 真实 HTTP Adapter, 仅 exec 侧);
+# 事件经 factory-core events 层; 经验复用 factory-core intelligence (10A-4)
+dependencies = ["pydantic>=2", "httpx>=0.27"]
+
+[project.scripts]
+factory-exec = "exec.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["exec*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"

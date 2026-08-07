@@ -32,6 +32,11 @@ from exec.ranking import (
     TASK_TYPE_BUDGETS,
     TASK_TYPES,
     ContextCandidate,
+    TaskProfile,
+    analyze_task,
+    detect_task_type,
+    extract_acceptance,
+    extract_symbol_candidates,
 )
 
 # ================================================================ §1 ContextCandidate 模型
@@ -178,3 +183,136 @@ class TestRankingConstants:
     def test_default_budget_and_hard_cap(self) -> None:
         assert DEFAULT_TASK_BUDGET == 25_000
         assert HARD_CAP_CHARS == 30_000
+
+
+# ================================================================ §2 Task Analyzer
+
+class _DuckTask:
+    """duck-typed 任务 (对齐 ExecutionRequest: objective/requirement/task_id/id)。"""
+
+    def __init__(
+        self,
+        objective: str,
+        requirement: str = "",
+        task_id: str = "T-RANK-1",
+        id: str = "REQ-RANK-1",
+    ) -> None:
+        self.objective = objective
+        self.requirement = requirement
+        self.task_id = task_id
+        self.id = id
+
+
+class TestTaskTypeDetection:
+    """规则检测 (bug_fix > greenfield > feature; 零 LLM)。"""
+
+    def test_bug_fix_chinese(self) -> None:
+        assert detect_task_type("修复文件列表加载报错") == "bug_fix"
+
+    def test_bug_fix_english(self) -> None:
+        assert detect_task_type("Fix the crash when saving") == "bug_fix"
+        assert detect_task_type("handle exception in parser") == "bug_fix"
+
+    def test_greenfield_chinese(self) -> None:
+        assert detect_task_type("新建一个设置页面") == "greenfield"
+        assert detect_task_type("从零搭建项目脚手架") == "greenfield"
+
+    def test_greenfield_english(self) -> None:
+        assert detect_task_type("Create a new module") == "greenfield"
+
+    def test_feature_default(self) -> None:
+        assert detect_task_type("增加导出功能") == "feature"
+        assert detect_task_type("Add pagination to the list") == "feature"
+
+    def test_bug_fix_priority_over_greenfield(self) -> None:
+        """「新建…修复报错」语义是修 bug → bug_fix 优先 (预算最小)。"""
+        assert detect_task_type("新建页面后修复崩溃问题") == "bug_fix"
+
+    def test_requirement_joined_into_detection(self) -> None:
+        assert detect_task_type("优化列表", "滚动时出现异常") == "bug_fix"
+
+    def test_unknown_type_normalized(self) -> None:
+        p = TaskProfile(objective="x", task_type="bogus")
+        assert p.task_type == "feature"
+
+
+class TestTaskProfile:
+    """TaskProfile 模型 + analyze_task (结构化解析)。"""
+
+    def test_analyze_task_full(self) -> None:
+        task = _DuckTask(
+            "修复 replaceCurrent 只替换当前匹配的问题",
+            "验收: 1. 光标处替换生效; 2. 其他匹配不受影响",
+            task_id="T-BUG-9",
+        )
+        p = analyze_task(task)
+        assert p.task_type == "bug_fix"
+        assert p.task_id == "T-BUG-9"
+        assert "replace" in p.keywords and "current" in p.keywords
+        assert "replaceCurrent" in p.symbol_candidates
+        assert len(p.acceptance) >= 1
+
+    def test_analyze_task_id_fallback(self) -> None:
+        class _NoTaskId:
+            objective = "add feature"
+            requirement = ""
+            id = "REQ-X"
+
+        p = analyze_task(_NoTaskId())
+        assert p.task_id == "REQ-X"
+
+    def test_analyze_task_missing_fields(self) -> None:
+        p = analyze_task(object())  # 无任何字段 → 空 objective
+        assert p.objective == ""
+        assert p.keywords == []
+        assert p.symbol_candidates == []
+        assert p.task_type == "feature"
+
+    def test_explicit_task_type_overrides(self) -> None:
+        task = _DuckTask("修复崩溃问题")
+        p = analyze_task(task, task_type="feature")
+        assert p.task_type == "feature"  # 显式覆盖规则检测
+
+    def test_symbol_candidates_extraction(self) -> None:
+        syms = extract_symbol_candidates(
+            "fix _cloneBlock crash and replaceCurrent flow"
+        )
+        assert "_cloneBlock" in syms or "cloneblock" in syms
+        assert "replaceCurrent" in syms
+
+    def test_symbol_candidates_dedup_order(self) -> None:
+        syms = extract_symbol_candidates("doThing then doThing again")
+        assert syms.count("doThing") == 1
+        assert syms[0] == "doThing"
+
+    def test_symbol_candidates_empty(self) -> None:
+        assert extract_symbol_candidates("修复列表显示问题") == []
+
+    def test_acceptance_extraction_numbered(self) -> None:
+        a = extract_acceptance("实现搜索", "1. 输入关键词即时过滤\n2. 结果高亮")
+        assert len(a) == 2
+        assert a[0] == "输入关键词即时过滤"
+
+    def test_acceptance_extraction_markers(self) -> None:
+        a = extract_acceptance("新增设置页", "验收: 设置项应能保存并重启后保留")
+        assert any("保存并重启后保留" in e for e in a)
+
+    def test_acceptance_extraction_cleanup_anchored(self) -> None:
+        """编号清理只剥行首 (不误删句中 '1.')。"""
+        a = extract_acceptance("x", "step 1. keep the number in sentence")
+        assert not a  # 无验收标记无列表样式 → 不提取
+
+    def test_acceptance_cap_at_eight(self) -> None:
+        req = "\n".join(f"{i}. item {i}" for i in range(1, 12))
+        a = extract_acceptance("x", req)
+        assert len(a) == 8
+
+    def test_profile_extra_forbid(self) -> None:
+        with pytest.raises(ValidationError):
+            TaskProfile(objective="x", bogus=1)  # type: ignore[call-arg]
+
+    def test_profile_to_dict(self) -> None:
+        p = TaskProfile(objective="x", task_type="bug_fix")
+        d = p.to_dict()
+        assert d["task_type"] == "bug_fix"
+        assert d["acceptance"] == []

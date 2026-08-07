@@ -29,6 +29,7 @@ KISS 边界: 零 LLM、零数据库、零 Core 依赖; context.py 经 ranking_as
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
@@ -163,3 +164,165 @@ class ContextCandidate(BaseModel):
         if level == LEVEL_ONE_LINE:
             return _ONELINE_CHARS
         return 0  # LEVEL_DROP / 未知
+
+
+# ================================================================ Task Analyzer
+
+#: 任务文本中的符号样式词 (纯标识符形态, 可能是函数/方法名 — camelCase/snake,
+#: 允许前导下划线: _cloneBlock / replaceCurrent / parse_row)
+_SYMBOL_LIKE_RE = re.compile(
+    r"\b(?:_*[a-z][A-Za-z0-9]*_[A-Za-z0-9_]*|_*[a-z][A-Za-z0-9]*[A-Z][A-Za-z0-9]*)\b"
+)
+
+#: bug_fix 类型触发词 (中英; 命中任一 → bug_fix)
+_BUG_FIX_MARKERS = (
+    "fix", "bug", "bugfix", "error", "crash", "broken", "fail", "failed",
+    "exception", "incorrect", "wrong", "修复", "错误", "崩溃", "故障", "异常", "缺陷",
+    "报错", "打不开", "失效", "回归",
+)
+#: greenfield 类型触发词 (中英; 命中任一 → greenfield; bug_fix 优先判定)
+_GREENFIELD_MARKERS = (
+    "create", "new", "scaffold", "generate", "from scratch", "init", "setup",
+    "新建", "创建", "从零", "生成", "搭建", "初始化", "脚手架", "首个版本",
+)
+#: 验收标准提取标记 (行首/句中触发)
+_ACCEPTANCE_MARKERS = (
+    "验收", "accept", "criterion", "criteria", "must", "should", "要求",
+    "应 ", "应能", "确保", "保证",
+)
+#: 验收行样式: 编号/列表项 (1. / - / * / ✓)
+_ACCEPTANCE_LINE_RE = re.compile(r"^\s*(?:[-*✓]\s*|\d+[.)]\s*|\[\s*x?\s*\]\s*)")
+
+
+class TaskProfile(BaseModel):
+    """结构化任务解析产物 (设计 §3 步骤①)。
+
+    - objective / requirement / task_id: 原始任务字段
+    - task_type: bug_fix|feature|greenfield (规则检测, 可显式覆盖)
+    - keywords: 标识符关键词 (camelCase/snake 拆分 — 复用 context.py 已有基础)
+    - symbol_candidates: 符号样式词候选 (纯标识符形态, 供 symbol_relation 匹配)
+    - acceptance: 验收标准条目 (规则提取)
+    """
+
+    model_config = {"extra": "forbid"}
+
+    objective: str
+    requirement: str = ""
+    task_id: str = ""
+    task_type: str = "feature"
+    keywords: list[str] = Field(default_factory=list)
+    symbol_candidates: list[str] = Field(default_factory=list)
+    acceptance: list[str] = Field(default_factory=list)
+
+    @field_validator("task_type", mode="before")
+    @classmethod
+    def _type_norm(cls, v: Any) -> str:
+        v = str(v) if v is not None else "feature"
+        return v if v in TASK_TYPES else "feature"
+
+    @field_validator("objective", "requirement", "task_id", mode="before")
+    @classmethod
+    def _strs_none(cls, v: Any) -> str:
+        return str(v) if v is not None else ""
+
+    @field_validator("keywords", "symbol_candidates", "acceptance", mode="before")
+    @classmethod
+    def _lists_none(cls, v: Any) -> list[str]:
+        if v is None:
+            return []
+        return [str(x) for x in v]
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json")
+
+
+def detect_task_type(objective: str, requirement: str = "") -> str:
+    """任务文本 → 类型 (规则检测, 零 LLM; bug_fix > greenfield > feature)。
+
+    判定顺序 (设计 §5 预算依据):
+    1. bug_fix: 命中修复/错误/崩溃/异常类触发词 (缺陷修复语义优先 — 预算最小);
+    2. greenfield: 命中新建/创建/从零类触发词 (从零构建 — 预算中档);
+    3. 其余 → feature (默认 — 预算最大)。
+    """
+    text = f"{objective} {requirement}".lower()
+    if any(m in text for m in _BUG_FIX_MARKERS):
+        return "bug_fix"
+    if any(m in text for m in _GREENFIELD_MARKERS):
+        return "greenfield"
+    return "feature"
+
+
+def extract_symbol_candidates(objective: str, requirement: str = "") -> list[str]:
+    """任务文本 → 符号样式词候选 (camelCase/snake 整词, 保序去重)。
+
+    与 keywords 的区别: keywords 是拆词后的匹配键 (replace/current),
+    symbol_candidates 保留整词形态 (replaceCurrent/_cloneBlock) — 供
+    symbol_relation 精确匹配真实符号名。
+    """
+    out: list[str] = []
+    seen: set[str] = set()
+    for m in _SYMBOL_LIKE_RE.finditer(_task_text_type(objective, requirement)):
+        word = m.group(0)
+        low = word.lower()
+        if low not in seen and len(word) >= 2:
+            out.append(word)
+            seen.add(low)
+    return out
+
+
+def _task_text_type(objective: str, requirement: str) -> str:
+    """文本拼接辅助 (detect/extract 共用; 小写用于匹配, 原样用于符号提取)。"""
+    return f"{objective} {requirement}"
+
+
+def extract_acceptance(objective: str, requirement: str = "") -> list[str]:
+    """任务文本 → 验收标准条目 (规则提取, 零 LLM)。
+
+    提取: 含验收标记 (验收/accept/criteria/must/should/要求/应/确保) 的独立行,
+    或编号/列表样式行 (1. / - / * / ✓); 去重保序, 上限 8 条。
+    """
+    lines: list[str] = []
+    seen: set[str] = set()
+    for raw in f"{objective}\n{requirement}".splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        low = line.lower()
+        marker_hit = any(m in low for m in _ACCEPTANCE_MARKERS)
+        style_hit = bool(_ACCEPTANCE_LINE_RE.match(line))
+        if not (marker_hit or style_hit):
+            continue
+        entry = re.sub(r"^\s*(?:[-*✓]\s*|\d+[.)]\s*)", "", line).strip()
+        if entry and entry not in seen:
+            lines.append(entry)
+            seen.add(entry)
+    return lines[:8]
+
+
+def analyze_task(task: Any, *, task_type: str | None = None) -> TaskProfile:
+    """Task (duck-typed objective/requirement/task_id) → TaskProfile (规则解析)。
+
+    task_type 显式传入 → 覆盖规则检测 (装配点/测试可控); None → 规则检测。
+    关键词复用 context.py extract_task_keywords (camelCase+snake 拆分, 已有基础)。
+    """
+    objective = getattr(task, "objective", "") or ""
+    requirement = getattr(task, "requirement", "") or ""
+    task_id = (
+        getattr(task, "task_id", "") or getattr(task, "id", "") or ""
+    )
+    return TaskProfile(
+        objective=objective,
+        requirement=requirement,
+        task_id=task_id,
+        task_type=task_type if task_type is not None else detect_task_type(objective, requirement),
+        keywords=_extract_keywords(objective, requirement),
+        symbol_candidates=extract_symbol_candidates(objective, requirement),
+        acceptance=extract_acceptance(objective, requirement),
+    )
+
+
+def _extract_keywords(objective: str, requirement: str) -> list[str]:
+    """关键词提取 (延迟 import context.py — 避免模块级环)。"""
+    from .context import extract_task_keywords
+
+    return extract_task_keywords(objective, requirement)

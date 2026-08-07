@@ -302,6 +302,21 @@ class BenchmarkRunner:
         passed: bool | None = None
         detail = ""
         applied = False
+        # Phase A++++++-2b: Context Assembly (6 节 + 质量分; 失败安全 → None →
+        # 旧路径, Benchmark 链不破坏)
+        assembled_context = None
+        context_score: float | None = None
+        try:
+            from ..context import ContextAssembler
+
+            assembled_context = ContextAssembler(
+                sandbox_root,
+                project_dir=self._project_dir,
+                git_bin=self._git_bin,
+            ).assemble(sample)
+            context_score = assembled_context.context_score
+        except Exception:  # noqa: BLE001 — 组装失败安全
+            assembled_context = None
         # 验证循环总尝试上限: 1 次初始 + 2 轮 verifier 反馈修复 (任务约束 ≤2 轮)
         max_attempts = 3
         for attempt in range(max_attempts):
@@ -312,6 +327,7 @@ class BenchmarkRunner:
                     sandbox_path=str(sandbox_root),
                     source_files=sample.source_files or None,
                     extra_instruction=feedback,
+                    context=assembled_context,
                 )
             except DeveloperError as exc:
                 # work 已内建空内容/无解析重试; 其余失败 (Provider 层/操作锚点/
@@ -376,6 +392,7 @@ class BenchmarkRunner:
         result.usage = usage_acc
         result.cost_usd = estimate_cost_usd(usage_acc)
         result.verifier_passed = passed
+        result.context_score = context_score
         if detail:
             result.verifier_detail = detail[:500]
 
@@ -480,7 +497,8 @@ def _print_report(report: BenchmarkReport) -> None:
               f"verifier={r.verifier_passed} pq={r.patch_quality} "
               f"score={r.score.average if r.score else '-'} "
               f"latency={r.latency_s}s cost={r.cost_usd} "
-              f"{(r.blocked_reason or r.error or '')[:80]}")
+              f"cs={r.context_score if r.context_score is not None else '-'} "
+              f"{(r.blocked_reason or r.error or '')[:70]}")
 
 
 def main(argv: list[str] | None = None) -> int:

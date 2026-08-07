@@ -107,6 +107,8 @@ class BenchmarkResult(BaseModel):
     # Phase A++++++-1: 结构化失败原因 (FailureReason 值; 空 = 成功/未归类 —
     # 失败必记, 复盘循环归因: empty_content / patch_apply_failed / verifier_failed)
     failure_reason: str = ""
+    # Phase A++++++-2b: Context Assembly 质量分 (0-1; 无组装 → None — 诚实标注)
+    context_score: float | None = None
     created_at: Any = Field(default_factory=utcnow)
 
     @field_validator("kind", mode="before")

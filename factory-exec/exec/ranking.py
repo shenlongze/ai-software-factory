@@ -40,10 +40,17 @@ from .budget import (  # T4.3: 通用 Context Budget 模型 (声明式; 本模�
     BudgetPolicy,
     BudgetTrace,
     DEFAULT_DEGRADATION_STEPS,
+    apply_budget_recommendation,
     build_budget_trace,
     get_budget_policy,
     order_by_priority,
     stage_budget_for,
+)
+from .experience_ctx import (  # T4.4: Context Experience (单向依赖, 无环)
+    budget_recommendation,
+    file_success_rates,
+    stage_order_from_experience,
+    symbol_miss_files_from_experience,
 )
 from .progressive import (  # T4.2: 渐进加载引擎 (本模块单向依赖, 无环)
     LoadedItem,
@@ -58,6 +65,9 @@ from .progressive import (  # T4.2: 渐进加载引擎 (本模块单向依赖, �
 # ================================================================ 常量
 
 #: 6 因素权重 (设计 §4; 和恒为 1.0 — 全满分 → 1.0)
+#: T4.4 经验影响 ≤20% 硬限制: 经验相关因素 history_success (0.08) +
+#: experience_match (0.07) = 0.15 ≤ 0.20 — 经验只背书不替代 (ADR-0033),
+#: 历史错误不可能通过权重污染未来决策。
 RANKING_WEIGHTS: dict[str, float] = {
     "keyword_match": 0.35,
     "symbol_relation": 0.25,
@@ -841,6 +851,7 @@ class BudgetController:
         hard_cap: int = HARD_CAP_CHARS,
         degradation_order: list[str] | None = None,
         policy: BudgetPolicy | None = None,
+        recommended_budget: int | None = None,
     ) -> None:
         """预算控制器构造 (T4.3: 声明式策略注入 + 降级链调序)。
 
@@ -848,6 +859,9 @@ class BudgetController:
           None → 从 BUDGET_POLICIES 取任务类型策略;
         - degradation_order: 显式降级链顺序; None → 策略的 degradation_order
           (空 → 默认链 T4.1 原序)。显式传入覆盖策略 (局部微调)。
+        - recommended_budget (T4.4): 经验预算推荐 (历史同类任务成功记录实际
+          用量均值; 经 apply_budget_recommendation clamp ±20% — 经验影响
+          ≤20% 硬限制)。None → 策略预算 (旧语义逐位不变)。
         """
         if policy is not None:
             self._policy = policy
@@ -860,6 +874,7 @@ class BudgetController:
             else TASK_TYPE_BUDGETS.get(self.task_type, self._policy.total_budget)
         )
         self.hard_cap = max(1, hard_cap)
+        self.recommended_budget = recommended_budget
         self._degradation_order = (
             list(degradation_order) if degradation_order is not None
             else list(self._policy.degradation_order)
@@ -872,7 +887,9 @@ class BudgetController:
     ) -> BudgetResult:
         """Top-K 选择 + 聚合候选 → 级别映射/成本/降级链 (不修改入参)。"""
         selection = selection or TopKSelection(core=[], related=[], levels={})
-        budget = min(self.budget, self.hard_cap)
+        budget = apply_budget_recommendation(
+            self.recommended_budget, self.budget, self.hard_cap
+        )
         # (candidate, level, is_related)
         items: list[list[Any]] = []
         for c in selection.core:
@@ -1624,7 +1641,10 @@ class RankingPipeline:
 
     构造: root (沙箱根) + project_dir (git 历史源) + ri (可注入, None → 惰性分析) +
     analyzer (经验) + git_bin + weights (评分权重) + core_limit/related_limit
-    (Top-K 名额) + task_type/budget/hard_cap (预算控制; None → 规则检测/任务类型档)。
+    (Top-K 名额) + task_type/budget/hard_cap (预算控制; None → 规则检测/任务类型档)
+    + experience_store (T4.4 ContextExperienceStore; None → 冷启动旧路径逐位
+    不变; 提供 → 真实经验接入: symbol_miss 失败史提权 / 文件级成功率 /
+    预算推荐 ±20% / 阶段优先级 — 经验影响权重 ≤20% 硬限制)。
     """
 
     def __init__(
@@ -1641,6 +1661,7 @@ class RankingPipeline:
         task_type: str | None = None,
         budget: int | None = None,
         hard_cap: int = HARD_CAP_CHARS,
+        experience_store: Any = None,
     ) -> None:
         self._root = Path(root)
         self._project_dir = Path(project_dir) if project_dir else self._root
@@ -1653,6 +1674,21 @@ class RankingPipeline:
         self._task_type = task_type
         self._budget = budget
         self._hard_cap = hard_cap
+        # T4.4: ContextExperienceStore (None → 冷启动, 旧路径逐位不变;
+        # 提供 → 真实经验接入: symbol_miss 失败史提权 / 文件成功率 /
+        # 预算推荐 / 阶段优先级, 全部失败安全)
+        self._experience_store = experience_store
+
+    def _experience_records(self, task_type: str) -> list[Any]:
+        """ContextExperienceStore → 同类任务记录 (失败安全; 无 store → 空)。"""
+        if self._experience_store is None:
+            return []
+        try:
+            return list(
+                self._experience_store.query(task_type=task_type) or []
+            )
+        except Exception:  # noqa: BLE001 — 经验查询失败安全 (审计增强数据)
+            return []
 
     # ------------------------------------------------------------------ 内部
 
@@ -1691,14 +1727,27 @@ class RankingPipeline:
 
         启发式: 候选文件路径 basename 含缺失符号名 → 该文件是任务指向目标但
         symbol 锚点会失败的候选 — 提权 (确定性, 无逐文件经验库时诚实近似)。
+
+        T4.4 Failure Learning: 合并持久化失败史 — 同类任务历史
+        symbol_miss 失败记录的 context_used 文件集 (symbol_miss_files_from_
+        experience; 经验库提供时持久化优先, 启发式兜底; 失败安全)。
         """
-        if not symbol_miss:
-            return set()
         out: set[str] = set()
-        for rel in list(batch.core_files) + list(batch.related_files):
-            name = Path(rel).name.lower()
-            if any(m.lower() in name for m in symbol_miss):
-                out.add(rel)
+        if symbol_miss:
+            for rel in list(batch.core_files) + list(batch.related_files):
+                name = Path(rel).name.lower()
+                if any(m.lower() in name for m in symbol_miss):
+                    out.add(rel)
+        if self._experience_store is not None:
+            try:
+                records = self._experience_records(profile.task_type)
+                persisted = symbol_miss_files_from_experience(
+                    records,
+                    files=list(batch.core_files) + list(batch.related_files),
+                )
+                out |= persisted
+            except Exception:  # noqa: BLE001 — 失败学习失败安全
+                pass
         return out
 
     def _build_feature_context(
@@ -1741,6 +1790,18 @@ class RankingPipeline:
         history_rates: dict[str, float] = {}
         if batch.experience_ctx.success_rate is not None:
             history_rates["__experience__"] = batch.experience_ctx.success_rate
+        # T4.4: 文件级成功率 (真实经验库 → history_success 因素; 失败安全)
+        if self._experience_store is not None:
+            try:
+                records = self._experience_records(profile.task_type)
+                if records:
+                    for f, rate in file_success_rates(records).items():
+                        history_rates[f] = rate
+                    if "__experience__" not in history_rates:
+                        ok = sum(1 for r in records if r.is_success)
+                        history_rates["__experience__"] = round(ok / len(records), 3)
+            except Exception:  # noqa: BLE001 — 经验聚合失败安全
+                pass
         return FeatureContext(
             keywords=profile.keywords,
             symbol_candidates=profile.symbol_candidates,
@@ -1894,8 +1955,25 @@ class RankingPipeline:
             self._root, ri=self._intelligence(), profile=profile,
             batch=batch, budget=budget, symbol_miss=symbol_miss,
         )
+        stages = code_progressive_stages_for(profile.task_type)
+        # T4.4: 阶段优先级受经验影响 (历史成功路径优先; 失败安全 —
+        # 无经验/查询异常 → 默认序逐位不变)
+        if self._experience_store is not None:
+            try:
+                records = self._experience_records(profile.task_type)
+                order = stage_order_from_experience(
+                    records, [s.stage for s in stages]
+                )
+                if order != [s.stage for s in stages]:
+                    by_name = {s.stage: s for s in stages}
+                    stages = (
+                        [by_name[n] for n in order if n in by_name]
+                        + [s for s in stages if s.stage not in order]
+                    )
+            except Exception:  # noqa: BLE001 — 经验阶段序失败安全
+                pass
         loader = ProgressiveLoader(
-            stages=code_progressive_stages_for(profile.task_type),
+            stages=stages,
             extractor=provider.extract,
             finalizer=provider.finalize,
             hard_cap=min(budget.budget_chars, self._hard_cap),
@@ -1943,8 +2021,19 @@ class RankingPipeline:
         selection = TopKSelector(self._core_limit, self._related_limit).select_top_k(
             ranked, core_ids=core_ids
         )
+        # T4.4: 预算推荐 (历史同类任务成功记录实际用量均值; 失败安全 →
+        # None → 策略预算; BudgetController 内部 clamp ±20% 硬限制)
+        recommended: int | None = None
+        if self._experience_store is not None:
+            try:
+                recommended = budget_recommendation(
+                    self._experience_records(profile.task_type), profile.task_type
+                )
+            except Exception:  # noqa: BLE001 — 预算推荐失败安全
+                recommended = None
         budget = BudgetController(
-            profile.task_type, budget=self._budget, hard_cap=self._hard_cap
+            profile.task_type, budget=self._budget, hard_cap=self._hard_cap,
+            recommended_budget=recommended,
         ).apply_budget(selection, aggregates=batch.aggregates)
         prog: ProgressiveResult | None = None
         if progressive:

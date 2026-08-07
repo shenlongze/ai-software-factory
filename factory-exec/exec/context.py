@@ -797,6 +797,7 @@ class ContextAssembler:
         total_budget_chars: int = TOTAL_BUDGET_CHARS,
         core_line_cap: int = CORE_LINE_CAP,
         long_file_lines: int = LONG_FILE_LINES,
+        experience_store: Any = None,
     ) -> None:
         self._root = Path(root)
         self._project_dir = Path(project_dir) if project_dir else self._root
@@ -806,6 +807,18 @@ class ContextAssembler:
         self._total_budget_chars = total_budget_chars
         self._core_line_cap = core_line_cap
         self._long_file_lines = long_file_lines
+        # T4.4: ContextExperienceStore (None → 冷启动; 提供 → RankingPipeline
+        # 真实经验接入: symbol_miss 提权/预算推荐/阶段序; 全部失败安全)
+        self._experience_store = experience_store
+        # T4.4: 最近一次 ranking_assemble 的 RankingPipelineResult (全链路
+        # Trace 来源; None = 未走新路径/回退旧路径 — 装配方 Experience
+        # Extractor 读取, 纯新增属性零回归)
+        self._last_ranking_result: Any = None
+
+    @property
+    def last_ranking_result(self) -> Any:
+        """最近一次 ranking_assemble 的 Pipeline 全产物 (None = 旧路径)。"""
+        return self._last_ranking_result
 
     # ------------------------------------------------------------------ 内部
 
@@ -948,7 +961,11 @@ class ContextAssembler:
                 ri=self._ri,
                 analyzer=self._analyzer,
                 git_bin=self._git_bin,
+                experience_store=self._experience_store,
             )
-            return pipeline.run(task, progressive=progressive).assembled
+            result = pipeline.run(task, progressive=progressive)
+            self._last_ranking_result = result
+            return result.assembled
         except Exception:  # noqa: BLE001 — 新路径失败安全: 回退旧路径
+            self._last_ranking_result = None
             return self.assemble(task)

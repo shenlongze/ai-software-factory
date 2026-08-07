@@ -39,6 +39,9 @@ DEFAULT_POLICY_TASK_TYPE = "feature"
 
 #: 总硬顶 (设计 §4: 总 ≤30K chars ≈7.5K tokens; 与 ranking.py HARD_CAP_CHARS 同值)
 HARD_CAP_CHARS = 30_000
+#: 经验预算推荐偏差上限 (T4.4: 经验影响 ≤20% 硬限制 — 生效预算 clamp 边界;
+#: 历史同类任务实际用量只能把预算拉偏 ±20%, 不覆盖策略档位)
+BUDGET_RECOMMEND_SPAN = 0.2
 
 #: 内容类别 (priority 映射键; 未来 Agent 可配自己的类别集)
 CATEGORY_SPEC = "spec"                # 需求/规格/模板
@@ -302,6 +305,32 @@ def order_by_priority(
         items,
         key=lambda it: -priority_of_content_ref(getattr(it, "content_ref", ""), policy),
     )
+
+
+def apply_budget_recommendation(
+    recommended: int | None,
+    policy_budget: int,
+    hard_cap: int = HARD_CAP_CHARS,
+) -> int:
+    """经验预算推荐 → 生效预算 (T4.4; 经验影响 ≤20% 硬限制)。
+
+    语义 (设计 §4 预算推荐):
+    - recommended None/≤0 → 策略预算 (min(policy, hard_cap) — 旧语义逐位不变);
+    - 有推荐 → clamp 到 [0.8×policy, 1.2×policy] (BUDGET_RECOMMEND_SPAN
+      偏差上限 — 历史同类任务实际用量只能微调, 不覆盖策略档位), 再 min
+      hard_cap (硬顶恒生效)。
+
+    纯函数 (可复算审计); BudgetController 装配点消费 (ranking.py 经
+    experience_store 查成功记录均值后注入)。
+    """
+    base = _nonneg_int(policy_budget)
+    if recommended is None or recommended <= 0:
+        return min(base, max(1, hard_cap))
+    base = max(1, base)
+    span = max(0.0, min(1.0, BUDGET_RECOMMEND_SPAN))
+    lo = int(base * (1.0 - span))
+    hi = int(base * (1.0 + span))
+    return min(max(int(recommended), lo), hi, max(1, hard_cap))
 
 
 # ================================================================ BudgetTrace (审计)

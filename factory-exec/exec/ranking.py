@@ -326,3 +326,243 @@ def _extract_keywords(objective: str, requirement: str) -> list[str]:
     from .context import extract_task_keywords
 
     return extract_task_keywords(objective, requirement)
+
+
+# ================================================================ Feature Extractor
+
+#: 6 因素特征键 (与 RANKING_WEIGHTS 对齐; 特征完整性 = 已评分因素占比)
+FACTOR_KEYS: tuple[str, ...] = (
+    "keyword_match", "symbol_relation", "dependency_distance",
+    "test_relation", "history_success", "experience_match",
+)
+
+#: 历史失败模式提取标记 (经验 evidence "failure_reason: X" 前缀 — 同 context.py)
+_FAILURE_REASON_PREFIX = "failure_reason: "
+
+
+def score_keyword_match(keywords: list[str], names: list[str]) -> float:
+    """因素 1 — 任务关键词命中 (设计 §4): 精确 1.0 / 前缀 0.8 / 包含 0.6 / 无 0。
+
+    names = 文件路径 + 符号名 + 内容头词 (可注入; 空 → 0)。
+    取所有 关键词×名字 组合的最高分; 大小写不敏感。
+    """
+    if not keywords or not names:
+        return 0.0
+    kws = [k.lower() for k in keywords]
+    best = 0.0
+    for kw in kws:
+        for name in names:
+            low = name.lower()
+            if low == kw:
+                best = max(best, 1.0)
+            elif low.startswith(kw):
+                best = max(best, 0.8)
+            elif kw in low:
+                best = max(best, 0.6)
+    return best
+
+
+def score_symbol_relation(
+    defines: set[str], calls: set[str], called_by: set[str], symbols: set[str]
+) -> float:
+    """因素 2 — 候选与任务符号关系 (设计 §4): 定义 1.0 / 调用 0.7 / 被调 0.5 / 无关 0。
+
+    defines = 候选文件定义的符号; calls = 候选文件调用的符号 (call graph
+    callee); called_by = 调用候选文件的调用方符号 (call graph caller);
+    symbols = 任务符号候选。任一非空交集按优先级取分 (定义 > 调用 > 被调);
+    大小写不敏感。
+    """
+    syms = {s.lower() for s in symbols}
+    if {d.lower() for d in defines} & syms:
+        return 1.0
+    if {c.lower() for c in calls} & syms:
+        return 0.7
+    if {b.lower() for b in called_by} & syms:
+        return 0.5
+    return 0.0
+
+
+def score_dependency_distance(distance: int | None) -> float:
+    """因素 3 — 依赖距离 (设计 §4): 直接 1.0 / 间接 0.5 / 无关 0.1。
+
+    distance: 0 = 候选即核心目标; 1 = 与核心文件直接依赖 (被依赖或依赖);
+    2 = 间接 (2 跳); None = 无关。
+    """
+    if distance == 0 or distance == 1:
+        return 1.0
+    if distance == 2:
+        return 0.5
+    return 0.1
+
+
+def score_test_relation(target_test: bool, related_test: bool) -> float:
+    """因素 4 — 测试关系 (设计 §4): 目标测试 1.0 / 相关测试 0.6 / 无 0。"""
+    if target_test:
+        return 1.0
+    if related_test:
+        return 0.6
+    return 0.0
+
+
+def score_history_success(rate: float | None) -> float:
+    """因素 5 — 文件历史任务成功率 (设计 §4): 经验库聚合; 冷启动 None → 0.5 中性。"""
+    if rate is None:
+        return 0.5
+    return _clamp01(rate)
+
+
+def score_experience_match(has_symbol_miss_history: bool) -> float:
+    """因素 6 — 历史失败模式匹配 (设计 §4/§7): symbol miss 相关文件提权 +0.2。
+
+    经验反馈首轮无历史 → 0; 该文件有 symbol_miss 失败史 → 0.2 (提权 —
+    symbol 锚点易错, 该候选更值得优先给行号/正文级上下文)。
+    """
+    return 0.2 if has_symbol_miss_history else 0.0
+
+
+class FeatureContext:
+    """特征提取上下文 (RankingPipeline 装配; 全部可注入 — 纯函数可测)。
+
+    - keywords / symbol_candidates: TaskProfile 解析产物
+    - core_files: 核心目标文件集 (显式 source_files ∪ symbol 命中文件)
+    - depends_on_core: 与核心文件直接依赖的文件集 (影响面 1 跳)
+    - indirect: 间接关联文件集 (2 跳)
+    - target_tests: 核心文件直接映射的测试文件集
+    - related_tests: 相关文件映射的测试文件集 (非目标)
+    - history_rates: 文件 → 历史成功率 (经验库聚合; 缺省空 → 冷启动 0.5;
+      "__experience__" 键 = 经验候选自身聚合成功率)
+    - symbol_miss_files: 有 symbol_miss 失败史的文件集 (经验提权)
+    - defined_symbols: 文件 → 定义的符号名集合 (小写; 装配方从 ri 提取)
+    - called_symbols: 文件 → 调用的符号名集合 (小写; call graph callee)
+    - caller_symbols: 文件 → 调用它的调用方符号名集合 (小写; call graph caller)
+    - headers: 文件 → 内容头文本 (内容头关键词命中; 缺省空 — 不读文件)
+    """
+
+    def __init__(
+        self,
+        *,
+        keywords: list[str] | tuple[str, ...] = (),
+        symbol_candidates: list[str] | tuple[str, ...] = (),
+        core_files: set[str] | frozenset[str] = frozenset(),
+        depends_on_core: set[str] | frozenset[str] = frozenset(),
+        indirect: set[str] | frozenset[str] = frozenset(),
+        target_tests: set[str] | frozenset[str] = frozenset(),
+        related_tests: set[str] | frozenset[str] = frozenset(),
+        history_rates: dict[str, float] | None = None,
+        symbol_miss_files: set[str] | frozenset[str] = frozenset(),
+        defined_symbols: dict[str, set[str]] | None = None,
+        called_symbols: dict[str, set[str]] | None = None,
+        caller_symbols: dict[str, set[str]] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> None:
+        self.keywords = list(keywords)
+        self.symbol_candidates = {s.lower() for s in symbol_candidates}
+        self.core_files = set(core_files)
+        self.depends_on_core = set(depends_on_core)
+        self.indirect = set(indirect)
+        self.target_tests = set(target_tests)
+        self.related_tests = set(related_tests)
+        self.history_rates = dict(history_rates or {})
+        self.symbol_miss_files = set(symbol_miss_files)
+        self.defined_symbols = {k: set(v) for k, v in (defined_symbols or {}).items()}
+        self.called_symbols = {k: set(v) for k, v in (called_symbols or {}).items()}
+        self.caller_symbols = {k: set(v) for k, v in (caller_symbols or {}).items()}
+        self.headers = dict(headers or {})
+
+
+def _name_haystack(ctx: FeatureContext, rel: str, symbol_names: list[str]) -> list[str]:
+    """关键词匹配的名字集合: 文件路径 + 符号名 + 内容头词 (设计 §4 匹配面)。"""
+    names = [rel] + list(symbol_names)
+    header = ctx.headers.get(rel, "")
+    if header:
+        names += header.split()
+    return names
+
+
+def extract_candidate_features(
+    candidate: ContextCandidate, profile: TaskProfile, ctx: FeatureContext
+) -> dict[str, float]:
+    """每候选提取 6 维特征 (设计 §3 步骤③; 纯规则, 零 LLM)。
+
+    code: 全 6 因素; test: keyword/test_relation/history/experience 为主,
+    symbol/dependency 按无关基线; 聚合候选 (history/experience/architecture):
+    keyword_match (content_ref) + 各自 history/experience 语义, 其余 0。
+    """
+    ctype = candidate.type
+    features: dict[str, float] = {}
+
+    if ctype == "code":
+        syms = sorted(ctx.defined_symbols.get(candidate.source, set()))
+        features = {
+            "keyword_match": score_keyword_match(
+                ctx.keywords, _name_haystack(ctx, candidate.source, syms)
+            ),
+            "symbol_relation": _code_symbol_relation(candidate.source, ctx),
+            "dependency_distance": score_dependency_distance(
+                _dependency_distance(candidate.source, ctx)
+            ),
+            "test_relation": 0.0,
+            "history_success": score_history_success(
+                ctx.history_rates.get(candidate.source)
+            ),
+            "experience_match": score_experience_match(
+                candidate.source in ctx.symbol_miss_files
+            ),
+        }
+    elif ctype == "test":
+        features = {
+            "keyword_match": score_keyword_match(
+                ctx.keywords, _name_haystack(ctx, candidate.source, [])
+            ),
+            "symbol_relation": 0.0,
+            "dependency_distance": 0.1,  # 测试非代码依赖 → 无关基线
+            "test_relation": score_test_relation(
+                candidate.source in ctx.target_tests,
+                candidate.source in ctx.related_tests,
+            ),
+            "history_success": score_history_success(
+                ctx.history_rates.get(candidate.source)
+            ),
+            "experience_match": score_experience_match(
+                candidate.source in ctx.symbol_miss_files
+            ),
+        }
+    else:
+        # 聚合候选 (history/experience/architecture): 引用面关键词 + 各自语义
+        own_rate = None
+        if ctype == "experience":
+            own_rate = ctx.history_rates.get("__experience__")
+        features = {
+            "keyword_match": score_keyword_match(ctx.keywords, [candidate.content_ref]),
+            "symbol_relation": 0.0,
+            "dependency_distance": 0.1,
+            "test_relation": 0.0,
+            "history_success": score_history_success(own_rate),
+            "experience_match": 0.0,
+        }
+    return features
+
+
+def _code_symbol_relation(rel: str, ctx: FeatureContext) -> float:
+    """候选代码文件的符号关系 (定义 1.0 / 调用 0.7 / 被调 0.5 / 无关 0)。
+
+    原始集合来自 ctx (装配方从 RepositoryIntelligence 提取): defined =
+    文件定义的符号; called = 文件调用的符号 (call graph callee); caller =
+    调用该文件的调用方符号 (call graph caller)。
+    """
+    return score_symbol_relation(
+        ctx.defined_symbols.get(rel, set()),
+        ctx.called_symbols.get(rel, set()),
+        ctx.caller_symbols.get(rel, set()),
+        ctx.symbol_candidates,
+    )
+
+
+def _dependency_distance(rel: str, ctx: FeatureContext) -> int | None:
+    if rel in ctx.core_files:
+        return 0
+    if rel in ctx.depends_on_core:
+        return 1
+    if rel in ctx.indirect:
+        return 2
+    return None

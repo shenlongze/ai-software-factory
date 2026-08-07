@@ -32,11 +32,19 @@ from exec.ranking import (
     TASK_TYPE_BUDGETS,
     TASK_TYPES,
     ContextCandidate,
+    FeatureContext,
     TaskProfile,
     analyze_task,
     detect_task_type,
     extract_acceptance,
+    extract_candidate_features,
     extract_symbol_candidates,
+    score_dependency_distance,
+    score_experience_match,
+    score_history_success,
+    score_keyword_match,
+    score_symbol_relation,
+    score_test_relation,
 )
 
 # ================================================================ §1 ContextCandidate 模型
@@ -316,3 +324,244 @@ class TestTaskProfile:
         d = p.to_dict()
         assert d["task_type"] == "bug_fix"
         assert d["acceptance"] == []
+
+
+# ================================================================ §3 Feature Extractor
+
+class TestKeywordMatchFactor:
+    """因素 1 — 关键词命中 (精确 1.0 / 前缀 0.8 / 包含 0.6 / 无 0)。"""
+
+    def test_exact_match(self) -> None:
+        assert score_keyword_match(["replace"], ["replace"]) == 1.0
+
+    def test_prefix_match(self) -> None:
+        assert score_keyword_match(["replace"], ["replace_current"]) == 0.8
+
+    def test_contains_match(self) -> None:
+        assert score_keyword_match(["replace"], ["my_replacer"]) == 0.6
+
+    def test_no_match(self) -> None:
+        assert score_keyword_match(["zzz"], ["app/main.py"]) == 0.0
+
+    def test_empty_keywords_or_names(self) -> None:
+        assert score_keyword_match([], ["a.py"]) == 0.0
+        assert score_keyword_match(["a"], []) == 0.0
+
+    def test_best_of_multiple(self) -> None:
+        """多关键词×多名字取最高分 (前缀 0.8 > 包含 0.6)。"""
+        assert score_keyword_match(["fix", "save"], ["save_flow", "main.py"]) == 0.8
+
+    def test_path_and_symbol_names(self) -> None:
+        names = ["app/main.py", "replace_current", "run"]
+        assert score_keyword_match(["replace"], names) == 0.8
+        assert score_keyword_match(["main"], names) == 0.6  # 路径段包含命中
+
+    def test_case_insensitive(self) -> None:
+        assert score_keyword_match(["Replace"], ["REPLACE"]) == 1.0
+
+
+class TestSymbolRelationFactor:
+    """因素 2 — 候选与任务符号关系 (定义 1.0 / 调用 0.7 / 被调 0.5 / 无关 0)。"""
+
+    def test_defines_symbol(self) -> None:
+        assert score_symbol_relation({"run"}, set(), set(), {"run"}) == 1.0
+
+    def test_calls_symbol(self) -> None:
+        assert score_symbol_relation(set(), {"helper"}, set(), {"helper"}) == 0.7
+
+    def test_called_by_symbol_caller(self) -> None:
+        assert score_symbol_relation(set(), set(), {"run"}, {"run"}) == 0.5
+
+    def test_unrelated(self) -> None:
+        assert score_symbol_relation({"run"}, set(), set(), {"other"}) == 0.0
+
+    def test_definition_priority_over_calls(self) -> None:
+        """同一符号既定义又调用 → 定义优先 (1.0)。"""
+        assert score_symbol_relation({"run"}, {"run"}, set(), {"run"}) == 1.0
+
+    def test_case_insensitive(self) -> None:
+        assert score_symbol_relation({"Run"}, set(), set(), {"run"}) == 1.0
+
+    def test_empty_symbols(self) -> None:
+        assert score_symbol_relation({"run"}, set(), set(), set()) == 0.0
+
+
+class TestDependencyDistanceFactor:
+    """因素 3 — 依赖距离 (直接 1.0 / 间接 0.5 / 无关 0.1)。"""
+
+    def test_target_itself(self) -> None:
+        assert score_dependency_distance(0) == 1.0
+
+    def test_direct_dependency(self) -> None:
+        assert score_dependency_distance(1) == 1.0
+
+    def test_indirect(self) -> None:
+        assert score_dependency_distance(2) == 0.5
+
+    def test_unrelated(self) -> None:
+        assert score_dependency_distance(None) == 0.1
+
+
+class TestTestRelationFactor:
+    """因素 4 — 测试关系 (目标 1.0 / 相关 0.6 / 无 0)。"""
+
+    def test_target_test(self) -> None:
+        assert score_test_relation(True, False) == 1.0
+
+    def test_related_test(self) -> None:
+        assert score_test_relation(False, True) == 0.6
+
+    def test_no_relation(self) -> None:
+        assert score_test_relation(False, False) == 0.0
+
+    def test_target_over_related(self) -> None:
+        assert score_test_relation(True, True) == 1.0
+
+
+class TestHistorySuccessFactor:
+    """因素 5 — 历史成功率 (冷启动 None → 0.5 中性)。"""
+
+    def test_cold_start_neutral(self) -> None:
+        assert score_history_success(None) == 0.5
+
+    def test_high_rate(self) -> None:
+        assert score_history_success(0.9) == 0.9
+
+    def test_low_rate(self) -> None:
+        assert score_history_success(0.2) == 0.2
+
+    def test_rate_clamped(self) -> None:
+        assert score_history_success(1.5) == 1.0
+        assert score_history_success(-0.5) == 0.0
+
+
+class TestExperienceMatchFactor:
+    """因素 6 — 历史失败模式匹配 (symbol miss 提权 +0.2; 首轮 0)。"""
+
+    def test_symbol_miss_history_boost(self) -> None:
+        assert score_experience_match(True) == 0.2
+
+    def test_no_history(self) -> None:
+        assert score_experience_match(False) == 0.0
+
+
+class TestFeatureContextExtraction:
+    """FeatureContext + extract_candidate_features (6 维装配)。"""
+
+    def _code_candidate(self, rel: str = "app/main.py") -> ContextCandidate:
+        return ContextCandidate(id=f"code:{rel}", type="code", source=rel, token_cost=50)
+
+    def test_code_candidate_all_six_factors(self) -> None:
+        profile = TaskProfile(objective="fix replace crash", task_type="bug_fix")
+        ctx = FeatureContext(
+            keywords=["replacecurrent"],
+            symbol_candidates=["replacecurrent"],
+            core_files={"app/main.py"},
+            defined_symbols={"app/main.py": {"replacecurrent"}},
+            history_rates={"app/main.py": 0.8},
+            symbol_miss_files={"app/main.py"},
+        )
+        f = extract_candidate_features(self._code_candidate(), profile, ctx)
+        assert set(f) == {
+            "keyword_match", "symbol_relation", "dependency_distance",
+            "test_relation", "history_success", "experience_match",
+        }
+        assert f["keyword_match"] == 1.0          # 符号名精确命中
+        assert f["symbol_relation"] == 1.0        # 定义任务符号
+        assert f["dependency_distance"] == 1.0    # 核心目标
+        assert f["test_relation"] == 0.0
+        assert f["history_success"] == 0.8
+        assert f["experience_match"] == 0.2       # symbol miss 提权
+
+    def test_related_code_file_factors(self) -> None:
+        profile = TaskProfile(objective="fix replace crash")
+        ctx = FeatureContext(
+            keywords=["replace"],
+            symbol_candidates=["replacecurrent"],
+            core_files={"app/main.py"},
+            depends_on_core={"util/helper.py"},
+            defined_symbols={"util/helper.py": {"helper"}},
+            caller_symbols={"util/helper.py": {"replacecurrent"}},
+        )
+        f = extract_candidate_features(self._code_candidate("util/helper.py"), profile, ctx)
+        assert f["dependency_distance"] == 1.0    # 直接依赖
+        assert f["symbol_relation"] == 0.5        # 被任务符号调用方调用
+        assert f["history_success"] == 0.5        # 冷启动中性
+
+    def test_indirect_file_factor(self) -> None:
+        profile = TaskProfile(objective="add feature xyz")
+        ctx = FeatureContext(
+            core_files={"app/main.py"}, indirect={"deep/other.py"}
+        )
+        f = extract_candidate_features(self._code_candidate("deep/other.py"), profile, ctx)
+        assert f["dependency_distance"] == 0.5
+
+    def test_test_candidate_factors(self) -> None:
+        profile = TaskProfile(objective="fix replace crash")
+        c = ContextCandidate(id="test:tests/test_main.py", type="test",
+                             source="tests/test_main.py")
+        ctx = FeatureContext(
+            keywords=["replace"],
+            core_files={"app/main.py"},
+            target_tests={"tests/test_main.py"},
+            history_rates={"tests/test_main.py": 0.6},
+        )
+        f = extract_candidate_features(c, profile, ctx)
+        assert f["test_relation"] == 1.0          # 目标测试
+        assert f["dependency_distance"] == 0.1    # 无关基线
+        assert f["symbol_relation"] == 0.0
+        assert f["history_success"] == 0.6
+
+    def test_related_test_candidate_factor(self) -> None:
+        profile = TaskProfile(objective="fix replace crash")
+        c = ContextCandidate(id="test:tests/test_util.py", type="test",
+                             source="tests/test_util.py")
+        ctx = FeatureContext(
+            core_files={"app/main.py"}, related_tests={"tests/test_util.py"}
+        )
+        f = extract_candidate_features(c, profile, ctx)
+        assert f["test_relation"] == 0.6
+
+    def test_experience_candidate_uses_own_rate(self) -> None:
+        profile = TaskProfile(objective="fix replace crash")
+        c = ContextCandidate(id="exp:development", type="experience",
+                             source="experience:development",
+                             content_ref="experience:development")
+        ctx = FeatureContext(history_rates={"__experience__": 0.3})
+        f = extract_candidate_features(c, profile, ctx)
+        assert f["history_success"] == 0.3
+        assert f["experience_match"] == 0.0
+
+    def test_aggregate_candidate_factors(self) -> None:
+        profile = TaskProfile(objective="fix replace crash")
+        c = ContextCandidate(id="arch:summary", type="architecture",
+                             source="architecture:summary",
+                             content_ref="architecture:summary-replace-flow")
+        ctx = FeatureContext(keywords=["arch"])
+        f = extract_candidate_features(c, profile, ctx)
+        assert f["keyword_match"] == 0.8          # 前缀命中 content_ref
+        assert f["dependency_distance"] == 0.1
+        assert f["symbol_relation"] == 0.0
+        assert f["test_relation"] == 0.0
+
+    def test_header_words_in_keyword_match(self) -> None:
+        profile = TaskProfile(objective="fix parser crash")
+        ctx = FeatureContext(
+            keywords=["parser"],
+            headers={"app/main.py": "parser tokenize render"},
+        )
+        f = extract_candidate_features(self._code_candidate(), profile, ctx)
+        assert f["keyword_match"] == 1.0          # 内容头词精确命中
+
+    def test_cold_start_neutral_history(self) -> None:
+        profile = TaskProfile(objective="fix replace crash")
+        ctx = FeatureContext(keywords=["replace"], core_files={"app/main.py"})
+        f = extract_candidate_features(self._code_candidate(), profile, ctx)
+        assert f["history_success"] == 0.5
+
+    def test_unrelated_file_low_ranking_factors(self) -> None:
+        profile = TaskProfile(objective="fix replace crash")
+        ctx = FeatureContext(keywords=["zzz"], core_files={"app/main.py"})
+        f = extract_candidate_features(self._code_candidate("docs/readme.md"), profile, ctx)
+        assert f["keyword_match"] == 0.0
+        assert f["dependency_distance"] == 0.1

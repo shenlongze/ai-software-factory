@@ -77,8 +77,14 @@ class ExperienceRecorder:
         result: ExecutionResult,
         employee_id: str,
         request: Any = None,
+        failure_reason: str = "",
     ) -> Any:
-        """执行结果 → 经验记录 (analyzer 缺失 → 返回 None, 失败安全)。"""
+        """执行结果 → 经验记录 (analyzer 缺失 → 返回 None, 失败安全)。
+
+        failure_reason: 结构化失败原因 (FailureReason 值; 空 → 从
+        result.error 文本归类) — 失败必记录结构化原因 (不静默失败,
+        供复盘循环归因: max_tokens 不足 / hunk 不匹配 / 功能缺失)。
+        """
         if self._analyzer is None:
             return None
         success = result.is_success
@@ -98,8 +104,15 @@ class ExperienceRecorder:
                 )
             )
         if not success:
+            from .developer import classify_failure
+
+            reason = failure_reason or classify_failure(result.error)
             evidence.append(
-                _evidence("event", result.id, f"failure_reason: {result.error}")
+                _evidence(
+                    "event",
+                    result.id,
+                    f"failure_reason: {reason}: {result.error[:300]}",
+                )
             )
         return self._analyzer.record_experience(
             subject_type="agent",

@@ -92,9 +92,26 @@ class TestRecord:
         assert call["result"] == "failure"
         assert call["score"] == SCORE_FAILURE
         assert call["quality_score"] == QUALITY_FAIL
-        # 失败原因进 evidence (结构化, 供未来推荐/复盘)
+        # 失败原因进 evidence (结构化 FailureReason + 原始 error, 供复盘/推荐)
         reasons = [e["description"] for e in call["evidence"]]
-        assert any("failure_reason: provider error" in r for r in reasons)
+        assert any("failure_reason" in r and "provider_error" in r for r in reasons)
+        # 原始错误详情保留 (结构化 reason 前缀 + error 文本)
+        assert any("anthropic api key missing" in r for r in reasons)
+
+    def test_failure_reason_explicit_passthrough(self):
+        """显式 failure_reason (AgentRuntime 传入) 覆盖文本归类 — 不静默失败。"""
+        analyzer = FakeAnalyzer()
+        recorder = ExperienceRecorder(analyzer)
+        result = _result(
+            status=ExecutionStatus.FAILED,
+            error="provider returned empty content (no patch) (after 1 retry)",
+        )
+        recorder.record(
+            result=result, employee_id="E-9", request=make_request(),
+            failure_reason="empty_content",
+        )
+        reasons = [e["description"] for e in analyzer.calls[0]["evidence"]]
+        assert any("failure_reason: empty_content" in r for r in reasons)
 
     def test_cost_mapping(self):
         analyzer = FakeAnalyzer()

@@ -47,7 +47,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from ..developer import DeveloperAgent, DeveloperError
+from ..developer import DeveloperAgent, DeveloperError, FailureReason, classify_failure
 from ..provider import ProviderConfigChecker, ProviderInterface
 from ..sandbox import Sandbox
 from . import verifiers as benchmark_verifiers
@@ -291,88 +291,114 @@ class BenchmarkRunner:
             result.error = f"sandbox error: {exc}"[:1000]
             return result
 
-        # 2. Developer 执行 (真实 Provider 调用; 计时; 空内容/空 patch 重试 1 次)
+        # 2. Developer 执行 (真实 Provider 调用; 计时; 空 patch 重试 1 次 +
+        #    verifier 反馈循环 ≤2 轮修复; 空内容/无解析由 work 内建重试)
         started = time.monotonic()
         output = None
         last_error: str = ""
         retried = False
         usage_acc: dict[str, Any] = {}
-        # 重试场景 (模型随机性兜底, 非 verifier 放水):
-        # - Provider 返回空内容 (reasoning 模型偶发空 content);
-        # - 回复无解析 patch (模型回复说明但没有 diff);
-        # - patch 为空 (NO_CHANGE/空 <patch> 标签 — Benchmark 样本全部要求改代码,
-        #   NO_CHANGE 在本场景一律视为失败, 重试一次)。
-        for attempt in range(2):
+        feedback: str = ""
+        passed: bool | None = None
+        detail = ""
+        applied = False
+        # 验证循环总尝试上限: 1 次初始 + 2 轮 verifier 反馈修复 (任务约束 ≤2 轮)
+        max_attempts = 3
+        for attempt in range(max_attempts):
             try:
                 output = self._developer.work(
                     request=sample,  # duck-typed: objective/requirement
                     project_context=self._project_context(sample),
                     sandbox_path=str(sandbox_root),
                     source_files=sample.source_files or None,
+                    extra_instruction=feedback,
                 )
             except DeveloperError as exc:
+                # work 已内建空内容/无解析重试; 其余失败 (Provider 层/操作锚点/
+                # 语法) 是环境或能力判定 — 不重试 (重试是放水/掩盖环境问题)
                 last_error = str(exc)
-                if attempt == 0 and self._retryable_error(last_error):
-                    retried = True
-                    continue
+                output = None
                 break
             usage_acc = self._accumulate_usage(usage_acc, output.usage)
-            if output.patch_text.strip() == "" and attempt == 0:
+            if output.patch_text.strip() == "":
+                # 空 patch (NO_CHANGE/空操作列表) — Benchmark 样本全部要求改代码,
+                # 空 patch 一律视为失败, 重试 1 次 (带提示, 非 verifier 放水)
+                if attempt == 0:
+                    last_error = "provider returned empty patch (no code change)"
+                    output = None
+                    retried = True
+                    feedback = (
+                        "上次输出未包含任何代码修改 (空 patch)。本任务要求修改代码, "
+                        "请直接输出 <operations> 或 <patch>。"
+                    )
+                    continue
                 last_error = "provider returned empty patch (no code change)"
                 output = None
-                retried = True
+                break
+            try:
+                sandbox.apply_patch(output.patch_text)
+                applied = True
+            except Exception as exc:  # noqa: BLE001 — 失败安全
+                last_error = f"patch apply failed: {exc}"[:1000]
+                # 保持既有语义: apply 失败后仍跑 verifier (未修改文件 → False)
+                fn = benchmark_verifiers.get(sample.verifier_id)
+                if fn is not None:
+                    try:
+                        passed, detail = fn(sandbox_root, sample)
+                    except Exception as exc2:  # noqa: BLE001 — verifier 异常转 FAIL
+                        passed = False
+                        detail = f"verifier error: {exc2}"
+                break
+            # verifier 判定 (纯 Python, 不依赖 LLM; 反馈 detail 不含 fix_hint)
+            fn = benchmark_verifiers.get(sample.verifier_id)
+            passed = None
+            if fn is not None:
+                try:
+                    passed, detail = fn(sandbox_root, sample)
+                except Exception as exc2:  # noqa: BLE001 — verifier 异常转 FAIL
+                    passed = False
+                    detail = f"verifier error: {exc2}"
+            if passed:
+                break
+            if attempt < max_attempts - 1:
+                # 验证循环: 反馈验收失败给 Developer, 下一轮基于当前沙箱状态再修
+                feedback = (
+                    f"你的修改未通过验收 (第 {attempt + 1} 轮, 最多 "
+                    f"{max_attempts - 1} 轮自动修复)。\n"
+                    f"验收反馈:\n{detail[:800]}\n"
+                    "请分析失败原因并修复, 直接输出新的 <operations> 或 <patch>。"
+                )
                 continue
+            last_error = f"verifier failed: {detail[:200]}"
             break
-        if output is not None and output.patch_text.strip() == "":
-            # 末次尝试仍产出空 patch (NO_CHANGE/空标签) — Benchmark 样本全部要求
-            # 改代码, 空 patch 一律视为失败 (与重试标注一致, 不溜进 apply 阶段)
-            last_error = "provider returned empty patch (no code change)"
-            output = None
+
+        result.latency_s = round(time.monotonic() - started, 3)
+        result.usage = usage_acc
+        result.cost_usd = estimate_cost_usd(usage_acc)
+        result.verifier_passed = passed
+        if detail:
+            result.verifier_detail = detail[:500]
+
         if output is None:
             result.status = SampleStatus.FAILED
             result.error = (
                 f"{last_error[:900]} (after 1 retry)" if retried else last_error
             )[:1000]
-            result.latency_s = round(time.monotonic() - started, 3)
-            result.usage = usage_acc
-            result.cost_usd = estimate_cost_usd(usage_acc)
-            # 失败尝试同样评分 (Level 1 未达) — 报告聚合不遗漏失败样本
             result.score = provisional_score(False)
             result.patch_quality = 0
+            # 失败必记结构化原因 (复盘循环归因: 空内容/hunk 不匹配/功能缺失)
+            result.failure_reason = classify_failure(result.error)
             return result
-        result.latency_s = round(time.monotonic() - started, 3)
-        result.usage = usage_acc
-        result.cost_usd = estimate_cost_usd(usage_acc)
 
-        # 3. patch 应用 (沙箱内) + diff 统计
-        applied = False
-        try:
-            if output.patch_text.strip():
-                sandbox.apply_patch(output.patch_text)
-            applied = True
-        except Exception as exc:  # noqa: BLE001 — 失败安全
-            result.error = f"patch apply failed: {exc}"[:1000]
+        # 3. diff 统计 (已应用; 沙箱导出最终变更)
         diff_text = ""
         try:
             diff_text = sandbox.diff()
         except Exception:  # noqa: BLE001 — diff 失败不致命
             diff_text = ""
+
+        # 4. 7 指标 + 五维评分
         stats = patch_stats(diff_text)
-
-        # 4. verifier 判定 (纯 Python, 不依赖 LLM)
-        fn = benchmark_verifiers.get(sample.verifier_id)
-        passed: bool | None = None
-        detail = ""
-        if fn is not None:
-            try:
-                passed, detail = fn(sandbox_root, sample)
-            except Exception as exc:  # noqa: BLE001 — verifier 异常转 FAIL
-                passed = False
-                detail = f"verifier error: {exc}"
-        result.verifier_passed = passed
-        result.verifier_detail = detail[:500]
-
-        # 5. 7 指标 + 五维评分
         result.patch_quality = patch_quality_score(
             applied=applied,
             verifier_passed=bool(passed),
@@ -386,18 +412,16 @@ class BenchmarkRunner:
         result.status = (
             SampleStatus.SUCCESS if (applied and passed) else SampleStatus.FAILED
         )
+        if result.status is SampleStatus.FAILED:
+            result.error = (
+                last_error or f"verifier failed: {detail[:200]}"
+            )[:1000]
+            result.failure_reason = (
+                classify_failure(result.error) or FailureReason.VERIFIER_FAILED.value
+            )
         return result
 
     # ------------------------------------------------------------ 内部
-
-    @staticmethod
-    def _retryable_error(message: str) -> bool:
-        """DeveloperError 是否值得重试 (空内容/无解析 patch — 模型随机性, 非能力失败)。
-
-        Provider 层错误 (HTTP/网络/key) 不重试 — 那是环境问题, 重试掩盖不了;
-        patch apply 失败 / verifier 不通过不重试 — 那是真实能力判定, 重试是放水。
-        """
-        return ("empty content" in message) or ("no parseable patch" in message)
 
     @staticmethod
     def _accumulate_usage(acc: dict[str, Any], usage: dict[str, Any]) -> dict[str, Any]:

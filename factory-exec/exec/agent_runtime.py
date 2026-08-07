@@ -52,10 +52,13 @@ from .models import (
 from .provider import ProviderInterface
 from .sandbox import Sandbox
 from .store import ExecStore
-from .validation import Validation
+from .validation import Validation, ValidationResult
 
 #: 项目上下文文件清单上限 (prompt 体积控制; 真实场景 Agent 可自行读文件)
 _PROJECT_CONTEXT_FILE_LIMIT = 60
+
+#: 验证循环总尝试上限 (1 次初始 + 2 轮自动修复 — 任务约束 ≤2 轮, 禁无限循环)
+_MAX_VALIDATION_ATTEMPTS = 3
 
 
 def _project_context(sandbox_dir: Path) -> str:
@@ -131,12 +134,13 @@ class AgentRuntime:
 
     def _fail(
         self, request: ExecutionRequest, error: str, *, duration: float = 0.0,
-        employee: Any = None,
+        employee: Any = None, failure_reason: str = "",
     ) -> ExecutionResult:
         """构造 failed 结果 + 发 org.execution.failed (终态单一)。
 
         失败同样记录 Experience (设计 §8: 成功/失败都记录; 失败 = 负信号 +
-        failure_reason 结构化 — 供未来复盘/推荐)。经验失败安全 (记录异常静默)。
+        failure_reason 结构化 — 供未来复盘/推荐, 不静默失败)。经验失败安全
+        (记录异常静默)。
         """
         result = ExecutionResult(
             id=new_id("EXS"),
@@ -154,6 +158,7 @@ class AgentRuntime:
                     result=result,
                     employee_id=getattr(employee, "id", "") or "",
                     request=request,
+                    failure_reason=failure_reason,
                 )
             except Exception:  # noqa: BLE001 — 经验失败安全 (8B-3 语义)
                 pass
@@ -215,33 +220,60 @@ class AgentRuntime:
         # 事件链锚点 (artifact.event_refs: 已发生的 requested/started seq)
         event_refs = self._event_refs(session)
 
+        # 项目上下文 (文件清单; 计算失败不致命 — 空上下文继续)
         try:
             context = _project_context(Path(session.workspace_copy_path))
-            output = self._developer.work(
-                request=request,
-                project_context=context,
-                sandbox_path=session.workspace_copy_path,
-            )
-        except DeveloperError as exc:
-            return self._fail(
-                request, f"provider error: {exc}", duration=time.monotonic() - started,
-                employee=employee,
-            )
-        except Exception as exc:  # noqa: BLE001 — 防御兜底: 意外错误 → failed
-            return self._fail(
-                request, f"execution error: {exc}", duration=time.monotonic() - started,
-                employee=employee,
-            )
+        except Exception:  # noqa: BLE001 — 上下文失败安全
+            context = "(project context unavailable)"
 
-        try:
-            if output.patch_text.strip():
-                sandbox.apply_patch(output.patch_text)
-            validation = Validation(Path(session.workspace_copy_path))
-            vresult = validation.validate(self._validation_command)
-        except Exception as exc:  # noqa: BLE001 — 失败安全
-            return self._fail(
-                request, f"sandbox error: {exc}", duration=time.monotonic() - started,
-                employee=employee,
+        # Phase A++++++-1 验证循环 (Modify → Validate → Fix → Validate, ≤2 轮修复):
+        # 每次 work → 应用 patch → 语法/测试验证; 验证失败 → 反馈失败输出给
+        # Developer 再修 (最多 _MAX_VALIDATION_ATTEMPTS 次总尝试 = 1 + 2 修复);
+        # 循环记录尝试次数 (report validation_attempts), 禁无限循环。
+        feedback = ""
+        output = None
+        vresult: ValidationResult | None = None
+        attempt = 0
+        while True:
+            try:
+                output = self._developer.work(
+                    request=request,
+                    project_context=context,
+                    sandbox_path=session.workspace_copy_path,
+                    extra_instruction=feedback,
+                )
+            except DeveloperError as exc:
+                return self._fail(
+                    request, f"provider error: {exc}",
+                    duration=time.monotonic() - started,
+                    employee=employee,
+                    failure_reason=getattr(exc, "failure_reason", ""),
+                )
+            except Exception as exc:  # noqa: BLE001 — 防御兜底: 意外错误 → failed
+                return self._fail(
+                    request, f"execution error: {exc}",
+                    duration=time.monotonic() - started,
+                    employee=employee,
+                )
+            try:
+                if output.patch_text.strip():
+                    sandbox.apply_patch(output.patch_text)
+                validation = Validation(Path(session.workspace_copy_path))
+                vresult = validation.validate(self._validation_command)
+            except Exception as exc:  # noqa: BLE001 — 失败安全
+                return self._fail(
+                    request, f"sandbox error: {exc}",
+                    duration=time.monotonic() - started,
+                    employee=employee,
+                )
+            attempt += 1
+            if vresult.passed or attempt >= _MAX_VALIDATION_ATTEMPTS:
+                break
+            feedback = (
+                f"你的修改未通过验证 (第 {attempt} 轮, 最多 "
+                f"{_MAX_VALIDATION_ATTEMPTS - 1} 轮自动修复)。\n"
+                f"验证结果:\n{vresult.output[:1500]}\n"
+                "请分析失败原因并修复, 直接输出新的 <operations> 或 <patch>。"
             )
 
         duration = time.monotonic() - started
@@ -286,9 +318,20 @@ class AgentRuntime:
                 path=test_path,
             )
         )
-        # report 产物 (执行报告, 审批 Review 输入)
+        # report 产物 (执行报告, 审批 Review 输入; 含验证结果 + 循环尝试次数)
+        assert output is not None and vresult is not None  # 循环保证 (失败路径已 return)
+        report_text = self._developer.build_report(
+            request=request,
+            raw_content=output.raw_content,
+            patch_text=output.patch_text,
+            validation=vresult,
+            duration=duration,
+            usage=output.usage,
+            operations=output.operations,
+            validation_attempts=attempt,
+        )
         report_path = self._write_artifact_file(
-            f"{result_id}.report.md", output.report
+            f"{result_id}.report.md", report_text
         )
         artifacts.append(
             Artifact(
@@ -308,7 +351,7 @@ class AgentRuntime:
             status=ExecutionStatus.SUCCESS,
             artifacts=artifacts,
             usage=dict(output.usage),
-            report=output.report,
+            report=report_text,
             duration=duration,
         )
         if self._store is not None:

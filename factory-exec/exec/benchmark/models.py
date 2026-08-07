@@ -104,6 +104,9 @@ class BenchmarkResult(BaseModel):
     # BLOCKED 原因 (无 key → ProviderError 消息; 诚实标注)
     blocked_reason: str = ""
     error: str = ""
+    # Phase A++++++-1: 结构化失败原因 (FailureReason 值; 空 = 成功/未归类 —
+    # 失败必记, 复盘循环归因: empty_content / patch_apply_failed / verifier_failed)
+    failure_reason: str = ""
     created_at: Any = Field(default_factory=utcnow)
 
     @field_validator("kind", mode="before")

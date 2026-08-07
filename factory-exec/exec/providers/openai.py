@@ -130,7 +130,12 @@ class OpenAIProvider:
 
     @staticmethod
     def _parse_content(data: dict[str, Any]) -> str:
-        """响应解析: choices[0].message.content; 结构不符 → ProviderError (响亮, 不静默空)。
+        """响应解析: choices[0].message.content; 结构不符/空内容 → ProviderError。
+
+        Phase A++++++-1 可靠性: **空内容检测** — reasoning 模型 max_tokens
+        耗尽时 content 为空串 (历史空内容 ×4 根因); 空内容 → 明确
+        ProviderError (finish_reason=length 时提示 max_tokens 耗尽), 供
+        DeveloperAgent 判定为可重试信号 (不静默当成功)。
 
         content 兼容两种形态 (OpenAI 兼容端点差异):
         - str: 纯文本 (主流形态);
@@ -162,8 +167,23 @@ class OpenAIProvider:
             for seg in text:
                 if isinstance(seg, dict) and isinstance(seg.get("text"), str):
                     parts.append(seg["text"])
-            return "".join(parts)
-        return str(text)
+            text = "".join(parts)
+        else:
+            text = str(text)
+        if not text.strip():
+            # 空内容: 显式错误 + 重试信号 (finish_reason=length → max_tokens 耗尽)
+            finish = first.get("finish_reason")
+            if finish == "length":
+                raise ProviderError(
+                    "openai empty response: finish_reason=length "
+                    "(max_tokens exhausted by reasoning — retry with "
+                    "higher max_tokens or shorter task)"
+                )
+            raise ProviderError(
+                "openai empty response: message.content is empty "
+                "(reasoning model produced no output — retryable)"
+            )
+        return text
 
     # ------------------------------------------------------------ 接口实现
 

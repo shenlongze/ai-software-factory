@@ -24,13 +24,18 @@ Experience Signal (T5.2 §6, 复用 T4.4 experience_ctx — 不重复建库):
   symbol_miss / context_insufficient / token_overflow / operation_failure /
   validation_failure — 由候选失败原因映射, 同源词汇供未来学习/推荐)。
 
-T5.3 边界: 本模块**不做 Best 选择** (Evaluator 是 T5.3); SequentialRunner
-提供 select_result() 临时占位 (第一个成功候选 / 全失败 → 最后一个,
-失败如实返回不静默), T5.3 由 CandidateEvaluator 替换。
+T5.3 边界: Best 选择由 CandidateEvaluator 承担 (exec/evaluator.py — 5 层
+确定性评分, 禁 LLM/随机); 本模块只产候选 + 收集, 并在 T5.3 起把
+SequentialRunner.select_result() 升级为经 Evaluator 的正式选择 (评估明细
+经 last_evaluation 审计; 全失败 → 最后一个失败结果 + 诚实拒绝理由)。
+候选携带 T5.3 各层评分证据 (patch_apply_result / scope_result /
+regression_risk_result / requirement_coverage_result — 缺省 {} 中性,
+产线不提供则评估层按 0 分处理, 不臆造)。
 
 KISS 边界: 本模块只依赖 stdlib + pydantic + 本层 models/experience_ctx
-(零 Core 导入); 不跑真实 Benchmark / 不接 Evaluator / 不接 Model Selection /
-不改 Benchmark; 不落数据库 (Run 状态在内存, 审计走候选对象 + 既有事件链)。
+(零 Core 导入); 不跑真实 Benchmark / 不接 Model Selection / 不改 Benchmark;
+不落数据库 (Run 状态在内存, 审计走候选对象 + 既有事件链; Evaluator 评估
+结果经 runner.last_evaluation 内存可审计, 不重复建库)。
 """
 
 from __future__ import annotations
@@ -53,8 +58,8 @@ from .experience_ctx import (
 )
 from .models import _ExecModel, new_id, utcnow
 
-#: 成功/失败候选质量分 (0-100; T5.3 Evaluator 落地前的保守基线:
-#: 验证通过的候选给基准分, 失败候选 0 — 诚实不臆造精细评分)。
+#: 成功/失败候选质量分 (0-100; 保守基线: 验证通过 80 / 失败 0 — 诚实不臆造
+#: 精细评分; 精细排名由 T5.3 CandidateEvaluator 5 层确定性评分承担)。
 QUALITY_SCORE_PASS = 80.0
 
 # ---------------------------------------------------------------- 失败原因词汇
@@ -151,6 +156,10 @@ class ExecutionCandidate(_ExecModel):
     - quality_score: 0-100 (T5.3 Evaluator 前: 验证通过 80 / 失败 0);
     - failure_reason: 失败候选必填 (CANDIDATE_FAILURE_REASONS 词汇;
       空 = 成功候选 — is_success 判定);
+    - patch_apply_result / scope_result / regression_risk_result /
+      requirement_coverage_result: T5.3 Evaluator 各层评分证据 dict
+      (② git apply/check 结果 / ③ 修改范围 / ④ 回归风险 / ⑤ 验收标准覆盖;
+      缺省 {} — 产线不提供则评估层按 0 分中性处理, 不臆造);
     - created_at: UTC 时间戳 (序列化 round-trip 保留)。
 
     校验: id/run_id 必填; 容器字段 None → 默认; quality_score clamp [0,100];
@@ -172,10 +181,23 @@ class ExecutionCandidate(_ExecModel):
     validation_result: dict[str, Any] = Field(default_factory=dict)
     quality_score: float = 0.0
     failure_reason: str = ""
+    patch_apply_result: dict[str, Any] = Field(default_factory=dict)
+    scope_result: dict[str, Any] = Field(default_factory=dict)
+    regression_risk_result: dict[str, Any] = Field(default_factory=dict)
+    requirement_coverage_result: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=utcnow)
 
-    @field_validator("context_trace", "budget_trace", "token_usage",
-                     "validation_result", mode="before")
+    @field_validator(
+        "context_trace",
+        "budget_trace",
+        "token_usage",
+        "validation_result",
+        "patch_apply_result",
+        "scope_result",
+        "regression_risk_result",
+        "requirement_coverage_result",
+        mode="before",
+    )
     @classmethod
     def _dicts_none(cls, v: Any) -> Any:
         return v if v is not None else {}

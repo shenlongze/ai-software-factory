@@ -184,10 +184,11 @@ class TestEventTypeEnumExtension:
         # (experience.analyzed / task.evaluated / feedback.learned, ADR-0033);
         # 134 → 137: 11A Human Console +3 (console.viewed / console.approval.opened
         # / console.dashboard.viewed, ADR-0034); 137 → 151: 16A Organization
-        # Extension +14 (org.* 14 事件, ADR-0036); 151 → 157: Phase A Execution
-        # Extension +6 (org.execution.* 6 事件, ADR-0037 — factory-exec)。
+        # Extension +14 (org.* 14 事件, ADR-0036); 151 → 158: Phase A Execution
+        # Extension +7 (org.execution.* 7 事件, ADR-0037 — factory-exec:
+        # requested/started/completed/failed/approved/applied + viewed 读审计)。
         # 纯增量扩展 (ADR-0001 决策 1 路径, 既有值零改动)
-        assert len(EventType) == 157
+        assert len(EventType) == 158
 
     def test_event_accepts_new_type_string(self):
         from events.models import Event

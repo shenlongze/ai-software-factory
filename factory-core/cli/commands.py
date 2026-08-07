@@ -3629,3 +3629,78 @@ def cmd_org_knowledge_add(ctx: FactoryContext, args: Any) -> dict:
 def cmd_org_knowledge_list(ctx: FactoryContext, args: Any) -> dict:
     """factory org knowledge list — 公司知识清单 (org.knowledge.viewed)。"""
     return _org_call(ctx, args, "cmd_knowledge_list")
+
+
+# ------------------------------------------------------------------ exec (Phase A: factory-exec Extension, ADR-0037)
+#
+# factory-exec 是独立 Extension 包 (factory-exec/exec/)。exec 命令复用 exec/cli.py
+# 的 cmd_exec_* 函数 (单一实现零复制): 本文件只做延迟装配 + 分发, 零顶层 imports
+# exec (Removal Isolation — 删 factory-exec 不影响 Factory 其余命令, 同
+# factory-org/factory-console 模式)。
+
+
+def _factory_exec_pkg_dir() -> Any:
+    """factory-exec 包目录 (factory-exec/); 不存在 → None (Removal Isolation)。"""
+    from pathlib import Path
+
+    d = Path(__file__).resolve().parents[2] / "factory-exec"
+    return d if d.is_dir() else None
+
+
+def _open_exec_cli() -> Any:
+    """延迟 import factory-exec/exec.cli (包名 `exec`, 把 factory-exec/ 挂 sys.path)。
+
+    未安装/导入失败 → None (调用方报 CliError 7 未找到 — 同 factory-org
+    装配点模式, 配置缺口响亮暴露; Factory 其余命令零感知)。
+    """
+    import sys
+
+    pkg_dir = _factory_exec_pkg_dir()
+    if pkg_dir is None:
+        return None
+    if str(pkg_dir) not in sys.path:
+        sys.path.insert(0, str(pkg_dir))
+    try:
+        import exec.cli  # noqa: F401
+
+        return exec.cli
+    except ImportError:
+        return None
+
+
+def _exec_call(ctx: FactoryContext, args: Any, fn_name: str) -> dict:
+    """exec 命令统一装配点: 缺 factory-exec 包 → rc 7 (响亮配置缺口)。"""
+    module = _open_exec_cli()
+    if module is None:
+        raise CliError("factory-exec 未安装 (缺 factory-exec/ 包)", exit_code=7)
+    return getattr(module, fn_name)(ctx.root, args)
+
+
+def cmd_exec_run(ctx: FactoryContext, args: Any) -> dict:
+    """factory exec run — 执行请求 → Runtime (沙箱 + patch + 产物 + org.execution.* 链)。"""
+    return _exec_call(ctx, args, "cmd_exec_run")
+
+
+def cmd_exec_status(ctx: FactoryContext, args: Any) -> dict:
+    """factory exec status — 执行结果清单/详情 (org.execution.viewed 审计)。"""
+    return _exec_call(ctx, args, "cmd_exec_status")
+
+
+def cmd_exec_approval_approve(ctx: FactoryContext, args: Any) -> dict:
+    """factory exec approval approve — 审批通过 (org.execution.approved)。"""
+    return _exec_call(ctx, args, "cmd_exec_approval_approve")
+
+
+def cmd_exec_approval_deny(ctx: FactoryContext, args: Any) -> dict:
+    """factory exec approval deny — 审批拒绝 (comment 反馈; 不发 approved 事件)。"""
+    return _exec_call(ctx, args, "cmd_exec_approval_deny")
+
+
+def cmd_exec_approval_apply(ctx: FactoryContext, args: Any) -> dict:
+    """factory exec approval apply — 应用已批准 patch (未批 → 硬拒绝; org.execution.applied)。"""
+    return _exec_call(ctx, args, "cmd_exec_approval_apply")
+
+
+def cmd_exec_approval_list(ctx: FactoryContext, args: Any) -> dict:
+    """factory exec approval list — 审批记录清单 (org.execution.viewed 审计)。"""
+    return _exec_call(ctx, args, "cmd_exec_approval_list")

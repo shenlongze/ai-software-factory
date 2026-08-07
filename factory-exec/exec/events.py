@@ -163,3 +163,20 @@ def record_execution_applied(
             "patch_path": patch_path,
         },
     )
+
+
+def record_execution_viewed(
+    logger: Any, *, count: int = 0, source: str = "cli",
+) -> Event | None:
+    """执行结果/审批清单被查看 (org.execution.viewed; 读命令审计, ADR-0002)。"""
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.ORG_EXECUTION_VIEWED,
+        source=source,
+        stage="viewed",
+        action="view execution status",
+        result="OK",
+        task_id=None,
+        payload={"count": count},
+    )

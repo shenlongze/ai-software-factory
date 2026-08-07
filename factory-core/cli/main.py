@@ -53,6 +53,12 @@ from .commands import (
     cmd_org_employee_list,
     cmd_org_knowledge_add,
     cmd_org_knowledge_list,
+    cmd_exec_approval_apply,
+    cmd_exec_approval_approve,
+    cmd_exec_approval_deny,
+    cmd_exec_approval_list,
+    cmd_exec_run,
+    cmd_exec_status,
     cmd_project_list,
     cmd_project_show,
     cmd_provider_list,
@@ -853,6 +859,66 @@ def build_parser() -> Any:
     json_opt(p_ok_list)
     p_ok_list.add_argument("--company", required=True, help="公司 ID")
 
+    # factory exec <sub> (Phase A, ADR-0037: factory-exec Extension — 执行闭环)
+    p_exec = sub.add_parser(
+        "exec", help="执行闭环: run/status/approval (factory-exec Extension, 独立数据空间 <root>/exec/, 发 org.execution.* 事件)"
+    )
+    json_opt(p_exec)
+    esub = p_exec.add_subparsers(dest="exec_command", required=True)
+
+    # factory exec run
+    p_exec_run = esub.add_parser(
+        "run", help="执行请求 → Runtime (沙箱 + patch + 产物; 发 org.execution.* 链)"
+    )
+    json_opt(p_exec_run)
+    p_exec_run.add_argument("--project", required=True, help="项目目录 (沙箱副本源, 原项目零接触)")
+    p_exec_run.add_argument("--task", required=True, help="任务 ID (Task 锚点)")
+    p_exec_run.add_argument("--objective", default=None, help="目标描述 (默认派生自 task)")
+    p_exec_run.add_argument("--requirement", default="", help="验收标准/约束")
+    p_exec_run.add_argument("--employee", default=None, help="员工 ID (org store 解析)")
+    p_exec_run.add_argument("--agent", default=None, help="Agent 实例 ID (默认 developer-1)")
+    p_exec_run.add_argument("--provider", default=None, help="Provider id (默认 anthropic)")
+    p_exec_run.add_argument("--test-cmd", default=None, help="沙箱内测试命令 (验证)")
+
+    # factory exec status
+    p_exec_status = esub.add_parser(
+        "status", help="执行结果清单/详情 (发 org.execution.viewed 审计)"
+    )
+    json_opt(p_exec_status)
+    p_exec_status.add_argument("--id", default=None, help="结果 ID (缺省列出全部)")
+
+    # factory exec approval <sub>
+    p_exec_ap = esub.add_parser(
+        "approval", help="审批门禁: approve/deny/apply/list (应用 patch 前必批)"
+    )
+    json_opt(p_exec_ap)
+    asub = p_exec_ap.add_subparsers(dest="approval_command", required=True)
+    p_exec_approve = asub.add_parser(
+        "approve", help="审批通过 (发 org.execution.approved)"
+    )
+    json_opt(p_exec_approve)
+    p_exec_approve.add_argument("--id", required=True, help="审批记录 ID")
+    p_exec_approve.add_argument("--by", required=True, help="审批人 (Human 身份)")
+    p_exec_approve.add_argument("--comment", default="")
+    p_exec_deny = asub.add_parser(
+        "deny", help="审批拒绝 (comment 反馈; 不发 approved 事件)"
+    )
+    json_opt(p_exec_deny)
+    p_exec_deny.add_argument("--id", required=True)
+    p_exec_deny.add_argument("--by", required=True)
+    p_exec_deny.add_argument("--comment", default="")
+    p_exec_apply = asub.add_parser(
+        "apply", help="应用已批准 patch (未批 → 硬拒绝; 发 org.execution.applied)"
+    )
+    json_opt(p_exec_apply)
+    p_exec_apply.add_argument("--id", required=True)
+    p_exec_apply.add_argument("--project", default=None, help="目标项目 (缺省取请求 project_dir)")
+    p_exec_list = asub.add_parser(
+        "list", help="审批记录清单 (发 org.execution.viewed 审计)"
+    )
+    json_opt(p_exec_list)
+    p_exec_list.add_argument("--status", default=None, help="过滤: pending|approved|rejected")
+
     # factory demo (Phase 13A: Demo Productization — 一键跑通完整生命周期)
     p_demo = sub.add_parser(
         "demo", help="产品化演示: 一键跑通完整生命周期 (Mock Provider 只生成内容, 生命周期/审批/决策真实, 临时工厂根)"
@@ -934,6 +1000,8 @@ def main(argv: list[str] | None = None) -> int:
             result = _dispatch_console(ctx, args)
         elif args.command == "org":
             result = _dispatch_org(ctx, args)
+        elif args.command == "exec":
+            result = _dispatch_exec(ctx, args)
         elif args.command == "demo":
             result = _dispatch_demo(ctx, args)
         else:  # pragma: no cover — argparse required=True 已拦截
@@ -1217,6 +1285,27 @@ def _dispatch_org(ctx: FactoryContext, args: Any) -> dict:
     raise CliError(f"unknown org command: {args.org_command}", exit_code=2)
 
 
+def _dispatch_exec(ctx: FactoryContext, args: Any) -> dict:
+    """exec run/status/approval 分发 (Phase A, ADR-0037: factory-exec Extension —
+    缺包 rc 7, 其余命令零影响; 执行失败 rc 1 = 结果对象携带 status=failed, 命令
+    本身成功)。"""
+    if args.exec_command == "run":
+        return cmd_exec_run(ctx, args)
+    if args.exec_command == "status":
+        return cmd_exec_status(ctx, args)
+    if args.exec_command == "approval":
+        if args.approval_command == "approve":
+            return cmd_exec_approval_approve(ctx, args)
+        if args.approval_command == "deny":
+            return cmd_exec_approval_deny(ctx, args)
+        if args.approval_command == "apply":
+            return cmd_exec_approval_apply(ctx, args)
+        if args.approval_command == "list":
+            return cmd_exec_approval_list(ctx, args)
+        raise CliError(f"unknown exec approval command: {args.approval_command}", exit_code=2)
+    raise CliError(f"unknown exec command: {args.exec_command}", exit_code=2)
+
+
 # ------------------------------------------------------------------ 输出
 
 def _print_output(args: Any, result: dict) -> None:
@@ -1271,6 +1360,8 @@ def _print_output(args: Any, result: dict) -> None:
         _print_console(args, result)
     elif args.command == "org":
         _print_org(args, result)
+    elif args.command == "exec":
+        _print_exec(args, result)
     elif args.command == "demo":
         _print_demo(args, result)
 
@@ -2371,6 +2462,62 @@ def _print_org(args: Any, r: dict) -> None:
             print(f"知识清单 ({r['count']} 条) — 公司 {r['company_id']}")
             for item in r["knowledge"]:
                 print(f"  {item['id']}  [{item['domain']}] v{item['version']}  {item['content']}")
+
+
+# ------------------------------------------------------------------ Phase A: Execution 输出 (ADR-0037, factory-exec Extension)
+
+
+def _print_exec(args: Any, r: dict) -> None:
+    """factory exec 输出 (非 JSON): run/status/approval 结果。
+
+    --json 已在 _print_output 前置处理 (全局 JSON); 文本渲染与 factory-exec
+    独立 CLI (exec/cli.py _print_result) 逐字一致 — 双 CLI 同构, 单一实现。
+    错误结果 (cmd_* 返回 ok=False 错误 dict) → stderr, 不渲染正文。
+    """
+    if not r.get("ok"):
+        print(f"error: {r.get('error')}", file=sys.stderr)
+        return
+    if args.exec_command == "run":
+        print("✔ 执行完成" if r["status"] == "success" else "✘ 执行失败")
+        print(f"  request_id  {r['request_id']}")
+        print(f"  result_id   {r['result_id']}")
+        print(f"  status      {r['status']}")
+        if r.get("error"):
+            print(f"  error       {r['error']}")
+        for a in r.get("artifacts", []):
+            print(f"  artifact    {a['type']:<12} {a['path']}")
+        if r.get("usage"):
+            print(f"  usage       {r['usage']}")
+        if r.get("event_seq") is not None:
+            print(f"  event_seq   {r['event_seq']}")
+    elif args.exec_command == "status":
+        print(f"执行结果 {r['count']} 条 (审批 {r.get('approval_count', 0)} 条)")
+        for res in r.get("results", []):
+            print(f"  {res['id']}  {res['status']:<8} {res['request_id']}")
+        if r.get("event_seq") is not None:
+            print(f"  event_seq   {r['event_seq']}")
+    elif args.exec_command == "approval":
+        sub = args.approval_command
+        if sub in ("approve", "deny"):
+            ap = r["approval"]
+            print(f"审批 {ap['decision']}: {ap['id']}")
+            print(f"  request_id  {ap['request_id']}")
+            print(f"  decided_by  {ap['decided_by']}")
+            if ap.get("comment"):
+                print(f"  comment     {ap['comment']}")
+            if r.get("event_seq") is not None:
+                print(f"  event_seq   {r['event_seq']}")
+        elif sub == "apply":
+            ap = r["approval"]
+            print(f"✔ patch 已应用: {ap['id']} (diff {r['patch_lines']} 行)")
+            if r.get("event_seq") is not None:
+                print(f"  event_seq   {r['event_seq']}")
+        elif sub == "list":
+            print(f"审批记录 {r['count']} 条")
+            for ap in r.get("approvals", []):
+                print(f"  {ap['id']}  {ap['decision']:<10} {ap['request_id']}  by {ap['decided_by']}")
+            if r.get("event_seq") is not None:
+                print(f"  event_seq   {r['event_seq']}")
 
 
 # ------------------------------------------------------------------ Phase 13A: Demo 输出 (Demo Productization)

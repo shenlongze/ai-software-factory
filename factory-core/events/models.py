@@ -447,6 +447,7 @@ class EventType(str, Enum):
     ORG_EXECUTION_FAILED = "org.execution.failed"            # 执行失败 (Provider/沙箱错误)
     ORG_EXECUTION_APPROVED = "org.execution.approved"        # Human 审批通过
     ORG_EXECUTION_APPLIED = "org.execution.applied"          # patch 已应用 (批准后)
+    ORG_EXECUTION_VIEWED = "org.execution.viewed"            # 执行结果/审批清单被查看 (只读审计, ADR-0002)
 
 
 class Event(BaseModel):

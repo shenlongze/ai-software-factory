@@ -30,6 +30,7 @@ KISS 边界: 零 LLM、零数据库、零 Core 依赖; context.py 经 ranking_as
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
@@ -895,4 +896,553 @@ class BudgetController:
             degraded_steps=degraded,
             context_overflow=total_cost() > budget,
             task_type=self.task_type,
+        )
+
+
+# ================================================================ Candidate Generator
+
+class CandidateBatch:
+    """生成器产物: 候选池 + 选择元数据 (FeatureContext 装配 + 组装渲染输入)。
+
+    - candidates: 全部候选 (code/test/history/experience/architecture)
+    - core_files / related_files: 文件选择结果 (距离 0 / 1 跳语义同 context.select_files)
+    - test_mapping: 核心/相关文件 → 测试文件映射 (select_tests 复用)
+    - symbol_hits: select_symbols 命中 [(file, SymbolEntry, score)]
+    - history_entries / experience_ctx / arch_ctx: 聚合候选的预渲染内容
+    """
+
+    def __init__(
+        self,
+        *,
+        candidates: list[ContextCandidate],
+        core_files: list[str],
+        related_files: list[str],
+        test_mapping: dict[str, list[str]],
+        symbol_hits: list[tuple[str, Any, float]],
+        history_entries: list[str],
+        experience_ctx: Any,
+        arch_ctx: Any,
+    ) -> None:
+        self.candidates = candidates
+        self.core_files = core_files
+        self.related_files = related_files
+        self.test_mapping = test_mapping
+        self.symbol_hits = symbol_hits
+        self.history_entries = history_entries
+        self.experience_ctx = experience_ctx
+        self.arch_ctx = arch_ctx
+
+    @property
+    def aggregates(self) -> list[ContextCandidate]:
+        """聚合候选 (history/experience/architecture — 不占 Top-K 名额)。"""
+        return [c for c in self.candidates if c.type in ("history", "experience", "architecture")]
+
+
+def _file_chars(root: Path, rel: str) -> int:
+    """文件字符数 (token_cost 估算; 缺失/读失败 → 0 — 失败安全)。"""
+    try:
+        path = root / rel
+        if not path.is_file():
+            return 0
+        return len(path.read_text(encoding="utf-8", errors="replace"))
+    except OSError:  # noqa: BLE001 — 失败安全
+        return 0
+
+
+def _arch_context(ri: Any) -> Any:
+    """ArchitectureContext 预渲染 (镜像 ContextAssembler._architecture — 独立小段避免跨包私有耦合)。"""
+    from .context import ArchitectureContext
+
+    if ri is None or ri.architecture is None:
+        return ArchitectureContext()
+    arch = ri.architecture
+    ctx = ArchitectureContext(
+        entry_points=list(arch.entry_points or []),
+        modules=[m.path for m in (ri.modules or [])][:12],
+        tech_stack=list(arch.tech_stack or []),
+    )
+    try:
+        ctx.summary = ri.format_context(
+            max_files=80, include_modules=True,
+            include_architecture=True, include_tests=False,
+        )[: 8000]
+    except Exception:  # noqa: BLE001 — 摘要失败安全
+        ctx.summary = ""
+    return ctx
+
+
+class CandidateGenerator:
+    """任务结构化 → ContextCandidate 候选池 (设计 §3 步骤②; 复用 context.py 选择器, 零复制)。
+
+    复用面 (全部延迟 import context.py — 单向无环):
+    - select_symbols: 任务关键词 → 符号命中;
+    - select_files: 核心/相关文件选择 (source_files ∪ 符号命中 / 影响面 ∪ 同模块);
+    - select_tests: 测试映射;
+    - git_history / experience_advice: 历史与经验聚合。
+
+    全部确定性启发式; ri=None (情报不可用) → 只产 source_files 代码候选 + 空聚合。
+    """
+
+    def __init__(
+        self,
+        root: str | Path,
+        *,
+        ri: Any = None,
+        project_dir: str | Path | None = None,
+        analyzer: Any = None,
+        git_bin: str = "git",
+    ) -> None:
+        self._root = Path(root)
+        self._ri = ri
+        self._project_dir = Path(project_dir) if project_dir else self._root
+        self._analyzer = analyzer
+        self._git_bin = git_bin
+
+    # ------------------------------------------------------------------ 生成
+
+    def generate(
+        self, profile: TaskProfile, source_files: list[str]
+    ) -> CandidateBatch:
+        """TaskProfile + 显式源文件 → 候选池 + 选择元数据。"""
+        from .context import (
+            experience_advice,
+            git_history,
+            select_files,
+            select_symbols,
+            select_tests,
+        )
+        from .repo_intelligence import TestMapper
+
+        ri = self._ri
+        keywords = profile.keywords
+        symbol_hits = select_symbols(ri, keywords) if ri is not None else []
+        if ri is not None:
+            core_files, related_files = select_files(
+                ri, source_files=source_files, symbol_hits=symbol_hits,
+                keywords=keywords,
+            )
+        else:
+            core_files = list(source_files[:6])
+            related_files = []
+        test_mapping = select_tests(ri, core_files) if ri is not None else {}
+        history_entries = git_history(
+            self._project_dir, core_files[:6], git_bin=self._git_bin
+        )
+        exp_ctx = experience_advice(
+            self._analyzer, task_type="development", keywords=keywords
+        )
+        arch_ctx = _arch_context(ri)
+
+        candidates: list[ContextCandidate] = []
+        # code 候选 (核心 + 相关; 内容延迟加载 — 只估 token_cost 不预载)。
+        # 相关文件里跳过测试文件 (is_test_file) — 测试由 test 候选覆盖,
+        # 避免同一文件同时出现 code/test 双候选 (KISS)。
+        for rel in core_files:
+            candidates.append(
+                ContextCandidate(
+                    id=f"code:{rel}", type="code", source=rel, content_ref=rel,
+                    token_cost=max(1, _file_chars(self._root, rel) // _CHARS_PER_TOKEN),
+                )
+            )
+        for rel in related_files:
+            if TestMapper.is_test_file(rel):
+                continue
+            candidates.append(
+                ContextCandidate(
+                    id=f"code:{rel}", type="code", source=rel, content_ref=rel,
+                    token_cost=max(1, _file_chars(self._root, rel) // _CHARS_PER_TOKEN),
+                )
+            )
+        # test 候选
+        for _src, tests in test_mapping.items():
+            for t in tests:
+                if any(c.id == f"test:{t}" for c in candidates):
+                    continue
+                candidates.append(
+                    ContextCandidate(
+                        id=f"test:{t}", type="test", source=t, content_ref=t,
+                        token_cost=max(1, _file_chars(self._root, t) // _CHARS_PER_TOKEN),
+                    )
+                )
+        # 聚合候选 (summary 级; 内容 = 引用摘要)
+        candidates.append(
+            ContextCandidate(
+                id="history:summary", type="history",
+                content_ref=f"{len(history_entries)} git entries",
+                token_cost=max(1, sum(len(e) for e in history_entries) // _CHARS_PER_TOKEN),
+            )
+        )
+        candidates.append(
+            ContextCandidate(
+                id=f"exp:{profile.task_type}", type="experience",
+                content_ref=f"experience for {profile.task_type}",
+                token_cost=max(1, len(exp_ctx.advice) * 30 // _CHARS_PER_TOKEN),
+            )
+        )
+        candidates.append(
+            ContextCandidate(
+                id="arch:summary", type="architecture",
+                content_ref="architecture summary",
+                token_cost=max(1, len(arch_ctx.summary) // _CHARS_PER_TOKEN),
+            )
+        )
+        return CandidateBatch(
+            candidates=candidates,
+            core_files=core_files,
+            related_files=related_files,
+            test_mapping=test_mapping,
+            symbol_hits=symbol_hits,
+            history_entries=history_entries,
+            experience_ctx=exp_ctx,
+            arch_ctx=arch_ctx,
+        )
+
+
+# ================================================================ Ranking Pipeline
+
+class RankingPipelineResult:
+    """Pipeline 全链产物 (审计 + 组装输出)。"""
+
+    def __init__(
+        self,
+        *,
+        profile: TaskProfile,
+        batch: CandidateBatch,
+        feature_context: FeatureContext,
+        ranked: list[ContextCandidate],
+        selection: Any,
+        budget: Any,
+        assembled: Any,
+        symbol_miss: list[str],
+    ) -> None:
+        self.profile = profile
+        self.batch = batch
+        self.feature_context = feature_context
+        self.ranked = ranked
+        self.selection = selection
+        self.budget = budget
+        self.assembled = assembled
+        self.symbol_miss = symbol_miss
+
+    def to_dict(self) -> dict[str, Any]:
+        """审计摘要 (候选数/评分/预算/降级链/符号缺失)。"""
+        return {
+            "task_type": self.profile.task_type,
+            "candidates": len(self.batch.candidates),
+            "ranked_ids": [c.id for c in self.ranked[:10]],
+            "selected_ids": self.budget.selected_ids,
+            "levels": dict(self.budget.levels),
+            "total_chars": self.budget.total_chars,
+            "budget_chars": self.budget.budget_chars,
+            "degraded_steps": list(self.budget.degraded_steps),
+            "context_overflow": self.budget.context_overflow,
+            "symbol_miss": list(self.symbol_miss),
+        }
+
+
+class RankingPipeline:
+    """Ranking Pipeline 全链 (设计 §3 六步; 零 LLM, 失败安全)。
+
+    Task → ① analyze_task → ② CandidateGenerator → ③ Feature Extractor →
+    ④ RankingEngine → ⑤ TopKSelector → ⑥ BudgetController → 组装 AssembledContext。
+
+    构造: root (沙箱根) + project_dir (git 历史源) + ri (可注入, None → 惰性分析) +
+    analyzer (经验) + git_bin + weights (评分权重) + core_limit/related_limit
+    (Top-K 名额) + task_type/budget/hard_cap (预算控制; None → 规则检测/任务类型档)。
+    """
+
+    def __init__(
+        self,
+        root: str | Path,
+        *,
+        project_dir: str | Path | None = None,
+        ri: Any = None,
+        analyzer: Any = None,
+        git_bin: str = "git",
+        weights: dict[str, float] | None = None,
+        core_limit: int = 3,
+        related_limit: int = 5,
+        task_type: str | None = None,
+        budget: int | None = None,
+        hard_cap: int = HARD_CAP_CHARS,
+    ) -> None:
+        self._root = Path(root)
+        self._project_dir = Path(project_dir) if project_dir else self._root
+        self._ri = ri
+        self._analyzer = analyzer
+        self._git_bin = git_bin
+        self._weights = dict(weights) if weights else None
+        self._core_limit = max(0, core_limit)
+        self._related_limit = max(0, related_limit)
+        self._task_type = task_type
+        self._budget = budget
+        self._hard_cap = hard_cap
+
+    # ------------------------------------------------------------------ 内部
+
+    def _intelligence(self) -> Any:
+        """RepositoryIntelligence 实例 (惰性 analyze; 失败 → None — 情报不可用降级)。"""
+        if self._ri is None:
+            try:
+                from .repo_intelligence import RepositoryIntelligence
+
+                self._ri = RepositoryIntelligence(self._root).analyze()
+            except Exception:  # noqa: BLE001 — 失败安全: 情报不可用不致命
+                self._ri = None
+        return self._ri
+
+    def _detect_symbol_miss(self, profile: TaskProfile) -> list[str]:
+        """任务符号候选 → 仓库未定义的符号 (symbol miss → line_range 提示源)。
+
+        规则: 符号候选 (camelCase/snake 整词) 在全部文件定义符号集中无小写命中
+        → miss。确定性启发式 (零 LLM)。
+        """
+        ri = self._intelligence()
+        if ri is None or not profile.symbol_candidates:
+            return []
+        defined_anywhere: set[str] = set()
+        for f in ri.index.files:
+            for s in f.symbols:
+                defined_anywhere.add(s.name.lower())
+        return [
+            s for s in profile.symbol_candidates if s.lower() not in defined_anywhere
+        ]
+
+    def _symbol_miss_files(
+        self, profile: TaskProfile, batch: CandidateBatch, symbol_miss: list[str]
+    ) -> set[str]:
+        """与缺失符号同名的候选文件 (symbol miss 失败史提权 — experience_match +0.2)。
+
+        启发式: 候选文件路径 basename 含缺失符号名 → 该文件是任务指向目标但
+        symbol 锚点会失败的候选 — 提权 (确定性, 无逐文件经验库时诚实近似)。
+        """
+        if not symbol_miss:
+            return set()
+        out: set[str] = set()
+        for rel in list(batch.core_files) + list(batch.related_files):
+            name = Path(rel).name.lower()
+            if any(m.lower() in name for m in symbol_miss):
+                out.add(rel)
+        return out
+
+    def _build_feature_context(
+        self,
+        profile: TaskProfile,
+        batch: CandidateBatch,
+        symbol_miss_files: set[str],
+    ) -> FeatureContext:
+        """候选池 → 6 因素特征上下文 (全部从 ri 提取, 确定性)。"""
+        ri = self._intelligence()
+        core = set(batch.core_files)
+        depends: set[str] = set()
+        indirect: set[str] = set()
+        if ri is not None:
+            for c in core:
+                for d in ri.impact_of(c):
+                    depends.add(d)
+            depends -= core
+            for d in depends:
+                for f in ri.impact_of(d):
+                    indirect.add(f)
+            indirect -= core
+            indirect -= depends
+        target_tests: set[str] = set()
+        related_tests: set[str] = set()
+        for src, tests in batch.test_mapping.items():
+            if src in core:
+                target_tests.update(tests)
+            else:
+                related_tests.update(tests)
+        defined: dict[str, set[str]] = {}
+        called: dict[str, set[str]] = {}
+        caller: dict[str, set[str]] = {}
+        if ri is not None:
+            for f in ri.index.files:
+                defined[f.path] = {s.name.lower() for s in f.symbols}
+            for rel in core | set(batch.related_files):
+                called[rel] = {e.callee_symbol.lower() for e in ri.call_graph.callees_of(rel)}
+                caller[rel] = {e.caller_symbol.lower() for e in ri.call_graph.callers_of(rel)}
+        history_rates: dict[str, float] = {}
+        if batch.experience_ctx.success_rate is not None:
+            history_rates["__experience__"] = batch.experience_ctx.success_rate
+        return FeatureContext(
+            keywords=profile.keywords,
+            symbol_candidates=profile.symbol_candidates,
+            core_files=core,
+            depends_on_core=depends,
+            indirect=indirect,
+            target_tests=target_tests,
+            related_tests=related_tests,
+            history_rates=history_rates,
+            symbol_miss_files=symbol_miss_files,
+            defined_symbols=defined,
+            called_symbols=called,
+            caller_symbols=caller,
+        )
+
+    def _assemble(
+        self,
+        task: Any,
+        profile: TaskProfile,
+        batch: CandidateBatch,
+        budget: Any,
+        symbol_miss: list[str],
+    ) -> Any:
+        """预算后候选 → AssembledContext (6 节; 级别 → 渲染形态, 与旧路径同语义)。"""
+        from .context import (
+            CORE_LINE_CAP,
+            AssembledContext,
+            CodeContext,
+            FileSlice,
+            HistoryContext,
+            RequirementContext,
+            TestContext,
+            _file_symbol_index,
+            _read_file_text,
+            _render_lines,
+            _symbol_blocks,
+            quality_score,
+        )
+
+        ri = self._intelligence()
+        cand_by_id = {c.id: c for c in batch.candidates}
+        code_core: list[FileSlice] = []
+        code_related: list[FileSlice] = []
+        test_slices: list[FileSlice] = []
+        for cid in budget.selected_ids:
+            cand = cand_by_id.get(cid)
+            if cand is None or cand.type not in ("code", "test"):
+                continue  # 聚合候选由 batch 预渲染内容组装
+            lvl = budget.levels.get(cid)
+            if cand.type == "test":
+                idx = _file_symbol_index(ri, cand.source) if ri is not None else ""
+                test_slices.append(
+                    FileSlice(rel_path=cand.source, kind="test", content=idx, symbol_index=idx)
+                )
+            elif lvl == LEVEL_FULL:
+                lines = _read_file_text(self._root, cand.source)
+                line_count = len(lines)
+                if line_count <= CORE_LINE_CAP:
+                    content = _render_lines("\n".join(lines)) if lines else ""
+                    code_core.append(
+                        FileSlice(rel_path=cand.source, kind="core",
+                                  content=content, line_count=line_count)
+                    )
+                else:
+                    # 超长文件: symbol 索引 + 命中关键词函数块 (同旧路径语义)
+                    f = ri.index.find(cand.source) if ri is not None else None
+                    symbols = f.symbols if f is not None else []
+                    blocks = _symbol_blocks(lines, symbols, profile.keywords)
+                    idx = _file_symbol_index(ri, cand.source) if ri is not None else ""
+                    parts = [
+                        f"// (文件 {cand.source} 共 {line_count} 行, 超过 {CORE_LINE_CAP} 行上限 —",
+                        "//  以下为 symbol 索引 + 命中任务关键词的函数块; 完整文件不内联)",
+                    ]
+                    if idx:
+                        parts.append(idx)
+                    for sym, start, end in blocks[:6]:
+                        block_text = "\n".join(lines[start : end + 1])
+                        parts.append(f"// 关键段: {sym.kind.value} {sym.name} (行 {start + 1}-{end + 1}):")
+                        parts.append(_render_lines(block_text))
+                    content = "\n".join(parts)
+                    code_core.append(
+                        FileSlice(rel_path=cand.source, kind="core", content=content,
+                                  line_count=line_count, truncated=True, symbol_index=idx)
+                    )
+            else:  # symbol 级 (相关文件/降级核心)
+                idx = _file_symbol_index(ri, cand.source) if ri is not None else ""
+                code_related.append(
+                    FileSlice(rel_path=cand.source, kind="related",
+                              content=idx, symbol_index=idx)
+                )
+
+        exp_ctx = batch.experience_ctx
+        # symbol miss → line_range 定位提示 (设计 §7 失败兜底; 进经验建议节)
+        if symbol_miss:
+            names = ", ".join(symbol_miss[:3])
+            exp_ctx.advice.append(
+                f"任务引用符号 ({names}) 未在仓库中定义 — 定位请用 line_range "
+                "(见源文件 `N|` 行号), 勿用 symbol 锚点"
+            )
+        if budget.context_overflow:
+            exp_ctx.advice.append(
+                "上下文超出预算已降级 (符号索引/摘要级) — 精确定位用 line_range, 保持最小改动"
+            )
+
+        score = quality_score(
+            core_files=code_core, related_files=code_related,
+            mapping=batch.test_mapping, keywords=profile.keywords,
+            experience=exp_ctx,
+        )
+        if budget.context_overflow:
+            score = round(score * 0.5, 3)  # 降级 → 质量分减半 (执行前警示)
+        return AssembledContext(
+            requirement=RequirementContext(
+                objective=profile.objective, requirement=profile.requirement,
+                task_id=profile.task_id,
+            ),
+            architecture=batch.arch_ctx,
+            code=CodeContext(
+                core_files=code_core, related_files=code_related,
+                keywords=profile.keywords,
+            ),
+            history=HistoryContext(entries=batch.history_entries),
+            test=TestContext(test_files=test_slices, mapping=batch.test_mapping),
+            experience=exp_ctx,
+            context_score=score,
+            total_chars=budget.total_chars,
+            token_estimate=budget.total_chars // 4,
+        )
+
+    # ------------------------------------------------------------------ 入口
+
+    def run(
+        self,
+        task: Any,
+        *,
+        source_files: list[str] | None = None,
+        task_type: str | None = None,
+    ) -> RankingPipelineResult:
+        """Task → 全链 → RankingPipelineResult (含组装好的 AssembledContext)。
+
+        失败安全: 任一环节异常 → 抛出 (由调用方 context.ranking_assemble 回退旧路径;
+        本方法不吞异常 — 回退决策在装配点, 保持全链可审计)。
+        """
+        profile = analyze_task(task, task_type=task_type or self._task_type)
+        src = list(source_files) if source_files is not None else (
+            list(getattr(task, "source_files", None) or [])
+        )
+        ri = self._intelligence()  # 先惰性初始化 — 生成器/特征提取共用同一实例
+        generator = CandidateGenerator(
+            self._root, ri=ri, project_dir=self._project_dir,
+            analyzer=self._analyzer, git_bin=self._git_bin,
+        )
+        batch = generator.generate(profile, src)
+        symbol_miss = self._detect_symbol_miss(profile)
+        miss_files = self._symbol_miss_files(profile, batch, symbol_miss)
+        fctx = self._build_feature_context(profile, batch, miss_files)
+        features_map = {
+            c.id: extract_candidate_features(c, profile, fctx) for c in batch.candidates
+        }
+        ranked = RankingEngine(self._weights).rank(batch.candidates, features_map)
+        # 核心 = 距离 0/1 文件 (核心目标 ∪ 直接依赖 — TopKSelector 契约;
+        # 候选 id 形式 code:<rel>, 距离 1 里的测试文件已由 test 候选覆盖)
+        core_ids = {f"code:{p}" for p in batch.core_files}
+        core_ids |= {f"code:{p}" for p in fctx.depends_on_core}
+        selection = TopKSelector(self._core_limit, self._related_limit).select_top_k(
+            ranked, core_ids=core_ids
+        )
+        budget = BudgetController(
+            profile.task_type, budget=self._budget, hard_cap=self._hard_cap
+        ).apply_budget(selection, aggregates=batch.aggregates)
+        assembled = self._assemble(task, profile, batch, budget, symbol_miss)
+        return RankingPipelineResult(
+            profile=profile,
+            batch=batch,
+            feature_context=fctx,
+            ranked=ranked,
+            selection=selection,
+            budget=budget,
+            assembled=assembled,
+            symbol_miss=symbol_miss,
         )

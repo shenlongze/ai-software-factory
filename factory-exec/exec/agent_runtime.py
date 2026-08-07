@@ -120,6 +120,8 @@ class AgentRuntime:
     - artifacts_dir: 产物落盘根目录 (缺省 store.dir; patches/ 子目录放 patch)。
     - work_root: 沙箱副本父目录 (None = 系统临时目录)。
     - experience: ExperienceRecorder (None = 不记录经验 — 装配点注入)。
+    - ranking_enabled: T4.1 Ranking Pipeline 新路径开关 (默认 False — 旧
+      ContextAssembler.assemble 路径; True → ranking_assemble, 失败安全回退旧路径)。
     """
 
     def __init__(
@@ -134,6 +136,7 @@ class AgentRuntime:
         experience: ExperienceRecorder | None = None,
         git_bin: str = "git",
         conventions: str | None = None,
+        ranking_enabled: bool = False,
     ) -> None:
         self._store = store
         self._logger = logger
@@ -145,6 +148,7 @@ class AgentRuntime:
         self._work_root = work_root
         self._experience = experience
         self._git_bin = git_bin
+        self._ranking_enabled = ranking_enabled
         self._developer = DeveloperAgent(
             provider, conventions=conventions or _default_conventions()
         )
@@ -263,6 +267,8 @@ class AgentRuntime:
         # Phase A++++++-2b: Context Assembly Engine — 6 节结构化上下文
         # (Task/Architecture/Code/Tests/History/Experience + 质量分)。失败安全:
         # 组装异常 → None → developer 走旧路径 (Stage 1 兼容, 执行链不破坏)。
+        # T4.1: ranking_enabled=True → Ranking Pipeline 新路径 (ranking_assemble
+        # 内部失败安全回退旧 assemble); 默认 False → 旧路径逐位不动。
         assembled_context = None
         context_score: float | None = None
         try:
@@ -271,12 +277,16 @@ class AgentRuntime:
             analyzer = None
             if self._experience is not None:
                 analyzer = getattr(self._experience, "analyzer", None)
-            assembled_context = ContextAssembler(
+            assembler = ContextAssembler(
                 Path(session.workspace_copy_path),
                 project_dir=project_path,
                 analyzer=analyzer,
                 git_bin=self._git_bin,
-            ).assemble(request)
+            )
+            if self._ranking_enabled:
+                assembled_context = assembler.ranking_assemble(request)
+            else:
+                assembled_context = assembler.assemble(request)
             context_score = assembled_context.context_score
         except Exception:  # noqa: BLE001 — 上下文组装失败安全
             assembled_context = None

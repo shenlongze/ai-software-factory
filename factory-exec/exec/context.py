@@ -923,3 +923,26 @@ class ContextAssembler:
             token_estimate=total_chars // 4,
         )
         return ctx
+
+    def ranking_assemble(self, task: Any) -> AssembledContext:
+        """T4.1 Ranking Pipeline 新路径 (Task→候选→特征→评分→TopK→预算→组装)。
+
+        与 assemble() 完全独立并存 (旧路径逐位不动 — Sprint 3 测试全绿是硬约束):
+        内部 RankingPipeline 延迟 import (单向无环); 新路径任一环节异常 →
+        回退旧 assemble() (执行链不破坏, 失败安全)。开关在装配点
+        (agent_runtime ranking_enabled, 默认 False — 注入式门控, 新行为
+        默认关在单元层、只开在装配点)。
+        """
+        try:
+            from .ranking import RankingPipeline
+
+            pipeline = RankingPipeline(
+                self._root,
+                project_dir=self._project_dir,
+                ri=self._ri,
+                analyzer=self._analyzer,
+                git_bin=self._git_bin,
+            )
+            return pipeline.run(task).assembled
+        except Exception:  # noqa: BLE001 — 新路径失败安全: 回退旧路径
+            return self.assemble(task)

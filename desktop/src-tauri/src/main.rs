@@ -168,7 +168,8 @@ pub fn resolve_runtime_cmd() -> String {
 }
 
 /// 数据根: env DESKTOP_DATA_ROOT 覆盖, 否则平台规范应用数据目录
-/// (macOS: ~/Library/Application Support/ai-software-factory)。
+/// (macOS: ~/Library/Application Support/com.aiorganizationfactory.desktop,
+/// 由 tauri.conf.json identifier 决定)。
 pub fn resolve_data_root(app: &tauri::App) -> PathBuf {
     if let Ok(p) = std::env::var("DESKTOP_DATA_ROOT") {
         if !p.trim().is_empty() {

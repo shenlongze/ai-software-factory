@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "AI Organization Factory",
   "version": "0.1.0",
-  "identifier": "ai-organization-factory",
+  "identifier": "com.aiorganizationfactory.desktop",
   "build": {
     "frontendDist": "../src/ui"
   },
@@ -13,8 +13,8 @@
     }
   },
   "bundle": {
-    "active": false,
-    "targets": "all",
+    "active": true,
+    "targets": ["dmg"],
     "resources": ["../../dist/factory-runtime-bundle/"]
   }
 }

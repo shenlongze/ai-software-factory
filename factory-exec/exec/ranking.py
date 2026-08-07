@@ -663,3 +663,82 @@ class RankingEngine:
             )
         scored.sort(key=lambda c: (-c.relevance_score, c.id))
         return scored
+
+
+# ================================================================ TopKSelector
+
+class TopKSelection:
+    """Top-K 选择结果 (设计 §3 步骤⑤): 核心/相关分级 + 初始级别映射。
+
+    - core: 核心候选 (≤core_limit; 初始级别 full — 全量或符号段)
+    - related: 相关候选 (≤related_limit; 初始级别 symbol — 符号索引)
+    - levels: 候选 id → 初始级别 (full|symbol; 预算控制器接手降级链)
+    - selected_ids: 选中候选 id 序列 (core 优先, 各按评分降序)
+    - all: 完整选中候选列表 (core + related, 评分降序)
+
+    聚合候选 (history/experience/architecture) 不在 Top-K 名额内 —
+    由预算控制器保留为 summary/one_line 级 (设计 §3 步骤⑤)。
+    """
+
+    def __init__(
+        self,
+        core: list[ContextCandidate],
+        related: list[ContextCandidate],
+        levels: dict[str, str],
+    ) -> None:
+        self.core = core
+        self.related = related
+        self.levels = levels
+
+    @property
+    def selected_ids(self) -> list[str]:
+        return [c.id for c in self.core] + [c.id for c in self.related]
+
+    @property
+    def all(self) -> list[ContextCandidate]:
+        return self.core + self.related
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "core_ids": [c.id for c in self.core],
+            "related_ids": [c.id for c in self.related],
+            "levels": dict(self.levels),
+        }
+
+
+class TopKSelector:
+    """按预算取 Top-K (设计 §3 步骤⑤; 纯规则, 零 LLM)。
+
+    输入已按评分降序的候选列表; 核心/相关分级:
+    - 核心 = caller 标记的 core_ids (依赖距离 0/1: 核心目标 + 直接依赖);
+    - 相关 = 其余 code/test 候选 (影响面/同模块/测试);
+    - 聚合候选 (history/experience/architecture) 自动排除 — 不占名额。
+
+    截断: 核心 ≤3 (默认) / 相关 ≤5 (默认); 排序随入参 (评分降序稳定)。
+    """
+
+    def __init__(self, core_limit: int = 3, related_limit: int = 5) -> None:
+        self.core_limit = max(0, core_limit)
+        self.related_limit = max(0, related_limit)
+
+    def select_top_k(
+        self,
+        ranked: list[ContextCandidate],
+        *,
+        core_ids: set[str] | frozenset[str] | None = None,
+    ) -> TopKSelection:
+        """评分排序后的候选 → 核心/相关分级截断 (不修改入参)。"""
+        core_ids = set(core_ids or frozenset())
+        core: list[ContextCandidate] = []
+        related: list[ContextCandidate] = []
+        for c in ranked:
+            if c.type not in ("code", "test"):
+                continue  # 聚合候选不占 Top-K 名额
+            if c.id in core_ids and len(core) < self.core_limit:
+                core.append(c)
+            elif len(related) < self.related_limit:
+                related.append(c)
+        levels: dict[str, str] = {c.id: LEVEL_FULL for c in core}
+        for c in related:
+            levels[c.id] = LEVEL_SYMBOL
+        return TopKSelection(core=core, related=related, levels=levels)

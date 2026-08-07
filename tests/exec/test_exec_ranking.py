@@ -49,6 +49,8 @@ from exec.ranking import (
     score_keyword_match,
     score_symbol_relation,
     score_test_relation,
+    TopKSelection,
+    TopKSelector,
 )
 
 # ================================================================ §1 ContextCandidate 模型
@@ -730,3 +732,132 @@ class TestRankingEngine:
         engine = RankingEngine()
         r = engine.score(_FULL_FEATURES)
         assert r["score"] == 1.0
+
+
+# ================================================================ §5 TopKSelector
+
+
+def _ranked_candidate(
+    cid: str, score: float, ctype: str = "code"
+) -> ContextCandidate:
+    """构造已评分候选 (relevance_score 预置, 模拟 rank() 输出)。"""
+    return ContextCandidate(
+        id=cid,
+        type=ctype,
+        source=cid.split(":", 1)[-1],
+        relevance_score=score,
+        confidence=1.0,
+        reason=f"score={score:.3f}",
+    )
+
+
+class TestTopKSelector:
+    """Top-K 选择: 排序/核心相关分级/预算截断 (设计 §3 步骤⑤)。"""
+
+    def test_core_limit_three(self) -> None:
+        """核心候选 >3 时只取评分最高的 ≤3 个; 溢出核心降级为相关 (符号级)。"""
+        ranked = [
+            _ranked_candidate("code:f.py", 0.9),
+            _ranked_candidate("code:e.py", 0.8),
+            _ranked_candidate("code:d.py", 0.7),
+            _ranked_candidate("code:c.py", 0.6),
+            _ranked_candidate("code:b.py", 0.5),
+            _ranked_candidate("code:a.py", 0.4),
+        ]
+        sel = TopKSelector().select_top_k(
+            ranked,
+            core_ids={f"code:{x}.py" for x in "fedcba"},
+        )
+        assert [c.id for c in sel.core] == ["code:f.py", "code:e.py", "code:d.py"]
+        # 核心名额外的核心候选 → 相关名额 (符号索引级, 不丢弃)
+        assert [c.id for c in sel.related] == ["code:c.py", "code:b.py", "code:a.py"]
+
+    def test_related_limit_five(self) -> None:
+        """相关候选 >5 时只取评分最高的 ≤5 个。"""
+        ranked = [_ranked_candidate(f"code:r{i}.py", 0.9 - i * 0.05) for i in range(8)]
+        sel = TopKSelector().select_top_k(ranked, core_ids=set())
+        assert len(sel.related) == 5
+        assert sel.related[0].id == "code:r0.py"
+        assert sel.related[-1].id == "code:r4.py"
+        assert len(sel.core) == 0
+
+    def test_priority_core_then_related(self) -> None:
+        """核心名额优先: 即使核心评分低于相关, 也先占核心名额。"""
+        ranked = [
+            _ranked_candidate("code:rel_high.py", 0.99),  # 相关但评分最高
+            _ranked_candidate("code:core_high.py", 0.95),
+            _ranked_candidate("code:core_low.py", 0.3),   # 核心但评分低
+        ]
+        sel = TopKSelector().select_top_k(
+            ranked, core_ids={"code:core_high.py", "code:core_low.py"}
+        )
+        assert [c.id for c in sel.core] == ["code:core_high.py", "code:core_low.py"]
+        assert [c.id for c in sel.related] == ["code:rel_high.py"]
+
+    def test_order_preserved_desc(self) -> None:
+        """选择结果保持入参顺序 (rank() 已按评分降序+同分 id 升序排好)。"""
+        ranked = [
+            _ranked_candidate("code:a.py", 0.8),
+            _ranked_candidate("code:b.py", 0.8),  # 同分按 id 升序 (rank 已排)
+            _ranked_candidate("test:test_a.py", 0.6),
+        ]
+        sel = TopKSelector().select_top_k(ranked, core_ids={"code:b.py", "code:a.py"})
+        assert sel.selected_ids == ["code:a.py", "code:b.py", "test:test_a.py"]
+
+    def test_aggregate_types_excluded(self) -> None:
+        """聚合候选 (history/experience/architecture) 不占 Top-K 名额。"""
+        ranked = [
+            _ranked_candidate("code:main.py", 0.9),
+            _ranked_candidate("exp:feature", 0.99, "experience"),
+            _ranked_candidate("arch:summary", 0.98, "architecture"),
+            _ranked_candidate("history:app", 0.97, "history"),
+            _ranked_candidate("test:test_main.py", 0.8, "test"),
+        ]
+        sel = TopKSelector().select_top_k(ranked, core_ids={"code:main.py"})
+        assert [c.id for c in sel.core] == ["code:main.py"]
+        assert [c.id for c in sel.related] == ["test:test_main.py"]
+        assert "exp:feature" not in sel.selected_ids
+        assert "arch:summary" not in sel.selected_ids
+        assert "history:app" not in sel.selected_ids
+
+    def test_empty_input(self) -> None:
+        sel = TopKSelector().select_top_k([], core_ids=set())
+        assert sel.core == []
+        assert sel.related == []
+        assert sel.selected_ids == []
+
+    def test_levels_full_for_core_symbol_for_related(self) -> None:
+        ranked = [
+            _ranked_candidate("code:core.py", 0.9),
+            _ranked_candidate("code:rel.py", 0.8),
+            _ranked_candidate("test:test_rel.py", 0.7, "test"),
+        ]
+        sel = TopKSelector().select_top_k(ranked, core_ids={"code:core.py"})
+        assert sel.levels["code:core.py"] == LEVEL_FULL
+        assert sel.levels["code:rel.py"] == LEVEL_SYMBOL
+        assert sel.levels["test:test_rel.py"] == LEVEL_SYMBOL
+
+    def test_custom_limits(self) -> None:
+        ranked = [
+            _ranked_candidate(f"code:c{i}.py", 0.9 - i * 0.1) for i in range(4)
+        ] + [_ranked_candidate(f"code:r{i}.py", 0.5 - i * 0.05) for i in range(6)]
+        sel = TopKSelector(core_limit=2, related_limit=3).select_top_k(
+            ranked,
+            core_ids={f"code:c{i}.py" for i in range(4)},
+        )
+        assert len(sel.core) == 2
+        assert len(sel.related) == 3
+
+    def test_no_mutation_of_input(self) -> None:
+        ranked = [_ranked_candidate("code:a.py", 0.9), _ranked_candidate("code:b.py", 0.8)]
+        before = [(c.id, c.relevance_score) for c in ranked]
+        TopKSelector().select_top_k(ranked, core_ids={"code:a.py"})
+        assert [(c.id, c.relevance_score) for c in ranked] == before
+
+    def test_to_dict_shape(self) -> None:
+        ranked = [_ranked_candidate("code:a.py", 0.9)]
+        sel = TopKSelector().select_top_k(ranked, core_ids={"code:a.py"})
+        d = sel.to_dict()
+        assert d["core_ids"] == ["code:a.py"]
+        assert d["related_ids"] == []
+        assert d["levels"] == {"code:a.py": LEVEL_FULL}

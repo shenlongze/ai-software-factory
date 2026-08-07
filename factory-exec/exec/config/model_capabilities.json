@@ -1,0 +1,27 @@
+{
+  "comment": "Sprint 5 T5.4 内置示例能力配置 (声明式, 非代码; 注册表通用, 示例含 deepseek 系模型, 真实评分仅人工/Benchmark 更新 — 第一阶段禁自动改分; 缺失字段按 0.0 中性处理)",
+  "models": [
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-flash",
+      "coding_score": 0.6,
+      "reasoning_score": 0.8,
+      "stability_score": 0.3,
+      "context_score": 0.7,
+      "tool_use_score": 0.5,
+      "cost_score": 0.9,
+      "latency_score": 0.8
+    },
+    {
+      "provider": "deepseek",
+      "model": "deepseek-v4-pro",
+      "coding_score": 0.7,
+      "reasoning_score": 0.9,
+      "stability_score": 0.5,
+      "context_score": 0.8,
+      "tool_use_score": 0.6,
+      "cost_score": 0.7,
+      "latency_score": 0.6
+    }
+  ]
+}

@@ -491,18 +491,22 @@ class ProgressiveTrace(BaseModel):
     symbol_miss: list[str] = Field(default_factory=list)
     large_file: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+    # T4.3 Budget Enforcement 记录 (BudgetTrace 同口径; 旧字段全兼容):
+    requested_budget: int = 0     # 申请预算 (chars; 各进入阶段预算分配和)
+    actual_usage: int = 0         # 实际消耗 (chars; 同 total_chars, 双口径)
+    degraded_steps: list[str] = Field(default_factory=list)  # 降级链执行记录
 
     @field_validator("entries", mode="before")
     @classmethod
     def _entries_none(cls, v: Any) -> list[Any]:
         return list(v) if v is not None else []
 
-    @field_validator("symbol_miss", "large_file", "warnings", mode="before")
+    @field_validator("symbol_miss", "large_file", "warnings", "degraded_steps", mode="before")
     @classmethod
     def _lists_none(cls, v: Any) -> list[str]:
         return [str(x) for x in v] if v is not None else []
 
-    @field_validator("total_chars", "token_estimate", mode="before")
+    @field_validator("total_chars", "token_estimate", "requested_budget", "actual_usage", mode="before")
     @classmethod
     def _ints_nonneg(cls, v: Any) -> int:
         return max(0, int(v)) if v is not None else 0
@@ -550,6 +554,9 @@ class ProgressiveTrace(BaseModel):
             "symbol_miss": list(self.symbol_miss),
             "large_file": list(self.large_file),
             "warnings": list(self.warnings),
+            "requested_budget": self.requested_budget,
+            "actual_usage": self.actual_usage,
+            "degraded_steps": list(self.degraded_steps),
             "signals": self.to_experience_signals(),
         }
 
@@ -649,6 +656,7 @@ class ProgressiveLoader:
         trace = result.trace
         stage_names = [s.stage for s in self._stages]
         stage_items: dict[str, list[LoadedItem]] = {}
+        allocated: dict[str, int] = {}  # T4.3: 每进入阶段预算分配 (申请记录)
         states: dict[str, StageState] = {}
         global_ext = 0
         enter_reason = "initial"
@@ -670,6 +678,8 @@ class ProgressiveLoader:
 
             # --- 2) 预算 (设计 §4: 阶段档位 + 剩余; 超限 → 截断锚点核心) ---
             sbudget = stage_budget(spec, self._used(stage_items, exclude=spec.stage), self._hard_cap)
+            if spec.stage not in allocated:
+                allocated[spec.stage] = sbudget  # T4.3: 申请预算 (每阶段首次分配)
             items, overflow = apply_stage_budget(load.items, sbudget)
             if overflow and state.retry_count == 0:
                 # token 超限 → 降级 + 重试 1 次 (设计 §6; extractor degrade=True
@@ -678,8 +688,10 @@ class ProgressiveLoader:
                 load = self._extractor(spec, widen=state.widen_count > 0, degrade=True)
                 items, overflow = apply_stage_budget(load.items, sbudget)
                 trace.warnings.append(f"stage {spec.stage}: token 超限降级重试 1 次")
+                trace.degraded_steps.append(f"{spec.stage}:token_degrade_retry")
                 if overflow:
                     trace.context_overflow = True  # 降级后仍超 → 执行前警示 (设计 §4)
+                    trace.degraded_steps.append("context_overflow")
             stage_items[spec.stage] = items
             trace.add_load_meta(load)
 
@@ -804,6 +816,11 @@ class ProgressiveLoader:
         result.token_estimate = result.total_chars // 4
         trace.total_chars = result.total_chars
         trace.token_estimate = result.token_estimate
+        # T4.3 Budget Enforcement 记录: 申请预算 = 各进入阶段预算分配和 (上限 = 总硬顶 —
+        # 末阶段「剩余」按前序实际消耗计算可能使分配和虚高, 截断到总预算保持可审计);
+        # 实际 = 渲染消耗。
+        trace.requested_budget = min(sum(allocated.values()), self._hard_cap)
+        trace.actual_usage = result.total_chars
 
         reasons = {e.reason for e in trace.entries}
         decision_reasons = {e.decision_reason for e in trace.entries}

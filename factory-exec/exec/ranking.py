@@ -35,6 +35,16 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
+from .budget import (  # T4.3: 通用 Context Budget 模型 (声明式; 本模块单向依赖, 无环)
+    BUDGET_POLICIES,
+    BudgetPolicy,
+    BudgetTrace,
+    DEFAULT_DEGRADATION_STEPS,
+    build_budget_trace,
+    get_budget_policy,
+    order_by_priority,
+    stage_budget_for,
+)
 from .progressive import (  # T4.2: 渐进加载引擎 (本模块单向依赖, 无环)
     LoadedItem,
     ProgressiveLoader,
@@ -60,14 +70,12 @@ RANKING_WEIGHTS: dict[str, float] = {
 #: 候选类型 (设计 §2)
 CANDIDATE_TYPES: tuple[str, ...] = ("code", "test", "history", "experience", "architecture")
 
-#: 任务类型 (设计 §5: Bug Fix 20K / Feature 25K / Greenfield 15K chars)
-TASK_TYPES: tuple[str, ...] = ("bug_fix", "feature", "greenfield")
+#: 任务类型 (设计 §5: T4.1 三档 + T4.3 补 refactor → 4 类)
+TASK_TYPES: tuple[str, ...] = ("bug_fix", "feature", "refactor", "greenfield")
 
-#: 任务类型 → 预算 (字符数)
+#: 任务类型 → 预算 (字符数; T4.3 派生自 BUDGET_POLICIES — 声明式单一事实源)
 TASK_TYPE_BUDGETS: dict[str, int] = {
-    "bug_fix": 20_000,
-    "feature": 25_000,
-    "greenfield": 15_000,
+    t: p.total_budget for t, p in BUDGET_POLICIES.items()
 }
 #: 未知/缺省任务类型的预算 (保守取 Feature 档)
 DEFAULT_TASK_BUDGET = 25_000
@@ -191,10 +199,17 @@ _BUG_FIX_MARKERS = (
     "exception", "incorrect", "wrong", "修复", "错误", "崩溃", "故障", "异常", "缺陷",
     "报错", "打不开", "失效", "回归",
 )
-#: greenfield 类型触发词 (中英; 命中任一 → greenfield; bug_fix 优先判定)
+#: greenfield 类型触发词 (中英; 命中任一 → greenfield; bug_fix/refactor 优先判定)
 _GREENFIELD_MARKERS = (
     "create", "new", "scaffold", "generate", "from scratch", "init", "setup",
     "新建", "创建", "从零", "生成", "搭建", "初始化", "脚手架", "首个版本",
+)
+#: refactor 类型触发词 (中英; T4.3 新增; 命中任一 → refactor; bug_fix 优先判定,
+#: refactor 先于 greenfield — 「重构并新建…」语义是重构)
+_REFACTOR_MARKERS = (
+    "refactor", "restructure", "rename", "migrate", "extract", "split",
+    "cleanup", "simplify", "reorganize",
+    "重构", "重命名", "迁移", "拆分", "抽取", "清理", "简化", "拆解", "调整结构",
 )
 #: 验收标准提取标记 (行首/句中触发)
 _ACCEPTANCE_MARKERS = (
@@ -248,16 +263,19 @@ class TaskProfile(BaseModel):
 
 
 def detect_task_type(objective: str, requirement: str = "") -> str:
-    """任务文本 → 类型 (规则检测, 零 LLM; bug_fix > greenfield > feature)。
+    """任务文本 → 类型 (规则检测, 零 LLM; bug_fix > refactor > greenfield > feature)。
 
-    判定顺序 (设计 §5 预算依据):
+    判定顺序 (设计 §5 预算依据; T4.3 补 refactor):
     1. bug_fix: 命中修复/错误/崩溃/异常类触发词 (缺陷修复语义优先 — 预算最小);
-    2. greenfield: 命中新建/创建/从零类触发词 (从零构建 — 预算中档);
-    3. 其余 → feature (默认 — 预算最大)。
+    2. refactor: 命中重构/重命名/迁移/拆分类触发词 (T4.3 新增 — 中档偏大);
+    3. greenfield: 命中新建/创建/从零类触发词 (从零构建 — 预算中档);
+    4. 其余 → feature (默认 — 预算最大)。
     """
     text = f"{objective} {requirement}".lower()
     if any(m in text for m in _BUG_FIX_MARKERS):
         return "bug_fix"
+    if any(m in text for m in _REFACTOR_MARKERS):
+        return "refactor"
     if any(m in text for m in _GREENFIELD_MARKERS):
         return "greenfield"
     return "feature"
@@ -821,12 +839,31 @@ class BudgetController:
         task_type: str = "feature",
         budget: int | None = None,
         hard_cap: int = HARD_CAP_CHARS,
+        degradation_order: list[str] | None = None,
+        policy: BudgetPolicy | None = None,
     ) -> None:
-        self.task_type = task_type if task_type in TASK_TYPE_BUDGETS else "feature"
+        """预算控制器构造 (T4.3: 声明式策略注入 + 降级链调序)。
+
+        - policy: 注入 BudgetPolicy (Agent 通用化 — 自定义任务类型/预算表);
+          None → 从 BUDGET_POLICIES 取任务类型策略;
+        - degradation_order: 显式降级链顺序; None → 策略的 degradation_order
+          (空 → 默认链 T4.1 原序)。显式传入覆盖策略 (局部微调)。
+        """
+        if policy is not None:
+            self._policy = policy
+            self.task_type = policy.task_type
+        else:
+            self.task_type = task_type if task_type in TASK_TYPE_BUDGETS else "feature"
+            self._policy = get_budget_policy(self.task_type)
         self.budget = (
-            budget if budget is not None else TASK_TYPE_BUDGETS[self.task_type]
+            budget if budget is not None
+            else TASK_TYPE_BUDGETS.get(self.task_type, self._policy.total_budget)
         )
         self.hard_cap = max(1, hard_cap)
+        self._degradation_order = (
+            list(degradation_order) if degradation_order is not None
+            else list(self._policy.degradation_order)
+        )
 
     def apply_budget(
         self,
@@ -853,48 +890,84 @@ class BudgetController:
             for cand, lvl, is_rel in items:
                 cost = cand.char_cost(lvl)
                 if related_shrunk and is_rel and lvl == LEVEL_SYMBOL:
-                    cost //= 2  # 降级链步骤 1: 相关符号索引收缩 ×0.5
+                    cost //= 2  # 降级链: 相关符号索引收缩 ×0.5
                 total += cost
             return total
 
-        while total_cost() > budget:
+        # --- 降级步骤表 (T4.3 声明式: 每步独立函数; 顺序由策略/显式参数决定) ---
+        def step_related_shrink() -> bool:
+            nonlocal related_shrunk
             if not related_shrunk and any(it[2] and it[1] == LEVEL_SYMBOL for it in items):
                 related_shrunk = True
                 degraded.append("related_symbol_shrink")
-                continue
-            exp_idx = next(
+                return True
+            return False
+
+        def step_experience_one_line() -> bool:
+            idx = next(
                 (i for i, it in enumerate(items)
                  if it[0].type == "experience" and it[1] == LEVEL_SUMMARY),
                 None,
             )
-            if exp_idx is not None:
-                items[exp_idx][1] = LEVEL_ONE_LINE
-                degraded.append("experience_one_line")
-                continue
-            arch_idx = next(
+            if idx is None:
+                return False
+            items[idx][1] = LEVEL_ONE_LINE
+            degraded.append("experience_one_line")
+            return True
+
+        def step_architecture_one_line() -> bool:
+            idx = next(
                 (i for i, it in enumerate(items)
                  if it[0].type == "architecture" and it[1] == LEVEL_SUMMARY),
                 None,
             )
-            if arch_idx is not None:
-                items[arch_idx][1] = LEVEL_ONE_LINE
-                degraded.append("architecture_one_line")
-                continue
+            if idx is None:
+                return False
+            items[idx][1] = LEVEL_ONE_LINE
+            degraded.append("architecture_one_line")
+            return True
+
+        def step_core_full_to_symbol() -> bool:
             core_full = [i for i, it in enumerate(items) if not it[2] and it[1] == LEVEL_FULL]
-            if core_full:
-                core_full.sort(key=lambda i: (items[i][0].relevance_score, items[i][0].id))
-                idx = core_full[0]
-                items[idx][1] = LEVEL_SYMBOL
-                degraded.append(f"core_full_to_symbol:{items[idx][0].id}")
-                continue
+            if not core_full:
+                return False
+            core_full.sort(key=lambda i: (items[i][0].relevance_score, items[i][0].id))
+            idx = core_full[0]
+            items[idx][1] = LEVEL_SYMBOL
+            degraded.append(f"core_full_to_symbol:{items[idx][0].id}")
+            return True
+
+        def step_drop_related() -> bool:
             rel_symbol = [i for i, it in enumerate(items) if it[2] and it[1] == LEVEL_SYMBOL]
-            if rel_symbol:
-                rel_symbol.sort(key=lambda i: (items[i][0].relevance_score, items[i][0].id))
-                idx = rel_symbol[0]
-                items[idx][1] = LEVEL_DROP
-                degraded.append(f"drop_related:{items[idx][0].id}")
-                continue
-            break  # 无可降级 → overflow
+            if not rel_symbol:
+                return False
+            rel_symbol.sort(key=lambda i: (items[i][0].relevance_score, items[i][0].id))
+            idx = rel_symbol[0]
+            items[idx][1] = LEVEL_DROP
+            degraded.append(f"drop_related:{items[idx][0].id}")
+            return True
+
+        step_table = {
+            "related_symbol_shrink": step_related_shrink,
+            "experience_one_line": step_experience_one_line,
+            "architecture_one_line": step_architecture_one_line,
+            "core_full_to_symbol": step_core_full_to_symbol,
+            "drop_related": step_drop_related,
+        }
+        # 顺序: 显式/策略顺序 + 未列出的默认步骤追加末尾 (未知步骤名安全跳过)
+        order = [s for s in self._degradation_order if s in step_table]
+        for s in DEFAULT_DEGRADATION_STEPS:
+            if s not in order:
+                order.append(s)
+
+        while total_cost() > budget:
+            acted = False
+            for step_name in order:
+                if step_table[step_name]():
+                    acted = True
+                    break
+            if not acted:
+                break  # 无可降级 → overflow
 
         levels = {c.id: lvl for c, lvl, _ in items if lvl != LEVEL_DROP}
         selected_ids = [c.id for c, lvl, _ in items if lvl != LEVEL_DROP]
@@ -1123,6 +1196,29 @@ CODE_PROGRESSIVE_STAGES: list[StageSpec] = [
               required=False),
 ]
 
+
+def code_progressive_stages_for(task_type: str = "feature") -> list[StageSpec]:
+    """任务类型 → 渐进阶段配置 (T4.3 Dynamic Budget Policy)。
+
+    Budget Enforcement 三档语义 (设计 §4):
+    - Stage 1 固定: overview 恒 STAGE_1_BUDGET_CHARS (2K 必载);
+    - Stage 2 动态: symbol 取任务类型策略 stage_budget (bug_fix 4K / feature 5K /
+      refactor 5K / greenfield 1K — 优先级取向不同);
+    - Stage 3 剩余: detail max_chars=0 → loader 给剩余预算 (总 ≤ 任务类型预算)。
+
+    CODE_PROGRESSIVE_STAGES 保持不变 = feature 档 (声明式测试依赖)。
+    """
+    policy = get_budget_policy(task_type)
+    return [
+        StageSpec(stage="overview", label="Overview Context",
+                  max_chars=STAGE_1_BUDGET_CHARS, extractor="overview", required=True),
+        StageSpec(stage="symbol", label="Symbol Context",
+                  max_chars=stage_budget_for(policy, "symbol", STAGE_2_BUDGET_CHARS),
+                  extractor="symbol", required=False),
+        StageSpec(stage="detail", label="Code Detail", max_chars=0, extractor="detail",
+                  required=False),
+    ]
+
 #: 载荷哨兵 (finalize 区分「已由 6 节结构承载」与「进 notes 聚合片段」)
 _PAYLOAD_REQ = "requirement"        # RequirementContext 承载
 _PAYLOAD_ARCH = "architecture"      # ArchitectureContext 承载
@@ -1313,6 +1409,8 @@ class CodeProgressiveProvider:
         ]
         found = bool(selected)
         confidence = max((c.relevance_score for c in selected), default=0.0)
+        # T4.3: 任务类型优先级影响加载顺序 (bug_fix 降低全局架构 → arch 排后)
+        items = order_by_priority(items, self._profile.task_type)
         return StageLoadResult(
             items=items, confidence=confidence, candidates_found=found,
             missing_info=not found,
@@ -1374,6 +1472,8 @@ class CodeProgressiveProvider:
             items.append(LoadedItem(content_ref="hint:line_range", content=hint))
             missing = False
         # 锚点确定: line_range 兜底恒可用 (设计 §2: symbol 或 line_range)
+        # T4.3: 任务类型优先级 (bug_fix: symbol/test 先于架构; refactor: graph 前置)
+        items = order_by_priority(items, self._profile.task_type)
         return StageLoadResult(
             items=items, confidence=1.0 if items else 0.5, anchor_found=True,
             missing_info=missing, symbol_miss=list(self._symbol_miss),
@@ -1451,6 +1551,8 @@ class CodeProgressiveProvider:
                                        content=content, symbol_index=idx)
                 items.append(LoadedItem(content_ref=f"test:{cand.id}", content=content,
                                         payload=slice_))
+        # T4.3: 任务类型优先级 (feature: tests 先于核心; bug_fix: 目标文件最优先)
+        items = order_by_priority(items, self._profile.task_type)
         return StageLoadResult(
             items=items, confidence=1.0 if items else 0.4, anchor_found=True,
             large_file=large,
@@ -1464,6 +1566,8 @@ class RankingPipelineResult:
 
     progressive: T4.2 渐进加载产物 (ProgressiveResult; 旧路径 run() 缺省
     progressive=False → None — 一次性组装语义不变)。
+    budget_trace: T4.3 预算审计 (BudgetTrace; 供 Experience Learning T4.4 —
+    含 task_type/planned/requested/actual/token/overflow/degraded/success)。
     """
 
     def __init__(
@@ -1478,6 +1582,7 @@ class RankingPipelineResult:
         assembled: Any,
         symbol_miss: list[str],
         progressive: Any = None,
+        budget_trace: Any = None,
     ) -> None:
         self.profile = profile
         self.batch = batch
@@ -1488,9 +1593,10 @@ class RankingPipelineResult:
         self.assembled = assembled
         self.symbol_miss = symbol_miss
         self.progressive = progressive
+        self.budget_trace = budget_trace
 
     def to_dict(self) -> dict[str, Any]:
-        """审计摘要 (候选数/评分/预算/降级链/符号缺失/渐进 Trace)。"""
+        """审计摘要 (候选数/评分/预算/降级链/符号缺失/渐进 Trace/预算审计)。"""
         d: dict[str, Any] = {
             "task_type": self.profile.task_type,
             "candidates": len(self.batch.candidates),
@@ -1505,6 +1611,8 @@ class RankingPipelineResult:
         }
         if self.progressive is not None:
             d["progressive"] = self.progressive.to_dict()
+        if self.budget_trace is not None:
+            d["budget_trace"] = self.budget_trace.to_dict()
         return d
 
 
@@ -1773,6 +1881,11 @@ class RankingPipeline:
     ) -> ProgressiveResult:
         """T4.2: TopK→Budget 后 → ProgressiveLoader 按阶段加载组装 (设计 §1 接入点)。
 
+        T4.3 Budget Enforcement: 阶段配置按任务类型动态化 (Stage 1 固定 2K /
+        Stage 2 动态 symbol 档 / Stage 3 剩余), loader 总硬顶 = 任务类型生效预算
+        (min(任务类型预算, 硬顶)) — 渐进路径不越任务预算 (requested/actual/
+        overflow/degraded 由 ProgressiveTrace 记录)。
+
         Developer 域 StageSpec + CodeProgressiveProvider 注入通用引擎; 引擎
         逐阶段加载并决策 (continue|stop|fallback|skip), 产出 ProgressiveResult
         (审计 Trace + finalize 后的 AssembledContext)。
@@ -1782,10 +1895,10 @@ class RankingPipeline:
             batch=batch, budget=budget, symbol_miss=symbol_miss,
         )
         loader = ProgressiveLoader(
-            stages=CODE_PROGRESSIVE_STAGES,
+            stages=code_progressive_stages_for(profile.task_type),
             extractor=provider.extract,
             finalizer=provider.finalize,
-            hard_cap=self._hard_cap,
+            hard_cap=min(budget.budget_chars, self._hard_cap),
         )
         return loader.run(task_type=profile.task_type)
 
@@ -1843,6 +1956,8 @@ class RankingPipeline:
                 assembled = self._assemble(task, profile, batch, budget, symbol_miss)
         else:
             assembled = self._assemble(task, profile, batch, budget, symbol_miss)
+        # T4.3: 预算审计 (供 Experience Learning T4.4; 两路径均记录)
+        budget_trace = build_budget_trace(profile.task_type, budget, prog)
         return RankingPipelineResult(
             profile=profile,
             batch=batch,
@@ -1853,4 +1968,5 @@ class RankingPipeline:
             assembled=assembled,
             symbol_miss=symbol_miss,
             progressive=prog,
+            budget_trace=budget_trace,
         )

@@ -435,6 +435,18 @@ class EventType(str, Enum):
     ORG_AUTHORITY_CHECKED = "org.authority.checked"          # 权限校验 (只读审计)
     ORG_KNOWLEDGE_BOUND = "org.knowledge.bound"              # 知识入库 (公司隔离)
     ORG_KNOWLEDGE_VIEWED = "org.knowledge.viewed"            # 知识清单被查看 (只读审计)
+    # Phase A (factory-exec Extension, ADR-0037): org.execution.* 执行闭环
+    # 事件链 — requested (ExecutionRequest 落库) → started (Runtime 开始,
+    # 沙箱就绪) → completed|failed (执行终态, 单一) → approved (Human 审批
+    # 通过) → applied (patch 应用, 批准后)。payload 契约见
+    # factory-exec/exec/events.py — 事件唯一事实源: 从 payload 可重建执行
+    # 闭环关键字段 (request_id/result_id/employee_id/agent_id/error/patch_path)。
+    ORG_EXECUTION_REQUESTED = "org.execution.requested"      # 执行请求创建
+    ORG_EXECUTION_STARTED = "org.execution.started"          # Runtime 开始执行 (沙箱就绪)
+    ORG_EXECUTION_COMPLETED = "org.execution.completed"      # 执行成功 (产物齐全)
+    ORG_EXECUTION_FAILED = "org.execution.failed"            # 执行失败 (Provider/沙箱错误)
+    ORG_EXECUTION_APPROVED = "org.execution.approved"        # Human 审批通过
+    ORG_EXECUTION_APPLIED = "org.execution.applied"          # patch 已应用 (批准后)
 
 
 class Event(BaseModel):

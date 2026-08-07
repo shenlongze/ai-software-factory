@@ -82,6 +82,33 @@ def _project_context(sandbox_dir: Path) -> str:
     return lines
 
 
+def _repo_intelligence_context(sandbox_dir: Path) -> str:
+    """Repository Intelligence 轻量上下文 (Phase A++++++-2a)。
+
+    组装: Architecture Summary 摘要 + Call Graph 摘要段 (按文件聚合边数 top),
+    帮助 Developer 理解仓库结构/修改影响面。轻量: 不重写 Stage 1 的
+    _project_context 文件清单, 只追加架构级摘要。
+
+    失败安全: 分析失败/无文件 → "" (上下文增强不破坏执行链, 与
+    _project_context 同语义 — 计算失败不致命)。
+    """
+    try:
+        from .repo_intelligence import RepositoryIntelligence
+
+        ri = RepositoryIntelligence(sandbox_dir).analyze()
+        parts: list[str] = []
+        if ri.architecture is not None:
+            arch_text = ri.architecture.format_text()
+            if arch_text.strip():
+                parts.append(arch_text)
+        cg_text = ri.format_call_graph()
+        if cg_text.strip() and cg_text.strip() != "(no call edges detected)":
+            parts.append(cg_text)
+        return "\n\n".join(parts)
+    except Exception:  # noqa: BLE001 — 失败安全: 上下文增强不致命
+        return ""
+
+
 class AgentRuntime:
     """执行运行时: ExecutionRequest → ExecutionResult (全程不抛未处理异常)。
 
@@ -226,6 +253,13 @@ class AgentRuntime:
         except Exception:  # noqa: BLE001 — 上下文失败安全
             context = "(project context unavailable)"
 
+        # Phase A++++++-2a: Repository Intelligence 轻量接入 — Architecture
+        # Summary 摘要 + Call Graph 摘要段 (仓库结构/影响面; 失败安全 → 空)。
+        try:
+            repo_context = _repo_intelligence_context(Path(session.workspace_copy_path))
+        except Exception:  # noqa: BLE001 — 上下文增强失败安全
+            repo_context = ""
+
         # Phase A++++++-1 验证循环 (Modify → Validate → Fix → Validate, ≤2 轮修复):
         # 每次 work → 应用 patch → 语法/测试验证; 验证失败 → 反馈失败输出给
         # Developer 再修 (最多 _MAX_VALIDATION_ATTEMPTS 次总尝试 = 1 + 2 修复);
@@ -241,6 +275,7 @@ class AgentRuntime:
                     project_context=context,
                     sandbox_path=session.workspace_copy_path,
                     extra_instruction=feedback,
+                    repo_context=repo_context,
                 )
             except DeveloperError as exc:
                 return self._fail(

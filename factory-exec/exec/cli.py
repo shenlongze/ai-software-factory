@@ -5,6 +5,7 @@
 factory-exec exec run --project DIR --task T [--objective O] [--requirement R]
                       [--employee EID] [--agent AID] [--provider P] [--test-cmd CMD]
 factory-exec exec status [--id RESULT_ID]
+factory-exec exec providers [--provider P]
 factory-exec exec approval approve --id APR --by NAME [--comment C]
 factory-exec exec approval deny    --id APR --by NAME [--comment C]
 factory-exec exec approval apply   --id APR [--project DIR]
@@ -208,6 +209,34 @@ def cmd_exec_status(root: Path, args: Any) -> dict:
     }
 
 
+def cmd_exec_providers(root: Path, args: Any) -> dict:
+    """exec providers — Provider 配置预检 (key 缺失 → 明确提示 + 指引, BLOCKED 标注)。
+
+    检查内置 Provider 的 API key 环境变量是否设置 (不假装成功: configured=True
+    仅表示 key 已设置, 真实调用仍需 run/Benchmark 验证)。发 org.execution.viewed
+    审计 (ADR-0002 只读命令)。
+    """
+    from .provider import ProviderConfigChecker
+
+    with _logger_scope(root) as logger:
+        checker = ProviderConfigChecker()
+        statuses = checker.check(getattr(args, "provider", None) or None)
+        summary = checker.summary()
+        exec_events.record_execution_viewed(logger, count=len(statuses))
+        event_seq = exec_events.last_seq(logger, EventType.ORG_EXECUTION_VIEWED)
+    return {
+        "ok": True,
+        "command": "providers",
+        "providers": summary["providers"],
+        "configured_ids": summary["configured_ids"],
+        "blocked": summary["blocked"],
+        "any_configured": summary["any_configured"],
+        "message": summary["message"],
+        "event_seq": event_seq,
+        "exit_code": 0,
+    }
+
+
 # ------------------------------------------------------------------ exec approval
 
 def _approval_gate(root: Path, logger: Any) -> ApprovalGate:
@@ -332,6 +361,10 @@ def build_parser() -> argparse.ArgumentParser:
     _json_opt(p_status)
     p_status.add_argument("--id", default=None, help="结果 ID (缺省列出全部)")
 
+    p_providers = sub.add_parser("providers", help="Provider 配置预检 (key 缺失 → 明确提示)")
+    _json_opt(p_providers)
+    p_providers.add_argument("--provider", default=None, help="Provider id (缺省全部)")
+
     p_ap = sub.add_parser("approval", help="审批门禁 (应用 patch 前必批)")
     _json_opt(p_ap)
     asub = p_ap.add_subparsers(dest="approval_command", required=True)
@@ -360,6 +393,8 @@ def _dispatch(root: Path, args: Any) -> dict:
         return cmd_exec_run(root, args)
     if args.command == "status":
         return cmd_exec_status(root, args)
+    if args.command == "providers":
+        return cmd_exec_providers(root, args)
     if args.command == "approval":
         if args.approval_command == "approve":
             return cmd_exec_approval_approve(root, args)
@@ -395,6 +430,16 @@ def _print_result(args: Any, r: dict) -> None:
         print(f"执行结果 {r['count']} 条 (审批 {r.get('approval_count', 0)} 条)")
         for res in r.get("results", []):
             print(f"  {res['id']}  {res['status']:<8} {res['request_id']}")
+        if r.get("event_seq") is not None:
+            print(f"  event_seq   {r['event_seq']}")
+    elif r.get("command") == "providers":
+        print("Provider 配置预检:")
+        for p in r.get("providers", []):
+            mark = "✓" if p["configured"] else "✗"
+            print(f"  [{mark}] {p['provider_id']:<10} key={p['key_var']}")
+        for pid in r.get("blocked", []):
+            print(f"      → {pid} 未配置: key 缺失 → 真实调用 BLOCKED (设置指引见 JSON 输出)")
+        print(f"  → {r.get('message', '')}")
         if r.get("event_seq") is not None:
             print(f"  event_seq   {r['event_seq']}")
     elif r.get("command") in ("approval approve", "approval deny"):

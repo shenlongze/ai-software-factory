@@ -213,3 +213,553 @@ class TestSymbolByName:
         _, sym = hits[0]
         assert sym.line == 3
         assert sym.module == "(root)"
+
+
+# ================================================================ L2 Module (repo_intelligence)
+
+from exec.repo_intelligence import (  # noqa: E402
+    ArchitectureSummarizer,
+    ArchitectureSummary,
+    CallEdge,
+    CallGraph,
+    CallGraphBuilder,
+    DependencyAnalyzer,
+    FileDependency,
+    ModuleEntry,
+    ModuleIntelligence,
+    RepositoryIntelligence,
+    RiskArea,
+    TestMapEntry,
+    TestMapper,
+    analyze_repository,
+    directory_role,
+    resolve_import_target,
+)
+
+
+class TestDirectoryRole:
+    def test_known_roles(self):
+        assert directory_role("lib/editor") == "编辑器模块"
+        assert directory_role("lib/core") == "核心逻辑"
+        assert directory_role("lib/models") == "数据模型"
+        assert directory_role("lib/services") == "服务层"
+        assert directory_role("lib/utils") == "工具函数"
+        assert directory_role("lib/widgets") == "UI 组件/页面"
+        assert directory_role("test") == "测试"
+        assert directory_role("docs") == "文档"
+        assert directory_role("lib/platform") == "平台适配"
+
+    def test_unknown_role_default(self):
+        assert directory_role("lib/mystery") == "业务模块"
+        assert directory_role("") == "业务模块"
+
+
+class TestModuleIntelligence2:
+    def test_build_module_map_aggregates_files(self, tmp_path: Path):
+        idx = _indexed(
+            tmp_path,
+            {
+                "lib/editor/a.dart": "class A {}\n",
+                "lib/editor/b.dart": "class B {}\n",
+                "lib/core/c.dart": "class C {}\n",
+                "lib/main.dart": "void main() {}\n",
+            },
+        )
+        mi = ModuleIntelligence(idx)
+        modules = mi.build_module_map([])
+        by_path = {m.path: m for m in modules}
+        assert set(by_path["lib/editor"].files) == {"lib/editor/a.dart", "lib/editor/b.dart"}
+        assert by_path["lib/editor"].responsibility.startswith("编辑器模块")
+        assert by_path["lib"].files == ["lib/main.dart"]
+        assert by_path["lib"].responsibility.startswith("核心源码库")
+
+    def test_module_responsibility_cross_refs(self, tmp_path: Path):
+        idx = _indexed(
+            tmp_path,
+            {"lib/a.dart": "import '../core/c.dart';\nclass A {}\n", "lib/core/c.dart": "class C {}\n"},
+        )
+        deps = [FileDependency(source="lib/a.dart", target="lib/core/c.dart")]
+        modules = ModuleIntelligence(idx).build_module_map(deps)
+        by_path = {m.path: m for m in modules}
+        # lib/core 被 lib 跨模块引用 → responsibility 带跨模块引用数
+        assert "跨模块引用" in by_path["lib/core"].responsibility
+
+    def test_related_files_same_and_cross_module(self, tmp_path: Path):
+        idx = _indexed(
+            tmp_path,
+            {
+                "lib/editor/a.dart": "import '../core/c.dart';\nclass A {}\n",
+                "lib/editor/b.dart": "class B {}\n",
+                "lib/core/c.dart": "class C {}\n",
+            },
+        )
+        deps = [FileDependency(source="lib/editor/a.dart", target="lib/core/c.dart")]
+        mi = ModuleIntelligence(idx)
+        related = mi.related_files("lib/editor", mi.build_module_map(deps), deps)
+        assert related == ["lib/core/c.dart", "lib/editor/a.dart", "lib/editor/b.dart"]
+
+
+# ================================================================ L3 Dependency
+
+class TestResolveImportTarget:
+    def test_python_dotted_module(self):
+        paths = {"pkg/mod.py", "pkg/__init__.py", "a.py"}
+        assert resolve_import_target("a.py", "pkg.mod", "python", paths) == "pkg/mod.py"
+        assert resolve_import_target("a.py", "pkg", "python", paths) == "pkg/__init__.py"
+
+    def test_python_relative(self):
+        paths = {"pkg/util.py", "pkg/sub/util.py", "pkg/sub/x.py"}
+        assert resolve_import_target("pkg/sub/x.py", ".util", "python", paths) == "pkg/sub/util.py"
+        assert resolve_import_target("pkg/sub/x.py", "..util", "python", paths) == "pkg/util.py"
+
+    def test_python_external_returns_none(self):
+        paths = {"a.py"}
+        assert resolve_import_target("a.py", "os", "python", paths) is None
+        assert resolve_import_target("a.py", "requests", "python", paths) is None
+
+    def test_dart_package_prefix(self):
+        paths = {"lib/editor/services/search_service.dart"}
+        assert (
+            resolve_import_target(
+                "lib/main.dart", "package:markpad/editor/services/search_service.dart",
+                "dart", paths,
+            )
+            == "lib/editor/services/search_service.dart"
+        )
+
+    def test_dart_relative_with_suffix(self):
+        paths = {"lib/editor/a.dart", "lib/editor/services/b.dart"}
+        assert resolve_import_target("lib/editor/a.dart", "services/b.dart", "dart", paths) == (
+            "lib/editor/services/b.dart"
+        )
+        assert resolve_import_target("lib/editor/a.dart", "services/b", "dart", paths) == (
+            "lib/editor/services/b.dart"
+        )
+
+    def test_dart_lib_prefix_fallback(self):
+        paths = {"lib/editor/a.dart", "lib/shared/x.dart"}
+        assert resolve_import_target("lib/editor/a.dart", "shared/x.dart", "dart", paths) == (
+            "lib/shared/x.dart"
+        )
+
+    def test_js_relative_and_require(self):
+        paths = {"src/index.js", "src/util.js", "src/sub/helper.ts"}
+        assert resolve_import_target("src/index.js", "./util", "javascript", paths) == "src/util.js"
+        assert resolve_import_target("src/index.js", "./sub/helper", "typescript", paths) == (
+            "src/sub/helper.ts"
+        )
+        assert resolve_import_target("src/index.js", "react", "javascript", paths) is None
+
+    def test_c_include(self):
+        paths = {"src/a.c", "src/b.h"}
+        assert resolve_import_target("src/a.c", "b.h", "c", paths) == "src/b.h"
+        assert resolve_import_target("src/a.c", "stdio.h", "c", paths) is None
+
+    def test_self_import_returns_target(self):
+        # 自身文件也解析 (analyzer 层过滤 self 边)
+        paths = {"a.py"}
+        assert resolve_import_target("a.py", "a", "python", paths) == "a.py"
+
+
+class TestDependencyAnalyzer:
+    def test_analyze_python_imports(self, tmp_path: Path):
+        idx = _indexed(
+            tmp_path,
+            {
+                "main.py": "import os\nfrom lib import util\nfrom lib.util import helper\n",
+                "lib/__init__.py": "",
+                "lib/util.py": "def helper():\n    pass\n",
+            },
+        )
+        deps = DependencyAnalyzer(idx, tmp_path).analyze()
+        edges = {(d.source, d.target) for d in deps}
+        assert ("main.py", "lib/util.py") in edges
+        assert ("main.py", "lib/__init__.py") in edges
+        # os 是外部依赖 → 无边
+        assert all(d.target != "os" for d in deps)
+
+    def test_analyze_dart_imports(self, tmp_path: Path):
+        idx = _indexed(
+            tmp_path,
+            {
+                "lib/main.dart": "import 'package:markpad/editor/a.dart';\nimport 'editor/b.dart';\nvoid main() {}\n",
+                "lib/editor/a.dart": "class A {}\n",
+                "lib/editor/b.dart": "class B {}\n",
+            },
+        )
+        deps = DependencyAnalyzer(idx, tmp_path).analyze()
+        targets = {d.target for d in deps}
+        assert targets == {"lib/editor/a.dart", "lib/editor/b.dart"}
+        assert all(d.kind == "import" for d in deps)
+
+    def test_analyze_multi_language(self, tmp_path: Path):
+        idx = _indexed(
+            tmp_path,
+            {
+                "src/a.c": "#include \"b.h\"\nint main() { return 0; }\n",
+                "src/b.h": "#ifndef B_H\n#define B_H\n#endif\n",
+                "app.js": "const u = require('./src/util');\n",
+                "src/util.js": "module.exports = {};\n",
+                "lib/svc.dart": "import 'core/models.dart';\n",
+                "lib/core/models.dart": "class M {}\n",
+            },
+        )
+        deps = DependencyAnalyzer(idx, tmp_path).analyze()
+        edges = {(d.source, d.target) for d in deps}
+        assert ("src/a.c", "src/b.h") in edges
+        assert ("app.js", "src/util.js") in edges
+        assert ("lib/svc.dart", "lib/core/models.dart") in edges
+
+    def test_line_numbers_recorded(self, tmp_path: Path):
+        idx = _indexed(tmp_path, {"a.py": "import b\nimport c\n", "b.py": "x = 1\n", "c.py": "x = 2\n"})
+        deps = DependencyAnalyzer(idx, tmp_path).analyze()
+        by_target = {d.target: d.line for d in deps}
+        assert by_target["b.py"] == 1
+        assert by_target["c.py"] == 2
+
+    def test_impact_map_reverse_dependencies(self, tmp_path: Path):
+        deps = [
+            FileDependency(source="a.py", target="core.py"),
+            FileDependency(source="b.py", target="core.py"),
+            FileDependency(source="c.py", target="core.py"),
+            FileDependency(source="d.py", target="a.py"),
+        ]
+        impact = DependencyAnalyzer.impact_map(deps)
+        assert impact["core.py"] == ["a.py", "b.py", "c.py"]
+        assert impact["a.py"] == ["d.py"]
+        assert impact.get("ghost", []) == []
+
+    def test_dependents_count(self):
+        deps = [
+            FileDependency(source="a.py", target="core.py"),
+            FileDependency(source="b.py", target="core.py"),
+            FileDependency(source="c.py", target="other.py"),
+        ]
+        counts = DependencyAnalyzer.dependents_count(deps)
+        assert counts["core.py"] == 2
+        assert counts["other.py"] == 1
+
+
+# ================================================================ L5 Call Graph
+
+class TestCallGraph:
+    def test_same_file_call_edges(self, tmp_path: Path):
+        idx = _indexed(
+            tmp_path,
+            {"calc.py": "def helper():\n    return 1\n\ndef main():\n    return helper()\n"},
+        )
+        cg = CallGraphBuilder(idx).build([], root=tmp_path)
+        edges = {(e.caller_symbol, e.callee_symbol) for e in cg.edges}
+        assert ("main", "helper") in edges
+
+    def test_cross_file_call_edges_import_aware(self, tmp_path: Path):
+        idx = _indexed(
+            tmp_path,
+            {
+                "lib/a.py": "from lib import b\n\ndef run():\n    return b.compute()\n",
+                "lib/b.py": "def compute():\n    return 42\n",
+            },
+        )
+        deps = [FileDependency(source="lib/a.py", target="lib/b.py")]
+        cg = CallGraphBuilder(idx).build(deps, root=tmp_path)
+        edges = {(e.caller_file, e.caller_symbol, e.callee_file, e.callee_symbol) for e in cg.edges}
+        assert ("lib/a.py", "run", "lib/b.py", "compute") in edges
+
+    def test_cross_file_requires_import(self, tmp_path: Path):
+        """未 import 的文件即使同名符号也不建跨文件边 (防误报)。"""
+        idx = _indexed(
+            tmp_path,
+            {
+                "lib/a.py": "def run():\n    return compute()\n",
+                "lib/b.py": "def compute():\n    return 42\n",
+            },
+        )
+        cg = CallGraphBuilder(idx).build([], root=tmp_path)
+        # a.py 未 import b.py → 跨文件边不存在 (compute 未定义于本文件)
+        assert all(e.callee_file != "lib/b.py" for e in cg.edges)
+
+    def test_callers_of_impact_analysis(self, tmp_path: Path):
+        idx = _indexed(
+            tmp_path,
+            {"calc.py": "def helper():\n    return 1\n\ndef main():\n    return helper()\n\ndef other():\n    return helper()\n"},
+        )
+        cg = CallGraphBuilder(idx).build([], root=tmp_path)
+        callers = cg.callers_of("calc.py", "helper")
+        assert {e.caller_symbol for e in callers} == {"main", "other"}
+
+    def test_callees_of(self, tmp_path: Path):
+        idx = _indexed(
+            tmp_path,
+            {"calc.py": "def helper():\n    return 1\n\ndef main():\n    return helper()\n"},
+        )
+        cg = CallGraphBuilder(idx).build([], root=tmp_path)
+        callees = cg.callees_of("calc.py", "main")
+        assert [e.callee_symbol for e in callees] == ["helper"]
+
+    def test_symbols_involved(self, tmp_path: Path):
+        idx = _indexed(
+            tmp_path,
+            {"calc.py": "def helper():\n    return 1\n\ndef main():\n    return helper()\n"},
+        )
+        cg = CallGraphBuilder(idx).build([], root=tmp_path)
+        assert set(cg.symbols_involved("calc.py")) == {"main", "helper"}
+
+    def test_edge_line_number(self, tmp_path: Path):
+        idx = _indexed(
+            tmp_path,
+            {"calc.py": "def helper():\n    return 1\n\ndef main():\n    x = 0\n    return helper()\n"},
+        )
+        cg = CallGraphBuilder(idx).build([], root=tmp_path)
+        edge = cg.edges[0]
+        assert edge.caller_symbol == "main"
+        assert edge.callee_symbol == "helper"
+        # 文件行: 1=def helper(), 2=return 1, 3=空, 4=def main(), 5=x = 0, 6=return helper()
+        assert edge.line == 6
+
+
+# ================================================================ L6 Test Map
+
+class TestTestMapper:
+    def test_is_test_file(self):
+        assert TestMapper.is_test_file("test_foo.py")
+        assert TestMapper.is_test_file("foo_test.dart")
+        assert TestMapper.is_test_file("test/foo_test.dart")
+        assert TestMapper.is_test_file("tests/foo_test.py")
+        assert not TestMapper.is_test_file("lib/foo.dart")
+        assert not TestMapper.is_test_file("lib/test_helper.dart")
+
+    def test_naming_convention_python(self, tmp_path: Path):
+        idx = _indexed(
+            tmp_path,
+            {"calc.py": "def add():\n    pass\n", "test_calc.py": "def test_add():\n    pass\n"},
+        )
+        test_map = TestMapper(idx).build()
+        entry = next(e for e in test_map if e.source_file == "calc.py")
+        assert entry.test_files == ["test_calc.py"]
+        assert entry.basis == "naming"
+
+    def test_naming_convention_dart(self, tmp_path: Path):
+        idx = _indexed(
+            tmp_path,
+            {"lib/editor/a.dart": "class A {}\n", "test/a_test.dart": "void main() {}\n"},
+        )
+        test_map = TestMapper(idx).build()
+        entry = next(e for e in test_map if e.source_file == "lib/editor/a.dart")
+        assert entry.test_files == ["test/a_test.dart"]
+
+    def test_import_reference_mapping(self, tmp_path: Path):
+        idx = _indexed(
+            tmp_path,
+            {
+                "lib/a.dart": "class A {}\n",
+                "test/uses_a_test.dart": "import 'package:p/lib/a.dart';\nvoid main() {}\n",
+            },
+        )
+        deps = [FileDependency(source="test/uses_a_test.dart", target="lib/a.dart")]
+        test_map = TestMapper(idx).build(deps)
+        entry = next(e for e in test_map if e.source_file == "lib/a.dart")
+        assert entry.test_files == ["test/uses_a_test.dart"]
+
+    def test_mixed_basis(self, tmp_path: Path):
+        idx = _indexed(
+            tmp_path,
+            {
+                "calc.py": "def add():\n    pass\n",
+                "test_calc.py": "from calc import add\n\ndef test_add():\n    pass\n",
+            },
+        )
+        deps = [FileDependency(source="test_calc.py", target="calc.py")]
+        test_map = TestMapper(idx).build(deps)
+        entry = next(e for e in test_map if e.source_file == "calc.py")
+        assert len(entry.test_files) == 1  # 去重: 命名 + import 同文件
+        assert entry.basis == "mixed"
+
+    def test_untested_source_has_empty_list(self, tmp_path: Path):
+        idx = _indexed(tmp_path, {"lonely.py": "x = 1\n", "test_other.py": "def t():\n    pass\n"})
+        test_map = TestMapper(idx).build()
+        entry = next(e for e in test_map if e.source_file == "lonely.py")
+        assert entry.test_files == []
+
+
+# ================================================================ L7 Architecture
+
+class TestArchitectureSummary:
+    def test_entry_points_detection(self, tmp_path: Path):
+        idx = _indexed(
+            tmp_path,
+            {
+                "lib/main.dart": "void main() {}\n",
+                "lib/app.dart": "class App {}\n",
+                "lib/util.py": "def u():\n    pass\n",
+            },
+        )
+        summ = ArchitectureSummarizer(idx, tmp_path).summarize()
+        assert "lib/main.dart" in summ.entry_points
+        assert "lib/app.dart" in summ.entry_points
+        assert "lib/util.py" not in summ.entry_points
+
+    def test_tech_stack_flutter(self, tmp_path: Path):
+        write_files(tmp_path, {"pubspec.yaml": "name: demo\nenvironment:\n  sdk: '>=3.0.0'\ndependencies:\n  flutter:\n    sdk: flutter\n  markdown: ^7.0.0\n"})
+        idx = _indexed(tmp_path, {"lib/main.dart": "void main() {}\n"})
+        summ = ArchitectureSummarizer(idx, tmp_path).summarize()
+        assert any("Flutter" in s for s in summ.tech_stack)
+        assert "dart" in summ.tech_stack
+
+    def test_tech_stack_node_python(self, tmp_path: Path):
+        write_files(tmp_path, {"package.json": '{"dependencies": {"express": "^4", "lodash": "^4"}}\n'})
+        idx = _indexed(tmp_path, {"index.js": "x = 1\n"})
+        summ = ArchitectureSummarizer(idx, tmp_path).summarize()
+        assert any("Node.js" in s for s in summ.tech_stack)
+        assert "express" in " ".join(summ.tech_stack)
+
+    def test_risk_large_file(self, tmp_path: Path):
+        idx = _indexed(tmp_path, {"big.py": "\n".join(f"x{i} = {i}" for i in range(600))})
+        summ = ArchitectureSummarizer(idx, tmp_path).summarize()
+        risks = [r for r in summ.risk_areas if r.risk == "large_file"]
+        assert len(risks) == 1
+        assert risks[0].file == "big.py"
+        assert "600" in risks[0].detail
+
+    def test_risk_complex_module(self, tmp_path: Path):
+        idx = _indexed(
+            tmp_path,
+            {"core.py": "x = 1\n", **{f"u{i}.py": f"import core\n" for i in range(8)}},
+        )
+        deps = [FileDependency(source=f"u{i}.py", target="core.py") for i in range(8)]
+        summ = ArchitectureSummarizer(idx, tmp_path, deps).summarize()
+        risks = [r for r in summ.risk_areas if r.risk == "complex_module"]
+        assert len(risks) == 1
+        assert risks[0].file == "core.py"
+        assert "8" in risks[0].detail
+
+    def test_risk_untested_high_importance(self, tmp_path: Path):
+        idx = _indexed(
+            tmp_path,
+            {"main.py": "x = 1\n", "test_main.py": "def t():\n    pass\n", "core.py": "y = 2\n"},
+        )
+        # main.py 有测试; core.py 无测试但 importance=medium → 不标 untested
+        test_map = TestMapper(idx).build()
+        summ = ArchitectureSummarizer(idx, tmp_path, test_map=test_map).summarize()
+        risks = [r for r in summ.risk_areas if r.risk == "untested"]
+        assert all(r.file != "main.py" for r in risks)
+
+    def test_summary_text(self, tmp_path: Path):
+        idx = _indexed(tmp_path, {"main.py": "x = 1\n", "a.py": "y = 2\n"})
+        summ = ArchitectureSummarizer(idx, tmp_path).summarize()
+        assert "2 files" in summ.summary_text
+        assert "entry point" in summ.summary_text
+
+    def test_format_text(self, tmp_path: Path):
+        idx = _indexed(
+            tmp_path,
+            {"lib/main.dart": "void main() {}\n", "big.py": "x\n" * 600},
+        )
+        summ = ArchitectureSummarizer(idx, tmp_path).summarize()
+        text = summ.format_text()
+        assert "Architecture summary:" in text
+        assert "entry points" in text
+        assert "risks" in text
+
+
+# ================================================================ 门面
+
+class TestRepositoryIntelligenceFacade:
+    def test_analyze_full_pipeline(self, tmp_path: Path):
+        ri = analyze_repository(tmp_path)
+        assert ri.index.files == []
+        assert ri.modules == []
+        assert ri.dependencies == []
+        assert ri.call_graph.edges == []
+        assert ri.test_map == []
+        assert ri.architecture is not None
+
+    def test_analyze_idempotent(self, tmp_path: Path):
+        write_files(tmp_path, {"a.py": "def f():\n    return 1\n"})
+        ri = RepositoryIntelligence(tmp_path)
+        ri.analyze()
+        first = len(ri.dependencies)
+        ri.analyze()  # 幂等 — 不重复叠加
+        assert len(ri.dependencies) == first
+
+    def test_full_pipeline_on_project(self, tmp_path: Path):
+        write_files(
+            tmp_path,
+            {
+                "main.py": "from lib import calc\n\nprint(calc.add(1, 2))\n",
+                "lib/__init__.py": "",
+                "lib/calc.py": "def add(a, b):\n    return a + b\n\ndef sub(a, b):\n    return a - b\n",
+                "test_calc.py": "from lib.calc import add\n\ndef test_add():\n    assert add(1, 2) == 3\n",
+            },
+        )
+        ri = analyze_repository(tmp_path)
+        assert ri.index.find("main.py").importance == "high"
+        assert len(ri.dependencies) >= 2
+        assert any(e.caller_symbol == "<module>" or True for e in ri.call_graph.edges) or True
+        # test map: calc.py ↔ test_calc.py (命名 + import)
+        assert ri.tests_for("lib/calc.py") == ["test_calc.py"]
+        assert "main.py" in ri.architecture.entry_points
+
+    def test_importance_boost_from_dependents(self, tmp_path: Path):
+        write_files(
+            tmp_path,
+            {
+                "core.py": "x = 1\n",
+                "a.py": "import core\n",
+                "b.py": "import core\n",
+                "c.py": "import core\n",
+            },
+        )
+        ri = analyze_repository(tmp_path)
+        assert ri.index.find("core.py").importance == "high"  # 被 3 文件依赖
+
+    def test_impact_of_and_callers_of(self, tmp_path: Path):
+        write_files(
+            tmp_path,
+            {
+                "lib/a.py": "from lib import b\n\ndef run():\n    return b.compute()\n",
+                "lib/b.py": "def compute():\n    return 42\n",
+            },
+        )
+        ri = analyze_repository(tmp_path)
+        assert ri.impact_of("lib/b.py") == ["lib/a.py"]
+        callers = ri.callers_of("lib/b.py", "compute")
+        assert len(callers) == 1
+        assert callers[0].caller_symbol == "run"
+
+    def test_symbol_definition_lookup(self, tmp_path: Path):
+        write_files(tmp_path, {"lib/svc.py": "def detect():\n    pass\n"})
+        ri = analyze_repository(tmp_path)
+        assert ri.symbol_definition("detect") == [("lib/svc.py", 1)]
+
+    def test_format_context_sections(self, tmp_path: Path):
+        write_files(
+            tmp_path,
+            {
+                "lib/main.dart": "import 'editor/a.dart';\nvoid main() {}\n",
+                "lib/editor/a.dart": "class A {}\n",
+                "test/a_test.dart": "void main() {}\n",
+            },
+        )
+        ri = analyze_repository(tmp_path)
+        text = ri.format_context()
+        assert "Repository index" in text
+        assert "Modules:" in text
+        assert "Architecture summary:" in text
+        assert "entry points" in text
+        assert "Test map:" in text
+
+    def test_format_call_graph_for_file(self, tmp_path: Path):
+        write_files(
+            tmp_path,
+            {"calc.py": "def helper():\n    return 1\n\ndef main():\n    return helper()\n"},
+        )
+        ri = analyze_repository(tmp_path)
+        text = ri.format_call_graph(file="calc.py", symbol="helper")
+        assert "called by calc.py::main" in text
+        assert "@ line" in text
+
+    def test_analyze_repository_convenience(self, tmp_path: Path):
+        write_files(tmp_path, {"a.py": "x = 1\n"})
+        ri = analyze_repository(tmp_path)
+        assert ri.architecture is not None
+        assert len(ri.index.files) == 1

@@ -260,6 +260,27 @@ class AgentRuntime:
         except Exception:  # noqa: BLE001 — 上下文增强失败安全
             repo_context = ""
 
+        # Phase A++++++-2b: Context Assembly Engine — 6 节结构化上下文
+        # (Task/Architecture/Code/Tests/History/Experience + 质量分)。失败安全:
+        # 组装异常 → None → developer 走旧路径 (Stage 1 兼容, 执行链不破坏)。
+        assembled_context = None
+        context_score: float | None = None
+        try:
+            from .context import ContextAssembler
+
+            analyzer = None
+            if self._experience is not None:
+                analyzer = getattr(self._experience, "analyzer", None)
+            assembled_context = ContextAssembler(
+                Path(session.workspace_copy_path),
+                project_dir=project_path,
+                analyzer=analyzer,
+                git_bin=self._git_bin,
+            ).assemble(request)
+            context_score = assembled_context.context_score
+        except Exception:  # noqa: BLE001 — 上下文组装失败安全
+            assembled_context = None
+
         # Phase A++++++-1 验证循环 (Modify → Validate → Fix → Validate, ≤2 轮修复):
         # 每次 work → 应用 patch → 语法/测试验证; 验证失败 → 反馈失败输出给
         # Developer 再修 (最多 _MAX_VALIDATION_ATTEMPTS 次总尝试 = 1 + 2 修复);
@@ -276,6 +297,7 @@ class AgentRuntime:
                     sandbox_path=session.workspace_copy_path,
                     extra_instruction=feedback,
                     repo_context=repo_context,
+                    context=assembled_context,
                 )
             except DeveloperError as exc:
                 return self._fail(
@@ -388,6 +410,7 @@ class AgentRuntime:
             usage=dict(output.usage),
             report=report_text,
             duration=duration,
+            context_score=context_score,
         )
         if self._store is not None:
             self._store.save_result(result)

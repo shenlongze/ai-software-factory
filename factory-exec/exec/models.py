@@ -186,6 +186,7 @@ class ExecutionResult(_ExecModel):
     report: str = ""
     error: str = ""
     duration: float = 0.0
+    context_score: float | None = None
     created_at: datetime = Field(default_factory=utcnow)
 
     @field_validator("status", mode="before")

@@ -204,6 +204,7 @@ class DeveloperAgent:
         source_files: list[tuple[str, str]] | None = None,
         extra_instruction: str = "",
         repo_context: str = "",
+        context_text: str = "",
     ) -> str:
         """任务 + 项目上下文 + 内联源文件 (带行号) + 规范 + 反馈 → Provider 提示词。
 
@@ -212,32 +213,42 @@ class DeveloperAgent:
         每行加 `N|` 行号前缀 (定位参考; 输出代码内容不含前缀)。
         extra_instruction: 附加指令 (验证反馈/重试提示 — 验证循环输入)。
         repo_context: Repository Index 文本 (文件树 + symbol 索引; 探索步骤产物)。
+        context_text: Phase A++++++-2b Context Assembly 渲染的 6 节 prompt 主体
+          (Task/Architecture/Code/Tests/History/Experience — context.py
+          AssembledContext.render_prompt); 非空时**整体替换**旧的任务/上下文/
+          源文件拼接 (Code 节已含行号内联源文件), 其余节 (Sandbox/Conventions/
+          Output format) 照常附加 — 保持 Stage 1 输出协议。
         """
         lines = [
             "You are a Developer Agent working inside an AI Software Factory.",
             "You make minimal, correct code changes and return them as structured operations.",
             "",
-            "## Task",
-            objective.strip(),
         ]
-        if requirement.strip():
-            lines += ["", "## Requirement / Acceptance criteria", requirement.strip()]
-        if project_context.strip():
-            lines += ["", "## Project context", project_context.strip()]
-        if repo_context.strip():
-            lines += ["", "## Repository index", repo_context.strip()]
-        if extra_instruction.strip():
+        if context_text.strip():
+            # Context Assembly 主体 (6 节; 行号前缀说明在 Code 节内, 不重复渲染)
+            lines += [context_text.strip()]
+        else:
+            lines += ["## Task", objective.strip()]
+            if requirement.strip():
+                lines += ["", "## Requirement / Acceptance criteria", requirement.strip()]
+            if project_context.strip():
+                lines += ["", "## Project context", project_context.strip()]
+            if repo_context.strip():
+                lines += ["", "## Repository index", repo_context.strip()]
+            if extra_instruction.strip():
+                lines += ["", "## Previous attempt feedback", extra_instruction.strip()]
+            if source_files:
+                lines += ["", "## Relevant source files"]
+                lines += [
+                    "(每行前缀 `N|` 为行号, 仅用于精确定位 location (symbol 或 "
+                    "line_range); 输出的代码内容绝不能包含行号前缀)"
+                ]
+                for rel, content in source_files:
+                    line_count = len(content.splitlines())
+                    lines += ["", f"### {rel} ({line_count} 行)"]
+                    lines += ["```dart", self._render_lines(content), "```"]
+        if extra_instruction.strip() and context_text.strip():
             lines += ["", "## Previous attempt feedback", extra_instruction.strip()]
-        if source_files:
-            lines += ["", "## Relevant source files"]
-            lines += [
-                "(每行前缀 `N|` 为行号, 仅用于精确定位 location (symbol 或 "
-                "line_range); 输出的代码内容绝不能包含行号前缀)"
-            ]
-            for rel, content in source_files:
-                line_count = len(content.splitlines())
-                lines += ["", f"### {rel} ({line_count} 行)"]
-                lines += ["```dart", self._render_lines(content), "```"]
         if sandbox_path.strip():
             lines += [
                 "",
@@ -571,6 +582,7 @@ class DeveloperAgent:
         source_files: list[str] | None = None,
         extra_instruction: str = "",
         repo_context: str = "",
+        context: Any = None,
         max_retries: int = 1,
     ) -> DeveloperOutput:
         """调 Provider (内建重试) → 解析 (操作优先) → 报告 (失败 → DeveloperError)。
@@ -584,9 +596,20 @@ class DeveloperAgent:
         内容, 每行带行号; 模型无文件访问能力, 修复目标代码靠此进入上下文)。
         extra_instruction: 附加指令 (验证循环反馈 — 上轮验证失败输出)。
         repo_context: Repository Index 文本 (文件树 + symbol 索引)。
+        context: Phase A++++++-2b AssembledContext (context.py) — 非 None 时
+          prompt 主体 = context.render_prompt() (6 节: Task/Architecture/Code/
+          Tests/History/Experience), source_files/project_context/repo_context
+          不再重复拼接 (Code 节已含行号内联); 保持旧参数兼容 (None → 旧路径
+          逐位不变)。
         max_retries: 空内容/无解析的重试次数上限 (缺省 1 — 任务约束)。
         """
-        embedded = self._read_source_files(sandbox_path, source_files or [])
+        if context is not None:
+            # Context Assembly 路径: 源文件已由 context 渲染 (Code 节), 不重复读取
+            embedded: list[tuple[str, str]] = []
+            context_text = context.render_prompt()
+        else:
+            embedded = self._read_source_files(sandbox_path, source_files or [])
+            context_text = ""
         started = time.monotonic()
         usage_acc: dict[str, Any] = {}
         retry_hint = ""
@@ -600,6 +623,7 @@ class DeveloperAgent:
                 sandbox_path=sandbox_path,
                 source_files=embedded,
                 repo_context=repo_context,
+                context_text=context_text,
                 extra_instruction=(
                     extra_instruction if attempt == 0 else f"{extra_instruction}\n{retry_hint}"
                 ).strip(),

@@ -742,3 +742,157 @@ class TopKSelector:
         for c in related:
             levels[c.id] = LEVEL_SYMBOL
         return TopKSelection(core=core, related=related, levels=levels)
+
+
+# ================================================================ Budget Controller
+
+class BudgetResult:
+    """预算控制结果 (设计 §5/§6): 级别映射 + 降级链记录 + overflow 标记。
+
+    - selected_ids: 最终入选候选 id (drop 的排除)
+    - levels: 候选 id → 最终级别 (full|symbol|summary|one_line)
+    - total_chars: 最终总字符成本
+    - budget_chars: 实际生效预算 (min(任务类型预算, 硬顶))
+    - degraded_steps: 降级链每步记录 (审计)
+    - context_overflow: 降级链走完仍超预算 (执行前警示)
+    - task_type: 生效任务类型
+    """
+
+    def __init__(
+        self,
+        *,
+        selected_ids: list[str],
+        levels: dict[str, str],
+        total_chars: int,
+        budget_chars: int,
+        degraded_steps: list[str],
+        context_overflow: bool,
+        task_type: str,
+    ) -> None:
+        self.selected_ids = list(selected_ids)
+        self.levels = dict(levels)
+        self.total_chars = int(total_chars)
+        self.budget_chars = int(budget_chars)
+        self.degraded_steps = list(degraded_steps)
+        self.context_overflow = bool(context_overflow)
+        self.task_type = task_type
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "selected_ids": list(self.selected_ids),
+            "levels": dict(self.levels),
+            "total_chars": self.total_chars,
+            "budget_chars": self.budget_chars,
+            "degraded_steps": list(self.degraded_steps),
+            "context_overflow": self.context_overflow,
+            "task_type": self.task_type,
+        }
+
+
+class BudgetController:
+    """任务类型预算 + 降级链 (设计 §5; 纯规则, 零 LLM)。
+
+    预算 (chars): bug_fix 20K / feature 25K / greenfield 15K; 硬顶 30K —
+    实际生效预算 = min(任务类型预算, 硬顶)。
+
+    初始级别: 核心→full, 相关→symbol, 测试→symbol, 聚合候选→summary。
+    降级链 (每步记录到 degraded_steps, 超预算才触发下一步):
+      1. 相关符号索引收缩 (symbol 成本 ×0.5)
+      2. 经验 → one_line 摘要
+      3. 架构 → one_line 摘要
+      4. 最低分核心 full → symbol (逐个, 最低分先)
+      5. 丢弃最低分相关候选 (逐个)
+      6. 仍超 → context_overflow=True (执行前警示)
+    """
+
+    def __init__(
+        self,
+        task_type: str = "feature",
+        budget: int | None = None,
+        hard_cap: int = HARD_CAP_CHARS,
+    ) -> None:
+        self.task_type = task_type if task_type in TASK_TYPE_BUDGETS else "feature"
+        self.budget = (
+            budget if budget is not None else TASK_TYPE_BUDGETS[self.task_type]
+        )
+        self.hard_cap = max(1, hard_cap)
+
+    def apply_budget(
+        self,
+        selection: TopKSelection | None = None,
+        aggregates: list[ContextCandidate] | None = None,
+    ) -> BudgetResult:
+        """Top-K 选择 + 聚合候选 → 级别映射/成本/降级链 (不修改入参)。"""
+        selection = selection or TopKSelection(core=[], related=[], levels={})
+        budget = min(self.budget, self.hard_cap)
+        # (candidate, level, is_related)
+        items: list[list[Any]] = []
+        for c in selection.core:
+            items.append([c, LEVEL_FULL, False])
+        for c in selection.related:
+            items.append([c, LEVEL_SYMBOL, True])
+        for c in aggregates or []:
+            items.append([c, LEVEL_SUMMARY, False])
+
+        degraded: list[str] = []
+        related_shrunk = False
+
+        def total_cost() -> int:
+            total = 0
+            for cand, lvl, is_rel in items:
+                cost = cand.char_cost(lvl)
+                if related_shrunk and is_rel and lvl == LEVEL_SYMBOL:
+                    cost //= 2  # 降级链步骤 1: 相关符号索引收缩 ×0.5
+                total += cost
+            return total
+
+        while total_cost() > budget:
+            if not related_shrunk and any(it[2] and it[1] == LEVEL_SYMBOL for it in items):
+                related_shrunk = True
+                degraded.append("related_symbol_shrink")
+                continue
+            exp_idx = next(
+                (i for i, it in enumerate(items)
+                 if it[0].type == "experience" and it[1] == LEVEL_SUMMARY),
+                None,
+            )
+            if exp_idx is not None:
+                items[exp_idx][1] = LEVEL_ONE_LINE
+                degraded.append("experience_one_line")
+                continue
+            arch_idx = next(
+                (i for i, it in enumerate(items)
+                 if it[0].type == "architecture" and it[1] == LEVEL_SUMMARY),
+                None,
+            )
+            if arch_idx is not None:
+                items[arch_idx][1] = LEVEL_ONE_LINE
+                degraded.append("architecture_one_line")
+                continue
+            core_full = [i for i, it in enumerate(items) if not it[2] and it[1] == LEVEL_FULL]
+            if core_full:
+                core_full.sort(key=lambda i: (items[i][0].relevance_score, items[i][0].id))
+                idx = core_full[0]
+                items[idx][1] = LEVEL_SYMBOL
+                degraded.append(f"core_full_to_symbol:{items[idx][0].id}")
+                continue
+            rel_symbol = [i for i, it in enumerate(items) if it[2] and it[1] == LEVEL_SYMBOL]
+            if rel_symbol:
+                rel_symbol.sort(key=lambda i: (items[i][0].relevance_score, items[i][0].id))
+                idx = rel_symbol[0]
+                items[idx][1] = LEVEL_DROP
+                degraded.append(f"drop_related:{items[idx][0].id}")
+                continue
+            break  # 无可降级 → overflow
+
+        levels = {c.id: lvl for c, lvl, _ in items if lvl != LEVEL_DROP}
+        selected_ids = [c.id for c, lvl, _ in items if lvl != LEVEL_DROP]
+        return BudgetResult(
+            selected_ids=selected_ids,
+            levels=levels,
+            total_chars=total_cost(),
+            budget_chars=budget,
+            degraded_steps=degraded,
+            context_overflow=total_cost() > budget,
+            task_type=self.task_type,
+        )

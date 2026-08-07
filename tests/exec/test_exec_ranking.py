@@ -49,6 +49,7 @@ from exec.ranking import (
     score_keyword_match,
     score_symbol_relation,
     score_test_relation,
+    BudgetController,
     TopKSelection,
     TopKSelector,
 )
@@ -861,3 +862,157 @@ class TestTopKSelector:
         assert d["core_ids"] == ["code:a.py"]
         assert d["related_ids"] == []
         assert d["levels"] == {"code:a.py": LEVEL_FULL}
+
+
+# ================================================================ §6 Budget Controller
+
+
+def _cost_candidate(cid: str, token_cost: int, score: float = 0.5, ctype: str = "code") -> ContextCandidate:
+    """构造带 token 成本的候选 (char_cost: full=token×4 / symbol=max(40, token×0.8))。"""
+    return ContextCandidate(
+        id=cid,
+        type=ctype,
+        source=cid.split(":", 1)[-1],
+        token_cost=token_cost,
+        relevance_score=score,
+    )
+
+
+class TestBudgetController:
+    """预算控制器: 任务类型预算 / 降级链各层 / context_overflow (设计 §5)。"""
+
+    def test_budget_by_task_type(self) -> None:
+        assert BudgetController("bug_fix").budget == 20_000
+        assert BudgetController("feature").budget == 25_000
+        assert BudgetController("greenfield").budget == 15_000
+
+    def test_unknown_task_type_falls_back_feature(self) -> None:
+        c = BudgetController("unknown_type")
+        assert c.task_type == "feature"
+        assert c.budget == 25_000
+
+    def test_within_budget_no_degradation(self) -> None:
+        sel = TopKSelection(
+            core=[_cost_candidate("code:core.py", 100)],
+            related=[_cost_candidate("code:rel.py", 100)],
+            levels={"code:core.py": LEVEL_FULL, "code:rel.py": LEVEL_SYMBOL},
+        )
+        r = BudgetController("feature").apply_budget(sel)
+        assert r.degraded_steps == []
+        assert not r.context_overflow
+        assert r.levels["code:core.py"] == LEVEL_FULL
+        assert r.levels["code:rel.py"] == LEVEL_SYMBOL
+        # full=400 + symbol=max(40, 80)=80 → 480 ≤ 25_000
+        assert r.total_chars == 480
+
+    def test_related_symbol_shrink(self) -> None:
+        """超预算第一步: 相关符号索引收缩 ×0.5。"""
+        sel = TopKSelection(
+            core=[_cost_candidate("code:core.py", 1000)],   # full = 4000
+            related=[_cost_candidate("code:rel.py", 1000)],  # symbol = 800
+            levels={"code:core.py": LEVEL_FULL, "code:rel.py": LEVEL_SYMBOL},
+        )
+        r = BudgetController("feature", budget=4_500).apply_budget(sel)
+        assert r.degraded_steps == ["related_symbol_shrink"]
+        assert not r.context_overflow
+        assert r.total_chars == 4_000 + 400  # 收缩后 symbol ×0.5
+        assert r.levels["code:rel.py"] == LEVEL_SYMBOL  # 级别不变, 成本收缩
+
+    def test_experience_to_one_line(self) -> None:
+        sel = TopKSelection(
+            core=[_cost_candidate("code:core.py", 100)],  # full = 400
+            related=[],
+            levels={},
+        )
+        exp = [_cost_candidate("exp:feature", 1000, 0.4, "experience")]  # summary = 200
+        r = BudgetController("feature", budget=500).apply_budget(sel, exp)
+        assert "experience_one_line" in r.degraded_steps
+        assert r.levels["exp:feature"] == LEVEL_ONE_LINE
+        assert r.total_chars == 400 + 60  # one_line 固定 60
+
+    def test_architecture_to_one_line(self) -> None:
+        sel = TopKSelection(
+            core=[_cost_candidate("code:core.py", 100)],  # full = 400
+            related=[],
+            levels={},
+        )
+        arch = [_cost_candidate("arch:summary", 1000, 0.4, "architecture")]  # summary = 200
+        r = BudgetController("feature", budget=500).apply_budget(sel, arch)
+        assert "architecture_one_line" in r.degraded_steps
+        assert r.levels["arch:summary"] == LEVEL_ONE_LINE
+
+    def test_lowest_core_full_to_symbol(self) -> None:
+        sel = TopKSelection(
+            core=[_cost_candidate("code:low.py", 1000, 0.3), _cost_candidate("code:high.py", 1000, 0.9)],
+            related=[],
+            levels={},
+        )
+        r = BudgetController("feature", budget=4_500).apply_budget(sel)
+        # full=4000×2=8000 > 4500 → 最低分核心 low 先降 symbol (800+4000=4800 仍超)
+        # → 再降 high → 800+800=1600 ≤ 4500 — 最低分优先逐个降 (设计步骤 4)
+        assert r.degraded_steps[0] == "core_full_to_symbol:code:low.py"
+        assert r.degraded_steps[1] == "core_full_to_symbol:code:high.py"
+        assert r.levels["code:low.py"] == LEVEL_SYMBOL
+        assert r.levels["code:high.py"] == LEVEL_SYMBOL
+        assert r.total_chars == 800 + 800
+
+    def test_drop_lowest_related(self) -> None:
+        """降级链步骤 5: 丢弃最低分相关候选。"""
+        sel = TopKSelection(
+            core=[_cost_candidate("code:core.py", 100)],  # full = 400
+            related=[
+                _cost_candidate("code:rel_high.py", 1000, 0.9),  # symbol 800
+                _cost_candidate("code:rel_low.py", 1000, 0.1),
+            ],
+            levels={},
+        )
+        r = BudgetController("feature", budget=800).apply_budget(sel)
+        # 4000... 实际: shrink → 400+400+400=1200 > 800 → core symbol (max(40,80)=80)
+        # → 80+400+400=880 > 800 → drop 最低分相关 → 80+400=480 ≤ 800
+        assert "drop_related:code:rel_low.py" in r.degraded_steps
+        assert "code:rel_low.py" not in r.levels
+        assert "code:rel_low.py" not in r.selected_ids
+        assert r.levels["code:rel_high.py"] == LEVEL_SYMBOL
+
+    def test_context_overflow_flag(self) -> None:
+        """降级链走完仍超预算 → context_overflow 标记。"""
+        sel = TopKSelection(
+            core=[_cost_candidate("code:core.py", 1000)],  # full 4000 → symbol 800
+            related=[_cost_candidate("code:rel.py", 1000)],  # symbol 800 → shrink 400 → drop
+            levels={},
+        )
+        r = BudgetController("feature", budget=100).apply_budget(sel)
+        assert r.context_overflow
+        assert "drop_related:code:rel.py" in r.degraded_steps
+        # 核心保底 symbol 800 仍超 100
+        assert r.levels["code:core.py"] == LEVEL_SYMBOL
+
+    def test_hard_cap_caps_budget(self) -> None:
+        """硬顶 30K: 显式大预算被压到 min(budget, hard_cap)。"""
+        c = BudgetController("feature", budget=100_000)
+        r = c.apply_budget(TopKSelection([], [], {}))
+        assert r.budget_chars == 30_000
+        assert HARD_CAP_CHARS == 30_000
+
+    def test_empty_selection(self) -> None:
+        r = BudgetController("feature").apply_budget(None)
+        assert r.selected_ids == []
+        assert r.levels == {}
+        assert r.total_chars == 0
+        assert not r.context_overflow
+
+    def test_result_dict_shape(self) -> None:
+        sel = TopKSelection(
+            core=[_cost_candidate("code:core.py", 100)],
+            related=[],
+            levels={"code:core.py": LEVEL_FULL},
+        )
+        r = BudgetController("feature").apply_budget(sel)
+        d = r.to_dict()
+        assert d["selected_ids"] == ["code:core.py"]
+        assert d["levels"] == {"code:core.py": LEVEL_FULL}
+        assert d["total_chars"] == 400
+        assert d["budget_chars"] == 25_000
+        assert d["degraded_steps"] == []
+        assert d["context_overflow"] is False
+        assert d["task_type"] == "feature"

@@ -924,7 +924,7 @@ class ContextAssembler:
         )
         return ctx
 
-    def ranking_assemble(self, task: Any) -> AssembledContext:
+    def ranking_assemble(self, task: Any, *, progressive: bool = False) -> AssembledContext:
         """T4.1 Ranking Pipeline 新路径 (Task→候选→特征→评分→TopK→预算→组装)。
 
         与 assemble() 完全独立并存 (旧路径逐位不动 — Sprint 3 测试全绿是硬约束):
@@ -932,6 +932,12 @@ class ContextAssembler:
         回退旧 assemble() (执行链不破坏, 失败安全)。开关在装配点
         (agent_runtime ranking_enabled, 默认 False — 注入式门控, 新行为
         默认关在单元层、只开在装配点)。
+
+        progressive (T4.2, 默认 False 旧路径兼容): True → 透传给
+        RankingPipeline.run(progressive=True) 走渐进加载路径 (TopK→Budget
+        后由 ProgressiveLoader 逐阶段加载 + 决策 + 审计 Trace); 渐进路径
+        自身异常已由 Pipeline 内部回退一次性组装, 本方法 try/except 兜底
+        只负责新路径整体 (含 Pipeline 装配) 失败 → 旧 assemble()。
         """
         try:
             from .ranking import RankingPipeline
@@ -943,6 +949,6 @@ class ContextAssembler:
                 analyzer=self._analyzer,
                 git_bin=self._git_bin,
             )
-            return pipeline.run(task).assembled
+            return pipeline.run(task, progressive=progressive).assembled
         except Exception:  # noqa: BLE001 — 新路径失败安全: 回退旧路径
             return self.assemble(task)

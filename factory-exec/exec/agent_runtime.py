@@ -120,6 +120,10 @@ class AgentRuntime:
     - artifacts_dir: 产物落盘根目录 (缺省 store.dir; patches/ 子目录放 patch)。
     - work_root: 沙箱副本父目录 (None = 系统临时目录)。
     - experience: ExperienceRecorder (None = 不记录经验 — 装配点注入)。
+    - experience_extractor: T4.4 ContextExperienceExtractor (None = 不提取
+      上下文经验 — 装配点注入; 提供 → 任务结束后自动提取 ContextExperienceRecord
+      (成功: 有效 Context/最佳 Budget/成功路径; 失败: 结构化 failure_type +
+      missing_symbols), 提取/落库异常静默 — 审计增强数据不破坏执行链)。
     - ranking_enabled: T4.1 Ranking Pipeline 新路径开关 (默认 False — 旧
       ContextAssembler.assemble 路径; True → ranking_assemble, 失败安全回退旧路径)。
     """
@@ -134,6 +138,7 @@ class AgentRuntime:
         artifacts_dir: str | Path | None = None,
         work_root: str | Path | None = None,
         experience: ExperienceRecorder | None = None,
+        experience_extractor: Any = None,
         git_bin: str = "git",
         conventions: str | None = None,
         ranking_enabled: bool = False,
@@ -147,11 +152,48 @@ class AgentRuntime:
         )
         self._work_root = work_root
         self._experience = experience
+        self._experience_extractor = experience_extractor
         self._git_bin = git_bin
         self._ranking_enabled = ranking_enabled
         self._developer = DeveloperAgent(
             provider, conventions=conventions or _default_conventions()
         )
+
+    def _extract_experience(
+        self,
+        result: ExecutionResult,
+        request: ExecutionRequest,
+        *,
+        assembler: Any = None,
+        validation: Any = None,
+        employee_id: str = "",
+    ) -> None:
+        """任务结束后自动提取 ContextExperienceRecord (T4.4; 失败安全)。
+
+        全链路 Trace 输入: assembler.last_ranking_result (RankingPipelineResult
+        — 含 ranking_trace/context_used/progressive/budget_trace); 旧路径
+        (assembler None 或未走 ranking) → 对应 trace 缺省空, 提取不破坏。
+        """
+        if self._experience_extractor is None:
+            return
+        try:
+            ranking = None
+            if assembler is not None:
+                ranking = getattr(assembler, "last_ranking_result", None)
+            progressive = getattr(ranking, "progressive", None) if ranking is not None else None
+            budget = getattr(ranking, "budget", None) if ranking is not None else None
+            self._experience_extractor.extract(
+                result=result,
+                request=request,
+                ranking=ranking,
+                progressive=progressive,
+                budget=budget,
+                validation=validation,
+                context_score=getattr(result, "context_score", None),
+                employee_id=employee_id,
+            )
+        except Exception:  # noqa: BLE001 — 经验提取失败安全 (8B-3 语义)
+            pass
 
     @property
     def developer(self) -> DeveloperAgent:
@@ -166,12 +208,17 @@ class AgentRuntime:
     def _fail(
         self, request: ExecutionRequest, error: str, *, duration: float = 0.0,
         employee: Any = None, failure_reason: str = "",
+        assembler: Any = None, validation: Any = None,
     ) -> ExecutionResult:
         """构造 failed 结果 + 发 org.execution.failed (终态单一)。
 
         失败同样记录 Experience (设计 §8: 成功/失败都记录; 失败 = 负信号 +
         failure_reason 结构化 — 供未来复盘/推荐, 不静默失败)。经验失败安全
         (记录异常静默)。
+
+        T4.4: 失败路径同样自动提取 ContextExperienceRecord (assembler/
+        validation 由调用方在可用时传入 — 早期失败 (无上下文) → None,
+        提取器按失败文本分类, 链路不破坏)。
         """
         result = ExecutionResult(
             id=new_id("EXS"),
@@ -193,6 +240,13 @@ class AgentRuntime:
                 )
             except Exception:  # noqa: BLE001 — 经验失败安全 (8B-3 语义)
                 pass
+        self._extract_experience(
+            result,
+            request,
+            assembler=assembler,
+            validation=validation,
+            employee_id=getattr(employee, "id", "") or "",
+        )
         return result
 
     def _write_artifact_file(self, name: str, content: str) -> str:
@@ -271,6 +325,7 @@ class AgentRuntime:
         # 内部失败安全回退旧 assemble); 默认 False → 旧路径逐位不动。
         assembled_context = None
         context_score: float | None = None
+        assembler: Any = None
         try:
             from .context import ContextAssembler
 
@@ -315,12 +370,14 @@ class AgentRuntime:
                     duration=time.monotonic() - started,
                     employee=employee,
                     failure_reason=getattr(exc, "failure_reason", ""),
+                    assembler=assembler,
                 )
             except Exception as exc:  # noqa: BLE001 — 防御兜底: 意外错误 → failed
                 return self._fail(
                     request, f"execution error: {exc}",
                     duration=time.monotonic() - started,
                     employee=employee,
+                    assembler=assembler,
                 )
             try:
                 if output.patch_text.strip():
@@ -332,6 +389,7 @@ class AgentRuntime:
                     request, f"sandbox error: {exc}",
                     duration=time.monotonic() - started,
                     employee=employee,
+                    assembler=assembler,
                 )
             attempt += 1
             if vresult.passed or attempt >= _MAX_VALIDATION_ATTEMPTS:
@@ -357,7 +415,7 @@ class AgentRuntime:
             except Exception as exc:  # noqa: BLE001 — 失败安全
                 return self._fail(
                     request, f"sandbox error: {exc}", duration=duration,
-                    employee=employee,
+                    employee=employee, assembler=assembler, validation=vresult,
                 )
         artifacts.append(
             Artifact(
@@ -432,6 +490,15 @@ class AgentRuntime:
                 self._experience.record(result=result, employee_id=employee_id, request=request)
             except Exception:  # noqa: BLE001 — 经验失败安全 (8B-3 语义)
                 pass
+        # T4.4: 成功路径自动提取 ContextExperienceRecord (全链路 Trace:
+        # assembler.last_ranking_result → ranking/progressive/budget; 失败安全)
+        self._extract_experience(
+            result,
+            request,
+            assembler=assembler,
+            validation=vresult,
+            employee_id=employee_id,
+        )
         return result
 
     def _event_refs(self, session: SandboxSession) -> list[str]:

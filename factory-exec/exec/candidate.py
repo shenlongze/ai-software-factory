@@ -460,8 +460,11 @@ class SequentialRunner:
       不中断收集 (失败必存, 禁静默丢弃);
     - 经验信号: 每候选 to_experience_signals() 汇总到 signals (candidate_success
       / 五类失败 — T4.4 词汇);
-    - select_result(): T5.3 Evaluator 落地前的临时选择 (第一个成功候选结果,
-      全失败 → 最后一个候选结果 — 失败如实返回不静默)。
+    - evaluate(): T5.3 正式评估 — CandidateEvaluator 5 层确定性评分
+      (禁 LLM/随机), 返回 EvaluationResult (last_evaluation 可审计);
+    - select_result(): 经 Evaluator 的正式选择 — 选中候选对应执行结果;
+      全失败/无合格 → 最后一个失败结果 (如实返回, 拒绝理由经
+      last_evaluation 审计, 不静默)。
 
     executor: Callable[[int], ExecutionResult] — 第 index 次 Run 的独立执行
     (1-based); 返回 ExecutionResult (失败也返回结果对象 — 失败安全契约,
@@ -486,6 +489,7 @@ class SequentialRunner:
         self._results: list[Any] = []
         self._candidates: list[ExecutionCandidate] = []
         self._signals: list[tuple[str, str]] = []
+        self._last_evaluation: Any = None
 
     # ------------------------------------------------------------------ 状态
 
@@ -548,6 +552,8 @@ class SequentialRunner:
                     model=self._model,
                     failure_reason=classify_candidate_failure(str(exc)),
                 )
+                # 结果占位对齐: 候选与结果索引一一对应 (select_result 按索引回取)
+                self._results.append(None)
                 run.candidate_id = candidate.id
                 run.fail()
             self._run_states.append(run)
@@ -557,15 +563,40 @@ class SequentialRunner:
         self._candidates = collector.candidates
         return self._candidates
 
-    def select_result(self) -> Any:
-        """T5.3 Evaluator 落地前的临时选择 (可审计占位, 不替换 T5.3)。
+    def evaluate(self) -> Any:
+        """正式评估 (T5.3): CandidateEvaluator 5 层确定性评分 (禁 LLM/随机)。
 
-        规则: 第一个成功候选对应的执行结果; 全失败 → 最后一个候选结果
-        (失败如实返回 — 不静默伪装成功); 未 run() → RuntimeError。
+        返回 EvaluationResult (selected/ranking/score_breakdown/rejection_reason,
+        可解释可审计); 未 run() → RuntimeError; 评估明细经 last_evaluation
+        属性重复读取 (同一次评估结果, 无副作用)。
         """
         if not self._candidates:
             raise RuntimeError("no candidates: call run() first")
-        for candidate, result in zip(self._candidates, self._results):
-            if candidate.is_success:
-                return result
-        return self._results[-1]
+        from .evaluator import CandidateEvaluator  # 延迟导入 — 防循环依赖
+
+        evaluation = CandidateEvaluator().evaluate(self._candidates)
+        self._last_evaluation = evaluation
+        return evaluation
+
+    @property
+    def last_evaluation(self) -> Any:
+        """最近一次评估结果 (T5.3; 未评估 → None; 审计用 — 为什么选它)。"""
+        return self._last_evaluation
+
+    def select_result(self) -> Any:
+        """正式选择 (T5.3): CandidateEvaluator 评估 → 选中候选对应执行结果。
+
+        规则: 验证通过候选按 5 层总分选 Best (评估明细经 last_evaluation
+        审计 — 为什么选它可解释); 全失败 / 无合格候选 → 最后一个候选结果
+        (失败如实返回, 不静默伪装成功 — 拒绝理由经 last_evaluation 审计);
+        未 run() → RuntimeError。
+        """
+        if not self._candidates:
+            raise RuntimeError("no candidates: call run() first")
+        evaluation = self.evaluate()
+        if evaluation.selected_candidate_id is not None:
+            for index, candidate in enumerate(self._candidates):
+                if candidate.id == evaluation.selected_candidate_id:
+                    if index < len(self._results):
+                        return self._results[index]
+        return self._results[-1] if self._results else None

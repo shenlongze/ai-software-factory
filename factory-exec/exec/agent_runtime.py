@@ -165,6 +165,7 @@ class AgentRuntime:
         self._execution_strategy_enabled = execution_strategy_enabled
         self._execution_strategy_runs = max(1, int(execution_strategy_runs))
         self._last_candidates: list[Any] = []
+        self._last_evaluation: Any = None
         self._developer = DeveloperAgent(
             provider, conventions=conventions or _default_conventions()
         )
@@ -217,6 +218,15 @@ class AgentRuntime:
     def last_candidates(self) -> list[Any]:
         """最近一次策略执行的候选列表 (T5.2; 未走策略路径 → 空; 审计用)。"""
         return list(self._last_candidates)
+
+    @property
+    def last_evaluation(self) -> Any:
+        """最近一次策略评估结果 (T5.3; 未走策略路径 → None; 审计用)。
+
+        EvaluationResult: selected_candidate_id / ranking / score_breakdown /
+        rejection_reason — 为什么选它 / 为什么拒绝, 可解释可审计。
+        """
+        return self._last_evaluation
 
     # ------------------------------------------------------------------ 内部
 
@@ -286,8 +296,9 @@ class AgentRuntime:
         T5.2 Feature Flag (execution_strategy_enabled, 默认 False):
         - False: 旧流程逐位不变 (Task→LLM→Validation 单次执行 → _execute_legacy)。
         - True: 多 Run 执行策略 (SequentialRunner N 次独立执行 → Candidate 列表
-          → 临时选择; 候选经 last_candidates 属性审计); 策略路径异常 →
-          失败安全回退旧流程 (执行链不破坏, 同 T4.1 ranking 回退语义)。
+          → T5.3 CandidateEvaluator 正式选择; 候选经 last_candidates、评估明细
+          经 last_evaluation 审计); 策略路径异常 → 失败安全回退旧流程 (执行链
+          不破坏, 同 T4.1 ranking 回退语义)。
         """
         if self._execution_strategy_enabled:
             try:
@@ -310,9 +321,10 @@ class AgentRuntime:
         必存 (failure_reason 必填 — 禁静默丢弃)。逐 Run 的 T4.4 经验记录
         由 _execute_legacy 既有接线自动完成 (不重复建库)。
 
-        T5.3 边界: Evaluator 落地前, 结果 = 临时选择 (第一个成功候选对应
-        结果; 全失败 → 最后一个 — 失败如实返回不静默); 候选列表经
-        last_candidates 属性可审计。
+        T5.3: 结果 = CandidateEvaluator 正式选择 (验证通过候选 5 层总分选
+        Best — 评估明细经 runner.last_evaluation / self.last_evaluation
+        审计, 为什么选它可解释); 全失败 → 最后一个失败结果 + 诚实拒绝理由
+        (不静默伪装成功); 候选列表经 last_candidates 属性可审计。
         """
         provider_id = getattr(self._developer.provider, "provider_id", "")
         model = getattr(self._developer.provider, "model", "") or ""
@@ -326,7 +338,9 @@ class AgentRuntime:
         )
         runner.run(request=request)
         self._last_candidates = runner.candidates
-        return runner.select_result()
+        result = runner.select_result()  # T5.3: 经 CandidateEvaluator 正式选择
+        self._last_evaluation = runner.last_evaluation
+        return result
 
     def _execute_legacy(
         self,

@@ -32,13 +32,17 @@ from exec.ranking import (
     TASK_TYPE_BUDGETS,
     TASK_TYPES,
     ContextCandidate,
+    FACTOR_KEYS,
     FeatureContext,
+    RankingEngine,
     TaskProfile,
     analyze_task,
     detect_task_type,
     extract_acceptance,
     extract_candidate_features,
     extract_symbol_candidates,
+    normalize_weights,
+    score_candidate,
     score_dependency_distance,
     score_experience_match,
     score_history_success,
@@ -565,3 +569,164 @@ class TestFeatureContextExtraction:
         f = extract_candidate_features(self._code_candidate("docs/readme.md"), profile, ctx)
         assert f["keyword_match"] == 0.0
         assert f["dependency_distance"] == 0.1
+
+
+# ================================================================ §4 RankingEngine
+
+_FULL_FEATURES = {
+    "keyword_match": 1.0, "symbol_relation": 1.0, "dependency_distance": 1.0,
+    "test_relation": 1.0, "history_success": 1.0, "experience_match": 1.0,
+}
+
+
+class TestNormalizeWeights:
+    """权重归一 (部分键合并 / clamp / 上限保护)。"""
+
+    def test_default_weights_preserved(self) -> None:
+        assert normalize_weights(None) == RANKING_WEIGHTS
+
+    def test_partial_keys_merged_over_defaults(self) -> None:
+        w = normalize_weights({"keyword_match": 0.5})
+        # 部分键替换默认后总和 0.5+0.25+0.15+0.10+0.08+0.07 = 1.15 > 1.0
+        # → 等比缩放至和 = 1.0 (设计: 权重上限保护)
+        assert w["keyword_match"] == pytest.approx(0.5 / 1.15)
+        assert w["symbol_relation"] == pytest.approx(0.25 / 1.15)  # 默认保留 + 同比例缩放
+        assert abs(sum(w.values()) - 1.0) < 1e-9
+
+    def test_unknown_keys_ignored(self) -> None:
+        w = normalize_weights({"bogus": 1.0})
+        assert "bogus" not in w
+        assert w == RANKING_WEIGHTS
+
+    def test_weight_cap_protection(self) -> None:
+        """权重超限 → 等比缩放至和 = 1.0 (设计: 全满分 → 1.0)。"""
+        w = normalize_weights({"keyword_match": 2.0})
+        assert abs(sum(w.values()) - 1.0) < 1e-9
+        assert w["keyword_match"] < 1.0
+
+    def test_idempotent(self) -> None:
+        w = normalize_weights(RANKING_WEIGHTS)
+        assert w == RANKING_WEIGHTS
+
+
+class TestScoreCandidate:
+    """评分纯函数 (设计 §4 公式 + 边界)。"""
+
+    def test_all_zero_scores_zero(self) -> None:
+        zero = {k: 0.0 for k in RANKING_WEIGHTS}
+        r = score_candidate(zero)
+        assert r["score"] == 0.0
+        assert r["confidence"] == 1.0
+
+    def test_all_max_scores_one(self) -> None:
+        r = score_candidate(_FULL_FEATURES)
+        assert r["score"] == 1.0
+
+    def test_exact_weighted_sum(self) -> None:
+        """0.35×1.0 + 0.25×0.7 + 0.15×1.0 + 0.10×0 + 0.08×0.5 + 0.07×0 = 0.715。"""
+        features = {
+            "keyword_match": 1.0, "symbol_relation": 0.7, "dependency_distance": 1.0,
+            "test_relation": 0.0, "history_success": 0.5, "experience_match": 0.0,
+        }
+        r = score_candidate(features)
+        assert r["score"] == 0.715
+
+    def test_missing_factors_zero_contribution(self) -> None:
+        """部分特征缺失 → 该因素按 0 计, 不参与置信度 (特征完整性)。"""
+        r = score_candidate({"keyword_match": 1.0})
+        assert r["score"] == 0.35
+        assert r["confidence"] == round(1 / 6, 3)
+
+    def test_feature_clamped(self) -> None:
+        r = score_candidate({"keyword_match": 2.0})
+        assert r["score"] == 0.35
+
+    def test_reason_recomputable(self) -> None:
+        """reason 逐因素明细 (权重×特征值) — 可复算审计。"""
+        r = score_candidate(
+            {"keyword_match": 1.0, "symbol_relation": 0.7, "dependency_distance": 1.0,
+             "test_relation": 0.0, "history_success": 0.5, "experience_match": 0.0}
+        )
+        assert "keyword_match=0.350(0.35×1.000)" in r["reason"]
+        assert "symbol_relation=0.175(0.25×0.700)" in r["reason"]
+        assert "→ score=0.715" in r["reason"]
+
+    def test_contributions_sum_to_score(self) -> None:
+        r = score_candidate(_FULL_FEATURES)
+        assert abs(sum(r["contributions"].values()) - r["score"]) < 1e-6
+        assert set(r["contributions"]) == set(FACTOR_KEYS)
+
+    def test_weight_cap_boundary(self) -> None:
+        """权重超限保护后全满分仍 → 1.0 (上限语义)。"""
+        r = score_candidate(_FULL_FEATURES, {"keyword_match": 5.0})
+        assert r["score"] == 1.0
+
+    def test_custom_weights_shift_ranking(self) -> None:
+        """keyword_match 权重 0.8 → 高关键词命中候选大幅领先。"""
+        f_high = {"keyword_match": 1.0, "history_success": 0.0}
+        f_low = {"keyword_match": 0.0, "history_success": 1.0}
+        r_high = score_candidate(f_high, {"keyword_match": 0.8})
+        r_low = score_candidate(f_low, {"keyword_match": 0.8})
+        assert r_high["score"] > r_low["score"]
+
+
+class TestRankingEngine:
+    """引擎 rank(): 排序 / 不修改入参 / 缺失特征处理。"""
+
+    def _cand(self, cid: str, ctype: str = "code") -> ContextCandidate:
+        return ContextCandidate(id=cid, type=ctype, source=cid.split(":", 1)[-1])
+
+    def test_rank_sorts_desc(self) -> None:
+        engine = RankingEngine()
+        cs = [self._cand("code:a.py"), self._cand("code:b.py"), self._cand("code:c.py")]
+        fm = {
+            "code:a.py": {"keyword_match": 1.0},
+            "code:b.py": {"keyword_match": 0.5},
+            "code:c.py": {"keyword_match": 0.9},
+        }
+        ranked = engine.rank(cs, fm)
+        assert [c.id for c in ranked] == ["code:a.py", "code:c.py", "code:b.py"]
+
+    def test_rank_tie_broken_by_id(self) -> None:
+        engine = RankingEngine()
+        cs = [self._cand("code:b.py"), self._cand("code:a.py")]
+        fm = {"code:a.py": {"keyword_match": 0.5}, "code:b.py": {"keyword_match": 0.5}}
+        ranked = engine.rank(cs, fm)
+        assert [c.id for c in ranked] == ["code:a.py", "code:b.py"]
+
+    def test_rank_does_not_mutate_input(self) -> None:
+        engine = RankingEngine()
+        c = self._cand("code:a.py")
+        ranked = engine.rank([c], {"code:a.py": {"keyword_match": 1.0}})
+        assert c.relevance_score == 0.0  # 原对象不变
+        assert ranked[0].relevance_score == 0.35
+        assert ranked[0] is not c
+
+    def test_rank_missing_features_zero(self) -> None:
+        engine = RankingEngine()
+        c = self._cand("code:a.py")
+        ranked = engine.rank([c], {})
+        assert ranked[0].relevance_score == 0.0
+        assert ranked[0].confidence == 0.0
+
+    def test_rank_populates_audit_fields(self) -> None:
+        engine = RankingEngine()
+        c = self._cand("code:a.py")
+        ranked = engine.rank([c], {"code:a.py": _FULL_FEATURES})
+        top = ranked[0]
+        assert top.relevance_score == 1.0
+        assert top.confidence == 1.0
+        assert "score=1.000" in top.reason
+        assert top.factor_scores["keyword_match"] == 0.35
+
+    def test_engine_custom_weights(self) -> None:
+        engine = RankingEngine({"keyword_match": 0.8})
+        # 0.8+0.65 = 1.45 > 1.0 → 等比缩放 (设计: 权重上限保护)
+        assert engine.weights["keyword_match"] == pytest.approx(0.8 / 1.45)
+        r = engine.score({"keyword_match": 1.0})
+        assert r["score"] == pytest.approx(round(0.8 / 1.45, 3))
+
+    def test_engine_score_wrapper(self) -> None:
+        engine = RankingEngine()
+        r = engine.score(_FULL_FEATURES)
+        assert r["score"] == 1.0

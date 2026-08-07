@@ -566,3 +566,100 @@ def _dependency_distance(rel: str, ctx: FeatureContext) -> int | None:
     if rel in ctx.indirect:
         return 2
     return None
+
+
+# ================================================================ RankingEngine
+
+def normalize_weights(weights: dict[str, float] | None = None) -> dict[str, float]:
+    """权重归一 (装配/纯函数路径共用): 部分键合并到默认权重 → clamp 0-1 →
+    和 > 1.0 时等比缩放 (权重上限保护, 设计 §4: 全满分 → 1.0)。
+
+    未知键忽略 (评分只认 6 因素); 幂等 (已是合法权重 → 原样返回)。
+    """
+    w = dict(RANKING_WEIGHTS)
+    if weights:
+        for k, v in weights.items():
+            if k in w:
+                w[k] = _clamp01(v)
+    total = sum(w.values())
+    if total > 1.0:
+        w = {k: v / total for k, v in w.items()}
+    return w
+
+
+def score_candidate(
+    features: dict[str, float], weights: dict[str, float] | None = None
+) -> dict[str, Any]:
+    """6 因素特征 → 评分 (设计 §4): score + 各因素贡献 + reason + confidence。
+
+    返回:
+    - score: 加权求和, clamp 0-1, 3 位小数 (全零 → 0; 全满分 → 1.0);
+    - contributions: 因素 → 加权贡献 (可复算审计);
+    - reason: 逐因素明细字符串 (权重×特征值, 可复算);
+    - confidence: 特征完整性 = 已出现因素占比 (缺失因素不参与评分)。
+
+    纯函数可测: 输入特征向量 → 断言分数精确。
+    """
+    w = normalize_weights(weights)
+    contributions: dict[str, float] = {}
+    missing = 0
+    for key in FACTOR_KEYS:
+        if key not in features or features[key] is None:
+            missing += 1
+            contributions[key] = 0.0
+            continue
+        val = _clamp01(features[key])
+        contributions[key] = round(w[key] * val, 6)
+    score = round(max(0.0, min(1.0, sum(contributions.values()))), 3)
+    reason_parts = [
+        f"{key}={contributions[key]:.3f}({w[key]:.2f}×{_clamp01(features[key]) if key in features and features[key] is not None else 0.0:.3f})"
+        for key in FACTOR_KEYS
+    ]
+    reason = "; ".join(reason_parts) + f" → score={score:.3f}"
+    confidence = round(1.0 - missing / len(FACTOR_KEYS), 3)
+    return {
+        "score": score,
+        "contributions": contributions,
+        "reason": reason,
+        "confidence": confidence,
+    }
+
+
+class RankingEngine:
+    """加权评分引擎 (设计 §3 步骤④; 纯规则, 零 LLM)。
+
+    构造可注入权重 (部分键 → 合并默认 + 上限保护); rank() 对候选+特征对
+    产出 ContextCandidate (relevance_score/reason/confidence/factor_scores)。
+    """
+
+    def __init__(self, weights: dict[str, float] | None = None) -> None:
+        self.weights = normalize_weights(weights)
+
+    def score(self, features: dict[str, float]) -> dict[str, Any]:
+        """特征向量 → 评分结果 (纯函数包装, 用引擎权重)。"""
+        return score_candidate(features, self.weights)
+
+    def rank(
+        self, candidates: list[ContextCandidate], features_map: dict[str, dict[str, float]]
+    ) -> list[ContextCandidate]:
+        """候选+特征 → 评分排序后的候选列表 (降序; 同分按 id 升序稳定)。
+
+        不修改入参对象 — model_copy 产出新实例 (同服务层 model_copy 语义)。
+        缺失特征映射的候选 → 按 0 分全因素缺失处理 (置信度 0)。
+        """
+        scored: list[ContextCandidate] = []
+        for c in candidates:
+            features = features_map.get(c.id, {})
+            result = score_candidate(features, self.weights)
+            scored.append(
+                c.model_copy(
+                    update={
+                        "relevance_score": result["score"],
+                        "reason": result["reason"],
+                        "confidence": result["confidence"],
+                        "factor_scores": result["contributions"],
+                    }
+                )
+            )
+        scored.sort(key=lambda c: (-c.relevance_score, c.id))
+        return scored

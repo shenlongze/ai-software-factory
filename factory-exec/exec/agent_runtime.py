@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import Any
 
 from . import events as exec_events
+from .candidate import SequentialRunner
 from .developer import DeveloperAgent, DeveloperError
 from .experience import ExperienceRecorder
 from .models import (
@@ -126,6 +127,10 @@ class AgentRuntime:
       missing_symbols), 提取/落库异常静默 — 审计增强数据不破坏执行链)。
     - ranking_enabled: T4.1 Ranking Pipeline 新路径开关 (默认 False — 旧
       ContextAssembler.assemble 路径; True → ranking_assemble, 失败安全回退旧路径)。
+    - execution_strategy_enabled: T5.2 多 Run 执行策略 Feature Flag (默认
+      False — 旧流程逐位不变; True → SequentialRunner N 次独立执行 →
+      Candidate 列表 → 临时选择; 策略路径异常 → 失败安全回退旧流程)。
+    - execution_strategy_runs: 策略 Run 次数 (默认 3, ≥1 归一)。
     """
 
     def __init__(
@@ -142,6 +147,8 @@ class AgentRuntime:
         git_bin: str = "git",
         conventions: str | None = None,
         ranking_enabled: bool = False,
+        execution_strategy_enabled: bool = False,
+        execution_strategy_runs: int = 3,
     ) -> None:
         self._store = store
         self._logger = logger
@@ -155,6 +162,9 @@ class AgentRuntime:
         self._experience_extractor = experience_extractor
         self._git_bin = git_bin
         self._ranking_enabled = ranking_enabled
+        self._execution_strategy_enabled = execution_strategy_enabled
+        self._execution_strategy_runs = max(1, int(execution_strategy_runs))
+        self._last_candidates: list[Any] = []
         self._developer = DeveloperAgent(
             provider, conventions=conventions or _default_conventions()
         )
@@ -202,6 +212,11 @@ class AgentRuntime:
     @property
     def store(self) -> ExecStore | None:
         return self._store
+
+    @property
+    def last_candidates(self) -> list[Any]:
+        """最近一次策略执行的候选列表 (T5.2; 未走策略路径 → 空; 审计用)。"""
+        return list(self._last_candidates)
 
     # ------------------------------------------------------------------ 内部
 
@@ -267,6 +282,62 @@ class AgentRuntime:
         agent_instance: Any = None,
     ) -> ExecutionResult:
         """执行请求 → ExecutionResult (沙箱副本 + patch; 全程失败安全)。
+
+        T5.2 Feature Flag (execution_strategy_enabled, 默认 False):
+        - False: 旧流程逐位不变 (Task→LLM→Validation 单次执行 → _execute_legacy)。
+        - True: 多 Run 执行策略 (SequentialRunner N 次独立执行 → Candidate 列表
+          → 临时选择; 候选经 last_candidates 属性审计); 策略路径异常 →
+          失败安全回退旧流程 (执行链不破坏, 同 T4.1 ranking 回退语义)。
+        """
+        if self._execution_strategy_enabled:
+            try:
+                return self._execute_strategy(request, employee, agent_instance)
+            except Exception:  # noqa: BLE001 — T5.2 失败安全: 回退旧流程
+                pass
+        return self._execute_legacy(request, employee, agent_instance)
+
+    def _execute_strategy(
+        self,
+        request: ExecutionRequest,
+        employee: Any = None,
+        agent_instance: Any = None,
+    ) -> ExecutionResult:
+        """多 Run 执行策略 (T5.2; flag 开时): N 次独立顺序执行 → Candidate 收集。
+
+        每次 Run = 独立 Provider 调用 (同一 request/Context, 独立随机性 —
+        新沙箱 + 新 generate; 抗单次波动, 不复制 Agent)。Run 状态经
+        SequentialRunner 记录 (pending→running→success|failed); 失败候选
+        必存 (failure_reason 必填 — 禁静默丢弃)。逐 Run 的 T4.4 经验记录
+        由 _execute_legacy 既有接线自动完成 (不重复建库)。
+
+        T5.3 边界: Evaluator 落地前, 结果 = 临时选择 (第一个成功候选对应
+        结果; 全失败 → 最后一个 — 失败如实返回不静默); 候选列表经
+        last_candidates 属性可审计。
+        """
+        provider_id = getattr(self._developer.provider, "provider_id", "")
+        model = getattr(self._developer.provider, "model", "") or ""
+        runner = SequentialRunner(
+            executor=lambda _index: self._execute_legacy(
+                request, employee, agent_instance
+            ),
+            runs=self._execution_strategy_runs,
+            provider=provider_id,
+            model=model,
+        )
+        runner.run(request=request)
+        self._last_candidates = runner.candidates
+        return runner.select_result()
+
+    def _execute_legacy(
+        self,
+        request: ExecutionRequest,
+        employee: Any = None,
+        agent_instance: Any = None,
+    ) -> ExecutionResult:
+        """执行请求 → ExecutionResult (沙箱副本 + patch; 全程失败安全)。
+
+        T5.2: 旧流程单次执行路径 (Feature Flag 关闭 / 策略回退时的逐位不变
+        行为; execute() 在 flag 关闭时原样派发到此)。
 
         employee/agent_instance: duck-typed (含 id/name 即可 — org Employee
         或本层 AgentInstance 均可; 零硬依赖 factory-org)。

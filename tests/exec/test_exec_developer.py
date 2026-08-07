@@ -57,6 +57,29 @@ class TestBuildPrompt:
         )
         assert "/tmp/sbx/project" in prompt
 
+    def test_source_files_rendered_inline(self):
+        prompt = DeveloperAgent(FakeProvider()).build_prompt(
+            objective="o",
+            source_files=[("lib/a.dart", "class A {\n  int x = 1;\n}")],
+        )
+        assert "## Relevant source files" in prompt
+        assert "### lib/a.dart" in prompt
+        assert "class A {" in prompt
+        assert "```dart" in prompt
+
+    def test_source_files_empty_no_section(self):
+        p1 = DeveloperAgent(FakeProvider()).build_prompt(objective="o")
+        p2 = DeveloperAgent(FakeProvider()).build_prompt(
+            objective="o", source_files=[]
+        )
+        assert "## Relevant source files" not in p1
+        assert "## Relevant source files" not in p2
+
+    def test_prompt_mentions_no_shell_access(self):
+        prompt = DeveloperAgent(FakeProvider()).build_prompt(objective="o")
+        assert "NO shell or file access" in prompt
+        assert "NO_CHANGE" in prompt
+
 
 class TestParsePatch:
     def test_patch_tags(self):
@@ -186,3 +209,41 @@ class TestWork:
         out = DeveloperAgent(provider).work(request=make_request())
         assert out.usage["input_tokens"] == 10
         assert out.usage["estimated_cost_usd"] == 0.01
+
+
+class TestWorkSourceFiles:
+    """work(source_files=...) → 沙箱源文件内容内联进 Provider 提示词。"""
+
+    def test_work_embeds_source_file_content(self, tmp_path):
+        target = tmp_path / "lib" / "a.dart"
+        target.parent.mkdir(parents=True)
+        target.write_text("class A {\n  int x = 1;\n}\n", encoding="utf-8")
+        provider = FakeProvider(content="<patch>\n" + VALID_DIFF + "\n</patch>")
+        agent = DeveloperAgent(provider)
+        agent.work(
+            request=make_request(),
+            sandbox_path=str(tmp_path),
+            source_files=["lib/a.dart"],
+        )
+        prompt = provider.calls[0].task_context
+        assert "## Relevant source files" in prompt
+        assert "### lib/a.dart" in prompt
+        assert "class A {" in prompt
+
+    def test_work_missing_source_file_raises(self, tmp_path):
+        provider = FakeProvider(content="<patch>\n" + VALID_DIFF + "\n</patch>")
+        agent = DeveloperAgent(provider)
+        with pytest.raises(DeveloperError, match="source file not found"):
+            agent.work(
+                request=make_request(),
+                sandbox_path=str(tmp_path),
+                source_files=["lib/not_there.dart"],
+            )
+
+    def test_work_no_source_files_ok(self, tmp_path):
+        provider = FakeProvider(content="<patch>\n" + VALID_DIFF + "\n</patch>")
+        agent = DeveloperAgent(provider)
+        out = agent.work(request=make_request(), sandbox_path=str(tmp_path))
+        assert out.patch_text == VALID_DIFF
+        # 无 source_files → 不渲染该节 (conventions 中的字样说明不算节)
+        assert "## Relevant source files" not in provider.calls[0].task_context

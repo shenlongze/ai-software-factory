@@ -49,9 +49,11 @@ class FakeProvider:
         self._content = content
         self._usage = usage or {}
         self.calls = 0
+        self.requests: list = []
 
     def generate(self, request) -> ProviderResponse:
         self.calls += 1
+        self.requests.append(request)
         return ProviderResponse(content=self._content, usage=dict(self._usage))
 
 
@@ -60,6 +62,23 @@ class RaisingProvider(FakeProvider):
 
     def generate(self, request) -> ProviderResponse:  # pragma: no cover
         raise AssertionError("BLOCKED 模式禁止 Provider 调用")
+
+
+class SequenceProvider:
+    """按调用序号依次返回回复 (重试场景: 先空 patch, 后有效 patch)。"""
+
+    provider_id = "openai"
+    model = "fake-model"
+
+    def __init__(self, contents: list[str], usage: dict | None = None) -> None:
+        self._contents = list(contents)
+        self._usage = usage or {}
+        self.calls = 0
+
+    def generate(self, request) -> ProviderResponse:
+        idx = min(self.calls, len(self._contents) - 1)
+        self.calls += 1
+        return ProviderResponse(content=self._contents[idx], usage=dict(self._usage))
 
 
 def make_patch(old: str, new: str, rel: str) -> str:
@@ -328,6 +347,101 @@ def test_runs_repeat_and_unique_result_ids(tmp_path: Path) -> None:
     ids = [r.id for r in report.results]
     assert len(set(ids)) == 2
     assert report.success_rate == 1.0
+
+
+# ================================================================ 重试语义
+
+def test_empty_patch_retries_once_then_succeeds(tmp_path: Path) -> None:
+    """空 patch (模型随机性) → 重试 1 次 → 有效 patch → SUCCESS (调用 2 次)。"""
+    fake_markpad(tmp_path / "proj")
+    provider = SequenceProvider([
+        "need to think\n<patch>\n</patch>",  # 空 patch 标签
+        make_patch(BUGGY_SEARCH, FIXED_SEARCH, "lib/editor/services/search_service.dart"),
+    ], usage={"prompt_tokens": 10, "completion_tokens": 5,
+              "estimated_cost_usd": 0.0001})
+    runner = BenchmarkRunner(
+        provider, samples=[sample_bug()],
+        project_dir=tmp_path / "proj", work_root=tmp_path,
+        env={"OPENAI_API_KEY": "sk-test"},
+    )
+    result = runner.run_all().results[0]
+    assert result.status is SampleStatus.SUCCESS
+    assert result.verifier_passed is True
+    assert provider.calls == 2, "空 patch 应重试 1 次"
+    # 成本累计两次调用 (诚实总花费)
+    assert result.cost_usd == pytest.approx(0.0002)
+
+
+def test_empty_patch_both_attempts_fail(tmp_path: Path) -> None:
+    """两次都空 patch → FAILED + error 标注 (after 1 retry)。"""
+    fake_markpad(tmp_path / "proj")
+    provider = FakeProvider("still thinking\n<patch>\n</patch>")
+    runner = BenchmarkRunner(
+        provider, samples=[sample_bug()],
+        project_dir=tmp_path / "proj", work_root=tmp_path,
+        env={"OPENAI_API_KEY": "sk-test"},
+    )
+    result = runner.run_all().results[0]
+    assert result.status is SampleStatus.FAILED
+    assert "empty patch" in result.error
+    assert "after 1 retry" in result.error
+    assert result.verifier_passed is None
+    assert provider.calls == 2
+
+
+def test_empty_content_retries_then_fails(tmp_path: Path) -> None:
+    """空内容 (reasoning 模型空 content) → 重试 → 仍空 → FAILED 诚实标注。"""
+    fake_markpad(tmp_path / "proj")
+    provider = FakeProvider("")
+    runner = BenchmarkRunner(
+        provider, samples=[sample_bug()],
+        project_dir=tmp_path / "proj", work_root=tmp_path,
+        env={"OPENAI_API_KEY": "sk-test"},
+    )
+    result = runner.run_all().results[0]
+    assert result.status is SampleStatus.FAILED
+    assert "empty content" in result.error
+    assert "after 1 retry" in result.error
+    assert provider.calls == 2
+
+
+def test_unappliable_patch_does_not_retry(tmp_path: Path) -> None:
+    """patch 可解析但不可应用 → 不重试 (真实能力判定, 重试是放水)。"""
+    fake_markpad(tmp_path / "proj")
+    provider = FakeProvider(make_patch(BUGGY_SEARCH, FIXED_SEARCH,
+                                       "lib/editor/services/search_service.dart")
+                            .replace("class SearchService", "class Renamed"))
+    runner = BenchmarkRunner(
+        provider, samples=[sample_bug()],
+        project_dir=tmp_path / "proj", work_root=tmp_path,
+        env={"OPENAI_API_KEY": "sk-test"},
+    )
+    result = runner.run_all().results[0]
+    assert result.status is SampleStatus.FAILED
+    assert "patch apply failed" in result.error
+    assert "after 1 retry" not in result.error
+    assert provider.calls == 1, "不可应用 patch 不重试"
+
+
+def test_source_files_embedded_in_prompt(tmp_path: Path) -> None:
+    """样本 source_files → 沙箱内文件内容内联进 Provider 提示词 (模型唯一代码来源)。"""
+    fake_markpad(tmp_path / "proj")
+    sb = sample("BUG-TEST-002", SampleKind.BUG, "verify_bug_001_replace_current",
+                ["lib/editor/services/search_service.dart"])
+    sb.source_files = ["lib/editor/services/search_service.dart"]
+    provider = FakeProvider(
+        make_patch(BUGGY_SEARCH, FIXED_SEARCH, "lib/editor/services/search_service.dart"))
+    runner = BenchmarkRunner(
+        provider, samples=[sb],
+        project_dir=tmp_path / "proj", work_root=tmp_path,
+        env={"OPENAI_API_KEY": "sk-test"},
+    )
+    result = runner.run_all().results[0]
+    assert result.status is SampleStatus.SUCCESS
+    prompt = provider.requests[0].task_context
+    assert "## Relevant source files" in prompt
+    assert "class SearchService" in prompt  # 缺陷现场代码已内联
+    assert "verify_bug_001_replace_current" not in prompt  # verifier id 不进 prompt
 
 
 # ================================================================ 报告聚合

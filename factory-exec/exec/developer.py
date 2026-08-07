@@ -26,6 +26,7 @@ from __future__ import annotations
 import re
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from .provider import ProviderError, ProviderInterface, ProviderRequest
@@ -38,7 +39,14 @@ DEFAULT_CONVENTIONS = (
     "3. 补丁必须是 unified diff 格式 (git diff 可应用)\n"
     "4. 不引入新外部依赖 (除非任务明确要求)\n"
     "5. 修改后语法必须正确 (沙箱会做语法检查)\n"
+    "6. 新建文件: diff 头用 `--- /dev/null` 与 `+++ b/<path>`, "
+    "并带 `new file mode 100644` 行\n"
+    "7. 你没有任何 shell / 文件系统访问能力 — 只能基于提示词中内联的源文件 "
+    "(Relevant source files) 编写补丁\n"
 )
+
+#: 单文件内联上限 (行数; 超出截断并标注 — 防超长文件撑爆上下文)
+_SOURCE_FILE_LINE_CAP = 3000
 
 
 class DeveloperError(Exception):
@@ -67,7 +75,7 @@ class DeveloperAgent:
         provider: ProviderInterface,
         *,
         conventions: str = DEFAULT_CONVENTIONS,
-        max_tokens: int = 4096,
+        max_tokens: int = 8192,
     ) -> None:
         self._provider = provider
         self._conventions = conventions
@@ -86,8 +94,13 @@ class DeveloperAgent:
         project_context: str = "",
         requirement: str = "",
         sandbox_path: str = "",
+        source_files: list[tuple[str, str]] | None = None,
     ) -> str:
-        """任务 + 项目上下文 + 规范 → Provider 提示词 (Agent 输入组装)。"""
+        """任务 + 项目上下文 + 内联源文件 + 规范 → Provider 提示词。
+
+        source_files: [(相对路径, 文件内容)] — 模型无文件访问能力, 修复目标
+        代码必须内联进提示词; 空列表 → 不渲染该节 (Greenfield 从零构建场景)。
+        """
         lines = [
             "You are a Developer Agent working inside an AI Software Factory.",
             "You make minimal, correct code changes and return them as a unified diff.",
@@ -99,6 +112,10 @@ class DeveloperAgent:
             lines += ["", "## Requirement / Acceptance criteria", requirement.strip()]
         if project_context.strip():
             lines += ["", "## Project context", project_context.strip()]
+        if source_files:
+            lines += ["", "## Relevant source files"]
+            for rel, content in source_files:
+                lines += ["", f"### {rel}", "```dart", content, "```"]
         if sandbox_path.strip():
             lines += [
                 "",
@@ -113,8 +130,13 @@ class DeveloperAgent:
             "## Output format",
             "Reply with a short summary of what you changed and why (2-4 sentences),",
             "then the patch ONLY between <patch> and </patch> tags in unified diff",
-            "format (git apply compatible). If no change is needed, put the literal",
-            "text NO_CHANGE between the tags.",
+            "format (git apply compatible). Patch file paths are relative to the",
+            "repo root (e.g. --- a/lib/editor/services/search_service.dart",
+            "+++ b/lib/editor/services/search_service.dart).",
+            "You have NO shell or file access: the code in 'Relevant source files'",
+            "above is the only code you can see — write the complete fix based on it.",
+            "If you cannot produce a correct patch, put the literal text NO_CHANGE",
+            "between the tags (do NOT leave the tags empty).",
         ]
         return "\n".join(lines)
 
@@ -173,6 +195,40 @@ class DeveloperAgent:
         if not lines:
             return ""
         return "\n".join(lines) + "\n"
+
+    @staticmethod
+    def _read_source_files(
+        sandbox_path: str, source_files: list[str]
+    ) -> list[tuple[str, str]]:
+        """从沙箱副本读取源文件内容 → [(相对路径, 内容)] (供 prompt 内联)。
+
+        - 文件缺失 → DeveloperError 响亮 (样本 source_files 配错立即暴露,
+          不静默丢上下文);
+        - 超长文件截断到 _SOURCE_FILE_LINE_CAP 行并标注 (防撑爆上下文);
+        - 读取失败 (权限/编码) → DeveloperError。
+        """
+        if not source_files:
+            return []
+        root = Path(sandbox_path)
+        embedded: list[tuple[str, str]] = []
+        for rel in source_files:
+            path = root / rel
+            if not path.is_file():
+                raise DeveloperError(
+                    f"source file not found in sandbox: {rel} (sandbox: {sandbox_path})"
+                )
+            try:
+                lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+            except OSError as exc:
+                raise DeveloperError(f"source file read failed: {rel}: {exc}") from exc
+            if len(lines) > _SOURCE_FILE_LINE_CAP:
+                lines = lines[:_SOURCE_FILE_LINE_CAP]
+                lines.append(
+                    f"// ... (truncated at {_SOURCE_FILE_LINE_CAP} lines, "
+                    f"original {len(lines) + 1}+ lines)"
+                )
+            embedded.append((rel, "\n".join(lines)))
+        return embedded
 
     # ------------------------------------------------------------------ report
 
@@ -237,13 +293,20 @@ class DeveloperAgent:
         request: Any,
         project_context: str = "",
         sandbox_path: str = "",
+        source_files: list[str] | None = None,
     ) -> DeveloperOutput:
-        """调 Provider → 解析 patch → 报告 (失败 → DeveloperError 响亮)。"""
+        """调 Provider → 解析 patch → 报告 (失败 → DeveloperError 响亮)。
+
+        source_files: 需要内联进提示词的源文件相对路径 (从 sandbox_path 读取
+        内容; 模型无文件访问能力, 修复目标代码靠此进入上下文)。
+        """
+        embedded = self._read_source_files(sandbox_path, source_files or [])
         prompt = self.build_prompt(
             objective=request.objective,
             project_context=project_context,
             requirement=request.requirement,
             sandbox_path=sandbox_path,
+            source_files=embedded,
         )
         started = time.monotonic()
         try:

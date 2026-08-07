@@ -208,7 +208,11 @@ class BenchmarkSample(BaseModel):
     kind: bug | feature | greenfield。
     objective: 自然语言任务描述 (禁人工答案 — 只描述现象/需求, 不给修复方案)。
     requirement: 验收标准 (可验证约束, 供 verifier 判定)。
-    project_files: 需要复制到沙箱的项目文件 (相对 markpad lib/ 根)。
+    project_files: 需要复制到沙箱的项目相对路径 (文件或目录, 如 ["lib", "pubspec.yaml"];
+        None/[] → 空; runner 沙箱选择性复制, 大项目不拷构建产物目录)。
+    source_files: 需要内联进 Agent prompt 的源文件相对路径 (沙箱内读取内容嵌入提示词;
+        模型无 shell/文件访问能力, 只能看到内联代码 — 修复目标文件必须在此列出;
+        内容不含 fix_hint 答案, 只给缺陷现场的代码)。
     verifier_id: 注册的 verifier 名 (exec.benchmark.verifiers 注册表)。
     fix_hint: 隐藏字段 — 仅供测试/人工核验 verifier 正反例, 绝不进 Agent prompt。
     """
@@ -219,6 +223,7 @@ class BenchmarkSample(BaseModel):
     objective: str
     requirement: str = ""
     project_files: list[str] = Field(default_factory=list)
+    source_files: list[str] = Field(default_factory=list)
     verifier_id: str = ""
     fix_hint: str = ""  # 只读测试用, 不进 prompt
 

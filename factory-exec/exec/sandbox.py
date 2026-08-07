@@ -37,9 +37,13 @@ from typing import Any
 
 from .models import SandboxSession, new_id, utcnow
 
-#: 副本拷贝忽略项 (依赖/构建产物/vcs 元数据 — 沙箱只追踪源码变更)
+#: 副本拷贝忽略项 (依赖/构建产物/vcs 元数据 — 沙箱只追踪源码变更)。
+#: 构建产物 (build/.dart_tool/dist 等) 即使全量拷贝也默认忽略 — 沙箱语义是
+#: 源码工作副本, 大体积构建目录只拖慢拷贝、不参与 diff。
 _IGNORE_PATTERNS = shutil.ignore_patterns(
     ".git",
+    ".svn",
+    ".hg",
     ".venv",
     "venv",
     "__pycache__",
@@ -51,6 +55,16 @@ _IGNORE_PATTERNS = shutil.ignore_patterns(
     "*.pyc",
     "*.pyo",
     ".DS_Store",
+    # 构建/依赖产物 (Flutter/Node/IDE 等 — 源码追踪不需要)
+    "build",
+    ".dart_tool",
+    "dist",
+    ".gradle",
+    ".idea",
+    "coverage",
+    ".coverage",
+    "Pods",
+    "DerivedData",
 )
 
 
@@ -107,12 +121,22 @@ class Sandbox:
 
     # ------------------------------------------------------------- 生命周期
 
-    def create(self, *, request_id: str = "") -> SandboxSession:
+    def create(
+        self,
+        *,
+        request_id: str = "",
+        project_files: list[str] | None = None,
+    ) -> SandboxSession:
         """创建沙箱: 副本 + git init + 基线提交; 返回会话记录。
 
         副本目录: <work_root>/exec-sandbox-<id>/project (id = 会话 id)。
         基线: git add -A + commit; 空项目 (nothing to commit) → 无基线
         (diff 走空树对比, 新增文件仍可导出)。
+
+        project_files: 选择性复制 — 仅复制指定的相对路径 (文件或目录,
+        如 ["lib", "pubspec.yaml"]), 大项目跳过 build/.dart_tool 等
+        构建产物目录, 拷贝从全量数小时降到秒级 (markpad 2.2G → lib 1.1M);
+        None → 全量拷贝 (兼容现有语义); [] → 空副本 (显式声明)。
         """
         session_id = new_id("SBX")
         if self._copy_dir is not None:
@@ -126,7 +150,12 @@ class Sandbox:
         )
         copy_dir = base / "project"
         try:
-            shutil.copytree(self._project_dir, copy_dir, ignore=_IGNORE_PATTERNS)
+            if project_files is None:
+                shutil.copytree(self._project_dir, copy_dir, ignore=_IGNORE_PATTERNS)
+            else:
+                copy_dir.mkdir(parents=True)
+                for rel in project_files:
+                    self._copy_one(self._project_dir, copy_dir, rel)
         except OSError as exc:
             raise SandboxError(f"copy project failed: {exc}") from exc
         self._copy_dir = copy_dir
@@ -147,6 +176,24 @@ class Sandbox:
             workspace_copy_path=str(copy_dir),
             baseline_commit=self._baseline_commit,
         )
+
+    @staticmethod
+    def _copy_one(src_root: Path, dst_root: Path, rel: str) -> None:
+        """复制单个相对路径 (文件或目录) 到副本; 缺失 → SandboxError (响亮)。
+
+        - 目录: copytree (带 ignore — 目录内构建产物同样跳过);
+        - 文件: 建父目录 + copy2 (保留元数据);
+        - 其他/缺失: SandboxError (路径写错响亮暴露, 不静默空副本)。
+        """
+        src = src_root / rel
+        dst = dst_root / rel
+        if src.is_dir():
+            shutil.copytree(src, dst, ignore=_IGNORE_PATTERNS)
+        elif src.is_file():
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst)
+        else:
+            raise SandboxError(f"project file not found: {rel} (project: {src_root})")
 
     @property
     def copy_dir(self) -> Path:

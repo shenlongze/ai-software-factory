@@ -35,8 +35,9 @@ BUG_SAMPLES: list[BenchmarkSample] = [
             "2. 方法体对当前匹配范围做局部替换 (replaceRange 语义);\n"
             "3. 不存在把全文直接替换为替换词的行为。"
         ),
-        project_files=["lib/editor/services/search_service.dart"],
+        project_files=["lib", "pubspec.yaml"],
         verifier_id="verify_bug_001_replace_current",
+        source_files=["lib/editor/services/search_service.dart"],
         fix_hint=(
             "缺陷定位: search_service.dart 的「替换当前」处理器把整个文档内容直接"
             "回传为替换词, 正确做法是仅针对首次命中的区间做局部改写 "
@@ -57,8 +58,9 @@ BUG_SAMPLES: list[BenchmarkSample] = [
             "1. switchToTab 不再无条件把只读标记重置为 false;\n"
             "2. 切换后从文件/缓存状态恢复该文件的只读标记。"
         ),
-        project_files=["lib/editor/controllers/file_controller.dart"],
+        project_files=["lib", "pubspec.yaml"],
         verifier_id="verify_bug_002_readonly_tab",
+        source_files=["lib/editor/controllers/file_controller.dart"],
         fix_hint=(
             "缺陷定位: file_controller.dart 的标签切换处理逻辑里, 只读标记被无条件"
             "写为关闭状态; 正确做法是从该文件自身的打开记录中读取其只读属性并恢复, "
@@ -78,8 +80,9 @@ BUG_SAMPLES: list[BenchmarkSample] = [
             "编码检测函数中, BOM 检查 (0xFF 0xFE / 0xFE 0xFF) 必须位于长度守卫 "
             "(bytes.length < 4) 之前。"
         ),
-        project_files=["lib/editor/services/encoding_service.dart"],
+        project_files=["lib", "pubspec.yaml"],
         verifier_id="verify_bug_003_bom_order",
+        source_files=["lib/editor/services/encoding_service.dart"],
         fix_hint=(
             "缺陷定位: encoding_service.dart 的编码探测函数中, 长度不足时提前返回"
             "默认编码的守卫写在字节序标记 (BOM) 探测之前; 修复: 将 BOM 探测调整到"
@@ -99,8 +102,9 @@ BUG_SAMPLES: list[BenchmarkSample] = [
             "1. DocumentSnapshot 深拷贝 TableBlock 时保留 rows;\n"
             "2. 同时保留 aligns 与 columnWidths (表格样式不因 undo/redo 丢失)。"
         ),
-        project_files=["lib/editor/undo/document_snapshot.dart"],
+        project_files=["lib", "pubspec.yaml"],
         verifier_id="verify_bug_004_snapshot_fields",
+        source_files=["lib/editor/undo/document_snapshot.dart"],
         fix_hint=(
             "缺陷定位: document_snapshot.dart 的深拷贝辅助中, 表格对象分支仅复制了"
             "单元格行数据, 遗漏了列对齐配置与列宽配置; 修复: 表格分支同步复制这两组"
@@ -120,8 +124,9 @@ BUG_SAMPLES: list[BenchmarkSample] = [
             "列表序列化时, 有序列表的序号按 indent 层级独立计数 "
             "(每级从 1 重新编号), 不跨层级共享同一个计数器。"
         ),
-        project_files=["lib/core/document/serializer.dart"],
+        project_files=["lib", "pubspec.yaml"],
         verifier_id="verify_bug_005_nested_list_numbering",
+        source_files=["lib/core/document/serializer.dart"],
         fix_hint=(
             "serializer.dart 的 _serializeList 用全局 i+1 作有序序号 (嵌套项同样递增); "
             "应维护 per-indent-level 计数器, 层级变化时重置。"

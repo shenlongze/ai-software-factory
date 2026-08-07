@@ -92,7 +92,7 @@ def test_project_files_exist_in_markpad() -> None:
         if s.kind is SampleKind.GREENFIELD:
             continue
         for rel in s.project_files:
-            if not (MARKPAD_DIR / rel).is_file():
+            if not (MARKPAD_DIR / rel).exists():
                 missing.append(f"{s.id}: {rel}")
     assert missing == [], f"项目文件缺失: {missing}"
 

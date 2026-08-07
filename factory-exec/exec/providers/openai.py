@@ -130,7 +130,13 @@ class OpenAIProvider:
 
     @staticmethod
     def _parse_content(data: dict[str, Any]) -> str:
-        """响应解析: choices[0].message.content; 结构不符 → ProviderError (响亮, 不静默空)。"""
+        """响应解析: choices[0].message.content; 结构不符 → ProviderError (响亮, 不静默空)。
+
+        content 兼容两种形态 (OpenAI 兼容端点差异):
+        - str: 纯文本 (主流形态);
+        - list: 多段内容 (部分兼容端点返回 [{type: text, text: ...}, ...]) —
+          拼接各段 text; 段内无 text → 该段忽略。
+        """
         choices = data.get("choices")
         if not isinstance(choices, list) or not choices:
             raise ProviderError(
@@ -151,6 +157,12 @@ class OpenAIProvider:
             raise ProviderError(
                 f"openai invalid response: message.content missing: {message!r}"
             )
+        if isinstance(text, list):
+            parts: list[str] = []
+            for seg in text:
+                if isinstance(seg, dict) and isinstance(seg.get("text"), str):
+                    parts.append(seg["text"])
+            return "".join(parts)
         return str(text)
 
     # ------------------------------------------------------------ 接口实现

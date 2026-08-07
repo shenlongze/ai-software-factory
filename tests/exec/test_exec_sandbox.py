@@ -160,3 +160,107 @@ class TestDiffExport:
         sbx = Sandbox(project_dir, work_root=tmp_path, git_bin="definitely-not-git")
         with pytest.raises(SandboxError, match="git command not found"):
             sbx.create()
+
+
+class TestSelectiveCopy:
+    """选择性复制 (project_files): 只拷指定相对路径; 原项目零影响; None 兼容全量。
+
+    场景: markpad 2.2G (build/.dart_tool/dist 大体积) — 全量拷贝数小时;
+    选择性复制 ["lib", "pubspec.yaml"] 秒级完成, 沙箱只含源码。
+    """
+
+    @staticmethod
+    def _make_project(root: Path) -> Path:
+        """模拟 Flutter 项目: lib/ 源码 + pubspec.yaml + 大体积构建产物。"""
+        proj = root / "proj"
+        (proj / "lib" / "editor").mkdir(parents=True)
+        (proj / "lib" / "editor" / "search_service.dart").write_text(
+            "class SearchService {}\n", encoding="utf-8"
+        )
+        (proj / "lib" / "core").mkdir(parents=True)
+        (proj / "lib" / "core" / "document.dart").write_text(
+            "class Document {}\n", encoding="utf-8"
+        )
+        (proj / "pubspec.yaml").write_text("name: markpad\n", encoding="utf-8")
+        (proj / "README.md").write_text("# markpad\n", encoding="utf-8")
+        # 构建产物 (选择性复制必须跳过)
+        (proj / "build" / "app").mkdir(parents=True)
+        (proj / "build" / "app" / "huge.bin").write_bytes(b"\x00" * 1024)
+        (proj / ".dart_tool").mkdir(parents=True)
+        (proj / ".dart_tool" / "package_config.json").write_text("{}\n", encoding="utf-8")
+        (proj / "dist" / "out").mkdir(parents=True)
+        (proj / "dist" / "out" / "bundle.js").write_text("console.log(1)\n", encoding="utf-8")
+        return proj
+
+    def test_selective_copy_only_specified_paths(self, tmp_path: Path):
+        """project_files=["lib", "pubspec.yaml"] → 副本只含这两个路径, 无其他。"""
+        proj = self._make_project(tmp_path)
+        sbx = Sandbox(proj, work_root=tmp_path)
+        session = sbx.create(project_files=["lib", "pubspec.yaml"])
+        copy = Path(session.workspace_copy_path)
+        assert (copy / "lib" / "editor" / "search_service.dart").is_file()
+        assert (copy / "lib" / "core" / "document.dart").is_file()
+        assert (copy / "pubspec.yaml").is_file()
+        assert not (copy / "README.md").exists(), "未指定的文件不得复制"
+        assert not (copy / "build").exists(), "构建产物不得进入沙箱"
+        assert not (copy / ".dart_tool").exists()
+        assert not (copy / "dist").exists()
+
+    def test_selective_copy_file_only(self, tmp_path: Path):
+        """project_files=[单文件路径] → 仅该文件 (嵌套父目录自动创建)。"""
+        proj = self._make_project(tmp_path)
+        sbx = Sandbox(proj, work_root=tmp_path)
+        session = sbx.create(project_files=["lib/editor/search_service.dart"])
+        copy = Path(session.workspace_copy_path)
+        assert (copy / "lib" / "editor" / "search_service.dart").is_file()
+        assert not (copy / "lib" / "core").exists(), "同 lib 下未指定子目录不得复制"
+        assert not (copy / "pubspec.yaml").exists()
+
+    def test_selective_copy_missing_path_raises(self, tmp_path: Path):
+        """project_files 含不存在路径 → SandboxError (响亮, 不静默空副本)。"""
+        proj = self._make_project(tmp_path)
+        sbx = Sandbox(proj, work_root=tmp_path)
+        with pytest.raises(SandboxError, match="project file not found"):
+            sbx.create(project_files=["lib", "no_such_file.dart"])
+
+    def test_selective_copy_original_untouched(self, tmp_path: Path):
+        """选择性副本上应用 patch → 原项目逐字节不变 (沙箱铁律)。"""
+        proj = self._make_project(tmp_path)
+        before = (proj / "lib" / "editor" / "search_service.dart").read_text()
+        after = before.replace("class SearchService {}", "class SearchService {}\n// fixed")
+        diff = git_diff_text(
+            tmp_path, {"lib/editor/search_service.dart": before},
+            {"lib/editor/search_service.dart": after},
+        )
+        sbx = Sandbox(proj, work_root=tmp_path)
+        session = sbx.create(project_files=["lib", "pubspec.yaml"])
+        sbx.apply_patch(diff)
+        copy = Path(session.workspace_copy_path)
+        assert "// fixed" in (copy / "lib" / "editor" / "search_service.dart").read_text()
+        assert (proj / "lib" / "editor" / "search_service.dart").read_text() == before
+        assert (proj / "build" / "app" / "huge.bin").read_bytes() == b"\x00" * 1024
+
+    def test_selective_copy_none_means_full_copy(self, tmp_path: Path):
+        """project_files=None (缺省) → 全量拷贝 (兼容现有语义, 含忽略项过滤)。"""
+        proj = self._make_project(tmp_path)
+        sbx = Sandbox(proj, work_root=tmp_path)
+        session = sbx.create()  # 不传 project_files
+        copy = Path(session.workspace_copy_path)
+        assert (copy / "lib" / "editor" / "search_service.dart").is_file()
+        assert (copy / "README.md").is_file(), "None → 全量拷贝"
+        assert (copy / "pubspec.yaml").is_file()
+        # 即使全量, 构建产物也默认忽略
+        assert not (copy / "build").exists()
+        assert not (copy / ".dart_tool").exists()
+        assert not (copy / "dist").exists()
+
+    def test_selective_copy_empty_list_empty_copy(self, tmp_path: Path):
+        """project_files=[] → 空副本 (显式声明; 基线可空, diff 走空树)。"""
+        proj = self._make_project(tmp_path)
+        sbx = Sandbox(proj, work_root=tmp_path)
+        session = sbx.create(project_files=[])
+        copy = Path(session.workspace_copy_path)
+        assert copy.is_dir()
+        assert not (copy / "lib").exists()
+        assert not (copy / "pubspec.yaml").exists()
+        assert sbx.diff() == ""  # 空副本零变更

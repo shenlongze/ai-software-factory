@@ -30,8 +30,9 @@ FEATURE_SAMPLES: list[BenchmarkSample] = [
             "1. 最近文件条目渲染时引用文件的修改时间字段 (modifiedAt);\n"
             "2. 以相对时间格式 (如「3 分钟前」) 显示, 而非裸时间戳。"
         ),
-        project_files=["lib/shared/pages/file_tree.dart"],
+        project_files=["lib", "pubspec.yaml"],
         verifier_id="verify_feat_001_recent_time",
+        source_files=["lib/shared/pages/file_tree.dart"],
         fix_hint=(
             "file_tree.dart 的 _buildRecentFiles 条目 itemBuilder 中, "
             "在文件名旁追加显示 file.modifiedAt 的相对时间文本 (新增相对时间辅助函数)。"
@@ -49,8 +50,9 @@ FEATURE_SAMPLES: list[BenchmarkSample] = [
             "1. 在 MdFile 模型上新增 formatSize 辅助 (按 1024 进制格式化字节数);\n"
             "2. 包含 KB/MB/GB 单位分支 (B 以下返回字节数 + B)。"
         ),
-        project_files=["lib/shared/models/md_file.dart"],
+        project_files=["lib", "pubspec.yaml"],
         verifier_id="verify_feat_002_format_size",
+        source_files=["lib/shared/models/md_file.dart"],
         fix_hint=(
             "缺陷定位: md_file.dart 中文件模型缺少大小格式化能力, 界面直接展示原始"
             "字节数; 修复: 在模型上新增格式化辅助, 按 2 的 10 次方进位, 不足 1K 显示"
@@ -70,8 +72,9 @@ FEATURE_SAMPLES: list[BenchmarkSample] = [
             "1. 标签栏组件感知 dirty/未保存状态 (接收该状态);\n"
             "2. 未保存的标签上渲染修改指示器 (如小圆点)。"
         ),
-        project_files=["lib/shared/widgets/tab_bar.dart"],
+        project_files=["lib", "pubspec.yaml"],
         verifier_id="verify_feat_003_tab_dirty",
+        source_files=["lib/shared/widgets/tab_bar.dart"],
         fix_hint=(
             "缺陷定位: tab_bar.dart 的标签组件未感知未保存状态; 修复: 为标签组件接入"
             "未保存标记数据 (按文件路径记录的布尔映射或通知回调), 对存在未保存标记的"

@@ -27,6 +27,14 @@ blocked_reason (ProviderError 消息), 不调 LLM, 不 mock 当能力证明 —
 
 CLI: python -m exec.benchmark.runner --check   (预检: key + 样本集完整性)
      python -m exec.benchmark.runner --run --provider openai [--runs 1]
+     python -m exec.benchmark.runner --run --provider openai \\
+         --base-url https://api.deepseek.com/v1/chat/completions --model deepseek-chat \\
+         --input-rate-per-1k 0.00027 --output-rate-per-1k 0.0011   (DeepSeek 端点)
+
+DeepSeek 端点 (OpenAI 兼容): OpenAIProvider 是通用 Chat Completions adapter —
+base_url/model/费率均可配, provider_id 仍为 openai (适配器身份), model 记录
+真实端点模型 (deepseek-chat)。key 用 OPENAI_API_KEY 承载 (DeepSeek key 导出后
+运行, 禁明文); 费率按 deepseek-chat 定价估算成本 (仅估算, 非计费)。
 """
 
 from __future__ import annotations
@@ -60,6 +68,17 @@ DEFAULT_PROJECT_DIR = Path(os.environ.get("BENCHMARK_MARKPAD_DIR", "/Users/Share
 #: 最小性阈值: 改动文件数 ≤ 3 → 满分档; ≤ 6 → 半档; 更多 → 0 分档
 _MIN_FILES_FULL = 3
 _MIN_FILES_HALF = 6
+
+
+def _env_float(name: str) -> float | None:
+    """环境变量 → float (缺失/非法 → None; CLI 缺省值解析用)。"""
+    raw = os.environ.get(name)
+    if raw is None:
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        return None
 
 
 # ================================================================ 工具函数
@@ -207,7 +226,7 @@ class BenchmarkRunner:
                 problems.append(f"{s.id}: verifier 未注册: {s.verifier_id}")
             if s.kind is not SampleKind.GREENFIELD:
                 for rel in s.project_files:
-                    if not (self._project_dir / rel).is_file():
+                    if not (self._project_dir / rel).exists():
                         problems.append(f"{s.id}: 项目文件缺失: {rel} (项目: {self._project_dir})")
         return problems
 
@@ -272,25 +291,58 @@ class BenchmarkRunner:
             result.error = f"sandbox error: {exc}"[:1000]
             return result
 
-        # 2. Developer 执行 (真实 Provider 调用; 计时)
+        # 2. Developer 执行 (真实 Provider 调用; 计时; 空内容/空 patch 重试 1 次)
         started = time.monotonic()
-        try:
-            output = self._developer.work(
-                request=sample,  # duck-typed: objective/requirement
-                project_context=self._project_context(sample),
-                sandbox_path=str(sandbox_root),
-            )
-        except DeveloperError as exc:
+        output = None
+        last_error: str = ""
+        retried = False
+        usage_acc: dict[str, Any] = {}
+        # 重试场景 (模型随机性兜底, 非 verifier 放水):
+        # - Provider 返回空内容 (reasoning 模型偶发空 content);
+        # - 回复无解析 patch (模型回复说明但没有 diff);
+        # - patch 为空 (NO_CHANGE/空 <patch> 标签 — Benchmark 样本全部要求改代码,
+        #   NO_CHANGE 在本场景一律视为失败, 重试一次)。
+        for attempt in range(2):
+            try:
+                output = self._developer.work(
+                    request=sample,  # duck-typed: objective/requirement
+                    project_context=self._project_context(sample),
+                    sandbox_path=str(sandbox_root),
+                    source_files=sample.source_files or None,
+                )
+            except DeveloperError as exc:
+                last_error = str(exc)
+                if attempt == 0 and self._retryable_error(last_error):
+                    retried = True
+                    continue
+                break
+            usage_acc = self._accumulate_usage(usage_acc, output.usage)
+            if output.patch_text.strip() == "" and attempt == 0:
+                last_error = "provider returned empty patch (no code change)"
+                output = None
+                retried = True
+                continue
+            break
+        if output is not None and output.patch_text.strip() == "":
+            # 末次尝试仍产出空 patch (NO_CHANGE/空标签) — Benchmark 样本全部要求
+            # 改代码, 空 patch 一律视为失败 (与重试标注一致, 不溜进 apply 阶段)
+            last_error = "provider returned empty patch (no code change)"
+            output = None
+        if output is None:
             result.status = SampleStatus.FAILED
-            result.error = str(exc)[:1000]
+            result.error = (
+                f"{last_error[:900]} (after 1 retry)" if retried else last_error
+            )[:1000]
             result.latency_s = round(time.monotonic() - started, 3)
+            result.usage = usage_acc
+            result.cost_usd = estimate_cost_usd(usage_acc)
             # 失败尝试同样评分 (Level 1 未达) — 报告聚合不遗漏失败样本
             result.score = provisional_score(False)
             result.patch_quality = 0
             return result
         result.latency_s = round(time.monotonic() - started, 3)
-        result.usage = dict(output.usage)
-        result.cost_usd = estimate_cost_usd(output.usage)
+        result.usage = usage_acc
+        result.cost_usd = estimate_cost_usd(usage_acc)
 
         # 3. patch 应用 (沙箱内) + diff 统计
         applied = False
@@ -338,6 +390,24 @@ class BenchmarkRunner:
 
     # ------------------------------------------------------------ 内部
 
+    @staticmethod
+    def _retryable_error(message: str) -> bool:
+        """DeveloperError 是否值得重试 (空内容/无解析 patch — 模型随机性, 非能力失败)。
+
+        Provider 层错误 (HTTP/网络/key) 不重试 — 那是环境问题, 重试掩盖不了;
+        patch apply 失败 / verifier 不通过不重试 — 那是真实能力判定, 重试是放水。
+        """
+        return ("empty content" in message) or ("no parseable patch" in message)
+
+    @staticmethod
+    def _accumulate_usage(acc: dict[str, Any], usage: dict[str, Any]) -> dict[str, Any]:
+        """跨重试累计 usage (token/成本真实总花费; 非数值字段取末次)。"""
+        out = dict(usage)
+        for k, v in acc.items():
+            if isinstance(v, (int, float)) and isinstance(out.get(k), (int, float)):
+                out[k] = v + out[k]
+        return out
+
     def _make_sandbox(self, sample: BenchmarkSample) -> tuple[Sandbox, Path]:
         """创建沙箱副本 → (sandbox, 副本根目录)。
 
@@ -355,7 +425,7 @@ class BenchmarkRunner:
                 "(set BENCHMARK_MARKPAD_DIR 指定项目目录)"
             )
         sandbox = Sandbox(self._project_dir, work_root=self._work_root, git_bin=self._git_bin)
-        session = sandbox.create()
+        session = sandbox.create(project_files=sample.project_files or None)
         return sandbox, Path(session.workspace_copy_path)
 
     def _project_context(self, sample: BenchmarkSample) -> str:
@@ -363,8 +433,11 @@ class BenchmarkRunner:
         if sample.kind is SampleKind.GREENFIELD:
             return "空项目目录 — 从零构建, 交付物直接放在沙箱根目录。"
         if sample.project_files:
-            return "建议先阅读以下文件 (其余项目文件在沙箱内可自行浏览):\n- " + "\n- ".join(
-                sample.project_files
+            return (
+                "沙箱内为项目副本 (已选择性复制以下路径, 其余项目文件不在沙箱内):\n- "
+                + "\n- ".join(sample.project_files)
+                + "\n相关源文件内容已内联在下方 Relevant source files 节 "
+                "(模型无 shell 访问, 以内联代码为准)。"
             )
         return "项目文件在沙箱内, 请先浏览相关目录再动手。"
 
@@ -397,6 +470,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--provider", default="openai", choices=["openai", "anthropic"],
                         help="Provider id (缺省 openai)")
     parser.add_argument("--runs", type=int, default=1, help="每样本执行次数")
+    # OpenAI 兼容端点参数 (DeepSeek: base_url=https://api.deepseek.com/v1/chat/completions,
+    # model=deepseek-chat; 费率按 deepseek-chat 定价估算成本)。支持环境变量覆盖
+    # (BENCHMARK_BASE_URL/BENCHMARK_MODEL/BENCHMARK_INPUT_RATE_PER_1K/
+    # BENCHMARK_OUTPUT_RATE_PER_1K) — 可复现运行, 命令不含 key 明文。
+    parser.add_argument("--base-url", default=os.environ.get("BENCHMARK_BASE_URL"),
+                        help="OpenAI 兼容端点完整 URL (缺省 api.openai.com)")
+    parser.add_argument("--model", default=os.environ.get("BENCHMARK_MODEL"),
+                        help="模型名 (DeepSeek: deepseek-chat)")
+    parser.add_argument("--input-rate-per-1k", type=float,
+                        default=_env_float("BENCHMARK_INPUT_RATE_PER_1K"),
+                        help="输入成本估算费率 (美元/1K token; DeepSeek: 0.00027)")
+    parser.add_argument("--output-rate-per-1k", type=float,
+                        default=_env_float("BENCHMARK_OUTPUT_RATE_PER_1K"),
+                        help="输出成本估算费率 (美元/1K token; DeepSeek: 0.0011)")
     args = parser.parse_args(argv)
 
     # 延迟导入 Provider Adapter (零副作用; 缺包 → 响亮错误)
@@ -406,7 +493,16 @@ def main(argv: list[str] | None = None) -> int:
             provider = AnthropicProvider()
         else:
             from ..providers.openai import OpenAIProvider
-            provider = OpenAIProvider()
+            kwargs: dict[str, Any] = {}
+            if args.base_url:
+                kwargs["base_url"] = args.base_url
+            if args.model:
+                kwargs["model"] = args.model
+            if args.input_rate_per_1k is not None:
+                kwargs["input_rate_per_1k"] = args.input_rate_per_1k
+            if args.output_rate_per_1k is not None:
+                kwargs["output_rate_per_1k"] = args.output_rate_per_1k
+            provider = OpenAIProvider(**kwargs)
     except Exception as exc:  # noqa: BLE001 — 依赖缺失响亮暴露
         print(f"provider init failed: {exc}")
         return 7

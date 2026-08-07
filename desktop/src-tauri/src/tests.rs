@@ -1076,7 +1076,10 @@ fn resolve_runtime_cmd_at_empty_env_falls_back_embedded() {
     set_env("DESKTOP_RUNTIME_CMD", "   ");
     let dir = embedded_dir("disc_envblank", "factory-runtime-bundle");
     let cmd = resolve_runtime_cmd_at(Some(dir.path()));
-    assert!(cmd.contains("factory-runtime-bundle"), "空 env → embedded, got: {cmd}");
+    assert!(
+        cmd.contains("factory-runtime-bundle"),
+        "空 env → embedded, got: {cmd}"
+    );
     remove_env("DESKTOP_RUNTIME_CMD");
 }
 
@@ -1101,7 +1104,10 @@ fn resolve_runtime_cmd_at_resource_dir_without_bundle_falls_back_path() {
 #[test]
 fn remote_endpoint_extension_point_reserved() {
     // Phase 16+ remote runtime 扩展点契约: env 名已预留, 解析链第 0 优先级
-    assert_eq!(RUNTIME_REMOTE_ENDPOINT_ENV, "DESKTOP_RUNTIME_REMOTE_ENDPOINT");
+    assert_eq!(
+        RUNTIME_REMOTE_ENDPOINT_ENV,
+        "DESKTOP_RUNTIME_REMOTE_ENDPOINT"
+    );
     // 未实现: 设置该 env 不影响当前解析 (Local Embedded 阶段)
     let _g = ENV_LOCK.lock().unwrap();
     remove_env("DESKTOP_RUNTIME_CMD");
@@ -1767,4 +1773,186 @@ fn product_error_user_language_end_to_end() {
     assert!(!html.contains("pip install"));
     assert!(!html.contains("python"));
     assert!(html.contains("启动失败"));
+}
+
+// ================================================================ 15A-3c-3
+// macOS dmg 打包契约 (App 结构 / embedded discovery / dmg smoke / first launch)
+// dist/ 与 target/release 产物 gitignored — 未构建时 guard-skip (等价 @skipif)。
+// ================================================================
+
+/// dist/factory-runtime-bundle 目录 (tauri.conf bundle.resources 指向; 未构建 → None)。
+fn dist_bundle_dir() -> Option<PathBuf> {
+    let p = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../dist/factory-runtime-bundle");
+    if p.join("factory-runtime-bundle").is_file() {
+        Some(p)
+    } else {
+        None
+    }
+}
+
+/// dmg 产物路径 (Tauri 命名: <productName>_<version>_<arch>.dmg; 未构建 → None)。
+/// target/ 位于 CARGO_MANIFEST_DIR (src-tauri/) 之下, 无上级跳转。
+fn dmg_bundle_path() -> Option<PathBuf> {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target/release/bundle/dmg");
+    let entries = fs::read_dir(&dir).ok()?;
+    let dmg = entries.filter_map(|e| e.ok()).find(|e| {
+        let n = e.file_name();
+        let n = n.to_string_lossy();
+        n.starts_with("AI Organization Factory") && n.ends_with(".dmg")
+    })?;
+    let p = dmg.path();
+    if p.is_file() {
+        Some(p)
+    } else {
+        None
+    }
+}
+
+#[test]
+fn bundle_resource_contract_dist_bundle_exists() {
+    // App 结构契约: bundle.resources → dist/factory-runtime-bundle/
+    // (PyInstaller onedir: 主二进制 + _internal/ 内嵌解释器目录)
+    let Some(dir) = dist_bundle_dir() else {
+        eprintln!("SKIP: dist/factory-runtime-bundle 未构建 (dist/ gitignored)");
+        return;
+    };
+    assert!(
+        dir.join("factory-runtime-bundle").is_file(),
+        "bundle 主二进制缺失: {}",
+        dir.display()
+    );
+    assert!(
+        dir.join("_internal").is_dir(),
+        "PyInstaller onedir _internal 目录缺失"
+    );
+}
+
+#[test]
+fn bundle_embedded_interpreter_independent_of_system_python() {
+    // macOS onedir 契约: _internal/ 内嵌解释器 (Python.framework / python3.12 / Python)
+    // — App 运行时不需要系统 python (fresh machine 无 python 依赖)
+    let Some(dir) = dist_bundle_dir() else {
+        eprintln!("SKIP: dist/factory-runtime-bundle 未构建");
+        return;
+    };
+    let internal = dir.join("_internal");
+    let embedded = internal.join("Python.framework").exists()
+        || internal.join("python3.12").exists()
+        || internal.join("Python").exists();
+    assert!(
+        embedded,
+        "内嵌解释器缺失 (Python.framework / python3.12 / Python): {}",
+        internal.display()
+    );
+}
+
+#[test]
+fn bundle_discovery_resolves_real_dist_bundle() {
+    // 集成: discovery (embedded > PATH) 对真实 dist bundle 生效 — resolve 出
+    // dist/factory-runtime-bundle/factory-runtime-bundle 绝对路径 (App 内嵌形态)
+    let Some(dir) = dist_bundle_dir() else {
+        eprintln!("SKIP: dist/factory-runtime-bundle 未构建");
+        return;
+    };
+    let resource_dir = dir.parent().unwrap(); // 打包后 resource_dir = dist/ 同级
+    let cmd = embedded_runtime_cmd(resource_dir).expect("embedded 探测应命中 dist bundle");
+    assert!(
+        cmd.ends_with("factory-runtime-bundle/factory-runtime-bundle"),
+        "got: {cmd}"
+    );
+    let _g = ENV_LOCK.lock().unwrap();
+    remove_env("DESKTOP_RUNTIME_CMD");
+    assert_eq!(
+        resolve_runtime_cmd_at(Some(resource_dir)),
+        cmd,
+        "embedded 应优先于 PATH (真实 bundle)"
+    );
+}
+
+#[test]
+fn missing_runtime_full_chain_friendly() {
+    // 无 env + 无 embedded (空 resource_dir) → PATH 回退 → spawn 失败 →
+    // launch_flow 报错 → friendly_error 全用户语言 (fresh machine 无 runtime 场景)
+    let _g = ENV_LOCK.lock().unwrap();
+    remove_env("DESKTOP_RUNTIME_CMD");
+    let dir = TestDir::new("pkg_missing");
+    let cmd = resolve_runtime_cmd_at(Some(dir.path()));
+    assert_eq!(
+        cmd,
+        runtime::DEFAULT_RUNTIME_CMD,
+        "空 resource_dir → PATH 回退"
+    );
+    let b = Bridge::new(cmd);
+    let e = launch_flow(&b, dir.path(), Duration::from_secs(5)).unwrap_err();
+    assert!(matches!(e, BridgeError::SpawnFailed(_)), "got {e:?}");
+    let msg = friendly_error(&e);
+    assert!(msg.starts_with("Factory startup failed"), "got: {msg}");
+    assert_no_tech_terms(&msg);
+}
+
+#[test]
+fn dmg_smoke_metadata() {
+    // dmg smoke (@skipif 未构建): dmg 是发布产物 — 存在 + 大小;
+    // .app 是中间产物 (bundle_dmg.sh 打包后清理, macos/ 目录可为空),
+    // 仅当残留时验证结构契约 (Contents/MacOS 主二进制 +
+    // Resources/factory-runtime-bundle 内嵌 onedir)
+    let Some(dmg) = dmg_bundle_path() else {
+        eprintln!("SKIP: dmg 未构建 (tauri build --bundles dmg 后重跑)");
+        return;
+    };
+    let meta = fs::metadata(&dmg).unwrap();
+    assert!(
+        meta.len() > 5 * 1024 * 1024,
+        "dmg 过小 ({} bytes, 应含 38M 内嵌 runtime)",
+        meta.len()
+    );
+    let app = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("target/release/bundle/macos/AI Organization Factory.app");
+    if !app.is_dir() {
+        // 构建清理语义: .app 中间产物可被构建流程删除, dmg 才是发布产物
+        return;
+    }
+    assert!(
+        app.join("Contents/MacOS/AI Organization Factory").is_file(),
+        "主二进制缺失"
+    );
+    let res = app.join("Contents/Resources/factory-runtime-bundle");
+    assert!(
+        res.join("factory-runtime-bundle").is_file(),
+        "Resources/factory-runtime-bundle 内嵌缺失 (bundle.resources 契约)"
+    );
+    assert!(
+        res.join("_internal").is_dir(),
+        "内嵌 _internal (PyInstaller onedir) 缺失"
+    );
+}
+
+#[test]
+fn first_launch_creates_state_and_three_logs() {
+    // First Launch (fake runtime): data_root 初始化 → ready →
+    // 三日志文件 (runtime/core/console.log) 落盘 → graceful stop 写入 runtime.log
+    let dir = TestDir::new("pkg_first");
+    let port = free_port();
+    let b = bridge_for(&dir, &[("FAKE_RUNTIME_PORT", &port.to_string())]);
+    let launched = launch_flow(&b, dir.path(), Duration::from_secs(5)).unwrap();
+    assert_eq!(launched.status.status, "ready");
+    let root = dir.path();
+    assert!(
+        root.join("config/runtime_state.json").is_file(),
+        "首次启动应写状态文件"
+    );
+    for name in ["runtime.log", "core.log", "console.log"] {
+        let log = root.join("logs").join(name);
+        assert!(log.is_file(), "日志缺失: {name}");
+        let text = fs::read_to_string(&log).unwrap();
+        assert!(!text.trim().is_empty(), "日志为空: {name}");
+    }
+    let st = shutdown_flow(&b, root).unwrap();
+    assert_eq!(st.status, "stopped");
+    let rt_log = fs::read_to_string(root.join("logs/runtime.log")).unwrap();
+    assert!(
+        rt_log.contains("stopped"),
+        "graceful stop 应写入 runtime.log"
+    );
+    cleanup_children(root);
 }

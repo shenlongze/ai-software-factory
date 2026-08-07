@@ -15,6 +15,6 @@
   "bundle": {
     "active": true,
     "targets": ["dmg"],
-    "resources": ["../../dist/factory-runtime-bundle/"]
+    "resources": { "../../dist/factory-runtime-bundle/": "factory-runtime-bundle/" }
   }
 }

@@ -131,12 +131,7 @@ class Sandbox:
             raise SandboxError(f"copy project failed: {exc}") from exc
         self._copy_dir = copy_dir
         # git init (带 -b main; 老 git 不支持则退化 init + checkout)
-        init = subprocess.run(
-            [self._git_bin, "-C", str(copy_dir), "init", "-q", "-b", "main"],
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
+        init = self._git("init", "-q", "-b", "main", check=False)
         if init.returncode != 0:
             self._git("init", "-q", check=False)
             self._git("checkout", "-q", "-b", "main", check=False)

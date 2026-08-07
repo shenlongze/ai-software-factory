@@ -193,6 +193,9 @@ def cmd_exec_status(root: Path, args: Any) -> dict:
         else:
             results = store.list_results()
         approvals = store.list_approvals()
+        exec_events.record_execution_viewed(
+            logger, count=len(results) + len(approvals)
+        )
         event_seq = exec_events.last_seq(logger, EventType.ORG_EXECUTION_VIEWED)
     return {
         "ok": True,
@@ -281,6 +284,7 @@ def cmd_exec_approval_list(root: Path, args: Any) -> dict:
         records = _approval_gate(root, logger).list(
             status=getattr(args, "status", None) or None
         )
+        exec_events.record_execution_viewed(logger, count=len(records))
         event_seq = exec_events.last_seq(logger, EventType.ORG_EXECUTION_VIEWED)
     return {
         "ok": True,
@@ -295,7 +299,15 @@ def cmd_exec_approval_list(root: Path, args: Any) -> dict:
 # ------------------------------------------------------------------ 独立 CLI
 
 def _json_opt(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--json", action="store_true", help="JSON 输出")
+    """每个子命令也接受 --json (全局选项须在子命令前, 此处双保险)。
+
+    default 必须为 SUPPRESS: Python 3.12 的 _SubParsersAction.__call__ 会把子
+    解析器结果解析进全新 namespace 再整体拷贝回原 namespace — 子解析器任何非
+    SUPPRESS 默认值都会无条件覆盖已解析的全局 --json 值 (同主 CLI json_opt)。
+    """
+    parser.add_argument(
+        "--json", action="store_true", default=argparse.SUPPRESS, help="JSON 输出"
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -415,7 +427,11 @@ def main(argv: list[str] | None = None) -> int:
     root.mkdir(parents=True, exist_ok=True)
     result = _dispatch(root, args)
     exit_code = int(result.get("exit_code", 0))
-    if exit_code != 2:
+    if getattr(args, "json", False) and result.get("ok"):
+        import json as _json
+
+        print(_json.dumps(result, ensure_ascii=False, indent=2))
+    elif exit_code != 2:
         _print_result(args, result)
     return exit_code
 

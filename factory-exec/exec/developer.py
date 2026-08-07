@@ -135,7 +135,7 @@ class DeveloperAgent:
         # 1) <patch> 标签 (最可靠; NO_CHANGE 字面量 → 空补丁)
         m = re.search(r"<patch>(.*?)</patch>", content, re.DOTALL)
         if m:
-            body = m.group(1).strip()
+            body = m.group(1)
             if body.strip().upper() == "NO_CHANGE":
                 return ""
             return DeveloperAgent._strip_fence(body)
@@ -148,7 +148,7 @@ class DeveloperAgent:
         has_old = any(line.startswith("--- ") for line in lines)
         has_new = any(line.startswith("+++ ") for line in lines)
         if has_old and has_new:
-            return content.strip()
+            return DeveloperAgent._strip_fence(content)
         raise DeveloperError(
             "provider response contains no parseable patch "
             "(expected <patch>...</patch> or ```diff ... ``` block)"
@@ -158,13 +158,17 @@ class DeveloperAgent:
     def _strip_fence(text: str) -> str:
         """规范化 patch 文本: 去首尾空行, 保证以单个换行结尾 (git apply 容错)。
 
-        strip(\"\\n\") 会剥掉 EOF 换行 → git apply 报 \"corrupt patch at line N\"
+        strip("\\n") 会剥掉 EOF 换行 → git apply 报 "corrupt patch at line N"
         (实测); 规范化后统一以 \\n 结尾。
+
+        尾行只剥**纯空行** ("") 不剥空白行 (" "): diff 末尾的 " " 是合法
+        context 行 (文件以空行结尾时 git diff 产出), 剥掉 → hunk 计数错 →
+        "corrupt patch at line N" (实测)。首行空白 (围栏/标签后填充) 可全剥。
         """
         lines = text.splitlines()
         while lines and not lines[0].strip():
             lines.pop(0)
-        while lines and not lines[-1].strip():
+        while lines and lines[-1] == "":
             lines.pop()
         if not lines:
             return ""

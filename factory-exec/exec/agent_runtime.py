@@ -130,9 +130,14 @@ class AgentRuntime:
     # ------------------------------------------------------------------ 内部
 
     def _fail(
-        self, request: ExecutionRequest, error: str, *, duration: float = 0.0
+        self, request: ExecutionRequest, error: str, *, duration: float = 0.0,
+        employee: Any = None,
     ) -> ExecutionResult:
-        """构造 failed 结果 + 发 org.execution.failed (终态单一)。"""
+        """构造 failed 结果 + 发 org.execution.failed (终态单一)。
+
+        失败同样记录 Experience (设计 §8: 成功/失败都记录; 失败 = 负信号 +
+        failure_reason 结构化 — 供未来复盘/推荐)。经验失败安全 (记录异常静默)。
+        """
         result = ExecutionResult(
             id=new_id("EXS"),
             request_id=request.id,
@@ -143,6 +148,15 @@ class AgentRuntime:
         if self._store is not None:
             self._store.save_result(result)
         exec_events.record_execution_failed(self._logger, request=request, error=error)
+        if self._experience is not None:
+            try:
+                self._experience.record(
+                    result=result,
+                    employee_id=getattr(employee, "id", "") or "",
+                    request=request,
+                )
+            except Exception:  # noqa: BLE001 — 经验失败安全 (8B-3 语义)
+                pass
         return result
 
     def _write_artifact_file(self, name: str, content: str) -> str:
@@ -176,11 +190,11 @@ class AgentRuntime:
         provider_id = getattr(self._developer.provider, "provider_id", "")
 
         if not project_dir:
-            return self._fail(request, "request.input missing project_dir")
+            return self._fail(request, "request.input missing project_dir", employee=employee)
         project_path = Path(str(project_dir))
         if not project_path.is_dir():
             return self._fail(
-                request, f"project dir not found: {project_path}"
+                request, f"project dir not found: {project_path}", employee=employee
             )
         exec_events.record_execution_requested(
             self._logger, request=request, employee=employee,
@@ -192,7 +206,7 @@ class AgentRuntime:
             sandbox = Sandbox(project_path, work_root=self._work_root, git_bin=self._git_bin)
             session = sandbox.create(request_id=request.id)
         except Exception as exc:  # noqa: BLE001 — 失败安全: 沙箱错误 → failed
-            return self._fail(request, f"sandbox error: {exc}")
+            return self._fail(request, f"sandbox error: {exc}", employee=employee)
 
         exec_events.record_execution_started(
             self._logger, request=request, employee=employee, agent=agent,
@@ -210,11 +224,13 @@ class AgentRuntime:
             )
         except DeveloperError as exc:
             return self._fail(
-                request, f"provider error: {exc}", duration=time.monotonic() - started
+                request, f"provider error: {exc}", duration=time.monotonic() - started,
+                employee=employee,
             )
         except Exception as exc:  # noqa: BLE001 — 防御兜底: 意外错误 → failed
             return self._fail(
-                request, f"execution error: {exc}", duration=time.monotonic() - started
+                request, f"execution error: {exc}", duration=time.monotonic() - started,
+                employee=employee,
             )
 
         try:
@@ -224,7 +240,8 @@ class AgentRuntime:
             vresult = validation.validate(self._validation_command)
         except Exception as exc:  # noqa: BLE001 — 失败安全
             return self._fail(
-                request, f"sandbox error: {exc}", duration=time.monotonic() - started
+                request, f"sandbox error: {exc}", duration=time.monotonic() - started,
+                employee=employee,
             )
 
         duration = time.monotonic() - started
@@ -240,7 +257,8 @@ class AgentRuntime:
                 sandbox.export_patch(patch_path)
             except Exception as exc:  # noqa: BLE001 — 失败安全
                 return self._fail(
-                    request, f"sandbox error: {exc}", duration=duration
+                    request, f"sandbox error: {exc}", duration=duration,
+                    employee=employee,
                 )
         artifacts.append(
             Artifact(

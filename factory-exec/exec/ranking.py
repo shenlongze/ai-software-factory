@@ -35,6 +35,16 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
+from .progressive import (  # T4.2: 渐进加载引擎 (本模块单向依赖, 无环)
+    LoadedItem,
+    ProgressiveLoader,
+    ProgressiveResult,
+    STAGE_1_BUDGET_CHARS,
+    STAGE_2_BUDGET_CHARS,
+    StageLoadResult,
+    StageSpec,
+)
+
 # ================================================================ 常量
 
 #: 6 因素权重 (设计 §4; 和恒为 1.0 — 全满分 → 1.0)
@@ -1098,10 +1108,363 @@ class CandidateGenerator:
         )
 
 
+# ================================================================ Progressive Loading (T4.2)
+
+#: Developer 域渐进阶段配置 (声明式 StageSpec — 设计 §2/§4/§7; 引擎通用,
+#: 未来 Product/Finance/Medical Agent 配不同 StageSpec, 引擎不变):
+#: Stage 1 Overview 1-2K (必载) → Stage 2 Symbol 3-5K → Stage 3 Code Detail 剩余
+#: (总 ≤30K chars — ProgressiveLoader hard_cap)。
+CODE_PROGRESSIVE_STAGES: list[StageSpec] = [
+    StageSpec(stage="overview", label="Overview Context", max_chars=STAGE_1_BUDGET_CHARS,
+              extractor="overview", required=True),
+    StageSpec(stage="symbol", label="Symbol Context", max_chars=STAGE_2_BUDGET_CHARS,
+              extractor="symbol", required=False),
+    StageSpec(stage="detail", label="Code Detail", max_chars=0, extractor="detail",
+              required=False),
+]
+
+#: 载荷哨兵 (finalize 区分「已由 6 节结构承载」与「进 notes 聚合片段」)
+_PAYLOAD_REQ = "requirement"        # RequirementContext 承载
+_PAYLOAD_ARCH = "architecture"      # ArchitectureContext 承载
+_PAYLOAD_HIST = "history"           # HistoryContext 承载
+_PAYLOAD_TEST_MAP = "test_mapping"  # TestContext.mapping 承载
+
+
+class CodeProgressiveProvider:
+    """Developer 域渐进内容提取器 (设计 §2/§6; StageSpec 语义化 — 引擎不解释内容)。
+
+    三阶段内容:
+    - overview (必载, 1-2K): 任务需求 (keep 锚点) + 架构摘要 + 文件/模块树 + 历史;
+    - symbol (3-5K): 相关文件 symbol 索引 (payload=FileSlice related) + 核心锚点 +
+      call graph + test 关系 + line_range 兜底提示 (symbol miss 扩 1 轮后加入);
+    - detail (剩余): 核心代码锚点段 (≤3000 行全量 / 超长符号索引+关键块) + 测试代码。
+
+    失败兜底 (设计 §6):
+    - 候选未定位 → candidates_found=False (loader 自动扩 1 轮 → unable_to_locate);
+    - symbol miss → line_range 提示 (widen 轮加入, missing_info 清除);
+    - 超大文件 → 符号索引 + 命中关键词锚点段 + large_file 记录;
+    - token 超限 → degrade=True 返回 symbol 级轻量内容 (loader 重试 1 次)。
+
+    finalize: ProgressiveResult → AssembledContext (6 节旧语义; 全部已加载内容
+    进 prompt — 无 payload 的 notes 项聚合为 progressive_notes 相关片段, 不丢内容)。
+    """
+
+    def __init__(
+        self,
+        root: str | Path,
+        *,
+        ri: Any,
+        profile: TaskProfile,
+        batch: CandidateBatch,
+        budget: Any,
+        symbol_miss: list[str],
+    ) -> None:
+        self._root = Path(root)
+        self._ri = ri
+        self._profile = profile
+        self._batch = batch
+        self._budget = budget
+        self._symbol_miss = list(symbol_miss)
+        self._symbol_widened = False
+        self._cand_by_id = {c.id: c for c in batch.candidates}
+
+    # ------------------------------------------------------------------ 契约
+
+    def extract(
+        self, spec: StageSpec, *, widen: bool = False, degrade: bool = False
+    ) -> StageLoadResult:
+        """Loader 契约: StageSpec + widen/degrade → StageLoadResult (内容+决策元数据)。"""
+        if spec.stage == "overview":
+            return self._overview(widen)
+        if spec.stage == "symbol":
+            return self._symbol(widen)
+        if spec.stage == "detail":
+            return self._detail(degrade)
+        return StageLoadResult(items=[], confidence=0.0, candidates_found=False,
+                               missing_info=True)
+
+    def finalize(self, result: ProgressiveResult) -> Any:
+        """Loader finalizer 契约: ProgressiveResult → AssembledContext (6 节, 旧语义)。"""
+        from .context import (
+            AssembledContext,
+            CodeContext,
+            FileSlice,
+            HistoryContext,
+            RequirementContext,
+            TestContext,
+            quality_score,
+        )
+
+        profile = self._profile
+        batch = self._batch
+        trace = result.trace
+        stage_items = result.stage_items
+
+        core_slices: list[FileSlice] = []
+        related_slices: list[FileSlice] = []
+        test_slices: list[FileSlice] = []
+        notes: list[str] = []
+        for stage in ("overview", "symbol", "detail"):
+            for it in stage_items.get(stage, []):
+                payload = it.payload
+                if isinstance(payload, FileSlice):
+                    if payload.kind == "core":
+                        core_slices.append(payload)
+                    elif payload.kind == "related":
+                        related_slices.append(payload)
+                    elif payload.kind == "test":
+                        test_slices.append(payload)
+                elif payload is None and it.content:
+                    notes.append(it.content)  # 未由 6 节结构承载 → notes 聚合
+        if notes:
+            related_slices.append(
+                FileSlice(rel_path="progressive_notes", kind="related",
+                          content="\n\n".join(notes))
+            )
+
+        exp = batch.experience_ctx.model_copy(deep=True)
+        if trace.unable_to_locate:
+            exp.advice.append(
+                "未能定位候选文件 — 上下文仅含任务/架构概览; 建议人工介入或补充 source_files"
+            )
+        if trace.symbol_miss:
+            names = ", ".join(trace.symbol_miss[:3])
+            exp.advice.append(
+                f"任务引用符号 ({names}) 未在仓库中定义 — 定位请用 line_range "
+                "(见源文件 `N|` 行号), 勿用 symbol 锚点"
+            )
+        if trace.large_file:
+            exp.advice.append(
+                "超大文件已转 symbol 索引+锚点段 (不全文) — 精确定位用 line_range"
+            )
+        if trace.context_overflow:
+            exp.advice.append(
+                "上下文超出预算已降级 (符号索引/摘要级) — 精确定位用 line_range, 保持最小改动"
+            )
+        if trace.low_confidence:
+            exp.advice.append(
+                "上下文低置信度加载 (渐进加载失败兜底) — 执行时保持最小改动, 验证逐条核验"
+            )
+
+        score = quality_score(
+            core_files=core_slices, related_files=related_slices,
+            mapping=batch.test_mapping, keywords=profile.keywords, experience=exp,
+        )
+        if trace.context_overflow or self._budget.context_overflow:
+            score = round(score * 0.5, 3)  # 降级 → 质量分减半 (执行前警示)
+
+        return AssembledContext(
+            requirement=RequirementContext(
+                objective=profile.objective, requirement=profile.requirement,
+                task_id=profile.task_id,
+            ),
+            architecture=batch.arch_ctx,
+            code=CodeContext(
+                core_files=core_slices, related_files=related_slices,
+                keywords=profile.keywords,
+            ),
+            history=HistoryContext(entries=batch.history_entries),
+            test=TestContext(test_files=test_slices, mapping=batch.test_mapping),
+            experience=exp,
+            context_score=score,
+            total_chars=result.total_chars,
+            token_estimate=result.total_chars // 4,
+        )
+
+    # ------------------------------------------------------------------ 提取
+
+    def _selected_code_test(self) -> list[ContextCandidate]:
+        """预算后选中的 code/test 候选 (按 selected_ids 序)。"""
+        out: list[ContextCandidate] = []
+        for cid in self._budget.selected_ids:
+            c = self._cand_by_id.get(cid)
+            if c is not None and c.type in ("code", "test"):
+                out.append(c)
+        return out
+
+    def _overview(self, widen: bool = False) -> StageLoadResult:
+        from .context import RequirementContext
+
+        profile = self._profile
+        arch = self._batch.arch_ctx
+        req = RequirementContext(
+            objective=profile.objective, requirement=profile.requirement,
+            task_id=profile.task_id,
+        )
+        selected = self._selected_code_test()
+        refs = [c.content_ref for c in selected][:8]
+        tree_lines = [
+            "modules: " + (", ".join(arch.modules[:12]) if arch.modules else "(无模块情报)"),
+            "entry_points: " + (", ".join(arch.entry_points[:6]) if arch.entry_points else "(无)"),
+            "tech_stack: " + (", ".join(arch.tech_stack[:8]) if arch.tech_stack else "(无)"),
+            "candidates: " + (", ".join(refs) if refs else "(无候选文件 — 未能定位)"),
+        ]
+        items = [
+            LoadedItem(content_ref="req:task", content=req.render(), keep=True,
+                       payload=_PAYLOAD_REQ),
+            LoadedItem(content_ref="arch:summary",
+                       content=arch.summary or "(仓库结构摘要不可用 — 仍以内联源文件为准)",
+                       payload=_PAYLOAD_ARCH),
+            LoadedItem(content_ref="tree:overview", content="\n".join(tree_lines)),
+            LoadedItem(content_ref="history:summary",
+                       content="\n".join(self._batch.history_entries[:6])
+                       or "(无可用提交历史 — 沙箱基线)",
+                       payload=_PAYLOAD_HIST),
+        ]
+        found = bool(selected)
+        confidence = max((c.relevance_score for c in selected), default=0.0)
+        return StageLoadResult(
+            items=items, confidence=confidence, candidates_found=found,
+            missing_info=not found,
+        )
+
+    def _symbol(self, widen: bool = False) -> StageLoadResult:
+        from .context import FileSlice, _file_symbol_index
+
+        ri = self._ri
+        items: list[LoadedItem] = []
+        # 1) 相关 (symbol 级) 候选符号索引 (payload=related slice; 核心 full 在 detail)
+        related = [
+            c for c in self._selected_code_test()
+            if c.type == "code" and self._budget.levels.get(c.id) != LEVEL_FULL
+        ]
+        for c in related:
+            idx = _file_symbol_index(ri, c.source) if ri is not None else ""
+            if not idx:
+                continue
+            items.append(
+                LoadedItem(
+                    content_ref=f"symbol:{c.id}", content=idx,
+                    payload=FileSlice(rel_path=c.source, kind="related",
+                                      content=idx, symbol_index=idx),
+                )
+            )
+        # 2) call graph (callers/callees — 影响面; 设计 §2 Stage 2)
+        graph_lines: list[str] = []
+        if ri is not None:
+            for rel in self._batch.core_files[:5]:
+                callees = [e.callee_symbol for e in ri.call_graph.callees_of(rel)][:8]
+                callers = [e.caller_symbol for e in ri.call_graph.callers_of(rel)][:8]
+                if callees:
+                    graph_lines.append(f"{rel} → calls: {', '.join(callees)}")
+                if callers:
+                    graph_lines.append(f"{rel} ← called_by: {', '.join(callers)}")
+        if graph_lines:
+            items.append(LoadedItem(content_ref="graph:call",
+                                    content="\n".join(graph_lines)))
+        # 3) test 关系 (test_map — 设计 §2 Stage 2)
+        map_lines = [
+            f"{src} → {', '.join(t[:4])}"
+            for src, t in list(self._batch.test_mapping.items())[:8]
+        ]
+        if map_lines:
+            items.append(
+                LoadedItem(content_ref="tests:mapping",
+                           content="\n".join(map_lines), payload=_PAYLOAD_TEST_MAP)
+            )
+        # 4) symbol miss → line_range 兜底提示 (widen 轮加入; 设计 §6)
+        missing = bool(self._symbol_miss) and not self._symbol_widened
+        if widen and missing:
+            self._symbol_widened = True
+            names = ", ".join(self._symbol_miss[:3])
+            hint = (
+                f"任务引用符号 ({names}) 未在仓库中定义 — 定位请用 line_range "
+                "(见源文件 `N|` 行号), 勿用 symbol 锚点"
+            )
+            items.append(LoadedItem(content_ref="hint:line_range", content=hint))
+            missing = False
+        # 锚点确定: line_range 兜底恒可用 (设计 §2: symbol 或 line_range)
+        return StageLoadResult(
+            items=items, confidence=1.0 if items else 0.5, anchor_found=True,
+            missing_info=missing, symbol_miss=list(self._symbol_miss),
+        )
+
+    def _detail(self, degrade: bool = False) -> StageLoadResult:
+        from .context import (
+            CORE_LINE_CAP,
+            FileSlice,
+            _file_symbol_index,
+            _read_file_text,
+            _render_lines,
+            _symbol_blocks,
+        )
+
+        ri = self._ri
+        items: list[LoadedItem] = []
+        large: list[str] = []
+        for cid in self._budget.selected_ids:
+            cand = self._cand_by_id.get(cid)
+            if cand is None or cand.type not in ("code", "test"):
+                continue
+            lvl = self._budget.levels.get(cid)
+            if cand.type == "code" and lvl == LEVEL_FULL:
+                if degrade:
+                    # token 超限降级: 只给 symbol 锚点 (正文 → 符号索引; 设计 §4 降级链)
+                    idx = _file_symbol_index(ri, cand.source) if ri is not None else ""
+                    if idx:
+                        items.append(LoadedItem(content_ref=f"symbol:{cid}", content=idx))
+                    continue
+                lines = _read_file_text(self._root, cand.source)
+                line_count = len(lines)
+                if line_count <= CORE_LINE_CAP:
+                    content = _render_lines("\n".join(lines)) if lines else ""
+                    slice_ = FileSlice(rel_path=cand.source, kind="core",
+                                       content=content, line_count=line_count)
+                    items.append(LoadedItem(content_ref=f"code:{cid}", content=content,
+                                            payload=slice_))
+                else:
+                    # 超大文件: 符号索引 + 命中关键词锚点段 (不全文; 设计 §6)
+                    large.append(cand.source)
+                    f = ri.index.find(cand.source) if ri is not None else None
+                    symbols = f.symbols if f is not None else []
+                    blocks = _symbol_blocks(lines, symbols, self._profile.keywords)
+                    idx = _file_symbol_index(ri, cand.source) if ri is not None else ""
+                    parts = [
+                        f"// (文件 {cand.source} 共 {line_count} 行, 超过 {CORE_LINE_CAP} 行上限 —",
+                        "//  以下为 symbol 索引 + 命中任务关键词的函数块; 完整文件不内联)",
+                    ]
+                    if idx:
+                        parts.append(idx)
+                    for sym, start, end in blocks[:6]:
+                        block_text = "\n".join(lines[start : end + 1])
+                        parts.append(
+                            f"// 关键段: {sym.kind.value} {sym.name} (行 {start + 1}-{end + 1}):"
+                        )
+                        parts.append(_render_lines(block_text))
+                    content = "\n".join(parts)
+                    slice_ = FileSlice(rel_path=cand.source, kind="core",
+                                       content=content, line_count=line_count,
+                                       truncated=True, symbol_index=idx)
+                    items.append(LoadedItem(content_ref=f"code:{cid}", content=content,
+                                            payload=slice_))
+            elif cand.type == "test":
+                # 相关测试代码 (设计 §2 Stage 3; 小文件全量, 大文件符号索引)
+                lines = _read_file_text(self._root, cand.source)
+                if lines and len(lines) <= 200:
+                    content = _render_lines("\n".join(lines))
+                    slice_ = FileSlice(rel_path=cand.source, kind="test",
+                                       content=content, line_count=len(lines))
+                else:
+                    idx = _file_symbol_index(ri, cand.source) if ri is not None else ""
+                    content = idx or ""
+                    slice_ = FileSlice(rel_path=cand.source, kind="test",
+                                       content=content, symbol_index=idx)
+                items.append(LoadedItem(content_ref=f"test:{cand.id}", content=content,
+                                        payload=slice_))
+        return StageLoadResult(
+            items=items, confidence=1.0 if items else 0.4, anchor_found=True,
+            large_file=large,
+        )
+
+
 # ================================================================ Ranking Pipeline
 
 class RankingPipelineResult:
-    """Pipeline 全链产物 (审计 + 组装输出)。"""
+    """Pipeline 全链产物 (审计 + 组装输出)。
+
+    progressive: T4.2 渐进加载产物 (ProgressiveResult; 旧路径 run() 缺省
+    progressive=False → None — 一次性组装语义不变)。
+    """
 
     def __init__(
         self,
@@ -1114,6 +1477,7 @@ class RankingPipelineResult:
         budget: Any,
         assembled: Any,
         symbol_miss: list[str],
+        progressive: Any = None,
     ) -> None:
         self.profile = profile
         self.batch = batch
@@ -1123,10 +1487,11 @@ class RankingPipelineResult:
         self.budget = budget
         self.assembled = assembled
         self.symbol_miss = symbol_miss
+        self.progressive = progressive
 
     def to_dict(self) -> dict[str, Any]:
-        """审计摘要 (候选数/评分/预算/降级链/符号缺失)。"""
-        return {
+        """审计摘要 (候选数/评分/预算/降级链/符号缺失/渐进 Trace)。"""
+        d: dict[str, Any] = {
             "task_type": self.profile.task_type,
             "candidates": len(self.batch.candidates),
             "ranked_ids": [c.id for c in self.ranked[:10]],
@@ -1138,6 +1503,9 @@ class RankingPipelineResult:
             "context_overflow": self.budget.context_overflow,
             "symbol_miss": list(self.symbol_miss),
         }
+        if self.progressive is not None:
+            d["progressive"] = self.progressive.to_dict()
+        return d
 
 
 class RankingPipeline:
@@ -1396,14 +1764,44 @@ class RankingPipeline:
 
     # ------------------------------------------------------------------ 入口
 
+    def _progressive_assemble(
+        self,
+        profile: TaskProfile,
+        batch: CandidateBatch,
+        budget: Any,
+        symbol_miss: list[str],
+    ) -> ProgressiveResult:
+        """T4.2: TopK→Budget 后 → ProgressiveLoader 按阶段加载组装 (设计 §1 接入点)。
+
+        Developer 域 StageSpec + CodeProgressiveProvider 注入通用引擎; 引擎
+        逐阶段加载并决策 (continue|stop|fallback|skip), 产出 ProgressiveResult
+        (审计 Trace + finalize 后的 AssembledContext)。
+        """
+        provider = CodeProgressiveProvider(
+            self._root, ri=self._intelligence(), profile=profile,
+            batch=batch, budget=budget, symbol_miss=symbol_miss,
+        )
+        loader = ProgressiveLoader(
+            stages=CODE_PROGRESSIVE_STAGES,
+            extractor=provider.extract,
+            finalizer=provider.finalize,
+            hard_cap=self._hard_cap,
+        )
+        return loader.run(task_type=profile.task_type)
+
     def run(
         self,
         task: Any,
         *,
         source_files: list[str] | None = None,
         task_type: str | None = None,
+        progressive: bool = False,
     ) -> RankingPipelineResult:
         """Task → 全链 → RankingPipelineResult (含组装好的 AssembledContext)。
+
+        progressive=True → T4.2 渐进加载路径: Ranking→TopK→Budget 后由
+        ProgressiveLoader 按阶段加载组装 (3 阶段 + 决策 + 审计 Trace);
+        渐进路径异常 → 回退本路径一次性组装 (旧行为, 不破坏执行链)。
 
         失败安全: 任一环节异常 → 抛出 (由调用方 context.ranking_assemble 回退旧路径;
         本方法不吞异常 — 回退决策在装配点, 保持全链可审计)。
@@ -1435,7 +1833,16 @@ class RankingPipeline:
         budget = BudgetController(
             profile.task_type, budget=self._budget, hard_cap=self._hard_cap
         ).apply_budget(selection, aggregates=batch.aggregates)
-        assembled = self._assemble(task, profile, batch, budget, symbol_miss)
+        prog: ProgressiveResult | None = None
+        if progressive:
+            try:
+                prog = self._progressive_assemble(profile, batch, budget, symbol_miss)
+                assembled = prog.assembled
+            except Exception:  # noqa: BLE001 — 渐进失败安全: 回退一次性组装
+                prog = None
+                assembled = self._assemble(task, profile, batch, budget, symbol_miss)
+        else:
+            assembled = self._assemble(task, profile, batch, budget, symbol_miss)
         return RankingPipelineResult(
             profile=profile,
             batch=batch,
@@ -1445,4 +1852,5 @@ class RankingPipeline:
             budget=budget,
             assembled=assembled,
             symbol_miss=symbol_miss,
+            progressive=prog,
         )

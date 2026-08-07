@@ -176,6 +176,14 @@ class BenchmarkRunner:
     - work_root: 沙箱父目录 (None → 系统临时目录; 测试注入 tmp_path)。
     - runs: 每样本执行次数 (Provider 对比/稳定性; 缺省 1)。
     - env: 配置检查环境 (缺省 os.environ; 测试注入空 dict 模拟无 key)。
+    - ranking_enabled: T4.5 Context Ranking 新路径开关 (缺省 False — 旧
+      ContextAssembler.assemble 路径逐位兼容; True → ranking_assemble,
+      失败安全回退旧路径)。
+    - progressive: T4.5 渐进加载开关 (缺省 False; 仅在 ranking_enabled=True
+      时生效 — ranking_assemble(progressive=True); 旧路径无此语义)。
+    - experience_store: T4.5 上下文经验库 (ContextExperienceStore 实例;
+      缺省 None — 冷启动, 旧路径逐位不变; 提供 → RankingPipeline 真实
+      经验接入: symbol_miss 提权/预算推荐/阶段序, 全部失败安全)。
     """
 
     def __init__(
@@ -188,6 +196,9 @@ class BenchmarkRunner:
         runs: int = 1,
         git_bin: str = "git",
         env: dict[str, str] | None = None,
+        ranking_enabled: bool = False,
+        progressive: bool = False,
+        experience_store: Any = None,
     ) -> None:
         self._provider = provider
         self._samples = list(samples) if samples else list(ALL_SAMPLES)
@@ -197,6 +208,13 @@ class BenchmarkRunner:
         self._git_bin = git_bin
         self._env = env
         self._developer = DeveloperAgent(provider)
+        # T4.5: Context Intelligence 开关 (默认全关 → 旧路径逐位兼容)
+        self._ranking_enabled = bool(ranking_enabled)
+        self._progressive = bool(progressive)
+        self._experience_store = experience_store
+        # T4.5: Context Intelligence 审计摘要 (sample_id → dict; 纯新增属性,
+        # 报告侧读取; 不影响既有结果模型/执行链)
+        self._context_intel: dict[str, dict] = {}
 
     # ------------------------------------------------------------ 预检
 
@@ -304,17 +322,33 @@ class BenchmarkRunner:
         applied = False
         # Phase A++++++-2b: Context Assembly (6 节 + 质量分; 失败安全 → None →
         # 旧路径, Benchmark 链不破坏)
+        # T4.5: ranking_enabled=True → Ranking Pipeline 新路径 (ranking_assemble
+        # + progressive + experience_store 透传); 默认全关 → 旧 assemble 逐位兼容。
         assembled_context = None
         context_score: float | None = None
+        ranking_trace: dict | None = None
         try:
             from ..context import ContextAssembler
 
-            assembled_context = ContextAssembler(
-                sandbox_root,
-                project_dir=self._project_dir,
-                git_bin=self._git_bin,
-            ).assemble(sample)
+            assembler_kwargs: dict[str, Any] = {
+                "project_dir": self._project_dir,
+                "git_bin": self._git_bin,
+            }
+            if self._experience_store is not None:
+                assembler_kwargs["experience_store"] = self._experience_store
+            assembler = ContextAssembler(sandbox_root, **assembler_kwargs)
+            if self._ranking_enabled:
+                assembled_context = assembler.ranking_assemble(
+                    sample, progressive=self._progressive
+                )
+            else:
+                assembled_context = assembler.assemble(sample)
             context_score = assembled_context.context_score
+            # T4.5: Context Intelligence 审计摘要 (RankingPipeline 全链产物 →
+            # ranking/progressive/budget/experience 四类指标; 失败安全)
+            ranking_trace = self._capture_ranking_trace(
+                sample, assembler, assembled_context
+            )
         except Exception:  # noqa: BLE001 — 组装失败安全
             assembled_context = None
         # 验证循环总尝试上限: 1 次初始 + 2 轮 verifier 反馈修复 (任务约束 ≤2 轮)
@@ -393,6 +427,9 @@ class BenchmarkRunner:
         result.cost_usd = estimate_cost_usd(usage_acc)
         result.verifier_passed = passed
         result.context_score = context_score
+        # T4.5: Context Intelligence 审计摘要随结果归档 (报告侧读取; 模型不动)
+        if ranking_trace is not None:
+            self._context_intel[result.id] = ranking_trace
         if detail:
             result.verifier_detail = detail[:500]
 
@@ -440,6 +477,94 @@ class BenchmarkRunner:
 
     # ------------------------------------------------------------ 内部
 
+    def _capture_ranking_trace(
+        self,
+        sample: BenchmarkSample,
+        assembler: Any,
+        assembled_context: Any,
+    ) -> dict | None:
+        """T4.5 Context Intelligence 审计摘要 (四类指标, 失败安全)。
+
+        从 ContextAssembler.last_ranking_result (RankingPipeline 全链产物)
+        提取 — 纯审计, 不改执行链/评分标准:
+
+        - ranking:   候选数 / Top ranked (id+score+reason) / selected_ids /
+                     levels / symbol_miss;
+        - progressive: stages / total_chars / token_estimate / degraded 标记
+                     (仅 progressive 路径; 一次性路径 → None);
+        - budget:    planned / requested / actual / overflow / degraded_steps
+                     / source (budget_trace);
+        - experience: 经验库匹配记录数 (matched) + 是否启用经验 (influence 信号:
+                     经验库提供即视为 influence 潜在, 匹配记录数 = 实际背书量)。
+
+        旧路径 (ranking_enabled=False) → 返回 None (不上报, 零噪音)。
+        新路径任一环节异常 → None (审计不破坏执行链)。
+        """
+        if not self._ranking_enabled:
+            return None
+        try:
+            result = getattr(assembler, "last_ranking_result", None)
+            if result is None:
+                return None
+            d = result.to_dict() if hasattr(result, "to_dict") else {}
+            ranked = list(getattr(result, "ranked", []) or [])
+            top = []
+            for c in ranked[:5]:
+                top.append({
+                    "id": getattr(c, "id", ""),
+                    "score": round(float(getattr(c, "relevance_score", 0.0) or 0.0), 3),
+                    "reason": (getattr(c, "reason", "") or "")[:160],
+                })
+            budget_trace = d.get("budget_trace") or {}
+            prog = d.get("progressive")
+            experience: dict = {"enabled": self._experience_store is not None,
+                                "matched_records": 0}
+            if self._experience_store is not None:
+                try:
+                    task_type = d.get("task_type", "") or ""
+                    records = self._experience_store.query(task_type=task_type) or []
+                    experience["matched_records"] = len(records)
+                except Exception:  # noqa: BLE001 — 经验统计失败安全
+                    experience["matched_records"] = 0
+            return {
+                "sample_id": sample.id,
+                "context_score": round(float(getattr(assembled_context,
+                                                     "context_score", 0.0) or 0.0), 3),
+                "ranking": {
+                    "candidates": d.get("candidates"),
+                    "top": top,
+                    "selected_ids": list(d.get("selected_ids") or []),
+                    "levels": d.get("levels"),
+                    "symbol_miss": list(d.get("symbol_miss") or []),
+                },
+                "progressive": (
+                    None
+                    if prog is None
+                    else {
+                        "stages": list(prog.get("stages") or []),
+                        "total_chars": prog.get("total_chars"),
+                        "token_estimate": prog.get("token_estimate"),
+                        "degraded": bool(
+                            (prog.get("trace") or {}).get("degraded_steps")
+                            or (prog.get("trace") or {}).get("context_overflow")
+                            or (prog.get("trace") or {}).get("low_confidence")
+                            or (prog.get("trace") or {}).get("unable_to_locate")
+                        ),
+                    }
+                ),
+                "budget": {
+                    "planned": budget_trace.get("planned_budget"),
+                    "requested": budget_trace.get("requested_budget"),
+                    "actual": budget_trace.get("actual_context"),
+                    "overflow": bool(budget_trace.get("overflow")),
+                    "degraded_steps": list(budget_trace.get("degraded_steps") or []),
+                    "source": budget_trace.get("source"),
+                },
+                "experience": experience,
+            }
+        except Exception:  # noqa: BLE001 — 审计失败安全
+            return None
+
     @staticmethod
     def _accumulate_usage(acc: dict[str, Any], usage: dict[str, Any]) -> dict[str, Any]:
         """跨重试累计 usage (token/成本真实总花费; 非数值字段取末次)。"""
@@ -485,7 +610,8 @@ class BenchmarkRunner:
 
 # ================================================================ CLI
 
-def _print_report(report: BenchmarkReport) -> None:
+def _print_report(report: BenchmarkReport,
+                  context_intel: dict | None = None) -> None:
     print(f"Benchmark report: {report.id}")
     print(f"  provider={report.provider_id} model={report.model or '(default)'}")
     print(f"  blocked={report.blocked} blocked_reason={report.blocked_reason or '-'}")
@@ -499,6 +625,25 @@ def _print_report(report: BenchmarkReport) -> None:
               f"latency={r.latency_s}s cost={r.cost_usd} "
               f"cs={r.context_score if r.context_score is not None else '-'} "
               f"{(r.blocked_reason or r.error or '')[:70]}")
+        # T4.5: Context Intelligence 审计摘要 (每样本一行; 旧路径无 → 跳过)
+        if context_intel:
+            trace = context_intel.get(r.id)
+            if trace:
+                ranking = trace.get("ranking") or {}
+                top0 = (ranking.get("top") or [{}])[0]
+                prog = trace.get("progressive")
+                budget = trace.get("budget") or {}
+                exp = trace.get("experience") or {}
+                print(f"      intel: candidates={ranking.get('candidates')} "
+                      f"top1={top0.get('id')}({top0.get('score')}) "
+                      f"selected={len(ranking.get('selected_ids') or [])} "
+                      f"symbol_miss={ranking.get('symbol_miss') or []} "
+                      f"stages={prog.get('stages') if prog else '-'} "
+                      f"prog_degraded={prog.get('degraded') if prog else '-'} "
+                      f"budget_planned={budget.get('planned')} "
+                      f"actual={budget.get('actual')} "
+                      f"overflow={budget.get('overflow')} "
+                      f"exp_records={exp.get('matched_records')}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -512,6 +657,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--provider", default="openai", choices=["openai", "anthropic"],
                         help="Provider id (缺省 openai)")
     parser.add_argument("--runs", type=int, default=1, help="每样本执行次数")
+    # T4.5: Context Intelligence 新路径开关 (默认全关 → 旧路径逐位兼容)。
+    # --ranking: Ranking Pipeline 新路径 (ranking_assemble);
+    # --progressive: 渐进加载 (ranking_assemble progressive=True; 需 --ranking);
+    # --experience: 上下文经验库目录 (ContextExperienceStore 数据空间,
+    #   <dir>/context_experience.json; 缺省/空库 → 冷启动, 诚实)。
+    parser.add_argument("--ranking", action="store_true",
+                        help="Context Ranking 新路径 (ranking_assemble)")
+    parser.add_argument("--progressive", action="store_true",
+                        help="渐进加载 (需 --ranking; 3 阶段 + 决策)")
+    parser.add_argument("--experience", metavar="DIR", default=None,
+                        help="上下文经验库目录 (缺省/空库 → 冷启动)")
+    parser.add_argument("--output-json", metavar="PATH", default=None,
+                        help="结果 JSON 落盘 (report + context intelligence trace)")
     # OpenAI 兼容端点参数 (DeepSeek: base_url=https://api.deepseek.com/v1/chat/completions,
     # model=deepseek-chat; 费率按 deepseek-chat 定价估算成本)。支持环境变量覆盖
     # (BENCHMARK_BASE_URL/BENCHMARK_MODEL/BENCHMARK_INPUT_RATE_PER_1K/
@@ -549,7 +707,24 @@ def main(argv: list[str] | None = None) -> int:
         print(f"provider init failed: {exc}")
         return 7
 
-    runner = BenchmarkRunner(provider, runs=args.runs)
+    # T4.5: Context Intelligence 开关接线 (默认全关 → 旧路径逐位兼容);
+    # --progressive 无 --ranking → 警告并忽略 (旧路径无渐进语义)。
+    if args.progressive and not args.ranking:
+        print("⚠ --progressive 需要 --ranking, 已忽略 (旧路径无渐进语义)")
+    experience_store = None
+    if args.experience:
+        from ..experience_ctx import ContextExperienceStore
+
+        experience_store = ContextExperienceStore(args.experience)
+        print(f"上下文经验库: {experience_store.path} "
+              f"(记录数: {experience_store.count()})")
+
+    runner = BenchmarkRunner(
+        provider, runs=args.runs,
+        ranking_enabled=args.ranking,
+        progressive=args.progressive and args.ranking,
+        experience_store=experience_store,
+    )
     problems = runner.validate_samples()
     if problems:
         print("样本集校验失败:")
@@ -566,7 +741,26 @@ def main(argv: list[str] | None = None) -> int:
         report = runner.run_all()
     else:
         report = runner.run_all()
-    _print_report(report)
+    _print_report(report, runner._context_intel)
+    # T4.5: --output-json 落盘 (report 全量 + Context Intelligence 审计摘要;
+    # 失败安全 — 落盘异常不掩盖执行结果, 退出码不变)
+    if args.output_json:
+        import json
+
+        out_path = Path(args.output_json)
+        try:
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            payload = {
+                "report": report.to_dict(),
+                "context_intelligence": runner._context_intel,
+            }
+            out_path.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2, default=str),
+                encoding="utf-8",
+            )
+            print(f"结果 JSON 已落盘: {out_path}")
+        except Exception as exc:  # noqa: BLE001 — 落盘失败安全
+            print(f"⚠ --output-json 落盘失败: {exc}")
     return 0
 
 

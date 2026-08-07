@@ -25,10 +25,14 @@ Desktop Runtime ✅ / Installer / Update / Local Runtime
 
 ### Phase 16 — AI Organization Foundation
 ```
-目标: Factory 拥有专业 AI 员工
-Organization Model: Company/Department/Role/Agent
+目标: Factory 拥有专业 AI 员工 (AI Organization Operating System 基础)
+Organization Model: Company/Department/Role/Agent (Solo 扁平 ↔ Enterprise 嵌套, 同一模型)
 Agent Registry + Capability Model + Experience Model
-验收: 组织建模 + AI 员工注册/分配 (≥120 tests)
+AI HR Agent (招聘/培训建议) + Knowledge 三层隔离 + Default Deny (Role 权限)
+MVP: AI Software Company (CEO=Human + PM/Dev/QA)
+设计: docs/architecture/phase16-organization-model-review.md + agent-employee-model.md
+      + knowledge-learning-model.md + ai-company-operating-model.md
+验收: 组织建模 + AI 员工注册/分配 + Goal→Org→Assign→Execute→Review→Experience (≥120 tests)
 ```
 
 ### Phase 17 — AI Professional Organization MVP

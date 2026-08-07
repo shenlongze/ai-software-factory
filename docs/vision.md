@@ -65,11 +65,12 @@ Human Leadership → AI 组织 → Human 最终负责（Approval Gate 铁律）�
 ## 成功标准
 
 ```
-1. 一个用户 + Factory = 一家 AI 公司 (所有专业角色 AI 化, 人只决策)
-2. 项目管理智能化 (17 Planning: 拆解/调度/风险/重规划)
-3. 行业可扩展 (20 模板: 软件/金融/制造/电商/医疗/媒体)
-4. 透明可控 (19 治理: 一切可见, 高危必经人)
-5. 经验是资产 (Experience Loop: 每次执行都让组织更聪明)
+1. 一个用户 + Factory = 一家 AI 公司 (Human CEO + AI 员工, 人只决策)
+2. 一人公司/企业/集团同一组织模型 (Solo → Enterprise → Multi-tenant → 集团)
+3. 项目管理智能化 (Analysis ≠ PM; Scrum/Kanban/Waterfall/Hybrid/MVP)
+4. 行业可扩展 (Software/金融/制造/电商/医疗/媒体 公司模板)
+5. 透明可控 (Default Deny + 高危必经人 + 审计)
+6. 经验是资产 (Experience Loop: 每次执行都让组织更聪明)
 ```
 
 ## Desktop 定位 (15A-3b)

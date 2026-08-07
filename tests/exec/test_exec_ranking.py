@@ -190,9 +190,10 @@ class TestRankingConstants:
         assert CANDIDATE_TYPES == ("code", "test", "history", "experience", "architecture")
 
     def test_task_types_and_budgets(self) -> None:
-        assert TASK_TYPES == ("bug_fix", "feature", "greenfield")
+        assert TASK_TYPES == ("bug_fix", "feature", "refactor", "greenfield")
         assert TASK_TYPE_BUDGETS["bug_fix"] == 20_000
         assert TASK_TYPE_BUDGETS["feature"] == 25_000
+        assert TASK_TYPE_BUDGETS["refactor"] == 22_000
         assert TASK_TYPE_BUDGETS["greenfield"] == 15_000
 
     def test_default_budget_and_hard_cap(self) -> None:

@@ -247,18 +247,20 @@ class TestRankingPipelineChain:
 
 class TestPipelineBudget:
     def test_mid_budget_single_step_shrink(self, mini_project: Path) -> None:
-        """中档预算 → 第一步 (相关符号收缩 ×0.5) 即达标; 核心保持 full。"""
+        """中档预算 → 按 bug_fix 策略降级链 (首步架构摘要 one_line — 先裁全局架构) 达标。"""
         res = RankingPipeline(mini_project, budget=250).run(_replace_task())
-        assert res.budget.degraded_steps[0] == "related_symbol_shrink"
+        assert res.budget.degraded_steps[0] == "architecture_one_line"
+        assert "related_symbol_shrink" in res.budget.degraded_steps
         assert res.budget.context_overflow is False
         assert res.budget.total_chars <= res.budget.budget_chars
-        assert res.budget.levels["code:app/main.py"] == LEVEL_FULL
+        # 核心文件降级但未被丢弃 (仍可定位)
+        assert "code:app/main.py" in res.budget.levels
 
     def test_small_budget_multi_step_degradation(self, mini_project: Path) -> None:
-        """小预算 → 降级链走多步 (核心 full→symbol 逐个 + 丢最低分相关)。"""
+        """小预算 → 降级链走多步 (架构先行 + 核心 full→symbol 逐个 + 丢最低分相关)。"""
         res = RankingPipeline(mini_project, budget=200).run(_replace_task())
         steps = res.budget.degraded_steps
-        assert steps[0] == "related_symbol_shrink"
+        assert steps[0] == "architecture_one_line"
         assert any(s.startswith("core_full_to_symbol:") for s in steps)
         assert any(s.startswith("drop_related:") for s in steps)
         # 核心降级为 symbol 级 (预算下不再全文内联)
@@ -785,4 +787,253 @@ class TestProgressiveRegression:
         res = RankingPipeline(mini_project).run(_replace_task())
         assert 0.0 <= res.assembled.context_score <= 1.0
         assert res.assembled.total_chars > 0
-        assert "## Experience" in res.assembled.render_prompt()
+
+
+# ================================================================ 9. T4.3 Budget Enforcement 集成
+
+class TestBudgetTraceIntegration:
+    """T4.3: BudgetTrace 集成 (两路径均记录; 渐进路径含 Budget Enforcement 三档)。"""
+
+    def test_one_shot_path_records_budget_trace(self, mini_project: Path) -> None:
+        """一次性路径 → budget_trace 记录 (source=one_shot, 成功语义)。"""
+        res = RankingPipeline(mini_project).run(_replace_task())
+        bt = res.budget_trace
+        assert bt is not None
+        assert bt.task_type == "bug_fix"
+        assert bt.source == "one_shot"
+        assert bt.planned_budget == res.budget.budget_chars
+        assert bt.actual_context == res.budget.total_chars
+        assert bt.success_failure == "success"
+        assert bt.to_experience_signals() == []
+
+    def test_progressive_path_records_budget_trace(self, mini_project: Path) -> None:
+        """渐进路径 → budget_trace 记录 (source=progressive, requested/actual 双口径)。"""
+        res = RankingPipeline(mini_project).run(_replace_task(), progressive=True)
+        bt = res.budget_trace
+        assert bt is not None
+        assert bt.source == "progressive"
+        assert bt.task_type == "bug_fix"
+        assert bt.planned_budget == res.budget.budget_chars
+        assert bt.requested_budget == res.progressive.trace.requested_budget
+        assert bt.actual_context == res.progressive.total_chars
+        assert bt.actual_usage == res.progressive.trace.actual_usage
+        assert bt.token_cost == res.progressive.total_chars // 4
+
+    def test_progressive_requested_within_planned(self, mini_project: Path) -> None:
+        """渐进 Budget Enforcement: requested ≤ planned (总硬顶约束可审计)。"""
+        res = RankingPipeline(mini_project).run(_replace_task(), progressive=True)
+        bt = res.budget_trace
+        assert bt.requested_budget <= bt.planned_budget
+        assert bt.requested_budget > 0
+        # 实际消耗不超过申请
+        assert bt.actual_context <= bt.requested_budget
+
+    def test_budget_trace_overflow_degraded(self, mini_project: Path) -> None:
+        """预算超限 → budget_trace overflow/degraded 诚实标记 (降级警示信号)。"""
+        res = RankingPipeline(mini_project, budget=50).run(_replace_task())
+        bt = res.budget_trace
+        assert bt.overflow is True
+        assert bt.success_failure == "degraded"
+        assert bt.degraded_steps  # 降级链确实执行
+        assert "context_overflow" in bt.to_experience_signals()
+
+    def test_budget_trace_in_to_dict(self, mini_project: Path) -> None:
+        """两路径 to_dict 均含 budget_trace (可审计导出)。"""
+        one = RankingPipeline(mini_project).run(_replace_task())
+        prog = RankingPipeline(mini_project).run(_replace_task(), progressive=True)
+        for res in (one, prog):
+            d = res.to_dict()
+            assert "budget_trace" in d
+            assert d["budget_trace"]["task_type"] == "bug_fix"
+        assert one.to_dict()["budget_trace"]["source"] == "one_shot"
+        assert prog.to_dict()["budget_trace"]["source"] == "progressive"
+
+
+class TestProgressiveDynamicBudget:
+    """T4.3: 渐进 3 阶段动态预算 (Stage 1 固定 / Stage 2 按任务类型 / Stage 3 剩余)。"""
+
+    def test_stage_one_fixed_overview(self) -> None:
+        """Stage 1 固定: 全部任务类型 overview = 2K (必载)。"""
+        from exec.ranking import code_progressive_stages_for
+
+        for tt in ("bug_fix", "feature", "refactor", "greenfield"):
+            stages = code_progressive_stages_for(tt)
+            assert stages[0].stage == "overview"
+            assert stages[0].max_chars == 2_000
+            assert stages[0].required is True
+
+    def test_stage_two_dynamic_symbol(self) -> None:
+        """Stage 2 动态: symbol 按任务类型策略 (bug_fix 4K / feature 5K / refactor 5K / greenfield 1K)。"""
+        from exec.ranking import code_progressive_stages_for
+
+        assert code_progressive_stages_for("bug_fix")[1].max_chars == 4_000
+        assert code_progressive_stages_for("feature")[1].max_chars == 5_000
+        assert code_progressive_stages_for("refactor")[1].max_chars == 5_000
+        assert code_progressive_stages_for("greenfield")[1].max_chars == 1_000
+
+    def test_stage_three_remaining(self) -> None:
+        """Stage 3 剩余: detail max_chars=0 → loader 给剩余预算 (总 ≤ 任务类型预算)。"""
+        from exec.ranking import code_progressive_stages_for
+
+        for tt in ("bug_fix", "feature", "refactor", "greenfield"):
+            stages = code_progressive_stages_for(tt)
+            assert stages[2].stage == "detail"
+            assert stages[2].max_chars == 0
+
+    def test_progressive_loader_hard_cap_is_task_budget(self, mini_project: Path) -> None:
+        """渐进 loader 总硬顶 = min(任务类型预算, 硬顶) — 不越任务预算。"""
+        res = RankingPipeline(mini_project).run(_replace_task(), progressive=True)
+        prog = res.progressive
+        # bug_fix 预算 20K; 渐进总消耗 ≤ 20K
+        assert prog.total_chars <= 20_000
+        assert prog.trace.requested_budget <= 20_000
+
+    def test_progressive_small_budget_overflow_recorded(self, mini_project: Path) -> None:
+        """小预算渐进 → trace.degraded_steps + budget_trace overflow (两处审计一致)。"""
+        long_req = "1. 修复; " * 200
+        res = RankingPipeline(mini_project, hard_cap=500).run(
+            _Task("修复 run 函数", long_req, source_files=["app/main.py"]),
+            progressive=True,
+        )
+        prog = res.progressive
+        assert prog.trace.context_overflow is True
+        assert prog.trace.degraded_steps  # 降级重试记录
+        bt = res.budget_trace
+        assert bt.overflow is True
+        assert bt.success_failure == "degraded"
+
+    def test_progressive_degraded_steps_merged_into_trace(self, mini_project: Path) -> None:
+        """渐进路径降级记录合并: budget 链 ∪ trace 链 (BudgetTrace.degraded_steps)。"""
+        long_req = "1. 修复; " * 200
+        res = RankingPipeline(mini_project, hard_cap=500).run(
+            _Task("修复 run 函数", long_req, source_files=["app/main.py"]),
+            progressive=True,
+        )
+        bt = res.budget_trace
+        assert bt.degraded_steps
+        for s in res.progressive.trace.degraded_steps:
+            assert s in bt.degraded_steps
+
+
+class TestTaskTypeBudgetPolicyIntegration:
+    """T4.3: 任务类型 → 预算档/降级链/优先级 全链生效 (集成)。"""
+
+    def test_task_type_budget_applied(self, mini_project: Path) -> None:
+        """显式 task_type → 对应预算档 (bug_fix 20K / refactor 22K)。"""
+        bug = RankingPipeline(mini_project, task_type="bug_fix").run(_replace_task())
+        ref = RankingPipeline(mini_project, task_type="refactor").run(_replace_task())
+        assert bug.budget.budget_chars == 20_000
+        assert ref.budget.budget_chars == 22_000
+
+    def test_bug_fix_degrades_architecture_first(self, mini_project: Path) -> None:
+        """bug_fix 降级链: 架构摘要最先裁 (目标文件保护最久)。"""
+        res = RankingPipeline(mini_project, task_type="bug_fix", budget=200).run(_replace_task())
+        assert res.budget.degraded_steps[0] == "architecture_one_line"
+        assert res.budget_trace.task_type == "bug_fix"
+
+    def test_feature_keeps_default_chain_order(self, mini_project: Path) -> None:
+        """feature 降级链: 默认序 (related_symbol_shrink 最先 — T4.1 原序兼容)。"""
+        res = RankingPipeline(mini_project, task_type="feature", budget=200).run(_replace_task())
+        assert res.budget.degraded_steps[0] == "related_symbol_shrink"
+
+    def test_detect_refactor_task_type(self) -> None:
+        """T4.3 新增 refactor 检测 (重构/重命名/迁移 → refactor; bug_fix 优先判定)。"""
+        from exec.ranking import detect_task_type
+
+        assert detect_task_type("重构模块拆分") == "refactor"
+        assert detect_task_type("重命名变量") == "refactor"
+        assert detect_task_type("修复崩溃后重构") == "bug_fix"  # bug_fix 优先
+        assert detect_task_type("Refactor the parser") == "refactor"
+
+    def test_progressive_path_honors_refactor_budget(self, mini_project: Path) -> None:
+        """refactor 渐进路径: 总消耗 ≤ 22K (动态档 + 剩余阶段不越档)。"""
+        res = RankingPipeline(mini_project, task_type="refactor").run(
+            _replace_task(), progressive=True
+        )
+        prog = res.progressive
+        assert prog.total_chars <= 22_000
+        assert res.budget_trace.planned_budget == 22_000
+
+
+class TestBudgetEnforcementBackwardCompat:
+    """T4.3: 旧路径完全不变 (progressive=False / ranking_enabled=False)。"""
+
+    def test_progressive_false_old_path_unchanged(self, mini_project: Path) -> None:
+        """progressive=False (缺省) → progressive=None + budget_trace one_shot + 旧组装语义。"""
+        res = RankingPipeline(mini_project).run(_replace_task())
+        assert res.progressive is None
+        assert res.budget_trace.source == "one_shot"
+        assert res.assembled is not None
+        prompt = res.assembled.render_prompt()
+        assert "## Task" in prompt
+        assert "## Relevant source files" in prompt
+        assert 0.0 <= res.assembled.context_score <= 1.0
+
+    def test_ranking_enabled_false_old_path(self, mini_project: Path, tmp_path: Path) -> None:
+        """ranking_enabled=False → assemble 旧路径 (ranking_assemble 零调用 — T4.3 零影响)。"""
+        from exec.agent_runtime import AgentRuntime
+
+        import exec.context as context_mod
+
+        calls: list[str] = []
+        orig_assemble = ContextAssembler.assemble
+        orig_ranking = ContextAssembler.ranking_assemble
+
+        def _assemble(self: Any, task: Any) -> Any:
+            calls.append("assemble")
+            return orig_assemble(self, task)
+
+        def _ranking(self: Any, task: Any, **kw: Any) -> Any:
+            calls.append("ranking_assemble")
+            return orig_ranking(self, task)
+
+        provider = FakeProvider(content="<operations>[]</operations>")
+        (tmp_path / "wrt43").mkdir(exist_ok=True)
+        rt = AgentRuntime(
+            provider, work_root=str(tmp_path / "wrt43"), ranking_enabled=False
+        )
+        monkey = pytest.MonkeyPatch()
+        monkey.setattr(context_mod.ContextAssembler, "assemble", _assemble)
+        monkey.setattr(context_mod.ContextAssembler, "ranking_assemble", _ranking)
+        try:
+            req = make_request(project_dir=mini_project, objective="fix the run function bug")
+            result = rt.execute(req)
+        finally:
+            monkey.undo()
+        assert result.status.value == "success"
+        assert calls == ["assemble"]
+        assert "## Task" in provider.calls[0].task_context
+
+    def test_ranking_enabled_true_still_works(self, mini_project: Path, tmp_path: Path) -> None:
+        """ranking_enabled=True → ranking_assemble 新路径 (T4.3 不破坏开关语义)。"""
+        from exec.agent_runtime import AgentRuntime
+
+        import exec.context as context_mod
+
+        calls: list[str] = []
+        orig_assemble = ContextAssembler.assemble
+        orig_ranking = ContextAssembler.ranking_assemble
+
+        def _assemble(self: Any, task: Any) -> Any:
+            calls.append("assemble")
+            return orig_assemble(self, task)
+
+        def _ranking(self: Any, task: Any) -> Any:
+            calls.append("ranking_assemble")
+            return orig_ranking(self, task)
+
+        provider = FakeProvider(content="<operations>[]</operations>")
+        (tmp_path / "wrnew43").mkdir(exist_ok=True)
+        rt = AgentRuntime(
+            provider, work_root=str(tmp_path / "wrnew43"), ranking_enabled=True
+        )
+        monkey = pytest.MonkeyPatch()
+        monkey.setattr(context_mod.ContextAssembler, "assemble", _assemble)
+        monkey.setattr(context_mod.ContextAssembler, "ranking_assemble", _ranking)
+        try:
+            req = make_request(project_dir=mini_project, objective="fix the run function bug")
+            result = rt.execute(req)
+        finally:
+            monkey.undo()
+        assert result.status.value == "success"
+        assert calls == ["ranking_assemble"]

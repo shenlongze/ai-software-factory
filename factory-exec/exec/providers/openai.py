@@ -30,6 +30,7 @@ HTTP, 零真实网络); api_key 缺省读环境变量 (调用时读取, monkeypa
 from __future__ import annotations
 
 import os
+import ssl
 from typing import Any, cast
 
 import httpx
@@ -43,6 +44,22 @@ DEFAULT_MODEL = "gpt-4o"
 #: 成本估算 (美元/1K token, 缺省 gpt-4o 定价; 仅估算, 非计费)
 DEFAULT_INPUT_RATE_PER_1K = 0.0025
 DEFAULT_OUTPUT_RATE_PER_1K = 0.01
+
+
+def _default_ssl_context() -> ssl.SSLContext:
+    """默认 TLS 上下文: 强制最低 TLSv1_2 (代理 TLS 1.3 不兼容 → SSL UNEXPECTED_EOF)。
+
+    本机/部分网络代理 (如 127.0.0.1:6518) 只支持 TLS 1.2, 而 httpx 默认协商
+    TLS 1.3 → 握手被代理截断 (SSL UNEXPECTED_EOF_BEFORE_FIRST_BYTE)。
+    强制 minimum_version=TLSv1_2 后握手成功 (与 curl --tlsv1.2 行为一致)。
+    TLSv1_2 仍是当前安全基线 (AES-GCM/ECDHE, PCI-DSS 合规), 不降级安全性。
+    """
+    ctx = ssl.create_default_context()
+    try:
+        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+    except AttributeError:  # pragma: no cover — 极老 Python 兜底
+        pass
+    return ctx
 
 
 class OpenAIProvider:
@@ -67,12 +84,22 @@ class OpenAIProvider:
         base_url: str = DEFAULT_BASE_URL,
         timeout: float = 120.0,
         client: httpx.Client | None = None,
+        input_rate_per_1k: float | None = None,
+        output_rate_per_1k: float | None = None,
     ) -> None:
         self._api_key = api_key
         self._model = model
         self._base_url = base_url
         self._timeout = timeout
         self._client = client
+        # 成本估算费率可覆盖 (OpenAI 兼容端点如 DeepSeek 定价不同;
+        # 缺省 gpt-4o 费率 — 仅估算, 非计费)
+        self._input_rate_per_1k = (
+            input_rate_per_1k if input_rate_per_1k is not None else DEFAULT_INPUT_RATE_PER_1K
+        )
+        self._output_rate_per_1k = (
+            output_rate_per_1k if output_rate_per_1k is not None else DEFAULT_OUTPUT_RATE_PER_1K
+        )
 
     # ------------------------------------------------------------------ 内部
 
@@ -96,8 +123,8 @@ class OpenAIProvider:
         if inp <= 0 and out <= 0:
             return None
         return round(
-            inp / 1000.0 * DEFAULT_INPUT_RATE_PER_1K
-            + out / 1000.0 * DEFAULT_OUTPUT_RATE_PER_1K,
+            inp / 1000.0 * self._input_rate_per_1k
+            + out / 1000.0 * self._output_rate_per_1k,
             6,
         )
 
@@ -146,7 +173,9 @@ class OpenAIProvider:
                     self._base_url, json=body, headers=headers, timeout=self._timeout
                 )
             else:
-                with httpx.Client(timeout=self._timeout) as client:
+                with httpx.Client(
+                    timeout=self._timeout, verify=_default_ssl_context()
+                ) as client:
                     resp = client.post(
                         self._base_url, json=body, headers=headers, timeout=self._timeout
                     )

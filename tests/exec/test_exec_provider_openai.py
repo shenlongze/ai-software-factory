@@ -155,8 +155,9 @@ class TestOpenAIErrors:
         with pytest.raises(ProviderError, match="openai invalid response"):
             p.generate(ProviderRequest(task_context="x"))
 
-    def test_error_prefixes_stable(self):
+    def test_error_prefixes_stable(self, monkeypatch):
         """错误前缀稳定 (测试/审计断言契约)。"""
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         p = OpenAIProvider(api_key=None, client=_mock_client(_ok_handler))
         with pytest.raises(ProviderError) as exc:
             p.generate(ProviderRequest(task_context="x"))

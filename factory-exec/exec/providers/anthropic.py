@@ -26,6 +26,7 @@ HTTP, 零真实网络); api_key 缺省读环境变量 (调用时读取, monkeypa
 from __future__ import annotations
 
 import os
+import ssl
 from typing import Any, cast
 
 import httpx
@@ -41,6 +42,21 @@ DEFAULT_MODEL = "claude-sonnet-4-5"
 #: 成本估算 (美元/1K token, 缺省 claude-sonnet 定价; 仅估算, 非计费)
 DEFAULT_INPUT_RATE_PER_1K = 3.0
 DEFAULT_OUTPUT_RATE_PER_1K = 15.0
+
+
+def _default_ssl_context() -> ssl.SSLContext:
+    """默认 TLS 上下文: 强制最低 TLSv1_2 (代理 TLS 1.3 不兼容 → SSL UNEXPECTED_EOF)。
+
+    与 OpenAI Adapter 同策略: httpx 默认协商 TLS 1.3 会被只支持 TLS 1.2 的
+    本地代理截断 (SSL UNEXPECTED_EOF_BEFORE_FIRST_BYTE)。强制
+    minimum_version=TLSv1_2 后握手成功; TLSv1_2 仍是安全基线, 不降级安全性。
+    """
+    ctx = ssl.create_default_context()
+    try:
+        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+    except AttributeError:  # pragma: no cover — 极老 Python 兜底
+        pass
+    return ctx
 
 
 class AnthropicProvider:
@@ -140,7 +156,9 @@ class AnthropicProvider:
                     self._base_url, json=body, headers=headers, timeout=self._timeout
                 )
             else:
-                with httpx.Client(timeout=self._timeout) as client:
+                with httpx.Client(
+                    timeout=self._timeout, verify=_default_ssl_context()
+                ) as client:
                     resp = client.post(
                         self._base_url, json=body, headers=headers, timeout=self._timeout
                     )

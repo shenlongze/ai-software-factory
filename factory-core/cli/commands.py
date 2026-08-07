@@ -3549,3 +3549,83 @@ def cmd_demo_markpad(ctx: FactoryContext, args: Any) -> dict:
         )
     except DemoError as exc:
         raise CliError(str(exc), exit_code=1) from exc
+
+
+# ------------------------------------------------------------------ org (Phase 16A: factory-org Extension, ADR-0036)
+#
+# factory-org 是独立 Extension 包 (factory-org/org/)。org 命令复用 org/cli.py
+# 的 cmd_* 函数 (单一实现零复制): 本文件只做延迟装配 + 分发, 零顶层 imports
+# org (Removal Isolation — 删 factory-org 不影响 Factory 其余命令, 同
+# factory-console 模式)。
+
+
+def _factory_org_pkg_dir() -> Any:
+    """factory-org 包目录 (factory-org/); 不存在 → None (Removal Isolation)。"""
+    from pathlib import Path
+
+    d = Path(__file__).resolve().parents[2] / "factory-org"
+    return d if d.is_dir() else None
+
+
+def _open_org_cli() -> Any:
+    """延迟 import factory-org/org.cli (包名 `org`, 把 factory-org/ 挂 sys.path)。
+
+    未安装/导入失败 → None (调用方报 CliError 7 未找到 — 同 factory-console
+    装配点模式, 配置缺口响亮暴露; Factory 其余命令零感知)。
+    """
+    import sys
+
+    pkg_dir = _factory_org_pkg_dir()
+    if pkg_dir is None:
+        return None
+    if str(pkg_dir) not in sys.path:
+        sys.path.insert(0, str(pkg_dir))
+    try:
+        import org.cli  # noqa: F401
+
+        return org.cli
+    except ImportError:
+        return None
+
+
+def _org_call(ctx: FactoryContext, args: Any, fn_name: str) -> dict:
+    """org 命令统一装配点: 缺 factory-org 包 → rc 7 (响亮配置缺口)。"""
+    module = _open_org_cli()
+    if module is None:
+        raise CliError("factory-org 未安装 (缺 factory-org/ 包)", exit_code=7)
+    return getattr(module, fn_name)(ctx.root, args)
+
+
+def cmd_org_company_create(ctx: FactoryContext, args: Any) -> dict:
+    """factory org company create — 模板实例化公司 (org.company.created 链)。"""
+    return _org_call(ctx, args, "cmd_company_create")
+
+
+def cmd_org_company_show(ctx: FactoryContext, args: Any) -> dict:
+    """factory org company show — 公司详情 + 部门/角色 (org.company.viewed)。"""
+    return _org_call(ctx, args, "cmd_company_show")
+
+
+def cmd_org_employee_hire(ctx: FactoryContext, args: Any) -> dict:
+    """factory org employee hire — 入职 (org.employee.joined 链)。"""
+    return _org_call(ctx, args, "cmd_employee_hire")
+
+
+def cmd_org_employee_list(ctx: FactoryContext, args: Any) -> dict:
+    """factory org employee list — 员工清单 (org.employee.viewed)。"""
+    return _org_call(ctx, args, "cmd_employee_list")
+
+
+def cmd_org_authority_check(ctx: FactoryContext, args: Any) -> dict:
+    """factory org authority check — 权限校验 Default Deny (org.authority.checked)。"""
+    return _org_call(ctx, args, "cmd_authority_check")
+
+
+def cmd_org_knowledge_add(ctx: FactoryContext, args: Any) -> dict:
+    """factory org knowledge add — 知识入库 (org.knowledge.bound)。"""
+    return _org_call(ctx, args, "cmd_knowledge_add")
+
+
+def cmd_org_knowledge_list(ctx: FactoryContext, args: Any) -> dict:
+    """factory org knowledge list — 公司知识清单 (org.knowledge.viewed)。"""
+    return _org_call(ctx, args, "cmd_knowledge_list")

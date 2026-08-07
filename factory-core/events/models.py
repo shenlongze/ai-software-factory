@@ -409,6 +409,33 @@ class EventType(str, Enum):
     CONSOLE_APPROVAL_OPENED = "console.approval.opened"  # 审批详情被打开 (只读, 非决定)
     CONSOLE_DASHBOARD_VIEWED = "console.dashboard.viewed"  # Console Dashboard 被查看 (七域汇总)
 
+    # --- Phase 16A: Organization Extension 事件 (增量扩展, ADR-0035) ---
+    # 依 ADR-0001 决策 1 的扩展路径: 加枚举成员即可, 不改表结构/API。
+    # org.* 为组织域 (factory-org/ 独立 Extension, source="org"/"cli") 的审计
+    # 事件: 写路径 company.created (模板实例化, 含部门/角色/权限子链事件) /
+    # department.created / role.created / employee.joined|left (入职/离职) /
+    # employee.capability_added (培训, 不自动提权) / employee.role_assigned
+    # (转岗, 冲突组合注册表硬拒绝) / authority.granted|denied (Role 绑定,
+    # 默认 deny — 未声明即拒绝) / knowledge.bound (知识入库, 公司隔离);
+    # 读命令审计 (ADR-0002: 所有 CLI 行为必须产生 Event, 同 console.viewed):
+    # company.viewed / employee.viewed / authority.checked / knowledge.viewed。
+    # payload 契约见 factory-org/org/events.py — 事件唯一事实源: 从 payload
+    # 可重建组织变化关键字段 (company_id/role_id/employee_id/permission 等)。
+    ORG_COMPANY_CREATED = "org.company.created"              # 公司创建 (模板实例化)
+    ORG_COMPANY_VIEWED = "org.company.viewed"                # 公司详情被查看 (只读审计)
+    ORG_DEPARTMENT_CREATED = "org.department.created"        # 部门创建
+    ORG_ROLE_CREATED = "org.role.created"                    # 职位创建 (权限矩阵物化)
+    ORG_EMPLOYEE_JOINED = "org.employee.joined"              # 员工入职 (含角色/能力)
+    ORG_EMPLOYEE_LEFT = "org.employee.left"                  # 员工离职 (权限即刻失效)
+    ORG_EMPLOYEE_CAPABILITY_ADDED = "org.employee.capability_added"  # 能力培训 (不自动提权)
+    ORG_EMPLOYEE_ROLE_ASSIGNED = "org.employee.role_assigned"  # 角色分配/转岗 (冲突硬拒)
+    ORG_EMPLOYEE_VIEWED = "org.employee.viewed"              # 员工清单被查看 (只读审计)
+    ORG_AUTHORITY_GRANTED = "org.authority.granted"          # 权限授予 (Role 绑定)
+    ORG_AUTHORITY_DENIED = "org.authority.denied"            # 显式拒绝 (deny 优先)
+    ORG_AUTHORITY_CHECKED = "org.authority.checked"          # 权限校验 (只读审计)
+    ORG_KNOWLEDGE_BOUND = "org.knowledge.bound"              # 知识入库 (公司隔离)
+    ORG_KNOWLEDGE_VIEWED = "org.knowledge.viewed"            # 知识清单被查看 (只读审计)
+
 
 class Event(BaseModel):
     """一条事件。append-only: 写入后永不修改、永不删除。"""

@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "factory-org"
+version = "0.1.0"
+description = "AI Software Factory — Organization Extension (Company/Department/Role/Employee/Authority/Knowledge + org.* 事件)"
+readme = "README.md"
+requires-python = ">=3.12"
+# 零新依赖: pydantic (模型) + 标准库 (json/os/argparse); 事件经 factory-core events 层
+dependencies = ["pydantic>=2"]
+
+[project.scripts]
+factory-org = "org.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["org*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"

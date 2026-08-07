@@ -1,6 +1,6 @@
 # AI Software Factory — Product Proof Report
 
-> 日期: 2026-08-07 | Phase A++++++-1 修复后重跑 | 状态: **已执行 (真实 Benchmark 数据, 成功率 55.6% — Stage 1 Bug Fix 达标, Phase B 门禁未达)**
+> 日期: 2026-08-07 | Phase A++++++-2b Context Engine 重跑 | 状态: **已执行 (真实 Benchmark 数据, 成功率 33.3% — 诚实记录: Context Engine v1 首轮真实验证退步, 根因分析见下)**
 > 报告性质: 商业级验证报告 — 环境/样本就绪已实测, 真实执行指标如实回填,
 > 失败案例逐样本分析, 不 mock、不美化、不预判。
 
@@ -244,4 +244,43 @@ AI 耗时: 10.9-66.6s 模型 + 假设 5min 人工审阅/修正 ≈ 6min/任务
    效果可归因 (失败类型变化与修复项一一对应)
 ✅ Stage 1 (Bug Fix 60%) 达标; 不进入 Phase B (总成功率未过 80%) |
    ⚠️ 临时诊断脚本 scripts_diag_empty.py 留存于 factory-exec/ (未纳入 commit)
+```
+
+---
+
+## 4.5 Phase A++++++-2b 重跑结果 (Context Engine v1, 2026-08-07, BMRPT-589c385d)
+
+```
+成功率:   3/9 = 33.3%  (对比 -1: 55.6% → 退步 -22.3%)
+Bug Fix:  1/5 = 20%    (对比 -1: 60% → 退步)
+总成本:   $1.3534      (对比 -1: $0.0498 → 27× 激增)
+平均延迟: 328.4s       (对比 -1: 95.5s → 3.4×)
+人工介入: 0
+context_score: 0.0-0.7 (cs 记录生效)
+```
+
+### 失败归因 (6 样本 3 类)
+
+| 类别 | 样本 | 根因 |
+|---|---|---|
+| empty (finish_reason=length) ×4 | BUG-001/002, FEAT-001/003 | Context Engine 增大 prompt (6 节) → deepseek-v4-flash 推理消耗暴涨 → 16384 max_tokens 仍耗尽; 且 reasoning tokens 成本爆炸 (0.19-0.44/样本) |
+| operation error ×2 | BUG-003/004 | symbol 锚点 'detect'/'_cloneBlock' 仍定位失败 (Context 选择未覆盖目标文件 symbol 或索引缺失) — -1 同型未解 |
+| 成功 ×3 | BUG-005, FEAT-002, GREENFIELD-001 | pq=100 满分 (与 -1 成功样本部分重合) |
+
+### 诚实结论 (关键工程教训)
+
+```
+1. 上下文不是越多越好: 6 节大 prompt 让推理模型在长输入下耗尽输出预算 → 空响应 + 成本爆炸
+2. Context Engine v1 方向对但需收紧: token budget 过宽 (核心全量 ≤3000 行 + 相关索引 + 经验) 
+   → 对 reasoning 模型 (deepseek-v4-flash) 是灾难 (推理 tokens 是普通输出的数倍)
+3. operation error 依旧: 上下文增强没解决 symbol 锚点提取 (需 line_range 兜底)
+4. 可复用: BUG-005/FEAT-002/GREENFIELD-001 稳定成功 (3 个稳定样本)
+
+### 下一步修复方向 (数据驱动)
+
+```
+1. 收紧 token budget: 核心文件只给 symbol 索引 + 命中段 (非全量 3000 行); 总输入 ≤30K chars
+2. max_tokens 16384 → 32768 (或换非 reasoning 模型 — 需成本权衡)
+3. operation error → line_range 兜底 (symbol 失败自动降级行号)
+4. 回归验证: 以 -1 (55.6%) 为基线, Context Engine 调优后必须 ≥ 该基线
 ```

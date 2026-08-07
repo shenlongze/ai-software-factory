@@ -30,6 +30,9 @@ CLI: python -m exec.benchmark.runner --check   (预检: key + 样本集完整性
      python -m exec.benchmark.runner --run --provider openai \\
          --base-url https://api.deepseek.com/v1/chat/completions --model deepseek-chat \\
          --input-rate-per-1k 0.00027 --output-rate-per-1k 0.0011   (DeepSeek 端点)
+     T5.5 Multi-Run 策略: 追加 --strategy (每样本 SequentialRunner(N=max(3,runs))
+         独立多 Run + CandidateEvaluator 选 Best → 样本结果 = selected; 每 Run
+         明细经 --output-json 的 strategy_audit 落盘; 能力快照随候选冻结)。
 
 DeepSeek 端点 (OpenAI 兼容): OpenAIProvider 是通用 Chat Completions adapter —
 base_url/model/费率均可配, provider_id 仍为 openai (适配器身份), model 记录
@@ -184,6 +187,15 @@ class BenchmarkRunner:
     - experience_store: T4.5 上下文经验库 (ContextExperienceStore 实例;
       缺省 None — 冷启动, 旧路径逐位不变; 提供 → RankingPipeline 真实
       经验接入: symbol_miss 提权/预算推荐/阶段序, 全部失败安全)。
+    - strategy_enabled: T5.5 Multi-Run 候选策略开关 (缺省 False — 旧路径
+      逐位不变: 每样本直接单次 Developer 执行, --runs 仅重复记录);
+      True → 每样本用 SequentialRunner(N=max(3, runs)) 多 Run 独立执行 +
+      CandidateEvaluator 5 层评分选 Best → 样本结果 = selected candidate
+      (每 Run 各自 result 经 _strategy_audit 可审计; 全失败 → 最后一个
+      失败结果 + 诚实拒绝理由)。ranking/progressive/experience 透传不变。
+    - capability_registry: T5.4 CapabilityRegistry 实例 (缺省 None — 候选
+      能力快照 {} 中性不臆造; 提供 → 每候选保存时冻结该模型能力快照
+      model_capability_snapshot, 历史可解释 — 供 Capability Accuracy 对比)。
     """
 
     def __init__(
@@ -199,6 +211,8 @@ class BenchmarkRunner:
         ranking_enabled: bool = False,
         progressive: bool = False,
         experience_store: Any = None,
+        strategy_enabled: bool = False,
+        capability_registry: Any = None,
     ) -> None:
         self._provider = provider
         self._samples = list(samples) if samples else list(ALL_SAMPLES)
@@ -212,6 +226,12 @@ class BenchmarkRunner:
         self._ranking_enabled = bool(ranking_enabled)
         self._progressive = bool(progressive)
         self._experience_store = experience_store
+        # T5.5: Multi-Run 候选策略 (默认关 → 旧路径逐位不变) + T5.4 能力注册表
+        self._strategy_enabled = bool(strategy_enabled)
+        self._capability_registry = capability_registry
+        # T5.5: Multi-Run 审计摘要 (sample_id → 每 Run 结果 + 候选 + 选择明细;
+        # 纯新增属性, 报告侧读取; 不影响既有结果模型/执行链)
+        self._strategy_audit: dict[str, dict] = {}
         # T4.5: Context Intelligence 审计摘要 (sample_id → dict; 纯新增属性,
         # 报告侧读取; 不影响既有结果模型/执行链)
         self._context_intel: dict[str, dict] = {}
@@ -266,6 +286,18 @@ class BenchmarkRunner:
                 f"{report.blocked_reason}; " if report.blocked_reason else ""
             ) + "样本集校验失败: " + "; ".join(problems)
         for sample in self._samples:
+            if self._strategy_enabled:
+                # T5.5 策略路径: 每样本 SequentialRunner 多 Run + Evaluator 选
+                # Best → 样本结果 = selected candidate (每 Run 明细经
+                # _strategy_audit 审计; 旧路径行为逐位不变 — 仅此分支新增)。
+                report.results.append(
+                    self._run_strategy_sample(
+                        sample,
+                        blocked=not ok,
+                        blocked_reason=report.blocked_reason,
+                    )
+                )
+                continue
             for run_i in range(self._runs):
                 report.results.append(
                     self.run_sample(
@@ -475,6 +507,166 @@ class BenchmarkRunner:
             )
         return result
 
+    # ------------------------------------------------------------ T5.5 策略路径
+
+    class _CandidateResultAdapter:
+        """BenchmarkResult → candidate_from_result duck-typed 适配 (只读, 零拷贝)。
+
+        T5.2 candidate_from_result 期望 ExecutionResult 形态 (is_success/error/
+        usage/artifacts/generated_output); BenchmarkResult 字段名不同 — 适配器
+        只做属性映射, 不改任何结果模型/评分/数据 (禁新功能, 最小接线)。
+        """
+
+        def __init__(self, result: BenchmarkResult) -> None:
+            self._r = result
+
+        @property
+        def is_success(self) -> bool:
+            return self._r.status is SampleStatus.SUCCESS
+
+        @property
+        def error(self) -> str:
+            return self._r.error or ""
+
+        @property
+        def usage(self) -> dict[str, Any]:
+            return dict(self._r.usage or {})
+
+        @property
+        def artifacts(self) -> list[Any]:
+            # Benchmark 不产出 PATCH Artifact 文件 (patch 在沙箱 diff 内;
+            # 评估层不读 patch 文本 — 空列表中性, 不臆造)。
+            return []
+
+        @property
+        def generated_output(self) -> str:
+            return ""
+
+    def _run_strategy_sample(
+        self,
+        sample: BenchmarkSample,
+        *,
+        blocked: bool = False,
+        blocked_reason: str = "",
+    ) -> BenchmarkResult:
+        """T5.5 策略路径: 单样本 SequentialRunner(N) 多 Run + Evaluator 选 Best。
+
+        每样本执行 N = max(3, runs) 次独立 Run (每次 Run = 全新沙箱 + 独立
+        Developer 调用 — 抗单次波动, 禁并发); 每 Run 结果 → ExecutionCandidate
+        (T5.2, 经 duck-typed 适配; 失败必存 + failure_reason 必填) →
+        CandidateEvaluator 5 层确定性评分 (T5.3) → 选中候选对应结果 = 样本结果
+        (全失败 → 最后一个失败结果 + last_evaluation.rejection_reason 诚实拒绝)。
+
+        记录 (审计, 禁改评分/数据):
+        - _strategy_audit[sample.id]: 每 Run 各自 result (run1/run2/run3 状态/
+          verifier/延迟/成本/失败原因) + 候选 (含 T5.4 model_capability_snapshot
+          能力快照) + evaluation (ranking/score_breakdown/rejection_reason);
+        - _context_intel: 每 Run 的 ranking/progressive/budget/experience 摘要
+          (run_sample 内既有接线自动记录, 不重复)。
+        """
+        from ..candidate import SequentialRunner  # 延迟导入 — 防循环依赖
+
+        n_runs = max(3, self._runs)
+        run_results: list[BenchmarkResult] = []
+
+        def executor(index: int) -> Any:
+            # index: 1-based Run 序号 (SequentialRunner 契约); 每次独立执行 —
+            # 全新沙箱 + 独立 Provider 调用 (独立随机性, 抗单次波动)。
+            result = self.run_sample(
+                sample, blocked=blocked, blocked_reason=blocked_reason, run=index - 1
+            )
+            run_results.append(result)
+            # duck-typed 适配 → candidate_from_result 正确读 is_success/usage/error
+            return self._CandidateResultAdapter(result)
+
+        runner = SequentialRunner(
+            executor=executor,
+            runs=n_runs,
+            provider=getattr(self._provider, "provider_id", ""),
+            model=model_name(self._provider),
+            capability_registry=self._capability_registry,
+        )
+        runner.run(request=sample)
+        evaluation = runner.evaluate()
+        selected = runner.select_result()
+        # select_result 返回 executor 的产物 (适配器) — 解包回真实 BenchmarkResult
+        # (样本结果 = selected candidate 对应的执行结果, 报告模型不变)。
+        if isinstance(selected, self._CandidateResultAdapter):
+            selected = selected._r
+
+        # 审计: 每 Run 结果 + 候选 (含 T5.4 能力快照) + 选择明细 (纯审计, 失败安全)
+        audit_runs: list[dict[str, Any]] = []
+        for index, (run_state, candidate) in enumerate(
+            zip(runner.runs, runner.candidates)
+        ):
+            result = run_results[index] if index < len(run_results) else None
+            audit_runs.append({
+                "run_id": run_state.run_id,
+                "run_status": run_state.status.value,
+                "result_id": getattr(result, "id", ""),
+                "sample_status": (
+                    result.status.value if getattr(result, "status", None) else None
+                ),
+                "verifier_passed": getattr(result, "verifier_passed", None),
+                "patch_quality": getattr(result, "patch_quality", None),
+                "latency_s": getattr(result, "latency_s", None),
+                "cost_usd": getattr(result, "cost_usd", None),
+                "failure_reason": getattr(result, "failure_reason", ""),
+                "error": (getattr(result, "error", "") or "")[:200],
+                "candidate_id": candidate.id,
+                "candidate_quality_score": candidate.quality_score,
+                "candidate_failure_reason": candidate.failure_reason,
+                # T5.4: 能力快照 (registry 中该模型声明评分冻结; {} → 无声明, 中性)
+                "capability_snapshot": dict(candidate.model_capability_snapshot or {}),
+            })
+        eval_dict: dict[str, Any] | None = None
+        if evaluation is not None:
+            eval_dict = {
+                "selected_candidate_id": evaluation.selected_candidate_id,
+                "ranking": list(evaluation.ranking),
+                "qualified_count": evaluation.qualified_count,
+                "total_candidates": evaluation.total_candidates,
+                "rejection_reason": evaluation.rejection_reason,
+                "score_breakdown": [
+                    {
+                        "candidate_id": s.candidate_id,
+                        "run_id": s.run_id,
+                        "total": s.total,
+                        "qualified": s.qualified,
+                        "verdict": s.verdict,
+                        "layers": [
+                            {
+                                "layer": layer.layer.value,
+                                "score": layer.score,
+                                "reason": layer.reason,
+                            }
+                            for layer in s.layers
+                        ],
+                    }
+                    for s in evaluation.score_breakdown
+                ],
+            }
+        self._strategy_audit[sample.id] = {
+            "sample_id": sample.id,
+            "kind": sample.kind.value,
+            "n_runs": n_runs,
+            "runs": audit_runs,
+            "selected": {
+                "candidate_id": (
+                    evaluation.selected_candidate_id if evaluation is not None else None
+                ),
+                "result_id": getattr(selected, "id", ""),
+                "status": (
+                    getattr(getattr(selected, "status", None), "value", None)
+                    if getattr(selected, "status", None) is not None
+                    else None
+                ),
+                "verifier_passed": getattr(selected, "verifier_passed", None),
+            },
+            "evaluation": eval_dict,
+        }
+        return selected
+
     # ------------------------------------------------------------ 内部
 
     def _capture_ranking_trace(
@@ -611,7 +803,8 @@ class BenchmarkRunner:
 # ================================================================ CLI
 
 def _print_report(report: BenchmarkReport,
-                  context_intel: dict | None = None) -> None:
+                  context_intel: dict | None = None,
+                  strategy_audit: dict | None = None) -> None:
     print(f"Benchmark report: {report.id}")
     print(f"  provider={report.provider_id} model={report.model or '(default)'}")
     print(f"  blocked={report.blocked} blocked_reason={report.blocked_reason or '-'}")
@@ -644,6 +837,22 @@ def _print_report(report: BenchmarkReport,
                       f"actual={budget.get('actual')} "
                       f"overflow={budget.get('overflow')} "
                       f"exp_records={exp.get('matched_records')}")
+    # T5.5: Multi-Run 候选策略审计摘要 (每样本一行: run 各自结果 + 选中明细)
+    if strategy_audit:
+        print("  [strategy] SequentialRunner + CandidateEvaluator (每样本 N 次独立 Run):")
+        for sample_id, audit in strategy_audit.items():
+            runs = " ".join(
+                f"{r['run_id'].rsplit('-', 1)[-1]}={r['sample_status']}"
+                f"{'✓' if r['sample_status'] == 'success' else '✗'}"
+                for r in audit.get("runs") or []
+            )
+            sel = audit.get("selected") or {}
+            eval_info = audit.get("evaluation") or {}
+            print(f"    {sample_id}: N={audit.get('n_runs')} [{runs}] "
+                  f"selected={sel.get('status')} "
+                  f"qualified={eval_info.get('qualified_count')}/"
+                  f"{eval_info.get('total_candidates')} "
+                  f"rejection={eval_info.get('rejection_reason') or '-'}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -668,6 +877,10 @@ def main(argv: list[str] | None = None) -> int:
                         help="渐进加载 (需 --ranking; 3 阶段 + 决策)")
     parser.add_argument("--experience", metavar="DIR", default=None,
                         help="上下文经验库目录 (缺省/空库 → 冷启动)")
+    parser.add_argument("--strategy", action="store_true",
+                        help="T5.5 Multi-Run 候选策略: 每样本 SequentialRunner"
+                             "(N=max(3,runs)) 独立多 Run + CandidateEvaluator "
+                             "5 层评分选 Best (默认关 → 旧路径逐位不变)")
     parser.add_argument("--output-json", metavar="PATH", default=None,
                         help="结果 JSON 落盘 (report + context intelligence trace)")
     # OpenAI 兼容端点参数 (DeepSeek: base_url=https://api.deepseek.com/v1/chat/completions,
@@ -719,11 +932,44 @@ def main(argv: list[str] | None = None) -> int:
         print(f"上下文经验库: {experience_store.path} "
               f"(记录数: {experience_store.count()})")
 
+    # T5.5: Capability Registry 装载 (仅 --strategy 路径; 内存模式不落盘)。
+    # 内置示例配置 (exec/config/model_capabilities.json, T5.4 声明式数据) 灌入;
+    # 基准模型以适配器身份 (provider_id::model) 回填 — 声明评分原样复制
+    # (不改分/不臆造), 使候选能力快照 model_capability_snapshot 非空可审计
+    # (Capability Accuracy: 声明 vs 实测对比)。
+    capability_registry = None
+    if args.strategy:
+        from ..capability import CapabilityRegistry, load_default_config
+
+        capability_registry = CapabilityRegistry()  # root None → 内存模式
+        capability_registry.seed_defaults()
+        bench_model = args.model or model_name(provider)
+        if bench_model:
+            for cap in load_default_config():
+                if cap.model == bench_model:
+                    capability_registry.register({
+                        "provider": getattr(provider, "provider_id", ""),
+                        "model": bench_model,
+                        "coding_score": cap.coding_score,
+                        "reasoning_score": cap.reasoning_score,
+                        "stability_score": cap.stability_score,
+                        "context_score": cap.context_score,
+                        "tool_use_score": cap.tool_use_score,
+                        "cost_score": cap.cost_score,
+                        "latency_score": cap.latency_score,
+                    })
+                    break
+        print(f"Capability Registry: {capability_registry.count()} 模型 "
+              f"(基准 {getattr(provider, 'provider_id', '')}::{bench_model or '-'} "
+              f"声明能力已装载 — 候选快照可审计)")
+
     runner = BenchmarkRunner(
         provider, runs=args.runs,
         ranking_enabled=args.ranking,
         progressive=args.progressive and args.ranking,
         experience_store=experience_store,
+        strategy_enabled=args.strategy,
+        capability_registry=capability_registry,
     )
     problems = runner.validate_samples()
     if problems:
@@ -741,9 +987,10 @@ def main(argv: list[str] | None = None) -> int:
         report = runner.run_all()
     else:
         report = runner.run_all()
-    _print_report(report, runner._context_intel)
-    # T4.5: --output-json 落盘 (report 全量 + Context Intelligence 审计摘要;
-    # 失败安全 — 落盘异常不掩盖执行结果, 退出码不变)
+    _print_report(report, runner._context_intel, runner._strategy_audit)
+    # T4.5/T5.5: --output-json 落盘 (report 全量 + Context Intelligence 审计摘要
+    # + Multi-Run 策略审计 + Capability Registry 声明快照; 失败安全 — 落盘异常
+    # 不掩盖执行结果, 退出码不变)
     if args.output_json:
         import json
 
@@ -753,6 +1000,12 @@ def main(argv: list[str] | None = None) -> int:
             payload = {
                 "report": report.to_dict(),
                 "context_intelligence": runner._context_intel,
+                "strategy_audit": runner._strategy_audit,
+                "capability_registry": (
+                    [c.to_dict() for c in capability_registry.list()]
+                    if capability_registry is not None
+                    else []
+                ),
             }
             out_path.write_text(
                 json.dumps(payload, ensure_ascii=False, indent=2, default=str),

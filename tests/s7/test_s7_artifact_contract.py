@@ -61,9 +61,19 @@ class TestContractsDeclared:
         )
 
     def test_release_contract_shape(self):
+        """S8-004: release 契约强化为 5 节 (Release Agent 输出; 旧
+        version/notes/artifact_ref 3 字段契约废弃)。"""
         assert CONTRACTS["release"]["required_fields"] == (
-            "version", "notes", "artifact_ref",
+            "build_result", "version", "package", "release_notes", "deployment",
         )
+        # S8-004 强化: build_result 必含 status/command; package 必含
+        # name/type/files (构建结果/发布包清单结构化契约)
+        assert CONTRACTS["release"]["validation_rules"]["build_result"][
+            "required_keys"
+        ] == ["status", "command"]
+        assert CONTRACTS["release"]["validation_rules"]["package"][
+            "required_keys"
+        ] == ["name", "type", "files"]
 
     def test_contract_is_extensible_dict(self):
         """契约声明式: 普通 dict, 新增类型 = 枚举 + 本表加条目。"""
@@ -203,13 +213,42 @@ class TestValidateOtherTypes:
         assert result.missing == ["bugs"]
 
     def test_release_valid(self):
-        payload = {"version": "1.0.0", "notes": "n", "artifact_ref": "A-2"}
+        payload = {
+            "build_result": {"status": "success", "command": "python -m build"},
+            "version": "1.0.0",
+            "package": {"name": "app", "type": "tar.gz", "files": ["dist/app.tar.gz"]},
+            "release_notes": "首个正式版本",
+            "deployment": "解压发布包并启动服务",
+        }
         assert validate_artifact("release", payload).ok
 
-    def test_release_missing_notes(self):
-        result = validate_artifact("release", {"version": "1.0.0", "artifact_ref": "A-2"})
+    def test_release_missing_deployment(self):
+        result = validate_artifact(
+            "release",
+            {
+                "build_result": {"status": "success", "command": "python -m build"},
+                "version": "1.0.0",
+                "package": {"name": "app", "type": "tar.gz", "files": ["dist/app.tar.gz"]},
+                "release_notes": "首个正式版本",
+            },
+        )
         assert not result.ok
-        assert result.missing == ["notes"]
+        assert result.missing == ["deployment"]
+
+    def test_release_build_result_missing_keys_rule_fail(self):
+        """S8-004 强化: build_result 缺 status/command → 规则失败。"""
+        result = validate_artifact(
+            "release",
+            {
+                "build_result": {"outcome": "ok"},
+                "version": "1.0.0",
+                "package": {"name": "app", "type": "tar.gz", "files": ["dist/app.tar.gz"]},
+                "release_notes": "首个正式版本",
+                "deployment": "解压发布包并启动服务",
+            },
+        )
+        assert not result.ok
+        assert any("status" in e and "command" in e for e in result.errors)
 
 
 class TestValidateEdgeCases:
@@ -221,7 +260,9 @@ class TestValidateEdgeCases:
     def test_none_payload_all_missing(self):
         result = validate_artifact("release", None)
         assert not result.ok
-        assert result.missing == ["version", "notes", "artifact_ref"]
+        assert result.missing == [
+            "build_result", "version", "package", "release_notes", "deployment",
+        ]
 
     def test_unknown_type_raises(self):
         with pytest.raises(ValueError, match="invalid artifact type"):

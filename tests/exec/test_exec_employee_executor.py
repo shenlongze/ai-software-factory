@@ -81,7 +81,7 @@ class TestStageMapping:
             "architecture": "architect",
             "development": "developer",
             "testing": "tester",
-            "deployment": "devops",
+            "release": "devops",
         }.items():
             assert EmployeeExecutor._role_for_stage(stage) == role_id
 

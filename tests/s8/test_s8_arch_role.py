@@ -63,10 +63,11 @@ class TestArchitectRole:
         assert "Developer" in prompt
 
     def test_executable_role_ids_include_architect(self):
-        """executable 角色 (S8-003): architect + developer + product-manager
-        + tester + ui-designer (按 role_id 排序)。"""
+        """executable 角色 (S8-004): 6 角色全部 (architect + developer +
+        devops + product-manager + tester + ui-designer, 按 role_id 排序)。"""
         assert roles.executable_role_ids() == [
-            "architect", "developer", "product-manager", "tester", "ui-designer",
+            "architect", "developer", "devops", "product-manager",
+            "tester", "ui-designer",
         ]
 
     def test_resolve_architect(self):
@@ -89,12 +90,12 @@ class TestArchitectRole:
         caps = roles.capabilities_for_role("architect")
         assert {"architecture", "design"} <= set(caps)
 
-    def test_devops_still_planning(self):
-        """诚实标注: devops 仍是 planning (S8-004 Release 未实现, 不假装
-        可执行)。"""
+    def test_devops_now_executable(self):
+        """诚实标注: devops S8-004 已 executable (ReleaseAgent 已实现 —
+        Code + Test 双输入 → Release Artifact, Test 必须 VALIDATED 强校验)。"""
         devops = roles.require_role("devops")
-        assert devops.execution_kind == "planning"
-        assert not devops.is_executable
+        assert devops.execution_kind == "executable"
+        assert devops.is_executable
 
     def test_existing_executables_unchanged(self):
         """S8-001/002/007 保持: pm/ui-designer/developer/tester 仍 executable

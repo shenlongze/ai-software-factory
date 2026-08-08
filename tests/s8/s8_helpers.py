@@ -15,12 +15,24 @@
   endpoints; task_breakdown 每项含 module/task/api_contract/ui_guidance
   (Developer 消费: 模块/API 约定/UI 实现指导)
 - design_json: 合法 design 的 JSON 串 (mock provider 注入, 围栏/散文变体)
+- release_payload_ok: 合法 release 契约载荷 (5 节) — 与 org CONTRACTS
+  release 同构 (build_result/version/package/release_notes/deployment);
+  build_result 必含 status/command; package 必含 name/type/files
+- release_json: 合法 release 的 JSON 串 (mock provider 注入, 围栏/散文变体)
+- code_payload_ok: 合法 code 契约载荷 (files/changes — Code Artifact)
+- qa_payload_ok: 合法 test 契约载荷 (results 含 passed + bugs — Test
+  Artifact, VALIDATED 语义; qa = 测试角色别名, 同 ROLE_ALIASES; 命名避开
+  test_* 前缀防 pytest 误收集)
 - event_sequence / payload_of: 事件库断言辅助 (org.workflow.* / org.stage.*)
 - make_idea_artifact: idea 产物 dict (executor context inputs 契约)
 - make_product_artifact: product 产物 dict (executor context inputs 契约:
   type == "product", metadata = product 契约载荷)
 - make_uxui_artifact: ux_ui 产物 dict (executor context inputs 契约:
   type == "ux_ui", metadata = ux_ui 契约载荷)
+- make_code_artifact: code 产物 dict (executor context inputs 契约:
+  type == "code", metadata = code 契约载荷)
+- make_test_artifact: test 产物 dict (executor context inputs 契约:
+  type == "test", metadata = test 契约载荷)
 """
 
 from __future__ import annotations
@@ -204,6 +216,62 @@ def design_json(
     return body
 
 
+def release_payload_ok(
+    *, file_count: int = 2, build_status: str = "success"
+) -> dict[str, Any]:
+    """合法 release 契约载荷 (5 节; build_result 必含 status/command,
+    package 必含 name/type/files — 构建结果/版本/发布包清单/说明/部署)。"""
+    return {
+        "build_result": {
+            "status": build_status,
+            "command": "python -m build",
+        },
+        "version": "1.0.0",
+        "package": {
+            "name": "demo-app",
+            "type": "tar.gz",
+            "files": [f"dist/demo-1.0.0.{i}.tar.gz" for i in range(file_count)],
+        },
+        "release_notes": "首个正式版本: 核心功能完整, 测试全部通过",
+        "deployment": "解压发布包 → 安装依赖 → 启动服务 → 健康检查",
+    }
+
+
+def release_json(
+    *,
+    fenced: bool = False,
+    prose: bool = False,
+    **overrides: Any,
+) -> str:
+    """合法 release 的 JSON 串 (mock provider 注入; 围栏/散文变体可叠加)。"""
+    payload = release_payload_ok()
+    payload.update(overrides)
+    body = json.dumps(payload, ensure_ascii=False)
+    if fenced:
+        body = f"```json\n{body}\n```"
+    if prose:
+        body = f"以下是发布产物:\n{body}\n以上为全部内容。"
+    return body
+
+
+def code_payload_ok(*, file_count: int = 2) -> dict[str, Any]:
+    """合法 code 契约载荷 (files/changes — Code Artifact, Release 输入)。"""
+    return {
+        "files": [f"src/module_{i}.py" for i in range(1, file_count + 1)],
+        "changes": "实现核心功能模块 (S8-005 全链 Demo 代码产物)",
+    }
+
+
+def qa_payload_ok(*, passed: Any = True, bug_count: int = 0) -> dict[str, Any]:
+    """合法 test 契约载荷 (results 含 passed + bugs — Test Artifact,
+    VALIDATED 语义: 通过 = passed 为真 + bugs 空)。"""
+
+    return {
+        "results": {"passed": passed, "total": 3, "failed": 0},
+        "bugs": [{"location": f"b{i}"} for i in range(bug_count)],
+    }
+
+
 def event_sequence(store: Any) -> list[str]:
     return [e.type.value for e in store.query()]
 
@@ -234,3 +302,19 @@ def make_uxui_artifact(
     """ux_ui 产物 dict (executor context inputs 契约: type == "ux_ui",
     metadata = ux_ui 契约载荷)。"""
     return {"type": "ux_ui", "ref": ref, "metadata": payload or uxui_payload_ok()}
+
+
+def make_code_artifact(
+    *, payload: dict[str, Any] | None = None, ref: str = "file:///src"
+) -> dict[str, Any]:
+    """code 产物 dict (executor context inputs 契约: type == "code",
+    metadata = code 契约载荷)。"""
+    return {"type": "code", "ref": ref, "metadata": payload or code_payload_ok()}
+
+
+def make_test_artifact(
+    *, payload: dict[str, Any] | None = None, ref: str = "file:///test_result.json"
+) -> dict[str, Any]:
+    """test 产物 dict (executor context inputs 契约: type == "test",
+    metadata = test 契约载荷 — VALIDATED 语义: results.passed + bugs)。"""
+    return {"type": "test", "ref": ref, "metadata": payload or test_payload_ok()}

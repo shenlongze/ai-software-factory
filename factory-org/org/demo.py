@@ -22,9 +22,9 @@ User → Project → Workflow → Stage → Artifact:
   轮次自动 id (防重复注册)
 
 诚实标注 (Demo 用 mock 处明确标注):
-- Product/Architecture/Release: mock executor (占位语义, 非 LLM — 对应角色
-  execution_kind=planning; PM/Architect/Release Agent 自动化 = Sprint 8,
-  本 Sprint 不实现)
+- Product/Architecture/Release: mock executor (占位语义, 非 LLM — S8-001
+  PMAgent / S8-003 ArchitectAgent / S8-004 ReleaseAgent 已实现真实 LLM 路径,
+  Demo 仍注入确定性 mock: Demo 零 LLM, mock 与角色 execution_kind 分离)
 - Development: mock executor (产出 code artifact + 真实写文件 — Developer
   真实 LLM 能力由 Sprint 6.5 exec 引擎证明; Demo 注入确定性版本轨迹, 供
   Tester 真实确定性测试执行)
@@ -90,9 +90,18 @@ _DEMO_DESIGN_METADATA: dict[str, Any] = {
     ],
 }
 _DEMO_RELEASE_METADATA: dict[str, Any] = {
+    "build_result": {
+        "status": "success",
+        "command": "python -m build (demo mock 占位)",
+    },
     "version": "1.0.0",
-    "notes": "Release 占位 (mock executor, 非 LLM — S7-005 集成验证)",
-    "artifact_ref": "file:///dist/demo-1.0.0.tar.gz",
+    "package": {
+        "name": "demo-app",
+        "type": "tar.gz",
+        "files": ["dist/demo-1.0.0.tar.gz"],
+    },
+    "release_notes": "Release 占位 (mock executor, 非 LLM — S7-005 集成验证)",
+    "deployment": "解压发布包并启动服务 (demo mock 占位)",
 }
 
 
@@ -227,9 +236,11 @@ def dev_executor(
 
 
 def devops_executor() -> Callable[[Any, dict[str, Any]], dict[str, Any]]:
-    """DevOps (Release) mock executor (非 LLM 占位语义; execution_kind=
-    planning, Release Agent 自动化 = Sprint 8)。产出 Release artifact
-    (契约: version/notes/artifact_ref)。"""
+    """DevOps (Release) mock executor (非 LLM 占位语义; S8-004 后 devops
+    注册表已 executable — ReleaseAgent 能力由 Sprint 8 证明, Demo 仍注入
+    mock 占位: Demo 零 LLM, mock 与角色 execution_kind 分离)。产出 Release
+    artifact (契约: build_result/version/package/release_notes/deployment
+    5 节)。"""
 
     def run(stage: Any, context: dict[str, Any]) -> dict[str, Any]:
         return {

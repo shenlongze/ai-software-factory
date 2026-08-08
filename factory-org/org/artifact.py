@@ -20,6 +20,11 @@
   frontend_architecture/backend_architecture/task_breakdown; 规则:
   task_breakdown list 非空, api_design dict 必含 endpoints, 其余非空 —
   api_design endpoints + task_breakdown 供 S8-005 Developer 消费)
+  S8-004 扩展: release 契约强化为 5 节 (Release Agent 输出:
+  build_result/version/package/release_notes/deployment; 规则:
+  build_result dict 必含 status/command, package dict 必含 name/type/
+  files, version/release_notes/deployment 非空 str — 构建结果/版本/发布包
+  清单/发布说明/部署方案, 供 S8-005 全链发布)
 - 引用完整: stage/project 必须存在; task 须经 ProjectTaskLink 关联该项目
   (项目隔离铁律, 同 S7-001 add_task_to_sprint); producer_role 经 exec
   注册表校验 (未安装 → 跳过, Removal Isolation — 不假装校验)
@@ -188,11 +193,27 @@ CONTRACTS: dict[str, dict[str, Any]] = {
         },
     },
     "release": {
-        "required_fields": ("version", "notes", "artifact_ref"),
+        "required_fields": (
+            "build_result",
+            "version",
+            "package",
+            "release_notes",
+            "deployment",
+        ),
         "validation_rules": {
+            "build_result": {
+                "type": "dict",
+                "min_keys": 1,
+                "required_keys": ["status", "command"],
+            },
             "version": {"type": "str", "min_length": 1},
-            "notes": {"type": "str", "min_length": 1},
-            "artifact_ref": {"type": "str", "min_length": 1},
+            "package": {
+                "type": "dict",
+                "min_keys": 1,
+                "required_keys": ["name", "type", "files"],
+            },
+            "release_notes": {"type": "str", "min_length": 1},
+            "deployment": {"type": "str", "min_length": 1},
         },
     },
 }

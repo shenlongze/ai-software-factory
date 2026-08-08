@@ -230,9 +230,17 @@ class TestPassPath:
                            depends_on=[test_stage.id])
         provider = SeqProvider([])
 
-        def release_stub(stage, context):
+        def release_stub(stage, context):  # noqa: ARG001 — executor 契约签名
             return {"artifact_type": "release",
-                    "metadata": {"version": "1.0.0", "notes": "n", "artifact_ref": "A-1"}}
+                    "ref": "file:///dist/release.json",
+                    "metadata": {
+                        "build_result": {"status": "success", "command": "python -m build"},
+                        "version": "1.0.0",
+                        "package": {"name": "app", "type": "tar.gz",
+                                    "files": ["dist/app-1.0.0.tar.gz"]},
+                        "release_notes": "通过测试后的发布",
+                        "deployment": "解压发布包并启动服务",
+                    }}
 
         loop = make_loop(wlife, {
             "developer": make_dev_executor(loop_project, [V2_FIXED]),

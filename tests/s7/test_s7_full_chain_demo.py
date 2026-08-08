@@ -527,12 +527,12 @@ class TestDemoLimits:
     """诚实标注: mock 角色 (planning) / 零 LLM / 未映射角色响亮失败。"""
 
     def test_planning_roles_are_mocked(self):
-        """S8-003 后 architect 已 executable (注册表), 但 S7-005 Demo 仍注入
-        mock 占位 (Demo 零 LLM, 不随注册表升级); devops 仍 planning (S8-004
-        Release 未实现); Developer/Tester/ProductManager executable (能力已由
+        """S8-003 后 architect 已 executable (注册表), S8-004 后 devops 也已
+        executable, 但 S7-005 Demo 仍注入 mock 占位 (Demo 零 LLM, 不随注册表
+        升级); Developer/Tester/ProductManager executable (能力已由
         S7-004/S8-001/Sprint 6.5 证明 — mock 与角色 execution_kind 分离)。"""
         assert require_role("architect").execution_kind == "executable"
-        assert require_role("devops").execution_kind == "planning"
+        assert require_role("devops").execution_kind == "executable"
         assert require_role("developer").execution_kind == "executable"
         assert require_role("tester").execution_kind == "executable"
         assert require_role("product-manager").execution_kind == "executable"

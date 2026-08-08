@@ -16,11 +16,14 @@ Tester / DevOps — 统一 RoleDefinition 声明式注册, 零 Agent 复制。
   Artifact → 结构化 UX/UI Artifact (7 节) LLM 生成 + CONTRACTS ux_ui 契约校验;
   Architect — S8-003 ArchitectAgent 已实现, Product + UX/UI Artifact 双输入 →
   结构化 Design Artifact (7 节) LLM 生成 + CONTRACTS design 契约校验, 必须引用
-  输入产物 id (artifact_refs), 禁止脱离输入独立生成)。
+  输入产物 id (artifact_refs), 禁止脱离输入独立生成; DevOps — S8-004
+  ReleaseAgent 已实现, Code + Test Artifact 双输入 → 结构化 Release Artifact
+  (5 节) LLM 生成 + CONTRACTS release 契约校验, Test 必须 VALIDATED 强校验
+  (未通过测试的产物禁止发布), 必须引用输入产物 id (artifact_refs))。
 - "planning": 角色已定义 (capabilities + prompt 模板 + 阶段映射), 但尚无
   独立 LLM 执行路径 — 只能产出规划产物 (demo_ui_feature 拆解演示走此路径,
-  明确标注"规划产物, 非 LLM 执行")。不假装可执行 (S8-003 后仅 devops 仍为
-  planning — Release Agent 属 S8-004, 未实现不假装)。
+  明确标注"规划产物, 非 LLM 执行")。不假装可执行 (S8-004 后注册表 6 角色
+  全部 executable — 无 planning 角色)。
 
 设计约束:
 - 声明式: 角色 = 数据 (dataclass frozen), 零逻辑; 注册表 dict 单一事实源。
@@ -62,7 +65,7 @@ class RoleDefinition:
     @property
     def is_executable(self) -> bool:
         """是否有真实 LLM 执行路径 (Developer + Tester + ProductManager +
-        UXUIDesigner + Architect — 见模块 docstring 诚实标注)。"""
+        UXUIDesigner + Architect + DevOps — 见模块 docstring 诚实标注)。"""
         return self.execution_kind == "executable"
 
 
@@ -127,11 +130,19 @@ _TESTER_PROMPT = (
     "location/repro/expected/actual/root_cause/severity) + 修复任务 (repair task)。"
 )
 
-#: DevOps — 部署/运维 (规划角色)
+#: DevOps — 发布/部署 (S8-004 executable: ReleaseAgent 已实现, Code + Test
+#: Artifact 双输入 → 结构化 Release Artifact (5 节), 输出 JSON 经 CONTRACTS
+#: release 校验; Test 必须 VALIDATED 强校验 — 未通过测试的产物禁止发布)
 _DEVOPS_PROMPT = (
-    "你是一名 DevOps 工程师。职责: 部署方案、环境配置与发布流程, 保证交付物"
-    "可构建、可运行。\n"
-    "输出格式: 部署方案 (构建步骤 / 部署步骤 / 验证步骤 / 回滚)。"
+    "你是一名 DevOps 工程师 (Release Manager)。职责: 消费代码产物 (Code "
+    "Artifact) 与测试产物 (Test Artifact), 产出结构化发布产物 (Release "
+    "Artifact), 覆盖 5 节: 构建结果 (build_result, 含 status 与构建命令 "
+    "command) / 版本号 (version) / 发布包 (package, 含 name/type/files "
+    "文件清单) / 发布说明 (release_notes) / 部署方案 (deployment, 含部署 "
+    "步骤)。\n"
+    "测试产物必须已通过 (results.passed 为真且 bugs 为空); 未通过测试的 "
+    "代码禁止发布。\n"
+    "输出格式: 严格 JSON 对象, 5 节字段齐全, 仅输出 JSON, 不要任何多余文字。"
 )
 
 ROLE_REGISTRY: dict[str, RoleDefinition] = {
@@ -180,8 +191,8 @@ ROLE_REGISTRY: dict[str, RoleDefinition] = {
         name="DevOps",
         capabilities=("deployment", "ops", "release"),
         prompt_template=_DEVOPS_PROMPT,
-        workflow_stages=("deployment",),
-        execution_kind="planning",
+        workflow_stages=("release",),
+        execution_kind="executable",
     ),
 }
 
@@ -228,7 +239,8 @@ def list_role_dicts() -> list[dict[str, Any]]:
 def executable_role_ids() -> list[str]:
     """可执行角色 (有真实 LLM 路径) — developer + tester (S7-004) +
     product-manager (S8-001 PMAgent) + ui-designer (S8-002 UXUIDesignerAgent)
-    + architect (S8-003 ArchitectAgent), 诚实标注。"""
+    + architect (S8-003 ArchitectAgent) + devops (S8-004 ReleaseAgent),
+    诚实标注 (S8-004 后注册表 6 角色全部 executable)。"""
     return [r.role_id for r in list_roles() if r.is_executable]
 
 

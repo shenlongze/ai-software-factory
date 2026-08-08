@@ -1,0 +1,1013 @@
+{
+ "meta": {
+  "sprint": "6.5",
+  "model": "deepseek-v4-pro",
+  "base_url": "https://api.deepseek.com/v1/chat/completions",
+  "validation_command": "PYTHONPATH=. python3 -m unittest discover -s tests -v",
+  "runs_per_task": 3,
+  "scoring": "patch_gen/patch_valid/test_pass/report/experience — 全部来自真实产物 (PATCH 文件 / 执行状态 / TEST_RESULT 输出 / REPORT 文件 / 经验库计数增量)",
+  "cost_note": "usage.estimated_cost_usd = OpenAIProvider 费率估算 (gpt-4o 代理费率, 与 6.2 闭环同口径); 真实计费以 DeepSeek 账单为准",
+  "generated_at": "2026-08-08T10:35:01Z"
+ },
+ "runs": [
+  {
+   "task_id": "T1",
+   "level": 1,
+   "title": "sum_list 漏首元素 (单文件 bug)",
+   "run": 0,
+   "model": "deepseek-v4-pro",
+   "started_at": "2026-08-08T10:18:28Z",
+   "result_id": "EXS-41a456c5",
+   "request_id": "EXR-926ad033",
+   "status": "success",
+   "usage": {
+    "prompt_tokens": 4105,
+    "completion_tokens": 855,
+    "total_tokens": 4960,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    },
+    "completion_tokens_details": {
+     "reasoning_tokens": 752
+    },
+    "prompt_cache_hit_tokens": 0,
+    "prompt_cache_miss_tokens": 4105,
+    "estimated_cost_usd": 0.018813
+   },
+   "cost_usd": 0.018813,
+   "report_head": "# Execution Report — EXR-926ad033\n- task_id: T1\n- objective: 修复 s6b/arithmetic.py 中 sum_list 的 bug: 当前实现漏掉列表第一个元素, 返回的总和偏小\n\n## What the agent did\n(no summary)\n\n## Patch\ndiff lines: 15 (generated from 1 structured operations)\nhuman review required before apply (execution.approved gate)\n\n## Validation",
+   "dims": {
+    "patch_gen": 1,
+    "patch_valid": 1,
+    "test_pass": 1,
+    "report": 1,
+    "experience": 1
+   },
+   "test_head": "[PASS] syntax\n语法检查通过 (12 个 .py 文件)\n[PASS] command: PYTHONPATH=. python3 -m unittest discover -s tests -v\ntest_add_subtract_multiply (test_arithmetic.TestArithmetic.test_add_subtract_multiply) ... ok\ntest_factorial (test_arithmetic.TestArithmetic.test_factorial) ... ok\ntest_sum_list (test_arithmetic.",
+   "duration_s": 15.885,
+   "score": 5
+  },
+  {
+   "task_id": "T1",
+   "level": 1,
+   "title": "sum_list 漏首元素 (单文件 bug)",
+   "run": 1,
+   "model": "deepseek-v4-pro",
+   "started_at": "2026-08-08T10:18:44Z",
+   "result_id": "EXS-22c8d5c6",
+   "request_id": "EXR-caeac0c1",
+   "status": "success",
+   "usage": {
+    "prompt_tokens": 4105,
+    "completion_tokens": 396,
+    "total_tokens": 4501,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    },
+    "completion_tokens_details": {
+     "reasoning_tokens": 294
+    },
+    "prompt_cache_hit_tokens": 0,
+    "prompt_cache_miss_tokens": 4105,
+    "estimated_cost_usd": 0.014223
+   },
+   "cost_usd": 0.014223,
+   "report_head": "# Execution Report — EXR-caeac0c1\n- task_id: T1\n- objective: 修复 s6b/arithmetic.py 中 sum_list 的 bug: 当前实现漏掉列表第一个元素, 返回的总和偏小\n\n## What the agent did\n(no summary)\n\n## Patch\ndiff lines: 15 (generated from 1 structured operations)\nhuman review required before apply (execution.approved gate)\n\n## Validation",
+   "dims": {
+    "patch_gen": 1,
+    "patch_valid": 1,
+    "test_pass": 1,
+    "report": 1,
+    "experience": 1
+   },
+   "test_head": "[PASS] syntax\n语法检查通过 (12 个 .py 文件)\n[PASS] command: PYTHONPATH=. python3 -m unittest discover -s tests -v\ntest_add_subtract_multiply (test_arithmetic.TestArithmetic.test_add_subtract_multiply) ... ok\ntest_factorial (test_arithmetic.TestArithmetic.test_factorial) ... ok\ntest_sum_list (test_arithmetic.",
+   "duration_s": 7.205,
+   "score": 5
+  },
+  {
+   "task_id": "T1",
+   "level": 1,
+   "title": "sum_list 漏首元素 (单文件 bug)",
+   "run": 2,
+   "model": "deepseek-v4-pro",
+   "started_at": "2026-08-08T10:18:52Z",
+   "result_id": "EXS-53083507",
+   "request_id": "EXR-b97913dd",
+   "status": "success",
+   "usage": {
+    "prompt_tokens": 4107,
+    "completion_tokens": 517,
+    "total_tokens": 4624,
+    "prompt_tokens_details": {
+     "cached_tokens": 3584
+    },
+    "completion_tokens_details": {
+     "reasoning_tokens": 407
+    },
+    "prompt_cache_hit_tokens": 3584,
+    "prompt_cache_miss_tokens": 523,
+    "estimated_cost_usd": 0.015437
+   },
+   "cost_usd": 0.015437,
+   "report_head": "# Execution Report — EXR-b97913dd\n- task_id: T1\n- objective: 修复 s6b/arithmetic.py 中 sum_list 的 bug: 当前实现漏掉列表第一个元素, 返回的总和偏小\n\n## What the agent did\n(no summary)\n\n## Patch\ndiff lines: 15 (generated from 1 structured operations)\nhuman review required before apply (execution.approved gate)\n\n## Validation",
+   "dims": {
+    "patch_gen": 1,
+    "patch_valid": 1,
+    "test_pass": 1,
+    "report": 1,
+    "experience": 1
+   },
+   "test_head": "[PASS] syntax\n语法检查通过 (12 个 .py 文件)\n[PASS] command: PYTHONPATH=. python3 -m unittest discover -s tests -v\ntest_add_subtract_multiply (test_arithmetic.TestArithmetic.test_add_subtract_multiply) ... ok\ntest_factorial (test_arithmetic.TestArithmetic.test_factorial) ... ok\ntest_sum_list (test_arithmetic.",
+   "duration_s": 7.993,
+   "score": 5
+  },
+  {
+   "task_id": "T2",
+   "level": 1,
+   "title": "truncate 默认长度调回 30 (参数默认值调整)",
+   "run": 0,
+   "model": "deepseek-v4-pro",
+   "started_at": "2026-08-08T10:19:00Z",
+   "result_id": "EXS-290e24e5",
+   "request_id": "EXR-b041fc93",
+   "status": "success",
+   "usage": {
+    "prompt_tokens": 3964,
+    "completion_tokens": 564,
+    "total_tokens": 4528,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    },
+    "completion_tokens_details": {
+     "reasoning_tokens": 434
+    },
+    "prompt_cache_hit_tokens": 0,
+    "prompt_cache_miss_tokens": 3964,
+    "estimated_cost_usd": 0.01555
+   },
+   "cost_usd": 0.01555,
+   "report_head": "# Execution Report — EXR-b041fc93\n- task_id: T2\n- objective: 调整 s6b/textutil.py 中 truncate 函数的默认参数: 默认截断长度应为 30 字符, 当前被改成 50\n\n## What the agent did\n(no summary)\n\n## Patch\ndiff lines: 17 (generated from 1 structured operations)\nhuman review required before apply (execution.approved gate)\n\n## Validati",
+   "dims": {
+    "patch_gen": 1,
+    "patch_valid": 1,
+    "test_pass": 1,
+    "report": 1,
+    "experience": 1
+   },
+   "test_head": "[PASS] syntax\n语法检查通过 (12 个 .py 文件)\n[PASS] command: PYTHONPATH=. python3 -m unittest discover -s tests -v\ntest_add_subtract_multiply (test_arithmetic.TestArithmetic.test_add_subtract_multiply) ... ok\ntest_factorial (test_arithmetic.TestArithmetic.test_factorial) ... ok\ntest_sum_list (test_arithmetic.",
+   "duration_s": 8.613,
+   "score": 5
+  },
+  {
+   "task_id": "T2",
+   "level": 1,
+   "title": "truncate 默认长度调回 30 (参数默认值调整)",
+   "run": 1,
+   "model": "deepseek-v4-pro",
+   "started_at": "2026-08-08T10:19:08Z",
+   "result_id": "EXS-13374edc",
+   "request_id": "EXR-35b8dc0f",
+   "status": "success",
+   "usage": {
+    "prompt_tokens": 3962,
+    "completion_tokens": 925,
+    "total_tokens": 4887,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    },
+    "completion_tokens_details": {
+     "reasoning_tokens": 587
+    },
+    "prompt_cache_hit_tokens": 0,
+    "prompt_cache_miss_tokens": 3962,
+    "estimated_cost_usd": 0.019155
+   },
+   "cost_usd": 0.019155,
+   "report_head": "# Execution Report — EXR-35b8dc0f\n- task_id: T2\n- objective: 调整 s6b/textutil.py 中 truncate 函数的默认参数: 默认截断长度应为 30 字符, 当前被改成 50\n\n## What the agent did\n(no summary)\n\n## Patch\ndiff lines: 17 (generated from 1 structured operations)\nhuman review required before apply (execution.approved gate)\n\n## Validati",
+   "dims": {
+    "patch_gen": 1,
+    "patch_valid": 1,
+    "test_pass": 1,
+    "report": 1,
+    "experience": 1
+   },
+   "test_head": "[PASS] syntax\n语法检查通过 (12 个 .py 文件)\n[PASS] command: PYTHONPATH=. python3 -m unittest discover -s tests -v\ntest_add_subtract_multiply (test_arithmetic.TestArithmetic.test_add_subtract_multiply) ... ok\ntest_factorial (test_arithmetic.TestArithmetic.test_factorial) ... ok\ntest_sum_list (test_arithmetic.",
+   "duration_s": 14.688,
+   "score": 5
+  },
+  {
+   "task_id": "T2",
+   "level": 1,
+   "title": "truncate 默认长度调回 30 (参数默认值调整)",
+   "run": 2,
+   "model": "deepseek-v4-pro",
+   "started_at": "2026-08-08T10:19:23Z",
+   "result_id": "EXS-f244cb16",
+   "request_id": "EXR-444cf30a",
+   "status": "success",
+   "usage": {
+    "prompt_tokens": 3964,
+    "completion_tokens": 320,
+    "total_tokens": 4284,
+    "prompt_tokens_details": {
+     "cached_tokens": 3328
+    },
+    "completion_tokens_details": {
+     "reasoning_tokens": 192
+    },
+    "prompt_cache_hit_tokens": 3328,
+    "prompt_cache_miss_tokens": 636,
+    "estimated_cost_usd": 0.01311
+   },
+   "cost_usd": 0.01311,
+   "report_head": "# Execution Report — EXR-444cf30a\n- task_id: T2\n- objective: 调整 s6b/textutil.py 中 truncate 函数的默认参数: 默认截断长度应为 30 字符, 当前被改成 50\n\n## What the agent did\n(no summary)\n\n## Patch\ndiff lines: 17 (generated from 1 structured operations)\nhuman review required before apply (execution.approved gate)\n\n## Validati",
+   "dims": {
+    "patch_gen": 1,
+    "patch_valid": 1,
+    "test_pass": 1,
+    "report": 1,
+    "experience": 1
+   },
+   "test_head": "[PASS] syntax\n语法检查通过 (12 个 .py 文件)\n[PASS] command: PYTHONPATH=. python3 -m unittest discover -s tests -v\ntest_add_subtract_multiply (test_arithmetic.TestArithmetic.test_add_subtract_multiply) ... ok\ntest_factorial (test_arithmetic.TestArithmetic.test_factorial) ... ok\ntest_sum_list (test_arithmetic.",
+   "duration_s": 5.15,
+   "score": 5
+  },
+  {
+   "task_id": "T3",
+   "level": 1,
+   "title": "factorial 循环边界修正 (单函数逻辑修正)",
+   "run": 0,
+   "model": "deepseek-v4-pro",
+   "started_at": "2026-08-08T10:19:28Z",
+   "result_id": "EXS-dbd08bdf",
+   "request_id": "EXR-d58f98dd",
+   "status": "success",
+   "usage": {
+    "prompt_tokens": 4174,
+    "completion_tokens": 273,
+    "total_tokens": 4447,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    },
+    "completion_tokens_details": {
+     "reasoning_tokens": 131
+    },
+    "prompt_cache_hit_tokens": 0,
+    "prompt_cache_miss_tokens": 4174,
+    "estimated_cost_usd": 0.013165
+   },
+   "cost_usd": 0.013165,
+   "report_head": "# Execution Report — EXR-d58f98dd\n- task_id: T3\n- objective: 修正 s6b/arithmetic.py 中 factorial 的逻辑: 当前循环从 1 乘到 n-1, 阶乘结果错误\n\n## What the agent did\n(no summary)\n\n## Patch\ndiff lines: 10 (generated from 1 structured operations)\nhuman review required before apply (execution.approved gate)\n\n## Validation\n",
+   "dims": {
+    "patch_gen": 1,
+    "patch_valid": 1,
+    "test_pass": 1,
+    "report": 1,
+    "experience": 1
+   },
+   "test_head": "[PASS] syntax\n语法检查通过 (12 个 .py 文件)\n[PASS] command: PYTHONPATH=. python3 -m unittest discover -s tests -v\ntest_add_subtract_multiply (test_arithmetic.TestArithmetic.test_add_subtract_multiply) ... ok\ntest_factorial (test_arithmetic.TestArithmetic.test_factorial) ... ok\ntest_sum_list (test_arithmetic.",
+   "duration_s": 4.594,
+   "score": 5
+  },
+  {
+   "task_id": "T3",
+   "level": 1,
+   "title": "factorial 循环边界修正 (单函数逻辑修正)",
+   "run": 1,
+   "model": "deepseek-v4-pro",
+   "started_at": "2026-08-08T10:19:33Z",
+   "result_id": "EXS-484c17d1",
+   "request_id": "EXR-8645a3bb",
+   "status": "success",
+   "usage": {
+    "prompt_tokens": 4174,
+    "completion_tokens": 419,
+    "total_tokens": 4593,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    },
+    "completion_tokens_details": {
+     "reasoning_tokens": 285
+    },
+    "prompt_cache_hit_tokens": 0,
+    "prompt_cache_miss_tokens": 4174,
+    "estimated_cost_usd": 0.014625
+   },
+   "cost_usd": 0.014625,
+   "report_head": "# Execution Report — EXR-8645a3bb\n- task_id: T3\n- objective: 修正 s6b/arithmetic.py 中 factorial 的逻辑: 当前循环从 1 乘到 n-1, 阶乘结果错误\n\n## What the agent did\n(no summary)\n\n## Patch\ndiff lines: 10 (generated from 1 structured operations)\nhuman review required before apply (execution.approved gate)\n\n## Validation\n",
+   "dims": {
+    "patch_gen": 1,
+    "patch_valid": 1,
+    "test_pass": 1,
+    "report": 1,
+    "experience": 1
+   },
+   "test_head": "[PASS] syntax\n语法检查通过 (12 个 .py 文件)\n[PASS] command: PYTHONPATH=. python3 -m unittest discover -s tests -v\ntest_add_subtract_multiply (test_arithmetic.TestArithmetic.test_add_subtract_multiply) ... ok\ntest_factorial (test_arithmetic.TestArithmetic.test_factorial) ... ok\ntest_sum_list (test_arithmetic.",
+   "duration_s": 6.802,
+   "score": 5
+  },
+  {
+   "task_id": "T3",
+   "level": 1,
+   "title": "factorial 循环边界修正 (单函数逻辑修正)",
+   "run": 2,
+   "model": "deepseek-v4-pro",
+   "started_at": "2026-08-08T10:19:39Z",
+   "result_id": "EXS-89ce23d3",
+   "request_id": "EXR-3fcdb9a5",
+   "status": "success",
+   "usage": {
+    "prompt_tokens": 4174,
+    "completion_tokens": 539,
+    "total_tokens": 4713,
+    "prompt_tokens_details": {
+     "cached_tokens": 3584
+    },
+    "completion_tokens_details": {
+     "reasoning_tokens": 405
+    },
+    "prompt_cache_hit_tokens": 3584,
+    "prompt_cache_miss_tokens": 590,
+    "estimated_cost_usd": 0.015825
+   },
+   "cost_usd": 0.015825,
+   "report_head": "# Execution Report — EXR-3fcdb9a5\n- task_id: T3\n- objective: 修正 s6b/arithmetic.py 中 factorial 的逻辑: 当前循环从 1 乘到 n-1, 阶乘结果错误\n\n## What the agent did\n(no summary)\n\n## Patch\ndiff lines: 10 (generated from 1 structured operations)\nhuman review required before apply (execution.approved gate)\n\n## Validation\n",
+   "dims": {
+    "patch_gen": 1,
+    "patch_valid": 1,
+    "test_pass": 1,
+    "report": 1,
+    "experience": 1
+   },
+   "test_head": "[PASS] syntax\n语法检查通过 (12 个 .py 文件)\n[PASS] command: PYTHONPATH=. python3 -m unittest discover -s tests -v\ntest_add_subtract_multiply (test_arithmetic.TestArithmetic.test_add_subtract_multiply) ... ok\ntest_factorial (test_arithmetic.TestArithmetic.test_factorial) ... ok\ntest_sum_list (test_arithmetic.",
+   "duration_s": 9.131,
+   "score": 5
+  },
+  {
+   "task_id": "T4",
+   "level": 2,
+   "title": "新增 clamp 函数 (新增功能函数 + 预置测试)",
+   "run": 0,
+   "model": "deepseek-v4-pro",
+   "started_at": "2026-08-08T10:19:49Z",
+   "result_id": "EXS-6aa26352",
+   "request_id": "EXR-1dcef4f1",
+   "status": "success",
+   "usage": {
+    "prompt_tokens": 4274,
+    "completion_tokens": 1149,
+    "total_tokens": 5423,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    },
+    "completion_tokens_details": {
+     "reasoning_tokens": 806
+    },
+    "prompt_cache_hit_tokens": 0,
+    "prompt_cache_miss_tokens": 4274,
+    "estimated_cost_usd": 0.022175
+   },
+   "cost_usd": 0.022175,
+   "report_head": "# Execution Report — EXR-1dcef4f1\n- task_id: T4\n- objective: 在 s6b/arithmetic.py 中新增 clamp 函数并让预置测试全部通过\n\n## What the agent did\n(no summary)\n\n## Patch\ndiff lines: 15 (generated from 1 structured operations)\nhuman review required before apply (execution.approved gate)\n\n## Validation\nresult: PASS\n[PASS",
+   "dims": {
+    "patch_gen": 1,
+    "patch_valid": 1,
+    "test_pass": 1,
+    "report": 1,
+    "experience": 1
+   },
+   "test_head": "[PASS] syntax\n语法检查通过 (13 个 .py 文件)\n[PASS] command: PYTHONPATH=. python3 -m unittest discover -s tests -v\ntest_add_subtract_multiply (test_arithmetic.TestArithmetic.test_add_subtract_multiply) ... ok\ntest_factorial (test_arithmetic.TestArithmetic.test_factorial) ... ok\ntest_sum_list (test_arithmetic.",
+   "duration_s": 14.93,
+   "score": 5
+  },
+  {
+   "task_id": "T4",
+   "level": 2,
+   "title": "新增 clamp 函数 (新增功能函数 + 预置测试)",
+   "run": 1,
+   "model": "deepseek-v4-pro",
+   "started_at": "2026-08-08T10:20:04Z",
+   "result_id": "EXS-033df13c",
+   "request_id": "EXR-fe5388ec",
+   "status": "success",
+   "usage": {
+    "prompt_tokens": 4279,
+    "completion_tokens": 1704,
+    "total_tokens": 5983,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    },
+    "completion_tokens_details": {
+     "reasoning_tokens": 1376
+    },
+    "prompt_cache_hit_tokens": 0,
+    "prompt_cache_miss_tokens": 4279,
+    "estimated_cost_usd": 0.027737
+   },
+   "cost_usd": 0.027737,
+   "report_head": "# Execution Report — EXR-fe5388ec\n- task_id: T4\n- objective: 在 s6b/arithmetic.py 中新增 clamp 函数并让预置测试全部通过\n\n## What the agent did\n(no summary)\n\n## Patch\ndiff lines: 14 (generated from 1 structured operations)\nhuman review required before apply (execution.approved gate)\n\n## Validation\nresult: PASS\n[PASS",
+   "dims": {
+    "patch_gen": 1,
+    "patch_valid": 1,
+    "test_pass": 1,
+    "report": 1,
+    "experience": 1
+   },
+   "test_head": "[PASS] syntax\n语法检查通过 (13 个 .py 文件)\n[PASS] command: PYTHONPATH=. python3 -m unittest discover -s tests -v\ntest_add_subtract_multiply (test_arithmetic.TestArithmetic.test_add_subtract_multiply) ... ok\ntest_factorial (test_arithmetic.TestArithmetic.test_factorial) ... ok\ntest_sum_list (test_arithmetic.",
+   "duration_s": 23.784,
+   "score": 5
+  },
+  {
+   "task_id": "T4",
+   "level": 2,
+   "title": "新增 clamp 函数 (新增功能函数 + 预置测试)",
+   "run": 2,
+   "model": "deepseek-v4-pro",
+   "started_at": "2026-08-08T10:20:27Z",
+   "result_id": "EXS-9796adfd",
+   "request_id": "EXR-62527cb8",
+   "status": "success",
+   "usage": {
+    "prompt_tokens": 4277,
+    "completion_tokens": 1690,
+    "total_tokens": 5967,
+    "prompt_tokens_details": {
+     "cached_tokens": 3712
+    },
+    "completion_tokens_details": {
+     "reasoning_tokens": 1369
+    },
+    "prompt_cache_hit_tokens": 3712,
+    "prompt_cache_miss_tokens": 565,
+    "estimated_cost_usd": 0.027592
+   },
+   "cost_usd": 0.027592,
+   "report_head": "# Execution Report — EXR-62527cb8\n- task_id: T4\n- objective: 在 s6b/arithmetic.py 中新增 clamp 函数并让预置测试全部通过\n\n## What the agent did\n(no summary)\n\n## Patch\ndiff lines: 14 (generated from 1 structured operations)\nhuman review required before apply (execution.approved gate)\n\n## Validation\nresult: PASS\n[PASS",
+   "dims": {
+    "patch_gen": 1,
+    "patch_valid": 1,
+    "test_pass": 1,
+    "report": 1,
+    "experience": 1
+   },
+   "test_head": "[PASS] syntax\n语法检查通过 (13 个 .py 文件)\n[PASS] command: PYTHONPATH=. python3 -m unittest discover -s tests -v\ntest_add_subtract_multiply (test_arithmetic.TestArithmetic.test_add_subtract_multiply) ... ok\ntest_factorial (test_arithmetic.TestArithmetic.test_factorial) ... ok\ntest_sum_list (test_arithmetic.",
+   "duration_s": 27.6,
+   "score": 5
+  },
+  {
+   "task_id": "T5",
+   "level": 2,
+   "title": "report 调用错误 API (修改模块逻辑, 多文件引用)",
+   "run": 0,
+   "model": "deepseek-v4-pro",
+   "started_at": "2026-08-08T10:20:55Z",
+   "result_id": "EXS-064b57f2",
+   "request_id": "EXR-36e85d5f",
+   "status": "success",
+   "usage": {
+    "prompt_tokens": 4261,
+    "completion_tokens": 619,
+    "total_tokens": 4880,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    },
+    "completion_tokens_details": {
+     "reasoning_tokens": 476
+    },
+    "prompt_cache_hit_tokens": 0,
+    "prompt_cache_miss_tokens": 4261,
+    "estimated_cost_usd": 0.016842
+   },
+   "cost_usd": 0.016842,
+   "report_head": "# Execution Report — EXR-36e85d5f\n- task_id: T5\n- objective: 修复 s6b/report.py: summarize 调用了 stats.stddev 不存在的 sample 参数, 运行时抛 TypeError\n\n## What the agent did\n(no summary)\n\n## Patch\ndiff lines: 9 (generated from 1 structured operations)\nhuman review required before apply (execution.approved gate)\n\n",
+   "dims": {
+    "patch_gen": 1,
+    "patch_valid": 1,
+    "test_pass": 1,
+    "report": 1,
+    "experience": 1
+   },
+   "test_head": "[PASS] syntax\n语法检查通过 (12 个 .py 文件)\n[PASS] command: PYTHONPATH=. python3 -m unittest discover -s tests -v\ntest_add_subtract_multiply (test_arithmetic.TestArithmetic.test_add_subtract_multiply) ... ok\ntest_factorial (test_arithmetic.TestArithmetic.test_factorial) ... ok\ntest_sum_list (test_arithmetic.",
+   "duration_s": 10.521,
+   "score": 5
+  },
+  {
+   "task_id": "T5",
+   "level": 2,
+   "title": "report 调用错误 API (修改模块逻辑, 多文件引用)",
+   "run": 1,
+   "model": "deepseek-v4-pro",
+   "started_at": "2026-08-08T10:21:05Z",
+   "result_id": "EXS-38424cf1",
+   "request_id": "EXR-ff5c6daf",
+   "status": "success",
+   "usage": {
+    "prompt_tokens": 4261,
+    "completion_tokens": 458,
+    "total_tokens": 4719,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    },
+    "completion_tokens_details": {
+     "reasoning_tokens": 323
+    },
+    "prompt_cache_hit_tokens": 0,
+    "prompt_cache_miss_tokens": 4261,
+    "estimated_cost_usd": 0.015232
+   },
+   "cost_usd": 0.015232,
+   "report_head": "# Execution Report — EXR-ff5c6daf\n- task_id: T5\n- objective: 修复 s6b/report.py: summarize 调用了 stats.stddev 不存在的 sample 参数, 运行时抛 TypeError\n\n## What the agent did\n(no summary)\n\n## Patch\ndiff lines: 9 (generated from 1 structured operations)\nhuman review required before apply (execution.approved gate)\n\n",
+   "dims": {
+    "patch_gen": 1,
+    "patch_valid": 1,
+    "test_pass": 1,
+    "report": 1,
+    "experience": 1
+   },
+   "test_head": "[PASS] syntax\n语法检查通过 (12 个 .py 文件)\n[PASS] command: PYTHONPATH=. python3 -m unittest discover -s tests -v\ntest_add_subtract_multiply (test_arithmetic.TestArithmetic.test_add_subtract_multiply) ... ok\ntest_factorial (test_arithmetic.TestArithmetic.test_factorial) ... ok\ntest_sum_list (test_arithmetic.",
+   "duration_s": 9.81,
+   "score": 5
+  },
+  {
+   "task_id": "T5",
+   "level": 2,
+   "title": "report 调用错误 API (修改模块逻辑, 多文件引用)",
+   "run": 2,
+   "model": "deepseek-v4-pro",
+   "started_at": "2026-08-08T10:21:15Z",
+   "result_id": "EXS-8780586d",
+   "request_id": "EXR-d343a48d",
+   "status": "success",
+   "usage": {
+    "prompt_tokens": 4262,
+    "completion_tokens": 515,
+    "total_tokens": 4777,
+    "prompt_tokens_details": {
+     "cached_tokens": 3712
+    },
+    "completion_tokens_details": {
+     "reasoning_tokens": 372
+    },
+    "prompt_cache_hit_tokens": 3712,
+    "prompt_cache_miss_tokens": 550,
+    "estimated_cost_usd": 0.015805
+   },
+   "cost_usd": 0.015805,
+   "report_head": "# Execution Report — EXR-d343a48d\n- task_id: T5\n- objective: 修复 s6b/report.py: summarize 调用了 stats.stddev 不存在的 sample 参数, 运行时抛 TypeError\n\n## What the agent did\n(no summary)\n\n## Patch\ndiff lines: 9 (generated from 1 structured operations)\nhuman review required before apply (execution.approved gate)\n\n",
+   "dims": {
+    "patch_gen": 1,
+    "patch_valid": 1,
+    "test_pass": 1,
+    "report": 1,
+    "experience": 1
+   },
+   "test_head": "[PASS] syntax\n语法检查通过 (12 个 .py 文件)\n[PASS] command: PYTHONPATH=. python3 -m unittest discover -s tests -v\ntest_add_subtract_multiply (test_arithmetic.TestArithmetic.test_add_subtract_multiply) ... ok\ntest_factorial (test_arithmetic.TestArithmetic.test_factorial) ... ok\ntest_sum_list (test_arithmetic.",
+   "duration_s": 8.476,
+   "score": 5
+  },
+  {
+   "task_id": "T6",
+   "level": 2,
+   "title": "validate_age 增加类型校验 (输入校验 + 测试)",
+   "run": 0,
+   "model": "deepseek-v4-pro",
+   "started_at": "2026-08-08T10:21:24Z",
+   "result_id": "EXS-c6dd588d",
+   "request_id": "EXR-4b52c9c1",
+   "status": "success",
+   "usage": {
+    "prompt_tokens": 4056,
+    "completion_tokens": 612,
+    "total_tokens": 4668,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    },
+    "completion_tokens_details": {
+     "reasoning_tokens": 494
+    },
+    "prompt_cache_hit_tokens": 0,
+    "prompt_cache_miss_tokens": 4056,
+    "estimated_cost_usd": 0.01626
+   },
+   "cost_usd": 0.01626,
+   "report_head": "# Execution Report — EXR-4b52c9c1\n- task_id: T6\n- objective: 加强 s6b/datavalid.py 的 validate_age 输入校验: 非 int 类型 (含 bool、字符串) 目前误判为合法年龄\n\n## What the agent did\n(no summary)\n\n## Patch\ndiff lines: 14 (generated from 1 structured operations)\nhuman review required before apply (execution.approved gate)\n\n##",
+   "dims": {
+    "patch_gen": 1,
+    "patch_valid": 1,
+    "test_pass": 1,
+    "report": 1,
+    "experience": 1
+   },
+   "test_head": "[PASS] syntax\n语法检查通过 (12 个 .py 文件)\n[PASS] command: PYTHONPATH=. python3 -m unittest discover -s tests -v\ntest_add_subtract_multiply (test_arithmetic.TestArithmetic.test_add_subtract_multiply) ... ok\ntest_factorial (test_arithmetic.TestArithmetic.test_factorial) ... ok\ntest_sum_list (test_arithmetic.",
+   "duration_s": 10.034,
+   "score": 5
+  },
+  {
+   "task_id": "T6",
+   "level": 2,
+   "title": "validate_age 增加类型校验 (输入校验 + 测试)",
+   "run": 1,
+   "model": "deepseek-v4-pro",
+   "started_at": "2026-08-08T10:21:34Z",
+   "result_id": "EXS-fd163a46",
+   "request_id": "EXR-77c0e866",
+   "status": "success",
+   "usage": {
+    "prompt_tokens": 4057,
+    "completion_tokens": 592,
+    "total_tokens": 4649,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    },
+    "completion_tokens_details": {
+     "reasoning_tokens": 486
+    },
+    "prompt_cache_hit_tokens": 0,
+    "prompt_cache_miss_tokens": 4057,
+    "estimated_cost_usd": 0.016063
+   },
+   "cost_usd": 0.016063,
+   "report_head": "# Execution Report — EXR-77c0e866\n- task_id: T6\n- objective: 加强 s6b/datavalid.py 的 validate_age 输入校验: 非 int 类型 (含 bool、字符串) 目前误判为合法年龄\n\n## What the agent did\n(no summary)\n\n## Patch\ndiff lines: 14 (generated from 1 structured operations)\nhuman review required before apply (execution.approved gate)\n\n##",
+   "dims": {
+    "patch_gen": 1,
+    "patch_valid": 1,
+    "test_pass": 1,
+    "report": 1,
+    "experience": 1
+   },
+   "test_head": "[PASS] syntax\n语法检查通过 (12 个 .py 文件)\n[PASS] command: PYTHONPATH=. python3 -m unittest discover -s tests -v\ntest_add_subtract_multiply (test_arithmetic.TestArithmetic.test_add_subtract_multiply) ... ok\ntest_factorial (test_arithmetic.TestArithmetic.test_factorial) ... ok\ntest_sum_list (test_arithmetic.",
+   "duration_s": 10.705,
+   "score": 5
+  },
+  {
+   "task_id": "T6",
+   "level": 2,
+   "title": "validate_age 增加类型校验 (输入校验 + 测试)",
+   "run": 2,
+   "model": "deepseek-v4-pro",
+   "started_at": "2026-08-08T10:21:44Z",
+   "result_id": "EXS-7584b188",
+   "request_id": "EXR-9f17dce5",
+   "status": "success",
+   "usage": {
+    "prompt_tokens": 4057,
+    "completion_tokens": 557,
+    "total_tokens": 4614,
+    "prompt_tokens_details": {
+     "cached_tokens": 3456
+    },
+    "completion_tokens_details": {
+     "reasoning_tokens": 458
+    },
+    "prompt_cache_hit_tokens": 3456,
+    "prompt_cache_miss_tokens": 601,
+    "estimated_cost_usd": 0.015713
+   },
+   "cost_usd": 0.015713,
+   "report_head": "# Execution Report — EXR-9f17dce5\n- task_id: T6\n- objective: 加强 s6b/datavalid.py 的 validate_age 输入校验: 非 int 类型 (含 bool、字符串) 目前误判为合法年龄\n\n## What the agent did\n(no summary)\n\n## Patch\ndiff lines: 14 (generated from 1 structured operations)\nhuman review required before apply (execution.approved gate)\n\n##",
+   "dims": {
+    "patch_gen": 1,
+    "patch_valid": 1,
+    "test_pass": 1,
+    "report": 1,
+    "experience": 1
+   },
+   "test_head": "[PASS] syntax\n语法检查通过 (12 个 .py 文件)\n[PASS] command: PYTHONPATH=. python3 -m unittest discover -s tests -v\ntest_add_subtract_multiply (test_arithmetic.TestArithmetic.test_add_subtract_multiply) ... ok\ntest_factorial (test_arithmetic.TestArithmetic.test_factorial) ... ok\ntest_sum_list (test_arithmetic.",
+   "duration_s": 9.633,
+   "score": 5
+  },
+  {
+   "task_id": "T7",
+   "level": 3,
+   "title": "sum_list→total_of 重命名重构 (跨模块重构: A 改接口, B 适配)",
+   "run": 0,
+   "model": "deepseek-v4-pro",
+   "started_at": "2026-08-08T10:21:54Z",
+   "result_id": "EXS-8c3668d3",
+   "request_id": "EXR-d4a41ad7",
+   "status": "success",
+   "usage": {
+    "prompt_tokens": 4588,
+    "completion_tokens": 8990,
+    "total_tokens": 13578,
+    "prompt_tokens_details": {
+     "cached_tokens": 3584
+    },
+    "completion_tokens_details": {
+     "reasoning_tokens": 7864
+    },
+    "prompt_cache_hit_tokens": 3584,
+    "prompt_cache_miss_tokens": 1004,
+    "estimated_cost_usd": 0.10137
+   },
+   "cost_usd": 0.10137,
+   "report_head": "# Execution Report — EXR-d4a41ad7\n- task_id: T7\n- objective: 完成 sum_list → total_of 重命名重构: s6b/stats.py 与测试仍引用已删除的 sum_list, 全部 ImportError\n\n## What the agent did\n(no summary)\n\n## Patch\ndiff lines: 51 (generated from 3 structured operations)\nhuman review required before apply (execution.approved gat",
+   "dims": {
+    "patch_gen": 1,
+    "patch_valid": 1,
+    "test_pass": 0,
+    "report": 1,
+    "experience": 1
+   },
+   "test_head": "[PASS] syntax\n语法检查通过 (12 个 .py 文件)\n[FAIL] command: PYTHONPATH=. python3 -m unittest discover -s tests -v\ntest_add_subtract_multiply (test_arithmetic.TestArithmetic.test_add_subtract_multiply) ... ok\ntest_factorial (test_arithmetic.TestArithmetic.test_factorial) ... ok\ntest_total_of (test_arithmetic.",
+   "duration_s": 268.936,
+   "score": 4
+  },
+  {
+   "task_id": "T7",
+   "level": 3,
+   "title": "sum_list→total_of 重命名重构 (跨模块重构: A 改接口, B 适配)",
+   "run": 1,
+   "model": "deepseek-v4-pro",
+   "started_at": "2026-08-08T10:26:23Z",
+   "result_id": "EXS-1b84600d",
+   "request_id": "EXR-fc856af6",
+   "status": "success",
+   "usage": {
+    "prompt_tokens": 4589,
+    "completion_tokens": 6463,
+    "total_tokens": 11052,
+    "prompt_tokens_details": {
+     "cached_tokens": 3584
+    },
+    "completion_tokens_details": {
+     "reasoning_tokens": 5851
+    },
+    "prompt_cache_hit_tokens": 3584,
+    "prompt_cache_miss_tokens": 1005,
+    "estimated_cost_usd": 0.076103
+   },
+   "cost_usd": 0.076103,
+   "report_head": "# Execution Report — EXR-fc856af6\n- task_id: T7\n- objective: 完成 sum_list → total_of 重命名重构: s6b/stats.py 与测试仍引用已删除的 sum_list, 全部 ImportError\n\n## What the agent did\n(no summary)\n\n## Patch\ndiff lines: 40 (generated from 5 structured operations)\nhuman review required before apply (execution.approved gat",
+   "dims": {
+    "patch_gen": 1,
+    "patch_valid": 1,
+    "test_pass": 1,
+    "report": 1,
+    "experience": 1
+   },
+   "test_head": "[PASS] syntax\n语法检查通过 (12 个 .py 文件)\n[PASS] command: PYTHONPATH=. python3 -m unittest discover -s tests -v\ntest_add_subtract_multiply (test_arithmetic.TestArithmetic.test_add_subtract_multiply) ... ok\ntest_factorial (test_arithmetic.TestArithmetic.test_factorial) ... ok\ntest_total_of (test_arithmetic.",
+   "duration_s": 147.863,
+   "score": 5
+  },
+  {
+   "task_id": "T7",
+   "level": 3,
+   "title": "sum_list→total_of 重命名重构 (跨模块重构: A 改接口, B 适配)",
+   "run": 2,
+   "model": "deepseek-v4-pro",
+   "started_at": "2026-08-08T10:28:51Z",
+   "result_id": "EXS-e1bc7ad0",
+   "request_id": "EXR-4bc17fc5",
+   "status": "success",
+   "usage": {
+    "prompt_tokens": 4588,
+    "completion_tokens": 4493,
+    "total_tokens": 9081,
+    "prompt_tokens_details": {
+     "cached_tokens": 3584
+    },
+    "completion_tokens_details": {
+     "reasoning_tokens": 4052
+    },
+    "prompt_cache_hit_tokens": 3584,
+    "prompt_cache_miss_tokens": 1004,
+    "estimated_cost_usd": 0.0564
+   },
+   "cost_usd": 0.0564,
+   "report_head": "# Execution Report — EXR-4bc17fc5\n- task_id: T7\n- objective: 完成 sum_list → total_of 重命名重构: s6b/stats.py 与测试仍引用已删除的 sum_list, 全部 ImportError\n\n## What the agent did\n(no summary)\n\n## Patch\ndiff lines: 11 (generated from 1 structured operations)\nhuman review required before apply (execution.approved gat",
+   "dims": {
+    "patch_gen": 1,
+    "patch_valid": 1,
+    "test_pass": 0,
+    "report": 1,
+    "experience": 1
+   },
+   "test_head": "[PASS] syntax\n语法检查通过 (12 个 .py 文件)\n[FAIL] command: PYTHONPATH=. python3 -m unittest discover -s tests -v\ntest_add_subtract_multiply (test_arithmetic.TestArithmetic.test_add_subtract_multiply) ... ok\ntest_factorial (test_arithmetic.TestArithmetic.test_factorial) ... ok\ntest_total_of (test_arithmetic.",
+   "duration_s": 127.277,
+   "score": 4
+  },
+  {
+   "task_id": "T8",
+   "level": 3,
+   "title": "新增 serializer 模块 + report 集成 (新文件 + 集成)",
+   "run": 0,
+   "model": "deepseek-v4-pro",
+   "started_at": "2026-08-08T10:30:58Z",
+   "result_id": "EXS-0f17618a",
+   "request_id": "EXR-775f9b5e",
+   "status": "success",
+   "usage": {
+    "prompt_tokens": 4671,
+    "completion_tokens": 1393,
+    "total_tokens": 6064,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    },
+    "completion_tokens_details": {
+     "reasoning_tokens": 949
+    },
+    "prompt_cache_hit_tokens": 0,
+    "prompt_cache_miss_tokens": 4671,
+    "estimated_cost_usd": 0.025607
+   },
+   "cost_usd": 0.025607,
+   "report_head": "# Execution Report — EXR-775f9b5e\n- task_id: T8\n- objective: 新增 s6b/serializer.py JSON 序列化模块, 并集成到 report 模块提供 summarize_json\n\n## What the agent did\n(no summary)\n\n## Patch\ndiff lines: 44 (generated from 2 structured operations)\nhuman review required before apply (execution.approved gate)\n\n## Validat",
+   "dims": {
+    "patch_gen": 1,
+    "patch_valid": 1,
+    "test_pass": 1,
+    "report": 1,
+    "experience": 1
+   },
+   "test_head": "[PASS] syntax\n语法检查通过 (14 个 .py 文件)\n[PASS] command: PYTHONPATH=. python3 -m unittest discover -s tests -v\ntest_add_subtract_multiply (test_arithmetic.TestArithmetic.test_add_subtract_multiply) ... ok\ntest_factorial (test_arithmetic.TestArithmetic.test_factorial) ... ok\ntest_sum_list (test_arithmetic.",
+   "duration_s": 19.394,
+   "score": 5
+  },
+  {
+   "task_id": "T8",
+   "level": 3,
+   "title": "新增 serializer 模块 + report 集成 (新文件 + 集成)",
+   "run": 1,
+   "model": "deepseek-v4-pro",
+   "started_at": "2026-08-08T10:31:18Z",
+   "result_id": "EXS-0a8a947e",
+   "request_id": "EXR-e8c05fee",
+   "status": "success",
+   "usage": {
+    "prompt_tokens": 4673,
+    "completion_tokens": 1834,
+    "total_tokens": 6507,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    },
+    "completion_tokens_details": {
+     "reasoning_tokens": 1353
+    },
+    "prompt_cache_hit_tokens": 0,
+    "prompt_cache_miss_tokens": 4673,
+    "estimated_cost_usd": 0.030023
+   },
+   "cost_usd": 0.030023,
+   "report_head": "# Execution Report — EXR-e8c05fee\n- task_id: T8\n- objective: 新增 s6b/serializer.py JSON 序列化模块, 并集成到 report 模块提供 summarize_json\n\n## What the agent did\n(no summary)\n\n## Patch\ndiff lines: 49 (generated from 2 structured operations)\nhuman review required before apply (execution.approved gate)\n\n## Validat",
+   "dims": {
+    "patch_gen": 1,
+    "patch_valid": 1,
+    "test_pass": 1,
+    "report": 1,
+    "experience": 1
+   },
+   "test_head": "[PASS] syntax\n语法检查通过 (14 个 .py 文件)\n[PASS] command: PYTHONPATH=. python3 -m unittest discover -s tests -v\ntest_add_subtract_multiply (test_arithmetic.TestArithmetic.test_add_subtract_multiply) ... ok\ntest_factorial (test_arithmetic.TestArithmetic.test_factorial) ... ok\ntest_sum_list (test_arithmetic.",
+   "duration_s": 26.67,
+   "score": 5
+  },
+  {
+   "task_id": "T8",
+   "level": 3,
+   "title": "新增 serializer 模块 + report 集成 (新文件 + 集成)",
+   "run": 2,
+   "model": "deepseek-v4-pro",
+   "started_at": "2026-08-08T10:31:44Z",
+   "result_id": "EXS-e0f024e6",
+   "request_id": "EXR-e04cbdc7",
+   "status": "success",
+   "usage": {
+    "prompt_tokens": 4671,
+    "completion_tokens": 2469,
+    "total_tokens": 7140,
+    "prompt_tokens_details": {
+     "cached_tokens": 4096
+    },
+    "completion_tokens_details": {
+     "reasoning_tokens": 2022
+    },
+    "prompt_cache_hit_tokens": 4096,
+    "prompt_cache_miss_tokens": 575,
+    "estimated_cost_usd": 0.036367
+   },
+   "cost_usd": 0.036367,
+   "report_head": "# Execution Report — EXR-e04cbdc7\n- task_id: T8\n- objective: 新增 s6b/serializer.py JSON 序列化模块, 并集成到 report 模块提供 summarize_json\n\n## What the agent did\n(no summary)\n\n## Patch\ndiff lines: 45 (generated from 2 structured operations)\nhuman review required before apply (execution.approved gate)\n\n## Validat",
+   "dims": {
+    "patch_gen": 1,
+    "patch_valid": 1,
+    "test_pass": 1,
+    "report": 1,
+    "experience": 1
+   },
+   "test_head": "[PASS] syntax\n语法检查通过 (14 个 .py 文件)\n[PASS] command: PYTHONPATH=. python3 -m unittest discover -s tests -v\ntest_add_subtract_multiply (test_arithmetic.TestArithmetic.test_add_subtract_multiply) ... ok\ntest_factorial (test_arithmetic.TestArithmetic.test_factorial) ... ok\ntest_sum_list (test_arithmetic.",
+   "duration_s": 34.035,
+   "score": 5
+  },
+  {
+   "task_id": "T9",
+   "level": 3,
+   "title": "normalize 数据结构变更 + 全量适配 (数据结构变更)",
+   "run": 0,
+   "model": "deepseek-v4-pro",
+   "started_at": "2026-08-08T10:32:18Z",
+   "result_id": "EXS-1c769cf6",
+   "request_id": "EXR-41a0b6d6",
+   "status": "success",
+   "usage": {
+    "prompt_tokens": 8901,
+    "completion_tokens": 4978,
+    "total_tokens": 13879,
+    "prompt_tokens_details": {
+     "cached_tokens": 0
+    },
+    "completion_tokens_details": {
+     "reasoning_tokens": 2298
+    },
+    "prompt_cache_hit_tokens": 0,
+    "prompt_cache_miss_tokens": 8901,
+    "estimated_cost_usd": 0.072033
+   },
+   "cost_usd": 0.072033,
+   "report_head": "# Execution Report — EXR-41a0b6d6\n- task_id: T9\n- objective: 数据结构变更: stats.normalize 返回类型从 list 改为 dict 结果对象, 所有调用方与测试需适配\n\n## What the agent did\n(no summary)\n\n## Patch\ndiff lines: 41 (generated from 2 structured operations)\nhuman review required before apply (execution.approved gate)\n\n## Validation\n",
+   "dims": {
+    "patch_gen": 1,
+    "patch_valid": 1,
+    "test_pass": 1,
+    "report": 1,
+    "experience": 1
+   },
+   "test_head": "[PASS] syntax\n语法检查通过 (12 个 .py 文件)\n[PASS] command: PYTHONPATH=. python3 -m unittest discover -s tests -v\ntest_add_subtract_multiply (test_arithmetic.TestArithmetic.test_add_subtract_multiply) ... ok\ntest_factorial (test_arithmetic.TestArithmetic.test_factorial) ... ok\ntest_sum_list (test_arithmetic.",
+   "duration_s": 75.752,
+   "score": 5
+  },
+  {
+   "task_id": "T9",
+   "level": 3,
+   "title": "normalize 数据结构变更 + 全量适配 (数据结构变更)",
+   "run": 1,
+   "model": "deepseek-v4-pro",
+   "started_at": "2026-08-08T10:33:34Z",
+   "result_id": "EXS-2455f41c",
+   "request_id": "EXR-fc670421",
+   "status": "success",
+   "usage": {
+    "prompt_tokens": 4425,
+    "completion_tokens": 3353,
+    "total_tokens": 7778,
+    "prompt_tokens_details": {
+     "cached_tokens": 3840
+    },
+    "completion_tokens_details": {
+     "reasoning_tokens": 2902
+    },
+    "prompt_cache_hit_tokens": 3840,
+    "prompt_cache_miss_tokens": 585,
+    "estimated_cost_usd": 0.044593
+   },
+   "cost_usd": 0.044593,
+   "report_head": "# Execution Report — EXR-fc670421\n- task_id: T9\n- objective: 数据结构变更: stats.normalize 返回类型从 list 改为 dict 结果对象, 所有调用方与测试需适配\n\n## What the agent did\n(no summary)\n\n## Patch\ndiff lines: 43 (generated from 2 structured operations)\nhuman review required before apply (execution.approved gate)\n\n## Validation\n",
+   "dims": {
+    "patch_gen": 1,
+    "patch_valid": 1,
+    "test_pass": 1,
+    "report": 1,
+    "experience": 1
+   },
+   "test_head": "[PASS] syntax\n语法检查通过 (12 个 .py 文件)\n[PASS] command: PYTHONPATH=. python3 -m unittest discover -s tests -v\ntest_add_subtract_multiply (test_arithmetic.TestArithmetic.test_add_subtract_multiply) ... ok\ntest_factorial (test_arithmetic.TestArithmetic.test_factorial) ... ok\ntest_sum_list (test_arithmetic.",
+   "duration_s": 52.632,
+   "score": 5
+  },
+  {
+   "task_id": "T9",
+   "level": 3,
+   "title": "normalize 数据结构变更 + 全量适配 (数据结构变更)",
+   "run": 2,
+   "model": "deepseek-v4-pro",
+   "started_at": "2026-08-08T10:34:27Z",
+   "result_id": "EXS-efde882a",
+   "request_id": "EXR-7fb7c656",
+   "status": "success",
+   "usage": {
+    "prompt_tokens": 4425,
+    "completion_tokens": 2242,
+    "total_tokens": 6667,
+    "prompt_tokens_details": {
+     "cached_tokens": 3840
+    },
+    "completion_tokens_details": {
+     "reasoning_tokens": 1839
+    },
+    "prompt_cache_hit_tokens": 3840,
+    "prompt_cache_miss_tokens": 585,
+    "estimated_cost_usd": 0.033482
+   },
+   "cost_usd": 0.033482,
+   "report_head": "# Execution Report — EXR-7fb7c656\n- task_id: T9\n- objective: 数据结构变更: stats.normalize 返回类型从 list 改为 dict 结果对象, 所有调用方与测试需适配\n\n## What the agent did\n(no summary)\n\n## Patch\ndiff lines: 39 (generated from 2 structured operations)\nhuman review required before apply (execution.approved gate)\n\n## Validation\n",
+   "dims": {
+    "patch_gen": 1,
+    "patch_valid": 1,
+    "test_pass": 1,
+    "report": 1,
+    "experience": 1
+   },
+   "test_head": "[PASS] syntax\n语法检查通过 (12 个 .py 文件)\n[PASS] command: PYTHONPATH=. python3 -m unittest discover -s tests -v\ntest_add_subtract_multiply (test_arithmetic.TestArithmetic.test_add_subtract_multiply) ... ok\ntest_factorial (test_arithmetic.TestArithmetic.test_factorial) ... ok\ntest_sum_list (test_arithmetic.",
+   "duration_s": 34.073,
+   "score": 5
+  }
+ ]
+}

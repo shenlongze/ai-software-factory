@@ -1,0 +1,219 @@
+"""factory-exec/exec/roles.py — 多角色模型 (统一 Employee 抽象, 不复制 Agent)。
+
+Sprint 6: Employee 可绑定多角色 (org Employee.role_ids 已有), 每个角色 =
+capabilities + prompt 模板 (角色职责/输出格式) + workflow 阶段映射。执行时
+按角色选择 prompt/能力 (EmployeeExecutor 消费本注册表)。
+
+角色清单 (任务要求): ProductManager / UIDesigner / Architect / Developer /
+Tester / DevOps — 统一 RoleDefinition 声明式注册, 零 Agent 复制。
+
+诚实标注 (execution_kind):
+- "executable": 有真实 LLM 执行路径 (当前仅 Developer — AgentRuntime/
+  DeveloperAgent 已实现, production_validate 真实闭环验证)。
+- "planning": 角色已定义 (capabilities + prompt 模板 + 阶段映射), 但尚无
+  独立 LLM 执行路径 — 只能产出规划产物 (demo_ui_feature 拆解演示走此路径,
+  明确标注"规划产物, 非 LLM 执行")。不假装可执行。
+
+设计约束:
+- 声明式: 角色 = 数据 (dataclass frozen), 零逻辑; 注册表 dict 单一事实源。
+- KISS: 只依赖 stdlib (零 pydantic — 与 templates.py 同构, 减少序列化面)。
+- 与 org Role 的关系: org.Role 是权限/责任载体 (Default Deny); 本模块是
+  执行能力定义 (prompt/能力/阶段)。两者互补: Employee.role_ids 引用 org
+  Role (权限), EmployeeExecutor 按 role_id 查本注册表 (执行 prompt)。
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any
+
+
+class RoleError(Exception):
+    """角色注册表错误 (未注册 role_id 等)。"""
+
+
+@dataclass(frozen=True)
+class RoleDefinition:
+    """声明式角色定义 (capabilities + prompt 模板 + workflow 阶段映射)。
+
+    role_id: 注册表键 (kebab-case, 如 "product-manager")。
+    name: 角色显示名 (如 "Product Manager")。
+    capabilities: 角色能力集 (与 Employee.capabilities 同词汇, 执行时合并)。
+    prompt_template: 角色 prompt (职责说明 + 输出格式) — 执行时按角色选择。
+    workflow_stages: 该角色负责的 workflow 阶段 id (验收演示拆解映射)。
+    execution_kind: "executable" | "planning" — 诚实标注 (见模块 docstring)。
+    """
+
+    role_id: str
+    name: str
+    capabilities: tuple[str, ...] = ()
+    prompt_template: str = ""
+    workflow_stages: tuple[str, ...] = ()
+    execution_kind: str = "planning"
+
+    @property
+    def is_executable(self) -> bool:
+        """是否有真实 LLM 执行路径 (当前仅 Developer)。"""
+        return self.execution_kind == "executable"
+
+
+# ------------------------------------------------------------------ 角色定义
+
+#: Product Manager — 需求/计划/调度 (org 模板同职责; 规划角色)
+_PM_PROMPT = (
+    "你是一名 Product Manager (产品经理)。职责: 把用户诉求转化为清晰、可验收的"
+    "需求描述, 拆解功能范围, 明确验收标准。\n"
+    "输出格式: 需求文档 (目标 / 功能清单 / 验收标准 / 范围外)。"
+)
+
+#: UI Designer — 界面/交互设计 (规划角色)
+_UI_PROMPT = (
+    "你是一名 UI Designer (UI 设计师)。职责: 根据需求设计界面结构与交互, "
+    "关注可用性与视觉一致性。\n"
+    "输出格式: 设计说明 (界面结构 / 交互流程 / 关键组件 / 状态)。"
+)
+
+#: Architect — 架构决策与技术方案 (规划角色)
+_ARCH_PROMPT = (
+    "你是一名 Architect (架构师)。职责: 决定技术方案、模块划分与关键实现路径, "
+    "评估改动影响面。\n"
+    "输出格式: 技术方案 (模块结构 / 数据流 / 关键实现点 / 风险)。"
+)
+
+#: Developer — 技术实现 (唯一 executable 角色: AgentRuntime/DeveloperAgent 已实现)
+_DEV_PROMPT = (
+    "你是一名 Developer (开发工程师)。职责: 按需求与技术方案实现代码修改, "
+    "保持最小改动与现有风格, 修改后必须通过验证。\n"
+    "输出格式: 结构化操作 <operations> JSON 或统一 diff <patch> (由系统执行)。"
+)
+
+#: Tester — 测试验证与评审 (规划角色; 测试执行经确定性 Validation, 非 LLM)
+_TESTER_PROMPT = (
+    "你是一名 Tester (测试工程师)。职责: 设计验收用例, 验证功能正确性与回归"
+    "安全, 输出明确通过/失败结论。\n"
+    "输出格式: 测试计划与结论 (用例清单 / 预期结果 / 实际结果)。"
+)
+
+#: DevOps — 部署/运维 (规划角色)
+_DEVOPS_PROMPT = (
+    "你是一名 DevOps 工程师。职责: 部署方案、环境配置与发布流程, 保证交付物"
+    "可构建、可运行。\n"
+    "输出格式: 部署方案 (构建步骤 / 部署步骤 / 验证步骤 / 回滚)。"
+)
+
+ROLE_REGISTRY: dict[str, RoleDefinition] = {
+    "product-manager": RoleDefinition(
+        role_id="product-manager",
+        name="Product Manager",
+        capabilities=("requirement", "planning"),
+        prompt_template=_PM_PROMPT,
+        workflow_stages=("product",),
+        execution_kind="planning",
+    ),
+    "ui-designer": RoleDefinition(
+        role_id="ui-designer",
+        name="UI Designer",
+        capabilities=("ui_design", "prototyping"),
+        prompt_template=_UI_PROMPT,
+        workflow_stages=("design",),
+        execution_kind="planning",
+    ),
+    "architect": RoleDefinition(
+        role_id="architect",
+        name="Architect",
+        capabilities=("architecture", "design"),
+        prompt_template=_ARCH_PROMPT,
+        workflow_stages=("architecture",),
+        execution_kind="planning",
+    ),
+    "developer": RoleDefinition(
+        role_id="developer",
+        name="Developer",
+        capabilities=("coding", "python", "debugging"),
+        prompt_template=_DEV_PROMPT,
+        workflow_stages=("development",),
+        execution_kind="executable",
+    ),
+    "tester": RoleDefinition(
+        role_id="tester",
+        name="Tester",
+        capabilities=("testing", "verification"),
+        prompt_template=_TESTER_PROMPT,
+        workflow_stages=("testing",),
+        execution_kind="planning",
+    ),
+    "devops": RoleDefinition(
+        role_id="devops",
+        name="DevOps",
+        capabilities=("deployment", "ops", "release"),
+        prompt_template=_DEVOPS_PROMPT,
+        workflow_stages=("deployment",),
+        execution_kind="planning",
+    ),
+}
+
+#: 角色清单 (按 role_id 排序, 审计友好)
+ROLE_IDS: tuple[str, ...] = tuple(sorted(ROLE_REGISTRY))
+
+
+# ------------------------------------------------------------------ 注册表 API
+
+def get_role(role_id: str) -> RoleDefinition | None:
+    """按 role_id 取角色定义; 未注册 → None (调用方按配置缺口处理)。"""
+    return ROLE_REGISTRY.get(role_id)
+
+
+def require_role(role_id: str) -> RoleDefinition:
+    """按 role_id 取角色; 未注册 → RoleError (响亮暴露拼写错误)。"""
+    role = ROLE_REGISTRY.get(role_id)
+    if role is None:
+        raise RoleError(
+            f"unknown role: {role_id!r} (available: {', '.join(ROLE_IDS)})"
+        )
+    return role
+
+
+def list_roles() -> list[RoleDefinition]:
+    """全部角色定义 (按 role_id 排序)。"""
+    return [ROLE_REGISTRY[k] for k in ROLE_IDS]
+
+
+def list_role_dicts() -> list[dict[str, Any]]:
+    """角色清单 dict (CLI/报告展示; 只读)。"""
+    return [
+        {
+            "role_id": r.role_id,
+            "name": r.name,
+            "capabilities": list(r.capabilities),
+            "workflow_stages": list(r.workflow_stages),
+            "execution_kind": r.execution_kind,
+        }
+        for r in list_roles()
+    ]
+
+
+def executable_role_ids() -> list[str]:
+    """可执行角色 (有真实 LLM 路径) — 当前仅 developer, 诚实标注。"""
+    return [r.role_id for r in list_roles() if r.is_executable]
+
+
+def capabilities_for_role(role_id: str) -> tuple[str, ...]:
+    """角色能力集; 未注册 → RoleError。"""
+    return require_role(role_id).capabilities
+
+
+def merge_capabilities(*capability_sets: Any) -> list[str]:
+    """多来源能力合并 (去重保序; None/非 list 输入安全跳过)。
+
+    EmployeeExecutor 用: employee.capabilities ∪ 绑定角色 capabilities —
+    统一 Employee 抽象 (员工多技能集 + 角色能力), 不复制 Agent。
+    """
+    merged: list[str] = []
+    for caps in capability_sets:
+        if not isinstance(caps, (list, tuple)):
+            continue
+        for c in caps:
+            s = str(c).strip()
+            if s and s not in merged:
+                merged.append(s)
+    return merged

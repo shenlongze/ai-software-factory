@@ -52,7 +52,8 @@ class TestTesterRole:
         assert "unittest/pytest" in prompt
 
     def test_executable_role_ids_include_tester(self):
-        assert roles.executable_role_ids() == ["developer", "tester"]
+        """S8-001 扩展: developer + product-manager + tester (按 role_id 排序)。"""
+        assert roles.executable_role_ids() == ["developer", "product-manager", "tester"]
 
     def test_org_coverage_tester_executable(self):
         """双体系统一: org 模板 qa → exec tester (execution_kind=executable)。"""

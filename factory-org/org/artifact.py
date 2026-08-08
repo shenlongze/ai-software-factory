@@ -6,7 +6,10 @@
   异常 INVALID (契约校验失败/执行失败), 可回 GENERATED 重生成 (失败恢复)
 - 类型契约 (CONTRACTS 声明式): prd/design/code/test/bug_report/release 各自
   required_fields + validation_rules — 阶段间契约严格定义 (架构风险 1 缓解);
-  S7-004 扩展: test 强化 (results.passed 必含) + bug_report 类型 (Tester 缺陷报告)
+  S7-004 扩展: test 强化 (results.passed 必含) + bug_report 类型 (Tester 缺陷报告);
+  S8-001 扩展: product 类型 (PM Agent 输出, 7 节必填: market_analysis/
+  user_persona/user_journey/problem_statement/feature_list/mvp_scope/
+  user_stories) + idea 类型 (PM 阶段输入, 自然语言)
 - 引用完整: stage/project 必须存在; task 须经 ProjectTaskLink 关联该项目
   (项目隔离铁律, 同 S7-001 add_task_to_sprint); producer_role 经 exec
   注册表校验 (未安装 → 跳过, Removal Isolation — 不假装校验)
@@ -75,6 +78,32 @@ class ValidationResult:
 #: 规则 dict: {field: {"type": "str"|"list"|"dict", "min_length"/"min_items"/"min_keys": N}}。
 #: 新增产物类型 = 枚举加成员 + 本表加条目 (单点扩展, 契约与枚举同源)。
 CONTRACTS: dict[str, dict[str, Any]] = {
+    "idea": {
+        "required_fields": ("idea",),
+        "validation_rules": {
+            "idea": {"type": "str", "min_length": 1},
+        },
+    },
+    "product": {
+        "required_fields": (
+            "market_analysis",
+            "user_persona",
+            "user_journey",
+            "problem_statement",
+            "feature_list",
+            "mvp_scope",
+            "user_stories",
+        ),
+        "validation_rules": {
+            "market_analysis": {"type": "str", "min_length": 1},
+            "user_persona": {"type": "str", "min_length": 1},
+            "user_journey": {"type": "str", "min_length": 1},
+            "problem_statement": {"type": "str", "min_length": 1},
+            "feature_list": {"type": "list", "min_items": 1},
+            "mvp_scope": {"type": "dict", "min_keys": 1, "required_keys": ["in", "out"]},
+            "user_stories": {"type": "list", "min_items": 1},
+        },
+    },
     "prd": {
         "required_fields": ("problem", "user", "features"),
         "validation_rules": {
@@ -134,13 +163,17 @@ _TYPE_CHECKS: dict[str, Any] = {
 
 
 def _check_rule(field: str, value: Any, rule: dict[str, Any]) -> str | None:
-    """单条规则校验 → 失败信息 (None = 通过)。"""
+    """单条规则校验 → 失败信息 (None = 通过)。
+
+    str 非空语义: min_length 按 strip 后长度判定 (纯空白视为空串 —
+    与 exec 侧 _local_validate 同规则, 双体系一致; 契约意图 "非空")。
+    """
     expected = rule.get("type")
     if expected and expected in _TYPE_CHECKS and not _TYPE_CHECKS[expected](value):
         return f"expected {expected}, got {type(value).__name__}"
     if isinstance(value, str):
         min_length = rule.get("min_length", 0)
-        if len(value) < min_length:
+        if len(value.strip()) < min_length:
             return f"min length {min_length}"
     elif isinstance(value, list):
         min_items = rule.get("min_items", 0)

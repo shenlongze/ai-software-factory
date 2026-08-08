@@ -69,11 +69,11 @@ class TestRegistry:
         assert dev.execution_kind == "executable"
         assert dev.is_executable
 
-    def test_developer_and_tester_executable(self):
-        """诚实标注: developer + tester 有真实 LLM 执行路径 (S7-004 Tester
-        executable), 其余 planning。"""
+    def test_developer_tester_pm_executable(self):
+        """诚实标注: developer + tester (S7-004) + product-manager (S8-001)
+        有真实 LLM 执行路径, 其余 planning。"""
         for role in list_roles():
-            if role.role_id in ("developer", "tester"):
+            if role.role_id in ("developer", "tester", "product-manager"):
                 assert role.is_executable
                 assert role.execution_kind == "executable"
             else:
@@ -82,7 +82,7 @@ class TestRegistry:
 
     def test_planning_roles_have_prompt_and_stages(self):
         """规划角色同样具备 prompt 模板与阶段映射 (演示拆解可用, 不假装可执行)。"""
-        for role_id in EXPECTED_ROLES - {"developer", "tester"}:
+        for role_id in EXPECTED_ROLES - {"developer", "tester", "product-manager"}:
             role = require_role(role_id)
             assert role.prompt_template, f"{role_id} 缺 prompt 模板"
             assert role.workflow_stages, f"{role_id} 缺 workflow 阶段映射"
@@ -118,9 +118,10 @@ class TestLookup:
         with pytest.raises(RoleError):
             capabilities_for_role("nope")
 
-    def test_executable_role_ids_developer_tester(self):
-        """executable 角色 (S7-004): developer + tester (真实 LLM 路径)。"""
-        assert executable_role_ids() == ["developer", "tester"]
+    def test_executable_role_ids(self):
+        """executable 角色 (S7-004 + S8-001): developer + tester +
+        product-manager (真实 LLM 路径, 按 role_id 排序)。"""
+        assert executable_role_ids() == ["developer", "product-manager", "tester"]
 
 
 class TestMergeCapabilities:

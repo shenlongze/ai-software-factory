@@ -70,9 +70,15 @@ class ArtifactType(str, Enum):
 
     S7-004 扩展: BUG_REPORT (结构化缺陷报告 — Tester 失败分析产物, 修复任务
     输入; 单点扩展: 枚举加成员 + CONTRACTS 表加条目)。
+    S8-001 扩展: PRODUCT (Product Artifact — PM Agent 输出, 7 节契约:
+    market_analysis/user_persona/user_journey/problem_statement/feature_list/
+    mvp_scope/user_stories); IDEA (想法输入 — 自然语言, PM 阶段输入,
+    stage input 可无 artifact 或 idea artifact)。
     """
 
+    IDEA = "idea"               # S8-001: 想法输入 (自然语言)
     PRD = "prd"
+    PRODUCT = "product"         # S8-001: Product Artifact (PM Agent 输出)
     DESIGN = "design"
     CODE = "code"
     TEST = "test"

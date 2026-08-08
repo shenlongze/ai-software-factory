@@ -10,7 +10,9 @@ Tester / DevOps — 统一 RoleDefinition 声明式注册, 零 Agent 复制。
 诚实标注 (execution_kind):
 - "executable": 有真实 LLM 执行路径 (Developer — AgentRuntime/DeveloperAgent
   已实现, production_validate 真实闭环验证; Tester — S7-004 TesterAgent 已实现,
-  测试执行确定性 + 失败分析/缺陷报告 LLM 结构化输出)。
+  测试执行确定性 + 失败分析/缺陷报告 LLM 结构化输出; ProductManager — S8-001
+  PMAgent 已实现, Idea → 结构化 Product Artifact (7 节) LLM 生成 + CONTRACTS
+  product 契约校验)。
 - "planning": 角色已定义 (capabilities + prompt 模板 + 阶段映射), 但尚无
   独立 LLM 执行路径 — 只能产出规划产物 (demo_ui_feature 拆解演示走此路径,
   明确标注"规划产物, 非 LLM 执行")。不假装可执行。
@@ -54,17 +56,21 @@ class RoleDefinition:
 
     @property
     def is_executable(self) -> bool:
-        """是否有真实 LLM 执行路径 (当前 Developer + Tester)。"""
+        """是否有真实 LLM 执行路径 (当前 Developer + Tester + ProductManager)。"""
         return self.execution_kind == "executable"
 
 
 # ------------------------------------------------------------------ 角色定义
 
-#: Product Manager — 需求/计划/调度 (org 模板同职责; 规划角色)
+#: Product Manager — 想法 → 产品分析 (S8-001 executable: PMAgent 已实现,
+#: Idea → 结构化 Product Artifact (7 节), 输出 JSON 经 CONTRACTS product 校验)
 _PM_PROMPT = (
-    "你是一名 Product Manager (产品经理)。职责: 把用户诉求转化为清晰、可验收的"
-    "需求描述, 拆解功能范围, 明确验收标准。\n"
-    "输出格式: 需求文档 (目标 / 功能清单 / 验收标准 / 范围外)。"
+    "你是一名 Product Manager (产品经理)。职责: 把用户想法 (Idea) 转化为结构化"
+    "产品分析产物 (Product Artifact), 覆盖 7 节: 市场分析 (market_analysis) / "
+    "用户画像 (user_persona) / 用户旅程 (user_journey) / 问题定义 "
+    "(problem_statement) / 功能清单 (feature_list) / MVP 范围 (mvp_scope, "
+    "含 in/out 边界) / 用户故事 (user_stories, 每项含 as-a/i-want/so-that)。\n"
+    "输出格式: 严格 JSON 对象, 7 节字段齐全, 仅输出 JSON, 不要任何多余文字。"
 )
 
 #: UI Designer — 界面/交互设计 (规划角色)
@@ -110,10 +116,10 @@ ROLE_REGISTRY: dict[str, RoleDefinition] = {
     "product-manager": RoleDefinition(
         role_id="product-manager",
         name="Product Manager",
-        capabilities=("requirement", "planning"),
+        capabilities=("requirement", "planning", "product_analysis"),
         prompt_template=_PM_PROMPT,
         workflow_stages=("product",),
-        execution_kind="planning",
+        execution_kind="executable",
     ),
     "ui-designer": RoleDefinition(
         role_id="ui-designer",
@@ -198,7 +204,8 @@ def list_role_dicts() -> list[dict[str, Any]]:
 
 
 def executable_role_ids() -> list[str]:
-    """可执行角色 (有真实 LLM 路径) — developer + tester (S7-004), 诚实标注。"""
+    """可执行角色 (有真实 LLM 路径) — developer + tester (S7-004) +
+    product-manager (S8-001 PMAgent), 诚实标注。"""
     return [r.role_id for r in list_roles() if r.is_executable]
 
 

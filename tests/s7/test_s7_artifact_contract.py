@@ -24,8 +24,12 @@ def _prd_ok() -> dict:
 
 
 class TestContractsDeclared:
-    def test_all_six_types_covered(self):
-        assert sorted(CONTRACTS) == ["bug_report", "code", "design", "prd", "release", "test"]
+    def test_all_types_covered(self):
+        """全部类型契约 (S7-002 六类型 + S8-001 扩展: idea/product)。"""
+        assert sorted(CONTRACTS) == [
+            "bug_report", "code", "design", "idea", "prd", "product",
+            "release", "test",
+        ]
         for contract in CONTRACTS.values():
             assert "required_fields" in contract
             assert "validation_rules" in contract

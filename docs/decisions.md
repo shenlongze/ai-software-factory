@@ -7,7 +7,7 @@
 
 | ID | 决策 | 选项 | 依据 | 决定时间 |
 |:-:|:-----|:-----|:-----|:-----|
-| D-001 | Ollama qwen3:8b 是否作为生产模型 | DeepSeek (reasoning 瓶颈) vs 本地 | 6.2 Benchmark 数据 | Sprint 6.5 |
+| D-001 | 生产模型选择 (仅 DeepSeek 约束) | flash (reasoning 耗尽) vs **v4-pro (实测稳定)** | 6.2 Benchmark 数据 + 成本 | Sprint 6.5 |
 | D-002 | Workspace/Organization 泛化时机 | Sprint 7 (连接前) vs Sprint 9 (UI 前) | 依赖顺序 | Sprint 6 后 |
 | D-003 | 11 个空目录处置 | 清理 vs 实现 (knowledge/mcp/skills) | 领域规划 | Sprint 10 |
 

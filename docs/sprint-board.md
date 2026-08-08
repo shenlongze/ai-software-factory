@@ -3,20 +3,22 @@
 > ⭐ 实时任务板 | 与 factory-state.json / factory-tree.md 同步
 > 规则: 每任务完成 → 更新本板 + state.json + tree → commit
 
-## 当前 Sprint: 6 — 模型换档 + 生产闭环
+## 当前 Sprint: 6 — DeepSeek 模型档位调优 + 生产闭环
 
 ```
-目标: Ollama 本地模型跑通 9 样本, Bug Fix ≥60% (打破"生产 0%"瓶颈)
-状态: NOT_STARTED | 前置: 审计完成 ✅ / 文档校准 ✅ / Ollama 内存可行 ✅
+目标: 在"仅 DeepSeek"约束下, 用 v4-pro + 现有工程打破"生产 0%"瓶颈
+背景: flash 是 reasoning 模型 (25/27 空响应); pro 实测稳定产出 patch (无空内容)
+      + 延迟快 2.7×; 当时 diff 失败已被 Operation API/行号/MultiRun 修复
+状态: NOT_STARTED | 前置: 审计 ✅ / 文档校准 ✅ / 模型约束确认 (仅 DeepSeek) ✅
 ```
 
 | # | 任务 | 状态 | 验收 | 依赖 |
 |:-:|:-----|:----:|:-----|:-----|
-| 6.1 | 拉取 qwen3:8b + 单样本冒烟 | ⬜ | 本地生成非空 patch | 无 |
-| 6.2 | Ollama 跑 9 样本 Benchmark (runs=3) | ⬜ | 真实数据表 | 6.1 |
-| 6.3 | Capability Registry 回填实测分 | ⬜ | coding/stability 修正 | 6.2 |
-| 6.4 | 对比 DeepSeek vs Ollama 报告 | ⬜ | sprint6-benchmark-report.md | 6.2 |
-| 6.5 | 判定: Bug Fix ≥60%? → 决定生产闭环 | ⬜ | 门禁结论 | 6.4 |
+| 6.1 | v4-pro 单样本冒烟 (非空 patch?) | ⬜ | 本地生成非空 patch | 无 |
+| 6.2 | v4-pro 跑 9 样本 Benchmark (runs=3, max_tokens 65536) | ⬜ | 真实数据表 | 6.1 |
+| 6.3 | Capability Registry 回填实测分 | ⬜ | pro coding/stability 修正 | 6.2 |
+| 6.4 | flash vs pro 对比报告 | ⬜ | sprint6-benchmark-report.md | 6.2 |
+| 6.5 | 判定: Bug Fix ≥60%? → 定生产模型 (D-001) | ⬜ | 门禁结论 | 6.4 |
 
 ## Sprint 7: 组织-执行连接
 

@@ -49,12 +49,13 @@
   ],
   "sprint": {
     "current": "6",
-    "goal": "模型换档 + 生产闭环验证 (Ollama qwen3:8b, Bug Fix ≥60%)",
+    "goal": "DeepSeek 模型档位调优 (v4-pro) + 生产闭环验证 (Bug Fix ≥60%)",
+    "constraint": "仅 DeepSeek 一个 LLM (无新资源)",
     "status": "NOT_STARTED",
     "board": "docs/sprint-board.md"
   },
   "roadmap": {
-    "sprint_6": "模型换档 + 生产闭环",
+    "sprint_6": "DeepSeek 档位调优 (flash→pro) + 生产闭环",
     "sprint_7": "组织-执行连接 (Employee 统一+分配)",
     "sprint_8": "多角色员工 + 业务 Workflow",
     "sprint_9": "工作台 UI (6 视图)",

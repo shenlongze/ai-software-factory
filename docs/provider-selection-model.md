@@ -1,5 +1,7 @@
 # Provider 选择模型 (provider-selection-model)
 
+> 状态: IMPLEMENTED (已实现 — 见 ./audit/architecture-reality-audit.md)
+
 > 通用 AI Software Factory 的 Provider 选择体系:Agent Task Requirement →
 > Provider Capability 匹配模型、成本感知推荐流程,以及"只推荐不自动切换"语义。
 > 依据 Phase 8B-2 (ADR-0024) 落地,与 Provider 扩展模型 (Phase 8A, ADR-0022) 和

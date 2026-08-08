@@ -1,5 +1,7 @@
 # Phase A — Execution MVP Design（最小执行边界冻结）
 
+> 状态: IMPLEMENTED (已实现 — 见 ../audit/architecture-reality-audit.md)
+
 > 日期: 2026-08-07 | 状态: 实施准备评审 (Phase A-0)
 > 目标: 个人 AI Software Company MVP — 真实 LLM Developer Agent 闭环
 > 原则: Core/Runtime 冻结; 零新顶层架构; 复用已有模型

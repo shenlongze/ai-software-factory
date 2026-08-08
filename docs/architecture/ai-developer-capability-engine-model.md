@@ -1,5 +1,7 @@
 # AI Developer Capability Engine Model
 
+> 状态: DESIGN ONLY (蓝图, 未实现或部分实现 — 见 ../audit/architecture-reality-audit.md)
+
 > 日期: 2026-08-07 | 状态: 架构评审 (Phase A++++++-2, 不编码)
 > 背景: Stage 1 真实 Benchmark 22.2% → 55.6% (Bug Fix 20% → 60%) — 方向正确, 需能力升级
 > 目标: Developer Agent 从"代码修改工具" → "Software Engineer AI Employee"

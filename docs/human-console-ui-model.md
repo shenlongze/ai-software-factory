@@ -1,5 +1,7 @@
 # Human Console — UI 模型 (Phase 11B)
 
+> 状态: IMPLEMENTED (已实现: Web UI 已实现 (只读管理台, 非工作台) — 见 ./audit/architecture-reality-audit.md)
+
 > 日期: 2026-08-06 | 关联: ADR-0034 (11A Console Layer) / ADR-0035 (11B Web UI)
 > 定位: 把 AI Software Factory 从"工程师的 CLI"提升为"普通用户可用的产品入口"的交互模型。
 

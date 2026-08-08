@@ -1,5 +1,7 @@
 # Developer Agent Reliability Model
 
+> 状态: IMPLEMENTED (已实现 — 见 ../audit/architecture-reality-audit.md)
+
 > 日期: 2026-08-07 | 状态: 架构评审 (Phase A++++++, 不编码)
 > 背景: 真实 Benchmark 22.2% (2/9) — 瓶颈是 Agent Engineering 非 LLM 智能
 > 目标: Developer Agent 从"生成 patch"→"可靠完成工程任务" (Bug Fix ≥70% → ≥90%, Feature ≥50% → ≥80%)

@@ -1,5 +1,7 @@
 # AI Enterprise OS — Implementation Roadmap (Freeze 后)
 
+> 状态: DESIGN ONLY (蓝图, 未实现或部分实现 — 见 ../audit/architecture-reality-audit.md)
+
 > 日期: 2026-08-07 | 状态: 实施战略裁决 (Architecture Freeze 后)
 > 目标: 从"完整架构" → "可被用户验证的产品"
 > 原则: 零新架构模型; Core/Runtime 冻结; 诚实区分 Implemented/Designed/Future

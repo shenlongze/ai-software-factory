@@ -1,5 +1,7 @@
 # AI Software Production Platform — 商业定位 (Business Positioning)
 
+> 状态: DESIGN ONLY (蓝图, 未实现或部分实现: 商业策略文档, 只分析不实现 — 见 ./audit/architecture-reality-audit.md)
+
 > 日期: 2026-08-06 | 归属: Phase 12A-5 | 状态: **只分析不实现** (商业策略文档, 非路线图承诺)
 > 关联: [vision.md](./vision.md) · [lifecycle-model.md](./lifecycle-model.md) · [capability-architecture.md](./capability-architecture.md)
 > · [human-console-model.md](./human-console-model.md) · [approval-model.md](./approval-model.md) · [demo-scenario.md](./demo-scenario.md)

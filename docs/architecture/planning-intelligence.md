@@ -1,5 +1,7 @@
 # AI Software Factory — Planning Intelligence
 
+> 状态: DESIGN ONLY (蓝图, 未实现或部分实现 — 见 ../audit/architecture-reality-audit.md)
+
 > 日期: 2026-08-07 | 状态: 设计 (Phase 17 实现)
 > 定位: AI Project Manager — 分析目标/创建计划/管理进度/动态重规划
 

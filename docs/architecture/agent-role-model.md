@@ -1,5 +1,7 @@
 # AI Software Factory — Agent Role Model
 
+> 状态: DESIGN ONLY (蓝图, 未实现或部分实现 — 见 ../audit/architecture-reality-audit.md)
+
 > 日期: 2026-08-07 | 状态: 设计 (Architecture Correction, Phase 17 实现)
 > 核心修正: 能力 != 角色 — 不同专业需要不同 AI 员工
 

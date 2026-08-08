@@ -1,5 +1,7 @@
 # Phase 15 Architecture Design — Product Runtime & Desktop Edition
 
+> 状态: IMPLEMENTED (已实现 — 见 ../audit/architecture-reality-audit.md)
+
 > 日期: 2026-08-07 | 状态: 架构已确认 (裁决 B, 15A-3c) | 前置: Phase 1-14B + Roadmap 15-21 (5195385)
 > 原则: Core 零修改 / Extension 化 / 安全·可控·透明·可扩展 / 默认安全
 > 修订: 15A-3c-2 — §1.6/§3 修正 Core daemon → Command Model (详见 runtime-service-model.md)

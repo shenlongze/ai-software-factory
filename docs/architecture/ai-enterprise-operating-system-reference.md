@@ -1,5 +1,7 @@
 # AI Enterprise Operating System — Reference Architecture
 
+> 状态: DESIGN ONLY (蓝图, 未实现或部分实现 — 见 ../audit/architecture-reality-audit.md)
+
 > 日期: 2026-08-07 | 状态: 统一参考架构 (Phase 17B Consolidation)
 > 定位: AI Factory 的最高统一设计文档 (整合 16A-17A 五个设计)
 > 复用: factory-org-design.md / ai-employee-runtime-model.md / ai-enterprise-nervous-system-model.md / ai-enterprise-planning-operation-model.md / ai-enterprise-governance-model.md

@@ -1,5 +1,7 @@
 # Human Console Model
 
+> 状态: IMPLEMENTED (已实现: Console 7 只读管理页; 工作台视图未实现 — 见 ./audit/architecture-reality-audit.md)
+
 > 日期: 2026-08-06 | 关联: ADR-0034, Phase 11A
 
 ## Human Layer 定位

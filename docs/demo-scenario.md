@@ -1,5 +1,7 @@
 # 预约系统完整演示 — Demo Scenario (Idea → Development)
 
+> 状态: IMPLEMENTED (已实现 — 见 ./audit/architecture-reality-audit.md)
+
 > 日期: 2026-08-06 | 归属: Phase 12A-4 | 状态: 与实际能力一致 (4090 tests, 41 commits)
 > 关联: [vision.md](./vision.md) · [lifecycle-model.md](./lifecycle-model.md) · [capability-architecture.md](./capability-architecture.md)
 > · [human-console-model.md](./human-console-model.md) · [decision-intelligence-model.md](./decision-intelligence-model.md)

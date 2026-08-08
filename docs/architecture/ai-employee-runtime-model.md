@@ -1,5 +1,7 @@
 # AI Employee Runtime Identity Model
 
+> 状态: DESIGN ONLY (蓝图, 未实现或部分实现 — 见 ../audit/architecture-reality-audit.md)
+
 > 日期: 2026-08-07 | 状态: 架构评审, 待确认 (Phase 16B)
 > 定位: Organization Foundation → Execution Layer 的最高设计文档
 > 引用: agent-role-model.md / knowledge-learning-model.md / factory-org-design.md / ai-enterprise-operating-model.md

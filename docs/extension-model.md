@@ -1,5 +1,7 @@
 # 扩展模型 (extension-model)
 
+> 状态: IMPLEMENTED (已实现 — 见 ./audit/architecture-reality-audit.md)
+
 > 版本: v1.0 | 日期: 2026-08-06 | 状态: 冻结报告配套文档 (Extension 体系完整)
 > 关联文档: [architecture-freeze-2026-08.md](./architecture-freeze-2026-08.md) · [core-boundary.md](./core-boundary.md) · [design-principles.md](./design-principles.md) · [skill-model.md](./skill-model.md) · [agent-model.md](./agent-model.md)
 

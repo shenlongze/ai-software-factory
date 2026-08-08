@@ -1,5 +1,7 @@
 # 反馈闭环模型 (Feedback Model) — 接口设计
 
+> 状态: DESIGN ONLY (蓝图, 未实现或部分实现: 设计稿, 明确不实现后台 — 见 ./audit/architecture-reality-audit.md)
+
 > 日期: 2026-08-06 初稿 (Phase 14A) / 2026-08-07 补充分类路由与闭环 (Phase 14B) | 状态: **设计稿, 不实现后台**
 > 关联: ADR-0031 (Decision, Phase 10A-2) · ADR-0033 (Experience, Phase 10A-4)
 > 铁律: 只定义**接口与数据结构**, 不落库、不建服务、不接 UI — 留待未来 Feedback 阶段实现。

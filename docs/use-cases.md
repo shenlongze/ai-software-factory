@@ -1,5 +1,7 @@
 # AI Software Factory — 应用场景 (Use Cases)
 
+> 状态: IMPLEMENTED (已实现 — 见 ./audit/architecture-reality-audit.md)
+
 > 日期: 2026-08-06 | 状态: 与实际能力一致 (Phase 1–11, 4090 pytest)
 > 关联: [README](../README.md) · [vision.md](./vision.md) · [lifecycle-model.md](./lifecycle-model.md) · [design-principles.md](./design-principles.md)
 >

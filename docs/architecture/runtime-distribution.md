@@ -1,5 +1,7 @@
 # Runtime Distribution — Local / Enterprise / Cloud 三种分发形态
 
+> 状态: IMPLEMENTED (已实现 — 见 ../audit/architecture-reality-audit.md)
+
 > 日期: 2026-08-07 | 状态: 已确认 (15A-3c-3) | 前置: [runtime-service-model.md](./runtime-service-model.md) + [desktop-product-entry.md](./desktop-product-entry.md)
 > 原则: Desktop 不是业务层 / Runtime Interface 是唯一替换边界 / 默认安全 / KISS
 > 关联: phase15-runtime-design.md §1.6 / tauri.conf.json bundle.resources / main.rs `resolve_runtime_cmd_at`

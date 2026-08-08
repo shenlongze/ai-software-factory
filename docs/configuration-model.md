@@ -1,5 +1,7 @@
 # 配置模型审计 (configuration-model)
 
+> 状态: IMPLEMENTED (已实现 — 见 ./audit/architecture-reality-audit.md)
+
 > 版本: v1.0 | 日期: 2026-08-06 | 状态: 与 v1.0 Release 一致
 > 关联文档: [provider-selection-model.md](./provider-selection-model.md) · [extension-model.md](./extension-model.md) · [system-architecture-review.md](./system-architecture-review.md)
 

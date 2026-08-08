@@ -1,5 +1,7 @@
 # Core 边界 (core-boundary)
 
+> 状态: IMPLEMENTED (已实现 — 见 ./audit/architecture-reality-audit.md)
+
 > 版本: v1.0 | 日期: 2026-08-06 | 状态: 冻结报告配套文档 (架构冻结有效, 无需重构)
 > 关联文档: [architecture-freeze-2026-08.md](./architecture-freeze-2026-08.md) · [design-principles.md](./design-principles.md) · [architecture.md](./architecture.md) · [extension-model.md](./extension-model.md)
 

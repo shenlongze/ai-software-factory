@@ -1,5 +1,7 @@
 # Approval Gate 模型 (approval-model)
 
+> 状态: IMPLEMENTED (已实现 — 见 ./audit/architecture-reality-audit.md)
+
 > 通用 AI Software Factory 的**人工审核节点**统一模型:把"哪些环节必须由人拍板、如何拍板、
 > 证据是什么"建模为可执行、可审计的 Gate 原语。Human Approval 是平台的核心价值
 > (评审 §6: Dashboard 给人审核用; 冻结 §四: Approval Gate 模型就绪)。

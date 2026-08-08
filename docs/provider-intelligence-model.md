@@ -1,5 +1,7 @@
 # Provider Intelligence Model
 
+> 状态: IMPLEMENTED (已实现 — 见 ./audit/architecture-reality-audit.md)
+
 > 日期: 2026-08-06 | 关联: ADR-0025, Phase 8B-3
 
 ## Provider Intelligence Loop

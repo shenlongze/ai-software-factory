@@ -1,5 +1,7 @@
 # Desktop Product Entry — AI Organization Factory 入口 (Phase 15A-3b)
 
+> 状态: IMPLEMENTED (已实现 — 见 ../audit/architecture-reality-audit.md)
+
 > 日期: 2026-08-07 | 状态: 已实现 (15A-3a 桥 + 15A-3b 入口 UI)
 > 前置: [phase15-runtime-design.md](./phase15-runtime-design.md) + Phase 15A-3a (5a3fc0f)
 > 原则: Desktop 不是业务系统 / 不保存业务数据 / 错误用用户语言 / 零 Core·Console·Runtime 修改

@@ -1,5 +1,7 @@
 # Agent 模型 (agent-model)
 
+> 状态: DESIGN ONLY (蓝图, 未实现或部分实现: Core agents 仅简单执行者模型, 双 Agent 模型未统一 — 见 ./audit/architecture-reality-audit.md)
+
 > 通用 AI Software Factory 的 Agent 定义。本模型从 Hermes + MarkPad 多轮 Sprint
 > 实践归纳而来,抽象为与具体工具无关的规范:只定义概念、状态、接口,不绑定任何
 > 具体 Agent 实现、LLM 或执行工具。

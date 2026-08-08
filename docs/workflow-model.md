@@ -1,5 +1,7 @@
 # Workflow 模型 (workflow-model)
 
+> 状态: DESIGN ONLY (蓝图, 未实现或部分实现: 任务级 WorkflowEngine 已实现, 组织级/业务流程未实现 — 见 ./audit/architecture-reality-audit.md)
+
 > 通用 AI Software Factory 的流程定义。Workflow 把"一系列委派 + 门禁"组织成可自动推进、
 > 可暂停的生产流水线。本模型从 Hermes + MarkPad 的生产实践(通用生产流程、Bug 固定流程、
 > Sprint 管理)归纳而来,与具体工具无关。

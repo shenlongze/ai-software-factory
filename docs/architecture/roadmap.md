@@ -1,5 +1,7 @@
 # AI Software Factory — Architecture Roadmap
 
+> 状态: DESIGN ONLY (蓝图, 未实现或部分实现: 旧 Phase 15-21 蓝图, 已被 docs/roadmap.md Sprint 6-12 取代 — 见 ../audit/architecture-reality-audit.md)
+
 > 日期: 2026-08-07 | 状态: v3.0 (Architecture Re-alignment, 终极目标融入)
 > 前置: Phase 1-14B + 15A-1 (25371e4, 4217 tests, v1.0.0-rc1)
 

@@ -1,5 +1,7 @@
 # Decision Intelligence Model — 决策智能模型 (Phase 10A-2, ADR-0031)
 
+> 状态: IMPLEMENTED (已实现 — 见 ./audit/architecture-reality-audit.md)
+
 > 日期: 2026-08-06 | 前置: Phase 10A-1 (ADR-0030, intelligence-layer-model.md)
 > 范围: 决策链 — Context→Analysis→Options→Evaluation→Recommendation→Risk→
 > Decision Artifact (规则驱动, **不绑定 LLM, 不自动执行**)

@@ -1,5 +1,7 @@
 # AI Enterprise Nervous System Model
 
+> 状态: DESIGN ONLY (蓝图, 未实现或部分实现: 事件系统已实现, 神经系统其余未实现 — 见 ../audit/architecture-reality-audit.md)
+
 > 日期: 2026-08-07 | 状态: 架构评审, 待确认 (Phase 16C)
 > 定位: AI 企业操作系统的信息流最高设计文档
 > 引用: ai-enterprise-operating-model.md / ai-employee-runtime-model.md / knowledge-learning-model.md / factory-org-design.md

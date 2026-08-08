@@ -1,5 +1,7 @@
 # AI Software Factory — Composable Capability Architecture
 
+> 状态: DESIGN ONLY (蓝图, 未实现或部分实现: 能力架构蓝图, 大部分未落地 — 见 ./audit/architecture-reality-audit.md)
+
 > 日期: 2026-08-06 | 状态: 架构约束 (Architecture Freeze 补充)
 > 关联: architecture-freeze-2026-08.md / design-principles.md
 

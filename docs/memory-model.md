@@ -1,5 +1,7 @@
 # AI Software Factory — 记忆模型 (Memory Model)
 
+> 状态: DESIGN ONLY (蓝图, 未实现或部分实现: 无 memory 模块 — 见 ./audit/architecture-reality-audit.md)
+
 > 角色: 首席架构师。把 Hermes + MarkPad 流程中实际跑通的记忆实践, 抽象为一套可复用的分层知识体系。
 > 原则: 可落地、KISS、中文。抽象为方法论, 不绑定具体工具。
 

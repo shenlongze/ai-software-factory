@@ -1,5 +1,7 @@
 # AI Software Factory — Organization Model
 
+> 状态: DESIGN ONLY (蓝图, 未实现或部分实现: org 基础已实现, Organization 泛化 (解绑 Company) 未实现 — 见 ../audit/architecture-reality-audit.md)
+
 > 日期: 2026-08-07 | 状态: 设计 (Phase 16 实现)
 > 定位: Organization Engine — 公司/部门/角色/AI 员工/权限
 

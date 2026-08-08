@@ -1,5 +1,7 @@
 # 5 分钟演示指南 (Demo Guide)
 
+> 状态: IMPLEMENTED (已实现 — 见 ./audit/architecture-reality-audit.md)
+
 > 适用: 发布会 / 投资人路演 / 技术评审 / 新成员 onboarding。
 > 前提: 演示前**先跑通一次** `bash scripts/setup.sh` (npm install 耗时, 现场不要等)。
 > 全流程: Before/After 一句话 → 一键安装 → 一键演示 → 决策/审批/经验三个讲解点 → 收尾。

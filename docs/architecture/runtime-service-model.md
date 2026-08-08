@@ -1,5 +1,7 @@
 # Runtime Service Model — Service vs Command (架构裁决 B)
 
+> 状态: IMPLEMENTED (已实现 — 见 ../audit/architecture-reality-audit.md)
+
 > 日期: 2026-08-07 | 状态: 已确认 (架构裁决 B, 15A-3c) | 前置: Phase 15A-3b (8abce8c)
 > 原则: Core 零修改 / Extension 化 / KISS / 默认安全
 > 关联: phase15-runtime-design.md §1.6 (已同步) / factory-runtime (manager/watchdog/health/cli)

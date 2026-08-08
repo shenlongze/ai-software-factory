@@ -1,5 +1,7 @@
 # Recommendation Engine Model — 推荐引擎模型 (Phase 10A-3, ADR-0032)
 
+> 状态: IMPLEMENTED (已实现 — 见 ./audit/architecture-reality-audit.md)
+
 > 日期: 2026-08-06 | 前置: Phase 10A-2 (ADR-0031, decision-intelligence-model.md)
 > 范围: 推荐链 — Context → Filter → Evaluation (四因素加权) → Rank → Reasoning →
 > Risk → Recommendation Artifact (+ 可选 Decision Artifact / 9c Approval)

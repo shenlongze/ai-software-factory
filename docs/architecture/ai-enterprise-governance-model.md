@@ -1,5 +1,7 @@
 # AI Enterprise Governance & Control Model
 
+> 状态: DESIGN ONLY (蓝图, 未实现或部分实现 — 见 ../audit/architecture-reality-audit.md)
+
 > 日期: 2026-08-07 | 状态: 架构评审, 待确认 (Phase 17A)
 > 定位: AI 企业操作系统治理最高设计文档
 > 引用: ai-enterprise-operating-model.md / ai-employee-runtime-model.md / ai-enterprise-nervous-system-model.md / ai-enterprise-planning-operation-model.md

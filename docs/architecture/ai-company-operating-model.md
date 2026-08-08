@@ -1,5 +1,7 @@
 # AI Software Factory — AI Company Operating Model
 
+> 状态: DESIGN ONLY (蓝图, 未实现或部分实现 — 见 ../audit/architecture-reality-audit.md)
+
 > 日期: 2026-08-07 | 状态: 设计 (Phase 16 Deep Review)
 > 核心: 同一组织模型支持 Solo → Enterprise → Multi-tenant → 集团
 

@@ -1,5 +1,7 @@
 # factory-org 设计 — AI Organization Foundation (Phase 16A, ADR-0036)
 
+> 状态: IMPLEMENTED (已实现 — 见 ../audit/architecture-reality-audit.md)
+
 > 日期: 2026-08-07 | 状态: Accepted
 > 前置: phase16-organization-foundation-review.md / organization-model.md / agent-employee-model.md / ai-company-operating-model.md / knowledge-learning-model.md
 

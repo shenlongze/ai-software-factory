@@ -1,5 +1,7 @@
 # AI Software Factory — Knowledge & Learning Model
 
+> 状态: DESIGN ONLY (蓝图, 未实现或部分实现 — 见 ../audit/architecture-reality-audit.md)
+
 > 日期: 2026-08-07 | 状态: 设计 (Phase 16 Deep Review)
 > 核心: Knowledge(知道什么) ≠ Experience(做过什么) ≠ Performance(做得怎样); 三层知识隔离
 

@@ -1,5 +1,7 @@
 # AI Enterprise Operating System v1.0 — Final Architecture Specification
 
+> 状态: DESIGN ONLY (蓝图, 未实现或部分实现 — 见 ../audit/architecture-reality-audit.md)
+
 > 日期: 2026-08-07 | 状态: 架构冻结 (Phase 20 Final Review)
 > 复用: ai-enterprise-operating-system-reference.md / ai-employee-execution-runtime-model.md / ai-organization-learning-improvement-model.md
 > 原则: 只做架构统一; 零新模型; Core/Runtime 零修改

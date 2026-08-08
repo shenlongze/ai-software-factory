@@ -1,5 +1,7 @@
 # Intelligence Layer 模型 (Phase 10A-1)
 
+> 状态: IMPLEMENTED (已实现 — 见 ./audit/architecture-reality-audit.md)
+
 > 日期: 2026-08-06 | 状态: Accepted (ADR-0030) | 范围: 基础 — 模型 + 存储 + 事件
 > 前置: Phase 9d (3393 tests) | 后续: 10A-2 Decision Intelligence / 10A-3
 > Recommendation Engine / 10A-4 Experience Integration

@@ -1,5 +1,7 @@
 # Agent / Skill / Runtime / Provider 模型 (agent-skill-runtime-model)
 
+> 状态: IMPLEMENTED (已实现 — 见 ./audit/architecture-reality-audit.md)
+
 > 通用 AI Software Factory 的**统一扩展模型**:一个 Agent 如何由 角色 + 能力 + 执行方式 + LLM 来源
 > 组装而成,以及新增能力时如何做到 **Core 零改动**。本模型是架构冻结报告的扩展模型
 > (冻结 §二)与架构评审统一抽象(评审 §2)的落地细化,与当前代码实现一一对应。

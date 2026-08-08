@@ -1,5 +1,7 @@
 # Skill 模型 (skill-model)
 
+> 状态: DESIGN ONLY (蓝图, 未实现或部分实现: Core 有基础 Registry/CLI, Skill 未进执行流程 — 见 ./audit/architecture-reality-audit.md)
+
 > 通用 AI Software Factory 的 Skill 定义。Skill 是工厂的**程序性记忆**:把"某类任务怎么
 > 做、有哪些坑、怎么验证"编码为可加载、可复用、可维护的知识单元。Agent 凭 Role 决定
 > 做什么,凭 Skill 决定怎么做。本模型从 Hermes + MarkPad 实践归纳,与具体工具无关。

@@ -1,5 +1,7 @@
 # Validation 模型 (validation-model)
 
+> 状态: IMPLEMENTED (已实现 — 见 ./audit/architecture-reality-audit.md)
+
 > 通用 AI Software Factory 的验证体系:双验证机制、门禁、自动化指标与质量基线。
 > 核心公理来自实证:**Agent 的自报不等于事实**;自动化命令的通过也不等于功能完成。
 > 本模型从 Hermes + MarkPad 实践归纳,与具体工具无关。

@@ -1,5 +1,7 @@
 # AI Employee Execution Runtime Model
 
+> 状态: DESIGN ONLY (蓝图, 未实现或部分实现: exec 工程已实现, Employee 执行运行时未实现 — 见 ../audit/architecture-reality-audit.md)
+
 > 日期: 2026-08-07 | 状态: 架构评审, 待确认 (Phase 18)
 > 定位: AI Enterprise OS Execution Layer 最高设计文档
 > 引用: ai-employee-runtime-model.md / ai-enterprise-nervous-system-model.md / ai-enterprise-planning-operation-model.md / ai-enterprise-governance-model.md

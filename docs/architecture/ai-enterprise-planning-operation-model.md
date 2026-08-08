@@ -1,5 +1,7 @@
 # AI Enterprise Planning & Operation Model
 
+> 状态: DESIGN ONLY (蓝图, 未实现或部分实现 — 见 ../audit/architecture-reality-audit.md)
+
 > 日期: 2026-08-07 | 状态: 架构评审, 待确认 (Phase 17)
 > 定位: AI Enterprise OS 的业务运行最高设计文档
 > 引用: ai-enterprise-operating-model.md / ai-employee-runtime-model.md / ai-enterprise-nervous-system-model.md / factory-org-design.md

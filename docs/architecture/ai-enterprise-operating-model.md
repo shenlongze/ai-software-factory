@@ -1,6 +1,8 @@
 # AI Enterprise Operating Model
 
 > 日期: 2026-08-07 | 状态: 最高层产品与架构说明书 (官方)
+> 更新: 2026-08-08 依 [Reality Audit v1.0](../audit/architecture-reality-audit.md) 校准 — 本文是**愿景总纲**;
+> 已实现: 组织建模 (org) + 执行工程 (exec); 未实现: 组织-执行连接 / 工作台 / 多行业 / 自改进 (详见 §14)
 > 定位: AI Software Factory → AI Organization Factory → AI Enterprise Operating System
 > 权威文档索引: 本文是总纲; 细节见各引用文档 (不重复概念)
 
@@ -110,7 +112,7 @@ Analysis Agent (顾问: 事实/数据/风险) ≠ PM Agent (组织者: 目标/�
 
 AI Enterprise Operating System 通过:
 ```
-Event System       (137+ 事件, 唯一事实源)
+Event System       (158 事件, 28 前缀, 唯一事实源)
 Artifact System    (所有产物版本化可追溯)
 Communication Record (谁发给谁/何时/为什么)
 Decision Evidence (每个决策的依据链)
@@ -230,6 +232,10 @@ Desktop 无业务逻辑 | Organization 是 Extension
 
 ## 11. 数据模型（核心实体关系）
 
+> Reality Audit 校准: 当前代码根实体是 **Company** (org 硬编码, 12 处引用);
+> 泛化方向 (校准路线 Sprint 7): **Workspace → Organization → Department → Role → Employee**,
+> Organization 解绑 Company (见 [ai-factory-alignment-audit.md](./ai-factory-alignment-audit.md))。
+
 ```
 Company ─┬─ Department ─┬─ Role ─── Authority (Role→Permission, Default Deny)
          │              └─ Employee(Agent) ─ Capability
@@ -274,21 +280,28 @@ Planning Agent (组织者) 输出: Project Plan / Task Graph / Schedule / Status
 
 ---
 
-## 14. 当前实现状态（诚实）
+## 14. 当前实现状态（诚实, 依 Reality Audit v1.0 校准）
 
-```
-✅ 已完成:
-  Phase 1-14B  Core/Extension/Intelligence/Human Console/Web UI/Demo/开源发布 (v1.0.0-rc1)
-  Phase 15     Runtime (Managed Services + Command Model) / Desktop (Tauri+dmg) / Distribution
-  Phase 16A    Organization Foundation (factory-org: 六实体/Default Deny/Registry/模板/192 测试)
-  4433 pytest + 116 cargo + 92 Vitest | 35 ADR | 151 EventType
+```text
+✅ 已实现 (代码现实):
+  Core 冻结 (事件 158 / 任务 / 工作流 / Agent / 执行 / 恢复 / 验证 / 指标 / CLI 91 命令)
+  Extension: Git / Change / Understanding (699 行) / Provider (2992 行) / Product (4063 行, 501 测试)
+  Intelligence: Decision / Recommendation / Experience (3549 行, 509 测试)
+  Human Console: 7 只读管理页 (Dashboard/Projects/Lifecycle/Intelligence/Approval/Decisions/Providers)
+  Organization Foundation (factory-org: 六实体/Default Deny/Registry/software_company 模板, 2081 行, 192 测试)
+  Execution Engineering (factory-exec: Context/Ranking/Progressive/Budget/MultiRun/Evaluator/
+    Sandbox/DeveloperAgent, 12353 行, 1019 测试) — Sprint 4/5
+  5493 pytest + 92 Vitest + 116 cargo | 35 ADR | 158 EventType | 147 commits | 185 docs
 
-📐 设计完成 (待实现):
-  Organization 深层 (HR 招聘/培训) / Agent Model / Learning Model / Planning
+📐 设计完成 (DESIGN ONLY, 未实现或部分实现 — 蓝图 22+ 份, 见 docs/status.md):
+  Organization 深层 (HR 招聘/培训) / Agent 统一模型 (Core Agent vs org Employee) /
+  Learning Model / Planning Intelligence / 多行业模板
 
-❌ 未完成 (Phase 17+):
-  真实 Agent Execution | LLM Provider 真实接入 | Sandbox | Self Improvement Loop
-  (当前执行 = 管理闭环, 非生产闭环)
+❌ 未实现 (校准路线 Sprint 6–12):
+  真实生产闭环 (Bug Fix 0% — 模型瓶颈: DeepSeek 25/27 空响应; Sprint 6 换档 Ollama)
+  组织-执行连接 (Employee 不干活; Sprint 7) | 工作台 UI (Sprint 8) | 业务流程 (Sprint 9)
+  Skill/MCP 整合 (Sprint 10) | Self Improvement Loop (Sprint 11) | 多行业工厂 (Sprint 12)
+  (当前执行 = 管理闭环 + 执行工程, 非生产闭环)
 ```
 
 ---

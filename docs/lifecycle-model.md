@@ -1,8 +1,10 @@
 # AI Software Factory — Lifecycle Model
 
-> 版本: v1.1 | 日期: 2026-08-06 | 状态: 评审确认 (12 阶段 + 4 类接入点)
-> 关联文档: [vision.md](./vision.md) · [design-principles.md](./design-principles.md) · [architecture.md](./architecture.md)
+> 版本: v1.2 | 日期: 2026-08-06 (v1.1) / 2026-08-08 (依 Reality Audit 校准)
+> 状态: 评审确认 (12 阶段 + 4 类接入点) + Reality Audit 校准 — 阶段 1–5 已实现 (product 模块), 阶段 6–9 完整实现
+> 关联文档: [vision.md](./vision.md) · [design-principles.md](./design-principles.md) · [architecture.md](./architecture.md) · [status.md](./status.md)
 > 评审依据: [architecture-review-2026-08.md](./architecture-review-2026-08.md) §3/§4/§5/§6
+> 校准依据: [architecture-reality-audit.md](./audit/architecture-reality-audit.md) (附录 A: product 501 测试 / understanding 699 行 / exec 12353 行)
 >
 > 本文档定义 AI Software Factory 覆盖的**完整软件生命周期** (12 阶段), 以及
 > Factory 如何支持**从任意节点接入** —— 项目带任何已有状态进入工厂, 都能被
@@ -27,23 +29,25 @@ Idea → Research → PRD → Design → Architecture → Task Planning
 
 | # | 阶段 | 核心产物 | Factory 支撑 | 落地 |
 |:-:|:-----|:---------|:-------------|:-----|
-| 1 | Idea | 一句话目标 / 问题描述 | tasks, project, workspace | Phase 9 (规划) |
-| 2 | Research | 调研结论 / 可行性 | tasks, workflows, knowledge | Phase 9 (规划) |
-| 3 | PRD | 需求文档 / 验收标准 | tasks, validation (L1/L2) | Phase 9 (规划) |
-| 4 | Design | 方案 / 设计稿 | tasks, workflows (决策门), knowledge (ADR) | Phase 9 (规划) |
-| 5 | Architecture | 架构决策 / 模块划分 | workflows, knowledge (ADR), validation | Phase 9 (规划) |
+| 1 | Idea | 一句话目标 / 问题描述 | tasks, project, workspace | ✅ 已实现 (product 模块) |
+| 2 | Research | 调研结论 / 可行性 | tasks, workflows, knowledge | ✅ 已实现 (product 模块) |
+| 3 | PRD | 需求文档 / 验收标准 | tasks, validation (L1/L2) | ✅ 已实现 (product 模块) |
+| 4 | Design | 方案 / 设计稿 | tasks, workflows (决策门), knowledge (ADR) | ✅ 已实现 (product 模块) |
+| 5 | Architecture | 架构决策 / 模块划分 | workflows, knowledge (ADR), validation | ✅ 已实现 (product 模块) |
 | 6 | Task Planning | 任务拆解 / 依赖 / 分配 | tasks (parent_id/dependencies), workflows, assignment | ✅ 已有 |
-| 7 | Development | 代码变更 | assignment, execution, runtime (Hermes), git | ✅ 已有 |
+| 7 | Development | 代码变更 | assignment, execution, runtime + providers, git, exec | ✅ 已有 (exec 工程 Sprint 4/5) |
 | 8 | Testing | 验证报告 / 证据链 | validation (L1–L4), metrics | ✅ 已有 |
 | 9 | Release | 发布版本 / 变更集 | workflows (release), change, changeflow | ✅ 已有 |
-| 10 | Deployment | 部署状态 | workflows (release), execution | Phase 10 (规划) |
-| 11 | Monitoring | 运行指标 / 事件流 | dashboard, metrics, events | Phase 10 (规划) |
+| 10 | Deployment | 部署状态 | workflows (release), execution | ⬜ 未实现 (Phase 10 规划) |
+| 11 | Monitoring | 运行指标 / 事件流 | dashboard, metrics, events | ⬜ 未实现 (Phase 10 规划) |
 | 12 | Optimization | 改进项 / 新任务 | metrics, change, changeflow, knowledge | ✅ 已有 |
 
-> 阶段 1–5 的产品化链路 (想法→需求→设计) 由 **Phase 9 Product Intelligence**
-> 规划承接; 阶段 10–11 (部署/监控/运维) 由 **Phase 10 Operations** 承接;
-> 阶段 6–9 的任务/工作流/执行/验证已实现。产品判断 (是否值得做/批准/驳回)
-> 永远是人, LLM/Factory 只产出候选与证据 (评审 §3 原则)。
+> 阶段 1–5 的产品化链路 (想法→需求→设计) 由 **product 模块** (Phase 9 落地,
+> factory-core/product/ 4063 行, 501 测试) **已实现**: idea → market → product → prd →
+> 人工批准 → ui → architecture → task 拆解, CLI `factory product` 17 命令。
+> 阶段 6–9 的任务/工作流/执行/验证已实现。阶段 10–11 (部署/监控/运维) 仍未实现
+> (仅 release workflow 步骤, 无 deploy/monitor/incident), 规划见 [roadmap.md](./roadmap.md) Sprint 9+。
+> 产品判断 (是否值得做/批准/驳回) 永远是人, LLM/Factory 只产出候选与证据 (评审 §3 原则)。
 
 ## 2. 核心命题: 任意节点接入
 
@@ -60,8 +64,9 @@ Factory 不要求项目从 Idea 开始。**项目在哪个阶段, 就从哪个�
 Release 完全复用同一套执行-验证-恢复-观测基础设施。
 
 按"项目当前状态", 所有接入点归纳为 **4 类** (见 §3): 想法 / 已有代码 /
-开发中 / 生产。其中"开发中"已有完整实现, 其余三类分别由 Phase 9 / Phase 7 /
-Phase 10 规划承接 (评审 §4 接入点确认)。
+开发中 / 生产。其中"开发中"已有完整实现, **"想法"已实现 (product 模块)**,
+"已有代码"已实现 (understanding 模块), 仅"生产"仍由 Phase 10 规划承接
+(评审 §4 接入点确认, Reality Audit 附录 A 校准)。
 
 > **Git 可选 (评审 §5 确认)**: Core (task/workflow/execution/validation/event)
 > **零 Git 依赖**; git 是**可选能力** —— 独立模块, 经 Skill/MCP/Integration
@@ -70,27 +75,29 @@ Phase 10 规划承接 (评审 §4 接入点确认)。
 
 ## 3. 四类接入点 (评审确认)
 
-### ① 想法阶段 (Idea) —— 落地: Phase 9 Product Intelligence
+### ① 想法阶段 (Idea) —— ✅ 已实现 (product 模块, Phase 9 落地)
 
 - **输入**: 一个想法 (一句话目标 / 问题描述), 无任何工程产物。
 - **输出**: 市场/竞品分析 → 结构化 PRD → UI 原型 → 架构方案 → 任务清单。
 - **能理解什么**: 想法记录本身; 产品起点 (想法) 到任务定义之间的空白 —— 调研、
-  PRD、UI、架构、任务拆解目前全靠人工, 是 Factory 尚未覆盖的链路。
+  PRD、UI、架构、任务拆解已由 product 模块覆盖 (idea → market → product → prd →
+  approve → ui → architecture → task, CLI `factory product` 17 命令, 501 测试)。
 - **缺什么**: 形式化的需求与验收标准; 产品决策 (是否值得做、批准/驳回) 永远归人。
-- **如何继续**: Phase 9 把 Idea 推进到 Research (市场/竞品, 外部检索, 证据入事件库)
+- **如何继续**: product 模块把 Idea 推进到 Research (市场/竞品, 外部检索, 证据入事件库)
   → Product Analysis → PRD (结构化) → **[人工批准闸口]** → UI 原型 + 架构方案
   (候选产物, 不直接写码) → 任务拆解 (task.create 候选) → 人工确认 → 进入 ③/④
   工作流执行。人工批准复用既有 validate 退出码/三挡板语义; 接入方式与
   orchestration/changeflow 同模式 (新模块 + CLI 扩展 + Dashboard 视图 + 复用 Core API)。
 - **对应生命周期**: 阶段 1–6 (Idea → Task Planning)。
 
-### ② 已有代码 (存量项目) —— 落地: Phase 7 Project Understanding
+### ② 已有代码 (存量项目) —— ✅ 已实现 (understanding 模块, Phase 7 落地)
 
 - **输入**: 任意阶段的 git 仓库 (刚初始化 / 半成品 / 老项目), 无 Factory 配置。
 - **输出**: **Understanding Report** —— 项目阶段判断 / 技术栈 / 架构形态 /
   产物完整度 / 缺失信息 / 风险 / 下一步建议; 可一键生成 ProjectConfig 草稿。
 - **能理解什么**: 语言/技术栈、目录结构、包管理文件、README/文档、CI 配置、
-  git 历史形态、已存在产物 (源码/测试/构建/部署清单) 的完整度。
+  git 历史形态、已存在产物 (源码/测试/构建/部署清单) 的完整度 (understanding/
+  699 行: inspection/detection/lifecycle/analysis/recommender)。
 - **缺什么**: 项目尚未形式化进 Factory (无 project.yaml / 无任务 / 无验收标准)。
 - **如何继续**: 采纳配置草稿 → 项目进入 Factory 管理 → 缺失信息以任务补齐
   (无测试→建测试任务, 无 README→建文档任务) → 按检测出的阶段
@@ -133,31 +140,31 @@ Phase 10 规划承接 (评审 §4 接入点确认)。
 
 - **Factory 能理解什么**: 项目存在性与技术栈 (project.yaml 的 name/tech_stack/language)、仓库是否已有内容 (git status)、工作区里有哪些项目 (workspace.projects)。
 - **缺什么**: 目标还没有被形式化为需求与验收标准。
-- **如何继续**: `task create --type feature` 把 Idea 表达为任务 (默认挂 feature-delivery 工作流); 若 Idea 需要先探索, 挂调研型 workflow, 由 Agent 装配对应 Skill 产出探索结论。Idea → Research 的推进完全可观察 (task.viewed/status 时间线)。**规划**: 从一句话想法直接产出市场分析/PRD/UI/任务的产品化链路由 Phase 9 承接 (见 §3 ①)。
+- **如何继续**: `task create --type feature` 把 Idea 表达为任务 (默认挂 feature-delivery 工作流); 若 Idea 需要先探索, 挂调研型 workflow, 由 Agent 装配对应 Skill 产出探索结论。Idea → Research 的推进完全可观察 (task.viewed/status 时间线)。**已实现**: 从一句话想法直接产出市场分析/PRD/UI/任务的产品化链路由 product 模块承接 (见 §3 ①, 501 测试)。
 
 ### 阶段 2 — Research
 
 - **Factory 能理解什么**: 调研任务的进展 (task 状态机 + checkpoint)、Agent 调研产物 (execution 结果与 artifacts)、仓库现有文档作为上下文。
 - **缺什么**: 调研结论尚未固化为"可验收的结论"。
-- **如何继续**: 用 `validate` (L1/L2) 验证调研任务满足验收条件 (如结论文档存在、覆盖要求的问题清单); 结论沉淀进 knowledge/ 供后续 PRD 阶段检索复用。**规划**: 外部检索 (市场/竞品) 由 Phase 9 research 步骤承接, 数据源标注来源与时效。
+- **如何继续**: 用 `validate` (L1/L2) 验证调研任务满足验收条件 (如结论文档存在、覆盖要求的问题清单); 结论沉淀进 knowledge/ 供后续 PRD 阶段检索复用。**已实现**: 外部检索 (市场/竞品) 由 product 模块 research 步骤承接, 数据源标注来源与时效。
 
 ### 阶段 3 — PRD
 
 - **Factory 能理解什么**: 需求以任务形式存在 (title/type/acceptance), 仓库中已有文档即上下文。
 - **缺什么**: 需求尚未拆解为可执行的工作项 (Factory 不替代产品经理产出 PRD 正文, 只管理其生命周期)。
-- **如何继续**: PRD 文档作为产物挂到任务上; 验收标准 (acceptance) 进入任务定义, 成为后期 Validation 的输入 —— "验收标准先行"是 Factory 验证体系的天然要求 (L1 task_data / L2 workflow 规则)。**规划**: Phase 9 生成结构化 PRD, 带**人工批准闸口** —— 未经用户批准的 PRD 不可能进入 UI/架构。
+- **如何继续**: PRD 文档作为产物挂到任务上; 验收标准 (acceptance) 进入任务定义, 成为后期 Validation 的输入 —— "验收标准先行"是 Factory 验证体系的天然要求 (L1 task_data / L2 workflow 规则)。**已实现**: product 模块生成结构化 PRD, 带**人工批准闸口** —— 未经用户批准的 PRD 不可能进入 UI/架构。
 
 ### 阶段 4 — Design
 
 - **Factory 能理解什么**: 设计任务、设计产物 (文档/设计稿文件)、决策门要求 (无决策记录不进入开发)。
 - **缺什么**: 设计方案的取舍判断 (这是产品/技术决策, 归人工, 见原则④)。
-- **如何继续**: 走带**决策门**的 workflow; 设计评审由人批准 (approve/reject); 已定决策自动沉淀为知识 (ADR), 后续开发阶段可直接引用。**规划**: Phase 9 的 UI 原型作为"候选产物"提交, 人工确认后才进入架构。
+- **如何继续**: 走带**决策门**的 workflow; 设计评审由人批准 (approve/reject); 已定决策自动沉淀为知识 (ADR), 后续开发阶段可直接引用。**已实现**: product 模块的 UI 原型作为"候选产物"提交, 人工确认后才进入架构。
 
 ### 阶段 5 — Architecture
 
 - **Factory 能理解什么**: 架构决策记录 (knowledge/adr)、模块划分 (可表达为任务依赖图: Task.parent_id / dependencies)、项目技术栈 (project.yaml → Skill 装配)。
 - **缺什么**: 架构本身的权衡判断。
-- **如何继续**: 架构任务走 workflow 的架构步骤 (如 desktop-feature 流程), 出口处决策门人工放行; 架构变更命中三挡板之一时 → `task.blocked` 上报, 人工裁决 (原则④)。**规划**: Phase 9 的架构方案 → 自动拆解为任务清单, 人工确认后进入执行。
+- **如何继续**: 架构任务走 workflow 的架构步骤 (如 desktop-feature 流程), 出口处决策门人工放行; 架构变更命中三挡板之一时 → `task.blocked` 上报, 人工裁决 (原则④)。**已实现**: product 模块的架构方案 → 自动拆解为任务清单, 人工确认后进入执行。
 
 ### 阶段 6 — Task Planning
 
@@ -168,8 +175,15 @@ Phase 10 规划承接 (评审 §4 接入点确认)。
 ### 阶段 7 — Development
 
 - **Factory 能理解什么**: 任务的 scope 与验收标准、git 工作区状态 (git status/diff)、提交历史与任务关联 (change commits: message > execution > branch 三来源解析)。
-- **缺什么**: 无 —— 这是 Factory 的执行核心。
-- **如何继续**: `execution run` 派发执行到 Runtime Adapter (默认 Hermes, 可换); 执行全链路事件 (`execution.started/completed/failed`、工具调用事件); 变更被检测并与任务绑定 (`git.change.detected` / `git.task.bound`); 截断可 `recover` 从 checkpoint 续跑。**规划**: ② 已有代码接入在此汇合 —— Phase 7 产出 Understanding Report 后, 缺失信息补齐为任务, 即进入本阶段。
+- **缺什么**: 无 —— 这是 Factory 的执行核心 (开发链路在 Sprint 4/5 得到大幅强化, 见下)。
+- **如何继续**: `execution run` 派发执行到 Runtime Adapter (默认 Hermes, 可换; 真实 LLM 经 exec providers 适配器 → DeepSeek/Ollama, 见 [status.md](./status.md) 执行链路); 执行全链路事件 (`execution.started/completed/failed`、工具调用事件); 变更被检测并与任务绑定 (`git.change.detected` / `git.task.bound`); 截断可 `recover` 从 checkpoint 续跑。
+- **exec 执行工程 (Sprint 4/5, Reality Audit 校准补充)**: 单 Agent 执行链已工程化 ——
+  Context 装配 (6 类 Context + Ranking Top-K 6 因素 + Progressive 3 阶段加载 + Budget 4 任务类型)
+  → DeveloperAgent (LLM→Operation→Patch, 沙箱副本) → MultiRun (N=3) → Evaluator (5 层确定性评估)
+  → Experience 回写 (17 字段)。代码在 factory-exec (12353 行, 1019 测试)。
+  **诚实标注**: 这是"执行工程", 不是"生产结果" — 真实 Benchmark (DeepSeek) 25/27 空响应,
+  Bug Fix 0%, 见 [sprint5-t55-benchmark-report.md](./validation/sprint5-t55-benchmark-report.md)。
+- **规划**: ② 已有代码接入在此汇合 —— understanding 模块产出 Understanding Report 后, 缺失信息补齐为任务, 即进入本阶段。
 
 ### 阶段 8 — Testing
 
@@ -210,10 +224,10 @@ Phase 10 规划承接 (评审 §4 接入点确认)。
 
 | 接入点 | 输入 | 输出 | 落地 | 能理解 | 缺 | 继续动作 |
 |:-------|:-----|:-----|:----:|:-------|:---|:---------|
-| ① 想法 | 一句话想法 | 市场分析/PRD/UI/架构/任务清单 | Phase 9 | 想法记录 + 链路空白 | 形式化需求与验收标准 | 人工批准闸口 → 任务进入 ③/④ |
-| ② 已有代码 | Git 仓库 (任意阶段) | Understanding Report (阶段/技术栈/架构/缺失/风险/建议) | Phase 7 | 仓库事实与产物完整度 | Factory 配置/任务化表达 | 采纳配置草稿 → 补缺失 → 继续开发 |
-| ③ 开发中 | 任务/仓库 | 继续 Task/Workflow 执行 | ✅ 已有 (Core) | 状态/提交/变更路径/执行进度 | 无 | change analyze → L4 → 开发/发布 |
-| ④ 生产 | 服务/部署 | Monitoring/Alert/维护/诊断建议 | Phase 10 | 过程指标/证据链 | 运行时遥测/部署执行器 | 诊断建议 → 人工确认 → 巡检/回滚 |
+| ① 想法 | 一句话想法 | 市场分析/PRD/UI/架构/任务清单 | ✅ 已实现 (product 501) | 想法记录 + 产品化链路 | 形式化需求与验收标准 | 人工批准闸口 → 任务进入 ③/④ |
+| ② 已有代码 | Git 仓库 (任意阶段) | Understanding Report (阶段/技术栈/架构/缺失/风险/建议) | ✅ 已实现 (understanding 699) | 仓库事实与产物完整度 | Factory 配置/任务化表达 | 采纳配置草稿 → 补缺失 → 继续开发 |
+| ③ 开发中 | 任务/仓库 | 继续 Task/Workflow 执行 | ✅ 已有 (Core + exec) | 状态/提交/变更路径/执行进度 | 无 | change analyze → L4 → 开发/发布 |
+| ④ 生产 | 服务/部署 | Monitoring/Alert/维护/诊断建议 | ⬜ 未实现 (Phase 10 规划) | 过程指标/证据链 | 运行时遥测/部署执行器 | 诊断建议 → 人工确认 → 巡检/回滚 |
 
 ## 6. 设计约束
 

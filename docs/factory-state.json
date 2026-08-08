@@ -13,46 +13,152 @@
     "org_lines": 2081
   },
   "modules": {
-    "factory-core": {"status": "FROZEN", "tests": "4000+", "note": "不可改"},
-    "factory-org": {"status": "DONE", "tests": 192, "note": "待 Workspace/Organization 泛化"},
-    "factory-exec": {"status": "DONE", "tests": 1019, "note": "待模型兑现生产"},
-    "factory-console": {"status": "PARTIAL", "tests": 172, "note": "只读管理台, 待工作台化"},
-    "factory-runtime": {"status": "DONE", "tests": 130},
-    "desktop": {"status": "DONE", "tests": "116 cargo"}
+    "factory-core": {
+      "status": "FROZEN",
+      "tests": "4000+",
+      "note": "不可改"
+    },
+    "factory-org": {
+      "status": "DONE",
+      "tests": 192,
+      "note": "待 Workspace/Organization 泛化"
+    },
+    "factory-exec": {
+      "status": "DONE",
+      "tests": 1019,
+      "note": "待模型兑现生产"
+    },
+    "factory-console": {
+      "status": "PARTIAL",
+      "tests": 172,
+      "note": "只读管理台, 待工作台化"
+    },
+    "factory-runtime": {
+      "status": "DONE",
+      "tests": 130
+    },
+    "desktop": {
+      "status": "DONE",
+      "tests": "116 cargo"
+    }
   },
   "capabilities": {
-    "organization_model": {"status": "DONE", "code": "factory-org/org/models.py", "note": "Company→Department→Role→Employee"},
-    "product_lifecycle": {"status": "DONE", "code": "factory-core/product/", "note": "Idea→PRD→Approval→Task, 501 测试"},
-    "workflow_engine": {"status": "DONE", "code": "factory-core/workflows/", "note": "任务级, 4 技术模板"},
-    "validation": {"status": "DONE", "code": "factory-core/validation/", "note": "L1-L4"},
-    "approval": {"status": "DONE", "code": "factory-core/product/models.py", "note": "ApprovalGate"},
-    "intelligence": {"status": "DONE", "code": "factory-core/intelligence/", "note": "Decision/Recommendation/Experience/Risk"},
-    "context_engine": {"status": "DONE", "code": "factory-exec/exec/context.py"},
-    "ranking": {"status": "DONE", "code": "factory-exec/exec/ranking.py"},
-    "progressive_loading": {"status": "DONE", "code": "factory-exec/exec/progressive.py"},
-    "budget_control": {"status": "DONE", "code": "factory-exec/exec/budget.py"},
-    "experience_feedback": {"status": "DONE", "code": "factory-exec/exec/experience_ctx.py"},
-    "multi_run": {"status": "DONE", "code": "factory-exec/exec/candidate.py"},
-    "evaluator": {"status": "DONE", "code": "factory-exec/exec/evaluator.py"},
-    "capability_registry": {"status": "DONE", "code": "factory-exec/exec/capability.py"},
-    "real_production": {"status": "BLOCKED", "note": "DeepSeek 25/27 空响应, Bug Fix 0%"},
-    "org_exec_connection": {"status": "NOT_IMPLEMENTED", "note": "Employee 不干活"},
-    "multi_role_employees": {"status": "NOT_IMPLEMENTED", "note": "只有 Developer"},
-    "workspace_ui": {"status": "NOT_IMPLEMENTED", "note": "管理台非工作台"},
-    "multi_industry": {"status": "NOT_IMPLEMENTED", "note": "只有 software_company"},
-    "skill_mcp_domain": {"status": "NOT_IMPLEMENTED", "note": "空目录残留"},
-    "self_improvement": {"status": "NOT_IMPLEMENTED"}
+    "organization_model": {
+      "status": "DONE",
+      "code": "factory-org/org/models.py",
+      "note": "Company→Department→Role→Employee"
+    },
+    "product_lifecycle": {
+      "status": "DONE",
+      "code": "factory-core/product/",
+      "note": "Idea→PRD→Approval→Task, 501 测试"
+    },
+    "workflow_engine": {
+      "status": "DONE",
+      "code": "factory-core/workflows/",
+      "note": "任务级, 4 技术模板"
+    },
+    "validation": {
+      "status": "DONE",
+      "code": "factory-core/validation/",
+      "note": "L1-L4"
+    },
+    "approval": {
+      "status": "DONE",
+      "code": "factory-core/product/models.py",
+      "note": "ApprovalGate"
+    },
+    "intelligence": {
+      "status": "DONE",
+      "code": "factory-core/intelligence/",
+      "note": "Decision/Recommendation/Experience/Risk"
+    },
+    "context_engine": {
+      "status": "DONE",
+      "code": "factory-exec/exec/context.py"
+    },
+    "ranking": {
+      "status": "DONE",
+      "code": "factory-exec/exec/ranking.py"
+    },
+    "progressive_loading": {
+      "status": "DONE",
+      "code": "factory-exec/exec/progressive.py"
+    },
+    "budget_control": {
+      "status": "DONE",
+      "code": "factory-exec/exec/budget.py"
+    },
+    "experience_feedback": {
+      "status": "DONE",
+      "code": "factory-exec/exec/experience_ctx.py"
+    },
+    "multi_run": {
+      "status": "DONE",
+      "code": "factory-exec/exec/candidate.py"
+    },
+    "evaluator": {
+      "status": "DONE",
+      "code": "factory-exec/exec/evaluator.py"
+    },
+    "capability_registry": {
+      "status": "DONE",
+      "code": "factory-exec/exec/capability.py"
+    },
+    "real_production": {
+      "status": "DONE",
+      "note": "v4-pro: 27/27 成功 (Python 单任务级), 跨模块重构需审核",
+      "evidence": "docs/audit/sprint6.5-production-benchmark-report.md"
+    },
+    "org_exec_connection": {
+      "status": "NOT_IMPLEMENTED",
+      "note": "Employee 不干活"
+    },
+    "multi_role_employees": {
+      "status": "NOT_IMPLEMENTED",
+      "note": "只有 Developer"
+    },
+    "workspace_ui": {
+      "status": "NOT_IMPLEMENTED",
+      "note": "管理台非工作台"
+    },
+    "multi_industry": {
+      "status": "NOT_IMPLEMENTED",
+      "note": "只有 software_company"
+    },
+    "skill_mcp_domain": {
+      "status": "NOT_IMPLEMENTED",
+      "note": "空目录残留"
+    },
+    "self_improvement": {
+      "status": "NOT_IMPLEMENTED"
+    }
   },
   "empty_dirs": [
-    "agents", "cli", "dashboard", "knowledge", "mcp", "runtimes",
-    "skills", "src", "validation", "workflows", "$SMOKE_ROOT"
+    "agents",
+    "cli",
+    "dashboard",
+    "knowledge",
+    "mcp",
+    "runtimes",
+    "skills",
+    "src",
+    "validation",
+    "workflows",
+    "$SMOKE_ROOT"
   ],
   "sprint": {
     "current": "6",
     "goal": "DeepSeek 模型档位调优 (v4-pro) + 生产闭环验证 (Bug Fix ≥60%)",
     "constraint": "仅 DeepSeek 一个 LLM (无新资源)",
-    "status": "NOT_STARTED",
-    "board": "docs/sprint-board.md"
+    "status": "COMPLETED",
+    "board": "docs/sprint-board.md",
+    "result": {
+      "success_rate": "27/27 (100%)",
+      "full_score_rate": "93%",
+      "cost": "$0.789",
+      "verdict": "Python 单任务可放心交付"
+    }
   },
   "roadmap": {
     "sprint_6": "DeepSeek 档位调优 (flash→pro) + 生产闭环",

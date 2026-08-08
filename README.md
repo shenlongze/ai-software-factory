@@ -59,15 +59,18 @@ bash scripts/demo.sh    # 2. 一键跑 MarkPad 完整生命周期 (等价于 fac
 
 > `scripts/demo.sh` 是脚本化终端演示 (8 阶段日志 + 汇总), 支持 `--json` (供管道消费) 与 `--keep-root` (保留临时工厂根), 可用 `script` / asciinema 录制为 terminal recording 展示。分步手工演示见下文 [Demo — 真实项目验证 (MarkPad)](#demo--真实项目验证-markpad)。
 
-## Feature Matrix — v1.0 全量 Done
+## Feature Matrix — 已实现能力 (Reality Audit 校准后)
 
 | 能力域 | 状态 | 落地 |
 |:-------|:----:|:-----|
-| **Lifecycle** | ✅ Done | 12 阶段模型; 6–9 完整实现, 1–5 由 Product Intelligence 承接, 10–11 部分支撑 (Phase 9) |
-| **Decision Intelligence** | ✅ Done | 决策链 + Evidence 六来源强制 + Risk R1–R5 + Approval 状态机绑定 (Phase 9c / 10A) |
-| **Provider Intelligence** | ✅ Done | 四因素可解释推荐 0.35/0.30/0.20/0.15 + Cost/Usage/Performance 聚合 (Phase 8) |
-| **Human Console** | ✅ Done | 7 页面 Web UI + 8 只读 API + Simple/Expert 双模式, 人在环上 (Phase 11) |
-| **Experience Loop** | ✅ Done | 五域经验 + 新鲜度衰减 (半衰期 30 天) + 推荐回馈, 影响但不支配 (Phase 10A-4) |
+| **Lifecycle** | ✅ 已实现 | 12 阶段模型; 6–9 完整实现, 1–5 由 product 模块承接 (501 测试), 10–11 部分支撑 (Phase 9) |
+| **Decision Intelligence** | ✅ 已实现 | 决策链 + Evidence 六来源强制 + Risk R1–R5 + Approval 状态机绑定 (Phase 9c / 10A) |
+| **Provider Intelligence** | ✅ 已实现 | 四因素可解释推荐 0.35/0.30/0.20/0.15 + Cost/Usage/Performance 聚合 (Phase 8) |
+| **Human Console** | ✅ 已实现 (管理台) | 7 只读页面 Web UI + 8 只读 API + Simple/Expert 双模式 (工作台视图未实现) |
+| **Experience Loop** | ✅ 已实现 | 五域经验 + 新鲜度衰减 (半衰期 30 天) + 推荐回馈, 影响但不支配 (Phase 10A-4) |
+| **组织建模 (org)** | ✅ 已实现 | Company→Department→Role→Employee + Authority + Knowledge (16A, 192 测试) |
+| **单 Agent 执行 (exec)** | ✅ 已实现 (工程) | Context/Ranking/Progressive/Budget/MultiRun/Evaluator — 生产闭环 0% (模型瓶颈, 见审计附录 H) |
+| **组织-执行连接 / 多角色 / 工作台 / 多行业** | ❌ 未实现 | 校准路线 Sprint 7/8/9/12 (见 [roadmap.md](./docs/roadmap.md)) |
 
 ---
 
@@ -140,19 +143,25 @@ Idea → Research → PRD → Approval → Architecture → Development → Test
 
 ---
 
-## Current Status — AI Software Factory v1.0
+## Current Status — Sprint 5 完成 (Reality Audit 校准后)
 
-> **v1.0 里程碑达成**: Core + Extensions + Intelligence + Human Console 全部落地, 真实项目验证通过, 4000+ 测试全绿。
+> **当前现实 (2026-08-08)**: 软件生产生命周期管理平台 + 组织建模 + 单 Agent 执行工程。
+> 详见 [Reality Audit v1.0](./docs/audit/architecture-reality-audit.md) (定位: 非 AI Company OS 完整形态;
+> Vision 达成度约 25%; 创建/管理 ✅ / 运行 ❌ / 进化 ❌ / 多行业 ❌ / 工作台 ❌)。
 
-- **交付**: Phase 1–12B, **43 次提交**, 每阶段独立可交付、可回退
-  - Core (冻结): 事件/任务/工作流/Agent/执行/Runtime/恢复/编排/验证/指标/Dashboard/CLI — 零领域依赖
-  - Extension: Git / Change / Understanding / Provider / Product — 声明式注册, 不修改 Core
+- **交付**: Phase 1–16A + Phase A (exec) + Sprint 3/4/5, **147 次提交** (docs 61 / test 45 / feat 28 / fix 13)
+  - Core (冻结): 事件(158)/任务/工作流/Agent/执行/Runtime/恢复/编排/验证/指标/Dashboard/CLI — 零领域依赖
+  - Extension: Git / Change / Understanding / Provider / Product (产品链路 501 测试) — 声明式注册, 不修改 Core
   - Intelligence: Decision / Recommendation / Experience — 四因素可解释推荐 + 经验回馈
-  - Human Console: Web UI 人类审核台 (只读聚合 + 人工审批) + 8 个只读 API
+  - Human Console: Web UI 人类审核台 (7 只读页面 + 8 只读 API)
+  - **factory-org** (16A): Company→Department→Role→Employee + Authority + Knowledge (192 测试)
+  - **factory-exec** (Phase A + Sprint 3/4/5): Context/Ranking/Progressive/Budget/Experience/MultiRun/
+    Evaluator/Capability/Sandbox/DeveloperAgent — 12353 行执行工程 (1019 测试)
 - **真实项目验证**: MarkPad (Flutter/Dart 编辑器) 完整生命周期闭环 — Idea→Research→PRD→审批→UI→审批→Architecture→Task→Experience, 34 事件 / 6 Artifacts / 2 经验 / 人工审批 2 次, Core 零修改 (见 [docs/real-world-validation.md](./docs/real-world-validation.md))
-- **测试**: **4090 pytest 全绿** (24 个域, 基线只增不减) + **92 Vitest** (Web UI)
-- **决策记录**: ADR-0001–0035 (docs/adr/), 设计文档 30+ 篇
-- **规模**: CLI 23 命令组 / 77 叶子命令 · Dashboard 20 视图 · 六域指标 · 12 阶段生命周期中 6–9 完整实现, 1–5 由 Product Intelligence 承接, 10–11 部分支撑
+- **测试**: **5493 pytest 全绿** (285 文件; exec 1019 / providers 569 / product 501 / intelligence 509 / change 196 / org 192 …) + **92 Vitest** (Web UI) + 116 cargo (Desktop)
+- **Benchmark 现状 (诚实)**: exec 真实 LLM 链路 (OpenAI 兼容适配器 → DeepSeek) 已验证可调用, 但 **25/27 空响应 (reasoning 耗尽) → Bug Fix 0%**, 生产闭环未跑通; Ollama qwen3:8b 本地模型确认可行 (未拉取)。详见 [Sprint 5 Benchmark 报告](./docs/validation/sprint5-t55-benchmark-report.md) 与审计附录 H。
+- **决策记录**: ADR-0001–0035 (docs/adr/), 设计文档 185 份 (含 22+ 份 DESIGN ONLY 蓝图, 见 [docs/status.md](./docs/status.md))
+- **规模**: CLI 91 命令 / 24 组 · Dashboard 16 视图 · 158 事件 (28 前缀) · 12 阶段生命周期中 6–9 完整实现, 1–5 由 product 模块承接 (已实现), 10–11 部分支撑
 
 ## Architecture — 三区 + Human Layer
 
@@ -245,7 +254,7 @@ factory change evaluate T-101
 
 1. **不修改 Core 行为** — Core 是冻结的 8 项通用原语。新能力先自问: 通用原语还是领域能力?
    领域能力一律走 Extension 声明式注册 (新 Skill / MCP / Runtime / Provider / 工作流), 判定流程见 [docs/core-boundary.md](./docs/core-boundary.md) §4。
-2. **测试先行, 只增不减** — 每个变更必须带测试 (pytest / Vitest); 全量跑通: `pytest` (4090) + `cd factory-console/web/frontend && npx vitest run` (92); 基线用例数只增不减。
+2. **测试先行, 只增不减** — 每个变更必须带测试 (pytest / Vitest); 全量跑通: `pytest` (5493) + `cd factory-console/web/frontend && npx vitest run` (92); 基线用例数只增不减。
 3. **依赖单向向下** — 新代码禁止反向依赖与循环 import; 跨包引用一律函数内延迟导入; 领域包不得进入冻结原语层的顶层 import。
 
 流程: Fork → 分支 (`feature/<phase>-<描述>`) → 变更 + 测试 → 提交信息含阶段号 (如 `Phase 13: ... + pytest 计数`) → PR。设计决策先写 ADR (docs/adr/), 新模型先补设计文档 (docs/), 再写代码。

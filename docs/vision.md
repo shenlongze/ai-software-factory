@@ -1,7 +1,27 @@
 # AI Software Factory — Vision
 
 > 日期: 2026-08-07 | 状态: v4.0 (Architecture Re-alignment)
+> 更新: 2026-08-08 依 [Reality Audit v1.0](./audit/architecture-reality-audit.md) 校准 — 愿景与实现诚实分层 (见下节)
 > 前置: Phase 1-14B + 15A-1 完成 (v1.0.0-rc1, 4217 tests, Core 冻结)
+
+## ⚠️ 当前实现状态（诚实分层）
+
+> **本文是愿景文档, 不是现状描述。** 现状以 [Reality Audit v1.0](./audit/architecture-reality-audit.md)
+> (2026-08-08, pytest 5493 / 158 事件 / 147 commits / 185 docs) 为准。
+
+| 层 | 内容 | 状态 |
+|:---|:-----|:----:|
+| **愿景** | AI Organization Factory → AI Global Enterprise Operating System | 🎯 终局目标, 非现状 |
+| **已实现** | 软件生产生命周期管理平台 + 组织建模 (Company→Department→Role→Employee) + 单 Agent 执行工程 (exec) | ✅ 代码现实 |
+| **进行中** | Sprint 6: 模型换档 → 7: Employee 统一+连接 → 8: 工作台 → 9: 业务流程 → 10: Skill/MCP → 11: 自改进 → 12: 多行业 | 🔄 见 [roadmap.md](./roadmap.md) |
+
+**Vision 达成度约 25%**: 创建/管理 ✅ (org 模型 + 生命周期 + 审批), 运行 ❌ (生产 0%,
+Bug Fix 0%), 进化 ❌ (无 Self Improvement), 多行业 ❌ (仅 software_company 模板),
+工作台 ❌ (Console 是只读管理台, 非工作台)。
+
+> 当前系统的真实本质是 **"软件生产生命周期管理平台 + 组织建模 + 单 Agent 执行工程"**,
+> 不是 AI Company OS 的完整形态。本文其余部分描述的愿景**全部有效**——只是其中大部分
+> 尚未落地, 读者应将"成功标准 / Desktop 定位"等段落理解为方向而非现状。
 
 ## 终极定位
 

@@ -126,6 +126,7 @@ class OrgLifecycle:
                 responsibility=spec.responsibility,
                 authority_policy=dict(spec.authority_policy),
                 human=spec.human,
+                role_ref=spec.role_ref,
             )
         return company
 
@@ -175,11 +176,14 @@ class OrgLifecycle:
         authority_policy: dict[str, str] | None = None,
         role_id: str | None = None,
         human: bool = False,
+        role_ref: str = "",
     ) -> Role:
         """创建职位 (role.created + 权限矩阵物化 authority.granted/denied)。
 
         department_id="" = company-level (Solo 扁平); 非空须真实存在。
         authority_policy 只接受 allow|deny 值 (非法值 → ValueError)。
+        role_ref: 统一角色注册表引用 (S7-001) — exec 注册表 role_id;
+        缺省 "" (Human/未接执行角色), 既有调用零影响。
         """
         if self._store.get_company(company_id) is None:
             raise NotFoundError(f"company not found: {company_id}")
@@ -203,6 +207,7 @@ class OrgLifecycle:
             responsibility=responsibility,
             authority_policy=policy,
             human=human,
+            role_ref=role_ref,
         )
         self._store.save_role(role)
         org_events.record_role_created(self._logger, role=role)
@@ -211,6 +216,46 @@ class OrgLifecycle:
         return role
 
     # ------------------------------------------------------------------ 员工
+
+    def resolve_role_ref(self, company_id: str, role_ref: str) -> str:
+        """统一角色解析 (S7-001): 角色引用 → 公司内角色 id。
+
+        解析链 (大小写不敏感, 单一注册表 = exec/roles.py 事实源):
+          1. 角色 id 精确匹配 (store 全局唯一)
+          2. 公司内角色名大小写不敏感匹配 (Developer == developer)
+          3. exec 注册表统一解析 (role_id/显示名/别名, 如 "qa"/"tester")
+             → 公司内 role_ref 指向该 exec role_id 的角色
+        未解析 → NotFoundError (CLI 层映射 rc 7)。
+
+        向后兼容: 既有数据 (无 role_ref 的 Role) 走 1/2 两链, 行为不变;
+        3 链为双体系统一新增能力 (org 模板角色经 role_ref 引用注册表)。
+        """
+        if self._store.get_role(role_ref) is not None:
+            return role_ref
+        roles = self._store.list_roles_by_company(company_id)
+        norm = str(role_ref).strip().lower()
+        for role in roles:
+            if role.name.strip().lower() == norm:
+                return role.id
+        # 3) exec 注册表统一解析 → role_ref 匹配
+        exec_role_id = self._resolve_exec_role_id(role_ref)
+        if exec_role_id is not None:
+            for role in roles:
+                if role.role_ref == exec_role_id:
+                    return role.id
+        raise NotFoundError(f"role not found: {role_ref!r}")
+
+    def _resolve_exec_role_id(self, role_ref: str) -> str | None:
+        """把角色引用解析为 exec 注册表 role_id (惰性; 未安装 → None)。"""
+        try:
+            import exec.roles  # type: ignore[import-not-found]
+
+            try:
+                return exec.roles.resolve_role(role_ref).role_id
+            except exec.roles.RoleError:
+                return None
+        except ImportError:
+            return None
 
     def hire_employee(
         self,

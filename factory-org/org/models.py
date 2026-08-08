@@ -103,6 +103,9 @@ class Role(_OrgModel):
     实例化 (OrgLifecycle.create_role) 时逐条物化为 Authority 记录。
     company_id: 冗余 scoping 字段 (Solo 扁平无部门时 department_id="" 无法
     反查公司 — 公司隔离查询必需)。
+    role_ref: 统一角色注册表引用 (S7-001: exec/roles.py 为事实源) —
+    exec 注册表 role_id (如 "developer"), 或 "" = 无执行角色 (Human CEO)。
+    向后兼容: 缺省 "", 既有 roles.json 数据 (无该字段) 加载零影响。
     """
 
     id: str
@@ -112,6 +115,7 @@ class Role(_OrgModel):
     responsibility: str = ""
     authority_policy: dict[str, str] = Field(default_factory=dict)
     human: bool = False                       # True = Human 角色 (CEO, 唯一最终权)
+    role_ref: str = ""                        # S7-001: exec 注册表 role_id
     created_at: datetime = Field(default_factory=utcnow)
 
     @field_validator("authority_policy", mode="before")

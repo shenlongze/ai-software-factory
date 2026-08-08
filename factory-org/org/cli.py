@@ -70,18 +70,19 @@ def _org_store(root: Path) -> OrgStore:
 def _resolve_role_id(
     store: OrgStore, company_id: str | None, role_ref: str
 ) -> str:
-    """角色引用 → 角色 id: 先精确 id 匹配, 再大小写不敏感名称匹配。
+    """角色引用 → 角色 id (S7-001 统一解析, 大小写不敏感)。
+
+    有 company 作用域 → 委托 OrgLifecycle.resolve_role_ref (3 链: id 精确 /
+    公司内名称大小写不敏感 / exec 注册表 role_ref 匹配 — 双体系统一);
+    无 company → 全局 id/名称匹配 (employee list 全库过滤场景)。
 
     未找到 → NotFoundError (CLI 层错误映射 rc 7)。
     """
+    if company_id is not None:
+        return OrgLifecycle(store).resolve_role_ref(company_id, role_ref)
     if store.get_role(role_ref) is not None:
         return role_ref
-    roles = (
-        store.list_roles_by_company(company_id)
-        if company_id is not None
-        else store.list_roles()
-    )
-    for role in roles:
+    for role in store.list_roles():
         if role.name.strip().lower() == role_ref.strip().lower():
             return role.id
     raise NotFoundError(f"role not found: {role_ref!r}")

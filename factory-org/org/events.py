@@ -305,3 +305,147 @@ def record_knowledge_viewed(logger: Any, *, count: int, source: str = "cli") -> 
         result="OK",
         payload={"count": count},
     )
+
+
+# ------------------------------------------------------------------ 统一生命周期 (S7-001)
+# org.project.* / org.sprint.* / org.stage.* / org.artifact.* 事件 — 模型见
+# org/projects.py (User→Project→Sprint→Workflow→Stage→Task→Artifact)。
+# 同既有 org.* 模式: logger=None 全静默; payload 唯一事实源。
+
+PROJECT_LIFECYCLES = ("idea", "active", "maintained", "archived")
+ARTIFACT_TYPES = ("prd", "design", "code", "test", "release")
+
+
+def record_project_created(logger: Any, *, project: Any, source: str = "org") -> Event | None:
+    """项目创建 (org.project.created; 用户想法的生命周期容器)。"""
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.ORG_PROJECT_CREATED,
+        source=source,
+        stage=project.lifecycle.value,
+        action="create project",
+        result="OK",
+        payload={
+            "project_id": project.id,
+            "name": project.name,
+            "user_id": project.user_id,
+            "goal": project.goal,
+            "lifecycle": project.lifecycle.value,
+        },
+    )
+
+
+def record_project_lifecycle_changed(
+    logger: Any,
+    *,
+    project: Any,
+    from_lifecycle: str,
+    to_lifecycle: str,
+    source: str = "org",
+) -> Event | None:
+    """项目生命周期流转 (org.project.lifecycle_changed; idea→active→...)。"""
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.ORG_PROJECT_LIFECYCLE_CHANGED,
+        source=source,
+        stage=to_lifecycle,
+        action="transition project lifecycle",
+        result="OK",
+        payload={
+            "project_id": project.id,
+            "from_lifecycle": from_lifecycle,
+            "to_lifecycle": to_lifecycle,
+        },
+    )
+
+
+def record_project_task_linked(
+    logger: Any, *, project_id: str, task_id: str, source: str = "org"
+) -> Event | None:
+    """项目 ↔ Core Task 关联 (org.project.task_linked; Task 冻结, 扩展侧映射表)。"""
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.ORG_PROJECT_TASK_LINKED,
+        source=source,
+        stage="linked",
+        action="link task to project",
+        result="OK",
+        task_id=task_id,
+        payload={"project_id": project_id, "task_id": task_id},
+    )
+
+
+def record_sprint_created(logger: Any, *, sprint: Any, source: str = "org") -> Event | None:
+    """Sprint 创建 (org.sprint.created; 项目内任务批次)。"""
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.ORG_SPRINT_CREATED,
+        source=source,
+        stage="created",
+        action="create sprint",
+        result="OK",
+        payload={
+            "sprint_id": sprint.id,
+            "project_id": sprint.project_id,
+            "name": sprint.name,
+        },
+    )
+
+
+def record_sprint_task_added(
+    logger: Any, *, sprint: Any, task_id: str, source: str = "org"
+) -> Event | None:
+    """任务加入 Sprint (org.sprint.task_added; 任务须先关联项目)。"""
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.ORG_SPRINT_TASK_ADDED,
+        source=source,
+        stage="added",
+        action="add task to sprint",
+        result="OK",
+        task_id=task_id,
+        payload={"sprint_id": sprint.id, "project_id": sprint.project_id, "task_id": task_id},
+    )
+
+
+def record_stage_created(logger: Any, *, stage: Any, source: str = "org") -> Event | None:
+    """Stage 创建 (org.stage.created; 组织级 Workflow 编排壳阶段, S7-005 接执行)。"""
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.ORG_STAGE_CREATED,
+        source=source,
+        stage=stage.status.value,
+        action="create stage",
+        result="OK",
+        payload={
+            "stage_id": stage.id,
+            "workflow_id": stage.workflow_id,
+            "role_id": stage.role_id,
+            "order": stage.order,
+        },
+    )
+
+
+def record_artifact_created(logger: Any, *, artifact: Any, source: str = "org") -> Event | None:
+    """阶段产物创建 (org.artifact.created; prd|design|code|test|release)。"""
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.ORG_ARTIFACT_CREATED,
+        source=source,
+        stage=artifact.type.value,
+        action="create artifact",
+        result="OK",
+        payload={
+            "artifact_id": artifact.id,
+            "stage_id": artifact.stage_id,
+            "type": artifact.type.value,
+            "ref": artifact.ref,
+        },
+    )

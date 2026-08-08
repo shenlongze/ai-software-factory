@@ -448,6 +448,18 @@ class EventType(str, Enum):
     ORG_EXECUTION_APPROVED = "org.execution.approved"        # Human 审批通过
     ORG_EXECUTION_APPLIED = "org.execution.applied"          # patch 已应用 (批准后)
     ORG_EXECUTION_VIEWED = "org.execution.viewed"            # 执行结果/审批清单被查看 (只读审计, ADR-0002)
+    # Sprint 7 S7-001 (factory-org Extension, ADR-0036 同扩展路径): 统一
+    # 生命周期模型事件 — User→Project→Sprint→Workflow→Stage→Task→Artifact。
+    # 同 ADR-0001 决策 1 扩展路径 (加枚举成员即可); payload 契约见
+    # factory-org/org/events.py — 从 payload 可重建生命周期关键字段
+    # (project_id/sprint_id/stage_id/artifact_id/lifecycle/task_id/type/ref)。
+    ORG_PROJECT_CREATED = "org.project.created"              # 项目创建 (想法容器)
+    ORG_PROJECT_LIFECYCLE_CHANGED = "org.project.lifecycle_changed"  # 生命周期流转 (idea→active→maintained→archived)
+    ORG_PROJECT_TASK_LINKED = "org.project.task_linked"      # 项目 ↔ Core Task 关联 (Task 冻结, 扩展侧映射)
+    ORG_SPRINT_CREATED = "org.sprint.created"                # Sprint 创建 (任务批次)
+    ORG_SPRINT_TASK_ADDED = "org.sprint.task_added"          # 任务加入 Sprint
+    ORG_STAGE_CREATED = "org.stage.created"                  # 组织级编排壳 Stage 创建 (Workflow 阶段)
+    ORG_ARTIFACT_CREATED = "org.artifact.created"            # 阶段产物创建 (prd|design|code|test|release)
 
 
 class Event(BaseModel):

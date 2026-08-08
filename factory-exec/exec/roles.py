@@ -202,6 +202,103 @@ def capabilities_for_role(role_id: str) -> tuple[str, ...]:
     return require_role(role_id).capabilities
 
 
+# ------------------------------------------------------------------ 统一角色解析 (S7-001)
+# 单一角色注册表 = 本模块 ROLE_REGISTRY (事实源)。org 模板角色 (templates.py)
+# 经 role_ref/别名指向本注册表; 一切查找大小写不敏感 (Developer == developer)。
+# 向后兼容: require_role/get_role 语义逐位不变 (精确 role_id), 新增 resolve_role
+# 是统一的宽松入口 (role_id / 显示名 / 别名), 既有调用零影响。
+
+#: 显示名/别名 → role_id (大小写不敏感; 归一化后查询; 注册表内建名自动覆盖)
+ROLE_ALIASES: dict[str, str] = {
+    "pm": "product-manager",
+    "ui": "ui-designer",
+    "dev": "developer",
+    "qa": "tester",
+    "test engineer": "tester",
+    "devops engineer": "devops",
+}
+
+
+def normalize_role_ref(ref: Any) -> str:
+    """角色引用归一: strip + 小写 + 折叠空白 (大小写不敏感解析基础)。"""
+    return " ".join(str(ref).strip().lower().split())
+
+
+def _builtin_name_index() -> dict[str, str]:
+    """注册表内建名称索引 (显示名归一化 → role_id; 惰性构建, 只读)。"""
+    return {
+        normalize_role_ref(r.name): r.role_id
+        for r in ROLE_REGISTRY.values()
+        if r.name
+    }
+
+
+def resolve_role(ref: Any) -> RoleDefinition:
+    """统一角色解析 (单一注册表入口, S7-001): 大小写不敏感。
+
+    解析链 (有序):
+      1. role_id 精确匹配 (ROLE_REGISTRY 键)
+      2. 显示名大小写不敏感匹配 (如 "product manager" / "Product Manager")
+      3. 别名匹配 (ROLE_ALIASES, 如 "pm" / "qa")
+    未解析 → RoleError (响亮暴露拼写错误, 不静默降级)。
+    """
+    key = normalize_role_ref(ref)
+    role = ROLE_REGISTRY.get(key)
+    if role is not None:
+        return role
+    role = ROLE_REGISTRY.get(_builtin_name_index().get(key, ""))
+    if role is not None:
+        return role
+    role = ROLE_REGISTRY.get(ROLE_ALIASES.get(key, ""))
+    if role is not None:
+        return role
+    raise RoleError(
+        f"unknown role: {ref!r} (available: {', '.join(ROLE_IDS)})"
+    )
+
+
+def try_resolve_role(ref: Any) -> RoleDefinition | None:
+    """resolve_role 的宽容版本: 未解析 → None (调用方按配置缺口处理)。"""
+    try:
+        return resolve_role(ref)
+    except RoleError:
+        return None
+
+
+#: org 模板角色名 (归一化) → exec 注册表 role_id (S7-001 双体系统一映射)。
+#: CEO 为 Human 角色 (最终批准权唯一, 非 Agent), 无 exec 执行角色 — 不入表。
+ORG_TEMPLATE_ROLE_MAP: dict[str, str] = {
+    "product manager": "product-manager",
+    "architect": "architect",
+    "developer": "developer",
+    "qa": "tester",
+}
+
+
+def org_template_role_map() -> dict[str, str]:
+    """org 模板角色 → exec role_id 只读快照 (审计/测试友好, 防外部改表)。"""
+    return dict(ORG_TEMPLATE_ROLE_MAP)
+
+
+def org_role_coverage() -> dict[str, dict[str, Any]]:
+    """org 模板角色 → exec 注册表覆盖审计 (S7-001 双体系统一证明)。
+
+    每条: 模板角色名 (归一化) → {role_id, resolved, execution_kind,
+    capabilities}; resolved=False 表示该 org 角色在注册表缺失 (审计风险,
+    应随角色演进同步补表)。CEO (Human) 不在表内。
+    """
+    coverage: dict[str, dict[str, Any]] = {}
+    for org_name, role_id in ORG_TEMPLATE_ROLE_MAP.items():
+        role = ROLE_REGISTRY.get(role_id)
+        coverage[org_name] = {
+            "role_id": role_id,
+            "resolved": role is not None,
+            "execution_kind": role.execution_kind if role else "",
+            "capabilities": list(role.capabilities) if role else [],
+        }
+    return coverage
+
+
 def merge_capabilities(*capability_sets: Any) -> list[str]:
     """多来源能力合并 (去重保序; None/非 list 输入安全跳过)。
 

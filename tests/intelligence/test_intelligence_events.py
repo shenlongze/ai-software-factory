@@ -186,9 +186,20 @@ class TestEventTypeEnumExtension:
         # / console.dashboard.viewed, ADR-0034); 137 → 151: 16A Organization
         # Extension +14 (org.* 14 事件, ADR-0036); 151 → 158: Phase A Execution
         # Extension +7 (org.execution.* 7 事件, ADR-0037 — factory-exec:
-        # requested/started/completed/failed/approved/applied + viewed 读审计)。
+        # requested/started/completed/failed/approved/applied + viewed 读审计);
+        # 158 → 165: S7-001 Organization Model +7 (org.project.created /
+        # org.sprint.created / org.stage.created / org.artifact.created /
+        # org.project.lifecycle_changed / org.project.task_linked /
+        # org.sprint.task_added, ADR-0039)。
         # 纯增量扩展 (ADR-0001 决策 1 路径, 既有值零改动)
-        assert len(EventType) == 158
+        assert len(EventType) == 165
+        assert EventType.ORG_PROJECT_CREATED.value == "org.project.created"
+        assert EventType.ORG_SPRINT_CREATED.value == "org.sprint.created"
+        assert EventType.ORG_STAGE_CREATED.value == "org.stage.created"
+        assert EventType.ORG_ARTIFACT_CREATED.value == "org.artifact.created"
+        assert EventType.ORG_PROJECT_LIFECYCLE_CHANGED.value == "org.project.lifecycle_changed"
+        assert EventType.ORG_PROJECT_TASK_LINKED.value == "org.project.task_linked"
+        assert EventType.ORG_SPRINT_TASK_ADDED.value == "org.sprint.task_added"
 
     def test_event_accepts_new_type_string(self):
         from events.models import Event

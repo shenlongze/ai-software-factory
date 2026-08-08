@@ -14,11 +14,11 @@
 
 | # | 任务 | 状态 | 验收 | 依赖 |
 |:-:|:-----|:----:|:-----|:-----|
-| 6.1 | v4-pro 单样本冒烟 (非空 patch?) | ⬜ | 本地生成非空 patch | 无 |
-| 6.2 | v4-pro 跑 9 样本 Benchmark (runs=3, max_tokens 65536) | ⬜ | 真实数据表 | 6.1 |
-| 6.3 | Capability Registry 回填实测分 | ⬜ | pro coding/stability 修正 | 6.2 |
-| 6.4 | flash vs pro 对比报告 | ⬜ | sprint6-benchmark-report.md | 6.2 |
-| 6.5 | 判定: Bug Fix ≥60%? → 定生产模型 (D-001) | ⬜ | 门禁结论 | 6.4 |
+| 6.1 | v4-pro 单样本冒烟 (非空 patch?) | ✅ | 966 chars 非空, 17.3s, $0.0076 |
+| 6.2 | v4-pro 真实闭环验证 (6 步) | ✅ | SUCCESS: patch+report+test_result, $0.0046, 经验落库 |
+| 6.3 | Employee-Execution 连接 + 多角色 (6 角色) | ✅ | employee_executor + roles.py, 28 测试 |
+| 6.4 | flash vs pro 对比 + 验收拆解 | ✅ | production-validation-report.md |
+| 6.5 | 9 样本 Benchmark (v4-pro) → 门禁 (Bug Fix ≥60%) | ⬜ | 下一执行 |
 
 ## Sprint 7: 组织-执行连接
 

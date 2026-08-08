@@ -39,8 +39,12 @@ class TestContractsDeclared:
         assert CONTRACTS["prd"]["required_fields"] == ("problem", "user", "features")
 
     def test_design_contract_shape(self):
+        """S8-003: design 契约强化为 7 节 (Architect Agent 输出; 旧
+        architecture/api/database 3 节契约废弃)。"""
         assert CONTRACTS["design"]["required_fields"] == (
-            "architecture", "api", "database",
+            "system_architecture", "technical_stack", "database_design",
+            "api_design", "frontend_architecture", "backend_architecture",
+            "task_breakdown",
         )
 
     def test_code_contract_shape(self):
@@ -109,13 +113,60 @@ class TestValidatePrd:
 
 class TestValidateOtherTypes:
     def test_design_valid(self):
-        payload = {"architecture": "a", "api": "b", "database": "c"}
+        payload = {
+            "system_architecture": "a",
+            "technical_stack": {"lang": "python"},
+            "database_design": {"table": "tx"},
+            "api_design": {"endpoints": [{"method": "GET", "path": "/x"}]},
+            "frontend_architecture": "f",
+            "backend_architecture": "b",
+            "task_breakdown": [{"module": "m", "task": "t"}],
+        }
         assert validate_artifact("design", payload).ok
 
-    def test_design_missing_database(self):
-        result = validate_artifact("design", {"architecture": "a", "api": "b"})
+    def test_design_missing_task_breakdown(self):
+        result = validate_artifact(
+            "design",
+            {
+                "system_architecture": "a",
+                "technical_stack": {"lang": "python"},
+                "database_design": {"table": "tx"},
+                "api_design": {"endpoints": [{"method": "GET", "path": "/x"}]},
+                "frontend_architecture": "f",
+                "backend_architecture": "b",
+            },
+        )
         assert not result.ok
-        assert result.missing == ["database"]
+        assert result.missing == ["task_breakdown"]
+
+    def test_design_api_missing_endpoints_rule_fail(self):
+        """S8-003: api_design dict 必含 endpoints (API 约定, Developer 消费)。"""
+        payload = {
+            "system_architecture": "a",
+            "technical_stack": {"lang": "python"},
+            "database_design": {"table": "tx"},
+            "api_design": {"base_url": "/api"},
+            "frontend_architecture": "f",
+            "backend_architecture": "b",
+            "task_breakdown": [{"module": "m", "task": "t"}],
+        }
+        result = validate_artifact("design", payload)
+        assert not result.ok
+        assert any("endpoints" in e for e in result.errors)
+
+    def test_design_task_breakdown_empty_rule_fail(self):
+        payload = {
+            "system_architecture": "a",
+            "technical_stack": {"lang": "python"},
+            "database_design": {"table": "tx"},
+            "api_design": {"endpoints": [{"method": "GET", "path": "/x"}]},
+            "frontend_architecture": "f",
+            "backend_architecture": "b",
+            "task_breakdown": [],
+        }
+        result = validate_artifact("design", payload)
+        assert not result.ok
+        assert any("task_breakdown" in e for e in result.errors)
 
     def test_code_valid(self):
         payload = {"files": ["a.py", "b.py"], "changes": "add feature"}

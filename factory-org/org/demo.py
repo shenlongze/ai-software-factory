@@ -72,9 +72,22 @@ _DEMO_PRD_METADATA: dict[str, Any] = {
     "features": ["核心功能 (demo mock 占位)"],
 }
 _DEMO_DESIGN_METADATA: dict[str, Any] = {
-    "architecture": "单模块纯函数 (demo mock 占位)",
-    "api": "calc 模块 API (demo mock 占位)",
-    "database": "无 (纯函数, demo mock 占位)",
+    "system_architecture": "单模块纯函数 (demo mock 占位)",
+    "technical_stack": {"language": "python", "runtime": "stdlib"},
+    "database_design": {"storage": "无 (纯函数, demo mock 占位)"},
+    "api_design": {
+        "endpoints": [{"method": "GET", "path": "/calc", "contract": "calc 模块 API (demo mock 占位)"}],
+    },
+    "frontend_architecture": "无前端 (demo mock 占位)",
+    "backend_architecture": "calc 模块纯函数后端 (demo mock 占位)",
+    "task_breakdown": [
+        {
+            "module": "calc",
+            "task": "实现 calc 模块 (demo mock 占位)",
+            "api_contract": "calc API 约定 (demo mock 占位)",
+            "ui_guidance": "无 UI (demo mock 占位)",
+        }
+    ],
 }
 _DEMO_RELEASE_METADATA: dict[str, Any] = {
     "version": "1.0.0",
@@ -163,8 +176,9 @@ def pm_executor() -> Callable[[Any, dict[str, Any]], dict[str, Any]]:
 
 def arch_executor() -> Callable[[Any, dict[str, Any]], dict[str, Any]]:
     """Architect mock executor (非 LLM 占位语义; execution_kind=planning,
-    Architect Agent 自动化 = Sprint 8)。产出 Design artifact (契约:
-    architecture/api/database)。"""
+    Architect Agent 自动化 = Sprint 8 S8-003)。产出 Design artifact (契约:
+    system_architecture/technical_stack/database_design/api_design/
+    frontend_architecture/backend_architecture/task_breakdown 7 节)。"""
 
     def run(stage: Any, context: dict[str, Any]) -> dict[str, Any]:
         return {

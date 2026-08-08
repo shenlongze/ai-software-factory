@@ -15,6 +15,11 @@
   component_definition/design_tokens/prototype; 结构校验: wireframe dict
   必含 screens, screen_specifications list, design_tokens dict — 深度
   wireframe Screen 结构校验在 exec 侧 _local_validate, 双体系一致)
+  S8-003 扩展: design 契约强化为 7 节 (Architect Agent 输出:
+  system_architecture/technical_stack/database_design/api_design/
+  frontend_architecture/backend_architecture/task_breakdown; 规则:
+  task_breakdown list 非空, api_design dict 必含 endpoints, 其余非空 —
+  api_design endpoints + task_breakdown 供 S8-005 Developer 消费)
 - 引用完整: stage/project 必须存在; task 须经 ProjectTaskLink 关联该项目
   (项目隔离铁律, 同 S7-001 add_task_to_sprint); producer_role 经 exec
   注册表校验 (未安装 → 跳过, Removal Isolation — 不假装校验)
@@ -138,11 +143,23 @@ CONTRACTS: dict[str, dict[str, Any]] = {
         },
     },
     "design": {
-        "required_fields": ("architecture", "api", "database"),
+        "required_fields": (
+            "system_architecture",
+            "technical_stack",
+            "database_design",
+            "api_design",
+            "frontend_architecture",
+            "backend_architecture",
+            "task_breakdown",
+        ),
         "validation_rules": {
-            "architecture": {"type": "str", "min_length": 1},
-            "api": {"type": "str", "min_length": 1},
-            "database": {"type": "str", "min_length": 1},
+            "system_architecture": {"type": "str", "min_length": 1},
+            "technical_stack": {"type": "dict", "min_keys": 1},
+            "database_design": {"type": "dict", "min_keys": 1},
+            "api_design": {"type": "dict", "min_keys": 1, "required_keys": ["endpoints"]},
+            "frontend_architecture": {"type": "str", "min_length": 1},
+            "backend_architecture": {"type": "str", "min_length": 1},
+            "task_breakdown": {"type": "list", "min_items": 1},
         },
     },
     "code": {

@@ -69,11 +69,18 @@ class TestRegistry:
         assert dev.execution_kind == "executable"
         assert dev.is_executable
 
-    def test_four_roles_executable(self):
+    def test_five_roles_executable(self):
         """诚实标注: developer + tester (S7-004) + product-manager (S8-001)
-        + ui-designer (S8-002) 有真实 LLM 执行路径, 其余 planning。"""
+        + ui-designer (S8-002) + architect (S8-003) 有真实 LLM 执行路径,
+        devops 仍 planning (S8-004 Release 未实现, 不假装)。"""
         for role in list_roles():
-            if role.role_id in ("developer", "tester", "product-manager", "ui-designer"):
+            if role.role_id in (
+                "developer",
+                "tester",
+                "product-manager",
+                "ui-designer",
+                "architect",
+            ):
                 assert role.is_executable
                 assert role.execution_kind == "executable"
             else:
@@ -83,7 +90,11 @@ class TestRegistry:
     def test_planning_roles_have_prompt_and_stages(self):
         """规划角色同样具备 prompt 模板与阶段映射 (演示拆解可用, 不假装可执行)。"""
         for role_id in EXPECTED_ROLES - {
-            "developer", "tester", "product-manager", "ui-designer",
+            "developer",
+            "tester",
+            "product-manager",
+            "ui-designer",
+            "architect",
         }:
             role = require_role(role_id)
             assert role.prompt_template, f"{role_id} 缺 prompt 模板"
@@ -121,10 +132,11 @@ class TestLookup:
             capabilities_for_role("nope")
 
     def test_executable_role_ids(self):
-        """executable 角色 (S7-004 + S8-001 + S8-002): developer + tester +
-        product-manager + ui-designer (真实 LLM 路径, 按 role_id 排序)。"""
+        """executable 角色 (S7-004 + S8-001/002/003): developer + tester +
+        product-manager + ui-designer + architect (真实 LLM 路径, 按 role_id
+        排序)。"""
         assert executable_role_ids() == [
-            "developer", "product-manager", "tester", "ui-designer",
+            "architect", "developer", "product-manager", "tester", "ui-designer",
         ]
 
 

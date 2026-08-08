@@ -9,10 +9,18 @@
   component_definition/design_tokens/prototype); wireframe.screens 每屏
   Screen = {name, ascii, components[], actions[]} (机器可读 ASCII 布局)
 - uxui_json: 合法 ux_ui 的 JSON 串 (mock provider 注入, 围栏/散文变体)
+- design_payload_ok: 合法 design 契约载荷 (7 节) — 与 org CONTRACTS design
+  同构 (system_architecture/technical_stack/database_design/api_design/
+  frontend_architecture/backend_architecture/task_breakdown); api_design 必含
+  endpoints; task_breakdown 每项含 module/task/api_contract/ui_guidance
+  (Developer 消费: 模块/API 约定/UI 实现指导)
+- design_json: 合法 design 的 JSON 串 (mock provider 注入, 围栏/散文变体)
 - event_sequence / payload_of: 事件库断言辅助 (org.workflow.* / org.stage.*)
 - make_idea_artifact: idea 产物 dict (executor context inputs 契约)
 - make_product_artifact: product 产物 dict (executor context inputs 契约:
   type == "product", metadata = product 契约载荷)
+- make_uxui_artifact: ux_ui 产物 dict (executor context inputs 契约:
+  type == "ux_ui", metadata = ux_ui 契约载荷)
 """
 
 from __future__ import annotations
@@ -129,6 +137,73 @@ def uxui_json(
     return body
 
 
+def design_payload_ok(*, endpoint_count: int = 2, task_count: int = 3) -> dict[str, Any]:
+    """合法 design 契约载荷 (7 节; api_design 必含 endpoints, task_breakdown
+    每项含 module/task/api_contract/ui_guidance — Developer 消费: 模块/API
+    约定/UI 实现指导)。"""
+    endpoints = [
+        {
+            "method": "GET" if i % 2 else "POST",
+            "path": f"/api/v1/resource{i}",
+            "contract": f"接口 {i} 契约: 请求/响应数据形状",
+        }
+        for i in range(1, endpoint_count + 1)
+    ]
+    tasks = [
+        {
+            "module": f"module_{i}",
+            "task": f"实现模块 {i} 的核心逻辑",
+            "api_contract": f"模块 {i} 依赖的 API 约定 (端点/数据形状)",
+            "ui_guidance": f"模块 {i} 的 UI 实现指导 (依据 wireframe/spec)",
+        }
+        for i in range(1, task_count + 1)
+    ]
+    return {
+        "system_architecture": (
+            "三层架构: 前端静态页 + 后端 API 服务 + 本地存储; 模块边界清晰, "
+            "数据流单向"
+        ),
+        "technical_stack": {
+            "frontend": "HTML/CSS/JS (原生, 无框架)",
+            "backend": "Python 标准库 HTTP 服务",
+            "database": "JSON 文件存储 (MVP 无外部数据库)",
+        },
+        "database_design": {
+            "models": [
+                {"name": "transaction", "fields": ["id", "amount", "category", "date"]},
+            ],
+            "storage": "data/transactions.json",
+        },
+        "api_design": {"endpoints": endpoints},
+        "frontend_architecture": (
+            "页面: 首页/记录/报表; 组件: BalanceCard/AmountInput; 状态: "
+            "余额与流水单向数据流"
+        ),
+        "backend_architecture": (
+            "单服务: app.py 路由 + service 层 + storage 层; 模块: "
+            "transactions/categories/reports"
+        ),
+        "task_breakdown": tasks,
+    }
+
+
+def design_json(
+    *,
+    fenced: bool = False,
+    prose: bool = False,
+    **overrides: Any,
+) -> str:
+    """合法 design 的 JSON 串 (mock provider 注入; 围栏/散文变体可叠加)。"""
+    payload = design_payload_ok()
+    payload.update(overrides)
+    body = json.dumps(payload, ensure_ascii=False)
+    if fenced:
+        body = f"```json\n{body}\n```"
+    if prose:
+        body = f"以下是技术设计产物:\n{body}\n以上为全部内容。"
+    return body
+
+
 def event_sequence(store: Any) -> list[str]:
     return [e.type.value for e in store.query()]
 
@@ -151,3 +226,11 @@ def make_product_artifact(
     """product 产物 dict (executor context inputs 契约: type == "product",
     metadata = product 契约载荷)。"""
     return {"type": "product", "ref": ref, "metadata": payload or product_payload_ok()}
+
+
+def make_uxui_artifact(
+    *, payload: dict[str, Any] | None = None, ref: str = "file:///docs/ux_ui.json"
+) -> dict[str, Any]:
+    """ux_ui 产物 dict (executor context inputs 契约: type == "ux_ui",
+    metadata = ux_ui 契约载荷)。"""
+    return {"type": "ux_ui", "ref": ref, "metadata": payload or uxui_payload_ok()}

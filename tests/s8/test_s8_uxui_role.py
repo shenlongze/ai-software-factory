@@ -8,7 +8,8 @@
 - workflow_stages: design → ux_ui (架构 §2 ②: Workflow stage "ux_ui",
   role_ref=ui-designer)
 - 别名: ui → ui-designer (resolve_role 大小写不敏感)
-- 诚实标注: architect/devops 仍为 planning (S8-003/004 未实现, 不假装)
+- 诚实标注: devops 仍为 planning (S8-004 未实现, 不假装); architect 已
+  executable (S8-003 ArchitectAgent)
 
 依赖: 本目录 conftest (sys.path 挂 exec/org)。
 """
@@ -51,10 +52,10 @@ class TestUXUIDesignerRole:
         assert "仅输出 JSON" in prompt
 
     def test_executable_role_ids_include_ui_designer(self):
-        """executable 角色 (S8-002): developer + product-manager + tester +
-        ui-designer (按 role_id 排序)。"""
+        """executable 角色 (S8-003): architect + developer + product-manager
+        + tester + ui-designer (按 role_id 排序)。"""
         assert roles.executable_role_ids() == [
-            "developer", "product-manager", "tester", "ui-designer",
+            "architect", "developer", "product-manager", "tester", "ui-designer",
         ]
 
     def test_resolve_ui_designer_alias(self):
@@ -74,13 +75,15 @@ class TestUXUIDesignerRole:
         caps = roles.capabilities_for_role("ui-designer")
         assert {"ui_design", "prototyping"} <= set(caps)
 
-    def test_architect_devops_still_planning(self):
-        """诚实标注: architect/devops 仍是 planning (S8-003/004 未实现,
-        不假装可执行)。"""
-        for role_id in ("architect", "devops"):
-            role = roles.require_role(role_id)
-            assert role.execution_kind == "planning"
-            assert not role.is_executable
+    def test_architect_now_executable_devops_still_planning(self):
+        """诚实标注: architect S8-003 已 executable; devops 仍是 planning
+        (S8-004 Release 未实现, 不假装可执行)。"""
+        architect = roles.require_role("architect")
+        assert architect.execution_kind == "executable"
+        assert architect.is_executable
+        devops = roles.require_role("devops")
+        assert devops.execution_kind == "planning"
+        assert not devops.is_executable
 
     def test_product_manager_still_executable(self):
         """S8-001 保持: product-manager 仍 executable (回归, 只扩展不重写)。"""

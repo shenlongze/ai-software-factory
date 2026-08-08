@@ -13,10 +13,14 @@ Tester / DevOps — 统一 RoleDefinition 声明式注册, 零 Agent 复制。
   测试执行确定性 + 失败分析/缺陷报告 LLM 结构化输出; ProductManager — S8-001
   PMAgent 已实现, Idea → 结构化 Product Artifact (7 节) LLM 生成 + CONTRACTS
   product 契约校验; UXUIDesigner — S8-002 UXUIDesignerAgent 已实现, Product
-  Artifact → 结构化 UX/UI Artifact (7 节) LLM 生成 + CONTRACTS ux_ui 契约校验)。
+  Artifact → 结构化 UX/UI Artifact (7 节) LLM 生成 + CONTRACTS ux_ui 契约校验;
+  Architect — S8-003 ArchitectAgent 已实现, Product + UX/UI Artifact 双输入 →
+  结构化 Design Artifact (7 节) LLM 生成 + CONTRACTS design 契约校验, 必须引用
+  输入产物 id (artifact_refs), 禁止脱离输入独立生成)。
 - "planning": 角色已定义 (capabilities + prompt 模板 + 阶段映射), 但尚无
   独立 LLM 执行路径 — 只能产出规划产物 (demo_ui_feature 拆解演示走此路径,
-  明确标注"规划产物, 非 LLM 执行")。不假装可执行。
+  明确标注"规划产物, 非 LLM 执行")。不假装可执行 (S8-003 后仅 devops 仍为
+  planning — Release Agent 属 S8-004, 未实现不假装)。
 
 设计约束:
 - 声明式: 角色 = 数据 (dataclass frozen), 零逻辑; 注册表 dict 单一事实源。
@@ -58,7 +62,7 @@ class RoleDefinition:
     @property
     def is_executable(self) -> bool:
         """是否有真实 LLM 执行路径 (Developer + Tester + ProductManager +
-        UXUIDesigner — 见模块 docstring 诚实标注)。"""
+        UXUIDesigner + Architect — 见模块 docstring 诚实标注)。"""
         return self.execution_kind == "executable"
 
 
@@ -88,11 +92,21 @@ _UI_PROMPT = (
     "输出格式: 严格 JSON 对象, 7 节字段齐全, 仅输出 JSON, 不要任何多余文字。"
 )
 
-#: Architect — 架构决策与技术方案 (规划角色)
+#: Architect — 技术方案与架构决策 (S8-003 executable: ArchitectAgent 已实现,
+#: Product + UX/UI Artifact 双输入 → 结构化 Design Artifact (7 节: 系统架构/
+#: 技术选型/数据库设计/API 设计/前端架构/后端架构/任务拆分), 输出 JSON 经
+#: CONTRACTS design 校验; 必须引用输入产物 id (artifact_refs), 禁止脱离输入
+#: 独立生成)
 _ARCH_PROMPT = (
-    "你是一名 Architect (架构师)。职责: 决定技术方案、模块划分与关键实现路径, "
-    "评估改动影响面。\n"
-    "输出格式: 技术方案 (模块结构 / 数据流 / 关键实现点 / 风险)。"
+    "你是一名 Architect (架构师)。职责: 消费产品分析产物 (Product Artifact) "
+    "与 UX/UI 设计产物 (UX/UI Artifact), 产出结构化技术设计产物 (Design "
+    "Artifact), 覆盖 7 节: 系统架构 (system_architecture) / 技术选型 "
+    "(technical_stack) / 数据库设计 (database_design) / API 设计 "
+    "(api_design, 含 endpoints) / 前端架构 (frontend_architecture) / "
+    "后端架构 (backend_architecture) / 任务拆分 (task_breakdown, 每项含 "
+    "module/task/api_contract/ui_guidance — 模块/API 约定/UI 实现指导, 供 "
+    "Developer 消费)。\n"
+    "输出格式: 严格 JSON 对象, 7 节字段齐全, 仅输出 JSON, 不要任何多余文字。"
 )
 
 #: Developer — 技术实现 (唯一 executable 角色: AgentRuntime/DeveloperAgent 已实现)
@@ -143,7 +157,7 @@ ROLE_REGISTRY: dict[str, RoleDefinition] = {
         capabilities=("architecture", "design"),
         prompt_template=_ARCH_PROMPT,
         workflow_stages=("architecture",),
-        execution_kind="planning",
+        execution_kind="executable",
     ),
     "developer": RoleDefinition(
         role_id="developer",
@@ -213,8 +227,8 @@ def list_role_dicts() -> list[dict[str, Any]]:
 
 def executable_role_ids() -> list[str]:
     """可执行角色 (有真实 LLM 路径) — developer + tester (S7-004) +
-    product-manager (S8-001 PMAgent) + ui-designer (S8-002 UXUIDesignerAgent),
-    诚实标注。"""
+    product-manager (S8-001 PMAgent) + ui-designer (S8-002 UXUIDesignerAgent)
+    + architect (S8-003 ArchitectAgent), 诚实标注。"""
     return [r.role_id for r in list_roles() if r.is_executable]
 
 

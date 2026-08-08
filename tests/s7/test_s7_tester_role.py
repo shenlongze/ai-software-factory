@@ -52,10 +52,10 @@ class TestTesterRole:
         assert "unittest/pytest" in prompt
 
     def test_executable_role_ids_include_tester(self):
-        """S8-002 扩展: developer + product-manager + tester + ui-designer
-        (按 role_id 排序)。"""
+        """S8-003 扩展: architect + developer + product-manager + tester +
+        ui-designer (按 role_id 排序)。"""
         assert roles.executable_role_ids() == [
-            "developer", "product-manager", "tester", "ui-designer",
+            "architect", "developer", "product-manager", "tester", "ui-designer",
         ]
 
     def test_org_coverage_tester_executable(self):

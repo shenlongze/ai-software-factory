@@ -49,6 +49,63 @@ def make_artifact(
     return Artifact(id=artifact_id, stage_id=stage_id, type=type_, ref=ref)
 
 
+def make_artifact_full(
+    artifact_id: str = "A-1",
+    stage_id: str = "STG-1",
+    type_: str = "prd",
+    *,
+    project_id: str = "",
+    task_id: str = "",
+    ref: str = "",
+    producer_role: str = "",
+    producer_agent: str = "",
+    version: str = "1",
+    status: str = "created",
+    location: str = "",
+    metadata: dict[str, Any] | None = None,
+) -> Artifact:
+    """S7-002 完整模型构造工厂 (显式 id, 确定性断言)。"""
+    return Artifact(
+        id=artifact_id,
+        stage_id=stage_id,
+        type=type_,
+        ref=ref,
+        project_id=project_id,
+        task_id=task_id,
+        producer_role=producer_role,
+        producer_agent=producer_agent,
+        version=version,
+        status=status,
+        location=location,
+        metadata=metadata or {},
+    )
+
+
+def seed_stage(
+    plife: Any,
+    *,
+    stage_id: str = "STG-1",
+    workflow_id: str = "WF-1",
+    role_id: str = "developer",
+    order: int = 1,
+) -> Any:
+    """创建 Stage (经 ProjectLifecycle, role 经 exec 注册表校验)。"""
+    return plife.create_stage(workflow_id, role_id, order=order, stage_id=stage_id)
+
+
+def seed_project_chain(
+    plife: Any,
+    *,
+    project_id: str = "P-1",
+    task_id: str = "T-1",
+    stage_id: str = "STG-1",
+) -> None:
+    """最小关联链: project → link task → stage (产物关联校验前置条件)。"""
+    plife.create_project("Build App", project_id=project_id)
+    plife.link_task(project_id, task_id)
+    plife.create_stage("WF-1", "developer", stage_id=stage_id)
+
+
 def make_task_link(
     link_id: str = "PTL-1",
     project_id: str = "P-1",

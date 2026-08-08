@@ -87,6 +87,33 @@ class ArtifactType(str, Enum):
             ) from None
 
 
+class ArtifactStatus(str, Enum):
+    """阶段产物生命周期状态 (S7-002: CREATED→GENERATED→VALIDATED→CONSUMED→ARCHIVED; 异常 INVALID)。
+
+    状态转换受控 (ARTIFACT_TRANSITIONS 转换表): 非法跳转拒绝, 如 CREATED
+    不能直接 ARCHIVED; INVALID 可回 GENERATED 重生成 (失败恢复)。
+    """
+
+    CREATED = "created"
+    GENERATED = "generated"
+    VALIDATED = "validated"
+    CONSUMED = "consumed"
+    ARCHIVED = "archived"
+    INVALID = "invalid"
+
+    @classmethod
+    def parse(cls, value: Any) -> "ArtifactStatus":
+        if isinstance(value, cls):
+            return value
+        try:
+            return cls(str(value).strip().lower())
+        except ValueError:
+            valid = ", ".join(m.value for m in cls)
+            raise ValueError(
+                f"invalid artifact status: {value!r} (expected one of: {valid})"
+            ) from None
+
+
 class StageStatus(str, Enum):
     """Stage 状态 (组织级编排壳; S7-005 接执行后流转)。"""
 
@@ -113,6 +140,19 @@ PROJECT_TRANSITIONS: dict[str, tuple[str, ...]] = {
     "idea": ("active", "archived"),
     "active": ("maintained", "archived"),
     "maintained": ("archived",),
+    "archived": (),
+}
+
+#: 产物生命周期合法流转 (S7-002 受控转换表; 单向无环; archived 为终态)。
+#: 主链: created→generated→validated→consumed→archived; 失败路径: 各态可
+#: →invalid (契约校验/执行失败); 恢复: invalid→generated (重生成) 或
+#: invalid→archived (废弃)。created/generated 不可直接 archived (受控)。
+ARTIFACT_TRANSITIONS: dict[str, tuple[str, ...]] = {
+    "created": ("generated", "invalid"),
+    "generated": ("validated", "invalid"),
+    "validated": ("consumed", "archived", "invalid"),
+    "consumed": ("archived", "invalid"),
+    "invalid": ("generated", "archived"),
     "archived": (),
 }
 
@@ -180,18 +220,56 @@ class Stage(_OrgModel):
 
 
 class Artifact(_OrgModel):
-    """阶段产物 (type: prd|design|code|test|release; ref = 产物引用)。"""
+    """阶段产物 (type: prd|design|code|test|release; S7-002 完整模型)。
+
+    S7-001 基础字段 (id/stage_id/type/ref/created_at) 原样保留 — 既有
+    artifacts.json 数据加载零破坏 (向后兼容); S7-002 新增字段全部带默认值:
+    - project_id/task_id: 关联维度 (task 须经 ProjectTaskLink 关联该项目)
+    - producer_role/producer_agent: 生产者 (role 经 exec 注册表校验)
+    - version: 产物版本 (默认 "1"; release 类型可用语义版本)
+    - status: 生命周期状态 (默认 created; 转换经受控转换表
+      ARTIFACT_TRANSITIONS, 见 org/artifact.py ArtifactRegistry)
+    - location: 产物位置 (file:// / ref://)
+    - metadata: 类型契约校验载荷 (JSON 友好 dict, 声明式 CONTRACTS)
+    - updated_at/archived_at/invalid_reason: 流转与失败审计
+    """
 
     id: str
     stage_id: str
     type: ArtifactType
     ref: str = ""                        # 产物引用 (file:// / ref:// / 描述)
+    project_id: str = ""                 # 项目维度 (引用完整: 须存在)
+    task_id: str = ""                    # 任务维度 (须经 link_task 关联该项目)
+    producer_role: str = ""              # 生产者角色 (exec 注册表校验)
+    producer_agent: str = ""             # 生产者 Agent id
+    version: str = "1"                   # 产物版本
+    status: ArtifactStatus = ArtifactStatus.CREATED
+    location: str = ""                   # 产物位置
+    metadata: dict[str, Any] = Field(default_factory=dict)  # 契约校验载荷
     created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
+    archived_at: datetime | None = None  # 软删归档时间 (archived 终态)
+    invalid_reason: str = ""             # 失败原因 (invalid 状态审计)
 
     @field_validator("type", mode="before")
     @classmethod
     def _coerce_type(cls, v: Any) -> ArtifactType:
         return ArtifactType.parse(v)
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def _coerce_status(cls, v: Any) -> ArtifactStatus:
+        return ArtifactStatus.parse(v)
+
+    @field_validator("metadata", mode="before")
+    @classmethod
+    def _metadata_none(cls, v: Any) -> Any:
+        return v if v is not None else {}
+
+    @property
+    def is_archived(self) -> bool:
+        """终态判断 (archived 后不可再流转/更新)。"""
+        return self.status == ArtifactStatus.ARCHIVED
 
 
 class ProjectTaskLink(_OrgModel):

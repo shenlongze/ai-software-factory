@@ -433,7 +433,11 @@ def record_stage_created(logger: Any, *, stage: Any, source: str = "org") -> Eve
 
 
 def record_artifact_created(logger: Any, *, artifact: Any, source: str = "org") -> Event | None:
-    """阶段产物创建 (org.artifact.created; prd|design|code|test|release)。"""
+    """阶段产物创建 (org.artifact.created; prd|design|code|test|release)。
+
+    S7-002 扩展: payload 增补 project_id/status/version (向后兼容 —
+    既有字段 artifact_id/stage_id/type/ref 原样不动, 既有测试零破坏)。
+    """
     if logger is None:
         return None
     return logger.record(
@@ -442,10 +446,187 @@ def record_artifact_created(logger: Any, *, artifact: Any, source: str = "org") 
         stage=artifact.type.value,
         action="create artifact",
         result="OK",
+        project_id=artifact.project_id or None,
+        task_id=artifact.task_id or None,
         payload={
             "artifact_id": artifact.id,
             "stage_id": artifact.stage_id,
             "type": artifact.type.value,
             "ref": artifact.ref,
+            "project_id": artifact.project_id,
+            "status": artifact.status.value,
+            "version": artifact.version,
         },
+    )
+
+
+# ------------------------------------------------------------------ Artifact System (S7-002)
+# org.artifact.updated|validated|consumed|failed|archived|viewed — 状态机
+# 转换事件 (每转换 audit) + 读命令审计 (ADR-0002)。payload 唯一事实源:
+# from_status/to_status/version 可重建产物流转; failed 带 missing/errors
+# (契约校验失败明细, 从事件可重建失败原因)。
+
+
+def record_artifact_updated(
+    logger: Any,
+    *,
+    artifact: Any,
+    from_status: str,
+    to_status: str,
+    changed_fields: list[str],
+    source: str = "org",
+) -> Event | None:
+    """产物更新 (org.artifact.updated; 字段/元数据更新, 或 →generated 转换)。"""
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.ORG_ARTIFACT_UPDATED,
+        source=source,
+        stage=artifact.status.value,
+        action="update artifact",
+        result="OK",
+        project_id=artifact.project_id or None,
+        task_id=artifact.task_id or None,
+        payload={
+            "artifact_id": artifact.id,
+            "type": artifact.type.value,
+            "from_status": from_status,
+            "to_status": to_status,
+            "version": artifact.version,
+            "changed_fields": changed_fields,
+        },
+    )
+
+
+def record_artifact_validated(
+    logger: Any,
+    *,
+    artifact: Any,
+    from_status: str,
+    missing: list[str],
+    errors: list[str],
+    source: str = "org",
+) -> Event | None:
+    """契约校验通过 (org.artifact.validated; →validated)。"""
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.ORG_ARTIFACT_VALIDATED,
+        source=source,
+        stage="validated",
+        action="validate artifact",
+        result="OK",
+        project_id=artifact.project_id or None,
+        task_id=artifact.task_id or None,
+        payload={
+            "artifact_id": artifact.id,
+            "type": artifact.type.value,
+            "from_status": from_status,
+            "to_status": "validated",
+            "version": artifact.version,
+            "missing": missing,
+            "errors": errors,
+        },
+    )
+
+
+def record_artifact_consumed(
+    logger: Any, *, artifact: Any, from_status: str, source: str = "org"
+) -> Event | None:
+    """产物被下一阶段消费 (org.artifact.consumed; →consumed)。"""
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.ORG_ARTIFACT_CONSUMED,
+        source=source,
+        stage="consumed",
+        action="consume artifact",
+        result="OK",
+        project_id=artifact.project_id or None,
+        task_id=artifact.task_id or None,
+        payload={
+            "artifact_id": artifact.id,
+            "type": artifact.type.value,
+            "from_status": from_status,
+            "to_status": "consumed",
+            "version": artifact.version,
+        },
+    )
+
+
+def record_artifact_failed(
+    logger: Any,
+    *,
+    artifact: Any,
+    from_status: str,
+    reason: str,
+    missing: list[str] | None = None,
+    errors: list[str] | None = None,
+    source: str = "org",
+) -> Event | None:
+    """产物失败 (org.artifact.failed; →invalid; 契约校验/执行失败)。"""
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.ORG_ARTIFACT_FAILED,
+        source=source,
+        stage="invalid",
+        action="artifact invalid",
+        result="FAIL",
+        project_id=artifact.project_id or None,
+        task_id=artifact.task_id or None,
+        payload={
+            "artifact_id": artifact.id,
+            "type": artifact.type.value,
+            "from_status": from_status,
+            "to_status": "invalid",
+            "version": artifact.version,
+            "reason": reason,
+            "missing": missing or [],
+            "errors": errors or [],
+        },
+    )
+
+
+def record_artifact_archived(
+    logger: Any, *, artifact: Any, from_status: str, source: str = "org"
+) -> Event | None:
+    """产物软删归档 (org.artifact.archived; →archived 终态)。"""
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.ORG_ARTIFACT_ARCHIVED,
+        source=source,
+        stage="archived",
+        action="archive artifact",
+        result="OK",
+        project_id=artifact.project_id or None,
+        task_id=artifact.task_id or None,
+        payload={
+            "artifact_id": artifact.id,
+            "type": artifact.type.value,
+            "from_status": from_status,
+            "to_status": "archived",
+            "version": artifact.version,
+        },
+    )
+
+
+def record_artifact_viewed(
+    logger: Any,
+    *,
+    count: int,
+    filters: dict[str, Any] | None = None,
+    source: str = "cli",
+) -> Event | None:
+    """产物清单/详情被查看 (org.artifact.viewed; 读命令审计, ADR-0002)。"""
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.ORG_ARTIFACT_VIEWED,
+        source=source,
+        stage="viewed",
+        action="list artifacts",
+        result="OK",
+        payload={"count": count, "filters": filters or {}},
     )

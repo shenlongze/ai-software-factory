@@ -190,9 +190,11 @@ class TestEventTypeEnumExtension:
         # 158 → 165: S7-001 Organization Model +7 (org.project.created /
         # org.sprint.created / org.stage.created / org.artifact.created /
         # org.project.lifecycle_changed / org.project.task_linked /
-        # org.sprint.task_added, ADR-0039)。
+        # org.sprint.task_added, ADR-0039); 165 → 171: S7-002 Artifact
+        # System +6 (org.artifact.updated/validated/consumed/failed/archived/
+        # viewed — 产物状态机转换事件 + 读命令审计, ADR-0039)。
         # 纯增量扩展 (ADR-0001 决策 1 路径, 既有值零改动)
-        assert len(EventType) == 165
+        assert len(EventType) == 171
         assert EventType.ORG_PROJECT_CREATED.value == "org.project.created"
         assert EventType.ORG_SPRINT_CREATED.value == "org.sprint.created"
         assert EventType.ORG_STAGE_CREATED.value == "org.stage.created"
@@ -200,6 +202,12 @@ class TestEventTypeEnumExtension:
         assert EventType.ORG_PROJECT_LIFECYCLE_CHANGED.value == "org.project.lifecycle_changed"
         assert EventType.ORG_PROJECT_TASK_LINKED.value == "org.project.task_linked"
         assert EventType.ORG_SPRINT_TASK_ADDED.value == "org.sprint.task_added"
+        assert EventType.ORG_ARTIFACT_UPDATED.value == "org.artifact.updated"
+        assert EventType.ORG_ARTIFACT_VALIDATED.value == "org.artifact.validated"
+        assert EventType.ORG_ARTIFACT_CONSUMED.value == "org.artifact.consumed"
+        assert EventType.ORG_ARTIFACT_FAILED.value == "org.artifact.failed"
+        assert EventType.ORG_ARTIFACT_ARCHIVED.value == "org.artifact.archived"
+        assert EventType.ORG_ARTIFACT_VIEWED.value == "org.artifact.viewed"
 
     def test_event_accepts_new_type_string(self):
         from events.models import Event

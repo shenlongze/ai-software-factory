@@ -40,6 +40,7 @@ import pytest
 from events.logger import EventLogger
 from events.store import EventStore
 
+from org.artifact import ArtifactRegistry
 from org.projects import ProjectStore
 from org.store import OrgStore
 
@@ -77,3 +78,15 @@ def logger(db_path: Path) -> EventLogger:
 @pytest.fixture
 def event_store(logger: EventLogger) -> EventStore:
     return logger.store
+
+
+@pytest.fixture
+def registry(project_store: ProjectStore, logger: EventLogger) -> ArtifactRegistry:
+    """ArtifactRegistry (S7-002; logger 带事件库, 事件集成断言)。"""
+    return ArtifactRegistry(project_store, logger=logger)
+
+
+@pytest.fixture
+def no_logger_registry(project_store: ProjectStore) -> ArtifactRegistry:
+    """logger=None: 事件全静默 (同既有 org 模式)。"""
+    return ArtifactRegistry(project_store, logger=None)

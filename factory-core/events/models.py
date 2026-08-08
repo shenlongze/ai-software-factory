@@ -460,6 +460,21 @@ class EventType(str, Enum):
     ORG_SPRINT_TASK_ADDED = "org.sprint.task_added"          # 任务加入 Sprint
     ORG_STAGE_CREATED = "org.stage.created"                  # 组织级编排壳 Stage 创建 (Workflow 阶段)
     ORG_ARTIFACT_CREATED = "org.artifact.created"            # 阶段产物创建 (prd|design|code|test|release)
+    # Sprint 7 S7-002 (factory-org Extension, 同扩展路径): Artifact System —
+    # 产物生命周期完整化 (CREATED→GENERATED→VALIDATED→CONSUMED→ARCHIVED;
+    # 异常 INVALID)。同 ADR-0001 决策 1 扩展路径 (加枚举成员即可);
+    # updated|validated|consumed|failed|archived 为状态机转换事件 (每转换
+    # audit, payload 含 from_status/to_status/version), viewed 为读命令审计
+    # (ADR-0002: 所有 CLI 行为必须产生 Event)。payload 契约见
+    # factory-org/org/events.py — 事件唯一事实源: 从 payload 可重建产物
+    # 流转关键字段 (artifact_id/type/from_status/to_status/version/reason/
+    # missing/errors)。
+    ORG_ARTIFACT_UPDATED = "org.artifact.updated"            # 产物更新 (字段/元数据, 或 →generated)
+    ORG_ARTIFACT_VALIDATED = "org.artifact.validated"        # 契约校验通过 (→validated)
+    ORG_ARTIFACT_CONSUMED = "org.artifact.consumed"          # 产物被下一阶段消费 (→consumed)
+    ORG_ARTIFACT_FAILED = "org.artifact.failed"              # 契约校验失败/执行失败 (→invalid)
+    ORG_ARTIFACT_ARCHIVED = "org.artifact.archived"          # 软删归档 (→archived, 终态)
+    ORG_ARTIFACT_VIEWED = "org.artifact.viewed"              # 产物清单/详情被查看 (只读审计)
 
 
 class Event(BaseModel):

@@ -51,6 +51,16 @@ from .lifecycle import (
 from .models import new_id
 from .projects import ArtifactStatus, ArtifactType, ProjectStore
 from .store import OrgStore
+from .workflow import (
+    WorkflowLifecycle,
+    WorkflowRunner,
+    WorkflowStatus,
+    WorkflowError,
+    WorkflowStateError,
+    WorkflowCycleError,
+    WorkflowDependencyError,
+    WorkflowExecutionError,
+)
 
 DEFAULT_ROOT = Path.home() / ".factory"
 
@@ -414,6 +424,136 @@ def cmd_artifact_validate(root: Path, args: Any) -> dict:
     }
 
 
+# ------------------------------------------------------------------ workflow (S7-003)
+# factory-org workflow create|list|show|run|status — 组织级编排壳 (Workflow
+# DRAFT/ACTIVE/PAUSED/COMPLETED/FAILED + Stage 流转 + DAG 依赖 + Runner)。
+# 每命令在 logger_scope 内打开事件库 + EventLogger (同既有模式); 读命令
+# 发 org.workflow.viewed (ADR-0002); run 经 _build_workflow_runner 注入
+# executor (S7-005 接真实 Role Executor; 未注入且需执行 → rc 1 响亮)。
+
+
+def _workflow_lifecycle(root: Path, logger: Any) -> WorkflowLifecycle:
+    return WorkflowLifecycle(ProjectStore(root / "org"), logger=logger)
+
+
+def _build_workflow_runner(root: Path, logger: Any) -> WorkflowRunner:
+    """构造 WorkflowRunner (executor 注入点 — 测试 monkeypatch / S7-005 接入)。
+
+    S7-003 编排壳默认不注入 executor (零 LLM/零执行副作用); 真实执行由
+    S7-005 提供 EmployeeExecutor 适配器 (runner 契约: executor(stage,
+    context) → dict)。
+    """
+    return WorkflowRunner(_workflow_lifecycle(root, logger), logger=logger)
+
+
+def cmd_workflow_create(root: Path, args: Any) -> dict:
+    """workflow create — 创建编排壳 (org.workflow.created; 与项目关联校验)。"""
+    with _logger_scope(root) as logger:
+        try:
+            workflow = _workflow_lifecycle(root, logger).create_workflow(
+                args.project,
+                args.name,
+                workflow_id=getattr(args, "id", None),
+            )
+        except (WorkflowError, OrgLifecycleError, ValueError) as exc:
+            return _error(str(exc), exit_code=7 if isinstance(exc, NotFoundError) else 1)
+        event_seq = org_events.last_seq(logger, EventType.ORG_WORKFLOW_CREATED)
+    return {"ok": True, "workflow": workflow.to_dict(), "event_seq": event_seq, "exit_code": 0}
+
+
+def cmd_workflow_list(root: Path, args: Any) -> dict:
+    """workflow list — 工作流清单 (org.workflow.viewed 审计; 按项目过滤)。"""
+    with _logger_scope(root) as logger:
+        workflows = _workflow_lifecycle(root, logger).list_workflows(
+            project_id=getattr(args, "project", None) or None
+        )
+        org_events.record_workflow_viewed(
+            logger,
+            count=len(workflows),
+            filters={"project_id": getattr(args, "project", None) or None},
+        )
+        event_seq = org_events.last_seq(logger, EventType.ORG_WORKFLOW_VIEWED)
+    return {
+        "ok": True,
+        "workflows": [w.to_dict() for w in workflows],
+        "count": len(workflows),
+        "event_seq": event_seq,
+        "exit_code": 0,
+    }
+
+
+def _workflow_detail(root: Path, logger: Any, workflow_id: str) -> dict:
+    """workflow 详情 (workflow + 阶段序列 + 阶段产物引用; show/status 共用)。"""
+    lifecycle = _workflow_lifecycle(root, logger)
+    workflow = lifecycle.get_workflow(workflow_id)
+    stages = lifecycle.list_stages(workflow_id)
+    return {
+        "workflow": workflow.to_dict(),
+        "stages": [s.to_dict() for s in stages],
+        "stage_count": len(stages),
+        "artifacts": [a.to_dict() for a in lifecycle.workflow_artifacts(workflow_id)],
+    }
+
+
+def cmd_workflow_show(root: Path, args: Any) -> dict:
+    """workflow show — 工作流详情 (org.workflow.viewed 审计; 含阶段明细)。"""
+    with _logger_scope(root) as logger:
+        try:
+            detail = _workflow_detail(root, logger, args.workflow_id)
+        except (WorkflowError, OrgLifecycleError) as exc:
+            return _error(str(exc), exit_code=7 if isinstance(exc, NotFoundError) else 1)
+        org_events.record_workflow_viewed(
+            logger, count=1, filters={"workflow_id": args.workflow_id}
+        )
+        event_seq = org_events.last_seq(logger, EventType.ORG_WORKFLOW_VIEWED)
+    detail["event_seq"] = event_seq
+    detail["ok"] = True
+    detail["exit_code"] = 0
+    return detail
+
+
+def cmd_workflow_run(root: Path, args: Any) -> dict:
+    """workflow run — 执行编排壳 (Runner: 就绪判定→Executor→Artifact 注册→推进)。
+
+    executor 经 _build_workflow_runner 注入 (S7-005 接真实执行); 未注入且
+    需执行 → rc 1 (编排壳诚实边界)。返回终态/挂起 workflow + 阶段状态。
+    """
+    with _logger_scope(root) as logger:
+        try:
+            workflow = _build_workflow_runner(root, logger).run(
+                args.workflow_id,
+                max_steps=getattr(args, "max_steps", None),
+            )
+        except (WorkflowError, OrgLifecycleError, ValueError) as exc:
+            return _error(str(exc), exit_code=7 if isinstance(exc, NotFoundError) else 1)
+        detail = _workflow_detail(root, logger, args.workflow_id)
+    detail["workflow"] = workflow.to_dict()
+    detail["ok"] = True
+    detail["exit_code"] = 0
+    return detail
+
+
+def cmd_workflow_status(root: Path, args: Any) -> dict:
+    """workflow status — 状态总览 (org.workflow.viewed 审计; 阶段计数)。"""
+    with _logger_scope(root) as logger:
+        try:
+            detail = _workflow_detail(root, logger, args.workflow_id)
+        except (WorkflowError, OrgLifecycleError) as exc:
+            return _error(str(exc), exit_code=7 if isinstance(exc, NotFoundError) else 1)
+        org_events.record_workflow_viewed(
+            logger, count=1, filters={"workflow_id": args.workflow_id}
+        )
+        event_seq = org_events.last_seq(logger, EventType.ORG_WORKFLOW_VIEWED)
+    status_counts: dict[str, int] = {}
+    for s in detail["stages"]:
+        status_counts[s["status"]] = status_counts.get(s["status"], 0) + 1
+    detail["status_counts"] = status_counts
+    detail["event_seq"] = event_seq
+    detail["ok"] = True
+    detail["exit_code"] = 0
+    return detail
+
+
 # ------------------------------------------------------------------ 独立 CLI (factory-org console script)
 
 def build_parser() -> argparse.ArgumentParser:
@@ -541,6 +681,30 @@ def build_parser() -> argparse.ArgumentParser:
     p_av.add_argument("artifact_id")
     p_av.add_argument("--payload", default=None,
                       help="契约载荷 JSON 对象 (缺省用产物 metadata)")
+
+    p_wf = sub.add_parser("workflow", help="组织级工作流编排 (org.workflow.* 事件, S7-003)")
+    json_opt(p_wf)
+    wsub = p_wf.add_subparsers(dest="workflow_command", required=True)
+    p_wc = wsub.add_parser("create", help="创建工作流 (发 org.workflow.created)")
+    json_opt(p_wc)
+    p_wc.add_argument("--project", required=True, help="项目 ID (须存在, 引用完整)")
+    p_wc.add_argument("--name", required=True, help="工作流名称")
+    p_wc.add_argument("--id", default=None, help="工作流 ID (默认自动生成 WF-xxx)")
+    p_wl = wsub.add_parser("list", help="工作流清单 (发 org.workflow.viewed)")
+    json_opt(p_wl)
+    p_wl.add_argument("--project", default=None, help="按项目过滤")
+    p_ws = wsub.add_parser("show", help="工作流详情 + 阶段明细 (发 org.workflow.viewed)")
+    json_opt(p_ws)
+    p_ws.add_argument("workflow_id")
+    p_wr = wsub.add_parser("run",
+                           help="执行编排壳 (Runner: 就绪判定→Executor→Artifact 注册→推进)")
+    json_opt(p_wr)
+    p_wr.add_argument("workflow_id")
+    p_wr.add_argument("--max-steps", type=int, default=None,
+                      help="步数上限 (默认 = 阶段数 + 1; 防无限循环保护)")
+    p_wst = wsub.add_parser("status", help="工作流状态总览 (发 org.workflow.viewed)")
+    json_opt(p_wst)
+    p_wst.add_argument("workflow_id")
     return p
 
 
@@ -568,6 +732,13 @@ _CMD_DISPATCH: dict[str, dict[str, Any]] = {
         "update": cmd_artifact_update,
         "archive": cmd_artifact_archive,
         "validate": cmd_artifact_validate,
+    },
+    "workflow": {
+        "create": cmd_workflow_create,
+        "list": cmd_workflow_list,
+        "show": cmd_workflow_show,
+        "run": cmd_workflow_run,
+        "status": cmd_workflow_status,
     },
 }
 
@@ -644,6 +815,59 @@ def _print_result(args: Any, result: dict) -> None:
                 print(f"  {item['id']}  [{item['domain']}] v{item['version']}  {item['content']}")
     elif command == "artifact":
         _print_artifact_result(args, result)
+    elif command == "workflow":
+        _print_workflow_result(args, result)
+
+
+def _print_workflow_result(args: Any, result: dict) -> None:
+    """workflow 子命令人类可读输出 (list/show/run/status 共用)。"""
+    sub = args.workflow_command
+    if sub == "create":
+        w = result["workflow"]
+        print("✔ 工作流创建成功 (编排壳)")
+        print(f"  id         {w['id']}")
+        print(f"  project    {w['project_id']}")
+        print(f"  name       {w['name']}")
+        print(f"  status     {w['status']}")
+    elif sub == "list":
+        print(f"工作流清单 ({result['count']} 条)")
+        for w in result["workflows"]:
+            print(f"  {w['id']}  [{w['status']}]  {w['name']}  project={w['project_id']}  "
+                  f"stages={len(w['stage_ids'])}")
+    elif sub == "show":
+        _print_workflow_detail(result, detailed=True)
+    elif sub == "run":
+        w = result["workflow"]
+        verdict = "✔" if w["status"] == "completed" else "⏸"
+        print(f"{verdict} 工作流执行结束: {w['id']} → {w['status']}")
+        _print_workflow_detail(result, detailed=False)
+    elif sub == "status":
+        w = result["workflow"]
+        print(f"工作流状态: {w['id']} [{w['status']}] — {w['name']}")
+        counts = result.get("status_counts", {})
+        summary = ", ".join(f"{k}={v}" for k, v in sorted(counts.items())) or "(无阶段)"
+        print(f"  阶段      {summary}")
+        _print_workflow_detail(result, detailed=True)
+    if result.get("event_seq") is not None:
+        print(f"  event_seq  {result['event_seq']}")
+
+
+def _print_workflow_detail(result: dict, *, detailed: bool) -> None:
+    """workflow 详情/状态共用输出 (stages 行 + 产物引用)。"""
+    w = result["workflow"]
+    print(f"  workflow   {w['id']} [{w['status']}] — {w['name']} (project {w['project_id']})")
+    if w.get("failed_reason"):
+        print(f"  reason     {w['failed_reason']}")
+    for s in result.get("stages", []):
+        deps = f" deps={','.join(s['depends_on'])}" if s.get("depends_on") else ""
+        inputs = f" in={','.join(s['input_artifacts'])}" if s.get("input_artifacts") else ""
+        outputs = f" out={','.join(s['output_artifacts'])}" if s.get("output_artifacts") else ""
+        print(f"  stage      {s['id']}  [{s['status']}]  {s['role_id']}"
+              f"{'  ' + s['name'] if s.get('name') else ''}{deps}{inputs}{outputs}")
+    if detailed and result.get("artifacts"):
+        for a in result["artifacts"]:
+            print(f"  artifact   {a['id']}  [{a['type']}] {a['status']}  "
+                  f"stage={a['stage_id']}")
 
 
 def _print_artifact_result(args: Any, result: dict) -> None:

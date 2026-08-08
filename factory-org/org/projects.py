@@ -115,10 +115,17 @@ class ArtifactStatus(str, Enum):
 
 
 class StageStatus(str, Enum):
-    """Stage 状态 (组织级编排壳; S7-005 接执行后流转)。"""
+    """Stage 状态 (组织级编排壳; S7-005 接执行后流转)。
+
+    S7-003 扩展: READY (依赖满足+输入 VALIDATED, 待执行) / BLOCKED (依赖
+    未完成或输入未验证) — 纯增量成员 (既有值零改动, 向后兼容); 受控转换表
+    STAGE_TRANSITIONS (workflow.py 编排层消费)。
+    """
 
     PENDING = "pending"
+    READY = "ready"                        # S7-003: 就绪 (依赖+输入满足)
     RUNNING = "running"
+    BLOCKED = "blocked"                    # S7-003: 阻塞 (依赖未完成/输入未验证)
     COMPLETED = "completed"
     FAILED = "failed"
 
@@ -154,6 +161,21 @@ ARTIFACT_TRANSITIONS: dict[str, tuple[str, ...]] = {
     "consumed": ("archived", "invalid"),
     "invalid": ("generated", "archived"),
     "archived": (),
+}
+
+#: Stage 合法流转 (S7-003 受控转换表; 单向无环; completed 为终态)。
+#: 主链: pending→ready→running→completed; 阻塞: pending/ready→blocked
+#: (依赖未完成/输入未 VALIDATED); 恢复: blocked→ready (条件满足) 或
+#: blocked→pending (重置); 失败: running→failed (执行错误); 重试:
+#: failed→ready (条件满足) 或 failed→pending (重置)。completed 终态
+#: (不可再流转); pending 不可直接 running/completed/failed (受控)。
+STAGE_TRANSITIONS: dict[str, tuple[str, ...]] = {
+    "pending": ("ready", "blocked"),
+    "ready": ("running", "blocked"),
+    "running": ("completed", "failed"),
+    "blocked": ("ready", "pending"),
+    "failed": ("ready", "pending"),
+    "completed": (),
 }
 
 
@@ -202,21 +224,35 @@ class Stage(_OrgModel):
 
     workflow_id: 组织级 workflow run id (S7-005 编排壳创建; 本层不校验
     Core workflow 存在性 — 编排壳与任务级 WorkflowEngine 解耦)。
-    artifact_ref: 产出 Artifact id (阶段产物引用, 流转输入)。
+    artifact_ref: 产出 Artifact id (阶段产物引用, 流转输入; S7-001 兼容)。
+    S7-003 扩展 (全部带默认值, 既有 stages.json 数据加载零破坏):
+    - name: 阶段名 (可读标签, 缺省 "")
+    - depends_on: DAG 依赖 (本 workflow 内前置 stage id 列表, 循环拒绝)
+    - input_artifacts: 输入产物 id 列表 (全部 VALIDATED 才放行执行)
+    - output_artifacts: 输出产物 id 列表 (Runner 完成后自动注册追加)
     """
 
     id: str
     workflow_id: str
     role_id: str                         # exec 注册表 role_id (单一事实源)
+    name: str = ""                       # S7-003: 阶段名
     order: int = 1
     status: StageStatus = StageStatus.PENDING
     artifact_ref: str = ""               # 产出 Artifact id
+    depends_on: list[str] = Field(default_factory=list)      # S7-003: DAG 依赖
+    input_artifacts: list[str] = Field(default_factory=list)  # S7-003: 输入产物
+    output_artifacts: list[str] = Field(default_factory=list)  # S7-003: 输出产物
     created_at: datetime = Field(default_factory=utcnow)
 
     @field_validator("status", mode="before")
     @classmethod
     def _coerce_status(cls, v: Any) -> StageStatus:
         return StageStatus.parse(v)
+
+    @field_validator("depends_on", "input_artifacts", "output_artifacts", mode="before")
+    @classmethod
+    def _lists_none(cls, v: Any) -> Any:
+        return _norm_list(v)
 
 
 class Artifact(_OrgModel):

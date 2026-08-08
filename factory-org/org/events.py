@@ -414,7 +414,11 @@ def record_sprint_task_added(
 
 
 def record_stage_created(logger: Any, *, stage: Any, source: str = "org") -> Event | None:
-    """Stage 创建 (org.stage.created; 组织级 Workflow 编排壳阶段, S7-005 接执行)。"""
+    """Stage 创建 (org.stage.created; 组织级 Workflow 编排壳阶段, S7-005 接执行)。
+
+    S7-003 扩展: payload 增补 name/depends_on/input_artifacts/output_artifacts
+    (向后兼容 — 既有字段 stage_id/workflow_id/role_id/order 原样不动)。
+    """
     if logger is None:
         return None
     return logger.record(
@@ -428,6 +432,10 @@ def record_stage_created(logger: Any, *, stage: Any, source: str = "org") -> Eve
             "workflow_id": stage.workflow_id,
             "role_id": stage.role_id,
             "order": stage.order,
+            "name": stage.name,
+            "depends_on": list(stage.depends_on),
+            "input_artifacts": list(stage.input_artifacts),
+            "output_artifacts": list(stage.output_artifacts),
         },
     )
 
@@ -627,6 +635,219 @@ def record_artifact_viewed(
         source=source,
         stage="viewed",
         action="list artifacts",
+        result="OK",
+        payload={"count": count, "filters": filters or {}},
+    )
+
+
+# ------------------------------------------------------------------ Workflow Engine (S7-003)
+# org.workflow.* 组织级编排壳事件 — 模型见 org/workflow.py (Workflow
+# DRAFT/ACTIVE/PAUSED/COMPLETED/FAILED + Stage PENDING/READY/RUNNING/
+# BLOCKED/COMPLETED/FAILED + DAG 依赖 + Runner 推进 + Artifact 集成)。
+# 同既有 org.* 模式: logger=None 全静默; payload 唯一事实源:
+# - created:      workflow_id/project_id/name/status/stage_count
+# - started:      workflow_id/project_id/from_status/to_status (启动/恢复,
+#                 含 paused→active 重试路径)
+# - stage_ready:  workflow_id/project_id/stage_id/role_id/name/status
+# - stage_started: workflow_id/project_id/stage_id/role_id/name/status
+# - stage_completed: workflow_id/project_id/stage_id/role_id/name/
+#                   output_artifact_ids
+# - completed:    workflow_id/project_id/status/stage_count/
+#                 completed_stage_count
+# - failed:       workflow_id/project_id/status/stage_id/reason
+# - viewed:       count/filters (读命令审计, source="cli", ADR-0002)
+# 顶层 project_id 随事件带出 (同 artifact 事件模式, 项目维度检索友好)。
+
+
+def record_workflow_created(
+    logger: Any, *, workflow: Any, source: str = "org"
+) -> Event | None:
+    """工作流创建 (org.workflow.created; 状态 DRAFT, 与项目关联)。"""
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.ORG_WORKFLOW_CREATED,
+        source=source,
+        stage=workflow.status.value,
+        action="create workflow",
+        result="OK",
+        project_id=workflow.project_id,
+        payload={
+            "workflow_id": workflow.id,
+            "project_id": workflow.project_id,
+            "name": workflow.name,
+            "status": workflow.status.value,
+            "stage_count": len(workflow.stage_ids),
+        },
+    )
+
+
+def record_workflow_started(
+    logger: Any,
+    *,
+    workflow: Any,
+    from_status: str,
+    source: str = "org",
+) -> Event | None:
+    """工作流启动/恢复 (org.workflow.started; →active, 含 paused→active 重试)。"""
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.ORG_WORKFLOW_STARTED,
+        source=source,
+        stage=workflow.status.value,
+        action="start workflow",
+        result="OK",
+        project_id=workflow.project_id,
+        payload={
+            "workflow_id": workflow.id,
+            "project_id": workflow.project_id,
+            "from_status": from_status,
+            "to_status": "active",
+            "status": workflow.status.value,
+        },
+    )
+
+
+def record_workflow_stage_ready(
+    logger: Any, *, workflow: Any, stage: Any, source: str = "org"
+) -> Event | None:
+    """阶段就绪 (org.workflow.stage_ready; 依赖 COMPLETED + 输入 VALIDATED)。"""
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.ORG_WORKFLOW_STAGE_READY,
+        source=source,
+        stage=stage.status.value,
+        action="stage ready",
+        result="OK",
+        project_id=workflow.project_id,
+        payload={
+            "workflow_id": workflow.id,
+            "project_id": workflow.project_id,
+            "stage_id": stage.id,
+            "role_id": stage.role_id,
+            "name": stage.name,
+            "status": stage.status.value,
+        },
+    )
+
+
+def record_workflow_stage_started(
+    logger: Any, *, workflow: Any, stage: Any, source: str = "org"
+) -> Event | None:
+    """阶段开始执行 (org.workflow.stage_started; →running, Role Executor 触发)。"""
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.ORG_WORKFLOW_STAGE_STARTED,
+        source=source,
+        stage=stage.status.value,
+        action="stage started",
+        result="OK",
+        project_id=workflow.project_id,
+        payload={
+            "workflow_id": workflow.id,
+            "project_id": workflow.project_id,
+            "stage_id": stage.id,
+            "role_id": stage.role_id,
+            "name": stage.name,
+            "status": stage.status.value,
+        },
+    )
+
+
+def record_workflow_stage_completed(
+    logger: Any, *, workflow: Any, stage: Any, source: str = "org"
+) -> Event | None:
+    """阶段完成 (org.workflow.stage_completed; →completed, 输出产物引用)。"""
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.ORG_WORKFLOW_STAGE_COMPLETED,
+        source=source,
+        stage=stage.status.value,
+        action="stage completed",
+        result="OK",
+        project_id=workflow.project_id,
+        payload={
+            "workflow_id": workflow.id,
+            "project_id": workflow.project_id,
+            "stage_id": stage.id,
+            "role_id": stage.role_id,
+            "name": stage.name,
+            "status": stage.status.value,
+            "output_artifact_ids": list(stage.output_artifacts),
+        },
+    )
+
+
+def record_workflow_completed(
+    logger: Any, *, workflow: Any, source: str = "org"
+) -> Event | None:
+    """工作流完成 (org.workflow.completed; 全部阶段完成, 终态)。"""
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.ORG_WORKFLOW_COMPLETED,
+        source=source,
+        stage=workflow.status.value,
+        action="workflow completed",
+        result="OK",
+        project_id=workflow.project_id,
+        payload={
+            "workflow_id": workflow.id,
+            "project_id": workflow.project_id,
+            "status": workflow.status.value,
+            "stage_count": len(workflow.stage_ids),
+            "completed_stage_count": len(workflow.stage_ids),
+        },
+    )
+
+
+def record_workflow_failed(
+    logger: Any,
+    *,
+    workflow: Any,
+    stage_id: str,
+    reason: str,
+    source: str = "org",
+) -> Event | None:
+    """工作流失败 (org.workflow.failed; 阶段失败 → 终态, 可经 paused 重试)。"""
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.ORG_WORKFLOW_FAILED,
+        source=source,
+        stage=workflow.status.value,
+        action="workflow failed",
+        result="FAIL",
+        project_id=workflow.project_id,
+        payload={
+            "workflow_id": workflow.id,
+            "project_id": workflow.project_id,
+            "status": workflow.status.value,
+            "stage_id": stage_id,
+            "reason": reason,
+        },
+    )
+
+
+def record_workflow_viewed(
+    logger: Any,
+    *,
+    count: int,
+    filters: dict[str, Any] | None = None,
+    source: str = "cli",
+) -> Event | None:
+    """工作流清单/详情/状态被查看 (org.workflow.viewed; 读命令审计, ADR-0002)。"""
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.ORG_WORKFLOW_VIEWED,
+        source=source,
+        stage="viewed",
+        action="view workflow",
         result="OK",
         payload={"count": count, "filters": filters or {}},
     )

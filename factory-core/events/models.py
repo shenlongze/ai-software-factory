@@ -475,6 +475,25 @@ class EventType(str, Enum):
     ORG_ARTIFACT_FAILED = "org.artifact.failed"              # 契约校验失败/执行失败 (→invalid)
     ORG_ARTIFACT_ARCHIVED = "org.artifact.archived"          # 软删归档 (→archived, 终态)
     ORG_ARTIFACT_VIEWED = "org.artifact.viewed"              # 产物清单/详情被查看 (只读审计)
+    # Sprint 7 S7-003 (factory-org Extension, 同扩展路径): 组织级 Workflow
+    # Engine — 编排壳 (Workflow DRAFT/ACTIVE/PAUSED/COMPLETED/FAILED +
+    # Stage PENDING/READY/RUNNING/BLOCKED/COMPLETED/FAILED + DAG 依赖 +
+    # Runner 就绪判定→Role Executor→Artifact 注册→推进)。created/started/
+    # completed/failed 为 workflow 生命周期事件 (started 覆盖 启动/恢复 —
+    # 含 paused→active 重试路径; failed 含 stage_id/reason 审计); stage_ready/
+    # stage_started/stage_completed 为 Stage 流转事件; viewed 为读命令审计
+    # (ADR-0002: 所有 CLI 行为必须产生 Event)。payload 契约见
+    # factory-org/org/events.py — 事件唯一事实源: 从 payload 可重建编排
+    # 关键字段 (workflow_id/project_id/status/stage_id/role_id/from_status/
+    # to_status/artifact_ids/reason)。
+    ORG_WORKFLOW_CREATED = "org.workflow.created"            # 工作流创建 (DRAFT)
+    ORG_WORKFLOW_STARTED = "org.workflow.started"            # 工作流启动/恢复 (→ACTIVE)
+    ORG_WORKFLOW_STAGE_READY = "org.workflow.stage_ready"    # 阶段就绪 (依赖+输入满足 →READY)
+    ORG_WORKFLOW_STAGE_STARTED = "org.workflow.stage_started"  # 阶段开始执行 (→RUNNING)
+    ORG_WORKFLOW_STAGE_COMPLETED = "org.workflow.stage_completed"  # 阶段完成 (→COMPLETED)
+    ORG_WORKFLOW_COMPLETED = "org.workflow.completed"        # 全部阶段完成 (终态)
+    ORG_WORKFLOW_FAILED = "org.workflow.failed"              # 阶段失败 → 工作流失败
+    ORG_WORKFLOW_VIEWED = "org.workflow.viewed"              # 工作流清单/详情/状态被查看 (只读审计)
 
 
 class Event(BaseModel):

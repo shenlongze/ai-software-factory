@@ -52,7 +52,7 @@ def _code_metadata() -> dict:
 
 
 def _test_metadata() -> dict:
-    return {"results": {"pass": 3}, "bugs": []}
+    return {"results": {"passed": True, "total": 3}, "bugs": []}
 
 
 def make_role_executor(executors: dict):

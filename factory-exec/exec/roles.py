@@ -8,8 +8,9 @@ capabilities + prompt 模板 (角色职责/输出格式) + workflow 阶段映射
 Tester / DevOps — 统一 RoleDefinition 声明式注册, 零 Agent 复制。
 
 诚实标注 (execution_kind):
-- "executable": 有真实 LLM 执行路径 (当前仅 Developer — AgentRuntime/
-  DeveloperAgent 已实现, production_validate 真实闭环验证)。
+- "executable": 有真实 LLM 执行路径 (Developer — AgentRuntime/DeveloperAgent
+  已实现, production_validate 真实闭环验证; Tester — S7-004 TesterAgent 已实现,
+  测试执行确定性 + 失败分析/缺陷报告 LLM 结构化输出)。
 - "planning": 角色已定义 (capabilities + prompt 模板 + 阶段映射), 但尚无
   独立 LLM 执行路径 — 只能产出规划产物 (demo_ui_feature 拆解演示走此路径,
   明确标注"规划产物, 非 LLM 执行")。不假装可执行。
@@ -53,7 +54,7 @@ class RoleDefinition:
 
     @property
     def is_executable(self) -> bool:
-        """是否有真实 LLM 执行路径 (当前仅 Developer)。"""
+        """是否有真实 LLM 执行路径 (当前 Developer + Tester)。"""
         return self.execution_kind == "executable"
 
 
@@ -87,11 +88,15 @@ _DEV_PROMPT = (
     "输出格式: 结构化操作 <operations> JSON 或统一 diff <patch> (由系统执行)。"
 )
 
-#: Tester — 测试验证与评审 (规划角色; 测试执行经确定性 Validation, 非 LLM)
+#: Tester — 测试验证与缺陷分析 (S7-004 executable: TesterAgent 已实现 —
+#: 测试执行经确定性验证循环 (unittest/pytest, 不靠 LLM 猜), 失败分析/缺陷报告
+#: 经 LLM 结构化输出)
 _TESTER_PROMPT = (
-    "你是一名 Tester (测试工程师)。职责: 设计验收用例, 验证功能正确性与回归"
-    "安全, 输出明确通过/失败结论。\n"
-    "输出格式: 测试计划与结论 (用例清单 / 预期结果 / 实际结果)。"
+    "你是一名 Tester (测试工程师)。职责: 运行测试 (确定性验证循环, unittest/pytest), "
+    "分析失败输出, 生成结构化缺陷报告 (bug report: 位置/复现/期望/实际/根因/严重级), "
+    "并生成修复任务回传 Developer。测试通过 → 明确通过结论。\n"
+    "输出格式: 测试结果 (results: passed/failed 计数) + 缺陷列表 (bugs, 每项含 "
+    "location/repro/expected/actual/root_cause/severity) + 修复任务 (repair task)。"
 )
 
 #: DevOps — 部署/运维 (规划角色)
@@ -140,7 +145,7 @@ ROLE_REGISTRY: dict[str, RoleDefinition] = {
         capabilities=("testing", "verification"),
         prompt_template=_TESTER_PROMPT,
         workflow_stages=("testing",),
-        execution_kind="planning",
+        execution_kind="executable",
     ),
     "devops": RoleDefinition(
         role_id="devops",
@@ -193,7 +198,7 @@ def list_role_dicts() -> list[dict[str, Any]]:
 
 
 def executable_role_ids() -> list[str]:
-    """可执行角色 (有真实 LLM 路径) — 当前仅 developer, 诚实标注。"""
+    """可执行角色 (有真实 LLM 路径) — developer + tester (S7-004), 诚实标注。"""
     return [r.role_id for r in list_roles() if r.is_executable]
 
 

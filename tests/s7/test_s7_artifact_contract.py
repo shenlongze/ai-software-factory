@@ -1,6 +1,6 @@
 """tests/s7/test_s7_artifact_contract.py — S7-002 类型契约 (Unit, ADR-0039)。
 
-覆盖 (任务清单: prd/design/code/test/release 声明式 required+validation):
+覆盖 (任务清单: prd/design/code/test/bug_report/release 声明式 required+validation):
 - CONTRACTS 声明式覆盖全部 5 类型 (required_fields + validation_rules)
 - validate_artifact: 缺失字段 → missing; 规则失败 (类型错/空值/空容器)
   → errors; 通过 → ok=True; 类型大小写不敏感; None 载荷 → 全缺失;
@@ -24,8 +24,8 @@ def _prd_ok() -> dict:
 
 
 class TestContractsDeclared:
-    def test_all_five_types_covered(self):
-        assert sorted(CONTRACTS) == ["code", "design", "prd", "release", "test"]
+    def test_all_six_types_covered(self):
+        assert sorted(CONTRACTS) == ["bug_report", "code", "design", "prd", "release", "test"]
         for contract in CONTRACTS.values():
             assert "required_fields" in contract
             assert "validation_rules" in contract
@@ -43,6 +43,13 @@ class TestContractsDeclared:
 
     def test_test_contract_shape(self):
         assert CONTRACTS["test"]["required_fields"] == ("results", "bugs")
+        # S7-004 强化: results 必含 passed 键 (确定性测试结果契约)
+        assert CONTRACTS["test"]["validation_rules"]["results"]["required_keys"] == ["passed"]
+
+    def test_bug_report_contract_shape(self):
+        assert CONTRACTS["bug_report"]["required_fields"] == (
+            "location", "repro", "expected", "actual", "root_cause", "severity",
+        )
 
     def test_release_contract_shape(self):
         assert CONTRACTS["release"]["required_fields"] == (
@@ -122,6 +129,12 @@ class TestValidateOtherTypes:
     def test_test_valid(self):
         payload = {"results": {"passed": 3, "failed": 1}, "bugs": ["b1"]}
         assert validate_artifact("test", payload).ok
+
+    def test_test_results_missing_passed_rule_fail(self):
+        """S7-004 强化: results 缺 passed 键 → 规则失败 (确定性契约)。"""
+        result = validate_artifact("test", {"results": {"total": 3}, "bugs": []})
+        assert not result.ok
+        assert any("passed" in e for e in result.errors)
 
     def test_test_results_empty_dict_rule_fail(self):
         result = validate_artifact("test", {"results": {}, "bugs": []})

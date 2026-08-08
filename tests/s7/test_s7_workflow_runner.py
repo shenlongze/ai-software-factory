@@ -243,7 +243,7 @@ class TestOutputRegistration:
             return {"artifacts": [
                 {"type": "code", "ref": "file:///a.py", "metadata": _code_metadata()},
                 {"type": "test", "ref": "file:///t.py",
-                 "metadata": {"results": {"pass": 1}, "bugs": []}},
+                 "metadata": {"results": {"passed": True, "total": 1}, "bugs": []}},
             ]}
 
         make_runner(wlife, executor=multi).run("WF-1")

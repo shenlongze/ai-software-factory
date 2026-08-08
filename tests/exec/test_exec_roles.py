@@ -2,9 +2,10 @@
 
 覆盖: 6 角色注册 (ProductManager/UIDesigner/Architect/Developer/Tester/
 DevOps) / RoleDefinition 字段 (capabilities + prompt 模板 + workflow 阶段
-映射 + execution_kind) / 唯一 executable 角色 (developer) / get_role vs
-require_role (未注册 → RoleError 响亮) / 能力合并 (去重保序, None 安全) /
-workflow 阶段 ↔ 角色映射完整性 / list_role_dicts / executable_role_ids。
+映射 + execution_kind) / executable 角色 (developer + tester, S7-004) /
+get_role vs require_role (未注册 → RoleError 响亮) / 能力合并 (去重保序,
+None 安全) / workflow 阶段 ↔ 角色映射完整性 / list_role_dicts /
+executable_role_ids。
 
 设计 (roles.py): 角色 = 声明式数据 (dataclass frozen), 零逻辑; 注册表 dict
 单一事实源; 零 pydantic — 与 templates.py 同构。
@@ -68,10 +69,11 @@ class TestRegistry:
         assert dev.execution_kind == "executable"
         assert dev.is_executable
 
-    def test_only_developer_executable(self):
-        """诚实标注: 仅 developer 有真实 LLM 执行路径, 其余 planning。"""
+    def test_developer_and_tester_executable(self):
+        """诚实标注: developer + tester 有真实 LLM 执行路径 (S7-004 Tester
+        executable), 其余 planning。"""
         for role in list_roles():
-            if role.role_id == "developer":
+            if role.role_id in ("developer", "tester"):
                 assert role.is_executable
                 assert role.execution_kind == "executable"
             else:
@@ -80,7 +82,7 @@ class TestRegistry:
 
     def test_planning_roles_have_prompt_and_stages(self):
         """规划角色同样具备 prompt 模板与阶段映射 (演示拆解可用, 不假装可执行)。"""
-        for role_id in EXPECTED_ROLES - {"developer"}:
+        for role_id in EXPECTED_ROLES - {"developer", "tester"}:
             role = require_role(role_id)
             assert role.prompt_template, f"{role_id} 缺 prompt 模板"
             assert role.workflow_stages, f"{role_id} 缺 workflow 阶段映射"
@@ -116,8 +118,9 @@ class TestLookup:
         with pytest.raises(RoleError):
             capabilities_for_role("nope")
 
-    def test_executable_role_ids_only_developer(self):
-        assert executable_role_ids() == ["developer"]
+    def test_executable_role_ids_developer_tester(self):
+        """executable 角色 (S7-004): developer + tester (真实 LLM 路径)。"""
+        assert executable_role_ids() == ["developer", "tester"]
 
 
 class TestMergeCapabilities:

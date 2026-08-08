@@ -143,7 +143,7 @@ class TestOrgRoleCoverage:
         coverage = roles.org_role_coverage()
         qa = coverage["qa"]
         assert qa["role_id"] == "tester"
-        assert qa["execution_kind"] == "planning"
+        assert qa["execution_kind"] == "executable"  # S7-004: Tester 已可执行
         assert "testing" in qa["capabilities"]
 
     def test_developer_executable_in_coverage(self):

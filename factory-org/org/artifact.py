@@ -4,8 +4,9 @@
 - 每阶段产物 = 下一阶段输入: PRD → Design → Code → Test → Release
 - Artifact 生命周期: CREATED → GENERATED → VALIDATED → CONSUMED → ARCHIVED;
   异常 INVALID (契约校验失败/执行失败), 可回 GENERATED 重生成 (失败恢复)
-- 类型契约 (CONTRACTS 声明式): prd/design/code/test/release 各自
-  required_fields + validation_rules — 阶段间契约严格定义 (架构风险 1 缓解)
+- 类型契约 (CONTRACTS 声明式): prd/design/code/test/bug_report/release 各自
+  required_fields + validation_rules — 阶段间契约严格定义 (架构风险 1 缓解);
+  S7-004 扩展: test 强化 (results.passed 必含) + bug_report 类型 (Tester 缺陷报告)
 - 引用完整: stage/project 必须存在; task 须经 ProjectTaskLink 关联该项目
   (项目隔离铁律, 同 S7-001 add_task_to_sprint); producer_role 经 exec
   注册表校验 (未安装 → 跳过, Removal Isolation — 不假装校验)
@@ -100,8 +101,19 @@ CONTRACTS: dict[str, dict[str, Any]] = {
     "test": {
         "required_fields": ("results", "bugs"),
         "validation_rules": {
-            "results": {"type": "dict", "min_keys": 1},
+            "results": {"type": "dict", "min_keys": 1, "required_keys": ["passed"]},
             "bugs": {"type": "list"},
+        },
+    },
+    "bug_report": {
+        "required_fields": ("location", "repro", "expected", "actual", "root_cause", "severity"),
+        "validation_rules": {
+            "location": {"type": "str", "min_length": 1},
+            "repro": {"type": "str", "min_length": 1},
+            "expected": {"type": "str", "min_length": 1},
+            "actual": {"type": "str", "min_length": 1},
+            "root_cause": {"type": "str", "min_length": 1},
+            "severity": {"type": "str", "min_length": 1},
         },
     },
     "release": {
@@ -138,6 +150,11 @@ def _check_rule(field: str, value: Any, rule: dict[str, Any]) -> str | None:
         min_keys = rule.get("min_keys", 0)
         if len(value) < min_keys:
             return f"min keys {min_keys}"
+        required_keys = rule.get("required_keys")
+        if required_keys:
+            missing_keys = [k for k in required_keys if k not in value]
+            if missing_keys:
+                return f"missing required keys: {', '.join(missing_keys)}"
     return None
 
 

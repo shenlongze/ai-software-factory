@@ -66,12 +66,17 @@ class ProjectState(str, Enum):
 
 
 class ArtifactType(str, Enum):
-    """阶段产物类型 (sprint7-architecture §1: 阶段产物 = 下一阶段输入)。"""
+    """阶段产物类型 (sprint7-architecture §1: 阶段产物 = 下一阶段输入)。
+
+    S7-004 扩展: BUG_REPORT (结构化缺陷报告 — Tester 失败分析产物, 修复任务
+    输入; 单点扩展: 枚举加成员 + CONTRACTS 表加条目)。
+    """
 
     PRD = "prd"
     DESIGN = "design"
     CODE = "code"
     TEST = "test"
+    BUG_REPORT = "bug_report"   # S7-004: 结构化缺陷报告
     RELEASE = "release"
 
     @classmethod

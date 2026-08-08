@@ -826,6 +826,240 @@ class WorkflowRunner:
         )
 
 
+# ------------------------------------------------------------------ Dev↔Tester Loop (S7-004)
+
+#: 自动修复轮数上限 (架构 §4: ≤2 轮防无限; 测试轮数上限 = 该值 + 1)
+DEFAULT_MAX_REPAIR_ROUNDS = 2
+
+
+def build_dev_test_workflow(
+    lifecycle: WorkflowLifecycle,
+    project_id: str,
+    name: str,
+    *,
+    workflow_id: str | None = None,
+) -> Workflow:
+    """创建 Dev↔Tester Loop workflow (初始对: developer stage → tester stage)。
+
+    修复轮 (repair developer + retest tester) 由 DevTestLoopRunner 按需动态
+    创建 (≤ max_repair_rounds, 计数保护); 通过后剩余阶段 (如 release 前置)
+    交回 base Runner 推进。
+    """
+    workflow = lifecycle.create_workflow(project_id, name, workflow_id=workflow_id)
+    dev = lifecycle.create_stage(workflow.id, "developer", name="develop")
+    lifecycle.create_stage(workflow.id, "tester", name="test", depends_on=[dev.id])
+    return workflow
+
+
+class DevTestLoopRunner(WorkflowRunner):
+    """Developer↔Tester Loop 编排 (S7-004): dev → test → (bug → repair → retest)。
+
+    复用 S7-003 WorkflowRunner 执行原语 (_is_ready/_execute_stage/_invoke_executor/
+    _register_outputs — 同一 executor 注入点 + 产物自动注册 + 就绪判定),
+    不重写 Runner 核心 run() 循环 (约束: 只扩展)。
+
+    循环语义:
+    - 初始对: developer stage (develop) → tester stage (test), 经
+      build_dev_test_workflow 创建。
+    - 每轮: 执行 developer 阶段 (产出 code 产物, 自动接线为 test 输入) →
+      执行 tester 阶段 (产出 test + bug_report 产物)。
+    - tester 通过 (无 bug_report 产物) → 剩余阶段 (如 release 前置) 交回
+      base Runner 推进 → workflow COMPLETED。
+    - tester 失败 (有 bug_report) 且修复轮次未耗尽 → 动态创建 repair
+      (developer, 输入 = bug_report 产物) + retest (tester) 阶段 → 下一轮。
+    - 修复轮次耗尽 (默认 ≤2 轮自动修复 = 3 次测试) 仍有缺陷 → workflow
+      FAILED (质量门禁, failed_reason + stage_id 审计) — 禁无限循环。
+    - 计数保护: 测试轮数上限 = max_repair_rounds + 1; 中断重跑幂等 (已
+      COMPLETED 轮次计入, 不超限); 重跑后仍有未决缺陷 → 保持 ACTIVE
+      (不假装完成, 等待人工介入)。
+    """
+
+    def __init__(
+        self,
+        lifecycle: WorkflowLifecycle,
+        *,
+        executor: ExecutorFn | None = None,
+        logger: Any = None,
+        max_repair_rounds: int = DEFAULT_MAX_REPAIR_ROUNDS,
+    ) -> None:
+        super().__init__(lifecycle, executor=executor, logger=logger)
+        self._max_repair_rounds = max(0, int(max_repair_rounds))
+
+    @property
+    def max_repair_rounds(self) -> int:
+        """自动修复轮数上限 (计数保护配置)。"""
+        return self._max_repair_rounds
+
+    def run(self, workflow_id: str, *, max_steps: int | None = None) -> Workflow:
+        """执行 Dev↔Tester Loop (轮次计数保护; 返回终态/挂起 workflow)。
+
+        max_steps 透传 base Runner (测试通过后剩余阶段推进的步数上限);
+        Loop 本身的防无限保护 = 轮次计数 (max_repair_rounds + 1), 与 base
+        Runner 的步数保护语义一致。
+        """
+        workflow = self._lifecycle.get_workflow(workflow_id)
+        if workflow.status == WorkflowStatus.COMPLETED:
+            return workflow  # 幂等: 已完成不重复执行
+        if workflow.status == WorkflowStatus.FAILED:
+            raise WorkflowStateError(
+                f"failed workflow cannot run: {workflow_id} "
+                f"(pause 后人工介入再恢复 — failed → paused → active 重试路径)"
+            )
+        if workflow.status != WorkflowStatus.ACTIVE:
+            workflow = self._lifecycle.activate(workflow_id)  # DRAFT/PAUSED → ACTIVE
+        stages = self._lifecycle.list_stages(workflow_id)
+        if not stages:
+            return self._lifecycle.transition_workflow(workflow_id, WorkflowStatus.COMPLETED)
+        self._lifecycle.validate_dag(workflow_id)  # 循环依赖响亮拒绝
+
+        max_test_rounds = self._max_repair_rounds + 1
+        # 幂等恢复: 已 COMPLETED 的 tester 阶段计入已执行轮次 (中断重跑不超限)
+        executed_rounds = sum(
+            1 for s in stages
+            if s.role_id == "tester" and s.status == StageStatus.COMPLETED
+        )
+
+        while executed_rounds < max_test_rounds:
+            workflow = self._lifecycle.get_workflow(workflow_id)
+            if workflow.status != WorkflowStatus.ACTIVE:
+                break  # 已 FAILED (stage 执行失败) — 返回既有终态
+            stages = self._lifecycle.list_stages(workflow_id)
+            dev = next(
+                (s for s in stages
+                 if s.role_id == "developer"
+                 and s.status not in (StageStatus.COMPLETED, StageStatus.FAILED)),
+                None,
+            )
+            test = next(
+                (s for s in stages
+                 if s.role_id == "tester"
+                 and s.status not in (StageStatus.COMPLETED, StageStatus.FAILED)),
+                None,
+            )
+            if dev is None or test is None:
+                break  # 阶段不足 → 兜底完成/挂起判定
+
+            # --- 自动接线: 修复轮 dev 输入 = 前序 test 的 bug_report 产物 ---
+            prev_tests = [
+                s for s in stages
+                if s.role_id == "tester" and s.status == StageStatus.COMPLETED
+            ]
+            if prev_tests:
+                prev = prev_tests[-1]
+                bug_ids = [
+                    a.id for a in self._lifecycle.stage_artifacts(prev.id)
+                    if a.type.value == "bug_report" and a.status == ArtifactStatus.VALIDATED
+                ]
+                if bug_ids:
+                    dev = self._wire(dev, depends_on=[prev.id], input_artifacts=bug_ids)
+            by_id = {s.id: s for s in self._lifecycle.list_stages(workflow_id)}
+            if not self._is_ready(dev, by_id):
+                self._to_blocked(dev)
+                break  # 依赖/输入未满足 → 保持 ACTIVE (等待外部输入, 诚实)
+            if dev.status != StageStatus.READY:
+                self._lifecycle.transition_stage(dev.id, StageStatus.READY)
+            self._execute_stage(workflow_id, dev)
+            if self._lifecycle.get_stage(dev.id).status == StageStatus.FAILED:
+                return self._lifecycle.get_workflow(workflow_id)  # workflow 已 FAILED
+
+            # --- test 接线: 输入 = 本 dev 的 code 产物 (自动注册后回查) ---
+            test = self._lifecycle.get_stage(test.id)
+            code_artifacts = [
+                a for a in self._lifecycle.stage_artifacts(dev.id)
+                if a.type.value == "code" and a.status == ArtifactStatus.VALIDATED
+            ]
+            if not code_artifacts:
+                self._to_blocked(test)
+                break  # dev 未产出 code 产物 → 测试无可测输入 (诚实阻塞)
+            test = self._wire(test, depends_on=[dev.id], input_artifacts=[code_artifacts[0].id])
+            by_id = {s.id: s for s in self._lifecycle.list_stages(workflow_id)}
+            if not self._is_ready(test, by_id):
+                self._to_blocked(test)
+                break
+            if test.status != StageStatus.READY:
+                self._lifecycle.transition_stage(test.id, StageStatus.READY)
+            self._execute_stage(workflow_id, test)
+            if self._lifecycle.get_stage(test.id).status == StageStatus.FAILED:
+                return self._lifecycle.get_workflow(workflow_id)
+            executed_rounds += 1
+
+            # --- 缺陷判定 (bug_report 产物 = 质量门禁) ---
+            bugs = [
+                a for a in self._lifecycle.stage_artifacts(test.id)
+                if a.type.value == "bug_report" and a.status == ArtifactStatus.VALIDATED
+            ]
+            if not bugs:
+                # 测试通过 → 剩余阶段 (如 release 前置) 交回 base Runner 推进
+                return super().run(workflow_id, max_steps=max_steps)
+            if executed_rounds >= max_test_rounds:
+                # 修复轮次耗尽仍有缺陷 → 质量门禁失败 (响亮, 不假装完成)
+                return self._lifecycle.transition_workflow(
+                    workflow_id,
+                    WorkflowStatus.FAILED,
+                    reason=(
+                        f"test loop exhausted after {executed_rounds} rounds: "
+                        f"{len(bugs)} bug(s) remaining (max repair rounds="
+                        f"{self._max_repair_rounds})"
+                    ),
+                    event_extra={"stage_id": test.id},
+                )
+            # 创建修复轮: repair (developer, 输入 = bug_report) + retest (tester)
+            repair = self._lifecycle.create_stage(
+                workflow_id,
+                "developer",
+                name=f"repair {executed_rounds}",
+                depends_on=[test.id],
+                input_artifacts=[a.id for a in bugs],
+            )
+            self._lifecycle.create_stage(
+                workflow_id,
+                "tester",
+                name=f"retest {executed_rounds}",
+                depends_on=[repair.id],
+            )
+
+        # 兜底: 阶段不足/阻塞 — 全部 COMPLETED 且无未决缺陷 → COMPLETED;
+        # 否则保持 ACTIVE (诚实, 不假装完成; 未决缺陷交人工介入)
+        workflow = self._lifecycle.get_workflow(workflow_id)
+        stages = self._lifecycle.list_stages(workflow_id)
+        if all(s.status == StageStatus.COMPLETED for s in stages):
+            last_test = [s for s in stages if s.role_id == "tester"]
+            unresolved = last_test and any(
+                a.type.value == "bug_report" and a.status == ArtifactStatus.VALIDATED
+                for a in self._lifecycle.stage_artifacts(last_test[-1].id)
+            )
+            if not unresolved:
+                return self._lifecycle.transition_workflow(workflow_id, WorkflowStatus.COMPLETED)
+        return workflow  # ACTIVE (等待外部输入 / 人工介入)
+
+    # ------------------------------------------------------------ 内部辅助
+
+    def _wire(
+        self,
+        stage: Stage,
+        *,
+        depends_on: list[str] | None = None,
+        input_artifacts: list[str] | None = None,
+    ) -> Stage:
+        """阶段 DAG 接线 (depends_on/input_artifacts 数据更新, 非状态转换)。
+
+        循环编排层动态接线: dev ← bug_report 产物 / test ← code 产物。
+        """
+        updates: dict[str, Any] = {"updated_at": utcnow()}
+        if depends_on is not None:
+            updates["depends_on"] = list(depends_on)
+        if input_artifacts is not None:
+            updates["input_artifacts"] = list(input_artifacts)
+        updated = stage.model_copy(update=updates)
+        self._lifecycle.store.save_stage(updated)
+        return updated
+
+    def _to_blocked(self, stage: Stage) -> None:
+        """阶段置 BLOCKED (依赖/输入未满足; 幂等, 不重复发事件)。"""
+        if stage.status != StageStatus.BLOCKED:
+            self._lifecycle.transition_stage(stage.id, StageStatus.BLOCKED)
+
+
 def workflow_files(org_dir: str | Path) -> list[Path]:
     """workflow 数据文件 (存在者; 测试/审计用 — workflows.json)。"""
     path = Path(org_dir) / "workflows.json"

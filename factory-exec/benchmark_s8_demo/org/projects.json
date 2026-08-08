@@ -1,0 +1,13 @@
+{
+  "projects": {
+    "P-S8-DEMO": {
+      "id": "P-S8-DEMO",
+      "name": "S8-005 记账 Web App Demo",
+      "user_id": "",
+      "goal": "Idea → PM → UX/UI → Architect → Developer → Tester → Release 全链真实执行",
+      "lifecycle": "idea",
+      "created_at": "2026-08-08T19:26:11.420778Z",
+      "updated_at": "2026-08-08T19:26:11.420781Z"
+    }
+  }
+}

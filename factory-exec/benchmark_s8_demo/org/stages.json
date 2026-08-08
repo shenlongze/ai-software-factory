@@ -1,0 +1,118 @@
+{
+  "stages": {
+    "STG-S8-DESIGN": {
+      "id": "STG-S8-DESIGN",
+      "workflow_id": "WF-S8-DESIGN",
+      "role_id": "architect",
+      "name": "design",
+      "order": 3,
+      "status": "completed",
+      "artifact_ref": "",
+      "depends_on": [
+        "STG-S8-UXUI"
+      ],
+      "input_artifacts": [
+        "A-S8-PRODUCT",
+        "A-S8-UXUI"
+      ],
+      "output_artifacts": [
+        "A-S8-DESIGN"
+      ],
+      "created_at": "2026-08-08T19:26:11.462140Z"
+    },
+    "STG-S8-DEV": {
+      "id": "STG-S8-DEV",
+      "workflow_id": "WF-S8-APP",
+      "role_id": "developer",
+      "name": "development",
+      "order": 1,
+      "status": "completed",
+      "artifact_ref": "",
+      "depends_on": [],
+      "input_artifacts": [
+        "A-S8-PRODUCT",
+        "A-S8-UXUI",
+        "A-S8-DESIGN"
+      ],
+      "output_artifacts": [
+        "A-S8-CODE"
+      ],
+      "created_at": "2026-08-08T19:26:11.463329Z"
+    },
+    "STG-S8-PRODUCT": {
+      "id": "STG-S8-PRODUCT",
+      "workflow_id": "WF-S8-DESIGN",
+      "role_id": "product-manager",
+      "name": "product",
+      "order": 1,
+      "status": "completed",
+      "artifact_ref": "",
+      "depends_on": [],
+      "input_artifacts": [
+        "A-S8-IDEA"
+      ],
+      "output_artifacts": [
+        "A-S8-PRODUCT"
+      ],
+      "created_at": "2026-08-08T19:26:11.460349Z"
+    },
+    "STG-S8-REL": {
+      "id": "STG-S8-REL",
+      "workflow_id": "WF-S8-APP",
+      "role_id": "devops",
+      "name": "release",
+      "order": 3,
+      "status": "completed",
+      "artifact_ref": "",
+      "depends_on": [
+        "STG-S8-TEST"
+      ],
+      "input_artifacts": [
+        "A-S8-CODE",
+        "A-S8-TEST"
+      ],
+      "output_artifacts": [
+        "A-S8-RELEASE"
+      ],
+      "created_at": "2026-08-08T19:26:11.465037Z"
+    },
+    "STG-S8-TEST": {
+      "id": "STG-S8-TEST",
+      "workflow_id": "WF-S8-APP",
+      "role_id": "tester",
+      "name": "testing",
+      "order": 2,
+      "status": "completed",
+      "artifact_ref": "",
+      "depends_on": [
+        "STG-S8-DEV"
+      ],
+      "input_artifacts": [
+        "A-S8-CODE"
+      ],
+      "output_artifacts": [
+        "A-S8-TEST"
+      ],
+      "created_at": "2026-08-08T19:26:11.464261Z"
+    },
+    "STG-S8-UXUI": {
+      "id": "STG-S8-UXUI",
+      "workflow_id": "WF-S8-DESIGN",
+      "role_id": "ui-designer",
+      "name": "ux_ui",
+      "order": 2,
+      "status": "completed",
+      "artifact_ref": "",
+      "depends_on": [
+        "STG-S8-PRODUCT"
+      ],
+      "input_artifacts": [
+        "A-S8-PRODUCT"
+      ],
+      "output_artifacts": [
+        "A-S8-UXUI"
+      ],
+      "created_at": "2026-08-08T19:26:11.461152Z"
+    }
+  }
+}

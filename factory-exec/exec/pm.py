@@ -32,6 +32,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field as dc_field
 from typing import Any, Callable
 
@@ -142,6 +143,10 @@ def _local_validate(payload: dict[str, Any]) -> list[str]:
 
 
 #: PM Agent prompt (想法 → 产品分析 7 节; 生产 provider = DeepSeek v4-pro)
+#: S8-005 强化: 显式声明每节必须为实质内容 (str 非空 / list 非空 /
+#: mvp_scope 含 in/out), 禁止省略/留空 — 真实 v4-pro 曾输出缺 3 节
+#: (user_persona/user_journey/problem_statement 为空), 契约失败由
+#: develop 反馈重试闭环兜底 (见 _build_retry_prompt)。
 _PM_AGENT_PROMPT = (
     "你是一名 Product Manager (产品经理)。把下面的用户想法 (Idea) 转化为结构化"
     "产品分析产物 (Product Artifact), 覆盖 7 节: \n"
@@ -153,33 +158,98 @@ _PM_AGENT_PROMPT = (
     "- mvp_scope: MVP 范围 (对象, 必含 in/out 两个数组: 范围内/范围外)\n"
     "- user_stories: 用户故事 (数组, 每项含 as-a/i-want/so-that)\n\n"
     "用户想法:\n{idea}\n\n"
-    "输出 JSON 对象, 7 节字段齐全, 仅输出 JSON, 不要任何多余文字。"
+    "输出 JSON 对象, 7 节字段必须全部存在且为实质内容: "
+    "market_analysis / user_persona / user_journey / problem_statement "
+    "为非空字符串, feature_list / user_stories 为非空数组, mvp_scope 为"
+    "含 in/out 两个数组的对象。每一节都必须认真填写, 禁止省略任何一节, "
+    "禁止留空或写占位文字。必须是纯 JSON 对象: 禁止 markdown 代码块围栏 "
+    "(```), 禁止注释, 禁止任何前后说明文字; 输出必须以 {{ 开始、以 }} 结束。"
 )
 
 
 # ------------------------------------------------------------------ 解析
 
 
-def _extract_json(content: str) -> Any:
-    """宽容 JSON 提取: 剥 markdown 围栏 → 整体解析 → 子串回退 ({})。"""
-    text = content.strip()
-    lines = text.splitlines()
-    if lines and lines[0].strip().startswith("```"):
+def _strip_fences(content: str) -> str:
+    """剥 markdown 代码块围栏 (``` / ```json 等; 前导/尾部多行均剥)。"""
+    lines = content.strip().lstrip("\ufeff").splitlines()
+    while lines and lines[0].strip().startswith("```"):
         lines = lines[1:]
-    if lines and lines[-1].strip().startswith("```"):
+    while lines and lines[-1].strip().startswith("```"):
         lines = lines[:-1]
-    text = "\n".join(lines).strip()
+    return "\n".join(lines).strip()
+
+
+def _balanced_json_candidates(text: str) -> list[str]:
+    """扫描所有顶层平衡 {...} 子串 (字符串字面量内的大括号不计数)。
+
+    返回按出现顺序的候选列表 — 覆盖前后夹带说明文字 / 围栏残留 (如
+    "}```" 同行) / 尾部散文含花括号等模型真实输出形态 (S8-005 demo7
+    实测: 输出 12579/9953 chars 但整体解析与首尾子串回退全失败)。
+    """
+    candidates: list[str] = []
+    i, n = 0, len(text)
+    while i < n:
+        if text[i] != "{":
+            i += 1
+            continue
+        depth = 0
+        in_str = False
+        esc = False
+        j = i
+        while j < n:
+            ch = text[j]
+            if in_str:
+                if esc:
+                    esc = False
+                elif ch == "\\":
+                    esc = True
+                elif ch == '"':
+                    in_str = False
+            elif ch == '"':
+                in_str = True
+            elif ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    candidates.append(text[i : j + 1])
+                    i = j + 1
+                    break
+            j += 1
+        else:
+            i += 1  # 该起点无闭合 → 放弃, 找下一个 {
+    return candidates
+
+
+def _try_parse_json(candidate: str) -> Any:
+    """单候选解析: strict=False 容忍字符串内控制字符; 失败 → 去尾逗号再试。"""
     try:
-        return json.loads(text)
+        return json.loads(candidate, strict=False)
     except ValueError:
         pass
-    start = text.find("{")
-    end = text.rfind("}")
-    if start != -1 and end > start:
+    # JSON5 式尾逗号 (v4-pro 偶发): ",}" / ",]" → 去掉再试 (对合法 JSON 无副作用)
+    cleaned = re.sub(r",\s*([}\]])", r"\1", candidate)
+    if cleaned != candidate:
         try:
-            return json.loads(text[start : end + 1])
+            return json.loads(cleaned, strict=False)
         except ValueError:
             pass
+    return None
+
+
+def _extract_json(content: str) -> Any:
+    """宽容 JSON 提取 (S8-005 强化): 剥围栏 → 整体解析 → 多候选回退。"""
+    text = _strip_fences(content)
+    # 1) 整体解析 (最常见路径, 省扫描)
+    parsed = _try_parse_json(text)
+    if parsed is not None:
+        return parsed
+    # 2) 多候选回退: 依次尝试每个平衡 {...} 子串
+    for candidate in _balanced_json_candidates(text):
+        parsed = _try_parse_json(candidate)
+        if parsed is not None:
+            return parsed
     raise ProductManagerError("PM output is not valid JSON")
 
 
@@ -191,6 +261,25 @@ def _parse_product(content: str) -> ProductArtifact:
             "PM output must be a JSON object (product artifact 7 节)"
         )
     return ProductArtifact.from_dict(data)
+
+
+def _build_retry_prompt(original_prompt: str, error: ProductManagerError) -> str:
+    """契约失败反馈 (生产自愈闭环, DevTestLoop 失败反馈模式移植): 原始
+    prompt + 校验错误明细 + 修正要求 → 重试轮输入。
+
+    真实 v4-pro 曾输出 7 节缺 3 节 (字段存在但为空 str) — 模型不知道契约
+    校验规则, 反馈具体缺失/空字段比重复原始 prompt 更有效 (S8-005 修复)。
+    """
+    return (
+        original_prompt
+        + "\n\n你的上一次输出未通过产品契约校验, 错误如下:\n"
+        + str(error)
+        + "\n请修正后重新输出完整 JSON: 7 节字段必须全部存在且为实质内容"
+        " (str 节非空字符串、list 节非空数组、mvp_scope 含 in/out 数组), "
+        "特别注意补齐所有缺失或为空的节。禁止省略任何一节。"
+        " 必须输出修正后的完整 JSON (纯 JSON 对象, 以 { 开始、以 } 结束), "
+        "禁止 markdown 代码块围栏 (```)、禁止注释、禁止任何说明文字。"
+    )
 
 
 # ------------------------------------------------------------------ PM Agent
@@ -217,11 +306,15 @@ class PMAgent:
         provider: Any = None,
         *,
         idea: str = "",
-        max_tokens: int = 4096,
+        max_tokens: int = 8192,
+        max_retries: int = 1,
     ) -> None:
         self._provider = provider
         self._idea = (idea or "").strip()
+        # S8-005: v4-pro reasoning 消耗大, 4096 曾截断致输出缺节 → 8192
         self._max_tokens = int(max_tokens)
+        # S8-005: 契约失败 → 带错误反馈重试 ≤max_retries 次 (生产自愈)
+        self._max_retries = int(max_retries)
 
     @property
     def provider(self) -> Any:
@@ -242,6 +335,11 @@ class PMAgent:
         provider 缺失 / 调用失败 / 输出不可解析 / 缺字段 → ProductManagerError
         响亮 (不假装生成成功); 输出再经 Workflow Runner CONTRACTS product
         校验 (org 侧), 失败 → INVALID → stage FAILED。
+
+        S8-005 生产自愈 (产品级闭环, 非一次性 hack): 契约校验失败 →
+        将错误明细反馈给 LLM (prompt 追加缺失/空字段) 重试 ≤max_retries 次
+        (DevTestLoop 失败反馈模式移植); 重试耗尽仍失败 → 响亮 (错误含
+        最后一次解析失败明细, 诚实记录)。
         """
         idea_text = (idea or "").strip() or self._idea
         if not idea_text:
@@ -253,14 +351,26 @@ class PMAgent:
                 "product analysis requires a provider (仅 DeepSeek v4-pro; 测试注入 mock)"
             )
         prompt = _PM_AGENT_PROMPT.format(idea=idea_text[:4000])
-        response = self._provider.generate(
-            ProviderRequest(task_context=prompt, max_tokens=self._max_tokens)
-        )
-        if not response.ok or not (response.content or "").strip():
-            raise ProductManagerError(
-                f"product analysis failed: {response.error or 'empty provider response'}"
+        last_error: ProductManagerError | None = None
+        for attempt in range(self._max_retries + 1):
+            response = self._provider.generate(
+                ProviderRequest(task_context=prompt, max_tokens=self._max_tokens)
             )
-        return _parse_product(response.content)
+            if not response.ok or not (response.content or "").strip():
+                raise ProductManagerError(
+                    f"product analysis failed: {response.error or 'empty provider response'}"
+                )
+            try:
+                return _parse_product(response.content)
+            except ProductManagerError as exc:
+                last_error = exc
+                if attempt < self._max_retries:
+                    # 契约失败 → 带错误明细反馈重试 (生产自愈闭环)
+                    prompt = _build_retry_prompt(prompt, exc)
+        raise ProductManagerError(
+            f"product analysis failed after {self._max_retries + 1} attempts: "
+            f"{last_error}"
+        )
 
 
 # ------------------------------------------------------------------ Workflow 接入

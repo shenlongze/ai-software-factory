@@ -1,0 +1,732 @@
+{
+  "artifacts": {
+    "A-S8-CODE": {
+      "id": "A-S8-CODE",
+      "stage_id": "STG-S8-DEV",
+      "type": "code",
+      "ref": "file:///app_project",
+      "project_id": "P-S8-DEMO",
+      "task_id": "",
+      "producer_role": "developer",
+      "producer_agent": "",
+      "version": "1",
+      "status": "validated",
+      "location": "",
+      "metadata": {
+        "files": [
+          "app.js",
+          "index.html",
+          "style.css",
+          "tests/smoke_check.py"
+        ],
+        "changes": "# Execution Report — T-DEMO-001\n- task_id: T-DEMO-001\n- objective: 从零实现一个记账 Web App (纯前端 HTML/CSS/JS)。\n\n## 产品需求摘要 (Product Artifact)\n{\n \"market_analysis\": \"目标市场为寻求极简个人财务管理工具的用户，覆盖学生、职场新人、自由职业者等有日常记账需求但排斥复杂软件的群体。当前市场上主流记账应用多为移动App，需下载安装、注册账号，功能臃肿且存在隐私顾虑；纯网页端记账工具供给不足，尤其缺乏支持离线本地存储、刷新不丢失的轻量方案。竞争主要来自移动端记账App（如随手记、挖财）以及表格手工记账。机会在于：提供一款零门槛、即开即用、数据完全留在本地的网页记账工具，满足隐私敏感、厌恶繁琐流程的用户需求，可通过浏览器PWA能力后续扩展桌面/移动端体验。\",\n \"user_persona\": \"典型用户为22-35岁的年轻职场人或学生，生活节奏快，希望掌控个人现金流但不愿在记账上花费过多精力。他们常用的设备为笔记本电脑或手机浏览器，偏好简洁工具，对界面美观度有一定要求。核心特征：有基本的收支记录需求，无专业财务知识；痛点包括现有记账应用操作路径过长、需注册登录、广告多、担心数据上传云端泄露；期望一个打开即记、自动保存、刷新不丢数据的轻量工具，能直观",
+        "project_dir": "/Users/Shared/work/ai-software-factory/factory-exec/benchmark_s8_demo/app_project",
+        "patch_head": "--- /dev/null\n+++ b/index.html\n@@ -0,0 +1,80 @@\n+<!DOCTYPE html>\n+<html lang='zh-CN'>\n+<head>\n+  <meta charset='UTF-8'>\n+  <meta name='viewport' content='width=device-width, initial-scale=1.0'>\n+  <ti"
+      },
+      "created_at": "2026-08-08T19:30:28.766658Z",
+      "updated_at": "2026-08-08T19:30:28.772504Z",
+      "archived_at": null,
+      "invalid_reason": ""
+    },
+    "A-S8-DESIGN": {
+      "id": "A-S8-DESIGN",
+      "stage_id": "STG-S8-DESIGN",
+      "type": "design",
+      "ref": "file:///docs/design.json",
+      "project_id": "P-S8-DEMO",
+      "task_id": "",
+      "producer_role": "architect",
+      "producer_agent": "",
+      "version": "1",
+      "status": "validated",
+      "location": "",
+      "metadata": {
+        "system_architecture": "分层架构，纯客户端单页应用。分为三层：表现层（UI组件）、业务逻辑层（状态管理、余额计算、输入校验）、数据持久层（LocalStorage存取）。无后端服务器，数据流为：用户操作 -> UI组件事件 -> 业务逻辑/hooks -> 更新Context状态 -> 渲染更新视图；同时通过数据服务层读写LocalStorage。所有数据在浏览器本地闭环，刷新页面时从LocalStorage恢复状态。",
+        "technical_stack": {
+          "language": "TypeScript",
+          "framework": "React 18",
+          "bundler": "Vite",
+          "styling": "Tailwind CSS",
+          "state_management": "React Context + useReducer",
+          "id_generator": "crypto.randomUUID()",
+          "date_utils": "date-fns",
+          "testing": "Vitest + React Testing Library",
+          "linting": "ESLint + Prettier",
+          "deployment": "Static hosting (Vercel / Netlify / GitHub Pages)",
+          "storage": "LocalStorage"
+        },
+        "database_design": {
+          "tables": [
+            {
+              "name": "transactions",
+              "storage": "LocalStorage (key: 'transactions')",
+              "columns": [
+                {
+                  "name": "id",
+                  "type": "string (UUID v4)",
+                  "description": "记录唯一标识"
+                },
+                {
+                  "name": "type",
+                  "type": "'income' | 'expense'",
+                  "description": "收支类型"
+                },
+                {
+                  "name": "amount",
+                  "type": "number",
+                  "description": "金额，正整数或最多两位小数正数"
+                },
+                {
+                  "name": "note",
+                  "type": "string",
+                  "maxLength": 30,
+                  "description": "备注"
+                },
+                {
+                  "name": "timestamp",
+                  "type": "number",
+                  "description": "创建时间的Unix毫秒时间戳"
+                }
+              ]
+            }
+          ]
+        },
+        "api_design": {
+          "endpoints": [
+            {
+              "method": "GET",
+              "path": "/local/transactions",
+              "contract": "请求：无参数。响应：返回LocalStorage中存储的全部交易记录数组，格式为 Transaction[]。服务层负责从LocalStorage读取并解析JSON，若不存在则返回空数组。Transaction对象包含 id, type, amount, note, timestamp 字段。"
+            },
+            {
+              "method": "POST",
+              "path": "/local/transactions",
+              "contract": "请求体：{ type: 'income'|'expense', amount: number, note?: string, timestamp: number } （id由服务层自动生成）。响应：返回创建成功的完整Transaction对象，包含生成的id。服务层将新记录追加到LocalStorage数组并持久化。校验金额>0且格式正确，否则抛出错误。"
+            },
+            {
+              "method": "DELETE",
+              "path": "/local/transactions/:id",
+              "contract": "请求参数：路径中的记录id。响应：成功删除返回 { success: true }。服务层从LocalStorage数组中过滤掉匹配id的记录并持久化；若id不存在，静默成功。"
+            }
+          ]
+        },
+        "frontend_architecture": "目录结构：src/ 下分 components/（可复用UI组件）、contexts/（全局状态）、services/（LocalStorage CRUD封装）、hooks/（自定义业务hooks）、types/（TypeScript接口与类型）、App.tsx（主布局与路由/状态提供）、main.tsx（入口）。\n组件树：App -> AppProvider(contex) -> HomeScreen -> [AppHeader, BalanceCard, TransactionList -> (EmptyState | TransactionItem[]), FloatingActionButton, AddRecordModal (含TypeSegmentedControl, AmountInput, NoteInput, SaveButton), DeleteConfirmModal]。\n状态设计：AppContext 内存储 transactions: Transaction[] 和 dispatch 方法；通过useReducer管理增删操作，每次操作同步调用localStorageService。自定义 hook useTransactions 封装数据读取与dispatch，提供 balance 计算（收入总和 - 支出总和）。\nUI实现指导：严格遵循design_tokens，使用CSS变量定义颜色、字体、圆角等。全局样式引用Inter字体。移动端优先，使用Tailwind的响应式断点（sm/md/lg）：移动端模态从底部滑入（translate-y动画），桌面端居中缩放；FAB固定右下角 bottom-6 right-6。组件内金额使用Intl.NumberFormat格式化（¥前缀，千分位，两位小数）。TransactionItem根据type渲染颜色（income为#16A34A绿色，expense为#DC2626红色）。AmountInput实时过滤非法字符，失焦时格式化。EmptyState使用插图和引导文案。所有交互动效通过CSS transition/animation实现，确保60fps。删除按钮用绝对定位或flex布局于TransactionItem右侧，点击触发确认模态。",
+        "backend_architecture": "本应用为纯前端静态Web应用，无后端服务器运行时。所有业务逻辑（余额计算、数据增删改、输入校验）均在客户端执行，数据持久化完全依赖浏览器LocalStorage。部署时只需将构建产物（HTML/JS/CSS）托管至静态文件服务（如Vercel、Netlify、GitHub Pages）。无需API网关、认证服务或数据库服务器。",
+        "task_breakdown": [
+          {
+            "module": "Project Setup",
+            "task": "初始化Vite + React + TypeScript项目，配置Tailwind CSS、ESLint、Prettier，建立目录结构（components/contexts/services/hooks/types）",
+            "api_contract": "N/A",
+            "ui_guidance": "按照 frontend_architecture 中的目录树创建文件夹和入口文件。引入Inter字体，设置全局CSS变量（对应design_tokens中的colors、typography、spacing），基础样式重置。"
+          },
+          {
+            "module": "Types & Models",
+            "task": "定义Transaction类型及相关类型（如TransactionType联合类型、NewTransactionInput接口）",
+            "api_contract": "参照 GET/POST /local/transactions 的契约字段",
+            "ui_guidance": "在 types/index.ts 中导出接口。Transaction 包含 id: string, type: 'income'|'expense', amount: number, note: string, timestamp: number。"
+          },
+          {
+            "module": "Data Service",
+            "task": "实现 LocalStorage 数据服务 (localStorageService.ts)，封装 getTransactions, addTransaction, deleteTransaction 方法",
+            "api_contract": "对应 GET /local/transactions, POST /local/transactions, DELETE /local/transactions/:id",
+            "ui_guidance": "函数返回 Promise 以模拟异步（或直接同步操作）。内部使用 localStorage.getItem/setItem，JSON序列化与反序列化。addTransaction 自动生成 UUID 和时间戳（若未传入）。统一异常处理。"
+          },
+          {
+            "module": "Global State",
+            "task": "创建 AppContext 与 useReducer 管理 transactions 状态，提供 dispatch 方法供子组件调用，实现余额计算逻辑",
+            "api_contract": "N/A",
+            "ui_guidance": "在 AppProvider 中初始化时调用 GET /local/transactions 获取数据。reducer 处理 'ADD' 和 'DELETE' 动作，每次变更后调用对应数据服务方法同步LocalStorage。通过 Context 暴露 transactions 和 dispatch，以及计算属性 balance（useMemo）。"
+          },
+          {
+            "module": "BalanceCard",
+            "task": "实现 BalanceCard 组件，展示格式化的当前余额",
+            "api_contract": "N/A",
+            "ui_guidance": "从 context 获取 balance。使用 amount_large 样式（32px/800），金额用 Intl.NumberFormat 格式化为 ¥1,234.56。卡片背景 white（surface），圆角 12px，内边距 20px。标题“当前余额”用 caption 灰色字体。"
+          },
+          {
+            "module": "TransactionItem",
+            "task": "实现 TransactionItem 组件，渲染单条收支记录（时间、类型、金额、备注、删除按钮）",
+            "api_contract": "N/A",
+            "ui_guidance": "根据 type 显示绿色收入（+金额）或红色支出（-金额）。时间格式化为 MM-DD HH:mm（使用 date-fns format）。备注用 body_small 灰色。删除图标放在行右侧，点击时调用传入的 onDelete 回调（传递 id）。删除图标应有 hover 效果。高度不小于 48px，内边距 12px，底部边框可选。"
+          },
+          {
+            "module": "TransactionList & EmptyState",
+            "task": "实现 TransactionList 容器组件和 EmptyState 占位组件",
+            "api_contract": "N/A",
+            "ui_guidance": "TransactionList 接收 transactions 数组，按 timestamp 降序排列（最新在前）。列表为空时渲染 EmptyState：显示图标（如空清单插画）、文字“还没有记录”和引导文案“点击右下角 + 开始记账”。有数据时映射渲染 TransactionItem。列表区域设置 overflow-y-auto 并占据剩余空间。"
+          },
+          {
+            "module": "FloatingActionButton",
+            "task": "实现 FAB 浮动操作按钮组件",
+            "api_contract": "N/A",
+            "ui_guidance": "固定定位在右下角 z-50，bottom-6 right-6。圆形按钮直径 56px，背景色 primary (#2563EB)，内部“+”图标和“记一笔”文字（caption）。点击有缩放动画（scale-95），触发 onClick 打开添加模态。使用 shadow-lg。"
+          },
+          {
+            "module": "TypeSegmentedControl",
+            "task": "实现 TypeSegmentedControl 分段控件，用于切换“收入”和“支出”",
+            "api_contract": "N/A",
+            "ui_guidance": "两个并排按钮容器，选中项背景 primary，文字白色；未选中项背景 primary_light，文字 primary。默认选中“支出”。点击触發 onChange(type)。过渡动画 background-color 0.2s。"
+          },
+          {
+            "module": "AmountInput",
+            "task": "实现金额专用输入框组件，具备实时输入过滤与校验",
+            "api_contract": "N/A",
+            "ui_guidance": "大号字体（amount_large），placeholder '0.00'。输入时实时过滤非数字和小数点，限制只有一个小数点且小数点后最多两位，自动去掉前导零（除小数部分）。onChange 传出数字或空字符串。校验不通过（空或<=0）时边框变红（danger）。获得焦点时移除红框。"
+          },
+          {
+            "module": "NoteInput",
+            "task": "实现备注输入框组件",
+            "api_contract": "N/A",
+            "ui_guidance": "单行输入框，placeholder '例如：午餐'，最大长度 30 字符，显示当前字符计数（可选）。样式 body_normal，边框 border 色。"
+          },
+          {
+            "module": "AddRecordModal",
+            "task": "实现添加记录模态组件，整合类型切换、金额输入、备注输入和保存操作",
+            "api_contract": "POST /local/transactions",
+            "ui_guidance": "模态通过 FAB 点击打开，用 transition 实现从底部滑入（移动端）或淡入缩放（桌面端）。顶部标题栏“记录一笔”和关闭按钮（✕）。内容区包含 TypeSegmentedControl、AmountInput、NoteInput。保存按钮 primary 背景，宽满，高 48px。点击保存执行校验（金额非空且>0），校验通过则调用 dispatch({ type: 'ADD', payload: newTransaction })，关闭模态。默认打开时聚焦 AmountInput，类型选中“支出”。关闭时重置表单。"
+          },
+          {
+            "module": "DeleteConfirmModal",
+            "task": "实现删除确认对话框组件",
+            "api_contract": "DELETE /local/transactions/:id",
+            "ui_guidance": "居中弹窗，背景 overlay 半透明黑色。白色卡片包含警告文案“确定删除此记录吗？”及副标题“该操作无法撤销”。两个按钮：“取消”（border 样式）和“确认删除”（红色背景 danger）。点击确认调用 dispatch({ type: 'DELETE', payload: id })，关闭模态。打开时 focus 在取消按钮防止误触。动画为缩放弹出。"
+          },
+          {
+            "module": "Home Screen Integration",
+            "task": "组合所有组件，完成主屏幕逻辑，管理模态显示状态与数据流",
+            "api_contract": "GET /local/transactions",
+            "ui_guidance": "Home 组件包裹 AppProvider。内部结构：AppHeader（应用名“即刻记账”）、BalanceCard、TransactionList、FAB。管理两个模态的 isOpen 和 selectedTransactionId 状态。从 context 获取 transactions 和 balance。FAB 点击打开 AddRecordModal。TransactionItem 的删除回调设置 selectedId 并打开 DeleteConfirmModal。删除成功后清除选中。组件初次加载时自动从 LocalStorage 获取数据（已由 context 初始化完成）。"
+          },
+          {
+            "module": "Responsive & Polish",
+            "task": "适配移动端与桌面端布局，优化交互细节和动效",
+            "api_contract": "N/A",
+            "ui_guidance": "使用 Tailwind 响应式前缀（如 md:）。移动端（<768px）模态使用底部抽屉样式、宽度满屏；桌面端模态居中固定宽度 400px。FAB 在移动端 bottom-4 right-4，桌面端 bottom-8 right-8。列表项删除按钮在移动端始终显示，桌面端可悬停显示。添加 touch 和 hover 反馈。"
+          },
+          {
+            "module": "Testing & Validation",
+            "task": "编写单元测试和集成测试，覆盖核心业务逻辑和验收标准",
+            "api_contract": "所有端点",
+            "ui_guidance": "测试 localStorageService 的增删改正确性，Context reducer 的余额计算，组件渲染（空状态、有数据状态）、用户交互（添加、删除流程）。使用 Vitest + React Testing Library 模拟用户操作，验证 UI 更新、LocalStorage 数据一致。"
+          },
+          {
+            "module": "Deployment",
+            "task": "构建生产版本并部署到静态托管平台，确保刷新后路由正常",
+            "api_contract": "N/A",
+            "ui_guidance": "运行 vite build 输出到 dist/。选择 Vercel/Netlify 等连接仓库自动部署。配置单页应用回退规则（fallback to index.html）。验证部署后跨浏览器功能和 LocalStorage 持久性。"
+          }
+        ],
+        "artifact_refs": [
+          "A-S8-PRODUCT",
+          "A-S8-UXUI"
+        ]
+      },
+      "created_at": "2026-08-08T19:29:26.937299Z",
+      "updated_at": "2026-08-08T19:29:26.940722Z",
+      "archived_at": null,
+      "invalid_reason": ""
+    },
+    "A-S8-IDEA": {
+      "id": "A-S8-IDEA",
+      "stage_id": "STG-S8-PRODUCT",
+      "type": "idea",
+      "ref": "file:///idea.md",
+      "project_id": "P-S8-DEMO",
+      "task_id": "",
+      "producer_role": "product-manager",
+      "producer_agent": "",
+      "version": "1",
+      "status": "validated",
+      "location": "",
+      "metadata": {
+        "idea": "开发一个简单记账 App (纯前端网页应用): 用户可以快速记录每笔收入和支出, 查看当前余额与收支明细列表, 数据保存在浏览器本地 (刷新不丢失), 界面简洁易用。"
+      },
+      "created_at": "2026-08-08T19:26:11.465774Z",
+      "updated_at": "2026-08-08T19:26:11.466544Z",
+      "archived_at": null,
+      "invalid_reason": ""
+    },
+    "A-S8-PRODUCT": {
+      "id": "A-S8-PRODUCT",
+      "stage_id": "STG-S8-PRODUCT",
+      "type": "product",
+      "ref": "file:///docs/product.json",
+      "project_id": "P-S8-DEMO",
+      "task_id": "",
+      "producer_role": "product-manager",
+      "producer_agent": "",
+      "version": "1",
+      "status": "validated",
+      "location": "",
+      "metadata": {
+        "market_analysis": "目标市场为寻求极简个人财务管理工具的用户，覆盖学生、职场新人、自由职业者等有日常记账需求但排斥复杂软件的群体。当前市场上主流记账应用多为移动App，需下载安装、注册账号，功能臃肿且存在隐私顾虑；纯网页端记账工具供给不足，尤其缺乏支持离线本地存储、刷新不丢失的轻量方案。竞争主要来自移动端记账App（如随手记、挖财）以及表格手工记账。机会在于：提供一款零门槛、即开即用、数据完全留在本地的网页记账工具，满足隐私敏感、厌恶繁琐流程的用户需求，可通过浏览器PWA能力后续扩展桌面/移动端体验。",
+        "user_persona": "典型用户为22-35岁的年轻职场人或学生，生活节奏快，希望掌控个人现金流但不愿在记账上花费过多精力。他们常用的设备为笔记本电脑或手机浏览器，偏好简洁工具，对界面美观度有一定要求。核心特征：有基本的收支记录需求，无专业财务知识；痛点包括现有记账应用操作路径过长、需注册登录、广告多、担心数据上传云端泄露；期望一个打开即记、自动保存、刷新不丢数据的轻量工具，能直观看到余额和近期流水。",
+        "user_journey": "1. 用户通过浏览器首次打开记账网页，看到简洁首页，顶部显示当前余额为0，下方为空白交易记录列表和明显的“记一笔”按钮。2. 点击“记一笔”，弹出快速录入面板，可选择类型（收入/支出）、输入金额、简短备注，点击保存。3. 保存后，弹窗关闭，余额实时更新，列表顶部新增一条记录，包含时间、类型、金额、备注。4. 用户多次记录不同类型的收支，列表按时间倒序展示，余额累计变动。5. 用户关闭页面或浏览器后重新打开该网址，此前所有记账数据完整保留，余额和明细列表与上次离开时一致。6. 用户发现一笔误记，点击该记录旁的删除图标，确认后该条记录移除，余额相应调整。7. 用户在日常碎片时间快速完成记账，无需登录、无网络依赖。",
+        "problem_statement": "许多个人用户虽有记账意愿，却因现有工具的使用门槛而放弃：移动App需要下载、注册账号、面对复杂分类和预算功能，学习成本高；手动记录在备忘录或表格中缺乏结构化，无法自动累计余额、易丢失。核心问题是缺乏一种零摩擦的记账方式，让用户仅聚焦于“记录收支”和“查看余额”两个最基础动作，同时保障数据安全与持久性。这导致用户无法形成持续记账习惯，难以实时掌握个人财务状态，进而影响消费意识和储蓄计划。",
+        "feature_list": [
+          "添加收入记录",
+          "添加支出记录",
+          "查看当前余额",
+          "展示收支明细列表（按时间倒序）",
+          "单条记录删除",
+          "数据通过浏览器本地存储持久化（LocalStorage）",
+          "收入/支出类型快速切换",
+          "金额数字输入与格式校验",
+          "记录自动带时间戳",
+          "界面响应式适配桌面与移动端浏览器"
+        ],
+        "mvp_scope": {
+          "in": [
+            "添加收入记录",
+            "添加支出记录",
+            "实时计算并展示当前余额",
+            "交易明细列表（显示时间、类型、金额、备注）",
+            "删除单条记录",
+            "数据存入LocalStorage，刷新不丢失",
+            "基础金额输入校验",
+            "移动端和桌面端浏览器适配"
+          ],
+          "out": [
+            "用户注册与登录系统",
+            "数据云同步与多设备互通",
+            "图表统计与可视化分析",
+            "预算设置与超支提醒",
+            "自定义分类标签管理",
+            "数据导出（CSV/Excel）",
+            "多账户管理",
+            "周期性交易/模板",
+            "语音记账或拍照记账"
+          ]
+        },
+        "user_stories": [
+          {
+            "as-a": "用户",
+            "i-want": "快速记录一笔支出，仅输入金额和简短备注",
+            "so-that": "在几秒内完成记账，不打断当前事务"
+          },
+          {
+            "as-a": "用户",
+            "i-want": "随时查看当前账户余额",
+            "so-that": "我知道自己还有多少可支配资金，便于消费决策"
+          },
+          {
+            "as-a": "用户",
+            "i-want": "打开网页就能看到最近的收支明细列表",
+            "so-that": "回顾资金流向，发现不必要开销"
+          },
+          {
+            "as-a": "用户",
+            "i-want": "关闭浏览器后重新打开页面，数据仍然存在",
+            "so-that": "不必担心数据丢失，可以长期累积记账"
+          },
+          {
+            "as-a": "用户",
+            "i-want": "删除一笔错误记录",
+            "so-that": "纠正误操作，保持账目准确"
+          }
+        ]
+      },
+      "created_at": "2026-08-08T19:26:38.907855Z",
+      "updated_at": "2026-08-08T19:26:38.909145Z",
+      "archived_at": null,
+      "invalid_reason": ""
+    },
+    "A-S8-RELEASE": {
+      "id": "A-S8-RELEASE",
+      "stage_id": "STG-S8-REL",
+      "type": "release",
+      "ref": "file:////Users/Shared/work/ai-software-factory/factory-exec/benchmark_s8_demo/dist/ledger-app-1.0.0.zip",
+      "project_id": "P-S8-DEMO",
+      "task_id": "",
+      "producer_role": "devops",
+      "producer_agent": "",
+      "version": "1",
+      "status": "validated",
+      "location": "",
+      "metadata": {
+        "build_result": {
+          "status": "success",
+          "command": "python3 zipfile build -> ledger-app-1.0.0.zip"
+        },
+        "version": "1.0.0",
+        "package": {
+          "name": "ledger-app",
+          "type": "zip",
+          "files": [
+            "/Users/Shared/work/ai-software-factory/factory-exec/benchmark_s8_demo/dist/ledger-app-1.0.0.zip"
+          ],
+          "size_bytes": 6919
+        },
+        "release_notes": "修复了 DevTestLoop 中的问题，项目达到最终稳定状态，所有冒烟测试均已通过。",
+        "deployment": "1. 将 app.js、index.html 与 style.css 上传至目标 Web 服务器根目录。\n2. 确保 Web 服务器（如 Nginx、Apache）配置正确，指向该目录。\n3. 重启 Web 服务器使变更生效。\n4. 通过浏览器访问站点确认功能正常。",
+        "artifact_refs": [
+          "A-S8-CODE",
+          "A-S8-TEST"
+        ]
+      },
+      "created_at": "2026-08-08T19:30:46.628575Z",
+      "updated_at": "2026-08-08T19:30:46.638085Z",
+      "archived_at": null,
+      "invalid_reason": ""
+    },
+    "A-S8-TEST": {
+      "id": "A-S8-TEST",
+      "stage_id": "STG-S8-TEST",
+      "type": "test",
+      "ref": "file:///test_result.json",
+      "project_id": "P-S8-DEMO",
+      "task_id": "",
+      "producer_role": "tester",
+      "producer_agent": "",
+      "version": "1",
+      "status": "validated",
+      "location": "",
+      "metadata": {
+        "results": {
+          "passed": true,
+          "total": 0,
+          "failed": 0,
+          "command": "python3 tests/smoke_check.py"
+        },
+        "bugs": []
+      },
+      "created_at": "2026-08-08T19:30:28.958158Z",
+      "updated_at": "2026-08-08T19:30:28.961214Z",
+      "archived_at": null,
+      "invalid_reason": ""
+    },
+    "A-S8-UXUI": {
+      "id": "A-S8-UXUI",
+      "stage_id": "STG-S8-UXUI",
+      "type": "ux_ui",
+      "ref": "file:///docs/ux_ui.json",
+      "project_id": "P-S8-DEMO",
+      "task_id": "",
+      "producer_role": "ui-designer",
+      "producer_agent": "",
+      "version": "1",
+      "status": "validated",
+      "location": "",
+      "metadata": {
+        "information_architecture": {
+          "app_name": "即刻记账",
+          "screen_hierarchy": {
+            "root": "Home",
+            "screens": [
+              {
+                "name": "Home",
+                "type": "main_screen",
+                "description": "主界面，展示余额、交易列表和核心操作入口",
+                "components": [
+                  "AppHeader",
+                  "BalanceCard",
+                  "TransactionList",
+                  "EmptyState",
+                  "FloatingActionButton"
+                ],
+                "modals": [
+                  "AddRecordModal",
+                  "DeleteConfirmModal"
+                ]
+              }
+            ]
+          },
+          "navigation": "单页应用（SPA），所有交互均在同一页面完成。Home为主屏幕，通过触发模态弹窗（AddRecordModal、DeleteConfirmModal）实现添加与删除操作，无页面跳转。数据通过LocalStorage本地持久化。"
+        },
+        "user_flow": [
+          {
+            "step": 1,
+            "screen": "Home",
+            "description": "用户通过浏览器首次打开网址，加载Home屏幕。顶部显示余额卡片（余额¥0.00），下方交易列表为空，显示空状态提示，右下角浮动按钮“记一笔”高亮可点击。"
+          },
+          {
+            "step": 2,
+            "screen": "Home -> AddRecordModal",
+            "description": "用户点击“记一笔”按钮，从底部滑出AddRecordModal。面板包含收入/支出类型切换、金额输入框、备注输入框和保存按钮。用户选择类型，输入金额和简短备注。"
+          },
+          {
+            "step": 3,
+            "screen": "AddRecordModal -> Home",
+            "description": "用户点击保存，系统校验金额格式（正整数或两位小数），若非空且合法，则生成记录（含时间戳、类型、金额、备注），存入LocalStorage。模态关闭，Home屏幕余额实时更新，交易列表顶部出现新记录，列表按时间倒序排列。"
+          },
+          {
+            "step": 4,
+            "screen": "Home",
+            "description": "用户重复步骤2-3，添加多笔收入与支出。余额累计计算（收入总和减去支出总和），列表持续按时间倒序展示所有记录，每条记录显示时间、类型标签、金额（收入绿色，支出红色）、备注及删除图标。"
+          },
+          {
+            "step": 5,
+            "screen": "Home",
+            "description": "用户关闭浏览器标签页或窗口后，再次打开同一网址。应用从LocalStorage读取数据，渲染与上次离开时完全一致的余额和交易列表，无需任何登录操作。"
+          },
+          {
+            "step": 6,
+            "screen": "Home -> DeleteConfirmModal -> Home",
+            "description": "用户在交易列表中发现误记，点击某条记录右侧的删除图标。弹出居中DeleteConfirmModal询问“确定删除此记录？”。用户确认后，记录从LocalStorage移除，余额相应调整，列表刷新。取消则模态关闭，无变化。"
+          },
+          {
+            "step": 7,
+            "screen": "Home",
+            "description": "用户在日常碎片时间打开页面，快速点击“记一笔”完成记账，整个过程无需注册、登录或网络连接，所有操作响应即时，数据完全本地化。"
+          }
+        ],
+        "wireframe": {
+          "screens": [
+            {
+              "name": "Home",
+              "ascii": "┌────────────────────────────────┐\n│ 即刻记账            [菜单]  │\n├────────────────────────────────┤\n│                                │\n│  ┌──────────────────────────┐ │\n│  │  当前余额                 │ │\n│  │  ¥ 0.00                  │ │\n│  └──────────────────────────┘ │\n│                                │\n│  交易记录                      │\n│  ┌──────────────────────────┐ │\n│  │  (空状态)                │ │\n│  │  📋 还没有记录            │ │\n│  │  点击右下角 + 开始记账    │ │\n│  └──────────────────────────┘ │\n│                                │\n│  有记录时：                   │\n│  ┌──────────────────────────┐ │\n│  │ 09-10 12:30    支出      │ │\n│  │ 午餐              -35.00 │ │\n│  │ 备注：外卖          [🗑] │ │\n│  └──────────────────────────┘ │\n│  ┌──────────────────────────┐ │\n│  │ 09-10 09:15    收入      │ │\n│  │ 工资             +5000.00│ │\n│  │ 备注：9月薪资       [🗑] │ │\n│  └──────────────────────────┘ │\n│                                │\n│                         ┌───┐ │\n│                         │ + │ │\n│                         │记一│ │\n│                         │笔 │ │\n│                         └───┘ │\n└────────────────────────────────┘",
+              "components": [
+                "AppHeader",
+                "BalanceCard",
+                "TransactionList",
+                "EmptyState",
+                "FloatingActionButton"
+              ],
+              "actions": [
+                "tap_fab: 打开AddRecordModal",
+                "tap_delete_icon(item): 打开DeleteConfirmModal并传递记录ID",
+                "scroll_list: 列表过长时上下滚动浏览"
+              ]
+            },
+            {
+              "name": "AddRecordModal",
+              "ascii": "┌────────────────────────────────┐\n│  (半透明蒙层)                  │\n│                                │\n│  ┌──────────────────────────┐ │\n│  │ 记录一笔                  ✕│ │\n│  ├──────────────────────────┤ │\n│  │ 类型: [收入] [支出]      │ │\n│  │        (分段控件)        │ │\n│  ├──────────────────────────┤ │\n│  │ 金额                       │ │\n│  │ ┌────────────────────┐   │ │\n│  │ │ 0.00               │   │ │\n│  │ └────────────────────┘   │ │\n│  ├──────────────────────────┤ │\n│  │ 备注 (选填)               │ │\n│  │ ┌────────────────────┐   │ │\n│  │ │ 例如：午餐          │   │ │\n│  │ └────────────────────┘   │ │\n│  ├──────────────────────────┤ │\n│  │      ┌────────┐         │ │\n│  │      │  保存  │         │ │\n│  │      └────────┘         │ │\n│  └──────────────────────────┘ │\n│                                │\n└────────────────────────────────┘",
+              "components": [
+                "ModalOverlay",
+                "ModalHeader",
+                "TypeSegmentedControl",
+                "AmountInput",
+                "NoteInput",
+                "SaveButton"
+              ],
+              "actions": [
+                "toggle_type: 切换收入/支出",
+                "input_amount: 输入金额，自动限制数字格式",
+                "input_note: 输入备注文本",
+                "tap_save: 校验并保存记录，关闭模态",
+                "tap_close: 关闭模态，不保存"
+              ]
+            },
+            {
+              "name": "DeleteConfirmModal",
+              "ascii": "┌────────────────────────────────┐\n│  (半透明蒙层)                  │\n│                                │\n│  ┌──────────────────────────┐ │\n│  │                          │ │\n│  │   确定删除此记录吗？     │ │\n│  │   该操作无法撤销         │ │\n│  │                          │ │\n│  │   [取消]    [确认删除]   │ │\n│  │                          │ │\n│  └──────────────────────────┘ │\n│                                │\n└────────────────────────────────┘",
+              "components": [
+                "ModalOverlay",
+                "ConfirmDialog",
+                "CancelButton",
+                "ConfirmDeleteButton"
+              ],
+              "actions": [
+                "tap_confirm_delete: 执行删除，更新数据与UI",
+                "tap_cancel: 关闭模态，不做任何更改"
+              ]
+            }
+          ]
+        },
+        "screen_specifications": [
+          {
+            "screen": "Home",
+            "elements": [
+              "AppHeader: 包含应用名称‘即刻记账’与可选的菜单图标（预留）",
+              "BalanceCard: 圆角卡片，显示‘当前余额’标签与格式化货币金额（¥0.00），金额较大突出",
+              "TransactionList: 可滚动区域，包含零至多条TransactionItem，按时间倒序排列",
+              "EmptyState: 当无记录时显示，包含图标、提示文案‘还没有记录’及引导语‘点击右下角 + 开始记账’",
+              "FloatingActionButton: 固定于右下角，圆形按钮，内含‘+’图标与‘记一笔’文字，颜色为主色调，悬浮于内容之上"
+            ],
+            "behaviors": [
+              "页面加载时从LocalStorage读取transactions数组，计算余额 = sum(收入) - sum(支出)，渲染列表。若无数据，显示EmptyState。",
+              "余额实时显示，货币符号为¥，数字格式保留两位小数，千分位分隔。",
+              "TransactionItem根据type显示收入（绿色加号前缀）或支出（红色减号前缀），时间格式为‘MM-DD HH:mm’。",
+              "点击单个TransactionItem无反应，但点击其内的删除图标触发DeleteConfirmModal。",
+              "FAB点击打开AddRecordModal，需有轻微缩放动效反馈。",
+              "列表超出可视区域时支持垂直滚动，FAB不随滚动移动。"
+            ],
+            "acceptance": [
+              "首次打开页面，余额显示¥0.00，列表呈现空状态文案。",
+              "添加一条收入后，余额增加，列表顶部出现新记录，时间准确。",
+              "添加一条支出后，余额减少，记录带上支出标记。",
+              "刷新页面，所有数据完整保留，余额与列表排序正确。",
+              "点击删除图标弹出确认框，确认后记录消失，余额立即更新。",
+              "在移动端和桌面端浏览器打开，布局自适应，FAB位置合理。"
+            ]
+          },
+          {
+            "screen": "AddRecordModal",
+            "elements": [
+              "ModalOverlay: 半透明黑色遮罩层，覆盖Home屏幕",
+              "ModalContainer: 白色底部弹出式面板（移动端）或居中卡片（桌面端），圆角顶部",
+              "ModalHeader: 标题‘记录一笔’及右侧关闭图标（✕）",
+              "TypeSegmentedControl: 两个选项‘收入’和‘支出’，默认选中‘支出’，选中项呈主色填充",
+              "AmountInput: 大号数字输入框，placeholder为‘0.00’，键盘类型为数字（移动端），输入时自动过滤非数字和小数点",
+              "NoteInput: 文本输入框，placeholder‘例如：午餐’，最大长度30字符",
+              "SaveButton: 主色填充按钮，文字‘保存’，宽度占满容器或固定宽"
+            ],
+            "behaviors": [
+              "模态以从底部滑入动画打开（移动端）或淡入缩放打开（桌面端）。",
+              "默认类型为‘支出’，光标自动聚焦到金额输入框。",
+              "金额输入限制：只能输入数字和一个小数点，小数点后最多两位，前导零自动处理。",
+              "点击‘保存’时进行校验：金额不能为空且大于0，否则输入框边框变红并阻止关闭。",
+              "校验通过后生成记录对象{id, type, amount:Number, note, timestamp}，存入LocalStorage。",
+              "保存成功后模态关闭，Home页面数据刷新。",
+              "点击关闭或蒙层（可选）可关闭模态，不保存数据。"
+            ],
+            "acceptance": [
+              "模态框打开流畅，焦点在金额输入上。",
+              "输入‘123.456’自动截断为‘123.45’。",
+              "金额为空时点击保存，输入框红框提示，模态不关闭。",
+              "保存后新记录正确出现在Home列表顶部，余额正确增减。",
+              "切换收入/支出类型，按钮状态实时反映。",
+              "关闭模态不产生任何记录。"
+            ]
+          },
+          {
+            "screen": "DeleteConfirmModal",
+            "elements": [
+              "ModalOverlay: 半透明遮罩",
+              "ConfirmDialog: 居中白色卡片，内边距适中",
+              "WarningText: ‘确定删除此记录吗？’及辅助文案‘该操作无法撤销’",
+              "CancelButton: 次要样式按钮，文字‘取消’",
+              "ConfirmDeleteButton: 危险样式按钮，文字‘确认删除’，红色背景或文字"
+            ],
+            "behaviors": [
+              "模态以居中缩放动画出现。",
+              "点击‘确认删除’后，根据传入的记录id从LocalStorage数组中移除该条。",
+              "删除后更新余额计算，Home列表刷新，模态关闭。",
+              "点击‘取消’或蒙层关闭模态，不做任何操作。"
+            ],
+            "acceptance": [
+              "确认删除后，记录永久消失，刷新页面后也不再出现。",
+              "余额因删除而恢复至该笔记录添加前的数值。",
+              "取消操作无任何数据变更。",
+              "对话框聚焦在‘取消’按钮，防止误触。"
+            ]
+          }
+        ],
+        "component_definition": [
+          {
+            "name": "BalanceCard",
+            "description": "展示当前账户总余额的视觉卡片，通常位于Home页顶部，大字号金额突出显示，伴有标签‘当前余额’。",
+            "usage": "可用于Home主屏幕顶部，实时反映收入与支出的差额。"
+          },
+          {
+            "name": "TransactionItem",
+            "description": "单条交易记录行，包含时间戳、收入/支出类型标签、金额（收入绿色、支出红色）、备注文本及删除图标按钮。",
+            "usage": "在TransactionList中循环渲染，每行对应一条记录。"
+          },
+          {
+            "name": "TransactionList",
+            "description": "可滚动的列表容器，包含所有TransactionItem，并集成EmptyState在无数据时展示。",
+            "usage": "用于Home屏幕中部，动态绑定交易数据数组。"
+          },
+          {
+            "name": "EmptyState",
+            "description": "空数据占位组件，显示插图、提示标题和引导文案，引导用户执行核心操作。",
+            "usage": "当交易记录为空时替代列表区域。"
+          },
+          {
+            "name": "FloatingActionButton",
+            "description": "主要操作触发按钮，固定在屏幕右下角，带有图标和文字，颜色为主色调，按下有缩放反馈。",
+            "usage": "用于Home屏幕，触发添加记录模态。"
+          },
+          {
+            "name": "AddRecordModal",
+            "description": "从底部弹出的模态面板，包含收入/支出切换、金额输入、备注输入和保存按钮，用于快速记录一笔交易。",
+            "usage": "Home屏幕通过FAB触发，保存后更新全局数据。"
+          },
+          {
+            "name": "DeleteConfirmModal",
+            "description": "居中确认对话框，询问用户是否删除指定记录，提供取消和确认删除两个操作。",
+            "usage": "TransactionItem的删除图标触发，传入记录ID。"
+          },
+          {
+            "name": "TypeSegmentedControl",
+            "description": "两段式选择器，用于在‘收入’和‘支出’之间切换，选中段高亮为主色。",
+            "usage": "用于AddRecordModal中类型选择。"
+          },
+          {
+            "name": "AmountInput",
+            "description": "专为金额设计的输入框，限制只能输入数字和小数点，自动格式化，大字号显示。",
+            "usage": "AddRecordModal中的金额输入。"
+          },
+          {
+            "name": "NoteInput",
+            "description": "单行文本输入框，用于输入简短备注，带有placeholder和最大字符限制。",
+            "usage": "AddRecordModal中的备注输入。"
+          }
+        ],
+        "design_tokens": {
+          "colors": {
+            "primary": "#2563EB",
+            "primary_light": "#DBEAFE",
+            "income": "#16A34A",
+            "income_bg": "#DCFCE7",
+            "expense": "#DC2626",
+            "expense_bg": "#FEE2E2",
+            "background": "#F8FAFC",
+            "surface": "#FFFFFF",
+            "text_primary": "#1E293B",
+            "text_secondary": "#64748B",
+            "border": "#E2E8F0",
+            "overlay": "rgba(0, 0, 0, 0.5)",
+            "danger": "#B91C1C"
+          },
+          "typography": {
+            "font_family": "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+            "heading_large": {
+              "size": "24px",
+              "weight": "700",
+              "line_height": "32px"
+            },
+            "heading_medium": {
+              "size": "20px",
+              "weight": "600",
+              "line_height": "28px"
+            },
+            "body_large": {
+              "size": "18px",
+              "weight": "500",
+              "line_height": "26px"
+            },
+            "body_normal": {
+              "size": "16px",
+              "weight": "400",
+              "line_height": "24px"
+            },
+            "body_small": {
+              "size": "14px",
+              "weight": "400",
+              "line_height": "20px"
+            },
+            "caption": {
+              "size": "12px",
+              "weight": "400",
+              "line_height": "16px"
+            },
+            "amount_large": {
+              "size": "32px",
+              "weight": "800",
+              "line_height": "40px"
+            }
+          },
+          "spacing": {
+            "base": "8px",
+            "xs": "4px",
+            "sm": "8px",
+            "md": "16px",
+            "lg": "24px",
+            "xl": "32px",
+            "2xl": "48px",
+            "border_radius": "12px",
+            "card_padding": "20px",
+            "button_height": "48px"
+          }
+        },
+        "prototype": "原型交互描述：\n1. 初始加载：用户访问网页，Home屏幕渲染。从LocalStorage读取交易数据，若无数据，BalanceCard显示¥0.00，TransactionList区域展示EmptyState（图标+提示），右下角FAB呈蓝色悬浮。\n2. 添加收支：用户点击FAB，AddRecordModal从底部平滑滑出（移动端）或居中缩放出现（桌面端），自动聚焦金额输入框，默认类型为支出。用户通过分段控件切换收入/支出，输入金额（如‘35’），触发在数值上自动格式化显示‘35.00’，输入备注‘午餐’。点击‘保存’。\n3. 保存反馈：前端校验通过后，生成新记录对象并push到localStorage中的transactions数组。BalanceCard数字动态跳变为新余额（若为支出则减少35），列表顶部立即插入新记录项，显示时间‘09-10 12:30’、红色支出标签‘-35.00’及备注，同时EmptyState消失。模态关闭，回到Home。\n4. 连续记账：用户重复操作，添加一笔收入‘工资 +5000.00’，余额上升，列表增加绿色收入条目。列表按时间倒序排列，最新的在最上面。\n5. 数据持久化证明：用户关闭浏览器标签页，模拟数据丢失场景。重新打开网页，应用再次从LocalStorage读取，余额和列表完整恢复，如同从未关闭。\n6. 删除记录：用户发现误记，点击某条记录的垃圾桶图标，DeleteConfirmModal以小幅度弹性缩放出现。弹出询问‘确定删除此记录吗？’，用户点击‘确认删除’，该条记录从LocalStorage数组移除，余额立刻调整（如删除支出则余额增加），列表无缝刷新。\n7. 响应式体验：用户在手机浏览器中将页面添加到主屏幕（可选PWA），打开后界面元素自适应，卡片拉满宽度，FAB位置合理，字体大小舒适，触摸区域≥44px，确保操作无误。\n整个交互过程无需任何网络请求，数据完全留存本地，实现极简、快速、隐私安全的记账体验。"
+      },
+      "created_at": "2026-08-08T19:28:01.671704Z",
+      "updated_at": "2026-08-08T19:28:01.674989Z",
+      "archived_at": null,
+      "invalid_reason": ""
+    }
+  }
+}

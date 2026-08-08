@@ -207,3 +207,147 @@ Sprint 12: 多行业工厂 (6+ 模板)
 → 业务流程 (9) → Skill/MCP 领域 (10) → 自改进 (11) → 多行业 (12)。
 核心原则: 每 Sprint 必须产出"真实可演示的生产结果", 禁止纯工程扩张。
 ```
+
+---
+
+# 附录 A — 模块级细节（全部 25 个 Core 模块 + 扩展）
+
+```
+模块           行数    类数   职责
+agents         593    16    Agent/Skill Registry (简单执行者模型)
+assignment     665    12    任务分配 (AgentAllocator)
+change         1058   9     变更分析 (Files/Insertions/Deletions/Modules)
+changeflow     1081   10    变更驱动工作流 (触发器)
+cli            6418   2     CLI (91 命令函数式)
+dashboard      2455   21    Dashboard 16 视图
+demo           440    3     markpad 演示
+events         1097   6     事件溯源 (158 事件, 28 前缀)
+execution      497    11    执行派发 (Runtime Adapter)
+git            736    7     git 操作 (可选能力)
+intelligence   3549   40    Decision/Recommendation/Experience/Risk
+metrics        1002   18    质量指标 (first_attempt_success 等)
+orchestration  622    6     编排
+product        4063   34    产品链路 (Idea→PRD→Approval→UI→Task, 501 测试)
+project        336    7     project.yaml
+providers      2992   28    Provider 管理/选择/成本 (Core 层)
+recovery       811    11    checkpoint 恢复
+runtime        599    13    Runtime 管理
+runtimes       531    9     Runtime 适配
+tasks          216    6     任务模型 (最小)
+understanding  699    8     项目理解 (阶段判断/技术栈)
+validation     566    4     L1-L4 验证
+workflows      1031   18    Workflow 引擎 + 4 技术模板
+workspace      679    11    workspace init
+
+扩展:
+  factory-exec 12353 行 (ranking 2061 最大 / context 971 / repo_intelligence 958
+    / experience_ctx 923 / progressive 837 / developer 694 / candidate 641
+    / agent_runtime 607 / capability 578 / repo_index 528 / cli 485 / budget 476
+    / operations 437 / evaluator 429 ...)
+  factory-org 2081 行 (models/store/registry/lifecycle/authority/knowledge/templates/cli)
+```
+
+# 附录 B — CLI 命令全景（91 命令, 24 组）
+
+```
+product 17 (最大: idea/analyze/decide/approve/design/architecture/plan/task...)
+org 7 (company/hire/employee/role/authority/knowledge...)  provider 7  change 7
+exec 6  agent 5  runtime 5  workflow 4  intelligence 4  task 4
+git 3  execution 3  checkpoint 2  console 2  skill 2  project 2  workspace 2
+dashboard 1  demo 1  event 1  metrics 1  recover 1  status 1  understand 1  validate 1  init 1
+
+观察: product 命令最多 (17) → 产品链路是 CLI 最重投入
+     exec 6 (run/status/approval/providers/...) → 执行层 CLI 薄 (引擎在 Python API)
+```
+
+# 附录 C — 事件体系全景（158 事件, 28 前缀）
+
+```
+ORG 21 (最大: company/employee/role 生命周期)  PRODUCT 15  INTELLIGENCE 14
+APPROVAL 11  PROVIDER 9  CHANGE 7  WORKFLOW 7  TASK 6  RUNTIME 6
+AGENT 5  ASSIGNMENT 5  EXECUTION 5  GIT 5  ORCHESTRATION 5  WORKSPACE 5
+VALIDATION 5  UNDERSTANDING 4  CONSOLE 3  IDEA 3  PROJECT 3  RECOVERY 3  SKILL 3  SYSTEM 3
+CHECKPOINT 1  DASHBOARD 1  METRICS 1  SESSION 1  TOOL 1
+
+观察: 组织事件最多 (org.*) → 组织层事件完备
+     无 workflow.* 组织级事件 (workflow 7 是任务级)
+     无 learning/improvement 事件前缀
+```
+
+# 附录 D — 测试全景（285 文件, 5493 测试）
+
+```
+exec 1019 (最大: 执行工程 29 文件)  providers 569  product 501  intelligence 509
+change 196  org 192  console 172  dashboard 165  changeflow 144  assignment 134
+factory_runtime 130  recovery 122  metrics 113  agents 112  execution 100
+runtimes 93  orchestration 73  events 69  cli 38  benchmark 36  project 34
+tasks 22  demo 21
+
+观察: 工程测试占比高 (exec+providers+intelligence+product ≈ 40%)
+     无真实 LLM 集成测试 (全是 mock)
+     tests/exec 29 文件 (Sprint 4/5 从 6 文件暴增)
+```
+
+# 附录 E — Git 历史分析
+
+```
+147 commits, 全部 2026-08 (一个月内建成)
+类型: docs 61 (41%) / test 45 (31%) / feat 28 (19%) / fix 13 (9%)
+→ 文档+测试占 72%, 代码实现 19% — 蓝图驱动/测试驱动特征明显
+阶段: 12B-13A (验证) → 14 (开源) → 15 (Runtime/Desktop) → 16A (org)
+      → Phase A (exec) → Sprint 3/4/5 (Context/Execution 工程)
+```
+
+# 附录 F — 文档全清单（185 文件）
+
+```
+docs 顶层 41: vision/roadmap/lifecycle-model(12 阶段)/architecture/design-principles/
+  core-boundary/extension-model/agent-model/skill-model/memory-model/
+  workflow-model/validation-model/intelligence-layer-model/decision-intelligence-model/
+  recommendation-engine-model/experience-learning-model/provider-*-model/
+  human-console-*-model/configuration-model/capability-architecture/
+  business-positioning/use-cases/demo-*/feedback-model/quality-report/...
+architecture 32 (16A-20 设计 + 近期审计 4: strategic/alignment/current-state/reality)
+validation 15 (product-proof/sprint 4-5/benchmark)
+adr 35 (ADR-0001 起, 决策记录)
+audit 1 (本报告)
+roadmap (phase15-21 + 新规划)
+观察: 设计文档 22+ 份远超实现文档 → 蓝图驱动; 近期审计文档 4 份 (08-08 密集产出)
+```
+
+# 附录 G — 空目录/残留清单（边角料）
+
+```
+11 个顶层空目录 (脚手架占位, 0 文件):
+  agents/ cli/ dashboard/ knowledge/ mcp/ runtimes/ skills/ src/ validation/ workflows/
+残留:
+  $SMOKE_ROOT/ (7 文件, 历史误提交残留)
+  build/factory_runtime_bundle + dist/factory-runtime-bundle (构建产物, gitignore)
+  factory-core/ai_software_factory.egg-info (打包残留)
+  .ruff_cache/.pytest_cache (缓存)
+```
+
+# 附录 H — 执行链路真实细节
+
+```
+真实 LLM 支持: exec/providers/anthropic.py + openai.py (2 真实适配器)
+  Core providers 层有 registry/selector/costs/feedback (管理未接线到 exec 执行)
+Provider 可替换已验证: openai-adapter → DeepSeek 端点 (零架构改动)
+真实调用现状: DeepSeek 25/27 空响应 (reasoning 耗尽) / Ollama 本地未跑
+本地模型: qwen3:8b 已确认 8GB 内存可行 (未拉取)
+```
+
+# 附录 I — 数据模型完整清单（核心 Pydantic）
+
+```
+org: Company/Department/Role/Employee/Authority/KnowledgeItem
+exec: ExecutionRequest/ExecutionResult/ExecutionCandidate/ExecutionRun/
+      EvaluationResult/CandidateScore/ContextCandidate/AssembledContext/
+      StructuredCodeOperation/FileChange/ModelCapability/BudgetPolicy/BudgetTrace/
+      ProgressiveTrace/ContextExperienceRecord
+core: Task/Workflow/WorkflowStep/WorkflowRun/Agent/Skill/EventType/
+      ApprovalGate/ApprovalStatus/DecisionContext/DecisionResult/ExperienceRecord/
+      RecommendationResult/RiskAssessment/ProjectConfig/ValidationResult/
+      ExecutionRunOutcome/ChangeAnalysis
+```
+

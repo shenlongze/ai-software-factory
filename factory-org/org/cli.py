@@ -9,6 +9,8 @@ factory-org employee list [--company X] [--role R] [--capability C]
 factory-org authority check --role developer --permission release.approve
 factory-org knowledge add --company X --domain docs --content "..."
 factory-org knowledge list --company X
+factory-org workflow create/list/show/run/status (S7-003 组织级编排壳)
+factory-org approval list|show|approve|reject (S9-001 人工审批门)
 ```
 
 架构:
@@ -39,6 +41,7 @@ from events.models import EventType
 from events.store import EventStore
 
 from . import events as org_events
+from .approval import ApprovalError, ApprovalStateError, ApprovalStatus
 from .artifact import ArtifactRegistry, ArtifactStateError
 from .lifecycle import (
     CompanyMismatchError,
@@ -554,6 +557,104 @@ def cmd_workflow_status(root: Path, args: Any) -> dict:
     return detail
 
 
+# ------------------------------------------------------------------ approval (S9-001)
+# factory-org approval list|show|approve|reject — 人工审批门 (Approval Gate:
+# approval_required stage COMPLETED → PENDING + workflow PAUSED → 人工决定)。
+# 决定命令 (approve/reject) 发 org.approval.approved/rejected (ADR-0002 —
+# 审批行为必须审计); 读命令 (list/show) 不独立发事件 (S9-001 任务约束事件
+# +3 仅 created/approved/rejected — 审计锚点由决定事件承载, S9-005 Console
+# 可视层补齐 viewed 类, 诚实边界见报告)。
+
+
+def _approval_lifecycle(root: Path, logger: Any) -> WorkflowLifecycle:
+    return _workflow_lifecycle(root, logger)
+
+
+def cmd_approval_list(root: Path, args: Any) -> dict:
+    """approval list — 审批门清单 (workflow/status/stage 过滤)。"""
+    with _logger_scope(root) as logger:
+        gates = _approval_lifecycle(root, logger).list_approvals(
+            workflow_id=getattr(args, "workflow", None) or None,
+            status=getattr(args, "status", None) or None,
+            stage_id=getattr(args, "stage", None) or None,
+        )
+    return {
+        "ok": True,
+        "approvals": [g.to_dict() for g in gates],
+        "count": len(gates),
+        "exit_code": 0,
+    }
+
+
+def cmd_approval_show(root: Path, args: Any) -> dict:
+    """approval show — 审批门详情 (gate + 关联 stage/workflow)。"""
+    with _logger_scope(root) as logger:
+        try:
+            lifecycle = _approval_lifecycle(root, logger)
+            gate = lifecycle.get_approval(args.gate_id)
+            stage = lifecycle.get_stage(gate.stage_id)
+            workflow = lifecycle.get_workflow(gate.workflow_id)
+        except (WorkflowError, ApprovalError, OrgLifecycleError) as exc:
+            return _error(str(exc), exit_code=7 if isinstance(exc, NotFoundError) else 1)
+    return {
+        "ok": True,
+        "approval": gate.to_dict(),
+        "stage": stage.to_dict(),
+        "workflow": workflow.to_dict(),
+        "exit_code": 0,
+    }
+
+
+def cmd_approval_approve(root: Path, args: Any) -> dict:
+    """approval approve — 审批放行 (→APPROVED + workflow 恢复 PAUSED→ACTIVE)。
+
+    --reviewer 决策人 (审计必需, 建议必填); --comment 放行理由。发
+    org.approval.approved + org.workflow.started (from_status=paused)。
+    """
+    with _logger_scope(root) as logger:
+        try:
+            gate, workflow = _approval_lifecycle(root, logger).approve_approval(
+                args.gate_id,
+                reviewer=getattr(args, "reviewer", None) or "",
+                comment=getattr(args, "comment", None) or "",
+            )
+        except (WorkflowError, ApprovalError, OrgLifecycleError, ValueError) as exc:
+            return _error(str(exc), exit_code=7 if isinstance(exc, NotFoundError) else 1)
+        event_seq = org_events.last_seq(logger, EventType.ORG_APPROVAL_APPROVED)
+    return {
+        "ok": True,
+        "approval": gate.to_dict(),
+        "workflow": workflow.to_dict(),
+        "event_seq": event_seq,
+        "exit_code": 0,
+    }
+
+
+def cmd_approval_reject(root: Path, args: Any) -> dict:
+    """approval reject — 审批否决 (→REJECTED + workflow FAILED 停止, 记录原因)。
+
+    --reviewer 决策人; --comment 否决理由 (写入 failed_reason 审计)。发
+    org.approval.rejected + org.workflow.failed。
+    """
+    with _logger_scope(root) as logger:
+        try:
+            gate, workflow = _approval_lifecycle(root, logger).reject_approval(
+                args.gate_id,
+                reviewer=getattr(args, "reviewer", None) or "",
+                comment=getattr(args, "comment", None) or "",
+            )
+        except (WorkflowError, ApprovalError, OrgLifecycleError, ValueError) as exc:
+            return _error(str(exc), exit_code=7 if isinstance(exc, NotFoundError) else 1)
+        event_seq = org_events.last_seq(logger, EventType.ORG_APPROVAL_REJECTED)
+    return {
+        "ok": True,
+        "approval": gate.to_dict(),
+        "workflow": workflow.to_dict(),
+        "event_seq": event_seq,
+        "exit_code": 0,
+    }
+
+
 # ------------------------------------------------------------------ 独立 CLI (factory-org console script)
 
 def build_parser() -> argparse.ArgumentParser:
@@ -705,6 +806,29 @@ def build_parser() -> argparse.ArgumentParser:
     p_wst = wsub.add_parser("status", help="工作流状态总览 (发 org.workflow.viewed)")
     json_opt(p_wst)
     p_wst.add_argument("workflow_id")
+
+    p_appr = sub.add_parser("approval", help="人工审批门 (org.approval.* 事件, S9-001)")
+    json_opt(p_appr)
+    asub = p_appr.add_subparsers(dest="approval_command", required=True)
+    p_al = asub.add_parser("list", help="审批门清单 (按 workflow/status/stage 过滤)")
+    json_opt(p_al)
+    p_al.add_argument("--workflow", default=None, help="按 workflow 过滤")
+    p_al.add_argument("--status", default=None, choices=[s.value for s in ApprovalStatus],
+                      help="按状态过滤 (pending|approved|rejected)")
+    p_al.add_argument("--stage", default=None, help="按 Stage 过滤")
+    p_as = asub.add_parser("show", help="审批门详情 + 关联 stage/workflow")
+    json_opt(p_as)
+    p_as.add_argument("gate_id")
+    p_ap = asub.add_parser("approve", help="审批放行 (→APPROVED + workflow 恢复; 发 org.approval.approved)")
+    json_opt(p_ap)
+    p_ap.add_argument("gate_id")
+    p_ap.add_argument("--reviewer", default=None, help="决策人 (审计, 建议必填)")
+    p_ap.add_argument("--comment", default=None, help="放行理由")
+    p_ar = asub.add_parser("reject", help="审批否决 (→REJECTED + workflow FAILED 停止; 发 org.approval.rejected)")
+    json_opt(p_ar)
+    p_ar.add_argument("gate_id")
+    p_ar.add_argument("--reviewer", default=None, help="决策人 (审计, 建议必填)")
+    p_ar.add_argument("--comment", default=None, help="否决理由 (写入 failed_reason)")
     return p
 
 
@@ -739,6 +863,12 @@ _CMD_DISPATCH: dict[str, dict[str, Any]] = {
         "show": cmd_workflow_show,
         "run": cmd_workflow_run,
         "status": cmd_workflow_status,
+    },
+    "approval": {
+        "list": cmd_approval_list,
+        "show": cmd_approval_show,
+        "approve": cmd_approval_approve,
+        "reject": cmd_approval_reject,
     },
 }
 
@@ -817,6 +947,8 @@ def _print_result(args: Any, result: dict) -> None:
         _print_artifact_result(args, result)
     elif command == "workflow":
         _print_workflow_result(args, result)
+    elif command == "approval":
+        _print_approval_result(args, result)
 
 
 def _print_workflow_result(args: Any, result: dict) -> None:
@@ -868,6 +1000,49 @@ def _print_workflow_detail(result: dict, *, detailed: bool) -> None:
         for a in result["artifacts"]:
             print(f"  artifact   {a['id']}  [{a['type']}] {a['status']}  "
                   f"stage={a['stage_id']}")
+
+
+def _print_approval_result(args: Any, result: dict) -> None:
+    """approval 子命令人类可读输出 (list/show/approve/reject)。"""
+    sub = args.approval_command
+    if sub == "list":
+        print(f"审批门清单 ({result['count']} 条)")
+        for g in result["approvals"]:
+            print(f"  {g['id']}  [{g['status']}]  stage={g['stage_id']}  "
+                  f"workflow={g['workflow_id']}")
+    elif sub == "show":
+        g = result["approval"]
+        w = result["workflow"]
+        s = result["stage"]
+        print(f"审批门 {g['id']} — [{g['status']}]")
+        print(f"  stage      {g['stage_id']}  ({s['role_id']} / {s['name'] or '-'})")
+        print(f"  workflow   {g['workflow_id']}  [{w['status']}] — {w['name']}")
+        if g.get("reviewer"):
+            print(f"  reviewer   {g['reviewer']}")
+        if g.get("comment"):
+            print(f"  comment    {g['comment']}")
+        print(f"  requested  {g['requested_at']}")
+        if g.get("approved_at"):
+            print(f"  approved   {g['approved_at']}")
+        if g.get("rejected_at"):
+            print(f"  rejected   {g['rejected_at']}")
+    elif sub == "approve":
+        g = result["approval"]
+        w = result["workflow"]
+        verdict = "✔" if g["status"] == "approved" else "⏸"
+        print(f"{verdict} 审批放行: {g['id']} → {g['status']}")
+        print(f"  workflow   {w['id']} [{w['status']}] (恢复 PAUSED→ACTIVE)")
+        if result.get("event_seq") is not None:
+            print(f"  event_seq  {result['event_seq']}")
+    elif sub == "reject":
+        g = result["approval"]
+        w = result["workflow"]
+        print(f"✘ 审批否决: {g['id']} → {g['status']}")
+        print(f"  workflow   {w['id']} [{w['status']}] (停止)")
+        if w.get("failed_reason"):
+            print(f"  reason     {w['failed_reason']}")
+        if result.get("event_seq") is not None:
+            print(f"  event_seq  {result['event_seq']}")
 
 
 def _print_artifact_result(args: Any, result: dict) -> None:

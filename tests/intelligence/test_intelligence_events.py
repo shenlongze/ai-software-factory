@@ -192,12 +192,14 @@ class TestEventTypeEnumExtension:
         # org.project.lifecycle_changed / org.project.task_linked /
         # org.sprint.task_added, ADR-0039); 165 → 171: S7-002 Artifact
         # System +6 (org.artifact.updated/validated/consumed/failed/archived/
-        # viewed — 产物状态机转换事件 + 读命令审计, ADR-0039); 171 → 179:
+        # 171 → 179:
         # S7-003 Workflow Engine +8 (org.workflow.created/started/stage_ready/
         # stage_started/stage_completed/completed/failed — 组织级编排壳生命周期
-        # + Stage 流转事件 + viewed 读命令审计, ADR-0039)。
+        # + Stage 流转事件 + viewed 读命令审计, ADR-0039); 179 → 182:
+        # S9-001 Approval Gate +3 (org.approval.created/approved/rejected —
+        # 人工审批门: 门创建/放行/否决, ADR-0001 扩展路径, S9-001 报告)。
         # 纯增量扩展 (ADR-0001 决策 1 路径, 既有值零改动)
-        assert len(EventType) == 179
+        assert len(EventType) == 182
         assert EventType.ORG_PROJECT_CREATED.value == "org.project.created"
         assert EventType.ORG_SPRINT_CREATED.value == "org.sprint.created"
         assert EventType.ORG_STAGE_CREATED.value == "org.stage.created"

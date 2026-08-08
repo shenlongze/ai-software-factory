@@ -851,3 +851,108 @@ def record_workflow_viewed(
         result="OK",
         payload={"count": count, "filters": filters or {}},
     )
+
+
+# ------------------------------------------------------------------ Approval Gate (S9-001)
+# org.approval.* 人工审批门事件 — 模型见 org/approval.py (ApprovalGate
+# PENDING/APPROVED/REJECTED + APPROVAL_TRANSITIONS 受控转换表 + Store) 与
+# org/workflow.py (接线: stage COMPLETED + approval_required → 门创建 +
+# workflow PAUSED; approve → 恢复; reject → 停止)。同既有 org.* 模式:
+# logger=None 全静默; payload 唯一事实源:
+# - created:   gate_id/stage_id/workflow_id/project_id/status/requested_at
+#              (门创建 = workflow PAUSED 审计锚点)
+# - approved:  gate_id/stage_id/workflow_id/project_id/status/reviewer/
+#              comment/approved_at (放行决定 + 决策人)
+# - rejected:  gate_id/stage_id/workflow_id/project_id/status/reviewer/
+#              comment/rejected_at (否决决定 + 决策人 + 理由)
+# 顶层 project_id 随事件带出 (同 workflow/artifact 事件模式, 项目维度检索
+# 友好)。source: 门创建 = "org" (Runner 自动); 决定 = "cli" (人工决策,
+# ADR-0002 — 审批行为必须审计)。
+
+
+def record_approval_created(
+    logger: Any, *, gate: Any, workflow: Any, source: str = "org"
+) -> Event | None:
+    """审批门创建 (org.approval.created; PENDING + workflow PAUSED)。"""
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.ORG_APPROVAL_CREATED,
+        source=source,
+        stage=gate.status.value,
+        action="approval gate created",
+        result="OK",
+        project_id=workflow.project_id,
+        payload={
+            "gate_id": gate.id,
+            "stage_id": gate.stage_id,
+            "workflow_id": gate.workflow_id,
+            "project_id": workflow.project_id,
+            "status": gate.status.value,
+            "requested_at": gate.requested_at.isoformat(),
+        },
+    )
+
+
+def record_approval_approved(
+    logger: Any,
+    *,
+    gate: Any,
+    workflow: Any,
+    reviewer: str,
+    comment: str,
+    source: str = "cli",
+) -> Event | None:
+    """审批放行 (org.approval.approved; →APPROVED + workflow 恢复 PAUSED→ACTIVE)。"""
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.ORG_APPROVAL_APPROVED,
+        source=source,
+        stage=gate.status.value,
+        action="approve approval gate",
+        result="OK",
+        project_id=workflow.project_id,
+        payload={
+            "gate_id": gate.id,
+            "stage_id": gate.stage_id,
+            "workflow_id": gate.workflow_id,
+            "project_id": workflow.project_id,
+            "status": gate.status.value,
+            "reviewer": reviewer,
+            "comment": comment,
+            "approved_at": gate.approved_at.isoformat() if gate.approved_at else "",
+        },
+    )
+
+
+def record_approval_rejected(
+    logger: Any,
+    *,
+    gate: Any,
+    workflow: Any,
+    reviewer: str,
+    comment: str,
+    source: str = "cli",
+) -> Event | None:
+    """审批否决 (org.approval.rejected; →REJECTED + workflow FAILED 停止)。"""
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.ORG_APPROVAL_REJECTED,
+        source=source,
+        stage=gate.status.value,
+        action="reject approval gate",
+        result="FAIL",
+        project_id=workflow.project_id,
+        payload={
+            "gate_id": gate.id,
+            "stage_id": gate.stage_id,
+            "workflow_id": gate.workflow_id,
+            "project_id": workflow.project_id,
+            "status": gate.status.value,
+            "reviewer": reviewer,
+            "comment": comment,
+            "rejected_at": gate.rejected_at.isoformat() if gate.rejected_at else "",
+        },
+    )

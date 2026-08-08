@@ -494,6 +494,17 @@ class EventType(str, Enum):
     ORG_WORKFLOW_COMPLETED = "org.workflow.completed"        # 全部阶段完成 (终态)
     ORG_WORKFLOW_FAILED = "org.workflow.failed"              # 阶段失败 → 工作流失败
     ORG_WORKFLOW_VIEWED = "org.workflow.viewed"              # 工作流清单/详情/状态被查看 (只读审计)
+    # Sprint 9 S9-001 (factory-org Extension, 同扩展路径): Approval Gate —
+    # 人工审批门 (三挡板: product 后 MVP 确认 / design 后架构确认 / release
+    # 前发布确认)。created 为门创建 (approval_required stage COMPLETED →
+    # PENDING + workflow PAUSED); approved 为放行 (→APPROVED + workflow 恢复
+    # PAUSED→ACTIVE, 继续下一 stage); rejected 为否决 (→REJECTED + workflow
+    # FAILED 停止, 记录原因)。payload 契约见 factory-org/org/events.py —
+    # gate_id/stage_id/workflow_id/reviewer/comment/requested_at (从事件可
+    # 重建审批决定与决策人)。
+    ORG_APPROVAL_CREATED = "org.approval.created"            # 审批门创建 (PENDING + workflow PAUSED)
+    ORG_APPROVAL_APPROVED = "org.approval.approved"          # 审批放行 (→APPROVED + workflow 恢复)
+    ORG_APPROVAL_REJECTED = "org.approval.rejected"          # 审批否决 (→REJECTED + workflow FAILED)
 
 
 class Event(BaseModel):

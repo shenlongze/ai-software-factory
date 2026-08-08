@@ -245,6 +245,11 @@ class Stage(_OrgModel):
     - depends_on: DAG 依赖 (本 workflow 内前置 stage id 列表, 循环拒绝)
     - input_artifacts: 输入产物 id 列表 (全部 VALIDATED 才放行执行)
     - output_artifacts: 输出产物 id 列表 (Runner 完成后自动注册追加)
+    S9-001 扩展 (带默认值, 向后兼容):
+    - approval_required: 人工审批门 (三挡板: product 后 MVP / design 后
+      架构 / release 前发布; 默认 False — 既有 stage 零影响; 该 stage
+      COMPLETED → 创建 ApprovalGate (PENDING) → workflow PAUSED → 人工
+      approve 继续 / reject 停止, 见 org/approval.py)
     """
 
     id: str
@@ -257,6 +262,7 @@ class Stage(_OrgModel):
     depends_on: list[str] = Field(default_factory=list)      # S7-003: DAG 依赖
     input_artifacts: list[str] = Field(default_factory=list)  # S7-003: 输入产物
     output_artifacts: list[str] = Field(default_factory=list)  # S7-003: 输出产物
+    approval_required: bool = False                           # S9-001: 人工审批门
     created_at: datetime = Field(default_factory=utcnow)
 
     @field_validator("status", mode="before")

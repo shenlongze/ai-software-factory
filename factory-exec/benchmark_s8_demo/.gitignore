@@ -1,5 +1,7 @@
-factory-exec/benchmark_s8_demo/app_project/
-factory-exec/benchmark_s8_demo/org/
-factory-exec/benchmark_s8_demo/dist/
-factory-exec/benchmark_s8_demo/events.db
-factory-exec/benchmark_s8_demo/results/
+# 本 .gitignore 位于 factory-exec/benchmark_s8_demo/ 内, pattern 相对本目录
+# (S8-005 demo 运行时生成物 — 非源码, 防 gitlink/误提交; 曾误用仓库根路径致不生效)
+app_project/
+org/
+dist/
+events.db
+results/

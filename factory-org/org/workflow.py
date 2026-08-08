@@ -63,10 +63,26 @@ Artifact 集成:
 约束: Core 冻结 (仅 events 枚举新增, ADR-0001 扩展路径); 零 LLM/零执行
 副作用 (真实执行 S7-005 接入; 本层只编排状态与审计事件); executor=None
 时 Runner 响亮拒绝执行 (不假装执行 — 编排壳诚实边界)。
-
 事件 (org.workflow.*, 见 org/events.py): created/started/stage_ready/
 stage_started/stage_completed/completed/failed + viewed (读命令审计)。
 logger=None 全静默 (同既有 org 模式); 每转换审计 payload 唯一事实源。
+
+Sprint 9 S9-001 扩展 (Approval Gate 接线, 只扩展不改核心):
+- Stage 增加 approval_required 属性 (projects.py; 三挡板: product 后 MVP /
+  design 后架构 / release 前发布)
+- 执行链: approval_required stage COMPLETED → ApprovalGate (PENDING) 创建
+  (org/approval.py 模型 + approvals.json 持久化) → workflow PAUSED (受控
+  转换表 active→paused 已有语义)
+- approve → gate APPROVED → workflow 恢复 (PAUSED→ACTIVE, started 事件
+  from_status=paused) → Runner 继续下一 stage
+- reject → gate REJECTED → workflow FAILED 停止 (复用既有合法路径
+  PAUSED→ACTIVE→FAILED 两跳 — WORKFLOW_TRANSITIONS 零修改; failed_reason
+  记录审批否决原因)
+- Runner 守卫 (禁绕过审批门): 待审门 PENDING → 挂起不自动恢复;
+  否决门 REJECTED → WorkflowStateError 响亮拒绝 (含 failed→paused→active
+  重试路径 — 决定不可撤销)
+- 事件 +3 (factory-core events/models.py 枚举扩展, ADR-0001 路径):
+  org.approval.created / approved / rejected
 """
 
 from __future__ import annotations
@@ -79,6 +95,12 @@ from typing import Any, Callable
 from pydantic import Field, field_validator
 
 from . import events as org_events
+from .approval import (
+    ApprovalGate,
+    ApprovalGateStore,
+    ApprovalStatus,
+    transition_approval,
+)
 from .artifact import ArtifactRegistry
 from .lifecycle import DuplicateError, NotFoundError
 from .models import _OrgModel, _norm_list, new_id, utcnow
@@ -231,6 +253,7 @@ class WorkflowLifecycle:
         self._store = store
         self._logger = logger
         self._workflows = WorkflowSection(store.dir)
+        self._approvals = ApprovalGateStore(store.dir)  # S9-001: approvals.json
         self._registry = ArtifactRegistry(store, logger=logger)
 
     @property
@@ -340,6 +363,7 @@ class WorkflowLifecycle:
         depends_on: list[str] | None = None,
         input_artifacts: list[str] | None = None,
         output_artifacts: list[str] | None = None,
+        approval_required: bool = False,  # S9-001: 人工审批门 (三挡板)
         stage_id: str | None = None,
     ) -> Stage:
         """创建 Stage (org.stage.created; 组织级编排壳阶段, 不执行)。
@@ -351,6 +375,8 @@ class WorkflowLifecycle:
           workflow 依赖 → WorkflowDependencyError); 新 stage 无出边,
           循环不可能 (set_stage_dependencies 才可能成环)
         - order 缺省 = 当前最大 order + 1 (追加语义; S7-001 直建不受影响)
+        - approval_required: S9-001 审批门标记 (product/design/release 三
+          挡板; COMPLETED 后 Runner 自动创建 ApprovalGate + PAUSED)
         stage_ids 索引同步 (workflow.stage_ids 追加 + updated_at 落库)。
         """
         self.get_workflow(workflow_id)  # 工作流必须存在 (引用完整)
@@ -374,6 +400,7 @@ class WorkflowLifecycle:
             depends_on=depends_on,
             input_artifacts=input_artifacts,
             output_artifacts=output_artifacts,
+            approval_required=bool(approval_required),
         )
         self._store.save_stage(stage)
         self._append_stage_id(workflow_id, stage_id)
@@ -503,6 +530,164 @@ class WorkflowLifecycle:
             for sid in stage_ids
             for a in self._registry.query(stage_id=sid)
         ]
+
+    # ---------------------------------------------------- Approval Gate (S9-001)
+    # 人工审批门接线 (只扩展不改核心 — 状态机复用 WORKFLOW_TRANSITIONS 既有
+    # 语义: active→paused 挂起 / paused→active 恢复 / active→failed 停止):
+    # - request_approval: approval_required stage 的门创建 (Runner 在 stage
+    #   COMPLETED 后调用; PENDING + workflow PAUSED; org.approval.created)
+    # - approve_approval: PENDING→APPROVED (终态) + workflow 恢复
+    #   PAUSED→ACTIVE (started 事件 from_status=paused) → Runner 继续下一 stage
+    # - reject_approval: PENDING→REJECTED (终态) + workflow FAILED 停止
+    #   (复用 PAUSED→ACTIVE→FAILED 两跳合法路径; failed_reason 记录否决原因)
+    # 模型/状态机/持久化见 org/approval.py (APPROVAL_TRANSITIONS + Store)。
+
+    def get_approval(self, gate_id: str) -> ApprovalGate:
+        """审批门详情 (不存在 → NotFoundError)。"""
+        gate = self._approvals.get(gate_id)
+        if gate is None:
+            raise NotFoundError(f"approval gate not found: {gate_id}")
+        return gate
+
+    def get_approval_by_stage(self, stage_id: str) -> ApprovalGate | None:
+        """按 stage 查审批门 (每 stage 至多一门; 无 → None)。"""
+        for gate in self._approvals.list_all():
+            if gate.stage_id == stage_id:
+                return gate
+        return None
+
+    def list_approvals(
+        self,
+        *,
+        workflow_id: str | None = None,
+        status: ApprovalStatus | str | None = None,
+        stage_id: str | None = None,
+    ) -> list[ApprovalGate]:
+        """审批门清单 (workflow/status/stage 过滤; id 排序, 审计友好)。"""
+        gates = self._approvals.list_all()
+        if workflow_id is not None:
+            gates = [g for g in gates if g.workflow_id == workflow_id]
+        if status is not None:
+            target = ApprovalStatus.parse(status)
+            gates = [g for g in gates if g.status == target]
+        if stage_id is not None:
+            gates = [g for g in gates if g.stage_id == stage_id]
+        return gates
+
+    def has_pending_approval(self, workflow_id: str) -> bool:
+        """workflow 是否有待审门 (PENDING — Runner 挂起守卫, 禁绕过审批门)。"""
+        return any(
+            g.status == ApprovalStatus.PENDING
+            for g in self._approvals.list_all()
+            if g.workflow_id == workflow_id
+        )
+
+    def has_rejected_approval(self, workflow_id: str) -> bool:
+        """workflow 是否有否决门 (REJECTED — Runner 禁绕过守卫, 决定不可撤销)。"""
+        return any(
+            g.status == ApprovalStatus.REJECTED
+            for g in self._approvals.list_all()
+            if g.workflow_id == workflow_id
+        )
+
+    def request_approval(self, stage_id: str, *, comment: str = "") -> ApprovalGate:
+        """创建审批门 (approval_required stage → PENDING + workflow PAUSED)。
+
+        由 Runner 在 approval_required stage COMPLETED 后调用 (人工介入点);
+        校验 (响亮, 防误挂/重复):
+        - stage 必须存在 (NotFoundError)
+        - stage.approval_required 必须为 True (非门禁阶段拒建)
+        - 每 stage 至多一个门 (DuplicateError; COMPLETED 终态保证 Runner
+          路径天然唯一, 手工重复调用防护)
+        workflow ACTIVE → PAUSED (受控转换表); 发 org.approval.created
+        (Runner 自动, source="org")。
+        """
+        stage = self.get_stage(stage_id)
+        if not stage.approval_required:
+            raise WorkflowStateError(
+                f"stage {stage_id} does not require approval "
+                f"(approval_required=False)"
+            )
+        if self.get_approval_by_stage(stage_id) is not None:
+            raise DuplicateError(
+                f"approval gate already exists for stage {stage_id}"
+            )
+        workflow = self.get_workflow(stage.workflow_id)
+        gate = ApprovalGate(
+            id=new_id("AG"),
+            stage_id=stage.id,
+            workflow_id=workflow.id,
+            comment=comment,
+        )
+        self._approvals.save(gate)
+        org_events.record_approval_created(self._logger, gate=gate, workflow=workflow)
+        if workflow.status == WorkflowStatus.ACTIVE:
+            self.transition_workflow(workflow.id, WorkflowStatus.PAUSED)
+        return gate
+
+    def approve_approval(
+        self, gate_id: str, *, reviewer: str = "", comment: str = ""
+    ) -> tuple[ApprovalGate, Workflow]:
+        """审批放行 (→APPROVED 终态 + workflow 恢复 PAUSED→ACTIVE)。
+
+        非 PENDING 门 → ApprovalStateError (终态决定不可撤销); 恢复复用
+        受控转换表 paused→active (started 事件 from_status=paused — 既有
+        语义); 已 ACTIVE 不重复转换 (幂等恢复)。返回 (gate, workflow)。
+        """
+        gate = self.get_approval(gate_id)
+        updated = transition_approval(
+            gate, ApprovalStatus.APPROVED, reviewer=reviewer, comment=comment
+        )
+        self._approvals.save(updated)
+        workflow = self.get_workflow(gate.workflow_id)
+        org_events.record_approval_approved(
+            self._logger,
+            gate=updated,
+            workflow=workflow,
+            reviewer=reviewer,
+            comment=comment,
+        )
+        if workflow.status == WorkflowStatus.PAUSED:
+            workflow = self.transition_workflow(workflow.id, WorkflowStatus.ACTIVE)
+        return updated, workflow
+
+    def reject_approval(
+        self, gate_id: str, *, reviewer: str = "", comment: str = ""
+    ) -> tuple[ApprovalGate, Workflow]:
+        """审批否决 (→REJECTED 终态 + workflow FAILED 停止, 记录原因)。
+
+        非 PENDING 门 → ApprovalStateError; workflow 停止复用既有合法路径
+        PAUSED→ACTIVE→FAILED (两跳 — WORKFLOW_TRANSITIONS 零修改, 禁改核心
+        约束); failed_reason = "approval rejected: <comment> (reviewer:
+        <reviewer>)" 审计。返回 (gate, workflow)。
+        """
+        gate = self.get_approval(gate_id)
+        updated = transition_approval(
+            gate, ApprovalStatus.REJECTED, reviewer=reviewer, comment=comment
+        )
+        self._approvals.save(updated)
+        workflow = self.get_workflow(gate.workflow_id)
+        org_events.record_approval_rejected(
+            self._logger,
+            gate=updated,
+            workflow=workflow,
+            reviewer=reviewer,
+            comment=comment,
+        )
+        if workflow.status == WorkflowStatus.PAUSED:
+            workflow = self.transition_workflow(workflow.id, WorkflowStatus.ACTIVE)
+        if workflow.status == WorkflowStatus.ACTIVE:
+            reason = "approval rejected"
+            if comment:
+                reason += f": {comment}"
+            reason += f" (reviewer: {reviewer or 'unknown'})"
+            workflow = self.transition_workflow(
+                workflow.id,
+                WorkflowStatus.FAILED,
+                reason=reason,
+                event_extra={"stage_id": updated.stage_id},
+            )
+        return updated, workflow
 
     # ------------------------------------------------------------ 内部辅助
 
@@ -645,15 +830,27 @@ class WorkflowRunner:
     # ------------------------------------------------------------------ run
 
     def run(self, workflow_id: str, *, max_steps: int | None = None) -> Workflow:
-        """执行工作流 (全链推进; 返回终态/挂起 workflow)。"""
+        """执行工作流 (全链推进; 返回终态/挂起 workflow)。
+
+        S9-001 审批门守卫 (禁绕过): 待审门 PENDING → 直接返回挂起 workflow
+        (不自动恢复执行); 否决门 REJECTED → WorkflowStateError 响亮拒绝
+        (含 failed→paused→active 重试路径 — 审批决定不可撤销)。
+        """
         workflow = self._lifecycle.get_workflow(workflow_id)
         if workflow.status == WorkflowStatus.COMPLETED:
             return workflow  # 幂等: 已完成不重复执行
+        if self._lifecycle.has_rejected_approval(workflow_id):
+            raise WorkflowStateError(
+                f"workflow {workflow_id} has a rejected approval gate — "
+                f"不可恢复 (审批否决为终态决定, 禁绕过审批门)"
+            )
         if workflow.status == WorkflowStatus.FAILED:
             raise WorkflowStateError(
                 f"failed workflow cannot run: {workflow_id} "
                 f"(pause 后人工修复再恢复 — failed → paused → active 重试路径)"
             )
+        if self._lifecycle.has_pending_approval(workflow_id):
+            return workflow  # S9-001: 待审门挂起 — 等 approve/reject 再继续
         if workflow.status != WorkflowStatus.ACTIVE:
             workflow = self._lifecycle.activate(workflow_id)  # DRAFT/PAUSED → ACTIVE
         stages = self._lifecycle.list_stages(workflow_id)
@@ -681,6 +878,12 @@ class WorkflowRunner:
                 break  # 无可推进: 全部完成或存在阻塞 (workflow 保持 ACTIVE)
             self._execute_stage(workflow_id, ready_stage)
             executed += 1
+            # S9-001: Approval Gate — approval_required stage COMPLETED →
+            # 创建审批门 (PENDING) + workflow PAUSED (人工介入点; 返回挂起态)
+            fresh = self._lifecycle.get_stage(ready_stage.id)
+            if fresh.status == StageStatus.COMPLETED and fresh.approval_required:
+                self._lifecycle.request_approval(ready_stage.id)
+                return self._lifecycle.get_workflow(workflow_id)
         else:
             raise WorkflowExecutionError(
                 f"workflow {workflow_id} exceeded max steps ({cap}) — "
@@ -900,11 +1103,18 @@ class DevTestLoopRunner(WorkflowRunner):
         workflow = self._lifecycle.get_workflow(workflow_id)
         if workflow.status == WorkflowStatus.COMPLETED:
             return workflow  # 幂等: 已完成不重复执行
+        if self._lifecycle.has_rejected_approval(workflow_id):
+            raise WorkflowStateError(
+                f"workflow {workflow_id} has a rejected approval gate — "
+                f"不可恢复 (审批否决为终态决定, 禁绕过审批门)"
+            )
         if workflow.status == WorkflowStatus.FAILED:
             raise WorkflowStateError(
                 f"failed workflow cannot run: {workflow_id} "
                 f"(pause 后人工介入再恢复 — failed → paused → active 重试路径)"
             )
+        if self._lifecycle.has_pending_approval(workflow_id):
+            return workflow  # S9-001: 待审门挂起 — 等 approve/reject 再继续
         if workflow.status != WorkflowStatus.ACTIVE:
             workflow = self._lifecycle.activate(workflow_id)  # DRAFT/PAUSED → ACTIVE
         stages = self._lifecycle.list_stages(workflow_id)

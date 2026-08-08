@@ -25,10 +25,11 @@ def _prd_ok() -> dict:
 
 class TestContractsDeclared:
     def test_all_types_covered(self):
-        """全部类型契约 (S7-002 六类型 + S8-001 扩展: idea/product)。"""
+        """全部类型契约 (S7-002 六类型 + S8-001 扩展 idea/product + S8-002
+        扩展 ux_ui)。"""
         assert sorted(CONTRACTS) == [
             "bug_report", "code", "design", "idea", "prd", "product",
-            "release", "test",
+            "release", "test", "ux_ui",
         ]
         for contract in CONTRACTS.values():
             assert "required_fields" in contract

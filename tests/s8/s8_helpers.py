@@ -1,11 +1,18 @@
-"""tests/s8/s8_helpers.py — S8-001 PM Agent 测试构造/断言 helper (唯一名)。
+"""tests/s8/s8_helpers.py — S8 测试构造/断言 helper (唯一名)。
 
 - product_payload_ok: 合法 product 契约载荷 (7 节) — 与 org CONTRACTS
   product 同构 (market_analysis/user_persona/user_journey/problem_statement/
   feature_list/mvp_scope/user_stories)
 - product_json: 合法 product 的 JSON 串 (mock provider 注入, 围栏/散文变体)
+- uxui_payload_ok: 合法 ux_ui 契约载荷 (7 节) — 与 org CONTRACTS ux_ui
+  同构 (information_architecture/user_flow/wireframe/screen_specifications/
+  component_definition/design_tokens/prototype); wireframe.screens 每屏
+  Screen = {name, ascii, components[], actions[]} (机器可读 ASCII 布局)
+- uxui_json: 合法 ux_ui 的 JSON 串 (mock provider 注入, 围栏/散文变体)
 - event_sequence / payload_of: 事件库断言辅助 (org.workflow.* / org.stage.*)
 - make_idea_artifact: idea 产物 dict (executor context inputs 契约)
+- make_product_artifact: product 产物 dict (executor context inputs 契约:
+  type == "product", metadata = product 契约载荷)
 """
 
 from __future__ import annotations
@@ -50,6 +57,78 @@ def product_json(
     return body
 
 
+def uxui_payload_ok(*, screen_count: int = 2) -> dict[str, Any]:
+    """合法 ux_ui 契约载荷 (7 节; wireframe.screens 每屏含 name/ascii/
+    components/actions — 机器可读 ASCII 布局, 不生成图片文件)。"""
+    screens = [
+        {
+            "name": f"screen_{i}",
+            "ascii": f"+----------+\n| 屏幕 {i} |\n+----------+",
+            "components": ["header", "content"],
+            "actions": ["点击进入下一屏"],
+        }
+        for i in range(1, screen_count + 1)
+    ]
+    return {
+        "information_architecture": {
+            "screens": [s["name"] for s in screens],
+            "navigation": "底部 Tab 导航: 首页/记录/报表",
+        },
+        "user_flow": [
+            {"step": "打开应用", "screen": "screen_1"},
+            {"step": "记录一笔支出", "screen": "screen_2"},
+            {"step": "查看月度报表", "screen": "screen_1"},
+        ],
+        "wireframe": {"screens": screens},
+        "screen_specifications": [
+            {
+                "screen": "screen_1",
+                "elements": ["余额卡片", "近期流水"],
+                "behaviors": ["下拉刷新", "点击流水进入详情"],
+                "acceptance": ["余额展示正确", "流水按时间倒序"],
+            },
+            {
+                "screen": "screen_2",
+                "elements": ["金额输入", "分类选择"],
+                "behaviors": ["提交后返回首页", "分类必选"],
+                "acceptance": ["金额校验通过才可提交"],
+            },
+        ],
+        "component_definition": [
+            {"name": "BalanceCard", "description": "余额展示卡片",
+             "usage": "首页顶部"},
+            {"name": "AmountInput", "description": "金额输入框",
+             "usage": "记录页"},
+        ],
+        "design_tokens": {
+            "colors": {"primary": "#1A73E8", "background": "#FFFFFF"},
+            "typography": {"title": "18px/600", "body": "14px/400"},
+            "spacing": {"xs": 4, "sm": 8, "md": 16},
+        },
+        "prototype": (
+            "点击底部 Tab 在首页/记录/报表间切换; 记录页提交表单后返回首页"
+            "并刷新余额; 交互纯文本描述, 无外部原型工具依赖。"
+        ),
+    }
+
+
+def uxui_json(
+    *,
+    fenced: bool = False,
+    prose: bool = False,
+    **overrides: Any,
+) -> str:
+    """合法 ux_ui 的 JSON 串 (mock provider 注入; 围栏/散文变体可叠加)。"""
+    payload = uxui_payload_ok()
+    payload.update(overrides)
+    body = json.dumps(payload, ensure_ascii=False)
+    if fenced:
+        body = f"```json\n{body}\n```"
+    if prose:
+        body = f"以下是 UX/UI 设计产物:\n{body}\n以上为全部内容。"
+    return body
+
+
 def event_sequence(store: Any) -> list[str]:
     return [e.type.value for e in store.query()]
 
@@ -64,3 +143,11 @@ def payload_of(store: Any, event_type: str) -> dict[str, Any]:
 def make_idea_artifact(*, idea: str = "开发一个记账 Web App") -> dict[str, Any]:
     """idea 产物 dict (executor context inputs 契约: type + metadata.idea)。"""
     return {"type": "idea", "ref": "file:///idea.txt", "metadata": {"idea": idea}}
+
+
+def make_product_artifact(
+    *, payload: dict[str, Any] | None = None, ref: str = "file:///docs/product.json"
+) -> dict[str, Any]:
+    """product 产物 dict (executor context inputs 契约: type == "product",
+    metadata = product 契约载荷)。"""
+    return {"type": "product", "ref": ref, "metadata": payload or product_payload_ok()}

@@ -12,7 +12,8 @@ Tester / DevOps — 统一 RoleDefinition 声明式注册, 零 Agent 复制。
   已实现, production_validate 真实闭环验证; Tester — S7-004 TesterAgent 已实现,
   测试执行确定性 + 失败分析/缺陷报告 LLM 结构化输出; ProductManager — S8-001
   PMAgent 已实现, Idea → 结构化 Product Artifact (7 节) LLM 生成 + CONTRACTS
-  product 契约校验)。
+  product 契约校验; UXUIDesigner — S8-002 UXUIDesignerAgent 已实现, Product
+  Artifact → 结构化 UX/UI Artifact (7 节) LLM 生成 + CONTRACTS ux_ui 契约校验)。
 - "planning": 角色已定义 (capabilities + prompt 模板 + 阶段映射), 但尚无
   独立 LLM 执行路径 — 只能产出规划产物 (demo_ui_feature 拆解演示走此路径,
   明确标注"规划产物, 非 LLM 执行")。不假装可执行。
@@ -56,7 +57,8 @@ class RoleDefinition:
 
     @property
     def is_executable(self) -> bool:
-        """是否有真实 LLM 执行路径 (当前 Developer + Tester + ProductManager)。"""
+        """是否有真实 LLM 执行路径 (Developer + Tester + ProductManager +
+        UXUIDesigner — 见模块 docstring 诚实标注)。"""
         return self.execution_kind == "executable"
 
 
@@ -73,11 +75,17 @@ _PM_PROMPT = (
     "输出格式: 严格 JSON 对象, 7 节字段齐全, 仅输出 JSON, 不要任何多余文字。"
 )
 
-#: UI Designer — 界面/交互设计 (规划角色)
+#: UI Designer — 产品 → UX/UI 设计 (S8-002 executable: UXUIDesignerAgent 已实现,
+#: Product Artifact → 结构化 UX/UI Artifact (7 节), 输出 JSON 经 CONTRACTS
+#: ux_ui 校验; 机器可读: ASCII 布局嵌 JSON, 不生成图片文件)
 _UI_PROMPT = (
-    "你是一名 UI Designer (UI 设计师)。职责: 根据需求设计界面结构与交互, "
-    "关注可用性与视觉一致性。\n"
-    "输出格式: 设计说明 (界面结构 / 交互流程 / 关键组件 / 状态)。"
+    "你是一名 UX/UI Designer (UX/UI 设计师)。职责: 把产品分析产物 (Product "
+    "Artifact) 转化为结构化 UX/UI 设计产物 (UX/UI Artifact), 覆盖 7 节: "
+    "信息架构 (information_architecture) / 用户流程 (user_flow) / 线框 "
+    "(wireframe, 每屏 ASCII 布局 + 结构化 Screen: name/ascii/components/"
+    "actions) / 屏幕规格 (screen_specifications) / 组件定义 "
+    "(component_definition) / 设计规范 (design_tokens) / 原型说明 (prototype)。\n"
+    "输出格式: 严格 JSON 对象, 7 节字段齐全, 仅输出 JSON, 不要任何多余文字。"
 )
 
 #: Architect — 架构决策与技术方案 (规划角色)
@@ -126,8 +134,8 @@ ROLE_REGISTRY: dict[str, RoleDefinition] = {
         name="UI Designer",
         capabilities=("ui_design", "prototyping"),
         prompt_template=_UI_PROMPT,
-        workflow_stages=("design",),
-        execution_kind="planning",
+        workflow_stages=("ux_ui",),
+        execution_kind="executable",
     ),
     "architect": RoleDefinition(
         role_id="architect",
@@ -205,7 +213,8 @@ def list_role_dicts() -> list[dict[str, Any]]:
 
 def executable_role_ids() -> list[str]:
     """可执行角色 (有真实 LLM 路径) — developer + tester (S7-004) +
-    product-manager (S8-001 PMAgent), 诚实标注。"""
+    product-manager (S8-001 PMAgent) + ui-designer (S8-002 UXUIDesignerAgent),
+    诚实标注。"""
     return [r.role_id for r in list_roles() if r.is_executable]
 
 
@@ -224,6 +233,8 @@ def capabilities_for_role(role_id: str) -> tuple[str, ...]:
 ROLE_ALIASES: dict[str, str] = {
     "pm": "product-manager",
     "ui": "ui-designer",
+    "ux/ui designer": "ui-designer",
+    "ux designer": "ui-designer",
     "dev": "developer",
     "qa": "tester",
     "test engineer": "tester",

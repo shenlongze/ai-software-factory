@@ -74,11 +74,15 @@ class ArtifactType(str, Enum):
     market_analysis/user_persona/user_journey/problem_statement/feature_list/
     mvp_scope/user_stories); IDEA (想法输入 — 自然语言, PM 阶段输入,
     stage input 可无 artifact 或 idea artifact)。
+    S8-002 扩展: UX_UI (UX/UI Artifact — UX/UI Designer Agent 输出, 7 节
+    契约: information_architecture/user_flow/wireframe/screen_specifications/
+    component_definition/design_tokens/prototype, 机器可读纯 JSON)。
     """
 
     IDEA = "idea"               # S8-001: 想法输入 (自然语言)
     PRD = "prd"
     PRODUCT = "product"         # S8-001: Product Artifact (PM Agent 输出)
+    UX_UI = "ux_ui"             # S8-002: UX/UI Artifact (UX/UI Designer 输出)
     DESIGN = "design"
     CODE = "code"
     TEST = "test"

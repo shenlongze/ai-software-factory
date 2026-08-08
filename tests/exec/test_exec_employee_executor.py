@@ -77,7 +77,7 @@ class TestStageMapping:
     def test_known_stage_to_role(self):
         for stage, role_id in {
             "product": "product-manager",
-            "design": "ui-designer",
+            "ux_ui": "ui-designer",
             "architecture": "architect",
             "development": "developer",
             "testing": "tester",

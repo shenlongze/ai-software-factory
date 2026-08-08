@@ -9,7 +9,12 @@
   S7-004 扩展: test 强化 (results.passed 必含) + bug_report 类型 (Tester 缺陷报告);
   S8-001 扩展: product 类型 (PM Agent 输出, 7 节必填: market_analysis/
   user_persona/user_journey/problem_statement/feature_list/mvp_scope/
-  user_stories) + idea 类型 (PM 阶段输入, 自然语言)
+  user_stories) + idea 类型 (PM 阶段输入, 自然语言);
+  S8-002 扩展: ux_ui 类型 (UX/UI Designer Agent 输出, 7 节必填:
+  information_architecture/user_flow/wireframe/screen_specifications/
+  component_definition/design_tokens/prototype; 结构校验: wireframe dict
+  必含 screens, screen_specifications list, design_tokens dict — 深度
+  wireframe Screen 结构校验在 exec 侧 _local_validate, 双体系一致)
 - 引用完整: stage/project 必须存在; task 须经 ProjectTaskLink 关联该项目
   (项目隔离铁律, 同 S7-001 add_task_to_sprint); producer_role 经 exec
   注册表校验 (未安装 → 跳过, Removal Isolation — 不假装校验)
@@ -102,6 +107,26 @@ CONTRACTS: dict[str, dict[str, Any]] = {
             "feature_list": {"type": "list", "min_items": 1},
             "mvp_scope": {"type": "dict", "min_keys": 1, "required_keys": ["in", "out"]},
             "user_stories": {"type": "list", "min_items": 1},
+        },
+    },
+    "ux_ui": {
+        "required_fields": (
+            "information_architecture",
+            "user_flow",
+            "wireframe",
+            "screen_specifications",
+            "component_definition",
+            "design_tokens",
+            "prototype",
+        ),
+        "validation_rules": {
+            "information_architecture": {"type": "dict", "min_keys": 1},
+            "user_flow": {"type": "list", "min_items": 1},
+            "wireframe": {"type": "dict", "min_keys": 1, "required_keys": ["screens"]},
+            "screen_specifications": {"type": "list", "min_items": 1},
+            "component_definition": {"type": "list", "min_items": 1},
+            "design_tokens": {"type": "dict", "min_keys": 1},
+            "prototype": {"type": "str", "min_length": 1},
         },
     },
     "prd": {

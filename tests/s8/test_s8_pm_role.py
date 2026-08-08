@@ -48,8 +48,11 @@ class TestPMRole:
         assert "仅输出 JSON" in prompt
 
     def test_executable_role_ids_include_pm(self):
-        """executable 角色 (S8-001): developer + product-manager + tester。"""
-        assert roles.executable_role_ids() == ["developer", "product-manager", "tester"]
+        """executable 角色 (S8-002): developer + product-manager + tester +
+        ui-designer。"""
+        assert roles.executable_role_ids() == [
+            "developer", "product-manager", "tester", "ui-designer",
+        ]
 
     def test_org_coverage_pm_executable(self):
         """双体系统一: org 模板 product manager → exec product-manager。"""
@@ -74,8 +77,13 @@ class TestPMRole:
         caps = roles.capabilities_for_role("product-manager")
         assert {"requirement", "planning", "product_analysis"} <= set(caps)
 
-    def test_ui_designer_still_planning(self):
-        """诚实标注: UX/UI Designer 仍是 planning (S8-002 未实现, 不假装)。"""
+    def test_architect_devops_still_planning(self):
+        """诚实标注: Architect/DevOps 仍是 planning (S8-003/S8-004 未实现,
+        不假装); UX/UI Designer S8-002 已 executable。"""
         ui = roles.require_role("ui-designer")
-        assert ui.execution_kind == "planning"
-        assert not ui.is_executable
+        assert ui.execution_kind == "executable"
+        assert ui.is_executable
+        for role_id in ("architect", "devops"):
+            role = roles.require_role(role_id)
+            assert role.execution_kind == "planning"
+            assert not role.is_executable

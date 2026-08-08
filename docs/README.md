@@ -6,13 +6,14 @@
 ## 5 分钟路径 (新人必读)
 
 1. [README.md](../README.md) — 项目是什么 (Vision / Problem / Solution / 四条核心理念)
-2. [architecture-overview.md](./architecture-overview.md) — 三区 · 11 层架构总览 (先有地图)
-3. [project-structure.md](./project-structure.md) — 代码在哪、怎么长这样
-4. [adr/0031-decision-intelligence.md](./adr/0031-decision-intelligence.md) + [adr/0033-experience-loop.md](./adr/0033-experience-loop.md) — 认知层两个关键 ADR (决策/经验)
-5. [configuration-model.md](./configuration-model.md) — 怎么配置、配在哪
-6. [quality-report.md](./quality-report.md) — 质量基线: 4111 pytest + 92 Vitest, 全绿才算完成
+2. [status.md](./status.md) — 当前实现状态总表 (什么已实现 / 什么只是蓝图, Reality Audit 校准)
+3. [architecture-overview.md](./architecture-overview.md) — 三区 · 11 层架构总览 (先有地图)
+4. [project-structure.md](./project-structure.md) — 代码在哪、怎么长这样
+5. [adr/0031-decision-intelligence.md](./adr/0031-decision-intelligence.md) + [adr/0033-experience-loop.md](./adr/0033-experience-loop.md) — 认知层两个关键 ADR (决策/经验)
+6. [configuration-model.md](./configuration-model.md) — 怎么配置、配在哪
+7. [quality-report.md](./quality-report.md) — 质量基线: 5493 pytest + 92 Vitest, 全绿才算完成
 
-验证命令 (仓库根目录): `pytest -q` (4111) / `cd factory-console/web/frontend && npx vitest run` (92)。
+验证命令 (仓库根目录): `pytest -q` (5493) / `cd factory-console/web/frontend && npx vitest run` (92)。
 
 ---
 

@@ -13,7 +13,7 @@
 | SSE | 7 类事件 (stage.started / stage.completed / artifact.created / approval.required / error / runtime.created / runtime.status.changed); since_seq 断点续推; 断线重连 + isMock 检测 |
 | RuntimeInstance 模型 | 后端 models.py + 前端 types.ts (id/project_id/type/status/artifact_id/url/session/created_at) — 只建模型, 不实现 Browser/Terminal (S10-004) |
 | mock fallback | workflow/timeline 无后端 → is_mock=true 演示数据 (诚实标注); SSE 无事件库 → 单条 error (mock=true) 后关闭; 项目不存在 → 404 (mock 不兜底不存在) |
-| 测试 | pytest 6456 + 30 = **6486 全绿** / vitest **187 全绿** (177 基线 + 10 新) / tsc 零错 |
+| 测试 | pytest 6456 + 40 = **6496 全绿** / vitest **187 全绿** (177 基线 + 10 新) / tsc 零错 |
 | 冻结 | git diff factory-core/ factory-runtime/ desktop/ = **0**; 未写 Timeline UI; 未实现 Browser |
 
 ## 2. 端点清单 (S10-002 Runtime API)
@@ -72,7 +72,7 @@ workspace-architecture.md §4 (S10-004 调整版) 的共享契约 — 后端 `fa
 
 ## 6. 测试
 
-**pytest 6486 全绿 (6456 基线 + 30 新, 零回归)** — tests/console/test_console_s10_runtime.py (唯一 basename `test_console_*`):
+**pytest 6496 全绿 (6456 基线 + 40 新, 零回归)** — tests/console/test_console_s10_runtime.py (唯一 basename `test_console_*`):
 
 - workflow 端点: 真实 200 / mock fallback (is_mock=true, 形状对齐 workspace) / 不存在 404 / 无 org None
 - stages 端点: 字段装配 / duration 从事件推导 (12.5s 确定性时间戳) / 缺 completed → None / 404

@@ -24,7 +24,7 @@ from .lifecycle import get_project_lifecycle
 from .projects import list_projects
 from .providers import list_providers
 from .runtime import (
-    SSE_EVENT_MAP,
+    SSE_EVENT_MAP,  # noqa: F401 — SSE 事件映射常量 (测试/前端引用; 非路由不进 __all__)
     get_project_timeline,
     get_project_workflow,
     get_workflow_stages,
@@ -33,7 +33,6 @@ from .runtime import (
 from .workflows import get_workflow, list_workflows
 
 __all__ = [
-    "SSE_EVENT_MAP",
     "approve_approval",
     "get_artifact",
     "get_decision",

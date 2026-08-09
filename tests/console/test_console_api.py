@@ -137,7 +137,6 @@ class TestRouteExports:
             "list_recommendations",
             "list_workflows",
             "reject_approval",
-            "SSE_EVENT_MAP",
         }
         assert set(_api.__all__) == expected
         for name in expected:

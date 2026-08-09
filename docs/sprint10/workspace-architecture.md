@@ -57,18 +57,38 @@ AI Factory = AI 软件生产工作台 (不是后台管理/CRUD Dashboard)
    Review: 人工审核 (需求/UI/架构/发布 — 意见 + 批准/重做)
 ```
 
-## 4. Browser Runtime (核心差异化)
+## 4. Runtime Workspace（替代固定 Browser Tab — S10-004 调整版）
 
 ```
-功能: 查看 AI 生成的软件真实运行页面 (localhost:<port>)
-  - 刷新 / 截图 / 打开链接
-  - 未来 Agent Browser Tool: open()/click()/input()/screenshot()/console()
+设计: 不是固定一个 Browser Tab, 而是 "+" 创建 Runtime Instance
 
-实现:
-  后端: 沙箱内起静态服务器 (python -m http.server 或 node serve)
-      → GET /api/projects/{id}/browser/url 返回运行 URL
-  前端: iframe 嵌入 + 工具栏 (刷新/截图/新窗口)
-  安全: 仅本机沙箱进程, 生产项目不暴露
+用户打开 AI Factory → 在 Workspace 内监督 AI 软件生产:
+  Panel → Runtime Tab → [+] 菜单 → 选择类型 → 创建 Instance
+
+Runtime Instance 数据模型:
+  id / type (browser|terminal) / project_id / artifact_id
+  status (starting|running|stopped|error) / url|session / created_at
+
+① Browser Runtime
+   - AI 软件预览 (沙箱 URL iframe)
+   - Artifact 绑定 (预览对应产物: ux_ui/code/release)
+   - 截图反馈 (用户截图 + 意见 → feedback → Agent 修改 Loop)
+
+② Terminal Runtime
+   - Agent 执行日志 (实时流)
+   - 命令输出 (build/test 命令 stdout)
+   - Build/Test 状态 (Tester/Release 阶段可见)
+
+API:
+  POST /api/projects/{id}/runtimes     创建 Instance {type, artifact_id}
+  GET  /api/projects/{id}/runtimes     列表
+  GET  /api/runtimes/{id}              详情 (url/session/status)
+  POST /api/runtimes/{id}/start|stop   生命周期
+  POST /api/runtimes/{id}/screenshot   截图 (Browser 反馈)
+
+前端: Runtime Tab = Instance 列表 + [+] 菜单
+  Browser Instance: iframe + 工具栏 (刷新/截图/打开)
+  Terminal Instance: 终端样式日志 (等宽字体, 滚动)
 ```
 
 ## 5. Artifact Renderer (UX/UI Visual Review)

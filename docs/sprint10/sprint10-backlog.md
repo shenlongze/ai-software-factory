@@ -10,7 +10,7 @@ Sprint 10 — AI 软件生产工作台
 ├── S10-001 Workspace Shell (三栏 UI 框架: Explorer/Workspace/Panel)
 ├── S10-002 Factory Runtime API (Timeline/Monitor/SSE/Browser URL/Artifacts/Downloads)
 ├── S10-003 Agent Timeline (中间核心: 事件流实时渲染 + 产物按钮 + 底部持续开发输入)
-├── S10-004 Browser Runtime ⭐核心 (右侧 Browser Tab: iframe 沙箱预览 + 反馈 Loop)
+├── S10-004 Runtime Workspace ⭐核心 (调整: "+" 创建 Instance — Browser/Terminal, 非固定 Tab)
 ├── S10-005 Artifact Center (Explorer + Artifact Tab: 资产库式 6 类产物 + Renderer)
 ├── S10-006 Review Workflow (Review Tab + 页: PRD/UI/架构/发布审核闭环)
 └── S10-007 CLI MVP (统一 factory 命令, 与 UI 同 API)
@@ -57,11 +57,11 @@ Sprint 10 — AI 软件生产工作台
     },
     {
       "id": "S10-004",
-      "title": "Browser Runtime",
+      "title": "Runtime Workspace (Instance 模式)",
       "priority": "P0",
-      "dependency": "S10-002 (browser/url)",
-      "acceptance": "右侧 Browser Tab: iframe 沙箱预览; 工具栏 (刷新/截图/新窗口); 空态引导; 沙箱静态服务器启动 (python http.server); 测试 ≥15",
-      "estimated_complexity": "L"
+      "dependency": "S10-002",
+      "acceptance": "Runtime Tab = Instance 列表 + [+] 创建菜单 (browser|terminal); RuntimeInstance 模型 (id/type/project_id/artifact_id/status/url|session); API: POST/GET runtimes + start/stop + screenshot; Browser Instance: iframe 沙箱预览 + Artifact 绑定 + 截图反馈; Terminal Instance: 日志流 + 命令输出 + Build/Test 状态; 测试 ≥20",
+      "estimated_complexity": "XL"
     },
     {
       "id": "S10-005",

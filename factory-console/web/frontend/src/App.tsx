@@ -11,6 +11,7 @@ import { ProvidersPage } from './pages/ProvidersPage';
 import { WorkflowPage } from './pages/WorkflowPage';
 import { ArtifactsPage } from './pages/ArtifactsPage';
 import { ReviewPage } from './pages/ReviewPage';
+import { WorkspaceShell } from './shell/WorkspaceShell';
 
 /** 导航项 (普通模式隐藏 Providers — Expert 专属)。 */
 function NavLink({ label, page, target }: { label: string; page: Page; target: Page }): JSX.Element {
@@ -31,6 +32,11 @@ function NavLink({ label, page, target }: { label: string; page: Page; target: P
 function Shell(): JSX.Element {
   const { mode, page } = useAppState();
 
+  // S10-001: Workspace Shell 全屏三栏 (独立于 Human Console, 无 console 头/脚)
+  if (page.name === 'workspace') {
+    return <WorkspaceShell />;
+  }
+
   return (
     <div className="console-shell">
       <header className="console-header">
@@ -47,6 +53,7 @@ function Shell(): JSX.Element {
           <NavLink label="审批" page={page} target={{ name: 'approvals' }} />
           <NavLink label="决策" page={page} target={{ name: 'decisions' }} />
           <NavLink label="智能" page={page} target={{ name: 'intelligence' }} />
+          <NavLink label="工作台" page={page} target={{ name: 'workspace' }} />
           {mode === 'expert' ? <NavLink label="Providers" page={page} target={{ name: 'providers' }} /> : null}
         </nav>
         <ModeToggle />

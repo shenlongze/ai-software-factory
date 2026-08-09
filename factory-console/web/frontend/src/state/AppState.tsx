@@ -24,7 +24,9 @@ export type Page =
   | { name: 'workflow'; workflowId: string; projectId?: string }
   | { name: 'artifacts'; projectId?: string; workflowId?: string }
   // S9-003: 单产物评审页 (从 Artifacts 列表进入; 详情 + approve/reject/comment)
-  | { name: 'review'; artifactId: string };
+  | { name: 'review'; artifactId: string }
+  // S10-001: Workspace Shell (三栏 AI 工作台, 全屏独立于 Human Console)
+  | { name: 'workspace' };
 
 export interface AppStateValue {
   mode: Mode;
@@ -35,9 +37,23 @@ export interface AppStateValue {
 
 const AppStateContext = createContext<AppStateValue | null>(null);
 
+/** 直接入口 (URL hash): `#/workspace` → Workspace Shell。S10-001 状态导航入口。 */
+export function pageFromHash(hash: string): Page | null {
+  if (hash === '#/workspace') return { name: 'workspace' };
+  return null;
+}
+
+function initialPage(): Page {
+  try {
+    return pageFromHash(window.location.hash) ?? { name: 'dashboard' };
+  } catch {
+    return { name: 'dashboard' };
+  }
+}
+
 export function AppStateProvider({ children }: { children: ReactNode }): JSX.Element {
   const [mode, setMode] = useState<Mode>('simple');
-  const [page, setPage] = useState<Page>({ name: 'dashboard' });
+  const [page, setPage] = useState<Page>(initialPage);
 
   const value = useMemo<AppStateValue>(
     () => ({ mode, setMode, page, navigate: setPage }),

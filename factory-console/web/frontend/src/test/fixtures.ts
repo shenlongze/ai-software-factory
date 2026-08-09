@@ -8,6 +8,7 @@ import type {
   ApprovalDecisionSummary,
   ApprovalGateSummary,
   ApprovalSummary,
+  ArtifactDetail,
   ArtifactSummary,
   ConsoleDashboard,
   DecisionSummary,
@@ -196,6 +197,79 @@ export function sampleArtifact(overrides: Partial<ArtifactSummary> = {}): Artifa
     location: 'org/artifacts/design-1.md',
     created_at: '2026-08-06T00:00:00Z',
     updated_at: '2026-08-06T00:00:00Z',
+    ...overrides,
+  };
+}
+
+/** product Artifact 详情 (S9-003 Review 数据源: PRD 6 节 + pending 审批门)。 */
+export function sampleArtifactDetail(
+  overrides: Partial<ArtifactDetail> = {},
+): ArtifactDetail {
+  return {
+    ...sampleArtifact({ id: 'art-1', type: 'product', stage_id: 'product', producer_role: 'pm' }),
+    metadata: {
+      market_analysis: '目标市场: 个人记账用户; 竞争: 手工表格/同类 App',
+      user_persona: '25-40 岁上班族, 需要简单记账与月度报表',
+      user_journey: '记录一笔支出 → 查看分类统计 → 月底生成报表',
+      feature_list: ['支出记录', '分类统计', '月度报表'],
+      mvp_scope: { in: ['支出记录', '分类统计'], out: ['多人协作'] },
+      user_stories: [
+        { 'as-a': '用户', 'i-want': '快速记录支出', 'so-that': '不遗漏' },
+      ],
+    },
+    review: sampleApprovalGate({ id: 'gate-1', stage_id: 'product' }),
+    ...overrides,
+  };
+}
+
+/** ux_ui Artifact 详情 (S9-003: 7 节 + wireframe ASCII 预览数据源)。 */
+export function sampleUXUIDetail(overrides: Partial<ArtifactDetail> = {}): ArtifactDetail {
+  return {
+    ...sampleArtifact({ id: 'art-ux1', type: 'ux_ui', stage_id: 'ux-ui', producer_role: 'designer' }),
+    metadata: {
+      information_architecture: {
+        screens: ['screen_home', 'screen_record'],
+        navigation: '底部 Tab 导航: 首页/记录/报表',
+      },
+      user_flow: [
+        { step: '打开应用', screen: 'screen_home' },
+        { step: '记录一笔支出', screen: 'screen_record' },
+      ],
+      wireframe: {
+        screens: [
+          {
+            name: 'screen_home',
+            ascii: '+------------+\n| 余额卡片   |\n| 近期流水   |\n+------------+',
+            components: ['BalanceCard', 'TransactionList'],
+            actions: ['下拉刷新', '点击流水进入详情'],
+          },
+          {
+            name: 'screen_record',
+            ascii: '+------------+\n| 金额输入   |\n+------------+',
+            components: ['AmountInput'],
+            actions: ['提交后返回首页'],
+          },
+        ],
+      },
+      screen_specifications: [
+        {
+          screen: 'screen_home',
+          elements: ['余额卡片', '近期流水'],
+          behaviors: ['下拉刷新'],
+          acceptance: ['余额展示正确'],
+        },
+      ],
+      component_definition: [
+        { name: 'BalanceCard', description: '余额展示卡片', usage: '首页顶部' },
+      ],
+      design_tokens: {
+        colors: { primary: '#1A73E8', background: '#FFFFFF' },
+        typography: { title: '18px/600', body: '14px/400' },
+        spacing: { xs: 4, sm: 8 },
+      },
+      prototype: '点击底部 Tab 切换; 记录页提交后返回首页并刷新余额; 纯文本描述。',
+    },
+    review: sampleApprovalGate({ id: 'gate-ux1', stage_id: 'ux-ui' }),
     ...overrides,
   };
 }

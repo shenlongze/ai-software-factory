@@ -14,6 +14,7 @@ import type {
   ApprovalDecisionSummary,
   ApprovalGateSummary,
   ApprovalSummary,
+  ArtifactDetail,
   ArtifactSummary,
   ConsoleDashboard,
   DecisionSummary,
@@ -94,16 +95,21 @@ export const api = {
     return getJson<ArtifactSummary[]>(`/api/artifacts${qs ? `?${qs}` : ''}`);
   },
   // S9-002: 审批决定 (Console 唯一写路径; source=console 审计由后端落库)
-  approveApproval: (approvalId: string) =>
+  // S9-003: 可选 comment 透传 (Review 页反馈输入 → gate.comment 持久化;
+  //         空串不发送键 — S9-002 无 body 调用兼容)
+  approveApproval: (approvalId: string, comment = '') =>
     sendJson<ApprovalDecisionSummary>(
       `/api/approvals/${encodeURIComponent(approvalId)}/approve`,
-      { reviewer: 'console' },
+      { reviewer: 'console', ...(comment ? { comment } : {}) },
     ),
-  rejectApproval: (approvalId: string) =>
+  rejectApproval: (approvalId: string, comment = '') =>
     sendJson<ApprovalDecisionSummary>(
       `/api/approvals/${encodeURIComponent(approvalId)}/reject`,
-      { reviewer: 'console' },
+      { reviewer: 'console', ...(comment ? { comment } : {}) },
     ),
+  // S9-003: 单产物详情 (Review 数据源: metadata 契约载荷 + review 审批门)
+  artifact: (artifactId: string) =>
+    getJson<ArtifactDetail>(`/api/artifacts/${encodeURIComponent(artifactId)}`),
 } as const;
 
 export type Api = typeof api;

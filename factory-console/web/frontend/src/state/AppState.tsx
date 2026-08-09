@@ -22,7 +22,9 @@ export type Page =
   | { name: 'providers' }
   // S9-002: 组织级 Workflow / Artifact 视图
   | { name: 'workflow'; workflowId: string; projectId?: string }
-  | { name: 'artifacts'; projectId?: string; workflowId?: string };
+  | { name: 'artifacts'; projectId?: string; workflowId?: string }
+  // S9-003: 单产物评审页 (从 Artifacts 列表进入; 详情 + approve/reject/comment)
+  | { name: 'review'; artifactId: string };
 
 export interface AppStateValue {
   mode: Mode;

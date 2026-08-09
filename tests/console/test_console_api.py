@@ -117,10 +117,10 @@ service_template = ("Idea", "PM", "Product", "UX/UI", "Architecture", "Developme
 
 class TestRouteExports:
     def test_route_modules_exported(self):
-        """api/ 暴露全部路由函数 (S9-002: 13 个 — 新增 workflows/artifacts/
-        approval-gates + approve/reject 决定)。"""
+        """api/ 暴露全部路由函数 (S9-003: 14 个 — 新增 get_artifact 详情)。"""
         expected = {
             "approve_approval",
+            "get_artifact",
             "get_decision",
             "get_project_lifecycle",
             "get_workflow",

@@ -32,6 +32,7 @@ describe('api client — 只读契约 + S9-002 审批写面', () => {
       'approvalGates',
       'approvals',
       'approveApproval',
+      'artifact',
       'artifacts',
       'dashboard',
       'decision',

@@ -252,6 +252,26 @@ class ArtifactSummary(BaseModel):
         return self.model_dump(mode="json")
 
 
+class ArtifactDetail(ArtifactSummary):
+    """GET /artifacts/{id} — 单产物详情 (S9-003 Review 数据源)。
+
+    在 ArtifactSummary 基础上扩展 Review 视图字段 (全部带默认值 — 既有
+    消费方零破坏):
+    - metadata: 类型契约校验载荷 (product 6/7 节 / ux_ui 7 节等 — Review
+      页按节渲染的原始数据)
+    - review: 绑定本产物的审批门 (需求确认门 product / 设计确认门 ux_ui —
+      gate.status + gate.comment, approve/reject 决定状态; 无门 → None)
+    """
+
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    review: "ApprovalGateSummary | None" = None
+
+    @field_validator("metadata", mode="before")
+    @classmethod
+    def _metadata_none(cls, v: Any) -> Any:
+        return v if v is not None else {}
+
+
 class StageSummary(BaseModel):
     """GET /workflows/{id} — 阶段链节点投影 (status/role/artifact)。
 

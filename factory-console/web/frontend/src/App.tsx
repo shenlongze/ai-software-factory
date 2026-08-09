@@ -10,6 +10,7 @@ import { IntelligencePage } from './pages/IntelligencePage';
 import { ProvidersPage } from './pages/ProvidersPage';
 import { WorkflowPage } from './pages/WorkflowPage';
 import { ArtifactsPage } from './pages/ArtifactsPage';
+import { ReviewPage } from './pages/ReviewPage';
 
 /** 导航项 (普通模式隐藏 Providers — Expert 专属)。 */
 function NavLink({ label, page, target }: { label: string; page: Page; target: Page }): JSX.Element {
@@ -56,6 +57,7 @@ function Shell(): JSX.Element {
         {page.name === 'lifecycle' ? <LifecyclePage /> : null}
         {page.name === 'workflow' ? <WorkflowPage /> : null}
         {page.name === 'artifacts' ? <ArtifactsPage /> : null}
+        {page.name === 'review' ? <ReviewPage /> : null}
         {page.name === 'approvals' ? <ApprovalPage /> : null}
         {page.name === 'decisions' ? <DecisionsPage /> : null}
         {page.name === 'intelligence' ? <IntelligencePage /> : null}

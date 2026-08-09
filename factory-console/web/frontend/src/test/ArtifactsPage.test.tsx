@@ -11,7 +11,8 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { AppStateProvider } from '../state/AppState';
 import { ArtifactsPage } from '../pages/ArtifactsPage';
-import { sampleArtifact, stubFetch } from './fixtures';
+import { ReviewPage } from '../pages/ReviewPage';
+import { sampleArtifact, sampleArtifactDetail, stubFetch } from './fixtures';
 
 function renderArtifacts() {
   return render(
@@ -71,5 +72,23 @@ describe('ArtifactsPage', () => {
     );
     renderArtifacts();
     expect(await screen.findByTestId('error-state')).toHaveTextContent(/503/);
+  });
+
+  it('点击评审按钮 → 跳转 Review 页 (GET /api/artifacts/{id} 详情)', async () => {
+    const user = userEvent.setup();
+    stubFetch({
+      '/api/artifacts': [sampleArtifact({ id: 'art-1', type: 'product' })],
+      '/api/artifacts/art-1': sampleArtifactDetail(),
+    });
+    render(
+      <AppStateProvider>
+        <ArtifactsPage />
+        <ReviewPage />
+      </AppStateProvider>,
+    );
+    await screen.findByRole('heading', { name: '产物' });
+    await user.click(screen.getByRole('button', { name: '评审' }));
+    expect(await screen.findByRole('heading', { name: '评审 · Product' })).toBeInTheDocument();
+    expect(screen.getByText('市场分析')).toBeInTheDocument();
   });
 });

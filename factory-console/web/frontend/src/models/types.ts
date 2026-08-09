@@ -225,6 +225,41 @@ export interface ArtifactSummary {
   updated_at: string | null;
 }
 
+/** 单产物详情 (S9-003 Review 数据源: metadata 契约载荷 + review 审批门)。 */
+export interface ArtifactDetail extends ArtifactSummary {
+  metadata: Record<string, unknown>;
+  review: ApprovalGateSummary | null;
+}
+
+/** PRD (product Artifact) Review 节 (S9-003 任务规格 6 节)。 */
+export const PRODUCT_SECTIONS: readonly { key: string; label: string }[] = [
+  { key: 'market_analysis', label: '市场分析' },
+  { key: 'user_persona', label: '用户画像' },
+  { key: 'user_journey', label: '用户旅程' },
+  { key: 'feature_list', label: '功能列表' },
+  { key: 'mvp_scope', label: 'MVP 范围' },
+  { key: 'user_stories', label: '用户故事' },
+];
+
+/** UX/UI Artifact Review 节 (7 节; wireframe 特殊渲染 — ASCII 预览)。 */
+export const UXUI_SECTIONS: readonly { key: string; label: string }[] = [
+  { key: 'information_architecture', label: '信息架构' },
+  { key: 'user_flow', label: '用户流程' },
+  { key: 'wireframe', label: '线框图' },
+  { key: 'screen_specifications', label: '屏幕规格' },
+  { key: 'component_definition', label: '组件定义' },
+  { key: 'design_tokens', label: '设计令牌' },
+  { key: 'prototype', label: '原型说明' },
+];
+
+/** wireframe Screen (S8-002 UX/UI Designer 产物结构: 机器可读 ASCII 布局)。 */
+export interface WireframeScreen {
+  name: string;
+  ascii: string;
+  components: string[];
+  actions: string[];
+}
+
 /** 阶段链节点投影 (status/role/artifact)。 */
 export interface StageSummary {
   id: string;

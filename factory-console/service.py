@@ -29,6 +29,7 @@ from .models import (
     ApprovalDecisionSummary,
     ApprovalGateSummary,
     ApprovalSummary,
+    ArtifactDetail,
     ArtifactSummary,
     ConsoleDashboard,
     CostSummary,
@@ -332,6 +333,42 @@ class ConsoleService:
                 continue
             out.append(self._artifact_summary(artifact, stage_wf or ""))
         return out
+
+    def get_artifact(self, artifact_id: str) -> "ArtifactDetail | None":
+        """单 Artifact 详情 (S9-003: metadata 契约载荷 + review 审批门)。
+
+        返回 ArtifactDetail (含 metadata 原始载荷 + 绑定本产物的审批门 —
+        按 stage_id 关联的 gate, 即需求/设计确认门: status/comment/reviewer
+        决定状态); 无 org / 产物不存在 / store 损坏 → None (404 语义由
+        调用方定, 失败安全同其余查询)。
+        """
+        lifecycle = self._workflow_lifecycle()
+        if lifecycle is None:
+            return None
+        store = lifecycle.store
+        try:
+            artifact = store.get_artifact(artifact_id)
+        except Exception:
+            return None  # 损坏 store → None (失败安全)
+        if artifact is None:
+            return None
+        try:
+            stages = {s.id: s for s in store.list_stages()}
+        except Exception:
+            stages = {}
+        stage = stages.get(artifact.stage_id)
+        workflow_id = stage.workflow_id if stage else ""
+        summary = self._artifact_summary(artifact, workflow_id)
+        gate = None
+        try:
+            gate = lifecycle.get_approval_by_stage(artifact.stage_id)
+        except Exception:
+            gate = None  # 门 store 损坏 → review=None (只读视图不拖垮详情)
+        return ArtifactDetail(
+            **summary.to_dict(),
+            metadata=dict(artifact.metadata or {}),
+            review=self._gate_summary(gate, artifact.project_id) if gate else None,
+        )
 
     def list_approval_gates(
         self,

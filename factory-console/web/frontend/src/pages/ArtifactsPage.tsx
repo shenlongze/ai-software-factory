@@ -10,9 +10,9 @@ import type { ArtifactSummary } from '../models/types';
 
 const ARTIFACT_TYPES = ['', 'product', 'ux_ui', 'design', 'code', 'test', 'release'] as const;
 
-/** Artifacts — Artifact 查看器 (6 类型, 按 project/workflow/type 过滤)。 */
+/** Artifacts — Artifact 查看器 (6 类型, 按 project/workflow/type 过滤; S9-003 评审入口)。 */
 export function ArtifactsPage(): JSX.Element {
-  const { page } = useAppState();
+  const { page, navigate } = useAppState();
   const [type, setType] = useState<string>('');
   const { data, error, loading } = useAsync(
     useCallback(
@@ -37,6 +37,19 @@ export function ArtifactsPage(): JSX.Element {
       key: 'location',
       header: '内容',
       render: (a) => (a.location ? `${a.location} (v${a.version ?? '?'})` : '—'),
+    },
+    {
+      key: 'review',
+      header: '评审',
+      render: (a) => (
+        <button
+          type="button"
+          className="review-entry"
+          onClick={() => navigate({ name: 'review', artifactId: a.id })}
+        >
+          评审
+        </button>
+      ),
     },
   ];
 

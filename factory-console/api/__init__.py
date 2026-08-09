@@ -17,7 +17,7 @@ from .approvals import (
     list_approvals,
     reject_approval,
 )
-from .artifacts import list_artifacts
+from .artifacts import get_artifact, list_artifacts
 from .decisions import get_decision
 from .intelligence import list_experience, list_recommendations
 from .lifecycle import get_project_lifecycle
@@ -27,6 +27,7 @@ from .workflows import get_workflow, list_workflows
 
 __all__ = [
     "approve_approval",
+    "get_artifact",
     "get_decision",
     "get_project_lifecycle",
     "get_workflow",

@@ -48,6 +48,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from pydantic import BaseModel
+
 __all__ = ["DEFAULT_ROOT", "DEFAULT_PORT", "build_app", "build_console_service", "create_app"]
 
 #: 默认后端端口 (uvicorn 启动提示用; vite dev proxy 同源约定)
@@ -55,6 +57,17 @@ DEFAULT_PORT = 8011
 
 #: 默认工厂根 (与 cli.context.DEFAULT_ROOT 同口径: ~/.factory)
 DEFAULT_ROOT = Path.home() / ".factory"
+
+
+class _ApprovalDecisionBody(BaseModel):
+    """POST 审批决定 body (S9-003: comment 透传落库 — Review 反馈输入)。
+
+    兼容 S9-002 无 body 调用 (reviewer 默认 "console"); comment 默认空串
+    (既有调用零破坏 — 决定事件/门落库字段不变)。
+    """
+
+    reviewer: str = "console"
+    comment: str = ""
 
 
 # ------------------------------------------------------------------ 装配
@@ -281,14 +294,30 @@ def build_app(
             )
         ]
 
+    @app.get("/api/artifacts/{artifact_id}")
+    def api_artifact_detail(artifact_id: str) -> dict[str, Any]:
+        """单产物详情 (S9-003: metadata 契约载荷 + review 审批门; 404 映射)。"""
+        detail = _api.get_artifact(service, artifact_id, logger=event_logger)
+        if detail is None:
+            raise HTTPException(status_code=404, detail="artifact not found")
+        return detail.to_dict()
+
     @app.post("/api/approvals/{approval_id}/approve")
-    def api_approve_approval(approval_id: str) -> dict[str, Any]:
+    def api_approve_approval(
+        approval_id: str,
+        body: _ApprovalDecisionBody | None = None,
+    ) -> dict[str, Any]:
         """审批放行 (S9-002: 接 org.approval S9-001; source=console 审计)。
 
         门不存在 → 404; 非 PENDING 门 (终态不可撤销) → 409 Conflict。
+        S9-003: body.comment 透传落库 (gate.comment — Review 反馈输入)。
         """
+        reviewer = body.reviewer if body is not None else "console"
+        comment = body.comment if body is not None else ""
         try:
-            summary = _api.approve_approval(service, approval_id, reviewer="console")
+            summary = _api.approve_approval(
+                service, approval_id, reviewer=reviewer, comment=comment
+            )
         except Exception as exc:
             if _api.conflict_status(exc):
                 raise HTTPException(status_code=409, detail="approval already decided") from exc
@@ -298,13 +327,21 @@ def build_app(
         return summary.to_dict()
 
     @app.post("/api/approvals/{approval_id}/reject")
-    def api_reject_approval(approval_id: str) -> dict[str, Any]:
+    def api_reject_approval(
+        approval_id: str,
+        body: _ApprovalDecisionBody | None = None,
+    ) -> dict[str, Any]:
         """审批否决 (S9-002: gate → REJECTED 终态 + workflow FAILED 停止)。
 
         错误语义同 approve (404 / 409); 决定不可撤销 — 审计铁律。
+        S9-003: body.comment 透传落库 (否决原因 → 下轮重生成反馈输入)。
         """
+        reviewer = body.reviewer if body is not None else "console"
+        comment = body.comment if body is not None else ""
         try:
-            summary = _api.reject_approval(service, approval_id, reviewer="console")
+            summary = _api.reject_approval(
+                service, approval_id, reviewer=reviewer, comment=comment
+            )
         except Exception as exc:
             if _api.conflict_status(exc):
                 raise HTTPException(status_code=409, detail="approval already decided") from exc

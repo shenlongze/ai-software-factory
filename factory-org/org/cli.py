@@ -52,6 +52,7 @@ from .lifecycle import (
     RoleConflictError,
 )
 from .models import new_id
+from .project_adoption import ProjectAdoption
 from .projects import ArtifactStatus, ArtifactType, ProjectStore
 from .store import OrgStore
 from .workflow import (
@@ -655,6 +656,105 @@ def cmd_approval_reject(root: Path, args: Any) -> dict:
     }
 
 
+def _project_adoption(root: Path, logger: Any) -> ProjectAdoption:
+    """ProjectAdoption 服务 (ProjectStore + 事件 logger; S9-004 数据空间同目录)。"""
+    return ProjectAdoption(ProjectStore(root / "org"), logger=logger)
+
+
+def cmd_project_register(root: Path, args: Any) -> dict:
+    """project register — 注册已有项目 (建项目 + 分析 + 基线 + 快照)。
+
+    失败安全: repo_path 非目录 → 错误; 分析/基线/快照任何失败都不阻断注册
+    (记录 unavailable)。发 org.project.created + registered/analyzed/
+    baseline_recorded/context_snapshotted。
+    """
+    with _logger_scope(root) as logger:
+        adoption = _project_adoption(root, logger)
+        try:
+            project = adoption.register(
+                args.repo_path,
+                name=args.name,
+                language=args.language,
+                framework=args.framework,
+                build_command=args.build_command,
+                test_command=args.test_command,
+                project_type=args.project_type,
+                goal=args.goal,
+                project_id=args.id,
+            )
+        except ValueError as exc:
+            return _error(str(exc))
+        baseline = (
+            adoption.get_baseline(project.baseline_ref) if project.baseline_ref else None
+        )
+        analysis = (
+            adoption.get_analysis(project.analysis_ref) if project.analysis_ref else None
+        )
+        baseline_payload = baseline.payload if baseline else {}
+        analysis_payload = analysis.payload if analysis else {}
+    return {
+        "ok": True,
+        "project": project.to_dict(),
+        "analysis_ref": project.analysis_ref,
+        "baseline_ref": project.baseline_ref,
+        "snapshot_ref": project.snapshot_ref,
+        "analysis": {
+            "build_method": analysis_payload.get("build_method", ""),
+            "test_method": analysis_payload.get("test_method", ""),
+            "structure_count": len(analysis_payload.get("structure", [])),
+            "valid": analysis.valid if analysis else False,
+        },
+        "baseline": {
+            "build_status": baseline_payload.get("build", {}).get("status", ""),
+            "test_status": baseline_payload.get("test", {}).get("status", ""),
+            "test_passed": baseline_payload.get("test", {}).get("passed", 0),
+            "test_failed": baseline_payload.get("test", {}).get("failed", 0),
+            "valid": baseline.valid if baseline else False,
+        },
+        "exit_code": 0,
+    }
+
+
+def cmd_project_show(root: Path, args: Any) -> dict:
+    """project show — 项目详情 + 分析/基线/快照记录 (读命令)。"""
+    with _logger_scope(root) as logger:
+        adoption = _project_adoption(root, logger)
+        try:
+            project = adoption.get_project(args.project_id)
+        except NotFoundError as exc:
+            return _error(str(exc))
+        analysis = (
+            adoption.get_analysis(project.analysis_ref) if project.analysis_ref else None
+        )
+        baseline = (
+            adoption.get_baseline(project.baseline_ref) if project.baseline_ref else None
+        )
+        snapshot = (
+            adoption.get_snapshot(project.snapshot_ref) if project.snapshot_ref else None
+        )
+    return {
+        "ok": True,
+        "project": project.to_dict(),
+        "analysis": analysis.to_dict() if analysis else None,
+        "baseline": baseline.to_dict() if baseline else None,
+        "snapshot": snapshot.to_dict() if snapshot else None,
+        "exit_code": 0,
+    }
+
+
+def cmd_project_list(root: Path, args: Any) -> dict:
+    """project list — 项目清单 (读命令)。"""
+    with _logger_scope(root) as logger:
+        adoption = _project_adoption(root, logger)
+        projects = adoption.list_projects()
+    return {
+        "ok": True,
+        "count": len(projects),
+        "projects": [p.to_dict() for p in sorted(projects, key=lambda p: p.id)],
+        "exit_code": 0,
+    }
+
+
 # ------------------------------------------------------------------ 独立 CLI (factory-org console script)
 
 def build_parser() -> argparse.ArgumentParser:
@@ -829,6 +929,27 @@ def build_parser() -> argparse.ArgumentParser:
     p_ar.add_argument("gate_id")
     p_ar.add_argument("--reviewer", default=None, help="决策人 (审计, 建议必填)")
     p_ar.add_argument("--comment", default=None, help="否决理由 (写入 failed_reason)")
+
+    p_prj = sub.add_parser("project", help="已有项目接入 (S9-004: 注册/分析/基线/快照)")
+    json_opt(p_prj)
+    psub = p_prj.add_subparsers(dest="project_command", required=True)
+    p_reg = psub.add_parser("register",
+                            help="注册已有项目 (自动分析+基线+快照; 发 org.project.registered)")
+    json_opt(p_reg)
+    p_reg.add_argument("--repo-path", required=True, help="已有代码库路径 (须为目录)")
+    p_reg.add_argument("--name", default="", help="项目名 (缺省 = 目录名)")
+    p_reg.add_argument("--language", default="", help="主语言 (缺省自动检测)")
+    p_reg.add_argument("--framework", default="", help="框架 (缺省自动检测)")
+    p_reg.add_argument("--build-command", default="", help="构建命令 (缺省: Python 语法检查/不可用)")
+    p_reg.add_argument("--test-command", default="", help="测试命令 (缺省: 不可用)")
+    p_reg.add_argument("--project-type", default="", help="项目类型 (app/library/service/cli)")
+    p_reg.add_argument("--goal", default="", help="项目目标")
+    p_reg.add_argument("--id", default=None, help="项目 ID (默认自动生成 P-xxx)")
+    p_sh = psub.add_parser("show", help="项目详情 + 分析/基线/快照引用")
+    json_opt(p_sh)
+    p_sh.add_argument("project_id")
+    p_ls = psub.add_parser("list", help="项目清单")
+    json_opt(p_ls)
     return p
 
 
@@ -869,6 +990,11 @@ _CMD_DISPATCH: dict[str, dict[str, Any]] = {
         "show": cmd_approval_show,
         "approve": cmd_approval_approve,
         "reject": cmd_approval_reject,
+    },
+    "project": {
+        "register": cmd_project_register,
+        "show": cmd_project_show,
+        "list": cmd_project_list,
     },
 }
 
@@ -949,6 +1075,53 @@ def _print_result(args: Any, result: dict) -> None:
         _print_workflow_result(args, result)
     elif command == "approval":
         _print_approval_result(args, result)
+    elif command == "project":
+        _print_project_result(args, result)
+
+
+def _print_project_result(args: Any, result: dict) -> None:
+    """project 子命令人类可读输出 (register/show/list)。"""
+    sub = getattr(args, "project_command", None) or ""
+    if sub == "register":
+        project = result["project"]
+        print("✔ 项目注册成功 (已有代码库接入)")
+        print(f"  id            {project['id']}")
+        print(f"  name          {project['name']}")
+        print(f"  repo_path     {project['repo_path']}")
+        print(f"  language      {project['language'] or '(未识别)'}")
+        print(f"  framework     {project['framework'] or '(未识别)'}")
+        print(f"  project_type  {project['project_type'] or '-'}")
+        print(f"  analysis_ref  {result['analysis_ref'] or '-'}")
+        print(f"  baseline_ref  {result['baseline_ref'] or '-'}")
+        print(f"  snapshot_ref  {result['snapshot_ref'] or '-'}")
+        bl = result.get("baseline") or {}
+        print(f"  baseline      build={bl.get('build_status')}  "
+              f"test={bl.get('test_status')}  "
+              f"passed={bl.get('test_passed')}  failed={bl.get('test_failed')}")
+    elif sub == "show":
+        project = result["project"]
+        print(f"项目 {project['id']} — {project['name']}  [{project['lifecycle']}]")
+        print(f"  repo_path     {project['repo_path'] or '-'}")
+        print(f"  language      {project['language'] or '-'}")
+        print(f"  framework     {project['framework'] or '-'}")
+        print(f"  build_cmd     {project['build_command'] or '-'}")
+        print(f"  test_cmd      {project['test_command'] or '-'}")
+        print(f"  project_type  {project['project_type'] or '-'}")
+        print(f"  analysis_ref  {project['analysis_ref'] or '-'}")
+        print(f"  baseline_ref  {project['baseline_ref'] or '-'}")
+        print(f"  snapshot_ref  {project['snapshot_ref'] or '-'}")
+        if result.get("baseline"):
+            payload = result["baseline"]["payload"]
+            build = payload.get("build", {})
+            test = payload.get("test", {})
+            print(f"  baseline      build={build.get('status')}  "
+                  f"test={test.get('status')}  "
+                  f"passed={test.get('passed')}  failed={test.get('failed')}")
+    else:
+        print(f"项目清单 ({result['count']} 个)")
+        for p in result["projects"]:
+            print(f"  {p['id']}  {p['name']}  [{p['lifecycle']}]  "
+                  f"lang={p['language'] or '-'}  repo={p['repo_path'] or '-'}")
 
 
 def _print_workflow_result(args: Any, result: dict) -> None:

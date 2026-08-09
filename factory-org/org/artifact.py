@@ -216,6 +216,52 @@ CONTRACTS: dict[str, dict[str, Any]] = {
             "deployment": {"type": "str", "min_length": 1},
         },
     },
+    # S9-004 (Existing Project Adoption): 仓库分析产物 — 已有项目接入时由
+    # Repository Analyzer (exec.project_adoption, 复用 repo_intelligence) 生成。
+    # 字段语义: language 主语言 (python/dart/...; 未识别 = "unknown");
+    # framework 框架 (可空 "" = 未识别, 故不设 min_length); structure 模块
+    # 列表 (空仓库回退单条 "(root)" 占位 — 契约 min_items 1); dependencies
+    # 依赖摘要 (edge_count/file_count/top_dependents/languages);
+    # build_method/test_method 构建/测试方法提示 (不可用 = "unavailable")。
+    "project_analysis": {
+        "required_fields": (
+            "language",
+            "framework",
+            "structure",
+            "dependencies",
+            "build_method",
+            "test_method",
+        ),
+        "validation_rules": {
+            "language": {"type": "str", "min_length": 1},
+            "framework": {"type": "str"},
+            "structure": {"type": "list", "min_items": 1},
+            "dependencies": {"type": "dict", "min_keys": 1},
+            "build_method": {"type": "str", "min_length": 1},
+            "test_method": {"type": "str", "min_length": 1},
+        },
+    },
+    # S9-004 (Existing Project Adoption): 基线验证产物 — 注册后自动执行
+    # build (build_command 或语法检查) + test (test_command) + 分析引用。
+    # build: {status: passed|failed|unavailable, command, output_head};
+    # test: {status: passed|failed|unavailable, command, passed, failed,
+    # output_head}; analysis_ref 可空 (分析不可用时 "" — 失败安全)。
+    "baseline": {
+        "required_fields": ("build", "test", "analysis_ref"),
+        "validation_rules": {
+            "build": {
+                "type": "dict",
+                "min_keys": 1,
+                "required_keys": ["status", "command"],
+            },
+            "test": {
+                "type": "dict",
+                "min_keys": 1,
+                "required_keys": ["status", "passed", "failed"],
+            },
+            "analysis_ref": {"type": "str"},
+        },
+    },
 }
 
 _TYPE_CHECKS: dict[str, Any] = {

@@ -199,7 +199,7 @@ class TestEventTypeEnumExtension:
         # S9-001 Approval Gate +3 (org.approval.created/approved/rejected —
         # 人工审批门: 门创建/放行/否决, ADR-0001 扩展路径, S9-001 报告)。
         # 纯增量扩展 (ADR-0001 决策 1 路径, 既有值零改动)
-        assert len(EventType) == 182
+        assert len(EventType) == 186
         assert EventType.ORG_PROJECT_CREATED.value == "org.project.created"
         assert EventType.ORG_SPRINT_CREATED.value == "org.sprint.created"
         assert EventType.ORG_STAGE_CREATED.value == "org.stage.created"

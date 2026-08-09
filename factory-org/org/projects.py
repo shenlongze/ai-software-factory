@@ -77,6 +77,10 @@ class ArtifactType(str, Enum):
     S8-002 扩展: UX_UI (UX/UI Artifact — UX/UI Designer Agent 输出, 7 节
     契约: information_architecture/user_flow/wireframe/screen_specifications/
     component_definition/design_tokens/prototype, 机器可读纯 JSON)。
+    S9-004 扩展: PROJECT_ANALYSIS (仓库分析 — 已有项目接入产物:
+    language/framework/structure/dependencies/build_method/test_method);
+    BASELINE (基线验证 — build/test 结果 + analysis_ref; 注册后自动记录,
+    失败安全: 命令缺失 → unavailable 不崩溃)。
     """
 
     IDEA = "idea"               # S8-001: 想法输入 (自然语言)
@@ -88,6 +92,8 @@ class ArtifactType(str, Enum):
     TEST = "test"
     BUG_REPORT = "bug_report"   # S7-004: 结构化缺陷报告
     RELEASE = "release"
+    PROJECT_ANALYSIS = "project_analysis"  # S9-004: 仓库分析 (已有项目接入)
+    BASELINE = "baseline"                  # S9-004: 基线验证 (build/test 结果)
 
     @classmethod
     def parse(cls, value: Any) -> "ArtifactType":
@@ -198,13 +204,36 @@ STAGE_TRANSITIONS: dict[str, tuple[str, ...]] = {
 
 
 class Project(_OrgModel):
-    """项目 (用户想法的生命周期容器; lifecycle 状态机单向流转)。"""
+    """项目 (用户想法的生命周期容器; lifecycle 状态机单向流转)。
+
+    S9-004 扩展 (Existing Project Adoption, 全部带默认值 — 既有 projects.json
+    数据加载零破坏, 向后兼容):
+    - repo_path: 已有代码库路径 (接入的真实项目根目录)
+    - language: 主语言 (python/dart/javascript/...; 注册时自动检测或显式指定)
+    - framework: 框架 (flutter/nextjs/spring-boot/...; 检测或显式指定, 可空)
+    - build_command: 构建命令 (如 "dart pub get && dart analyze"; 缺省 →
+      Python 语法检查兜底, 其余语言记录不可用)
+    - test_command: 测试命令 (如 "dart test"; 缺省 → 记录不可用, 不崩溃)
+    - project_type: 项目类型 (app/library/service/cli/...)
+    - analysis_ref/baseline_ref/snapshot_ref: S9-004 记录引用
+      (project_analyses/project_baselines/context_snapshots 数据空间记录 id,
+      供后续 Agent 读取上下文输入)
+    """
 
     id: str
     name: str
     user_id: str = ""                    # User (想法来源)
     goal: str = ""
     lifecycle: ProjectState = ProjectState.IDEA
+    repo_path: str = ""                  # S9-004: 已有代码库路径
+    language: str = ""                   # S9-004: 主语言
+    framework: str = ""                  # S9-004: 框架 (可空 = 未识别)
+    build_command: str = ""              # S9-004: 构建命令
+    test_command: str = ""               # S9-004: 测试命令
+    project_type: str = ""               # S9-004: 项目类型
+    analysis_ref: str = ""               # S9-004: 分析记录引用
+    baseline_ref: str = ""               # S9-004: 基线记录引用
+    snapshot_ref: str = ""               # S9-004: 上下文快照引用
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
 

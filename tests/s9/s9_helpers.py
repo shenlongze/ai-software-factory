@@ -212,3 +212,82 @@ def payload_of(store: Any, event_type: str) -> dict[str, Any]:
         if e.type.value == event_type:
             return dict(e.payload)
     raise AssertionError(f"no event of type {event_type!r} found")
+
+
+# ------------------------------------------------------------ S9-004 构造
+
+def make_python_repo(
+    root: Any,
+    *,
+    with_tests: bool = True,
+    broken_syntax: bool = False,
+    name: str = "adopted-app",
+) -> Any:
+    """小真实 Python 项目 (S9-004 集成测试基座; 唯一名, 无 pytest 误收集)。
+
+    结构: <root>/<name>/{hello.py, main.py, tests/test_hello.py} — hello.py
+    被 main.py import (依赖边 1 条); 测试文件内容含 "import pytest"
+    (test_method 检测 → pytest); broken_syntax=True 时 hello.py 语法损坏
+    (syntax_check 失败路径)。返回项目根 Path。
+    """
+    from pathlib import Path
+
+    project = Path(root) / name
+    (project / "tests").mkdir(parents=True, exist_ok=True)
+    (project / "hello.py").write_text(
+        "def add(a, b):\n    return a + b\n" if not broken_syntax
+        else "def add(a, b):\n    return a +  # broken syntax\n",
+        encoding="utf-8",
+    )
+    (project / "main.py").write_text(
+        "from hello import add\n\n"
+        "def run():\n    return add(1, 2)\n"
+        "\n"
+        'if __name__ == "__main__":\n    print(run())\n',
+        encoding="utf-8",
+    )
+    if with_tests:
+        (project / "tests" / "test_hello.py").write_text(
+            "import pytest\n\n"
+            "from hello import add\n\n"
+            "@pytest.mark.parametrize(\"a,b,expected\", [(1, 2, 3), (0, 0, 0)])\n"
+            "def test_add(a, b, expected):\n    assert add(a, b) == expected\n",
+            encoding="utf-8",
+        )
+    return project
+
+
+def analysis_payload_ok(
+    *,
+    language: str = "python",
+    framework: str = "",
+    module_count: int = 2,
+) -> dict[str, Any]:
+    """合法 project_analysis 契约载荷 (CONTRACTS project_analysis 同源)。"""
+    return {
+        "language": language,
+        "framework": framework,
+        "structure": [
+            {"path": f"module_{i}", "responsibility": f"模块 {i}", "file_count": 1}
+            for i in range(1, module_count + 1)
+        ],
+        "dependencies": {"edge_count": 1, "file_count": 2, "languages": [language]},
+        "build_method": "python_syntax_check",
+        "test_method": "pytest",
+    }
+
+
+def baseline_payload_ok(
+    *,
+    build_status: str = "passed",
+    test_status: str = "passed",
+    analysis_ref: str = "PA-1",
+) -> dict[str, Any]:
+    """合法 baseline 契约载荷 (CONTRACTS baseline 同源)。"""
+    return {
+        "build": {"status": build_status, "command": "python -m build",
+                  "output_head": "build ok"},
+        "test": {"status": test_status, "command": "pytest -q",
+                 "output_head": "2 passed", "passed": 2, "failed": 0},
+        "analysis_ref": analysis_ref,
+    }

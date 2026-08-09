@@ -505,6 +505,20 @@ class EventType(str, Enum):
     ORG_APPROVAL_CREATED = "org.approval.created"            # 审批门创建 (PENDING + workflow PAUSED)
     ORG_APPROVAL_APPROVED = "org.approval.approved"          # 审批放行 (→APPROVED + workflow 恢复)
     ORG_APPROVAL_REJECTED = "org.approval.rejected"          # 审批否决 (→REJECTED + workflow FAILED)
+    # Sprint 9 S9-004 (factory-org Extension, 同扩展路径): Existing Project
+    # Adoption — 已有项目接入 (Project Registration + Repository Analyzer +
+    # Baseline Validation + Context Snapshot)。registered 为项目注册完成
+    # (repo_path/language/framework/project_type 落库); analyzed 为仓库分析
+    # 完成 (project_analysis 契约记录); baseline_recorded 为基线构建/测试
+    # 记录 (baseline 契约, build/test 状态); context_snapshotted 为上下文
+    # 快照生成 (tree/important_files/architecture — 供 Agent 输入标注)。
+    # payload 契约见 factory-org/org/events.py — 从事件可重建接入关键字段
+    # (project_id/repo_path/language/framework/analysis_ref/baseline_ref/
+    # snapshot_ref/build_status/test_status)。
+    ORG_PROJECT_REGISTERED = "org.project.registered"          # 项目注册完成 (已有代码库接入)
+    ORG_PROJECT_ANALYZED = "org.project.analyzed"              # 仓库分析完成 (project_analysis)
+    ORG_PROJECT_BASELINE_RECORDED = "org.project.baseline_recorded"  # 基线验证记录 (build/test)
+    ORG_PROJECT_CONTEXT_SNAPSHOTTED = "org.project.context_snapshotted"  # 上下文快照生成
 
 
 class Event(BaseModel):

@@ -378,6 +378,123 @@ def record_project_task_linked(
     )
 
 
+def record_project_registered(
+    logger: Any,
+    *,
+    project: Any,
+    repo_path: str,
+    source: str = "org",
+) -> Event | None:
+    """项目注册完成 (org.project.registered; 已有代码库接入 S9-004)。
+
+    注册 = 建项目 + repo 元信息落库 (language/framework/project_type +
+    分析/基线/快照记录引用); 分析/基线/快照另发独立事件 (逐环节审计)。
+    """
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.ORG_PROJECT_REGISTERED,
+        source=source,
+        stage=project.lifecycle.value,
+        action="register project",
+        result="OK",
+        payload={
+            "project_id": project.id,
+            "name": project.name,
+            "repo_path": repo_path,
+            "language": project.language,
+            "framework": project.framework,
+            "project_type": project.project_type,
+            "build_command": project.build_command,
+            "test_command": project.test_command,
+            "analysis_ref": project.analysis_ref,
+            "baseline_ref": project.baseline_ref,
+            "snapshot_ref": project.snapshot_ref,
+        },
+    )
+
+
+def record_project_analyzed(
+    logger: Any,
+    *,
+    project_id: str,
+    analysis_ref: str,
+    language: str,
+    framework: str,
+    source: str = "org",
+) -> Event | None:
+    """仓库分析完成 (org.project.analyzed; project_analysis 契约记录引用)。"""
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.ORG_PROJECT_ANALYZED,
+        source=source,
+        stage="analyzed",
+        action="analyze repository",
+        result="OK",
+        payload={
+            "project_id": project_id,
+            "analysis_ref": analysis_ref,
+            "language": language,
+            "framework": framework,
+        },
+    )
+
+
+def record_project_baseline_recorded(
+    logger: Any,
+    *,
+    project_id: str,
+    baseline_ref: str,
+    build_status: str,
+    test_status: str,
+    source: str = "org",
+) -> Event | None:
+    """基线验证记录 (org.project.baseline_recorded; baseline 契约 build/test)。"""
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.ORG_PROJECT_BASELINE_RECORDED,
+        source=source,
+        stage="baselined",
+        action="record project baseline",
+        result="OK",
+        payload={
+            "project_id": project_id,
+            "baseline_ref": baseline_ref,
+            "build_status": build_status,
+            "test_status": test_status,
+        },
+    )
+
+
+def record_project_context_snapshotted(
+    logger: Any,
+    *,
+    project_id: str,
+    snapshot_ref: str,
+    tree_entries: int,
+    important_count: int,
+    source: str = "org",
+) -> Event | None:
+    """上下文快照生成 (org.project.context_snapshotted; 供 Agent 输入标注)。"""
+    if logger is None:
+        return None
+    return logger.record(
+        EventType.ORG_PROJECT_CONTEXT_SNAPSHOTTED,
+        source=source,
+        stage="snapshotted",
+        action="snapshot project context",
+        result="OK",
+        payload={
+            "project_id": project_id,
+            "snapshot_ref": snapshot_ref,
+            "tree_entries": tree_entries,
+            "important_count": important_count,
+        },
+    )
+
+
 def record_sprint_created(logger: Any, *, sprint: Any, source: str = "org") -> Event | None:
     """Sprint 创建 (org.sprint.created; 项目内任务批次)。"""
     if logger is None:

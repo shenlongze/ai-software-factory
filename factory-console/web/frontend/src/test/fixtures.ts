@@ -5,7 +5,10 @@
  */
 
 import type {
+  ApprovalDecisionSummary,
+  ApprovalGateSummary,
   ApprovalSummary,
+  ArtifactSummary,
   ConsoleDashboard,
   DecisionSummary,
   ExperienceSummary,
@@ -13,6 +16,9 @@ import type {
   ProjectSummary,
   ProviderSummary,
   RecommendationSummary,
+  StageSummary,
+  WorkflowDetail,
+  WorkflowSummary,
 } from '../models/types';
 
 /** 返回一个只读 JSON 响应 (client 只消费 ok + json())。 */
@@ -51,6 +57,13 @@ export function sampleProject(overrides: Partial<ProjectSummary> = {}): ProjectS
     status: 'active',
     lifecycle_stage: 'build',
     lifecycle_status: 'running',
+    workflow_id: null,
+    workflow_name: null,
+    workflow_status: null,
+    current_stage: null,
+    current_stage_status: null,
+    progress: 0,
+    stage_counts: {},
     pending_approvals: 1,
     tasks: { done: 3 },
     last_activity: '2026-08-06T00:00:00Z',
@@ -73,6 +86,116 @@ export function sampleApproval(overrides: Partial<ApprovalSummary> = {}): Approv
     comment: null,
     requested_at: '2026-08-06T00:00:00Z',
     artifact_version: 3,
+    ...overrides,
+  };
+}
+
+/** org 审批门 (S9-001 ApprovalGate; Console 决定操作对象 — Approval 页)。 */
+export function sampleApprovalGate(
+  overrides: Partial<ApprovalGateSummary> = {},
+): ApprovalGateSummary {
+  return {
+    id: 'gate-1',
+    stage_id: 'design',
+    workflow_id: 'wf-1',
+    project_id: 'demo',
+    status: 'pending',
+    reviewer: 'console',
+    comment: '',
+    requested_at: '2026-08-06T00:00:00Z',
+    approved_at: null,
+    rejected_at: null,
+    ...overrides,
+  };
+}
+
+/** POST approve/reject 决定结果投影。 */
+export function sampleApprovalDecision(
+  overrides: Partial<ApprovalDecisionSummary> = {},
+): ApprovalDecisionSummary {
+  return {
+    action: 'approved',
+    gate: sampleApprovalGate(),
+    workflow_id: 'wf-1',
+    workflow_status: 'running',
+    ...overrides,
+  };
+}
+
+/** 阶段链节点 (WorkflowDetail.stages)。 */
+export function sampleStage(overrides: Partial<StageSummary> = {}): StageSummary {
+  return {
+    id: 'stage-design',
+    workflow_id: 'wf-1',
+    role_id: 'designer',
+    name: 'Design',
+    order: 3,
+    status: 'waiting',
+    depends_on: ['stage-pm'],
+    input_artifacts: ['prd-1'],
+    output_artifacts: ['design-1'],
+    approval_required: true,
+    artifact: null,
+    pending_approval: null,
+    ...overrides,
+  };
+}
+
+/** org Workflow 运行摘要 (Workflow 页表格行)。 */
+export function sampleWorkflow(overrides: Partial<WorkflowSummary> = {}): WorkflowSummary {
+  return {
+    id: 'wf-1',
+    project_id: 'demo',
+    project_name: 'Demo Project',
+    name: '记账 App',
+    status: 'running',
+    stage_count: 8,
+    completed_count: 3,
+    progress: 0.375,
+    current_stage: 'Design',
+    current_stage_status: 'waiting',
+    failed_reason: '',
+    ...overrides,
+  };
+}
+
+/** 单 Workflow 8 阶段链全视图 (Workflow 页详情)。 */
+export function sampleWorkflowDetail(
+  overrides: Partial<WorkflowDetail> = {},
+): WorkflowDetail {
+  return {
+    id: 'wf-1',
+    project_id: 'demo',
+    project_name: 'Demo Project',
+    name: '记账 App',
+    status: 'running',
+    failed_reason: '',
+    created_at: '2026-08-06T00:00:00Z',
+    started_at: '2026-08-06T00:00:00Z',
+    completed_at: null,
+    stages: [sampleStage()],
+    pending_approvals: [],
+    template: ['Idea', 'PM', 'Product', 'UX/UI', 'Architecture', 'Development', 'Test', 'Release'],
+    ...overrides,
+  };
+}
+
+/** org Artifact 投影 (6 类产物链, Artifacts 页表格行)。 */
+export function sampleArtifact(overrides: Partial<ArtifactSummary> = {}): ArtifactSummary {
+  return {
+    id: 'art-1',
+    stage_id: 'design',
+    workflow_id: 'wf-1',
+    project_id: 'demo',
+    type: 'design',
+    ref: 'designs/design-1',
+    version: '3',
+    status: 'approved',
+    producer_role: 'designer',
+    producer_agent: 'designer-agent',
+    location: 'org/artifacts/design-1.md',
+    created_at: '2026-08-06T00:00:00Z',
+    updated_at: '2026-08-06T00:00:00Z',
     ...overrides,
   };
 }

@@ -21,7 +21,7 @@ build 静态文件 (SPA)。只做 HTTP 绑定 (参数解析 / JSON 序列化 / �
 - build_app(service=..., static_dir=...) — 注入已装配 service; 供测试/
   复用方使用。
 
-端点 (全部 GET, 只读):
+端点 (只读 GET + S9-002 审批决定 POST):
   /api/dashboard                        → ConsoleDashboard 七域 (11A service.dashboard)
   /api/projects                         → list_projects (console.viewed)
   /api/projects/{project_id}/lifecycle  → get_project_lifecycle (None → 404)
@@ -30,6 +30,14 @@ build 静态文件 (SPA)。只做 HTTP 绑定 (参数解析 / JSON 序列化 / �
   /api/recommendations                  → list_recommendations (?limit)
   /api/experience                       → list_experience (?limit)
   /api/providers                        → list_providers
+  /api/workflows                        → list_workflows (?project_id)      [S9-002]
+  /api/workflows/{workflow_id}          → get_workflow (None → 404)         [S9-002]
+  /api/artifacts                        → list_artifacts (?project/workflow/type) [S9-002]
+  POST /api/approvals/{id}/approve      → 审批放行 (404/409 映射)            [S9-002]
+  POST /api/approvals/{id}/reject       → 审批否决 (404/409 映射)            [S9-002]
+Permission Boundary (S9-002 收窄): 写路径仅审批决定两 POST (approve/reject,
+  reviewer="console" 落库 + source="console" 审计), 其余端点全部 GET —
+  register_project/成本写入等仍不在 Console 范围 (S9-005/后续)。
 静态: frontend build 产物 (dist/) — SPA html=True; 缺目录 → 纯 API 模式。
 """
 
@@ -52,12 +60,17 @@ DEFAULT_ROOT = Path.home() / ".factory"
 # ------------------------------------------------------------------ 装配
 
 
-def build_console_service(factory_root: str | Path) -> Any:
+def build_console_service(factory_root: str | Path, *, event_logger: Any = None) -> Any:
     """按工厂根装配 ConsoleService (镜像 cli.commands._open_console_service)。
 
     全部 store 依赖可选 (失败安全: 缺任一 store → Console 按空数据处理);
     延迟导入 Core 包保 Removal Isolation (删除任一 Core 包不影响 Console 加载)。
     factory-console 包名含连字符 → importlib 按路径加载 (同 CLI 模式)。
+
+    S9-002: 装配 org 数据空间 (root/org — ProjectStore + WorkflowLifecycle,
+    与 factory-org 演示/CLI 同目录口径); event_logger 提供时注入带事件库的
+    生命周期 (org.approval.* 决定事件 source="console" 落库审计); org 缺失
+    → 跳过注入 (失败安全, 读命令永不因 org 缺失失败)。
     """
     root = Path(factory_root)
     root.mkdir(parents=True, exist_ok=True)
@@ -84,6 +97,22 @@ def build_console_service(factory_root: str | Path) -> Any:
 
     from workspace.manager import WorkspaceManager
 
+    # S9-002: org 数据空间 (root/org — 与 factory-org CLI 同目录口径; 失败安全)
+    project_store = None
+    workflow_lifecycle = None
+    try:
+        org_dir = repo_root / "factory-org"
+        if org_dir.is_dir() and str(org_dir) not in sys.path:
+            sys.path.insert(0, str(org_dir))
+        from org.projects import ProjectStore
+        from org.workflow import WorkflowLifecycle
+
+        project_store = ProjectStore(root / "org")
+        workflow_lifecycle = WorkflowLifecycle(project_store, logger=event_logger)
+    except Exception:
+        project_store = None
+        workflow_lifecycle = None
+
     return module.ConsoleService(
         workspace_manager=WorkspaceManager(root),
         task_store=TaskStore(root / "tasks"),
@@ -94,6 +123,8 @@ def build_console_service(factory_root: str | Path) -> Any:
         experience_store=ExperienceStore(root / "intelligence"),
         usage_store=UsageStore(root / "providers"),
         provider_registry=ProviderRegistry(ProviderStore(root / "providers")),
+        project_store=project_store,
+        workflow_lifecycle=workflow_lifecycle,
     )
 
 
@@ -169,6 +200,19 @@ def build_app(
             for a in _api.list_approvals(service, logger=event_logger, pending_only=pending_only)
         ]
 
+    @app.get("/api/approval-gates")
+    def api_approval_gates(
+        status: str | None = Query(default=None),
+        workflow_id: str | None = Query(default=None),
+    ) -> list[dict[str, Any]]:
+        """org 审批门清单 (S9-002 — Approval 页决定操作对象; 只读查询)。"""
+        return [
+            g.to_dict()
+            for g in _api.list_approval_gates(
+                service, logger=event_logger, status=status, workflow_id=workflow_id
+            )
+        ]
+
     @app.get("/api/decisions/{decision_id}")
     def api_decision(decision_id: str) -> dict[str, Any]:
         """决策详情; 不存在 → 404。"""
@@ -201,6 +245,74 @@ def build_app(
         """Provider 目录 (11A list_providers)。"""
         return [p.to_dict() for p in _api.list_providers(service, logger=event_logger)]
 
+    @app.get("/api/workflows")
+    def api_workflows(
+        project_id: str | None = Query(default=None),
+    ) -> list[dict[str, Any]]:
+        """组织级 Workflow 运行清单 (S9-002; 阶段链进度聚合, 只读)。"""
+        return [
+            w.to_dict()
+            for w in _api.list_workflows(service, logger=event_logger, project_id=project_id)
+        ]
+
+    @app.get("/api/workflows/{workflow_id}")
+    def api_workflow_detail(workflow_id: str) -> dict[str, Any]:
+        """单 Workflow 8 阶段链全视图; 无 org/不存在 → 404。"""
+        detail = _api.get_workflow(service, workflow_id, logger=event_logger)
+        if detail is None:
+            raise HTTPException(status_code=404, detail="workflow not found")
+        return detail.to_dict()
+
+    @app.get("/api/artifacts")
+    def api_artifacts(
+        project_id: str | None = Query(default=None),
+        workflow_id: str | None = Query(default=None),
+        type: str | None = Query(default=None),
+    ) -> list[dict[str, Any]]:
+        """org Artifact 清单 (S9-002; project/workflow/type 过滤, 只读)。"""
+        return [
+            a.to_dict()
+            for a in _api.list_artifacts(
+                service,
+                logger=event_logger,
+                project_id=project_id,
+                workflow_id=workflow_id,
+                type=type,
+            )
+        ]
+
+    @app.post("/api/approvals/{approval_id}/approve")
+    def api_approve_approval(approval_id: str) -> dict[str, Any]:
+        """审批放行 (S9-002: 接 org.approval S9-001; source=console 审计)。
+
+        门不存在 → 404; 非 PENDING 门 (终态不可撤销) → 409 Conflict。
+        """
+        try:
+            summary = _api.approve_approval(service, approval_id, reviewer="console")
+        except Exception as exc:
+            if _api.conflict_status(exc):
+                raise HTTPException(status_code=409, detail="approval already decided") from exc
+            raise
+        if summary is None:
+            raise HTTPException(status_code=404, detail="approval gate not found")
+        return summary.to_dict()
+
+    @app.post("/api/approvals/{approval_id}/reject")
+    def api_reject_approval(approval_id: str) -> dict[str, Any]:
+        """审批否决 (S9-002: gate → REJECTED 终态 + workflow FAILED 停止)。
+
+        错误语义同 approve (404 / 409); 决定不可撤销 — 审计铁律。
+        """
+        try:
+            summary = _api.reject_approval(service, approval_id, reviewer="console")
+        except Exception as exc:
+            if _api.conflict_status(exc):
+                raise HTTPException(status_code=409, detail="approval already decided") from exc
+            raise
+        if summary is None:
+            raise HTTPException(status_code=404, detail="approval gate not found")
+        return summary.to_dict()
+
     if static_dir is not None and Path(static_dir).is_dir():
         app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="web")
 
@@ -217,8 +329,9 @@ def create_app(
     factory_root=None → 用户默认工厂根 (~/.factory, 同 CLI FactoryContext)。
     """
     root = Path(factory_root) if factory_root is not None else DEFAULT_ROOT
-    service = build_console_service(root)
-    return build_app(service, static_dir=static_dir, event_logger=_open_event_logger(root))
+    logger = _open_event_logger(root)
+    service = build_console_service(root, event_logger=logger)
+    return build_app(service, static_dir=static_dir, event_logger=logger)
 
 
 if __name__ == "__main__":  # pragma: no cover — uvicorn 直接启动入口

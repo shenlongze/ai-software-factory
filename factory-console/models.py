@@ -76,6 +76,12 @@ class ProjectSummary(BaseModel):
     lifecycle_stage: 该项目关联生命周期的当前阶段名 (无生命周期 → None);
     pending_approvals: 该项目维度待审批数; tasks: 任务状态计数 (按五状态);
     last_activity: 最近活动时间 (项目维度事件最新时间戳, 无 → None)。
+
+    S9-002 扩展 (org 聚合, 全部带默认值 — 既有消费方零破坏): workflow_id/
+    workflow_name/workflow_status: 当前 (最近) 组织级 Workflow 运行;
+    current_stage/current_stage_status: 当前阶段名与状态; progress: 阶段链
+    完成度 (0-1, completed stages / total stages); stage_counts: 按 Stage
+    状态计数 (pending/ready/running/blocked/completed/failed)。
     """
 
     id: str
@@ -90,15 +96,23 @@ class ProjectSummary(BaseModel):
     pending_approvals: int = Field(default=0, ge=0)
     tasks: dict[str, int] = Field(default_factory=dict)
     last_activity: str | None = None
+    # S9-002: org 聚合 (workflow/stage/progress)
+    workflow_id: str | None = None
+    workflow_name: str | None = None
+    workflow_status: str | None = None
+    current_stage: str | None = None
+    current_stage_status: str | None = None
+    progress: float = Field(default=0.0, ge=0.0, le=1.0)
+    stage_counts: dict[str, int] = Field(default_factory=dict)
 
     @field_validator("tech_stack", mode="before")
     @classmethod
     def _coerce_tech_stack(cls, v: Any) -> list[str]:
         return _coerce_str_list(v)
 
-    @field_validator("tasks", mode="before")
+    @field_validator("tasks", "stage_counts", mode="before")
     @classmethod
-    def _coerce_tasks(cls, v: Any) -> dict[str, int]:
+    def _coerce_int_maps(cls, v: Any) -> dict[str, int]:
         if v is None:
             return {}
         return {str(k): int(val) for k, val in v.items()}
@@ -163,6 +177,159 @@ class ApprovalSummary(BaseModel):
     @classmethod
     def _coerce_evidence(cls, v: Any) -> list[str]:
         return _coerce_str_list(v)
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json")
+
+
+# ------------------------------------------------------------------ S9-002 org 投影模型
+
+
+class ApprovalGateSummary(BaseModel):
+    """org ApprovalGate 投影 (S9-001 审批门; Console 决定操作对象)。
+
+    与 org/approval.py ApprovalGate 字段一一对应 (宽容投影: 时间为 UTC
+    字符串, 无 → None); workflow_id/stage_id 冗余 scoping 原样保留,
+    前端据此展示上下文 (门绑定哪个阶段/工作流)。
+    """
+
+    id: str
+    stage_id: str = ""
+    workflow_id: str = ""
+    project_id: str = ""
+    status: str = "pending"
+    reviewer: str = ""
+    comment: str = ""
+    requested_at: str | None = None
+    approved_at: str | None = None
+    rejected_at: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json")
+
+
+class ApprovalDecisionSummary(BaseModel):
+    """POST /approvals/{id}/approve|reject — 决定结果投影 (S9-002)。
+
+    action: approve/reject; gate: 决定后门快照 (终态 APPROVED/REJECTED,
+    决定不可撤销 — 审计铁律); workflow_id/workflow_status: 决定后工作流
+    状态 (approve → PAUSED→ACTIVE 恢复; reject → FAILED 停止)。
+    """
+
+    action: str
+    gate: ApprovalGateSummary
+    workflow_id: str = ""
+    workflow_status: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json")
+
+
+class ArtifactSummary(BaseModel):
+    """GET /artifacts — org Artifact 只读投影 (S9-002 六类产物链)。
+
+    type: idea|product|ux_ui|prd|design|code|test|bug_report|release;
+    status: 生命周期 (created/generated/validated/consumed/archived/invalid);
+    producer_role: 生产者角色 (exec 注册表); workflow_id 经 stage 反查
+    (Artifact 模型无 workflow 字段 — stage 冗余 scoping)。
+    """
+
+    id: str
+    stage_id: str = ""
+    workflow_id: str = ""
+    project_id: str = ""
+    type: str = ""
+    ref: str = ""
+    version: str = "1"
+    status: str = "created"
+    producer_role: str = ""
+    producer_agent: str = ""
+    location: str = ""
+    created_at: str | None = None
+    updated_at: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json")
+
+
+class StageSummary(BaseModel):
+    """GET /workflows/{id} — 阶段链节点投影 (status/role/artifact)。
+
+    artifact: 该阶段输出产物摘要 (无 → None); pending_approval: 绑定本
+    阶段的审批门 (approval_required stage COMPLETED 后创建, PENDING →
+    workflow PAUSED; 无 → None)。input/output_artifacts: 依赖与产出索引
+    (S7-003 DAG 语义, 原样投影)。
+    """
+
+    id: str
+    workflow_id: str = ""
+    role_id: str = ""
+    name: str = ""
+    order: int = 1
+    status: str = "pending"
+    depends_on: list[str] = Field(default_factory=list)
+    input_artifacts: list[str] = Field(default_factory=list)
+    output_artifacts: list[str] = Field(default_factory=list)
+    approval_required: bool = False
+    artifact: ArtifactSummary | None = None
+    pending_approval: ApprovalGateSummary | None = None
+
+    @field_validator("depends_on", "input_artifacts", "output_artifacts", mode="before")
+    @classmethod
+    def _coerce_str_lists(cls, v: Any) -> list[str]:
+        return _coerce_str_list(v)
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json")
+
+
+class WorkflowSummary(BaseModel):
+    """GET /workflows — 组织级 Workflow 运行摘要 (S9-002)。
+
+    progress: 阶段链完成度 (completed / total); current_stage: 当前阶段名
+    (无 → None); current_stage_status: 当前阶段状态 (paused 挂起时可见
+    PENDING 门阶段为 completed — 门后 workflow PAUSED, current_stage 取
+    第一个未 completed 阶段)。
+    """
+
+    id: str
+    project_id: str = ""
+    project_name: str = ""
+    name: str = ""
+    status: str = "draft"
+    stage_count: int = Field(default=0, ge=0)
+    completed_count: int = Field(default=0, ge=0)
+    progress: float = Field(default=0.0, ge=0.0, le=1.0)
+    current_stage: str | None = None
+    current_stage_status: str | None = None
+    failed_reason: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json")
+
+
+class WorkflowDetail(BaseModel):
+    """GET /workflows/{id} — 8 阶段链全视图 (S9-002)。
+
+    stages: 阶段链 (按 order 升序; 每节点 status/role/artifact/pending_
+    approval — Workflow View 页直接消费); template: 规范 8 阶段链
+    (Idea→PM→Product→UX/UI→Architecture→Development→Test→Release —
+    前端渲染占位/标签映射用); pending_approvals: 本 workflow 全部审批门
+    (按 requested_at 升序, 含已决定历史 — 审计视图)。
+    """
+
+    id: str
+    project_id: str = ""
+    project_name: str = ""
+    name: str = ""
+    status: str = "draft"
+    failed_reason: str = ""
+    created_at: str | None = None
+    started_at: str | None = None
+    completed_at: str | None = None
+    stages: list[StageSummary] = Field(default_factory=list)
+    pending_approvals: list[ApprovalGateSummary] = Field(default_factory=list)
+    template: list[str] = Field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return self.model_dump(mode="json")
@@ -485,7 +652,10 @@ class ConsoleDashboard(BaseModel):
 
 __all__ = [
     "AgentSummary",
+    "ApprovalDecisionSummary",
+    "ApprovalGateSummary",
     "ApprovalSummary",
+    "ArtifactSummary",
     "ConsoleDashboard",
     "CostSummary",
     "DecisionSummary",
@@ -496,4 +666,7 @@ __all__ = [
     "ProjectSummary",
     "ProviderSummary",
     "RecommendationSummary",
+    "StageSummary",
+    "WorkflowDetail",
+    "WorkflowSummary",
 ]

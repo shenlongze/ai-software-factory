@@ -8,6 +8,8 @@ import { ApprovalPage } from './pages/ApprovalPage';
 import { DecisionsPage } from './pages/DecisionsPage';
 import { IntelligencePage } from './pages/IntelligencePage';
 import { ProvidersPage } from './pages/ProvidersPage';
+import { WorkflowPage } from './pages/WorkflowPage';
+import { ArtifactsPage } from './pages/ArtifactsPage';
 
 /** 导航项 (普通模式隐藏 Providers — Expert 专属)。 */
 function NavLink({ label, page, target }: { label: string; page: Page; target: Page }): JSX.Element {
@@ -39,6 +41,8 @@ function Shell(): JSX.Element {
         <nav className="console-nav" aria-label="主导航">
           <NavLink label="Dashboard" page={page} target={{ name: 'dashboard' }} />
           <NavLink label="项目" page={page} target={{ name: 'projects' }} />
+          <NavLink label="工作流" page={page} target={{ name: 'workflow', workflowId: '' }} />
+          <NavLink label="产物" page={page} target={{ name: 'artifacts' }} />
           <NavLink label="审批" page={page} target={{ name: 'approvals' }} />
           <NavLink label="决策" page={page} target={{ name: 'decisions' }} />
           <NavLink label="智能" page={page} target={{ name: 'intelligence' }} />
@@ -50,6 +54,8 @@ function Shell(): JSX.Element {
         {page.name === 'dashboard' ? <DashboardPage /> : null}
         {page.name === 'projects' ? <ProjectsPage /> : null}
         {page.name === 'lifecycle' ? <LifecyclePage /> : null}
+        {page.name === 'workflow' ? <WorkflowPage /> : null}
+        {page.name === 'artifacts' ? <ArtifactsPage /> : null}
         {page.name === 'approvals' ? <ApprovalPage /> : null}
         {page.name === 'decisions' ? <DecisionsPage /> : null}
         {page.name === 'intelligence' ? <IntelligencePage /> : null}

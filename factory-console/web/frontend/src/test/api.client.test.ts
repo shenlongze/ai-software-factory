@@ -1,20 +1,38 @@
 /**
- * src/test/api.client.test.ts — 只读 API 客户端测试。
+ * src/test/api.client.test.ts — API 客户端测试 (S9-002 收窄写面)。
  *
  * - fetch 桩注入: 成功 JSON / 非 2xx → ApiError
- * - Permission Boundary: client 只暴露 GET 方法, 无 post/put/patch/delete
- * - 路径编码 (encodeURIComponent) 与查询参数形状
+ * - Permission Boundary: 全部查询 GET; 写面仅 approve/reject 两 POST (reviewer=console)
+ * - S9-002: approvalGates / workflows / workflow / artifacts 查询形状 + 路径编码
  */
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { api, ApiError } from '../api/client';
-import { sampleApproval, sampleDashboard, sampleDecision, sampleExperience, sampleLifecycle, sampleProject, sampleProvider, sampleRecommendation, stubFetch } from './fixtures';
+import {
+  sampleApproval,
+  sampleApprovalDecision,
+  sampleApprovalGate,
+  sampleArtifact,
+  sampleDashboard,
+  sampleDecision,
+  sampleExperience,
+  sampleLifecycle,
+  sampleProject,
+  sampleProvider,
+  sampleRecommendation,
+  sampleWorkflow,
+  sampleWorkflowDetail,
+  stubFetch,
+} from './fixtures';
 
-describe('api client — 只读契约', () => {
-  it('暴露的接口全部是数据读取方法 (无写方法)', () => {
-    const keys = Object.keys(api) as (keyof typeof api)[];
-    expect(keys.sort()).toEqual([
+describe('api client — 只读契约 + S9-002 审批写面', () => {
+  it('暴露接口清单 (查询 + 审批决定; 无 post/put/patch/delete 方法)', () => {
+    const keys = Object.keys(api).sort();
+    expect(keys).toEqual([
+      'approvalGates',
       'approvals',
+      'approveApproval',
+      'artifacts',
       'dashboard',
       'decision',
       'experience',
@@ -22,10 +40,18 @@ describe('api client — 只读契约', () => {
       'projects',
       'providers',
       'recommendations',
+      'rejectApproval',
+      'workflow',
+      'workflows',
     ]);
-    // Permission Boundary: 前端不提供任何写方法
-    const src = api.toString();
-    expect(src).not.toMatch(/\b(post|put|patch|delete)\s*\(/i);
+    // Permission Boundary: 写方法仅 approve/reject 两 POST (无 put/patch/delete)
+    for (const verb of ['post', 'put', 'patch', 'delete']) {
+      expect(keys.some((k) => k.toLowerCase().startsWith(verb))).toBe(false);
+    }
+    expect(keys.filter((k) => k === 'approveApproval' || k === 'rejectApproval')).toEqual([
+      'approveApproval',
+      'rejectApproval',
+    ]);
   });
 
   it('dashboard() 请求 /api/dashboard 并返回 JSON', async () => {
@@ -58,6 +84,69 @@ describe('api client — 只读契约', () => {
     expect(String(fetchMock.mock.calls[0][0])).toBe('/api/approvals?pending_only=true');
     await api.approvals();
     expect(String(fetchMock.mock.calls[1][0])).toBe('/api/approvals');
+  });
+
+  it('approvalGates(pendingOnly) 请求 /api/approval-gates (status=pending 过滤)', async () => {
+    const fetchMock = stubFetch({
+      '/api/approval-gates?status=pending': [sampleApprovalGate()],
+      '/api/approval-gates': [sampleApprovalGate({ status: 'approved' })],
+    });
+    await api.approvalGates(true);
+    expect(String(fetchMock.mock.calls[0][0])).toBe('/api/approval-gates?status=pending');
+    await api.approvalGates();
+    expect(String(fetchMock.mock.calls[1][0])).toBe('/api/approval-gates');
+  });
+
+  it('workflows(projectId) / workflow(id) 查询形状与编码', async () => {
+    const fetchMock = stubFetch({
+      '/api/workflows?project_id=demo': [sampleWorkflow()],
+      '/api/workflows': [sampleWorkflow()],
+      '/api/workflows/wf%201': sampleWorkflowDetail(),
+    });
+    const list = await api.workflows('demo');
+    expect(list[0].id).toBe('wf-1');
+    expect(String(fetchMock.mock.calls[0][0])).toBe('/api/workflows?project_id=demo');
+    await api.workflows();
+    expect(String(fetchMock.mock.calls[1][0])).toBe('/api/workflows');
+    const detail = await api.workflow('wf 1');
+    expect(detail.stages[0].name).toBe('Design');
+    expect(String(fetchMock.mock.calls[2][0])).toBe('/api/workflows/wf%201');
+  });
+
+  it('artifacts(filters) 拼 project/workflow/type 查询参数', async () => {
+    const fetchMock = stubFetch({
+      '/api/artifacts?project_id=demo&workflow_id=wf-1&type=design': [sampleArtifact()],
+      '/api/artifacts': [sampleArtifact()],
+    });
+    await api.artifacts({ projectId: 'demo', workflowId: 'wf-1', type: 'design' });
+    expect(String(fetchMock.mock.calls[0][0])).toBe(
+      '/api/artifacts?project_id=demo&workflow_id=wf-1&type=design',
+    );
+    await api.artifacts();
+    expect(String(fetchMock.mock.calls[1][0])).toBe('/api/artifacts');
+  });
+
+  it('approveApproval(id) → POST /api/approvals/{id}/approve (reviewer=console)', async () => {
+    const fetchMock = stubFetch({
+      '/api/approvals/gate-1/approve': sampleApprovalDecision({ action: 'approved' }),
+    });
+    const got = await api.approveApproval('gate-1');
+    expect(got.action).toBe('approved');
+    const [path, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(path).toBe('/api/approvals/gate-1/approve');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(String(init.body))).toEqual({ reviewer: 'console' });
+  });
+
+  it('rejectApproval(id) → POST /api/approvals/{id}/reject (reviewer=console)', async () => {
+    const fetchMock = stubFetch({
+      '/api/approvals/gate-1/reject': sampleApprovalDecision({ action: 'rejected' }),
+    });
+    const got = await api.rejectApproval('gate-1');
+    expect(got.action).toBe('rejected');
+    const [path, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(path).toBe('/api/approvals/gate-1/reject');
+    expect(init.method).toBe('POST');
   });
 
   it('decision() 请求详情并编码 id', async () => {

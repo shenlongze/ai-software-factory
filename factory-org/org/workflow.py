@@ -626,13 +626,22 @@ class WorkflowLifecycle:
         return gate
 
     def approve_approval(
-        self, gate_id: str, *, reviewer: str = "", comment: str = ""
+        self,
+        gate_id: str,
+        *,
+        reviewer: str = "",
+        comment: str = "",
+        source: str = "cli",
     ) -> tuple[ApprovalGate, Workflow]:
         """审批放行 (→APPROVED 终态 + workflow 恢复 PAUSED→ACTIVE)。
 
         非 PENDING 门 → ApprovalStateError (终态决定不可撤销); 恢复复用
         受控转换表 paused→active (started 事件 from_status=paused — 既有
         语义); 已 ACTIVE 不重复转换 (幂等恢复)。返回 (gate, workflow)。
+
+        S9-002 扩展: source kwarg (默认 \"cli\" 向后兼容) — Console 决定
+        传 \"console\" (S9-001 报告 §7 接入说明: source 沿 CLI 先例传
+        \"console\", 审计区分决策入口)。
         """
         gate = self.get_approval(gate_id)
         updated = transition_approval(
@@ -646,13 +655,19 @@ class WorkflowLifecycle:
             workflow=workflow,
             reviewer=reviewer,
             comment=comment,
+            source=source,
         )
         if workflow.status == WorkflowStatus.PAUSED:
             workflow = self.transition_workflow(workflow.id, WorkflowStatus.ACTIVE)
         return updated, workflow
 
     def reject_approval(
-        self, gate_id: str, *, reviewer: str = "", comment: str = ""
+        self,
+        gate_id: str,
+        *,
+        reviewer: str = "",
+        comment: str = "",
+        source: str = "cli",
     ) -> tuple[ApprovalGate, Workflow]:
         """审批否决 (→REJECTED 终态 + workflow FAILED 停止, 记录原因)。
 
@@ -660,6 +675,9 @@ class WorkflowLifecycle:
         PAUSED→ACTIVE→FAILED (两跳 — WORKFLOW_TRANSITIONS 零修改, 禁改核心
         约束); failed_reason = "approval rejected: <comment> (reviewer:
         <reviewer>)" 审计。返回 (gate, workflow)。
+
+        S9-002 扩展: source kwarg (默认 "cli" 向后兼容) — Console 决定
+        传 "console" (审计区分决策入口, 同 approve_approval)。
         """
         gate = self.get_approval(gate_id)
         updated = transition_approval(
@@ -673,6 +691,7 @@ class WorkflowLifecycle:
             workflow=workflow,
             reviewer=reviewer,
             comment=comment,
+            source=source,
         )
         if workflow.status == WorkflowStatus.PAUSED:
             workflow = self.transition_workflow(workflow.id, WorkflowStatus.ACTIVE)

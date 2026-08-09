@@ -7,7 +7,8 @@
   - /api/projects, /api/approvals, /api/recommendations, /api/experience,
     /api/providers → 200 列表
   - /api/projects/{id}/lifecycle + /api/decisions/{id} → 存在 200 / 缺失 404
-- Permission Boundary: 只注册 GET 路由 (无 POST/PUT/DELETE 写路径)
+- Permission Boundary: 只读路由 (GET/HEAD) + S9-002 审批决定两 POST
+  (approve/reject; 无 PUT/PATCH/DELETE 写路径)
 - 审计集成: 端点命中 → events.db 出现 console.viewed / console.dashboard.viewed
 - 静态托管: dist/ 存在 → GET / 返回 index.html (SPA)
 
@@ -210,23 +211,43 @@ class TestReadOnlyEndpoints:
 
 @requires_fastapi
 class TestPermissionBoundary:
-    def test_only_get_routes_registered(self, client):
-        """只读铁律: adapter 不注册任何写路由 (POST/PUT/PATCH/DELETE)。"""
+    def test_write_routes_limited_to_approval_decisions(self, client):
+        """Permission Boundary (S9-002): 写路由仅审批决定两 POST。
+
+        用户解除 Console 冻结后, 唯一写路径 = POST /api/approvals/{id}/
+        approve|reject (走 org Approval 状态机, source=console 审计);
+        其余一切路由只读 (GET/HEAD), 无 PUT/PATCH/DELETE。
+        """
         app = _adapter.build_app(_StubService())
-        allowed = {"GET", "HEAD"}
         for route in app.routes:
             if not hasattr(route, "methods"):
                 continue
             for route_method in route.methods:
-                assert route_method in allowed, f"写路由泄漏: {route_method}"
+                if route_method in {"GET", "HEAD"}:
+                    continue
+                assert route_method == "POST", (
+                    f"非 POST 写路由泄漏: {route_method} {getattr(route, 'path', '?')}"
+                )
+                path = getattr(route, "path", "")
+                assert path.endswith("/approve") or path.endswith("/reject"), (
+                    f"POST 路由超出审批决定范围: {path}"
+                )
 
-    def test_no_write_helpers_in_api_client_module(self):
-        """前端 api client 只读 (fetch GET) — 无 post/put/delete 方法。"""
+    def test_client_write_surface_limited_to_approval_decisions(self):
+        """前端 api client 写面仅审批决定 (POST approve/reject; 无 put/patch/delete)。"""
         src = (Path(__file__).parents[2] / "factory-console" / "web" / "frontend"
                / "src" / "api" / "client.ts").read_text(encoding="utf-8")
-        assert "function post" not in src
+        # 写 helper 存在但唯一 (sendJson → POST approve/reject)
+        assert "sendJson" in src
+        assert "approveApproval" in src
+        assert "rejectApproval" in src
+        # 无 put/patch/delete 写方法
         assert "function put" not in src
+        assert "function patch" not in src
         assert "function del" not in src
+        assert "method: 'PUT'" not in src
+        assert "method: 'PATCH'" not in src
+        assert "method: 'DELETE'" not in src
 
 
 @requires_fastapi

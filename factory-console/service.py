@@ -26,7 +26,10 @@ from typing import Any
 
 from .models import (
     AgentSummary,
+    ApprovalDecisionSummary,
+    ApprovalGateSummary,
     ApprovalSummary,
+    ArtifactSummary,
     ConsoleDashboard,
     CostSummary,
     DecisionSummary,
@@ -37,10 +40,36 @@ from .models import (
     ProjectSummary,
     ProviderSummary,
     RecommendationSummary,
+    StageSummary,
+    WorkflowDetail,
+    WorkflowSummary,
 )
 
 #: 默认最近决策/活动条数 (KISS: Dashboard 不无限增长, CLI --limit 可覆盖)
 DEFAULT_RECENT_LIMIT = 10
+
+#: 规范 8 阶段链 (S9-002 Workflow View 模板; 前端渲染占位/标签映射用 —
+#: Idea→PM→Product→UX/UI→Architecture→Development→Test→Release)。
+WORKFLOW_TEMPLATE: tuple[str, ...] = (
+    "Idea",
+    "PM",
+    "Product",
+    "UX/UI",
+    "Architecture",
+    "Development",
+    "Test",
+    "Release",
+)
+
+
+def _dt_str(value: Any) -> str | None:
+    """datetime → UTC 字符串 (宽容; 已字符串/None 原样 — 投影模型时间字段)。"""
+    if value is None or isinstance(value, str):
+        return value
+    try:
+        return value.isoformat()
+    except Exception:
+        return str(value)
 
 
 class ConsoleService:
@@ -63,6 +92,8 @@ class ConsoleService:
         usage_store: Any = None,
         provider_registry: Any = None,
         event_store: Any = None,
+        project_store: Any = None,
+        workflow_lifecycle: Any = None,
     ) -> None:
         self._workspace = workspace_manager
         self._task_store = task_store
@@ -74,6 +105,10 @@ class ConsoleService:
         self._usage = usage_store
         self._providers = provider_registry
         self._events = event_store
+        # S9-002: org 层 (组织级 Workflow/Stage/Artifact/ApprovalGate 聚合 —
+        # 全部可选, 失败安全; 典型装配见 web/backend/fastapi_adapter.py)
+        self._project_store = project_store
+        self._workflow = workflow_lifecycle
 
     # ------------------------------------------------------------------ 七域 Dashboard
 
@@ -96,38 +131,461 @@ class ConsoleService:
     # ------------------------------------------------------------------ GET /projects
 
     def list_projects(self) -> list[ProjectSummary]:
-        """全部项目只读投影 (workspace 项目定义 + 生命周期阶段/任务计数)。"""
+        """全部项目只读投影 (workspace 项目定义 + org 项目并集, 含 S9-002
+        workflow/stage/progress 聚合)。
+
+        数据源 (全部可选, 失败安全): workspace 项目定义 (id/name/language/
+        repository/tech_stack) ∪ org Project (id/name/lifecycle); 同 id 合并。
+        org 聚合: 当前 (最近创建) Workflow 运行 → workflow_id/status +
+        当前阶段 + progress (completed stages / total stages) + stage_counts。
+        """
         definitions = self._project_definitions()
         tasks = self._tasks_by_project()
+        org_by_id = {p.id: p for p in self._org_projects()}
+        wf_by_project = self._workflows_by_project()
         summaries: list[ProjectSummary] = []
+        seen: set[str] = set()
         for definition in definitions:
             project_id = definition.id
+            seen.add(project_id)
+            org = org_by_id.get(project_id)
             lifecycle = self._lifecycle_for_project(project_id)
-            summaries.append(
-                ProjectSummary(
-                    id=project_id,
-                    name=definition.name or project_id,
-                    description=definition.description,
-                    language=definition.language,
-                    repository=definition.repository,
-                    tech_stack=list(definition.tech_stack or []),
-                    status=definition.status,
-                    lifecycle_stage=(
-                        lifecycle["current_stage"]["name"]
-                        if lifecycle and lifecycle.get("current_stage")
-                        else None
+            summary = ProjectSummary(
+                id=project_id,
+                name=definition.name or (org.name if org else project_id),
+                description=definition.description,
+                language=definition.language,
+                repository=definition.repository,
+                tech_stack=list(definition.tech_stack or []),
+                status=definition.status,
+                lifecycle_stage=(
+                    lifecycle["current_stage"]["name"]
+                    if lifecycle and lifecycle.get("current_stage")
+                    else None
+                ),
+                lifecycle_status=(
+                    (lifecycle.get("lifecycle") or {}).get("status")
+                    if lifecycle
+                    else None
+                ),
+                pending_approvals=self._pending_approvals_for_project(project_id),
+                tasks=tasks.get(project_id, {}),
+                last_activity=self._project_last_activity(project_id),
+            )
+            self._apply_workflow_projection(summary, wf_by_project.get(project_id))
+            summaries.append(summary)
+        # org-only 项目 (无 workspace 定义 — 纯 org 数据空间项目)
+        for project_id, org in org_by_id.items():
+            if project_id in seen:
+                continue
+            lifecycle = self._lifecycle_for_project(project_id)
+            summary = ProjectSummary(
+                id=project_id,
+                name=org.name or project_id,
+                status=org.lifecycle.value
+                if hasattr(org.lifecycle, "value")
+                else str(org.lifecycle),
+                lifecycle_stage=(
+                    lifecycle["current_stage"]["name"]
+                    if lifecycle and lifecycle.get("current_stage")
+                    else None
+                ),
+                lifecycle_status=(
+                    (lifecycle.get("lifecycle") or {}).get("status")
+                    if lifecycle
+                    else None
+                ),
+                pending_approvals=self._pending_approvals_for_project(project_id),
+                tasks=tasks.get(project_id, {}),
+                last_activity=self._project_last_activity(project_id),
+            )
+            self._apply_workflow_projection(summary, wf_by_project.get(project_id))
+            summaries.append(summary)
+        return summaries
+
+    # ------------------------------------------------------------------ S9-002: Workflow/Artifact/Approval
+
+    def list_workflows(self, project_id: str | None = None) -> list[WorkflowSummary]:
+        """组织级 Workflow 运行清单 (阶段链进度聚合; 无 org → 空)。"""
+        lifecycle = self._workflow_lifecycle()
+        if lifecycle is None:
+            return []
+        try:
+            workflows = lifecycle.list_workflows(project_id=project_id)
+        except Exception:
+            return []  # 损坏 store → 空 (失败安全)
+        project_names = {
+            p.id: p.name for p in self._org_projects()
+        }
+        workspace_names = {p.id: p.name for p in self._project_definitions()}
+        out: list[WorkflowSummary] = []
+        for workflow in workflows:
+            stages = self._stages_of(workflow.id)
+            completed = sum(1 for s in stages if s.status.value == "completed")
+            total = len(stages)
+            current = next(
+                (s for s in stages if s.status.value != "completed"), None
+            )
+            out.append(
+                WorkflowSummary(
+                    id=workflow.id,
+                    project_id=workflow.project_id,
+                    project_name=(
+                        workspace_names.get(workflow.project_id)
+                        or project_names.get(workflow.project_id)
+                        or workflow.project_id
                     ),
-                    lifecycle_status=(
-                        (lifecycle.get("lifecycle") or {}).get("status")
-                        if lifecycle
-                        else None
-                    ),
-                    pending_approvals=self._pending_approvals_for_project(project_id),
-                    tasks=tasks.get(project_id, {}),
-                    last_activity=self._project_last_activity(project_id),
+                    name=workflow.name,
+                    status=workflow.status.value,
+                    stage_count=total,
+                    completed_count=completed,
+                    progress=round(completed / total, 4) if total else 0.0,
+                    current_stage=current.name or current.role_id if current else None,
+                    current_stage_status=current.status.value if current else None,
+                    failed_reason=workflow.failed_reason,
                 )
             )
-        return summaries
+        return out
+
+    def get_workflow(self, workflow_id: str) -> WorkflowDetail | None:
+        """单 Workflow 8 阶段链全视图; 无 org/不存在 → None (404 语义由调用方定)。
+
+        阶段链: 按 order 升序; 每节点 status/role/artifact (输出产物摘要)/
+        pending_approval (绑定本阶段的审批门)。template = 规范 8 阶段链
+        (前端占位/标签映射)。org NotFoundError → None (失败安全, 同
+        project_lifecycle None 语义)。
+        """
+        lifecycle = self._workflow_lifecycle()
+        if lifecycle is None:
+            return None
+        try:
+            workflow = lifecycle.get_workflow(workflow_id)
+        except Exception:
+            return None
+        project_names = {p.id: p.name for p in self._org_projects()}
+        workspace_names = {p.id: p.name for p in self._project_definitions()}
+        stages = self._stages_of(workflow.id)
+        stage_summaries = [
+            self._stage_summary(lifecycle, stage, workflow.project_id)
+            for stage in stages
+        ]
+        gates = sorted(
+            lifecycle.list_approvals(workflow_id=workflow.id),
+            key=lambda g: g.requested_at,
+        )
+        return WorkflowDetail(
+            id=workflow.id,
+            project_id=workflow.project_id,
+            project_name=(
+                workspace_names.get(workflow.project_id)
+                or project_names.get(workflow.project_id)
+                or workflow.project_id
+            ),
+            name=workflow.name,
+            status=workflow.status.value,
+            failed_reason=workflow.failed_reason,
+            created_at=_dt_str(workflow.created_at),
+            started_at=_dt_str(workflow.started_at),
+            completed_at=_dt_str(workflow.completed_at),
+            stages=stage_summaries,
+            pending_approvals=[self._gate_summary(g) for g in gates],
+            template=list(WORKFLOW_TEMPLATE),
+        )
+
+    def list_artifacts(
+        self,
+        *,
+        project_id: str | None = None,
+        workflow_id: str | None = None,
+        type: str | None = None,
+    ) -> list[ArtifactSummary]:
+        """org Artifact 清单 (按 project/workflow/type 过滤; 无 org → 空)。
+
+        workflow 过滤经 stage 反查 (Artifact 模型无 workflow 字段 — stage
+        冗余 scoping): 仅保留 stage 属于该 workflow 的产物; 无 stage 的
+        产物 (project_id 直挂) 在无 workflow 过滤时保留。
+        """
+        lifecycle = self._workflow_lifecycle()
+        if lifecycle is None:
+            return []
+        store = lifecycle.store
+        try:
+            artifacts = store.list_artifacts()
+            stages = store.list_stages()
+        except Exception:
+            return []  # 损坏 store → 空 (失败安全)
+        wf_by_stage = {s.id: s.workflow_id for s in stages}
+        out: list[ArtifactSummary] = []
+        for artifact in artifacts:
+            if project_id is not None and artifact.project_id != project_id:
+                continue
+            if type is not None:
+                artifact_type = (
+                    artifact.type.value
+                    if hasattr(artifact.type, "value")
+                    else str(artifact.type)
+                )
+                if artifact_type != type:
+                    continue
+            stage_wf = wf_by_stage.get(artifact.stage_id)
+            if workflow_id is not None and stage_wf != workflow_id:
+                continue
+            out.append(self._artifact_summary(artifact, stage_wf or ""))
+        return out
+
+    def list_approval_gates(
+        self,
+        *,
+        status: str | None = None,
+        workflow_id: str | None = None,
+    ) -> list[ApprovalGateSummary]:
+        """org 审批门清单 (S9-002 — Console 审批中心的决定操作对象)。
+
+        与 11A list_approvals (product 9c 请求, 只读遗留视图) 区分: 本方法
+        返回 org ApprovalGate (S9-001), id 即 POST /approvals/{id}/approve|
+        reject 的操作对象。project_id 经 gate → stage → workflow 反查
+        (org ApprovalGate 模型无 project_id 字段 — stage/workflow 冗余
+        scoping)。无 org → 空 (失败安全)。
+        """
+        lifecycle = self._workflow_lifecycle()
+        if lifecycle is None:
+            return []
+        try:
+            gates = lifecycle.list_approvals(
+                workflow_id=workflow_id, status=status
+            )
+            stages = {s.id: s for s in lifecycle.store.list_stages()}
+            workflows = {w.id: w for w in lifecycle.list_workflows()}
+        except Exception:
+            return []  # 损坏 store → 空 (失败安全)
+        out: list[ApprovalGateSummary] = []
+        for gate in gates:
+            workflow = workflows.get(gate.workflow_id)
+            project_id = workflow.project_id if workflow else ""
+            out.append(self._gate_summary(gate, project_id))
+        return out
+
+    def approve_approval(
+        self,
+        gate_id: str,
+        *,
+        reviewer: str = "",
+        comment: str = "",
+    ) -> ApprovalDecisionSummary | None:
+        """审批放行 (POST /approvals/{id}/approve; 接 org.approval S9-001)。
+
+        委托 WorkflowLifecycle.approve_approval (source=\"console\" — 审计
+        区分决策入口); 无 org → None (调用方 404 语义); 门不存在 → 抛
+        org NotFoundError; 非 PENDING 门 → 抛 org ApprovalStateError
+        (终态决定不可撤销 — 由 HTTP 层映射 409)。
+        """
+        lifecycle = self._workflow_lifecycle()
+        if lifecycle is None:
+            return None
+        gate, workflow = lifecycle.approve_approval(
+            gate_id, reviewer=reviewer, comment=comment, source="console"
+        )
+        return self._approval_decision_summary("approve", gate, workflow)
+
+    def reject_approval(
+        self,
+        gate_id: str,
+        *,
+        reviewer: str = "",
+        comment: str = "",
+    ) -> ApprovalDecisionSummary | None:
+        """审批否决 (POST /approvals/{id}/reject; 接 org.approval S9-001)。
+
+        委托 WorkflowLifecycle.reject_approval (source=\"console\"); 错误
+        语义同 approve_approval (NotFound → 抛 org NotFoundError;
+        非 PENDING → org ApprovalStateError)。
+        """
+        lifecycle = self._workflow_lifecycle()
+        if lifecycle is None:
+            return None
+        gate, workflow = lifecycle.reject_approval(
+            gate_id, reviewer=reviewer, comment=comment, source="console"
+        )
+        return self._approval_decision_summary("reject", gate, workflow)
+
+    # ------------------------------------------------------ S9-002 内部: org 装配/投影
+
+    def _workflow_lifecycle(self) -> Any:
+        """org WorkflowLifecycle (注入优先; 否则按 project_store 懒构建)。
+
+        logger=None 懒构建路径 (仅测试/无注入场景) → 决定事件静默; 生产
+        装配 (fastapi_adapter) 注入带 EventLogger 的生命周期 — org.approval.*
+        事件 source=\"console\" 落库审计。失败安全: org 缺失/损坏 → None。
+        """
+        if self._workflow is not None:
+            return self._workflow
+        if self._project_store is None:
+            return None
+        self._mount_org()
+        try:
+            from org.workflow import WorkflowLifecycle
+
+            return WorkflowLifecycle(self._project_store, logger=None)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _mount_org() -> None:
+        """挂载 factory-org 包目录到 sys.path (幂等; 缺目录 → 跳过)。
+
+        org 包名不含连字符但位于 factory-org/ 子目录 — 延迟导入需该目录
+        在 sys.path (Removal Isolation: 删除 factory-org 不影响 Console)。
+        """
+        import sys
+        from pathlib import Path
+
+        org_dir = Path(__file__).resolve().parents[1] / "factory-org"
+        if org_dir.is_dir() and str(org_dir) not in sys.path:
+            sys.path.insert(0, str(org_dir))
+
+    def _org_projects(self) -> list[Any]:
+        """org Project 清单 (无 org store → 空, 失败安全)。"""
+        store = self._project_store
+        if store is None:
+            return []
+        try:
+            return store.list_projects()
+        except Exception:
+            return []
+
+    def _stages_of(self, workflow_id: str) -> list[Any]:
+        """workflow 阶段链 (按 order 升序; 失败安全 → 空)。"""
+        lifecycle = self._workflow_lifecycle()
+        if lifecycle is None:
+            return []
+        try:
+            return sorted(
+                lifecycle.store.list_stages_by_workflow(workflow_id),
+                key=lambda s: s.order,
+            )
+        except Exception:
+            return []
+
+    def _workflows_by_project(self) -> dict[str, Any]:
+        """项目 → 最近 Workflow (按 created_at 升序遍历, 后写覆盖 = 最新)。"""
+        lifecycle = self._workflow_lifecycle()
+        if lifecycle is None:
+            return {}
+        try:
+            workflows = lifecycle.list_workflows()
+        except Exception:
+            return {}
+        out: dict[str, Any] = {}
+        for workflow in sorted(workflows, key=lambda w: w.created_at):
+            out[workflow.project_id] = workflow
+        return out
+
+    def _apply_workflow_projection(
+        self, summary: ProjectSummary, workflow: Any | None
+    ) -> None:
+        """workflow → ProjectSummary 聚合字段 (无 workflow → 零修改)。"""
+        if workflow is None:
+            return
+        stages = self._stages_of(workflow.id)
+        statuses = [s.status.value for s in stages]
+        completed = sum(1 for st in statuses if st == "completed")
+        total = len(statuses)
+        counts: dict[str, int] = {}
+        for st in statuses:
+            counts[st] = counts.get(st, 0) + 1
+        current = next((s for s in stages if s.status.value != "completed"), None)
+        summary.workflow_id = workflow.id
+        summary.workflow_name = workflow.name
+        summary.workflow_status = workflow.status.value
+        summary.current_stage = current.name or current.role_id if current else None
+        summary.current_stage_status = current.status.value if current else None
+        summary.progress = round(completed / total, 4) if total else 0.0
+        summary.stage_counts = counts
+
+    def _stage_summary(
+        self, lifecycle: Any, stage: Any, project_id: str = ""
+    ) -> StageSummary:
+        """Stage → StageSummary (含输出产物摘要 + 绑定审批门)。"""
+        artifact = None
+        artifact_ids = list(stage.output_artifacts or [])
+        if stage.artifact_ref and stage.artifact_ref not in artifact_ids:
+            artifact_ids.append(stage.artifact_ref)
+        for artifact_id in reversed(artifact_ids):
+            found = lifecycle.store.get_artifact(artifact_id)
+            if found is not None:
+                artifact = self._artifact_summary(found, stage.workflow_id)
+                break
+        gate = lifecycle.get_approval_by_stage(stage.id)
+        return StageSummary(
+            id=stage.id,
+            workflow_id=stage.workflow_id,
+            role_id=stage.role_id,
+            name=stage.name,
+            order=stage.order,
+            status=stage.status.value,
+            depends_on=list(stage.depends_on or []),
+            input_artifacts=list(stage.input_artifacts or []),
+            output_artifacts=list(stage.output_artifacts or []),
+            approval_required=stage.approval_required,
+            artifact=artifact,
+            pending_approval=(
+                self._gate_summary(gate, project_id) if gate else None
+            ),
+        )
+
+    def _artifact_summary(self, artifact: Any, workflow_id: str) -> ArtifactSummary:
+        """org Artifact → ArtifactSummary (workflow_id 经 stage 反查传入)。"""
+        return ArtifactSummary(
+            id=artifact.id,
+            stage_id=artifact.stage_id,
+            workflow_id=workflow_id,
+            project_id=artifact.project_id,
+            type=artifact.type.value
+            if hasattr(artifact.type, "value")
+            else str(artifact.type),
+            ref=artifact.ref,
+            version=artifact.version,
+            status=artifact.status.value
+            if hasattr(artifact.status, "value")
+            else str(artifact.status),
+            producer_role=artifact.producer_role,
+            producer_agent=artifact.producer_agent,
+            location=artifact.location,
+            created_at=_dt_str(artifact.created_at),
+            updated_at=_dt_str(artifact.updated_at),
+        )
+
+    @staticmethod
+    def _gate_summary(gate: Any, project_id: str = "") -> ApprovalGateSummary:
+        """org ApprovalGate → ApprovalGateSummary (时间 ISO 投影)。
+
+        org ApprovalGate 模型无 project_id 字段 (stage/workflow 冗余 scoping)
+        — 由调用方 (workflow 上下文) 传入, 前端项目维度定位用。
+        """
+        return ApprovalGateSummary(
+            id=gate.id,
+            stage_id=gate.stage_id,
+            workflow_id=gate.workflow_id,
+            project_id=project_id,
+            status=gate.status.value,
+            reviewer=gate.reviewer,
+            comment=gate.comment,
+            requested_at=_dt_str(gate.requested_at),
+            approved_at=_dt_str(gate.approved_at),
+            rejected_at=_dt_str(gate.rejected_at),
+        )
+
+    @staticmethod
+    def _approval_decision_summary(
+        action: str, gate: Any, workflow: Any
+    ) -> ApprovalDecisionSummary:
+        """(gate, workflow) → ApprovalDecisionSummary (决定结果投影)。"""
+        return ApprovalDecisionSummary(
+            action=action,
+            gate=ConsoleService._gate_summary(gate, workflow.project_id),
+            workflow_id=workflow.id,
+            workflow_status=workflow.status.value,
+        )
 
     def project_lifecycle(self, project_id: str) -> LifecycleSummary | None:
         """单项目生命周期只读快照; 无生命周期/无项目 → None (404 语义由调用方定)。

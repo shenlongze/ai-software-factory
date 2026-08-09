@@ -10,19 +10,33 @@
   (ADR-0002: 所有 CLI 行为必须产生 Event; API 层读审计同语义)。
 """
 
-from .approvals import list_approvals
+from .approvals import (
+    approve_approval,
+    conflict_status,
+    list_approval_gates,
+    list_approvals,
+    reject_approval,
+)
+from .artifacts import list_artifacts
 from .decisions import get_decision
 from .intelligence import list_experience, list_recommendations
 from .lifecycle import get_project_lifecycle
 from .projects import list_projects
 from .providers import list_providers
+from .workflows import get_workflow, list_workflows
 
 __all__ = [
+    "approve_approval",
     "get_decision",
     "get_project_lifecycle",
+    "get_workflow",
+    "list_approval_gates",
     "list_approvals",
+    "list_artifacts",
     "list_experience",
     "list_projects",
     "list_providers",
     "list_recommendations",
+    "list_workflows",
+    "reject_approval",
 ]

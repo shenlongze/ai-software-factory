@@ -35,6 +35,33 @@ export function ProjectsPage(): JSX.Element {
     { key: 'stage', header: '生命周期阶段', render: (p) => p.lifecycle_stage ?? '—' },
     { key: 'status', header: '状态', render: (p) => statusBadge(p.status) },
     {
+      key: 'workflow',
+      header: '当前工作流',
+      render: (p) => (
+        <button
+          type="button"
+          className="link-like"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (p.workflow_id) navigate({ name: 'workflow', workflowId: p.workflow_id, projectId: p.id });
+          }}
+        >
+          {p.workflow_name || p.workflow_status || (p.workflow_id ? '查看' : '—')}
+        </button>
+      ),
+    },
+    {
+      key: 'current_stage',
+      header: '当前阶段',
+      render: (p) => (p.current_stage ? `${p.current_stage} (${p.current_stage_status ?? '?'})` : '—'),
+    },
+    {
+      key: 'progress',
+      header: '进度',
+      render: (p) =>
+        typeof p.progress === 'number' ? `${Math.round(p.progress * 100)}%` : '—',
+    },
+    {
       key: 'pending',
       header: '待审批',
       render: (p) => (p.pending_approvals > 0 ? <strong>{p.pending_approvals}</strong> : '0'),

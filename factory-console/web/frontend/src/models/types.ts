@@ -18,6 +18,14 @@ export interface ProjectSummary {
   pending_approvals: number;
   tasks: Record<string, number>;
   last_activity: string | null;
+  // S9-002: org 聚合 (当前 Workflow 运行 + 阶段链进度)
+  workflow_id: string | null;
+  workflow_name: string | null;
+  workflow_status: string | null;
+  current_stage: string | null;
+  current_stage_status: string | null;
+  progress: number;
+  stage_counts: Record<string, number>;
 }
 
 export interface LifecycleSummary {
@@ -174,4 +182,121 @@ export const FACTOR_LABELS: Record<string, string> = {
 
 export function factorLabel(key: string): string {
   return FACTOR_LABELS[key] ?? key;
+}
+
+// ------------------------------------------------------------------ S9-002 org 投影类型
+
+/** org ApprovalGate 投影 (S9-001 审批门; Console 决定操作对象)。 */
+export interface ApprovalGateSummary {
+  id: string;
+  stage_id: string;
+  workflow_id: string;
+  project_id: string;
+  status: string;
+  reviewer: string;
+  comment: string;
+  requested_at: string | null;
+  approved_at: string | null;
+  rejected_at: string | null;
+}
+
+/** POST /approvals/{id}/approve|reject 决定结果投影。 */
+export interface ApprovalDecisionSummary {
+  action: string;
+  gate: ApprovalGateSummary;
+  workflow_id: string;
+  workflow_status: string;
+}
+
+/** org Artifact 只读投影 (6 类产物链: prd/ui/architecture/code/test/release…)。 */
+export interface ArtifactSummary {
+  id: string;
+  stage_id: string;
+  workflow_id: string;
+  project_id: string;
+  type: string;
+  ref: string;
+  version: string;
+  status: string;
+  producer_role: string;
+  producer_agent: string;
+  location: string;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+/** 阶段链节点投影 (status/role/artifact)。 */
+export interface StageSummary {
+  id: string;
+  workflow_id: string;
+  role_id: string;
+  name: string;
+  order: number;
+  status: string;
+  depends_on: string[];
+  input_artifacts: string[];
+  output_artifacts: string[];
+  approval_required: boolean;
+  artifact: ArtifactSummary | null;
+  pending_approval: ApprovalGateSummary | null;
+}
+
+/** 组织级 Workflow 运行摘要。 */
+export interface WorkflowSummary {
+  id: string;
+  project_id: string;
+  project_name: string;
+  name: string;
+  status: string;
+  stage_count: number;
+  completed_count: number;
+  progress: number;
+  current_stage: string | null;
+  current_stage_status: string | null;
+  failed_reason: string;
+}
+
+/** 单 Workflow 8 阶段链全视图。 */
+export interface WorkflowDetail {
+  id: string;
+  project_id: string;
+  project_name: string;
+  name: string;
+  status: string;
+  failed_reason: string;
+  created_at: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  stages: StageSummary[];
+  pending_approvals: ApprovalGateSummary[];
+  template: string[];
+}
+
+/** 规范 8 阶段链 (与后端 WORKFLOW_TEMPLATE 同源; 前端标签/占位映射)。 */
+export const STAGE_TEMPLATE: readonly string[] = [
+  'Idea',
+  'PM',
+  'Product',
+  'UX/UI',
+  'Architecture',
+  'Development',
+  'Test',
+  'Release',
+];
+
+/** Artifact 类型中文标签 (6 类 Viewer 分组; 未知类型原样显示)。 */
+export const ARTIFACT_TYPE_LABELS: Record<string, string> = {
+  idea: 'Idea',
+  product: 'Product',
+  ux_ui: 'UX/UI',
+  prd: 'PRD',
+  design: 'Design',
+  code: 'Code',
+  test: 'Test',
+  bug_report: 'Bug Report',
+  release: 'Release',
+};
+
+export function artifactTypeLabel(type: string): string {
+  return ARTIFACT_TYPE_LABELS[type] ?? type;
 }

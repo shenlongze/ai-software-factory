@@ -19,7 +19,10 @@ export type Page =
   | { name: 'approvals' }
   | { name: 'decisions'; decisionId?: string }
   | { name: 'intelligence' }
-  | { name: 'providers' };
+  | { name: 'providers' }
+  // S9-002: 组织级 Workflow / Artifact 视图
+  | { name: 'workflow'; workflowId: string; projectId?: string }
+  | { name: 'artifacts'; projectId?: string; workflowId?: string };
 
 export interface AppStateValue {
   mode: Mode;

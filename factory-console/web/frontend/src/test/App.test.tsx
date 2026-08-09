@@ -3,7 +3,7 @@
  *
  * - 品牌/导航/页脚渲染
  * - 普通模式隐藏 Providers 导航, 专业模式显示 (Expert 专属)
- * - 导航切换页面 (Dashboard 默认)
+ * - 导航切换页面 (Dashboard 默认; 含 S9-002 工作流/产物页)
  * - Simple ↔ Expert 切换
  */
 
@@ -25,6 +25,9 @@ function renderApp() {
     '/api/dashboard': emptyDashboard,
     '/api/projects': [],
     '/api/approvals': [],
+    '/api/approval-gates': [],
+    '/api/workflows': [],
+    '/api/artifacts': [],
     '/api/experience?limit=20': [],
     '/api/providers': [],
     '/api/recommendations?limit=20': [],
@@ -33,12 +36,14 @@ function renderApp() {
 }
 
 describe('App Shell', () => {
-  it('渲染品牌与导航 (Dashboard/项目/审批/决策/智能)', async () => {
+  it('渲染品牌与导航 (Dashboard/项目/工作流/产物/审批/决策/智能)', async () => {
     renderApp();
     expect(screen.getByText('AI Software Factory')).toBeInTheDocument();
     expect(screen.getByText('Human Console')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Dashboard' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '项目' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '工作流' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '产物' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '审批' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '决策' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '智能' })).toBeInTheDocument();
@@ -59,13 +64,18 @@ describe('App Shell', () => {
     expect(await screen.findByText('正在管理 0 个项目')).toBeInTheDocument();
   });
 
-  it('导航切换页面', async () => {
+  it('导航切换页面 (含工作流/产物/审批门)', async () => {
     const user = userEvent.setup();
     renderApp();
     await user.click(screen.getByRole('button', { name: '项目' }));
     expect(await screen.findByText(/点击项目查看其 AI 工作区/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '工作流' }));
+    expect(await screen.findByRole('heading', { name: '工作流' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '产物' }));
+    expect(await screen.findByRole('heading', { name: '产物' })).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '审批' }));
-    expect(await screen.findByText('暂无审批请求')).toBeInTheDocument();
+    expect(await screen.findByText('暂无组织级审批门')).toBeInTheDocument();
+    expect(screen.getByText('暂无 Core 审批请求')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '决策' }));
     expect(await screen.findByText('暂无 AI 决策')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '智能' }));
@@ -74,6 +84,6 @@ describe('App Shell', () => {
 
   it('页脚渲染只读声明', () => {
     renderApp();
-    expect(screen.getByText(/只读控制台 \(执行权永远在人工一侧\)/)).toBeInTheDocument();
+    expect(screen.getByText(/只读控制台.*执行权永远在人工一侧/)).toBeInTheDocument();
   });
 });

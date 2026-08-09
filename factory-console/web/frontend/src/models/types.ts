@@ -305,6 +305,97 @@ export interface WorkflowDetail {
   stages: StageSummary[];
   pending_approvals: ApprovalGateSummary[];
   template: string[];
+  /** S10-002: mock fallback 标记 (后端数据缺失 → 演示数据, 前端据此显示标识)。 */
+  is_mock?: boolean;
+}
+
+/** S10-002: 阶段运行明细 (Task 面板数据源 — GET /workflows/{id}/stages)。 */
+export interface StageRunSummary {
+  id: string;
+  workflow_id: string;
+  role_id: string;
+  name: string;
+  order: number;
+  status: string;
+  /** 执行 Agent (org 无独立 Agent 实体 — 角色即执行者, agent_id = role_id)。 */
+  agent_id: string | null;
+  /** 从事件流推导 (stage_started → stage_completed 时间戳差; 缺 → null)。 */
+  duration_s: number | null;
+  /** org 未跟踪成本 → null (诚实; 仅 mock 数据带示例值)。 */
+  cost_usd: number | null;
+  started_at: string | null;
+  completed_at: string | null;
+  depends_on: string[];
+  input_artifacts: string[];
+  output_artifacts: string[];
+  artifacts: ArtifactSummary[];
+}
+
+/** S10-002: Timeline 事件节点 (Agent Timeline 数据源 — GET /projects/{id}/timeline)。 */
+export interface TimelineEventSummary {
+  id: string;
+  seq: number;
+  project_id: string;
+  /** user | stage | artifact | review | error (api-data-model §1)。 */
+  type: string;
+  event_type: string;
+  stage_id: string | null;
+  agent_id: string | null;
+  artifact_id: string | null;
+  gate_id: string | null;
+  message: string;
+  status: string | null;
+  payload: Record<string, unknown>;
+  created_at: string | null;
+}
+
+/** S10-002: Runtime Instance 基础模型 (workspace-architecture.md §4; 只建模型)。
+
+ * type: browser|terminal (沙箱实例类型); status: starting|running|stopped|error
+ * (生命周期状态机); artifact_id: 绑定产物 (browser 预览 ux_ui/code/release 对应
+ * 产物, 无 → null); url: browser 预览地址 / session: terminal 会话标识 (按 type
+ * 二选一, 未就绪 → null); created_at: UTC 时间戳。S10-004 实现实例/生命周期。
+ */
+export interface RuntimeInstance {
+  id: string;
+  project_id: string;
+  type: 'browser' | 'terminal';
+  status: 'starting' | 'running' | 'stopped' | 'error';
+  artifact_id: string | null;
+  url: string | null;
+  session: string | null;
+  created_at: string | null;
+}
+
+/** S10-002: SSE 事件名 (与后端 SSE_EVENT_MAP 同源; 业务 7 类 + error 通道)。 */
+export const RUNTIME_EVENT_NAMES = [
+  'stage.started',
+  'stage.completed',
+  'artifact.created',
+  'approval.required',
+  'approval.completed',
+  'error',
+  // S10-002: Runtime Instance 生命周期 (契约先行 — S10-004 Runtime 服务发射)
+  'runtime.created',
+  'runtime.status.changed',
+] as const;
+
+export type RuntimeEventName = (typeof RUNTIME_EVENT_NAMES)[number];
+
+/** S10-002: runtime.created 事件载荷 (instance/type/status/artifact)。 */
+export interface RuntimeCreatedEventData {
+  instance_id: string | null;
+  type: string | null;
+  status: string | null;
+  artifact_id: string | null;
+  project_id: string | null;
+}
+
+/** S10-002: runtime.status.changed 事件载荷 (状态流转)。 */
+export interface RuntimeStatusChangedEventData {
+  instance_id: string | null;
+  status: string | null;
+  previous_status: string | null;
 }
 
 /** 规范 8 阶段链 (与后端 WORKFLOW_TEMPLATE 同源; 前端标签/占位映射)。 */

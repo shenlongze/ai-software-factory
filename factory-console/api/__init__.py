@@ -23,14 +23,26 @@ from .intelligence import list_experience, list_recommendations
 from .lifecycle import get_project_lifecycle
 from .projects import list_projects
 from .providers import list_providers
+from .runtime import (
+    SSE_EVENT_MAP,
+    get_project_timeline,
+    get_project_workflow,
+    get_workflow_stages,
+    iter_sse_events,
+)
 from .workflows import get_workflow, list_workflows
 
 __all__ = [
+    "SSE_EVENT_MAP",
     "approve_approval",
     "get_artifact",
     "get_decision",
     "get_project_lifecycle",
+    "get_project_timeline",
+    "get_project_workflow",
     "get_workflow",
+    "get_workflow_stages",
+    "iter_sse_events",
     "list_approval_gates",
     "list_approvals",
     "list_artifacts",

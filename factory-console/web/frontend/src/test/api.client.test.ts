@@ -38,11 +38,15 @@ describe('api client — 只读契约 + S9-002 审批写面', () => {
       'decision',
       'experience',
       'lifecycle',
+      // S10-002: Runtime 查询 (只读 GET; SSE 在 runtimeClient)
+      'projectTimeline',
+      'projectWorkflow',
       'projects',
       'providers',
       'recommendations',
       'rejectApproval',
       'workflow',
+      'workflowStages',
       'workflows',
     ]);
     // Permission Boundary: 写方法仅 approve/reject 两 POST (无 put/patch/delete)

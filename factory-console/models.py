@@ -35,7 +35,7 @@ GET /providers → ProviderSummary。
 
 from __future__ import annotations
 
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -350,6 +350,111 @@ class WorkflowDetail(BaseModel):
     stages: list[StageSummary] = Field(default_factory=list)
     pending_approvals: list[ApprovalGateSummary] = Field(default_factory=list)
     template: list[str] = Field(default_factory=list)
+    # S10-002: mock fallback 标记 (数据缺失 → mock 数据, 明确标注不冒充真实)
+    is_mock: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json")
+
+
+class StageRunSummary(BaseModel):
+    """GET /workflows/{id}/stages — 阶段运行明细 (S10-002 Runtime API)。
+
+    Task 面板数据源: 每阶段状态/agent/artifacts/duration/cost 一次装配。
+
+    agent_id: 执行 Agent (org 无独立 Agent 实体 — 阶段由 role_id 对应角色
+    执行, 诚实投影: agent_id = role_id); artifacts: 输出产物摘要 (无 → []);
+    duration_s: 从事件流推导 (org.workflow.stage_started → stage_completed
+    时间戳差, 缺任一端 → None — 不臆造); cost_usd: org 未跟踪成本 → None
+    (诚实 null, 前端显示 \"—\"; 仅 mock 数据带示例值)。
+    """
+
+    id: str
+    workflow_id: str = ""
+    role_id: str = ""
+    name: str = ""
+    order: int = 1
+    status: str = "pending"
+    agent_id: str | None = None
+    duration_s: float | None = None
+    cost_usd: float | None = None
+    started_at: str | None = None
+    completed_at: str | None = None
+    depends_on: list[str] = Field(default_factory=list)
+    input_artifacts: list[str] = Field(default_factory=list)
+    output_artifacts: list[str] = Field(default_factory=list)
+    artifacts: list[ArtifactSummary] = Field(default_factory=list)
+
+    @field_validator(
+        "depends_on", "input_artifacts", "output_artifacts", "artifacts", mode="before"
+    )
+    @classmethod
+    def _coerce_lists(cls, v: Any) -> list[Any]:
+        return v if v is not None else []
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json")
+
+
+class TimelineEventSummary(BaseModel):
+    """GET /projects/{id}/timeline — Timeline 事件节点 (S10-002 Runtime API)。
+
+    从事件流 (events.db) 按 project_id 聚合映射 (Agent Timeline 数据源);
+    与 SSE /api/events/stream 同源同映射 — Timeline 是历史快照, SSE 是增量。
+
+    type: user|stage|artifact|review|error (api-data-model §1 TimelineEvent);
+    event_type: 原始事件类型 (org.workflow.stage_completed 等 — 可追溯锚点);
+    stage_id/agent_id/artifact_id/gate_id: 从 payload 提取的关联维度
+    (无 → None); message: 人类可读摘要; status: 事件 result/stage 状态。
+    """
+
+    id: str
+    seq: int = 0
+    project_id: str = ""
+    type: str = "stage"
+    event_type: str = ""
+    stage_id: str | None = None
+    agent_id: str | None = None
+    artifact_id: str | None = None
+    gate_id: str | None = None
+    message: str = ""
+    status: str | None = None
+    payload: dict[str, Any] = Field(default_factory=dict)
+    created_at: str | None = None
+
+    @field_validator("payload", mode="before")
+    @classmethod
+    def _payload_none(cls, v: Any) -> Any:
+        return v if v is not None else {}
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json")
+
+
+class RuntimeInstance(BaseModel):
+    """S10-002 Runtime Instance 基础模型 (只建模型, 不实现 Browser/Terminal)。
+
+    对应 workspace-architecture.md §4 (S10-004 调整版) 的 Runtime Instance
+    数据模型 — 前端 Runtime Tab (S10-004) 与后端 Runtime 服务的共享契约。
+
+    本 Sprint 只落模型 + SSE 事件契约 (runtime.created / runtime.status.changed),
+    不实现实例创建/生命周期/截图 (Browser/Terminal 由 S10-004 实现, 该服务
+    发射 org.runtime.* 事件 → SSE_EVENT_MAP 同映射)。
+
+    type: browser|terminal (沙箱实例类型); status: starting|running|stopped|
+    error (生命周期状态机); artifact_id: 绑定产物 (browser 预览 ux_ui/code/
+    release 对应产物, 无 → None); url: browser 预览地址 / session: terminal
+    会话标识 (按 type 二选一, 未就绪 → None); created_at: UTC 时间戳。
+    """
+
+    id: str
+    project_id: str = ""
+    type: Literal["browser", "terminal"] = "browser"
+    status: Literal["starting", "running", "stopped", "error"] = "starting"
+    artifact_id: str | None = None
+    url: str | None = None
+    session: str | None = None
+    created_at: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return self.model_dump(mode="json")
@@ -686,7 +791,10 @@ __all__ = [
     "ProjectSummary",
     "ProviderSummary",
     "RecommendationSummary",
+    "RuntimeInstance",
+    "StageRunSummary",
     "StageSummary",
+    "TimelineEventSummary",
     "WorkflowDetail",
     "WorkflowSummary",
 ]

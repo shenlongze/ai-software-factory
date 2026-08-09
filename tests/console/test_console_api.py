@@ -117,13 +117,17 @@ service_template = ("Idea", "PM", "Product", "UX/UI", "Architecture", "Developme
 
 class TestRouteExports:
     def test_route_modules_exported(self):
-        """api/ 暴露全部路由函数 (S9-003: 14 个 — 新增 get_artifact 详情)。"""
+        """api/ 暴露全部路由函数 (S10-002: 18 个 — 新增 runtime 4 个)。"""
         expected = {
             "approve_approval",
             "get_artifact",
             "get_decision",
             "get_project_lifecycle",
+            "get_project_timeline",
+            "get_project_workflow",
             "get_workflow",
+            "get_workflow_stages",
+            "iter_sse_events",
             "list_approval_gates",
             "list_approvals",
             "list_artifacts",
@@ -133,6 +137,7 @@ class TestRouteExports:
             "list_recommendations",
             "list_workflows",
             "reject_approval",
+            "SSE_EVENT_MAP",
         }
         assert set(_api.__all__) == expected
         for name in expected:

@@ -22,6 +22,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
 from .models import (
@@ -41,7 +42,9 @@ from .models import (
     ProjectSummary,
     ProviderSummary,
     RecommendationSummary,
+    StageRunSummary,
     StageSummary,
+    TimelineEventSummary,
     WorkflowDetail,
     WorkflowSummary,
 )
@@ -60,6 +63,43 @@ WORKFLOW_TEMPLATE: tuple[str, ...] = (
     "Development",
     "Test",
     "Release",
+)
+
+#: Timeline 事件类型映射 (S10-002 — events.db org.* 事件 → Timeline 节点 type)。
+#: 只聚合 org.* 运行事件 (user/stage/artifact/review/error 五类), 其余事件
+#: (console.viewed 等审计事件) 不进 Timeline (KISS: Timeline 是运行视图)。
+TIMELINE_TYPES: dict[str, tuple[str, str]] = {
+    "org.project.created": ("user", "项目创建"),
+    "org.project.registered": ("user", "项目注册"),
+    "org.project.lifecycle_changed": ("user", "生命周期流转"),
+    "org.workflow.created": ("stage", "工作流创建"),
+    "org.workflow.started": ("stage", "工作流启动"),
+    "org.workflow.stage_ready": ("stage", "阶段就绪"),
+    "org.workflow.stage_started": ("stage", "阶段开始"),
+    "org.workflow.stage_completed": ("stage", "阶段完成"),
+    "org.workflow.completed": ("stage", "工作流完成"),
+    "org.workflow.failed": ("error", "工作流失败"),
+    "org.artifact.created": ("artifact", "产物生成"),
+    "org.artifact.updated": ("artifact", "产物更新"),
+    "org.artifact.validated": ("artifact", "产物验证通过"),
+    "org.artifact.consumed": ("artifact", "产物被消费"),
+    "org.artifact.archived": ("artifact", "产物归档"),
+    "org.artifact.failed": ("error", "产物契约失败"),
+    "org.approval.created": ("review", "审批待处理"),
+    "org.approval.approved": ("review", "审批通过"),
+    "org.approval.rejected": ("review", "审批驳回"),
+}
+
+#: mock fallback 阶段链 (S10-002 — 形状对齐前端 mock/workspace.ts MOCK_PROJECTS:
+#: Product→UX/UI→Architecture→Code→Test→Release; 状态沿用设计 token 语义)。
+MOCK_STAGE_CHAIN: tuple[tuple[str, str, str, str], ...] = (
+    # (role_id, name, status, artifact_type)
+    ("product-manager", "Product", "completed", "product"),
+    ("ui-designer", "UX/UI", "completed", "ux_ui"),
+    ("architect", "Architecture", "waiting_review", "design"),
+    ("developer", "Code", "pending", "code"),
+    ("tester", "Test", "pending", "test"),
+    ("devops", "Release", "pending", "release"),
 )
 
 
@@ -291,6 +331,267 @@ class ConsoleService:
             stages=stage_summaries,
             pending_approvals=[self._gate_summary(g) for g in gates],
             template=list(WORKFLOW_TEMPLATE),
+        )
+
+    # ------------------------------------------------ S10-002: Runtime API
+    # Adapter 层 (UI 与 CLI 共用): 只消费 org.* 查询 + events 流, 零 Core 修改。
+
+    def project_exists(self, project_id: str) -> bool:
+        """项目存在性 (org 项目 ∪ workspace 定义; 失败安全 → False)。
+
+        Runtime 端点的 404 语义依据: 项目不存在 → 404; 项目存在但无运行
+        数据 → mock fallback (is_mock=True, 前端可展示不崩溃)。
+        """
+        for project in self._org_projects():
+            if project.id == project_id:
+                return True
+        for definition in self._project_definitions():
+            if definition.id == project_id:
+                return True
+        return False
+
+    def get_project_workflow(self, project_id: str) -> WorkflowDetail | None:
+        """项目当前 (最近) Workflow 详情; 无 org/无 workflow → None。
+
+        复用 _workflows_by_project (created_at 升序遍历, 后写覆盖 = 最新
+        运行); 404 语义由调用方定; mock fallback (is_mock=True) 由 api 层
+        在项目存在但无 workflow 时提供 (诚实标注, 不冒充真实)。
+        """
+        workflow = self._workflows_by_project().get(project_id)
+        if workflow is None:
+            return None
+        return self.get_workflow(workflow.id)
+
+    def get_workflow_stage_runs(
+        self, workflow_id: str, *, event_logger: Any = None
+    ) -> list[StageRunSummary] | None:
+        """GET /workflows/{id}/stages — 阶段运行明细 (状态/agent/artifacts/
+        duration/cost); 无 org/不存在 → None (404 语义由调用方定)。
+
+        - agent_id: org 无独立 Agent 实体 — 阶段由 role_id 角色执行,
+          诚实投影 agent_id = role_id (Task 面板 Agent 列)
+        - duration_s: 从事件流推导 (stage_started → stage_completed 时间戳差;
+          缺任一端 → None, 不臆造)
+        - cost_usd: org 未跟踪成本 → None (诚实 null; 仅 mock 数据带示例值)
+        - artifacts: 输出产物摘要 (output_artifacts + artifact_ref 去重)
+        """
+        lifecycle = self._workflow_lifecycle()
+        if lifecycle is None:
+            return None
+        try:
+            workflow = lifecycle.get_workflow(workflow_id)
+        except Exception:
+            return None  # 不存在/损坏 → None (失败安全)
+        stages = self._stages_of(workflow.id)
+        started_at, completed_at = self._stage_event_times(
+            workflow.project_id, event_logger=event_logger
+        )
+        out: list[StageRunSummary] = []
+        for stage in stages:
+            artifacts: list[ArtifactSummary] = []
+            artifact_ids = list(stage.output_artifacts or [])
+            if stage.artifact_ref and stage.artifact_ref not in artifact_ids:
+                artifact_ids.append(stage.artifact_ref)
+            for artifact_id in artifact_ids:
+                found = lifecycle.store.get_artifact(artifact_id)
+                if found is not None:
+                    artifacts.append(self._artifact_summary(found, stage.workflow_id))
+            duration_s: float | None = None
+            if stage.id in started_at and stage.id in completed_at:
+                duration_s = round(
+                    (completed_at[stage.id] - started_at[stage.id]).total_seconds(), 3
+                )
+            out.append(
+                StageRunSummary(
+                    id=stage.id,
+                    workflow_id=stage.workflow_id,
+                    role_id=stage.role_id,
+                    name=stage.name,
+                    order=stage.order,
+                    status=stage.status.value,
+                    agent_id=stage.role_id,
+                    duration_s=duration_s,
+                    cost_usd=None,  # org 未跟踪成本 — 诚实 null (mock 才带示例值)
+                    started_at=_dt_str(started_at.get(stage.id)),
+                    completed_at=_dt_str(completed_at.get(stage.id)),
+                    depends_on=list(stage.depends_on or []),
+                    input_artifacts=list(stage.input_artifacts or []),
+                    output_artifacts=list(stage.output_artifacts or []),
+                    artifacts=artifacts,
+                )
+            )
+        return out
+
+    def get_project_timeline(
+        self,
+        project_id: str,
+        *,
+        event_logger: Any = None,
+        limit: int = 200,
+    ) -> list[TimelineEventSummary] | None:
+        """GET /projects/{id}/timeline — Timeline 事件聚合 (user/stage/
+        artifact/review/error 五类节点)。
+
+        数据源: events.db 按 project_id 过滤的 org.* 运行事件 (与 SSE
+        /api/events/stream 同源同映射 — Timeline = 历史快照, SSE = 增量);
+        项目不存在 → None (404 语义); 无事件 → [] (诚实空态, 前端空态展示)。
+        """
+        if not self.project_exists(project_id):
+            return None
+        store = getattr(event_logger, "store", None) if event_logger is not None else None
+        if store is None:
+            return []  # 无事件库 → 空 (失败安全)
+        try:
+            events = store.query(project_id=project_id)
+        except Exception:
+            return []  # 事件库损坏 → 空 (失败安全)
+        mapped: list[TimelineEventSummary] = []
+        for event in events:
+            summary = self._timeline_summary(event)
+            if summary is not None:
+                mapped.append(summary)
+        return mapped[-max(limit, 0):]
+
+    def build_mock_workflow(self, project_id: str) -> WorkflowDetail:
+        """mock fallback (S10-002): 项目存在但无运行数据 → is_mock=True 详情。
+
+        形状对齐前端 mock/workspace.ts MOCK_PROJECTS (Product→UX/UI→
+        Architecture→Code→Test→Release, Architecture 待审核); 示例
+        duration/cost 仅 mock 数据携带 — 真实数据 cost 恒 None (诚实边界:
+        mock 明确标注 is_mock, 前端据此显示演示标识)。
+        """
+        org_names = {p.id: p.name for p in self._org_projects()}
+        workspace_names = {p.id: p.name for p in self._project_definitions()}
+        name = org_names.get(project_id) or workspace_names.get(project_id) or project_id
+        now_iso = _dt_str(datetime.now(timezone.utc))
+        stages: list[StageSummary] = []
+        for order, (role_id, label, status, artifact_type) in enumerate(
+            MOCK_STAGE_CHAIN, start=1
+        ):
+            artifact = None
+            if status == "completed":
+                artifact = ArtifactSummary(
+                    id=f"mock-art-{role_id}",
+                    stage_id=f"mock-{role_id}",
+                    workflow_id=f"mock-wf-{project_id}",
+                    project_id=project_id,
+                    type=artifact_type,
+                    ref=f"mock://{artifact_type}",
+                    status="validated",
+                    producer_role=role_id,
+                    created_at=now_iso,
+                    updated_at=now_iso,
+                )
+            stages.append(
+                StageSummary(
+                    id=f"mock-{role_id}",
+                    workflow_id=f"mock-wf-{project_id}",
+                    role_id=role_id,
+                    name=label,
+                    order=order,
+                    status=status,
+                    depends_on=[
+                        prev for prev, *_ in MOCK_STAGE_CHAIN[: order - 1]
+                    ],
+                    artifact=artifact,
+                    approval_required=(status == "waiting_review"),
+                )
+            )
+        return WorkflowDetail(
+            id=f"mock-wf-{project_id}",
+            project_id=project_id,
+            project_name=name,
+            name="Mock Workflow (演示数据)",
+            status="active",
+            created_at=now_iso,
+            started_at=now_iso,
+            stages=stages,
+            pending_approvals=[
+                ApprovalGateSummary(
+                    id="mock-gate-arch",
+                    stage_id="mock-architect",
+                    workflow_id=f"mock-wf-{project_id}",
+                    project_id=project_id,
+                    status="pending",
+                    requested_at=now_iso,
+                )
+            ],
+            template=list(WORKFLOW_TEMPLATE),
+            is_mock=True,
+        )
+
+    def _stage_event_times(
+        self,
+        project_id: str,
+        *,
+        event_logger: Any = None,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """从事件流推导阶段 started/completed 时间戳 (S10-002 duration 数据源)。
+
+        查询 org.workflow.stage_started / stage_completed 事件 (project_id
+        维度), 按 payload.stage_id 归组: started 取首个 (setdefault — 重试
+        场景保留首次开始), completed 取最近 (后写覆盖); 无事件库/损坏 →
+        空映射 (duration=None, 诚实不臆造)。
+        """
+        store = getattr(event_logger, "store", None) if event_logger is not None else None
+        started_at: dict[str, Any] = {}
+        completed_at: dict[str, Any] = {}
+        if store is None:
+            return started_at, completed_at
+        try:
+            from events.models import EventType
+
+            started_events = store.query(
+                project_id=project_id, event_type=EventType.ORG_WORKFLOW_STAGE_STARTED
+            )
+            completed_events = store.query(
+                project_id=project_id, event_type=EventType.ORG_WORKFLOW_STAGE_COMPLETED
+            )
+        except Exception:
+            return started_at, completed_at  # 事件库损坏 → 空 (失败安全)
+        for event in started_events:
+            stage_id = (event.payload or {}).get("stage_id")
+            if stage_id:
+                started_at.setdefault(stage_id, event.timestamp)
+        for event in completed_events:
+            stage_id = (event.payload or {}).get("stage_id")
+            if stage_id:
+                completed_at[stage_id] = event.timestamp
+        return started_at, completed_at
+
+    def _timeline_summary(self, event: Any) -> TimelineEventSummary | None:
+        """Event → TimelineEventSummary (TIMELINE_TYPES 映射; 未知类型 → None)。
+
+        五类节点: user (项目创建/注册) / stage (workflow 流转) / artifact
+        (产物生命周期) / review (审批门) / error (失败)。审计事件
+        (console.viewed 等) 不在映射 → None (不进 Timeline, 运行视图纯净)。
+        """
+        event_type = (
+            event.type.value if hasattr(event.type, "value") else str(event.type)
+        )
+        mapping = TIMELINE_TYPES.get(event_type)
+        if mapping is None:
+            return None
+        timeline_type, verb = mapping
+        payload = dict(event.payload or {})
+        name = payload.get("name") or ""
+        detail = f" {name}" if name else ""
+        if timeline_type == "error" and payload.get("reason"):
+            detail = f": {payload['reason']}"  # 失败原因入 message (可读摘要)
+        return TimelineEventSummary(
+            id=f"evt-{event.seq}",
+            seq=event.seq,
+            project_id=event.project_id or "",
+            type=timeline_type,
+            event_type=event_type,
+            stage_id=payload.get("stage_id"),
+            agent_id=payload.get("role_id") or event.agent_id,
+            artifact_id=payload.get("artifact_id"),
+            gate_id=payload.get("gate_id"),
+            message=f"{verb}{detail}",
+            status=event.result or event.stage,
+            payload=payload,
+            created_at=_dt_str(event.timestamp),
         )
 
     def list_artifacts(

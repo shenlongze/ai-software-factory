@@ -6,25 +6,30 @@
  * - POST 仅两个审批决定端点 (/api/approvals/{id}/approve|reject) — 由
  *   Approval 页操作按钮触发; 其余一切写路径 (register_project/成本等)
  *   不在 Console 范围 (S9-005/后续)。
+ * - S10-002: Runtime 查询 (projectWorkflow/workflowStages/projectTimeline,
+ *   只读 GET) + SSE 事件流 — SSE 封装在 runtimeClient.subscribeEvents
+ *   (断线重连 + mock 检测), 本文件只保留 REST 查询。
  *
  * fetch 直接调用 → 组件测试用 vi.stubGlobal('fetch', ...) 注入桩。
  */
 
-import type {
-  ApprovalDecisionSummary,
-  ApprovalGateSummary,
-  ApprovalSummary,
-  ArtifactDetail,
-  ArtifactSummary,
-  ConsoleDashboard,
-  DecisionSummary,
-  ExperienceSummary,
-  LifecycleSummary,
-  ProjectSummary,
-  ProviderSummary,
-  RecommendationSummary,
-  WorkflowDetail,
-  WorkflowSummary,
+import {
+  type ApprovalDecisionSummary,
+  type ApprovalGateSummary,
+  type ApprovalSummary,
+  type ArtifactDetail,
+  type ArtifactSummary,
+  type ConsoleDashboard,
+  type DecisionSummary,
+  type ExperienceSummary,
+  type LifecycleSummary,
+  type ProjectSummary,
+  type ProviderSummary,
+  type RecommendationSummary,
+  type StageRunSummary,
+  type TimelineEventSummary,
+  type WorkflowDetail,
+  type WorkflowSummary,
 } from '../models/types';
 
 export class ApiError extends Error {
@@ -110,6 +115,35 @@ export const api = {
   // S9-003: 单产物详情 (Review 数据源: metadata 契约载荷 + review 审批门)
   artifact: (artifactId: string) =>
     getJson<ArtifactDetail>(`/api/artifacts/${encodeURIComponent(artifactId)}`),
+  // S10-002: Runtime API (UI 与 CLI 共用; 全部只读 GET)
+  projectWorkflow: (projectId: string) =>
+    getJson<WorkflowDetail>(`/api/projects/${encodeURIComponent(projectId)}/workflow`),
+  workflowStages: (workflowId: string) =>
+    getJson<StageRunSummary[]>(`/api/workflows/${encodeURIComponent(workflowId)}/stages`),
+  projectTimeline: (projectId: string, limit = 200) =>
+    getJson<TimelineEventSummary[]>(
+      `/api/projects/${encodeURIComponent(projectId)}/timeline?limit=${limit}`,
+    ),
 } as const;
 
 export type Api = typeof api;
+
+/** mock fallback (S10-002): 请求失败 (404/网络) → mock 数据 (is_mock 标记)。
+
+ * 只兜底 ApiError (后端不可达/数据缺失), 其他异常照抛; mock 数据必须携带
+ * is_mock: true — 前端据此显示演示标识, 不冒充真实数据。
+ */
+export async function withMockFallback<T>(
+  request: () => Promise<T>,
+  mock: T & { is_mock: true },
+): Promise<T & { is_mock: boolean }> {
+  try {
+    const data = await request();
+    return { ...data, is_mock: (data as { is_mock?: boolean }).is_mock ?? false };
+  } catch (err) {
+    if (err instanceof ApiError) {
+      return mock;
+    }
+    throw err;
+  }
+}

@@ -46,7 +46,7 @@ from __future__ import annotations
 import importlib
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from pydantic import BaseModel
 
@@ -164,6 +164,7 @@ def build_app(
     static_dir 存在 → 挂 SPA 静态托管 (html=True); 否则纯 API 模式。
     """
     from fastapi import FastAPI, HTTPException, Query
+    from fastapi.responses import StreamingResponse
     from fastapi.staticfiles import StaticFiles
 
     # 延迟 import 11A 路由函数 + 事件辅助 (仅依赖 factory-console.api, 无 Web 依赖)
@@ -301,6 +302,84 @@ def build_app(
         if detail is None:
             raise HTTPException(status_code=404, detail="artifact not found")
         return detail.to_dict()
+
+    # ------------------------------------------------- S10-002: Runtime API
+    # UI 与 CLI 共用 (Adapter 层只读 + SSE; 零 Core 修改, 只消费 org.* 查询)。
+
+    @app.get("/api/projects/{project_id}/workflow")
+    def api_project_workflow(project_id: str) -> dict[str, Any]:
+        """项目工作流详情 (S10-002 — 8 阶段链 + 统计)。
+
+        项目存在但无运行数据 → mock 工作流 (is_mock=True, 前端可展示);
+        项目不存在 → 404 (mock 只兜底数据缺失, 不兜底不存在)。
+        """
+        detail = _api.get_project_workflow(service, project_id, logger=event_logger)
+        if detail is None:
+            raise HTTPException(status_code=404, detail="project not found")
+        return detail.to_dict()
+
+    @app.get("/api/workflows/{workflow_id}/stages")
+    def api_workflow_stages(workflow_id: str) -> list[dict[str, Any]]:
+        """Workflow 阶段运行明细 (S10-002 — 状态/agent/artifacts/duration/cost)。
+
+        duration_s 从事件流推导 (stage_started → stage_completed 时间戳差);
+        cost_usd 未跟踪 → null (诚实); 无 org/不存在 → 404。
+        """
+        runs = _api.get_workflow_stages(service, workflow_id, logger=event_logger)
+        if runs is None:
+            raise HTTPException(status_code=404, detail="workflow not found")
+        return [r.to_dict() for r in runs]
+
+    @app.get("/api/projects/{project_id}/timeline")
+    def api_project_timeline(
+        project_id: str,
+        limit: int = Query(default=200, ge=1, le=1000),
+    ) -> list[dict[str, Any]]:
+        """Timeline 事件聚合 (S10-002 — user/stage/artifact/review/error)。
+
+        数据源 = events.db org.* 事件 (与 SSE 同源同映射; Timeline 历史
+        快照); 项目不存在 → 404; 无事件 → [] (诚实空态)。
+        """
+        events = _api.get_project_timeline(
+            service, project_id, logger=event_logger, limit=limit
+        )
+        if events is None:
+            raise HTTPException(status_code=404, detail="project not found")
+        return [e.to_dict() for e in events]
+
+    @app.get("/api/events/stream")
+    def api_events_stream(
+        project_id: str,
+        since_seq: int = Query(default=0, ge=0),
+        poll_interval: float = Query(default=1.0, ge=0.05),
+        max_polls: int | None = Query(default=None, ge=1),
+    ) -> StreamingResponse:
+        """SSE 事件流 (S10-002 — Timeline 实时增量驱动; 只读 GET)。
+
+        推送: stage.started / stage.completed / artifact.created /
+        approval.required / error (SSE_EVENT_MAP); 从 events 库按
+        project_id 轮询 (since_seq 断点续推); 无事件库 → 单条 error
+        (mock=True) 后关闭 (失败安全)。max_polls/poll_interval 为
+        测试/调试旋钮 (生产缺省: 无限轮询至客户端断开)。
+        """
+        import json
+
+        def _generate() -> Iterator[str]:
+            for name, data in _api.iter_sse_events(
+                service,
+                project_id,
+                logger=event_logger,
+                since_seq=since_seq,
+                poll_interval=poll_interval,
+                max_polls=max_polls,
+            ):
+                yield f"event: {name}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+        return StreamingResponse(
+            _generate(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
 
     @app.post("/api/approvals/{approval_id}/approve")
     def api_approve_approval(

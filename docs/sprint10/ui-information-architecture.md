@@ -1,7 +1,7 @@
 # Sprint 10 — UI 信息架构: 三栏工作台
 
 > 日期: 2026-08-10 | 状态: 设计 (ONLY DESIGN)
-> 参考: Cursor/TRAE/Windsurf 布局 + Figma Review 交互
+> 参考: Cursor/TRAE/Windsurf 布局 + Figma Review 交互 + DevTools
 
 ## 1. 页面路由
 

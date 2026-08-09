@@ -1,0 +1,55 @@
+{
+  "project_analyses": {
+    "PA-444ef88f": {
+      "id": "PA-444ef88f",
+      "project_id": "P-S9-DEVTOOLBOX",
+      "payload": {
+        "language": "javascript",
+        "framework": "",
+        "structure": [
+          {
+            "path": "(root)",
+            "responsibility": "业务模块 (根目录文件)",
+            "file_count": 52
+          },
+          {
+            "path": "css",
+            "responsibility": "业务模块",
+            "file_count": 1
+          },
+          {
+            "path": "icons",
+            "responsibility": "业务模块",
+            "file_count": 2
+          },
+          {
+            "path": "js",
+            "responsibility": "业务模块",
+            "file_count": 38
+          }
+        ],
+        "dependencies": {
+          "edge_count": 0,
+          "file_count": 93,
+          "top_dependents": [],
+          "languages": [
+            "html",
+            "javascript",
+            "text",
+            "markdown",
+            "css",
+            "shell",
+            "python",
+            "json",
+            "xml"
+          ]
+        },
+        "build_method": "unknown",
+        "test_method": "unknown"
+      },
+      "valid": true,
+      "errors": [],
+      "created_at": "2026-08-09T05:05:28.780435Z"
+    }
+  }
+}

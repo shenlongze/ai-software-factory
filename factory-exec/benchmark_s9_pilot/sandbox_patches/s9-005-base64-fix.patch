@@ -1,0 +1,110 @@
+diff --git a/js/tools/base64.js b/js/tools/base64.js
+index c3fb82a..65157af 100644
+--- a/js/tools/base64.js
++++ b/js/tools/base64.js
+@@ -14,7 +14,7 @@ const base64Tool = {
+       </div>
+       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">
+         <span style="font-size:13px;color:var(--text-muted);font-weight:600;">Mode:</span>
+-        <label class="checkbox-label" style="padding:4px 12px;"><input type="radio" name="b64-mode" value="encode" checked onchange="base64Tool._auto()"> Encode</label>
++        <label class="checkbox-label" style="padding:4px 12px;"><input type="radio" id="b64-mode" name="b64-mode" value="encode" checked onchange="base64Tool._auto()"> Encode</label>
+         <label class="checkbox-label" style="padding:4px 12px;"><input type="radio" name="b64-mode" value="decode" onchange="base64Tool._auto()"> Decode</label>
+       </div>
+       <div class="output-area" id="b64-output"></div>
+@@ -53,9 +53,9 @@ const base64Tool = {
+     }
+   },
+   clear() {
+-    document.getElementById('base-input').value = '';
+-    document.getElementById('base-output').value = '';
+-    document.getElementById('base-mode').checked = false;
++    document.getElementById('b64-input').value = '';
++    document.getElementById('b64-output').textContent = '';
++    document.getElementById('b64-mode').checked = true;
+     this._updateStats();
+   },
+ 
+@@ -74,7 +74,7 @@ const base64Tool = {
+     el.style.color = 'var(--success)';
+     setTimeout(() => el.style.color = '', 1000);
+   },
+-example() {
+-    return { '#base-input': 'Hello World! 你好，世界！' };
++  example() {
++    return { '#b64-input': 'Hello World! 你好，世界！' };
+   },
+ };
+diff --git a/tests/tool_checks.py b/tests/tool_checks.py
+new file mode 100644
+index 0000000..d4f159f
+--- /dev/null
++++ b/tests/tool_checks.py
+@@ -0,0 +1,68 @@
++#!/usr/bin/env python3
++"""DevToolBox base64.js 修复验证 (S9-005 确定性测试, 非 LLM)。
++
++检查项:
++1. js/tools/base64.js 存在;
++2. node --check 语法通过;
++3. bug 修复正确性 (S9-005 缺陷断言):
++   - clear() 不再引用不存在的 'base-input'/'base-output'/'base-mode';
++   - clear() 引用正确的 'b64-input'/'b64-output'/'b64-mode';
++   - example() 返回键为 '#b64-input';
++4. 回归: js/tools/ 全部工具 JS 语法通过。
++"""
++import subprocess
++import sys
++from pathlib import Path
++
++root = Path(__file__).resolve().parent.parent
++failures: list[str] = []
++
++
++def check(name: str, ok: bool, detail: str = "") -> None:
++    print(f"[{'PASS' if ok else 'FAIL'}] {name}" + (f" — {detail}" if detail else ""))
++    if not ok:
++        failures.append(name)
++
++
++def node_check(rel: str) -> bool:
++    path = root / rel
++    try:
++        proc = subprocess.run(["node", "--check", str(path)],
++                              capture_output=True, text=True, timeout=30)
++        return proc.returncode == 0
++    except FileNotFoundError:
++        check(f"{rel} node syntax", False, "node not found")
++        return False
++
++
++# 1. 目标文件存在
++target = root / "js" / "tools" / "base64.js"
++check("js/tools/base64.js exists", target.is_file())
++if not target.is_file():
++    print("\nRESULT: 1 failure(s)")
++    sys.exit(1)
++
++src = target.read_text(encoding="utf-8")
++
++# 2. 语法
++check("base64.js node syntax", node_check("js/tools/base64.js"))
++
++# 3. bug 修复断言
++check("no stale 'base-input' ref", "getElementById('base-input')" not in src)
++check("no stale 'base-output' ref", "getElementById('base-output')" not in src)
++check("no stale 'base-mode' ref", "getElementById('base-mode')" not in src)
++check("clear() uses b64-input", "getElementById('b64-input')" in src)
++check("clear() uses b64-output", "getElementById('b64-output')" in src)
++check("clear() uses b64-mode", "getElementById('b64-mode')" in src)
++check("example() key is #b64-input", "'#b64-input'" in src)
++
++# 4. 回归: 全部工具 JS 语法
++tools_dir = root / "js" / "tools"
++if tools_dir.is_dir():
++    for js in sorted(tools_dir.glob("*.js")):
++        rel = f"js/tools/{js.name}"
++        if not node_check(rel):
++            check(f"{rel} node syntax", False)
++
++print(f"\nRESULT: {len(failures)} failure(s)")
++sys.exit(1 if failures else 0)

@@ -1,0 +1,22 @@
+{
+  "projects": {
+    "P-S9-DEVTOOLBOX": {
+      "id": "P-S9-DEVTOOLBOX",
+      "name": "DevToolBox",
+      "user_id": "s9-005-pilot",
+      "goal": "S9-005 Real Project Pilot: 已有项目接入 → 沙箱 bug 修复 → 发布 (人工审批)",
+      "lifecycle": "idea",
+      "repo_path": "/Users/agentdev/devtoolbox",
+      "language": "javascript",
+      "framework": "",
+      "build_command": "",
+      "test_command": "",
+      "project_type": "static-web",
+      "analysis_ref": "PA-444ef88f",
+      "baseline_ref": "BL-eef64ea1",
+      "snapshot_ref": "CS-b15e83e3",
+      "created_at": "2026-08-09T05:05:28.692583Z",
+      "updated_at": "2026-08-09T05:05:28.848486Z"
+    }
+  }
+}

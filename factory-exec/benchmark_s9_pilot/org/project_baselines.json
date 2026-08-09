@@ -1,0 +1,28 @@
+{
+  "project_baselines": {
+    "BL-eef64ea1": {
+      "id": "BL-eef64ea1",
+      "project_id": "P-S9-DEVTOOLBOX",
+      "payload": {
+        "build": {
+          "status": "unavailable",
+          "command": "",
+          "returncode": null,
+          "output_head": "no build command; no syntax check fallback for language javascript"
+        },
+        "test": {
+          "status": "unavailable",
+          "command": "",
+          "returncode": null,
+          "output_head": "no test command",
+          "passed": 0,
+          "failed": 0
+        },
+        "analysis_ref": "PA-444ef88f"
+      },
+      "valid": true,
+      "errors": [],
+      "created_at": "2026-08-09T05:05:28.781145Z"
+    }
+  }
+}

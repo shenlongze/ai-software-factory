@@ -1,0 +1,415 @@
+{
+  "task": "S9-005 Real Project Pilot — DevToolBox",
+  "model": "deepseek-v4-pro",
+  "started_at": "2026-08-09T05:05:28+00:00",
+  "finished_at": "2026-08-09T05:06:47+00:00",
+  "final_workflow_status": "completed",
+  "adoption": {
+    "project": {
+      "id": "P-S9-DEVTOOLBOX",
+      "name": "DevToolBox",
+      "repo_path": "/Users/agentdev/devtoolbox",
+      "language": "javascript",
+      "framework": "",
+      "project_type": "static-web",
+      "analysis_ref": "PA-444ef88f",
+      "baseline_ref": "BL-eef64ea1",
+      "snapshot_ref": "CS-b15e83e3"
+    },
+    "analysis": {
+      "id": "PA-444ef88f",
+      "valid": true,
+      "errors": [],
+      "language": "javascript",
+      "framework": "",
+      "build_method": "unknown",
+      "test_method": "unknown",
+      "structure": [
+        {
+          "path": "(root)",
+          "responsibility": "业务模块 (根目录文件)",
+          "file_count": 52
+        },
+        {
+          "path": "css",
+          "responsibility": "业务模块",
+          "file_count": 1
+        },
+        {
+          "path": "icons",
+          "responsibility": "业务模块",
+          "file_count": 2
+        },
+        {
+          "path": "js",
+          "responsibility": "业务模块",
+          "file_count": 38
+        }
+      ],
+      "dependencies": {
+        "edge_count": 0,
+        "file_count": 93,
+        "top_dependents": [],
+        "languages": [
+          "html",
+          "javascript",
+          "text",
+          "markdown",
+          "css",
+          "shell",
+          "python",
+          "json",
+          "xml"
+        ]
+      }
+    },
+    "baseline": {
+      "id": "BL-eef64ea1",
+      "valid": true,
+      "errors": [],
+      "build": {
+        "status": "unavailable",
+        "command": "",
+        "returncode": null,
+        "output_head": "no build command; no syntax check fallback for language javascript"
+      },
+      "test": {
+        "status": "unavailable",
+        "command": "",
+        "returncode": null,
+        "output_head": "no test command",
+        "passed": 0,
+        "failed": 0
+      }
+    },
+    "snapshot": {
+      "id": "CS-b15e83e3",
+      "tree_entries": 60,
+      "important_count": 30,
+      "important_files": [
+        {
+          "path": "js/app.js",
+          "importance": "high",
+          "language": "javascript",
+          "line_count": 518
+        },
+        {
+          "path": "js/tools/json-formatter.js",
+          "importance": "medium",
+          "language": "javascript",
+          "line_count": 936
+        },
+        {
+          "path": "generate-seo-pages.py",
+          "importance": "medium",
+          "language": "python",
+          "line_count": 683
+        },
+        {
+          "path": "js/tools/markdown-editor.js",
+          "importance": "medium",
+          "language": "javascript",
+          "line_count": 371
+        },
+        {
+          "path": "js/tools/image-crop.js",
+          "importance": "medium",
+          "language": "javascript",
+          "line_count": 336
+        },
+        {
+          "path": "js/tools/json-csv.js",
+          "importance": "medium",
+          "language": "javascript",
+          "line_count": 313
+        },
+        {
+          "path": "js/tools/text-diff.js",
+          "importance": "medium",
+          "language": "javascript",
+          "line_count": 277
+        },
+        {
+          "path": "js/tools/merge-pdf.js",
+          "importance": "medium",
+          "language": "javascript",
+          "line_count": 257
+        },
+        {
+          "path": "js/tools/split-pdf.js",
+          "importance": "medium",
+          "language": "javascript",
+          "line_count": 242
+        },
+        {
+          "path": "js/tools/image-to-base64.js",
+          "importance": "medium",
+          "language": "javascript",
+          "line_count": 229
+        }
+      ],
+      "architecture": {
+        "entry_points": [
+          "index.html",
+          "js/app.js"
+        ],
+        "core_modules": [
+          "js"
+        ],
+        "tech_stack": [
+          "html",
+          "javascript",
+          "text",
+          "markdown",
+          "css",
+          "shell",
+          "python",
+          "json",
+          "xml"
+        ],
+        "risk_areas": [
+          {
+            "file": "generate-seo-pages.py",
+            "risk": "large_file",
+            "detail": "683 lines (>500) — 上下文预算/修改风险"
+          },
+          {
+            "file": "js/app.js",
+            "risk": "large_file",
+            "detail": "518 lines (>500) — 上下文预算/修改风险"
+          },
+          {
+            "file": "js/app.js",
+            "risk": "untested",
+            "detail": "no test mapping found — 修改后验证覆盖未知"
+          },
+          {
+            "file": "js/tools/json-formatter.js",
+            "risk": "large_file",
+            "detail": "936 lines (>500) — 上下文预算/修改风险"
+          }
+        ],
+        "summary_text": "93 files, 2 entry point(s), 1 core module(s), 4 risk area(s); languages: html, javascript, text, markdown, css, shell, python, json, xml"
+      },
+      "summary_text": "Project context for devtoolbox: 93 files, languages: html, javascript, text. 93 files, 2 entry point(s), 1 core module(s), 4 risk area(s); languages: html, javascript, text, markdown, css, shell, python, json, xml"
+    }
+  },
+  "bug_target": "js/tools/base64.js",
+  "task_text": "修复 DevToolBox 中 base64 工具 (js/tools/base64.js) 的一个真实 UI 缺陷: clear() 方法引用了不存在的 DOM 元素 id ('base-input'/'base-output'/'base-mode'), 而页面实际元素 id 为 'b64-input'/'b64-output'/'b64-mode' (textarea / output div / radio name) — 导致点击 Clear 按钮时 getElementById 返回 null 并抛出 TypeError, 清除功能完全失效; example() 方法返回的填充映射同样用了错误的 '#base-input' 键, 示例填充不生效。修复方法: 将 clear() 内 3 处 getElementById 的元素 id 和 example() 返回的对象键改为正确的 'b64-*' id, 保持其余逻辑不变。",
+  "stages": [
+    {
+      "workflow": "WF-S9-PILOT",
+      "stage": "development",
+      "role": "developer",
+      "calls": [
+        0
+      ],
+      "cost_usd_est": 0.003273,
+      "latency_s": 63.77,
+      "status": "COMPLETED",
+      "note": "files=1"
+    },
+    {
+      "workflow": "WF-S9-PILOT",
+      "stage": "testing",
+      "role": "tester",
+      "calls": [],
+      "cost_usd_est": 0.0,
+      "latency_s": 0.0,
+      "status": "COMPLETED",
+      "note": "passed=True bugs=0"
+    },
+    {
+      "workflow": "WF-S9-PILOT",
+      "stage": "release",
+      "role": "devops",
+      "calls": [
+        1
+      ],
+      "cost_usd_est": 0.000546,
+      "latency_s": 13.76,
+      "status": "COMPLETED",
+      "note": "version=1.0.1 package=devtoolbox-1.0.1.zip (234981B)"
+    }
+  ],
+  "calls": [
+    {
+      "model": "deepseek-v4-pro",
+      "max_tokens": 16384,
+      "usage": {
+        "prompt_tokens": 2125,
+        "completion_tokens": 6375,
+        "total_tokens": 8500,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 5758
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 2125,
+        "estimated_cost_usd": 0.003273
+      },
+      "latency_s": 63.77,
+      "ok": true,
+      "error": null,
+      "content_len": 1984,
+      "cost_usd_est": 0.003273
+    },
+    {
+      "model": "deepseek-v4-pro",
+      "max_tokens": 16384,
+      "usage": {
+        "prompt_tokens": 433,
+        "completion_tokens": 1012,
+        "total_tokens": 1445,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 844
+        },
+        "prompt_cache_hit_tokens": 0,
+        "prompt_cache_miss_tokens": 433,
+        "estimated_cost_usd": 0.000546
+      },
+      "latency_s": 13.76,
+      "ok": true,
+      "error": null,
+      "content_len": 409,
+      "cost_usd_est": 0.000546
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "A-S9-TASK",
+      "type": "idea",
+      "status": "validated",
+      "stage_id": "STG-S9-DEV",
+      "producer_role": "product-manager",
+      "ref": "file:///task.md",
+      "metadata_keys": [
+        "idea"
+      ]
+    },
+    {
+      "id": "A-S9-CODE",
+      "type": "code",
+      "status": "validated",
+      "stage_id": "STG-S9-DEV",
+      "producer_role": "developer",
+      "ref": "file:///sandbox/project",
+      "metadata_keys": [
+        "changes",
+        "diff_len",
+        "files",
+        "patch_head",
+        "project_dir"
+      ]
+    },
+    {
+      "id": "A-S9-TEST",
+      "type": "test",
+      "status": "validated",
+      "stage_id": "STG-S9-TEST",
+      "producer_role": "tester",
+      "ref": "file:///test_result.json",
+      "metadata_keys": [
+        "bugs",
+        "results"
+      ]
+    },
+    {
+      "id": "A-S9-RELEASE",
+      "type": "release",
+      "status": "validated",
+      "stage_id": "STG-S9-REL",
+      "producer_role": "devops",
+      "ref": "file:////Users/Shared/work/ai-software-factory/factory-exec/benchmark_s9_pilot/dist/devtoolbox-1.0.1.zip",
+      "metadata_keys": [
+        "artifact_refs",
+        "build_result",
+        "deployment",
+        "package",
+        "release_notes",
+        "version"
+      ]
+    }
+  ],
+  "approvals": [
+    {
+      "id": "AG-2e38ffd9",
+      "stage_id": "STG-S9-REL",
+      "workflow_id": "WF-S9-PILOT",
+      "status": "approved",
+      "reviewer": "s9-005-pilot",
+      "comment": "沙箱内测试通过 + 真实源零修改, 允许发布 (演示人工审批)"
+    }
+  ],
+  "events_by_type": {
+    "org.approval.approved": 1,
+    "org.approval.created": 1,
+    "org.artifact.created": 4,
+    "org.artifact.updated": 4,
+    "org.artifact.validated": 4,
+    "org.project.analyzed": 1,
+    "org.project.baseline_recorded": 1,
+    "org.project.context_snapshotted": 1,
+    "org.project.created": 1,
+    "org.project.registered": 1,
+    "org.stage.created": 3,
+    "org.workflow.completed": 1,
+    "org.workflow.created": 1,
+    "org.workflow.stage_completed": 3,
+    "org.workflow.stage_ready": 3,
+    "org.workflow.stage_started": 3,
+    "org.workflow.started": 2
+  },
+  "totals": {
+    "calls": 2,
+    "prompt_tokens": 2558,
+    "completion_tokens": 7387,
+    "total_tokens": 9945,
+    "cost_usd_est": 0.003819,
+    "wall_s": 79.4
+  },
+  "errors": [],
+  "acceptance": {
+    "artifact_chain_all_validated": true,
+    "artifact_statuses": {
+      "A-S9-TASK": "VALIDATED",
+      "A-S9-CODE": "VALIDATED",
+      "A-S9-TEST": "VALIDATED",
+      "A-S9-RELEASE": "VALIDATED"
+    },
+    "stages_all_completed": true,
+    "stage_statuses": {
+      "WF-S9-PILOT/development": "COMPLETED",
+      "WF-S9-PILOT/testing": "COMPLETED",
+      "WF-S9-PILOT/release": "COMPLETED"
+    },
+    "test_artifact_validated": false,
+    "sandbox_fix_no_stale_refs": true,
+    "sandbox_fix_has_b64_refs": true,
+    "sandbox_fix_example_key": true,
+    "sandbox_base64_syntax": true,
+    "source_project_unchanged": true,
+    "source_changed_files": [],
+    "release_zip_exists": true,
+    "release_zips": [
+      "devtoolbox-1.0.1.zip"
+    ],
+    "approval_gate_approved": true,
+    "approval_gates": [
+      {
+        "id": "AG-2e38ffd9",
+        "stage_id": "STG-S9-REL",
+        "workflow_id": "WF-S9-PILOT",
+        "status": "approved",
+        "reviewer": "s9-005-pilot",
+        "comment": "沙箱内测试通过 + 真实源零修改, 允许发布 (演示人工审批)"
+      }
+    ],
+    "all_pass": false
+  }
+}

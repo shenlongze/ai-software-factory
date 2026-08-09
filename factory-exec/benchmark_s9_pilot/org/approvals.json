@@ -1,0 +1,17 @@
+{
+  "approvals": {
+    "AG-2e38ffd9": {
+      "id": "AG-2e38ffd9",
+      "stage_id": "STG-S9-REL",
+      "workflow_id": "WF-S9-PILOT",
+      "status": "approved",
+      "reviewer": "s9-005-pilot",
+      "comment": "沙箱内测试通过 + 真实源零修改, 允许发布 (演示人工审批)",
+      "requested_at": "2026-08-09T05:06:47.845274Z",
+      "approved_at": "2026-08-09T05:06:47.846318Z",
+      "rejected_at": null,
+      "created_at": "2026-08-09T05:06:47.845275Z",
+      "updated_at": "2026-08-09T05:06:47.846317Z"
+    }
+  }
+}

@@ -6,11 +6,12 @@
 
 ```
 Sprint 10 — AI 软件生产工作台
+├── S10-000 Design System (新增: 颜色/字体/Button/Card/Timeline/Status Badge/Artifact Card/Agent Avatar/Modal)
 ├── S10-001 Workspace Shell (三栏 UI 框架: Explorer/Workspace/Panel)
 ├── S10-002 Factory Runtime API (Timeline/Monitor/SSE/Browser URL/Artifacts/Downloads)
-├── S10-003 Agent Timeline (中间核心: 事件流实时渲染 + 产物按钮)
-├── S10-004 Browser Runtime (右侧 Browser Tab: iframe 沙箱预览)
-├── S10-005 Artifact Center (Explorer + Artifact Tab: 6 类产物查看 + Renderer)
+├── S10-003 Agent Timeline (中间核心: 事件流实时渲染 + 产物按钮 + 底部持续开发输入)
+├── S10-004 Browser Runtime ⭐核心 (右侧 Browser Tab: iframe 沙箱预览 + 反馈 Loop)
+├── S10-005 Artifact Center (Explorer + Artifact Tab: 资产库式 6 类产物 + Renderer)
 ├── S10-006 Review Workflow (Review Tab + 页: PRD/UI/架构/发布审核闭环)
 └── S10-007 CLI MVP (统一 factory 命令, 与 UI 同 API)
 ```
@@ -23,11 +24,19 @@ Sprint 10 — AI 软件生产工作台
   "goal": "AI Factory Workspace — 用户打开输入一句话, 看到 AI 工作/设计/浏览器/审核/发布",
   "backlog": [
     {
+      "id": "S10-000",
+      "title": "Design System",
+      "priority": "P0",
+      "dependency": "无 (先行)",
+      "acceptance": "设计 token (颜色/字体/间距/圆角/亮暗主题) + 组件库 (Button/Card/Timeline/StatusBadge/ArtifactCard/AgentAvatar/Modal/Layout); 复用 AI 自产 uxui.json token; 组件测试 + 文档; 后续所有页面消费",
+      "estimated_complexity": "M"
+    },
+    {
       "id": "S10-001",
       "title": "Workspace Shell (三栏 UI 框架)",
       "priority": "P0",
-      "dependency": "S9 Console 前端",
-      "acceptance": "三栏布局 (Explorer 220px/Workspace flex/Panel 360px 可折叠); Header (品牌/项目/LLM 状态/主题); 路由 /projects/:id 等; 亮暗主题 (design_tokens); 复用 S9 数据逻辑; vitest+tsc 绿",
+      "dependency": "S10-000",
+      "acceptance": "三栏布局 (Explorer 220px/Workspace flex/Panel 360px 可折叠); Header (品牌/项目/LLM 状态/主题); 路由; 消费 Design System; 复用 S9 数据逻辑; vitest+tsc 绿",
       "estimated_complexity": "L"
     },
     {

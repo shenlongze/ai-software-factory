@@ -1,16 +1,18 @@
-# Sprint 10 — Backlog
+# Sprint 10 — Backlog: AI Factory Workspace
 
-> 日期: 2026-08-10 | 状态: 设计待审核 | 避免重复建设: 全部复用 Sprint 1-9
+> 日期: 2026-08-10 | 状态: 设计待审核 | 复用 Sprint 1-9, 不重复建设
 
 ## Backlog Tree
 
 ```
-Sprint 10 — User Experience Layer
-├── S10-001 Factory CLI (统一入口: init/start/status/project/workflow/artifact/review/approve/logs)
-├── S10-002 API 扩展 (POST projects 一句话建项目 + monitor + settings/llm + downloads)
-├── S10-003 Web 工作台 (Dashboard/Create/Workspace 8 阶段管道/Review/Monitor/Artifacts/Settings)
-├── S10-004 一键启动 (factory start → 后端+前端+浏览器)
-└── S10-005 用户旅程验收 (普通用户场景: 一句话→下载, 端到端真实)
+Sprint 10 — AI 软件生产工作台
+├── S10-001 Workspace Shell (三栏 UI 框架: Explorer/Workspace/Panel)
+├── S10-002 Factory Runtime API (Timeline/Monitor/SSE/Browser URL/Artifacts/Downloads)
+├── S10-003 Agent Timeline (中间核心: 事件流实时渲染 + 产物按钮)
+├── S10-004 Browser Runtime (右侧 Browser Tab: iframe 沙箱预览)
+├── S10-005 Artifact Center (Explorer + Artifact Tab: 6 类产物查看 + Renderer)
+├── S10-006 Review Workflow (Review Tab + 页: PRD/UI/架构/发布审核闭环)
+└── S10-007 CLI MVP (统一 factory 命令, 与 UI 同 API)
 ```
 
 ## Backlog JSON
@@ -18,67 +20,84 @@ Sprint 10 — User Experience Layer
 ```json
 {
   "sprint": "10",
-  "goal": "AI Factory User Experience Layer: CLI 入口 + 产品 Web 工作台 (普通用户可用)",
+  "goal": "AI Factory Workspace — 用户打开输入一句话, 看到 AI 工作/设计/浏览器/审核/发布",
   "backlog": [
     {
       "id": "S10-001",
-      "title": "Factory CLI 统一入口",
+      "title": "Workspace Shell (三栏 UI 框架)",
       "priority": "P0",
-      "dependency": "Sprint 9 (org CLI/approval CLI 已有)",
-      "acceptance": "factory 命令全局可用 (init/start/status/project list/create/workflow list/artifact list/review/approve/reject/logs); 委托现有 CLI 函数零重写; 人类可读 + --json; key 进程内注入禁明文; 测试 ≥20",
+      "dependency": "S9 Console 前端",
+      "acceptance": "三栏布局 (Explorer 220px/Workspace flex/Panel 360px 可折叠); Header (品牌/项目/LLM 状态/主题); 路由 /projects/:id 等; 亮暗主题 (design_tokens); 复用 S9 数据逻辑; vitest+tsc 绿",
       "estimated_complexity": "L"
     },
     {
       "id": "S10-002",
-      "title": "API 扩展 (任务提交/监控/配置/下载)",
+      "title": "Factory Runtime API",
       "priority": "P0",
-      "dependency": "S10-001",
-      "acceptance": "POST /api/projects (idea+type+tech → 建项目+启动 workflow 后台); GET /api/projects/{id}/monitor (8 阶段 agent/status/cost/latency); GET/PUT /api/settings/llm (key 加密存储永不返回); GET /api/projects/{id}/downloads (zip); 后台执行防阻塞; 测试 ≥25",
+      "dependency": "Sprint 9 (workflow/approval/events)",
+      "acceptance": "GET /api/timeline (事件流); GET /api/projects/{id}/monitor (8 阶段/成本/耗时); SSE /api/events; POST /api/projects (一句话建项目+启动); GET /api/projects/{id}/browser/url; GET /api/projects/{id}/downloads; 测试 ≥25",
       "estimated_complexity": "L"
     },
     {
       "id": "S10-003",
-      "title": "Web 产品工作台",
+      "title": "Agent Timeline",
       "priority": "P0",
-      "dependency": "S10-002",
-      "acceptance": "7 页面 (Dashboard/Create/Workspace 8 阶段管道/Review PRD+UI/Monitor/Artifacts/Settings); 中文极简风 (S10 设计 token); 轮询 2s 状态刷新; 审批按钮+意见进 gate; 复用 S9 Console 数据逻辑; vitest+tsc 绿",
-      "estimated_complexity": "XL"
+      "dependency": "S10-001/002",
+      "acceptance": "中间核心区: 事件流渲染 (user/stage/artifact/review/diff/error 节点); SSE 实时追加; 产物按钮 (查看/打开设计/去审核); 状态色; 测试 ≥20",
+      "estimated_complexity": "L"
     },
     {
       "id": "S10-004",
-      "title": "一键启动",
-      "priority": "P1",
-      "dependency": "S10-001/003",
-      "acceptance": "factory start → 后端 8011 + 前端 5180 + 打开浏览器; 端口冲突处理 (自动换); 状态健康检查; 测试 ≥10",
-      "estimated_complexity": "M"
+      "title": "Browser Runtime",
+      "priority": "P0",
+      "dependency": "S10-002 (browser/url)",
+      "acceptance": "右侧 Browser Tab: iframe 沙箱预览; 工具栏 (刷新/截图/新窗口); 空态引导; 沙箱静态服务器启动 (python http.server); 测试 ≥15",
+      "estimated_complexity": "L"
     },
     {
       "id": "S10-005",
-      "title": "用户旅程验收",
+      "title": "Artifact Center",
       "priority": "P1",
-      "dependency": "S10-001~004",
-      "acceptance": "普通用户场景端到端: 打开→输入一句话→PM 真实→PRD 审批→UX/UI→设计审批→Dev→Test→Release→下载 (真实 v4-pro); 记录全链; 报告",
-      "estimated_complexity": "XL"
+      "dependency": "S10-001/002",
+      "acceptance": "Explorer Project Tree (阶段→产物); Artifact Tab 6 类产物查看 (JSON 格式化/代码高亮/zip 下载); Artifact Renderer L1 (wireframe 布局预览) + L2 (token 主题预览); 测试 ≥20",
+      "estimated_complexity": "L"
+    },
+    {
+      "id": "S10-006",
+      "title": "Review Workflow",
+      "priority": "P1",
+      "dependency": "S10-001~005",
+      "acceptance": "Review Tab 待审清单; Review 页 (左内容右操作: 意见 + 重新设计/批准继续); 历史审批记录; 与 S9 审批门对接; 测试 ≥20",
+      "estimated_complexity": "L"
+    },
+    {
+      "id": "S10-007",
+      "title": "CLI MVP",
+      "priority": "P1",
+      "dependency": "S10-002 (同一 API)",
+      "acceptance": "factory 命令: init/start/status/create/review/approve/artifact/release; 委托现有 CLI 函数; 与 UI 同 API; 人类可读+--json; 测试 ≥20",
+      "estimated_complexity": "M"
     }
   ]
 }
 ```
 
-## 复用清单（避免重复建设）
-
-```
-✅ Workflow/Artifact/Approval/Agent Executor (Sprint 1-9) — 全复用, 零重写
-✅ org CLI 函数 — factory 包装委托
-✅ Console 前端/后端 (S9-002/003) — 重构布局, 保留数据逻辑
-✅ events 流 — logs/monitor 数据源
-✅ S9 审批门 — review/approve/reject
-✅ 沙箱/审批 — 生产保护
-🆕 仅新增: 统一 CLI 壳 + 3 个 API 端点 + 产品布局 UI + 一键启动
-```
-
 ## 执行顺序
 
 ```
-S10-001 CLI → S10-002 API → S10-003 工作台 → S10-004 一键启动 → S10-005 用户旅程验收
+S10-001 Shell → S10-002 API → S10-003 Timeline → S10-004 Browser
+→ S10-005 Artifact → S10-006 Review → S10-007 CLI
 每任务: 设计 → 编码 → 测试 → commit → push (Agile 小步)
+```
+
+## 复用清单（避免重复建设）
+
+```
+✅ Workflow/Artifact/Approval/Agent (S1-9) — 全复用
+✅ S9 Console 前端/后端 — 数据逻辑复用, 重排三栏
+✅ events 流 — Timeline/Monitor 数据源
+✅ org approval — Review 闭环
+✅ 沙箱 — Browser 预览隔离
+✅ 已有 AI 自产设计规范 (/tmp/ai-factory-product-ui/uxui.json) — UI token/布局参考
+🆕 仅新增: 三栏 Shell + Timeline + Browser Runtime + Artifact Renderer + Runtime API + CLI 壳
 ```

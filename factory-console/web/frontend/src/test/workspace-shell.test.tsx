@@ -243,7 +243,7 @@ describe('Project Tree (mock)', () => {
     await user.click(screen.getByRole('button', { name: /记账 App/ }));
     expect(screen.getByTestId('ws-project-workspace')).toBeInTheDocument();
     expect(screen.getByTestId('ws-project-name')).toHaveTextContent('记账 App');
-    expect(screen.getByText('进行中')).toBeInTheDocument(); // StatusBadge (active)
+    expect(within(screen.getByTestId('ws-project-workspace')).getByText('active')).toBeInTheDocument(); // StatusBadge (API status 原值)
     // Timeline 预留已替换为 AgentTimeline (事件流渲染)
     expect(screen.queryByTestId('timeline-placeholder')).toBeNull();
     expect(screen.getByTestId('agent-timeline')).toBeInTheDocument();

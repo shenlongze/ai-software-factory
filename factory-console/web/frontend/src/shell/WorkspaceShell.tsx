@@ -66,10 +66,15 @@ export function WorkspaceShell({
     initialArtifactId != null ? { artifactId: initialArtifactId, nonce: 1 } : null,
   );
 
-  const selectedProject = useMemo(
-    () => MOCK_PROJECTS.find((project) => project.id === selectedProjectId) ?? null,
-    [selectedProjectId],
-  );
+  const selectedProject = useMemo(() => {
+    const found = projects.find((project) => project.id === selectedProjectId);
+    if (found != null) return { id: found.id, name: found.name, status: found.status ?? null };
+    // 兼容既有 mock 项目展示 (S10-001 遗留; 新项目走真实列表)
+    const mock = MOCK_PROJECTS.find((project) => project.id === selectedProjectId);
+    return mock != null
+      ? { id: mock.id, name: mock.name, status: mock.status ?? null }
+      : null;
+  }, [projects, selectedProjectId]);
 
   /** S10-006.5: 创建项目 (POST /api/projects → 项目入树 + 选中)。 */
   const handleCreateProject = async (idea: string): Promise<void> => {
@@ -93,6 +98,7 @@ export function WorkspaceShell({
     <div className="ws-shell" data-testid="ws-shell">
       <WorkspaceHeader
         projectId={selectedProjectId}
+        projects={projects}
         onSelectProject={setSelectedProjectId}
         onOpenSettings={() => setView('settings')}
       />

@@ -13,15 +13,22 @@ import { useAppState } from '../state/AppState';
 
 export function WorkspaceHeader({
   projectId,
+  projects,
   onSelectProject,
   onOpenSettings,
 }: {
   projectId: string | null;
+  /** S10-006.5: 真实项目列表 (Header 选择器数据源; 空 → 兜底 mock)。 */
+  projects: { id: string; name: string }[];
   onSelectProject: (projectId: string | null) => void;
   onOpenSettings: () => void;
 }): JSX.Element {
   const { navigate } = useAppState();
   const [menuOpen, setMenuOpen] = useState(false);
+  const options =
+    projects.length > 0
+      ? projects.map((project) => ({ value: project.id, label: project.name }))
+      : MOCK_PROJECTS.map((project) => ({ value: project.id, label: project.name }));
 
   return (
     <header className="ws-header" data-testid="ws-header">
@@ -41,7 +48,7 @@ export function WorkspaceHeader({
           placeholder="选择项目…"
           value={projectId ?? ''}
           onChange={(value) => onSelectProject(value === '' ? null : value)}
-          options={MOCK_PROJECTS.map((project) => ({ value: project.id, label: project.name }))}
+          options={options}
         />
       </div>
 

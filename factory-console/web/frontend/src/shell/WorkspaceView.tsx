@@ -9,8 +9,8 @@
 
 import { useState } from 'react';
 import { Button, StatusBadge } from '../components/ds';
-import { NAV_ITEMS, projectStatusBadge } from '../mock/workspace';
-import type { ExplorerViewId, MockProject } from '../mock/workspace';
+import { NAV_ITEMS } from '../mock/workspace';
+import type { ExplorerViewId } from '../mock/workspace';
 import { AgentTimeline } from './AgentTimeline';
 
 /** Timeline 空态提示 (无选中项目时 — 选择项目后渲染 AgentTimeline)。 */
@@ -102,23 +102,17 @@ function ProjectWorkspace({
   project,
   onViewArtifact,
 }: {
-  project: MockProject;
+  project: { id: string; name: string; status?: string | null };
   onViewArtifact?: (artifactId: string) => void;
 }): JSX.Element {
-  const badge = projectStatusBadge(project.status);
-  const completedStages = project.stages.filter((stage) => stage.status === 'completed').length;
   return (
     <div className="ws-project" data-testid="ws-project-workspace">
       <header className="ws-project-head">
         <h1 className="ws-project-name" data-testid="ws-project-name">
           {project.name}
         </h1>
-        <StatusBadge status={badge.status} label={badge.label} />
-        <span className="ws-project-progress">
-          进度 {completedStages}/{project.stages.length}
-        </span>
+        {project.status != null ? <StatusBadge status={project.status} label={project.status} /> : null}
       </header>
-      <p className="ws-project-idea">{project.idea}</p>
       <AgentTimeline projectId={project.id} onViewArtifact={onViewArtifact} />
     </div>
   );
@@ -162,7 +156,7 @@ export function WorkspaceView({
   onCreateProject,
 }: {
   view: ExplorerViewId;
-  project: MockProject | null;
+  project: { id: string; name: string; status?: string | null } | null;
   onOpenProjects: () => void;
   /** S10-004 联动: Timeline artifact 查看 → Runtime Panel (WorkspaceShell 提供)。 */
   onViewArtifact?: (artifactId: string) => void;

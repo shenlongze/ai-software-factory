@@ -258,7 +258,8 @@ export function ArtifactCenter({
   focusNonce,
   onFocusConsumed,
 }: {
-  projectId: string;
+  /** S10-007: 可选 — 缺省 = 全局产物库 (所有项目)。 */
+  projectId?: string | null;
   /** S10-005 Timeline 联动 — 待定位 artifact_id (透传, 同 RuntimePanel 模式)。 */
   focusArtifactId?: string | null;
   focusNonce?: number | null;
@@ -269,9 +270,10 @@ export function ArtifactCenter({
   const [focusNotice, setFocusNotice] = useState<string | null>(null);
   const handledNonceRef = useRef<number | null>(null);
 
+  const projectKey = projectId ?? '__all__';
   const { data, error, loading } = useAsync(
-    useCallback(() => runtimeClient.listArtifacts(projectId, type || undefined), [projectId, type]),
-    [projectId, type],
+    useCallback(() => runtimeClient.listArtifacts(projectId ?? '', type || undefined), [projectKey, type]),
+    [projectKey, type],
   );
   const artifacts = data?.data ?? [];
   const isMock = data?.is_mock ?? false;

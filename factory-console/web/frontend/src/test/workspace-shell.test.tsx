@@ -187,10 +187,10 @@ describe('Workspace Header', () => {
 
 // ------------------------------------------------------------------ Explorer 导航
 describe('Explorer 导航', () => {
-  it('渲染 8 项导航 (Home/Projects/Tasks/Agents/Skills/Templates/Artifacts/Settings)', () => {
+  it('渲染生产空间导航 4 项 (Home/Projects/Artifacts/Settings — S10-007)', () => {
     renderShell();
     const nav = within(screen.getByTestId('ws-explorer-nav'));
-    expect(NAV_ITEMS).toHaveLength(8);
+    expect(NAV_ITEMS).toHaveLength(4);
     for (const item of NAV_ITEMS) {
       expect(nav.getByRole('button', { name: item.label })).toBeInTheDocument();
     }
@@ -320,11 +320,11 @@ describe('Workspace 视图', () => {
     expect(screen.getByRole('heading', { name: '设置' })).toBeInTheDocument();
   });
 
-  it('导航 Tasks → 通用占位视图 (后续 Sprint 接入)', async () => {
+  it('导航 Home → 回到 Welcome (项目上下文不丢 — S10-007)', async () => {
     const user = userEvent.setup();
     renderShell();
-    await user.click(screen.getByRole('button', { name: 'Tasks' }));
-    expect(screen.getByTestId('ws-view-tasks')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Home' }));
+    expect(screen.getByTestId('ws-workspace-home')).toBeInTheDocument();
   });
 });
 

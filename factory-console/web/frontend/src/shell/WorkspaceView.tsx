@@ -13,6 +13,7 @@ import { ApiError } from '../api/client';
 import { NAV_ITEMS } from '../mock/workspace';
 import type { ExplorerViewId } from '../mock/workspace';
 import { AgentTimeline } from './AgentTimeline';
+import { ArtifactCenter } from './ArtifactCenter';
 import { RunStatusBar } from './RunStatusBar';
 
 /** S10-007 阶段三: Welcome 示例 chips (点击填入输入框; 有项目时不挡已有列表)。 */
@@ -430,6 +431,14 @@ export function WorkspaceView({
   onSelectProject?: (projectId: string) => void;
 }): JSX.Element {
   if (view === 'settings') return <SettingsView />;
+  if (view === 'artifacts') {
+    // S10-007: 全局产物库 (所有项目) — 真实 /api/artifacts
+    return (
+      <div className="ws-artifacts-view" data-testid="ws-artifacts-view">
+        <ArtifactCenter />
+      </div>
+    );
+  }
   if (view !== 'home' && view !== 'projects') return <PlaceholderView view={view} />;
   if (project != null) return <ProjectWorkspace project={project} onViewArtifact={onViewArtifact} />;
   return (

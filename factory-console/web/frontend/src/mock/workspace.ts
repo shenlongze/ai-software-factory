@@ -31,10 +31,6 @@ export interface NavItem {
 export const NAV_ITEMS: readonly NavItem[] = [
   { id: 'home', label: 'Home', icon: '🏠' },
   { id: 'projects', label: 'Projects', icon: '📁' },
-  { id: 'tasks', label: 'Tasks', icon: '✅' },
-  { id: 'agents', label: 'Agents', icon: '🤖' },
-  { id: 'skills', label: 'Skills', icon: '🧩' },
-  { id: 'templates', label: 'Templates', icon: '📄' },
   { id: 'artifacts', label: 'Artifacts', icon: '📦' },
   { id: 'settings', label: 'Settings', icon: '⚙️' },
 ];

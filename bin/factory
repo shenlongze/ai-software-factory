@@ -1,0 +1,44 @@
+#!/usr/bin/env python3
+"""bin/factory — AI Software Factory 统一 CLI 入口 (S10-007 阶段二)。
+
+薄包装: 定位项目 .venv 解释器 → os.execv 切换为
+factory-console.cli_factory.main() (包名含连字符, 经 importlib 加载;
+PYTHONPATH 指向仓库根 + factory-core)。用户零配置 — 不要求懂
+uvicorn/vite/PYTHONPATH/npm: `./bin/factory start` 即可。
+
+用法:
+    ./bin/factory start [--no-browser] [--port N] [--frontend-port N]
+    ./bin/factory stop
+    ./bin/factory status
+    ./bin/factory init|config|project|run   (预留 stub, 阶段三实现)
+
+说明: 与已安装的 `.venv/bin/factory` (org CLI, cli.main) 不同名同形 —
+本项目内入口, 请在仓库根目录用 `./bin/factory` 调用。
+"""
+from __future__ import annotations
+
+import os
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+VENV_PY = ROOT / ".venv" / "bin" / "python"
+FACTORY_CORE = ROOT / "factory-core"
+
+if not VENV_PY.is_file():
+    print(f"错误: 未找到虚拟环境解释器: {VENV_PY}", file=sys.stderr)
+    print("请先安装依赖:", file=sys.stderr)
+    print(f"  python3 -m venv {ROOT / '.venv'}", file=sys.stderr)
+    print(f"  {ROOT / '.venv' / 'bin' / 'pip'} install -e '.[dev]'", file=sys.stderr)
+    sys.exit(1)
+
+os.environ["PYTHONPATH"] = os.pathsep.join(
+    [str(ROOT), str(FACTORY_CORE), os.environ.get("PYTHONPATH", "")]
+).rstrip(os.pathsep)
+
+_BOOT = (
+    "import importlib,sys;"
+    "sys.argv[0]='factory';"
+    "sys.exit(importlib.import_module('factory-console.cli_factory').main())"
+)
+os.execv(str(VENV_PY), [str(VENV_PY), "-c", _BOOT, *sys.argv[1:]])

@@ -10,13 +10,14 @@
  * - 不实现 Timeline/Browser/Artifact/Review 内容 (Empty State 占位)
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Layout } from '../components/ds';
 import { MOCK_PROJECTS } from '../mock/workspace';
 import type { ExplorerViewId, PanelTabId } from '../mock/workspace';
+import { api } from '../api/client';
 import { ExplorerNav } from './ExplorerNav';
 import { FactoryPanel } from './FactoryPanel';
-import { ProjectTree } from './ProjectTree';
+import { ProjectTree, type TreeProject } from './ProjectTree';
 import { WorkspaceHeader } from './WorkspaceHeader';
 import { WorkspaceView } from './WorkspaceView';
 import './workspace.css';
@@ -36,6 +37,30 @@ export function WorkspaceShell({
   const [view, setView] = useState<ExplorerViewId>('home');
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(initialProjectId);
   const [panelTab, setPanelTab] = useState<PanelTabId>(initialPanelTab ?? 'browser');
+  // S10-006.5 P0: 真实项目列表 (GET /api/projects; 失败 → 空列表, 创建入口兜底)
+  const [projects, setProjects] = useState<TreeProject[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .projects()
+      .then((list) => {
+        if (!cancelled) {
+          setProjects(
+            list.map((project) => ({
+              id: project.id,
+              name: project.name,
+              status: project.status ?? null,
+            })),
+          );
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setProjects([]); // 后端不可达 → 空 (创建会诚实报错)
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   // S10-005 Timeline 联动: artifact 查看请求 (artifactId + 递增序号触发)
   const [artifactFocus, setArtifactFocus] = useState<{ artifactId: string; nonce: number } | null>(
     initialArtifactId != null ? { artifactId: initialArtifactId, nonce: 1 } : null,
@@ -45,6 +70,17 @@ export function WorkspaceShell({
     () => MOCK_PROJECTS.find((project) => project.id === selectedProjectId) ?? null,
     [selectedProjectId],
   );
+
+  /** S10-006.5: 创建项目 (POST /api/projects → 项目入树 + 选中)。 */
+  const handleCreateProject = async (idea: string): Promise<void> => {
+    const created = await api.createProject(idea);
+    setProjects((prev) => {
+      const next = prev.filter((project) => project.id !== created.project_id);
+      return [...next, { id: created.project_id, name: created.name, status: created.status }];
+    });
+    setSelectedProjectId(created.project_id);
+    window.location.hash = `#/workspace?project=${created.project_id}`;
+  };
 
   /** Timeline artifact 查看 → 选中 Artifact Tab + 定位产物详情 (S10-005;
    * 复用 S10-004 onViewArtifact 管线, 目标由 Runtime 改为 Artifact Center)。 */
@@ -66,7 +102,11 @@ export function WorkspaceShell({
             <>
               <ExplorerNav active={view} onSelect={setView} />
               {view === 'projects' || selectedProject != null ? (
-                <ProjectTree project={selectedProject} onSelectProject={setSelectedProjectId} />
+                <ProjectTree
+                  projects={projects}
+                  selectedId={selectedProjectId}
+                  onSelectProject={setSelectedProjectId}
+                />
               ) : null}
             </>
           }
@@ -76,6 +116,7 @@ export function WorkspaceShell({
               project={selectedProject}
               onOpenProjects={() => setView('projects')}
               onViewArtifact={handleViewArtifact}
+              onCreateProject={handleCreateProject}
             />
           }
           panel={

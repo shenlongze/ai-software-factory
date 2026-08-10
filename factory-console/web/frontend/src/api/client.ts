@@ -1,14 +1,15 @@
 /**
  * api/client.ts — 前端 API 客户端。
  *
- * 只读 + 审批决定 + S10-004 Runtime 生命周期 (Human Console MVP 收窄
- * Permission Boundary):
+ * 只读 + 审批决定 + S10-004 Runtime 生命周期 + S10-006.5 项目创建
+ * (Human Console MVP 收窄 Permission Boundary):
  * - 全部查询 GET (只读投影; 无 put/patch/delete)
- * - POST 仅两类写面: ① 审批决定 (/api/approvals/{id}/approve|reject) —
+ * - POST 仅三类写面: ① 审批决定 (/api/approvals/{id}/approve|reject) —
  *   Approval 页操作按钮触发; ② S10-004 Runtime 实例生命周期
  *   (POST /projects/{id}/runtimes 创建 + /runtimes/{id}/start|stop|screenshot)
- *   — Runtime Panel 操作按钮触发; 其余一切写路径 (register_project/成本等)
- *   不在 Console 范围 (S9-005/后续)。
+ *   — Runtime Panel 操作按钮触发; ③ S10-006.5 项目创建 (POST /api/projects
+ *   {idea} → org 项目壳) — Workspace Home 创建入口触发; 其余一切写路径
+ *   (register_project/成本等) 不在 Console 范围 (S9-005/后续)。
  * - S10-002: Runtime 查询 (projectWorkflow/workflowStages/projectTimeline,
  *   只读 GET) + SSE 事件流 — SSE 封装在 runtimeClient.subscribeEvents
  *   (断线重连 + mock 检测), 本文件只保留 REST 查询/写面。
@@ -31,6 +32,7 @@ import {
   type ProviderSummary,
   type RecommendationSummary,
   type ReviewFeedback,
+  type ProjectCreatedSummary,
   type RuntimeInstance,
   type RuntimeScreenshot,
   type StageRunSummary,
@@ -59,7 +61,7 @@ async function getJson<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
-/** POST 公共路径 (仅审批决定使用; 命名避开 put/patch/delete 语义)。 */
+/** POST 公共路径 (审批决定/Runtime 生命周期/项目创建; 命名避开 put/patch/delete 语义)。 */
 async function sendJson<T>(path: string, body: Record<string, unknown>): Promise<T> {
   const res = await fetch(path, {
     method: 'POST',
@@ -72,10 +74,23 @@ async function sendJson<T>(path: string, body: Record<string, unknown>): Promise
   return (await res.json()) as T;
 }
 
-/** API 客户端 (查询全 GET; 写路径仅审批 approve/reject 两 POST)。 */
+/** API 客户端 (查询全 GET; 写路径仅审批决定/项目创建/Runtime 生命周期 POST)。 */
 export const api = {
   dashboard: () => getJson<ConsoleDashboard>('/api/dashboard'),
   projects: () => getJson<ProjectSummary[]>('/api/projects'),
+  // S10-006.5: 用户第一公里创建 (POST /api/projects {idea} → org 项目壳;
+  // project_type/tech 可选透传; 空 idea 由后端 400 拒绝)
+  createProject: (
+    idea: string,
+    options: { projectType?: string; tech?: string } = {},
+  ) =>
+    sendJson<ProjectCreatedSummary>('/api/projects', {
+      idea,
+      ...(options.projectType != null && options.projectType.length > 0
+        ? { project_type: options.projectType }
+        : {}),
+      ...(options.tech != null && options.tech.length > 0 ? { tech: options.tech } : {}),
+    }),
   lifecycle: (projectId: string) =>
     getJson<LifecycleSummary>(
       `/api/projects/${encodeURIComponent(projectId)}/lifecycle`,

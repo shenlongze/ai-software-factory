@@ -212,13 +212,14 @@ class TestReadOnlyEndpoints:
 @requires_fastapi
 class TestPermissionBoundary:
     def test_write_routes_limited_to_approval_decisions(self, client):
-        """Permission Boundary (S9-002 + S10-004): 写路由仅审批决定 + Runtime 生命周期。
+        """Permission Boundary (S9-002 + S10-004/006/006.5): 写路由白名单。
 
-        用户解除 Console 冻结后, 唯一写路径 = POST /api/approvals/{id}/
-        approve|reject (走 org Approval 状态机, source=console 审计);
-        S10-004 扩展: POST /api/projects/{id}/runtimes (创建) +
-        /api/runtimes/{id}/start|stop|screenshot (实例生命周期, 不触碰
-        Core 引擎); 其余一切路由只读 (GET/HEAD), 无 PUT/PATCH/DELETE。
+        用户解除 Console 冻结后, 写路径 = 审批决定 POST (approve|reject,
+        走 org Approval 状态机, source=console 审计) + Runtime 实例生命周期
+        (POST /projects/{id}/runtimes 创建 + /runtimes/{id}/start|stop|
+        screenshot) + Review 反馈 (POST /review-feedback) + 项目创建
+        (POST /api/projects — S10-006.5 org 项目壳); 其余一切路由只读
+        (GET/HEAD), 无 PUT/PATCH/DELETE。
         """
         app = _adapter.build_app(_StubService())
         for route in app.routes:
@@ -231,12 +232,18 @@ class TestPermissionBoundary:
                     f"非 POST 写路由泄漏: {route_method} {getattr(route, 'path', '?')}"
                 )
                 path = getattr(route, "path", "")
-                # S10-002 审批决定 + S10-004 Runtime 生命周期 + S10-006 Review 反馈
+                # 审批决定 + Runtime 生命周期 + Review 反馈 + 项目创建
                 is_approval = path.endswith("/approve") or path.endswith("/reject")
                 is_runtime_lifecycle = "/runtimes" in path
                 is_review_feedback = path.endswith("/review-feedback")
-                assert is_approval or is_runtime_lifecycle or is_review_feedback, (
-                    f"POST 路由超出审批决定 + Runtime 生命周期范围: {path}"
+                is_project_create = path == "/api/projects"
+                assert (
+                    is_approval
+                    or is_runtime_lifecycle
+                    or is_review_feedback
+                    or is_project_create
+                ), (
+                    f"POST 路由超出审批决定 + Runtime 生命周期 + 反馈 + 创建范围: {path}"
                 )
 
     def test_client_write_surface_limited_to_approval_decisions(self):

@@ -274,6 +274,59 @@ class ConsoleService:
             summaries.append(summary)
         return summaries
 
+    # ------------------------------------------------------------------ POST /projects (S10-006.5)
+
+    def create_project(
+        self,
+        idea: str,
+        *,
+        name: str | None = None,
+        project_type: str | None = None,
+        tech: str | None = None,
+    ) -> Any | None:
+        """创建 org 项目 (POST /projects — 用户第一公里创建闭环)。
+
+        复用 org ProjectLifecycle.create_project (org.project.created 事件
+        审计, 不扩 Core 枚举); project_type/tech 落 org Project 已有字段
+        (project_type / framework — S9-004 兼容, 零新数据空间)。失败安全:
+        org store 缺失/创建失败 → None (HTTP 层 503); 成功 → org Project
+        (id/name/lifecycle 起点 idea)。
+        """
+        store = self._project_store
+        if store is None:
+            return None
+        self._mount_org()
+        try:
+            from org.projects import ProjectLifecycle
+            from org.models import utcnow
+
+            # logger: 生产装配注入带 EventLogger 的 WorkflowLifecycle —
+            # 提取其 logger 供 ProjectLifecycle 复用 (org.project.created
+            # source=console 落库审计; 无注入 → None 静默, 失败安全)
+            logger = (
+                getattr(self._workflow, "_logger", None)
+                if self._workflow is not None
+                else None
+            )
+            lifecycle = ProjectLifecycle(store, logger=logger)
+            project = lifecycle.create_project(
+                name or idea,
+                user_id="console",
+                goal=idea,
+            )
+            if project_type or tech:
+                project = project.model_copy(
+                    update={
+                        "project_type": project_type or project.project_type,
+                        "framework": tech or project.framework,
+                        "updated_at": utcnow(),
+                    }
+                )
+                store.save_project(project)
+            return project
+        except Exception:
+            return None  # org 缺失/损坏 → 503 (失败安全, 不拖垮 API)
+
     # ------------------------------------------------------------------ S9-002: Workflow/Artifact/Approval
 
     def list_workflows(self, project_id: str | None = None) -> list[WorkflowSummary]:

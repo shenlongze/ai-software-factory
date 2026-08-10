@@ -133,10 +133,11 @@ service_template = ("Idea", "PM", "Product", "UX/UI", "Architecture", "Developme
 
 class TestRouteExports:
     def test_route_modules_exported(self):
-        """api/ 暴露全部路由函数 (S10-006: 26 个 — 新增 review_feedback 2 个)。"""
+        """api/ 暴露全部路由函数 (S10-006.5: 27 个 — 新增 review_feedback 2 + create_project 1)。"""
         expected = {
             "approve_approval",
             "capture_runtime_screenshot",
+            "create_project",
             "create_runtime",
             "get_artifact",
             "get_artifact_content",

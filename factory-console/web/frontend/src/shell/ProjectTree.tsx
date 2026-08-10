@@ -1,61 +1,58 @@
 /**
- * shell/ProjectTree.tsx — S10-001 Project Tree (mock)。
+ * shell/ProjectTree.tsx — S10-001 Project Tree。
  *
- * Ledger App ├ Product ├ UX/UI ├ Architecture ├ Code ├ Test └ Release,
- * 每阶段状态色点 (待办/运行/待审/完成/失败) + 中文状态标签。
- * S10-005 Artifact Center 接入后, 点击阶段跳对应产物。
+ * S10-006.5 P0 修复: 真实项目列表 (GET /api/projects) 替换硬编码 mock;
+ * 每项目可选中 (stages 阶段链在项目有 workflow 后展示 — 当前显示项目名 + 状态)。
  */
 
-import { statusLabel, statusTone } from '../design/tokens';
-import { MOCK_PROJECTS } from '../mock/workspace';
-import type { MockProject } from '../mock/workspace';
+import { StatusBadge } from '../components/ds';
+
+export interface TreeProject {
+  id: string;
+  name: string;
+  status?: string | null;
+}
 
 export function ProjectTree({
-  project,
+  projects,
+  selectedId,
   onSelectProject,
 }: {
-  project: MockProject | null;
+  projects: TreeProject[];
+  selectedId: string | null;
   onSelectProject: (projectId: string) => void;
 }): JSX.Element {
   return (
     <section className="ws-tree" aria-label="项目阶段树" data-testid="ws-project-tree">
       <div className="ws-tree-header">项目</div>
-      {MOCK_PROJECTS.map((mockProject) => {
-        const selected = project?.id === mockProject.id;
-        return (
-          <button
-            key={mockProject.id}
-            type="button"
-            className={`ws-tree-project${selected ? ' selected' : ''}`}
-            data-project-id={mockProject.id}
-            aria-pressed={selected}
-            onClick={() => onSelectProject(mockProject.id)}
-          >
-            <span className="ws-tree-caret" aria-hidden="true">
-              {selected ? '▾' : '▸'}
-            </span>
-            {mockProject.name}
-          </button>
-        );
-      })}
-      {project != null ? (
-        <ul className="ws-tree-stages" data-testid="ws-project-tree-stages">
-          {project.stages.map((stage) => {
-            const tone = statusTone(stage.status);
-            return (
-              <li key={stage.id} className="ws-tree-stage" data-stage-id={stage.id}>
-                <span
-                  className={`ws-tree-dot ws-dot-${tone}`}
-                  data-status={stage.status}
-                  aria-hidden="true"
-                />
-                <span className="ws-tree-stage-name">{stage.name}</span>
-                <span className="ws-tree-stage-status">{statusLabel(stage.status)}</span>
-              </li>
-            );
-          })}
-        </ul>
-      ) : null}
+      {projects.length === 0 ? (
+        <p className="ws-tree-empty" data-testid="ws-tree-empty">
+          还没有项目 — 输入一句话开始
+        </p>
+      ) : (
+        projects.map((project) => {
+          const selected = selectedId === project.id;
+          return (
+            <button
+              key={project.id}
+              type="button"
+              className={`ws-tree-project${selected ? ' selected' : ''}`}
+              data-project-id={project.id}
+              data-testid={`ws-tree-project-${project.id}`}
+              aria-pressed={selected}
+              onClick={() => onSelectProject(project.id)}
+            >
+              <span className="ws-tree-caret" aria-hidden="true">
+                {selected ? '▾' : '▸'}
+              </span>
+              <span className="ws-tree-project-name">{project.name}</span>
+              {project.status != null ? (
+                <StatusBadge status={project.status} label={project.status} />
+              ) : null}
+            </button>
+          );
+        })
+      )}
     </section>
   );
 }

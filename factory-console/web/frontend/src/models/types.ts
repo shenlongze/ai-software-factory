@@ -28,6 +28,14 @@ export interface ProjectSummary {
   stage_counts: Record<string, number>;
 }
 
+/** POST /api/projects 创建结果 (S10-006.5 用户创建闭环投影)。 */
+export interface ProjectCreatedSummary {
+  project_id: string;
+  name: string;
+  idea: string;
+  status: string;
+}
+
 export interface LifecycleSummary {
   project_id: string;
   lifecycle_id: string | null;

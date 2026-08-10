@@ -121,6 +121,23 @@ class ProjectSummary(BaseModel):
         return self.model_dump(mode="json")
 
 
+class ProjectCreatedSummary(BaseModel):
+    """POST /projects — 创建结果投影 (S10-006.5: 用户第一公里创建闭环)。
+
+    {project_id, name, idea, status}: 前端创建成功 → 跳转
+    #/workspace?project={project_id} 的数据源; idea 原样回显 (诚实 —
+    不伪造 AI 理解), status 恒 "idea" (org Project 生命周期起点)。
+    """
+
+    project_id: str
+    name: str
+    idea: str
+    status: str = "idea"
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json")
+
+
 class LifecycleSummary(BaseModel):
     """GET /projects/{id}/lifecycle — 生命周期只读快照。
 
@@ -853,6 +870,7 @@ __all__ = [
     "ExperienceSummaryModel",
     "LifecycleSummary",
     "ProjectSummary",
+    "ProjectCreatedSummary",
     "ProviderSummary",
     "RecommendationSummary",
     "ReviewFeedback",

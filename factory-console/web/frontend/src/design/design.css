@@ -536,8 +536,9 @@
   flex: none;
 }
 .ds-layout-pane.is-collapsed {
-  width: 0;
+  width: 26px;
   padding: 0;
+  overflow: visible; /* 保留 toggle 按钮可点击 (overflow:hidden 会裁掉) */
 }
 .ds-layout-pane.is-collapsed .ds-layout-pane-body {
   display: none;

@@ -35,6 +35,7 @@ describe('api client — 只读契约 + S9-002 审批写面 + S10-004 Runtime �
       'artifact',
       'artifactContent',
       'artifacts',
+      'createProject',
       'createRuntime',
       'dashboard',
       'decision',

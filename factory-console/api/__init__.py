@@ -21,7 +21,7 @@ from .artifacts import get_artifact, get_artifact_content, list_artifacts
 from .decisions import get_decision
 from .intelligence import list_experience, list_recommendations
 from .lifecycle import get_project_lifecycle
-from .projects import list_projects
+from .projects import create_project, list_projects
 from .providers import list_providers
 from .review_feedback import list_review_feedback, save_review_feedback
 from .runtime import (
@@ -42,6 +42,7 @@ from .workflows import get_workflow, list_workflows
 __all__ = [
     "approve_approval",
     "capture_runtime_screenshot",
+    "create_project",
     "create_runtime",
     "get_artifact",
     "get_artifact_content",

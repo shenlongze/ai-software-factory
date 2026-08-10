@@ -21,9 +21,11 @@ build 静态文件 (SPA)。只做 HTTP 绑定 (参数解析 / JSON 序列化 / �
 - build_app(service=..., static_dir=...) — 注入已装配 service; 供测试/
   复用方使用。
 
-端点 (只读 GET + S9-002 审批决定 POST):
+端点 (只读 GET + S9-002 审批决定 POST + S10-006.5 创建 POST):
   /api/dashboard                        → ConsoleDashboard 七域 (11A service.dashboard)
   /api/projects                         → list_projects (console.viewed)
+  POST /api/projects                    → create_project ({idea,project_type,tech}
+                                          → org 项目; 400/503 语义)   [S10-006.5]
   /api/projects/{project_id}/lifecycle  → get_project_lifecycle (None → 404)
   /api/approvals                        → list_approvals (?pending_only)
   /api/decisions/{decision_id}          → get_decision (None → 404)
@@ -37,10 +39,13 @@ build 静态文件 (SPA)。只做 HTTP 绑定 (参数解析 / JSON 序列化 / �
   POST /api/approvals/{id}/reject       → 审批否决 (404/409 映射)            [S9-002]
   GET  /api/review-feedback             → 审核反馈历史 (artifact/gate 过滤)   [S10-006]
   POST /api/review-feedback             → 保存反馈记录 (round 递增; 400/503)  [S10-006]
-Permission Boundary (S9-002 收窄 + S10-006 扩展): 写路径仅审批决定两 POST
-(approve/reject, reviewer="console" 落库 + source="console" 审计) + Feedback
-Loop 一 POST (review-feedback — Reject 意见落库, 不触碰引擎), 其余端点全部
-GET — register_project/成本写入等仍不在 Console 范围 (S9-005/后续)。
+Permission Boundary (S9-002 收窄 + S10-004/006/006.5 扩展): 写路径仅
+① 审批决定两 POST (approve/reject, reviewer="console" 落库 + source="console"
+审计) ② Feedback Loop 一 POST (review-feedback — Reject 意见落库, 不触碰
+引擎) ③ Runtime 实例生命周期 POST (创建/start/stop/screenshot, S10-004)
+④ POST /api/projects (S10-006.5 — org 项目壳创建: org.project.created 审计,
+只建壳不启动执行链); 其余端点全部 GET — register_project/成本写入等仍
+不在 Console 范围 (S9-005/后续)。
 静态: frontend build 产物 (dist/) — SPA html=True; 缺目录 → 纯 API 模式。
 """
 
@@ -83,6 +88,20 @@ class _CreateRuntimeBody(BaseModel):
 
     type: str
     artifact_id: str | None = None
+
+
+class _CreateProjectBody(BaseModel):
+    """POST /api/projects body (S10-006.5: 用户第一公里创建闭环)。
+
+    {idea, project_type?, tech?}: idea 为必填想法 (空 → 400); project_type
+    (web|mobile|desktop) 与 tech (auto|flutter|react|vue) 可选 — 宽容
+    收窄 (非设计值 → 400), 透传 org Project 落库 (project_type/framework),
+    不伪造 AI 技术选型。
+    """
+
+    idea: str
+    project_type: str = ""
+    tech: str = ""
 
 
 class _ReviewFeedbackBody(BaseModel):
@@ -256,6 +275,44 @@ def build_app(
     def api_projects() -> list[dict[str, Any]]:
         """项目清单 (11A list_projects, 只读投影)。"""
         return [p.to_dict() for p in _api.list_projects(service, logger=event_logger)]
+
+    @app.post("/api/projects", status_code=201)
+    def api_create_project(body: _CreateProjectBody) -> dict[str, Any]:
+        """创建项目 (S10-006.5: {idea, project_type?, tech?} → org 项目)。
+
+        错误语义: idea 空 → 400 (空想法不创建); project_type/tech 非法
+        → 400 (宽容收窄); org store 缺失/创建失败 → 503 (失败安全, 不
+        拖垮 API); 成功 → 201 {project_id, name, idea, status}。写面
+        (Permission Boundary): 与审批决定/Runtime/Review 反馈并列的
+        Console 写路径 — 只建 org 项目壳 (org.project.created 审计),
+        不启动执行链 (Step 4-5 后续 Sprint)。
+        """
+        idea = body.idea.strip()
+        if not idea:
+            raise HTTPException(status_code=400, detail="idea is required (空想法不创建)")
+        project_type = body.project_type.strip()
+        tech = body.tech.strip()
+        for field_name, value, allowed in (
+            ("project_type", project_type, ("", "web", "mobile", "desktop")),
+            ("tech", tech, ("", "auto", "flutter", "react", "vue")),
+        ):
+            if value not in allowed:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"{field_name} must be one of: {', '.join(a for a in allowed if a)}",
+                )
+        summary = _api.create_project(
+            service,
+            idea,
+            project_type=project_type,
+            tech=tech,
+            logger=event_logger,
+        )
+        if summary is None:
+            raise HTTPException(
+                status_code=503, detail="project store unavailable (org 未装配)"
+            )
+        return summary.to_dict()
 
     @app.get("/api/projects/{project_id}/lifecycle")
     def api_project_lifecycle(project_id: str) -> dict[str, Any]:

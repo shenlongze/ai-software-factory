@@ -54,7 +54,7 @@ const STUB_TIMELINE_EVENTS = [
 ];
 
 /** 渲染 Workspace Shell (AppState + Theme 双 Provider, 与 main.tsx 一致)。 */
-function renderShell() {
+function renderShell(overrides?: Record<string, unknown>) {
   // jsdom 无 localStorage (theme.tsx 内部已 try/catch 降级 light)
   try {
     window.localStorage.clear();
@@ -63,7 +63,12 @@ function renderShell() {
   }
   document.documentElement.dataset.theme = 'light';
   stubFetch({
+    // S10-006.5: 真实项目列表 (ProjectTree 数据源)
+    '/api/projects': [
+      { id: 'ledger-app', name: '记账 App', status: 'active', description: 'mock 项目' },
+    ],
     '/api/projects/ledger-app/timeline?limit=200': STUB_TIMELINE_EVENTS,
+    ...overrides,
   });
   return render(
     <AppStateProvider>
@@ -220,32 +225,17 @@ describe('Project Tree (mock)', () => {
     return user;
   }
 
-  it('渲染项目 "记账 App" + 6 阶段 (Product→Release)', async () => {
+  it('渲染真实项目 (API 数据源, S10-006.5)', async () => {
     await openTree();
     expect(screen.getByRole('button', { name: /记账 App/ })).toBeInTheDocument();
-    const stages = screen.getByTestId('ws-project-tree-stages');
-    for (const name of ['Product', 'UX/UI', 'Architecture', 'Code', 'Test', 'Release']) {
-      expect(within(stages).getByText(name)).toBeInTheDocument();
-    }
+    expect(screen.getByTestId('ws-tree-project-ledger-app')).toBeInTheDocument();
   });
 
-  it('阶段状态色点 data-status 正确 (完成/待审/待办)', async () => {
-    await openTree();
-    const stages = screen.getByTestId('ws-project-tree-stages');
-    expect(stages.querySelector('[data-stage-id="product"] [data-status]')).toHaveAttribute(
-      'data-status',
-      'completed',
-    );
-    expect(stages.querySelector('[data-stage-id="architecture"] [data-status]')).toHaveAttribute(
-      'data-status',
-      'waiting_review',
-    );
-    expect(stages.querySelector('[data-stage-id="code"] [data-status]')).toHaveAttribute(
-      'data-status',
-      'pending',
-    );
-    expect(within(stages).getByText('待审核')).toBeInTheDocument();
-    expect(within(stages).getAllByText('待执行')).toHaveLength(3);
+  it('项目树空态 (无项目)', async () => {
+    const user = userEvent.setup();
+    renderShell({ '/api/projects': [] });
+    await user.click(screen.getByRole('button', { name: 'Projects' }));
+    expect(await screen.findByTestId('ws-tree-empty')).toBeInTheDocument();
   });
 
   it('点击项目 → Workspace 显示项目工作台 + Agent Timeline (S10-003)', async () => {
@@ -306,12 +296,11 @@ describe('Workspace 视图', () => {
     expect(screen.getByTestId('timeline-placeholder')).toBeInTheDocument();
   });
 
-  it('新建项目按钮 → 提示 S10-002 接入 (点击有反馈)', async () => {
-    const user = userEvent.setup();
+  it('创建入口: 输入框 + 开始生产按钮 (S10-006.5)', () => {
     renderShell();
-    expect(screen.queryByTestId('ws-new-project-hint')).toBeNull();
-    await user.click(screen.getByRole('button', { name: /新建项目/ }));
-    expect(screen.getByTestId('ws-new-project-hint')).toHaveTextContent('S10-002 Runtime API');
+    expect(screen.getByTestId('ws-create-form')).toBeInTheDocument();
+    expect(screen.getByTestId('ws-create-input')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '开始生产' })).toBeInTheDocument();
   });
 
   it('导航 Settings → 设置空态视图', async () => {

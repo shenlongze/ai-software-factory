@@ -4,9 +4,12 @@
  * 约束: S10-001 只做 Shell 框架, 不接真实 API; S10-002 Runtime API
  * 接入后由真实数据替换。形状对齐 docs/sprint10/api-data-model.md
  * (Project/Stage 状态机) 与 ui-information-architecture.md (Explorer 导航)。
+ * S10-006.5: 项目树改读 GET /api/projects 真实投影 — MOCK_PROJECTS 仅作
+ * 后端不可达时的 fallback (ProjectTree 用 is_mock 徽章诚实标注, 不冒充)。
  */
 
 import type { AgentRole, StageStatus } from '../design/tokens';
+import type { ProjectSummary } from '../models/types';
 
 // ------------------------------------------------------------------ Explorer 导航 (8 项)
 export type ExplorerViewId =
@@ -86,6 +89,41 @@ export function projectStatusBadge(status: ProjectStatus): { status: StageStatus
     case 'failed':
       return { status: 'failed', label: '失败' };
   }
+}
+
+/** GET /api/projects 投影 → 项目树节点 (S10-006.5 真实数据适配)。
+
+ * 诚实边界: ProjectSummary 只含生命周期状态, 不含 6 阶段链 — stages
+ * 置空数组 (树不伪造阶段明细); 状态非法 → active 兜底 (宽容收窄)。
+ */
+export function projectSummaryToTree(project: ProjectSummary): MockProject {
+  const status: ProjectStatus = ['active', 'paused', 'completed', 'failed'].includes(
+    project.status,
+  )
+    ? (project.status as ProjectStatus)
+    : 'active';
+  return {
+    id: project.id,
+    name: project.name || project.id,
+    idea: project.description || project.name || project.id,
+    status,
+    stages: [],
+  };
+}
+
+/** POST /api/projects 创建结果 → 项目树节点 (创建后立即入树, 不刷新列表)。 */
+export function createdProjectToTree(created: {
+  project_id: string;
+  name: string;
+  idea: string;
+}): MockProject {
+  return {
+    id: created.project_id,
+    name: created.name || created.project_id,
+    idea: created.idea,
+    status: 'active',
+    stages: [],
+  };
 }
 
 // ------------------------------------------------------------------ Panel 4 Tab

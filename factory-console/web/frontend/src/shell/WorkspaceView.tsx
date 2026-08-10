@@ -27,8 +27,34 @@ export function TimelinePlaceholder({ projectName }: { projectName?: string }): 
 }
 
 /** 空态页 "AI Workspace" (无选中项目)。 */
-function WorkspaceHome({ onOpenProjects }: { onOpenProjects: () => void }): JSX.Element {
-  const [newProjectHint, setNewProjectHint] = useState(false);
+function WorkspaceHome({
+  onOpenProjects,
+  onCreateProject,
+}: {
+  onOpenProjects: () => void;
+  onCreateProject: (idea: string) => void;
+}): JSX.Element {
+  const [idea, setIdea] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async (): Promise<void> => {
+    const text = idea.trim();
+    if (text.length === 0) {
+      setError('请先输入你想开发的软件 (例如: 开发一个记账 App)');
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      await onCreateProject(text);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '创建失败, 请稍后重试');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <div className="ws-empty" data-testid="ws-workspace-home">
       <div className="ws-empty-icon" aria-hidden="true">
@@ -38,20 +64,34 @@ function WorkspaceHome({ onOpenProjects }: { onOpenProjects: () => void }): JSX.
       <p className="ws-empty-desc">
         输入一句话, 看到 AI 软件生产全过程 — 从需求分析、设计、编码到测试发布。
       </p>
-      <p className="ws-empty-hint">开始: 在左侧选择项目, 或新建一个项目。</p>
-      <div className="ws-empty-actions">
-        <Button variant="primary" onClick={() => setNewProjectHint(true)}>
-          ＋ 新建项目
-        </Button>
-        <Button variant="ghost" onClick={onOpenProjects}>
-          选择项目
-        </Button>
+      <div className="ws-create" data-testid="ws-create-form">
+        <textarea
+          className="ws-create-input"
+          data-testid="ws-create-input"
+          placeholder="我想开发一个 xxx"
+          value={idea}
+          onChange={(e) => setIdea(e.target.value)}
+          rows={2}
+        />
+        <div className="ws-create-actions">
+          <Button
+            variant="primary"
+            onClick={() => void submit()}
+            disabled={submitting}
+            data-testid="ws-create-submit"
+          >
+            {submitting ? '创建中…' : '开始生产'}
+          </Button>
+          <Button variant="ghost" onClick={onOpenProjects}>
+            选择项目
+          </Button>
+        </div>
+        {error != null ? (
+          <p className="ws-create-error" data-testid="ws-create-error">
+            {error}
+          </p>
+        ) : null}
       </div>
-      {newProjectHint ? (
-        <p className="ws-empty-hint" data-testid="ws-new-project-hint">
-          新建项目将在 S10-002 Runtime API (POST /api/projects) 接入后可用。
-        </p>
-      ) : null}
       <TimelinePlaceholder />
     </div>
   );
@@ -119,15 +159,18 @@ export function WorkspaceView({
   project,
   onOpenProjects,
   onViewArtifact,
+  onCreateProject,
 }: {
   view: ExplorerViewId;
   project: MockProject | null;
   onOpenProjects: () => void;
   /** S10-004 联动: Timeline artifact 查看 → Runtime Panel (WorkspaceShell 提供)。 */
   onViewArtifact?: (artifactId: string) => void;
+  /** S10-006.5: 创建项目 (WorkspaceShell 调 POST /api/projects → 选中新项目)。 */
+  onCreateProject?: (idea: string) => Promise<void>;
 }): JSX.Element {
   if (view === 'settings') return <SettingsView />;
   if (view !== 'home' && view !== 'projects') return <PlaceholderView view={view} />;
   if (project != null) return <ProjectWorkspace project={project} onViewArtifact={onViewArtifact} />;
-  return <WorkspaceHome onOpenProjects={onOpenProjects} />;
+  return <WorkspaceHome onOpenProjects={onOpenProjects} onCreateProject={onCreateProject ?? (async () => {})} />;
 }

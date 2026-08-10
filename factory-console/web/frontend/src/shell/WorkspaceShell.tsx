@@ -120,9 +120,11 @@ export function WorkspaceShell({
             <WorkspaceView
               view={view}
               project={selectedProject}
+              projects={projects}
               onOpenProjects={() => setView('projects')}
               onViewArtifact={handleViewArtifact}
               onCreateProject={handleCreateProject}
+              onSelectProject={setSelectedProjectId}
             />
           }
           panel={

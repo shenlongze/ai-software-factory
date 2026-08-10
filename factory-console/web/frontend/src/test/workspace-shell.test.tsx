@@ -221,7 +221,7 @@ describe('Project Tree (mock)', () => {
     const user = userEvent.setup();
     renderShell();
     await user.click(screen.getByRole('button', { name: 'Projects' }));
-    await user.click(screen.getByRole('button', { name: /记账 App/ }));
+    await user.click(within(screen.getByTestId('ws-project-tree')).getByRole('button', { name: /记账 App/ }));
     return user;
   }
 
@@ -229,6 +229,15 @@ describe('Project Tree (mock)', () => {
     await openTree();
     expect(screen.getByRole('button', { name: /记账 App/ })).toBeInTheDocument();
     expect(screen.getByTestId('ws-tree-project-ledger-app')).toBeInTheDocument();
+  });
+
+  it('Home 视图显示已有项目列表 (S10-006.5)', async () => {
+    const user = userEvent.setup();
+    renderShell();
+    expect(await screen.findByTestId('ws-recent-projects')).toBeInTheDocument();
+    expect(screen.getByTestId('ws-recent-ledger-app')).toBeInTheDocument();
+    await user.click(screen.getByTestId('ws-recent-ledger-app'));
+    expect(screen.getByTestId('ws-project-workspace')).toBeInTheDocument();
   });
 
   it('项目树空态 (无项目)', async () => {
@@ -240,7 +249,7 @@ describe('Project Tree (mock)', () => {
 
   it('点击项目 → Workspace 显示项目工作台 + Agent Timeline (S10-003)', async () => {
     const user = await openTree();
-    await user.click(screen.getByRole('button', { name: /记账 App/ }));
+    await user.click(within(screen.getByTestId('ws-project-tree')).getByRole('button', { name: /记账 App/ }));
     expect(screen.getByTestId('ws-project-workspace')).toBeInTheDocument();
     expect(screen.getByTestId('ws-project-name')).toHaveTextContent('记账 App');
     expect(within(screen.getByTestId('ws-project-workspace')).getByText('active')).toBeInTheDocument(); // StatusBadge (API status 原值)

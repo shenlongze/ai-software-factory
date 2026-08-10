@@ -30,9 +30,14 @@ export function TimelinePlaceholder({ projectName }: { projectName?: string }): 
 function WorkspaceHome({
   onOpenProjects,
   onCreateProject,
+  projects,
+  onSelectProject,
 }: {
   onOpenProjects: () => void;
   onCreateProject: (idea: string) => void;
+  /** S10-006.5: 已有项目列表 (默认视图直接可见, 点击进入工作台)。 */
+  projects: { id: string; name: string }[];
+  onSelectProject: (projectId: string) => void;
 }): JSX.Element {
   const [idea, setIdea] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -92,6 +97,27 @@ function WorkspaceHome({
           </p>
         ) : null}
       </div>
+      {projects.length > 0 ? (
+        <div className="ws-recent" data-testid="ws-recent-projects">
+          <h3 className="ws-recent-title">已有项目</h3>
+          <div className="ws-recent-list">
+            {projects.map((project) => (
+              <button
+                key={project.id}
+                type="button"
+                className="ws-recent-item"
+                data-testid={`ws-recent-${project.id}`}
+                onClick={() => onSelectProject(project.id)}
+              >
+                <span className="ws-recent-name">{project.name}</span>
+                <span className="ws-recent-arrow" aria-hidden="true">
+                  →
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
       <TimelinePlaceholder />
     </div>
   );
@@ -151,20 +177,33 @@ function SettingsView(): JSX.Element {
 export function WorkspaceView({
   view,
   project,
+  projects,
   onOpenProjects,
   onViewArtifact,
   onCreateProject,
+  onSelectProject,
 }: {
   view: ExplorerViewId;
   project: { id: string; name: string; status?: string | null } | null;
+  /** S10-006.5: 已有项目列表 (Home 默认视图展示)。 */
+  projects: { id: string; name: string }[];
   onOpenProjects: () => void;
   /** S10-004 联动: Timeline artifact 查看 → Runtime Panel (WorkspaceShell 提供)。 */
   onViewArtifact?: (artifactId: string) => void;
   /** S10-006.5: 创建项目 (WorkspaceShell 调 POST /api/projects → 选中新项目)。 */
   onCreateProject?: (idea: string) => Promise<void>;
+  /** S10-006.5: 选择已有项目 (Home 列表点击)。 */
+  onSelectProject?: (projectId: string) => void;
 }): JSX.Element {
   if (view === 'settings') return <SettingsView />;
   if (view !== 'home' && view !== 'projects') return <PlaceholderView view={view} />;
   if (project != null) return <ProjectWorkspace project={project} onViewArtifact={onViewArtifact} />;
-  return <WorkspaceHome onOpenProjects={onOpenProjects} onCreateProject={onCreateProject ?? (async () => {})} />;
+  return (
+    <WorkspaceHome
+      onOpenProjects={onOpenProjects}
+      onCreateProject={onCreateProject ?? (async () => {})}
+      projects={projects}
+      onSelectProject={onSelectProject ?? (() => {})}
+    />
+  );
 }

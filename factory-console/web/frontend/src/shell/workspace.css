@@ -1062,3 +1062,19 @@
 .ws-rv-history-meta {
   font-size: var(--ds-font-xs);
 }
+
+/* S10-006.5: Home 已有项目列表 (Apple 卡片) */
+.ws-recent { margin-top: var(--ds-space-lg); width: 100%; max-width: 560px; }
+.ws-recent-title { font-size: 15px; font-weight: 600; color: var(--ds-text-secondary); margin: 0 0 var(--ds-space-sm); }
+.ws-recent-list { display: flex; flex-direction: column; gap: var(--ds-space-sm); }
+.ws-recent-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: var(--ds-space-md) var(--ds-space-lg);
+  background: var(--ds-surface); border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-md); cursor: pointer;
+  font-size: 15px; color: var(--ds-text); text-align: left;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+.ws-recent-item:hover { background: var(--ds-surface-2); box-shadow: var(--ds-shadow); }
+.ws-recent-name { font-weight: 500; }
+.ws-recent-arrow { color: var(--ds-text-secondary); }

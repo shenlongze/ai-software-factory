@@ -15,14 +15,28 @@
  *     org.runtime.* 成员 → 事件不落库, 诚实走 REST 轮询)
  *   - createRuntime / screenshotRuntime: 写面 (直接 API, 无 mock fallback —
  *     失败诚实报错, 不掩盖)
+ * - S10-005 Artifact Center 数据源 (读路径, 均 mock fallback 诚实标注):
+ *   - listArtifacts(projectId, type?): 项目产物清单 (类型过滤走服务端参数)
+ *   - getArtifactDetail(artifactId): 单产物详情 (metadata 契约载荷)
+ *   - getArtifactContent(artifactId): 产物渲染内容 (Code diff 兜底 / Release 下载源)
  *
  * 只读契约 (与 api/client.ts 同: 查询全 GET; 写面仅 Runtime 生命周期)。
  */
 
 import { api, ApiError } from './client';
-import { mockRuntimes, mockTimeline, mockWorkflowDetail } from '../mock/runtime';
+import {
+  mockArtifactContent,
+  mockArtifactDetail,
+  mockArtifacts,
+  mockRuntimes,
+  mockTimeline,
+  mockWorkflowDetail,
+} from '../mock/runtime';
 import {
   RUNTIME_EVENT_NAMES,
+  type ArtifactContent,
+  type ArtifactDetail,
+  type ArtifactSummary,
   type RuntimeEventName,
   type RuntimeInstance,
   type RuntimeScreenshot,
@@ -124,6 +138,32 @@ export const runtimeClient = {
   /** 截图 (POST; 预留 — 只落截图记录, 完整 Feedback Loop 后续实现)。 */
   screenshotRuntime: (runtimeId: string): Promise<RuntimeScreenshot> =>
     api.screenshotRuntime(runtimeId),
+
+  // ------------------------------------------------ S10-005 Artifact Center
+
+  /** 项目 Artifact 清单 (类型过滤走服务端 type 参数; 无后端 → mock fallback)。 */
+  listArtifacts: (
+    projectId: string,
+    type?: string,
+  ): Promise<RuntimeQueryResult<ArtifactSummary[]>> =>
+    fetchWithMockFallback(
+      () => api.artifacts({ projectId, ...(type != null && type.length > 0 ? { type } : {}) }),
+      () => mockArtifacts(projectId, type),
+    ),
+
+  /** 单产物详情 (Detail Viewer 数据源; 无后端 → mock fallback)。 */
+  getArtifactDetail: (artifactId: string): Promise<RuntimeQueryResult<ArtifactDetail>> =>
+    fetchWithMockFallback(
+      () => api.artifact(artifactId),
+      () => mockArtifactDetail(artifactId),
+    ),
+
+  /** 产物渲染内容 (Code diff 兜底 / Release 下载源; 无后端 → mock fallback)。 */
+  getArtifactContent: (artifactId: string): Promise<RuntimeQueryResult<ArtifactContent>> =>
+    fetchWithMockFallback(
+      () => api.artifactContent(artifactId),
+      () => mockArtifactContent(artifactId),
+    ),
 };
 
 /** SSE 事件流订阅 (见 runtimeClient.subscribeEvents 说明)。 */

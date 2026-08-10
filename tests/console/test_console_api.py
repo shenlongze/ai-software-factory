@@ -123,6 +123,7 @@ class TestRouteExports:
             "capture_runtime_screenshot",
             "create_runtime",
             "get_artifact",
+            "get_artifact_content",
             "get_decision",
             "get_project_lifecycle",
             "get_project_timeline",

@@ -20,6 +20,7 @@ import {
   type ApprovalDecisionSummary,
   type ApprovalGateSummary,
   type ApprovalSummary,
+  type ArtifactContent,
   type ArtifactDetail,
   type ArtifactSummary,
   type ConsoleDashboard,
@@ -120,6 +121,9 @@ export const api = {
   // S9-003: 单产物详情 (Review 数据源: metadata 契约载荷 + review 审批门)
   artifact: (artifactId: string) =>
     getJson<ArtifactDetail>(`/api/artifacts/${encodeURIComponent(artifactId)}`),
+  // S10-005: 产物渲染内容 (location 文件文本 — Code diff 兜底 / Release 下载源)
+  artifactContent: (artifactId: string) =>
+    getJson<ArtifactContent>(`/api/artifacts/${encodeURIComponent(artifactId)}/content`),
   // S10-002: Runtime API (UI 与 CLI 共用; 全部只读 GET)
   projectWorkflow: (projectId: string) =>
     getJson<WorkflowDetail>(`/api/projects/${encodeURIComponent(projectId)}/workflow`),

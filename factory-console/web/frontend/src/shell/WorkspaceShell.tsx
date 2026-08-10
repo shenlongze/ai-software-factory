@@ -23,25 +23,34 @@ import './workspace.css';
 
 export function WorkspaceShell({
   initialProjectId = null,
+  initialPanelTab = null,
+  initialArtifactId = null,
 }: {
   /** S10-003: hash 直链初始项目 (无 → 空态首页, 用户自行选择)。 */
   initialProjectId?: string | null;
+  /** S10-005: hash 直链初始面板 Tab (截图入口 #/workspace?project=X&panel=artifact)。 */
+  initialPanelTab?: PanelTabId | null;
+  /** S10-005: hash 直链初始产物 (打开 Artifact Tab 并定位详情)。 */
+  initialArtifactId?: string | null;
 }): JSX.Element {
   const [view, setView] = useState<ExplorerViewId>('home');
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(initialProjectId);
-  const [panelTab, setPanelTab] = useState<PanelTabId>('browser');
-  // S10-004 Timeline 联动: artifact 查看请求 (artifactId + 递增序号触发)
-  const [runtimeFocus, setRuntimeFocus] = useState<{ artifactId: string; nonce: number } | null>(null);
+  const [panelTab, setPanelTab] = useState<PanelTabId>(initialPanelTab ?? 'browser');
+  // S10-005 Timeline 联动: artifact 查看请求 (artifactId + 递增序号触发)
+  const [artifactFocus, setArtifactFocus] = useState<{ artifactId: string; nonce: number } | null>(
+    initialArtifactId != null ? { artifactId: initialArtifactId, nonce: 1 } : null,
+  );
 
   const selectedProject = useMemo(
     () => MOCK_PROJECTS.find((project) => project.id === selectedProjectId) ?? null,
     [selectedProjectId],
   );
 
-  /** S10-004: Timeline artifact 查看 → 选中 Runtime Tab + 定位/提示创建。 */
+  /** Timeline artifact 查看 → 选中 Artifact Tab + 定位产物详情 (S10-005;
+   * 复用 S10-004 onViewArtifact 管线, 目标由 Runtime 改为 Artifact Center)。 */
   const handleViewArtifact = (artifactId: string): void => {
-    setRuntimeFocus((prev) => ({ artifactId, nonce: (prev?.nonce ?? 0) + 1 }));
-    setPanelTab('browser');
+    setArtifactFocus((prev) => ({ artifactId, nonce: (prev?.nonce ?? 0) + 1 }));
+    setPanelTab('artifact');
   };
 
   return (
@@ -74,9 +83,9 @@ export function WorkspaceShell({
               activeTab={panelTab}
               onSelectTab={setPanelTab}
               projectId={selectedProjectId}
-              focusArtifactId={runtimeFocus?.artifactId ?? null}
-              focusNonce={runtimeFocus?.nonce ?? null}
-              onFocusConsumed={() => setRuntimeFocus(null)}
+              focusArtifactId={artifactFocus?.artifactId ?? null}
+              focusNonce={artifactFocus?.nonce ?? null}
+              onFocusConsumed={() => setArtifactFocus(null)}
             />
           }
         />

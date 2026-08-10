@@ -17,7 +17,7 @@ from .approvals import (
     list_approvals,
     reject_approval,
 )
-from .artifacts import get_artifact, list_artifacts
+from .artifacts import get_artifact, get_artifact_content, list_artifacts
 from .decisions import get_decision
 from .intelligence import list_experience, list_recommendations
 from .lifecycle import get_project_lifecycle
@@ -43,6 +43,7 @@ __all__ = [
     "capture_runtime_screenshot",
     "create_runtime",
     "get_artifact",
+    "get_artifact_content",
     "get_decision",
     "get_project_lifecycle",
     "get_project_timeline",

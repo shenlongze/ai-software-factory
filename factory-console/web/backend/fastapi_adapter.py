@@ -334,6 +334,15 @@ def build_app(
             raise HTTPException(status_code=404, detail="artifact not found")
         return detail.to_dict()
 
+    @app.get("/api/artifacts/{artifact_id}/content")
+    def api_artifact_content(artifact_id: str) -> dict[str, Any]:
+        """产物渲染内容 (S10-005 — location 文件文本: Code diff 兜底 / Release
+        下载源; 缺失 → content null, 失败安全; 产物不存在 → 404)。"""
+        content = _api.get_artifact_content(service, artifact_id, logger=event_logger)
+        if content is None:
+            raise HTTPException(status_code=404, detail="artifact not found")
+        return content.to_dict()
+
     # ------------------------------------------------- S10-002: Runtime API
     # UI 与 CLI 共用 (Adapter 层只读 + SSE; 零 Core 修改, 只消费 org.* 查询)。
 

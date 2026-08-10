@@ -501,40 +501,33 @@ describe('RuntimePanel — Timeline Artifact 联动 (WorkspaceShell 集成)', ()
     );
   }
 
-  it('artifact 查看 (绑定实例存在) → Runtime Tab 激活 + 已定位提示 + 高亮', async () => {
+  it('artifact 查看 (S10-005) → Artifact Tab 激活 + 打开产物详情 (Artifact Center)', async () => {
     const user = userEvent.setup();
     renderShell([browserInstance('rt-b', 'running', 'mock-art-ux_ui')]);
     // Timeline artifact 节点渲染
     await screen.findByTestId('agent-timeline-artifact');
     await user.click(screen.getByRole('button', { name: '查看' }));
-    // Runtime Panel 可见 (browser tab 激活) + 联动提示
-    expect(screen.getByTestId('runtime-panel')).toBeInTheDocument();
-    const notice = await screen.findByTestId('runtime-focus-notice');
-    expect(notice).toHaveTextContent('已从 Timeline 打开产物 mock-art-ux_ui 的 Runtime');
-    expect(screen.getByTestId('runtime-card-rt-b')).toHaveAttribute('data-status', 'running');
-    expect(screen.getByTestId('runtime-highlight')).toHaveTextContent('已定位');
+    // Artifact Center 可见 (artifact tab 激活) + 打开产物详情 (focus 优先)
+    expect(screen.getByTestId('artifact-center')).toBeInTheDocument();
+    expect(await screen.findByTestId('artifact-detail')).toBeInTheDocument();
   });
 
-  it('artifact 查看 (无绑定实例) → 提示创建 (简单联动)', async () => {
+  it('artifact 查看 (无对应产物) → Artifact Center 空态/兜底 (简单联动)', async () => {
     const user = userEvent.setup();
     renderShell([]);
     await screen.findByTestId('agent-timeline-artifact');
     await user.click(screen.getByRole('button', { name: '查看' }));
-    expect(screen.getByTestId('runtime-panel')).toBeInTheDocument();
-    const notice = await screen.findByTestId('runtime-focus-notice');
-    expect(notice).toHaveTextContent('暂无 Runtime');
-    expect(notice).toHaveTextContent('点击 + 创建');
-    expect(screen.getByTestId('runtime-panel-empty')).toBeInTheDocument();
+    expect(screen.getByTestId('artifact-center')).toBeInTheDocument();
   });
 
-  it('联动后再次点击 artifact → 提示仍生效 (nonce 递增, 无重复消费问题)', async () => {
+  it('联动后再次点击 artifact → 定位仍生效 (nonce 递增, 无重复消费问题)', async () => {
     const user = userEvent.setup();
     renderShell([browserInstance('rt-b', 'running', 'mock-art-ux_ui')]);
     await screen.findByTestId('agent-timeline-artifact');
     await user.click(screen.getByRole('button', { name: '查看' }));
-    await screen.findByTestId('runtime-focus-notice');
+    await screen.findByTestId('artifact-detail');
     await user.click(screen.getByRole('button', { name: '查看' }));
-    expect(await screen.findByTestId('runtime-focus-notice')).toHaveTextContent('已从 Timeline 打开产物 mock-art-ux_ui 的 Runtime');
+    expect(await screen.findByTestId('artifact-detail')).toBeInTheDocument();
   });
 });
 

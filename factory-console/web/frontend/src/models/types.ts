@@ -231,6 +231,15 @@ export interface ArtifactDetail extends ArtifactSummary {
   review: ApprovalGateSummary | null;
 }
 
+/** S10-005: GET /artifacts/{id}/content — 产物渲染内容 (Code diff 兜底 /
+ * Release 下载源; 文件缺失/越界 → content null 失败安全)。 */
+export interface ArtifactContent {
+  artifact_id: string;
+  type: string;
+  location: string;
+  content: string | null;
+}
+
 /** PRD (product Artifact) Review 节 (S9-003 任务规格 6 节)。 */
 export const PRODUCT_SECTIONS: readonly { key: string; label: string }[] = [
   { key: 'market_analysis', label: '市场分析' },
@@ -259,6 +268,19 @@ export interface WireframeScreen {
   components: string[];
   actions: string[];
 }
+
+/** S10-005: design Artifact (Architect S8-003 输出) Review 节 — org CONTRACTS
+ * design 契约 7 键 (system_architecture/technical_stack/database_design/api_design/
+ * frontend_architecture/backend_architecture/task_breakdown)。 */
+export const ARCHITECTURE_SECTIONS: readonly { key: string; label: string }[] = [
+  { key: 'system_architecture', label: '系统架构' },
+  { key: 'technical_stack', label: '技术栈' },
+  { key: 'database_design', label: '数据库设计' },
+  { key: 'api_design', label: 'API 设计' },
+  { key: 'frontend_architecture', label: '前端架构' },
+  { key: 'backend_architecture', label: '后端架构' },
+  { key: 'task_breakdown', label: '任务拆解' },
+];
 
 /** 阶段链节点投影 (status/role/artifact)。 */
 export interface StageSummary {
@@ -453,4 +475,30 @@ export const ARTIFACT_TYPE_LABELS: Record<string, string> = {
 
 export function artifactTypeLabel(type: string): string {
   return ARTIFACT_TYPE_LABELS[type] ?? type;
+}
+
+/** Artifact 生命周期状态中文标签 (S10-005 Artifact Center 状态徽章;
+ * created/generated/validated/consumed/archived/invalid + 通用 pending/failed;
+ * 未知原样显示)。 */
+export function artifactStatusLabel(status: string): string {
+  switch (status.toLowerCase()) {
+    case 'validated':
+      return '已验证';
+    case 'generated':
+      return '已生成';
+    case 'created':
+      return '已创建';
+    case 'consumed':
+      return '已消费';
+    case 'archived':
+      return '已归档';
+    case 'invalid':
+      return '无效';
+    case 'pending':
+      return '待验证';
+    case 'failed':
+      return '失败';
+    default:
+      return status;
+  }
 }

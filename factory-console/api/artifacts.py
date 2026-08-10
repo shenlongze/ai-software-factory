@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..events import record_console_viewed
-from ..models import ArtifactDetail, ArtifactSummary
+from ..models import ArtifactContent, ArtifactDetail, ArtifactSummary
 
 #: API 路由标识 (事件 payload view 名, 11B FastAPI 薄层同用)
 VIEW = "artifacts"
@@ -65,4 +65,27 @@ def get_artifact(
     return detail
 
 
-__all__ = ["VIEW", "get_artifact", "list_artifacts"]
+def get_artifact_content(
+    service: Any,
+    artifact_id: str,
+    *,
+    logger: Any = None,
+) -> ArtifactContent | None:
+    """GET /artifacts/{id}/content — 产物渲染内容 (S10-005 Artifact Center)。
+
+    返回 ArtifactContent (location 文件文本; 缺失 → content None — 失败安全);
+    无 org / 产物不存在 → None (HTTP 层映射 404)。logger 存在时发
+    console.viewed (view="artifact_content") 只读审计。
+    """
+    content = service.get_artifact_content(artifact_id)
+    if logger is not None and content is not None:
+        record_console_viewed(
+            logger,
+            view="artifact_content",
+            count=1,
+            extra={"artifact_id": artifact_id, "type": content.type},
+        )
+    return content
+
+
+__all__ = ["VIEW", "get_artifact", "get_artifact_content", "list_artifacts"]

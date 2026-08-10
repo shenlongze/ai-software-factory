@@ -134,11 +134,14 @@ export function statusTone(status: string): StatusTone {
     case 'success':
     case 'done':
     case 'passed':
+    // S10-005: Artifact 生命周期状态 (statusTone 语义色 — VALIDATED 绿 / INVALID 红)
+    case 'validated':
       return 'success';
     case 'failed':
     case 'rejected':
     case 'error':
     case 'failure':
+    case 'invalid':
       return 'failed';
     default:
       return 'neutral';

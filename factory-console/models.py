@@ -272,6 +272,23 @@ class ArtifactDetail(ArtifactSummary):
         return v if v is not None else {}
 
 
+class ArtifactContent(BaseModel):
+    """GET /artifacts/{id}/content — 产物渲染内容 (S10-005 Artifact Center)。
+
+    artifact 的原始内容 (location 指向文件的文本 — Code diff 兜底 / Release
+    下载源); 文件缺失/不可读/越界 → content None (失败安全 — metadata 已在
+    ArtifactDetail, 本端点只补渲染内容, 缺数据不拖垮查看器)。
+    """
+
+    artifact_id: str
+    type: str = ""
+    location: str = ""
+    content: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json")
+
+
 class StageSummary(BaseModel):
     """GET /workflows/{id} — 阶段链节点投影 (status/role/artifact)。
 

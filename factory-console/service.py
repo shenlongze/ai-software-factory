@@ -23,6 +23,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from .models import (
@@ -30,6 +31,7 @@ from .models import (
     ApprovalDecisionSummary,
     ApprovalGateSummary,
     ApprovalSummary,
+    ArtifactContent,
     ArtifactDetail,
     ArtifactSummary,
     ConsoleDashboard,
@@ -844,6 +846,37 @@ class ConsoleService:
             **summary.to_dict(),
             metadata=dict(artifact.metadata or {}),
             review=self._gate_summary(gate, artifact.project_id) if gate else None,
+        )
+
+    def get_artifact_content(self, artifact_id: str) -> "ArtifactContent | None":
+        """产物渲染内容 (GET /artifacts/{id}/content; S10-005)。
+
+        复用 get_artifact 定位产物 (无 org/不存在 → None, 404 语义同详情);
+        content 尝试读 location 指向的文本文件 — 相对 org store 目录解析,
+        越界/缺失/不可读 → None (失败安全: 查看器以 metadata 为主, content
+        仅补 Code diff 兜底 / Release 下载, 缺数据不拖垮)。
+        """
+        detail = self.get_artifact(artifact_id)
+        if detail is None:
+            return None
+        content: str | None = None
+        if detail.location:
+            lifecycle = self._workflow_lifecycle()
+            store = getattr(lifecycle, "store", None) if lifecycle else None
+            root = getattr(store, "dir", None) if store else None
+            if root is not None:
+                try:
+                    base = Path(root).resolve()
+                    target = (base / detail.location).resolve()
+                    if target.is_relative_to(base) and target.is_file():
+                        content = target.read_text(encoding="utf-8", errors="replace")
+                except Exception:
+                    content = None  # 读取失败 → None (失败安全)
+        return ArtifactContent(
+            artifact_id=detail.id,
+            type=detail.type,
+            location=detail.location,
+            content=content,
         )
 
     def list_approval_gates(

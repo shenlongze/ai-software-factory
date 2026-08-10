@@ -4,12 +4,15 @@
  * Runtime Tab (browser): S10-004 Runtime Workspace Panel — 选中项目后渲染
  * RuntimePanel (Instances 列表 + [+] 创建 + Browser iframe + Terminal mock
  * stream + REST 轮询); 未选中项目 → 空态 (等待选择项目)。
- * Task / Artifact / Review — 仍为 Empty State 占位 (S10-002 / S10-005 /
- * S10-006 接入)。
+ * Artifact Tab (artifact): S10-005 Artifact Center — 选中项目后渲染
+ * ArtifactCenter (6 类产物 List + 类型过滤 + Detail Viewer 类型化渲染 +
+ * Timeline 联动); 未选中项目 → 空态 (等待选择项目)。
+ * Task / Review — 仍为 Empty State 占位 (S10-002 / S10-006 接入)。
  */
 
 import { PANEL_TABS } from '../mock/workspace';
 import type { PanelTabId } from '../mock/workspace';
+import { ArtifactCenter } from './ArtifactCenter';
 import { RuntimePanel } from './RuntimePanel';
 
 function PanelEmpty({ tabId }: { tabId: PanelTabId }): JSX.Element {
@@ -74,6 +77,13 @@ export function FactoryPanel({
       >
         {activeTab === 'browser' && projectId != null ? (
           <RuntimePanel
+            projectId={projectId}
+            focusArtifactId={focusArtifactId}
+            focusNonce={focusNonce}
+            onFocusConsumed={onFocusConsumed}
+          />
+        ) : activeTab === 'artifact' && projectId != null ? (
+          <ArtifactCenter
             projectId={projectId}
             focusArtifactId={focusArtifactId}
             focusNonce={focusNonce}

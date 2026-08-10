@@ -159,6 +159,9 @@ class ConsoleService:
         # S10-006: 审核反馈持久化 (Feedback Loop — Reject 意见落库; 可选,
         # 失败安全: 缺 store → 反馈保存/查询按空处理, 不拖垮审批决定)
         review_feedback_store: Any = None,
+        # S10-006.5 P1-A: 对话记录持久化 (POST /projects/{id}/chat 消息落库;
+        # 可选, 失败安全: 缺 store → 消息记录跳过, 对话仍可用)
+        conversation_store: Any = None,
     ) -> None:
         self._workspace = workspace_manager
         self._task_store = task_store
@@ -180,6 +183,9 @@ class ConsoleService:
         self._runtime_screenshots = runtime_screenshot_store
         # S10-006: 审核反馈 store (缺失 → None; 保存/查询失败安全)
         self._review_feedback_store = review_feedback_store
+        # S10-006.5 P1-A: 对话记录 store (POST /projects/{id}/chat 消息落库;
+        # 可选, 失败安全: 缺 store → 消息记录跳过, 对话仍可用)
+        self._conversation_store = conversation_store
 
     # ------------------------------------------------------------------ 七域 Dashboard
 
@@ -326,6 +332,68 @@ class ConsoleService:
             return project
         except Exception:
             return None  # org 缺失/损坏 → 503 (失败安全, 不拖垮 API)
+
+    # ------------------------------------------------------------------ S10-006.5 P1-A: Workflow 启动/对话
+
+    def workflow_run_paths(self) -> dict[str, Any] | None:
+        """Workflow 运行数据空间路径 (org 数据空间派生的目录布局)。
+
+        返回 {org_dir, runs_dir}: org_dir = <root>/org (ProjectStore 根),
+        runs_dir = <root>/workflow_runs (运行沙箱/报告目录); project_store
+        缺失 → None (HTTP 层 503 — 存储不可用, 失败安全)。events db 路径
+        由 Adapter 层从 event_logger.store.db_path 提供 (本服务不持事件库)。
+        """
+        store = self._project_store
+        if store is None:
+            return None
+        try:
+            org_dir = store.dir
+        except Exception:
+            return None
+        return {
+            "org_dir": str(org_dir),
+            "runs_dir": str(Path(org_dir).parent / "workflow_runs"),
+        }
+
+    def project_idea(self, project_id: str) -> str | None:
+        """项目 idea (org Project.goal; 无 org/不存在 → None)。"""
+        if self._project_store is None:
+            return None
+        try:
+            project = self._project_store.get_project(project_id)
+        except Exception:
+            return None
+        if project is None:
+            return None
+        return project.goal or project.name or None
+
+    def update_project_idea(self, project_id: str, idea: str) -> bool:
+        """更新项目 idea (org Project.goal — 聊天未启动场景); 失败 → False。
+
+        只改 org Project 数据 (不触碰 Core Workflow/Artifact/Approval —
+        冻结铁律); 更新后 Workflow 启动链以新 idea 为输入。
+        """
+        if self._project_store is None:
+            return False
+        try:
+            from org.models import utcnow
+
+            project = self._project_store.get_project(project_id)
+            if project is None:
+                return False
+            updated = project.model_copy(update={"goal": idea, "updated_at": utcnow()})
+            self._project_store.save_project(updated)
+            return True
+        except Exception:
+            return False  # org 缺失/损坏 → False (失败安全)
+
+    def get_conversation_store(self) -> Any:
+        """对话记录 store (S10-006.5 P1-A — POST /projects/{id}/chat 落库)。
+
+        缺失 → None (失败安全: 消息记录跳过, 对话/启动不受影响 — 同
+        _get_runtime_store 模式, 方法名避开实例属性遮蔽陷阱)。
+        """
+        return self._conversation_store
 
     # ------------------------------------------------------------------ S9-002: Workflow/Artifact/Approval
 

@@ -137,6 +137,7 @@ class TestRouteExports:
         expected = {
             "approve_approval",
             "capture_runtime_screenshot",
+            "chat_route",
             "create_project",
             "create_runtime",
             "get_artifact",
@@ -160,7 +161,9 @@ class TestRouteExports:
             "list_runtimes",
             "list_workflows",
             "reject_approval",
+            "run_status_route",
             "save_review_feedback",
+            "start_project_workflow_route",
             "start_runtime",
             "stop_runtime",
         }

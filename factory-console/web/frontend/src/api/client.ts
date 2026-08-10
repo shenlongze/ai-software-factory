@@ -95,6 +95,21 @@ export const api = {
     getJson<LifecycleSummary>(
       `/api/projects/${encodeURIComponent(projectId)}/lifecycle`,
     ),
+  // S10-006.5 P1-A: 启动真实 Agent 执行链 + chat + run 状态
+  startWorkflow: (projectId: string) =>
+    sendJson<{ status: string; run_id?: string }>(
+      `/api/projects/${encodeURIComponent(projectId)}/start`,
+      {},
+    ),
+  sendChat: (projectId: string, message: string) =>
+    sendJson<{ status: string; message: string; started?: boolean }>(
+      `/api/projects/${encodeURIComponent(projectId)}/chat`,
+      { message },
+    ),
+  runStatus: (projectId: string) =>
+    getJson<{ status: string; stages?: unknown[] }>(
+      `/api/projects/${encodeURIComponent(projectId)}/run-status`,
+    ),
   approvals: (pendingOnly = false) =>
     getJson<ApprovalSummary[]>(`/api/approvals${pendingOnly ? '?pending_only=true' : ''}`),
   // S9-002: 组织级审批门 (org ApprovalGate) — 可操作

@@ -218,8 +218,9 @@ class TestPermissionBoundary:
         走 org Approval 状态机, source=console 审计) + Runtime 实例生命周期
         (POST /projects/{id}/runtimes 创建 + /runtimes/{id}/start|stop|
         screenshot) + Review 反馈 (POST /review-feedback) + 项目创建
-        (POST /api/projects — S10-006.5 org 项目壳); 其余一切路由只读
-        (GET/HEAD), 无 PUT/PATCH/DELETE。
+        (POST /api/projects — S10-006.5 org 项目壳) + Workflow 启动/对话
+        (POST /projects/{id}/start|chat — S10-006.5 P1-A 触发执行链/消息
+        落库); 其余一切路由只读 (GET/HEAD), 无 PUT/PATCH/DELETE。
         """
         app = _adapter.build_app(_StubService())
         for route in app.routes:
@@ -232,28 +233,35 @@ class TestPermissionBoundary:
                     f"非 POST 写路由泄漏: {route_method} {getattr(route, 'path', '?')}"
                 )
                 path = getattr(route, "path", "")
-                # 审批决定 + Runtime 生命周期 + Review 反馈 + 项目创建
+                # 审批决定 + Runtime 生命周期 + Review 反馈 + 项目创建 + Workflow 启动/对话
                 is_approval = path.endswith("/approve") or path.endswith("/reject")
                 is_runtime_lifecycle = "/runtimes" in path
                 is_review_feedback = path.endswith("/review-feedback")
                 is_project_create = path == "/api/projects"
+                is_workflow_start = path.endswith("/start") or path.endswith("/chat")
                 assert (
                     is_approval
                     or is_runtime_lifecycle
                     or is_review_feedback
                     or is_project_create
+                    or is_workflow_start
                 ), (
-                    f"POST 路由超出审批决定 + Runtime 生命周期 + 反馈 + 创建范围: {path}"
+                    f"POST 路由超出审批决定 + Runtime 生命周期 + 反馈 + 创建 + 启动范围: {path}"
                 )
 
     def test_client_write_surface_limited_to_approval_decisions(self):
-        """前端 api client 写面仅审批决定 (POST approve/reject; 无 put/patch/delete)。"""
+        """前端 api client 写面仅审批决定 + Runtime + 创建 + 启动/对话 POST
+        (approve/reject/start/chat/…; 无 put/patch/delete)。"""
         src = (Path(__file__).parents[2] / "factory-console" / "web" / "frontend"
                / "src" / "api" / "client.ts").read_text(encoding="utf-8")
-        # 写 helper 存在但唯一 (sendJson → POST approve/reject)
+        # 写 helper 存在但唯一 (sendJson → POST 写面)
         assert "sendJson" in src
         assert "approveApproval" in src
         assert "rejectApproval" in src
+        # S10-006.5 P1-A: Workflow 启动/对话/状态 (POST start/chat + GET run-status)
+        assert "startWorkflow" in src
+        assert "sendChat" in src
+        assert "runStatus" in src
         # 无 put/patch/delete 写方法
         assert "function put" not in src
         assert "function patch" not in src

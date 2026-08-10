@@ -39,13 +39,17 @@ build 静态文件 (SPA)。只做 HTTP 绑定 (参数解析 / JSON 序列化 / �
   POST /api/approvals/{id}/reject       → 审批否决 (404/409 映射)            [S9-002]
   GET  /api/review-feedback             → 审核反馈历史 (artifact/gate 过滤)   [S10-006]
   POST /api/review-feedback             → 保存反馈记录 (round 递增; 400/503)  [S10-006]
+  POST /api/projects/{id}/start         → 启动真实 Agent 执行链 (404/409/503) [S10-006.5 P1-A]
+  POST /api/projects/{id}/chat          → 持续开发对话 (400/404/503)          [S10-006.5 P1-A]
+  GET  /api/projects/{id}/run-status    → 运行状态+进度 (none/running/…)      [S10-006.5 P1-A]
 Permission Boundary (S9-002 收窄 + S10-004/006/006.5 扩展): 写路径仅
 ① 审批决定两 POST (approve/reject, reviewer="console" 落库 + source="console"
 审计) ② Feedback Loop 一 POST (review-feedback — Reject 意见落库, 不触碰
 引擎) ③ Runtime 实例生命周期 POST (创建/start/stop/screenshot, S10-004)
 ④ POST /api/projects (S10-006.5 — org 项目壳创建: org.project.created 审计,
-只建壳不启动执行链); 其余端点全部 GET — register_project/成本写入等仍
-不在 Console 范围 (S9-005/后续)。
+只建壳不启动执行链) ⑤ Workflow 启动/对话 POST (start/chat, S10-006.5 P1-A
+— 触发本项目真实 Agent 执行链/消息落库, 不触碰 Core 引擎); 其余端点
+全部 GET — register_project/成本写入等仍不在 Console 范围 (S9-005/后续)。
 静态: frontend build 产物 (dist/) — SPA html=True; 缺目录 → 纯 API 模式。
 """
 
@@ -117,6 +121,17 @@ class _ReviewFeedbackBody(BaseModel):
     gate_id: str = ""
     reviewer: str = "console"
     comment: str = ""
+
+
+class _ChatBody(BaseModel):
+    """POST /api/projects/{id}/chat body (S10-006.5 P1-A: 持续开发对话最小版)。
+
+    {message}: 用户持续开发指令 — 已启动项目 → 只落消息 (chat_store);
+    未启动项目 → 消息作为新 idea (org Project.goal 更新) + 触发 start。
+    message 空 → 400 (空消息不发送)。
+    """
+
+    message: str
 
 
 # ------------------------------------------------------------------ 装配
@@ -196,6 +211,15 @@ def build_console_service(factory_root: str | Path, *, event_logger: Any = None)
     except Exception:
         review_feedback_store = None
 
+    # S10-006.5 P1-A: 对话记录数据空间 (root/chat.json — POST /projects/{id}/chat
+    # 消息落库; 失败安全: 装配失败 → None, 消息记录跳过, 对话/启动不受影响)
+    conversation_store = None
+    try:
+        _chat_module = importlib.import_module("factory-console.chat_store")
+        conversation_store = _chat_module.ConversationStore(root / "chat.json")
+    except Exception:
+        conversation_store = None
+
     return module.ConsoleService(
         workspace_manager=WorkspaceManager(root),
         task_store=TaskStore(root / "tasks"),
@@ -214,6 +238,8 @@ def build_console_service(factory_root: str | Path, *, event_logger: Any = None)
         # S10-006: 审核反馈持久化 (root/review_feedback.json — Feedback Loop
         # Reject 意见落库; 失败安全: 装配失败 → None, 保存/查询按空处理)
         review_feedback_store=review_feedback_store,
+        # S10-006.5 P1-A: 对话记录持久化 (root/chat.json — 消息落库; 失败安全)
+        conversation_store=conversation_store,
     )
 
 
@@ -682,6 +708,75 @@ def build_app(
                 status_code=503, detail="review feedback store unavailable"
             )
         return record.to_dict()
+
+    # ------------------------------------------- S10-006.5 P1-A: Workflow 启动 API
+    # 用户第一公里闭环: POST start (真实 Agent 执行链, 后台线程) + chat 最小版
+    # (持续开发对话: 已启动 → 记录消息; 未启动 → idea 更新 + 触发 start) +
+    # run-status (轮询驱动 Timeline 进度)。写路径扩展 (Permission Boundary
+    # S10-006.5 扩展: 与审批决定/Runtime/Review/创建并列的 Console 写路径 —
+    # 仅触发本项目 workflow 执行与消息落库, 不触碰 Core 引擎)。
+    # 错误映射: 项目不存在 → 404; 空消息/空 idea → 400; 已有运行 → 409
+    # (WorkflowConflictError — 诚实拒绝重复启动); key 缺失/存储不可用 →
+    # 503 (WorkflowStartError — 诚实失败, 不假装执行)。
+    # 事件可读: 链经 EventLogger 写 org.* 事件到 events.db (与 Timeline 同库)
+    # → GET /api/projects/{id}/timeline 直接可见 (真实事件, 非伪造)。
+
+    _events_db_path = getattr(getattr(event_logger, "store", None), "db_path", None)
+    _runner = importlib.import_module("factory-console.workflow_runner")  # noqa: E402
+    WorkflowStartError = _runner.WorkflowStartError
+    WorkflowConflictError = _runner.WorkflowConflictError
+
+    @app.post("/api/projects/{project_id}/start")
+    def api_start_project_workflow(project_id: str) -> dict[str, Any]:
+        """启动真实 Agent 执行链 (key 校验 → 后台线程; 200 立即回包)。"""
+        try:
+            result = _api.start_project_workflow_route(
+                service,
+                project_id,
+                events_db_path=_events_db_path,
+                logger=event_logger,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except WorkflowConflictError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except WorkflowStartError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        if result is None:
+            raise HTTPException(status_code=404, detail="project not found")
+        return result
+
+    @app.post("/api/projects/{project_id}/chat")
+    def api_project_chat(project_id: str, body: _ChatBody) -> dict[str, Any]:
+        """持续开发对话 (最小版): 已启动 → 记录消息; 未启动 → idea 更新 + start。"""
+        try:
+            result = _api.chat_route(
+                service,
+                project_id,
+                body.message,
+                events_db_path=_events_db_path,
+                logger=event_logger,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except WorkflowConflictError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except WorkflowStartError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        if result is None:
+            raise HTTPException(status_code=404, detail="project not found")
+        return result
+
+    @app.get("/api/projects/{project_id}/run-status")
+    def api_project_run_status(project_id: str) -> dict[str, Any]:
+        """运行状态 + 进度 (轮询驱动 Timeline; none/running/completed/failed)。"""
+        try:
+            result = _api.run_status_route(service, project_id, logger=event_logger)
+        except WorkflowStartError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        if result is None:
+            raise HTTPException(status_code=404, detail="project not found")
+        return result
 
     if static_dir is not None and Path(static_dir).is_dir():
         app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="web")

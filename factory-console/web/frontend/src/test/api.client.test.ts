@@ -51,10 +51,13 @@ describe('api client — 只读契约 + S9-002 审批写面 + S10-004 Runtime �
       'rejectApproval',
       // S10-006: 审核反馈 (Feedback Loop 读/写)
       'reviewFeedback',
+      'runStatus',
       'runtimeDetail',
       'saveReviewFeedback',
       'screenshotRuntime',
+      'sendChat',
       'startRuntime',
+      'startWorkflow',
       'stopRuntime',
       'workflow',
       'workflowStages',

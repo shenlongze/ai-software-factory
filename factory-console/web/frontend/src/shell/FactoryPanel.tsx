@@ -7,12 +7,16 @@
  * Artifact Tab (artifact): S10-005 Artifact Center — 选中项目后渲染
  * ArtifactCenter (6 类产物 List + 类型过滤 + Detail Viewer 类型化渲染 +
  * Timeline 联动); 未选中项目 → 空态 (等待选择项目)。
- * Task / Review — 仍为 Empty State 占位 (S10-002 / S10-006 接入)。
+ * Review Tab (review): S10-006 Review Workflow — 选中项目后渲染
+ * ReviewWorkflowPanel (Queue/Content/Decision 三栏 + Feedback Loop + Gate
+ * 集成 + Timeline 联动); 未选中项目 → 空态 (等待选择项目)。
+ * Task — 仍为 Empty State 占位 (S10-002 后续接入)。
  */
 
 import { PANEL_TABS } from '../mock/workspace';
 import type { PanelTabId } from '../mock/workspace';
 import { ArtifactCenter } from './ArtifactCenter';
+import { ReviewWorkflowPanel } from './ReviewWorkflowPanel';
 import { RuntimePanel } from './RuntimePanel';
 
 function PanelEmpty({ tabId }: { tabId: PanelTabId }): JSX.Element {
@@ -38,6 +42,7 @@ export function FactoryPanel({
   focusArtifactId,
   focusNonce,
   onFocusConsumed,
+  focusGateId,
 }: {
   activeTab: PanelTabId;
   onSelectTab: (tab: PanelTabId) => void;
@@ -47,6 +52,8 @@ export function FactoryPanel({
   focusArtifactId?: string | null;
   focusNonce?: number | null;
   onFocusConsumed?: () => void;
+  /** S10-006: Timeline 联动 — 待定位审核门 id (透传给 ReviewWorkflowPanel)。 */
+  focusGateId?: string | null;
 }): JSX.Element {
   return (
     <div className="ws-panel" data-testid="ws-factory-panel">
@@ -86,6 +93,13 @@ export function FactoryPanel({
           <ArtifactCenter
             projectId={projectId}
             focusArtifactId={focusArtifactId}
+            focusNonce={focusNonce}
+            onFocusConsumed={onFocusConsumed}
+          />
+        ) : activeTab === 'review' && projectId != null ? (
+          <ReviewWorkflowPanel
+            projectId={projectId}
+            focusGateId={focusGateId}
             focusNonce={focusNonce}
             onFocusConsumed={onFocusConsumed}
           />

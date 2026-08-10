@@ -30,6 +30,7 @@ import {
   type ProjectSummary,
   type ProviderSummary,
   type RecommendationSummary,
+  type ReviewFeedback,
   type RuntimeInstance,
   type RuntimeScreenshot,
   type StageRunSummary,
@@ -124,6 +125,29 @@ export const api = {
   // S10-005: 产物渲染内容 (location 文件文本 — Code diff 兜底 / Release 下载源)
   artifactContent: (artifactId: string) =>
     getJson<ArtifactContent>(`/api/artifacts/${encodeURIComponent(artifactId)}/content`),
+  // S10-006: 审核反馈历史 (Feedback Loop — GET /api/review-feedback?artifact_id=&gate_id=
+  // 过滤均可选; round 升序, 下一轮 Agent 重生成输入按序消费; 缺 store → [] 失败安全)
+  reviewFeedback: (artifactId?: string, gateId?: string) => {
+    const params = new URLSearchParams();
+    if (artifactId != null && artifactId.length > 0) params.set('artifact_id', artifactId);
+    if (gateId != null && gateId.length > 0) params.set('gate_id', gateId);
+    const qs = params.toString();
+    return getJson<ReviewFeedback[]>(`/api/review-feedback${qs ? `?${qs}` : ''}`);
+  },
+  // S10-006: 保存审核反馈 (POST /api/review-feedback — Reject 决定时同步保存结构化
+  // 意见; 空意见 → 400 不落库; 缺 store → 503 失败安全)
+  saveReviewFeedback: (input: {
+    artifact_id: string;
+    gate_id: string;
+    reviewer?: string;
+    comment: string;
+  }) =>
+    sendJson<ReviewFeedback>('/api/review-feedback', {
+      reviewer: input.reviewer ?? 'console',
+      artifact_id: input.artifact_id,
+      gate_id: input.gate_id,
+      comment: input.comment,
+    }),
   // S10-002: Runtime API (UI 与 CLI 共用; 全部只读 GET)
   projectWorkflow: (projectId: string) =>
     getJson<WorkflowDetail>(`/api/projects/${encodeURIComponent(projectId)}/workflow`),

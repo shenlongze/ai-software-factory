@@ -44,6 +44,7 @@ from .models import (
     ProjectSummary,
     ProviderSummary,
     RecommendationSummary,
+    ReviewFeedback,
     RuntimeInstance,
     RuntimeScreenshot,
     StageRunSummary,
@@ -155,6 +156,9 @@ class ConsoleService:
         # 全部可选, 失败安全: 缺 store → runtime 操作按空/不存在处理)
         runtime_store: Any = None,
         runtime_screenshot_store: Any = None,
+        # S10-006: 审核反馈持久化 (Feedback Loop — Reject 意见落库; 可选,
+        # 失败安全: 缺 store → 反馈保存/查询按空处理, 不拖垮审批决定)
+        review_feedback_store: Any = None,
     ) -> None:
         self._workspace = workspace_manager
         self._task_store = task_store
@@ -174,6 +178,8 @@ class ConsoleService:
         # 独立数据空间 <root>/runtimes, 与 org 并存; 缺任一 → 对应操作失败安全)
         self._runtime_store = runtime_store
         self._runtime_screenshots = runtime_screenshot_store
+        # S10-006: 审核反馈 store (缺失 → None; 保存/查询失败安全)
+        self._review_feedback_store = review_feedback_store
 
     # ------------------------------------------------------------------ 七域 Dashboard
 
@@ -953,6 +959,65 @@ class ConsoleService:
             gate_id, reviewer=reviewer, comment=comment, source="console"
         )
         return self._approval_decision_summary("reject", gate, workflow)
+
+    # ------------------------------------------------------ S10-006 审核反馈 (Feedback Loop)
+
+    def save_review_feedback(
+        self,
+        *,
+        gate_id: str,
+        artifact_id: str,
+        reviewer: str = "console",
+        comment: str = "",
+    ) -> ReviewFeedback | None:
+        """保存一条审核反馈记录 (POST /api/review-feedback)。
+
+        对应 api-data-model.md §1 ReviewComment 的实践形态: Reject 意见除
+        gate.comment 落库 (S9-001 审计) 外, 另存结构化记录 (round 按产物
+        递增), 作为下一轮 Agent 重生成输入的数据源。store 缺失 → None
+        (失败安全 — 审批决定不受反馈保存失败影响); 空意见 → None (无反馈
+        不落库, 诚实边界)。
+        """
+        store = self._review_feedback_store
+        if store is None:
+            return None
+        trimmed = comment.strip()
+        if not trimmed:
+            return None
+        from .review_feedback import new_feedback_id
+
+        record = ReviewFeedback(
+            id=new_feedback_id(),
+            gate_id=gate_id,
+            artifact_id=artifact_id,
+            reviewer=reviewer or "console",
+            comment=trimmed,
+            round=store.next_round(artifact_id),
+            created_at=_utc_now_str(),
+        )
+        store.save(record)
+        return record
+
+    def list_review_feedback(
+        self,
+        artifact_id: str | None = None,
+        gate_id: str | None = None,
+    ) -> list[ReviewFeedback]:
+        """审核反馈历史 (GET /api/review-feedback — 按 artifact/gate 过滤)。
+
+        artifact_id 提供 → 该产物全部反馈; 否则全库。gate_id 提供 → 追加
+        来源门过滤。按 round 升序 (下轮输入按序消费); store 缺失 → []
+        (失败安全)。
+        """
+        store = self._review_feedback_store
+        if store is None:
+            return []
+        records = (
+            store.list_by_artifact(artifact_id) if artifact_id else store.list_all()
+        )
+        if gate_id:
+            records = [r for r in records if r.gate_id == gate_id]
+        return records
 
     # ------------------------------------------------------ S9-002 内部: org 装配/投影
 

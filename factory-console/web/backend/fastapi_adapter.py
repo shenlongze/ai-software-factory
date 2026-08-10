@@ -35,9 +35,12 @@ build 静态文件 (SPA)。只做 HTTP 绑定 (参数解析 / JSON 序列化 / �
   /api/artifacts                        → list_artifacts (?project/workflow/type) [S9-002]
   POST /api/approvals/{id}/approve      → 审批放行 (404/409 映射)            [S9-002]
   POST /api/approvals/{id}/reject       → 审批否决 (404/409 映射)            [S9-002]
-Permission Boundary (S9-002 收窄): 写路径仅审批决定两 POST (approve/reject,
-  reviewer="console" 落库 + source="console" 审计), 其余端点全部 GET —
-  register_project/成本写入等仍不在 Console 范围 (S9-005/后续)。
+  GET  /api/review-feedback             → 审核反馈历史 (artifact/gate 过滤)   [S10-006]
+  POST /api/review-feedback             → 保存反馈记录 (round 递增; 400/503)  [S10-006]
+Permission Boundary (S9-002 收窄 + S10-006 扩展): 写路径仅审批决定两 POST
+(approve/reject, reviewer="console" 落库 + source="console" 审计) + Feedback
+Loop 一 POST (review-feedback — Reject 意见落库, 不触碰引擎), 其余端点全部
+GET — register_project/成本写入等仍不在 Console 范围 (S9-005/后续)。
 静态: frontend build 产物 (dist/) — SPA html=True; 缺目录 → 纯 API 模式。
 """
 
@@ -80,6 +83,21 @@ class _CreateRuntimeBody(BaseModel):
 
     type: str
     artifact_id: str | None = None
+
+
+class _ReviewFeedbackBody(BaseModel):
+    """POST /api/review-feedback body (S10-006: Feedback Loop 反馈记录)。
+
+    {artifact_id, gate_id, reviewer, comment}: Reject 决定后前端同时调用本
+    端点保存结构化驳回意见 (round 按产物递增, 下轮 Agent 重生成输入)。
+    comment 空 → 400 (无反馈不落库); reviewer 默认 "console" (与审批决定
+    同口径); gate_id 记录来源审批门 (空串允许 — 兼容产物级反馈, 不强制)。
+    """
+
+    artifact_id: str
+    gate_id: str = ""
+    reviewer: str = "console"
+    comment: str = ""
 
 
 # ------------------------------------------------------------------ 装配
@@ -150,6 +168,15 @@ def build_console_service(factory_root: str | Path, *, event_logger: Any = None)
         runtime_store = None
         runtime_screenshot_store = None
 
+    # S10-006: 审核反馈数据空间 (root/review_feedback.json — Feedback Loop
+    # Reject 意见落库; 失败安全: 装配失败 → None, 反馈保存/查询按空处理)
+    review_feedback_store = None
+    try:
+        _feedback_module = importlib.import_module("factory-console.review_feedback")
+        review_feedback_store = _feedback_module.ReviewFeedbackStore(root)
+    except Exception:
+        review_feedback_store = None
+
     return module.ConsoleService(
         workspace_manager=WorkspaceManager(root),
         task_store=TaskStore(root / "tasks"),
@@ -165,6 +192,9 @@ def build_console_service(factory_root: str | Path, *, event_logger: Any = None)
         # S10-004: Runtime 实例/截图持久化 (root/runtimes; 失败安全)
         runtime_store=runtime_store,
         runtime_screenshot_store=runtime_screenshot_store,
+        # S10-006: 审核反馈持久化 (root/review_feedback.json — Feedback Loop
+        # Reject 意见落库; 失败安全: 装配失败 → None, 保存/查询按空处理)
+        review_feedback_store=review_feedback_store,
     )
 
 
@@ -545,6 +575,56 @@ def build_app(
         if summary is None:
             raise HTTPException(status_code=404, detail="approval gate not found")
         return summary.to_dict()
+
+    # ------------------------------------------- S10-006: Review Feedback API
+    # Feedback Loop (workspace-architecture.md §3 Panel Review): Reject 决定后
+    # 前端同时 POST /api/review-feedback 保存结构化驳回意见 — 下轮 Agent
+    # 重生成输入的数据源 (gate.comment 由 S9-001 决定端点负责审计落库, 本
+    # 端点只补 Loop 数据流, 不重设计审批 API)。
+    # 错误语义: 400 空意见/缺 artifact_id (无反馈不落库); 503 缺 store
+    # (失败安全 — 审批决定不受反馈保存失败影响, 前端按尽力而为处理)。
+
+    @app.get("/api/review-feedback")
+    def api_review_feedback(
+        artifact_id: str | None = Query(default=None),
+        gate_id: str | None = Query(default=None),
+    ) -> list[dict[str, Any]]:
+        """审核反馈历史 (GET — 按 artifact/gate 过滤, round 升序)。
+
+        无过滤 → 全部记录; 无匹配 → [] (诚实空态); 缺 store → [] (失败
+        安全, 与 11A 读命令同哲学 — 查询永不因数据缺失失败)。
+        """
+        records = _api.list_review_feedback(
+            service,
+            artifact_id,
+            gate_id=gate_id,
+            logger=event_logger,
+        )
+        return [r.to_dict() for r in records]
+
+    @app.post("/api/review-feedback")
+    def api_save_review_feedback(body: _ReviewFeedbackBody) -> dict[str, Any]:
+        """保存审核反馈记录 (POST — Reject 意见落库, round 按产物递增)。"""
+        artifact_id = body.artifact_id.strip()
+        if not artifact_id:
+            raise HTTPException(status_code=400, detail="artifact_id is required")
+        comment = body.comment.strip()
+        if not comment:
+            raise HTTPException(status_code=400, detail="comment is required (空意见不落库)")
+        record = _api.save_review_feedback(
+            service,
+            reviewer=body.reviewer or "console",
+            artifact_id=artifact_id,
+            gate_id=body.gate_id,
+            comment=comment,
+        )
+        if record is None:
+            # 缺 review_feedback store → 503 (失败安全: 决定已成功, 反馈
+            # 尽力而为; 前端显示提示不阻断流程)
+            raise HTTPException(
+                status_code=503, detail="review feedback store unavailable"
+            )
+        return record.to_dict()
 
     if static_dir is not None and Path(static_dir).is_dir():
         app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="web")

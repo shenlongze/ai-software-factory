@@ -8,9 +8,12 @@
  */
 
 import type {
+  ApprovalGateSummary,
   ArtifactContent,
   ArtifactDetail,
   ArtifactSummary,
+  ReviewFeedback,
+  ReviewQueueItem,
   RuntimeInstance,
   StageRunSummary,
   TimelineEventSummary,
@@ -531,4 +534,67 @@ export function mockArtifactContent(artifactId: string): ArtifactContent {
     };
   }
   return { ...base, type: 'unknown', location: '', content: null };
+}
+
+// ---------------------------------------------------------------- S10-006 Review Workflow mock
+
+/** mock 待审门清单 (Review Queue 数据源; is_mock 由 runtimeClient fallback
+ * 标记)。4 道审核门 (Product/UXUI/Architecture/Release) 全部 pending, 产物按
+ * stage_id 匹配 mockArtifacts 约定 id (mock-art-product/ux_ui/architect/release)
+ * — 与 mockTimeline review 节点 gate_id (mock-gate-arch) 共用, Timeline "去审核"
+ * 联动才能经 gateId 定位到队列行。 */
+export function mockReviewQueue(projectId = 'ledger-app'): ReviewQueueItem[] {
+  const artifacts = mockArtifacts(projectId);
+  const gate = (
+    id: string,
+    stageId: string,
+  ): ApprovalGateSummary => ({
+    id,
+    stage_id: stageId,
+    workflow_id: `mock-wf-${projectId}`,
+    project_id: projectId,
+    status: 'pending',
+    reviewer: '',
+    comment: '',
+    requested_at: '2026-08-10T00:00:00+00:00',
+    approved_at: null,
+    rejected_at: null,
+  });
+  const entry = (gateId: string, stageId: string): ReviewQueueItem => ({
+    gate: gate(gateId, stageId),
+    artifact: artifacts.find((a) => a.stage_id === stageId) ?? null,
+  });
+  return [
+    entry('mock-gate-product', 'mock-product'),
+    entry('mock-gate-uxui', 'mock-ux_ui'),
+    entry('mock-gate-arch', 'mock-architect'),
+    entry('mock-gate-release', 'mock-release'),
+  ];
+}
+
+/** mock 审核反馈历史 (Feedback Loop 数据源; 演示 Reject 后意见落库的形状 —
+ * round 按产物递增; 按 artifact_id 过滤)。 */
+export function mockReviewFeedback(artifactId?: string): ReviewFeedback[] {
+  const records: ReviewFeedback[] = [
+    {
+      id: 'mock-fb-1',
+      gate_id: 'mock-gate-uxui',
+      artifact_id: 'mock-art-ux_ui',
+      reviewer: 'console',
+      comment: '首页信息密度过高, 建议精简余额卡片区域并突出本月支出',
+      round: 1,
+      created_at: '2026-08-10T00:10:00+00:00',
+    },
+    {
+      id: 'mock-fb-2',
+      gate_id: 'mock-gate-uxui',
+      artifact_id: 'mock-art-ux_ui',
+      reviewer: 'console',
+      comment: '记录页需支持负数金额 (退款场景), 分类下拉建议加搜索',
+      round: 2,
+      created_at: '2026-08-10T00:12:00+00:00',
+    },
+  ];
+  if (artifactId == null || artifactId.length === 0) return records;
+  return records.filter((record) => record.artifact_id === artifactId);
 }

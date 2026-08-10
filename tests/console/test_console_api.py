@@ -40,6 +40,8 @@ ApprovalDecisionSummary = _models.ApprovalDecisionSummary
 ArtifactSummary = _models.ArtifactSummary
 WorkflowSummary = _models.WorkflowSummary
 WorkflowDetail = _models.WorkflowDetail
+# S10-006 审核反馈投影
+ReviewFeedback = _models.ReviewFeedback
 
 
 class _StubService:
@@ -107,6 +109,20 @@ class _StubService:
         gate = ApprovalGateSummary(id="AG-1", stage_id="STG-1", workflow_id="WF-1", status="rejected")
         return ApprovalDecisionSummary(action="reject", gate=gate, workflow_id="WF-1", workflow_status="failed")
 
+    def save_review_feedback(self, *, gate_id, artifact_id, reviewer="console", comment=""):
+        if not comment.strip():
+            return None  # 空意见 → None (HTTP 层 400 语义)
+        return ReviewFeedback(
+            id="fb-1", gate_id=gate_id, artifact_id=artifact_id,
+            reviewer=reviewer, comment=comment.strip(), round=1,
+        )
+
+    def list_review_feedback(self, artifact_id=None, gate_id=None):
+        return [
+            ReviewFeedback(id="fb-1", gate_id="AG-1", artifact_id="A-1", round=1, comment="重做"),
+            ReviewFeedback(id="fb-2", gate_id="AG-2", artifact_id="A-2", round=1, comment="OK"),
+        ]
+
 
 #: 规范 8 阶段链 (同 factory-console/service.py WORKFLOW_TEMPLATE 同源)
 service_template = ("Idea", "PM", "Product", "UX/UI", "Architecture", "Development", "Test", "Release")
@@ -117,7 +133,7 @@ service_template = ("Idea", "PM", "Product", "UX/UI", "Architecture", "Developme
 
 class TestRouteExports:
     def test_route_modules_exported(self):
-        """api/ 暴露全部路由函数 (S10-004: 24 个 — 新增 runtime 6 个)。"""
+        """api/ 暴露全部路由函数 (S10-006: 26 个 — 新增 review_feedback 2 个)。"""
         expected = {
             "approve_approval",
             "capture_runtime_screenshot",
@@ -139,9 +155,11 @@ class TestRouteExports:
             "list_projects",
             "list_providers",
             "list_recommendations",
+            "list_review_feedback",
             "list_runtimes",
             "list_workflows",
             "reject_approval",
+            "save_review_feedback",
             "start_runtime",
             "stop_runtime",
         }
@@ -395,6 +413,77 @@ class TestApprovalDecisionRoutes:
         assert seen == {"reviewer": "console", "comment": "OK"}
 
 
+# ------------------------------------------------------------------ S10-006 Review Feedback 路由 (审计 + 语义)
+
+
+class TestReviewFeedbackRoutes:
+    def test_save_forwards_and_returns_record(self):
+        out = _api.save_review_feedback(
+            _StubService(), reviewer="console", artifact_id="A-1",
+            gate_id="AG-1", comment="MVP 范围过大, 请重做",
+        )
+        assert isinstance(out, ReviewFeedback)
+        assert out.artifact_id == "A-1"
+        assert out.gate_id == "AG-1"
+        assert out.round == 1
+
+    def test_save_empty_comment_returns_none(self):
+        """空意见 → None (HTTP 层 400 — 无反馈不落库, 诚实边界)。"""
+        assert (
+            _api.save_review_feedback(
+                _StubService(), reviewer="console", artifact_id="A-1",
+                gate_id="AG-1", comment="   ",
+            )
+            is None
+        )
+
+    def test_save_forwards_to_service(self):
+        seen: dict[str, str] = {}
+
+        class _SaveStub:
+            def save_review_feedback(self, *, gate_id, artifact_id, reviewer, comment):
+                seen.update(
+                    {"gate_id": gate_id, "artifact_id": artifact_id,
+                     "reviewer": reviewer, "comment": comment}
+                )
+                return ReviewFeedback(
+                    id="fb-9", gate_id=gate_id, artifact_id=artifact_id,
+                    reviewer=reviewer, comment=comment, round=1,
+                )
+
+        _api.save_review_feedback(
+            _SaveStub(), reviewer="console", artifact_id="A-1",
+            gate_id="AG-1", comment="重做",
+        )
+        assert seen == {
+            "gate_id": "AG-1", "artifact_id": "A-1",
+            "reviewer": "console", "comment": "重做",
+        }
+
+    def test_list_returns_records(self):
+        out = _api.list_review_feedback(_StubService())
+        assert len(out) == 2
+        assert all(isinstance(r, ReviewFeedback) for r in out)
+        assert [r.id for r in out] == ["fb-1", "fb-2"]
+
+    def test_list_passes_gate_filter(self):
+        calls: list[dict[str, str | None]] = []
+
+        class _FilterStub:
+            def list_review_feedback(self, artifact_id=None, gate_id=None):
+                calls.append({"artifact_id": artifact_id, "gate_id": gate_id})
+                return []
+
+        _api.list_review_feedback(_FilterStub(), "A-1", gate_id="AG-1")
+        assert calls == [{"artifact_id": "A-1", "gate_id": "AG-1"}]
+
+    def test_list_audit_view(self, event_logger, event_store):
+        _api.list_review_feedback(_StubService(), logger=event_logger)
+        payload = payload_of(event_store, "console.viewed")
+        assert payload["view"] == "review_feedback"
+        assert payload["count"] == 2
+
+
 # ------------------------------------------------------------------ 只读铁律 (路由层)
 
 
@@ -412,6 +501,8 @@ class TestReadOnlyIronRule:
             (_api.list_workflows, ()),
             (_api.list_artifacts, ()),
             (_api.list_approval_gates, ()),
+            # S10-006: 反馈历史 (只读投影)
+            (_api.list_review_feedback, ()),
         ]:
             for item in fn(stub, *args):
                 assert hasattr(item, "to_dict"), fn.__name__
@@ -443,6 +534,15 @@ class TestReadOnlyIronRule:
         assert _api.list_approval_gates(stub) is not None
         assert _api.approve_approval(stub, "AG-1") is not None
         assert _api.reject_approval(stub, "AG-1") is not None
+        # S10-006: 反馈路由
+        assert _api.list_review_feedback(stub) is not None
+        assert (
+            _api.save_review_feedback(
+                stub, reviewer="console", artifact_id="A-1",
+                gate_id="AG-1", comment="重做",
+            )
+            is not None
+        )
         assert event_store.query() == []
 
     def test_no_web_framework_dependency(self):

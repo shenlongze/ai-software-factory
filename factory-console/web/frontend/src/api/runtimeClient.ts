@@ -28,15 +28,20 @@ import {
   mockArtifactContent,
   mockArtifactDetail,
   mockArtifacts,
+  mockReviewFeedback,
+  mockReviewQueue,
   mockRuntimes,
   mockTimeline,
   mockWorkflowDetail,
 } from '../mock/runtime';
 import {
   RUNTIME_EVENT_NAMES,
+  type ApprovalGateSummary,
   type ArtifactContent,
   type ArtifactDetail,
   type ArtifactSummary,
+  type ReviewFeedback,
+  type ReviewQueueItem,
   type RuntimeEventName,
   type RuntimeInstance,
   type RuntimeScreenshot,
@@ -164,7 +169,52 @@ export const runtimeClient = {
       () => api.artifactContent(artifactId),
       () => mockArtifactContent(artifactId),
     ),
+
+  // ------------------------------------------------ S10-006 Review Workflow
+
+  /** 项目待审门清单 (Review Queue — pending gates + 按 stage_id 匹配产物;
+   * 无后端 → mock fallback, is_mock=true 诚实标注)。 */
+  getReviewQueue: (projectId: string): Promise<RuntimeQueryResult<ReviewQueueItem[]>> =>
+    fetchWithMockFallback(
+      () =>
+        Promise.all([api.approvalGates(true), api.artifacts({ projectId })]).then(
+          ([gates, artifacts]) => buildReviewQueue(gates, artifacts, projectId),
+        ),
+      () => mockReviewQueue(projectId),
+    ),
+
+  /** 审核反馈历史 (Feedback Loop — GET /api/review-feedback; 无后端 → mock
+   * fallback 演示记录, is_mock=true)。 */
+  getReviewFeedback: (artifactId?: string): Promise<RuntimeQueryResult<ReviewFeedback[]>> =>
+    fetchWithMockFallback(
+      () => api.reviewFeedback(artifactId),
+      () => mockReviewFeedback(artifactId),
+    ),
+
+  /** 保存审核反馈 (POST /api/review-feedback — Reject 决定时同步保存结构化
+   * 意见; 写路径直接 API, 失败诚实报错不 fallback)。 */
+  saveReviewFeedback: (input: {
+    artifact_id: string;
+    gate_id: string;
+    reviewer?: string;
+    comment: string;
+  }): Promise<ReviewFeedback> => api.saveReviewFeedback(input),
 };
+
+/** 组装 Review Queue (S10-006): 项目 pending gates → 每行 {gate, artifact}。
+ * artifact 按 stage_id 匹配 (无 → null — 只读展示, 无法决定)。 */
+export function buildReviewQueue(
+  gates: ApprovalGateSummary[],
+  artifacts: ArtifactSummary[],
+  projectId: string,
+): ReviewQueueItem[] {
+  return gates
+    .filter((gate) => gate.project_id === projectId)
+    .map((gate) => ({
+      gate,
+      artifact: artifacts.find((artifact) => artifact.stage_id === gate.stage_id) ?? null,
+    }));
+}
 
 /** SSE 事件流订阅 (见 runtimeClient.subscribeEvents 说明)。 */
 export function subscribeEvents(

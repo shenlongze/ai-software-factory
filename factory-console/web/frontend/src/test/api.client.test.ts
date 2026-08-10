@@ -48,7 +48,10 @@ describe('api client — 只读契约 + S9-002 审批写面 + S10-004 Runtime �
       'providers',
       'recommendations',
       'rejectApproval',
+      // S10-006: 审核反馈 (Feedback Loop 读/写)
+      'reviewFeedback',
       'runtimeDetail',
+      'saveReviewFeedback',
       'screenshotRuntime',
       'startRuntime',
       'stopRuntime',
@@ -145,6 +148,53 @@ describe('api client — 只读契约 + S9-002 审批写面 + S10-004 Runtime �
     );
     await api.artifacts();
     expect(String(fetchMock.mock.calls[1][0])).toBe('/api/artifacts');
+  });
+
+  it('reviewFeedback(artifactId?) 拼 artifact/gate 过滤查询参数 (S10-006)', async () => {
+    const fetchMock = stubFetch({
+      '/api/review-feedback?artifact_id=art-a&gate_id=gate-b': [
+        { id: 'fb-1', gate_id: 'gate-b', artifact_id: 'art-a', reviewer: 'console', comment: '重做', round: 1, created_at: null },
+      ],
+      '/api/review-feedback?artifact_id=art-a': [],
+      '/api/review-feedback': [],
+    });
+    const got = await api.reviewFeedback('art-a', 'gate-b');
+    expect(got[0].round).toBe(1);
+    expect(got[0].comment).toBe('重做');
+    expect(String(fetchMock.mock.calls[0][0])).toBe('/api/review-feedback?artifact_id=art-a&gate_id=gate-b');
+    await api.reviewFeedback('art-a');
+    expect(String(fetchMock.mock.calls[1][0])).toBe('/api/review-feedback?artifact_id=art-a');
+    await api.reviewFeedback();
+    expect(String(fetchMock.mock.calls[2][0])).toBe('/api/review-feedback');
+  });
+
+  it('saveReviewFeedback → POST /api/review-feedback (reviewer 缺省 console)', async () => {
+    const fetchMock = stubFetch({
+      '/api/review-feedback': {
+        id: 'fb-9',
+        gate_id: 'gate-1',
+        artifact_id: 'art-1',
+        reviewer: 'console',
+        comment: 'MVP 范围过大, 请重做',
+        round: 1,
+        created_at: null,
+      },
+    });
+    const got = await api.saveReviewFeedback({
+      artifact_id: 'art-1',
+      gate_id: 'gate-1',
+      comment: 'MVP 范围过大, 请重做',
+    });
+    expect(got.round).toBe(1);
+    const [path, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(path).toBe('/api/review-feedback');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(String(init.body))).toEqual({
+      reviewer: 'console',
+      artifact_id: 'art-1',
+      gate_id: 'gate-1',
+      comment: 'MVP 范围过大, 请重做',
+    });
   });
 
   it('approveApproval(id) → POST /api/approvals/{id}/approve (reviewer=console)', async () => {

@@ -499,6 +499,31 @@ class RuntimeScreenshot(BaseModel):
         return self.model_dump(mode="json")
 
 
+class ReviewFeedback(BaseModel):
+    """S10-006 审核反馈记录 (Feedback Loop 数据流 — Reject 意见落库)。
+
+    对应 api-data-model.md §1 ReviewComment 的实践形态: 每次 Reject 决定
+    除 gate.comment 落库 (S9-001 审计) 外, 另存一条结构化反馈记录, 供
+    下一轮 Agent 重生成时作为输入 (reviewer/artifact_id/comment/round)。
+
+    id: fb-<hex>; gate_id: 来源审批门 (Reject 决定); artifact_id: 被审
+    产物 (重生成输入目标); reviewer: 决策人 (console); comment: 驳回意见
+    (下轮重生成输入); round: 该产物第几轮反馈 (1 起, 按 artifact 递增);
+    created_at: UTC 时间戳。
+    """
+
+    id: str
+    gate_id: str = ""
+    artifact_id: str = ""
+    reviewer: str = ""
+    comment: str = ""
+    round: int = 1
+    created_at: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json")
+
+
 class DecisionSummary(BaseModel):
     """GET /decisions/{id} — 智能决策只读投影 (AI 推荐产物, ≠ Approval)。
 
@@ -830,6 +855,7 @@ __all__ = [
     "ProjectSummary",
     "ProviderSummary",
     "RecommendationSummary",
+    "ReviewFeedback",
     "RuntimeInstance",
     "RuntimeScreenshot",
     "StageRunSummary",

@@ -240,6 +240,28 @@ export interface ArtifactContent {
   content: string | null;
 }
 
+/** S10-006: 审核反馈记录 (Feedback Loop — GET/POST /api/review-feedback)。
+
+ * Reject 决定后前端同时保存的结构化驳回意见: round 按产物递增 (第几轮
+ * 反馈), 作为下一轮 Agent 重生成输入的数据源; 与 gate.comment (S9-001
+ * 审计落库) 并列的 Loop 数据流。 */
+export interface ReviewFeedback {
+  id: string;
+  gate_id: string;
+  artifact_id: string;
+  reviewer: string;
+  comment: string;
+  round: number;
+  created_at: string | null;
+}
+
+/** S10-006: 审核门 → 待审清单摘要 (Review Queue 行: 门 + 对应产物)。 */
+export interface ReviewQueueItem {
+  gate: ApprovalGateSummary;
+  /** 门对应产物 (按 stage_id 匹配; 无 → null — 只读展示, 无法决定)。 */
+  artifact: ArtifactSummary | null;
+}
+
 /** PRD (product Artifact) Review 节 (S9-003 任务规格 6 节)。 */
 export const PRODUCT_SECTIONS: readonly { key: string; label: string }[] = [
   { key: 'market_analysis', label: '市场分析' },

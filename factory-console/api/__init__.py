@@ -23,6 +23,7 @@ from .intelligence import list_experience, list_recommendations
 from .lifecycle import get_project_lifecycle
 from .projects import list_projects
 from .providers import list_providers
+from .review_feedback import list_review_feedback, save_review_feedback
 from .runtime import (
     SSE_EVENT_MAP,  # noqa: F401 — SSE 事件映射常量 (测试/前端引用; 非路由不进 __all__)
     capture_runtime_screenshot,
@@ -59,9 +60,11 @@ __all__ = [
     "list_projects",
     "list_providers",
     "list_recommendations",
+    "list_review_feedback",
     "list_runtimes",
     "list_workflows",
     "reject_approval",
+    "save_review_feedback",
     "start_runtime",
     "stop_runtime",
 ]

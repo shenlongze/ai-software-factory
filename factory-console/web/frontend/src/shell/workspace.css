@@ -822,3 +822,194 @@
   color: var(--ds-status-failed);
   word-break: break-all;
 }
+
+/* ---------- S10-006 Review Workflow Panel (三栏) ---------- */
+.ws-rv {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr) 264px;
+  height: 100%;
+  min-height: 0;
+}
+.ws-rv-queue {
+  border-right: 1px solid var(--ds-border);
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-sm);
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--ds-space-sm);
+}
+.ws-rv-content {
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--ds-space-sm) var(--ds-space-md);
+}
+.ws-rv-decision {
+  border-left: 1px solid var(--ds-border);
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--ds-space-sm) var(--ds-space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-sm);
+}
+.ws-rv-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ds-space-xs);
+}
+.ws-rv-title {
+  margin: 0;
+  font-size: var(--ds-font-sm);
+  font-weight: var(--ds-weight-medium);
+  color: var(--ds-text-secondary);
+  letter-spacing: 0.04em;
+}
+.ws-rv-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  margin-left: 6px;
+  border-radius: 9px;
+  background: var(--ds-primary);
+  color: #ffffff;
+  font-size: var(--ds-font-xs);
+  vertical-align: middle;
+}
+.ws-rv-queue-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-xs);
+}
+.ws-rv-q-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  background: var(--ds-surface-2);
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-md);
+  padding: var(--ds-space-sm) var(--ds-space-md);
+  color: var(--ds-text);
+}
+.ws-rv-q-row:hover:not(:disabled) {
+  border-color: var(--ds-primary);
+}
+.ws-rv-q-row.active {
+  border-color: var(--ds-primary);
+  background: var(--ds-surface);
+}
+.ws-rv-q-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ds-space-xs);
+}
+.ws-rv-q-name {
+  font-weight: var(--ds-weight-medium);
+  font-size: var(--ds-font-body);
+}
+.ws-rv-q-meta {
+  font-size: var(--ds-font-xs);
+  color: var(--ds-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ws-rv-state {
+  padding: var(--ds-space-md) 0;
+  font-size: var(--ds-font-sm);
+  color: var(--ds-text-secondary);
+}
+.ws-rv-error {
+  color: var(--ds-status-failed);
+}
+.ws-rv-notice {
+  margin: 0;
+  font-size: var(--ds-font-sm);
+  color: var(--ds-status-success);
+  word-break: break-word;
+}
+.ws-rv-warn {
+  margin: 0;
+  font-size: var(--ds-font-sm);
+  color: var(--ds-status-warning);
+  word-break: break-word;
+}
+.ws-rv-detail-head {
+  margin-bottom: var(--ds-space-sm);
+}
+.ws-rv-detail-title {
+  margin: 0 0 4px;
+  font-size: var(--ds-font-body);
+}
+.ws-rv-detail-id {
+  color: var(--ds-text-secondary);
+  font-weight: var(--ds-weight-regular);
+}
+.ws-rv-detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ds-space-sm);
+  font-size: var(--ds-font-xs);
+  color: var(--ds-text-secondary);
+}
+.ws-rv-gate {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ds-space-sm);
+}
+.ws-rv-gate-id {
+  font-size: var(--ds-font-sm);
+  word-break: break-all;
+}
+.ws-rv-actions {
+  display: flex;
+  gap: var(--ds-space-sm);
+}
+.ws-rv-hint {
+  margin: 0;
+  font-size: var(--ds-font-xs);
+}
+.ws-rv-history {
+  border-top: 1px solid var(--ds-border);
+  padding-top: var(--ds-space-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-sm);
+}
+.ws-rv-history-title {
+  margin: 0;
+  font-size: var(--ds-font-sm);
+  color: var(--ds-text-secondary);
+}
+.ws-rv-history-item {
+  background: var(--ds-surface-2);
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-md);
+  padding: var(--ds-space-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ws-rv-round {
+  align-self: flex-start;
+  font-size: var(--ds-font-xs);
+  font-weight: var(--ds-weight-medium);
+  color: var(--ds-primary);
+}
+.ws-rv-history-comment {
+  margin: 0;
+  font-size: var(--ds-font-sm);
+}
+.ws-rv-history-meta {
+  font-size: var(--ds-font-xs);
+}

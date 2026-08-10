@@ -231,10 +231,11 @@ class TestPermissionBoundary:
                     f"非 POST 写路由泄漏: {route_method} {getattr(route, 'path', '?')}"
                 )
                 path = getattr(route, "path", "")
+                # S10-002 审批决定 + S10-004 Runtime 生命周期 + S10-006 Review 反馈
                 is_approval = path.endswith("/approve") or path.endswith("/reject")
-                # S10-004 Runtime 写路径 (创建/启动/停止/截图 — 全部含 /runtimes)
                 is_runtime_lifecycle = "/runtimes" in path
-                assert is_approval or is_runtime_lifecycle, (
+                is_review_feedback = path.endswith("/review-feedback")
+                assert is_approval or is_runtime_lifecycle or is_review_feedback, (
                     f"POST 路由超出审批决定 + Runtime 生命周期范围: {path}"
                 )
 

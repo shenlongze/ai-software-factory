@@ -11,15 +11,16 @@ import { useState } from 'react';
 import { Button, StatusBadge } from '../components/ds';
 import { NAV_ITEMS, projectStatusBadge } from '../mock/workspace';
 import type { ExplorerViewId, MockProject } from '../mock/workspace';
+import { AgentTimeline } from './AgentTimeline';
 
-/** Timeline 预留容器 (S10-003 Agent Timeline 接入点)。 */
+/** Timeline 空态提示 (无选中项目时 — 选择项目后渲染 AgentTimeline)。 */
 export function TimelinePlaceholder({ projectName }: { projectName?: string }): JSX.Element {
   return (
     <div className="ws-timeline-placeholder" data-testid="timeline-placeholder">
-      <div className="ws-timeline-placeholder-title">Agent Timeline 预留区</div>
+      <div className="ws-timeline-placeholder-title">Agent Timeline</div>
       <div className="ws-timeline-placeholder-desc">
-        S10-003 接入实时事件流 (SSE) — {projectName != null ? `${projectName} 的 ` : ''}
-        user / stage / artifact / review / diff / error 节点将在此从上到下展示
+        {projectName != null ? `${projectName} 的 ` : '选择项目后, '}
+        AI Agent 事件流 (user / stage / artifact / review / diff / error) 将在此从上到下实时展示
       </div>
     </div>
   );
@@ -56,7 +57,7 @@ function WorkspaceHome({ onOpenProjects }: { onOpenProjects: () => void }): JSX.
   );
 }
 
-/** 选中项目后的工作台视图 (Header + Timeline 预留)。 */
+/** 选中项目后的工作台视图 (Header + Agent Timeline 实时事件流)。 */
 function ProjectWorkspace({ project }: { project: MockProject }): JSX.Element {
   const badge = projectStatusBadge(project.status);
   const completedStages = project.stages.filter((stage) => stage.status === 'completed').length;
@@ -72,7 +73,7 @@ function ProjectWorkspace({ project }: { project: MockProject }): JSX.Element {
         </span>
       </header>
       <p className="ws-project-idea">{project.idea}</p>
-      <TimelinePlaceholder projectName={project.name} />
+      <AgentTimeline projectId={project.id} />
     </div>
   );
 }

@@ -10,7 +10,7 @@
 
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../App';
 import { ThemeProvider } from '../design/theme';
 import { pageFromHash } from '../state/AppState';
@@ -18,6 +18,40 @@ import { AppStateProvider, useAppState } from '../state/AppState';
 import { WorkspaceShell } from '../shell/WorkspaceShell';
 import { NAV_ITEMS, PANEL_TABS } from '../mock/workspace';
 import { stubFetch } from './fixtures';
+
+/** jsdom EventSource 桩 (S10-003: 选中项目后 AgentTimeline 订阅 SSE 用)。 */
+class FakeEventSource {
+  static instances: FakeEventSource[] = [];
+
+  url: string;
+  listeners: Record<string, Array<(ev: MessageEvent<string>) => void>> = {};
+  onerror: ((ev: Event) => void) | null = null;
+  closed = false;
+
+  constructor(url: string) {
+    this.url = url;
+    FakeEventSource.instances.push(this);
+  }
+
+  addEventListener(name: string, cb: (ev: MessageEvent<string>) => void): void {
+    (this.listeners[name] ??= []).push(cb);
+  }
+
+  close(): void {
+    this.closed = true;
+  }
+}
+
+beforeEach(() => {
+  FakeEventSource.instances = [];
+  vi.stubGlobal('EventSource', FakeEventSource);
+});
+
+/** Timeline 事件流桩 (S10-003 AgentTimeline 初始历史; 选中项目后渲染)。 */
+const STUB_TIMELINE_EVENTS = [
+  { id: 'evt-1', seq: 1, project_id: 'ledger-app', type: 'user', event_type: '', stage_id: null, agent_id: null, artifact_id: null, gate_id: null, message: '项目创建: 记账 App', status: 'OK', payload: {}, created_at: null },
+  { id: 'evt-2', seq: 2, project_id: 'ledger-app', type: 'stage', event_type: 'org.workflow.stage_started', stage_id: 'mock-product', agent_id: 'pm', artifact_id: null, gate_id: null, message: '阶段开始: PM', status: 'OK', payload: { name: 'PM' }, created_at: null },
+];
 
 /** 渲染 Workspace Shell (AppState + Theme 双 Provider, 与 main.tsx 一致)。 */
 function renderShell() {
@@ -28,6 +62,9 @@ function renderShell() {
     /* 忽略 */
   }
   document.documentElement.dataset.theme = 'light';
+  stubFetch({
+    '/api/projects/ledger-app/timeline?limit=200': STUB_TIMELINE_EVENTS,
+  });
   return render(
     <AppStateProvider>
       <ThemeProvider>
@@ -114,11 +151,14 @@ describe('Workspace Header', () => {
     expect(options.map((option) => option.textContent)).toContain('记账 App');
   });
 
-  it('切换项目选择 → Workspace 显示选中项目', () => {
+  it('切换项目选择 → Workspace 显示选中项目 + Agent Timeline', async () => {
     renderShell();
     fireEvent.change(screen.getByTestId('ds-select'), { target: { value: 'ledger-app' } });
     expect(screen.getByTestId('ws-project-workspace')).toBeInTheDocument();
     expect(screen.getByTestId('ws-project-name')).toHaveTextContent('记账 App');
+    // S10-003: Agent Timeline 接入 (初始历史事件渲染)
+    expect(screen.getByTestId('agent-timeline')).toBeInTheDocument();
+    expect(await screen.findByText('项目创建: 记账 App')).toBeInTheDocument();
   });
 
   it('LLM 状态 pill 显示已连接 + Provider/模型 (mock)', () => {
@@ -208,13 +248,16 @@ describe('Project Tree (mock)', () => {
     expect(within(stages).getAllByText('待执行')).toHaveLength(3);
   });
 
-  it('点击项目 → Workspace 显示项目工作台 + Timeline 预留', async () => {
+  it('点击项目 → Workspace 显示项目工作台 + Agent Timeline (S10-003)', async () => {
     const user = await openTree();
     await user.click(screen.getByRole('button', { name: /记账 App/ }));
     expect(screen.getByTestId('ws-project-workspace')).toBeInTheDocument();
     expect(screen.getByTestId('ws-project-name')).toHaveTextContent('记账 App');
-    expect(screen.getByTestId('timeline-placeholder')).toBeInTheDocument();
     expect(screen.getByText('进行中')).toBeInTheDocument(); // StatusBadge (active)
+    // Timeline 预留已替换为 AgentTimeline (事件流渲染)
+    expect(screen.queryByTestId('timeline-placeholder')).toBeNull();
+    expect(screen.getByTestId('agent-timeline')).toBeInTheDocument();
+    expect(await screen.findByText('PM')).toBeInTheDocument(); // StageCard name (mock stage 节点)
   });
 });
 

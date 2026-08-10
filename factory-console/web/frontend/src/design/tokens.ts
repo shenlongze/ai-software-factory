@@ -103,6 +103,14 @@ export const STATUS_LABELS: Record<StageStatus, string> = {
   rework: '返工中',
 };
 
+// S10-003: api-data-model §1 Stage 状态机同义状态 (WAITING/RUNNING/SUCCESS/FAILED/
+// APPROVAL_REQUIRED — 大写由组件层 toLowerCase 归一; 标签补齐中文, tone 已覆盖)。
+export const STAGE_STATUS_LABELS: Record<string, string> = {
+  waiting: '等待中',
+  success: '成功',
+  approval_required: '待审批',
+};
+
 /** 状态色调 (状态 → 语义色; 未知回退 neutral)。 */
 export type StatusTone = 'neutral' | 'running' | 'success' | 'failed' | 'warning';
 
@@ -137,9 +145,10 @@ export function statusTone(status: string): StatusTone {
   }
 }
 
-/** 状态中文显示名 (未知状态原样返回)。 */
+/** 状态中文显示名 (未知状态原样返回; S10-003 兼容 Stage 状态机同义状态)。 */
 export function statusLabel(status: string): string {
-  return STATUS_LABELS[status.toLowerCase() as StageStatus] ?? status;
+  const key = status.toLowerCase();
+  return STATUS_LABELS[key as StageStatus] ?? STAGE_STATUS_LABELS[key] ?? status;
 }
 
 // ------------------------------------------------------------------ Agent (6)

@@ -33,8 +33,9 @@ function Shell(): JSX.Element {
   const { mode, page } = useAppState();
 
   // S10-001: Workspace Shell 全屏三栏 (独立于 Human Console, 无 console 头/脚)
+  // S10-003: hash 项目直链 (#/workspace?project=id) → 初始选中项目 (Agent Timeline)
   if (page.name === 'workspace') {
-    return <WorkspaceShell />;
+    return <WorkspaceShell initialProjectId={page.projectId ?? null} />;
   }
 
   return (

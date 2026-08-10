@@ -26,7 +26,9 @@ export type Page =
   // S9-003: 单产物评审页 (从 Artifacts 列表进入; 详情 + approve/reject/comment)
   | { name: 'review'; artifactId: string }
   // S10-001: Workspace Shell (三栏 AI 工作台, 全屏独立于 Human Console)
-  | { name: 'workspace' };
+  // S10-003: 可选 projectId — 项目工作台直链 (#/workspace?project=ledger-app,
+  //          截图/分享入口; 无 → 空态首页)
+  | { name: 'workspace'; projectId?: string };
 
 export interface AppStateValue {
   mode: Mode;
@@ -37,9 +39,17 @@ export interface AppStateValue {
 
 const AppStateContext = createContext<AppStateValue | null>(null);
 
-/** 直接入口 (URL hash): `#/workspace` → Workspace Shell。S10-001 状态导航入口。 */
+/** 直接入口 (URL hash): `#/workspace` → Workspace Shell; S10-001 状态导航入口。
+ * S10-003: `#/workspace?project=<id>` → 项目工作台直链 (Agent Timeline 截图入口)。 */
 export function pageFromHash(hash: string): Page | null {
   if (hash === '#/workspace') return { name: 'workspace' };
+  if (hash.startsWith('#/workspace?')) {
+    const query = new URLSearchParams(hash.slice('#/workspace?'.length));
+    const projectId = query.get('project');
+    return projectId != null && projectId.length > 0
+      ? { name: 'workspace', projectId }
+      : { name: 'workspace' };
+  }
   return null;
 }
 

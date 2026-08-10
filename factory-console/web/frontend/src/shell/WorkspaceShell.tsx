@@ -21,9 +21,14 @@ import { WorkspaceHeader } from './WorkspaceHeader';
 import { WorkspaceView } from './WorkspaceView';
 import './workspace.css';
 
-export function WorkspaceShell(): JSX.Element {
+export function WorkspaceShell({
+  initialProjectId = null,
+}: {
+  /** S10-003: hash 直链初始项目 (无 → 空态首页, 用户自行选择)。 */
+  initialProjectId?: string | null;
+}): JSX.Element {
   const [view, setView] = useState<ExplorerViewId>('home');
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(initialProjectId);
   const [panelTab, setPanelTab] = useState<PanelTabId>('browser');
 
   const selectedProject = useMemo(

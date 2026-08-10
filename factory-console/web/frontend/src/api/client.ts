@@ -29,6 +29,7 @@ import {
   type ConsoleDashboard,
   type DecisionSummary,
   type ExperienceSummary,
+  type IdeaSuggestion,
   type LifecycleSummary,
   type ProjectSummary,
   type ProviderSummary,
@@ -107,14 +108,19 @@ async function deleteJson<T>(path: string): Promise<T> {
 export const api = {
   dashboard: () => getJson<ConsoleDashboard>('/api/dashboard'),
   projects: () => getJson<ProjectSummary[]>('/api/projects'),
+  // S10-007 阶段三增强: AI 想法理解 (POST /api/projects/suggest → 建议名称/
+  // 一句话理解/澄清问题; ai_generated=false → 规则 fallback, 前端标注"快速模式")
+  suggestProject: (idea: string) => sendJson<IdeaSuggestion>('/api/projects/suggest', { idea }),
   // S10-006.5: 用户第一公里创建 (POST /api/projects {idea} → org 项目壳;
+  // S10-007: name 可选 — 用户确认的名称优先落库, 无 → 规则 slug 兜底;
   // project_type/tech 可选透传; 空 idea 由后端 400 拒绝)
   createProject: (
     idea: string,
-    options: { projectType?: string; tech?: string } = {},
+    options: { name?: string; projectType?: string; tech?: string } = {},
   ) =>
     sendJson<ProjectCreatedSummary>('/api/projects', {
       idea,
+      ...(options.name != null && options.name.length > 0 ? { name: options.name } : {}),
       ...(options.projectType != null && options.projectType.length > 0
         ? { project_type: options.projectType }
         : {}),

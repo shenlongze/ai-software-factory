@@ -343,6 +343,89 @@
   display: flex;
   justify-content: center;
 }
+
+/* ------------------------------ AI 理解卡片 (S10-007 想法确认对话) ------------------------------ */
+.ws-suggest-card {
+  width: 100%;
+  max-width: 520px;
+  background: var(--ds-surface);
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-lg);
+  box-shadow: var(--ds-shadow);
+  padding: var(--ds-space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-sm);
+  text-align: left;
+}
+.ws-suggest-head {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-sm);
+}
+.ws-suggest-title {
+  font-size: var(--ds-font-md);
+  font-weight: var(--ds-weight-bold);
+  color: var(--ds-text);
+}
+.ws-suggest-quick {
+  font-size: var(--ds-font-xs);
+  color: var(--ds-text-secondary);
+  background: var(--ds-surface-2);
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-full);
+  padding: 1px var(--ds-space-sm);
+  white-space: nowrap;
+}
+.ws-suggest-idea {
+  margin: 0;
+  font-size: var(--ds-font-sm);
+  color: var(--ds-text-secondary);
+}
+.ws-suggest-slug {
+  margin: 0;
+  font-size: var(--ds-font-xs);
+  color: var(--ds-text-secondary);
+  font-family: var(--ds-mono);
+}
+.ws-suggest-summary {
+  margin: 0;
+  font-size: var(--ds-font-body);
+  color: var(--ds-text);
+  background: var(--ds-surface-2);
+  border-radius: var(--ds-radius-md);
+  padding: var(--ds-space-sm) var(--ds-space-md);
+}
+.ws-suggest-questions {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ws-suggest-questions-title {
+  margin: 0;
+  font-size: var(--ds-font-sm);
+  font-weight: var(--ds-weight-medium);
+  color: var(--ds-text);
+}
+.ws-suggest-questions ul {
+  margin: 0;
+  padding-left: var(--ds-space-lg);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ws-suggest-questions li {
+  font-size: var(--ds-font-body);
+  color: var(--ds-text-secondary);
+}
+.ws-suggest-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--ds-space-sm);
+}
+.ws-suggest-card .ws-create-error {
+  margin: 0;
+}
 .ws-timeline-placeholder {
   margin-top: var(--ds-space-lg);
   width: 100%;

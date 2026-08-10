@@ -9,9 +9,10 @@
 
 import { useEffect, useState } from 'react';
 import { Button, Input, Modal, StatusBadge } from '../components/ds';
-import { ApiError } from '../api/client';
+import { api, ApiError } from '../api/client';
 import { NAV_ITEMS } from '../mock/workspace';
 import type { ExplorerViewId } from '../mock/workspace';
+import type { IdeaSuggestion } from '../models/types';
 import { AgentTimeline } from './AgentTimeline';
 import { ArtifactCenter } from './ArtifactCenter';
 import { RunStatusBar } from './RunStatusBar';
@@ -42,7 +43,8 @@ function WorkspaceHome({
   onDeleteProject,
 }: {
   onOpenProjects: () => void;
-  onCreateProject: (idea: string) => void;
+  /** S10-007 收尾: 确认创建 (name 可选 — 用户编辑后的名称; 无 → 旧直接创建兼容)。 */
+  onCreateProject: (idea: string, name?: string) => void;
   /** S10-006.5: 已有项目列表 (默认视图直接可见, 点击进入工作台)。 */
   projects: { id: string; name: string }[];
   onSelectProject: (projectId: string) => void;
@@ -53,6 +55,12 @@ function WorkspaceHome({
   const [idea, setIdea] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // S10-007 收尾: 想法确认对话 — 两阶段 (分析需求 → AI 理解卡片 → 确认创建)
+  const [suggesting, setSuggesting] = useState(false);
+  const [suggestion, setSuggestion] = useState<IdeaSuggestion | null>(null);
+  const [editedName, setEditedName] = useState('');
+  const [confirming, setConfirming] = useState(false);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
   // S10-006.5 收尾: 每项 ⋯ 菜单 (openMenuId) + 重命名/删除 Modal (action) + 请求态
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [action, setAction] = useState<{ type: 'rename' | 'delete'; project: { id: string; name: string } } | null>(null);
@@ -132,7 +140,54 @@ function WorkspaceHome({
     }
   };
 
-  const submit = async (): Promise<void> => {
+  /** S10-007 收尾: 阶段一「分析需求」— POST /api/projects/suggest (真实 LLM +
+   * 诚实 fallback; 失败 → 错误提示可重试, 不假装)。 */
+  const analyze = async (): Promise<void> => {
+    const text = idea.trim();
+    if (text.length === 0) {
+      setError('请先输入你想开发的软件 (例如: 开发一个记账 App)');
+      return;
+    }
+    setSuggesting(true);
+    setError(null);
+    setConfirmError(null);
+    try {
+      const result = await api.suggestProject(text);
+      setSuggestion(result);
+      setEditedName(result.suggested_name);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '分析失败, 请稍后重试');
+    } finally {
+      setSuggesting(false);
+    }
+  };
+
+  /** S10-007 收尾: 阶段二「确认创建」— 用户编辑后的名称显式传给 Shell
+   * (POST /api/projects {idea, name}); 成功 → Shell 选中新项目 → 工作台。 */
+  const confirmCreate = async (): Promise<void> => {
+    if (suggestion == null) return;
+    const name = editedName.trim();
+    setConfirming(true);
+    setConfirmError(null);
+    try {
+      await onCreateProject(suggestion.idea, name.length > 0 ? name : undefined);
+      setSuggestion(null); // 防卸载前闪回 (Shell 选中项目后本组件卸载)
+    } catch (err) {
+      setConfirmError(err instanceof Error ? err.message : '创建失败, 请稍后重试');
+    } finally {
+      setConfirming(false);
+    }
+  };
+
+  /** 「重新分析」— 收起卡片回输入态 (想法保留, 可修改后再次分析)。 */
+  const reanalyze = (): void => {
+    setSuggestion(null);
+    setConfirmError(null);
+    setError(null);
+  };
+
+  /** 旧直接创建兼容 (无 name — 规则 slug 兜底; 保留给跳过分析的快速用户)。 */
+  const submitDirect = async (): Promise<void> => {
     const text = idea.trim();
     if (text.length === 0) {
       setError('请先输入你想开发的软件 (例如: 开发一个记账 App)');
@@ -174,34 +229,111 @@ function WorkspaceHome({
           </button>
         ))}
       </div>
-      <div className="ws-create" data-testid="ws-create-form">
-        <textarea
-          className="ws-create-input"
-          data-testid="ws-create-input"
-          placeholder="我想开发一个 xxx"
-          value={idea}
-          onChange={(e) => setIdea(e.target.value)}
-          rows={2}
-        />
-        <div className="ws-create-actions">
-          <Button
-            variant="primary"
-            onClick={() => void submit()}
-            disabled={submitting}
-            data-testid="ws-create-submit"
-          >
-            {submitting ? '创建中…' : '开始生产'}
-          </Button>
-          <Button variant="ghost" onClick={onOpenProjects}>
-            选择项目
-          </Button>
+      {/* S10-007 收尾: 两阶段创建 — 阶段一: 输入想法 → [分析需求] (loading);
+          阶段二: AI 理解卡片 (名称可编辑+摘要+澄清问题) → [确认创建] */}
+      {suggestion == null ? (
+        <div className="ws-create" data-testid="ws-create-form">
+          <textarea
+            className="ws-create-input"
+            data-testid="ws-create-input"
+            placeholder="我想开发一个 xxx"
+            value={idea}
+            onChange={(e) => setIdea(e.target.value)}
+            rows={2}
+          />
+          <div className="ws-create-actions">
+            <Button
+              variant="primary"
+              onClick={() => void analyze()}
+              disabled={suggesting || submitting}
+              loading={suggesting}
+              data-testid="ws-suggest-submit"
+            >
+              {suggesting ? '分析中…' : '分析需求'}
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => void submitDirect()}
+              disabled={submitting || suggesting}
+              loading={submitting}
+              data-testid="ws-create-submit"
+            >
+              {submitting ? '创建中…' : '开始生产'}
+            </Button>
+            <Button variant="ghost" onClick={onOpenProjects}>
+              选择项目
+            </Button>
+          </div>
+          {error != null ? (
+            <p className="ws-create-error" data-testid="ws-create-error">
+              {error}
+            </p>
+          ) : null}
         </div>
-        {error != null ? (
-          <p className="ws-create-error" data-testid="ws-create-error">
-            {error}
+      ) : (
+        <div className="ws-suggest-card" data-testid="ws-suggest-card">
+          <div className="ws-suggest-head">
+            <span className="ws-suggest-title">AI 理解</span>
+            {!suggestion.ai_generated ? (
+              <span className="ws-suggest-quick" data-testid="ws-suggest-quick">
+                快速模式
+              </span>
+            ) : null}
+          </div>
+          <p className="ws-suggest-idea" data-testid="ws-suggest-idea">
+            想法: {suggestion.idea}
           </p>
-        ) : null}
-      </div>
+          <Input
+            label="项目名称 (可编辑)"
+            data-testid="ws-suggest-name"
+            value={editedName}
+            onChange={(e) => setEditedName(e.target.value)}
+            disabled={confirming}
+          />
+          <p className="ws-suggest-slug" data-testid="ws-suggest-slug">
+            slug: {suggestion.slug}
+          </p>
+          <p className="ws-suggest-summary" data-testid="ws-suggest-summary">
+            {suggestion.summary}
+          </p>
+          {suggestion.questions.length > 0 ? (
+            <div className="ws-suggest-questions" data-testid="ws-suggest-questions">
+              <p className="ws-suggest-questions-title">需要确认的问题:</p>
+              <ul>
+                {suggestion.questions.map((question, index) => (
+                  <li key={index} data-testid={`ws-suggest-question-${index}`}>
+                    {question}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          <div className="ws-suggest-actions">
+            <Button
+              variant="primary"
+              onClick={() => void confirmCreate()}
+              disabled={confirming}
+              loading={confirming}
+              data-testid="ws-suggest-confirm"
+            >
+              {confirming ? '创建中…' : '确认创建'}
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={reanalyze}
+              disabled={confirming}
+              data-testid="ws-suggest-reanalyze"
+            >
+              重新分析
+            </Button>
+          </div>
+          {confirmError != null ? (
+            <p className="ws-create-error" data-testid="ws-suggest-confirm-error">
+              {confirmError}
+            </p>
+          ) : null}
+        </div>
+      )}
       {projects.length > 0 ? (
         <div className="ws-recent" data-testid="ws-recent-projects">
           <h3 className="ws-recent-title">已有项目</h3>
@@ -422,8 +554,9 @@ export function WorkspaceView({
   onOpenProjects: () => void;
   /** S10-004 联动: Timeline artifact 查看 → Runtime Panel (WorkspaceShell 提供)。 */
   onViewArtifact?: (artifactId: string) => void;
-  /** S10-006.5: 创建项目 (WorkspaceShell 调 POST /api/projects → 选中新项目)。 */
-  onCreateProject?: (idea: string) => Promise<void>;
+  /** S10-006.5: 创建项目 (WorkspaceShell 调 POST /api/projects → 选中新项目)。
+   * S10-007 收尾: name 可选 — 用户确认的名称 (suggest 卡片编辑后显式传)。 */
+  onCreateProject?: (idea: string, name?: string) => Promise<void>;
   /** S10-006.5 收尾: 重命名/删除 (Home 列表 ⋯ 菜单 → Modal → Shell 同步)。 */
   onRenameProject?: (projectId: string, name: string) => Promise<void>;
   onDeleteProject?: (projectId: string) => Promise<void>;

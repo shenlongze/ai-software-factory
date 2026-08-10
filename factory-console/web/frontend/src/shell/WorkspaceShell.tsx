@@ -79,9 +79,10 @@ export function WorkspaceShell({
       : null;
   }, [projects, selectedProjectId, deletedProjectIds]);
 
-  /** S10-006.5: 创建项目 (POST /api/projects → 项目入树 + 选中)。 */
-  const handleCreateProject = async (idea: string): Promise<void> => {
-    const created = await api.createProject(idea);
+  /** S10-006.5: 创建项目 (POST /api/projects → 项目入树 + 选中)。
+   * S10-007 收尾: name 可选 — 想法确认卡片用户编辑后的名称显式落库 (无 → 旧兼容)。 */
+  const handleCreateProject = async (idea: string, name?: string): Promise<void> => {
+    const created = await api.createProject(idea, name != null && name.length > 0 ? { name } : {});
     setProjects((prev) => {
       const next = prev.filter((project) => project.id !== created.project_id);
       return [...next, { id: created.project_id, name: created.name, status: created.status }];

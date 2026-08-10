@@ -36,6 +36,21 @@ export interface ProjectCreatedSummary {
   status: string;
 }
 
+/** POST /api/projects/suggest — AI 想法理解 (S10-007 阶段三增强: 想法确认对话)。
+
+ * 用户输入想法 → AI 提议名称/一句话理解/1-3 澄清问题 → 前端确认卡 (名称可编辑)
+ * → 确认后 POST /projects {idea, name} 创建。ai_generated=false → 诚实
+ * fallback (规则提炼, questions=[] — 前端标注"快速模式", 不冒充 AI 理解)。
+ */
+export interface IdeaSuggestion {
+  idea: string;
+  suggested_name: string;
+  slug: string;
+  summary: string;
+  questions: string[];
+  ai_generated: boolean;
+}
+
 /** PATCH /api/projects/{id} 更新结果 (S10-006.5 项目管理: 重命名/改 idea)。 */
 export interface ProjectUpdatedSummary {
   project_id: string;

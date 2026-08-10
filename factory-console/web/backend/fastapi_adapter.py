@@ -24,8 +24,10 @@ build 静态文件 (SPA)。只做 HTTP 绑定 (参数解析 / JSON 序列化 / �
 端点 (只读 GET + S9-002 审批决定 POST + S10-006.5 创建 POST/管理 PATCH/DELETE):
   /api/dashboard                        → ConsoleDashboard 七域 (11A service.dashboard)
   /api/projects                         → list_projects (console.viewed)
-  POST /api/projects                    → create_project ({idea,project_type,tech}
-                                          → org 项目; 400/503 语义)   [S10-006.5]
+  POST /api/projects/suggest            → suggest_project ({idea} → AI 提议
+                                          名称/理解/澄清问题; fallback 诚实标注) [S10-007]
+  POST /api/projects                    → create_project ({idea,name?,project_type,
+                                          tech} → org 项目; 400/503 语义)   [S10-006.5]
   PATCH /api/projects/{id}              → update_project (重命名/改 idea;
                                           400/404 语义)                [S10-006.5]
   DELETE /api/projects/{id}             → delete_project (运行中 409 保护;
@@ -104,15 +106,29 @@ class _CreateRuntimeBody(BaseModel):
 class _CreateProjectBody(BaseModel):
     """POST /api/projects body (S10-006.5: 用户第一公里创建闭环)。
 
-    {idea, project_type?, tech?}: idea 为必填想法 (空 → 400); project_type
+    {idea, name?, project_type?, tech?}: idea 为必填想法 (空 → 400); name
+    (S10-007 阶段三增强) 为用户确认的项目名称 (suggest 卡片确认后显式传,
+    优先落库; 无 → 规则 slug 兜底, 旧调用向后兼容); project_type
     (web|mobile|desktop) 与 tech (auto|flutter|react|vue) 可选 — 宽容
     收窄 (非设计值 → 400), 透传 org Project 落库 (project_type/framework),
     不伪造 AI 技术选型。
     """
 
     idea: str
+    name: str = ""
     project_type: str = ""
     tech: str = ""
+
+
+class _SuggestBody(BaseModel):
+    """POST /api/projects/suggest body (S10-007 阶段三增强: 想法确认对话)。
+
+    {idea}: 用户想法 (必填; 空 → 400) — AI 提议名称/一句话理解/澄清问题
+    卡片数据源。建议本身不落库 (非关键路径), LLM 不可用 → 诚实 fallback
+    (ai_generated=false, 前端标注"快速模式")。
+    """
+
+    idea: str
 
 
 class _ReviewFeedbackBody(BaseModel):
@@ -326,16 +342,35 @@ def build_app(
         """项目清单 (11A list_projects, 只读投影)。"""
         return [p.to_dict() for p in _api.list_projects(service, logger=event_logger)]
 
+    @app.post("/api/projects/suggest", status_code=200)
+    def api_suggest_project(body: _SuggestBody) -> dict[str, Any]:
+        """AI 想法理解 (S10-007 阶段三增强: 想法确认对话)。
+
+        {idea} → {suggested_name, slug, summary, questions, ai_generated}:
+        真实 LLM 小调用 (1 次 ~$0.001) 提议名称/一句话理解/1-3 澄清问题;
+        LLM 不可用/超时/解析失败 → 诚实 fallback (ai_generated=false, 规则
+        提炼 + questions=[] — 前端标注"快速模式", 不冒充 AI 理解)。idea 空
+        → 400 (空想法不分析)。失败安全: 建议是非关键路径, LLM 异常不 5xx
+        (fallback 兜底), 用户仍可确认创建。
+        """
+        idea = body.idea.strip()
+        if not idea:
+            raise HTTPException(status_code=400, detail="idea is required (空想法不分析)")
+        suggestion = _api.suggest_project(service, idea, logger=event_logger)
+        return suggestion.to_dict()
+
     @app.post("/api/projects", status_code=201)
     def api_create_project(body: _CreateProjectBody) -> dict[str, Any]:
-        """创建项目 (S10-006.5: {idea, project_type?, tech?} → org 项目)。
+        """创建项目 (S10-006.5: {idea, name?, project_type?, tech?} → org 项目)。
 
-        错误语义: idea 空 → 400 (空想法不创建); project_type/tech 非法
-        → 400 (宽容收窄); org store 缺失/创建失败 → 503 (失败安全, 不
-        拖垮 API); 成功 → 201 {project_id, name, idea, status}。写面
-        (Permission Boundary): 与审批决定/Runtime/Review 反馈并列的
-        Console 写路径 — 只建 org 项目壳 (org.project.created 审计),
-        不启动执行链 (Step 4-5 后续 Sprint)。
+        S10-007 阶段三增强: name (用户确认的名称) 显式传 → 优先落库; 无
+        name → 规则 slug 兜底 (旧 {idea} 调用向后兼容)。错误语义: idea 空
+        → 400 (空想法不创建); project_type/tech 非法 → 400 (宽容收窄);
+        org store 缺失/创建失败 → 503 (失败安全, 不拖垮 API); 成功 → 201
+        {project_id, name, idea, status}。写面 (Permission Boundary): 与
+        审批决定/Runtime/Review 反馈并列的 Console 写路径 — 只建 org 项目
+        壳 (org.project.created 审计), 不启动执行链 (确认后由用户点击
+        "开始开发")。
         """
         idea = body.idea.strip()
         if not idea:
@@ -354,6 +389,7 @@ def build_app(
         summary = _api.create_project(
             service,
             idea,
+            name=body.name,
             project_type=project_type,
             tech=tech,
             logger=event_logger,

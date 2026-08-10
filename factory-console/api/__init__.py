@@ -21,7 +21,13 @@ from .artifacts import get_artifact, get_artifact_content, list_artifacts
 from .decisions import get_decision
 from .intelligence import list_experience, list_recommendations
 from .lifecycle import get_project_lifecycle
-from .projects import create_project, delete_project, list_projects, update_project
+from .projects import (
+    create_project,
+    delete_project,
+    list_projects,
+    suggest_project,
+    update_project,
+)
 from .providers import list_providers
 from .review_feedback import list_review_feedback, save_review_feedback
 from .runtime import (
@@ -73,5 +79,6 @@ __all__ = [
     "start_project_workflow_route",
     "start_runtime",
     "stop_runtime",
+    "suggest_project",
     "update_project",
 ]

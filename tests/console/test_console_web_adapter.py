@@ -331,6 +331,9 @@ class TestPermissionBoundary:
                 is_runtime_lifecycle = "/runtimes" in path
                 is_review_feedback = path.endswith("/review-feedback")
                 is_project_create = path == "/api/projects"
+                # S10-007: AI 想法理解 (POST /api/projects/suggest — 建议不落库,
+                # 非关键路径; 与创建同为想法输入写面, 白名单内)
+                is_project_suggest = route_method == "POST" and path == "/api/projects/suggest"
                 is_workflow_start = path.endswith("/start") or path.endswith("/chat")
                 # S10-006.5 收尾: 项目管理 (PATCH/DELETE /api/projects/{id})
                 is_project_update = route_method == "PATCH" and path == "/api/projects/{project_id}"
@@ -340,6 +343,7 @@ class TestPermissionBoundary:
                     or is_runtime_lifecycle
                     or is_review_feedback
                     or is_project_create
+                    or is_project_suggest
                     or is_workflow_start
                     or is_project_update
                     or is_project_delete

@@ -127,12 +127,43 @@ class ProjectCreatedSummary(BaseModel):
     {project_id, name, idea, status}: 前端创建成功 → 跳转
     #/workspace?project={project_id} 的数据源; idea 原样回显 (诚实 —
     不伪造 AI 理解), status 恒 "idea" (org Project 生命周期起点)。
+
+    S10-007 阶段三增强: name = 用户确认的名称 (suggest 卡片确认后显式传),
+    规则 slug 仅兜底 (无 name → extract_project_name)。
     """
 
     project_id: str
     name: str
     idea: str
     status: str = "idea"
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json")
+
+
+class IdeaSuggestion(BaseModel):
+    """POST /projects/suggest — AI 想法理解卡片 (S10-007 阶段三增强)。
+
+    {idea, suggested_name, slug, summary, questions, ai_generated}: 用户输入
+    想法 → AI 提议名称/一句话理解/澄清问题 → 前端确认卡 (名称可编辑) →
+    确认后 POST /projects {idea, name} 创建。
+
+    - suggested_name: 有意义的中文名 (如 "记账小助手"; LLM 提议, 规则 fallback
+      提炼核心词)
+    - slug: URL 安全标识 (LLM 提议或规则生成; 创建时 name 显式优先, 规则仅兜底)
+    - summary: 一句话理解 (AI 对想法的理解)
+    - questions: 1-3 个澄清问题 (LLM 可用时); 规则 fallback → [] (诚实:
+      规则无法提问, 不伪造)
+    - ai_generated: True = 真实 LLM 理解; False = 诚实 fallback (前端标注
+      "快速模式", 仍可确认创建 — 规则名仅兜底, 不冒充 AI)
+    """
+
+    idea: str
+    suggested_name: str = ""
+    slug: str = ""
+    summary: str = ""
+    questions: list[str] = Field(default_factory=list)
+    ai_generated: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return self.model_dump(mode="json")

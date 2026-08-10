@@ -182,6 +182,7 @@ class TestRouteExports:
             "start_project_workflow_route",
             "start_runtime",
             "stop_runtime",
+            "suggest_project",
             "update_project",
         }
         assert set(_api.__all__) == expected

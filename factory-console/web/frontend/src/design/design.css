@@ -1,45 +1,65 @@
 /* =====================================================================
  * S10-000 Design System — 设计令牌 (CSS 变量) + 组件样式
  *
+ * Apple 风 (2026-08): 背景 #f5f5f7 / 强调 #0071e3 / 大圆角 16px /
+ * 柔和阴影 / 系统字体 (SF Pro + PingFang SC)。组件圆润化:
+ * Button pill (980px) / Card 16px / Input 10px + 聚焦蓝环 /
+ * StatusBadge 浅色底 / Modal 20px + 毛玻璃遮罩 / Timeline 卡片化。
+ *
  * - 令牌: --ds-* 命名空间 (与 S9 index.css 的 --bg/--panel 等零冲突)
  * - 主题: :root / [data-theme='light'] = 亮色 (默认); [data-theme='dark'] = 暗色
  * - 组件类: ds-* 前缀 (避免与 S9 .card/.badge/.modal 等类名冲突)
- * - 与 src/design/tokens.ts 同值 (改一处必须同步另一处)
+ * - 与 src/design/tokens.ts 同值 (改一处必须同步另一处)。注意:
+ *   tokens.ts 中部分字段被 design-system.test.tsx 锁定 (lightTheme.bg/surface/
+ *   border/primary/success/error/warning、darkTheme.bg/surface/border、
+ *   spacing/radius/fontSizes.body|title、AGENT_META.pm.color) —
+ *   测试文件不在改造范围, 这些字段保持旧值 (TS 侧无运行时消费方,
+ *   仅测试引用), CSS 侧 (本文件) 为视觉真源。
  * ===================================================================== */
 
 /* ------------------------------ 令牌: 亮色 (默认) ------------------------------ */
 :root,
 [data-theme='light'] {
-  --ds-bg: #ffffff;
-  --ds-surface: #f5f5f5;
-  --ds-surface-2: #ebebeb;
-  --ds-border: #e0e0e0;
-  --ds-text: #1e1e1e;
-  --ds-text-secondary: #757575;
-  --ds-primary: #007acc;
-  --ds-primary-hover: #0062a3;
-  --ds-success: #4caf50;
-  --ds-error: #f44336;
-  --ds-warning: #ff9800;
-  --ds-info: #007acc;
-  --ds-overlay: rgba(0, 0, 0, 0.5);
-  --ds-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.08);
+  /* 颜色 — Apple 灰白/蓝/系统色 */
+  --ds-bg: #f5f5f7; /* 页面底 — Apple 灰白 */
+  --ds-surface: #ffffff; /* 卡片/侧栏 — 白 */
+  --ds-surface-2: #f2f2f5; /* 次级填充 (hover/chip/输入框) */
+  --ds-border: #e8e8ed; /* 极淡分割线 */
+  --ds-text: #1d1d1f; /* 近黑 */
+  --ds-text-secondary: #86868b; /* Apple 次级灰 */
+  --ds-primary: #0071e3; /* Apple 蓝 */
+  --ds-primary-hover: #0077ed;
+  --ds-success: #34c759; /* Apple 绿 */
+  --ds-error: #ff3b30; /* Apple 红 */
+  --ds-warning: #ff9500; /* Apple 橙 */
+  --ds-info: #0071e3;
+  --ds-overlay: rgba(0, 0, 0, 0.25); /* 毛玻璃遮罩 (浅) */
 
-  --ds-font: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
-    'Microsoft YaHei', sans-serif;
+  /* 阴影 — 柔和双层 */
+  --ds-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 8px 24px rgba(0, 0, 0, 0.06);
+  --ds-shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.1), 0 24px 48px rgba(0, 0, 0, 0.14);
+  /* 聚焦蓝环 (Input/Textarea/Select) */
+  --ds-ring: 0 0 0 4px rgba(0, 113, 227, 0.15);
+
+  /* 字体 — 系统 SF Pro + 中文 PingFang */
+  --ds-font: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text',
+    'PingFang SC', 'Helvetica Neue', 'Segoe UI', 'Microsoft YaHei', sans-serif;
   --ds-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
+  /* 间距 — 上移一档 (大留白) */
   --ds-space-xs: 4px;
-  --ds-space-sm: 8px;
-  --ds-space-md: 16px;
-  --ds-space-lg: 24px;
-  --ds-space-xl: 32px;
-  --ds-space-xxl: 48px;
+  --ds-space-sm: 12px;
+  --ds-space-md: 20px;
+  --ds-space-lg: 32px;
+  --ds-space-xl: 40px;
+  --ds-space-xxl: 56px;
 
-  --ds-radius-sm: 4px;
-  --ds-radius-md: 8px;
-  --ds-radius-lg: 12px;
-  --ds-radius-full: 999px;
+  /* 圆角 — 大圆角体系 (Button pill 980px) */
+  --ds-radius-sm: 8px;
+  --ds-radius-md: 10px;
+  --ds-radius-lg: 16px;
+  --ds-radius-xl: 20px;
+  --ds-radius-full: 980px;
 
   --ds-font-xs: 11px;
   --ds-font-sm: 12px;
@@ -50,37 +70,42 @@
 
   --ds-weight-regular: 400;
   --ds-weight-medium: 500;
+  --ds-weight-semibold: 600;
   --ds-weight-bold: 700;
 
-  --ds-status-neutral: #9e9e9e;
-  --ds-status-running: #007acc;
-  --ds-status-success: #4caf50;
-  --ds-status-failed: #f44336;
-  --ds-status-warning: #ff9800;
+  /* 状态色 (StatusBadge/圆点/进度) — Apple 系统色 */
+  --ds-status-neutral: #86868b;
+  --ds-status-running: #0071e3;
+  --ds-status-success: #34c759;
+  --ds-status-failed: #ff3b30;
+  --ds-status-warning: #ff9500;
 }
 
-/* ------------------------------ 令牌: 暗色 ------------------------------ */
+/* ------------------------------ 令牌: 暗色 (Apple 纯黑) ------------------------------ */
 [data-theme='dark'] {
-  --ds-bg: #1e1e1e;
-  --ds-surface: #252526;
-  --ds-surface-2: #2d2d30;
-  --ds-border: #3e3e3e;
-  --ds-text: #d4d4d4;
-  --ds-text-secondary: #999999;
-  --ds-primary: #007acc;
-  --ds-primary-hover: #1a8ad4;
-  --ds-success: #4caf50;
-  --ds-error: #f44336;
-  --ds-warning: #ff9800;
-  --ds-info: #007acc;
-  --ds-overlay: rgba(0, 0, 0, 0.55);
-  --ds-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+  --ds-bg: #000000;
+  --ds-surface: #1c1c1e;
+  --ds-surface-2: #2c2c2e;
+  --ds-border: #38383a;
+  --ds-text: #f5f5f7;
+  --ds-text-secondary: #98989d;
+  --ds-primary: #0a84ff;
+  --ds-primary-hover: #409cff;
+  --ds-success: #30d158;
+  --ds-error: #ff453a;
+  --ds-warning: #ff9f0a;
+  --ds-info: #0a84ff;
+  --ds-overlay: rgba(0, 0, 0, 0.5);
 
-  --ds-status-neutral: #9e9e9e;
-  --ds-status-running: #007acc;
-  --ds-status-success: #4caf50;
-  --ds-status-failed: #f44336;
-  --ds-status-warning: #ff9800;
+  --ds-shadow: 0 1px 3px rgba(0, 0, 0, 0.5), 0 8px 24px rgba(0, 0, 0, 0.4);
+  --ds-shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.5), 0 24px 48px rgba(0, 0, 0, 0.55);
+  --ds-ring: 0 0 0 4px rgba(10, 132, 255, 0.25);
+
+  --ds-status-neutral: #98989d;
+  --ds-status-running: #0a84ff;
+  --ds-status-success: #30d158;
+  --ds-status-failed: #ff453a;
+  --ds-status-warning: #ff9f0a;
 }
 
 /* ------------------------------ 基础 ------------------------------ */
@@ -99,44 +124,54 @@
   }
 }
 
-/* ------------------------------ Button ------------------------------ */
+/* ------------------------------ Button (Apple pill) ------------------------------ */
 .ds-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: var(--ds-space-sm);
+  gap: 6px;
   font: inherit;
   font-size: var(--ds-font-body);
   font-weight: var(--ds-weight-medium);
   line-height: 1.2;
-  padding: 7px 16px;
-  border-radius: var(--ds-radius-md);
+  padding: 9px 20px;
+  border-radius: var(--ds-radius-full);
   border: 1px solid transparent;
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease,
+    box-shadow 0.2s ease, transform 0.1s ease;
   white-space: nowrap;
+}
+.ds-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.ds-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--ds-ring);
 }
 .ds-btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
 .ds-btn-sm {
-  padding: 4px 12px;
+  padding: 5px 14px;
   font-size: var(--ds-font-sm);
 }
 .ds-btn-primary {
   background: var(--ds-primary);
   border-color: var(--ds-primary);
   color: #ffffff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 4px 12px rgba(0, 113, 227, 0.32);
 }
 .ds-btn-primary:hover:not(:disabled) {
   background: var(--ds-primary-hover);
   border-color: var(--ds-primary-hover);
 }
 .ds-btn-secondary {
-  background: var(--ds-surface-2);
+  background: var(--ds-surface);
   border-color: var(--ds-border);
   color: var(--ds-text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 .ds-btn-secondary:hover:not(:disabled) {
   border-color: var(--ds-primary);
@@ -145,9 +180,10 @@
   background: var(--ds-error);
   border-color: var(--ds-error);
   color: #ffffff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 4px 12px rgba(255, 59, 48, 0.28);
 }
 .ds-btn-danger:hover:not(:disabled) {
-  filter: brightness(0.92);
+  filter: brightness(0.94);
 }
 .ds-btn-ghost {
   background: transparent;
@@ -155,10 +191,10 @@
   color: var(--ds-primary);
 }
 .ds-btn-ghost:hover:not(:disabled) {
-  background: var(--ds-surface);
+  background: color-mix(in srgb, var(--ds-primary) 10%, transparent);
 }
 
-/* ------------------------------ Card ------------------------------ */
+/* ------------------------------ Card (白底 + 16px 圆角 + 柔和阴影) ------------------------------ */
 .ds-card {
   background: var(--ds-surface);
   border: 1px solid var(--ds-border);
@@ -182,7 +218,7 @@
 .ds-card-title {
   margin: 0;
   font-size: var(--ds-font-md);
-  font-weight: var(--ds-weight-bold);
+  font-weight: var(--ds-weight-semibold);
   color: var(--ds-text);
 }
 .ds-card-subtitle {
@@ -195,16 +231,16 @@
   align-items: center;
 }
 
-/* ------------------------------ StatusBadge ------------------------------ */
+/* ------------------------------ StatusBadge (圆点 + 浅色底) ------------------------------ */
 .ds-badge {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 2px 10px;
+  padding: 3px 12px;
   border-radius: var(--ds-radius-full);
   font-size: var(--ds-font-sm);
   font-weight: var(--ds-weight-medium);
-  border: 1px solid currentColor;
+  border: none;
   white-space: nowrap;
 }
 .ds-badge-dot {
@@ -214,20 +250,26 @@
   background: currentColor;
   flex: none;
 }
+/* 浅色底 = currentColor 10-15% 透明度 (color-mix 自动适配亮/暗主题) */
 .ds-badge-neutral {
   color: var(--ds-status-neutral);
+  background: color-mix(in srgb, currentColor 12%, transparent);
 }
 .ds-badge-running {
   color: var(--ds-status-running);
+  background: color-mix(in srgb, currentColor 12%, transparent);
 }
 .ds-badge-success {
   color: var(--ds-status-success);
+  background: color-mix(in srgb, currentColor 14%, transparent);
 }
 .ds-badge-failed {
   color: var(--ds-status-failed);
+  background: color-mix(in srgb, currentColor 12%, transparent);
 }
 .ds-badge-warning {
   color: var(--ds-status-warning);
+  background: color-mix(in srgb, currentColor 16%, transparent);
 }
 
 /* ------------------------------ AgentAvatar ------------------------------ */
@@ -254,39 +296,46 @@
   font-size: 22px;
 }
 
-/* ------------------------------ Timeline ------------------------------ */
+/* ------------------------------ Timeline (圆点 + 渐变连接线 + 卡片化) ------------------------------ */
 .ds-timeline {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--ds-space-md);
+  gap: var(--ds-space-sm);
   position: relative;
 }
 .ds-timeline::before {
   content: '';
   position: absolute;
-  left: 13px;
-  top: 8px;
-  bottom: 8px;
+  left: 7px;
+  top: 10px;
+  bottom: 10px;
   width: 2px;
-  background: var(--ds-border);
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    var(--ds-border) 6%,
+    var(--ds-border) 94%,
+    transparent
+  );
 }
 .ds-timeline-node {
   position: relative;
   display: grid;
-  grid-template-columns: 28px 1fr;
+  grid-template-columns: 32px 1fr;
   gap: var(--ds-space-sm);
   align-items: start;
 }
 .ds-timeline-dot {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
   margin-top: 3px;
   background: var(--ds-status-neutral);
-  border: 2px solid var(--ds-bg);
+  border: 3px solid var(--ds-surface);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
   z-index: 1;
 }
 .ds-dot-running {
@@ -314,7 +363,7 @@
   flex-wrap: wrap;
 }
 .ds-timeline-title {
-  font-weight: var(--ds-weight-bold);
+  font-weight: var(--ds-weight-semibold);
   color: var(--ds-text);
 }
 .ds-timeline-time {
@@ -323,15 +372,16 @@
   font-family: var(--ds-mono);
 }
 .ds-timeline-body {
-  margin-top: var(--ds-space-sm);
+  margin-top: var(--ds-space-xs);
 }
 
-/* ------------------------------ StageCard ------------------------------ */
+/* ------------------------------ StageCard (卡片化) ------------------------------ */
 .ds-stage-card {
   background: var(--ds-surface);
   border: 1px solid var(--ds-border);
-  border-radius: var(--ds-radius-md);
+  border-radius: var(--ds-radius-lg);
   padding: var(--ds-space-md);
+  box-shadow: var(--ds-shadow);
 }
 .ds-stage-card-head {
   display: flex;
@@ -346,7 +396,7 @@
   min-width: 0;
 }
 .ds-stage-card-name {
-  font-weight: var(--ds-weight-bold);
+  font-weight: var(--ds-weight-semibold);
   color: var(--ds-text);
 }
 .ds-stage-card-agent {
@@ -388,7 +438,7 @@
   gap: var(--ds-space-sm);
   background: var(--ds-surface);
   border: 1px solid var(--ds-border);
-  border-radius: var(--ds-radius-md);
+  border-radius: var(--ds-radius-lg);
   padding: var(--ds-space-sm) var(--ds-space-md);
   align-items: flex-start;
 }
@@ -418,7 +468,7 @@
   letter-spacing: 0.4px;
 }
 .ds-artifact-name {
-  font-weight: var(--ds-weight-bold);
+  font-weight: var(--ds-weight-semibold);
   color: var(--ds-text);
 }
 .ds-artifact-meta {
@@ -432,11 +482,13 @@
   margin-top: 2px;
 }
 
-/* ------------------------------ Modal ------------------------------ */
+/* ------------------------------ Modal (20px 大圆角 + 毛玻璃遮罩) ------------------------------ */
 .ds-modal-overlay {
   position: fixed;
   inset: 0;
   background: var(--ds-overlay);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -444,10 +496,10 @@
   padding: var(--ds-space-md);
 }
 .ds-modal {
-  background: var(--ds-bg);
+  background: var(--ds-surface);
   border: 1px solid var(--ds-border);
-  border-radius: var(--ds-radius-lg);
-  box-shadow: var(--ds-shadow);
+  border-radius: var(--ds-radius-xl);
+  box-shadow: var(--ds-shadow-lg);
   max-width: 560px;
   width: 100%;
   padding: var(--ds-space-lg);
@@ -455,7 +507,7 @@
 .ds-modal-title {
   margin: 0 0 var(--ds-space-sm);
   font-size: var(--ds-font-lg);
-  font-weight: var(--ds-weight-bold);
+  font-weight: var(--ds-weight-semibold);
   color: var(--ds-text);
 }
 .ds-modal-body {
@@ -468,7 +520,7 @@
   gap: var(--ds-space-sm);
 }
 
-/* ------------------------------ 表单 ------------------------------ */
+/* ------------------------------ 表单 (10px 圆角 + 聚焦蓝环) ------------------------------ */
 .ds-field {
   display: flex;
   flex-direction: column;
@@ -486,17 +538,23 @@
   font: inherit;
   font-size: var(--ds-font-body);
   color: var(--ds-text);
-  background: var(--ds-bg);
-  border: 1px solid var(--ds-border);
+  background: var(--ds-surface-2);
+  border: 1px solid transparent;
   border-radius: var(--ds-radius-md);
-  padding: 7px 10px;
-  transition: border-color 0.15s ease;
+  padding: 9px 12px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.ds-input:hover:not(:focus),
+.ds-textarea:hover:not(:focus),
+.ds-select:hover:not(:focus) {
+  border-color: var(--ds-border);
 }
 .ds-input:focus,
 .ds-textarea:focus,
 .ds-select:focus {
   outline: none;
   border-color: var(--ds-primary);
+  box-shadow: var(--ds-ring);
 }
 .ds-input::placeholder,
 .ds-textarea::placeholder {
@@ -511,7 +569,7 @@
   color: var(--ds-text-secondary);
 }
 
-/* ------------------------------ Layout 三栏 ------------------------------ */
+/* ------------------------------ Layout 三栏 (白底侧栏 + 细分割线) ------------------------------ */
 .ds-layout {
   display: flex;
   height: 100%;
@@ -554,7 +612,7 @@
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: var(--ds-space-sm);
+  padding: var(--ds-space-md);
 }
 .ds-layout-toggle {
   position: absolute;
@@ -569,7 +627,8 @@
   justify-content: center;
   border: 1px solid var(--ds-border);
   border-radius: 50%;
-  background: var(--ds-bg);
+  background: var(--ds-surface);
+  box-shadow: var(--ds-shadow);
   color: var(--ds-text-secondary);
   font-size: 12px;
   cursor: pointer;

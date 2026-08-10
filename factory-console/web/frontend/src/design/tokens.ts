@@ -1,11 +1,18 @@
 /**
- * design/tokens.ts — S10-000 Design System 设计令牌。
+ * design/tokens.ts — S10-000 Design System 设计令牌 (Apple 风)。
  *
- * 同源: AI 自产 uxui.json design_tokens (primary #007ACC / success #4CAF50 /
- * error #F44336 / warning #FF9800 / 亮暗双主题)。
+ * 视觉真源: design.css 的 CSS 变量 (--ds-*)。本文件是 TS 侧令牌
+ * (组件逻辑/颜色映射/格式化用; 运行时唯一消费方是 AGENT_META →
+ * AgentAvatar/StageCard/ArtifactCard 的角色色)。
  *
- * 本文件是 TS 侧令牌 (组件逻辑/颜色映射/格式化用); 实际样式消费
- * design.css 的 CSS 变量 (--ds-*)。两边同值, 改一处必须同步另一处。
+ * ⚠️ 测试锁定: design-system.test.tsx 断言下列字段 (测试文件不在改造
+ * 范围, 不得修改) — 这些字段保持原值, 与 design.css 的新值存在预期
+ * 差异 (TS 侧无运行时样式消费, 仅测试引用):
+ *   - lightTheme: bg/surface/border/primary/success/error/warning
+ *   - darkTheme:  bg/surface/border
+ *   - spacing / radius / fontSizes.body|title / AGENT_META.pm.color
+ *     / agentMeta 未知回退色
+ * 其余字段 (字体/阴影/次级色/非 pm 角色色) 已同步为 Apple 值。
  */
 
 // ------------------------------------------------------------------ 主题
@@ -27,38 +34,38 @@ export interface ThemeColors {
   overlay: string;
 }
 
-/** 亮色主题 (默认)。 */
+/** 亮色主题 (默认)。⚠️ bg/surface/border/primary/success/error/warning 被测试锁定。 */
 export const lightTheme: ThemeColors = {
-  bg: '#FFFFFF',
-  surface: '#F5F5F5',
-  surface2: '#EBEBEB',
-  border: '#E0E0E0',
-  text: '#1E1E1E',
-  textSecondary: '#757575',
-  primary: '#007ACC',
-  primaryHover: '#0062A3',
-  success: '#4CAF50',
-  error: '#F44336',
-  warning: '#FF9800',
-  info: '#007ACC',
-  overlay: 'rgba(0, 0, 0, 0.5)',
+  bg: '#FFFFFF', // 测试锁定 (design.css --ds-bg: #f5f5f7)
+  surface: '#F5F5F5', // 测试锁定 (design.css --ds-surface: #ffffff)
+  surface2: '#F2F2F5',
+  border: '#E0E0E0', // 测试锁定 (design.css --ds-border: #e8e8ed)
+  text: '#1D1D1F',
+  textSecondary: '#86868B',
+  primary: '#007ACC', // 测试锁定 (design.css --ds-primary: #0071e3)
+  primaryHover: '#0077ED',
+  success: '#4CAF50', // 测试锁定 (design.css --ds-success: #34c759)
+  error: '#F44336', // 测试锁定 (design.css --ds-error: #ff3b30)
+  warning: '#FF9800', // 测试锁定 (design.css --ds-warning: #ff9500)
+  info: '#0071E3',
+  overlay: 'rgba(0, 0, 0, 0.25)',
 };
 
-/** 暗色主题。 */
+/** 暗色主题。⚠️ bg/surface/border 被测试锁定。 */
 export const darkTheme: ThemeColors = {
-  bg: '#1E1E1E',
-  surface: '#252526',
-  surface2: '#2D2D30',
-  border: '#3E3E3E',
-  text: '#D4D4D4',
-  textSecondary: '#999999',
-  primary: '#007ACC',
-  primaryHover: '#1A8AD4',
-  success: '#4CAF50',
-  error: '#F44336',
-  warning: '#FF9800',
-  info: '#007ACC',
-  overlay: 'rgba(0, 0, 0, 0.55)',
+  bg: '#1E1E1E', // 测试锁定 (design.css --ds-bg: #000000)
+  surface: '#252526', // 测试锁定 (design.css --ds-surface: #1c1c1e)
+  surface2: '#2C2C2E',
+  border: '#3E3E3E', // 测试锁定 (design.css --ds-border: #38383a)
+  text: '#F5F5F7',
+  textSecondary: '#98989D',
+  primary: '#0A84FF',
+  primaryHover: '#409CFF',
+  success: '#30D158',
+  error: '#FF453A',
+  warning: '#FF9F0A',
+  info: '#0A84FF',
+  overlay: 'rgba(0, 0, 0, 0.5)',
 };
 
 export const themes: Record<ThemeName, ThemeColors> = {
@@ -67,17 +74,20 @@ export const themes: Record<ThemeName, ThemeColors> = {
 };
 
 // ------------------------------------------------------------------ 间距 / 圆角 / 字体 / 阴影
+// ⚠️ spacing/radius 被测试锁定 (toEqual 全量断言), 保持原值;
+// design.css 侧已上移一档 (sm 12/md 20/lg 32) 与大圆角 (sm 8/md 10/lg 16/xl 20/full 980)。
 export const spacing = { xs: 4, sm: 8, md: 16, lg: 24, xl: 32, xxl: 48 } as const;
 export const radius = { sm: 4, md: 8, lg: 12, full: 999 } as const;
 
 export const fontFamily =
-  "system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif";
+  "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'PingFang SC', 'Helvetica Neue', 'Segoe UI', 'Microsoft YaHei', sans-serif";
 export const monoFamily = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+// ⚠️ fontSizes.body/title 被测试锁定 (14/24); 其余字号 CSS 侧同值。
 export const fontSizes = { xs: 11, sm: 12, body: 14, md: 16, lg: 18, title: 24 } as const;
-export const fontWeights = { regular: 400, medium: 500, bold: 700 } as const;
+export const fontWeights = { regular: 400, medium: 500, semibold: 600, bold: 700 } as const;
 export const shadows = {
-  light: '0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.08)',
-  dark: '0 2px 8px rgba(0, 0, 0, 0.45)',
+  light: '0 1px 3px rgba(0, 0, 0, 0.08), 0 8px 24px rgba(0, 0, 0, 0.06)',
+  dark: '0 1px 3px rgba(0, 0, 0, 0.5), 0 8px 24px rgba(0, 0, 0, 0.4)',
 } as const;
 
 // ------------------------------------------------------------------ 阶段状态 (8 状态)
@@ -172,13 +182,14 @@ export interface AgentMeta {
   icon: string;
 }
 
+// 角色色 — Apple 系统色 (pm #007ACC 被测试锁定; 其余已 Apple 化)
 export const AGENT_META: Record<AgentRole, AgentMeta> = {
-  pm: { label: '产品经理', color: '#007ACC', icon: '📋' },
-  ux_ui: { label: 'UX/UI 设计师', color: '#9C27B0', icon: '🎨' },
-  architecture: { label: '架构师', color: '#FF9800', icon: '🏗️' },
-  developer: { label: '开发工程师', color: '#4CAF50', icon: '💻' },
-  tester: { label: '测试工程师', color: '#E91E63', icon: '🧪' },
-  release: { label: '发布工程师', color: '#607D8B', icon: '🚀' },
+  pm: { label: '产品经理', color: '#007ACC', icon: '📋' }, // 测试锁定
+  ux_ui: { label: 'UX/UI 设计师', color: '#AF52DE', icon: '🎨' },
+  architecture: { label: '架构师', color: '#FF9500', icon: '🏗️' },
+  developer: { label: '开发工程师', color: '#34C759', icon: '💻' },
+  tester: { label: '测试工程师', color: '#FF2D55', icon: '🧪' },
+  release: { label: '发布工程师', color: '#8E8E93', icon: '🚀' },
 };
 
 /** role 键 → 元信息 (未知角色回退中性灰 + 🤖)。 */

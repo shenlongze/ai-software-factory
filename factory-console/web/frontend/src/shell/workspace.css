@@ -17,19 +17,26 @@
   background: var(--ds-bg);
   color: var(--ds-text);
   font-family: var(--ds-font);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* ------------------------------ Header ------------------------------ */
+/* ------------------------------ Header (毛玻璃) ------------------------------ */
 .ws-header {
   flex: none;
   display: flex;
   align-items: center;
   gap: var(--ds-space-md);
-  height: 48px;
+  height: 52px;
   padding: 0 var(--ds-space-md);
-  background: var(--ds-surface);
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(20px) saturate(1.8);
+  -webkit-backdrop-filter: blur(20px) saturate(1.8);
   border-bottom: 1px solid var(--ds-border);
   z-index: 10;
+}
+[data-theme='dark'] .ws-header {
+  background: rgba(28, 28, 30, 0.72);
 }
 .ws-brand {
   display: flex;
@@ -78,7 +85,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: var(--ds-surface-2);
+  background: var(--ds-surface);
   border: 1px solid var(--ds-border);
   border-radius: var(--ds-radius-full);
   padding: 4px 10px;
@@ -86,6 +93,7 @@
   color: var(--ds-text);
   font: inherit;
   font-size: var(--ds-font-sm);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 .ws-user-btn:hover {
   border-color: var(--ds-primary);
@@ -107,10 +115,10 @@
   right: 0;
   top: calc(100% + 6px);
   min-width: 168px;
-  background: var(--ds-bg);
+  background: var(--ds-surface);
   border: 1px solid var(--ds-border);
-  border-radius: var(--ds-radius-md);
-  box-shadow: var(--ds-shadow);
+  border-radius: var(--ds-radius-lg);
+  box-shadow: var(--ds-shadow-lg);
   padding: var(--ds-space-xs);
   z-index: 30;
 }
@@ -169,8 +177,9 @@
   background: var(--ds-surface-2);
 }
 .ws-nav-item.active {
-  background: var(--ds-primary);
-  color: #ffffff;
+  background: color-mix(in srgb, var(--ds-primary) 12%, transparent);
+  color: var(--ds-primary);
+  font-weight: var(--ds-weight-medium);
 }
 .ws-nav-icon {
   width: 18px;
@@ -298,6 +307,41 @@
   display: flex;
   gap: var(--ds-space-sm);
   margin-top: var(--ds-space-sm);
+}
+
+/* ------------------------------ 工作台首页创建表单 (Apple 输入框) ------------------------------ */
+.ws-create {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-sm);
+  width: 100%;
+  max-width: 520px;
+}
+.ws-create-input {
+  font: inherit;
+  font-size: var(--ds-font-body);
+  color: var(--ds-text);
+  background: var(--ds-surface-2);
+  border: 1px solid transparent;
+  border-radius: var(--ds-radius-md);
+  padding: 12px 14px;
+  resize: vertical;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.ws-create-input:hover:not(:focus) {
+  border-color: var(--ds-border);
+}
+.ws-create-input:focus {
+  outline: none;
+  border-color: var(--ds-primary);
+  box-shadow: var(--ds-ring);
+}
+.ws-create-input::placeholder {
+  color: var(--ds-text-secondary);
+}
+.ws-create-actions {
+  display: flex;
+  justify-content: center;
 }
 .ws-timeline-placeholder {
   margin-top: var(--ds-space-lg);
@@ -500,14 +544,16 @@
   font: inherit;
   font-size: var(--ds-font-body);
   color: var(--ds-text);
-  background: var(--ds-surface);
-  border: 1px solid var(--ds-border);
+  background: var(--ds-surface-2);
+  border: 1px solid transparent;
   border-radius: var(--ds-radius-md);
-  padding: 6px var(--ds-space-sm);
+  padding: 9px var(--ds-space-sm);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 .ws-tl-input-box:focus {
   outline: none;
   border-color: var(--ds-primary);
+  box-shadow: var(--ds-ring);
 }
 .ws-tl-input-box::placeholder {
   color: var(--ds-text-secondary);
@@ -663,8 +709,9 @@
   gap: var(--ds-space-sm);
   background: var(--ds-surface);
   border: 1px solid var(--ds-border);
-  border-radius: var(--ds-radius-md);
-  padding: var(--ds-space-sm);
+  border-radius: var(--ds-radius-lg);
+  padding: var(--ds-space-sm) var(--ds-space-md);
+  box-shadow: var(--ds-shadow);
 }
 .ws-rt-card.is-highlighted {
   border-color: var(--ds-primary);
@@ -784,12 +831,13 @@
   gap: 2px;
   text-align: left;
   font: inherit;
-  background: var(--ds-surface-2);
+  background: var(--ds-surface);
   border: 1px solid var(--ds-border);
-  border-radius: var(--ds-radius-md);
+  border-radius: var(--ds-radius-lg);
   padding: var(--ds-space-sm) var(--ds-space-md);
   cursor: pointer;
   color: var(--ds-text);
+  box-shadow: var(--ds-shadow);
 }
 .ws-rt-create-option:hover:not(:disabled) {
   border-color: var(--ds-primary);
@@ -892,11 +940,12 @@
   text-align: left;
   font: inherit;
   cursor: pointer;
-  background: var(--ds-surface-2);
+  background: var(--ds-surface);
   border: 1px solid var(--ds-border);
-  border-radius: var(--ds-radius-md);
+  border-radius: var(--ds-radius-lg);
   padding: var(--ds-space-sm) var(--ds-space-md);
   color: var(--ds-text);
+  box-shadow: var(--ds-shadow);
 }
 .ws-rv-q-row:hover:not(:disabled) {
   border-color: var(--ds-primary);
@@ -992,10 +1041,10 @@
   color: var(--ds-text-secondary);
 }
 .ws-rv-history-item {
-  background: var(--ds-surface-2);
+  background: var(--ds-surface);
   border: 1px solid var(--ds-border);
-  border-radius: var(--ds-radius-md);
-  padding: var(--ds-space-sm);
+  border-radius: var(--ds-radius-lg);
+  padding: var(--ds-space-sm) var(--ds-space-md);
   display: flex;
   flex-direction: column;
   gap: 2px;

@@ -40,6 +40,7 @@ from ..events import record_console_viewed
 
 logger = logging.getLogger(__name__)
 from ..models import (
+    ConfirmProjectSummary,
     DiscoveryAnswerSummary,
     DiscoveryCompleteSummary,
     IdeaSuggestion,
@@ -323,6 +324,43 @@ def complete_discovery(
     )
 
 
+def confirm_project_route(
+    service: Any,
+    project_id: str,
+    name: str,
+    *,
+    logger: Any = None,
+) -> ConfirmProjectSummary | None:
+    """POST /projects/{id}/confirm — Confirm+Rename 事务 (S10-009 Task 5)。
+
+    {name} → service.confirm_project 事务 (校验→快照→写 project.json→
+    目录 rename [os.replace 原子]→索引/引用更新→失败回滚), 成功 →
+    ConfirmProjectSummary {project_id, name, slug, lifecycle: confirmed}。
+    错误语义: 空 name → ValueError (HTTP 400 — 空名字不确认); 状态未到
+    确认点 / slug 冲突 → service 抛 ProjectConfirmConflictError (HTTP 层
+    409 — 诚实拒绝, 事务预检失败零变更); 项目不存在/store 缺失 → None
+    (HTTP 404); 事务执行失败 (已回滚) → service 抛 ConfirmTransactionError
+    (HTTP 层 503 — 存储不可用, 可重试)。
+    """
+    cleaned = str(name or "").strip()
+    if not cleaned:
+        raise ValueError("name is required (空名字不确认)")
+    project = service.confirm_project(project_id, cleaned)
+    if project is None:
+        return None
+    lifecycle = (
+        project.lifecycle.value
+        if hasattr(project.lifecycle, "value")
+        else str(project.lifecycle)
+    )
+    return ConfirmProjectSummary(
+        project_id=project.id,
+        name=project.name,
+        slug=project.slug,
+        lifecycle=lifecycle,
+    )
+
+
 # ------------------------------------------------------------------ S10-007 想法建议 (LLM + 诚实 fallback)
 
 
@@ -565,6 +603,7 @@ def delete_project(
 __all__ = [
     "VIEW",
     "complete_discovery",
+    "confirm_project_route",
     "create_draft_project",
     "create_project",
     "delete_project",

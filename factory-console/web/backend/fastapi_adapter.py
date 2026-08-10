@@ -35,6 +35,9 @@ build 静态文件 (SPA)。只做 HTTP 绑定 (参数解析 / JSON 序列化 / �
                                           discovery/conversation.json; 400/404) [S10-009-004]
   POST /api/projects/{id}/discovery/complete → complete_discovery (product-definition.md
                                           + lifecycle→product_defined; 404/409) [S10-009-004]
+  POST /api/projects/{id}/confirm       → confirm_project (rename 事务: 正式命名 +
+                                          目录 os.replace 原子 rename + 索引/org 镜像
+                                          引用全更新 + 失败回滚; 400/404/409/503) [S10-009-005]
   PATCH /api/projects/{id}              → update_project (重命名/改 idea;
                                           400/404 语义)                [S10-006.5]
   DELETE /api/projects/{id}             → delete_project (运行中 409 保护;
@@ -67,7 +70,10 @@ Permission Boundary (S9-002 收窄 + S10-004/006/006.5 扩展): 写路径仅
   org Project + 删除 [运行中 409 诚实拒绝] + org.project.deleted 审计 + 运行
   数据清理) ⑦ Discovery 持久化两 POST (/api/projects/{id}/discovery/answer|
   complete, S10-009-004 — 沟通记录追加 conversation.json + product-definition.md
-  生成 + lifecycle 受控流转, 均落 ProjectSpace 目录信源); 其余端点全部 GET —
+  生成 + lifecycle 受控流转, 均落 ProjectSpace 目录信源) ⑧ Confirm+Rename
+  一 POST (/api/projects/{id}/confirm, S10-009-005 — 正式命名 rename 事务:
+  目录 os.replace 原子 rename + project.json/索引/org 镜像引用全更新 +
+  失败回滚; 400/404/409/503 语义); 其余端点全部 GET —
   register_project/成本写入等仍不在 Console 范围 (S9-005/后续)。
 静态: frontend build 产物 (dist/) — SPA html=True; 缺目录 → 纯 API 模式。
 """
@@ -177,6 +183,18 @@ class _DiscoveryAnswerBody(BaseModel):
 
     question: str
     answer: str
+
+
+class _ConfirmBody(BaseModel):
+    """POST /api/projects/{id}/confirm body (S10-009 Task 5).
+
+    {name}: 用户确认的正式项目名 → rename 事务 (校验→快照→写 project.json
+    →目录 os.replace 原子 rename→索引/引用更新→失败回滚)。空 name → 400
+    (空名字不确认); 状态未到确认点/slug 冲突 → 409; 项目不存在 → 404;
+    事务失败 (已回滚) → 503。
+    """
+
+    name: str
 
 
 class _UpdateProjectBody(BaseModel):
@@ -348,6 +366,10 @@ def build_app(
     RuntimeStateError = _service.RuntimeStateError
     # S10-006.5 收尾: 项目删除冲突 (service 定义 — 运行中删除 → 409 诚实拒绝)
     ProjectConflictError = _service.ProjectConflictError
+    # S10-009 Task 5: Confirm 冲突 (状态未到确认点/slug 冲突 → 409) +
+    # 事务失败已回滚 (→ 503 存储不可用)
+    ProjectConfirmConflictError = _service.ProjectConfirmConflictError
+    ConfirmTransactionError = _service.ConfirmTransactionError
 
     app = FastAPI(title="AI Software Factory — Human Console Web", version="0.1.0")
 
@@ -485,6 +507,35 @@ def build_app(
             summary = _api.complete_discovery(service, project_id, logger=event_logger)
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        if summary is None:
+            raise HTTPException(status_code=404, detail="project not found")
+        return summary.to_dict()
+
+    @app.post("/api/projects/{project_id}/confirm")
+    def api_confirm_project(project_id: str, body: _ConfirmBody) -> dict[str, Any]:
+        """Confirm+Rename 事务 (S10-009 Task 5: 正式命名 + 目录 rename)。
+
+        {name} → 事务: 校验 (name 合法/slug 唯一/状态到确认点) → 快照 →
+        写 project.json (name/slug/lifecycle=confirmed/draft=false) → 目录
+        rename (os.replace 原子, unnamed-project-xxx → {slug}/) → workspace
+        索引 + org/projects.json 引用更新 → 提交; 任一步失败 → 回滚到快照
+        (目录/索引/引用全量还原)。错误映射: 空 name → 400 (空名字不确认);
+        状态未到确认点 (非 discovery/product_defined) / slug 冲突 → 409
+        (诚实拒绝, 事务预检失败零变更); 项目不存在/store 缺失 → 404;
+        事务执行失败 (已回滚) → 503 (存储不可用, 可重试)。成功 → 200
+        ConfirmProjectSummary {project_id, name, slug, lifecycle: confirmed}
+        — 幂等: 已 confirmed 同 name 再次 confirm → 200 原样返回。
+        """
+        try:
+            summary = _api.confirm_project_route(
+                service, project_id, body.name, logger=event_logger
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except ProjectConfirmConflictError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except ConfirmTransactionError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
         if summary is None:
             raise HTTPException(status_code=404, detail="project not found")
         return summary.to_dict()

@@ -195,6 +195,24 @@ class DiscoveryCompleteSummary(BaseModel):
         return self.model_dump(mode="json")
 
 
+class ConfirmProjectSummary(BaseModel):
+    """POST /projects/{id}/confirm — Confirm+Rename 事务结果投影 (S10-009 Task 5)。
+
+    {project_id, name, slug, lifecycle: confirmed}: 用户确认正式名称 →
+    目录 rename (unnamed-project-xxx → {slug}/) + project.json/索引/org
+    镜像引用全更新。slug = 新目录名 (前端跳转 workspace 数据源); id 稳定
+    (rename 不变)。幂等: 已 confirmed 同 name 再次 confirm → 原样返回。
+    """
+
+    project_id: str
+    name: str
+    slug: str
+    lifecycle: str = "confirmed"
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json")
+
+
 class IdeaSuggestion(BaseModel):
     """POST /projects/suggest — AI 想法理解卡片 (S10-007 阶段三增强)。
 

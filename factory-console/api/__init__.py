@@ -23,6 +23,7 @@ from .intelligence import list_experience, list_recommendations
 from .lifecycle import get_project_lifecycle
 from .projects import (
     complete_discovery,
+    confirm_project_route,
     create_draft_project,
     create_project,
     delete_project,
@@ -54,6 +55,7 @@ __all__ = [
     "capture_runtime_screenshot",
     "chat_route",
     "complete_discovery",
+    "confirm_project_route",
     "create_draft_project",
     "create_project",
     "create_runtime",

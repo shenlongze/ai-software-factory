@@ -100,6 +100,19 @@ class ProjectSpaceStore:
         """项目空间是否已存在 (骨架已建)。"""
         return self.space_dir(slug).is_dir()
 
+    def rename_space(self, old_slug: str, new_slug: str) -> Path:
+        """原子 rename 项目空间目录 (S10-009 Task 5: os.replace — 同文件系统原子)。
+
+        整目录 (project.json + 全部骨架子目录与资产) 一并移动, 内容零丢失;
+        os.replace 对目录执行 rename(2) — 目标不存在时原子; 目标已存在 →
+        OSError (冲突在 service 层事务预检, 本原语只做原子 rename, 不兜业务)。
+        旧目录不存在 → FileNotFoundError (调用方事务回滚兜底)。
+        """
+        old_dir = self.space_dir(old_slug)
+        new_dir = self.space_dir(new_slug)
+        os.replace(old_dir, new_dir)
+        return new_dir
+
     # ---------------------------------------------------------- 骨架 / 信源
     def _effective_slug(self, project: Project) -> str:
         """目录名: project.slug 优先; 旧项目 (slug 空) → name slug 化兜底; 再兜底 id。"""

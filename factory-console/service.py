@@ -22,6 +22,8 @@
 
 from __future__ import annotations
 
+import os
+import re
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
@@ -74,9 +76,56 @@ class ProjectConflictError(Exception):
     """
 
 
+class ProjectConfirmConflictError(Exception):
+    """S10-009 Task 5: Confirm 冲突 (HTTP 409 诚实拒绝)。
+
+    两类: ① 状态未到确认点 (非 discovery/product_defined 的确认请求 —
+    含已 confirmed 后不同 name 的重复确认) ② slug 冲突 (目标目录名已被
+    其他项目占用)。与 RuntimeStateError/ProjectConflictError 同语义 —
+    事务预检失败, 未发生任何变更 (回滚点之前)。
+    """
+
+
+class ConfirmTransactionError(Exception):
+    """S10-009 Task 5: Confirm 事务执行失败 (HTTP 503)。
+
+    rename/索引/镜像任一步 IO 失败 → 已回滚到快照 (目录/信源/索引/引用
+    全量还原), 事务对外表现为失败 — 存储不可用语义 (与创建 503 同口径),
+    前端可重试。
+    """
+
+
 def _utc_now_str() -> str:
     """当前 UTC 时间 ISO 字符串 (Runtime 实例/截图 created_at)。"""
     return datetime.now(timezone.utc).isoformat()
+
+
+def _confirm_slug(name: str) -> str:
+    """Confirm 名称 → 目录 slug (S10-009 Task 5)。
+
+    与 api/projects._slugify 同口径 (CJK 保留 — 中文项目名可作目录名,
+    与 create_project 中文名保留一致): 小写; 非字母数字/中文 → '-';
+    压缩连续 '-' 并去首尾。纯符号/空 → "" (调用方按非法 name 拒绝)。
+    """
+    slug = re.sub(r"[^a-zA-Z0-9\u4e00-\u9fff]+", "-", str(name).strip().lower())
+    slug = re.sub(r"-+", "-", slug).strip("-")
+    return slug
+
+
+def _atomic_write_bytes(path: Path, data: bytes) -> None:
+    """原子写原始字节 (回滚还原用 — 临时文件 + os.replace, 同 store 模式)。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.parent / f".{path.name}.{os.getpid()}.tmp"
+    tmp.write_bytes(data)
+    os.replace(tmp, path)
+
+
+def _safe_read_bytes(path: Path) -> bytes | None:
+    """读取原始字节; 不存在/IO 错误 → None (回滚快照失败安全)。"""
+    try:
+        return path.read_bytes()
+    except OSError:
+        return None
 
 #: 规范 8 阶段链 (S9-002 Workflow View 模板; 前端渲染占位/标签映射用 —
 #: Idea→PM→Product→UX/UI→Architecture→Development→Test→Release)。
@@ -659,6 +708,183 @@ class ConsoleService:
             "",
         ]
         return "\n".join(lines)
+
+    # ------------------------------------------------- S10-009 Task 5: Confirm + Rename 事务
+
+    def confirm_project(self, project_id: str, name: str) -> Any | None:
+        """Confirm + Rename 事务 (S10-009 Task 5: POST /projects/{id}/confirm)。
+
+        流程 (project-lifecycle.md §6 rename 机制 + S10-009-plan Task 5):
+          校验 (name 合法 + slug 唯一 + 状态到确认点) → 快照 (回滚点) →
+          写 project.json (name/slug/lifecycle=confirmed/draft=false) →
+          目录 rename (os.replace 原子, 旧目录内信源随目录一并移动) →
+          索引更新 (workspace/projects.json → id: 新 slug) →
+          引用更新 (org/projects.json 镜像 — id 稳定, rename 不变; 其余
+          引用均按 project_id 寻址 [workflow_runs/runtimes/chat], 无需改写)。
+        任一步失败 → 回滚到快照 (目录/信源/索引/引用全量逐字节还原) +
+        抛 ConfirmTransactionError (HTTP 503 — 存储不可用语义)。
+
+        错误语义:
+        - 非法 name (空 / 无法 slug 化) → ValueError (HTTP 400)
+        - 状态未到确认点 (非 discovery/product_defined) → ProjectConfirmConflictError
+          (HTTP 409); 已 confirmed 后不同 name 重复确认 → 同 409 (已过确认点)
+        - slug 冲突 (目标目录已存在) → ProjectConfirmConflictError (HTTP 409,
+          事务预检失败, 零变更)
+        - 项目不存在 / org/space 缺失或损坏 → None (HTTP 404, 失败安全)
+        幂等: 已 confirmed 且 name/slug 与当前一致 → 原样返回 (200, 零变更)。
+        兼容: 旧项目 (仅 org 记录, 无目录) → 先 ensure_space 回填镜像再 rename。
+        """
+        store = self._project_store
+        space = self._project_space
+        if store is None or space is None:
+            return None
+        self._mount_org()
+        try:
+            from org.models import utcnow
+            from org.projects import ProjectState
+
+            logger = self._org_logger()
+            project = store.get_project(project_id)
+            if project is None:
+                return None
+            # 1. name 校验 (空 / 无法 slug 化 → 400)
+            cleaned = str(name or "").strip()
+            if not cleaned:
+                raise ValueError("name is required (空名字不确认)")
+            new_slug = _confirm_slug(cleaned)
+            if not new_slug:
+                raise ValueError(
+                    f"name cannot form a slug: {cleaned!r} (非法名字不确认)"
+                )
+            # 2. 状态约束 (discovery/product_defined 为确认点; 已 confirmed 同
+            #    name/slug → 幂等返回; 其余状态 → 409 未到确认点)
+            if project.lifecycle not in (
+                ProjectState.DISCOVERY,
+                ProjectState.PRODUCT_DEFINED,
+            ):
+                if (
+                    project.lifecycle == ProjectState.CONFIRMED
+                    and project.name == cleaned
+                    and project.slug == new_slug
+                ):
+                    return project  # 幂等: 零变更
+                raise ProjectConfirmConflictError(
+                    f"project is not at confirmation point: {project_id} "
+                    f"(lifecycle={project.lifecycle.value}; confirm 仅限 "
+                    f"discovery/product_defined 状态)"
+                )
+            # 3. slug 唯一性预检 (事务开始前 — 失败零变更)
+            old_slug = space.get_slug(project_id)
+            if old_slug is None:
+                # 兼容: 旧项目无目录 → 先回填目录镜像再 rename
+                space.ensure_space(project)
+                old_slug = space.get_slug(project_id)
+            if old_slug is None:
+                return None  # 空间仍不可用 → 404 (失败安全)
+            if space.has_space(new_slug) and new_slug != old_slug:
+                raise ProjectConfirmConflictError(
+                    f"slug already exists: {new_slug} (目录名冲突, 已存在同名项目)"
+                )
+            # 4. 快照 (回滚点) + 提交
+            updated = project.model_copy(
+                update={
+                    "name": cleaned,
+                    "slug": new_slug,
+                    "lifecycle": ProjectState.CONFIRMED,
+                    "draft": False,
+                    "updated_at": utcnow(),
+                }
+            )
+            snap = self._confirm_snapshot(space, store, old_slug)
+            try:
+                # 5. 写 project.json (旧目录内 — 随目录 rename 一并移动)
+                space.write_json(old_slug, "project.json", updated.to_dict())
+                # 6. 目录 rename (os.replace 原子 — 整目录移动, 内容零丢失)
+                space.rename_space(old_slug, new_slug)
+                snap["new_slug"] = new_slug
+                # 7. 索引更新 (workspace/projects.json → id: 新 slug)
+                space.rebuild_index()
+                # 8. 引用更新 (org/projects.json 镜像)
+                store.save_project(updated)
+            except Exception as exc:
+                self._confirm_rollback(space, store, snap)
+                raise ConfirmTransactionError(
+                    f"confirm transaction failed and rolled back: "
+                    f"{project_id} → {new_slug}: {exc}"
+                ) from exc
+            # 审计 (失败安全: 审计事件失败不撤销已提交事务)
+            try:
+                from org import events as org_events
+
+                org_events.record_project_lifecycle_changed(
+                    logger,
+                    project=updated,
+                    from_lifecycle=project.lifecycle.value,
+                    to_lifecycle=ProjectState.CONFIRMED.value,
+                    source="console",
+                )
+            except Exception:
+                pass
+            self._record_fail_safe(
+                logger,
+                "org.project.confirmed",
+                source="console",
+                project_id=project_id,
+                name=cleaned,
+                slug=new_slug,
+                result="OK",
+            )
+            return updated
+        except ValueError:
+            raise  # 非法 name → HTTP 400
+        except ProjectConfirmConflictError:
+            raise  # 状态/冲突 → HTTP 409
+        except ConfirmTransactionError:
+            raise  # 事务失败已回滚 → HTTP 503
+        except Exception:
+            return None  # org/space 损坏 → 404 (失败安全, 不拖垮 API)
+
+    @staticmethod
+    def _confirm_snapshot(space: Any, store: Any, old_slug: str) -> dict[str, Any]:
+        """Confirm 事务回滚点快照 (旧目录/信源/索引/org 镜像原始字节)。"""
+        old_dir = space.space_dir(old_slug)
+        return {
+            "old_slug": old_slug,
+            "new_slug": None,  # rename 成功后才记录 (回滚据此判断是否需 rename 还原)
+            "project_json": _safe_read_bytes(old_dir / "project.json"),
+            "index": _safe_read_bytes(space.index_path),
+            "org": _safe_read_bytes(Path(store.dir) / "projects.json"),
+        }
+
+    @staticmethod
+    def _confirm_rollback(space: Any, store: Any, snap: dict[str, Any]) -> None:
+        """回滚到快照: 目录 rename 还原 + project.json/索引/org 镜像逐字节还原。
+
+        尽力而为: 任一步失败静默 (原始事务异常优先上抛 — 回滚是兜底, 不掩盖
+        主失败); 幂等 — 未发生步骤的还原是 no-op; 快照为 None 的文件 (事务前
+        不存在) → 删除 (逐字节还原, 不留事务残留)。
+        """
+        try:
+            if snap.get("new_slug") and space.has_space(snap["new_slug"]):
+                if not space.has_space(snap["old_slug"]):
+                    space.rename_space(snap["new_slug"], snap["old_slug"])
+            project_json_path = space.space_dir(snap["old_slug"]) / "project.json"
+            if snap.get("project_json") is not None:
+                _atomic_write_bytes(project_json_path, snap["project_json"])
+            elif project_json_path.exists():
+                project_json_path.unlink()
+            index_path = space.index_path
+            if snap.get("index") is not None:
+                _atomic_write_bytes(index_path, snap["index"])
+            elif index_path.exists():
+                index_path.unlink()
+            org_path = Path(store.dir) / "projects.json"
+            if snap.get("org") is not None:
+                _atomic_write_bytes(org_path, snap["org"])
+            elif org_path.exists():
+                org_path.unlink()
+        except Exception:
+            return  # 回滚尽力而为 (主异常已上抛)
 
     # ------------------------------------------------------------------ S10-006.5 P1-A: Workflow 启动/对话
 

@@ -150,12 +150,13 @@ class TestRouteExports:
     def test_route_modules_exported(self):
         """api/ 暴露全部路由函数 (S10-006.5 收尾: 33 个 — 新增 update/delete_project;
         S10-009-004: 36 个 — 新增 create_draft_project/save_discovery_answer/
-        complete_discovery)。"""
+        complete_discovery; S10-009-005: 37 个 — 新增 confirm_project_route)。"""
         expected = {
             "approve_approval",
             "capture_runtime_screenshot",
             "chat_route",
             "complete_discovery",
+            "confirm_project_route",
             "create_draft_project",
             "create_project",
             "create_runtime",

@@ -336,6 +336,8 @@ class TestPermissionBoundary:
                 is_project_suggest = route_method == "POST" and path == "/api/projects/suggest"
                 is_discovery_answer = route_method == "POST" and path.endswith("/discovery/answer")
                 is_discovery_complete = route_method == "POST" and path.endswith("/discovery/complete")
+                # S10-009-005: Confirm+Rename 事务 (POST /api/projects/{id}/confirm — 白名单)
+                is_project_confirm = route_method == "POST" and path.endswith("/confirm")
                 is_workflow_start = path.endswith("/start") or path.endswith("/chat")
                 # S10-006.5 收尾: 项目管理 (PATCH/DELETE /api/projects/{id})
                 is_project_update = route_method == "PATCH" and path == "/api/projects/{project_id}"
@@ -348,6 +350,7 @@ class TestPermissionBoundary:
                     or is_project_suggest
                     or is_discovery_answer
                     or is_discovery_complete
+                    or is_project_confirm
                     or is_workflow_start
                     or is_project_update
                     or is_project_delete

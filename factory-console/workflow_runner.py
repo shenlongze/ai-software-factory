@@ -9,12 +9,14 @@
 
 设计 (只组合, 不重写 — 复用 S8-005 已验证模式):
 - 阶段执行器全部来自 factory-exec (PMAgent/UXUIDesignerAgent/ArchitectAgent/
-  DeveloperAgent/TesterAgent/ReleaseAgent), DeepSeek v4-pro 真实调用
-  (OpenAIProvider + base_url=api.deepseek.com; RecordingProvider 记录
-  usage/延迟/成本估算)。
-- key 进程内注入 (禁明文): ~/.hermes/.env 的 DEEPSEEK_API_KEY → 进程环境
-  OPENAI_API_KEY (OpenAIProvider._resolve_api_key 读取); 缺失 → WorkflowStartError
-  (HTTP 层 503, 诚实失败 — 不假装执行)。
+  DeveloperAgent/TesterAgent/ReleaseAgent), 真实 LLM 调用 (provider 由
+  ConfigProvider 配置: deepseek/openai/ollama → OpenAIProvider 兼容端点,
+  anthropic → AnthropicProvider; RecordingProvider 记录 usage/延迟/成本估算)。
+- key 进程内注入 (禁明文, S10-007 阶段一): ConfigProvider 解析
+  (env > 项目 .env > ~/.factory/config.json > 默认; 支持 env:VAR 引用) →
+  进程环境注入 provider 对应变量 (deepseek/openai → OPENAI_API_KEY,
+  anthropic → ANTHROPIC_API_KEY, ollama 无 key); 缺失 → WorkflowStartError
+  (HTTP 层 503, 诚实失败 — 不假装执行)。不读取任何 ~/.hermes 路径。
 - 编排: org WorkflowLifecycle/WorkflowRunner/DevTestLoopRunner (只消费, 零修改
   Core Workflow/Artifact/Approval); org.* 事件经 EventLogger 落库到与 Timeline
   同一 events.db → GET /api/projects/{id}/timeline 直接可见 (真实事件, 非伪造)。
@@ -45,12 +47,11 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Callable
 
-#: DeepSeek v4-pro (S8-005 已验证真实模型; OpenAI 兼容端点)
-MODEL = "deepseek-v4-pro"
-BASE_URL = "https://api.deepseek.com/v1/chat/completions"
-#: DeepSeek v4 费率估算 (per 1K tokens; 仅成本估算, 非计费 — 同 S8-005)
-INPUT_RATE_PER_1K = 0.00028
-OUTPUT_RATE_PER_1K = 0.00042
+from .config import get_config
+
+#: LLM provider 配置已移入 factory-console/config.py (PROVIDER_DEFAULTS 映射表)
+#: — MODEL/BASE_URL/费率不再硬编码 (S10-007 阶段一: 多 Provider 支持,
+#: 不写死 DeepSeek)。消费方一律经 get_config().get_llm() 读取。
 
 #: 仓库根 (sys.path 挂载 factory-core/factory-org/factory-exec)
 ROOT = Path(__file__).resolve().parents[1]
@@ -72,30 +73,36 @@ def _now() -> str:
 
 
 def load_llm_key() -> str:
-    """~/.hermes/.env DEEPSEEK_API_KEY → 进程内注入 OPENAI_API_KEY (禁明文)。
+    """LLM API key 解析 + 进程内注入 (ConfigProvider; 禁明文, 不读 ~/.hermes)。
 
+    S10-007 阶段一: 来源链 (config.py 完整语义) — LLM_API_KEY (进程 env >
+    项目 .env > ~/.factory/config.json, 支持 env:VAR 引用) → provider 专属
+    环境变量 (deepseek → DEEPSEEK_API_KEY 等) → OPENAI_API_KEY (历史 Hermes
+    进程环境注入目标, 开发环境向后兼容)。注入目标按 provider 转换:
+    deepseek/openai → OPENAI_API_KEY (OpenAI 兼容端点); anthropic →
+    ANTHROPIC_API_KEY; ollama → 无 key (本地模型不注入)。
     返回 key (空串 = 缺失)。只写进程环境, 不打印/不落盘明文。
     """
-    env_path = Path.home() / ".hermes" / ".env"
-    key = ""
-    try:
-        for line in env_path.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if line.startswith("DEEPSEEK_API_KEY="):
-                key = line.split("=", 1)[1].strip().strip('"').strip("'")
-                break
-    except OSError:
-        return ""
-    if key:
-        os.environ["OPENAI_API_KEY"] = key
+    llm = get_config().get_llm()
+    key = llm.get("api_key") or ""
+    key_env = llm.get("key_env")
+    if key and key_env:
+        os.environ[key_env] = key
     return key
 
 
 def has_llm_key() -> bool:
-    """LLM key 可用性 (进程环境已注入 OR 配置文件可读)。"""
+    """LLM key 可用性 (进程环境已注入 OR 配置可解析; ollama 本地无需 key)。
+
+    向后兼容: 进程环境 OPENAI_API_KEY 仍优先 (Hermes 曾注入的部署形态)。
+    其余走 ConfigProvider — 无 ~/.hermes 依赖 (S10-007 P0 解除)。
+    """
     if os.environ.get("OPENAI_API_KEY"):
         return True
-    return bool(load_llm_key())
+    llm = get_config().get_llm()
+    if llm.get("provider") == "ollama":
+        return True  # 本地模型不需要 API key
+    return bool(llm.get("api_key"))
 
 
 def is_project_running(project_id: str) -> bool:
@@ -152,7 +159,8 @@ def start_project_workflow(
     """
     if not has_llm_key():
         raise WorkflowStartError(
-            "LLM API key unavailable (DEEPSEEK_API_KEY not found in ~/.hermes/.env) "
+            "LLM API key unavailable (LLM_API_KEY not configured — 见 "
+            "factory-console/.env.example: LLM_PROVIDER/LLM_API_KEY) "
             "— 无法启动真实 Agent 执行"
         )
     run_id = f"R{int(time.time() * 1000)}"
@@ -422,29 +430,49 @@ class Recorder:
 
 
 def _build_provider(recorder: Recorder) -> Any:
-    """真实 DeepSeek v4-pro Provider (Recording 包装; key 已由进程环境注入)。"""
-    from exec.providers.openai import OpenAIProvider
+    """真实 Provider (Recording 包装) — 按配置 provider 选择, 不写死 DeepSeek。
 
-    inner = OpenAIProvider(
-        model=MODEL,
-        base_url=BASE_URL,
-        timeout=300,
-        input_rate_per_1k=INPUT_RATE_PER_1K,
-        output_rate_per_1k=OUTPUT_RATE_PER_1K,
-    )
+    S10-007 阶段一: model/base_url/费率全来自 ConfigProvider.get_llm()
+    (key 已由 load_llm_key 进程内注入到 provider 对应环境变量):
+    - deepseek/openai/ollama → OpenAIProvider (OpenAI 兼容端点; ollama 本地
+      不校验 Authorization, 用占位 key 满足兼容客户端)
+    - anthropic → AnthropicProvider (Messages API)
+    """
+    llm = get_config().get_llm()
+    provider = llm["provider"]
+    if provider == "anthropic":
+        from exec.providers.anthropic import AnthropicProvider
+
+        inner = AnthropicProvider(model=llm["model"], base_url=llm["base_url"], timeout=300)
+    else:
+        from exec.providers.openai import OpenAIProvider
+
+        kwargs: dict[str, Any] = {
+            "model": llm["model"],
+            "base_url": llm["base_url"],
+            "timeout": 300,
+            "input_rate_per_1k": llm.get("input_rate_per_1k"),
+            "output_rate_per_1k": llm.get("output_rate_per_1k"),
+        }
+        if provider == "ollama":
+            kwargs["api_key"] = "ollama"  # 本地占位 (Ollama 不校验 Authorization)
+        inner = OpenAIProvider(**kwargs)
     wrapper = _RecordingProvider(inner)
     wrapper.recorder = recorder
     return wrapper
 
 
 class _RecordingProvider:
-    """真实 OpenAIProvider 包装: 记录每次调用 usage/延迟/估算成本 (同 S8-005)。"""
-
-    provider_id = "deepseek-v4-pro-rec"
+    """真实 Provider 包装: 记录每次调用 usage/延迟/估算成本 (同 S8-005)。"""
 
     def __init__(self, inner: Any) -> None:
         self._inner = inner
         self.recorder: Recorder | None = None
+
+    @property
+    def provider_id(self) -> str:
+        """记录器标识 (provider 随配置 — S10-007 多 Provider 支持)。"""
+        return f"{get_config().get_llm()['provider']}-rec"
 
     def generate(self, request: Any) -> Any:
         t0 = time.monotonic()
@@ -452,7 +480,7 @@ class _RecordingProvider:
         dt = round(time.monotonic() - t0, 2)
         usage = dict(resp.usage or {})
         call: dict[str, Any] = {
-            "model": MODEL,
+            "model": get_config().get_llm()["model"],
             "max_tokens": request.max_tokens,
             "usage": usage,
             "latency_s": dt,
@@ -1018,7 +1046,7 @@ def _finalize(
     for type_, count in sorted(event_store.count_by_type().items()):
         recorder.events[type_] = count
     return {
-        "model": MODEL,
+        "model": get_config().get_llm()["model"],
         "started_at": started,
         "finished_at": _now(),
         "final_workflow_status": final_status,
@@ -1033,7 +1061,6 @@ def _finalize(
 
 
 __all__ = [
-    "MODEL",
     "Recorder",
     "WorkflowConflictError",
     "WorkflowStartError",

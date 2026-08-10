@@ -39,7 +39,15 @@ from typing import Any, Callable
 from ..events import record_console_viewed
 
 logger = logging.getLogger(__name__)
-from ..models import IdeaSuggestion, ProjectCreatedSummary, ProjectSummary, ProjectUpdatedSummary
+from ..models import (
+    DiscoveryAnswerSummary,
+    DiscoveryCompleteSummary,
+    IdeaSuggestion,
+    ProjectCreatedSummary,
+    ProjectDraftSummary,
+    ProjectSummary,
+    ProjectUpdatedSummary,
+)
 
 #: API 路由标识 (事件 payload view 名, 11B FastAPI 薄层同用)
 VIEW = "projects"
@@ -207,6 +215,111 @@ def create_project(
         name=summary.name or final_name or summary.id,
         idea=cleaned,
         status=status,
+    )
+
+
+def create_draft_project(
+    service: Any,
+    idea: str,
+    *,
+    project_type: str = "",
+    tech: str = "",
+    logger: Any = None,
+) -> ProjectDraftSummary | None:
+    """POST /projects 无 name → 创建 DRAFT (S10-009 Task 4: unnamed draft)。
+
+    idea (无显式 name) → service.create_draft_project: org Project
+    (lifecycle=discovery, draft=true, name=unnamed-project-{ts}) +
+    ProjectSpace 目录骨架 + idea/discovery 资产初始化。idea 空 →
+    ValueError (HTTP 400 — 空想法不创建); project_store/space 缺失或创建
+    失败 → None (HTTP 503 — 存储不可用, 失败安全); 成功 → ProjectDraftSummary
+    {project_id, name, idea, status, lifecycle, draft} (与旧 {idea, name}
+    兼容路径的 ProjectCreatedSummary 形状区分 — 前端确认创建不受影响)。
+    """
+    cleaned = str(idea or "").strip()
+    if not cleaned:
+        raise ValueError("idea is required (空想法不创建)")
+    project = service.create_draft_project(
+        cleaned,
+        project_type=project_type or None,
+        tech=tech or None,
+    )
+    if project is None:
+        return None
+    lifecycle = (
+        project.lifecycle.value
+        if hasattr(project.lifecycle, "value")
+        else str(project.lifecycle)
+    )
+    return ProjectDraftSummary(
+        project_id=project.id,
+        name=project.name,
+        idea=cleaned,
+        status=lifecycle,
+        lifecycle=lifecycle,
+        draft=bool(project.draft),
+    )
+
+
+def save_discovery_answer(
+    service: Any,
+    project_id: str,
+    question: str,
+    answer: str,
+    *,
+    logger: Any = None,
+) -> DiscoveryAnswerSummary | None:
+    """POST /projects/{id}/discovery/answer — Discovery 问答持久化 (S10-009 Task 4)。
+
+    {question, answer} → discovery/conversation.json 追加 (可多次, 顺序保留)。
+    错误语义: 空 answer/question → ValueError (HTTP 400 — 空问答不记录);
+    项目不存在/store 缺失 → None (HTTP 404)。成功 → DiscoveryAnswerSummary
+    {project_id, question, answer, count}。
+    """
+    cleaned_q = str(question or "").strip()
+    cleaned_a = str(answer or "").strip()
+    if not cleaned_a:
+        raise ValueError("answer is required (空答案不记录)")
+    if not cleaned_q:
+        raise ValueError("question is required (空问题不记录)")
+    result = service.save_discovery_answer(project_id, cleaned_q, cleaned_a)
+    if result is None:
+        return None
+    return DiscoveryAnswerSummary(
+        project_id=result["project_id"],
+        question=result["question"],
+        answer=result["answer"],
+        count=result["count"],
+    )
+
+
+def complete_discovery(
+    service: Any,
+    project_id: str,
+    *,
+    logger: Any = None,
+) -> DiscoveryCompleteSummary | None:
+    """POST /projects/{id}/discovery/complete — 完成 Discovery (S10-009 Task 4)。
+
+    生成 discovery/product-definition.md (基于 idea + 沟通记录) + lifecycle
+    discovery → product_defined。错误语义: 未在 discovery 状态 → ValueError
+    (HTTP 层 409 — 状态冲突); 项目不存在/store 缺失 → None (HTTP 404)。
+    成功 → DiscoveryCompleteSummary {project_id, name, lifecycle,
+    product_definition_ref}。
+    """
+    project = service.complete_discovery(project_id)
+    if project is None:
+        return None
+    lifecycle = (
+        project.lifecycle.value
+        if hasattr(project.lifecycle, "value")
+        else str(project.lifecycle)
+    )
+    return DiscoveryCompleteSummary(
+        project_id=project.id,
+        name=project.name,
+        lifecycle=lifecycle,
+        product_definition_ref="discovery/product-definition.md",
     )
 
 
@@ -451,10 +564,13 @@ def delete_project(
 
 __all__ = [
     "VIEW",
+    "complete_discovery",
+    "create_draft_project",
     "create_project",
     "delete_project",
     "extract_project_name",
     "list_projects",
+    "save_discovery_answer",
     "suggest_project",
     "update_project",
 ]

@@ -141,6 +141,60 @@ class ProjectCreatedSummary(BaseModel):
         return self.model_dump(mode="json")
 
 
+class ProjectDraftSummary(BaseModel):
+    """POST /projects — 草稿创建结果投影 (S10-009 Task 4: 无 name → unnamed draft)。
+
+    {project_id, name, idea, status, lifecycle, draft}: 用户输入想法 (未确认
+    名称) → 创建 DRAFT (lifecycle=discovery, draft=true, name=unnamed-project-
+    {ts}) — Product Discovery Session 起点。与 ProjectCreatedSummary 形状
+    区分 (draft 响应带 lifecycle/draft 字段; 旧 {idea, name} 兼容路径返回
+    ProjectCreatedSummary, 零破坏)。status = lifecycle 同值 (前端旧字段兼容)。
+    """
+
+    project_id: str
+    name: str
+    idea: str
+    status: str = "discovery"
+    lifecycle: str = "discovery"
+    draft: bool = True
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json")
+
+
+class DiscoveryAnswerSummary(BaseModel):
+    """POST /projects/{id}/discovery/answer — 问答持久化结果投影 (S10-009 Task 4)。
+
+    {project_id, question, answer, count}: 追加 discovery/conversation.json
+    后回显 (count = 该会话累计问答条数, 前端可据此判断进度)。
+    """
+
+    project_id: str
+    question: str
+    answer: str
+    count: int = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json")
+
+
+class DiscoveryCompleteSummary(BaseModel):
+    """POST /projects/{id}/discovery/complete — Discovery 完成结果投影 (S10-009 Task 4)。
+
+    {project_id, name, lifecycle, product_definition_ref}: Discovery 沟通
+    完成 → product-definition.md 落库 + lifecycle discovery → product_defined
+    (product_definition_ref = 空间内相对路径, 供后续阶段消费)。
+    """
+
+    project_id: str
+    name: str
+    lifecycle: str = "product_defined"
+    product_definition_ref: str = "discovery/product-definition.md"
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json")
+
+
 class IdeaSuggestion(BaseModel):
     """POST /projects/suggest — AI 想法理解卡片 (S10-007 阶段三增强)。
 

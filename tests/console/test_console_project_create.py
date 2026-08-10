@@ -93,9 +93,12 @@ requires_fastapi = pytest.mark.skipif(
 
 
 class _NoProjectStoreService:
-    """缺 org project store 的桩 (503 语义: create_project → None)。"""
+    """缺 org project store 的桩 (503 语义: create_project/create_draft_project → None)。"""
 
     def create_project(self, idea, **kwargs):
+        return None
+
+    def create_draft_project(self, idea, **kwargs):
         return None
 
     def list_projects(self):
@@ -113,24 +116,31 @@ class TestCreateProjectHttp:
             yield c
 
     def test_create_201_shape(self, client):
-        """POST /api/projects 成功 → 201 {project_id, name, idea, status}。"""
+        """POST /api/projects {idea} (无 name) → S10-009-004: 创建 DRAFT —
+        201 {project_id, name: unnamed-project-*, idea, status, lifecycle, draft}。"""
         resp = client.post("/api/projects", json={"idea": "开发一个记账 App"})
         assert resp.status_code == 201
         body = resp.json()
-        assert set(body.keys()) == {"project_id", "name", "idea", "status"}
-        assert body["name"] == "ledger-app"
+        assert set(body.keys()) == {
+            "project_id", "name", "idea", "status", "lifecycle", "draft",
+        }
+        assert body["name"].startswith("unnamed-project-")
         assert body["idea"] == "开发一个记账 App"
-        assert body["status"] == "idea"
+        assert body["status"] == "discovery"
+        assert body["lifecycle"] == "discovery"
+        assert body["draft"] is True
         assert body["project_id"].startswith("P")
 
     def test_create_with_type_and_tech(self, client):
-        """project_type/tech 透传 (web/flutter) → 201 且不报错。"""
+        """project_type/tech 透传 (web/flutter) → 201 且不报错 (draft 创建路径)。"""
         resp = client.post(
             "/api/projects",
             json={"idea": "我想开发一个待办清单", "project_type": "web", "tech": "flutter"},
         )
         assert resp.status_code == 201
-        assert resp.json()["name"] == "todo"
+        body = resp.json()
+        assert body["name"].startswith("unnamed-project-")
+        assert body["lifecycle"] == "discovery"
 
     def test_empty_idea_400(self, client):
         """idea 空 → 400 (空想法不创建, 语义清晰)。"""

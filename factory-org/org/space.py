@@ -158,6 +158,37 @@ class ProjectSpaceStore:
         except (json.JSONDecodeError, ValueError) as exc:
             raise ValueError(f"corrupt project space: {project_json}: {exc}") from exc
 
+    # -------------------------------------------------------- 空间内文件原语
+    # (S10-009 Task 4 — Draft/Discovery 持久化: idea/conversation.json +
+    # idea.md + discovery/conversation.json + product-definition.md 均由
+    # console service 经这些原语读写, 空间布局知识留在 org 层)
+
+    def read_json(self, slug: str, relpath: str) -> dict[str, Any] | None:
+        """读空间内 JSON 文件; 缺失/损坏/非 dict → None (失败安全, 调用方按空处理)。"""
+        path = self.space_dir(slug) / relpath
+        if not path.is_file():
+            return None
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return None
+        return data if isinstance(data, dict) else None
+
+    def write_json(self, slug: str, relpath: str, data: dict[str, Any]) -> Path:
+        """写空间内 JSON 文件 (原子写 — 同 _atomic_write 模式)。"""
+        path = self.space_dir(slug) / relpath
+        self._atomic_write(path, data)
+        return path
+
+    def write_text(self, slug: str, relpath: str, content: str) -> Path:
+        """写空间内文本文件 (原子写 — 临时文件 + os.replace; 骨架幂等保障目录)。"""
+        path = self.space_dir(slug) / relpath
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.parent / f".{path.name}.{os.getpid()}.tmp"
+        tmp.write_text(content, encoding="utf-8")
+        os.replace(tmp, path)
+        return path
+
     # ------------------------------------------------------------ index 缓存
     def list_index(self) -> dict[str, str]:
         """读 index 缓存 (id→slug); 缺失/损坏 → {} (缓存语义: 可重建, 不致命)。"""

@@ -171,6 +171,10 @@ class ConsoleService:
         # S10-006.5 P1-A: 对话记录持久化 (POST /projects/{id}/chat 消息落库;
         # 可选, 失败安全: 缺 store → 消息记录跳过, 对话仍可用)
         conversation_store: Any = None,
+        # S10-009 Task 4: Project Space (workspace/projects/{slug}/ 目录信源
+        # + idea/discovery 资产; 可选, 失败安全: 缺 space → draft/发现流程
+        # 按存储不可用处理 → HTTP 503)
+        project_space: Any = None,
     ) -> None:
         self._workspace = workspace_manager
         self._task_store = task_store
@@ -195,6 +199,9 @@ class ConsoleService:
         # S10-006.5 P1-A: 对话记录 store (POST /projects/{id}/chat 消息落库;
         # 可选, 失败安全: 缺 store → 消息记录跳过, 对话仍可用)
         self._conversation_store = conversation_store
+        # S10-009 Task 4: Project Space store (workspace/projects/{slug}/ 目录
+        # 信源 — draft/idea/discovery 资产落位; 可选, 失败安全)
+        self._project_space = project_space
 
     # ------------------------------------------------------------------ 七域 Dashboard
 
@@ -341,6 +348,317 @@ class ConsoleService:
             return project
         except Exception:
             return None  # org 缺失/损坏 → 503 (失败安全, 不拖垮 API)
+
+    # ------------------------------------------------------------------ S10-009 Task 4: Draft + Discovery
+
+    def _org_logger(self) -> Any:
+        """org 事件 logger (生产装配注入带 EventLogger 的 WorkflowLifecycle —
+        提取其 logger; 无注入 → None 静默, 失败安全)。"""
+        return (
+            getattr(self._workflow, "_logger", None)
+            if self._workflow is not None
+            else None
+        )
+
+    @staticmethod
+    def _record_fail_safe(logger: Any, type_: str, **kwargs: Any) -> None:
+        """Core 冻结期字符串事件类型落库 (失败安全 — 同 org _record_fail_safe 模式)。
+
+        EventType 枚举尚无 org.project.discovery.* 成员 (扩枚举 = 改
+        factory-core, 冻结铁律) → pydantic ValidationError → 静默跳过,
+        不拖垮 draft/answer/complete 链路; 依 ADR-0001 扩枚举后自动恢复。
+        """
+        if logger is None:
+            return
+        try:
+            logger.record(type_, **kwargs)
+        except Exception:
+            return
+
+    def create_draft_project(
+        self,
+        idea: str,
+        *,
+        project_type: str | None = None,
+        tech: str | None = None,
+    ) -> Any | None:
+        """创建草稿项目 (S10-009 Task 4: POST /projects 无 name → unnamed draft)。
+
+        idea → org Project (name=unnamed-project-{ts}, lifecycle=DISCOVERY,
+        draft=True, slug="" — 无正式名/目录名, rename 时更新) + ProjectSpace
+        目录骨架 (workspace/projects/{slug}/) + idea/ 初始化 (conversation.json
+        + idea.md 含原始想法) + discovery/conversation.json 初始化 (空会话)。
+        org.project.created 事件复用既有 record 函数 (不扩 Core 枚举)。
+        失败安全: org store / space store 缺失或创建失败 → None (HTTP 503);
+        成功 → org Project (id/name/lifecycle/goal)。
+        """
+        store = self._project_store
+        space = self._project_space
+        if store is None or space is None:
+            return None
+        self._mount_org()
+        try:
+            from org import events as org_events
+            from org.models import new_id, utcnow
+            from org.projects import Project, ProjectState
+
+            logger = self._org_logger()
+            project_id = new_id("P")
+            now = utcnow()
+            name = f"unnamed-project-{now.strftime('%Y%m%d-%H%M%S')}"
+            project = Project(
+                id=project_id,
+                name=name,
+                slug="",  # draft 期无正式 slug (Task 5 confirm/rename 时更新)
+                user_id="console",
+                goal=idea,
+                lifecycle=ProjectState.DISCOVERY,
+                draft=True,
+            )
+            if project_type or tech:
+                project = project.model_copy(
+                    update={
+                        "project_type": project_type or project.project_type,
+                        "framework": tech or project.framework,
+                        "updated_at": utcnow(),
+                    }
+                )
+            store.save_project(project)
+            org_events.record_project_created(logger, project=project)
+            # ProjectSpace: 骨架 + project.json 镜像 + idea/discovery 初始化
+            space_dir = space.ensure_space(project)
+            slug = space_dir.name
+            now_iso = now.isoformat()
+            space.write_json(
+                slug,
+                "idea/conversation.json",
+                {
+                    "project_id": project_id,
+                    "idea": idea,
+                    "created_at": now_iso,
+                    "conversation": [
+                        {"role": "user", "content": idea, "at": now_iso}
+                    ],
+                },
+            )
+            space.write_text(
+                slug, "idea/idea.md", f"# Idea\n\n{idea}\n"
+            )
+            space.write_json(
+                slug,
+                "discovery/conversation.json",
+                {
+                    "project_id": project_id,
+                    "session_id": f"DS-{project_id[2:]}",
+                    "status": "active",
+                    "started_at": now_iso,
+                    "updated_at": now_iso,
+                    "conversation": [],
+                },
+            )
+            return project
+        except Exception:
+            return None  # org/space 缺失或损坏 → 503 (失败安全, 不拖垮 API)
+
+    def save_discovery_answer(
+        self, project_id: str, question: str, answer: str
+    ) -> dict[str, Any] | None:
+        """记录 Discovery 问答 (S10-009 Task 4: discovery/conversation.json 追加)。
+
+        追加条目 {question, asked_at, answer, answered_at} (可多次, 顺序保留);
+        org Project.discovery 字段镜像 + space project.json 同步 (引用完整,
+        失败安全)。错误语义: 空 answer/question → ValueError (HTTP 400 —
+        空问答不记录); 项目不存在 / store 缺失 / 损坏 → None (HTTP 404,
+        失败安全)。成功 → {project_id, question, answer, count}。
+        """
+        cleaned_q = str(question or "").strip()
+        cleaned_a = str(answer or "").strip()
+        if not cleaned_a:
+            raise ValueError("answer is required (空答案不记录)")
+        if not cleaned_q:
+            raise ValueError("question is required (空问题不记录)")
+        store = self._project_store
+        space = self._project_space
+        if store is None or space is None:
+            return None
+        self._mount_org()
+        try:
+            from org.models import utcnow
+
+            project = store.get_project(project_id)
+            if project is None:
+                return None
+            slug = space.get_slug(project_id)
+            if slug is None:
+                return None
+            data = space.read_json(slug, "discovery/conversation.json") or {}
+            conversation = data.get("conversation")
+            if not isinstance(conversation, list):
+                conversation = []
+            now = utcnow().isoformat()
+            conversation.append(
+                {
+                    "question": cleaned_q,
+                    "asked_at": now,
+                    "answer": cleaned_a,
+                    "answered_at": now,
+                }
+            )
+            data.update(
+                {
+                    "project_id": project_id,
+                    "status": "active",
+                    "updated_at": now,
+                    "conversation": conversation,
+                }
+            )
+            space.write_json(slug, "discovery/conversation.json", data)
+            # org Project.discovery 镜像 (Task 5 项目详情数据源; 失败安全)
+            self._sync_discovery_state(project, data, slug)
+            self._record_fail_safe(
+                self._org_logger(),
+                "org.project.discovery.answered",
+                source="console",
+                project_id=project_id,
+                question=cleaned_q,
+                result="OK",
+            )
+            return {
+                "project_id": project_id,
+                "question": cleaned_q,
+                "answer": cleaned_a,
+                "count": len(conversation),
+            }
+        except Exception:
+            return None  # org/space 损坏 → 404 (失败安全, 不拖垮 API)
+
+    def _sync_discovery_state(self, project: Any, data: dict[str, Any], slug: str) -> None:
+        """org Project.discovery 镜像 + space project.json 同步 (失败安全)。
+
+        discovery dict 携带 session_id/status/answered_count/product_definition
+        (Task 5 GET 项目详情数据源); 同步写 org store + space 信源, 任一步
+        失败 → 静默 (主体操作已完成, 不撤销)。
+        """
+        try:
+            from org.models import utcnow
+
+            conversation = data.get("conversation")
+            answered_count = len(conversation) if isinstance(conversation, list) else 0
+            discovery = {
+                "session_id": data.get("session_id"),
+                "status": data.get("status", "active"),
+                "started_at": data.get("started_at"),
+                "updated_at": data.get("updated_at"),
+                "answered_count": answered_count,
+            }
+            if data.get("product_definition"):
+                discovery["product_definition"] = data["product_definition"]
+            updated = project.model_copy(
+                update={"discovery": discovery, "updated_at": utcnow()}
+            )
+            self._project_store.save_project(updated)
+            if self._project_space is not None:
+                self._project_space.save_project(updated)
+        except Exception:
+            return  # 镜像失败 → 静默 (不拖垮问答/完成链路)
+
+    def complete_discovery(self, project_id: str) -> Any | None:
+        """完成 Discovery (S10-009 Task 4: product-definition.md + lifecycle 流转)。
+
+        生成 discovery/product-definition.md (规则式 markdown — 基于原始想法
+        + 澄清沟通记录, 不伪造 AI); lifecycle discovery → product_defined
+        (受控转换, org.project.lifecycle_changed 事件); discovery 会话
+        status → completed + product_definition 引用 (org Project.discovery
+        镜像 + space project.json 同步)。错误语义: 未在 discovery 状态 →
+        ValueError (HTTP 层 409 — 状态冲突, 诚实拒绝); 项目不存在 / store
+        缺失 → None (HTTP 404)。成功 → 流转后 org Project。
+        """
+        store = self._project_store
+        space = self._project_space
+        if store is None or space is None:
+            return None
+        self._mount_org()
+        try:
+            from org.models import utcnow
+            from org.projects import ProjectLifecycle, ProjectState
+
+            logger = self._org_logger()
+            project = store.get_project(project_id)
+            if project is None:
+                return None
+            if project.lifecycle != ProjectState.DISCOVERY:
+                raise ValueError(
+                    f"project is not in discovery state: {project_id} "
+                    f"(lifecycle={project.lifecycle.value}; discovery/complete "
+                    f"仅限 discovery 状态)"
+                )
+            slug = space.get_slug(project_id)
+            if slug is None:
+                return None
+            data = space.read_json(slug, "discovery/conversation.json") or {}
+            conversation = data.get("conversation")
+            if not isinstance(conversation, list):
+                conversation = []
+            content = self._build_product_definition(project, conversation)
+            space.write_text(slug, "discovery/product-definition.md", content)
+            # lifecycle 流转: discovery → product_defined (受控转换表 + 事件)
+            lifecycle = ProjectLifecycle(store, logger=logger)
+            updated = lifecycle.transition_lifecycle(project_id, ProjectState.PRODUCT_DEFINED)
+            # discovery 会话收尾: status=completed + product_definition 引用
+            now = utcnow()
+            data.update(
+                {
+                    "status": "completed",
+                    "updated_at": now.isoformat(),
+                    "product_definition": "discovery/product-definition.md",
+                }
+            )
+            space.write_json(slug, "discovery/conversation.json", data)
+            self._sync_discovery_state(updated, data, slug)
+            self._record_fail_safe(
+                logger,
+                "org.project.discovery.completed",
+                source="console",
+                project_id=project_id,
+                product_definition_ref="discovery/product-definition.md",
+                result="OK",
+            )
+            return updated
+        except ValueError:
+            raise  # 非法状态 → HTTP 409 (状态冲突语义)
+        except Exception:
+            return None  # org/space 损坏 → 404 (失败安全, 不拖垮 API)
+
+    @staticmethod
+    def _build_product_definition(project: Any, conversation: list[dict[str, Any]]) -> str:
+        """规则式 product-definition.md (诚实: 基于原始想法 + 澄清记录, 不伪造 AI)。"""
+        lines = [
+            "# Product Definition",
+            "",
+            f"- project: {project.id}",
+            f"- name: {project.name}",
+            f"- lifecycle: {project.lifecycle.value} → product_defined",
+            "",
+            "## Idea (原始想法)",
+            "",
+            project.goal or project.name,
+            "",
+            "## Discovery Conversation (澄清记录)",
+            "",
+        ]
+        if not conversation:
+            lines.append("(无澄清问答)")
+        for entry in conversation:
+            lines.append(f"- Q: {entry.get('question', '')}")
+            lines.append(f"  A: {entry.get('answer', '')}")
+        lines += [
+            "",
+            "## Summary (产品定义结论)",
+            "",
+            "产品围绕原始想法展开, 结合澄清沟通形成初步产品定义。",
+            "",
+        ]
+        return "\n".join(lines)
 
     # ------------------------------------------------------------------ S10-006.5 P1-A: Workflow 启动/对话
 

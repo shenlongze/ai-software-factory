@@ -28,6 +28,13 @@ build 静态文件 (SPA)。只做 HTTP 绑定 (参数解析 / JSON 序列化 / �
                                           名称/理解/澄清问题; fallback 诚实标注) [S10-007]
   POST /api/projects                    → create_project ({idea,name?,project_type,
                                           tech} → org 项目; 400/503 语义)   [S10-006.5]
+  POST /api/projects                    → create_draft_project (无 name → unnamed
+                                          draft: lifecycle=discovery/draft=true +
+                                          ProjectSpace idea/discovery 资产) [S10-009-004]
+  POST /api/projects/{id}/discovery/answer  → save_discovery_answer (问答追加
+                                          discovery/conversation.json; 400/404) [S10-009-004]
+  POST /api/projects/{id}/discovery/complete → complete_discovery (product-definition.md
+                                          + lifecycle→product_defined; 404/409) [S10-009-004]
   PATCH /api/projects/{id}              → update_project (重命名/改 idea;
                                           400/404 语义)                [S10-006.5]
   DELETE /api/projects/{id}             → delete_project (运行中 409 保护;
@@ -53,12 +60,15 @@ Permission Boundary (S9-002 收窄 + S10-004/006/006.5 扩展): 写路径仅
 审计) ② Feedback Loop 一 POST (review-feedback — Reject 意见落库, 不触碰
 引擎) ③ Runtime 实例生命周期 POST (创建/start/stop/screenshot, S10-004)
 ④ POST /api/projects (S10-006.5 — org 项目壳创建: org.project.created 审计,
-只建壳不启动执行链) ⑤ Workflow 启动/对话 POST (start/chat, S10-006.5 P1-A
-— 触发本项目真实 Agent 执行链/消息落库, 不触碰 Core 引擎) ⑥ 项目
-管理 PATCH/DELETE /api/projects/{id} (S10-006.5 收尾 — 重命名/改 idea 落库
-org Project + 删除 [运行中 409 诚实拒绝] + org.project.deleted 审计 + 运行
-数据清理); 其余端点全部 GET — register_project/成本写入等仍不在 Console
-范围 (S9-005/后续)。
+  只建壳不启动执行链; S10-009-004 分流: 无 name → unnamed draft +
+  ProjectSpace idea/discovery 资产) ⑤ Workflow 启动/对话 POST (start/chat,
+  S10-006.5 P1-A — 触发本项目真实 Agent 执行链/消息落库, 不触碰 Core 引擎)
+  ⑥ 项目管理 PATCH/DELETE /api/projects/{id} (S10-006.5 收尾 — 重命名/改 idea 落库
+  org Project + 删除 [运行中 409 诚实拒绝] + org.project.deleted 审计 + 运行
+  数据清理) ⑦ Discovery 持久化两 POST (/api/projects/{id}/discovery/answer|
+  complete, S10-009-004 — 沟通记录追加 conversation.json + product-definition.md
+  生成 + lifecycle 受控流转, 均落 ProjectSpace 目录信源); 其余端点全部 GET —
+  register_project/成本写入等仍不在 Console 范围 (S9-005/后续)。
 静态: frontend build 产物 (dist/) — SPA html=True; 缺目录 → 纯 API 模式。
 """
 
@@ -157,6 +167,18 @@ class _ChatBody(BaseModel):
     message: str
 
 
+class _DiscoveryAnswerBody(BaseModel):
+    """POST /api/projects/{id}/discovery/answer body (S10-009 Task 4).
+
+    {question, answer}: Product Discovery Session 逐条问答 — 追加
+    discovery/conversation.json (可多次, 顺序保留)。空 answer/question →
+    400 (空问答不记录); 项目不存在 → 404。
+    """
+
+    question: str
+    answer: str
+
+
 class _UpdateProjectBody(BaseModel):
     """PATCH /api/projects/{id} body (S10-006.5 项目管理: 重命名/改 idea)。
 
@@ -212,18 +234,25 @@ def build_console_service(factory_root: str | Path, *, event_logger: Any = None)
     # S9-002: org 数据空间 (root/org — 与 factory-org CLI 同目录口径; 失败安全)
     project_store = None
     workflow_lifecycle = None
+    project_space = None
     try:
         org_dir = repo_root / "factory-org"
         if org_dir.is_dir() and str(org_dir) not in sys.path:
             sys.path.insert(0, str(org_dir))
         from org.projects import ProjectStore
+        from org.space import ProjectSpaceStore
         from org.workflow import WorkflowLifecycle
 
         project_store = ProjectStore(root / "org")
         workflow_lifecycle = WorkflowLifecycle(project_store, logger=event_logger)
+        # S10-009 Task 4: Project Space (root/workspace — 目录信源:
+        # workspace/projects/{slug}/project.json + idea/discovery 资产;
+        # 失败安全: 缺 space → draft/发现流程 503)
+        project_space = ProjectSpaceStore(root)
     except Exception:
         project_store = None
         workflow_lifecycle = None
+        project_space = None
 
     # S10-004: Runtime 数据空间 (root/runtimes — 独立于 org, 原子写 JSON;
     # 失败安全: 装配失败 → None, runtime 操作按空/不存在处理)
@@ -267,6 +296,9 @@ def build_console_service(factory_root: str | Path, *, event_logger: Any = None)
         provider_registry=ProviderRegistry(ProviderStore(root / "providers")),
         project_store=project_store,
         workflow_lifecycle=workflow_lifecycle,
+        # S10-009 Task 4: Project Space (root/workspace — draft/idea/discovery
+        # 资产目录信源; 失败安全: 缺 space → draft/发现流程按存储不可用处理)
+        project_space=project_space,
         # S10-004: Runtime 实例/截图持久化 (root/runtimes; 失败安全)
         runtime_store=runtime_store,
         runtime_screenshot_store=runtime_screenshot_store,
@@ -361,14 +393,18 @@ def build_app(
 
     @app.post("/api/projects", status_code=201)
     def api_create_project(body: _CreateProjectBody) -> dict[str, Any]:
-        """创建项目 (S10-006.5: {idea, name?, project_type?, tech?} → org 项目)。
+        """创建项目 (S10-006.5 + S10-009 Task 4: {idea, name?, ...} → org 项目)。
 
         S10-007 阶段三增强: name (用户确认的名称) 显式传 → 优先落库; 无
-        name → 规则 slug 兜底 (旧 {idea} 调用向后兼容)。错误语义: idea 空
+        name → 规则 slug 兜底 (旧 {idea} 调用向后兼容)。
+        S10-009 Task 4 分流: 无 name → 创建 DRAFT (unnamed-project-{ts},
+        lifecycle=discovery, draft=true + ProjectSpace idea/discovery 资产);
+        有 name → 旧兼容正式项目 (前端确认创建零破坏)。错误语义: idea 空
         → 400 (空想法不创建); project_type/tech 非法 → 400 (宽容收窄);
         org store 缺失/创建失败 → 503 (失败安全, 不拖垮 API); 成功 → 201
-        {project_id, name, idea, status}。写面 (Permission Boundary): 与
-        审批决定/Runtime/Review 反馈并列的 Console 写路径 — 只建 org 项目
+        {project_id, name, idea, status} (旧路径) 或 {project_id, name, idea,
+        status, lifecycle, draft} (draft 路径)。写面 (Permission Boundary):
+        与审批决定/Runtime/Review 反馈并列的 Console 写路径 — 只建 org 项目
         壳 (org.project.created 审计), 不启动执行链 (确认后由用户点击
         "开始开发")。
         """
@@ -386,18 +422,71 @@ def build_app(
                     status_code=400,
                     detail=f"{field_name} must be one of: {', '.join(a for a in allowed if a)}",
                 )
-        summary = _api.create_project(
-            service,
-            idea,
-            name=body.name,
-            project_type=project_type,
-            tech=tech,
-            logger=event_logger,
-        )
+        if body.name.strip():
+            # 旧兼容: {idea, name} → 正式项目 (前端确认创建; 零破坏)
+            summary = _api.create_project(
+                service,
+                idea,
+                name=body.name,
+                project_type=project_type,
+                tech=tech,
+                logger=event_logger,
+            )
+        else:
+            # S10-009 Task 4: 无 name → unnamed draft (DISCOVERY, draft=true)
+            summary = _api.create_draft_project(
+                service,
+                idea,
+                project_type=project_type,
+                tech=tech,
+                logger=event_logger,
+            )
         if summary is None:
             raise HTTPException(
                 status_code=503, detail="project store unavailable (org 未装配)"
             )
+        return summary.to_dict()
+
+    @app.post("/api/projects/{project_id}/discovery/answer")
+    def api_discovery_answer(project_id: str, body: _DiscoveryAnswerBody) -> dict[str, Any]:
+        """Discovery 问答持久化 (S10-009 Task 4: discovery/conversation.json 追加)。
+
+        {question, answer} → 追加会话记录 (可多次, 顺序保留) + org
+        Project.discovery 镜像。错误映射: 空 answer/question → 400 (空问答
+        不记录); 项目不存在/store 缺失 → 404; 成功 → 200 DiscoveryAnswerSummary
+        {project_id, question, answer, count}。
+        """
+        try:
+            summary = _api.save_discovery_answer(
+                service,
+                project_id,
+                body.question,
+                body.answer,
+                logger=event_logger,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if summary is None:
+            raise HTTPException(status_code=404, detail="project not found")
+        return summary.to_dict()
+
+    @app.post("/api/projects/{project_id}/discovery/complete")
+    def api_discovery_complete(project_id: str) -> dict[str, Any]:
+        """完成 Discovery (S10-009 Task 4: product-definition.md + 生命周期流转)。
+
+        生成 discovery/product-definition.md (基于原始想法 + 澄清沟通记录) +
+        lifecycle discovery → product_defined (受控转换 + 事件审计)。错误
+        映射: 未在 discovery 状态 → 409 (状态冲突, 诚实拒绝 — 与 Runtime
+        状态机/删除冲突同语义); 项目不存在/store 缺失 → 404; 成功 → 200
+        DiscoveryCompleteSummary {project_id, name, lifecycle,
+        product_definition_ref}。
+        """
+        try:
+            summary = _api.complete_discovery(service, project_id, logger=event_logger)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        if summary is None:
+            raise HTTPException(status_code=404, detail="project not found")
         return summary.to_dict()
 
     @app.patch("/api/projects/{project_id}")

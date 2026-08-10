@@ -22,9 +22,12 @@ from .decisions import get_decision
 from .intelligence import list_experience, list_recommendations
 from .lifecycle import get_project_lifecycle
 from .projects import (
+    complete_discovery,
+    create_draft_project,
     create_project,
     delete_project,
     list_projects,
+    save_discovery_answer,
     suggest_project,
     update_project,
 )
@@ -50,6 +53,8 @@ __all__ = [
     "approve_approval",
     "capture_runtime_screenshot",
     "chat_route",
+    "complete_discovery",
+    "create_draft_project",
     "create_project",
     "create_runtime",
     "delete_project",
@@ -75,6 +80,7 @@ __all__ = [
     "list_workflows",
     "reject_approval",
     "run_status_route",
+    "save_discovery_answer",
     "save_review_feedback",
     "start_project_workflow_route",
     "start_runtime",

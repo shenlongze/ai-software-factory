@@ -148,11 +148,15 @@ service_template = ("Idea", "PM", "Product", "UX/UI", "Architecture", "Developme
 
 class TestRouteExports:
     def test_route_modules_exported(self):
-        """api/ 暴露全部路由函数 (S10-006.5 收尾: 33 个 — 新增 update/delete_project)。"""
+        """api/ 暴露全部路由函数 (S10-006.5 收尾: 33 个 — 新增 update/delete_project;
+        S10-009-004: 36 个 — 新增 create_draft_project/save_discovery_answer/
+        complete_discovery)。"""
         expected = {
             "approve_approval",
             "capture_runtime_screenshot",
             "chat_route",
+            "complete_discovery",
+            "create_draft_project",
             "create_project",
             "create_runtime",
             "delete_project",
@@ -178,6 +182,7 @@ class TestRouteExports:
             "list_workflows",
             "reject_approval",
             "run_status_route",
+            "save_discovery_answer",
             "save_review_feedback",
             "start_project_workflow_route",
             "start_runtime",

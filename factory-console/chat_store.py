@@ -78,6 +78,18 @@ class ConversationStore:
         with self._lock:
             return list(self._data.get(project_id, []))
 
+    def clear_project(self, project_id: str) -> bool:
+        """删除项目全部对话记录 (S10-006.5 项目管理 — DELETE /projects/{id} 清理)。
+
+        无记录 → True (幂等); 写盘失败 → False (失败安全: 聊天记录清理
+        尽力而为, 不拖垮项目删除 — 删除主体已由 org 完成)。
+        """
+        with self._lock:
+            if project_id not in self._data:
+                return True
+            del self._data[project_id]
+            return self._save()
+
     def count(self, project_id: str) -> int:
         with self._lock:
             return len(self._data.get(project_id, []))

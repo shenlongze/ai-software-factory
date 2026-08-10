@@ -1,8 +1,10 @@
 /**
- * src/test/api.client.test.ts — API 客户端测试 (S9-002 收窄写面)。
+/**
+ * src/test/api.client.test.ts — API 客户端测试 (S9-002 收窄写面 + S10-006.5 项目管理写面)。
  *
  * - fetch 桩注入: 成功 JSON / 非 2xx → ApiError
- * - Permission Boundary: 全部查询 GET; 写面仅 approve/reject 两 POST (reviewer=console)
+ * - Permission Boundary: 查询全 GET; 写面 = approve/reject POST (reviewer=console) +
+ *   Runtime 生命周期 POST + 项目创建 POST + 项目管理 PATCH/DELETE
  * - S9-002: approvalGates / workflows / workflow / artifacts 查询形状 + 路径编码
  */
 
@@ -39,6 +41,7 @@ describe('api client — 只读契约 + S9-002 审批写面 + S10-004 Runtime �
       'createRuntime',
       'dashboard',
       'decision',
+      'deleteProject',
       'experience',
       'lifecycle',
       // S10-002: Runtime 查询 (只读 GET; SSE 在 runtimeClient)
@@ -59,26 +62,38 @@ describe('api client — 只读契约 + S9-002 审批写面 + S10-004 Runtime �
       'startRuntime',
       'startWorkflow',
       'stopRuntime',
+      'updateProject',
       'workflow',
       'workflowStages',
       'workflows',
     ]);
-    // Permission Boundary: 写面仅 审批决定 + Runtime 生命周期 两类 POST
-    // (无 put/patch/delete 方法)
-    for (const verb of ['put', 'patch', 'delete']) {
-      expect(keys.some((k) => k.toLowerCase().startsWith(verb))).toBe(false);
-    }
+    // Permission Boundary: 写面 = 审批决定 + Runtime 生命周期 + 项目创建 POST,
+    // 项目管理 PATCH/DELETE (updateProject/deleteProject; 无裸 put/patch 方法名)
+    expect(keys.some((k) => k.toLowerCase().startsWith('put'))).toBe(false);
     expect(
       keys.filter((k) =>
-        ['approveApproval', 'rejectApproval', 'createRuntime', 'startRuntime', 'stopRuntime', 'screenshotRuntime'].includes(k),
+        [
+          'approveApproval',
+          'rejectApproval',
+          'createRuntime',
+          'startRuntime',
+          'stopRuntime',
+          'screenshotRuntime',
+          'createProject',
+          'updateProject',
+          'deleteProject',
+        ].includes(k),
       ),
     ).toEqual([
       'approveApproval',
+      'createProject',
       'createRuntime',
+      'deleteProject',
       'rejectApproval',
       'screenshotRuntime',
       'startRuntime',
       'stopRuntime',
+      'updateProject',
     ]);
   });
 
@@ -229,6 +244,50 @@ describe('api client — 只读契约 + S9-002 审批写面 + S10-004 Runtime �
     const got = await api.decision('dec 1');
     expect(got.recommendation).toBe('opt-a');
     expect(String(fetchMock.mock.calls[0][0])).toBe('/api/decisions/dec%201');
+  });
+
+  it('updateProject → PATCH /api/projects/{id} (重命名 body + URL 编码, S10-006.5)', async () => {
+    const fetchMock = stubFetch({
+      '/api/projects/a%2Fb': { project_id: 'a/b', name: '记账本', idea: '记账', status: 'active' },
+    });
+    const got = await api.updateProject('a/b', { name: '记账本' });
+    expect(got.name).toBe('记账本');
+    const [path, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(path).toBe('/api/projects/a%2Fb');
+    expect(init.method).toBe('PATCH');
+    expect(JSON.parse(String(init.body))).toEqual({ name: '记账本' });
+  });
+
+  it('updateProject 只发送提供的键 (仅 idea, S10-006.5)', async () => {
+    const fetchMock = stubFetch({
+      '/api/projects/demo': { project_id: 'demo', name: 'Demo', idea: '新想法', status: 'idea' },
+    });
+    await api.updateProject('demo', { idea: '新想法' });
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toEqual({ idea: '新想法' });
+  });
+
+  it('deleteProject → DELETE /api/projects/{id} (成功 {deleted: true}, S10-006.5)', async () => {
+    const fetchMock = stubFetch({
+      '/api/projects/demo': { deleted: true, project_id: 'demo' },
+    });
+    const got = await api.deleteProject('demo');
+    expect(got.deleted).toBe(true);
+    const [path, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(path).toBe('/api/projects/demo');
+    expect(init.method).toBe('DELETE');
+  });
+
+  it('deleteProject 409 → ApiError status 409 (运行中保护, S10-006.5)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: false, status: 409, json: async () => ({ detail: 'running' }) }) as Response),
+    );
+    await expect(api.deleteProject('demo')).rejects.toMatchObject({
+      name: 'ApiError',
+      path: '/api/projects/demo',
+      status: 409,
+    });
   });
 
   it('recommendations/experience 带 limit 参数', async () => {

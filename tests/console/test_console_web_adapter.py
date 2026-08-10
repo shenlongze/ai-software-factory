@@ -8,7 +8,8 @@
     /api/providers → 200 列表
   - /api/projects/{id}/lifecycle + /api/decisions/{id} → 存在 200 / 缺失 404
 - Permission Boundary: 只读路由 (GET/HEAD) + S9-002 审批决定两 POST
-  (approve/reject; 无 PUT/PATCH/DELETE 写路径)
+  (approve/reject) + S10-006.5 创建 POST + 项目管理 PATCH/DELETE
+  (/api/projects/{id} — 重命名/改 idea/删除; 无 PUT 写路径)
 - 审计集成: 端点命中 → events.db 出现 console.viewed / console.dashboard.viewed
 - 静态托管: dist/ 存在 → GET / 返回 index.html (SPA)
 
@@ -80,7 +81,12 @@ requires_fastapi = pytest.mark.skipif(
 
 
 class _StubService:
-    """最薄只读桩: dashboard 七域 + 8 个读接口 (与 11A ConsoleService 同签名)。"""
+    """最薄只读桩: dashboard 七域 + 8 个读接口 (与 11A ConsoleService 同签名)。
+
+    S10-006.5 收尾: 新增项目管理接口 (update_project/delete_project) —
+    镜像真实 service 错误语义 (空 name/idea → ValueError; 项目不存在 →
+    None), 供 HTTP 层 400/404/409 映射断言。
+    """
 
     def dashboard(self):
         return _models.ConsoleDashboard()
@@ -92,6 +98,32 @@ class _StubService:
         if project_id != "demo":
             return None
         return _models.LifecycleSummary(project_id=project_id, status="running", next_actions=["do x"])
+
+    def update_project(self, project_id, *, name=None, idea=None):
+        """镜像 service.update_project: 空值 ValueError / 不存在 None。"""
+        cleaned_name = name.strip() if isinstance(name, str) else ""
+        cleaned_idea = idea.strip() if isinstance(idea, str) else ""
+        if name is not None and not cleaned_name:
+            raise ValueError("name is required (空名字不落库)")
+        if idea is not None and not cleaned_idea:
+            raise ValueError("idea is required (空想法不落库)")
+        if not cleaned_name and not cleaned_idea:
+            raise ValueError("nothing to update (name/idea 至少提供一项)")
+        if project_id != "demo":
+            return None
+        from types import SimpleNamespace
+
+        return SimpleNamespace(
+            id=project_id,
+            name=cleaned_name or "Demo Project",
+            goal=cleaned_idea or "记账",
+            lifecycle=SimpleNamespace(value="idea"),
+        )
+
+    def delete_project(self, project_id):
+        if project_id != "demo":
+            return None
+        return True
 
     def list_approvals(self):
         return [_models.ApprovalSummary(id="req-1", artifact_id="art-1", status="pending")]
@@ -210,6 +242,65 @@ class TestReadOnlyEndpoints:
 
 
 @requires_fastapi
+class TestProjectManagementEndpoints:
+    """S10-006.5 收尾: PATCH/DELETE /api/projects/{id} 端点语义 (200/400/404/409)。"""
+
+    def test_update_project_200_renames(self, client):
+        resp = client.patch("/api/projects/demo", json={"name": "记账本"})
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["project_id"] == "demo"
+        assert body["name"] == "记账本"
+        assert body["status"] == "idea"
+
+    def test_update_project_idea_field(self, client):
+        resp = client.patch("/api/projects/demo", json={"idea": "记账 + 报表"})
+        assert resp.status_code == 200
+        assert resp.json()["idea"] == "记账 + 报表"
+
+    def test_update_project_empty_name_400(self, client):
+        resp = client.patch("/api/projects/demo", json={"name": "   "})
+        assert resp.status_code == 400
+        assert "name is required" in resp.json()["detail"]
+
+    def test_update_project_empty_body_400(self, client):
+        resp = client.patch("/api/projects/demo", json={})
+        assert resp.status_code == 400
+        assert "nothing to update" in resp.json()["detail"]
+
+    def test_update_project_missing_404(self, client):
+        resp = client.patch("/api/projects/nope", json={"name": "x"})
+        assert resp.status_code == 404
+
+    def test_delete_project_200(self, client):
+        resp = client.delete("/api/projects/demo")
+        assert resp.status_code == 200
+        assert resp.json() == {"deleted": True, "project_id": "demo"}
+
+    def test_delete_project_missing_404(self, client):
+        resp = client.delete("/api/projects/nope")
+        assert resp.status_code == 404
+
+    def test_delete_project_running_409(self, client):
+        """运行中项目删除 → 409 (ProjectConflictError 映射, 诚实拒绝)。"""
+        import importlib
+
+        _service = importlib.import_module("factory-console.service")
+
+        class _RunningService(_StubService):
+            def delete_project(self, project_id):
+                raise _service.ProjectConflictError(
+                    f"project is running: {project_id} (运行中不可删除, 等待完成后重试)"
+                )
+
+        app = _adapter.build_app(_RunningService())
+        with TestClient(app) as c:
+            resp = c.delete("/api/projects/demo")
+        assert resp.status_code == 409
+        assert "project is running" in resp.json()["detail"]
+
+
+@requires_fastapi
 class TestPermissionBoundary:
     def test_write_routes_limited_to_approval_decisions(self, client):
         """Permission Boundary (S9-002 + S10-004/006/006.5): 写路由白名单。
@@ -220,7 +311,9 @@ class TestPermissionBoundary:
         screenshot) + Review 反馈 (POST /review-feedback) + 项目创建
         (POST /api/projects — S10-006.5 org 项目壳) + Workflow 启动/对话
         (POST /projects/{id}/start|chat — S10-006.5 P1-A 触发执行链/消息
-        落库); 其余一切路由只读 (GET/HEAD), 无 PUT/PATCH/DELETE。
+        落库) + 项目管理 PATCH/DELETE /api/projects/{id} (S10-006.5 收尾
+        — 重命名/改 idea + 删除 [运行中 409 保护]); 其余一切路由只读
+        (GET/HEAD), 无 PUT。
         """
         app = _adapter.build_app(_StubService())
         for route in app.routes:
@@ -229,8 +322,8 @@ class TestPermissionBoundary:
             for route_method in route.methods:
                 if route_method in {"GET", "HEAD"}:
                     continue
-                assert route_method == "POST", (
-                    f"非 POST 写路由泄漏: {route_method} {getattr(route, 'path', '?')}"
+                assert route_method in {"POST", "PATCH", "DELETE"}, (
+                    f"白名单外写路由泄漏: {route_method} {getattr(route, 'path', '?')}"
                 )
                 path = getattr(route, "path", "")
                 # 审批决定 + Runtime 生命周期 + Review 反馈 + 项目创建 + Workflow 启动/对话
@@ -239,19 +332,25 @@ class TestPermissionBoundary:
                 is_review_feedback = path.endswith("/review-feedback")
                 is_project_create = path == "/api/projects"
                 is_workflow_start = path.endswith("/start") or path.endswith("/chat")
+                # S10-006.5 收尾: 项目管理 (PATCH/DELETE /api/projects/{id})
+                is_project_update = route_method == "PATCH" and path == "/api/projects/{project_id}"
+                is_project_delete = route_method == "DELETE" and path == "/api/projects/{project_id}"
                 assert (
                     is_approval
                     or is_runtime_lifecycle
                     or is_review_feedback
                     or is_project_create
                     or is_workflow_start
+                    or is_project_update
+                    or is_project_delete
                 ), (
-                    f"POST 路由超出审批决定 + Runtime 生命周期 + 反馈 + 创建 + 启动范围: {path}"
+                    f"写路由超出白名单 (审批决定 + Runtime + 反馈 + 创建 + 启动 + 项目管理): "
+                    f"{route_method} {path}"
                 )
 
     def test_client_write_surface_limited_to_approval_decisions(self):
         """前端 api client 写面仅审批决定 + Runtime + 创建 + 启动/对话 POST
-        (approve/reject/start/chat/…; 无 put/patch/delete)。"""
+        + 项目管理 PATCH/DELETE (updateProject/deleteProject; 无 put)。"""
         src = (Path(__file__).parents[2] / "factory-console" / "web" / "frontend"
                / "src" / "api" / "client.ts").read_text(encoding="utf-8")
         # 写 helper 存在但唯一 (sendJson → POST 写面)
@@ -262,13 +361,15 @@ class TestPermissionBoundary:
         assert "startWorkflow" in src
         assert "sendChat" in src
         assert "runStatus" in src
-        # 无 put/patch/delete 写方法
+        # S10-006.5 收尾: 项目管理写面 (PATCH 重命名/改 idea + DELETE 删除;
+        # 均为 /api/projects/{id} 白名单路径, 无 put 语义)
+        assert "updateProject" in src
+        assert "deleteProject" in src
+        assert "method: 'PATCH'" in src
+        assert "method: 'DELETE'" in src
+        # 无 put 写方法 (Permission Boundary: PUT 不在白名单)
         assert "function put" not in src
-        assert "function patch" not in src
-        assert "function del" not in src
         assert "method: 'PUT'" not in src
-        assert "method: 'PATCH'" not in src
-        assert "method: 'DELETE'" not in src
 
 
 @requires_fastapi

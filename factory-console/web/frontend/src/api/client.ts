@@ -1,15 +1,17 @@
 /**
  * api/client.ts — 前端 API 客户端。
  *
- * 只读 + 审批决定 + S10-004 Runtime 生命周期 + S10-006.5 项目创建
+ * 只读 + 审批决定 + S10-004 Runtime 生命周期 + S10-006.5 项目创建/管理
  * (Human Console MVP 收窄 Permission Boundary):
- * - 全部查询 GET (只读投影; 无 put/patch/delete)
- * - POST 仅三类写面: ① 审批决定 (/api/approvals/{id}/approve|reject) —
+ * - 全部查询 GET (只读投影)
+ * - POST 写面: ① 审批决定 (/api/approvals/{id}/approve|reject) —
  *   Approval 页操作按钮触发; ② S10-004 Runtime 实例生命周期
  *   (POST /projects/{id}/runtimes 创建 + /runtimes/{id}/start|stop|screenshot)
  *   — Runtime Panel 操作按钮触发; ③ S10-006.5 项目创建 (POST /api/projects
- *   {idea} → org 项目壳) — Workspace Home 创建入口触发; 其余一切写路径
- *   (register_project/成本等) 不在 Console 范围 (S9-005/后续)。
+ *   {idea} → org 项目壳) — Workspace Home 创建入口触发。
+ * - S10-006.5 项目收尾: PATCH /api/projects/{id} (重命名/改 idea) +
+ *   DELETE /api/projects/{id} (删除, 运行中 409 诚实拒绝) — Home 列表 ⋯
+ *   菜单触发; 其余一切写路径 (register_project/成本等) 不在 Console 范围。
  * - S10-002: Runtime 查询 (projectWorkflow/workflowStages/projectTimeline,
  *   只读 GET) + SSE 事件流 — SSE 封装在 runtimeClient.subscribeEvents
  *   (断线重连 + mock 检测), 本文件只保留 REST 查询/写面。
@@ -30,6 +32,7 @@ import {
   type LifecycleSummary,
   type ProjectSummary,
   type ProviderSummary,
+  type ProjectUpdatedSummary,
   type RecommendationSummary,
   type ReviewFeedback,
   type ProjectCreatedSummary,
@@ -74,7 +77,32 @@ async function sendJson<T>(path: string, body: Record<string, unknown>): Promise
   return (await res.json()) as T;
 }
 
-/** API 客户端 (查询全 GET; 写路径仅审批决定/项目创建/Runtime 生命周期 POST)。 */
+/** PATCH 公共路径 (S10-006.5 项目管理: 重命名/改 idea — 空 body 由后端 400 拒绝)。 */
+async function patchJson<T>(path: string, body: Record<string, unknown>): Promise<T> {
+  const res = await fetch(path, {
+    method: 'PATCH',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new ApiError(path, res.status);
+  }
+  return (await res.json()) as T;
+}
+
+/** DELETE 公共路径 (S10-006.5 项目管理: 删除 — 运行中 409 由后端诚实拒绝)。 */
+async function deleteJson<T>(path: string): Promise<T> {
+  const res = await fetch(path, {
+    method: 'DELETE',
+    headers: { Accept: 'application/json' },
+  });
+  if (!res.ok) {
+    throw new ApiError(path, res.status);
+  }
+  return (await res.json()) as T;
+}
+
+/** API 客户端 (查询全 GET; 写路径 = 审批决定/项目创建/Runtime 生命周期 POST + 项目管理 PATCH/DELETE)。 */
 export const api = {
   dashboard: () => getJson<ConsoleDashboard>('/api/dashboard'),
   projects: () => getJson<ProjectSummary[]>('/api/projects'),
@@ -91,6 +119,19 @@ export const api = {
         : {}),
       ...(options.tech != null && options.tech.length > 0 ? { tech: options.tech } : {}),
     }),
+  // S10-006.5 收尾: 项目管理 — 重命名/改 idea (PATCH → ProjectUpdatedSummary
+  // {project_id, name, idea, status}; 空 name/idea / 无事可做 → 400 诚实拒绝)
+  updateProject: (projectId: string, changes: { name?: string; idea?: string }) =>
+    patchJson<ProjectUpdatedSummary>(
+      `/api/projects/${encodeURIComponent(projectId)}`,
+      changes,
+    ),
+  // S10-006.5 收尾: 项目管理 — 删除 (DELETE → {deleted: true, project_id};
+  // 运行中 → 409 由后端拒绝, 前端提示"正在开发中")
+  deleteProject: (projectId: string) =>
+    deleteJson<{ deleted: boolean; project_id: string }>(
+      `/api/projects/${encodeURIComponent(projectId)}`,
+    ),
   lifecycle: (projectId: string) =>
     getJson<LifecycleSummary>(
       `/api/projects/${encodeURIComponent(projectId)}/lifecycle`,

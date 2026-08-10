@@ -123,6 +123,21 @@ class _StubService:
             ReviewFeedback(id="fb-2", gate_id="AG-2", artifact_id="A-2", round=1, comment="OK"),
         ]
 
+    # S10-006.5 收尾: 项目管理 (update_project/delete_project) — 镜像真实
+    # service 语义: 项目不存在 → None (路由层 404); 删除成功 → True
+    def update_project(self, project_id, *, name=None, idea=None):
+        if project_id != "demo":
+            return None
+        return SimpleNamespace(
+            id=project_id,
+            name=name or "Demo Project",
+            goal=idea or "记账",
+            lifecycle=SimpleNamespace(value="idea"),
+        )
+
+    def delete_project(self, project_id):
+        return project_id == "demo"
+
 
 #: 规范 8 阶段链 (同 factory-console/service.py WORKFLOW_TEMPLATE 同源)
 service_template = ("Idea", "PM", "Product", "UX/UI", "Architecture", "Development", "Test", "Release")
@@ -133,13 +148,14 @@ service_template = ("Idea", "PM", "Product", "UX/UI", "Architecture", "Developme
 
 class TestRouteExports:
     def test_route_modules_exported(self):
-        """api/ 暴露全部路由函数 (S10-006.5: 27 个 — 新增 review_feedback 2 + create_project 1)。"""
+        """api/ 暴露全部路由函数 (S10-006.5 收尾: 33 个 — 新增 update/delete_project)。"""
         expected = {
             "approve_approval",
             "capture_runtime_screenshot",
             "chat_route",
             "create_project",
             "create_runtime",
+            "delete_project",
             "get_artifact",
             "get_artifact_content",
             "get_decision",
@@ -166,6 +182,7 @@ class TestRouteExports:
             "start_project_workflow_route",
             "start_runtime",
             "stop_runtime",
+            "update_project",
         }
         assert set(_api.__all__) == expected
         for name in expected:

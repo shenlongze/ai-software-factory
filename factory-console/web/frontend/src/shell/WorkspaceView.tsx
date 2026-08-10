@@ -7,8 +7,9 @@
  * 不实现 Timeline/Browser/Artifact/Review 内容 (S10-001 只做 Shell)。
  */
 
-import { useState } from 'react';
-import { Button, StatusBadge } from '../components/ds';
+import { useEffect, useState } from 'react';
+import { Button, Input, Modal, StatusBadge } from '../components/ds';
+import { ApiError } from '../api/client';
 import { NAV_ITEMS } from '../mock/workspace';
 import type { ExplorerViewId } from '../mock/workspace';
 import { AgentTimeline } from './AgentTimeline';
@@ -32,16 +33,99 @@ function WorkspaceHome({
   onCreateProject,
   projects,
   onSelectProject,
+  onRenameProject,
+  onDeleteProject,
 }: {
   onOpenProjects: () => void;
   onCreateProject: (idea: string) => void;
   /** S10-006.5: 已有项目列表 (默认视图直接可见, 点击进入工作台)。 */
   projects: { id: string; name: string }[];
   onSelectProject: (projectId: string) => void;
+  /** S10-006.5 收尾: 重命名/删除 (PATCH/DELETE → Shell 同步列表+树; 失败抛回展示)。 */
+  onRenameProject: (projectId: string, name: string) => Promise<void>;
+  onDeleteProject: (projectId: string) => Promise<void>;
 }): JSX.Element {
   const [idea, setIdea] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // S10-006.5 收尾: 每项 ⋯ 菜单 (openMenuId) + 重命名/删除 Modal (action) + 请求态
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [action, setAction] = useState<{ type: 'rename' | 'delete'; project: { id: string; name: string } } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [modalError, setModalError] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+
+  // 菜单打开时: 点击菜单外任意处关闭 (mousedown 早于 click, 菜单项 onClick 已先执行;
+  // ⋯ 按钮/弹出菜单内部不拦截 — 按钮自身 onClick 负责切换)
+  useEffect(() => {
+    if (openMenuId == null) return undefined;
+    const close = (event: MouseEvent): void => {
+      const target = event.target;
+      if (target instanceof Element && target.closest('.ws-recent-menu-wrap') != null) return;
+      setOpenMenuId(null);
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [openMenuId]);
+
+  const openRename = (project: { id: string; name: string }): void => {
+    setRenameValue(project.name);
+    setModalError(null);
+    setAction({ type: 'rename', project });
+    setOpenMenuId(null);
+  };
+
+  const openDelete = (project: { id: string; name: string }): void => {
+    setModalError(null);
+    setAction({ type: 'delete', project });
+    setOpenMenuId(null);
+  };
+
+  const closeModal = (): void => {
+    if (busy) return; // 请求中禁止关闭 (防误触)
+    setAction(null);
+    setModalError(null);
+  };
+
+  const confirmRename = async (): Promise<void> => {
+    if (action == null || action.type !== 'rename') return;
+    const name = renameValue.trim();
+    if (name.length === 0) {
+      setModalError('项目名不能为空');
+      return;
+    }
+    setBusy(true);
+    setModalError(null);
+    try {
+      await onRenameProject(action.project.id, name);
+      setAction(null);
+    } catch (err) {
+      setModalError(err instanceof Error ? err.message : '重命名失败, 请稍后重试');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirmDelete = async (): Promise<void> => {
+    if (action == null || action.type !== 'delete') return;
+    setBusy(true);
+    setModalError(null);
+    try {
+      await onDeleteProject(action.project.id);
+      setAction(null);
+    } catch (err) {
+      // 409 运行中保护 (后端诚实拒绝) → 明确提示; 其余透传 ApiError 消息
+      setModalError(
+        err instanceof ApiError && err.status === 409
+          ? '项目正在开发中, 无法删除'
+          : err instanceof Error
+            ? err.message
+            : '删除失败, 请稍后重试',
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const submit = async (): Promise<void> => {
     const text = idea.trim();
@@ -102,22 +186,145 @@ function WorkspaceHome({
           <h3 className="ws-recent-title">已有项目</h3>
           <div className="ws-recent-list">
             {projects.map((project) => (
-              <button
+              <div
                 key={project.id}
-                type="button"
                 className="ws-recent-item"
-                data-testid={`ws-recent-${project.id}`}
-                onClick={() => onSelectProject(project.id)}
+                data-testid={`ws-recent-row-${project.id}`}
               >
-                <span className="ws-recent-name">{project.name}</span>
-                <span className="ws-recent-arrow" aria-hidden="true">
-                  →
-                </span>
-              </button>
+                <button
+                  type="button"
+                  className="ws-recent-main"
+                  data-testid={`ws-recent-${project.id}`}
+                  onClick={() => onSelectProject(project.id)}
+                >
+                  <span className="ws-recent-name">{project.name}</span>
+                  <span className="ws-recent-arrow" aria-hidden="true">
+                    →
+                  </span>
+                </button>
+                <div className="ws-recent-menu-wrap">
+                  <button
+                    type="button"
+                    className="ws-recent-menu-btn"
+                    aria-label={`${project.name} 操作`}
+                    aria-haspopup="menu"
+                    aria-expanded={openMenuId === project.id}
+                    data-testid={`ws-recent-menu-${project.id}`}
+                    onClick={() => setOpenMenuId((cur) => (cur === project.id ? null : project.id))}
+                  >
+                    ⋯
+                  </button>
+                  {openMenuId === project.id ? (
+                    <div
+                      className="ws-recent-pop"
+                      role="menu"
+                      data-testid={`ws-recent-pop-${project.id}`}
+                    >
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="ws-recent-pop-item"
+                        data-testid={`ws-recent-rename-${project.id}`}
+                        onClick={() => openRename(project)}
+                      >
+                        重命名
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="ws-recent-pop-item danger"
+                        data-testid={`ws-recent-delete-${project.id}`}
+                        onClick={() => openDelete(project)}
+                      >
+                        删除
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
             ))}
           </div>
         </div>
       ) : null}
+
+      {/* S10-006.5 收尾: 重命名 Modal (PATCH → 列表/树同步) */}
+      <Modal
+        open={action?.type === 'rename'}
+        title="重命名项目"
+        onClose={closeModal}
+        footer={
+          <>
+            <Button variant="secondary" size="sm" onClick={closeModal} disabled={busy}>
+              取消
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => void confirmRename()}
+              disabled={busy}
+              loading={busy}
+              data-testid="pm-rename-save"
+            >
+              保存
+            </Button>
+          </>
+        }
+      >
+        <div className="pm-modal-body" data-testid="pm-rename-modal">
+          <p className="pm-modal-desc">输入项目新名称 (保存后列表与项目树同步更新)。</p>
+          <Input
+            label="项目名称"
+            data-testid="pm-rename-input"
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void confirmRename();
+            }}
+            autoFocus
+          />
+          {modalError != null ? (
+            <p className="pm-modal-error" data-testid="pm-modal-error">
+              {modalError}
+            </p>
+          ) : null}
+        </div>
+      </Modal>
+
+      {/* S10-006.5 收尾: 删除二次确认 Modal (DELETE → 列表/树移除; 运行中 409 提示) */}
+      <Modal
+        open={action?.type === 'delete'}
+        title="删除项目"
+        onClose={closeModal}
+        footer={
+          <>
+            <Button variant="secondary" size="sm" onClick={closeModal} disabled={busy}>
+              取消
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={() => void confirmDelete()}
+              disabled={busy}
+              loading={busy}
+              data-testid="pm-delete-confirm"
+            >
+              删除
+            </Button>
+          </>
+        }
+      >
+        <div className="pm-modal-body" data-testid="pm-delete-modal">
+          <p className="pm-modal-desc">
+            确定删除「{action?.type === 'delete' ? action.project.name : ''}」吗? 删除后不可恢复。
+          </p>
+          {modalError != null ? (
+            <p className="pm-modal-error" data-testid="pm-modal-error">
+              {modalError}
+            </p>
+          ) : null}
+        </div>
+      </Modal>
+
       <TimelinePlaceholder />
     </div>
   );
@@ -181,6 +388,8 @@ export function WorkspaceView({
   onOpenProjects,
   onViewArtifact,
   onCreateProject,
+  onRenameProject,
+  onDeleteProject,
   onSelectProject,
 }: {
   view: ExplorerViewId;
@@ -192,6 +401,9 @@ export function WorkspaceView({
   onViewArtifact?: (artifactId: string) => void;
   /** S10-006.5: 创建项目 (WorkspaceShell 调 POST /api/projects → 选中新项目)。 */
   onCreateProject?: (idea: string) => Promise<void>;
+  /** S10-006.5 收尾: 重命名/删除 (Home 列表 ⋯ 菜单 → Modal → Shell 同步)。 */
+  onRenameProject?: (projectId: string, name: string) => Promise<void>;
+  onDeleteProject?: (projectId: string) => Promise<void>;
   /** S10-006.5: 选择已有项目 (Home 列表点击)。 */
   onSelectProject?: (projectId: string) => void;
 }): JSX.Element {
@@ -204,6 +416,8 @@ export function WorkspaceView({
       onCreateProject={onCreateProject ?? (async () => {})}
       projects={projects}
       onSelectProject={onSelectProject ?? (() => {})}
+      onRenameProject={onRenameProject ?? (async () => {})}
+      onDeleteProject={onDeleteProject ?? (async () => {})}
     />
   );
 }

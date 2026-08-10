@@ -21,11 +21,15 @@ build 静态文件 (SPA)。只做 HTTP 绑定 (参数解析 / JSON 序列化 / �
 - build_app(service=..., static_dir=...) — 注入已装配 service; 供测试/
   复用方使用。
 
-端点 (只读 GET + S9-002 审批决定 POST + S10-006.5 创建 POST):
+端点 (只读 GET + S9-002 审批决定 POST + S10-006.5 创建 POST/管理 PATCH/DELETE):
   /api/dashboard                        → ConsoleDashboard 七域 (11A service.dashboard)
   /api/projects                         → list_projects (console.viewed)
   POST /api/projects                    → create_project ({idea,project_type,tech}
                                           → org 项目; 400/503 语义)   [S10-006.5]
+  PATCH /api/projects/{id}              → update_project (重命名/改 idea;
+                                          400/404 语义)                [S10-006.5]
+  DELETE /api/projects/{id}             → delete_project (运行中 409 保护;
+                                          404/409 语义)                [S10-006.5]
   /api/projects/{project_id}/lifecycle  → get_project_lifecycle (None → 404)
   /api/approvals                        → list_approvals (?pending_only)
   /api/decisions/{decision_id}          → get_decision (None → 404)
@@ -48,8 +52,11 @@ Permission Boundary (S9-002 收窄 + S10-004/006/006.5 扩展): 写路径仅
 引擎) ③ Runtime 实例生命周期 POST (创建/start/stop/screenshot, S10-004)
 ④ POST /api/projects (S10-006.5 — org 项目壳创建: org.project.created 审计,
 只建壳不启动执行链) ⑤ Workflow 启动/对话 POST (start/chat, S10-006.5 P1-A
-— 触发本项目真实 Agent 执行链/消息落库, 不触碰 Core 引擎); 其余端点
-全部 GET — register_project/成本写入等仍不在 Console 范围 (S9-005/后续)。
+— 触发本项目真实 Agent 执行链/消息落库, 不触碰 Core 引擎) ⑥ 项目
+管理 PATCH/DELETE /api/projects/{id} (S10-006.5 收尾 — 重命名/改 idea 落库
+org Project + 删除 [运行中 409 诚实拒绝] + org.project.deleted 审计 + 运行
+数据清理); 其余端点全部 GET — register_project/成本写入等仍不在 Console
+范围 (S9-005/后续)。
 静态: frontend build 产物 (dist/) — SPA html=True; 缺目录 → 纯 API 模式。
 """
 
@@ -132,6 +139,18 @@ class _ChatBody(BaseModel):
     """
 
     message: str
+
+
+class _UpdateProjectBody(BaseModel):
+    """PATCH /api/projects/{id} body (S10-006.5 项目管理: 重命名/改 idea)。
+
+    {name?, idea?}: 任一非空 → 对应字段更新 (org Project 落库); 显式空串
+    → 400 (空字段不落库); 两者皆 None (未提供) → 400 (无事可做)。
+    None 与空串区分: None = 未提供 (不更新该字段), "" = 显式空值 (拒绝)。
+    """
+
+    name: str | None = None
+    idea: str | None = None
 
 
 # ------------------------------------------------------------------ 装配
@@ -262,7 +281,10 @@ def build_app(
 ) -> Any:
     """把已装配 ConsoleService 挂为 FastAPI app (最薄 HTTP 绑定)。
 
-    只读铁律: 只注册 GET 端点 — 本函数不产生任何写路由 (Permission Boundary)。
+    写面收窄 (Permission Boundary): 只注册 GET 读端点 + 白名单写路径 —
+    审批决定 POST (approve/reject)、Runtime 生命周期 POST、Review 反馈
+    POST、项目创建 POST + 项目管理 PATCH/DELETE (S10-006.5); 其余一切
+    PUT 等写动词不注册。
     static_dir 存在 → 挂 SPA 静态托管 (html=True); 否则纯 API 模式。
     """
     from fastapi import FastAPI, HTTPException, Query
@@ -276,6 +298,8 @@ def build_app(
     # Adapter 层直接取 service 符号, 避免给 api 包加非路由导出)
     _service = importlib.import_module("factory-console.service")
     RuntimeStateError = _service.RuntimeStateError
+    # S10-006.5 收尾: 项目删除冲突 (service 定义 — 运行中删除 → 409 诚实拒绝)
+    ProjectConflictError = _service.ProjectConflictError
 
     app = FastAPI(title="AI Software Factory — Human Console Web", version="0.1.0")
 
@@ -339,6 +363,47 @@ def build_app(
                 status_code=503, detail="project store unavailable (org 未装配)"
             )
         return summary.to_dict()
+
+    @app.patch("/api/projects/{project_id}")
+    def api_update_project(project_id: str, body: _UpdateProjectBody) -> dict[str, Any]:
+        """更新项目 (S10-006.5 项目管理: 重命名/改 idea → org Project 落库)。
+
+        {name?, idea?}: 任一非空 → 对应字段更新 (空串显式拒绝 — 空字段不
+        落库); 两者皆未提供 → 400 (无事可做)。错误映射: ValueError → 400
+        (空 name/idea); 项目不存在/store 缺失 → 404; 成功 → 200
+        ProjectUpdatedSummary {project_id, name, idea, status} (更新后摘要,
+        前端重命名 Modal 成功后刷新列表的数据源)。
+        """
+        try:
+            summary = _api.update_project(
+                service,
+                project_id,
+                name=body.name,
+                idea=body.idea,
+                logger=event_logger,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if summary is None:
+            raise HTTPException(status_code=404, detail="project not found")
+        return summary.to_dict()
+
+    @app.delete("/api/projects/{project_id}")
+    def api_delete_project(project_id: str) -> dict[str, Any]:
+        """删除项目 (S10-006.5 项目管理; 运行中 409 诚实拒绝)。
+
+        错误映射: ProjectConflictError → 409 (workflow 运行中不可删除 —
+        等待完成后重试); 项目不存在/store 缺失 → 404; 成功 → 200
+        {deleted: true, project_id} (org 删除 + org.project.deleted 审计
+        失败安全 + workflow_runs/chat 运行数据清理, 均由 service 组合)。
+        """
+        try:
+            deleted = _api.delete_project(service, project_id, logger=event_logger)
+        except ProjectConflictError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        if deleted is None:
+            raise HTTPException(status_code=404, detail="project not found")
+        return {"deleted": True, "project_id": project_id}
 
     @app.get("/api/projects/{project_id}/lifecycle")
     def api_project_lifecycle(project_id: str) -> dict[str, Any]:

@@ -40,6 +40,20 @@ from .lifecycle import DuplicateError, NotFoundError
 from .models import _OrgModel, _norm_list, new_id, utcnow
 from .store import _SectionStore
 
+
+def _record_fail_safe(logger: Any, type_: str, **kwargs: Any) -> None:
+    """Core 冻结期字符串事件类型落库 (S10-006.5 项目管理; 复用 console
+    record_runtime_* 模式 — 失败安全: EventType 枚举尚无 org.project.updated/
+    deleted 成员 (扩枚举 = 改 factory-core/events/models.py, 冻结铁律),
+    字符串类型被 pydantic 拒 (ValidationError) → 静默跳过, 不拖垮删除/更新
+    链路; 依 ADR-0001 扩枚举后自动恢复, 本函数零改动)。"""
+    if logger is None:
+        return
+    try:
+        logger.record(type_, **kwargs)
+    except Exception:
+        return
+
 # ------------------------------------------------------------------ 枚举
 
 
@@ -443,6 +457,15 @@ class ProjectStore:
     def count_projects(self) -> int:
         return self._projects.count()
 
+    def delete_project(self, project_id: str) -> bool:
+        """删除项目 (S10-006.5 项目管理 — _SectionStore.delete 原子写幂等)。
+
+        不存在 → False (幂等, 不抛错 — 与 _SectionStore.delete 同语义);
+        删除只移除项目记录, 不级联 (sprints/stages/artifacts/links 由
+        调用方按需清理 — KISS, 组织数据空间不隐式破坏)。
+        """
+        return self._projects.delete(project_id)
+
     # ------------------------------------------------------------- Sprint
     def save_sprint(self, sprint: Sprint) -> None:
         self._sprints.save(sprint)
@@ -571,6 +594,31 @@ class ProjectLifecycle:
 
     def list_projects(self) -> list[Project]:
         return self._store.list_projects()
+
+    def delete_project(self, project_id: str) -> None:
+        """删除项目 (S10-006.5 项目管理; org.project.deleted 事件)。
+
+        不存在 → NotFoundError (与 get_project 同语义 — 显式失败, 不静默);
+        删除经 ProjectStore.delete_project (原子写幂等)。事件: Core 冻结期
+        EventType 无 org.project.deleted 成员 → _record_fail_safe 失败安全
+        跳过 (同 console record_runtime_* 模式; 扩枚举后自动恢复)。
+        """
+        project = self.get_project(project_id)  # NotFoundError: 不存在
+        self._store.delete_project(project_id)
+        _record_fail_safe(
+            self._logger,
+            "org.project.deleted",
+            source="org",
+            project_id=project_id,
+            stage="deleted",
+            action="delete project",
+            result="OK",
+            payload={
+                "project_id": project_id,
+                "name": project.name,
+                "lifecycle": project.lifecycle.value,
+            },
+        )
 
     def transition_lifecycle(
         self, project_id: str, to_lifecycle: ProjectState | str

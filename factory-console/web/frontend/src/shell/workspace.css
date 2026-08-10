@@ -1069,12 +1069,51 @@
 .ws-recent-list { display: flex; flex-direction: column; gap: var(--ds-space-sm); }
 .ws-recent-item {
   display: flex; align-items: center; justify-content: space-between;
-  padding: var(--ds-space-md) var(--ds-space-lg);
+  padding: 0 0 0 var(--ds-space-lg);
   background: var(--ds-surface); border: 1px solid var(--ds-border);
-  border-radius: var(--ds-radius-md); cursor: pointer;
+  border-radius: var(--ds-radius-md);
   font-size: 15px; color: var(--ds-text); text-align: left;
   transition: background 0.15s ease, box-shadow 0.15s ease;
+  position: relative; /* ⋯ 弹出菜单定位锚点 */
 }
 .ws-recent-item:hover { background: var(--ds-surface-2); box-shadow: var(--ds-shadow); }
+.ws-recent-main {
+  display: flex; align-items: center; justify-content: space-between;
+  flex: 1; gap: var(--ds-space-sm);
+  padding: var(--ds-space-md) 0 var(--ds-space-md) 0;
+  background: none; border: none; cursor: pointer;
+  font-size: 15px; color: var(--ds-text); text-align: left;
+}
 .ws-recent-name { font-weight: 500; }
 .ws-recent-arrow { color: var(--ds-text-secondary); }
+/* S10-006.5 收尾: 每项 ⋯ 菜单 (弹出层) */
+.ws-recent-menu-wrap { position: relative; display: flex; align-items: center; padding: 0 var(--ds-space-sm); }
+.ws-recent-menu-btn {
+  width: 32px; height: 32px; border-radius: var(--ds-radius-sm);
+  border: none; background: none; cursor: pointer;
+  font-size: 18px; line-height: 1; color: var(--ds-text-secondary);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.ws-recent-menu-btn:hover { background: var(--ds-surface-3); color: var(--ds-text); }
+.ws-recent-pop {
+  position: absolute; right: 0; top: calc(100% + 4px); z-index: 30;
+  min-width: 120px; padding: 4px;
+  background: var(--ds-surface); border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-md); box-shadow: var(--ds-shadow-lg, var(--ds-shadow));
+  display: flex; flex-direction: column;
+}
+.ws-recent-pop-item {
+  padding: 8px 12px; border: none; background: none; cursor: pointer;
+  border-radius: var(--ds-radius-sm);
+  font-size: 14px; color: var(--ds-text); text-align: left;
+}
+.ws-recent-pop-item:hover { background: var(--ds-surface-2); }
+.ws-recent-pop-item.danger { color: #d70015; }
+.ws-recent-pop-item.danger:hover { background: rgba(215, 0, 21, 0.08); }
+/* S10-006.5 收尾: 重命名/删除 Modal 内容 */
+.pm-modal-body { display: flex; flex-direction: column; gap: var(--ds-space-md); }
+.pm-modal-desc { margin: 0; font-size: 14px; color: var(--ds-text-secondary); line-height: 1.5; }
+.pm-modal-error {
+  margin: 0; padding: 8px 12px; border-radius: var(--ds-radius-sm);
+  background: rgba(215, 0, 21, 0.08); color: #d70015; font-size: 13px;
+}

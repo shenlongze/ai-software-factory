@@ -39,6 +39,8 @@ export function WorkspaceShell({
   const [panelTab, setPanelTab] = useState<PanelTabId>(initialPanelTab ?? 'browser');
   // S10-006.5 P0: 真实项目列表 (GET /api/projects; 失败 → 空列表, 创建入口兜底)
   const [projects, setProjects] = useState<TreeProject[]>([]);
+  // S10-006.5 收尾: 已删除项目 id 集合 (selectedProject mock 兜底排除 — 删除后不得复活)
+  const [deletedProjectIds, setDeletedProjectIds] = useState<ReadonlySet<string>>(new Set());
   useEffect(() => {
     let cancelled = false;
     api
@@ -69,12 +71,13 @@ export function WorkspaceShell({
   const selectedProject = useMemo(() => {
     const found = projects.find((project) => project.id === selectedProjectId);
     if (found != null) return { id: found.id, name: found.name, status: found.status ?? null };
-    // 兼容既有 mock 项目展示 (S10-001 遗留; 新项目走真实列表)
+    // 兼容既有 mock 项目展示 (S10-001 遗留; 新项目走真实列表) — 已删除项目不复活
+    if (deletedProjectIds.has(selectedProjectId ?? '')) return null;
     const mock = MOCK_PROJECTS.find((project) => project.id === selectedProjectId);
     return mock != null
       ? { id: mock.id, name: mock.name, status: mock.status ?? null }
       : null;
-  }, [projects, selectedProjectId]);
+  }, [projects, selectedProjectId, deletedProjectIds]);
 
   /** S10-006.5: 创建项目 (POST /api/projects → 项目入树 + 选中)。 */
   const handleCreateProject = async (idea: string): Promise<void> => {
@@ -85,6 +88,25 @@ export function WorkspaceShell({
     });
     setSelectedProjectId(created.project_id);
     window.location.hash = `#/workspace?project=${created.project_id}`;
+  };
+
+  /** S10-006.5 收尾: 重命名 (PATCH → 列表/树同步; 失败抛给 Modal 展示)。 */
+  const handleRenameProject = async (projectId: string, name: string): Promise<void> => {
+    const updated = await api.updateProject(projectId, { name });
+    // 以后端回显名同步 (诚实: 不本地猜测规范化结果)
+    const syncedName = updated.name || name;
+    setProjects((prev) =>
+      prev.map((project) => (project.id === projectId ? { ...project, name: syncedName } : project)),
+    );
+  };
+
+  /** S10-006.5 收尾: 删除 (DELETE → 列表/树移除; 选中项被删 → 回 Home 空态)。 */
+  const handleDeleteProject = async (projectId: string): Promise<void> => {
+    await api.deleteProject(projectId);
+    setProjects((prev) => prev.filter((project) => project.id !== projectId));
+    // 防 mock fallback 复活已删项目 (selectedProject 兜底排除)
+    setDeletedProjectIds((prev) => new Set(prev).add(projectId));
+    setSelectedProjectId((current) => (current === projectId ? null : current));
   };
 
   /** Timeline artifact 查看 → 选中 Artifact Tab + 定位产物详情 (S10-005;
@@ -124,6 +146,8 @@ export function WorkspaceShell({
               onOpenProjects={() => setView('projects')}
               onViewArtifact={handleViewArtifact}
               onCreateProject={handleCreateProject}
+              onRenameProject={handleRenameProject}
+              onDeleteProject={handleDeleteProject}
               onSelectProject={setSelectedProjectId}
             />
           }

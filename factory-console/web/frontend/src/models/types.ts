@@ -36,6 +36,14 @@ export interface ProjectCreatedSummary {
   status: string;
 }
 
+/** PATCH /api/projects/{id} 更新结果 (S10-006.5 项目管理: 重命名/改 idea)。 */
+export interface ProjectUpdatedSummary {
+  project_id: string;
+  name: string;
+  idea: string;
+  status: string;
+}
+
 export interface LifecycleSummary {
   project_id: string;
   lifecycle_id: string | null;

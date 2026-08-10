@@ -22,6 +22,7 @@
 
 from __future__ import annotations
 
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -62,6 +63,14 @@ class RuntimeStateError(Exception):
     """S10-004: Runtime 状态机非法流转 (start/stop/screenshot 状态不符)。
 
     HTTP 层映射 409 Conflict (与审批决定冲突同语义 — 终态/非法跳转拒绝)。
+    """
+
+
+class ProjectConflictError(Exception):
+    """S10-006.5: 项目删除冲突 (workflow 运行中 → HTTP 409 诚实拒绝)。
+
+    与 RuntimeStateError/WorkflowConflictError 同语义 — 破坏性操作
+    (删除) 在执行进行中不可执行, 前端提示等待完成后再试。
     """
 
 
@@ -386,6 +395,109 @@ class ConsoleService:
             return True
         except Exception:
             return False  # org 缺失/损坏 → False (失败安全)
+
+    def update_project(
+        self,
+        project_id: str,
+        *,
+        name: str | None = None,
+        idea: str | None = None,
+    ) -> Any | None:
+        """更新 org 项目 (PATCH /projects/{id} — 重命名/改 idea)。
+
+        name/idea 任一提供 → org Project 对应字段 (name/goal) + updated_at
+        落库 (复用 save_project 原子写, 零新数据空间)。错误语义:
+        - 显式空 name/idea (strip 后) → ValueError (HTTP 400 — 空字段不落库)
+        - 两者皆空 (未提供任何更新) → ValueError (HTTP 400 — 无事可做)
+        - org store 缺失 / 项目不存在 / org 损坏 → None (HTTP 404, 失败安全)
+        成功 → 更新后 org Project (更新摘要由 API 层投影)。
+        """
+        cleaned_name = name.strip() if isinstance(name, str) else ""
+        cleaned_idea = idea.strip() if isinstance(idea, str) else ""
+        if name is not None and not cleaned_name:
+            raise ValueError("name is required (空名字不落库)")
+        if idea is not None and not cleaned_idea:
+            raise ValueError("idea is required (空想法不落库)")
+        if not cleaned_name and not cleaned_idea:
+            raise ValueError("nothing to update (name/idea 至少提供一项)")
+        store = self._project_store
+        if store is None:
+            return None
+        self._mount_org()
+        try:
+            from org.models import utcnow
+
+            project = store.get_project(project_id)
+            if project is None:
+                return None
+            update: dict[str, Any] = {"updated_at": utcnow()}
+            if cleaned_name:
+                update["name"] = cleaned_name
+            if cleaned_idea:
+                update["goal"] = cleaned_idea
+            updated = project.model_copy(update=update)
+            store.save_project(updated)
+            return updated
+        except Exception:
+            return None  # org 缺失/损坏 → 404 (失败安全, 不拖垮 API)
+
+    def delete_project(self, project_id: str) -> bool | None:
+        """删除 org 项目 (DELETE /projects/{id} — 项目管理; 运行中保护)。
+
+        顺序: ① 运行中检查 (workflow_runner.is_project_running — 模块级
+        _RUNNING; 运行中 → ProjectConflictError, HTTP 层 409 诚实拒绝 —
+        防删除执行中的数据) → ② org 删除 (ProjectLifecycle.delete_project:
+        不存在 → NotFoundError → None 404; org.project.deleted 事件失败安全
+        落库) → ③ 运行数据清理 (workflow_runs/{id} 目录 + chat.json 该项目
+        对话记录 — 失败安全: 清理失败不撤销删除)。org store 缺失/损坏 →
+        None (失败安全, 不拖垮 API)。
+        """
+        store = self._project_store
+        if store is None:
+            return None
+        # 延迟导入 workflow_runner (模块级副作用隔离, 同 api/workflow_start 模式)
+        from .workflow_runner import is_project_running
+
+        if is_project_running(project_id):
+            raise ProjectConflictError(
+                f"project is running: {project_id} (运行中不可删除, 等待完成后重试)"
+            )
+        self._mount_org()
+        try:
+            from org.projects import NotFoundError, ProjectLifecycle
+
+            logger = (
+                getattr(self._workflow, "_logger", None)
+                if self._workflow is not None
+                else None
+            )
+            lifecycle = ProjectLifecycle(store, logger=logger)
+            try:
+                lifecycle.delete_project(project_id)
+            except NotFoundError:
+                return None  # 项目不存在 → HTTP 404
+        except Exception:
+            return None  # org 缺失/损坏 → 失败安全
+        self._cleanup_project_data(project_id)
+        return True
+
+    def _cleanup_project_data(self, project_id: str) -> None:
+        """删除项目运行数据 (workflow_runs/{id} + chat.json 对话; 失败安全)。
+
+        尽力而为: 目录/记录不存在或清理失败 → 静默 (删除主体已成功, 残留
+        孤儿数据不阻塞 — 同 chat 记录 缺 store 静默哲学)。
+        """
+        try:
+            runs_dir = Path(self._project_store.dir).parent / "workflow_runs"
+            shutil.rmtree(runs_dir / project_id, ignore_errors=True)
+        except Exception:
+            pass
+        try:
+            conversation = self._conversation_store
+            if conversation is not None:
+                conversation.clear_project(project_id)
+        except Exception:
+            pass
 
     def get_conversation_store(self) -> Any:
         """对话记录 store (S10-006.5 P1-A — POST /projects/{id}/chat 落库)。

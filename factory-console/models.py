@@ -138,6 +138,23 @@ class ProjectCreatedSummary(BaseModel):
         return self.model_dump(mode="json")
 
 
+class ProjectUpdatedSummary(BaseModel):
+    """PATCH /projects/{id} — 更新结果投影 (S10-006.5 项目管理: 重命名/改 idea)。
+
+    {project_id, name, idea, status}: 更新后 org Project 摘要 (前端重命名
+    Modal 成功后刷新列表的数据源; idea = org Project.goal 原样回显, 诚实
+    不伪造)。status 为 org Project.lifecycle 当前值 (更新不改生命周期)。
+    """
+
+    project_id: str
+    name: str
+    idea: str
+    status: str = "idea"
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json")
+
+
 class LifecycleSummary(BaseModel):
     """GET /projects/{id}/lifecycle — 生命周期只读快照。
 

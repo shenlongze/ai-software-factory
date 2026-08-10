@@ -26,7 +26,7 @@ import re
 from typing import Any
 
 from ..events import record_console_viewed
-from ..models import ProjectCreatedSummary, ProjectSummary
+from ..models import ProjectCreatedSummary, ProjectSummary, ProjectUpdatedSummary
 
 #: API 路由标识 (事件 payload view 名, 11B FastAPI 薄层同用)
 VIEW = "projects"
@@ -188,4 +188,59 @@ def create_project(
     )
 
 
-__all__ = ["VIEW", "create_project", "extract_project_name", "list_projects"]
+def update_project(
+    service: Any,
+    project_id: str,
+    *,
+    name: str | None = None,
+    idea: str | None = None,
+    logger: Any = None,
+) -> ProjectUpdatedSummary | None:
+    """PATCH /projects/{id} — 更新项目名/idea (S10-006.5 项目管理)。
+
+    name/idea 任一非空 → org Project 对应字段落库 (service 层校验 + 保存,
+    本层只投影)。错误语义: 空 name/idea / 无事可做 → ValueError (HTTP 400);
+    项目不存在/store 缺失 → None (HTTP 404)。成功 → ProjectUpdatedSummary
+    {project_id, name, idea, status} — idea = org Project.goal 原样回显
+    (诚实, 不伪造); status 为当前生命周期 (更新不改生命周期)。
+    """
+    project = service.update_project(project_id, name=name, idea=idea)
+    if project is None:
+        return None
+    status = (
+        project.lifecycle.value
+        if hasattr(project.lifecycle, "value")
+        else str(project.lifecycle)
+    )
+    return ProjectUpdatedSummary(
+        project_id=project.id,
+        name=project.name or project.id,
+        idea=project.goal or "",
+        status=status,
+    )
+
+
+def delete_project(
+    service: Any,
+    project_id: str,
+    *,
+    logger: Any = None,
+) -> bool | None:
+    """DELETE /projects/{id} — 删除项目 (S10-006.5 项目管理; 运行中保护)。
+
+    service 层组合: 运行中检查 (ProjectConflictError → HTTP 409 诚实拒绝)
+    → org 删除 (org.project.deleted 事件失败安全落库) → workflow_runs/{id}
+    + chat.json 清理 (失败安全)。项目不存在/store 缺失 → None (HTTP 404);
+    成功 → True (HTTP 200 {deleted: true})。
+    """
+    return service.delete_project(project_id)
+
+
+__all__ = [
+    "VIEW",
+    "create_project",
+    "delete_project",
+    "extract_project_name",
+    "list_projects",
+    "update_project",
+]

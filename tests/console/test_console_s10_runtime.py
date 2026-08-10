@@ -97,9 +97,17 @@ def project_id(project_store: ProjectStore) -> str:
 
 
 @pytest.fixture
-def service(wlife: WorkflowLifecycle, project_store: ProjectStore) -> Any:
-    """ConsoleService (注入真实 org 装配 — S10-002 走真实数据空间)。"""
-    return _console.ConsoleService(project_store=project_store, workflow_lifecycle=wlife)
+def service(wlife: WorkflowLifecycle, project_store: ProjectStore, tmp_path: Path) -> Any:
+    """ConsoleService (注入真实 org 装配 + S10-004 runtime stores — S10-002
+    走真实数据空间; runtime 数据空间独立于 org, 同根目录 <root>/runtimes)。"""
+    _runtime_store_mod = importlib.import_module("factory-console.runtime_store")
+    runtime_dir = tmp_path / "factory" / "runtimes"
+    return _console.ConsoleService(
+        project_store=project_store,
+        workflow_lifecycle=wlife,
+        runtime_store=_runtime_store_mod.RuntimeInstanceStore(runtime_dir),
+        runtime_screenshot_store=_runtime_store_mod.RuntimeScreenshotStore(runtime_dir),
+    )
 
 
 @pytest.fixture
@@ -911,3 +919,282 @@ class TestRuntimeAudit:
             if event.type == EventType.CONSOLE_VIEWED
         }
         assert "events_stream" in views
+
+
+# ------------------------------------------------------------------ S10-004: Runtime Workspace API
+# Instance 模式 (workspace-architecture.md §4 调整版): "+" 创建 browser|
+# terminal 实例 + start/stop 生命周期 + screenshot 预留。覆盖:
+# - CRUD: 创建 (type/artifact 绑定) / 列表 / 详情 — 项目不存在 → 404
+# - 状态机: starting→running→stopped (重启允许); 非法流转 → 409
+# - screenshot 门禁: 仅 running 可截图 (非 running → 409)
+# - 持久化: 原子写 JSON — 新 store 实例读同目录数据仍在; 损坏文件响亮报错
+# - 失败安全: 无 runtime store → create None / list [] (冷启动照常)
+# - 事件诚实边界: Core 冻结期 EventType 无 org.runtime.* 成员 → 审计事件
+#   失败安全跳过, API 不崩溃 (S10-005+ 扩展枚举后自动恢复)
+
+
+class TestRuntimeWorkspaceApi:
+    """S10-004 Runtime Workspace API (HTTP 层 + store 层集成断言)。"""
+
+    @staticmethod
+    def _create(
+        client,
+        project_id: str = "P-10",
+        runtime_type: str = "browser",
+        artifact_id: str | None = None,
+    ):
+        body: dict[str, Any] = {"type": runtime_type}
+        if artifact_id is not None:
+            body["artifact_id"] = artifact_id
+        return client.post(f"/api/projects/{project_id}/runtimes", json=body)
+
+    # ------------------------------------------------------------- CRUD
+
+    @requires_fastapi
+    def test_create_browser_with_artifact(self, client, project_id):
+        """创建 browser 实例: starting + artifact_id 绑定 + rt- 前缀 id。"""
+        resp = self._create(client, project_id, "browser", artifact_id="ART-9")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["id"].startswith("rt-")
+        assert body["project_id"] == project_id
+        assert body["type"] == "browser"
+        assert body["status"] == "starting"  # 生命周期入口 (start 后 running)
+        assert body["artifact_id"] == "ART-9"
+        assert body["url"] is None and body["session"] is None
+
+    @requires_fastapi
+    def test_create_terminal_instance(self, client, project_id):
+        """创建 terminal 实例 (类型二选一; 契约 Literal 校验同模型层)。"""
+        resp = self._create(client, project_id, "terminal")
+        assert resp.status_code == 200
+        assert resp.json()["type"] == "terminal"
+        assert resp.json()["status"] == "starting"
+
+    @requires_fastapi
+    def test_create_runtime_invalid_type_400(self, client, project_id):
+        """非法 type (非 browser|terminal) → 400 (语义清晰, 不依赖 422)。"""
+        resp = self._create(client, project_id, "docker")
+        assert resp.status_code == 400
+        assert "browser|terminal" in resp.json()["detail"]
+
+    @requires_fastapi
+    def test_create_runtime_unknown_project_404(self, client):
+        resp = self._create(client, "nope", "browser")
+        assert resp.status_code == 404
+
+    @requires_fastapi
+    def test_list_runtimes_empty_then_after_create(self, client, project_id):
+        """列表: 无实例 → [] (诚实空态); 创建后按 id 排序返回。"""
+        assert client.get(f"/api/projects/{project_id}/runtimes").json() == []
+        self._create(client, project_id, "browser")
+        self._create(client, project_id, "terminal")
+        body = client.get(f"/api/projects/{project_id}/runtimes").json()
+        assert len(body) == 2
+        assert {r["type"] for r in body} == {"browser", "terminal"}
+        assert [r["id"] for r in body] == sorted(r["id"] for r in body)  # id 排序
+
+    @requires_fastapi
+    def test_list_runtimes_unknown_project_404(self, client):
+        assert client.get("/api/projects/nope/runtimes").status_code == 404
+
+    @requires_fastapi
+    def test_runtime_detail_roundtrip(self, client, project_id):
+        created = self._create(client, project_id, "browser").json()
+        resp = client.get(f"/api/runtimes/{created['id']}")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["id"] == created["id"]
+        assert body["project_id"] == project_id
+        assert body["type"] == "browser"
+
+    @requires_fastapi
+    def test_runtime_detail_unknown_404(self, client):
+        assert client.get("/api/runtimes/rt-nope").status_code == 404
+
+    # ------------------------------------------------------------- 状态机 (start/stop)
+
+    @requires_fastapi
+    def test_start_browser_generates_preview_url(self, client, project_id):
+        """start: starting → running; browser 生成沙箱预览 URL。"""
+        created = self._create(client, project_id, "browser").json()
+        resp = client.post(f"/api/runtimes/{created['id']}/start")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "running"
+        assert body["url"] == f"http://127.0.0.1:8099/preview/{project_id}"
+
+    @requires_fastapi
+    def test_start_terminal_generates_session(self, client, project_id):
+        """start: terminal 生成 tty 会话标识 (url 保持 None)。"""
+        created = self._create(client, project_id, "terminal").json()
+        body = client.post(f"/api/runtimes/{created['id']}/start").json()
+        assert body["status"] == "running"
+        assert body["session"].startswith("tty://")
+        assert body["url"] is None
+
+    @requires_fastapi
+    def test_start_unknown_runtime_404(self, client):
+        assert client.post("/api/runtimes/rt-nope/start").status_code == 404
+
+    @requires_fastapi
+    def test_start_running_instance_409(self, client, project_id):
+        """状态机非法流转: running → start → 409 (RuntimeStateError)。"""
+        created = self._create(client, project_id, "browser").json()
+        client.post(f"/api/runtimes/{created['id']}/start")
+        resp = client.post(f"/api/runtimes/{created['id']}/start")
+        assert resp.status_code == 409
+        assert "cannot start" in resp.json()["detail"]
+
+    @requires_fastapi
+    def test_stop_running_to_stopped(self, client, project_id):
+        """stop: running → stopped; 保留历史连接信息 (可复查)。"""
+        created = self._create(client, project_id, "browser").json()
+        client.post(f"/api/runtimes/{created['id']}/start")
+        resp = client.post(f"/api/runtimes/{created['id']}/stop")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "stopped"
+        assert resp.json()["url"] is not None  # 停止不丢连接信息
+
+    @requires_fastapi
+    def test_stop_starting_allowed(self, client, project_id):
+        """stop 起点覆盖 starting (未 start 也可直接停)。"""
+        created = self._create(client, project_id, "browser").json()
+        resp = client.post(f"/api/runtimes/{created['id']}/stop")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "stopped"
+
+    @requires_fastapi
+    def test_stop_stopped_instance_409(self, client, project_id):
+        """终态不可重复停止: stopped → stop → 409。"""
+        created = self._create(client, project_id, "browser").json()
+        client.post(f"/api/runtimes/{created['id']}/stop")
+        resp = client.post(f"/api/runtimes/{created['id']}/stop")
+        assert resp.status_code == 409
+
+    @requires_fastapi
+    def test_restart_stopped_allowed(self, client, project_id):
+        """重启允许: stopped → start → running (状态机闭环)。"""
+        created = self._create(client, project_id, "browser").json()
+        client.post(f"/api/runtimes/{created['id']}/stop")
+        resp = client.post(f"/api/runtimes/{created['id']}/start")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "running"
+
+    @requires_fastapi
+    def test_state_machine_full_cycle(self, client, project_id):
+        """状态机全周期: starting → running → stopped → running (GET 复查)。"""
+        created = self._create(client, project_id, "terminal").json()
+        runtime_id = created["id"]
+
+        def status_of(rid: str) -> str:
+            return client.get(f"/api/runtimes/{rid}").json()["status"]
+
+        assert status_of(runtime_id) == "starting"
+        client.post(f"/api/runtimes/{runtime_id}/start")
+        assert status_of(runtime_id) == "running"
+        client.post(f"/api/runtimes/{runtime_id}/stop")
+        assert status_of(runtime_id) == "stopped"
+        client.post(f"/api/runtimes/{runtime_id}/start")
+        assert status_of(runtime_id) == "running"
+
+    # ------------------------------------------------------------- screenshot 门禁
+
+    @requires_fastapi
+    def test_screenshot_requires_running_409(self, client, project_id):
+        """截图门禁: 非 running 实例 → 409 (截图只在运行态有意义)。"""
+        created = self._create(client, project_id, "browser").json()
+        resp = client.post(f"/api/runtimes/{created['id']}/screenshot")
+        assert resp.status_code == 409
+
+    @requires_fastapi
+    def test_screenshot_ok_when_running(self, client, project_id):
+        """截图预留: running 实例 → 截图记录 + artifact 引用 (完整 Loop 后续)。"""
+        created = self._create(client, project_id, "browser").json()
+        client.post(f"/api/runtimes/{created['id']}/start")
+        resp = client.post(f"/api/runtimes/{created['id']}/screenshot")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["id"].startswith("shot-")
+        assert body["instance_id"] == created["id"]
+        assert body["project_id"] == project_id
+        assert body["artifact_id"] == f"shot-{created['id']}"  # 预留产物引用
+
+    @requires_fastapi
+    def test_screenshot_unknown_runtime_404(self, client):
+        assert client.post("/api/runtimes/rt-nope/screenshot").status_code == 404
+
+    # ------------------------------------------------------------- 事件诚实边界
+
+    @requires_fastapi
+    def test_http_events_failsafe_no_crash(
+        self, client, project_id, event_store
+    ):
+        """事件落库失败安全: Core 冻结期 EventType 无 org.runtime.* 成员 —
+        HTTP 端点不因审计事件崩溃 (创建/启动 200); runtime 事件跳过不落库
+        (诚实: S10-005+ 扩展枚举后自动恢复, record_runtime_* 零改动)。"""
+        created = self._create(client, project_id, "browser").json()
+        assert client.post(f"/api/runtimes/{created['id']}/start").status_code == 200
+        types = {
+            event.type.value if hasattr(event.type, "value") else str(event.type)
+            for event in event_store.query(project_id=project_id)
+        }
+        assert not {"org.runtime.created", "org.runtime.status_changed"} & types
+
+    # ------------------------------------------------------------- 失败安全
+
+    def test_service_failsafe_without_runtime_store(
+        self, project_store, project_id
+    ):
+        """失败安全: 有 org 但无 runtime store → create None / list []。"""
+        svc = _console.ConsoleService(project_store=project_store)
+        assert svc.create_runtime(project_id, "browser") is None
+        assert svc.list_runtimes(project_id) == []  # 诚实空态
+
+    def test_service_runtime_none_without_org(self):
+        """无 org (项目不存在) → create None (404 语义源头)。"""
+        assert _console.ConsoleService().create_runtime("P-1", "browser") is None
+
+    # ------------------------------------------------------------- 持久化 (store 层)
+
+    def test_runtime_persistence_across_store_reload(
+        self, tmp_path: Path, project_store, project_id
+    ):
+        """持久化: 原子写落盘 — 新 store 实例读同目录 → 实例/截图仍在。"""
+        _runtime_store_mod = importlib.import_module("factory-console.runtime_store")
+
+        def build_svc():
+            return _console.ConsoleService(
+                project_store=project_store,
+                runtime_store=_runtime_store_mod.RuntimeInstanceStore(
+                    tmp_path / "factory" / "runtimes"
+                ),
+                runtime_screenshot_store=_runtime_store_mod.RuntimeScreenshotStore(
+                    tmp_path / "factory" / "runtimes"
+                ),
+            )
+
+        svc1 = build_svc()
+        created = svc1.create_runtime(project_id, "browser", artifact_id="ART-1")
+        svc1.start_runtime(created.id)
+        shot = svc1.capture_runtime_screenshot(created.id)
+
+        # 新 service + 新 store (同目录) → 数据仍在 (原子写 JSON 持久化)
+        svc2 = build_svc()
+        reloaded = svc2.get_runtime(created.id)
+        assert reloaded is not None
+        assert reloaded.status == "running"
+        assert reloaded.artifact_id == "ART-1"
+        assert reloaded.url is not None  # 连接信息持久化
+        assert svc2._get_runtime_screenshot_store().get(shot.id) is not None
+
+    def test_runtime_store_corrupt_raises(self, tmp_path: Path):
+        """损坏存储文件 → CorruptRuntimeStoreError (响亮, 绝不静默返回空)。"""
+        _runtime_store_mod = importlib.import_module("factory-console.runtime_store")
+        store = _runtime_store_mod.RuntimeInstanceStore(tmp_path / "runtimes")
+        (tmp_path / "runtimes").mkdir(parents=True, exist_ok=True)
+        (tmp_path / "runtimes" / "runtimes.json").write_text(
+            "{not json", encoding="utf-8"
+        )
+        with pytest.raises(_runtime_store_mod.CorruptRuntimeStoreError):
+            store.list_all()

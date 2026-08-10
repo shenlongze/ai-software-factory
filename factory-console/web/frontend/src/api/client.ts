@@ -1,14 +1,17 @@
 /**
  * api/client.ts — 前端 API 客户端。
  *
- * 只读 + S9-002 审批决定 (Human Console MVP 收窄 Permission Boundary):
+ * 只读 + 审批决定 + S10-004 Runtime 生命周期 (Human Console MVP 收窄
+ * Permission Boundary):
  * - 全部查询 GET (只读投影; 无 put/patch/delete)
- * - POST 仅两个审批决定端点 (/api/approvals/{id}/approve|reject) — 由
- *   Approval 页操作按钮触发; 其余一切写路径 (register_project/成本等)
+ * - POST 仅两类写面: ① 审批决定 (/api/approvals/{id}/approve|reject) —
+ *   Approval 页操作按钮触发; ② S10-004 Runtime 实例生命周期
+ *   (POST /projects/{id}/runtimes 创建 + /runtimes/{id}/start|stop|screenshot)
+ *   — Runtime Panel 操作按钮触发; 其余一切写路径 (register_project/成本等)
  *   不在 Console 范围 (S9-005/后续)。
  * - S10-002: Runtime 查询 (projectWorkflow/workflowStages/projectTimeline,
  *   只读 GET) + SSE 事件流 — SSE 封装在 runtimeClient.subscribeEvents
- *   (断线重连 + mock 检测), 本文件只保留 REST 查询。
+ *   (断线重连 + mock 检测), 本文件只保留 REST 查询/写面。
  *
  * fetch 直接调用 → 组件测试用 vi.stubGlobal('fetch', ...) 注入桩。
  */
@@ -26,6 +29,8 @@ import {
   type ProjectSummary,
   type ProviderSummary,
   type RecommendationSummary,
+  type RuntimeInstance,
+  type RuntimeScreenshot,
   type StageRunSummary,
   type TimelineEventSummary,
   type WorkflowDetail,
@@ -124,6 +129,25 @@ export const api = {
     getJson<TimelineEventSummary[]>(
       `/api/projects/${encodeURIComponent(projectId)}/timeline?limit=${limit}`,
     ),
+  // S10-004: Runtime Workspace API (写面 = 实例生命周期 + 截图 — Permission
+  // Boundary 扩展; 错误语义: 404 项目/实例不存在 / 400 非法 type / 409 状态机)
+  projectRuntimes: (projectId: string) =>
+    getJson<RuntimeInstance[]>(
+      `/api/projects/${encodeURIComponent(projectId)}/runtimes`,
+    ),
+  runtimeDetail: (runtimeId: string) =>
+    getJson<RuntimeInstance>(`/api/runtimes/${encodeURIComponent(runtimeId)}`),
+  createRuntime: (projectId: string, type: 'browser' | 'terminal', artifactId: string | null = null) =>
+    sendJson<RuntimeInstance>(`/api/projects/${encodeURIComponent(projectId)}/runtimes`, {
+      type,
+      ...(artifactId != null && artifactId.length > 0 ? { artifact_id: artifactId } : {}),
+    }),
+  startRuntime: (runtimeId: string) =>
+    sendJson<RuntimeInstance>(`/api/runtimes/${encodeURIComponent(runtimeId)}/start`, {}),
+  stopRuntime: (runtimeId: string) =>
+    sendJson<RuntimeInstance>(`/api/runtimes/${encodeURIComponent(runtimeId)}/stop`, {}),
+  screenshotRuntime: (runtimeId: string) =>
+    sendJson<RuntimeScreenshot>(`/api/runtimes/${encodeURIComponent(runtimeId)}/screenshot`, {}),
 } as const;
 
 export type Api = typeof api;

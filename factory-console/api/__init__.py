@@ -25,20 +25,29 @@ from .projects import list_projects
 from .providers import list_providers
 from .runtime import (
     SSE_EVENT_MAP,  # noqa: F401 — SSE 事件映射常量 (测试/前端引用; 非路由不进 __all__)
+    capture_runtime_screenshot,
+    create_runtime,
     get_project_timeline,
     get_project_workflow,
+    get_runtime,
     get_workflow_stages,
     iter_sse_events,
+    list_runtimes,
+    start_runtime,
+    stop_runtime,
 )
 from .workflows import get_workflow, list_workflows
 
 __all__ = [
     "approve_approval",
+    "capture_runtime_screenshot",
+    "create_runtime",
     "get_artifact",
     "get_decision",
     "get_project_lifecycle",
     "get_project_timeline",
     "get_project_workflow",
+    "get_runtime",
     "get_workflow",
     "get_workflow_stages",
     "iter_sse_events",
@@ -49,6 +58,9 @@ __all__ = [
     "list_projects",
     "list_providers",
     "list_recommendations",
+    "list_runtimes",
     "list_workflows",
     "reject_approval",
+    "start_runtime",
+    "stop_runtime",
 ]

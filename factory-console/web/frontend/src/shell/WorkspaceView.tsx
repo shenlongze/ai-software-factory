@@ -58,7 +58,13 @@ function WorkspaceHome({ onOpenProjects }: { onOpenProjects: () => void }): JSX.
 }
 
 /** 选中项目后的工作台视图 (Header + Agent Timeline 实时事件流)。 */
-function ProjectWorkspace({ project }: { project: MockProject }): JSX.Element {
+function ProjectWorkspace({
+  project,
+  onViewArtifact,
+}: {
+  project: MockProject;
+  onViewArtifact?: (artifactId: string) => void;
+}): JSX.Element {
   const badge = projectStatusBadge(project.status);
   const completedStages = project.stages.filter((stage) => stage.status === 'completed').length;
   return (
@@ -73,7 +79,7 @@ function ProjectWorkspace({ project }: { project: MockProject }): JSX.Element {
         </span>
       </header>
       <p className="ws-project-idea">{project.idea}</p>
-      <AgentTimeline projectId={project.id} />
+      <AgentTimeline projectId={project.id} onViewArtifact={onViewArtifact} />
     </div>
   );
 }
@@ -112,13 +118,16 @@ export function WorkspaceView({
   view,
   project,
   onOpenProjects,
+  onViewArtifact,
 }: {
   view: ExplorerViewId;
   project: MockProject | null;
   onOpenProjects: () => void;
+  /** S10-004 联动: Timeline artifact 查看 → Runtime Panel (WorkspaceShell 提供)。 */
+  onViewArtifact?: (artifactId: string) => void;
 }): JSX.Element {
   if (view === 'settings') return <SettingsView />;
   if (view !== 'home' && view !== 'projects') return <PlaceholderView view={view} />;
-  if (project != null) return <ProjectWorkspace project={project} />;
+  if (project != null) return <ProjectWorkspace project={project} onViewArtifact={onViewArtifact} />;
   return <WorkspaceHome onOpenProjects={onOpenProjects} />;
 }

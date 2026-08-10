@@ -42,6 +42,8 @@ from .models import (
     ProjectSummary,
     ProviderSummary,
     RecommendationSummary,
+    RuntimeInstance,
+    RuntimeScreenshot,
     StageRunSummary,
     StageSummary,
     TimelineEventSummary,
@@ -51,6 +53,18 @@ from .models import (
 
 #: 默认最近决策/活动条数 (KISS: Dashboard 不无限增长, CLI --limit 可覆盖)
 DEFAULT_RECENT_LIMIT = 10
+
+
+class RuntimeStateError(Exception):
+    """S10-004: Runtime 状态机非法流转 (start/stop/screenshot 状态不符)。
+
+    HTTP 层映射 409 Conflict (与审批决定冲突同语义 — 终态/非法跳转拒绝)。
+    """
+
+
+def _utc_now_str() -> str:
+    """当前 UTC 时间 ISO 字符串 (Runtime 实例/截图 created_at)。"""
+    return datetime.now(timezone.utc).isoformat()
 
 #: 规范 8 阶段链 (S9-002 Workflow View 模板; 前端渲染占位/标签映射用 —
 #: Idea→PM→Product→UX/UI→Architecture→Development→Test→Release)。
@@ -135,6 +149,10 @@ class ConsoleService:
         event_store: Any = None,
         project_store: Any = None,
         workflow_lifecycle: Any = None,
+        # S10-004: Runtime 持久化 (Instance 模式 — browser|terminal 实例;
+        # 全部可选, 失败安全: 缺 store → runtime 操作按空/不存在处理)
+        runtime_store: Any = None,
+        runtime_screenshot_store: Any = None,
     ) -> None:
         self._workspace = workspace_manager
         self._task_store = task_store
@@ -150,6 +168,10 @@ class ConsoleService:
         # 全部可选, 失败安全; 典型装配见 web/backend/fastapi_adapter.py)
         self._project_store = project_store
         self._workflow = workflow_lifecycle
+        # S10-004: Runtime 层 (RuntimeInstanceStore + RuntimeScreenshotStore —
+        # 独立数据空间 <root>/runtimes, 与 org 并存; 缺任一 → 对应操作失败安全)
+        self._runtime_store = runtime_store
+        self._runtime_screenshots = runtime_screenshot_store
 
     # ------------------------------------------------------------------ 七域 Dashboard
 
@@ -451,6 +473,159 @@ class ConsoleService:
             if summary is not None:
                 mapped.append(summary)
         return mapped[-max(limit, 0):]
+
+    # ------------------------------------------------ S10-004: Runtime Workspace
+    # Instance 模式 (workspace-architecture.md §4 调整版): "+" 创建 browser|
+    # terminal 实例; RuntimeInstanceStore 持久化; 状态机 starting→running→
+    # stopped (error 为异常终态); screenshot 预留 (只落记录, 不实现完整 Loop)。
+
+    #: 沙箱预览 URL 模板 (S10-004 预留: 沙箱静态服务器由后续 Sprint 实现;
+    #: URL 为设计占位, 前端 iframe 按此加载, 不可达时显示"沙箱未就绪")。
+    RUNTIME_PREVIEW_URL = "http://127.0.0.1:8099/preview/{project_id}"
+
+    def _get_runtime_store(self) -> Any:
+        """RuntimeInstanceStore (缺失 → None; 失败安全 — 调用方按空处理)。
+
+        注意: 方法名避开实例属性 `self._runtime_store` (同名遮蔽陷阱 —
+        属性会覆盖方法, 导致 store 注入后 `self._get_runtime_store()` 不可调用)。
+        """
+        return self._runtime_store
+
+    def _get_runtime_screenshot_store(self) -> Any:
+        """RuntimeScreenshotStore (缺失 → None; 失败安全)。"""
+        return self._runtime_screenshots
+
+    def create_runtime(
+        self,
+        project_id: str,
+        runtime_type: str,
+        artifact_id: str | None = None,
+    ) -> RuntimeInstance | None:
+        """POST /projects/{id}/runtimes — 创建 Runtime Instance (starting)。
+
+        项目不存在 → None (404); runtime store 缺失 → None (失败安全 —
+        Console 冷启动照常工作); 非法 type (非 browser|terminal) → ValueError
+        (HTTP 层 400); 创建后 status=starting (生命周期起点, start 后 running)。
+        """
+        if not self.project_exists(project_id):
+            return None
+        store = self._get_runtime_store()
+        if store is None:
+            return None
+        from .runtime_store import new_runtime_id
+
+        instance = RuntimeInstance(
+            id=new_runtime_id(),
+            project_id=project_id,
+            type=runtime_type,  # type: ignore[arg-type]  # Literal 校验在 pydantic
+            status="starting",
+            artifact_id=artifact_id,
+            url=None,
+            session=None,
+            created_at=_utc_now_str(),
+        )
+        store.save(instance)
+        return instance
+
+    def list_runtimes(self, project_id: str) -> list[RuntimeInstance] | None:
+        """GET /projects/{id}/runtimes — 项目实例列表 (id 排序)。
+
+        项目不存在 → None (404); store 缺失 → [] (失败安全); 无实例 → []
+        (诚实空态 — 前端显示"还没有 Runtime, 点击 + 创建")。
+        """
+        if not self.project_exists(project_id):
+            return None
+        store = self._get_runtime_store()
+        if store is None:
+            return []
+        return store.list_by_project(project_id)
+
+    def get_runtime(self, runtime_id: str) -> RuntimeInstance | None:
+        """GET /runtimes/{id} — 实例详情; 不存在 → None (404)。"""
+        store = self._get_runtime_store()
+        if store is None:
+            return None
+        return store.get(runtime_id)
+
+    def start_runtime(self, runtime_id: str) -> RuntimeInstance | None:
+        """POST /runtimes/{id}/start — starting|stopped → running (重启允许)。
+
+        不存在 → None (404); 状态机非法流转 (running/error → start) →
+        RuntimeStateError (HTTP 层 409); start 时生成连接信息: browser →
+        url (沙箱预览 URL 模板), terminal → session (tty 会话标识)。
+        """
+        instance = self.get_runtime(runtime_id)
+        if instance is None:
+            return None
+        if instance.status not in ("starting", "stopped"):
+            raise RuntimeStateError(
+                f"runtime {runtime_id} cannot start from status {instance.status!r}"
+            )
+        updated = instance.model_copy(
+            update={
+                "status": "running",
+                **self._runtime_endpoint(instance, runtime_id),
+            }
+        )
+        self._get_runtime_store().save(updated)
+        return updated
+
+    def stop_runtime(self, runtime_id: str) -> RuntimeInstance | None:
+        """POST /runtimes/{id}/stop — starting|running → stopped。
+
+        不存在 → None (404); 已 stopped/error → RuntimeStateError (409,
+        终态不可重复停止); 停止保留 url/session (历史连接信息可复查)。
+        """
+        instance = self.get_runtime(runtime_id)
+        if instance is None:
+            return None
+        if instance.status not in ("starting", "running"):
+            raise RuntimeStateError(
+                f"runtime {runtime_id} cannot stop from status {instance.status!r}"
+            )
+        updated = instance.model_copy(update={"status": "stopped"})
+        self._get_runtime_store().save(updated)
+        return updated
+
+    def capture_runtime_screenshot(self, runtime_id: str) -> RuntimeScreenshot | None:
+        """POST /runtimes/{id}/screenshot — 截图预留 (只落记录 + artifact 引用)。
+
+        不存在 → None (404); 非 running 实例 → RuntimeStateError (409 —
+        截图只在运行态有意义); 返回截图记录 (artifact_id 预留 — 完整
+        Feedback Loop 由后续 Sprint 实现, 本 Sprint 只保存)。
+        """
+        instance = self.get_runtime(runtime_id)
+        if instance is None:
+            return None
+        if instance.status != "running":
+            raise RuntimeStateError(
+                f"runtime {runtime_id} screenshot requires running status "
+                f"(got {instance.status!r})"
+            )
+        store = self._get_runtime_screenshot_store()
+        if store is None:
+            return None
+        from .runtime_store import new_screenshot_id
+
+        screenshot = RuntimeScreenshot(
+            id=new_screenshot_id(),
+            instance_id=runtime_id,
+            project_id=instance.project_id,
+            artifact_id=f"shot-{runtime_id}",  # 预留产物引用 (后续渲染环节)
+            created_at=_utc_now_str(),
+        )
+        store.save(screenshot)
+        return screenshot
+
+    def _runtime_endpoint(self, instance: RuntimeInstance, runtime_id: str) -> dict[str, str | None]:
+        """start 时按类型生成连接信息: browser → url / terminal → session。
+
+        url 为沙箱预览 URL 模板 (RUNTIME_PREVIEW_URL — 静态服务器后续实现);
+        session 为 tty 会话标识 (mock 会话 — 真实 PTY 由后续 Sprint 接入)。
+        """
+        if instance.type == "browser":
+            return {"url": self.RUNTIME_PREVIEW_URL.format(project_id=instance.project_id), "session": None}
+        return {"session": f"tty://{instance.project_id}/{runtime_id}", "url": None}
 
     def build_mock_workflow(self, project_id: str) -> WorkflowDetail:
         """mock fallback (S10-002): 项目存在但无运行数据 → is_mock=True 详情。

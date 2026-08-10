@@ -1,12 +1,16 @@
 /**
  * shell/FactoryPanel.tsx — S10-001 右侧 Factory Panel (4 Tab 框架)。
  *
- * Browser / Task / Artifact / Review — 每个 Tab 均为 Empty State 占位,
- * 具体内容由 S10-004 / S10-002 / S10-005 / S10-006 接入。
+ * Runtime Tab (browser): S10-004 Runtime Workspace Panel — 选中项目后渲染
+ * RuntimePanel (Instances 列表 + [+] 创建 + Browser iframe + Terminal mock
+ * stream + REST 轮询); 未选中项目 → 空态 (等待选择项目)。
+ * Task / Artifact / Review — 仍为 Empty State 占位 (S10-002 / S10-005 /
+ * S10-006 接入)。
  */
 
 import { PANEL_TABS } from '../mock/workspace';
 import type { PanelTabId } from '../mock/workspace';
+import { RuntimePanel } from './RuntimePanel';
 
 function PanelEmpty({ tabId }: { tabId: PanelTabId }): JSX.Element {
   const tab = PANEL_TABS.find((meta) => meta.id === tabId) ?? PANEL_TABS[0];
@@ -27,9 +31,19 @@ function PanelEmpty({ tabId }: { tabId: PanelTabId }): JSX.Element {
 export function FactoryPanel({
   activeTab,
   onSelectTab,
+  projectId,
+  focusArtifactId,
+  focusNonce,
+  onFocusConsumed,
 }: {
   activeTab: PanelTabId;
   onSelectTab: (tab: PanelTabId) => void;
+  /** S10-004: 选中项目 (Runtime Panel 需要 projectId; null → 空态)。 */
+  projectId?: string | null;
+  /** S10-004: Timeline 联动 — 待定位 artifact_id (透传给 RuntimePanel)。 */
+  focusArtifactId?: string | null;
+  focusNonce?: number | null;
+  onFocusConsumed?: () => void;
 }): JSX.Element {
   return (
     <div className="ws-panel" data-testid="ws-factory-panel">
@@ -58,7 +72,16 @@ export function FactoryPanel({
         aria-labelledby={`ws-panel-tab-${activeTab}`}
         data-testid="ws-panel-body"
       >
-        <PanelEmpty tabId={activeTab} />
+        {activeTab === 'browser' && projectId != null ? (
+          <RuntimePanel
+            projectId={projectId}
+            focusArtifactId={focusArtifactId}
+            focusNonce={focusNonce}
+            onFocusConsumed={onFocusConsumed}
+          />
+        ) : (
+          <PanelEmpty tabId={activeTab} />
+        )}
       </div>
     </div>
   );

@@ -367,6 +367,34 @@ export interface RuntimeInstance {
   created_at: string | null;
 }
 
+/** Runtime 状态中文标签 (Runtime Panel 状态徽章显示)。 */
+export const RUNTIME_STATUS_LABELS: Record<RuntimeInstance['status'], string> = {
+  starting: '启动中',
+  running: '运行中',
+  stopped: '已停止',
+  error: '异常',
+};
+
+/** Runtime 类型中文标签 (创建菜单/卡片类型图标 title)。 */
+export const RUNTIME_TYPE_LABELS: Record<RuntimeInstance['type'], string> = {
+  browser: 'Browser Runtime',
+  terminal: 'Terminal Runtime',
+};
+
+export function runtimeTypeLabel(type: string): string {
+  return RUNTIME_TYPE_LABELS[type as RuntimeInstance['type']] ?? type;
+}
+
+/** S10-004: Runtime 截图记录 (截图反馈预留 — 只落记录, 不实现完整 Loop)。 */
+export interface RuntimeScreenshot {
+  id: string;
+  instance_id: string;
+  project_id: string;
+  /** 预留产物引用 (完整 Feedback Loop 后续实现)。 */
+  artifact_id: string;
+  created_at: string | null;
+}
+
 /** S10-002: SSE 事件名 (与后端 SSE_EVENT_MAP 同源; 业务 7 类 + error 通道)。 */
 export const RUNTIME_EVENT_NAMES = [
   'stage.started',

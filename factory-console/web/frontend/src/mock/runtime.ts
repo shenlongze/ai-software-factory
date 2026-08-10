@@ -8,6 +8,7 @@
  */
 
 import type {
+  RuntimeInstance,
   StageRunSummary,
   TimelineEventSummary,
   WorkflowDetail,
@@ -158,9 +159,39 @@ export function mockStageRuns(projectId = 'ledger-app'): StageRunSummary[] {
   ];
 }
 
+/** S10-004: mock Runtime 实例列表 (Runtime Panel 演示数据源; is_mock 由
+ * runtimeClient.listRuntimes fallback 标记 — 形状对齐后端 create_runtime
+ * 输出: browser (url 沙箱预览) + terminal (session 会话) 各一, 诚实演示)。 */
+export function mockRuntimes(projectId = 'ledger-app'): RuntimeInstance[] {
+  return [
+    {
+      id: 'mock-rt-browser-1',
+      project_id: projectId,
+      type: 'browser',
+      status: 'running',
+      artifact_id: 'mock-art-ux_ui',
+      // data: URL 沙箱预览 (演示数据 — 真实 URL 由 Runtime 服务提供)
+      url: 'data:text/html;charset=utf-8,' + encodeURIComponent(
+        '<h1>Browser 沙箱预览</h1><p>演示数据 — 绑定产物 mock-art-ux_ui (UX/UI)</p>',
+      ),
+      session: null,
+      created_at: '2026-08-10T00:05:00+00:00',
+    },
+    {
+      id: 'mock-rt-terminal-1',
+      project_id: projectId,
+      type: 'terminal',
+      status: 'running',
+      artifact_id: 'mock-art-code',
+      url: null,
+      session: 'mock-session-1',
+      created_at: '2026-08-10T00:06:00+00:00',
+    },
+  ];
+}
+
 /** mock Timeline 事件流 (Agent Timeline 数据源; user/stage/artifact/review 五类)。 */
-export function mockTimeline(projectId = 'ledger-app'): TimelineEventSummary[] {
-  const node = (
+export function mockTimeline(projectId = 'ledger-app'): TimelineEventSummary[] {  const node = (
     seq: number,
     type: TimelineEventSummary['type'],
     message: string,

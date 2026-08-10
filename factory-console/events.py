@@ -128,9 +128,89 @@ def record_console_dashboard_viewed(
     )
 
 
+# ------------------------------------------------------------------ S10-004 Runtime 事件
+# Runtime 实例生命周期事件 (org.runtime.created / org.runtime.status_changed):
+# 用字符串事件类型落库 (EventLogger.record 接受 str — 零 Core 修改, 不扩展
+# events/models.py 枚举); SSE 侧 SSE_EVENT_MAP 同字符串 key 映射 (S10-002
+# 契约先行已锁定: runtime.created / runtime.status.changed), 事件经既有
+# iter_sse_events/_sse_event 自动推送, Timeline/前端零改动。
+#
+# 诚实边界 (Core 冻结): EventType 枚举尚无 org.runtime.* 成员 (扩枚举 = 改
+# factory-core/events/models.py — 冻结铁律), 字符串类型经 pydantic 校验被拒
+# (ValidationError)。故 record_runtime_* 对落库失败做**失败安全跳过** (返回
+# None, 不拖垮 API/审计链) — 与无 event_logger 静默同哲学; S10-005+ 依
+# ADR-0001 扩展枚举后自动恢复, record_runtime_* 本身零改动。SSE 侧 runtime.*
+# 事件在真实事件落库前不推送 (前端 Runtime Panel 走 REST 轮询, 不依赖 SSE)。
+
+
+def _record_runtime_event(logger: EventLogger, type_: str, **kwargs: Any) -> Event | None:
+    """落库 runtime 事件 (失败安全: 字符串类型被 EventType 拒 → 跳过不崩溃)。"""
+    if logger is None:
+        return None
+    try:
+        return logger.record(type_, **kwargs)
+    except Exception:
+        # Core 冻结期 EventType 无 org.runtime.* 成员 → pydantic 拒绝字符串
+        # 类型; 审计失败安全 (不因审计事件拖垮实例生命周期 API)
+        return None
+
+
+def record_runtime_created(
+    logger: EventLogger,
+    *,
+    instance: Any,
+    source: str = SOURCE,
+) -> Event | None:
+    """org.runtime.created — Runtime 实例创建 (payload 含 instance/type/
+    status/artifact_id/project_id, 匹配 SSE runtime.created 映射)。"""
+    return _record_runtime_event(
+        logger,
+        "org.runtime.created",
+        source=source,
+        project_id=instance.project_id,
+        stage=instance.status,
+        action="runtime instance created",
+        result="OK",
+        payload={
+            "instance_id": instance.id,
+            "type": instance.type,
+            "status": instance.status,
+            "artifact_id": instance.artifact_id,
+            "project_id": instance.project_id,
+        },
+    )
+
+
+def record_runtime_status_changed(
+    logger: EventLogger,
+    *,
+    instance: Any,
+    previous_status: str,
+    source: str = SOURCE,
+) -> Event | None:
+    """org.runtime.status_changed — 实例状态流转 (payload 含 instance_id/
+    status/previous_status, 匹配 SSE runtime.status.changed 映射)。"""
+    return _record_runtime_event(
+        logger,
+        "org.runtime.status_changed",
+        source=source,
+        project_id=instance.project_id,
+        stage=instance.status,
+        action="runtime status changed",
+        result="OK",
+        payload={
+            "instance_id": instance.id,
+            "status": instance.status,
+            "previous_status": previous_status,
+        },
+    )
+
+
 __all__ = [
     "SOURCE",
     "record_console_approval_opened",
     "record_console_dashboard_viewed",
     "record_console_viewed",
+    "record_runtime_created",
+    "record_runtime_status_changed",
 ]

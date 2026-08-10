@@ -460,6 +460,28 @@ class RuntimeInstance(BaseModel):
         return self.model_dump(mode="json")
 
 
+class RuntimeScreenshot(BaseModel):
+    """S10-004 Runtime 截图记录 (截图反馈预留 — 只落记录, 不实现完整 Loop)。
+
+    POST /runtimes/{id}/screenshot 的落库结果: 截图动作 → 生成一条截图
+    记录 + artifact_id (预留产物引用)。完整 Feedback Loop (截图 → 意见 →
+    Agent 修改) 由后续 Sprint 实现; 本模型只保证截图动作可审计/可追溯。
+
+    id: shot-<hex>; instance_id: 所属 Runtime 实例; project_id: 项目;
+    artifact_id: 截图产物引用 (预留, 后续渲染/反馈环节使用); created_at:
+    UTC 时间戳。
+    """
+
+    id: str
+    instance_id: str = ""
+    project_id: str = ""
+    artifact_id: str | None = None
+    created_at: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump(mode="json")
+
+
 class DecisionSummary(BaseModel):
     """GET /decisions/{id} — 智能决策只读投影 (AI 推荐产物, ≠ Approval)。
 
@@ -792,6 +814,7 @@ __all__ = [
     "ProviderSummary",
     "RecommendationSummary",
     "RuntimeInstance",
+    "RuntimeScreenshot",
     "StageRunSummary",
     "StageSummary",
     "TimelineEventSummary",

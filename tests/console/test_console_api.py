@@ -117,14 +117,17 @@ service_template = ("Idea", "PM", "Product", "UX/UI", "Architecture", "Developme
 
 class TestRouteExports:
     def test_route_modules_exported(self):
-        """api/ 暴露全部路由函数 (S10-002: 18 个 — 新增 runtime 4 个)。"""
+        """api/ 暴露全部路由函数 (S10-004: 24 个 — 新增 runtime 6 个)。"""
         expected = {
             "approve_approval",
+            "capture_runtime_screenshot",
+            "create_runtime",
             "get_artifact",
             "get_decision",
             "get_project_lifecycle",
             "get_project_timeline",
             "get_project_workflow",
+            "get_runtime",
             "get_workflow",
             "get_workflow_stages",
             "iter_sse_events",
@@ -135,8 +138,11 @@ class TestRouteExports:
             "list_projects",
             "list_providers",
             "list_recommendations",
+            "list_runtimes",
             "list_workflows",
             "reject_approval",
+            "start_runtime",
+            "stop_runtime",
         }
         assert set(_api.__all__) == expected
         for name in expected:

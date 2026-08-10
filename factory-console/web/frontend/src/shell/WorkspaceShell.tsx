@@ -30,11 +30,19 @@ export function WorkspaceShell({
   const [view, setView] = useState<ExplorerViewId>('home');
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(initialProjectId);
   const [panelTab, setPanelTab] = useState<PanelTabId>('browser');
+  // S10-004 Timeline 联动: artifact 查看请求 (artifactId + 递增序号触发)
+  const [runtimeFocus, setRuntimeFocus] = useState<{ artifactId: string; nonce: number } | null>(null);
 
   const selectedProject = useMemo(
     () => MOCK_PROJECTS.find((project) => project.id === selectedProjectId) ?? null,
     [selectedProjectId],
   );
+
+  /** S10-004: Timeline artifact 查看 → 选中 Runtime Tab + 定位/提示创建。 */
+  const handleViewArtifact = (artifactId: string): void => {
+    setRuntimeFocus((prev) => ({ artifactId, nonce: (prev?.nonce ?? 0) + 1 }));
+    setPanelTab('browser');
+  };
 
   return (
     <div className="ws-shell" data-testid="ws-shell">
@@ -53,8 +61,24 @@ export function WorkspaceShell({
               ) : null}
             </>
           }
-          workspace={<WorkspaceView view={view} project={selectedProject} onOpenProjects={() => setView('projects')} />}
-          panel={<FactoryPanel activeTab={panelTab} onSelectTab={setPanelTab} />}
+          workspace={
+            <WorkspaceView
+              view={view}
+              project={selectedProject}
+              onOpenProjects={() => setView('projects')}
+              onViewArtifact={handleViewArtifact}
+            />
+          }
+          panel={
+            <FactoryPanel
+              activeTab={panelTab}
+              onSelectTab={setPanelTab}
+              projectId={selectedProjectId}
+              focusArtifactId={runtimeFocus?.artifactId ?? null}
+              focusNonce={runtimeFocus?.nonce ?? null}
+              onFocusConsumed={() => setRuntimeFocus(null)}
+            />
+          }
         />
       </div>
     </div>

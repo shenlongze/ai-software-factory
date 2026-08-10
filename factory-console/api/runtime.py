@@ -39,8 +39,19 @@ from __future__ import annotations
 import time
 from typing import Any, Iterator
 
-from ..events import record_console_viewed
-from ..models import StageRunSummary, TimelineEventSummary, WorkflowDetail
+from ..events import (
+    record_console_viewed,
+    record_runtime_created,
+    record_runtime_status_changed,
+)
+from ..models import (
+    RuntimeInstance,
+    RuntimeScreenshot,
+    StageRunSummary,
+    TimelineEventSummary,
+    WorkflowDetail,
+)
+from ..service import RuntimeStateError
 
 #: SSE 事件映射 (org 事件类型 → SSE 事件名; 只推送七类)。
 SSE_EVENT_MAP: dict[str, str] = {
@@ -282,3 +293,139 @@ def _stage_duration_s(store: Any, completed_event: Any, stage_id: Any) -> float 
                 (completed_event.timestamp - event.timestamp).total_seconds(), 3
             )
     return None
+
+
+# ------------------------------------------------ S10-004: Runtime Workspace API
+# Instance 模式 (workspace-architecture.md §4 调整版): "+" 创建 browser|terminal
+# 实例 + start/stop 生命周期 + screenshot 预留。路由函数无 Web 依赖 (FastAPI
+# 薄层做 HTTP 绑定); 事件发射: 创建 → org.runtime.created, 状态流转 →
+# org.runtime.status_changed (字符串事件类型落库, SSE_EVENT_MAP 同映射 —
+# S10-002 契约先行已锁定, 前端 SSE 零改动); 审计: console.viewed
+# (view=runtime_create|runtimes|runtime_detail|runtime_start|runtime_stop|
+# runtime_screenshot)。
+#
+# None 语义 (HTTP 层映射): 项目不存在 / 实例不存在 / store 缺失 → 404;
+# RuntimeStateError (状态机非法流转) → 409; ValueError (非法 type) → 400。
+
+
+def create_runtime(
+    service: Any,
+    project_id: str,
+    runtime_type: str,
+    artifact_id: str | None = None,
+    *,
+    logger: Any = None,
+) -> RuntimeInstance | None:
+    """POST /projects/{id}/runtimes — 创建 Runtime Instance (starting)。
+
+    项目不存在 → None (404); 非法 type (非 browser|terminal) → ValueError
+    (HTTP 层 400); 成功 → 落库 + org.runtime.created 事件 + 审计。
+    """
+    instance = service.create_runtime(project_id, runtime_type, artifact_id=artifact_id)
+    if instance is None:
+        return None
+    record_runtime_created(logger, instance=instance)
+    record_console_viewed(logger, view="runtime_create", count=1, project_id=project_id)
+    return instance
+
+
+def list_runtimes(
+    service: Any,
+    project_id: str,
+    *,
+    logger: Any = None,
+) -> list[RuntimeInstance] | None:
+    """GET /projects/{id}/runtimes — 项目实例列表 (id 排序; 无 → [])。
+
+    项目不存在 → None (404); store 缺失 → [] (失败安全); 审计: console.viewed
+    (view=runtimes)。
+    """
+    instances = service.list_runtimes(project_id)
+    if instances is None:
+        return None
+    record_console_viewed(logger, view="runtimes", count=len(instances), project_id=project_id)
+    return instances
+
+
+def get_runtime(
+    service: Any,
+    runtime_id: str,
+    *,
+    logger: Any = None,
+) -> RuntimeInstance | None:
+    """GET /runtimes/{id} — 实例详情; 不存在 → None (404)。审计: console.viewed
+    (view=runtime_detail)。"""
+    instance = service.get_runtime(runtime_id)
+    if instance is None:
+        return None
+    record_console_viewed(
+        logger, view="runtime_detail", count=1, project_id=instance.project_id
+    )
+    return instance
+
+
+def start_runtime(
+    service: Any,
+    runtime_id: str,
+    *,
+    logger: Any = None,
+) -> RuntimeInstance | None:
+    """POST /runtimes/{id}/start — starting|stopped → running (重启允许)。
+
+    不存在 → None (404); 状态机非法流转 → RuntimeStateError (HTTP 层 409);
+    成功 → org.runtime.status_changed 事件 (previous_status) + 审计。
+    """
+    previous = service.get_runtime(runtime_id)
+    instance = service.start_runtime(runtime_id)
+    if instance is None:
+        return None
+    if previous is not None:
+        record_runtime_status_changed(logger, instance=instance, previous_status=previous.status)
+    record_console_viewed(
+        logger, view="runtime_start", count=1, project_id=instance.project_id
+    )
+    return instance
+
+
+def stop_runtime(
+    service: Any,
+    runtime_id: str,
+    *,
+    logger: Any = None,
+) -> RuntimeInstance | None:
+    """POST /runtimes/{id}/stop — starting|running → stopped。
+
+    不存在 → None (404); 已 stopped/error → RuntimeStateError (409);
+    成功 → org.runtime.status_changed 事件 + 审计。
+    """
+    previous = service.get_runtime(runtime_id)
+    instance = service.stop_runtime(runtime_id)
+    if instance is None:
+        return None
+    if previous is not None:
+        record_runtime_status_changed(logger, instance=instance, previous_status=previous.status)
+    record_console_viewed(
+        logger, view="runtime_stop", count=1, project_id=instance.project_id
+    )
+    return instance
+
+
+def capture_runtime_screenshot(
+    service: Any,
+    runtime_id: str,
+    *,
+    logger: Any = None,
+) -> RuntimeScreenshot | None:
+    """POST /runtimes/{id}/screenshot — 截图预留 (只落记录 + artifact 引用)。
+
+    不存在 → None (404); 非 running → RuntimeStateError (409 — 截图只在
+    运行态有意义); 成功 → 截图记录落库 + 审计。完整 Feedback Loop (截图 →
+    意见 → Agent 修改) 由后续 Sprint 实现 (S10-004 只预留动作 + artifact)。
+    """
+    screenshot = service.capture_runtime_screenshot(runtime_id)
+    if screenshot is None:
+        return None
+    record_console_viewed(
+        logger, view="runtime_screenshot", count=1, project_id=screenshot.project_id
+    )
+    return screenshot

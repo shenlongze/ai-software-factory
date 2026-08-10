@@ -9,15 +9,23 @@
  * - subscribeEvents(projectId, onEvent): SSE 事件流 (EventSource 封装)
  *   — 断线重连 (固定延迟, 指数退避留作后续) + isMock 检测: 收到后端
  *   mock error 事件 (mock: true) → 停止重连, 诚实进入演示模式
+ * - S10-004 Runtime Panel 数据源:
+ *   - listRuntimes(projectId): 项目实例列表 (REST 轮询 2s; 无后端 → mock
+ *     fallback is_mock=true) — 不依赖 SSE runtime.* (Core 事件枚举冻结无
+ *     org.runtime.* 成员 → 事件不落库, 诚实走 REST 轮询)
+ *   - createRuntime / screenshotRuntime: 写面 (直接 API, 无 mock fallback —
+ *     失败诚实报错, 不掩盖)
  *
- * 只读契约 (与 api/client.ts 同: 全部 GET / 只读 SSE; 无写路径)。
+ * 只读契约 (与 api/client.ts 同: 查询全 GET; 写面仅 Runtime 生命周期)。
  */
 
 import { api, ApiError } from './client';
-import { mockTimeline, mockWorkflowDetail } from '../mock/runtime';
+import { mockRuntimes, mockTimeline, mockWorkflowDetail } from '../mock/runtime';
 import {
   RUNTIME_EVENT_NAMES,
   type RuntimeEventName,
+  type RuntimeInstance,
+  type RuntimeScreenshot,
   type TimelineEventSummary,
   type WorkflowDetail,
 } from '../models/types';
@@ -28,6 +36,10 @@ export interface RuntimeQueryResult<T> {
   /** true = 后端不可达/数据缺失 → mock 演示数据 (前端据此显示演示标识)。 */
   is_mock: boolean;
 }
+
+/** Runtime Panel 实例状态 REST 轮询间隔 (2s; 不依赖 SSE runtime.* 事件 —
+ * Core 事件枚举冻结无 org.runtime.* 成员, 诚实走轮询)。 */
+export const RUNTIME_POLL_MS = 2000;
 
 /** SSE 事件 handler (event: 名 → data 回调; onError 连接错误 — 不含 mock 关闭)。 */
 export interface RuntimeEventHandlers {
@@ -92,6 +104,26 @@ export const runtimeClient = {
     projectId: string,
     handlers: RuntimeEventHandlers,
   ): RuntimeEventSubscription => subscribeEvents(projectId, handlers),
+
+  // ------------------------------------------------ S10-004 Runtime Panel
+
+  /** 项目 Runtime 实例列表 (REST 轮询数据源; 无后端 → mock fallback)。 */
+  listRuntimes: (projectId: string): Promise<RuntimeQueryResult<RuntimeInstance[]>> =>
+    fetchWithMockFallback(
+      () => api.projectRuntimes(projectId),
+      () => mockRuntimes(projectId),
+    ),
+
+  /** 创建 Runtime Instance (POST; 直接 API, 失败诚实报错不 fallback)。 */
+  createRuntime: (
+    projectId: string,
+    type: 'browser' | 'terminal',
+    artifactId: string | null = null,
+  ): Promise<RuntimeInstance> => api.createRuntime(projectId, type, artifactId),
+
+  /** 截图 (POST; 预留 — 只落截图记录, 完整 Feedback Loop 后续实现)。 */
+  screenshotRuntime: (runtimeId: string): Promise<RuntimeScreenshot> =>
+    api.screenshotRuntime(runtimeId),
 };
 
 /** SSE 事件流订阅 (见 runtimeClient.subscribeEvents 说明)。 */

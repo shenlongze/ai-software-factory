@@ -212,11 +212,13 @@ class TestReadOnlyEndpoints:
 @requires_fastapi
 class TestPermissionBoundary:
     def test_write_routes_limited_to_approval_decisions(self, client):
-        """Permission Boundary (S9-002): 写路由仅审批决定两 POST。
+        """Permission Boundary (S9-002 + S10-004): 写路由仅审批决定 + Runtime 生命周期。
 
         用户解除 Console 冻结后, 唯一写路径 = POST /api/approvals/{id}/
         approve|reject (走 org Approval 状态机, source=console 审计);
-        其余一切路由只读 (GET/HEAD), 无 PUT/PATCH/DELETE。
+        S10-004 扩展: POST /api/projects/{id}/runtimes (创建) +
+        /api/runtimes/{id}/start|stop|screenshot (实例生命周期, 不触碰
+        Core 引擎); 其余一切路由只读 (GET/HEAD), 无 PUT/PATCH/DELETE。
         """
         app = _adapter.build_app(_StubService())
         for route in app.routes:
@@ -229,8 +231,11 @@ class TestPermissionBoundary:
                     f"非 POST 写路由泄漏: {route_method} {getattr(route, 'path', '?')}"
                 )
                 path = getattr(route, "path", "")
-                assert path.endswith("/approve") or path.endswith("/reject"), (
-                    f"POST 路由超出审批决定范围: {path}"
+                is_approval = path.endswith("/approve") or path.endswith("/reject")
+                # S10-004 Runtime 写路径 (创建/启动/停止/截图 — 全部含 /runtimes)
+                is_runtime_lifecycle = "/runtimes" in path
+                assert is_approval or is_runtime_lifecycle, (
+                    f"POST 路由超出审批决定 + Runtime 生命周期范围: {path}"
                 )
 
     def test_client_write_surface_limited_to_approval_decisions(self):

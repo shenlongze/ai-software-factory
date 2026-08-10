@@ -17,7 +17,9 @@
  * - 实时: SSE 事件 → 追加节点 + 滚动到底
  *
  * 底部: 持续开发输入 (仅占位 UI — S10-006 Review Workflow 接入, 本期无写路径)。
- * 不实现 Browser/Terminal Runtime (S10-004); 不修改 S10-004 设计。
+ * S10-004 联动: artifact 节点 "查看" → onViewArtifact(artifactId) 回调
+ * (WorkspaceShell 选中 Runtime Tab 定位/提示创建; 未提供回调时维持展开详情)。
+ * 不实现 Browser/Terminal Runtime (S10-004 RuntimePanel); 不修改 S10-004 设计。
  */
 
 import { useEffect, useRef, useState } from 'react';
@@ -202,10 +204,13 @@ function TimelineEventNode({
   event,
   expanded,
   onToggleDetail,
+  onViewArtifact,
 }: {
   event: TimelineEventSummary;
   expanded: boolean;
   onToggleDetail: (eventId: string) => void;
+  /** S10-004 联动: artifact 节点查看 → 打开 Runtime (可选)。 */
+  onViewArtifact?: (artifactId: string) => void;
 }): JSX.Element {
   const meta = TIMELINE_TYPE_META[event.type] ?? { label: event.type, icon: '📌' };
   const status = timelineNodeStatus(event);
@@ -245,7 +250,23 @@ function TimelineEventNode({
             <span className="ws-tl-artifact-name" data-testid="agent-timeline-artifact">
               {event.message}
             </span>
-            <Button variant="secondary" size="sm" onClick={() => onToggleDetail(event.id)}>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                // S10-004 联动: artifact_id 存在且提供回调 → 打开 Runtime Tab
+                // (WorkspaceShell 定位绑定实例/提示创建); 否则维持展开详情
+                if (
+                  onViewArtifact != null &&
+                  event.artifact_id != null &&
+                  event.artifact_id.length > 0
+                ) {
+                  onViewArtifact(event.artifact_id);
+                } else {
+                  onToggleDetail(event.id);
+                }
+              }}
+            >
               查看
             </Button>
           </div>
@@ -312,7 +333,14 @@ function TimelineEventNode({
 
 // ------------------------------------------------------------------ 主组件
 
-export function AgentTimeline({ projectId }: { projectId: string }): JSX.Element {
+export function AgentTimeline({
+  projectId,
+  onViewArtifact,
+}: {
+  projectId: string;
+  /** S10-004 联动: artifact "查看" → 打开对应 Runtime (WorkspaceShell 提供)。 */
+  onViewArtifact?: (artifactId: string) => void;
+}): JSX.Element {
   const [events, setEvents] = useState<TimelineEventSummary[]>([]);
   const [isMock, setIsMock] = useState(false);
   const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>('loading');
@@ -423,6 +451,7 @@ export function AgentTimeline({ projectId }: { projectId: string }): JSX.Element
                 event={event}
                 expanded={expandedId === event.id}
                 onToggleDetail={toggleDetail}
+                onViewArtifact={onViewArtifact}
               />
             ))}
           </Timeline>

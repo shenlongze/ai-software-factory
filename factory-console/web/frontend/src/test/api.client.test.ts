@@ -25,8 +25,8 @@ import {
   stubFetch,
 } from './fixtures';
 
-describe('api client — 只读契约 + S9-002 审批写面', () => {
-  it('暴露接口清单 (查询 + 审批决定; 无 post/put/patch/delete 方法)', () => {
+describe('api client — 只读契约 + S9-002 审批写面 + S10-004 Runtime 写面', () => {
+  it('暴露接口清单 (查询 + 审批决定 + Runtime 生命周期; 无 post/put/patch/delete 方法)', () => {
     const keys = Object.keys(api).sort();
     expect(keys).toEqual([
       'approvalGates',
@@ -34,28 +34,43 @@ describe('api client — 只读契约 + S9-002 审批写面', () => {
       'approveApproval',
       'artifact',
       'artifacts',
+      'createRuntime',
       'dashboard',
       'decision',
       'experience',
       'lifecycle',
       // S10-002: Runtime 查询 (只读 GET; SSE 在 runtimeClient)
+      'projectRuntimes',
       'projectTimeline',
       'projectWorkflow',
       'projects',
       'providers',
       'recommendations',
       'rejectApproval',
+      'runtimeDetail',
+      'screenshotRuntime',
+      'startRuntime',
+      'stopRuntime',
       'workflow',
       'workflowStages',
       'workflows',
     ]);
-    // Permission Boundary: 写方法仅 approve/reject 两 POST (无 put/patch/delete)
-    for (const verb of ['post', 'put', 'patch', 'delete']) {
+    // Permission Boundary: 写面仅 审批决定 + Runtime 生命周期 两类 POST
+    // (无 put/patch/delete 方法)
+    for (const verb of ['put', 'patch', 'delete']) {
       expect(keys.some((k) => k.toLowerCase().startsWith(verb))).toBe(false);
     }
-    expect(keys.filter((k) => k === 'approveApproval' || k === 'rejectApproval')).toEqual([
+    expect(
+      keys.filter((k) =>
+        ['approveApproval', 'rejectApproval', 'createRuntime', 'startRuntime', 'stopRuntime', 'screenshotRuntime'].includes(k),
+      ),
+    ).toEqual([
       'approveApproval',
+      'createRuntime',
       'rejectApproval',
+      'screenshotRuntime',
+      'startRuntime',
+      'stopRuntime',
     ]);
   });
 

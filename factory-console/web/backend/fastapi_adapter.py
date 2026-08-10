@@ -70,6 +70,18 @@ class _ApprovalDecisionBody(BaseModel):
     comment: str = ""
 
 
+class _CreateRuntimeBody(BaseModel):
+    """POST /projects/{id}/runtimes body (S10-004: 创建 Runtime Instance)。
+
+    type: browser|terminal (沙箱实例类型); artifact_id: 绑定产物 (browser
+    预览 ux_ui/code/release 对应产物, 无 → None — 创建后可从 Timeline 联动
+    绑定)。type 合法性在 handler 显式校验 → 400 (语义清晰, 不依赖 pydantic 422)。
+    """
+
+    type: str
+    artifact_id: str | None = None
+
+
 # ------------------------------------------------------------------ 装配
 
 
@@ -126,6 +138,18 @@ def build_console_service(factory_root: str | Path, *, event_logger: Any = None)
         project_store = None
         workflow_lifecycle = None
 
+    # S10-004: Runtime 数据空间 (root/runtimes — 独立于 org, 原子写 JSON;
+    # 失败安全: 装配失败 → None, runtime 操作按空/不存在处理)
+    runtime_store = None
+    runtime_screenshot_store = None
+    try:
+        _runtime_stores = importlib.import_module("factory-console.runtime_store")
+        runtime_store = _runtime_stores.RuntimeInstanceStore(root / "runtimes")
+        runtime_screenshot_store = _runtime_stores.RuntimeScreenshotStore(root / "runtimes")
+    except Exception:
+        runtime_store = None
+        runtime_screenshot_store = None
+
     return module.ConsoleService(
         workspace_manager=WorkspaceManager(root),
         task_store=TaskStore(root / "tasks"),
@@ -138,6 +162,9 @@ def build_console_service(factory_root: str | Path, *, event_logger: Any = None)
         provider_registry=ProviderRegistry(ProviderStore(root / "providers")),
         project_store=project_store,
         workflow_lifecycle=workflow_lifecycle,
+        # S10-004: Runtime 实例/截图持久化 (root/runtimes; 失败安全)
+        runtime_store=runtime_store,
+        runtime_screenshot_store=runtime_screenshot_store,
     )
 
 
@@ -170,6 +197,10 @@ def build_app(
     # 延迟 import 11A 路由函数 + 事件辅助 (仅依赖 factory-console.api, 无 Web 依赖)
     _api = importlib.import_module("factory-console.api")
     _events = importlib.import_module("factory-console.events")
+    # S10-004: Runtime 状态机异常 (service 定义; api/__init__ 不导出 —
+    # Adapter 层直接取 service 符号, 避免给 api 包加非路由导出)
+    _service = importlib.import_module("factory-console.service")
+    RuntimeStateError = _service.RuntimeStateError
 
     app = FastAPI(title="AI Software Factory — Human Console Web", version="0.1.0")
 
@@ -380,6 +411,83 @@ def build_app(
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
+
+    # ------------------------------------------- S10-004: Runtime Workspace API
+    # Instance 模式 (workspace-architecture.md §4 调整版): "+" 创建 browser|
+    # terminal 实例 + start/stop 生命周期 + screenshot 预留。写路径新增
+    # (Permission Boundary S10-004 扩展: 与审批决定并列的 Console 写路径 —
+    # 仅 Runtime 实例生命周期, 不触碰 Core 引擎)。
+    # 错误映射: 项目/实例不存在 → 404; 非法 type → 400; 状态机非法流转
+    # (RuntimeStateError) → 409; 事件 (org.runtime.*) 由路由函数落库。
+
+    @app.post("/api/projects/{project_id}/runtimes")
+    def api_create_runtime(project_id: str, body: _CreateRuntimeBody) -> dict[str, Any]:
+        """创建 Runtime Instance (starting; browser|terminal + artifact 绑定)。"""
+        if body.type not in ("browser", "terminal"):
+            raise HTTPException(
+                status_code=400, detail="runtime type must be browser|terminal"
+            )
+        instance = _api.create_runtime(
+            service,
+            project_id,
+            body.type,
+            artifact_id=body.artifact_id,
+            logger=event_logger,
+        )
+        if instance is None:
+            raise HTTPException(status_code=404, detail="project not found")
+        return instance.to_dict()
+
+    @app.get("/api/projects/{project_id}/runtimes")
+    def api_project_runtimes(project_id: str) -> list[dict[str, Any]]:
+        """项目 Runtime 实例列表 (无 → []; 项目不存在 → 404)。"""
+        instances = _api.list_runtimes(service, project_id, logger=event_logger)
+        if instances is None:
+            raise HTTPException(status_code=404, detail="project not found")
+        return [r.to_dict() for r in instances]
+
+    @app.get("/api/runtimes/{runtime_id}")
+    def api_runtime_detail(runtime_id: str) -> dict[str, Any]:
+        """单实例详情 (url/session/status; 不存在 → 404)。"""
+        instance = _api.get_runtime(service, runtime_id, logger=event_logger)
+        if instance is None:
+            raise HTTPException(status_code=404, detail="runtime not found")
+        return instance.to_dict()
+
+    @app.post("/api/runtimes/{runtime_id}/start")
+    def api_runtime_start(runtime_id: str) -> dict[str, Any]:
+        """启动实例 (starting|stopped → running; 重启允许)。"""
+        try:
+            instance = _api.start_runtime(service, runtime_id, logger=event_logger)
+        except RuntimeStateError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        if instance is None:
+            raise HTTPException(status_code=404, detail="runtime not found")
+        return instance.to_dict()
+
+    @app.post("/api/runtimes/{runtime_id}/stop")
+    def api_runtime_stop(runtime_id: str) -> dict[str, Any]:
+        """停止实例 (starting|running → stopped)。"""
+        try:
+            instance = _api.stop_runtime(service, runtime_id, logger=event_logger)
+        except RuntimeStateError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        if instance is None:
+            raise HTTPException(status_code=404, detail="runtime not found")
+        return instance.to_dict()
+
+    @app.post("/api/runtimes/{runtime_id}/screenshot")
+    def api_runtime_screenshot(runtime_id: str) -> dict[str, Any]:
+        """截图预留: 保存截图记录 + artifact 引用 (完整 Feedback Loop 后续实现)。"""
+        try:
+            screenshot = _api.capture_runtime_screenshot(
+                service, runtime_id, logger=event_logger
+            )
+        except RuntimeStateError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        if screenshot is None:
+            raise HTTPException(status_code=404, detail="runtime not found")
+        return screenshot.to_dict()
 
     @app.post("/api/approvals/{approval_id}/approve")
     def api_approve_approval(

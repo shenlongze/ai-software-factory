@@ -105,13 +105,33 @@ class TestProjectCrud:
 
 class TestProjectStateMachine:
     def test_transition_table_single_way_acyclic(self):
-        """流转表单向无环 (sprint7-architecture: idea→active→maintained→archived)。"""
-        assert PROJECT_TRANSITIONS == {
-            "idea": ("active", "archived"),
-            "active": ("maintained", "archived"),
-            "maintained": ("archived",),
-            "archived": (),
-        }
+        """流转表单向无环 (S10-009 扩展: 新生命周期链 + 旧值兼容保留)。"""
+        # 新状态全链 (S10-009): draft→discovery→...→maintain→archived
+        assert PROJECT_TRANSITIONS["draft"] == ("discovery", "archived")
+        assert PROJECT_TRANSITIONS["discovery"] == ("product_defined", "archived")
+        assert PROJECT_TRANSITIONS["product_defined"] == ("design", "archived")
+        assert PROJECT_TRANSITIONS["design"] == ("architecture", "archived")
+        assert PROJECT_TRANSITIONS["architecture"] == ("confirmed", "archived")
+        assert PROJECT_TRANSITIONS["confirmed"] == ("development", "archived")
+        assert PROJECT_TRANSITIONS["development"] == ("release", "archived")
+        assert PROJECT_TRANSITIONS["release"] == ("maintain", "archived")
+        assert PROJECT_TRANSITIONS["maintain"] == ("archived",)
+        # 旧值兼容保留 (S7): idea→active→maintained→archived
+        assert PROJECT_TRANSITIONS["idea"] == ("active", "archived")
+        assert PROJECT_TRANSITIONS["active"] == ("maintained", "archived")
+        assert PROJECT_TRANSITIONS["maintained"] == ("archived",)
+        assert PROJECT_TRANSITIONS["archived"] == ()
+        # 无环校验: 任一状态经任意步不回到自身
+        for start in PROJECT_TRANSITIONS:
+            seen: set[str] = set()
+            current = start
+            while current in PROJECT_TRANSITIONS and PROJECT_TRANSITIONS[current]:
+                next_states = PROJECT_TRANSITIONS[current]
+                assert next_states, f"{current} 应可继续或终态"
+                # 单向: 后继不能再回到前驱链
+                current = next_states[0]
+                assert current not in seen, f"环检测: {start} → ... → {current}"
+                seen.add(current)
 
     def test_idea_to_active(self, lifecycle):
         p = lifecycle.create_project("A", project_id="P-1")

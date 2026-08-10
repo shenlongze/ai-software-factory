@@ -298,10 +298,10 @@ describe('Factory Panel 4 Tab', () => {
 
 // ------------------------------------------------------------------ Workspace 空态 / 视图
 describe('Workspace 视图', () => {
-  it('空态页 "AI Workspace" + Timeline 预留容器 (S10-003)', () => {
+  it('Welcome 首屏 (S10-007): 你想创建什么软件? + 示例 chips + Timeline 预留容器', () => {
     renderShell();
-    expect(screen.getByTestId('ws-workspace-home')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'AI Workspace' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '你想创建什么软件?' })).toBeInTheDocument();
+    expect(screen.getByText('一个记账 App')).toBeInTheDocument(); // 示例 chip
     expect(screen.getByTestId('timeline-placeholder')).toBeInTheDocument();
   });
 

@@ -1117,3 +1117,114 @@
   margin: 0; padding: 8px 12px; border-radius: var(--ds-radius-sm);
   background: rgba(215, 0, 21, 0.08); color: #d70015; font-size: 13px;
 }
+
+/* ------------------------------ S10-007 阶段三: Welcome 示例 chips ------------------------------ */
+.ws-example-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--ds-space-sm);
+  max-width: 520px;
+}
+.ws-example-chip {
+  font: inherit;
+  font-size: var(--ds-font-sm);
+  color: var(--ds-text);
+  background: var(--ds-surface);
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-full);
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+.ws-example-chip:hover {
+  border-color: var(--ds-primary);
+  color: var(--ds-primary);
+  background: var(--ds-surface-2);
+}
+
+/* ------------------------------ S10-007 阶段三: run 状态条 / 开始开发 ------------------------------ */
+.ws-run-none {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--ds-space-sm);
+  flex: none;
+  padding: var(--ds-space-md);
+  border: 1px dashed var(--ds-border);
+  border-radius: var(--ds-radius-lg);
+  background: var(--ds-surface);
+  text-align: center;
+}
+.ws-run-none-hint {
+  margin: 0;
+  font-size: var(--ds-font-sm);
+  color: var(--ds-text-secondary);
+}
+.ws-run {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-sm);
+  padding: var(--ds-space-sm) var(--ds-space-md);
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-lg);
+  background: var(--ds-surface);
+}
+.ws-run-icon {
+  flex: none;
+  font-size: 18px;
+  line-height: 1;
+}
+.ws-run-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ws-run-title {
+  margin: 0;
+  font-size: var(--ds-font-body);
+  font-weight: var(--ds-weight-medium);
+  color: var(--ds-text);
+}
+.ws-run-desc {
+  margin: 0;
+  font-size: var(--ds-font-sm);
+  color: var(--ds-text-secondary);
+  word-break: break-word;
+}
+.ws-run-track {
+  height: 6px;
+  border-radius: var(--ds-radius-full);
+  background: var(--ds-surface-3);
+  overflow: hidden;
+  margin-top: var(--ds-space-xs);
+}
+.ws-run-fill {
+  height: 100%;
+  border-radius: var(--ds-radius-full);
+  background: var(--ds-primary);
+  transition: width 0.4s ease;
+}
+.ws-run-stages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: var(--ds-space-xs);
+}
+.ws-run-stage {
+  font-size: var(--ds-font-xs);
+  font-family: var(--ds-mono);
+  color: var(--ds-text-secondary);
+  background: var(--ds-surface-2);
+  border: 1px solid var(--ds-border);
+  border-radius: var(--ds-radius-sm);
+  padding: 1px 6px;
+}
+.ws-run-pending { border-color: var(--ds-status-warning); }
+.ws-run-running { border-color: var(--ds-status-running, var(--ds-primary)); }
+.ws-run-success { border-color: var(--ds-status-success); }
+.ws-run-failed { border-color: var(--ds-status-failed); }
+.ws-run-warn { border-color: var(--ds-status-warning); }

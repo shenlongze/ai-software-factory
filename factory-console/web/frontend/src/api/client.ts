@@ -38,6 +38,7 @@ import {
   type ProjectCreatedSummary,
   type RuntimeInstance,
   type RuntimeScreenshot,
+  type RunStatusResponse,
   type StageRunSummary,
   type TimelineEventSummary,
   type WorkflowDetail,
@@ -148,7 +149,7 @@ export const api = {
       { message },
     ),
   runStatus: (projectId: string) =>
-    getJson<{ status: string; stages?: unknown[] }>(
+    getJson<RunStatusResponse>(
       `/api/projects/${encodeURIComponent(projectId)}/run-status`,
     ),
   approvals: (pendingOnly = false) =>

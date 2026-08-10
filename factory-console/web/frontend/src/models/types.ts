@@ -540,3 +540,37 @@ export function artifactStatusLabel(status: string): string {
       return status;
   }
 }
+
+// ------------------------------------------------------------------ S10-007 阶段三: Run 状态 (POST /start + GET /run-status)
+
+/** 单阶段进度投影 (workflow_runner Recorder.stages 条目; 宽松读取, 缺 → null)。 */
+export interface RunStageInfo {
+  workflow?: string;
+  stage?: string;
+  role?: string;
+  /** RUNNING / COMPLETED / FAILED (进度文件里均为终态; 运行中阶段在内存, 未落盘)。 */
+  status?: string;
+  note?: string;
+  cost_usd_est?: number;
+  latency_s?: number;
+}
+
+/** 单 run 摘要 (report.json 优先; 无 report → progress.json; 都无 → pending)。 */
+export interface RunInfo {
+  run_id: string;
+  status: string;
+  stages: RunStageInfo[];
+  totals: Record<string, unknown>;
+  errors: Array<{ where?: string; message?: string }>;
+  updated_at: string | null;
+}
+
+/** GET /api/projects/{id}/run-status 响应 (status: none|running|completed|failed)。 */
+export interface RunStatusResponse {
+  project_id: string;
+  status: string;
+  current_run_id: string | null;
+  runs: RunInfo[];
+  updated_at: string | null;
+}
+

@@ -13,6 +13,10 @@ import { ApiError } from '../api/client';
 import { NAV_ITEMS } from '../mock/workspace';
 import type { ExplorerViewId } from '../mock/workspace';
 import { AgentTimeline } from './AgentTimeline';
+import { RunStatusBar } from './RunStatusBar';
+
+/** S10-007 阶段三: Welcome 示例 chips (点击填入输入框; 有项目时不挡已有列表)。 */
+export const EXAMPLE_IDEAS = ['一个记账 App', '一个待办清单 App', '一个博客网站'] as const;
 
 /** Timeline 空态提示 (无选中项目时 — 选择项目后渲染 AgentTimeline)。 */
 export function TimelinePlaceholder({ projectName }: { projectName?: string }): JSX.Element {
@@ -149,10 +153,26 @@ function WorkspaceHome({
       <div className="ws-empty-icon" aria-hidden="true">
         ✨
       </div>
-      <h1 className="ws-empty-title">AI Workspace</h1>
-      <p className="ws-empty-desc">
-        输入一句话, 看到 AI 软件生产全过程 — 从需求分析、设计、编码到测试发布。
+      {/* S10-007 阶段三: Welcome 首屏 (首次进入引导, 不把 Workspace 做成管理台) */}
+      <h1 className="ws-empty-title" data-testid="ws-welcome-title">
+        你想创建什么软件?
+      </h1>
+      <p className="ws-empty-desc" data-testid="ws-welcome-subtitle">
+        输入一句话, AI 团队为你开发 — 从需求分析、设计、编码到测试发布全程自动。
       </p>
+      <div className="ws-example-chips" data-testid="ws-example-chips">
+        {EXAMPLE_IDEAS.map((example, index) => (
+          <button
+            key={example}
+            type="button"
+            className="ws-example-chip"
+            data-testid={`ws-example-chip-${index}`}
+            onClick={() => setIdea(example)}
+          >
+            {example}
+          </button>
+        ))}
+      </div>
       <div className="ws-create" data-testid="ws-create-form">
         <textarea
           className="ws-create-input"
@@ -330,7 +350,7 @@ function WorkspaceHome({
   );
 }
 
-/** 选中项目后的工作台视图 (Header + Agent Timeline 实时事件流)。 */
+/** 选中项目后的工作台视图 (Run 状态条 + Header + Agent Timeline 实时事件流)。 */
 function ProjectWorkspace({
   project,
   onViewArtifact,
@@ -346,6 +366,8 @@ function ProjectWorkspace({
         </h1>
         {project.status != null ? <StatusBadge status={project.status} label={project.status} /> : null}
       </header>
+      {/* S10-007 阶段三: 开始开发入口 + run 状态条 (Timeline 顶部) */}
+      <RunStatusBar projectId={project.id} />
       <AgentTimeline projectId={project.id} onViewArtifact={onViewArtifact} />
     </div>
   );

@@ -58,12 +58,36 @@ def _record_fail_safe(logger: Any, type_: str, **kwargs: Any) -> None:
 
 
 class ProjectState(str, Enum):
-    """项目生命周期状态 (sprint7-architecture: idea→active→maintained→archived)。"""
+    """项目生命周期状态 (sprint7-architecture: idea→active→maintained→archived;
+    S10-009 扩展: draft→discovery→product_defined→design→architecture→confirmed→
+    development→release→maintain; 旧值 idea/active/maintained 兼容保留)。
 
-    IDEA = "idea"
-    ACTIVE = "active"
-    MAINTAINED = "maintained"
-    ARCHIVED = "archived"
+    S10-009 (project-lifecycle.md §2) 状态机:
+    - DRAFT: 草稿 (unnamed-project-XXX, 无正式名)
+    - DISCOVERY: Product Discovery Session (AI 产品经理沟通)
+    - PRODUCT_DEFINED: 产品定义完成 (product-definition.md 落库)
+    - DESIGN: UI/UX 设计
+    - ARCHITECTURE: 技术方案
+    - CONFIRMED: 项目定名 (用户确认 rename), 待开发
+    - DEVELOPMENT: Software Development Workflow 执行
+    - RELEASE: 发布产物
+    - MAINTAIN: 维护期
+    - 旧值兼容 (零破坏): IDEA/ACTIVE/MAINTAINED/ARCHIVED
+    """
+
+    DRAFT = "draft"
+    DISCOVERY = "discovery"
+    PRODUCT_DEFINED = "product_defined"
+    DESIGN = "design"
+    ARCHITECTURE = "architecture"
+    CONFIRMED = "confirmed"
+    DEVELOPMENT = "development"
+    RELEASE = "release"
+    MAINTAIN = "maintain"
+    IDEA = "idea"               # 旧值兼容 (S10-009 前)
+    ACTIVE = "active"           # 旧值兼容
+    MAINTAINED = "maintained"   # 旧值兼容
+    ARCHIVED = "archived"       # 终态 (新旧共用)
 
     @classmethod
     def parse(cls, value: Any) -> "ProjectState":
@@ -177,11 +201,23 @@ class StageStatus(str, Enum):
             ) from None
 
 
-#: 项目生命周期合法流转 (单向无环; archived 为终态)
+#: 项目生命周期合法流转 (单向无环; archived 为终态)。
+#: S10-009 主链 (project-lifecycle.md §2): draft→discovery→product_defined→
+#: design→architecture→confirmed→development→release→maintain→archived;
+#: 各态可 →archived (弃用); 旧值兼容保留 (idea→active→maintained→archived)。
 PROJECT_TRANSITIONS: dict[str, tuple[str, ...]] = {
-    "idea": ("active", "archived"),
-    "active": ("maintained", "archived"),
-    "maintained": ("archived",),
+    "draft": ("discovery", "archived"),
+    "discovery": ("product_defined", "archived"),
+    "product_defined": ("design", "archived"),
+    "design": ("architecture", "archived"),
+    "architecture": ("confirmed", "archived"),
+    "confirmed": ("development", "archived"),
+    "development": ("release", "archived"),
+    "release": ("maintain", "archived"),
+    "maintain": ("archived",),
+    "idea": ("active", "archived"),        # 旧值兼容
+    "active": ("maintained", "archived"),  # 旧值兼容
+    "maintained": ("archived",),           # 旧值兼容
     "archived": (),
 }
 
@@ -232,6 +268,14 @@ class Project(_OrgModel):
     - analysis_ref/baseline_ref/snapshot_ref: S9-004 记录引用
       (project_analyses/project_baselines/context_snapshots 数据空间记录 id,
       供后续 Agent 读取上下文输入)
+    S10-009 扩展 (project-lifecycle.md §3, 全部带默认值 — 既有 projects.json
+    数据加载零破坏, 向后兼容; 本 Task 仅字段存在, 不实现逻辑):
+    - slug: 目录名 (rename 时更新; draft 期为空)
+    - draft: 草稿标记 (unnamed-project; confirm/rename 后 False)
+    - discovery: Product Discovery Session 数据 (预留 dict 结构, 默认 None)
+    - bindings: Project ↔ 公共资源 binding (workflow/agents/skills/mcps;
+      预留 dict 结构, 默认 None)
+    - metadata: 扩展元数据 (JSON 友好 dict, 默认 {})
     """
 
     id: str
@@ -248,6 +292,11 @@ class Project(_OrgModel):
     analysis_ref: str = ""               # S9-004: 分析记录引用
     baseline_ref: str = ""               # S9-004: 基线记录引用
     snapshot_ref: str = ""               # S9-004: 上下文快照引用
+    slug: str = ""                       # S10-009: 目录名
+    draft: bool = False                  # S10-009: 草稿标记
+    discovery: dict[str, Any] | None = None  # S10-009: Discovery Session (预留)
+    bindings: dict[str, Any] | None = None   # S10-009: 资源 binding (预留)
+    metadata: dict[str, Any] = Field(default_factory=dict)  # S10-009: 扩展元数据
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
 
@@ -255,6 +304,11 @@ class Project(_OrgModel):
     @classmethod
     def _coerce_lifecycle(cls, v: Any) -> ProjectState:
         return ProjectState.parse(v)
+
+    @field_validator("metadata", mode="before")
+    @classmethod
+    def _metadata_none(cls, v: Any) -> Any:
+        return v if v is not None else {}
 
     @property
     def is_archived(self) -> bool:

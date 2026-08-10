@@ -64,6 +64,8 @@ export const RUNTIME_POLL_MS = 2000;
 export interface RuntimeEventHandlers {
   onEvent: (name: RuntimeEventName, data: Record<string, unknown>) => void;
   onError?: (event: Event | null) => void;
+  /** S10-006.5: 收到 mock 哨兵 (后端不可达) → 演示模式徽章 (非业务事件)。 */
+  onMock?: () => void;
 }
 
 /** SSE 订阅控制器 (close 停止; isMock 查询当前演示模式)。 */
@@ -251,8 +253,11 @@ export function subscribeEvents(
           data = { raw: message.data };
         }
         if (data.mock === true) {
-          // 后端不可达 → 诚实演示模式: 停止重连, 流保持关闭
+          // 后端不可达 → 诚实演示模式: 停止重连, 流保持关闭。
+          // 哨兵事件不是业务事件 — 走 onMock (徽章), 不调 onEvent (避免误渲染"失败"节点)。
           mockMode = true;
+          handlers.onMock?.();
+          return;
         }
         handlers.onEvent(name, data);
       });

@@ -171,6 +171,8 @@ export function sseEventToTimelineNode(
         status: 'approval_required',
       });
     case 'error':
+      // mock 哨兵 (data.mock=true) 是连接降级信号, 不是业务失败 — 不渲染
+      if (data.mock === true) return null;
       return build('error', 'org.workflow.failed', {
         message: str(data.reason) ?? '任务失败',
         status: 'failed',
@@ -399,16 +401,16 @@ export function AgentTimeline({
     };
   }, [projectId, retryToken]);
 
-  // SSE 实时追加 (S10-002 subscribeEvents; 收到 mock error 事件 → 演示模式徽章)
+  // SSE 实时追加 (S10-002 subscribeEvents; mock 哨兵 → onMock 演示模式徽章, 不渲染节点)
   useEffect(() => {
     const subscription = runtimeClient.subscribeEvents(projectId, {
       onEvent: (name, data) => {
-        if (data.mock === true) setIsMock(true);
         seqRef.current += 1;
         const node = sseEventToTimelineNode(projectId, name, data, seqRef.current);
         if (node == null) return;
         setEvents((prev) => [...prev, node]);
       },
+      onMock: () => setIsMock(true),
     });
     return () => subscription.close();
   }, [projectId]);

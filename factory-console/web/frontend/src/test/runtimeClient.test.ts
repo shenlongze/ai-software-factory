@@ -166,15 +166,17 @@ describe('runtimeClient — subscribeEvents (SSE 断线重连 + isMock)', () => 
     ]);
   });
 
-  it('收到后端 mock error 事件 (mock:true) → isMock()=true 且停止重连', () => {
+  it('收到后端 mock error 事件 (mock:true) → onMock 回调 + isMock()=true + 不渲染节点', () => {
     vi.useFakeTimers();
     const onError = vi.fn();
+    const onMock = vi.fn();
     const seen: Array<[string, Record<string, unknown>]> = [];
-    const sub = runtimeClient.subscribeEvents('demo', { onEvent: (n, d) => seen.push([n, d]), onError });
+    const sub = runtimeClient.subscribeEvents('demo', { onEvent: (n, d) => seen.push([n, d]), onError, onMock });
     const source = lastSource();
     source.dispatch('error', JSON.stringify({ stage_id: null, reason: 'event store unavailable', mock: true }));
-    expect(seen[0][0]).toBe('error');
-    expect((seen[0][1] as { mock?: boolean }).mock).toBe(true);
+    // 哨兵不是业务事件: 不进 onEvent (避免误渲染"失败"节点), 走 onMock 置演示模式
+    expect(seen).toEqual([]);
+    expect(onMock).toHaveBeenCalled();
     expect(sub.isMock()).toBe(true);
     // 连接关闭后不应重连 (mock 模式诚实停止)
     source.fail();

@@ -163,6 +163,8 @@ def start_project_workflow(
             "factory-console/.env.example: LLM_PROVIDER/LLM_API_KEY) "
             "— 无法启动真实 Agent 执行"
         )
+    # 解析配置 key 并注入 provider 专属环境变量 (仅检查不注入 → 干净环境 provider 读不到)
+    load_llm_key()
     run_id = f"R{int(time.time() * 1000)}"
     with _RUNNING_LOCK:
         if project_id in _RUNNING:
@@ -893,11 +895,14 @@ def _init_project_dir(project_dir: Path) -> None:
         ["git", "commit", "-q", "-m", "baseline (greenfield)"],
         cwd=project_dir, capture_output=True, text=True,
     )
-    if proc.returncode != 0 and "nothing to commit" not in proc.stderr and "无文件要提交" not in proc.stdout:
-        raise RuntimeError(
-            f"baseline commit failed: rc={proc.returncode} "
-            f"stderr={proc.stderr.strip()[:300]!r} stdout={proc.stdout.strip()[:200]!r}"
-        )
+    if proc.returncode != 0:
+        # 空仓库 commit 是正常信号 (英文/中文环境输出位置不同: stdout/stderr 都可能)
+        combined = proc.stderr + proc.stdout
+        if "nothing to commit" not in combined and "无文件要提交" not in combined:
+            raise RuntimeError(
+                f"baseline commit failed: rc={proc.returncode} "
+                f"stderr={proc.stderr.strip()[:300]!r} stdout={proc.stdout.strip()[:200]!r}"
+            )
 
 
 def _list_project_files(project_dir: Path) -> list[str]:

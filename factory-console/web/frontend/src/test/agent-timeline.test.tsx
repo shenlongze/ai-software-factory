@@ -78,8 +78,8 @@ const PROJECT = 'ledger-app';
 const TIMELINE_URL = `/api/projects/${PROJECT}/timeline?limit=200`;
 
 /** 渲染 AgentTimeline (fetch 桩 + EventSource 桩)。 */
-function renderTimeline(events: unknown[]) {
-  stubFetch({ [TIMELINE_URL]: events });
+function renderTimeline(events: unknown[], overrides?: Record<string, unknown>) {
+  stubFetch({ [TIMELINE_URL]: events, ...overrides });
   return render(<AgentTimeline projectId={PROJECT} />);
 }
 
@@ -433,16 +433,20 @@ describe('AgentTimeline — 查看详情 / 底部持续开发输入', () => {
     expect(screen.getByTestId('agent-timeline-detail')).toHaveTextContent('"artifact_id"');
   });
 
-  it('底部输入: placeholder + 发送 → 提示 S10-006 接入 (仅占位)', async () => {
+  it('底部输入: 发送 → 真实 POST /chat + 反馈 (S10-006.5 P1-A)', async () => {
     const user = userEvent.setup();
-    renderTimeline([tlEvent({ id: 'e0', type: 'user', message: '初始事件' })]);
+    // stub /chat 返回 started (未启动 → 触发开发)
+    renderTimeline([tlEvent({ id: 'e0', type: 'user', message: '初始事件' })], {
+      '/api/projects/ledger-app/chat': { status: 'started', message: 'ok', started: true },
+    });
     await screen.findByTestId('agent-timeline-user');
     const input = screen.getByTestId('agent-timeline-input-box');
-    expect(input).toHaveAttribute('placeholder', expect.stringContaining('S10-006'));
+    expect(input).toHaveAttribute('placeholder', '继续提出需求或修改意见…');
     expect(screen.queryByTestId('agent-timeline-input-hint')).toBeNull();
     await user.type(input, '修改首页颜色');
     await user.click(screen.getByRole('button', { name: '发送' }));
-    expect(screen.getByTestId('agent-timeline-input-hint')).toHaveTextContent('S10-006');
+    expect(await screen.findByTestId('agent-timeline-input-hint')).toHaveTextContent('AI 开发已启动');
+    expect(input).toHaveValue('');
   });
 });
 

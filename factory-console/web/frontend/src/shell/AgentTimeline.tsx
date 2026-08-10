@@ -24,6 +24,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { runtimeClient } from '../api/runtimeClient';
+import { api } from '../api/client';
 import { Button, StageCard, Timeline, TimelineNode } from '../components/ds';
 import { artifactTypeLabel } from '../models/types';
 import type { RuntimeEventName, TimelineEventSummary } from '../models/types';
@@ -346,8 +347,32 @@ export function AgentTimeline({
   const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [loadError, setLoadError] = useState<string>('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [inputHint, setInputHint] = useState(false);
   const [retryToken, setRetryToken] = useState(0);
+  // S10-006.5 P1-A: 持续开发 chat (真实 POST /api/projects/{id}/chat)
+  const [chatText, setChatText] = useState('');
+  const [chatSending, setChatSending] = useState(false);
+  const [chatHint, setChatHint] = useState<string | null>(null);
+
+  /** 发送持续开发消息: POST /chat → 后端 (未启动 → 触发真实 Agent 链)。 */
+  const handleChatSubmit = async (): Promise<void> => {
+    const message = chatText.trim();
+    if (message.length === 0) return;
+    setChatSending(true);
+    setChatHint(null);
+    try {
+      const result = await api.sendChat(projectId, message);
+      setChatText('');
+      setChatHint(
+        result.started === true
+          ? '已发送 — AI 开发已启动 (Timeline 将显示真实工作)'
+          : '已发送给 AI 团队',
+      );
+    } catch (err) {
+      setChatHint(err instanceof Error ? `发送失败: ${err.message}` : '发送失败, 请稍后重试');
+    } finally {
+      setChatSending(false);
+    }
+  };
   const scrollRef = useRef<HTMLDivElement>(null);
   const seqRef = useRef(0);
 
@@ -458,29 +483,31 @@ export function AgentTimeline({
         ) : null}
       </div>
 
-      {/* 底部持续开发输入 (仅占位 — S10-006 Review Workflow 接入后接真实写路径) */}
+      {/* 底部持续开发输入 (S10-006.5 P1-A: 真实 POST /chat — 已发送/触发开发) */}
       <form
         className="ws-tl-input"
         data-testid="agent-timeline-input"
         onSubmit={(e) => {
           e.preventDefault();
-          setInputHint(true);
+          void handleChatSubmit();
         }}
       >
         <input
           className="ws-tl-input-box"
           data-testid="agent-timeline-input-box"
           type="text"
-          placeholder="继续提出需求或修改意见… (S10-006 接入)"
+          placeholder="继续提出需求或修改意见…"
           aria-label="持续开发输入"
+          value={chatText}
+          onChange={(e) => setChatText(e.target.value)}
         />
-        <Button type="submit" variant="primary" size="sm">
-          发送
+        <Button type="submit" variant="primary" size="sm" disabled={chatSending}>
+          {chatSending ? '发送中…' : '发送'}
         </Button>
       </form>
-      {inputHint ? (
+      {chatHint != null ? (
         <p className="ws-tl-input-hint" data-testid="agent-timeline-input-hint">
-          持续开发输入将在 S10-006 Review Workflow 接入 (本期仅占位)
+          {chatHint}
         </p>
       ) : null}
     </section>

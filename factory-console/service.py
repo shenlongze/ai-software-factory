@@ -272,6 +272,23 @@ class ConsoleService:
 
     # ------------------------------------------------------------------ GET /projects
 
+    def _migrate_legacy_spaces(self) -> None:
+        """旧项目懒迁移 (S10-009 Task 6 场景 3: list/get 首次访问回填目录镜像)。
+
+        project-lifecycle.md §八 方案 A: 旧项目 (仅 org/projects.json, 无
+        workspace 目录) 在读取路径首次访问时经 ProjectSpaceStore.migrate_legacy
+        回填目录镜像 (幂等 — 已存在目录跳过, 重复读取零额外写)。失败安全:
+        org/space store 任一缺失 → 静默 (读取不因回填失败崩溃)。
+        """
+        store = self._project_store
+        space = self._project_space
+        if store is None or space is None:
+            return
+        try:
+            space.migrate_legacy(store)
+        except Exception:
+            return  # 回填失败 → 静默 (读取路径永不因迁移失败 5xx)
+
     def list_projects(self) -> list[ProjectSummary]:
         """全部项目只读投影 (workspace 项目定义 + org 项目并集, 含 S9-002
         workflow/stage/progress 聚合)。
@@ -281,6 +298,7 @@ class ConsoleService:
         org 聚合: 当前 (最近创建) Workflow 运行 → workflow_id/status +
         当前阶段 + progress (completed stages / total stages) + stage_counts。
         """
+        self._migrate_legacy_spaces()  # S10-009 Task 6: 旧项目懒迁移 (list 首次访问回填)
         definitions = self._project_definitions()
         tasks = self._tasks_by_project()
         org_by_id = {p.id: p for p in self._org_projects()}
@@ -1149,6 +1167,7 @@ class ConsoleService:
         Runtime 端点的 404 语义依据: 项目不存在 → 404; 项目存在但无运行
         数据 → mock fallback (is_mock=True, 前端可展示不崩溃)。
         """
+        self._migrate_legacy_spaces()  # S10-009 Task 6: 旧项目懒迁移 (get 首次访问回填)
         for project in self._org_projects():
             if project.id == project_id:
                 return True

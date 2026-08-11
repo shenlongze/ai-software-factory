@@ -169,6 +169,18 @@
   border-left: 1px solid var(--af-border, #2a3140);
 }
 
+/* Todo Tree 页: 树 + 右侧 Task Detail 面板 (S10-015 Task 005 闭环) */
+.af-todo-tree-layout {
+  display: flex;
+  gap: 0;
+  align-items: flex-start;
+}
+
+.af-todo-tree-main {
+  flex: 1;
+  min-width: 0;
+}
+
 .af-context-hint {
   font-size: 12px;
   color: var(--af-neutral, #9ca3af);

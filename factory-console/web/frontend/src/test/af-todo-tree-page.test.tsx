@@ -8,7 +8,7 @@
  * - 优先级标签来自真实 backlog.tasks 字段 (页面级 taskMeta 投影)
  */
 
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 import { AfTodoTreePage } from '../pages/project/AfTodoTreePage';
@@ -98,5 +98,19 @@ describe('AfTodoTreePage (Todo Tree 页面 — 真实 backlog 驱动)', () => {
     render(<AfTodoTreePage projectId="ghost" projectName="幽灵项目" />);
     const errorState = await screen.findByTestId('af-error-state');
     expect(errorState).toHaveTextContent(/404/);
+  });
+
+  it('闭环: 点击任务节点 → 右侧 Task Detail 面板出现 (Task→Workflow→Runtime 链路入口)', async () => {
+    stubFetch({ [BACKLOG_PATH]: sampleTodoBacklog() });
+    render(<AfTodoTreePage projectId="demo" projectName="演示项目" />);
+    // 点击任务 "实现注册 API" → 详情面板
+    const taskNode = await screen.findByRole('button', { name: /实现注册 API/ });
+    await userEvent.click(taskNode);
+    const panel = await screen.findByTestId('af-todo-tree-detail');
+    expect(panel).toBeInTheDocument();
+    expect(within(panel).getByText('实现注册 API')).toBeInTheDocument();
+    // 关闭 → 面板消失
+    await userEvent.click(within(panel).getByRole('button', { name: /关闭/ }));
+    expect(screen.queryByTestId('af-todo-tree-detail')).toBeNull();
   });
 });

@@ -20,9 +20,10 @@
  */
 
 import { useState } from 'react';
-import { toTodoTree } from '../../api/domain';
 import { ApiError } from '../../api/client';
 import { AfTodoTree, type TaskMeta } from '../../components/af/AfTodoTree';
+import { AfTaskDetailPanel } from '../../components/af/AfTaskDetailPanel';
+import { toTaskDetail, toTodoTree } from '../../api/domain';
 import { AfEmptyState, AfErrorState, AfLoadingState } from '../../components/af/AfState';
 import { useAsync } from '../../hooks/useAsync';
 import type { BacklogResponse, BacklogTask } from '../../models/domain';
@@ -59,11 +60,16 @@ export interface AfTodoTreePageProps {
 
 export function AfTodoTreePage({ projectId, projectName }: AfTodoTreePageProps): JSX.Element {
   const [retryTick, setRetryTick] = useState(0);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
 
   const { data, error, loading } = useAsync(
     async () => {
       const backlog = await fetchProjectBacklog(projectId);
-      return { tree: toTodoTree(backlog, projectName), meta: buildTaskMeta(backlog.tasks) };
+      return {
+        backlog,
+        tree: toTodoTree(backlog, projectName),
+        meta: buildTaskMeta(backlog.tasks),
+      };
     },
     [projectId, projectName, retryTick],
   );
@@ -74,10 +80,34 @@ export function AfTodoTreePage({ projectId, projectName }: AfTodoTreePageProps):
   if (error != null) {
     return <AfErrorState message={`任务树加载失败: ${error}`} onRetry={() => setRetryTick((t) => t + 1)} />;
   }
-  // Success: 树交给 AfTodoTree (空树由组件内 AfEmptyState 兜底, 禁空白)
+  // Success: 树交给 AfTodoTree (空树由组件内 AfEmptyState 兜底, 禁空白);
+  // 点击任务 → toTaskDetail (真实 backlog 定位 + Epic/Feature/Story 关联) → AfTaskDetailPanel (闭环)
+  const backlog = data?.backlog ?? null;
+  const selectedDetail =
+    backlog != null && selectedTaskId != null ? toTaskDetail(backlog, selectedTaskId) : null;
   return (
     <div className="af-todo-tree-page" data-testid="af-todo-tree-page">
-      {data != null ? <AfTodoTree tree={data.tree} taskMeta={data.meta} /> : <AfEmptyState message="暂无任务 — AI 正在规划" />}
+      {data != null ? (
+        <div className="af-todo-tree-layout">
+          <div className="af-todo-tree-main">
+            <AfTodoTree
+              tree={data.tree}
+              taskMeta={data.meta}
+              onSelectTask={setSelectedTaskId}
+            />
+          </div>
+          {selectedDetail != null ? (
+            <aside className="af-context-panel" data-testid="af-todo-tree-detail">
+              <AfTaskDetailPanel
+                task={selectedDetail}
+                onClose={() => setSelectedTaskId(null)}
+              />
+            </aside>
+          ) : null}
+        </div>
+      ) : (
+        <AfEmptyState message="暂无任务 — AI 正在规划" />
+      )}
     </div>
   );
 }

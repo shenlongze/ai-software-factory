@@ -29,8 +29,10 @@
 约束: 本模块零 Core 依赖 (stdlib + pydantic + org.models, Removal Isolation);
 Task 002 已实现 skills/ 目录信源 Registry CRUD + 默认种子; Task 003 已实现
 agents/ 目录信源 Registry CRUD (register/get/list/update/delete + 生命周期 +
-binding 校验 + 默认种子 5 角色); Task 004-006 才实现 mcps/workflows/
-industries/llm-configs 注册。
+binding 校验 + 默认种子 5 角色); Task 004 已实现 mcps/ 目录信源 Registry
+CRUD (register/get/list/update/delete + 生命周期 — MCP 不预置种子,
+外部工具由用户注册); Task 005-006 才实现 workflows/industries/llm-configs
+注册。
 """
 
 from __future__ import annotations
@@ -490,6 +492,7 @@ class CapabilityRegistry:
         self._capabilities_dir = self._root / "workspace" / "capabilities"
         self._skills_dir = self._capabilities_dir / "skills"
         self._agents_dir = self._capabilities_dir / "agents"
+        self._mcps_dir = self._capabilities_dir / "mcps"
 
     # ------------------------------------------------------------------ 布局
     @property
@@ -511,11 +514,19 @@ class CapabilityRegistry:
         """agents 目录信源 (<root>/workspace/capabilities/agents)。"""
         return self._agents_dir
 
+    @property
+    def mcps_dir(self) -> Path:
+        """mcps 目录信源 (<root>/workspace/capabilities/mcps)。"""
+        return self._mcps_dir
+
     def _skill_path(self, skill_id: str) -> Path:
         return self._skills_dir / f"{skill_id}.json"
 
     def _agent_path(self, agent_id: str) -> Path:
         return self._agents_dir / f"{agent_id}.json"
+
+    def _mcp_path(self, mcp_id: str) -> Path:
+        return self._mcps_dir / f"{mcp_id}.json"
 
     @staticmethod
     def _validate_skill_id(skill_id: str) -> None:
@@ -532,6 +543,14 @@ class CapabilityRegistry:
             raise ValueError("agent id must be a non-empty string")
         if any(ch in agent_id for ch in _SKILL_ID_BANNED):
             raise ValueError(f"agent id must not contain path separators: {agent_id!r}")
+
+    @staticmethod
+    def _validate_mcp_id(mcp_id: str) -> None:
+        """id 防御: 非空 + 无路径分隔符 (防目录信源路径穿越)。"""
+        if not isinstance(mcp_id, str) or not mcp_id.strip():
+            raise ValueError("mcp id must be a non-empty string")
+        if any(ch in mcp_id for ch in _SKILL_ID_BANNED):
+            raise ValueError(f"mcp id must not contain path separators: {mcp_id!r}")
 
     # ------------------------------------------------------------------ 原子写
     @staticmethod
@@ -765,3 +784,98 @@ class CapabilityRegistry:
                     f"agent {agent_id}: skill binding missing: {binding.id}"
                 )
         return warnings
+
+    # ------------------------------------------------------------------ MCP Registry (Task 004)
+
+    # 读 (失败安全)
+    @staticmethod
+    def _parse_mcp(data: Any) -> MCP | None:
+        """dict → MCP; JSON 结构非法 (缺字段/extra/state 非法) → None。"""
+        if not isinstance(data, dict):
+            return None
+        try:
+            return MCP.model_validate(data)
+        except ValueError:
+            return None
+
+    def _read_mcp_file(self, path: Path) -> MCP | None:
+        """读单文件; 损坏 JSON / 非法 schema → None (失败安全, 不崩溃)。"""
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return None
+        return self._parse_mcp(data)
+
+    def get_mcp(self, mcp_id: str) -> MCP | None:
+        """按 id 取 MCP; 缺失 / 损坏 → None。
+
+        auth_config 为占位 dict (不实现认证逻辑 — S10-012 禁止范围)。
+        """
+        path = self._mcp_path(mcp_id)
+        if not path.is_file():
+            return None
+        return self._read_mcp_file(path)
+
+    def list_mcps(self, *, enabled_only: bool = False) -> list[MCP]:
+        """全部 MCP (按 id 排序, 确定性); 损坏文件静默跳过。
+
+        enabled_only=True → 只返回 ACTIVE+enabled (capability_selectable,
+        S10-012 §四b 可选能力过滤)。
+        """
+        result: list[MCP] = []
+        if self._mcps_dir.is_dir():
+            for path in sorted(self._mcps_dir.glob("*.json")):
+                mcp = self._read_mcp_file(path)
+                if mcp is None:
+                    continue  # 失败安全: 损坏/非法文件跳过
+                if enabled_only and not capability_selectable(mcp):
+                    continue
+                result.append(mcp)
+        return result
+
+    # 写
+    def register_mcp(self, mcp: MCP) -> MCP:
+        """注册/覆盖 MCP (upsert — 重复 id 覆盖; 原子写; 懒迁移建目录)。"""
+        self._validate_mcp_id(mcp.id)
+        self._atomic_write(self._mcp_path(mcp.id), mcp.to_dict())
+        return mcp
+
+    def update_mcp(self, mcp_id: str, updates: dict[str, Any]) -> MCP | None:
+        """部分字段更新 (含 type/endpoint/auth_config/capabilities); 缺失 → None。
+
+        全量重校验 (model_validate): 未知字段 (extra=forbid) / 非法 state
+        → ValueError, 不落盘 (原文件保持)。
+        """
+        current = self.get_mcp(mcp_id)
+        if current is None:
+            return None
+        merged = MCP.model_validate({**current.to_dict(), **(updates or {})})
+        self.register_mcp(merged)
+        return merged
+
+    def delete_mcp(self, mcp_id: str) -> bool:
+        """删除 MCP 文件; 缺失 → False (幂等); 删除失败 → False (失败安全)。"""
+        path = self._mcp_path(mcp_id)
+        if not path.is_file():
+            return False
+        try:
+            path.unlink()
+            return True
+        except OSError:
+            return False
+
+    # 生命周期
+    def transition_mcp(self, mcp_id: str, target: CapabilityState | str) -> MCP | None:
+        """受控生命周期转换并落盘 (DRAFT→ACTIVE→DEPRECATED→ARCHIVED)。
+
+        非法转换 (跳级/回退/终态后) → ValueError, 不落盘 (原文件保持);
+        缺失 id → None。
+        """
+        current = self.get_mcp(mcp_id)
+        if current is None:
+            return None
+        updated = transition_capability(current, target)
+        if not isinstance(updated, MCP):
+            raise TypeError("transition_capability must return an MCP instance")
+        self.register_mcp(updated)
+        return updated

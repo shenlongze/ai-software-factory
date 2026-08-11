@@ -95,6 +95,24 @@ class ConfirmTransactionError(Exception):
     """
 
 
+class BacklogNotFoundError(Exception):
+    """S10-010 Task 3: Backlog 资源不存在 (HTTP 404)。
+
+    两类: ① Task 不存在 (GET/PATCH/DELETE /backlog/task/{id}) ② 子级
+    绑定目标不存在 (Feature→Epic / Story→Feature / Task→Story 引用缺失)。
+    与项目不存在 (路由函数返回 None → 404) 区分 — 语义均为 404, 详情不同。
+    """
+
+
+class BacklogStateError(Exception):
+    """S10-010 Task 3: Task 状态机非法转换 (HTTP 409)。
+
+    目标态不在 TASK_TRANSITIONS[当前态] (跳级/回退/终态后) → 诚实冲突,
+    与 RuntimeStateError/ProjectConflictError 同语义 (409, 非输入错误)。
+    依赖未满足 (依赖 gate) 属输入校验 → ValueError → 400, 不在此类。
+    """
+
+
 def _utc_now_str() -> str:
     """当前 UTC 时间 ISO 字符串 (Runtime 实例/截图 created_at)。"""
     return datetime.now(timezone.utc).isoformat()
@@ -2570,6 +2588,324 @@ class ConsoleService:
             return round(aggregate_experience_factor(records), 4)
         except Exception:
             return None
+
+    # ------------------------------------------------- S10-010 Task 3: Backlog API
+    # Requirement Management (AF-PRD-v1.md 4.3): Epic→Feature→Story→Task 层级
+    # CRUD。数据信源 = workspace/projects/{slug}/management/backlog/*.json
+    # (org ManagementStore 目录信源 — project-management-system.md §十);
+    # Task 状态机/priority/dependency 校验复用 org.management (Task 002)。
+    # 错误语义: 项目不存在/缺 store → None (HTTP 404); 任务/绑定不存在 →
+    # BacklogNotFoundError (404); 参数/依赖/priority 非法 → ValueError (400);
+    # 状态机非法转换 → BacklogStateError (409)。
+
+    def _management_store(self, project_id: str) -> Any | None:
+        """定位项目 management 目录并构造 ManagementStore。
+
+        项目不存在 / org ProjectStore 或 ProjectSpaceStore 缺失 → None
+        (调用方 → HTTP 404, 与既有项目不存在语义同口径)。目录名经
+        space.ensure_space 决定 (project.slug → name slugify → id, 与
+        migrate_legacy 同口径) 并幂等建骨架 (含 management/ 子目录);
+        ManagementStore 首次 save 才写 backlog/*.json (旧项目零破坏)。
+        """
+        store = self._project_store
+        space = self._project_space
+        if store is None or space is None:
+            return None
+        project = store.get_project(project_id)
+        if project is None:
+            return None
+        space_dir = space.ensure_space(project)
+        self._mount_org()  # factory-org 挂载 (幂等; Removal Isolation)
+        from org.management import ManagementStore
+
+        return ManagementStore(space_dir / "management")
+
+    @staticmethod
+    def _task_dependency_map(mgmt: Any) -> dict[str, list[str]]:
+        """全量任务依赖声明图 {task_id: [dependency ids]} (环检测构图用)。"""
+        return {t.id: list(t.dependency) for t in mgmt.list_tasks()}
+
+    @staticmethod
+    def _task_status_map(mgmt: Any) -> dict[str, Any]:
+        """全量任务当前状态 {task_id: status} (依赖 gate 校验用)。"""
+        return {t.id: t.status for t in mgmt.list_tasks()}
+
+    def create_epic(
+        self, project_id: str, *, name: str, description: str = ""
+    ) -> dict[str, Any] | None:
+        """POST /backlog/epic — 创建 Epic (children 引用 Feature, 非包含)。"""
+        mgmt = self._management_store(project_id)
+        if mgmt is None:
+            return None
+        cleaned = str(name or "").strip()
+        if not cleaned:
+            raise ValueError("name is required (空名字不创建)")
+        self._mount_org()
+        from org.management import Epic
+        from org.models import new_id
+
+        epic = Epic(
+            id=new_id("EPIC"),
+            name=cleaned,
+            description=str(description or "").strip(),
+        )
+        mgmt.save_epic(epic)
+        return epic.to_dict()
+
+    def create_feature(
+        self,
+        project_id: str,
+        *,
+        name: str,
+        description: str = "",
+        epic_id: str = "",
+    ) -> dict[str, Any] | None:
+        """POST /backlog/feature — 创建 Feature (可选绑定 Epic)。"""
+        mgmt = self._management_store(project_id)
+        if mgmt is None:
+            return None
+        cleaned = str(name or "").strip()
+        if not cleaned:
+            raise ValueError("name is required (空名字不创建)")
+        self._mount_org()
+        from org.management import Feature
+        from org.models import new_id, utcnow
+
+        feature = Feature(
+            id=new_id("FEAT"),
+            name=cleaned,
+            description=str(description or "").strip(),
+        )
+        bound_epic = str(epic_id or "").strip()
+        if bound_epic:
+            epic = mgmt.get_epic(bound_epic)
+            if epic is None:
+                raise BacklogNotFoundError(f"epic not found: {bound_epic}")
+            mgmt.save_epic(
+                epic.model_copy(
+                    update={
+                        "children": list(epic.children) + [feature.id],
+                        "updated_at": utcnow(),
+                    }
+                )
+            )
+        mgmt.save_feature(feature)
+        result = feature.to_dict()
+        result["epic_id"] = bound_epic
+        return result
+
+    def create_story(
+        self,
+        project_id: str,
+        *,
+        name: str,
+        description: str = "",
+        feature_id: str = "",
+    ) -> dict[str, Any] | None:
+        """POST /backlog/story — 创建 Story (可选绑定 Feature)。"""
+        mgmt = self._management_store(project_id)
+        if mgmt is None:
+            return None
+        cleaned = str(name or "").strip()
+        if not cleaned:
+            raise ValueError("name is required (空名字不创建)")
+        self._mount_org()
+        from org.management import Story
+        from org.models import new_id, utcnow
+
+        story = Story(
+            id=new_id("STORY"),
+            name=cleaned,
+            description=str(description or "").strip(),
+        )
+        bound_feature = str(feature_id or "").strip()
+        if bound_feature:
+            feature = mgmt.get_feature(bound_feature)
+            if feature is None:
+                raise BacklogNotFoundError(f"feature not found: {bound_feature}")
+            mgmt.save_feature(
+                feature.model_copy(
+                    update={
+                        "children": list(feature.children) + [story.id],
+                        "updated_at": utcnow(),
+                    }
+                )
+            )
+        mgmt.save_story(story)
+        result = story.to_dict()
+        result["feature_id"] = bound_feature
+        return result
+
+    def create_task(
+        self,
+        project_id: str,
+        *,
+        title: str,
+        description: str = "",
+        priority: Any = None,
+        dependency: Any = None,
+        story_id: str = "",
+    ) -> dict[str, Any] | None:
+        """POST /backlog/task — 创建 Task (可选绑定 Story; priority/dependency 校验)。
+
+        priority 非法 (非 P0-P3) → ValueError (HTTP 400); dependency 自引用/
+        环 → ValueError (HTTP 400); story_id 不存在 → BacklogNotFoundError (404)。
+        """
+        mgmt = self._management_store(project_id)
+        if mgmt is None:
+            return None
+        cleaned_title = str(title or "").strip()
+        if not cleaned_title:
+            raise ValueError("title is required (空标题不创建)")
+        self._mount_org()
+        from org.management import Task, TaskPriority, validate_dependency
+        from org.models import new_id, utcnow
+
+        task_id = new_id("TASK")
+        deps = validate_dependency(
+            dependency,
+            task_id,
+            known_dependencies=self._task_dependency_map(mgmt),
+        )
+        prio = (
+            TaskPriority.parse(priority)
+            if priority not in (None, "")
+            else TaskPriority.P2
+        )
+        task = Task(
+            id=task_id,
+            title=cleaned_title,
+            description=str(description or "").strip(),
+            priority=prio,
+            dependency=deps,
+        )
+        bound_story = str(story_id or "").strip()
+        if bound_story:
+            story = mgmt.get_story(bound_story)
+            if story is None:
+                raise BacklogNotFoundError(f"story not found: {bound_story}")
+            mgmt.save_story(
+                story.model_copy(
+                    update={
+                        "children": list(story.children) + [task_id],
+                        "updated_at": utcnow(),
+                    }
+                )
+            )
+        mgmt.save_task(task)
+        result = task.to_dict()
+        result["story_id"] = bound_story
+        return result
+
+    def list_backlog(self, project_id: str) -> dict[str, Any] | None:
+        """GET /backlog — 全量分组 (epics/features/stories/tasks; 失败安全空)。"""
+        mgmt = self._management_store(project_id)
+        if mgmt is None:
+            return None
+        return {
+            "project_id": project_id,
+            "epics": [e.to_dict() for e in mgmt.list_epics()],
+            "features": [f.to_dict() for f in mgmt.list_features()],
+            "stories": [s.to_dict() for s in mgmt.list_stories()],
+            "tasks": [t.to_dict() for t in mgmt.list_tasks()],
+        }
+
+    def get_task(self, project_id: str, task_id: str) -> dict[str, Any] | None:
+        """GET /backlog/task/{id} — Task 详情 (不存在 → BacklogNotFoundError)。"""
+        mgmt = self._management_store(project_id)
+        if mgmt is None:
+            return None
+        task = mgmt.get_task(task_id)
+        if task is None:
+            raise BacklogNotFoundError(f"task not found: {task_id}")
+        return task.to_dict()
+
+    def update_task(
+        self,
+        project_id: str,
+        task_id: str,
+        *,
+        title: Any = None,
+        description: Any = None,
+        priority: Any = None,
+        status: Any = None,
+        assignee: Any = None,
+        dependency: Any = None,
+    ) -> dict[str, Any] | None:
+        """PATCH /backlog/task/{id} — 字段更新 + 状态机转换 + 依赖校验。
+
+        错误语义: 空 title → ValueError (400); priority/status 非法值 →
+        ValueError (400); dependency 自引用/环 → ValueError (400); 依赖未
+        满足 (目标态 ∈ {READY, IN_PROGRESS} 且依赖非 DONE) → ValueError
+        (400); 状态机非法转换 → BacklogStateError (409); 任务不存在 →
+        BacklogNotFoundError (404)。
+        """
+        mgmt = self._management_store(project_id)
+        if mgmt is None:
+            return None
+        task = mgmt.get_task(task_id)
+        if task is None:
+            raise BacklogNotFoundError(f"task not found: {task_id}")
+        self._mount_org()
+        from org.management import (
+            TASK_TRANSITIONS,
+            TaskPriority,
+            TaskStatus,
+            transition_task,
+            validate_dependency,
+        )
+        from org.models import utcnow
+
+        updates: dict[str, Any] = {}
+        if title is not None:
+            cleaned = str(title).strip()
+            if not cleaned:
+                raise ValueError("title is required (空标题不落库)")
+            updates["title"] = cleaned
+        if description is not None:
+            updates["description"] = str(description)
+        if priority is not None:
+            updates["priority"] = TaskPriority.parse(priority)  # 非法 → 400
+        if assignee is not None:
+            updates["assignee"] = str(assignee)
+        if dependency is not None:
+            updates["dependency"] = validate_dependency(
+                dependency,
+                task_id,
+                known_dependencies=self._task_dependency_map(mgmt),
+            )
+        updated = task.model_copy(update=updates)
+        if status is not None:
+            target = TaskStatus.parse(status)  # 非法 status → ValueError → 400
+            if target not in TASK_TRANSITIONS[updated.status]:
+                raise BacklogStateError(
+                    f"illegal task transition: {updated.status.value} -> "
+                    f"{target.value} (allowed: "
+                    f"{[s.value for s in TASK_TRANSITIONS[updated.status]]})"
+                )
+            try:
+                updated = transition_task(
+                    updated,
+                    target,
+                    actor="console",
+                    dependency_status=self._task_status_map(mgmt),
+                )
+            except ValueError as exc:
+                raise ValueError(str(exc)) from exc  # 依赖未满足 → 400
+        else:
+            updated = updated.model_copy(update={"updated_at": utcnow()})
+        mgmt.save_task(updated)
+        return updated.to_dict()
+
+    def delete_task(self, project_id: str, task_id: str) -> dict[str, Any] | None:
+        """DELETE /backlog/task/{id} — 删除 Task (引用可留: sprint/story 引用
+        不清理 — 引用非包含语义; 不存在 → BacklogNotFoundError)。"""
+        mgmt = self._management_store(project_id)
+        if mgmt is None:
+            return None
+        if not mgmt.delete_task(task_id):
+            raise BacklogNotFoundError(f"task not found: {task_id}")
+        return {"deleted": True, "task_id": task_id}
 
 
 __all__ = ["ConsoleService", "DEFAULT_RECENT_LIMIT"]

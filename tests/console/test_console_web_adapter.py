@@ -303,7 +303,7 @@ class TestProjectManagementEndpoints:
 @requires_fastapi
 class TestPermissionBoundary:
     def test_write_routes_limited_to_approval_decisions(self, client):
-        """Permission Boundary (S9-002 + S10-004/006/006.5): 写路由白名单。
+        """Permission Boundary (S9-002 + S10-004/006/006.5/010): 写路由白名单。
 
         用户解除 Console 冻结后, 写路径 = 审批决定 POST (approve|reject,
         走 org Approval 状态机, source=console 审计) + Runtime 实例生命周期
@@ -312,8 +312,10 @@ class TestPermissionBoundary:
         (POST /api/projects — S10-006.5 org 项目壳) + Workflow 启动/对话
         (POST /projects/{id}/start|chat — S10-006.5 P1-A 触发执行链/消息
         落库) + 项目管理 PATCH/DELETE /api/projects/{id} (S10-006.5 收尾
-        — 重命名/改 idea + 删除 [运行中 409 保护]); 其余一切路由只读
-        (GET/HEAD), 无 PUT。
+        — 重命名/改 idea + 删除 [运行中 409 保护]) + Backlog 写路径
+        (S10-010 Task 3 — POST/PATCH/DELETE /api/projects/{id}/backlog*:
+        层级创建 + Task 更新/删除, 只落 management/ 目录信源); 其余一切
+        路由只读 (GET/HEAD), 无 PUT。
         """
         app = _adapter.build_app(_StubService())
         for route in app.routes:
@@ -342,6 +344,9 @@ class TestPermissionBoundary:
                 # S10-006.5 收尾: 项目管理 (PATCH/DELETE /api/projects/{id})
                 is_project_update = route_method == "PATCH" and path == "/api/projects/{project_id}"
                 is_project_delete = route_method == "DELETE" and path == "/api/projects/{project_id}"
+                # S10-010 Task 3: Backlog 写路径 (POST/PATCH/DELETE
+                # /api/projects/{id}/backlog* — 层级 CRUD + Task 更新/删除)
+                is_backlog_write = "/backlog" in path
                 assert (
                     is_approval
                     or is_runtime_lifecycle
@@ -354,9 +359,10 @@ class TestPermissionBoundary:
                     or is_workflow_start
                     or is_project_update
                     or is_project_delete
+                    or is_backlog_write
                 ), (
-                    f"写路由超出白名单 (审批决定 + Runtime + 反馈 + 创建 + 启动 + 项目管理): "
-                    f"{route_method} {path}"
+                    f"写路由超出白名单 (审批决定 + Runtime + 反馈 + 创建 + 启动 + "
+                    f"项目管理 + Backlog): {route_method} {path}"
                 )
 
     def test_client_write_surface_limited_to_approval_decisions(self):

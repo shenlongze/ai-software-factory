@@ -18,6 +18,16 @@ from .approvals import (
     reject_approval,
 )
 from .artifacts import get_artifact, get_artifact_content, list_artifacts
+from .backlog import (
+    create_epic,
+    create_feature,
+    create_story,
+    create_task,
+    delete_task,
+    get_task,
+    list_backlog,
+    update_task,
+)
 from .decisions import get_decision
 from .intelligence import list_experience, list_recommendations
 from .lifecycle import get_project_lifecycle
@@ -57,9 +67,14 @@ __all__ = [
     "complete_discovery",
     "confirm_project_route",
     "create_draft_project",
+    "create_epic",
+    "create_feature",
     "create_project",
     "create_runtime",
+    "create_story",
+    "create_task",
     "delete_project",
+    "delete_task",
     "get_artifact",
     "get_artifact_content",
     "get_decision",
@@ -67,12 +82,14 @@ __all__ = [
     "get_project_timeline",
     "get_project_workflow",
     "get_runtime",
+    "get_task",
     "get_workflow",
     "get_workflow_stages",
     "iter_sse_events",
     "list_approval_gates",
     "list_approvals",
     "list_artifacts",
+    "list_backlog",
     "list_experience",
     "list_projects",
     "list_providers",
@@ -89,4 +106,5 @@ __all__ = [
     "stop_runtime",
     "suggest_project",
     "update_project",
+    "update_task",
 ]

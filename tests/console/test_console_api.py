@@ -158,11 +158,17 @@ class TestRouteExports:
             "complete_discovery",
             "confirm_project_route",
             "create_draft_project",
+            "create_epic",
+            "create_feature",
             "create_project",
             "create_runtime",
+            "create_story",
+            "create_task",
             "delete_project",
+            "delete_task",
             "get_artifact",
             "get_artifact_content",
+            "get_task",
             "get_decision",
             "get_project_lifecycle",
             "get_project_timeline",
@@ -174,6 +180,7 @@ class TestRouteExports:
             "list_approval_gates",
             "list_approvals",
             "list_artifacts",
+            "list_backlog",
             "list_experience",
             "list_projects",
             "list_providers",
@@ -190,6 +197,7 @@ class TestRouteExports:
             "stop_runtime",
             "suggest_project",
             "update_project",
+            "update_task",
         }
         assert set(_api.__all__) == expected
         for name in expected:

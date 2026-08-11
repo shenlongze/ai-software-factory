@@ -83,7 +83,7 @@ from __future__ import annotations
 import importlib
 import sys
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Iterator, NoReturn
 
 from pydantic import BaseModel
 
@@ -207,6 +207,73 @@ class _UpdateProjectBody(BaseModel):
 
     name: str | None = None
     idea: str | None = None
+
+
+class _EpicBody(BaseModel):
+    """POST /api/projects/{id}/backlog/epic body (S10-010 Task 3)。
+
+    {name, description?}: name 必填 (空 → 400 — 空名字不创建); description
+    可选 (默认空串)。成功 → 201 Epic {id, name, description, children,
+    created_at, updated_at}。
+    """
+
+    name: str
+    description: str = ""
+
+
+class _FeatureBody(BaseModel):
+    """POST /api/projects/{id}/backlog/feature body (S10-010 Task 3)。
+
+    {name, description?, epic_id?}: epic_id 可选绑定 (宽松 — 提供时校验
+    Epic 存在 → 不存在 404; 绑定 = epic.children 追加引用, 非包含)。
+    """
+
+    name: str
+    description: str = ""
+    epic_id: str = ""
+
+
+class _StoryBody(BaseModel):
+    """POST /api/projects/{id}/backlog/story body (S10-010 Task 3)。
+
+    {name, description?, feature_id?}: feature_id 可选绑定 (Story→Feature)。
+    """
+
+    name: str
+    description: str = ""
+    feature_id: str = ""
+
+
+class _TaskBody(BaseModel):
+    """POST /api/projects/{id}/backlog/task body (S10-010 Task 3)。
+
+    {title, description?, priority?, dependency?, story_id?}: title 必填
+    (空 → 400); priority P0-P3 (非法 → 400, 默认 P2); dependency 前置任务
+    id 列表 (自引用/环 → 400); story_id 可选绑定 (Task→Story, 不存在 → 404)。
+    """
+
+    title: str
+    description: str = ""
+    priority: str = ""
+    dependency: list[str] | None = None
+    story_id: str = ""
+
+
+class _TaskPatchBody(BaseModel):
+    """PATCH /api/projects/{id}/backlog/task/{task_id} body (S10-010 Task 3)。
+
+    {title?, description?, priority?, status?, assignee?, dependency?}: None
+    = 未提供 (不更新该字段)。status 转换走 Task 002 状态机 (非法转换 → 409;
+    依赖未满足 → 400); priority 非法 → 400; dependency 环/自引用 → 400;
+    空 title → 400。
+    """
+
+    title: str | None = None
+    description: str | None = None
+    priority: str | None = None
+    status: str | None = None
+    assignee: str | None = None
+    dependency: list[str] | None = None
 
 
 # ------------------------------------------------------------------ 装配
@@ -370,8 +437,22 @@ def build_app(
     # 事务失败已回滚 (→ 503 存储不可用)
     ProjectConfirmConflictError = _service.ProjectConfirmConflictError
     ConfirmTransactionError = _service.ConfirmTransactionError
+    # S10-010 Task 3: Backlog 错误语义 (任务/绑定不存在 → 404; 状态机
+    # 非法转换 → 409 — 依赖未满足/参数非法仍走 ValueError → 400)
+    BacklogNotFoundError = _service.BacklogNotFoundError
+    BacklogStateError = _service.BacklogStateError
 
     app = FastAPI(title="AI Software Factory — Human Console Web", version="0.1.0")
+
+    def _raise_backlog_error(exc: Exception) -> NoReturn:
+        """Backlog 端点统一错误映射 (404/409/400; 其余原样上抛)。"""
+        if isinstance(exc, BacklogNotFoundError):
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        if isinstance(exc, BacklogStateError):
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        if isinstance(exc, ValueError):
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise exc
 
     @app.get("/api/dashboard")
     def api_dashboard() -> dict[str, Any]:
@@ -580,6 +661,146 @@ def build_app(
         if deleted is None:
             raise HTTPException(status_code=404, detail="project not found")
         return {"deleted": True, "project_id": project_id}
+
+    # ------------------------------------------- S10-010 Task 3: Backlog API
+    # Requirement Management (AF-PRD-v1.md 4.3): Epic→Feature→Story→Task 层级
+    # CRUD + Task 状态机/priority/dependency 校验 (复用 org.management) +
+    # 目录信源持久化 (management/backlog/*.json)。写路径扩展 (Permission
+    # Boundary S10-010 扩展: 与审批决定/项目管理并列的 Console 写路径 — 只
+    # 落 management/ 目录信源, 不触碰 Core 引擎)。
+    # 错误映射 (统一 _raise_backlog_error): 项目不存在 → 404; 任务/绑定
+    # 不存在 (BacklogNotFoundError) → 404; 参数/依赖/priority 非法
+    # (ValueError) → 400; 状态机非法转换 (BacklogStateError) → 409。
+
+    @app.post("/api/projects/{project_id}/backlog/epic", status_code=201)
+    def api_create_backlog_epic(project_id: str, body: _EpicBody) -> dict[str, Any]:
+        """创建 Epic ({name, description?} → 201 {id, name, ..., created_at})。"""
+        try:
+            epic = _api.create_epic(
+                service,
+                project_id,
+                name=body.name,
+                description=body.description,
+                logger=event_logger,
+            )
+        except Exception as exc:
+            _raise_backlog_error(exc)
+        if epic is None:
+            raise HTTPException(status_code=404, detail="project not found")
+        return epic
+
+    @app.post("/api/projects/{project_id}/backlog/feature", status_code=201)
+    def api_create_backlog_feature(project_id: str, body: _FeatureBody) -> dict[str, Any]:
+        """创建 Feature (可选绑定 Epic; epic_id 不存在 → 404)。"""
+        try:
+            feature = _api.create_feature(
+                service,
+                project_id,
+                name=body.name,
+                description=body.description,
+                epic_id=body.epic_id,
+                logger=event_logger,
+            )
+        except Exception as exc:
+            _raise_backlog_error(exc)
+        if feature is None:
+            raise HTTPException(status_code=404, detail="project not found")
+        return feature
+
+    @app.post("/api/projects/{project_id}/backlog/story", status_code=201)
+    def api_create_backlog_story(project_id: str, body: _StoryBody) -> dict[str, Any]:
+        """创建 Story (可选绑定 Feature; feature_id 不存在 → 404)。"""
+        try:
+            story = _api.create_story(
+                service,
+                project_id,
+                name=body.name,
+                description=body.description,
+                feature_id=body.feature_id,
+                logger=event_logger,
+            )
+        except Exception as exc:
+            _raise_backlog_error(exc)
+        if story is None:
+            raise HTTPException(status_code=404, detail="project not found")
+        return story
+
+    @app.post("/api/projects/{project_id}/backlog/task", status_code=201)
+    def api_create_backlog_task(project_id: str, body: _TaskBody) -> dict[str, Any]:
+        """创建 Task (可选绑定 Story; priority 非法/依赖环/自引用 → 400)。"""
+        try:
+            task = _api.create_task(
+                service,
+                project_id,
+                title=body.title,
+                description=body.description,
+                priority=body.priority,
+                dependency=body.dependency,
+                story_id=body.story_id,
+                logger=event_logger,
+            )
+        except Exception as exc:
+            _raise_backlog_error(exc)
+        if task is None:
+            raise HTTPException(status_code=404, detail="project not found")
+        return task
+
+    @app.get("/api/projects/{project_id}/backlog")
+    def api_backlog(project_id: str) -> dict[str, Any]:
+        """Backlog 全量分组 (epics/features/stories/tasks; 项目不存在 → 404)。"""
+        try:
+            backlog = _api.list_backlog(service, project_id, logger=event_logger)
+        except Exception as exc:
+            _raise_backlog_error(exc)
+        if backlog is None:
+            raise HTTPException(status_code=404, detail="project not found")
+        return backlog
+
+    @app.get("/api/projects/{project_id}/backlog/task/{task_id}")
+    def api_backlog_task_detail(project_id: str, task_id: str) -> dict[str, Any]:
+        """Task 详情 (任务不存在 → 404)。"""
+        try:
+            task = _api.get_task(service, project_id, task_id, logger=event_logger)
+        except Exception as exc:
+            _raise_backlog_error(exc)
+        if task is None:
+            raise HTTPException(status_code=404, detail="project not found")
+        return task
+
+    @app.patch("/api/projects/{project_id}/backlog/task/{task_id}")
+    def api_patch_backlog_task(
+        project_id: str, task_id: str, body: _TaskPatchBody
+    ) -> dict[str, Any]:
+        """PATCH Task (字段更新 + 状态机转换 + 依赖校验; 400/404/409)。"""
+        try:
+            task = _api.update_task(
+                service,
+                project_id,
+                task_id,
+                title=body.title,
+                description=body.description,
+                priority=body.priority,
+                status=body.status,
+                assignee=body.assignee,
+                dependency=body.dependency,
+                logger=event_logger,
+            )
+        except Exception as exc:
+            _raise_backlog_error(exc)
+        if task is None:
+            raise HTTPException(status_code=404, detail="project not found")
+        return task
+
+    @app.delete("/api/projects/{project_id}/backlog/task/{task_id}")
+    def api_delete_backlog_task(project_id: str, task_id: str) -> dict[str, Any]:
+        """DELETE Task (200 {deleted, task_id}; 引用可留; 不存在 → 404)。"""
+        try:
+            result = _api.delete_task(service, project_id, task_id, logger=event_logger)
+        except Exception as exc:
+            _raise_backlog_error(exc)
+        if result is None:
+            raise HTTPException(status_code=404, detail="project not found")
+        return result
 
     @app.get("/api/projects/{project_id}/lifecycle")
     def api_project_lifecycle(project_id: str) -> dict[str, Any]:

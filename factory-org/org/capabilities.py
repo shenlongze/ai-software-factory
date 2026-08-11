@@ -27,12 +27,16 @@
 宽松解析: 旧数据 (无 state/enabled 字段) → 默认 DRAFT + enabled=True, 零破坏。
 
 约束: 本模块零 Core 依赖 (stdlib + pydantic + org.models, Removal Isolation);
-Task 002-006 才实现 Registry CRUD/目录信源/种子。
+Task 002 已实现 skills/ 目录信源 Registry CRUD + 默认种子 (Task 003-006
+才实现 agents/mcps/workflows/industries/llm-configs 注册)。
 """
 
 from __future__ import annotations
 
+import json
+import os
 from enum import Enum
+from pathlib import Path
 from typing import Any, Protocol
 
 from pydantic import Field, field_validator
@@ -330,3 +334,228 @@ class LLMConfig(_OrgModel):
     @classmethod
     def _coerce_state(cls, v: Any) -> CapabilityState:
         return CapabilityState.parse(v)
+
+
+# ------------------------------------------------------------------ Skill Registry (Task 002)
+
+_SKILL_ID_BANNED = ("/", "\\")
+
+
+def _default_skill(
+    skill_id: str, name: str, description: str, category: str
+) -> Skill:
+    """默认种子 Skill 构造 (S10-012 §三 种子: 只建实体不实现逻辑)。"""
+    return Skill(
+        id=skill_id,
+        name=name,
+        description=description,
+        category=category,
+        input_schema={"inputs": [{"name": "task"}]},
+        output_schema={"outputs": [{"name": "result"}]},
+        version="1.0.0",
+        enabled=True,
+        state=CapabilityState.ACTIVE,
+    )
+
+
+#: 默认种子 — 标准 skills (S10-012 §三: flutter-development/backend-development 等;
+#: ACTIVE+enabled → 验收场景4 可选能力池; 幂等, 已存在不覆盖)。
+DEFAULT_SKILLS: tuple[Skill, ...] = (
+    _default_skill(
+        "backend-development",
+        "Backend Development",
+        "后端开发: 服务端 API/数据库/CLI (Java/Python/Shell)",
+        "software-development",
+    ),
+    _default_skill(
+        "frontend-development",
+        "Frontend Development",
+        "前端开发: HTML/JS/Vue/UniApp/小程序",
+        "software-development",
+    ),
+    _default_skill(
+        "qa-testing",
+        "QA Testing",
+        "测试: 功能/压力/自动化/PRD 验收",
+        "software-development",
+    ),
+    _default_skill(
+        "product-management",
+        "Product Management",
+        "产品: 需求分析/PRD/竞品调研",
+        "software-development",
+    ),
+    _default_skill(
+        "flutter-development",
+        "Flutter Development",
+        "Flutter 跨平台开发 (Dart/UI/状态管理)",
+        "software-development",
+    ),
+)
+
+
+class CapabilityRegistry:
+    """Factory Capability Pool 注册表 (S10-012 §三 — skills/ 目录信源, Task 002)。
+
+    目录信源: <root>/workspace/capabilities/skills/{id}.json (单实体单文件;
+    id 主键, version 字段记录 — 同 id 新 version → 覆盖, 升级 = update)。
+
+    语义:
+    - register_skill: upsert (重复 id 覆盖 — 同 store.save 模式); 原子写
+      (临时文件 + os.replace); 懒迁移 (无 capabilities/ 目录 → 首次写创建)
+    - get_skill: 缺失 → None; 损坏 JSON / schema 非法 → None (失败安全)
+    - list_skills(enabled_only): 按 id 排序; enabled_only=True → 只返回
+      ACTIVE+enabled (capability_selectable — §四b 可选能力)
+    - update_skill(id, updates): 部分字段更新 (pydantic 重校验, 未知字段/
+      非法 state 拒绝); 缺失 → None
+    - transition_skill(id, target): 受控生命周期转换并落盘; 非法转换
+      ValueError 不落盘; 缺失 → None
+    - delete_skill(id): 缺失 → False (幂等)
+    - seed_defaults(): 幂等默认种子 (已存在不覆盖 — 用户注册/修改优先)
+
+    约束: 零 Core/console 依赖 (stdlib + pydantic + 本模块实体 — Removal
+    Isolation, 同 org/store.py 模式)。
+    """
+
+    def __init__(self, root: str | Path):
+        self._root = Path(root)
+        self._capabilities_dir = self._root / "workspace" / "capabilities"
+        self._skills_dir = self._capabilities_dir / "skills"
+
+    # ------------------------------------------------------------------ 布局
+    @property
+    def root(self) -> Path:
+        return self._root
+
+    @property
+    def capabilities_dir(self) -> Path:
+        """能力池根目录 (<root>/workspace/capabilities)。"""
+        return self._capabilities_dir
+
+    @property
+    def skills_dir(self) -> Path:
+        """skills 目录信源 (<root>/workspace/capabilities/skills)。"""
+        return self._skills_dir
+
+    def _skill_path(self, skill_id: str) -> Path:
+        return self._skills_dir / f"{skill_id}.json"
+
+    @staticmethod
+    def _validate_skill_id(skill_id: str) -> None:
+        """id 防御: 非空 + 无路径分隔符 (防目录信源路径穿越)。"""
+        if not isinstance(skill_id, str) or not skill_id.strip():
+            raise ValueError("skill id must be a non-empty string")
+        if any(ch in skill_id for ch in _SKILL_ID_BANNED):
+            raise ValueError(f"skill id must not contain path separators: {skill_id!r}")
+
+    # ------------------------------------------------------------------ 原子写
+    @staticmethod
+    def _atomic_write(path: Path, data: dict[str, Any]) -> None:
+        """原子写 JSON: 临时文件 + os.replace (同 store.py/space.py 模式)。"""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.parent / f".{path.name}.{os.getpid()}.tmp"
+        tmp.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        os.replace(tmp, path)
+
+    # ------------------------------------------------------------------ 读 (失败安全)
+    @staticmethod
+    def _parse_skill(data: Any) -> Skill | None:
+        """dict → Skill; JSON 结构非法 (缺字段/extra/state 非法) → None。"""
+        if not isinstance(data, dict):
+            return None
+        try:
+            return Skill.model_validate(data)
+        except ValueError:
+            return None
+
+    def _read_skill_file(self, path: Path) -> Skill | None:
+        """读单文件; 损坏 JSON / 非法 schema → None (失败安全, 不崩溃)。"""
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return None
+        return self._parse_skill(data)
+
+    def get_skill(self, skill_id: str) -> Skill | None:
+        """按 id 取技能; 缺失 / 损坏 → None。"""
+        path = self._skill_path(skill_id)
+        if not path.is_file():
+            return None
+        return self._read_skill_file(path)
+
+    def list_skills(self, *, enabled_only: bool = False) -> list[Skill]:
+        """全部技能 (按 id 排序, 确定性); 损坏文件静默跳过。
+
+        enabled_only=True → 只返回 ACTIVE+enabled (capability_selectable,
+        S10-012 §四b 可选能力过滤)。
+        """
+        result: list[Skill] = []
+        if self._skills_dir.is_dir():
+            for path in sorted(self._skills_dir.glob("*.json")):
+                skill = self._read_skill_file(path)
+                if skill is None:
+                    continue  # 失败安全: 损坏/非法文件跳过
+                if enabled_only and not capability_selectable(skill):
+                    continue
+                result.append(skill)
+        return result
+
+    # ------------------------------------------------------------------ 写
+    def register_skill(self, skill: Skill) -> Skill:
+        """注册/覆盖技能 (upsert — 重复 id 覆盖; 原子写; 懒迁移建目录)。"""
+        self._validate_skill_id(skill.id)
+        self._atomic_write(self._skill_path(skill.id), skill.to_dict())
+        return skill
+
+    def update_skill(self, skill_id: str, updates: dict[str, Any]) -> Skill | None:
+        """部分字段更新 (升级 = 更新 version 字段); 缺失 → None。
+
+        全量重校验 (model_validate): 未知字段 (extra=forbid) / 非法 state
+        → ValueError, 不落盘 (原文件保持)。
+        """
+        current = self.get_skill(skill_id)
+        if current is None:
+            return None
+        merged = Skill.model_validate({**current.to_dict(), **(updates or {})})
+        self.register_skill(merged)
+        return merged
+
+    def delete_skill(self, skill_id: str) -> bool:
+        """删除技能文件; 缺失 → False (幂等); 删除失败 → False (失败安全)。"""
+        path = self._skill_path(skill_id)
+        if not path.is_file():
+            return False
+        try:
+            path.unlink()
+            return True
+        except OSError:
+            return False
+
+    # ------------------------------------------------------------------ 生命周期
+    def transition_skill(self, skill_id: str, target: CapabilityState | str) -> Skill | None:
+        """受控生命周期转换并落盘 (DRAFT→ACTIVE→DEPRECATED→ARCHIVED)。
+
+        非法转换 (跳级/回退/终态后) → ValueError, 不落盘 (原文件保持);
+        缺失 id → None。
+        """
+        current = self.get_skill(skill_id)
+        if current is None:
+            return None
+        updated = transition_capability(current, target)
+        if not isinstance(updated, Skill):
+            raise TypeError("transition_capability must return a Skill instance")
+        self.register_skill(updated)
+        return updated
+
+    # ------------------------------------------------------------------ 默认种子
+    def seed_defaults(self) -> int:
+        """预置标准 skills (幂等 — 已存在文件不覆盖, 用户修改保留); 返回新建数。"""
+        seeded = 0
+        for skill in DEFAULT_SKILLS:
+            if not self._skill_path(skill.id).is_file():
+                self.register_skill(skill)
+                seeded += 1
+        return seeded

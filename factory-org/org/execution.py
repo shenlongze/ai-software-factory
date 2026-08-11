@@ -13,6 +13,11 @@
   + waiting_dependency 未满足原因; S10-011 Task 002)
 - Scheduler 纯函数 (S10-011 §二 1): plan_tasks (只选 READY + dependency 满足
   + priority 排序 + max_parallel 分批) + can_execute (手动检查 ok/reason)
+- Dispatcher 纯函数 (S10-011 §二 2/3 — Task 003): dispatch_task (can_execute
+  校验 → 依赖未满足/非 READY 抛 DispatchError; 创建 WorkflowInstance CREATED
+  + bindings agent/skill/mcp 选择 (取第一个, 空绑定可执行) + workflow_id
+  缺省 software-development-v1) + WorkflowInstanceStore (workflow-instance/
+  {id}.json 目录信源 — save/load/list, 原子写 + 失败安全)
 - ExecutionLock: per-project 进程内互斥 (threading.RLock — 同线程重入安全);
   同项目写互斥, 不同项目各自独立锁互不阻塞 (设计 §7, 跨进程锁 S10-012+)
 - RuntimeStore: workspace/projects/{slug}/runtime/ 三类 JSON 原子写
@@ -38,7 +43,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from pydantic import Field, field_validator
+from pydantic import Field, ValidationError, field_validator
 
 from .models import _OrgModel, _norm_list, new_id, utcnow
 from .management import Task, TaskStatus, _PRIORITY_RANK
@@ -267,6 +272,163 @@ def plan_tasks(tasks: list[Task], max_parallel: int = 5) -> ExecutionPlan:
         max_parallel=parallel,
         waiting_dependency=waiting,
     )
+
+
+# ------------------------------------------------------------------ Dispatcher (S10-011 Task 003)
+
+
+class DispatchError(Exception):
+    """Dispatcher 拒绝分发 (任务不可执行)。
+
+    reason: 拒绝原因 (来自 can_execute — 依赖未满足
+    "Waiting dependency Task X" / 非 READY 状态原因 / BLOCKED 不执行)。
+    """
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
+
+
+def _first_binding_ref(bindings: dict[str, Any] | None, key: str, ref_key: str) -> str:
+    """bindings.{key} 列表取第一个引用 (agent/skill/mcp; 设计 §3)。
+
+    - 条目为字符串 → 直接用
+    - 条目为 dict (如 {agent_ref, role} — project-lifecycle.md) → 优先
+      {ref_key}, 回退 "ref"
+    - bindings 缺失 / 非列表 / 空列表 / 无法解析 → "" (无绑定, 可执行)
+    """
+    if not bindings:
+        return ""
+    entries = bindings.get(key)
+    if not isinstance(entries, list) or not entries:
+        return ""
+    first = entries[0]
+    if isinstance(first, str):
+        return first
+    if isinstance(first, dict):
+        for k in (ref_key, "ref"):
+            val = first.get(k)
+            if isinstance(val, str) and val:
+                return val
+    return ""
+
+
+def _workflow_ref(bindings: dict[str, Any] | None, workflow_id: str) -> str:
+    """workflow_id 选择: bindings.workflow.workflow_ref 优先, 否则参数缺省。
+
+    兼容 PRD 4.8 / project-lifecycle.md 的 workflow_instance 键形式
+    ({workflow_ref: software-development-v1, parameters})。
+    """
+    if bindings:
+        wf = bindings.get("workflow")
+        if not isinstance(wf, dict):
+            wf = bindings.get("workflow_instance")
+        if isinstance(wf, dict):
+            ref = wf.get("workflow_ref") or wf.get("ref")
+            if isinstance(ref, str) and ref:
+                return ref
+        elif isinstance(wf, str) and wf:
+            return wf
+    return workflow_id
+
+
+def dispatch_task(
+    task: Task,
+    bindings: dict[str, Any] | None = None,
+    all_tasks: list[Task] | None = None,
+    workflow_id: str = "software-development-v1",
+) -> WorkflowInstance:
+    """Dispatcher 纯函数 (S10-011 §二 2/3 — Task → Workflow Instance 分发)。
+
+    输入: task + bindings (ProjectBindings dict: agents/skills/mcps/workflow,
+    可为空 — 无绑定可执行) + all_tasks (依赖状态上下文; 缺省 [task], 未知
+    依赖 id 视为未满足) + workflow_id (缺省 software-development-v1,
+    PRD 4.8 公共资源默认)。
+
+    行为:
+    1. can_execute 校验: 依赖未满足 / BLOCKED / 非 READY → DispatchError
+       (reason = can_execute 原因; 依赖未满足 "Waiting dependency Task X")
+    2. 创建 WorkflowInstance: status=CREATED, task_id, workflow_id
+       (bindings workflow_ref 优先, 否则 workflow_id 参数), agent/skill/mcp
+       (bindings 第一个引用, 无绑定 → 空串)
+    3. instance_id 唯一 (new_id)
+
+    纯函数: 不实际执行 (执行在 Task 004 Executor), 不写盘 (持久化由
+    WorkflowInstanceStore 负责), 不改入参。
+    """
+    all_tasks = [task] if all_tasks is None else all_tasks
+    ok, reason = can_execute(task, all_tasks)
+    if not ok:
+        raise DispatchError(reason)
+    return WorkflowInstance(
+        instance_id=new_id("wi"),
+        task_id=task.id,
+        workflow_id=_workflow_ref(bindings, workflow_id),
+        agent=_first_binding_ref(bindings, "agents", "agent_ref"),
+        skill=_first_binding_ref(bindings, "skills", "skill_ref"),
+        mcp=_first_binding_ref(bindings, "mcps", "mcp_ref"),
+        status=WorkflowInstanceStatus.CREATED,
+    )
+
+
+class WorkflowInstanceStore:
+    """workflow-instance/ 目录信源 (S10-011 §4 — WorkflowInstance 持久化)。
+
+    布局: workspace/projects/{slug}/workflow-instance/{instance_id}.json
+    语义: 原子写 (临时文件 + os.replace — 同 RuntimeStore 模式);
+    失败安全 (缺失/损坏/非 dict → load None; 目录缺失 → list 空);
+    状态机转换后可重存续流转 (save → load → transition → save)。
+    """
+
+    def __init__(self, space_dir: str | Path):
+        self._space_dir = Path(space_dir)
+        self._dir = self._space_dir / "workflow-instance"
+
+    @property
+    def instance_dir(self) -> Path:
+        return self._dir
+
+    def _path(self, instance_id: str) -> Path:
+        return self._dir / f"{instance_id}.json"
+
+    def save_instance(self, instance: WorkflowInstance) -> Path:
+        """写 workflow-instance/{instance_id}.json (原子); 返回落盘路径。"""
+        path = self._path(instance.instance_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.parent / f".{path.name}.{os.getpid()}.tmp"
+        tmp.write_text(
+            json.dumps(instance.to_dict(), ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        os.replace(tmp, path)
+        return path
+
+    def load_instance(self, instance_id: str) -> WorkflowInstance | None:
+        """读 workflow-instance/{instance_id}.json; 缺失/损坏/非 dict → None。"""
+        path = self._path(instance_id)
+        if not path.is_file():
+            return None
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(data, dict):
+            return None
+        try:
+            return WorkflowInstance.model_validate(data)
+        except ValidationError:
+            return None
+
+    def list_instances(self) -> list[WorkflowInstance]:
+        """目录信源枚举 (按 instance_id 排序); 目录缺失 → []。"""
+        if not self._dir.is_dir():
+            return []
+        instances: list[WorkflowInstance] = []
+        for path in sorted(self._dir.glob("*.json")):
+            loaded = self.load_instance(path.stem)
+            if loaded is not None:
+                instances.append(loaded)
+        return instances
 
 
 # ------------------------------------------------------------------ ExecutionLock

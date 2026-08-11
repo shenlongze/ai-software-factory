@@ -77,6 +77,21 @@ describe('LifecyclePage', () => {
     expect(screen.queryByText('待人工审批')).toBeNull();
   });
 
+  it('API 404 (项目无生命周期记录) → 空态而非错误', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: false, status: 404, json: async () => ({}) }) as Response),
+    );
+    render(
+      <AppStateProvider>
+        <NavToLifecycle />
+      </AppStateProvider>,
+    );
+    // 404 视为"暂无记录", 不暴露 HTTP 状态码 (S10-015 修复)
+    expect(await screen.findByText(/暂无生命周期记录/)).toBeInTheDocument();
+    expect(screen.queryByTestId('error-state')).toBeNull();
+  });
+
   it('API 错误 → ErrorState', async () => {
     vi.stubGlobal(
       'fetch',

@@ -6,9 +6,17 @@ import { Card } from '../components/Card';
 import { Badge, riskBadge } from '../components/Badge';
 import { EmptyState, ErrorState, LoadingState } from '../components/State';
 
+/** 404 = 项目无生命周期记录 (后端 None → HTTP 404) → 空态而非错误。 */
+function isNotFound(error: string | null): boolean {
+  return error != null && error.includes('HTTP 404');
+}
+
 /**
  * Lifecycle — 项目工作区 (Notion+Linear 风格):
  * 项目名 / 生命周期阶段 / 当前 AI 状态 / 下一步 (只读快照)。
+ *
+ * S10-015 修复: 404 (旧项目/未关联 idea → 无生命周期记录) 视为
+ * "暂无记录" 空态, 不向用户暴露 HTTP 状态码。
  */
 export function LifecyclePage(): JSX.Element {
   const { page, navigate } = useAppState();
@@ -21,7 +29,7 @@ export function LifecyclePage(): JSX.Element {
   if (loading) {
     return <LoadingState label="加载项目工作区…" />;
   }
-  if (error) {
+  if (error && !isNotFound(error)) {
     return <ErrorState message={error} />;
   }
   if (!data) {

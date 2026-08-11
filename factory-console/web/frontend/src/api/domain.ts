@@ -18,12 +18,18 @@ import type {
   AgentStatus as DomainAgentStatus,
   AgentSummary as DomainAgentSummary,
   Activity,
+  BacklogEpic,
+  BacklogFeature,
+  BacklogResponse,
+  BacklogStory,
+  BacklogTask,
   DomainStatus,
   ProjectLifecycleStage,
   RuntimeActivity,
   TaskDetail,
   TodoTree,
   TreeNode,
+  TreeNodeType,
   WorkflowPipeline,
   WorkflowStage,
   WorkspaceProject,
@@ -60,6 +66,7 @@ const STATUS_ALIASES: Record<string, DomainStatus> = {
   not_started: 'pending',
   idle: 'pending',
   paused: 'pending',
+  todo: 'pending',
   blocked: 'blocked',
   failed: 'failed',
   error: 'failed',
@@ -142,272 +149,227 @@ function riskCount(counts: Record<string, number> | undefined | null): number {
   return toNonNegativeInt(counts.failed) + toNonNegativeInt(counts.blocked);
 }
 
-// ------------------------------------------------------------------ toTodoTree
+// ------------------------------------------------------------------ toTodoTree (S10-015 Task 002: BacklogResponse 真实结构重构)
 
-/** backlog 节点宽松输入 (后端无专用 backlog 结构时的前端投影; 缺字段 → 降级)。 */
-export interface BacklogNodeInput {
-  id?: string | null;
-  title?: string | null;
-  name?: string | null;
-  type?: string | null;
-  status?: string | null;
-  progress?: number | null;
-  agent?: string | null;
-  owner?: string | null;
-  started_at?: string | null;
-  completed_at?: string | null;
-  next_action?: string | null;
-  blocked_reason?: string | null;
-  features?: BacklogNodeInput[];
-  items?: BacklogNodeInput[];
-  children?: BacklogNodeInput[];
-}
-
-/** backlog 聚合输入: { epics: [...] } 或裸数组 (视为 epics)。 */
-export interface BacklogInput {
-  epics?: BacklogNodeInput[];
-}
-
-/** 项目级降级树阶段 (从 lifecycle 派生: 产品/开发/测试发布)。 */
-const FALLBACK_PHASES: ReadonlyArray<{ id: string; title: string }> = [
-  { id: 'product', title: '产品设计' },
-  { id: 'development', title: '开发' },
-  { id: 'release', title: '测试发布' },
-];
-
-/** backlog + runtime 投影 → TodoTree。
+/**
+ * backlog (GET /api/projects/{id}/backlog) + projectName → TodoTree。
  *
- * 聚合: epic → phase, feature → module, task → task (三层)。
- * 降级: 无 backlog / 结构不匹配 → 项目级降级树 (单根 = 项目名, 阶段从 lifecycle
- *       + workflow 信号 (failed/blocked/stage_counts) 派生), 不崩溃 (§6.3)。
+ * 真实结构 (S10-015 §2.1 实测): 4 个平行数组 (epics/features/stories/tasks),
+ * 层级仅靠自上而下的 `children` id 引用 (Epic→Feature→Story→Task);
+ * Epic/Feature/Story 无 status/进度字段。
+ *
+ * 关联 (§3.3): id 反向索引自上而下组装; 悬空引用跳过 (不崩溃);
+ *   孤儿 Epic (children=[]) 保留为空阶段。
+ * 层级 (§3.2): Epic→phase / Feature→module / Story→task (状态/进度从子 Task
+ *   聚合) / Task→task 子节点 (执行单元)。
+ * 状态 (§3.4): Task 六态 (todo/ready→pending, in_progress→running,
+ *   blocked→blocked, review→review, done→completed); Story 聚合 (全 done→completed;
+ *   有 running→running; 有 blocked→blocked; 有 review→review; 否则 pending);
+ *   Epic/Feature 由子节点聚合 (failed > blocked > running > review > completed > pending)。
+ * 完成度 (§4.5): 叶子 Task 按 priority 加权 (P0=4/P1=3/P2=2/P3=1, 缺失=1);
+ *   Story/Feature/Epic = 子节点加权均值; 无子 → 0。
+ * 降级 (§3.5): 空 backlog (无 epics) → 单根 {id:'root', title: projectName || '项目',
+ *   type:'phase', pending, 0%}。
  */
 export function toTodoTree(
-  project?: ProjectSummary | null,
-  backlog?: BacklogInput | BacklogNodeInput[] | null,
-  _runtime?: unknown,
+  backlog?: BacklogResponse | null,
+  projectName?: string | null,
 ): TodoTree {
-  const source = project ?? ({} as ProjectSummary);
-  const rootTitle = source.name ?? '';
-  const epics = extractEpics(backlog);
-  if (epics.length > 0) {
-    const phases = epics.map((epic) => toPhaseNode(epic));
-    return { root: aggregateRoot(source, rootTitle, phases) };
+  const source = backlog ?? {};
+  const featureIndex = buildIndex(source.features);
+  const storyIndex = buildIndex(source.stories);
+  const taskIndex = buildIndex(source.tasks);
+  const weightedPhases = (source.epics ?? []).map((epic) =>
+    toPhaseNode(epic, featureIndex, storyIndex, taskIndex),
+  );
+  const phases = weightedPhases.map((w) => w.node);
+  if (phases.length === 0) {
+    return { root: emptyRoot(projectName) };
   }
-  return { root: fallbackRoot(source, rootTitle) };
-}
-
-/** backlog 输入 → epics 数组 (数组 → 视为 epics; 缺 → [])。 */
-function extractEpics(
-  backlog: BacklogInput | BacklogNodeInput[] | null | undefined,
-): BacklogNodeInput[] {
-  if (Array.isArray(backlog)) return backlog;
-  const epics = backlog?.epics;
-  return Array.isArray(epics) ? epics : [];
-}
-
-/** epic → phase 节点 (feature → module → task)。 */
-function toPhaseNode(epic: BacklogNodeInput): TreeNode {
-  const children = (epic.features ?? []).map((feature) => toModuleNode(feature));
-  return {
-    id: epic.id ?? '',
-    title: epic.title ?? epic.name ?? '',
-    type: 'phase',
-    status: toDomainStatus(epic.status ?? null),
-    statusLabel: statusLabel(epic.status ?? null),
-    progress: nodeProgress(epic, children),
-    agent: epic.agent ?? undefined,
-    owner: epic.owner ?? undefined,
-    startedAt: epic.started_at ?? undefined,
-    completedAt: epic.completed_at ?? undefined,
-    nextAction: epic.next_action ?? undefined,
-    blockedReason: epic.blocked_reason ?? undefined,
-    children,
-  };
-}
-
-/** feature → module 节点 (items/children → task 节点)。 */
-function toModuleNode(feature: BacklogNodeInput): TreeNode {
-  const children = (feature.items ?? feature.children ?? []).map((item) => toTaskNode(item));
-  return {
-    id: feature.id ?? '',
-    title: feature.title ?? feature.name ?? '',
-    type: 'module',
-    status: toDomainStatus(feature.status ?? null),
-    statusLabel: statusLabel(feature.status ?? null),
-    progress: nodeProgress(feature, children),
-    agent: feature.agent ?? undefined,
-    owner: feature.owner ?? undefined,
-    startedAt: feature.started_at ?? undefined,
-    completedAt: feature.completed_at ?? undefined,
-    nextAction: feature.next_action ?? undefined,
-    blockedReason: feature.blocked_reason ?? undefined,
-    children,
-  };
-}
-
-/** item → task 节点 (叶子)。 */
-function toTaskNode(item: BacklogNodeInput): TreeNode {
-  return {
-    id: item.id ?? '',
-    title: item.title ?? item.name ?? '',
-    type: 'task',
-    status: toDomainStatus(item.status ?? null),
-    statusLabel: statusLabel(item.status ?? null),
-    progress: nodeProgress(item, []),
-    agent: item.agent ?? undefined,
-    owner: item.owner ?? undefined,
-    startedAt: item.started_at ?? undefined,
-    completedAt: item.completed_at ?? undefined,
-    nextAction: item.next_action ?? undefined,
-    blockedReason: item.blocked_reason ?? undefined,
-    children: [],
-  };
-}
-
-/** 节点进度: 显式 progress (0..1) → 0..100; 否则子节点均值 (无子 → 0)。 */
-function nodeProgress(node: BacklogNodeInput, children: TreeNode[]): number {
-  if (typeof node.progress === 'number' && Number.isFinite(node.progress)) {
-    return progressPercent(node.progress);
-  }
-  return aggregateProgress(children);
-}
-
-/** 聚合根节点 (backlog 路径): 状态/进度从子阶段派生。 */
-function aggregateRoot(source: ProjectSummary, title: string, phases: TreeNode[]): TreeNode {
   const status = aggregateStatus(phases);
   return {
-    id: source.id ?? '',
-    title,
-    type: 'phase',
-    status,
-    statusLabel: statusLabel(status),
-    progress: aggregateProgress(phases),
-    children: phases,
+    root: {
+      id: 'root',
+      title: projectName ?? '项目',
+      type: 'phase',
+      status,
+      statusLabel: statusLabel(status),
+      progress: weightedProgress(weightedPhases),
+      children: phases,
+    },
   };
 }
 
-/** 聚合状态: failed > blocked > running > review > completed > pending。 */
+/** 加权节点: TreeNode + 叶子权重 (Task=priorityWeight, 上层=子权重和)。 */
+interface WeightedNode {
+  node: TreeNode;
+  weight: number;
+}
+
+/** id → 条目 反向索引 (空 id 跳过; 重复 id 后者覆盖)。 */
+function buildIndex<T extends { id?: string | null }>(
+  items: T[] | null | undefined,
+): Map<string, T> {
+  const index = new Map<string, T>();
+  for (const item of items ?? []) {
+    if (item != null && item.id != null && item.id.length > 0) {
+      index.set(item.id, item);
+    }
+  }
+  return index;
+}
+
+/** Epic → phase 节点 (children id 反向索引 → Feature → module; 孤儿 → 空阶段)。 */
+function toPhaseNode(
+  epic: BacklogEpic,
+  featureIndex: Map<string, BacklogFeature>,
+  storyIndex: Map<string, BacklogStory>,
+  taskIndex: Map<string, BacklogTask>,
+): WeightedNode {
+  const weighted = (epic.children ?? [])
+    .map((id) => featureIndex.get(id))
+    .filter((f): f is BacklogFeature => f != null)
+    .map((feature) => toModuleNode(feature, storyIndex, taskIndex));
+  return buildAggregateNode(epic.id, epic.name, 'phase', weighted);
+}
+
+/** Feature → module 节点 (children id → Story → task 节点)。 */
+function toModuleNode(
+  feature: BacklogFeature,
+  storyIndex: Map<string, BacklogStory>,
+  taskIndex: Map<string, BacklogTask>,
+): WeightedNode {
+  const weighted = (feature.children ?? [])
+    .map((id) => storyIndex.get(id))
+    .filter((s): s is BacklogStory => s != null)
+    .map((story) => toStoryNode(story, taskIndex));
+  return buildAggregateNode(feature.id, feature.name, 'module', weighted);
+}
+
+/** Story → task 节点 (状态从子 Task 聚合, 规则 §3.4; children = Task 执行单元)。 */
+function toStoryNode(
+  story: BacklogStory,
+  taskIndex: Map<string, BacklogTask>,
+): WeightedNode {
+  const weighted = (story.children ?? [])
+    .map((id) => taskIndex.get(id))
+    .filter((t): t is BacklogTask => t != null)
+    .map((task) => toTaskNode(task));
+  const status = aggregateStoryStatus(weighted.map((w) => w.node));
+  return {
+    node: {
+      id: story.id ?? '',
+      title: story.name ?? '',
+      type: 'task',
+      status,
+      statusLabel: statusLabel(status),
+      progress: weightedProgress(weighted),
+      children: weighted.map((w) => w.node),
+    },
+    weight: sumWeights(weighted),
+  };
+}
+
+/** Task → task 叶子节点 (完成 → 100%, 其余 → 0%; 权重 = priorityWeight)。 */
+function toTaskNode(task: BacklogTask): WeightedNode {
+  const status = toDomainStatus(task.status ?? null);
+  return {
+    node: {
+      id: task.id ?? '',
+      title: task.title ?? '',
+      type: 'task',
+      status,
+      statusLabel: statusLabel(status),
+      progress: status === 'completed' ? 100 : 0,
+      children: [],
+    },
+    weight: priorityWeight(task.priority),
+  };
+}
+
+/** 通用聚合节点 (phase/module): 状态=子节点聚合, 进度=加权均值, 权重=子权重和。 */
+function buildAggregateNode(
+  id: string | null | undefined,
+  title: string | null | undefined,
+  type: TreeNodeType,
+  weighted: WeightedNode[],
+): WeightedNode {
+  const children = weighted.map((w) => w.node);
+  const status = aggregateStatus(children);
+  return {
+    node: {
+      id: id ?? '',
+      title: title ?? '',
+      type,
+      status,
+      statusLabel: statusLabel(status),
+      progress: weightedProgress(weighted),
+      children,
+    },
+    weight: sumWeights(weighted),
+  };
+}
+
+/** 子节点权重和 (无子 → 0; 孤儿 Epic/空 Story 不贡献进度)。 */
+function sumWeights(weighted: WeightedNode[]): number {
+  return weighted.reduce((acc, w) => acc + w.weight, 0);
+}
+
+/** 加权进度: Σ(weight×progress) / Σ(weight) (叶子按 priority 权重; 无子 → 0)。 */
+function weightedProgress(weighted: WeightedNode[]): number {
+  const totalWeight = sumWeights(weighted);
+  if (totalWeight === 0) return 0;
+  const sum = weighted.reduce((acc, w) => acc + w.weight * w.node.progress, 0);
+  return Math.round(sum / totalWeight);
+}
+
+/** Task 优先级 → 完成度权重 (P0=4/P1=3/P2=2/P3=1, 缺失/未知 → 1)。 */
+const PRIORITY_WEIGHTS: Record<string, number> = { P0: 4, P1: 3, P2: 2, P3: 1 };
+
+function priorityWeight(priority: string | null | undefined): number {
+  if (priority == null) return 1;
+  const key = String(priority).trim().toUpperCase();
+  return PRIORITY_WEIGHTS[key] ?? 1;
+}
+
+/** Story 状态聚合 (子 Task 派生, S10-015 §3.4): 全 done→completed;
+ * 有 running→running; 有 blocked→blocked; 有 review→review; 否则 pending。 */
+function aggregateStoryStatus(tasks: TreeNode[]): DomainStatus {
+  if (tasks.length === 0) return 'pending';
+  if (tasks.every((t) => t.status === 'completed')) return 'completed';
+  if (tasks.some((t) => t.status === 'running')) return 'running';
+  if (tasks.some((t) => t.status === 'blocked')) return 'blocked';
+  if (tasks.some((t) => t.status === 'review')) return 'review';
+  return 'pending';
+}
+
+/** 聚合状态 (Epic/Feature/root 用): failed > blocked > running > review > completed > pending。 */
 function aggregateStatus(nodes: TreeNode[]): DomainStatus {
-  const priority: DomainStatus[] = ['failed', 'blocked', 'running', 'review', 'completed', 'pending'];
+  const priority: DomainStatus[] = [
+    'failed',
+    'blocked',
+    'running',
+    'review',
+    'completed',
+    'pending',
+  ];
   for (const p of priority) {
     if (nodes.some((n) => n.status === p)) return p;
   }
   return 'pending';
 }
 
-/** 聚合进度: 子节点均值 (空 → 0)。 */
-function aggregateProgress(nodes: TreeNode[]): number {
-  if (nodes.length === 0) return 0;
-  const sum = nodes.reduce((acc, n) => acc + n.progress, 0);
-  return Math.round(sum / nodes.length);
-}
-
-/** 项目级降级树 (无 backlog): 单根 = 项目名, 3 阶段从 lifecycle/workflow 信号派生。 */
-function fallbackRoot(source: ProjectSummary, title: string): TreeNode {
-  const phases = deriveFallbackPhases(source).map(({ phase, status }) => ({
-    id: `${source.id ?? 'project'}:phase:${phase.id}`,
-    title: phase.title,
-    type: 'phase' as const,
-    status,
-    statusLabel: statusLabel(status),
-    progress: phaseProgress(status),
+/** 空 backlog 降级根 (单根, phase, pending, 0%; §3.5 空降级)。 */
+function emptyRoot(projectName?: string | null): TreeNode {
+  return {
+    id: 'root',
+    title: projectName ?? '项目',
+    type: 'phase',
+    status: 'pending',
+    statusLabel: statusLabel('pending'),
+    progress: 0,
     children: [],
-  }));
-  return aggregateRoot(source, title, phases);
-}
-
-/** 降级阶段进度: completed → 100, running/review → 50, 其余 → 0。 */
-function phaseProgress(status: DomainStatus): number {
-  switch (status) {
-    case 'completed':
-      return 100;
-    case 'running':
-    case 'review':
-      return 50;
-    default:
-      return 0;
-  }
-}
-
-/** 降级阶段状态派生 (顺序): lifecycle/status 基础 → 完成信号 → failed → blocked → running 增强。 */
-function deriveFallbackPhases(
-  source: ProjectSummary,
-): Array<{ phase: { id: string; title: string }; status: DomainStatus }> {
-  const statuses = ['pending', 'pending', 'pending'] as DomainStatus[];
-  const lifecycleKey = source.lifecycle_stage ?? source.status ?? '';
-  switch (lifecycleKey) {
-    case 'draft':
-    case 'idea':
-      break; // 全 pending
-    case 'discovery':
-    case 'definition':
-      statuses[0] = 'running';
-      break;
-    case 'development':
-    case 'build':
-    case 'active':
-    case 'running':
-      statuses[0] = 'completed';
-      statuses[1] = 'running';
-      break;
-    case 'release':
-      statuses[0] = 'completed';
-      statuses[1] = 'completed';
-      statuses[2] = 'running';
-      break;
-    case 'maintenance':
-    case 'completed':
-    case 'done':
-    case 'success':
-    case 'archived':
-      statuses[0] = 'completed';
-      statuses[1] = 'completed';
-      statuses[2] = 'completed';
-      break;
-    case 'failed':
-      statuses[0] = 'completed';
-      statuses[1] = 'failed';
-      break;
-    case 'paused':
-      statuses[0] = 'completed';
-      break;
-    default:
-      break; // 未知 → 全 pending
-  }
-
-  const counts = source.stage_counts ?? {};
-  // workflow 完成信号: 3+ 阶段完成 → 全部 completed
-  if (toNonNegativeInt(counts.completed) >= 3) {
-    return FALLBACK_PHASES.map((phase) => ({ phase, status: 'completed' as DomainStatus }));
-  }
-  // failed 信号 → 第一个未完成阶段 failed
-  const failedSignal =
-    source.workflow_status === 'failed' ||
-    source.current_stage_status === 'failed' ||
-    toNonNegativeInt(counts.failed) > 0;
-  if (failedSignal) {
-    const idx = statuses.findIndex((s) => s !== 'completed');
-    if (idx >= 0) statuses[idx] = 'failed';
-  }
-  // blocked 信号 → 第一个未完成且未失败阶段 blocked (不覆盖 failed)
-  const blockedSignal =
-    source.current_stage_status === 'blocked' || toNonNegativeInt(counts.blocked) > 0;
-  if (blockedSignal) {
-    const idx = statuses.findIndex((s) => s !== 'completed' && s !== 'failed');
-    if (idx >= 0) statuses[idx] = 'blocked';
-  }
-  // running 增强: 无 lifecycle 派生状态时, 用 stage_counts 推进阶段 (completed N 个 → 第 N+1 运行中)
-  if (
-    toNonNegativeInt(counts.running) > 0 &&
-    toNonNegativeInt(counts.completed) > 0 &&
-    statuses.every((s): boolean => s === 'pending')
-  ) {
-    const done = Math.min(toNonNegativeInt(counts.completed), 2);
-    for (let i = 0; i < done; i += 1) statuses[i] = 'completed';
-    statuses[Math.min(done, 2)] = 'running';
-  }
-
-  return FALLBACK_PHASES.map((phase, i) => ({ phase, status: statuses[i] }));
+  };
 }
 
 // ------------------------------------------------------------------ toWorkflowPipeline

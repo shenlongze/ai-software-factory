@@ -36,6 +36,71 @@ export interface WorkspaceProject {
   riskCount: number;
 }
 
+// ------------------------------------------------------------------ Backlog 输入契约 (S10-015 Task 002)
+
+/**
+ * Backlog 层次条目 (Epic/Feature/Story 共用, 对齐真实 GET /api/projects/{id}/backlog)。
+ *
+ * 真实结构: 4 个平行数组 (epics/features/stories/tasks), 层级只靠自上而下的
+ * `children` id 引用关联 (Epic.children → Feature id, Feature.children → Story id,
+ * Story.children → Task id); Epic/Feature/Story 均无 status/进度字段
+ * (节点状态只能从子 Task 聚合); 无回溯字段 (epic_id/feature_id/story_id)。
+ */
+export interface BacklogEpic {
+  id?: string | null;
+  name?: string | null;
+  description?: string | null;
+  /** 子 Feature id 引用 (悬空引用由 Adapter 跳过, 孤儿 children=[] 保留为空阶段)。 */
+  children?: string[] | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+/** Feature (Epic 的子层, children = Story id 引用)。 */
+export interface BacklogFeature {
+  id?: string | null;
+  name?: string | null;
+  description?: string | null;
+  children?: string[] | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+/** Story (Feature 的子层, children = Task id 引用; 无 status — 从子 Task 聚合)。 */
+export interface BacklogStory {
+  id?: string | null;
+  name?: string | null;
+  description?: string | null;
+  children?: string[] | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+/** Task (Story 的子层, 唯一有 status 的执行单元; 后端六态 todo/ready/in_progress/blocked/review/done)。 */
+export interface BacklogTask {
+  id?: string | null;
+  title?: string | null;
+  description?: string | null;
+  /** P0-P3 (完成度加权: P0=4/P1=3/P2=2/P3=1, 缺失=1)。 */
+  priority?: string | null;
+  /** 六态: todo/ready/in_progress/blocked/review/done。 */
+  status?: string | null;
+  assignee?: string | null;
+  dependency?: string[] | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  history?: Array<Record<string, unknown>> | null;
+}
+
+/** GET /api/projects/{id}/backlog 响应 (4 个平行数组 + project_id)。 */
+export interface BacklogResponse {
+  project_id?: string | null;
+  epics?: BacklogEpic[] | null;
+  features?: BacklogFeature[] | null;
+  stories?: BacklogStory[] | null;
+  tasks?: BacklogTask[] | null;
+}
+
 /** 进度树节点 (§6.1: 阶段|模块|任务; 可选字段表达缺失 — §6.3 降级)。 */
 export interface TreeNode {
   id: string;

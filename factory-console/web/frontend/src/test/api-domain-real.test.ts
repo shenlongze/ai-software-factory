@@ -1,16 +1,23 @@
 /**
- * src/test/api-domain-real.test.ts — Domain Adapter 真实结构 fixture 测试 (S10-014 Task 007)。
+ * src/test/api-domain-real.test.ts — Domain Adapter 真实结构 fixture 测试 (S10-014 Task 007 + S10-015 Task 002)。
  *
- * fixture 直接来自真实后端响应 (GET http://127.0.0.1:8011, 2026-08-11 实测):
+ * fixture 直接来自真实后端响应 (GET http://127.0.0.1:8011, 实测):
  *   - /api/projects → ProjectSummary[] (markpad / P-100b4453 / P-16775f9f)
  *   - /api/projects/{id}/workflow → WorkflowDetail (P-16775f9f 设计链, 3 阶段)
  *   - /api/projects/{id}/timeline → TimelineEventSummary[] (P-16775f9f 前 2 条)
+ *   - /api/projects/P-806fe6e8/backlog → BacklogResponse (S10-015 §2.1, 2026-08-12 实测:
+ *     3 Epic / 2 Feature / 2 Story / 3 Task, 含 2 个孤儿 Epic + children id 引用)
  *   - /api/dashboard.agents → 后端 AgentSummary[] (id/name/role/status/skills/current_task)
  * 字段保留真实值 (仅截断/省略无关项), 证明 Adapter 吃真实 JSON 结构不崩溃、映射正确。
  */
 
 import { describe, expect, it } from 'vitest';
-import type { ProjectSummary, TimelineEventSummary, WorkflowDetail } from '../models/types';
+import type {
+  ProjectSummary,
+  TimelineEventSummary,
+  WorkflowDetail,
+} from '../models/types';
+import type { BacklogResponse } from '../models/domain';
 import {
   toAgentSummary,
   toRuntimeActivity,
@@ -237,32 +244,180 @@ describe('api/domain 真实结构 — toWorkspaceProject (/api/projects 实测)'
   });
 });
 
-describe('api/domain 真实结构 — toTodoTree (/api/projects 实测降级树)', () => {
-  it('P-16775f9f: stage_counts {completed:2, running:1} → 两阶段完成一阶段运行', () => {
-    const tree = toTodoTree(REAL_PROJECT_ACTIVE);
-    expect(tree.root.title).toBe('ledger-app');
+/** 真实 /api/projects/P-806fe6e8/backlog 响应 (S10-015 §2.1, 2026-08-12 实测节选):
+ * 3 Epic (含 2 个孤儿 children=[] + 1 个带子), 2 Feature, 2 Story, 3 Task。
+ * 字段保留真实值; 层级只靠 children id 引用 (无回溯字段), Task 全部 todo。 */
+const REAL_BACKLOG_P806FE6E8: BacklogResponse = {
+  project_id: 'P-806fe6e8',
+  epics: [
+    {
+      id: 'EPIC-6ffd3c02',
+      name: '计分核心',
+      description: '台球计分',
+      children: [],
+      created_at: '2026-08-11T17:49:45.602701Z',
+      updated_at: '2026-08-11T17:49:45.602701Z',
+    },
+    {
+      id: 'EPIC-89bcd292',
+      name: 'UI 界面',
+      description: 'Flutter 界面',
+      children: [],
+      created_at: '2026-08-11T17:49:45.602701Z',
+      updated_at: '2026-08-11T17:49:45.602701Z',
+    },
+    {
+      id: 'EPIC-c6cac2d8',
+      name: '计分核心',
+      description: '台球计分核心功能',
+      children: ['FEAT-39a91953', 'FEAT-f6d9c303'],
+      created_at: '2026-08-11T17:49:45.602701Z',
+      updated_at: '2026-08-11T17:49:45.602701Z',
+    },
+  ],
+  features: [
+    {
+      id: 'FEAT-39a91953',
+      name: '用户系统',
+      description: '注册登录',
+      children: ['STORY-9f928023'],
+      created_at: '2026-08-11T17:49:45.602701Z',
+      updated_at: '2026-08-11T17:49:45.602701Z',
+    },
+    {
+      id: 'FEAT-f6d9c303',
+      name: '比赛管理',
+      description: '创建比赛/计分',
+      children: ['STORY-317aed7b'],
+      created_at: '2026-08-11T17:49:45.602701Z',
+      updated_at: '2026-08-11T17:49:45.602701Z',
+    },
+  ],
+  stories: [
+    {
+      id: 'STORY-9f928023',
+      name: '用户注册',
+      description: '手机号注册',
+      children: ['TASK-a8a01f8d', 'TASK-e10a6043'],
+      created_at: '2026-08-11T17:49:45.602701Z',
+      updated_at: '2026-08-11T17:49:45.602701Z',
+    },
+    {
+      id: 'STORY-317aed7b',
+      name: '创建比赛',
+      description: '新比赛',
+      children: ['TASK-425bf30b'],
+      created_at: '2026-08-11T17:49:45.602701Z',
+      updated_at: '2026-08-11T17:49:45.602701Z',
+    },
+  ],
+  tasks: [
+    {
+      id: 'TASK-425bf30b',
+      title: '计分逻辑',
+      description: '实时计分',
+      priority: 'P0',
+      status: 'todo',
+      assignee: '',
+      dependency: [],
+      created_at: '2026-08-11T17:49:45.602701Z',
+      updated_at: '2026-08-11T17:49:45.602701Z',
+      history: [],
+    },
+    {
+      id: 'TASK-a8a01f8d',
+      title: '实现注册 API',
+      description: 'POST /api/register',
+      priority: 'P1',
+      status: 'todo',
+      assignee: '',
+      dependency: [],
+      created_at: '2026-08-11T17:49:45.602701Z',
+      updated_at: '2026-08-11T17:49:45.602701Z',
+      history: [],
+    },
+    {
+      id: 'TASK-e10a6043',
+      title: '实现登录 API',
+      description: 'POST /api/login JWT',
+      priority: 'P1',
+      status: 'todo',
+      assignee: '',
+      dependency: [],
+      created_at: '2026-08-11T17:49:45.602701Z',
+      updated_at: '2026-08-11T17:49:45.602701Z',
+      history: [],
+    },
+  ],
+};
+
+describe('api/domain 真实结构 — toTodoTree (/api/projects/P-806fe6e8/backlog 实测)', () => {
+  it('孤儿 Epic 保留为空阶段: 3 phase (2 空 + 1 带子), root 聚合', () => {
+    const tree = toTodoTree(REAL_BACKLOG_P806FE6E8, 'ScorePocket');
+    expect(tree.root.id).toBe('root');
+    expect(tree.root.title).toBe('ScorePocket');
+    expect(tree.root.type).toBe('phase');
     expect(tree.root.children).toHaveLength(3);
-    expect(tree.root.children.map((c) => c.status)).toEqual([
-      'completed',
-      'completed',
-      'running',
-    ]);
-    expect(tree.root.status).toBe('running');
+    const [orphan1, orphan2, main] = tree.root.children;
+    expect(orphan1.id).toBe('EPIC-6ffd3c02');
+    expect(orphan1.title).toBe('计分核心');
+    expect(orphan1.status).toBe('pending');
+    expect(orphan1.progress).toBe(0);
+    expect(orphan1.children).toHaveLength(0);
+    expect(orphan2.id).toBe('EPIC-89bcd292');
+    expect(orphan2.title).toBe('UI 界面');
+    expect(orphan2.children).toHaveLength(0);
+    expect(main.id).toBe('EPIC-c6cac2d8');
+    expect(main.children).toHaveLength(2);
   });
 
-  it('P-100b4453: workflow failed + blocked → 首阶段 failed, 次阶段 blocked', () => {
-    const tree = toTodoTree(REAL_PROJECT_FAILED);
-    expect(tree.root.children.map((c) => c.status)).toEqual(['failed', 'blocked', 'pending']);
-    expect(tree.root.status).toBe('failed');
+  it('children id 反向索引组装: Epic→Feature→Story→Task 层级与真实引用一致', () => {
+    const tree = toTodoTree(REAL_BACKLOG_P806FE6E8, 'ScorePocket');
+    const main = tree.root.children[2];
+    // EPIC-c6cac2d8.children → [FEAT-39a91953, FEAT-f6d9c303]
+    expect(main.children.map((m) => m.id)).toEqual(['FEAT-39a91953', 'FEAT-f6d9c303']);
+    expect(main.children.map((m) => m.type)).toEqual(['module', 'module']);
+    const userSystem = main.children[0];
+    expect(userSystem.title).toBe('用户系统');
+    expect(userSystem.children).toHaveLength(1);
+    const story = userSystem.children[0];
+    expect(story.id).toBe('STORY-9f928023');
+    expect(story.title).toBe('用户注册');
+    expect(story.type).toBe('task');
+    // STORY-9f928023.children → [TASK-a8a01f8d, TASK-e10a6043]
+    expect(story.children.map((t) => t.id)).toEqual(['TASK-a8a01f8d', 'TASK-e10a6043']);
+    expect(story.children.map((t) => t.title)).toEqual(['实现注册 API', '实现登录 API']);
+    expect(story.children.map((t) => t.type)).toEqual(['task', 'task']);
+    const match = main.children[1];
+    expect(match.title).toBe('比赛管理');
+    expect(match.children[0].children[0].id).toBe('TASK-425bf30b');
+    expect(match.children[0].children[0].title).toBe('计分逻辑');
   });
 
-  it('markpad: 无 workflow 信号 → active 语义 (产品完成/开发运行中)', () => {
-    const tree = toTodoTree(REAL_PROJECT_MARKPAD);
-    expect(tree.root.children.map((c) => c.status)).toEqual([
-      'completed',
-      'running',
-      'pending',
-    ]);
+  it('Task 六态映射 + Story 聚合: 全 todo → pending, 完成度 0', () => {
+    const tree = toTodoTree(REAL_BACKLOG_P806FE6E8, 'ScorePocket');
+    const userSystem = tree.root.children[2].children[0];
+    const story = userSystem.children[0];
+    expect(story.children[0].status).toBe('pending'); // todo → pending
+    expect(story.children[1].status).toBe('pending');
+    expect(story.status).toBe('pending'); // 全 todo (无完成信号) → pending
+    expect(story.progress).toBe(0);
+    expect(userSystem.status).toBe('pending');
+    expect(userSystem.progress).toBe(0);
+    expect(tree.root.status).toBe('pending');
+    expect(tree.root.progress).toBe(0);
+  });
+
+  it('真实任务详情字段透传: priority/description 保留在 BacklogTask (输入契约不丢数据)', () => {
+    const tree = toTodoTree(REAL_BACKLOG_P806FE6E8, 'ScorePocket');
+    const scoreTask = tree.root.children[2].children[1].children[0].children[0];
+    expect(scoreTask.id).toBe('TASK-425bf30b');
+    expect(scoreTask.title).toBe('计分逻辑');
+    // 输入层 BacklogTask 保留真实字段 (priority P0 / 空 assignee / 空 dependency)
+    const raw = REAL_BACKLOG_P806FE6E8.tasks?.[0];
+    expect(raw?.priority).toBe('P0');
+    expect(raw?.assignee).toBe('');
+    expect(raw?.dependency).toEqual([]);
   });
 });
 

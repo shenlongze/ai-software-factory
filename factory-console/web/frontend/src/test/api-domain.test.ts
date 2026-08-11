@@ -21,7 +21,13 @@ import {
   toWorkflowPipeline,
   toWorkspaceProject,
 } from '../api/domain';
-import type { BacklogInput } from '../api/domain';
+import type {
+  BacklogEpic,
+  BacklogFeature,
+  BacklogResponse,
+  BacklogStory,
+  BacklogTask,
+} from '../models/domain';
 
 /** 完整 ProjectSummary 工厂 (真实后端结构, 见 models/types.ts)。 */
 function proj(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
@@ -145,126 +151,252 @@ describe('api/domain — toWorkspaceProject 降级与边界', () => {
   });
 });
 
-// ------------------------------------------------------------------ toTodoTree
+// ------------------------------------------------------------------ toTodoTree (S10-015 Task 002: BacklogResponse 重构)
 
-describe('api/domain — toTodoTree 项目级降级树 (lifecycle 派生)', () => {
-  it('development → 产品 completed / 开发 running / 测试发布 pending, root 聚合', () => {
-    const tree = toTodoTree(proj({ lifecycle_stage: 'development', progress: 0.5 }));
-    expect(tree.root.id).toBe('demo');
-    expect(tree.root.title).toBe('Demo Project');
+/** BacklogEpic 快捷工厂 (真实结构: id/name/children id 引用, 无 status)。 */
+function bep(id: string, name: string, children: string[] = []): BacklogEpic {
+  return { id, name, children };
+}
+
+/** BacklogFeature 快捷工厂。 */
+function bfeat(id: string, name: string, children: string[] = []): BacklogFeature {
+  return { id, name, children };
+}
+
+/** BacklogStory 快捷工厂。 */
+function bstory(id: string, name: string, children: string[] = []): BacklogStory {
+  return { id, name, children };
+}
+
+/** BacklogTask 快捷工厂 (真实结构: title/priority/status)。 */
+function btask(id: string, title: string, status: string, priority: string = 'P2'): BacklogTask {
+  return { id, title, status, priority };
+}
+
+describe('api/domain — toTodoTree 层级映射 (children id 反向索引)', () => {
+  it('完整映射: Epic→phase / Feature→module / Story→task(带子Task) / Task→task 子节点', () => {
+    const backlog: BacklogResponse = {
+      epics: [bep('EPIC-1', '计分核心', ['FEAT-1'])],
+      features: [bfeat('FEAT-1', '用户系统', ['STORY-1'])],
+      stories: [bstory('STORY-1', '用户注册', ['TASK-1', 'TASK-2'])],
+      tasks: [btask('TASK-1', '实现注册 API', 'done', 'P0'), btask('TASK-2', '实现登录 API', 'todo', 'P1')],
+    };
+    const tree = toTodoTree(backlog, 'ScorePocket');
+    expect(tree.root.id).toBe('root');
+    expect(tree.root.title).toBe('ScorePocket');
     expect(tree.root.type).toBe('phase');
-    expect(tree.root.children).toHaveLength(3);
-    const [product, development, release] = tree.root.children;
-    expect(product.title).toBe('产品设计');
-    expect(product.type).toBe('phase');
-    expect(product.status).toBe('completed');
-    expect(product.progress).toBe(100);
-    expect(development.title).toBe('开发');
-    expect(development.status).toBe('running');
-    expect(development.progress).toBe(50);
-    expect(release.title).toBe('测试发布');
-    expect(release.status).toBe('pending');
-    expect(release.progress).toBe(0);
-    expect(tree.root.status).toBe('running');
-    expect(tree.root.progress).toBe(50);
-    expect(tree.root.statusLabel).toBe('执行中');
-  });
-
-  it('idea (无 lifecycle) → 全部 pending; workflow failed → 首阶段 failed; blocked → 次阶段 blocked', () => {
-    const tree = toTodoTree(
-      proj({
-        status: 'idea',
-        workflow_status: 'failed',
-        current_stage: 'product',
-        current_stage_status: 'failed',
-        stage_counts: { failed: 1, blocked: 2 },
-      }),
-    );
-    const [product, development, release] = tree.root.children;
-    expect(product.status).toBe('failed');
-    expect(development.status).toBe('blocked');
-    expect(release.status).toBe('pending');
-    expect(tree.root.status).toBe('failed');
-  });
-
-  it('stage_counts 驱动: completed=2 + running=1 → 前两阶段完成, 第三阶段运行中', () => {
-    const tree = toTodoTree(
-      proj({ status: 'idea', workflow_status: 'active', stage_counts: { completed: 2, running: 1 } }),
-    );
-    const [product, development, release] = tree.root.children;
-    expect(product.status).toBe('completed');
-    expect(development.status).toBe('completed');
-    expect(release.status).toBe('running');
-    expect(tree.root.status).toBe('running');
-    expect(tree.root.progress).toBe(83);
-  });
-
-  it('stage_counts.completed >= 3 → 全部 completed', () => {
-    const tree = toTodoTree(proj({ status: 'idea', stage_counts: { completed: 3 } }));
-    expect(tree.root.children.every((c) => c.status === 'completed')).toBe(true);
-    expect(tree.root.status).toBe('completed');
-    expect(tree.root.progress).toBe(100);
-  });
-
-  it('release → 测试发布 running; maintenance → 全部 completed', () => {
-    const releaseTree = toTodoTree(proj({ lifecycle_stage: 'release' }));
-    expect(releaseTree.root.children[2].status).toBe('running');
-    const maintTree = toTodoTree(proj({ lifecycle_stage: 'maintenance' }));
-    expect(maintTree.root.children.every((c) => c.status === 'completed')).toBe(true);
+    expect(tree.root.children).toHaveLength(1);
+    const phase = tree.root.children[0];
+    expect(phase.type).toBe('phase');
+    expect(phase.title).toBe('计分核心');
+    expect(phase.children).toHaveLength(1);
+    const module = phase.children[0];
+    expect(module.type).toBe('module');
+    expect(module.title).toBe('用户系统');
+    expect(module.children).toHaveLength(1);
+    const story = module.children[0];
+    expect(story.type).toBe('task');
+    expect(story.title).toBe('用户注册');
+    expect(story.children).toHaveLength(2);
+    expect(story.children[0].type).toBe('task');
+    expect(story.children[0].title).toBe('实现注册 API');
+    expect(story.children[1].title).toBe('实现登录 API');
   });
 });
 
-describe('api/domain — toTodoTree backlog 聚合 (epic→phase, feature→module, task→task)', () => {
-  const backlog: BacklogInput = {
-    epics: [
-      {
-        id: 'ep-1',
-        title: '记账核心',
-        status: 'active',
-        features: [
-          {
-            id: 'f-1',
-            title: '支出记录',
-            status: 'completed',
-            items: [
-              { id: 't-1', title: '记录表单', status: 'completed' },
-              { id: 't-2', title: '分类统计', status: 'pending' },
-            ],
-          },
-        ],
-      },
-    ],
-  };
+describe('api/domain — toTodoTree Task 六态映射 (含 review)', () => {
+  it.each([
+    ['todo', 'pending'],
+    ['ready', 'pending'],
+    ['in_progress', 'running'],
+    ['blocked', 'blocked'],
+    ['review', 'review'],
+    ['done', 'completed'],
+  ] as const)('status=%s → %s', (raw, expected) => {
+    const backlog: BacklogResponse = {
+      epics: [bep('E', '阶段', ['F'])],
+      features: [bfeat('F', '模块', ['S'])],
+      stories: [bstory('S', '故事', ['T'])],
+      tasks: [btask('T', '任务', raw)],
+    };
+    const leaf = toTodoTree(backlog).root.children[0].children[0].children[0].children[0];
+    expect(leaf.status).toBe(expected);
+  });
+});
 
-  it('三层聚合: phase(epic) → module(feature) → task(item)', () => {
-    const tree = toTodoTree(proj(), backlog);
-    expect(tree.root.title).toBe('Demo Project');
+describe('api/domain — toTodoTree Story 状态聚合 (子 Task 派生)', () => {
+  function storyTree(taskStatuses: Array<[string, string]>): ReturnType<typeof toTodoTree> {
+    const backlog: BacklogResponse = {
+      epics: [bep('E', '阶段', ['F'])],
+      features: [bfeat('F', '模块', ['S'])],
+      stories: [bstory('S', '故事', taskStatuses.map(([id]) => id))],
+      tasks: taskStatuses.map(([id, status]) => btask(id, `任务-${id}`, status)),
+    };
+    return toTodoTree(backlog);
+  }
+
+  it('全 done → completed', () => {
+    const story = storyTree([
+      ['T1', 'done'],
+      ['T2', 'done'],
+    ]).root.children[0].children[0].children[0];
+    expect(story.status).toBe('completed');
+  });
+
+  it('有 in_progress → running', () => {
+    const story = storyTree([
+      ['T1', 'done'],
+      ['T2', 'in_progress'],
+    ]).root.children[0].children[0].children[0];
+    expect(story.status).toBe('running');
+  });
+
+  it('有 blocked → blocked', () => {
+    const story = storyTree([
+      ['T1', 'done'],
+      ['T2', 'blocked'],
+    ]).root.children[0].children[0].children[0];
+    expect(story.status).toBe('blocked');
+  });
+
+  it('有 review → review', () => {
+    const story = storyTree([
+      ['T1', 'done'],
+      ['T2', 'review'],
+    ]).root.children[0].children[0].children[0];
+    expect(story.status).toBe('review');
+  });
+
+  it('全部 todo/ready (无完成信号) → pending', () => {
+    const story = storyTree([
+      ['T1', 'todo'],
+      ['T2', 'ready'],
+    ]).root.children[0].children[0].children[0];
+    expect(story.status).toBe('pending');
+  });
+});
+
+describe('api/domain — toTodoTree 完成度 (P0-P3 加权)', () => {
+  function treeWithTasks(tasks: Array<[string, string, string]>): ReturnType<typeof toTodoTree> {
+    const backlog: BacklogResponse = {
+      epics: [bep('E', '阶段', ['F'])],
+      features: [bfeat('F', '模块', ['S'])],
+      stories: [bstory('S', '故事', tasks.map(([id]) => id))],
+      tasks: tasks.map(([id, status, priority]) => btask(id, `任务-${id}`, status, priority)),
+    };
+    return toTodoTree(backlog);
+  }
+
+  it('叶子 Task: done=100%, todo=0%', () => {
+    const tree = treeWithTasks([
+      ['T1', 'done', 'P0'],
+      ['T2', 'todo', 'P0'],
+    ]);
+    const story = tree.root.children[0].children[0].children[0];
+    expect(story.children[0].progress).toBe(100);
+    expect(story.children[1].progress).toBe(0);
+  });
+
+  it('Story 加权: P0 done + P3 todo → 80% (P0=4 权重大于 P3=1)', () => {
+    const tree = treeWithTasks([
+      ['T1', 'done', 'P0'],
+      ['T2', 'todo', 'P3'],
+    ]);
+    const story = tree.root.children[0].children[0].children[0];
+    expect(story.progress).toBe(80); // (4*100 + 1*0) / 5
+  });
+
+  it('反向: P0 todo + P3 done → 20% (P0 权重拖低)', () => {
+    const tree = treeWithTasks([
+      ['T1', 'todo', 'P0'],
+      ['T2', 'done', 'P3'],
+    ]);
+    const story = tree.root.children[0].children[0].children[0];
+    expect(story.progress).toBe(20); // (4*0 + 1*100) / 5
+  });
+
+  it('无 priority → 权重 1 (等同 P3)', () => {
+    const backlog: BacklogResponse = {
+      epics: [bep('E', '阶段', ['F'])],
+      features: [bfeat('F', '模块', ['S'])],
+      stories: [bstory('S', '故事', ['T1', 'T2'])],
+      tasks: [
+        { id: 'T1', title: '无优先级-完成', status: 'done' },
+        { id: 'T2', title: '无优先级-待办', status: 'todo' },
+      ],
+    };
+    const story = toTodoTree(backlog).root.children[0].children[0].children[0];
+    expect(story.progress).toBe(50); // (1*100 + 1*0) / 2
+  });
+
+  it('阶段/模块递归加权聚合: 单 Story 50% → module=50% → phase=50%', () => {
+    const backlog: BacklogResponse = {
+      epics: [bep('E', '阶段', ['F'])],
+      features: [bfeat('F', '模块', ['S'])],
+      stories: [bstory('S', '故事', ['T1'])],
+      tasks: [btask('T1', '任务', 'done')],
+    };
+    const tree = toTodoTree(backlog);
     const phase = tree.root.children[0];
-    expect(phase.type).toBe('phase');
-    expect(phase.title).toBe('记账核心');
-    expect(phase.status).toBe('running');
     const module = phase.children[0];
-    expect(module.type).toBe('module');
-    expect(module.title).toBe('支出记录');
-    expect(module.status).toBe('completed');
-    expect(module.children).toHaveLength(2);
-    const task = module.children[0];
-    expect(task.type).toBe('task');
-    expect(task.title).toBe('记录表单');
-    expect(task.status).toBe('completed');
-    expect(module.children[1].status).toBe('pending');
+    expect(module.progress).toBe(100);
+    expect(phase.progress).toBe(100);
+    expect(tree.root.progress).toBe(100);
+  });
+});
+
+describe('api/domain — toTodoTree 孤儿/悬空/空降级', () => {
+  it('孤儿 Epic (children=[]) → 保留为空阶段 (pending, 0%)', () => {
+    const backlog: BacklogResponse = {
+      epics: [bep('EPIC-orphan', 'UI 界面'), bep('EPIC-2', '有子', ['F1'])],
+      features: [bfeat('F1', '模块', [])],
+      stories: [],
+      tasks: [],
+    };
+    const tree = toTodoTree(backlog);
+    expect(tree.root.children).toHaveLength(2);
+    const orphan = tree.root.children[0];
+    expect(orphan.id).toBe('EPIC-orphan');
+    expect(orphan.title).toBe('UI 界面');
+    expect(orphan.type).toBe('phase');
+    expect(orphan.status).toBe('pending');
+    expect(orphan.progress).toBe(0);
+    expect(orphan.children).toHaveLength(0);
   });
 
-  it('backlog 为数组 → 视为 epics', () => {
-    const tree = toTodoTree(proj(), backlog.epics as unknown as BacklogInput);
-    expect(tree.root.children[0].title).toBe('记账核心');
+  it('悬空引用 (children 指向不存在的 id) → 跳过, 不崩溃', () => {
+    const backlog: BacklogResponse = {
+      epics: [bep('E', '阶段', ['F-missing', 'F-ok'])],
+      features: [bfeat('F-ok', '存在的模块', ['S-missing'])],
+      stories: [bstory('S-ok', '存在的故事', ['T-missing'])],
+      tasks: [btask('T-ok', '存在的任务', 'done')],
+    };
+    const tree = toTodoTree(backlog);
+    const phase = tree.root.children[0];
+    expect(phase.children).toHaveLength(1);
+    expect(phase.children[0].title).toBe('存在的模块');
+    expect(phase.children[0].children).toHaveLength(0); // S-missing 悬空 → Story 跳过
   });
 
-  it('backlog 缺 epics / 空对象 / undefined / null → 项目级降级树 (不崩溃)', () => {
-    expect(toTodoTree(proj(), {} as BacklogInput).root.children).toHaveLength(3);
-    expect(toTodoTree(proj(), { epics: [] }).root.children).toHaveLength(3);
-    expect(toTodoTree(proj(), undefined).root.children).toHaveLength(3);
-    expect(toTodoTree(proj(), null).root.children).toHaveLength(3);
+  it('空 backlog → 单根降级 (projectName, phase, pending, 0%)', () => {
+    const tree = toTodoTree({ epics: [], features: [], stories: [], tasks: [] }, 'ScorePocket');
+    expect(tree.root.id).toBe('root');
+    expect(tree.root.title).toBe('ScorePocket');
+    expect(tree.root.type).toBe('phase');
+    expect(tree.root.status).toBe('pending');
+    expect(tree.root.progress).toBe(0);
+    expect(tree.root.children).toHaveLength(0);
+  });
+
+  it('空 backlog 且缺 projectName → root.title=项目', () => {
+    const tree = toTodoTree({ epics: [], features: [], stories: [], tasks: [] });
+    expect(tree.root.title).toBe('项目');
+    expect(tree.root.children).toHaveLength(0);
+  });
+
+  it('backlog 为 null / undefined → 单根降级 (不崩溃)', () => {
+    expect(toTodoTree(null, 'P').root.title).toBe('P');
+    expect(toTodoTree(undefined, 'P').root.title).toBe('P');
   });
 });
 

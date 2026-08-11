@@ -34,7 +34,10 @@ CRUD (register/get/list/update/delete + 生命周期 — MCP 不预置种子,
 外部工具由用户注册); Task 005 已实现 workflows/ 目录信源 Registry CRUD
 (register/get/list/update/delete + 生命周期 + steps 校验 非空/有序/step id
 唯一 + required_agents/skills 引用校验 + 默认种子 software-development-lifecycle);
-Task 006 才实现 industries/llm-configs 注册。
+Task 006 已实现 industries/ + llm-configs/ 目录信源 Registry CRUD
+(register/get/list/update/delete + 生命周期 + workflow_templates 引用校验 +
+默认种子 software/deepseek-default — 无 key 明文) + 统一门面
+get_capability/list_capabilities (六类能力单入口, 供 Task 007 Dispatcher 集成)。
 """
 
 from __future__ import annotations
@@ -529,6 +532,120 @@ DEFAULT_WORKFLOWS: tuple[WorkflowTemplate, ...] = (
 )
 
 
+def _default_industry(
+    industry_id: str, name: str, description: str, workflow_templates: tuple[str, ...]
+) -> Industry:
+    """默认种子 Industry 构造 (S10-012 §三 种子: 只建实体不实现逻辑)。
+
+    workflow_templates 引用 DEFAULT_WORKFLOWS 内 id (种子自洽 — 全量种子后
+    validate_industry_refs 零警告)。
+    """
+    return Industry(
+        id=industry_id,
+        name=name,
+        description=description,
+        workflow_templates=list(workflow_templates),
+        enabled=True,
+        state=CapabilityState.ACTIVE,
+    )
+
+
+#: 默认种子 — 标准行业域 (S10-012 §三: software 行业; workflow_templates 绑定
+#: software-development-lifecycle — 引用落在 DEFAULT_WORKFLOWS 内; ACTIVE+enabled
+#: → 验收场景4 可选能力池; 幂等, 已存在不覆盖)。
+DEFAULT_INDUSTRIES: tuple[Industry, ...] = (
+    _default_industry(
+        "software",
+        "Software Development",
+        "软件行业: 需求分析/架构/开发/测试/发布全流程 (SDLC)",
+        ("software-development-lifecycle",),
+    ),
+)
+
+
+def _default_llm_config(
+    config_id: str,
+    provider: str,
+    model: str,
+    endpoint: str,
+    parameters: dict[str, Any],
+) -> LLMConfig:
+    """默认种子 LLMConfig 构造 (S10-012 §三 种子: 只建实体不实现逻辑)。
+
+    禁明文凭据: LLMConfig 模型无 key 字段 (extra=forbid — 带 key 的输入
+    直接拒绝); endpoint 为公共端点占位; parameters 只含 provider 通用参数
+    (温度/长度等), 不含任何 key/token/secret。
+    """
+    return LLMConfig(
+        id=config_id,
+        provider=provider,
+        model=model,
+        endpoint=endpoint,
+        parameters=parameters,
+        enabled=True,
+        state=CapabilityState.ACTIVE,
+    )
+
+
+#: 默认种子 — 标准 LLM 配置 (S10-012 §三: deepseek-default; model/endpoint 占位
+#: — 只建实体不连接, 真实调用 Task 007+ 消费; 无 key 明文; ACTIVE+enabled →
+#: 验收场景4 可选能力池; 幂等, 已存在不覆盖)。
+DEFAULT_LLM_CONFIGS: tuple[LLMConfig, ...] = (
+    _default_llm_config(
+        "deepseek-default",
+        "deepseek",
+        "v4-pro",                      # 占位模型名 (Task 006 不连接真实 LLM)
+        "https://api.deepseek.com/v1",  # 公共端点占位 (不含任何凭据)
+        {"temperature": 0.7, "max_tokens": 4096},
+    ),
+)
+
+
+# ------------------------------------------------------------------ 统一门面 kind 规范化 (Task 006)
+
+#: kind 规范名 → getter 方法名 (统一门面 get_capability 分发表)。
+_CAPABILITY_KIND_GETTERS: dict[str, str] = {
+    "skill": "get_skill",
+    "agent": "get_agent",
+    "mcp": "get_mcp",
+    "workflow": "get_workflow",
+    "industry": "get_industry",
+    "llm_config": "get_llm_config",
+}
+
+#: kind 规范名 → lister 方法名 (统一门面 list_capabilities 分发表)。
+_CAPABILITY_KIND_LISTERS: dict[str, str] = {
+    "skill": "list_skills",
+    "agent": "list_agents",
+    "mcp": "list_mcps",
+    "workflow": "list_workflows",
+    "industry": "list_industries",
+    "llm_config": "list_llm_configs",
+}
+
+#: 复数别名 → 规范名 (industries → industry, llm-configs → llm_config ...)。
+_CAPABILITY_KIND_ALIASES: dict[str, str] = {
+    "skills": "skill",
+    "agents": "agent",
+    "mcps": "mcp",
+    "workflows": "workflow",
+    "industries": "industry",
+    "llm_configs": "llm_config",
+}
+
+
+def _normalize_capability_kind(kind: Any) -> str:
+    """kind 规范化: 非空 + 小写 + "-" → "_" + 复数别名 → 规范名。
+
+    "LLM-CONFIG" → "llm_config"; "industries" → "industry";
+    "llm-configs" → "llm_config"; 未知字符串原样返回 (由门面分发表拒绝)。
+    """
+    if not isinstance(kind, str) or not kind.strip():
+        raise ValueError("capability kind must be a non-empty string")
+    key = kind.strip().lower().replace("-", "_")
+    return _CAPABILITY_KIND_ALIASES.get(key, key)
+
+
 class CapabilityRegistry:
     """Factory Capability Pool 注册表 (S10-012 §三 — skills/ 目录信源, Task 002)。
 
@@ -559,6 +676,8 @@ class CapabilityRegistry:
         self._agents_dir = self._capabilities_dir / "agents"
         self._mcps_dir = self._capabilities_dir / "mcps"
         self._workflows_dir = self._capabilities_dir / "workflows"
+        self._industries_dir = self._capabilities_dir / "industries"
+        self._llm_configs_dir = self._capabilities_dir / "llm-configs"
 
     # ------------------------------------------------------------------ 布局
     @property
@@ -590,6 +709,16 @@ class CapabilityRegistry:
         """workflows 目录信源 (<root>/workspace/capabilities/workflows)。"""
         return self._workflows_dir
 
+    @property
+    def industries_dir(self) -> Path:
+        """industries 目录信源 (<root>/workspace/capabilities/industries)。"""
+        return self._industries_dir
+
+    @property
+    def llm_configs_dir(self) -> Path:
+        """llm-configs 目录信源 (<root>/workspace/capabilities/llm-configs)。"""
+        return self._llm_configs_dir
+
     def _skill_path(self, skill_id: str) -> Path:
         return self._skills_dir / f"{skill_id}.json"
 
@@ -601,6 +730,12 @@ class CapabilityRegistry:
 
     def _workflow_path(self, workflow_id: str) -> Path:
         return self._workflows_dir / f"{workflow_id}.json"
+
+    def _industry_path(self, industry_id: str) -> Path:
+        return self._industries_dir / f"{industry_id}.json"
+
+    def _llm_config_path(self, llm_config_id: str) -> Path:
+        return self._llm_configs_dir / f"{llm_config_id}.json"
 
     @staticmethod
     def _validate_skill_id(skill_id: str) -> None:
@@ -659,6 +794,26 @@ class CapabilityRegistry:
             if step_id in seen:
                 raise ValueError(f"duplicate workflow step id: {step_id!r}")
             seen.add(step_id)
+
+    @staticmethod
+    def _validate_industry_id(industry_id: str) -> None:
+        """id 防御: 非空 + 无路径分隔符 (防目录信源路径穿越)。"""
+        if not isinstance(industry_id, str) or not industry_id.strip():
+            raise ValueError("industry id must be a non-empty string")
+        if any(ch in industry_id for ch in _SKILL_ID_BANNED):
+            raise ValueError(
+                f"industry id must not contain path separators: {industry_id!r}"
+            )
+
+    @staticmethod
+    def _validate_llm_config_id(llm_config_id: str) -> None:
+        """id 防御: 非空 + 无路径分隔符 (防目录信源路径穿越)。"""
+        if not isinstance(llm_config_id, str) or not llm_config_id.strip():
+            raise ValueError("llm config id must be a non-empty string")
+        if any(ch in llm_config_id for ch in _SKILL_ID_BANNED):
+            raise ValueError(
+                f"llm config id must not contain path separators: {llm_config_id!r}"
+            )
 
     # ------------------------------------------------------------------ 原子写
     @staticmethod
@@ -764,10 +919,12 @@ class CapabilityRegistry:
 
     # ------------------------------------------------------------------ 默认种子
     def seed_defaults(self) -> int:
-        """预置标准 skills + 标准 AI 员工角色 + 标准 workflows (幂等 — 已存在
-        文件不覆盖, 用户修改保留); 返回新建总数。种子 workflow 的 agent/skill
-        引用全部落在 DEFAULT_AGENTS/DEFAULT_SKILLS 内 — 同次种子后自洽
-        (validate_agent_bindings / validate_workflow_refs 零警告)。"""
+        """预置标准 skills + 标准 AI 员工角色 + 标准 workflows + 标准行业域 +
+        标准 LLM 配置 (幂等 — 已存在文件不覆盖, 用户修改保留); 返回新建总数。
+        种子 workflow 的 agent/skill 引用全部落在 DEFAULT_AGENTS/DEFAULT_SKILLS
+        内; 种子 industry 的 workflow 引用落在 DEFAULT_WORKFLOWS 内 — 同次种子
+        后自洽 (validate_agent_bindings / validate_workflow_refs /
+        validate_industry_refs 零警告)。"""
         seeded = 0
         for skill in DEFAULT_SKILLS:
             if not self._skill_path(skill.id).is_file():
@@ -780,6 +937,14 @@ class CapabilityRegistry:
         for workflow in DEFAULT_WORKFLOWS:
             if not self._workflow_path(workflow.id).is_file():
                 self.register_workflow(workflow)
+                seeded += 1
+        for industry in DEFAULT_INDUSTRIES:
+            if not self._industry_path(industry.id).is_file():
+                self.register_industry(industry)
+                seeded += 1
+        for llm_config in DEFAULT_LLM_CONFIGS:
+            if not self._llm_config_path(llm_config.id).is_file():
+                self.register_llm_config(llm_config)
                 seeded += 1
         return seeded
 
@@ -1128,4 +1293,265 @@ class CapabilityRegistry:
                 )
         return warnings
 
-    # ------------------------------------------------------------------ Workflow 默认种子 (Task 005)
+    # ------------------------------------------------------------------ Industry Registry (Task 006)
+
+    # 读 (失败安全)
+    @staticmethod
+    def _parse_industry(data: Any) -> Industry | None:
+        """dict → Industry; JSON 结构非法 (缺字段/extra/state 非法) → None。"""
+        if not isinstance(data, dict):
+            return None
+        try:
+            return Industry.model_validate(data)
+        except ValueError:
+            return None
+
+    def _read_industry_file(self, path: Path) -> Industry | None:
+        """读单文件; 损坏 JSON / 非法 schema → None (失败安全, 不崩溃)。"""
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return None
+        return self._parse_industry(data)
+
+    def get_industry(self, industry_id: str) -> Industry | None:
+        """按 id 取行业域; 缺失 / 损坏 → None。"""
+        path = self._industry_path(industry_id)
+        if not path.is_file():
+            return None
+        return self._read_industry_file(path)
+
+    def list_industries(self, *, enabled_only: bool = False) -> list[Industry]:
+        """全部行业域 (按 id 排序, 确定性); 损坏文件静默跳过。
+
+        enabled_only=True → 只返回 ACTIVE+enabled (capability_selectable,
+        S10-012 §四b 可选能力过滤)。
+        """
+        result: list[Industry] = []
+        if self._industries_dir.is_dir():
+            for path in sorted(self._industries_dir.glob("*.json")):
+                industry = self._read_industry_file(path)
+                if industry is None:
+                    continue  # 失败安全: 损坏/非法文件跳过
+                if enabled_only and not capability_selectable(industry):
+                    continue
+                result.append(industry)
+        return result
+
+    # 写
+    def register_industry(self, industry: Industry) -> Industry:
+        """注册/覆盖行业域 (upsert — 重复 id 覆盖; 原子写; 懒迁移建目录)。
+
+        workflow_templates 为引用列表 — 注册时不校验引用存在 (懒校验:
+        validate_industry_refs 负责标注缺失, 不崩溃, 同 workflow 模式)。
+        """
+        self._validate_industry_id(industry.id)
+        self._atomic_write(self._industry_path(industry.id), industry.to_dict())
+        return industry
+
+    def update_industry(
+        self, industry_id: str, updates: dict[str, Any]
+    ) -> Industry | None:
+        """部分字段更新 (含 description/workflow_templates); 缺失 → None。
+
+        全量重校验 (model_validate): 未知字段 (extra=forbid) / 非法 state
+        → ValueError, 不落盘 (原文件保持)。
+        """
+        current = self.get_industry(industry_id)
+        if current is None:
+            return None
+        merged = Industry.model_validate({**current.to_dict(), **(updates or {})})
+        self.register_industry(merged)
+        return merged
+
+    def delete_industry(self, industry_id: str) -> bool:
+        """删除行业域文件; 缺失 → False (幂等); 删除失败 → False (失败安全)。"""
+        path = self._industry_path(industry_id)
+        if not path.is_file():
+            return False
+        try:
+            path.unlink()
+            return True
+        except OSError:
+            return False
+
+    # 生命周期
+    def transition_industry(
+        self, industry_id: str, target: CapabilityState | str
+    ) -> Industry | None:
+        """受控生命周期转换并落盘 (DRAFT→ACTIVE→DEPRECATED→ARCHIVED)。
+
+        非法转换 (跳级/回退/终态后) → ValueError, 不落盘 (原文件保持);
+        缺失 id → None。
+        """
+        current = self.get_industry(industry_id)
+        if current is None:
+            return None
+        updated = transition_capability(current, target)
+        if not isinstance(updated, Industry):
+            raise TypeError("transition_capability must return an Industry instance")
+        self.register_industry(updated)
+        return updated
+
+    # 引用校验 (S10-012 §四: 缺失 → 警告标注, 不崩溃)
+    def validate_industry_refs(self, industry_id: str) -> list[str] | None:
+        """校验 industry.workflow_templates 引用是否存在于 Registry。
+
+        - workflow_templates 引用 workflows/ 目录 (WorkflowTemplate 实体)
+        - 返回警告字符串列表 (每条一个缺失引用); 全部解析 → 空列表
+        - 缺失 industry → None (同 get_industry 语义)
+        - 不崩溃: 缺失引用只是警告, 不影响 industry 本身读取/使用
+        """
+        industry = self.get_industry(industry_id)
+        if industry is None:
+            return None
+        known_workflows = {w.id for w in self.list_workflows()}
+        warnings: list[str] = []
+        for workflow_id in industry.workflow_templates:
+            if workflow_id not in known_workflows:
+                warnings.append(
+                    f"industry {industry_id}: workflow template missing: {workflow_id}"
+                )
+        return warnings
+
+    # ------------------------------------------------------------------ LLM Config Registry (Task 006)
+
+    # 读 (失败安全)
+    @staticmethod
+    def _parse_llm_config(data: Any) -> LLMConfig | None:
+        """dict → LLMConfig; JSON 结构非法 (缺字段/extra/state 非法) → None。"""
+        if not isinstance(data, dict):
+            return None
+        try:
+            return LLMConfig.model_validate(data)
+        except ValueError:
+            return None
+
+    def _read_llm_config_file(self, path: Path) -> LLMConfig | None:
+        """读单文件; 损坏 JSON / 非法 schema → None (失败安全, 不崩溃)。"""
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return None
+        return self._parse_llm_config(data)
+
+    def get_llm_config(self, llm_config_id: str) -> LLMConfig | None:
+        """按 id 取模型配置; 缺失 / 损坏 → None。
+
+        只读实体不连接: 真实 LLM 调用在 S10-012 禁止范围外 (Task 007+ 消费);
+        模型无 key 字段 (禁明文凭据 — 凭据走 env:VAR 引用, 未来 Task 扩展)。
+        """
+        path = self._llm_config_path(llm_config_id)
+        if not path.is_file():
+            return None
+        return self._read_llm_config_file(path)
+
+    def list_llm_configs(self, *, enabled_only: bool = False) -> list[LLMConfig]:
+        """全部模型配置 (按 id 排序, 确定性); 损坏文件静默跳过。
+
+        enabled_only=True → 只返回 ACTIVE+enabled (capability_selectable,
+        S10-012 §四b 可选能力过滤)。
+        """
+        result: list[LLMConfig] = []
+        if self._llm_configs_dir.is_dir():
+            for path in sorted(self._llm_configs_dir.glob("*.json")):
+                config = self._read_llm_config_file(path)
+                if config is None:
+                    continue  # 失败安全: 损坏/非法文件跳过
+                if enabled_only and not capability_selectable(config):
+                    continue
+                result.append(config)
+        return result
+
+    # 写
+    def register_llm_config(self, config: LLMConfig) -> LLMConfig:
+        """注册/覆盖模型配置 (upsert — 重复 id 覆盖; 原子写; 懒迁移建目录)。
+
+        禁明文凭据: LLMConfig 模型无 key 字段 (extra=forbid — 带 api_key 的
+        输入直接拒绝), endpoint/parameters 由调用方保证不含凭据。
+        """
+        self._validate_llm_config_id(config.id)
+        self._atomic_write(self._llm_config_path(config.id), config.to_dict())
+        return config
+
+    def update_llm_config(
+        self, llm_config_id: str, updates: dict[str, Any]
+    ) -> LLMConfig | None:
+        """部分字段更新 (含 provider/model/endpoint/parameters); 缺失 → None。
+
+        全量重校验 (model_validate): 未知字段 (extra=forbid — 含 api_key 等
+        凭据字段) / 非法 state → ValueError, 不落盘 (原文件保持)。
+        """
+        current = self.get_llm_config(llm_config_id)
+        if current is None:
+            return None
+        merged = LLMConfig.model_validate({**current.to_dict(), **(updates or {})})
+        self.register_llm_config(merged)
+        return merged
+
+    def delete_llm_config(self, llm_config_id: str) -> bool:
+        """删除模型配置文件; 缺失 → False (幂等); 删除失败 → False (失败安全)。"""
+        path = self._llm_config_path(llm_config_id)
+        if not path.is_file():
+            return False
+        try:
+            path.unlink()
+            return True
+        except OSError:
+            return False
+
+    # 生命周期
+    def transition_llm_config(
+        self, llm_config_id: str, target: CapabilityState | str
+    ) -> LLMConfig | None:
+        """受控生命周期转换并落盘 (DRAFT→ACTIVE→DEPRECATED→ARCHIVED)。
+
+        非法转换 (跳级/回退/终态后) → ValueError, 不落盘 (原文件保持);
+        缺失 id → None。
+        """
+        current = self.get_llm_config(llm_config_id)
+        if current is None:
+            return None
+        updated = transition_capability(current, target)
+        if not isinstance(updated, LLMConfig):
+            raise TypeError("transition_capability must return an LLMConfig instance")
+        self.register_llm_config(updated)
+        return updated
+
+    # ------------------------------------------------------------------ 统一门面 (Task 006 — 供 Task 007 Dispatcher 集成)
+
+    def get_capability(self, kind: str, capability_id: str) -> CapabilityEntity | None:
+        """统一查询门面: kind → 对应实体 (六类能力单入口, Task 007 集成)。
+
+        - kind: skill|agent|mcp|workflow|industry|llm_config (大小写不敏感;
+          "-" → "_"; 支持复数别名 skills/agents/mcps/workflows/industries/
+          llm-configs)
+        - 未知 kind → ValueError (拼写错误显式暴露, 不静默 None)
+        - 缺失 id → None (跨类型统一缺失语义)
+        """
+        normalized = _normalize_capability_kind(kind)
+        getter = _CAPABILITY_KIND_GETTERS.get(normalized)
+        if getter is None:
+            raise ValueError(
+                f"unknown capability kind: {kind!r} "
+                f"(expected one of: {sorted(_CAPABILITY_KIND_GETTERS)})"
+            )
+        return getattr(self, getter)(capability_id)
+
+    def list_capabilities(
+        self, kind: str, *, enabled_only: bool = False
+    ) -> list[CapabilityEntity]:
+        """统一列表门面: kind → 对应实体列表 (六类能力单入口, Task 007 集成)。
+
+        - kind 语义同 get_capability (大小写不敏感/复数别名; 未知 → ValueError)
+        - enabled_only=True → 只返回 ACTIVE+enabled (capability_selectable,
+          S10-012 §四b 可选能力过滤)
+        """
+        normalized = _normalize_capability_kind(kind)
+        lister = _CAPABILITY_KIND_LISTERS.get(normalized)
+        if lister is None:
+            raise ValueError(
+                f"unknown capability kind: {kind!r} "
+                f"(expected one of: {sorted(_CAPABILITY_KIND_LISTERS)})"
+            )
+        return getattr(self, lister)(enabled_only=enabled_only)

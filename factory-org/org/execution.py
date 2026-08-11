@@ -31,6 +31,16 @@
   (缺失/损坏 → None; 设计 §5)
 - AuditStore: workspace/projects/{slug}/logs/audit.log 追加不可变
   (记录 {time, actor, action, entity, input, output, result}; 设计 §6)
+  Task 006 完善: list_audit (按 time 排序 + actor/entity/action 过滤) +
+  读取返回副本 (不可变语义 — 外部修改不影响落盘事实)
+- NotificationSink: 通知预留接口 (Task 006 — 本 Sprint 不实现真实渠道):
+  notify(project_id, event, payload) 默认 no-op; ExecutionEngine 可注入
+  (notification=sink); 门面终态通知 event="task.completed"/"task.failed"
+  (真实渠道 S10-012+ 注入替换)
+- 全链路审计 (Task 006): dispatch_task (actor=dispatcher,
+  action=instance.dispatched) + ExecutionEngine 门面 plan (actor=scheduler,
+  action=plan.created) + Task 状态联动 (actor=executor, action=task.linked)
+  均写 audit.log — scheduler/dispatcher/executor 每转换可审计
 
 约束: 本模块零 Core 依赖 (stdlib + pydantic + org.models, Removal Isolation);
 目录在项目空间 workspace/projects/{slug}/ 下 (与 org/space.py 布局一致 —
@@ -40,6 +50,7 @@ runtime/ 与 logs/ 平级); 原子写 = 临时文件 + os.replace (同 org/store
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import threading
@@ -346,6 +357,7 @@ def dispatch_task(
     *,
     project_id: str | None = None,
     lock: ExecutionLock | None = None,
+    audit_store: AuditStore | None = None,
 ) -> WorkflowInstance:
     """Dispatcher 纯函数 (S10-011 §二 2/3 — Task → Workflow Instance 分发)。
 
@@ -361,19 +373,23 @@ def dispatch_task(
        (bindings workflow_ref 优先, 否则 workflow_id 参数), agent/skill/mcp
        (bindings 第一个引用, 无绑定 → 空串)
     3. instance_id 唯一 (new_id)
+    4. audit_store 提供时 (Task 006 全链路审计): 写 audit 条目
+       (actor=dispatcher, action=instance.dispatched, entity=instance_id,
+       input={task_id, workflow_id, agent, skill, mcp},
+       output={instance_id, task_id, status}, result="OK")
 
-    纯函数: 不实际执行 (执行在 Task 004 Executor), 不写盘 (持久化由
-    WorkflowInstanceStore 负责), 不改入参。
+    纯函数: 不实际执行 (执行在 Task 004 Executor), 不改入参; 审计写入是
+    唯一副作用 (可选注入, 缺省不写)。
 
     project_id 提供时 (Task 005 写路径持锁): workflow instance 创建持
     per-project 锁 — 同项目写串行 (并发 dispatch 不交错), 跨项目并行,
     同线程重入安全; lock 缺省进程级默认锁 (可注入隔离锁)。
     """
     if project_id is None:
-        return _dispatch_impl(task, bindings, all_tasks, workflow_id)
+        return _dispatch_impl(task, bindings, all_tasks, workflow_id, audit_store=audit_store)
     holder = lock if lock is not None else _EXECUTION_LOCK
     with holder.locked(project_id):
-        return _dispatch_impl(task, bindings, all_tasks, workflow_id)
+        return _dispatch_impl(task, bindings, all_tasks, workflow_id, audit_store=audit_store)
 
 
 def _dispatch_impl(
@@ -381,13 +397,14 @@ def _dispatch_impl(
     bindings: dict[str, Any] | None,
     all_tasks: list[Task] | None,
     workflow_id: str,
+    audit_store: AuditStore | None = None,
 ) -> WorkflowInstance:
-    """dispatch_task 无锁实现 (纯函数 — 校验 + 创建 WorkflowInstance)。"""
+    """dispatch_task 无锁实现 (纯函数 — 校验 + 创建 WorkflowInstance + 可选审计)。"""
     all_tasks = [task] if all_tasks is None else all_tasks
     ok, reason = can_execute(task, all_tasks)
     if not ok:
         raise DispatchError(reason)
-    return WorkflowInstance(
+    instance = WorkflowInstance(
         instance_id=new_id("wi"),
         task_id=task.id,
         workflow_id=_workflow_ref(bindings, workflow_id),
@@ -396,6 +413,26 @@ def _dispatch_impl(
         mcp=_first_binding_ref(bindings, "mcps", "mcp_ref"),
         status=WorkflowInstanceStatus.CREATED,
     )
+    if audit_store is not None:
+        audit_store.append(
+            actor="dispatcher",
+            action="instance.dispatched",
+            entity=instance.instance_id,
+            input={
+                "task_id": task.id,
+                "workflow_id": instance.workflow_id,
+                "agent": instance.agent,
+                "skill": instance.skill,
+                "mcp": instance.mcp,
+            },
+            output={
+                "instance_id": instance.instance_id,
+                "task_id": instance.task_id,
+                "status": instance.status.value,
+            },
+            result="OK",
+        )
+    return instance
 
 
 class WorkflowInstanceStore:
@@ -672,7 +709,11 @@ class AuditStore:
         return entry
 
     def list(self) -> list[dict[str, Any]]:
-        """读取全部审计条目 (按追加顺序); 缺失 → []; 损坏行跳过。"""
+        """读取全部审计条目 (按追加顺序); 缺失 → []; 损坏行跳过; 返回副本。
+
+        Task 006 不可变语义: 返回 deep copy — 调用方修改返回值不影响
+        落盘事实 (audit.log 为不可变事实源, 只追加不覆盖)。
+        """
         if not self._path.is_file():
             return []
         entries: list[dict[str, Any]] = []
@@ -687,8 +728,32 @@ class AuditStore:
                     except json.JSONDecodeError:
                         continue
                     if isinstance(data, dict):
-                        entries.append(data)
+                        entries.append(copy.deepcopy(data))
         return entries
+
+    def list_audit(
+        self,
+        *,
+        actor: str | None = None,
+        entity: str | None = None,
+        action: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """读取审计条目 (Task 006 — 按 time 升序) + 过滤 (actor/entity/action)。
+
+        - 排序: 按 time (ISO 字符串, 同格式字典序 == 时间序; 同时间稳定
+          保持追加序 — 与 list() 顺序一致)
+        - 过滤: actor / entity / action 任意组合 (None = 不过滤)
+        - 不可变: 返回 deep copy (同 list()); 缺失 → []; 损坏行跳过
+        - 项目空间隔离: store 按 space_dir 归属, 天然项目级作用域
+        """
+        entries = self.list()
+        if actor is not None:
+            entries = [e for e in entries if e.get("actor") == actor]
+        if entity is not None:
+            entries = [e for e in entries if e.get("entity") == entity]
+        if action is not None:
+            entries = [e for e in entries if e.get("action") == action]
+        return sorted(entries, key=lambda e: e.get("time", ""))
 
 
 # ------------------------------------------------------------------ Executor (S10-011 Task 004)
@@ -758,6 +823,7 @@ def _link_task(
     *,
     actor: str,
     dependency_status: dict[str, TaskStatus] | None,
+    audit_store: AuditStore | None = None,
 ) -> Task | None:
     """Task 状态联动 (走 management.transition_task 受控状态机)。
 
@@ -766,6 +832,10 @@ def _link_task(
     - 其他 task 状态 (TODO/BLOCKED/REVIEW/DONE 等) → 不联动 (返回原 task)
     - 受控转换非法 (如依赖门控拒绝) → 失败安全跳过, 返回原 task
       (执行结果已落盘, 不因联动失败破坏; 异常路径由调用方/人工处理)
+    - audit_store 提供时 (Task 006 全链路审计): 联动成功写 audit 条目
+      (actor=executor, action=task.linked, entity=task.id,
+      input={from, to}, output={task_id, instance_id, status},
+      result=instance 终态值)
     """
     if task is None:
         return None
@@ -784,7 +854,7 @@ def _link_task(
     else:
         return task
     try:
-        return transition_task(
+        updated = transition_task(
             task,
             target,
             actor=actor,
@@ -794,6 +864,20 @@ def _link_task(
         )
     except ValueError:
         return task
+    if audit_store is not None:
+        audit_store.append(
+            actor=actor,
+            action="task.linked",
+            entity=task.id,
+            input={"from": task.status.value, "to": updated.status.value},
+            output={
+                "task_id": task.id,
+                "instance_id": instance.instance_id,
+                "status": instance.status.value,
+            },
+            result=instance.status.value,
+        )
+    return updated
 
 
 def execute_instance(
@@ -827,7 +911,8 @@ def execute_instance(
     4. 终态转换同样写 runtime + audit (每次转换都落盘)
     5. Task 状态联动 (task 参数提供时): SUCCESS → IN_PROGRESS→REVIEW 或
        READY→IN_PROGRESS; FAILED → READY/IN_PROGRESS→BLOCKED; 非法跳过
-       (失败安全 — 执行结果不因联动失败而回滚)
+       (失败安全 — 执行结果不因联动失败而回滚); 联动成功写 audit
+       (actor=executor, action=task.linked — Task 006 全链路审计)
     6. 返回 ExecutionOutcome {终态 instance, 联动后 task}
 
     纯函数风格: 不改入参 (instance/task 原对象不变, 转换返回新对象)。
@@ -907,7 +992,13 @@ def _execute_impl(
         result=outcome_result,
     )
 
-    linked = _link_task(task, terminal, actor=actor, dependency_status=dependency_status)
+    linked = _link_task(
+        task,
+        terminal,
+        actor=actor,
+        dependency_status=dependency_status,
+        audit_store=audit_store,
+    )
     return ExecutionOutcome(instance=terminal, task=linked)
 
 
@@ -954,6 +1045,28 @@ class ProjectExecutionResult(_OrgModel):
         return v if v is not None else {}
 
 
+# ------------------------------------------------------------------ NotificationSink (S10-011 Task 006)
+
+
+class NotificationSink:
+    """通知预留接口 (Task 006 — 本 Sprint 不实现真实渠道)。
+
+    notify(project_id, event, payload) → 默认无操作 (no-op sink); 真实通知
+    渠道 (邮件/IM/WebSocket — docs/design/execution-engine.md §七 Notification
+    Engine) S10-012+ 注入替换。本类只定义契约:
+
+    - event: "task.completed" | "task.failed" (ExecutionEngine 门面终态通知;
+      预留扩展: dispatch.queued / plan.created 等)
+    - payload: 事件上下文 dict (含 project_id/task_id/instance_id/status/result)
+    - 注入: ExecutionEngine(notification=sink) — 测试收集 / 生产渠道替换
+      (可注入 = 依赖注入点; 默认 no-op 保证不注入也可运行)
+    """
+
+    def notify(self, project_id: str, event: str, payload: dict[str, Any]) -> None:
+        """发送一条通知事件; 默认无操作 (no-op)。"""
+        return None
+
+
 class ExecutionEngine:
     """ExecutionEngine 门面 (S10-011 Task 005 — 项目级执行入口, 持锁串行化)。
 
@@ -961,15 +1074,60 @@ class ExecutionEngine:
     同项目并发写串行 (无交错, 数据一致), 跨项目并行 (互不阻塞), 同线程重入
     安全 (内部 dispatch/execute 再取同锁不 deadlock); 锁缺省进程级默认锁
     (_EXECUTION_LOCK), 可注入隔离锁 (测试/多租户)。
+
+    Task 006 完善:
+    - 全链路审计: 门面 plan 写 audit (actor=scheduler, action=plan.created);
+      dispatch/execute 透传 audit_store (actor=dispatcher/executor)
+    - NotificationSink 预留: notification 可注入 (缺省 no-op); 每个实例
+      终态 notify — SUCCESS → event="task.completed", FAILED →
+      event="task.failed" (payload 含 project_id/task_id/instance_id/status/result)
     """
 
-    def __init__(self, *, lock: ExecutionLock | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        lock: ExecutionLock | None = None,
+        notification: NotificationSink | None = None,
+    ) -> None:
         self._lock = lock if lock is not None else _EXECUTION_LOCK
+        self._notification = (
+            notification if notification is not None else NotificationSink()
+        )
 
     @property
     def lock(self) -> ExecutionLock:
         """本门面使用的 ExecutionLock (注入或进程级默认)。"""
         return self._lock
+
+    @property
+    def notification(self) -> NotificationSink:
+        """本门面使用的 NotificationSink (注入或默认 no-op)。"""
+        return self._notification
+
+    def _notify_terminal(
+        self,
+        project_id: str,
+        task: Task,
+        instance: WorkflowInstance,
+        outcome: ExecutionOutcome,
+    ) -> None:
+        """终态通知 (Task 006): SUCCESS → task.completed; FAILED → task.failed。"""
+        event = (
+            "task.completed"
+            if outcome.instance.status == WorkflowInstanceStatus.SUCCESS
+            else "task.failed"
+        )
+        self._notification.notify(
+            project_id,
+            event,
+            {
+                "project_id": project_id,
+                "task_id": task.id,
+                "instance_id": instance.instance_id,
+                "status": outcome.instance.status.value,
+                "result": outcome.instance.result,
+            },
+        )
 
     def execute_project_tasks(
         self,
@@ -988,15 +1146,34 @@ class ExecutionEngine:
 
         1. 持 per-project 锁 (同项目其他写/执行阻塞; 跨项目不阻塞; 重入安全)
         2. plan_tasks 生成计划 (READY + 依赖满足 + priority 排序 +
-           max_parallel 分批; 非 READY 不入选, 依赖未满足记录 waiting_dependency)
-        3. 逐任务 dispatch (创建 WorkflowInstance) → execute (缺省 stub
-           executor 或注入 executor) → Task 状态联动 (SUCCESS →
-           IN_PROGRESS→REVIEW 或 READY→IN_PROGRESS; FAILED → BLOCKED;
-           走受控状态机, 依赖门控透传)
+           max_parallel 分批; 非 READY 不入选, 依赖未满足记录 waiting_dependency);
+           audit_store 提供时写 plan 审计 (actor=scheduler, action=plan.created)
+        3. 逐任务 dispatch (创建 WorkflowInstance; audit actor=dispatcher) →
+           execute (缺省 stub executor 或注入 executor) → Task 状态联动
+           (SUCCESS → IN_PROGRESS→REVIEW 或 READY→IN_PROGRESS; FAILED →
+           BLOCKED; 走受控状态机, 依赖门控透传; audit actor=executor) →
+           终态 notify (task.completed / task.failed)
         4. 返回 ProjectExecutionResult {plan, instances, outcomes, final_tasks}
         """
         with self._lock.locked(project_id):
             plan = plan_tasks(tasks, max_parallel=max_parallel)
+            if audit_store is not None:
+                audit_store.append(
+                    actor="scheduler",
+                    action="plan.created",
+                    entity=plan.plan_id,
+                    input={
+                        "project_id": project_id,
+                        "task_ids": [pt.task_id for pt in plan.tasks],
+                    },
+                    output={
+                        "tasks": [pt.to_dict() for pt in plan.tasks],
+                        "parallel_batch": plan.parallel_batch,
+                        "max_parallel": plan.max_parallel,
+                        "waiting_dependency": plan.waiting_dependency,
+                    },
+                    result="OK",
+                )
             instances: list[WorkflowInstance] = []
             outcomes: list[ExecutionOutcome] = []
             final_tasks: dict[str, str] = {t.id: t.status.value for t in tasks}
@@ -1013,6 +1190,7 @@ class ExecutionEngine:
                     workflow_id=workflow_id,
                     project_id=project_id,
                     lock=self._lock,
+                    audit_store=audit_store,
                 )
                 instances.append(instance)
                 outcome = execute_instance(
@@ -1029,6 +1207,7 @@ class ExecutionEngine:
                 outcomes.append(outcome)
                 if outcome.task is not None:
                     final_tasks[task.id] = outcome.task.status.value
+                self._notify_terminal(project_id, task, instance, outcome)
             return ProjectExecutionResult(
                 project_id=project_id,
                 plan=plan,

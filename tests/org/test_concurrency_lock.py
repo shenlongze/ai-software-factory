@@ -688,8 +688,9 @@ class TestExecutionEngineFacade:
             assert all(
                 o.instance.status == WorkflowInstanceStatus.SUCCESS for o in r.outcomes
             )
-        # 数据一致: 4 个实例 runtime 全部终态 SUCCESS (每实例 RUNNING+终态 2 条 audit)
-        assert len(audit.list()) == 8, "4 instances × 2 transitions"
+        # 数据一致: 4 个实例 runtime 全部终态 SUCCESS
+        # Task 006 全链路审计: 2 次执行 × (1 plan + 2 task × (dispatch + 2 transition + task.linked)) = 18
+        assert len(audit.list()) == 18, "2 runs × (plan + 2 tasks × 4 audit entries)"
 
     def test_cross_project_engine_runs_in_parallel(self):
         """跨项目并行: p1 慢执行 (持锁) 期间 p2 的 execute_project_tasks 不受阻塞。"""
@@ -772,9 +773,16 @@ class TestExecutionEngineFacade:
         running = store.load_workflow_execution(inst_id)
         assert running is not None and running["status"] == WorkflowInstanceStatus.SUCCESS.value
         entries = audit.list()
-        assert len(entries) == 2
-        assert [e["action"] for e in entries] == ["instance.transition", "instance.transition"]
-        assert [e["result"] for e in entries] == ["OK", "OK"]
+        # Task 006 全链路审计: plan(scheduler) + dispatch(dispatcher) + 2×transition(executor) + task.linked(executor)
+        assert len(entries) == 5
+        assert [e["action"] for e in entries] == [
+            "plan.created",
+            "instance.dispatched",
+            "instance.transition",
+            "instance.transition",
+            "task.linked",
+        ]
+        assert [e["result"] for e in entries] == ["OK", "OK", "OK", "OK", "success"]
 
     def test_reentrant_engine_inside_executor(self):
         """重入安全: executor 回调内再调 execute_project_tasks 同项目不 deadlock。"""

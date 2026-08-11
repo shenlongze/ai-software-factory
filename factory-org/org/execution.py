@@ -1375,6 +1375,7 @@ class ExecutionEngine:
         runtime_store: RuntimeStore | None = None,
         audit_store: AuditStore | None = None,
         actor: str = "executor",
+        registry: Any = None,
     ) -> ProjectExecutionResult:
         """项目任务一键执行 (plan→dispatch→execute 持锁串行化)。
 
@@ -1388,6 +1389,10 @@ class ExecutionEngine:
            BLOCKED; 走受控状态机, 依赖门控透传; audit actor=executor) →
            终态 notify (task.completed / task.failed)
         4. 返回 ProjectExecutionResult {plan, instances, outcomes, final_tasks}
+
+        registry (S10-012 Task 007-003): CapabilityRegistry 可注入 — 提供时
+        dispatch 解析 binding → snapshot; 缺省 None → 纯 legacy 行为
+        (旧项目裸 binding 不经 Resolver, 零破坏 — 验收场景 5)。
         """
         with self._lock.locked(project_id):
             plan = plan_tasks(tasks, max_parallel=max_parallel)
@@ -1425,6 +1430,7 @@ class ExecutionEngine:
                     project_id=project_id,
                     lock=self._lock,
                     audit_store=audit_store,
+                    registry=registry,
                 )
                 instances.append(instance)
                 outcome = execute_instance(

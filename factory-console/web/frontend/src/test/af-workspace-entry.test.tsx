@@ -2,12 +2,13 @@
  * src/test/af-workspace-entry.test.tsx — AI Factory 工作台真实入口 (S10-014 Task 002b)。
  *
  * 验证 (#/workspace 与 #/workspace/* 渲染真实 Workspace 数据, GET /api/dashboard):
- * - 加载: LoadingState
+ * - 加载: AfLoadingState (af-loading-state)
  * - 成功: 项目列表 (name / lifecycle 人话标签 / workflow 状态 / progress / stage_counts)
- * - 空:   EmptyState ("暂无项目 — 输入想法创建一个")
- * - 错误: ErrorState (API 失败)
+ * - 空:   AfEmptyState ("暂无项目 — 输入想法创建一个")
+ * - 错误: AfErrorState (API 失败)
  * - 点击项目卡片 → hash 跳转 #/project/{id}
  * - 品牌 Header (◆ AI Factory) + 子页标签
+ * (S10-014 Task 004: 入口升级为 Workspace Shell 三栏壳, 四态改用 AI OS 的 AfState 组件)
  */
 
 import { render, screen } from '@testing-library/react';
@@ -37,7 +38,7 @@ describe('AfWorkspaceEntry (AI Factory 工作台真实入口)', () => {
       ),
     );
     render(<AfWorkspaceEntry route={workspaceRoute()} />);
-    expect(screen.getByTestId('loading-state')).toBeInTheDocument();
+    expect(screen.getByTestId('af-loading-state')).toBeInTheDocument();
     void resolveFetch;
   });
 
@@ -94,7 +95,7 @@ describe('AfWorkspaceEntry (AI Factory 工作台真实入口)', () => {
   it('空列表 → EmptyState (暂无项目)', async () => {
     stubFetch({ '/api/dashboard': sampleDashboard({ projects: [] }) });
     render(<AfWorkspaceEntry route={workspaceRoute()} />);
-    expect(await screen.findByTestId('empty-state')).toHaveTextContent(
+    expect(await screen.findByTestId('af-empty-state')).toHaveTextContent(
       '暂无项目 — 输入想法创建一个',
     );
   });
@@ -102,7 +103,7 @@ describe('AfWorkspaceEntry (AI Factory 工作台真实入口)', () => {
   it('API 失败 → ErrorState', async () => {
     vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('network down'))));
     render(<AfWorkspaceEntry route={workspaceRoute()} />);
-    expect(await screen.findByTestId('error-state')).toHaveTextContent('network down');
+    expect(await screen.findByTestId('af-error-state')).toHaveTextContent('network down');
   });
 
   it('点击项目卡片 → 导航到 #/project/{id}', async () => {

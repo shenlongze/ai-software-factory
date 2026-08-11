@@ -41,12 +41,12 @@ import threading
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from pydantic import Field, ValidationError, field_validator
 
 from .models import _OrgModel, _norm_list, new_id, utcnow
-from .management import Task, TaskStatus, _PRIORITY_RANK
+from .management import Task, TaskStatus, _PRIORITY_RANK, transition_task
 
 # ------------------------------------------------------------------ 枚举
 
@@ -624,3 +624,183 @@ class AuditStore:
                     if isinstance(data, dict):
                         entries.append(data)
         return entries
+
+
+# ------------------------------------------------------------------ Executor (S10-011 Task 004)
+
+
+class ExecutionOutcome(_OrgModel):
+    """execute_instance 结果 (Task 004 — 终态实例 + 联动后的 Task)。
+
+    instance: 终态 WorkflowInstance (SUCCESS/FAILED — start_time/end_time/result 已记录);
+    task: 联动后的 Task (execute_instance 收到 task 参数时; 未提供/非法跳过 → None/原对象)。
+    """
+
+    instance: WorkflowInstance
+    task: Task | None = None
+
+
+def _default_executor(instance: WorkflowInstance) -> str:
+    """内置 stub executor (本 Sprint 注入点缺省 — 真实 Agent S10-012+ 替换)。
+
+    纯标记执行: 返回 \"executed by {agent|stub}\" — 不调用任何 Agent/LLM。
+    """
+    agent = instance.agent or "stub"
+    return f"executed by {agent}"
+
+
+def _error_text(exc: Exception) -> str:
+    """异常 → 可读 error 文本 (类型名 + 消息)。"""
+    return f"{type(exc).__name__}: {exc}"
+
+
+def _record_runtime(runtime_store: RuntimeStore | None, instance: WorkflowInstance) -> None:
+    """每次状态转换写 runtime 快照 (workflow-execution + agent-execution; 可恢复)。"""
+    if runtime_store is None:
+        return
+    runtime_store.save_workflow_execution(instance.instance_id, instance.to_dict())
+    runtime_store.save_agent_execution(instance.instance_id, instance.to_dict())
+
+
+def _record_audit(
+    audit_store: AuditStore | None,
+    instance: WorkflowInstance,
+    *,
+    actor: str,
+    from_status: WorkflowInstanceStatus,
+    result: str = "OK",
+) -> None:
+    """每次状态转换写 audit (actor=executor, action=instance.transition)。"""
+    if audit_store is None:
+        return
+    audit_store.append(
+        actor=actor,
+        action="instance.transition",
+        entity=instance.instance_id,
+        input={"from": from_status.value, "to": instance.status.value},
+        output={
+            "instance_id": instance.instance_id,
+            "task_id": instance.task_id,
+            "status": instance.status.value,
+        },
+        result=result,
+    )
+
+
+def _link_task(
+    task: Task | None,
+    instance: WorkflowInstance,
+    *,
+    actor: str,
+    dependency_status: dict[str, TaskStatus] | None,
+) -> Task | None:
+    """Task 状态联动 (走 management.transition_task 受控状态机)。
+
+    - instance SUCCESS → task IN_PROGRESS→REVIEW; 未开始 (READY) → IN_PROGRESS
+    - instance FAILED → task READY/IN_PROGRESS→BLOCKED
+    - 其他 task 状态 (TODO/BLOCKED/REVIEW/DONE 等) → 不联动 (返回原 task)
+    - 受控转换非法 (如依赖门控拒绝) → 失败安全跳过, 返回原 task
+      (执行结果已落盘, 不因联动失败破坏; 异常路径由调用方/人工处理)
+    """
+    if task is None:
+        return None
+    if instance.status == WorkflowInstanceStatus.SUCCESS:
+        if task.status == TaskStatus.IN_PROGRESS:
+            target = TaskStatus.REVIEW
+        elif task.status == TaskStatus.READY:
+            target = TaskStatus.IN_PROGRESS
+        else:
+            return task
+    elif instance.status == WorkflowInstanceStatus.FAILED:
+        if task.status in (TaskStatus.READY, TaskStatus.IN_PROGRESS):
+            target = TaskStatus.BLOCKED
+        else:
+            return task
+    else:
+        return task
+    try:
+        return transition_task(
+            task,
+            target,
+            actor=actor,
+            action="instance.linked",
+            result=instance.status.value,
+            dependency_status=dependency_status,
+        )
+    except ValueError:
+        return task
+
+
+def execute_instance(
+    instance: WorkflowInstance,
+    executor: Callable[[WorkflowInstance], str] | None = None,
+    *,
+    runtime_store: RuntimeStore | None = None,
+    audit_store: AuditStore | None = None,
+    task: Task | None = None,
+    actor: str = "executor",
+    dependency_status: dict[str, TaskStatus] | None = None,
+) -> ExecutionOutcome:
+    """Workflow Instance Runtime 执行 (S10-011 §三 Task 004 — 生命周期执行)。
+
+    输入: CREATED 实例 + executor 回调 (stub — 本 Sprint 注入点; 真实 Agent
+    S10-012+ 替换; 缺省内置 stub 直接成功) + runtime_store/audit_store (可注入
+    项目空间 store) + task (Task 状态联动; 可选) + actor (审计 actor, 缺省
+    executor) + dependency_status (有依赖 task 联动时透传状态机)。
+
+    流程 (同步模型 — 异步/并发 Task 005):
+    1. 非法状态拒绝: status != CREATED → ValueError (RUNNING/终态直接 execute 非法)
+    2. CREATED → RUNNING (transition_instance 记录 start_time) → 写 runtime
+       (workflow-execution/{id}.json + agent-execution/{id}.json) + audit
+       (actor=executor, action=instance.transition)
+    3. 调用 executor(running 实例):
+       - 成功 (返回 str, 非 \"ERROR:\" 前缀) → SUCCESS + end_time + result
+       - 抛异常 → FAILED + end_time + error (result 字段 = \"TypeName: msg\")
+       - 返回 \"ERROR: ...\" 前缀 → 视为失败 → FAILED + error (前缀后内容)
+    4. 终态转换同样写 runtime + audit (每次转换都落盘)
+    5. Task 状态联动 (task 参数提供时): SUCCESS → IN_PROGRESS→REVIEW 或
+       READY→IN_PROGRESS; FAILED → READY/IN_PROGRESS→BLOCKED; 非法跳过
+       (失败安全 — 执行结果不因联动失败而回滚)
+    6. 返回 ExecutionOutcome {终态 instance, 联动后 task}
+
+    纯函数风格: 不改入参 (instance/task 原对象不变, 转换返回新对象)。
+    """
+    if instance.status != WorkflowInstanceStatus.CREATED:
+        raise ValueError(
+            f"cannot execute workflow instance: status {instance.status.value} "
+            f"(expected: {WorkflowInstanceStatus.CREATED.value})"
+        )
+    running = transition_instance(instance, WorkflowInstanceStatus.RUNNING)
+    _record_runtime(runtime_store, running)
+    _record_audit(
+        audit_store, running, actor=actor, from_status=WorkflowInstanceStatus.CREATED
+    )
+
+    run_executor = executor if executor is not None else _default_executor
+    try:
+        result = run_executor(running)
+    except Exception as exc:  # noqa: BLE001 — executor 任意异常 → FAILED (失败捕获)
+        error = _error_text(exc)
+        terminal = transition_instance(running, WorkflowInstanceStatus.FAILED, result=error)
+        outcome_result = f"FAILED: {error}"
+    else:
+        if isinstance(result, str) and result.startswith("ERROR:"):
+            error = result[len("ERROR:") :].strip()
+            terminal = transition_instance(running, WorkflowInstanceStatus.FAILED, result=error)
+            outcome_result = f"FAILED: {error}"
+        else:
+            terminal = transition_instance(
+                running, WorkflowInstanceStatus.SUCCESS, result=result or ""
+            )
+            outcome_result = "OK"
+    _record_runtime(runtime_store, terminal)
+    _record_audit(
+        audit_store,
+        terminal,
+        actor=actor,
+        from_status=WorkflowInstanceStatus.RUNNING,
+        result=outcome_result,
+    )
+
+    linked = _link_task(task, terminal, actor=actor, dependency_status=dependency_status)
+    return ExecutionOutcome(instance=terminal, task=linked)

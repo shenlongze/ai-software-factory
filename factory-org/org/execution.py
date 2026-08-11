@@ -19,7 +19,12 @@
   缺省 software-development-v1) + WorkflowInstanceStore (workflow-instance/
   {id}.json 目录信源 — save/load/list, 原子写 + 失败安全)
 - ExecutionLock: per-project 进程内互斥 (threading.RLock — 同线程重入安全);
-  同项目写互斥, 不同项目各自独立锁互不阻塞 (设计 §7, 跨进程锁 S10-012+)
+  同项目写互斥, 不同项目各自独立锁互不阻塞 (设计 §7, 跨进程锁 S10-012+);
+  Task 005 完善: acquire(project_id, timeout=None) -> bool (超时不阻塞返回
+  False) + locked(project_id, timeout) 上下文管理器 (超时抛 LockTimeoutError);
+  写路径集成: dispatch_task / execute_instance 提供 project_id 时持锁,
+  transition_task_locked 封装 Task 状态更新; ExecutionEngine 门面
+  (execute_project_tasks: plan→dispatch→execute 持锁串行化)
 - RuntimeStore: workspace/projects/{slug}/runtime/ 三类 JSON 原子写
   (task-execution/{task_id}.json / agent-execution/{instance_id}.json /
   workflow-execution/{instance_id}.json) — 运行上下文 (可恢复), 失败安全
@@ -38,10 +43,11 @@ from __future__ import annotations
 import json
 import os
 import threading
+from contextlib import contextmanager
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterator
 
 from pydantic import Field, ValidationError, field_validator
 
@@ -337,6 +343,9 @@ def dispatch_task(
     bindings: dict[str, Any] | None = None,
     all_tasks: list[Task] | None = None,
     workflow_id: str = "software-development-v1",
+    *,
+    project_id: str | None = None,
+    lock: ExecutionLock | None = None,
 ) -> WorkflowInstance:
     """Dispatcher 纯函数 (S10-011 §二 2/3 — Task → Workflow Instance 分发)。
 
@@ -355,7 +364,25 @@ def dispatch_task(
 
     纯函数: 不实际执行 (执行在 Task 004 Executor), 不写盘 (持久化由
     WorkflowInstanceStore 负责), 不改入参。
+
+    project_id 提供时 (Task 005 写路径持锁): workflow instance 创建持
+    per-project 锁 — 同项目写串行 (并发 dispatch 不交错), 跨项目并行,
+    同线程重入安全; lock 缺省进程级默认锁 (可注入隔离锁)。
     """
+    if project_id is None:
+        return _dispatch_impl(task, bindings, all_tasks, workflow_id)
+    holder = lock if lock is not None else _EXECUTION_LOCK
+    with holder.locked(project_id):
+        return _dispatch_impl(task, bindings, all_tasks, workflow_id)
+
+
+def _dispatch_impl(
+    task: Task,
+    bindings: dict[str, Any] | None,
+    all_tasks: list[Task] | None,
+    workflow_id: str,
+) -> WorkflowInstance:
+    """dispatch_task 无锁实现 (纯函数 — 校验 + 创建 WorkflowInstance)。"""
     all_tasks = [task] if all_tasks is None else all_tasks
     ok, reason = can_execute(task, all_tasks)
     if not ok:
@@ -434,11 +461,22 @@ class WorkflowInstanceStore:
 # ------------------------------------------------------------------ ExecutionLock
 
 
+class LockTimeoutError(Exception):
+    """ExecutionLock 获取超时 (Task 005)。
+
+    acquire(project_id, timeout) 超时 → 返回 False (不阻塞, 不抛);
+    locked(project_id, timeout) 上下文超时 → 抛 LockTimeoutError (快速失败)。
+    """
+
+
 class ExecutionLock:
     """per-project 进程内互斥锁 (S10-011 §7 — B1/B2 前置)。
 
-    - acquire(project_id)/release(project_id): 写操作 (task 状态更新 /
-      scheduler plan / workflow instance 创建) 持锁
+    - acquire(project_id, timeout=None) -> bool: 写操作 (task 状态更新 /
+      scheduler plan / workflow instance 创建) 持锁; 默认阻塞直到获取,
+      timeout 给定 → 超时返回 False (不阻塞)
+    - locked(project_id, timeout=None) 上下文管理器: 持锁代码块 (退出自动
+      释放; 超时抛 LockTimeoutError)
     - 同项目互斥: 第一持有者未释放 → 第二 acquire 阻塞
     - 同线程重入安全 (threading.RLock): 嵌套 acquire 不阻塞
     - 不同项目各自独立锁: 跨项目不互斥 (互不阻塞)
@@ -458,9 +496,15 @@ class ExecutionLock:
                 self._locks[project_id] = lock
             return lock
 
-    def acquire(self, project_id: str) -> None:
-        """获取指定项目的进程内锁 (同项目互斥; 同线程可重入)。"""
-        self._lock_for(project_id).acquire()
+    def acquire(self, project_id: str, timeout: float | None = None) -> bool:
+        """获取指定项目的进程内锁 (同项目互斥; 同线程可重入)。
+
+        默认阻塞直到获取成功并返回 True; timeout 秒内未获取 → 返回 False
+        (不阻塞, 不抛 — 调用方自行处理超时)。
+        """
+        return self._lock_for(project_id).acquire(
+            timeout=-1 if timeout is None else timeout
+        )
 
     def release(self, project_id: str) -> None:
         """释放指定项目的锁; 未持有 → 静默 (失败安全, 不抛 RuntimeError)。"""
@@ -469,6 +513,27 @@ class ExecutionLock:
             lock.release()
         except RuntimeError:
             pass
+
+    @contextmanager
+    def locked(self, project_id: str, timeout: float | None = None) -> Iterator[None]:
+        """with lock.locked(project_id): 持锁代码块 (重入安全; 退出自动释放)。
+
+        timeout 给定且超时未获取 → LockTimeoutError (acquire 超时语义的
+        上下文形式 — 失败快速暴露, 不无限阻塞)。
+        """
+        if not self.acquire(project_id, timeout=timeout):
+            raise LockTimeoutError(
+                f"timed out acquiring execution lock for project: {project_id}"
+            )
+        try:
+            yield
+        finally:
+            self.release(project_id)
+
+
+#: 进程级默认锁 (单服务共享同一 ExecutionLock — 写路径/门面缺省持锁;
+#: 跨进程锁 S10-012+ 再评估)。
+_EXECUTION_LOCK = ExecutionLock()
 
 
 # ------------------------------------------------------------------ RuntimeStore
@@ -740,6 +805,8 @@ def execute_instance(
     task: Task | None = None,
     actor: str = "executor",
     dependency_status: dict[str, TaskStatus] | None = None,
+    project_id: str | None = None,
+    lock: ExecutionLock | None = None,
 ) -> ExecutionOutcome:
     """Workflow Instance Runtime 执行 (S10-011 §三 Task 004 — 生命周期执行)。
 
@@ -754,9 +821,9 @@ def execute_instance(
        (workflow-execution/{id}.json + agent-execution/{id}.json) + audit
        (actor=executor, action=instance.transition)
     3. 调用 executor(running 实例):
-       - 成功 (返回 str, 非 \"ERROR:\" 前缀) → SUCCESS + end_time + result
-       - 抛异常 → FAILED + end_time + error (result 字段 = \"TypeName: msg\")
-       - 返回 \"ERROR: ...\" 前缀 → 视为失败 → FAILED + error (前缀后内容)
+       - 成功 (返回 str, 非 "ERROR:" 前缀) → SUCCESS + end_time + result
+       - 抛异常 → FAILED + end_time + error (result 字段 = "TypeName: msg")
+       - 返回 "ERROR: ..." 前缀 → 视为失败 → FAILED + error (前缀后内容)
     4. 终态转换同样写 runtime + audit (每次转换都落盘)
     5. Task 状态联动 (task 参数提供时): SUCCESS → IN_PROGRESS→REVIEW 或
        READY→IN_PROGRESS; FAILED → READY/IN_PROGRESS→BLOCKED; 非法跳过
@@ -764,7 +831,45 @@ def execute_instance(
     6. 返回 ExecutionOutcome {终态 instance, 联动后 task}
 
     纯函数风格: 不改入参 (instance/task 原对象不变, 转换返回新对象)。
+
+    project_id 提供时 (Task 005 写路径持锁): 生命周期执行全程 (状态转换 +
+    executor + Task 联动) 持 per-project 锁 — 同项目执行串行 (无交错,
+    数据一致), 跨项目并行, 同线程重入安全; lock 缺省进程级默认锁。
     """
+    if project_id is None:
+        return _execute_impl(
+            instance,
+            executor,
+            runtime_store=runtime_store,
+            audit_store=audit_store,
+            task=task,
+            actor=actor,
+            dependency_status=dependency_status,
+        )
+    holder = lock if lock is not None else _EXECUTION_LOCK
+    with holder.locked(project_id):
+        return _execute_impl(
+            instance,
+            executor,
+            runtime_store=runtime_store,
+            audit_store=audit_store,
+            task=task,
+            actor=actor,
+            dependency_status=dependency_status,
+        )
+
+
+def _execute_impl(
+    instance: WorkflowInstance,
+    executor: Callable[[WorkflowInstance], str] | None,
+    *,
+    runtime_store: RuntimeStore | None,
+    audit_store: AuditStore | None,
+    task: Task | None,
+    actor: str,
+    dependency_status: dict[str, TaskStatus] | None,
+) -> ExecutionOutcome:
+    """execute_instance 无锁实现 (生命周期执行 — 状态转换 + executor + 联动)。"""
     if instance.status != WorkflowInstanceStatus.CREATED:
         raise ValueError(
             f"cannot execute workflow instance: status {instance.status.value} "
@@ -804,3 +909,130 @@ def execute_instance(
 
     linked = _link_task(task, terminal, actor=actor, dependency_status=dependency_status)
     return ExecutionOutcome(instance=terminal, task=linked)
+
+
+# ------------------------------------------------------------------ Task 状态更新封装 + ExecutionEngine 门面 (S10-011 Task 005)
+
+
+def transition_task_locked(
+    task: Task,
+    target: TaskStatus | str,
+    project_id: str,
+    *,
+    lock: ExecutionLock | None = None,
+    **kwargs: Any,
+) -> Task:
+    """Task 状态更新封装 (S10-011 Task 005 — 写路径持锁)。
+
+    per-project 锁内调用 management.transition_task (受控状态机透传 — 非法
+    转换/依赖门控 ValueError 原样抛; actor/action/result/dependency_status
+    经 kwargs 透传); 与 execute_instance 的 Task 联动共用同一锁 (重入安全 —
+    执行内联动不 deadlock)。lock 缺省进程级默认锁。纯函数风格: 不改入参。
+    """
+    holder = lock if lock is not None else _EXECUTION_LOCK
+    with holder.locked(project_id):
+        return transition_task(task, target, **kwargs)
+
+
+class ProjectExecutionResult(_OrgModel):
+    """execute_project_tasks 汇总结果 (计划 + 实例 + 执行结果 + task 终态)。"""
+
+    project_id: str
+    plan: ExecutionPlan
+    instances: list[WorkflowInstance] = Field(default_factory=list)
+    outcomes: list[ExecutionOutcome] = Field(default_factory=list)
+    final_tasks: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("instances", "outcomes", mode="before")
+    @classmethod
+    def _lists_none(cls, v: Any) -> Any:
+        return _norm_list(v)
+
+    @field_validator("final_tasks", mode="before")
+    @classmethod
+    def _final_tasks_none(cls, v: Any) -> Any:
+        return v if v is not None else {}
+
+
+class ExecutionEngine:
+    """ExecutionEngine 门面 (S10-011 Task 005 — 项目级执行入口, 持锁串行化)。
+
+    execute_project_tasks: plan→dispatch→execute 全程持 per-project 锁 —
+    同项目并发写串行 (无交错, 数据一致), 跨项目并行 (互不阻塞), 同线程重入
+    安全 (内部 dispatch/execute 再取同锁不 deadlock); 锁缺省进程级默认锁
+    (_EXECUTION_LOCK), 可注入隔离锁 (测试/多租户)。
+    """
+
+    def __init__(self, *, lock: ExecutionLock | None = None) -> None:
+        self._lock = lock if lock is not None else _EXECUTION_LOCK
+
+    @property
+    def lock(self) -> ExecutionLock:
+        """本门面使用的 ExecutionLock (注入或进程级默认)。"""
+        return self._lock
+
+    def execute_project_tasks(
+        self,
+        project_id: str,
+        tasks: list[Task],
+        *,
+        bindings: dict[str, Any] | None = None,
+        workflow_id: str = "software-development-v1",
+        max_parallel: int = 5,
+        executor: Callable[[WorkflowInstance], str] | None = None,
+        runtime_store: RuntimeStore | None = None,
+        audit_store: AuditStore | None = None,
+        actor: str = "executor",
+    ) -> ProjectExecutionResult:
+        """项目任务一键执行 (plan→dispatch→execute 持锁串行化)。
+
+        1. 持 per-project 锁 (同项目其他写/执行阻塞; 跨项目不阻塞; 重入安全)
+        2. plan_tasks 生成计划 (READY + 依赖满足 + priority 排序 +
+           max_parallel 分批; 非 READY 不入选, 依赖未满足记录 waiting_dependency)
+        3. 逐任务 dispatch (创建 WorkflowInstance) → execute (缺省 stub
+           executor 或注入 executor) → Task 状态联动 (SUCCESS →
+           IN_PROGRESS→REVIEW 或 READY→IN_PROGRESS; FAILED → BLOCKED;
+           走受控状态机, 依赖门控透传)
+        4. 返回 ProjectExecutionResult {plan, instances, outcomes, final_tasks}
+        """
+        with self._lock.locked(project_id):
+            plan = plan_tasks(tasks, max_parallel=max_parallel)
+            instances: list[WorkflowInstance] = []
+            outcomes: list[ExecutionOutcome] = []
+            final_tasks: dict[str, str] = {t.id: t.status.value for t in tasks}
+            by_id = {t.id: t for t in tasks}
+            dependency_status = {t.id: t.status for t in tasks}
+            for pt in plan.tasks:
+                task = by_id.get(pt.task_id)
+                if task is None:
+                    continue
+                instance = dispatch_task(
+                    task,
+                    bindings=bindings,
+                    all_tasks=tasks,
+                    workflow_id=workflow_id,
+                    project_id=project_id,
+                    lock=self._lock,
+                )
+                instances.append(instance)
+                outcome = execute_instance(
+                    instance,
+                    executor=executor,
+                    runtime_store=runtime_store,
+                    audit_store=audit_store,
+                    task=task,
+                    actor=actor,
+                    dependency_status=dependency_status,
+                    project_id=project_id,
+                    lock=self._lock,
+                )
+                outcomes.append(outcome)
+                if outcome.task is not None:
+                    final_tasks[task.id] = outcome.task.status.value
+            return ProjectExecutionResult(
+                project_id=project_id,
+                plan=plan,
+                instances=instances,
+                outcomes=outcomes,
+                final_tasks=final_tasks,
+            )

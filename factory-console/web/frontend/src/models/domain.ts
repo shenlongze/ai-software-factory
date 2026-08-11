@@ -166,20 +166,44 @@ export interface Activity {
 /** 实时活动 (§6.1: 时间/执行者/动作/结果; 项目名可选 — 全局流 vs 项目流)。 */
 export interface RuntimeActivity extends Activity {
   projectName?: string;
+  /** 关联阶段 id (timeline 事件 stage_id; Runtime Timeline 阶段定位用, 缺失 → undefined)。 */
+  stageId?: string;
+  /** 原始事件类型 (org.workflow.* / org.artifact.*; 缺失 → undefined)。 */
+  eventType?: string;
 }
 
-/** 任务详情 (Context Panel, §5.4: 状态/AI 员工/负责人/时间/下一步/阻塞/历史/产物)。 */
+/**
+ * 任务详情 (Context Panel, §5.4: 状态/AI 员工/负责人/时间/下一步/阻塞/历史/产物)。
+ * S10-015 Task 005 增强: 所属 Epic/Feature/Story (为什么存在) + priority/description/
+ * dependency + agent (assignee → ROLE_LABELS 人话)。缺失字段 → undefined (诚实降级)。
+ */
 export interface TaskDetail {
   id: string;
   title: string;
   status: DomainStatus;
   statusLabel: string;
+  /** 哪个 Agent (assignee → ROLE_LABELS 人话角色; 无 → undefined)。 */
   agent?: string;
+  /** 谁负责 (assignee 原值; 空串归一 undefined)。 */
   owner?: string;
+  /** 优先级 (P0-P3; 缺失 → undefined)。 */
+  priority?: string;
+  description?: string;
+  /** 依赖任务 id 列表 (缺失 → undefined)。 */
+  dependency?: string[];
   startedAt?: string;
   completedAt?: string;
+  /** 下一步动作 (后端字段优先; 缺失 → 从 status 派生人话, 不臆造)。 */
   nextAction?: string;
   blockedReason?: string;
+  /** 为什么存在 — 所属 Epic (backlog 定位; 缺失 → undefined)。 */
+  epicName?: string;
+  /** 为什么存在 — 所属 Feature (backlog 定位; 缺失 → undefined)。 */
+  featureName?: string;
+  /** 为什么存在 — 所属 Story (backlog 定位; 缺失 → undefined)。 */
+  storyName?: string;
+  /** 所属 Sprint (后端 backlog 无此字段 → 恒 undefined, 诚实降级)。 */
+  sprintName?: string;
   history: Activity[];
   artifacts: string[];
 }

@@ -60,8 +60,9 @@ describe('AfWorkflowPage (Workflow 页面 — 真实 workflow+timeline 驱动)',
     render(<AfWorkflowPage projectId="demo" projectName="演示项目" />);
     expect(await screen.findByTestId('af-workflow-viewer')).toBeInTheDocument();
     // 真实实例内容: 人话 Agent 名 + 状态 + timeline 历史
-    expect(screen.getByText('产品经理 Agent')).toBeInTheDocument();
-    expect(screen.getByText('UI 设计师 Agent')).toBeInTheDocument();
+    // (S10-015 Task 005: timeline actor 也人话化 → 阶段卡 + 事件流均出现, 用 getAllByText)
+    expect(screen.getAllByText('产品经理 Agent').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('UI 设计师 Agent').length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText('执行中').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('阻塞: 等待前置阶段完成: UI 设计师')).toBeInTheDocument();
     expect(screen.getAllByTestId('af-timeline-item')).toHaveLength(7);
@@ -105,7 +106,7 @@ describe('AfWorkflowPage (Workflow 页面 — 真实 workflow+timeline 驱动)',
     expect(errorState).toHaveTextContent(/500/);
     await user.click(screen.getByRole('button', { name: '重试' }));
     expect(await screen.findByTestId('af-workflow-viewer')).toBeInTheDocument();
-    expect(screen.getByText('产品经理 Agent')).toBeInTheDocument();
+    expect(screen.getAllByText('产品经理 Agent').length).toBeGreaterThanOrEqual(1);
     expect(fn).toHaveBeenCalledTimes(4); // 首次 2 请求 + 重试 2 请求
   });
 

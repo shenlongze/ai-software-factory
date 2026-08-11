@@ -1404,3 +1404,241 @@
 .af-wf-arrow {
   color: #6b7280;
 }
+
+/* ============================================= Runtime Timeline (S10-015 Task 005b) */
+/* Runtime Timeline ≠ Log Viewer: 当前执行卡 (Agent/Stage/状态/开始/耗时/最近事件/下一步/
+   失败原因 8 项) + 事件流倒序 (复用 AfTimeline) + 空态 — 全部数据来自真实 workflow/timeline */
+
+.af-runtime-title {
+  margin: 0 0 12px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #e5e7eb;
+}
+
+/* 当前执行卡 (面板卡片) */
+.af-runtime-card {
+  background: #1a1f2a;
+  border: 1px solid #2a3140;
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+}
+
+.af-runtime-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.af-runtime-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.af-runtime-status {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* 字段网格 (2 列; 宽字段跨整行) */
+.af-runtime-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 16px;
+}
+
+.af-runtime-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.af-runtime-field--wide {
+  grid-column: 1 / -1;
+}
+
+.af-runtime-label {
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.af-runtime-value {
+  font-size: 13px;
+  color: #e5e7eb;
+  overflow-wrap: anywhere;
+}
+
+/* 失败原因横幅 (红色 — 为什么阻塞/失败) */
+.af-runtime-failed {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: 8px;
+}
+
+.af-runtime-failed-icon {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--af-status-failed, #ef4444);
+  border-radius: 50%;
+}
+
+.af-runtime-failed-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.af-runtime-failed-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #f87171;
+}
+
+.af-runtime-failed-reason {
+  font-size: 12px;
+  color: #fca5a5;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+
+/* 事件流 (复用 AfTimeline) */
+.af-runtime-events {
+  margin-top: 4px;
+}
+
+.af-runtime-section-title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #e5e7eb;
+}
+
+.af-runtime-section-sub {
+  font-size: 11px;
+  font-weight: 400;
+  color: #6b7280;
+}
+
+/* ============================================= Task Detail Panel (S10-015 Task 005b) */
+/* 右侧 Context Panel 基础 (Task 006 树节点点击集成); 缺失字段 → '—' 降级 */
+
+.af-task-detail-panel {
+  background: #161a22;
+  border: 1px solid #2a3140;
+  border-radius: 10px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.af-task-detail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid #2a3140;
+}
+
+.af-task-detail-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #e5e7eb;
+  overflow-wrap: anywhere;
+}
+
+.af-task-detail-close {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: #9ca3af;
+  background: transparent;
+  border: 1px solid #2a3140;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.af-task-detail-close:hover {
+  color: #e5e7eb;
+  border-color: #4c8dff;
+}
+
+.af-task-detail-body {
+  padding: 12px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.af-task-detail-status {
+  display: inline-flex;
+}
+
+/* 所属 (为什么存在): Epic → Feature → Story */
+.af-task-detail-belong {
+  margin: 0;
+  font-size: 12px;
+  color: #9ca3af;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.af-task-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 16px;
+}
+
+.af-task-detail-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.af-task-detail-label {
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.af-task-detail-value {
+  font-size: 13px;
+  color: #e5e7eb;
+  overflow-wrap: anywhere;
+}
+
+.af-task-detail-history {
+  margin-top: 4px;
+}
+
+.af-task-detail-section-title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #e5e7eb;
+}

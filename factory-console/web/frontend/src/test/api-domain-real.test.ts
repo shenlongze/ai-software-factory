@@ -455,8 +455,8 @@ describe('api/domain 真实结构 — toRuntimeActivity (/api/projects/{id}/time
     expect(activities).toHaveLength(2);
     expect(activities[0].time).toBe('2026-08-10T09:32:45.713312+00:00');
     expect(activities[0].action).toContain('工作流创建');
-    expect(activities[0].result).toBe('OK');
-    expect(activities[0].actor).toBe('');
+    expect(activities[0].result).toBe('通过'); // OK → 人话 (S10-015 Task 005)
+    expect(activities[0].actor).toBe('系统'); // 无 agent → 系统 (S10-015 Task 005)
     expect(activities[1].action).toBe('产物生成');
   });
 });

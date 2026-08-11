@@ -21,6 +21,7 @@ import {
   toWorkflowPipeline,
   toWorkspaceProject,
 } from '../api/domain';
+import { sampleBacklog } from './fixtures';
 import type {
   BacklogEpic,
   BacklogFeature,
@@ -670,6 +671,65 @@ describe('api/domain — toTaskDetail 降级', () => {
   });
 });
 
+// ------------------------------------------------------------------ toTaskDetail (S10-015 Task 005: backlog 定位 + 关联)
+
+describe('api/domain — toTaskDetail backlog 定位 + Epic/Feature/Story 关联', () => {
+  it('从 backlog 定位 Task + 关联 Epic/Feature/Story (为什么存在)', () => {
+    const detail = toTaskDetail(sampleBacklog(), 'task-1');
+    expect(detail.id).toBe('task-1');
+    expect(detail.title).toBe('实现支出记录 API');
+    expect(detail.description).toBe('POST /api/transactions 新增支出记录');
+    expect(detail.status).toBe('running');
+    expect(detail.statusLabel).toBe('执行中');
+    expect(detail.owner).toBe('developer');
+    expect(detail.agent).toBe('开发工程师'); // assignee → ROLE_LABELS 人话
+    expect(detail.priority).toBe('P1');
+    expect(detail.epicName).toBe('记账核心');
+    expect(detail.featureName).toBe('支出记录');
+    expect(detail.storyName).toBe('记录支出');
+    expect(detail.dependency).toEqual([]);
+    expect(detail.history).toHaveLength(1);
+    expect(detail.history[0]).toEqual({
+      time: '2026-08-11T00:05:00Z',
+      actor: 'developer',
+      action: 'started',
+      result: 'ok',
+    });
+  });
+
+  it('assignee 空串 → owner/agent undefined (诚实降级); 依赖透传; 孤儿 Task 关联缺失', () => {
+    const detail = toTaskDetail(sampleBacklog(), 'task-2');
+    expect(detail.owner).toBeUndefined();
+    expect(detail.agent).toBeUndefined();
+    expect(detail.priority).toBe('P2');
+    expect(detail.dependency).toEqual(['task-1']);
+    expect(detail.status).toBe('pending');
+    // task-2 不在任何 story.children (孤儿) → Epic/Feature/Story 关联缺失, 诚实降级
+    expect(detail.epicName).toBeUndefined();
+    expect(detail.featureName).toBeUndefined();
+    expect(detail.storyName).toBeUndefined();
+    expect(detail.history).toHaveLength(0);
+  });
+
+  it('taskId 未找到 → 降级空对象 (不崩溃)', () => {
+    const detail = toTaskDetail(sampleBacklog(), 'no-such-task');
+    expect(detail.id).toBe('');
+    expect(detail.title).toBe('');
+    expect(detail.status).toBe('pending');
+    expect(detail.epicName).toBeUndefined();
+  });
+
+  it('null / undefined backlog → 降级空对象 (不崩溃)', () => {
+    expect(toTaskDetail(null, 'task-1').id).toBe('');
+    expect(toTaskDetail(undefined, 'task-1').id).toBe('');
+  });
+
+  it('backlog 内 Task 无匹配 (孤儿) → 降级, 不抛异常', () => {
+    const detail = toTaskDetail(sampleBacklog({ tasks: [] }), 'task-1');
+    expect(detail.id).toBe('');
+  });
+});
+
 // ------------------------------------------------------------------ toRuntimeActivity
 
 describe('api/domain — toRuntimeActivity 正常映射', () => {
@@ -685,9 +745,35 @@ describe('api/domain — toRuntimeActivity 正常映射', () => {
     ]);
     expect(activities).toHaveLength(1);
     expect(activities[0].time).toBe('2026-08-10T09:32:45.713312+00:00');
-    expect(activities[0].actor).toBe('product-manager');
+    // S10-015 Task 005: agent_id → ROLE_LABELS 人话 + Agent 后缀 (不再是原始 role id)
+    expect(activities[0].actor).toBe('产品经理 Agent');
     expect(activities[0].action).toBe('工作流创建 Demo');
-    expect(activities[0].result).toBe('OK');
+    // S10-015 Task 005: status → result 人话 (OK → 通过)
+    expect(activities[0].result).toBe('通过');
+    // stage_id/event_type 透传 (Runtime Timeline 关联用)
+    expect(activities[0].stageId).toBeUndefined();
+    expect(activities[0].eventType).toBe('org.workflow.created');
+  });
+
+  it('agent_id → 人话 Agent; 未知 role 原样 (不臆造)', () => {
+    const [a] = toRuntimeActivity([{ agent_id: 'developer' }]);
+    expect(a.actor).toBe('开发工程师 Agent');
+    const [b] = toRuntimeActivity([{ agent_id: 'custom-role' }]);
+    expect(b.actor).toBe('custom-role');
+  });
+
+  it('无 agent (null/空) → 系统; source/actor 原样透传', () => {
+    const [a] = toRuntimeActivity([{ event_type: 'org.workflow.failed' }]);
+    expect(a.actor).toBe('系统');
+    const [b] = toRuntimeActivity([{ source: 'engine' }]);
+    expect(b.actor).toBe('engine');
+    const [c] = toRuntimeActivity([{ actor: 'console' }]);
+    expect(c.actor).toBe('console');
+  });
+
+  it('stage_id 透传 → RuntimeActivity.stageId', () => {
+    const [a] = toRuntimeActivity([{ stage_id: 'STG-dev' }]);
+    expect(a.stageId).toBe('STG-dev');
   });
 
   it('message 缺失 → event_type 人话映射', () => {
@@ -707,7 +793,8 @@ describe('api/domain — toRuntimeActivity 正常映射', () => {
     expect(a.time).toBe('2026-08-06T00:00:00Z');
     expect(a.actor).toBe('engine');
     expect(a.action).toBe('completed');
-    expect(a.result).toBe('ok');
+    // S10-015 Task 005: 已知状态值 → 人话 result (ok → 通过)
+    expect(a.result).toBe('通过');
   });
 
   it('projectName 参数 → 透传到每条活动', () => {
@@ -723,10 +810,10 @@ describe('api/domain — toRuntimeActivity 降级与边界', () => {
     expect(toRuntimeActivity(undefined)).toHaveLength(0);
   });
 
-  it('缺字段事件 → 默认值, 不崩溃', () => {
+  it('缺字段事件 → 默认值, 不崩溃 (无 agent → 系统)', () => {
     const [a] = toRuntimeActivity([{}]);
     expect(a.time).toBe('');
-    expect(a.actor).toBe('');
+    expect(a.actor).toBe('系统');
     expect(a.action).toBe('');
     expect(a.result).toBe('');
   });

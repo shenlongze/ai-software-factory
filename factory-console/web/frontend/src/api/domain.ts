@@ -526,6 +526,9 @@ export interface TaskDetailInput {
   agent?: string | null;
   owner?: string | null;
   assignee?: string | null;
+  priority?: string | null;
+  description?: string | null;
+  dependency?: string[] | null;
   started_at?: string | null;
   startedAt?: string | null;
   completed_at?: string | null;
@@ -536,23 +539,164 @@ export interface TaskDetailInput {
   blockedReason?: string | null;
   history?: Array<Record<string, unknown>> | null;
   artifacts?: string[] | null;
+  epic_name?: string | null;
+  feature_name?: string | null;
+  story_name?: string | null;
 }
 
-/** backlog/task/{id} + timeline → TaskDetail (字段映射 + history 投影; 缺失 → undefined/[])。 */
-export function toTaskDetail(taskRaw?: TaskDetailInput | null): TaskDetail {
+/** 空 TaskDetail 降级 (Task 未定位/输入缺失; §6.3 不崩溃)。 */
+function emptyTaskDetail(): TaskDetail {
+  return {
+    id: '',
+    title: '',
+    status: 'pending',
+    statusLabel: statusLabel('pending'),
+    history: [],
+    artifacts: [],
+  };
+}
+
+/** 负责人归一: null/空串 → undefined (真实 assignee='' 不显示空负责人)。 */
+function normalizeOwner(value: string | null | undefined): string | undefined {
+  if (value == null || value.length === 0) return undefined;
+  return value;
+}
+
+/** 下一步动作派生 (后端无 next_action 字段时; 从真实 status 推导人话, 非伪造状态)。 */
+function deriveNextAction(status: DomainStatus): string | undefined {
+  switch (status) {
+    case 'running':
+      return '正在执行 — 等待当前工作完成';
+    case 'blocked':
+      return '解除阻塞后继续执行';
+    case 'review':
+      return '等待人工审核';
+    case 'failed':
+      return '修复失败原因后重试';
+    case 'completed':
+      return '已完成 — 无后续动作';
+    default:
+      return '等待开始执行';
+  }
+}
+
+/**
+ * 任务详情统一 Adapter (S10-015 Task 005 双模式):
+ *   ① backlog 定位模式: toTaskDetail(backlog, taskId) — 从 GET /api/projects/{id}/backlog
+ *      定位 Task + 自上而下 children 反向关联 Epic/Feature/Story (为什么存在);
+ *      agent = assignee → ROLE_LABELS 人话 (哪个 Agent); nextAction = 后端字段 ?: status 派生
+ *   ② 任务实体模式: toTaskDetail(taskRaw) — 兼容 S10-014 单对象输入 (字段直映,
+ *      缺失 → undefined, 不派生)
+ * 输入检测: 含 epics/features/stories/tasks 数组 → backlog 模式; 否则 → 实体模式。
+ */
+export function toTaskDetail(
+  backlogOrTask?: BacklogResponse | TaskDetailInput | null,
+  taskId?: string | null,
+): TaskDetail {
+  if (isBacklogResponse(backlogOrTask)) {
+    return toTaskDetailFromBacklog(backlogOrTask, taskId);
+  }
+  return toTaskDetailFromInput(backlogOrTask as TaskDetailInput | null | undefined);
+}
+
+/** 输入是否 BacklogResponse (4 平行数组中任一存在 → backlog 模式)。 */
+function isBacklogResponse(value: unknown): value is BacklogResponse {
+  const v = (value ?? {}) as Record<string, unknown>;
+  return (
+    Array.isArray(v.epics) ||
+    Array.isArray(v.features) ||
+    Array.isArray(v.stories) ||
+    Array.isArray(v.tasks)
+  );
+}
+
+/** backlog 定位模式: taskId → Task + Epic/Feature/Story 反向关联 (缺失 → 降级)。 */
+function toTaskDetailFromBacklog(
+  backlog: BacklogResponse | null | undefined,
+  taskId: string | null | undefined,
+): TaskDetail {
+  const source = backlog ?? {};
+  const tasks = source.tasks ?? [];
+  const task = taskId != null ? tasks.find((t) => t?.id === taskId) : undefined;
+  if (task == null) return emptyTaskDetail();
+  const story = (source.stories ?? []).find((s) => (s?.children ?? []).includes(taskId ?? ''));
+  const feature =
+    story != null
+      ? (source.features ?? []).find((f) => (f?.children ?? []).includes(story.id ?? ''))
+      : undefined;
+  const epic =
+    feature != null
+      ? (source.epics ?? []).find((e) => (e?.children ?? []).includes(feature.id ?? ''))
+      : undefined;
+  const status = toDomainStatus(task.status ?? null);
+  const assignee = normalizeOwner(task.assignee);
+  return {
+    id: task.id ?? '',
+    title: task.title ?? '',
+    status,
+    statusLabel: statusLabel(status),
+    ...(assignee != null
+      ? { owner: assignee, agent: ROLE_LABELS[assignee] ?? assignee }
+      : {}),
+    ...(task.priority != null && task.priority.length > 0 ? { priority: task.priority } : {}),
+    ...(task.description != null && task.description.length > 0
+      ? { description: task.description }
+      : {}),
+    ...(Array.isArray(task.dependency) ? { dependency: task.dependency } : {}),
+    ...(task.created_at != null && task.created_at.length > 0
+      ? { startedAt: task.created_at }
+      : {}),
+    nextAction: deriveNextAction(status),
+    ...(epic != null && epic.name != null && epic.name.length > 0 ? { epicName: epic.name } : {}),
+    ...(feature != null && feature.name != null && feature.name.length > 0
+      ? { featureName: feature.name }
+      : {}),
+    ...(story != null && story.name != null && story.name.length > 0 ? { storyName: story.name } : {}),
+    history: (task.history ?? []).map(toActivity),
+    artifacts: [],
+  };
+}
+
+/** 任务实体模式: 单对象直映 (S10-014 兼容; 缺失 → undefined, 不派生)。 */
+function toTaskDetailFromInput(taskRaw?: TaskDetailInput | null): TaskDetail {
   const t = taskRaw ?? {};
   const status = toDomainStatus(t.status ?? null);
+  const owner = normalizeOwner(t.owner ?? t.assignee);
   return {
     id: t.id ?? '',
     title: t.title ?? t.name ?? '',
     status,
     statusLabel: statusLabel(status),
-    agent: t.agent ?? undefined,
-    owner: t.owner ?? t.assignee ?? undefined,
-    startedAt: t.started_at ?? t.startedAt ?? undefined,
-    completedAt: t.completed_at ?? t.completedAt ?? undefined,
-    nextAction: t.next_action ?? t.nextAction ?? undefined,
-    blockedReason: t.blocked_reason ?? t.blockedReason ?? undefined,
+    ...(t.agent != null && t.agent.length > 0 ? { agent: t.agent } : {}),
+    ...(owner != null ? { owner } : {}),
+    ...(t.priority != null && t.priority.length > 0 ? { priority: t.priority } : {}),
+    ...(t.description != null && t.description.length > 0 ? { description: t.description } : {}),
+    ...(Array.isArray(t.dependency) && t.dependency.length > 0
+      ? { dependency: t.dependency }
+      : {}),
+    ...(t.started_at != null && t.started_at.length > 0
+      ? { startedAt: t.started_at }
+      : t.startedAt != null && t.startedAt.length > 0
+        ? { startedAt: t.startedAt }
+        : {}),
+    ...(t.completed_at != null && t.completed_at.length > 0
+      ? { completedAt: t.completed_at }
+      : t.completedAt != null && t.completedAt.length > 0
+        ? { completedAt: t.completedAt }
+        : {}),
+    ...(t.next_action != null && t.next_action.length > 0
+      ? { nextAction: t.next_action }
+      : t.nextAction != null && t.nextAction.length > 0
+        ? { nextAction: t.nextAction }
+        : {}),
+    ...(t.blocked_reason != null && t.blocked_reason.length > 0
+      ? { blockedReason: t.blocked_reason }
+      : t.blockedReason != null && t.blockedReason.length > 0
+        ? { blockedReason: t.blockedReason }
+        : {}),
+    ...(t.epic_name != null && t.epic_name.length > 0 ? { epicName: t.epic_name } : {}),
+    ...(t.feature_name != null && t.feature_name.length > 0 ? { featureName: t.feature_name } : {}),
+    ...(t.story_name != null && t.story_name.length > 0 ? { storyName: t.story_name } : {}),
     history: (t.history ?? []).map(toActivity),
     artifacts: Array.isArray(t.artifacts) ? t.artifacts : [],
   };
@@ -593,10 +737,39 @@ const EVENT_ACTION_LABELS: Record<string, string> = {
   error: '发生错误',
 };
 
+/** 事件结果/状态 → result 人话 (S10-015 Task 005: OK→通过; 未知 → 原样, §6.3)。 */
+const RESULT_LABELS: Record<string, string> = {
+  OK: '通过',
+  ok: '通过',
+  success: '成功',
+  completed: '完成',
+  done: '完成',
+  validated: '验证通过',
+  ready: '就绪',
+  running: '执行中',
+  failed: '失败',
+  error: '失败',
+  FAIL: '失败',
+  pending: '待处理',
+  approved: '已通过',
+  rejected: '已驳回',
+};
+
+/** 后端 role/agent id → 人话 Agent 名 (ROLE_LABELS 命中 → '产品经理 Agent'; 未知 → 原样)。 */
+function agentLabel(id: string): string {
+  if (id == null || id.length === 0) return '';
+  return ROLE_LABELS[id] != null ? `${ROLE_LABELS[id]} Agent` : id;
+}
+
 /** timeline + events/stream → RuntimeActivity[] (事件 → 活动条目; 空/非数组 → [])。
  *
- * 输入兼容 TimelineEventSummary (created_at/message/status/agent_id) 与
- * EventSummary (timestamp/source/action/result)。projectName 可选 (全局流)。
+ * 输入兼容 TimelineEventSummary (created_at/message/status/agent_id/stage_id/event_type)
+ * 与 EventSummary (timestamp/source/action/result)。projectName 可选 (全局流)。
+ * S10-015 Task 005 增强:
+ *   - actor: agent_id → ROLE_LABELS 人话 + 'Agent' 后缀 (未知 role 原样, 不臆造);
+ *     无 agent_id → source/actor 原样; 全无 → '系统'
+ *   - result: 已知状态值 → 人话 (OK → 通过; completed → 完成; …); 未知 → 原样
+ *   - stageId/eventType 透传 (Runtime Timeline 阶段/事件定位)
  */
 export function toRuntimeActivity(
   events?: unknown[] | null,
@@ -610,11 +783,20 @@ export function toRuntimeActivity(
     const action =
       message ||
       (eventType ? (EVENT_ACTION_LABELS[eventType] ?? eventType) : str(raw.action));
+    const agentId = str(raw.agent_id);
+    const sourceActor = str(raw.source ?? raw.actor);
+    const actor =
+      agentId.length > 0 ? agentLabel(agentId) : sourceActor.length > 0 ? sourceActor : '系统';
+    const rawResult = str(raw.result ?? raw.status);
+    const result = rawResult.length > 0 ? (RESULT_LABELS[rawResult] ?? rawResult) : '';
+    const stageId = str(raw.stage_id);
     return {
       time: str(raw.created_at ?? raw.timestamp ?? raw.time),
-      actor: str(raw.agent_id ?? raw.source ?? raw.actor),
+      actor,
       action,
-      result: str(raw.result ?? raw.status),
+      result,
+      ...(stageId.length > 0 ? { stageId } : {}),
+      ...(eventType.length > 0 ? { eventType } : {}),
       ...(projectName != null && projectName.length > 0 ? { projectName } : {}),
     };
   });

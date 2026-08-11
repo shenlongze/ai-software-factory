@@ -30,6 +30,7 @@ import { AfModulePlaceholder } from './AfModulePlaceholder';
 import { AfProjectSidebar } from './AfProjectSidebar';
 import { AfTodoTreePage } from '../../pages/project/AfTodoTreePage';
 import { AfWorkflowPage } from '../../pages/project/AfWorkflowPage';
+import { AfRuntimePage } from '../../pages/project/AfRuntimePage';
 import { ErrorState, LoadingState } from '../State';
 import { useAsync } from '../../hooks/useAsync';
 import type { ProjectSummary, WorkflowDetail } from '../../models/types';
@@ -243,6 +244,7 @@ function ProjectDetailView({
 /**
  * 子页分发 (S10-015): todo → AfTodoTreePage (真实 backlog 树);
  * workflow → AfWorkflowPage (真实 Workflow Instance 可视化);
+ * runtime → AfRuntimePage (真实 Runtime Timeline: 当前执行卡 + 事件流);
  * 其他子页 → AfModulePlaceholder (禁空白, 后续 Sprint 接入)。
  */
 function AfProjectSubPage({
@@ -259,6 +261,9 @@ function AfProjectSubPage({
   }
   if (page === 'Workflow' && projectId != null) {
     return <AfWorkflowPage projectId={projectId} projectName={projectName ?? ''} />;
+  }
+  if (page === 'Runtime' && projectId != null) {
+    return <AfRuntimePage projectId={projectId} projectName={projectName ?? ''} />;
   }
   return <AfModulePlaceholder pageLabel={page} />;
 }

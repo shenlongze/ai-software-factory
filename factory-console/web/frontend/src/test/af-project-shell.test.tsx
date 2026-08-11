@@ -17,7 +17,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 import { PROJECT_NAV_ITEMS } from '../components/af/AfProjectSidebar';
 import { AfProjectShell } from '../components/af/AfProjectShell';
-import { sampleProject, sampleTodoBacklog, sampleWorkflowInstance, sampleWorkflowTimeline, stubFetch } from './fixtures';
+import { sampleProject, sampleTodoBacklog, sampleWorkflowInstance, sampleWorkflowTimeline, sampleFailedWorkflow, sampleFailedTimeline, stubFetch } from './fixtures';
 
 function projectRoute(page = 'overview') {
   return { level: 'project' as const, page, projectId: 'demo' };
@@ -163,7 +163,7 @@ describe('AfProjectShell (AI OS 项目层壳)', () => {
     render(<AfProjectShell route={projectRoute('workflow')} />);
     expect(await screen.findByTestId('af-workflow-viewer')).toBeInTheDocument();
     // 真实流水线内容: 人话 Agent 名 + 阻塞原因 + 三层 (Instance/Template/Timeline)
-    expect(screen.getByText('产品经理 Agent')).toBeInTheDocument();
+    expect(screen.getAllByText('产品经理 Agent').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('阻塞: 等待前置阶段完成: UI 设计师')).toBeInTheDocument();
     expect(screen.getByTestId('af-wf-instance')).toBeInTheDocument();
     expect(screen.getByTestId('af-wf-template')).toBeInTheDocument();
@@ -177,6 +177,22 @@ describe('AfProjectShell (AI OS 项目层壳)', () => {
     });
     render(<AfProjectShell route={projectRoute('todo')} />);
     expect(await screen.findByTestId('af-todo-tree')).toBeInTheDocument();
+  });
+
+  it('runtime 页 → 真实 Runtime Timeline (AfRuntimePage, workflow+timeline 驱动, 失败展示)', async () => {
+    stubFetch({
+      '/api/projects': [sampleProject({ id: 'demo' })],
+      '/api/projects/demo/workflow': sampleFailedWorkflow(),
+      '/api/projects/demo/timeline?limit=200': sampleFailedTimeline(),
+    });
+    render(<AfProjectShell route={projectRoute('runtime')} />);
+    expect(await screen.findByTestId('af-runtime-timeline')).toBeInTheDocument();
+    // 真实失败展示: failed_reason 全文 + 当前 Agent + 事件流
+    expect(screen.getByTestId('af-runtime-failed')).toHaveTextContent(
+      'DeveloperError: provider response contains no parseable patch or operations (after 1 retry)',
+    );
+    expect(screen.getByTestId('af-runtime-agent')).toHaveTextContent('开发工程师 Agent');
+    expect(screen.getAllByTestId('af-timeline-item').length).toBeGreaterThanOrEqual(1);
   });
 
   it('404: 项目不存在 → ErrorState "项目不存在或已被删除"', async () => {

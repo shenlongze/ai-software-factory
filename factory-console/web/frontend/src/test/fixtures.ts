@@ -999,6 +999,111 @@ export interface BacklogResponse {
   tasks: BacklogTaskItem[];
 }
 
+// ------------------------------------------------------------------ S10-015 Task 005b: Runtime 失败实例 fixtures
+// sampleFailedWorkflow: 真实 P-806fe6e8 ScorePocket 失败工作流 (2026-08-12 实测,
+//   status=failed + failed_reason DeveloperError + 3 阶段 development(failed) →
+//   testing(pending) → release(pending)) — Runtime Timeline 当前执行卡/失败原因/下一步数据源。
+// sampleFailedTimeline: 真实形状运行事件 (org.workflow.* / org.artifact.* / 失败收尾),
+//   时间升序 (seq 递增) — AfRuntimeTimeline 需倒序展示 (最新在上)。
+
+/** 真实 P-806fe6e8 失败 Workflow (status=failed, 3 阶段: development failed → testing/release pending)。 */
+export function sampleFailedWorkflow(overrides: Partial<WorkflowDetail> = {}): WorkflowDetail {
+  const wfId = 'WF-P-806fe6e8-R1786473507972-DEV';
+  const stage = (
+    id: string,
+    roleId: string,
+    name: string,
+    order: number,
+    status: string,
+  ): StageSummary => ({
+    id,
+    workflow_id: wfId,
+    role_id: roleId,
+    name,
+    order,
+    status,
+    depends_on: [],
+    input_artifacts: [],
+    output_artifacts: [],
+    approval_required: false,
+    artifact: null,
+    pending_approval: null,
+  });
+  return {
+    id: wfId,
+    project_id: 'P-806fe6e8',
+    project_name: 'ScorePocket',
+    name: 'P-806fe6e8 开发链 (development→testing→release)',
+    status: 'failed',
+    failed_reason:
+      'DeveloperError: provider response contains no parseable patch or operations (after 1 retry)',
+    created_at: '2026-08-12T03:00:00.000000+00:00',
+    started_at: '2026-08-12T03:00:00.000000+00:00',
+    completed_at: '2026-08-12T03:45:00.000000+00:00',
+    stages: [
+      stage('STG-P-806fe6e8-R1786473507972-DEV', 'developer', 'development', 1, 'failed'),
+      stage('STG-P-806fe6e8-R1786473507972-TEST', 'tester', 'testing', 2, 'pending'),
+      stage('STG-P-806fe6e8-R1786473507972-REL', 'devops', 'release', 3, 'pending'),
+    ],
+    pending_approvals: [],
+    template: ['Idea', 'PM', 'Product', 'UX/UI', 'Architecture', 'Development', 'Test', 'Release'],
+    is_mock: false,
+    ...overrides,
+  };
+}
+
+/** 失败运行事件流 4 条 (升序; org.workflow.* + org.artifact.* + 失败收尾)。 */
+export function sampleFailedTimeline(): TimelineEventSummary[] {
+  return [
+    sampleTimelineEvent({
+      id: 'evt-501',
+      seq: 501,
+      project_id: 'P-806fe6e8',
+      type: 'stage',
+      event_type: 'org.workflow.created',
+      message: '工作流创建 P-806fe6e8 开发链',
+      status: 'OK',
+      created_at: '2026-08-12T03:00:00.000000+00:00',
+    }),
+    sampleTimelineEvent({
+      id: 'evt-502',
+      seq: 502,
+      project_id: 'P-806fe6e8',
+      type: 'stage',
+      event_type: 'org.workflow.stage_started',
+      stage_id: 'STG-P-806fe6e8-R1786473507972-DEV',
+      agent_id: 'developer',
+      message: '阶段开始 development',
+      status: 'running',
+      created_at: '2026-08-12T03:00:05.000000+00:00',
+    }),
+    sampleTimelineEvent({
+      id: 'evt-503',
+      seq: 503,
+      project_id: 'P-806fe6e8',
+      type: 'artifact',
+      event_type: 'org.artifact.created',
+      stage_id: 'STG-P-806fe6e8-R1786473507972-DEV',
+      artifact_id: 'P-806fe6e8-R1786473507972-CODE',
+      message: '产物生成',
+      status: 'OK',
+      created_at: '2026-08-12T03:40:00.000000+00:00',
+    }),
+    sampleTimelineEvent({
+      id: 'evt-504',
+      seq: 504,
+      project_id: 'P-806fe6e8',
+      type: 'error',
+      event_type: 'org.workflow.failed',
+      stage_id: 'STG-P-806fe6e8-R1786473507972-DEV',
+      agent_id: 'developer',
+      message: '工作流失败: provider response contains no parseable patch or operations',
+      status: 'FAIL',
+      created_at: '2026-08-12T03:45:00.000000+00:00',
+    }),
+  ];
+}
+
 /**
  * Backlog 全量分组 (epics/features/stories/tasks; 层级引用: epic.children =
  * Feature id, feature.children = Story id, story.children = Task id — 非包含)。

@@ -722,6 +722,7 @@ def _dispatch_impl(
                 "status": instance.status.value,
             },
             result="OK",
+            capability=instance.capability_snapshot or None,  # 005: 能力快照入审计
         )
     return instance
 
@@ -961,7 +962,7 @@ class AuditStore:
     - 读取失败安全: 缺失 → 空列表; 损坏行跳过 (日志为不可变事实源, 不整体失败)
     """
 
-    _FIELDS = ("time", "actor", "action", "entity", "input", "output", "result")
+    _FIELDS = ("time", "actor", "action", "entity", "input", "output", "result", "capability")
 
     def __init__(self, space_dir: str | Path):
         self._space_dir = Path(space_dir)
@@ -982,8 +983,14 @@ class AuditStore:
         input: Any = None,
         output: Any = None,
         result: str = "",
+        capability: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """追加一条审计记录 (返回落盘条目; time 自动 UTC ISO)。"""
+        """追加一条审计记录 (返回落盘条目; time 自动 UTC ISO)。
+
+        capability (S10-012 Task 007-005): 执行能力快照 {agent/skill/mcp/llm:
+        {id, version}} — 回答 "谁执行 / 用什么能力 / 哪个版本"; 缺省 None →
+        条目不含该字段 (老调用零破坏; 纯 legacy 无快照可写)。
+        """
         entry: dict[str, Any] = {
             "time": utcnow().isoformat(),
             "actor": actor,
@@ -993,6 +1000,8 @@ class AuditStore:
             "output": output,
             "result": result,
         }
+        if capability is not None:
+            entry["capability"] = capability
         with self._lock:
             self._logs_dir.mkdir(parents=True, exist_ok=True)
             with open(self._path, "a", encoding="utf-8") as f:
@@ -1105,6 +1114,7 @@ def _record_audit(
             "status": instance.status.value,
         },
         result=result,
+        capability=instance.capability_snapshot or None,  # 005: 能力快照入审计
     )
 
 
@@ -1167,6 +1177,7 @@ def _link_task(
                 "status": instance.status.value,
             },
             result=instance.status.value,
+            capability=instance.capability_snapshot or None,  # 005: 能力快照入审计
         )
     return updated
 

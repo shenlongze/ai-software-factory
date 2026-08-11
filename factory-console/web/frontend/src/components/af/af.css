@@ -6,7 +6,45 @@
  *   阻塞紫 #8B5CF6 / 中性灰 #9CA3AF
  * 布局 (§9.3): 卡片圆角 12px / 标签 6px; 标题 16 / 正文 14 / 辅助 12。
  * 组件 (§9.4): 深底 + 1px 边框 + 轻阴影; 进度条 4px 细条 + 百分比文字。
+ *
+ * AI OS Design Tokens (S10-014 Task 003): :root 变量与 afTokens.ts 同值
+ * (TS 侧由测试锁定, 此处为 CSS 消费方 — 改动需同步 afTokens.ts)。
  */
+
+/* --------------------------------------------------- AI OS tokens (:root) */
+:root {
+  --af-bg: #0f1115;
+  --af-panel: #161a22;
+  --af-card: #1d232e;
+  --af-primary: #4c8dff;
+  --af-success: #22c55e;
+  --af-warning: #f59e0b;
+  --af-danger: #ef4444;
+  --af-blocked: #8b5cf6;
+  --af-neutral: #9ca3af;
+  --af-border: #2a3140;
+  /* 状态色语义 (6 态: 完成绿/执行中蓝/待办灰/阻塞紫/失败红/待审核橙) */
+  --af-status-completed: #22c55e;
+  --af-status-running: #4c8dff;
+  --af-status-pending: #9ca3af;
+  --af-status-blocked: #8b5cf6;
+  --af-status-failed: #ef4444;
+  --af-status-review: #f59e0b;
+  --af-font-sans: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei',
+    'Segoe UI', Roboto, sans-serif;
+  --af-font-mono: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+}
+
+/* 执行中呼吸动画 (§4.4: 透明度 0.6→1, 1.2s) */
+@keyframes af-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
 
 .af-shell {
   min-height: 100vh;
@@ -193,6 +231,68 @@
   background: rgba(156, 163, 175, 0.12);
 }
 
+/* -------------------------------------------------------- StatusBadge (af) */
+/* 色点 + 人话文字 (§9.4); 色点颜色走 --af-status-* 语义变量 */
+.af-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #e5e7eb;
+}
+
+.af-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--af-status-pending, #9ca3af);
+}
+
+.af-status-dot--completed {
+  background: var(--af-status-completed);
+}
+.af-status-dot--running {
+  background: var(--af-status-running);
+  animation: af-breathe 1.2s ease-in-out infinite; /* 执行中呼吸 (§4.4) */
+}
+.af-status-dot--pending {
+  background: var(--af-status-pending);
+}
+.af-status-dot--blocked {
+  background: var(--af-status-blocked);
+}
+.af-status-dot--failed {
+  background: var(--af-status-failed);
+}
+.af-status-dot--review {
+  background: var(--af-status-review);
+}
+.af-status-dot--neutral {
+  background: var(--af-neutral);
+}
+
+/* ------------------------------------------------- Progress fill 状态色 (af) */
+.af-progress-fill--completed {
+  background: var(--af-status-completed);
+}
+.af-progress-fill--running {
+  background: var(--af-status-running);
+}
+.af-progress-fill--pending {
+  background: var(--af-status-pending);
+}
+.af-progress-fill--blocked {
+  background: var(--af-status-blocked);
+}
+.af-progress-fill--failed {
+  background: var(--af-status-failed);
+}
+.af-progress-fill--review {
+  background: var(--af-status-review);
+}
+
 /* -------------------------------------------------------------- Progress */
 .af-card-progress {
   display: flex;
@@ -318,6 +418,299 @@
 
 /* ------------------------------------------------------------ Placeholder */
 .af-module-placeholder {
+  font-size: 14px;
+  color: #9ca3af;
+  background: #161a22;
+  border: 1px dashed #2a3140;
+  border-radius: 12px;
+  padding: 24px;
+  text-align: center;
+}
+
+/* --------------------------------------------------- ProgressBar (af, §9.4) */
+.af-progress-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ------------------------------------------------------- 四态 (af, AI OS) */
+.af-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 32px 16px;
+  text-align: center;
+  font-size: 14px;
+  color: #9ca3af;
+  background: #161a22;
+  border: 1px dashed #2a3140;
+  border-radius: 12px;
+}
+
+.af-empty-hint {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.af-loading-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px 16px;
+  font-size: 14px;
+  color: #9ca3af;
+}
+
+.af-loading-spinner {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid #2a3140;
+  border-top-color: var(--af-primary, #4c8dff);
+  animation: af-spin 0.8s linear infinite;
+}
+
+@keyframes af-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.af-error-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 24px 16px;
+  font-size: 14px;
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: 12px;
+}
+
+.af-error-message {
+  color: #e5e7eb;
+}
+
+/* 基础按钮 (次按钮 = 透明 + 边框, §9.4) */
+.af-btn {
+  font: inherit;
+  font-size: 12px;
+  color: #e5e7eb;
+  background: transparent;
+  border: 1px solid #2a3140;
+  border-radius: 8px;
+  padding: 4px 12px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.af-btn:hover {
+  color: #4c8dff;
+  border-color: #4c8dff;
+}
+
+/* ---------------------------------------------------- AgentCard (af, §6.2) */
+.af-agent-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--af-card, #1d232e);
+  border: 1px solid var(--af-border, #2a3140);
+  border-radius: 12px;
+  padding: 16px;
+  transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+
+.af-agent-card:hover {
+  border-color: var(--af-primary, #4c8dff);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+
+.af-agent-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.af-agent-avatar {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  background: #161a22;
+  border: 1px solid #2a3140;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.af-agent-id {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.af-agent-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: #f5f7fa;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.af-agent-role {
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.af-agent-status {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: #22c55e;
+  background: rgba(34, 197, 94, 0.12);
+  border-radius: 6px;
+  padding: 2px 8px;
+}
+
+.af-agent-skills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.af-agent-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid #2a3140;
+}
+
+.af-agent-version {
+  font-size: 12px;
+  color: #9ca3af;
+  font-family: var(--af-font-mono, 'SF Mono', Menlo, monospace);
+}
+
+.af-agent-stats {
+  display: flex;
+  gap: 12px;
+}
+
+.af-agent-stat {
+  font-size: 12px;
+  color: #9ca3af;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --------------------------------------------------- Timeline (af, §9.5) */
+.af-timeline {
+  display: flex;
+  flex-direction: column;
+}
+
+.af-timeline-item {
+  display: flex;
+  gap: 12px;
+}
+
+.af-timeline-time {
+  width: 128px;
+  flex-shrink: 0;
+  padding-top: 2px;
+  font-size: 12px;
+  color: #9ca3af;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.af-timeline-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 8px;
+  flex-shrink: 0;
+}
+
+.af-timeline-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-top: 4px;
+  flex-shrink: 0;
+  background: var(--af-status-pending, #9ca3af);
+}
+
+.af-timeline-dot--completed {
+  background: var(--af-status-completed);
+}
+.af-timeline-dot--running {
+  background: var(--af-status-running);
+  animation: af-breathe 1.2s ease-in-out infinite; /* 当前活动呼吸 (§4.4) */
+}
+.af-timeline-dot--pending {
+  background: var(--af-status-pending);
+}
+.af-timeline-dot--blocked {
+  background: var(--af-status-blocked);
+}
+.af-timeline-dot--failed {
+  background: var(--af-status-failed);
+}
+.af-timeline-dot--review {
+  background: var(--af-status-review);
+}
+.af-timeline-dot--neutral {
+  background: var(--af-neutral);
+}
+
+.af-timeline-line {
+  flex: 1;
+  width: 2px;
+  background: #2a3140;
+  margin: 4px 0;
+}
+
+.af-timeline-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 20px;
+  min-width: 0;
+}
+
+.af-timeline-actor {
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.af-timeline-action {
+  font-size: 14px;
+  color: #e5e7eb;
+}
+
+.af-timeline-result {
+  font-size: 12px;
+  color: #4c8dff;
+  background: rgba(76, 141, 255, 0.12);
+  border-radius: 6px;
+  padding: 1px 8px;
+  align-self: flex-start;
+}
+
+.af-timeline-empty {
   font-size: 14px;
   color: #9ca3af;
   background: #161a22;

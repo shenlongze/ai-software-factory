@@ -276,6 +276,90 @@ class _TaskPatchBody(BaseModel):
     dependency: list[str] | None = None
 
 
+class _SprintBody(BaseModel):
+    """POST /api/projects/{id}/sprints body (S10-010 Task 4)。
+
+    {name, goal?, start_date?, end_date?, task_refs?}: name 必填 (空 → 400
+    — 空名字不创建); task_refs = Task id 引用列表 (非包含 — 引用不影响
+    Task 本身; 引用不存在 Task → 400)。成功 → 201 Sprint (默认
+    status=planning)。
+    """
+
+    name: str
+    goal: str = ""
+    start_date: str = ""
+    end_date: str = ""
+    task_refs: list[str] | None = None
+
+
+class _SprintPatchBody(BaseModel):
+    """PATCH /api/projects/{id}/sprints/{sprint_id} body (S10-010 Task 4)。
+
+    {goal?, planning?, task_refs?, start_date?, end_date?, status?,
+    daily_progress?, review?}: None = 未提供 (不更新该字段)。status 受控
+    转换 planning→active→completed (非法跳级/回退 → 409; 非法值 → 400);
+    task_refs 引用不存在 Task → 400; daily_progress 元素非对象 → 400。
+    """
+
+    goal: str | None = None
+    planning: str | None = None
+    task_refs: list[str] | None = None
+    start_date: str | None = None
+    end_date: str | None = None
+    status: str | None = None
+    daily_progress: list[dict[str, Any]] | None = None
+    review: str | None = None
+
+
+class _SprintPlanBody(BaseModel):
+    """POST /api/projects/{id}/sprints/{sprint_id}/plan body (S10-010 Task 4)。
+
+    {goal?}: Planning 预留端点 — 只回显 goal 并返回可执行任务建议
+    (sort_tasks 纯函数排序), 不实际调度 (S10-011)。
+    """
+
+    goal: str = ""
+
+
+class _MilestoneBody(BaseModel):
+    """POST /api/projects/{id}/milestones body (S10-010 Task 4)。
+
+    {name, description?, target_date?, task_refs?}: name 必填 (空 → 400);
+    task_refs 引用 Task (非包含; 不存在 → 400)。成功 → 201 Milestone
+    (默认 status=planned, 自由文本宽容)。
+    """
+
+    name: str
+    description: str = ""
+    target_date: str = ""
+    task_refs: list[str] | None = None
+
+
+class _MilestonePatchBody(BaseModel):
+    """PATCH /api/projects/{id}/milestones/{milestone_id} body (S10-010 Task 4)。
+
+    {name?, description?, target_date?, status?, task_refs?}: None = 未提供。
+    status 自由文本 (宽容, 无状态机); task_refs 引用不存在 Task → 400;
+    空 name → 400。
+    """
+
+    name: str | None = None
+    description: str | None = None
+    target_date: str | None = None
+    status: str | None = None
+    task_refs: list[str] | None = None
+
+
+class _MilestoneRefBody(BaseModel):
+    """POST /api/projects/{id}/roadmap/milestone-ref body (S10-010 Task 4)。
+
+    {milestone_id}: 追加到 Roadmap.milestone_refs (去重幂等); milestone
+    不存在 → 400 (引用校验, 同 task_ref 语义)。
+    """
+
+    milestone_id: str
+
+
 # ------------------------------------------------------------------ 装配
 
 
@@ -445,7 +529,7 @@ def build_app(
     app = FastAPI(title="AI Software Factory — Human Console Web", version="0.1.0")
 
     def _raise_backlog_error(exc: Exception) -> NoReturn:
-        """Backlog 端点统一错误映射 (404/409/400; 其余原样上抛)。"""
+        """Backlog + Sprint/Milestone/Roadmap 端点统一错误映射 (404/409/400; 其余原样上抛)。"""
         if isinstance(exc, BacklogNotFoundError):
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         if isinstance(exc, BacklogStateError):
@@ -801,6 +885,221 @@ def build_app(
         if result is None:
             raise HTTPException(status_code=404, detail="project not found")
         return result
+
+    # ------------------------- S10-010 Task 4: Sprint/Milestone/Roadmap API
+    # 执行窗口与路线 (AF-PRD-v1.md 4.4/4.5): Sprint/Milestone 引用 Task (非
+    # 包含 — 引用不影响 Task 本身), Roadmap 引用 Milestone; Sprint 状态受控
+    # (planning→active→completed); Planning 端点只给建议不调度 (S10-011)。
+    # 目录信源: management/sprint/{id}.json + milestone.json + roadmap.md。
+    # 错误映射 (复用 _raise_backlog_error): 项目不存在 → 404; Sprint/Milestone
+    # 不存在 (BacklogNotFoundError) → 404; 空 name/task_ref 引用不存在
+    # Task/milestone-ref 引用不存在 Milestone (ValueError) → 400; Sprint
+    # 状态机非法转换 (BacklogStateError) → 409。
+
+    @app.post("/api/projects/{project_id}/sprints", status_code=201)
+    def api_create_sprint(project_id: str, body: _SprintBody) -> dict[str, Any]:
+        """创建 Sprint ({name, goal?, start_date?, end_date?, task_refs?} → 201)。"""
+        try:
+            sprint = _api.create_sprint(
+                service,
+                project_id,
+                name=body.name,
+                goal=body.goal,
+                start_date=body.start_date,
+                end_date=body.end_date,
+                task_refs=body.task_refs,
+                logger=event_logger,
+            )
+        except Exception as exc:
+            _raise_backlog_error(exc)
+        if sprint is None:
+            raise HTTPException(status_code=404, detail="project not found")
+        return sprint
+
+    @app.get("/api/projects/{project_id}/sprints")
+    def api_list_sprints(project_id: str) -> dict[str, Any]:
+        """Sprint 列表 ({project_id, sprints}; 项目不存在 → 404)。"""
+        try:
+            sprints = _api.list_sprints(service, project_id, logger=event_logger)
+        except Exception as exc:
+            _raise_backlog_error(exc)
+        if sprints is None:
+            raise HTTPException(status_code=404, detail="project not found")
+        return sprints
+
+    @app.get("/api/projects/{project_id}/sprints/{sprint_id}")
+    def api_sprint_detail(project_id: str, sprint_id: str) -> dict[str, Any]:
+        """Sprint 详情 (不存在 → 404)。"""
+        try:
+            sprint = _api.get_sprint(service, project_id, sprint_id, logger=event_logger)
+        except Exception as exc:
+            _raise_backlog_error(exc)
+        if sprint is None:
+            raise HTTPException(status_code=404, detail="project not found")
+        return sprint
+
+    @app.patch("/api/projects/{project_id}/sprints/{sprint_id}")
+    def api_patch_sprint(
+        project_id: str, sprint_id: str, body: _SprintPatchBody
+    ) -> dict[str, Any]:
+        """PATCH Sprint (字段 + 受控状态转换 + task_refs 校验; 400/404/409)。"""
+        try:
+            sprint = _api.update_sprint(
+                service,
+                project_id,
+                sprint_id,
+                goal=body.goal,
+                planning=body.planning,
+                task_refs=body.task_refs,
+                start_date=body.start_date,
+                end_date=body.end_date,
+                status=body.status,
+                daily_progress=body.daily_progress,
+                review=body.review,
+                logger=event_logger,
+            )
+        except Exception as exc:
+            _raise_backlog_error(exc)
+        if sprint is None:
+            raise HTTPException(status_code=404, detail="project not found")
+        return sprint
+
+    @app.delete("/api/projects/{project_id}/sprints/{sprint_id}")
+    def api_delete_sprint(project_id: str, sprint_id: str) -> dict[str, Any]:
+        """DELETE Sprint (200 {deleted, sprint_id}; Task 保留; 不存在 → 404)。"""
+        try:
+            result = _api.delete_sprint(service, project_id, sprint_id, logger=event_logger)
+        except Exception as exc:
+            _raise_backlog_error(exc)
+        if result is None:
+            raise HTTPException(status_code=404, detail="project not found")
+        return result
+
+    @app.post("/api/projects/{project_id}/sprints/{sprint_id}/plan")
+    def api_plan_sprint(
+        project_id: str, sprint_id: str, body: _SprintPlanBody
+    ) -> dict[str, Any]:
+        """Sprint Planning 预留 (建议排序, 不调度; Sprint 不存在 → 404)。"""
+        try:
+            plan = _api.plan_sprint(
+                service,
+                project_id,
+                sprint_id,
+                goal=body.goal,
+                logger=event_logger,
+            )
+        except Exception as exc:
+            _raise_backlog_error(exc)
+        if plan is None:
+            raise HTTPException(status_code=404, detail="project not found")
+        return plan
+
+    @app.post("/api/projects/{project_id}/milestones", status_code=201)
+    def api_create_milestone(project_id: str, body: _MilestoneBody) -> dict[str, Any]:
+        """创建 Milestone ({name, description?, target_date?, task_refs?} → 201)。"""
+        try:
+            milestone = _api.create_milestone(
+                service,
+                project_id,
+                name=body.name,
+                description=body.description,
+                target_date=body.target_date,
+                task_refs=body.task_refs,
+                logger=event_logger,
+            )
+        except Exception as exc:
+            _raise_backlog_error(exc)
+        if milestone is None:
+            raise HTTPException(status_code=404, detail="project not found")
+        return milestone
+
+    @app.get("/api/projects/{project_id}/milestones")
+    def api_list_milestones(project_id: str) -> dict[str, Any]:
+        """Milestone 列表 ({project_id, milestones}; 项目不存在 → 404)。"""
+        try:
+            milestones = _api.list_milestones(
+                service, project_id, logger=event_logger
+            )
+        except Exception as exc:
+            _raise_backlog_error(exc)
+        if milestones is None:
+            raise HTTPException(status_code=404, detail="project not found")
+        return milestones
+
+    @app.get("/api/projects/{project_id}/milestones/{milestone_id}")
+    def api_milestone_detail(project_id: str, milestone_id: str) -> dict[str, Any]:
+        """Milestone 详情 (不存在 → 404)。"""
+        try:
+            milestone = _api.get_milestone(
+                service, project_id, milestone_id, logger=event_logger
+            )
+        except Exception as exc:
+            _raise_backlog_error(exc)
+        if milestone is None:
+            raise HTTPException(status_code=404, detail="project not found")
+        return milestone
+
+    @app.patch("/api/projects/{project_id}/milestones/{milestone_id}")
+    def api_patch_milestone(
+        project_id: str, milestone_id: str, body: _MilestonePatchBody
+    ) -> dict[str, Any]:
+        """PATCH Milestone (字段更新; status 自由文本; task_refs 校验 → 400)。"""
+        try:
+            milestone = _api.update_milestone(
+                service,
+                project_id,
+                milestone_id,
+                name=body.name,
+                description=body.description,
+                target_date=body.target_date,
+                status=body.status,
+                task_refs=body.task_refs,
+                logger=event_logger,
+            )
+        except Exception as exc:
+            _raise_backlog_error(exc)
+        if milestone is None:
+            raise HTTPException(status_code=404, detail="project not found")
+        return milestone
+
+    @app.delete("/api/projects/{project_id}/milestones/{milestone_id}")
+    def api_delete_milestone(project_id: str, milestone_id: str) -> dict[str, Any]:
+        """DELETE Milestone (200 {deleted, milestone_id}; 不存在 → 404)。"""
+        try:
+            result = _api.delete_milestone(
+                service, project_id, milestone_id, logger=event_logger
+            )
+        except Exception as exc:
+            _raise_backlog_error(exc)
+        if result is None:
+            raise HTTPException(status_code=404, detail="project not found")
+        return result
+
+    @app.get("/api/projects/{project_id}/roadmap")
+    def api_get_roadmap(project_id: str) -> dict[str, Any]:
+        """Roadmap 单例 ({project_id, milestone_refs, updated_at}; 不存在 → 404)。"""
+        try:
+            roadmap = _api.get_roadmap(service, project_id, logger=event_logger)
+        except Exception as exc:
+            _raise_backlog_error(exc)
+        if roadmap is None:
+            raise HTTPException(status_code=404, detail="project not found")
+        return roadmap
+
+    @app.post("/api/projects/{project_id}/roadmap/milestone-ref")
+    def api_roadmap_milestone_ref(
+        project_id: str, body: _MilestoneRefBody
+    ) -> dict[str, Any]:
+        """Roadmap 追加 Milestone 引用 (去重幂等; milestone 不存在 → 400)。"""
+        try:
+            roadmap = _api.add_roadmap_milestone_ref(
+                service, project_id, body.milestone_id, logger=event_logger
+            )
+        except Exception as exc:
+            _raise_backlog_error(exc)
+        if roadmap is None:
+            raise HTTPException(status_code=404, detail="project not found")
+        return roadmap
 
     @app.get("/api/projects/{project_id}/lifecycle")
     def api_project_lifecycle(project_id: str) -> dict[str, Any]:

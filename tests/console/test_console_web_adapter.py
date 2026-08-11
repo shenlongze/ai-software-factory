@@ -347,6 +347,12 @@ class TestPermissionBoundary:
                 # S10-010 Task 3: Backlog 写路径 (POST/PATCH/DELETE
                 # /api/projects/{id}/backlog* — 层级 CRUD + Task 更新/删除)
                 is_backlog_write = "/backlog" in path
+                # S10-010 Task 4: Sprint/Milestone/Roadmap 写路径 (POST/PATCH/
+                # DELETE /api/projects/{id}/sprints*|milestones*|roadmap* —
+                # 执行窗口/路线 CRUD + Planning 预留, 只落 management/ 目录信源)
+                is_management_write = (
+                    "/sprints" in path or "/milestones" in path or "/roadmap" in path
+                )
                 assert (
                     is_approval
                     or is_runtime_lifecycle
@@ -360,9 +366,11 @@ class TestPermissionBoundary:
                     or is_project_update
                     or is_project_delete
                     or is_backlog_write
+                    or is_management_write
                 ), (
                     f"写路由超出白名单 (审批决定 + Runtime + 反馈 + 创建 + 启动 + "
-                    f"项目管理 + Backlog): {route_method} {path}"
+                    f"项目管理 + Backlog + Sprint/Milestone/Roadmap): "
+                    f"{route_method} {path}"
                 )
 
     def test_client_write_surface_limited_to_approval_decisions(self):

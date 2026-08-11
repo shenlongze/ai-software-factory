@@ -118,6 +118,12 @@ def _utc_now_str() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _norm_any_list(v: Any) -> Any:
+    """None → [] 归一 (S10-010 Task 4: task_refs/daily_progress 输入, 同
+    org.models._norm_list 语义 — 容器字段 None 输入宽容)。"""
+    return v if v is not None else []
+
+
 def _confirm_slug(name: str) -> str:
     """Confirm 名称 → 目录 slug (S10-009 Task 5)。
 
@@ -2906,6 +2912,353 @@ class ConsoleService:
         if not mgmt.delete_task(task_id):
             raise BacklogNotFoundError(f"task not found: {task_id}")
         return {"deleted": True, "task_id": task_id}
+
+    # --------------------------------- S10-010 Task 4: Sprint/Milestone/Roadmap API
+    # 执行窗口与路线 (AF-PRD-v1.md 4.4/4.5 + project-management-system.md §五/§十):
+    # Sprint/Milestone 引用 Task (非包含 — 引用不影响 Task 本身); Roadmap 引用
+    # Milestone; Sprint 状态受控 (planning→active→completed, org SPRINT_TRANSITIONS);
+    # Planning 端点只返回建议 (sort_tasks 纯函数排序), 不实际调度 (S10-011)。
+    # 目录信源: management/sprint/{id}.json + milestone.json + roadmap.md。
+    # 错误语义: 项目不存在/缺 store → None (404); Sprint/Milestone 不存在 →
+    # BacklogNotFoundError (404); 参数非法/空 name/task_ref 引用不存在 Task →
+    # ValueError (400); Sprint 状态机非法转换 → BacklogStateError (409)。
+
+    @staticmethod
+    def _norm_task_refs(mgmt: Any, task_refs: Any) -> list[str]:
+        """task_refs 规范化 + 存在性校验 (引用非包含 — 只记 id)。
+
+        元素必须为非空 str; 引用不存在的 Task → ValueError (HTTP 400, 引用
+        校验属输入错误); 去重保序返回新列表。
+        """
+        refs: list[str] = []
+        for ref in _norm_any_list(task_refs):
+            ref_id = str(ref).strip()
+            if not ref_id:
+                raise ValueError("invalid task_ref: empty reference (expected task id)")
+            if mgmt.get_task(ref_id) is None:
+                raise ValueError(f"task not found: {ref_id} (task_refs 引用不存在 Task)")
+            if ref_id not in refs:
+                refs.append(ref_id)
+        return refs
+
+    # ----------------------------------------------------------------- Sprint
+    def create_sprint(
+        self,
+        project_id: str,
+        *,
+        name: str,
+        goal: str = "",
+        start_date: str = "",
+        end_date: str = "",
+        task_refs: Any = None,
+    ) -> dict[str, Any] | None:
+        """POST /sprints — 创建 Sprint 执行窗口 (默认 planning; 引用 Task)。"""
+        mgmt = self._management_store(project_id)
+        if mgmt is None:
+            return None
+        cleaned = str(name or "").strip()
+        if not cleaned:
+            raise ValueError("name is required (空名字不创建)")
+        refs = self._norm_task_refs(mgmt, task_refs)
+        self._mount_org()
+        from org.management import Sprint
+        from org.models import new_id
+
+        sprint = Sprint(
+            id=new_id("SPRINT"),
+            name=cleaned,
+            goal=str(goal or "").strip(),
+            start_date=str(start_date or "").strip(),
+            end_date=str(end_date or "").strip(),
+            task_refs=refs,
+        )
+        mgmt.save_sprint(sprint)
+        return sprint.to_dict()
+
+    def list_sprints(self, project_id: str) -> dict[str, Any] | None:
+        """GET /sprints — Sprint 列表 (失败安全空态)。"""
+        mgmt = self._management_store(project_id)
+        if mgmt is None:
+            return None
+        return {
+            "project_id": project_id,
+            "sprints": [s.to_dict() for s in mgmt.list_sprints()],
+        }
+
+    def get_sprint(self, project_id: str, sprint_id: str) -> dict[str, Any] | None:
+        """GET /sprints/{id} — Sprint 详情 (不存在 → BacklogNotFoundError)。"""
+        mgmt = self._management_store(project_id)
+        if mgmt is None:
+            return None
+        sprint = mgmt.get_sprint(sprint_id)
+        if sprint is None:
+            raise BacklogNotFoundError(f"sprint not found: {sprint_id}")
+        return sprint.to_dict()
+
+    def update_sprint(
+        self,
+        project_id: str,
+        sprint_id: str,
+        *,
+        goal: Any = None,
+        planning: Any = None,
+        task_refs: Any = None,
+        start_date: Any = None,
+        end_date: Any = None,
+        status: Any = None,
+        daily_progress: Any = None,
+        review: Any = None,
+    ) -> dict[str, Any] | None:
+        """PATCH /sprints/{id} — 字段更新 + 受控状态转换 + task_refs 校验。
+
+        task_refs 引用不存在 Task → ValueError (400); status 非法值 →
+        ValueError (400); 状态机非法转换 → BacklogStateError (409)。
+        """
+        mgmt = self._management_store(project_id)
+        if mgmt is None:
+            return None
+        sprint = mgmt.get_sprint(sprint_id)
+        if sprint is None:
+            raise BacklogNotFoundError(f"sprint not found: {sprint_id}")
+        self._mount_org()
+        from org.management import SprintStatus, transition_sprint
+        from org.models import utcnow
+
+        updates: dict[str, Any] = {}
+        if goal is not None:
+            updates["goal"] = str(goal)
+        if planning is not None:
+            updates["planning"] = str(planning)
+        if task_refs is not None:
+            updates["task_refs"] = self._norm_task_refs(mgmt, task_refs)
+        if start_date is not None:
+            updates["start_date"] = str(start_date)
+        if end_date is not None:
+            updates["end_date"] = str(end_date)
+        if daily_progress is not None:
+            items = _norm_any_list(daily_progress)
+            for item in items:
+                if not isinstance(item, dict):
+                    raise ValueError(
+                        "invalid daily_progress entry (expected object with day/note)"
+                    )
+            updates["daily_progress"] = [dict(item) for item in items]
+        if review is not None:
+            updates["review"] = str(review)
+        updated = sprint.model_copy(update=updates)
+        if status is not None:
+            target = SprintStatus.parse(status)  # 非法值 → ValueError → 400
+            try:
+                updated = transition_sprint(updated, target)
+            except ValueError as exc:
+                raise BacklogStateError(str(exc)) from exc  # 非法转换 → 409
+        else:
+            updated = updated.model_copy(update={"updated_at": utcnow()})
+        mgmt.save_sprint(updated)
+        return updated.to_dict()
+
+    def delete_sprint(self, project_id: str, sprint_id: str) -> dict[str, Any] | None:
+        """DELETE /sprints/{id} — 删除 Sprint (Task 保留 — 引用非包含)。"""
+        mgmt = self._management_store(project_id)
+        if mgmt is None:
+            return None
+        if not mgmt.delete_sprint(sprint_id):
+            raise BacklogNotFoundError(f"sprint not found: {sprint_id}")
+        return {"deleted": True, "sprint_id": sprint_id}
+
+    def plan_sprint(
+        self,
+        project_id: str,
+        sprint_id: str,
+        *,
+        goal: str = "",
+    ) -> dict[str, Any] | None:
+        """POST /sprints/{id}/plan — Planning 预留端点 (S10-011 才实际调度)。
+
+        只返回可执行任务建议: 候选池 = sprint.task_refs (非空) 否则全量
+        Backlog Task; 用 org.management.sort_tasks 纯函数排序 (依赖满足组
+        优先, 组内按 priority P0 最前), 不执行任何调度/落库。
+        """
+        mgmt = self._management_store(project_id)
+        if mgmt is None:
+            return None
+        sprint = mgmt.get_sprint(sprint_id)
+        if sprint is None:
+            raise BacklogNotFoundError(f"sprint not found: {sprint_id}")
+        self._mount_org()
+        from org.management import TaskStatus, sort_tasks
+
+        tasks = mgmt.list_tasks()
+        if sprint.task_refs:
+            by_id = {t.id: t for t in tasks}
+            tasks = [by_id[r] for r in sprint.task_refs if r in by_id]
+        dependency_status = {t.id: t.status for t in tasks}
+        ordered = sort_tasks(tasks, dependency_status=dependency_status)
+        suggestions = [
+            {
+                "id": t.id,
+                "title": t.title,
+                "priority": t.priority.value,
+                "status": t.status.value,
+                "dependency_satisfied": all(
+                    dependency_status.get(dep) == TaskStatus.DONE
+                    for dep in t.dependency
+                ),
+            }
+            for t in ordered
+        ]
+        return {
+            "sprint_id": sprint_id,
+            "goal": str(goal or "").strip(),
+            "suggestions": suggestions,
+        }
+
+    # -------------------------------------------------------------- Milestone
+    def create_milestone(
+        self,
+        project_id: str,
+        *,
+        name: str,
+        description: str = "",
+        target_date: str = "",
+        task_refs: Any = None,
+    ) -> dict[str, Any] | None:
+        """POST /milestones — 创建 Milestone (默认 planned; 引用 Task)。"""
+        mgmt = self._management_store(project_id)
+        if mgmt is None:
+            return None
+        cleaned = str(name or "").strip()
+        if not cleaned:
+            raise ValueError("name is required (空名字不创建)")
+        refs = self._norm_task_refs(mgmt, task_refs)
+        self._mount_org()
+        from org.management import Milestone
+        from org.models import new_id
+
+        milestone = Milestone(
+            id=new_id("MS"),
+            name=cleaned,
+            description=str(description or "").strip(),
+            target_date=str(target_date or "").strip(),
+            task_refs=refs,
+        )
+        mgmt.save_milestone(milestone)
+        return milestone.to_dict()
+
+    def list_milestones(self, project_id: str) -> dict[str, Any] | None:
+        """GET /milestones — Milestone 列表 (失败安全空态)。"""
+        mgmt = self._management_store(project_id)
+        if mgmt is None:
+            return None
+        return {
+            "project_id": project_id,
+            "milestones": [m.to_dict() for m in mgmt.list_milestones()],
+        }
+
+    def get_milestone(
+        self, project_id: str, milestone_id: str
+    ) -> dict[str, Any] | None:
+        """GET /milestones/{id} — Milestone 详情 (不存在 → BacklogNotFoundError)。"""
+        mgmt = self._management_store(project_id)
+        if mgmt is None:
+            return None
+        milestone = mgmt.get_milestone(milestone_id)
+        if milestone is None:
+            raise BacklogNotFoundError(f"milestone not found: {milestone_id}")
+        return milestone.to_dict()
+
+    def update_milestone(
+        self,
+        project_id: str,
+        milestone_id: str,
+        *,
+        name: Any = None,
+        description: Any = None,
+        target_date: Any = None,
+        status: Any = None,
+        task_refs: Any = None,
+    ) -> dict[str, Any] | None:
+        """PATCH /milestones/{id} — 字段更新 (status 自由文本宽容, 无状态机)。"""
+        mgmt = self._management_store(project_id)
+        if mgmt is None:
+            return None
+        milestone = mgmt.get_milestone(milestone_id)
+        if milestone is None:
+            raise BacklogNotFoundError(f"milestone not found: {milestone_id}")
+        self._mount_org()
+        from org.models import utcnow
+
+        updates: dict[str, Any] = {}
+        if name is not None:
+            cleaned = str(name).strip()
+            if not cleaned:
+                raise ValueError("name is required (空名字不落库)")
+            updates["name"] = cleaned
+        if description is not None:
+            updates["description"] = str(description)
+        if target_date is not None:
+            updates["target_date"] = str(target_date)
+        if status is not None:
+            updates["status"] = str(status)
+        if task_refs is not None:
+            updates["task_refs"] = self._norm_task_refs(mgmt, task_refs)
+        updated = milestone.model_copy(
+            update=updates or {"updated_at": utcnow()}
+        ).model_copy(update={"updated_at": utcnow()})
+        mgmt.save_milestone(updated)
+        return updated.to_dict()
+
+    def delete_milestone(
+        self, project_id: str, milestone_id: str
+    ) -> dict[str, Any] | None:
+        """DELETE /milestones/{id} — 删除 Milestone (Roadmap 引用可留)。"""
+        mgmt = self._management_store(project_id)
+        if mgmt is None:
+            return None
+        if not mgmt.delete_milestone(milestone_id):
+            raise BacklogNotFoundError(f"milestone not found: {milestone_id}")
+        return {"deleted": True, "milestone_id": milestone_id}
+
+    # ---------------------------------------------------------------- Roadmap
+    def get_roadmap(self, project_id: str) -> dict[str, Any] | None:
+        """GET /roadmap — 路线 (每项目单例; milestone_refs 引用 Milestone)。"""
+        mgmt = self._management_store(project_id)
+        if mgmt is None:
+            return None
+        roadmap = mgmt.get_roadmap()
+        result = roadmap.to_dict()
+        result["project_id"] = project_id
+        return result
+
+    def add_roadmap_milestone_ref(
+        self, project_id: str, milestone_id: str
+    ) -> dict[str, Any] | None:
+        """POST /roadmap/milestone-ref — 追加 Milestone 引用 (去重幂等)。
+
+        milestone 不存在 → ValueError (400, 同 task_ref 引用校验语义)。
+        """
+        mgmt = self._management_store(project_id)
+        if mgmt is None:
+            return None
+        ref_id = str(milestone_id or "").strip()
+        if not ref_id:
+            raise ValueError("milestone_id is required (空引用不追加)")
+        if mgmt.get_milestone(ref_id) is None:
+            raise ValueError(f"milestone not found: {ref_id}")
+        self._mount_org()
+        from org.models import utcnow
+
+        roadmap = mgmt.get_roadmap()
+        refs = list(roadmap.milestone_refs)
+        if ref_id not in refs:
+            refs.append(ref_id)
+        roadmap = roadmap.model_copy(
+            update={"milestone_refs": refs, "updated_at": utcnow()}
+        )
+        mgmt.save_roadmap(roadmap)
+        result = roadmap.to_dict()
+        result["project_id"] = project_id
+        return result
 
 
 __all__ = ["ConsoleService", "DEFAULT_RECENT_LIMIT"]

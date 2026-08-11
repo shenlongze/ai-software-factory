@@ -325,6 +325,14 @@ _PRIORITY_RANK: dict[TaskPriority, int] = {
     TaskPriority.P3: 3,
 }
 
+#: Sprint 受控状态转换表 (PRD 4.5: planning → active → completed; completed
+#: 为终态 — 无任何合法去向; 跳级/回退一律拒绝)。
+SPRINT_TRANSITIONS: dict[SprintStatus, tuple[SprintStatus, ...]] = {
+    SprintStatus.PLANNING: (SprintStatus.ACTIVE,),
+    SprintStatus.ACTIVE: (SprintStatus.COMPLETED,),
+    SprintStatus.COMPLETED: (),
+}
+
 
 def transition_task(
     task: Task,
@@ -449,6 +457,25 @@ def sort_tasks(
     return sorted(
         tasks,
         key=lambda t: (_unsatisfied(t), _PRIORITY_RANK.get(t.priority, 99)),
+    )
+
+
+def transition_sprint(sprint: Sprint, target: SprintStatus | str) -> Sprint:
+    """Sprint 受控状态转换 (纯函数 — 返回新 Sprint, 原对象不变)。
+
+    - 目标态不在 SPRINT_TRANSITIONS[当前态] → ValueError (跳级/回退/终态后)
+    - 合法转换 → model_copy 更新 status + updated_at (Sprint 无 history 链 —
+      审计由 service/API 层事件承担)
+    """
+    from_status = sprint.status
+    target_status = SprintStatus.parse(target)
+    if target_status not in SPRINT_TRANSITIONS[from_status]:
+        raise ValueError(
+            f"illegal sprint transition: {from_status.value} -> {target_status.value} "
+            f"(allowed: {[s.value for s in SPRINT_TRANSITIONS[from_status]]})"
+        )
+    return sprint.model_copy(
+        update={"status": target_status, "updated_at": utcnow()}
     )
 
 

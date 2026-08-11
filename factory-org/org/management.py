@@ -299,6 +299,159 @@ class Roadmap(_OrgModel):
         return _norm_list(v)
 
 
+# ------------------------------------------------------------------ 业务规则 (S10-010 Task 002)
+
+#: 受控状态转换表 (PRD 4.3 六态约定; 异常路径 BLOCKED 显式枚举;
+#: done 为终态 — 无任何合法去向)。key=当前态, value=合法目标态元组。
+TASK_TRANSITIONS: dict[TaskStatus, tuple[TaskStatus, ...]] = {
+    TaskStatus.TODO: (TaskStatus.READY, TaskStatus.BLOCKED),
+    TaskStatus.READY: (TaskStatus.IN_PROGRESS, TaskStatus.BLOCKED),
+    TaskStatus.IN_PROGRESS: (TaskStatus.BLOCKED, TaskStatus.REVIEW),
+    TaskStatus.BLOCKED: (TaskStatus.READY, TaskStatus.IN_PROGRESS),
+    TaskStatus.REVIEW: (TaskStatus.IN_PROGRESS, TaskStatus.DONE),
+    TaskStatus.DONE: (),
+}
+
+#: 依赖门控目标态: 进入就绪/执行前必须依赖全部满足 (PRD 4.7 依赖链串行)。
+_DEPENDENCY_GATED: frozenset[TaskStatus] = frozenset(
+    {TaskStatus.READY, TaskStatus.IN_PROGRESS}
+)
+
+#: 优先级权重 (P0 Critical 最高 → 排序最前; 未知值兜底排最后)。
+_PRIORITY_RANK: dict[TaskPriority, int] = {
+    TaskPriority.P0: 0,
+    TaskPriority.P1: 1,
+    TaskPriority.P2: 2,
+    TaskPriority.P3: 3,
+}
+
+
+def transition_task(
+    task: Task,
+    target: TaskStatus | str,
+    *,
+    actor: str = "",
+    action: str = "transition",
+    result: str = "OK",
+    dependency_status: dict[str, TaskStatus] | None = None,
+) -> Task:
+    """受控状态转换 (纯函数 — 返回新 Task, 原对象不变)。
+
+    - 目标态不在 TASK_TRANSITIONS[当前态] → ValueError (跳级/回退/终态后/同态)
+    - 依赖门控: 目标 ∈ {READY, IN_PROGRESS} 且 task.dependency 非空 →
+      必须提供 dependency_status 且全部依赖 == DONE, 否则 ValueError
+      (依赖未满足拒绝推进 — PRD 4.7)
+    - 每次转换追加 history 条目 {time, actor, action, result} (PRD 4.6 审计链)
+    """
+    from_status = task.status
+    target_status = TaskStatus.parse(target)
+    if target_status not in TASK_TRANSITIONS[from_status]:
+        raise ValueError(
+            f"illegal task transition: {from_status.value} -> {target_status.value} "
+            f"(allowed: {[s.value for s in TASK_TRANSITIONS[from_status]]})"
+        )
+    if target_status in _DEPENDENCY_GATED and task.dependency:
+        if dependency_status is None:
+            raise ValueError(
+                "dependency status required: task has dependencies "
+                f"{task.dependency} but dependency_status was not provided"
+            )
+        unsatisfied = [
+            dep for dep in task.dependency
+            if dependency_status.get(dep) != TaskStatus.DONE
+        ]
+        if unsatisfied:
+            raise ValueError(
+                f"dependency not satisfied: task {task.id} depends on "
+                f"{unsatisfied} (not DONE)"
+            )
+    entry = HistoryEntry(
+        time=utcnow().isoformat(),
+        actor=actor,
+        action=action,
+        result=result,
+    )
+    return task.model_copy(
+        update={
+            "status": target_status,
+            "history": list(task.history) + [entry],
+            "updated_at": utcnow(),
+        }
+    )
+
+
+def validate_dependency(
+    dependency: list[str] | None,
+    task_id: str,
+    *,
+    known_dependencies: dict[str, list[str]] | None = None,
+) -> list[str]:
+    """Dependency 列表校验 + 环检测 (创建/更新 Task.dependency 时调用)。
+
+    - 元素必须为非空 str id 引用 (规范列表); 返回去重保序的新列表
+    - 自引用拒绝: task_id 出现在自身 dependency 中 → ValueError
+    - 环检测: 结合 known_dependencies (其它任务依赖声明) 构图, DFS 从
+      task_id 出发若可达自身 → ValueError (A→B→A 及深层环)
+    """
+    deps = [d for d in _norm_list(dependency)]
+    for dep in deps:
+        if not isinstance(dep, str) or not dep.strip():
+            raise ValueError(
+                f"invalid dependency reference: {dep!r} "
+                "(expected non-empty str task id)"
+            )
+    if task_id in deps:
+        raise ValueError(f"self-reference rejected: task {task_id} depends on itself")
+    graph: dict[str, list[str]] = {
+        k: list(v) for k, v in (known_dependencies or {}).items()
+    }
+    graph[task_id] = deps
+    visited: set[str] = set()
+    stack = list(graph.get(task_id, []))
+    while stack:
+        node = stack.pop()
+        if node == task_id:
+            raise ValueError(
+                f"dependency cycle detected: task {task_id} transitively "
+                f"depends on itself"
+            )
+        if node in visited:
+            continue
+        visited.add(node)
+        stack.extend(graph.get(node, []))
+    return list(dict.fromkeys(deps))  # 去重保序
+
+
+def sort_by_priority(tasks: list[Task]) -> list[Task]:
+    """按优先级排序 (P0 Critical 最前 — 纯函数, 不改入参; 稳定排序)。"""
+    return sorted(tasks, key=lambda t: _PRIORITY_RANK.get(t.priority, 99))
+
+
+def sort_tasks(
+    tasks: list[Task],
+    *,
+    dependency_status: dict[str, TaskStatus] | None = None,
+) -> list[Task]:
+    """AI 排序预留 (纯函数): dependency 感知排序 — 依赖完成优先。
+
+    - dependency_status 提供时: 存在未满足依赖 (非 DONE) 的任务排后
+      (即使 P0); 满足组内按 priority 排序 (P0 最前)
+    - dependency_status 缺省 → 退化为纯 priority 排序 (sort_by_priority)
+    """
+    if dependency_status is None:
+        return sort_by_priority(tasks)
+
+    def _unsatisfied(t: Task) -> int:
+        return 0 if all(
+            dependency_status.get(dep) == TaskStatus.DONE for dep in t.dependency
+        ) else 1
+
+    return sorted(
+        tasks,
+        key=lambda t: (_unsatisfied(t), _PRIORITY_RANK.get(t.priority, 99)),
+    )
+
+
 # ------------------------------------------------------------------ 存储
 
 

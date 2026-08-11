@@ -9,7 +9,10 @@
   CREATED → RUNNING → SUCCESS / FAILED / CANCELLED (非法转换拒绝);
   字段 instance_id/task_id/workflow_id/agent/skill/mcp/status/start_time/
   end_time/result/created_at (设计 §4)
-- ExecutionPlan: 执行计划 (tasks 有序列表 + parallel_batch 批 + max_parallel)
+- ExecutionPlan: 执行计划 (tasks 有序列表 + parallel_batch 批 + max_parallel
+  + waiting_dependency 未满足原因; S10-011 Task 002)
+- Scheduler 纯函数 (S10-011 §二 1): plan_tasks (只选 READY + dependency 满足
+  + priority 排序 + max_parallel 分批) + can_execute (手动检查 ok/reason)
 - ExecutionLock: per-project 进程内互斥 (threading.RLock — 同线程重入安全);
   同项目写互斥, 不同项目各自独立锁互不阻塞 (设计 §7, 跨进程锁 S10-012+)
 - RuntimeStore: workspace/projects/{slug}/runtime/ 三类 JSON 原子写
@@ -37,7 +40,8 @@ from typing import Any
 
 from pydantic import Field, field_validator
 
-from .models import _OrgModel, _norm_list, utcnow
+from .models import _OrgModel, _norm_list, new_id, utcnow
+from .management import Task, TaskStatus, _PRIORITY_RANK
 
 # ------------------------------------------------------------------ 枚举
 
@@ -172,7 +176,8 @@ class ExecutionPlan(_OrgModel):
 
     tasks: 有序执行列表 (调度顺序 = 执行顺序); parallel_batch: 可并行批
     (每批 task_id 列表); max_parallel: 同项目最大并行数 (缺省 5,
-    workspace/settings 可覆盖)。
+    workspace/settings 可覆盖); waiting_dependency: 未满足依赖的 READY
+    任务 → 原因 (S10-011 Task 002, 验收场景 2 — 不入选但可解释)。
     """
 
     plan_id: str
@@ -180,11 +185,88 @@ class ExecutionPlan(_OrgModel):
     tasks: list[PlanTask] = Field(default_factory=list)
     parallel_batch: list[list[str]] = Field(default_factory=list)
     max_parallel: int = 5
+    waiting_dependency: dict[str, str] = Field(default_factory=dict)
 
     @field_validator("tasks", "parallel_batch", mode="before")
     @classmethod
     def _lists_none(cls, v: Any) -> Any:
         return _norm_list(v)
+
+    @field_validator("waiting_dependency", mode="before")
+    @classmethod
+    def _waiting_none(cls, v: Any) -> Any:
+        return v if v is not None else {}
+
+
+# ------------------------------------------------------------------ Scheduler 纯函数 (S10-011 Task 002)
+
+
+def _unsatisfied_deps(task: Task, statuses: dict[str, TaskStatus]) -> list[str]:
+    """未满足依赖列表: dependency 中非 DONE (含不在列表的未知 id) 的前置任务。"""
+    return [dep for dep in task.dependency if statuses.get(dep) != TaskStatus.DONE]
+
+
+def _waiting_reason(unsatisfied: list[str]) -> str:
+    """依赖未满足原因 (验收场景 2: manual 执行返回原因)。"""
+    return "Waiting dependency Task " + ", Task ".join(unsatisfied)
+
+
+def can_execute(task: Task, all_tasks: list[Task]) -> tuple[bool, str]:
+    """手动执行检查 (纯函数, 无副作用) → (ok, reason)。
+
+    - READY 且依赖全部 DONE (或无依赖) → (True, "")
+    - 依赖未满足 → (False, "Waiting dependency Task X"[, "Task Y"...])
+    - 非 READY (BLOCKED/TODO/IN_PROGRESS/REVIEW/DONE) → (False, 状态原因)
+      (BLOCKED 不执行 — S10-011 §二 1 / 验收场景 3)
+    """
+    if task.status != TaskStatus.READY:
+        return False, f"task not ready (status: {task.status.value})"
+    statuses = {t.id: t.status for t in all_tasks}
+    unsatisfied = _unsatisfied_deps(task, statuses)
+    if unsatisfied:
+        return False, _waiting_reason(unsatisfied)
+    return True, ""
+
+
+def plan_tasks(tasks: list[Task], max_parallel: int = 5) -> ExecutionPlan:
+    """生成执行计划 (S10-011 §二 1 — Scheduler 纯函数, 无副作用, 不改入参)。
+
+    规则 (按序):
+    1. 只选 READY 任务 (TODO/IN_PROGRESS/REVIEW/DONE/BLOCKED 不入选)
+    2. dependency 必须满足 (依赖任务全部 DONE; 未知 id 视为未满足)
+    3. BLOCKED 不执行 (非 READY 一律不入选)
+    4. priority 排序: P0>P1>P2>P3 (同 priority → 输入序稳定 = 创建序)
+    5. parallel_batch: 按 max_parallel (缺省 5, ≤0 防御按 1) 顺序分批
+    6. 依赖未满足的 READY 任务不入选, 但记录 waiting_dependency[task_id] 原因
+    """
+    parallel = max(1, int(max_parallel))
+    statuses = {t.id: t.status for t in tasks}
+    selected: list[Task] = []
+    waiting: dict[str, str] = {}
+    for t in tasks:
+        if t.status != TaskStatus.READY:
+            continue
+        unsatisfied = _unsatisfied_deps(t, statuses)
+        if unsatisfied:
+            waiting[t.id] = _waiting_reason(unsatisfied)
+        else:
+            selected.append(t)
+    selected.sort(key=lambda t: _PRIORITY_RANK.get(t.priority, 99))  # 稳定 → 同 priority 保持创建序
+    plan_tasks_out = [
+        PlanTask(task_id=t.id, agent_hint=t.assignee, order=i)
+        for i, t in enumerate(selected, start=1)
+    ]
+    batches = [
+        [pt.task_id for pt in plan_tasks_out[i : i + parallel]]
+        for i in range(0, len(plan_tasks_out), parallel)
+    ]
+    return ExecutionPlan(
+        plan_id=new_id("plan"),
+        tasks=plan_tasks_out,
+        parallel_batch=batches,
+        max_parallel=parallel,
+        waiting_dependency=waiting,
+    )
 
 
 # ------------------------------------------------------------------ ExecutionLock

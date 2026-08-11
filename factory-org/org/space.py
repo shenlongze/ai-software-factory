@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -112,6 +113,20 @@ class ProjectSpaceStore:
         new_dir = self.space_dir(new_slug)
         os.replace(old_dir, new_dir)
         return new_dir
+
+    def remove_space(self, slug: str) -> bool:
+        """删除项目空间目录 (S10-010 Task 5 B3 治理: DELETE 项目 → 清理目录,
+        防 rebuild_index 扫回幽灵项目)。失败安全: 目录不存在/删除失败 → False 静默。
+        """
+        target = self.space_dir(slug)
+        if not target.is_dir():
+            return False
+        try:
+            shutil.rmtree(target, ignore_errors=True)
+            self.rebuild_index()  # 索引重建 (幽灵不复活)
+            return True
+        except Exception:
+            return False
 
     # ---------------------------------------------------------- 骨架 / 信源
     def _effective_slug(self, project: Project) -> str:

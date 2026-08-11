@@ -136,6 +136,14 @@ def _confirm_slug(name: str) -> str:
     return slug
 
 
+def _derived_slug(project: Any) -> str:
+    """项目目录名 (与 org.space._effective_slug 同口径): slug 优先, 无 → name slug 化, 再兜底 id。"""
+    if getattr(project, "slug", ""):
+        return project.slug
+    derived = _confirm_slug(getattr(project, "name", "") or "")
+    return derived if derived else (project.id if project.id else "")
+
+
 def _atomic_write_bytes(path: Path, data: bytes) -> None:
     """原子写原始字节 (回滚还原用 — 临时文件 + os.replace, 同 store 模式)。"""
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -1030,6 +1038,27 @@ class ConsoleService:
                 update["goal"] = cleaned_idea
             updated = project.model_copy(update=update)
             store.save_project(updated)
+            # B4 治理 (S10-010 Task 5): 目录镜像同步 — name 变化 → rename 目录;
+            # idea 变化 → 镜像 goal 同步 (信源不陈旧)
+            if self._project_space is not None:
+                try:
+                    space = self._project_space
+                    if cleaned_name:
+                        old_slug = space.get_slug(project_id) or _derived_slug(project)
+                        new_slug = _derived_slug(updated)
+                        if old_slug and new_slug and old_slug != new_slug:
+                            if space.has_space(old_slug):
+                                space.rename_space(old_slug, new_slug)
+                                updated = updated.model_copy(
+                                    update={"slug": new_slug, "updated_at": updated.updated_at}
+                                )
+                                store.save_project(updated)
+                            space.save_project(updated)
+                            space.rebuild_index()
+                    elif cleaned_idea:
+                        space.save_project(updated)  # 镜像 goal 同步
+                except Exception:
+                    pass  # 镜像同步失败安全 (org 主记录已成功)
             return updated
         except Exception:
             return None  # org 缺失/损坏 → 404 (失败安全, 不拖垮 API)
@@ -1071,6 +1100,15 @@ class ConsoleService:
                 return None  # 项目不存在 → HTTP 404
         except Exception:
             return None  # org 缺失/损坏 → 失败安全
+        # B3 治理 (S10-010 Task 5): 清理项目空间目录 (防 rebuild_index 扫回幽灵)
+        if self._project_space is not None:
+            try:
+                space = self._project_space
+                slug = space.get_slug(project_id)
+                if slug:
+                    space.remove_space(slug)
+            except Exception:
+                pass  # 空间清理失败安全 (org 删除已成功)
         self._cleanup_project_data(project_id)
         return True
 

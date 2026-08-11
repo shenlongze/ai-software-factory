@@ -123,6 +123,7 @@ class WorkflowInstance(_OrgModel):
     end_time: datetime | None = None
     result: str = ""
     created_at: datetime = Field(default_factory=utcnow)
+    capability_snapshot: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("status", mode="before")
     @classmethod
@@ -496,6 +497,78 @@ def resolve_capability(
     )
 
 
+# ------------------------------------------------------------------ Binding → Snapshot (S10-012 Task 007-002/003)
+
+
+def _binding_first_entry(bindings: dict[str, Any] | None, key: str) -> Any:
+    """bindings.{key} 列表取第一个原始条目 (str 或 dict; 缺失/非列表/空 → None)。
+
+    原始条目 (而非解析后的引用串) 交给 Resolver — 保留 dict 里的 version pin。
+    """
+    if not bindings:
+        return None
+    entries = bindings.get(key)
+    if not isinstance(entries, list) or not entries:
+        return None
+    return entries[0]
+
+
+#: (bindings 键, dict 引用键, snapshot 键, binding kind) — 快照四类。
+#: llm 兼容 bindings["llm_configs"] (新) 与 bindings["llm"] (简写) 两键。
+_BINDING_SNAPSHOT_SPECS: tuple[tuple[str, str, str, str], ...] = (
+    ("agents", "agent_ref", "agent", "agent"),
+    ("skills", "skill_ref", "skill", "skill"),
+    ("mcps", "mcp_ref", "mcp", "mcp"),
+    ("llm_configs", "llm_config_ref", "llm", "llm_config"),
+)
+
+
+def _resolve_binding_snapshot(
+    bindings: dict[str, Any] | None,
+    registry: Any,
+) -> tuple[dict[str, Any], dict[str, CapabilityResolution], list[tuple[str, str]]]:
+    """binding → Registry 解析 → (capability_snapshot, resolutions, legacy)。
+
+    - snapshot: {agent: {id, version}, skill: {...}, mcp: {...}, llm: {...}}
+      — 只含非空引用; 解析成功 → {id, version} dict (历史可复现 — Registry
+      后续升级不影响已落盘实例); Registry 无对应 → legacy 保留裸字符串
+      (记录 warning, 不崩溃)
+    - resolutions: snap_key → CapabilityResolution (只含解析成功; 供校验门)
+    - legacy: [(kind, ref)] — Registry 无对应引用的降级清单 (供校验门拒绝)
+    - registry 为 None → 纯 legacy 行为 (空 snapshot/resolutions/legacy —
+      零破坏, 旧调用方不经 Resolver)
+    """
+    snapshot: dict[str, Any] = {}
+    resolutions: dict[str, CapabilityResolution] = {}
+    legacy: list[tuple[str, str]] = []
+    if registry is None:
+        return snapshot, resolutions, legacy
+    for bind_key, ref_key, snap_key, kind in _BINDING_SNAPSHOT_SPECS:
+        entry = _binding_first_entry(bindings, bind_key)
+        if entry is None and snap_key == "llm":
+            bind_key, ref_key = "llm", "llm_ref"
+            entry = _binding_first_entry(bindings, "llm")
+        if entry is None:
+            continue
+        resolution = resolve_capability(entry, registry, kind=kind, ref_key=ref_key)
+        if resolution is None:
+            ref = _first_binding_ref(bindings, bind_key, ref_key)
+            if not ref:
+                continue  # 无有效引用 (如 {role: pm} 无 ref 键) — 不进 snapshot
+            snapshot[snap_key] = ref  # legacy: 保留裸字符串行为
+            legacy.append((kind, ref))
+            _LOGGER.warning(
+                "capability binding legacy mode: %s %r not found in registry — "
+                "raw binding preserved",
+                kind,
+                ref,
+            )
+        else:
+            snapshot[snap_key] = {"id": resolution.id, "version": resolution.version}
+            resolutions[snap_key] = resolution
+    return snapshot, resolutions, legacy
+
+
 def dispatch_task(
     task: Task,
     bindings: dict[str, Any] | None = None,
@@ -505,6 +578,7 @@ def dispatch_task(
     project_id: str | None = None,
     lock: ExecutionLock | None = None,
     audit_store: AuditStore | None = None,
+    registry: Any = None,
 ) -> WorkflowInstance:
     """Dispatcher 纯函数 (S10-011 §二 2/3 — Task → Workflow Instance 分发)。
 
@@ -519,8 +593,12 @@ def dispatch_task(
     2. 创建 WorkflowInstance: status=CREATED, task_id, workflow_id
        (bindings workflow_ref 优先, 否则 workflow_id 参数), agent/skill/mcp
        (bindings 第一个引用, 无绑定 → 空串)
-    3. instance_id 唯一 (new_id)
-    4. audit_store 提供时 (Task 006 全链路审计): 写 audit 条目
+    3. registry 提供时 (S10-012 Task 007-002): binding 引用 → Registry 实体
+       解析 → instance.capability_snapshot 记录 {agent/skill/mcp/llm:
+       {id, version}} (历史可复现; Registry 无对应 → legacy 保留裸字符串
+       + warning, 不崩溃); registry 缺省 None → 纯 legacy 行为 (零破坏)
+    4. instance_id 唯一 (new_id)
+    5. audit_store 提供时 (Task 006 全链路审计): 写 audit 条目
        (actor=dispatcher, action=instance.dispatched, entity=instance_id,
        input={task_id, workflow_id, agent, skill, mcp},
        output={instance_id, task_id, status}, result="OK")
@@ -533,10 +611,16 @@ def dispatch_task(
     同线程重入安全; lock 缺省进程级默认锁 (可注入隔离锁)。
     """
     if project_id is None:
-        return _dispatch_impl(task, bindings, all_tasks, workflow_id, audit_store=audit_store)
+        return _dispatch_impl(
+            task, bindings, all_tasks, workflow_id, audit_store=audit_store,
+            registry=registry,
+        )
     holder = lock if lock is not None else _EXECUTION_LOCK
     with holder.locked(project_id):
-        return _dispatch_impl(task, bindings, all_tasks, workflow_id, audit_store=audit_store)
+        return _dispatch_impl(
+            task, bindings, all_tasks, workflow_id, audit_store=audit_store,
+            registry=registry,
+        )
 
 
 def _dispatch_impl(
@@ -545,12 +629,14 @@ def _dispatch_impl(
     all_tasks: list[Task] | None,
     workflow_id: str,
     audit_store: AuditStore | None = None,
+    registry: Any = None,
 ) -> WorkflowInstance:
     """dispatch_task 无锁实现 (纯函数 — 校验 + 创建 WorkflowInstance + 可选审计)。"""
     all_tasks = [task] if all_tasks is None else all_tasks
     ok, reason = can_execute(task, all_tasks)
     if not ok:
         raise DispatchError(reason)
+    snapshot, _resolutions, _legacy = _resolve_binding_snapshot(bindings, registry)
     instance = WorkflowInstance(
         instance_id=new_id("wi"),
         task_id=task.id,
@@ -558,6 +644,7 @@ def _dispatch_impl(
         agent=_first_binding_ref(bindings, "agents", "agent_ref"),
         skill=_first_binding_ref(bindings, "skills", "skill_ref"),
         mcp=_first_binding_ref(bindings, "mcps", "mcp_ref"),
+        capability_snapshot=snapshot,
         status=WorkflowInstanceStatus.CREATED,
     )
     if audit_store is not None:

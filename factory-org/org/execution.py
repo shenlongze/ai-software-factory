@@ -569,6 +569,59 @@ def _resolve_binding_snapshot(
     return snapshot, resolutions, legacy
 
 
+# ------------------------------------------------------------------ Capability Validation Gate (S10-012 Task 007-004)
+
+
+def _validate_capability_gate(
+    resolutions: dict[str, CapabilityResolution],
+) -> list[str]:
+    """Capability Validation Gate — READY dispatch 前置检查 (S10-012 Task 007-004)。
+
+    只检查 registry 提供 + binding 解析成功的 resolution (可解析场景);
+    legacy 降级引用 (Registry 无对应 → 003 保留裸字符串 + warning) 与
+    registry 缺省 None (纯 legacy) 一律不做 gate — 零破坏。
+
+    检查项 (per resolution):
+    - entity 存在 (resolved — resolutions 只含解析成功项, 防御性检查)
+    - enabled == True (独立运行开关; §四b 语义)
+    - state == ACTIVE (生命周期; capability_selectable 语义)
+    - version 可用: binding dict pin 了 version → 实体 version 必须匹配
+      (实体无 version 字段 → 无法满足 pin); 实体有 version 字段 (Skill)
+      → 必须非空; 无 version 字段实体 (agent/mcp/llm_config) → version N/A
+
+    返回失败原因列表 (空 = 通过); 失败原因以 "capability unavailable: "
+    前缀 — ExecutionEngine 捕获 DispatchError 后据此 audit
+    capability_unavailable + Task BLOCKED。
+    """
+    failures: list[str] = []
+    for snap_key, res in resolutions.items():
+        kind = res.kind
+        label = f"{kind} {res.ref_id!r}"
+        if res.entity is None:  # 防御 — 解析失败进 legacy, 不进 resolutions
+            failures.append(f"capability unavailable: {label} not found in registry")
+            continue
+        entity = res.entity
+        if getattr(entity, "enabled", True) is not True:
+            failures.append(f"capability unavailable: {label} is not enabled")
+        state = getattr(entity, "state", None)
+        if state is None or str(getattr(state, "value", state)) != "active":
+            state_txt = getattr(state, "value", None) if state is not None else None
+            failures.append(
+                f"capability unavailable: {label} state={state_txt or '?'} (expected active)"
+            )
+        has_version = hasattr(entity, "version")
+        version = res.version or ""
+        if res.version_pin is not None:
+            if not has_version or version != res.version_pin:
+                failures.append(
+                    f"capability unavailable: {label} version pin "
+                    f"{res.version_pin!r} != entity {version!r}"
+                )
+        elif has_version and not version:
+            failures.append(f"capability unavailable: {label} has no version")
+    return failures
+
+
 def dispatch_task(
     task: Task,
     bindings: dict[str, Any] | None = None,
@@ -636,7 +689,11 @@ def _dispatch_impl(
     ok, reason = can_execute(task, all_tasks)
     if not ok:
         raise DispatchError(reason)
-    snapshot, _resolutions, _legacy = _resolve_binding_snapshot(bindings, registry)
+    snapshot, resolutions, _legacy = _resolve_binding_snapshot(bindings, registry)
+    if registry is not None:  # S10-012 Task 007-004: Capability Validation Gate
+        gate_failures = _validate_capability_gate(resolutions)
+        if gate_failures:
+            raise DispatchError("; ".join(gate_failures))
     instance = WorkflowInstance(
         instance_id=new_id("wi"),
         task_id=task.id,
@@ -1422,16 +1479,42 @@ class ExecutionEngine:
                 task = by_id.get(pt.task_id)
                 if task is None:
                     continue
-                instance = dispatch_task(
-                    task,
-                    bindings=bindings,
-                    all_tasks=tasks,
-                    workflow_id=workflow_id,
-                    project_id=project_id,
-                    lock=self._lock,
-                    audit_store=audit_store,
-                    registry=registry,
-                )
+                try:
+                    instance = dispatch_task(
+                        task,
+                        bindings=bindings,
+                        all_tasks=tasks,
+                        workflow_id=workflow_id,
+                        project_id=project_id,
+                        lock=self._lock,
+                        audit_store=audit_store,
+                        registry=registry,
+                    )
+                except DispatchError as exc:
+                    # S10-012 Task 007-004: Capability Validation Gate 失败
+                    # (或依赖/状态拒绝) → Task BLOCKED + audit
+                    # capability_unavailable — 不创建 instance, 不执行。
+                    blocked = transition_task(
+                        task,
+                        TaskStatus.BLOCKED,
+                        actor="dispatcher",
+                        action="capability.blocked",
+                        result=exc.reason,
+                    )
+                    final_tasks[task.id] = blocked.status.value
+                    if audit_store is not None:
+                        audit_store.append(
+                            actor="dispatcher",
+                            action="capability.unavailable",
+                            entity=task.id,
+                            input={"task_id": task.id, "reason": exc.reason},
+                            output={
+                                "task_id": task.id,
+                                "status": blocked.status.value,
+                            },
+                            result="BLOCKED",
+                        )
+                    continue
                 instances.append(instance)
                 outcome = execute_instance(
                     instance,

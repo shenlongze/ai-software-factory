@@ -27,8 +27,10 @@
 宽松解析: 旧数据 (无 state/enabled 字段) → 默认 DRAFT + enabled=True, 零破坏。
 
 约束: 本模块零 Core 依赖 (stdlib + pydantic + org.models, Removal Isolation);
-Task 002 已实现 skills/ 目录信源 Registry CRUD + 默认种子 (Task 003-006
-才实现 agents/mcps/workflows/industries/llm-configs 注册)。
+Task 002 已实现 skills/ 目录信源 Registry CRUD + 默认种子; Task 003 已实现
+agents/ 目录信源 Registry CRUD (register/get/list/update/delete + 生命周期 +
+binding 校验 + 默认种子 5 角色); Task 004-006 才实现 mcps/workflows/
+industries/llm-configs 注册。
 """
 
 from __future__ import annotations
@@ -394,6 +396,72 @@ DEFAULT_SKILLS: tuple[Skill, ...] = (
 )
 
 
+def _default_agent(
+    agent_id: str, name: str, role: str, description: str, skill_ids: tuple[str, ...]
+) -> Agent:
+    """默认种子 Agent 构造 (S10-012 §三 种子: 只建实体不实现逻辑)。
+
+    skill_bindings: 引用 DEFAULT_SKILLS 中的标准 skill (binding 引用, 非复制);
+    workflow_bindings 留空 (workflows/ 目录信源 Task 005 落地后扩展);
+    llm_config 留空 (llm-configs/ 目录信源 Task 006 落地后引用)。
+    """
+    return Agent(
+        id=agent_id,
+        name=name,
+        role=role,
+        description=description,
+        skill_bindings=[
+            CapabilityBinding(type=BindingType.SKILL, id=sid) for sid in skill_ids
+        ],
+        workflow_bindings=[],
+        llm_config="",
+        enabled=True,
+        state=CapabilityState.ACTIVE,
+    )
+
+
+#: 默认种子 — 标准 AI 员工角色 (S10-012 §三: PM/Architect/Developer/QA/UI
+#: 五角色 + skill 绑定; ACTIVE+enabled → 验收场景4 可选能力池; 幂等,
+#: 已存在不覆盖)。skill 引用全部落在 DEFAULT_SKILLS 内 (种子自洽, 零警告)。
+DEFAULT_AGENTS: tuple[Agent, ...] = (
+    _default_agent(
+        "product-manager-agent",
+        "Product Manager Agent",
+        "product-manager",
+        "产品经理: 需求分析/PRD/竞品调研/市场分析",
+        ("product-management",),
+    ),
+    _default_agent(
+        "architect-agent",
+        "Architect Agent",
+        "architect",
+        "架构师: 系统架构设计/技术选型/方案评审",
+        ("backend-development", "flutter-development"),
+    ),
+    _default_agent(
+        "developer-agent",
+        "Developer Agent",
+        "developer",
+        "开发工程师: 后端/前端/跨平台实现",
+        ("backend-development", "frontend-development"),
+    ),
+    _default_agent(
+        "qa-agent",
+        "QA Agent",
+        "qa",
+        "测试工程师: 功能/压力/自动化/PRD 验收",
+        ("qa-testing",),
+    ),
+    _default_agent(
+        "ui-designer-agent",
+        "UI Designer Agent",
+        "ui-designer",
+        "UI/UX 设计师: 界面设计/切图/设计稿输出",
+        ("frontend-development",),
+    ),
+)
+
+
 class CapabilityRegistry:
     """Factory Capability Pool 注册表 (S10-012 §三 — skills/ 目录信源, Task 002)。
 
@@ -421,6 +489,7 @@ class CapabilityRegistry:
         self._root = Path(root)
         self._capabilities_dir = self._root / "workspace" / "capabilities"
         self._skills_dir = self._capabilities_dir / "skills"
+        self._agents_dir = self._capabilities_dir / "agents"
 
     # ------------------------------------------------------------------ 布局
     @property
@@ -437,8 +506,16 @@ class CapabilityRegistry:
         """skills 目录信源 (<root>/workspace/capabilities/skills)。"""
         return self._skills_dir
 
+    @property
+    def agents_dir(self) -> Path:
+        """agents 目录信源 (<root>/workspace/capabilities/agents)。"""
+        return self._agents_dir
+
     def _skill_path(self, skill_id: str) -> Path:
         return self._skills_dir / f"{skill_id}.json"
+
+    def _agent_path(self, agent_id: str) -> Path:
+        return self._agents_dir / f"{agent_id}.json"
 
     @staticmethod
     def _validate_skill_id(skill_id: str) -> None:
@@ -447,6 +524,14 @@ class CapabilityRegistry:
             raise ValueError("skill id must be a non-empty string")
         if any(ch in skill_id for ch in _SKILL_ID_BANNED):
             raise ValueError(f"skill id must not contain path separators: {skill_id!r}")
+
+    @staticmethod
+    def _validate_agent_id(agent_id: str) -> None:
+        """id 防御: 非空 + 无路径分隔符 (防目录信源路径穿越)。"""
+        if not isinstance(agent_id, str) or not agent_id.strip():
+            raise ValueError("agent id must be a non-empty string")
+        if any(ch in agent_id for ch in _SKILL_ID_BANNED):
+            raise ValueError(f"agent id must not contain path separators: {agent_id!r}")
 
     # ------------------------------------------------------------------ 原子写
     @staticmethod
@@ -552,10 +637,131 @@ class CapabilityRegistry:
 
     # ------------------------------------------------------------------ 默认种子
     def seed_defaults(self) -> int:
-        """预置标准 skills (幂等 — 已存在文件不覆盖, 用户修改保留); 返回新建数。"""
+        """预置标准 skills + 标准 AI 员工角色 (幂等 — 已存在文件不覆盖,
+        用户修改保留); 返回新建总数。种子 agent 的 skill 引用全部落在
+        DEFAULT_SKILLS 内 — 同次种子后自洽 (validate_agent_bindings 零警告)。"""
         seeded = 0
         for skill in DEFAULT_SKILLS:
             if not self._skill_path(skill.id).is_file():
                 self.register_skill(skill)
                 seeded += 1
+        for agent in DEFAULT_AGENTS:
+            if not self._agent_path(agent.id).is_file():
+                self.register_agent(agent)
+                seeded += 1
         return seeded
+
+    # ------------------------------------------------------------------ Agent Registry (Task 003)
+
+    # 读 (失败安全)
+    @staticmethod
+    def _parse_agent(data: Any) -> Agent | None:
+        """dict → Agent; JSON 结构非法 (缺字段/extra/state 非法) → None。"""
+        if not isinstance(data, dict):
+            return None
+        try:
+            return Agent.model_validate(data)
+        except ValueError:
+            return None
+
+    def _read_agent_file(self, path: Path) -> Agent | None:
+        """读单文件; 损坏 JSON / 非法 schema → None (失败安全, 不崩溃)。"""
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return None
+        return self._parse_agent(data)
+
+    def get_agent(self, agent_id: str) -> Agent | None:
+        """按 id 取角色; 缺失 / 损坏 → None。"""
+        path = self._agent_path(agent_id)
+        if not path.is_file():
+            return None
+        return self._read_agent_file(path)
+
+    def list_agents(self, *, enabled_only: bool = False) -> list[Agent]:
+        """全部角色 (按 id 排序, 确定性); 损坏文件静默跳过。
+
+        enabled_only=True → 只返回 ACTIVE+enabled (capability_selectable,
+        S10-012 §四b 可选能力过滤)。
+        """
+        result: list[Agent] = []
+        if self._agents_dir.is_dir():
+            for path in sorted(self._agents_dir.glob("*.json")):
+                agent = self._read_agent_file(path)
+                if agent is None:
+                    continue  # 失败安全: 损坏/非法文件跳过
+                if enabled_only and not capability_selectable(agent):
+                    continue
+                result.append(agent)
+        return result
+
+    # 写
+    def register_agent(self, agent: Agent) -> Agent:
+        """注册/覆盖角色 (upsert — 重复 id 覆盖; 原子写; 懒迁移建目录)。"""
+        self._validate_agent_id(agent.id)
+        self._atomic_write(self._agent_path(agent.id), agent.to_dict())
+        return agent
+
+    def update_agent(self, agent_id: str, updates: dict[str, Any]) -> Agent | None:
+        """部分字段更新 (含 skill_bindings/workflow_bindings/llm_config);
+        缺失 → None。
+
+        全量重校验 (model_validate): 未知字段 (extra=forbid) / 非法 state
+        / 非法 binding → ValueError, 不落盘 (原文件保持)。
+        """
+        current = self.get_agent(agent_id)
+        if current is None:
+            return None
+        merged = Agent.model_validate({**current.to_dict(), **(updates or {})})
+        self.register_agent(merged)
+        return merged
+
+    def delete_agent(self, agent_id: str) -> bool:
+        """删除角色文件; 缺失 → False (幂等); 删除失败 → False (失败安全)。"""
+        path = self._agent_path(agent_id)
+        if not path.is_file():
+            return False
+        try:
+            path.unlink()
+            return True
+        except OSError:
+            return False
+
+    # 生命周期
+    def transition_agent(self, agent_id: str, target: CapabilityState | str) -> Agent | None:
+        """受控生命周期转换并落盘 (DRAFT→ACTIVE→DEPRECATED→ARCHIVED)。
+
+        非法转换 (跳级/回退/终态后) → ValueError, 不落盘 (原文件保持);
+        缺失 id → None。
+        """
+        current = self.get_agent(agent_id)
+        if current is None:
+            return None
+        updated = transition_capability(current, target)
+        if not isinstance(updated, Agent):
+            raise TypeError("transition_capability must return an Agent instance")
+        self.register_agent(updated)
+        return updated
+
+    # binding 校验 (S10-012 §四: 缺失 → 警告标注, 不崩溃)
+    def validate_agent_bindings(self, agent_id: str) -> list[str] | None:
+        """校验 agent.skill_bindings 引用是否存在于 Registry (缺失 → 警告标注)。
+
+        - 返回警告字符串列表 (每条一个缺失引用); 全部解析 → 空列表
+        - 缺失 agent → None (同 get_agent 语义)
+        - 不崩溃: 缺失引用只是警告, 不影响 agent 本身读取/使用
+        - 当前范围 (Task 003): 只校验 skill_bindings 对 skills/ 目录的引用;
+          workflow_bindings 校验随 Task 005 (workflows/ 目录信源) 落地
+        """
+        agent = self.get_agent(agent_id)
+        if agent is None:
+            return None
+        known_skills = {s.id for s in self.list_skills()}
+        warnings: list[str] = []
+        for binding in agent.skill_bindings:
+            if binding.id not in known_skills:
+                warnings.append(
+                    f"agent {agent_id}: skill binding missing: {binding.id}"
+                )
+        return warnings

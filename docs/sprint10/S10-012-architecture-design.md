@@ -38,12 +38,22 @@ CapabilityRegistry (org/capabilities.py):
   懒迁移: 无目录 → 首次访问创建 (与 ProjectSpace 同模式)
 ```
 
-## 四、Binding 集成
+## 四、Binding 集成 (v1.1 — 用户补充 2026-08-11)
 
 ```
-Project.capability_bindings: [{type: agent|skill|mcp|workflow, id}] (引用, 非复制)
+Project.capability_bindings: [{type: agent|skill|mcp|workflow, id, version?}] (引用, 非复制)
+  → version 必须支持 (能力持续升级, 历史 Project/Workflow/Runtime 保持可复现)
   → 校验: binding 引用的能力必须存在于 Registry (缺失 → 可标注警告, 不崩溃)
   → S10-009 Project 已预留 bindings 字段; 本 Sprint 对齐语义为 capability_bindings
+```
+
+## 四b. Capability 生命周期 (v1.1 — 用户补充)
+
+```
+CapabilityState: DRAFT → ACTIVE → DEPRECATED → ARCHIVED (受控单向, archived 终态)
+  enabled (bool) 保留为运行开关 (ACTIVE 且 enabled=true 才可被 binding 选用)
+  所有 Capability 实体 (Skill/Agent/MCP/WorkflowTemplate/Industry/LLMConfig) 统一生命周期
+  历史 binding (含 version) 不受实体 DEPRECATED/ARCHIVED 影响 (可复现)
 ```
 
 ## 五、Execution Engine 集成 (Task 007)

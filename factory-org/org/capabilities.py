@@ -31,8 +31,10 @@ Task 002 已实现 skills/ 目录信源 Registry CRUD + 默认种子; Task 003 �
 agents/ 目录信源 Registry CRUD (register/get/list/update/delete + 生命周期 +
 binding 校验 + 默认种子 5 角色); Task 004 已实现 mcps/ 目录信源 Registry
 CRUD (register/get/list/update/delete + 生命周期 — MCP 不预置种子,
-外部工具由用户注册); Task 005-006 才实现 workflows/industries/llm-configs
-注册。
+外部工具由用户注册); Task 005 已实现 workflows/ 目录信源 Registry CRUD
+(register/get/list/update/delete + 生命周期 + steps 校验 非空/有序/step id
+唯一 + required_agents/skills 引用校验 + 默认种子 software-development-lifecycle);
+Task 006 才实现 industries/llm-configs 注册。
 """
 
 from __future__ import annotations
@@ -464,6 +466,69 @@ DEFAULT_AGENTS: tuple[Agent, ...] = (
 )
 
 
+def _default_workflow(
+    workflow_id: str,
+    name: str,
+    industry: str,
+    steps: list[dict[str, Any]],
+    required_agents: tuple[str, ...],
+    required_skills: tuple[str, ...],
+) -> WorkflowTemplate:
+    """默认种子 WorkflowTemplate 构造 (S10-012 §三 种子: 只建实体不实现逻辑)。
+
+    steps 有序 (列表顺序即执行顺序 — AF-PRD §4.8); required_agents/required_skills
+    引用 DEFAULT_AGENTS/DEFAULT_SKILLS 内 id (种子自洽, 零警告)。
+    """
+    return WorkflowTemplate(
+        id=workflow_id,
+        name=name,
+        industry=industry,
+        steps=steps,
+        required_agents=list(required_agents),
+        required_skills=list(required_skills),
+        enabled=True,
+        state=CapabilityState.ACTIVE,
+    )
+
+
+#: 默认种子 — Software Development Lifecycle 工作流 (S10-012 §三 + AF-PRD §4.8:
+#: Requirement Analysis → Architecture → Development → Testing → Release;
+#: required_agents pm/architect/developer/qa; required_skills 对应;
+#: ACTIVE+enabled → 验收场景4 可选能力池; 幂等, 已存在不覆盖)。
+#: agent/skill 引用全部落在 DEFAULT_AGENTS/DEFAULT_SKILLS 内 (种子自洽, 零警告)。
+DEFAULT_WORKFLOWS: tuple[WorkflowTemplate, ...] = (
+    _default_workflow(
+        "software-development-lifecycle",
+        "Software Development Lifecycle",
+        "software-development",
+        [
+            {"id": "requirement-analysis", "name": "Requirement Analysis",
+             "description": "需求分析 (PM)"},
+            {"id": "architecture", "name": "Architecture",
+             "description": "系统架构设计与技术选型"},
+            {"id": "development", "name": "Development",
+             "description": "编码实现 (后端/前端)"},
+            {"id": "testing", "name": "Testing",
+             "description": "功能/压力/验收测试"},
+            {"id": "release", "name": "Release",
+             "description": "发布交付"},
+        ],
+        (
+            "product-manager-agent",
+            "architect-agent",
+            "developer-agent",
+            "qa-agent",
+        ),
+        (
+            "product-management",
+            "backend-development",
+            "frontend-development",
+            "qa-testing",
+        ),
+    ),
+)
+
+
 class CapabilityRegistry:
     """Factory Capability Pool 注册表 (S10-012 §三 — skills/ 目录信源, Task 002)。
 
@@ -493,6 +558,7 @@ class CapabilityRegistry:
         self._skills_dir = self._capabilities_dir / "skills"
         self._agents_dir = self._capabilities_dir / "agents"
         self._mcps_dir = self._capabilities_dir / "mcps"
+        self._workflows_dir = self._capabilities_dir / "workflows"
 
     # ------------------------------------------------------------------ 布局
     @property
@@ -519,6 +585,11 @@ class CapabilityRegistry:
         """mcps 目录信源 (<root>/workspace/capabilities/mcps)。"""
         return self._mcps_dir
 
+    @property
+    def workflows_dir(self) -> Path:
+        """workflows 目录信源 (<root>/workspace/capabilities/workflows)。"""
+        return self._workflows_dir
+
     def _skill_path(self, skill_id: str) -> Path:
         return self._skills_dir / f"{skill_id}.json"
 
@@ -527,6 +598,9 @@ class CapabilityRegistry:
 
     def _mcp_path(self, mcp_id: str) -> Path:
         return self._mcps_dir / f"{mcp_id}.json"
+
+    def _workflow_path(self, workflow_id: str) -> Path:
+        return self._workflows_dir / f"{workflow_id}.json"
 
     @staticmethod
     def _validate_skill_id(skill_id: str) -> None:
@@ -551,6 +625,40 @@ class CapabilityRegistry:
             raise ValueError("mcp id must be a non-empty string")
         if any(ch in mcp_id for ch in _SKILL_ID_BANNED):
             raise ValueError(f"mcp id must not contain path separators: {mcp_id!r}")
+
+    @staticmethod
+    def _validate_workflow_id(workflow_id: str) -> None:
+        """id 防御: 非空 + 无路径分隔符 (防目录信源路径穿越)。"""
+        if not isinstance(workflow_id, str) or not workflow_id.strip():
+            raise ValueError("workflow id must be a non-empty string")
+        if any(ch in workflow_id for ch in _SKILL_ID_BANNED):
+            raise ValueError(
+                f"workflow id must not contain path separators: {workflow_id!r}"
+            )
+
+    @staticmethod
+    def _validate_workflow_steps(steps: Any) -> None:
+        """steps 校验 (S10-012 §二 + Task 005): 非空 + 有序 (列表顺序即执行顺序)。
+
+        - steps 必须为非空 list (无步骤的工作流无意义 → 拒绝)
+        - 每个 step 必须为 dict 且含非空 id (步骤可标识)
+        - step id 唯一 (无重复步骤, 审计/调度可寻址)
+        顺序语义: 列表顺序即执行顺序 — 校验不重排, register→get 顺序保持。
+        """
+        if not isinstance(steps, list) or not steps:
+            raise ValueError("workflow steps must be a non-empty list")
+        seen: set[str] = set()
+        for step in steps:
+            if not isinstance(step, dict):
+                raise ValueError(f"workflow step must be a dict: {step!r}")
+            step_id = step.get("id")
+            if not isinstance(step_id, str) or not step_id.strip():
+                raise ValueError(
+                    f"workflow step must have a non-empty id: {step!r}"
+                )
+            if step_id in seen:
+                raise ValueError(f"duplicate workflow step id: {step_id!r}")
+            seen.add(step_id)
 
     # ------------------------------------------------------------------ 原子写
     @staticmethod
@@ -656,9 +764,10 @@ class CapabilityRegistry:
 
     # ------------------------------------------------------------------ 默认种子
     def seed_defaults(self) -> int:
-        """预置标准 skills + 标准 AI 员工角色 (幂等 — 已存在文件不覆盖,
-        用户修改保留); 返回新建总数。种子 agent 的 skill 引用全部落在
-        DEFAULT_SKILLS 内 — 同次种子后自洽 (validate_agent_bindings 零警告)。"""
+        """预置标准 skills + 标准 AI 员工角色 + 标准 workflows (幂等 — 已存在
+        文件不覆盖, 用户修改保留); 返回新建总数。种子 workflow 的 agent/skill
+        引用全部落在 DEFAULT_AGENTS/DEFAULT_SKILLS 内 — 同次种子后自洽
+        (validate_agent_bindings / validate_workflow_refs 零警告)。"""
         seeded = 0
         for skill in DEFAULT_SKILLS:
             if not self._skill_path(skill.id).is_file():
@@ -667,6 +776,10 @@ class CapabilityRegistry:
         for agent in DEFAULT_AGENTS:
             if not self._agent_path(agent.id).is_file():
                 self.register_agent(agent)
+                seeded += 1
+        for workflow in DEFAULT_WORKFLOWS:
+            if not self._workflow_path(workflow.id).is_file():
+                self.register_workflow(workflow)
                 seeded += 1
         return seeded
 
@@ -879,3 +992,140 @@ class CapabilityRegistry:
             raise TypeError("transition_capability must return an MCP instance")
         self.register_mcp(updated)
         return updated
+
+    # ------------------------------------------------------------------ Workflow Template Registry (Task 005)
+
+    # 读 (失败安全)
+    @staticmethod
+    def _parse_workflow(data: Any) -> WorkflowTemplate | None:
+        """dict → WorkflowTemplate; JSON 结构非法 (缺字段/extra/state 非法) → None。"""
+        if not isinstance(data, dict):
+            return None
+        try:
+            return WorkflowTemplate.model_validate(data)
+        except ValueError:
+            return None
+
+    def _read_workflow_file(self, path: Path) -> WorkflowTemplate | None:
+        """读单文件; 损坏 JSON / 非法 schema → None (失败安全, 不崩溃)。"""
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return None
+        return self._parse_workflow(data)
+
+    def get_workflow(self, workflow_id: str) -> WorkflowTemplate | None:
+        """按 id 取工作流模板; 缺失 / 损坏 → None。"""
+        path = self._workflow_path(workflow_id)
+        if not path.is_file():
+            return None
+        return self._read_workflow_file(path)
+
+    def list_workflows(self, *, enabled_only: bool = False) -> list[WorkflowTemplate]:
+        """全部工作流模板 (按 id 排序, 确定性); 损坏文件静默跳过。
+
+        enabled_only=True → 只返回 ACTIVE+enabled (capability_selectable,
+        S10-012 §四b 可选能力过滤)。
+        """
+        result: list[WorkflowTemplate] = []
+        if self._workflows_dir.is_dir():
+            for path in sorted(self._workflows_dir.glob("*.json")):
+                workflow = self._read_workflow_file(path)
+                if workflow is None:
+                    continue  # 失败安全: 损坏/非法文件跳过
+                if enabled_only and not capability_selectable(workflow):
+                    continue
+                result.append(workflow)
+        return result
+
+    # 写
+    def register_workflow(self, workflow: WorkflowTemplate) -> WorkflowTemplate:
+        """注册/覆盖工作流模板 (upsert — 重复 id 覆盖; 原子写; 懒迁移建目录)。
+
+        steps 校验 (非空 + step id 唯一) 在写前执行 — 非法拒绝不落盘。
+        """
+        self._validate_workflow_id(workflow.id)
+        self._validate_workflow_steps(workflow.steps)
+        self._atomic_write(self._workflow_path(workflow.id), workflow.to_dict())
+        return workflow
+
+    def update_workflow(
+        self, workflow_id: str, updates: dict[str, Any]
+    ) -> WorkflowTemplate | None:
+        """部分字段更新 (含 industry/steps/required_agents/required_skills);
+        缺失 → None。
+
+        全量重校验 (model_validate): 未知字段 (extra=forbid) / 非法 state
+        → ValueError; steps 校验 (非空/step id 唯一) → ValueError — 均不落盘
+        (原文件保持)。
+        """
+        current = self.get_workflow(workflow_id)
+        if current is None:
+            return None
+        merged = WorkflowTemplate.model_validate(
+            {**current.to_dict(), **(updates or {})}
+        )
+        self._validate_workflow_steps(merged.steps)
+        self.register_workflow(merged)
+        return merged
+
+    def delete_workflow(self, workflow_id: str) -> bool:
+        """删除工作流模板文件; 缺失 → False (幂等); 删除失败 → False (失败安全)。"""
+        path = self._workflow_path(workflow_id)
+        if not path.is_file():
+            return False
+        try:
+            path.unlink()
+            return True
+        except OSError:
+            return False
+
+    # 生命周期
+    def transition_workflow(
+        self, workflow_id: str, target: CapabilityState | str
+    ) -> WorkflowTemplate | None:
+        """受控生命周期转换并落盘 (DRAFT→ACTIVE→DEPRECATED→ARCHIVED)。
+
+        非法转换 (跳级/回退/终态后) → ValueError, 不落盘 (原文件保持);
+        缺失 id → None。
+        """
+        current = self.get_workflow(workflow_id)
+        if current is None:
+            return None
+        updated = transition_capability(current, target)
+        if not isinstance(updated, WorkflowTemplate):
+            raise TypeError(
+                "transition_capability must return a WorkflowTemplate instance"
+            )
+        self.register_workflow(updated)
+        return updated
+
+    # 引用校验 (S10-012 §四: 缺失 → 警告标注, 不崩溃)
+    def validate_workflow_refs(self, workflow_id: str) -> list[str] | None:
+        """校验 workflow.required_agents/required_skills 引用是否存在于 Registry。
+
+        - required_agents 引用 agents/ 目录 (Agent 实体); required_skills
+          引用 skills/ 目录 (Skill 实体)
+        - 返回警告字符串列表 (每条一个缺失引用); 全部解析 → 空列表
+        - 缺失 workflow → None (同 get_workflow 语义)
+        - 不崩溃: 缺失引用只是警告, 不影响 workflow 本身读取/使用
+        """
+        workflow = self.get_workflow(workflow_id)
+        if workflow is None:
+            return None
+        known_agents = {a.id for a in self.list_agents()}
+        known_skills = {s.id for s in self.list_skills()}
+        warnings: list[str] = []
+        for agent_id in workflow.required_agents:
+            if agent_id not in known_agents:
+                warnings.append(
+                    f"workflow {workflow_id}: required agent missing: {agent_id}"
+                )
+        for skill_id in workflow.required_skills:
+            if skill_id not in known_skills:
+                warnings.append(
+                    f"workflow {workflow_id}: required skill missing: {skill_id}"
+                )
+        return warnings
+
+    # ------------------------------------------------------------------ Workflow 默认种子 (Task 005)

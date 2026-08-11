@@ -10,7 +10,7 @@
  * - 子页未实现 → 明确 placeholder ("{Page} module loading — 开发中", 禁空白)
  */
 
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { AfProjectEntry } from '../pages/project/AfProjectEntry';
 import { sampleProject, sampleWorkflowDetail, stubFetch } from './fixtures';
@@ -60,15 +60,17 @@ describe('AfProjectEntry (AI Factory 项目真实入口)', () => {
 
     render(<AfProjectEntry route={projectRoute()} />);
 
-    expect(await screen.findByText('记账 App')).toBeInTheDocument();
-    expect(screen.getByText('demo')).toBeInTheDocument();
-    expect(screen.getByText('探索')).toBeInTheDocument(); // lifecycle 人话标签
-    expect(screen.getByText('活跃')).toBeInTheDocument(); // status 人话标签
-    expect(screen.getByText('个人记账工具')).toBeInTheDocument();
-    expect(screen.getByText('执行中')).toBeInTheDocument(); // workflow 状态
-    expect(screen.getByText(/product/)).toBeInTheDocument(); // 当前阶段
-    expect(screen.getByText('50%')).toBeInTheDocument();
-    expect(screen.getByText(/最后活动/)).toBeInTheDocument(); // 可用时间字段
+    // S10-014 Task 005: Project Shell Header 也显示项目名 + lifecycle — 断言限定详情区
+    const detail = await screen.findByTestId('af-project-detail');
+    expect(within(detail).getByText('记账 App')).toBeInTheDocument();
+    expect(within(detail).getByText('demo')).toBeInTheDocument();
+    expect(within(detail).getByText('探索')).toBeInTheDocument(); // lifecycle 人话标签
+    expect(within(detail).getByText('活跃')).toBeInTheDocument(); // status 人话标签
+    expect(within(detail).getByText('个人记账工具')).toBeInTheDocument();
+    expect(within(detail).getByText('执行中')).toBeInTheDocument(); // workflow 状态
+    expect(within(detail).getByText(/product/)).toBeInTheDocument(); // 当前阶段
+    expect(within(detail).getByText('50%')).toBeInTheDocument();
+    expect(within(detail).getByText(/最后活动/)).toBeInTheDocument(); // 可用时间字段
   });
 
   it('404: 项目不存在 → ErrorState "项目不存在或已被删除"', async () => {
@@ -119,6 +121,7 @@ describe('AfProjectEntry (AI Factory 项目真实入口)', () => {
       // /api/projects/demo/workflow 未桩 → stubFetch 404 → 降级 null
     });
     render(<AfProjectEntry route={projectRoute()} />);
-    expect(await screen.findByText('Demo Project')).toBeInTheDocument();
+    const detail = await screen.findByTestId('af-project-detail');
+    expect(within(detail).getByText('Demo Project')).toBeInTheDocument();
   });
 });

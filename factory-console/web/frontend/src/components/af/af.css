@@ -874,3 +874,30 @@
   padding: 24px;
   text-align: center;
 }
+
+/* ============================================= Project Shell (§2.4, Task 005) */
+/* S10-014 Task 005: 项目层壳 — Project Header + Sidebar 11 导航 + Main (复用 af-*) */
+.af-project-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+/* Project Header: ← 返回工作台 + 项目名 + lifecycle 徽标 */
+.af-project-header {
+  gap: 12px;
+}
+
+.af-project-header-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: #f5f7fa;
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.af-project-header-lifecycle {
+  flex-shrink: 0;
+}

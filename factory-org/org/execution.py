@@ -52,18 +52,25 @@ from __future__ import annotations
 
 import copy
 import json
+import logging
 import os
 import threading
 from contextlib import contextmanager
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Iterator
+from typing import TYPE_CHECKING, Any, Callable, Iterator
 
 from pydantic import Field, ValidationError, field_validator
 
 from .models import _OrgModel, _norm_list, new_id, utcnow
 from .management import Task, TaskStatus, _PRIORITY_RANK, transition_task
+
+if TYPE_CHECKING:  # 仅类型标注 (运行时 duck-type registry.get_capability, 零耦合)
+    from .capabilities import CapabilityRegistry
+
+_LOGGER = logging.getLogger(__name__)
 
 # ------------------------------------------------------------------ 枚举
 
@@ -347,6 +354,146 @@ def _workflow_ref(bindings: dict[str, Any] | None, workflow_id: str) -> str:
         elif isinstance(wf, str) and wf:
             return wf
     return workflow_id
+
+
+# ------------------------------------------------------------------ Capability Resolver (S10-012 Task 007-001)
+
+
+#: binding kind 规范名 (Resolver 支持五类 — Industry 不参与执行绑定)。
+_CAPABILITY_RESOLVE_KINDS: tuple[str, ...] = (
+    "agent",
+    "skill",
+    "mcp",
+    "workflow",
+    "llm_config",
+)
+
+#: binding kind 复数别名 → 规范名 (大小写/连字符由 _normalize_binding_kind 处理)。
+_CAPABILITY_KIND_PLURALS: dict[str, str] = {
+    "agents": "agent",
+    "skills": "skill",
+    "mcps": "mcp",
+    "workflows": "workflow",
+    "llm_configs": "llm_config",
+    "llms": "llm_config",
+}
+
+
+def _normalize_binding_kind(kind: Any) -> str:
+    """binding kind 规范化: 非空 + 小写 + "-" → "_" + 复数别名 → 规范名。
+
+    "LLM-CONFIG" → "llm_config"; "skills" → "skill"; 未知原样返回
+    (由 _CAPABILITY_RESOLVE_KINDS 白名单拒绝)。
+    """
+    if not isinstance(kind, str) or not kind.strip():
+        raise ValueError("capability binding kind must be a non-empty string")
+    key = kind.strip().lower().replace("-", "_")
+    return _CAPABILITY_KIND_PLURALS.get(key, key)
+
+
+def _binding_ref_id(binding_ref: Any, ref_key: str) -> tuple[str, str | None]:
+    """binding reference → (ref_id, version_pin)。
+
+    - 字符串 (旧格式裸引用) → (原字符串, None)
+    - dict ({agent_ref/skill_ref/... 或 {id, version?}} — 设计 §四
+      CapabilityBinding 引用) → 优先 {ref_key}, 回退 "ref"/"id" + 可选
+      "version" pin
+    - 无法解析 → ("", None) (无有效引用, 不进入解析/快照)
+    """
+    if isinstance(binding_ref, str):
+        return binding_ref, None
+    if isinstance(binding_ref, dict):
+        for k in (ref_key, "ref", "id"):
+            val = binding_ref.get(k)
+            if isinstance(val, str) and val:
+                version = binding_ref.get("version")
+                return val, (version if isinstance(version, str) and version else None)
+    return "", None
+
+
+@dataclass(frozen=True)
+class CapabilityResolution:
+    """Resolver 输出: binding reference → Registry Capability 实体解析结果。
+
+    - kind: 规范化 binding kind (agent|skill|mcp|workflow|llm_config)
+    - ref_id: binding 引用的 id (解析输入); id: 实体 id (解析成功 == ref_id)
+    - name/version/status: 实体字段 (解析失败 → ""; 仅 Skill 带 version,
+      其余实体 Registry 无 version 字段 → "")
+    - metadata: 实体全量字段 (entity.to_dict() — 实体无独立 metadata 字段,
+      Task 001 约定以全量字段输出)
+    - version_pin: binding dict 显式 pin 的 version (无 → None)
+    - entity: 解析到的 CapabilityEntity (失败 → None)
+    - resolved: 实体是否解析成功 (registry 有对应 id)
+    """
+
+    kind: str
+    ref_id: str
+    id: str = ""
+    name: str = ""
+    version: str = ""
+    status: str = ""
+    metadata: dict[str, Any] = field(default_factory=dict)
+    version_pin: str | None = None
+    entity: Any = None  # CapabilityEntity | None (仅运行时, 不序列化)
+
+    @property
+    def resolved(self) -> bool:
+        """是否解析到 Registry 实体。"""
+        return self.entity is not None
+
+
+def resolve_capability(
+    binding_ref: Any,
+    registry: Any,
+    *,
+    kind: str,
+    ref_key: str = "ref",
+) -> CapabilityResolution | None:
+    """binding reference → Registry Capability 实体解析 (S10-012 Task 007-001)。
+
+    输入:
+    - binding_ref: 字符串 (旧格式裸引用) 或 dict ({agent_ref/skill_ref/...
+      或 {id, version?}} — version pin 可选, 可复现)
+    - registry: CapabilityRegistry (统一门面 get_capability — 大小写/复数
+      别名已处理; 缺失实体 → None)
+    - kind: binding 类型 (agent|skill|mcp|workflow|llm_config; 大小写/复数
+      别名宽容; 未知 → ValueError 显式暴露)
+    - ref_key: dict 引用键名 (agent_ref/skill_ref/mcp_ref/workflow_ref/
+      llm_config_ref — 与 ProjectBindings 键对应; 回退 "ref"/"id")
+
+    输出:
+    - 解析成功 → CapabilityResolution (id/name/version/status/metadata +
+      entity; metadata = 实体全量 to_dict — 实体无独立 metadata 字段)
+    - Registry 无对应实体 / 无有效引用 → None (由调用方决定 legacy 降级
+      或校验门拒绝; 不抛错 — 缺失是业务状态非异常)
+    - 未知 kind → ValueError
+
+    纯函数: 不改入参, 无副作用 (registry 只读)。
+    """
+    norm_kind = _normalize_binding_kind(kind)
+    if norm_kind not in _CAPABILITY_RESOLVE_KINDS:
+        raise ValueError(
+            f"unknown capability binding kind: {kind!r} "
+            f"(expected one of: {sorted(_CAPABILITY_RESOLVE_KINDS)})"
+        )
+    ref_id, version_pin = _binding_ref_id(binding_ref, ref_key)
+    if not ref_id:
+        return None
+    entity = registry.get_capability(norm_kind, ref_id)
+    if entity is None:
+        return None
+    state = getattr(entity, "state", None)
+    return CapabilityResolution(
+        kind=norm_kind,
+        ref_id=ref_id,
+        id=getattr(entity, "id", ref_id),
+        name=getattr(entity, "name", "") or "",
+        version=getattr(entity, "version", "") or "",
+        status=state.value if state is not None else "",
+        metadata=entity.to_dict(),
+        version_pin=version_pin,
+        entity=entity,
+    )
 
 
 def dispatch_task(

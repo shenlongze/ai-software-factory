@@ -13,7 +13,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 import App from '../App';
-import { sampleDashboard, sampleProject, stubFetch } from './fixtures';
+import { sampleDashboard, sampleProject, sampleTodoBacklog, stubFetch } from './fixtures';
 
 function stubConsoleApis() {
   const emptyDashboard = sampleDashboard({
@@ -78,10 +78,11 @@ describe('AI Factory 真实入口挂载 (App.tsx)', () => {
     expect(await screen.findByText('markpad')).toBeInTheDocument();
   });
 
-  it('#/project/markpad/todo → AI Factory 项目入口 (Project Entity + 子页 placeholder)', async () => {
+  it('#/project/markpad/todo → AI Factory 项目入口 (Project Entity + 真实 Todo Tree)', async () => {
     stubConsoleApis();
     stubFetch({
       '/api/projects': [sampleProject({ id: 'markpad', name: 'markpad' })],
+      '/api/projects/markpad/backlog': sampleTodoBacklog(),
     });
     window.location.hash = '#/project/markpad/todo';
     render(<App />);
@@ -89,9 +90,7 @@ describe('AI Factory 真实入口挂载 (App.tsx)', () => {
     expect(
       await screen.findByRole('heading', { name: 'markpad' }),
     ).toBeInTheDocument();
-    expect(
-      await screen.findByText('Todo Tree module loading — 开发中'),
-    ).toBeInTheDocument();
+    expect(await screen.findByTestId('af-todo-tree')).toBeInTheDocument();
   });
 
   it('#/workspace?project=ledger-app 直链 → AI Factory 项目入口 (S10-003 兼容)', async () => {

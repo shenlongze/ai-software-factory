@@ -17,7 +17,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 import { PROJECT_NAV_ITEMS } from '../components/af/AfProjectSidebar';
 import { AfProjectShell } from '../components/af/AfProjectShell';
-import { sampleProject, stubFetch } from './fixtures';
+import { sampleProject, sampleTodoBacklog, stubFetch } from './fixtures';
 
 function projectRoute(page = 'overview') {
   return { level: 'project' as const, page, projectId: 'demo' };
@@ -145,7 +145,6 @@ describe('AfProjectShell (AI OS 项目层壳)', () => {
   });
 
   it.each([
-    ['todo', 'Todo Tree module loading — 开发中'],
     ['vision', 'Vision module loading — 开发中'],
     ['sprint', 'Sprint module loading — 开发中'],
     ['logs', 'Logs module loading — 开发中'],
@@ -154,6 +153,15 @@ describe('AfProjectShell (AI OS 项目层壳)', () => {
     stubFetch({ '/api/projects': [sampleProject({ id: 'demo' })] });
     render(<AfProjectShell route={projectRoute(page)} />);
     expect(await screen.findByTestId('af-module-placeholder')).toHaveTextContent(expectedText);
+  });
+
+  it('todo 页 → 真实 Todo Tree (AfTodoTreePage, backlog 驱动)', async () => {
+    stubFetch({
+      '/api/projects': [sampleProject({ id: 'demo' })],
+      '/api/projects/demo/backlog': sampleTodoBacklog(),
+    });
+    render(<AfProjectShell route={projectRoute('todo')} />);
+    expect(await screen.findByTestId('af-todo-tree')).toBeInTheDocument();
   });
 
   it('404: 项目不存在 → ErrorState "项目不存在或已被删除"', async () => {

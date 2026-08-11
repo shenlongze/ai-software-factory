@@ -901,3 +901,250 @@
 .af-project-header-lifecycle {
   flex-shrink: 0;
 }
+
+/* ============================================= Todo Tree (S10-015 Task 003) */
+/* 依据: AF-UI-Architecture §4 (Project → Phase → Module → Task 树) +
+ * S10-015-architecture-review §3 (Story→task 带子 Task 递归, 树深 ≤4)。 */
+
+/* 树容器 (面板卡片) */
+.af-todo-tree {
+  background: #1d232e;
+  border: 1px solid #2a3140;
+  border-radius: 12px;
+  padding: 16px;
+}
+
+/* 工具栏: 全展开/全折叠 + 状态过滤 chips (§4.6) */
+.af-tree-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.af-tree-btn {
+  padding: 4px 10px;
+}
+
+.af-tree-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.af-filter-chip {
+  font: inherit;
+  font-size: 12px;
+  color: #9ca3af;
+  background: #161a22;
+  border: 1px solid #2a3140;
+  border-radius: 980px;
+  padding: 2px 12px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.af-filter-chip:hover {
+  color: #4c8dff;
+  border-color: #4c8dff;
+}
+
+.af-filter-chip--active {
+  color: #4c8dff;
+  background: rgba(76, 141, 255, 0.12);
+  border-color: #4c8dff;
+  font-weight: 600;
+}
+
+/* 项目头 (root): 整体完成度 + 状态 */
+.af-tree-root {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #161a22;
+  border: 1px solid #2a3140;
+  border-radius: 10px;
+  margin-bottom: 8px;
+}
+
+.af-tree-root-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #f5f7fa;
+}
+
+.af-tree-root-progress {
+  flex: 1;
+  min-width: 120px;
+  max-width: 280px;
+}
+
+/* 树体 */
+.af-tree-body {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 节点行 (层级靠 .af-tree-children 缩进 + 左侧引导线) */
+.af-tree-node {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #e5e7eb;
+  transition: background 0.15s;
+}
+
+.af-tree-node:hover {
+  background: rgba(76, 141, 255, 0.06);
+}
+
+/* 任务节点可点击 (Context Panel 联动, Task 006) */
+.af-tree-node--clickable {
+  cursor: pointer;
+}
+
+.af-tree-node--clickable:hover {
+  background: rgba(76, 141, 255, 0.1);
+}
+
+.af-tree-node--clickable:focus-visible {
+  outline: 1px solid #4c8dff;
+  outline-offset: 1px;
+}
+
+/* 当前焦点: 执行中节点高亮 (§4.6) */
+.af-tree-node--focus {
+  background: rgba(76, 141, 255, 0.08);
+  box-shadow: inset 2px 0 0 #4c8dff;
+}
+
+/* 展开/折叠箭头 */
+.af-tree-toggle {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+  color: #9ca3af;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  padding: 0;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.af-tree-toggle:hover {
+  color: #4c8dff;
+}
+
+.af-tree-toggle--spacer {
+  cursor: default;
+}
+
+/* 节点图标 (阶段 📁 / 模块 📦 / 任务 📄) */
+.af-tree-icon {
+  width: 18px;
+  flex-shrink: 0;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.af-tree-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.af-tree-progress {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 12px;
+  color: #9ca3af;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 负责人 / Agent */
+.af-tree-owner {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: #9ca3af;
+  background: #161a22;
+  border: 1px solid #2a3140;
+  border-radius: 6px;
+  padding: 0 6px;
+}
+
+/* 叶子任务额外字段 (开始/下一步/阻塞原因) */
+.af-tree-meta {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.af-tree-meta--blocked {
+  color: #8b5cf6;
+}
+
+/* 子节点容器: 缩进 + 左侧引导线 + 展开动画 120ms (§4.6 平滑展开) */
+.af-tree-children {
+  margin-left: 15px;
+  padding-left: 10px;
+  border-left: 1px solid #2a3140;
+  display: flex;
+  flex-direction: column;
+  animation: af-tree-expand 0.12s ease;
+}
+
+@keyframes af-tree-expand {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 优先级标签 (P0 红 / P1 橙 / P2 蓝 / P3 灰) */
+.af-priority {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 6px;
+  padding: 0 6px;
+  line-height: 1.6;
+}
+
+.af-priority--P0 {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.14);
+}
+
+.af-priority--P1 {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.14);
+}
+
+.af-priority--P2 {
+  color: #4c8dff;
+  background: rgba(76, 141, 255, 0.14);
+}
+
+.af-priority--P3 {
+  color: #9ca3af;
+  background: rgba(156, 163, 175, 0.14);
+}

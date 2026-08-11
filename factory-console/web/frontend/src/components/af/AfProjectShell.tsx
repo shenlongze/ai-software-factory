@@ -28,6 +28,7 @@ import {
 } from './afLabels';
 import { AfModulePlaceholder } from './AfModulePlaceholder';
 import { AfProjectSidebar } from './AfProjectSidebar';
+import { AfTodoTreePage } from '../../pages/project/AfTodoTreePage';
 import { ErrorState, LoadingState } from '../State';
 import { useAsync } from '../../hooks/useAsync';
 import type { ProjectSummary, WorkflowDetail } from '../../models/types';
@@ -227,7 +228,32 @@ function ProjectDetailView({
           <div className="af-progress-fill" style={{ width: `${pct}%` }} />
         </div>
       </div>
-      {isOverview ? null : <AfModulePlaceholder pageLabel={pageLabel} />}
+      {isOverview ? null : (
+        <AfProjectSubPage
+          page={pageLabel}
+          projectId={project?.id}
+          projectName={project?.name}
+        />
+      )}
     </div>
   );
+}
+
+/**
+ * 子页分发 (S10-015): todo → AfTodoTreePage (真实 backlog 树);
+ * 其他子页 → AfModulePlaceholder (禁空白, 后续 Sprint 接入)。
+ */
+function AfProjectSubPage({
+  page,
+  projectId,
+  projectName,
+}: {
+  page: string;
+  projectId?: string;
+  projectName?: string;
+}): JSX.Element {
+  if (page === 'Todo Tree' && projectId != null) {
+    return <AfTodoTreePage projectId={projectId} projectName={projectName ?? ''} />;
+  }
+  return <AfModulePlaceholder pageLabel={page} />;
 }

@@ -25,6 +25,8 @@ import type {
   WorkflowDetail,
   WorkflowSummary,
 } from '../models/types';
+import { toTodoTree } from '../api/domain';
+import type { TodoTree } from '../models/domain';
 
 /**
  * 每个 fixture 的来源标注 (S10-014 Task 008: 结构与真实 API 响应一致 + 验证日期)。
@@ -460,6 +462,196 @@ export function sampleDashboard(overrides: Partial<ConsoleDashboard> = {}): Cons
     ],
     ...overrides,
   };
+}
+
+// ------------------------------------------------------------------ S10-015 Task 003: Todo Tree UI fixtures
+// sampleTodoBacklog: 全 6 态 Task (todo/ready/in_progress/blocked/review/done) + P0-P3 全优先级,
+//   结构对齐真实 GET /api/projects/{id}/backlog (children id 引用, 无回溯字段)。
+// sampleTodoTree: toTodoTree(sampleTodoBacklog()) → TodoTree (真实 Adapter 转换, 非手工树)。
+// sampleTaskMeta: backlog.tasks → {id → {priority, owner}} (AfTodoTree 优先级/负责人补充数据源;
+//   Adapter 未映射 priority/assignee 时的页面级投影, 真实字段来源)。
+
+/** 全 6 态 + P0-P3 的 backlog (S10-015 Task 003 组件测试用; 结构同真实响应)。 */
+export interface TodoBacklog extends BacklogResponse {}
+
+/** 来源: 结构与 GET /api/projects/{id}/backlog 真实响应一致 (验证于 2026-08-11/12)。 */
+export function sampleTodoBacklog(overrides: Partial<BacklogResponse> = {}): TodoBacklog {
+  return {
+    project_id: 'demo',
+    epics: [
+      {
+        id: 'epic-dev',
+        name: '开发阶段',
+        description: '核心功能开发',
+        children: ['feat-user'],
+        created_at: '2026-08-12T00:00:00Z',
+        updated_at: '2026-08-12T00:00:00Z',
+      },
+      {
+        id: 'epic-qa',
+        name: '质量保障',
+        description: '测试与发布',
+        children: ['feat-test'],
+        created_at: '2026-08-12T00:00:00Z',
+        updated_at: '2026-08-12T00:00:00Z',
+      },
+    ],
+    features: [
+      {
+        id: 'feat-user',
+        name: '用户系统',
+        description: '注册登录',
+        children: ['story-reg', 'story-login'],
+        created_at: '2026-08-12T00:00:00Z',
+        updated_at: '2026-08-12T00:00:00Z',
+      },
+      {
+        id: 'feat-test',
+        name: '自动化测试',
+        description: '回归与发布',
+        children: ['story-regression', 'story-release'],
+        created_at: '2026-08-12T00:00:00Z',
+        updated_at: '2026-08-12T00:00:00Z',
+      },
+    ],
+    stories: [
+      {
+        id: 'story-reg',
+        name: '用户注册',
+        description: '手机号注册',
+        children: ['t-reg-api', 't-reg-db'],
+        created_at: '2026-08-12T00:00:00Z',
+        updated_at: '2026-08-12T00:00:00Z',
+      },
+      {
+        id: 'story-login',
+        name: '用户登录',
+        description: '登录鉴权',
+        children: ['t-login-api'],
+        created_at: '2026-08-12T00:00:00Z',
+        updated_at: '2026-08-12T00:00:00Z',
+      },
+      {
+        id: 'story-regression',
+        name: '回归测试',
+        description: '全量回归',
+        children: ['t-regr-run', 't-regr-report'],
+        created_at: '2026-08-12T00:00:00Z',
+        updated_at: '2026-08-12T00:00:00Z',
+      },
+      {
+        id: 'story-release',
+        name: '发布准备',
+        description: '发布检查',
+        children: ['t-release-check'],
+        created_at: '2026-08-12T00:00:00Z',
+        updated_at: '2026-08-12T00:00:00Z',
+      },
+    ],
+    tasks: [
+      {
+        id: 't-reg-api',
+        title: '实现注册 API',
+        description: 'POST /api/register',
+        priority: 'P1',
+        status: 'in_progress',
+        assignee: 'developer',
+        dependency: [],
+        created_at: '2026-08-12T00:00:00Z',
+        updated_at: '2026-08-12T00:00:00Z',
+        history: [],
+      },
+      {
+        id: 't-reg-db',
+        title: '用户数据模型',
+        description: '用户表设计',
+        priority: 'P2',
+        status: 'done',
+        assignee: 'developer',
+        dependency: [],
+        created_at: '2026-08-12T00:00:00Z',
+        updated_at: '2026-08-12T00:00:00Z',
+        history: [],
+      },
+      {
+        id: 't-login-api',
+        title: '实现登录 API',
+        description: 'POST /api/login JWT',
+        priority: 'P1',
+        status: 'blocked',
+        assignee: '',
+        dependency: ['t-reg-api'],
+        created_at: '2026-08-12T00:00:00Z',
+        updated_at: '2026-08-12T00:00:00Z',
+        history: [],
+      },
+      {
+        id: 't-regr-run',
+        title: '回归测试执行',
+        description: '全量回归跑批',
+        priority: 'P3',
+        status: 'review',
+        assignee: 'tester',
+        dependency: [],
+        created_at: '2026-08-12T00:00:00Z',
+        updated_at: '2026-08-12T00:00:00Z',
+        history: [],
+      },
+      {
+        id: 't-regr-report',
+        title: '测试报告',
+        description: '回归结果汇总',
+        priority: 'P2',
+        status: 'failed',
+        assignee: 'tester',
+        dependency: ['t-regr-run'],
+        created_at: '2026-08-12T00:00:00Z',
+        updated_at: '2026-08-12T00:00:00Z',
+        history: [],
+      },
+      {
+        id: 't-release-check',
+        title: '发布检查单',
+        description: '上线前检查',
+        priority: 'P0',
+        status: 'todo',
+        assignee: '',
+        dependency: [],
+        created_at: '2026-08-12T00:00:00Z',
+        updated_at: '2026-08-12T00:00:00Z',
+        history: [],
+      },
+    ],
+    ...overrides,
+  };
+}
+
+/** 任务补充元数据: id → {priority, owner} (来自真实 backlog.tasks 字段投影)。 */
+export interface TaskMeta {
+  priority?: string;
+  owner?: string;
+}
+
+/** sampleTodoBacklog().tasks → TaskMeta 映射 (assignee 空串 → owner undefined, 诚实降级)。 */
+export function sampleTaskMeta(backlog: TodoBacklog = sampleTodoBacklog()): Record<string, TaskMeta> {
+  const meta: Record<string, TaskMeta> = {};
+  for (const task of backlog.tasks ?? []) {
+    meta[task.id] = {
+      priority: task.priority != null && task.priority.length > 0 ? task.priority : undefined,
+      owner: task.assignee != null && task.assignee.length > 0 ? task.assignee : undefined,
+    };
+  }
+  return meta;
+}
+
+/** 来源: 结构与 GET /api/projects/{id}/backlog 真实响应一致 (验证于 2026-08-12) → toTodoTree。 */
+export function sampleTodoTree(projectName = '演示项目'): TodoTree {
+  return toTodoTree(sampleTodoBacklog(), projectName);
+}
+
+/** sampleTodoFixture: 组件测试一站式 (树 + 元数据)。 */
+export function sampleTodoFixture(): { tree: TodoTree; meta: Record<string, TaskMeta> } {
+  return { tree: sampleTodoTree(), meta: sampleTaskMeta() };
 }
 
 // ------------------------------------------------------------------ S10-014 Task 008 补齐: agent / timeline / backlog

@@ -13,7 +13,7 @@
 import { render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { AfProjectEntry } from '../pages/project/AfProjectEntry';
-import { sampleProject, sampleWorkflowDetail, stubFetch } from './fixtures';
+import { sampleProject, sampleTodoBacklog, sampleWorkflowDetail, stubFetch } from './fixtures';
 
 function projectRoute(page = 'overview') {
   return { level: 'project' as const, page, projectId: 'demo' };
@@ -87,12 +87,13 @@ describe('AfProjectEntry (AI Factory 项目真实入口)', () => {
     expect(await screen.findByTestId('error-state')).toHaveTextContent('boom');
   });
 
-  it('子页 placeholder: todo → "Todo Tree module loading — 开发中" (禁空白)', async () => {
-    stubFetch({ '/api/projects': [sampleProject({ id: 'demo' })] });
+  it('子页 todo → 真实 Todo Tree (AfTodoTreePage, 真实 backlog 驱动)', async () => {
+    stubFetch({
+      '/api/projects': [sampleProject({ id: 'demo' })],
+      '/api/projects/demo/backlog': sampleTodoBacklog(),
+    });
     render(<AfProjectEntry route={projectRoute('todo')} />);
-    expect(
-      await screen.findByText('Todo Tree module loading — 开发中'),
-    ).toBeInTheDocument();
+    expect(await screen.findByTestId('af-todo-tree')).toBeInTheDocument();
   });
 
   it('子页 placeholder: 其他子页 → "{Page} module loading — 开发中"', async () => {

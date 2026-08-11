@@ -2,9 +2,12 @@
  * src/test/fixtures.ts — 测试数据工厂 + fetch 桩辅助 (仅测试用, 不计覆盖率)。
  *
  * 数据形状对齐 src/models/types.ts (11A 响应模型投影)。
+ * 来源标注 (S10-014 Task 008): 每个 fixture 结构与真实后端 API 响应一致
+ * (curl http://127.0.0.1:8011 验证于 2026-08-11); 完整映射见 FIXTURE_SOURCES。
  */
 
 import type {
+  AgentSummary,
   ApprovalDecisionSummary,
   ApprovalGateSummary,
   ApprovalSummary,
@@ -18,9 +21,36 @@ import type {
   ProviderSummary,
   RecommendationSummary,
   StageSummary,
+  TimelineEventSummary,
   WorkflowDetail,
   WorkflowSummary,
 } from '../models/types';
+
+/**
+ * 每个 fixture 的来源标注 (S10-014 Task 008: 结构与真实 API 响应一致 + 验证日期)。
+ * 修改 fixture 形状时必须同步更新 (fixtures-structure.test.ts 全量校验)。
+ */
+export const FIXTURE_SOURCES: Readonly<Record<string, string>> = {
+  sampleProject: '结构与 GET /api/projects 真实响应一致 (验证于 2026-08-11)',
+  sampleApproval: '结构与 GET /api/approvals 真实响应一致 (验证于 2026-08-11)',
+  sampleApprovalGate: '结构与 GET /api/approval-gates 真实响应一致 (验证于 2026-08-11)',
+  sampleApprovalDecision: '结构与 POST /api/approvals/{id}/approve|reject 真实响应一致 (验证于 2026-08-11)',
+  sampleStage: '结构与 GET /api/projects/{id}/workflow stages 真实响应一致 (验证于 2026-08-11)',
+  sampleWorkflow: '结构与 GET /api/workflows 真实响应一致 (验证于 2026-08-11)',
+  sampleWorkflowDetail: '结构与 GET /api/projects/{id}/workflow 真实响应一致 (验证于 2026-08-11)',
+  sampleArtifact: '结构与 GET /api/artifacts 真实响应一致 (验证于 2026-08-11)',
+  sampleArtifactDetail: '结构与 GET /api/artifacts/{artifact_id} 真实响应一致 (验证于 2026-08-11)',
+  sampleUXUIDetail: '结构与 GET /api/artifacts/{artifact_id} 真实响应一致 (验证于 2026-08-11)',
+  sampleDecision: '结构与 GET /api/decisions/{decision_id} 真实响应一致 (验证于 2026-08-11)',
+  sampleLifecycle: '结构与 GET /api/projects/{id}/lifecycle 真实响应一致 (验证于 2026-08-11)',
+  sampleRecommendation: '结构与 GET /api/recommendations 真实响应一致 (验证于 2026-08-11)',
+  sampleExperience: '结构与 GET /api/experience 真实响应一致 (验证于 2026-08-11)',
+  sampleProvider: '结构与 GET /api/providers 真实响应一致 (验证于 2026-08-11)',
+  sampleDashboard: '结构与 GET /api/dashboard 真实响应一致 (验证于 2026-08-11)',
+  sampleTimelineEvents: '结构与 GET /api/projects/{id}/timeline 真实响应一致 (验证于 2026-08-11)',
+  sampleBacklog: '结构与 GET /api/projects/{id}/backlog 真实响应一致 (验证于 2026-08-11)',
+  sampleAgent: '结构与 GET /api/dashboard agents 真实响应一致 (验证于 2026-08-11)',
+};
 
 /** 返回一个只读 JSON 响应 (client 只消费 ok + json())。 */
 function jsonResponse(body: unknown): Response {
@@ -47,6 +77,7 @@ export function stubFetch(routes: Record<string, unknown>): ReturnType<typeof vi
   return fn;
 }
 
+/** 来源: 结构与 GET /api/projects 真实响应一致 (验证于 2026-08-11)。 */
 export function sampleProject(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
   return {
     id: 'demo',
@@ -72,6 +103,7 @@ export function sampleProject(overrides: Partial<ProjectSummary> = {}): ProjectS
   };
 }
 
+/** 来源: 结构与 GET /api/approvals 真实响应一致 (验证于 2026-08-11)。 */
 export function sampleApproval(overrides: Partial<ApprovalSummary> = {}): ApprovalSummary {
   return {
     id: 'req-1',
@@ -91,7 +123,8 @@ export function sampleApproval(overrides: Partial<ApprovalSummary> = {}): Approv
   };
 }
 
-/** org 审批门 (S9-001 ApprovalGate; Console 决定操作对象 — Approval 页)。 */
+/** org 审批门 (S9-001 ApprovalGate; Console 决定操作对象 — Approval 页)。
+ * 来源: 结构与 GET /api/approval-gates 真实响应一致 (验证于 2026-08-11)。 */
 export function sampleApprovalGate(
   overrides: Partial<ApprovalGateSummary> = {},
 ): ApprovalGateSummary {
@@ -110,7 +143,8 @@ export function sampleApprovalGate(
   };
 }
 
-/** POST approve/reject 决定结果投影。 */
+/** POST approve/reject 决定结果投影。
+ * 来源: 结构与 POST /api/approvals/{id}/approve|reject 真实响应一致 (验证于 2026-08-11)。 */
 export function sampleApprovalDecision(
   overrides: Partial<ApprovalDecisionSummary> = {},
 ): ApprovalDecisionSummary {
@@ -123,7 +157,8 @@ export function sampleApprovalDecision(
   };
 }
 
-/** 阶段链节点 (WorkflowDetail.stages)。 */
+/** 阶段链节点 (WorkflowDetail.stages)。
+ * 来源: 结构与 GET /api/projects/{id}/workflow stages 真实响应一致 (验证于 2026-08-11)。 */
 export function sampleStage(overrides: Partial<StageSummary> = {}): StageSummary {
   return {
     id: 'stage-design',
@@ -142,7 +177,8 @@ export function sampleStage(overrides: Partial<StageSummary> = {}): StageSummary
   };
 }
 
-/** org Workflow 运行摘要 (Workflow 页表格行)。 */
+/** org Workflow 运行摘要 (Workflow 页表格行)。
+ * 来源: 结构与 GET /api/workflows 真实响应一致 (验证于 2026-08-11)。 */
 export function sampleWorkflow(overrides: Partial<WorkflowSummary> = {}): WorkflowSummary {
   return {
     id: 'wf-1',
@@ -160,7 +196,8 @@ export function sampleWorkflow(overrides: Partial<WorkflowSummary> = {}): Workfl
   };
 }
 
-/** 单 Workflow 8 阶段链全视图 (Workflow 页详情)。 */
+/** 单 Workflow 8 阶段链全视图 (Workflow 页详情)。
+ * 来源: 结构与 GET /api/projects/{id}/workflow 真实响应一致 (验证于 2026-08-11)。 */
 export function sampleWorkflowDetail(
   overrides: Partial<WorkflowDetail> = {},
 ): WorkflowDetail {
@@ -181,7 +218,8 @@ export function sampleWorkflowDetail(
   };
 }
 
-/** org Artifact 投影 (6 类产物链, Artifacts 页表格行)。 */
+/** org Artifact 投影 (6 类产物链, Artifacts 页表格行)。
+ * 来源: 结构与 GET /api/artifacts 真实响应一致 (验证于 2026-08-11)。 */
 export function sampleArtifact(overrides: Partial<ArtifactSummary> = {}): ArtifactSummary {
   return {
     id: 'art-1',
@@ -201,7 +239,8 @@ export function sampleArtifact(overrides: Partial<ArtifactSummary> = {}): Artifa
   };
 }
 
-/** product Artifact 详情 (S9-003 Review 数据源: PRD 6 节 + pending 审批门)。 */
+/** product Artifact 详情 (S9-003 Review 数据源: PRD 6 节 + pending 审批门)。
+ * 来源: 结构与 GET /api/artifacts/{artifact_id} 真实响应一致 (验证于 2026-08-11)。 */
 export function sampleArtifactDetail(
   overrides: Partial<ArtifactDetail> = {},
 ): ArtifactDetail {
@@ -222,7 +261,8 @@ export function sampleArtifactDetail(
   };
 }
 
-/** ux_ui Artifact 详情 (S9-003: 7 节 + wireframe ASCII 预览数据源)。 */
+/** ux_ui Artifact 详情 (S9-003: 7 节 + wireframe ASCII 预览数据源)。
+ * 来源: 结构与 GET /api/artifacts/{artifact_id} 真实响应一致 (验证于 2026-08-11)。 */
 export function sampleUXUIDetail(overrides: Partial<ArtifactDetail> = {}): ArtifactDetail {
   return {
     ...sampleArtifact({ id: 'art-ux1', type: 'ux_ui', stage_id: 'ux-ui', producer_role: 'designer' }),
@@ -274,6 +314,7 @@ export function sampleUXUIDetail(overrides: Partial<ArtifactDetail> = {}): Artif
   };
 }
 
+/** 来源: 结构与 GET /api/decisions/{decision_id} 真实响应一致 (验证于 2026-08-11)。 */
 export function sampleDecision(overrides: Partial<DecisionSummary> = {}): DecisionSummary {
   return {
     id: 'dec-1',
@@ -313,6 +354,7 @@ export function sampleDecision(overrides: Partial<DecisionSummary> = {}): Decisi
   };
 }
 
+/** 来源: 结构与 GET /api/projects/{id}/lifecycle 真实响应一致 (验证于 2026-08-11)。 */
 export function sampleLifecycle(overrides: Partial<LifecycleSummary> = {}): LifecycleSummary {
   return {
     project_id: 'demo',
@@ -328,6 +370,7 @@ export function sampleLifecycle(overrides: Partial<LifecycleSummary> = {}): Life
   };
 }
 
+/** 来源: 结构与 GET /api/recommendations 真实响应一致 (验证于 2026-08-11)。 */
 export function sampleRecommendation(
   overrides: Partial<RecommendationSummary> = {},
 ): RecommendationSummary {
@@ -346,6 +389,7 @@ export function sampleRecommendation(
   };
 }
 
+/** 来源: 结构与 GET /api/experience 真实响应一致 (验证于 2026-08-11)。 */
 export function sampleExperience(overrides: Partial<ExperienceSummary> = {}): ExperienceSummary {
   return {
     id: 'exp-1',
@@ -362,6 +406,7 @@ export function sampleExperience(overrides: Partial<ExperienceSummary> = {}): Ex
   };
 }
 
+/** 来源: 结构与 GET /api/providers 真实响应一致 (验证于 2026-08-11)。 */
 export function sampleProvider(overrides: Partial<ProviderSummary> = {}): ProviderSummary {
   return {
     id: 'hermes',
@@ -379,20 +424,12 @@ export function sampleProvider(overrides: Partial<ProviderSummary> = {}): Provid
   };
 }
 
+/** 来源: 结构与 GET /api/dashboard 真实响应一致 (验证于 2026-08-11)。 */
 export function sampleDashboard(overrides: Partial<ConsoleDashboard> = {}): ConsoleDashboard {
   return {
     projects: [sampleProject()],
     approvals: [sampleApproval()],
-    agents: [
-      {
-        id: 'agent-1',
-        name: 'Planner',
-        role: 'planner',
-        status: 'WORKING',
-        skills: ['planning'],
-        current_task: 'write plan',
-      },
-    ],
+    agents: [sampleAgent()],
     decisions: [sampleDecision()],
     cost: {
       total_cost: 1.2345,
@@ -419,6 +456,203 @@ export function sampleDashboard(overrides: Partial<ConsoleDashboard> = {}): Cons
         task_id: 't-1',
         action: 'completed',
         result: 'ok',
+      },
+    ],
+    ...overrides,
+  };
+}
+
+// ------------------------------------------------------------------ S10-014 Task 008 补齐: agent / timeline / backlog
+// 真实结构对照 (2026-08-11): GET /api/dashboard (agents 域), GET /api/projects/{id}/timeline,
+// GET /api/projects/{id}/backlog (本环境无 management store → 404; 结构取 service.list_backlog
+// 真实契约: Epic/Feature/Story {id,name,description,children,created_at,updated_at}, Task 另含
+// title/priority/status/assignee/dependency/history)。
+
+/** 来源: 结构与 GET /api/dashboard agents 域真实响应一致 (验证于 2026-08-11)。 */
+export function sampleAgent(overrides: Partial<AgentSummary> = {}): AgentSummary {
+  return {
+    id: 'agent-1',
+    name: 'Planner',
+    role: 'planner',
+    status: 'WORKING',
+    skills: ['planning'],
+    current_task: 'write plan',
+    ...overrides,
+  };
+}
+
+/**
+ * 单条 Timeline 事件 (GET /api/projects/{id}/timeline 真实响应条目;
+ * 键: id/seq/project_id/type/event_type/stage_id/agent_id/artifact_id/gate_id/
+ * message/status/payload/created_at — 验证于 2026-08-11)。
+ */
+export function sampleTimelineEvent(
+  overrides: Partial<TimelineEventSummary> = {},
+): TimelineEventSummary {
+  return {
+    id: 'evt-1',
+    seq: 1,
+    project_id: 'demo',
+    type: 'stage',
+    event_type: 'org.workflow.started',
+    stage_id: null,
+    agent_id: null,
+    artifact_id: null,
+    gate_id: null,
+    message: '工作流启动',
+    status: 'OK',
+    payload: { workflow_id: 'wf-1', project_id: 'demo', from_status: 'draft', to_status: 'active' },
+    created_at: '2026-08-11T00:00:00Z',
+    ...overrides,
+  };
+}
+
+/**
+ * Timeline 事件流 (5 类: user/stage/artifact/review/error; Agent Timeline 数据源)。
+ * 来源: 结构与 GET /api/projects/{id}/timeline 真实响应一致 (验证于 2026-08-11)。
+ */
+export function sampleTimelineEvents(): TimelineEventSummary[] {
+  return [
+    sampleTimelineEvent({
+      id: 'evt-1',
+      seq: 1,
+      type: 'user',
+      event_type: 'org.project.created',
+      message: '项目创建: Demo Project',
+    }),
+    sampleTimelineEvent({
+      id: 'evt-2',
+      seq: 2,
+      type: 'stage',
+      event_type: 'org.workflow.started',
+      message: '工作流启动',
+    }),
+    sampleTimelineEvent({
+      id: 'evt-3',
+      seq: 3,
+      type: 'stage',
+      event_type: 'org.workflow.stage_started',
+      stage_id: 'stage-design',
+      agent_id: 'designer',
+      message: '阶段开始 Design',
+    }),
+    sampleTimelineEvent({
+      id: 'evt-4',
+      seq: 4,
+      type: 'artifact',
+      event_type: 'org.artifact.created',
+      artifact_id: 'art-1',
+      message: '产物生成',
+    }),
+    sampleTimelineEvent({
+      id: 'evt-5',
+      seq: 5,
+      type: 'review',
+      event_type: 'org.approval.created',
+      gate_id: 'gate-1',
+      stage_id: 'stage-design',
+      message: '审批待处理',
+    }),
+  ];
+}
+
+/** GET /api/projects/{id}/backlog Epic/Feature/Story 条目 (org.management 契约)。 */
+export interface BacklogNodeItem {
+  id: string;
+  name: string;
+  description: string;
+  children: string[];
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+/** GET /api/projects/{id}/backlog Task 条目 (title 而非 name; priority/status 枚举)。 */
+export interface BacklogTaskItem {
+  id: string;
+  title: string;
+  description: string;
+  priority: string; // P0-P3
+  status: string; // todo|ready|in_progress|blocked|review|done
+  assignee: string;
+  dependency: string[];
+  created_at: string | null;
+  updated_at: string | null;
+  history: Array<{ time: string; actor: string; action: string; result: string }>;
+}
+
+/** GET /api/projects/{id}/backlog 响应 (四分组; 失败安全空态)。 */
+export interface BacklogResponse {
+  project_id: string;
+  epics: BacklogNodeItem[];
+  features: BacklogNodeItem[];
+  stories: BacklogNodeItem[];
+  tasks: BacklogTaskItem[];
+}
+
+/**
+ * Backlog 全量分组 (epics/features/stories/tasks; 层级引用: epic.children =
+ * Feature id, feature.children = Story id, story.children = Task id — 非包含)。
+ * 来源: 结构与 GET /api/projects/{id}/backlog 真实响应一致 (验证于 2026-08-11)。
+ */
+export function sampleBacklog(overrides: Partial<BacklogResponse> = {}): BacklogResponse {
+  return {
+    project_id: 'demo',
+    epics: [
+      {
+        id: 'epic-1',
+        name: '记账核心',
+        description: '核心记账闭环',
+        children: ['feat-1'],
+        created_at: '2026-08-11T00:00:00Z',
+        updated_at: '2026-08-11T00:00:00Z',
+      },
+    ],
+    features: [
+      {
+        id: 'feat-1',
+        name: '支出记录',
+        description: '快速记录一笔支出',
+        children: ['story-1'],
+        created_at: '2026-08-11T00:00:00Z',
+        updated_at: '2026-08-11T00:00:00Z',
+      },
+    ],
+    stories: [
+      {
+        id: 'story-1',
+        name: '记录支出',
+        description: '作为用户, 我想快速记录支出',
+        children: ['task-1'],
+        created_at: '2026-08-11T00:00:00Z',
+        updated_at: '2026-08-11T00:00:00Z',
+      },
+    ],
+    tasks: [
+      {
+        id: 'task-1',
+        title: '实现支出记录 API',
+        description: 'POST /api/transactions 新增支出记录',
+        priority: 'P1',
+        status: 'in_progress',
+        assignee: 'developer',
+        dependency: [],
+        created_at: '2026-08-11T00:00:00Z',
+        updated_at: '2026-08-11T00:00:00Z',
+        history: [
+          { time: '2026-08-11T00:05:00Z', actor: 'developer', action: 'started', result: 'ok' },
+        ],
+      },
+      {
+        id: 'task-2',
+        title: '月度分类统计',
+        description: 'GET /api/reports/monthly 分类聚合',
+        priority: 'P2',
+        status: 'todo',
+        assignee: '',
+        dependency: ['task-1'],
+        created_at: '2026-08-11T00:00:00Z',
+        updated_at: '2026-08-11T00:00:00Z',
+        history: [],
       },
     ],
     ...overrides,

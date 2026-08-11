@@ -748,6 +748,224 @@ export function sampleTimelineEvents(): TimelineEventSummary[] {
   ];
 }
 
+// ------------------------------------------------------------------ S10-015 Task 004: Workflow Instance fixtures
+// sampleWorkflowInstance: 真实 P-806fe6e8 ScorePocket 设计链实例 (is_mock=false),
+//   结构 = GET /api/projects/P-806fe6e8/workflow 实测 (2026-08-12 02:35):
+//   3 阶段 product(completed) → ux_ui(running) → design(blocked, depends_on ux_ui)。
+// sampleWorkflowInstanceMock: 演示流 (is_mock=true, 6 阶段 Product→Release) —
+//   结构 = 后端 mock fallback 契约 (MOCK_STAGE_CHAIN), 含 waiting_review + devops 角色。
+// sampleWorkflowTimeline: 7 条真实运行事件 (org.workflow.* + org.artifact.*)。
+
+/** 真实 P-806fe6e8 Workflow Instance (is_mock=false; 阶段含真实 artifact/依赖)。 */
+export function sampleWorkflowInstance(overrides: Partial<WorkflowDetail> = {}): WorkflowDetail {
+  const wfId = 'WF-P-806fe6e8-R1786473507972-DESIGN';
+  return {
+    id: wfId,
+    project_id: 'P-806fe6e8',
+    project_name: 'ScorePocket',
+    name: 'P-806fe6e8 设计链 (product→ux_ui→design) [R1786473507972]',
+    status: 'active',
+    failed_reason: '',
+    created_at: '2026-08-11T18:38:28.047043+00:00',
+    started_at: '2026-08-11T18:38:28.056279+00:00',
+    completed_at: null,
+    stages: [
+      {
+        id: 'STG-P-806fe6e8-R1786473507972-PRODUCT',
+        workflow_id: wfId,
+        role_id: 'product-manager',
+        name: 'product',
+        order: 1,
+        status: 'completed',
+        depends_on: [],
+        input_artifacts: ['P-806fe6e8-R1786473507972-IDEA'],
+        output_artifacts: ['P-806fe6e8-R1786473507972-PRODUCT'],
+        approval_required: false,
+        artifact: {
+          id: 'P-806fe6e8-R1786473507972-PRODUCT',
+          stage_id: 'STG-P-806fe6e8-R1786473507972-PRODUCT',
+          workflow_id: wfId,
+          project_id: 'P-806fe6e8',
+          type: 'product',
+          ref: 'file:///docs/product.json',
+          version: '1',
+          status: 'validated',
+          producer_role: 'product-manager',
+          producer_agent: '',
+          location: '',
+          created_at: '2026-08-11T18:39:03.117160+00:00',
+          updated_at: '2026-08-11T18:39:03.125611+00:00',
+        },
+        pending_approval: null,
+      },
+      {
+        id: 'STG-P-806fe6e8-R1786473507972-UXUI',
+        workflow_id: wfId,
+        role_id: 'ui-designer',
+        name: 'ux_ui',
+        order: 2,
+        status: 'running',
+        depends_on: ['STG-P-806fe6e8-R1786473507972-PRODUCT'],
+        input_artifacts: ['P-806fe6e8-R1786473507972-PRODUCT'],
+        output_artifacts: [],
+        approval_required: false,
+        artifact: null,
+        pending_approval: null,
+      },
+      {
+        id: 'STG-P-806fe6e8-R1786473507972-DESIGN',
+        workflow_id: wfId,
+        role_id: 'architect',
+        name: 'design',
+        order: 3,
+        status: 'blocked',
+        depends_on: ['STG-P-806fe6e8-R1786473507972-UXUI'],
+        input_artifacts: ['P-806fe6e8-R1786473507972-PRODUCT', 'P-806fe6e8-R1786473507972-UXUI'],
+        output_artifacts: [],
+        approval_required: false,
+        artifact: null,
+        pending_approval: null,
+      },
+    ],
+    pending_approvals: [],
+    template: ['Idea', 'PM', 'Product', 'UX/UI', 'Architecture', 'Development', 'Test', 'Release'],
+    is_mock: false,
+    ...overrides,
+  };
+}
+
+/** 演示流 (is_mock=true; 6 阶段链 Product→Release, 含 waiting_review + devops)。 */
+export function sampleWorkflowInstanceMock(overrides: Partial<WorkflowDetail> = {}): WorkflowDetail {
+  const wfId = 'mock-wf-markpad';
+  const stage = (
+    id: string,
+    roleId: string,
+    name: string,
+    order: number,
+    status: string,
+  ): StageSummary => ({
+    id,
+    workflow_id: wfId,
+    role_id: roleId,
+    name,
+    order,
+    status,
+    depends_on: [],
+    input_artifacts: [],
+    output_artifacts: [],
+    approval_required: false,
+    artifact: null,
+    pending_approval: null,
+  });
+  return {
+    id: wfId,
+    project_id: 'markpad',
+    project_name: 'MarkPad',
+    name: 'Mock Workflow (演示数据)',
+    status: 'active',
+    failed_reason: '',
+    created_at: '2026-08-11T17:52:06.202422+00:00',
+    started_at: '2026-08-11T17:52:06.202422+00:00',
+    completed_at: null,
+    stages: [
+      stage('mock-product-manager', 'product-manager', 'Product', 1, 'completed'),
+      stage('mock-ui-designer', 'ui-designer', 'UX/UI', 2, 'completed'),
+      stage('mock-architect', 'architect', 'Architecture', 3, 'waiting_review'),
+      stage('mock-developer', 'developer', 'Code', 4, 'pending'),
+      stage('mock-tester', 'tester', 'Test', 5, 'pending'),
+      stage('mock-devops', 'devops', 'Release', 6, 'pending'),
+    ],
+    pending_approvals: [],
+    template: ['Idea', 'PM', 'Product', 'UX/UI', 'Architecture', 'Development', 'Test', 'Release'],
+    is_mock: true,
+    ...overrides,
+  };
+}
+
+/** 真实运行事件 7 条 (org.workflow.* + org.artifact.*; GET /api/projects/{id}/timeline 实测形状)。 */
+export function sampleWorkflowTimeline(): TimelineEventSummary[] {
+  return [
+    sampleTimelineEvent({
+      id: 'evt-314',
+      seq: 314,
+      project_id: 'P-806fe6e8',
+      type: 'stage',
+      event_type: 'org.workflow.created',
+      message: '工作流创建 P-806fe6e8 设计链 (product→ux_ui→design) [R1786473507972]',
+      status: 'OK',
+      created_at: '2026-08-11T18:38:28.047411+00:00',
+    }),
+    sampleTimelineEvent({
+      id: 'evt-315',
+      seq: 315,
+      project_id: 'P-806fe6e8',
+      type: 'stage',
+      event_type: 'org.workflow.started',
+      message: '工作流启动 P-806fe6e8 设计链',
+      status: 'OK',
+      created_at: '2026-08-11T18:38:28.055702+00:00',
+    }),
+    sampleTimelineEvent({
+      id: 'evt-316',
+      seq: 316,
+      project_id: 'P-806fe6e8',
+      type: 'stage',
+      event_type: 'org.workflow.stage_ready',
+      stage_id: 'STG-P-806fe6e8-R1786473507972-PRODUCT',
+      agent_id: 'product-manager',
+      message: '阶段就绪 product',
+      status: 'ready',
+      created_at: '2026-08-11T18:38:28.055937+00:00',
+    }),
+    sampleTimelineEvent({
+      id: 'evt-317',
+      seq: 317,
+      project_id: 'P-806fe6e8',
+      type: 'stage',
+      event_type: 'org.workflow.stage_started',
+      stage_id: 'STG-P-806fe6e8-R1786473507972-PRODUCT',
+      agent_id: 'product-manager',
+      message: '阶段开始 product',
+      status: 'running',
+      created_at: '2026-08-11T18:38:28.056057+00:00',
+    }),
+    sampleTimelineEvent({
+      id: 'evt-318',
+      seq: 318,
+      project_id: 'P-806fe6e8',
+      type: 'artifact',
+      event_type: 'org.artifact.created',
+      stage_id: 'STG-P-806fe6e8-R1786473507972-PRODUCT',
+      artifact_id: 'P-806fe6e8-R1786473507972-IDEA',
+      message: '产物生成',
+      status: 'OK',
+      created_at: '2026-08-11T18:38:28.052090+00:00',
+    }),
+    sampleTimelineEvent({
+      id: 'evt-319',
+      seq: 319,
+      project_id: 'P-806fe6e8',
+      type: 'artifact',
+      event_type: 'org.artifact.updated',
+      artifact_id: 'P-806fe6e8-R1786473507972-IDEA',
+      message: '产物更新',
+      status: 'OK',
+      created_at: '2026-08-11T18:38:28.052632+00:00',
+    }),
+    sampleTimelineEvent({
+      id: 'evt-320',
+      seq: 320,
+      project_id: 'P-806fe6e8',
+      type: 'artifact',
+      event_type: 'org.artifact.validated',
+      artifact_id: 'P-806fe6e8-R1786473507972-IDEA',
+      message: '产物验证通过',
+      status: 'OK',
+      created_at: '2026-08-11T18:38:28.053128+00:00',
+    }),
+  ];
+}
+
 /** GET /api/projects/{id}/backlog Epic/Feature/Story 条目 (org.management 契约)。 */
 export interface BacklogNodeItem {
   id: string;

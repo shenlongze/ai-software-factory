@@ -17,7 +17,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 import { PROJECT_NAV_ITEMS } from '../components/af/AfProjectSidebar';
 import { AfProjectShell } from '../components/af/AfProjectShell';
-import { sampleProject, sampleTodoBacklog, stubFetch } from './fixtures';
+import { sampleProject, sampleTodoBacklog, sampleWorkflowInstance, sampleWorkflowTimeline, stubFetch } from './fixtures';
 
 function projectRoute(page = 'overview') {
   return { level: 'project' as const, page, projectId: 'demo' };
@@ -148,11 +148,26 @@ describe('AfProjectShell (AI OS 项目层壳)', () => {
     ['vision', 'Vision module loading — 开发中'],
     ['sprint', 'Sprint module loading — 开发中'],
     ['logs', 'Logs module loading — 开发中'],
-    ['workflow', 'Workflow module loading — 开发中'],
   ])('占位页 %s → AfModulePlaceholder (禁空白)', async (page, expectedText) => {
     stubFetch({ '/api/projects': [sampleProject({ id: 'demo' })] });
     render(<AfProjectShell route={projectRoute(page)} />);
     expect(await screen.findByTestId('af-module-placeholder')).toHaveTextContent(expectedText);
+  });
+
+  it('workflow 页 → 真实 Workflow Viewer (AfWorkflowPage, workflow+timeline 驱动)', async () => {
+    stubFetch({
+      '/api/projects': [sampleProject({ id: 'demo' })],
+      '/api/projects/demo/workflow': sampleWorkflowInstance(),
+      '/api/projects/demo/timeline?limit=200': sampleWorkflowTimeline(),
+    });
+    render(<AfProjectShell route={projectRoute('workflow')} />);
+    expect(await screen.findByTestId('af-workflow-viewer')).toBeInTheDocument();
+    // 真实流水线内容: 人话 Agent 名 + 阻塞原因 + 三层 (Instance/Template/Timeline)
+    expect(screen.getByText('产品经理 Agent')).toBeInTheDocument();
+    expect(screen.getByText('阻塞: 等待前置阶段完成: UI 设计师')).toBeInTheDocument();
+    expect(screen.getByTestId('af-wf-instance')).toBeInTheDocument();
+    expect(screen.getByTestId('af-wf-template')).toBeInTheDocument();
+    expect(screen.getByTestId('af-wf-timeline')).toBeInTheDocument();
   });
 
   it('todo 页 → 真实 Todo Tree (AfTodoTreePage, backlog 驱动)', async () => {

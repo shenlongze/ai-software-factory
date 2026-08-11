@@ -1148,3 +1148,259 @@
   color: #9ca3af;
   background: rgba(156, 163, 175, 0.14);
 }
+
+/* ============================================= Workflow Viewer (§4, Task 004) */
+/* S10-015 Task 004: Workflow Instance 可视化 — 运行流程/设计流程/历史 三层 + isMock 降级 */
+.af-workflow-viewer {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.af-wf-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px 16px;
+  background: #161a22;
+  border: 1px solid #2a3140;
+  border-radius: 12px;
+}
+
+.af-wf-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #e5e7eb;
+}
+
+/* isMock 降级警告 (演示数据 — 非真实执行, 禁冒充) */
+.af-wf-mock-badge {
+  font-size: 12px;
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.14);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  border-radius: 6px;
+  padding: 2px 8px;
+  line-height: 1.5;
+}
+
+/* 工作流级失败横幅 */
+.af-wf-failed {
+  font-size: 13px;
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  border-radius: 12px;
+  padding: 10px 16px;
+}
+
+.af-wf-section {
+  background: #161a22;
+  border: 1px solid #2a3140;
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+
+.af-wf-section-title {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #e5e7eb;
+}
+
+.af-wf-section-sub {
+  font-size: 11px;
+  font-weight: 400;
+  color: #6b7280;
+}
+
+/* ① 运行流程 (Instance): 阶段卡流水线 */
+.af-wf-pipeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.af-wf-stage-wrap {
+  display: flex;
+  flex-direction: column;
+}
+
+.af-wf-stage {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: #1d232e;
+  border: 1px solid #2a3140;
+  border-radius: 10px;
+}
+
+/* 状态语义: 完成绿 / 执行中蓝 / 待办灰 / 阻塞紫 / 失败红 / 待审核橙 */
+.af-wf-stage--completed {
+  border-left: 3px solid var(--af-status-completed, #22c55e);
+}
+
+.af-wf-stage--running {
+  border-left: 3px solid var(--af-status-running, #4c8dff);
+}
+
+.af-wf-stage--pending {
+  border-left: 3px solid var(--af-status-pending, #9ca3af);
+  opacity: 0.72;
+}
+
+.af-wf-stage--blocked {
+  border-left: 3px solid var(--af-status-blocked, #8b5cf6);
+}
+
+.af-wf-stage--failed {
+  border-left: 3px solid var(--af-status-failed, #ef4444);
+}
+
+.af-wf-stage--review {
+  border-left: 3px solid var(--af-status-review, #f59e0b);
+}
+
+/* 当前执行阶段高亮 (呼吸 — 回答"当前流程运行到哪里") */
+.af-wf-stage--active {
+  background: rgba(76, 141, 255, 0.08);
+  border-color: rgba(76, 141, 255, 0.5);
+  animation: af-breathe 1.2s ease-in-out infinite;
+}
+
+.af-wf-stage-order {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: #9ca3af;
+  background: #161a22;
+  border: 1px solid #2a3140;
+  border-radius: 50%;
+}
+
+.af-wf-stage-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+.af-wf-stage-name-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.af-wf-stage-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #e5e7eb;
+}
+
+.af-wf-stage-agent {
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.af-wf-stage-done {
+  font-size: 12px;
+  color: var(--af-status-completed, #22c55e);
+}
+
+.af-wf-stage-blocked {
+  font-size: 12px;
+  color: var(--af-status-blocked, #8b5cf6);
+}
+
+.af-wf-stage-task,
+.af-wf-stage-artifact {
+  font-size: 11px;
+  color: #6b7280;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 执行中呼吸点 (视觉辅助) */
+.af-wf-stage-pulse {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--af-status-running, #4c8dff);
+  animation: af-breathe 1.2s ease-in-out infinite;
+}
+
+/* 顺序箭头 ↓ */
+.af-wf-stage-arrow {
+  align-self: center;
+  color: #4c8dff;
+  font-size: 14px;
+  line-height: 1.2;
+  padding: 2px 0;
+}
+
+/* ② 设计流程 (Template): 折叠区 */
+.af-wf-template > summary {
+  cursor: pointer;
+  list-style: none;
+  margin-bottom: 0;
+}
+
+.af-wf-template > summary::-webkit-details-marker {
+  display: none;
+}
+
+.af-wf-template > summary::before {
+  content: '▸ ';
+  color: #4c8dff;
+}
+
+.af-wf-template[open] > summary::before {
+  content: '▾ ';
+}
+
+.af-wf-template-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #2a3140;
+}
+
+.af-wf-template-name {
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.af-wf-template-seq {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #e5e7eb;
+}
+
+.af-wf-template-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.af-wf-arrow {
+  color: #6b7280;
+}

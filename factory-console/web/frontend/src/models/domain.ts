@@ -127,18 +127,31 @@ export interface TodoTree {
 export interface WorkflowStage {
   order: number;
   name: string;
+  /** 后端角色 id (product-manager/ui-designer/…; 真实数据溯源, 缺失 → undefined)。 */
+  roleId?: string;
+  /** 人话 Agent 名 (ROLE_LABELS[role_id] ?? role_id; 缺失 → undefined)。 */
   agentName?: string;
   status: DomainStatus;
   statusLabel: string;
   currentTask?: string;
   duration?: number;
   artifact?: string;
+  /** 阻塞原因 (blocked 阶段: 前置阶段人话 / 后端 failed_reason; 缺失 → undefined)。 */
+  blockedReason?: string;
 }
 
-/** 流程流水线 (§6.1: 模板 + 阶段列表)。 */
+/** 流程流水线 (§6.1: 模板 + 阶段列表; S10-015 Task 004: 实例状态/is_mock 降级标记)。 */
 export interface WorkflowPipeline {
   templateId: string;
   templateName: string;
+  /** 实例状态 (workflow.status → DomainStatus; 缺失 → undefined)。 */
+  status?: DomainStatus;
+  /** mock 降级标记: 后端 is_mock=true → 演示数据 (前端必须显式标注, 不冒充真实执行)。 */
+  isMock?: boolean;
+  startedAt?: string;
+  completedAt?: string;
+  /** 工作流级失败原因 (后端 failed_reason; 缺失 → undefined)。 */
+  failedReason?: string;
   stages: WorkflowStage[];
 }
 

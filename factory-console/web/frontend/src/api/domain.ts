@@ -72,6 +72,7 @@ const STATUS_ALIASES: Record<string, DomainStatus> = {
   error: 'failed',
   errored: 'failed',
   review: 'review',
+  waiting_review: 'review',
   awaiting_approval: 'review',
   needs_approval: 'review',
 };
@@ -401,15 +402,22 @@ const ROLE_LABELS: Record<string, string> = {
   'full-stack-dev': '开发工程师',
   tester: '测试工程师',
   'qa-engineer': '测试工程师',
+  devops: '发布工程师',
 };
 
 /** 流水线阶段输入: WorkflowDetail.stages (StageSummary) 或 /workflows/{id}/stages (StageRunSummary)。 */
 type StageInput = StageSummary | StageRunSummary;
 
-/** GET /api/projects/{id}/workflow + stages → WorkflowPipeline。
+/** GET /api/projects/{id}/workflow + stages → WorkflowPipeline (S10-015 Task 004 增强)。
  *
- * 阶段: 名称/角色人话映射, pending_approval → review; 降级: 无 workflow →
- * templateName='未启动', stages=[] (§6.3 不崩溃)。
+ * 真实实例结构 (S10-015 §2.2 实测 + 用户 Task 004 约束):
+ *   - isMock: workflowDetail.is_mock 透传 (true → 前端降级标注"演示数据", 不冒充真实)
+ *   - status: workflow.status → DomainStatus (active→running/completed→completed/failed→failed)
+ *   - startedAt/completedAt: 实例起止时间 (缺失 → undefined)
+ *   - failedReason: workflow.failed_reason (工作流级失败原因, 缺失 → undefined)
+ *   - stages: 阶段映射 (名称/角色人话 Agent 名/5 状态映射含 waiting_review→review/
+ *     blocked 阶段 blockedReason = depends_on 前置阶段人话)
+ * 降级 (§6.3): 无 workflow → templateName='未启动', stages=[] (不崩溃)。
  */
 export function toWorkflowPipeline(
   project?: ProjectSummary | null,
@@ -419,39 +427,79 @@ export function toWorkflowPipeline(
   const source = project ?? ({} as ProjectSummary);
   const detail = workflowDetail ?? null;
   const stageInputs: StageInput[] = stages ?? detail?.stages ?? [];
+  // stageId → role_id 反向索引 (blockedReason 把 depends_on 阶段 id 翻译成人话前置阶段)
+  const roleByStageId = new Map<string, string>();
+  for (const s of stageInputs) {
+    if (s?.id != null && s.id.length > 0 && s.role_id != null && s.role_id.length > 0) {
+      roleByStageId.set(s.id, s.role_id);
+    }
+  }
+  const failedReason =
+    detail?.failed_reason != null && detail.failed_reason.length > 0
+      ? detail.failed_reason
+      : undefined;
   return {
     templateId: detail?.id ?? source.workflow_id ?? '',
     templateName: detail?.name ?? source.workflow_name ?? '未启动',
-    stages: stageInputs.map((s, index) => toWorkflowStage(s, index)),
+    isMock: detail?.is_mock ?? false,
+    status: toDomainStatus(detail?.status ?? source.workflow_status ?? null),
+    startedAt: detail?.started_at ?? undefined,
+    completedAt: detail?.completed_at ?? undefined,
+    ...(failedReason != null ? { failedReason } : {}),
+    stages: stageInputs.map((s, index) => toWorkflowStage(s, index, roleByStageId)),
   };
 }
 
-/** 单阶段映射 (order/名称/角色/状态/耗时/产物; 缺失 → 可选字段 undefined)。 */
-function toWorkflowStage(s: StageInput, index: number): WorkflowStage {
+/** 单阶段映射 (order/名称/角色/Agent/状态/耗时/产物; 缺失 → 可选字段 undefined)。 */
+function toWorkflowStage(
+  s: StageInput,
+  index: number,
+  roleByStageId: Map<string, string>,
+): WorkflowStage {
   const pendingApproval = (s as StageSummary).pending_approval;
   const status: DomainStatus =
     pendingApproval != null && pendingApproval.status === 'pending'
       ? 'review'
       : toDomainStatus(s.status);
   const roleId = s.role_id ?? '';
+  const blockedReason = blockedReasonOf(s, status, roleByStageId);
   return {
     order: s.order ?? index + 1,
     name: STAGE_NAME_LABELS[s.name] ?? s.name,
+    ...(roleId.length > 0 ? { roleId } : {}),
     agentName: agentNameOf(s, roleId),
     status,
     statusLabel: statusLabel(status),
+    ...(blockedReason != null ? { blockedReason } : {}),
     currentTask: currentTaskOf(s),
     duration: (s as StageRunSummary).duration_s ?? undefined,
     artifact: artifactRefOf(s),
   };
 }
 
-/** agent 名: StageRunSummary.agent_id 优先 (原样), 否则 role_id → 人话 (未知原样)。 */
+/** agent 名: agent_id/role_id → ROLE_LABELS 人话 (未知原样; org 角色即执行者, agent_id=role_id)。 */
 function agentNameOf(s: StageInput, roleId: string): string | undefined {
   const agentId = (s as StageRunSummary).agent_id;
-  if (agentId != null && agentId.length > 0) return agentId;
-  if (roleId == null || roleId.length === 0) return undefined;
-  return ROLE_LABELS[roleId] ?? roleId;
+  const rawId = agentId != null && agentId.length > 0 ? agentId : roleId;
+  if (rawId == null || rawId.length === 0) return undefined;
+  return ROLE_LABELS[rawId] ?? rawId;
+}
+
+/** 阻塞原因: blocked 阶段 depends_on 前置阶段 id → 人话角色 (无依赖 → 通用, 不臆造)。 */
+function blockedReasonOf(
+  s: StageInput,
+  status: DomainStatus,
+  roleByStageId: Map<string, string>,
+): string | undefined {
+  if (status !== 'blocked') return undefined;
+  const dependsOn = (s as StageSummary).depends_on ?? [];
+  const labels = dependsOn
+    .map((id) => roleByStageId.get(id))
+    .filter((r): r is string => r != null && r.length > 0)
+    .map((roleId) => ROLE_LABELS[roleId] ?? roleId);
+  if (labels.length > 0) return `等待前置阶段完成: ${labels.join('、')}`;
+  if (dependsOn.length > 0) return '等待前置阶段完成';
+  return '依赖未就绪';
 }
 
 /** 当前任务: 阶段产物 type 人话 (无 → undefined, 诚实降级)。 */

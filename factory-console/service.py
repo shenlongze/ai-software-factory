@@ -472,7 +472,14 @@ class ConsoleService:
             logger = self._org_logger()
             project_id = new_id("P")
             now = utcnow()
-            name = f"unnamed-project-{now.strftime('%Y%m%d-%H%M%S')}"
+            # R1 修复 (S10-009 GATE-PASS R1): 秒级时间戳 + 项目 id 片段 —
+            # 同秒连续创建 draft 时 name/slug 不再碰撞 (ensure_space 幂等
+            # 已存在不覆盖 → 旧实现第二个 draft get_slug 永久 None →
+            # complete/confirm 404 无恢复路径; 现 slug 含 id 后 8 位唯一)。
+            name = (
+                f"unnamed-project-{now.strftime('%Y%m%d-%H%M%S')}"
+                f"-{project_id[2:]}"
+            )
             project = Project(
                 id=project_id,
                 name=name,

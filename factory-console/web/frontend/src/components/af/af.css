@@ -1654,3 +1654,270 @@
   font-weight: 600;
   color: #e5e7eb;
 }
+
+/* ============================================================ S10-015 Task 006: Dashboard (Control Center)
+ * AI 软件公司控制中心 — 6 模块网格 (Active Projects / Running AI Employees / Workflow Status /
+ * Blocked Tasks / Recent Runtime Events / Quality Summary)。深色 AI OS 风格, 与既有 af-* 组件一致。 */
+
+.af-dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.af-dashboard-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.af-dashboard-sub {
+  margin: 0;
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.af-dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+@media (max-width: 1100px) {
+  .af-dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.af-dash-module {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  background: #1a1d24;
+  border: 1px solid #2b303b;
+  border-radius: 10px;
+  min-width: 0;
+}
+
+.af-dash-module-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #e5e7eb;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.af-dash-module-sub {
+  font-size: 11px;
+  font-weight: 400;
+  color: #6b7280;
+}
+
+/* 诚实空态 (模块级, 不用 AfEmptyState 避免与全局空态 testid 冲突) */
+.af-dash-empty {
+  padding: 14px 12px;
+  border: 1px dashed #2b303b;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #9ca3af;
+  text-align: center;
+}
+
+/* ② Running AI Employees */
+.af-dash-agent-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.af-dash-agent {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: #14161c;
+  border: 1px solid #2b303b;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #e5e7eb;
+}
+
+.af-dash-agent-name {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.af-dash-agent-task,
+.af-dash-agent-stage {
+  color: #9ca3af;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ③ Workflow Status */
+.af-dash-wf-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.af-dash-wf-item {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  background: #14161c;
+  border: 1px solid #2b303b;
+  border-radius: 8px;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+.af-dash-wf-item:hover {
+  border-color: #4c8dff;
+}
+
+.af-dash-wf-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.af-dash-wf-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e5e7eb;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.af-dash-wf-stage {
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.af-dash-wf-chain {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.af-dash-wf-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: #1a1d24;
+  border: 1px solid #2b303b;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #e5e7eb;
+}
+
+.af-dash-wf-step--active {
+  border-color: #4c8dff;
+  animation: af-pulse 1.6s ease-in-out infinite;
+}
+
+.af-dash-wf-arrow {
+  color: #4b5563;
+  margin-right: -2px;
+}
+
+.af-dash-wf-step-name {
+  font-weight: 500;
+}
+
+/* ④ Blocked Tasks */
+.af-dash-blocked-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.af-dash-blocked-item {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  background: #14161c;
+  border: 1px solid #2b303b;
+  border-radius: 8px;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+.af-dash-blocked-item:hover {
+  border-color: #b98cff;
+}
+
+.af-dash-blocked-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e5e7eb;
+}
+
+.af-dash-blocked-reason,
+.af-dash-blocked-owner,
+.af-dash-blocked-next {
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+/* ⑥ Quality Summary */
+.af-dash-quality {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.af-dash-quality-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  background: #14161c;
+  border: 1px solid #2b303b;
+  border-radius: 8px;
+}
+
+.af-dash-quality-row dt {
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.af-dash-quality-row dd {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #e5e7eb;
+  text-align: right;
+  overflow-wrap: anywhere;
+}

@@ -1173,3 +1173,239 @@ export function sampleBacklog(overrides: Partial<BacklogResponse> = {}): Backlog
     ...overrides,
   };
 }
+
+// ------------------------------------------------------------------ S10-015 Task 006: Dashboard 真实环境 fixtures
+// sampleDashboardReal: GET /api/dashboard 七域 (2026-08-12 实测环境: 2 项目 [markpad +
+//   P-806fe6e8] + 3 Agent AVAILABLE + 1 pending 审批 [APR-001 prd] + 2 decisions +
+//   cost {0.0, 8 calls, 12.5%} + experience + activity [] 诚实空态)。
+// 注意: 不注册 FIXTURE_SOURCES (fixtures-structure.test.ts 防标注漂移 — 仅覆盖既有 KNOWN_FIXTURES)。
+
+/** 真实 markpad 项目 (status=active, 无 workflow, stage_counts 空; /api/projects 实测 2026-08-11)。 */
+export function sampleProjectMarkpad(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
+  return {
+    id: 'markpad',
+    name: 'markpad',
+    description: 'MarkPad — 跨平台 Markdown 编辑器 (Flutter/Dart, Typora-like)',
+    language: 'dart',
+    repository: '/Users/Shared/work/markpad',
+    tech_stack: ['flutter', 'dart'],
+    status: 'active',
+    lifecycle_stage: null,
+    lifecycle_status: null,
+    pending_approvals: 0,
+    tasks: {},
+    last_activity: null,
+    workflow_id: null,
+    workflow_name: null,
+    workflow_status: null,
+    current_stage: null,
+    current_stage_status: null,
+    progress: 0,
+    stage_counts: {},
+    ...overrides,
+  };
+}
+
+/** 真实 P-806fe6e8 项目 (idea, workflow failed, current_stage development; /api/projects 实测)。 */
+export function sampleProjectP806(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
+  return {
+    id: 'P-806fe6e8',
+    name: 'ScorePocket',
+    description: '台球计分 App',
+    language: 'dart',
+    repository: '',
+    tech_stack: ['flutter'],
+    status: 'idea',
+    lifecycle_stage: null,
+    lifecycle_status: null,
+    pending_approvals: 1,
+    tasks: {},
+    last_activity: null,
+    workflow_id: 'WF-P-806fe6e8-R1786473507972-DEV',
+    workflow_name: 'P-806fe6e8 开发链 (development→testing→release)',
+    workflow_status: 'failed',
+    current_stage: 'development',
+    current_stage_status: 'failed',
+    progress: 0,
+    stage_counts: { failed: 1 },
+    ...overrides,
+  };
+}
+
+/** 真实 3 Agent (backend-1/flutter-dev/tester-1, 均 AVAILABLE, current_task null; dashboard.agents 实测)。 */
+export function sampleAgentsAvailable(): AgentSummary[] {
+  return [
+    {
+      id: 'backend-1',
+      name: 'backend-1',
+      role: 'backend-dev',
+      status: 'AVAILABLE',
+      skills: ['python', 'fastapi'],
+      current_task: null,
+    },
+    {
+      id: 'flutter-dev',
+      name: 'flutter-dev',
+      role: 'frontend-dev',
+      status: 'AVAILABLE',
+      skills: ['flutter', 'dart'],
+      current_task: null,
+    },
+    {
+      id: 'tester-1',
+      name: 'tester-1',
+      role: 'tester',
+      status: 'AVAILABLE',
+      skills: ['pytest'],
+      current_task: null,
+    },
+  ];
+}
+
+/** 真实 dashboard 七域: 2 项目 + 1 pending 审批 + 3 AVAILABLE Agent + 2 decisions + cost + experience + activity []。 */
+export function sampleDashboardReal(overrides: Partial<ConsoleDashboard> = {}): ConsoleDashboard {
+  return {
+    projects: [sampleProjectMarkpad(), sampleProjectP806()],
+    approvals: [
+      sampleApproval({
+        id: 'APR-001',
+        artifact_id: 'art-prd-1',
+        artifact_type: 'product',
+        gate: 'prd',
+        status: 'pending',
+        confidence: 0.72,
+        risk: 'medium',
+        idea_id: 'P-806fe6e8',
+        by: 'planner',
+        requested_at: '2026-08-12T03:00:00Z',
+      }),
+    ],
+    agents: sampleAgentsAvailable(),
+    decisions: [sampleDecision(), sampleDecision({ id: 'dec-2', decision_type: 'tech' })],
+    cost: {
+      total_cost: 0.0,
+      calls: 8,
+      success_rate: 0.125,
+      avg_cost: 0.0,
+      total_tokens: 0,
+      by_provider: {},
+    },
+    experience: {
+      total: 2,
+      by_domain: { flutter: 2 },
+      success_rate: 0.5,
+      avg_score: 0.8,
+      avg_confidence: 0.9,
+    },
+    activity: [],
+    ...overrides,
+  };
+}
+
+/** 真实 P-806fe6e8 backlog (3 todo Task; /api/projects/P-806fe6e8/backlog 实测 2026-08-12)。 */
+export function sampleBacklogP806(overrides: Partial<BacklogResponse> = {}): BacklogResponse {
+  return {
+    project_id: 'P-806fe6e8',
+    epics: [
+      {
+        id: 'EPIC-6ffd3c02',
+        name: '计分核心',
+        description: '台球计分',
+        children: [],
+        created_at: '2026-08-11T17:49:45.602701Z',
+        updated_at: '2026-08-11T17:49:45.602701Z',
+      },
+      {
+        id: 'EPIC-89bcd292',
+        name: 'UI 界面',
+        description: 'Flutter 界面',
+        children: [],
+        created_at: '2026-08-11T17:49:45.602701Z',
+        updated_at: '2026-08-11T17:49:45.602701Z',
+      },
+      {
+        id: 'EPIC-c6cac2d8',
+        name: '计分核心',
+        description: '台球计分核心功能',
+        children: ['FEAT-39a91953', 'FEAT-f6d9c303'],
+        created_at: '2026-08-11T17:49:45.602701Z',
+        updated_at: '2026-08-11T17:49:45.602701Z',
+      },
+    ],
+    features: [
+      {
+        id: 'FEAT-39a91953',
+        name: '用户系统',
+        description: '注册登录',
+        children: ['STORY-9f928023'],
+        created_at: '2026-08-11T17:49:45.602701Z',
+        updated_at: '2026-08-11T17:49:45.602701Z',
+      },
+      {
+        id: 'FEAT-f6d9c303',
+        name: '比赛管理',
+        description: '创建比赛/计分',
+        children: ['STORY-317aed7b'],
+        created_at: '2026-08-11T17:49:45.602701Z',
+        updated_at: '2026-08-11T17:49:45.602701Z',
+      },
+    ],
+    stories: [
+      {
+        id: 'STORY-9f928023',
+        name: '用户注册',
+        description: '手机号注册',
+        children: ['TASK-a8a01f8d', 'TASK-e10a6043'],
+        created_at: '2026-08-11T17:49:45.602701Z',
+        updated_at: '2026-08-11T17:49:45.602701Z',
+      },
+      {
+        id: 'STORY-317aed7b',
+        name: '创建比赛',
+        description: '新比赛',
+        children: ['TASK-425bf30b'],
+        created_at: '2026-08-11T17:49:45.602701Z',
+        updated_at: '2026-08-11T17:49:45.602701Z',
+      },
+    ],
+    tasks: [
+      {
+        id: 'TASK-425bf30b',
+        title: '计分逻辑',
+        description: '实时计分',
+        priority: 'P0',
+        status: 'todo',
+        assignee: '',
+        dependency: [],
+        created_at: '2026-08-11T17:49:45.602701Z',
+        updated_at: '2026-08-11T17:49:45.602701Z',
+        history: [],
+      },
+      {
+        id: 'TASK-a8a01f8d',
+        title: '实现注册 API',
+        description: 'POST /api/register',
+        priority: 'P1',
+        status: 'todo',
+        assignee: '',
+        dependency: [],
+        created_at: '2026-08-11T17:49:45.602701Z',
+        updated_at: '2026-08-11T17:49:45.602701Z',
+        history: [],
+      },
+      {
+        id: 'TASK-e10a6043',
+        title: '实现登录 API',
+        description: 'POST /api/login JWT',
+        priority: 'P1',
+        status: 'todo',
+        assignee: '',
+        dependency: [],
+        created_at: '2026-08-11T17:49:45.602701Z',
+        updated_at: '2026-08-11T17:49:45.602701Z',
+        history: [],
+      },
+    ],
+    ...overrides,
+  };
+}

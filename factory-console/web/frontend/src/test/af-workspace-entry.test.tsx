@@ -74,9 +74,9 @@ describe('AfWorkspaceEntry (AI Factory 工作台真实入口)', () => {
     // lifecycle 人话标签: lifecycle_stage → 开发; 缺失 → status (想法)
     expect(screen.getByText('开发')).toBeInTheDocument();
     expect(screen.getByText('想法')).toBeInTheDocument();
-    // workflow 状态 + 当前阶段
-    expect(screen.getByText('执行中')).toBeInTheDocument();
-    expect(screen.getByText(/design/)).toBeInTheDocument();
+    // workflow 状态 + 当前阶段 (可能多处"执行中": lifecycle + workflow + stage_counts)
+    expect(screen.getAllByText('执行中').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText(/design/).length).toBeGreaterThanOrEqual(1);
     // progress 百分比
     expect(screen.getByText('66%')).toBeInTheDocument();
     // stage_counts 芯片 (STATUS_LABELS: completed→已完成, running→执行中)

@@ -21,6 +21,7 @@ import { api } from '../../api/client';
 import { useAsync } from '../../hooks/useAsync';
 import type { ParsedRoute } from '../../router';
 import { AfProjectCard } from './AfProjectCard';
+import { AfDashboard } from './AfDashboard';
 import { AfEmptyState, AfErrorState, AfLoadingState } from './AfState';
 import { AfModulePlaceholder } from './AfModulePlaceholder';
 import { AfHeader } from './AfHeader';
@@ -89,9 +90,13 @@ function AfProjectListView(): JSX.Element {
   );
 }
 
-/** Main 页面分发: dashboard/projects → 真实列表; 其余 5 页 → AfModulePlaceholder (禁空白)。 */
+/** Main 页面分发 (S10-015 Task 006): dashboard → Control Center (AfDashboard 6 模块);
+ * projects → 项目列表 (保留); 其余 5 页 → AfModulePlaceholder (禁空白)。 */
 function WorkspacePage({ route }: { route: ParsedRoute }): JSX.Element {
-  if (route.page === 'dashboard' || route.page === 'projects') {
+  if (route.page === 'dashboard') {
+    return <AfDashboard />;
+  }
+  if (route.page === 'projects') {
     return <AfProjectListView />;
   }
   const navItem = WORKSPACE_NAV_ITEMS.find((item) => item.page === route.page);

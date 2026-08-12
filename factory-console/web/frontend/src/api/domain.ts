@@ -23,9 +23,12 @@ import type {
   BacklogResponse,
   BacklogStory,
   BacklogTask,
+  BlockedTask,
+  DashboardViewModel,
   DomainStatus,
   ProjectLifecycleStage,
   RuntimeActivity,
+  RunningAgent,
   TaskDetail,
   TodoTree,
   TreeNode,
@@ -33,12 +36,18 @@ import type {
   WorkflowPipeline,
   WorkflowStage,
   WorkspaceProject,
+  WorkflowStatusItem,
 } from '../models/domain';
 import {
   artifactTypeLabel,
+  type ApprovalSummary,
+  type ConsoleDashboard,
+  type CostSummary,
+  type ExperienceSummaryModel,
   type ProjectSummary,
   type StageRunSummary,
   type StageSummary,
+  type TimelineEventSummary,
   type WorkflowDetail,
 } from '../models/types';
 
@@ -55,6 +64,7 @@ const STATUS_ALIASES: Record<string, DomainStatus> = {
   passed: 'completed',
   running: 'running',
   active: 'running',
+  executing: 'running',
   in_progress: 'running',
   working: 'running',
   started: 'running',
@@ -845,4 +855,240 @@ export function toAgentSummary(agentRaw?: AgentSummaryInput | null): DomainAgent
     ...(typeof a.success_rate === 'number' ? { successRate: a.success_rate } : {}),
     ...(typeof a.avg_duration === 'number' ? { avgDuration: a.avg_duration } : {}),
   };
+}
+
+// ------------------------------------------------------------------ toDashboardViewModel (S10-015 Task 006)
+
+/**
+ * Dashboard 聚合附加输入 (每项目真实数据; 缺失 → 降级, 不崩溃)。
+ * 页面数据流 (AfDashboard): api.dashboard() + 每项目 projectWorkflow / projectTimeline /
+ * fetchProjectBacklog → DashboardExtras (Promise.allSettled, 单项目失败 → null)。
+ */
+export interface DashboardExtras {
+  /** projectId → workflow 实例 (GET /api/projects/{id}/workflow; 缺失 → null)。 */
+  workflows?: Record<string, WorkflowDetail | null | undefined> | null;
+  /** projectId → timeline 事件 (GET /api/projects/{id}/timeline; 缺失 → null)。 */
+  timelines?: Record<string, TimelineEventSummary[] | null | undefined> | null;
+  /** projectId → backlog (GET /api/projects/{id}/backlog; 缺失 → null)。 */
+  backlogs?: Record<string, BacklogResponse | null | undefined> | null;
+}
+
+/** 最近活动条数上限 (Recent Runtime Events 模块)。 */
+export const RECENT_EVENTS_LIMIT = 10;
+
+/** 审批门 gate → 人话 (未知 → 原样)。 */
+const GATE_LABELS: Record<string, string> = {
+  prd: 'PRD',
+  product: 'PRD',
+  design: '设计',
+  ux_ui: 'UX/UI',
+  ui: 'UX/UI',
+  architecture: '架构',
+  code: '代码',
+  test: '测试',
+  release: '发布',
+};
+
+/** 时间戳排序键 (ISO → epoch; 非法 → 0, 不崩溃)。 */
+function timeKey(time: string): number {
+  const t = Date.parse(time);
+  return Number.isNaN(t) ? 0 : t;
+}
+
+/** 比率 (0..1) → 百分比人话 ('13%'; 非法 → '0%')。 */
+function percentLabel(rate: number | null | undefined): string {
+  const raw = Number(rate ?? 0);
+  if (!Number.isFinite(raw)) return '0%';
+  return `${Math.round(raw * 100)}%`;
+}
+
+/**
+ * Dashboard 视图模型聚合 (S10-015 Task 006 — AI 软件公司 Control Center 数据源)。
+ *
+ * 输入: GET /api/dashboard 七域 + 每项目 workflow/timeline/backlog (DashboardExtras)。
+ * 输出: DashboardViewModel 6 域 (UI 不直接依赖 API DTO — Adapter Layer):
+ *   - projects:       dashboard.projects → toWorkspaceProject (复用, 无 → [])
+ *   - runningAgents:  agents toDomainStatus=running (RUNNING/EXECUTING/WORKING/ACTIVE…)
+ *                     → {agentName, currentTask, workflowStage, status}; workflowStage =
+ *                     运行中阶段 role 匹配人话名 (无 → null, 不编造); 无 → []
+ *   - workflowStatus: 有真实 workflow 实例的项目 → 阶段链 (toWorkflowPipeline 复用,
+ *                     status 从实例; currentStage = project.current_stage);
+ *                     无实例项目不编造 (其 workflow 状态已由项目卡展示); 无 → []
+ *   - blockedTasks:   backlog tasks status=blocked → {taskName, reason (dependency
+ *                     依赖任务标题), ownerAgent (assignee→ROLE_LABELS 人话), nextAction,
+ *                     projectId}; 无 → []
+ *   - recentEvents:   每项目 timeline + dashboard activity → toRuntimeActivity 合并,
+ *                     按时间倒序, 上限 RECENT_EVENTS_LIMIT; 无 → []
+ *   - qualitySummary: cost.calls>0 → tests; approvals pending → qualityGate;
+ *                     experience.total>0 → buildStatus; 无数据 → undefined (UI Unavailable)
+ * 降级 (§6.3): 任何输入缺失/非法 → 空数组/undefined, 不崩溃; 全部纯函数无副作用。
+ */
+export function toDashboardViewModel(
+  dashboard?: ConsoleDashboard | null,
+  extras?: DashboardExtras | null,
+): DashboardViewModel {
+  const dash = dashboard ?? null;
+  const projects = dash?.projects ?? [];
+  const workflows = extras?.workflows ?? {};
+  const runningStages = collectRunningStages(projects, workflows);
+
+  return {
+    projects: projects.map(toWorkspaceProject),
+    runningAgents: (dash?.agents ?? [])
+      .filter((a) => toDomainStatus(a?.status ?? null) === 'running')
+      .map((a) => toRunningAgent(a, runningStages)),
+    workflowStatus: workflowStatusItems(projects, workflows),
+    blockedTasks: collectBlockedTasks(projects, backlogsOf(extras)),
+    recentEvents: collectRecentEvents(projects, timelinesOf(extras), dash?.activity),
+    qualitySummary: {
+      tests: qualityTests(dash?.cost),
+      qualityGate: qualityGate(dash?.approvals),
+      buildStatus: qualityBuild(dash?.experience),
+    },
+  };
+}
+
+function backlogsOf(extras: DashboardExtras | null | undefined) {
+  return extras?.backlogs ?? {};
+}
+
+function timelinesOf(extras: DashboardExtras | null | undefined) {
+  return extras?.timelines ?? {};
+}
+
+/** 单 Agent → RunningAgent (缺失字段诚实降级; workflowStage 从运行中阶段 role 匹配)。 */
+function toRunningAgent(
+  a: ConsoleDashboard['agents'][number] | null | undefined,
+  runningStages: Map<string, string>,
+): RunningAgent {
+  return {
+    agentName: a?.name ?? a?.id ?? '',
+    currentTask:
+      a?.current_task != null && a.current_task.length > 0 ? a.current_task : null,
+    workflowStage: runningStages.get(a?.role ?? '') ?? null,
+    status: 'running',
+  };
+}
+
+/** 运行中阶段索引: role_id → 阶段人话名 (只取真实 running 阶段; 无 → 空 Map)。 */
+function collectRunningStages(
+  projects: ProjectSummary[],
+  workflows: Record<string, WorkflowDetail | null | undefined>,
+): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const project of projects) {
+    for (const stage of workflows[project.id]?.stages ?? []) {
+      if (toDomainStatus(stage?.status ?? null) !== 'running') continue;
+      const role = stage?.role_id;
+      if (role == null || role.length === 0) continue;
+      const label = STAGE_NAME_LABELS[stage.name] ?? stage.name;
+      if (!map.has(role)) map.set(role, label);
+    }
+  }
+  return map;
+}
+
+/** workflowStatus: 有真实 workflow 实例的项目 → 阶段链 (无实例 → 不编造)。 */
+function workflowStatusItems(
+  projects: ProjectSummary[],
+  workflows: Record<string, WorkflowDetail | null | undefined>,
+): WorkflowStatusItem[] {
+  const items: WorkflowStatusItem[] = [];
+  for (const project of projects) {
+    const detail = workflows[project.id];
+    if (detail == null) continue;
+    const pipeline = toWorkflowPipeline(project, detail);
+    const status = pipeline.status ?? 'pending';
+    items.push({
+      projectId: project.id,
+      projectName: project.name ?? '',
+      status,
+      statusLabel: statusLabel(status),
+      ...(project.current_stage != null && project.current_stage.length > 0
+        ? { currentStage: project.current_stage }
+        : {}),
+      stages: pipeline.stages,
+    });
+  }
+  return items;
+}
+
+/** blockedTasks: 各项目 backlog blocked Task → 任务名/原因/负责人/下一步 (无 → [])。 */
+function collectBlockedTasks(
+  projects: ProjectSummary[],
+  backlogs: Record<string, BacklogResponse | null | undefined>,
+): BlockedTask[] {
+  const tasks: BlockedTask[] = [];
+  for (const project of projects) {
+    const backlog = backlogs[project.id];
+    if (backlog == null) continue;
+    const taskIndex = buildIndex(backlog.tasks);
+    for (const task of backlog.tasks ?? []) {
+      if (toDomainStatus(task?.status ?? null) !== 'blocked') continue;
+      const depTitles = (task?.dependency ?? [])
+        .map((id) => taskIndex.get(id)?.title)
+        .filter((t): t is string => t != null && t.length > 0);
+      tasks.push({
+        taskName: task?.title ?? '',
+        ...(depTitles.length > 0 ? { reason: `等待: ${depTitles.join('、')}` } : {}),
+        ...(task?.assignee != null && task.assignee.length > 0
+          ? { ownerAgent: ROLE_LABELS[task.assignee] ?? task.assignee }
+          : {}),
+        nextAction: deriveNextAction('blocked') ?? '解除阻塞后继续执行',
+        projectId: project.id,
+      });
+    }
+  }
+  return tasks;
+}
+
+/** recentEvents: timeline + activity 合并 → RuntimeActivity, 时间倒序, 上限 N (无 → [])。 */
+function collectRecentEvents(
+  projects: ProjectSummary[],
+  timelines: Record<string, TimelineEventSummary[] | null | undefined>,
+  activity: ConsoleDashboard['activity'] | null | undefined,
+): RuntimeActivity[] {
+  const all: RuntimeActivity[] = [];
+  for (const project of projects) {
+    const events = timelines[project.id];
+    if (!Array.isArray(events) || events.length === 0) continue;
+    all.push(...toRuntimeActivity(events, project.name));
+  }
+  if (Array.isArray(activity) && activity.length > 0) {
+    all.push(...toRuntimeActivity(activity));
+  }
+  return all
+    .sort((a, b) => timeKey(b.time) - timeKey(a.time))
+    .slice(0, RECENT_EVENTS_LIMIT);
+}
+
+/** qualitySummary.tests: cost.calls > 0 → '执行 N 次 · 成功率 P%' (无数据 → undefined)。 */
+function qualityTests(cost: CostSummary | null | undefined): string | undefined {
+  if (cost == null) return undefined;
+  const calls = toNonNegativeInt(cost.calls);
+  if (calls === 0) return undefined;
+  return `执行 ${calls} 次 · 成功率 ${percentLabel(cost.success_rate)}`;
+}
+
+/** qualitySummary.qualityGate: pending 审批门 → '待审批 N 项 (gate 人话)' (无 → undefined)。 */
+function qualityGate(approvals: ApprovalSummary[] | null | undefined): string | undefined {
+  if (!Array.isArray(approvals)) return undefined;
+  const pending = approvals.filter((a) => toDomainStatus(a?.status ?? null) === 'pending');
+  if (pending.length === 0) return undefined;
+  const gates = pending
+    .map((a) => a?.gate)
+    .filter((g): g is string => g != null && g.length > 0)
+    .map((g) => GATE_LABELS[g] ?? g);
+  const suffix = gates.length > 0 ? ` (${gates.join('、')})` : '';
+  return `待审批 ${pending.length} 项${suffix}`;
+}
+
+/** qualitySummary.buildStatus: experience.total > 0 → '经验 N 条 · 成功率 P%' (无 → undefined)。 */
+function qualityBuild(
+  experience: ExperienceSummaryModel | null | undefined,
+): string | undefined {
+  if (experience == null) return undefined;
+  const total = toNonNegativeInt(experience.total);
+  if (total === 0) return undefined;
+  return `经验 ${total} 条 · 成功率 ${percentLabel(experience.success_rate)}`;
 }

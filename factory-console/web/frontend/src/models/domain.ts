@@ -219,3 +219,66 @@ export interface AgentSummary {
   successRate?: number;
   avgDuration?: number;
 }
+
+// ------------------------------------------------------------------ Dashboard 视图模型 (S10-015 Task 006)
+
+/** 执行中 AI 员工 (Dashboard 模块②: 名称/当前任务/所属工作流阶段/状态)。 */
+export interface RunningAgent {
+  agentName: string;
+  /** 当前任务 (backend current_task; 无 → null 诚实)。 */
+  currentTask: string | null;
+  /** 所属 Workflow 阶段 (从运行中阶段 role 匹配人话名; 无 → null, 不编造)。 */
+  workflowStage: string | null;
+  status: DomainStatus;
+}
+
+/** 阻塞任务 (Dashboard 模块④: 任务名/原因/负责人/下一步; projectId 供跳转)。 */
+export interface BlockedTask {
+  taskName: string;
+  /** 阻塞原因 (dependency 依赖任务标题翻译; 无 → undefined → UI '—' 诚实)。 */
+  reason?: string;
+  /** 负责人 Agent 人话名 (assignee → ROLE_LABELS; 无 → undefined)。 */
+  ownerAgent?: string;
+  /** 下一步动作 (从真实 status 派生: 解除阻塞后继续执行)。 */
+  nextAction: string;
+  /** 所属项目 id (点击 → #/project/{id}/todo; 无 → undefined)。 */
+  projectId?: string;
+}
+
+/** 工作流状态项 (Dashboard 模块③: 项目 + 真实实例阶段链 + 当前阶段)。 */
+export interface WorkflowStatusItem {
+  projectId: string;
+  projectName: string;
+  status: DomainStatus;
+  statusLabel: string;
+  /** 当前阶段 (project.current_stage 真实值; 缺失 → undefined)。 */
+  currentStage?: string;
+  /** 阶段链 (workflow 实例 stages → WorkflowStage; 无实例 → [])。 */
+  stages: WorkflowStage[];
+}
+
+/** 质量摘要 (Dashboard 模块⑥: 执行质量/审批门/构建经验; 无数据 → undefined → UI Unavailable)。 */
+export interface QualitySummary {
+  /** 执行质量: cost.calls + success_rate (无 → undefined)。 */
+  tests?: string;
+  /** 审批门: approvals pending (无 → undefined)。 */
+  qualityGate?: string;
+  /** 构建/经验: experience.total + success_rate (无 → undefined)。 */
+  buildStatus?: string;
+}
+
+/** Dashboard 视图模型 (Control Center — 6 模块数据源; 全部真实聚合, 缺失 → 空/Unavailable)。 */
+export interface DashboardViewModel {
+  /** 我的项目 (复用 toWorkspaceProject; 无 → [])。 */
+  projects: WorkspaceProject[];
+  /** 当前执行 AI 员工 (agents status=RUNNING/EXECUTING…; 无 → [])。 */
+  runningAgents: RunningAgent[];
+  /** 工作流状态 (有真实 workflow 实例的项目; 无 → [])。 */
+  workflowStatus: WorkflowStatusItem[];
+  /** 阻塞任务 (backlog status=blocked; 无 → [])。 */
+  blockedTasks: BlockedTask[];
+  /** 最近活动 (timeline + activity 合并, 最近 N 条; 无 → [])。 */
+  recentEvents: RuntimeActivity[];
+  /** 质量摘要 (cost/approvals/experience; 无 → undefined → UI Unavailable)。 */
+  qualitySummary: QualitySummary;
+}

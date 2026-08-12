@@ -107,6 +107,13 @@ class RuntimeEventType(str, Enum):
     ACTION_REQUESTED = "action_requested"
     OBSERVATION_RECEIVED = "observation_received"
     EXECUTION_COMPLETED = "execution_completed"
+    # S10-018 Task 001: Tool Runtime 事件 (Decision→Tool→Result→Observation;
+    # 完整链路 ...→tool_requested→tool_started→tool_completed→observation_received→...;
+    # 失败 → tool_failed → execution_failed)
+    TOOL_REQUESTED = "tool_requested"
+    TOOL_STARTED = "tool_started"
+    TOOL_COMPLETED = "tool_completed"
+    TOOL_FAILED = "tool_failed"
 
 
 class AgentStepType(str, Enum):

@@ -70,12 +70,13 @@ class TestRuntimeSessionModel:
         }
 
     def test_event_type_fourteen(self):
-        """RuntimeEvent 类型 (任务约束 + Task 002 + S10-017 Task 001 扩展):
+        """RuntimeEvent 类型 (任务约束 + Task 002 + S10-017 Task 001 + S10-018):
         agent_started/task_received/execution_started/tool_called/
         llm_request_sent/llm_response_received/output_generated/
         execution_finished/execution_failed + thinking_started/
         decision_created/action_requested/observation_received/
-        execution_completed (9→14, 向后兼容)。"""
+        execution_completed + tool_requested/tool_started/tool_completed/
+        tool_failed (9→14→18, 向后兼容)。"""
         assert {t.value for t in RuntimeEventType} == {
             "agent_started",
             "task_received",
@@ -91,6 +92,10 @@ class TestRuntimeSessionModel:
             "action_requested",
             "observation_received",
             "execution_completed",
+            "tool_requested",
+            "tool_started",
+            "tool_completed",
+            "tool_failed",
         }
 
     def test_to_dict_json_friendly(self):

@@ -474,8 +474,8 @@ export interface RuntimeScreenshot {
 export interface RuntimeEventPayload {
   event_id: string;
   session_id: string;
-  /** RuntimeEventType 七类型: agent_started/task_received/execution_started/
-   * tool_called/output_generated/execution_finished/execution_failed。 */
+  /** RuntimeEventType: agent_started/task_received/thinking_started/decision_created/
+   * tool_requested/tool_started/tool_completed/tool_failed/execution_completed 等。 */
   type: string;
   message: string;
   created_at: string | null;
@@ -531,6 +531,22 @@ export interface ExecutionStep {
   output?: string | null;
   status: string;
   created_at: string | null;
+}
+
+/** S10-018 Task 001: Tool Runtime — GET /api/tools 返回的工具清单项。 */
+export interface ToolInfo {
+  id: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+}
+
+/** S10-018 Task 001: Tool 执行结果 (POST /api/tools/{tool_id}/execute)。 */
+export interface ToolResult {
+  success: boolean;
+  output?: unknown | null;
+  error?: string | null;
+  metadata?: Record<string, unknown> | null;
 }
 
 /** S10-002: SSE 事件名 (与后端 SSE_EVENT_MAP 同源; 业务 7 类 + error 通道)。 */

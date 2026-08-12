@@ -94,4 +94,18 @@ describe('api/domain — toRuntimeSession (S10-016 映射)', () => {
     ]);
     expect(steps.every((s) => s.status === 'completed')).toBe(true);
   });
+
+  it('S10-018: tool_* 事件人话映射 (toRuntimeActivity)', async () => {
+    const { toRuntimeActivity } = await import('../api/domain');
+    const events = [
+      { event_id: 'e1', session_id: 's1', type: 'tool_requested', message: '请求工具', status: 'OK', created_at: '2026-08-12T15:00:00Z' },
+      { event_id: 'e2', session_id: 's1', type: 'tool_completed', message: '工具完成', status: 'OK', created_at: '2026-08-12T15:00:01Z' },
+      { event_id: 'e3', session_id: 's1', type: 'tool_failed', message: '工具失败', status: 'FAIL', created_at: '2026-08-12T15:00:02Z' },
+    ] as unknown as Parameters<typeof toRuntimeActivity>[0];
+    const acts = toRuntimeActivity(events);
+    // S10-015 §5.3: message 优先于映射 — 事件用 message 作为 action
+    expect(acts[0].action).toBe('请求工具');
+    expect(acts[1].action).toBe('工具完成');
+    expect(acts[2].action).toBe('工具失败');
+  });
 });

@@ -334,6 +334,8 @@ class TestPermissionBoundary:
                     "/runtimes" in path or "/runtime-sessions" in path or "/sessions" in path
                     or path == "/api/runtime/execute"
                 )
+                # S10-018: Tool 执行写面 (POST /api/tools/{id}/execute)
+                is_tool_execute = path.startswith("/api/tools/") and path.endswith("/execute")
                 is_review_feedback = path.endswith("/review-feedback")
                 is_project_create = path == "/api/projects"
                 # S10-007: AI 想法理解 (POST /api/projects/suggest — 建议不落库,
@@ -370,9 +372,10 @@ class TestPermissionBoundary:
                     or is_project_delete
                     or is_backlog_write
                     or is_management_write
+                    or is_tool_execute
                 ), (
                     f"写路由超出白名单 (审批决定 + Runtime + 反馈 + 创建 + 启动 + "
-                    f"项目管理 + Backlog + Sprint/Milestone/Roadmap): "
+                    f"项目管理 + Backlog + Sprint/Milestone/Roadmap + Tool): "
                     f"{route_method} {path}"
                 )
 

@@ -47,6 +47,7 @@ describe('api client — 只读契约 + S9-002 审批写面 + S10-004 Runtime �
       'decision',
       'deleteProject',
       'executeRuntimeTask',
+      'executeTool',
       'experience',
       'lifecycle',
       // S10-002: Runtime 查询 (只读 GET; SSE 在 runtimeClient)
@@ -73,6 +74,7 @@ describe('api client — 只读契约 + S9-002 审批写面 + S10-004 Runtime �
       // S10-007: AI 想法理解 (suggest — 想法确认对话数据源)
       'suggestProject',
       'taskRuntimeSessions',
+      'tools',
       'updateProject',
       'workflow',
       'workflowStages',

@@ -123,6 +123,22 @@ class RuntimeSessionError(Exception):
     """
 
 
+class ToolExecuteNotFoundError(Exception):
+    """S10-018: Tool 不存在 (HTTP 404)。
+
+    ToolExecutor 返回 'tool not found: <id>' → 本异常 (与项目/会话不存在
+    同 404 语义; 详情含 tool_id 供审计)。
+    """
+
+
+class ToolExecutePermissionError(Exception):
+    """S10-018: Tool 权限拒绝 (HTTP 403)。
+
+    ToolExecutor 返回 'permission denied' (最小权限表 — agent 不在
+    allowed_agent_ids 白名单) → 本异常 (403 明确不静默; 详情含 agent/tool)。
+    """
+
+
 def _utc_now_str() -> str:
     """当前 UTC 时间 ISO 字符串 (Runtime 实例/截图 created_at)。"""
     return datetime.now(timezone.utc).isoformat()
@@ -276,6 +292,10 @@ class ConsoleService:
         # 无注入 → 自装配 (复用本服务 store), 自装配无已配置 Provider →
         # 诚实 FAILED (不伪造 LLM 结果))
         agent_executor: Any = None,
+        # S10-018 Task 001: ToolExecutor 执行层 (exec.tool — Decision→Tool→
+        # Result; 可选注入, 失败安全: 无注入 → 自装配系统 Tool + 工厂根沙箱,
+        # 自装配失败 → None → API 404/空清单)
+        tool_executor: Any = None,
     ) -> None:
         self._workspace = workspace_manager
         self._task_store = task_store
@@ -310,6 +330,9 @@ class ConsoleService:
         # Task→Session→LLM→Result; 可选注入, 失败安全: 无注入 → 自装配,
         # 自装配仍无已配置 Provider → 诚实 FAILED, 不伪造 LLM 结果)
         self._agent_executor = agent_executor
+        # S10-018 Task 001: ToolExecutor 执行层 (exec.tool — Tool 注册表 +
+        # 沙箱执行; 可选注入, 失败安全: 无注入 → 自装配, 失败 → None)
+        self._tool_executor = tool_executor
 
     # ------------------------------------------------------------------ S10-016: Runtime Session
     # AI Employee Runtime Foundation — Agent 执行会话可见性底座 (谁在跑/跑
@@ -445,6 +468,136 @@ class ConsoleService:
             if err_type is not None and isinstance(exc, err_type):
                 raise ValueError(str(exc)) from exc
             raise
+
+    # ------------------------------------------------------------------ S10-018 Task 001: Tool Runtime
+    # AI Employee 从 Decision 升级到 Decision→Tool→Result→Observation 的
+    # 基础设施 (exec.tool 已 GREEN: Tool/ToolRegistry/ToolExecutor + 沙箱
+    # filesystem.read); 本层只做失败安全装配 + 输入校验 (空 tool_id/agent_id
+    # → ValueError → HTTP 400) + 结果语义归一 (tool not found → 404 /
+    # permission denied → 403 / 其余执行失败 → 400)。延迟导入 exec 包
+    # (Removal Isolation — 缺 factory-exec 不拖垮 Console)。
+
+    @staticmethod
+    def _tool_mod() -> Any:
+        """延迟导入 exec.tool 模块 (Removal Isolation; 失败 → None)。"""
+        try:
+            from exec import tool
+
+            return tool
+        except Exception:
+            return None
+
+    def _tool_sandbox_root(self) -> Any | None:
+        """自装配 ToolExecutor 的沙箱根 (filesystem.read 边界)。
+
+        优先级: workspace_manager.root (工厂根) → session_store 目录父级;
+        全缺 → None (沙箱 Tool 执行时报 workspace root not configured —
+        诚实失败, 不假装可读)。
+        """
+        workspace = getattr(self, "_workspace", None)
+        root = getattr(workspace, "root", None)
+        if root is not None:
+            return root
+        store = getattr(self, "_session_store", None)
+        if store is not None:
+            try:
+                return Path(getattr(store, "dir", None) or "").parent or None
+            except Exception:
+                return None
+        return None
+
+    def _get_tool_executor(self) -> Any | None:
+        """ToolExecutor (注入优先; 缺失 → 自装配系统 Tool; 失败 → None)。
+
+        失败安全 (同全部 store 依赖哲学): 无注入且 exec.tool 不可导入 /
+        自装配异常 → None → 调用方按 404/空清单处理, 冷启动不崩溃。
+        自装配 = ToolRegistry.with_system_tools() (filesystem.read) +
+        workspace 沙箱根 (工厂根)。
+        """
+        if self._tool_executor is not None:
+            return self._tool_executor
+        mod = self._tool_mod()
+        if mod is None:
+            return None
+        try:
+            return mod.ToolExecutor(
+                mod.ToolRegistry.with_system_tools(),
+                workspace_root=self._tool_sandbox_root(),
+            )
+        except Exception:
+            return None  # 自装配失败安全 — 不拖垮 API
+
+    def list_tools(self) -> list[dict[str, Any]]:
+        """Tool 清单 (GET /api/tools — ToolRegistry 当前可用 Tool)。
+
+        形状: [{id, name, description, enabled}] (id 排序 — registry.list
+        契约; 含 disabled — 注册表全量, 由前端/调用方过滤)。未装配 → []
+        (失败安全 — GET 永不失败)。
+        """
+        executor = self._get_tool_executor()
+        if executor is None:
+            return []
+        registry = getattr(executor, "registry", None)
+        if registry is None:
+            return []
+        try:
+            tools = registry.list()
+        except Exception:
+            return []
+        return [
+            {
+                "id": t.id,
+                "name": t.name,
+                "description": t.description or "",
+                "enabled": t.enabled,
+            }
+            for t in tools
+        ]
+
+    def execute_tool(
+        self,
+        tool_id: str,
+        agent_id: str,
+        tool_input: dict[str, Any],
+        *,
+        context: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        """执行 Tool (POST /api/tools/{tool_id}/execute — 直调 ToolExecutor)。
+
+        错误语义:
+        - 空 tool_id/agent_id → ValueError (HTTP 400 — 工具标识/执行者必填)
+        - store/exec 未装配 (空构造无注入 + 自装配失败) → None (HTTP 404
+          失败安全)
+        - Tool 不存在 → ToolExecuteNotFoundError (HTTP 404)
+        - 权限拒绝 (最小权限表) → ToolExecutePermissionError (HTTP 403)
+        - 其余执行失败 (schema 非法 / disabled / handler 错误) → ValueError
+          (HTTP 400 — 输入/工具状态问题, 明确不静默)
+        成功 → {success: true, output} (ToolResult 输出原样透传)。
+        """
+        cleaned_tool = str(tool_id or "").strip()
+        cleaned_agent = str(agent_id or "").strip()
+        if not cleaned_tool:
+            raise ValueError("tool_id is required (工具标识必须明确)")
+        if not cleaned_agent:
+            raise ValueError("agent_id is required (执行者必须明确)")
+        executor = self._get_tool_executor()
+        if executor is None:
+            return None
+        cleaned_input = tool_input if isinstance(tool_input, dict) else {}
+        try:
+            result = executor.execute(
+                cleaned_tool, cleaned_input, cleaned_agent, context=context
+            )
+        except Exception as exc:  # 执行器兜底 — 归一为 400 (不抛裸异常)
+            raise ValueError(f"tool execution error: {exc}") from exc
+        if getattr(result, "success", False):
+            return {"success": True, "output": getattr(result, "output", None)}
+        error = str(getattr(result, "error", "") or "").strip() or "tool execution failed"
+        if "tool not found" in error:
+            raise ToolExecuteNotFoundError(error)
+        if "permission denied" in error:
+            raise ToolExecutePermissionError(error)
+        raise ValueError(error)
 
     def create_session(
         self,

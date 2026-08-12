@@ -754,6 +754,11 @@ const EVENT_ACTION_LABELS: Record<string, string> = {
   'stage.completed': '阶段完成',
   'task.started': '开始任务',
   'task.completed': '完成任务',
+  // S10-018 Task 001: Tool Runtime 事件 (AI Employee 调用工具)
+  'tool_requested': '工具请求',
+  'tool_started': '工具执行中',
+  'tool_completed': '工具完成',
+  'tool_failed': '工具失败',
   error: '发生错误',
 };
 

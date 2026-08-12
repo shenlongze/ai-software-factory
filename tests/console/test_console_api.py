@@ -152,7 +152,8 @@ class TestRouteExports:
         S10-009-004: 36 个 — 新增 create_draft_project/save_discovery_answer/
         complete_discovery; S10-009-005: 37 个 — 新增 confirm_project_route;
         S10-016: 45 个 — 新增 Runtime Session 8 路由; S10-016 Task 002:
-        46 个 — 新增 execute_runtime_task)。"""
+        46 个 — 新增 execute_runtime_task; S10-018 Task 001c: 48 个 —
+        新增 execute_tool/list_tools (Tool API))。"""
         expected = {
             "add_roadmap_milestone_ref",
             "append_runtime_session_event",
@@ -178,6 +179,7 @@ class TestRouteExports:
             "delete_sprint",
             "delete_task",
             "execute_runtime_task",
+            "execute_tool",
             "get_artifact",
             "get_artifact_content",
             "get_milestone",
@@ -207,6 +209,7 @@ class TestRouteExports:
             "list_runtime_sessions",
             "list_runtimes",
             "list_sprints",
+            "list_tools",
             "list_workflows",
             "plan_sprint",
             "reject_approval",

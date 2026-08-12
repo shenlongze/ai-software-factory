@@ -42,6 +42,8 @@ import {
   type RuntimeScreenshot,
   type RuntimeSessionPayload,
   type ExecuteResponse,
+  type ToolInfo,
+  type ToolResult,
   type RunStatusResponse,
   type StageRunSummary,
   type TimelineEventSummary,
@@ -312,6 +314,13 @@ export const api = {
       '/api/runtime/execute',
       { task_id: taskId, agent_id: agentId, context },
     ),
+  // S10-018 Task 001: Tool Runtime — 工具清单 + 执行 (filesystem.read 等)
+  tools: () => getJson<{ tools: ToolInfo[] }>('/api/tools'),
+  executeTool: (toolId: string, agentId: string, toolInput: Record<string, unknown>) =>
+    sendJson<ToolResult>(`/api/tools/${encodeURIComponent(toolId)}/execute`, {
+      agent_id: agentId,
+      input: toolInput,
+    }),
 } as const;
 
 export type Api = typeof api;

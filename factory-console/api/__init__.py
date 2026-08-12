@@ -83,6 +83,7 @@ from .sprint import (
     update_milestone,
     update_sprint,
 )
+from .tool_api import execute_tool, list_tools
 from .workflows import get_workflow, list_workflows
 from .workflow_start import chat_route, run_status_route, start_project_workflow_route
 
@@ -111,6 +112,7 @@ __all__ = [
     "delete_sprint",
     "delete_task",
     "execute_runtime_task",
+    "execute_tool",
     "get_artifact",
     "get_artifact_content",
     "get_decision",
@@ -140,6 +142,7 @@ __all__ = [
     "list_runtime_sessions",
     "list_runtimes",
     "list_sprints",
+    "list_tools",
     "list_workflows",
     "plan_sprint",
     "reject_approval",

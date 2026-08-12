@@ -263,6 +263,8 @@ class AgentExecutionLoop:
     - session_store: RuntimeSessionStore (状态变化立即落库 — 不静默)。
     - planner: Planner | None (缺省 LLMPlanner — 复用 runtime 的 Provider)。
     - action_executor: MockActionExecutor | None (缺省 MockActionExecutor)。
+    - tool_executor: ToolExecutor | None (S10-018 — Tool Action 分发; None →
+      诚实 tool_failed 'tool executor not configured', 不伪造)。
     - runtime: AgentRuntime | None (FINAL 路径执行引擎; None = 无 Provider
       → 诚实 FAILED, 不伪造 LLM 结果)。
 
@@ -281,6 +283,7 @@ class AgentExecutionLoop:
         planner: Any = None,
         action_executor: Any = None,
         runtime: Any = None,
+        tool_executor: Any = None,
     ) -> None:
         self._session = session
         self._session_store = session_store
@@ -293,6 +296,9 @@ class AgentExecutionLoop:
             if action_executor is not None
             else MockActionExecutor()
         )
+        # S10-018 Task 001: Tool Runtime — ToolExecutor (exec.tool) 可选装配;
+        # None → Tool Action 诚实 tool_failed ('tool executor not configured')。
+        self._tool_executor = tool_executor
         self._state = ExecutionState.CREATED
 
     # ------------------------------------------------------------------ 状态机
@@ -468,6 +474,97 @@ class AgentExecutionLoop:
             "execution_steps": [self._step_dict(s) for s in finished.steps],
         }
 
+    # ------------------------------------------------------------------ Tool 分支 (S10-018 Task 001)
+
+    def _run_tool_action(
+        self,
+        session: RuntimeSession,
+        action: dict[str, Any],
+        agent: Any,
+        context: dict[str, Any] | None,
+    ) -> tuple[RuntimeSession, dict[str, Any] | None]:
+        """Tool Action 分支: Decision→Tool→Result→Observation (事件全记录)。
+
+        action = {type: "tool", tool_id, input} — 事件链:
+        - 成功: tool_requested → tool_started → tool_completed →
+          observation_received (Observation 边界: status=succeeded + 工具输出),
+          返回 (session, None) — 调用方继续下一轮 (Continue 语义)。
+        - 失败: tool_requested → tool_started → tool_failed →
+          execution_failed (错误进 tool_failed.data.error), 返回
+          (session, FAILED 终态 dict) — 诚实终止, 不假装成功。
+        - 未装配 tool_executor → 诚实 tool_failed ('tool executor not
+          configured') → execution_failed (约束: 无执行器不伪造 Tool 结果)。
+        - 执行器抛异常 → 捕获转 tool_failed (编排层兜底, 不抛裸异常)。
+        """
+        tool_id = str(action.get("tool_id") or "").strip()
+        tool_input = dict(action.get("input") or {})
+        session = self._append(
+            session,
+            RuntimeEventType.TOOL_REQUESTED,
+            "请求执行工具",
+            data={"tool_id": tool_id, "input": tool_input},
+        )
+        if self._tool_executor is None:
+            error = "tool executor not configured"
+            session = self._append(
+                session,
+                RuntimeEventType.TOOL_FAILED,
+                "工具执行失败",
+                data={"tool_id": tool_id, "error": error},
+            )
+            return session, self._fail(session, error)
+        session = self._append(
+            session,
+            RuntimeEventType.TOOL_STARTED,
+            "工具开始执行",
+            data={"tool_id": tool_id},
+        )
+        try:
+            tool_result = self._tool_executor.execute(
+                tool_id, tool_input, agent.id, context=context
+            )
+        except Exception as exc:  # noqa: BLE001 — 执行器兜底 → 明确失败
+            error = f"tool executor error: {exc}"
+            session = self._append(
+                session,
+                RuntimeEventType.TOOL_FAILED,
+                "工具执行失败",
+                data={"tool_id": tool_id, "error": error},
+            )
+            return session, self._fail(session, error)
+        if not getattr(tool_result, "success", False):
+            error = (
+                str(getattr(tool_result, "error", "") or "") or f"tool failed: {tool_id}"
+            )
+            session = self._append(
+                session,
+                RuntimeEventType.TOOL_FAILED,
+                "工具执行失败",
+                data={"tool_id": tool_id, "error": error},
+            )
+            return session, self._fail(session, error)
+        output = getattr(tool_result, "output", None)
+        session = self._append(
+            session,
+            RuntimeEventType.TOOL_COMPLETED,
+            "工具执行完成",
+            data={"tool_id": tool_id, "output": output},
+        )
+        observation = {"status": "succeeded", "output": output or {}}
+        session = self._add_step(
+            session,
+            AgentStepType.OBSERVATION,
+            input={"action": action},
+            output=observation,
+        )
+        session = self._append(
+            session,
+            RuntimeEventType.OBSERVATION_RECEIVED,
+            "观察已接收",
+            data=observation,
+        )
+        return session, None
+
     # ------------------------------------------------------------------ 主流程
 
     def run(
@@ -558,7 +655,11 @@ class AgentExecutionLoop:
                     },
                 )
 
-                # --- ACTION_REQUIRED: 动作边界 (Mock; 为 Tool/MCP 预留) ---
+                # --- ACTION_REQUIRED: 动作边界 ---
+                # S10-018 Task 001: action.type == "tool" → ToolExecutor 分支
+                # (tool_requested→tool_started→tool_completed→observation_received;
+                # 失败 → tool_failed→execution_failed); 其余 (noop) → Mock
+                # ActionExecutor 旧流程 (S10-017 兼容)。
                 if decision.type == DecisionType.ACTION_REQUIRED:
                     self.transition(ExecutionState.WAITING_ACTION)
                     action = dict((decision.payload or {}).get("action") or {})
@@ -567,6 +668,15 @@ class AgentExecutionLoop:
                         AgentStepType.ACTION,
                         input={"action": action},
                     )
+                    if str(action.get("type") or "").strip() == "tool":
+                        session, tool_result = self._run_tool_action(
+                            session, action, agent, context
+                        )
+                        if tool_result is not None:
+                            return tool_result
+                        self.transition(ExecutionState.RUNNING)
+                        round_no += 1
+                        continue
                     session = self._append(
                         session,
                         RuntimeEventType.ACTION_REQUESTED,

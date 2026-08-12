@@ -61,6 +61,11 @@ build 静态文件 (SPA)。只做 HTTP 绑定 (参数解析 / JSON 序列化 / �
   POST /api/runtime/execute             → Agent 全链路执行 (Task→Agent→Session→
                                           LLM→Result; 400 校验/404 未装配/200
                                           status=failed=LLM 失败不 5xx)      [S10-016-002]
+  GET  /api/tools                        → Tool 清单 (ToolRegistry 可用 Tool;
+                                          console.viewed 审计)              [S10-018-001c]
+  POST /api/tools/{id}/execute          → 执行 Tool ({agent_id, input, context?}
+                                          → {success, output?, error?};
+                                          404/403/400 映射)                 [S10-018-001c]
 Permission Boundary (S9-002 收窄 + S10-004/006/006.5/016-002 扩展): 写路径仅
 ① 审批决定两 POST (approve/reject, reviewer="console" 落库 + source="console"
 审计) ② Feedback Loop 一 POST (review-feedback — Reject 意见落库, 不触碰
@@ -76,7 +81,10 @@ Permission Boundary (S9-002 收窄 + S10-004/006/006.5/016-002 扩展): 写路�
   生成 + lifecycle 受控流转, 均落 ProjectSpace 目录信源) ⑧ Confirm+Rename
   一 POST (/api/projects/{id}/confirm, S10-009-005 — 正式命名 rename 事务:
   目录 os.replace 原子 rename + project.json/索引/org 镜像引用全更新 +
-  失败回滚; 400/404/409/503 语义); 其余端点全部 GET —
+  失败回滚; 400/404/409/503 语义); ⑨ Tool 执行一 POST
+  (/api/tools/{id}/execute, S10-018 Task 001c — 直调 ToolExecutor, 执行权在
+  Tool 最小权限表 [filesystem.read 仅 backend-1, 其他 agent → 403 诚实拒绝],
+  Adapter 只做 HTTP 绑定); 其余端点全部 GET —
   register_project/成本写入等仍不在 Console 范围 (S9-005/后续)。
 静态: frontend build 产物 (dist/) — SPA html=True; 缺目录 → 纯 API 模式。
 """
@@ -409,6 +417,20 @@ class _ExecuteRuntimeBody(BaseModel):
     context: dict[str, Any] | None = None
 
 
+class _ToolExecuteBody(BaseModel):
+    """POST /api/tools/{tool_id}/execute body (S10-018 Task 001c: Tool 执行)。
+
+    {agent_id, input, context?}: agent_id 必填 (空 → 400 — 执行者必须明确,
+    Service 层 ValueError); input = Tool 输入 (JSON Schema 校验; 非 dict →
+    Service 层归一 {} → schema 校验失败 → 400); context 可选执行上下文
+    (workspace_root 等透传 ToolExecutor)。
+    """
+
+    agent_id: str = ""
+    input: dict[str, Any] = {}
+    context: dict[str, Any] | None = None
+
+
 # ------------------------------------------------------------------ 装配
 
 
@@ -606,6 +628,10 @@ def build_app(
     # 非法转换 → 409 — 依赖未满足/参数非法仍走 ValueError → 400)
     BacklogNotFoundError = _service.BacklogNotFoundError
     BacklogStateError = _service.BacklogStateError
+    # S10-018 Task 001c: Tool 错误语义 (404 不存在 / 403 最小权限拒绝 —
+    # 由 Service 层抛出, HTTP 层映射)
+    ToolExecuteNotFoundError = _service.ToolExecuteNotFoundError
+    ToolExecutePermissionError = _service.ToolExecutePermissionError
 
     app = FastAPI(title="AI Software Factory — Human Console Web", version="0.1.0")
 
@@ -1713,6 +1739,49 @@ def build_app(
             raise HTTPException(
                 status_code=404,
                 detail="runtime executor unavailable (store/exec 未装配)",
+            )
+        return result
+
+    # ------------------------------------------- S10-018 Task 001c: Tool API
+    # AI Employee Tool Runtime (GET /api/tools + POST /api/tools/{id}/execute —
+    # 内部 Tool 基础设施 HTTP 绑定; Tool 注册表/执行器在 Service 层失败安全
+    # 装配: 注入优先, 缺失 → ToolRegistry.with_system_tools 自装配, 再失败 →
+    # None → GET 返回空清单 / POST 404)。写路径扩展 (Permission Boundary):
+    # Tool 执行 POST — 执行权仍在 ToolExecutor 最小权限表 (filesystem.read
+    # 仅 backend-1; 其他 agent → 403 诚实拒绝), Adapter 只做 HTTP 绑定。
+    # 错误映射: ToolExecuteNotFoundError → 404 / ToolExecutePermissionError →
+    # 403 / ValueError (空 agent_id / schema 非法 / disabled / handler 错误)
+    # → 400 / None (store/exec 未装配) → 404 失败安全。审计: console.viewed
+    # (view=tools / tool_execute — ADR-0002 读审计同语义)。
+
+    @app.get("/api/tools")
+    def api_list_tools() -> dict[str, Any]:
+        """Tool 清单 (GET — ToolRegistry 当前可用 Tool; 未装配 → [] 失败安全)。"""
+        return _api.list_tools(service, logger=event_logger)
+
+    @app.post("/api/tools/{tool_id}/execute")
+    def api_execute_tool(tool_id: str, body: _ToolExecuteBody) -> dict[str, Any]:
+        """执行 Tool (POST — {agent_id, input, context?} → {success, output?,
+        error?}; 直调 ToolExecutor: Lookup→Permission→Schema→Execute)。"""
+        try:
+            result = _api.execute_tool(
+                service,
+                tool_id,
+                body.agent_id,
+                body.input,
+                context=body.context,
+                logger=event_logger,
+            )
+        except ToolExecuteNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ToolExecutePermissionError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if result is None:
+            raise HTTPException(
+                status_code=404,
+                detail="tool executor unavailable (store/exec 未装配)",
             )
         return result
 

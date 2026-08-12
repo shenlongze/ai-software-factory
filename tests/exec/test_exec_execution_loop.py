@@ -56,6 +56,9 @@ NO_CHANGE_PATCH = "<patch>NO_CHANGE</patch>"
 
 MINI_PROJECT = {
     "calc.py": "def add(a, b):\n    return a + b\n",
+    # S10-018: 连续两轮工具测试 (test_tool_then_tool_multiple_rounds) 第二轮
+    # 读取 README.md — 沙箱工作区须包含该文件 (工具轮成对收敛 → COMPLETED)。
+    "README.md": "# demo project\n",
 }
 
 
@@ -132,13 +135,14 @@ def _running_session(env, *, agent_id="developer-1", task_id="T-101") -> Runtime
     return started
 
 
-def _loop(env, session, *, planner=None, action_executor=None, runtime=None):
+def _loop(env, session, *, planner=None, action_executor=None, runtime=None, tool_executor=None):
     return AgentExecutionLoop(
         session=session,
         session_store=env["session_store"],
         planner=planner,
         action_executor=action_executor,
         runtime=env["runtime"] if runtime is None else runtime,
+        tool_executor=tool_executor,
     )
 
 
@@ -592,3 +596,227 @@ class TestExecutionLoopExecution:
         assert final_step["type"] == "FINAL"
         assert final_step["status"] == "succeeded"
         assert "output" in final_step
+
+
+# ------------------------------------------------------------------ S10-018 Task 001: Tool 集成
+
+#: 工具轮完整事件链 (约束 7 九事件链 — 决策→工具→观察→继续):
+#: agent_started → task_received → thinking_started → decision_created →
+#: tool_requested → tool_started → tool_completed → observation_received
+TOOL_ROUND_CHAIN = [
+    "agent_started",
+    "task_received",
+    "thinking_started",
+    "decision_created",
+    "tool_requested",
+    "tool_started",
+    "tool_completed",
+    "observation_received",
+]
+
+
+def _tool_action(tool_id: str, tool_input: dict) -> dict:
+    """Tool Action payload (决策 payload.action — 约束 6: {type, tool_id, input})。"""
+    return {"type": "tool", "tool_id": tool_id, "input": tool_input}
+
+
+def _real_tool_executor(workspace_root: Path):
+    """真实 ToolExecutor: 系统 Tool (filesystem.read) + workspace 沙箱根。"""
+    from exec.tool import ToolExecutor, ToolRegistry
+
+    return ToolExecutor(ToolRegistry.with_system_tools(), workspace_root=workspace_root)
+
+
+class TestExecutionLoopToolIntegration:
+    def test_tool_action_full_chain_completed(self, loop_env):
+        """ACTION_REQUIRED(tool) → tool_requested→tool_started→tool_completed→
+        observation_received → 下一轮 FINAL → COMPLETED; 工具轮九事件链保序
+        (agent_started→…→tool_requested→tool_started→tool_completed→
+        observation_received) + observation 含工具输出 (Observation 边界)。"""
+        env = loop_env
+        task = _make_task(env["task_store"])
+        agent = _make_agent(env["agent_registry"], agent_id="backend-1", name="Backend")
+        session = _running_session(env, agent_id="backend-1")
+        planner = _StubPlanner(
+            Decision(
+                type=ACTION_REQUIRED,
+                reason="需要读取文件",
+                payload={"action": _tool_action("filesystem.read", {"path": "calc.py"})},
+            ),
+            Decision(type=FINAL, reason="任务完成"),
+        )
+        loop = _loop(
+            env, session, planner=planner, tool_executor=_real_tool_executor(env["project_dir"])
+        )
+
+        result = loop.run(task, agent, context={"project_dir": str(env["project_dir"])})
+
+        assert loop.state == ExecutionState.COMPLETED
+        assert result["status"] == "success"
+        loaded = env["session_store"].get(result["runtime_session_id"])
+        types = [e.type.value for e in loaded.events]
+        # 九事件链前缀保序 (工具轮: 决策→工具请求→工具开始→工具完成→观察)
+        assert types[:8] == TOOL_ROUND_CHAIN
+        # 工具事件顺序: requested → started → completed (无 failed)
+        assert [t for t in types if t.startswith("tool_")] == [
+            "tool_requested",
+            "tool_started",
+            "tool_completed",
+        ]
+        # Observation 边界: 工具输出进观察载荷 (Decision→Tool→Result→Observation)
+        obs = [e for e in loaded.events if e.type.value == "observation_received"][0]
+        assert obs.data["status"] == "succeeded"
+        assert "def add" in (obs.data.get("output") or {}).get("content", "")
+        # 步骤序列含 ACTION + OBSERVATION (工具执行步骤记录)
+        assert [s["type"] for s in result["execution_steps"]] == [
+            "RECEIVE_TASK",
+            "ANALYZE",
+            "DECISION",
+            "ACTION",
+            "OBSERVATION",
+            "ANALYZE",
+            "DECISION",
+            "FINAL",
+        ]
+
+    def test_tool_then_tool_multiple_rounds(self, loop_env):
+        """连续两轮工具 (工具→观察→再工具→观察→FINAL): 每轮工具事件成对,
+        循环收敛 → COMPLETED (Continue 语义)。"""
+        env = loop_env
+        task = _make_task(env["task_store"])
+        agent = _make_agent(env["agent_registry"], agent_id="backend-1", name="Backend")
+        session = _running_session(env, agent_id="backend-1")
+        planner = _StubPlanner(
+            Decision(type=ACTION_REQUIRED, payload={"action": _tool_action("filesystem.read", {"path": "calc.py"})}),
+            Decision(type=ACTION_REQUIRED, payload={"action": _tool_action("filesystem.read", {"path": "README.md"})}),
+            Decision(type=FINAL, reason="任务完成"),
+        )
+        loop = _loop(
+            env, session, planner=planner, tool_executor=_real_tool_executor(env["project_dir"])
+        )
+
+        result = loop.run(task, agent, context={"project_dir": str(env["project_dir"])})
+
+        assert result["status"] == "success"
+        loaded = env["session_store"].get(result["runtime_session_id"])
+        types = [e.type.value for e in loaded.events]
+        assert types.count("tool_completed") == 2
+        assert types.count("observation_received") == 2
+        assert types[-1] == "execution_completed"
+
+    def test_tool_failed_ends_execution_failed(self, loop_env):
+        """工具执行失败 (文件不存在) → tool_failed 事件 → execution_failed →
+        loop FAILED (诚实 — 失败→tool_failed→execution_failed, 不假装成功)。"""
+        env = loop_env
+        task = _make_task(env["task_store"])
+        agent = _make_agent(env["agent_registry"], agent_id="backend-1", name="Backend")
+        session = _running_session(env, agent_id="backend-1")
+        planner = _StubPlanner(
+            Decision(type=ACTION_REQUIRED, payload={"action": _tool_action("filesystem.read", {"path": "missing.txt"})}),
+        )
+        loop = _loop(
+            env, session, planner=planner, tool_executor=_real_tool_executor(env["project_dir"])
+        )
+
+        result = loop.run(task, agent, context={"project_dir": str(env["project_dir"])})
+
+        assert loop.state == ExecutionState.FAILED
+        assert result["status"] == "failed"
+        loaded = env["session_store"].get(result["runtime_session_id"])
+        types = [e.type.value for e in loaded.events]
+        assert "tool_failed" in types
+        assert "tool_completed" not in types
+        assert types[-1] == "execution_failed"
+        failed = [e for e in loaded.events if e.type.value == "tool_failed"][0]
+        assert "missing.txt" in (failed.data or {}).get("error", "")
+
+    def test_tool_permission_denied_fails_honestly(self, loop_env):
+        """工具权限失败 (非白名单 agent) → ToolResult.failed + tool_failed 事件
+        → execution_failed (约束 8/9: backend-1 允许 filesystem.read, 其他禁止)。"""
+        env = loop_env
+        task = _make_task(env["task_store"])
+        agent = _make_agent(env["agent_registry"], agent_id="flutter-dev", name="Flutter")
+        session = _running_session(env, agent_id="flutter-dev")
+        planner = _StubPlanner(
+            Decision(type=ACTION_REQUIRED, payload={"action": _tool_action("filesystem.read", {"path": "calc.py"})}),
+        )
+        loop = _loop(
+            env, session, planner=planner, tool_executor=_real_tool_executor(env["project_dir"])
+        )
+
+        result = loop.run(task, agent, context={"project_dir": str(env["project_dir"])})
+
+        assert result["status"] == "failed"
+        loaded = env["session_store"].get(result["runtime_session_id"])
+        types = [e.type.value for e in loaded.events]
+        assert types[-1] == "execution_failed"
+        failed = [e for e in loaded.events if e.type.value == "tool_failed"][0]
+        assert "permission denied" in (failed.data or {}).get("error", "")
+        assert "flutter-dev" in (failed.data or {}).get("error", "")
+
+    def test_tool_schema_invalid_fails_honestly(self, loop_env):
+        """工具输入 Schema 校验失败 (缺 path) → tool_failed (invalid input) →
+        execution_failed (失败明确不吞)。"""
+        env = loop_env
+        task = _make_task(env["task_store"])
+        agent = _make_agent(env["agent_registry"], agent_id="backend-1", name="Backend")
+        session = _running_session(env, agent_id="backend-1")
+        planner = _StubPlanner(
+            Decision(type=ACTION_REQUIRED, payload={"action": _tool_action("filesystem.read", {})}),
+        )
+        loop = _loop(
+            env, session, planner=planner, tool_executor=_real_tool_executor(env["project_dir"])
+        )
+
+        result = loop.run(task, agent, context={"project_dir": str(env["project_dir"])})
+
+        assert result["status"] == "failed"
+        loaded = env["session_store"].get(result["runtime_session_id"])
+        types = [e.type.value for e in loaded.events]
+        assert types[-1] == "execution_failed"
+        failed = [e for e in loaded.events if e.type.value == "tool_failed"][0]
+        assert "invalid input" in (failed.data or {}).get("error", "")
+
+    def test_tool_action_without_tool_executor_honest_failed(self, loop_env):
+        """Tool Action 但 loop 未装配 tool_executor → tool_failed
+        ('tool executor not configured') → execution_failed (诚实, 不假装执行)。"""
+        env = loop_env
+        task = _make_task(env["task_store"])
+        agent = _make_agent(env["agent_registry"], agent_id="backend-1", name="Backend")
+        session = _running_session(env, agent_id="backend-1")
+        planner = _StubPlanner(
+            Decision(type=ACTION_REQUIRED, payload={"action": _tool_action("filesystem.read", {"path": "calc.py"})}),
+        )
+        loop = _loop(env, session, planner=planner, tool_executor=None)
+
+        result = loop.run(task, agent, context={"project_dir": str(env["project_dir"])})
+
+        assert result["status"] == "failed"
+        loaded = env["session_store"].get(result["runtime_session_id"])
+        types = [e.type.value for e in loaded.events]
+        assert types[-1] == "execution_failed"
+        failed = [e for e in loaded.events if e.type.value == "tool_failed"][0]
+        assert "not configured" in (failed.data or {}).get("error", "")
+
+    def test_noop_compat_with_tool_executor_present(self, loop_env):
+        """S10-017 兼容: tool_executor 已装配时 noop action 仍走旧流程
+        (MockActionExecutor → observation_received; 无 tool_* 事件)。"""
+        env = loop_env
+        task = _make_task(env["task_store"])
+        agent = _make_agent(env["agent_registry"])
+        session = _running_session(env)
+        planner = _StubPlanner(
+            Decision(type=ACTION_REQUIRED, reason="noop", payload={"action": {"type": "noop"}}),
+            Decision(type=FINAL, reason="任务完成"),
+        )
+        loop = _loop(
+            env, session, planner=planner, tool_executor=_real_tool_executor(env["project_dir"])
+        )
+
+        result = loop.run(task, agent, context={"project_dir": str(env["project_dir"])})
+
+        assert result["status"] == "success"
+        loaded = env["session_store"].get(result["runtime_session_id"])
+        types = [e.type.value for e in loaded.events]
+        assert "observation_received" in types
+        assert not [t for t in types if t.startswith("tool_")]

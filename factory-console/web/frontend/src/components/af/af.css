@@ -1921,3 +1921,272 @@
   text-align: right;
   overflow-wrap: anywhere;
 }
+
+/* ============================================================ S10-015 Task 007: Quality Gate */
+.af-quality-gate {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.af-quality-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.af-quality-sub {
+  margin: 0;
+  font-size: 13px;
+  color: #9ca3af;
+}
+
+.af-quality-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 14px;
+}
+
+.af-quality-module {
+  background: #1d232e;
+  border: 1px solid #2a3140;
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.af-quality-module-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #e5e7eb;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.af-quality-module-sub {
+  font-size: 12px;
+  font-weight: 400;
+  color: #9ca3af;
+}
+
+/* ① Current Quality Gate 卡 */
+.af-quality-gate-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.af-quality-gate-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.af-quality-gate-name {
+  font-size: 20px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.af-quality-gate-fields {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.af-quality-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: #14161c;
+  border: 1px solid #2b303b;
+  border-radius: 8px;
+}
+
+.af-quality-field dt {
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.af-quality-field dd {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #e5e7eb;
+}
+
+/* ② Required Checks 列表 */
+.af-quality-checks {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.af-quality-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: #14161c;
+  border: 1px solid #2b303b;
+  border-radius: 8px;
+}
+
+.af-quality-check-icon {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.af-quality-check--passed .af-quality-check-icon {
+  color: #22c55e;
+  background: rgba(34, 197, 94, 0.12);
+}
+
+.af-quality-check--pending .af-quality-check-icon {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.af-quality-check--failed .af-quality-check-icon {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.12);
+}
+
+.af-quality-check--unavailable .af-quality-check-icon {
+  color: #9ca3af;
+  background: rgba(156, 163, 175, 0.12);
+}
+
+.af-quality-check-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e5e7eb;
+}
+
+.af-quality-check-detail {
+  flex: 1;
+  font-size: 12px;
+  color: #9ca3af;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+/* ③ Quality Decision */
+.af-quality-decision {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: #14161c;
+  border: 1px solid #2b303b;
+  border-radius: 8px;
+}
+
+.af-quality-decision-status {
+  font-size: 18px;
+  font-weight: 700;
+  color: #f59e0b;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.af-quality-decision-unavailable {
+  font-size: 12px;
+  font-weight: 400;
+  color: #9ca3af;
+  padding: 2px 8px;
+  border: 1px solid #2b303b;
+  border-radius: 6px;
+}
+
+.af-quality-decision-reason {
+  font-size: 13px;
+  color: #9ca3af;
+  overflow-wrap: anywhere;
+}
+
+/* ④ Human Approval */
+.af-quality-approval {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  background: #14161c;
+  border: 1px solid #2b303b;
+  border-radius: 8px;
+}
+
+.af-quality-approval-status {
+  font-size: 15px;
+  font-weight: 600;
+  color: #e5e7eb;
+}
+
+.af-quality-approval-by,
+.af-quality-approval-time {
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.af-quality-approval-comment {
+  font-size: 13px;
+  color: #9ca3af;
+  overflow-wrap: anywhere;
+}
+
+/* 诚实降级态 (Unavailable / Not available / 空态) */
+.af-quality-unavailable {
+  padding: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #9ca3af;
+  background: #14161c;
+  border: 1px dashed #2b303b;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.af-quality-empty {
+  padding: 12px;
+  font-size: 13px;
+  color: #9ca3af;
+  text-align: center;
+}
+
+/* Dashboard Quality Summary 点击入口 (Quality Gate 行 → 项目质量页) */
+.af-dash-quality-link {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: #4c8dff;
+  cursor: pointer;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.af-dash-quality-link:hover {
+  color: #7aa8ff;
+  text-decoration: underline;
+}

@@ -33,8 +33,8 @@ describe('S10-014 路由常量表 (§2.3)', () => {
     ]);
   });
 
-  it('Project 级 11 条路由 (overview 默认 + 10 子页, :id 模板)', () => {
-    expect(PROJECT_ROUTES).toHaveLength(11);
+  it('Project 级 12 条路由 (overview 默认 + 11 子页, :id 模板)', () => {
+    expect(PROJECT_ROUTES).toHaveLength(12);
     expect(PROJECT_ROUTES.map((r) => r.path)).toEqual([
       '#/project/:id',
       '#/project/:id/vision',
@@ -46,6 +46,7 @@ describe('S10-014 路由常量表 (§2.3)', () => {
       '#/project/:id/todo',
       '#/project/:id/workflow',
       '#/project/:id/runtime',
+      '#/project/:id/quality',
       '#/project/:id/logs',
     ]);
     expect(PROJECT_ROUTES.map((r) => r.page)).toEqual([
@@ -59,6 +60,7 @@ describe('S10-014 路由常量表 (§2.3)', () => {
       'todo',
       'workflow',
       'runtime',
+      'quality',
       'logs',
     ]);
   });

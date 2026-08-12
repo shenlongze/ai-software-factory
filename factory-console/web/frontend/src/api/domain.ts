@@ -27,6 +27,11 @@ import type {
   DashboardViewModel,
   DomainStatus,
   ProjectLifecycleStage,
+  QualityCheck,
+  QualityCheckStatus,
+  QualityDecision,
+  QualityGateInfo,
+  QualityGateViewModel,
   RuntimeActivity,
   RunningAgent,
   TaskDetail,
@@ -740,6 +745,10 @@ const EVENT_ACTION_LABELS: Record<string, string> = {
   'org.artifact.consumed': '消费产物',
   'approval.required': '等待审批',
   'approval.completed': '审批完成',
+  // S10-015 Task 007: org.approval.* 受控事件 (S10-015 评审 §5.3 补齐; message 优先于映射)
+  'org.approval.created': '审批待处理',
+  'org.approval.approved': '审批通过',
+  'org.approval.rejected': '审批驳回',
   'stage.started': '阶段开始',
   'stage.completed': '阶段完成',
   'task.started': '开始任务',
@@ -1091,4 +1100,226 @@ function qualityBuild(
   const total = toNonNegativeInt(experience.total);
   if (total === 0) return undefined;
   return `经验 ${total} 条 · 成功率 ${percentLabel(experience.success_rate)}`;
+}
+
+// ------------------------------------------------------------------ toQualityGateViewModel (S10-015 Task 007)
+
+/**
+ * Quality Gate 输入 (组合真实数据; 全部可选, 缺失 → 降级, 不崩溃):
+ *   approvals — GET /api/approvals (全局审批门; 主数据源)
+ *   workflow  — GET /api/projects/{id}/workflow (阶段状态 → 架构/测试/构建检查)
+ *   timeline  — GET /api/projects/{id}/timeline (org.approval./org.artifact. 事件 → 历史)
+ */
+export interface QualityGateInput {
+  approvals?: ApprovalSummary[] | null;
+  workflow?: WorkflowDetail | null;
+  timeline?: TimelineEventSummary[] | null;
+}
+
+/** approval.status → QualityCheckStatus (未知/缺失 → unavailable, 不臆造)。 */
+function approvalCheckStatus(status: string | null | undefined): QualityCheckStatus {
+  const s = str(status).toLowerCase();
+  if (s === 'approved' || s === 'passed' || s === 'completed' || s === 'done') return 'passed';
+  if (s === 'rejected' || s === 'failed' || s === 'error') return 'failed';
+  if (s === 'pending' || s === 'requested' || s === 'waiting') return 'pending';
+  return 'unavailable';
+}
+
+/** 主审批门: 优先 pending, 同组按 requested_at 倒序取最新 (无 → null)。 */
+function primaryApproval(approvals: ApprovalSummary[]): ApprovalSummary | null {
+  if (approvals.length === 0) return null;
+  const pending = approvals.filter((a) => str(a?.status).toLowerCase() === 'pending');
+  const pool = pending.length > 0 ? pending : approvals;
+  return (
+    [...pool].sort(
+      (a, b) => timeKey(str(b?.requested_at)) - timeKey(str(a?.requested_at)),
+    )[0] ?? null
+  );
+}
+
+/** PRD 审批: artifact_type=prd|product (product 也视为 PRD; 无 → null)。 */
+function prdApprovalOf(approvals: ApprovalSummary[]): ApprovalSummary | null {
+  return (
+    approvals.find((a) => {
+      const t = str(a?.artifact_type).toLowerCase();
+      return t === 'prd' || t === 'product';
+    }) ?? null
+  );
+}
+
+/** workflow 阶段按 role_id/stage name 定位 (无匹配阶段 → undefined — 诚实 unavailable)。 */
+function stageByRoleOrName(
+  workflow: WorkflowDetail | null | undefined,
+  roleIds: readonly string[],
+  stageNames: readonly string[],
+): StageSummary | undefined {
+  for (const stage of workflow?.stages ?? []) {
+    const role = str(stage?.role_id).toLowerCase();
+    const name = str(stage?.name).toLowerCase();
+    if (roleIds.includes(role) || stageNames.includes(name)) return stage;
+  }
+  return undefined;
+}
+
+/** 阶段检查 (Architecture/Tests/Build): 真实阶段状态 → 检查状态 (无阶段 → unavailable)。 */
+function stageCheck(
+  workflow: WorkflowDetail | null | undefined,
+  roleIds: readonly string[],
+  stageNames: readonly string[],
+  labels: { unavailable: string; passed: string; failed: string; pending: string; running: string },
+  name: string,
+): QualityCheck {
+  const stage = stageByRoleOrName(workflow, roleIds, stageNames);
+  if (stage == null) return { name, status: 'unavailable', detail: labels.unavailable };
+  const status = toDomainStatus(stage.status ?? null);
+  switch (status) {
+    case 'completed':
+      return { name, status: 'passed', detail: labels.passed };
+    case 'failed':
+      return { name, status: 'failed', detail: labels.failed };
+    case 'running':
+      return { name, status: 'pending', detail: labels.running };
+    case 'review':
+      return { name, status: 'pending', detail: '等待人工评审' };
+    case 'blocked':
+      return { name, status: 'pending', detail: '前置依赖未就绪' };
+    default:
+      return { name, status: 'pending', detail: labels.pending };
+  }
+}
+
+/** PRD Exists 检查: 从 PRD 审批真实状态推导 (无审批 → unavailable, 不编造 passed)。 */
+function prdCheck(approval: ApprovalSummary | null): QualityCheck {
+  if (approval == null) {
+    return { name: 'PRD Exists', status: 'unavailable', detail: '无 PRD 审批记录' };
+  }
+  const status = approvalCheckStatus(approval.status);
+  const version =
+    approval.artifact_version != null ? ` v${approval.artifact_version}` : '';
+  if (status === 'passed') return { name: 'PRD Exists', status, detail: `PRD${version} 已通过` };
+  if (status === 'failed') return { name: 'PRD Exists', status, detail: `PRD${version} 未通过` };
+  return { name: 'PRD Exists', status: 'pending', detail: `PRD${version} 已生成, 待审批` };
+}
+
+/** Human Approval 检查: 主审批门真实状态 (无审批 → unavailable)。 */
+function approvalCheck(approval: ApprovalSummary | null): QualityCheck {
+  if (approval == null) return { name: 'Human Approval', status: 'unavailable', detail: '无审批数据' };
+  const status = approvalCheckStatus(approval.status);
+  const by = str(approval.by);
+  const suffix = by.length > 0 ? ` (by ${by})` : '';
+  if (status === 'passed') return { name: 'Human Approval', status, detail: `已通过${suffix}` };
+  if (status === 'failed') return { name: 'Human Approval', status, detail: `未通过${suffix}` };
+  return { name: 'Human Approval', status: 'pending', detail: '等待人工审核' };
+}
+
+/** 当前质量 Gate 卡 (主审批门投影; 无 → null → UI Unavailable)。 */
+function toCurrentGate(approval: ApprovalSummary | null): QualityGateInfo | null {
+  if (approval == null) return null;
+  const gate = str(approval.gate);
+  return {
+    name: gate.length > 0 ? (GATE_LABELS[gate] ?? gate) : '质量门',
+    status: approvalCheckStatus(approval.status),
+    ...(str(approval.artifact_type).length > 0 ? { artifactType: str(approval.artifact_type) } : {}),
+    ...(approval.artifact_version != null ? { artifactVersion: approval.artifact_version } : {}),
+    ...(typeof approval.confidence === 'number' ? { confidence: approval.confidence } : {}),
+    ...(str(approval.risk).length > 0 ? { risk: str(approval.risk) } : {}),
+    ...(str(approval.requested_at).length > 0 ? { requestedAt: str(approval.requested_at) } : {}),
+  };
+}
+
+/** 质量决策 (pending → WAITING_FOR_REVIEW / approved → APPROVED / rejected → FAILED / 无 → UNKNOWN)。 */
+function qualityDecision(approval: ApprovalSummary | null): QualityDecision {
+  if (approval == null) return { status: 'UNKNOWN', label: '无法评估' };
+  const s = str(approval.status).toLowerCase();
+  const reason =
+    approval.comment != null && approval.comment.length > 0 ? approval.comment : undefined;
+  if (s === 'pending' || s === 'requested' || s === 'waiting') {
+    return { status: 'WAITING_FOR_REVIEW', label: '等待人工审核', ...(reason != null ? { reason } : {}) };
+  }
+  if (s === 'approved' || s === 'passed' || s === 'completed' || s === 'done') {
+    return { status: 'APPROVED', label: '已通过' };
+  }
+  if (s === 'rejected' || s === 'failed' || s === 'error') {
+    return { status: 'FAILED', label: '未通过', ...(reason != null ? { reason } : {}) };
+  }
+  return { status: 'UNKNOWN', label: '无法评估' };
+}
+
+/** Human Approval 视图 (主审批门投影; 无 → null → UI Not available)。 */
+function toApprovalView(approval: ApprovalSummary | null): QualityGateViewModel['approval'] {
+  if (approval == null) return null;
+  const status = approvalCheckStatus(approval.status);
+  return {
+    status: status === 'passed' ? 'approved' : status === 'failed' ? 'rejected' : 'pending',
+    ...(str(approval.by).length > 0 ? { by: str(approval.by) } : {}),
+    ...(str(approval.comment).length > 0 ? { comment: str(approval.comment) } : {}),
+    ...(str(approval.requested_at).length > 0 ? { requestedAt: str(approval.requested_at) } : {}),
+  };
+}
+
+/** Decision History: timeline org.approval./org.artifact. 事件 → 条目 (倒序; 无 → [])。 */
+function qualityHistory(timeline: TimelineEventSummary[]): QualityGateViewModel['history'] {
+  const relevant = timeline.filter((ev) => {
+    const type = str(ev?.event_type);
+    return type.startsWith('org.approval.') || type.startsWith('org.artifact.');
+  });
+  return toRuntimeActivity(relevant)
+    .map((a) => ({ time: a.time, actor: a.actor, action: a.action, result: a.result }))
+    .sort((a, b) => timeKey(b.time) - timeKey(a.time));
+}
+
+/**
+ * Quality Gate 视图模型聚合 (S10-015 Task 007 — AI 生产交付标准界面)。
+ *
+ * 输入: approvals (GET /api/approvals) + workflow 实例 (GET /api/projects/{id}/workflow)
+ *   + timeline (GET /api/projects/{id}/timeline) — 组合真实数据, 禁止 mock 冒充。
+ * 输出: QualityGateViewModel 5 域 (UI 不直接依赖 API DTO — Adapter Layer):
+ *   - currentGate: 主审批门 (pending 优先, requested_at 倒序) → 卡 (name/status/artifact/
+ *     confidence/risk/requestedAt); 无审批 → null
+ *   - checks: 5 项 Required Checks (PRD Exists ← PRD 审批; Architecture/Tests/Build ←
+ *     workflow 阶段真实状态; Human Approval ← 主审批门); 无对应数据 → unavailable
+ *   - decision: pending → WAITING_FOR_REVIEW / approved → APPROVED / rejected → FAILED /
+ *     无审批 → UNKNOWN (UI Unavailable, 不编造质量结果)
+ *   - approval: 主审批门 → {status, by?, comment?, requestedAt?}; 无 → null
+ *   - history: timeline org.approval./org.artifact. 事件 → 倒序条目; 无 → []
+ * 降级 (§6.3): 任何输入缺失/非法 → null/[]/UNKNOWN/unavailable, 不崩溃; 纯函数无副作用。
+ */
+export function toQualityGateViewModel(input?: QualityGateInput | null): QualityGateViewModel {
+  const src = input ?? {};
+  const approvals = Array.isArray(src.approvals) ? src.approvals : [];
+  const workflow = src.workflow ?? null;
+  const timeline = Array.isArray(src.timeline) ? src.timeline : [];
+  const primary = primaryApproval(approvals);
+
+  return {
+    currentGate: toCurrentGate(primary),
+    checks: [
+      prdCheck(prdApprovalOf(approvals)),
+      stageCheck(workflow, ['architect'], ['design', 'architecture'], {
+        unavailable: '无架构阶段记录',
+        passed: '架构阶段已完成',
+        failed: '架构阶段失败',
+        pending: '架构评审待进行',
+        running: '架构评审进行中',
+      }, 'Architecture Review'),
+      stageCheck(workflow, ['tester', 'qa-engineer'], ['testing', 'test'], {
+        unavailable: '无测试阶段记录',
+        passed: '测试阶段已完成',
+        failed: '测试阶段失败',
+        pending: '测试待进行',
+        running: '测试进行中',
+      }, 'Tests Passed'),
+      stageCheck(workflow, ['devops'], ['release'], {
+        unavailable: '无发布阶段记录',
+        passed: '发布阶段已完成',
+        failed: '发布阶段失败',
+        pending: '发布待进行',
+        running: '发布进行中',
+      }, 'Build Available'),
+      approvalCheck(primary),
+    ],
+    decision: qualityDecision(primary),
+    approval: toApprovalView(primary),
+    history: qualityHistory(timeline),
+  };
 }

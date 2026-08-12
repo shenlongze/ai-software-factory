@@ -119,6 +119,10 @@ export function AfDashboard(): JSX.Element {
     if (id == null || id.length === 0) return;
     window.location.hash = `#/project/${encodeURIComponent(id)}/todo`;
   };
+  const openQuality = (id: string) => {
+    if (id == null || id.length === 0) return;
+    window.location.hash = `#/project/${encodeURIComponent(id)}/quality`;
+  };
 
   return (
     <div className="af-dashboard" data-testid="af-dashboard">
@@ -277,6 +281,17 @@ export function AfDashboard(): JSX.Element {
               </dd>
             </div>
           </dl>
+          {/* Quality Gate 入口: 点击 → 第一个真实项目的质量门 (闭环: Dashboard → Quality Gate) */}
+          {viewModel.projects.length > 0 ? (
+            <button
+              type="button"
+              className="af-dash-quality-link"
+              data-testid="af-dash-quality-link"
+              onClick={() => openQuality(viewModel.projects[0].id)}
+            >
+              查看质量门 →
+            </button>
+          ) : null}
         </section>
       </div>
     </div>

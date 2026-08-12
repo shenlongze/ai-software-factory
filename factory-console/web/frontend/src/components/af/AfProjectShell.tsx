@@ -31,6 +31,7 @@ import { AfProjectSidebar } from './AfProjectSidebar';
 import { AfTodoTreePage } from '../../pages/project/AfTodoTreePage';
 import { AfWorkflowPage } from '../../pages/project/AfWorkflowPage';
 import { AfRuntimePage } from '../../pages/project/AfRuntimePage';
+import { AfQualityGatePage } from '../../pages/project/AfQualityGatePage';
 import { ErrorState, LoadingState } from '../State';
 import { useAsync } from '../../hooks/useAsync';
 import type { ProjectSummary, WorkflowDetail } from '../../models/types';
@@ -49,6 +50,7 @@ export const PROJECT_PAGE_LABELS: Record<string, string> = {
   todo: 'Todo Tree',
   workflow: 'Workflow',
   runtime: 'Runtime',
+  quality: 'Quality',
   logs: 'Logs',
 };
 
@@ -264,6 +266,9 @@ function AfProjectSubPage({
   }
   if (page === 'Runtime' && projectId != null) {
     return <AfRuntimePage projectId={projectId} projectName={projectName ?? ''} />;
+  }
+  if (page === 'Quality' && projectId != null) {
+    return <AfQualityGatePage projectId={projectId} />;
   }
   return <AfModulePlaceholder pageLabel={page} />;
 }

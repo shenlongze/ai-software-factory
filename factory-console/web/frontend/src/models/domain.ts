@@ -282,3 +282,90 @@ export interface DashboardViewModel {
   /** 质量摘要 (cost/approvals/experience; 无 → undefined → UI Unavailable)。 */
   qualitySummary: QualitySummary;
 }
+
+// ------------------------------------------------------------------ Quality Gate 视图模型 (S10-015 Task 007)
+
+/**
+ * Quality Gate 检查状态 (从真实数据推导; 后端无对应数据 → 'unavailable' — UI 显示
+ * Unavailable, 禁止 fake passed/failed 冒充质量结果)。
+ */
+export type QualityCheckStatus = 'passed' | 'pending' | 'failed' | 'unavailable';
+
+/** 质量检查项 (Required Checks: PRD/架构/测试/构建/人工审批; 真实状态 + 证据 detail)。 */
+export interface QualityCheck {
+  name: string;
+  status: QualityCheckStatus;
+  /** 状态说明 (真实证据: 产物版本/审批人/失败原因; 无 → undefined)。 */
+  detail?: string;
+}
+
+/** 当前质量 Gate (审批门 + 产物信息; 无审批 → null → UI Unavailable)。 */
+export interface QualityGateInfo {
+  /** Gate 名 (gate → 人话: prd → PRD; 未知 → 原样)。 */
+  name: string;
+  /** Gate 状态 (approval.status → pending/passed/failed; 无审批 → unavailable)。 */
+  status: QualityCheckStatus;
+  /** 产物类型 (approval.artifact_type; 缺失 → undefined)。 */
+  artifactType?: string;
+  /** 产物版本 (approval.artifact_version; 缺失 → undefined)。 */
+  artifactVersion?: number;
+  /** AI 自评置信度 (approval.confidence — 真实值, 0 也是真实值; 缺失 → undefined)。 */
+  confidence?: number;
+  /** 风险等级 (approval.risk; 缺失 → undefined)。 */
+  risk?: string;
+  /** 审批请求时间 (approval.requested_at; 缺失 → undefined)。 */
+  requestedAt?: string;
+}
+
+/** 质量决策状态 (4 态: 待人工审核/已通过/未通过/无法评估)。 */
+export type QualityDecisionStatus =
+  | 'WAITING_FOR_REVIEW'
+  | 'APPROVED'
+  | 'FAILED'
+  | 'UNKNOWN';
+
+/** 质量决策 (Quality Decision 模块; 无审批数据 → UNKNOWN → UI Unavailable)。 */
+export interface QualityDecision {
+  status: QualityDecisionStatus;
+  /** 人话 label (等待人工审核/已通过/未通过/无法评估)。 */
+  label: string;
+  /** 决策依据 (approval.comment 真实意见; 无 → undefined)。 */
+  reason?: string;
+}
+
+/** 人工审批视图 (Human Approval 模块; 无审批 → null → UI Not available)。 */
+export interface QualityApproval {
+  status: 'pending' | 'approved' | 'rejected';
+  /** 审批人 (approval.by; 缺失 → undefined)。 */
+  by?: string;
+  /** 审批意见 (approval.comment; 缺失 → undefined)。 */
+  comment?: string;
+  /** 审批请求时间 (approval.requested_at; 缺失 → undefined)。 */
+  requestedAt?: string;
+}
+
+/** 历史决策条目 (Decision History — timeline org.approval./org.artifact. 事件投影)。 */
+export interface QualityHistoryItem {
+  time: string;
+  actor: string;
+  action: string;
+  result: string;
+}
+
+/**
+ * Quality Gate 视图模型 (5 模块数据源, UI 不直接依赖 API DTO — Adapter Layer):
+ *   - currentGate: 当前质量 Gate 卡 (无审批 → null)
+ *   - checks:      Required Checks 5 项 (真实数据推导; 无数据 → unavailable)
+ *   - decision:    Quality Decision (pending→WAITING_FOR_REVIEW / approved→APPROVED /
+ *                  rejected→FAILED / 无审批→UNKNOWN)
+ *   - approval:    Human Approval (无审批 → null)
+ *   - history:     Decision History (timeline 质量事件倒序; 无 → [])
+ * 降级 (§6.3): 任何输入缺失 → null/[]/UNKNOWN/unavailable, 不崩溃; 全部纯函数无副作用。
+ */
+export interface QualityGateViewModel {
+  currentGate: QualityGateInfo | null;
+  checks: QualityCheck[];
+  decision: QualityDecision;
+  approval: QualityApproval | null;
+  history: QualityHistoryItem[];
+}

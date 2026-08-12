@@ -125,6 +125,38 @@ export function sampleApproval(overrides: Partial<ApprovalSummary> = {}): Approv
   };
 }
 
+/**
+ * 真实 APR-001 审批门 (GET /api/approvals 实测 2026-08-12 01:50 — 唯一真实审批):
+ *   {id: "APR-001", artifact_id: "ART-009", artifact_type: "prd", gate: "prd",
+ *    status: "pending", confidence: 0, risk: "medium",
+ *    evidence: ["event:2f7cff3dc9234dbba3fcc03162aaecb9", "event:36e6ef7aa40a492cb192e31a61295e73"],
+ *    idea_id: "PI-002", by: "cli", comment: "auto-requested after prd generation (mandatory gate)",
+ *    requested_at: "2026-08-06T10:40:50.820090Z", artifact_version: 7}
+ * Quality Gate Adapter (S10-015 Task 007) 主数据源 — 与 sampleApproval (通用形状) 并列,
+ * 本 fixture 锁定真实字段值 (confidence=0 是真实值, 不是伪造质量分)。
+ */
+export function sampleApprovalReal(overrides: Partial<ApprovalSummary> = {}): ApprovalSummary {
+  return {
+    id: 'APR-001',
+    artifact_id: 'ART-009',
+    artifact_type: 'prd',
+    gate: 'prd',
+    status: 'pending',
+    confidence: 0,
+    risk: 'medium',
+    evidence: [
+      'event:2f7cff3dc9234dbba3fcc03162aaecb9',
+      'event:36e6ef7aa40a492cb192e31a61295e73',
+    ],
+    idea_id: 'PI-002',
+    by: 'cli',
+    comment: 'auto-requested after prd generation (mandatory gate)',
+    requested_at: '2026-08-06T10:40:50.820090Z',
+    artifact_version: 7,
+    ...overrides,
+  };
+}
+
 /** org 审批门 (S9-001 ApprovalGate; Console 决定操作对象 — Approval 页)。
  * 来源: 结构与 GET /api/approval-gates 真实响应一致 (验证于 2026-08-11)。 */
 export function sampleApprovalGate(
@@ -1408,4 +1440,63 @@ export function sampleBacklogP806(overrides: Partial<BacklogResponse> = {}): Bac
     ],
     ...overrides,
   };
+}
+
+// ------------------------------------------------------------------ S10-015 Task 007: Quality Gate fixtures
+// sampleApprovalReal (上方): 真实 APR-001 (prd gate pending)。
+// sampleQualityTimeline: 真实形状质量相关事件 (org.artifact.* + org.approval.*, 升序 seq)
+//   — Decision History 数据源 (Adapter 过滤 org.approval./org.artifact. 事件)。
+// sampleQualityWorkflow: 复用 sampleFailedWorkflow (真实 P-806fe6e8 失败链:
+//   development failed → testing pending → release pending, 无 architect 阶段)。
+
+/** 质量相关 timeline 事件 4 条 (org.artifact.* + org.approval.*; 结构与 GET /api/projects/{id}/timeline 实测一致)。 */
+export function sampleQualityTimeline(): TimelineEventSummary[] {
+  return [
+    sampleTimelineEvent({
+      id: 'evt-q1',
+      seq: 410,
+      project_id: 'P-806fe6e8',
+      type: 'artifact',
+      event_type: 'org.artifact.created',
+      artifact_id: 'ART-009',
+      message: '产物生成',
+      status: 'OK',
+      created_at: '2026-08-06T10:40:00.000000Z',
+    }),
+    sampleTimelineEvent({
+      id: 'evt-q2',
+      seq: 411,
+      project_id: 'P-806fe6e8',
+      type: 'artifact',
+      event_type: 'org.artifact.validated',
+      artifact_id: 'ART-009',
+      message: '产物验证通过',
+      status: 'OK',
+      created_at: '2026-08-06T10:40:30.000000Z',
+    }),
+    sampleTimelineEvent({
+      id: 'evt-q3',
+      seq: 412,
+      project_id: 'P-806fe6e8',
+      type: 'review',
+      event_type: 'org.approval.created',
+      gate_id: 'APR-001',
+      artifact_id: 'ART-009',
+      message: '审批待处理',
+      status: 'pending',
+      created_at: '2026-08-06T10:40:50.000000Z',
+    }),
+    sampleTimelineEvent({
+      id: 'evt-q4',
+      seq: 413,
+      project_id: 'P-806fe6e8',
+      type: 'review',
+      event_type: 'org.approval.approved',
+      gate_id: 'APR-001',
+      artifact_id: 'ART-009',
+      message: '审批通过',
+      status: 'approved',
+      created_at: '2026-08-06T10:41:00.000000Z',
+    }),
+  ];
 }

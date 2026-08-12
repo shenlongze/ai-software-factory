@@ -146,7 +146,7 @@ class TestAgentExecutorService:
         # Session 落库: 事件链含 LLM 边界 + 终态
         session = session_store.get(result["runtime_session_id"])
         assert session.status.value == "success"
-        assert [e.type.value for e in session.events][-1] == "execution_finished"
+        assert [e.type.value for e in session.events][-1] == "execution_completed"
 
     def test_empty_task_id_rejected(self, tmp_path: Path):
         """空 task_id → ValueError (HTTP 400 — 执行必须锚定 Task)。"""

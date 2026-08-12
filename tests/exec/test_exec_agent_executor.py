@@ -129,8 +129,9 @@ def executor_env(tmp_path: Path):
 
 class TestAgentExecutorSuccess:
     def test_full_chain_success(self, executor_env):
-        """全链路: Task/Agent 校验 → Session 创建 (PENDING→RUNNING) → LLM 调用
-        → 事件链 → SUCCESS; 返回 {runtime_session_id, status, output}。"""
+        """全链路: Task/Agent 校验 → Session 创建 (PENDING→RUNNING) → Loop
+        编排 (Analyze→Decision→Execute) → SUCCESS; 返回 {runtime_session_id,
+        status, output, execution_steps}。"""
         env = executor_env
         _make_task(env["task_store"])
         _make_agent(env["agent_registry"])
@@ -145,11 +146,18 @@ class TestAgentExecutorSuccess:
         assert output["execution_output"]
         assert output["execution_summary"]
         assert output["raw_response"]
+        # S10-017 Task 001: API 返回增加 execution_steps (Loop 步骤链)
+        assert [s["type"] for s in result["execution_steps"]] == [
+            "RECEIVE_TASK",
+            "ANALYZE",
+            "DECISION",
+            "FINAL",
+        ]
 
     def test_session_persisted_with_status_and_events(self, executor_env):
         """Session 落库: status=success + 事件链保序 (agent_started →
-        task_received → llm_request_sent → llm_response_received →
-        output_generated → execution_finished)。"""
+        task_received → thinking_started → decision_created → llm_request_sent
+        → llm_response_received → output_generated → execution_completed)。"""
         env = executor_env
         _make_task(env["task_store"])
         _make_agent(env["agent_registry"])
@@ -165,15 +173,17 @@ class TestAgentExecutorSuccess:
         assert [e.type.value for e in session.events] == [
             "agent_started",
             "task_received",
+            "thinking_started",
+            "decision_created",
             "llm_request_sent",
             "llm_response_received",
             "output_generated",
-            "execution_finished",
+            "execution_completed",
         ]
 
     def test_llm_called_through_reused_runtime(self, executor_env):
-        """LLM 调用复用 AgentRuntime.execute + Provider (FakeProvider.generate
-        被真实调用 — 非伪造结果)。"""
+        """LLM 调用复用 Provider: LLMPlanner (Reason) + AgentRuntime.execute
+        (Act — 旧流程 Task→LLM→Result); FakeProvider.generate 被真实调用。"""
         env = executor_env
         _make_task(env["task_store"])
         _make_agent(env["agent_registry"])
@@ -181,10 +191,10 @@ class TestAgentExecutorSuccess:
         env["executor"].execute_task(
             "T-101", "developer-1", context={"project_dir": str(env["project_dir"])}
         )
-        assert len(env["provider"].calls) == 1
-        # Provider 收到组装后的 Task Context (任务/项目/工作流阶段)
-        sent = env["provider"].calls[0]
-        assert "fix the sub bug" in sent.task_context
+        # 2 次调用: ① LLMPlanner 决策分析 ② runtime 执行 (Developer 工作)
+        assert len(env["provider"].calls) == 2
+        runtime_call = env["provider"].calls[-1]
+        assert "fix the sub bug" in runtime_call.task_context
 
     def test_output_preserved_in_session(self, executor_env):
         """Output 保留: execution_output/execution_summary/raw_response 在
@@ -215,7 +225,7 @@ class TestAgentExecutorSuccess:
         assert loaded is not None
         assert loaded.status.value == "success"
         assert loaded.execution_output
-        assert len(loaded.events) == 6
+        assert len(loaded.events) == 8
 
     def test_event_data_carries_context(self, executor_env):
         """agent_started 事件带 data (agent/task 锚点); output_generated 事件
@@ -233,7 +243,7 @@ class TestAgentExecutorSuccess:
         assert started.data is not None
         assert started.data["agent_id"] == "developer-1"
         assert started.data["task_id"] == "T-101"
-        output_ev = session.events[4]
+        output_ev = session.events[6]
         assert output_ev.type == RuntimeEventType.OUTPUT_GENERATED
         assert output_ev.data is not None
         assert "summary" in output_ev.data
@@ -268,12 +278,15 @@ class TestAgentExecutorFailure:
         assert result["status"] == "failed"
         session = env["session_store"].get(result["runtime_session_id"])
         assert session.status.value == "failed"
-        # 事件链: agent_started → task_received → llm_request_sent →
-        # llm_response_received → execution_failed (Provider 失败无输出生成)
+        # 事件链: agent_started → task_received → thinking_started →
+        # decision_created → llm_request_sent → llm_response_received →
+        # execution_failed (Provider 失败无输出生成)
         types = [e.type.value for e in session.events]
         assert types == [
             "agent_started",
             "task_received",
+            "thinking_started",
+            "decision_created",
             "llm_request_sent",
             "llm_response_received",
             "execution_failed",

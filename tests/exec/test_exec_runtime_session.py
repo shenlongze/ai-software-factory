@@ -21,6 +21,9 @@ from pathlib import Path
 import pytest
 
 from exec.runtime_session import (
+    AgentStep,
+    AgentStepStatus,
+    AgentStepType,
     CorruptRuntimeSessionStoreError,
     RuntimeEventType,
     RuntimeSession,
@@ -29,6 +32,7 @@ from exec.runtime_session import (
     RuntimeSessionStore,
     new_session_id,
     new_event_id,
+    new_step_id,
 )
 
 
@@ -65,11 +69,13 @@ class TestRuntimeSessionModel:
             "cancelled",
         }
 
-    def test_event_type_seven(self):
-        """RuntimeEvent 类型 (任务约束 + S10-016 Task 002 最小扩展):
+    def test_event_type_fourteen(self):
+        """RuntimeEvent 类型 (任务约束 + Task 002 + S10-017 Task 001 扩展):
         agent_started/task_received/execution_started/tool_called/
         llm_request_sent/llm_response_received/output_generated/
-        execution_finished/execution_failed。"""
+        execution_finished/execution_failed + thinking_started/
+        decision_created/action_requested/observation_received/
+        execution_completed (9→14, 向后兼容)。"""
         assert {t.value for t in RuntimeEventType} == {
             "agent_started",
             "task_received",
@@ -80,6 +86,11 @@ class TestRuntimeSessionModel:
             "output_generated",
             "execution_finished",
             "execution_failed",
+            "thinking_started",
+            "decision_created",
+            "action_requested",
+            "observation_received",
+            "execution_completed",
         }
 
     def test_to_dict_json_friendly(self):
@@ -97,10 +108,12 @@ class TestRuntimeSessionModel:
         assert session.id == "rs-abc"
 
     def test_new_ids_unique(self):
-        """id 生成: rs-/ev- 前缀, 唯一 basename。"""
+        """id 生成: rs-/ev-/st- 前缀, 唯一 basename。"""
         assert new_session_id().startswith("rs-")
         assert new_event_id().startswith("ev-")
+        assert new_step_id().startswith("st-")
         assert new_session_id() != new_session_id()
+        assert new_step_id() != new_step_id()
 
 
 # ------------------------------------------------------------------ 状态机
@@ -270,6 +283,123 @@ class TestRuntimeSessionEvents:
         for i in range(3):
             session, _ = session.append_event(RuntimeEventType.TOOL_CALLED, f"t{i}")
         assert [e.message for e in session.events] == ["t0", "t1", "t2"]
+
+
+# ------------------------------------------------------------------ AgentStep (S10-017 Task 001)
+
+
+class TestAgentStep:
+    """AgentStep 模型 + RuntimeSession.add_step (执行步骤记录 — S10-017)。"""
+
+    def _running(self):
+        return RuntimeSession(
+            session_id="rs-abc", agent_id="dev-1", task_id="T-1"
+        ).start()
+
+    def test_step_type_values(self):
+        """step_type 六类型 (RECEIVE_TASK/ANALYZE/DECISION/ACTION/OBSERVATION/FINAL)。"""
+        assert {t.value for t in AgentStepType} == {
+            "RECEIVE_TASK",
+            "ANALYZE",
+            "DECISION",
+            "ACTION",
+            "OBSERVATION",
+            "FINAL",
+        }
+
+    def test_step_status_values(self):
+        """step status 四态 (pending/running/succeeded/failed)。"""
+        assert {s.value for s in AgentStepStatus} == {
+            "pending",
+            "running",
+            "succeeded",
+            "failed",
+        }
+
+    def test_add_step_running_assigns_number_and_id(self):
+        """RUNNING 下 add_step: id (st-)/step_number 递增 (1,2,3)/step_type/
+        input/output/status/created_at; steps 内嵌于 session (保序)。"""
+        session = self._running()
+        session, step1 = session.add_step(
+            AgentStepType.RECEIVE_TASK, input={"task_id": "T-1"}
+        )
+        assert step1.id.startswith("st-")
+        assert step1.session_id == "rs-abc"
+        assert step1.step_number == 1
+        assert step1.step_type == AgentStepType.RECEIVE_TASK
+        assert step1.input == {"task_id": "T-1"}
+        assert step1.output == {}
+        assert step1.status == AgentStepStatus.SUCCEEDED
+        assert step1.created_at is not None
+        session, step2 = session.add_step(
+            AgentStepType.ANALYZE, input={}, output={"note": "x"}
+        )
+        assert step2.step_number == 2
+        assert [s.step_type for s in session.steps] == [
+            AgentStepType.RECEIVE_TASK,
+            AgentStepType.ANALYZE,
+        ]
+
+    def test_add_step_pending_rejected(self):
+        """PENDING 下 add_step → RuntimeSessionError (未开始无步骤)。"""
+        session = RuntimeSession(
+            session_id="rs-abc", agent_id="dev-1", task_id="T-1"
+        )
+        with pytest.raises(RuntimeSessionError):
+            session.add_step(AgentStepType.RECEIVE_TASK)
+
+    @pytest.mark.parametrize(
+        "terminal",
+        ["success", "failed", "cancelled"],
+    )
+    def test_add_step_terminal_rejected(self, terminal):
+        """终态下 add_step → RuntimeSessionError (步骤链冻结, 同事件链)。"""
+        session = self._running()
+        if terminal == "success":
+            session = session.complete(success=True)
+        elif terminal == "failed":
+            session = session.complete(success=False)
+        else:
+            session = session.cancel()
+        with pytest.raises(RuntimeSessionError):
+            session.add_step(AgentStepType.FINAL)
+
+    def test_add_step_invalid_type_raises_value_error(self):
+        """未知 step_type → ValueError (响亮)。"""
+        session = self._running()
+        with pytest.raises(ValueError):
+            session.add_step("NOT_A_STEP")  # type: ignore[arg-type]
+
+    def test_step_to_dict_json_friendly(self):
+        """AgentStep to_dict: datetime → ISO 字符串 (session.to_dict 含 steps)。"""
+        session = self._running()
+        session, _ = session.add_step(AgentStepType.RECEIVE_TASK, input={"task_id": "T-1"})
+        payload = session.to_dict()
+        assert len(payload["steps"]) == 1
+        assert isinstance(payload["steps"][0]["created_at"], str)
+        assert payload["steps"][0]["step_number"] == 1
+
+    def test_steps_persist_across_store_recreation(self, tmp_path: Path):
+        """持久化铁律: 重建 store 后 steps 仍可查 (旧数据无 steps 字段 → 空列表)。"""
+        data_dir = tmp_path / "sessions"
+        store = RuntimeSessionStore(data_dir)
+        session = self._running()
+        session, _ = session.add_step(AgentStepType.RECEIVE_TASK, input={"task_id": "T-1"})
+        store.save(session)
+        reopened = RuntimeSessionStore(data_dir)
+        loaded = reopened.get("rs-abc")
+        assert loaded is not None
+        assert len(loaded.steps) == 1
+        assert loaded.steps[0].step_type == AgentStepType.RECEIVE_TASK
+
+    def test_old_session_without_steps_loads_with_empty_list(self, tmp_path: Path):
+        """旧数据兼容: 无 steps 字段的已存 session 反序列化 → steps 空列表。"""
+        data_dir = tmp_path / "sessions"
+        store = RuntimeSessionStore(data_dir)
+        store.save(RuntimeSession(session_id="rs-old", agent_id="d", task_id="T"))
+        loaded = store.get("rs-old")
+        assert loaded is not None
+        assert loaded.steps == []
 
 
 # ------------------------------------------------------------------ Store

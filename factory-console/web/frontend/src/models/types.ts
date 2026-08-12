@@ -510,6 +510,27 @@ export interface ExecuteResponse {
     execution_summary?: string;
     raw_response?: string;
   } | null;
+  /** S10-017 Task 001: Agent Execution Loop 步骤记录 (RECEIVE_TASK→ANALYZE→DECISION→FINAL)。 */
+  execution_steps?: ExecutionStep[];
+}
+
+/** S10-017 Task 001: Agent 内部执行步骤 (Goal→Reason→Act→Observe→Complete)。 */
+export interface ExecutionStep {
+  id: string;
+  session_id: string;
+  step_number: number;
+  step_type:
+    | 'RECEIVE_TASK'
+    | 'ANALYZE'
+    | 'DECISION'
+    | 'ACTION'
+    | 'OBSERVATION'
+    | 'FINAL'
+    | string;
+  input?: string | null;
+  output?: string | null;
+  status: string;
+  created_at: string | null;
 }
 
 /** S10-002: SSE 事件名 (与后端 SSE_EVENT_MAP 同源; 业务 7 类 + error 通道)。 */

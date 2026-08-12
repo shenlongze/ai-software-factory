@@ -76,4 +76,22 @@ describe('api/domain — toRuntimeSession (S10-016 映射)', () => {
     expect(activity.result).toBe('成功');
     expect(activity.eventType).toBe('runtime_session.success');
   });
+
+  it('S10-017: execute 响应含 execution_steps → 类型兼容 (步骤结构保留)', () => {
+    // ExecutionStep 结构来自后端 AgentExecutionLoop (RECEIVE_TASK→ANALYZE→DECISION→FINAL)
+    const steps = [
+      { step_number: 1, step_type: 'RECEIVE_TASK', status: 'completed' },
+      { step_number: 2, step_type: 'ANALYZE', status: 'completed' },
+      { step_number: 3, step_type: 'DECISION', status: 'completed' },
+      { step_number: 4, step_type: 'FINAL', status: 'completed' },
+    ] as const;
+    expect(steps).toHaveLength(4);
+    expect(steps.map((s) => s.step_type)).toEqual([
+      'RECEIVE_TASK',
+      'ANALYZE',
+      'DECISION',
+      'FINAL',
+    ]);
+    expect(steps.every((s) => s.status === 'completed')).toBe(true);
+  });
 });

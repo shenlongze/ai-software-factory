@@ -64,6 +64,11 @@ def new_event_id() -> str:
     return f"ev-{uuid.uuid4().hex[:8]}"
 
 
+def new_step_id() -> str:
+    """新步骤 id (st-<uuid4 前 8 hex> — AgentStep 执行步骤)。"""
+    return f"st-{uuid.uuid4().hex[:8]}"
+
+
 class RuntimeSessionStatus(str, Enum):
     """Runtime Session 五状态 (API 契约: pending/running/success/failed/cancelled)。"""
 
@@ -80,6 +85,11 @@ class RuntimeEventType(str, Enum):
     S10-016 Task 002 最小扩展 (向后兼容): 新增 LLM_REQUEST_SENT /
     LLM_RESPONSE_RECEIVED — Agent Executor 编排层标记 LLM 调用边界
     (Request Sent: 调 Provider 前; Response Received: Provider 返回后)。
+
+    S10-017 Task 001 扩展 (9→14, 向后兼容): 新增 THINKING_STARTED /
+    DECISION_CREATED / ACTION_REQUESTED / OBSERVATION_RECEIVED /
+    EXECUTION_COMPLETED — Agent Execution Loop 完整记录
+    Task→Step→Decision→Result (思考/决策/动作边界/观察/循环完成)。
     """
 
     AGENT_STARTED = "agent_started"
@@ -91,6 +101,37 @@ class RuntimeEventType(str, Enum):
     OUTPUT_GENERATED = "output_generated"
     EXECUTION_FINISHED = "execution_finished"
     EXECUTION_FAILED = "execution_failed"
+    # S10-017 Task 001: Execution Loop 事件 (Reason→Act→Observe→Complete)
+    THINKING_STARTED = "thinking_started"
+    DECISION_CREATED = "decision_created"
+    ACTION_REQUESTED = "action_requested"
+    OBSERVATION_RECEIVED = "observation_received"
+    EXECUTION_COMPLETED = "execution_completed"
+
+
+class AgentStepType(str, Enum):
+    """Agent 执行步骤类型 (S10-017 Task 001 — 执行循环步骤模型)。
+
+    RECEIVE_TASK (接收任务) → ANALYZE (分析/思考) → DECISION (决策) →
+    ACTION (动作边界 — 本 Sprint 仅 Mock noop, 为 Tool/MCP 预留) →
+    OBSERVATION (观察结果) → FINAL (最终产出/循环完成)。
+    """
+
+    RECEIVE_TASK = "RECEIVE_TASK"
+    ANALYZE = "ANALYZE"
+    DECISION = "DECISION"
+    ACTION = "ACTION"
+    OBSERVATION = "OBSERVATION"
+    FINAL = "FINAL"
+
+
+class AgentStepStatus(str, Enum):
+    """Agent 步骤状态 (pending/running/succeeded/failed — 与执行结果同构)。"""
+
+    PENDING = "pending"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
 
 
 class RuntimeSessionError(Exception):
@@ -123,6 +164,25 @@ class RuntimeEvent(_SessionModel):
         return self.event_id
 
 
+class AgentStep(_SessionModel):
+    """Agent 执行步骤 (S10-017 Task 001 — 执行循环步骤记录; 内嵌于
+    RuntimeSession.steps)。
+
+    id (st-)/session_id/step_number (从 1 递增)/step_type (RECEIVE_TASK|
+    ANALYZE|DECISION|ACTION|OBSERVATION|FINAL)/input/output/status/
+    created_at — 完整记录 Task→Step→Decision→Result 的每一步。
+    """
+
+    id: str
+    session_id: str
+    step_number: int
+    step_type: AgentStepType
+    input: dict[str, Any] = Field(default_factory=dict)
+    output: dict[str, Any] = Field(default_factory=dict)
+    status: AgentStepStatus = AgentStepStatus.SUCCEEDED
+    created_at: datetime = Field(default_factory=utcnow)
+
+
 class RuntimeSession(_SessionModel):
     """Runtime Session — 一次 Agent 执行会话的记录 (谁/何时/何任务/何状态/事件链)。
 
@@ -140,6 +200,9 @@ class RuntimeSession(_SessionModel):
     started_at: datetime | None = None
     finished_at: datetime | None = None
     events: list[RuntimeEvent] = Field(default_factory=list)
+    # S10-017 Task 001: Agent Execution Loop 步骤链 (RECEIVE_TASK→…→FINAL;
+    # 状态变化不静默 — 每步都落 session; 缺省空列表, 旧数据无损)
+    steps: list[AgentStep] = Field(default_factory=list)
     # S10-016 Task 002: Agent Executor 输出保留 (执行产出 — execution_output/
     # execution_summary/raw_response; 缺省空串, 向后兼容旧数据无字段)
     execution_output: str = ""
@@ -226,6 +289,42 @@ class RuntimeSession(_SessionModel):
         return (
             self.model_copy(update={"events": [*self.events, event]}),
             event,
+        )
+
+    # ------------------------------------------------------------------ 步骤链 (S10-017)
+
+    def add_step(
+        self,
+        step_type: AgentStepType | str,
+        input: dict[str, Any] | None = None,
+        output: dict[str, Any] | None = None,
+        *,
+        status: AgentStepStatus = AgentStepStatus.SUCCEEDED,
+    ) -> tuple["RuntimeSession", AgentStep]:
+        """追加执行步骤 (仅 RUNNING 允许; 终态/未开始 → RuntimeSessionError)。
+
+        step_number 从 1 递增 (len(steps)+1); input/output 缺省空 dict (无
+        None 陷阱); 未知 step_type → ValueError (响亮)。返回 (新 session,
+        新 AgentStep) — 调用方经 store.save(新 session) 落库; 步骤内嵌于
+        session.steps (保序, 同事件链)。
+        """
+        if self.status != RuntimeSessionStatus.RUNNING:
+            raise RuntimeSessionError(
+                f"session {self.session_id} cannot add step from status "
+                f"{self.status.value!r} (only RUNNING)"
+            )
+        step = AgentStep(
+            id=new_step_id(),
+            session_id=self.session_id,
+            step_number=len(self.steps) + 1,
+            step_type=AgentStepType(step_type),  # 未知值 → ValueError (响亮)
+            input=input or {},
+            output=output or {},
+            status=status,
+        )
+        return (
+            self.model_copy(update={"steps": [*self.steps, step]}),
+            step,
         )
 
 

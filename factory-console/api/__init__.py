@@ -17,6 +17,7 @@ from .approvals import (
     list_approvals,
     reject_approval,
 )
+from .agent_executor import execute_runtime_task
 from .artifacts import get_artifact, get_artifact_content, list_artifacts
 from .backlog import (
     create_epic,
@@ -109,6 +110,7 @@ __all__ = [
     "delete_project",
     "delete_sprint",
     "delete_task",
+    "execute_runtime_task",
     "get_artifact",
     "get_artifact_content",
     "get_decision",

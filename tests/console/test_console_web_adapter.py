@@ -332,6 +332,7 @@ class TestPermissionBoundary:
                 is_approval = path.endswith("/approve") or path.endswith("/reject")
                 is_runtime_lifecycle = (
                     "/runtimes" in path or "/runtime-sessions" in path or "/sessions" in path
+                    or path == "/api/runtime/execute"
                 )
                 is_review_feedback = path.endswith("/review-feedback")
                 is_project_create = path == "/api/projects"

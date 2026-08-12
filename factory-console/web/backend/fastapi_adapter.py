@@ -58,7 +58,10 @@ build 静态文件 (SPA)。只做 HTTP 绑定 (参数解析 / JSON 序列化 / �
   POST /api/projects/{id}/start         → 启动真实 Agent 执行链 (404/409/503) [S10-006.5 P1-A]
   POST /api/projects/{id}/chat          → 持续开发对话 (400/404/503)          [S10-006.5 P1-A]
   GET  /api/projects/{id}/run-status    → 运行状态+进度 (none/running/…)      [S10-006.5 P1-A]
-Permission Boundary (S9-002 收窄 + S10-004/006/006.5 扩展): 写路径仅
+  POST /api/runtime/execute             → Agent 全链路执行 (Task→Agent→Session→
+                                          LLM→Result; 400 校验/404 未装配/200
+                                          status=failed=LLM 失败不 5xx)      [S10-016-002]
+Permission Boundary (S9-002 收窄 + S10-004/006/006.5/016-002 扩展): 写路径仅
 ① 审批决定两 POST (approve/reject, reviewer="console" 落库 + source="console"
 审计) ② Feedback Loop 一 POST (review-feedback — Reject 意见落库, 不触碰
 引擎) ③ Runtime 实例生命周期 POST (创建/start/stop/screenshot, S10-004)
@@ -393,15 +396,38 @@ class _SessionCompleteBody(BaseModel):
     success: bool = True
 
 
+class _ExecuteRuntimeBody(BaseModel):
+    """POST /api/runtime/execute body (S10-016 Task 002: Agent 全链路执行)。
+
+    {task_id, agent_id, context?}: task_id/agent_id 必填 (空 → 400 — 执行
+    必须锚定 Task 且执行者明确); context 可选执行上下文 (project_dir/
+    requirement/instruction — 透传 AgentExecutor 组装 Task Context)。
+    """
+
+    task_id: str = ""
+    agent_id: str = ""
+    context: dict[str, Any] | None = None
+
+
 # ------------------------------------------------------------------ 装配
 
 
-def build_console_service(factory_root: str | Path, *, event_logger: Any = None) -> Any:
+def build_console_service(
+    factory_root: str | Path,
+    *,
+    event_logger: Any = None,
+    agent_executor: Any = None,
+) -> Any:
     """按工厂根装配 ConsoleService (镜像 cli.commands._open_console_service)。
 
     全部 store 依赖可选 (失败安全: 缺任一 store → Console 按空数据处理);
     延迟导入 Core 包保 Removal Isolation (删除任一 Core 包不影响 Console 加载)。
     factory-console 包名含连字符 → importlib 按路径加载 (同 CLI 模式)。
+
+    S10-016 Task 002: agent_executor 可选注入 (exec.agent_executor — 全链路
+    编排; 生产装配不传 → ConsoleService 自装配: 复用本装配的 store +
+    workflow_runner 真实 Provider (LLM key 已配置时); 无已配置 Provider →
+    诚实 FAILED, 不伪造 LLM 结果)。
 
     S9-002: 装配 org 数据空间 (root/org — ProjectStore + WorkflowLifecycle,
     与 factory-org 演示/CLI 同目录口径); event_logger 提供时注入带事件库的
@@ -527,6 +553,10 @@ def build_console_service(factory_root: str | Path, *, event_logger: Any = None)
         # S10-016: Runtime Session 持久化 (root/runtime-sessions — Agent 执行
         # 会话; 失败安全: 装配失败 → None, session 操作按空/404 处理)
         session_store=session_store,
+        # S10-016 Task 002: AgentExecutor 编排层 (注入优先; 缺省 None →
+        # service 自装配 — 复用本装配 store + workflow_runner 真实 Provider,
+        # 无已配置 LLM key → 诚实 FAILED 不伪造结果)
+        agent_executor=agent_executor,
     )
 
 
@@ -1645,6 +1675,46 @@ def build_app(
             service, task_id, logger=event_logger
         )
         return [s.to_dict() for s in sessions]
+
+    # ------------------------------------------- S10-016 Task 002: Agent Executor API
+    # Agent 全链路执行入口 (AI Employee Runtime Foundation Task 002): POST
+    # /api/runtime/execute — Task/Agent 校验 → Runtime Session (PENDING→RUNNING)
+    # → Task Context → AgentRuntime (复用真实 Provider) → 事件链 → SUCCESS|FAILED
+    # → {runtime_session_id, status, output}。写路径扩展 (Permission Boundary
+    # S10-016 Task 002 扩展: 执行编排 POST — 触发真实 Agent 执行, 执行权仍
+    # 在 AgentRuntime; 无注入 → service 自装配)。
+    # 错误映射: 空 task_id/agent_id / Task 不存在 / Agent 不存在
+    # (AgentExecutorError → service 归一 ValueError) → 400; store/exec 未装配
+    # → 404 (失败安全); LLM Provider 失败 → 200 status=failed + output 保留
+    # (不抛裸异常 — 错误进事件链, 编排层兜底)。
+
+    @app.post("/api/runtime/execute")
+    def api_execute_runtime_task(body: _ExecuteRuntimeBody) -> dict[str, Any]:
+        """Agent 全链路执行 (POST — Task→Agent→Session→LLM→Result 编排闭环)。
+
+        {task_id, agent_id, context?} → 200 {runtime_session_id, status,
+        output}: status 终态 success|failed — LLM Provider 失败 → 200
+        status=failed + output 保留失败原因 (不 5xx / 不抛裸异常 — 错误进
+        事件链); 空 task_id/agent_id / Task 不存在 / Agent 不存在 → 400
+        (AgentExecutorError 由 service 归一为 ValueError, 不创建 Session);
+        store/exec 未装配 → 404 (失败安全 — 冷启动/缺装不崩溃)。
+        """
+        try:
+            result = _api.execute_runtime_task(
+                service,
+                body.task_id,
+                body.agent_id,
+                context=body.context,
+                logger=event_logger,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if result is None:
+            raise HTTPException(
+                status_code=404,
+                detail="runtime executor unavailable (store/exec 未装配)",
+            )
+        return result
 
     # ------------------------------------------- S10-006.5 P1-A: Workflow 启动 API
     # 用户第一公里闭环: POST start (真实 Agent 执行链, 后台线程) + chat 最小版

@@ -501,6 +501,17 @@ export interface RuntimeSessionPayload {
   events: RuntimeEventPayload[];
 }
 
+/** S10-016 Task 002: POST /api/runtime/execute 响应 (Agent Executor 执行结果)。 */
+export interface ExecuteResponse {
+  runtime_session_id: string;
+  status: 'pending' | 'running' | 'success' | 'failed' | 'cancelled' | string;
+  output?: {
+    execution_output?: string;
+    execution_summary?: string;
+    raw_response?: string;
+  } | null;
+}
+
 /** S10-002: SSE 事件名 (与后端 SSE_EVENT_MAP 同源; 业务 7 类 + error 通道)。 */
 export const RUNTIME_EVENT_NAMES = [
   'stage.started',

@@ -22,6 +22,7 @@
 
 from __future__ import annotations
 
+import importlib
 import os
 import re
 import shutil
@@ -270,6 +271,11 @@ class ConsoleService:
         # 可选, 失败安全: 缺 store → 查询空/写返回 None, Console 冷启动
         # 照常工作, 不拖垮 API)
         session_store: Any = None,
+        # S10-016 Task 002: AgentExecutor 编排层 (exec.agent_executor —
+        # Task→Agent→Session→LLM→Result 全链路; 可选注入, 失败安全:
+        # 无注入 → 自装配 (复用本服务 store), 自装配无已配置 Provider →
+        # 诚实 FAILED (不伪造 LLM 结果))
+        agent_executor: Any = None,
     ) -> None:
         self._workspace = workspace_manager
         self._task_store = task_store
@@ -300,6 +306,10 @@ class ConsoleService:
         # S10-016: Runtime Session store (exec.runtime_session — Agent 执行
         # 会话记录; 可选, 失败安全: 缺 store → 查询空/写 None)
         self._session_store = session_store
+        # S10-016 Task 002: AgentExecutor 编排层 (exec.agent_executor — 全链路
+        # Task→Session→LLM→Result; 可选注入, 失败安全: 无注入 → 自装配,
+        # 自装配仍无已配置 Provider → 诚实 FAILED, 不伪造 LLM 结果)
+        self._agent_executor = agent_executor
 
     # ------------------------------------------------------------------ S10-016: Runtime Session
     # AI Employee Runtime Foundation — Agent 执行会话可见性底座 (谁在跑/跑
@@ -326,6 +336,115 @@ class ConsoleService:
             return runtime_session
         except Exception:
             return None
+
+    @staticmethod
+    def _agent_executor_mod() -> Any:
+        """延迟导入 exec.agent_executor 模块 (Removal Isolation; 失败 → None)。"""
+        try:
+            from exec import agent_executor
+
+            return agent_executor
+        except Exception:
+            return None
+
+    def _self_assemble_runtime(self) -> Any | None:
+        """自装配 AgentRuntime (真实 Provider — 复用 workflow_runner 的 LLM
+        key 判定 + provider 构建; 延迟 import, Removal Isolation)。
+
+        无已配置 LLM key / 装配失败 → None — AgentExecutor 据此诚实 FAILED
+        (Provider Adapter Interface: 无 Provider 不伪造 LLM 结果, 错误进事件)。
+        work_root 缺省 None = 系统临时目录 (沙箱副本父目录, agent_runtime
+        契约); validation_command=None (不引入沙箱验证依赖)。
+        """
+        try:
+            _runner = importlib.import_module("factory-console.workflow_runner")
+            if not _runner.has_llm_key():
+                return None
+            _runner.load_llm_key()
+            _build = getattr(_runner, "_build_provider", None)
+            if _build is None:
+                return None
+            from exec.agent_runtime import AgentRuntime
+
+            return AgentRuntime(_build(None), validation_command=None)
+        except Exception:
+            return None  # 自装配失败安全 — 无 Provider → 诚实 FAILED
+
+    def _get_agent_executor(self) -> Any | None:
+        """AgentExecutor (注入优先; 缺失 → 自装配; store/exec 未装配 → None)。
+
+        失败安全 (同全部 store 依赖哲学): 无注入且无 session_store/task_store/
+        agent_registry (exec 未装配) → None → 调用方按 404 处理, 冷启动不崩溃。
+        自装配的 runtime: 已配置 Provider → 真实链路; 无 → None (AgentExecutor
+        诚实 FAILED — 不伪造 LLM 结果)。
+        """
+        if self._agent_executor is not None:
+            return self._agent_executor
+        store = self._get_session_store()
+        mod = self._agent_executor_mod()
+        if (
+            store is None
+            or mod is None
+            or self._task_store is None
+            or self._agent_registry is None
+        ):
+            return None
+        runtime = self._self_assemble_runtime()
+        return mod.AgentExecutor(
+            task_store=self._task_store,
+            agent_registry=self._agent_registry,
+            session_store=store,
+            runtime=runtime,
+        )
+
+    def execute_runtime_task(
+        self,
+        task_id: str,
+        agent_id: str,
+        *,
+        context: dict[str, Any] | None = None,
+    ) -> Any | None:
+        """S10-016 Task 002: Agent 全链路执行编排 (Task→Session→LLM→Result)。
+
+        编排 AgentExecutor.execute_task (exec.agent_executor 已 GREEN — 完整
+        闭环: Task/Agent 校验 → Runtime Session (PENDING→RUNNING) → Task
+        Context → AgentRuntime (复用真实 Provider) → 事件链 → SUCCESS|FAILED
+        → {runtime_session_id, status, output})。
+
+        错误语义:
+        - 空 task_id/agent_id → ValueError (HTTP 400 — 执行必须锚定 Task/Agent)
+        - Task/Agent 不存在 → AgentExecutorError 归一为 ValueError (HTTP 400,
+          不创建 Session)
+        - LLM Provider 失败 → status=failed + output 保留失败原因 (不抛裸异常
+          — 错误进事件链, 由编排层兜底)
+        - store/exec 未装配 (空构造无注入) → None (HTTP 404 失败安全)
+        - 注入缺失 → 自装配: 无已配置 Provider → 诚实 FAILED session (不伪造
+          LLM 结果, error 事件含 provider 提示)
+        """
+        cleaned_task = str(task_id or "").strip()
+        cleaned_agent = str(agent_id or "").strip()
+        if not cleaned_task:
+            raise ValueError("task_id is required (执行必须锚定 Task)")
+        if not cleaned_agent:
+            raise ValueError("agent_id is required (执行者必须明确)")
+        executor = self._get_agent_executor()
+        if executor is None:
+            return None
+        mod = self._agent_executor_mod()
+        try:
+            return executor.execute_task(
+                cleaned_task, cleaned_agent, context=context
+            )
+        except ValueError:
+            raise  # 已 ValueError (domain 输入校验) → HTTP 400
+        except Exception as exc:
+            # AgentExecutorError (TaskNotFoundError/AgentNotFoundError) →
+            # ValueError → HTTP 400; 其余异常照抛 (编排层自身不抛裸异常,
+            # 此处仅归一业务校验失败)
+            err_type = getattr(mod, "AgentExecutorError", None) if mod is not None else None
+            if err_type is not None and isinstance(exc, err_type):
+                raise ValueError(str(exc)) from exc
+            raise
 
     def create_session(
         self,

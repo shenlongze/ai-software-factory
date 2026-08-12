@@ -41,6 +41,7 @@ import {
   type RuntimeInstance,
   type RuntimeScreenshot,
   type RuntimeSessionPayload,
+  type ExecuteResponse,
   type RunStatusResponse,
   type StageRunSummary,
   type TimelineEventSummary,
@@ -305,6 +306,12 @@ export const api = {
     ),
   taskRuntimeSessions: (taskId: string) =>
     getJson<RuntimeSessionPayload[]>(`/api/tasks/${encodeURIComponent(taskId)}/runtime`),
+  // S10-016 Task 002: Agent Executor — 让 AI Employee 真正执行任务 (POST /api/runtime/execute)
+  executeRuntimeTask: (taskId: string, agentId: string, context?: Record<string, unknown>) =>
+    sendJson<ExecuteResponse>(
+      '/api/runtime/execute',
+      { task_id: taskId, agent_id: agentId, context },
+    ),
 } as const;
 
 export type Api = typeof api;

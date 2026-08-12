@@ -75,12 +75,19 @@ class RuntimeSessionStatus(str, Enum):
 
 
 class RuntimeEventType(str, Enum):
-    """Runtime Event 七类型 (任务约束 — Agent 执行时间线事件)。"""
+    """Runtime Event 类型 (任务约束 — Agent 执行时间线事件)。
+
+    S10-016 Task 002 最小扩展 (向后兼容): 新增 LLM_REQUEST_SENT /
+    LLM_RESPONSE_RECEIVED — Agent Executor 编排层标记 LLM 调用边界
+    (Request Sent: 调 Provider 前; Response Received: Provider 返回后)。
+    """
 
     AGENT_STARTED = "agent_started"
     TASK_RECEIVED = "task_received"
     EXECUTION_STARTED = "execution_started"
     TOOL_CALLED = "tool_called"
+    LLM_REQUEST_SENT = "llm_request_sent"
+    LLM_RESPONSE_RECEIVED = "llm_response_received"
     OUTPUT_GENERATED = "output_generated"
     EXECUTION_FINISHED = "execution_finished"
     EXECUTION_FAILED = "execution_failed"
@@ -133,6 +140,11 @@ class RuntimeSession(_SessionModel):
     started_at: datetime | None = None
     finished_at: datetime | None = None
     events: list[RuntimeEvent] = Field(default_factory=list)
+    # S10-016 Task 002: Agent Executor 输出保留 (执行产出 — execution_output/
+    # execution_summary/raw_response; 缺省空串, 向后兼容旧数据无字段)
+    execution_output: str = ""
+    execution_summary: str = ""
+    raw_response: str = ""
 
     @property
     def id(self) -> str:

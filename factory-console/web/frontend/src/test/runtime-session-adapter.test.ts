@@ -58,4 +58,22 @@ describe('api/domain — toRuntimeSession (S10-016 映射)', () => {
     expect(activity.result).toBe('');
     expect(activity.action).toBe('Agent 执行会话');
   });
+
+  it('兼容: ExecuteResponse 形态 (task_id/agent_id/status) → RuntimeActivity', () => {
+    // S10-016 Task 002: POST /api/runtime/execute 响应 → 复用 toRuntimeSession 映射
+    const activity = toRuntimeSession({
+      session_id: 'SES-EXEC-1',
+      agent_id: 'developer-1',
+      task_id: 'TASK-b2',
+      workflow_id: 'WF-2',
+      status: 'success',
+      created_at: '2026-08-12T14:00:00Z',
+      started_at: '2026-08-12T14:00:05Z',
+      finished_at: '2026-08-12T14:00:30Z',
+      events: [],
+    });
+    expect(activity.action).toBe('执行任务 TASK-b2 (WF-2)');
+    expect(activity.result).toBe('成功');
+    expect(activity.eventType).toBe('runtime_session.success');
+  });
 });

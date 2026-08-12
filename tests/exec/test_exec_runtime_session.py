@@ -66,14 +66,17 @@ class TestRuntimeSessionModel:
         }
 
     def test_event_type_seven(self):
-        """RuntimeEvent 七类型 (任务约束): agent_started/task_received/
-        execution_started/tool_called/output_generated/execution_finished/
-        execution_failed。"""
+        """RuntimeEvent 类型 (任务约束 + S10-016 Task 002 最小扩展):
+        agent_started/task_received/execution_started/tool_called/
+        llm_request_sent/llm_response_received/output_generated/
+        execution_finished/execution_failed。"""
         assert {t.value for t in RuntimeEventType} == {
             "agent_started",
             "task_received",
             "execution_started",
             "tool_called",
+            "llm_request_sent",
+            "llm_response_received",
             "output_generated",
             "execution_finished",
             "execution_failed",

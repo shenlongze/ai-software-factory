@@ -287,15 +287,18 @@ class ConsoleService:
         # 可选, 失败安全: 缺 store → 查询空/写返回 None, Console 冷启动
         # 照常工作, 不拖垮 API)
         session_store: Any = None,
-        # S10-016 Task 002: AgentExecutor 编排层 (exec.agent_executor —
-        # Task→Agent→Session→LLM→Result 全链路; 可选注入, 失败安全:
-        # 无注入 → 自装配 (复用本服务 store), 自装配无已配置 Provider →
-        # 诚实 FAILED (不伪造 LLM 结果))
+        # S10-016 Task 002: AgentExecutor 编排层 (exec.agent_executor — 全链路
+        # Task→Session→LLM→Result; 可选注入, 失败安全: 无注入 → 自装配,
+        # 自装配仍无已配置 Provider → 诚实 FAILED, 不伪造 LLM 结果)
         agent_executor: Any = None,
         # S10-018 Task 001: ToolExecutor 执行层 (exec.tool — Decision→Tool→
         # Result; 可选注入, 失败安全: 无注入 → 自装配系统 Tool + 工厂根沙箱,
         # 自装配失败 → None → API 404/空清单)
         tool_executor: Any = None,
+        # S10-019 Task 001: SkillRegistry 职业能力注册表 (exec.skill — Skill/
+        # SkillContext + 权限链; 可选注入, 失败安全: 无注入 → 自装配系统
+        # Skill (3 内置职业 Skill), 自装配失败 → None → API 404/空清单)
+        skill_registry: Any = None,
     ) -> None:
         self._workspace = workspace_manager
         self._task_store = task_store
@@ -333,6 +336,10 @@ class ConsoleService:
         # S10-018 Task 001: ToolExecutor 执行层 (exec.tool — Tool 注册表 +
         # 沙箱执行; 可选注入, 失败安全: 无注入 → 自装配, 失败 → None)
         self._tool_executor = tool_executor
+        # S10-019 Task 001: SkillRegistry 职业能力注册表 (exec.skill — Skill/
+        # SkillContext + 权限链 + SYSTEM_AGENT_SKILLS; 可选注入, 失败安全:
+        # 无注入 → 自装配系统 Skill (与 ToolExecutor 同源), 失败 → None)
+        self._skill_registry = skill_registry
 
     # ------------------------------------------------------------------ S10-016: Runtime Session
     # AI Employee Runtime Foundation — Agent 执行会话可见性底座 (谁在跑/跑
@@ -598,6 +605,113 @@ class ConsoleService:
         if "permission denied" in error:
             raise ToolExecutePermissionError(error)
         raise ValueError(error)
+
+    # ------------------------------------------------------------------ S10-019 Task 001: Skill System
+    # AI Employee 从 Tool 原子能力升级到 Skill 职业能力模型 (exec.skill 已
+    # GREEN: Skill/SkillRegistry/SkillContext + 权限链 + SYSTEM_AGENT_SKILLS —
+    # Agent 拥有 Skill → Skill 决定可用 Tool/行为规则/权限范围); 本层只做
+    # 失败安全装配 (注入优先 → with_system_skills 自装配 → []/None) + Agent
+    # 技能解析查询 (agent 不存在 → None → HTTP 404 明确错误)。延迟导入
+    # exec 包 (Removal Isolation — 缺 factory-exec 不拖垮 Console)。
+
+    @staticmethod
+    def _skill_mod() -> Any:
+        """延迟导入 exec.skill 模块 (Removal Isolation; 失败 → None)。"""
+        try:
+            from exec import skill
+
+            return skill
+        except Exception:
+            return None
+
+    def _get_skill_registry(self) -> Any | None:
+        """SkillRegistry (注入优先; 缺失 → 自装配系统 Skill; 失败 → None)。
+
+        自装配 = SkillRegistry.with_system_skills(tool_registry=系统 Tool 注册
+        表) — 权限链环 3 数据源与 ToolExecutor 同源 (filesystem.read 等)。
+        失败安全 (同全部 store 依赖哲学): 无注入且 exec.skill 不可导入 /
+        自装配异常 → None → 调用方按 404/空清单处理, 冷启动不崩溃。
+        """
+        if self._skill_registry is not None:
+            return self._skill_registry
+        mod = self._skill_mod()
+        if mod is None:
+            return None
+        try:
+            tool_mod = self._tool_mod()
+            tool_registry = (
+                tool_mod.ToolRegistry.with_system_tools()
+                if tool_mod is not None
+                else None
+            )
+            return mod.SkillRegistry.with_system_skills(tool_registry=tool_registry)
+        except Exception:
+            return None  # 自装配失败安全 — 不拖垮 API
+
+    def list_skills(self) -> dict[str, Any]:
+        """Skill 清单 (GET /api/skills — SkillRegistry 当前可用 Skill)。
+
+        → {skills: [{id, name, description, version, category, tools, enabled}]}
+        (id 排序 — registry.list 契约; 含 disabled — 注册表全量, 由前端/调用方
+        过滤)。未装配 → {skills: []} (失败安全 — GET 永不失败)。
+        """
+        registry = self._get_skill_registry()
+        if registry is None:
+            return {"skills": []}
+        try:
+            skills = registry.list()
+        except Exception:
+            return {"skills": []}
+        return {
+            "skills": [
+                {
+                    "id": s.id,
+                    "name": s.name,
+                    "description": s.description or "",
+                    "version": s.version or "",
+                    "category": s.category or "",
+                    "tools": list(s.tools or []),
+                    "enabled": s.enabled,
+                }
+                for s in skills
+            ]
+        }
+
+    def agent_skills(self, agent_id: str) -> dict[str, Any] | None:
+        """Agent 技能分配 (GET /api/agents/{agent_id}/skills — 系统映射兜底)。
+
+        错误语义:
+        - agent 不存在 (registry 查询不到) → None (HTTP 404 — 明确错误,
+          不静默)
+        - store/exec 未装配 (无 agent_registry / exec.skill 不可导入 /
+          自装配失败) → None (HTTP 404 — 失败安全)
+        成功 → {agent_id, skills: [skill_id, ...]} (resolve_agent_skills:
+        agent.skills 已注册 id 优先 → SYSTEM_AGENT_SKILLS 兜底 → 空列表 —
+        无技能 Agent 诚实空态, 权限链全拒由执行层兜底)。
+        """
+        cleaned = str(agent_id or "").strip()
+        if not cleaned:
+            return None
+        registry = getattr(self, "_agent_registry", None)
+        if registry is None:
+            return None
+        try:
+            agent = registry.get(cleaned)
+        except Exception:
+            return None
+        if agent is None:
+            return None
+        skill_registry = self._get_skill_registry()
+        if skill_registry is None:
+            return None
+        mod = self._skill_mod()
+        if mod is None:
+            return None
+        try:
+            skills = mod.resolve_agent_skills(agent, skill_registry)
+        except Exception:
+            return {"agent_id": cleaned, "skills": []}  # 失败安全 — 诚实空态
+        return {"agent_id": cleaned, "skills": list(skills)}
 
     def create_session(
         self,

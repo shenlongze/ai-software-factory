@@ -1785,6 +1785,26 @@ def build_app(
             )
         return result
 
+    # ------------------------------------------- S10-019: Skill API (职业能力)
+    # Skill Registry 清单 + Agent 技能分配 (resolve_agent_skills — org 模型 +
+    # 系统映射兜底; 未装配 → [] 失败安全; agent 不存在 → 404)。
+
+    @app.get("/api/skills")
+    def api_list_skills() -> dict[str, Any]:
+        """Skill 清单 (GET — SkillRegistry 当前可用 Skill; 未装配 → [] 失败安全)。"""
+        return _api.list_skills(service, logger=event_logger)
+
+    @app.get("/api/agents/{agent_id}/skills")
+    def api_agent_skills(agent_id: str) -> dict[str, Any]:
+        """Agent 当前 Skill (GET — resolve_agent_skills; 未装配/不存在 → 404)。"""
+        result = _api.agent_skills(service, agent_id, logger=event_logger)
+        if result is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"agent skills unavailable (agent not found or store 未装配): {agent_id}",
+            )
+        return result
+
     # ------------------------------------------- S10-006.5 P1-A: Workflow 启动 API
     # 用户第一公里闭环: POST start (真实 Agent 执行链, 后台线程) + chat 最小版
     # (持续开发对话: 已启动 → 记录消息; 未启动 → idea 更新 + 触发 start) +

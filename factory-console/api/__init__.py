@@ -68,6 +68,7 @@ from .runtime_session import (
     list_runtime_sessions,
     start_runtime_session,
 )
+from .skill_api import agent_skills, list_skills
 from .sprint import (
     add_roadmap_milestone_ref,
     create_milestone,
@@ -89,6 +90,7 @@ from .workflow_start import chat_route, run_status_route, start_project_workflow
 
 __all__ = [
     "add_roadmap_milestone_ref",
+    "agent_skills",
     "append_runtime_session_event",
     "approve_approval",
     "cancel_runtime_session",
@@ -141,6 +143,7 @@ __all__ = [
     "list_review_feedback",
     "list_runtime_sessions",
     "list_runtimes",
+    "list_skills",
     "list_sprints",
     "list_tools",
     "list_workflows",

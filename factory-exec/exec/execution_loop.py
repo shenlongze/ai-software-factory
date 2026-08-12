@@ -50,6 +50,7 @@ from .runtime_session import (
     RuntimeSession,
     RuntimeSessionStatus,
 )
+from .skill import resolve_agent_skills, skill_context_for
 
 #: ACTION_REQUIRED 轮次上限 (超限 → 诚实 FAILED — 禁无限循环)。
 MAX_ROUNDS = 4
@@ -265,6 +266,10 @@ class AgentExecutionLoop:
     - action_executor: MockActionExecutor | None (缺省 MockActionExecutor)。
     - tool_executor: ToolExecutor | None (S10-018 — Tool Action 分发; None →
       诚实 tool_failed 'tool executor not configured', 不伪造)。
+    - skill_registry: SkillRegistry | None (S10-019 — Skill 职业能力上下文;
+      None → 不触发 skill_* 事件 + 不校验权限链 (既有精确事件链零污染);
+      装配 → 解析 Agent 技能 → SkillContext 传 Planner + check_tool_access
+      权限链接入 Tool 分支; 条件触发: 仅当 Agent 有已注册 Skill)。
     - runtime: AgentRuntime | None (FINAL 路径执行引擎; None = 无 Provider
       → 诚实 FAILED, 不伪造 LLM 结果)。
 
@@ -284,6 +289,7 @@ class AgentExecutionLoop:
         action_executor: Any = None,
         runtime: Any = None,
         tool_executor: Any = None,
+        skill_registry: Any = None,
     ) -> None:
         self._session = session
         self._session_store = session_store
@@ -299,6 +305,16 @@ class AgentExecutionLoop:
         # S10-018 Task 001: Tool Runtime — ToolExecutor (exec.tool) 可选装配;
         # None → Tool Action 诚实 tool_failed ('tool executor not configured')。
         self._tool_executor = tool_executor
+        # S10-019 Task 001: Skill Registry (exec.skill) 可选装配; None → 不触发
+        # skill_* 事件 + 不校验权限链 (既有精确事件链零污染)。装配 → run() 启动
+        # 阶段解析 Agent 技能: 有已注册 Skill → skill_loaded 事件 + SkillContext
+        # (skill_selected 决策前事件 + 并入 planner context + check_tool_access
+        # 权限链接入 Tool 分支); 无技能 Agent → 零 skill_* 事件 (条件触发铁律)。
+        self._skill_registry = skill_registry
+        #: Agent 已解析技能列表 (resolve_agent_skills — 权限链数据源; run 填充)。
+        self._agent_skills: list[str] = []
+        #: SkillContext (职业能力快照 — 有技能 Agent 非 None; 驱动条件触发)。
+        self._skill_context: Any = None
         self._state = ExecutionState.CREATED
 
     # ------------------------------------------------------------------ 状态机
@@ -504,6 +520,23 @@ class AgentExecutionLoop:
             "请求执行工具",
             data={"tool_id": tool_id, "input": tool_input},
         )
+        # S10-019: 权限链接入 Tool 分支 (条件触发 — 仅装配 SkillContext 的 Agent):
+        # Agent has Skill → Skill includes Tool → Tool Permission allows; 任一环
+        # 失败 → tool_failed (error 含 'skill permission denied' + tool_id) →
+        # execution_failed (诚实拒绝 — 不执行, 不假装成功)。无技能 Agent / 未装配
+        # skill_registry → 跳过 (既有 Tool 分支行为原样, 零污染)。
+        if self._skill_context is not None and self._skill_registry is not None:
+            denied = self._skill_registry.check_tool_access(
+                agent.id, self._agent_skills, tool_id
+            )
+            if denied:
+                session = self._append(
+                    session,
+                    RuntimeEventType.TOOL_FAILED,
+                    "工具执行失败",
+                    data={"tool_id": tool_id, "error": denied},
+                )
+                return session, self._fail(session, denied)
         if self._tool_executor is None:
             error = "tool executor not configured"
             session = self._append(
@@ -607,6 +640,30 @@ class AgentExecutionLoop:
                 data={"task_id": task.id, "title": str(getattr(task, "title", ""))},
             )
 
+            # --- S10-019: 启动阶段 Skill 装配 (条件触发 — 仅 Agent 有已注册 Skill)
+            # resolve_agent_skills: agent.skills 已注册 id 优先 → 系统映射兜底
+            # (backend-1→backend.development …); 无技能 Agent → [] → 零 skill_*
+            # 事件 + 不校验权限链 (既有精确事件链零污染)。skill_loaded 在
+            # agent_started/task_received 之后 (启动阶段收尾), 循环开始前。
+            if self._skill_registry is not None:
+                agent_skills = resolve_agent_skills(agent, self._skill_registry)
+                self._agent_skills = agent_skills
+                if agent_skills:
+                    skill_ctx = skill_context_for(
+                        agent.id, agent_skills, self._skill_registry
+                    )
+                    self._skill_context = skill_ctx
+                    session = self._append(
+                        session,
+                        RuntimeEventType.SKILL_LOADED,
+                        "技能已加载",
+                        data={
+                            "agent_id": agent.id,
+                            "skill": skill_ctx.active_skill,
+                            "available_tools": list(skill_ctx.available_tools),
+                        },
+                    )
+
             # 2) Reason → Act → Observe 循环 (收敛 → FINAL; 超限 → 诚实 FAILED)
             round_no = 1
             while True:
@@ -633,8 +690,26 @@ class AgentExecutionLoop:
                 )
 
                 # --- DECISION (决策) ---
+                # S10-019: 决策前 skill_selected 事件 (thinking_started 之后、
+                # decision_created 之前 — Planner 决策可见职业能力边界) + 把
+                # SkillContext 并入 planner context (context.skill_context:
+                # active_skill/instructions/available_tools/constraints — 职业
+                # 能力快照, 不覆盖调用方原始 context, 仅条件触发时有技能 Agent)。
+                planner_context = context
+                if self._skill_context is not None:
+                    session = self._append(
+                        session,
+                        RuntimeEventType.SKILL_SELECTED,
+                        "技能已选择",
+                        data={
+                            "round": round_no,
+                            "skill": self._skill_context.active_skill,
+                        },
+                    )
+                    planner_context = dict(context or {})
+                    planner_context["skill_context"] = self._skill_context.model_dump()
                 try:
-                    decision = self._planner.plan(task, context)
+                    decision = self._planner.plan(task, planner_context)
                 except Exception as exc:  # noqa: BLE001 — planner 兜底 → FAILED
                     return self._fail(session, f"planner error: {exc}")
                 session = self._add_step(

@@ -108,4 +108,16 @@ describe('api/domain — toRuntimeSession (S10-016 映射)', () => {
     expect(acts[1].action).toBe('工具完成');
     expect(acts[2].action).toBe('工具失败');
   });
+
+  it('S10-019: skill_* 事件人话映射 (toRuntimeActivity)', async () => {
+    const { toRuntimeActivity } = await import('../api/domain');
+    const events = [
+      { event_id: 'e1', session_id: 's1', event_type: 'skill_loaded', message: '', status: 'OK', created_at: '2026-08-13T04:00:00Z' },
+      { event_id: 'e2', session_id: 's1', event_type: 'skill_selected', message: '', status: 'OK', created_at: '2026-08-13T04:00:01Z' },
+    ] as unknown as Parameters<typeof toRuntimeActivity>[0];
+    const acts = toRuntimeActivity(events);
+    // message 为空 → 用 event_type 映射 (skill_loaded→技能加载 / skill_selected→技能选择)
+    expect(acts[0].action).toBe('技能加载');
+    expect(acts[1].action).toBe('技能选择');
+  });
 });

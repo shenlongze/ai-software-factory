@@ -759,6 +759,9 @@ const EVENT_ACTION_LABELS: Record<string, string> = {
   'tool_started': '工具执行中',
   'tool_completed': '工具完成',
   'tool_failed': '工具失败',
+  // S10-019 Task 001: Skill 事件 (AI Employee 职业能力加载/选择)
+  'skill_loaded': '技能加载',
+  'skill_selected': '技能选择',
   error: '发生错误',
 };
 

@@ -69,14 +69,15 @@ class TestRuntimeSessionModel:
             "cancelled",
         }
 
-    def test_event_type_fourteen(self):
-        """RuntimeEvent 类型 (任务约束 + Task 002 + S10-017 Task 001 + S10-018):
-        agent_started/task_received/execution_started/tool_called/
+    def test_event_type_twenty(self):
+        """RuntimeEvent 类型 (任务约束 + Task 002 + S10-017 Task 001 + S10-018
+        + S10-019): agent_started/task_received/execution_started/tool_called/
         llm_request_sent/llm_response_received/output_generated/
         execution_finished/execution_failed + thinking_started/
         decision_created/action_requested/observation_received/
         execution_completed + tool_requested/tool_started/tool_completed/
-        tool_failed (9→14→18, 向后兼容)。"""
+        tool_failed + skill_loaded/skill_selected (9→14→18→20, 向后兼容;
+        S10-019 两个 Skill 事件为条件触发 — 仅装配 SkillContext 时发出)。"""
         assert {t.value for t in RuntimeEventType} == {
             "agent_started",
             "task_received",
@@ -96,6 +97,8 @@ class TestRuntimeSessionModel:
             "tool_started",
             "tool_completed",
             "tool_failed",
+            "skill_loaded",
+            "skill_selected",
         }
 
     def test_to_dict_json_friendly(self):

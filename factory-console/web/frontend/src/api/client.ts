@@ -44,6 +44,7 @@ import {
   type ExecuteResponse,
   type ToolInfo,
   type ToolResult,
+  type SkillInfo,
   type RunStatusResponse,
   type StageRunSummary,
   type TimelineEventSummary,
@@ -321,6 +322,12 @@ export const api = {
       agent_id: agentId,
       input: toolInput,
     }),
+  // S10-019 Task 001: Skill — 职业能力清单 + Agent 技能分配
+  skills: () => getJson<{ skills: SkillInfo[] }>('/api/skills'),
+  agentSkills: (agentId: string) =>
+    getJson<{ agent_id: string; skills: string[] }>(
+      `/api/agents/${encodeURIComponent(agentId)}/skills`,
+    ),
 } as const;
 
 export type Api = typeof api;

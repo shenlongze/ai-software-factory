@@ -156,6 +156,7 @@ class TestRouteExports:
         新增 execute_tool/list_tools (Tool API))。"""
         expected = {
             "add_roadmap_milestone_ref",
+            "agent_skills",
             "append_runtime_session_event",
             "approve_approval",
             "cancel_runtime_session",
@@ -208,6 +209,7 @@ class TestRouteExports:
             "list_review_feedback",
             "list_runtime_sessions",
             "list_runtimes",
+            "list_skills",
             "list_sprints",
             "list_tools",
             "list_workflows",

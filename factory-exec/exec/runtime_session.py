@@ -114,6 +114,15 @@ class RuntimeEventType(str, Enum):
     TOOL_STARTED = "tool_started"
     TOOL_COMPLETED = "tool_completed"
     TOOL_FAILED = "tool_failed"
+    # S10-019 Task 001: Skill System 事件 (职业能力上下文; **条件触发** — 仅当
+    # Agent 装配了 SkillContext (有已注册 Skill) 时发出, 不污染无技能 Agent 的
+    # 既有精确事件链):
+    # - skill_loaded:   Agent 启动后 (agent_started/task_received 之后), Skill
+    #   上下文就绪时 — 记录 Agent 拥有的职业能力快照 (skill/available_tools)。
+    # - skill_selected: 决策前 (planner.plan 之前), 当前轮选中的 Skill 边界 —
+    #   记录 Planner 决策时可见的职业能力约束 (round/skill/available_tools)。
+    SKILL_LOADED = "skill_loaded"
+    SKILL_SELECTED = "skill_selected"
 
 
 class AgentStepType(str, Enum):

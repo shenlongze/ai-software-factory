@@ -820,3 +820,190 @@ class TestExecutionLoopToolIntegration:
         types = [e.type.value for e in loaded.events]
         assert "observation_received" in types
         assert not [t for t in types if t.startswith("tool_")]
+
+
+# ------------------------------------------------------------------ Skill 集成 (S10-019 Task 001)
+# SkillContext 集成: skill_loaded (agent 启动后) / skill_selected (决策前) 条件
+# 触发 (仅装配 SkillContext — 有已注册 Skill 的 Agent); SkillContext 传 Planner
+# (context.skill_context); check_tool_access 权限链接入 Tool 分支。铁律: 无
+# skill_registry / 无技能 Agent → 零 skill_* 事件 (既有精确事件链零污染)。
+
+
+def _skill_registry_with_tool(tool_allowed: str = "backend-1"):
+    """SkillRegistry.with_system_skills + filesystem.read Tool (环 3 数据源;
+    同 test_exec_skill 权限链装配模式)。"""
+    from exec.skill import SkillRegistry
+    from exec.tool import Tool, ToolPermissionPolicy, ToolRegistry
+
+    tool_registry = ToolRegistry()
+    tool_registry.register(
+        Tool(
+            id="filesystem.read",
+            name="Filesystem Read",
+            handler=lambda i, c: {"content": ""},
+            permission_policy=ToolPermissionPolicy(allowed_agent_ids=[tool_allowed]),
+        )
+    )
+    return SkillRegistry.with_system_skills(tool_registry=tool_registry)
+
+
+def _skill_loop(env, session, *, skill_registry, planner=None, tool_executor=None, runtime=None):
+    """装配 skill_registry 的 Loop (S10-019 — SkillContext 集成测试)。"""
+    return AgentExecutionLoop(
+        session=session,
+        session_store=env["session_store"],
+        planner=planner,
+        runtime=env["runtime"] if runtime is None else runtime,
+        tool_executor=tool_executor,
+        skill_registry=skill_registry,
+    )
+
+
+class TestExecutionLoopSkillIntegration:
+    def test_skill_loaded_after_agent_started_with_skill_context(self, loop_env):
+        """有技能 Agent (backend-1 → 系统映射) + skill_registry → agent 启动后
+        skill_loaded 事件 (data: skill/available_tools — 职业能力快照)。"""
+        env = loop_env
+        task = _make_task(env["task_store"])
+        agent = _make_agent(env["agent_registry"], agent_id="backend-1", name="Backend")
+        session = _running_session(env, agent_id="backend-1")
+        loop = _skill_loop(env, session, skill_registry=_skill_registry_with_tool())
+
+        result = loop.run(task, agent, context={"project_dir": str(env["project_dir"])})
+
+        loaded = env["session_store"].get(result["runtime_session_id"])
+        types = [e.type.value for e in loaded.events]
+        assert "skill_loaded" in types
+        # 位置: agent_started/task_received 之后 (启动阶段收尾), 循环开始前
+        assert types.index("skill_loaded") > types.index("task_received")
+        loaded_ev = next(e for e in loaded.events if e.type.value == "skill_loaded")
+        assert loaded_ev.data["agent_id"] == "backend-1"
+        assert loaded_ev.data["skill"] == "backend.development"
+        assert loaded_ev.data["available_tools"] == ["filesystem.read"]
+
+    def test_skill_selected_before_decision_each_round(self, loop_env):
+        """决策前 skill_selected 事件: 位于 thinking_started 与 decision_created
+        之间; data 含 round/skill (Planner 决策可见职业能力边界)。"""
+        env = loop_env
+        task = _make_task(env["task_store"])
+        agent = _make_agent(env["agent_registry"], agent_id="backend-1", name="Backend")
+        session = _running_session(env, agent_id="backend-1")
+        loop = _skill_loop(env, session, skill_registry=_skill_registry_with_tool())
+
+        result = loop.run(task, agent, context={"project_dir": str(env["project_dir"])})
+
+        loaded = env["session_store"].get(result["runtime_session_id"])
+        types = [e.type.value for e in loaded.events]
+        assert "skill_selected" in types
+        i_sel = types.index("skill_selected")
+        assert i_sel > types.index("thinking_started")
+        assert i_sel < types.index("decision_created")
+        sel = next(e for e in loaded.events if e.type.value == "skill_selected")
+        assert sel.data["skill"] == "backend.development"
+        assert sel.data["round"] == 1
+
+    def test_no_skill_events_without_skill_context(self, loop_env):
+        """条件触发铁律: 无技能 Agent (developer-1, 不在系统映射) 即使装配
+        skill_registry → 零 skill_* 事件 (既有 8 事件精确链零污染)。"""
+        env = loop_env
+        task = _make_task(env["task_store"])
+        agent = _make_agent(env["agent_registry"])  # developer-1 — 无技能
+        session = _running_session(env)
+        loop = _skill_loop(env, session, skill_registry=_skill_registry_with_tool())
+
+        result = loop.run(task, agent, context={"project_dir": str(env["project_dir"])})
+
+        loaded = env["session_store"].get(result["runtime_session_id"])
+        types = [e.type.value for e in loaded.events]
+        assert not [t for t in types if t.startswith("skill_")]
+        # 既有精确链原样 (8 事件 — 无 skill_* 插入)
+        assert types == [
+            "agent_started",
+            "task_received",
+            "thinking_started",
+            "decision_created",
+            "llm_request_sent",
+            "llm_response_received",
+            "output_generated",
+            "execution_completed",
+        ]
+
+    def test_skill_context_passed_to_planner(self, loop_env):
+        """SkillContext 传入 Planner: plan(task, context) 的 context 含
+        skill_context (active_skill/instructions/available_tools/constraints)。"""
+        env = loop_env
+        task = _make_task(env["task_store"])
+        agent = _make_agent(env["agent_registry"], agent_id="backend-1", name="Backend")
+        session = _running_session(env, agent_id="backend-1")
+        seen: list[dict | None] = []
+
+        class _CapturePlanner:
+            def plan(self, task_, context):
+                seen.append(context)
+                return Decision(type=FINAL)
+
+        loop = _skill_loop(
+            env, session, skill_registry=_skill_registry_with_tool(), planner=_CapturePlanner()
+        )
+
+        loop.run(task, agent, context={"project_dir": str(env["project_dir"])})
+
+        assert seen
+        skill_ctx = (seen[0] or {}).get("skill_context")
+        assert skill_ctx is not None
+        assert skill_ctx["active_skill"] == "backend.development"
+        assert skill_ctx["available_tools"] == ["filesystem.read"]
+        assert skill_ctx["instructions"]
+        assert skill_ctx["constraints"]
+
+    def test_skill_permission_chain_blocks_unknown_tool(self, loop_env):
+        """权限链接入 Tool 分支: Skill 不含该 Tool (ghost.tool) →
+        tool_requested → tool_failed (skill permission denied) → execution_failed
+        (诚实拒绝 — 不执行, 不假装成功)。"""
+        env = loop_env
+        task = _make_task(env["task_store"])
+        agent = _make_agent(env["agent_registry"], agent_id="backend-1", name="Backend")
+        session = _running_session(env, agent_id="backend-1")
+        planner = _StubPlanner(
+            Decision(type=ACTION_REQUIRED, payload={"action": _tool_action("ghost.tool", {})}),
+        )
+        loop = _skill_loop(
+            env, session, skill_registry=_skill_registry_with_tool(),
+            planner=planner, tool_executor=_real_tool_executor(env["project_dir"]),
+        )
+
+        result = loop.run(task, agent, context={"project_dir": str(env["project_dir"])})
+
+        assert result["status"] == "failed"
+        loaded = env["session_store"].get(result["runtime_session_id"])
+        types = [e.type.value for e in loaded.events]
+        assert types[-1] == "execution_failed"
+        assert "tool_completed" not in types
+        failed = [e for e in loaded.events if e.type.value == "tool_failed"][0]
+        assert "permission denied" in (failed.data or {}).get("error", "")
+        assert "ghost.tool" in (failed.data or {}).get("error", "")
+
+    def test_skill_permission_chain_allows_owned_tool(self, loop_env):
+        """权限链放行: backend-1 + backend.development (含 filesystem.read) +
+        Tool 权限允许 → 工具执行成功 (Agent→Skill→Tool 全链打通)。"""
+        env = loop_env
+        task = _make_task(env["task_store"])
+        agent = _make_agent(env["agent_registry"], agent_id="backend-1", name="Backend")
+        session = _running_session(env, agent_id="backend-1")
+        planner = _StubPlanner(
+            Decision(type=ACTION_REQUIRED, payload={"action": _tool_action("filesystem.read", {"path": "calc.py"})}),
+            Decision(type=FINAL, reason="任务完成"),
+        )
+        loop = _skill_loop(
+            env, session, skill_registry=_skill_registry_with_tool(),
+            planner=planner, tool_executor=_real_tool_executor(env["project_dir"]),
+        )
+
+        result = loop.run(task, agent, context={"project_dir": str(env["project_dir"])})
+
+        assert result["status"] == "success"
+        loaded = env["session_store"].get(result["runtime_session_id"])
+        types = [e.type.value for e in loaded.events]
+        assert "skill_loaded" in types
+        assert "skill_selected" in types
+        assert "tool_completed" in types

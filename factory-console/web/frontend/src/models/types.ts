@@ -549,6 +549,17 @@ export interface ToolResult {
   metadata?: Record<string, unknown> | null;
 }
 
+/** S10-019 Task 001: Skill — GET /api/skills 返回的职业能力项。 */
+export interface SkillInfo {
+  id: string;
+  name: string;
+  description: string;
+  version: string;
+  category: string;
+  tools: string[];
+  enabled: boolean;
+}
+
 /** S10-002: SSE 事件名 (与后端 SSE_EVENT_MAP 同源; 业务 7 类 + error 通道)。 */
 export const RUNTIME_EVENT_NAMES = [
   'stage.started',

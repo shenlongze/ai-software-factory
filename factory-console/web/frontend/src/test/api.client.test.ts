@@ -31,6 +31,7 @@ describe('api client — 只读契约 + S9-002 审批写面 + S10-004 Runtime �
   it('暴露接口清单 (查询 + 审批决定 + Runtime 生命周期; 无 post/put/patch/delete 方法)', () => {
     const keys = Object.keys(api).sort();
     expect(keys).toEqual([
+      'agentSkills',
       'appendRuntimeSessionEvent',
       'approvalGates',
       'approvals',
@@ -67,6 +68,7 @@ describe('api client — 只读契约 + S9-002 审批写面 + S10-004 Runtime �
       'saveReviewFeedback',
       'screenshotRuntime',
       'sendChat',
+      'skills',
       'startRuntime',
       'startRuntimeSession',
       'startWorkflow',

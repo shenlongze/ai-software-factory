@@ -762,6 +762,10 @@ const EVENT_ACTION_LABELS: Record<string, string> = {
   // S10-019 Task 001: Skill 事件 (AI Employee 职业能力加载/选择)
   'skill_loaded': '技能加载',
   'skill_selected': '技能选择',
+  // S10-020 Task 001: MCP 事件 (外部 MCP 服务连接/工具发现/注册)
+  'mcp_connected': 'MCP 已连接',
+  'mcp_tool_discovered': 'MCP 工具发现',
+  'mcp_tool_registered': 'MCP 工具注册',
   error: '发生错误',
 };
 

@@ -123,6 +123,16 @@ class RuntimeEventType(str, Enum):
     #   记录 Planner 决策时可见的职业能力约束 (round/skill/available_tools)。
     SKILL_LOADED = "skill_loaded"
     SKILL_SELECTED = "skill_selected"
+    # S10-020 Task 001: MCP Adapter Foundation 事件 (20→23, 向后兼容):
+    # - mcp_connected:      MCP Client 建立连接时 (Mock 连接/MCP tool 首次
+    #   调用 — adapter 延迟连接) — 记录外部 MCP Server 连接边界。
+    # - mcp_tool_discovered: 连接后 list_tools 发现 Tool 时 — 记录发现结果
+    #   (tools 名列表, 注册前置)。
+    # - mcp_tool_registered: MCP Tool 经 MCPToolAdapter 注册进内部 ToolRegistry
+    #   时 — 记录注册边界 (tool/server; 之后该 Tool 与内部 Tool 无差别)。
+    MCP_CONNECTED = "mcp_connected"
+    MCP_TOOL_DISCOVERED = "mcp_tool_discovered"
+    MCP_TOOL_REGISTERED = "mcp_tool_registered"
 
 
 class AgentStepType(str, Enum):

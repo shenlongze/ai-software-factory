@@ -336,6 +336,8 @@ class TestPermissionBoundary:
                 )
                 # S10-018: Tool 执行写面 (POST /api/tools/{id}/execute)
                 is_tool_execute = path.startswith("/api/tools/") and path.endswith("/execute")
+                # S10-020: MCP 连接写面 (POST /api/mcp/connections — 注册外部 MCP 服务)
+                is_mcp_connect = path == "/api/mcp/connections" and route_method == "POST"
                 is_review_feedback = path.endswith("/review-feedback")
                 is_project_create = path == "/api/projects"
                 # S10-007: AI 想法理解 (POST /api/projects/suggest — 建议不落库,
@@ -373,9 +375,10 @@ class TestPermissionBoundary:
                     or is_backlog_write
                     or is_management_write
                     or is_tool_execute
+                    or is_mcp_connect
                 ), (
                     f"写路由超出白名单 (审批决定 + Runtime + 反馈 + 创建 + 启动 + "
-                    f"项目管理 + Backlog + Sprint/Milestone/Roadmap + Tool): "
+                    f"项目管理 + Backlog + Sprint/Milestone/Roadmap + Tool + MCP): "
                     f"{route_method} {path}"
                 )
 

@@ -32,6 +32,11 @@ from .backlog import (
 from .decisions import get_decision
 from .intelligence import list_experience, list_recommendations
 from .lifecycle import get_project_lifecycle
+from .mcp_api import (
+    create_mcp_connection,
+    list_mcp_connections,
+    list_mcp_tools,
+)
 from .projects import (
     complete_discovery,
     confirm_project_route,
@@ -102,6 +107,7 @@ __all__ = [
     "create_draft_project",
     "create_epic",
     "create_feature",
+    "create_mcp_connection",
     "create_milestone",
     "create_project",
     "create_runtime",
@@ -136,6 +142,8 @@ __all__ = [
     "list_artifacts",
     "list_backlog",
     "list_experience",
+    "list_mcp_connections",
+    "list_mcp_tools",
     "list_milestones",
     "list_projects",
     "list_providers",

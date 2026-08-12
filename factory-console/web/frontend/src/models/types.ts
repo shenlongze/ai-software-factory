@@ -560,6 +560,24 @@ export interface SkillInfo {
   enabled: boolean;
 }
 
+/** S10-020 Task 001: MCP Connection — 外部 MCP 服务连接。 */
+export interface MCPConnection {
+  id: string;
+  name: string;
+  server_url: string;
+  transport: string;
+  enabled: boolean;
+  created_at: string | null;
+}
+
+/** S10-020 Task 001: MCP Tool — 经 Adapter 导入的 MCP 工具 (内部 Tool 视图)。 */
+export interface MCPTool {
+  id: string;
+  name: string;
+  description: string;
+  server: string;
+}
+
 /** S10-002: SSE 事件名 (与后端 SSE_EVENT_MAP 同源; 业务 7 类 + error 通道)。 */
 export const RUNTIME_EVENT_NAMES = [
   'stage.started',

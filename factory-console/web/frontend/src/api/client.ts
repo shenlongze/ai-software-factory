@@ -45,6 +45,8 @@ import {
   type ToolInfo,
   type ToolResult,
   type SkillInfo,
+  type MCPConnection,
+  type MCPTool,
   type RunStatusResponse,
   type StageRunSummary,
   type TimelineEventSummary,
@@ -328,6 +330,15 @@ export const api = {
     getJson<{ agent_id: string; skills: string[] }>(
       `/api/agents/${encodeURIComponent(agentId)}/skills`,
     ),
+  // S10-020 Task 001: MCP — 外部 MCP 服务连接 + 导入 Tool
+  mcpConnections: () => getJson<{ connections: MCPConnection[] }>('/api/mcp/connections'),
+  createMCPConnection: (name: string, serverUrl: string, transport?: string) =>
+    sendJson<{ id: string; tools: MCPTool[] }>('/api/mcp/connections', {
+      name,
+      server_url: serverUrl,
+      transport,
+    }),
+  mcpTools: () => getJson<{ tools: MCPTool[] }>('/api/mcp/tools'),
 } as const;
 
 export type Api = typeof api;

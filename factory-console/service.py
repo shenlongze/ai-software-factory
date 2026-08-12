@@ -299,6 +299,11 @@ class ConsoleService:
         # SkillContext + 权限链; 可选注入, 失败安全: 无注入 → 自装配系统
         # Skill (3 内置职业 Skill), 自装配失败 → None → API 404/空清单)
         skill_registry: Any = None,
+        # S10-020 Task 001: MCPRegistry 外部工具注册表 (exec.mcp —
+        # MCPConnection/MockMCPClient/MCPToolAdapter/MCPRegistry; 可选注入,
+        # 失败安全: 无注入 → 自装配关联系统 ToolRegistry, 自装配失败 → None
+        # → API 404/空清单)
+        mcp_registry: Any = None,
     ) -> None:
         self._workspace = workspace_manager
         self._task_store = task_store
@@ -340,6 +345,10 @@ class ConsoleService:
         # SkillContext + 权限链 + SYSTEM_AGENT_SKILLS; 可选注入, 失败安全:
         # 无注入 → 自装配系统 Skill (与 ToolExecutor 同源), 失败 → None)
         self._skill_registry = skill_registry
+        # S10-020 Task 001: MCPRegistry 外部工具注册表 (exec.mcp — 连接管理 +
+        # 注册编排; 可选注入, 失败安全: 无注入 → 自装配关联系统 ToolRegistry,
+        # 失败 → None → API 404/空清单)
+        self._mcp_registry = mcp_registry
 
     # ------------------------------------------------------------------ S10-016: Runtime Session
     # AI Employee Runtime Foundation — Agent 执行会话可见性底座 (谁在跑/跑
@@ -527,10 +536,12 @@ class ConsoleService:
         if mod is None:
             return None
         try:
-            return mod.ToolExecutor(
+            # 缓存自装配实例 (跨请求共享 — 注册与查询必须同 registry)
+            self._tool_executor = mod.ToolExecutor(
                 mod.ToolRegistry.with_system_tools(),
                 workspace_root=self._tool_sandbox_root(),
             )
+            return self._tool_executor
         except Exception:
             return None  # 自装配失败安全 — 不拖垮 API
 
@@ -712,6 +723,159 @@ class ConsoleService:
         except Exception:
             return {"agent_id": cleaned, "skills": []}  # 失败安全 — 诚实空态
         return {"agent_id": cleaned, "skills": list(skills)}
+
+    # ------------------------------------------------------------------ S10-020 Task 001: MCP Adapter (Console)
+    # AI Employee 工具能力扩展到外部 MCP 服务 (exec.mcp 已 GREEN:
+    # MCPConnection/MockMCPClient/MCPToolAdapter/MCPRegistry — 注册即连接,
+    # stdio/http 真实协议响亮拒绝, 不连公网); 本层只做失败安全装配 (注入
+    # 优先 → 自装配关联系统 ToolRegistry) + 输入校验 (空 name/server_url →
+    # ValueError → HTTP 400) + 错误归一 (MCPConnectionError → ValueError →
+    # HTTP 400 — 协议/输入问题明确不静默) + 查询投影 (连接清单 / MCP Tool
+    # 清单 source=mcp 过滤 — 内部 Tool 不混入)。延迟导入 exec 包 (Removal
+    # Isolation — 缺 factory-exec 不拖垮 Console)。
+
+    @staticmethod
+    def _mcp_mod() -> Any:
+        """延迟导入 exec.mcp 模块 (Removal Isolation; 失败 → None)。"""
+        try:
+            from exec import mcp
+
+            return mcp
+        except Exception:
+            return None
+
+    def _get_mcp_registry(self) -> Any | None:
+        """MCPRegistry (注入优先; 缺失 → 自装配关联系统 ToolRegistry; 失败 → None)。
+
+        失败安全 (同全部 store 依赖哲学): 无注入且 exec.mcp 不可导入 / 自装配
+        异常 → None → 调用方按 404/空清单处理, 冷启动不崩溃。自装配 =
+        MCPRegistry(tool_registry=ToolExecutor.registry) — MCP Tool 注册进
+        内部 ToolRegistry, 执行权仍在 ToolExecutor 最小权限表。
+        """
+        if self._mcp_registry is not None:
+            return self._mcp_registry
+        mod = self._mcp_mod()
+        if mod is None:
+            return None
+        try:
+            executor = self._get_tool_executor()
+            tool_registry = (
+                getattr(executor, "registry", None) if executor is not None else None
+            )
+            # 缓存自装配实例 (跨请求共享 — POST 注册与 GET 查询必须同 registry)
+            self._mcp_registry = mod.MCPRegistry(tool_registry=tool_registry)
+            return self._mcp_registry
+        except Exception:
+            return None  # 自装配失败安全 — 不拖垮 API
+
+    def mcp_connections(self) -> list[dict[str, Any]]:
+        """MCP 连接清单 (GET /api/mcp/connections — MCPRegistry 当前连接)。
+
+        形状: [{id, name, server_url, transport, enabled, created_at}] (id
+        排序 — registry.list_connections 契约)。未装配 → [] (失败安全 — GET
+        永不失败)。
+        """
+        registry = self._get_mcp_registry()
+        if registry is None:
+            return []
+        try:
+            connections = registry.list_connections()
+        except Exception:
+            return []
+        return [
+            {
+                "id": c.id,
+                "name": c.name,
+                "server_url": c.server_url,
+                "transport": c.transport,
+                "enabled": c.enabled,
+                "created_at": _dt_str(getattr(c, "created_at", None)),
+            }
+            for c in connections
+        ]
+
+    def create_mcp_connection(
+        self,
+        name: str,
+        server_url: str,
+        *,
+        transport: str = "mock",
+    ) -> dict[str, Any] | None:
+        """创建 MCP 连接 (POST /api/mcp/connections — 注册即连接 + Tool 注册)。
+
+        错误语义:
+        - 空 name/server_url → ValueError (HTTP 400 — 连接标识/地址必填)
+        - stdio/http 真实协议 → MCPConnectionError 归一 ValueError (HTTP 400 —
+          本 Task 仅 mock 可用, 响亮拒绝不假装连接成功)
+        - store/exec 未装配 (空构造无注入 + 自装配失败) → None (HTTP 404
+          失败安全)
+        成功 → {id, name, server_url, transport, enabled, created_at,
+        tools: [{id, name, server}]} (连接摘要 + 注册 Tool 摘要 — 注册即
+        连接: Mock 不连公网, Tool 进内部 ToolRegistry, 执行权仍在
+        ToolExecutor 最小权限表)。
+        """
+        cleaned_name = str(name or "").strip()
+        cleaned_url = str(server_url or "").strip()
+        if not cleaned_name:
+            raise ValueError("name is required (连接名称必填)")
+        if not cleaned_url:
+            raise ValueError("server_url is required (服务地址必填)")
+        registry = self._get_mcp_registry()
+        if registry is None:
+            return None
+        mod = self._mcp_mod()
+        if mod is None:
+            return None
+        try:
+            connection = mod.MCPConnection(
+                id=mod.new_mcp_connection_id(),
+                name=cleaned_name,
+                server_url=cleaned_url,
+                transport=str(transport or "mock").strip() or "mock",
+            )
+            tools, _client = registry.register_connection(connection)
+            return {
+                "id": connection.id,
+                "name": connection.name,
+                "server_url": connection.server_url,
+                "transport": connection.transport,
+                "enabled": connection.enabled,
+                "created_at": _dt_str(connection.created_at),
+                "tools": tools,
+            }
+        except Exception as exc:
+            err_type = getattr(mod, "MCPConnectionError", None)
+            if err_type is not None and isinstance(exc, err_type):
+                raise ValueError(str(exc)) from exc  # 协议不支持 → HTTP 400
+            return None  # 其余异常 → 失败安全 (不拖垮 API)
+
+    def mcp_tools(self) -> list[dict[str, Any]]:
+        """MCP Tool 清单 (GET /api/mcp/tools — 内部 ToolRegistry source=mcp 过滤)。
+
+        形状: [{id, name, description, server}] (id 排序 — registry.list
+        契约; source=mcp 过滤 — 内部 Tool 不混入 MCP 视图)。未装配 → []
+        (失败安全 — GET 永不失败)。
+        """
+        executor = self._get_tool_executor()
+        if executor is None:
+            return []
+        registry = getattr(executor, "registry", None)
+        if registry is None:
+            return []
+        try:
+            tools = registry.list()
+        except Exception:
+            return []
+        return [
+            {
+                "id": t.id,
+                "name": t.name,
+                "description": t.description or "",
+                "server": (t.metadata or {}).get("server", ""),
+            }
+            for t in tools
+            if getattr(t, "source", "internal") == "mcp"
+        ]
 
     def create_session(
         self,

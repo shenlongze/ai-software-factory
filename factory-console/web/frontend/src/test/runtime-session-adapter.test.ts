@@ -120,4 +120,18 @@ describe('api/domain — toRuntimeSession (S10-016 映射)', () => {
     expect(acts[0].action).toBe('技能加载');
     expect(acts[1].action).toBe('技能选择');
   });
+
+  it('S10-020: mcp_* 事件人话映射 (toRuntimeActivity)', async () => {
+    const { toRuntimeActivity } = await import('../api/domain');
+    const events = [
+      { event_id: 'e1', session_id: 's1', event_type: 'mcp_connected', message: '', status: 'OK', created_at: '2026-08-13T05:00:00Z' },
+      { event_id: 'e2', session_id: 's1', event_type: 'mcp_tool_discovered', message: '', status: 'OK', created_at: '2026-08-13T05:00:01Z' },
+      { event_id: 'e3', session_id: 's1', event_type: 'mcp_tool_registered', message: '', status: 'OK', created_at: '2026-08-13T05:00:02Z' },
+    ] as unknown as Parameters<typeof toRuntimeActivity>[0];
+    const acts = toRuntimeActivity(events);
+    // message 为空 → 用 event_type 映射
+    expect(acts[0].action).toBe('MCP 已连接');
+    expect(acts[1].action).toBe('MCP 工具发现');
+    expect(acts[2].action).toBe('MCP 工具注册');
+  });
 });

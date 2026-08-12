@@ -41,6 +41,7 @@ describe('api client — 只读契约 + S9-002 审批写面 + S10-004 Runtime �
       'artifacts',
       'cancelRuntimeSession',
       'completeRuntimeSession',
+      'createMCPConnection',
       'createProject',
       'createRuntime',
       'createRuntimeSession',
@@ -51,6 +52,8 @@ describe('api client — 只读契约 + S9-002 审批写面 + S10-004 Runtime �
       'executeTool',
       'experience',
       'lifecycle',
+      'mcpConnections',
+      'mcpTools',
       // S10-002: Runtime 查询 (只读 GET; SSE 在 runtimeClient)
       'projectRuntimes',
       'projectTimeline',

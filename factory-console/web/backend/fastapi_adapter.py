@@ -431,6 +431,19 @@ class _ToolExecuteBody(BaseModel):
     context: dict[str, Any] | None = None
 
 
+class _CreateMCPConnectionBody(BaseModel):
+    """POST /api/mcp/connections body (S10-020 Task 001: MCP 连接注册)。
+
+    {name, server_url, transport?}: name/server_url 必填 (空 → 400 — Service
+    层 ValueError); transport 默认 mock (本 Task 仅 Mock 可用 — 注册即连接,
+    不连公网; stdio/http 真实协议 → 400 响亮拒绝, 不假装连接成功)。
+    """
+
+    name: str = ""
+    server_url: str = ""
+    transport: str = "mock"
+
+
 # ------------------------------------------------------------------ 装配
 
 
@@ -1804,6 +1817,51 @@ def build_app(
                 detail=f"agent skills unavailable (agent not found or store 未装配): {agent_id}",
             )
         return result
+
+    # ------------------------------------------- S10-020 Task 001: MCP API
+    # AI Employee 工具能力外部扩展 (GET /api/mcp/connections + POST
+    # /api/mcp/connections + GET /api/mcp/tools — MCP Adapter Foundation
+    # Console 收尾)。MCPRegistry 在 Service 层失败安全装配: 注入优先, 缺失
+    # → 自装配关联系统 ToolRegistry, 再失败 → None → GET 返回空清单 / POST
+    # 404)。写路径扩展 (Permission Boundary S10-020): MCP 连接注册一 POST —
+    # 注册即连接 (Mock, 不连公网) + Tool 注册进内部 ToolRegistry, 执行权仍
+    # 在 ToolExecutor 最小权限表, Adapter 只做 HTTP 绑定。错误映射:
+    # ValueError (空 name/server_url / stdio/http 真实协议) → 400 / None
+    # (store/exec 未装配) → 404 失败安全。审计: console.viewed
+    # (view=mcp_connections / mcp_connection_create / mcp_tools)。
+
+    @app.get("/api/mcp/connections")
+    def api_list_mcp_connections() -> dict[str, Any]:
+        """MCP 连接清单 (GET — MCPRegistry 当前连接; 未装配 → {connections: []}
+        失败安全)。"""
+        return _api.list_mcp_connections(service, logger=event_logger)
+
+    @app.post("/api/mcp/connections")
+    def api_create_mcp_connection(body: _CreateMCPConnectionBody) -> dict[str, Any]:
+        """创建 MCP 连接 (POST — {name, server_url, transport?} → 连接摘要 +
+        tools; 注册即连接: Mock 不连公网, stdio/http → 400 响亮拒绝)。"""
+        try:
+            result = _api.create_mcp_connection(
+                service,
+                body.name,
+                body.server_url,
+                transport=body.transport,
+                logger=event_logger,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if result is None:
+            raise HTTPException(
+                status_code=404,
+                detail="mcp registry unavailable (store/exec 未装配)",
+            )
+        return result
+
+    @app.get("/api/mcp/tools")
+    def api_list_mcp_tools() -> dict[str, Any]:
+        """MCP Tool 清单 (GET — 内部 ToolRegistry source=mcp 过滤; 内部 Tool
+        不混入 MCP 视图; 未装配 → {tools: []} 失败安全)。"""
+        return _api.list_mcp_tools(service, logger=event_logger)
 
     # ------------------------------------------- S10-006.5 P1-A: Workflow 启动 API
     # 用户第一公里闭环: POST start (真实 Agent 执行链, 后台线程) + chat 最小版

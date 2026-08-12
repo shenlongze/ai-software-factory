@@ -71,13 +71,14 @@ class TestRuntimeSessionModel:
 
     def test_event_type_twenty(self):
         """RuntimeEvent 类型 (任务约束 + Task 002 + S10-017 Task 001 + S10-018
-        + S10-019): agent_started/task_received/execution_started/tool_called/
+        + S10-019 + S10-020): agent_started/task_received/execution_started/tool_called/
         llm_request_sent/llm_response_received/output_generated/
         execution_finished/execution_failed + thinking_started/
         decision_created/action_requested/observation_received/
         execution_completed + tool_requested/tool_started/tool_completed/
-        tool_failed + skill_loaded/skill_selected (9→14→18→20, 向后兼容;
-        S10-019 两个 Skill 事件为条件触发 — 仅装配 SkillContext 时发出)。"""
+        tool_failed + skill_loaded/skill_selected + mcp_connected/
+        mcp_tool_discovered/mcp_tool_registered (9→14→18→20→23, 向后兼容;
+        Skill/MCP 事件为条件触发 — 仅装配对应上下文时发出)。"""
         assert {t.value for t in RuntimeEventType} == {
             "agent_started",
             "task_received",
@@ -99,6 +100,9 @@ class TestRuntimeSessionModel:
             "tool_failed",
             "skill_loaded",
             "skill_selected",
+            "mcp_connected",
+            "mcp_tool_discovered",
+            "mcp_tool_registered",
         }
 
     def test_to_dict_json_friendly(self):

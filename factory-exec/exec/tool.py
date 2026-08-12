@@ -36,7 +36,7 @@ from __future__ import annotations
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -44,6 +44,11 @@ from .models import utcnow
 
 #: Tool handler 签名: (input: dict, context: dict) -> Any (输出任意可 JSON 序列化值)。
 ToolHandler = Callable[[dict[str, Any], dict[str, Any]], Any]
+
+#: Tool 来源枚举值 (S10-020 Task 001 — MCP Adapter Foundation 扩展):
+#: internal = 内部系统 Tool (filesystem.read 等); mcp = 外部 MCP Server Tool
+#: (经 MCPToolAdapter 注册 — Agent 不知来源, 都是 Tool)。
+ToolSource = Literal["internal", "mcp"]
 
 
 class ToolError(Exception):
@@ -104,6 +109,12 @@ class Tool(BaseModel):
     permission_policy: ToolPermissionPolicy = Field(default_factory=ToolPermissionPolicy)
     enabled: bool = True
     created_at: datetime = Field(default_factory=utcnow)
+    # S10-020 Task 001 (MCP Adapter Foundation — 最小扩展, 向后兼容):
+    # source: Tool 来源 (internal|mcp — 旧 Tool 缺省 internal, 构造零破坏);
+    # metadata: 扩展元信息 (MCP tool → {source: "mcp", server, server_url,
+    # transport}; 内部 tool 缺省 {} — 来源可审计, Agent 不知来源)。
+    source: ToolSource = "internal"
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class ToolResult(BaseModel):
@@ -355,6 +366,9 @@ class ToolExecutor:
         # 4) Execute (handler 异常 → 明确 failed, 不吞不抛)
         ctx: dict[str, Any] = dict(context or {})
         ctx.setdefault("agent_id", agent)
+        # S10-020: event_callback 透传 (MCP adapter 事件 → session 记录; 主逻辑不变)
+        if self._event_callback is not None:
+            ctx.setdefault("event_callback", self._event_callback)
         if self._workspace_root is not None:
             ctx.setdefault("workspace_root", str(self._workspace_root))
         try:
@@ -376,6 +390,7 @@ __all__ = [
     "ToolPermissionPolicy",
     "ToolRegistry",
     "ToolResult",
+    "ToolSource",
     "ToolValidationError",
     "ToolExecutor",
     "validate_against_schema",

@@ -113,6 +113,15 @@ class BacklogStateError(Exception):
     """
 
 
+class RuntimeSessionError(Exception):
+    """S10-016: Runtime Session 状态机非法流转 (HTTP 409)。
+
+    PENDING→complete / SUCCESS→start / 终态→events 等非法转换 → 诚实冲突
+    (与 RuntimeStateError 同语义 — 执行会话状态由 domain 状态机裁决,
+    Service 层捕获 exec.RuntimeSessionError 后重抛本异常统一 HTTP 映射)。
+    """
+
+
 def _utc_now_str() -> str:
     """当前 UTC 时间 ISO 字符串 (Runtime 实例/截图 created_at)。"""
     return datetime.now(timezone.utc).isoformat()
@@ -256,6 +265,11 @@ class ConsoleService:
         # + idea/discovery 资产; 可选, 失败安全: 缺 space → draft/发现流程
         # 按存储不可用处理 → HTTP 503)
         project_space: Any = None,
+        # S10-016: Runtime Session 持久化 (exec.runtime_session
+        # RuntimeSessionStore — <root>/runtime-sessions 独立数据空间;
+        # 可选, 失败安全: 缺 store → 查询空/写返回 None, Console 冷启动
+        # 照常工作, 不拖垮 API)
+        session_store: Any = None,
     ) -> None:
         self._workspace = workspace_manager
         self._task_store = task_store
@@ -283,6 +297,186 @@ class ConsoleService:
         # S10-009 Task 4: Project Space store (workspace/projects/{slug}/ 目录
         # 信源 — draft/idea/discovery 资产落位; 可选, 失败安全)
         self._project_space = project_space
+        # S10-016: Runtime Session store (exec.runtime_session — Agent 执行
+        # 会话记录; 可选, 失败安全: 缺 store → 查询空/写 None)
+        self._session_store = session_store
+
+    # ------------------------------------------------------------------ S10-016: Runtime Session
+    # AI Employee Runtime Foundation — Agent 执行会话可见性底座 (谁在跑/跑
+    # 哪个任务/跑到哪一步/产出什么事件)。Domain (exec.runtime_session) 已
+    # GREEN: 五态状态机 + 事件链 + 原子写持久化; 本层只做失败安全装配 +
+    # 输入校验 (空 agent_id/task_id → ValueError → HTTP 400) + 状态机异常
+    # 归一 (exec.RuntimeSessionError → 本模块 RuntimeSessionError → HTTP 409)。
+    # 延迟导入 exec 包 (Removal Isolation — 缺 factory-exec 不拖垮 Console)。
+
+    def _get_session_store(self) -> Any:
+        """RuntimeSessionStore (缺失 → None; 失败安全 — 调用方按空/None 处理)。
+
+        注意: 方法名避开实例属性 `self._session_store` (同名遮蔽陷阱 — 同
+        _get_runtime_store 模式)。
+        """
+        return self._session_store
+
+    @staticmethod
+    def _runtime_session_mod() -> Any:
+        """延迟导入 exec.runtime_session 模块 (Removal Isolation; 失败 → None)。"""
+        try:
+            from exec import runtime_session
+
+            return runtime_session
+        except Exception:
+            return None
+
+    def create_session(
+        self,
+        agent_id: str,
+        task_id: str,
+        *,
+        workflow_id: str = "",
+    ) -> Any | None:
+        """创建 Runtime Session (PENDING — 一次 Agent 执行会话的记录起点)。
+
+        错误语义: 空 agent_id/task_id → ValueError (HTTP 400 — 执行者与
+        锚定任务必须明确); store 缺失/exec 未装配/落库失败 → None (失败
+        安全, 冷启动不崩溃)。成功 → RuntimeSession (session_id 以 rs- 开头,
+        status=pending, 事件链空)。
+        """
+        cleaned_agent = str(agent_id or "").strip()
+        cleaned_task = str(task_id or "").strip()
+        if not cleaned_agent:
+            raise ValueError("agent_id is required (执行者必须明确)")
+        if not cleaned_task:
+            raise ValueError("task_id is required (Session 必须锚定 Task)")
+        store = self._get_session_store()
+        mod = self._runtime_session_mod()
+        if store is None or mod is None:
+            return None
+        try:
+            session = mod.RuntimeSession(
+                session_id=mod.new_session_id(),
+                agent_id=cleaned_agent,
+                task_id=cleaned_task,
+                workflow_id=workflow_id,
+            )
+            store.save(session)
+            return session
+        except RuntimeSessionError:
+            raise
+        except Exception:
+            return None  # 存储不可用/损坏 → 失败安全 (不拖垮 API)
+
+    def start_session(self, session_id: str) -> Any | None:
+        """PENDING → RUNNING (started_at 记录)。不存在 → None (404); 非法
+        转换 (非 PENDING → start) → RuntimeSessionError (409)。"""
+        store = self._get_session_store()
+        mod = self._runtime_session_mod()
+        if store is None or mod is None:
+            return None
+        session = store.get(session_id)
+        if session is None:
+            return None
+        try:
+            updated = session.start()
+        except mod.RuntimeSessionError as exc:
+            raise RuntimeSessionError(str(exc)) from exc
+        store.save(updated)
+        return updated
+
+    def append_event(
+        self,
+        session_id: str,
+        event_type: str,
+        message: str = "",
+        *,
+        data: dict[str, Any] | None = None,
+    ) -> Any | None:
+        """追加执行事件 (仅 RUNNING 允许; 终态冻结)。
+
+        错误语义: 不存在 → None (404); 非法事件类型 → ValueError (400);
+        非 RUNNING → RuntimeSessionError (409)。成功 → RuntimeEvent
+        (event_id 以 ev- 开头)。
+        """
+        store = self._get_session_store()
+        mod = self._runtime_session_mod()
+        if store is None or mod is None:
+            return None
+        session = store.get(session_id)
+        if session is None:
+            return None
+        try:
+            updated, event = session.append_event(event_type, message, data=data)
+        except mod.RuntimeSessionError as exc:
+            raise RuntimeSessionError(str(exc)) from exc
+        except ValueError:
+            raise  # 非法事件类型 → HTTP 400 (domain 响亮校验)
+        store.save(updated)
+        return event
+
+    def complete_session(self, session_id: str, *, success: bool) -> Any | None:
+        """RUNNING → SUCCESS|FAILED (finished_at 记录)。不存在 → None (404);
+        非法转换 (非 RUNNING → complete) → RuntimeSessionError (409)。"""
+        store = self._get_session_store()
+        mod = self._runtime_session_mod()
+        if store is None or mod is None:
+            return None
+        session = store.get(session_id)
+        if session is None:
+            return None
+        try:
+            updated = session.complete(bool(success))
+        except mod.RuntimeSessionError as exc:
+            raise RuntimeSessionError(str(exc)) from exc
+        store.save(updated)
+        return updated
+
+    def cancel_session(self, session_id: str) -> Any | None:
+        """RUNNING → CANCELLED (finished_at 记录)。不存在 → None (404);
+        非法转换 (非 RUNNING → cancel) → RuntimeSessionError (409)。"""
+        store = self._get_session_store()
+        mod = self._runtime_session_mod()
+        if store is None or mod is None:
+            return None
+        session = store.get(session_id)
+        if session is None:
+            return None
+        try:
+            updated = session.cancel()
+        except mod.RuntimeSessionError as exc:
+            raise RuntimeSessionError(str(exc)) from exc
+        store.save(updated)
+        return updated
+
+    def list_running_sessions(self) -> list[Any]:
+        """运行中 Session 清单 (只含 RUNNING; 按 id 排序; 缺 store → [])。"""
+        store = self._get_session_store()
+        if store is None:
+            return []
+        try:
+            sessions = store.list_all()
+        except Exception:
+            return []  # 损坏 store → 空 (失败安全)
+        return [s for s in sessions if s.status.value == "running"]
+
+    def get_session(self, session_id: str) -> Any | None:
+        """单 Session 详情 (含事件链); 不存在 → None (404); 缺 store → None。"""
+        store = self._get_session_store()
+        if store is None:
+            return None
+        try:
+            return store.get(session_id)
+        except Exception:
+            return None  # 损坏 store → None (失败安全)
+
+    def get_sessions_by_task(self, task_id: str) -> list[Any]:
+        """按 task_id 过滤 Session (多次执行 = 多 session; 缺 store/无匹配 → [])。"""
+        store = self._get_session_store()
+        if store is None:
+            return []
+        try:
+            sessions = store.list_all()
+        except Exception:
+            return []  # 损坏 store → 空 (失败安全)
+        return [s for s in sessions if s.task_id == task_id]
 
     # ------------------------------------------------------------------ 七域 Dashboard
 

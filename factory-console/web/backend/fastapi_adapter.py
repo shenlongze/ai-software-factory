@@ -360,6 +360,39 @@ class _MilestoneRefBody(BaseModel):
     milestone_id: str
 
 
+class _CreateSessionBody(BaseModel):
+    """POST /api/agents/{agent_id}/sessions body (S10-016: Runtime Session)。
+
+    {task_id, workflow_id?}: task_id 必填 (空 → 400 — Session 必须锚定
+    Task); workflow_id 可选 (独立执行无工作流, 缺省空串)。
+    """
+
+    task_id: str = ""
+    workflow_id: str = ""
+
+
+class _SessionEventBody(BaseModel):
+    """POST /api/runtime-sessions/{id}/events body (S10-016)。
+
+    {type, message?, data?}: type 为 RuntimeEventType 七类型之一 (非法 →
+    400); message 可选 (事件人话描述); data 可选 (结构化载荷, 如工具调用
+    参数)。
+    """
+
+    type: str = ""
+    message: str = ""
+    data: dict[str, Any] | None = None
+
+
+class _SessionCompleteBody(BaseModel):
+    """POST /api/runtime-sessions/{id}/complete body (S10-016)。
+
+    {success}: true → SUCCESS / false → FAILED (缺省 true — 完成语义)。
+    """
+
+    success: bool = True
+
+
 # ------------------------------------------------------------------ 装配
 
 
@@ -453,6 +486,21 @@ def build_console_service(factory_root: str | Path, *, event_logger: Any = None)
     except Exception:
         conversation_store = None
 
+    # S10-016: Runtime Session 数据空间 (root/runtime-sessions — Agent 执行
+    # 会话独立数据空间, 原子写 JSON; 挂 factory-exec 到 sys.path (同
+    # workflow_runner._setup_sys_path 模式 — 8011 启动命令未挂 factory-exec,
+    # 延迟导入 exec.runtime_session 需该目录可寻址); 失败安全: 装配失败 →
+    # None, session 操作按空/404 处理)
+    session_store = None
+    try:
+        exec_dir = repo_root / "factory-exec"
+        if exec_dir.is_dir() and str(exec_dir) not in sys.path:
+            sys.path.insert(0, str(exec_dir))
+        _session_module = importlib.import_module("exec.runtime_session")
+        session_store = _session_module.RuntimeSessionStore(root / "runtime-sessions")
+    except Exception:
+        session_store = None
+
     return module.ConsoleService(
         workspace_manager=WorkspaceManager(root),
         task_store=TaskStore(root / "tasks"),
@@ -476,6 +524,9 @@ def build_console_service(factory_root: str | Path, *, event_logger: Any = None)
         review_feedback_store=review_feedback_store,
         # S10-006.5 P1-A: 对话记录持久化 (root/chat.json — 消息落库; 失败安全)
         conversation_store=conversation_store,
+        # S10-016: Runtime Session 持久化 (root/runtime-sessions — Agent 执行
+        # 会话; 失败安全: 装配失败 → None, session 操作按空/404 处理)
+        session_store=session_store,
     )
 
 
@@ -1469,6 +1520,131 @@ def build_app(
                 status_code=503, detail="review feedback store unavailable"
             )
         return record.to_dict()
+
+    # ------------------------------------------- S10-016: Runtime Session API
+    # AI Employee Runtime Foundation (Task 001b): Agent 执行会话可见性底座 —
+    # 谁在跑/跑哪个任务/跑到哪一步/产出什么事件。写路径扩展 (Permission
+    # Boundary S10-016 扩展: 会话生命周期 POST — 只记录执行会话/事件,
+    # 不触碰 Core 引擎, 执行权仍在 AgentRuntime)。
+    # 错误映射: 空 task_id/非法事件类型 → 400; 会话不存在/store 缺失 →
+    # 404; 状态机非法流转 (RuntimeSessionError) → 409 (诚实冲突)。
+    # 事件可读: session 详情/运行中列表/任务过滤三条查询路径 (含事件链 —
+    # 前端 Runtime Timeline 数据源)。
+
+    RuntimeSessionError = _service.RuntimeSessionError
+
+    @app.post("/api/agents/{agent_id}/sessions")
+    def api_create_runtime_session(
+        agent_id: str, body: _CreateSessionBody
+    ) -> dict[str, Any]:
+        """创建 Runtime Session (POST — PENDING 会话记录起点)。"""
+        try:
+            session = _api.create_runtime_session(
+                service,
+                agent_id,
+                task_id=body.task_id,
+                workflow_id=body.workflow_id,
+                logger=event_logger,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if session is None:
+            raise HTTPException(status_code=404, detail="session store unavailable")
+        return session.to_dict()
+
+    @app.post("/api/runtime-sessions/{session_id}/start")
+    def api_start_runtime_session(session_id: str) -> dict[str, Any]:
+        """启动会话 (PENDING → RUNNING; started_at 记录)。"""
+        try:
+            session = _api.start_runtime_session(
+                service, session_id, logger=event_logger
+            )
+        except RuntimeSessionError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        if session is None:
+            raise HTTPException(status_code=404, detail="runtime session not found")
+        return session.to_dict()
+
+    @app.post("/api/runtime-sessions/{session_id}/events")
+    def api_append_runtime_session_event(
+        session_id: str, body: _SessionEventBody
+    ) -> dict[str, Any]:
+        """追加执行事件 (POST — 仅 RUNNING; 终态冻结 409)。"""
+        try:
+            event = _api.append_runtime_session_event(
+                service,
+                session_id,
+                event_type=body.type,
+                message=body.message,
+                data=body.data,
+                logger=event_logger,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except RuntimeSessionError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        if event is None:
+            raise HTTPException(status_code=404, detail="runtime session not found")
+        return event.to_dict()
+
+    @app.post("/api/runtime-sessions/{session_id}/complete")
+    def api_complete_runtime_session(
+        session_id: str, body: _SessionCompleteBody
+    ) -> dict[str, Any]:
+        """完成会话 (RUNNING → SUCCESS|FAILED; finished_at 记录)。"""
+        try:
+            session = _api.complete_runtime_session(
+                service,
+                session_id,
+                success=body.success,
+                logger=event_logger,
+            )
+        except RuntimeSessionError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        if session is None:
+            raise HTTPException(status_code=404, detail="runtime session not found")
+        return session.to_dict()
+
+    @app.post("/api/runtime-sessions/{session_id}/cancel")
+    def api_cancel_runtime_session(session_id: str) -> dict[str, Any]:
+        """取消会话 (RUNNING → CANCELLED; finished_at 记录)。"""
+        try:
+            session = _api.cancel_runtime_session(
+                service, session_id, logger=event_logger
+            )
+        except RuntimeSessionError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        if session is None:
+            raise HTTPException(status_code=404, detail="runtime session not found")
+        return session.to_dict()
+
+    @app.get("/api/runtime-sessions")
+    def api_list_runtime_sessions(
+        status: str | None = Query(default=None),
+    ) -> list[dict[str, Any]]:
+        """会话清单 (GET ?status=running — 运行中过滤, 含事件链)。"""
+        sessions = _api.list_runtime_sessions(
+            service, status=status, logger=event_logger
+        )
+        return [s.to_dict() for s in sessions]
+
+    @app.get("/api/runtime-sessions/{session_id}")
+    def api_runtime_session_detail(session_id: str) -> dict[str, Any]:
+        """会话详情 (GET — 含保序事件时间线; 不存在 → 404)。"""
+        session = _api.get_runtime_session(
+            service, session_id, logger=event_logger
+        )
+        if session is None:
+            raise HTTPException(status_code=404, detail="runtime session not found")
+        return session.to_dict()
+
+    @app.get("/api/tasks/{task_id}/runtime")
+    def api_task_runtime_sessions(task_id: str) -> list[dict[str, Any]]:
+        """任务会话过滤 (GET — 多次执行 = 多 session; 无 → [] 诚实空态)。"""
+        sessions = _api.get_task_runtime_sessions(
+            service, task_id, logger=event_logger
+        )
+        return [s.to_dict() for s in sessions]
 
     # ------------------------------------------- S10-006.5 P1-A: Workflow 启动 API
     # 用户第一公里闭环: POST start (真实 Agent 执行链, 后台线程) + chat 最小版

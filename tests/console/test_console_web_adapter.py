@@ -330,7 +330,9 @@ class TestPermissionBoundary:
                 path = getattr(route, "path", "")
                 # 审批决定 + Runtime 生命周期 + Review 反馈 + 项目创建 + Workflow 启动/对话
                 is_approval = path.endswith("/approve") or path.endswith("/reject")
-                is_runtime_lifecycle = "/runtimes" in path
+                is_runtime_lifecycle = (
+                    "/runtimes" in path or "/runtime-sessions" in path or "/sessions" in path
+                )
                 is_review_feedback = path.endswith("/review-feedback")
                 is_project_create = path == "/api/projects"
                 # S10-007: AI 想法理解 (POST /api/projects/suggest — 建议不落库,

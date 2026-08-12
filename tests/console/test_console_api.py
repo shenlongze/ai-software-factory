@@ -150,13 +150,17 @@ class TestRouteExports:
     def test_route_modules_exported(self):
         """api/ 暴露全部路由函数 (S10-006.5 收尾: 33 个 — 新增 update/delete_project;
         S10-009-004: 36 个 — 新增 create_draft_project/save_discovery_answer/
-        complete_discovery; S10-009-005: 37 个 — 新增 confirm_project_route)。"""
+        complete_discovery; S10-009-005: 37 个 — 新增 confirm_project_route;
+        S10-016: 45 个 — 新增 Runtime Session 8 路由)。"""
         expected = {
             "add_roadmap_milestone_ref",
+            "append_runtime_session_event",
             "approve_approval",
+            "cancel_runtime_session",
             "capture_runtime_screenshot",
             "chat_route",
             "complete_discovery",
+            "complete_runtime_session",
             "confirm_project_route",
             "create_draft_project",
             "create_epic",
@@ -164,6 +168,7 @@ class TestRouteExports:
             "create_milestone",
             "create_project",
             "create_runtime",
+            "create_runtime_session",
             "create_sprint",
             "create_story",
             "create_task",
@@ -182,6 +187,8 @@ class TestRouteExports:
             "get_project_timeline",
             "get_project_workflow",
             "get_runtime",
+            "get_runtime_session",
+            "get_task_runtime_sessions",
             "get_workflow",
             "get_workflow_stages",
             "iter_sse_events",
@@ -195,6 +202,7 @@ class TestRouteExports:
             "list_providers",
             "list_recommendations",
             "list_review_feedback",
+            "list_runtime_sessions",
             "list_runtimes",
             "list_sprints",
             "list_workflows",
@@ -205,6 +213,7 @@ class TestRouteExports:
             "save_review_feedback",
             "start_project_workflow_route",
             "start_runtime",
+            "start_runtime_session",
             "stop_runtime",
             "suggest_project",
             "update_milestone",

@@ -37,8 +37,10 @@ import {
   type RecommendationSummary,
   type ReviewFeedback,
   type ProjectCreatedSummary,
+  type RuntimeEventPayload,
   type RuntimeInstance,
   type RuntimeScreenshot,
+  type RuntimeSessionPayload,
   type RunStatusResponse,
   type StageRunSummary,
   type TimelineEventSummary,
@@ -254,6 +256,55 @@ export const api = {
     sendJson<RuntimeInstance>(`/api/runtimes/${encodeURIComponent(runtimeId)}/stop`, {}),
   screenshotRuntime: (runtimeId: string) =>
     sendJson<RuntimeScreenshot>(`/api/runtimes/${encodeURIComponent(runtimeId)}/screenshot`, {}),
+  // S10-016: Runtime Session API (AI Employee 执行会话 — 创建/生命周期/事件 +
+  // 查询; 错误语义: 400 空 task_id/非法事件类型 / 404 不存在 / 409 状态机非法)
+  createRuntimeSession: (
+    agentId: string,
+    taskId: string,
+    workflowId: string | null = null,
+  ) =>
+    sendJson<RuntimeSessionPayload>(
+      `/api/agents/${encodeURIComponent(agentId)}/sessions`,
+      {
+        task_id: taskId,
+        ...(workflowId != null && workflowId.length > 0 ? { workflow_id: workflowId } : {}),
+      },
+    ),
+  startRuntimeSession: (sessionId: string) =>
+    sendJson<RuntimeSessionPayload>(
+      `/api/runtime-sessions/${encodeURIComponent(sessionId)}/start`,
+      {},
+    ),
+  appendRuntimeSessionEvent: (
+    sessionId: string,
+    type: string,
+    message: string = '',
+    data: Record<string, unknown> | null = null,
+  ) =>
+    sendJson<RuntimeEventPayload>(
+      `/api/runtime-sessions/${encodeURIComponent(sessionId)}/events`,
+      { type, message, ...(data != null ? { data } : {}) },
+    ),
+  completeRuntimeSession: (sessionId: string, success: boolean = true) =>
+    sendJson<RuntimeSessionPayload>(
+      `/api/runtime-sessions/${encodeURIComponent(sessionId)}/complete`,
+      { success },
+    ),
+  cancelRuntimeSession: (sessionId: string) =>
+    sendJson<RuntimeSessionPayload>(
+      `/api/runtime-sessions/${encodeURIComponent(sessionId)}/cancel`,
+      {},
+    ),
+  runtimeSessions: (status: 'running' | null = null) =>
+    getJson<RuntimeSessionPayload[]>(
+      `/api/runtime-sessions${status ? '?status=running' : ''}`,
+    ),
+  runtimeSessionDetail: (sessionId: string) =>
+    getJson<RuntimeSessionPayload>(
+      `/api/runtime-sessions/${encodeURIComponent(sessionId)}`,
+    ),
+  taskRuntimeSessions: (taskId: string) =>
+    getJson<RuntimeSessionPayload[]>(`/api/tasks/${encodeURIComponent(taskId)}/runtime`),
 } as const;
 
 export type Api = typeof api;

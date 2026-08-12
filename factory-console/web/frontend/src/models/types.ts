@@ -470,6 +470,37 @@ export interface RuntimeScreenshot {
   created_at: string | null;
 }
 
+/** S10-016: Runtime Session 事件 (执行会话时间线条目 — 内嵌于 session.events)。 */
+export interface RuntimeEventPayload {
+  event_id: string;
+  session_id: string;
+  /** RuntimeEventType 七类型: agent_started/task_received/execution_started/
+   * tool_called/output_generated/execution_finished/execution_failed。 */
+  type: string;
+  message: string;
+  created_at: string | null;
+  data: Record<string, unknown> | null;
+}
+
+/** S10-016: Runtime Session (Agent 执行会话记录 — 后端 exec.runtime_session)。
+
+ * session_id/agent_id/task_id/workflow_id: 会话身份字段 (workflow_id 可选);
+ * status: 五态状态机 pending|running|success|failed|cancelled; started_at/
+ * finished_at: 生命周期时间戳 (未发生 → null); events: 保序事件链 (终态冻结)。
+ * API 数据源: POST /api/agents/{id}/sessions + /api/runtime-sessions/*。
+ */
+export interface RuntimeSessionPayload {
+  session_id: string;
+  agent_id: string;
+  task_id: string;
+  workflow_id: string;
+  status: 'pending' | 'running' | 'success' | 'failed' | 'cancelled' | string;
+  created_at: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  events: RuntimeEventPayload[];
+}
+
 /** S10-002: SSE 事件名 (与后端 SSE_EVENT_MAP 同源; 业务 7 类 + error 通道)。 */
 export const RUNTIME_EVENT_NAMES = [
   'stage.started',

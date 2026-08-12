@@ -50,6 +50,7 @@ import {
   type CostSummary,
   type ExperienceSummaryModel,
   type ProjectSummary,
+  type RuntimeSessionPayload,
   type StageRunSummary,
   type StageSummary,
   type TimelineEventSummary,
@@ -819,6 +820,59 @@ export function toRuntimeActivity(
       ...(projectName != null && projectName.length > 0 ? { projectName } : {}),
     };
   });
+}
+
+// ------------------------------------------------------------------ toRuntimeSession (S10-016)
+
+/** S10-016: Runtime Session 状态 → result 人话 (未知 → 原样, §6.3)。 */
+const SESSION_RESULT_LABELS: Record<string, string> = {
+  pending: '待处理',
+  running: '执行中',
+  success: '成功',
+  failed: '失败',
+  cancelled: '已取消',
+};
+
+/** Runtime Session → RuntimeActivity (S10-016 — AI Employee 执行会话活动条目)。
+
+ * 后端 RuntimeSession (GET/POST /api/runtime-sessions/*) → 前端实时活动流
+ * 兼容结构 (S10-015 RuntimeActivity — Dashboard 最近活动/运行时时间线数据源):
+ *   - time: started_at ?? created_at (会话开始/创建时间; 缺失 → '')
+ *   - actor: agent_id → ROLE_LABELS 人话 + 'Agent' 后缀 (未知原样, 同
+ *     toRuntimeActivity agentLabel 口径; 空 → '系统')
+ *   - action: 执行任务 <task_id> (含 workflow_id → 追加 (工作流 id);
+ *     全缺 → 'Agent 执行会话')
+ *   - result: 五态状态人话 (pending→待处理/running→执行中/success→成功/
+ *     failed→失败/cancelled→已取消; 未知 → 原样)
+ *   - eventType: runtime_session.<status> (Runtime Timeline 会话定位; 缺状态
+ *     → undefined)
+ * 降级 (§6.3): null/undefined 输入 → 空活动条目 (time/actor/action 空,
+ * result 空, 不崩溃)。
+ */
+export function toRuntimeSession(
+  session?: RuntimeSessionPayload | null,
+): RuntimeActivity {
+  const source = session ?? ({} as RuntimeSessionPayload);
+  const status = str(source.status);
+  const task = str(source.task_id).trim();
+  const workflow = str(source.workflow_id).trim();
+  const action =
+    task.length > 0
+      ? workflow.length > 0
+        ? `执行任务 ${task} (${workflow})`
+        : `执行任务 ${task}`
+      : workflow.length > 0
+        ? `执行工作流 ${workflow}`
+        : 'Agent 执行会话';
+  const actor =
+    str(source.agent_id).length > 0 ? agentLabel(str(source.agent_id)) : '系统';
+  return {
+    time: str(source.started_at ?? source.created_at),
+    actor,
+    action,
+    result: status.length > 0 ? (SESSION_RESULT_LABELS[status] ?? status) : '',
+    ...(status.length > 0 ? { eventType: `runtime_session.${status}` } : {}),
+  };
 }
 
 // ------------------------------------------------------------------ toAgentSummary

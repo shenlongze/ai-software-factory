@@ -72,6 +72,18 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def _control_plane() -> Any:
+    """LLMControlPlane 实例 (S10-021 接线; config 复用进程单例 — .env 层同源)。
+
+    延迟 import (Removal Isolation: llm_control 独立模块, 加载失败不拖垮
+    workflow_runner 现有路径)。providers_file 缺省 ~/.factory/providers.json
+    (HOME 重定向即隔离 — 测试/冒烟用)。
+    """
+    from .llm_control import LLMControlPlane
+
+    return LLMControlPlane(config=get_config())
+
+
 def load_llm_key() -> str:
     """LLM API key 解析 + 进程内注入 (ConfigProvider; 禁明文, 不读 ~/.hermes)。
 
@@ -81,6 +93,9 @@ def load_llm_key() -> str:
     进程环境注入目标, 开发环境向后兼容)。注入目标按 provider 转换:
     deepseek/openai → OPENAI_API_KEY (OpenAI 兼容端点); anthropic →
     ANTHROPIC_API_KEY; ollama → 无 key (本地模型不注入)。
+    S10-021: 上述链未命中时, providers.json 管理面兜底 (D4: config.json
+    之后) — enabled provider 的 api_key_ref 解析 + 注入; 只引用 env:VAR,
+    不落明文; ollama → 空串不注入。
     返回 key (空串 = 缺失)。只写进程环境, 不打印/不落盘明文。
     """
     llm = get_config().get_llm()
@@ -88,6 +103,21 @@ def load_llm_key() -> str:
     key_env = llm.get("key_env")
     if key and key_env:
         os.environ[key_env] = key
+    if key:
+        return key
+    # S10-021: providers.json 管理面兜底注入 (D4; 异常 → 诚实空 key 失败安全)
+    try:
+        plane = _control_plane()
+        pid = plane.selected_provider_id()
+        if pid is not None:
+            cfg = plane.resolve_runtime_config(pid) or {}
+            cp_key = cfg.get("api_key") or ""
+            cp_key_env = cfg.get("key_env")
+            if cp_key and cp_key_env:
+                os.environ[cp_key_env] = cp_key
+            return cp_key
+    except Exception:  # noqa: BLE001 — 失败安全: 管理面异常 → 空 key
+        return ""
     return key
 
 
@@ -96,13 +126,20 @@ def has_llm_key() -> bool:
 
     向后兼容: 进程环境 OPENAI_API_KEY 仍优先 (Hermes 曾注入的部署形态)。
     其余走 ConfigProvider — 无 ~/.hermes 依赖 (S10-007 P0 解除)。
+    S10-021: providers.json 管理面参与判定 (D4: config.json 之后, 内置默认
+    之前; enabled 的 ollama 无 key 也算可用; 管理面异常 → False 失败安全)。
     """
     if os.environ.get("OPENAI_API_KEY"):
         return True
     llm = get_config().get_llm()
     if llm.get("provider") == "ollama":
         return True  # 本地模型不需要 API key
-    return bool(llm.get("api_key"))
+    if llm.get("api_key"):
+        return True
+    try:
+        return _control_plane().any_enabled_with_key()
+    except Exception:  # noqa: BLE001 — 失败安全: 管理面异常不阻断旧路径
+        return False
 
 
 def is_project_running(project_id: str) -> bool:
@@ -431,6 +468,25 @@ class Recorder:
         )
 
 
+def _resolve_llm_config() -> dict[str, Any]:
+    """LLM 装配配置: providers.json 管理面优先 (D4), fallback ConfigProvider.get_llm()。
+
+    S10-021: selected_provider_id 命中 → resolve_runtime_config (model/
+    base_url/费率来自 providers.json); 未配置/异常 → 现有 get_llm() 路径
+    (兼容不破坏 — 无 providers.json 时行为与 S10-007 完全一致)。
+    """
+    try:
+        plane = _control_plane()
+        pid = plane.selected_provider_id()
+        if pid is not None:
+            cfg = plane.resolve_runtime_config(pid)
+            if cfg:
+                return cfg
+    except Exception:  # noqa: BLE001 — 失败安全: 管理面异常 → 旧路径
+        pass
+    return get_config().get_llm()
+
+
 def _build_provider(recorder: Recorder) -> Any:
     """真实 Provider (Recording 包装) — 按配置 provider 选择, 不写死 DeepSeek。
 
@@ -439,8 +495,10 @@ def _build_provider(recorder: Recorder) -> Any:
     - deepseek/openai/ollama → OpenAIProvider (OpenAI 兼容端点; ollama 本地
       不校验 Authorization, 用占位 key 满足兼容客户端)
     - anthropic → AnthropicProvider (Messages API)
+    S10-021: providers.json 管理面优先 (D4) — _resolve_llm_config 先查
+    LLMControlPlane.selected_provider_id, 未命中才走 get_llm() 旧路径。
     """
-    llm = get_config().get_llm()
+    llm = _resolve_llm_config()
     provider = llm["provider"]
     if provider == "anthropic":
         from exec.providers.anthropic import AnthropicProvider

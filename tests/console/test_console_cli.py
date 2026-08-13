@@ -314,6 +314,7 @@ class TestFactoryCliArgparse:
             "audit",
             "init",
             "config",
+            "demo",  # S10-026 Task F: 隔离 Demo Workspace (~/.factory-demo)
             "project",
             "run",
         }

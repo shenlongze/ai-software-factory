@@ -55,6 +55,21 @@ S10-026 Task E (init 转正, §2.1 P0 factory init — 首次运行初始化):
     交互输入非 env: 引用 → 拒绝并回退默认引用; 除 providers.json 外不碰任何文件
     (config.json 归 config 命令管)。
 
+S10-026 Task F (demo 转正, §2.5 P4 Demo Workspace, 修订 ③):
+    factory demo init    创建隔离 Demo Workspace (~/.factory-demo, 零污染
+                        ~/.factory): workspace 目录 + providers.json (demo
+                        用, 可选 provider, 只写 env: 引用) + models.json
+                        (复用 ModelCatalog 构造自动 seed) + 1 个示例项目
+                        (复用 org ProjectStore/ProjectAdoption; 缺包 → 只建
+                        项目目录 + 提示)
+    factory demo status  只读展示 demo root / providers / models / 示例项目
+    factory demo reset   清空 ~/.factory-demo 重建 (安全护栏: 只删 demo 根,
+                        绝不碰 ~/.factory)
+    factory demo start   用 demo root 作 factory_root 启动 backend+frontend
+                        (复用 start → cli_services; 未初始化 → 明确提示)
+    铁律: demo 只 seed 真实数据文件 + 展示真实链路 (无 mock AI); providers.json
+    只写 api_key_ref 引用, 无明文 key; 任何 demo 操作只写 ~/.factory-demo。
+
 架构预留: project/run 注册为 argparse stub (阶段三实现), 未来可加子子命令
 (project list 等) — 不限制扩展。
 
@@ -81,6 +96,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import importlib
 import json
 import os
 import shutil
@@ -125,6 +141,17 @@ STUB_COMMANDS = ("project", "run")
 INIT_PROVIDERS = ("deepseek", "openai", "anthropic", "ollama")
 #: workspace 初始目录 (S10-026 §2.1 step 2; 与 cli_doctor.EnvironmentCheck 同口径)
 WORKSPACE_DIRS = ("agents", "skills", "projects", "providers", "workspace")
+
+#: Demo Workspace 数据根目录名 (S10-026 §2.5 修订 ③: 隔离 ~/.factory-demo,
+#: 独立于 ~/.factory, 零污染用户数据; HOME 重定向即隔离 — 测试用 tmp)
+DEMO_ROOT_NAME = ".factory-demo"
+#: Demo 示例项目固定 id (幂等 seed — 二次 init 不重复创建)
+DEMO_PROJECT_ID = "demo-project"
+#: Demo 示例项目名
+DEMO_PROJECT_NAME = "AI Factory Demo"
+#: Demo providers.json 的 provider (可选 provider; 无 key 也可 — 展示 UI/流程,
+#: 执行需要 key 时提示)
+DEMO_PROVIDER = "deepseek"
 
 #: config 白名单 (可写运行时键 — S10-026 Task D §2.3; workspace 等未来扩展位暂不开放)
 CONFIG_KEYS = ("core.data_dir", "core.port", "core.frontend_port")
@@ -355,6 +382,85 @@ def _init_validation(data_dir: Path) -> list[str]:
     return []
 
 
+# ------------------------------------------------------------------ demo (S10-026 Task F: 隔离 Demo Workspace IO)
+
+DEMO_ORG_MODULE = "factory-org.org.projects"  # 目录名含连字符, 经 importlib 加载
+
+
+def _demo_root() -> Path:
+    """Demo Workspace 数据根 (~/.factory-demo; HOME 重定向即隔离 — 测试用 tmp)。"""
+    return Path.home() / DEMO_ROOT_NAME
+
+
+def _demo_rmtree(root: Path) -> None:
+    """删除 demo 根目录 (安全护栏: 只允许删 ~/.factory-demo, 绝不碰其他路径)。
+
+    reset 的唯一删除入口 — 路径约束 (basename == DEMO_ROOT_NAME 且父目录 ==
+    HOME) 不满足 → 响亮拒绝, 保证任何情况下都不触碰 ~/.factory 等用户数据。
+    """
+    if root.name != DEMO_ROOT_NAME or root.parent != Path.home():
+        raise ValueError(f"拒绝删除非 demo 路径: {root}")
+    shutil.rmtree(root)
+
+
+def _demo_write_providers(root: Path) -> None:
+    """写 providers.json (demo 用, 可选 provider; 复用 LLMControlPlane).
+
+    只写 api_key_ref 引用 (env:VAR) — 无明文 key; demo 无 key 也可 (展示
+    UI/流程, 执行需要 key 时由 LLM 链路提示)。upsert 语义, 幂等。
+    """
+    from .llm_control import LLMControlPlane
+
+    defaults = PROVIDER_DEFAULTS.get(DEMO_PROVIDER, {})
+    plane = LLMControlPlane(providers_file=root / "providers.json", environ=os.environ)
+    plane.enable(
+        DEMO_PROVIDER,
+        models=[defaults.get("model") or "deepseek-chat"],
+        base_url=defaults.get("base_url"),
+        api_key_ref=_default_api_key_ref(DEMO_PROVIDER),
+    )
+
+
+def _demo_write_models(root: Path) -> None:
+    """触发 ModelCatalog 种子写入 models.json (复用 ModelCatalog 构造即自动 seed)。"""
+    from .model_catalog import ModelCatalog
+
+    ModelCatalog(models_file=root / "models.json")
+
+
+def _demo_seed_project(root: Path) -> bool:
+    """seed 1 个示例项目 (复用 org ProjectStore/ProjectAdoption).
+
+    logger=None → 事件全静默 (不建事件库); 固定 project_id → 幂等 (已存在
+    跳过, 不重复创建)。org 扩展包不可用 (import 失败) → False (调用方只建
+    项目目录 + 提示, 不假装成功)。
+    """
+    try:
+        projects_mod = importlib.import_module(DEMO_ORG_MODULE)
+    except Exception:  # noqa: BLE001 — org 缺包降级 (设计: 只建目录 + 提示)
+        return False
+    store = projects_mod.ProjectStore(root / "org")
+    if store.get_project(DEMO_PROJECT_ID) is None:
+        projects_mod.ProjectLifecycle(store, logger=None).create_project(
+            DEMO_PROJECT_NAME,
+            user_id="demo",
+            goal=(
+                "AI Factory Demo — 展示完整流程 "
+                "(Idea → Project → Workflow → Agent 执行 → Artifact)"
+            ),
+            project_id=DEMO_PROJECT_ID,
+        )
+    return True
+
+
+def _demo_project_count(root: Path) -> int:
+    """读 org/projects.json 的示例项目数 (只读, 失败安全; 缺文件/损坏 → 0)。"""
+    data = _load_json_safe(root / "org" / "projects.json")
+    if isinstance(data, dict) and isinstance(data.get("projects"), dict):
+        return len(data["projects"])
+    return 0
+
+
 # ------------------------------------------------------------------ 命令组骨架 IO (S10-026 Task C: 只读数据读取)
 
 #: 事件库候选文件名 (audit 按序探测; factory.db 内含 events 表)
@@ -578,6 +684,8 @@ class FactoryCLI:
             return self.config_cmd(args)
         if args.command == "init":
             return self.init(args)
+        if args.command == "demo":
+            return self.demo(args)
         if args.command in STUB_COMMANDS:
             return self._stub(args.command)
         print(f"未知命令: {args.command}", file=sys.stderr)
@@ -1539,6 +1647,167 @@ class FactoryCLI:
         for problem in problems:
             print(f"  ⚠ {problem}")
 
+    # ------------------------------------------------------------- demo (S10-026 Task F: 隔离 Demo Workspace)
+
+    def demo(self, args: argparse.Namespace) -> int:
+        """隔离 Demo Workspace (§2.5 P4, 修订 ③): init / status / reset / start。
+
+        Demo 数据根固定 ~/.factory-demo (独立于 ~/.factory, 零污染用户数据):
+        - init: 创建隔离 workspace (agents/skills/projects/providers/workspace)
+          + providers.json (复用 LLMControlPlane, 只写 env: 引用, 无明文 key)
+          + models.json (复用 ModelCatalog 构造自动 seed) + 1 个示例项目
+          (复用 org ProjectStore/ProjectAdoption; 缺包 → 只建目录 + 提示)
+        - status: 只读展示 demo root / providers / models / 示例项目 (失败安全)
+        - reset: 清空重建 (安全护栏: 只删 ~/.factory-demo, 绝不碰 ~/.factory)
+        - start: 用 demo root 作 factory_root 启动 backend+frontend (复用
+          start → cli_services; 未初始化 → 明确提示, rc 1)
+        铁律: 无明文 key; 无假 AI 能力 (demo 只 seed 真实数据文件, 展示真实链路)。
+        """
+        action = args.demo_action
+        if action == "init":
+            return self._demo_init()
+        if action == "status":
+            return self._demo_status()
+        if action == "reset":
+            return self._demo_reset()
+        if action == "start":
+            return self._demo_start(args)
+        print(f"未知 demo 动作: {action}", file=sys.stderr)
+        return 2
+
+    def _demo_init(self) -> int:
+        """创建隔离 Demo Workspace (幂等): 目录 + providers + models + 示例项目。"""
+        root = _demo_root()
+        print("=== Demo Workspace 初始化 ===")
+        print(f"  Demo 根目录: {root} (隔离 — 不触碰 ~/.factory)")
+        created = _ensure_workspace(root)
+        if created:
+            print("  已创建 workspace 目录: " + ", ".join(created))
+        else:
+            print("  workspace 目录已就绪")
+        _demo_write_providers(root)
+        print(
+            f"  ✓ providers.json 就位 ({DEMO_PROVIDER}, api_key_ref=env 引用 — "
+            "无明文 key; 执行需要 key 时由 LLM 链路提示)"
+        )
+        _demo_write_models(root)
+        print("  ✓ models.json 就位 (ModelCatalog 种子)")
+        if _demo_seed_project(root):
+            print(f"  ✓ 示例项目已 seed ({DEMO_PROJECT_ID})")
+        else:
+            print(
+                "  ⚠ org 扩展包不可用 — 已建项目目录, 未写入示例项目记录"
+                " (可后续用 org CLI 注册)",
+                file=sys.stderr,
+            )
+        print("  下一步: factory demo start — 用 Demo Workspace 启动 (UI/流程演示)")
+        return 0
+
+    def _demo_status(self) -> int:
+        """Demo 状态 (只读, 失败安全 — 缺失/损坏 → 明确提示, 永不抛)。"""
+        root = _demo_root()
+        print("=== Demo Workspace 状态 ===")
+        if not root.is_dir():
+            print(f"  Demo 根目录: {root} — 不存在 (请先运行 factory demo init)")
+            return 0
+        print(f"  Demo 根目录: {root} (存在)")
+        ready = [name for name in WORKSPACE_DIRS if (root / name).is_dir()]
+        print(
+            f"  workspace 目录: {', '.join(ready) if ready else '(无)'} "
+            f"({len(ready)}/{len(WORKSPACE_DIRS)})"
+        )
+        providers_file = root / "providers.json"
+        if providers_file.is_file():
+            from .llm_control import LLMControlPlane, ProviderFileError
+
+            try:
+                plane = LLMControlPlane(
+                    providers_file=providers_file, environ=os.environ
+                )
+                enabled = plane.enabled_providers()
+                key_ok = [
+                    p.id
+                    for p in enabled
+                    if p.id == "ollama" or plane.resolve_api_key(p.id)
+                ]
+                line = (
+                    f"  providers.json: 就位 ({len(plane.list_providers())} "
+                    f"provider, {len(enabled)} enabled)"
+                )
+                print(line)
+                if enabled:
+                    print(
+                        "    enabled: " + ", ".join(p.id for p in enabled)
+                        + f" | API key: {'可解析' if key_ok else '未配置 (演示 UI/流程无需, 执行时需要)'}"
+                    )
+                else:
+                    print("    (无 enabled provider)")
+            except ProviderFileError as exc:
+                print(f"  providers.json: 损坏 ({exc})")
+        else:
+            print("  providers.json: 缺失")
+        models_file = root / "models.json"
+        if models_file.is_file():
+            from .model_catalog import ModelCatalog, ModelCatalogError
+
+            try:
+                catalog = ModelCatalog(models_file=models_file)
+                print(
+                    f"  models.json: 就位 ({len(catalog.list_models(include_disabled=True))} "
+                    "个模型元数据)"
+                )
+            except ModelCatalogError as exc:
+                print(f"  models.json: 损坏 ({exc})")
+        else:
+            print("  models.json: 缺失")
+        count = _demo_project_count(root)
+        if count:
+            print(f"  示例项目: {count} 个 (org/projects.json)")
+        else:
+            print("  示例项目: 无 (org 数据缺失 — 可重跑 factory demo init)")
+        return 0
+
+    def _demo_reset(self) -> int:
+        """重置 Demo: 清空 ~/.factory-demo → 重建 (绝不碰 ~/.factory)。"""
+        root = _demo_root()
+        print("=== Demo Workspace 重置 ===")
+        if root.exists():
+            _demo_rmtree(root)  # 安全护栏: 只允许删 ~/.factory-demo
+            print(f"  ✓ 已清空 {root}")
+        else:
+            print(f"  Demo 根目录不存在 ({root}) — 直接重建")
+        return self._demo_init()
+
+    def _demo_start(self, args: argparse.Namespace) -> int:
+        """用 demo root 作 factory_root 启动 backend+frontend (复用 start)。
+
+        装配一个 data_dir 指向 demo root 的 CLI 实例 (run/pid/日志全在 demo
+        root 内) → 委托 start() → cli_services (backend 经 create_app
+        (factory_root=demo_root) 启动)。未初始化 → 明确提示, rc 1。
+        """
+        root = _demo_root()
+        if not (root / "providers.json").is_file():
+            print(
+                "  ✗ Demo Workspace 未初始化 — 请先运行 factory demo init",
+                file=sys.stderr,
+            )
+            return 1
+        demo_cli = FactoryCLI(self.config, root=self.root)
+        demo_cli.data_dir = root
+        demo_cli.run_dir = root / RUN_SUBDIR
+        demo_cli.backend_pid = demo_cli.run_dir / "backend.pid"
+        demo_cli.frontend_pid = demo_cli.run_dir / "frontend.pid"
+        demo_cli.backend_log = demo_cli.run_dir / "backend.log"
+        demo_cli.frontend_log = demo_cli.run_dir / "frontend.log"
+        print(f"=== Demo Workspace 启动 (factory_root: {root}) ===")
+        return demo_cli.start(
+            no_browser=args.no_browser,
+            port=args.port,
+            frontend_port=args.frontend_port,
+            services=None,
+            dev=args.dev,
+        )
+
     # ------------------------------------------------------------- 杂项
 
     def _show_log_tail(self, path: Path, lines: int = 30) -> None:
@@ -1659,6 +1928,32 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_init.add_argument(
         "--model", metavar="MODEL", help="指定模型 (缺省用 provider 默认模型)"
+    )
+    p_demo = sub.add_parser(
+        "demo",
+        help="隔离 Demo Workspace (init/status/reset/start — ~/.factory-demo, 零污染用户数据)",
+    )
+    p_demo.add_argument(
+        "demo_action",
+        choices=["init", "status", "reset", "start"],
+        metavar="动作",
+        help="init — 创建隔离 Demo Workspace; status — Demo 状态; "
+        "reset — 清空重建; start — 用 demo root 启动 backend+frontend",
+    )
+    p_demo.add_argument(
+        "--no-browser", action="store_true", help="(start) 不自动打开浏览器 (headless/CI)"
+    )
+    p_demo.add_argument(
+        "--port", type=int, default=None, help="(start) 后端端口 (默认取配置, 8011)"
+    )
+    p_demo.add_argument(
+        "--frontend-port",
+        type=int,
+        default=None,
+        help="(start) 前端端口 (默认取配置, 5180)",
+    )
+    p_demo.add_argument(
+        "--dev", action="store_true", help="(start) 前端走 vite dev (默认托管 dist)"
     )
     for name in STUB_COMMANDS:
         sub.add_parser(name, help=f"[预留] factory {name} — 阶段三实现")

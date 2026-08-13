@@ -326,9 +326,13 @@ class TestFactoryCliArgparse:
         assert ns.port == 9000
         assert ns.frontend_port == 6000
 
-    @pytest.mark.parametrize("cmd", ["init", "config", "project", "run"])
+    @pytest.mark.parametrize("cmd", ["init", "project", "run"])
     def test_stub_commands_not_implemented(self, cmd, capsys):
-        """预留 stub: 语法合法 (rc 1 业务未实现) + 提示清晰。"""
+        """预留 stub: 语法合法 (rc 1 业务未实现) + 提示清晰。
+
+        config 已于 S10-026 Task D 转正 (factory config show/set/check/path),
+        不再属于 stub — 见 tests/console/test_cli_config.py。
+        """
         mod = _factory_cli_mod()
         rc = mod.main([cmd])
         assert rc == 1

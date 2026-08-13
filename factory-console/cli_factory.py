@@ -30,7 +30,20 @@ S10-026 Task C (命令组骨架): 新增 agent/skill/task/router/rag/audit 六�
 约束: 全部只读展示, 失败安全 (缺失/损坏 → 空列表提示, 永不抛); 不引入
 新依赖 (仅标准库 sqlite3); 不改动 llm_router/llm_control/model_catalog 等。
 
-架构预留: init/config/project/run 注册为 argparse stub (阶段三实现), 未来
+S10-026 Task D (config 转正, §2.3 Factory Runtime Configuration 修订 ①):
+    factory config show   显示运行时配置 (脱敏: key 不显示值, 只显示
+                          已配置/未配置状态) + 只读展示 LLM 状态 (不打印 key)
+    factory config set <key> <value>  写 config.json 白名单键 (core.data_dir /
+                          core.port / core.frontend_port); llm.* → 明确拒绝
+                          (红线 ①: config.json 禁存 LLM 偏好 — LLM 配置归
+                          providers.json / models.json / agent.yaml·skill.yaml·
+                          project.yaml); 未知键/非法端口值 → 拒绝
+    factory config check  校验配置: config.json 状态 + providers.json 只读检查
+                          (复用 LLMControlPlane list_providers/enabled_providers/
+                          resolve_api_key), 输出 OK/WARN, 零副作用
+    factory config path   显示配置文件路径 (ConfigProvider 注入可见)
+
+架构预留: init/project/run 注册为 argparse stub (阶段三实现), 未来
 可加子子命令 (project list 等) — 不限制扩展。
 
 设计:
@@ -92,8 +105,13 @@ HEALTH_TIMEOUT = 30.0
 FRONTEND_TIMEOUT = 15.0
 #: 健康检查轮询间隔 (秒)
 HEALTH_INTERVAL = 0.5
-#: 架构预留子命令 (阶段三实现; 注册为 stub 不限制扩展)
-STUB_COMMANDS = ("init", "config", "project", "run")
+#: 架构预留子命令 (阶段三实现; 注册为 stub 不限制扩展; config 已于 Task D 转正)
+STUB_COMMANDS = ("init", "project", "run")
+
+#: config 白名单 (可写运行时键 — S10-026 Task D §2.3; workspace 等未来扩展位暂不开放)
+CONFIG_KEYS = ("core.data_dir", "core.port", "core.frontend_port")
+#: 红线键 (S10-026 修订 ①): config.json 禁存 LLM 偏好 — 明确拒绝 + 引导
+CONFIG_FORBIDDEN_KEYS = ("llm.provider", "llm.model", "llm.base_url", "llm.api_key_ref")
 
 
 # ------------------------------------------------------------------ 模块级 IO (可 monkeypatch)
@@ -254,6 +272,31 @@ def _load_json_safe(path: Path) -> Any | None:
         return json.loads(path.read_text(encoding="utf-8"))
     except Exception:  # noqa: BLE001 — 只读展示失败安全
         return None
+
+
+def _read_config_file(path: Path) -> dict[str, Any] | None:
+    """读 config.json → dict; 缺失 → {}; 损坏/非 JSON 对象 → None。
+
+    None 语义: 文件存在但损坏 — 调用方拒绝覆盖 (保护用户数据); 缺失文件
+    视为空配置 (首次运行, 可安全创建)。
+    """
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 — 损坏由调用方决策
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _write_config_file(path: Path, data: dict[str, Any]) -> None:
+    """原子写 config.json (临时文件 + os.replace — 同 providers/store 模式)。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.parent / f".{path.name}.{os.getpid()}.tmp"
+    tmp.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    os.replace(tmp, path)
 
 
 def _agent_rows(data_dir: Path) -> list[dict[str, Any]]:
@@ -436,6 +479,8 @@ class FactoryCLI:
             return self.service(args)
         if args.command in ("agent", "skill", "task", "router", "rag", "audit"):
             return getattr(self, args.command)(args)
+        if args.command == "config":
+            return self.config_cmd(args)
         if args.command in STUB_COMMANDS:
             return self._stub(args.command)
         print(f"未知命令: {args.command}", file=sys.stderr)
@@ -851,6 +896,169 @@ class FactoryCLI:
             ),
         )
 
+    # ------------------------------------------------------------- config (S10-026 Task D)
+
+    def config_cmd(self, args: argparse.Namespace) -> int:
+        """Factory Runtime Configuration (§2.3): show / set / check / path。
+
+        白名单写入 (core.data_dir / core.port / core.frontend_port); 红线 ①:
+        拒绝一切 llm.* 写入 — LLM 配置归 providers.json (LLMControlPlane) /
+        models.json (ModelCatalog) / agent.yaml·skill.yaml·project.yaml (策略)。
+        """
+        action = args.config_action
+        if action == "show":
+            return self._config_show()
+        if action == "set":
+            if not args.key or args.value is None:
+                print("用法: factory config set <key> <value>", file=sys.stderr)
+                return 2
+            return self._config_set(args.key, args.value)
+        if action == "check":
+            return self._config_check()
+        if action == "path":
+            print(f"配置文件: {self._config_file()}")
+            return 0
+        print(f"未知 config 动作: {action}", file=sys.stderr)
+        return 2
+
+    def _config_file(self) -> Path:
+        """config.json 路径 (自 ConfigProvider 取 — 测试注入 tmp 文件时可见)。"""
+        return Path(
+            getattr(
+                self.config,
+                "_user_config_file",
+                Path.home() / ".factory" / "config.json",
+            )
+        )
+
+    def _config_show(self) -> int:
+        """显示运行时配置 (脱敏: key 不显示值, 只显示 已配置/未配置 状态)。
+
+        状态判定: ConfigProvider 分层取值 (env > .env > config.json) 为
+        None → 未配置 (使用默认); 任一层有值 → 已配置。LLM 行只读展示
+        状态, 不打印 key 明文 (铁律: 不打印 API key)。
+        """
+        print("=== Factory 运行时配置 ===")
+        print(f"配置文件: {self._config_file()}")
+        for key in CONFIG_KEYS:
+            section, _, sub = key.partition(".")
+            configured = self.config.get(section, sub, None) is not None
+            print(f"  {key:<22} {'已配置' if configured else '未配置'}")
+        llm = self.config.get_llm()
+        print(
+            f"LLM (只读状态): provider={llm['provider']} model={llm['model']} "
+            f"api_key={'已配置' if llm['api_key'] else '未配置'}"
+        )
+        return 0
+
+    def _config_set(self, key: str, value: str) -> int:
+        """写运行时配置 (仅白名单); llm.* / 未知键 / 非法值 → 拒绝 + 明确错误。"""
+        if key in CONFIG_FORBIDDEN_KEYS or key.startswith("llm."):
+            print(
+                f"拒绝写入 {key}: config.json 只存运行时配置 (红线 ①) — "
+                "LLM 配置归 providers.json (Provider 生命周期) / models.json "
+                "(模型元数据) / agent.yaml·skill.yaml·project.yaml (策略), "
+                "请用对应管理命令配置。",
+                file=sys.stderr,
+            )
+            return 1
+        if key not in CONFIG_KEYS:
+            print(
+                f"未知配置键: {key} (允许: {', '.join(CONFIG_KEYS)})",
+                file=sys.stderr,
+            )
+            return 1
+        section, _, sub = key.partition(".")
+        if sub in ("port", "frontend_port"):
+            try:
+                number = int(value.strip())
+            except ValueError:
+                print(
+                    f"非法端口值: {value!r} — 需要 1-65535 的整数", file=sys.stderr
+                )
+                return 1
+            if not 1 <= number <= 65535:
+                print(
+                    f"非法端口值: {value!r} — 需要 1-65535 的整数", file=sys.stderr
+                )
+                return 1
+            typed: Any = number
+        else:  # core.data_dir
+            stripped = value.strip()
+            if not stripped:
+                print("非法 data_dir: 不能为空", file=sys.stderr)
+                return 1
+            typed = stripped
+        path = self._config_file()
+        data = _read_config_file(path)
+        if data is None:
+            print(
+                f"config.json 损坏 ({path}) — 请人工修复后再执行 config set",
+                file=sys.stderr,
+            )
+            return 1
+        data.setdefault(section, {})[sub] = typed
+        _write_config_file(path, data)
+        print(f"已写入 {key} = {typed}")
+        return 0
+
+    def _config_check(self) -> int:
+        """校验配置: config.json 状态 + providers.json 只读检查 (复用
+        LLMControlPlane list_providers/enabled_providers/resolve_api_key)。
+
+        输出 OK/WARN 行; 零副作用 (绝不创建/修改 providers.json 等文件)。
+        """
+        print("=== 配置校验 ===")
+        # 1. 运行时配置 (config.json)
+        path = self._config_file()
+        data = _read_config_file(path)
+        if data is None:
+            print(f"  WARN config.json 损坏 ({path}) — 忽略并回退默认值")
+        elif not data:
+            print(
+                f"  WARN config.json 不存在 ({path}) — 使用默认值"
+                " (可用 factory config set 写入)"
+            )
+        else:
+            print(f"  OK   config.json 可读 ({path})")
+        # 2. LLM Provider (providers.json — LLMControlPlane 只读查询)
+        providers_file = self.data_dir / "providers.json"
+        from .llm_control import LLMControlPlane, ProviderFileError
+
+        try:
+            plane = LLMControlPlane(providers_file=providers_file, environ=os.environ)
+        except ProviderFileError as exc:
+            print(f"  WARN providers.json 损坏: {exc}")
+            return 0
+        if not providers_file.exists():
+            print(
+                "  WARN providers.json 不存在 — 请先运行 factory init 配置 LLM Provider"
+            )
+            return 0
+        providers = plane.list_providers()
+        enabled = plane.enabled_providers()
+        if not enabled:
+            print(
+                "  WARN providers.json 存在但无 enabled provider — "
+                "请启用至少一个 provider (factory init)"
+            )
+            return 0
+        missing_key = [
+            p.id for p in enabled if p.id != "ollama" and not plane.resolve_api_key(p.id)
+        ]
+        if missing_key:
+            print(
+                "  WARN enabled provider 缺少 API key: "
+                f"{', '.join(missing_key)} — 请配置 api_key_ref (如 env:DEEPSEEK_API_KEY)"
+            )
+            return 0
+        print(
+            f"  OK   providers.json 就绪 ({len(providers)} provider, "
+            f"{len(enabled)} enabled: {', '.join(p.id for p in enabled)}, "
+            "API key 可解析)"
+        )
+        return 0
+
     # ------------------------------------------------------------- 命令组骨架 (S10-026 Task C)
 
     def agent(self, args: argparse.Namespace) -> int:
@@ -1081,6 +1289,25 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_doctor.add_argument("--json", action="store_true", help="输出结构化 JSON")
     p_doctor.add_argument("--verbose", action="store_true", help="显示检查详情")
+    p_config = sub.add_parser(
+        "config", help="Factory 运行时配置 (show/set/check/path)"
+    )
+    p_config.add_argument(
+        "config_action",
+        choices=["show", "set", "check", "path"],
+        metavar="动作",
+        help="show — 显示运行时配置 (脱敏); set — 写白名单键; "
+        "check — 校验配置 (OK/WARN); path — 显示配置文件路径",
+    )
+    p_config.add_argument(
+        "key",
+        nargs="?",
+        metavar="键",
+        help="配置键 (仅 core.data_dir / core.port / core.frontend_port)",
+    )
+    p_config.add_argument(
+        "value", nargs="?", metavar="值", help="配置值 (set 动作使用)"
+    )
     sub.add_parser(
         "agent", help="Agent 管理骨架 (只读: 列出现有 agents 的 id/name/role/skills)"
     )

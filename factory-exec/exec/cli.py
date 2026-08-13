@@ -79,7 +79,67 @@ def _error(message: str, exit_code: int = 1) -> dict:
 # ------------------------------------------------------------------ 装配点
 
 def _provider_registry() -> ProviderRegistry:
-    """Provider 注册表装配点 (延迟 import; 测试 monkeypatch 注入 mock)。"""
+    """Provider 注册表装配点 (延迟 import; 测试 monkeypatch 注入 mock)。
+
+    S10-023 (Phase 3): 装配优先级 ControlPlane > legacy registry > fallback。
+    1. LLMControlPlane (providers.json) 选中 provider (selected_provider_id)
+       → resolve_runtime_config → 构造对应 Adapter 注册:
+       deepseek/openai/ollama → OpenAIProvider (OpenAI 兼容端点);
+       anthropic → AnthropicProvider。Adapter 的 provider_id 类属性硬编码
+       (openai/anthropic), 装配时实例级覆盖为配置的 provider id — 不改
+       openai.py/anthropic.py, registry.get(配置 id) 命中, usage 记录正确。
+    2. 未命中 (无 providers.json / enabled 无 key / 全 disabled) → 回退 legacy
+       default_registry() (anthropic+openai, 回归保护)。
+    3. 异常安全: ControlPlane import 失败 (factory-console 包名带连字符, 仅经
+       importlib 可加载, 依赖 PYTHONPATH 挂仓库根) / providers.json 损坏 /
+       装配异常 → 一律回退不抛。
+    """
+    try:
+        import importlib
+
+        llm_control = importlib.import_module("factory-console.llm_control")
+        plane = llm_control.LLMControlPlane()
+        pid = plane.selected_provider_id()
+        if pid is not None:
+            cfg = plane.resolve_runtime_config(pid)
+            if cfg:
+                registry = ProviderRegistry()
+                if pid == "anthropic":
+                    from .providers.anthropic import (
+                        DEFAULT_BASE_URL,
+                        DEFAULT_MODEL,
+                        AnthropicProvider,
+                    )
+
+                    provider = AnthropicProvider(
+                        api_key=cfg.get("api_key") or None,
+                        model=cfg.get("model") or DEFAULT_MODEL,
+                        base_url=cfg.get("base_url") or DEFAULT_BASE_URL,
+                    )
+                else:
+                    # deepseek/openai/ollama → OpenAI 兼容 Chat Completions 端点
+                    from .providers.openai import (
+                        DEFAULT_BASE_URL,
+                        DEFAULT_MODEL,
+                        OpenAIProvider,
+                    )
+
+                    kwargs: dict[str, Any] = {
+                        "model": cfg.get("model") or DEFAULT_MODEL,
+                        "base_url": cfg.get("base_url") or DEFAULT_BASE_URL,
+                        "input_rate_per_1k": cfg.get("input_rate_per_1k"),
+                        "output_rate_per_1k": cfg.get("output_rate_per_1k"),
+                    }
+                    if pid == "ollama":
+                        kwargs["api_key"] = "ollama"  # 本地占位 (同 workflow_runner)
+                    else:
+                        kwargs["api_key"] = cfg.get("api_key") or None
+                    provider = OpenAIProvider(**kwargs)
+                provider.provider_id = pid  # 实例级覆盖 → registry.get(pid) 命中
+                registry.register(provider)
+                return registry
+    except Exception:  # noqa: BLE001 — 失败安全: ControlPlane 不可用 → 回退不抛
+        pass
     from .provider import default_registry
 
     return default_registry()

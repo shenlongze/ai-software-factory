@@ -43,8 +43,20 @@ S10-026 Task D (config 转正, §2.3 Factory Runtime Configuration 修订 ①):
                           resolve_api_key), 输出 OK/WARN, 零副作用
     factory config path   显示配置文件路径 (ConfigProvider 注入可见)
 
-架构预留: init/project/run 注册为 argparse stub (阶段三实现), 未来
-可加子子命令 (project list 等) — 不限制扩展。
+S10-026 Task E (init 转正, §2.1 P0 factory init — 首次运行初始化):
+    factory init [--force] [--non-interactive] [--provider <id>] [--model <m>]
+    流程: 环境检测 (复用 _env_problems/_dep_problems, 缺失 → 明确提示先装依赖)
+    → workspace 初始化 (~/.factory/{agents,skills,projects,providers,workspace}
+    幂等创建) → LLM 配置引导 (无 providers.json → 交互向导或参数直写; 已存在
+    → 显示当前 + 询问修改, 非交互跳过; --force 重新引导) → 校验 (复用
+    LLMControlPlane: enabled? key 可解析? model 列表?) → 下一步提示 (factory
+    doctor / factory start)。
+    红线: providers.json 只写 api_key_ref 引用 (env:VAR 格式), 绝不写明文 key;
+    交互输入非 env: 引用 → 拒绝并回退默认引用; 除 providers.json 外不碰任何文件
+    (config.json 归 config 命令管)。
+
+架构预留: project/run 注册为 argparse stub (阶段三实现), 未来可加子子命令
+(project list 等) — 不限制扩展。
 
 设计:
 - 纯标准库 (argparse/subprocess/socket/urllib) — 零新增依赖。
@@ -83,7 +95,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Sequence
 
-from .config import ConfigProvider
+from .config import DEFAULT_PROVIDER, PROVIDER_DEFAULTS, ConfigProvider
 
 # ------------------------------------------------------------------ 常量
 
@@ -105,8 +117,14 @@ HEALTH_TIMEOUT = 30.0
 FRONTEND_TIMEOUT = 15.0
 #: 健康检查轮询间隔 (秒)
 HEALTH_INTERVAL = 0.5
-#: 架构预留子命令 (阶段三实现; 注册为 stub 不限制扩展; config 已于 Task D 转正)
-STUB_COMMANDS = ("init", "project", "run")
+#: 架构预留子命令 (阶段三实现; 注册为 stub 不限制扩展; config 已于 Task D 转正,
+#: init 已于 Task E 转正)
+STUB_COMMANDS = ("project", "run")
+
+#: init 引导的 provider 选择项 (与 config.PROVIDER_DEFAULTS 键集对齐)
+INIT_PROVIDERS = ("deepseek", "openai", "anthropic", "ollama")
+#: workspace 初始目录 (S10-026 §2.1 step 2; 与 cli_doctor.EnvironmentCheck 同口径)
+WORKSPACE_DIRS = ("agents", "skills", "projects", "providers", "workspace")
 
 #: config 白名单 (可写运行时键 — S10-026 Task D §2.3; workspace 等未来扩展位暂不开放)
 CONFIG_KEYS = ("core.data_dir", "core.port", "core.frontend_port")
@@ -258,6 +276,83 @@ def _config_hints(config: ConfigProvider) -> list[str]:
         "  配置方法: 复制 factory-console/.env.example 为 factory-console/.env "
         "并填写 LLM_API_KEY (或编辑 ~/.factory/config.json)"
     ]
+
+
+# ------------------------------------------------------------------ init (S10-026 Task E: 首次运行初始化 IO)
+
+
+def _stdin_is_tty() -> bool:
+    """stdin 是否为交互终端 (无 TTY 自动降级非交互; 探测失败 → False)。"""
+    try:
+        return sys.stdin.isatty()
+    except Exception:  # noqa: BLE001 — 失败安全
+        return False
+
+
+def _ask(prompt: str) -> str:
+    """交互输入 (模块级 IO — 测试可 monkeypatch); EOF/异常 → 空串。"""
+    try:
+        return input(prompt)
+    except (EOFError, OSError):
+        return ""
+
+
+def _parse_choice(raw: str, count: int) -> int | None:
+    """交互选择解析: 空/非法 → None (调用方用默认); 1..count → 索引。"""
+    text = raw.strip()
+    if not text:
+        return None
+    try:
+        number = int(text)
+    except ValueError:
+        return None
+    return number if 1 <= number <= count else None
+
+
+def _ensure_workspace(data_dir: Path) -> list[str]:
+    """确保 workspace 目录就位 (幂等, mkdir parents=True)。返回新建目录名列表。"""
+    created: list[str] = []
+    for name in WORKSPACE_DIRS:
+        path = data_dir / name
+        if not path.is_dir():
+            path.mkdir(parents=True, exist_ok=True)
+            created.append(name)
+    return created
+
+
+def _default_api_key_ref(provider_id: str) -> str | None:
+    """provider 的 api_key_ref 默认建议 (env:VAR 格式; 本地模型无 key → None)。"""
+    env_name = PROVIDER_DEFAULTS.get(provider_id, {}).get("api_key_env")
+    return f"env:{env_name}" if env_name else None
+
+
+def _init_validation(data_dir: Path) -> list[str]:
+    """校验 LLM 配置 (只读, 零副作用; 复用 LLMControlPlane): providers.json
+    存在? enabled? model 列表? key 可解析? 返回问题列表 (空 → 全就绪)。"""
+    from .llm_control import LLMControlPlane, ProviderFileError
+
+    providers_file = data_dir / "providers.json"
+    try:
+        plane = LLMControlPlane(providers_file=providers_file, environ=os.environ)
+    except ProviderFileError as exc:
+        return [f"providers.json 损坏: {exc}"]
+    if not providers_file.exists():
+        return ["providers.json 不存在 — 尚未配置 LLM Provider"]
+    enabled = plane.enabled_providers()
+    if not enabled:
+        return ["providers.json 存在但无 enabled provider"]
+    no_model = [p.id for p in enabled if not p.models]
+    if no_model:
+        return [f"enabled provider 缺模型列表: {', '.join(no_model)}"]
+    missing_key = [
+        p.id for p in enabled if p.id != "ollama" and not plane.resolve_api_key(p.id)
+    ]
+    if missing_key:
+        return [
+            "enabled provider 缺少 API key: "
+            f"{', '.join(missing_key)} — 请配置对应环境变量 (如 DEEPSEEK_API_KEY)"
+        ]
+    return []
 
 
 # ------------------------------------------------------------------ 命令组骨架 IO (S10-026 Task C: 只读数据读取)
@@ -481,6 +576,8 @@ class FactoryCLI:
             return getattr(self, args.command)(args)
         if args.command == "config":
             return self.config_cmd(args)
+        if args.command == "init":
+            return self.init(args)
         if args.command in STUB_COMMANDS:
             return self._stub(args.command)
         print(f"未知命令: {args.command}", file=sys.stderr)
@@ -1227,6 +1324,221 @@ class FactoryCLI:
             )
         return 0
 
+    # ------------------------------------------------------------- init (S10-026 Task E)
+
+    def init(self, args: argparse.Namespace) -> int:
+        """首次运行初始化 (§2.1 P0): 环境检测 → workspace 初始化 → LLM 配置
+        引导 → 校验 → 下一步提示 (factory doctor / factory start)。
+
+        支持 --force (已初始化也重新引导) / --non-interactive (无 TTY 自动
+        降级; 用参数或默认) / --provider <id> / --model <model> (非交互指定)。
+        红线: providers.json 只写 api_key_ref 引用, 绝不写明文 key; 除
+        providers.json 外不修改任何文件 (config.json 归 config 命令管)。
+        """
+        print("=== AI Factory 初始化 ===")
+
+        # 1. 环境检测 (python/venv/node_modules → 缺失 → 明确提示先装依赖)
+        problems = _env_problems()
+        if problems:
+            for problem in problems:
+                print(f"  ✗ {problem}", file=sys.stderr)
+            print(
+                "  环境检查未通过 — 请先修复上述问题再运行 factory init "
+                "(安装指引见 README / setup.sh)。",
+                file=sys.stderr,
+            )
+            return 1
+        problems = _dep_problems(self.root)
+        if problems:
+            for problem in problems:
+                print(f"  ✗ {problem}", file=sys.stderr)
+            print(
+                "  依赖检查未通过 — 请先安装依赖再运行 factory init "
+                "(安装指引见 README / setup.sh)。",
+                file=sys.stderr,
+            )
+            return 1
+        print("  ✓ 环境检查通过 (Python/Node/依赖)")
+
+        # 2. workspace 初始化 (幂等)
+        created = _ensure_workspace(self.data_dir)
+        if created:
+            print("  ✓ 已创建 workspace 目录: " + ", ".join(created))
+        else:
+            print("  ✓ workspace 目录已就绪")
+
+        # 3. LLM 配置引导 (providers.json — 经 LLMControlPlane, 只写引用)
+        rc = self._init_llm_guide(args)
+        if rc != 0:
+            return rc
+
+        # 4. 校验 (只读: enabled / model 列表 / key 可解析)
+        self._init_validate()
+
+        # 5. 下一步提示
+        print("  初始化完成 — 下一步:")
+        print("    factory doctor   — 全面诊断 (环境/Provider/模型/Router)")
+        print("    factory start    — 启动 AI Factory")
+        return 0
+
+    def _init_llm_guide(self, args: argparse.Namespace) -> int:
+        """LLM 配置引导 (step 3)。
+
+        已存在 providers.json → 显示当前配置 + 交互询问是否修改 (非交互跳过,
+        保持现状); --force → 无视已存在重新引导。--provider → 参数直写;
+        无 TTY (或 --non-interactive) → 非交互 (用参数或默认 deepseek);
+        其余 → 交互向导。
+        """
+        providers_file = self.data_dir / "providers.json"
+        force = args.force
+        non_interactive = args.non_interactive or not _stdin_is_tty()
+
+        if providers_file.exists() and not force:
+            self._show_provider_config()
+            if non_interactive:
+                print("  非交互模式: 保持现有 Provider 配置 (--force 可重新引导)")
+                return 0
+            answer = _ask("  是否重新配置 LLM Provider? [y/N]: ").strip().lower()
+            if answer not in ("y", "yes"):
+                print("  保持现有 Provider 配置。")
+                return 0
+            print("  开始重新配置…")
+        elif force:
+            print("  --force: 重新引导 LLM Provider 配置")
+
+        if args.provider:
+            if args.provider not in PROVIDER_DEFAULTS:
+                print(
+                    f"  未知 provider: {args.provider} "
+                    f"(可用: {', '.join(PROVIDER_DEFAULTS)})",
+                    file=sys.stderr,
+                )
+                return 1
+            return self._init_write_noninteractive(args.provider, args.model)
+        if non_interactive:
+            provider_id = DEFAULT_PROVIDER
+            if args.model:
+                print(f"  --model {args.model} 应用于默认 provider {provider_id}")
+            print(f"  非交互模式: 使用默认 provider {provider_id}")
+            return self._init_write_noninteractive(provider_id, args.model)
+        return self._init_wizard(args.model)
+
+    def _init_wizard(self, model_arg: str | None) -> int:
+        """交互向导: provider 选择 → base_url → api_key_ref → 模型 → 写入。
+
+        api_key_ref 只接受 env:VAR 引用 — 输入明文 key 会被拒绝并回退默认
+        引用 (红线: 明文 key 永不落盘)。无效选择回退默认, 不中断向导。
+        """
+        print("  配置 LLM Provider:")
+        for i, pid in enumerate(INIT_PROVIDERS, 1):
+            print(f"    {i}) {pid} (默认模型: {PROVIDER_DEFAULTS[pid]['model']})")
+        choice = _parse_choice(_ask("  选择 [1-4, 回车=1]: "), len(INIT_PROVIDERS))
+        provider_id = INIT_PROVIDERS[choice - 1] if choice else INIT_PROVIDERS[0]
+        if choice is None:
+            print(f"  (使用默认 provider: {provider_id})")
+        defaults = PROVIDER_DEFAULTS[provider_id]
+        suggested_ref = _default_api_key_ref(provider_id)
+
+        raw = _ask(f"  base_url (回车默认 {defaults['base_url']}): ").strip()
+        base_url = raw or defaults["base_url"]
+
+        if suggested_ref:
+            raw = _ask(
+                f"  API key 引用 (env:VAR 格式, 回车默认 {suggested_ref}): "
+            ).strip()
+            api_key_ref = suggested_ref
+            if raw:
+                if raw.startswith("env:"):
+                    api_key_ref = raw
+                else:
+                    print(
+                        "  ⚠ 只接受 env:VAR 引用 — 明文 key 不会写入文件, "
+                        f"已使用默认引用 {suggested_ref}",
+                        file=sys.stderr,
+                    )
+        else:  # ollama 等本地模型 — 无需 key
+            raw = _ask("  API key 引用 (本地模型无需 key, 回车留空): ").strip()
+            api_key_ref = raw if raw.startswith("env:") else None
+            if raw and not raw.startswith("env:"):
+                print(
+                    "  ⚠ 只接受 env:VAR 引用 — 明文 key 不会写入文件, 已留空",
+                    file=sys.stderr,
+                )
+
+        if model_arg:
+            model = model_arg
+        else:
+            raw = _ask(f"  模型 (回车默认 {defaults['model']}): ").strip()
+            model = raw or defaults["model"]
+        return self._write_provider(
+            provider_id,
+            {"models": [model], "base_url": base_url, "api_key_ref": api_key_ref},
+        )
+
+    def _init_write_noninteractive(self, provider_id: str, model: str | None) -> int:
+        """非交互直写 (--provider 或默认 provider): 用参数/内置默认生成条目。
+
+        api_key_ref 固定为内置默认 env:VAR 引用 (deepseek→env:DEEPSEEK_API_KEY
+        等; ollama 无 key) — 参数面不接收任何 key 输入, 明文 key 无入口。
+        """
+        defaults = PROVIDER_DEFAULTS[provider_id]
+        return self._write_provider(
+            provider_id,
+            {
+                "models": [model or defaults["model"]],
+                "base_url": defaults["base_url"],
+                "api_key_ref": _default_api_key_ref(provider_id),
+            },
+        )
+
+    def _write_provider(self, provider_id: str, overrides: dict[str, Any]) -> int:
+        """经 LLMControlPlane 写 providers.json (enable: 创建/启用 + 覆盖字段)。
+
+        只写 api_key_ref 引用; upsert 语义 — 其他既有 provider 条目保留。
+        """
+        from .llm_control import LLMControlPlane
+
+        plane = LLMControlPlane(
+            providers_file=self.data_dir / "providers.json", environ=os.environ
+        )
+        plane.enable(provider_id, **overrides)
+        print(
+            f"  ✓ 已写入 providers.json: {provider_id} "
+            f"(enabled, models={overrides['models']}, "
+            f"api_key_ref={overrides['api_key_ref']})"
+        )
+        return 0
+
+    def _show_provider_config(self) -> None:
+        """展示当前 providers.json 配置 (只读; api_key_ref 是 env: 引用, 非明文)。"""
+        from .llm_control import LLMControlPlane, ProviderFileError
+
+        providers_file = self.data_dir / "providers.json"
+        print(f"  当前 Provider 配置 ({providers_file}):")
+        try:
+            plane = LLMControlPlane(providers_file=providers_file, environ=os.environ)
+        except ProviderFileError as exc:
+            print(f"    ⚠ providers.json 损坏: {exc}")
+            return
+        providers = plane.list_providers()
+        if not providers:
+            print("    (空)")
+            return
+        for pc in providers:
+            print(
+                f"    - {pc.id}: enabled={pc.enabled}, "
+                f"models={pc.models or '(无)'}, api_key_ref={pc.api_key_ref or '(无)'}"
+            )
+
+    def _init_validate(self) -> None:
+        """校验 (step 4, 只读): 输出 ✓ 通过 / ⚠ 问题列表 (不阻断, rc 0)。"""
+        problems = _init_validation(self.data_dir)
+        if not problems:
+            print("  ✓ Provider 配置校验通过 (enabled provider, API key 可解析)")
+            return
+        for problem in problems:
+            print(f"  ⚠ {problem}")
+
     # ------------------------------------------------------------- 杂项
 
     def _show_log_tail(self, path: Path, lines: int = 30) -> None:
@@ -1251,7 +1563,7 @@ class FactoryCLI:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """argparse 结构: start/stop/status + 预留 init/config/project/run。"""
+    """argparse 结构: start/stop/status + doctor/service/config/init + 预留 project/run。"""
     parser = argparse.ArgumentParser(
         prog="factory",
         description="AI Software Factory — 一键启动/停止/状态 (S10-007 阶段二 CLI MVP)",
@@ -1326,6 +1638,27 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_audit.add_argument(
         "--limit", type=int, default=10, metavar="N", help="最近事件条数 (默认 10)"
+    )
+    p_init = sub.add_parser(
+        "init", help="首次运行初始化: 环境检测 + workspace 目录 + LLM Provider 引导"
+    )
+    p_init.add_argument(
+        "--force",
+        action="store_true",
+        help="已初始化也重新引导 (重新配置 LLM Provider)",
+    )
+    p_init.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help="非交互模式 (无 TTY 自动降级; 用参数或默认值直接生成配置)",
+    )
+    p_init.add_argument(
+        "--provider",
+        metavar="ID",
+        help="非交互指定 provider (deepseek/openai/anthropic/ollama)",
+    )
+    p_init.add_argument(
+        "--model", metavar="MODEL", help="指定模型 (缺省用 provider 默认模型)"
     )
     for name in STUB_COMMANDS:
         sub.add_parser(name, help=f"[预留] factory {name} — 阶段三实现")

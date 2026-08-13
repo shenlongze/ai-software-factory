@@ -18,6 +18,18 @@ S10-026 P3 (Runtime Manager): start/stop/status 内部改调 Services Registry
 旧版完全一致 (幂等/端口预检/健康检查/打开浏览器); 新增 `factory start
 <service_id>` 只启动指定服务; 新增 `factory service list` 展示注册表状态。
 
+S10-026 Task C (命令组骨架): 新增 agent/skill/task/router/rag/audit 六子命令
+(§2.0 CLI 命令组命名空间第一步 — 只建结构 + 薄代理, 不实现新业务逻辑):
+    factory agent   只读列出现有 agents (agents.json: id/name/role/skills)
+    factory skill   只读列出现有 skills (skills.json / skills/*.json)
+    factory task    只读列出 tasks (tasks/*.json: id/title/status)
+    factory router  展示 LLMRouter 五层链可用性 + route() 当前决策 (只读)
+    factory rag     明确占位 ("RAG 未实现 — 规划中", 不实现功能)
+    factory audit   只读查询事件库 (events.db/factory.db 的 events 表:
+                    最近事件列表 + 按类型计数)
+约束: 全部只读展示, 失败安全 (缺失/损坏 → 空列表提示, 永不抛); 不引入
+新依赖 (仅标准库 sqlite3); 不改动 llm_router/llm_control/model_catalog 等。
+
 架构预留: init/config/project/run 注册为 argparse stub (阶段三实现), 未来
 可加子子命令 (project list 等) — 不限制扩展。
 
@@ -44,17 +56,19 @@ from __future__ import annotations
 
 import argparse
 import base64
+import json
 import os
 import shutil
 import signal
 import socket
+import sqlite3
 import subprocess
 import sys
 import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Sequence
+from typing import Any, Sequence
 
 from .config import ConfigProvider
 
@@ -228,6 +242,157 @@ def _config_hints(config: ConfigProvider) -> list[str]:
     ]
 
 
+# ------------------------------------------------------------------ 命令组骨架 IO (S10-026 Task C: 只读数据读取)
+
+#: 事件库候选文件名 (audit 按序探测; factory.db 内含 events 表)
+EVENTS_DB_NAMES = ("events.db", "factory.db")
+
+
+def _load_json_safe(path: Path) -> Any | None:
+    """fail-safe JSON 读取 (缺失/损坏 → None; 永不抛)。"""
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 — 只读展示失败安全
+        return None
+
+
+def _agent_rows(data_dir: Path) -> list[dict[str, Any]]:
+    """agents/agents.json → 行 dict 列表 (id/name/role/skills); 缺失/损坏 → []。
+
+    兼容 dict (按 id 索引) 与 list 两种存储形态; 只取展示字段, 不加工。
+    """
+    data = _load_json_safe(data_dir / "agents" / "agents.json")
+    if isinstance(data, dict):
+        data = list(data.values())
+    if not isinstance(data, list):
+        return []
+    rows: list[dict[str, Any]] = []
+    for row in data:
+        if not isinstance(row, dict):
+            continue
+        rows.append(
+            {
+                "id": row.get("id", ""),
+                "name": row.get("name", row.get("id", "")),
+                "role": row.get("role", ""),
+                "skills": ", ".join(row.get("skills") or []),
+            }
+        )
+    return rows
+
+
+def _skill_rows(data_dir: Path) -> list[dict[str, Any]]:
+    """skills 注册表 → 行 dict 列表 (id/name/category/version); 无数据 → []。
+
+    数据源: skills/skills.json (单文件注册表, dict 按 id 索引); 目录形态
+    skills/*.json 兜底兼容 (exec skill 注册表). 只读, 失败安全。
+    """
+    rows: list[dict[str, Any]] = []
+
+    def _row_from(item: Any) -> dict[str, Any] | None:
+        if not isinstance(item, dict):
+            return None
+        return {
+            "id": item.get("id", ""),
+            "name": item.get("name", item.get("id", "")),
+            "category": item.get("category", ""),
+            "version": item.get("version", ""),
+        }
+
+    data = _load_json_safe(data_dir / "skills" / "skills.json")
+    if isinstance(data, dict):
+        data = list(data.values())
+    if isinstance(data, list):
+        for item in data:
+            row = _row_from(item)
+            if row is not None:
+                rows.append(row)
+        return rows
+    for path in sorted((data_dir / "skills").glob("*.json")):
+        row = _row_from(_load_json_safe(path))
+        if row is not None:
+            rows.append(row)
+    return rows
+
+
+def _task_rows(data_dir: Path) -> list[dict[str, Any]]:
+    """tasks/*.json → 行 dict 列表 (id/title/status/project); 无数据 → []。
+
+    每个文件一条任务; 损坏/无 id 的文件跳过 (失败安全)。
+    """
+    rows: list[dict[str, Any]] = []
+    for path in sorted((data_dir / "tasks").glob("*.json")):
+        row = _load_json_safe(path)
+        if not isinstance(row, dict) or not row.get("id"):
+            continue
+        rows.append(
+            {
+                "id": row.get("id", ""),
+                "title": row.get("title", ""),
+                "status": row.get("status", ""),
+                "project": row.get("project", ""),
+            }
+        )
+    return rows
+
+
+def _find_events_db(data_dir: Path) -> Path | None:
+    """定位事件库: 优先 events.db, 兜底 factory.db (须含 events 表)。
+
+    只读探测 (mode=ro); 未找到/无 events 表 → None。
+    """
+    for name in EVENTS_DB_NAMES:
+        path = data_dir / name
+        if not path.is_file():
+            continue
+        try:
+            conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+            try:
+                has = conn.execute(
+                    "SELECT 1 FROM sqlite_master"
+                    " WHERE type='table' AND name='events'"
+                ).fetchone()
+            finally:
+                conn.close()
+            if has:
+                return path
+        except sqlite3.Error:
+            continue
+    return None
+
+
+def _events_summary(db_path: Path, limit: int = 10) -> dict[str, Any]:
+    """只读查询 events 表 → {counts: [(type, n)], recent: [行 dict]}。
+
+    严格只读: mode=ro URI; WAL 库只读打开失败 (需 -shm 写权限) 时兜底普通
+    连接 — 仍只执行 SELECT, 绝不写库。
+    """
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    except sqlite3.Error:
+        conn = sqlite3.connect(str(db_path))
+    try:
+        conn.row_factory = sqlite3.Row
+        counts = [
+            (row["type"], row["n"])
+            for row in conn.execute(
+                "SELECT type, COUNT(*) AS n FROM events"
+                " GROUP BY type ORDER BY n DESC"
+            )
+        ]
+        recent = [
+            dict(row)
+            for row in conn.execute(
+                "SELECT seq, event_id, timestamp, type, source, project_id,"
+                " task_id, agent_id FROM events ORDER BY seq DESC LIMIT ?",
+                (max(1, int(limit)),),
+            )
+        ]
+    finally:
+        conn.close()
+    return {"counts": counts, "recent": recent}
+
+
 # ------------------------------------------------------------------ FactoryCLI (流程编排)
 
 
@@ -269,6 +434,8 @@ class FactoryCLI:
             return self.doctor(args)
         if args.command == "service":
             return self.service(args)
+        if args.command in ("agent", "skill", "task", "router", "rag", "audit"):
+            return getattr(self, args.command)(args)
         if args.command in STUB_COMMANDS:
             return self._stub(args.command)
         print(f"未知命令: {args.command}", file=sys.stderr)
@@ -684,6 +851,174 @@ class FactoryCLI:
             ),
         )
 
+    # ------------------------------------------------------------- 命令组骨架 (S10-026 Task C)
+
+    def agent(self, args: argparse.Namespace) -> int:
+        """Agent 管理骨架 (只读): 列出现有 agents (id/name/role/skills)。
+
+        数据源: <data_dir>/agents/agents.json; 缺失/损坏 → 空列表提示,
+        不报错 (薄代理, 无新业务逻辑)。
+        """
+        print("=== Agent 管理 (骨架, 只读) ===")
+        rows = _agent_rows(self.data_dir)
+        if not rows:
+            print("  无 agents 数据 (空列表)")
+            return 0
+        for row in rows:
+            print(
+                f"  - {row['id']} | {row['name']} | role={row['role']} "
+                f"| skills=[{row['skills']}]"
+            )
+        print(f"  共 {len(rows)} 个 agent")
+        return 0
+
+    def skill(self, args: argparse.Namespace) -> int:
+        """Skill 管理骨架 (只读): 列出现有 skills (id/name/category/version)。
+
+        数据源: <data_dir>/skills/skills.json 或 skills/*.json; 无数据 → 空列表。
+        """
+        print("=== Skill 管理 (骨架, 只读) ===")
+        rows = _skill_rows(self.data_dir)
+        if not rows:
+            print("  无 skills 数据 (空列表)")
+            return 0
+        for row in rows:
+            print(
+                f"  - {row['id']} | {row['name']} | category={row['category']} "
+                f"| v{row['version']}"
+            )
+        print(f"  共 {len(rows)} 个 skill")
+        return 0
+
+    def task(self, args: argparse.Namespace) -> int:
+        """Task 管理骨架 (只读): 列出 tasks (id/title/status/project)。
+
+        数据源: <data_dir>/tasks/*.json (每文件一条任务); 无数据 → 空列表。
+        """
+        print("=== Task 管理 (骨架, 只读) ===")
+        rows = _task_rows(self.data_dir)
+        if not rows:
+            print("  无 tasks 数据 (空列表)")
+            return 0
+        for row in rows:
+            print(
+                f"  - {row['id']} | {row['title']} | {row['status']} "
+                f"| project={row['project']}"
+            )
+        print(f"  共 {len(rows)} 个 task")
+        return 0
+
+    def router(self, args: argparse.Namespace) -> int:
+        """LLM Router 管理骨架 (只读): 五层决策链可用性 + 当前决策。
+
+        复用 LLMRouter (同 cli_doctor.RouterCheck 装配: control_plane +
+        可选 model_catalog), 调 route() 无参数展示当前命中层; 决策异常 →
+        显示错误但仍 rc 0 (诊断性质, 不修改任何配置)。
+        """
+        print("=== LLM Router 状态 (骨架, 只读) ===")
+        from .llm_control import LLMControlPlane
+        from .llm_router import LLMRouter
+        from .model_catalog import ModelCatalog
+
+        agents_dir = self.data_dir / "agents"
+        skills_dir = self.data_dir / "skills"
+        print("  五层决策链:")
+        print("    L1 用户显式: 可用 (调用参数显式指定)")
+        print(
+            "    L2 Agent/Skill 策略: "
+            + (
+                "策略目录就绪"
+                if agents_dir.is_dir() or skills_dir.is_dir()
+                else "无策略目录 (未配置 agent.yaml/skill.yaml)"
+            )
+        )
+        print("    L3 项目规则: 未提供 project.yaml (无项目输入)")
+        print(
+            "    L4 系统推荐: "
+            + (
+                "models.json 就绪"
+                if (self.data_dir / "models.json").is_file()
+                else "缺失 (L4 跳过)"
+            )
+        )
+        try:
+            plane = LLMControlPlane(
+                providers_file=self.data_dir / "providers.json", environ=os.environ
+            )
+            enabled = plane.enabled_providers()
+        except Exception:  # noqa: BLE001 — 展示失败安全
+            plane, enabled = None, []
+        print(
+            "    L5 兜底: "
+            + (
+                f"可用 ({len(enabled)} 个 enabled provider)"
+                if enabled
+                else "无 enabled provider"
+            )
+        )
+        catalog = None
+        if (self.data_dir / "models.json").is_file():
+            catalog = ModelCatalog(models_file=self.data_dir / "models.json")
+        router = LLMRouter(
+            control_plane=plane,
+            model_catalog=catalog,
+            agents_dir=agents_dir,
+            skills_dir=skills_dir,
+        )
+        try:
+            choice = router.route()
+        except Exception as exc:  # noqa: BLE001 — 决策异常 → 展示, 不崩溃
+            print(f"  当前决策: 异常 — {exc}")
+            return 0
+        if choice is None:
+            print(
+                "  当前决策: 未命中 (无可用 provider — "
+                "请先 factory init 配置并启用 provider)"
+            )
+            return 0
+        print(
+            f"  当前决策: {choice.provider_id}/{choice.model_id or '(默认模型)'} "
+            f"(source={choice.source}, score={choice.score})"
+        )
+        return 0
+
+    def rag(self, args: argparse.Namespace) -> int:
+        """RAG 管理骨架: 明确占位 — 本 Sprint 不实现 RAG。"""
+        print("RAG 未实现 — 规划中 (S10-026 Task C 命令组骨架占位, 不实现功能)")
+        return 0
+
+    def audit(self, args: argparse.Namespace) -> int:
+        """审计查询骨架 (只读): events 最近事件列表 + 按类型计数。
+
+        数据源: <data_dir>/events.db, 兜底 factory.db (含 events 表);
+        仅 SELECT 查询, 绝不写库。缺失/空库 → 提示, rc 0。
+        """
+        print("=== 审计查询 (骨架, 只读) ===")
+        db = _find_events_db(self.data_dir)
+        if db is None:
+            print(f"  未找到事件库 (期望 {self.data_dir / 'events.db'} 或 factory.db)")
+            return 0
+        summary = _events_summary(db, args.limit)
+        print(f"  事件库: {db}")
+        if not summary["counts"]:
+            print("  无事件数据")
+            return 0
+        print("  按类型计数:")
+        for typ, n in summary["counts"]:
+            print(f"    {typ}: {n}")
+        recent = summary["recent"]
+        print(f"  最近 {len(recent)} 条事件:")
+        for row in recent:
+            scope = ", ".join(
+                f"{k}={row[k]}" for k in ("project_id", "task_id", "agent_id") if row.get(k)
+            )
+            suffix = f" ({scope})" if scope else ""
+            print(
+                f"    #{row['seq']} [{row['timestamp']}] "
+                f"{row['type']} <{row['source']}>{suffix}"
+            )
+        return 0
+
     # ------------------------------------------------------------- 杂项
 
     def _show_log_tail(self, path: Path, lines: int = 30) -> None:
@@ -746,6 +1081,25 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_doctor.add_argument("--json", action="store_true", help="输出结构化 JSON")
     p_doctor.add_argument("--verbose", action="store_true", help="显示检查详情")
+    sub.add_parser(
+        "agent", help="Agent 管理骨架 (只读: 列出现有 agents 的 id/name/role/skills)"
+    )
+    sub.add_parser(
+        "skill", help="Skill 管理骨架 (只读: 列出现有 skills 的 id/name/category/version)"
+    )
+    sub.add_parser(
+        "task", help="Task 管理骨架 (只读: 列出 tasks 的 id/title/status/project)"
+    )
+    sub.add_parser(
+        "router", help="LLM Router 管理骨架 (只读: 五层决策链可用性 + 当前决策)"
+    )
+    sub.add_parser("rag", help="RAG 管理骨架 (占位 — 规划中, 不实现功能)")
+    p_audit = sub.add_parser(
+        "audit", help="审计查询骨架 (只读: events 最近事件列表 + 按类型计数)"
+    )
+    p_audit.add_argument(
+        "--limit", type=int, default=10, metavar="N", help="最近事件条数 (默认 10)"
+    )
     for name in STUB_COMMANDS:
         sub.add_parser(name, help=f"[预留] factory {name} — 阶段三实现")
     return parser

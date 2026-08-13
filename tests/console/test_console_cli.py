@@ -288,7 +288,8 @@ def _parse(mod, *argv):
 
 
 class TestFactoryCliArgparse:
-    """子命令注册: start/stop/status/doctor + 预留 init/config/project/run。"""
+    """子命令注册: start/stop/status/doctor/service + 命令组骨架
+    (agent/skill/task/router/rag/audit) + 预留 init/config/project/run。"""
 
     def test_all_subcommands_registered(self):
         mod = _factory_cli_mod()
@@ -305,6 +306,12 @@ class TestFactoryCliArgparse:
             "status",
             "doctor",
             "service",  # S10-026 P3: 服务注册表 (cli_services)
+            "agent",  # S10-026 Task C: 命令组骨架 (只读展示)
+            "skill",
+            "task",
+            "router",
+            "rag",
+            "audit",
             "init",
             "config",
             "project",

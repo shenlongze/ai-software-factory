@@ -248,6 +248,8 @@ class FactoryCLI:
             return self.stop()
         if args.command == "status":
             return self.status()
+        if args.command == "doctor":
+            return self.doctor(args)
         if args.command in STUB_COMMANDS:
             return self._stub(args.command)
         print(f"未知命令: {args.command}", file=sys.stderr)
@@ -524,6 +526,28 @@ class FactoryCLI:
             print(f"{label}: {state} — 端口 {port} {'监听中' if listening else '空闲'}")
         return 0
 
+    # ------------------------------------------------------------- doctor
+
+    def doctor(self, args: argparse.Namespace) -> int:
+        """诊断检查 (S10-026 P1): 薄代理 → cli_doctor 注册表 + 5 内置检查器。
+
+        协议/注册表/检查器全在 cli_doctor (可扩展: 未来 rag/governance/
+        agent-policy 注册即被发现); 本方法只装配上下文并转交输出。
+        """
+        from .cli_doctor import build_context, run_doctor
+
+        return run_doctor(
+            args.checker,
+            json_mode=args.json,
+            verbose=args.verbose,
+            ctx=build_context(
+                data_dir=self.data_dir,
+                root=self.root,
+                backend_port=self.config.get_port(),
+                frontend_port=self.config.get_frontend_port(),
+            ),
+        )
+
     # ------------------------------------------------------------- 杂项
 
     def _show_log_tail(self, path: Path, lines: int = 30) -> None:
@@ -562,6 +586,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub.add_parser("stop", help="停止前后端服务 (pid 文件优先, 兜底按端口)")
     sub.add_parser("status", help="显示端口/进程/数据目录/LLM 状态")
+    p_doctor = sub.add_parser("doctor", help="运行诊断检查 (环境/Provider/模型/运行时/Router)")
+    p_doctor.add_argument(
+        "checker", nargs="*", help="只运行指定检查器 (缺省全部; 如 provider)"
+    )
+    p_doctor.add_argument("--json", action="store_true", help="输出结构化 JSON")
+    p_doctor.add_argument("--verbose", action="store_true", help="显示检查详情")
     for name in STUB_COMMANDS:
         sub.add_parser(name, help=f"[预留] factory {name} — 阶段三实现")
     return parser

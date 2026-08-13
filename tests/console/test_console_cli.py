@@ -288,7 +288,7 @@ def _parse(mod, *argv):
 
 
 class TestFactoryCliArgparse:
-    """子命令注册: start/stop/status + 预留 init/config/project/run。"""
+    """子命令注册: start/stop/status/doctor + 预留 init/config/project/run。"""
 
     def test_all_subcommands_registered(self):
         mod = _factory_cli_mod()
@@ -299,7 +299,16 @@ class TestFactoryCliArgparse:
             if isinstance(a, argparse._SubParsersAction)  # noqa: SLF001
         }
         choices = set(sub_actions["command"].choices)
-        assert choices == {"start", "stop", "status", "init", "config", "project", "run"}
+        assert choices == {
+            "start",
+            "stop",
+            "status",
+            "doctor",
+            "init",
+            "config",
+            "project",
+            "run",
+        }
 
     def test_start_flags_parsed(self):
         mod = _factory_cli_mod()

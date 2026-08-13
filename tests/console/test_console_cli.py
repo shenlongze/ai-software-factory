@@ -304,6 +304,7 @@ class TestFactoryCliArgparse:
             "stop",
             "status",
             "doctor",
+            "service",  # S10-026 P3: 服务注册表 (cli_services)
             "init",
             "config",
             "project",

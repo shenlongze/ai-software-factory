@@ -6,10 +6,17 @@
     factory start   环境检查 (python ≥3.10 / node ≥18) → 依赖检查 (.venv /
                     node_modules, 缺失给 install 提示) → 配置检查 (LLM key
                     缺失仅提示 .env.example 指引, 不阻断) → 后端 (uvicorn,
-                    后台, pid 文件) → 前端 (vite --strictPort, 后台, pid
-                    文件) → 健康检查 (轮询 /api/projects 200) → 打开浏览器
+                    后台, pid 文件) → 前端 (默认托管 dist, --dev 走 vite
+                    --strictPort, 后台, pid 文件) → 健康检查 (轮询
+                    /api/projects 200) → 打开浏览器
     factory stop    读 pid 文件杀前后端 (干净); 无 pid → 按端口 (lsof) 找
     factory status  端口 / 进程 / 数据目录 / LLM provider 状态
+
+S10-026 P3 (Runtime Manager): start/stop/status 内部改调 Services Registry
+(cli_services — ServiceDef 协议 + backend/frontend/runtime 三服务), CLI 契约
+不变: `factory start` 无参数 = 启动全部内置服务 (backend+frontend), 行为与
+旧版完全一致 (幂等/端口预检/健康检查/打开浏览器); 新增 `factory start
+<service_id>` 只启动指定服务; 新增 `factory service list` 展示注册表状态。
 
 架构预留: init/config/project/run 注册为 argparse stub (阶段三实现), 未来
 可加子子命令 (project list 等) — 不限制扩展。
@@ -21,6 +28,9 @@
 - 后端启动: importlib 加载 factory-console.web.backend.fastapi_adapter
   (包名含连字符, 唯一导入方式) → create_app(factory_root=<data_dir>) →
   uvicorn.run — bootstrap 经 base64 传给子进程, 免引号转义。
+- 前端默认托管 dist: 第二个 uvicorn + create_app(static_dir=<frontend>/dist)
+  (SPA 同源 /api, 与 vite 代理等价); dist 缺失 → 回退 vite dev 并提示;
+  --dev 强制 vite dev (现有 npm run dev 逻辑保留)。
 - 幂等: pid 文件 + kill(0) 判活 → 已运行提示, 不重复起。
 - 错误处理: 端口预检 (占用 → 明确提示, 含修改配置指引); 启动失败 →
   打印日志尾部 + 回滚已起服务。
@@ -222,7 +232,12 @@ def _config_hints(config: ConfigProvider) -> list[str]:
 
 
 class FactoryCLI:
-    """CLI 命令编排: start / stop / status (+ 预留 stub)。"""
+    """CLI 命令编排: start / stop / status / service / doctor (+ 预留 stub)。
+
+    S10-026 P3: start/stop/status 内部改调 Services Registry (cli_services),
+    本类保留环境/依赖/配置检查 + 就绪输出/浏览器编排, 服务级原语
+    (启动/健康检查/停止/状态) 由注册表服务经 ServiceContext.cli 包装调用。
+    """
 
     def __init__(self, config: ConfigProvider, *, root: Path | None = None) -> None:
         self.config = config
@@ -243,6 +258,8 @@ class FactoryCLI:
                 no_browser=args.no_browser,
                 port=args.port,
                 frontend_port=args.frontend_port,
+                services=args.services or None,
+                dev=args.dev,
             )
         if args.command == "stop":
             return self.stop()
@@ -250,6 +267,8 @@ class FactoryCLI:
             return self.status()
         if args.command == "doctor":
             return self.doctor(args)
+        if args.command == "service":
+            return self.service(args)
         if args.command in STUB_COMMANDS:
             return self._stub(args.command)
         print(f"未知命令: {args.command}", file=sys.stderr)
@@ -263,10 +282,43 @@ class FactoryCLI:
         no_browser: bool = False,
         port: int | None = None,
         frontend_port: int | None = None,
+        services: Sequence[str] | None = None,
+        dev: bool = False,
     ) -> int:
+        """Runtime Manager (S10-026 P3): 经 Services Registry 启动服务。
+
+        无参数 → 全部内置服务 (backend+frontend), 行为与旧版完全一致:
+        环境检查 → 依赖检查 → 配置提示 → 幂等 → 端口预检 → 后端启动+健康
+        检查 → 前端启动+就绪检查 → 打开浏览器。`factory start <svc>...` 只
+        启动指定服务 (未知服务 → exit 2)。`--dev` 前端走 vite dev (缺省
+        托管 dist)。
+        """
+        from .cli_services import STATE_RUNNING, get_service, list_services
+
         backend_port = port or self.config.get_port()
         frontend_port = frontend_port or self.config.get_frontend_port()
         print("=== AI Factory 启动 ===")
+
+        # 0. 目标服务解析 (缺省 → 全部内置 backend+frontend; 未知 → exit 2)
+        if services:
+            selected: list = []
+            for sid in services:
+                svc = get_service(sid)
+                if svc is None:
+                    print(
+                        f"未知服务: {sid} (可用: {', '.join(s.id for s in list_services())})",
+                        file=sys.stderr,
+                    )
+                    return 2
+                selected.append(svc)
+            all_builtin = False
+        else:
+            selected = [get_service("backend"), get_service("frontend")]
+            all_builtin = True
+
+        ctx = self._service_ctx(
+            backend_port=backend_port, frontend_port=frontend_port, dev_mode=dev
+        )
 
         # 1. 环境检查 (python / node)
         problems = _env_problems()
@@ -288,19 +340,26 @@ class FactoryCLI:
         for hint in _config_hints(self.config):
             print(f"  ⚠ {hint}")
 
-        # 4. 幂等: 前后端均已运行 → 提示不重复起
-        backend_up = self._backend_running()
-        frontend_up = self._frontend_running()
-        if backend_up and frontend_up:
-            print(f"  已在运行: http://127.0.0.1:{frontend_port}{FRONTEND_PATH}")
+        # 4. 幂等: 目标服务均已运行 → 提示不重复起
+        if all(svc.status(ctx).state == STATE_RUNNING for svc in selected):
+            if all_builtin:
+                print(f"  已在运行: http://127.0.0.1:{frontend_port}{FRONTEND_PATH}")
+            else:
+                print(
+                    "  已在运行: "
+                    + " / ".join(
+                        f"{svc.id} (PID {svc.status(ctx).pid})" for svc in selected
+                    )
+                )
             return 0
 
         # 5. 端口预检 (仅检查需要启动的一侧; 占用 → 明确提示)
         busy: list[str] = []
-        if not backend_up and _port_in_use(backend_port):
-            busy.append(f"后端端口 {backend_port}")
-        if not frontend_up and _port_in_use(frontend_port):
-            busy.append(f"前端端口 {frontend_port}")
+        for svc in selected:
+            if svc.status(ctx).state != STATE_RUNNING:
+                svc_port = getattr(svc, "port", lambda c: None)(ctx)
+                if svc_port and _port_in_use(svc_port):
+                    busy.append(f"{getattr(svc, 'short_label', svc.id)}端口 {svc_port}")
         if busy:
             print("  ✗ 端口已被占用: " + " / ".join(busy), file=sys.stderr)
             print(
@@ -310,31 +369,50 @@ class FactoryCLI:
             )
             return 1
 
-        # 6. 后端启动 + 健康检查 (失败 → 日志尾部 + 清理)
-        if not self._start_backend(backend_port):
-            return 1
-        if not self._wait_backend(backend_port):
-            self._show_log_tail(self.backend_log)
-            self._cleanup_pids()
-            print("  ✗ 后端启动失败 (健康检查超时, 详见上方日志尾部)", file=sys.stderr)
-            return 1
+        # 6. 按注册序启动: start → 健康检查; 失败 → 日志尾部 + 回滚
+        started: list = []
+        for svc in selected:
+            handle = svc.start(ctx)
+            if not handle.ok:
+                if started:  # 回滚本次已起服务 (旧行为: 前端启动失败停后端)
+                    self.stop()
+                return 1
+            started.append(svc)
+            wait_ready = getattr(svc, "wait_ready", None)
+            if wait_ready is None:  # 无独立进程的服务 (如 runtime) — 无需健康检查
+                continue
+            if not wait_ready(ctx, handle):
+                log = getattr(svc, "log_path", lambda c: None)(ctx)
+                if log:
+                    self._show_log_tail(log)
+                if getattr(svc, "rollback", None) == "all":
+                    self.stop()
+                else:
+                    self._cleanup_pids()
+                print(
+                    getattr(svc, "fail_message", f"  ✗ {svc.label}启动失败"),
+                    file=sys.stderr,
+                )
+                return 1
 
-        # 7. 前端启动 + 就绪检查 (失败 → 回滚: 停掉已起后端)
-        if not self._start_frontend(frontend_port):
-            self.stop()
-            return 1
-        if not self._wait_frontend(frontend_port):
-            self._show_log_tail(self.frontend_log)
-            self.stop()
-            print("  ✗ 前端启动失败 (详见上方日志尾部)", file=sys.stderr)
-            return 1
-
-        # 8. 打开浏览器
-        url = f"http://127.0.0.1:{frontend_port}{FRONTEND_PATH}"
-        print(f"  ✓ 已就绪: {url}")
-        print(f"    后端 API: http://127.0.0.1:{backend_port}{HEALTH_PATH}")
-        if not no_browser:
-            _open_url(url)
+        # 7. 就绪输出 + 打开浏览器
+        frontend_svc = get_service("frontend")
+        frontend_running = (
+            frontend_svc is not None
+            and frontend_svc.status(ctx).state == STATE_RUNNING
+        )
+        if all_builtin:
+            url = f"http://127.0.0.1:{frontend_port}{FRONTEND_PATH}"
+            print(f"  ✓ 已就绪: {url}")
+            print(f"    后端 API: http://127.0.0.1:{backend_port}{HEALTH_PATH}")
+            if not no_browser:
+                _open_url(url)
+        else:
+            for svc in selected:
+                st = svc.status(ctx)
+                print(f"  ✓ {svc.id} 已就绪: {st.url if st.url else svc.label}")
+            if not no_browser and frontend_running:
+                _open_url(f"http://127.0.0.1:{frontend_port}{FRONTEND_PATH}")
         return 0
 
     def _start_backend(self, port: int) -> bool:
@@ -373,27 +451,56 @@ class FactoryCLI:
         print(f"  后端启动中 (PID {proc.pid}, http://127.0.0.1:{port})")
         return True
 
-    def _start_frontend(self, port: int) -> bool:
-        """后台启动 vite dev (--port --strictPort --host); pid 写文件。"""
+    def _start_frontend(self, port: int, *, dev: bool = False) -> bool:
+        """后台启动前端: 默认托管 dist (SPA 同源 /api), --dev 走 vite dev。
+
+        - 默认 (dev=False): <frontend>/dist 存在 → 第二个 uvicorn 挂
+          create_app(static_dir=dist) (与 vite /api 代理等价的同源 API);
+          dist 缺失 → 回退 vite dev 并提示 (未构建也能用)。
+        - dev=True: 现有 vite --port --strictPort --host 逻辑 (开发热更)。
+        pid 写文件 (stop 兼容)。
+        """
         if self._frontend_running():
             print(f"  前端已在运行 (PID {_read_pid(self.frontend_pid)})")
             return True
         frontend = self.root / "factory-console" / "web" / "frontend"
-        npm = shutil.which("npm")
-        if not npm:
-            print("  ✗ 未找到 npm — 请安装 Node.js ≥18", file=sys.stderr)
-            return False
-        cmd = [
-            npm,
-            "run",
-            "dev",
-            "--",
-            "--port",
-            str(port),
-            "--strictPort",
-            "--host",
-            "127.0.0.1",
-        ]
+        dist = frontend / "dist"
+        if dev or not dist.is_dir():
+            if not dev:
+                print(
+                    f"  ⚠ 未找到前端构建产物 {dist} — 回退 vite dev 模式 "
+                    "(提示: 运行 `npm run build` 后 `factory start` 将托管静态产物)"
+                )
+            npm = shutil.which("npm")
+            if not npm:
+                print("  ✗ 未找到 npm — 请安装 Node.js ≥18", file=sys.stderr)
+                return False
+            cmd = [
+                npm,
+                "run",
+                "dev",
+                "--",
+                "--port",
+                str(port),
+                "--strictPort",
+                "--host",
+                "127.0.0.1",
+            ]
+        else:
+            # dist 托管: uvicorn + create_app(static_dir=dist) — bootstrap 同后端
+            python = self.root / ".venv" / "bin" / "python"
+            code = (
+                "import importlib,uvicorn;"
+                "m=importlib.import_module({mod!r});"
+                "app=m.create_app(factory_root={root!r},static_dir={dist!r});"
+                "uvicorn.run(app,host='127.0.0.1',port={port},log_level='info')"
+            ).format(mod=BACKEND_MODULE, root=str(self.data_dir), dist=str(dist), port=port)
+            b64 = base64.b64encode(code.encode("utf-8")).decode("ascii")
+            cmd = [
+                str(python),
+                "-c",
+                f"import base64;exec(base64.b64decode('{b64}').decode('utf-8'))",
+            ]
         try:
             log = open(self.frontend_log, "ab")
         except OSError as exc:
@@ -450,7 +557,11 @@ class FactoryCLI:
             pass
 
     def _stop_one(self, pid_file: Path, port: int) -> int | None:
-        """停单个服务: pid 文件优先; 无 → 按端口 lsof 找。返回被杀 PID。"""
+        """停单个服务: pid 文件优先; 无 → 按端口 lsof 找。返回被杀 PID。
+
+        S10-026 P3: cli_services 服务 stop(handle) 经 handle.cli 复用本方法 —
+        停止路径单一实现, 且保留实例调用面 (monkeypatch 兼容)。
+        """
         pid = _read_pid(pid_file)
         if pid is not None:
             if _pid_alive(pid):
@@ -473,27 +584,27 @@ class FactoryCLI:
     # ------------------------------------------------------------- stop
 
     def stop(self) -> int:
+        """停止前后端服务 (pid 文件优先, 兜底按端口) — 经服务注册表。"""
+        from .cli_services import get_service
+
         print("=== AI Factory 停止 ===")
+        ctx = self._service_ctx()
         stopped: list[str] = []
-        for label, pid_file, port in (
-            ("后端", self.backend_pid, self.config.get_port()),
-            ("前端", self.frontend_pid, self.config.get_frontend_port()),
-        ):
-            killed = self._stop_one(pid_file, port)
+        for svc in (get_service("backend"), get_service("frontend")):
+            handle = svc.current_handle(ctx)
+            killed = svc.stop(handle)
             if killed is not None:
-                stopped.append(f"{label} (PID {killed})")
+                stopped.append(f"{svc.short_label} (PID {killed})")
         self._cleanup_pids()  # 统一清理 (循环内删会吞掉后续服务的 pid 文件)
         if stopped:
             print("  已停止: " + ", ".join(stopped))
         else:
             print("  未发现运行中的服务 (无 pid 文件 / 进程已退出)")
-        for label, port in (
-            ("后端", self.config.get_port()),
-            ("前端", self.config.get_frontend_port()),
-        ):
-            if _port_in_use(port):
+        for svc in (get_service("backend"), get_service("frontend")):
+            svc_port = svc.port(ctx)
+            if _port_in_use(svc_port):
                 print(
-                    f"  ⚠ {label} 端口 {port} 仍被占用 — 存在未托管进程, 请手动检查",
+                    f"  ⚠ {svc.short_label} 端口 {svc_port} 仍被占用 — 存在未托管进程, 请手动检查",
                     file=sys.stderr,
                 )
         return 0
@@ -501,6 +612,9 @@ class FactoryCLI:
     # ------------------------------------------------------------- status
 
     def status(self) -> int:
+        """端口/进程/数据目录/LLM 状态 — 经服务注册表 (输出与旧版一致)。"""
+        from .cli_services import get_service
+
         llm = self.config.get_llm()
         print("=== AI Factory 状态 ===")
         print(f"数据目录: {self.data_dir}")
@@ -508,23 +622,45 @@ class FactoryCLI:
             f"LLM: provider={llm['provider']} model={llm['model']} "
             f"api_key={'已配置' if llm['api_key'] else '未配置'}"
         )
-        for label, pid_file, port in (
-            ("后端", self.backend_pid, self.config.get_port()),
-            ("前端", self.frontend_pid, self.config.get_frontend_port()),
-        ):
-            pid = _read_pid(pid_file)
-            alive = pid is not None and _pid_alive(pid)
-            listening = _port_in_use(port)
-            if alive and listening:
-                state = f"运行中 (PID {pid})"
-            elif alive:
-                state = f"进程在但端口未监听 (PID {pid})"
-            elif listening:
-                state = "未托管进程占用端口"
-            else:
-                state = "未运行"
-            print(f"{label}: {state} — 端口 {port} {'监听中' if listening else '空闲'}")
+        ctx = self._service_ctx()
+        for svc in (get_service("backend"), get_service("frontend")):
+            st = svc.status(ctx)
+            print(f"{svc.short_label}: {st.detail}")
         return 0
+
+    # ------------------------------------------------------------- service
+
+    def service(self, args: argparse.Namespace) -> int:
+        """服务注册表子命令 (S10-026 P3): `factory service list`。
+
+        薄代理 → cli_services.run_service_list (协议/注册表/状态全在
+        cli_services; 未来 vector-db/gateway 注册即自动出现)。
+        """
+        from .cli_services import run_service_list
+
+        if args.service_action == "list":
+            return run_service_list(self._service_ctx())
+        print(f"未知 service 动作: {args.service_action}", file=sys.stderr)
+        return 2
+
+    def _service_ctx(self, *, backend_port=None, frontend_port=None, dev_mode=False):
+        """装配 ServiceContext (cli=self 提供启动/停止原语, 测试可注入)。"""
+        from .cli_services import ServiceContext
+
+        return ServiceContext(
+            data_dir=self.data_dir,
+            root=self.root,
+            backend_port=(
+                backend_port if backend_port is not None else self.config.get_port()
+            ),
+            frontend_port=(
+                frontend_port
+                if frontend_port is not None
+                else self.config.get_frontend_port()
+            ),
+            dev_mode=dev_mode,
+            cli=self,
+        )
 
     # ------------------------------------------------------------- doctor
 
@@ -578,14 +714,32 @@ def build_parser() -> argparse.ArgumentParser:
         description="AI Software Factory — 一键启动/停止/状态 (S10-007 阶段二 CLI MVP)",
     )
     sub = parser.add_subparsers(dest="command", required=True, metavar="命令")
-    p_start = sub.add_parser("start", help="启动本地开发环境 (后端 + 前端 + 打开浏览器)")
+    p_start = sub.add_parser(
+        "start", help="启动服务 (缺省 = 全部内置服务 backend+frontend)"
+    )
+    p_start.add_argument(
+        "services",
+        nargs="*",
+        metavar="服务",
+        help="只启动指定服务 (backend/frontend/runtime; 缺省 = backend+frontend)",
+    )
     p_start.add_argument("--no-browser", action="store_true", help="不自动打开浏览器 (headless/CI)")
     p_start.add_argument("--port", type=int, default=None, help="后端端口 (默认取配置, 8011)")
     p_start.add_argument(
         "--frontend-port", type=int, default=None, help="前端端口 (默认取配置, 5180)"
     )
+    p_start.add_argument(
+        "--dev", action="store_true", help="前端走 vite dev (默认托管 dist 构建产物)"
+    )
     sub.add_parser("stop", help="停止前后端服务 (pid 文件优先, 兜底按端口)")
     sub.add_parser("status", help="显示端口/进程/数据目录/LLM 状态")
+    p_service = sub.add_parser("service", help="服务注册表管理 (S10-026 P3)")
+    p_service.add_argument(
+        "service_action",
+        choices=["list"],
+        metavar="动作",
+        help="list — 列出全部已注册服务状态",
+    )
     p_doctor = sub.add_parser("doctor", help="运行诊断检查 (环境/Provider/模型/运行时/Router)")
     p_doctor.add_argument(
         "checker", nargs="*", help="只运行指定检查器 (缺省全部; 如 provider)"

@@ -469,22 +469,68 @@ class Recorder:
 
 
 def _resolve_llm_config() -> dict[str, Any]:
-    """LLM 装配配置: providers.json 管理面优先 (D4), fallback ConfigProvider.get_llm()。
+    """LLM 装配配置: Router 五层决策链优先 (S10-024), fallback ConfigProvider.get_llm()。
 
     S10-021: selected_provider_id 命中 → resolve_runtime_config (model/
     base_url/费率来自 providers.json); 未配置/异常 → 现有 get_llm() 路径
     (兼容不破坏 — 无 providers.json 时行为与 S10-007 完全一致)。
+    S10-024: 改调 LLMRouter.route() — 五层链 (L1 User Explicit > L2
+    Agent/Skill Policy > L3 Project Rule > L4 System Recommendation > L5
+    Fallback)。Router 命中 → resolve_runtime_config(choice.provider_id),
+    model 以 Router 决策为准 (choice.model_id 非空时覆盖)。Router 未命中/
+    异常 → get_llm() 旧路径 (行为兼容)。Router 输入上下文: 调用方可通过
+    set_router_context() 注入 (agent_id/task_type/project_dir/explicit_*);
+    无上下文时 Router 自动降级 L4/L5, 行为与 S10-021 一致。
     """
     try:
         plane = _control_plane()
-        pid = plane.selected_provider_id()
-        if pid is not None:
-            cfg = plane.resolve_runtime_config(pid)
+        router = _make_router(plane)
+        choice = router.route(**_router_context())
+        if choice is not None:
+            cfg = plane.resolve_runtime_config(choice.provider_id)
             if cfg:
+                if choice.model_id:
+                    cfg["model"] = choice.model_id
                 return cfg
-    except Exception:  # noqa: BLE001 — 失败安全: 管理面异常 → 旧路径
+    except Exception:  # noqa: BLE001 — 失败安全: 管理面/Router 异常 → 旧路径
         pass
     return get_config().get_llm()
+
+
+#: S10-024 Router 接线上下文 (模块级, 调用方可注入; 无 → Router 降级 L4/L5)
+_ROUTER_CONTEXT: dict[str, Any] = {}
+
+
+def set_router_context(**kwargs: Any) -> None:
+    """注入 Router 路由上下文 (agent_id/task_type/project_dir/explicit_*/…)。
+
+    供调用方 (AgentExecutor 执行链) 在装配前设置; 未设置 → Router 自动
+    降级, 行为与 S10-021 一致。None 值忽略 (不覆盖已有上下文)。
+    """
+    for key, value in kwargs.items():
+        if value is not None:
+            _ROUTER_CONTEXT[key] = value
+
+
+def _router_context() -> dict[str, Any]:
+    """当前 Router 上下文快照 (仅传 route() 认识的关键字)。"""
+    keys = (
+        "task_type",
+        "required_capabilities",
+        "agent_id",
+        "skill_ids",
+        "project_dir",
+        "explicit_provider",
+        "explicit_model",
+    )
+    return {k: v for k, v in _ROUTER_CONTEXT.items() if k in keys}
+
+
+def _make_router(plane: Any) -> Any:
+    """LLMRouter 实例 (延迟 import — Removal Isolation: Router 加载失败不拖垮)。"""
+    from .llm_router import LLMRouter
+
+    return LLMRouter(control_plane=plane)
 
 
 def _build_provider(recorder: Recorder) -> Any:

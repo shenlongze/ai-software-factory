@@ -1,10 +1,10 @@
-# AI Software Factory
+# AI Factory
 
-> **AI Workforce Operating System — 管理你的 AI 员工, 而不是用 AI 聊天。**
+> **AI Workforce Operating System — for building, managing and governing AI workers.**
 >
 > 治理驱动的 AI 软件生产平台: 让 AI 像软件公司员工一样工作 — 理解需求 → 规划 → 开发 → 受治理 → 可审计。
 
-`v1.0.0-rc1` · CLI First · 本地部署 · 全事件审计 · Apache-2.0
+`v0.1.0` · CLI First · 本地部署 · 全事件审计 · Apache-2.0
 
 ---
 
@@ -20,6 +20,18 @@ AI 时代:    Human → AI Organization → AI Workers → Software Output (全�
 
 定位: **Devin 替你干活, AI Factory 管理你的 AI 员工。**
 
+### 核心能力
+
+| 能力 | 说明 |
+|---|---|
+| Provider Management | 多 Provider(DeepSeek/OpenAI/Anthropic/Ollama)生命周期 + key 引用安全 |
+| Model Catalog | Provider→Model 两级元数据(capabilities/context/cost) |
+| LLM Router | 五层决策链: User > Agent/Skill > Project > System > Fallback |
+| Agent Runtime | 真实 LLM 执行: Task → Agent → LLM → 沙箱 → Artifact |
+| Skill System | 技能注册 + 权限链(Agent→Skill→Tool) |
+| CLI Control Plane | 17+ 命令统一入口, 无 UI 也完整可用 |
+| Audit Foundation | append-only 事件库: 谁/什么/何时/哪个模型/多少钱 |
+
 ---
 
 ## 它解决什么问题
@@ -34,7 +46,7 @@ AI 时代:    Human → AI Organization → AI Workers → Software Output (全�
 | **成本失控** | 所有任务都交给同一个大模型, 账单悄悄膨胀, 无人知晓 |
 | **无法组织** | 多任务、多项目、多人并行时, 没有流程、没有分工、没有记录 |
 
-**AI Software Factory 把 AI 从"聊天机器人"变成"员工"**: 有岗位、有职责、有流程、
+**AI Factory 把 AI 从"聊天机器人"变成"员工"**: 有岗位、有职责、有流程、
 有审批、有审计、有成本账单。你不是在跟 AI 对话 —— 你是在管理一支 AI 团队。
 
 ## 快速开始
@@ -123,7 +135,7 @@ factory demo reset      # 清空重建
 - 生命周期模型: [docs/lifecycle-model.md](./docs/lifecycle-model.md)
 - 愿景与理念: [docs/vision.md](./docs/vision.md)
 - 用户指南: [docs/user-guide.md](./docs/user-guide.md) · 应用场景: [docs/use-cases.md](./docs/use-cases.md)
-- 测试基线: **8148 pytest 全绿** (v1.0.0-rc1)
+- 测试基线: **8148 pytest 全绿** (v0.1.0)
 
 ## 企业 / 商业
 
@@ -134,4 +146,4 @@ factory demo reset      # 清空重建
 
 ---
 
-*v1.0.0-rc1 · 治理驱动的 AI 软件生产平台 —— 管理你的 AI 员工, 而不是用 AI 聊天。*
+*v0.1.0 · AI Workforce Operating System — 管理你的 AI 员工, 而不是用 AI 聊天。*

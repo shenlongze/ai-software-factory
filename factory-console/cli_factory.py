@@ -2107,13 +2107,28 @@ class FactoryCLI:
         self.data_dir.mkdir(parents=True, exist_ok=True)
 
     def run_cmd(self, args: argparse.Namespace) -> int:
-        """factory run — 薄代理 exec.cli.cmd_exec_run (执行链全在 exec, 零新逻辑)。"""
-        if not getattr(args, "task", None):
-            print("错误: --task 必填 (任务 ID)", file=sys.stderr)
+        """factory run — 薄代理 exec.cli.cmd_exec_run (执行链全在 exec, 零新逻辑)。
+
+        S10-042 Task 003 (目标式任务): --task 或 --objective 之一必填 —
+        两者都缺 → 明确错误 (rc 2); 仅提供 --objective (无 --task 锚点) →
+        自动生成 task ID (E2-OBJ-*, 同 demo run E2-DEMO-* 风格) 后透传
+        exec CLI (objective 原样传递, exec 契约已支持); 旧用法 --task 优先,
+        不覆盖用户显式任务 ID。
+        """
+        task = getattr(args, "task", None)
+        objective = getattr(args, "objective", None)
+        if not task and not objective:
+            print(
+                "错误: --task 必填 (任务 ID) / --objective 必填 "
+                "(自然语言目标), 二选一",
+                file=sys.stderr,
+            )
             return 2
         if not getattr(args, "project", None):
             print("错误: --project 必填 (项目目录)", file=sys.stderr)
             return 2
+        if not task:  # 目标式任务: 自动生成 task 锚点, objective 透传 exec
+            args.task = f"E2-OBJ-{uuid.uuid4().hex[:8]}"
         self._ensure_data_dir()
         try:
             exec_cli = self._proxy_exec_cli()
@@ -2348,11 +2363,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     # S10-031: project/run 转正 (薄代理 org/exec CLI) — 参数与底层 CLI 对齐
     p_run = sub.add_parser(
-        "run", help="执行任务 → exec CLI (薄代理: --project/--task 必填)"
+        "run",
+        help="执行任务 → exec CLI (薄代理: --project 必填; --task 或 --objective 之一必填)",
     )
     p_run.add_argument("--project", default=None, help="项目目录 (沙箱副本源; 必填)")
-    p_run.add_argument("--task", default=None, help="任务 ID (必填)")
-    p_run.add_argument("--objective", default=None, help="目标描述 (默认派生自 task)")
+    p_run.add_argument("--task", default=None, help="任务 ID (与 --objective 二选一; 提供则优先)")
+    p_run.add_argument(
+        "--objective",
+        default=None,
+        help="目标描述 (与 --task 二选一; 无 --task 时自动生成任务 ID)",
+    )
     p_run.add_argument("--requirement", default="", help="验收标准/约束")
     p_run.add_argument("--employee", default=None, help="员工 ID (org store 解析)")
     p_run.add_argument("--agent", default=None, help="Agent 实例 ID (默认 developer-1)")

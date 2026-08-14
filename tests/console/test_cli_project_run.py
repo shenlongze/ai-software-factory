@@ -136,12 +136,13 @@ class FakeOrgCli:
 
 
 class TestRunRequiredArgs:
-    def test_run_missing_task(self, tmp_path, capsys):
+    def test_run_missing_task_and_objective(self, tmp_path, capsys):
+        """验收 B (S10-042-003): 无 --task 且无 --objective → 明确错误 (rc 2)。"""
         cli = make_cli(tmp_path)
         rc = run(cli, "run", "--project", str(tmp_path))
         err = capsys.readouterr().err
         assert rc == 2
-        assert "--task 必填" in err
+        assert "--task 必填" in err and "--objective 必填" in err
 
     def test_run_missing_project(self, tmp_path, capsys):
         cli = make_cli(tmp_path)
@@ -202,6 +203,82 @@ class TestRunProxy:
         assert rc == 0
         assert data["ok"] is True
         assert data["result_id"] == "RES-1"
+
+
+# ------------------------------------------------------------ S10-042 Task 003: run --objective
+
+
+class TestRunObjective:
+    def test_run_objective_auto_generates_task(self, tmp_path, monkeypatch, capsys):
+        """验收 A: run --project <dir> --objective <goal> → 调 exec CLI —
+        task 自动生成 (非空, E2-OBJ-* 前缀), objective 透传。"""
+        cli = make_cli(tmp_path)
+        fake = FakeExecCli()
+        monkeypatch.setattr(cli, "_proxy_exec_cli", lambda: fake)
+        repo_dir = tmp_path / "repo"
+        repo_dir.mkdir()
+        rc = run(
+            cli, "run", "--project", str(repo_dir),
+            "--objective", "给 main.py 加一个加法函数",
+        )
+        out = capsys.readouterr().out
+        assert rc == 0
+        assert "✔ 执行完成" in out and "RES-1" in out
+        assert len(fake.calls) == 1
+        kind, root, args = fake.calls[0]
+        assert kind == "run"
+        assert root == cli.data_dir  # 薄代理: root 即工厂数据根
+        assert args.task  # 自动生成非空
+        assert args.task.startswith("E2-OBJ-")
+        assert args.objective == "给 main.py 加一个加法函数"  # objective 透传
+
+    def test_run_objective_json_output(self, tmp_path, monkeypatch, capsys):
+        """--objective + --json → 结构化 JSON (task 自动生成不破坏 JSON 契约)。"""
+        cli = make_cli(tmp_path)
+        fake = FakeExecCli()
+        monkeypatch.setattr(cli, "_proxy_exec_cli", lambda: fake)
+        repo_dir = tmp_path / "repo"
+        repo_dir.mkdir()
+        rc = run(cli, "run", "--project", str(repo_dir), "--objective", "加测试", "--json")
+        data = json.loads(capsys.readouterr().out)
+        assert rc == 0
+        assert data["ok"] is True
+        assert data["result_id"] == "RES-1"
+        assert fake.calls[0][2].task.startswith("E2-OBJ-")
+
+    def test_run_objective_real_smoke_honest_failure(self, tmp_path, monkeypatch, capsys):
+        """真实 exec.cli 链路: --objective 路径 → task 自动生成 + objective
+        透传 → 真实 cmd_exec_run (provider bogus → 诚实失败 rc 1, 不发网络)。"""
+        monkeypatch.setenv("HOME", str(tmp_path))  # 隔离 ~/.factory
+        cli = make_cli(tmp_path, real_root=True)
+        repo_dir = tmp_path / "repo"
+        repo_dir.mkdir()
+        rc = run(
+            cli, "run", "--project", str(repo_dir),
+            "--objective", "真实链路目标", "--provider", "bogus",
+        )
+        err = capsys.readouterr().err
+        assert rc == 1
+        assert "provider not found: bogus" in err
+
+    def test_run_objective_with_explicit_task_still_works(self, tmp_path, monkeypatch, capsys):
+        """验收 C: 旧用法 --task 仍工作 (task 优先, 不自动生成覆盖)。"""
+        cli = make_cli(tmp_path)
+        fake = FakeExecCli()
+        monkeypatch.setattr(cli, "_proxy_exec_cli", lambda: fake)
+        repo_dir = tmp_path / "repo"
+        repo_dir.mkdir()
+        rc = run(
+            cli, "run", "--project", str(repo_dir), "--task", "T-001",
+            "--objective", "修复 bug",
+        )
+        out = capsys.readouterr().out
+        assert rc == 0
+        assert "✔ 执行完成" in out
+        assert len(fake.calls) == 1
+        _, _, args = fake.calls[0]
+        assert args.task == "T-001"  # task 优先, 原样透传
+        assert args.objective == "修复 bug"  # objective 仍透传
 
     def test_run_status_proxies_exec_cli(self, tmp_path, monkeypatch, capsys):
         """验收 B: run-status --id → cmd_exec_status (root=data_dir, id 透传)。"""

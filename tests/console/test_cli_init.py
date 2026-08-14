@@ -463,10 +463,11 @@ class TestParser:
         assert ns.model is None
 
     def test_init_no_longer_stub(self):
-        """init 已转正: 不在 STUB_COMMANDS; project/run 仍为 stub。"""
+        """init 已转正: 不在 STUB_COMMANDS; S10-031 project/run 也已转正 (已清空)。"""
         assert "init" not in _cli.STUB_COMMANDS
-        assert "project" in _cli.STUB_COMMANDS
-        assert "run" in _cli.STUB_COMMANDS
+        assert "project" not in _cli.STUB_COMMANDS
+        assert "run" not in _cli.STUB_COMMANDS
+        assert _cli.STUB_COMMANDS == ()
 
     def test_subcommand_still_registered(self):
         """init 子命令仍在 parser (从 stub 转正, 集合不变)。"""

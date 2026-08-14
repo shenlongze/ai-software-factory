@@ -315,8 +315,9 @@ class TestFactoryCliArgparse:
             "init",
             "config",
             "demo",  # S10-026 Task F: 隔离 Demo Workspace (~/.factory-demo)
-            "project",
-            "run",
+            "project",  # S10-031: 转正 (create 代理 org CLI / list 只读)
+            "run",  # S10-031: 转正 (薄代理 exec CLI cmd_exec_run)
+            "run-status",  # S10-031: 转正 (薄代理 exec CLI cmd_exec_status)
         }
 
     def test_start_flags_parsed(self):
@@ -327,18 +328,24 @@ class TestFactoryCliArgparse:
         assert ns.port == 9000
         assert ns.frontend_port == 6000
 
-    @pytest.mark.parametrize("cmd", ["project", "run"])
-    def test_stub_commands_not_implemented(self, cmd, capsys):
-        """预留 stub: 语法合法 (rc 1 业务未实现) + 提示清晰。
+    def test_legacy_stub_commands_now_implemented(self, capsys):
+        """S10-031: project/run 不再返回 stub 提示 (参数缺失 → 明确错误 rc 2)。
 
-        config 已于 S10-026 Task D 转正 (factory config show/set/check/path),
-        init 已于 S10-026 Task E 转正 (factory init 首次运行初始化) — 均不再
-        属于 stub, 见 tests/console/test_cli_config.py / test_cli_init.py。
+        config 已于 S10-026 Task D 转正, init 已于 S10-026 Task E 转正,
+        project/run/run-status 已于 S10-031 转正 (薄代理 org/exec CLI) —
+        代理/查询/列表行为见 tests/console/test_cli_project_run.py。
         """
         mod = _factory_cli_mod()
-        rc = mod.main([cmd])
-        assert rc == 1
-        assert "尚未实现" in capsys.readouterr().out
+        rc = mod.main(["run"])  # 缺 --task → 明确错误
+        out, err = capsys.readouterr()
+        assert rc == 2
+        assert "--task 必填" in err
+        assert "尚未实现" not in out + err
+        rc = mod.main(["project"])  # 缺动作 → 明确错误
+        out, err = capsys.readouterr()
+        assert rc == 2
+        assert "需要子命令" in err
+        assert "尚未实现" not in out + err
 
 
 class TestFactoryCliEnvironment:

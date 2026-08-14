@@ -70,8 +70,9 @@ S10-026 Task F (demo 转正, §2.5 P4 Demo Workspace, 修订 ③):
     铁律: demo 只 seed 真实数据文件 + 展示真实链路 (无 mock AI); providers.json
     只写 api_key_ref 引用, 无明文 key; 任何 demo 操作只写 ~/.factory-demo。
 
-架构预留: project/run 注册为 argparse stub (阶段三实现), 未来可加子子命令
-(project list 等) — 不限制扩展。
+S10-031 (First User Release): project/run 从 stub 转正 — 薄代理 org/exec CLI
+(cmd_project_register / cmd_exec_run / cmd_exec_status; project list 只读
+projects.json; 参数缺失 → 明确错误; 失败安全: 底层异常 → 明确消息)。
 
 设计:
 - 纯标准库 (argparse/subprocess/socket/urllib) — 零新增依赖。
@@ -133,9 +134,10 @@ HEALTH_TIMEOUT = 30.0
 FRONTEND_TIMEOUT = 15.0
 #: 健康检查轮询间隔 (秒)
 HEALTH_INTERVAL = 0.5
-#: 架构预留子命令 (阶段三实现; 注册为 stub 不限制扩展; config 已于 Task D 转正,
-#: init 已于 Task E 转正)
-STUB_COMMANDS = ("project", "run")
+#: 架构预留子命令 (注册为 stub 不限制扩展; config 已于 Task D 转正, init 已于
+#: Task E 转正; S10-031: project/run 已转正 (薄代理 org/exec CLI) — 当前为空,
+#: 保留常量与 _stub 供未来预留命令复用)
+STUB_COMMANDS: tuple[str, ...] = ()
 
 #: init 引导的 provider 选择项 (与 config.PROVIDER_DEFAULTS 键集对齐)
 INIT_PROVIDERS = ("deepseek", "openai", "anthropic", "ollama")
@@ -686,6 +688,12 @@ class FactoryCLI:
             return self.init(args)
         if args.command == "demo":
             return self.demo(args)
+        if args.command == "run":
+            return self.run_cmd(args)
+        if args.command == "run-status":
+            return self.run_status(args)
+        if args.command == "project":
+            return self.project_cmd(args)
         if args.command in STUB_COMMANDS:
             return self._stub(args.command)
         print(f"未知命令: {args.command}", file=sys.stderr)
@@ -1823,6 +1831,132 @@ class FactoryCLI:
         for line in tail:
             print(f"  | {line}", file=sys.stderr)
 
+    # ------------------------------------------- run / project (S10-031: 薄代理 org/exec CLI)
+
+    def _proxy_exec_cli(self) -> Any:
+        """延迟 import exec.cli (PYTHONPATH 挂 factory-exec — 设计注 D1; 失败 → 明确错误)。"""
+        try:
+            path = str(self.root / "factory-exec")
+            if path not in sys.path:
+                sys.path.insert(0, path)
+            import exec.cli as exec_cli
+
+            return exec_cli
+        except ImportError as exc:
+            raise RuntimeError(
+                f"无法加载 exec CLI (缺 factory-exec/ 包或 PYTHONPATH 错误): {exc}"
+            ) from exc
+
+    def _proxy_org_cli(self) -> Any:
+        """延迟 import org.cli (PYTHONPATH 挂 factory-org; 失败 → 明确错误)。"""
+        try:
+            path = str(self.root / "factory-org")
+            if path not in sys.path:
+                sys.path.insert(0, path)
+            import org.cli as org_cli
+
+            return org_cli
+        except ImportError as exc:
+            raise RuntimeError(
+                f"无法加载 org CLI (缺 factory-org/ 包或 PYTHONPATH 错误): {exc}"
+            ) from exc
+
+    def _emit_proxy_result(
+        self, proxy: Any, args: argparse.Namespace, result: dict
+    ) -> int:
+        """代理 CLI 结果输出 (契约同 exec.cli.main / org.cli.main: --json → JSON; 错误 → stderr)。"""
+        exit_code = int(result.get("exit_code", 0))
+        if getattr(args, "json", False) and result.get("ok"):
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        elif exit_code != 2:
+            proxy._print_result(args, result)
+        return exit_code
+
+    def _ensure_data_dir(self) -> None:
+        """确保工厂数据根存在 (同 exec.cli.main / org.cli.main 的 root.mkdir 前置)。"""
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+
+    def run_cmd(self, args: argparse.Namespace) -> int:
+        """factory run — 薄代理 exec.cli.cmd_exec_run (执行链全在 exec, 零新逻辑)。"""
+        if not getattr(args, "task", None):
+            print("错误: --task 必填 (任务 ID)", file=sys.stderr)
+            return 2
+        if not getattr(args, "project", None):
+            print("错误: --project 必填 (项目目录)", file=sys.stderr)
+            return 2
+        self._ensure_data_dir()
+        try:
+            exec_cli = self._proxy_exec_cli()
+            result = exec_cli.cmd_exec_run(root=self.data_dir, args=args)
+        except Exception as exc:  # noqa: BLE001 — 失败安全: 底层异常 → 明确错误, 不吞不裸抛
+            print(f"错误: exec CLI 执行失败 — {exc}", file=sys.stderr)
+            return 1
+        return self._emit_proxy_result(exec_cli, args, result)
+
+    def run_status(self, args: argparse.Namespace) -> int:
+        """factory run-status — 薄代理 exec.cli.cmd_exec_status (执行结果查询)。"""
+        self._ensure_data_dir()
+        try:
+            exec_cli = self._proxy_exec_cli()
+            result = exec_cli.cmd_exec_status(root=self.data_dir, args=args)
+        except Exception as exc:  # noqa: BLE001 — 失败安全: 底层异常 → 明确错误, 不吞不裸抛
+            print(f"错误: exec CLI 查询失败 — {exc}", file=sys.stderr)
+            return 1
+        return self._emit_proxy_result(exec_cli, args, result)
+
+    def project_cmd(self, args: argparse.Namespace) -> int:
+        """factory project — create 代理 org.cli.cmd_project_register; list 只读 projects.json。"""
+        action = getattr(args, "project_command", None)
+        if action == "create":
+            if not getattr(args, "repo_path", None):
+                print("错误: --repo-path 必填 (已有代码库路径)", file=sys.stderr)
+                return 2
+            self._ensure_data_dir()
+            try:
+                org_cli = self._proxy_org_cli()
+                result = org_cli.cmd_project_register(root=self.data_dir, args=args)
+            except Exception as exc:  # noqa: BLE001 — 失败安全: 底层异常 → 明确错误
+                print(f"错误: org CLI 注册失败 — {exc}", file=sys.stderr)
+                return 1
+            # 对齐 org CLI 子命令名 (输出格式化按 register 分支; 用户面仍为 create)
+            args.project_command = "register"
+            return self._emit_proxy_result(org_cli, args, result)
+        if action == "list":
+            return self._project_list(args)
+        print(
+            f"错误: project 需要子命令 (create / list), 收到: {action!r}",
+            file=sys.stderr,
+        )
+        return 2
+
+    def _project_list(self, args: argparse.Namespace) -> int:
+        """project list — 只读 projects.json (缺失/损坏 → 空列表, 永不抛)。"""
+        projects_file = self.data_dir / "org" / "projects.json"
+        projects: list[dict[str, Any]] = []
+        try:
+            if projects_file.is_file():
+                raw = json.loads(projects_file.read_text(encoding="utf-8"))
+                section = raw.get("projects", {}) if isinstance(raw, dict) else {}
+                if isinstance(section, dict):
+                    for pid, record in sorted(section.items()):
+                        record = record if isinstance(record, dict) else {}
+                        projects.append({"id": pid, "name": record.get("name", "")})
+        except Exception:  # noqa: BLE001 — 只读展示, 损坏 → 空列表 (失败安全铁律)
+            projects = []
+        if getattr(args, "json", False):
+            print(
+                json.dumps(
+                    {"ok": True, "count": len(projects), "projects": projects},
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            return 0
+        print(f"项目清单 ({len(projects)} 个)")
+        for p in projects:
+            print(f"  {p['id']}  {p['name']}")
+        return 0
+
     def _stub(self, cmd: str) -> int:
         print(f"`factory {cmd}` 尚未实现 — 架构预留子命令 (计划 S10-007 阶段三实现)。")
         return 1
@@ -1955,8 +2089,46 @@ def build_parser() -> argparse.ArgumentParser:
     p_demo.add_argument(
         "--dev", action="store_true", help="(start) 前端走 vite dev (默认托管 dist)"
     )
-    for name in STUB_COMMANDS:
-        sub.add_parser(name, help=f"[预留] factory {name} — 阶段三实现")
+    # S10-031: project/run 转正 (薄代理 org/exec CLI) — 参数与底层 CLI 对齐
+    p_run = sub.add_parser(
+        "run", help="执行任务 → exec CLI (薄代理: --project/--task 必填)"
+    )
+    p_run.add_argument("--project", default=None, help="项目目录 (沙箱副本源; 必填)")
+    p_run.add_argument("--task", default=None, help="任务 ID (必填)")
+    p_run.add_argument("--objective", default=None, help="目标描述 (默认派生自 task)")
+    p_run.add_argument("--requirement", default="", help="验收标准/约束")
+    p_run.add_argument("--employee", default=None, help="员工 ID (org store 解析)")
+    p_run.add_argument("--agent", default=None, help="Agent 实例 ID (默认 developer-1)")
+    p_run.add_argument("--provider", default=None, help="Provider id (默认 anthropic)")
+    p_run.add_argument("--test-cmd", default=None, help="沙箱内测试命令 (验证)")
+    p_run.add_argument("--json", action="store_true", help="输出结构化 JSON")
+    p_status = sub.add_parser(
+        "run-status", help="执行结果查询 → exec CLI (薄代理: --id 结果 ID)"
+    )
+    p_status.add_argument("--id", default=None, help="结果 ID (缺省列出全部)")
+    p_status.add_argument("--json", action="store_true", help="输出结构化 JSON")
+    p_project = sub.add_parser(
+        "project", help="已有项目接入 (create 代理 org CLI / list 只读)"
+    )
+    p_project.add_argument(
+        "project_command",
+        choices=["create", "list"],
+        nargs="?",
+        default=None,
+        metavar="动作",
+        help="create — 注册已有项目 (代理 org CLI project register); "
+        "list — 只读项目清单 (projects.json)",
+    )
+    p_project.add_argument("--repo-path", default=None, help="已有代码库路径 (create 必填)")
+    p_project.add_argument("--name", default=None, help="项目名 (缺省 = 目录名)")
+    p_project.add_argument("--language", default="", help="主语言 (缺省自动检测)")
+    p_project.add_argument("--framework", default="", help="框架 (缺省自动检测)")
+    p_project.add_argument("--build-command", default="", help="构建命令 (缺省: 语法检查)")
+    p_project.add_argument("--test-command", default="", help="测试命令 (缺省: 不可用)")
+    p_project.add_argument("--project-type", default="", help="项目类型 (app/library/service/cli)")
+    p_project.add_argument("--goal", default="", help="项目目标")
+    p_project.add_argument("--id", default=None, help="项目 ID (默认自动生成 P-xxx)")
+    p_project.add_argument("--json", action="store_true", help="输出结构化 JSON")
     return parser
 
 

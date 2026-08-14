@@ -2509,9 +2509,20 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """CLI 入口 (bin/factory 经 importlib 调用; sys.argv[1:] 默认)。"""
+    """CLI 入口 (bin/factory 经 importlib 调用; sys.argv[1:] 默认)。
+
+    S10-047: 无参数 (factory) 或 --interactive → Interactive Session
+    (session shell, 见 docs/sprint10/S10-047-session-design.md); 有命令
+    → 原逻辑完全不变。无参数时 argparse 会因 required subparser 抛
+    SystemExit(2) — 此处先于 parse 判断, 不误吞未知命令错误 (rc 2)。
+    """
+    argv_list = list(sys.argv[1:]) if argv is None else list(argv)
+    if not argv_list or argv_list == ["--interactive"]:
+        from .session.session import InteractiveSession  # 延迟导入 (Removal Isolation)
+
+        return InteractiveSession().run()
     parser = build_parser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args(argv_list)
     return FactoryCLI(ConfigProvider()).run(args)
 
 

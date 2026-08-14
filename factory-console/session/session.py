@@ -5,8 +5,9 @@
 - 纯内置 input(), 零新依赖 (高级交互后续可加 prompt_toolkit, 非本 Sprint)
 - banner → loop ("> " 提示符) → exit/quit/Ctrl+C/EOF 优雅退出, rc 0
 - 输入分发: "/" 开头 → slash registry (SlashCommand 注册式);
-  否则 → Intent 执行链 (S10-048 P1): IntentParser.parse → IntentRouter.route
-  → [ConfirmationGate, P3 注入] → Action.execute(ExecutionContext) → Renderer 展示;
+  否则 → Intent 执行链 (S10-048 P1+P4): IntentParser.parse → IntentRouter.route
+  → ConfirmationGate (P4 默认装配, 敏感 action 确认后执行)
+  → Action.execute(ExecutionContext) → Renderer 展示;
   未识别/未路由 → 明确提示 (不静默)
 - 会话上下文 (Task 002): ContextManager 注入, 输入记录进 history (/cost 等数据来源)
 - 纯 shell 零业务逻辑, 不接真实 LLM, 不改现有命令
@@ -21,6 +22,7 @@ from typing import Any, Optional
 from .action import ActionRegistry, ExecutionContext
 from .actions import DEFAULT_WORKSPACE, build_default_actions
 from .commands import build_default_registry
+from .confirm import ConfirmationGate
 from .context import ContextManager, SessionContext
 from .intent import IntentObject, IntentParser, KeywordIntentParser
 from .renderer import HumanRenderer, Renderer
@@ -79,8 +81,12 @@ class InteractiveSession:
         self.intent_parser = intent_parser if intent_parser is not None else KeywordIntentParser()
         #: 注入式 ExecutionContext (测试/宿主定制); None → 每次派发从会话上下文构建
         self.action_context = action_context
-        #: Confirmation Gate (P3 Task 注入) — None → 直接执行 (本 Phase 不阻塞)
-        self.confirmation_gate = confirmation_gate
+        #: Confirmation Gate (P4 最小治理) — 默认装配 ConfirmationGate:
+        #: 敏感 action (create_project/run_task) 经确认流, 拒绝 → "已取消";
+        #: 测试可注入定制 gate / confirm_fn (不阻塞 input)
+        self.confirmation_gate = (
+            confirmation_gate if confirmation_gate is not None else ConfirmationGate()
+        )
         #: 结果渲染器 (P1) — ActionResult.to_dict() → Renderer 展示
         self.renderer = renderer if renderer is not None else HumanRenderer()
 
@@ -123,9 +129,10 @@ class InteractiveSession:
     def _dispatch(self, line: str) -> None:
         """命令分发: "/" 开头 → slash registry; 否则 → Intent 执行链 (S10-048 P1)。
 
-        非 slash 输入: IntentParser.parse → IntentRouter.route → [ConfirmationGate
-        (P3 注入, 未注入直接执行)] → Action.execute(ExecutionContext) → Renderer 展示。
-        未识别意图 / 未路由意图 → 明确提示 (不静默)。slash 路径行为不变。
+        非 slash 输入: IntentParser.parse → IntentRouter.route → ConfirmationGate
+        (P4 默认装配, 敏感 action 确认通过才执行) → Action.execute(ExecutionContext)
+        → Renderer 展示。未识别意图 / 未路由意图 → 明确提示 (不静默)。
+        slash 路径行为不变。
         """
         if line.startswith("/"):
             self.registry.execute(line, self.context)

@@ -93,7 +93,7 @@ class TestPackageDirMapping:
         )
 
     def test_packages_cover_all_factory_core_subpackages(self, setuptools_cfg):
-        """packages ⊇ factory-core 全部子包 (等价旧 find where=['factory-core'])。"""
+        """packages ⊇ factory-core 全部子包 + exec/org 映射包 (S10-031)。"""
         packages = set(setuptools_cfg["packages"])
         core_root = _ROOT / "factory-core"
         discovered = {
@@ -101,8 +101,16 @@ class TestPackageDirMapping:
             for init in core_root.rglob("__init__.py")
             if "__pycache__" not in init.parts
         }
+        # S10-031: exec/org 映射包 (package_dir 指向 factory-exec/exec, factory-org/org)
+        for src, prefix in ((_ROOT / "factory-exec" / "exec", "exec"),
+                            (_ROOT / "factory-org" / "org", "org")):
+            for init in src.rglob("__init__.py"):
+                if "__pycache__" in init.parts:
+                    continue
+                rel = init.parent.relative_to(src).parts
+                discovered.add(".".join((prefix, *rel)))
         missing = discovered - packages
-        assert not missing, f"factory-core 子包未列入 packages: {sorted(missing)}"
+        assert not missing, f"factory-core/exec/org 子包未列入 packages: {sorted(missing)}"
         only_mapped = {p for p in packages if p.startswith("factory_console")}
         assert packages - discovered - only_mapped == set(), "packages 含未知包名"
 

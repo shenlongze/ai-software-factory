@@ -379,7 +379,12 @@ class TestEnvGate:
         config = _cfg.ConfigProvider(
             user_config_file=cfg_file, env_file=tmp_path / ".env", environ={}
         )
-        cli = _cli.FactoryCLI(config, root=tmp_path / "empty_repo")  # 无依赖
+        # S10-031: wheel 模式 (无 pyproject.toml) 跳过依赖检查; 本测试模拟源码仓库
+        # (有 pyproject.toml 但缺 .venv/node_modules) → 仍应被依赖门拦截。
+        empty_repo = tmp_path / "empty_repo"
+        empty_repo.mkdir(exist_ok=True)
+        (empty_repo / "pyproject.toml").write_text("", encoding="utf-8")
+        cli = _cli.FactoryCLI(config, root=empty_repo)  # 无依赖
         rc = run(cli, "init", "--non-interactive", "--provider", "deepseek")
         err = capsys.readouterr().err
         assert rc == 1

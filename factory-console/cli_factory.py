@@ -278,8 +278,15 @@ def _env_problems() -> list[str]:
 
 
 def _dep_problems(root: Path) -> list[str]:
-    """依赖检查: .venv 存在? 前端 node_modules 存在? (缺失 → install 指引)。"""
+    """依赖检查: .venv 存在? 前端 node_modules 存在? (缺失 → install 指引)。
+
+    S10-031 (First User Release): wheel 安装模式 (root 无 pyproject.toml, 即
+    cli_factory.py 位于 site-packages/factory_console/) 跳过源码仓库式依赖检查 —
+    wheel 已含前端 dist (package-data), 运行环境即 venv, 无 node_modules 需求。
+    """
     problems: list[str] = []
+    if not (root / "pyproject.toml").is_file():
+        return problems  # wheel 安装模式: 无源码仓库依赖
     venv_py = root / ".venv" / "bin" / "python"
     if not venv_py.is_file():
         problems.append(

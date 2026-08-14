@@ -76,6 +76,35 @@ def _error(message: str, exit_code: int = 1) -> dict:
     return {"ok": False, "error": message, "exit_code": exit_code}
 
 
+def _import_llm_control_module() -> Any:
+    """加载 LLMControlPlane 模块 (双名解析: wheel → factory_console / 源码 → factory-console)。
+
+    S10-031 (First User Release): 发布包经 package_dir 映射为合法包名 factory_console
+    (目录 factory-console 含连字符, 无法直接 import); 源码运行仍用 factory-console.
+    两者取其一, 失败回退 (调用方失败安全)。
+    """
+    import importlib
+
+    for name in ("factory_console.llm_control", "factory-console.llm_control"):
+        try:
+            return importlib.import_module(name)
+        except (ImportError, ModuleNotFoundError):
+            continue
+    raise ImportError("LLMControlPlane unavailable (factory_console/factory-console)")
+
+
+def _default_provider_id() -> str:
+    """默认 provider id: ControlPlane 选中 (providers.json enabled+key) → 回退 anthropic.
+
+    S10-031 (First User Release): exec run 未显式 --provider 时, 用用户配置的
+    provider (如 deepseek), 而非硬编码 anthropic — 用户 init 配置即生效。
+    """
+    try:
+        return _import_llm_control_module().LLMControlPlane().selected_provider_id() or "anthropic"
+    except Exception:  # noqa: BLE001 — 失败安全: ControlPlane 不可用 → 默认 anthropic
+        return "anthropic"
+
+
 # ------------------------------------------------------------------ 装配点
 
 def _provider_registry() -> ProviderRegistry:
@@ -97,7 +126,7 @@ def _provider_registry() -> ProviderRegistry:
     try:
         import importlib
 
-        llm_control = importlib.import_module("factory-console.llm_control")
+        llm_control = _import_llm_control_module()
         plane = llm_control.LLMControlPlane()
         pid = plane.selected_provider_id()
         if pid is not None:
@@ -186,12 +215,13 @@ def cmd_exec_run(root: Path, args: Any) -> dict:
         agent = AgentInstance(id=getattr(args, "agent", None) or "developer-1")
         try:
             registry = _provider_registry()
-            provider = registry.get(getattr(args, "provider", None) or "anthropic")
+            provider_id = getattr(args, "provider", None) or _default_provider_id()
+            provider = registry.get(provider_id)
         except ImportError:
             return _error("provider registry unavailable (factory-exec providers 缺失)", exit_code=1)
         if provider is None:
             return _error(
-                f"provider not found: {getattr(args, 'provider', None) or 'anthropic'} "
+                f"provider not found: {provider_id} "
                 f"(available: {registry.ids()})",
                 exit_code=1,
             )

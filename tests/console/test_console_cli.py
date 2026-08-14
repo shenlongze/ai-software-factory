@@ -374,8 +374,10 @@ class TestFactoryCliEnvironment:
 
     def test_deps_node_modules_missing_hint(self, tmp_path, monkeypatch, capsys):
         mod = _factory_cli_mod()
-        # 假 root: 无 .venv 无 node_modules → 依赖检查给出 install 指引
+        # 假 root: 源码仓库 (有 pyproject.toml) 但无 .venv 无 node_modules → 依赖检查给出 install 指引
         fake_root = tmp_path / "fake"
+        fake_root.mkdir(exist_ok=True)
+        (fake_root / "pyproject.toml").write_text("", encoding="utf-8")
         (fake_root / "factory-console" / "web" / "frontend").mkdir(parents=True)
         problems = mod._dep_problems(fake_root)
         text = "\n".join(problems)

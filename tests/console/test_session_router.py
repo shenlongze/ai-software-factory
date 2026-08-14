@@ -69,12 +69,15 @@ def test_router_extension_without_code_change():
 
 
 def test_route_unmapped_intent_raises():
-    """E: 类型无映射 → UnknownIntentError, 错误信息明确 (不静默)。"""
+    """E: 类型无映射 → UnknownIntentError, 错误信息明确 (不静默)。
+
+    S10-049: run_task 已纳入默认路由 (→ agent.execute_task), 未映射示例改用 show_cost。
+    """
     router = ROUTER_MOD.IntentRouter()
     registry = _registry_with(["create_project"])
     with pytest.raises(ROUTER_MOD.UnknownIntentError) as exc:
-        router.route(_intent("run_task"), registry)
-    assert "run_task" in str(exc.value)
+        router.route(_intent("show_cost"), registry)
+    assert "show_cost" in str(exc.value)
     assert "未配置路由" in str(exc.value)
 
 

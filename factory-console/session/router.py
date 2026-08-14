@@ -13,11 +13,15 @@ from typing import Optional
 from .action import Action, ActionRegistry
 from .intent import IntentObject
 
-#: 默认声明式映射 (intent_type → action_name; 3 个 P0 真实 Action)
+#: 默认声明式映射 (intent_type → action_name; 3 个 P0 真实 Action + S10-049 agent.execute_task)
 DEFAULT_ROUTES: dict[str, str] = {
     "create_project": "create_project",
     "list_projects": "list_projects",
     "show_status": "show_status",
+    # S10-049 P1: run_task → Agent Execution Kernel (execute_task action)
+    "run_task": "agent.execute_task",
+    # 别名: "execute_task" 意图直达 (显式任务执行语义, 同 action 名)
+    "execute_task": "agent.execute_task",
 }
 
 

@@ -24,7 +24,10 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Optional
 
-from .intent import IntentObject, IntentParser, KeywordIntentParser
+from .intent import INTENT_RUN_TASK, IntentObject, IntentParser, KeywordIntentParser
+
+#: run_task 执行所需的定位参数 (project/task/task_id — 任一缺失 → 澄清)
+_TASK_TARGET_KEYS = ("project", "task", "task_id")
 
 
 class ConversationState(Enum):
@@ -103,6 +106,14 @@ class ConversationManager:
         if intent is None:
             return self._clarify(
                 "未识别意图 — 请换个说法描述需求 (例如: '创建项目' / '项目列表' / '状态')"
+            )
+        # S10-049 P4 (最小): run_task 缺 project/task 定位参数 → 澄清
+        # (不挂起 pending_intent — 任务目标未明确, 不进入确认/执行)
+        if intent.intent_type == INTENT_RUN_TASK and not any(
+            intent.parameters.get(key) for key in _TASK_TARGET_KEYS
+        ):
+            return self._clarify(
+                "需要指定项目或任务: /project <id> 或 描述 '给 X 项目实现 Y'"
             )
         self.pending_intent = intent
         self.transition(ConversationState.CONFIRMATION)

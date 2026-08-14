@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 from typing import Any, Optional
 
-from .action import ActionRegistry, ExecutionContext
+from .action import ActionRegistry, ActionResult, ExecutionContext
 from .actions import DEFAULT_WORKSPACE, build_default_actions
 from .commands import build_default_registry
 from .confirm import ConfirmationGate
@@ -149,8 +149,10 @@ class InteractiveSession:
             print(f"未识别的意图: {exc} — {INTENT_HINT}")
             return
         context = self._build_action_context(intent)
+        # S10-049 P0: 确认判定以 intent 类型为准 (run_task ∈ 敏感集合 →
+        # ConfirmationGate 确认流; create_project 等 action.name == intent 类型不变)
         if self.confirmation_gate is not None and not self.confirmation_gate.confirm(
-            action.name, intent, context
+            intent.intent_type, intent, context
         ):
             print("已取消 — 输入 exit 或 quit 退出会话")
             return
@@ -162,7 +164,30 @@ class InteractiveSession:
         except Exception as exc:  # noqa: BLE001 — 失败安全: Action 异常 → 明确错误, 不崩溃会话
             print(f"❌ Action 执行失败 ({action.name}): {exc}")
             return
+        # S10-049 P5: agent.execute_task 长耗时执行 — 展示 AgentExecutionResult 摘要
+        # (agent/artifact/cost/duration); 其余 Action 走通用 Renderer
+        if action.name == "agent.execute_task":
+            self._render_execution(action.name, result)
+            return
         print(self.renderer.render(result.to_dict()))
+
+    def _render_execution(self, action_name: str, result: ActionResult) -> None:
+        """Agent 执行结果摘要展示 (S10-049 P5) — agent/artifact/cost/duration。
+
+        不走通用 Renderer (data 含 cost 键会触发成本分支, 丢失 agent/artifact/
+        duration): 成功 → ✔ 消息 + 摘要行; 失败 → ❌ 明确错误 (验收 E)。
+        """
+        data = result.data if isinstance(result.data, dict) else {}
+        execution = data.get("execution") or {}
+        if not isinstance(execution, dict):
+            execution = {}
+        if result.ok:
+            print(f"✔ {result.message}")
+            for key in ("agent", "artifact", "cost", "duration"):
+                if execution.get(key):
+                    print(f"  {key}: {execution[key]}")
+        else:
+            print(f"❌ {result.message}")
 
     def _build_action_context(self, intent: IntentObject) -> ExecutionContext:
         """装配 ExecutionContext: 注入复用 (action_context); 否则从会话上下文构建。

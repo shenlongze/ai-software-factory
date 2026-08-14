@@ -34,7 +34,8 @@ INTENT_LIST_PROJECTS = "list_projects"
 _KEYWORD_RULES: tuple[tuple[tuple[str, ...], str, Optional[str]], ...] = (
     (("花了多少", "成本", "费用"), INTENT_SHOW_COST, None),
     (("创建", "做一个", "开发一个"), INTENT_CREATE_PROJECT, "name"),
-    (("加", "修复", "写"), INTENT_RUN_TASK, "objective"),
+    # S10-049 P0: +"实现" (验收: "帮我实现登录功能" → run_task, objective="登录功能")
+    (("加", "修复", "写", "实现"), INTENT_RUN_TASK, "objective"),
     (("项目列表", "有哪些项目", "列出项目"), INTENT_LIST_PROJECTS, None),
     (("状态", "看看"), INTENT_SHOW_STATUS, None),
 )

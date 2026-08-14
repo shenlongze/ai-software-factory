@@ -367,9 +367,12 @@ class TestFailureSafety:
         monkeypatch.setattr(cli, "_proxy_exec_cli", lambda: fake)
         rc = run(cli, "demo", "run", "hello")
         assert rc == 1
-        err = capsys.readouterr().err
-        assert "exec CLI 执行失败" in err
-        assert "boom" in err
+        out = capsys.readouterr().out
+        assert "❌ Failed" in out
+        assert "Reason" in out
+        assert "Solution" in out
+        assert "exec CLI 执行失败" in out
+        assert "boom" in out
 
     def test_exec_result_failed(self, tmp_path, isolated_home, monkeypatch, capsys):
         """result ok=False → rc=exit_code + 明确错误。"""
@@ -380,9 +383,11 @@ class TestFailureSafety:
         monkeypatch.setattr(cli, "_proxy_exec_cli", lambda: fake)
         rc = run(cli, "demo", "run", "hello")
         assert rc == 1
-        err = capsys.readouterr().err
-        assert "执行失败" in err
-        assert "provider not found" in err
+        out = capsys.readouterr().out
+        assert "❌ Failed" in out
+        assert "Reason" in out
+        assert "Solution" in out
+        assert "provider not found" in out
 
     def test_exec_ok_but_failed_status(self, tmp_path, isolated_home, monkeypatch, capsys):
         """exec 契约: ok=True 但 exit_code=1 → 执行本身失败 → rc 1 + 明确错误 (不假装成功)。"""
@@ -401,9 +406,11 @@ class TestFailureSafety:
         monkeypatch.setattr(cli, "_proxy_exec_cli", lambda: fake)
         rc = run(cli, "demo", "run", "hello")
         assert rc == 1
-        err = capsys.readouterr().err
-        assert "执行失败" in err
-        assert "agent failed: boom" in err
+        out = capsys.readouterr().out
+        assert "❌ Failed" in out
+        assert "Reason" in out
+        assert "Solution" in out
+        assert "agent failed: boom" in out
 
     def test_project_dir_creation_failure(self, tmp_path, isolated_home, monkeypatch, capsys):
         """项目目录创建失败 → 明确错误, 不吞 (不调 exec)。"""

@@ -2029,7 +2029,6 @@ class FactoryCLI:
             exec_cli = self._proxy_exec_cli()
             result = exec_cli.cmd_exec_run(root=root, args=exec_args)
         except Exception as exc:  # noqa: BLE001 — 失败安全: 底层异常 → 明确错误, 不吞不裸抛
-            print(f"  ✗ 错误: exec CLI 执行失败 — {exc}", file=sys.stderr)
             # S10-044: 统一失败格式到 stdout (用户必见; stderr 常被忽略)
             print(_format_failure(f"exec CLI 执行失败 — {exc}"), file=sys.stdout)
             self._demo_run_cleanup(project_dir, auto_created, args)
@@ -2037,7 +2036,6 @@ class FactoryCLI:
         elapsed = time.monotonic() - started
         if not result.get("ok"):
             error = str(result.get("error") or "执行失败")
-            print(f"  ✗ 执行失败: {error}", file=sys.stderr)
             # S10-044: 统一失败格式到 stdout (用户必见)
             print(_format_failure(error), file=sys.stdout)
             self._demo_run_cleanup(project_dir, auto_created, args)
@@ -2047,7 +2045,6 @@ class FactoryCLI:
         exit_code = int(result.get("exit_code", 0) or 0)
         if exit_code != 0:  # exec 契约: ok=True 但 exit_code=1 → 执行本身失败
             error = str(result.get("error") or result.get("status") or "执行失败")
-            print(f"  ✗ 执行失败: {error}", file=sys.stderr)
             # S10-044: 统一失败格式到 stdout (用户必见)
             print(_format_failure(error), file=sys.stdout)
             self._demo_run_cleanup(project_dir, auto_created, args)

@@ -2294,10 +2294,26 @@ class FactoryCLI:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """argparse 结构: start/stop/status + doctor/service/config/init + 预留 project/run。"""
+    """argparse 结构: CLI Control Plane (17+ 命令)。"""
     parser = argparse.ArgumentParser(
         prog="factory",
-        description="AI Software Factory — 一键启动/停止/状态 (S10-007 阶段二 CLI MVP)",
+        description=(
+            "AI Factory v0.1.0 — AI Workforce Operating System\n"
+            "管理你的 AI 员工, 而不是用 AI 聊天。\n"
+            "\n"
+            "快速开始:\n"
+            "  factory init --non-interactive --provider deepseek   # 配置 LLM\n"
+            "  factory demo run '<目标>'                            # 一条命令完成首次任务\n"
+            "  factory doctor                                       # 诊断\n"
+        ),
+        epilog=(
+            "示例:\n"
+            "  factory demo run '给 main.py 加一个 hello 函数'\n"
+            "  factory run --project ~/my-app --objective '修复测试' --agent backend-1\n"
+            "  factory run-status --id EXS-...   |  factory audit   |  factory project list\n"
+            "文档: docs/getting-started/quick-start-zh.md\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     sub = parser.add_subparsers(dest="command", required=True, metavar="命令")
     p_start = sub.add_parser(

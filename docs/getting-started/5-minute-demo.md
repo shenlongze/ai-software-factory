@@ -57,15 +57,17 @@ factory project create --repo-path ~/my-first-project --name my-first-project
 
 ### 第 5 步: 让 AI 执行第一个任务(2 分钟)
 
+用一句自然语言描述目标, AI Factory 负责执行:
+
 ```bash
 factory run \
   --project ~/my-first-project \
-  --task T-001 \
+  --objective "给 main.py 加一个加法函数" \
   --agent backend-1
 ```
 
-> `T-001` 是任务编号(随便起), `backend-1` 是负责写代码的 AI 员工。
-> 想看效果? 把任务改成: `--objective "给 main.py 加一个加法函数"`(v0.2 支持, 当前用 --task)。
+> 不需要任务编号! `--objective` 直接描述你要什么; `backend-1` 是负责写代码的 AI 员工。
+> 想用任务编号也行: `--task T-001`(高级用法, 效果相同)。
 
 ### 第 6 步: 看结果
 
@@ -83,6 +85,15 @@ factory run-status --id <上一步输出的 EXS-...>
 ```bash
 factory demo init && factory demo status
 ```
+
+**一条命令完成全部体验**(自动建目录 + 执行 + 展示, S10-042):
+
+```bash
+factory demo run "给 main.py 加一个 hello 函数"
+```
+
+> 自动完成: workspace 准备 → 项目目录 → 目标 → Agent 执行 → artifact 展示。
+> 用时约 1 分钟, 成本 < $0.01。
 
 ## 常见问题
 

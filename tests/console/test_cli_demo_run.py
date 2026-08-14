@@ -447,3 +447,137 @@ class TestHelpers:
         assert _cli._demo_format_usage(None) == "-"
         assert _cli._demo_format_usage("n/a") == "n/a"
         assert _cli._demo_format_usage({}) == "-"
+
+
+# ------------------------------------------------------------------ S10-044 Task 001: 统一失败输出 (❌ Failed + Reason + Solution 到 stdout)
+
+
+class TestUnifiedFailureOutput:
+    """验收 A/B/C (S10-044 Task 001): demo run 失败 → stdout 显示统一格式, 用户必见
+    (错误到 stdout, 不再只进 stderr — 用户失败时只看 stdout)。"""
+
+    def test_failure_stdout_has_unified_format(self, tmp_path, isolated_home, monkeypatch, capsys):
+        """验收 A: result ok=False → stdout 含 ❌ Failed + Reason + Solution + 原因。"""
+        cli = make_cli(tmp_path)
+        fake = FakeExecCli(
+            result={"ok": False, "error": "agent failed: boom", "exit_code": 1}
+        )
+        monkeypatch.setattr(cli, "_proxy_exec_cli", lambda: fake)
+        rc = run(cli, "demo", "run", "hello")
+        assert rc == 1
+        out = capsys.readouterr().out
+        assert "❌ Failed" in out
+        assert "Reason:" in out
+        assert "Solution:" in out
+        assert "agent failed: boom" in out
+
+    def test_api_key_missing_solution_has_export(self, tmp_path, isolated_home, monkeypatch, capsys):
+        """验收 B: api key missing → Solution 含 export 指引 (export <PROVIDER>_API_KEY)。"""
+        cli = make_cli(tmp_path)
+        fake = FakeExecCli(
+            result={
+                "ok": True,
+                "status": "failed",
+                "error": (
+                    "provider error: anthropic api key missing: "
+                    "ANTHROPIC_API_KEY 未设置 (在 ~/.factory/.env 配置)"
+                ),
+                "exit_code": 1,
+                "artifacts": [],
+                "usage": {},
+            }
+        )
+        monkeypatch.setattr(cli, "_proxy_exec_cli", lambda: fake)
+        rc = run(cli, "demo", "run", "hello")
+        assert rc == 1
+        out = capsys.readouterr().out
+        assert "❌ Failed" in out
+        assert "export" in out
+        assert "_API_KEY" in out
+        assert "factory init" in out
+
+    def test_provider_not_found_solution_has_config_check(
+        self, tmp_path, isolated_home, monkeypatch, capsys
+    ):
+        """验收 C: provider not found → Solution 含 config check + --provider 指引。"""
+        cli = make_cli(tmp_path)
+        fake = FakeExecCli(
+            result={
+                "ok": False,
+                "error": "provider not found: bogus (available: ['deepseek'])",
+                "exit_code": 1,
+            }
+        )
+        monkeypatch.setattr(cli, "_proxy_exec_cli", lambda: fake)
+        rc = run(cli, "demo", "run", "hello")
+        assert rc == 1
+        out = capsys.readouterr().out
+        assert "❌ Failed" in out
+        assert "config check" in out
+        assert "--provider" in out
+
+    def test_exec_ok_but_exit_code_1_unified_stdout(
+        self, tmp_path, isolated_home, monkeypatch, capsys
+    ):
+        """exec 契约: ok=True 但 exit_code=1 → 执行失败 → 统一格式到 stdout。"""
+        cli = make_cli(tmp_path)
+        fake = FakeExecCli(
+            result={
+                "ok": True,
+                "status": "failed",
+                "error": "agent failed: boom",
+                "exit_code": 1,
+                "artifacts": [],
+                "usage": {},
+            }
+        )
+        monkeypatch.setattr(cli, "_proxy_exec_cli", lambda: fake)
+        rc = run(cli, "demo", "run", "hello")
+        assert rc == 1
+        out = capsys.readouterr().out
+        assert "❌ Failed" in out
+        assert "Reason:" in out
+        assert "Solution:" in out
+        assert "agent failed: boom" in out
+
+    def test_exception_unified_stdout(self, tmp_path, isolated_home, monkeypatch, capsys):
+        """底层异常 → 统一格式到 stdout (执行失败同路径, 用户必见)。"""
+        cli = make_cli(tmp_path)
+        fake = FakeExecCli(exc=RuntimeError("boom"))
+        monkeypatch.setattr(cli, "_proxy_exec_cli", lambda: fake)
+        rc = run(cli, "demo", "run", "hello")
+        assert rc == 1
+        out = capsys.readouterr().out
+        assert "❌ Failed" in out
+        assert "exec CLI 执行失败" in out
+        assert "boom" in out
+
+
+class TestFormatFailure:
+    """_format_failure 场景映射单元 (S10-044 §2 场景表)。"""
+
+    def test_api_key_missing_maps_export_solution(self):
+        text = _cli._format_failure(
+            "provider error: anthropic api key missing: ANTHROPIC_API_KEY 未设置 (hint)"
+        )
+        assert text.startswith("❌ Failed")
+        assert "Reason:\n  provider error: anthropic api key missing" in text
+        assert "export" in text and "_API_KEY" in text and "factory init" in text
+
+    def test_provider_not_found_maps_config_check(self):
+        text = _cli._format_failure("provider not found: bogus (available: [...])")
+        assert "config check" in text and "--provider" in text
+
+    def test_project_dir_not_found_maps_project_create(self):
+        text = _cli._format_failure("project dir not found: /tmp/x")
+        assert "project create" in text and "--repo-path" in text
+
+    def test_generic_error_falls_back_to_run_status(self):
+        text = _cli._format_failure("agent failed: boom")
+        assert "run-status" in text and "重试" in text
+
+    def test_empty_error_fallback(self):
+        text = _cli._format_failure("")
+        assert text.startswith("❌ Failed")
+        assert "未知错误" in text
+        assert "Solution:" in text

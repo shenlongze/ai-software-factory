@@ -69,12 +69,10 @@ def run(cli, *argv: str) -> int:
 class FakeExecCli:
     """假 exec.cli — 记录代理调用 (验证参数传递) + 最小 _print_result。"""
 
-    def __init__(self) -> None:
+    def __init__(self, result: dict | None = None, exc: Exception | None = None) -> None:
         self.calls: list[tuple] = []
-
-    def cmd_exec_run(self, root, args):
-        self.calls.append(("run", root, args))
-        return {
+        self.exc = exc
+        self.result = result or {
             "ok": True,
             "command": "run",
             "request_id": "EXR-1",
@@ -87,6 +85,12 @@ class FakeExecCli:
             "event_seq": 1,
             "exit_code": 0,
         }
+
+    def cmd_exec_run(self, root, args):
+        self.calls.append(("run", root, args))
+        if self.exc is not None:
+            raise self.exc
+        return self.result
 
     def cmd_exec_status(self, root, args):
         self.calls.append(("status", root, args))
@@ -257,9 +261,12 @@ class TestRunObjective:
             cli, "run", "--project", str(repo_dir),
             "--objective", "真实链路目标", "--provider", "bogus",
         )
-        err = capsys.readouterr().err
+        out = capsys.readouterr().out
         assert rc == 1
-        assert "provider not found: bogus" in err
+        # S10-044: 统一失败格式到 stdout (错误不再只进 stderr)
+        assert "❌ Failed" in out
+        assert "provider not found: bogus" in out
+        assert "config check" in out
 
     def test_run_objective_with_explicit_task_still_works(self, tmp_path, monkeypatch, capsys):
         """验收 C: 旧用法 --task 仍工作 (task 优先, 不自动生成覆盖)。"""
@@ -309,9 +316,12 @@ class TestRunObjective:
             cli, "run", "--project", str(repo_dir), "--task", "E2-001",
             "--agent", "backend-1", "--provider", "bogus",
         )
-        err = capsys.readouterr().err
+        out = capsys.readouterr().out
         assert rc == 1
-        assert "provider not found: bogus" in err
+        # S10-044: 统一失败格式到 stdout (错误不再只进 stderr)
+        assert "❌ Failed" in out
+        assert "provider not found: bogus" in out
+        assert "config check" in out
 
 
 # ------------------------------------------------------------------ 验收 C: project create → 代理 org CLI
@@ -498,3 +508,79 @@ class TestNoRegression:
         cli = make_cli(tmp_path)
         rc = run(cli, "status")
         assert rc == 0
+
+
+# ------------------------------------------------------------------ S10-044 Task 001: run 失败统一输出 (❌ Failed + Reason + Solution 到 stdout)
+
+
+class TestRunUnifiedFailure:
+    """验收 D (S10-044 Task 001): run 执行失败 → 统一格式到 stdout (用户必见)。"""
+
+    def test_run_failure_unified_format_stdout(self, tmp_path, monkeypatch, capsys):
+        """ok=True 但 exit_code=1 (执行本身失败) → ❌ Failed + Reason + Solution 到 stdout。"""
+        cli = make_cli(tmp_path)
+        fake = FakeExecCli(
+            result={
+                "ok": True,
+                "command": "run",
+                "status": "failed",
+                "error": "agent failed: boom",
+                "exit_code": 1,
+                "artifacts": [],
+                "usage": None,
+            }
+        )
+        monkeypatch.setattr(cli, "_proxy_exec_cli", lambda: fake)
+        repo_dir = tmp_path / "repo"
+        repo_dir.mkdir()
+        rc = run(cli, "run", "--project", str(repo_dir), "--task", "E2-001")
+        out = capsys.readouterr().out
+        assert rc == 1
+        assert "❌ Failed" in out
+        assert "Reason:" in out
+        assert "Solution:" in out
+        assert "agent failed: boom" in out
+        assert "run-status" in out  # 通用 Solution (执行失败)
+
+    def test_run_ok_false_unified_stdout(self, tmp_path, monkeypatch, capsys):
+        """ok=False (provider not found) → 统一格式到 stdout + config check Solution。"""
+        cli = make_cli(tmp_path)
+        fake = FakeExecCli(
+            result={
+                "ok": False,
+                "error": "provider not found: bogus (available: ['deepseek'])",
+                "exit_code": 1,
+            }
+        )
+        monkeypatch.setattr(cli, "_proxy_exec_cli", lambda: fake)
+        repo_dir = tmp_path / "repo"
+        repo_dir.mkdir()
+        rc = run(cli, "run", "--project", str(repo_dir), "--task", "E2-001")
+        out = capsys.readouterr().out
+        assert rc == 1
+        assert "❌ Failed" in out
+        assert "provider not found: bogus" in out
+        assert "config check" in out  # provider not found → Solution 含 config check
+
+    def test_run_exception_unified_stdout(self, tmp_path, monkeypatch, capsys):
+        """底层异常 → 统一格式到 stdout (错误不再只进 stderr)。"""
+        cli = make_cli(tmp_path)
+        fake = FakeExecCli(exc=RuntimeError("boom"))
+        monkeypatch.setattr(cli, "_proxy_exec_cli", lambda: fake)
+        repo_dir = tmp_path / "repo"
+        repo_dir.mkdir()
+        rc = run(cli, "run", "--project", str(repo_dir), "--task", "E2-001")
+        out = capsys.readouterr().out
+        assert rc == 1
+        assert "❌ Failed" in out
+        assert "exec CLI 执行失败" in out
+        assert "boom" in out
+
+    def test_usage_error_stays_simple(self, tmp_path, capsys):
+        """验收 E: 参数校验错误 (缺 --task) 仍简单 '错误: ...' (用法错误不统一)。"""
+        cli = make_cli(tmp_path)
+        rc = run(cli, "run", "--project", str(tmp_path))
+        err = capsys.readouterr().err
+        assert rc == 2
+        assert "错误: --task 必填" in err
+        assert "❌ Failed" not in err

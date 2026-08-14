@@ -566,6 +566,42 @@ def _demo_format_usage(usage: Any) -> str:
     return " · ".join(parts) if parts else "-"
 
 
+def _format_failure(error: str) -> str:
+    """统一失败输出 (S10-044 Task 001): ❌ Failed + Reason + Solution 到 stdout。
+
+    用户失败时只看 stdout — 错误必须到 stdout (stderr 常被吞/被忽略)。
+    格式:
+        ❌ Failed
+
+        Reason:
+          <具体原因, 来自 exec error>
+
+        Solution:
+          <可操作修复指引>
+
+    场景映射 (简单子串匹配, 同 docs/sprint10/S10-044-failure-experience.md §2):
+    - api key missing / 未设置 → export <PROVIDER>_API_KEY 指引
+    - provider not found       → factory config check + --provider
+    - project dir not found    → factory project create --repo-path
+    - 其他                     → factory run-status --id <id> / 重试
+    """
+    error = str(error or "").strip()
+    reason = error or "未知错误"
+    solution = "查看 factory run-status --id <id> 报告; 或重试"
+    low = error.lower()
+    if "api key missing" in low or "未设置" in error:
+        solution = "export <PROVIDER>_API_KEY=... 后重试; 或 factory init --provider <id> 配置"
+    elif "provider not found" in low:
+        solution = "检查 factory config check; 用可用 provider: --provider <id>"
+    elif "project dir not found" in low:
+        solution = "确认目录存在; factory project create --repo-path <dir> 注册"
+    return (
+        "❌ Failed\n\n"
+        f"Reason:\n  {reason}\n\n"
+        f"Solution:\n  {solution}"
+    )
+
+
 # ------------------------------------------------------------------ 命令组骨架 IO (S10-026 Task C: 只读数据读取)
 
 #: 事件库候选文件名 (audit 按序探测; factory.db 内含 events 表)
@@ -1994,21 +2030,26 @@ class FactoryCLI:
             result = exec_cli.cmd_exec_run(root=root, args=exec_args)
         except Exception as exc:  # noqa: BLE001 — 失败安全: 底层异常 → 明确错误, 不吞不裸抛
             print(f"  ✗ 错误: exec CLI 执行失败 — {exc}", file=sys.stderr)
+            # S10-044: 统一失败格式到 stdout (用户必见; stderr 常被忽略)
+            print(_format_failure(f"exec CLI 执行失败 — {exc}"), file=sys.stdout)
             self._demo_run_cleanup(project_dir, auto_created, args)
             return 1
         elapsed = time.monotonic() - started
         if not result.get("ok"):
-            print(f"  ✗ 执行失败: {result.get('error')}", file=sys.stderr)
+            error = str(result.get("error") or "执行失败")
+            print(f"  ✗ 执行失败: {error}", file=sys.stderr)
+            # S10-044: 统一失败格式到 stdout (用户必见)
+            print(_format_failure(error), file=sys.stdout)
             self._demo_run_cleanup(project_dir, auto_created, args)
             return int(result.get("exit_code", 1) or 1)
         # 5. artifact 展示 (从 result 提取 status/artifact/usage)
         self._demo_print_result(result)
         exit_code = int(result.get("exit_code", 0) or 0)
         if exit_code != 0:  # exec 契约: ok=True 但 exit_code=1 → 执行本身失败
-            print(
-                f"  ✗ 执行失败: {result.get('error') or result.get('status')}",
-                file=sys.stderr,
-            )
+            error = str(result.get("error") or result.get("status") or "执行失败")
+            print(f"  ✗ 执行失败: {error}", file=sys.stderr)
+            # S10-044: 统一失败格式到 stdout (用户必见)
+            print(_format_failure(error), file=sys.stdout)
             self._demo_run_cleanup(project_dir, auto_created, args)
             return exit_code
         print(f"  ✔ 完成! 用时 {elapsed:.1f} 秒")
@@ -2135,7 +2176,14 @@ class FactoryCLI:
             result = exec_cli.cmd_exec_run(root=self.data_dir, args=args)
         except Exception as exc:  # noqa: BLE001 — 失败安全: 底层异常 → 明确错误, 不吞不裸抛
             print(f"错误: exec CLI 执行失败 — {exc}", file=sys.stderr)
+            # S10-044: 统一失败格式到 stdout (用户必见; stderr 常被忽略)
+            print(_format_failure(f"exec CLI 执行失败 — {exc}"), file=sys.stdout)
             return 1
+        # S10-044: 执行失败 (ok=False 或 exit_code != 0) → 统一格式到 stdout (用户必见)
+        if not result.get("ok") or int(result.get("exit_code", 0) or 0) != 0:
+            error = str(result.get("error") or result.get("status") or "执行失败")
+            print(_format_failure(error), file=sys.stdout)
+            return int(result.get("exit_code", 1) or 1)
         return self._emit_proxy_result(exec_cli, args, result)
 
     def run_status(self, args: argparse.Namespace) -> int:

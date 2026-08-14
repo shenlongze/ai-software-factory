@@ -74,6 +74,17 @@ S10-031 (First User Release): project/run 从 stub 转正 — 薄代理 org/exec
 (cmd_project_register / cmd_exec_run / cmd_exec_status; project list 只读
 projects.json; 参数缺失 → 明确错误; 失败安全: 底层异常 → 明确消息)。
 
+S10-042 Task 002 (demo run 转正 — 一条命令完成首次体验):
+    factory demo run "<objective>" [--agent backend-1] [--provider <id>]
+        [--no-cleanup] [--project-dir <dir>]
+    流程 (全复用, 零复制执行逻辑): workspace 准备 (复用 _ensure_workspace /
+    _demo_write_providers) → project 目录 (--project-dir 复用; 否则自动建
+    /tmp/factory-demo-<ts>/ + main.py 骨架) → task (objective=用户输入, task
+    id 自动生成 E2-DEMO-*) → 执行 (exec_cli.cmd_exec_run 薄代理, provider
+    缺省 → Router/ControlPlane 决策) → artifact 展示 → 清理 (默认删临时
+    目录, 护栏同 _demo_rmtree 哲学; --no-cleanup 保留并打印路径)。
+    失败安全: 缺 objective / exec 错误 / 清理失败 → 明确提示, 不吞。
+
 设计:
 - 纯标准库 (argparse/subprocess/socket/urllib) — 零新增依赖。
 - 模块级 IO 函数 (测试可 monkeypatch) + FactoryCLI 类 (流程编排)。
@@ -106,9 +117,11 @@ import socket
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
+import uuid
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -468,6 +481,89 @@ def _demo_project_count(root: Path) -> int:
     if isinstance(data, dict) and isinstance(data.get("projects"), dict):
         return len(data["projects"])
     return 0
+
+
+# ------------------------------------------------------------------ demo run (S10-042 Task 002: 一条命令完成首次体验)
+
+
+#: demo run 自动项目目录前缀 (系统临时目录下; 清理护栏识别用)
+DEMO_TMP_PREFIX = "factory-demo-"
+
+
+def _demo_main_skeleton(objective: str) -> str:
+    """main.py 演示骨架: objective 注释 + 可运行的 print stub (最小 Python 程序)。"""
+    return "\n".join(
+        [
+            "# AI Factory Demo — 一条命令完成首次体验 (S10-042)",
+            f"# objective: {objective}",
+            "",
+            "def main() -> None:",
+            '    print("hello from ai-factory-demo")',
+            "",
+            "",
+            'if __name__ == "__main__":',
+            "    main()",
+            "",
+        ]
+    )
+
+
+def _demo_make_project_dir(
+    objective: str, project_dir: Path | str | None = None
+) -> tuple[Path, bool]:
+    """demo run 项目目录: --project-dir 指定则复用 (mkdir 幂等, main.py 缺失才写
+    骨架 — 不覆盖用户文件); 否则自动建 /tmp/factory-demo-<ts>-<rand>/ + main.py
+    骨架。返回 (目录, 是否自动创建)。创建失败 → OSError 上抛 (调用方明确提示)。"""
+    if project_dir is not None:
+        path = Path(project_dir)
+        path.mkdir(parents=True, exist_ok=True)
+        auto = False
+    else:
+        base = Path(tempfile.gettempdir())
+        name = (
+            f"{DEMO_TMP_PREFIX}{time.strftime('%Y%m%d-%H%M%S')}-"
+            f"{uuid.uuid4().hex[:6]}"
+        )
+        path = base / name
+        path.mkdir(parents=True, exist_ok=True)
+        auto = True
+    main_py = path / "main.py"
+    if not main_py.exists():
+        main_py.write_text(_demo_main_skeleton(objective), encoding="utf-8")
+    return path, auto
+
+
+def _demo_rmtree_tmp(path: Path) -> None:
+    """删除 demo run 自动创建的临时项目目录 (安全护栏, 同 _demo_rmtree 哲学:
+    只允许删系统临时目录下 factory-demo-* 前缀目录, 绝不碰其他路径 — 不满足
+    → 响亮拒绝)。"""
+    if not (
+        path.name.startswith(DEMO_TMP_PREFIX)
+        and path.parent == Path(tempfile.gettempdir())
+    ):
+        raise ValueError(f"拒绝删除非 demo 临时路径: {path}")
+    shutil.rmtree(path)
+
+
+def _demo_format_usage(usage: Any) -> str:
+    """usage dict → 可读字符串 (失败安全: 缺失/异常 → '-')。"""
+    if not isinstance(usage, dict):
+        return str(usage) if usage else "-"
+    tokens = (
+        usage.get("total_tokens")
+        or usage.get("prompt_tokens")
+        or usage.get("completion_tokens")
+    )
+    cost = usage.get("estimated_cost_usd")
+    parts: list[str] = []
+    if tokens:
+        parts.append(f"{tokens} tokens")
+    if cost is not None:
+        try:
+            parts.append(f"${float(cost):.4f}")
+        except (TypeError, ValueError):
+            pass
+    return " · ".join(parts) if parts else "-"
 
 
 # ------------------------------------------------------------------ 命令组骨架 IO (S10-026 Task C: 只读数据读取)
@@ -1665,7 +1761,7 @@ class FactoryCLI:
     # ------------------------------------------------------------- demo (S10-026 Task F: 隔离 Demo Workspace)
 
     def demo(self, args: argparse.Namespace) -> int:
-        """隔离 Demo Workspace (§2.5 P4, 修订 ③): init / status / reset / start。
+        """隔离 Demo Workspace (§2.5 P4, 修订 ③): init / status / reset / start / run。
 
         Demo 数据根固定 ~/.factory-demo (独立于 ~/.factory, 零污染用户数据):
         - init: 创建隔离 workspace (agents/skills/projects/providers/workspace)
@@ -1676,6 +1772,9 @@ class FactoryCLI:
         - reset: 清空重建 (安全护栏: 只删 ~/.factory-demo, 绝不碰 ~/.factory)
         - start: 用 demo root 作 factory_root 启动 backend+frontend (复用
           start → cli_services; 未初始化 → 明确提示, rc 1)
+        - run: 一条命令完成首次体验 (S10-042 Task 002 — workspace → project →
+          task → agent 执行 → artifact 展示 → 清理; 全复用 exec CLI 薄代理,
+          零复制执行逻辑)
         铁律: 无明文 key; 无假 AI 能力 (demo 只 seed 真实数据文件, 展示真实链路)。
         """
         action = args.demo_action
@@ -1687,6 +1786,8 @@ class FactoryCLI:
             return self._demo_reset()
         if action == "start":
             return self._demo_start(args)
+        if action == "run":
+            return self._demo_run(args)
         print(f"未知 demo 动作: {action}", file=sys.stderr)
         return 2
 
@@ -1822,6 +1923,128 @@ class FactoryCLI:
             services=None,
             dev=args.dev,
         )
+
+    def _demo_run(self, args: argparse.Namespace) -> int:
+        """factory demo run — 一条命令完成首次体验 (S10-042 Task 002)。
+
+        编排 (全复用, 零复制执行逻辑):
+        0. 环境检查 (_env_problems — python/node, 缺失 → 明确提示)
+        1. workspace 准备: _ensure_workspace + _demo_write_providers (demo init 路径)
+        2. project 目录:   --project-dir 复用; 否则自动建 /tmp/factory-demo-<ts>/
+                           + main.py 骨架 (_demo_make_project_dir)
+        3. task:           objective=用户输入; task id 自动生成 (E2-DEMO-*)
+        4. 执行:           exec_cli.cmd_exec_run(root=demo root, args=装配
+                           Namespace) — 复用 run_cmd 同路径; provider 缺省 →
+                           Router/ControlPlane 决策 (exec._default_provider_id)
+        5. artifact 展示:  status + artifact 清单 + usage (从 result 提取)
+        6. 清理:           默认删临时目录 (护栏 _demo_rmtree_tmp); --no-cleanup
+                           保留并打印路径
+        失败安全: 缺 objective → rc 2; 目录创建失败/exec 异常/执行失败 → 明确
+        提示, 不吞; 清理失败 → 警告并保留目录。
+        """
+        objective = getattr(args, "objective", None)
+        if not objective:
+            print(
+                "错误: demo run 需要 objective (自然语言目标, "
+                "如 \"给 main.py 加一个加法函数\")",
+                file=sys.stderr,
+            )
+            return 2
+        # 0. 环境检查 (python / node — 同 demo start 的环境门)
+        problems = _env_problems()
+        if problems:
+            for problem in problems:
+                print(f"  ✗ {problem}", file=sys.stderr)
+            print("  请先解决上述环境问题再运行 demo run", file=sys.stderr)
+            return 1
+        root = _demo_root()
+        print("=== AI Factory Quick Demo ===")
+        # 1. workspace 准备 (复用 demo init 路径)
+        _ensure_workspace(root)
+        _demo_write_providers(root)
+        print(f"  ✔ workspace 就绪 ({root})")
+        # 2. project 目录 (--project-dir 复用 / 自动建临时目录 + main.py 骨架)
+        try:
+            project_dir, auto_created = _demo_make_project_dir(
+                objective, getattr(args, "project_dir", None)
+            )
+        except OSError as exc:
+            print(f"  ✗ 错误: 项目目录创建失败 — {exc}", file=sys.stderr)
+            return 1
+        print(f"  ✔ 项目目录: {project_dir / 'main.py'}")
+        print(f"  ✔ 目标: {objective}")
+        # 3. task (objective=用户输入; task id 自动生成) + 4. agent 执行 (exec 薄代理)
+        task_id = f"E2-DEMO-{uuid.uuid4().hex[:8]}"
+        agent_id = getattr(args, "agent", None) or "backend-1"
+        print(f"  ✔ 执行: {agent_id} → {getattr(args, 'provider', None) or 'Router 决策'}")
+        exec_args = argparse.Namespace(
+            project=str(project_dir),
+            task=task_id,
+            objective=objective,
+            requirement="",
+            employee=None,
+            agent=agent_id,
+            provider=getattr(args, "provider", None),
+            test_cmd=None,
+            json=False,
+        )
+        started = time.monotonic()
+        try:
+            exec_cli = self._proxy_exec_cli()
+            result = exec_cli.cmd_exec_run(root=root, args=exec_args)
+        except Exception as exc:  # noqa: BLE001 — 失败安全: 底层异常 → 明确错误, 不吞不裸抛
+            print(f"  ✗ 错误: exec CLI 执行失败 — {exc}", file=sys.stderr)
+            self._demo_run_cleanup(project_dir, auto_created, args)
+            return 1
+        elapsed = time.monotonic() - started
+        if not result.get("ok"):
+            print(f"  ✗ 执行失败: {result.get('error')}", file=sys.stderr)
+            self._demo_run_cleanup(project_dir, auto_created, args)
+            return int(result.get("exit_code", 1) or 1)
+        # 5. artifact 展示 (从 result 提取 status/artifact/usage)
+        self._demo_print_result(result)
+        exit_code = int(result.get("exit_code", 0) or 0)
+        if exit_code != 0:  # exec 契约: ok=True 但 exit_code=1 → 执行本身失败
+            print(
+                f"  ✗ 执行失败: {result.get('error') or result.get('status')}",
+                file=sys.stderr,
+            )
+            self._demo_run_cleanup(project_dir, auto_created, args)
+            return exit_code
+        print(f"  ✔ 完成! 用时 {elapsed:.1f} 秒")
+        # 6. 清理 (默认删临时目录; --no-cleanup 保留并打印路径)
+        self._demo_run_cleanup(project_dir, auto_created, args)
+        return 0
+
+    def _demo_print_result(self, result: dict) -> None:
+        """demo run 结果展示 (从 exec result 提取 status/artifact/usage — 失败安全,
+        同 exec run-status 输出风格; 不复制执行逻辑)。"""
+        print(f"  status      {result.get('status', '?')}")
+        for artifact in result.get("artifacts", []) or []:
+            if isinstance(artifact, dict):
+                print(
+                    f"  artifact    {str(artifact.get('type', '')):<12} "
+                    f"{artifact.get('path', '')}"
+                )
+        print(f"  usage       {_demo_format_usage(result.get('usage'))}")
+
+    def _demo_run_cleanup(
+        self, project_dir: Path, auto_created: bool, args: argparse.Namespace
+    ) -> None:
+        """demo run 收尾: 自动创建的临时目录默认删除 (护栏), --no-cleanup 保留并打印。"""
+        if not auto_created:
+            return
+        if getattr(args, "no_cleanup", False):
+            print(f"  (演示目录保留: {project_dir})")
+            return
+        try:
+            _demo_rmtree_tmp(project_dir)
+            print(f"  ✔ 已清理临时目录: {project_dir}")
+        except OSError as exc:
+            print(
+                f"  ⚠ 清理失败: {exc} (目录保留: {project_dir})",
+                file=sys.stderr,
+            )
 
     # ------------------------------------------------------------- 杂项
 
@@ -2072,14 +2295,22 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_demo = sub.add_parser(
         "demo",
-        help="隔离 Demo Workspace (init/status/reset/start — ~/.factory-demo, 零污染用户数据)",
+        help="隔离 Demo Workspace (init/status/reset/start/run — ~/.factory-demo, 零污染用户数据)",
     )
     p_demo.add_argument(
         "demo_action",
-        choices=["init", "status", "reset", "start"],
+        choices=["init", "status", "reset", "start", "run"],
         metavar="动作",
         help="init — 创建隔离 Demo Workspace; status — Demo 状态; "
-        "reset — 清空重建; start — 用 demo root 启动 backend+frontend",
+        "reset — 清空重建; start — 用 demo root 启动 backend+frontend; "
+        "run — 一条命令完成首次体验 (workspace→project→task→agent→execution→artifact)",
+    )
+    p_demo.add_argument(
+        "objective",
+        nargs="?",
+        default=None,
+        metavar="目标",
+        help="(run) 自然语言目标, 如 \"给 main.py 加一个加法函数\" — 必填",
     )
     p_demo.add_argument(
         "--no-browser", action="store_true", help="(start) 不自动打开浏览器 (headless/CI)"
@@ -2095,6 +2326,25 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_demo.add_argument(
         "--dev", action="store_true", help="(start) 前端走 vite dev (默认托管 dist)"
+    )
+    p_demo.add_argument(
+        "--agent", default=None, help="(run) 执行 Agent 实例 ID (默认 backend-1)"
+    )
+    p_demo.add_argument(
+        "--provider",
+        default=None,
+        help="(run) 显式 Provider id (缺省 → Router/ControlPlane 决策)",
+    )
+    p_demo.add_argument(
+        "--no-cleanup",
+        action="store_true",
+        help="(run) 保留自动创建的临时演示目录 (默认清理)",
+    )
+    p_demo.add_argument(
+        "--project-dir",
+        default=None,
+        metavar="DIR",
+        help="(run) 指定项目目录 (否则自动建 /tmp/factory-demo-<ts>/ + main.py 骨架)",
     )
     # S10-031: project/run 转正 (薄代理 org/exec CLI) — 参数与底层 CLI 对齐
     p_run = sub.add_parser(

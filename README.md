@@ -1,10 +1,24 @@
 # AI Software Factory
 
-> **治理驱动的 AI 软件生产平台 —— 管理你的 AI 员工, 而不是用 AI 聊天。**
+> **AI Workforce Operating System — 管理你的 AI 员工, 而不是用 AI 聊天。**
+>
+> 治理驱动的 AI 软件生产平台: 让 AI 像软件公司员工一样工作 — 理解需求 → 规划 → 开发 → 受治理 → 可审计。
 
-让 AI 像软件公司员工一样工作: 理解需求 → 规划 → 开发 → 受治理 → 可审计。
+`v1.0.0-rc1` · CLI First · 本地部署 · 全事件审计 · Apache-2.0
 
-`v1.0.0-rc1` · CLI First · 本地部署 · 全事件审计
+---
+
+## AI Factory 是什么
+
+AI Factory 是 **AI 员工操作系统 (AI Workforce Operating System)**: 把 AI 从"一问一答的聊天机器人"
+变成**有岗位、有职责、有流程、有审批、有审计、有成本账单的员工**。
+
+```
+传统开发:   Human → Code
+AI 时代:    Human → AI Organization → AI Workers → Software Output (全部可审计)
+```
+
+定位: **Devin 替你干活, AI Factory 管理你的 AI 员工。**
 
 ---
 
@@ -92,6 +106,16 @@ factory demo reset      # 清空重建
 
 > 治理底座 + 可插拔能力: 事件是唯一事实源, 新能力以扩展注册, 零核心破坏。
 > 技术细节见 [docs/architecture/](./docs/architecture/)。
+
+## Roadmap(不夸大, 诚实区分)
+
+| 状态 | 能力 |
+|---|---|
+| ✅ **Implemented** | 多模型路由 / 真实 LLM 执行 / 审批门 / 全事件审计 / CLI First / 项目生命周期 |
+| 🚧 **In Progress** | Web 管理台增强 / PyPI 发布 / CI 门禁 |
+| 🔮 **Future** | 智能路由(usage 反馈学习)/ Multi-Agent 协作 / RAG 知识库 / 插件市场 / 企业治理版 |
+
+> 详见 [docs/product/vision-zh.md](./docs/product/vision-zh.md) 与 [docs/release/v0.1-checklist.md](./docs/release/v0.1-checklist.md)。
 
 ## 开发者
 

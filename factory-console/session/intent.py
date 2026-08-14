@@ -22,11 +22,12 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-#: Intent 类型注册表 (S10-046 §4 初始子集 — 仅本 Task 涉及 4 类)
+#: Intent 类型注册表 (S10-046 §4 初始子集 — 本 Task 涉及 4 类 + S10-048 P0 list_projects)
 INTENT_CREATE_PROJECT = "create_project"
 INTENT_RUN_TASK = "run_task"
 INTENT_SHOW_COST = "show_cost"
 INTENT_SHOW_STATUS = "show_status"
+INTENT_LIST_PROJECTS = "list_projects"
 
 #: KeywordIntentParser 关键词规则表 (顺序 = 优先级, 确定性无歧义):
 #: (关键词元组, intent_type, 参数键 — 命中后取关键词后剩余文本作为参数值)
@@ -34,6 +35,7 @@ _KEYWORD_RULES: tuple[tuple[tuple[str, ...], str, Optional[str]], ...] = (
     (("花了多少", "成本", "费用"), INTENT_SHOW_COST, None),
     (("创建", "做一个", "开发一个"), INTENT_CREATE_PROJECT, "name"),
     (("加", "修复", "写"), INTENT_RUN_TASK, "objective"),
+    (("项目列表", "有哪些项目", "列出项目"), INTENT_LIST_PROJECTS, None),
     (("状态", "看看"), INTENT_SHOW_STATUS, None),
 )
 
@@ -54,6 +56,8 @@ class IntentObject:
     constraints: dict[str, Any] = field(default_factory=dict)
     confidence: float = 1.0
     raw: str = ""
+    source: str = ""  # S10-048 §2.2: "cli" | "chat" | "agent" | "api" | "session" (会话派发时注入)
+    metadata: dict[str, Any] = field(default_factory=dict)  # 扩展: user_id/workspace/session_id
 
     @property
     def type(self) -> str:

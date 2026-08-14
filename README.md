@@ -103,6 +103,14 @@ factory demo status     # 查看演示状态
 factory demo reset      # 清空重建
 ```
 
+**一条命令体验完整流程**(自动建目录 + 真实 AI 执行 + 展示产物, S10-042):
+
+```bash
+factory demo run "给 main.py 加一个 hello 函数"
+# ✔ 任务完成 (status=success, 用时 ~40 秒, 成本 < $0.01)
+# result-id: EXS-xxx → 查看报告: factory run-status --id EXS-xxx
+```
+
 ## 能力一览
 
 | 能力 | 说明 |

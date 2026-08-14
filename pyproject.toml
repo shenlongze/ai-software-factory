@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai-software-factory"
-version = "1.0.0-rc1"
-description = "AI Software Factory — 四层架构 AI 软件工厂 (Core 冻结原语 + Extension 领域能力 + Intelligence 决策智能 + Human Console 人类控制台)"
+version = "0.1.0"
+description = "AI Software Factory — An AI Workforce Operating System (build, manage and govern AI workers)"
 readme = "README.md"
 requires-python = ">=3.12"
 # 运行依赖: pydantic (模型) + rich (Dashboard 渲染, Phase 4C-4) +

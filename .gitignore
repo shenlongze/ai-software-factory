@@ -18,6 +18,23 @@ factory-console/web/frontend/dist/
 
 # IDE
 .idea/
+
+# 早期工作文档 (公开仓库不展示, 保留在本地历史; S10-034-002)
+/CLI命令参考文档.md
+/LLM智能路由设计说明.md
+/软件市场价值评估-v1.md
+/商业评测-v1.md
+/项目代码逻辑总结.md
+/项目级RAG方案-v1.md
+/项目全量扫描总结-v2.md
+/项目全量扫描总结-v3.md
+/项目扫描报告.md
+/项目总纲.md
+/行业竞品分析-v1.md
+/验证报告-idea到产品完整路径.md
+
+# 前端覆盖率报告 (构建产物)
+factory-console/web/frontend/coverage/
 .vscode/
 *.swp
 

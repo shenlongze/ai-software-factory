@@ -100,9 +100,41 @@ factory demo run "给 main.py 加一个 hello 函数"
 | 问题 | 解决 |
 |---|---|
 | `factory doctor` 提示 key 缺失 | 确认执行了 `export DEEPSEEK_API_KEY=...` |
-| `factory run` 报 provider not found | 先 `factory init --non-interactive --provider deepseek` |
+| `factory run` 报 `❌ Failed` | 看输出里的 **Reason + Solution**(会告诉你怎么修) |
 | 想换模型 | 改 `--provider`, 或配置多 provider 后由 Router 自动选 |
 | 担心污染数据 | 用 `factory demo`(隔离环境, 不碰真实数据) |
+
+## 失败怎么办
+
+命令失败时, AI Factory 会显示统一格式:
+
+```
+❌ Failed
+
+Reason:
+  provider error: deepseek api key missing
+
+Solution:
+  export DEEPSEEK_API_KEY=... 后重试; 或 factory init --provider <id> 配置
+```
+
+**跟着 Solution 做即可** — 不需要看懂内部原理。
+
+## 成功怎么看 / 结果在哪里
+
+`factory demo run` 或 `factory run` 成功后:
+
+```
+  ✔ 任务: 给 main.py 加一个 hello 函数 已完成 (status=success, 用时 20.9 秒)
+  result-id   EXS-bc49915b
+  下一步:
+    - 查看报告: factory run-status --id EXS-bc49915b
+    - 查看审计: factory audit
+```
+
+- **result-id** 是这次执行的结果编号
+- 代码改动(patch)在 `~/.factory/exec/patches/`(demo 在 `~/.factory-demo/exec/patches/`)
+- 随时用 `factory run-status --id <EXS-...>` 重新查看
 
 ## 下一步
 

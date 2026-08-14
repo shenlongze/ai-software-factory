@@ -28,3 +28,4 @@ jobs:
 
       - name: Run tests
         run: python -m pytest -q
+        timeout-minutes: 15

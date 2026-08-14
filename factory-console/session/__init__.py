@@ -6,10 +6,11 @@ cli_factory 命令逻辑 (main 只加一个分支)。
 
 模块:
 - session.py — InteractiveSession: 主循环 (banner/prompt/exit/quit/Ctrl+C/EOF)
-- (Task 002+: context.py — SessionContext + ContextManager; 后续 Task:
-   slash.py / commands.py / intent.py / renderer.py / completion.py)
+- context.py — SessionContext + ContextManager: 会话上下文 (内存实现)
+- (后续 Task: slash.py / commands.py / intent.py / renderer.py / completion.py)
 """
 
+from .context import ContextManager, SessionContext
 from .session import InteractiveSession
 
-__all__ = ["InteractiveSession"]
+__all__ = ["InteractiveSession", "SessionContext", "ContextManager"]

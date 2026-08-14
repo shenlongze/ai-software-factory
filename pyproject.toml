@@ -14,24 +14,47 @@ requires-python = ">=3.12"
 dependencies = ["pydantic>=2", "rich>=13", "pyyaml>=6"]
 
 [project.scripts]
-# 统一入口 (S10-031 Task 2): factory-console/cli_factory.py 的 main() —
+# 统一入口 (S10-031 Task 2 + 修复): factory-console/cli_factory.py 的 main() —
 # init/doctor/config/start/project/run 等全部命令。目录名 factory-console 含
 # 连字符, 生成式 console script 无法 `from factory-console... import` (语法错误),
-# 故经 factory_console 别名包 (importlib 转发) 暴露为可导入路径。
+# 故经 [tool.setuptools] package-dir 映射为合法包名 factory_console 后直接可导入。
 factory = "factory_console.cli_factory:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.6"]
 
-[tool.setuptools.packages.find]
-# factory-core/ 为源码根目录, events 等子模块为独立顶层包;
-# factory-console/ (统一 CLI 层, 含连字符) + factory_console/ (导入别名) 一并入包
-where = ["factory-core", "factory-console", "factory_console"]
+[tool.setuptools]
+# S10-031 修复 (Design Note, package_dir 映射方案): 旧配置 packages.find
+# where=["factory-core","factory-console","factory_console"] 把 factory_console
+# 当"搜索根"而非"包", setuptools 从 where 目录内部找包 → factory_console 未入
+# wheel (空壳根因)。package-dir 最长前缀匹配: "factory_console" → "factory-console"
+# 使 factory_console 及其子包 (api/web/web.backend) 映射到连字符目录;
+# "" → "factory-core" 使 factory-core 下 27 个顶层子包源码根保持 factory-core/ 前缀
+# (等价旧 find where=["factory-core"])。映射后 factory_console 即真实代码包
+# (cli_factory/config/llm_control/...), 不再需要 importlib 胶水转发。
+package-dir = { "" = "factory-core", "factory_console" = "factory-console" }
+# 显式列出全部包: find 无法发现映射包的子包 (物理位于 factory-console/ 下),
+# 故 factory_console* 显式列出; factory-core 子包为 find_packages("factory-core")
+# 展开 (新增子包须同步本列表)。
+packages = [
+    # factory-core 顶层子包
+    "agents", "assignment", "change", "changeflow", "cli", "dashboard", "demo",
+    "events", "execution", "git", "intelligence", "metrics", "orchestration",
+    "product", "project", "providers", "providers.adapters", "recovery",
+    "runtime", "runtime.adapters", "runtimes", "tasks", "understanding",
+    "understanding.analyzers", "validation", "workflows", "workspace",
+    # factory-console → factory_console 映射包及其子包
+    "factory_console",
+    "factory_console.api",
+    "factory_console.web",
+    "factory_console.web.backend",
+]
 
 [tool.setuptools.package-data]
 # 前端 dist 打包入 wheel (S10-030 Task 002 / S10-031 Task 2): pip install 后
-# factory start 免 node 托管静态前端。dist/ 为构建产物 (gitignore), 打包时读磁盘。
-"factory-console" = [
+# factory start 免 node 托管静态前端。键名随映射改为 factory_console, 模式相对
+# 映射目录 factory-console/。dist/ 为构建产物 (gitignore), 打包时读磁盘。
+"factory_console" = [
     "web/frontend/dist/index.html",
     "web/frontend/dist/assets/*",
 ]

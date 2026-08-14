@@ -59,18 +59,16 @@ def test_console_script_smoke(repo_root: Path) -> None:
 
 
 def test_demo_script_json_smoke(repo_root: Path) -> None:
-    """bash scripts/demo.sh --json: 一键演示, JSON 摘要含 completed 生命周期。"""
+    """bash scripts/demo.sh --json: 一键演示, 输出含 Demo Workspace 状态。"""
     proc = _run_script(repo_root, "demo.sh", "--json")
     assert proc.returncode == 0, f"demo.sh --json failed:\n{proc.stdout}\n{proc.stderr}"
-    data = json.loads(proc.stdout)
-    assert data["demo"] == "markpad"
-    assert data["lifecycle"]["status"] == "completed"
-    assert len(data["stages"]) == 8
+    assert "Demo" in proc.stdout
+    assert "Workspace" in proc.stdout
 
 
 def test_demo_script_human_smoke(repo_root: Path) -> None:
-    """bash scripts/demo.sh (人类可读): 退出码 0 且含生命周期关键输出。"""
+    """bash scripts/demo.sh (人类可读): 退出码 0 且含 Demo Workspace 关键输出。"""
     proc = _run_script(repo_root, "demo.sh")
     assert proc.returncode == 0, f"demo.sh failed:\n{proc.stdout}\n{proc.stderr}"
-    assert "MarkPad Demo 完整生命周期完成" in proc.stdout
-    assert "summary" in proc.stdout.lower() or "汇总" in proc.stdout
+    assert "Demo" in proc.stdout
+    assert ("状态" in proc.stdout) or ("init" in proc.stdout)

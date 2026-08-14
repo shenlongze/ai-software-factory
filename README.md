@@ -1,268 +1,113 @@
 # AI Software Factory
 
-> **AI 工作生命周期管理平台** — 管理 AI 员工 (Agent)、组织软件生产流程 (Workflow)、连接各种 Agent Runtime 与 LLM Provider, 让一个软件项目从 Idea 到交付/运维的**全生命周期**处于可管理、可观察、可验证、可积累的状态。
->
-> 不是聊天机器人, 不是单个 Agent, 不是代码生成工具 — 是**管理 Agent 的工厂**。
-> 类比: Jira (任务) + Jenkins (流程) + K8s Dashboard (可观测) + Confluence (知识) + CI/CD (验证) 的 AI 时代对应。
+> **治理驱动的 AI 软件生产平台 —— 管理你的 AI 员工, 而不是用 AI 聊天。**
+
+让 AI 像软件公司员工一样工作: 理解需求 → 规划 → 开发 → 受治理 → 可审计。
+
+`v1.0.0-rc1` · CLI First · 本地部署 · 全事件审计
 
 ---
 
-## 一句话定位 (One-liner)
+## 它解决什么问题
 
-> **AI Software Factory is not a code generator. It is an AI-driven software production system.**
->
-> **AI Software Factory 不是代码生成器, 而是一套 AI 驱动的软件生产系统。** 管理 AI 员工 (Agent)、组织软件生产流程 (Workflow)、连接各种 Agent Runtime 与 LLM Provider, 让软件项目从 Idea 到交付/运维的**全生命周期**处于可管理、可观察、可验证、可积累的状态。
+传统的 AI 编码工具是"一问一答": 你发一个 prompt, 它吐一段代码, 然后呢?
 
-## Architecture — 四层, 单向依赖
+| 痛点 | 后果 |
+|---|---|
+| **不可控** | AI 说"完成了"就完成了, 没有独立验证, 也没有人能解释它为什么这么做 |
+| **无审计** | 哪个模型干了什么、花了多少钱、谁批准的 —— 全部无从追溯 |
+| **上下文丢失** | 会话一关就"失忆", 项目背景、历史决策、进行中状态全部归零 |
+| **成本失控** | 所有任务都交给同一个大模型, 账单悄悄膨胀, 无人知晓 |
+| **无法组织** | 多任务、多项目、多人并行时, 没有流程、没有分工、没有记录 |
 
-```
-┌─ Human Console ──────────────────────────────────────────────┐
-│ factory-console/  Web UI 人类审核台 (React 7 页 + FastAPI)    │
-│                    8 只读 GET 路由 · 零写 API                  │
-└───────────────────────────────┬──────────────────────────────┘
-                                │ 只读聚合 (零写 API)
-┌───────────────────────────────▼──────────────────────────────┐
-│ Intelligence    intelligence/ 决策 · 推荐 · 经验               │
-│                 (只复用 events + product, 只读)               │
-└───────────────────────────────┬──────────────────────────────┘
-                                │ 事件 + 只读复用
-┌───────────────────────────────▼──────────────────────────────┐
-│ Extension       understanding/ product/ providers/ git/       │
-│                 change/ changeflow/  (声明式注册, 零 Core 破坏)│
-└───────────────────────────────┬──────────────────────────────┘
-                                │ 只 import events (Core)
-┌───────────────────────────────▼──────────────────────────────┐
-│ Core (冻结)     events/ tasks/ workflows/ agents/ execution/  │
-│                 runtime/ recovery/ validation/ metrics/ cli/  │
-│                 — 零领域依赖, 新能力一律走 Extension           │
-└──────────────────────────────────────────────────────────────┘
-```
+**AI Software Factory 把 AI 从"聊天机器人"变成"员工"**: 有岗位、有职责、有流程、
+有审批、有审计、有成本账单。你不是在跟 AI 对话 —— 你是在管理一支 AI 团队。
 
-> 依赖单向向下: 上层只读复用下层; 事件是唯一事实源 (append-only SQLite)。详见 [docs/project-structure.md](./docs/project-structure.md)。
+## 快速开始
 
-## Lifecycle — 一个想法如何变成产品
+### 1. 安装 (2 分钟)
 
-```
-Idea → Research → PRD → Approval → UI → Architecture → Task → Development → Experience
-   ▲                                                                               │
-   └─────────────────────── 经验回流, 指导下一次选择 ───────────────────────────────┘
-```
-
-> MarkPad 真实项目即走通此链路 (34 事件 / 6 Artifacts / 2 经验 / 2 次人工审批, Core 零修改): [docs/real-world-validation.md](./docs/real-world-validation.md)。完整 12 阶段模型见 [docs/lifecycle-model.md](./docs/lifecycle-model.md)。
-
-## Demo — 一键演示
+> 当前以源码安装为准, 一键脚本自动完成环境搭建; `pip install ai-software-factory` 即将支持。
 
 ```bash
-bash scripts/setup.sh   # 1. 环境: venv + editable install + 冒烟 (幂等, 可重复执行)
-bash scripts/demo.sh    # 2. 一键跑 MarkPad 完整生命周期 (等价于 factory demo markpad)
+git clone https://github.com/shenlongze/ai-software-factory.git
+cd ai-software-factory
+bash scripts/setup.sh        # 自动: Python 3.12+ venv + 安装 + 冒烟验证 (幂等, 可重复执行)
 ```
 
-> `scripts/demo.sh` 是脚本化终端演示 (8 阶段日志 + 汇总), 支持 `--json` (供管道消费) 与 `--keep-root` (保留临时工厂根), 可用 `script` / asciinema 录制为 terminal recording 展示。分步手工演示见下文 [Demo — 真实项目验证 (MarkPad)](#demo--真实项目验证-markpad)。
-
-## Feature Matrix — 已实现能力 (Reality Audit 校准后)
-
-| 能力域 | 状态 | 落地 |
-|:-------|:----:|:-----|
-| **Lifecycle** | ✅ 已实现 | 12 阶段模型; 6–9 完整实现, 1–5 由 product 模块承接 (501 测试), 10–11 部分支撑 (Phase 9) |
-| **Decision Intelligence** | ✅ 已实现 | 决策链 + Evidence 六来源强制 + Risk R1–R5 + Approval 状态机绑定 (Phase 9c / 10A) |
-| **Provider Intelligence** | ✅ 已实现 | 四因素可解释推荐 0.35/0.30/0.20/0.15 + Cost/Usage/Performance 聚合 (Phase 8) |
-| **Human Console** | ✅ 已实现 (管理台) | 7 只读页面 Web UI + 8 只读 API + Simple/Expert 双模式 (工作台视图未实现) |
-| **Experience Loop** | ✅ 已实现 | 五域经验 + 新鲜度衰减 (半衰期 30 天) + 推荐回馈, 影响但不支配 (Phase 10A-4) |
-| **组织建模 (org)** | ✅ 已实现 | Company→Department→Role→Employee + Authority + Knowledge (16A, 192 测试) |
-| **单 Agent 执行 (exec)** | ✅ 已实现 (工程) | Context/Ranking/Progressive/Budget/MultiRun/Evaluator — 生产闭环 0% (模型瓶颈, 见审计附录 H) |
-| **组织-执行连接 / 多角色 / 工作台 / 多行业** | ❌ 未实现 | 校准路线 Sprint 7/8/9/12 (见 [roadmap.md](./docs/roadmap.md)) |
-
----
-
-## Vision — 为什么存在
-
-> **"AI Software Factory is not a tool that generates software. It is a system that grows with capabilities and helps humans accomplish goals."**
->
-> **AI Software Factory 不是生成软件的工具, 而是一个能力持续生长的系统, 帮助人类达成目标。**
-
-软件生产正在从"靠人盯着 AI 干活"升级为工厂化运转。Factory 的存在不是为了替人写代码 —— 写代码只是中间产物。它的对象是**工作的生命周期**: 一个想法如何被调研、被写成需求、被批准、被架构、被开发、被验证、被运维, 以及这些过程如何沉淀为下一次做得更好的经验。
-
-一句话: **传统 AI Coding 是"问答", Factory 是"生产线 + 记忆 + 成长"。**
-
-## Problem — 传统 AI Coding 的局限
-
-传统 AI Coding 是 `User → Prompt → Code` 的单次问答模式。它把 AI 当成一个"即用即走"的代码生成器, 这带来五个根本局限:
-
-| # | 局限 | 后果 |
-|:-:|:-----|:-----|
-| 1 | **无长期记忆** | 每次会话从零开始: 项目上下文、历史决策、进行中状态全部丢失, 换个会话就"失忆", 工作无法延续 |
-| 2 | **无经验积累** | 成功、失败、用户反馈都不会沉淀: 同样的坑反复踩, 团队无法从历史中变强, 能力永远停在原地 |
-| 3 | **无能力评估** | 不知道该用哪个模型/Agent 做哪类任务: 选择全凭感觉, 性能、成本、匹配度不可见、不可比较 |
-| 4 | **无决策透明** | AI 只给结果不给解释: 为什么这么做不可追溯、不可审计, "完成了"是自报告, 没有独立验证 |
-| 5 | **无法组织生产** | 单点问答支撑不了多角色协作、多项目并行、长流程编排与人工审核 —— 更不用说把生产经验沉淀为资产 |
-
-结果是: AI 能力越强, 人越累 —— 因为所有上下文、判断、验收、记忆都压在人身上。
-
-## Solution — 从"问答"到"持续成长的生命周期系统"
-
-Factory 把软件生产组织成一条**可管理的生命周期链**, 并把每个环节的产物变成下一环节的证据:
-
-```
-Idea → Research → PRD → Approval → Architecture → Development → Testing → Operation → Experience
-   ▲                                                                                        │
-   └────────────────────────── 经验回流, 指导下一次选择 ──────────────────────────────────────┘
-```
-
-(浓缩自 12 阶段生命周期模型, 见 [docs/lifecycle-model.md](./docs/lifecycle-model.md))
-
-- **Idea / Research / PRD** — Product Intelligence (Phase 9) 承接: 想法 → 调研 → 结构化 PRD, 产物作为证据进入事件库
-- **Approval** — 产品决策的闸口在人: Approval 状态机 + Decision 链 + 人类审核台 (Phase 9c / 11), AI 只产出候选与建议
-- **Architecture** — 架构方案与任务拆解作为候选产物提交, 人工确认后进入开发
-- **Development / Testing** — 工厂的核心执行域: 任务状态机、声明式工作流、角色化 Agent、Runtime 执行、L1–L4 独立验证、checkpoint 恢复, 全程事件可追溯
-- **Operation** — 发布工作流 + 生产过程可观测 (事件流/Dashboard/指标); 部署执行器与运维闭环规划中
-- **Experience** — 成功/失败/反馈全部记录为经验 (Phase 10A), 经验经推荐引擎**影响但不支配**未来的 Provider/Agent/Workflow 选择
-
-三个关键性质, 使它与"问答式 AI Coding"根本不同:
-
-1. **任意阶段接入** — 项目带任何已有状态进入 (只有一个想法 / 已有代码 / 开发中 / 生产), 从当前节点继续推进, 而不是重建
-2. **能力持续生长** — 新能力以 Extension 声明式注册 (新 Skill / MCP / Runtime / Provider / 工作流), 零核心破坏, 系统越用越强
-3. **经验是资产** — 失败记录不是污点而是最贵的工程资产, 与成功记录一样被沉淀、被衰减、被复用
-
-## Core Philosophy — 四条核心理念
-
-### ① Professional does professional work — 专业的人做专业的事
-
-同一平台上, 架构师用擅长推理的模型、开发者用擅长写码的 Agent、测试员用擅长验证的 Runtime —— 平台按 **Capability / Cost / Performance / Experience** 四因素 (权重 0.35 / 0.30 / 0.20 / 0.15) 为每个任务选出**最合适的执行资源** (Provider / Agent / Skill / Workflow), 而不是让一个模型干所有事。选谁、为什么选它, 都有结构化解释, 任何人都能复算。
-
-### ② Human in the loop — 人在环上, 决策权在人
-
-**AI 负责分析、推荐、解释; 人负责决策、批准、负责。** 平台"只推荐不自动执行" —— 高风险推荐必须经人工审批 (Approval 状态机), 产品冲突、架构变更、Scope 扩展三类挡板命中即暂停上报。Human Console (Web UI 人类审核台) 给人看状态、看推荐理由、批准或驳回。自动化可以提速, 但**不能静默改变产品方向**。
-
-### ③ Evidence driven — 一切以证据为准
-
-**Agent 自报告 ≠ 完成。** 交付是否完成由独立的 Validation 引擎 (L1–L4) 判定, 结论 = PASS/FAIL/SKIP/ERROR + 证据链; 每个推荐与决策都附 Evidence 链 (六来源: artifact / event / experience / external_data / human_input / provider_output)、Confidence 置信度与逐条 Reasoning 解释。事实优先级最高, AI 输出是建议不是依据 —— 可追溯、可审计、可证伪。
-
-### ④ Experience accumulation — 成功、失败、反馈都成经验
-
-每次执行的成败、用户的反馈、决策的后果, 都以经验记录沉淀 (五域: provider / agent / workflow / project / decision, 含反事实的失败样本)。经验带**新鲜度衰减** (半衰期 30 天, 被验证的经验保持有效), 经推荐引擎影响未来的选择, 但**绝不支配** (冷启动给中性分, 不惩罚新候选)。工厂不是用过即弃的工具, 而是越用越懂你的系统。
-
----
-
-## Current Status — Sprint 5 完成 (Reality Audit 校准后)
-
-> **当前现实 (2026-08-08)**: 软件生产生命周期管理平台 + 组织建模 + 单 Agent 执行工程。
-> 详见 [Reality Audit v1.0](./docs/audit/architecture-reality-audit.md) (定位: 非 AI Company OS 完整形态;
-> Vision 达成度约 25%; 创建/管理 ✅ / 运行 ❌ / 进化 ❌ / 多行业 ❌ / 工作台 ❌)。
-
-- **交付**: Phase 1–16A + Phase A (exec) + Sprint 3/4/5, **147 次提交** (docs 61 / test 45 / feat 28 / fix 13)
-  - Core (冻结): 事件(158)/任务/工作流/Agent/执行/Runtime/恢复/编排/验证/指标/Dashboard/CLI — 零领域依赖
-  - Extension: Git / Change / Understanding / Provider / Product (产品链路 501 测试) — 声明式注册, 不修改 Core
-  - Intelligence: Decision / Recommendation / Experience — 四因素可解释推荐 + 经验回馈
-  - Human Console: Web UI 人类审核台 (7 只读页面 + 8 只读 API)
-  - **factory-org** (16A): Company→Department→Role→Employee + Authority + Knowledge (192 测试)
-  - **factory-exec** (Phase A + Sprint 3/4/5): Context/Ranking/Progressive/Budget/Experience/MultiRun/
-    Evaluator/Capability/Sandbox/DeveloperAgent — 12353 行执行工程 (1019 测试)
-- **真实项目验证**: MarkPad (Flutter/Dart 编辑器) 完整生命周期闭环 — Idea→Research→PRD→审批→UI→审批→Architecture→Task→Experience, 34 事件 / 6 Artifacts / 2 经验 / 人工审批 2 次, Core 零修改 (见 [docs/real-world-validation.md](./docs/real-world-validation.md))
-- **测试**: **5493 pytest 全绿** (285 文件; exec 1019 / providers 569 / product 501 / intelligence 509 / change 196 / org 192 …) + **92 Vitest** (Web UI) + 116 cargo (Desktop)
-- **Benchmark 现状 (诚实)**: exec 真实 LLM 链路 (OpenAI 兼容适配器 → DeepSeek) 已验证可调用, 但 **25/27 空响应 (reasoning 耗尽) → Bug Fix 0%**, 生产闭环未跑通; Ollama qwen3:8b 本地模型确认可行 (未拉取)。详见 [Sprint 5 Benchmark 报告](./docs/validation/sprint5-t55-benchmark-report.md) 与审计附录 H。
-- **决策记录**: ADR-0001–0035 (docs/adr/), 设计文档 185 份 (含 22+ 份 DESIGN ONLY 蓝图, 见 [docs/status.md](./docs/status.md))
-- **规模**: CLI 91 命令 / 24 组 · Dashboard 16 视图 · 158 事件 (28 前缀) · 12 阶段生命周期中 6–9 完整实现, 1–5 由 product 模块承接 (已实现), 10–11 部分支撑
-
-## Architecture — 三区 + Human Layer
-
-```
-┌─ Human Layer ──────────────────────────────────────────────┐
-│ factory-console/  Web UI 人类审核台 (React + FastAPI)      │
-│   7 页面 · 8 只读 GET 路由 · Simple/Expert 切换             │
-└───────────────────────────┬───────────────────────────────┘
-                            │ 只读聚合 (零写 API)
-┌───────────────────────────▼───────────────────────────────┐
-│ Intelligence   intelligence/ 决策 · 推荐 · 经验            │
-│               (只复用 events + product, 只读)               │
-└───────────────────────────┬───────────────────────────────┘
-                            │ 事件 + 只读复用
-┌───────────────────────────▼───────────────────────────────┐
-│ Extension      understanding/ product/ providers/ git/     │
-│                change/ changeflow/  (只 import events)     │
-└───────────────────────────┬───────────────────────────────┘
-                            │ 只 import events (Core)
-┌───────────────────────────▼───────────────────────────────┐
-│ Core (冻结)    events/ tasks/ workflows/ agents/           │
-│                assignment/ execution/ runtime/ recovery/   │
-│                orchestration/ validation/ metrics/         │
-│                dashboard/ project/ workspace/ runtimes/    │
-│                cli/ — 零领域依赖                            │
-└────────────────────────────────────────────────────────────┘
-```
-
-- 统一抽象: `Agent (角色) ── Skills (能力) ── MCP (工具) ── Runtime (执行) ── Provider (LLM)` — 上层编排不关心底层 AI 是谁, 换工具 = 改配置
-- 事件是唯一事实源 (append-only SQLite, 可回放重建状态); 恢复 = checkpoint + 事件回放, 断点续跑零丢失
-- **Core 冻结**: 新能力一律走 Extension 声明式注册, 零核心破坏 (见 [docs/core-boundary.md](./docs/core-boundary.md) / [docs/extension-model.md](./docs/extension-model.md))
-- 设计原则 9 条 (事件唯一事实源 / 一切可观测 / AI 可替换 / 人类审核台 / 三层分离 / 恢复=回放 / 增量演进零破坏 / Git 可选 / 任意阶段接入): [docs/design-principles.md](./docs/design-principles.md)
-- 目录结构: [docs/project-structure.md](./docs/project-structure.md) · 配置模型: [docs/configuration-model.md](./docs/configuration-model.md) · 质量报告: [docs/quality-report.md](./docs/quality-report.md)
-
-## Quick Start
+### 2. 配置你的 LLM (1 分钟)
 
 ```bash
-# 1. 安装 (Python 3.12+)
-python3.12 -m venv .venv
-.venv/bin/pip install -e .
-
-# 2. 初始化工厂 (目录骨架 + 事件库, 幂等)
-.venv/bin/factory init
-
-# 3. 定义任务
-.venv/bin/factory task create --id T-001 --title "实现登录页"
-
-# 4. 自动执行完整链路 (工作流 → 匹配 Agent → 执行 → 验证)
-.venv/bin/factory workflow run T-001 --auto
-
-# 5. 观察工厂 (Dashboard 20 视图)
-.venv/bin/factory dashboard --view all
+export DEEPSEEK_API_KEY=sk-xxxx...                              # 你的 DeepSeek API Key
+factory init --non-interactive --provider deepseek              # 生成配置
+factory doctor                                                  # 诊断环境, 全部 PASS 即可开始
 ```
 
-> 首次自动执行前需先注册 Agent 与 Runtime (`factory agent add` / `factory runtime add`), 完整命令参考: `factory --help`、[docs/vision.md](./docs/vision.md) 与 [docs/use-cases.md](./docs/use-cases.md)。
+> Key 只以环境变量引用写入配置 (`env:DEEPSEEK_API_KEY`), **不落盘、不写明文**。
+> 支持 provider: `deepseek` / `openai` / `anthropic` / `ollama`。
 
-## Demo — 真实项目验证 (MarkPad)
-
-用内置示例项目跑通"任务 → 工作流 → 分配 → 执行 → 验证"完整链路:
+### 3. 5 分钟体验 (核心)
 
 ```bash
-# 1. 查看 Factory 认识的项目
-factory project list
-factory project show markpad
+factory start                                                   # 启动服务 (backend + frontend)
+# 浏览器打开 http://localhost:8011, 看 AI 员工工作
 
-# 2. 注册 MarkPad 角色与 echo runtime (冒烟)
-factory agent add --id flutter-developer --role developer --skills flutter,dart
-factory agent add --id tester            --role test-engineer --skills testing,dart
-factory agent add --id architect         --role product-manager --skills architecture,flutter
-factory runtime add --id echo --type mock
-
-# 3. 创建 bug fix 任务并跑完整链路
-factory task create --id T-101 --title "修复编辑器光标位置错乱" --project markpad \
-  --type bug --workflow bug-fix
-factory workflow run --auto T-101
-
-# 4. 变更驱动工作流: 提交关联代码 → L4 验证 → 四规则评估 → 触发 release
-factory change validate T-101
-factory change evaluate T-101
+# 或全 CLI (无需 UI, 一样完整):
+factory project create --repo-path ~/my-app                     # 接入你的已有项目
+factory project list                                            # 查看已注册项目
+factory run --project ~/my-app --task T-001 --agent backend-1   # 派第一个任务
+factory run-status --id <结果ID>                                # 查询执行结果
 ```
 
-> 生产环境将 echo 换成 hermes-runtime (`runtime add --id hermes-runtime --type agent`,
-> `FACTORY_HERMES_CMD` 指向 hermes CLI) 即接入真实 LLM 执行。完整用法见
-> [examples/markpad/README.md](./examples/markpad/README.md)。
-> 真实项目全生命周期验证 (审批/决策/推荐/经验) 见 [docs/real-world-validation.md](./docs/real-world-validation.md)。
+> `--task T-001` 是任务锚点 ID, 可换成任意编号; 详细目标可用 `--objective` 补充, 验收标准用 `--requirement` 指定。
 
-## Contribution — 贡献指南
+### 你会看到什么
 
-欢迎贡献! 三条铁律:
+- ✅ **真实 LLM 执行** — 不是 demo 数据, 是真实模型在工作
+- ✅ **审批门** — AI 产出等你批准, 决策权在人
+- ✅ **全审计** — 谁 / 什么 / 何时 / 哪个模型 / 多少钱, 全程可查
 
-1. **不修改 Core 行为** — Core 是冻结的 8 项通用原语。新能力先自问: 通用原语还是领域能力?
-   领域能力一律走 Extension 声明式注册 (新 Skill / MCP / Runtime / Provider / 工作流), 判定流程见 [docs/core-boundary.md](./docs/core-boundary.md) §4。
-2. **测试先行, 只增不减** — 每个变更必须带测试 (pytest / Vitest); 全量跑通: `pytest` (5493) + `cd factory-console/web/frontend && npx vitest run` (92); 基线用例数只增不减。
-3. **依赖单向向下** — 新代码禁止反向依赖与循环 import; 跨包引用一律函数内延迟导入; 领域包不得进入冻结原语层的顶层 import。
+### 零污染演示 (可选)
 
-流程: Fork → 分支 (`feature/<phase>-<描述>`) → 变更 + 测试 → 提交信息含阶段号 (如 `Phase 13: ... + pytest 计数`) → PR。设计决策先写 ADR (docs/adr/), 新模型先补设计文档 (docs/), 再写代码。
+不想碰自己的项目? 用隔离的 Demo Workspace 30 秒看效果:
 
-## 应用场景
+```bash
+factory demo init       # 创建隔离演示环境 (~/.factory-demo, 不碰你的数据)
+factory demo status     # 查看演示状态
+factory demo reset      # 清空重建
+```
 
-一个人拥有 AI 软件团队 · 创业团队快速验证产品 · 企业研发部门管理多个 AI Agent · 外包团队自动化项目生命周期 · AI Agent 平台基础设施 — 见 **[docs/use-cases.md](./docs/use-cases.md)** (5 个场景: 痛点 / Factory 如何解决 / 示例流程)。
+## 能力一览
+
+| 能力 | 说明 |
+|---|---|
+| ✅ **多模型路由** | DeepSeek / OpenAI / Claude / Ollama, 按 能力 / 成本 / 性能 为每个任务选最合适的模型 |
+| ✅ **真实代码执行** | 沙箱内真实执行 + 独立验证 — 自报告 ≠ 完成 |
+| ✅ **人工审批** | 高风险动作必须人工批准, 平台只推荐、不静默执行 |
+| ✅ **全事件审计** | append-only 事件库, 一切操作可追溯、可回放、可对账 |
+| ✅ **项目生命周期** | 项目从接入、任务派发到交付全程可管理 |
+| ✅ **CLI First** | 无 UI 也完整可用, Web 管理台用于观察与审批 |
+
+## 架构 (一句话)
+
+> 治理底座 + 可插拔能力: 事件是唯一事实源, 新能力以扩展注册, 零核心破坏。
+> 技术细节见 [docs/architecture/](./docs/architecture/)。
+
+## 开发者
+
+- 源码构建 / 测试 / 贡献指南: [docs/development.md](./docs/development.md)
+- 生命周期模型: [docs/lifecycle-model.md](./docs/lifecycle-model.md)
+- 愿景与理念: [docs/vision.md](./docs/vision.md)
+- 用户指南: [docs/user-guide.md](./docs/user-guide.md) · 应用场景: [docs/use-cases.md](./docs/use-cases.md)
+- 测试基线: **8148 pytest 全绿** (v1.0.0-rc1)
+
+## 企业 / 商业
+
+需要私有化部署、审计合规、企业治理版? 欢迎通过 GitHub 联系:
+
+- Issues: <https://github.com/shenlongze/ai-software-factory/issues>
+- 仓库: <https://github.com/shenlongze/ai-software-factory>
 
 ---
 
-*文档: [docs/vision.md](./docs/vision.md) (愿景) · [docs/design-principles.md](./docs/design-principles.md) (9 原则) · [docs/lifecycle-model.md](./docs/lifecycle-model.md) (12 阶段生命周期) · [docs/capability-architecture.md](./docs/capability-architecture.md) (能力架构) · [docs/roadmap.md](./docs/roadmap.md) (路线图) · [docs/use-cases.md](./docs/use-cases.md) (应用场景) · [docs/project-structure.md](./docs/project-structure.md) (项目结构) · [docs/configuration-model.md](./docs/configuration-model.md) (配置模型) · [docs/quality-report.md](./docs/quality-report.md) (质量报告) · [docs/adr/](./docs/adr/) (决策记录)*
+*v1.0.0-rc1 · 治理驱动的 AI 软件生产平台 —— 管理你的 AI 员工, 而不是用 AI 聊天。*

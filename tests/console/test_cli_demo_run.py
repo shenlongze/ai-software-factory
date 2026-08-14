@@ -228,7 +228,12 @@ class TestDemoRunHappyPath:
         assert "status      success" in out
         assert "artifact    patch" in out
         assert "1234 tokens" in out
-        assert "✔ 完成!" in out
+        # S10-044 Task 002: 成功摘要 — 用户知道结果在哪 + 下一步 (验收 A/B/C)
+        assert "✔ 任务: 给 main.py 加一个加法函数 已完成" in out
+        assert "status=success" in out
+        assert "result-id   EXS-def456" in out
+        assert "factory run-status --id EXS-def456" in out
+        assert "factory audit" in out
         # 默认清理: 自动目录已删
         assert not Path(project_dir).exists()
 
@@ -454,6 +459,81 @@ class TestHelpers:
         assert _cli._demo_format_usage(None) == "-"
         assert _cli._demo_format_usage("n/a") == "n/a"
         assert _cli._demo_format_usage({}) == "-"
+
+
+# ------------------------------------------------------------------ S10-044 Task 002: 成功结果展示 (结果在哪 + 下一步)
+
+
+class TestSuccessResultDisplay:
+    """验收 A/B/C (S10-044 Task 002): demo run 成功 → 输出含 result-id (EXS-...)
+    + 下一步命令 (factory run-status --id / audit / 再次 demo run)。纯展示层 —
+    FakeExecCli 注入 _OK_RESULT, 零真实执行, 断言仅限输出文本。"""
+
+    def test_success_output_has_result_id_and_next_steps(
+        self, tmp_path, isolated_home, monkeypatch, capsys
+    ):
+        """验收 A/B/C: 成功输出含任务摘要 + result-id (EXS-...) + 下一步命令。"""
+        cli = make_cli(tmp_path)
+        fake = FakeExecCli()  # _OK_RESULT: result_id=EXS-def456, status=success
+        monkeypatch.setattr(cli, "_proxy_exec_cli", lambda: fake)
+        rc = run(cli, "demo", "run", "给 main.py 加 hello")
+        assert rc == 0
+        out = capsys.readouterr().out
+        # 任务摘要 (status + 用时)
+        assert "✔ 任务: 给 main.py 加 hello 已完成" in out
+        assert "status=success" in out
+        # 验收 A: result-id 突出 (EXS-... 结果 ID, 用户后续可查)
+        assert "result-id   EXS-def456" in out
+        # 验收 B: 下一步命令 — 查看报告
+        assert "factory run-status --id EXS-def456" in out
+        # 验收 C: audit 提示 + demo 场景再次体验
+        assert "factory audit" in out
+        assert "factory demo run" in out
+
+    def test_success_output_no_cleanup_shows_full_artifacts_dir(
+        self, tmp_path, isolated_home, monkeypatch, capsys
+    ):
+        """--no-cleanup 保留临时目录 → 成功摘要补 完整产物: <project_dir> (产物位置)。"""
+        cli = make_cli(tmp_path)
+        fake = FakeExecCli()
+        monkeypatch.setattr(cli, "_proxy_exec_cli", lambda: fake)
+        rc = run(cli, "demo", "run", "hello", "--no-cleanup")
+        assert rc == 0
+        project_dir = Path(fake.calls[0]["args"].project)
+        out = capsys.readouterr().out
+        assert f"完整产物: {project_dir}" in out
+        _cli._demo_rmtree_tmp(project_dir)  # 测试自清理 (护栏路径, 同实现)
+
+    def test_success_output_default_cleanup_no_full_artifacts_line(
+        self, tmp_path, isolated_home, monkeypatch, capsys
+    ):
+        """默认清理 (临时目录删除) → 不打印 完整产物 行 (避免指向已删目录)。"""
+        cli = make_cli(tmp_path)
+        fake = FakeExecCli()
+        monkeypatch.setattr(cli, "_proxy_exec_cli", lambda: fake)
+        rc = run(cli, "demo", "run", "hello")
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "完整产物:" not in out
+        assert "已清理临时目录" in out
+
+    def test_success_output_missing_result_id_fail_safe(
+        self, tmp_path, isolated_home, monkeypatch, capsys
+    ):
+        """失败安全: result 无 result_id → 跳过 result-id 行与 run-status 提示,
+        其余下一步 (audit / 再次体验) 照常, rc 仍 0。"""
+        cli = make_cli(tmp_path)
+        result = dict(_OK_RESULT)
+        del result["result_id"]
+        fake = FakeExecCli(result=result)
+        monkeypatch.setattr(cli, "_proxy_exec_cli", lambda: fake)
+        rc = run(cli, "demo", "run", "hello")
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "result-id" not in out
+        assert "factory run-status" not in out
+        assert "factory audit" in out
+        assert "factory demo run" in out
 
 
 # ------------------------------------------------------------------ S10-044 Task 001: 统一失败输出 (❌ Failed + Reason + Solution 到 stdout)

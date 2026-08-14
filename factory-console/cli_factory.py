@@ -1972,7 +1972,8 @@ class FactoryCLI:
         4. 执行:           exec_cli.cmd_exec_run(root=demo root, args=装配
                            Namespace) — 复用 run_cmd 同路径; provider 缺省 →
                            Router/ControlPlane 决策 (exec._default_provider_id)
-        5. artifact 展示:  status + artifact 清单 + usage (从 result 提取)
+        5. 成功摘要:        status + artifact 清单 + usage + result-id + 下一步命令
+                           (S10-044 Task 002 — 用户知道结果在哪/下一步); 失败 → 统一格式
         6. 清理:           默认删临时目录 (护栏 _demo_rmtree_tmp); --no-cleanup
                            保留并打印路径
         失败安全: 缺 objective → rc 2; 目录创建失败/exec 异常/执行失败 → 明确
@@ -2040,7 +2041,7 @@ class FactoryCLI:
             print(_format_failure(error), file=sys.stdout)
             self._demo_run_cleanup(project_dir, auto_created, args)
             return int(result.get("exit_code", 1) or 1)
-        # 5. artifact 展示 (从 result 提取 status/artifact/usage)
+        # 5. 成功展示: status/artifact/usage → 摘要 + result-id + 下一步 (S10-044 Task 002)
         self._demo_print_result(result)
         exit_code = int(result.get("exit_code", 0) or 0)
         if exit_code != 0:  # exec 契约: ok=True 但 exit_code=1 → 执行本身失败
@@ -2049,7 +2050,13 @@ class FactoryCLI:
             print(_format_failure(error), file=sys.stdout)
             self._demo_run_cleanup(project_dir, auto_created, args)
             return exit_code
-        print(f"  ✔ 完成! 用时 {elapsed:.1f} 秒")
+        self._demo_print_success_summary(
+            result,
+            objective=objective,
+            elapsed=elapsed,
+            project_dir=project_dir,
+            keep_dir=getattr(args, "no_cleanup", False) and auto_created,
+        )
         # 6. 清理 (默认删临时目录; --no-cleanup 保留并打印路径)
         self._demo_run_cleanup(project_dir, auto_created, args)
         return 0
@@ -2065,6 +2072,37 @@ class FactoryCLI:
                     f"{artifact.get('path', '')}"
                 )
         print(f"  usage       {_demo_format_usage(result.get('usage'))}")
+
+    def _demo_print_success_summary(
+        self,
+        result: dict,
+        *,
+        objective: str,
+        elapsed: float,
+        project_dir: Path,
+        keep_dir: bool,
+    ) -> None:
+        """demo run 成功摘要 (S10-044 Task 002 — 纯展示层, 在 _demo_print_result 后调用):
+        用户知道结果在哪 + 下一步看什么。不新增任何执行逻辑。
+        - 任务摘要:  ✔ 任务: <objective> 已完成 (status=<status>, 用时 X 秒)
+        - 结果 ID:   result-id <EXS-...> — 后续 factory run-status --id 可查
+        - 产物位置:  patch 路径已在 artifact 行展示; --no-cleanup 保留临时目录
+                    → 补 完整产物: <project_dir>
+        - 下一步:    run-status --id / audit / 再次 demo run (失败安全: 无
+                    result_id 时跳过 result-id 行与 run-status 提示, 其余照常)。
+        """
+        status = str(result.get("status") or "success")
+        print(f"  ✔ 任务: {objective} 已完成 (status={status}, 用时 {elapsed:.1f} 秒)")
+        result_id = str(result.get("result_id") or "")
+        if result_id:
+            print(f"  result-id   {result_id}")
+        if keep_dir:
+            print(f"  完整产物: {project_dir}")
+        print("  下一步:")
+        if result_id:
+            print(f"    - 查看报告: factory run-status --id {result_id}")
+        print("    - 查看审计: factory audit")
+        print("    - 再次体验: factory demo run '<新目标>'")
 
     def _demo_run_cleanup(
         self, project_dir: Path, auto_created: bool, args: argparse.Namespace

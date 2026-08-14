@@ -13,9 +13,11 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 
 import pytest
 
+from events.models import format_timestamp
 from providers.costs import ProviderCostModel
 from providers.models import ProviderDefinition
 from providers.store import ProviderStore
@@ -54,7 +56,7 @@ def make_usage(
         latency_ms=latency_ms,
         success=success,
         error=error,
-        recorded_at=recorded_at or "2026-08-06T10:00:00.000000Z",
+        recorded_at=recorded_at or format_timestamp(datetime.now(timezone.utc)),
     )
 
 

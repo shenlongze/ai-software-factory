@@ -13,6 +13,9 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
+from events.models import format_timestamp
 from providers.usage import (
     ProviderPerformanceStats,
     ProviderUsage,
@@ -32,7 +35,7 @@ def make_usage(
     success: bool = True,
     prompt_tokens: int = 10,
     completion_tokens: int = 20,
-    recorded_at: str = "2026-08-06T10:00:00.000000Z",
+    recorded_at: str | None = None,
 ) -> ProviderUsage:
     return ProviderUsage(
         provider_id=provider_id,
@@ -43,7 +46,7 @@ def make_usage(
         success=success,
         prompt_tokens=prompt_tokens,
         completion_tokens=completion_tokens,
-        recorded_at=recorded_at,
+        recorded_at=recorded_at or format_timestamp(datetime.now(timezone.utc)),
     )
 
 

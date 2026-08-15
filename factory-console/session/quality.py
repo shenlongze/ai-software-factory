@@ -103,10 +103,77 @@ class Validator:
 
     mock 默认 (第一版, 不绑语言): task_result.success 且 artifact 存在 → PASS
     (tests_total=1, passed=1); 否则 → FAIL + errors。
-    command 接口: command 参数预留 — 未来在沙箱内执行真实测试命令
-    (pytest / flutter test / npm test), 解析退出码/输出; 本版不执行真实命令,
-    仅定义接口 (调用方传 command 仍走 mock 判定, 不隐式执行)。
+    command 接口 (S10-054 真实化): validate_command(project_dir, command) —
+    在项目目录执行真实测试命令 (pytest / flutter test / npm test),
+    解析退出码/输出 → ValidationResult。不绑定具体语言, 调用方指定命令。
     """
+
+    def validate_command(
+        self,
+        project_dir: Path,
+        command: str = "pytest",
+        *,
+        timeout: int = 120,
+        env: Optional[dict[str, str]] = None,
+    ) -> ValidationResult:
+        """真实 command validation (S10-054): 在项目目录执行测试命令。
+
+        - 成功 (exit 0) → PASS (tests_total=1, passed=1)
+        - 失败/超时/异常 → FAIL + errors (含命令输出摘要)
+        失败安全: 命令不存在/超时 → ValidationResult(success=False), 不抛。
+        """
+        import subprocess
+
+        project_dir = Path(project_dir)
+        cmd = command if isinstance(command, (list, tuple)) else command.split()
+        try:
+            proc = subprocess.run(
+                list(cmd),
+                cwd=str(project_dir),
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                env=env,
+            )
+        except FileNotFoundError:
+            return ValidationResult(
+                success=False,
+                tests_total=1,
+                tests_failed=1,
+                errors=[f"命令不存在: {command}"],
+                timestamp=_now_iso(),
+            )
+        except subprocess.TimeoutExpired:
+            return ValidationResult(
+                success=False,
+                tests_total=1,
+                tests_failed=1,
+                errors=[f"命令超时 (> {timeout}s): {command}"],
+                timestamp=_now_iso(),
+            )
+        except Exception as exc:  # noqa: BLE001 — 失败安全
+            return ValidationResult(
+                success=False,
+                tests_total=1,
+                tests_failed=1,
+                errors=[f"验证命令执行失败: {exc}"],
+                timestamp=_now_iso(),
+            )
+        ok = proc.returncode == 0
+        errors: list[str] = []
+        if not ok:
+            tail = (proc.stdout or "")[-300:] or (proc.stderr or "")[-300:]
+            errors.append(f"命令退出码 {proc.returncode}: {command}")
+            if tail.strip():
+                errors.append(tail.strip())
+        return ValidationResult(
+            success=ok,
+            tests_total=1,
+            tests_passed=1 if ok else 0,
+            tests_failed=0 if ok else 1,
+            errors=errors,
+            timestamp=_now_iso(),
+        )
 
     def validate(
         self,

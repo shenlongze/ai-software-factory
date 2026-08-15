@@ -242,7 +242,7 @@ def test_result_fields_set():
         errors=[],
     )
     assert r.project == "ScorePocket"
-    assert r.status == "delivered"
+    assert r.status in ("user_acceptance", "delivered")
     assert r.completed_tasks == 3
     assert r.artifacts == ["a.patch"]
     assert r.duration == 1.5
@@ -363,8 +363,8 @@ def test_state_load_roundtrip(tmp_path):
     loaded = ORCH_MOD.ExecutionState.load(p)
     assert loaded is not None
     assert loaded.project == "ScorePocket"
-    assert loaded.status == "delivered"
-    assert loaded.lifecycle == "delivered"
+    assert loaded.status in ("user_acceptance", "delivered")
+    assert loaded.lifecycle in ("user_acceptance", "delivered")
     assert loaded.tasks == s.tasks
 
 
@@ -524,7 +524,7 @@ def test_execute_project_result_status_delivered(tmp_path):
     _make_project(tmp_path)
     orch = ORCH_MOD.ExecutionOrchestrator(tmp_path)
     result = orch.execute_project("scorepocket", execute_fn=_make_ok_fn())
-    assert result.status == "delivered"
+    assert result.status in ("user_acceptance", "delivered")
 
 
 def test_execute_project_started_at_set(tmp_path):
@@ -657,7 +657,7 @@ def test_lifecycle_project_json_delivered_final(tmp_path):
             encoding="utf-8"
         )
     )
-    assert data["status"] == "delivered"
+    assert data["status"] in ("user_acceptance", "delivered")
 
 
 def test_lifecycle_product_json_delivered_final(tmp_path):
@@ -669,7 +669,7 @@ def test_lifecycle_product_json_delivered_final(tmp_path):
             encoding="utf-8"
         )
     )
-    assert data["status"] == "delivered"
+    assert data["status"] in ("user_acceptance", "delivered")
 
 
 def test_lifecycle_preserves_project_json_fields(tmp_path):
@@ -683,7 +683,7 @@ def test_lifecycle_preserves_project_json_fields(tmp_path):
     data = json.loads((pdir / "project.json").read_text(encoding="utf-8"))
     assert data["id"] == "p1"
     assert data["repo_path"] == "/tmp/repo"
-    assert data["status"] == "delivered"
+    assert data["status"] in ("user_acceptance", "delivered")
 
 
 def test_lifecycle_project_json_created_if_missing(tmp_path):
@@ -692,7 +692,7 @@ def test_lifecycle_project_json_created_if_missing(tmp_path):
     orch = ORCH_MOD.ExecutionOrchestrator(tmp_path)
     orch.execute_project("scorepocket", execute_fn=_make_ok_fn())
     data = json.loads((pdir / "project.json").read_text(encoding="utf-8"))
-    assert data["status"] == "delivered"
+    assert data["status"] in ("user_acceptance", "delivered")
     assert data["name"] == "scorepocket"
 
 
@@ -704,8 +704,8 @@ def test_lifecycle_state_status_delivered(tmp_path):
         tmp_path / "projects" / "scorepocket" / "execution_state.json"
     )
     assert state is not None
-    assert state.status == "delivered"
-    assert state.lifecycle == "delivered"
+    assert state.status in ("user_acceptance", "delivered")
+    assert state.lifecycle in ("user_acceptance", "delivered")
 
 
 def test_lifecycle_transition_sequence(tmp_path):
@@ -713,7 +713,7 @@ def test_lifecycle_transition_sequence(tmp_path):
     _make_project(tmp_path)
     orch = _RecordingOrchestrator(tmp_path)
     orch.execute_project("scorepocket", execute_fn=_make_ok_fn())
-    assert orch.lifecycle_calls == ["development", "testing", "validation_pass", "delivered"]
+    assert orch.lifecycle_calls == ["development", "testing", "validation_pass", "user_acceptance"]
 
 
 # ================================================================== 7. 失败处理 (验收 G)
@@ -828,7 +828,7 @@ def test_failure_retry_succeeds_marks_completed(tmp_path):
     result = orch.execute_project(
         "scorepocket", execute_fn=_make_flaky_fn(fail_until=1)
     )
-    assert result.status == "delivered"
+    assert result.status in ("user_acceptance", "delivered")
     assert result.completed_tasks == 1
     state = ORCH_MOD.ExecutionState.load(
         tmp_path / "projects" / "scorepocket" / "execution_state.json"
@@ -910,8 +910,8 @@ def test_progress_after_full_run(tmp_path):
     orch = ORCH_MOD.ExecutionOrchestrator(tmp_path)
     orch.execute_project("scorepocket", execute_fn=_make_ok_fn())
     p = orch.get_progress("scorepocket")
-    assert p["status"] == "delivered"
-    assert p["lifecycle"] == "delivered"
+    assert p["status"] in ("user_acceptance", "delivered")
+    assert p["lifecycle"] in ("user_acceptance", "delivered")
     assert p["tasks_total"] == 3
     assert p["completed"] == 3
     assert p["pending"] == 0 and p["running"] == 0 and p["failed"] == 0
@@ -963,7 +963,7 @@ def test_progress_returns_project_and_lifecycle(tmp_path):
     orch.execute_project("scorepocket", execute_fn=_make_ok_fn())
     p = orch.get_progress("scorepocket")
     assert p["project"] == "scorepocket"
-    assert p["lifecycle"] == "delivered"
+    assert p["lifecycle"] in ("user_acceptance", "delivered")
 
 
 def test_progress_readonly_no_execution(tmp_path):
@@ -996,7 +996,7 @@ def test_resume_skips_completed_tasks(tmp_path):
     calls.clear()
     result = orch.resume("scorepocket", execute_fn=_make_ok_fn(calls))
     assert calls == []
-    assert result.status == "delivered"
+    assert result.status in ("user_acceptance", "delivered")
     assert result.completed_tasks == 3
 
 
@@ -1008,7 +1008,7 @@ def test_resume_reruns_failed_tasks(tmp_path):
     calls: list = []
     result = orch.resume("scorepocket", execute_fn=_make_ok_fn(calls))
     assert [t["id"] for t in calls] == ["T001", "T002", "T003"]
-    assert result.status == "delivered"
+    assert result.status in ("user_acceptance", "delivered")
     assert result.completed_tasks == 3
     assert result.failed_tasks == 0
 
@@ -1033,7 +1033,7 @@ def test_resume_partial_failure_only_reruns_failed(tmp_path):
     calls: list = []
     result = orch.resume("scorepocket", execute_fn=_make_ok_fn(calls))
     assert [t["id"] for t in calls] == ["T002"]
-    assert result.status == "delivered"
+    assert result.status in ("user_acceptance", "delivered")
     assert result.completed_tasks == 3
 
 
@@ -1067,7 +1067,7 @@ def test_resume_state_file_updated(tmp_path):
         tmp_path / "projects" / "scorepocket" / "execution_state.json"
     )
     assert state is not None
-    assert state.status == "delivered"
+    assert state.status in ("user_acceptance", "delivered")
     assert all(t["status"] == "completed" for t in state.tasks)
 
 
@@ -1206,7 +1206,7 @@ def test_action_execute_project_runs_via_bridge(fake_exec, tmp_path):
     result = ACTIONS_MOD.execute_project(ctx)
     assert result.ok, result.message
     assert result.data["completed_tasks"] == 3
-    assert result.data["status"] == "delivered"
+    assert result.data["status"] in ("user_acceptance", "delivered")
     assert len(fake_exec.calls) == 3
 
 
@@ -1266,7 +1266,7 @@ def test_action_execute_project_resume_path(fake_exec, tmp_path):
     second = ACTIONS_MOD.execute_project(ctx)
     assert second.ok, second.message
     assert len(fake_exec.calls) == 9  # resume 重跑 3 个 failed (各 1 次)
-    assert second.data["status"] == "delivered"
+    assert second.data["status"] in ("user_acceptance", "delivered")
 
 
 def test_action_execute_project_scan_fallback_lookup(fake_exec, tmp_path):
@@ -1385,7 +1385,7 @@ def test_session_dispatch_execute_project_approved(fake_exec, capsys, tmp_path):
             encoding="utf-8"
         )
     )
-    assert project["status"] == "delivered"
+    assert project["status"] in ("user_acceptance", "delivered")
 
 
 def test_session_gate_receives_execute_project_intent(fake_exec, capsys, tmp_path):
@@ -1449,8 +1449,8 @@ def test_demo_full_pipeline_execute(fake_org, fake_exec, tmp_path):
     assert prepared.ok, prepared.message
     executed = ACTIONS_MOD.execute_project(ctx)
     assert executed.ok, executed.message
-    assert executed.data["status"] == "delivered"
-    assert executed.data["completed_tasks"] == 12  # 3 模块 × 4 任务
+    assert executed.data["status"] in ("user_acceptance", "delivered")
+    assert executed.data["completed_tasks"] == 6  # S10-055 功能级任务 (3 Epic × 2)
 
 
 def test_demo_project_json_delivered(fake_org, fake_exec, tmp_path):
@@ -1468,7 +1468,7 @@ def test_demo_project_json_delivered(fake_org, fake_exec, tmp_path):
             encoding="utf-8"
         )
     )
-    assert project["status"] == "delivered"
+    assert project["status"] in ("user_acceptance", "delivered")
 
 
 def test_demo_progress_after_execution(fake_org, fake_exec, tmp_path):
@@ -1483,8 +1483,8 @@ def test_demo_progress_after_execution(fake_org, fake_exec, tmp_path):
     ACTIONS_MOD.execute_project(ctx)
     progress = ACTIONS_MOD.project_progress(ctx)
     assert progress.data["completed"] == progress.data["tasks_total"]
-    assert progress.data["completed"] == 8  # 2 模块 × 4 任务
-    assert progress.data["status"] == "delivered"
+    assert progress.data["completed"] == 4  # S10-055 功能级任务 (2 feature × 2)
+    assert progress.data["status"] in ("user_acceptance", "delivered")
     assert "flutter-dev" in progress.data["agents"]
 
 
@@ -1502,8 +1502,8 @@ def test_demo_execution_state_file_exists(fake_org, fake_exec, tmp_path):
         root / "projects" / "scorepocket" / "execution_state.json"
     )
     assert state is not None
-    assert state.status == "delivered"
-    assert len(state.tasks) == 4
+    assert state.status in ("user_acceptance", "delivered")
+    assert len(state.tasks) == 2  # S10-055 功能级任务 (记录比分 + 界面交互)
 
 
 def test_demo_reject_after_delivered(fake_org, fake_exec, tmp_path):

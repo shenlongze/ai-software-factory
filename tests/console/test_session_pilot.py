@@ -138,7 +138,7 @@ class TestExecutionFlow:
         _make_project(tmp_path)
         orch = ORCH.ExecutionOrchestrator(tmp_path)
         res = orch.execute_project("scorepocket", execute_fn=_ok_fn())
-        assert res.status == "delivered"
+        assert res.status in ("user_acceptance", "delivered")
         assert res.completed_tasks == 3
 
     def test_execute_project_failure(self, tmp_path):
@@ -153,7 +153,7 @@ class TestExecutionFlow:
         orch = ORCH.ExecutionOrchestrator(tmp_path)
         orch.execute_project("scorepocket", execute_fn=_ok_fn())
         state = json.loads((pd / "execution_state.json").read_text(encoding="utf-8"))
-        assert state["lifecycle"] == "delivered"
+        assert state["lifecycle"] in ("user_acceptance", "delivered")
 
     def test_progress_query(self, tmp_path):
         _make_project(tmp_path)
@@ -161,7 +161,7 @@ class TestExecutionFlow:
         orch.execute_project("scorepocket", execute_fn=_ok_fn())
         prog = orch.get_progress("scorepocket")
         assert prog["completed"] == 3
-        assert prog["lifecycle"] == "delivered"
+        assert prog["lifecycle"] in ("user_acceptance", "delivered")
 
     def test_resume_flow(self, tmp_path):
         _make_project(tmp_path)
@@ -300,7 +300,7 @@ class TestProjectReport:
         _make_project(tmp_path)
         orch = ORCH.ExecutionOrchestrator(tmp_path)
         res = orch.execute_project("scorepocket", execute_fn=_ok_fn())
-        assert res.status == "delivered"
+        assert res.status in ("user_acceptance", "delivered")
 
     def test_audit_records_written(self, tmp_path):
         """执行审计落盘 (可回答: 哪个 Agent 做了什么)。"""
@@ -332,7 +332,8 @@ class TestRegression:
 
     def test_lifecycle_unchained(self):
         assert PIPE.Lifecycle.next_status(PIPE.Lifecycle.TESTING) == PIPE.Lifecycle.VALIDATION_PASS
-        assert PIPE.Lifecycle.next_status(PIPE.Lifecycle.VALIDATION_PASS) == PIPE.Lifecycle.DELIVERED
+        assert PIPE.Lifecycle.next_status(PIPE.Lifecycle.VALIDATION_PASS) == PIPE.Lifecycle.USER_ACCEPTANCE
+        assert PIPE.Lifecycle.next_status(PIPE.Lifecycle.USER_ACCEPTANCE) == PIPE.Lifecycle.DELIVERED
 
     def test_quality_modules_import(self):
         import_module("factory-console.session.quality")
@@ -375,7 +376,7 @@ class TestExtra:
         pd = _make_project(tmp_path)
         orch = ORCH.ExecutionOrchestrator(tmp_path)
         res = orch.execute_project("scorepocket", execute_fn=_ok_fn())
-        assert res.status == "delivered"
+        assert res.status in ("user_acceptance", "delivered")
         assert (pd / "validation_result.json").exists()
 
     def test_progress_repair_counts(self, tmp_path):

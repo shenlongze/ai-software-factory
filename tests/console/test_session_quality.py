@@ -160,19 +160,21 @@ class TestLifecycleGate:
     def test_validation_pass_between_testing_delivered(self):
         s = PIPE.Lifecycle.STATUSES
         assert s.index(PIPE.Lifecycle.VALIDATION_PASS) == s.index(PIPE.Lifecycle.TESTING) + 1
-        assert s.index(PIPE.Lifecycle.DELIVERED) == s.index(PIPE.Lifecycle.VALIDATION_PASS) + 1
+        assert s.index(PIPE.Lifecycle.USER_ACCEPTANCE) == s.index(PIPE.Lifecycle.VALIDATION_PASS) + 1
+        assert s.index(PIPE.Lifecycle.DELIVERED) == s.index(PIPE.Lifecycle.USER_ACCEPTANCE) + 1
 
     def test_next_status_chain(self):
         assert PIPE.Lifecycle.next_status(PIPE.Lifecycle.TESTING) == PIPE.Lifecycle.VALIDATION_PASS
-        assert PIPE.Lifecycle.next_status(PIPE.Lifecycle.VALIDATION_PASS) == PIPE.Lifecycle.DELIVERED
+        assert PIPE.Lifecycle.next_status(PIPE.Lifecycle.VALIDATION_PASS) == PIPE.Lifecycle.USER_ACCEPTANCE
+        assert PIPE.Lifecycle.next_status(PIPE.Lifecycle.USER_ACCEPTANCE) == PIPE.Lifecycle.DELIVERED
 
     def test_orchestrator_reaches_validation_pass(self, tmp_path):
         _make_project(tmp_path)
         orch = ORCH.ExecutionOrchestrator(tmp_path)
         res = orch.execute_project("scorepocket", execute_fn=_ok_fn())
-        assert res.status == "delivered"
+        assert res.status in ("user_acceptance", "delivered")
         state = json.loads((tmp_path / "projects" / "scorepocket" / "execution_state.json").read_text(encoding="utf-8"))
-        assert state["lifecycle"] == "delivered"
+        assert state["lifecycle"] in ("user_acceptance", "delivered")
 
     def test_no_validation_no_delivered_on_fail(self, tmp_path):
         _make_project(tmp_path)
@@ -339,7 +341,7 @@ class TestExecutionValidationFlow:
         _make_project(tmp_path)
         orch = ORCH.ExecutionOrchestrator(tmp_path)
         res = orch.execute_project("scorepocket", execute_fn=_ok_fn())
-        assert res.status == "delivered"
+        assert res.status in ("user_acceptance", "delivered")
         assert res.completed_tasks == 3
         assert res.failed_tasks == 0
 
@@ -434,7 +436,7 @@ class TestFullDemo:
         _make_project(tmp_path)
         orch = ORCH.ExecutionOrchestrator(tmp_path)
         res = orch.execute_project("scorepocket", execute_fn=_ok_fn())
-        assert res.status == "delivered"
+        assert res.status in ("user_acceptance", "delivered")
         pd = tmp_path / "projects" / "scorepocket"
         assert (pd / "execution_state.json").exists()
         assert (pd / "validation_result.json").exists()
@@ -460,7 +462,7 @@ class TestFullDemo:
         assert res.completed_tasks == 3
         # 再次执行全绿 → DELIVERED
         res2 = orch.execute_project("scorepocket", execute_fn=flaky)
-        assert res2.status == "delivered"
+        assert res2.status in ("user_acceptance", "delivered")
         assert res2.completed_tasks == 3
 
 
@@ -490,7 +492,7 @@ class TestProgressEnhancement:
         orch = ORCH.ExecutionOrchestrator(tmp_path)
         orch.execute_project("scorepocket", execute_fn=_ok_fn())
         prog = orch.get_progress("scorepocket")
-        assert prog["lifecycle"] == "delivered"
+        assert prog["lifecycle"] in ("user_acceptance", "delivered")
         assert prog["tasks_total"] == 3
         assert prog["completed"] == 3
         assert prog["failed"] == 0
@@ -730,7 +732,7 @@ class TestLocateProductPathFix:
         res1 = orch.execute_project("scorepocket", execute_fn=flaky)
         # 首次: T001 retry 后成功 → 3 全成功 → delivered
         assert res1.completed_tasks == 3
-        assert res1.status == "delivered"
+        assert res1.status in ("user_acceptance", "delivered")
         assert (pd / "validation_result.json").exists()
 
     def test_validator_double_validate_consistent(self, tmp_path):

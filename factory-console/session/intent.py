@@ -38,10 +38,14 @@ INTENT_PREPARE_PROJECT = "prepare_project"
 #: S10-052 P3: 执行编排意图 (开始开发 / 进度查询 — Orchestrator Actions)
 INTENT_EXECUTE_PROJECT = "execute_project"
 INTENT_PROJECT_PROGRESS = "project_progress"
+#: S10-055 Task 005: 项目验收意图 (通过验收 → USER_ACCEPTANCE → DELIVERED)
+INTENT_ACCEPT_PROJECT = "accept_project"
 
 #: KeywordIntentParser 关键词规则表 (顺序 = 优先级, 确定性无歧义):
 #: (关键词元组, intent_type, 参数键 — 命中后取关键词后剩余文本作为参数值)
 _KEYWORD_RULES: tuple[tuple[tuple[str, ...], str, Optional[str]], ...] = (
+    # S10-055 Task 005: 项目验收意图 — 最高优先级 (确认门后 DELIVERED)
+    (("通过验收", "验收通过", "确认交付", "接受交付"), INTENT_ACCEPT_PROJECT, None),
     # S10-053 P4: 质量修复意图 — 必须在 run_task ("修复" 关键词) 之前 (优先级更高)
     (("修复失败任务", "修复任务", "重试失败任务"), INTENT_REPAIR_TASK, None),
     (("花了多少", "成本", "费用"), INTENT_SHOW_COST, None),

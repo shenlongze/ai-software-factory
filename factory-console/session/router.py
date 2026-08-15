@@ -32,6 +32,8 @@ DEFAULT_ROUTES: dict[str, str] = {
     "project_progress": "project_progress",
     # S10-053 P4: 质量修复意图 → RepairManager Action (修复失败任务)
     "repair_task": "repair_task",
+    # S10-055 Task 005: 项目验收意图 → accept_project Action (USER_ACCEPTANCE → DELIVERED)
+    "accept_project": "accept_project",
 }
 
 

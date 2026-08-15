@@ -42,6 +42,7 @@ from .orchestrator import ExecutionOrchestrator
 from .pipeline import (
     AgentAssignment,
     EngineeringPlan,
+    FeatureTaskGenerator,
     Lifecycle,
     ProductDocument,
     TaskTree,
@@ -51,6 +52,7 @@ from .product import (
     generate_temp_product_name,
     parse_core_features,
 )
+from .progress import ProductProgressTracker
 from .quality import RepairManager
 
 #: 会话工作区缺省 (与 commands.DEFAULT_PROJECTS_FILE 同口径: ~/.factory)
@@ -477,10 +479,12 @@ def prepare_project(context: ExecutionContext) -> ActionResult:
     # 2) EngineeringPlan → engineering.json
     plan = EngineeringPlan.from_prd(product, prd_text)
     engineering_path = product_dir / "engineering.json"
-    # 3) TaskTree → tasks.json
-    tree = TaskTree.from_engineering(plan)
+    # 3) FeatureTaskGenerator → tasks.json (S10-055 Task 002: 功能级 Epic/Task,
+    #    非模板化 db/api/frontend/test — 用户可感知功能; TaskTree 旧路径仍可用, 验收 H)
+    tree = FeatureTaskGenerator.from_product(product)
     tasks_path = product_dir / "tasks.json"
-    # 4) AgentAssignment → execution_plan.json (复用 select_agent: frontend→flutter-dev)
+    # 4) AgentAssignment → execution_plan.json (复用 select_agent: frontend→flutter-dev;
+    #    feature/epic 归属透传 — Feature Level Execution 消费)
     execution = AgentAssignment.from_tasks(
         tree, select_agent_fn=select_agent, context=context
     )
@@ -876,12 +880,14 @@ def repair_task(context: ExecutionContext) -> ActionResult:
 
 
 def project_progress(context: ExecutionContext) -> ActionResult:
-    """查询项目执行进度 (S10-052 P4 + S10-053 P6): 只读, 不执行任何任务。
+    """查询项目执行进度 (S10-052 P4 + S10-053 P6 + S10-055 Task 003/004): 只读。
 
     "项目进度/进度如何/执行到哪了" → 非敏感查询 → 汇总
     {project, status, lifecycle, tasks_total, completed, running, pending,
     failed, agents} + S10-053 增强 (验收 H): validation {passed, failed,
-    not_run} + repair {pending, done, failed}。
+    not_run} + repair {pending, done, failed} + S10-055 增强 (验收 D):
+    features (功能级完成度) + product_progress (product_progress.json 内容,
+    同步落盘 — 回答 "做到哪里")。
     """
     context.require("user")
     product, slug, projects_root = _locate_product(context)
@@ -892,8 +898,9 @@ def project_progress(context: ExecutionContext) -> ActionResult:
             message="进度查询失败: 未找到产品定义 (请先创建产品)",
             error="未找到产品定义 (请先创建产品)",
         )
+    orchestrator = ExecutionOrchestrator(context.workspace)
     try:
-        progress = ExecutionOrchestrator(context.workspace).get_progress(slug)
+        progress = orchestrator.get_progress(slug)
     except Exception as exc:  # noqa: BLE001 — 失败安全: 底层异常 → 明确错误
         return ActionResult(
             ok=False,
@@ -901,6 +908,39 @@ def project_progress(context: ExecutionContext) -> ActionResult:
             message=f"进度查询失败: {exc}",
             error=str(exc),
         )
+    # S10-055 Task 003: 功能级进度文档 (product_progress.json 落盘 — 失败安全:
+    # 进度查询不因落盘失败阻断)
+    project_dir = projects_root / slug
+    progress_doc: dict[str, Any] = {
+        "product": product.name or slug,
+        "status": "pending",
+        "tasks_total": 0,
+        "tasks_completed": 0,
+        "features": [],
+    }
+    state_file = project_dir / "execution_state.json"
+    try:
+        if state_file.is_file():
+            state_doc = _read_json_file(state_file)
+            progress_doc = ProductProgressTracker.update_from_execution(
+                state_doc, product_name=product.name or slug
+            )
+        else:
+            tasks_file = project_dir / "tasks.json"
+            tasks = (
+                _read_json_file(tasks_file).get("tasks") or []
+                if tasks_file.is_file()
+                else []
+            )
+            progress_doc = ProductProgressTracker.init(product, tasks)
+        ProductProgressTracker.save(project_dir, progress_doc)
+    except Exception:  # noqa: BLE001 — 失败安全: 功能进度计算/落盘失败不影响查询
+        pass
+    data: dict[str, Any] = {
+        **progress,
+        "features": progress_doc.get("features") or [],
+        "product_progress": progress_doc,
+    }
     total = progress.get("tasks_total") or 0
     completed = progress.get("completed") or 0
     if progress.get("status") == "not_started":
@@ -911,7 +951,56 @@ def project_progress(context: ExecutionContext) -> ActionResult:
         ok=True,
         status=STATUS_OK,
         message=message,
-        data=progress,
+        data=data,
+        error=None,
+    )
+
+
+def accept_project(context: ExecutionContext) -> ActionResult:
+    """项目验收 (S10-055 Task 005, 验收 G): "通过验收/验收通过" → 确认门 → DELIVERED。
+
+    流程:
+    1. 定位产品 (复用 _locate_product)
+    2. ExecutionOrchestrator.accept_project — 仅 lifecycle=user_acceptance
+       (执行完成 + 验证通过后停在待验收) 可验收 → DELIVERED;
+       其它状态 → 明确拒绝 (不静默推进)
+    3. 成功 → "项目已验收交付: <slug>" + {project, status: delivered}
+    """
+    context.require("user")
+    product, slug, projects_root = _locate_product(context)
+    if product is None or slug is None:
+        return ActionResult(
+            ok=False,
+            status=STATUS_ERROR,
+            message="项目验收失败: 未找到产品定义 (请先创建产品)",
+            error="未找到产品定义 (请先创建产品)",
+        )
+    orchestrator = ExecutionOrchestrator(context.workspace)
+    try:
+        accepted = orchestrator.accept_project(slug)
+    except Exception as exc:  # noqa: BLE001 — 失败安全: 底层异常 → 明确错误
+        return ActionResult(
+            ok=False,
+            status=STATUS_ERROR,
+            message=f"项目验收失败: {exc}",
+            error=str(exc),
+        )
+    if not accepted:
+        return ActionResult(
+            ok=False,
+            status=STATUS_ERROR,
+            message="项目验收失败: 项目尚未到达待验收状态 (需执行完成且验证通过)",
+            error="项目未处于 user_acceptance 状态 (无法验收)",
+        )
+    return ActionResult(
+        ok=True,
+        status=STATUS_OK,
+        message=f"项目已验收交付: {slug}",
+        data={
+            "project": slug,
+            "status": Lifecycle.DELIVERED,
+            "lifecycle": Lifecycle.DELIVERED,
+        },
         error=None,
     )
 
@@ -1041,6 +1130,23 @@ def build_default_actions() -> ActionRegistry:
             metadata={
                 "service": "RepairManager (复用 execute_task)",
                 "phase": "S10-053 P3",
+                "sensitive": True,
+                "category": "execution",
+            },
+        )
+    )
+    registry.register(
+        Action(
+            name="accept_project",
+            description=(
+                "项目验收 (USER_ACCEPTANCE → DELIVERED: 执行完成 + 验证通过后"
+                "经用户确认交付)"
+            ),
+            handler=accept_project,
+            permission="project",
+            metadata={
+                "service": "ExecutionOrchestrator.accept_project",
+                "phase": "S10-055 P5",
                 "sensitive": True,
                 "category": "execution",
             },

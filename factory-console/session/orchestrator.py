@@ -298,12 +298,18 @@ class ExecutionOrchestrator:
 
     @staticmethod
     def _task_record(plan_task: dict[str, Any]) -> dict[str, Any]:
-        """plan 任务 → state 任务记录 (初始 pending; 含 agent_type 冗余字段)。"""
+        """plan 任务 → state 任务记录 (初始 pending; 含 agent_type/feature 冗余字段)。
+
+        S10-055 Task 004: feature/epic 归属透传 (Feature Level Execution —
+        get_feature_progress 按 task.feature 分组); 旧式 plan 无此字段 → 兼容缺失。
+        """
         return {
             "id": str(plan_task.get("id") or ""),
             "name": str(plan_task.get("name") or plan_task.get("id") or ""),
             "agent_type": plan_task.get("agent_type"),
             "agent": str(plan_task.get("agent") or ""),
+            "feature": plan_task.get("feature"),
+            "epic": plan_task.get("epic"),
             "status": "pending",
             "artifact": "",
             "retry_count": 0,
@@ -447,6 +453,54 @@ class ExecutionOrchestrator:
             },
         }
 
+    def get_feature_progress(self, project_id: str) -> dict[str, Any]:
+        """功能级进度 (S10-055 Task 004, 验收 D): 按 task.feature 分组统计。
+
+        返回 {project, features: [{name, total_tasks, completed_tasks, status}],
+        tasks_total, completed, status} — status: completed/in_progress/pending
+        (ProductProgressTracker 状态推导); state 缺失 → status="not_started" +
+        features=[] (失败安全)。只读, 不执行任何任务。
+        """
+        project_dir, slug = self._locate_project(project_id)
+        state = self._load_state(project_dir)
+        base: dict[str, Any] = {
+            "project": slug,
+            "features": [],
+            "tasks_total": 0,
+            "completed": 0,
+            "status": "not_started",
+        }
+        if state is None:
+            return base
+        # 惰性 import .progress (progress 不依赖本模块 — 循环依赖护栏)
+        from .progress import ProductProgressTracker
+
+        doc = ProductProgressTracker.update_from_execution(state, product_name=slug)
+        return {
+            "project": slug,
+            "features": doc["features"],
+            "tasks_total": doc["tasks_total"],
+            "completed": doc["tasks_completed"],
+            "status": doc["status"],
+        }
+
+    def accept_project(self, project_id: str) -> bool:
+        """用户验收 (S10-055 Task 005, 验收 G): USER_ACCEPTANCE → DELIVERED。
+
+        仅 lifecycle=user_acceptance 可验收 (执行完成 + 验证通过后停在待验收);
+        其它状态 (含未执行/失败/已交付) → False (明确拒绝, 不静默推进)。
+        验收成功 → execution_state + project.json/product.json status=delivered。
+        """
+        project_dir, slug = self._locate_project(project_id)
+        state = self._load_state(project_dir)
+        if state is None or state.lifecycle != Lifecycle.USER_ACCEPTANCE:
+            return False
+        state.status = Lifecycle.DELIVERED
+        state.lifecycle = Lifecycle.DELIVERED
+        self._save_state(project_dir, state)
+        self._set_lifecycle(project_dir, slug, Lifecycle.DELIVERED)
+        return True
+
     # ------------------------------------------------------------ 任务队列
 
     def _run_queue(
@@ -521,15 +575,17 @@ class ExecutionOrchestrator:
                 costs.append(str(outcome["cost"]))
         result = ExecutionResult(
             project=slug,
-            status=Lifecycle.DELIVERED if failed == 0 else "failed",
+            status=Lifecycle.USER_ACCEPTANCE if failed == 0 else "failed",
             completed_tasks=completed,
             failed_tasks=failed,
             artifacts=artifacts,
             cost=" · ".join(costs),
             errors=errors,
         )
-        # Lifecycle 推进 (§6 + S10-053 §4): 无 failed (含全部验证通过) →
-        # TESTING → VALIDATION_PASS → DELIVERED; 有 failed → 保持 DEVELOPMENT
+        # Lifecycle 推进 (§6 + S10-053 §4 + S10-055 Task 005): 无 failed
+        # (含全部验证通过) → TESTING → VALIDATION_PASS → USER_ACCEPTANCE (停在
+        # 待验收, 不直接 DELIVERED — 验收 F); 有 failed → 保持 DEVELOPMENT。
+        # DELIVERED 仅经 accept_project 用户确认后到达 (验收 E/G)。
         if failed == 0:
             state.status = Lifecycle.TESTING
             state.lifecycle = Lifecycle.TESTING
@@ -539,10 +595,10 @@ class ExecutionOrchestrator:
             state.lifecycle = Lifecycle.VALIDATION_PASS
             self._save_state(project_dir, state)
             self._set_lifecycle(project_dir, slug, Lifecycle.VALIDATION_PASS)
-            state.status = Lifecycle.DELIVERED
-            state.lifecycle = Lifecycle.DELIVERED
+            state.status = Lifecycle.USER_ACCEPTANCE
+            state.lifecycle = Lifecycle.USER_ACCEPTANCE
             self._save_state(project_dir, state)
-            self._set_lifecycle(project_dir, slug, Lifecycle.DELIVERED)
+            self._set_lifecycle(project_dir, slug, Lifecycle.USER_ACCEPTANCE)
         else:
             state.status = Lifecycle.DEVELOPMENT
             state.lifecycle = Lifecycle.DEVELOPMENT

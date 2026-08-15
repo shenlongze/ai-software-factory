@@ -491,16 +491,8 @@ def test_assignment_default_select_lazy():
 
 def test_lifecycle_statuses_order():
     assert PIPE_MOD.Lifecycle.STATUSES == (
-        "idea",
-        "product_defined",
-        "engineering_ready",
-        "execution_ready",
-        "development",
-        "testing",
-        "validation_pass",
-        "delivered",
+        "idea", "product_defined", "engineering_ready", "execution_ready", "development", "testing", "validation_pass", "user_acceptance", "delivered",
     )
-
 
 def test_lifecycle_next_status_chain():
     lc = PIPE_MOD.Lifecycle
@@ -512,6 +504,7 @@ def test_lifecycle_next_status_chain():
         lc.DEVELOPMENT,
         lc.TESTING,
         lc.VALIDATION_PASS,
+        lc.USER_ACCEPTANCE,
         lc.DELIVERED,
         None,
     ]
@@ -701,7 +694,8 @@ def test_prepare_project_execution_plan_json_content(fake_org, tmp_path):
     by_type = {a["agent_type"]: a["agent"] for a in data["tasks"]}
     assert by_type["frontend"] == "flutter-dev"
     assert by_type["backend"] == "backend-1"
-    assert by_type["qa"] == "backend-1"
+    # S10-055: 功能级任务无 qa 专属类型; 验证 frontend/backend 即可
+    assert "backend" in by_type and "frontend" in by_type
 
 
 def test_prepare_project_no_product_error(tmp_path):

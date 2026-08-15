@@ -146,9 +146,14 @@ class RoleSystem:
         if not required:
             return True
         role = str(agent.get("role") or "").lower()
-        if role and (required == role or required in role or role in required):
+        # 规范化: 空格/下划线/连字符等价 ("product manager" == "product_manager")
+        norm = lambda s: str(s).replace("_", " ").replace("-", " ").strip()
+        role_n, req_n = norm(role), norm(required)
+        if role and (role_n == req_n or req_n in role_n or role_n in req_n):
             return True
-        return required in RoleSystem.capabilities_for(agent)
+        # capabilities 子串匹配 (显式 capabilities 如 "backend_api" 含 "backend")
+        caps = RoleSystem.capabilities_for(agent)
+        return any(required in str(cap).lower() for cap in caps)
 
     # ------------------------------------------------------------ 注入
 

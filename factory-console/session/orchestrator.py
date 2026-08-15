@@ -30,9 +30,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+from .agents import AgentMatcher, AgentMetrics, AgentRegistry
+from .conflicts import ConflictDetector, ConflictRecord
+from .dependencies import TaskDependencyGraph
 from .intent import IntentObject
+from .messages import AgentMessageStore
 from .pipeline import Lifecycle
 from .quality import RepairManager, ValidationResult, Validator
+from .roles import RoleSystem
+from .teams import DEFAULT_TEAM_ID, TeamRegistry
+from .workspace import WorkspaceContext
 
 
 class ProjectNotFoundError(Exception):
@@ -196,6 +203,52 @@ class ExecutionState:
             raise ExecutionStateError(f"execution_state.json 损坏: {exc}") from exc
 
 
+@dataclass
+class TeamRunContext:
+    """团队执行钩子 (S10-056 批次 B): 冲突检测 + Workspace 更新 + 消息记录。
+
+    仅 team mode 使用 (solo mode 无此上下文, 行为零变化):
+    - before_task: ConflictDetector.detect — 同文件多任务 → ConflictRecord
+      (记录不阻塞 — 冲突不中断执行, 边界 §7 只检测不解决)
+    - after_task: 任务成功 → WorkspaceContext.mark_task_completed/add_artifact
+      (让 Agent 知道之前谁做过什么 — 设计 §2.5) + AgentMessage 可选记录
+      (architect → 成员 指令型消息 — 设计 §2.6, 接口预留, 缺省关闭)
+    """
+
+    team: dict[str, Any]
+    detector: ConflictDetector
+    store: Optional[AgentMessageStore] = None
+    messages_from: str = "architect-agent"
+
+    def before_task(
+        self, project_dir: Path, task: dict[str, Any]
+    ) -> list[ConflictRecord]:
+        """任务执行前冲突检测 (同文件已被其他 task 归属 → ConflictRecord, 记录不阻塞)。"""
+        files = [str(f) for f in (task.get("files") or []) if not isinstance(f, dict)]
+        return self.detector.detect(project_dir, str(task.get("id") or ""), files)
+
+    def after_task(self, project_dir: Path, task: dict[str, Any]) -> None:
+        """任务成功后 Workspace 更新 + 可选消息 (仅 completed 任务)。"""
+        if str(task.get("status")) != "completed":
+            return
+        WorkspaceContext.mark_task_completed(
+            project_dir,
+            str(task.get("id") or ""),
+            str(task.get("agent") or ""),
+            "success",
+        )
+        artifact = task.get("artifact")
+        if artifact:
+            WorkspaceContext.add_artifact(project_dir, str(artifact))
+        if self.store is not None:
+            self.store.send(
+                self.messages_from,
+                str(task.get("agent") or ""),
+                "instruction",
+                f"Task {task.get('id') or ''} completed: {task.get('name') or ''}",
+            )
+
+
 class ExecutionOrchestrator:
     """Autonomous Production Loop 编排器 (设计 §2/§3)。
 
@@ -265,6 +318,9 @@ class ExecutionOrchestrator:
         except Exception as exc:  # noqa: BLE001 — 损坏 → 明确错误
             raise PlanNotFoundError(f"execution_plan.json 损坏: {exc}") from exc
         if not isinstance(plan, dict) or not plan.get("tasks"):
+            # S10-056: 空任务 plan → 返回空计划 (空执行, 不报错 — 团队拓扑/空项目可恢复)
+            if isinstance(plan, dict) and "tasks" in plan:
+                return plan
             raise PlanNotFoundError(f"execution_plan.json 无任务: {plan_path}")
         return plan
 
@@ -305,6 +361,8 @@ class ExecutionOrchestrator:
 
         S10-055 Task 004: feature/epic 归属透传 (Feature Level Execution —
         get_feature_progress 按 task.feature 分组); 旧式 plan 无此字段 → 兼容缺失。
+        S10-056 批次 B: required_role (团队角色分配 — AgentMatcher 匹配结果透传)
+        + files (冲突检测输入 — ConflictDetector 消费), 缺省 None/[] 兼容旧式 plan。
         """
         return {
             "id": str(plan_task.get("id") or ""),
@@ -314,6 +372,11 @@ class ExecutionOrchestrator:
             "feature": plan_task.get("feature"),
             "epic": plan_task.get("epic"),
             "reason": plan_task.get("reason"),  # S10-055: Agent 选择理由透传 (可解释调度)
+            "required_role": plan_task.get("required_role"),  # S10-056: 团队角色
+            "matched_role": plan_task.get("matched_role"),  # S10-056: 角色匹配结果 (审计)
+            "files": [
+                str(f) for f in (plan_task.get("files") or []) if not isinstance(f, dict)
+            ],  # S10-056: 冲突检测输入
             "status": "pending",
             "artifact": "",
             "retry_count": 0,
@@ -326,8 +389,26 @@ class ExecutionOrchestrator:
         *,
         execute_fn: Optional[ExecuteFn] = None,
         max_retry: int = DEFAULT_MAX_RETRY,
+        mode: str = "solo",
+        team_id: str = DEFAULT_TEAM_ID,
+        teams_file: Optional[Path] = None,
+        agents_file: Optional[Path] = None,
+        dependencies_file: Optional[Path] = None,
+        conflicts_file: Optional[Path] = None,
+        messages_file: Optional[Path] = None,
+        enable_messages: bool = False,
     ) -> ExecutionResult:
         """全新执行 (设计 §3): 读 execution_plan.json → 初始化 state → 顺序执行。
+
+        mode="solo" (缺省): 原行为完全不变 — 任务按 plan 顺序执行, 无团队钩子。
+        mode="team" (S10-056 批次 B, 设计 §3 TeamExecutionMode):
+        ① 读 team.json (TeamRegistry.get(team_id), 缺省默认 software-team)
+        ② required_role 任务 → RoleSystem.role_matches 过滤团队成员 →
+           AgentMatcher 选最佳成员 (skill × 成功率 × 成本, 可解释 reason)
+        ③ TaskDependencyGraph.topological_order 拓扑排序 (无依赖 → 原顺序)
+        ④ 每任务: ConflictDetector.detect (同文件冲突 → ConflictRecord,
+           记录不阻塞) → 执行 → WorkspaceContext 更新 (mark_task_completed/
+           add_artifact) → AgentMessage 可选记录 (architect → 成员 指令接口)
 
         每任务: pending → running → completed/failed (状态逐任务持久化, 可恢复);
         失败: retry_count+1, 最多重试 max_retry 次, 仍失败 → failed (继续下一任务);
@@ -335,22 +416,120 @@ class ExecutionOrchestrator:
         """
         project_dir, slug = self._locate_project(project_id)
         plan = self._load_plan(project_dir)
+        plan_tasks = list(plan.get("tasks") or [])
+        team_run: Optional[TeamRunContext] = None
+        if mode == "team":
+            plan_tasks, team_run = self._team_prepare(
+                project_dir,
+                plan_tasks,
+                team_id=team_id,
+                teams_file=teams_file,
+                agents_file=agents_file,
+                dependencies_file=dependencies_file,
+                conflicts_file=conflicts_file,
+                messages_file=messages_file,
+                enable_messages=enable_messages,
+            )
         state = ExecutionState(
             project=slug,
             status=Lifecycle.DEVELOPMENT,
             lifecycle=Lifecycle.DEVELOPMENT,
             started_at=datetime.now(timezone.utc).isoformat(),
-            tasks=[self._task_record(t) for t in plan.get("tasks") or []],
+            tasks=[self._task_record(t) for t in plan_tasks],
         )
         self._save_state(project_dir, state)
         # Lifecycle: EXECUTION_READY → DEVELOPMENT (project.json/product.json status)
         self._set_lifecycle(project_dir, slug, Lifecycle.DEVELOPMENT)
         started = time.monotonic()
         result = self._run_queue(
-            project_dir, slug, state, execute_fn=execute_fn, max_retry=max_retry
+            project_dir,
+            slug,
+            state,
+            execute_fn=execute_fn,
+            max_retry=max_retry,
+            team_run=team_run,
         )
         result.duration = time.monotonic() - started
         return result
+
+    def _team_prepare(
+        self,
+        project_dir: Path,
+        plan_tasks: list[dict[str, Any]],
+        *,
+        team_id: str,
+        teams_file: Optional[Path],
+        agents_file: Optional[Path],
+        dependencies_file: Optional[Path],
+        conflicts_file: Optional[Path],
+        messages_file: Optional[Path],
+        enable_messages: bool,
+    ) -> tuple[list[dict[str, Any]], TeamRunContext]:
+        """团队模式准备 (S10-056 批次 B): 角色匹配 + 依赖拓扑排序 + 执行钩子。
+
+        ① 团队: TeamRegistry.get(team_id) 缺省 → 默认 software-team (失败安全);
+        ② 角色匹配: required_role 任务 → RoleSystem.role_matches 过滤团队成员 →
+           AgentMatcher 选最佳 (skill 匹配 × 成功率 × 成本归一化); 无匹配成员
+           → 保持原 assignment (失败安全, 不抛);
+        ③ 拓扑排序: TaskDependencyGraph.topological_order (无依赖 → 原顺序,
+           顺序执行兼容 — 设计 §2.4);
+        ④ TeamRunContext: 冲突检测 (detect, 记录不阻塞) + Workspace 更新 +
+           可选 AgentMessage (architect → 成员 指令接口, enable_messages 开启)。
+        返回 (排序后 plan_tasks, team_run 钩子)。
+        """
+        team = TeamRegistry.get(team_id, teams_file=teams_file)
+        if team is None:
+            team = TeamRegistry.build_default_team(agents_file=agents_file)
+        registry = AgentRegistry.load(agents_file)
+        member_roles = {
+            str(m.get("agent")): str(m.get("role") or "")
+            for m in (team.get("members") or [])
+            if isinstance(m, dict) and m.get("agent")
+        }
+        # 团队成员注册表 (角色匹配候选 — 只从团队成员中选, 不引入非团队成员)
+        member_registry = {aid: registry[aid] for aid in member_roles if aid in registry}
+        records_file = self.workspace / "exec" / "execution_records.json"
+        metrics = (
+            AgentMetrics.load_from_records(records_file)
+            if records_file.is_file()
+            else {}
+        )
+        matcher = AgentMatcher(registry=member_registry, metrics=metrics)
+        for task in plan_tasks:
+            required_role = str(task.get("required_role") or "").strip()
+            if not required_role:
+                continue
+            candidates = {
+                aid: agent
+                for aid, agent in member_registry.items()
+                if RoleSystem.role_matches(required_role, agent)
+            }
+            if not candidates:
+                continue
+            match = matcher.match(task, registry=candidates, metrics=metrics)
+            if match.get("agent"):
+                task["agent"] = match["agent"]
+                task["matched_role"] = required_role  # 审计: 按角色分配
+                if not task.get("reason"):
+                    task["reason"] = match.get("reason") or ""
+        ids = [str(t.get("id") or "") for t in plan_tasks]
+        if all(ids):
+            graph = TaskDependencyGraph.load(dependencies_file)
+            order = graph.topological_order(ids)
+            pos = {tid: i for i, tid in enumerate(order)}
+            plan_tasks = sorted(plan_tasks, key=lambda t: pos.get(str(t.get("id")), 0))
+        detector = ConflictDetector(conflicts_file=conflicts_file)
+        store = (
+            AgentMessageStore(file=messages_file)
+            if enable_messages and messages_file is not None
+            else None
+        )
+        # 工作区上下文初始化: 团队执行前确保 workspace_context.json 存在 (项目名落盘,
+        # 设计 §2.5 让 Agent 知道共享上下文; 已存在 → 保留既有上下文, 不覆盖)
+        ctx_file = project_dir / WorkspaceContext.FILE_NAME
+        if not ctx_file.is_file():
+            WorkspaceContext.save(project_dir, WorkspaceContext.init(project_dir.name))
+        return plan_tasks, TeamRunContext(team=team, detector=detector, store=store)
 
     def resume(
         self,
@@ -515,11 +694,20 @@ class ExecutionOrchestrator:
         *,
         execute_fn: Optional[ExecuteFn],
         max_retry: int,
+        team_run: Optional[TeamRunContext] = None,
     ) -> ExecutionResult:
         """任务队列 (设计 §5 + S10-053 §8): 顺序执行, 逐任务持久化 + 质量门。
 
         顺序执行 (未来 DAG: 保留 TaskQueue.next_pending/mark_done 语义扩展点 —
-        本版 state.tasks 顺序即队列顺序)。完成统计 + Lifecycle 推进 (§6)。
+        本版 state.tasks 顺序即队列顺序; team mode 下该顺序已由
+        TaskDependencyGraph.topological_order 拓扑排序决定 — S10-056 批次 B)。
+        完成统计 + Lifecycle 推进 (§6)。
+
+        S10-056 批次 B (team mode 钩子, solo mode 不传 → 行为零变化):
+        - before_task: ConflictDetector.detect — 同文件多任务 → ConflictRecord
+          (记录不阻塞, 不中断执行)
+        - after_task: 任务成功 → WorkspaceContext.mark_task_completed/add_artifact
+          + AgentMessage 可选记录 (architect → 成员 指令接口)
 
         S10-053 P2 质量门 (设计 §8): 每任务 outcome 后 → validator.validate:
         - success → task completed (state.tasks[].validation="passed")
@@ -543,6 +731,9 @@ class ExecutionOrchestrator:
                 if task.get("artifact"):
                     artifacts.append(str(task["artifact"]))
                 continue
+            if team_run is not None:
+                # S10-056 批次 B: 团队模式冲突检测 (同文件 → ConflictRecord, 记录不阻塞)
+                team_run.before_task(project_dir, task)
             outcome = self._execute_with_retry(
                 project_dir, state, task, runner, max_retry
             )
@@ -555,6 +746,9 @@ class ExecutionOrchestrator:
                 completed += 1
                 if task.get("artifact"):
                     artifacts.append(str(task["artifact"]))
+                if team_run is not None:
+                    # S10-056 批次 B: 团队模式 Workspace 更新 + 可选消息
+                    team_run.after_task(project_dir, task)
             else:
                 failed += 1
                 if task.get("status") == "completed":

@@ -42,6 +42,11 @@ DEFAULT_ROUTES: dict[str, str] = {
     # S10-056: Agent Team 意图 → Team Action (协作视图/创建团队;
     # workforce 映射保持不变 — 兼容既有 "查看团队" → 团队状态路径)
     "team": "team",
+    # S10-056 批次 B: Team Execution 意图 → 团队模式 Actions
+    # (团队执行 → mode=team 编排; 团队依赖 → 依赖图视图; 团队冲突 → 冲突记录视图)
+    "team_execute": "team_execute",
+    "team_dependencies": "team_dependencies",
+    "team_conflicts": "team_conflicts",
 }
 
 

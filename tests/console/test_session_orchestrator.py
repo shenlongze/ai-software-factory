@@ -439,8 +439,13 @@ def test_load_plan_missing_raises(tmp_path):
 
 
 def test_load_plan_empty_tasks_raises(tmp_path):
+    """S10-056: 空任务 plan ({"tasks": []}) → 返回空计划 (不抛错, 空执行可恢复)。"""
     pdir = _make_project(tmp_path, tasks=[])
     orch = ORCH_MOD.ExecutionOrchestrator(tmp_path)
+    plan = orch._load_plan(pdir)
+    assert plan.get("tasks") == []
+    # 仍保留: 非 dict/无 tasks 键 → 抛错 (真正损坏)
+    (pdir / "execution_plan.json").write_text("{bad json", encoding="utf-8")
     with pytest.raises(ORCH_MOD.PlanNotFoundError):
         orch._load_plan(pdir)
 

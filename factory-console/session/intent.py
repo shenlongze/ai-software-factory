@@ -48,12 +48,24 @@ INTENT_AGENT_REASON = "agent_reason"
 #: S10-056: Agent Team 意图 (团队协作视图 / 创建团队 — 扩展 workforce 语义,
 #: 与 workforce 兼容: "查看团队" 仍归 workforce, team 关键词不抢既有映射)
 INTENT_TEAM = "team"
+#: S10-056 批次 B: Team Execution 意图 (集成层)
+#: 团队执行 → execute_project(mode="team"); 团队依赖 → 依赖图视图;
+#: 团队冲突 → 冲突记录视图 (router → team_execute/team_dependencies/team_conflicts)
+INTENT_TEAM_EXECUTE = "team_execute"
+INTENT_TEAM_DEPENDENCIES = "team_dependencies"
+INTENT_TEAM_CONFLICTS = "team_conflicts"
 
 #: KeywordIntentParser 关键词规则表 (顺序 = 优先级, 确定性无歧义):
 #: (关键词元组, intent_type, 参数键 — 命中后取关键词后剩余文本作为参数值)
 _KEYWORD_RULES: tuple[tuple[tuple[str, ...], str, Optional[str]], ...] = (
     # S10-055 Task 005: 项目验收意图 — 最高优先级 (确认门后 DELIVERED)
     (("通过验收", "验收通过", "确认交付", "接受交付"), INTENT_ACCEPT_PROJECT, None),
+    # S10-056 批次 B: Team Execution 意图 — 必须在 INTENT_TEAM ("团队") 与
+    # INTENT_WORKFORCE 泛化关键词之前 ("团队执行/团队依赖/团队冲突" 含 "团队",
+    # 不被 "团队" 泛化规则抢; "冲突" 不被 run_task "修复" 抢)
+    (("团队执行", "团队开发", "团队开始开发"), INTENT_TEAM_EXECUTE, None),
+    (("团队依赖", "依赖关系", "任务依赖", "依赖图"), INTENT_TEAM_DEPENDENCIES, None),
+    (("团队冲突", "文件冲突", "冲突检测", "冲突"), INTENT_TEAM_CONFLICTS, None),
     # S10-056: Agent Team 意图 — 在 workforce 之前 ("团队协作/绩效" 等专属语义
     # 不被 workforce 泛化关键词 "团队" 抢; "创建团队" 不被 create_project "创建" 抢)
     (("创建团队",), INTENT_TEAM, "name"),

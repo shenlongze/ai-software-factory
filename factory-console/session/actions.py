@@ -38,7 +38,15 @@ from .action import (
 from .agents import AgentMatcher, AgentMetrics, AgentRegistry, workforce_snapshot
 from .audit import record_execution
 from .commands import read_projects
-from .intent import INTENT_CREATE_PROJECT, IntentObject
+from .conflicts import ConflictDetector
+from .dependencies import TaskDependencyGraph
+from .intent import (
+    INTENT_CREATE_PROJECT,
+    INTENT_TEAM_CONFLICTS,
+    INTENT_TEAM_DEPENDENCIES,
+    INTENT_TEAM_EXECUTE,
+    IntentObject,
+)
 from .orchestrator import ExecutionOrchestrator
 from .pipeline import (
     AgentAssignment,
@@ -56,6 +64,7 @@ from .product import (
 from .progress import ProductProgressTracker
 from .quality import RepairManager
 from .teams import DEFAULT_TEAM_MEMBERS, TeamRegistry, TeamService
+from .workspace import WorkspaceContext
 
 #: 会话工作区缺省 (与 commands.DEFAULT_PROJECTS_FILE 同口径: ~/.factory)
 DEFAULT_WORKSPACE = Path.home() / ".factory"
@@ -1292,7 +1301,7 @@ def _team_create(context: ExecutionContext, raw: str) -> ActionResult:
             message="团队创建失败: 请提供团队名称 (例如: 创建团队 电商后端团队)",
             error="缺少团队名称",
         )
-    team_id = _slugify(name) or "team"
+    team_id = _slugify(name) or name or "team"
     teams_file = Path(context.workspace) / "teams" / "teams.json"
     try:
         created = TeamRegistry.create(
@@ -1317,15 +1326,215 @@ def _team_create(context: ExecutionContext, raw: str) -> ActionResult:
     )
 
 
-def team(context: ExecutionContext) -> ActionResult:
-    """Agent Team 协作视图 (S10-056, 验收 E/F): \"创建团队\" → TeamRegistry.create;
-    其余 (\"查看团队/团队状态/团队协作\") → 默认团队协作视图 (team_snapshot)。
+def _team_execute(context: ExecutionContext) -> ActionResult:
+    """团队模式执行项目 (S10-056 批次 B): \"团队执行 <项目>\" → execute_project(mode=\"team\")。
 
-    只读查询 (非敏感, 无确认门); 失败安全: 数据缺失 → 默认团队/占位, 不抛。
-    workforce action 保持独立 (兼容既有 \"查看团队\" → 团队状态路径)。
+    定位: raw 中 \"团队执行\" 后文本为项目名 (product.json name 扫描); 缺名称 →
+    _locate_product 兜底 (会话 current_project / 最新产品)。Lifecycle 检查同
+    execute_project (需 EXECUTION_READY/DEVELOPMENT)。
+
+    执行: ExecutionOrchestrator.execute_project(mode=\"team\", 注入工作区
+    teams/agents/task_dependencies/conflicts 资产路径) — 团队成员角色匹配
+    (required_role → RoleSystem.role_matches + AgentMatcher) + 依赖拓扑排序
+    (TaskDependencyGraph) + 冲突检测记录 (ConflictDetector, 不阻塞)。
+
+    结果: ExecutionResult + mode/team_id + conflicts (conflicts.json 读取)
+    + assignments (execution_state.json 任务 → agent) 汇总 (失败安全读取)。
     """
     context.require("user")
     raw = context.intent.raw if context.intent else ""
+    name = raw.split("团队执行", 1)[1].strip() if "团队执行" in raw else ""
+    projects_root = Path(context.workspace) / "projects"
+    slug: Optional[str] = None
+    if name:
+        matched = _find_product_dir(projects_root, ProductIntent(name=name))
+        if matched is not None:
+            slug = matched
+    if slug is None:
+        product, slug, _ = _locate_product(context)
+        if product is None or slug is None:
+            return ActionResult(
+                ok=False,
+                status=STATUS_ERROR,
+                message="团队执行失败: 未找到产品定义 (请先创建产品)",
+                error="未找到产品定义 (请先创建产品)",
+            )
+    # Lifecycle 检查 (同 execute_project — 需 EXECUTION_READY 或 DEVELOPMENT)
+    project_dir = projects_root / slug
+    project_file = project_dir / "project.json"
+    status: Optional[str] = None
+    if project_file.is_file():
+        try:
+            status = str(_read_json_file(project_file).get("status") or "")
+        except Exception:  # noqa: BLE001 — 损坏 → 不阻塞 (orchestrator 为准)
+            status = None
+    allowed = (Lifecycle.EXECUTION_READY, Lifecycle.DEVELOPMENT)
+    if status and status not in allowed:
+        return ActionResult(
+            ok=False,
+            status=STATUS_ERROR,
+            message=(
+                f"团队执行失败: 项目当前状态 {status!r}, "
+                f"需 {Lifecycle.EXECUTION_READY!r} 或 {Lifecycle.DEVELOPMENT!r}"
+            ),
+            error=f"项目状态 {status!r} 不允许执行",
+        )
+    orchestrator = ExecutionOrchestrator(context.workspace)
+    teams_file = Path(context.workspace) / "teams" / "teams.json"
+    dependencies_file = Path(context.workspace) / "teams" / "task_dependencies.json"
+    conflicts_file = Path(context.workspace) / "teams" / "conflicts.json"
+    try:
+        result = orchestrator.execute_project(
+            slug,
+            mode="team",
+            teams_file=teams_file,
+            agents_file=_workspace_agents_file(context.workspace),
+            dependencies_file=dependencies_file,
+            conflicts_file=conflicts_file,
+        )
+    except Exception as exc:  # noqa: BLE001 — 失败安全: 底层异常 → 明确错误
+        return ActionResult(
+            ok=False,
+            status=STATUS_ERROR,
+            message=f"团队执行失败: {exc}",
+            error=str(exc),
+        )
+    ok = result.failed_tasks == 0
+    team_id, conflicts, assignments = _team_run_summary(
+        context.workspace, slug, teams_file, conflicts_file
+    )
+    message = (
+        f"团队执行完成: {result.project} — {result.completed_tasks} 任务完成 ({team_id})"
+        if ok
+        else f"团队执行未完成: {result.failed_tasks} 任务失败 (可再次团队执行恢复)"
+    )
+    return ActionResult(
+        ok=ok,
+        status=STATUS_OK if ok else STATUS_ERROR,
+        message=message,
+        data={
+            **result.to_dict(),
+            "mode": "team",
+            "team_id": team_id,
+            "conflicts": conflicts,
+            "assignments": assignments,
+        },
+        error=None if ok else ("; ".join(result.errors) or "任务执行失败"),
+    )
+
+
+def _team_run_summary(
+    workspace: Any,
+    slug: str,
+    teams_file: Path,
+    conflicts_file: Path,
+) -> tuple[str, list[dict[str, Any]], list[dict[str, Any]]]:
+    """团队执行汇总 (失败安全): team_id + conflicts + assignments 资产读取。"""
+    team_id = "software-team"
+    try:
+        team = TeamRegistry.load(teams_file).get("software-team")
+        if team:
+            team_id = str(team.get("team_id") or team_id)
+    except Exception:  # noqa: BLE001 — 失败安全: 团队读取失败 → 默认 id
+        pass
+    conflicts: list[dict[str, Any]] = []
+    try:
+        conflicts = ConflictDetector(conflicts_file=conflicts_file).list()
+    except Exception:  # noqa: BLE001 — 失败安全: 冲突读取失败 → 空列表
+        conflicts = []
+    assignments: list[dict[str, Any]] = []
+    try:
+        state_file = Path(workspace) / "projects" / slug / "execution_state.json"
+        if state_file.is_file():
+            state = _read_json_file(state_file)
+            assignments = [
+                {
+                    "id": str(t.get("id") or ""),
+                    "agent": str(t.get("agent") or ""),
+                    "status": str(t.get("status") or ""),
+                }
+                for t in (state.get("tasks") or [])
+                if isinstance(t, dict)
+            ]
+    except Exception:  # noqa: BLE001 — 失败安全: 状态读取失败 → 空列表
+        assignments = []
+    return team_id, conflicts, assignments
+
+
+def _team_dependencies(context: ExecutionContext) -> ActionResult:
+    """团队依赖视图 (S10-056 批次 B): \"团队依赖/依赖关系\" → TaskDependencyGraph 只读。
+
+    task_dependencies.json (工作区 teams/ 优先, 缺失 → 空图) → {dependencies,
+    tasks, topological_order} + 渲染 (task/depends_on 表格)。失败安全: 缺失/损坏
+    → 空依赖图, 不抛。
+    """
+    context.require("user")
+    file = Path(context.workspace) / "teams" / "task_dependencies.json"
+    graph = TaskDependencyGraph.load(file) if file.is_file() else TaskDependencyGraph()
+    deps = graph.to_dict()
+    ordered = graph.topological_order(list(deps.keys()))
+    rows = [[t, ", ".join(deps[t]) or "-"] for t in sorted(deps)]
+    return ActionResult(
+        ok=True,
+        status=STATUS_OK,
+        message=f"任务依赖图: {len(deps)} 个节点 (拓扑顺序 {len(ordered)})",
+        data={
+            "dependencies": deps,
+            "tasks": list(deps.keys()),
+            "topological_order": ordered,
+            "header": ["task", "depends_on"],
+            "rows": rows,
+        },
+        error=None,
+    )
+
+
+def _team_conflicts(context: ExecutionContext) -> ActionResult:
+    """团队冲突视图 (S10-056 批次 B): \"团队冲突/文件冲突\" → ConflictDetector 只读。
+
+    conflicts.json (工作区 teams/) → {conflicts, count} + 渲染 (task_a/task_b/
+    file/status 表格)。只检测不解决 — status 恒 open (设计 §2.7 / 边界 §7)。
+    失败安全: 缺失/损坏 → 空记录, 不抛。
+    """
+    context.require("user")
+    file = Path(context.workspace) / "teams" / "conflicts.json"
+    detector = ConflictDetector(conflicts_file=file)
+    records = detector.list()
+    rows = [[r["task_a"], r["task_b"], r["file"], r["status"]] for r in records]
+    return ActionResult(
+        ok=True,
+        status=STATUS_OK,
+        message=f"文件冲突: {len(records)} 条记录 (检测不解决)",
+        data={
+            "conflicts": records,
+            "count": len(records),
+            "header": ["task_a", "task_b", "file", "status"],
+            "rows": rows,
+        },
+        error=None,
+    )
+
+
+def team(context: ExecutionContext) -> ActionResult:
+    """Agent Team 协作视图 (S10-056 验收 E/F + 批次 B 集成):
+    "团队执行" → 团队模式执行 (mode=team); "团队依赖" → 依赖图视图;
+    "团队冲突" → 冲突记录视图; "创建团队" → TeamRegistry.create;
+    其余 ("查看团队/团队状态/团队协作") → 默认团队协作视图 (team_snapshot)。
+
+    raw 关键词优先分派; intent_type 兜底 (程序化 Intent 无 raw 关键词也可达)。
+    只读查询 (非敏感, 无确认门); 团队执行为确认门 Action (独立注册 team_execute)。
+    失败安全: 数据缺失 → 默认团队/占位, 不抛。
+    workforce action 保持独立 (兼容既有 "查看团队" → 团队状态路径)。
+    """
+    context.require("user")
+    raw = context.intent.raw if context.intent else ""
+    intent_type = context.intent.intent_type if context.intent else ""
+    if "团队执行" in raw or intent_type == INTENT_TEAM_EXECUTE:
+        return _team_execute(context)
+    if "团队依赖" in raw or intent_type == INTENT_TEAM_DEPENDENCIES:
+        return _team_dependencies(context)
+    if "团队冲突" in raw or intent_type == INTENT_TEAM_CONFLICTS:
+        return _team_conflicts(context)
     if "创建团队" in raw:
         return _team_create(context, raw)
     return _team_view(context)
@@ -1522,10 +1731,55 @@ def build_default_actions() -> ActionRegistry:
     )
     registry.register(
         Action(
+            name="team_execute",
+            description=(
+                "团队模式执行项目 (execute_project mode=team: 团队成员角色匹配 "
+                "+ 依赖拓扑排序 + 冲突检测记录)"
+            ),
+            handler=_team_execute,
+            permission="project",
+            metadata={
+                "service": "ExecutionOrchestrator.execute_project(mode=team)",
+                "phase": "S10-056 批次 B",
+                "sensitive": True,
+                "category": "team",
+            },
+        )
+    )
+    registry.register(
+        Action(
+            name="team_dependencies",
+            description="任务依赖图 (TaskDependencyGraph 只读视图: task_dependencies.json)",
+            handler=_team_dependencies,
+            permission="user",
+            metadata={
+                "service": "TaskDependencyGraph (task_dependencies.json)",
+                "phase": "S10-056 批次 B",
+                "sensitive": False,
+                "category": "team",
+            },
+        )
+    )
+    registry.register(
+        Action(
+            name="team_conflicts",
+            description="文件冲突记录 (ConflictDetector 只读视图, 检测不解决)",
+            handler=_team_conflicts,
+            permission="user",
+            metadata={
+                "service": "ConflictDetector (conflicts.json)",
+                "phase": "S10-056 批次 B",
+                "sensitive": False,
+                "category": "team",
+            },
+        )
+    )
+    registry.register(
+        Action(
             name="team",
             description=(
-                "团队协作视图 (查看团队 → 成员角色/负载/绩效; "
-                "创建团队 → TeamRegistry.create)"
+                "团队协作视图 (查看团队 → 成员角色/负载/绩效; 创建团队 → "
+                "TeamRegistry.create; 团队执行/团队依赖/团队冲突 → 对应视图)"
             ),
             handler=team,
             permission="user",

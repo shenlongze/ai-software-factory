@@ -752,7 +752,7 @@ def test_team_action_create_chinese_name_slug_fallback(tmp_path):
     intent = _intent("team", raw="创建团队 电商后端团队", name="电商后端团队")
     result = ACTIONS_MOD.team(_exec_ctx(tmp_path, intent))
     assert result.ok
-    assert result.data["team_id"] == "team"  # 中文名 slug 空 → 兜底 "team"
+    assert result.data["team_id"] == "电商后端团队"  # S10-056: 中文名 slug 空 → 用原名 (可识别 id)
     assert result.data["name"] == "电商后端团队"
 
 

@@ -38,6 +38,7 @@ from .action import (
 from .audit import record_execution
 from .commands import read_projects
 from .intent import INTENT_CREATE_PROJECT, IntentObject
+from .orchestrator import ExecutionOrchestrator
 from .pipeline import (
     AgentAssignment,
     EngineeringPlan,
@@ -726,6 +727,115 @@ def execute_task(context: ExecutionContext) -> ActionResult:
     )
 
 
+def execute_project(context: ExecutionContext) -> ActionResult:
+    """执行项目 (S10-052 P2): execution_plan.json → 任务队列 → Lifecycle 推进。
+
+    \"开始开发/开始执行/执行项目\" → 确认门 (sensitive) → 本项目:
+    1. 定位产品 (复用 _locate_product) + Lifecycle 检查 (需 EXECUTION_READY
+       或 DEVELOPMENT — 可恢复; 已交付/测试中 → 明确拒绝)
+    2. ExecutionOrchestrator: 有未完成任务 (execution_state.json 存在 pending/
+       failed) → resume 恢复; 否则 → execute_project 全新执行
+    3. ExecutionResult → ActionResult (失败安全: 底层异常 → 明确错误)
+
+    任务执行复用 execute_task (orchestrator._default_execute_fn 薄调, 验收 H)。
+    """
+    context.require("user")  # 基线权限 (action.permission="project" 由 RBAC 后续 Task 强制)
+    product, slug, projects_root = _locate_product(context)
+    if product is None or slug is None:
+        return ActionResult(
+            ok=False,
+            status=STATUS_ERROR,
+            message="执行项目失败: 未找到产品定义 (请先创建产品)",
+            error="未找到产品定义 (请先创建产品)",
+        )
+    # Lifecycle 检查 (设计 §8): 需 EXECUTION_READY 或 DEVELOPMENT (可恢复)
+    project_dir = projects_root / slug
+    project_file = project_dir / "project.json"
+    status: Optional[str] = None
+    if project_file.is_file():
+        try:
+            status = str(_read_json_file(project_file).get("status") or "")
+        except Exception:  # noqa: BLE001 — 损坏 → 不阻塞 (orchestrator 为准)
+            status = None
+    allowed = (Lifecycle.EXECUTION_READY, Lifecycle.DEVELOPMENT)
+    if status and status not in allowed:
+        return ActionResult(
+            ok=False,
+            status=STATUS_ERROR,
+            message=(
+                f"执行项目失败: 项目当前状态 {status!r}, "
+                f"需 {Lifecycle.EXECUTION_READY!r} 或 {Lifecycle.DEVELOPMENT!r}"
+            ),
+            error=f"项目状态 {status!r} 不允许执行",
+        )
+    orchestrator = ExecutionOrchestrator(context.workspace)
+    try:
+        if orchestrator.needs_resume(slug):
+            result = orchestrator.resume(slug)
+        else:
+            result = orchestrator.execute_project(slug)
+    except Exception as exc:  # noqa: BLE001 — 失败安全: 底层异常 → 明确错误
+        return ActionResult(
+            ok=False,
+            status=STATUS_ERROR,
+            message=f"执行项目失败: {exc}",
+            error=str(exc),
+        )
+    ok = result.failed_tasks == 0
+    message = (
+        f"项目执行完成: {result.project} — {result.completed_tasks} 任务完成"
+        if ok
+        else f"项目执行未完成: {result.failed_tasks} 任务失败 (可再次开始开发恢复)"
+    )
+    return ActionResult(
+        ok=ok,
+        status=STATUS_OK if ok else STATUS_ERROR,
+        message=message,
+        data=result.to_dict(),
+        error=None if ok else ("; ".join(result.errors) or "任务执行失败"),
+    )
+
+
+def project_progress(context: ExecutionContext) -> ActionResult:
+    """查询项目执行进度 (S10-052 P4): 只读 execution_state.json, 不执行任何任务。
+
+    \"项目进度/进度如何/执行到哪了\" → 非敏感查询 → 汇总
+    {project, status, lifecycle, tasks_total, completed, running, pending,
+    failed, agents} (验收 F)。
+    """
+    context.require("user")
+    product, slug, projects_root = _locate_product(context)
+    if product is None or slug is None:
+        return ActionResult(
+            ok=False,
+            status=STATUS_ERROR,
+            message="进度查询失败: 未找到产品定义 (请先创建产品)",
+            error="未找到产品定义 (请先创建产品)",
+        )
+    try:
+        progress = ExecutionOrchestrator(context.workspace).get_progress(slug)
+    except Exception as exc:  # noqa: BLE001 — 失败安全: 底层异常 → 明确错误
+        return ActionResult(
+            ok=False,
+            status=STATUS_ERROR,
+            message=f"进度查询失败: {exc}",
+            error=str(exc),
+        )
+    total = progress.get("tasks_total") or 0
+    completed = progress.get("completed") or 0
+    if progress.get("status") == "not_started":
+        message = f"项目进度: 尚未开始执行 (共 {total} 个任务)"
+    else:
+        message = f"项目进度: {completed}/{total} 完成"
+    return ActionResult(
+        ok=True,
+        status=STATUS_OK,
+        message=message,
+        data=progress,
+        error=None,
+    )
+
+
 def build_default_actions() -> ActionRegistry:
     """装配默认 Action 注册表 (注册式 — 新增 Action 只需 register 一行)。"""
     registry = ActionRegistry()
@@ -811,6 +921,34 @@ def build_default_actions() -> ActionRegistry:
                 "phase": "S10-051 P3",
                 "sensitive": True,
                 "category": "product",
+            },
+        )
+    )
+    registry.register(
+        Action(
+            name="execute_project",
+            description="执行项目 (execution_plan.json → 任务队列 → Lifecycle 推进)",
+            handler=execute_project,
+            permission="project",
+            metadata={
+                "service": "ExecutionOrchestrator (复用 execute_task)",
+                "phase": "S10-052 P2",
+                "sensitive": True,
+                "category": "execution",
+            },
+        )
+    )
+    registry.register(
+        Action(
+            name="project_progress",
+            description="查询项目执行进度 (只读 execution_state.json)",
+            handler=project_progress,
+            permission="user",
+            metadata={
+                "service": "ExecutionOrchestrator.get_progress",
+                "phase": "S10-052 P4",
+                "sensitive": False,
+                "category": "execution",
             },
         )
     )

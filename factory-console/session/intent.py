@@ -33,6 +33,9 @@ INTENT_CREATE_PRODUCT = "create_product"
 #: S10-051 P1: 工程管线意图 (生成 PRD / 准备工程 — 规则生成, 不调 LLM)
 INTENT_GENERATE_PRD = "generate_prd"
 INTENT_PREPARE_PROJECT = "prepare_project"
+#: S10-052 P3: 执行编排意图 (开始开发 / 进度查询 — Orchestrator Actions)
+INTENT_EXECUTE_PROJECT = "execute_project"
+INTENT_PROJECT_PROGRESS = "project_progress"
 
 #: KeywordIntentParser 关键词规则表 (顺序 = 优先级, 确定性无歧义):
 #: (关键词元组, intent_type, 参数键 — 命中后取关键词后剩余文本作为参数值)
@@ -46,6 +49,10 @@ _KEYWORD_RULES: tuple[tuple[tuple[str, ...], str, Optional[str]], ...] = (
     # ("我想生成PRD" 不被 "我想" 抢; "准备开发一个APP" 不被 "开发一个" 抢)
     (("生成PRD", "生成需求文档", "PRD"), INTENT_GENERATE_PRD, None),
     (("准备开发", "生成工程计划", "工程计划", "准备工程"), INTENT_PREPARE_PROJECT, None),
+    # S10-052 P3: 执行编排意图 — 优先级在 create_product 之前
+    # ("开始开发这个产品" 不被 "产品" 抢; "执行项目" 不被 run_task 抢)
+    (("开始开发", "开始执行", "执行项目", "开始开发这个产品"), INTENT_EXECUTE_PROJECT, None),
+    (("项目进度", "进度如何", "执行到哪了"), INTENT_PROJECT_PROGRESS, None),
     # S10-050 P1: 产品意图 (想法级) — "我想/做一款/产品/想法/创业" → create_product
     # (idea 参数 = 关键词后剩余文本; 优先级在 run_task/show_status 之后,
     #  "我想看看状态" → show_status、"我想加个功能" → run_task 不被抢)

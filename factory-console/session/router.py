@@ -27,6 +27,9 @@ DEFAULT_ROUTES: dict[str, str] = {
     # S10-051 P4: 工程管线意图 → 规则生成 Action (PRD / 准备工程)
     "generate_prd": "generate_prd",
     "prepare_project": "prepare_project",
+    # S10-052 P4: 执行编排意图 → Orchestrator Actions (执行项目 / 进度查询)
+    "execute_project": "execute_project",
+    "project_progress": "project_progress",
 }
 
 

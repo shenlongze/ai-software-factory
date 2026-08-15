@@ -94,10 +94,11 @@ class InteractiveSession:
         # S10-051 P3 (验收 G): prepare_project 为敏感组合 Action (生成 4 资产 +
         # 生命周期变更) — 纳入会话确认门。仅扩展本实例的集合 (拷贝),
         # 不改 ConfirmationGate 类默认集合 {create_project, run_task} (基线不动)
+        # S10-052 P2 (验收 D): execute_project 同纳入确认门 ("开始开发" → 确认后才执行)
         if isinstance(self.confirmation_gate, ConfirmationGate):
             self.confirmation_gate.sensitive_actions = set(
                 self.confirmation_gate.sensitive_actions
-            ) | {"prepare_project"}
+            ) | {"prepare_project", "execute_project"}
         #: 结果渲染器 (P1) — ActionResult.to_dict() → Renderer 展示
         self.renderer = renderer if renderer is not None else HumanRenderer()
         #: 会话状态机 (S10-050 P5) — 产品流程 (DISCOVERY 多轮) 由 conversation 接管;
@@ -206,7 +207,8 @@ class InteractiveSession:
             return
         # S10-049 P5: agent.execute_task 长耗时执行 — 展示 AgentExecutionResult 摘要
         # (agent/artifact/cost/duration); 其余 Action 走通用 Renderer
-        if action.name == "agent.execute_task":
+        # S10-052 P2: execute_project 结果含 cost 键 → 同走摘要渲染 (避免成本分支吞消息)
+        if action.name in ("agent.execute_task", "execute_project"):
             self._render_execution(action.name, result)
             return
         print(self.renderer.render(result.to_dict()))

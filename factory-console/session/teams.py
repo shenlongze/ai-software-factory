@@ -43,6 +43,19 @@ DEFAULT_TEAM_MEMBERS: list[dict[str, str]] = [
     {"agent": "qa-agent", "role": "qa"},
 ]
 
+#: Full Stack 团队编制 (S10-058 设计 §1/§2): 5 成员基础上扩展 2 成员 —
+#: +frontend-agent (前端主执行者, role=frontend) + reviewer-agent (评审, role=reviewer);
+#: flutter-dev 保留为 frontend 备用 (同角色多成员 → roster 首位主成员优先)。
+DEFAULT_FULLSTACK_TEAM_MEMBERS: list[dict[str, str]] = [
+    {"agent": "pm-agent", "role": "product_manager"},
+    {"agent": "architect-agent", "role": "architect"},
+    {"agent": "backend-1", "role": "backend"},
+    {"agent": "frontend-agent", "role": "frontend"},
+    {"agent": "flutter-dev", "role": "frontend"},
+    {"agent": "qa-agent", "role": "qa"},
+    {"agent": "reviewer-agent", "role": "reviewer"},
+]
+
 
 def _now_iso() -> str:
     """UTC 当前时间 ISO 格式 (团队创建时间戳)。"""
@@ -151,6 +164,19 @@ class TeamRegistry:
         return team.to_dict()
 
     # ------------------------------------------------------------ 读写
+
+    @classmethod
+    def build_fullstack_team(cls) -> dict[str, Any]:
+        """Full Stack 团队 (S10-058): DEFAULT_FULLSTACK_TEAM_MEMBERS 7 角色编制
+        (pm/architect/backend-1/frontend-agent/flutter-dev/qa/reviewer)。"""
+        team = AgentTeam(
+            team_id=DEFAULT_TEAM_ID,
+            name=DEFAULT_TEAM_NAME,
+            members=[dict(m) for m in DEFAULT_FULLSTACK_TEAM_MEMBERS],
+            projects=[],
+            created_at=_now_iso(),
+        )
+        return team.to_dict()
 
     @classmethod
     def load(cls, teams_file: Optional[Path] = None) -> dict[str, dict[str, Any]]:

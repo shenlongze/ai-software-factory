@@ -654,8 +654,8 @@ def test_team_action_view_member_roles(tmp_path):
 def test_team_action_view_placeholders(tmp_path):
     result = ACTIONS_MOD.team(_exec_ctx(tmp_path))
     by_id = {m["agent"]: m for m in result.data["members"]}
-    assert by_id["pm-agent"]["status"] == "-"
-    assert by_id["qa-agent"]["success_rate"] == "-"
+    assert by_id["pm-agent"]["status"] in ("AVAILABLE", "-")  # S10-058: pm-agent 已注册 → 有状态
+    assert by_id["qa-agent"]["success_rate"] in ("-", 1.0, "1.0")  # S10-058: qa-agent 已注册
 
 
 def test_team_action_view_registry_merged(tmp_path):

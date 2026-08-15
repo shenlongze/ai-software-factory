@@ -39,7 +39,9 @@ NEUTRAL_SUCCESS_RATE = 0.5
 
 #: 默认注册表 (Registry 2.0 兜底 — agents.json 缺失/损坏时使用)。
 #: role/skills 口径同设计 §1 现状: backend-1 (Backend Engineer: python/api/database) /
-#: flutter-dev (Frontend Engineer: flutter/react/ui) / tester-1 (QA Engineer: test/qa)
+#: flutter-dev (Frontend Engineer: flutter/react/ui) / tester-1 (QA Engineer: test/qa)。
+#: S10-058: DEFAULT_AGENTS 保持 3 Agent 基线 (既有测试锁定常量); frontend-agent
+#: 经 FRONTEND_AGENT/FULLSTACK_AGENTS 注册 (load_fullstack 默认兜底含它)。
 DEFAULT_AGENTS: dict[str, dict[str, Any]] = {
     "backend-1": {
         "id": "backend-1",
@@ -73,6 +75,66 @@ DEFAULT_AGENTS: dict[str, dict[str, Any]] = {
         "cost_profile": {"avg_cost": 500, "cost_unit": "tokens"},
         "status": "available",
         "current_task": None,
+    },
+}
+
+#: Frontend Agent 规格 (S10-058 设计 §2): 前端主执行者 — UI/组件/前端生产。
+#: role=Frontend Engineer, skills=[frontend, flutter, react, typescript, ui],
+#: capabilities=[ui_architecture, component_design, frontend_implementation,
+#: frontend_testing], supported_tasks=[frontend_page, ui_interaction, component, screen]。
+#: required_role=\"frontend\" → RoleSystem.role_matches 命中 (role 含 \"frontend\")。
+FRONTEND_AGENT: dict[str, Any] = {
+    "id": "frontend-agent",
+    "name": "frontend-agent",
+    "role": "Frontend Engineer",
+    "description": "前端开发: Flutter/React/TypeScript/UI 组件与页面生产",
+    "skills": ["frontend", "flutter", "react", "typescript", "ui"],
+    "supported_tasks": ["frontend_page", "ui_interaction", "component", "screen"],
+    "capabilities": [
+        "ui_architecture",
+        "component_design",
+        "frontend_implementation",
+        "frontend_testing",
+    ],
+    "cost_profile": {"avg_cost": 950, "cost_unit": "tokens"},
+    "status": "available",
+    "current_task": None,
+}
+
+#: Full Stack 注册表 (S10-058): 3 Agent 基线 + frontend-agent。
+#: load_fullstack 默认兜底 (agents.json 缺失/损坏) 与显式 agents.json 缺 frontend-agent
+#: 时的合并源 — Full Stack Team 前端任务匹配的注册面。
+#: S10-058: 完整 7 角色团队注册 (pm/architect/frontend/qa/reviewer + 基线)。
+FULLSTACK_AGENTS: dict[str, dict[str, Any]] = {
+    **DEFAULT_AGENTS,
+    "frontend-agent": dict(FRONTEND_AGENT),
+    "pm-agent": {
+        "id": "pm-agent", "name": "PM Agent", "role": "Product Manager",
+        "description": "产品经理: 需求/PRD/确认",
+        "skills": ["pm", "analysis", "requirement"],
+        "supported_tasks": ["product_planning", "requirement_analysis", "prd_writing"],
+        "status": "AVAILABLE", "current_task": None,
+    },
+    "architect-agent": {
+        "id": "architect-agent", "name": "Architect Agent", "role": "Architect",
+        "description": "架构师: 系统设计/技术选型",
+        "skills": ["architecture", "design", "system"],
+        "supported_tasks": ["system_design", "architecture_decision"],
+        "status": "AVAILABLE", "current_task": None,
+    },
+    "qa-agent": {
+        "id": "qa-agent", "name": "QA Agent", "role": "QA Engineer",
+        "description": "测试: pytest/验证",
+        "skills": ["test", "qa", "pytest"],
+        "supported_tasks": ["test_suite", "test"],
+        "status": "AVAILABLE", "current_task": None,
+    },
+    "reviewer-agent": {
+        "id": "reviewer-agent", "name": "Reviewer Agent", "role": "Reviewer",
+        "description": "评审: 代码审查/质量检查",
+        "skills": ["review", "quality", "code_review"],
+        "supported_tasks": ["code_review", "quality_gate"],
+        "status": "AVAILABLE", "current_task": None,
     },
 }
 
@@ -176,6 +238,29 @@ class AgentRegistry:
         return cls._normalize(data)
 
     @classmethod
+    def load_fullstack(cls, agents_file: Optional[Path] = None) -> dict[str, dict[str, Any]]:
+        """Full Stack 注册表 (S10-058): agents.json 读取 + frontend-agent 兜底。
+
+        - agents.json 缺失/损坏/空 → FULLSTACK_AGENTS 默认兜底 (含 frontend-agent);
+        - 有效 agents.json 缺 frontend-agent → 合并 FRONTEND_AGENT 规格 (团队前端匹配
+          注册面完整 — 真实 agents.json 未注册时 frontend-agent 仍可用);
+        - 有效 agents.json 已含 frontend-agent → 以文件为准 (规范化)。
+        """
+        path = Path(agents_file) if agents_file is not None else cls.DEFAULT_FILE
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001 — 失败安全: 缺失/损坏 → fullstack 默认
+            data = None
+        if not isinstance(data, dict) or not data:
+            return {aid: dict(agent) for aid, agent in FULLSTACK_AGENTS.items()}
+        result = cls._normalize(data)
+        if "frontend-agent" not in result:
+            result["frontend-agent"] = cls._normalize(
+                {"frontend-agent": dict(FRONTEND_AGENT)}
+            )["frontend-agent"]
+        return result
+
+    @classmethod
     def _normalize(cls, data: Any) -> dict[str, dict[str, Any]]:
         """任意结构 → {id: agent} (扩展字段缺省推导; 非 dict/空 → 默认注册表)。"""
         if not isinstance(data, dict) or not data:
@@ -205,6 +290,13 @@ class AgentRegistry:
                 )
             else:
                 normalized["supported_tasks"] = cls.derive_supported_tasks(normalized)
+            # S10-058: capabilities 显式透传 (frontend-agent 规格 —
+            # RoleSystem.capabilities_for 显式优先; 无 → 仍由 role/skills 推导)
+            if raw.get("capabilities"):
+                caps = raw["capabilities"]
+                normalized["capabilities"] = (
+                    [str(c) for c in caps] if isinstance(caps, list) else [str(caps)]
+                )
             if raw.get("cost_profile"):
                 normalized["cost_profile"] = dict(raw["cost_profile"])
             else:

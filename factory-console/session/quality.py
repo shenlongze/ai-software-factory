@@ -175,6 +175,33 @@ class Validator:
             timestamp=_now_iso(),
         )
 
+    #: 前端框架 → 默认测试命令 (S10-058: Frontend Validation)
+    FRONTEND_COMMANDS: dict[str, str] = {
+        "flutter": "flutter test",
+        "npm": "npm test",
+        "react": "npm test",
+        "typescript": "npm test",
+    }
+
+    def validate_frontend(
+        self,
+        project_dir: Path,
+        framework: str = "flutter",
+        *,
+        command: Optional[str] = None,
+        timeout: int = 180,
+        env: Optional[dict[str, str]] = None,
+    ) -> ValidationResult:
+        """前端验证 (S10-058): framework → 默认命令映射 → validate_command。
+
+        flutter → "flutter test"; npm/react/typescript → "npm test";
+        显式 command 优先 (调用方自定义)。失败安全 (同 validate_command)。
+        """
+        cmd = command or self.FRONTEND_COMMANDS.get(framework, "npm test")
+        return self.validate_command(
+            Path(project_dir), cmd, timeout=timeout, env=env
+        )
+
     def validate(
         self,
         task: dict[str, Any],

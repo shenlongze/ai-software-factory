@@ -312,3 +312,77 @@ def handoff(
     """
     store = HandoffStore(file=file)
     return store.send(from_agent, to_agent, requirement, decision, constraints, task_id=task_id)
+
+
+# ================================================================== S10-058: ArchitectDecision / DecisionStore
+
+
+class DecisionStore:
+    """架构决策存储 (S10-058 智能 Handoff): ArchitectDecision → decision_objects.json。
+
+    ArchitectDecision: {from, to, decision: {architecture, state_management,
+    api_contract}, constraints} — 结构化交接 (非纯文本消息), 供后续 Agent
+    执行前注入 previous_decisions (Decision Driven Execution)。
+    """
+
+    DEFAULT_FILE = Path.home() / ".factory" / "teams" / "decision_objects.json"
+
+    def __init__(self, file: Optional[Path] = None) -> None:
+        self._file = Path(file) if file is not None else self.DEFAULT_FILE
+
+    def record(
+        self,
+        from_agent: str,
+        to_agent: str,
+        decision: dict[str, Any],
+        constraints: Optional[list[str]] = None,
+        task_id: str = "",
+    ) -> dict[str, Any]:
+        """记录架构决策 (append) → decision_objects.json。"""
+        obj = {
+            "from": from_agent,
+            "to": to_agent,
+            "decision": dict(decision or {}),
+            "constraints": list(constraints or []),
+            "task_id": task_id,
+            "timestamp": _now_iso(),
+        }
+        records = self.load()
+        records.append(obj)
+        self._write(records)
+        return obj
+
+    def load(self) -> list[dict[str, Any]]:
+        """读回决策记录 (缺失/损坏 → [], 失败安全)。"""
+        try:
+            data = json.loads(self._file.read_text(encoding="utf-8"))
+            if isinstance(data, list):
+                return [d for d in data if isinstance(d, dict)]
+        except Exception:  # noqa: BLE001
+            pass
+        return []
+
+    def decisions_for(self, agent: str) -> list[dict[str, Any]]:
+        """某 Agent 收到的决策 (to == agent)。"""
+        return [d for d in self.load() if d.get("to") == agent]
+
+    def previous_decisions(self) -> dict[str, Any]:
+        """汇总为 previous_decisions (执行上下文注入用)。"""
+        records = self.load()
+        if not records:
+            return {}
+        return {
+            "decisions": records,
+            "summary": [
+                {
+                    "from": r.get("from"),
+                    "to": r.get("to"),
+                    "decision": r.get("decision", {}),
+                }
+                for r in records
+            ],
+        }
+
+    def _write(self, records: list[dict[str, Any]]) -> None:
+        self._file.parent.mkdir(parents=True, exist_ok=True)
+        self._file.write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding="utf-8")

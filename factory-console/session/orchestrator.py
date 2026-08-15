@@ -277,9 +277,23 @@ class TeamRunContext:
             "artifacts": list(ctx.get("artifacts") or []),
             "messages": [dict(m) for m in messages],
             "decisions": decisions,
+            # S10-058: previous_decisions (DecisionStore 结构化决策注入 — 决策驱动执行)
+            "previous_decisions": self._previous_decisions(project_dir, str(task.get("agent") or "")),
         }
         task["context"] = context
         return context
+
+    def _previous_decisions(self, project_dir: Path, agent: str) -> dict[str, Any]:
+        """S10-058: 读取 decision_objects.json 中发给该 Agent 的决策 → 上下文。"""
+        try:
+            from .messages import DecisionStore
+
+            dstore = DecisionStore(
+                file=Path(project_dir) / "decision_objects.json"
+            )
+            return dstore.previous_decisions()
+        except Exception:  # noqa: BLE001 — 失败安全: 缺决策 → 空
+            return {}
 
     def after_task(self, project_dir: Path, task: dict[str, Any]) -> None:
         """任务成功后 Workspace 更新 + 可选消息 (仅 completed 任务)。"""
@@ -1134,6 +1148,28 @@ class ExecutionOrchestrator:
                 lines.append(f"- {aid} ({role_of.get(aid) or '-'})")
         else:
             lines.append("- (无)")
+        lines += [
+            "",
+            "## Agent Contribution",
+            "",
+            "| Agent | Role | Tasks | Artifacts |",
+            "|---|---|---|---|",
+        ]
+        contrib = {}  # agent → {role, tasks, artifacts}
+        for t in state.tasks:
+            aid = str(t.get("agent") or "")
+            if not aid or aid == "None":
+                continue
+            entry = contrib.setdefault(
+                aid, {"role": role_of.get(aid) or "-", "tasks": 0, "artifacts": []}
+            )
+            entry["tasks"] += 1
+            if t.get("artifact"):
+                entry["artifacts"].append(str(t["artifact"]).split("/")[-1])
+        for aid in sorted(contrib):
+            c = contrib[aid]
+            art = ", ".join(c["artifacts"]) or "-"
+            lines.append(f"| {aid} | {c['role']} | {c['tasks']} | {art} |")
         lines += [
             "",
             "## Artifacts",

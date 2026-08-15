@@ -153,7 +153,13 @@ class RoleSystem:
             return True
         # capabilities 子串匹配 (显式 capabilities 如 "backend_api" 含 "backend")
         caps = RoleSystem.capabilities_for(agent)
-        return any(required in str(cap).lower() for cap in caps)
+        if any(required in str(cap).lower() for cap in caps):
+            return True
+        # skills 匹配 (S10-058: flutter/react/typescript 是技能非角色)
+        # 方向: required 是 skill 的子串 ("flutter" in "flutter_dev"); 反向太宽
+        # ("design" in "designer" 误匹配) — 不允许
+        skills = [str(s).lower() for s in (agent.get("skills") or [])]
+        return any(required in sk for sk in skills)
 
     # ------------------------------------------------------------ 注入
 

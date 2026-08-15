@@ -4,7 +4,15 @@
 → 失败处理 (retry/max_retry, 不无限重试) → Lifecycle 自动推进
 (EXECUTION_READY → DEVELOPMENT → TESTING → DELIVERED) → ExecutionResult 汇总。
 
-设计: docs/sprint10/S10-052-production-loop-design.md §2-§7
+S10-057 (Team Production Validation, team mode 增强): ConflictResolver 计划级
+冲突解决 (conflict_resolution.json) + TeamExecutionState (team_execution_state.json,
+pause/resume/progress) + Agent Handoff (handoff_messages.json) + Workspace Context
+注入 (task["context"] 透传) + Team Validation (QA Review + pytest 命令门) +
+team_report.md 生成。solo mode 行为零变化 (team_run 不传 → 原路径)。
+
+设计: docs/sprint10/S10-052-production-loop-design.md §2-§7;
+docs/sprint10/S10-056-team-design.md §3 TeamExecutionMode;
+docs/sprint10/S10-057-team-production-design.md §P0-§P5
 
 组件:
 - ExecutionResult  — 执行结果汇总 (project/status/completed/failed/artifacts/duration/cost/errors)
@@ -31,13 +39,19 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from .agents import AgentMatcher, AgentMetrics, AgentRegistry
-from .conflicts import ConflictDetector, ConflictRecord
+from .conflicts import (
+    ConflictDetector,
+    ConflictRecord,
+    ConflictResolver,
+    FileOwnership,
+)
 from .dependencies import TaskDependencyGraph
 from .intent import IntentObject
-from .messages import AgentMessageStore
+from .messages import AgentMessageStore, HandoffStore
 from .pipeline import Lifecycle
 from .quality import RepairManager, ValidationResult, Validator
 from .roles import RoleSystem
+from .team_state import TeamExecutionState
 from .teams import DEFAULT_TEAM_ID, TeamRegistry
 from .workspace import WorkspaceContext
 
@@ -205,20 +219,30 @@ class ExecutionState:
 
 @dataclass
 class TeamRunContext:
-    """团队执行钩子 (S10-056 批次 B): 冲突检测 + Workspace 更新 + 消息记录。
+    """团队执行钩子 (S10-056 批次 B + S10-057): 冲突检测/解决 + Workspace 注入 +
+    Handoff + TeamState 更新。
 
     仅 team mode 使用 (solo mode 无此上下文, 行为零变化):
     - before_task: ConflictDetector.detect — 同文件多任务 → ConflictRecord
       (记录不阻塞 — 冲突不中断执行, 边界 §7 只检测不解决)
+    - inject_context: 任务执行前 WorkspaceContext 快照 (completed_tasks/artifacts/
+      messages/decisions) → task["context"] 透传 (设计 §P3 — execute_fn 可读)
     - after_task: 任务成功 → WorkspaceContext.mark_task_completed/add_artifact
       (让 Agent 知道之前谁做过什么 — 设计 §2.5) + AgentMessage 可选记录
       (architect → 成员 指令型消息 — 设计 §2.6, 接口预留, 缺省关闭)
+    - S10-057 增强: handoff_after_task — 前序任务完成 → HandoffStore 交接给
+      后继任务 (requirement/decision/constraints → handoff_messages.json, §P2);
+      update_team_state — TeamExecutionState 每任务状态写入 (§P1)
     """
 
     team: dict[str, Any]
     detector: ConflictDetector
     store: Optional[AgentMessageStore] = None
     messages_from: str = "architect-agent"
+    # S10-057: 后继任务映射 (依赖图推导: task_id → [依赖它的任务]) + 任务索引
+    successors: dict[str, list[str]] = field(default_factory=dict)
+    tasks_by_id: dict[str, dict[str, Any]] = field(default_factory=dict)
+    handoff_store: Optional[HandoffStore] = None
 
     def before_task(
         self, project_dir: Path, task: dict[str, Any]
@@ -226,6 +250,36 @@ class TeamRunContext:
         """任务执行前冲突检测 (同文件已被其他 task 归属 → ConflictRecord, 记录不阻塞)。"""
         files = [str(f) for f in (task.get("files") or []) if not isinstance(f, dict)]
         return self.detector.detect(project_dir, str(task.get("id") or ""), files)
+
+    def inject_context(self, project_dir: Path, task: dict[str, Any]) -> dict[str, Any]:
+        """Workspace Context 注入 (设计 §P3): workspace_context.json 快照 +
+        消息/交接 → task["context"] 透传 (execute_fn 可读)。
+
+        上下文: {project, completed_tasks, artifacts, messages, decisions} —
+        messages 来自 AgentMessageStore (可选), decisions 为发给该任务的交接
+        (handoff_messages.json, to == task.agent)。只读组装, 不改 workspace。
+        """
+        ctx = WorkspaceContext.load(project_dir)
+        messages = (
+            self.store.list() if self.store is not None else []
+        )
+        decisions: list[dict[str, Any]] = []
+        if self.handoff_store is not None:
+            agent = str(task.get("agent") or "")
+            decisions = [
+                dict(h)
+                for h in self.handoff_store.list()
+                if agent and str(h.get("to")) == agent
+            ]
+        context = {
+            "project": str(ctx.get("project") or Path(project_dir).name),
+            "completed_tasks": list(ctx.get("completed_tasks") or []),
+            "artifacts": list(ctx.get("artifacts") or []),
+            "messages": [dict(m) for m in messages],
+            "decisions": decisions,
+        }
+        task["context"] = context
+        return context
 
     def after_task(self, project_dir: Path, task: dict[str, Any]) -> None:
         """任务成功后 Workspace 更新 + 可选消息 (仅 completed 任务)。"""
@@ -247,6 +301,54 @@ class TeamRunContext:
                 "instruction",
                 f"Task {task.get('id') or ''} completed: {task.get('name') or ''}",
             )
+
+    def handoff_after_task(self, project_dir: Path, task: dict[str, Any]) -> None:
+        """Agent Handoff (设计 §P2): 前序任务完成 → 后继任务交接。
+
+        依赖关系 → 后继任务 (successors); 交接内容: requirement (后继任务
+        requirement/name), decision (前序完成决策), constraints (后继任务
+        constraints/缺省) → handoff_messages.json。无后继/无 store → 无操作。
+        """
+        if self.handoff_store is None:
+            return
+        task_id = str(task.get("id") or "")
+        succ_ids = list(self.successors.get(task_id) or [])
+        if not succ_ids:
+            return
+        from_agent = str(task.get("agent") or "") or self.messages_from
+        for succ_id in succ_ids:
+            succ = self.tasks_by_id.get(succ_id) or {}
+            to_agent = str(succ.get("agent") or "") or self.messages_from
+            self.handoff_store.send(
+                from_agent,
+                to_agent,
+                requirement=str(
+                    succ.get("requirement") or succ.get("name") or succ_id
+                ),
+                decision=f"{task_id} 完成: {task.get('name') or task_id}",
+                constraints=str(
+                    succ.get("constraints") or "遵循前序设计与 workspace 上下文"
+                ),
+                task_id=succ_id,
+            )
+
+    @staticmethod
+    def update_team_state(
+        project_dir: Path, task: dict[str, Any], status: str
+    ) -> None:
+        """TeamExecutionState 每任务状态写入 (设计 §P1): team_execution_state.json。"""
+        TeamExecutionState.update(
+            project_dir,
+            str(task.get("id") or ""),
+            status,
+            agent=str(task.get("agent") or ""),
+            artifact=str(task.get("artifact") or "") if status == "completed" else None,
+        )
+
+    @staticmethod
+    def is_paused(project_dir: Path) -> bool:
+        """团队是否暂停 (team_execution_state.json status == paused)。"""
+        return TeamExecutionState.is_paused(project_dir)
 
 
 class ExecutionOrchestrator:
@@ -397,6 +499,7 @@ class ExecutionOrchestrator:
         conflicts_file: Optional[Path] = None,
         messages_file: Optional[Path] = None,
         enable_messages: bool = False,
+        validation_command: Optional[str] = None,
     ) -> ExecutionResult:
         """全新执行 (设计 §3): 读 execution_plan.json → 初始化 state → 顺序执行。
 
@@ -409,6 +512,17 @@ class ExecutionOrchestrator:
         ④ 每任务: ConflictDetector.detect (同文件冲突 → ConflictRecord,
            记录不阻塞) → 执行 → WorkspaceContext 更新 (mark_task_completed/
            add_artifact) → AgentMessage 可选记录 (architect → 成员 指令接口)
+
+        S10-057 (team mode 增强, solo 零变化):
+        - ConflictResolver 计划级冲突解决 (同文件 → 重排/串行 → conflict_resolution.json)
+        - TeamExecutionState 每任务状态 (team_execution_state.json, pause/resume/progress)
+        - Workspace Context 注入 (task["context"] = {completed_tasks, artifacts,
+          messages, decisions} — execute_fn 可读, 设计 §P3)
+        - Agent Handoff (前序完成 → 后继交接 → handoff_messages.json, 设计 §P2)
+        - Team Validation (全部完成 → QA Review → validation_command 命令门
+          (如 "pytest"); 缺省 None → 不执行命令, 保持既有 mock 语义;
+          失败 → repair 记录 + 保持 DEVELOPMENT — Repair Loop 保留)
+        - team_report.md 生成 (team/tasks/agents/artifacts/validation/conflicts/handoffs)
 
         每任务: pending → running → completed/failed (状态逐任务持久化, 可恢复);
         失败: retry_count+1, 最多重试 max_retry 次, 仍失败 → failed (继续下一任务);
@@ -448,6 +562,7 @@ class ExecutionOrchestrator:
             execute_fn=execute_fn,
             max_retry=max_retry,
             team_run=team_run,
+            validation_command=validation_command,
         )
         result.duration = time.monotonic() - started
         return result
@@ -465,16 +580,24 @@ class ExecutionOrchestrator:
         messages_file: Optional[Path],
         enable_messages: bool,
     ) -> tuple[list[dict[str, Any]], TeamRunContext]:
-        """团队模式准备 (S10-056 批次 B): 角色匹配 + 依赖拓扑排序 + 执行钩子。
+        """团队模式准备 (S10-056 批次 B + S10-057): 角色匹配 + 依赖拓扑 + 冲突解决
+        + 交接/团队状态初始化。
 
         ① 团队: TeamRegistry.get(team_id) 缺省 → 默认 software-team (失败安全);
         ② 角色匹配: required_role 任务 → RoleSystem.role_matches 过滤团队成员 →
-           AgentMatcher 选最佳 (skill 匹配 × 成功率 × 成本归一化); 无匹配成员
+           AgentMatcher 选最佳 (skill 匹配 × 成功率 × 成本); 无匹配成员
            → 保持原 assignment (失败安全, 不抛);
         ③ 拓扑排序: TaskDependencyGraph.topological_order (无依赖 → 原顺序,
            顺序执行兼容 — 设计 §2.4);
-        ④ TeamRunContext: 冲突检测 (detect, 记录不阻塞) + Workspace 更新 +
-           可选 AgentMessage (architect → 成员 指令接口, enable_messages 开启)。
+        ④ 后继映射: 依赖图 → successors {task_id: [依赖它的任务]} (Handoff 输入);
+        ⑤ 冲突解决 (S10-057 §P0): ConflictResolver.detect_and_resolve — 计划级
+           同文件冲突 → 策略 (dependency_delay 缺省) → ordered_tasks 重排 →
+           落盘 conflict_resolution.json (projects/<slug>/);
+        ⑥ TeamRunContext: 冲突检测 (detect, 记录不阻塞) + Workspace 注入 +
+           可选 AgentMessage (architect → 成员 指令接口, enable_messages 开启)
+           + HandoffStore (handoff_messages.json) + successors;
+        ⑦ TeamExecutionState.init (S10-057 §P1): team_execution_state.json
+           (team/tasks/agent/status pending)。
         返回 (排序后 plan_tasks, team_run 钩子)。
         """
         team = TeamRegistry.get(team_id, teams_file=teams_file)
@@ -513,23 +636,56 @@ class ExecutionOrchestrator:
                 if not task.get("reason"):
                     task["reason"] = match.get("reason") or ""
         ids = [str(t.get("id") or "") for t in plan_tasks]
+        graph = TaskDependencyGraph.load(dependencies_file)
         if all(ids):
-            graph = TaskDependencyGraph.load(dependencies_file)
             order = graph.topological_order(ids)
             pos = {tid: i for i, tid in enumerate(order)}
             plan_tasks = sorted(plan_tasks, key=lambda t: pos.get(str(t.get("id")), 0))
+        # S10-057 §P2: 后继任务映射 (依赖图 → task_id → [依赖它的任务], Handoff 输入)
+        tasks_by_id = {str(t.get("id") or ""): t for t in plan_tasks if t.get("id")}
+        successors: dict[str, list[str]] = {}
+        for task in plan_tasks:
+            tid = str(task.get("id") or "")
+            if not tid:
+                continue
+            for dep in graph.get(tid):
+                if dep in tasks_by_id:
+                    successors.setdefault(dep, []).append(tid)
+        # S10-057 §P0: 计划级冲突预检测 + 策略解决 (同文件 → 重排/串行 →
+        # conflict_resolution.json 落盘 projects/<slug>/)
+        resolver = ConflictResolver(
+            resolution_file=project_dir / "conflict_resolution.json"
+        )
+        resolution = resolver.detect_and_resolve(plan_tasks)
+        if resolution.get("ordered_tasks"):
+            pos = {
+                tid: i for i, tid in enumerate(resolution["ordered_tasks"])
+            }
+            plan_tasks = sorted(plan_tasks, key=lambda t: pos.get(str(t.get("id")), 0))
+            tasks_by_id = {str(t.get("id") or ""): t for t in plan_tasks if t.get("id")}
         detector = ConflictDetector(conflicts_file=conflicts_file)
         store = (
             AgentMessageStore(file=messages_file)
             if enable_messages and messages_file is not None
             else None
         )
+        # S10-057 §P2: HandoffStore — handoff_messages.json (projects/<slug>/)
+        handoff_store = HandoffStore(file=project_dir / "handoff_messages.json")
         # 工作区上下文初始化: 团队执行前确保 workspace_context.json 存在 (项目名落盘,
         # 设计 §2.5 让 Agent 知道共享上下文; 已存在 → 保留既有上下文, 不覆盖)
         ctx_file = project_dir / WorkspaceContext.FILE_NAME
         if not ctx_file.is_file():
             WorkspaceContext.save(project_dir, WorkspaceContext.init(project_dir.name))
-        return plan_tasks, TeamRunContext(team=team, detector=detector, store=store)
+        # S10-057 §P1: 团队执行状态初始化 — team_execution_state.json (全 pending)
+        TeamExecutionState.init(project_dir, str(team.get("team_id") or team_id), plan_tasks)
+        return plan_tasks, TeamRunContext(
+            team=team,
+            detector=detector,
+            store=store,
+            successors=successors,
+            tasks_by_id=tasks_by_id,
+            handoff_store=handoff_store,
+        )
 
     def resume(
         self,
@@ -556,6 +712,9 @@ class ExecutionOrchestrator:
                 task["status"] = "pending"
                 task["retry_count"] = 0
                 task["error"] = None
+        # S10-057 §P1: 团队执行状态恢复 (暂停 → running; 无团队状态 → 无操作, 不新建)
+        if (project_dir / TeamExecutionState.FILE_NAME).is_file():
+            TeamExecutionState.resume(project_dir)
         self._save_state(project_dir, state)
         started = time.monotonic()
         result = self._run_queue(
@@ -695,19 +854,34 @@ class ExecutionOrchestrator:
         execute_fn: Optional[ExecuteFn],
         max_retry: int,
         team_run: Optional[TeamRunContext] = None,
+        validation_command: Optional[str] = None,
     ) -> ExecutionResult:
-        """任务队列 (设计 §5 + S10-053 §8): 顺序执行, 逐任务持久化 + 质量门。
+        """任务队列 (设计 §5 + S10-053 §8 + S10-057): 顺序执行, 逐任务持久化 + 质量门。
 
         顺序执行 (未来 DAG: 保留 TaskQueue.next_pending/mark_done 语义扩展点 —
         本版 state.tasks 顺序即队列顺序; team mode 下该顺序已由
-        TaskDependencyGraph.topological_order 拓扑排序决定 — S10-056 批次 B)。
-        完成统计 + Lifecycle 推进 (§6)。
+        TaskDependencyGraph.topological_order 拓扑排序 + ConflictResolver 重排决定)。
 
         S10-056 批次 B (team mode 钩子, solo mode 不传 → 行为零变化):
         - before_task: ConflictDetector.detect — 同文件多任务 → ConflictRecord
           (记录不阻塞, 不中断执行)
         - after_task: 任务成功 → WorkspaceContext.mark_task_completed/add_artifact
           + AgentMessage 可选记录 (architect → 成员 指令接口)
+
+        S10-057 (team mode 增强, solo 零变化):
+        - 暂停检查: 每任务迭代前 TeamExecutionState.is_paused → 停止队列
+          (已完成任务保留, 剩余 pending; result.status="paused", Lifecycle 保持
+          DEVELOPMENT — resume 后可继续)
+        - Workspace Context 注入: inject_context — task["context"] =
+          {project, completed_tasks, artifacts, messages, decisions} (设计 §P3)
+        - TeamExecutionState 每任务状态: running → completed/failed (设计 §P1)
+        - Handoff: after_task 后 handoff_after_task — 前序完成 → 后继交接 (§P2)
+        - Team Validation (设计 §P4): 全部完成 + validation_command 提供 →
+          QA Review (qa 任务全完成) + validator.validate_command (pytest 命令门);
+          失败 → repair 记录 + 保持 DEVELOPMENT (Repair Loop 保留); 通过 →
+          TESTING → VALIDATION_PASS → USER_ACCEPTANCE (S10-055 验收门, DELIVERED
+          经 accept_project)
+        - team_report.md 生成 (设计 §P5) + 团队状态终态落盘
 
         S10-053 P2 质量门 (设计 §8): 每任务 outcome 后 → validator.validate:
         - success → task completed (state.tasks[].validation="passed")
@@ -723,6 +897,7 @@ class ExecutionOrchestrator:
         errors: list[str] = []
         costs: list[str] = []
         validations: list[ValidationResult] = []
+        paused_stop = False  # S10-057: 团队暂停 → 停止队列 (可 resume 继续)
         for task in state.tasks:
             if task.get("status") == "completed":
                 # 已完成任务跳过 (resume 语义: 不重跑); 缺 validation 字段 → 默认 passed
@@ -734,6 +909,14 @@ class ExecutionOrchestrator:
             if team_run is not None:
                 # S10-056 批次 B: 团队模式冲突检测 (同文件 → ConflictRecord, 记录不阻塞)
                 team_run.before_task(project_dir, task)
+                # S10-057 §P1: 暂停检查 — 已暂停 → 停止队列 (剩余任务保持 pending)
+                if team_run.is_paused(project_dir):
+                    paused_stop = True
+                    break
+                # S10-057 §P3: Workspace Context 注入 → task["context"] 透传
+                team_run.inject_context(project_dir, task)
+                # S10-057 §P1: TeamExecutionState 任务级 running
+                team_run.update_team_state(project_dir, task, "running")
             outcome = self._execute_with_retry(
                 project_dir, state, task, runner, max_retry
             )
@@ -749,6 +932,10 @@ class ExecutionOrchestrator:
                 if team_run is not None:
                     # S10-056 批次 B: 团队模式 Workspace 更新 + 可选消息
                     team_run.after_task(project_dir, task)
+                    # S10-057 §P2: 前序完成 → 后继任务 Handoff (handoff_messages.json)
+                    team_run.handoff_after_task(project_dir, task)
+                    # S10-057 §P1: TeamExecutionState 任务级 completed
+                    team_run.update_team_state(project_dir, task, "completed")
             else:
                 failed += 1
                 if task.get("status") == "completed":
@@ -769,11 +956,41 @@ class ExecutionOrchestrator:
                     reason,
                     retry_count=int(task.get("retry_count") or 0),
                 )
+                if team_run is not None:
+                    # S10-057 §P1: TeamExecutionState 任务级 failed
+                    team_run.update_team_state(project_dir, task, "failed")
             if isinstance(outcome, dict) and outcome.get("cost"):
                 costs.append(str(outcome["cost"]))
+        # S10-057 §P4: Team Validation — 全部任务完成 (无失败/未暂停) 且显式命令门
+        # (如 "pytest") → QA Review (qa 角色任务全完成, failed==0 保证) +
+        # validator.validate_command 真实命令验证; 失败 → repair + 保持 DEVELOPMENT。
+        team_validation: Optional[ValidationResult] = None
+        if (
+            team_run is not None
+            and failed == 0
+            and not paused_stop
+            and validation_command is not None
+        ):
+            team_validation = self.validator.validate_command(
+                project_dir, validation_command
+            )
+            if not team_validation.success:
+                failed += 1
+                err = "; ".join(team_validation.errors) or "团队验证失败 (pytest)"
+                errors.append(f"team-validation: {err}")
+                RepairManager.create_repair(
+                    project_dir,
+                    {"id": "team-validation", "name": "Team Validation (pytest)"},
+                    err,
+                    retry_count=0,
+                )
         result = ExecutionResult(
             project=slug,
-            status=Lifecycle.USER_ACCEPTANCE if failed == 0 else "failed",
+            status=(
+                "paused"
+                if paused_stop and failed == 0
+                else (Lifecycle.USER_ACCEPTANCE if failed == 0 else "failed")
+            ),
             completed_tasks=completed,
             failed_tasks=failed,
             artifacts=artifacts,
@@ -782,9 +999,10 @@ class ExecutionOrchestrator:
         )
         # Lifecycle 推进 (§6 + S10-053 §4 + S10-055 Task 005): 无 failed
         # (含全部验证通过) → TESTING → VALIDATION_PASS → USER_ACCEPTANCE (停在
-        # 待验收, 不直接 DELIVERED — 验收 F); 有 failed → 保持 DEVELOPMENT。
+        # 待验收, 不直接 DELIVERED — 验收 F); 有 failed → 保持 DEVELOPMENT;
+        # 团队暂停停止 (部分完成) → 保持 DEVELOPMENT (可 resume 继续)。
         # DELIVERED 仅经 accept_project 用户确认后到达 (验收 E/G)。
-        if failed == 0:
+        if failed == 0 and not paused_stop:
             state.status = Lifecycle.TESTING
             state.lifecycle = Lifecycle.TESTING
             self._save_state(project_dir, state)
@@ -814,7 +1032,197 @@ class ExecutionOrchestrator:
             ],
         )
         self.validator.save(project_dir, slug, summary)
+        if team_run is not None:
+            # S10-057 §P1: 团队状态终态落盘 (completed/paused/failed + validation 记录)
+            team_state = TeamExecutionState.get(project_dir)
+            team_state["status"] = (
+                "completed"
+                if failed == 0 and not paused_stop
+                else ("paused" if paused_stop else "failed")
+            )
+            team_state["updated_at"] = datetime.now(timezone.utc).isoformat()
+            if team_validation is not None or validation_command is not None:
+                team_state["validation"] = {
+                    "qa_review": "approved",  # qa 角色任务全完成 (failed==0) → 评审通过
+                    "command": validation_command,
+                    "success": team_validation.success if team_validation else True,
+                    "tests_total": team_validation.tests_total if team_validation else 0,
+                    "tests_passed": team_validation.tests_passed if team_validation else 0,
+                    "tests_failed": team_validation.tests_failed if team_validation else 0,
+                    "errors": list(team_validation.errors) if team_validation else [],
+                }
+            TeamExecutionState.save(project_dir, team_state)
+            # S10-057 §P5: team_report.md 生成 (team/tasks/agents/artifacts/
+            # validation/conflicts/handoffs)
+            self._write_team_report(
+                project_dir,
+                slug,
+                state,
+                result,
+                team_run,
+                team_validation,
+                validation_command,
+            )
         return result
+
+    def _write_team_report(
+        self,
+        project_dir: Path,
+        slug: str,
+        state: ExecutionState,
+        result: ExecutionResult,
+        team_run: TeamRunContext,
+        team_validation: Optional[ValidationResult],
+        validation_command: Optional[str],
+    ) -> Path:
+        """生成 team_report.md (设计 §P5): team/tasks/agents/artifacts/validation/
+        conflicts/handoffs → projects/<slug>/team_report.md。
+
+        只读各资产 (workspace_context / conflict_resolution / handoff_messages /
+        execution_state) 组装 markdown; 缺失资产 → 缺省占位, 不抛。
+        """
+        team = team_run.team or {}
+        members = [dict(m) for m in (team.get("members") or []) if isinstance(m, dict)]
+        role_of = {
+            str(m.get("agent")): str(m.get("role") or "") for m in members
+        }
+        agent_ids = sorted(
+            {
+                str(t.get("agent"))
+                for t in state.tasks
+                if t.get("agent") and str(t.get("agent")) != "None"
+            }
+        )
+        val_counts = Counter(str(t.get("validation")) for t in state.tasks)
+        ctx = WorkspaceContext.load(project_dir)
+        lines: list[str] = [
+            f"# Team Report — {slug}",
+            "",
+            f"- 项目: {slug}",
+            f"- 团队: {team.get('name') or team.get('team_id') or '-'} (`{team.get('team_id') or '-'}`)",
+            f"- 状态: {result.status}",
+            f"- Lifecycle: {state.lifecycle or state.status or '-'}",
+            f"- 完成/失败: {result.completed_tasks}/{result.failed_tasks}",
+            "",
+            "## Team",
+            "",
+            "| agent | role |",
+            "|---|---|",
+        ]
+        for m in members:
+            lines.append(f"| {m.get('agent') or '-'} | {m.get('role') or '-'} |")
+        lines += [
+            "",
+            "## Tasks",
+            "",
+            "| id | name | agent | status | validation | artifact |",
+            "|---|---|---|---|---|---|",
+        ]
+        for t in state.tasks:
+            lines.append(
+                f"| {t.get('id') or '-'} | {t.get('name') or '-'} | "
+                f"{t.get('agent') or '-'} | {t.get('status') or '-'} | "
+                f"{t.get('validation') or '-'} | {t.get('artifact') or '-'} |"
+            )
+        lines += [
+            "",
+            "## Agents",
+            "",
+        ]
+        if agent_ids:
+            for aid in agent_ids:
+                lines.append(f"- {aid} ({role_of.get(aid) or '-'})")
+        else:
+            lines.append("- (无)")
+        lines += [
+            "",
+            "## Artifacts",
+            "",
+        ]
+        artifacts = list(result.artifacts) or list(ctx.get("artifacts") or [])
+        if artifacts:
+            for a in artifacts:
+                lines.append(f"- {a}")
+        else:
+            lines.append("- (无)")
+        lines += [
+            "",
+            "## Validation",
+            "",
+            f"- 任务验证: passed={val_counts.get('passed', 0)}, "
+            f"failed={val_counts.get('failed', 0)}",
+        ]
+        if validation_command is not None or team_validation is not None:
+            if team_validation is not None:
+                lines.append(
+                    f"- 团队验证 ({validation_command}): "
+                    f"{'PASS' if team_validation.success else 'FAIL'} "
+                    f"(passed={team_validation.tests_passed}/"
+                    f"{team_validation.tests_total}, "
+                    f"failed={team_validation.tests_failed})"
+                )
+                for err in team_validation.errors:
+                    lines.append(f"  - error: {err}")
+            else:
+                lines.append(f"- 团队验证 ({validation_command}): 未执行 (命令门未开启)")
+        else:
+            lines.append("- 团队验证: 未启用 (validation_command=None, mock 语义)")
+        lines += [
+            "",
+            "## Conflicts",
+            "",
+        ]
+        res_file = project_dir / "conflict_resolution.json"
+        resolutions: list[dict[str, Any]] = []
+        if res_file.is_file():
+            try:
+                res_data = json.loads(res_file.read_text(encoding="utf-8"))
+                resolutions = [
+                    dict(r)
+                    for r in (res_data.get("resolutions") or [])
+                    if isinstance(r, dict)
+                ]
+                lines.append(f"- strategy: {res_data.get('strategy') or '-'}")
+                lines.append(
+                    f"- ordered_tasks: {', '.join(res_data.get('ordered_tasks') or []) or '-'}"
+                )
+            except Exception:  # noqa: BLE001 — 失败安全: 损坏 → 缺省
+                lines.append("- (损坏/缺失)")
+        if resolutions:
+            for r in resolutions:
+                lines.append(
+                    f"- {r.get('file') or '-'}: {r.get('task_a') or '-'} vs "
+                    f"{r.get('task_b') or '-'} → {r.get('strategy') or '-'}"
+                )
+        else:
+            lines.append("- 无冲突")
+        lines += [
+            "",
+            "## Handoffs",
+            "",
+        ]
+        ho_file = project_dir / "handoff_messages.json"
+        handoffs: list[dict[str, Any]] = []
+        if ho_file.is_file():
+            try:
+                data = json.loads(ho_file.read_text(encoding="utf-8"))
+                handoffs = [dict(h) for h in data if isinstance(h, dict)]
+            except Exception:  # noqa: BLE001 — 失败安全: 损坏 → 缺省
+                handoffs = []
+        if handoffs:
+            for h in handoffs:
+                lines.append(
+                    f"- {h.get('from') or '-'} → {h.get('to') or '-'}: "
+                    f"requirement={h.get('requirement') or '-'} | "
+                    f"decision={h.get('decision') or '-'} | "
+                    f"constraints={h.get('constraints') or '-'}"
+                )
+        else:
+            lines.append("- 无交接")
+        path = project_dir / "team_report.md"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return path
 
     def _execute_with_retry(
         self,

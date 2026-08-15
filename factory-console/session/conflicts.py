@@ -1,8 +1,13 @@
-"""factory-console/session/conflicts.py — FileOwnership + ConflictDetector (S10-056 批次 A)。
+"""factory-console/session/conflicts.py — FileOwnership + ConflictDetector + ConflictResolver (S10-056/S10-057)。
 
 文件冲突检测 (设计 §2.7): FileOwnership 记录 task → files 归属;
 ConflictDetector 检测同文件多任务修改 → ConflictRecord (status "open" 保留,
 只检测不解决 — 边界 §7), 落盘 conflicts.json (~/.factory/teams/)。
+
+S10-057 (Team Production Validation): ConflictResolver — 冲突解决策略
+(dependency_delay / task_reorder / serial_execution), 输出 resolutions +
+ordered_tasks (重排) + serial_groups (同文件串行), 落盘 conflict_resolution.json
+(projects/<slug>/)。只策略解决 (排序/串行), 暂不自动 merge (设计 §P0)。
 
 组件:
 - FileOwnership — claim(project_dir, task_id, files) / owned_by(file) / clear()
@@ -10,11 +15,16 @@ ConflictDetector 检测同文件多任务修改 → ConflictRecord (status "open
 - ConflictDetector — detect(project_dir, task_id, files) → list[ConflictRecord]
   (同文件已被其他 task claim → 冲突记录, 去重; 未归属文件 → 顺带 claim) /
   list() / save() / load() (失败安全: 缺失/损坏 → 空记录)
+- ConflictResolver — resolve(conflicts, plan_tasks, strategy?) → {strategy,
+  resolutions, ordered_tasks, serial_groups} / detect_and_resolve(plan_tasks) /
+  save() / load() (失败安全) — 同文件冲突 → 策略 (依赖延迟/重排/串行) 落盘
+  conflict_resolution.json
 
-设计: docs/sprint10/S10-056-team-design.md §2.7 / §4
+设计: docs/sprint10/S10-056-team-design.md §2.7 / §4;
+docs/sprint10/S10-057-team-production-design.md §P0
 边界:
 - 纯标准库 (json/pathlib/dataclasses), 零模块依赖; 失败安全, 永不抛
-- 只检测不解决: 冲突记录 status 恒为 "open", 不做自动合并/解决
+- 只检测不解决: 冲突记录 status 恒为 "open", 不做自动 merge/解决
 """
 
 from __future__ import annotations
@@ -28,8 +38,30 @@ from typing import Any, Optional
 #: 默认冲突文件 (~/.factory/teams/conflicts.json — 设计 §4 资产口径)
 DEFAULT_CONFLICTS_FILE = Path.home() / ".factory" / "teams" / "conflicts.json"
 
+#: 默认冲突解决文件 (~/.factory/teams/conflict_resolution.json — 设计 §4 资产口径;
+#: 项目级解决记录 → projects/<slug>/conflict_resolution.json, 由调用方显式指定)
+DEFAULT_RESOLUTION_FILE = Path.home() / ".factory" / "teams" / "conflict_resolution.json"
+
 #: 冲突状态常量 (只检测不解决 — status 恒为 open)
 CONFLICT_STATUS_OPEN = "open"
+
+#: 冲突解决策略常量 (S10-057 设计 §P0):
+#: dependency_delay — 冲突任务延迟到依赖 (先归属者) 之后
+#: task_reorder     — 重排: 冲突任务重新排序 (先归属者在前)
+#: serial_execution — 同文件串行: 同文件任务分组按计划顺序串行执行
+STRATEGY_DEPENDENCY_DELAY = "dependency_delay"
+STRATEGY_TASK_REORDER = "task_reorder"
+STRATEGY_SERIAL_EXECUTION = "serial_execution"
+
+#: 全部合法策略 (未知策略 → 失败安全回退 dependency_delay)
+CONFLICT_STRATEGIES: tuple[str, ...] = (
+    STRATEGY_DEPENDENCY_DELAY,
+    STRATEGY_TASK_REORDER,
+    STRATEGY_SERIAL_EXECUTION,
+)
+
+#: 缺省解决策略 (设计 §P0 首选: 依赖延迟)
+DEFAULT_RESOLVE_STRATEGY = STRATEGY_DEPENDENCY_DELAY
 
 
 def _now_iso() -> str:
@@ -221,6 +253,278 @@ class ConflictDetector:
 
     def save(self, file: Optional[Path] = None) -> Path:
         """落盘 conflicts.json (可指定文件); 返回文件路径。"""
+        if file is not None:
+            self._file = Path(file)
+        return self._save()
+
+
+class ConflictResolver:
+    """冲突解决器 (S10-057 设计 §P0): 同文件冲突 → 策略解决, 落盘 conflict_resolution.json。
+
+    resolve(conflicts, plan_tasks, strategy?): 冲突列表 (ConflictRecord.to_dict
+    兼容: {task_a, task_b, file}) + 计划任务 (含 id) → {strategy, resolutions:
+    [{file, task_a, task_b, strategy}], ordered_tasks: [重排后的 task ids],
+    serial_groups: [同文件串行分组]}。三种策略 (设计 §P0):
+
+    - dependency_delay — 冲突任务 (task_b) 延迟到先归属者 (task_a) 之后
+      (稳定拓扑: 加 a→b 边, 其余顺序保持)
+    - task_reorder     — 重排: 同样保证 a 在 b 前 (记录策略为 reorder)
+    - serial_execution — 同文件串行: 保证 a 在 b 前 + serial_groups 分组
+      (同文件任务按计划顺序串行)
+
+    detect_and_resolve(plan_tasks): 计划级冲突预检测 (FileOwnership 模拟归属,
+    不落盘 conflicts.json) → resolve。strategy 可为全局字符串或
+    {file: strategy} 按文件覆盖 (未知策略 → 回退 dependency_delay, 失败安全)。
+    save()/load(): conflict_resolution.json 落盘/读取 (缺失/损坏 → 空, 失败安全)。
+    """
+
+    DEFAULT_FILE = DEFAULT_RESOLUTION_FILE
+
+    STRATEGY_DEPENDENCY_DELAY = STRATEGY_DEPENDENCY_DELAY
+    STRATEGY_TASK_REORDER = STRATEGY_TASK_REORDER
+    STRATEGY_SERIAL_EXECUTION = STRATEGY_SERIAL_EXECUTION
+    STRATEGIES = CONFLICT_STRATEGIES
+    DEFAULT_STRATEGY = DEFAULT_RESOLVE_STRATEGY
+
+    def __init__(self, resolution_file: Optional[Path] = None) -> None:
+        self._file = (
+            Path(resolution_file) if resolution_file is not None else self.DEFAULT_FILE
+        )
+        self._resolutions: list[dict[str, Any]] = []
+        self._ordered_tasks: list[str] = []
+        self._serial_groups: list[list[str]] = []
+        self._strategy: str = DEFAULT_RESOLVE_STRATEGY
+        self._load()
+
+    # ------------------------------------------------------------ 解决
+
+    @staticmethod
+    def _normalize_strategy(strategy: Any, default: str = DEFAULT_RESOLVE_STRATEGY) -> str:
+        """策略归一化: 合法策略 → 原样; 未知/空 → 缺省 (失败安全)。"""
+        if isinstance(strategy, str) and strategy in CONFLICT_STRATEGIES:
+            return strategy
+        return default
+
+    @staticmethod
+    def _conflict_fields(conflict: Any) -> tuple[str, str, str]:
+        """冲突 dict → (file, task_a, task_b); 缺字段失败安全缺省空串。"""
+        if not isinstance(conflict, dict):
+            return ("", "", "")
+        return (
+            str(conflict.get("file") or ""),
+            str(conflict.get("task_a") or ""),
+            str(conflict.get("task_b") or ""),
+        )
+
+    def _dedupe(self, conflicts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """同 (file/task_a/task_b) 冲突去重 (保留首现)。"""
+        seen: set[tuple[str, str, str]] = set()
+        out: list[dict[str, Any]] = []
+        for c in conflicts:
+            key = self._conflict_fields(c)
+            if not any(key):  # 空冲突 (缺全部字段) → 跳过
+                continue
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(c)
+        return out
+
+    @staticmethod
+    def _stable_order(ids: list[str], edges: list[tuple[str, str]]) -> list[str]:
+        """稳定拓扑排序 (Kahn): edges (a→b: a 先于 b); 稳定 — 无冲突任务保持
+        原始相对顺序 (新入队节点按原始计划位置稳定插入); 环 → 剩余按原顺序追加。"""
+        order = [t for t in ids if t]
+        if not order:
+            return []
+        node_set = set(order)
+        pos = {t: i for i, t in enumerate(order)}
+        indegree = {t: 0 for t in order}
+        dependents: dict[str, list[str]] = {t: [] for t in order}
+        for a, b in edges:
+            if a in node_set and b in node_set and a != b:
+                dependents[a].append(b)
+                indegree[b] += 1
+        queue = [t for t in order if indegree[t] == 0]
+        result: list[str] = []
+        while queue:
+            node = queue.pop(0)
+            result.append(node)
+            for nxt in dependents[node]:
+                indegree[nxt] -= 1
+                if indegree[nxt] == 0:
+                    # 稳定插入: 按原始计划位置入队 (保持无冲突任务相对顺序)
+                    idx = 0
+                    while idx < len(queue) and pos[queue[idx]] < pos[nxt]:
+                        idx += 1
+                    queue.insert(idx, nxt)
+        for t in order:
+            if t not in result:
+                result.append(t)
+        return result
+
+    def _strategy_for(
+        self, strategy: Any, file: str, default: str = DEFAULT_RESOLVE_STRATEGY
+    ) -> str:
+        """按文件取策略: strategy 为 dict → 文件覆盖; 字符串 → 全局; None → 缺省。"""
+        if isinstance(strategy, dict):
+            return self._normalize_strategy(strategy.get(file), default)
+        return self._normalize_strategy(strategy, default)
+
+    def resolve(
+        self,
+        conflicts: list[dict[str, Any]],
+        plan_tasks: list[dict[str, Any]],
+        strategy: Any = None,
+    ) -> dict[str, Any]:
+        """解决冲突 (设计 §P0): 输出策略/重排/串行分组, 落盘 conflict_resolution.json。
+
+        conflicts: 冲突记录列表 (ConflictRecord.to_dict / {task_a, task_b, file});
+        plan_tasks: 计划任务 (含 id); strategy: None (缺省 dependency_delay) |
+        全局策略字符串 | {file: strategy} 按文件覆盖。
+        返回 {strategy, resolutions: [{file, task_a, task_b, strategy}],
+        ordered_tasks: [重排后 task ids], serial_groups: [同文件串行分组]}。
+        """
+        ids = [str(t.get("id") or "") for t in (plan_tasks or [])]
+        ids = [tid for tid in ids if tid]
+        node_set = set(ids)
+        default_strategy = self._normalize_strategy(
+            strategy if isinstance(strategy, str) else None,
+            DEFAULT_RESOLVE_STRATEGY,
+        )
+        resolutions: list[dict[str, Any]] = []
+        edges: list[tuple[str, str]] = []
+        seen_edges: set[tuple[str, str]] = set()
+        by_file: dict[str, set[str]] = {}
+        for conflict in self._dedupe(list(conflicts or [])):
+            file, task_a, task_b = self._conflict_fields(conflict)
+            if not file and not task_a and not task_b:
+                continue
+            strat = self._strategy_for(strategy, file, default_strategy)
+            resolutions.append(
+                {"file": file, "task_a": task_a, "task_b": task_b, "strategy": strat}
+            )
+            if task_a in node_set and task_b in node_set and task_a != task_b:
+                if (task_a, task_b) not in seen_edges:
+                    seen_edges.add((task_a, task_b))
+                    edges.append((task_a, task_b))
+            if file:
+                by_file.setdefault(file, set()).update(
+                    t for t in (task_a, task_b) if t in node_set
+                )
+        ordered_tasks = self._stable_order(ids, edges)
+        serial_groups: list[list[str]] = []
+        for file in sorted(by_file):
+            group = [tid for tid in ordered_tasks if tid in by_file[file]]
+            if len(group) > 1:
+                serial_groups.append(group)
+        payload = {
+            "strategy": default_strategy,
+            "resolutions": resolutions,
+            "ordered_tasks": ordered_tasks,
+            "serial_groups": serial_groups,
+        }
+        self._resolutions = resolutions
+        self._ordered_tasks = ordered_tasks
+        self._serial_groups = serial_groups
+        self._strategy = default_strategy
+        self._save()
+        return payload
+
+    def detect_and_resolve(
+        self, plan_tasks: list[dict[str, Any]], strategy: Any = None
+    ) -> dict[str, Any]:
+        """计划级冲突预检测 + 解决 (不写 conflicts.json — 归属仅内存模拟)。
+
+        按计划顺序模拟 FileOwnership claim: 同文件已被其他任务归属 → 冲突
+        {file, task_a, task_b} → resolve (策略解决 + 落盘 conflict_resolution.json)。
+        """
+        ownership = FileOwnership()
+        conflicts: list[dict[str, Any]] = []
+        for task in plan_tasks or []:
+            task_id = str(task.get("id") or "")
+            if not task_id:
+                continue
+            for file in [
+                str(f) for f in (task.get("files") or []) if not isinstance(f, dict)
+            ]:
+                owner = ownership.owned_by(file)
+                if owner is None:
+                    ownership.claim(Path("."), task_id, [file])
+                elif owner != task_id:
+                    conflicts.append({"file": file, "task_a": owner, "task_b": task_id})
+        return self.resolve(conflicts, plan_tasks, strategy=strategy)
+
+    # ------------------------------------------------------------ 查询/落盘
+
+    def list(self) -> list[dict[str, Any]]:
+        """本次/最近一次解决记录 (resolutions 列表, 拷贝)。"""
+        return [dict(r) for r in self._resolutions]
+
+    def ordered_tasks(self) -> list[str]:
+        """重排后的任务顺序 (最近一次解决)。"""
+        return list(self._ordered_tasks)
+
+    def serial_groups(self) -> list[list[str]]:
+        """同文件串行分组 (最近一次解决)。"""
+        return [list(g) for g in self._serial_groups]
+
+    def _load(self) -> None:
+        data: Any = None
+        try:
+            data = json.loads(self._file.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001 — 失败安全: 缺失/损坏 → 空解决
+            data = None
+        if isinstance(data, dict):
+            self._strategy = self._normalize_strategy(
+                data.get("strategy"), DEFAULT_RESOLVE_STRATEGY
+            )
+            self._resolutions = [
+                dict(r)
+                for r in (data.get("resolutions") or [])
+                if isinstance(r, dict)
+            ]
+            self._ordered_tasks = [
+                str(t) for t in (data.get("ordered_tasks") or []) if not isinstance(t, dict)
+            ]
+            self._serial_groups = [
+                [str(t) for t in (g or []) if not isinstance(t, dict)]
+                for g in (data.get("serial_groups") or [])
+                if isinstance(g, list)
+            ]
+        else:
+            self._strategy = DEFAULT_RESOLVE_STRATEGY
+            self._resolutions = []
+            self._ordered_tasks = []
+            self._serial_groups = []
+
+    def load(self, file: Optional[Path] = None) -> "ConflictResolver":
+        """(重)加载 conflict_resolution.json (缺省当前文件); 返回 self 链式。"""
+        if file is not None:
+            self._file = Path(file)
+        self._load()
+        return self
+
+    def _save(self) -> Path:
+        self._file.parent.mkdir(parents=True, exist_ok=True)
+        self._file.write_text(
+            json.dumps(
+                {
+                    "strategy": self._strategy,
+                    "resolutions": self._resolutions,
+                    "ordered_tasks": self._ordered_tasks,
+                    "serial_groups": self._serial_groups,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        return self._file
+
+    def save(self, file: Optional[Path] = None) -> Path:
+        """落盘 conflict_resolution.json (可指定文件); 返回文件路径。"""
         if file is not None:
             self._file = Path(file)
         return self._save()

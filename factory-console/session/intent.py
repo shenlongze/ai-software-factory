@@ -45,12 +45,19 @@ INTENT_ACCEPT_PROJECT = "accept_project"
 INTENT_WORKFORCE = "workforce"
 INTENT_TASK_OWNER = "task_owner"
 INTENT_AGENT_REASON = "agent_reason"
+#: S10-056: Agent Team 意图 (团队协作视图 / 创建团队 — 扩展 workforce 语义,
+#: 与 workforce 兼容: "查看团队" 仍归 workforce, team 关键词不抢既有映射)
+INTENT_TEAM = "team"
 
 #: KeywordIntentParser 关键词规则表 (顺序 = 优先级, 确定性无歧义):
 #: (关键词元组, intent_type, 参数键 — 命中后取关键词后剩余文本作为参数值)
 _KEYWORD_RULES: tuple[tuple[tuple[str, ...], str, Optional[str]], ...] = (
     # S10-055 Task 005: 项目验收意图 — 最高优先级 (确认门后 DELIVERED)
     (("通过验收", "验收通过", "确认交付", "接受交付"), INTENT_ACCEPT_PROJECT, None),
+    # S10-056: Agent Team 意图 — 在 workforce 之前 ("团队协作/绩效" 等专属语义
+    # 不被 workforce 泛化关键词 "团队" 抢; "创建团队" 不被 create_project "创建" 抢)
+    (("创建团队",), INTENT_TEAM, "name"),
+    (("团队协作", "协作视图", "团队绩效", "团队负载", "团队管理"), INTENT_TEAM, None),
     # S10-055 Task 005/006: Workforce 意图 — 在 show_status ("状态") 之前
     # ("团队状态" 含 "状态" 不被抢; "谁负责" 不被 run_task 抢; "为什么选择" 独立)
     (("查看团队", "团队状态", "团队成员", "团队情况", "团队"), INTENT_WORKFORCE, None),

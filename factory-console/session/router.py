@@ -39,6 +39,9 @@ DEFAULT_ROUTES: dict[str, str] = {
     "workforce": "workforce",
     "task_owner": "task_owner",
     "agent_reason": "agent_reason",
+    # S10-056: Agent Team 意图 → Team Action (协作视图/创建团队;
+    # workforce 映射保持不变 — 兼容既有 "查看团队" → 团队状态路径)
+    "team": "team",
 }
 
 

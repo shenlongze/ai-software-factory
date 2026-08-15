@@ -55,6 +55,7 @@ from .product import (
 )
 from .progress import ProductProgressTracker
 from .quality import RepairManager
+from .teams import DEFAULT_TEAM_MEMBERS, TeamRegistry, TeamService
 
 #: 会话工作区缺省 (与 commands.DEFAULT_PROJECTS_FILE 同口径: ~/.factory)
 DEFAULT_WORKSPACE = Path.home() / ".factory"
@@ -1200,6 +1201,136 @@ def agent_reason(context: ExecutionContext) -> ActionResult:
     )
 
 
+def _team_metrics(context: ExecutionContext) -> dict[str, Any]:
+    """团队协作视图绩效源: 工作区 agent_metrics.json 优先, 无 → records 聚合。
+
+    同 workforce 口径 (metrics_file → records_file → 真实记录聚合), 失败安全。
+    """
+    records_file = Path(context.workspace) / "exec" / "execution_records.json"
+    metrics_file = Path(context.workspace) / "exec" / "agent_metrics.json"
+    if metrics_file.is_file():
+        return AgentMetrics.load(metrics_file)
+    if records_file.is_file():
+        return AgentMetrics.load_from_records(records_file)
+    return AgentMetrics.load_from_records()
+
+
+def _pct(value: Any) -> str:
+    """success_rate 渲染: 数字 → 百分比; 缺省/非数字 → 占位 \"-\"。"""
+    if isinstance(value, (int, float)):
+        return f"{value * 100:.0f}%"
+    return "-"
+
+
+def _team_view(context: ExecutionContext) -> ActionResult:
+    """团队协作视图 (验收 E): 默认团队 software-team → team_snapshot 渲染。
+
+    TeamRegistry (工作区 teams.json 优先, 无 → 默认团队) + AgentRegistry
+    (工作区 agents.json) + AgentMetrics (工作区绩效) 合并 → members [{agent,
+    role, status, success_rate, total_tasks, current_task}] + 渲染 (header/rows)。
+    失败安全: 数据缺失 → 默认团队/占位 \"-\", 不抛。
+    """
+    context.require("user")
+    agents_file = _workspace_agents_file(context.workspace)
+    teams_file = Path(context.workspace) / "teams" / "teams.json"
+    try:
+        registry = AgentRegistry.load(agents_file)
+        team = TeamRegistry.get("software-team", teams_file=teams_file)
+        if team is None:
+            team = TeamRegistry.build_default_team(agents_file=agents_file)
+        snapshot = TeamService.team_snapshot(team, registry, _team_metrics(context))
+    except Exception as exc:  # noqa: BLE001 — 失败安全: 聚合异常 → 明确错误
+        return ActionResult(
+            ok=False,
+            status=STATUS_ERROR,
+            message=f"团队视图查询失败: {exc}",
+            error=str(exc),
+        )
+    members = snapshot["members"]
+    table_rows = [
+        [
+            m["agent"],
+            m["role"],
+            m["status"],
+            _pct(m["success_rate"]),
+            m["total_tasks"],
+            m["current_task"],
+        ]
+        for m in members
+    ]
+    return ActionResult(
+        ok=True,
+        status=STATUS_OK,
+        message=f"团队「{snapshot['name']}」共 {len(members)} 名成员",
+        data={
+            "team": snapshot,
+            "count": len(members),
+            "members": members,
+            "header": ["agent", "role", "status", "success_rate", "total_tasks", "current_task"],
+            "rows": table_rows,
+        },
+        error=None,
+    )
+
+
+def _team_create(context: ExecutionContext, raw: str) -> ActionResult:
+    """创建团队 (验收 F): \"创建团队 <name>\" → TeamRegistry.create + add。
+
+    名称来源: ① intent.raw 关键词后剩余文本; ② intent.parameters[\"name\"] 兜底;
+    缺名称 → 明确引导 (不静默)。新团队默认采用标准 5 角色编制
+    (DEFAULT_TEAM_MEMBERS — 同默认团队, 可后续按需调整)。
+    """
+    context.require("user")
+    name = raw.split("创建团队", 1)[1].strip() if "创建团队" in raw else ""
+    if not name:
+        params = context.intent.parameters if context.intent else {}
+        name = str(params.get("name") or "").strip()
+    if not name:
+        return ActionResult(
+            ok=False,
+            status=STATUS_ERROR,
+            message="团队创建失败: 请提供团队名称 (例如: 创建团队 电商后端团队)",
+            error="缺少团队名称",
+        )
+    team_id = _slugify(name) or "team"
+    teams_file = Path(context.workspace) / "teams" / "teams.json"
+    try:
+        created = TeamRegistry.create(
+            team_id,
+            name,
+            members=[dict(m) for m in DEFAULT_TEAM_MEMBERS],
+            teams_file=teams_file,
+        )
+    except Exception as exc:  # noqa: BLE001 — 失败安全: 创建异常 → 明确错误
+        return ActionResult(
+            ok=False,
+            status=STATUS_ERROR,
+            message=f"团队创建失败: {exc}",
+            error=str(exc),
+        )
+    return ActionResult(
+        ok=True,
+        status=STATUS_OK,
+        message=f"团队已创建: {name} ({team_id})",
+        data={"team": created, "team_id": team_id, "name": name},
+        error=None,
+    )
+
+
+def team(context: ExecutionContext) -> ActionResult:
+    """Agent Team 协作视图 (S10-056, 验收 E/F): \"创建团队\" → TeamRegistry.create;
+    其余 (\"查看团队/团队状态/团队协作\") → 默认团队协作视图 (team_snapshot)。
+
+    只读查询 (非敏感, 无确认门); 失败安全: 数据缺失 → 默认团队/占位, 不抛。
+    workforce action 保持独立 (兼容既有 \"查看团队\" → 团队状态路径)。
+    """
+    context.require("user")
+    raw = context.intent.raw if context.intent else ""
+    if "创建团队" in raw:
+        return _team_create(context, raw)
+    return _team_view(context)
+
+
 def build_default_actions() -> ActionRegistry:
     """装配默认 Action 注册表 (注册式 — 新增 Action 只需 register 一行)。"""
     registry = ActionRegistry()
@@ -1386,6 +1517,23 @@ def build_default_actions() -> ActionRegistry:
                 "phase": "S10-055 Task 006",
                 "sensitive": False,
                 "category": "workforce",
+            },
+        )
+    )
+    registry.register(
+        Action(
+            name="team",
+            description=(
+                "团队协作视图 (查看团队 → 成员角色/负载/绩效; "
+                "创建团队 → TeamRegistry.create)"
+            ),
+            handler=team,
+            permission="user",
+            metadata={
+                "service": "TeamRegistry + TeamService (team_snapshot)",
+                "phase": "S10-056",
+                "sensitive": False,
+                "category": "team",
             },
         )
     )

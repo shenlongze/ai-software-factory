@@ -39,11 +39,14 @@ def test_initial_state_discovery():
 
 
 def test_all_states_defined():
-    """枚举完备: DISCOVERY/CLARIFICATION/CONFIRMATION/EXECUTION/DONE (设计 §2.6)。"""
+    """枚举完备: DISCOVERY/CLARIFICATION/PRODUCT_CONFIRMATION/CONFIRMATION/
+    PROJECT_CREATION/EXECUTION/DONE (设计 §2.6 + S10-050 §2.4)。"""
     assert {s.name for s in CONV_MOD.ConversationState} == {
         "DISCOVERY",
         "CLARIFICATION",
+        "PRODUCT_CONFIRMATION",
         "CONFIRMATION",
+        "PROJECT_CREATION",
         "EXECUTION",
         "DONE",
     }

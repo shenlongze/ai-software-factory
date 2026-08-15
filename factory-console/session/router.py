@@ -16,6 +16,8 @@ from .intent import IntentObject
 #: 默认声明式映射 (intent_type → action_name; 3 个 P0 真实 Action + S10-049 agent.execute_task)
 DEFAULT_ROUTES: dict[str, str] = {
     "create_project": "create_project",
+    # S10-050 P3: 产品意图 → create_product action (ProductIntent → Project 桥接)
+    "create_product": "create_product",
     "list_projects": "list_projects",
     "show_status": "show_status",
     # S10-049 P1: run_task → Agent Execution Kernel (execute_task action)

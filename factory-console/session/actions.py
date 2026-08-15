@@ -18,6 +18,8 @@ agent.execute_task (S10-049) → 薄调 exec.cli.cmd_exec_run (真实 Agent Runt
 from __future__ import annotations
 
 import importlib
+import json
+import re
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -35,7 +37,12 @@ from .action import (
 )
 from .audit import record_execution
 from .commands import read_projects
-from .intent import IntentObject
+from .intent import INTENT_CREATE_PROJECT, IntentObject
+from .product import (
+    ProductIntent,
+    generate_temp_product_name,
+    parse_core_features,
+)
 
 #: 会话工作区缺省 (与 commands.DEFAULT_PROJECTS_FILE 同口径: ~/.factory)
 DEFAULT_WORKSPACE = Path.home() / ".factory"
@@ -137,7 +144,7 @@ def create_project(context: ExecutionContext) -> ActionResult:
         build_command=None,
         test_command=None,
         project_type=None,
-        goal=None,
+        goal=params.get("goal"),  # S10-050: create_product 桥接传 product.problem 作 goal (org Project 必填)
         id=None,
     )
     try:
@@ -166,6 +173,119 @@ def create_project(context: ExecutionContext) -> ActionResult:
             "snapshot_ref": result.get("snapshot_ref"),
         },
         error=None if ok else str(result.get("error", "注册失败")),
+    )
+
+
+def _slugify(text: str) -> str:
+    """宽松 slug 化 (产品名 → 项目目录名; 同 org.space._slugify 口径)。
+
+    非字母数字 → '-', 小写, 去首尾 '-' (路径目录推导, 非业务复制)。
+    """
+    slug = re.sub(r"[^a-z0-9]+", "-", str(text or "").strip().lower()).strip("-")
+    return slug
+
+
+def _product_from_context(context: ExecutionContext) -> ProductIntent:
+    """从上下文构建 ProductIntent: 会话 product_intent 优先; 否则 intent 参数。
+
+    S10-050 P2 (设计 §2.5): create_product 直接执行入口 (确认流外/测试直调)
+    也可用 — context.session.product_intent 存在 → 原样复用; 否则从
+    context.intent.parameters 提取 (name/problem/user/platform/core_features)。
+    """
+    session = getattr(context, "session", None)
+    product = getattr(session, "product_intent", None) if session is not None else None
+    if product is not None:
+        return product
+    params = context.intent.parameters if context.intent else {}
+    features = params.get("core_features") or []
+    return ProductIntent(
+        name=params.get("name"),
+        problem=params.get("problem"),
+        user=params.get("user"),
+        platform=params.get("platform"),
+        core_features=(
+            list(features) if isinstance(features, list) else parse_core_features(features)
+        ),
+        raw=context.intent.raw if context.intent else "",
+        session_id=getattr(session, "session_id", None),
+    )
+
+
+def create_product(context: ExecutionContext) -> ActionResult:
+    """创建产品 (ProductIntent → 桥接 Project, S10-050 P2/P3)。
+
+    1. 从 context.session.product_intent (或 intent.parameters) 构建 ProductIntent
+    2. 完整性校验 — 缺失必填字段 → 明确错误 (列出缺失字段, 不静默)
+    3. 桥接: 复用 create_project (薄调 org.cli.cmd_project_register) — 不复制业务
+    4. product.json 落盘: projects/<name>/product.json (ProductIntent.to_dict)
+    5. 返回 "Product Created: <name> — Ready for Engineering." + 产品摘要
+
+    设计: docs/sprint10/S10-050-product-manager-design.md §2.5 / §2.6
+    """
+    context.require("user")  # 基线权限 (permission="project" 由 RBAC 后续 Task 强制)
+    product = _product_from_context(context)
+    missing = product.missing_fields()
+    if missing:
+        # 验收 F: 缺失字段 → 明确错误 (不静默)
+        detail = ", ".join(missing)
+        return ActionResult(
+            ok=False,
+            status=STATUS_ERROR,
+            message=f"产品创建失败: 产品信息不完整, 缺失: {detail}",
+            error=f"产品信息不完整, 缺失: {detail}",
+        )
+    if not product.name:
+        product.name = generate_temp_product_name()  # name 缺省 → 临时名
+    # 桥接: 复用 create_project (薄调 org.cli.cmd_project_register, 不复制业务)
+    bridge_intent = IntentObject(
+        intent_type=INTENT_CREATE_PROJECT,
+        params={"name": product.name, "goal": product.problem or ""},
+        raw=product.raw,
+        source="product",
+    )
+    bridge_ctx = ExecutionContext(
+        workspace=context.workspace,
+        session=context.session,
+        user=context.user,
+        project=context.project,
+        intent=bridge_intent,
+    )
+    created = create_project(bridge_ctx)
+    if not created.ok:
+        return ActionResult(
+            ok=False,
+            status=STATUS_ERROR,
+            message=f"产品创建失败: {created.message}",
+            error=created.error or created.message,
+        )
+    project = created.data.get("project") or {} if isinstance(created.data, dict) else {}
+    # product.json 落盘: projects/<slug>/product.json (与 org project.json 同空间)
+    slug = str(project.get("slug") or _slugify(product.name) or project.get("id") or "unnamed")
+    product_dir = Path(context.workspace) / "projects" / slug
+    product.status = "project_created"
+    product_path = product_dir / "product.json"
+    try:
+        product_path.parent.mkdir(parents=True, exist_ok=True)
+        product_path.write_text(product.to_json(), encoding="utf-8")
+    except Exception as exc:  # noqa: BLE001 — 失败安全: 落盘异常 → 明确错误
+        return ActionResult(
+            ok=False,
+            status=STATUS_ERROR,
+            message=f"产品创建失败: product.json 落盘失败: {exc}",
+            error=str(exc),
+        )
+    return ActionResult(
+        ok=True,
+        status=STATUS_OK,
+        message=f"Product Created: {product.name} — Ready for Engineering.",
+        data={
+            "product": product.to_dict(),
+            "project": project,
+            "product_file": str(product_path),
+            "project_file": str(product_dir / "project.json"),
+            "summary": product.to_summary(),
+        },
+        error=None,
     )
 
 
@@ -379,6 +499,20 @@ def build_default_actions() -> ActionRegistry:
             handler=create_project,
             permission="project",
             metadata={"service": "org.cli.cmd_project_register", "phase": "S10-048 P0"},
+        )
+    )
+    registry.register(
+        Action(
+            name="create_product",
+            description="创建产品 (ProductIntent → 桥接 Project: product.json + project.json)",
+            handler=create_product,
+            permission="project",
+            metadata={
+                "service": "create_project (org.cli.cmd_project_register 复用)",
+                "phase": "S10-050 P2",
+                "sensitive": True,
+                "category": "product",
+            },
         )
     )
     registry.register(

@@ -13,11 +13,21 @@ Task 如需跨会话可接持久化, 非本 Sprint)。
 from __future__ import annotations
 
 import uuid
-from typing import Any
+from typing import Any, Optional
+
+from .product import ProductIntent
 
 #: SessionContext 已知字段 (update 直接 setattr; 其余落入 metadata)
 KNOWN_FIELDS = frozenset(
-    {"session_id", "workspace", "current_project", "current_agent", "metadata", "history"}
+    {
+        "session_id",
+        "workspace",
+        "current_project",
+        "current_agent",
+        "metadata",
+        "history",
+        "product_intent",  # S10-050 P5: 当前产品意图 (ProductIntent)
+    }
 )
 
 
@@ -35,6 +45,8 @@ class SessionContext:
         self.current_agent: str | None = None
         self.metadata: dict[str, Any] = {}
         self.history: list[str] = []
+        #: S10-050 P5: 当前产品意图 (ProductIntent | None — DISCOVERY 产物, create_product 消费)
+        self.product_intent: Optional[ProductIntent] = None
 
     def to_dict(self) -> dict[str, Any]:
         """只读快照 (测试/后续 Renderer 展示用; 不暴露可变内部)。"""
@@ -45,6 +57,9 @@ class SessionContext:
             "current_agent": self.current_agent,
             "metadata": dict(self.metadata),
             "history": list(self.history),
+            "product_intent": (
+                self.product_intent.to_dict() if self.product_intent is not None else None
+            ),
         }
 
 

@@ -28,17 +28,27 @@ INTENT_RUN_TASK = "run_task"
 INTENT_SHOW_COST = "show_cost"
 INTENT_SHOW_STATUS = "show_status"
 INTENT_LIST_PROJECTS = "list_projects"
+#: S10-050 P1: 产品意图 (用户想创造什么 — 走 DISCOVERY 多轮, 见 conversation.py)
+INTENT_CREATE_PRODUCT = "create_product"
 
 #: KeywordIntentParser 关键词规则表 (顺序 = 优先级, 确定性无歧义):
 #: (关键词元组, intent_type, 参数键 — 命中后取关键词后剩余文本作为参数值)
 _KEYWORD_RULES: tuple[tuple[tuple[str, ...], str, Optional[str]], ...] = (
     (("花了多少", "成本", "费用"), INTENT_SHOW_COST, None),
-    (("创建", "做一个", "开发一个"), INTENT_CREATE_PROJECT, "name"),
     # S10-049 P0: +"实现" (验收: "帮我实现登录功能" → run_task, objective="登录功能")
     (("加", "修复", "写", "实现"), INTENT_RUN_TASK, "objective"),
     (("项目列表", "有哪些项目", "列出项目"), INTENT_LIST_PROJECTS, None),
     (("状态", "看看"), INTENT_SHOW_STATUS, None),
+    # S10-050 P1: 产品意图 (想法级) — "我想/做一款/产品/想法/创业" → create_product
+    # (idea 参数 = 关键词后剩余文本; 优先级在 run_task/show_status 之后,
+    #  "我想看看状态" → show_status、"我想加个功能" → run_task 不被抢)
+    (("我想", "做一款", "产品", "想法", "创业"), INTENT_CREATE_PRODUCT, "idea"),
+    (("创建", "做一个", "开发一个"), INTENT_CREATE_PROJECT, "name"),
 )
+
+#: 产品意图判别标记 ("做一个"/"开发一个" 后接标记 → create_product;
+#: 否则归 create_project — S10-050 P1 区分 "做产品" vs "做项目")
+_PRODUCT_MARKERS: tuple[str, ...] = ("APP", "产品", "想法", "创业", "款")
 
 
 @dataclass
@@ -105,12 +115,18 @@ class KeywordIntentParser(IntentParser):
             for keyword in keywords:
                 if keyword not in raw:
                     continue
+                hint = raw.split(keyword, 1)[1].strip() if param_key else ""
+                # S10-050 P1: "做一个"/"开发一个" 后接产品标记 → create_product
+                # (区分 "做产品" vs "做项目"; 无标记 → 归 create_project, 基线不回归)
+                if intent_type == INTENT_CREATE_PROJECT and keyword in ("做一个", "开发一个"):
+                    if hint.startswith(_PRODUCT_MARKERS):
+                        intent_type = INTENT_CREATE_PRODUCT
+                        param_key = "idea"
                 params: dict[str, Any] = {}
                 if intent_type == INTENT_SHOW_COST:
                     # 设计 §2 示例口径: show_cost {period: "session"}
                     params["period"] = "session"
                 elif param_key:
-                    hint = raw.split(keyword, 1)[1].strip()
                     if hint:
                         params[param_key] = hint
                 return IntentObject(

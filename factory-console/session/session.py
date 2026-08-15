@@ -10,6 +10,8 @@
   → Action.execute(ExecutionContext) → Renderer 展示;
   未识别/未路由 → 明确提示 (不静默)
 - 会话上下文 (Task 002): ContextManager 注入, 输入记录进 history (/cost 等数据来源)
+- S10-050 P5: create_product intent / 产品流程进行中 → conversation 产品发现
+  (DISCOVERY 多轮追问 → PRODUCT_CONFIRMATION → 确认 → create_product action 桥接)
 - 纯 shell 零业务逻辑, 不接真实 LLM, 不改现有命令
 """
 
@@ -24,7 +26,8 @@ from .actions import DEFAULT_WORKSPACE, build_default_actions
 from .commands import build_default_registry
 from .confirm import ConfirmationGate
 from .context import ContextManager, SessionContext
-from .intent import IntentObject, IntentParser, KeywordIntentParser
+from .conversation import ConversationManager, ConversationState
+from .intent import INTENT_CREATE_PRODUCT, IntentObject, IntentParser, KeywordIntentParser
 from .renderer import HumanRenderer, Renderer
 from .router import IntentRouter, UnknownIntentError
 from .slash import SlashCommandRegistry
@@ -61,6 +64,7 @@ class InteractiveSession:
         action_context: Optional[ExecutionContext] = None,
         confirmation_gate: Any = None,
         renderer: Optional[Renderer] = None,
+        conversation_manager: Optional[ConversationManager] = None,
     ) -> None:
         self.prompt = prompt
         self.banner_text = banner if banner is not None else BANNER
@@ -89,6 +93,13 @@ class InteractiveSession:
         )
         #: 结果渲染器 (P1) — ActionResult.to_dict() → Renderer 展示
         self.renderer = renderer if renderer is not None else HumanRenderer()
+        #: 会话状态机 (S10-050 P5) — 产品流程 (DISCOVERY 多轮) 由 conversation 接管;
+        #: 可注入定制 (测试); 默认装配 (同 intent_parser)
+        self.conversation = (
+            conversation_manager
+            if conversation_manager is not None
+            else ConversationManager(parser=self.intent_parser)
+        )
 
     @property
     def context(self) -> SessionContext:
@@ -129,13 +140,30 @@ class InteractiveSession:
     def _dispatch(self, line: str) -> None:
         """命令分发: "/" 开头 → slash registry; 否则 → Intent 执行链 (S10-048 P1)。
 
-        非 slash 输入: IntentParser.parse → IntentRouter.route → ConfirmationGate
-        (P4 默认装配, 敏感 action 确认通过才执行) → Action.execute(ExecutionContext)
-        → Renderer 展示。未识别意图 / 未路由意图 → 明确提示 (不静默)。
+        非 slash 输入:
+        - S10-050 P5: 产品流程进行中 (conversation.product_intent 存在, 状态
+          DISCOVERY/PRODUCT_CONFIRMATION) → 输入直接进产品流程 (多轮追问 / 确认)
+        - create_product intent → 产品发现流程 (DISCOVERY 多轮追问), 不走普通
+          action 路由 (ProductIntent 完整 + 用户确认后才执行 create_product)
+        - 其余: IntentParser.parse → IntentRouter.route → ConfirmationGate
+          (P4 默认装配, 敏感 action 确认通过才执行) → Action.execute(ExecutionContext)
+          → Renderer 展示。未识别意图 / 未路由意图 → 明确提示 (不静默)。
         slash 路径行为不变。
         """
         if line.startswith("/"):
             self.registry.execute(line, self.context)
+            return
+        conv = self.conversation
+        # S10-050 P5: 产品流程进行中 → 答案直接进产品流程 (不重复解析意图)
+        if conv.product_intent is not None and conv.state in (
+            ConversationState.DISCOVERY,
+            ConversationState.PRODUCT_CONFIRMATION,
+        ):
+            if conv.state == ConversationState.PRODUCT_CONFIRMATION:
+                resp = conv.handle_product_confirm(line, confirm_fn=self._create_product_fn)
+            else:
+                resp = conv.handle_product_answer(line)
+            print(resp.message)
             return
         intent = self.intent_parser.parse(line)
         if intent is None:
@@ -143,6 +171,11 @@ class InteractiveSession:
             return
         if not intent.source:
             intent.source = "session"  # 设计 §2.2: 来源标注 (审计)
+        # S10-050 P1: 产品意图 → 产品发现流程 (多轮追问), 不走普通 action 路由
+        if intent.intent_type == INTENT_CREATE_PRODUCT:
+            resp = conv.start_product_discovery(line)
+            print(resp.message)
+            return
         try:
             action = self.intent_router.route(intent, self.action_registry)
         except UnknownIntentError as exc:
@@ -170,6 +203,29 @@ class InteractiveSession:
             self._render_execution(action.name, result)
             return
         print(self.renderer.render(result.to_dict()))
+
+    def _create_product_fn(self, product_intent: Any) -> str:
+        """产品确认回调 (S10-050 P5): 执行 create_product action → 展示消息。
+
+        conversation 零依赖 Action — 由宿主 (session) 注入: 产品意图写入
+        SessionContext.product_intent → 装配 ExecutionContext → 路由 create_product
+        action → 返回消息 (失败 → 抛异常, conversation 侧重置并明确提示)。
+        """
+        intent = IntentObject(
+            intent_type=INTENT_CREATE_PRODUCT,
+            params={"name": getattr(product_intent, "name", None)},
+            raw=getattr(product_intent, "raw", "") or "",
+            source="session",
+        )
+        self.context.product_intent = product_intent  # SessionContext.product_intent (P5)
+        context = self._build_action_context(intent)
+        action = self.action_registry.get("create_product")
+        if action is None:
+            raise RuntimeError("create_product Action 未注册")
+        result = action.execute(context)
+        if result.ok:
+            return result.message
+        raise RuntimeError(result.message or "产品创建失败")
 
     def _render_execution(self, action_name: str, result: ActionResult) -> None:
         """Agent 执行结果摘要展示 (S10-049 P5) — agent/artifact/cost/duration。

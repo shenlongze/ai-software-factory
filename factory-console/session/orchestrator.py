@@ -45,6 +45,7 @@ from .conflicts import (
     ConflictResolver,
     FileOwnership,
 )
+from .decision import HandoffDecisionEngine
 from .dependencies import TaskDependencyGraph
 from .intent import IntentObject
 from .messages import AgentMessageStore, HandoffStore
@@ -219,15 +220,22 @@ class ExecutionState:
 
 @dataclass
 class TeamRunContext:
-    """团队执行钩子 (S10-056 批次 B + S10-057): 冲突检测/解决 + Workspace 注入 +
-    Handoff + TeamState 更新。
+    """团队执行钩子 (S10-056 批次 B + S10-057 + S10-059 P4): 冲突检测/解决 +
+    Workspace 注入 + Handoff + TeamState 更新 + 自主决策 + 工作区隔离。
 
     仅 team mode 使用 (solo mode 无此上下文, 行为零变化):
     - before_task: ConflictDetector.detect — 同文件多任务 → ConflictRecord
-      (记录不阻塞 — 冲突不中断执行, 边界 §7 只检测不解决)
-    - inject_context: 任务执行前 WorkspaceContext 快照 (completed_tasks/artifacts/
-      messages/decisions) → task["context"] 透传 (设计 §P3 — execute_fn 可读)
-    - after_task: 任务成功 → WorkspaceContext.mark_task_completed/add_artifact
+      + HandoffDecisionEngine.decide (S10-059: 自主决策记录 — CONTINUE/
+      BLOCK/RETRY/REPAIR/SERIALIZE/SKIP/REQUEST_REVIEW + reason, 落盘
+      handoff_decisions.json); SERIALIZE/BLOCK → acquire_reservation 文件锁
+      (同文件已被其他 agent 占 → 锁未释放 → 记录 BLOCK, 本任务暂缓不执行 —
+      串行化, 不无限等待)
+    - inject_context: 任务执行前 WorkspaceContext 快照 (completed_tasks/
+      artifacts/messages/decisions) + reservations (workspace_locks.json) +
+      changed_files + recent_decision → task["context"] 透传 (设计 §P3 —
+      execute_fn 可读)
+    - after_task: release_reservation (释放文件锁 — 无论成败, 锁不残留) +
+      任务成功 → WorkspaceContext.mark_task_completed/add_artifact
       (让 Agent 知道之前谁做过什么 — 设计 §2.5) + AgentMessage 可选记录
       (architect → 成员 指令型消息 — 设计 §2.6, 接口预留, 缺省关闭)
     - S10-057 增强: handoff_after_task — 前序任务完成 → HandoffStore 交接给
@@ -243,13 +251,115 @@ class TeamRunContext:
     successors: dict[str, list[str]] = field(default_factory=dict)
     tasks_by_id: dict[str, dict[str, Any]] = field(default_factory=dict)
     handoff_store: Optional[HandoffStore] = None
+    # S10-059 P4: 决策引擎 + 依赖图 + Agent 角色映射 (决策输入)
+    decision_engine: Optional[HandoffDecisionEngine] = None
+    decisions_file: Optional[Path] = None
+    dependencies: dict[str, list[str]] = field(default_factory=dict)
+    agent_roles: dict[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        #: 本任务是否被 BLOCK (锁未释放) — _run_queue 消费 (暂缓不执行)
+        self._blocked: bool = False
+
+    # ------------------------------------------------------------ 决策/锁
+
+    def _engine(self, project_dir: Path) -> HandoffDecisionEngine:
+        """决策引擎 (惰性构造 — 缺省项目级 handoff_decisions.json)。"""
+        if self.decision_engine is None:
+            file = self.decisions_file or Path(project_dir) / "handoff_decisions.json"
+            self.decision_engine = HandoffDecisionEngine(file=file)
+        return self.decision_engine
 
     def before_task(
         self, project_dir: Path, task: dict[str, Any]
     ) -> list[ConflictRecord]:
-        """任务执行前冲突检测 (同文件已被其他 task 归属 → ConflictRecord, 记录不阻塞)。"""
+        """任务执行前 (S10-059 P4): 冲突检测 → 自主决策记录 → 文件锁获取。
+
+        ① ConflictDetector.detect — 同文件已被其他 task 归属 → ConflictRecord;
+        ② HandoffDecisionEngine.decide — 决策 (SKIP/BLOCK/RETRY/REPAIR/
+           SERIALIZE/REQUEST_REVIEW/CONTINUE + reason) → task["decision"] +
+           handoff_decisions.json 落盘;
+        ③ acquire_reservation 文件写权限锁 (有 files 的任务一律获取 — 同文件
+           互斥, 锁防未来并行): 同文件已被其他 agent 占 → 锁未释放 → 记录
+           BLOCK (等待前序释放, 不无限等待) + 本任务暂缓
+           (is_blocked() → True, 不执行 — 顺序框架下串行化)。
+
+        返回 ConflictRecord 列表 (向后兼容 — 原 detect 返回语义不变)。
+        """
+        self._blocked = False
         files = [str(f) for f in (task.get("files") or []) if not isinstance(f, dict)]
-        return self.detector.detect(project_dir, str(task.get("id") or ""), files)
+        task_id = str(task.get("id") or "")
+        conflicts = self.detector.detect(project_dir, task_id, files)
+        decision = self._decide(project_dir, task, conflicts)
+        task["decision"] = decision
+        if files:
+            # 文件写权限锁: 前序已完成 → 锁已释放 → 获取成功; 前序未完成/未释放
+            # → BLOCK 暂缓 (决策已记录, 不无限等待; resume 后可继续)
+            acquired = WorkspaceContext.acquire_reservation(
+                project_dir, str(task.get("agent") or ""), task_id, files
+            )
+            if acquired is None:
+                blocked = self._record_block(project_dir, task, files)
+                task["decision"] = blocked
+                self._blocked = True
+        return conflicts
+
+    def _decide(
+        self, project_dir: Path, task: dict[str, Any], conflicts: list[ConflictRecord]
+    ) -> dict[str, Any]:
+        """决策引擎调用 + 落盘 (handoff_decisions.json append)。"""
+        engine = self._engine(project_dir)
+        ctx = WorkspaceContext.load(project_dir)
+        task_id = str(task.get("id") or "")
+        deps = list(self.dependencies.get(task_id) or [])
+        agent_role = str(self.agent_roles.get(str(task.get("agent") or "")) or "")
+        decision = engine.decide(
+            task,
+            completed_tasks=list(ctx.get("completed_tasks") or []),
+            next_tasks=[],
+            dependencies={task_id: deps} if deps else {},
+            conflicts=[c.to_dict() for c in conflicts],
+            workspace=ctx,
+            agent_role=agent_role,
+            records=engine.previous_decisions(),
+        )
+        return engine.record(decision)
+
+    def _record_block(
+        self, project_dir: Path, task: dict[str, Any], files: list[str]
+    ) -> dict[str, Any]:
+        """锁未释放 → BLOCK 决策 (等待前序任务释放, 不无限等待)。"""
+        engine = self._engine(project_dir)
+        holders = WorkspaceContext.reserved_files(project_dir)
+        agent = str(task.get("agent") or "")
+        held = [
+            f for f in files if f in holders and str(holders[f].get("agent") or "") != agent
+        ]
+        return engine.record(
+            {
+                "decision": HandoffDecisionEngine.DECISION_BLOCK,
+                "reason": (
+                    f"文件锁未释放: {', '.join(held) or '同文件冲突'} — "
+                    f"等待前序任务释放后执行 (串行化, 不无限等待)"
+                ),
+                "conflicting_tasks": [str(holders[f].get("task_id") or "") for f in held],
+                "strategy": "wait for lock release",
+                "task_id": str(task.get("id") or ""),
+            }
+        )
+
+    def is_blocked(self) -> bool:
+        """本任务是否被 BLOCK (锁未释放) — 队列暂缓执行。"""
+        return self._blocked
+
+    def release_reservation(self, project_dir: Path, task: dict[str, Any]) -> None:
+        """任务执行后释放文件锁 (S10-059 P4: 无论成败, 锁不残留)。"""
+        try:
+            WorkspaceContext.release_reservation(
+                project_dir, str(task.get("agent") or ""), str(task.get("id") or "")
+            )
+        except Exception:  # noqa: BLE001 — 失败安全: 释放异常不中断队列
+            pass
 
     def inject_context(self, project_dir: Path, task: dict[str, Any]) -> dict[str, Any]:
         """Workspace Context 注入 (设计 §P3): workspace_context.json 快照 +
@@ -279,6 +389,12 @@ class TeamRunContext:
             "decisions": decisions,
             # S10-058: previous_decisions (DecisionStore 结构化决策注入 — 决策驱动执行)
             "previous_decisions": self._previous_decisions(project_dir, str(task.get("agent") or "")),
+            # S10-059 P4: reservations (workspace_locks.json) + changed_files +
+            # workspace_snapshot + recent_decision (工作区隔离可解释上下文)
+            "reservations": WorkspaceContext.reserved_files(project_dir),
+            "changed_files": list(ctx.get("changed_files") or []),
+            "workspace_snapshot": dict(ctx.get("workspace_snapshot") or {}),
+            "recent_decision": dict(task.get("decision") or {}),
         }
         task["context"] = context
         return context
@@ -296,7 +412,10 @@ class TeamRunContext:
             return {}
 
     def after_task(self, project_dir: Path, task: dict[str, Any]) -> None:
-        """任务成功后 Workspace 更新 + 可选消息 (仅 completed 任务)。"""
+        """任务执行后 (S10-059 P4): 释放文件锁 (无论成败, 锁不残留) +
+        任务成功后 Workspace 更新 + 可选消息 (仅 completed 任务)。"""
+        # S10-059 P4: 释放该任务持有的文件锁 (串行化 — 前序释放后后继才能写)
+        self.release_reservation(project_dir, task)
         if str(task.get("status")) != "completed":
             return
         WorkspaceContext.mark_task_completed(
@@ -658,13 +777,15 @@ class ExecutionOrchestrator:
         # S10-057 §P2: 后继任务映射 (依赖图 → task_id → [依赖它的任务], Handoff 输入)
         tasks_by_id = {str(t.get("id") or ""): t for t in plan_tasks if t.get("id")}
         successors: dict[str, list[str]] = {}
+        dependencies: dict[str, list[str]] = {}
         for task in plan_tasks:
             tid = str(task.get("id") or "")
             if not tid:
                 continue
-            for dep in graph.get(tid):
-                if dep in tasks_by_id:
-                    successors.setdefault(dep, []).append(tid)
+            deps = [d for d in graph.get(tid) if d in tasks_by_id]
+            dependencies[tid] = deps
+            for dep in deps:
+                successors.setdefault(dep, []).append(tid)
         # S10-057 §P0: 计划级冲突预检测 + 策略解决 (同文件 → 重排/串行 →
         # conflict_resolution.json 落盘 projects/<slug>/)
         resolver = ConflictResolver(
@@ -692,6 +813,10 @@ class ExecutionOrchestrator:
             WorkspaceContext.save(project_dir, WorkspaceContext.init(project_dir.name))
         # S10-057 §P1: 团队执行状态初始化 — team_execution_state.json (全 pending)
         TeamExecutionState.init(project_dir, str(team.get("team_id") or team_id), plan_tasks)
+        # S10-059 P4: 决策引擎 (项目级 handoff_decisions.json — 决策可解释性资产)
+        decision_engine = HandoffDecisionEngine(
+            file=project_dir / HandoffDecisionEngine.FILE_NAME
+        )
         return plan_tasks, TeamRunContext(
             team=team,
             detector=detector,
@@ -699,6 +824,9 @@ class ExecutionOrchestrator:
             successors=successors,
             tasks_by_id=tasks_by_id,
             handoff_store=handoff_store,
+            decision_engine=decision_engine,
+            dependencies=dependencies,
+            agent_roles=member_roles,
         )
 
     def resume(
@@ -912,6 +1040,7 @@ class ExecutionOrchestrator:
         costs: list[str] = []
         validations: list[ValidationResult] = []
         paused_stop = False  # S10-057: 团队暂停 → 停止队列 (可 resume 继续)
+        blocked_stop = False  # S10-059: 任务被 BLOCK (锁未释放) → 暂缓 (可 resume 继续)
         for task in state.tasks:
             if task.get("status") == "completed":
                 # 已完成任务跳过 (resume 语义: 不重跑); 缺 validation 字段 → 默认 passed
@@ -921,12 +1050,18 @@ class ExecutionOrchestrator:
                     artifacts.append(str(task["artifact"]))
                 continue
             if team_run is not None:
-                # S10-056 批次 B: 团队模式冲突检测 (同文件 → ConflictRecord, 记录不阻塞)
+                # S10-056 批次 B + S10-059: 团队模式冲突检测 + 自主决策 + 文件锁
+                # (SERIALIZE/BLOCK → acquire; 锁未释放 → BLOCK 暂缓)
                 team_run.before_task(project_dir, task)
                 # S10-057 §P1: 暂停检查 — 已暂停 → 停止队列 (剩余任务保持 pending)
                 if team_run.is_paused(project_dir):
                     paused_stop = True
                     break
+                # S10-059: 锁未释放 (前序任务未完成/未释放) → 本任务暂缓不执行
+                # (BLOCK 决策已记录, 不无限等待; resume 后可继续)
+                if team_run.is_blocked():
+                    blocked_stop = True
+                    continue
                 # S10-057 §P3: Workspace Context 注入 → task["context"] 透传
                 team_run.inject_context(project_dir, task)
                 # S10-057 §P1: TeamExecutionState 任务级 running
@@ -983,6 +1118,7 @@ class ExecutionOrchestrator:
             team_run is not None
             and failed == 0
             and not paused_stop
+            and not blocked_stop
             and validation_command is not None
         ):
             team_validation = self.validator.validate_command(
@@ -1003,7 +1139,11 @@ class ExecutionOrchestrator:
             status=(
                 "paused"
                 if paused_stop and failed == 0
-                else (Lifecycle.USER_ACCEPTANCE if failed == 0 else "failed")
+                else (
+                    "blocked"
+                    if blocked_stop and failed == 0
+                    else (Lifecycle.USER_ACCEPTANCE if failed == 0 else "failed")
+                )
             ),
             completed_tasks=completed,
             failed_tasks=failed,
@@ -1014,9 +1154,9 @@ class ExecutionOrchestrator:
         # Lifecycle 推进 (§6 + S10-053 §4 + S10-055 Task 005): 无 failed
         # (含全部验证通过) → TESTING → VALIDATION_PASS → USER_ACCEPTANCE (停在
         # 待验收, 不直接 DELIVERED — 验收 F); 有 failed → 保持 DEVELOPMENT;
-        # 团队暂停停止 (部分完成) → 保持 DEVELOPMENT (可 resume 继续)。
+        # 团队暂停/锁阻塞停止 (部分完成) → 保持 DEVELOPMENT (可 resume 继续)。
         # DELIVERED 仅经 accept_project 用户确认后到达 (验收 E/G)。
-        if failed == 0 and not paused_stop:
+        if failed == 0 and not paused_stop and not blocked_stop:
             state.status = Lifecycle.TESTING
             state.lifecycle = Lifecycle.TESTING
             self._save_state(project_dir, state)
@@ -1051,8 +1191,12 @@ class ExecutionOrchestrator:
             team_state = TeamExecutionState.get(project_dir)
             team_state["status"] = (
                 "completed"
-                if failed == 0 and not paused_stop
-                else ("paused" if paused_stop else "failed")
+                if failed == 0 and not paused_stop and not blocked_stop
+                else (
+                    "paused"
+                    if paused_stop
+                    else ("blocked" if blocked_stop else "failed")
+                )
             )
             team_state["updated_at"] = datetime.now(timezone.utc).isoformat()
             if team_validation is not None or validation_command is not None:

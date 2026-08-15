@@ -63,6 +63,24 @@ CONFLICT_STRATEGIES: tuple[str, ...] = (
 #: 缺省解决策略 (设计 §P0 首选: 依赖延迟)
 DEFAULT_RESOLVE_STRATEGY = STRATEGY_DEPENDENCY_DELAY
 
+#: 执行决策常量 (S10-059 P3 — Conflict → Execution Decision, 设计 §7 P3):
+#: NO_CONFLICT          — 无冲突, 可顺序执行
+#: SERIALIZE            — 同文件冲突 → 串行化 (先归属者先执行, 后执行者等待)
+#: RETRY_WITH_CONTEXT   — 无文件冲突但上下文缺失 → 携带最新上下文重试
+#: REQUEST_REVIEW       — 需人工评审 (冲突无法自动解决)
+DECISION_NO_CONFLICT = "NO_CONFLICT"
+DECISION_SERIALIZE = "SERIALIZE"
+DECISION_RETRY_WITH_CONTEXT = "RETRY_WITH_CONTEXT"
+DECISION_REQUEST_REVIEW = "REQUEST_REVIEW"
+
+#: 全部合法执行决策 (未知 → 失败安全回退 NO_CONFLICT)
+EXECUTION_DECISIONS: tuple[str, ...] = (
+    DECISION_NO_CONFLICT,
+    DECISION_SERIALIZE,
+    DECISION_RETRY_WITH_CONTEXT,
+    DECISION_REQUEST_REVIEW,
+)
+
 
 def _now_iso() -> str:
     """UTC 当前时间 ISO 格式 (冲突检测时间戳)。"""
@@ -259,18 +277,24 @@ class ConflictDetector:
 
 
 class ConflictResolver:
-    """冲突解决器 (S10-057 设计 §P0): 同文件冲突 → 策略解决, 落盘 conflict_resolution.json。
+    """冲突解决器 (S10-057 设计 §P0 + S10-059 P3): 同文件冲突 → 策略解决 +
+    执行决策, 落盘 conflict_resolution.json。
 
     resolve(conflicts, plan_tasks, strategy?): 冲突列表 (ConflictRecord.to_dict
     兼容: {task_a, task_b, file}) + 计划任务 (含 id) → {strategy, resolutions:
     [{file, task_a, task_b, strategy}], ordered_tasks: [重排后的 task ids],
-    serial_groups: [同文件串行分组]}。三种策略 (设计 §P0):
+    serial_groups: [同文件串行分组]} + S10-059 执行决策 (decision/reason/
+    conflicting_tasks — 供 orchestrator 消费, 向后兼容: 旧字段原样保留)。
+    三种策略 (设计 §P0):
 
     - dependency_delay — 冲突任务 (task_b) 延迟到先归属者 (task_a) 之后
       (稳定拓扑: 加 a→b 边, 其余顺序保持)
     - task_reorder     — 重排: 同样保证 a 在 b 前 (记录策略为 reorder)
     - serial_execution — 同文件串行: 保证 a 在 b 前 + serial_groups 分组
       (同文件任务按计划顺序串行)
+
+    classify(conflicts, *, review_required, missing_context) → 执行决策:
+    NO_CONFLICT / SERIALIZE / RETRY_WITH_CONTEXT / REQUEST_REVIEW (设计 §7 P3)。
 
     detect_and_resolve(plan_tasks): 计划级冲突预检测 (FileOwnership 模拟归属,
     不落盘 conflicts.json) → resolve。strategy 可为全局字符串或
@@ -286,6 +310,13 @@ class ConflictResolver:
     STRATEGIES = CONFLICT_STRATEGIES
     DEFAULT_STRATEGY = DEFAULT_RESOLVE_STRATEGY
 
+    #: S10-059 P3: 执行决策常量 (供调用方引用)
+    DECISION_NO_CONFLICT = DECISION_NO_CONFLICT
+    DECISION_SERIALIZE = DECISION_SERIALIZE
+    DECISION_RETRY_WITH_CONTEXT = DECISION_RETRY_WITH_CONTEXT
+    DECISION_REQUEST_REVIEW = DECISION_REQUEST_REVIEW
+    DECISIONS = EXECUTION_DECISIONS
+
     def __init__(self, resolution_file: Optional[Path] = None) -> None:
         self._file = (
             Path(resolution_file) if resolution_file is not None else self.DEFAULT_FILE
@@ -294,9 +325,35 @@ class ConflictResolver:
         self._ordered_tasks: list[str] = []
         self._serial_groups: list[list[str]] = []
         self._strategy: str = DEFAULT_RESOLVE_STRATEGY
+        # S10-059 P3: 执行决策 (decision/reason/conflicting_tasks)
+        self._decision: str = DECISION_NO_CONFLICT
+        self._decision_reason: str = ""
+        self._conflicting_tasks: list[str] = []
         self._load()
 
-    # ------------------------------------------------------------ 解决
+    # ------------------------------------------------------------ 分类/解决
+
+    @staticmethod
+    def classify(
+        conflicts: list[dict[str, Any]],
+        *,
+        review_required: bool = False,
+        missing_context: bool = False,
+    ) -> str:
+        """冲突 → 执行决策分类 (S10-059 P3, 设计 §7 P3)。
+
+        优先级: 同文件冲突 → SERIALIZE (最高, 物理写权限互斥); 无冲突且
+        review_required → REQUEST_REVIEW (人工评审优先于自动重试); 无冲突且
+        missing_context → RETRY_WITH_CONTEXT (携带最新上下文重试); 其余 →
+        NO_CONFLICT。未知输入失败安全 → NO_CONFLICT。
+        """
+        if conflicts:
+            return DECISION_SERIALIZE
+        if review_required:
+            return DECISION_REQUEST_REVIEW
+        if missing_context:
+            return DECISION_RETRY_WITH_CONTEXT
+        return DECISION_NO_CONFLICT
 
     @staticmethod
     def _normalize_strategy(strategy: Any, default: str = DEFAULT_RESOLVE_STRATEGY) -> str:
@@ -377,14 +434,18 @@ class ConflictResolver:
         plan_tasks: list[dict[str, Any]],
         strategy: Any = None,
     ) -> dict[str, Any]:
-        """解决冲突 (设计 §P0): 输出策略/重排/串行分组, 落盘 conflict_resolution.json。
+        """解决冲突 (设计 §P0 + S10-059 P3): 输出策略/重排/串行分组 + 执行决策,
+        落盘 conflict_resolution.json。
 
         conflicts: 冲突记录列表 (ConflictRecord.to_dict / {task_a, task_b, file});
         plan_tasks: 计划任务 (含 id); strategy: None (缺省 dependency_delay) |
         全局策略字符串 | {file: strategy} 按文件覆盖。
         返回 {strategy, resolutions: [{file, task_a, task_b, strategy}],
-        ordered_tasks: [重排后 task ids], serial_groups: [同文件串行分组]}。
+        ordered_tasks: [重排后 task ids], serial_groups: [同文件串行分组],
+        decision: NO_CONFLICT/SERIALIZE (执行决策), reason: 可解释原因,
+        conflicting_tasks: [冲突任务 ids]} — 旧字段原样保留 (向后兼容)。
         """
+        deduped = self._dedupe(list(conflicts or []))
         ids = [str(t.get("id") or "") for t in (plan_tasks or [])]
         ids = [tid for tid in ids if tid]
         node_set = set(ids)
@@ -396,7 +457,7 @@ class ConflictResolver:
         edges: list[tuple[str, str]] = []
         seen_edges: set[tuple[str, str]] = set()
         by_file: dict[str, set[str]] = {}
-        for conflict in self._dedupe(list(conflicts or [])):
+        for conflict in deduped:
             file, task_a, task_b = self._conflict_fields(conflict)
             if not file and not task_a and not task_b:
                 continue
@@ -418,16 +479,39 @@ class ConflictResolver:
             group = [tid for tid in ordered_tasks if tid in by_file[file]]
             if len(group) > 1:
                 serial_groups.append(group)
+        # ---- S10-059 P3: 执行决策 (decision/reason/conflicting_tasks — 可解释)
+        conflicting_tasks: list[str] = []
+        if resolutions:
+            first = resolutions[0]
+            for r in resolutions:
+                for side in ("task_a", "task_b"):
+                    tid = str(r.get(side) or "")
+                    if tid and tid not in conflicting_tasks:
+                        conflicting_tasks.append(tid)
+            decision = DECISION_SERIALIZE
+            reason = (
+                f"{first.get('task_a')} and {first.get('task_b')} both require "
+                f"write access to {first.get('file')}"
+            )
+        else:
+            decision = DECISION_NO_CONFLICT
+            reason = f"无冲突: {len(ids)} 任务可顺序执行"
         payload = {
             "strategy": default_strategy,
             "resolutions": resolutions,
             "ordered_tasks": ordered_tasks,
             "serial_groups": serial_groups,
+            "decision": decision,
+            "reason": reason,
+            "conflicting_tasks": conflicting_tasks,
         }
         self._resolutions = resolutions
         self._ordered_tasks = ordered_tasks
         self._serial_groups = serial_groups
         self._strategy = default_strategy
+        self._decision = decision
+        self._decision_reason = reason
+        self._conflicting_tasks = conflicting_tasks
         self._save()
         return payload
 
@@ -469,6 +553,14 @@ class ConflictResolver:
         """同文件串行分组 (最近一次解决)。"""
         return [list(g) for g in self._serial_groups]
 
+    def execution_decision(self) -> dict[str, Any]:
+        """最近一次执行决策 (S10-059 P3): {decision, reason, conflicting_tasks}。"""
+        return {
+            "decision": self._decision,
+            "reason": self._decision_reason,
+            "conflicting_tasks": list(self._conflicting_tasks),
+        }
+
     def _load(self) -> None:
         data: Any = None
         try:
@@ -492,11 +584,25 @@ class ConflictResolver:
                 for g in (data.get("serial_groups") or [])
                 if isinstance(g, list)
             ]
+            # S10-059 P3: 执行决策字段 (旧文件无 → 失败安全缺省)
+            decision = str(data.get("decision") or "")
+            self._decision = (
+                decision if decision in EXECUTION_DECISIONS else DECISION_NO_CONFLICT
+            )
+            self._decision_reason = str(data.get("reason") or "")
+            self._conflicting_tasks = [
+                str(t)
+                for t in (data.get("conflicting_tasks") or [])
+                if not isinstance(t, dict)
+            ]
         else:
             self._strategy = DEFAULT_RESOLVE_STRATEGY
             self._resolutions = []
             self._ordered_tasks = []
             self._serial_groups = []
+            self._decision = DECISION_NO_CONFLICT
+            self._decision_reason = ""
+            self._conflicting_tasks = []
 
     def load(self, file: Optional[Path] = None) -> "ConflictResolver":
         """(重)加载 conflict_resolution.json (缺省当前文件); 返回 self 链式。"""
@@ -514,6 +620,9 @@ class ConflictResolver:
                     "resolutions": self._resolutions,
                     "ordered_tasks": self._ordered_tasks,
                     "serial_groups": self._serial_groups,
+                    "decision": self._decision,
+                    "reason": self._decision_reason,
+                    "conflicting_tasks": self._conflicting_tasks,
                 },
                 ensure_ascii=False,
                 indent=2,

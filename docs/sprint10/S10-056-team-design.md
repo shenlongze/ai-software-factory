@@ -1,7 +1,7 @@
-# S10-056 — Agent Team Collaboration 设计
+# S10-056 — Agent Team Collaboration 设计 (完整版)
 
-> 日期:2026-08-15 | Sprint: S10-056 | 设计
-> 目标: 从"单 Agent 自动开发"升级为"多 Agent 软件生产团队"
+> 日期:2026-08-15 | Sprint: S10-056 | 9 大模块设计
+> 目标: 从"单 Agent 自动开发"升级为"多 Agent 软件生产团队系统"
 
 ---
 
@@ -12,15 +12,19 @@
   Intent → Product → Engineering → Tasks → AgentMatcher → Execution → Validation → Repair → Delivery
     ↓
 新增 Team 扩展层:
-  AgentTeam (team.json: 团队成员/角色/项目归属)
-    ├─ Team Registry (团队注册/查询/分配)
-    ├─ Team Assignment (项目 → 团队)
-    └─ Team Collaboration 视图 ("查看团队" 增强: 成员角色/负载/绩效)
+  AgentTeam (team.json)                    — 团队抽象 (members/roles)
+  Agent Role System (agents.json 扩展)      — role/skills/capabilities
+  Task → Team Assignment (required_role)   — AgentMatcher 选择最佳成员
+  TaskDependency (task_dependencies.json)   — DAG 数据结构 (顺序执行兼容)
+  WorkspaceContext (workspace_context.json) — 共享项目上下文
+  AgentMessage (agent_messages.json)        — 基础消息模型
+  ConflictDetector (conflicts.json)         — 文件冲突检测 (不自动解决)
+  TeamExecutionMode (mode="team")           — 编排器团队模式
 ```
 
 ## 2. 数据模型
 
-### AgentTeam
+### 2.1 AgentTeam (teams.py)
 ```json
 {
   "team_id": "software-team",
@@ -37,43 +41,107 @@
 }
 ```
 
-### Team Registry (teams.json)
+### 2.2 Agent Role System (agents.py 扩展)
+```
+支持角色: product_manager/architect/backend/frontend/qa/reviewer/devops
+Agent 字段扩展: role/skills/capabilities
+不破坏已有 agent (缺省推导: role → capabilities)
+```
+
+### 2.3 Task → Team Assignment
 ```json
-{"software-team": {team_id, name, members, projects, created_at}}
+{"task_id": "T001", "type": "frontend", "required_role": "frontend"}
+```
+AgentMatcher: required_role → 候选 agent (team 成员) → skill 匹配 → best
+
+### 2.4 TaskDependency (task_dependencies.json)
+```json
+{"frontend": ["backend_api"], "ranking": ["match"]}
+```
+保留顺序执行兼容 (dependencies 为空 → 顺序); DAG 数据结构; 暂不实现复杂调度
+
+### 2.5 WorkspaceContext (workspace_context.json)
+```json
+{
+  "project": "scorepocket",
+  "files": ["main.py", "api.py"],
+  "completed_tasks": ["T001"],
+  "artifacts": ["EXS-xxx.patch"],
+  "agent_history": [{"agent": "backend-1", "task": "T001", "result": "success"}]
+}
+```
+让 Agent 知道: 之前谁做过什么
+
+### 2.6 AgentMessage (agent_messages.json)
+```json
+{"from": "architect-agent", "to": "backend-1", "type": "instruction",
+ "content": "Implement REST API according to architecture", "timestamp": "..."}
+```
+只实现基础消息模型 (append/query)
+
+### 2.7 ConflictRecord (conflicts.json)
+```json
+{"task_a": "T001", "task_b": "T002", "file": "main.py", "detected_at": "...", "status": "open"}
+```
+FileOwnership: task → files 记录; ConflictDetector: 检测同文件多任务修改 (不自动解决)
+
+## 3. TeamExecutionMode (orchestrator 扩展)
+
+```python
+execute_project(project_id, mode="team")
+  Task
+  ↓ Dependency Resolver (顺序/DAG 兼容)
+  ↓ Agent Matcher (required_role → team member)
+  ↓ Agent Execution (真实)
+  ↓ Validation
 ```
 
-## 3. 模块计划
+## 4. 数据资产 (全部落盘)
 
 ```
-factory-console/session/teams.py (新增):
-  - class AgentTeam (dataclass): team_id/name/members/roles/projects/created_at
-  - class TeamRegistry: create/get/list/assign_project/members; DEFAULT_TEAM (software-team)
-  - class TeamService: build_default_team(agents) → 默认团队; team_snapshot(registry, metrics) → 协作视图
+~/.factory/teams/team.json              — 团队
+~/.factory/teams/task_dependencies.json — 依赖图
+~/.factory/projects/<slug>/workspace_context.json — 共享上下文
+~/.factory/teams/agent_messages.json    — 消息
+~/.factory/teams/conflicts.json         — 冲突记录
+```
 
-actions.py (修改): +team action ("查看团队/团队状态" 增强 → 团队视图; "创建团队" → TeamRegistry.create)
-intent.py/router.py: +INTENT_TEAM 关键词 ("团队", "查看团队" 已有 workforce; 扩展 team 语义)
-tests/console/test_session_teams.py (新增, >=50 测试)
+## 5. 模块计划
+
+```
+factory-console/session/
+  teams.py       (新增: AgentTeam/TeamRegistry/TeamService)
+  roles.py       (新增: RoleSystem — 角色→capabilities 推导) 或并入 agents.py
+  dependencies.py (新增: TaskDependencyGraph)
+  workspace.py    (新增: WorkspaceContext)
+  messages.py     (新增: AgentMessageStore)
+  conflicts.py    (新增: FileOwnership/ConflictDetector)
+  agents.py       (修改: +capabilities 推导, 兼容)
+  orchestrator.py (修改: +TeamExecutionMode, 兼容)
+  actions.py/intent.py/router.py (修改: +team 集成)
+tests/console/test_session_team.py (>=100 测试)
 docs/sprint10/S10-056-agent-team-collaboration.md
 ```
 
-## 4. 协作视图 (team_snapshot)
+## 6. 开发原则
 
 ```
-Team: AI Software Team
-  pm-agent       product_manager    -       -        -
-  architect-agent architect          -       -        -
-  backend-1      backend            65%     17       2 任务中
-  flutter-dev    frontend           100%    1        0 任务中
-  qa-agent       qa                 -       -        -
+1. 不破坏 S10-049~055 (主链路兼容)
+2. 优先扩展, 不重构
+3. 所有能力资产化 (json)
+4. 所有执行可审计
+5. 所有失败可恢复
+6. 真实执行能力, 不做 mock-only
 ```
 
-## 5. 边界
+## 7. 边界
 
-- 不重构主链路 (Team 是扩展层)
-- 复用 agents.json/AgentMetrics (真实数据)
-- 默认团队含现有 3 Agent + 预留 pm/architect/qa 角色
+- TeamExecutionMode 是 orchestrator 可选模式 (默认单 Agent 兼容)
+- DAG 只数据结构, 不实现复杂调度
+- Conflict 只检测不解决
+- Message 只基础模型
 - Core 零改动
 
 ---
 
-> 设计完毕 | Team Model + Registry + 协作视图 | 扩展层
+> 设计完毕 (完整版) | 9 大模块 | Team Execution 扩展层

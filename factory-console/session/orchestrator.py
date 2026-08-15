@@ -32,6 +32,7 @@ from typing import Any, Callable, Optional
 
 from .intent import IntentObject
 from .pipeline import Lifecycle
+from .quality import RepairManager, ValidationResult, Validator
 
 
 class ProjectNotFoundError(Exception):
@@ -205,8 +206,12 @@ class ExecutionOrchestrator:
     #: 任务队列最大重试次数 (设计 §5/§7: 失败 → retry 1 次 → failed, 不无限重试)
     DEFAULT_MAX_RETRY = 1
 
-    def __init__(self, workspace: Path) -> None:
+    def __init__(
+        self, workspace: Path, validator: Optional[Validator] = None
+    ) -> None:
         self.workspace = Path(workspace)
+        # S10-053 P2: 质量门验证器 (缺省 mock Validator; 测试注入自定义 validator)
+        self.validator = validator if validator is not None else Validator()
 
     # ------------------------------------------------------------ 定位/加载
 
@@ -388,7 +393,9 @@ class ExecutionOrchestrator:
         """进度查询 (设计 §3, 验收 F): 只读 execution_state.json, 不执行任何任务。
 
         返回 {project, status, lifecycle, tasks_total, completed, running,
-        pending, failed, agents}; state 缺失 → status="not_started" 零值。
+        pending, failed, agents} + S10-053 增强 (验收 H): validation
+        {passed, failed, not_run} + repair {pending, done, failed}
+        (repair 计数来自 repair_task.json 只读)。state 缺失 → status="not_started" 零值。
         """
         project_dir, slug = self._locate_project(project_id)
         state = self._load_state(project_dir)
@@ -402,6 +409,8 @@ class ExecutionOrchestrator:
             "pending": 0,
             "failed": 0,
             "agents": [],
+            "validation": {"passed": 0, "failed": 0, "not_run": 0},
+            "repair": {"pending": 0, "done": 0, "failed": 0},
         }
         if state is None:
             return base
@@ -413,6 +422,9 @@ class ExecutionOrchestrator:
                 if t.get("agent") and str(t.get("agent")) != "None"
             }
         )
+        val_passed = sum(1 for t in state.tasks if t.get("validation") == "passed")
+        val_failed = sum(1 for t in state.tasks if t.get("validation") == "failed")
+        repairs = RepairManager.load_repairs(project_dir)
         return {
             "project": state.project or slug,
             "status": state.status,
@@ -423,6 +435,16 @@ class ExecutionOrchestrator:
             "pending": counts.get("pending", 0),
             "failed": counts.get("failed", 0),
             "agents": agents,
+            "validation": {
+                "passed": val_passed,
+                "failed": val_failed,
+                "not_run": len(state.tasks) - val_passed - val_failed,
+            },
+            "repair": {
+                "pending": sum(1 for r in repairs if r.get("status") == "pending"),
+                "done": sum(1 for r in repairs if r.get("status") == "completed"),
+                "failed": sum(1 for r in repairs if r.get("status") == "failed"),
+            },
         }
 
     # ------------------------------------------------------------ 任务队列
@@ -436,18 +458,29 @@ class ExecutionOrchestrator:
         execute_fn: Optional[ExecuteFn],
         max_retry: int,
     ) -> ExecutionResult:
-        """任务队列第一版 (设计 §5): 按 execution_plan 顺序执行, 逐任务持久化。
+        """任务队列 (设计 §5 + S10-053 §8): 顺序执行, 逐任务持久化 + 质量门。
 
         顺序执行 (未来 DAG: 保留 TaskQueue.next_pending/mark_done 语义扩展点 —
         本版 state.tasks 顺序即队列顺序)。完成统计 + Lifecycle 推进 (§6)。
+
+        S10-053 P2 质量门 (设计 §8): 每任务 outcome 后 → validator.validate:
+        - success → task completed (state.tasks[].validation="passed")
+        - fail (执行失败或验证失败) → task failed + RepairManager.create_repair
+          (repair_task.json, 由 repair_task Action / resume 处理)
+        全部完成且无验证失败 → TESTING → VALIDATION_PASS → DELIVERED;
+        有失败 → 保持 DEVELOPMENT (可 repair/resume)。验证汇总 →
+        validation_result.json 落盘 (验收 I)。
         """
         runner: ExecuteFn = execute_fn if execute_fn is not None else _default_execute_fn
         completed = failed = 0
         artifacts: list[str] = []
         errors: list[str] = []
         costs: list[str] = []
+        validations: list[ValidationResult] = []
         for task in state.tasks:
             if task.get("status") == "completed":
+                # 已完成任务跳过 (resume 语义: 不重跑); 缺 validation 字段 → 默认 passed
+                task.setdefault("validation", "passed")
                 completed += 1
                 if task.get("artifact"):
                     artifacts.append(str(task["artifact"]))
@@ -455,16 +488,35 @@ class ExecutionOrchestrator:
             outcome = self._execute_with_retry(
                 project_dir, state, task, runner, max_retry
             )
-            if task.get("status") == "completed":
+            # S10-053: Validation Gate — 每任务 outcome 后验证 (设计 §8)
+            validation = self.validator.validate(task, outcome)
+            task["validation"] = "passed" if validation.success else "failed"
+            validations.append(validation)
+            self._save_state(project_dir, state)
+            if task.get("status") == "completed" and validation.success:
                 completed += 1
                 if task.get("artifact"):
                     artifacts.append(str(task["artifact"]))
             else:
                 failed += 1
-                if task.get("error"):
-                    errors.append(
-                        f"{task.get('id') or task.get('name')}: {task['error']}"
-                    )
+                if task.get("status") == "completed":
+                    # 执行成功但验证失败 → 同样视为失败 (质量门: 无 success 禁止交付)
+                    task["status"] = "failed"
+                    task["error"] = "; ".join(validation.errors) or "验证失败"
+                    self._save_state(project_dir, state)
+                reason = str(
+                    task.get("error")
+                    or "; ".join(validation.errors)
+                    or "任务执行失败"
+                )
+                errors.append(f"{task.get('id') or task.get('name')}: {reason}")
+                # S10-053: 失败 → repair_task.json (待修复队列, 不无限循环由 max_retry 约束)
+                RepairManager.create_repair(
+                    project_dir,
+                    task,
+                    reason,
+                    retry_count=int(task.get("retry_count") or 0),
+                )
             if isinstance(outcome, dict) and outcome.get("cost"):
                 costs.append(str(outcome["cost"]))
         result = ExecutionResult(
@@ -476,13 +528,17 @@ class ExecutionOrchestrator:
             cost=" · ".join(costs),
             errors=errors,
         )
-        # Lifecycle 推进 (§6): 无 failed → TESTING → (测试门占位通过) → DELIVERED;
-        # 有 failed → 保持 DEVELOPMENT (状态 failed, 可 resume)
+        # Lifecycle 推进 (§6 + S10-053 §4): 无 failed (含全部验证通过) →
+        # TESTING → VALIDATION_PASS → DELIVERED; 有 failed → 保持 DEVELOPMENT
         if failed == 0:
             state.status = Lifecycle.TESTING
             state.lifecycle = Lifecycle.TESTING
             self._save_state(project_dir, state)
             self._set_lifecycle(project_dir, slug, Lifecycle.TESTING)
+            state.status = Lifecycle.VALIDATION_PASS
+            state.lifecycle = Lifecycle.VALIDATION_PASS
+            self._save_state(project_dir, state)
+            self._set_lifecycle(project_dir, slug, Lifecycle.VALIDATION_PASS)
             state.status = Lifecycle.DELIVERED
             state.lifecycle = Lifecycle.DELIVERED
             self._save_state(project_dir, state)
@@ -491,6 +547,19 @@ class ExecutionOrchestrator:
             state.status = Lifecycle.DEVELOPMENT
             state.lifecycle = Lifecycle.DEVELOPMENT
             self._save_state(project_dir, state)
+        # S10-053: 验证结果资产化 — validation_result.json 落盘 (验收 I)
+        summary = ValidationResult(
+            success=failed == 0,
+            tests_total=len(validations),
+            tests_passed=sum(1 for v in validations if v.success),
+            tests_failed=sum(1 for v in validations if not v.success),
+            errors=[
+                f"{task.get('id') or task.get('name')}: {err}"
+                for task, v in zip(state.tasks, validations)
+                for err in (v.errors if not v.success else [])
+            ],
+        )
+        self.validator.save(project_dir, slug, summary)
         return result
 
     def _execute_with_retry(

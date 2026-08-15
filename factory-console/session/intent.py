@@ -32,6 +32,8 @@ INTENT_LIST_PROJECTS = "list_projects"
 INTENT_CREATE_PRODUCT = "create_product"
 #: S10-051 P1: 工程管线意图 (生成 PRD / 准备工程 — 规则生成, 不调 LLM)
 INTENT_GENERATE_PRD = "generate_prd"
+#: S10-053 P4: 质量修复意图 (修复失败任务 — RepairManager, 确认门后执行)
+INTENT_REPAIR_TASK = "repair_task"
 INTENT_PREPARE_PROJECT = "prepare_project"
 #: S10-052 P3: 执行编排意图 (开始开发 / 进度查询 — Orchestrator Actions)
 INTENT_EXECUTE_PROJECT = "execute_project"
@@ -40,6 +42,8 @@ INTENT_PROJECT_PROGRESS = "project_progress"
 #: KeywordIntentParser 关键词规则表 (顺序 = 优先级, 确定性无歧义):
 #: (关键词元组, intent_type, 参数键 — 命中后取关键词后剩余文本作为参数值)
 _KEYWORD_RULES: tuple[tuple[tuple[str, ...], str, Optional[str]], ...] = (
+    # S10-053 P4: 质量修复意图 — 必须在 run_task ("修复" 关键词) 之前 (优先级更高)
+    (("修复失败任务", "修复任务", "重试失败任务"), INTENT_REPAIR_TASK, None),
     (("花了多少", "成本", "费用"), INTENT_SHOW_COST, None),
     # S10-049 P0: +"实现" (验收: "帮我实现登录功能" → run_task, objective="登录功能")
     (("加", "修复", "写", "实现"), INTENT_RUN_TASK, "objective"),
@@ -53,6 +57,8 @@ _KEYWORD_RULES: tuple[tuple[tuple[str, ...], str, Optional[str]], ...] = (
     # ("开始开发这个产品" 不被 "产品" 抢; "执行项目" 不被 run_task 抢)
     (("开始开发", "开始执行", "执行项目", "开始开发这个产品"), INTENT_EXECUTE_PROJECT, None),
     (("项目进度", "进度如何", "执行到哪了"), INTENT_PROJECT_PROGRESS, None),
+    # S10-053 P4: 质量修复意图 — 修复失败任务 (RepairManager, 确认门)
+    (("修复失败任务", "修复任务", "重试失败任务"), INTENT_REPAIR_TASK, None),
     # S10-050 P1: 产品意图 (想法级) — "我想/做一款/产品/想法/创业" → create_product
     # (idea 参数 = 关键词后剩余文本; 优先级在 run_task/show_status 之后,
     #  "我想看看状态" → show_status、"我想加个功能" → run_task 不被抢)

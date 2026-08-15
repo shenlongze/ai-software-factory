@@ -497,6 +497,7 @@ def test_lifecycle_statuses_order():
         "execution_ready",
         "development",
         "testing",
+        "validation_pass",
         "delivered",
     )
 
@@ -510,6 +511,7 @@ def test_lifecycle_next_status_chain():
         lc.EXECUTION_READY,
         lc.DEVELOPMENT,
         lc.TESTING,
+        lc.VALIDATION_PASS,
         lc.DELIVERED,
         None,
     ]

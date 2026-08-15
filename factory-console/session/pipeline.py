@@ -78,9 +78,11 @@ def _slugify(text: str) -> str:
 
 class Lifecycle:
     """项目生命周期 (设计 §4): IDEA → PRODUCT_DEFINED → ENGINEERING_READY →
-    EXECUTION_READY → DEVELOPMENT → TESTING → DELIVERED。
+    EXECUTION_READY → DEVELOPMENT → TESTING → VALIDATION_PASS → DELIVERED。
 
     常量名大写 (设计口径), 值小写 (project.json status 落盘口径, 验收 E)。
+    S10-053 P1 (设计 §4): VALIDATION_PASS 质量门 — TESTING 之后, DELIVERED 之前;
+    无 ValidationResult.success 禁止进入 DELIVERED (停留在 TESTING/DEVELOPMENT)。
     """
 
     IDEA = "idea"
@@ -89,6 +91,7 @@ class Lifecycle:
     EXECUTION_READY = "execution_ready"
     DEVELOPMENT = "development"
     TESTING = "testing"
+    VALIDATION_PASS = "validation_pass"
     DELIVERED = "delivered"
 
     #: 完整状态序列 (顺序 = 生命周期推进方向)
@@ -99,6 +102,7 @@ class Lifecycle:
         EXECUTION_READY,
         DEVELOPMENT,
         TESTING,
+        VALIDATION_PASS,
         DELIVERED,
     )
 

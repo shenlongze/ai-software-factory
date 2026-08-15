@@ -51,6 +51,7 @@ from .product import (
     generate_temp_product_name,
     parse_core_features,
 )
+from .quality import RepairManager
 
 #: 会话工作区缺省 (与 commands.DEFAULT_PROJECTS_FILE 同口径: ~/.factory)
 DEFAULT_WORKSPACE = Path.home() / ".factory"
@@ -350,13 +351,15 @@ def _locate_product(
     projects_root = Path(context.workspace) / "projects"
     # ① 显式 current_project → 读 product.json
     if current_project:
-        pdir = projects_root / str(current_project)
+        # S10-053 修正: current_project 可能是完整路径 → 取 basename 作 slug
+        pslug = Path(str(current_project)).name or str(current_project)
+        pdir = projects_root / pslug
         pfile = pdir / "product.json"
         if pfile.is_file():
             try:
                 return (
                     ProductIntent.from_dict(_read_json_file(pfile)),
-                    str(current_project),
+                    pslug,
                     projects_root,
                 )
             except Exception:  # noqa: BLE001 — 失败安全: 损坏 → 继续其它路径
@@ -796,12 +799,89 @@ def execute_project(context: ExecutionContext) -> ActionResult:
     )
 
 
-def project_progress(context: ExecutionContext) -> ActionResult:
-    """查询项目执行进度 (S10-052 P4): 只读 execution_state.json, 不执行任何任务。
+def repair_task(context: ExecutionContext) -> ActionResult:
+    """修复失败任务 (S10-053 P3): \"修复失败任务/修复任务\" → 确认门 → RepairManager。
 
-    \"项目进度/进度如何/执行到哪了\" → 非敏感查询 → 汇总
+    流程:
+    1. 定位产品 (复用 _locate_product) → project_dir
+    2. 读 repair_task.json → 无 pending → 明确提示 (幂等, 不报错)
+    3. RepairManager.repair — execute_fn 缺省薄调 execute_task
+       (orchestrator._default_execute_fn 复用 Agent Runtime, 验收 H)
+    4. 返回修复结果 {repair_id, status: completed/failed/none, retry_count}
+
+    Retry Policy (设计 §5): max_retry=1 — 修复重试 1 次仍失败 → failed (不无限循环)。
+    """
+    context.require("user")
+    product, slug, projects_root = _locate_product(context)
+    if product is None or slug is None:
+        return ActionResult(
+            ok=False,
+            status=STATUS_ERROR,
+            message="修复任务失败: 未找到产品定义 (请先创建产品)",
+            error="未找到产品定义 (请先创建产品)",
+        )
+    project_dir = projects_root / slug
+    repairs = RepairManager.load_repairs(project_dir)
+    if not any(r.get("status") == "pending" for r in repairs):
+        return ActionResult(
+            ok=True,
+            status=STATUS_OK,
+            message=f"修复任务: 无待修复任务 (已处理 {len(repairs)} 条)",
+            data={
+                "project": slug,
+                "repair_id": None,
+                "status": "none",
+                "repairs_total": len(repairs),
+            },
+            error=None,
+        )
+    try:
+        result = RepairManager().repair(project_dir)
+    except Exception as exc:  # noqa: BLE001 — 失败安全: 底层异常 → 明确错误
+        return ActionResult(
+            ok=False,
+            status=STATUS_ERROR,
+            message=f"修复任务失败: {exc}",
+            error=str(exc),
+        )
+    ok = result.get("status") == "completed"
+    status_label = {
+        "completed": "修复完成",
+        "failed": "修复失败 (已达最大重试次数)",
+        "retrying": "修复重试中",
+    }.get(result.get("status"), "无待修复任务")
+    retries = int(result.get("retry_count") or 0)
+    message = (
+        f"修复任务: {status_label} — 重试 {retries} 次"
+        if ok
+        else f"修复任务: {status_label} (重试 {retries} 次)"
+    )
+    validation = result.get("validation")
+    validation_errors = (
+        validation.get("errors") if isinstance(validation, dict) else None
+    )
+    return ActionResult(
+        ok=ok,
+        status=STATUS_OK if ok else STATUS_ERROR,
+        message=message,
+        data={
+            "project": slug,
+            "repair_id": result.get("repair_id"),
+            "status": result.get("status"),
+            "retry_count": retries,
+            "validation": validation,
+        },
+        error=None if ok else validation_errors,
+    )
+
+
+def project_progress(context: ExecutionContext) -> ActionResult:
+    """查询项目执行进度 (S10-052 P4 + S10-053 P6): 只读, 不执行任何任务。
+
+    "项目进度/进度如何/执行到哪了" → 非敏感查询 → 汇总
     {project, status, lifecycle, tasks_total, completed, running, pending,
-    failed, agents} (验收 F)。
+    failed, agents} + S10-053 增强 (验收 H): validation {passed, failed,
+    not_run} + repair {pending, done, failed}。
     """
     context.require("user")
     product, slug, projects_root = _locate_product(context)
@@ -948,6 +1028,20 @@ def build_default_actions() -> ActionRegistry:
                 "service": "ExecutionOrchestrator.get_progress",
                 "phase": "S10-052 P4",
                 "sensitive": False,
+                "category": "execution",
+            },
+        )
+    )
+    registry.register(
+        Action(
+            name="repair_task",
+            description="修复失败任务 (repair_task.json → Agent 重跑 → 验证重跑)",
+            handler=repair_task,
+            permission="project",
+            metadata={
+                "service": "RepairManager (复用 execute_task)",
+                "phase": "S10-053 P3",
+                "sensitive": True,
                 "category": "execution",
             },
         )

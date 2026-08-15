@@ -713,7 +713,7 @@ def test_lifecycle_transition_sequence(tmp_path):
     _make_project(tmp_path)
     orch = _RecordingOrchestrator(tmp_path)
     orch.execute_project("scorepocket", execute_fn=_make_ok_fn())
-    assert orch.lifecycle_calls == ["development", "testing", "delivered"]
+    assert orch.lifecycle_calls == ["development", "testing", "validation_pass", "delivered"]
 
 
 # ================================================================== 7. 失败处理 (验收 G)

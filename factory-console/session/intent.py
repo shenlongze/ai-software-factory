@@ -40,12 +40,22 @@ INTENT_EXECUTE_PROJECT = "execute_project"
 INTENT_PROJECT_PROGRESS = "project_progress"
 #: S10-055 Task 005: 项目验收意图 (通过验收 → USER_ACCEPTANCE → DELIVERED)
 INTENT_ACCEPT_PROJECT = "accept_project"
+#: S10-055 Task 005/006: Workforce Intelligence 意图
+#: (查看团队 → 团队状态; 谁负责 → 最近任务 Agent; 为什么选择 → 计划 reason)
+INTENT_WORKFORCE = "workforce"
+INTENT_TASK_OWNER = "task_owner"
+INTENT_AGENT_REASON = "agent_reason"
 
 #: KeywordIntentParser 关键词规则表 (顺序 = 优先级, 确定性无歧义):
 #: (关键词元组, intent_type, 参数键 — 命中后取关键词后剩余文本作为参数值)
 _KEYWORD_RULES: tuple[tuple[tuple[str, ...], str, Optional[str]], ...] = (
     # S10-055 Task 005: 项目验收意图 — 最高优先级 (确认门后 DELIVERED)
     (("通过验收", "验收通过", "确认交付", "接受交付"), INTENT_ACCEPT_PROJECT, None),
+    # S10-055 Task 005/006: Workforce 意图 — 在 show_status ("状态") 之前
+    # ("团队状态" 含 "状态" 不被抢; "谁负责" 不被 run_task 抢; "为什么选择" 独立)
+    (("查看团队", "团队状态", "团队成员", "团队情况", "团队"), INTENT_WORKFORCE, None),
+    (("谁负责", "谁在做", "谁开发"), INTENT_TASK_OWNER, None),
+    (("为什么选择", "为什么是", "为什么选"), INTENT_AGENT_REASON, None),
     # S10-053 P4: 质量修复意图 — 必须在 run_task ("修复" 关键词) 之前 (优先级更高)
     (("修复失败任务", "修复任务", "重试失败任务"), INTENT_REPAIR_TASK, None),
     (("花了多少", "成本", "费用"), INTENT_SHOW_COST, None),

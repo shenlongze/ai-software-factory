@@ -108,6 +108,9 @@ def _default_execute_fn(
         "artifact": str(execution.get("artifact") or ""),
         "error": result.error,
         "cost": str(execution.get("cost") or ""),
+        # S10-055 Task 004: Agent 选择理由透传 (execution_plan.json reason →
+        # 执行结果; 旧式 plan 无 reason → 空串, 失败安全)
+        "reason": str(task.get("reason") or ""),
     }
 
 
@@ -310,6 +313,7 @@ class ExecutionOrchestrator:
             "agent": str(plan_task.get("agent") or ""),
             "feature": plan_task.get("feature"),
             "epic": plan_task.get("epic"),
+            "reason": plan_task.get("reason"),  # S10-055: Agent 选择理由透传 (可解释调度)
             "status": "pending",
             "artifact": "",
             "retry_count": 0,

@@ -35,6 +35,7 @@ from .action import (
     ActionResult,
     ExecutionContext,
 )
+from .agents import AgentMatcher, AgentMetrics, AgentRegistry, workforce_snapshot
 from .audit import record_execution
 from .commands import read_projects
 from .intent import INTENT_CREATE_PROJECT, IntentObject
@@ -77,6 +78,7 @@ class AgentExecutionResult:
 
     artifact: patch/产物路径摘要; cost: usage 摘要; duration: 耗时字符串。
     result_id: 底层 Runtime 执行结果 id (审计/回放); error: 失败详情 (None = 成功)。
+    reason (S10-055 Task 004): AgentMatcher 可解释选择理由 (执行计划/对话消费)。
     """
 
     success: bool
@@ -86,6 +88,7 @@ class AgentExecutionResult:
     duration: str = ""
     result_id: Optional[str] = None
     error: Optional[str] = None
+    reason: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         """渲染/审计视图 (顶层契约字段 + 摘要键)。"""
@@ -97,6 +100,7 @@ class AgentExecutionResult:
             "duration": self.duration,
             "result_id": self.result_id,
             "error": self.error,
+            "reason": self.reason,
         }
 
 
@@ -592,6 +596,31 @@ def select_agent(intent: Optional[IntentObject], context: Optional[ExecutionCont
     return DEFAULT_AGENT
 
 
+def _agent_reason_for(agent: str, objective: str) -> str:
+    """AgentMatcher 可解释选择理由 (S10-055 Task 004) — 失败安全: 计算失败 → ""。
+
+    以 objective 为任务输入 (agent 已由 select_agent 决定, 本函数只产 reason,
+    不改变决策); 供 execute_task 结果 / 审计 / 对话消费。
+    """
+    try:
+        match = AgentMatcher().reason_for(
+            agent, {"name": objective, "objective": objective}
+        )
+        return str(match.get("reason") or "")
+    except Exception:  # noqa: BLE001 — 失败安全: reason 缺失不阻断执行
+        return ""
+
+
+def _workspace_agents_file(workspace: Any) -> Optional[Path]:
+    """工作区 Agent 注册表 (workspace/agents/agents.json); 不存在 → None (默认注册表)。
+
+    Workforce Dashboard / Matcher 优先读工作区数据 (测试隔离), 无则回落
+    ~/.factory/agents/agents.json (真实数据空间, 同 commands.DEFAULT_PROJECTS_FILE 口径)。
+    """
+    path = Path(workspace) / "agents" / "agents.json"
+    return path if path.is_file() else None
+
+
 def _artifact_summary(artifacts: Any) -> str:
     """产物摘要: artifacts[0] 的 path/id (Runtime 产物 to_dict), 非 dict → str。"""
     if not artifacts:
@@ -664,6 +693,8 @@ def execute_task(context: ExecutionContext) -> ActionResult:
     task_id = params.get("task_id") or params.get("task") or ""
     project_ref = str(params.get("project") or context.project or context.workspace)
     agent = select_agent(context.intent, context)
+    # S10-055 Task 004: AgentMatcher 可解释理由 (失败安全 → "", 不改变决策)
+    reason = _agent_reason_for(agent, objective)
     exec_ctx = AgentExecutionContext(
         workspace=context.workspace,
         session=context.session,
@@ -712,6 +743,7 @@ def execute_task(context: ExecutionContext) -> ActionResult:
         duration=str(usage.get("duration") or result.get("duration") or ""),
         result_id=result.get("result_id"),
         error=error,
+        reason=reason,
     )
     _record_execution(exec_ctx, execution, params, result)
     if ok:
@@ -1005,6 +1037,169 @@ def accept_project(context: ExecutionContext) -> ActionResult:
     )
 
 
+def workforce(context: ExecutionContext) -> ActionResult:
+    """Workforce Dashboard (S10-055 Task 005, 验收 E): "查看团队/团队状态" → 团队状态。
+
+    只读查询 (非敏感, 无确认门): AgentRegistry (工作区 agents.json 优先, 无 →
+    默认注册表) + AgentMetrics (工作区 agent_metrics.json / execution_records.json
+    优先, 无 → 真实记录聚合) 合并 → agents [{id, name, role, status, success_rate,
+    total_tasks, avg_cost}] (按 id 排序) + 渲染视图 (header/rows)。
+    失败安全: 数据缺失 → 默认注册表/空绩效, 不抛。
+    """
+    context.require("user")
+    agents_file = _workspace_agents_file(context.workspace)
+    records_file = Path(context.workspace) / "exec" / "execution_records.json"
+    metrics_file = Path(context.workspace) / "exec" / "agent_metrics.json"
+    try:
+        rows = workforce_snapshot(
+            agents_file=agents_file,
+            records_file=records_file if records_file.is_file() else None,
+            metrics_file=metrics_file if metrics_file.is_file() else None,
+        )
+    except Exception as exc:  # noqa: BLE001 — 失败安全: 聚合异常 → 明确错误
+        return ActionResult(
+            ok=False,
+            status=STATUS_ERROR,
+            message=f"团队状态查询失败: {exc}",
+            error=str(exc),
+        )
+    table_rows = [
+        [
+            row["id"],
+            row["role"],
+            row["status"],
+            (
+                f"{row['success_rate'] * 100:.0f}%"
+                if row["success_rate"] is not None
+                else "-"
+            ),
+            row["total_tasks"],
+        ]
+        for row in rows
+    ]
+    return ActionResult(
+        ok=True,
+        status=STATUS_OK,
+        message=f"团队共 {len(rows)} 名 Agent",
+        data={
+            "count": len(rows),
+            "agents": rows,
+            "header": ["id", "role", "status", "success_rate", "total_tasks"],
+            "rows": table_rows,
+        },
+        error=None,
+    )
+
+
+def task_owner(context: ExecutionContext) -> ActionResult:
+    """任务负责人 (S10-055 Task 006, 验收 F): "谁负责这个任务" → 最近任务 Agent。
+
+    只读查询: ① 当前项目 execution_state.json 最近任务 (有 agent 的最后一个) →
+    agent; ② 兜底: 工作区 execution_records.json 最近执行记录 → agent;
+    ③ 仍无 → agent=None + 明确提示 (查询成功, 数据为空, 不报错)。
+    返回 {agent, task, project} + 消息 "最近任务「X」由 Y 负责"。
+    """
+    context.require("user")
+    agent: Optional[str] = None
+    task_name: Optional[str] = None
+    project: Optional[str] = None
+    product, slug, projects_root = _locate_product(context)
+    if slug:
+        state_file = projects_root / slug / "execution_state.json"
+        try:
+            if state_file.is_file():
+                state = _read_json_file(state_file)
+                for task in reversed(state.get("tasks") or []):
+                    if task.get("agent") and str(task.get("agent")) != "None":
+                        agent = str(task["agent"])
+                        task_name = str(task.get("name") or task.get("id") or "")
+                        project = slug
+                        break
+        except Exception:  # noqa: BLE001 — 失败安全: 状态损坏 → 回落执行记录
+            pass
+    if agent is None:
+        try:
+            from .audit import load_records as _load_records
+
+            records = _load_records(
+                Path(context.workspace) / "exec" / "execution_records.json"
+            )
+            for record in reversed(records):
+                if record.get("agent") and str(record.get("agent")) != "None":
+                    agent = str(record["agent"])
+                    task_name = str(record.get("task") or "")
+                    project = str(record.get("project") or "")
+                    break
+        except Exception:  # noqa: BLE001 — 失败安全: 记录损坏 → agent=None
+            pass
+    if agent is None:
+        return ActionResult(
+            ok=True,
+            status=STATUS_OK,
+            message="未找到任务负责人 (尚无执行记录)",
+            data={"agent": None, "task": None, "project": None},
+            error=None,
+        )
+    message = f"最近任务「{task_name or '未知任务'}」由 {agent} 负责"
+    if project:
+        message += f" (项目 {project})"
+    return ActionResult(
+        ok=True,
+        status=STATUS_OK,
+        message=message,
+        data={"agent": agent, "task": task_name, "project": project},
+        error=None,
+    )
+
+
+def agent_reason(context: ExecutionContext) -> ActionResult:
+    """Agent 选择理由 (S10-055 Task 006, 验收 G): "为什么选择" → execution_plan reason。
+
+    只读查询: 当前项目 execution_plan.json 中第一个带 reason 的任务 →
+    {agent, task, reason} + 消息 "选择 X 的理由: <reason>"。
+    无 plan / 无 reason → agent=None + 明确提示 (查询成功, 数据为空, 不报错)。
+    """
+    context.require("user")
+    product, slug, projects_root = _locate_product(context)
+    if slug is None:
+        return ActionResult(
+            ok=False,
+            status=STATUS_ERROR,
+            message="查询失败: 未找到产品定义 (请先创建产品)",
+            error="未找到产品定义 (请先创建产品)",
+        )
+    reason: Optional[str] = None
+    agent: Optional[str] = None
+    task_name: Optional[str] = None
+    plan_file = projects_root / slug / "execution_plan.json"
+    try:
+        if plan_file.is_file():
+            plan = _read_json_file(plan_file)
+            for task in plan.get("tasks") or []:
+                if task.get("reason"):
+                    reason = str(task["reason"])
+                    agent = str(task.get("agent") or "")
+                    task_name = str(task.get("name") or task.get("id") or "")
+                    break
+    except Exception:  # noqa: BLE001 — 失败安全: plan 损坏 → 无 reason
+        reason = None
+    if not reason:
+        return ActionResult(
+            ok=True,
+            status=STATUS_OK,
+            message="未找到 Agent 选择理由 (execution_plan.json 无 reason)",
+            data={"agent": None, "task": None, "reason": None},
+            error=None,
+        )
+    return ActionResult(
+        ok=True,
+        status=STATUS_OK,
+        message=f"选择 {agent} 的理由: {reason}",
+        data={"agent": agent, "task": task_name, "reason": reason},
+        error=None,
+    )
+
+
 def build_default_actions() -> ActionRegistry:
     """装配默认 Action 注册表 (注册式 — 新增 Action 只需 register 一行)。"""
     registry = ActionRegistry()
@@ -1149,6 +1344,48 @@ def build_default_actions() -> ActionRegistry:
                 "phase": "S10-055 P5",
                 "sensitive": True,
                 "category": "execution",
+            },
+        )
+    )
+    registry.register(
+        Action(
+            name="workforce",
+            description="查看团队 (AgentRegistry + AgentMetrics 合并 → 团队状态)",
+            handler=workforce,
+            permission="user",
+            metadata={
+                "service": "AgentRegistry + AgentMetrics (workforce_snapshot)",
+                "phase": "S10-055 Task 005",
+                "sensitive": False,
+                "category": "workforce",
+            },
+        )
+    )
+    registry.register(
+        Action(
+            name="task_owner",
+            description="谁负责这个任务 (execution_state 最近任务 → Agent)",
+            handler=task_owner,
+            permission="user",
+            metadata={
+                "service": "execution_state.json / execution_records.json",
+                "phase": "S10-055 Task 006",
+                "sensitive": False,
+                "category": "workforce",
+            },
+        )
+    )
+    registry.register(
+        Action(
+            name="agent_reason",
+            description="为什么选择该 Agent (execution_plan.json reason → 可解释)",
+            handler=agent_reason,
+            permission="user",
+            metadata={
+                "service": "execution_plan.json reason (AgentMatcher)",
+                "phase": "S10-055 Task 006",
+                "sensitive": False,
+                "category": "workforce",
             },
         )
     )

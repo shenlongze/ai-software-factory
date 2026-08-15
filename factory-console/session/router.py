@@ -34,6 +34,11 @@ DEFAULT_ROUTES: dict[str, str] = {
     "repair_task": "repair_task",
     # S10-055 Task 005: 项目验收意图 → accept_project Action (USER_ACCEPTANCE → DELIVERED)
     "accept_project": "accept_project",
+    # S10-055 Task 005/006: Workforce Intelligence 意图 → Workforce Actions
+    # (查看团队 → 团队状态; 谁负责 → 最近任务 Agent; 为什么选择 → 计划 reason)
+    "workforce": "workforce",
+    "task_owner": "task_owner",
+    "agent_reason": "agent_reason",
 }
 
 

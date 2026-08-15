@@ -481,10 +481,15 @@ class FeatureTaskGenerator:
 class AgentAssignment:
     """tasks.json → execution_plan.json (设计 §4): task_id → agent。
 
-    from_tasks(task_tree, select_agent_fn, context) — select_agent_fn 复用
+    from_tasks(task_tree, select_agent_fn, context, matcher) — select_agent_fn 复用
     actions.select_agent (frontend 任务名含 "前端" → flutter-dev; 其余 → backend-1;
     qa 无专属 agent → backend-1 兜底)。select_agent_fn 缺省 → 惰性 import
     actions.select_agent (避免模块级循环依赖)。
+
+    S10-055 Task 004 (Execution Plan Reasoning): matcher 参数 (缺省 → 惰性
+    AgentMatcher) 为每个已选 Agent 计算可解释 reason ("skill match 92%...") —
+    Agent 决策不变 (select_agent_fn 兼容保留), reason 仅附加 (execution_plan.json
+    含 reason, 供 Conversation "为什么选择" 与生产审计消费)。
     """
 
     @classmethod
@@ -493,12 +498,18 @@ class AgentAssignment:
         task_tree: dict[str, Any],
         select_agent_fn: Optional[Callable[..., str]] = None,
         context: Any = None,
+        matcher: Any = None,
     ) -> dict[str, Any]:
-        """任务树 → 分配结果 {"tasks": [{id, name, agent_type, agent}], "count"}。"""
+        """任务树 → 分配结果 {"tasks": [{id, name, agent_type, agent, reason}], "count"}。"""
         if select_agent_fn is None:
             from .actions import select_agent as _default_select
 
             select_agent_fn = _default_select
+        if matcher is None:
+            # S10-055 Task 004: 惰性 AgentMatcher (注册表驱动 reason 计算)
+            from .agents import AgentMatcher
+
+            matcher = AgentMatcher()
         tasks = task_tree.get("tasks") or []
         assignments: list[dict[str, Any]] = []
         for task in tasks:
@@ -514,6 +525,13 @@ class AgentAssignment:
                 agent = select_agent_fn(intent, context)  # type: ignore[operator]
             except TypeError:
                 agent = select_agent_fn(intent)  # type: ignore[operator]
+            # S10-055 Task 004: 可解释调度 reason (失败安全 — 计算失败 → None)
+            reason: Optional[str] = None
+            try:
+                match = matcher.reason_for(str(agent), task)
+                reason = match.get("reason")
+            except Exception:  # noqa: BLE001 — 失败安全: reason 缺失不阻断分配
+                reason = None
             assignments.append(
                 {
                     "id": task_id,
@@ -524,6 +542,8 @@ class AgentAssignment:
                     # execution_state 记录 task.feature; 旧式 plan 无此字段 → 兼容)
                     "feature": task.get("feature"),
                     "epic": task.get("epic"),
+                    # S10-055 Task 004: Agent 选择理由 (可解释调度, 设计 §3)
+                    "reason": reason,
                 }
             )
         return {"tasks": assignments, "count": len(assignments)}

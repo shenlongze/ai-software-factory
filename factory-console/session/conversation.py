@@ -57,6 +57,11 @@ _APPROVE_ANSWERS: frozenset[str] = frozenset({"y", "yes"})
 #: 产品确认提示 (y/N 约定: 回车/其他 → 拒绝)
 _PRODUCT_CONFIRM_PROMPT = "确认创建这个产品? (y/N)"
 
+#: 产品创建成功后引导 (S10-051 P6): 指向 prepare_project 意图关键词
+_ENGINEERING_GUIDE = (
+    "产品定义完成 — 是否生成工程计划? 输入 '准备开发' 或 '生成工程计划'"
+)
+
 
 class ConversationState(Enum):
     """会话状态 (设计 §2.6 + S10-050 §2.4): 收集需求 → 澄清 → 确认 → 执行 → 完成。
@@ -304,9 +309,12 @@ class ConversationManager:
                 needs_input=True,
             )
         self.transition(ConversationState.DONE)
+        base = message or f"Product Created: {self.product_intent.name} — Ready for Engineering."
+        # S10-051 P6 (验收 H): 产品创建成功后引导 "是否生成工程计划?" —
+        # 指向 prepare_project 意图关键词 ('准备开发' / '生成工程计划')
         return ConversationResponse(
             state=self.state,
-            message=message or f"Product Created: {self.product_intent.name} — Ready for Engineering.",
+            message=f"{base}\n{_ENGINEERING_GUIDE}",
             needs_input=False,
         )
 

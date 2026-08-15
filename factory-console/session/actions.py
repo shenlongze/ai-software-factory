@@ -38,6 +38,13 @@ from .action import (
 from .audit import record_execution
 from .commands import read_projects
 from .intent import INTENT_CREATE_PROJECT, IntentObject
+from .pipeline import (
+    AgentAssignment,
+    EngineeringPlan,
+    Lifecycle,
+    ProductDocument,
+    TaskTree,
+)
 from .product import (
     ProductIntent,
     generate_temp_product_name,
@@ -284,6 +291,236 @@ def create_product(context: ExecutionContext) -> ActionResult:
             "product_file": str(product_path),
             "project_file": str(product_dir / "project.json"),
             "summary": product.to_summary(),
+        },
+        error=None,
+    )
+
+
+def _write_text_file(path: Path, content: str) -> None:
+    """落盘文本资产 (父目录自动创建)。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+
+
+def _write_json_file(path: Path, data: dict[str, Any]) -> None:
+    """落盘 JSON 资产 (ensure_ascii=False — 中文可读; 确定性无时间戳)。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+
+
+def _read_json_file(path: Path) -> dict[str, Any]:
+    """读取 JSON 资产 (失败 → 抛, 由调用方失败安全处理)。"""
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _find_product_dir(projects_root: Path, product: ProductIntent) -> Optional[str]:
+    """扫描 projects/*/product.json 按 name 定位产品目录 (slug 推导失败的兜底)。"""
+    for pfile in sorted(projects_root.glob("*/product.json")):
+        try:
+            data = _read_json_file(pfile)
+        except Exception:  # noqa: BLE001 — 失败安全: 损坏文件跳过
+            continue
+        if data.get("name") == product.name:
+            return pfile.parent.name
+    return None
+
+
+def _locate_product(
+    context: ExecutionContext,
+) -> tuple[Optional[ProductIntent], Optional[str], Path]:
+    """定位当前产品与项目目录 (S10-051 资产读写共用)。
+
+    优先级:
+    ① context.session.current_project / context.project 显式指向 → projects/<slug>/product.json
+    ② context.session.product_intent (会话产品流程产物) → name slug 或同名扫描
+    ③ 扫描兜底: projects/*/product.json 最新一个
+
+    返回 (ProductIntent | None, slug | None, projects_root) — 未找到 → (None, None, root)。
+    """
+    session = getattr(context, "session", None)
+    product = getattr(session, "product_intent", None) if session is not None else None
+    current_project = (
+        getattr(session, "current_project", None) if session is not None else None
+    )
+    if not current_project:
+        current_project = getattr(context, "project", None)
+    projects_root = Path(context.workspace) / "projects"
+    # ① 显式 current_project → 读 product.json
+    if current_project:
+        pdir = projects_root / str(current_project)
+        pfile = pdir / "product.json"
+        if pfile.is_file():
+            try:
+                return (
+                    ProductIntent.from_dict(_read_json_file(pfile)),
+                    str(current_project),
+                    projects_root,
+                )
+            except Exception:  # noqa: BLE001 — 失败安全: 损坏 → 继续其它路径
+                pass
+    # ② 会话 product_intent → name slug (或同名扫描兜底, 兼容中文产品名)
+    if product is not None:
+        slug = _slugify(product.name) if product.name else ""
+        if not slug or not (projects_root / slug).is_dir():
+            matched = _find_product_dir(projects_root, product)
+            if matched is not None:
+                slug = matched
+        if not slug:
+            return None, None, projects_root
+        return product, slug, projects_root
+    # ③ 扫描兜底: 最新 product.json
+    matches = sorted(projects_root.glob("*/product.json"))
+    if matches:
+        latest = max(matches, key=lambda p: p.stat().st_mtime)
+        try:
+            return (
+                ProductIntent.from_dict(_read_json_file(latest)),
+                latest.parent.name,
+                projects_root,
+            )
+        except Exception:  # noqa: BLE001 — 失败安全: 损坏 → 视为未找到
+            return None, None, projects_root
+    return None, None, projects_root
+
+
+def generate_prd(context: ExecutionContext) -> ActionResult:
+    """生成产品需求文档 (S10-051 P2): ProductIntent → PRD.md + product.json status=prd_ready。
+
+    产品来源: session.product_intent / current_project / 扫描 (见 _locate_product)。
+    纯规则生成 (pipeline.ProductDocument, 不调 LLM); 资产落盘 projects/<slug>/PRD.md。
+    """
+    context.require("user")
+    product, slug, projects_root = _locate_product(context)
+    if product is None or slug is None:
+        return ActionResult(
+            ok=False,
+            status=STATUS_ERROR,
+            message="PRD 生成失败: 未找到产品定义 (请先创建产品)",
+            error="未找到产品定义 (请先创建产品)",
+        )
+    missing = product.missing_fields()
+    if missing:
+        detail = ", ".join(missing)
+        return ActionResult(
+            ok=False,
+            status=STATUS_ERROR,
+            message=f"PRD 生成失败: 产品信息不完整, 缺失: {detail}",
+            error=f"产品信息不完整, 缺失: {detail}",
+        )
+    prd_text = ProductDocument.from_product_intent(product)
+    product_dir = projects_root / slug
+    prd_path = product_dir / "PRD.md"
+    product_file = product_dir / "product.json"
+    product.status = "prd_ready"
+    try:
+        _write_text_file(prd_path, prd_text)
+        existing = _read_json_file(product_file) if product_file.is_file() else {}
+        _write_json_file(product_file, {**existing, **product.to_dict()})
+    except Exception as exc:  # noqa: BLE001 — 失败安全: 落盘异常 → 明确错误
+        return ActionResult(
+            ok=False,
+            status=STATUS_ERROR,
+            message=f"PRD 生成失败: 落盘失败: {exc}",
+            error=str(exc),
+        )
+    return ActionResult(
+        ok=True,
+        status=STATUS_OK,
+        message=f"PRD 已生成: {prd_path}",
+        data={
+            "prd_file": str(prd_path),
+            "product_file": str(product_file),
+            "sections": list(ProductDocument.SECTIONS),
+            "status": product.status,
+        },
+        error=None,
+    )
+
+
+def prepare_project(context: ExecutionContext) -> ActionResult:
+    """准备工程 (S10-051 P3 高级组合 Action): 一次生成全部管线资产。
+
+    依次: generate_prd (PRD.md) → EngineeringPlan (engineering.json) →
+    TaskTree (tasks.json) → AgentAssignment (execution_plan.json, 复用
+    select_agent) → Lifecycle (project.json status=execution_ready)。
+
+    返回 "Project Ready For Engineering." + 4 资产路径 (验收 F)。
+    """
+    context.require("user")
+    product, slug, projects_root = _locate_product(context)
+    if product is None or slug is None:
+        return ActionResult(
+            ok=False,
+            status=STATUS_ERROR,
+            message="工程准备失败: 未找到产品定义 (请先创建产品)",
+            error="未找到产品定义 (请先创建产品)",
+        )
+    missing = product.missing_fields()
+    if missing:
+        detail = ", ".join(missing)
+        return ActionResult(
+            ok=False,
+            status=STATUS_ERROR,
+            message=f"工程准备失败: 产品信息不完整, 缺失: {detail}",
+            error=f"产品信息不完整, 缺失: {detail}",
+        )
+    product_dir = projects_root / slug
+    # 1) PRD (ProductDocument — 规则生成)
+    prd_text = ProductDocument.from_product_intent(product)
+    prd_path = product_dir / "PRD.md"
+    # 2) EngineeringPlan → engineering.json
+    plan = EngineeringPlan.from_prd(product, prd_text)
+    engineering_path = product_dir / "engineering.json"
+    # 3) TaskTree → tasks.json
+    tree = TaskTree.from_engineering(plan)
+    tasks_path = product_dir / "tasks.json"
+    # 4) AgentAssignment → execution_plan.json (复用 select_agent: frontend→flutter-dev)
+    execution = AgentAssignment.from_tasks(
+        tree, select_agent_fn=select_agent, context=context
+    )
+    execution_path = product_dir / "execution_plan.json"
+    # 5) Lifecycle: project.json status → execution_ready (保留既有 org 字段)
+    project_path = product_dir / "project.json"
+    product.status = Lifecycle.EXECUTION_READY
+    try:
+        _write_text_file(prd_path, prd_text)
+        _write_json_file(engineering_path, plan)
+        _write_json_file(tasks_path, tree)
+        _write_json_file(execution_path, execution)
+        existing_project = (
+            _read_json_file(project_path) if project_path.is_file() else {}
+        )
+        _write_json_file(
+            project_path,
+            {
+                **existing_project,
+                "name": product.name,
+                "status": Lifecycle.EXECUTION_READY,
+            },
+        )
+        product_file = product_dir / "product.json"
+        existing_product = _read_json_file(product_file) if product_file.is_file() else {}
+        _write_json_file(product_file, {**existing_product, **product.to_dict()})
+    except Exception as exc:  # noqa: BLE001 — 失败安全: 落盘异常 → 明确错误
+        return ActionResult(
+            ok=False,
+            status=STATUS_ERROR,
+            message=f"工程准备失败: 资产落盘失败: {exc}",
+            error=str(exc),
+        )
+    return ActionResult(
+        ok=True,
+        status=STATUS_OK,
+        message="Project Ready For Engineering.",
+        data={
+            "prd_file": str(prd_path),
+            "engineering_file": str(engineering_path),
+            "tasks_file": str(tasks_path),
+            "execution_file": str(execution_path),
+            "project_file": str(project_path),
+            "status": Lifecycle.EXECUTION_READY,
         },
         error=None,
     )
@@ -544,6 +781,36 @@ def build_default_actions() -> ActionRegistry:
                 "phase": "S10-049 P0",
                 "sensitive": True,
                 "category": "execution",
+            },
+        )
+    )
+    registry.register(
+        Action(
+            name="generate_prd",
+            description="生成产品需求文档 (ProductIntent → PRD.md, 规则生成)",
+            handler=generate_prd,
+            permission="user",
+            metadata={
+                "service": "pipeline.ProductDocument (规则生成)",
+                "phase": "S10-051 P2",
+                "sensitive": False,
+                "category": "product",
+            },
+        )
+    )
+    registry.register(
+        Action(
+            name="prepare_project",
+            description=(
+                "准备工程 (PRD + engineering + tasks + agent assignment + lifecycle)"
+            ),
+            handler=prepare_project,
+            permission="user",
+            metadata={
+                "service": "pipeline (规则生成, 复用 select_agent)",
+                "phase": "S10-051 P3",
+                "sensitive": True,
+                "category": "product",
             },
         )
     )

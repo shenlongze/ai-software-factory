@@ -30,6 +30,9 @@ INTENT_SHOW_STATUS = "show_status"
 INTENT_LIST_PROJECTS = "list_projects"
 #: S10-050 P1: 产品意图 (用户想创造什么 — 走 DISCOVERY 多轮, 见 conversation.py)
 INTENT_CREATE_PRODUCT = "create_product"
+#: S10-051 P1: 工程管线意图 (生成 PRD / 准备工程 — 规则生成, 不调 LLM)
+INTENT_GENERATE_PRD = "generate_prd"
+INTENT_PREPARE_PROJECT = "prepare_project"
 
 #: KeywordIntentParser 关键词规则表 (顺序 = 优先级, 确定性无歧义):
 #: (关键词元组, intent_type, 参数键 — 命中后取关键词后剩余文本作为参数值)
@@ -39,6 +42,10 @@ _KEYWORD_RULES: tuple[tuple[tuple[str, ...], str, Optional[str]], ...] = (
     (("加", "修复", "写", "实现"), INTENT_RUN_TASK, "objective"),
     (("项目列表", "有哪些项目", "列出项目"), INTENT_LIST_PROJECTS, None),
     (("状态", "看看"), INTENT_SHOW_STATUS, None),
+    # S10-051 P1: 工程管线意图 — 优先级在 create_product 之前
+    # ("我想生成PRD" 不被 "我想" 抢; "准备开发一个APP" 不被 "开发一个" 抢)
+    (("生成PRD", "生成需求文档", "PRD"), INTENT_GENERATE_PRD, None),
+    (("准备开发", "生成工程计划", "工程计划", "准备工程"), INTENT_PREPARE_PROJECT, None),
     # S10-050 P1: 产品意图 (想法级) — "我想/做一款/产品/想法/创业" → create_product
     # (idea 参数 = 关键词后剩余文本; 优先级在 run_task/show_status 之后,
     #  "我想看看状态" → show_status、"我想加个功能" → run_task 不被抢)

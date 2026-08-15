@@ -24,6 +24,9 @@ DEFAULT_ROUTES: dict[str, str] = {
     "run_task": "agent.execute_task",
     # 别名: "execute_task" 意图直达 (显式任务执行语义, 同 action 名)
     "execute_task": "agent.execute_task",
+    # S10-051 P4: 工程管线意图 → 规则生成 Action (PRD / 准备工程)
+    "generate_prd": "generate_prd",
+    "prepare_project": "prepare_project",
 }
 
 

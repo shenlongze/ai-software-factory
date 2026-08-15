@@ -91,6 +91,13 @@ class InteractiveSession:
         self.confirmation_gate = (
             confirmation_gate if confirmation_gate is not None else ConfirmationGate()
         )
+        # S10-051 P3 (验收 G): prepare_project 为敏感组合 Action (生成 4 资产 +
+        # 生命周期变更) — 纳入会话确认门。仅扩展本实例的集合 (拷贝),
+        # 不改 ConfirmationGate 类默认集合 {create_project, run_task} (基线不动)
+        if isinstance(self.confirmation_gate, ConfirmationGate):
+            self.confirmation_gate.sensitive_actions = set(
+                self.confirmation_gate.sensitive_actions
+            ) | {"prepare_project"}
         #: 结果渲染器 (P1) — ActionResult.to_dict() → Renderer 展示
         self.renderer = renderer if renderer is not None else HumanRenderer()
         #: 会话状态机 (S10-050 P5) — 产品流程 (DISCOVERY 多轮) 由 conversation 接管;

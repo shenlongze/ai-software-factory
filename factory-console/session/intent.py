@@ -77,6 +77,12 @@ INTENT_MEMORY_LEARN = "memory_learn"
 INTENT_MEMORY_STATS = "memory_stats"
 INTENT_MEMORY_ANALYZE_AGENT = "memory_analyze_agent"
 INTENT_MEMORY_EXPORT = "memory_export"
+#: S10-068: Debug Intelligence 意图 (分析错误 → DebugDecision; 历史/推荐/统计
+#: — DebugEngine 的 CLI 入口: 错误理解 → 根因 → 历史经验 → 修复策略)
+INTENT_DEBUG_ANALYZE = "debug_analyze"
+INTENT_DEBUG_HISTORY = "debug_history"
+INTENT_DEBUG_RECOMMEND = "debug_recommend"
+INTENT_DEBUG_STATS = "debug_stats"
 
 #: KeywordIntentParser 关键词规则表 (顺序 = 优先级, 确定性无歧义):
 #: (关键词元组, intent_type, 参数键 — 命中后取关键词后剩余文本作为参数值)
@@ -100,6 +106,15 @@ _KEYWORD_RULES: tuple[tuple[tuple[str, ...], str, Optional[str]], ...] = (
     (("为什么选择", "为什么是", "为什么选"), INTENT_AGENT_REASON, None),
     # S10-053 P4: 质量修复意图 — 必须在 run_task ("修复" 关键词) 之前 (优先级更高)
     (("修复失败任务", "修复任务", "重试失败任务"), INTENT_REPAIR_TASK, None),
+    # S10-068: Debug Intelligence 意图 (纯新增, 旧关键词不动)。顺序要点:
+    # - 必须在 run_task ("修复") 之前: "修复建议" 含 "修复", 不被 run_task 抢;
+    # - 具体前缀在前: "debug历史/推荐/统计" 含 "debug", 不被 analyze 裸 "debug" 抢
+    #   (历史/推荐/统计规则在前, analyze 的裸 "debug" 规则在后 — 最具体优先);
+    # - "为什么失败" 与既有 "为什么选择/为什么停了" 无共享子串, 独立映射。
+    (("查看调试经验", "debug历史", "调试历史"), INTENT_DEBUG_HISTORY, None),
+    (("修复建议", "debug推荐", "调试推荐", "推荐修复"), INTENT_DEBUG_RECOMMEND, None),
+    (("debug统计", "调试统计", "调试数据"), INTENT_DEBUG_STATS, None),
+    (("分析错误", "为什么失败", "错误分析", "调试分析", "debug"), INTENT_DEBUG_ANALYZE, "error_message"),
     (("花了多少", "成本", "费用"), INTENT_SHOW_COST, None),
     # S10-049 P0: +"实现" (验收: "帮我实现登录功能" → run_task, objective="登录功能")
     (("加", "修复", "写", "实现"), INTENT_RUN_TASK, "objective"),

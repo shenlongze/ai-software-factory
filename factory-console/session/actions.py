@@ -2111,6 +2111,196 @@ def memory_export(context: ExecutionContext) -> ActionResult:
                             message=f"经验导出失败: {exc}", error=str(exc))
 
 
+# ================================================================== S10-068 Debug Intelligence CLI
+
+def _debug_params(context) -> dict:
+    """取 debug action 参数 (intent.params 优先; 兼容测试 FakeContext.params)。"""
+    intent = getattr(context, "intent", None)
+    if intent is not None and getattr(intent, "params", None):
+        return intent.params
+    return getattr(context, "params", None) or {}
+
+
+def _debug_workspace(context) -> Path:
+    """debug action 工作区 (context.workspace 缺省 → ~/.factory)。"""
+    return Path(getattr(context, "workspace", None) or DEFAULT_WORKSPACE)
+
+
+def _debug_latest_failure(ws: Path) -> Optional[dict]:
+    """最近失败任务 (缺省参数面): workspace/exec/execution_records.json 最新
+    result=failed 记录 → {error_message, task_id, context}; 无 → None (失败安全)。"""
+    try:
+        records_file = ws / "exec" / "execution_records.json"
+        data = json.loads(records_file.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 — 失败安全: 缺失/损坏 → None
+        return None
+    if not isinstance(data, list):
+        return None
+    failed = [
+        r for r in data
+        if isinstance(r, dict) and str(r.get("result") or "").lower()
+        in ("failed", "fail", "error")
+    ]
+    if not failed:
+        return None
+    failed.sort(key=lambda r: str(r.get("timestamp") or ""), reverse=True)
+    record = failed[0]
+    task = str(record.get("task") or "")
+    return {
+        "error_message": str(record.get("error") or "") or f"任务失败: {task}",
+        "task_id": task,
+        "context": str(record.get("intent") or ""),
+    }
+
+
+def debug_analyze(context: ExecutionContext) -> ActionResult:
+    """调试分析 (S10-068): \"分析错误/为什么失败/debug\" → DebugDecision
+    (错误类型 → 根因 → 历史经验 → 修复策略)。error_message 缺省 → 最近失败任务。"""
+    context.require("user")
+    params = _debug_params(context)
+    error_message = str(params.get("error_message") or "").strip()
+    try:
+        from .debug import DebugEngine
+        from .debug.error_analysis import ErrorAnalyzer
+
+        ws = _debug_workspace(context)
+        engine = DebugEngine(ws)
+        case_kw: dict = {
+            "task_id": str(params.get("task_id") or ""),
+            "agent_id": str(params.get("agent_id") or ""),
+            "context": str(params.get("context") or ""),
+            "project": str(params.get("project") or ""),
+        }
+        if not error_message:
+            latest = _debug_latest_failure(ws)
+            if latest is None:
+                return ActionResult(
+                    ok=False, status=STATUS_ERROR,
+                    message="缺少 error_message 参数, 且工作区无失败任务记录",
+                    error="no error_message",
+                )
+            error_message = latest["error_message"]
+            case_kw["task_id"] = case_kw["task_id"] or latest["task_id"]
+            case_kw["context"] = case_kw["context"] or latest["context"]
+        case = ErrorAnalyzer().extract(error_message, **case_kw)
+        decision = engine.analyze(case)
+        lines = [
+            "调试分析:",
+            f"• 错误类型: {case.error_type}",
+            f"• 错误信息: {case.error_message[:200]}",
+        ]
+        for evidence in decision.evidence[:5]:
+            lines.append(f"• 证据: {evidence}")
+        strategy = decision.strategy.value if hasattr(decision.strategy, "value") else str(decision.strategy)
+        lines.append(f"• 策略: {strategy} — {decision.reason} (conf {decision.confidence})")
+        lines.append(f"• 相关经验: {len(decision.related_experiences)} 条")
+        return ActionResult(
+            ok=True, status=STATUS_OK, message="\n".join(lines),
+            data=decision.to_dict(),
+        )
+    except Exception as exc:  # noqa: BLE001 — 失败安全
+        return ActionResult(ok=False, status=STATUS_ERROR,
+                            message=f"调试分析失败: {exc}", error=str(exc))
+
+
+def debug_history(context: ExecutionContext) -> ActionResult:
+    """调试历史 (S10-068): \"查看调试经验/debug历史\" → debug_cases.json 历史。"""
+    context.require("user")
+    params = _debug_params(context)
+    try:
+        from .debug import DebugEngine
+
+        ws = _debug_workspace(context)
+        engine = DebugEngine(ws)
+        limit = int(params.get("limit") or 20)
+        entries = engine.history(ws, limit=limit)
+        lines = [f"调试历史 (共 {len(entries)} 条):"]
+        for entry in entries:
+            case = entry.get("case") or {}
+            decision = entry.get("decision") or {}
+            outcome = str(entry.get("outcome") or "pending")
+            lines.append(
+                f"• [{case.get('error_type') or 'UNKNOWN'}] "
+                f"{(case.get('error_message') or '')[:60]} "
+                f"→ {decision.get('strategy')} "
+                f"(conf {decision.get('confidence')}, outcome: {outcome})"
+            )
+        if not entries:
+            lines.append("无调试记录。")
+        return ActionResult(ok=True, status=STATUS_OK, message="\n".join(lines),
+                            data={"count": len(entries)})
+    except Exception as exc:  # noqa: BLE001 — 失败安全
+        return ActionResult(ok=False, status=STATUS_ERROR,
+                            message=f"调试历史查询失败: {exc}", error=str(exc))
+
+
+def debug_recommend(context: ExecutionContext) -> ActionResult:
+    """修复建议 (S10-068): \"修复建议/debug推荐\" → 策略推荐 (同 analyze 简版)。"""
+    context.require("user")
+    params = _debug_params(context)
+    error_message = str(params.get("error_message") or "").strip()
+    try:
+        from .debug import DebugEngine
+        from .debug.error_analysis import ErrorAnalyzer
+
+        ws = _debug_workspace(context)
+        engine = DebugEngine(ws)
+        if not error_message:
+            latest = _debug_latest_failure(ws)
+            if latest is None:
+                return ActionResult(
+                    ok=False, status=STATUS_ERROR,
+                    message="缺少 error_message 参数, 且工作区无失败任务记录",
+                    error="no error_message",
+                )
+            error_message = latest["error_message"]
+        decision = engine.analyze(ErrorAnalyzer().extract(error_message))
+        strategy = decision.strategy.value if hasattr(decision.strategy, "value") else str(decision.strategy)
+        lines = [
+            f"修复建议: {strategy} — {decision.reason} (conf {decision.confidence})",
+        ]
+        return ActionResult(
+            ok=True, status=STATUS_OK, message="\n".join(lines),
+            data={"strategy": strategy, "reason": decision.reason,
+                  "confidence": decision.confidence},
+        )
+    except Exception as exc:  # noqa: BLE001 — 失败安全
+        return ActionResult(ok=False, status=STATUS_ERROR,
+                            message=f"修复建议失败: {exc}", error=str(exc))
+
+
+def debug_stats(context: ExecutionContext) -> ActionResult:
+    """调试统计 (S10-068): \"debug统计/调试统计\" → 按错误类型/策略/结果统计。"""
+    context.require("user")
+    try:
+        from .debug import DebugEngine
+
+        ws = _debug_workspace(context)
+        engine = DebugEngine(ws)
+        stats = engine.stats(ws)
+        lines = [f"调试统计 (共 {stats['total_cases']} 个案件):"]
+        by_error_type = stats["by_error_type"] or {}
+        if by_error_type:
+            lines.append("按错误类型: " + ", ".join(
+                f"{k}={v}" for k, v in by_error_type.items()))
+        else:
+            lines.append("按错误类型: 无")
+        by_strategy = stats["by_strategy"] or {}
+        if by_strategy:
+            lines.append("按策略: " + ", ".join(
+                f"{k}={v}" for k, v in by_strategy.items()))
+        else:
+            lines.append("按策略: 无")
+        by_outcome = stats["by_outcome"]
+        lines.append(f"按结果: 成功 {by_outcome['success']}, "
+                     f"失败 {by_outcome['fail']}, 待定 {by_outcome['pending']}")
+        return ActionResult(ok=True, status=STATUS_OK, message="\n".join(lines),
+                            data=stats)
+    except Exception as exc:  # noqa: BLE001 — 失败安全
+        return ActionResult(ok=False, status=STATUS_ERROR,
+                            message=f"调试统计失败: {exc}", error=str(exc))
+
+
 def build_default_actions() -> ActionRegistry:
     """装配默认 Action 注册表 (注册式 — 新增 Action 只需 register 一行)。"""
     registry = ActionRegistry()
@@ -2564,6 +2754,47 @@ def build_default_actions() -> ActionRegistry:
             permission="user",
             metadata={"service": "ExperienceStore", "phase": "S10-067",
                       "sensitive": False, "category": "memory"},
+        )
+    )
+    # S10-068: Debug Intelligence CLI (factory debug * — 调试智能)
+    registry.register(
+        Action(
+            name="debug_analyze",
+            description="调试分析 (分析错误/为什么失败/debug → DebugDecision)",
+            handler=debug_analyze,
+            permission="user",
+            metadata={"service": "DebugEngine.analyze", "phase": "S10-068",
+                      "sensitive": False, "category": "debug"},
+        )
+    )
+    registry.register(
+        Action(
+            name="debug_history",
+            description="调试历史 (查看调试经验/debug历史 → debug_cases 历史)",
+            handler=debug_history,
+            permission="user",
+            metadata={"service": "DebugEngine.history", "phase": "S10-068",
+                      "sensitive": False, "category": "debug"},
+        )
+    )
+    registry.register(
+        Action(
+            name="debug_recommend",
+            description="修复建议 (修复建议/debug推荐 → 策略推荐)",
+            handler=debug_recommend,
+            permission="user",
+            metadata={"service": "DebugEngine.analyze", "phase": "S10-068",
+                      "sensitive": False, "category": "debug"},
+        )
+    )
+    registry.register(
+        Action(
+            name="debug_stats",
+            description="调试统计 (debug统计/调试统计 → 按错误类型/策略统计)",
+            handler=debug_stats,
+            permission="user",
+            metadata={"service": "DebugEngine.stats", "phase": "S10-068",
+                      "sensitive": False, "category": "debug"},
         )
     )
     return registry

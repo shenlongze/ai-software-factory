@@ -30,6 +30,12 @@ from .backlog import (
     update_task,
 )
 from .decisions import get_decision
+from .debug import (
+    debug_analyze,
+    debug_history,
+    debug_recommend,
+    debug_stats,
+)
 from .intelligence import list_experience, list_recommendations
 from .lifecycle import get_project_lifecycle
 from .mcp_api import (
@@ -131,6 +137,10 @@ __all__ = [
     "delete_project",
     "delete_sprint",
     "delete_task",
+    "debug_analyze",
+    "debug_history",
+    "debug_recommend",
+    "debug_stats",
     "execute_runtime_task",
     "execute_tool",
     "get_artifact",

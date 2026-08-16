@@ -64,6 +64,12 @@ INTENT_PRODUCTION_SESSION_VIEW = "production_session_view"
 INTENT_REVIEW_APPROVE = "review_approve"
 INTENT_REVIEW_REJECT = "review_reject"
 INTENT_REVIEW_CANCEL = "review_cancel"
+#: S10-066: 产品智能意图 (分析产品/市场/画像/MVP/价值 — ProductIntelligenceEngine)
+INTENT_PRODUCT_INTELLIGENCE = "product_intelligence"
+INTENT_PRODUCT_MARKET = "product_market"
+INTENT_PRODUCT_PERSONA = "product_persona"
+INTENT_PRODUCT_MVP = "product_mvp"
+INTENT_PRODUCT_VALUE = "product_value"
 
 #: KeywordIntentParser 关键词规则表 (顺序 = 优先级, 确定性无歧义):
 #: (关键词元组, intent_type, 参数键 — 命中后取关键词后剩余文本作为参数值)
@@ -112,6 +118,12 @@ _KEYWORD_RULES: tuple[tuple[tuple[str, ...], str, Optional[str]], ...] = (
     (("继续执行", "继续开发", "继续", "resume"), INTENT_RESUME_PROJECT, None),
     (("为什么停了", "为什么停止", "为什么暂停"), INTENT_REVIEW_VIEW, None),
     (("查看进度", "现在做到哪了", "做到哪了"), INTENT_PRODUCTION_SESSION_VIEW, None),
+    # S10-066: 产品智能意图 (ProductIntelligenceEngine)
+    (("分析产品", "产品分析", "产品智能"), INTENT_PRODUCT_INTELLIGENCE, None),
+    (("产品市场", "市场分析"), INTENT_PRODUCT_MARKET, None),
+    (("产品画像", "用户画像"), INTENT_PRODUCT_PERSONA, None),
+    (("MVP规划", "MVP拆分", "MVP计划"), INTENT_PRODUCT_MVP, None),
+    (("产品价值", "价值评分"), INTENT_PRODUCT_VALUE, None),
     # S10-050 P1: 产品意图 (想法级) — "我想/做一款/产品/想法/创业" → create_product
     # (idea 参数 = 关键词后剩余文本; 优先级在 run_task/show_status 之后,
     #  "我想看看状态" → show_status、"我想加个功能" → run_task 不被抢)

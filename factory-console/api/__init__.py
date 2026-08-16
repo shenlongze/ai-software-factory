@@ -49,6 +49,11 @@ from .projects import (
     update_project,
 )
 from .providers import list_providers
+from .product_intelligence import (
+    product_intelligence_analyze,
+    product_market_analysis,
+    product_persona,
+)
 from .review_feedback import list_review_feedback, save_review_feedback
 from .runtime import (
     SSE_EVENT_MAP,  # noqa: F401 — SSE 事件映射常量 (测试/前端引用; 非路由不进 __all__)
@@ -156,6 +161,9 @@ __all__ = [
     "list_tools",
     "list_workflows",
     "plan_sprint",
+    "product_intelligence_analyze",
+    "product_market_analysis",
+    "product_persona",
     "reject_approval",
     "run_status_route",
     "save_discovery_answer",

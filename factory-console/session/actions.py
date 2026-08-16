@@ -1838,6 +1838,124 @@ def review_cancel(context: ExecutionContext) -> ActionResult:
         return ActionResult(ok=False, status=STATUS_ERROR,
                             message=f"取消失败: {exc}", error=str(exc))
 
+
+
+# ================================================================== S10-066 Product Intelligence CLI
+
+def _product_intent_from_context(context) -> dict:
+    """从 context 取 ProductIntent (project 的 product.json 或 params.product_intent)。"""
+    params = context.params or {}
+    intent = params.get("product_intent")
+    if isinstance(intent, dict) and intent:
+        return intent
+    workspace = Path(context.workspace or ".")
+    slug = str(params.get("project") or context.project or "")
+    if not slug:
+        projects_dir = workspace / "projects"
+        if projects_dir.is_dir():
+            slugs = sorted([p.name for p in projects_dir.iterdir()
+                            if p.is_dir() and (p / "product.json").is_file()])
+            slug = slugs[-1] if slugs else ""
+    if slug:
+        pf = workspace / "projects" / slug / "product.json"
+        if pf.is_file():
+            try:
+                import json as _json
+                return _json.loads(pf.read_text(encoding="utf-8"))
+            except Exception:  # noqa: BLE001
+                return {}
+    return {}
+
+
+def product_intelligence(context: ExecutionContext) -> ActionResult:
+    """产品智能分析 (S10-066): "分析产品/产品智能" → 完整 8 模块报告。"""
+    context.require("user")
+    intent = _product_intent_from_context(context)
+    try:
+        from .product_intelligence import ProductIntelligenceEngine
+        engine = ProductIntelligenceEngine()
+        report = engine.analyze(intent)
+        return ActionResult(ok=True, status=STATUS_OK, message=engine.to_markdown(report))
+    except Exception as exc:  # noqa: BLE001 — 失败安全
+        return ActionResult(ok=False, status=STATUS_ERROR,
+                            message=f"产品智能分析失败: {exc}", error=str(exc))
+
+
+def product_market(context: ExecutionContext) -> ActionResult:
+    """市场分析 (S10-066): "产品市场/市场分析" → MarketAnalysis。"""
+    context.require("user")
+    intent = _product_intent_from_context(context)
+    try:
+        from .product_intelligence import ProductIntelligenceEngine
+        engine = ProductIntelligenceEngine()
+        report = engine.analyze(intent)
+        m = report.market_analysis
+        lines = [
+            f"市场规模: {m.market_size}",
+            f"用户趋势: {m.user_trends}",
+            f"机会窗口: {m.opportunity_window}",
+        ]
+        return ActionResult(ok=True, status=STATUS_OK, message="\n".join(lines))
+    except Exception as exc:  # noqa: BLE001
+        return ActionResult(ok=False, status=STATUS_ERROR,
+                            message=f"市场分析失败: {exc}", error=str(exc))
+
+
+def product_persona(context: ExecutionContext) -> ActionResult:
+    """用户画像 (S10-066): "产品画像/用户画像" → UserPersonas。"""
+    context.require("user")
+    intent = _product_intent_from_context(context)
+    try:
+        from .product_intelligence import ProductIntelligenceEngine
+        engine = ProductIntelligenceEngine()
+        report = engine.analyze(intent)
+        lines = ["用户画像:"]
+        for p in report.user_personas:
+            lines.append(f"• {p.name} — {p.description}")
+        return ActionResult(ok=True, status=STATUS_OK, message="\n".join(lines))
+    except Exception as exc:  # noqa: BLE001
+        return ActionResult(ok=False, status=STATUS_ERROR,
+                            message=f"用户画像失败: {exc}", error=str(exc))
+
+
+def product_mvp(context: ExecutionContext) -> ActionResult:
+    """MVP 规划 (S10-066): "MVP规划/MVP拆分" → MvpPlan。"""
+    context.require("user")
+    intent = _product_intent_from_context(context)
+    try:
+        from .product_intelligence import ProductIntelligenceEngine
+        engine = ProductIntelligenceEngine()
+        report = engine.analyze(intent)
+        m = report.mvp_plan
+        lines = [
+            f"MVP: {', '.join(m.mvp)}",
+            f"V2: {', '.join(m.v2) if m.v2 else '-'}",
+            f"Future: {', '.join(m.future) if m.future else '-'}",
+        ]
+        return ActionResult(ok=True, status=STATUS_OK, message="\n".join(lines))
+    except Exception as exc:  # noqa: BLE001
+        return ActionResult(ok=False, status=STATUS_ERROR,
+                            message=f"MVP 规划失败: {exc}", error=str(exc))
+
+
+def product_value(context: ExecutionContext) -> ActionResult:
+    """产品价值评分 (S10-066): "产品价值/价值评分" → ProductValueScore。"""
+    context.require("user")
+    intent = _product_intent_from_context(context)
+    try:
+        from .product_intelligence import ProductIntelligenceEngine
+        engine = ProductIntelligenceEngine()
+        report = engine.analyze(intent)
+        v = report.product_value_score
+        return ActionResult(
+            ok=True, status=STATUS_OK,
+            message=f"产品价值评分: {v.score}/100\n用户价值: {v.user_value}\n"
+                    f"技术价值: {v.technical_value}\n理由: {v.justification}",
+        )
+    except Exception as exc:  # noqa: BLE001
+        return ActionResult(ok=False, status=STATUS_ERROR,
+                            message=f"价值评分失败: {exc}", error=str(exc))
+
 def build_default_actions() -> ActionRegistry:
     """装配默认 Action 注册表 (注册式 — 新增 Action 只需 register 一行)。"""
     registry = ActionRegistry()
@@ -2189,6 +2307,57 @@ def build_default_actions() -> ActionRegistry:
             permission="user",
             metadata={"service": "ReviewGate.cancel", "phase": "S10-065",
                       "sensitive": False, "category": "guided"},
+        )
+    )
+    # S10-066: Product Intelligence CLI (factory product *)
+    registry.register(
+        Action(
+            name="product_intelligence",
+            description="产品智能分析 (分析产品/产品智能 → 8 模块报告)",
+            handler=product_intelligence,
+            permission="user",
+            metadata={"service": "ProductIntelligenceEngine", "phase": "S10-066",
+                      "sensitive": False, "category": "product"},
+        )
+    )
+    registry.register(
+        Action(
+            name="product_market",
+            description="市场分析 (产品市场/市场分析)",
+            handler=product_market,
+            permission="user",
+            metadata={"service": "ProductIntelligenceEngine", "phase": "S10-066",
+                      "sensitive": False, "category": "product"},
+        )
+    )
+    registry.register(
+        Action(
+            name="product_persona",
+            description="用户画像 (产品画像/用户画像)",
+            handler=product_persona,
+            permission="user",
+            metadata={"service": "ProductIntelligenceEngine", "phase": "S10-066",
+                      "sensitive": False, "category": "product"},
+        )
+    )
+    registry.register(
+        Action(
+            name="product_mvp",
+            description="MVP 规划 (MVP规划/MVP拆分)",
+            handler=product_mvp,
+            permission="user",
+            metadata={"service": "ProductIntelligenceEngine", "phase": "S10-066",
+                      "sensitive": False, "category": "product"},
+        )
+    )
+    registry.register(
+        Action(
+            name="product_value",
+            description="产品价值评分 (产品价值/价值评分)",
+            handler=product_value,
+            permission="user",
+            metadata={"service": "ProductIntelligenceEngine", "phase": "S10-066",
+                      "sensitive": False, "category": "product"},
         )
     )
     return registry

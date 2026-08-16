@@ -47,12 +47,14 @@ from .conflicts import (
 )
 from .decision import HandoffDecisionEngine
 from .dependencies import TaskDependencyGraph
+from .gap_analyzer import GapAnalyzer
 from .intent import IntentObject
 from .messages import AgentMessageStore, HandoffStore
 from .pipeline import Lifecycle
 from .quality import RepairManager, ValidationResult, Validator
 from .replanning import ReplanDecision, ReplanningEngine
 from .roles import RoleSystem
+from .task_proposal import TaskProposalEngine, TaskProposalValidator
 from .team_state import TeamExecutionState
 from .teams import DEFAULT_TEAM_ID, TeamRegistry
 from .workspace import WorkspaceContext
@@ -619,8 +621,11 @@ class ExecutionOrchestrator:
         get_feature_progress 按 task.feature 分组); 旧式 plan 无此字段 → 兼容缺失。
         S10-056 批次 B: required_role (团队角色分配 — AgentMatcher 匹配结果透传)
         + files (冲突检测输入 — ConflictDetector 消费), 缺省 None/[] 兼容旧式 plan。
+        S10-061 批次 B: 自动提案元数据条件透传 (source_gap/rationale/confidence/
+        priority/acceptance_criteria/validation_command/objective/description —
+        仅候选携带时写入, 旧式任务记录字节不变)。
         """
-        return {
+        record: dict[str, Any] = {
             "id": str(plan_task.get("id") or ""),
             "name": str(plan_task.get("name") or plan_task.get("id") or ""),
             "agent_type": plan_task.get("agent_type"),
@@ -638,6 +643,25 @@ class ExecutionOrchestrator:
             "retry_count": 0,
             "error": None,
         }
+        # S10-061 批次 B: 自动提案元数据条件透传 (仅存在时 — 旧记录零变化)
+        for key in (
+            "description",
+            "objective",
+            "source_gap",
+            "rationale",
+            "confidence",
+            "priority",
+            "validation_command",
+        ):
+            val = plan_task.get(key)
+            if val not in (None, ""):
+                record[key] = val
+        crits = plan_task.get("acceptance_criteria")
+        if crits:
+            record["acceptance_criteria"] = [
+                str(c) for c in crits if not isinstance(c, dict)
+            ]
+        return record
 
     def execute_project(
         self,
@@ -661,6 +685,18 @@ class ExecutionOrchestrator:
         max_replan: int = 5,
         insert_tasks: Optional[list[dict[str, Any]]] = None,
         replanning_file: Optional[Path] = None,
+        # S10-061 批次 B (Autonomous Gap Resolution 集成): 失败 → GapAnalyzer →
+        # TaskProposalEngine → Validator → INSERT → 执行 (gap_analyzer=None →
+        # 自动提案关闭, 既有行为零变化; 提供后 task_proposal/task_validator
+        # 缺省用真实引擎 — 新任务由引擎生成, 非调用方注入)
+        gap_analyzer: Optional[GapAnalyzer] = None,
+        task_proposal: Optional[TaskProposalEngine] = None,
+        task_validator: Optional[TaskProposalValidator] = None,
+        max_auto_insert_tasks: int = 5,
+        max_tasks_per_round: int = 3,
+        max_total_generated_tasks: int = 10,
+        auto_mode: str = "auto_execute",
+        proposals_file: Optional[Path] = None,
     ) -> ExecutionResult:
         """全新执行 (设计 §3): 读 execution_plan.json → 初始化 state → 顺序执行。
 
@@ -719,6 +755,15 @@ class ExecutionOrchestrator:
         # S10-060: 重规划引擎解析 (replanning_file 便捷参数 → 引擎构造; 缺省关闭)
         if replanner is None and replanning_file is not None:
             replanner = ReplanningEngine(file=replanning_file)
+        # S10-061 批次 B: 自动提案组件解析 — gap_analyzer 提供后, 提案引擎/验证器
+        # 缺省用真实实现 (TaskProposalEngine/TaskProposalValidator — 非测试注入)
+        if gap_analyzer is not None:
+            task_proposal = task_proposal if task_proposal is not None else TaskProposalEngine()
+            task_validator = (
+                task_validator
+                if task_validator is not None
+                else TaskProposalValidator()
+            )
         result = self._run_queue(
             project_dir,
             slug,
@@ -732,6 +777,14 @@ class ExecutionOrchestrator:
             max_replan=int(max_replan or 5),
             insert_tasks=list(insert_tasks or []),
             dependencies_file=dependencies_file,
+            gap_analyzer=gap_analyzer,
+            task_proposal=task_proposal,
+            task_validator=task_validator,
+            max_auto_insert_tasks=int(max_auto_insert_tasks or 5),
+            max_tasks_per_round=int(max_tasks_per_round or 3),
+            max_total_generated_tasks=int(max_total_generated_tasks or 10),
+            auto_mode=str(auto_mode or "auto_execute"),
+            proposals_file=proposals_file,
         )
         result.duration = time.monotonic() - started
         return result
@@ -877,6 +930,15 @@ class ExecutionOrchestrator:
         insert_tasks: Optional[list[dict[str, Any]]] = None,
         dependencies_file: Optional[Path] = None,
         replanning_file: Optional[Path] = None,
+        # S10-061 批次 B: 自动缺口分析接入 (同 execute_project)
+        gap_analyzer: Optional[GapAnalyzer] = None,
+        task_proposal: Optional[TaskProposalEngine] = None,
+        task_validator: Optional[TaskProposalValidator] = None,
+        max_auto_insert_tasks: int = 5,
+        max_tasks_per_round: int = 3,
+        max_total_generated_tasks: int = 10,
+        auto_mode: str = "auto_execute",
+        proposals_file: Optional[Path] = None,
     ) -> ExecutionResult:
         """恢复执行 (设计 §3): 从 execution_state.json 继续 pending/failed 任务。
 
@@ -905,6 +967,14 @@ class ExecutionOrchestrator:
         # S10-060: 重规划引擎解析 (replanning_file 便捷参数 → 引擎构造; 缺省关闭)
         if replanner is None and replanning_file is not None:
             replanner = ReplanningEngine(file=replanning_file)
+        # S10-061 批次 B: 自动提案组件解析 (同 execute_project — 缺省真实引擎)
+        if gap_analyzer is not None:
+            task_proposal = task_proposal if task_proposal is not None else TaskProposalEngine()
+            task_validator = (
+                task_validator
+                if task_validator is not None
+                else TaskProposalValidator()
+            )
         plan = self._load_plan(project_dir) if replanner is not None else None
         result = self._run_queue(
             project_dir,
@@ -917,6 +987,14 @@ class ExecutionOrchestrator:
             max_replan=int(max_replan or 5),
             insert_tasks=list(insert_tasks or []),
             dependencies_file=dependencies_file,
+            gap_analyzer=gap_analyzer,
+            task_proposal=task_proposal,
+            task_validator=task_validator,
+            max_auto_insert_tasks=int(max_auto_insert_tasks or 5),
+            max_tasks_per_round=int(max_tasks_per_round or 3),
+            max_total_generated_tasks=int(max_total_generated_tasks or 10),
+            auto_mode=str(auto_mode or "auto_execute"),
+            proposals_file=proposals_file,
         )
         result.duration = time.monotonic() - started
         return result
@@ -1058,6 +1136,15 @@ class ExecutionOrchestrator:
         max_replan: int = 5,
         insert_tasks: Optional[list[dict[str, Any]]] = None,
         dependencies_file: Optional[Path] = None,
+        # S10-061 批次 B: 自动缺口分析 + 提案接入 (透传 _replan_on_failure)
+        gap_analyzer: Optional[GapAnalyzer] = None,
+        task_proposal: Optional[TaskProposalEngine] = None,
+        task_validator: Optional[TaskProposalValidator] = None,
+        max_auto_insert_tasks: int = 5,
+        max_tasks_per_round: int = 3,
+        max_total_generated_tasks: int = 10,
+        auto_mode: str = "auto_execute",
+        proposals_file: Optional[Path] = None,
     ) -> ExecutionResult:
         """任务队列 (设计 §5 + S10-053 §8 + S10-057): 顺序执行, 逐任务持久化 + 质量门。
 
@@ -1194,6 +1281,14 @@ class ExecutionOrchestrator:
                         insert_tasks=insert_tasks,
                         dependencies_file=dependencies_file,
                         team_run=team_run,
+                        gap_analyzer=gap_analyzer,
+                        task_proposal=task_proposal,
+                        task_validator=task_validator,
+                        max_auto_insert_tasks=max_auto_insert_tasks,
+                        max_tasks_per_round=max_tasks_per_round,
+                        max_total_generated_tasks=max_total_generated_tasks,
+                        auto_mode=auto_mode,
+                        proposals_file=proposals_file,
                     )
                     if signal == "review":
                         # 重规划超限 → 停止队列 (需人工评审; resume 可继续)
@@ -1592,11 +1687,32 @@ class ExecutionOrchestrator:
         insert_tasks: Optional[list[dict[str, Any]]],
         dependencies_file: Optional[Path],
         team_run: Optional[TeamRunContext],
+        gap_analyzer: Optional[GapAnalyzer] = None,
+        task_proposal: Optional[TaskProposalEngine] = None,
+        task_validator: Optional[TaskProposalValidator] = None,
+        max_auto_insert_tasks: int = 5,
+        max_tasks_per_round: int = 3,
+        max_total_generated_tasks: int = 10,
+        auto_mode: str = "auto_execute",
+        proposals_file: Optional[Path] = None,
     ) -> str:
-        """任务失败后: 观察 → ReplanningEngine.decide → 记录 → 应用 (改 DAG/Plan)。
+        """任务失败后: 观察 → Gap 分析 (S10-061) → ReplanningEngine.decide →
+        记录 → 应用 (改 DAG/Plan)。
 
         返回信号: "none" (KEEP_PLAN — Repair 路径不变) / "continue" (计划已改,
         队列继续) / "review" (REQUEST_REVIEW — 停止队列, 需人工评审)。
+
+        S10-061 批次 B (Autonomous Gap Resolution 集成, 设计 §2/§6/§7):
+        - gap_analyzer 提供 → GapAnalyzer.analyze (失败上下文) → 落盘
+          gap_analysis.json (资产 G9) → 同一 source_gap 防重 (GAP G6: 第一次
+          INSERT, 再失败 RETRY/REPAIR, 第三次 REQUEST_REVIEW — 不无限 INSERT);
+        - decide(gap_analysis=...) → TaskProposalEngine.propose + Validator
+          (引擎生成, 非调用方注入) → INSERT_TASK → _insert_tasks + plan_version+1
+          → 继续执行; 提案落盘 task_proposals.json (资产 G9);
+        - 防无限 (GAP G5): max_auto_insert_tasks / max_tasks_per_round /
+          max_total_generated_tasks (decide 内生效);
+        - auto_mode 安全边界 (GAP G7): auto_execute / auto_propose_review /
+          request_review (decide 内生效)。
 
         Repair vs Replanning 分离 (设计 §7 P6):
         - Repair:     任务失败 → repair_task.json (任务级, quality.RepairManager)
@@ -1625,6 +1741,91 @@ class ExecutionOrchestrator:
             }
         ]
         ctx = WorkspaceContext.load(project_dir)
+        plan_tasks = [t for t in (plan.get("tasks") or []) if isinstance(t, dict)]
+
+        # ---- S10-061 批次 B: Gap 分析 (失败上下文 → GapAnalysis → gap_analysis.json)
+        analysis = None
+        if gap_analyzer is not None:
+            try:
+                # 执行失败 (outcome.success=False) → 不传验证失败信号 (缺口信号优先,
+                # 避免 validation_failure 遮蔽 agent_output 缺口 — 验证门失败另有
+                # validation_failure→REPAIR 路径); 执行成功但验证失败 → 验证缺口
+                validation_signal = (
+                    {"success": False, "errors": list(validation.errors)}
+                    if bool(outcome.get("success")) and not validation.success
+                    else None
+                )
+                analysis = gap_analyzer.analyze(
+                    workspace=ctx,
+                    task=task,
+                    result=outcome,
+                    validation=validation_signal,
+                    agent_output=agent_output,
+                    failures=failures,
+                    existing_tasks=plan_tasks,
+                    dag=graph,
+                    prev_decisions=replanner.previous_decisions(),
+                )
+                if analysis is not None:
+                    gap_analyzer.record(analysis)
+            except Exception:  # noqa: BLE001 — 失败安全: 分析异常 → S10-060 路径
+                analysis = None
+
+        # ---- S10-061 批次 B: 同一 source_gap 防重 (GAP G6) — 第一次 INSERT,
+        # ---- 再失败 RETRY/REPAIR (Repair 路径, 不再插入), 第三次 REQUEST_REVIEW
+        source_gap = self._gap_key(analysis)
+        if source_gap and self._gap_insert_action(analysis):
+            occurrences = 1 + sum(
+                1
+                for d in replanner.previous_decisions()
+                if str(d.get("source_gap") or "") == source_gap
+            )
+            if occurrences >= 3:
+                decision_dict = ReplanningEngine._normalize(
+                    {
+                        "decision": ReplanningEngine.DECISION_REQUEST_REVIEW,
+                        "reason": (
+                            f"同一 source_gap {source_gap!r} 已出现 {occurrences} 次 — "
+                            f"已 INSERT 过且再次失败, 停止自主重规划, 需人工评审 "
+                            f"(REQUEST_REVIEW)"
+                        ),
+                        "affected_tasks": [f["task_id"] for f in failures if f.get("task_id")],
+                        "plan_version": state.plan_version,
+                        "source_gap": source_gap,
+                    }
+                )
+                signal = self._apply_replan(
+                    project_dir,
+                    state,
+                    plan,
+                    decision_dict,
+                    dependencies_file=dependencies_file,
+                    team_run=team_run,
+                )
+                replanner.record(decision_dict)
+                return signal
+            if occurrences >= 2:
+                decision_dict = ReplanningEngine._normalize(
+                    {
+                        "decision": ReplanningEngine.DECISION_KEEP_PLAN,
+                        "reason": (
+                            f"同一 source_gap {source_gap!r} 已 INSERT 过且再次失败 — "
+                            f"不再插入, 走任务级 Repair 路径 (RETRY/REPAIR)"
+                        ),
+                        "affected_tasks": [f["task_id"] for f in failures if f.get("task_id")],
+                        "plan_version": state.plan_version,
+                        "source_gap": source_gap,
+                    }
+                )
+                replanner.record(decision_dict)
+                return "none"
+
+        # ---- 决策: gap_analysis 结果驱动自动提案 (S10-061) / S10-060 路径
+        generated_count = sum(
+            len(d.get("new_tasks") or [])
+            for d in replanner.previous_decisions()
+            if d.get("decision") == "INSERT_TASK" and d.get("source_gap")
+        )
         decision = replanner.decide(
             state.to_dict(),
             plan,
@@ -1640,6 +1841,14 @@ class ExecutionOrchestrator:
             plan_version=state.plan_version,
             replan_count=state.replan_count,
             insert_tasks=insert_tasks,
+            gap_analysis=analysis,
+            task_proposal=task_proposal,
+            task_validator=task_validator,
+            auto_mode=auto_mode,
+            max_auto_insert_tasks=max_auto_insert_tasks,
+            max_tasks_per_round=max_tasks_per_round,
+            max_total_generated_tasks=max_total_generated_tasks,
+            generated_count=generated_count,
         )
         # 先应用 (可能补充 dependency_changes — 环拒绝边), 后记录 (资产完整落盘)
         decision_dict = ReplanningEngine._normalize(decision)
@@ -1652,7 +1861,85 @@ class ExecutionOrchestrator:
             team_run=team_run,
         )
         replanner.record(decision_dict)
+        # ---- S10-061 批次 B: 自动提案资产化 — task_proposals.json (GAP G9)
+        if decision_dict.get("new_tasks"):
+            self._record_proposals(project_dir, decision_dict["new_tasks"], proposals_file)
         return signal
+
+    # ------------------------------------------------------------ S10-061 资产/防重
+
+    @staticmethod
+    def _gap_key(analysis: Any) -> str:
+        """GapAnalysis/dict → source_gap 标识 "{gap_type}@{source_task_id}"。
+
+        未检出/无 gap_type → "" (不参与同一 gap 防重 — P2)。
+        """
+        if analysis is None:
+            return ""
+        d = (
+            analysis.to_dict()
+            if hasattr(analysis, "to_dict")
+            else (analysis if isinstance(analysis, dict) else {})
+        )
+        if not isinstance(d, dict) or not d.get("detected"):
+            return ""
+        gtype = str(d.get("gap_type") or "")
+        if not gtype:
+            return ""
+        sid = str(d.get("source_task_id") or "")
+        return f"{gtype}@{sid}" if sid else gtype
+
+    @staticmethod
+    def _gap_insert_action(analysis: Any) -> bool:
+        """缺口建议动作是否为 INSERT_TASK (同一 gap 防重仅作用于插入路径)。"""
+        if analysis is None:
+            return False
+        d = (
+            analysis.to_dict()
+            if hasattr(analysis, "to_dict")
+            else (analysis if isinstance(analysis, dict) else {})
+        )
+        return (
+            isinstance(d, dict)
+            and str(d.get("recommended_action") or "") == "INSERT_TASK"
+        )
+
+    def _record_proposals(
+        self,
+        project_dir: Path,
+        proposals: list[Any],
+        file: Optional[Path] = None,
+    ) -> None:
+        """task_proposals.json 落盘 (S10-061 资产 G9): append 有效提案, 失败安全。
+
+        记录面: 自动生成提案 (带 source_gap 的决策 new_tasks); 按 task_id 去重
+        (重复提案不追加); 读写异常 → 不抛 (资产记录不中断执行流)。
+        """
+        path = Path(file) if file is not None else project_dir / "task_proposals.json"
+        try:
+            records: list[dict[str, Any]] = []
+            if path.is_file():
+                data = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(data, list):
+                    records = [dict(r) for r in data if isinstance(r, dict)]
+            known = {
+                str(r.get("task_id") or r.get("id") or "") for r in records
+            }
+            for p in proposals:
+                if not isinstance(p, dict):
+                    continue
+                tid = str(p.get("task_id") or p.get("id") or "")
+                if not tid or tid in known:
+                    continue
+                records.append(dict(p))
+                known.add(tid)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                json.dumps(records, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+        except Exception:  # noqa: BLE001 — 失败安全: 落盘失败不中断
+            pass
 
     def _apply_replan(
         self,

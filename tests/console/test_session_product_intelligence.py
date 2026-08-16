@@ -304,3 +304,24 @@ class TestReport:
         """空 intent → 不崩。"""
         r = PI.ProductIntelligenceEngine().analyze({})
         assert r.industry_analysis.industry or r.product_name  # 不崩
+
+
+class TestLlmDefaultProvider:
+    """S10-066 修复: ReasoningProvider(llm_fn=None) → 用默认真实调用。"""
+
+    def test_default_provider_llm_fn(self):
+        """_llm_fn 识别 ReasoningProvider 默认。"""
+        from importlib import import_module as _im
+        R = _im("factory-console.session.reasoning")
+        prov = R.ReasoningProvider(llm_fn=None)
+        fn = PI.ProductIntelligenceEngine._llm_fn(prov)
+        assert callable(fn)
+
+    def test_callable_provider(self):
+        fn = PI.ProductIntelligenceEngine._llm_fn(lambda p, o="": "{}")
+        assert callable(fn)
+
+    def test_invalid_provider_raises(self):
+        import pytest as _pt
+        with _pt.raises(TypeError):
+            PI.ProductIntelligenceEngine._llm_fn("not a provider")

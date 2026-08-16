@@ -656,6 +656,11 @@ class ProductIntelligenceEngine:
         fn = getattr(provider, "llm_fn", None) or getattr(provider, "_llm_fn", None)
         if callable(fn):
             return fn
+        # S10-066 修复: ReasoningProvider 实例 (_llm_fn 可能 None → 用其默认真实调用)
+        if hasattr(provider, "_llm_fn") and hasattr(provider, "_default_llm_fn"):
+            default_fn = provider._default_llm_fn()
+            if callable(default_fn):
+                return default_fn
         raise TypeError(
             "llm_provider 必须为可调用 (prompt[, operation]) -> str|dict, "
             "或带 llm_fn 的对象 (如 ReasoningProvider 实例)"

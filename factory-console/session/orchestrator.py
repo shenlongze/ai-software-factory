@@ -45,13 +45,19 @@ from .conflicts import (
     ConflictResolver,
     FileOwnership,
 )
+from .context_builder import ContextBuilder
 from .decision import HandoffDecisionEngine
 from .dependencies import TaskDependencyGraph
 from .gap_analyzer import GapAnalyzer
 from .intent import IntentObject
+from .llm_gap import LLMGapAnalyzer
+from .llm_task_proposal import LLMTaskProposalEngine
 from .messages import AgentMessageStore, HandoffStore
 from .pipeline import Lifecycle
+from .plan_critic import PlanCritic
+from .planning_trace import PlanningTrace
 from .quality import RepairManager, ValidationResult, Validator
+from .reasoning import ReasoningProvider
 from .replanning import ReplanDecision, ReplanningEngine
 from .roles import RoleSystem
 from .task_proposal import TaskProposalEngine, TaskProposalValidator
@@ -70,6 +76,20 @@ class PlanNotFoundError(Exception):
 
 class ExecutionStateError(Exception):
     """execution_state.json 缺失/损坏 — resume/get_progress 无法读取。"""
+
+
+#: planning_mode 取值 (S10-062 批次 C — 设计 §11):
+#: deterministic — 现有行为 (S10-061 完全兼容, LLM 参数忽略);
+#: llm — LLM 优先 + deterministic fallback (无 provider → REQUEST_REVIEW 安全兜底);
+#: hybrid — LLM 优先 + deterministic fallback (缺省; 无 LLM 注入 → 完全 deterministic)
+PLANNING_MODE_DETERMINISTIC = "deterministic"
+PLANNING_MODE_LLM = "llm"
+PLANNING_MODE_HYBRID = "hybrid"
+PLANNING_MODES: tuple[str, ...] = (
+    PLANNING_MODE_DETERMINISTIC,
+    PLANNING_MODE_LLM,
+    PLANNING_MODE_HYBRID,
+)
 
 
 #: 任务执行函数契约: (task: dict, project_dir: Path, workspace: Path) -> dict
@@ -697,6 +717,22 @@ class ExecutionOrchestrator:
         max_total_generated_tasks: int = 10,
         auto_mode: str = "auto_execute",
         proposals_file: Optional[Path] = None,
+        # S10-062 批次 C (LLM Planning 集成, 设计 §11):
+        # planning_mode — "deterministic" (现有行为, LLM 参数忽略) | "llm"
+        # (LLM 优先 + fallback; 无 provider → REQUEST_REVIEW) | "hybrid"
+        # (缺省: LLM 优先 + deterministic fallback; 无 LLM 注入 → 完全
+        # deterministic — S10-061 兼容)。LLM 链: ContextBuilder → LLMGapAnalyzer
+        # → LLMTaskProposalEngine → ReplanningEngine (LLM=建议, Deterministic=执行)
+        planning_mode: str = PLANNING_MODE_HYBRID,
+        llm_reasoning: Optional[ReasoningProvider] = None,
+        llm_gap_analyzer: Optional[LLMGapAnalyzer] = None,
+        llm_task_proposal: Optional[LLMTaskProposalEngine] = None,
+        llm_trace: Optional[PlanningTrace] = None,
+        llm_confidence_threshold: float = 0.5,
+        # 执行前 PlanCritic 检查 (设计 §6): 计划缺口 → 提案链 (propose +
+        # validator) → ReplanningEngine.decide → INSERT (不直接改 DAG);
+        # 仅 replanner 同时提供时启用; None → 关闭 (既有行为零变化)
+        plan_critic: Optional[PlanCritic] = None,
     ) -> ExecutionResult:
         """全新执行 (设计 §3): 读 execution_plan.json → 初始化 state → 顺序执行。
 
@@ -757,13 +793,61 @@ class ExecutionOrchestrator:
             replanner = ReplanningEngine(file=replanning_file)
         # S10-061 批次 B: 自动提案组件解析 — gap_analyzer 提供后, 提案引擎/验证器
         # 缺省用真实实现 (TaskProposalEngine/TaskProposalValidator — 非测试注入)
-        if gap_analyzer is not None:
+        # S10-062 批次 C: plan_critic 提供后同样注入 (执行前缺口 → 提案链)
+        if gap_analyzer is not None or plan_critic is not None:
             task_proposal = task_proposal if task_proposal is not None else TaskProposalEngine()
             task_validator = (
                 task_validator
                 if task_validator is not None
                 else TaskProposalValidator()
             )
+        # S10-062 批次 C: LLM planning 组件装配 (planning_mode ≠ deterministic
+        # 且注入 llm_reasoning/llm_gap_analyzer → 补全 LLM 链; 缺省 hybrid +
+        # 无注入 = 完全 deterministic — S10-061 兼容)
+        llm_gap_analyzer, llm_task_proposal, _planning_mode = (
+            self._assemble_llm_planning(
+                planning_mode,
+                llm_reasoning,
+                llm_gap_analyzer,
+                llm_task_proposal,
+                llm_trace,
+                llm_confidence_threshold,
+            )
+        )
+        # S10-062 批次 C: PlanCritic 执行前检查 (可选) — 计划缺口 → 提案链 →
+        # INSERT (不直接改 DAG); 仅 replanner + plan_critic 均提供时启用
+        if plan_critic is not None and replanner is not None:
+            preflight = self._plan_critic_preflight(
+                project_dir,
+                slug,
+                state,
+                plan,
+                replanner=replanner,
+                plan_critic=plan_critic,
+                task_proposal=task_proposal,
+                task_validator=task_validator,
+                max_replan=int(max_replan or 5),
+                dependencies_file=dependencies_file,
+                team_run=team_run,
+                proposals_file=proposals_file,
+            )
+            if preflight == "review":
+                # 执行前缺口无法自动解决 → 停止执行, 需人工评审 (REQUEST_REVIEW 安全)
+                result = ExecutionResult(
+                    project=slug,
+                    status="review_required",
+                    completed_tasks=0,
+                    failed_tasks=0,
+                    errors=[
+                        "PlanCritic 执行前检查: "
+                        + str(
+                            state.last_replan_reason
+                            or "计划缺口无法自动解决 — 需人工评审 (REQUEST_REVIEW)"
+                        )
+                    ],
+                )
+                result.duration = time.monotonic() - started
+                return result
         result = self._run_queue(
             project_dir,
             slug,
@@ -785,6 +869,12 @@ class ExecutionOrchestrator:
             max_total_generated_tasks=int(max_total_generated_tasks or 10),
             auto_mode=str(auto_mode or "auto_execute"),
             proposals_file=proposals_file,
+            planning_mode=_planning_mode,
+            llm_gap_analyzer=llm_gap_analyzer,
+            llm_task_proposal=llm_task_proposal,
+            llm_reasoning=llm_reasoning,
+            llm_trace=llm_trace,
+            llm_confidence_threshold=float(llm_confidence_threshold or 0.5),
         )
         result.duration = time.monotonic() - started
         return result
@@ -939,6 +1029,14 @@ class ExecutionOrchestrator:
         max_total_generated_tasks: int = 10,
         auto_mode: str = "auto_execute",
         proposals_file: Optional[Path] = None,
+        # S10-062 批次 C: planning_mode + LLM planning 接入 (同 execute_project;
+        # 恢复执行不重跑 PlanCritic 执行前检查 — 防重复插入)
+        planning_mode: str = PLANNING_MODE_HYBRID,
+        llm_reasoning: Optional[ReasoningProvider] = None,
+        llm_gap_analyzer: Optional[LLMGapAnalyzer] = None,
+        llm_task_proposal: Optional[LLMTaskProposalEngine] = None,
+        llm_trace: Optional[PlanningTrace] = None,
+        llm_confidence_threshold: float = 0.5,
     ) -> ExecutionResult:
         """恢复执行 (设计 §3): 从 execution_state.json 继续 pending/failed 任务。
 
@@ -975,6 +1073,17 @@ class ExecutionOrchestrator:
                 if task_validator is not None
                 else TaskProposalValidator()
             )
+        # S10-062 批次 C: LLM planning 组件装配 (同 execute_project)
+        llm_gap_analyzer, llm_task_proposal, _planning_mode = (
+            self._assemble_llm_planning(
+                planning_mode,
+                llm_reasoning,
+                llm_gap_analyzer,
+                llm_task_proposal,
+                llm_trace,
+                llm_confidence_threshold,
+            )
+        )
         plan = self._load_plan(project_dir) if replanner is not None else None
         result = self._run_queue(
             project_dir,
@@ -995,6 +1104,12 @@ class ExecutionOrchestrator:
             max_total_generated_tasks=int(max_total_generated_tasks or 10),
             auto_mode=str(auto_mode or "auto_execute"),
             proposals_file=proposals_file,
+            planning_mode=_planning_mode,
+            llm_gap_analyzer=llm_gap_analyzer,
+            llm_task_proposal=llm_task_proposal,
+            llm_reasoning=llm_reasoning,
+            llm_trace=llm_trace,
+            llm_confidence_threshold=float(llm_confidence_threshold or 0.5),
         )
         result.duration = time.monotonic() - started
         return result
@@ -1145,6 +1260,13 @@ class ExecutionOrchestrator:
         max_total_generated_tasks: int = 10,
         auto_mode: str = "auto_execute",
         proposals_file: Optional[Path] = None,
+        # S10-062 批次 C: planning_mode + LLM planning (透传 _replan_on_failure)
+        planning_mode: str = PLANNING_MODE_HYBRID,
+        llm_gap_analyzer: Optional[LLMGapAnalyzer] = None,
+        llm_task_proposal: Optional[LLMTaskProposalEngine] = None,
+        llm_reasoning: Optional[ReasoningProvider] = None,
+        llm_trace: Optional[PlanningTrace] = None,
+        llm_confidence_threshold: float = 0.5,
     ) -> ExecutionResult:
         """任务队列 (设计 §5 + S10-053 §8 + S10-057): 顺序执行, 逐任务持久化 + 质量门。
 
@@ -1289,6 +1411,12 @@ class ExecutionOrchestrator:
                         max_total_generated_tasks=max_total_generated_tasks,
                         auto_mode=auto_mode,
                         proposals_file=proposals_file,
+                        planning_mode=planning_mode,
+                        llm_gap_analyzer=llm_gap_analyzer,
+                        llm_task_proposal=llm_task_proposal,
+                        llm_reasoning=llm_reasoning,
+                        llm_trace=llm_trace,
+                        llm_confidence_threshold=llm_confidence_threshold,
                     )
                     if signal == "review":
                         # 重规划超限 → 停止队列 (需人工评审; resume 可继续)
@@ -1673,6 +1801,105 @@ class ExecutionOrchestrator:
                     continue  # 计划既有环 → 拒绝该边 (失败安全, 不中断)
         return graph
 
+    def _assemble_llm_planning(
+        self,
+        planning_mode: str,
+        llm_reasoning: Optional[Any],
+        llm_gap_analyzer: Optional[Any],
+        llm_task_proposal: Optional[Any],
+        llm_trace: Optional[Any],
+        llm_confidence_threshold: float,
+    ) -> tuple[Optional[Any], Optional[Any], str]:
+        """S10-062 批次 C: LLM planning 组件装配。
+
+        planning_mode: "deterministic" | "llm" | "hybrid" (缺省 hybrid)。
+        注入 llm_gap_analyzer/llm_task_proposal → 直接复用; 否则基于
+        llm_reasoning 构造 (LLMGapAnalyzer/LLMTaskProposalEngine 默认实现)。
+        planning_mode != deterministic 且无任何 LLM 注入 → 回退 deterministic
+        (S10-061 完全兼容)。返回 (llm_gap_analyzer, llm_task_proposal, mode)。
+        """
+        mode = str(planning_mode or "hybrid")
+        if mode == "deterministic":
+            return None, None, "deterministic"
+        if llm_gap_analyzer is None and llm_task_proposal is None and llm_reasoning is None:
+            # hybrid/llm 但无 LLM 组件 → deterministic (安全回退)
+            return None, None, "deterministic"
+        if llm_reasoning is not None:
+            if llm_gap_analyzer is None:
+                llm_gap_analyzer = LLMGapAnalyzer(
+                    provider=llm_reasoning, confidence_threshold=llm_confidence_threshold
+                )
+            if llm_task_proposal is None:
+                llm_task_proposal = LLMTaskProposalEngine(provider=llm_reasoning)
+        return llm_gap_analyzer, llm_task_proposal, mode
+
+    def _plan_critic_preflight(
+        self,
+        project_dir: Path,
+        slug: str,
+        state: ExecutionState,
+        plan: dict[str, Any],
+        *,
+        replanner: ReplanningEngine,
+        plan_critic: PlanCritic,
+        task_proposal: Optional[TaskProposalEngine],
+        task_validator: Optional[TaskProposalValidator],
+        max_replan: int,
+        dependencies_file: Optional[Path],
+        llm_gap_analyzer: Optional[Any] = None,
+        llm_task_proposal: Optional[Any] = None,
+        team_run: Optional[Any] = None,
+        proposals_file: Optional[Path] = None,
+    ) -> str:
+        """S10-062 批次 C: PlanCritic 执行前缺口检查 → 提案链 → INSERT。
+
+        只输出 GapAnalysis (不直接改 DAG); 缺口 → TaskProposalEngine.propose
+        → Validator → replanner 应用 (INSERT_TASK)。返回 "review" (缺口无法
+        自动解决) / "none" (无缺口或已处理)。失败安全: critic 不阻断执行。
+        """
+        try:
+            gaps = plan_critic.review(plan, {}, {})
+            if not gaps:
+                return "none"
+            for gap in gaps:
+                detected = gap.get("detected") if isinstance(gap, dict) else getattr(gap, "detected", False)
+                action = (
+                    gap.get("recommended_action") if isinstance(gap, dict)
+                    else getattr(gap, "recommended_action", "")
+                )
+                if not detected or action not in ("INSERT_TASK", "REPAIR"):
+                    continue
+                proposals = (
+                    llm_task_proposal.propose(gap, {}, existing_tasks=plan.get("tasks") or [])
+                    if llm_task_proposal is not None
+                    else None
+                )
+                proposal = (
+                    proposals.proposal
+                    if proposals is not None and getattr(proposals, "proposal", None)
+                    else None
+                )
+                if proposal is None and task_proposal is not None:
+                    proposal = task_proposal.propose(gap, plan.get("tasks") or [], None)
+                if proposal is None:
+                    return "review"
+                valid = (
+                    task_validator.validate(
+                        proposal, plan.get("tasks") or [], None, state.replan_count, max_replan
+                    )
+                    if task_validator is not None
+                    else {"valid": True}
+                )
+                if valid.get("valid"):
+                    decision = replanner.decide(
+                        state.to_dict(), plan, agent_output="plan critic gap",
+                        insert_tasks=[proposal.to_dict()],
+                    )
+                    replanner.record(decision.to_dict())
+        except Exception:  # noqa: BLE001 — 失败安全: critic 不阻断执行
+            return "none"
+        return "none"
+
     def _replan_on_failure(
         self,
         project_dir: Path,
@@ -1695,6 +1922,13 @@ class ExecutionOrchestrator:
         max_total_generated_tasks: int = 10,
         auto_mode: str = "auto_execute",
         proposals_file: Optional[Path] = None,
+        # S10-062 批次 C: LLM planning 集成 (LLM=建议, Deterministic=执行)
+        planning_mode: str = "deterministic",
+        llm_gap_analyzer: Optional[Any] = None,
+        llm_task_proposal: Optional[Any] = None,
+        llm_reasoning: Optional[Any] = None,
+        llm_trace: Optional[Any] = None,
+        llm_confidence_threshold: float = 0.5,
     ) -> str:
         """任务失败后: 观察 → Gap 分析 (S10-061) → ReplanningEngine.decide →
         记录 → 应用 (改 DAG/Plan)。
@@ -1745,7 +1979,44 @@ class ExecutionOrchestrator:
 
         # ---- S10-061 批次 B: Gap 分析 (失败上下文 → GapAnalysis → gap_analysis.json)
         analysis = None
-        if gap_analyzer is not None:
+        # ---- S10-062 批次 C: LLM Gap 分析优先 (llm/hybrid) — LLM=建议,
+        # ---- Deterministic=执行; LLM 失败 → deterministic fallback
+        if (
+            llm_gap_analyzer is not None
+            and planning_mode in ("llm", "hybrid")
+        ):
+            try:
+                ctx_builder = ContextBuilder()
+                llm_ctx = ctx_builder.build(project_dir, str(Path(project_dir).name))
+                llm_result = llm_gap_analyzer.analyze(llm_ctx, {"task": task, "result": outcome})
+                llm_analysis = (
+                    getattr(llm_result, "analysis", None)
+                    if llm_result is not None
+                    else None
+                )
+                if llm_analysis is not None and getattr(llm_analysis, "detected", False):
+                    analysis = llm_analysis
+                    if llm_trace is not None:
+                        try:
+                            llm_trace.record(
+                                operation="analyze_gap",
+                                provider=getattr(llm_result, "provider", "llm") or "llm",
+                                model=getattr(llm_result, "model", "") or "",
+                                input_hash="",
+                                output="",
+                                parsed_result=analysis.to_dict() if hasattr(analysis, "to_dict") else {},
+                                confidence=getattr(llm_analysis, "confidence", 0.0) or 0.0,
+                                token_usage={},
+                                latency=0.0,
+                                fallback_used=bool(getattr(llm_result, "fallback_used", False)),
+                                validation_result={"valid": True},
+                                final_decision="llm_gap",
+                            )
+                        except Exception:  # noqa: BLE001
+                            pass
+            except Exception:  # noqa: BLE001 — LLM 失败 → deterministic fallback
+                analysis = None
+        if analysis is None and gap_analyzer is not None:
             try:
                 # 执行失败 (outcome.success=False) → 不传验证失败信号 (缺口信号优先,
                 # 避免 validation_failure 遮蔽 agent_output 缺口 — 验证门失败另有
@@ -1826,6 +2097,48 @@ class ExecutionOrchestrator:
             for d in replanner.previous_decisions()
             if d.get("decision") == "INSERT_TASK" and d.get("source_gap")
         )
+        # ---- S10-062 批次 C: LLM 任务提案优先 (llm/hybrid + LLM gap 检出 INSERT)
+        llm_proposal = None
+        if (
+            llm_task_proposal is not None
+            and planning_mode in ("llm", "hybrid")
+            and analysis is not None
+        ):
+            try:
+                action = (
+                    getattr(analysis, "recommended_action", "")
+                    if not isinstance(analysis, dict)
+                    else analysis.get("recommended_action", "")
+                )
+                if action in ("INSERT_TASK", "REPAIR"):
+                    llm_res = llm_task_proposal.propose(
+                        analysis,
+                        {},
+                        existing_tasks=plan_tasks,
+                        dag=graph,
+                    )
+                    if llm_res is not None and getattr(llm_res, "proposal", None) is not None:
+                        llm_proposal = llm_res.proposal
+                        if llm_trace is not None:
+                            try:
+                                llm_trace.record(
+                                    operation="propose_task",
+                                    provider=getattr(llm_res, "provider", "llm") or "llm",
+                                    model=getattr(llm_res, "model", "") or "",
+                                    input_hash="",
+                                    output="",
+                                    parsed_result=llm_proposal.to_dict() if hasattr(llm_proposal, "to_dict") else {},
+                                    confidence=getattr(llm_res, "confidence", 0.0) or 0.0,
+                                    token_usage={},
+                                    latency=0.0,
+                                    fallback_used=bool(getattr(llm_res, "fallback_used", False)),
+                                    validation_result={"valid": True},
+                                    final_decision="llm_proposal",
+                                )
+                            except Exception:  # noqa: BLE001
+                                pass
+            except Exception:  # noqa: BLE001 — LLM 失败 → deterministic 路径
+                llm_proposal = None
         decision = replanner.decide(
             state.to_dict(),
             plan,
@@ -1844,6 +2157,7 @@ class ExecutionOrchestrator:
             gap_analysis=analysis,
             task_proposal=task_proposal,
             task_validator=task_validator,
+            llm_proposal=llm_proposal,
             auto_mode=auto_mode,
             max_auto_insert_tasks=max_auto_insert_tasks,
             max_tasks_per_round=max_tasks_per_round,

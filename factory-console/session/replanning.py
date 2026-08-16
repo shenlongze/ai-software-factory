@@ -233,6 +233,11 @@ class ReplanningEngine:
         max_tasks_per_round: int = 3,
         max_total_generated_tasks: int = 10,
         generated_count: int = 0,
+        # S10-062 批次 C — LLM Planning 集成: 调用方已通过 LLMTaskProposalEngine
+        # 生成的提案 (已过 Validator gate; TaskProposal/dict — 鸭子类型)。提供后
+        # 缺口 INSERT 路径优先采用 LLM 提案 (仍过同一 task_validator 门 —
+        # LLM=建议, Deterministic=执行), 无效/缺失 → deterministic 提案 fallback。
+        llm_proposal: Any = None,
     ) -> ReplanDecision:
         """对失败/验证上下文产出计划级决策 (设计 §2 P1 规则, 优先级从高到低)。
 
@@ -265,6 +270,11 @@ class ReplanningEngine:
         max_tasks_per_round:   单轮自动提案上限 (缺省 3);
         max_total_generated_tasks: 本轮运行生成任务总数上限 (缺省 10);
         generated_count: 已自动生成任务数 (调用方累计 — 上限判定输入)。
+
+        S10-062 批次 C (LLM Planning 集成): llm_proposal — 调用方已通过
+        LLMTaskProposalEngine 生成的提案 (TaskProposal/dict); 缺口 INSERT
+        路径优先采用 (仍过同一 task_validator 门), 无效/缺失 → deterministic
+        提案 fallback (LLM 挂不影响系统 — 设计 §8)。
 
         返回 ReplanDecision (全字段 + source_gap + timestamp)。
         """
@@ -366,6 +376,7 @@ class ReplanningEngine:
                     auto_mode=str(auto_mode or "auto_execute"),
                     max_tasks_per_round=int(max_tasks_per_round or 3),
                     room=room,
+                    llm_proposal=llm_proposal,
                 )
             return self._decision(
                 self.DECISION_REQUEST_REVIEW,
@@ -728,9 +739,14 @@ class ReplanningEngine:
         auto_mode: str,
         max_tasks_per_round: int,
         room: int,
+        llm_proposal: Any = None,
     ) -> ReplanDecision:
         """缺口分析结果 → 决策 (S10-061 批次 B): 建议动作分发 + 自动提案 +
-        安全边界 (auto_mode) + 防无限上限 (GAP G5/G6/G7)。"""
+        安全边界 (auto_mode) + 防无限上限 (GAP G5/G6/G7)。
+
+        S10-062 批次 C: llm_proposal — LLM 提案优先 (仍过同一 task_validator
+        门); 无效/缺失 → deterministic 提案 fallback (LLM 挂不影响系统)。
+        """
         gtype = str(ga.get("gap_type") or "unknown")
         conf = float(ga.get("confidence") or 0.0)
         sev = str(ga.get("severity") or "low")
@@ -778,7 +794,8 @@ class ReplanningEngine:
                 source_gap=source_gap,
             )
         if auto_mode == "auto_propose_review":
-            proposals = self._generate_proposals(
+            proposals = self._llm_or_generated_proposals(
+                llm_proposal=llm_proposal,
                 ga=ga,
                 plan_tasks=plan_tasks,
                 dependency_graph=dependency_graph,
@@ -825,7 +842,8 @@ class ReplanningEngine:
                 plan_version=cur_version,
                 source_gap=source_gap,
             )
-        proposals = self._generate_proposals(
+        proposals = self._llm_or_generated_proposals(
+            llm_proposal=llm_proposal,
             ga=ga,
             plan_tasks=plan_tasks,
             dependency_graph=dependency_graph,
@@ -857,6 +875,71 @@ class ReplanningEngine:
             new_tasks=proposals,
             plan_version=cur_version,
             source_gap=source_gap,
+        )
+
+    def _llm_or_generated_proposals(
+        self,
+        *,
+        llm_proposal: Any,
+        ga: dict[str, Any],
+        plan_tasks: list[dict[str, Any]],
+        dependency_graph: Any,
+        task_proposal: Any,
+        task_validator: Any,
+        cur_replan: int,
+        max_replan: int,
+        max_tasks_per_round: int,
+        room: int,
+    ) -> list[dict[str, Any]]:
+        """缺口 → 插入候选 (S10-062 批次 C): LLM 提案优先 + deterministic fallback。
+
+        LLM 提案 (调用方已过 LLMTaskProposalEngine gate) → 仍过同一
+        task_validator 门 (LLM=建议, Deterministic=执行 — 设计 §1/§7) →
+        归一化为插入面 dict。LLM 提案缺失/无效/被门拒绝 → deterministic
+        _generate_proposals (S10-061 模板) fallback。失败安全 (永不抛)。
+        """
+        if llm_proposal is not None and room > 0:
+            p = llm_proposal
+            d = (
+                p.to_dict()
+                if hasattr(p, "to_dict")
+                else (dict(p) if isinstance(p, dict) else None)
+            )
+            if isinstance(d, dict):
+                valid = True
+                if task_validator is not None:
+                    try:
+                        vres = task_validator.validate(
+                            p, plan_tasks, dependency_graph, cur_replan, max_replan
+                        )
+                    except Exception:  # noqa: BLE001 — 失败安全: 验证异常 → 拒绝
+                        vres = {"valid": False}
+                    valid = bool((vres or {}).get("valid"))
+                if valid:
+                    cand = {
+                        **d,
+                        # 插入面 (orchestrator._insert_tasks 消费): id/name/depends_on
+                        "id": str(d.get("task_id") or d.get("id") or ""),
+                        "name": str(d.get("title") or d.get("name") or ""),
+                        "depends_on": [
+                            str(x)
+                            for x in (d.get("dependencies") or d.get("depends_on") or [])
+                            if not isinstance(x, dict)
+                        ],
+                    }
+                    if cand["id"]:
+                        return [cand][: max(0, int(room))]
+        # LLM 提案缺失/无效 → deterministic fallback (LLM 挂不影响系统)
+        return self._generate_proposals(
+            ga=ga,
+            plan_tasks=plan_tasks,
+            dependency_graph=dependency_graph,
+            task_proposal=task_proposal,
+            task_validator=task_validator,
+            cur_replan=cur_replan,
+            max_replan=max_replan,
+            max_tasks_per_round=max_tasks_per_round,
+            room=room,
         )
 
     def _generate_proposals(

@@ -1629,6 +1629,215 @@ def team(context: ExecutionContext) -> ActionResult:
     return _team_view(context)
 
 
+
+
+# ================================================================== S10-065 引导式 UX actions
+
+def discovery_start(context: ExecutionContext) -> ActionResult:
+    """引导式产品发现入口 (S10-065): "我想做X/开始做X" → DiscoverySession。
+
+    有新 discovery session (workspace 级) → 继续; 无 → start(idea) → 第一问。
+    非敏感 (自然对话)。失败安全。
+    """
+    context.require("user")
+    workspace = Path(context.workspace or ".")
+    params = context.params or {}
+    idea = str(params.get("idea") or "")
+    try:
+        from .discovery import DiscoverySession
+        # 找最近未完成 session (resume) — 有则继续
+        existing = None
+        try:
+            sessions = DiscoverySession.list_sessions(workspace)
+            for s in reversed(sessions or []):
+                if s.get("current_state") in ("discovering", "clarifying", "ready_for_confirmation"):
+                    existing = DiscoverySession.load(workspace, s["session_id"])
+                    break
+        except Exception:  # noqa: BLE001
+            existing = None
+        if existing is not None:
+            question = existing._next_question()
+            q = question.question if question else "信息已收集, 是否确认需求?"
+            return ActionResult(
+                ok=True, status=STATUS_OK,
+                message="继续之前的产品需求确认:\n" + q,
+            )
+        session = DiscoverySession.start(idea)
+        session.save(workspace)
+        question = session._next_question()
+        q = question.question if question else "这个产品解决什么问题?"
+        return ActionResult(
+            ok=True, status=STATUS_OK,
+            message="我先帮你梳理需求。\n" + q,
+        )
+    except Exception as exc:  # noqa: BLE001 — 失败安全
+        return ActionResult(ok=False, status=STATUS_ERROR,
+                            message=f"产品发现启动失败: {exc}", error=str(exc))
+
+
+def production_session_view(context: ExecutionContext) -> ActionResult:
+    """生产会话视图 (S10-065): "查看进度/现在做到哪了" → ProductionSession.to_markdown。
+
+    只读查询。失败安全: 无项目 → 友好空态。
+    """
+    context.require("user")
+    workspace = Path(context.workspace or ".")
+    params = context.params or {}
+    slug = str(params.get("project") or context.project or "")
+    try:
+        from .production_session import ProductionSession
+        # 无指定项目 → 找最近项目
+        if not slug:
+            projects_dir = workspace / "projects"
+            if projects_dir.is_dir():
+                slugs = sorted([p.name for p in projects_dir.iterdir()
+                                if p.is_dir() and (p / "execution_state.json").is_file()])
+                slug = slugs[-1] if slugs else ""
+        if not slug:
+            return ActionResult(ok=True, status=STATUS_OK, message="暂无生产中的项目。")
+        pd = workspace / "projects" / slug
+        if not (pd / "execution_state.json").is_file():
+            return ActionResult(ok=True, status=STATUS_OK,
+                                message=f"项目 {slug} 尚未开始生产。")
+        session = ProductionSession.from_project(pd, slug)
+        return ActionResult(ok=True, status=STATUS_OK, message=session.to_markdown())
+    except Exception as exc:  # noqa: BLE001 — 失败安全
+        return ActionResult(ok=False, status=STATUS_ERROR,
+                            message=f"生产状态查询失败: {exc}", error=str(exc))
+
+
+def resume_project(context: ExecutionContext) -> ActionResult:
+    """恢复执行 (S10-065): "继续/继续执行" → orchestrator.resume 薄调。
+
+    复用现有 resume 逻辑 (不复制业务)。失败安全。
+    """
+    context.require("user")
+    workspace = Path(context.workspace or ".")
+    params = context.params or {}
+    slug = str(params.get("project") or context.project or "")
+    try:
+        if not slug:
+            projects_dir = workspace / "projects"
+            if projects_dir.is_dir():
+                slugs = sorted([p.name for p in projects_dir.iterdir()
+                                if p.is_dir() and (p / "execution_state.json").is_file()])
+                slug = slugs[-1] if slugs else ""
+        if not slug:
+            return ActionResult(ok=True, status=STATUS_OK, message="暂无可恢复的项目。")
+        from .orchestrator import ExecutionOrchestrator
+        orch = ExecutionOrchestrator(workspace)
+        result = orch.resume(slug)
+        return ActionResult(
+            ok=True, status=STATUS_OK,
+            message=f"项目 {slug} 已恢复执行: {result.status} "
+                    f"(完成 {result.completed_tasks}/{result.completed_tasks + result.failed_tasks})",
+        )
+    except Exception as exc:  # noqa: BLE001 — 失败安全
+        return ActionResult(ok=False, status=STATUS_ERROR,
+                            message=f"恢复执行失败: {exc}", error=str(exc))
+
+
+def review_view(context: ExecutionContext) -> ActionResult:
+    """人工评审视图 (S10-065): "为什么停了" → ReviewView markdown。
+
+    无 review_id → 列出 pending; 有 review_id → 详情。只读查询。
+    """
+    context.require("user")
+    workspace = Path(context.workspace or ".")
+    params = context.params or {}
+    review_id = str(params.get("review_id") or "")
+    try:
+        from .review_gate import ReviewGate
+        from .review_view import ReviewView
+        gate = ReviewGate(file=workspace / "cost" / "review_records.json")
+        pending = gate.pending()
+        if review_id:
+            rec = next((r for r in pending if str(r.review_id) == review_id), None)
+            if rec is None:
+                return ActionResult(ok=True, status=STATUS_OK,
+                                    message=f"未找到待审评审 {review_id}。")
+            view = ReviewView.from_review(rec, context={"workspace": str(workspace)})
+            return ActionResult(ok=True, status=STATUS_OK, message=view.to_markdown())
+        if not pending:
+            return ActionResult(ok=True, status=STATUS_OK, message="当前无需人工评审。")
+        lines = ["AI Factory 当前有待确认事项:", ""]
+        for r in pending:
+            lines.append(f"• {r.review_id} — {str(r.reason)[:40]} (风险: {r.risk})")
+        lines.append("")
+        lines.append("输入 '批准' 或 '拒绝' 处理。")
+        return ActionResult(ok=True, status=STATUS_OK, message="\n".join(lines))
+    except Exception as exc:  # noqa: BLE001 — 失败安全
+        return ActionResult(ok=False, status=STATUS_ERROR,
+                            message=f"评审视图失败: {exc}", error=str(exc))
+
+
+def review_approve(context: ExecutionContext) -> ActionResult:
+    """批准评审 (S10-065): "接受/批准/同意" → ReviewGate.approve。"""
+    context.require("user")
+    workspace = Path(context.workspace or ".")
+    params = context.params or {}
+    review_id = str(params.get("review_id") or "")
+    reviewer = str(params.get("reviewer") or "user")
+    try:
+        from .review_gate import ReviewGate
+        gate = ReviewGate(file=workspace / "cost" / "review_records.json")
+        pending = gate.pending()
+        if not review_id and pending:
+            review_id = str(pending[0].review_id)  # 单待审 → 直接批准
+        if not review_id:
+            return ActionResult(ok=True, status=STATUS_OK, message="没有待批准的评审。")
+        rec = gate.approve(review_id, reviewer)
+        return ActionResult(ok=True, status=STATUS_OK,
+                            message=f"评审 {review_id} 已批准 ({rec.status}) — 可继续执行。")
+    except Exception as exc:  # noqa: BLE001 — 失败安全
+        return ActionResult(ok=False, status=STATUS_ERROR,
+                            message=f"批准失败: {exc}", error=str(exc))
+
+
+def review_reject(context: ExecutionContext) -> ActionResult:
+    """拒绝评审 (S10-065): "拒绝" → ReviewGate.reject。"""
+    context.require("user")
+    workspace = Path(context.workspace or ".")
+    params = context.params or {}
+    review_id = str(params.get("review_id") or "")
+    reviewer = str(params.get("reviewer") or "user")
+    try:
+        from .review_gate import ReviewGate
+        gate = ReviewGate(file=workspace / "cost" / "review_records.json")
+        pending = gate.pending()
+        if not review_id and pending:
+            review_id = str(pending[0].review_id)
+        if not review_id:
+            return ActionResult(ok=True, status=STATUS_OK, message="没有待拒绝的评审。")
+        rec = gate.reject(review_id, reviewer)
+        return ActionResult(ok=True, status=STATUS_OK,
+                            message=f"评审 {review_id} 已拒绝 ({rec.status}) — 生产停止。")
+    except Exception as exc:  # noqa: BLE001 — 失败安全
+        return ActionResult(ok=False, status=STATUS_ERROR,
+                            message=f"拒绝失败: {exc}", error=str(exc))
+
+
+def review_cancel(context: ExecutionContext) -> ActionResult:
+    """取消评审 (S10-065): "取消" → ReviewGate.cancel。"""
+    context.require("user")
+    workspace = Path(context.workspace or ".")
+    params = context.params or {}
+    review_id = str(params.get("review_id") or "")
+    try:
+        from .review_gate import ReviewGate
+        gate = ReviewGate(file=workspace / "cost" / "review_records.json")
+        pending = gate.pending()
+        if not review_id and pending:
+            review_id = str(pending[0].review_id)
+        if not review_id:
+            return ActionResult(ok=True, status=STATUS_OK, message="没有可取消的评审。")
+        rec = gate.cancel(review_id)
+        return ActionResult(ok=True, status=STATUS_OK,
+                            message=f"评审 {review_id} 已取消 ({rec.status})。")
+    except Exception as exc:  # noqa: BLE001 — 失败安全
+        return ActionResult(ok=False, status=STATUS_ERROR,
+                            message=f"取消失败: {exc}", error=str(exc))
+
 def build_default_actions() -> ActionRegistry:
     """装配默认 Action 注册表 (注册式 — 新增 Action 只需 register 一行)。"""
     registry = ActionRegistry()
@@ -1909,6 +2118,77 @@ def build_default_actions() -> ActionRegistry:
             permission="user",
             metadata={"service": "ReviewGate", "phase": "S10-063",
                       "sensitive": False, "category": "governance"},
+        )
+    )
+    # S10-065: 引导式 UX actions (自然语言入口)
+    registry.register(
+        Action(
+            name="discovery_start",
+            description="产品需求发现 (引导式: 我想做X → 澄清 → 确认)",
+            handler=discovery_start,
+            permission="user",
+            metadata={"service": "DiscoverySession", "phase": "S10-065",
+                      "sensitive": False, "category": "guided"},
+        )
+    )
+    registry.register(
+        Action(
+            name="production_session_view",
+            description="生产会话视图 (查看进度/现在做到哪了)",
+            handler=production_session_view,
+            permission="user",
+            metadata={"service": "ProductionSession", "phase": "S10-065",
+                      "sensitive": False, "category": "guided"},
+        )
+    )
+    registry.register(
+        Action(
+            name="resume_project",
+            description="恢复执行 (继续/继续执行)",
+            handler=resume_project,
+            permission="user",
+            metadata={"service": "orchestrator.resume", "phase": "S10-065",
+                      "sensitive": False, "category": "guided"},
+        )
+    )
+    registry.register(
+        Action(
+            name="review_view",
+            description="人工评审视图 (为什么停了)",
+            handler=review_view,
+            permission="user",
+            metadata={"service": "ReviewGate + ReviewView", "phase": "S10-065",
+                      "sensitive": False, "category": "guided"},
+        )
+    )
+    registry.register(
+        Action(
+            name="review_approve",
+            description="批准评审 (接受/批准/同意)",
+            handler=review_approve,
+            permission="user",
+            metadata={"service": "ReviewGate.approve", "phase": "S10-065",
+                      "sensitive": False, "category": "guided"},
+        )
+    )
+    registry.register(
+        Action(
+            name="review_reject",
+            description="拒绝评审 (拒绝)",
+            handler=review_reject,
+            permission="user",
+            metadata={"service": "ReviewGate.reject", "phase": "S10-065",
+                      "sensitive": False, "category": "guided"},
+        )
+    )
+    registry.register(
+        Action(
+            name="review_cancel",
+            description="取消评审 (取消)",
+            handler=review_cancel,
+            permission="user",
+            metadata={"service": "ReviewGate.cancel", "phase": "S10-065",
+                      "sensitive": False, "category": "guided"},
         )
     )
     return registry

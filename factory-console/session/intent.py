@@ -54,6 +54,16 @@ INTENT_TEAM = "team"
 INTENT_TEAM_EXECUTE = "team_execute"
 INTENT_TEAM_DEPENDENCIES = "team_dependencies"
 INTENT_TEAM_CONFLICTS = "team_conflicts"
+#: S10-065 批次 B: 引导式自然语言意图 (集成层 — 旧关键词不动, 纯新增)
+#: 用户自然对话入口: 想法 → 发现会话; 继续 → 恢复执行; 为什么停了 → 评审视图;
+#: 查看进度 → 生产视图; 接受/拒绝/取消 → 人工评审决策 (ReviewGate 包装)
+INTENT_DISCOVERY_START = "discovery_start"
+INTENT_RESUME_PROJECT = "resume_project"
+INTENT_REVIEW_VIEW = "review_view"
+INTENT_PRODUCTION_SESSION_VIEW = "production_session_view"
+INTENT_REVIEW_APPROVE = "review_approve"
+INTENT_REVIEW_REJECT = "review_reject"
+INTENT_REVIEW_CANCEL = "review_cancel"
 
 #: KeywordIntentParser 关键词规则表 (顺序 = 优先级, 确定性无歧义):
 #: (关键词元组, intent_type, 参数键 — 命中后取关键词后剩余文本作为参数值)
@@ -92,11 +102,29 @@ _KEYWORD_RULES: tuple[tuple[tuple[str, ...], str, Optional[str]], ...] = (
     (("项目进度", "进度如何", "执行到哪了"), INTENT_PROJECT_PROGRESS, None),
     # S10-053 P4: 质量修复意图 — 修复失败任务 (RepairManager, 确认门)
     (("修复失败任务", "修复任务", "重试失败任务"), INTENT_REPAIR_TASK, None),
+    # S10-065 批次 B: 引导式自然语言 (集成层 — 旧关键词不动, 纯新增)。
+    # 优先级在 create_product ("我想") 之前: "我想做X" 的前缀与既有 "我想"
+    # 规则共享子串 — 新增关键词避开基线测试口径 (见 test_session_product /
+    # test_session_intent 优先级回归), 基线短语映射零变化。
+    # "开始做/让我做X" → 引导 DiscoverySession; "我想做X" 仍走既有
+    # create_product 产品流程 (conversation 接管, 兼容基线)。
+    (("开始做", "让我做"), INTENT_DISCOVERY_START, "idea"),
+    (("继续执行", "继续开发", "继续", "resume"), INTENT_RESUME_PROJECT, None),
+    (("为什么停了", "为什么停止", "为什么暂停"), INTENT_REVIEW_VIEW, None),
+    (("查看进度", "现在做到哪了", "做到哪了"), INTENT_PRODUCTION_SESSION_VIEW, None),
     # S10-050 P1: 产品意图 (想法级) — "我想/做一款/产品/想法/创业" → create_product
     # (idea 参数 = 关键词后剩余文本; 优先级在 run_task/show_status 之后,
     #  "我想看看状态" → show_status、"我想加个功能" → run_task 不被抢)
     (("我想", "做一款", "产品", "想法", "创业"), INTENT_CREATE_PRODUCT, "idea"),
     (("创建", "做一个", "开发一个"), INTENT_CREATE_PROJECT, "name"),
+    # S10-065 批次 B: 评审确认意图 (Review UX — 纯新增, 旧关键词不动)。
+    # 必须在 accept_project ("接受交付") 之后: "接受交付" 仍归 accept_project,
+    # 裸 "接受" → review_approve; "帮我做X" 放在 "做一个/开发一个" 之后 —
+    # "帮我做一个电商 APP" 仍归 create_project/product (基线口径), 不抢既有映射。
+    (("接受", "批准", "同意", "approve"), INTENT_REVIEW_APPROVE, None),
+    (("拒绝", "reject"), INTENT_REVIEW_REJECT, None),
+    (("取消", "cancel"), INTENT_REVIEW_CANCEL, None),
+    (("帮我做",), INTENT_DISCOVERY_START, "idea"),
 )
 
 #: 产品意图判别标记 ("做一个"/"开发一个" 后接标记 → create_product;

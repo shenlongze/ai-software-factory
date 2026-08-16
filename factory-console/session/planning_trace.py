@@ -52,6 +52,11 @@ ALLOWED_KEYS: tuple[str, ...] = (
     "fallback_used",
     "validation_result",
     "final_decision",
+    # S10-063: 关联字段 (cost ledger 聚合 / audit correlation)
+    "task_id",
+    "agent_id",
+    "project_id",
+    "parent_execution_id",
 )
 
 #: 敏感键精确名 (脱敏: 键名小写/下划线归一后 ∈ 该集合 → 删除)
@@ -114,6 +119,11 @@ class PlanningTrace:
         validation_result: Any = None,
         final_decision: Any = None,
         input: Any = None,
+        # S10-063: 关联字段 (cost ledger 聚合 / audit correlation)
+        task_id: str = "",
+        agent_id: str = "",
+        project_id: str = "",
+        parent_execution_id: str = "",
     ) -> dict[str, Any]:
         """组装 + append 落盘一条规划轨迹 (设计 §9 全字段 + trace_id/timestamp)。
 
@@ -146,6 +156,11 @@ class PlanningTrace:
             "fallback_used": bool(fallback_used),
             "validation_result": self.sanitize(validation_result),
             "final_decision": self.sanitize(final_decision),
+            # S10-063: 关联字段
+            "task_id": str(task_id or ""),
+            "agent_id": str(agent_id or ""),
+            "project_id": str(project_id or ""),
+            "parent_execution_id": str(parent_execution_id or ""),
             "trace_id": str(uuid.uuid4()),
             "timestamp": _now_iso(),
         }
@@ -267,6 +282,10 @@ class PlanningTrace:
             "confidence": round(float(data.get("confidence") or 0.0), 2),
             "token_usage": cls._normalize_usage(data.get("token_usage")),
             "latency": round(float(data.get("latency") or 0.0), 4),
+            "task_id": str(data.get("task_id") or ""),
+            "agent_id": str(data.get("agent_id") or ""),
+            "project_id": str(data.get("project_id") or ""),
+            "parent_execution_id": str(data.get("parent_execution_id") or ""),
             "fallback_used": bool(data.get("fallback_used")),
             "validation_result": cls.sanitize(data.get("validation_result")),
             "final_decision": cls.sanitize(data.get("final_decision")),

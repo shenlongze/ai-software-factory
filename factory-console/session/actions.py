@@ -1047,6 +1047,95 @@ def accept_project(context: ExecutionContext) -> ActionResult:
     )
 
 
+
+def governance_status(context: ExecutionContext) -> ActionResult:
+    """factory status — 项目生产状态总览 (S10-063): status/plan_version/
+    completed/running/pending/token_usage/estimated_cost/budget/review。
+    只读查询 (非敏感, 无确认门)。失败安全: 无项目 → 友好空态。
+    """
+    context.require("user")
+    workspace = Path(context.workspace or ".")
+    try:
+        rows = []
+        projects_dir = workspace / "projects"
+        if projects_dir.is_dir():
+            for pd in sorted(projects_dir.iterdir()):
+                if not pd.is_dir():
+                    continue
+                state_file = pd / "execution_state.json"
+                if not state_file.is_file():
+                    continue
+                import json as _json
+                try:
+                    state = _json.loads(state_file.read_text(encoding="utf-8"))
+                except Exception:  # noqa: BLE001
+                    continue
+                rows.append([
+                    pd.name,
+                    state.get("status") or state.get("lifecycle") or "-",
+                    str(state.get("plan_version") or 1),
+                    str(state.get("governance_status") or "-"),
+                ])
+        if not rows:
+            return ActionResult(ok=True, status=STATUS_OK, message="暂无生产项目。")
+        lines = ["项目 | 状态 | 计划版本 | 治理状态"] + [" | ".join(r) for r in rows]
+        return ActionResult(ok=True, status=STATUS_OK, message="\n".join(lines))
+    except Exception as exc:  # noqa: BLE001 — 失败安全
+        return ActionResult(ok=False, status=STATUS_ERROR, message=f"状态查询失败: {exc}", error=str(exc))
+
+
+def governance_budget(context: ExecutionContext) -> ActionResult:
+    """factory budget — 预算查询 (S10-063): cost_records.json 聚合 →
+    spent/remaining/ratio/level。只读查询。失败安全: 无记录 → 空态。
+    """
+    context.require("user")
+    workspace = Path(context.workspace or ".")
+    try:
+        from .cost_ledger import CostLedger
+        from .budget import ProjectBudget, BudgetUsage, BudgetEnforcer
+        ledger = CostLedger(file=workspace / "cost" / "cost_records.json")
+        records = ledger.records()
+        budget = ProjectBudget()
+        usage = BudgetUsage.from_records(records, budget=budget)
+        level = BudgetEnforcer.check(budget, usage)["level"]
+        lines = [
+            f"总消耗: {usage.total_cost:.4f} USD / {usage.total_tokens} tokens",
+            f"LLM 调用: {usage.llm_calls} | 重规划: {usage.replans} | 重试: {usage.retries}",
+            f"预算等级: {level}",
+        ]
+        return ActionResult(ok=True, status=STATUS_OK, message="\n".join(lines))
+    except Exception as exc:  # noqa: BLE001
+        return ActionResult(ok=False, status=STATUS_ERROR, message=f"预算查询失败: {exc}", error=str(exc))
+
+
+def governance_review(context: ExecutionContext) -> ActionResult:
+    """factory review — 待审列表 + approve/reject (S10-063 ReviewGate)。
+    context.params: review_id (可选) + decision ("approve"/"reject") + reviewer。
+    敏感确认门: approve/reject 需确认。
+    """
+    context.require("user")
+    workspace = Path(context.workspace or ".")
+    params = context.params or {}
+    review_id = str(params.get("review_id") or "")
+    decision = str(params.get("decision") or "")
+    try:
+        from .review_gate import ReviewGate
+        gate = ReviewGate(file=workspace / "cost" / "review_records.json")
+        if review_id and decision in ("approve", "reject"):
+            reviewer = str(params.get("reviewer") or "user")
+            rec = gate.approve(review_id, reviewer) if decision == "approve" else gate.reject(review_id, reviewer)
+            return ActionResult(ok=True, status=STATUS_OK, message=f"评审 {review_id} → {rec.status}")
+        pending = gate.pending()
+        if not pending:
+            return ActionResult(ok=True, status=STATUS_OK, message="无待审评审。")
+        lines = ["review_id | reason | trigger | risk"] + [
+            f"{r.review_id} | {r.reason[:30]} | {r.trigger} | {r.risk}" for r in pending
+        ]
+        return ActionResult(ok=True, status=STATUS_OK, message="\n".join(lines))
+    except Exception as exc:  # noqa: BLE001
+        return ActionResult(ok=False, status=STATUS_ERROR, message=f"评审查询失败: {exc}", error=str(exc))
+
+
 def workforce(context: ExecutionContext) -> ActionResult:
     """Workforce Dashboard (S10-055 Task 005, 验收 E): "查看团队/团队状态" → 团队状态。
 
@@ -1789,6 +1878,37 @@ def build_default_actions() -> ActionRegistry:
                 "sensitive": False,
                 "category": "team",
             },
+        )
+    )
+    # S10-063: 生产治理命令 (factory status/budget/review)
+    registry.register(
+        Action(
+            name="factory_status",
+            description="生产状态 (项目/状态/计划版本/治理状态)",
+            handler=governance_status,
+            permission="user",
+            metadata={"service": "orchestrator state", "phase": "S10-063",
+                      "sensitive": False, "category": "governance"},
+        )
+    )
+    registry.register(
+        Action(
+            name="factory_budget",
+            description="预算查询 (消耗/剩余/等级)",
+            handler=governance_budget,
+            permission="user",
+            metadata={"service": "CostLedger + BudgetEnforcer", "phase": "S10-063",
+                      "sensitive": False, "category": "governance"},
+        )
+    )
+    registry.register(
+        Action(
+            name="factory_review",
+            description="生产评审 (待审列表 / approve / reject)",
+            handler=governance_review,
+            permission="user",
+            metadata={"service": "ReviewGate", "phase": "S10-063",
+                      "sensitive": False, "category": "governance"},
         )
     )
     return registry

@@ -39,6 +39,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from .agents import AgentMatcher, AgentMetrics, AgentRegistry
+from .budget import BudgetEnforcer, BudgetUsage
 from .conflicts import (
     ConflictDetector,
     ConflictRecord,
@@ -46,12 +47,14 @@ from .conflicts import (
     FileOwnership,
 )
 from .context_builder import ContextBuilder
+from .cost_ledger import CostLedger
 from .decision import HandoffDecisionEngine
 from .dependencies import TaskDependencyGraph
 from .gap_analyzer import GapAnalyzer
 from .intent import IntentObject
 from .llm_gap import LLMGapAnalyzer
 from .llm_task_proposal import LLMTaskProposalEngine
+from .loop_guard import LoopGuard
 from .messages import AgentMessageStore, HandoffStore
 from .pipeline import Lifecycle
 from .plan_critic import PlanCritic
@@ -59,6 +62,7 @@ from .planning_trace import PlanningTrace
 from .quality import RepairManager, ValidationResult, Validator
 from .reasoning import ReasoningProvider
 from .replanning import ReplanDecision, ReplanningEngine
+from .review_gate import ReviewGate
 from .roles import RoleSystem
 from .task_proposal import TaskProposalEngine, TaskProposalValidator
 from .team_state import TeamExecutionState
@@ -208,6 +212,11 @@ class ExecutionState:
     plan_version: int = 1
     replan_count: int = 0
     last_replan_reason: str = ""
+    # S10-063 批次 B (Production Governance): 治理停止状态/原因/告警 —
+    # 非缺省才落盘 (缺省状态与旧版字节一致, 兼容 S10-055~062 资产/测试)
+    governance_status: str = ""
+    governance_reason: str = ""
+    governance_warnings: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         """→ dict (落盘/审计视图)。
@@ -215,6 +224,7 @@ class ExecutionState:
         S10-060: plan_version/replan_count/last_replan_reason 非缺省才落盘 —
         缺省状态 (v1/0/空) 与旧版字节一致 (旧资产/旧测试兼容); 重规划后
         (plan v2+/count>0) 携带版本字段 (可回答"为什么改变计划")。
+        S10-063: governance_status/reason/warnings 非空才落盘 (缺省零变化)。
         """
         data: dict[str, Any] = {
             "project": self.project,
@@ -229,6 +239,12 @@ class ExecutionState:
             data["replan_count"] = int(self.replan_count or 0)
         if str(self.last_replan_reason or ""):
             data["last_replan_reason"] = str(self.last_replan_reason or "")
+        if str(self.governance_status or ""):
+            data["governance_status"] = str(self.governance_status or "")
+        if str(self.governance_reason or ""):
+            data["governance_reason"] = str(self.governance_reason or "")
+        if self.governance_warnings:
+            data["governance_warnings"] = list(self.governance_warnings)
         return data
 
     @classmethod
@@ -243,6 +259,11 @@ class ExecutionState:
             plan_version=int(data.get("plan_version") or 1),
             replan_count=int(data.get("replan_count") or 0),
             last_replan_reason=str(data.get("last_replan_reason") or ""),
+            governance_status=str(data.get("governance_status") or ""),
+            governance_reason=str(data.get("governance_reason") or ""),
+            governance_warnings=[
+                str(w) for w in (data.get("governance_warnings") or [])
+            ],
         )
 
     def save(self, path: Path) -> None:
@@ -527,6 +548,238 @@ class TeamRunContext:
         return TeamExecutionState.is_paused(project_dir)
 
 
+class _GovernanceContext:
+    """S10-063 批次 B: 生产治理集成上下文 — budget/cost_ledger/review_gate/
+    policy/loop_guard 聚合 (设计 §3-§7, 全部可选, 缺省 None → 无治理行为)。
+
+    - check_budget(action, task) → None | {"status": "blocked"|"waiting_for_review",
+      "reason"}: BudgetEnforcer.enforce — block → blocked (停止); review →
+      waiting_for_review (停止, 等审批); warn → 记录告警继续 (不停止)
+    - check_policy(op, task) → None | stop: can_execute/can_retry/can_repair/
+      can_replan — 禁 → 停止 (有 review_gate → waiting_for_review + request;
+      无 gate → blocked)
+    - check_loop_failure(task, failure_key) → None | stop: LoopGuard.check_failure
+      — action block → blocked; review → waiting_for_review
+    - record_execution(task, outcome) — cost_ledger.record EXECUTION
+      (project/task/agent/tokens/cost/latency)
+    - record_planning(purpose, task, **kw) — cost_ledger.record
+      REPLANNING/GAP_ANALYSIS/PLANNING
+    - request_review(reason, trigger, task) — review_gate.request (失败安全)
+
+    停止语义: stop_status/stop_reason 为单一停止信号 (队列消费后 break);
+    warn 记录进 warnings (state.governance_warnings 落盘, 可回答"为什么告警")。
+    """
+
+    STATUS_BLOCKED = "blocked"
+    STATUS_WAITING_REVIEW = "waiting_for_review"
+
+    def __init__(
+        self,
+        project_id: str,
+        *,
+        budget: Optional[Any] = None,
+        cost_ledger: Optional[Any] = None,
+        review_gate: Optional[Any] = None,
+        policy: Optional[Any] = None,
+        loop_guard: Optional[Any] = None,
+    ) -> None:
+        self.project_id = str(project_id or "")
+        self.budget = budget
+        self.cost_ledger = cost_ledger
+        self.review_gate = review_gate
+        self.policy = policy
+        self.loop_guard = loop_guard
+        #: 单一停止信号 (队列消费; "" = 未停止)
+        self.stop_status: str = ""
+        self.stop_reason: str = ""
+        #: warn 级告警记录 (落盘 state.governance_warnings)
+        self.warnings: list[str] = []
+        #: loop_guard 失败历史 (同 task 同 failure 计数 — 组合总闸输入)
+        self.failure_history: list[dict[str, Any]] = []
+
+    # ------------------------------------------------------------ 组件判定
+
+    def _usage(self) -> BudgetUsage:
+        """已消耗量 (从 cost_ledger 记录聚合; 无 ledger → 空消耗)。"""
+        if self.cost_ledger is None:
+            return BudgetUsage.from_records([], budget=self.budget)
+        records = self.cost_ledger.records(self.project_id)
+        return BudgetUsage.from_records(records, budget=self.budget)
+
+    def check_budget(
+        self, action: str, task: Optional[dict[str, Any]] = None
+    ) -> Optional[dict[str, Any]]:
+        """预算执行闸 (设计 §3): enforce → block/review 停止, warn 记录继续。"""
+        if self.budget is None or self.cost_ledger is None:
+            return None
+        result = BudgetEnforcer.enforce(self.budget, self._usage(), action)
+        level = str(result.get("level") or "ok")
+        if level == BudgetEnforcer.LEVEL_BLOCK:
+            return self._stop(self.STATUS_BLOCKED, result.get("reason") or "")
+        if level == BudgetEnforcer.LEVEL_REVIEW:
+            # 设计 §3: 90% → REVIEW_REQUIRED — 停止等审批 (有 gate → 记录评审)
+            if self.review_gate is not None:
+                self.request_review(result.get("reason") or "", f"budget:{action}", task)
+            return self._stop(self.STATUS_WAITING_REVIEW, result.get("reason") or "")
+        if level == BudgetEnforcer.LEVEL_WARN:
+            self.warnings.append(str(result.get("reason") or ""))
+        return None
+
+    def check_policy(
+        self, op: str, task: Optional[dict[str, Any]] = None
+    ) -> Optional[dict[str, Any]]:
+        """策略判定 (设计 §6): can_* 禁 → 停止 (有 gate → review, 无 → blocked)。"""
+        if self.policy is None:
+            return None
+        fn = getattr(self.policy, f"can_{op}", None)
+        if fn is None:
+            return None
+        context: dict[str, Any] = {
+            "task": task or {},
+            "task_id": str((task or {}).get("id") or ""),
+            "agent_id": str((task or {}).get("agent") or ""),
+            "name": str((task or {}).get("name") or ""),
+            "description": str((task or {}).get("name") or ""),
+            "task_count": 1,
+        }
+        try:
+            allowed, reason = fn(context)
+        except Exception:  # noqa: BLE001 — 失败安全: 判定异常 → 视为允许 (不阻断)
+            return None
+        if allowed:
+            return None
+        return self._stop_review(str(reason or f"policy 禁止 {op}"), f"policy:{op}", task)
+
+    def check_loop_failure(
+        self, task: dict[str, Any], failure_key: str
+    ) -> Optional[dict[str, Any]]:
+        """循环防护 (设计 §7): check_failure → block/review 停止, 其余记录继续。"""
+        if self.loop_guard is None:
+            return None
+        task_id = str(task.get("id") or "")
+        result = self.loop_guard.check_failure(task_id, failure_key, self.failure_history)
+        action = str(result.get("action") or "")
+        self.failure_history.append(
+            {"task_id": task_id, "failure": failure_key, "action": action}
+        )
+        if action == LoopGuard.ACTION_BLOCK:
+            return self._stop(self.STATUS_BLOCKED, result.get("reason") or "")
+        if action == LoopGuard.ACTION_REVIEW:
+            return self._stop_review(result.get("reason") or "", "loop_guard", task)
+        return None
+
+    # ------------------------------------------------------------ 停止信号
+
+    def _stop(
+        self, status: str, reason: str
+    ) -> dict[str, Any]:
+        """记录停止信号 (队列 break 消费)。"""
+        self.stop_status = status
+        self.stop_reason = str(reason or "")
+        return {"status": status, "reason": self.stop_reason}
+
+    def _stop_review(
+        self, reason: str, trigger: str, task: Optional[dict[str, Any]]
+    ) -> dict[str, Any]:
+        """评审停止: 有 review_gate → request + waiting_for_review; 无 → blocked。"""
+        if self.review_gate is not None:
+            self.request_review(reason, trigger, task)
+            return self._stop(self.STATUS_WAITING_REVIEW, reason)
+        return self._stop(self.STATUS_BLOCKED, reason)
+
+    def request_review(
+        self,
+        reason: str,
+        trigger: str,
+        task: Optional[dict[str, Any]] = None,
+        risk: str = "medium",
+    ) -> Any:
+        """发起人工评审 (失败安全: 评审记录失败不中断执行流)。"""
+        if self.review_gate is None:
+            return None
+        try:
+            return self.review_gate.request(
+                reason=str(reason or ""),
+                trigger=str(trigger or ""),
+                project_id=self.project_id,
+                affected_tasks=[str((task or {}).get("id") or "")]
+                if task is not None
+                else [],
+                risk=risk,
+            )
+        except Exception:  # noqa: BLE001 — 失败安全
+            return None
+
+    # ------------------------------------------------------------ 成本记录
+
+    def record_execution(
+        self, task: dict[str, Any], outcome: dict[str, Any]
+    ) -> None:
+        """EXECUTION 成本记录 (设计 §4): project/task/agent/tokens/cost/latency。"""
+        if self.cost_ledger is None:
+            return
+        usage = outcome.get("usage") or outcome.get("token_usage") or {}
+        if not isinstance(usage, dict):
+            usage = {}
+        input_tokens = int(usage.get("input_tokens") or 0)
+        output_tokens = int(usage.get("output_tokens") or 0)
+        total_tokens = int(usage.get("total_tokens") or 0) or (
+            input_tokens + output_tokens
+        )
+        cost = outcome.get("estimated_cost")
+        if cost is None:
+            cost = self._parse_cost(outcome.get("cost"))
+        self.cost_ledger.record(
+            {
+                "project_id": self.project_id,
+                "task_id": str(task.get("id") or ""),
+                "agent_id": str(task.get("agent") or ""),
+                "purpose": "EXECUTION",
+                "provider": str(outcome.get("provider") or ""),
+                "model": str(outcome.get("model") or ""),
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "total_tokens": total_tokens,
+                "estimated_cost": float(cost or 0.0),
+                "latency": float(outcome.get("duration") or 0),
+                "parent_execution_id": str(
+                    (task.get("parent_execution_id") or "")
+                ),
+            }
+        )
+
+    def record_planning(
+        self,
+        purpose: str,
+        task: Optional[dict[str, Any]] = None,
+        **kw: Any,
+    ) -> None:
+        """规划/重规划成本记录 (设计 §4): REPLANNING/GAP_ANALYSIS/PLANNING。"""
+        if self.cost_ledger is None:
+            return
+        rec: dict[str, Any] = {
+            "project_id": self.project_id,
+            "task_id": str((task or {}).get("id") or ""),
+            "agent_id": str((task or {}).get("agent") or ""),
+            "purpose": purpose,
+        }
+        rec.update(kw)
+        self.cost_ledger.record(rec)
+
+    @staticmethod
+    def _parse_cost(cost: Any) -> float:
+        """成本字符串解析 (失败安全: 不可解析 → 0.0)。"""
+        if cost is None:
+            return 0.0
+        if isinstance(cost, (int, float)):
+            return float(cost)
+        try:
+            text = str(cost).strip().strip("$").strip()
+            return float(text) if text else 0.0
+        except Exception:  # noqa: BLE001 — 失败安全
+            return 0.0
+
+
 class ExecutionOrchestrator:
     """Autonomous Production Loop 编排器 (设计 §2/§3)。
 
@@ -733,6 +986,14 @@ class ExecutionOrchestrator:
         # validator) → ReplanningEngine.decide → INSERT (不直接改 DAG);
         # 仅 replanner 同时提供时启用; None → 关闭 (既有行为零变化)
         plan_critic: Optional[PlanCritic] = None,
+        # S10-063 批次 B (Production Governance 集成, 设计 §3-§7):
+        # budget/cost_ledger/review_gate/policy/loop_guard — 全部可选,
+        # 全缺省 → 现有行为完全不变 (S10-055~062 兼容)
+        budget: Optional[Any] = None,
+        cost_ledger: Optional[Any] = None,
+        review_gate: Optional[Any] = None,
+        policy: Optional[Any] = None,
+        loop_guard: Optional[Any] = None,
     ) -> ExecutionResult:
         """全新执行 (设计 §3): 读 execution_plan.json → 初始化 state → 顺序执行。
 
@@ -875,6 +1136,15 @@ class ExecutionOrchestrator:
             llm_reasoning=llm_reasoning,
             llm_trace=llm_trace,
             llm_confidence_threshold=float(llm_confidence_threshold or 0.5),
+            # S10-063 批次 B: 治理上下文 (全缺省 → 无治理行为)
+            governance=_GovernanceContext(
+                slug,
+                budget=budget,
+                cost_ledger=cost_ledger,
+                review_gate=review_gate,
+                policy=policy,
+                loop_guard=loop_guard,
+            ),
         )
         result.duration = time.monotonic() - started
         return result
@@ -1267,6 +1537,9 @@ class ExecutionOrchestrator:
         llm_reasoning: Optional[ReasoningProvider] = None,
         llm_trace: Optional[PlanningTrace] = None,
         llm_confidence_threshold: float = 0.5,
+        # S10-063 批次 B: 治理上下文 (budget/cost_ledger/review_gate/policy/
+        # loop_guard 聚合; None → 无治理行为, 现有行为零变化)
+        governance: Optional[_GovernanceContext] = None,
     ) -> ExecutionResult:
         """任务队列 (设计 §5 + S10-053 §8 + S10-057): 顺序执行, 逐任务持久化 + 质量门。
 
@@ -1312,6 +1585,9 @@ class ExecutionOrchestrator:
         paused_stop = False  # S10-057: 团队暂停 → 停止队列 (可 resume 继续)
         blocked_stop = False  # S10-059: 任务被 BLOCK (锁未释放) → 暂缓 (可 resume 继续)
         review_stop = False  # S10-060: 重规划超限 → REQUEST_REVIEW → 停止 (需人工评审)
+        governance_stop = False  # S10-063: 治理停止 (budget/policy/loop_guard/review)
+        governance_stop_status = ""  # S10-063: "blocked" | "waiting_for_review"
+        governance_stop_reason = ""  # S10-063: 停止原因 (可解释)
         idx = 0
         while idx < len(state.tasks):
             task = state.tasks[idx]
@@ -1345,9 +1621,29 @@ class ExecutionOrchestrator:
                 team_run.inject_context(project_dir, task)
                 # S10-057 §P1: TeamExecutionState 任务级 running
                 team_run.update_team_state(project_dir, task, "running")
+            # S10-063: 治理预检 — 任务执行前 budget enforce("execute") + policy
+            # can_execute (block/review → 停止队列; warn → 记录继续)
+            if governance is not None:
+                stop = governance.check_budget("execute", task) or governance.check_policy(
+                    "execute", task
+                )
+                if stop:
+                    governance_stop = True
+                    governance_stop_status = str(stop.get("status") or "blocked")
+                    governance_stop_reason = str(stop.get("reason") or "")
+                    break
             outcome = self._execute_with_retry(
-                project_dir, state, task, runner, max_retry
+                project_dir, state, task, runner, max_retry, governance=governance
             )
+            # S10-063: 重试闸门停止 (budget retry / policy can_retry) — 停止队列
+            if governance is not None and governance.stop_status:
+                governance_stop = True
+                governance_stop_status = governance.stop_status
+                governance_stop_reason = governance.stop_reason
+                break
+            # S10-063: 任务执行后成本记录 (EXECUTION — 设计 §4)
+            if governance is not None:
+                governance.record_execution(task, outcome)
             # S10-053: Validation Gate — 每任务 outcome 后验证 (设计 §8)
             validation = self.validator.validate(task, outcome)
             task["validation"] = "passed" if validation.success else "failed"
@@ -1377,6 +1673,23 @@ class ExecutionOrchestrator:
                     or "任务执行失败"
                 )
                 errors.append(f"{task.get('id') or task.get('name')}: {reason}")
+                # S10-063: 失败后治理 — loop_guard 组合总闸 (same_failure →
+                # block/review 停止) + budget repair + policy can_repair
+                if governance is not None:
+                    stop = governance.check_loop_failure(task, reason)
+                    if stop:
+                        governance_stop = True
+                        governance_stop_status = str(stop.get("status") or "blocked")
+                        governance_stop_reason = str(stop.get("reason") or "")
+                        break
+                    stop = governance.check_budget("repair", task) or governance.check_policy(
+                        "repair", task
+                    )
+                    if stop:
+                        governance_stop = True
+                        governance_stop_status = str(stop.get("status") or "blocked")
+                        governance_stop_reason = str(stop.get("reason") or "")
+                        break
                 # S10-053: 失败 → repair_task.json (待修复队列, 不无限循环由 max_retry 约束)
                 RepairManager.create_repair(
                     project_dir,
@@ -1391,6 +1704,17 @@ class ExecutionOrchestrator:
                 # validation) → ReplanningEngine.decide → 应用 (改 DAG/Plan)
                 # → 继续执行 (非简单 retry; Repair 任务级路径不变)
                 if replanner is not None:
+                    # S10-063: 重规划前治理 — budget enforce("replan") + policy
+                    # can_replan (block/review → 停止队列)
+                    if governance is not None:
+                        stop = governance.check_budget("replan", task) or governance.check_policy(
+                            "replan", task
+                        )
+                        if stop:
+                            governance_stop = True
+                            governance_stop_status = str(stop.get("status") or "blocked")
+                            governance_stop_reason = str(stop.get("reason") or "")
+                            break
                     signal = self._replan_on_failure(
                         project_dir,
                         state,
@@ -1417,6 +1741,7 @@ class ExecutionOrchestrator:
                         llm_reasoning=llm_reasoning,
                         llm_trace=llm_trace,
                         llm_confidence_threshold=llm_confidence_threshold,
+                        governance=governance,
                     )
                     if signal == "review":
                         # 重规划超限 → 停止队列 (需人工评审; resume 可继续)
@@ -1460,7 +1785,12 @@ class ExecutionOrchestrator:
                     else (
                         "review_required"
                         if review_stop
-                        else (Lifecycle.USER_ACCEPTANCE if failed == 0 else "failed")
+                        else (
+                            # S10-063: 治理停止 (budget block/review)
+                            governance_stop_status
+                            if governance_stop
+                            else (Lifecycle.USER_ACCEPTANCE if failed == 0 else "failed")
+                        )
                     )
                 )
             ),
@@ -1475,7 +1805,9 @@ class ExecutionOrchestrator:
         # 待验收, 不直接 DELIVERED — 验收 F); 有 failed → 保持 DEVELOPMENT;
         # 团队暂停/锁阻塞停止 (部分完成) → 保持 DEVELOPMENT (可 resume 继续)。
         # DELIVERED 仅经 accept_project 用户确认后到达 (验收 E/G)。
-        if failed == 0 and not paused_stop and not blocked_stop and not review_stop:
+        # S10-063: governance_stop (budget block/review) → 保持 DEVELOPMENT
+        # + governance_status 落盘 (可解释: 为什么停止)。
+        if failed == 0 and not paused_stop and not blocked_stop and not review_stop and not governance_stop:
             state.status = Lifecycle.TESTING
             state.lifecycle = Lifecycle.TESTING
             self._save_state(project_dir, state)
@@ -1491,6 +1823,11 @@ class ExecutionOrchestrator:
         else:
             state.status = Lifecycle.DEVELOPMENT
             state.lifecycle = Lifecycle.DEVELOPMENT
+            # S10-063: 治理停止信息落盘 (可解释: 为什么停止)
+            if governance_stop:
+                state.governance_status = governance_stop_status
+                state.governance_reason = governance_stop_reason
+                errors.append(f"governance:{governance_stop_status} — {governance_stop_reason}")
             self._save_state(project_dir, state)
         # S10-053: 验证结果资产化 — validation_result.json 落盘 (验收 I)
         summary = ValidationResult(
@@ -1734,6 +2071,7 @@ class ExecutionOrchestrator:
         task: dict[str, Any],
         runner: ExecuteFn,
         max_retry: int,
+        governance: Optional[Any] = None,
     ) -> dict[str, Any]:
         """单任务执行 + 失败重试 (设计 §7): pending → running → completed/failed。
 
@@ -1929,6 +2267,8 @@ class ExecutionOrchestrator:
         llm_reasoning: Optional[Any] = None,
         llm_trace: Optional[Any] = None,
         llm_confidence_threshold: float = 0.5,
+        # S10-063: 生产治理 (budget/review/policy/loop guard — 失败安全可选)
+        governance: Optional[Any] = None,
     ) -> str:
         """任务失败后: 观察 → Gap 分析 (S10-061) → ReplanningEngine.decide →
         记录 → 应用 (改 DAG/Plan)。

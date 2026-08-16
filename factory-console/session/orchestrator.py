@@ -51,6 +51,7 @@ from .intent import IntentObject
 from .messages import AgentMessageStore, HandoffStore
 from .pipeline import Lifecycle
 from .quality import RepairManager, ValidationResult, Validator
+from .replanning import ReplanDecision, ReplanningEngine
 from .roles import RoleSystem
 from .team_state import TeamExecutionState
 from .teams import DEFAULT_TEAM_ID, TeamRegistry
@@ -173,6 +174,8 @@ class ExecutionState:
 
     tasks: [{id, name, agent, status: pending/running/completed/failed,
             artifact, retry_count, error}] — status 落盘小写 (同 Lifecycle 口径)。
+    S10-060 (Autonomous Replanning, 设计 §5 P4): plan_version (缺省 1) /
+    replan_count (缺省 0) / last_replan_reason (计划变更可解释 — 为什么改变计划)。
     """
 
     project: str
@@ -180,16 +183,31 @@ class ExecutionState:
     lifecycle: Optional[str] = Lifecycle.DEVELOPMENT
     started_at: str = ""
     tasks: list[dict[str, Any]] = field(default_factory=list)
+    plan_version: int = 1
+    replan_count: int = 0
+    last_replan_reason: str = ""
 
     def to_dict(self) -> dict[str, Any]:
-        """→ dict (落盘/审计视图)。"""
-        return {
+        """→ dict (落盘/审计视图)。
+
+        S10-060: plan_version/replan_count/last_replan_reason 非缺省才落盘 —
+        缺省状态 (v1/0/空) 与旧版字节一致 (旧资产/旧测试兼容); 重规划后
+        (plan v2+/count>0) 携带版本字段 (可回答"为什么改变计划")。
+        """
+        data: dict[str, Any] = {
             "project": self.project,
             "status": self.status,
             "lifecycle": self.lifecycle,
             "started_at": self.started_at,
             "tasks": list(self.tasks),
         }
+        if int(self.plan_version or 1) != 1:
+            data["plan_version"] = int(self.plan_version or 1)
+        if int(self.replan_count or 0) != 0:
+            data["replan_count"] = int(self.replan_count or 0)
+        if str(self.last_replan_reason or ""):
+            data["last_replan_reason"] = str(self.last_replan_reason or "")
+        return data
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ExecutionState":
@@ -200,6 +218,9 @@ class ExecutionState:
             lifecycle=data.get("lifecycle") or Lifecycle.DEVELOPMENT,
             started_at=str(data.get("started_at") or ""),
             tasks=list(data.get("tasks") or []),
+            plan_version=int(data.get("plan_version") or 1),
+            replan_count=int(data.get("replan_count") or 0),
+            last_replan_reason=str(data.get("last_replan_reason") or ""),
         )
 
     def save(self, path: Path) -> None:
@@ -633,6 +654,13 @@ class ExecutionOrchestrator:
         messages_file: Optional[Path] = None,
         enable_messages: bool = False,
         validation_command: Optional[str] = None,
+        # S10-060 (Autonomous Replanning, 设计 §P5): 计划级重规划接入
+        # replanner=None → 重规划关闭 (solo/team 既有行为零变化);
+        # 提供后: 任务失败 → ReplanningEngine.decide → 更新 DAG/Plan → 继续执行
+        replanner: Optional[ReplanningEngine] = None,
+        max_replan: int = 5,
+        insert_tasks: Optional[list[dict[str, Any]]] = None,
+        replanning_file: Optional[Path] = None,
     ) -> ExecutionResult:
         """全新执行 (设计 §3): 读 execution_plan.json → 初始化 state → 顺序执行。
 
@@ -688,6 +716,9 @@ class ExecutionOrchestrator:
         # Lifecycle: EXECUTION_READY → DEVELOPMENT (project.json/product.json status)
         self._set_lifecycle(project_dir, slug, Lifecycle.DEVELOPMENT)
         started = time.monotonic()
+        # S10-060: 重规划引擎解析 (replanning_file 便捷参数 → 引擎构造; 缺省关闭)
+        if replanner is None and replanning_file is not None:
+            replanner = ReplanningEngine(file=replanning_file)
         result = self._run_queue(
             project_dir,
             slug,
@@ -696,6 +727,11 @@ class ExecutionOrchestrator:
             max_retry=max_retry,
             team_run=team_run,
             validation_command=validation_command,
+            plan=plan,
+            replanner=replanner,
+            max_replan=int(max_replan or 5),
+            insert_tasks=list(insert_tasks or []),
+            dependencies_file=dependencies_file,
         )
         result.duration = time.monotonic() - started
         return result
@@ -835,11 +871,18 @@ class ExecutionOrchestrator:
         *,
         execute_fn: Optional[ExecuteFn] = None,
         max_retry: int = DEFAULT_MAX_RETRY,
+        # S10-060: 重规划接入 (同 execute_project — 恢复执行也支持自主重规划)
+        replanner: Optional[ReplanningEngine] = None,
+        max_replan: int = 5,
+        insert_tasks: Optional[list[dict[str, Any]]] = None,
+        dependencies_file: Optional[Path] = None,
+        replanning_file: Optional[Path] = None,
     ) -> ExecutionResult:
         """恢复执行 (设计 §3): 从 execution_state.json 继续 pending/failed 任务。
 
         跳过 completed; failed 任务重置 retry_count 重新执行 (仍受 max_retry 约束);
         无待恢复任务 → 直接汇总 (不重跑)。
+        S10-060: skipped/blocked/split (计划级决策产物) 不重跑 (resume 语义保留)。
         """
         project_dir, slug = self._locate_project(project_id)
         state = self._load_state(project_dir)
@@ -859,8 +902,21 @@ class ExecutionOrchestrator:
             TeamExecutionState.resume(project_dir)
         self._save_state(project_dir, state)
         started = time.monotonic()
+        # S10-060: 重规划引擎解析 (replanning_file 便捷参数 → 引擎构造; 缺省关闭)
+        if replanner is None and replanning_file is not None:
+            replanner = ReplanningEngine(file=replanning_file)
+        plan = self._load_plan(project_dir) if replanner is not None else None
         result = self._run_queue(
-            project_dir, slug, state, execute_fn=execute_fn, max_retry=max_retry
+            project_dir,
+            slug,
+            state,
+            execute_fn=execute_fn,
+            max_retry=max_retry,
+            plan=plan,
+            replanner=replanner,
+            max_replan=int(max_replan or 5),
+            insert_tasks=list(insert_tasks or []),
+            dependencies_file=dependencies_file,
         )
         result.duration = time.monotonic() - started
         return result
@@ -997,6 +1053,11 @@ class ExecutionOrchestrator:
         max_retry: int,
         team_run: Optional[TeamRunContext] = None,
         validation_command: Optional[str] = None,
+        plan: Optional[dict[str, Any]] = None,
+        replanner: Optional[ReplanningEngine] = None,
+        max_replan: int = 5,
+        insert_tasks: Optional[list[dict[str, Any]]] = None,
+        dependencies_file: Optional[Path] = None,
     ) -> ExecutionResult:
         """任务队列 (设计 §5 + S10-053 §8 + S10-057): 顺序执行, 逐任务持久化 + 质量门。
 
@@ -1041,13 +1102,22 @@ class ExecutionOrchestrator:
         validations: list[ValidationResult] = []
         paused_stop = False  # S10-057: 团队暂停 → 停止队列 (可 resume 继续)
         blocked_stop = False  # S10-059: 任务被 BLOCK (锁未释放) → 暂缓 (可 resume 继续)
-        for task in state.tasks:
-            if task.get("status") == "completed":
+        review_stop = False  # S10-060: 重规划超限 → REQUEST_REVIEW → 停止 (需人工评审)
+        idx = 0
+        while idx < len(state.tasks):
+            task = state.tasks[idx]
+            idx += 1
+            status = str(task.get("status") or "")
+            if status == "completed":
                 # 已完成任务跳过 (resume 语义: 不重跑); 缺 validation 字段 → 默认 passed
                 task.setdefault("validation", "passed")
                 completed += 1
                 if task.get("artifact"):
                     artifacts.append(str(task["artifact"]))
+                continue
+            if status in ("skipped", "blocked", "split"):
+                # S10-060: 计划级决策产物 (SKIP_TASK/BLOCK_TASK/SPLIT_TASK) —
+                # 不再执行 (决策已记录 replanning_decisions.json, 可解释; resume 不重跑)
                 continue
             if team_run is not None:
                 # S10-056 批次 B + S10-059: 团队模式冲突检测 + 自主决策 + 文件锁
@@ -1108,6 +1178,27 @@ class ExecutionOrchestrator:
                 if team_run is not None:
                     # S10-057 §P1: TeamExecutionState 任务级 failed
                     team_run.update_team_state(project_dir, task, "failed")
+                # S10-060 §P5: 计划级重规划 — 任务失败 → 观察 (agent_output/
+                # validation) → ReplanningEngine.decide → 应用 (改 DAG/Plan)
+                # → 继续执行 (非简单 retry; Repair 任务级路径不变)
+                if replanner is not None:
+                    signal = self._replan_on_failure(
+                        project_dir,
+                        state,
+                        plan,
+                        task,
+                        outcome,
+                        validation,
+                        replanner=replanner,
+                        max_replan=max_replan,
+                        insert_tasks=insert_tasks,
+                        dependencies_file=dependencies_file,
+                        team_run=team_run,
+                    )
+                    if signal == "review":
+                        # 重规划超限 → 停止队列 (需人工评审; resume 可继续)
+                        review_stop = True
+                        break
             if isinstance(outcome, dict) and outcome.get("cost"):
                 costs.append(str(outcome["cost"]))
         # S10-057 §P4: Team Validation — 全部任务完成 (无失败/未暂停) 且显式命令门
@@ -1119,6 +1210,7 @@ class ExecutionOrchestrator:
             and failed == 0
             and not paused_stop
             and not blocked_stop
+            and not review_stop
             and validation_command is not None
         ):
             team_validation = self.validator.validate_command(
@@ -1142,7 +1234,11 @@ class ExecutionOrchestrator:
                 else (
                     "blocked"
                     if blocked_stop and failed == 0
-                    else (Lifecycle.USER_ACCEPTANCE if failed == 0 else "failed")
+                    else (
+                        "review_required"
+                        if review_stop
+                        else (Lifecycle.USER_ACCEPTANCE if failed == 0 else "failed")
+                    )
                 )
             ),
             completed_tasks=completed,
@@ -1156,7 +1252,7 @@ class ExecutionOrchestrator:
         # 待验收, 不直接 DELIVERED — 验收 F); 有 failed → 保持 DEVELOPMENT;
         # 团队暂停/锁阻塞停止 (部分完成) → 保持 DEVELOPMENT (可 resume 继续)。
         # DELIVERED 仅经 accept_project 用户确认后到达 (验收 E/G)。
-        if failed == 0 and not paused_stop and not blocked_stop:
+        if failed == 0 and not paused_stop and not blocked_stop and not review_stop:
             state.status = Lifecycle.TESTING
             state.lifecycle = Lifecycle.TESTING
             self._save_state(project_dir, state)
@@ -1191,11 +1287,15 @@ class ExecutionOrchestrator:
             team_state = TeamExecutionState.get(project_dir)
             team_state["status"] = (
                 "completed"
-                if failed == 0 and not paused_stop and not blocked_stop
+                if failed == 0 and not paused_stop and not blocked_stop and not review_stop
                 else (
                     "paused"
                     if paused_stop
-                    else ("blocked" if blocked_stop else "failed")
+                    else (
+                        "blocked"
+                        if blocked_stop
+                        else ("review_required" if review_stop else "failed")
+                    )
                 )
             )
             team_state["updated_at"] = datetime.now(timezone.utc).isoformat()
@@ -1445,3 +1545,362 @@ class ExecutionOrchestrator:
             task["retry_count"] = retries
             self._save_state(project_dir, state)
             return outcome
+
+    # ------------------------------------------------------------ S10-060 重规划
+
+    def _replan_graph(
+        self,
+        project_dir: Path,
+        plan: Optional[dict[str, Any]],
+        dependencies_file: Optional[Path],
+    ) -> TaskDependencyGraph:
+        """重规划依赖图 (S10-060): 调用方 dependencies_file 优先; 否则从计划任务
+        depends_on 构建 (内存图, 不落盘)。失败安全: 图缺失/损坏 → 空图。"""
+        graph = TaskDependencyGraph.load(
+            dependencies_file if dependencies_file is not None else None
+        )
+        if graph.to_dict():
+            return graph
+        for t in (plan or {}).get("tasks") or []:
+            if not isinstance(t, dict):
+                continue
+            tid = str(t.get("id") or "")
+            if not tid:
+                continue
+            for d in t.get("depends_on") or []:
+                if isinstance(d, dict):
+                    continue
+                dep = str(d)
+                if not dep:
+                    continue
+                graph.add_task(tid)
+                if not graph.add_dependency(tid, dep):
+                    continue  # 计划既有环 → 拒绝该边 (失败安全, 不中断)
+        return graph
+
+    def _replan_on_failure(
+        self,
+        project_dir: Path,
+        state: ExecutionState,
+        plan: Optional[dict[str, Any]],
+        task: dict[str, Any],
+        outcome: dict[str, Any],
+        validation: ValidationResult,
+        *,
+        replanner: ReplanningEngine,
+        max_replan: int,
+        insert_tasks: Optional[list[dict[str, Any]]],
+        dependencies_file: Optional[Path],
+        team_run: Optional[TeamRunContext],
+    ) -> str:
+        """任务失败后: 观察 → ReplanningEngine.decide → 记录 → 应用 (改 DAG/Plan)。
+
+        返回信号: "none" (KEEP_PLAN — Repair 路径不变) / "continue" (计划已改,
+        队列继续) / "review" (REQUEST_REVIEW — 停止队列, 需人工评审)。
+
+        Repair vs Replanning 分离 (设计 §7 P6):
+        - Repair:     任务失败 → repair_task.json (任务级, quality.RepairManager)
+        - Replanning: 计划不适合现实 → 改 DAG/Plan (计划级, 本方法)
+        - 两者独立: repair 已在上游创建, 本方法只处理计划级偏差。
+        """
+        outcome = outcome if isinstance(outcome, dict) else {}
+        plan = plan if isinstance(plan, dict) else {"tasks": []}
+        graph = self._replan_graph(project_dir, plan, dependencies_file)
+        agent_output = str(
+            outcome.get("agent_output")
+            or outcome.get("output")
+            or outcome.get("error")
+            or ""
+        )
+        failures = [
+            {
+                "task_id": str(task.get("id") or ""),
+                "name": str(task.get("name") or task.get("id") or ""),
+                "error": str(
+                    outcome.get("error")
+                    or task.get("error")
+                    or "; ".join(validation.errors)
+                    or "任务执行失败"
+                ),
+            }
+        ]
+        ctx = WorkspaceContext.load(project_dir)
+        decision = replanner.decide(
+            state.to_dict(),
+            plan,
+            failures=failures,
+            validation={
+                "success": bool(validation.success),
+                "errors": list(validation.errors),
+            },
+            agent_output=agent_output,
+            dependency_graph=graph,
+            workspace=ctx,
+            max_replan=max_replan,
+            plan_version=state.plan_version,
+            replan_count=state.replan_count,
+            insert_tasks=insert_tasks,
+        )
+        # 先应用 (可能补充 dependency_changes — 环拒绝边), 后记录 (资产完整落盘)
+        decision_dict = ReplanningEngine._normalize(decision)
+        signal = self._apply_replan(
+            project_dir,
+            state,
+            plan,
+            decision_dict,
+            dependencies_file=dependencies_file,
+            team_run=team_run,
+        )
+        replanner.record(decision_dict)
+        return signal
+
+    def _apply_replan(
+        self,
+        project_dir: Path,
+        state: ExecutionState,
+        plan: dict[str, Any],
+        decision: Any,
+        *,
+        dependencies_file: Optional[Path],
+        team_run: Optional[TeamRunContext],
+    ) -> str:
+        """应用 ReplanDecision → 同步 state/plan/DAG → 返回信号 (none/continue/review)。
+
+        入参为归一化 dict (ReplanDecision → to_dict) — 应用期间可能补充
+        dependency_changes (环拒绝边), 由调用方负责记录 (先应用后记录)。
+        """
+        if isinstance(decision, ReplanDecision):
+            decision = decision.to_dict()
+        elif not isinstance(decision, dict):
+            decision = {}
+        name = str(decision.get("decision") or ReplanningEngine.DECISION_KEEP_PLAN)
+        affected = [
+            str(t) for t in (decision.get("affected_tasks") or []) if not isinstance(t, dict)
+        ]
+        if name == ReplanningEngine.DECISION_KEEP_PLAN:
+            return "none"
+        if name == ReplanningEngine.DECISION_REQUEST_REVIEW:
+            state.replan_count += 1
+            state.last_replan_reason = str(decision.get("reason") or "")
+            self._save_state(project_dir, state)
+            return "review"
+        if name == ReplanningEngine.DECISION_INSERT_TASK:
+            self._insert_tasks(
+                project_dir,
+                state,
+                plan,
+                decision.get("new_tasks") or [],
+                dependencies_file=dependencies_file,
+                decision=decision,
+            )
+            self._bump_plan(
+                project_dir, state, plan, decision, dependencies_file=dependencies_file,
+                team_run=team_run,
+            )
+            return "continue"
+        if name == ReplanningEngine.DECISION_SPLIT_TASK:
+            # 原任务标记 split (计划级产物, 不再执行); 拆分任务插入 (同 INSERT)
+            for tid in affected:
+                self._mark_plan_task(state, tid, "split", str(decision.get("reason") or ""))
+            self._insert_tasks(
+                project_dir,
+                state,
+                plan,
+                decision.get("new_tasks") or [],
+                dependencies_file=dependencies_file,
+                decision=decision,
+            )
+            self._bump_plan(
+                project_dir, state, plan, decision, dependencies_file=dependencies_file,
+                team_run=team_run,
+            )
+            return "continue"
+        if name == ReplanningEngine.DECISION_MODIFY_TASK:
+            for m in decision.get("modified_tasks") or []:
+                if not isinstance(m, dict):
+                    continue
+                tid = str(m.get("id") or "")
+                if not tid:
+                    continue
+                for t in state.tasks:
+                    if str(t.get("id")) == tid:
+                        if m.get("name"):
+                            t["name"] = str(m["name"])
+                        if m.get("requirement") and not m.get("name"):
+                            t["name"] = str(m["requirement"])
+                for pt in plan.get("tasks") or []:
+                    if isinstance(pt, dict) and str(pt.get("id")) == tid:
+                        if m.get("name"):
+                            pt["name"] = str(m["name"])
+            self._bump_plan(
+                project_dir, state, plan, decision, dependencies_file=dependencies_file,
+                team_run=team_run,
+            )
+            return "continue"
+        if name == ReplanningEngine.DECISION_SKIP_TASK:
+            for tid in affected:
+                self._mark_plan_task(state, tid, "skipped", str(decision.get("reason") or ""))
+            self._bump_plan(
+                project_dir, state, plan, decision, dependencies_file=dependencies_file,
+                team_run=team_run,
+            )
+            return "continue"
+        if name == ReplanningEngine.DECISION_BLOCK_TASK:
+            for tid in affected:
+                self._mark_plan_task(state, tid, "blocked", str(decision.get("reason") or ""))
+            self._bump_plan(
+                project_dir, state, plan, decision, dependencies_file=dependencies_file,
+                team_run=team_run,
+            )
+            return "continue"
+        if name == ReplanningEngine.DECISION_REORDER_TASKS:
+            order = [
+                str(t) for t in (decision.get("execution_order") or []) if not isinstance(t, dict)
+            ]
+            if order:
+                pos = {tid: i for i, tid in enumerate(order)}
+                pending = [t for t in state.tasks if str(t.get("status")) == "pending"]
+                done = [t for t in state.tasks if str(t.get("status")) != "pending"]
+                pending.sort(key=lambda t: pos.get(str(t.get("id")), len(order)))
+                state.tasks = done + pending
+                plan_tasks = [
+                    t for t in (plan.get("tasks") or []) if isinstance(t, dict)
+                ]
+                plan["tasks"] = sorted(
+                    plan_tasks,
+                    key=lambda t: pos.get(str(t.get("id")), len(order)),
+                )
+                plan["count"] = len(plan["tasks"])
+            self._bump_plan(
+                project_dir, state, plan, decision, dependencies_file=dependencies_file,
+                team_run=team_run,
+            )
+            return "continue"
+        return "none"
+
+    @staticmethod
+    def _mark_plan_task(
+        state: ExecutionState, task_id: str, status: str, reason: str
+    ) -> None:
+        """计划级任务标记 (skipped/blocked/split — 不再执行, 可解释)。"""
+        for t in state.tasks:
+            if str(t.get("id")) == task_id and str(t.get("status")) != "completed":
+                t["status"] = status
+                t["error"] = reason
+                if status == "skipped":
+                    t.setdefault("validation", "passed")
+
+    def _insert_tasks(
+        self,
+        project_dir: Path,
+        state: ExecutionState,
+        plan: dict[str, Any],
+        new_tasks: list[Any],
+        *,
+        dependencies_file: Optional[Path],
+        decision: Optional[dict[str, Any]] = None,
+    ) -> list[str]:
+        """插入新任务 (INSERT_TASK/SPLIT_TASK): state + plan + DAG + 落盘同步。
+
+        新任务候选由调用方提供 (设计: 不自动生成任务内容); id 缺失 → 自动推导
+        (task-<n>, 仅标识不生成内容); 已存在同 id → 跳过 (幂等)。
+        DAG 更新: 新任务注册 + 依赖边 (环 → 拒绝该边, 记录 decision 的
+        dependency_changes, 不中断)。execution_plan.json / tasks.json (存在时) 同步。
+        """
+        inserted: list[str] = []
+        existing = {str(t.get("id")) for t in state.tasks if t.get("id")}
+        graph = self._replan_graph(project_dir, plan, dependencies_file)
+        plan_tasks = [t for t in (plan.get("tasks") or []) if isinstance(t, dict)]
+        plan_ids = {str(t.get("id")) for t in plan_tasks if t.get("id")}
+        for cand in new_tasks:
+            if not isinstance(cand, dict):
+                continue
+            tid = str(cand.get("id") or "")
+            if not tid:
+                tid = f"task-{len(state.tasks) + 1}"
+            if tid in existing:
+                continue
+            record = self._task_record({**cand, "id": tid})
+            state.tasks.append(record)
+            existing.add(tid)
+            # DAG: 注册节点 + 依赖边 (环 → 拒绝该边, 记录 dependency_changes, 不中断)
+            graph.add_task(tid)
+            for d in cand.get("depends_on") or []:
+                if isinstance(d, dict):
+                    continue
+                dep = str(d)
+                if not dep:
+                    continue
+                if not graph.add_dependency(tid, dep):
+                    if decision is not None:
+                        decision.setdefault("dependency_changes", []).append(
+                            {
+                                "action": "reject_add_dependency",
+                                "task": tid,
+                                "depends_on": dep,
+                                "reason": "cyclic dependency",
+                            }
+                        )
+            # plan 同步 (候选原样 + 推导 id)
+            if tid not in plan_ids:
+                plan_tasks.append({**cand, "id": tid})
+                plan_ids.add(tid)
+            inserted.append(tid)
+        plan["tasks"] = plan_tasks
+        plan["count"] = len(plan_tasks)
+        # DAG 落盘 (仅调用方提供文件时 — solo 模式不引入新资产文件)
+        if dependencies_file is not None:
+            try:
+                graph.save(dependencies_file)
+            except Exception:  # noqa: BLE001 — 失败安全: DAG 落盘失败不中断
+                pass
+        # tasks.json 同步 (存在才更新 — 失败安全; 无 tasks.json → 仅 plan/state)
+        tasks_file = project_dir / "tasks.json"
+        if tasks_file.is_file():
+            try:
+                data = _read_json(tasks_file)
+                known = {
+                    str(t.get("id"))
+                    for t in (data.get("tasks") or [])
+                    if isinstance(t, dict)
+                }
+                added = [
+                    {**t, "id": str(t.get("id") or "")}
+                    for t in new_tasks
+                    if isinstance(t, dict) and str(t.get("id") or "") and str(t.get("id")) not in known
+                ]
+                if added:
+                    data.setdefault("tasks", []).extend(added)
+                    data["count"] = len(data["tasks"])
+                    _write_json(tasks_file, data)
+            except Exception:  # noqa: BLE001 — 失败安全: tasks.json 同步失败不中断
+                pass
+        self._save_state(project_dir, state)
+        return inserted
+
+    def _bump_plan(
+        self,
+        project_dir: Path,
+        state: ExecutionState,
+        plan: dict[str, Any],
+        decision: dict[str, Any],
+        *,
+        dependencies_file: Optional[Path],
+        team_run: Optional[TeamRunContext],
+    ) -> None:
+        """计划版本推进 (S10-060 P3): plan_version v→v+1 + replan_count+1 +
+        last_replan_reason + execution_plan.json/execution_state.json/tasks 同步。
+
+        落盘后可回答"AI Factory 为什么改变了原来的开发计划" (replanning_decisions
+        + last_replan_reason 双资产)。team mode → team_execution_state 同步。
+        """
+        state.plan_version += 1
+        state.replan_count += 1
+        state.last_replan_reason = str(decision.get("reason") or "")
+        plan["plan_version"] = state.plan_version
+        plan["replan_count"] = state.replan_count
+        plan["last_replan_reason"] = state.last_replan_reason
+        self._save_state(project_dir, state)
+        _write_json(project_dir / "execution_plan.json", plan)
+        if team_run is not None:
+            TeamExecutionState.sync_plan_version(project_dir, state.plan_version)

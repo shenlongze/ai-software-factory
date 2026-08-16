@@ -8,7 +8,8 @@ validation}, 支持暂停/恢复/进度查询。
 - TeamExecutionState — init(project_dir, team_id, tasks) / update(project_dir,
   task_id, status, agent?, artifact?) / get() / snapshot() / save() / load()
   (失败安全: 缺失/损坏 → None) / pause() / resume() / is_paused() /
-  progress() / set_status()
+  progress() / set_status() / sync_plan_version(project_dir, plan_version)
+  (S10-060: plan_version 同步 — Autonomous Replanning 计划版本同源)
 
 设计: docs/sprint10/S10-057-team-production-design.md §P1 / §2 数据资产
 边界:
@@ -113,6 +114,8 @@ class TeamExecutionState:
             "updated_at": str(data.get("updated_at") or ""),
             "tasks": tasks,
             "validation": validation if isinstance(validation, dict) else None,
+            # S10-060: 计划版本同步 (Autonomous Replanning — team 与 execution 同源)
+            "plan_version": int(data.get("plan_version") or 1),
         }
 
     @classmethod
@@ -125,6 +128,7 @@ class TeamExecutionState:
             "updated_at": _now_iso(),
             "tasks": {},
             "validation": None,
+            "plan_version": 1,
         }
 
     # ------------------------------------------------------------ init/读写
@@ -150,6 +154,7 @@ class TeamExecutionState:
                 if t.get("id")
             },
             "validation": None,
+            "plan_version": 1,
         }
         cls.save(project_dir, state)
         return state
@@ -202,6 +207,7 @@ class TeamExecutionState:
             "validation": (
                 dict(state["validation"]) if state.get("validation") else None
             ),
+            "plan_version": int(state.get("plan_version") or 1),
         }
 
     # ------------------------------------------------------------ 变更
@@ -235,6 +241,19 @@ class TeamExecutionState:
         """团队级状态落盘 (running/paused/completed/failed) → 返回状态。"""
         state = cls.get(project_dir)
         state["status"] = str(status or TEAM_STATUS_RUNNING)
+        state["updated_at"] = _now_iso()
+        cls.save(project_dir, state)
+        return state
+
+    @classmethod
+    def sync_plan_version(cls, project_dir: Any, plan_version: int) -> dict[str, Any]:
+        """计划版本同步 (S10-060 H3): team_execution_state.json plan_version 更新。
+
+        ReplanningEngine 应用计划变更 (plan v1→v2) 后调用, 团队状态与
+        execution_state 同源; 缺失状态 → 缺省骨架, 不抛 (失败安全)。
+        """
+        state = cls.get(project_dir)
+        state["plan_version"] = int(plan_version or 1)
         state["updated_at"] = _now_iso()
         cls.save(project_dir, state)
         return state

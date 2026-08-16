@@ -1,4 +1,4 @@
-"""factory-console/session/orchestrator.py — Autonomous Production Loop 执行编排 (S10-052 P0-P6)。
+"""factory-console/session/orchestrator.py — Autonomous Production Loop 执行编排 (S10-052 P0-P6 + S10-065 批次 C)。
 
 读取 execution_plan.json → 任务队列 (顺序执行) → 状态持久化 (execution_state.json)
 → 失败处理 (retry/max_retry, 不无限重试) → Lifecycle 自动推进
@@ -555,6 +555,9 @@ class _GovernanceContext:
     - check_budget(action, task) → None | {"status": "blocked"|"waiting_for_review",
       "reason"}: BudgetEnforcer.enforce — block → blocked (停止); review →
       waiting_for_review (停止, 等审批); warn → 记录告警继续 (不停止)
+    - check_execution_time() → None | stop (S10-065): 每任务执行前 elapsed
+      (从执行开始累积) >= budget.max_execution_time → 停止 (有 review_gate
+      → waiting_for_review + request; 无 → blocked — 同 budget enforce 语义)
     - check_policy(op, task) → None | stop: can_execute/can_retry/can_repair/
       can_replan — 禁 → 停止 (有 review_gate → waiting_for_review + request;
       无 gate → blocked)
@@ -582,6 +585,9 @@ class _GovernanceContext:
         review_gate: Optional[Any] = None,
         policy: Optional[Any] = None,
         loop_guard: Optional[Any] = None,
+        # S10-065: 执行开始时间 (wall-clock, time.monotonic) — max_execution_time
+        # 计时基准 (每任务执行前检查 elapsed; None → 不计时)
+        execution_started: Optional[float] = None,
     ) -> None:
         self.project_id = str(project_id or "")
         self.budget = budget
@@ -589,6 +595,9 @@ class _GovernanceContext:
         self.review_gate = review_gate
         self.policy = policy
         self.loop_guard = loop_guard
+        self._execution_started = (
+            float(execution_started) if execution_started is not None else None
+        )
         #: 单一停止信号 (队列消费; "" = 未停止)
         self.stop_status: str = ""
         self.stop_reason: str = ""
@@ -600,11 +609,55 @@ class _GovernanceContext:
     # ------------------------------------------------------------ 组件判定
 
     def _usage(self) -> BudgetUsage:
-        """已消耗量 (从 cost_ledger 记录聚合; 无 ledger → 空消耗)。"""
+        """已消耗量 (从 cost_ledger 记录聚合; 无 ledger → 空消耗)。
+
+        S10-065: budget.max_execution_time > 0 时 execution_time 维度以
+        wall-clock elapsed 覆盖 (max 取大 — 与 latency 聚合兼容, 时间维度
+        真正生效; 其余维度不变)。
+        """
         if self.cost_ledger is None:
-            return BudgetUsage.from_records([], budget=self.budget)
-        records = self.cost_ledger.records(self.project_id)
-        return BudgetUsage.from_records(records, budget=self.budget)
+            usage = BudgetUsage.from_records([], budget=self.budget)
+        else:
+            records = self.cost_ledger.records(self.project_id)
+            usage = BudgetUsage.from_records(records, budget=self.budget)
+        if (
+            self.budget is not None
+            and float(getattr(self.budget, "max_execution_time", 0.0) or 0.0) > 0
+        ):
+            usage.execution_time = max(
+                usage.execution_time, round(self.elapsed(), 4)
+            )
+        return usage
+
+    def elapsed(self) -> float:
+        """自执行开始累积秒数 (wall-clock; 未设置起点 → 0.0)。"""
+        if self._execution_started is None:
+            return 0.0
+        return max(0.0, time.monotonic() - self._execution_started)
+
+    def check_execution_time(self) -> Optional[dict[str, Any]]:
+        """执行时间闸 (S10-065, GAP G7): elapsed >= max_execution_time → 停止。
+
+        遵循 budget enforce 语义: 有 review_gate → request_review +
+        waiting_for_review; 无 gate → blocked。max_execution_time <= 0
+        (无限) → 不检查。返回停止信号 dict 或 None。
+        """
+        if self.budget is None:
+            return None
+        max_time = float(getattr(self.budget, "max_execution_time", 0.0) or 0.0)
+        if max_time <= 0:
+            return None
+        elapsed = self.elapsed()
+        if elapsed < max_time:
+            return None
+        return self._stop_review(
+            (
+                f"执行超时: 已执行 {elapsed:.2f}s >= max_execution_time "
+                f"{max_time:.2f}s — 停止执行 (budget:execution_time)"
+            ),
+            "budget:execution_time",
+            None,
+        )
 
     def check_budget(
         self, action: str, task: Optional[dict[str, Any]] = None
@@ -1144,6 +1197,8 @@ class ExecutionOrchestrator:
                 review_gate=review_gate,
                 policy=policy,
                 loop_guard=loop_guard,
+                # S10-065: max_execution_time 计时基准 (从执行开始累积)
+                execution_started=started,
             ),
         )
         result.duration = time.monotonic() - started
@@ -1623,9 +1678,13 @@ class ExecutionOrchestrator:
                 team_run.update_team_state(project_dir, task, "running")
             # S10-063: 治理预检 — 任务执行前 budget enforce("execute") + policy
             # can_execute (block/review → 停止队列; warn → 记录继续)
+            # S10-065: 执行时间闸优先 — elapsed >= max_execution_time → 停止
+            # (慢执行不再无限跑; 同 budget enforce 语义 blocked/waiting_for_review)
             if governance is not None:
-                stop = governance.check_budget("execute", task) or governance.check_policy(
-                    "execute", task
+                stop = (
+                    governance.check_execution_time()
+                    or governance.check_budget("execute", task)
+                    or governance.check_policy("execute", task)
                 )
                 if stop:
                     governance_stop = True
@@ -2338,7 +2397,7 @@ class ExecutionOrchestrator:
                     analysis = llm_analysis
                     if llm_trace is not None:
                         try:
-                            llm_trace.record(
+                            trace_rec = llm_trace.record(
                                 operation="analyze_gap",
                                 provider=getattr(llm_result, "provider", "llm") or "llm",
                                 model=getattr(llm_result, "model", "") or "",
@@ -2351,6 +2410,11 @@ class ExecutionOrchestrator:
                                 fallback_used=bool(getattr(llm_result, "fallback_used", False)),
                                 validation_result={"valid": True},
                                 final_decision="llm_gap",
+                            )
+                            # S10-065: planning trace 记录 → cost ledger 同步
+                            # (trace_id + final_decision 关联 — 成本可追溯)
+                            self._sync_planning_cost(
+                                governance, trace_rec, "GAP_ANALYSIS", task
                             )
                         except Exception:  # noqa: BLE001
                             pass
@@ -2461,7 +2525,7 @@ class ExecutionOrchestrator:
                         llm_proposal = llm_res.proposal
                         if llm_trace is not None:
                             try:
-                                llm_trace.record(
+                                trace_rec = llm_trace.record(
                                     operation="propose_task",
                                     provider=getattr(llm_res, "provider", "llm") or "llm",
                                     model=getattr(llm_res, "model", "") or "",
@@ -2474,6 +2538,10 @@ class ExecutionOrchestrator:
                                     fallback_used=bool(getattr(llm_res, "fallback_used", False)),
                                     validation_result={"valid": True},
                                     final_decision="llm_proposal",
+                                )
+                                # S10-065: planning trace 记录 → cost ledger 同步
+                                self._sync_planning_cost(
+                                    governance, trace_rec, "PLANNING", task
                                 )
                             except Exception:  # noqa: BLE001
                                 pass
@@ -2521,6 +2589,38 @@ class ExecutionOrchestrator:
         return signal
 
     # ------------------------------------------------------------ S10-061 资产/防重
+
+    @staticmethod
+    def _sync_planning_cost(
+        governance: Optional[Any],
+        trace_rec: Any,
+        purpose: str,
+        task: Optional[dict[str, Any]],
+    ) -> None:
+        """S10-065: planning trace 记录 → cost ledger 同步 (trace_id 关联)。
+
+        planning_trace 落盘后同步一条成本记录 (同 trace_id + final_decision
+        → planning_decision_id) — 回答"这次为什么花了这些钱"。失败安全:
+        无 governance/ledger/记录异常 → 不抛, 不中断执行流。
+        """
+        if governance is None or trace_rec is None or governance.cost_ledger is None:
+            return
+        try:
+            governance.cost_ledger.record(
+                {
+                    "project_id": governance.project_id,
+                    "task_id": str((task or {}).get("id") or ""),
+                    "agent_id": str((task or {}).get("agent") or ""),
+                    "purpose": str(purpose or "PLANNING"),
+                    "provider": str(trace_rec.get("provider") or ""),
+                    "model": str(trace_rec.get("model") or ""),
+                    "latency": float(trace_rec.get("latency") or 0.0),
+                },
+                trace_id=str(trace_rec.get("trace_id") or "") or None,
+                planning_decision_id=str(trace_rec.get("final_decision") or "") or None,
+            )
+        except Exception:  # noqa: BLE001 — 失败安全: 同步失败不中断执行流
+            pass
 
     @staticmethod
     def _gap_key(analysis: Any) -> str:

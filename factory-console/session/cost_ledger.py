@@ -1,4 +1,4 @@
-"""factory-console/session/cost_ledger.py — CostRecord + CostLedger (S10-063 批次 A)。
+"""factory-console/session/cost_ledger.py — CostRecord + CostLedger (S10-063 批次 A + S10-065 批次 C)。
 
 Production Governance (GAP G3/G4, 设计 §4): 统一 Cost/Usage 记录 — 关联
 project/sprint/task/agent/role/purpose/provider/model/tokens/cost/latency/
@@ -9,14 +9,20 @@ projects/<slug>/cost_records.json, 缺省 ~/.factory/cost/cost_records.json)。
 - CostRecord   — 单条成本记录 (全字段 + to_dict/from_dict; purpose 白名单
   PURPOSES: DISCOVERY/PLANNING/TASK_PROPOSAL/PLAN_CRITIC/EXECUTION/REPAIR/
   REPLANNING/GAP_ANALYSIS/OTHER, 未知 purpose 归一 OTHER)
-- CostLedger   — record (append 落盘, 失败安全) / records(project_id) 读回 /
-  aggregate (total_cost/total_tokens/by_purpose/by_agent/by_task/by_sprint/
+- CostLedger   — record (append 落盘, 失败安全; 可选 trace_id/planning_decision_id
+  关联 — S10-065) / records(project_id) 读回 /
+  aggregate (total_cost/total_tokens/by_purpose/by_agent/by_task/by_sprint/by_trace/
   planning/execution/repair/replanning 分项 + record_count) /
   estimate_cost (粗估 USD: 缺省 input=5e-7/token, output=1.5e-6/token;
-  provider 特定可扩展 PROVIDER_RATES) / for_project(project_dir)
+  provider 特定可扩展 PROVIDER_RATES) / cost_by_trace / cost_by_task /
+  cost_by_agent / cost_by_planning_decision (trace/task/agent/planning 决策
+  级成本查询 — S10-065 GAP G6) / for_project(project_dir)
 
 数据源复用: AgentRuntime usage (execution_records) → record;
 planning_trace token_usage → record (调用方转换, 本模块只记录/聚合)。
+S10-065 关联: orchestrator 执行时 planning_trace 记录 → 同步
+cost_ledger.record(trace_id=..., planning_decision_id=...) — 回答
+"这次为什么花了这些钱" (trace_id → planning 决策)。
 
 设计: docs/sprint10/S10-063-production-governance-design.md §4
 边界: 纯标准库 (json/pathlib/dataclasses/datetime), 零依赖, 不修改任何现有模块;
@@ -99,7 +105,9 @@ class CostRecord:
     project_id / sprint_id / task_id / agent_id / role / purpose /
     provider / model / input_tokens / output_tokens / total_tokens /
     estimated_cost (USD) / latency (秒) / timestamp (UTC ISO) /
-    parent_execution_id (审计关联 — GAP G8 基础)。
+    parent_execution_id (审计关联 — GAP G8 基础) / trace_id (S10-065:
+    PlanningTrace 轨迹关联 — 同一 planning 决策的成本可追溯) /
+    planning_decision_id (S10-065: planning 决策标识 — 决策级成本聚合)。
     """
 
     project_id: str = ""
@@ -117,6 +125,9 @@ class CostRecord:
     latency: float = 0.0
     timestamp: str = ""
     parent_execution_id: str = ""
+    # S10-065: PlanningTrace 关联 (trace_id + planning 决策标识 — 可选, 缺省 "")
+    trace_id: str = ""
+    planning_decision_id: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         """→ dict (落盘 cost_records.json / 聚合输入)。"""
@@ -136,6 +147,8 @@ class CostRecord:
             "latency": float(self.latency),
             "timestamp": self.timestamp,
             "parent_execution_id": self.parent_execution_id,
+            "trace_id": self.trace_id,
+            "planning_decision_id": self.planning_decision_id,
         }
 
     @classmethod
@@ -170,18 +183,23 @@ class CostRecord:
             latency=float(data.get("latency") or 0.0),
             timestamp=str(data.get("timestamp") or ""),
             parent_execution_id=str(data.get("parent_execution_id") or ""),
+            trace_id=str(data.get("trace_id") or ""),
+            planning_decision_id=str(data.get("planning_decision_id") or ""),
         )
 
 
 class CostLedger:
     """成本账本 (设计 §4): record → cost_records.json (append)。
 
-    record(cost) — CostRecord 或 dict → 归一化 dict (purpose 校验/时间戳兜底),
-    append 落盘 (失败安全, 不抛; 即使落盘失败也返回记录);
+    record(cost, trace_id=None, planning_decision_id=None) — CostRecord 或 dict
+    → 归一化 dict (purpose 校验/时间戳兜底 + 可选 trace_id/planning_decision_id
+    关联 — S10-065), append 落盘 (失败安全, 不抛; 即使落盘失败也返回记录);
     records(project_id=None) — 读回全部/按项目过滤 (失败安全 → []);
     aggregate(project_id=None) — 聚合 {total_cost, total_tokens, by_purpose,
-    by_agent, by_task, by_sprint, planning_cost, execution_cost, repair_cost,
-    replanning_cost, record_count};
+    by_agent, by_task, by_sprint, by_trace, planning_cost, execution_cost,
+    repair_cost, replanning_cost, record_count};
+    cost_by_trace/cost_by_task/cost_by_agent/cost_by_planning_decision —
+    单维成本查询 (USD, 失败安全 → 0.0);
     estimate_cost(input_tokens, output_tokens, provider, model) — 粗估 USD;
     for_project(project_dir) — 项目级账本实例 (projects/<slug>/cost_records.json)。
     """
@@ -193,10 +211,18 @@ class CostLedger:
 
     # ------------------------------------------------------------ record
 
-    def record(self, cost: Any) -> dict[str, Any]:
+    def record(
+        self,
+        cost: Any,
+        trace_id: Optional[str] = None,
+        planning_decision_id: Optional[str] = None,
+    ) -> dict[str, Any]:
         """记录一条成本 (CostRecord 或 dict) — append 落盘, 返回归一化 dict。
 
-        失败安全: 落盘异常不抛; timestamp 缺省 → now (UTC ISO)。
+        trace_id / planning_decision_id (S10-065): 可选关联 — PlanningTrace
+        记录后同步成本 (回答"为什么花这些钱"); None → 不写 (向后兼容,
+        无 trace_id 调用字节不变)。失败安全: 落盘异常不抛; timestamp 缺省
+        → now (UTC ISO)。
         """
         if isinstance(cost, CostRecord):
             rec = cost.to_dict()
@@ -204,6 +230,10 @@ class CostLedger:
             rec = dict(cost)
         else:
             rec = {}
+        if trace_id is not None:
+            rec["trace_id"] = str(trace_id)
+        if planning_decision_id is not None:
+            rec["planning_decision_id"] = str(planning_decision_id)
         rec = CostRecord.from_dict(rec).to_dict()
         if not rec["timestamp"]:
             rec["timestamp"] = _now_iso()
@@ -223,7 +253,8 @@ class CostLedger:
 
     def aggregate(self, project_id: Optional[str] = None) -> dict[str, Any]:
         """聚合 (设计 §4 分项): total / by_purpose / by_agent / by_task /
-        by_sprint / planning|execution|repair|replanning_cost。
+        by_sprint / by_trace (S10-065: trace 级成本) / planning|execution|
+        repair|replanning_cost。
 
         planning_cost 口径 = DISCOVERY+PLANNING+TASK_PROPOSAL+PLAN_CRITIC+
         GAP_ANALYSIS (PLANNING_PURPOSES); execution=EXECUTION;
@@ -236,6 +267,7 @@ class CostLedger:
         by_agent: dict[str, dict[str, Any]] = {}
         by_task: dict[str, dict[str, Any]] = {}
         by_sprint: dict[str, dict[str, Any]] = {}
+        by_trace: dict[str, dict[str, Any]] = {}
         planning_cost = execution_cost = repair_cost = replanning_cost = 0.0
         for r in records:
             cost = float(r.get("estimated_cost") or 0.0)
@@ -250,6 +282,8 @@ class CostLedger:
                 self._bump(by_task, str(r["task_id"]), cost, tokens)
             if r.get("sprint_id"):
                 self._bump(by_sprint, str(r["sprint_id"]), cost, tokens)
+            if r.get("trace_id"):
+                self._bump(by_trace, str(r["trace_id"]), cost, tokens)
             if purpose in PLANNING_PURPOSES:
                 planning_cost += cost
             elif purpose == PURPOSE_EXECUTION:
@@ -266,6 +300,7 @@ class CostLedger:
             "by_agent": by_agent,
             "by_task": by_task,
             "by_sprint": by_sprint,
+            "by_trace": by_trace,
             "planning_cost": round(planning_cost, 6),
             "execution_cost": round(execution_cost, 6),
             "repair_cost": round(repair_cost, 6),
@@ -283,6 +318,40 @@ class CostLedger:
         item["cost"] = round(item["cost"] + cost, 6)
         item["tokens"] += int(tokens)
         item["calls"] += 1
+
+    # ------------------------------------------------------------ cost_by_*
+
+    def cost_by_trace(self, trace_id: Any) -> float:
+        """trace 级成本 (USD, S10-065): trace_id 匹配记录 estimated_cost 合计。
+
+        失败安全: 空/无匹配 → 0.0。
+        """
+        return self._cost_sum(str(trace_id or ""), "trace_id")
+
+    def cost_by_task(self, task_id: Any) -> float:
+        """task 级成本 (USD): task_id 匹配记录 estimated_cost 合计 (失败安全 → 0.0)。"""
+        return self._cost_sum(str(task_id or ""), "task_id")
+
+    def cost_by_agent(self, agent_id: Any) -> float:
+        """agent 级成本 (USD): agent_id 匹配记录 estimated_cost 合计 (失败安全 → 0.0)。"""
+        return self._cost_sum(str(agent_id or ""), "agent_id")
+
+    def cost_by_planning_decision(self, planning_decision_id: Any) -> float:
+        """planning 决策级成本 (USD, S10-065): planning_decision_id 匹配记录合计。
+
+        失败安全: 空/无匹配 → 0.0。
+        """
+        return self._cost_sum(str(planning_decision_id or ""), "planning_decision_id")
+
+    def _cost_sum(self, key: str, field: str) -> float:
+        """单维成本合计 (失败安全: 空 key/无匹配 → 0.0)。"""
+        if not key:
+            return 0.0
+        total = 0.0
+        for r in self.load():
+            if str(r.get(field) or "") == key:
+                total += float(r.get("estimated_cost") or 0.0)
+        return round(total, 6)
 
     # ------------------------------------------------------------ estimate
 

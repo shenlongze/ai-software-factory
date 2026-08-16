@@ -1,11 +1,14 @@
-"""factory-console/session/budget.py — ProjectBudget + BudgetUsage + BudgetEnforcer (S10-063 批次 A)。
+"""factory-console/session/budget.py — ProjectBudget + BudgetUsage + BudgetEnforcer (S10-063 批次 A + S10-065 批次 C)。
 
 Production Governance (GAP G1/G2, 设计 §2-§3): 项目级总预算模型 + 执行闸。
 - ProjectBudget — 总预算 (token/cost/calls/replans/retries/repairs/task_count/
   execution_time/concurrent_agents + warn/review 比例; 0=无限, 但
   max_replans=5 / max_retries=1 / max_repairs=2 / max_concurrent_agents=1 有缺省值)
 - BudgetUsage    — 已消耗量 (from_records 从 CostRecord 列表聚合) + spent/
-  remaining/ratio (消耗比 — 取所有有界维度最高值, 无界维度不参与)
+  remaining/ratio (消耗比 — 取所有有界维度最高值, 无界维度不参与);
+  execution_time 维度 (S10-065): from_records 聚合 sum(latency),
+  orchestrator _GovernanceContext._usage 以 wall-clock elapsed 覆盖
+  (max 取大 — 执行时间维度真正生效, GAP G7)
 - BudgetEnforcer — check(budget, usage) → {level: ok|warn|review|block, reason,
   usage, ratio}: 80%→WARN (继续) / 90%→REVIEW (停止等审批) / 100%→BLOCK (禁止);
   enforce(budget, usage, action) → {allowed, level, reason}: 任何 action

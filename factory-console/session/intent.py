@@ -70,6 +70,13 @@ INTENT_PRODUCT_MARKET = "product_market"
 INTENT_PRODUCT_PERSONA = "product_persona"
 INTENT_PRODUCT_MVP = "product_mvp"
 INTENT_PRODUCT_VALUE = "product_value"
+#: S10-067: Memory Learning 意图 (经验搜索/学习/统计/Agent 画像/导出 — 完整
+#: 学习循环的 CLI 入口: 提取 → 学习 → 检索 → 推荐 → 影响未来)
+INTENT_MEMORY_SEARCH = "memory_search"
+INTENT_MEMORY_LEARN = "memory_learn"
+INTENT_MEMORY_STATS = "memory_stats"
+INTENT_MEMORY_ANALYZE_AGENT = "memory_analyze_agent"
+INTENT_MEMORY_EXPORT = "memory_export"
 
 #: KeywordIntentParser 关键词规则表 (顺序 = 优先级, 确定性无歧义):
 #: (关键词元组, intent_type, 参数键 — 命中后取关键词后剩余文本作为参数值)
@@ -124,6 +131,19 @@ _KEYWORD_RULES: tuple[tuple[tuple[str, ...], str, Optional[str]], ...] = (
     (("产品画像", "用户画像"), INTENT_PRODUCT_PERSONA, None),
     (("MVP规划", "MVP拆分", "MVP计划"), INTENT_PRODUCT_MVP, None),
     (("产品价值", "价值评分"), INTENT_PRODUCT_VALUE, None),
+    # S10-067: Memory Learning 意图 (经验智能 — 纯新增, 旧关键词不动)。
+    # 优先级在 create_product ("我想"/"产品") 与 create_project ("创建") 之前:
+    # "我想搜索经验" 不被 "我想" 抢; "学习" 不与 run_task (写/修复/实现/加)
+    # 共享子串; "分析Agent" 不与其他 "分析" 类规则冲突 (无裸 "分析" 规则)。
+    (("搜索经验", "查找经验", "查经验"), INTENT_MEMORY_SEARCH, "query"),
+    (("学习经验", "经验学习", "学习"), INTENT_MEMORY_LEARN, None),
+    (("经验统计",), INTENT_MEMORY_STATS, None),
+    (
+        ("分析Agent", "分析agent", "Agent成长", "agent成长", "Agent分析", "agent分析"),
+        INTENT_MEMORY_ANALYZE_AGENT,
+        "agent_id",
+    ),
+    (("导出经验",), INTENT_MEMORY_EXPORT, None),
     # S10-050 P1: 产品意图 (想法级) — "我想/做一款/产品/想法/创业" → create_product
     # (idea 参数 = 关键词后剩余文本; 优先级在 run_task/show_status 之后,
     #  "我想看看状态" → show_status、"我想加个功能" → run_task 不被抢)

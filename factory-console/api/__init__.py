@@ -37,6 +37,13 @@ from .mcp_api import (
     list_mcp_connections,
     list_mcp_tools,
 )
+from .memory import (
+    memory_agent,
+    memory_export,
+    memory_learn,
+    memory_search,
+    memory_stats,
+)
 from .projects import (
     complete_discovery,
     confirm_project_route,
@@ -160,6 +167,11 @@ __all__ = [
     "list_sprints",
     "list_tools",
     "list_workflows",
+    "memory_agent",
+    "memory_export",
+    "memory_learn",
+    "memory_search",
+    "memory_stats",
     "plan_sprint",
     "product_intelligence_analyze",
     "product_market_analysis",

@@ -1956,6 +1956,161 @@ def product_value(context: ExecutionContext) -> ActionResult:
         return ActionResult(ok=False, status=STATUS_ERROR,
                             message=f"价值评分失败: {exc}", error=str(exc))
 
+# ================================================================== S10-067 Memory Learning CLI
+
+def _memory_params(context) -> dict:
+    """取 memory action 参数 (intent.params 优先; 兼容测试 FakeContext.params)。"""
+    intent = getattr(context, "intent", None)
+    if intent is not None and getattr(intent, "params", None):
+        return intent.params
+    return getattr(context, "params", None) or {}
+
+
+def _memory_workspace(context) -> Path:
+    """memory action 工作区 (context.workspace 缺省 → ~/.factory)。"""
+    return Path(getattr(context, "workspace", None) or DEFAULT_WORKSPACE)
+
+
+def _memory_lines(records: list, header: str, limit: int = 20) -> list[str]:
+    """经验记录 → 展示行 (类型/问题/结果/置信)。"""
+    lines = [f"{header} ({len(records)} 条):"]
+    for r in records[:limit]:
+        subject = r.problem or r.task or "(无问题)"
+        outcome = r.result or r.action or "-"
+        lines.append(f"• [{r.type}] {subject} → {outcome} (conf {r.confidence})")
+    if not records:
+        lines.append("无记录。")
+    return lines
+
+
+def memory_search(context: ExecutionContext) -> ActionResult:
+    """经验检索 (S10-067): "搜索经验/查找经验" → 关键词检索 (query/type 参数)。"""
+    context.require("user")
+    params = _memory_params(context)
+    query = str(params.get("query") or "")
+    record_type = params.get("type") or None
+    try:
+        from ..memory.experience_store import ExperienceStore
+        from ..memory.retrieval import ExperienceRetriever
+        ws = _memory_workspace(context)
+        retriever = ExperienceRetriever(ExperienceStore.from_workspace(ws))
+        hits = retriever.search(query=query, type=str(record_type) if record_type else None)
+        lines = _memory_lines(hits, f"经验检索「{query}」" if query else "全部经验")
+        return ActionResult(ok=True, status=STATUS_OK, message="\n".join(lines))
+    except Exception as exc:  # noqa: BLE001 — 失败安全
+        return ActionResult(ok=False, status=STATUS_ERROR,
+                            message=f"经验检索失败: {exc}", error=str(exc))
+
+
+def memory_learn(context: ExecutionContext) -> ActionResult:
+    """触发学习 (S10-067): "学习经验/经验学习" → 提取 → 模式/Agent 画像 → 审计。"""
+    context.require("user")
+    try:
+        from ..memory.learning_engine import LearningEngine
+        ws = _memory_workspace(context)
+        result = LearningEngine(workspace=ws).run(ws)
+        lines = [
+            f"学习完成: 提取 {result.extracted_count} 条经验"
+            f" → {len(result.patterns)} 个模式 + {len(result.agent_profiles)} 个 Agent 画像",
+        ]
+        for p in result.patterns[:10]:
+            lines.append(f"• 模式 {p['pattern_id']}: {p['description']} (conf {p['confidence']})")
+        for a in result.agent_profiles[:10]:
+            lines.append(
+                f"• Agent {a['agent_id']}: {a['total_tasks']} 任务, "
+                f"成功率 {a['success_rate']:.0%}"
+            )
+        return ActionResult(ok=True, status=STATUS_OK, message="\n".join(lines))
+    except Exception as exc:  # noqa: BLE001 — 失败安全
+        return ActionResult(ok=False, status=STATUS_ERROR,
+                            message=f"经验学习失败: {exc}", error=str(exc))
+
+
+def memory_stats(context: ExecutionContext) -> ActionResult:
+    """经验统计 (S10-067): "经验统计" → 按类型/成功/Agent 统计。"""
+    context.require("user")
+    try:
+        from ..memory.experience_store import ExperienceStore
+        ws = _memory_workspace(context)
+        stats = ExperienceStore.from_workspace(ws).stats()
+        lines = [f"经验统计 (共 {stats['total']} 条):"]
+        by_type = stats["by_type"] or {}
+        if by_type:
+            lines.append("按类型: " + ", ".join(f"{k}={v}" for k, v in by_type.items()))
+        else:
+            lines.append("按类型: 无")
+        lines.append(f"按结果: 成功 {stats['by_success']['success']}, "
+                     f"失败 {stats['by_success']['failed']}")
+        by_agent = stats["by_agent"] or {}
+        if by_agent:
+            lines.append("按Agent: " + ", ".join(f"{k}={v}" for k, v in by_agent.items()))
+        return ActionResult(ok=True, status=STATUS_OK, message="\n".join(lines))
+    except Exception as exc:  # noqa: BLE001 — 失败安全
+        return ActionResult(ok=False, status=STATUS_ERROR,
+                            message=f"经验统计失败: {exc}", error=str(exc))
+
+
+def memory_analyze_agent(context: ExecutionContext) -> ActionResult:
+    """Agent 画像 (S10-067): "分析Agent/Agent成长" → 能力画像 (agent_id 参数)。"""
+    context.require("user")
+    params = _memory_params(context)
+    agent_id = str(params.get("agent_id") or "").strip()
+    try:
+        from ..memory.experience_store import ExperienceStore
+        from ..memory.extraction import ExperienceExtractor
+        from ..memory.learning_engine import PatternLearner
+        ws = _memory_workspace(context)
+        records = ExperienceExtractor.extract_all(ws)
+        profiles = PatternLearner().learn_agent(records)
+        if not agent_id and profiles:
+            agent_id = profiles[0].agent_id
+        profile = next((p for p in profiles if p.agent_id == agent_id), None)
+        if profile is None:
+            return ActionResult(
+                ok=False, status=STATUS_ERROR,
+                message=f"未找到 Agent {agent_id!r} 的经验画像 (共 {len(profiles)} 个画像)",
+                error="agent profile not found",
+            )
+        lines = [
+            f"Agent 画像: {profile.agent_id} ({profile.role or '角色未知'})",
+            f"任务数: {profile.total_tasks} | 成功: {profile.success_count} "
+            f"| 成功率: {profile.success_rate:.0%}",
+        ]
+        if profile.common_problems:
+            lines.append("常见问题: " + "; ".join(profile.common_problems[:3]))
+        if profile.best_domains:
+            lines.append("最佳领域: " + ", ".join(profile.best_domains[:5]))
+        return ActionResult(ok=True, status=STATUS_OK, message="\n".join(lines))
+    except Exception as exc:  # noqa: BLE001 — 失败安全
+        return ActionResult(ok=False, status=STATUS_ERROR,
+                            message=f"Agent 画像失败: {exc}", error=str(exc))
+
+
+def memory_export(context: ExecutionContext) -> ActionResult:
+    """导出经验 (S10-067): "导出经验" → 全量经验 → workspace/memory/experience_export.json。"""
+    context.require("user")
+    try:
+        from ..memory.experience_store import ExperienceStore
+        import json as _json
+        ws = _memory_workspace(context)
+        store = ExperienceStore.from_workspace(ws)
+        export_path = store.path.parent / "experience_export.json"
+        export_path.parent.mkdir(parents=True, exist_ok=True)
+        export_path.write_text(
+            _json.dumps([r.to_dict() for r in store.records()],
+                        ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        return ActionResult(
+            ok=True, status=STATUS_OK,
+            message=f"已导出 {len(store.records())} 条经验 → {export_path}",
+            data={"count": len(store.records()), "path": str(export_path)},
+        )
+    except Exception as exc:  # noqa: BLE001 — 失败安全
+        return ActionResult(ok=False, status=STATUS_ERROR,
+                            message=f"经验导出失败: {exc}", error=str(exc))
+
+
 def build_default_actions() -> ActionRegistry:
     """装配默认 Action 注册表 (注册式 — 新增 Action 只需 register 一行)。"""
     registry = ActionRegistry()
@@ -2358,6 +2513,57 @@ def build_default_actions() -> ActionRegistry:
             permission="user",
             metadata={"service": "ProductIntelligenceEngine", "phase": "S10-066",
                       "sensitive": False, "category": "product"},
+        )
+    )
+    # S10-067: Memory Learning CLI (factory memory * — 经验智能)
+    registry.register(
+        Action(
+            name="memory_search",
+            description="经验检索 (搜索经验/查找经验 → 关键词检索)",
+            handler=memory_search,
+            permission="user",
+            metadata={"service": "ExperienceRetriever", "phase": "S10-067",
+                      "sensitive": False, "category": "memory"},
+        )
+    )
+    registry.register(
+        Action(
+            name="memory_learn",
+            description="学习经验 (学习经验/经验学习 → 提取 + 模式 + Agent 画像)",
+            handler=memory_learn,
+            permission="user",
+            metadata={"service": "LearningEngine", "phase": "S10-067",
+                      "sensitive": False, "category": "memory"},
+        )
+    )
+    registry.register(
+        Action(
+            name="memory_stats",
+            description="经验统计 (经验统计 → 按类型/成功/Agent)",
+            handler=memory_stats,
+            permission="user",
+            metadata={"service": "ExperienceStore.stats", "phase": "S10-067",
+                      "sensitive": False, "category": "memory"},
+        )
+    )
+    registry.register(
+        Action(
+            name="memory_analyze_agent",
+            description="Agent 成长分析 (分析Agent/Agent成长 → 能力画像)",
+            handler=memory_analyze_agent,
+            permission="user",
+            metadata={"service": "PatternLearner.learn_agent", "phase": "S10-067",
+                      "sensitive": False, "category": "memory"},
+        )
+    )
+    registry.register(
+        Action(
+            name="memory_export",
+            description="导出经验 (导出经验 → experience_export.json)",
+            handler=memory_export,
+            permission="user",
+            metadata={"service": "ExperienceStore", "phase": "S10-067",
+                      "sensitive": False, "category": "memory"},
         )
     )
     return registry

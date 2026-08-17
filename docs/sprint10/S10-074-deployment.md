@@ -120,7 +120,8 @@ Python ≥3.12 | 数据 ~/.factory | 配置三级 (env > .env > config.json)
 ## 26. Full Regression
 
 ```
-等待完整结果 (后台运行中)
+全量: 11705 passed + 1 skipped, 0 failed (11698 → +7, 零回归)
+console+api: 4449 passed (修复 64 failed + 156 errors 至 0)
 新增: 7 (deployment 测试)
 ```
 
@@ -153,5 +154,7 @@ Audit ✅ | Memory ✅ | Docs ✅
 b3b7a34 S10-074: audit deployment requirements
 55816ec S10-074: implement production packaging + startup/health contract
 9f0e73f S10-074: add deployment tests + release documentation
-git clean, HEAD = origin/main
+ccb439e S10-074: deployment completion report
+648662f S10-074: fix dual-mode console import (full regression green)
+git clean, HEAD = 648662f = origin/main
 ```

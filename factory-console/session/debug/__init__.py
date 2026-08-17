@@ -105,18 +105,23 @@ class DebugCase:
 
 @dataclass
 class RootCause:
-    """根因分析结果 (G2): cause/evidence/confidence + related_experience。
+    """根因分析结果 (G2 + Part 2 G9): cause/evidence/confidence + related_experience
+    + root_cause_type (9 类) + reasoning_summary。
 
     cause:              根因假设 (自然语言)
     evidence:           证据 (匹配关键词/错误类型/历史经验 — list[str])
     confidence:         置信度 0-1 (规则确定性 + 经验加成)
     related_experience: 关联历史经验 (ExperienceRecord.to_dict() | None)
+    root_cause_type:    根因类型 (Part 2 G9 — CODE_DEFECT/TEST_DEFECT/.../UNKNOWN)
+    reasoning_summary:  推理摘要 (为什么归为这个根因类型 — Audit-ready)
     """
 
     cause: str
     evidence: list[str] = field(default_factory=list)
     confidence: float = 0.5
     related_experience: Optional[Any] = None
+    root_cause_type: str = "UNKNOWN"
+    reasoning_summary: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         """序列化 (related_experience 有 to_dict → dict, 否则原样)。"""
@@ -128,6 +133,8 @@ class RootCause:
             "evidence": list(self.evidence),
             "confidence": self.confidence,
             "related_experience": exp,
+            "root_cause_type": self.root_cause_type,
+            "reasoning_summary": self.reasoning_summary,
         }
 
     @classmethod
@@ -149,6 +156,8 @@ class RootCause:
             evidence=[str(e) for e in evidence],
             confidence=max(0.0, min(1.0, confidence)),
             related_experience=data.get("related_experience"),
+            root_cause_type=str(data.get("root_cause_type") or "UNKNOWN"),
+            reasoning_summary=str(data.get("reasoning_summary") or ""),
         )
 
 
@@ -248,6 +257,13 @@ class DebugDecision:
 
 
 __all__ = [
+    "ContextBudget",
+    "DebugAttempt",
+    "DebugPipeline",
+    "DebugRetrievalPolicy",
+    "DebugSession",
+    "DebugSessionStore",
+    "DebugTrace",
     "ERROR_API_CONTRACT",
     "ERROR_ASSERTION",
     "ERROR_AUTH",
@@ -258,6 +274,18 @@ __all__ = [
     "ERROR_TIMEOUT",
     "ERROR_TYPES",
     "ERROR_UNKNOWN",
+    "RepairSafety",
+    "SESSION_ANALYZING",
+    "SESSION_BLOCKED",
+    "SESSION_REPAIRING",
+    "SESSION_RETRYING",
+    "SESSION_ROOT_CAUSE_IDENTIFIED",
+    "SESSION_STATUSES",
+    "SESSION_STRATEGY_SELECTED",
+    "SESSION_SUCCESS",
+    "SESSION_VALIDATING",
+    "SESSION_WAITING_FOR_REVIEW",
+    "StrategyAdapter",
     "DebugCase",
     "DebugDecision",
     "DebugEngine",
@@ -273,3 +301,35 @@ def DebugEngine(*args: Any, **kwargs: Any) -> Any:
     from .debug_engine import DebugEngine as _DebugEngine
 
     return _DebugEngine(*args, **kwargs)
+
+
+# ---------------------------------------------------------------- Part 2 模块再导出
+# 置于全部数据模型定义之后 — 子模块 `from . import ...` 依赖本包已定义的名字
+
+from .context_budget import ContextBudget  # noqa: E402
+from .debug_session import (  # noqa: E402
+    SESSION_ANALYZING,
+    SESSION_BLOCKED,
+    SESSION_REPAIRING,
+    SESSION_RETRYING,
+    SESSION_ROOT_CAUSE_IDENTIFIED,
+    SESSION_STATUSES,
+    SESSION_STRATEGY_SELECTED,
+    SESSION_SUCCESS,
+    SESSION_VALIDATING,
+    SESSION_WAITING_FOR_REVIEW,
+    DebugAttempt,
+    DebugSession,
+    DebugSessionStore,
+)
+from .debug_trace import DebugTrace  # noqa: E402
+from .repair_safety import RepairSafety  # noqa: E402
+from .retrieval_policy import DebugRetrievalPolicy  # noqa: E402
+from .strategy_adaptation import StrategyAdapter  # noqa: E402
+
+
+def DebugPipeline(*args: Any, **kwargs: Any) -> Any:
+    """DebugPipeline 惰性实例化 (避免 debug_pipeline 循环依赖)。"""
+    from .debug_pipeline import DebugPipeline as _DebugPipeline
+
+    return _DebugPipeline(*args, **kwargs)

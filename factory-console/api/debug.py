@@ -7,11 +7,22 @@
 - debug_recommend: POST /api/debug/recommend {error_message, workspace?} → 策略推荐 (简版)
 - debug_history:   GET  /api/debug/history   {workspace?, limit?} → [DebugCase 历史]
 - debug_stats:     GET  /api/debug/stats     {workspace?} → 统计
+- debug_session:   POST /api/debug/session   {error_message, project_id?, task_id?,
+                   agent_id?, failure_id?, context?, workspace?} → DebugSession (Part 2)
+- debug_root_cause: POST /api/debug/root-cause {error_message, task_id?, workspace?}
+                   → RootCause (9 类根因, Part 2)
+- debug_repair:    POST /api/debug/repair   {debug_id, workspace?, max_attempts?}
+                   → DebugSession (治理闸后执行修复, Part 2)
+- debug_validate:  POST /api/debug/validate {debug_id, workspace?, result?,
+                   validation_command?} → DebugSession (PASS→SUCCESS, Part 2)
+- debug_resume:    POST /api/debug/resume   {debug_id, workspace?, decision?}
+                   → DebugSession (REVIEW 通过后继续, Part 2)
 
 错误语义 (失败安全铁律): 输入非法 (error_message 为空) / 引擎异常 →
 {"ok": False, "error": str} — 绝不裸抛。
 
 设计: docs/sprint10/S10-068-debug-intelligence-design.md §8
+      docs/sprint10/S10-068-part2-design.md §11
 """
 
 from __future__ import annotations
@@ -22,19 +33,29 @@ from typing import Any, Optional
 from pydantic import BaseModel, Field
 
 from ..memory.experience_store import DEFAULT_WORKSPACE
-from ..session.debug import DebugCase, DebugEngine
+from ..session.debug import DebugCase, DebugEngine, DebugPipeline
 from ..session.debug.error_analysis import ErrorAnalyzer
 
 __all__ = [
     "DebugAnalyzeRequest",
     "DebugHistoryRequest",
     "DebugRecommendRequest",
+    "DebugRepairRequest",
+    "DebugResumeRequest",
     "DebugResponse",
+    "DebugRootCauseRequest",
+    "DebugSessionRequest",
     "DebugStatsRequest",
+    "DebugValidateRequest",
     "debug_analyze",
     "debug_history",
     "debug_recommend",
+    "debug_repair",
+    "debug_resume",
+    "debug_root_cause",
+    "debug_session",
     "debug_stats",
+    "debug_validate",
 ]
 
 
@@ -70,6 +91,51 @@ class DebugStatsRequest(BaseModel):
     """GET /api/debug/stats 请求体: workspace。"""
 
     workspace: Optional[str] = None
+
+
+class DebugSessionRequest(BaseModel):
+    """POST /api/debug/session 请求体 (Part 2): 开始自主调试会话。"""
+
+    error_message: str = ""
+    project_id: Optional[str] = None
+    task_id: Optional[str] = None
+    agent_id: Optional[str] = None
+    failure_id: Optional[str] = None
+    context: Optional[str] = None
+    workspace: Optional[str] = None
+
+
+class DebugRootCauseRequest(BaseModel):
+    """POST /api/debug/root-cause 请求体 (Part 2): 根因分析 (9 类)。"""
+
+    error_message: str = ""
+    task_id: Optional[str] = None
+    workspace: Optional[str] = None
+
+
+class DebugRepairRequest(BaseModel):
+    """POST /api/debug/repair 请求体 (Part 2): 治理闸后执行修复。"""
+
+    debug_id: str = ""
+    workspace: Optional[str] = None
+    max_attempts: int = Field(default=3, ge=1, le=20)
+
+
+class DebugValidateRequest(BaseModel):
+    """POST /api/debug/validate 请求体 (Part 2): 验证修复结果。"""
+
+    debug_id: str = ""
+    workspace: Optional[str] = None
+    result: Optional[Any] = None
+    validation_command: Optional[str] = None
+
+
+class DebugResumeRequest(BaseModel):
+    """POST /api/debug/resume 请求体 (Part 2): REVIEW 通过后继续调试。"""
+
+    debug_id: str = ""
+    workspace: Optional[str] = None
+    decision: str = "approved"
 
 
 class DebugResponse(BaseModel):
@@ -178,3 +244,127 @@ def debug_stats(workspace: Any = None) -> dict[str, Any]:
         return _to_response(engine.stats(_workspace(workspace)))
     except Exception as exc:  # noqa: BLE001 — 失败安全铁律
         return _to_response(None, f"调试统计失败: {exc}")
+
+
+# ---------------------------------------------------------------- 5 新端点 (Part 2)
+
+def debug_session(
+    error_message: str = "",
+    project_id: Optional[str] = None,
+    task_id: Optional[str] = None,
+    agent_id: Optional[str] = None,
+    failure_id: Optional[str] = None,
+    context: Optional[str] = None,
+    workspace: Any = None,
+) -> dict[str, Any]:
+    """POST /api/debug/session (Part 2) — 开始自主调试会话。
+
+    {error_message, project_id?, task_id?, agent_id?, failure_id?, context?,
+    workspace?} → {ok, data: DebugSession.to_dict(), error}。
+    """
+    try:
+        message = _require_message(error_message)
+        pipeline = DebugPipeline(_workspace(workspace))
+        session = pipeline.start(
+            project_id=project_id or "",
+            task_id=task_id or "",
+            agent_id=agent_id or "",
+            error_message=message,
+            failure_id=failure_id or "",
+            context=context or "",
+        )
+        return _to_response(session.to_dict())
+    except Exception as exc:  # noqa: BLE001 — 失败安全铁律
+        return _to_response(None, f"调试会话启动失败: {exc}")
+
+
+def debug_root_cause(
+    error_message: str = "",
+    task_id: Optional[str] = None,
+    workspace: Any = None,
+) -> dict[str, Any]:
+    """POST /api/debug/root-cause (Part 2) — 根因分析 (9 类根因类型)。
+
+    {error_message, task_id?, workspace?} → {ok, data: RootCause.to_dict()
+    (含 root_cause_type/reasoning_summary), error}。
+    """
+    try:
+        message = _require_message(error_message)
+        pipeline = DebugPipeline(_workspace(workspace))
+        case = pipeline.engine.analyzer.extract(message, task_id=task_id or "")
+        root = pipeline.engine.root_cause_analyzer.analyze(case)
+        return _to_response(root.to_dict())
+    except Exception as exc:  # noqa: BLE001 — 失败安全铁律
+        return _to_response(None, f"根因分析失败: {exc}")
+
+
+def debug_repair(
+    debug_id: str = "",
+    workspace: Any = None,
+    max_attempts: int = 3,
+    budget: Any = None,
+) -> dict[str, Any]:
+    """POST /api/debug/repair (Part 2) — 治理闸后执行修复。
+
+    {debug_id, workspace?, max_attempts?, budget?} → {ok, data:
+    DebugSession.to_dict()} (AUTO/SAFE_AUTO → REPAIRING+VALIDATING;
+    REVIEW → WAITING_FOR_REVIEW; BLOCKED → BLOCKED; 未知 debug_id → 错误)。
+    """
+    try:
+        pipeline = DebugPipeline(_workspace(workspace))
+        session = pipeline.store.get(debug_id)
+        if session is None:
+            return _to_response(None, f"调试会话不存在: {debug_id}")
+        if session.status == "ANALYZING":
+            session = pipeline.analyze(session)
+        session = pipeline.repair(session, max_attempts=max_attempts, budget=budget)
+        return _to_response(session.to_dict())
+    except Exception as exc:  # noqa: BLE001 — 失败安全铁律
+        return _to_response(None, f"调试修复失败: {exc}")
+
+
+def debug_validate(
+    debug_id: str = "",
+    workspace: Any = None,
+    result: Any = None,
+    validation_command: Optional[str] = None,
+) -> dict[str, Any]:
+    """POST /api/debug/validate (Part 2) — 验证修复 (PASS→SUCCESS/FAIL→RETRYING)。
+
+    {debug_id, workspace?, result? (bool/dict/str), validation_command?} →
+    {ok, data: DebugSession.to_dict(), error}。result 缺省 → 用会话验证结果。
+    """
+    try:
+        pipeline = DebugPipeline(_workspace(workspace))
+        session = pipeline.store.get(debug_id)
+        if session is None:
+            return _to_response(None, f"调试会话不存在: {debug_id}")
+        session = pipeline.validate(
+            session,
+            validation_command=validation_command or "",
+            result=result,
+        )
+        return _to_response(session.to_dict())
+    except Exception as exc:  # noqa: BLE001 — 失败安全铁律
+        return _to_response(None, f"调试验证失败: {exc}")
+
+
+def debug_resume(
+    debug_id: str = "",
+    workspace: Any = None,
+    decision: str = "approved",
+) -> dict[str, Any]:
+    """POST /api/debug/resume (Part 2) — REVIEW 通过后继续调试。
+
+    {debug_id, workspace?, decision? ("approved"/"rejected")} → {ok, data:
+    DebugSession.to_dict(), error} (approved → REPAIRING 继续; rejected → BLOCKED)。
+    """
+    try:
+        pipeline = DebugPipeline(_workspace(workspace))
+        session = pipeline.store.get(debug_id)
+        if session is None:
+            return _to_response(None, f"调试会话不存在: {debug_id}")
+        session = pipeline.resume(session, decision=decision or "approved")
+        return _to_response(session.to_dict())
+    except Exception as exc:  # noqa: BLE001 — 失败安全铁律
+        return _to_response(None, f"调试继续失败: {exc}")

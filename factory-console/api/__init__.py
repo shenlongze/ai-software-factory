@@ -34,7 +34,12 @@ from .debug import (
     debug_analyze,
     debug_history,
     debug_recommend,
+    debug_repair,
+    debug_resume,
+    debug_root_cause,
+    debug_session,
     debug_stats,
+    debug_validate,
 )
 from .intelligence import list_experience, list_recommendations
 from .lifecycle import get_project_lifecycle
@@ -140,7 +145,12 @@ __all__ = [
     "debug_analyze",
     "debug_history",
     "debug_recommend",
+    "debug_repair",
+    "debug_resume",
+    "debug_root_cause",
+    "debug_session",
     "debug_stats",
+    "debug_validate",
     "execute_runtime_task",
     "execute_tool",
     "get_artifact",

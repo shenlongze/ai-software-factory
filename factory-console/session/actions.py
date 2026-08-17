@@ -2301,6 +2301,207 @@ def debug_stats(context: ExecutionContext) -> ActionResult:
                             message=f"调试统计失败: {exc}", error=str(exc))
 
 
+# ================================================================== S10-068 Part 2 Autonomous Debug & Repair CLI
+
+def _debug_pipeline(context) -> Any:
+    """DebugPipeline 实例 (工作区同 debug action 口径)。"""
+    from .debug import DebugPipeline
+
+    return DebugPipeline(_debug_workspace(context))
+
+
+def _debug_require_session(context, params) -> tuple[Any, Optional[dict]]:
+    """按 debug_id 取会话 (缺省 → 最近会话; 无 → (None, None))。"""
+    pipeline = _debug_pipeline(context)
+    debug_id = str(params.get("debug_id") or "").strip()
+    if debug_id:
+        session = pipeline.store.get(debug_id)
+        return (pipeline, session.to_dict() if session is not None else None)
+    latest = pipeline.store.list(limit=1)
+    if not latest:
+        return (pipeline, None)
+    return (pipeline, latest[0].to_dict())
+
+
+def debug_session(context: ExecutionContext) -> ActionResult:
+    """开始调试 (S10-068 Part 2): \"开始调试/调试会话\" → DebugSession (ANALYZING)。"""
+    context.require("user")
+    params = _debug_params(context)
+    error_message = str(params.get("error_message") or "").strip()
+    try:
+        ws = _debug_workspace(context)
+        pipeline = _debug_pipeline(context)
+        if not error_message:
+            latest = _debug_latest_failure(ws)
+            if latest is None:
+                return ActionResult(
+                    ok=False, status=STATUS_ERROR,
+                    message="缺少 error_message 参数, 且工作区无失败任务记录",
+                    error="no error_message",
+                )
+            error_message = latest["error_message"]
+            params.setdefault("task_id", latest.get("task_id") or "")
+            params.setdefault("context", latest.get("context") or "")
+        session = pipeline.start(
+            project_id=str(params.get("project_id") or ""),
+            task_id=str(params.get("task_id") or ""),
+            agent_id=str(params.get("agent_id") or ""),
+            error_message=error_message,
+            failure_id=str(params.get("failure_id") or ""),
+            context=str(params.get("context") or ""),
+        )
+        lines = [
+            "调试会话已开始:",
+            f"• debug_id: {session.debug_id}",
+            f"• 状态: {session.status}",
+            f"• 错误: {session.error_summary[:200]}",
+            "下一步: debug analyze / debug root-cause 分析根因",
+        ]
+        return ActionResult(ok=True, status=STATUS_OK, message="\n".join(lines),
+                            data=session.to_dict())
+    except Exception as exc:  # noqa: BLE001 — 失败安全
+        return ActionResult(ok=False, status=STATUS_ERROR,
+                            message=f"调试会话启动失败: {exc}", error=str(exc))
+
+
+def debug_root_cause(context: ExecutionContext) -> ActionResult:
+    """根因分析 (S10-068 Part 2): \"找一下根因\" → RootCause (9 类根因类型)。"""
+    context.require("user")
+    params = _debug_params(context)
+    error_message = str(params.get("error_message") or "").strip()
+    try:
+        ws = _debug_workspace(context)
+        pipeline = _debug_pipeline(context)
+        if not error_message:
+            latest = _debug_latest_failure(ws)
+            if latest is None:
+                return ActionResult(
+                    ok=False, status=STATUS_ERROR,
+                    message="缺少 error_message 参数, 且工作区无失败任务记录",
+                    error="no error_message",
+                )
+            error_message = latest["error_message"]
+        case = pipeline.engine.analyzer.extract(
+            error_message, task_id=str(params.get("task_id") or ""))
+        root = pipeline.engine.root_cause_analyzer.analyze(case)
+        lines = [
+            "根因分析:",
+            f"• 根因类型: {root.root_cause_type}",
+            f"• 根因: {root.cause}",
+            f"• 置信度: {root.confidence:.2f}",
+            f"• 推理: {root.reasoning_summary}",
+        ]
+        return ActionResult(ok=True, status=STATUS_OK, message="\n".join(lines),
+                            data=root.to_dict())
+    except Exception as exc:  # noqa: BLE001 — 失败安全
+        return ActionResult(ok=False, status=STATUS_ERROR,
+                            message=f"根因分析失败: {exc}", error=str(exc))
+
+
+def debug_repair(context: ExecutionContext) -> ActionResult:
+    """自动修复 (S10-068 Part 2): \"自动修复\" → RepairSafety 治理闸后执行修复。"""
+    context.require("user")
+    params = _debug_params(context)
+    try:
+        pipeline, session_dict = _debug_require_session(context, params)
+        if session_dict is None:
+            return ActionResult(
+                ok=False, status=STATUS_ERROR,
+                message="无调试会话 (先执行 debug session / debug analyze)",
+                error="no debug session",
+            )
+        from .debug.debug_session import DebugSession, SESSION_ANALYZING
+
+        session = DebugSession.from_dict(session_dict)
+        if session.status == SESSION_ANALYZING:
+            session = pipeline.analyze(session)
+        session = pipeline.repair(
+            session,
+            max_attempts=int(params.get("max_attempts") or 3),
+        )
+        decision = (session.budget_usage or {}).get("decision", "")
+        lines = [
+            "自动修复:",
+            f"• debug_id: {session.debug_id}",
+            f"• 状态: {session.status}",
+            f"• 决策: {decision} — {(session.budget_usage or {}).get('reason', '')}",
+            f"• 策略: {session.selected_strategy} (第 {session.attempt_number} 次尝试)",
+        ]
+        if session.status == "WAITING_FOR_REVIEW":
+            lines.append("• 需人工审批: debug resume (decision=approved) 继续")
+        return ActionResult(ok=True, status=STATUS_OK, message="\n".join(lines),
+                            data=session.to_dict())
+    except Exception as exc:  # noqa: BLE001 — 失败安全
+        return ActionResult(ok=False, status=STATUS_ERROR,
+                            message=f"自动修复失败: {exc}", error=str(exc))
+
+
+def debug_validate(context: ExecutionContext) -> ActionResult:
+    """验证修复 (S10-068 Part 2): \"验证修复\" → PASS→SUCCESS / FAIL→RETRYING。"""
+    context.require("user")
+    params = _debug_params(context)
+    try:
+        pipeline, session_dict = _debug_require_session(context, params)
+        if session_dict is None:
+            return ActionResult(
+                ok=False, status=STATUS_ERROR,
+                message="无调试会话 (先执行 debug session / debug repair)",
+                error="no debug session",
+            )
+        from .debug.debug_session import DebugSession
+
+        result = params.get("result")
+        if result is not None and not isinstance(result, bool):
+            result = str(result).strip().lower() in (
+                "success", "pass", "passed", "true", "1", "ok", "succeeded", "成功")
+        session = pipeline.validate(
+            DebugSession.from_dict(session_dict),
+            result=result,
+            validation_command=str(params.get("validation_command") or ""),
+        )
+        lines = [
+            "验证修复:",
+            f"• debug_id: {session.debug_id}",
+            f"• 状态: {session.status}",
+            f"• 验证结果: {session.validation_result}",
+        ]
+        return ActionResult(ok=True, status=STATUS_OK, message="\n".join(lines),
+                            data=session.to_dict())
+    except Exception as exc:  # noqa: BLE001 — 失败安全
+        return ActionResult(ok=False, status=STATUS_ERROR,
+                            message=f"调试验证失败: {exc}", error=str(exc))
+
+
+def debug_resume(context: ExecutionContext) -> ActionResult:
+    """继续调试 (S10-068 Part 2): \"继续调试\" → REVIEW 通过后继续 (approved 默认)。"""
+    context.require("user")
+    params = _debug_params(context)
+    try:
+        pipeline, session_dict = _debug_require_session(context, params)
+        if session_dict is None:
+            return ActionResult(
+                ok=False, status=STATUS_ERROR,
+                message="无调试会话 (先执行 debug session / debug repair)",
+                error="no debug session",
+            )
+        from .debug.debug_session import DebugSession
+
+        session = pipeline.resume(
+            DebugSession.from_dict(session_dict),
+            decision=str(params.get("decision") or "approved"),
+        )
+        lines = [
+            "继续调试:",
+            f"• debug_id: {session.debug_id}",
+            f"• 状态: {session.status}",
+        ]
+        return ActionResult(ok=True, status=STATUS_OK, message="\n".join(lines),
+                            data=session.to_dict())
+    except Exception as exc:  # noqa: BLE001 — 失败安全
+        return ActionResult(ok=False, status=STATUS_ERROR,
+                            message=f"调试继续失败: {exc}", error=str(exc))
+
+
 def build_default_actions() -> ActionRegistry:
     """装配默认 Action 注册表 (注册式 — 新增 Action 只需 register 一行)。"""
     registry = ActionRegistry()
@@ -2794,6 +2995,57 @@ def build_default_actions() -> ActionRegistry:
             handler=debug_stats,
             permission="user",
             metadata={"service": "DebugEngine.stats", "phase": "S10-068",
+                      "sensitive": False, "category": "debug"},
+        )
+    )
+    # S10-068 Part 2: Autonomous Debug & Repair CLI (factory debug * — 完整闭环)
+    registry.register(
+        Action(
+            name="debug_session",
+            description="开始调试 (开始调试/调试会话 → DebugSession 会话启动)",
+            handler=debug_session,
+            permission="user",
+            metadata={"service": "DebugPipeline.start", "phase": "S10-068 Part 2",
+                      "sensitive": False, "category": "debug"},
+        )
+    )
+    registry.register(
+        Action(
+            name="debug_root_cause",
+            description="根因分析 (找一下根因/根因分析 → RootCause 9 类根因类型)",
+            handler=debug_root_cause,
+            permission="user",
+            metadata={"service": "RootCauseAnalyzer.analyze", "phase": "S10-068 Part 2",
+                      "sensitive": False, "category": "debug"},
+        )
+    )
+    registry.register(
+        Action(
+            name="debug_repair",
+            description="自动修复 (自动修复 → RepairSafety 治理闸后执行修复)",
+            handler=debug_repair,
+            permission="user",
+            metadata={"service": "DebugPipeline.repair", "phase": "S10-068 Part 2",
+                      "sensitive": False, "category": "debug"},
+        )
+    )
+    registry.register(
+        Action(
+            name="debug_validate",
+            description="验证修复 (验证修复 → PASS→SUCCESS / FAIL→RETRYING)",
+            handler=debug_validate,
+            permission="user",
+            metadata={"service": "DebugPipeline.validate", "phase": "S10-068 Part 2",
+                      "sensitive": False, "category": "debug"},
+        )
+    )
+    registry.register(
+        Action(
+            name="debug_resume",
+            description="继续调试 (继续调试 → REVIEW 通过后继续调试)",
+            handler=debug_resume,
+            permission="user",
+            metadata={"service": "DebugPipeline.resume", "phase": "S10-068 Part 2",
                       "sensitive": False, "category": "debug"},
         )
     )

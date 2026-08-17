@@ -83,6 +83,13 @@ INTENT_DEBUG_ANALYZE = "debug_analyze"
 INTENT_DEBUG_HISTORY = "debug_history"
 INTENT_DEBUG_RECOMMEND = "debug_recommend"
 INTENT_DEBUG_STATS = "debug_stats"
+#: S10-068 Part 2: Autonomous Debug & Repair 意图 (会话/根因/修复/验证/继续 —
+#: DebugPipeline 的 CLI 入口: 完整闭环 start→analyze→repair→validate→resume)
+INTENT_DEBUG_SESSION = "debug_session"
+INTENT_DEBUG_ROOT_CAUSE = "debug_root_cause"
+INTENT_DEBUG_REPAIR = "debug_repair"
+INTENT_DEBUG_VALIDATE = "debug_validate"
+INTENT_DEBUG_RESUME = "debug_resume"
 
 #: KeywordIntentParser 关键词规则表 (顺序 = 优先级, 确定性无歧义):
 #: (关键词元组, intent_type, 参数键 — 命中后取关键词后剩余文本作为参数值)
@@ -115,6 +122,16 @@ _KEYWORD_RULES: tuple[tuple[tuple[str, ...], str, Optional[str]], ...] = (
     (("修复建议", "debug推荐", "调试推荐", "推荐修复"), INTENT_DEBUG_RECOMMEND, None),
     (("debug统计", "调试统计", "调试数据"), INTENT_DEBUG_STATS, None),
     (("分析错误", "为什么失败", "错误分析", "调试分析", "debug"), INTENT_DEBUG_ANALYZE, "error_message"),
+    # S10-068 Part 2: Autonomous Debug & Repair 意图 (纯新增, 旧关键词不动)。
+    # 优先级要点 (必须在 run_task "修复" 与 resume_project "继续" 之前):
+    # - "自动修复/验证修复" 含 "修复", 不被 run_task 抢;
+    # - "继续调试" 含 "继续", 不被 resume_project 的裸 "继续" 抢;
+    # - "调试会话" 与 analyze 的 "调试分析" 无共享子串, 独立映射。
+    (("开始调试", "调试会话"), INTENT_DEBUG_SESSION, "error_message"),
+    (("找一下根因", "根因分析", "查根因", "根因是什么"), INTENT_DEBUG_ROOT_CAUSE, "error_message"),
+    (("自动修复", "自动修复错误"), INTENT_DEBUG_REPAIR, None),
+    (("验证修复", "验证一下修复"), INTENT_DEBUG_VALIDATE, None),
+    (("继续调试",), INTENT_DEBUG_RESUME, None),
     (("花了多少", "成本", "费用"), INTENT_SHOW_COST, None),
     # S10-049 P0: +"实现" (验收: "帮我实现登录功能" → run_task, objective="登录功能")
     (("加", "修复", "写", "实现"), INTENT_RUN_TASK, "objective"),

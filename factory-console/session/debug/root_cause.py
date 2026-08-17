@@ -1,8 +1,12 @@
-"""factory-console/session/debug/root_cause.py — RootCauseAnalyzer (S10-068 G2)。
+"""factory-console/session/debug/root_cause.py — RootCauseAnalyzer (S10-068 G2 + Part 2 G9)。
 
 根因分析: DebugCase (error_type + message) → RootCause 假设 + evidence + confidence。
+Part 2 (G9): 根因类型 9 类增强 (CODE_DEFECT/TEST_DEFECT/REQUIREMENT_MISMATCH/
+ENVIRONMENT_FAILURE/DEPENDENCY_FAILURE/CONFIGURATION_FAILURE/DATA_FAILURE/
+INTEGRATION_FAILURE/UNKNOWN) + reasoning_summary。
 
 设计: docs/sprint10/S10-068-debug-intelligence-design.md §4
+      docs/sprint10/S10-068-part2-design.md §9
 边界:
 - 纯标准库, 零模块依赖; 规则兜底为主 (LLM 可选, 失败 → 规则兜底)
 - analyze 不抛 (任何输入 → RootCause; error_type 空 → 自动 classify)
@@ -26,6 +30,57 @@ from . import (
     RootCause,
 )
 from .error_analysis import ErrorAnalyzer
+
+# ---------------------------------------------------------------- 根因类型 (G9)
+
+ROOT_CAUSE_CODE_DEFECT = "CODE_DEFECT"
+ROOT_CAUSE_TEST_DEFECT = "TEST_DEFECT"
+ROOT_CAUSE_REQUIREMENT_MISMATCH = "REQUIREMENT_MISMATCH"
+ROOT_CAUSE_ENVIRONMENT_FAILURE = "ENVIRONMENT_FAILURE"
+ROOT_CAUSE_DEPENDENCY_FAILURE = "DEPENDENCY_FAILURE"
+ROOT_CAUSE_CONFIGURATION_FAILURE = "CONFIGURATION_FAILURE"
+ROOT_CAUSE_DATA_FAILURE = "DATA_FAILURE"
+ROOT_CAUSE_INTEGRATION_FAILURE = "INTEGRATION_FAILURE"
+ROOT_CAUSE_UNKNOWN = "UNKNOWN"
+
+#: 全部根因类型 (9 类)
+ROOT_CAUSE_TYPES: tuple[str, ...] = (
+    ROOT_CAUSE_CODE_DEFECT,
+    ROOT_CAUSE_TEST_DEFECT,
+    ROOT_CAUSE_REQUIREMENT_MISMATCH,
+    ROOT_CAUSE_ENVIRONMENT_FAILURE,
+    ROOT_CAUSE_DEPENDENCY_FAILURE,
+    ROOT_CAUSE_CONFIGURATION_FAILURE,
+    ROOT_CAUSE_DATA_FAILURE,
+    ROOT_CAUSE_INTEGRATION_FAILURE,
+    ROOT_CAUSE_UNKNOWN,
+)
+
+#: 错误类型 → 根因类型 (确定性规则主表)
+_ROOT_CAUSE_TYPE_RULES: dict[str, str] = {
+    ERROR_TIMEOUT: ROOT_CAUSE_ENVIRONMENT_FAILURE,      # 超时 → 环境/资源
+    ERROR_IMPORT: ROOT_CAUSE_DEPENDENCY_FAILURE,        # 导入失败 → 依赖
+    ERROR_AUTH: ROOT_CAUSE_CONFIGURATION_FAILURE,       # 认证/密钥 → 配置
+    ERROR_NULL: ROOT_CAUSE_CODE_DEFECT,                 # 空值未判空 → 代码缺陷
+    ERROR_ASSERTION: ROOT_CAUSE_CODE_DEFECT,            # 断言失败 → 代码缺陷
+    ERROR_MISSING: ROOT_CAUSE_DATA_FAILURE,             # 缺失 → 数据/资源
+    ERROR_TEST_FAILURE: ROOT_CAUSE_TEST_DEFECT,         # 测试失败 → 测试缺陷
+    ERROR_API_CONTRACT: ROOT_CAUSE_INTEGRATION_FAILURE, # 契约 → 集成
+    ERROR_UNKNOWN: ROOT_CAUSE_UNKNOWN,                  # 未分类 → UNKNOWN
+}
+
+#: 关键词细化 → 根因类型覆盖 (命中则覆盖主表; (错误类型, 关键词) → 根因类型)
+_ROOT_CAUSE_REFINEMENTS: dict[tuple[str, str], str] = {
+    (ERROR_API_CONTRACT, "missing field"): ROOT_CAUSE_INTEGRATION_FAILURE,
+    (ERROR_API_CONTRACT, "extra field"): ROOT_CAUSE_INTEGRATION_FAILURE,
+    (ERROR_API_CONTRACT, "invalid type"): ROOT_CAUSE_REQUIREMENT_MISMATCH,
+    (ERROR_API_CONTRACT, "schema"): ROOT_CAUSE_REQUIREMENT_MISMATCH,
+    (ERROR_MISSING, "file"): ROOT_CAUSE_ENVIRONMENT_FAILURE,
+    (ERROR_IMPORT, "no module"): ROOT_CAUSE_DEPENDENCY_FAILURE,
+    (ERROR_IMPORT, "cannot import"): ROOT_CAUSE_DEPENDENCY_FAILURE,
+    (ERROR_TEST_FAILURE, "pytest"): ROOT_CAUSE_TEST_DEFECT,
+    (ERROR_ASSERTION, "expected"): ROOT_CAUSE_CODE_DEFECT,
+}
 
 #: 每错误类型的基础根因假设 + 基础置信度 (规则口径)
 _CAUSE_RULES: dict[str, tuple[str, float]] = {
@@ -102,6 +157,8 @@ class RootCauseAnalyzer:
 
         cause, confidence = _CAUSE_RULES[error_type]
         evidence: list[str] = [f"错误类型: {error_type}"]
+        root_cause_type = _ROOT_CAUSE_TYPE_RULES.get(error_type, ROOT_CAUSE_UNKNOWN)
+        refined_by: str = ""
 
         # 消息关键词细化 (命中 → cause 覆盖 + evidence)
         message = (case.error_message or "").lower()
@@ -109,6 +166,14 @@ class RootCauseAnalyzer:
             if keyword in message:
                 cause = refined
                 evidence.append(f"关键词命中: {keyword}")
+                refined_by = keyword
+                break
+        # 根因类型关键词细化 (命中 → 覆盖主表)
+        for (type_key, keyword), rc_type in _ROOT_CAUSE_REFINEMENTS.items():
+            if type_key == error_type and keyword in message:
+                root_cause_type = rc_type
+                if not refined_by:
+                    refined_by = keyword
                 break
 
         # 历史经验 → evidence + 置信度加成
@@ -136,10 +201,23 @@ class RootCauseAnalyzer:
             except Exception:  # noqa: BLE001 — LLM 失败 → 规则兜底
                 pass
 
+        # 推理摘要 (Audit-ready: 为什么归为这个根因类型)
+        if refined_by:
+            reasoning = (
+                f"基于错误类型 {error_type} + 关键词 '{refined_by}' 判定为 "
+                f"{root_cause_type}: {cause}"
+            )
+        else:
+            reasoning = (
+                f"基于错误类型 {error_type} 判定为 {root_cause_type}: {cause}"
+            )
+
         related = top.to_dict() if top is not None and hasattr(top, "to_dict") else top
         return RootCause(
             cause=cause,
             evidence=evidence,
             confidence=max(0.0, min(1.0, confidence)),
             related_experience=related,
+            root_cause_type=root_cause_type,
+            reasoning_summary=reasoning,
         )

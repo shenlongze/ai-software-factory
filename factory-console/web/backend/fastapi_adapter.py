@@ -95,11 +95,20 @@ import importlib
 import os
 
 def _console_import(name: str):
-    """S10-074: 部署态包名 factory_console; 源码态兼容连字符目录。"""
+    """S10-074: 部署态包名 factory_console; 源码态兼容连字符目录。
+
+    判断: factory_console 模块位置 — 仓库内占位转发包 (源码态) → 连字符
+    真实目录; site-packages (部署态) → factory_console。
+    """
+    import importlib.util as _util
     try:
-        return importlib.import_module(f"factory_console.{name}")
-    except ImportError:
-        return importlib.import_module(f"factory-console.{name}")
+        _spec = _util.find_spec("factory_console")
+        _loc = str(_spec.origin or "") if _spec is not None else ""
+    except (ImportError, ValueError):  # noqa: BLE001
+        _loc = ""
+    _is_repo_stub = "factory_console/__init__.py" in _loc.replace("\\", "/") and "site-packages" not in _loc
+    _mod = ("factory-console" if _is_repo_stub else "factory_console") + (f".{name}" if name else "")
+    return importlib.import_module(_mod)
 
 
 from ... import __version__ as _factory_version
@@ -488,11 +497,8 @@ def build_console_service(
     if str(repo_root) not in sys.path:
         sys.path.insert(0, str(repo_root))
     try:
-        # S10-074: 部署态包名 factory_console; 源码态兼容连字符
-        try:
-            module = importlib.import_module("factory_console")
-        except ImportError:
-            module = importlib.import_module("factory-console")
+        # S10-074: 部署态 factory_console / 源码态连字符 (统一 helper)
+        module = _console_import("")
     except Exception as exc:  # 缺装/损坏 → 装配失败 (调用方决定兜底)
         raise RuntimeError("factory-console 未安装 (缺 factory-console/ 包)") from exc
 

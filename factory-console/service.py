@@ -24,6 +24,19 @@ from __future__ import annotations
 
 import importlib
 import os
+
+
+def _console_import(name: str):
+    """S10-074: 部署态包名 factory_console; 源码态兼容连字符目录。"""
+    import importlib.util as _util
+    try:
+        _spec = _util.find_spec("factory_console")
+        _loc = str(_spec.origin or "") if _spec is not None else ""
+    except (ImportError, ValueError):  # noqa: BLE001
+        _loc = ""
+    _is_repo_stub = "factory_console/__init__.py" in _loc.replace("\\", "/") and "site-packages" not in _loc
+    _mod = ("factory-console" if _is_repo_stub else "factory_console") + (f".{name}" if name else "")
+    return importlib.import_module(_mod)
 import re
 import shutil
 from datetime import datetime, timezone

@@ -90,8 +90,9 @@ class Recommender:
 
             store = getattr(self.retriever, "store", None) or getattr(self.retriever, "_store", None)
             recs = getattr(self.retriever, "_records", None)
+            # S10-073 P0-A: 项目隔离 — recommend 无项目上下文 → 仅全局经验 (fail-closed)
             hits, _stats = retrieve_experience(str(problem or ""), store=store,
-                                               records=recs, top_k=10)
+                                               records=recs, top_k=10, project="")
             hits = [r for r in hits if r.type in _DEBUG_TYPES]
         except Exception:  # noqa: BLE001 — 失败安全
             hits = []

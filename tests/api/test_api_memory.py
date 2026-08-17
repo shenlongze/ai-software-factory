@@ -82,7 +82,9 @@ class TestSearchEndpoint:
 
     def test_project_filter(self, tmp_path):
         res = MEM_API.memory_search(query="", project="demo", workspace=self._learned(tmp_path))
-        assert all(r["project"] == "demo" for r in res["data"])
+        # S10-073 契约: 项目检索 = 本项目 + 全局经验 (project=""), 绝不含其他项目
+        assert all(r["project"] in ("demo", "") for r in res["data"])
+        assert not any(r["project"] not in ("demo", "") for r in res["data"])
 
     def test_type_filter(self, tmp_path):
         res = MEM_API.memory_search(query="", type=EXP.FAILURE_PATTERN,

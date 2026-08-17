@@ -714,7 +714,7 @@ class TestRecommender:
     def test_debug_suggestion_contains_action(self):
         records = [
             _record(type=EXP.DEBUG_EXPERIENCE, problem="登录失败",
-                    action="补充密钥配置", success=True),
+                    action="补充密钥配置", success=True, project=""),
         ]
         recommender = REC.Recommender(RET.ExperienceRetriever(records=records))
         assert "补充密钥配置" in recommender.recommend_for_debug("登录")[0]

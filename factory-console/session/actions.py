@@ -2035,8 +2035,10 @@ def memory_search(context: ExecutionContext) -> ActionResult:
         ws = _memory_workspace(context)
         store = ExperienceStore.from_workspace(ws)
         # S10-072 P0-A: 统一检索入口 (经 RetrievalOrchestrator)
+        # S10-073 P0-A: 强制项目 scope (fail-closed — 无 project 上下文 → 仅全局经验)
+        project = str(getattr(context, "project", "") or params.get("project") or "")
         hits, _stats = retrieve_experience(
-            query, store=store, top_k=20,
+            query, store=store, top_k=20, project=project,
             record_type=str(record_type) if record_type else None)
         lines = _memory_lines(hits, f"经验检索「{query}」" if query else "全部经验")
         return ActionResult(ok=True, status=STATUS_OK, message="\n".join(lines))

@@ -66,7 +66,9 @@ class ExperienceRetriever:
                 continue
             if request.project_id:
                 rec_project = getattr(rec, "project", "") if not isinstance(rec, dict) else rec.get("project", "")
-                if rec_project != request.project_id:
+                # S10-073 P0-A: 项目隔离契约 — 仅匹配本项目 + 全局经验 (project="")
+                # 其他项目经验绝不泄漏
+                if rec_project != request.project_id and rec_project != "":
                     continue
             confidence = getattr(rec, "confidence", 0.0) if not isinstance(rec, dict) else rec.get("confidence", 0.0)
             candidates.append(RetrievalCandidate(

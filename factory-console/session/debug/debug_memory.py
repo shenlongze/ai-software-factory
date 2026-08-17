@@ -126,7 +126,7 @@ class DebugExperienceRetriever:
         orch = RetrievalOrchestrator()
         orch.register(RetrievalSource.EXPERIENCE, OrchestratedExpRetriever(memory_store=store))
         query = " ".join(p for p in (case.error_message, case.task_id, case.context) if p)
-        request = RetrievalRequest(query=query, project_id=case.project or None,
+        request = RetrievalRequest(query=query, project_id=case.project or "",
                                    top_k=top_k or 3, max_tokens=8000)
         candidates, _stats = orch.retrieve(request)
         if not candidates:

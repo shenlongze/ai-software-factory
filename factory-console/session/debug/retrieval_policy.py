@@ -126,7 +126,7 @@ class DebugRetrievalPolicy:
                 if memory_store is not None
                 else ExperienceStore.from_workspace(self.workspace)
             )
-            hits, _stats = retrieve_experience(query, store=store, top_k=20)
+            hits, _stats = retrieve_experience(query, store=store, top_k=20, project=project)
             hits = [r for r in hits if r.type in _RETRIEVE_TYPES]
         except Exception:  # noqa: BLE001 — 失败安全: Memory 异常 → 空结果
             return []

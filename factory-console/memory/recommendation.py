@@ -84,11 +84,17 @@ class Recommender:
         每条: "历史方案 [{type}]: {problem} → {action/result}"
         (有成功修复经验优先 — 排序由 retriever confidence 决定)。
         """
-        hits = [
-            r
-            for r in self.retriever.search(str(problem or ""))
-            if r.type in _DEBUG_TYPES
-        ]
+        # S10-072 P0-B: 统一检索入口 (经 RetrievalOrchestrator)
+        try:
+            from ..retrieval.unified import retrieve_experience
+
+            store = getattr(self.retriever, "store", None) or getattr(self.retriever, "_store", None)
+            recs = getattr(self.retriever, "_records", None)
+            hits, _stats = retrieve_experience(str(problem or ""), store=store,
+                                               records=recs, top_k=10)
+            hits = [r for r in hits if r.type in _DEBUG_TYPES]
+        except Exception:  # noqa: BLE001 — 失败安全
+            hits = []
         if not hits:
             return [_NO_HISTORY]
         suggestions: list[str] = []

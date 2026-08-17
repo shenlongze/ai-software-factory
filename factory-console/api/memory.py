@@ -129,12 +129,12 @@ def memory_search(
     try:
         if type is not None and str(type) not in TYPES:
             raise ValueError(f"未知经验类型: {type!r} (合法: {', '.join(TYPES)})")
-        retriever = ExperienceRetriever(_store(workspace))
-        hits = retriever.search(
-            query=str(query or ""),
-            project=str(project) if project else None,
-            type=str(type) if type else None,
-        )
+        # S10-072 P0-A: 统一检索入口 (经 RetrievalOrchestrator)
+        from ..retrieval.unified import retrieve_experience
+        hits, _stats = retrieve_experience(
+            str(query or ""), store=_store(workspace),
+            top_k=20, project=str(project) if project else None,
+            record_type=str(type) if type else None)
         return _to_response([r.to_dict() for r in hits])
     except Exception as exc:  # noqa: BLE001 — 失败安全铁律: 异常 → 明确错误
         return _to_response(None, f"经验检索失败: {exc}")

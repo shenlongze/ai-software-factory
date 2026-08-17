@@ -36,28 +36,41 @@ class ExperienceRetriever:
 
     source_type = RetrievalSource.EXPERIENCE
 
-    def __init__(self, memory_store: Any = None) -> None:
+    def __init__(self, memory_store: Any = None, records: Optional[List[Any]] = None) -> None:
         self.memory_store = memory_store
+        self._records = records
+
+    def _records_source(self):
+        if self._records is not None:
+            return list(self._records)
+        if self.memory_store is None:
+            return []
+        return self.memory_store.records() if hasattr(self.memory_store, "records") else []
 
     def retrieve(self, request: RetrievalRequest) -> List[RetrievalCandidate]:
         try:
-            if self.memory_store is None:
-                return []
-            records = self.memory_store.records() if hasattr(self.memory_store, "records") else []
+            records = self._records_source()
         except Exception:  # noqa: BLE001 — 失败安全
             return []
         candidates: List[RetrievalCandidate] = []
         for rec in records:
-            problem = getattr(rec, "problem", "") or rec.get("problem", "") if isinstance(rec, dict) else getattr(rec, "problem", "")
-            if not _match(request.query, problem):
+            # 匹配面: problem + task + context + action (旧检索语义, S10-072 兼容)
+            text = ""
+            if isinstance(rec, dict):
+                text = " ".join(str(rec.get(k, "")) for k in
+                                ("problem", "task", "context", "action", "error"))
+            else:
+                text = " ".join(str(getattr(rec, k, "")) for k in
+                                ("problem", "task", "context", "action", "error"))
+            if not _match(request.query, text):
                 continue
-            if request.project_id and getattr(rec, "project", "") and \
-                    getattr(rec, "project", "") != request.project_id:
-                if not isinstance(rec, dict) or rec.get("project") != request.project_id:
+            if request.project_id:
+                rec_project = getattr(rec, "project", "") if not isinstance(rec, dict) else rec.get("project", "")
+                if rec_project != request.project_id:
                     continue
             confidence = getattr(rec, "confidence", 0.0) if not isinstance(rec, dict) else rec.get("confidence", 0.0)
             candidates.append(RetrievalCandidate(
-                content=str(problem),
+                content=str(text),
                 source_type=self.source_type,
                 source_id=getattr(rec, "id", "") if not isinstance(rec, dict) else rec.get("id", ""),
                 score=float(confidence),

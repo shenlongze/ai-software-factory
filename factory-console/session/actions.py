@@ -2031,10 +2031,13 @@ def memory_search(context: ExecutionContext) -> ActionResult:
     record_type = params.get("type") or None
     try:
         from ..memory.experience_store import ExperienceStore
-        from ..memory.retrieval import ExperienceRetriever
+        from ..retrieval.unified import retrieve_experience
         ws = _memory_workspace(context)
-        retriever = ExperienceRetriever(ExperienceStore.from_workspace(ws))
-        hits = retriever.search(query=query, type=str(record_type) if record_type else None)
+        store = ExperienceStore.from_workspace(ws)
+        # S10-072 P0-A: 统一检索入口 (经 RetrievalOrchestrator)
+        hits, _stats = retrieve_experience(
+            query, store=store, top_k=20,
+            record_type=str(record_type) if record_type else None)
         lines = _memory_lines(hits, f"经验检索「{query}」" if query else "全部经验")
         return ActionResult(ok=True, status=STATUS_OK, message="\n".join(lines))
     except Exception as exc:  # noqa: BLE001 — 失败安全

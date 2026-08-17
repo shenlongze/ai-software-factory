@@ -118,17 +118,16 @@ class DebugRetrievalPolicy:
         )
         k = max(0, int(top_k or 0))
         try:
+            # S10-072 P0-C: 统一检索入口 (经 RetrievalOrchestrator, 失败 → 原逻辑)
+            from ...retrieval.unified import retrieve_experience
+
             store = (
                 memory_store
                 if memory_store is not None
                 else ExperienceStore.from_workspace(self.workspace)
             )
-            retriever = ExperienceRetriever(store)
-            hits: list[Any] = []
-            for record_type in _RETRIEVE_TYPES:
-                hits.extend(
-                    retriever.search(query=query, type=record_type, project=project or None)
-                )
+            hits, _stats = retrieve_experience(query, store=store, top_k=20)
+            hits = [r for r in hits if r.type in _RETRIEVE_TYPES]
         except Exception:  # noqa: BLE001 — 失败安全: Memory 异常 → 空结果
             return []
         return self.deduplicate(self.rank(hits, session))[:k] if k else []

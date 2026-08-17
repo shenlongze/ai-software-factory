@@ -153,3 +153,32 @@ AI Factory
 
 ---
 > 生成: 2026-08-17 | 全量测试: 11638 passed + 1 skipped | Git: clean
+
+## S10-072 更新 (Production Truth)
+
+> 2026-08-17: 反 bypass + 自动贯穿完成。
+
+| 能力 | S10-071 后 | S10-072 后 | 证据 |
+|---|---|---|---|
+| Retrieval (memory_search) | ⚠️ bypass | ✅ 统一 (Orchestrator) | retrieve_experience 统一入口 + 11 测试 |
+| Retrieval (recommend) | ⚠️ bypass | ✅ 统一 | recommend_for_debug 经 Orchestrator |
+| Retrieval (Debug) | ⚠️ 双路径 | ✅ 全统一 | DebugRetrievalPolicy + debug_memory 均经 Orchestrator |
+| Audit 自动覆盖 | 7/16 阶段 | **10/16** (+Governance/Repair/Validation) | GOVERNANCE_CHECK/REPAIR_*/VALIDATION_* 自动 emit |
+| Memory 自动沉淀 | 仅 execute_project | + **Debug 闭环自动** (run 终态 learn) | Learning Loop E2E: Run A→B 实证 |
+| Event Types | 缺 VALIDATION_* | ✅ 补全 (REPAIR_FAILED/VALIDATION_PASSED/FAILED) | 自动事件合法 |
+
+### Reality Status 最终
+
+| Status | 数量 | 说明 |
+|---|---|---|
+| DONE | 57 | 含 Debug 修复/验证/统一检索/自动 Audit/Memory |
+| PARTIAL | 1 | Deployment (无能力, NOT_PRODUCTION_READY 标记) |
+| STUB | 0 | — |
+| Production Ready | ~92% | 剩余: Deployment + Audit Discovery/Plan 级 + 多项目隔离 |
+
+### 已确认不存在的风险
+
+- ❌ 无生产路径硬编码 success (S10-071 移除)
+- ❌ 无 Retrieval bypass (统一入口验证测试强制)
+- ❌ 无人工 audit record 依赖 (生产链自动 emit 实证)
+- ❌ 无 Memory 手动数据库 (Debug 闭环自动 learn 实证)

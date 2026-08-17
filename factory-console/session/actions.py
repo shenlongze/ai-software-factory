@@ -542,6 +542,8 @@ def prepare_project(context: ExecutionContext) -> ActionResult:
             message=f"工程准备失败: 资产落盘失败: {exc}",
             error=str(exc),
         )
+    # S10-073 P0-B: 规划完成自动 Audit (失败安全)
+    _emit_plan_created(context, projects_root.parent, slug)
     return ActionResult(
         ok=True,
         status=STATUS_OK,
@@ -556,6 +558,19 @@ def prepare_project(context: ExecutionContext) -> ActionResult:
         },
         error=None,
     )
+
+
+def _emit_plan_created(context, ws, project):
+    """S10-073 P0-B: 规划完成自动 Audit (PLAN_CREATED, 失败安全)。"""
+    try:
+        from ..audit.audit_emitter import AuditEmitter
+        AuditEmitter(workspace=ws).emit(
+            "PLAN_CREATED", project_id=str(project or "") or str(getattr(context, "project", "") or ""),
+            actor_type="user", actor_id=str(getattr(context, "user", "") or ""),
+            decision_reason=f"项目规划完成 (PRD→Engineering→TaskTree→Agent 分配), 状态 EXECUTION_READY",
+        )
+    except Exception:  # noqa: BLE001 — 失败安全
+        pass
 
 
 def list_projects(context: ExecutionContext) -> ActionResult:

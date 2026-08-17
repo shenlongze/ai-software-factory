@@ -448,6 +448,17 @@ class DiscoverySession:
             )
         self.current_state = DiscoveryState.CONFIRMED
         self.updated_at = _now_iso()
+        # S10-073 P0-B: 需求确认自动 Audit (DISCOVERY_CONFIRMED, 失败安全)
+        try:
+            from ..audit.audit_emitter import AuditEmitter
+            AuditEmitter(workspace=self.workspace_id or None).emit(
+                "DISCOVERY_CONFIRMED",
+                project_id=self.created_product_id or "",
+                actor_type="user",
+                decision_reason=f"需求确认完成: {self.idea or ''}",
+            )
+        except Exception:  # noqa: BLE001 — 失败安全
+            pass
         return self
 
     def cancel(self) -> "DiscoverySession":

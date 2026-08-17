@@ -28,6 +28,7 @@ from typing import Any, Optional
 EVENT_TYPES: tuple[str, ...] = (
     "PRODUCT_CREATED",
     "DISCOVERY_COMPLETED",
+    "DISCOVERY_CONFIRMED",
     "PRODUCT_INTELLIGENCE",
     "PLAN_CREATED",
     "PLAN_CHANGED",
@@ -59,6 +60,9 @@ EVENT_TYPES: tuple[str, ...] = (
     "REVIEW_REJECTED",
     "TASK_BLOCKED",
     "TASK_COMPLETED",
+    "TASK_STARTED",
+    "TASK_FAILED",
+    "AGENT_ASSIGNED",
     "DELIVERY_CREATED",
     "USER_ACCEPTANCE",
     "PROJECT_DELIVERED",

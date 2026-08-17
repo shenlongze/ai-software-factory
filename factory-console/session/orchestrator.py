@@ -152,6 +152,19 @@ def _default_execute_fn(
     execution = data.get("execution") or {}
     if not isinstance(execution, dict):
         execution = {}
+    # S10-073 P0-B: 产物创建自动 Audit (ARTIFACT_CREATED, 失败安全)
+    if result.ok:
+        try:
+            from ..audit.audit_emitter import AuditEmitter
+            AuditEmitter(workspace=workspace).emit(
+                "ARTIFACT_CREATED", project_id=project_dir.name,
+                task_id=str(task.get("id") or ""),
+                agent_id=str(task.get("agent") or ""),
+                decision_reason=f"Agent 产物: {task.get('name') or task.get('id')}",
+                artifact_reference=str(execution.get("artifact") or ""),
+            )
+        except Exception:  # noqa: BLE001 — 失败安全
+            pass
     return {
         "success": result.ok,
         "artifact": str(execution.get("artifact") or ""),
@@ -1272,6 +1285,23 @@ class ExecutionOrchestrator:
                 task["matched_role"] = required_role  # 审计: 按角色分配
                 if not task.get("reason"):
                     task["reason"] = match.get("reason") or ""
+        # S10-073 P0-B: Agent 分配自动 Audit (AGENT_ASSIGNED, 失败安全)
+        try:
+            from ..audit.audit_emitter import AuditEmitter
+            _emitter = AuditEmitter(workspace=project_dir.parent.parent)
+            for _task in plan_tasks:
+                if _task.get("agent"):
+                    _emitter.emit(
+                        "AGENT_ASSIGNED", project_id=project_dir.name,
+                        task_id=str(_task.get("id") or ""),
+                        agent_id=str(_task.get("agent") or ""),
+                        decision_reason=(
+                            f"任务 {_task.get('id')} 分配 {_task.get('agent')} "
+                            f"(角色 {_task.get('required_role') or '?'})"
+                        ),
+                    )
+        except Exception:  # noqa: BLE001 — 失败安全
+            pass
         ids = [str(t.get("id") or "") for t in plan_tasks]
         graph = TaskDependencyGraph.load(dependencies_file)
         if all(ids):
@@ -1911,6 +1941,21 @@ class ExecutionOrchestrator:
             ],
         )
         self.validator.save(project_dir, slug, summary)
+        # S10-073 P0-B: 测试结果自动 Audit (TEST_PASSED/FAILED, 失败安全)
+        try:
+            from ..audit.audit_emitter import AuditEmitter
+            AuditEmitter(workspace=project_dir.parent.parent).emit(
+                "TEST_PASSED" if failed == 0 else "TEST_FAILED",
+                project_id=slug, actor_type="system", actor_id="validator",
+                decision_reason=(
+                    f"测试验证通过: {summary.tests_passed}/{summary.tests_total}"
+                    if failed == 0 else f"测试验证失败: {summary.tests_failed}/{summary.tests_total}"
+                ),
+                result={"tests_total": summary.tests_total, "tests_passed": summary.tests_passed,
+                        "tests_failed": summary.tests_failed},
+            )
+        except Exception:  # noqa: BLE001 — 失败安全
+            pass
         # S10-071 P0-4: Audit 自动接入生产链 (执行完成事件, 失败安全)
         try:
             from ..audit.audit_emitter import AuditEmitter
@@ -2170,6 +2215,18 @@ class ExecutionOrchestrator:
         runner 异常 → 视为失败 (失败安全, 不裸抛)。
         """
         retries = 0
+        # S10-073 P0-B: 任务开始自动 Audit (TASK_STARTED, 失败安全)
+        try:
+            from ..audit.audit_emitter import AuditEmitter
+            _emitter = AuditEmitter(workspace=project_dir.parent.parent)
+            _emitter.emit(
+                "TASK_STARTED", project_id=project_dir.name,
+                task_id=str(task.get("id") or ""),
+                agent_id=str(task.get("agent") or ""),
+                decision_reason=f"任务开始: {task.get('name') or task.get('id')}",
+            )
+        except Exception:  # noqa: BLE001 — 失败安全
+            pass
         while True:
             task["status"] = "running"
             task["error"] = None
@@ -2186,6 +2243,16 @@ class ExecutionOrchestrator:
                 task["retry_count"] = retries
                 task["error"] = None
                 self._save_state(project_dir, state)
+                # S10-073 P0-B: 任务完成自动 Audit (失败安全)
+                try:
+                    _emitter.emit(
+                        "TASK_COMPLETED", project_id=project_dir.name,
+                        task_id=str(task.get("id") or ""),
+                        agent_id=str(task.get("agent") or ""),
+                        decision_reason=f"任务完成: {task.get('name') or task.get('id')}",
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
                 return outcome
             task["error"] = str(outcome.get("error") or "任务执行失败")
             if retries < max_retry:
@@ -2195,6 +2262,17 @@ class ExecutionOrchestrator:
             task["status"] = "failed"
             task["retry_count"] = retries
             self._save_state(project_dir, state)
+            # S10-073 P0-B: 任务失败自动 Audit (TASK_FAILED, 失败安全)
+            try:
+                _emitter.emit(
+                    "TASK_FAILED", project_id=project_dir.name,
+                    task_id=str(task.get("id") or ""),
+                    agent_id=str(task.get("agent") or ""),
+                    decision_reason=f"任务失败: {task.get('name') or task.get('id')} — {task.get('error', '')[:60]}",
+                    result={"error": str(task.get("error") or "")},
+                )
+            except Exception:  # noqa: BLE001
+                pass
             return outcome
 
     # ------------------------------------------------------------ S10-060 重规划

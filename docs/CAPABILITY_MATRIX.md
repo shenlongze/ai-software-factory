@@ -154,6 +154,35 @@ AI Factory
 ---
 > 生成: 2026-08-17 | 全量测试: 11638 passed + 1 skipped | Git: clean
 
+
+## S10-073 更新 (Production Governance)
+
+> 2026-08-17: 项目隔离 + Audit 全覆盖完成。
+
+| 维度 | S10-072 | S10-073 | 证据 |
+|---|---|---|---|
+| Retrieval 项目隔离 | fail-open | **fail-closed** (项目+全局共享, 绝不含其他项目) | 8 隔离测试 (A→A✅ A→B❌) |
+| Debug 检索隔离 | 未强制 | **session.project 约束** | DebugRetrievalPolicy + debug_memory 强制 project |
+| Recommend 隔离 | fail-open | **fail-closed** (仅全局) | recommend_for_debug project="" |
+| Audit 自动覆盖 | 10/16 | **15/16** | DISCOVERY/PLAN/AGENT/TASK/EXECUTION/CODE/TEST 自动 |
+| Audit Event Types | 33 | **40** | TASK_STARTED/FAILED/AGENT_ASSIGNED/DISCOVERY_CONFIRMED 等 |
+| 失败路径 Audit | TASK_FAILED 手动 | **TASK_FAILED 自动** (执行循环) | _execute_with_retry emit |
+
+### Reality Status 最终
+
+| Status | S10-072 | S10-073 | 说明 |
+|---|---|---|---|
+| DONE | 57 | **57** | — |
+| PARTIAL | 1 | **1** | TOOL_CALL (AgentRuntime 内部, 约束不修改核心) |
+| STUB | 0 | 0 | — |
+| Production Ready | ~92% | **~96%** | 剩余: TOOL_CALL 自动 + Deployment |
+
+### 剩余真实缺口 (诚实)
+
+1. TOOL_CALL 未自动 (工具调用在 factory-exec AgentRuntime 内部 — 按用户约束不修改核心执行)
+2. Deployment 无能力 (S10-074 候选, 本 Sprint 禁止)
+3. 多项目 Audit 查询隔离已测 (query project_id) — 完整隔离契约达成
+
 ## S10-072 更新 (Production Truth)
 
 > 2026-08-17: 反 bypass + 自动贯穿完成。

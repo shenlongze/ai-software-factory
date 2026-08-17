@@ -65,6 +65,21 @@
 - P1-3 LLM 决策自动审计 (LLM_CALL 详情)
 - P1-4 多项目隔离全链
 
+
+## S10-073 更新 (Production Governance)
+
+> 2026-08-17: 项目隔离 + Audit 全覆盖。
+
+| 原 P1+ | 状态 | 证据 |
+|---|---|---|
+| P1-4 多项目隔离 | ✅ 解决 | 检索 fail-closed + 8 隔离测试 (A→A✅ A→B❌) |
+| P0-4b Audit Discovery/Plan/Agent 级 | ✅ 解决 | 15/16 自动 (仅 TOOL 需侵入核心) |
+| TOOL_CALL 自动 | ⚠️ PARTIAL | AgentRuntime 内部, 约束不修改核心 — 诚实标记 |
+
+**剩余最大风险**:
+1. TOOL_CALL 自动 (需修改 factory-exec 或 Agent Runtime — 待用户批准)
+2. Deployment 无能力 (S10-074)
+
 ## 15 问核心答案
 
 1. **真实 Capability**: 58 个 (接口层全完成)

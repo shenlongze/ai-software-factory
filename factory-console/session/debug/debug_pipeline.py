@@ -88,6 +88,33 @@ def _default_execute_fn() -> RepairExecuteFn:
     return execute
 
 
+def _production_default_execute_fn() -> RepairExecuteFn:
+    """S10-071 P0-1: 生产默认修复执行器 — 真实 Workspace 修改 (非桩)。
+
+    替代 _default_execute_fn 作为默认: 真实修改文件 (snapshot/diff/rollback)。
+    旧桩保留为显式测试 seam (注入时使用)。
+    """
+    from .workspace_executor import production_execute_fn
+
+    return production_execute_fn()
+
+
+def _production_default_validator_fn():
+    """S10-071 P0-2: 生产默认验证器 — 真实 pytest (非注入)。
+
+    替代注入 validator: subprocess 执行真实 pytest。
+    """
+
+    def validate(session: Any, outcome: Any = None, *, workspace: Any = None) -> dict:
+        from .workspace_executor import PytestValidator
+
+        v = PytestValidator().validate(workspace)
+        return {"success": v.success, "exit_code": v.exit_code,
+                "summary": v.summary, "error": v.error, "duration": v.duration}
+
+    return validate
+
+
 def repair_manager_execute_fn(
     repair_manager: Optional[RepairManager] = None,
     task_execute_fn: Any = None,
@@ -557,7 +584,7 @@ class DebugPipeline:
     ) -> dict[str, Any]:
         """执行修复 (缺省确定性桩; 注入器优先; 失败安全)。"""
         start = time.perf_counter()
-        fn = execute_fn if execute_fn is not None else _default_execute_fn()
+        fn = execute_fn if execute_fn is not None else _production_default_execute_fn()
         try:
             outcome = fn(session, workspace) or {}
         except Exception as exc:  # noqa: BLE001 — 失败安全: 执行异常 → 失败
@@ -566,9 +593,22 @@ class DebugPipeline:
             outcome = {"success": False, "error": "execute_fn 返回非 dict"}
         ok = bool(outcome.get("success"))
         validation = outcome.get("validation")
-        if validator is not None:
+        # S10-071 P0-2: 生产默认真实验证 (真实 pytest), 注入 validator 优先 (测试 seam)
+        active_validator = validator if validator is not None else _production_default_validator_fn()
+        if active_validator is not None:
             try:
-                verdict = validator(session, outcome)
+                # 兼容签名: 新 (session, outcome, *, workspace) / 旧 (session, result)
+                import inspect as _inspect
+                try:
+                    _sig = _inspect.signature(active_validator)
+                    _accepts_ws = "workspace" in _sig.parameters or any(
+                        p.kind == _inspect.Parameter.VAR_KEYWORD for p in _sig.parameters.values())
+                except (TypeError, ValueError):
+                    _accepts_ws = True
+                if _accepts_ws:
+                    verdict = active_validator(session, outcome, workspace=workspace)
+                else:
+                    verdict = active_validator(session, outcome)
                 if hasattr(verdict, "to_dict"):
                     validation = verdict.to_dict()
                     ok = bool(validation.get("success", ok))

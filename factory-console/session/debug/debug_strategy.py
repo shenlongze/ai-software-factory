@@ -16,6 +16,7 @@ LLM 可选 (llm_provider) — 失败 → 规则兜底。
 
 from __future__ import annotations
 
+import re
 from typing import Any, Optional
 
 from . import (
@@ -112,6 +113,17 @@ class DebugStrategySelector:
 
         # 3) 验证失败 → 修测试
         if error_type in (ERROR_TEST_FAILURE, ERROR_ASSERTION):
+            # S10-071 P0-1: ASSERTION 含 expected/got → 测试=需求定义, 修正实现 (FIX_CODE)
+            msg = str(getattr(case, "error_message", "") or "")
+            if error_type == ERROR_ASSERTION and re.search(
+                    r"expected\s+.+?(?:but\s+)?got\s+", msg, re.IGNORECASE):
+                return self._build(
+                    FixStrategy.FIX_CODE,
+                    "断言失败且含期望/实际对比 — 测试为需求定义, 修正实现代码",
+                    max(0.7, cause.confidence),
+                    evidence,
+                    experiences,
+                )
             return self._build(
                 FixStrategy.FIX_TEST,
                 "验证失败 (测试/断言) — 先修正测试或实现以通过验证",

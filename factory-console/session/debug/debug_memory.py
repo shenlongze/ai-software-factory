@@ -64,6 +64,13 @@ class DebugExperienceRetriever:
         """
         case = debug_case if isinstance(debug_case, DebugCase) else DebugCase.from_dict(debug_case)
         k = max(0, int(top_k or 0))
+        # S10-071 P0-6: 统一检索入口 — 优先经 RetrievalOrchestrator (多来源/去重/排序/Budget)
+        try:
+            hits = self._retrieve_via_orchestrator(case, k, memory_store)
+            if hits is not None:
+                return hits
+        except Exception:  # noqa: BLE001 — Orchestrator 失败 → 原逻辑 fallback
+            pass
         try:
             store = (
                 memory_store
@@ -100,3 +107,43 @@ class DebugExperienceRetriever:
             reverse=True,
         )
         return ranked[:k] if k else []
+
+    def _retrieve_via_orchestrator(self, case: DebugCase, top_k: int, memory_store: Any):
+        """统一检索: RetrievalOrchestrator (EXPERIENCE 来源优先, 失败 → None 触发 fallback)。"""
+        from ...retrieval import (
+            ExperienceRetriever as OrchestratedExpRetriever,
+            RetrievalOrchestrator,
+            RetrievalRequest,
+            RetrievalSource,
+        )
+        from ...retrieval.models import RetrievalCandidate
+
+        store = (
+            memory_store
+            if memory_store is not None
+            else ExperienceStore.from_workspace(self.workspace)
+        )
+        orch = RetrievalOrchestrator()
+        orch.register(RetrievalSource.EXPERIENCE, OrchestratedExpRetriever(memory_store=store))
+        query = " ".join(p for p in (case.error_message, case.task_id, case.context) if p)
+        request = RetrievalRequest(query=query, project_id=case.project or None,
+                                   top_k=top_k or 3, max_tokens=8000)
+        candidates, _stats = orch.retrieve(request)
+        if not candidates:
+            return []
+        # RetrievalCandidate → ExperienceRecord 语义 (调用方兼容)
+        from ...memory.experience import ExperienceRecord
+        records = []
+        for c in candidates:
+            if not isinstance(c, RetrievalCandidate):
+                continue
+            records.append(ExperienceRecord(
+                id=c.source_id,
+                type=str(c.metadata.get("type", "DEBUG_EXPERIENCE")),
+                problem=c.content,
+                confidence=c.score,
+                success=bool(c.metadata.get("success", True)),
+                source="retrieval_orchestrator",
+                project=case.project or "",
+            ))
+        return records[:top_k] if top_k else records

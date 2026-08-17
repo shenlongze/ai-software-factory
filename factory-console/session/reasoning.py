@@ -135,11 +135,13 @@ class ReasoningProvider:
         prompt_builder: Optional[Callable[[str, dict[str, Any]], str]] = None,
         trace: Any = None,
         max_tokens: int = DEFAULT_MAX_TOKENS,
+        context_ledger: Any = None,
     ) -> None:
         self._llm_fn = llm_fn
         self._control_plane = control_plane
         self._prompt_builder = prompt_builder
         self._trace = trace
+        self._context_ledger = context_ledger
         self._max_tokens = int(max_tokens)
         self._provider_id: str = ""
         self._model: str = ""
@@ -199,6 +201,19 @@ class ReasoningProvider:
         """
         start = time.monotonic()
         prompt = self.build_prompt(operation, payload)
+        # S10-071 P0-5: Context Budget 真实 gate — 超预算拒绝调用 (防 Context 无限增长)
+        if self._context_ledger is not None:
+            try:
+                est = max(1, len(prompt) // 2)
+                ok, reason = self._context_ledger.check(est)
+                if not ok:
+                    raise ReasoningError(
+                        f"{operation}: Context 预算超限 ({est} tokens, {reason}) — 拒绝 LLM 调用"
+                    )
+            except ReasoningError:
+                raise
+            except Exception:  # noqa: BLE001 — 预算检查异常不阻断
+                pass
         fn = self._llm_fn if self._llm_fn is not None else self._default_llm_fn()
         try:
             raw = fn(prompt, operation)

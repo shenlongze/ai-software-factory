@@ -1557,6 +1557,16 @@ class ExecutionOrchestrator:
         state.lifecycle = Lifecycle.DELIVERED
         self._save_state(project_dir, state)
         self._set_lifecycle(project_dir, slug, Lifecycle.DELIVERED)
+        # S10-071 P0-4: 交付事件自动 Audit (失败安全)
+        try:
+            from ..audit.audit_emitter import AuditEmitter
+            AuditEmitter(workspace=project_dir.parent.parent).emit(
+                "PROJECT_DELIVERED", project_id=slug,
+                actor_type="user", actor_id=str(getattr(self, "user", "") or ""),
+                decision_reason=f"用户验收通过, 项目 {slug} 交付",
+            )
+        except Exception:  # noqa: BLE001 — 失败安全
+            pass
         return True
 
     # ------------------------------------------------------------ 任务队列
@@ -1901,6 +1911,27 @@ class ExecutionOrchestrator:
             ],
         )
         self.validator.save(project_dir, slug, summary)
+        # S10-071 P0-4: Audit 自动接入生产链 (执行完成事件, 失败安全)
+        try:
+            from ..audit.audit_emitter import AuditEmitter
+            AuditEmitter(workspace=project_dir.parent.parent).emit(
+                "TASK_COMPLETED" if failed == 0 else "TASK_FAILED",
+                project_id=slug, actor_type="system", actor_id="orchestrator",
+                decision_reason=(
+                    f"生产执行完成: {len(state.tasks)} 任务, "
+                    f"{sum(1 for t in state.tasks if t.get('status') == 'completed')} 完成"
+                    if failed == 0 else f"生产执行有失败: {failed} 任务失败"
+                ),
+                result={"failed": failed, "total": len(state.tasks)},
+            )
+        except Exception:  # noqa: BLE001 — 失败安全
+            pass
+        # S10-071 P0-3: Memory 自动沉淀 (生产结束自动学习, 失败安全)
+        try:
+            from ..memory.auto_learn import AutoLearner
+            AutoLearner().learn_from_workspace(project_dir.parent.parent)
+        except Exception:  # noqa: BLE001 — 失败安全
+            pass
         if team_run is not None:
             # S10-057 §P1: 团队状态终态落盘 (completed/paused/failed + validation 记录)
             team_state = TeamExecutionState.get(project_dir)

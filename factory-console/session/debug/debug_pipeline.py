@@ -325,6 +325,20 @@ class DebugPipeline:
             "attempt": session.attempt_number,
             "phase": "repair",
         }
+        # S10-072 P0-D: 治理检查自动 Audit (失败安全)
+        try:
+            from ...audit.audit_emitter import AuditEmitter
+            AuditEmitter(workspace=ws).emit(
+                "GOVERNANCE_CHECK",
+                project_id=getattr(session, "project_id", "") or "",
+                task_id=getattr(session, "task_id", "") or "",
+                agent_id=getattr(session, "agent_id", "") or "",
+                decision_reason=f"修复治理检查: {decision} — {reason}",
+                policy={"decision": decision, "reason": reason},
+                debug_reference=getattr(session, "debug_id", "") or "",
+            )
+        except Exception:  # noqa: BLE001 — 失败安全
+            pass
         if decision == DECISION_BLOCKED:
             session.transition(SESSION_BLOCKED)
             self.store.update(session)
@@ -361,6 +375,22 @@ class DebugPipeline:
         session.attempt_number += 1
         session.transition(SESSION_VALIDATING)
         self.store.update(session)
+        # S10-072 P0-D: 修复结果自动 Audit (失败安全)
+        try:
+            from ...audit.audit_emitter import AuditEmitter
+            AuditEmitter(workspace=self.workspace).emit(
+                "REPAIR_COMPLETED" if ok else "REPAIR_FAILED",
+                project_id=getattr(session, "project_id", "") or "",
+                task_id=getattr(session, "task_id", "") or "",
+                agent_id=getattr(session, "agent_id", "") or "",
+                decision_reason=(
+                    f"修复{('成功' if ok else '失败')}: 策略 {attempt.strategy}, "
+                    f"第 {attempt.attempt_number} 次尝试"
+                ),
+                debug_reference=getattr(session, "debug_id", "") or "",
+            )
+        except Exception:  # noqa: BLE001 — 失败安全
+            pass
         return session
 
     # ------------------------------------------------------------ validate
@@ -387,9 +417,23 @@ class DebugPipeline:
             ok = self.adapter.evaluate(session.validation_result)
         if ok:
             session.transition(SESSION_SUCCESS)
+            event = "VALIDATION_PASSED"
         else:
             session.transition(SESSION_RETRYING)
+            event = "VALIDATION_FAILED"
         self.store.update(session)
+        # S10-072 P0-D: 验证结果自动 Audit (失败安全)
+        try:
+            from ...audit.audit_emitter import AuditEmitter
+            AuditEmitter(workspace=self.workspace).emit(
+                event, project_id=getattr(session, "project_id", "") or "",
+                task_id=getattr(session, "task_id", "") or "",
+                agent_id=getattr(session, "agent_id", "") or "",
+                decision_reason=f"调试验证 {event.lower()}: {getattr(session, 'error_summary', '')[:60]}",
+                debug_reference=getattr(session, "debug_id", "") or "",
+            )
+        except Exception:  # noqa: BLE001 — 失败安全
+            pass
         return session
 
     # ------------------------------------------------------------ adapt
@@ -481,6 +525,12 @@ class DebugPipeline:
                 "phase": "run",
             }
             self.store.update(session)
+        # S10-072 P0-E: 生产 Debug 闭环自动沉淀经验 (成功/失败终态, 失败安全)
+        if session.status in (SESSION_SUCCESS, SESSION_BLOCKED):
+            try:
+                self.learn(session, workspace=workspace, memory_store=memory_store)
+            except Exception:  # noqa: BLE001 — 学习失败不阻断
+                pass
         return session
 
     # ------------------------------------------------------------ resume

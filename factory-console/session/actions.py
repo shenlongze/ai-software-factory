@@ -299,6 +299,16 @@ def create_product(context: ExecutionContext) -> ActionResult:
             message=f"产品创建失败: product.json 落盘失败: {exc}",
             error=str(exc),
         )
+    # S10-070: Audit 自动接入 (失败安全 — Audit 故障不中断业务)
+    try:
+        from ..audit.audit_emitter import AuditEmitter
+        AuditEmitter(workspace=context.workspace).emit(
+            "PRODUCT_CREATED", project_id=slug, actor_type="user",
+            actor_id=str(getattr(context, "user", "") or ""),
+            decision_reason=f"用户创建产品 {product.name}",
+        )
+    except Exception:  # noqa: BLE001 — 失败安全
+        pass
     return ActionResult(
         ok=True,
         status=STATUS_OK,
@@ -1079,6 +1089,16 @@ def governance_status(context: ExecutionContext) -> ActionResult:
         if not rows:
             return ActionResult(ok=True, status=STATUS_OK, message="暂无生产项目。")
         lines = ["项目 | 状态 | 计划版本 | 治理状态"] + [" | ".join(r) for r in rows]
+                # S10-070: Audit 自动接入 (失败安全)
+        try:
+            from ..audit.audit_emitter import AuditEmitter
+            AuditEmitter(workspace=ws).emit(
+                "MEMORY_LEARNED", project_id=context.project or "",
+                actor_type="user", actor_id=str(getattr(context, "user", "") or ""),
+                decision_reason=f"经验学习: 提取 {result.extracted_count} 条",
+            )
+        except Exception:  # noqa: BLE001
+            pass
         return ActionResult(ok=True, status=STATUS_OK, message="\n".join(lines))
     except Exception as exc:  # noqa: BLE001 — 失败安全
         return ActionResult(ok=False, status=STATUS_ERROR, message=f"状态查询失败: {exc}", error=str(exc))
@@ -1787,6 +1807,16 @@ def review_approve(context: ExecutionContext) -> ActionResult:
         if not review_id:
             return ActionResult(ok=True, status=STATUS_OK, message="没有待批准的评审。")
         rec = gate.approve(review_id, reviewer)
+        # S10-070: Audit 自动接入 (失败安全)
+        try:
+            from ..audit.audit_emitter import AuditEmitter
+            AuditEmitter(workspace=workspace).emit(
+                "REVIEW_APPROVED", project_id=context.project or "",
+                actor_type="user", actor_id=str(getattr(context, "user", "") or ""),
+                decision_reason=f"评审 {review_id} 已批准 ({reviewer})",
+            )
+        except Exception:  # noqa: BLE001 — 失败安全
+            pass
         return ActionResult(ok=True, status=STATUS_OK,
                             message=f"评审 {review_id} 已批准 ({rec.status}) — 可继续执行。")
     except Exception as exc:  # noqa: BLE001 — 失败安全
@@ -1875,6 +1905,16 @@ def product_intelligence(context: ExecutionContext) -> ActionResult:
         from .product_intelligence import ProductIntelligenceEngine
         engine = ProductIntelligenceEngine()
         report = engine.analyze(intent)
+        # S10-070: Audit 自动接入 (失败安全)
+        try:
+            from ..audit.audit_emitter import AuditEmitter
+            AuditEmitter(workspace=context.workspace).emit(
+                "PRODUCT_INTELLIGENCE", project_id=context.project or "",
+                actor_type="user", actor_id=str(getattr(context, "user", "") or ""),
+                decision_reason=f"产品智能分析 {intent.get('name', '')}",
+            )
+        except Exception:  # noqa: BLE001
+            pass
         return ActionResult(ok=True, status=STATUS_OK, message=engine.to_markdown(report))
     except Exception as exc:  # noqa: BLE001 — 失败安全
         return ActionResult(ok=False, status=STATUS_ERROR,
@@ -2194,6 +2234,18 @@ def debug_analyze(context: ExecutionContext) -> ActionResult:
         strategy = decision.strategy.value if hasattr(decision.strategy, "value") else str(decision.strategy)
         lines.append(f"• 策略: {strategy} — {decision.reason} (conf {decision.confidence})")
         lines.append(f"• 相关经验: {len(decision.related_experiences)} 条")
+        # S10-070: Audit 自动接入 (失败安全)
+        try:
+            from ..audit.audit_emitter import AuditEmitter
+            AuditEmitter(workspace=ws).emit(
+                "DEBUG_STARTED", project_id=context.project or "",
+                task_id=str(params.get("task_id") or ""),
+                agent_id=str(params.get("agent_id") or ""),
+                actor_type="user", actor_id=str(getattr(context, "user", "") or ""),
+                decision_reason=f"调试分析: {error_message or '最近失败'}",
+            )
+        except Exception:  # noqa: BLE001 — 失败安全
+            pass
         return ActionResult(
             ok=True, status=STATUS_OK, message="\n".join(lines),
             data=decision.to_dict(),

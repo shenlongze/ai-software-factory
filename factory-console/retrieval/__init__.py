@@ -1,0 +1,37 @@
+"""factory-console/retrieval/ — 统一检索抽象 (S10-070)。
+
+多 RAG / 多 Memory 来源统一入口:
+  RetrievalRequest → RetrievalOrchestrator (注册/去重/排序/Top-K/Budget)
+  → [RetrievalCandidate] + stats
+
+来源: EXPERIENCE (Memory) / AUDIT (审计) / PROJECT (项目) /
+       KNOWLEDGE (知识库) / EXTERNAL_RAG (未来扩展)。
+"""
+
+from __future__ import annotations
+
+from .models import (
+    RetrievalCandidate,
+    RetrievalRequest,
+    RetrievalScore,
+    RetrievalSource,
+)
+from .orchestrator import RetrievalOrchestrator
+from .retriever import (
+    AuditRetriever,
+    ExperienceRetriever,
+    ProjectRetriever,
+    Retriever,
+)
+
+__all__ = [
+    "RetrievalCandidate",
+    "RetrievalRequest",
+    "RetrievalScore",
+    "RetrievalSource",
+    "RetrievalOrchestrator",
+    "Retriever",
+    "ExperienceRetriever",
+    "AuditRetriever",
+    "ProjectRetriever",
+]

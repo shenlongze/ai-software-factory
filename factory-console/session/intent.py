@@ -27,6 +27,7 @@ INTENT_CREATE_PROJECT = "create_project"
 INTENT_RUN_TASK = "run_task"
 INTENT_SHOW_COST = "show_cost"
 INTENT_SHOW_STATUS = "show_status"
+INTENT_FACTORY_BUDGET = "factory_budget"
 INTENT_LIST_PROJECTS = "list_projects"
 #: S10-050 P1: 产品意图 (用户想创造什么 — 走 DISCOVERY 多轮, 见 conversation.py)
 INTENT_CREATE_PRODUCT = "create_product"
@@ -117,7 +118,7 @@ _KEYWORD_RULES: tuple[tuple[tuple[str, ...], str, Optional[str]], ...] = (
     #   审计用 "为什么项目停了/为什么任务停了" (与基线不共享子串, 零冲突);
     # - "审计决策链" 在 "审计决策" 之前 (前者含后者, 最具体优先);
     # - "查看审计记录" 在 "审计记录" 之前 (同前缀最具体优先)。
-    (("查看审计记录", "审计记录"), INTENT_AUDIT_EVENTS, None),
+    (("查看审计记录", "审计记录", "查看审计"), INTENT_AUDIT_EVENTS, None),
     (("审计追踪", "查看审计链路"), INTENT_AUDIT_TRACE, "trace_id"),
     (("审计决策链",), INTENT_AUDIT_CHAIN, "trace_id"),
     (("审计决策",), INTENT_AUDIT_DECISION, None),
@@ -158,7 +159,7 @@ _KEYWORD_RULES: tuple[tuple[tuple[str, ...], str, Optional[str]], ...] = (
     (("查看调试经验", "debug历史", "调试历史"), INTENT_DEBUG_HISTORY, None),
     (("修复建议", "debug推荐", "调试推荐", "推荐修复"), INTENT_DEBUG_RECOMMEND, None),
     (("debug统计", "调试统计", "调试数据"), INTENT_DEBUG_STATS, None),
-    (("分析错误", "为什么失败", "错误分析", "调试分析", "debug"), INTENT_DEBUG_ANALYZE, "error_message"),
+    (("分析错误", "为什么失败", "错误分析", "调试分析", "debug", "检查一下失败原因", "检查失败原因"), INTENT_DEBUG_ANALYZE, "error_message"),
     # S10-068 Part 2: Autonomous Debug & Repair 意图 (纯新增, 旧关键词不动)。
     # 优先级要点 (必须在 run_task "修复" 与 resume_project "继续" 之前):
     # - "自动修复/验证修复" 含 "修复", 不被 run_task 抢;
@@ -174,6 +175,7 @@ _KEYWORD_RULES: tuple[tuple[tuple[str, ...], str, Optional[str]], ...] = (
     (("加", "修复", "写", "实现"), INTENT_RUN_TASK, "objective"),
     (("项目列表", "有哪些项目", "列出项目"), INTENT_LIST_PROJECTS, None),
     (("状态", "看看"), INTENT_SHOW_STATUS, None),
+    (("查看预算", "预算情况", "预算"), INTENT_FACTORY_BUDGET, None),
     # S10-051 P1: 工程管线意图 — 优先级在 create_product 之前
     # ("我想生成PRD" 不被 "我想" 抢; "准备开发一个APP" 不被 "开发一个" 抢)
     (("生成PRD", "生成需求文档", "PRD"), INTENT_GENERATE_PRD, None),
@@ -196,7 +198,7 @@ _KEYWORD_RULES: tuple[tuple[tuple[str, ...], str, Optional[str]], ...] = (
     (("查看进度", "现在做到哪了", "做到哪了"), INTENT_PRODUCTION_SESSION_VIEW, None),
     # S10-066: 产品智能意图 (ProductIntelligenceEngine)
     (("分析产品", "产品分析", "产品智能"), INTENT_PRODUCT_INTELLIGENCE, None),
-    (("产品市场", "市场分析"), INTENT_PRODUCT_MARKET, None),
+    (("产品市场", "市场分析", "有没有市场", "市场怎么样"), INTENT_PRODUCT_MARKET, None),
     (("产品画像", "用户画像"), INTENT_PRODUCT_PERSONA, None),
     (("MVP规划", "MVP拆分", "MVP计划"), INTENT_PRODUCT_MVP, None),
     (("产品价值", "价值评分"), INTENT_PRODUCT_VALUE, None),
@@ -204,7 +206,7 @@ _KEYWORD_RULES: tuple[tuple[tuple[str, ...], str, Optional[str]], ...] = (
     # 优先级在 create_product ("我想"/"产品") 与 create_project ("创建") 之前:
     # "我想搜索经验" 不被 "我想" 抢; "学习" 不与 run_task (写/修复/实现/加)
     # 共享子串; "分析Agent" 不与其他 "分析" 类规则冲突 (无裸 "分析" 规则)。
-    (("搜索经验", "查找经验", "查经验"), INTENT_MEMORY_SEARCH, "query"),
+    (("搜索经验", "查找经验", "查经验", "学到了什么", "有什么经验"), INTENT_MEMORY_SEARCH, "query"),
     (("学习经验", "经验学习", "学习"), INTENT_MEMORY_LEARN, None),
     (("经验统计",), INTENT_MEMORY_STATS, None),
     (

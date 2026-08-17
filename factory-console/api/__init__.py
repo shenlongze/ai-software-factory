@@ -82,7 +82,9 @@ from .providers import list_providers
 from .product_intelligence import (
     product_intelligence_analyze,
     product_market_analysis,
+    product_mvp,
     product_persona,
+    product_value,
 )
 from .review_feedback import list_review_feedback, save_review_feedback
 from .runtime import (
@@ -217,7 +219,9 @@ __all__ = [
     "plan_sprint",
     "product_intelligence_analyze",
     "product_market_analysis",
+    "product_mvp",
     "product_persona",
+    "product_value",
     "reject_approval",
     "run_status_route",
     "save_discovery_answer",

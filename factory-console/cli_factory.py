@@ -134,7 +134,8 @@ MIN_PYTHON = (3, 10)
 #: 最低 Node.js 版本 (环境检查; vite 5 要求 ≥18)
 MIN_NODE = (18, 0)
 #: 后端 FastAPI adapter (包名含连字符 — 唯一导入方式是 importlib)
-BACKEND_MODULE = "factory-console.web.backend.fastapi_adapter"
+# S10-074: 部署态包名 factory_console (pyproject package-dir 映射); 源码态兼容连字符
+BACKEND_MODULE = "factory_console.web.backend.fastapi_adapter"
 #: 打开浏览器默认路径 (SPA 工作台)
 FRONTEND_PATH = "/#/workspace"
 #: pid/日志子目录 (相对数据目录)
@@ -985,7 +986,11 @@ class FactoryCLI:
             print(f"  后端已在运行 (PID {_read_pid(self.backend_pid)})")
             return True
         self.run_dir.mkdir(parents=True, exist_ok=True)
-        python = self.root / ".venv" / "bin" / "python"
+        # S10-074: 部署态用 sys.executable (pip 安装无 .venv), 开发态 fallback 项目 .venv
+        import sys as _sys
+        python = Path(_sys.executable)
+        if not python.is_file():
+            python = self.root / ".venv" / "bin" / "python"
         code = (
             "import importlib,uvicorn;"
             "m=importlib.import_module({mod!r});"
@@ -1052,7 +1057,11 @@ class FactoryCLI:
             ]
         else:
             # dist 托管: uvicorn + create_app(static_dir=dist) — bootstrap 同后端
-            python = self.root / ".venv" / "bin" / "python"
+            # S10-074: 部署态用 sys.executable (无 .venv), 开发态 fallback 项目 .venv
+            import sys as _sys
+            python = Path(_sys.executable)
+            if not python.is_file():
+                python = self.root / ".venv" / "bin" / "python"
             code = (
                 "import importlib,uvicorn;"
                 "m=importlib.import_module({mod!r});"
@@ -2295,10 +2304,12 @@ class FactoryCLI:
 
 def build_parser() -> argparse.ArgumentParser:
     """argparse 结构: CLI Control Plane (17+ 命令)。"""
+    from . import __version__ as _factory_version
+
     parser = argparse.ArgumentParser(
         prog="factory",
         description=(
-            "AI Factory v0.1.0 — AI Workforce Operating System\n"
+            f"AI Factory v{_factory_version} — AI Workforce Operating System\n"
             "管理你的 AI 员工, 而不是用 AI 聊天。\n"
             "\n"
             "快速开始:\n"
@@ -2314,6 +2325,12 @@ def build_parser() -> argparse.ArgumentParser:
             "文档: docs/getting-started/quick-start-zh.md\n"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    # S10-074: --version 顶层 flag (单一版本源)
+    parser.add_argument(
+        "--version", action="version",
+        version=f"AI Factory v{_factory_version}",
+        help="显示版本并退出",
     )
     sub = parser.add_subparsers(dest="command", required=True, metavar="命令")
     p_start = sub.add_parser(

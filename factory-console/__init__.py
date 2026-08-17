@@ -69,3 +69,16 @@ __all__ = [
     "record_console_dashboard_viewed",
     "record_console_viewed",
 ]
+
+# S10-074: 运行时版本单一来源 (pyproject.toml [project].version)
+try:
+    from importlib.metadata import version as _pkg_version
+    __version__ = _pkg_version("ai-software-factory")
+except Exception:  # noqa: BLE001 — 非安装态 (源码运行) → 读 pyproject
+    import tomllib
+    from pathlib import Path as _P
+    _pp = _P(__file__).resolve().parent.parent / "pyproject.toml"
+    try:
+        __version__ = tomllib.loads(_pp.read_text(encoding="utf-8"))["project"]["version"]
+    except Exception:  # noqa: BLE001
+        __version__ = "0.0.0-dev"

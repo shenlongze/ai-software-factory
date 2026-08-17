@@ -92,6 +92,19 @@ Permission Boundary (S9-002 收窄 + S10-004/006/006.5/016-002 扩展): 写路�
 from __future__ import annotations
 
 import importlib
+import os
+
+def _console_import(name: str):
+    """S10-074: 部署态包名 factory_console; 源码态兼容连字符目录。"""
+    try:
+        return importlib.import_module(f"factory_console.{name}")
+    except ImportError:
+        return importlib.import_module(f"factory-console.{name}")
+
+
+from ... import __version__ as _factory_version
+
+
 import sys
 from pathlib import Path
 from typing import Any, Iterator, NoReturn
@@ -475,7 +488,11 @@ def build_console_service(
     if str(repo_root) not in sys.path:
         sys.path.insert(0, str(repo_root))
     try:
-        module = importlib.import_module("factory-console")
+        # S10-074: 部署态包名 factory_console; 源码态兼容连字符
+        try:
+            module = importlib.import_module("factory_console")
+        except ImportError:
+            module = importlib.import_module("factory-console")
     except Exception as exc:  # 缺装/损坏 → 装配失败 (调用方决定兜底)
         raise RuntimeError("factory-console 未安装 (缺 factory-console/ 包)") from exc
 
@@ -522,7 +539,7 @@ def build_console_service(
     runtime_store = None
     runtime_screenshot_store = None
     try:
-        _runtime_stores = importlib.import_module("factory-console.runtime_store")
+        _runtime_stores = _console_import("runtime_store")
         runtime_store = _runtime_stores.RuntimeInstanceStore(root / "runtimes")
         runtime_screenshot_store = _runtime_stores.RuntimeScreenshotStore(root / "runtimes")
     except Exception:
@@ -533,7 +550,7 @@ def build_console_service(
     # Reject 意见落库; 失败安全: 装配失败 → None, 反馈保存/查询按空处理)
     review_feedback_store = None
     try:
-        _feedback_module = importlib.import_module("factory-console.review_feedback")
+        _feedback_module = _console_import("review_feedback")
         review_feedback_store = _feedback_module.ReviewFeedbackStore(root)
     except Exception:
         review_feedback_store = None
@@ -542,7 +559,7 @@ def build_console_service(
     # 消息落库; 失败安全: 装配失败 → None, 消息记录跳过, 对话/启动不受影响)
     conversation_store = None
     try:
-        _chat_module = importlib.import_module("factory-console.chat_store")
+        _chat_module = _console_import("chat_store")
         conversation_store = _chat_module.ConversationStore(root / "chat.json")
     except Exception:
         conversation_store = None
@@ -625,11 +642,11 @@ def build_app(
     from fastapi.staticfiles import StaticFiles
 
     # 延迟 import 11A 路由函数 + 事件辅助 (仅依赖 factory-console.api, 无 Web 依赖)
-    _api = importlib.import_module("factory-console.api")
-    _events = importlib.import_module("factory-console.events")
+    _api = _console_import("api")
+    _events = _console_import("events")
     # S10-004: Runtime 状态机异常 (service 定义; api/__init__ 不导出 —
     # Adapter 层直接取 service 符号, 避免给 api 包加非路由导出)
-    _service = importlib.import_module("factory-console.service")
+    _service = _console_import("service")
     RuntimeStateError = _service.RuntimeStateError
     # S10-006.5 收尾: 项目删除冲突 (service 定义 — 运行中删除 → 409 诚实拒绝)
     ProjectConflictError = _service.ProjectConflictError
@@ -646,7 +663,7 @@ def build_app(
     ToolExecuteNotFoundError = _service.ToolExecuteNotFoundError
     ToolExecutePermissionError = _service.ToolExecutePermissionError
 
-    app = FastAPI(title="AI Software Factory — Human Console Web", version="0.1.0")
+    app = FastAPI(title="AI Software Factory — Human Console Web", version=_factory_version)
 
     def _raise_backlog_error(exc: Exception) -> NoReturn:
         """Backlog + Sprint/Milestone/Roadmap 端点统一错误映射 (404/409/400; 其余原样上抛)。"""
@@ -657,6 +674,27 @@ def build_app(
         if isinstance(exc, ValueError):
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         raise exc
+
+    # S10-074: 部署健康/就绪/版本契约 (GET /health /ready /version)
+    @app.get("/health")
+    def health() -> dict[str, Any]:
+        """存活: 进程活着。"""
+        return {"status": "ok", "version": _factory_version}
+
+    @app.get("/ready")
+    def ready() -> dict[str, Any]:
+        """就绪: 核心配置/数据目录可达。"""
+        issues: list[str] = []
+        data_dir = Path(os.environ.get("DATA_DIR", "~/.factory")).expanduser()
+        if not data_dir.is_dir():
+            issues.append(f"数据目录不存在: {data_dir}")
+        return {"status": "ready" if not issues else "not_ready",
+                "data_dir": str(data_dir), "issues": issues}
+
+    @app.get("/version")
+    def version() -> dict[str, Any]:
+        """版本。"""
+        return {"name": "ai-software-factory", "version": _factory_version}
 
     @app.get("/api/dashboard")
     def api_dashboard() -> dict[str, Any]:
@@ -1876,7 +1914,7 @@ def build_app(
     # → GET /api/projects/{id}/timeline 直接可见 (真实事件, 非伪造)。
 
     _events_db_path = getattr(getattr(event_logger, "store", None), "db_path", None)
-    _runner = importlib.import_module("factory-console.workflow_runner")  # noqa: E402
+    _runner = _console_import("workflow_runner")  # noqa: E402
     WorkflowStartError = _runner.WorkflowStartError
     WorkflowConflictError = _runner.WorkflowConflictError
 

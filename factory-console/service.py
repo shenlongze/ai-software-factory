@@ -396,7 +396,7 @@ class ConsoleService:
         契约); validation_command=None (不引入沙箱验证依赖)。
         """
         try:
-            _runner = importlib.import_module("factory-console.workflow_runner")
+            _runner = _console_import("workflow_runner")
             if not _runner.has_llm_key():
                 return None
             _runner.load_llm_key()

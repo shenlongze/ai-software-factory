@@ -90,12 +90,49 @@ INTENT_DEBUG_ROOT_CAUSE = "debug_root_cause"
 INTENT_DEBUG_REPAIR = "debug_repair"
 INTENT_DEBUG_VALIDATE = "debug_validate"
 INTENT_DEBUG_RESUME = "debug_resume"
+#: S10-069: Audit Intelligence 意图 (审计记录/追踪/决策链/为什么/成本/导出/统计
+#: — AuditStore + AuditExplain 的 CLI 入口: 统一审计查询与可解释性)
+INTENT_AUDIT_EVENTS = "audit_events"
+INTENT_AUDIT_TRACE = "audit_trace"
+INTENT_AUDIT_CHAIN = "audit_chain"
+INTENT_AUDIT_DECISION = "audit_decision"
+INTENT_AUDIT_EXPLAIN = "audit_explain"
+INTENT_AUDIT_TASK = "audit_task"
+INTENT_AUDIT_AGENT = "audit_agent"
+INTENT_AUDIT_COST = "audit_cost"
+INTENT_AUDIT_EXPORT = "audit_export"
+INTENT_AUDIT_STATS = "audit_stats"
 
 #: KeywordIntentParser 关键词规则表 (顺序 = 优先级, 确定性无歧义):
 #: (关键词元组, intent_type, 参数键 — 命中后取关键词后剩余文本作为参数值)
 _KEYWORD_RULES: tuple[tuple[tuple[str, ...], str, Optional[str]], ...] = (
     # S10-055 Task 005: 项目验收意图 — 最高优先级 (确认门后 DELIVERED)
     (("通过验收", "验收通过", "确认交付", "接受交付"), INTENT_ACCEPT_PROJECT, None),
+    # S10-069: Audit Intelligence 意图 (纯新增, 旧关键词不动)。优先级要点:
+    # - 必须在 show_cost ("成本/费用") 之前: "成本审计/查看项目成本审计" 含
+    #   "成本", 不被 show_cost 抢;
+    # - 必须在 agent_reason ("为什么选择") 之前: "为什么选择这个Agent" 不被抢;
+    # - 必须在 create_project ("创建") 之前: "为什么创建这个任务" 不被抢;
+    # - "为什么停了/为什么停止" 保留给 review_view (S10-065 基线口径),
+    #   审计用 "为什么项目停了/为什么任务停了" (与基线不共享子串, 零冲突);
+    # - "审计决策链" 在 "审计决策" 之前 (前者含后者, 最具体优先);
+    # - "查看审计记录" 在 "审计记录" 之前 (同前缀最具体优先)。
+    (("查看审计记录", "审计记录"), INTENT_AUDIT_EVENTS, None),
+    (("审计追踪", "查看审计链路"), INTENT_AUDIT_TRACE, "trace_id"),
+    (("审计决策链",), INTENT_AUDIT_CHAIN, "trace_id"),
+    (("审计决策",), INTENT_AUDIT_DECISION, None),
+    (("为什么创建这个任务", "为什么创建该任务"), INTENT_AUDIT_EXPLAIN, "task_id"),
+    (
+        ("为什么选择这个Agent", "为什么选择该Agent", "为什么选择这个agent", "为什么选择该agent"),
+        INTENT_AUDIT_EXPLAIN,
+        "agent_id",
+    ),
+    (("为什么项目停了", "为什么任务停了"), INTENT_AUDIT_EXPLAIN, None),
+    (("审计任务",), INTENT_AUDIT_TASK, "task_id"),
+    (("审计Agent", "审计agent"), INTENT_AUDIT_AGENT, "agent_id"),
+    (("查看项目成本审计", "成本审计"), INTENT_AUDIT_COST, "project_id"),
+    (("导出审计",), INTENT_AUDIT_EXPORT, None),
+    (("审计统计",), INTENT_AUDIT_STATS, None),
     # S10-056 批次 B: Team Execution 意图 — 必须在 INTENT_TEAM ("团队") 与
     # INTENT_WORKFORCE 泛化关键词之前 ("团队执行/团队依赖/团队冲突" 含 "团队",
     # 不被 "团队" 泛化规则抢; "冲突" 不被 run_task "修复" 抢)

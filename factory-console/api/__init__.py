@@ -19,6 +19,18 @@ from .approvals import (
 )
 from .agent_executor import execute_runtime_task
 from .artifacts import get_artifact, get_artifact_content, list_artifacts
+from .audit import (
+    audit_agent,
+    audit_chain,
+    audit_cost,
+    audit_decisions,
+    audit_events,
+    audit_explain,
+    audit_export,
+    audit_stats,
+    audit_task,
+    audit_trace,
+)
 from .backlog import (
     create_epic,
     create_feature,
@@ -121,6 +133,16 @@ __all__ = [
     "agent_skills",
     "append_runtime_session_event",
     "approve_approval",
+    "audit_agent",
+    "audit_chain",
+    "audit_cost",
+    "audit_decisions",
+    "audit_events",
+    "audit_explain",
+    "audit_export",
+    "audit_stats",
+    "audit_task",
+    "audit_trace",
     "cancel_runtime_session",
     "capture_runtime_screenshot",
     "chat_route",

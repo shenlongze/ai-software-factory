@@ -99,7 +99,8 @@ class ChatService:
                 return _FALLBACK
             return text[:max_chars]
         except Exception as exc:  # noqa: BLE001 — LLM 调用失败 → 明确不可用
-            logger.warning("chat answer failed: %s", exc)
+            # S10-078: 细节仅进日志 (默认不向 REPL stderr 倾倒内部异常)
+            logger.debug("chat answer failed: %s", exc)
             msg = str(exc)
             if "api key" in msg.lower() or "key" in msg.lower() or "未设置" in msg or "missing" in msg.lower():
                 if verbose:

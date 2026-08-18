@@ -45,6 +45,22 @@ factory-venv/bin/factory --version
 
 ---
 
+### 一步到位: 一键安装 (推荐)
+
+```bash
+# 在源码目录 (或下载 install.sh 后):
+bash scripts/install.sh                # 自动: 找 Python → 构建 wheel → venv → 安装 → 验证
+
+# 常用选项:
+bash scripts/install.sh --dir ~/factory-venv     # 指定安装目录
+bash scripts/install.sh --wheel x.whl            # 用现成安装包 (不用源码)
+bash scripts/install.sh --init --provider deepseek  # 安装后自动初始化 LLM
+bash scripts/install.sh --deploy                 # 一键全自动部署 (安装+初始化+启动+健康检查)
+```
+
+`--deploy` 完成后系统已运行, 直接访问 http://127.0.0.1:8011 (或对话: `factory`)。
+
+---
 ## 三、首次配置 (初始化)
 
 ```bash

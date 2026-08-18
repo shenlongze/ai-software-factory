@@ -308,6 +308,8 @@ def _dep_problems(root: Path) -> list[str]:
             "  请先安装依赖: python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'"
         )
     frontend = root / "factory-console" / "web" / "frontend"
+    if not frontend.is_dir():
+        frontend = root / "factory_console" / "web" / "frontend"  # S10-074 部署态
     if not (frontend / "node_modules").is_dir():
         problems.append(
             f"前端依赖缺失: {frontend / 'node_modules'}\n  请先安装: cd {frontend} && npm install"
@@ -1032,7 +1034,10 @@ class FactoryCLI:
         if self._frontend_running():
             print(f"  前端已在运行 (PID {_read_pid(self.frontend_pid)})")
             return True
+        # S10-074: 部署态前端在 factory_console (下划线) 包内; 源码态连字符目录
         frontend = self.root / "factory-console" / "web" / "frontend"
+        if not frontend.is_dir():
+            frontend = self.root / "factory_console" / "web" / "frontend"
         dist = frontend / "dist"
         if dev or not dist.is_dir():
             if not dev:

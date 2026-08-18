@@ -175,7 +175,7 @@ _KEYWORD_RULES: tuple[tuple[tuple[str, ...], str, Optional[str]], ...] = (
     (("花了多少", "成本", "费用"), INTENT_SHOW_COST, None),
     # S10-049 P0: +"实现" (验收: "帮我实现登录功能" → run_task, objective="登录功能")
     (("加", "修复", "写", "实现"), INTENT_RUN_TASK, "objective"),
-    (("项目列表", "有哪些项目", "列出项目"), INTENT_LIST_PROJECTS, None),
+    (("项目列表", "有哪些项目", "列出项目", "有什么项目", "现在有什么项目", "我有哪些项目"), INTENT_LIST_PROJECTS, None),
     (("状态", "看看"), INTENT_SHOW_STATUS, None),
     (("查看预算", "预算情况", "预算"), INTENT_FACTORY_BUDGET, None),
     # S10-051 P1: 工程管线意图 — 优先级在 create_product 之前
@@ -232,6 +232,9 @@ _KEYWORD_RULES: tuple[tuple[tuple[str, ...], str, Optional[str]], ...] = (
             "刚才那个项目",
             "项目在哪里",
             "创建的项目",
+            "最近创建了什么",
+            "最近创建的项目",
+            "最近创建",
         ),
         INTENT_CURRENT_PROJECT,
         None,

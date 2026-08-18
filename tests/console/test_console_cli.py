@@ -316,6 +316,7 @@ class TestFactoryCliArgparse:
             "config",
             "demo",  # S10-026 Task F: 隔离 Demo Workspace (~/.factory-demo)
             "project",  # S10-031: 转正 (create 代理 org CLI / list 只读)
+            "exec",  # S10-083: 执行历史 (真实时间线)
             "run",  # S10-031: 转正 (薄代理 exec CLI cmd_exec_run)
             "run-status",  # S10-031: 转正 (薄代理 exec CLI cmd_exec_status)
         }

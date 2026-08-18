@@ -822,6 +822,8 @@ class FactoryCLI:
             return self.doctor(args)
         if args.command == "service":
             return self.service(args)
+        if args.command == "exec":
+            return self._exec_history(args)
         if args.command in ("agent", "skill", "task", "router", "rag", "audit"):
             return getattr(self, args.command)(args)
         if args.command == "config":
@@ -2268,6 +2270,8 @@ class FactoryCLI:
         if action == "rename":
             # S10-081 P1: 复用 service.confirm_project 事务 (不复制 rename 逻辑)
             return self._project_rename(args)
+        if action == "status":
+            return self._project_status_view(args)
         print(
             f"错误: project 需要子命令 (create / list / rename), 收到: {action!r}",
             file=sys.stderr,
@@ -2320,6 +2324,48 @@ class FactoryCLI:
             )
             return 1
         print(f"✅ 项目改名成功: {pid} → {name}")
+        return 0
+
+    def _exec_history(self, args: argparse.Namespace) -> int:
+        """factory exec history — 真实执行时间线 (S10-083 Observability)。"""
+        self._ensure_data_dir()
+        try:
+            from .session.observability import execution_timeline, format_timeline
+
+            events = execution_timeline(self.data_dir, limit=getattr(args, "limit", 20) or 20)
+            print(format_timeline(events))
+        except Exception as exc:  # noqa: BLE001 — 失败安全 → 明确错误
+            print(f"错误: 执行历史读取失败 — {exc}", file=sys.stderr)
+            return 1
+        return 0
+
+    def _project_status_view(self, args: argparse.Namespace) -> int:
+        """factory project status [--project X] — S10-083 项目状态视图 (真实数据)。"""
+        pid = getattr(args, "project_name", None) or getattr(args, "id", None)
+        self._ensure_data_dir()
+        ws = self.data_dir
+        if pid:
+            project_dir = ws / "projects" / str(pid)
+        else:
+            cands = sorted((ws / "projects").glob("*"), key=lambda p: p.stat().st_mtime, reverse=True)
+            project_dir = None
+            for cand in cands:
+                if (cand / "execution_state.json").is_file():
+                    project_dir = cand
+                    break
+            if project_dir is None and cands:
+                project_dir = cands[0]
+        if project_dir is None or not project_dir.is_dir():
+            print(f"错误: 项目不存在 — {pid or '(无项目)'}", file=sys.stderr)
+            return 2
+        try:
+            from .session.observability import format_status, project_status
+
+            status = project_status(ws, project_dir)
+            print(format_status(status))
+        except Exception as exc:  # noqa: BLE001 — 失败安全 → 明确错误
+            print(f"错误: 项目状态读取失败 — {exc}", file=sys.stderr)
+            return 1
         return 0
 
     def _project_list(self, args: argparse.Namespace) -> int:
@@ -2556,12 +2602,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_status.add_argument("--id", default=None, help="结果 ID (缺省列出全部)")
     p_status.add_argument("--json", action="store_true", help="输出结构化 JSON")
+    p_exec = sub.add_parser(
+        "exec", help="执行记录 (S10-083: 真实执行历史 / 时间线)"
+    )
+    p_exec.add_argument(
+        "exec_command", choices=["history"], nargs="?", default=None, metavar="动作",
+        help="history — 执行历史时间线 (时间/角色/模型/token/cost)",
+    )
+    p_exec.add_argument("--limit", type=int, default=20, help="显示条数 (默认 20)")
     p_project = sub.add_parser(
         "project", help="已有项目接入 (create 代理 org CLI / list 只读)"
     )
     p_project.add_argument(
         "project_command",
-        choices=["create", "list", "rename"],
+        choices=["create", "list", "rename", "status"],
         nargs="?",
         default=None,
         metavar="动作",

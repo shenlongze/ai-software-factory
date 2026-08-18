@@ -1425,6 +1425,21 @@ def build_app(
             raise HTTPException(status_code=404, detail="project not found")
         return [e.to_dict() for e in events]
 
+    @app.get("/api/projects/{project_id}/status")
+    def api_project_status(project_id: str) -> dict[str, Any]:
+        """项目状态视图 (S10-083 — 阶段/任务/代码文件/最近事件, 真实数据)。"""
+        try:
+            from ...session.observability import project_status
+
+            project_dir = Path(service.workspace_root or "") / "projects" / project_id
+            if not project_dir.is_dir():
+                raise HTTPException(status_code=404, detail="project not found")
+            return project_status(Path(service.workspace_root or ""), project_dir)
+        except HTTPException:
+            raise
+        except Exception as exc:  # noqa: BLE001 — 失败安全
+            raise HTTPException(status_code=500, detail=str(exc))
+
     @app.get("/api/events/stream")
     def api_events_stream(
         project_id: str,

@@ -1,6 +1,6 @@
 # AI Software Factory — Deployment 文档 (S10-074)
 
-> 版本: 1.1.1 | 目标: macOS/Linux 本地部署 (wheel 分发)
+> 版本: 1.1.2 | 目标: macOS/Linux 本地部署 (wheel 分发)
 > 本文档所有命令均经 Clean Environment E2E 真实验证 (scripts/deploy_e2e.sh)。
 
 ---
@@ -13,10 +13,10 @@ python3 -m pip wheel . --no-deps -w dist/          # 在源码目录
 
 # 2. 创建虚拟环境并安装
 python3 -m venv .factory-venv
-.factory-venv/bin/pip install dist/ai_software_factory-1.1.1-py3-none-any.whl
+.factory-venv/bin/pip install dist/ai_software_factory-1.1.2-py3-none-any.whl
 
 # 3. 验证
-.factory-venv/bin/factory --version                # → AI Factory v1.1.1
+.factory-venv/bin/factory --version                # → AI Factory v1.1.2
 ```
 
 要求: Python ≥ 3.12 (Node.js 仅 --dev 模式需要)。
@@ -65,9 +65,9 @@ factory start --dev                                # 开发模式 (vite)
 健康契约 (HTTP):
 
 ```bash
-curl http://127.0.0.1:8011/health     # {"status":"ok","version":"1.1.1"}
+curl http://127.0.0.1:8011/health     # {"status":"ok","version":"1.1.2"}
 curl http://127.0.0.1:8011/ready      # {"status":"ready","data_dir":"...","issues":[]}
-curl http://127.0.0.1:8011/version    # {"name":"ai-software-factory","version":"1.1.1"}
+curl http://127.0.0.1:8011/version    # {"name":"ai-software-factory","version":"1.1.2"}
 ```
 
 ## 六、停止 (Stop)
@@ -134,8 +134,8 @@ rm -rf ~/.factory                                      # purge (仅确认后执�
 
 | 症状 | 原因 | 解决 |
 |---|---|---|
-| `No module named 'factory_console.audit'` | 旧 wheel 缺子包 | 重装 ≥1.1.1 wheel |
-| start 找不到 python | 硬编码 .venv (已修复) | 升级到 ≥1.1.1 |
+| `No module named 'factory_console.audit'` | 旧 wheel 缺子包 | 重装 ≥1.1.2 wheel |
+| start 找不到 python | 硬编码 .venv (已修复) | 升级到 ≥1.1.2 |
 | /health 不可达 | 后端未起/端口错 | `factory doctor` + 检查 run/backend.log |
 | CLI --version 无输出 | 源码态直接运行 | 用安装态 `factory` 命令 |
 

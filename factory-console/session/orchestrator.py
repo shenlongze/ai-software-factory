@@ -2238,8 +2238,52 @@ class ExecutionOrchestrator:
             if not isinstance(outcome, dict):
                 outcome = {"success": False, "error": "execute_fn 返回非 dict"}
             if outcome.get("success"):
+                # S10-083 P0: Patch Delivery — 任务成功 ≠ 完成; 必须
+                # patch 应用回项目 + 真实文件 + 校验通过才 completed
+                delivery_ok = True
+                delivery_msg = ""
+                artifact_path = str(outcome.get("artifact") or "")
+                if artifact_path and Path(artifact_path).is_file():
+                    try:
+                        from .delivery import deliver_patch
+                        # S10-083: delivery 审计事件独立装配 (不依赖 _emitter 作用域)
+                        try:
+                            from ..audit.audit_emitter import AuditEmitter
+                            _delivery_emitter = AuditEmitter(workspace=project_dir.parent.parent)
+                        except Exception:  # noqa: BLE001
+                            _delivery_emitter = None
+                        patch_text = Path(artifact_path).read_text(encoding="utf-8")
+                        delivery = deliver_patch(
+                            Path(project_dir), patch_text,
+                            emit=_delivery_emitter.emit if _delivery_emitter else None,
+                        )
+                        task["applied"] = delivery.get("applied", False)
+                        task["code_files"] = delivery.get("code_files", 0)
+                        task["blocked_files"] = delivery.get("blocked_files", [])
+                        delivery_ok = delivery.get("ok", False)
+                        delivery_msg = delivery.get("validation") or delivery.get("error") or ""
+                    except Exception as exc:  # noqa: BLE001 — 交付异常 → 任务失败
+                        delivery_ok = False
+                        delivery_msg = f"delivery error: {exc}"
+                if not delivery_ok:
+                    # 交付失败 (0 代码文件 / apply 失败) → 任务 FAILED, 非 completed
+                    task["status"] = "failed"
+                    task["error"] = delivery_msg or "交付失败: 项目无真实代码产物"
+                    task["retry_count"] = retries
+                    self._save_state(project_dir, state)
+                    try:
+                        from ..audit.audit_emitter import AuditEmitter
+                        AuditEmitter(workspace=project_dir.parent.parent).emit(
+                            "TASK_FAILED", project_id=project_dir.name,
+                            task_id=str(task.get("id") or ""),
+                            agent_id=str(task.get("agent") or ""),
+                            decision_reason=delivery_msg or "交付失败",
+                        )
+                    except Exception:  # noqa: BLE001
+                        pass
+                    return {"success": False, "error": delivery_msg or "交付失败"}
                 task["status"] = "completed"
-                task["artifact"] = str(outcome.get("artifact") or "")
+                task["artifact"] = artifact_path
                 task["retry_count"] = retries
                 task["error"] = None
                 self._save_state(project_dir, state)

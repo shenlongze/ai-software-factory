@@ -51,22 +51,43 @@ def ensure_git_repo(project_dir: Path) -> bool:
 
 
 def apply_patch(project_dir: Path, patch_text: str) -> tuple[bool, str]:
-    """把过滤后的 patch 应用到项目目录 (git apply)。
+    """把过滤后的 patch 应用到项目目录 (git apply + 容错重试)。
 
     返回 (成功, 消息)。patch 为空 → 视为无变更成功。
+    容错链 (S10-083): git apply → --recount --ignore-whitespace → patch -p1 --fuzz。
     """
     text = str(patch_text or "").strip()
     if not text:
         return True, "no changes"
     if not ensure_git_repo(project_dir):
         return False, "project not a git repo and git init failed"
+
+    # 尝试 1: 标准 git apply
     proc = subprocess.run(
         ["git", "-C", str(project_dir), "apply", "--whitespace=nowarn", "-"],
         input=text, capture_output=True, text=True, timeout=60,
     )
-    if proc.returncode != 0:
-        return False, f"git apply failed: {(proc.stderr or proc.stdout).strip()[:300]}"
-    return True, "patch applied"
+    if proc.returncode == 0:
+        return True, "patch applied"
+
+    # 尝试 2: 宽松 (recount 行号 + 忽略空白)
+    proc2 = subprocess.run(
+        ["git", "-C", str(project_dir), "apply", "--recount", "--ignore-whitespace", "-"],
+        input=text, capture_output=True, text=True, timeout=60,
+    )
+    if proc2.returncode == 0:
+        return True, "patch applied (loose)"
+
+    # 尝试 3: 系统 patch 工具 (fuzz 上下文容错)
+    proc3 = subprocess.run(
+        ["patch", "-p1", "--fuzz=3", "-d", str(project_dir), "-i", "-"],
+        input=text, capture_output=True, text=True, timeout=60,
+    )
+    if proc3.returncode == 0:
+        return True, "patch applied (patch -p1)"
+
+    last_err = (proc.stderr or proc.stdout or "").strip()[:300]
+    return False, f"git apply failed: {last_err}"
 
 
 def count_code_files(project_dir: Path) -> int:

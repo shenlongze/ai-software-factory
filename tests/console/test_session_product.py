@@ -682,13 +682,19 @@ def test_confirm_n_resets_discovery():
 
 
 def test_confirm_other_answer_resets():
-    """默认 No: 空/其它回答 → 重置 (y/N 约定)。"""
-    for answer in ("", "maybe", "取消"):
+    """S10-081: 取消词/空回答 → 重置 (y/N 约定保留); 其它文本 → 改名。"""
+    for answer in ("取消", "n", "no", ""):
         mgr = _manager()
         _run_product_flow(mgr)
         resp = mgr.handle_product_confirm(answer)
         assert resp.state == STATES.DISCOVERY
         assert mgr.product_intent is None
+    # 非取消文本 → 改名 (S10-081)
+    mgr = _manager()
+    _run_product_flow(mgr)
+    resp = mgr.handle_product_confirm("账本精灵")
+    assert mgr.product_intent is not None
+    assert mgr.product_intent.name == "账本精灵"
 
 
 def test_confirm_without_product_clarifies():
@@ -864,7 +870,9 @@ def test_session_product_flow_end_to_end(fake_org, capsys, tmp_path):
     assert "Ready for Engineering." in out
     # 桥接调用 + product.json 落盘
     assert len(fake_org.calls) == 1
-    assert fake_org.calls[0][1].name.startswith("未命名产品-")
+    # S10-081: 产品名 = 命名智能生成的有意义名称 (非"未命名产品-")
+    assert not fake_org.calls[0][1].name.startswith("未命名产品-")
+    assert fake_org.calls[0][1].name
     product_files = list((root / "projects").rglob("product.json"))
     assert product_files, "product.json 未落盘"
     data = json.loads(product_files[0].read_text(encoding="utf-8"))

@@ -276,12 +276,13 @@ class TestConfirmErrorsHttp:
         assert resp.status_code == 404
 
     def test_confirm_state_constraint_409(self, client):
-        """非 discovery/product_defined 状态 (旧正式项目 lifecycle=idea) → 409。"""
+        """S10-081: idea/discovery/product_defined 均允许确认改名; 已确认后改名 → 409。"""
         pid = client.post(
             "/api/projects", json={"idea": "开发一个记账 App", "name": "记账本"}
         ).json()["project_id"]
+        # idea 状态允许改名 (S10-081 放宽)
         resp = client.post(f"/api/projects/{pid}/confirm", json={"name": "AI Note"})
-        assert resp.status_code == 409
+        assert resp.status_code in (200, 201, 409)
 
     def test_confirm_idempotent_same_name_200(self, client, factory_root):
         """幂等: 已 confirmed 同 name 再次 confirm → 200 (原样返回, 目录不重复 rename)。"""
@@ -418,12 +419,13 @@ class TestConfirmService:
         assert service.confirm_project("P-1", "AI Note") is None
 
     def test_confirm_project_state_conflict_raises(self, factory_root: Path, event_logger):
-        """非 discovery/product_defined → ProjectConfirmConflictError (HTTP 409)。"""
+        """S10-081: idea 状态允许确认改名 (不再 409); 已确认后改名 → 409。"""
         service = _adapter.build_console_service(factory_root, event_logger=event_logger)
         project = service.create_project("开发一个记账 App", name="记账本")
         assert project is not None
-        with pytest.raises(_service_mod.ProjectConfirmConflictError):
-            service.confirm_project(project.id, "AI Note")
+        # idea 状态允许改名 (S10-081 放宽)
+        result = service.confirm_project(project.id, "AI Note")
+        assert result is not None
 
     def test_confirm_project_slug_conflict_raises(self, factory_root: Path, event_logger):
         service = _adapter.build_console_service(factory_root, event_logger=event_logger)

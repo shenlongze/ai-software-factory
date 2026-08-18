@@ -31,6 +31,7 @@ from .intent import (
     INTENT_CREATE_PRODUCT,
     INTENT_CREATE_PROJECT,
     INTENT_CURRENT_PROJECT,
+    INTENT_RENAME_PROJECT,
     IntentObject,
     IntentParser,
     KeywordIntentParser,
@@ -204,6 +205,10 @@ class InteractiveSession:
         if intent.intent_type == INTENT_CURRENT_PROJECT:
             self._show_current_project()
             return
+        # S10-081 P2: 自然语言改名 → 复用 confirm_project 事务 (确认门后执行)
+        if intent.intent_type == INTENT_RENAME_PROJECT:
+            self._rename_project_via_nl(intent, line)
+            return
         # S10-076: Action Safety — 高副作用 Action 参数不完整 → 自然语言提示,
         # 不进入 Domain/Pydantic validation error
         if intent.intent_type == INTENT_CREATE_PROJECT:
@@ -298,6 +303,51 @@ class InteractiveSession:
                     print(f"  {key}: {execution[key]}")
         else:
             print(f"❌ {result.message}")
+
+    def _rename_project_via_nl(self, intent: Any, raw_line: str) -> None:
+        """S10-081 P2: 自然语言改名 — 复用 service.confirm_project 事务。
+
+        name 参数 (关键词后文本); 无 name → 引导; 有 name → 确认门 → 执行。
+        """
+        name = ""
+        params = getattr(intent, "parameters", None) or {}
+        name = str(params.get("name") or "").strip()
+        # 清理 "改名叫/改名为/名称改成/项目改名" 残留 (参数提取可能含)
+        for w in ("改名叫", "改名为", "名称改成", "名字改成", "项目改名", "改名字"):
+            if name.startswith(w):
+                name = name[len(w):].strip()
+                break
+        if not name:
+            print(
+                "你想给项目改名? 告诉我新名称即可, 例如:\n"
+                "  • 这个项目改名叫 记账助手\n"
+                "  • 把项目名称改成 台球计分"
+            )
+            return
+        pid = self.context.current_project
+        if not pid:
+            print(
+                "当前没有正在开发的项目。\n"
+                "你可以: 输入 /project 查看已有项目, 或用 '项目 ID 改名叫 新名' 指定。"
+            )
+            return
+        if self.confirmation_gate is not None and not self.confirmation_gate.confirm(
+            INTENT_RENAME_PROJECT, intent, None
+        ):
+            print("已取消 — 输入 exit 或 quit 退出会话")
+            return
+        try:
+            from .web.backend.fastapi_adapter import build_console_service
+
+            service = build_console_service(Path(self.context.workspace) if self.context.workspace else None)
+            result = service.confirm_project(str(pid), name)
+        except Exception as exc:  # noqa: BLE001 — 失败安全 → 明确错误
+            print(f"❌ 项目改名失败: {exc}")
+            return
+        if result is None:
+            print(f"❌ 项目改名失败: 未找到项目 {pid} 或数据不完整")
+            return
+        print(f"✅ 项目改名成功: {pid} → {name}")
 
     def _show_current_project(self) -> None:
         """S10-076: 只读展示会话当前项目 (不创建/写)。"""

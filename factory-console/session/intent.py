@@ -62,6 +62,8 @@ INTENT_TEAM_CONFLICTS = "team_conflicts"
 #: 查看进度 → 生产视图; 接受/拒绝/取消 → 人工评审决策 (ReviewGate 包装)
 INTENT_DISCOVERY_START = "discovery_start"
 INTENT_RESUME_PROJECT = "resume_project"
+#: S10-081 P2: 项目改名 (这个项目改名叫X / 把项目名称改成X)
+INTENT_RENAME_PROJECT = "rename_project"
 INTENT_REVIEW_VIEW = "review_view"
 INTENT_PRODUCTION_SESSION_VIEW = "production_session_view"
 INTENT_REVIEW_APPROVE = "review_approve"
@@ -221,6 +223,8 @@ _KEYWORD_RULES: tuple[tuple[tuple[str, ...], str, Optional[str]], ...] = (
     # (idea 参数 = 关键词后剩余文本; 优先级在 run_task/show_status 之后,
     #  "我想看看状态" → show_status、"我想加个功能" → run_task 不被抢)
     (("我想", "做一款", "产品", "想法", "创业"), INTENT_CREATE_PRODUCT, "idea"),
+    # S10-081 P2: 项目改名 — "改名叫X/名称改成X/项目改名为X" → rename (name 参数)
+    (("改名叫", "改名为", "名称改成", "名字改成", "项目改名", "改名字"), INTENT_RENAME_PROJECT, "name"),
     # S10-076: 当前项目查询 (优先级在 create_project "创建" 之前 —
     # "刚刚创建的项目呢" 不被解析成创建新项目)
     (

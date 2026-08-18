@@ -1570,9 +1570,11 @@ class ConsoleService:
                 raise ValueError(
                     f"name cannot form a slug: {cleaned!r} (非法名字不确认)"
                 )
-            # 2. 状态约束 (discovery/product_defined 为确认点; 已 confirmed 同
+            # 2. 状态约束 (S10-081: idea/discovery/product_defined 均可确认改名 —
+            #    刚创建的"未命名产品"正处 idea 期, 应允许改名; 已 confirmed 同
             #    name/slug → 幂等返回; 其余状态 → 409 未到确认点)
             if project.lifecycle not in (
+                ProjectState.IDEA,
                 ProjectState.DISCOVERY,
                 ProjectState.PRODUCT_DEFINED,
             ):
@@ -1585,7 +1587,7 @@ class ConsoleService:
                 raise ProjectConfirmConflictError(
                     f"project is not at confirmation point: {project_id} "
                     f"(lifecycle={project.lifecycle.value}; confirm 仅限 "
-                    f"discovery/product_defined 状态)"
+                    f"idea/discovery/product_defined 状态)"
                 )
             # 3. slug 唯一性预检 (事务开始前 — 失败零变更)
             old_slug = space.get_slug(project_id)

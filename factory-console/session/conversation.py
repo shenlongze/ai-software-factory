@@ -53,6 +53,8 @@ _PRODUCT_FIELD_ORDER: tuple[str, ...] = ("problem", "user", "core_features")
 
 #: 确认回答集合 (y/yes 不区分大小写; 其余 → 拒绝, 默认 No — 同 ConfirmationGate 口径)
 _APPROVE_ANSWERS: frozenset[str] = frozenset({"y", "yes"})
+#: S10-081: 确认阶段取消词 (其余非 y 输入 → 视为改名)
+_CANCEL_ANSWERS: frozenset[str] = frozenset({"n", "no", "取消", "算了", "不要"})
 
 #: 产品确认提示 (y/N 约定: 回车/其他 → 拒绝)
 _PRODUCT_CONFIRM_PROMPT = "确认创建这个产品? (y/N)"
@@ -221,12 +223,33 @@ class ConversationManager:
             setattr(self.product_intent, field, value)  # type: ignore[union-attr]
 
     def _enter_product_confirmation(self) -> ConversationResponse:
-        """必填齐全 → PRODUCT_CONFIRMATION: 产品摘要 + 确认询问 (验收 C [4])。"""
+        """必填齐全 → 命名 → PRODUCT_CONFIRMATION: 产品摘要 + 确认询问 (验收 C [4])。
+
+        S10-081 P0: 确认前生成产品名候选 (LLM 可用 → AI 建议; 否则
+        deterministic 提取) — 消除 "未命名产品-<ts>" 作为最终产品名。
+        """
+        pi = self.product_intent  # type: ignore[union-attr]
+        if pi is None:
+            return self._clarify("请先描述你的产品想法")
+        # 命名: 无名称 / 临时名 → 生成候选 (不覆盖用户已给的名字)
+        from .naming import is_temp_name, suggest_product_name
+
+        if not pi.name or is_temp_name(pi.name):
+            try:
+                candidate = suggest_product_name(pi)
+            except Exception:  # noqa: BLE001 — 命名失败 → 保留原逻辑 (极兜底)
+                candidate = ""
+            if candidate:
+                pi.name = candidate
         self.transition(ConversationState.PRODUCT_CONFIRMATION)
-        summary = self.product_intent.to_summary()  # type: ignore[union-attr]
+        summary = pi.to_summary()
         return ConversationResponse(
             state=self.state,
-            message=f"{summary}\n{_PRODUCT_CONFIRM_PROMPT}",
+            message=(
+                f"{summary}\n"
+                f"建议名称: {pi.name or '(未命名)'} (可直接输入新名称修改)\n"
+                f"{_PRODUCT_CONFIRM_PROMPT}"
+            ),
             needs_input=True,
         )
 
@@ -277,8 +300,14 @@ class ConversationManager:
             return self._clarify("当前没有进行中的产品流程 — 请描述你的产品想法")
         approved = (answer or "").strip().lower() in _APPROVE_ANSWERS
         if not approved:
+            # S10-081: 非 y 输入 → 取消词 → 重置 DISCOVERY (既有验收 E);
+            # 否则视为改名 → 重新进入确认 (消除"未命名产品"最终名)
+            raw = (answer or "").strip()
+            if raw.lower() not in _CANCEL_ANSWERS and raw:
+                self.product_intent.name = raw  # type: ignore[union-attr]
+                return self._enter_product_confirmation()
             # 验收 E: 确认 n → 重置 DISCOVERY (product_intent / pending 清空)
-            cancelled = self.product_intent.name or "(未命名产品)"
+            cancelled = self.product_intent.name or "(未命名产品)"  # type: ignore[union-attr]
             self.product_intent = None
             self._product_pending = []
             self.pending_intent = None

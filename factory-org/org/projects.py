@@ -33,7 +33,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 from . import events as org_events
 from .lifecycle import DuplicateError, NotFoundError
@@ -299,6 +299,21 @@ class Project(_OrgModel):
     metadata: dict[str, Any] = Field(default_factory=dict)  # S10-009: 扩展元数据
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
+
+    # S10-081: 历史数据兼容 — 显式 null 字符串字段 → 默认值 (Pydantic v2 严格
+    # 模式拒绝 None; 旧 projects.json 可能含 "build_command": null 等)
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_none_strings(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            for key in (
+                "user_id", "goal", "repo_path", "language", "framework",
+                "build_command", "test_command", "project_type",
+                "analysis_ref", "baseline_ref", "snapshot_ref", "slug",
+            ):
+                if data.get(key) is None:
+                    data[key] = ""
+        return data
 
     @field_validator("lifecycle", mode="before")
     @classmethod

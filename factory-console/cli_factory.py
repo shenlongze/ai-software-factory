@@ -2265,11 +2265,62 @@ class FactoryCLI:
             return self._emit_proxy_result(org_cli, args, result)
         if action == "list":
             return self._project_list(args)
+        if action == "rename":
+            # S10-081 P1: 复用 service.confirm_project 事务 (不复制 rename 逻辑)
+            return self._project_rename(args)
         print(
-            f"错误: project 需要子命令 (create / list), 收到: {action!r}",
+            f"错误: project 需要子命令 (create / list / rename), 收到: {action!r}",
             file=sys.stderr,
         )
         return 2
+
+    def _project_rename(self, args: argparse.Namespace) -> int:
+        """factory project rename <id> <name> — 复用 service.confirm_project 事务。
+
+        S10-081 P1: 不复制 rename 逻辑; 参数不足 → 明确用法。
+        """
+        pid = getattr(args, "project_name", None) or getattr(args, "id", None)
+        name = getattr(args, "project_new_name", None)
+        if not pid:
+            print("错误: 缺少项目 ID — 用法: factory project rename <id> <name>", file=sys.stderr)
+            return 2
+        if not name:
+            print("错误: 缺少新名称 — 用法: factory project rename <id> <name>", file=sys.stderr)
+            return 2
+        self._ensure_data_dir()
+        try:
+            # S10-081 P1: 复用生产装配链 build_console_service → confirm_project 事务
+            from .web.backend.fastapi_adapter import build_console_service
+
+            service = build_console_service(self.data_dir)
+            result = service.confirm_project(str(pid), str(name))
+        except Exception as exc:  # noqa: BLE001 — 失败安全 → 明确错误
+            print(f"错误: 项目改名失败 — {exc}", file=sys.stderr)
+            return 1
+        if result is None:
+            # None 可能是: 项目不存在 / 数据不完整 / 或事务已完成但返回读取失败
+            # → 复查 org 实际 name (确认是否真改名)
+            try:
+                import json
+
+                pf = self.data_dir / "org" / "projects.json"
+                if pf.is_file():
+                    data = json.loads(pf.read_text(encoding="utf-8"))
+                    projects = data.get("projects", data) if isinstance(data, dict) else {}
+                    proj = projects.get(str(pid), {})
+                    if isinstance(proj, dict) and proj.get("name") == str(name):
+                        print(f"✅ 项目改名成功: {pid} → {name}")
+                        return 0
+            except Exception:  # noqa: BLE001 — 复查失败 → 走错误分支
+                pass
+            print(
+                f"错误: 项目改名失败 — 未找到项目 {pid} 或项目数据不完整 "
+                "(仅 discovery/product_defined 状态可确认改名)",
+                file=sys.stderr,
+            )
+            return 1
+        print(f"✅ 项目改名成功: {pid} → {name}")
+        return 0
 
     def _project_list(self, args: argparse.Namespace) -> int:
         """project list — 只读 projects.json (缺失/损坏 → 空列表, 永不抛)。"""
@@ -2510,7 +2561,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_project.add_argument(
         "project_command",
-        choices=["create", "list"],
+        choices=["create", "list", "rename"],
         nargs="?",
         default=None,
         metavar="动作",
@@ -2518,6 +2569,8 @@ def build_parser() -> argparse.ArgumentParser:
         "list — 只读项目清单 (projects.json)",
     )
     p_project.add_argument("--repo-path", default=None, help="已有代码库路径 (create 必填)")
+    p_project.add_argument("project_name", nargs="?", default=None, metavar="<id>", help="项目 ID (rename)")
+    p_project.add_argument("project_new_name", nargs="?", default=None, metavar="<name>", help="新名称 (rename)")
     p_project.add_argument("--name", default=None, help="项目名 (缺省 = 目录名)")
     p_project.add_argument("--language", default="", help="主语言 (缺省自动检测)")
     p_project.add_argument("--framework", default="", help="框架 (缺省自动检测)")

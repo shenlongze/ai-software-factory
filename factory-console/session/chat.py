@@ -102,7 +102,11 @@ class ChatService:
             # S10-078: 细节仅进日志 (默认不向 REPL stderr 倾倒内部异常)
             logger.debug("chat answer failed: %s", exc)
             msg = str(exc)
-            if "api key" in msg.lower() or "key" in msg.lower() or "未设置" in msg or "missing" in msg.lower():
+            if (
+                "api key" in msg.lower() or "key" in msg.lower() or "未设置" in msg
+                or "missing" in msg.lower() or "无可用 llm provider" in msg.lower()
+                or "未配置 enabled provider" in msg
+            ):
                 if verbose:
                     return f"{_PROVIDER_UNAVAILABLE}\n(细节: {msg[:200]})"
                 return _PROVIDER_UNAVAILABLE

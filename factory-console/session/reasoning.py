@@ -524,9 +524,9 @@ class ReasoningProvider:
 
         registry = _provider_registry()
         provider = registry.get(provider_id) if provider_id else None
-        if provider is None:
-            providers = registry.list()
-            provider = providers[0] if providers else None
+        # S10-079: 不 fallback 到任意 provider — select 已选 (key 可解析) 的
+        # provider 才装配; 无合法选择 (key 缺失) → None → 明确 "无可用 provider"
+        # (避免错误 fallback 到 anthropic 报 ANTHROPIC_API_KEY missing)
         return provider
 
     # ------------------------------------------------------------ trace

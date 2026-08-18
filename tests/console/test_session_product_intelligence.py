@@ -309,13 +309,19 @@ class TestReport:
 class TestLlmDefaultProvider:
     """S10-066 修复: ReasoningProvider(llm_fn=None) → 用默认真实调用。"""
 
-    def test_default_provider_llm_fn(self):
-        """_llm_fn 识别 ReasoningProvider 默认。"""
+    def test_default_provider_llm_fn(self, monkeypatch):
+        """_llm_fn 识别 ReasoningProvider 默认 (注入固定 fn, 不依赖真实 key)。"""
         from importlib import import_module as _im
         R = _im("factory-console.session.reasoning")
         prov = R.ReasoningProvider(llm_fn=None)
+
+        def _fake_default(self):
+            return lambda prompt, operation="": "fake"
+
+        monkeypatch.setattr(R.ReasoningProvider, "_default_llm_fn", _fake_default)
         fn = PI.ProductIntelligenceEngine._llm_fn(prov)
         assert callable(fn)
+        assert fn("x") == "fake"
 
     def test_callable_provider(self):
         fn = PI.ProductIntelligenceEngine._llm_fn(lambda p, o="": "{}")

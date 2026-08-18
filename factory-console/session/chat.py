@@ -32,8 +32,10 @@ _FALLBACK = (
 #: S10-076: LLM Provider 不可用 → 明确错误 (不再伪装成 "目标不明确")
 _PROVIDER_UNAVAILABLE = (
     "AI 对话服务当前不可用。\n"
-    "原因: LLM Provider 未配置或 API Key 缺失。\n"
-    "请检查: factory doctor (诊断) → factory init (配置 LLM)。\n"
+    "原因: LLM Provider 尚未配置或 API Key 缺失。\n"
+    "建议:\n"
+    "  1. 运行 factory doctor 检查当前配置\n"
+    "  2. 运行 factory init 配置 AI Provider\n"
     "系统命令 (/help /status /project) 不受影响。"
 )
 
@@ -75,15 +77,20 @@ class ChatService:
         except Exception as exc:  # noqa: BLE001
             return f"LLM 装配失败: {exc}"
 
-    def answer(self, question: str, *, max_chars: int = 600) -> str:
-        """真实 LLM 回答普通问题; LLM 不可用 → 明确不可用; 其它失败 → 引导。"""
+    def answer(self, question: str, *, max_chars: int = 600, verbose: bool = False) -> str:
+        """真实 LLM 回答普通问题; LLM 不可用 → 简洁提示 (verbose=True 含细节)。
+
+        S10-078: 默认不向普通用户倾倒内部异常; 开发者诊断经 verbose/doctor。
+        """
         q = str(question or "").strip()
         if not q:
             return _FALLBACK
         if not self._provider_ready():
             # S10-076: Provider 不可用 ≠ 用户目标不明确 — 明确区分
-            reason = self._provider_unavailable_reason()
-            return f"{_PROVIDER_UNAVAILABLE}\n(细节: {reason})"
+            if verbose:
+                reason = self._provider_unavailable_reason()
+                return f"{_PROVIDER_UNAVAILABLE}\n(细节: {reason})"
+            return _PROVIDER_UNAVAILABLE
         try:
             llm_fn = self._provider._default_llm_fn()  # noqa: SLF001 — 同包复用装配链
             text = llm_fn(_CHAT_PROMPT.format(question=q), "chat")
@@ -95,7 +102,9 @@ class ChatService:
             logger.warning("chat answer failed: %s", exc)
             msg = str(exc)
             if "api key" in msg.lower() or "key" in msg.lower() or "未设置" in msg or "missing" in msg.lower():
-                return f"{_PROVIDER_UNAVAILABLE}\n(细节: {msg[:200]})"
+                if verbose:
+                    return f"{_PROVIDER_UNAVAILABLE}\n(细节: {msg[:200]})"
+                return _PROVIDER_UNAVAILABLE
             return _FALLBACK
 
     def is_fallback(self, answer: str) -> bool:

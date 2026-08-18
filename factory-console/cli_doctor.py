@@ -216,6 +216,9 @@ class EnvironmentCheck:
             problems.append(f"Node.js 版本过低: {node[0]}.{node[1]} (需要 ≥{MIN_NODE[0]})")
         if ctx.root is None:
             problems.append("仓库根未知 — 无法检查 venv/node_modules 依赖")
+        elif not (ctx.root / "pyproject.toml").is_file():
+            # S10-078: wheel 安装模式 (无源码仓库) — 前端 dist 已打包, 无需 venv/node_modules
+            pass
         else:
             venv_py = ctx.root / ".venv" / "bin" / "python"
             if not venv_py.is_file():

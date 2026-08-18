@@ -1,3 +1,4 @@
+
 """tests/console/test_session_runtime.py — InteractiveSession 运行时 (S10-047 Task 001)。
 
 设计: docs/sprint10/S10-047-session-design.md §2 Session Loop / §5 测试
@@ -18,6 +19,15 @@ import importlib
 import sys
 
 import pytest
+
+class _FakeChat075:
+    """测试 ChatService (固定回答, 不依赖真实 LLM)。"""
+
+    def answer(self, question, **kw):
+        return f"AI: 测试回答 {question}"
+
+    def is_fallback(self, a):
+        return False
 
 SESSION_MOD = importlib.import_module("factory-console.session.session")
 CLI_MOD = importlib.import_module("factory-console.cli_factory")
@@ -67,12 +77,12 @@ def test_empty_input_does_not_exit(monkeypatch):
 
 
 def test_unknown_command_friendly_hint(monkeypatch, capsys):
+    """S10-075: 未知输入 → AI 问答 (不再 '未知命令')。"""
     _feed_inputs(monkeypatch, ["foobar", "exit"])
-    rc = SESSION_MOD.InteractiveSession().run()
+    rc = SESSION_MOD.InteractiveSession(chat_service=_FakeChat075()).run()
     out = capsys.readouterr().out
     assert rc == 0
-    assert "未知命令" in out
-    assert "foobar" in out
+    assert "未知命令" not in out
 
 
 def test_keyboard_interrupt_exits(monkeypatch, capsys):

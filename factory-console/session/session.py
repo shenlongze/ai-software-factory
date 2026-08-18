@@ -65,6 +65,7 @@ class InteractiveSession:
         confirmation_gate: Any = None,
         renderer: Optional[Renderer] = None,
         conversation_manager: Optional[ConversationManager] = None,
+        chat_service: Any = None,
     ) -> None:
         self.prompt = prompt
         self.banner_text = banner if banner is not None else BANNER
@@ -108,6 +109,12 @@ class InteractiveSession:
             if conversation_manager is not None
             else ConversationManager(parser=self.intent_parser)
         )
+        #: S10-075 L2: 普通问答服务 (intent 未识别 → LLM 问答)
+        if chat_service is None:
+            from .chat import ChatService
+
+            chat_service = ChatService()
+        self.chat_service = chat_service
 
     @property
     def context(self) -> SessionContext:
@@ -175,7 +182,9 @@ class InteractiveSession:
             return
         intent = self.intent_parser.parse(line)
         if intent is None:
-            print(f"{UNKNOWN_PREFIX}{line} — 未识别意图, {INTENT_HINT}")
+            # S10-075 L2: 普通自然语言 → 真实 LLM 问答 (不再是 "未知命令")
+            answer = self.chat_service.answer(line)
+            print(answer)
             return
         if not intent.source:
             intent.source = "session"  # 设计 §2.2: 来源标注 (审计)

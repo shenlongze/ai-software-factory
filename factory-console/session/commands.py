@@ -57,7 +57,15 @@ class HelpCommand(SlashCommand):
         if self.registry is None:
             print("错误: 命令表不可用 (registry 未注入)")
             return 1
-        print("可用命令:")
+        print("你可以直接用自然语言和 AI Factory 对话。例如:")
+        print("  你好")
+        print("  什么是 MCP？")
+        print("  我想做一个类似 OneNote 的 App")
+        print("  我想开发一个博客")
+        print("  继续开发当前项目")
+        print("  帮我修复当前项目的登录 Bug")
+        print()
+        print("系统命令:")
         for cmd in self.registry.list():
             print(f"  /{cmd.name}  {cmd.description}")
         return 0

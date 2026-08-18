@@ -1,3 +1,4 @@
+
 """tests/console/test_session_product.py — S10-050 AI Product Manager Loop (Phase 2-6)。
 
 设计: docs/sprint10/S10-050-product-manager-design.md
@@ -27,6 +28,15 @@ import json
 from pathlib import Path
 
 import pytest
+
+class _FakeChat075:
+    """测试 ChatService (固定回答, 不依赖真实 LLM)。"""
+
+    def answer(self, question, **kw):
+        return f"AI: 测试回答 {question}"
+
+    def is_fallback(self, a):
+        return False
 
 ACT_MOD = importlib.import_module("factory-console.session.action")
 ACTIONS_MOD = importlib.import_module("factory-console.session.actions")
@@ -823,10 +833,12 @@ def test_regression_session_dispatch_create_project(monkeypatch, capsys, tmp_pat
 
 
 def test_regression_session_dispatch_unknown_intent(capsys):
-    sess = SESS_MOD.InteractiveSession()
+    """S10-075: 未知输入 → AI 问答 (不再 '未识别意图')。"""
+    sess = SESS_MOD.InteractiveSession(chat_service=_FakeChat075())
     sess._dispatch("foobar")
     out = capsys.readouterr().out
-    assert "未识别意图" in out
+    assert "未识别意图" not in out
+    assert "AI:" in out
 
 
 # ================================================================== 11. Session 端到端产品流程 (验收 D/H)

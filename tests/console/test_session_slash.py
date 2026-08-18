@@ -24,6 +24,15 @@ from types import SimpleNamespace
 
 import pytest
 
+class _FakeChat075:
+    """测试 ChatService (固定回答, 不依赖真实 LLM)。"""
+
+    def answer(self, question, **kw):
+        return f"AI: 测试回答 {question}"
+
+    def is_fallback(self, a):
+        return False
+
 SLASH_MOD = importlib.import_module("factory-console.session.slash")
 CMDS_MOD = importlib.import_module("factory-console.session.commands")
 SESS_MOD = importlib.import_module("factory-console.session.session")
@@ -159,7 +168,7 @@ def test_help_lists_commands(capsys):
     rc = registry.execute("/help", _context())
     out = capsys.readouterr().out
     assert rc == 0
-    assert "可用命令:" in out
+    assert "系统命令:" in out
     for name in ("help", "status", "project", "cost", "exit"):
         assert f"/{name}" in out  # name 展示
     assert "退出会话" in out  # description 展示
@@ -325,12 +334,12 @@ def test_session_dispatch_unknown_slash(monkeypatch, capsys):
 
 
 def test_session_dispatch_non_slash_unknown(monkeypatch, capsys):
-    # Task 001 行为不回归: 非 "/" 输入 → 未知命令提示 (不崩溃)
+    # S10-075: 非 "/" 输入 → AI 问答 (不再未知命令; 不崩溃)
     _feed_inputs(monkeypatch, ["foobar", "exit"])
-    rc = SESS_MOD.InteractiveSession().run()
+    rc = SESS_MOD.InteractiveSession(chat_service=_FakeChat075()).run()
     out = capsys.readouterr().out
     assert rc == 0
-    assert "未知命令" in out and "foobar" in out
+    assert "未知命令" not in out
 
 
 def test_session_records_history(monkeypatch, capsys):

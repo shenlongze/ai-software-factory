@@ -1,3 +1,6 @@
+
+
+
 """tests/console/test_session_intent_execution.py — Intent 执行链端到端 (S10-048 P0+P1)。
 
 设计: docs/sprint10/S10-048-intent-kernel-design.md §2.1 数据流
@@ -20,6 +23,15 @@ import json
 from pathlib import Path
 
 import pytest
+
+class _FakeChat:
+    """测试 ChatService (固定回答, 不依赖真实 LLM)。"""
+
+    def answer(self, question, **kw):
+        return f"AI: 测试回答 {question}"
+
+    def is_fallback(self, a):
+        return False
 
 ACT_MOD = importlib.import_module("factory-console.session.action")
 ACTIONS_MOD = importlib.import_module("factory-console.session.actions")
@@ -266,13 +278,13 @@ def test_session_dispatch_show_status_natural_language(tmp_path, capsys):
 
 
 def test_session_dispatch_unrecognized_input_hint(capsys):
-    """未识别输入 → 明确提示 (含 未知命令 + 未识别意图 + 指引; 基线不回归)。"""
-    sess = SESS_MOD.InteractiveSession()
+    """未识别输入 → AI 问答/引导 (S10-075: 不再 '未知命令')。"""
+    sess = SESS_MOD.InteractiveSession(chat_service=_FakeChat())
     sess._dispatch("foobar")
     out = capsys.readouterr().out
-    assert "未知命令" in out and "foobar" in out
-    assert "未识别意图" in out
-    assert "创建项目" in out
+    assert "未知命令" not in out
+    assert "AI:" in out
+    assert "未识别意图" not in out
 
 
 def test_session_sets_intent_source_session(monkeypatch, capsys, tmp_path):

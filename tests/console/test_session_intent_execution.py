@@ -24,6 +24,16 @@ from pathlib import Path
 
 import pytest
 
+
+
+class _FixedChat082:
+    """S10-082: 固定回答 ChatService (验证降级路由)。"""
+
+    def answer(self, question, **kw):
+        return f"AI: {question}"
+
+    def is_fallback(self, a):
+        return a.startswith("AI:")
 class _FakeChat:
     """测试 ChatService (固定回答, 不依赖真实 LLM)。"""
 
@@ -220,13 +230,16 @@ def test_show_status_displays_workspace_session(tmp_path):
 
 
 def test_session_unrouted_intent_explicit_hint(capsys):
-    """E: 未路由意图 (show_cost 无默认路由) → 明确提示, 含意图类型与指引。"""
-    sess = SESS_MOD.InteractiveSession(intent_parser=_FixedIntentParser("show_cost"))
+    """E: 未路由意图 → S10-082 Chat 安全降级 (用户看不到意图类型/路由错误)。"""
+    sess = SESS_MOD.InteractiveSession(
+        intent_parser=_FixedIntentParser("show_cost"),
+        chat_service=_FixedChat082(),
+    )
     sess._dispatch("看看成本")
     out = capsys.readouterr().out
-    assert "未识别的意图" in out
-    assert "show_cost" in out
-    assert "创建项目" in out  # 指引
+    assert "未识别的意图" not in out
+    assert "show_cost" not in out
+    assert "AI:" in out
 
 
 # ------------------------------------------------------------------ F: Session 自然语言输入触发 Action

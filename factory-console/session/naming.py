@@ -43,6 +43,50 @@ def _extract_core(text: str, max_len: int = 12) -> str:
     return t[:max_len]
 
 
+def suggest_names(desc: str, *, llm_fn: Optional[object] = None, limit: int = 3) -> list[str]:
+    """生成产品名候选列表 (S10-082: 多候选供用户选择)。
+
+    LLM 可用 → AI 生成多个; 否则 deterministic 变体。永不产生
+    "未命名产品-{ts}"。返回去重、非空、限长候选。
+    """
+    desc = str(desc or "").strip()
+    if not desc:
+        return []
+    candidates: list[str] = []
+    if llm_fn is not None:
+        try:
+            text = str(llm_fn(_NAMES_PROMPT.format(desc=desc), "naming") or "").strip()
+            for line in text.replace("\n", "|").split("|"):
+                name = line.strip().strip("-*•·1234567890. ").strip("\"'“”「」")
+                if name and len(name) <= 16 and name not in candidates:
+                    candidates.append(name)
+                    if len(candidates) >= limit:
+                        break
+        except Exception as exc:  # noqa: BLE001 — LLM 失败 → deterministic
+            logger.debug("naming llm failed: %s", exc)
+    if not candidates:
+        core = _extract_core(desc)
+        if core and core not in candidates:
+            candidates.append(core)
+        # deterministic 变体: 核心词 + 业务后缀
+        for suffix in ("助手", "管家", "空间"):
+            variant = f"{core}{suffix}" if core else ""
+            if variant and variant not in candidates:
+                candidates.append(variant)
+                if len(candidates) >= limit:
+                    break
+    return candidates[:limit]
+
+
+#: LLM 多候选 prompt
+_NAMES_PROMPT = (
+    "你是产品命名专家。根据下面的产品描述, 给出 3 个简洁的中文产品名候选"
+    "(每个 2-6 字, 不要带'App/系统/工具'等后缀, 不要引号), 每行一个。\n"
+    "产品描述: {desc}\n"
+    "候选名:"
+)
+
+
 def suggest_name(desc: str, *, llm_fn: Optional[object] = None) -> str:
     """生成产品名候选。
 

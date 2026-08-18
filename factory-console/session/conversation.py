@@ -232,24 +232,32 @@ class ConversationManager:
         if pi is None:
             return self._clarify("请先描述你的产品想法")
         # 命名: 无名称 / 临时名 → 生成候选 (不覆盖用户已给的名字)
-        from .naming import is_temp_name, suggest_product_name
+        from .naming import is_temp_name, suggest_names
 
+        candidates: list[str] = []
         if not pi.name or is_temp_name(pi.name):
             try:
-                candidate = suggest_product_name(pi)
+                candidates = suggest_names(
+                    getattr(pi, "raw", "") or pi.problem or "",
+                    llm_fn=None,
+                    limit=3,
+                )
             except Exception:  # noqa: BLE001 — 命名失败 → 保留原逻辑 (极兜底)
-                candidate = ""
-            if candidate:
-                pi.name = candidate
+                candidates = []
+            if candidates:
+                pi.name = candidates[0]
         self.transition(ConversationState.PRODUCT_CONFIRMATION)
         summary = pi.to_summary()
+        # 展示候选列表 (S10-082: 多候选选择)
+        lines = [summary, f"建议名称: {pi.name or '(未命名)'}"]
+        if candidates:
+            for idx, cand in enumerate(candidates, 1):
+                lines.append(f"  {idx}. {cand}")
+            lines.append("输入 1-3 选择候选, 或直接输入新名称, 或 y 确认")
+        lines.append(_PRODUCT_CONFIRM_PROMPT)
         return ConversationResponse(
             state=self.state,
-            message=(
-                f"{summary}\n"
-                f"建议名称: {pi.name or '(未命名)'} (可直接输入新名称修改)\n"
-                f"{_PRODUCT_CONFIRM_PROMPT}"
-            ),
+            message="\n".join(lines),
             needs_input=True,
         )
 

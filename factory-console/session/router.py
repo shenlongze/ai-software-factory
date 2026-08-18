@@ -83,6 +83,11 @@ class IntentRouter:
         """
         action_name = self._mapping.get(intent.intent_type)
         if action_name is None:
+            # S10-082: 同名 action 兜底 — 大量 intent (audit_*/memory_*/debug_*)
+            # 与 action 同名注册; 避免 39 个 intent 全部 UnknownIntentError
+            action = registry.get(intent.intent_type)
+            if action is not None:
+                return action
             raise UnknownIntentError(
                 f"意图 {intent.intent_type!r} 未配置路由 "
                 f"(可用: {', '.join(sorted(self._mapping))})"

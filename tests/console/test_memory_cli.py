@@ -121,8 +121,11 @@ class TestIntent:
         assert it.intent_type == INT.INTENT_MEMORY_LEARN
 
     def test_learn_bare_keyword(self):
+        # S10-082: 裸"学习" → 不匹配 memory_learn (闲聊进 Chat); "学习经验" → 触发
         it = INT.KeywordIntentParser().parse("学习")
-        assert it.intent_type == INT.INTENT_MEMORY_LEARN
+        assert it is None or it.intent_type != INT.INTENT_MEMORY_LEARN
+        it2 = INT.KeywordIntentParser().parse("学习经验")
+        assert it2.intent_type == INT.INTENT_MEMORY_LEARN
 
     def test_stats_keyword(self):
         it = INT.KeywordIntentParser().parse("经验统计")

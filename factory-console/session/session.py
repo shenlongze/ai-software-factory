@@ -18,6 +18,10 @@
 from __future__ import annotations
 
 import sys
+
+import logging
+
+logger = logging.getLogger("factory.session")
 from pathlib import Path
 from typing import Any, Optional
 
@@ -224,7 +228,11 @@ class InteractiveSession:
         try:
             action = self.intent_router.route(intent, self.action_registry)
         except UnknownIntentError as exc:
-            print(f"未识别的意图: {exc} — {INTENT_HINT}")
+            # S10-082: Unknown Intent 安全降级 → ChatService (用户永远看不到
+            # UnknownIntentError / intent 名 / route 不存在)
+            logger.debug("intent %r 无路由 → chat 降级: %s", intent.intent_type, exc)
+            answer = self.chat_service.answer(line)
+            print(answer)
             return
         context = self._build_action_context(intent)
         # S10-049 P0: 确认判定以 intent 类型为准 (run_task ∈ 敏感集合 →

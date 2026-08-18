@@ -211,7 +211,7 @@ _KEYWORD_RULES: tuple[tuple[tuple[str, ...], str, Optional[str]], ...] = (
     # "我想搜索经验" 不被 "我想" 抢; "学习" 不与 run_task (写/修复/实现/加)
     # 共享子串; "分析Agent" 不与其他 "分析" 类规则冲突 (无裸 "分析" 规则)。
     (("搜索经验", "查找经验", "查经验", "学到了什么", "有什么经验"), INTENT_MEMORY_SEARCH, "query"),
-    (("学习经验", "经验学习", "学习"), INTENT_MEMORY_LEARN, None),
+    (("学习经验", "经验学习", "触发学习", "让我学习"), INTENT_MEMORY_LEARN, None),
     (("经验统计",), INTENT_MEMORY_STATS, None),
     (
         ("分析Agent", "分析agent", "Agent成长", "agent成长", "Agent分析", "agent分析"),

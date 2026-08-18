@@ -489,7 +489,7 @@ def test_start_discovery_first_question_problem():
     """C: 缺 problem → 第一追问明确指向 problem (不静默)。"""
     mgr = _manager()
     resp = mgr.start_product_discovery("我想开发一个台球计分APP")
-    assert "问题" in resp.message
+    assert "痛点" in resp.message or "问题" in resp.message
     assert "problem" in resp.message
 
 
@@ -557,7 +557,7 @@ def test_handle_create_product_starts_discovery():
     resp = mgr.handle("我想开发一个台球计分APP")
     assert resp.state == STATES.DISCOVERY
     assert mgr.product_intent is not None
-    assert "问题" in resp.message
+    assert "痛点" in resp.message or "问题" in resp.message
 
 
 def test_handle_multi_turn_to_confirmation():
@@ -607,7 +607,8 @@ def test_missing_problem_asked_first():
     mgr = _manager()
     mgr.start_product_discovery("x")
     assert mgr.product_intent.missing_fields() == ["产品解决什么问题", "目标用户", "核心功能"]
-    assert "产品解决什么问题" in mgr._next_product_question()
+    # S10-082: 对话化文案 (语义不变, 文案含痛点/问题)
+    assert "痛点" in mgr._next_product_question() or "问题" in mgr._next_product_question()
 
 
 def test_missing_user_asked_after_problem():
@@ -862,7 +863,7 @@ def test_session_product_flow_end_to_end(fake_org, capsys, tmp_path):
     sess._dispatch("计分、比赛记录、排行榜")
     sess._dispatch("y")
     out = capsys.readouterr().out
-    assert "这个产品解决什么问题" in out
+    assert "痛点" in out or "问题" in out
     assert "目标用户是谁" in out
     assert "核心功能有哪些" in out
     assert "确认创建这个产品? (y/N)" in out

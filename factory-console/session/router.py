@@ -29,6 +29,9 @@ DEFAULT_ROUTES: dict[str, str] = {
     "prepare_project": "prepare_project",
     # S10-052 P4: 执行编排意图 → Orchestrator Actions (执行项目 / 进度查询)
     "execute_project": "execute_project",
+    # S10-079: resume_project 别名 → execute_project (真实生产恢复:
+    # orchestrator.needs_resume → resume; 无任务 → 全新执行; 复用同一执行链)
+    "resume_project": "execute_project",
     "project_progress": "project_progress",
     # S10-053 P4: 质量修复意图 → RepairManager Action (修复失败任务)
     "repair_task": "repair_task",

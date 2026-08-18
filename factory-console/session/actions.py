@@ -814,6 +814,29 @@ def execute_project(context: ExecutionContext) -> ActionResult:
     任务执行复用 execute_task (orchestrator._default_execute_fn 薄调, 验收 H)。
     """
     context.require("user")  # 基线权限 (action.permission="project" 由 RBAC 后续 Task 强制)
+    # S10-079: resume (继续开发) 必须显式当前项目 — 禁止扫描兜底猜项目;
+    # execute_project (开始开发) 保留 S10-052 扫描兜底 (既有验收行为)
+    intent = getattr(context, "intent", None)
+    intent_type = getattr(intent, "intent_type", "") if intent is not None else ""
+    if intent_type == "resume_project":
+        session = getattr(context, "session", None)
+        explicit_project = (
+            getattr(session, "current_project", None) if session is not None else None
+        )
+        if not explicit_project:
+            explicit_project = getattr(context, "project", None)
+        if not explicit_project:
+            return ActionResult(
+                ok=False,
+                status=STATUS_ERROR,
+                message=(
+                    "当前没有正在开发的项目。\n"
+                    "你可以:\n"
+                    "  • 描述产品想法 (例如: 我想做一个记账 App) — 带你完成项目创建\n"
+                    "  • 输入 /project 查看已有项目并选择"
+                ),
+                error="未指定当前项目",
+            )
     product, slug, projects_root = _locate_product(context)
     if product is None or slug is None:
         return ActionResult(

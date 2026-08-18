@@ -24,6 +24,8 @@ from typing import Any, Optional
 
 #: Intent 类型注册表 (S10-046 §4 初始子集 — 本 Task 涉及 4 类 + S10-048 P0 list_projects)
 INTENT_CREATE_PROJECT = "create_project"
+#: S10-076: 当前项目查询 (刚刚创建的项目呢 / 当前项目是什么 — 只读, 不创建)
+INTENT_CURRENT_PROJECT = "current_project"
 INTENT_RUN_TASK = "run_task"
 INTENT_SHOW_COST = "show_cost"
 INTENT_SHOW_STATUS = "show_status"
@@ -219,6 +221,21 @@ _KEYWORD_RULES: tuple[tuple[tuple[str, ...], str, Optional[str]], ...] = (
     # (idea 参数 = 关键词后剩余文本; 优先级在 run_task/show_status 之后,
     #  "我想看看状态" → show_status、"我想加个功能" → run_task 不被抢)
     (("我想", "做一款", "产品", "想法", "创业"), INTENT_CREATE_PRODUCT, "idea"),
+    # S10-076: 当前项目查询 (优先级在 create_project "创建" 之前 —
+    # "刚刚创建的项目呢" 不被解析成创建新项目)
+    (
+        (
+            "刚刚创建的项目",
+            "当前项目是什么",
+            "当前项目",
+            "这个项目",
+            "刚才那个项目",
+            "项目在哪里",
+            "创建的项目",
+        ),
+        INTENT_CURRENT_PROJECT,
+        None,
+    ),
     (("创建", "做一个", "开发一个"), INTENT_CREATE_PROJECT, "name"),
     # S10-065 批次 B: 评审确认意图 (Review UX — 纯新增, 旧关键词不动)。
     # 必须在 accept_project ("接受交付") 之后: "接受交付" 仍归 accept_project,
@@ -312,7 +329,16 @@ class KeywordIntentParser(IntentParser):
                     params["period"] = "session"
                 elif param_key:
                     if hint:
-                        params[param_key] = hint
+                        # S10-076: create_project name 清理 — 去 "项目" 占位脏数据
+                        # ("创建项目" → name="项目" 无实质; "创建项目 记账App" → "记账App")
+                        if intent_type == INTENT_CREATE_PROJECT and param_key == "name":
+                            hint = hint.strip()
+                            if hint == "项目":
+                                hint = ""
+                            elif hint.startswith("项目 "):
+                                hint = hint[len("项目 "):].strip()
+                        if hint:
+                            params[param_key] = hint
                 return IntentObject(
                     intent_type=intent_type,
                     params=params,

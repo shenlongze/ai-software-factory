@@ -29,6 +29,14 @@ _FALLBACK = (
     "  • 输入 /help 查看系统命令"
 )
 
+#: S10-076: LLM Provider 不可用 → 明确错误 (不再伪装成 "目标不明确")
+_PROVIDER_UNAVAILABLE = (
+    "AI 对话服务当前不可用。\n"
+    "原因: LLM Provider 未配置或 API Key 缺失。\n"
+    "请检查: factory doctor (诊断) → factory init (配置 LLM)。\n"
+    "系统命令 (/help /status /project) 不受影响。"
+)
+
 
 class ChatService:
     """普通问答服务: 真实 LLM 回答, 失败 → 引导。"""
@@ -44,16 +52,38 @@ class ChatService:
 
             self._provider = ReasoningProvider()
             return True
-        except Exception:  # noqa: BLE001 — 装配失败 → 引导
+        except Exception:  # noqa: BLE001 — 装配失败 → 明确不可用
             return False
 
+    def _provider_unavailable_reason(self) -> str:
+        """S10-076: LLM 不可用的明确原因 (诚实, 不伪装)。"""
+        try:
+            from .reasoning import ReasoningProvider
+            from ..config import ConfigProvider
+
+            rp = ReasoningProvider()
+            pid, _model = rp._resolve_identity()  # noqa: SLF001 — 同包读取
+            if not pid:
+                return "未配置 LLM Provider (factory init 配置)"
+            try:
+                from exec.cli import _provider_registry  # noqa: PLC0415
+
+                _provider_registry.get(pid)
+                return f"Provider '{pid}' 已配置但 API Key 不可用"
+            except Exception:  # noqa: BLE001
+                return f"Provider '{pid}' 装配失败"
+        except Exception as exc:  # noqa: BLE001
+            return f"LLM 装配失败: {exc}"
+
     def answer(self, question: str, *, max_chars: int = 600) -> str:
-        """真实 LLM 回答普通问题; 无 LLM/失败 → 引导。"""
+        """真实 LLM 回答普通问题; LLM 不可用 → 明确不可用; 其它失败 → 引导。"""
         q = str(question or "").strip()
         if not q:
             return _FALLBACK
         if not self._provider_ready():
-            return _FALLBACK
+            # S10-076: Provider 不可用 ≠ 用户目标不明确 — 明确区分
+            reason = self._provider_unavailable_reason()
+            return f"{_PROVIDER_UNAVAILABLE}\n(细节: {reason})"
         try:
             llm_fn = self._provider._default_llm_fn()  # noqa: SLF001 — 同包复用装配链
             text = llm_fn(_CHAT_PROMPT.format(question=q), "chat")
@@ -61,8 +91,11 @@ class ChatService:
             if not text:
                 return _FALLBACK
             return text[:max_chars]
-        except Exception as exc:  # noqa: BLE001 — LLM 失败 → 引导 (诚实)
+        except Exception as exc:  # noqa: BLE001 — LLM 调用失败 → 明确不可用
             logger.warning("chat answer failed: %s", exc)
+            msg = str(exc)
+            if "api key" in msg.lower() or "key" in msg.lower() or "未设置" in msg or "missing" in msg.lower():
+                return f"{_PROVIDER_UNAVAILABLE}\n(细节: {msg[:200]})"
             return _FALLBACK
 
     def is_fallback(self, answer: str) -> bool:

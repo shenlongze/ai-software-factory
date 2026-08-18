@@ -27,7 +27,14 @@ from .commands import build_default_registry
 from .confirm import ConfirmationGate
 from .context import ContextManager, SessionContext
 from .conversation import ConversationManager, ConversationState
-from .intent import INTENT_CREATE_PRODUCT, IntentObject, IntentParser, KeywordIntentParser
+from .intent import (
+    INTENT_CREATE_PRODUCT,
+    INTENT_CREATE_PROJECT,
+    INTENT_CURRENT_PROJECT,
+    IntentObject,
+    IntentParser,
+    KeywordIntentParser,
+)
 from .renderer import HumanRenderer, Renderer
 from .router import IntentRouter, UnknownIntentError
 from .slash import SlashCommandRegistry
@@ -193,6 +200,22 @@ class InteractiveSession:
             resp = conv.start_product_discovery(line)
             print(resp.message)
             return
+        # S10-076: 当前项目查询 → 只读展示会话当前项目 (绝不创建/写)
+        if intent.intent_type == INTENT_CURRENT_PROJECT:
+            self._show_current_project()
+            return
+        # S10-076: Action Safety — 高副作用 Action 参数不完整 → 自然语言提示,
+        # 不进入 Domain/Pydantic validation error
+        if intent.intent_type == INTENT_CREATE_PROJECT:
+            params = intent.parameters or {}
+            if not (params.get("name") or "").strip() and not (params.get("goal") or "").strip():
+                print(
+                    "我理解你想创建项目, 但还需要一些信息:\n"
+                    "  • 项目名称 (例如: 创建项目 记账App)\n"
+                    "  • 或项目目标 (例如: 创建项目 goal=做一个记账软件)\n"
+                    "补充完整后我立即执行。"
+                )
+                return
         try:
             action = self.intent_router.route(intent, self.action_registry)
         except UnknownIntentError as exc:
@@ -242,6 +265,19 @@ class InteractiveSession:
             raise RuntimeError("create_product Action 未注册")
         result = action.execute(context)
         if result.ok:
+            # S10-076: 产品创建成功 → 写会话当前项目上下文 (后续 "刚刚创建的项目呢" 可用)
+            data = result.data if isinstance(result.data, dict) else {}
+            project = data.get("project")
+            if isinstance(project, dict):
+                self.context.current_project = str(
+                    project.get("id") or project.get("slug") or project.get("name") or ""
+                )
+                self.context.metadata["last_created_project"] = self.context.current_project
+            elif project is not None:
+                self.context.current_project = str(
+                    getattr(project, "id", "") or getattr(project, "slug", "") or getattr(project, "name", "")
+                )
+                self.context.metadata["last_created_project"] = self.context.current_project
             return result.message
         raise RuntimeError(result.message or "产品创建失败")
 
@@ -262,6 +298,26 @@ class InteractiveSession:
                     print(f"  {key}: {execution[key]}")
         else:
             print(f"❌ {result.message}")
+
+    def _show_current_project(self) -> None:
+        """S10-076: 只读展示会话当前项目 (不创建/写)。"""
+        ctx = self.context
+        project = ctx.current_project
+        if not project:
+            last = ctx.metadata.get("last_created_project")
+            if last:
+                project = str(last)
+        if not project:
+            print(
+                "当前还没有项目上下文。\n"
+                "你可以:\n"
+                "  • 描述产品想法 (例如: 我想做一个记账 App) — 我会带你完成 Discovery → 项目创建\n"
+                "  • 输入 /project 查看已有项目"
+            )
+            return
+        print(f"当前项目: {project}")
+        print(f"状态: 已就绪 (Project Ready For Engineering)")
+        print("需要的话, 我可以继续帮你查看项目详情或开始开发。")
 
     def _build_action_context(self, intent: IntentObject) -> ExecutionContext:
         """装配 ExecutionContext: 注入复用 (action_context); 否则从会话上下文构建。

@@ -2939,6 +2939,66 @@ def audit_stats(context: ExecutionContext) -> ActionResult:
                             message=f"审计统计失败: {exc}", error=str(exc))
 
 
+def project_docs(context: ExecutionContext) -> ActionResult:
+    """项目文档状态 (S10-084+): 扫描各项目 PRD.md / 管线资产 / 工程计划 — 真实数据。
+
+    "哪些项目有PRD/哪个项目有文档" → 逐项目列出文档情况 (不再让 LLM 猜)。
+    """
+    context.require("user")
+    workspace = Path(getattr(context, "workspace", None) or DEFAULT_WORKSPACE)
+    projects_root = workspace / "projects"
+    rows: list[list[str]] = []
+    projects: list[dict[str, Any]] = []
+    if projects_root.is_dir():
+        for pdir in sorted(projects_root.iterdir()):
+            if not pdir.is_dir():
+                continue
+            product_file = pdir / "product.json"
+            name = ""
+            try:
+                if product_file.is_file():
+                    name = str(_read_json_file(product_file).get("name") or "") or pdir.name
+                else:
+                    name = pdir.name
+            except Exception:  # noqa: BLE001
+                name = pdir.name
+            has_prd = (pdir / "PRD.md").is_file()
+            artifact_types = sorted(
+                d.name for d in (pdir / "artifacts").glob("*") if d.is_dir()
+            ) if (pdir / "artifacts").is_dir() else []
+            has_plan = (pdir / "engineering.json").is_file()
+            status = ""
+            try:
+                proj_file = pdir / "project.json"
+                if proj_file.is_file():
+                    status = str(_read_json_file(proj_file).get("status") or "")
+            except Exception:  # noqa: BLE001
+                pass
+            prd_mark = "✅" if has_prd else "—"
+            pipeline_mark = f"{len(artifact_types)} 资产" if artifact_types else "—"
+            rows.append([
+                pdir.name, name, prd_mark,
+                pipeline_mark, "✅" if has_plan else "—", status or "—",
+            ])
+            projects.append({
+                "id": pdir.name, "name": name, "prd": has_prd,
+                "artifacts": artifact_types, "engineering_plan": has_plan,
+                "status": status,
+            })
+    message = "项目文档状态:" if rows else "暂无项目 (先描述想法创建一个产品)"
+    return ActionResult(
+        ok=True,
+        status=STATUS_OK,
+        message=message,
+        data={
+            "count": len(projects),
+            "projects": projects,
+            "header": ["id", "name", "PRD", "管线资产", "工程计划", "状态"],
+            "rows": rows,
+        },
+    )
+
+
 def product_pipeline(context: ExecutionContext) -> ActionResult:
     """S10-084: 产品管线 (PM/Market/Competitive/UX/Architect/QA/SeniorPM 资产链)。
 
@@ -2999,6 +3059,15 @@ def build_default_actions() -> ActionRegistry:
                 "sensitive": True,
                 "category": "product",
             },
+        )
+    )
+    registry.register(
+        Action(
+            name="project_docs",
+            description="项目文档状态 (PRD/管线资产/工程计划 — 真实数据)",
+            handler=project_docs,
+            permission="user",
+            metadata={"service": "projects/* 扫描", "phase": "S10-084+", "category": "product"},
         )
     )
     registry.register(

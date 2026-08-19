@@ -325,8 +325,8 @@ class ModelCheck:
             return CheckResult(
                 self.id,
                 STATUS_WARN,
-                f"models.json 不存在 ({models_file}) — 运行 factory init 后 "
-                "ModelCatalog 将自动写入内置种子",
+                f"models.json 不存在 ({models_file}) — 运行 factory init 将生成内置模型种子 "
+                "(首次使用模型时也会自动补齐)",
                 {"path": str(models_file), "seeded": False},
             )
         try:
@@ -456,10 +456,25 @@ _register_builtin()
 # ------------------------------------------------------------------ 输出
 
 
+def _doctor_version() -> str:
+    """运行时版本 (单一来源: pyproject → __version__; 读取失败 → '未知')。"""
+    try:
+        from . import __version__
+        return str(__version__)
+    except Exception:  # noqa: BLE001 — 版本读取失败不阻塞诊断
+        return "未知"
+
+
 def _print_human(results: list[CheckResult], summary: dict[str, int], verbose: bool) -> None:
-    """人类可读表格输出 (stdout; FAIL 汇总提示走 stderr)。"""
+    """人类可读表格输出 (stdout; FAIL 汇总提示走 stderr)。
+
+    S10-026+ 增强: 头部带版本/关于/数据目录, 尾部带下一步命令 —
+    用户一眼看到"这是什么、在哪、怎么继续"。
+    """
     icons = {STATUS_PASS: "✓", STATUS_WARN: "⚠", STATUS_FAIL: "✗"}
     print("=== AI Factory Doctor ===")
+    print(f"  版本: v{_doctor_version()} | 关于: AI Software Factory — 想法 → 产品 → PRD → 工程 → 执行 → 交付")
+    print(f"  数据目录: {Path.home() / '.factory'}")
     if not results:
         print("  (注册表为空 — 无可用检查器)")
     for r in results:
@@ -469,6 +484,11 @@ def _print_human(results: list[CheckResult], summary: dict[str, int], verbose: b
             for key, value in r.details.items():
                 print(f"      {key}: {value}")
     print(f"  汇总: {summary['pass']} PASS / {summary['warn']} WARN / {summary['fail']} FAIL")
+    print("  下一步:")
+    print("    factory init      — 首次初始化 (Provider/模型种子)")
+    print("    factory start     — 启动后端+前端服务")
+    print("    factory status    — 端口/进程/LLM 状态")
+    print("    factory project list — 项目清单; 进入会话直接说 '我想做...'")
     if summary["warn"]:
         print("  ⚠ 存在 WARN 项 — 建议按上方提示处理 (不影响退出码)")
     if summary["fail"]:

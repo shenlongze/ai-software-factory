@@ -445,3 +445,32 @@ class TestCliIntegration:
             args = _cli.build_parser().parse_args(argv)
             rc = cli.run(args)
             assert rc == 0, f"command {argv} regressed"
+
+
+class TestOutputInfo:
+    """2026-08-19: doctor 信息量增强 (版本/关于/数据目录/下一步)。"""
+
+    def test_human_output_has_version_about_and_next(self, tmp_path, capsys):
+        rc = _doc.run_doctor(["provider"], ctx=make_ctx(tmp_path))
+        out = capsys.readouterr().out
+        assert rc == 1
+        assert "版本: v" in out
+        assert "关于: AI Software Factory" in out
+        assert "数据目录:" in out
+        assert "下一步:" in out
+        assert "factory init" in out
+        assert "factory start" in out
+        assert "factory status" in out
+
+    def test_doctor_version_reads_single_source(self):
+        v = _doc._doctor_version()
+        assert v and v != "未知"
+        assert v.count(".") >= 1
+
+    def test_double_dash_doctor_alias(self, monkeypatch, tmp_path, capsys):
+        """factory --doctor (用户把子命令当 flag) → 等价 doctor。"""
+        monkeypatch.setenv("HOME", str(tmp_path))
+        rc = _cli.main(["--doctor"])
+        out = capsys.readouterr().out
+        assert "AI Factory Doctor" in out
+        assert rc in (0, 1)  # 空环境 provider FAIL → 1; 有配置 → 0

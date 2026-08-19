@@ -1603,8 +1603,8 @@ class FactoryCLI:
 
         支持 --force (已初始化也重新引导) / --non-interactive (无 TTY 自动
         降级; 用参数或默认) / --provider <id> / --model <model> (非交互指定)。
-        红线: providers.json 只写 api_key_ref 引用, 绝不写明文 key; 除
-        providers.json 外不修改任何文件 (config.json 归 config 命令管)。
+        红线: providers.json 只写 api_key_ref 引用, 绝不写明文 key; 写入面
+        仅 workspace 目录 + providers.json + models.json 种子 (config.json 归 config 命令管)。
         """
         print("=== AI Factory 初始化 ===")
 
@@ -1637,6 +1637,16 @@ class FactoryCLI:
             print("  ✓ 已创建 workspace 目录: " + ", ".join(created))
         else:
             print("  ✓ workspace 目录已就绪")
+
+        # 2.5 模型目录种子 (models.json — 缺失时写入内置种子, 幂等)
+        try:
+            from .model_catalog import ModelCatalog
+
+            catalog = ModelCatalog(models_file=self.data_dir / "models.json")
+            model_count = len(catalog.list_models(include_disabled=True))
+            print(f"  ✓ 模型目录就绪 (models.json, {model_count} 个内置模型种子)")
+        except Exception as exc:  # noqa: BLE001 — 失败安全
+            print(f"  ⚠ 模型目录种子写入失败 (首次使用模型时会自动补齐): {exc}")
 
         # 3. LLM 配置引导 (providers.json — 经 LLMControlPlane, 只写引用)
         rc = self._init_llm_guide(args)
@@ -2646,6 +2656,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     SystemExit(2) — 此处先于 parse 判断, 不误吞未知命令错误 (rc 2)。
     """
     argv_list = list(sys.argv[1:]) if argv is None else list(argv)
+    # 常见拼写别名: --doctor → doctor (用户易把子命令当 flag 输入)
+    if argv_list == ["--doctor"]:
+        argv_list = ["doctor"]
     if not argv_list or argv_list == ["--interactive"]:
         from .session.session import InteractiveSession  # 延迟导入 (Removal Isolation)
 

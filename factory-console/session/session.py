@@ -36,6 +36,7 @@ from .intent import (
     INTENT_CREATE_PROJECT,
     INTENT_CURRENT_PROJECT,
     INTENT_RENAME_PROJECT,
+    INTENT_RESUME_PROJECT,
     IntentObject,
     IntentParser,
     KeywordIntentParser,
@@ -222,6 +223,10 @@ class InteractiveSession:
         if intent.intent_type == INTENT_RENAME_PROJECT:
             self._rename_project_via_nl(intent, line)
             return
+        # "继续 旅行记账" → 从输入解析项目名并切换当前项目; 无名称/未匹配 → 落回普通路由
+        if intent.intent_type == INTENT_RESUME_PROJECT:
+            if self._try_resume_with_name(line):
+                return
         # S10-076: Action Safety — 高副作用 Action 参数不完整 → 自然语言提示,
         # 不进入 Domain/Pydantic validation error
         if intent.intent_type == INTENT_CREATE_PROJECT:
@@ -379,6 +384,50 @@ class InteractiveSession:
                     print(f"  {key}: {execution[key]}")
         else:
             print(f"❌ {result.message}")
+
+    def _try_resume_with_name(self, raw_line: str) -> bool:
+        """'继续 <项目名>' → 解析项目名, 匹配并切换当前项目后继续 (返回 True 已处理)。
+
+        无项目名 (裸 '继续开发') → 返回 False, 落回普通路由 (由 execute_project
+        给出无当前项目的明确提示); 名称未匹配 → 打印提示并返回 True。
+        """
+        name = str(raw_line or "").strip()
+        for prefix in ("继续开发", "继续执行", "继续", "resume"):
+            if name.lower().startswith(prefix.lower()):
+                name = name[len(prefix):].strip()
+                break
+        name = name.strip("，。,. ")
+        if not name:
+            return False
+        pid = self._match_project(name)
+        if not pid:
+            print(f"未找到项目 '{name}' — 输入 /project 查看项目清单")
+            return True
+        self.context.current_project = pid
+        print(f"已切换到项目: {pid}")
+        self._dispatch("继续开发")
+        return True
+
+    def _match_project(self, name: str) -> str:
+        """按名称/ID 匹配项目 (org/projects.json; 名称包含或 ID 相等)。"""
+        from .commands import read_projects
+
+        workspace = getattr(self.context, "workspace", None) or DEFAULT_WORKSPACE
+        projects = read_projects(Path(workspace) / "org" / "projects.json")
+        for proj in projects:
+            pid = str(proj.get("id") or "")
+            pname = str(proj.get("name") or "")
+            if pid == name or pname == name:
+                return pid
+        # 宽松包含匹配 (唯一命中才用, 避免歧义)
+        hits = [
+            str(proj.get("id") or "")
+            for proj in projects
+            if name in str(proj.get("name") or "") or str(proj.get("name") or "") in name
+        ]
+        if len(hits) == 1:
+            return hits[0]
+        return None
 
     def _rename_project_via_nl(self, intent: Any, raw_line: str) -> None:
         """S10-081 P2: 自然语言改名 — 复用 service.confirm_project 事务。

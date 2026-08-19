@@ -31,6 +31,8 @@ INTENT_SHOW_COST = "show_cost"
 INTENT_SHOW_STATUS = "show_status"
 INTENT_FACTORY_BUDGET = "factory_budget"
 INTENT_LIST_PROJECTS = "list_projects"
+#: S10-084+: 项目文档状态查询 (哪些项目有 PRD/管线资产 — 真实数据, 不猜)
+INTENT_PROJECT_DOCS = "project_docs"
 #: S10-050 P1: 产品意图 (用户想创造什么 — 走 DISCOVERY 多轮, 见 conversation.py)
 INTENT_CREATE_PRODUCT = "create_product"
 #: S10-051 P1: 工程管线意图 (生成 PRD / 准备工程 — 规则生成, 不调 LLM)
@@ -180,6 +182,8 @@ _KEYWORD_RULES: tuple[tuple[tuple[str, ...], str, Optional[str]], ...] = (
     # S10-049 P0: +"实现" (验收: "帮我实现登录功能" → run_task, objective="登录功能")
     (("加", "修复", "写", "实现"), INTENT_RUN_TASK, "objective"),
     (("项目列表", "有哪些项目", "列出项目", "有什么项目", "现在有什么项目", "我有哪些项目"), INTENT_LIST_PROJECTS, None),
+    # S10-084+: 项目文档状态 (真实数据: PRD.md / 管线资产 / 工程计划)
+    (("哪些项目有PRD", "哪个项目有PRD", "项目有PRD", "PRD状态", "哪些项目有文档", "项目文档状态", "哪个项目有文档"), INTENT_PROJECT_DOCS, None),
     (("状态", "看看"), INTENT_SHOW_STATUS, None),
     (("查看预算", "预算情况", "预算"), INTENT_FACTORY_BUDGET, None),
     # S10-051 P1: 工程管线意图 — 优先级在 create_product 之前

@@ -536,3 +536,14 @@ class TestMainEntrypoint:
         assert _cli.main(["init", "--non-interactive"]) == 0
         out = capsys.readouterr().out
         assert "保持现有 Provider 配置" in out
+
+
+class TestModelSeed:
+    def test_init_seeds_models_json(self, tmp_path, capsys):
+        """2026-08-19: init 生成 models.json 内置种子 (doctor model 不再 WARN)。"""
+        cli = make_cli(tmp_path)
+        rc = run(cli, "init", "--non-interactive", "--provider", "deepseek")
+        out = capsys.readouterr().out
+        assert rc == 0
+        assert "模型目录就绪" in out
+        assert (cli.data_dir / "models.json").is_file()

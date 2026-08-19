@@ -35,6 +35,7 @@ DEFAULT_ROUTES: dict[str, str] = {
     # S10-081 P2: rename_project → execute_project? 否 — 特判 REPL (见 session.py)
     "project_progress": "project_progress",
     "product_pipeline": "product_pipeline",
+    "project_docs": "project_docs",
     # S10-053 P4: 质量修复意图 → RepairManager Action (修复失败任务)
     "repair_task": "repair_task",
     # S10-055 Task 005: 项目验收意图 → accept_project Action (USER_ACCEPTANCE → DELIVERED)

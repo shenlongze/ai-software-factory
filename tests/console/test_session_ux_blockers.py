@@ -123,3 +123,91 @@ def test_execute_failure_shows_reason(monkeypatch, capsys, tmp_path):
     assert "失败示例" in out
     assert "network down" in out
     assert "factory doctor" in out
+
+
+# ================================================================== 2026-08-19 第二轮: 流程信息量/名称解析/文档查询
+
+class _FakeChat2:
+    def answer(self, question, **kw):
+        return "AI: 测试回答"
+
+    def is_fallback(self, a):
+        return False
+
+
+def test_resume_with_project_name_switches_and_resumes(monkeypatch, capsys, tmp_path):
+    """'继续 旅行记账' → 解析项目名并切换当前项目 (不再报'没有正在开发的项目')。"""
+    org = FakeOrgCli()
+    monkeypatch.setattr(ACT, "_load_org_cli", lambda: org)
+    root = tmp_path / "ws"
+    root.mkdir()
+    sess = SESS.InteractiveSession(
+        context_manager=CTX.ContextManager(workspace=str(root)),
+        chat_service=_FakeChat2(),
+    )
+    sess._dispatch("我想做一个旅行记账软件")
+    sess._dispatch("出差报销对账麻烦")
+    sess._dispatch("旅行者")
+    sess._dispatch("记账、分类")
+    sess._dispatch("y")
+    capsys.readouterr()
+    # 模拟真实 org 落盘 (FakeOrg 不写数据文件)
+    org_dir = root / "org"
+    org_dir.mkdir(exist_ok=True)
+    (org_dir / "projects.json").write_text(
+        json.dumps({"projects": {"P-001": {"name": "旅行记账"}}}), encoding="utf-8"
+    )
+    # 新会话 (无 current_project) → "继续 旅行记账" 应解析名称
+    sess2 = SESS.InteractiveSession(
+        context_manager=CTX.ContextManager(workspace=str(root)),
+        chat_service=_FakeChat2(),
+    )
+    sess2._dispatch("继续 旅行记账")
+    out = capsys.readouterr().out
+    assert "已切换到项目" in out
+    assert sess2.context.current_project  # 已设置当前项目
+    assert "当前没有正在开发的项目" not in out
+
+
+def test_resume_unknown_name_guides(capsys, tmp_path):
+    """'继续 不存在的项目' → 明确未找到, 不猜。"""
+    root = tmp_path / "ws"
+    root.mkdir()
+    sess = SESS.InteractiveSession(
+        context_manager=CTX.ContextManager(workspace=str(root)),
+        chat_service=_FakeChat2(),
+    )
+    sess._dispatch("继续 不存在的项目")
+    out = capsys.readouterr().out
+    assert "未找到项目" in out
+
+
+def test_project_docs_intent_and_real_data(monkeypatch, capsys, tmp_path):
+    """'哪些项目有PRD' → 真实数据表 (不再让 LLM 猜)。"""
+    org = FakeOrgCli()
+    monkeypatch.setattr(ACT, "_load_org_cli", lambda: org)
+    root = tmp_path / "ws"
+    root.mkdir()
+    sess = SESS.InteractiveSession(
+        context_manager=CTX.ContextManager(workspace=str(root)),
+        chat_service=_FakeChat2(),
+    )
+    sess._dispatch("我想开发一个台球计分APP")
+    sess._dispatch("计分麻烦")
+    sess._dispatch("台球爱好者")
+    sess._dispatch("计分、记录")
+    sess._dispatch("y")
+    capsys.readouterr()
+    sess._dispatch("哪些项目有PRD")
+    out = capsys.readouterr().out
+    assert "PRD" in out
+    assert "管线资产" in out
+    assert "台球计分" in out or "scorepocket" in out
+
+
+def test_chat_persona_honesty_constraints():
+    """人设 prompt 禁止虚构未实现能力 / 禁止猜项目状态。"""
+    chat = import_module("factory-console.session.chat")
+    prompt = chat._CHAT_PROMPT
+    assert "不要虚构未实现能力" in prompt
+    assert "不要代替系统查询项目/文档状态" in prompt

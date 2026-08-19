@@ -27,6 +27,7 @@ S10-050 产品发现流程 (P4):
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Callable, Optional
@@ -39,6 +40,7 @@ from .intent import (
     KeywordIntentParser,
 )
 from .product import (
+    FIELD_LABELS,
     FIELD_QUESTIONS,
     ProductIntent,
     generate_temp_product_name,
@@ -55,6 +57,74 @@ _PRODUCT_FIELD_ORDER: tuple[str, ...] = ("problem", "user", "core_features")
 _APPROVE_ANSWERS: frozenset[str] = frozenset({"y", "yes"})
 #: S10-081: 确认阶段取消词 (其余非 y 输入 → 视为改名)
 _CANCEL_ANSWERS: frozenset[str] = frozenset({"n", "no", "取消", "算了", "不要"})
+
+#: 产品流程控制短语 — 取消/退出当前产品发现 (非答案; 精确匹配, 不误吞正常字段回答)
+_PRODUCT_CANCEL_PHRASES: frozenset[str] = frozenset({
+    "取消", "算了", "不做了", "不要了", "不想做了", "停止",
+    "放弃", "退出", "重新开始", "重新描述", "重来",
+})
+
+#: 需求整理短语 — 只整理需求, 不创建项目 (前缀匹配 — 显式命令口径,
+#: 回应 "先帮我整理需求, 不要创建项目" 类输入, 不进入创建流程)
+_PRODUCT_SUMMARY_PHRASES: tuple[str, ...] = (
+    "你先帮我整理", "你帮我整理", "你先整理", "请帮我整理", "请先帮我整理",
+    "先帮我整理", "帮我整理", "先整理", "只整理", "只要整理",
+    "不要创建", "不创建", "先不要创建", "先不创建",
+    "你整理一下", "请整理一下",
+)
+
+#: 产品流程逃生短语 — 输入其它意图 (项目列表/创建项目/当前项目) → 产品流程让位,
+#: 原输入交回宿主按普通意图链处理 (精确匹配 — 命令式短语, 不误吞字段回答)
+_PRODUCT_ESCAPE_PHRASES: frozenset[str] = frozenset({
+    "项目列表", "项目清单", "查看项目", "有哪些项目", "现在有哪些项目", "我现在有哪些项目",
+    "当前项目", "当前项目是什么", "刚刚创建的项目", "最近创建的项目", "最近创建了什么",
+})
+
+#: "现在创建" 短语 — 发现阶段必填未齐 → 引导一次性补齐 (不逃生到空名 create_project);
+#: 确认阶段 → 等价 y (直接创建)
+_PRODUCT_CREATE_NOW_PHRASES: frozenset[str] = frozenset({
+    "创建项目", "现在创建项目", "直接创建项目", "直接创建", "现在创建", "马上创建",
+})
+
+#: 修改指令标记 (分隔字段与值 — "把用户改成X" / "功能改为X")
+_EDIT_MARKERS: tuple[str, ...] = ("改成", "改为", "修改成", "更改为", "更新为")
+
+#: 修改指令字段别名 (定位要修改的字段)
+_EDIT_FIELD_ALIASES: dict[str, tuple[str, ...]] = {
+    "problem": ("问题", "痛点", "要解决的问题"),
+    "user": ("用户", "目标用户", "使用者"),
+    "core_features": ("功能", "核心功能", "功能点", "特性"),
+    "name": ("名称", "名字", "产品名", "产品名称"),
+    "platform": ("平台",),
+}
+
+#: 修改指令动词前缀 (无字段别名时, 需显式修改意图才识别为编辑指令)
+_EDIT_VERB_PREFIXES: tuple[str, ...] = ("修改", "改一下", "帮我改", "请修改", "更新", "调整")
+
+#: 批量模式下 "是否补充?" 的肯定回答 → 重新展示剩余问题
+_PRODUCT_SUPPLEMENT_ANSWERS: frozenset[str] = frozenset({
+    "是", "好", "行", "要", "补充", "可以", "对", "y", "yes",
+})
+
+#: 批量问题短语 — 用户嫌问题多 → 一次性列出剩余必填问题 (前缀匹配)
+_PRODUCT_BATCH_PHRASES: tuple[str, ...] = (
+    "问题太多", "问题有点多", "问题好多", "问题太多了",
+    "一次性问", "一次问完", "一次问", "一起问", "太啰嗦",
+)
+
+#: 批量问题模式展示用紧凑问题 (编号列表 — 不重复大段引导语)
+_BATCH_QUESTIONS: dict[str, str] = {
+    "problem": "产品解决什么问题? (用户遇到什么困难? 为什么现在的方法不好?)",
+    "user": "目标用户是谁? (主要给谁用, 例如: 个人用户 / 学生 / 中小企业)",
+    "core_features": "核心功能有哪些? (用逗号或顿号分隔, 例如: 记账、统计、导出)",
+}
+
+#: 批量回答标签别名 (去 "痛点:/用户:/功能:" 前缀 — 批量回答友好)
+_FIELD_LABEL_ALIASES: dict[str, tuple[str, ...]] = {
+    "problem": ("痛点", "问题", "解决", "要解决的问题", "产品解决"),
+    "user": ("用户", "目标用户", "使用者", "给谁用", "面向谁", "面向"),
+    "core_features": ("功能", "核心功能", "功能点", "特性"),
+}
 
 #: 产品确认提示 (y/N 约定: 回车/其他 → 拒绝)
 _PRODUCT_CONFIRM_PROMPT = "确认创建这个产品? (y/N)"
@@ -83,11 +153,16 @@ class ConversationState(Enum):
 
 @dataclass
 class ConversationResponse:
-    """ConversationManager.handle() 的产出: 当前状态 + 给用户的消息 + 是否等待输入。"""
+    """ConversationManager.handle() 的产出: 当前状态 + 给用户的消息 + 是否等待输入。
+
+    passthrough: 产品流程逃生标记 (True → 宿主应按普通意图链重新处理原输入,
+    不展示 message; 产品流程让位)。
+    """
 
     state: ConversationState
     message: str = ""
     needs_input: bool = False
+    passthrough: bool = False
 
 
 class ConversationManager:
@@ -111,6 +186,8 @@ class ConversationManager:
         self.product_intent: Optional[ProductIntent] = None
         #: 产品发现待追问字段队列 (按 _PRODUCT_FIELD_ORDER; 空 = 必填齐全)
         self._product_pending: list[str] = []
+        #: 批量问题模式 (用户嫌问题多 → 一次性列出剩余必填问题)
+        self._product_batch_mode: bool = False
 
     def transition(self, new_state: ConversationState) -> None:
         """状态迁移: 记录 history (from → to) 后更新 state。
@@ -216,7 +293,11 @@ class ConversationManager:
         return f"{question} (缺失字段: {field})"
 
     def _set_product_field(self, field: str, value: str) -> None:
-        """填充产品字段: core_features 解析为列表; 其余原样赋值。"""
+        """填充产品字段: core_features 解析为列表; 其余原样赋值。
+
+        批量回答去标签前缀 ("痛点：X" → "X"), 单字段回答不受影响。
+        """
+        value = _clean_field_answer(field, value)
         if field == "core_features":
             self.product_intent.core_features = parse_core_features(value)  # type: ignore[union-attr]
         else:
@@ -262,8 +343,12 @@ class ConversationManager:
         )
 
     def handle_product_answer(self, text: str) -> ConversationResponse:
-        """产品发现多轮回答: 填充当前缺失字段 → 还有缺失 → 追问下一个;
-        全部补齐 → PRODUCT_CONFIRMATION + 摘要 + 确认询问。
+        """产品发现多轮回答: 控制短语优先 (取消/整理需求/逃生/批量问题 — 非答案);
+        否则填充当前缺失字段 → 还有缺失 → 追问下一个; 全部补齐 →
+        PRODUCT_CONFIRMATION + 摘要 + 确认询问。
+
+        多部分回答 (分号/换行分隔) 且多个字段待填 → 按顺序一次填充多个字段
+        (批量友好); 单字段待填 → 原样进入该字段解析 (core_features 顿号分隔不受影响)。
 
         空回答 → 明确要求补充 (不静默跳过, 验收 F)。
         """
@@ -276,8 +361,35 @@ class ConversationManager:
                 message="回答不能为空 — 请补充当前缺失字段",
                 needs_input=True,
             )
+        # 控制短语优先 (非答案 — 取消/整理需求/逃生到其它意图/批量问题)
+        control = self._product_control(raw)
+        if control is not None:
+            return control
+        # 批量模式下 "是否补充? → 是/好" → 重新展示剩余问题 (逐条回答)
+        if self._product_batch_mode and _strip_tail_punct(raw) in _PRODUCT_SUPPLEMENT_ANSWERS:
+            return ConversationResponse(
+                state=self.state,
+                message=self._batch_questions_message(),
+                needs_input=True,
+            )
         if not self._product_pending:
             # 防御: 必填已齐全 (状态异常) → 回到确认
+            return self._enter_product_confirmation()
+        # 多部分回答 → 按顺序填充多个字段 (批量友好; 单字段待填不切分)
+        parts = _split_product_answers(raw)
+        if len(parts) > 1 and len(self._product_pending) > 1:
+            for part in parts:
+                if not self._product_pending:
+                    break
+                field = self._product_pending[0]
+                self._set_product_field(field, part)
+                self._product_pending = self._product_pending[1:]
+            if self._product_pending:
+                return ConversationResponse(
+                    state=self.state,
+                    message=self._pending_question_message(),
+                    needs_input=True,
+                )
             return self._enter_product_confirmation()
         field = self._product_pending[0]
         self._set_product_field(field, raw)
@@ -286,10 +398,177 @@ class ConversationManager:
             # 还有缺失 → 追问下一个 (验收 C: 缺 problem → 追问; 补齐 → 追问 user)
             return ConversationResponse(
                 state=self.state,
-                message=self._next_product_question(),
+                message=self._pending_question_message(),
                 needs_input=True,
             )
         return self._enter_product_confirmation()
+
+    # -------------------------------------------------- 产品流程控制短语 (非答案)
+
+    def _product_control(self, text: str) -> Optional[ConversationResponse]:
+        """产品流程中的控制短语检测 (非字段答案 — 回答阶段/确认阶段共用)。
+
+        优先级: 取消 → 需求整理 (不创建) → 逃生 (其它意图交回宿主) → 批量问题。
+        仅匹配显式命令短语 (精确/前缀), 不误吞正常字段回答。
+        """
+        norm = _strip_tail_punct(text)
+        if norm in _PRODUCT_CANCEL_PHRASES:
+            return self._cancel_product_discovery()
+        if any(norm.startswith(phrase) for phrase in _sorted_by_len_desc(_PRODUCT_SUMMARY_PHRASES)):
+            return self._summarize_product_only()
+        # 修改指令 ("把用户改成X" / "修改一下，功能改成X") — 更新已有信息
+        edit = _parse_edit_command(text)
+        if edit is not None:
+            return self._apply_edit_command(*edit)
+        # "现在创建" 家族: 精确 (无名称) → 引导补齐; 带名称 → 逃生到 create_project
+        # (最长短语优先匹配, 避免 "现在创建" 抢 "现在创建项目")
+        for phrase in _sorted_by_len_desc(_PRODUCT_CREATE_NOW_PHRASES):
+            if norm.startswith(phrase):
+                if len(norm) > len(phrase):
+                    return self._escape_product_flow(text)
+                return self._create_now_with_incomplete()
+        if norm in _PRODUCT_ESCAPE_PHRASES:
+            return self._escape_product_flow(text)
+        if any(norm.startswith(phrase) for phrase in _sorted_by_len_desc(_PRODUCT_BATCH_PHRASES)):
+            return self._enter_product_batch_mode()
+        return None
+
+    def _reset_product_flow(self) -> None:
+        """清空产品流程 (product_intent / pending / 批量模式) → 回 DISCOVERY。"""
+        self.product_intent = None
+        self._product_pending = []
+        self._product_batch_mode = False
+        self.pending_intent = None
+        if self.state != ConversationState.DISCOVERY:
+            self.transition(ConversationState.DISCOVERY)
+
+    def _cancel_product_discovery(self) -> ConversationResponse:
+        """取消当前产品发现 (回答阶段/确认阶段共用) → 重置 DISCOVERY。"""
+        if self.product_intent is None:
+            return self._clarify("当前没有进行中的产品流程 — 请描述你的产品想法")
+        cancelled = self.product_intent.name or "(未命名产品)"  # type: ignore[union-attr]
+        self._reset_product_flow()
+        return ConversationResponse(
+            state=self.state,
+            message=(
+                f"已取消产品发现 ({cancelled}) — 请描述你的产品想法, "
+                "或使用其它命令 (如 '项目列表' / '创建项目')"
+            ),
+            needs_input=True,
+        )
+
+    def _summarize_product_only(self) -> ConversationResponse:
+        """只整理需求, 不创建项目: 输出已收集字段摘要 → 重置产品流程。
+
+        直接回应 "先帮我整理需求, 不要创建项目" 类输入 — 不再把命令当字段答案,
+        也绝不进入创建流程。
+        """
+        if self.product_intent is None:
+            return self._clarify("请先描述你的产品想法 (例如: '我想开发一个台球计分APP')")
+        summary = self.product_intent.to_summary()  # type: ignore[union-attr]
+        self._reset_product_flow()
+        return ConversationResponse(
+            state=self.state,
+            message=(
+                "已按你的要求整理需求 — 未创建任何项目。\n"
+                f"{summary}\n"
+                "以上为需求整理结果; 需要继续补充或创建项目时告诉我 (例如: '创建项目')。"
+            ),
+            needs_input=True,
+        )
+
+    def _apply_edit_command(self, field: str, value: str) -> ConversationResponse:
+        """应用修改指令: 更新指定字段 → 还有追问则继续, 否则回确认。
+
+        field 为空 → 默认当前待填字段; 已全部填齐但未指明字段 → 引导指明修改项。
+        """
+        if self.product_intent is None:
+            return self._clarify("请先描述你的产品想法 (例如: '我想开发一个台球计分APP')")
+        pi = self.product_intent  # type: ignore[union-attr]
+        if not field:
+            if self._product_pending:
+                field = self._product_pending[0]
+            else:
+                return ConversationResponse(
+                    state=self.state,
+                    message=(
+                        "想修改哪一项? 例如:\n"
+                        "  '把目标用户改成创业公司'\n"
+                        "  '把核心功能改成客户档案、跟进'\n"
+                        f"当前需求:\n{pi.to_summary()}"
+                    ),
+                    needs_input=True,
+                )
+        self._set_product_field(field, value)
+        if field in self._product_pending:
+            self._product_pending.remove(field)
+        if self._product_pending:
+            label = FIELD_LABELS.get(field, field)
+            return ConversationResponse(
+                state=self.state,
+                message=f"已更新{label}。\n{self._pending_question_message()}",
+                needs_input=True,
+            )
+        return self._enter_product_confirmation()
+
+    def _escape_product_flow(self, text: str) -> ConversationResponse:
+        """逃生: 用户输入其它意图 (项目列表/创建项目/当前项目) → 产品流程让位,
+        原输入交回宿主按普通意图链处理 (passthrough=True, 不再当字段答案)。"""
+        self._reset_product_flow()
+        return ConversationResponse(
+            state=self.state,
+            message="",
+            needs_input=True,
+            passthrough=True,
+        )
+
+    def _enter_product_batch_mode(self) -> ConversationResponse:
+        """批量问题模式: 用户嫌问题多 → 一次性列出剩余必填问题 (编号), 可逐条
+        回答或分号一次写完 (multi-part 填充由 handle_product_answer 支持)。"""
+        if self.product_intent is None:
+            return self._clarify("请先描述你的产品想法 (例如: '我想开发一个台球计分APP')")
+        if not self._product_pending:
+            return self._enter_product_confirmation()
+        self._product_batch_mode = True
+        return ConversationResponse(
+            state=self.state,
+            message=self._batch_questions_message(),
+            needs_input=True,
+        )
+
+    def _create_now_with_incomplete(self) -> ConversationResponse:
+        """'创建项目/现在创建' 但必填未齐 → 不能直接创建: 列出还缺字段并询问是否补充
+        (批量模式), 避免把裸 '创建项目' 解析成名为 '项目' 的空项目。"""
+        if self.product_intent is None:
+            return self._clarify("请先描述你的产品想法 (例如: '我想开发一个台球计分APP')")
+        if not self._product_pending:
+            return self._enter_product_confirmation()
+        self._product_batch_mode = True
+        missing_lines = "\n".join(
+            f"  - {FIELD_LABELS.get(field, field)}" for field in self._product_pending
+        )
+        return ConversationResponse(
+            state=self.state,
+            message=(
+                f"可以创建，不过还缺少:\n{missing_lines}\n\n"
+                "是否补充? 直接回答即可 (可一次写完: 用户:...; 功能:...)"
+            ),
+            needs_input=True,
+        )
+
+    def _pending_question_message(self) -> str:
+        """下一个追问: 批量模式 → 剩余问题编号列表; 否则单字段问题 (验收 C/F)。"""
+        if self._product_batch_mode:
+            return self._batch_questions_message()
+        return self._next_product_question()
+
+    def _batch_questions_message(self) -> str:
+        """剩余必填问题编号列表 (批量模式提示/推进共用)。"""
+        lines = ["剩余需求 (可逐条回答, 或用分号一次写完):"]
+        for idx, field in enumerate(self._product_pending, 1):
+            question = _BATCH_QUESTIONS.get(field) or FIELD_QUESTIONS.get(field, field)
+            lines.append(f"  {idx}. {question}")
+        return "\n".join(lines)
 
     def handle_product_confirm(
         self,
@@ -306,6 +585,13 @@ class ConversationManager:
         """
         if self.product_intent is None:
             return self._clarify("当前没有进行中的产品流程 — 请描述你的产品想法")
+        # 确认阶段 "创建项目/现在创建" → 等价 y (用户已确认, 直接创建)
+        if _strip_tail_punct(answer) in _PRODUCT_CREATE_NOW_PHRASES:
+            answer = "y"
+        # 控制短语优先 (取消/需求整理/逃生 — 非改名, 非字段答案)
+        control = self._product_control(answer)
+        if control is not None:
+            return control
         approved = (answer or "").strip().lower() in _APPROVE_ANSWERS
         if not approved:
             # S10-081: 非 y 输入 → 取消词 → 重置 DISCOVERY (既有验收 E);
@@ -316,10 +602,7 @@ class ConversationManager:
                 return self._enter_product_confirmation()
             # 验收 E: 确认 n → 重置 DISCOVERY (product_intent / pending 清空)
             cancelled = self.product_intent.name or "(未命名产品)"  # type: ignore[union-attr]
-            self.product_intent = None
-            self._product_pending = []
-            self.pending_intent = None
-            self.transition(ConversationState.DISCOVERY)
+            self._reset_product_flow()
             return ConversationResponse(
                 state=self.state,
                 message=f"已取消产品 {cancelled} — 重新开始产品发现, 请描述你的产品想法",
@@ -337,9 +620,7 @@ class ConversationManager:
             message = confirm_fn(self.product_intent)
         except Exception as exc:  # noqa: BLE001 — 失败安全: 创建失败 → 重置, 明确错误
             product_name = self.product_intent.name or "(未命名产品)"
-            self.product_intent = None
-            self._product_pending = []
-            self.transition(ConversationState.DISCOVERY)
+            self._reset_product_flow()
             return ConversationResponse(
                 state=self.state,
                 message=f"产品创建失败 ({product_name}): {exc} — 已重置, 请重新描述产品想法",
@@ -368,4 +649,82 @@ class ConversationManager:
         self.pending_intent = None
         self.product_intent = None
         self._product_pending = []
+        self._product_batch_mode = False
         self.history = []
+
+
+# ---------------------------------------------------------------- 模块级工具 (控制短语)
+
+def _sorted_by_len_desc(phrases) -> list[str]:
+    """短语按长度降序 (最长优先匹配 — 避免短前缀抢长短语)。"""
+    return sorted(phrases, key=len, reverse=True)
+
+
+def _parse_edit_command(text: str) -> Optional[tuple[str, str]]:
+    """解析修改指令 → (field, new_value); 非修改指令 → None。
+
+    匹配: "把{field}改成{value}" / "{field}改为{value}" / "修改一下，{field}改成{value}"。
+    无字段别名时必须带显式修改动词前缀 ("修改/改一下/更新..."), 避免误吞正常回答
+    (如 "把客户管理从混乱改成有序" 作为痛点回答不会被当成编辑指令)。
+    """
+    norm = (text or "").strip()
+    if not norm:
+        return None
+    pos, marker = _find_edit_marker(norm)
+    if pos == -1:
+        return None
+    head = norm[:pos].strip()
+    value = norm[pos + len(marker):].strip()
+    if not value:
+        return None
+    field = _match_edit_field(head)
+    if field is None and not norm.startswith(_EDIT_VERB_PREFIXES):
+        return None
+    return (field or "", value)
+
+
+def _find_edit_marker(text: str) -> tuple[int, str]:
+    """最早出现的修改标记位置 (("改成", "改为", ...) 中首个)。未找到 → (-1, "")。"""
+    pos, marker = -1, ""
+    for m in _EDIT_MARKERS:
+        idx = text.find(m)
+        if idx != -1 and (pos == -1 or idx < pos):
+            pos, marker = idx, m
+    return pos, marker
+
+
+def _match_edit_field(head: str) -> Optional[str]:
+    """在分隔符前文本中定位字段 (按别名包含匹配, 顺序: problem→user→features→name→platform)。"""
+    for field, aliases in _EDIT_FIELD_ALIASES.items():
+        for alias in aliases:
+            if alias in head:
+                return field
+    return None
+
+
+def _clean_field_answer(field: str, value: str) -> str:
+    """批量回答清洗: 去 "痛点:/用户:/功能:" 等标签前缀 (仅当冒号前是字段别名)。"""
+    text = (value or "").strip()
+    if "：" not in text and ":" not in text:
+        return text
+    for sep in ("：", ":"):
+        if sep in text:
+            label, _, rest = text.partition(sep)
+            label = label.strip()
+            aliases = _FIELD_LABEL_ALIASES.get(field, ())
+            if any(alias in label for alias in aliases):
+                text = rest.strip()
+            break
+    return text
+
+
+def _strip_tail_punct(text: str) -> str:
+    """控制短语归一化: 去首尾空白 + 去尾部标点 (。！？!?；;，,、)."""
+    return (text or "").strip().rstrip("。！？!?；;，,、 \t\n")
+
+
+def _split_product_answers(text: str) -> list[str]:
+    """多部分回答切分: 分号 (；;) 或换行 → 多段 (去空)。单段 → [原样]。"""
+    parts = re.split(r"[；;]+|\n+", text)
+    return [part.strip() for part in parts if part.strip()]
+

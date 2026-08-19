@@ -928,3 +928,303 @@ def test_session_slash_not_intercepted_by_product_flow(capsys, tmp_path):
     sess._dispatch("/status")
     out = capsys.readouterr().out
     assert "会话状态" in out  # slash 正常处理
+
+# ================================================================== 12. 产品流程控制短语 (非答案不被吞 — S10-084)
+
+def test_answer_cancel_phrase_resets_discovery():
+    """发现阶段输入取消短语 → 重置 (不当作字段答案)。"""
+    mgr = _manager()
+    mgr.start_product_discovery("我想开发一个CRM")
+    resp = mgr.handle_product_answer("取消")
+    assert resp.state == STATES.DISCOVERY
+    assert mgr.product_intent is None
+    assert mgr._product_pending == []
+    assert "已取消" in resp.message
+
+
+def test_answer_summary_phrase_organizes_without_create():
+    """transcript: '先帮我整理需求, 不要创建项目' → 输出需求整理, 绝不进入创建/确认。"""
+    mgr = _manager()
+    mgr.start_product_discovery("我想开发一个CRM")
+    mgr.handle_product_answer("小团队用Excel管客户很混乱")
+    mgr.handle_product_answer("10人以内的小团队")
+    resp = mgr.handle_product_answer("你先帮我整理需求，不要创建项目。")
+    assert mgr.product_intent is None
+    assert mgr._product_pending == []
+    assert resp.state == STATES.DISCOVERY
+    assert "未创建任何项目" in resp.message
+    assert "需求整理" in resp.message
+    assert "小团队用Excel管客户很混乱" in resp.message
+    # 命令未被吞成 core_features 答案, 不进入确认
+    assert "确认创建这个产品? (y/N)" not in resp.message
+    assert resp.needs_input is True
+
+
+def test_answer_create_now_incomplete_nudges_batch():
+    """transcript: 发现阶段输入 '现在创建项目' (必填未齐) → 引导一次性补齐, 不逃生。"""
+    mgr = _manager()
+    mgr.start_product_discovery("我想开发一个 Todo API")
+    resp = mgr.handle_product_answer("现在创建项目")
+    assert resp.passthrough is False
+    assert mgr.product_intent is not None  # 产品流程保留
+    assert mgr._product_batch_mode is True
+    assert "可以创建，不过还缺少" in resp.message
+    assert "- 产品解决什么问题" in resp.message
+    assert "- 核心功能" in resp.message
+    # 未被吞成 problem 答案
+    assert mgr.product_intent.problem is None
+
+
+def test_answer_escape_list_projects_passthrough():
+    """transcript: 发现阶段输入 '我现在有哪些项目' → 逃生 (passthrough), 不吞成答案。"""
+    mgr = _manager()
+    mgr.start_product_discovery("x")
+    resp = mgr.handle_product_answer("我现在有哪些项目")
+    assert resp.passthrough is True
+    assert mgr.product_intent is None
+    assert mgr._product_pending == []
+
+
+def test_answer_batch_phrase_lists_remaining_questions():
+    """transcript: '问题有点多，你整理一下' → 一次性列出剩余必填问题 (编号) + 批量模式。"""
+    mgr = _manager()
+    mgr.start_product_discovery("x")
+    mgr.handle_product_answer("解决痛点")
+    resp = mgr.handle_product_answer("问题有点多，你整理一下")
+    assert mgr._product_batch_mode is True
+    assert "目标用户是谁" in resp.message
+    assert "核心功能有哪些" in resp.message
+    assert "1." in resp.message
+    # 未被吞成 user 答案
+    assert mgr.product_intent.user is None
+
+
+def test_multi_part_answer_fills_all_fields():
+    """分号多段回答 (带标签) → 一次填充多个字段到确认。"""
+    mgr = _manager()
+    mgr.start_product_discovery("x")
+    resp = mgr.handle_product_answer(
+        "痛点：台球计分麻烦；用户：台球爱好者；功能：计分、比赛记录、排行榜"
+    )
+    assert resp.state == STATES.PRODUCT_CONFIRMATION
+    assert mgr.product_intent.problem == "台球计分麻烦"
+    assert mgr.product_intent.user == "台球爱好者"
+    assert mgr.product_intent.core_features == ["计分", "比赛记录", "排行榜"]
+    assert "确认创建这个产品? (y/N)" in resp.message
+
+
+def test_multi_part_partial_answer_continues():
+    """分号多段但未填完 → 剩余字段继续追问。"""
+    mgr = _manager()
+    mgr.start_product_discovery("x")
+    resp = mgr.handle_product_answer("台球计分麻烦；台球爱好者")
+    assert resp.state == STATES.DISCOVERY
+    assert mgr.product_intent.problem == "台球计分麻烦"
+    assert mgr.product_intent.user == "台球爱好者"
+    assert mgr._product_pending == ["core_features"]
+    assert "核心功能" in resp.message
+
+
+def test_single_field_semicolon_not_mis_split():
+    """core_features 单字段待填 → 分号答案整体进入功能解析 (不误切)。"""
+    mgr = _manager()
+    mgr.start_product_discovery("x")
+    mgr.handle_product_answer("台球计分麻烦")
+    mgr.handle_product_answer("台球爱好者")
+    resp = mgr.handle_product_answer("计分；比赛记录；排行榜")
+    assert resp.state == STATES.PRODUCT_CONFIRMATION
+    assert mgr.product_intent.core_features == ["计分", "比赛记录", "排行榜"]
+
+
+def test_confirm_stage_create_now_equals_y():
+    """确认阶段输入 '现在创建项目' → 等价 y (直接创建)。"""
+    mgr = _manager()
+    _run_product_flow(mgr)
+    resp = mgr.handle_product_confirm("现在创建项目", confirm_fn=lambda pi: "created")
+    assert resp.state == STATES.DONE
+    assert "created" in resp.message
+
+
+def test_confirm_stage_escape_passthrough():
+    """确认阶段输入 '项目列表' → 逃生 (不当作改名)。"""
+    mgr = _manager()
+    _run_product_flow(mgr)
+    resp = mgr.handle_product_confirm("项目列表")
+    assert resp.passthrough is True
+    assert mgr.product_intent is None
+
+
+# ================================================================== 13. Session 端到端控制短语 (transcript 复现)
+
+def test_session_summary_without_create_transcript(fake_org, capsys, tmp_path):
+    """端到端复现 transcript: '先帮我整理需求, 不要创建项目' → 不创建、输出整理。"""
+    root = tmp_path / "ws"
+    root.mkdir()
+    sess = SESS_MOD.InteractiveSession(
+        context_manager=CTX_MOD.ContextManager(workspace=str(root)),
+    )
+    sess._dispatch("你好，我想做一个软件产品")
+    sess._dispatch("我想做一个帮助小团队管理客户关系的系统")
+    sess._dispatch("主要给 10 人以内的小团队使用，他们现在用 Excel 管理客户，很混乱。")
+    sess._dispatch("你先帮我整理需求，不要创建项目。")
+    out = capsys.readouterr().out
+    assert "需求整理" in out
+    assert "未创建任何项目" in out
+    assert "确认创建这个产品? (y/N)" not in out
+    assert fake_org.calls == []  # 未创建
+    assert sess.conversation.product_intent is None
+
+
+def test_session_escape_list_projects_transcript(capsys, tmp_path):
+    """端到端: 发现阶段输入 '我现在有哪些项目' → 走项目清单 (不吞成 user 答案)。"""
+    root = tmp_path / "ws"
+    root.mkdir()
+    sess = SESS_MOD.InteractiveSession(
+        context_manager=CTX_MOD.ContextManager(workspace=str(root)),
+    )
+    sess._dispatch("我想开发一个 Todo 管理 API，目标是学习后端开发")
+    sess._dispatch("我现在有哪些项目")
+    out = capsys.readouterr().out
+    # 空工作区 → 项目清单空表 (表头渲染), 而非产品追问吞掉该命令
+    assert "id" in out and "name" in out
+    assert sess.conversation.product_intent is None
+    assert "目标用户是谁" not in out  # 未被吞成 user 追问的答案
+
+
+def test_session_create_now_nudge_transcript(capsys, tmp_path):
+    """端到端: 发现阶段输入 '现在创建项目' → 引导补齐剩余需求 (批量模式)。"""
+    root = tmp_path / "ws"
+    root.mkdir()
+    sess = SESS_MOD.InteractiveSession(
+        context_manager=CTX_MOD.ContextManager(workspace=str(root)),
+    )
+    sess._dispatch("我想开发一个 Todo 管理 API，目标是学习后端开发")
+    sess._dispatch("现在创建项目")
+    out = capsys.readouterr().out
+    assert "可以创建，不过还缺少" in out
+    assert "- 核心功能" in out
+    assert sess.conversation.product_intent is not None
+    assert sess.conversation._product_batch_mode is True
+
+
+def test_session_batch_question_transcript(capsys, tmp_path):
+    """端到端: '问题有点多，你整理一下' → 一次性列出剩余问题。"""
+    root = tmp_path / "ws"
+    root.mkdir()
+    sess = SESS_MOD.InteractiveSession(
+        context_manager=CTX_MOD.ContextManager(workspace=str(root)),
+    )
+    sess._dispatch("我想开发一个 Todo 管理 API，目标是学习后端开发")
+    sess._dispatch("手动测试太慢")
+    sess._dispatch("问题有点多，你整理一下")
+    out = capsys.readouterr().out
+    assert "剩余需求" in out
+    assert "目标用户是谁" in out
+    assert "核心功能有哪些" in out
+    assert sess.conversation._product_batch_mode is True
+
+
+def test_session_multi_part_batch_answer_transcript(capsys, tmp_path):
+    """端到端: 批量模式下用分号一次补齐全部字段 → 直接到确认。"""
+    root = tmp_path / "ws"
+    root.mkdir()
+    sess = SESS_MOD.InteractiveSession(
+        context_manager=CTX_MOD.ContextManager(workspace=str(root)),
+    )
+    sess._dispatch("我想开发一个 Todo 管理 API，目标是学习后端开发")
+    sess._dispatch("现在创建项目")
+    sess._dispatch("痛点：手动测试太慢；用户：想学后端的开发者；功能：增删改查、列表、认证")
+    out = capsys.readouterr().out
+    assert "确认创建这个产品? (y/N)" in out
+    assert "手动测试太慢" in out
+    assert "想学后端的开发者" in out
+    assert "增删改查, 列表, 认证" in out
+
+
+
+# ================================================================== 14. 边界: 修改已有信息 / 取消任意阶段 (reviewer 补充)
+
+def test_edit_existing_field_during_discovery():
+    """Test 5: 先填 '用户: 小团队', 再 '修改一下，目标用户改成创业公司' → 更新不重问。"""
+    mgr = _manager()
+    mgr.start_product_discovery("我想做一个CRM")
+    mgr.handle_product_answer("客户信息散落在Excel，很难跟进")
+    mgr.handle_product_answer("用户：小团队")
+    assert mgr.product_intent.user == "小团队"
+    assert mgr._product_pending == ["core_features"]
+    resp = mgr.handle_product_answer("修改一下，目标用户改成创业公司")
+    assert mgr.product_intent.user == "创业公司"
+    assert mgr._product_pending == ["core_features"]  # 不推进字段, 不重问已答项
+    assert "已更新目标用户" in resp.message
+    assert "核心功能" in resp.message  # 继续追问剩余字段
+
+
+def test_edit_pending_field_directly():
+    """Test 5: 待填字段直接用 '用户改成X' → 视为编辑而非答案。"""
+    mgr = _manager()
+    mgr.start_product_discovery("x")
+    resp = mgr.handle_product_answer("用户改成创业公司")
+    assert mgr.product_intent.user == "创业公司"
+    assert mgr.product_intent.problem is None
+    assert "problem" in resp.message  # 仍追问剩余字段
+
+
+def test_edit_normal_answer_not_misparsed():
+    """Test 5 反例: '把客户管理从混乱改成有序' 是痛点回答, 不是编辑指令。"""
+    mgr = _manager()
+    mgr.start_product_discovery("x")
+    resp = mgr.handle_product_answer("把客户管理从混乱改成有序")
+    assert mgr.product_intent.problem == "把客户管理从混乱改成有序"
+    assert mgr.product_intent.user is None
+    assert resp.state == STATES.DISCOVERY
+
+
+def test_edit_at_confirmation_stage():
+    """Test 5: 确认阶段 '把用户改成职业选手' → 更新并回到确认 (不当作改名)。"""
+    mgr = _manager()
+    _run_product_flow(mgr)
+    resp = mgr.handle_product_confirm("把用户改成职业选手")
+    assert mgr.product_intent is not None
+    assert mgr.product_intent.user == "职业选手"
+    assert resp.state == STATES.PRODUCT_CONFIRMATION
+    assert "确认创建这个产品? (y/N)" in resp.message
+
+
+def test_edit_plain_rename_still_works():
+    """Test 5 兼容: 确认阶段普通文本仍是改名 (S10-081 不回归)。"""
+    mgr = _manager()
+    _run_product_flow(mgr)
+    mgr.handle_product_confirm("账本精灵")
+    assert mgr.product_intent.name == "账本精灵"
+
+
+def test_cancel_any_stage_resets():
+    """Test 4: '取消' 在回答阶段与确认阶段都重置为 DISCOVERY。"""
+    # 回答阶段
+    mgr = _manager()
+    mgr.start_product_discovery("x")
+    resp = mgr.handle_product_answer("取消")
+    assert resp.state == STATES.DISCOVERY
+    assert mgr.product_intent is None
+    # 确认阶段
+    mgr = _manager()
+    _run_product_flow(mgr)
+    resp = mgr.handle_product_confirm("取消")
+    assert resp.state == STATES.DISCOVERY
+    assert mgr.product_intent is None
+    assert "已取消" in resp.message
+
+
+def test_normal_discovery_one_shot_no_requestion():
+    """Test 1: 正常发现 + 一次多段填充 → 直达确认, 不逐个重问。"""
+    mgr = _manager()
+    mgr.start_product_discovery("我想做一个帮助小团队管理客户关系的软件")
+    resp = mgr.handle_product_answer(
+        "问题：客户信息散落在 Excel，很难跟进；用户：10人以内销售团队；功能：客户档案、跟进记录、提醒"
+    )
+    assert resp.state == STATES.PRODUCT_CONFIRMATION
+    assert mgr.product_intent.problem == "客户信息散落在 Excel，很难跟进"
+    assert mgr.product_intent.user == "10人以内销售团队"
+    assert mgr.product_intent.core_features == ["客户档案", "跟进记录", "提醒"]
+    assert "问题" in resp.message and "目标用户" in resp.message and "核心功能" in resp.message
+    assert "确认创建这个产品? (y/N)" in resp.message

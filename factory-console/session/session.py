@@ -190,7 +190,12 @@ class InteractiveSession:
                 resp = conv.handle_product_confirm(line, confirm_fn=self._create_product_fn)
             else:
                 resp = conv.handle_product_answer(line)
-            print(resp.message)
+            # 逃生 (passthrough) — 产品流程已让位 (product_intent=None),
+            # 原输入交回普通意图链处理 (不再当字段答案)
+            if getattr(resp, "passthrough", False):
+                self._dispatch(line)
+            else:
+                print(resp.message)
             return
         intent = self.intent_parser.parse(line)
         if intent is None:

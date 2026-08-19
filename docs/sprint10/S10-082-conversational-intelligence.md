@@ -74,9 +74,70 @@ console+api: 4534 passed, 0 failed
 
 ## 7. Remaining Issues
 
-1. 产品流程中其他意图被吞 (Discovery 状态接管 — S10-050 既有设计, 保留)
+1. ~~产品流程中其他意图被吞 (Discovery 状态接管 — S10-050 既有设计, 保留)~~
+   → **已修复 (v1.1.3, 2026-08-19)**, 见 §8。
 2. LLM 命名候选在 LLM 可用时更丰富 (deterministic 已验证)
 3. runtime 冒烟测试偶发 flaky (已知, 非本 Sprint 引入)
+
+## 8. Follow-up: Discovery 控制短语修复 (v1.1.3)
+
+> 日期: 2026-08-19 | 修复 §7-1 (Remaining Issue #1) | 版本: v1.1.3
+
+### 问题 (真实会话复现)
+
+```
+> 你先帮我整理需求，不要创建项目。
+→ 被当成 "核心功能" 答案, 还推进到创建确认   ❌
+> 现在创建项目。 / 我现在有哪些项目
+→ 被当成 "痛点/目标用户" 答案吞掉            ❌
+> 问题有点多，你整理一下
+→ 无响应 (被吞成答案)                        ❌
+```
+
+根因: 产品发现流程中 `用户消息 → 字段收集器 → 任何文本都当答案`,
+没有先做意图/控制指令分层。
+
+### 修复
+
+```
+用户消息
+  ↓
+意图判断
+  ↓
+控制指令? (取消 / 整理需求不创建 / 修改已有信息)
+  ↓
+查询? (项目列表 / 当前项目 → 逃生, 交回普通意图链)
+  ↓
+创建引导? (现在创建项目 → 列出还缺字段, 是否补充)
+  ↓
+批量问题? (问题有点多 → 一次性列出剩余问题)
+  ↓
+回答当前字段 (含多段填充: 问题:...; 用户:...; 功能:...)
+  ↓
+更新状态
+```
+
+### Modified
+
+- `session/conversation.py`: 控制短语检测 (`_product_control`) + 逃生标记
+  (`ConversationResponse.passthrough`) + 修改指令 (`_parse_edit_command` /
+  `_apply_edit_command`) + 批量问题/多段填充 (标签前缀清洗)。
+- `session/session.py`: 逃生时原输入交回普通意图链处理。
+- `tests/console/test_session_product.py`: 新增 22 个边界测试
+  (正常发现/多段填充不重问、打断→查询、创建引导、任意阶段取消、修改已有信息)。
+
+### Validation
+
+- `tests/console`: 全量通过 (4464 passed, 1 skipped)。
+- 全仓库: 11744 passed (仅沙箱环境类失败: factory_runtime 需进程/端口、
+  llm 需网络 — 与本次改动无关, HEAD 同样失败)。
+
+### 后续方向 (本次未实现, 设计留档)
+
+- **需求整理 → Discovery Artifact**: "整理需求" 输出不应停留在聊天, 后续落盘为
+  `discovery.md` (字段: `version/source/conversation_id/created_by/status=draft`),
+  供 PM Agent / Market Agent / PRD / Engineering Plan 消费。
+- 默认保持对话模式 (逐问), 结构化批量模式作为高级能力按需触发 — Discovery 不是表单。
 
 ## Git
 

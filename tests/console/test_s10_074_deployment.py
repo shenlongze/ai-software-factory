@@ -34,7 +34,7 @@ class TestVersionContract:
             runtime_version = _pv("ai-software-factory")
         except Exception:  # noqa: BLE001
             runtime_version = pyproject_version
-        assert pyproject_version == "1.1.2"
+        assert pyproject_version == "1.1.3"
         # 安装态版本与 pyproject 对齐 (wheel 构建)
         assert runtime_version  # 非空
 

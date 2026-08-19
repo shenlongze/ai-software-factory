@@ -157,12 +157,18 @@ class ConversationResponse:
 
     passthrough: 产品流程逃生标记 (True → 宿主应按普通意图链重新处理原输入,
     不展示 message; 产品流程让位)。
+    summary_only: "整理需求不创建" 标记 (True → 宿主应把需求快照落盘为
+    discovery.md 资产, 不进入创建流程)。
+    product_snapshot: 需求快照 (summary_only 时携带 ProductIntent.to_dict(),
+    供宿主落盘 — 产品流程已重置, 快照随响应传递)。
     """
 
     state: ConversationState
     message: str = ""
     needs_input: bool = False
     passthrough: bool = False
+    summary_only: bool = False
+    product_snapshot: Optional[dict[str, Any]] = None
 
 
 class ConversationManager:
@@ -466,15 +472,18 @@ class ConversationManager:
         if self.product_intent is None:
             return self._clarify("请先描述你的产品想法 (例如: '我想开发一个台球计分APP')")
         summary = self.product_intent.to_summary()  # type: ignore[union-attr]
+        snapshot = self.product_intent.to_dict()  # type: ignore[union-attr]
         self._reset_product_flow()
         return ConversationResponse(
             state=self.state,
             message=(
                 "已按你的要求整理需求 — 未创建任何项目。\n"
                 f"{summary}\n"
-                "以上为需求整理结果; 需要继续补充或创建项目时告诉我 (例如: '创建项目')。"
+                "以上为需求整理结果 (已生成 discovery 需求资产); 需要继续补充或创建项目时告诉我 (例如: '创建项目')。"
             ),
             needs_input=True,
+            summary_only=True,
+            product_snapshot=snapshot,
         )
 
     def _apply_edit_command(self, field: str, value: str) -> ConversationResponse:

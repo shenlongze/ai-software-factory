@@ -5,7 +5,35 @@
 
 ---
 
-## [v1.1.3] — 2026-08-19
+## [v1.1.4] — 2026-08-19
+
+**S10-084 Product Intelligence Pipeline (P0)**: 从 Idea 到 PRD 的多角色资产链。
+
+### Added
+
+- **ArtifactRegistry** (`session/artifact_registry.py`): 版本化资产注册表
+  (`projects/<slug>/artifacts/<type>/v<n>/artifact.md + artifact.json`, v+1 递增,
+  旧版本保留 — 渐进明细/变更前提)。
+- **ProductPipeline** (`session/pipeline_runner.py`): 7 角色资产链
+  (PM→product / Market→market_analysis / Competitive→competitive_analysis /
+  UX→ux_flow / Architect→architecture / QA→test_plan / SeniorPM→prd),
+  LLM 可用 → 角色 prompt; 失败/无 LLM → deterministic 兜底 (复用既有引擎)。
+- **审计血缘**: 每资产 `ARTIFACT_CREATED` 事件 (artifact_reference + parent_event_id 链)。
+- **discovery.md 落盘**: "先帮我整理需求，不要创建项目" → 需求快照落盘为
+  discovery 资产 (draft), 不创建项目。
+- **入口**: 意图 `让PM分析/产品管线` + action `product_pipeline` + 路由。
+
+### Validation
+
+- 新增 8 测试 (registry 3 + pipeline 3 + action/intent 2 + discovery 1)。
+- `tests/console` 全量通过 (4488, 含既有回归); 全仓库 11760+ passed。
+
+### Notes
+
+- 需求变更与渐进明细闭环 (ChangeProposal → 影响分析 → 审批 → 资产 v+1 →
+  ReplanningEngine) 为 P1, 见 docs/sprint10/S10-084-plan.md §4。
+
+---
 
 **Discovery 沟通修复 (S10-082 遗留问题 #1 落地)**: 产品发现流程不再把一切输入当字段答案,
 控制指令/查询/编辑与字段回答分层处理。

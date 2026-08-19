@@ -191,6 +191,9 @@ class InteractiveSession:
                 resp = conv.handle_product_confirm(line, confirm_fn=self._create_product_fn)
             else:
                 resp = conv.handle_product_answer(line)
+            # S10-084: 需求整理 (summary_only) → discovery.md 资产落盘 (失败安全)
+            if getattr(resp, "summary_only", False) and getattr(resp, "product_snapshot", None):
+                self._write_discovery_artifact(resp.product_snapshot)
             # 逃生 (passthrough) — 产品流程已让位 (product_intent=None),
             # 原输入交回普通意图链处理 (不再当字段答案)
             if getattr(resp, "passthrough", False):
@@ -299,6 +302,65 @@ class InteractiveSession:
                 self.context.metadata["last_created_project"] = self.context.current_project
             return result.message
         raise RuntimeError(result.message or "产品创建失败")
+
+    def _write_discovery_artifact(self, snapshot: dict) -> None:
+        """S10-084 P0: "整理需求不创建" → discovery.md 版本化资产落盘 (失败安全)。
+
+        从 ConversationResponse.product_snapshot (ProductIntent.to_dict) 构建
+        discovery 资产, 复用 ArtifactRegistry + ARTIFACT_CREATED 审计血缘。
+        任何故障 → 静默 (不打断已返回的需求整理消息)。
+        """
+        try:
+            if not isinstance(snapshot, dict) or not snapshot.get("name"):
+                return
+            # 与 _build_action_context 同口径: 会话未显式设 workspace → DEFAULT_WORKSPACE
+            workspace = getattr(self.context, "workspace", None) or DEFAULT_WORKSPACE
+            if not workspace:
+                return
+            from .artifact_registry import ArtifactRegistry
+            from .pipeline import _slugify  # 复用同名 slug 口径 (纯函数)
+
+            slug = _slugify(str(snapshot.get("name") or "")) or "unnamed"
+            features = snapshot.get("core_features") or []
+            if isinstance(features, list):
+                features_text = "、".join(str(f) for f in features)
+            else:
+                features_text = str(features or "")
+            content = (
+                "# 需求整理 (discovery)\n\n"
+                f"- 产品: {snapshot.get('name') or '(未命名)'}\n"
+                f"- 问题: {snapshot.get('problem') or '(未填写)'}\n"
+                f"- 目标用户: {snapshot.get('user') or '(未填写)'}\n"
+                f"- 核心功能: {features_text or '(未填写)'}\n"
+                f"- 平台: {snapshot.get('platform') or '(未指定)'}\n"
+                f"- 状态: draft\n"
+                f"- 来源: conversation {self.context.session_id}\n"
+            )
+            source = str(getattr(self.context, "session_id", "") or "")
+            registry = ArtifactRegistry(workspace, slug)
+            record = registry.write(
+                "discovery",
+                content,
+                created_by="user+ai",
+                source=source,
+                status="draft",
+            )
+            # 审计血缘 (失败安全)
+            try:
+                from ..audit.audit_emitter import AuditEmitter
+                AuditEmitter(workspace=workspace).emit(
+                    "ARTIFACT_CREATED",
+                    project_id=slug,
+                    actor_type="user",
+                    actor_id="user",
+                    artifact_reference=record.content_ref,
+                    artifact_type="discovery",
+                    artifact_version=record.version,
+                )
+            except Exception:  # noqa: BLE001 — 审计故障不中断
+                pass
+        except Exception:  # noqa: BLE001 — 失败安全: 落盘故障不打断需求整理消息
+            pass
 
     def _render_execution(self, action_name: str, result: ActionResult) -> None:
         """Agent 执行结果摘要展示 (S10-049 P5) — agent/artifact/cost/duration。

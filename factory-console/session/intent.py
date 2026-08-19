@@ -69,6 +69,8 @@ INTENT_PRODUCTION_SESSION_VIEW = "production_session_view"
 INTENT_REVIEW_APPROVE = "review_approve"
 INTENT_REVIEW_REJECT = "review_reject"
 INTENT_REVIEW_CANCEL = "review_cancel"
+#: S10-084: 产品管线意图 (让PM团队分析 → 7 角色资产链 ProductPipeline)
+INTENT_PRODUCT_PIPELINE = "product_pipeline"
 #: S10-066: 产品智能意图 (分析产品/市场/画像/MVP/价值 — ProductIntelligenceEngine)
 INTENT_PRODUCT_INTELLIGENCE = "product_intelligence"
 INTENT_PRODUCT_MARKET = "product_market"
@@ -200,6 +202,8 @@ _KEYWORD_RULES: tuple[tuple[tuple[str, ...], str, Optional[str]], ...] = (
     (("继续执行", "继续开发", "继续", "resume"), INTENT_RESUME_PROJECT, None),
     (("为什么停了", "为什么停止", "为什么暂停"), INTENT_REVIEW_VIEW, None),
     (("查看进度", "现在做到哪了", "做到哪了"), INTENT_PRODUCTION_SESSION_VIEW, None),
+    # S10-084: 产品管线意图 (优先级在 S10-066 之前 — "产品管线" 不抢 "产品分析")
+    (("让PM分析", "让产品经理分析", "产品管线", "跑产品管线", "生成管线报告"), INTENT_PRODUCT_PIPELINE, None),
     # S10-066: 产品智能意图 (ProductIntelligenceEngine)
     (("分析产品", "产品分析", "产品智能"), INTENT_PRODUCT_INTELLIGENCE, None),
     (("产品市场", "市场分析", "有没有市场", "市场怎么样"), INTENT_PRODUCT_MARKET, None),

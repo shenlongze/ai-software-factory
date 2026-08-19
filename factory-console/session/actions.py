@@ -2939,6 +2939,42 @@ def audit_stats(context: ExecutionContext) -> ActionResult:
                             message=f"审计统计失败: {exc}", error=str(exc))
 
 
+def product_pipeline(context: ExecutionContext) -> ActionResult:
+    """S10-084: 产品管线 (PM/Market/Competitive/UX/Architect/QA/SeniorPM 资产链)。
+
+    "让PM团队分析/产品管线" → 7 角色产出版本化资产 (artifact_registry) +
+    ARTIFACT_CREATED 审计事件 (artifact_reference/parent_event 血缘)。
+    """
+    context.require("user")
+    try:
+        product, slug, _root = _locate_product(context)
+        if product is None or slug is None:
+            return ActionResult(
+                ok=False,
+                status=STATUS_ERROR,
+                message="产品管线失败: 未找到产品定义 (请先创建产品)",
+                error="未找到产品定义 (请先创建产品)",
+            )
+        from .pipeline_runner import ProductPipeline
+        session = getattr(context, "session", None)
+        source = str(getattr(session, "session_id", "") or "")
+        pipeline = ProductPipeline(context.workspace, slug)
+        result = pipeline.run(product, source=source)
+        return ActionResult(
+            ok=True,
+            status=STATUS_OK,
+            message=result.summary,
+            data=result.to_dict(),
+        )
+    except Exception as exc:  # noqa: BLE001 — 失败安全
+        return ActionResult(
+            ok=False,
+            status=STATUS_ERROR,
+            message=f"产品管线失败: {exc}",
+            error=str(exc),
+        )
+
+
 def build_default_actions() -> ActionRegistry:
     """装配默认 Action 注册表 (注册式 — 新增 Action 只需 register 一行)。"""
     registry = ActionRegistry()
@@ -2963,6 +2999,16 @@ def build_default_actions() -> ActionRegistry:
                 "sensitive": True,
                 "category": "product",
             },
+        )
+    )
+    registry.register(
+        Action(
+            name="product_pipeline",
+            description="产品管线 (PM/Market/Competitive/UX/Architect/QA/PRD 资产链)",
+            handler=product_pipeline,
+            permission="project",
+            metadata={"service": "ProductPipeline (artifact_registry)", "phase": "S10-084 P0",
+                      "sensitive": False, "category": "product"},
         )
     )
     registry.register(

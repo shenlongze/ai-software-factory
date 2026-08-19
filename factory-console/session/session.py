@@ -47,11 +47,11 @@ from .slash import SlashCommandRegistry
 #: 会话 banner (v0.2 — AI Workforce Operating System 命名空间)
 BANNER = (
     "AI Factory v0.2 / AI Workforce Operating System\n"
-    "输入 exit 或 quit 退出会话; Ctrl+C / Ctrl+D 亦可。"
+    "输入 exit / 退出 结束会话; Ctrl+C / Ctrl+D 亦可。"
 )
 
 #: 退出命令集合 (匹配即优雅退出)
-EXIT_COMMANDS = frozenset({"exit", "quit"})
+EXIT_COMMANDS = frozenset({"exit", "quit", "退出", "退出会话", "再见", "拜拜", "结束"})
 
 #: 未知输入提示前缀 (slash 未知 + Intent 未识别共用)
 UNKNOWN_PREFIX = "未知命令: "
@@ -152,6 +152,7 @@ class InteractiveSession:
                 break
             cmd = line.strip()
             if cmd in EXIT_COMMANDS:
+                print("已退出会话 — 再见!")
                 self.running = False
             elif not cmd:
                 continue  # 空输入
@@ -245,7 +246,7 @@ class InteractiveSession:
         if self.confirmation_gate is not None and not self.confirmation_gate.confirm(
             intent.intent_type, intent, context
         ):
-            print("已取消 — 输入 exit 或 quit 退出会话")
+            print("已取消本次操作")
             return
         try:
             result = action.execute(context)
@@ -347,7 +348,7 @@ class InteractiveSession:
         if self.confirmation_gate is not None and not self.confirmation_gate.confirm(
             INTENT_RENAME_PROJECT, intent, None
         ):
-            print("已取消 — 输入 exit 或 quit 退出会话")
+            print("已取消本次操作")
             return
         try:
             from .web.backend.fastapi_adapter import build_console_service

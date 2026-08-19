@@ -879,11 +879,16 @@ def execute_project(context: ExecutionContext) -> ActionResult:
             error=str(exc),
         )
     ok = result.failed_tasks == 0
-    message = (
-        f"项目执行完成: {result.project} — {result.completed_tasks} 任务完成"
-        if ok
-        else f"项目执行未完成: {result.failed_tasks} 任务失败 (可再次开始开发恢复)"
-    )
+    if ok:
+        message = f"项目执行完成: {result.project} — {result.completed_tasks} 任务完成"
+    else:
+        # 失败原因可见 (不黑盒): 给出首个错误示例 + 恢复/诊断指引
+        detail = (result.errors or ["无详细错误"])[0]
+        message = (
+            f"项目执行未完成: {result.failed_tasks} 任务失败\n"
+            f"  失败示例: {detail}\n"
+            "可再次输入 '开始开发' 恢复执行; 持续失败请运行 factory doctor 检查 Provider/网络"
+        )
     return ActionResult(
         ok=ok,
         status=STATUS_OK if ok else STATUS_ERROR,

@@ -98,7 +98,21 @@ def execution_timeline(workspace: Path, *, project_id: str = "", limit: int = 20
             "cost_usd": usage.get("cost_usd"),
         })
     events.sort(key=lambda e: e["timestamp"], reverse=True)
-    return events[:limit]
+    # 去重: 同一任务的初次执行 + 重试 (retry_count) 是两条展示记录 → 只保留最新一次
+    # (完整重试历史在 execution_state.json; 时间线给用户看"每个任务当前状态")
+    seen: set[tuple[str, str, str]] = set()
+    deduped: list[dict] = []
+    for e in events:
+        key = (
+            str(e.get("agent") or ""),
+            str(e.get("action") or ""),
+            str(e.get("task") or ""),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(e)
+    return deduped[:limit]
 
 
 def project_status(workspace: Path, project_dir: Path) -> dict:
@@ -123,6 +137,7 @@ def project_status(workspace: Path, project_dir: Path) -> dict:
                 "status": str(t.get("status") or ""),
                 "applied": bool(t.get("applied")),
                 "code_files": int(t.get("code_files") or 0),
+                "error": str(t.get("error") or ""),
             })
     # artifacts (exec 层产物注册)
     artifacts = _load_artifacts(project_dir.parent.parent / "exec")
@@ -183,7 +198,8 @@ def format_status(status: dict) -> str:
         for t in status["tasks"][:10]:
             mark = {"completed": "✅", "failed": "❌", "running": "⏳"}.get(t["status"], "⬜")
             applied = " applied" if t["applied"] else ""
-            lines.append(f"  {mark} {t['name'][:28]} [{t['agent']}] {t['status']}{applied}")
+            err = f" — {t['error'][:60]}" if t.get("error") else ""
+            lines.append(f"  {mark} {t['name'][:28]} [{t['agent']}] {t['status']}{applied}{err}")
     if status["recent_events"]:
         lines.append("最近执行:")
         lines.append(format_timeline(status["recent_events"]))

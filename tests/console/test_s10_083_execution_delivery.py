@@ -227,3 +227,55 @@ class TestObservability:
         text = OBS.format_status(OBS.project_status(tmp_path, proj))
         assert "项目:" in text
         assert "阶段:" in text
+
+
+class TestObservabilityFixes:
+    """2026-08-19 修复: 时间线去重 + 任务失败原因可见。"""
+
+    def _exec_dir_with_retry(self, tmp_path) -> Path:
+        exec_dir = tmp_path / "exec"
+        exec_dir.mkdir(parents=True)
+        (exec_dir / "execution_records.json").write_text(json.dumps([
+            {
+                "intent": "execute_task", "action": "agent.execute_task",
+                "agent": "backend-1", "task": "保存历史", "result": "failed",
+                "result_id": "EXS-a", "timestamp": "2026-08-19T10:30:00+00:00",
+            },
+            {
+                "intent": "execute_task", "action": "agent.execute_task",
+                "agent": "backend-1", "task": "保存历史", "result": "failed",
+                "result_id": "EXS-b", "timestamp": "2026-08-19T10:30:01+00:00",
+            },
+            {
+                "intent": "execute_task", "action": "agent.execute_task",
+                "agent": "pm-agent", "task": "PRD", "result": "success",
+                "result_id": "EXS-c", "timestamp": "2026-08-19T10:31:00+00:00",
+            },
+        ]), encoding="utf-8")
+        return exec_dir
+
+    def test_timeline_dedupes_retry_records(self, tmp_path):
+        """同一任务初次+重试 → 时间线只保留最新一次 (不再重复刷屏)。"""
+        self._exec_dir_with_retry(tmp_path)
+        events = OBS.execution_timeline(tmp_path)
+        tasks = [e["task"] for e in events]
+        assert tasks.count("保存历史") == 1
+        kept = next(e for e in events if e["task"] == "保存历史")
+        assert kept["result_id"] == "EXS-b"  # 保留最新一次
+
+    def test_status_shows_task_error(self, tmp_path):
+        """任务失败原因进入状态视图 (原只有 'failed', 无原因)。"""
+        proj = tmp_path / "projects" / "P-test"
+        proj.mkdir(parents=True)
+        (proj / "project.json").write_text(json.dumps({"status": "development"}), encoding="utf-8")
+        (proj / "execution_state.json").write_text(json.dumps({
+            "tasks": [
+                {"id": "t1", "name": "保存历史", "agent": "backend-1", "status": "failed",
+                 "applied": False, "code_files": 0,
+                 "error": "provider error: openai request failed: network down"},
+            ]
+        }), encoding="utf-8")
+        status = OBS.project_status(tmp_path, proj)
+        assert status["tasks"][0]["error"] == "provider error: openai request failed: network down"
+        text = OBS.format_status(status)
+        assert "network down" in text

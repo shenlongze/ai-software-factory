@@ -124,3 +124,29 @@ class TestRenameIntent:
         s = _session()
         out = _dispatch(s, "项目改名叫 记账助手")
         assert "当前没有正在开发的项目" in out
+
+
+class TestNamingExtractionFixes:
+    """2026-08-19 修复: 目标从句/目的词不再进入产品名。"""
+
+    def test_goal_clause_truncated(self):
+        """'目标是学习后端' 不再进入名字 (原产出 'Todo管理API目标是')。"""
+        assert NAMING.suggest_name("我想开发一个 Todo 管理 API，目标是学习后端开发。") == "Todo管理"
+
+    def test_help_phrase_not_truncated(self):
+        """'帮助小团队管理客户关系' 是产品价值, 不是目标从句 (原产出 '我想做一')。"""
+        name = NAMING.suggest_name("我想做一个帮助小团队管理客户关系的软件")
+        assert name != "我想做一"
+        assert "管理客户关系" in name
+
+    def test_purpose_clause_after_comma_truncated(self):
+        """'，目的是坚持学习' 从句截断 (原产出 '打卡记录学习时长目是坚持')。"""
+        assert NAMING.suggest_name(
+            "我想做一个打卡记录学习时长的 App，目的是坚持学习"
+        ) == "打卡记录学习时长"
+
+    def test_soft_purpose_word_truncated(self):
+        """'，方便人事管理' 从句截断。"""
+        assert NAMING.suggest_name(
+            "我想开发一个员工考勤管理系统，方便人事管理"
+        ) == "员工考勤管理"

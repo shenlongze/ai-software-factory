@@ -86,6 +86,14 @@ Sprint 10 — AI 软件生产工作台
       "dependency": "S10-002 (同一 API)",
       "acceptance": "factory 命令: init/start/status/create/review/approve/artifact/release; 委托现有 CLI 函数; 与 UI 同 API; 人类可读+--json; 测试 ≥20",
       "estimated_complexity": "M"
+    },
+    {
+      "id": "S10-084",
+      "title": "Product Intelligence Pipeline (Idea → PRD 多角色资产链)",
+      "priority": "P0",
+      "dependency": "S10-050/065/066/083 (复用引擎+血缘字段); 计划见 docs/sprint10/S10-084-plan.md",
+      "acceptance": "7 角色 (PM/Market/Competitive/UX/Architect/QA/SeniorPM) 真实产出版本化资产 (product/market_analysis/competitive_analysis/ux_flow/architecture/test_plan/prd); 每资产 AuditEvent 含 artifact_reference+parent_event; discovery.md 落盘 (整理需求不创建); LLM 失败→deterministic 兜底; PRD 深度化替代模板; Discovery/PRD 审批门; 需求变更回流 (ChangeProposal→影响分析→审批→资产 v+1→ReplanningEngine); CLI factory product pipeline/artifact/approve + API; 测试 ≥60; 真实 E2E: 客户管理系统 7 资产可见→确认→PRD→工程→执行",
+      "estimated_complexity": "XL"
     }
   ]
 }

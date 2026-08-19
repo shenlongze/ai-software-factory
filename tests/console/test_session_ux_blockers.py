@@ -10,6 +10,7 @@ basename 全仓库唯一 (test_session_* 前缀)。
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 from importlib import import_module
 
@@ -17,6 +18,7 @@ ACT = import_module("factory-console.session.actions")
 CTX = import_module("factory-console.session.context")
 ORCH = import_module("factory-console.session.orchestrator")
 SESS = import_module("factory-console.session.session")
+INT = import_module("factory-console.session.intent")
 
 
 class _FakeChat:
@@ -211,3 +213,83 @@ def test_chat_persona_honesty_constraints():
     prompt = chat._CHAT_PROMPT
     assert "不要虚构未实现能力" in prompt
     assert "不要代替系统查询项目/文档状态" in prompt
+
+
+# ================================================================== 2026-08-19 第三轮: 项目清理改名 + 会话记忆
+
+def _write_org_project(workspace: Path, pid: str, name: str) -> None:
+    org_dir = workspace / "org"
+    org_dir.mkdir(parents=True, exist_ok=True)
+    path = org_dir / "projects.json"
+    data = {"projects": {pid: {"id": pid, "name": name}}}
+    if path.is_file():
+        existing = json.loads(path.read_text(encoding="utf-8"))
+        existing.setdefault("projects", {})[pid] = {"id": pid, "name": name}
+        data = existing
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def test_rename_project_action_updates_org_and_product(tmp_path):
+    """改名 action: org/projects.json + product.json 名称同步 (任何状态可改)。"""
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    _write_org_project(workspace, "P-001", "未命名产品-123")
+    pdir = workspace / "projects" / "P-001"
+    pdir.mkdir(parents=True)
+    (pdir / "product.json").write_text(
+        json.dumps({"name": "未命名产品-123", "problem": "x"}), encoding="utf-8"
+    )
+    ctx = SimpleNamespace(
+        workspace=str(workspace),
+        user="user",
+        project="P-001",
+        intent=SimpleNamespace(
+            intent_type=INT.INTENT_RENAME_PROJECT,
+            parameters={"project_id": "P-001", "name": "旅行账本"},
+            raw="",
+        ),
+    )
+    ctx.require = lambda level: None  # type: ignore[attr-defined]
+
+    result = ACT.rename_project(ctx)
+    assert result.ok
+    assert "P-001 → 旅行账本" in result.message
+    org = json.loads((workspace / "org" / "projects.json").read_text(encoding="utf-8"))
+    assert org["projects"]["P-001"]["name"] == "旅行账本"
+    product = json.loads((pdir / "product.json").read_text(encoding="utf-8"))
+    assert product["name"] == "旅行账本"
+
+
+def test_nl_rename_with_project_id(monkeypatch, capsys, tmp_path):
+    """'P-xxx 改名叫 新名' → 解析 ID 并改名 (不再要求先选当前项目)。"""
+    root = tmp_path / "ws"
+    root.mkdir()
+    _write_org_project(root, "P-001", "未命名产品-123")
+    sess = SESS.InteractiveSession(
+        context_manager=CTX.ContextManager(workspace=str(root)),
+        chat_service=_FakeChat2(),
+    )
+    sess._dispatch("P-001 改名叫 旅行账本")
+    out = capsys.readouterr().out
+    assert "✅ 项目改名成功" in out
+    assert "P-001 → 旅行账本" in out
+
+
+def test_session_state_restores_current_project(tmp_path):
+    """会话记忆: 保存 current_project → 新会话自动恢复。"""
+    root = tmp_path / "ws"
+    root.mkdir()
+    sess1 = SESS.InteractiveSession(
+        context_manager=CTX.ContextManager(workspace=str(root)),
+        chat_service=_FakeChat2(),
+    )
+    sess1.context.current_project = "P-001"
+    sess1._save_session_state()
+    state_file = root / "session_state.json"
+    assert state_file.is_file()
+    sess2 = SESS.InteractiveSession(
+        context_manager=CTX.ContextManager(workspace=str(root)),
+        chat_service=_FakeChat2(),
+    )
+    sess2._restore_session_state()
+    assert sess2.context.current_project == "P-001"

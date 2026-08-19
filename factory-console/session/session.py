@@ -17,6 +17,8 @@
 
 from __future__ import annotations
 
+import json
+import re
 import sys
 
 import logging
@@ -144,6 +146,7 @@ class InteractiveSession:
         - 其它输入 → 未知提示 (不崩溃; 后续 Task 接 Intent)
         """
         self._banner()
+        self._restore_session_state()
         self.running = True
         while self.running:
             try:
@@ -160,6 +163,7 @@ class InteractiveSession:
             else:
                 self.context_manager.record(cmd)
                 self._dispatch(cmd)
+        self._save_session_state()
         return 0
 
     def _banner(self) -> None:
@@ -308,6 +312,40 @@ class InteractiveSession:
             return result.message
         raise RuntimeError(result.message or "产品创建失败")
 
+    def _session_state_file(self) -> Path:
+        """会话状态文件 (workspace 或 ~/.factory / session_state.json)。"""
+        ws = getattr(self.context, "workspace", None) or DEFAULT_WORKSPACE
+        return Path(ws) / "session_state.json"
+
+    def _restore_session_state(self) -> None:
+        """恢复上次会话的当前项目 (失败安全: 无文件/损坏 → 静默)。"""
+        try:
+            state_file = self._session_state_file()
+            if state_file.is_file():
+                data = json.loads(state_file.read_text(encoding="utf-8"))
+                pid = str(data.get("current_project") or "")
+                if pid:
+                    self.context.current_project = pid
+                    print(f"已恢复上次项目: {pid} (输入 /project 可切换)")
+        except Exception:  # noqa: BLE001 — 失败安全
+            pass
+
+    def _save_session_state(self) -> None:
+        """保存会话状态 (当前项目) — 下次会话自动恢复 (失败安全)。"""
+        try:
+            state_file = self._session_state_file()
+            state_file.parent.mkdir(parents=True, exist_ok=True)
+            payload = {
+                "current_project": getattr(self.context, "current_project", "") or "",
+                "session_id": getattr(self.context, "session_id", "") or "",
+            }
+            state_file.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+        except Exception:  # noqa: BLE001 — 失败安全
+            pass
+
     def _write_discovery_artifact(self, snapshot: dict) -> None:
         """S10-084 P0: "整理需求不创建" → discovery.md 版本化资产落盘 (失败安全)。
 
@@ -450,10 +488,20 @@ class InteractiveSession:
             )
             return
         pid = self.context.current_project
+        # "P-xxx 改名叫 新名" → 从原始输入解析项目 ID (指引承诺的写法, 真正生效)
+        raw = str(raw_line or "").strip()
+        for kw in ("改名叫", "改名为", "名称改成", "名字改成", "项目改名", "改名字"):
+            idx = raw.find(kw)
+            if idx > 0:
+                candidate = raw[:idx].strip().strip("，。,. ")
+                # 只认项目 ID 形态 (P-xxx) — 避免把 "项目改名叫 X" 的 "项目" 当 ID
+                if re.match(r"^P-[\w-]+$", candidate):
+                    pid = candidate
+                break
         if not pid:
             print(
                 "当前没有正在开发的项目。\n"
-                "你可以: 输入 /project 查看已有项目, 或用 '项目 ID 改名叫 新名' 指定。"
+                "你可以: 输入 /project 查看已有项目, 或用 'P-xxx 改名叫 新名' 指定。"
             )
             return
         if self.confirmation_gate is not None and not self.confirmation_gate.confirm(
@@ -461,18 +509,20 @@ class InteractiveSession:
         ):
             print("已取消本次操作")
             return
-        try:
-            from .web.backend.fastapi_adapter import build_console_service
-
-            service = build_console_service(Path(self.context.workspace) if self.context.workspace else None)
-            result = service.confirm_project(str(pid), name)
-        except Exception as exc:  # noqa: BLE001 — 失败安全 → 明确错误
-            print(f"❌ 项目改名失败: {exc}")
+        # 执行: 走 rename_project action (org + product.json, 任何状态可改;
+        # 修复: 旧路径导入 web 模块失败, 且 confirm_project 有生命周期确认门限制)
+        intent2 = IntentObject(
+            intent_type=INTENT_RENAME_PROJECT,
+            params={"project_id": str(pid), "name": name},
+            raw=raw_line,
+            source="session",
+        )
+        action = self.action_registry.get("rename_project")
+        if action is None:
+            print("❌ 项目改名失败: rename_project Action 未注册")
             return
-        if result is None:
-            print(f"❌ 项目改名失败: 未找到项目 {pid} 或数据不完整")
-            return
-        print(f"✅ 项目改名成功: {pid} → {name}")
+        result = action.execute(self._build_action_context(intent2))
+        print(result.message)
 
     def _show_current_project(self) -> None:
         """S10-076: 只读展示会话当前项目 (不创建/写)。"""

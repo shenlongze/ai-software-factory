@@ -349,3 +349,20 @@ def test_session_records_history(monkeypatch, capsys):
     rc = sess.run()
     assert rc == 0
     assert sess.context.history == ["/help"]
+
+def test_project_list_shows_status_columns(tmp_path, capsys):
+    """2026-08-19: /project 加状态列 (PRD/管线资产) — 识别文档进度与垃圾名。"""
+    projects_file = tmp_path / "org" / "projects.json"
+    _write_projects(projects_file, {"P-001": {"name": "旅行记账"}, "P-002": {"name": "未命名产品-123"}})
+    # P-001 有 PRD + 管线资产
+    pdir = tmp_path / "projects" / "P-001"
+    pdir.mkdir(parents=True)
+    (pdir / "PRD.md").write_text("# PRD", encoding="utf-8")
+    (pdir / "artifacts" / "prd" / "v1").mkdir(parents=True)
+    (pdir / "artifacts" / "market_analysis" / "v1").mkdir(parents=True)
+    cmd = CMDS_MOD.ProjectCommand(projects_file=projects_file, workspace=tmp_path)
+    assert cmd.execute("", _context()) == 0
+    out = capsys.readouterr().out
+    assert "PRD" in out and "管线" in out
+    assert "✅" in out  # P-001 PRD 有
+    assert "2资产" in out  # 管线资产数

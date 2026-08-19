@@ -2939,6 +2939,78 @@ def audit_stats(context: ExecutionContext) -> ActionResult:
                             message=f"审计统计失败: {exc}", error=str(exc))
 
 
+def rename_project(context: ExecutionContext) -> ActionResult:
+    """项目改名 (S10-081 执行面修复 2026-08-19): 更新 org/projects.json + product.json 名称。
+
+    不做生命周期确认门 (清理垃圾名场景: 任何状态可改); 目录 slug 不变
+    (引用稳定), 只改展示名。失败安全: 缺失/损坏 → 明确错误。
+    """
+    context.require("user")
+    params = getattr(getattr(context, "intent", None), "parameters", None) or {}
+    pid = str(params.get("project_id") or params.get("id") or getattr(context, "project", "") or "")
+    new_name = str(params.get("name") or "").strip()
+    if not pid or not new_name:
+        return ActionResult(
+            ok=False, status=STATUS_ERROR,
+            message="项目改名需要: 项目 ID 和新名称 (例如: 'P-xxx 改名叫 新名')",
+            error="缺少项目 ID 或新名称",
+        )
+    workspace = Path(getattr(context, "workspace", None) or DEFAULT_WORKSPACE)
+    org_file = workspace / "org" / "projects.json"
+    try:
+        if not org_file.is_file():
+            return ActionResult(ok=False, status=STATUS_ERROR,
+                                message=f"项目改名失败: 未找到数据文件 {org_file}", error="org/projects.json 缺失")
+        data = json.loads(org_file.read_text(encoding="utf-8"))
+        section = data.get("projects", {}) if isinstance(data, dict) else {}
+        record = section.get(pid) if isinstance(section, dict) else None
+        if not isinstance(record, dict):
+            return ActionResult(ok=False, status=STATUS_ERROR,
+                                message=f"项目改名失败: 未找到项目 {pid}", error="项目不存在")
+        old_name = str(record.get("name") or "")
+        record["name"] = new_name
+        org_file.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
+    except Exception as exc:  # noqa: BLE001 — 失败安全
+        return ActionResult(ok=False, status=STATUS_ERROR,
+                            message=f"项目改名失败: {exc}", error=str(exc))
+    # product.json 名称同步 (projects/<slug>/product.json — 目录 slug 不变)
+    renamed_product = None
+    for pdir in (workspace / "projects").glob("*"):
+        pfile = pdir / "product.json"
+        if not pfile.is_file():
+            continue
+        try:
+            pdata = json.loads(pfile.read_text(encoding="utf-8"))
+            if str(pdata.get("name") or "") == old_name:
+                pdata["name"] = new_name
+                pfile.write_text(
+                    json.dumps(pdata, ensure_ascii=False, indent=2) + "\n",
+                    encoding="utf-8",
+                )
+                renamed_product = str(pdir.name)
+                break
+        except Exception:  # noqa: BLE001 — 单个损坏跳过
+            continue
+    # 审计 (失败安全)
+    try:
+        from ..audit.audit_emitter import AuditEmitter
+        AuditEmitter(workspace=workspace).emit(
+            "PROJECT_RENAMED", project_id=pid, actor_type="user", actor_id="user",
+            decision_reason=f"项目改名: {old_name} → {new_name}",
+            old_name=old_name, new_name=new_name,
+        )
+    except Exception:  # noqa: BLE001
+        pass
+    return ActionResult(
+        ok=True, status=STATUS_OK,
+        message=f"✅ 项目改名成功: {pid} → {new_name}",
+        data={"project_id": pid, "old_name": old_name, "new_name": new_name,
+              "product_updated": renamed_product or False},
+    )
+
+
 def project_docs(context: ExecutionContext) -> ActionResult:
     """项目文档状态 (S10-084+): 扫描各项目 PRD.md / 管线资产 / 工程计划 — 真实数据。
 
@@ -3059,6 +3131,16 @@ def build_default_actions() -> ActionRegistry:
                 "sensitive": True,
                 "category": "product",
             },
+        )
+    )
+    registry.register(
+        Action(
+            name="rename_project",
+            description="项目改名 (org + product.json, 任何状态可改)",
+            handler=rename_project,
+            permission="project",
+            metadata={"service": "org/projects.json + product.json", "phase": "S10-081 修复",
+                      "sensitive": False, "category": "project"},
         )
     )
     registry.register(

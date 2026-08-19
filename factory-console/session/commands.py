@@ -100,12 +100,15 @@ class ProjectCommand(SlashCommand):
         self,
         cli: Any = None,
         projects_file: Optional[Path] = None,
+        workspace: Optional[Path] = None,
     ) -> None:
         super().__init__()
         #: 可选 FactoryCLI — 提供 data_dir 口径 (复用其数据目录解析, 不复制业务)
         self.cli = cli
         #: projects.json 路径 (缺省 → cli.data_dir 或 ~/.factory 口径)
         self.projects_file = projects_file
+        #: workspace (projects/ 根) — 用于展示 PRD/管线/状态列 (缺省 → ~/.factory)
+        self.workspace = Path(workspace) if workspace is not None else Path.home() / ".factory"
 
     def _projects_file(self) -> Path:
         if self.projects_file is not None:
@@ -121,15 +124,45 @@ class ProjectCommand(SlashCommand):
         return self._switch(args.strip(), projects, context)
 
     def _show(self, projects: list[dict[str, Any]], context: SessionContext) -> int:
+        """项目清单 + 状态列 (PRD/管线资产/状态) — 识别垃圾名/文档进度。"""
         current = context.current_project
         print(f"项目清单 ({len(projects)} 个)")
+        print(f"  {'id':<12} {'名称':<16} {'PRD':<4} {'管线':<6} 状态")
         for item in projects:
-            marker = "  (当前)" if item["id"] == current else ""
-            print(f"  {item['id']}  {item['name']}{marker}")
+            pid = item["id"]
+            marker = "  (当前)" if pid == current else ""
+            prd, pipeline, status = self._project_brief(pid)
+            print(
+                f"  {pid:<12} {str(item['name'])[:16]:<16} "
+                f"{prd:<4} {pipeline:<6} {status}{marker}"
+            )
         if not projects:
             print("  (无项目 — 使用 `factory project create` 注册)")
         print(f"当前项目: {current or '(未选择)'}")
+        print("提示: /project <id> 切换; 'P-xxx 改名叫 新名' 改名")
         return 0
+
+    def _project_brief(self, pid: str) -> tuple[str, str, str]:
+        """单项目文档进度 (PRD/管线资产数/状态; 失败安全)。"""
+        pdir = self.workspace / "projects" / pid
+        if not pdir.is_dir():
+            return "—", "—", "—"
+        prd = "✅" if (pdir / "PRD.md").is_file() else "—"
+        artifact_dir = pdir / "artifacts"
+        n = (
+            len([d for d in artifact_dir.glob("*") if d.is_dir()])
+            if artifact_dir.is_dir()
+            else 0
+        )
+        pipeline = f"{n}资产" if n else "—"
+        status = ""
+        try:
+            proj = pdir / "project.json"
+            if proj.is_file():
+                status = str(json.loads(proj.read_text(encoding="utf-8")).get("status") or "")
+        except Exception:  # noqa: BLE001 — 失败安全
+            status = ""
+        return prd, pipeline, status or "—"
 
     def _switch(
         self, target: str, projects: list[dict[str, Any]], context: SessionContext
@@ -193,7 +226,17 @@ def build_default_registry(
     registry = SlashCommandRegistry(session=session)
     registry.register(HelpCommand())
     registry.register(StatusCommand())
-    registry.register(ProjectCommand(cli=cli, projects_file=projects_file))
+    registry.register(
+        ProjectCommand(
+            cli=cli,
+            projects_file=projects_file,
+            workspace=(
+                Path(getattr(getattr(session, "context", None), "workspace", None))
+                if getattr(getattr(session, "context", None), "workspace", None)
+                else None
+            ),
+        )
+    )
     registry.register(CostCommand())
     registry.register(ExitCommand(session=session))
     return registry

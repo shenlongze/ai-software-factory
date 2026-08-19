@@ -27,6 +27,7 @@ from typing import Any, Optional
 #: 标准事件类型注册表 (S10-069 设计 §2 — 33 个, 验收: 30+)
 EVENT_TYPES: tuple[str, ...] = (
     "PRODUCT_CREATED",
+    "PROJECT_RENAMED",
     "DISCOVERY_COMPLETED",
     "DISCOVERY_CONFIRMED",
     "PRODUCT_INTELLIGENCE",

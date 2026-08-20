@@ -5,7 +5,26 @@
 
 ---
 
-## [v1.1.4] — 2026-08-19
+## [v1.1.5] — 2026-08-20
+
+**M1 内核切片（AI Company OS 第一块地基）**: 存量仓库模式 + 工具发现 + 真 MCP 客户端。
+
+### Added
+
+- **`factory repo <path> <目标> [--patch]`** — 存量仓库模式: 理解(core/understanding) →
+  计划(LLM 或确定性) → patch 应用(Sandbox 副本, 原仓库零影响) → pytest 验证。
+- **`factory tools list`** — 发现本机 AI CLI (codex/hermes/openclaw/claude) +
+  MCP server 配置 (~/.codex/config.toml / ~/.claude.json / .mcp.json)。
+- **StdioMCPClient** — 真 MCP stdio 客户端 (JSON-RPC 2024-11-05, 不绑第三方 SDK);
+  工具是增强层, 任何任务不依赖外部 CLI 完成。
+- **core_loader** — 延迟加载 factory-core/factory-exec (对齐 actions 模式)。
+
+### Validation
+
+- 实测: 临时 git 仓库 + patch → 变更文件 + pytest 通过; tools 发现 3 CLI + 2 MCP。
+- 新增 21 测试; tests/console+exec 5791 passed; 全仓库 11805 passed。
+
+---
 
 **S10-084 Product Intelligence Pipeline (P0)**: 从 Idea 到 PRD 的多角色资产链。
 

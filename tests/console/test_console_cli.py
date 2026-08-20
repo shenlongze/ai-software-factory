@@ -322,6 +322,8 @@ class TestFactoryCliArgparse:
             "repo",  # M1: 存量仓库模式 (理解→计划→改→测→修)
             "tools",  # M1: 工具发现 (AI CLI + MCP server, 增强层)
             "evidence",  # M1a: 证据包 (diff+test+决策, 可审计)
+            "workload",  # M1b: 积压清道夫 (backlog/status)
+            "approval",  # M1b: 审批门 (list/decide, 复用 ApprovalGate)
         }
 
     def test_start_flags_parsed(self):

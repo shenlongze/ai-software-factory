@@ -220,10 +220,11 @@ factory-console/cli_agent.py    agent/expert/factory 命令
 | 里程碑 | 版本 | 内容 | 验收（可演示） |
 |---|---|---|---|
 | M1 内核切片 | v1.1.5 | repo_mode + tools(发现/MCP真连) + 执行循环接线 | `factory repo` 对现有仓库改一个文件 + 测试绿 |
-| M2 员工内核 | v1.1.6 | A1-A6: AgentEntity/Registry/装配器/HandoffBus/7角色/多LLM | `让PM分析` 走真 Agent 链, 资产互引 |
-| M3 IT 工厂深度 | v1.1.7~1.1.8 | B1-B5: PRD深度/需求变更/审批/repo深度/工程深度 | 执行中"加导出"→PRD v2+新任务; 仓库修改+测试绿 |
-| M4 自我提升 | v1.1.9 | C1-C5: 经验/画像/决策引用/评价回写/护栏 | 第二次同类任务引用第一次经验 |
-| M5 真实E2E+模板 | v1.2.0 | D1-D3 + Web 入口打通 | 一句话→专家→PRD→工程→代码→pytest绿→历史可查; FactorySpec 自举 |
+| M1b 积压清道夫 | v1.1.6 | BacklogSweeper (分诊→执行→证据包→审批) + evidence 接入普通执行 + approval decide CLI | `factory workload backlog` 真实修一个 issue + 证据包可见 |
+| M2 员工内核 | v1.1.7 | A1-A6: AgentEntity/Registry/装配器/HandoffBus/7角色/多LLM | `让PM分析` 走真 Agent 链, 资产互引 |
+| M3 IT 工厂深度 | v1.1.8~1.1.9 | B1-B5: PRD深度/需求变更/审批/repo深度/工程深度 | 执行中"加导出"→PRD v2+新任务; 仓库修改+测试绿 |
+| M4 自我提升 | v1.2.0 | C1-C5: 经验/画像/决策引用/评价回写/护栏 | 第二次同类任务引用第一次经验 |
+| M5 真实E2E+模板 | v1.2.x | D1-D3 + Web 入口打通 | 一句话→专家→PRD→工程→代码→pytest绿→历史可查; FactorySpec 自举 |
 | M6 第二行业 | v1.2.x | E1-E3 | 同一底座第二行业最小闭环 |
 | M7 入口扩展 | v1.3.x | ③IDE 插件 + ④自主沙箱 | IDE 内调用内核; 沙箱长任务自主完成 |
 

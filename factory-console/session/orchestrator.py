@@ -2016,7 +2016,95 @@ class ExecutionOrchestrator:
                 team_validation,
                 validation_command,
             )
+        # M1b T3: 普通执行 (execute_project/resume) 完成后自动组装证据包 —
+        # 复用 EvidenceBuilder.from_execution_result (失败安全, 不阻断执行)
+        self._attach_execution_evidence(project_dir, slug, result, state, validations)
         return result
+
+    # ------------------------------------------------------------- M1b T3: 证据包接入普通执行
+
+    def _attach_execution_evidence(
+        self,
+        project_dir: Path,
+        slug: str,
+        result: ExecutionResult,
+        state: ExecutionState,
+        validations: list,
+    ) -> None:
+        """普通执行 (execute_project/resume) 完成后自动组装证据包 (失败安全)。
+
+        复用 EvidenceBuilder.from_execution_result (M1a from_repo_result 模式):
+        测试结果 + 决策链 + 产物清单 + 执行日志 (T4 执行事件摘要 — 任务队列/
+        验证/终态)。普通执行无 unified patch → diff 留空 (不伪造)。
+        落盘 projects/<slug>/evidence/ + EVIDENCE_BUNDLE_CREATED 审计;
+        任何异常静默 (证据包失败不阻断执行链)。
+        """
+        try:
+            from .evidence import (
+                EvidenceBuilder,
+                EvidenceStore,
+                emit_evidence_created,
+            )
+
+            logs: list[dict[str, Any]] = []
+            done = sum(1 for t in state.tasks if t.get("status") == "completed")
+            logs.append(
+                EvidenceBuilder._step_log(
+                    "execute",
+                    f"任务队列执行完成: {done}/{len(state.tasks)} 任务完成",
+                )
+            )
+            for t in state.tasks:
+                logs.append(
+                    EvidenceBuilder._step_log(
+                        f"task:{t.get('id') or t.get('name') or '?'}",
+                        str(t.get("status") or "?"),
+                        detail=str(t.get("error") or ""),
+                    )
+                )
+            if validations:
+                ok = sum(1 for v in validations if getattr(v, "success", False))
+                logs.append(
+                    EvidenceBuilder._step_log(
+                        "validation", f"验证 {ok}/{len(validations)} 通过"
+                    )
+                )
+            test_results = [
+                {
+                    "ok": bool(getattr(v, "success", False)),
+                    "output": (
+                        f"tests {getattr(v, 'tests_total', 0)} "
+                        f"passed {getattr(v, 'tests_passed', 0)} "
+                        f"failed {getattr(v, 'tests_failed', 0)}"
+                    ),
+                }
+                for v in validations
+            ]
+            if not test_results:
+                test_results = [{
+                    "ok": result.failed_tasks == 0,
+                    "output": (
+                        f"{result.completed_tasks} completed / "
+                        f"{result.failed_tasks} failed"
+                    ),
+                }]
+            reasons = [f"项目 {slug} 执行: {result.completed_tasks} 完成 / "
+                       f"{result.failed_tasks} 失败"]
+            if result.errors:
+                reasons.append("错误: " + "; ".join(result.errors))
+            decisions = [{"step": "execute", "reason": " ".join(reasons)}]
+            bundle = EvidenceBuilder.from_execution_result(
+                result,
+                project_id=slug,
+                agent_id="orchestrator",
+                logs=logs,
+                test_results=test_results,
+                decisions=decisions,
+            )
+            EvidenceStore(project_dir.parent.parent, slug).save(bundle)
+            emit_evidence_created(project_dir.parent.parent, bundle)
+        except Exception:  # noqa: BLE001 — 证据包失败不阻断执行链
+            pass
 
     def _write_team_report(
         self,

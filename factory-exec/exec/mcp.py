@@ -192,7 +192,7 @@ class StdioMCPClient:
             self._request("initialize", {
                 "protocolVersion": self.PROTOCOL_VERSION,
                 "capabilities": {},
-                "clientInfo": {"name": "ai-factory", "version": "1.1.5"},
+                "clientInfo": {"name": "ai-factory", "version": "1.1.6"},
             })
             self._notify("notifications/initialized", {})
         except Exception:

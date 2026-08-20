@@ -826,6 +826,10 @@ class FactoryCLI:
             return self.repo(args)
         if args.command == "evidence":
             return self.evidence(args)
+        if args.command == "workload":
+            return self.workload(args)
+        if args.command == "approval":
+            return self.approval(args)
         if args.command == "service":
             return self.service(args)
         if args.command == "exec":
@@ -1357,6 +1361,148 @@ class FactoryCLI:
                   f"产物={result.understanding.get('artifacts') or 0}")
         print(f"  计划: {result.plan_reason}")
         return 0 if result.error == "" else 1
+
+    # ------------------------------------------------------------- workload (M1b/E3)
+
+    def workload(self, args: argparse.Namespace) -> int:
+        """factory workload — 积压清道夫 (backlog: 分诊→执行→证据包→报告;
+        status: 最近一次运行报告只读查询)。"""
+        self._ensure_data_dir()
+        try:
+            from .session.workloads.backlog_sweeper import BacklogSweeper, BacklogSweepError
+        except Exception as exc:  # noqa: BLE001
+            print(f"积压清道夫加载失败: {exc}", file=sys.stderr)
+            return 1
+        if args.workload_command == "status":
+            return self._workload_status(args, BacklogSweeper)
+        return self._workload_backlog(args, BacklogSweeper, BacklogSweepError)
+
+    def _workload_backlog(
+        self, args: argparse.Namespace, sweeper_cls: Any, err_cls: Any
+    ) -> int:
+        """workload backlog — 真实修 issue + 证据包 + 审批请求 (E3 验收 1)。"""
+        # LLM 计划/patch 来源 (失败安全: 无 LLM → dependency issue 仍可确定性修复)
+        llm_fn = None
+        try:
+            from .session.reasoning import ReasoningProvider
+
+            llm_fn = ReasoningProvider()._default_llm_fn()  # noqa: SLF001 — 复用装配链
+        except Exception:  # noqa: BLE001 — 无 LLM → 确定性修复 + 诚实 skipped
+            llm_fn = None
+        try:
+            sweeper = sweeper_cls(self.data_dir, llm_fn=llm_fn)
+            report = sweeper.sweep(
+                args.project,
+                issues_file=args.issues or "issues.json",
+                limit=args.limit,
+                request_approval=not args.no_approval,
+            )
+        except err_cls as exc:
+            print(f"错误: {exc}", file=sys.stderr)
+            return 2
+        except Exception as exc:  # noqa: BLE001 — 失败安全 → 明确错误
+            print(f"错误: 积压清道夫执行失败 — {exc}", file=sys.stderr)
+            return 1
+        print(report.summary_text())
+        print(f"\n证据包: factory evidence list --project {Path(args.project).resolve().name}")
+        if not args.no_approval:
+            print("审批: factory approval list (pending; decide 后经 exec apply 应用 patch)")
+        return 0
+
+    def _workload_status(self, args: argparse.Namespace, sweeper_cls: Any) -> int:
+        """workload status — 最近一次运行报告 (只读, 失败安全)。"""
+        try:
+            sweeper = sweeper_cls(self.data_dir)
+            report = sweeper.status(args.project)
+        except Exception as exc:  # noqa: BLE001 — 失败安全 → 明确错误
+            print(f"错误: 运行报告读取失败 — {exc}", file=sys.stderr)
+            return 1
+        if report is None:
+            print(
+                f"暂无运行报告 — 先执行 factory workload backlog --project {args.project}",
+                file=sys.stderr,
+            )
+            return 2
+        print(report.summary_text())
+        return 0
+
+    # ------------------------------------------------------------- approval (M1b/T2)
+
+    def approval(self, args: argparse.Namespace) -> int:
+        """factory approval — 审批门 (list: 待审批列表; decide: 复用 ApprovalGate 决策)。
+
+        复用 exec CLI 审批层 (exec.cli.cmd_exec_approval_* — ApprovalGate 接线 +
+        审计事件), 与 `factory-exec approval approve/deny/list` 同源。
+        """
+        self._ensure_data_dir()
+        try:
+            exec_cli = self._proxy_exec_cli()
+            if args.approval_command == "list":
+                result = exec_cli.cmd_exec_approval_list(root=self.data_dir, args=args)
+                if getattr(args, "project", None):
+                    self._filter_approvals_by_project(result, args.project, self.data_dir)
+            else:
+                if not args.approval_id or not args.decision:
+                    print(
+                        "用法: factory approval decide <id> approve|reject "
+                        "[--by NAME] [--comment C]",
+                        file=sys.stderr,
+                    )
+                    return 2
+                sub_args = argparse.Namespace(
+                    id=args.approval_id, by=args.by or "cli", comment=args.comment
+                )
+                if args.decision == "approve":
+                    result = exec_cli.cmd_exec_approval_approve(root=self.data_dir, args=sub_args)
+                else:
+                    result = exec_cli.cmd_exec_approval_deny(root=self.data_dir, args=sub_args)
+        except Exception as exc:  # noqa: BLE001 — 失败安全 → 明确错误
+            print(f"错误: 审批命令失败 — {exc}", file=sys.stderr)
+            return 1
+        self._print_approval_result(args, result)
+        return int(result.get("exit_code", 0) or 0)
+
+    @staticmethod
+    def _filter_approvals_by_project(result: dict, project: str, data_dir: Any) -> None:
+        """审批列表按项目目录过滤 (请求 input.project_dir 匹配; 失败安全空列表)。"""
+        filtered = []
+        try:
+            from exec.store import ExecStore
+
+            store = ExecStore(Path(data_dir) / "exec")
+            target = Path(project).resolve()
+            for ap in result.get("approvals", []):
+                req = store.get_request(str(ap.get("request_id") or ""))
+                proj = ((req.input or {}).get("project_dir", "")) if req is not None else ""
+                if proj and Path(proj).resolve() == target:
+                    filtered.append(ap)
+        except Exception:  # noqa: BLE001 — 过滤失败安全 → 空列表
+            filtered = []
+        result["approvals"] = filtered
+        result["count"] = len(filtered)
+
+    @staticmethod
+    def _print_approval_result(args: argparse.Namespace, result: dict) -> None:
+        """审批命令文本输出 (与 exec CLI 同构; 错误 → stderr)。"""
+        if not result.get("ok"):
+            print(f"error: {result.get('error')}", file=sys.stderr)
+            return
+        if result.get("command") == "approval list":
+            print(f"审批记录 {result.get('count', 0)} 条 (status={getattr(args, 'status', 'pending')})")
+            for ap in result.get("approvals", []):
+                print(
+                    f"  {ap['id']}  {ap['decision']:<10} {ap['request_id']}  "
+                    f"risk={ap.get('risk_level', 'low')}  by {ap.get('decided_by', '')}"
+                )
+        elif result.get("command") in ("approval approve", "approval deny"):
+            ap = result["approval"]
+            print(f"审批 {ap['decision']}: {ap['id']}")
+            print(f"  request_id  {ap['request_id']}")
+            print(f"  decided_by  {ap['decided_by']}")
+            if ap.get("comment"):
+                print(f"  comment     {ap['comment']}")
+        if result.get("event_seq") is not None:
+            print(f"  event_seq   {result['event_seq']}")
 
     # ------------------------------------------------------------- tools
 
@@ -2634,6 +2780,37 @@ def build_parser() -> argparse.ArgumentParser:
     p_repo.add_argument("repo_path", metavar="<path>", help="现有仓库路径")
     p_repo.add_argument("target", metavar="<目标>", help="要完成的目标 (例如: 加一个导出功能)")
     p_repo.add_argument("--patch", default=None, help="要应用的 patch 文件 (无 → 只做理解+计划)")
+    p_workload = sub.add_parser("workload", help="积压清道夫 (M1b/E3): 分诊→执行→证据包→报告")
+    p_workload.add_argument(
+        "workload_command", choices=["backlog", "status"], metavar="动作",
+        help="backlog — 对项目 issue 清单执行积压清道夫; status — 最近一次运行报告 (只读)",
+    )
+    p_workload.add_argument("--project", required=True, help="项目目录 (repo_mode)")
+    p_workload.add_argument(
+        "--issues", default=None, metavar="FILE",
+        help="issue 清单文件 (缺省 <project>/issues.json: [{id,title,type}])",
+    )
+    p_workload.add_argument(
+        "--limit", type=int, default=None, help="只处理前 N 个 issue (缺省全部)"
+    )
+    p_workload.add_argument(
+        "--no-approval", action="store_true",
+        help="不自动请求审批 (缺省: 每个成功修复请求 pending 审批)",
+    )
+    p_approval = sub.add_parser("approval", help="审批门 (M1b/T2): 待审批列表 + 决策 (复用 ApprovalGate)")
+    p_approval.add_argument(
+        "approval_command", choices=["list", "decide"], metavar="动作",
+        help="list — 待审批列表; decide <id> approve|reject — 审批决策",
+    )
+    p_approval.add_argument("approval_id", nargs="?", default=None, metavar="<id>", help="审批记录 id (decide)")
+    p_approval.add_argument(
+        "decision", nargs="?", choices=["approve", "reject"], default=None,
+        metavar="approve|reject", help="审批决定 (decide)",
+    )
+    p_approval.add_argument("--project", default=None, help="(list) 按项目目录过滤")
+    p_approval.add_argument("--status", default="pending", help="(list) 过滤 pending/approved/rejected (缺省 pending)")
+    p_approval.add_argument("--by", default="", help="(decide) 审批人 (缺省 cli)")
+    p_approval.add_argument("--comment", default="", help="(decide) 审批意见 (reject 反馈给修复循环)")
     p_tools = sub.add_parser("tools", help="工具发现与注册 (增强层: AI CLI + MCP server)")
     p_tools.add_argument(
         "tools_action", choices=["list", "doctor"], nargs="?", default="list",

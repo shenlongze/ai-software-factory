@@ -5,6 +5,45 @@
 
 ---
 
+## [v1.1.6] — 2026-08-20
+
+**M1b 积压清道夫 (E3 第一个可售卖工作负载)**: 分诊 → 执行 → 证据包 → 审批 → 报告
++ M1a Review 3 个 Minor 修复。
+
+### Added
+
+- **`factory workload backlog --project <dir>`** — BacklogSweeper 积压清道夫
+  (`session/workloads/backlog_sweeper.py`): 读取项目 `issues.json`
+  ([{id,title,type}]) → 分诊 (bug/feature/dependency → 修复策略) → 对每个
+  issue 执行 (复用 RepoModeRunner Execution Kernel → Sandbox patch + pytest)
+  → 组装 EvidenceBundle (diff+测试+日志+决策+变更文件, 落盘
+  `projects/<slug>/evidence/`) → 自动请求审批 (复用 ApprovalGate) → 运行报告
+  (`projects/<slug>/sweeps/sweep-*.json`)。
+- **确定性依赖修复** — `DependencyPatchGenerator`: 真实分析 requirements.txt /
+  pyproject.toml, 生成可应用 unified diff (无 LLM 也能「干完一件看得见的活」);
+  bug/feature 走 LLM patch (无 LLM → 诚实 skipped, 不伪造)。
+- **`factory workload status --project <dir>`** — 最近一次清道夫运行报告 (只读)。
+- **`factory approval list [--project X]` / `factory approval decide <id> approve|reject`**
+  (T2, Minor #2) — 待审批列表 + 审批决策, 复用 exec ApprovalGate (终态落库 +
+  org.execution.approved 审计), 与 `factory-exec approval` 同源。
+- **EvidenceBundle 接入普通执行** (T3, Minor #3) — `execute_project`/`resume`
+  完成后自动组装证据包 (`EvidenceBuilder.from_execution_result`, 复用
+  from_repo_result 模式), `factory evidence list` 可见。
+- **logs 字段填充** (T4, Minor #1) — 组装证据包时填充执行日志 (执行事件摘要:
+  理解/计划/patch/测试; 任务队列/验证/终态), 失败安全。
+- **demo/repo** — BacklogSweeper 演示仓库 (main.py + 测试 + requirements.txt +
+  issues.json: dependency 可确定性修复, feature/bug 需 LLM)。
+
+### Validation
+
+- 实测: `factory workload backlog --project demo/repo` → ISS-001 dependency 真实
+  修复 (requirements.txt 变更 + 测试✅) + 证据包可见 + pending 审批; approval
+  list/decide 全链路可用。
+- 新增 31 测试 (test_workload_backlog 20 / test_evidence_attach 7 /
+  test_approval_decide 9 含注册); 全量回归 0 failed。
+
+---
+
 ## [v1.1.5] — 2026-08-20
 
 **M1 内核切片（AI Company OS 第一块地基）**: 存量仓库模式 + 工具发现 + 真 MCP 客户端。

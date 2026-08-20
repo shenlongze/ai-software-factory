@@ -42,6 +42,9 @@ agent_runtime.py / provider.py / execution_loop.py 主逻辑。
 
 from __future__ import annotations
 
+import json
+import os
+import subprocess
 import uuid
 from datetime import datetime
 from typing import Any, Callable, Protocol
@@ -124,6 +127,160 @@ class MCPClient(Protocol):
     def list_tools(self) -> list[MCPToolSchema]: ...
 
     def call_tool(self, name: str, arguments: dict[str, Any]) -> Any: ...
+
+
+# ------------------------------------------------------------------ Stdio MCP Client (真连接, 增强层)
+
+
+class StdioMCPClient:
+    """真实 MCP stdio 客户端 (JSON-RPC 2.0 over 子进程 stdin/stdout)。
+
+    实现 MCPClient 契约 (connect/list_tools/call_tool), 替换 Mock 的**增强层**
+    实现 — 不绑定第三方 SDK, 手写最小 stdio 协议 (MCP 2024-11-05)。
+
+    铁律 (愿景): 工具是增强层 — MCP 连接失败不阻塞 AI Factory 自身能力;
+    调用方 (Agent 循环) 失败安全处理。
+
+    - connect(): 拉起子进程 → initialize → notifications/initialized
+    - list_tools(): tools/list → [MCPToolSchema]
+    - call_tool(): tools/call → {content:[text...], isError}
+    - 连接/协议错误 → MCPConnectionError/MCPToolError (响亮, 不假装成功)
+    """
+
+    #: MCP 协议版本 (2024-11-05 — 大部分 stdio server 兼容)
+    PROTOCOL_VERSION = "2024-11-05"
+
+    def __init__(
+        self,
+        command: str,
+        args: list[str] | None = None,
+        env: dict[str, str] | None = None,
+        *,
+        name: str = "stdio",
+    ) -> None:
+        self._command = command
+        self._args = list(args or [])
+        self._env = dict(env or {})
+        self._name = name
+        self._proc: subprocess.Popen[str] | None = None
+        self._request_id = 0
+        self._connected = False
+
+    # ------------------------------------------------------------ 连接
+
+    @property
+    def connected(self) -> bool:
+        return self._connected
+
+    def connect(self) -> None:
+        """建立连接 (幂等): 拉起子进程 + initialize + initialized 通知。"""
+        if self._connected:
+            return
+        try:
+            self._proc = subprocess.Popen(
+                [self._command, *self._args],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                encoding="utf-8",
+                env={**os.environ, **self._env},
+            )
+        except OSError as exc:
+            raise MCPConnectionError(f"mcp stdio connect failed: {exc}") from exc
+        try:
+            self._request("initialize", {
+                "protocolVersion": self.PROTOCOL_VERSION,
+                "capabilities": {},
+                "clientInfo": {"name": "ai-factory", "version": "1.1.5"},
+            })
+            self._notify("notifications/initialized", {})
+        except Exception:
+            self.disconnect()
+            raise
+        self._connected = True
+
+    def disconnect(self) -> None:
+        """断开连接 (幂等 — 终止子进程)。"""
+        if self._proc is not None:
+            try:
+                self._proc.terminate()
+            except Exception:  # noqa: BLE001
+                pass
+            self._proc = None
+        self._connected = False
+
+    # ------------------------------------------------------------ JSON-RPC
+
+    def _request(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+        """发送请求并等待同 id 响应 (协议错误 → MCPConnectionError)。"""
+        if self._proc is None or self._proc.stdin is None or self._proc.stdout is None:
+            raise MCPConnectionError("mcp client not connected")
+        self._request_id += 1
+        rid = self._request_id
+        payload = json.dumps(
+            {"jsonrpc": "2.0", "id": rid, "method": method, "params": params},
+            ensure_ascii=False,
+        )
+        try:
+            self._proc.stdin.write(payload + "\n")
+            self._proc.stdin.flush()
+        except OSError as exc:
+            raise MCPConnectionError(f"mcp write failed: {exc}") from exc
+        while True:
+            line = self._proc.stdout.readline()
+            if not line:
+                raise MCPConnectionError("mcp server closed stdout (stdin EOF)")
+            try:
+                msg = json.loads(line)
+            except (ValueError, TypeError):
+                continue
+            if not isinstance(msg, dict) or msg.get("id") != rid:
+                continue
+            if "error" in msg:
+                err = msg["error"]
+                raise MCPToolError(
+                    f"mcp {method} error: {err.get('message') or err}"
+                )
+            return msg.get("result") or {}
+
+    def _notify(self, method: str, params: dict[str, Any]) -> None:
+        """发送通知 (无 id, 不等待响应)。"""
+        if self._proc is None or self._proc.stdin is None:
+            raise MCPConnectionError("mcp client not connected")
+        self._proc.stdin.write(json.dumps(
+            {"jsonrpc": "2.0", "method": method, "params": params}
+        ) + "\n")
+        self._proc.stdin.flush()
+
+    # ------------------------------------------------------------ MCPClient 契约
+
+    def list_tools(self) -> list[MCPToolSchema]:
+        """tools/list → MCPToolSchema 列表 (失败 → MCPConnectionError)。"""
+        result = self._request("tools/list", {})
+        tools: list[MCPToolSchema] = []
+        for item in result.get("tools") or []:
+            if not isinstance(item, dict):
+                continue
+            schema = item.get("inputSchema") or {}
+            tools.append(MCPToolSchema(
+                name=str(item.get("name") or ""),
+                description=str(item.get("description") or ""),
+                input_schema=schema if isinstance(schema, dict) else {},
+            ))
+        return tools
+
+    def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
+        """tools/call → {content:[text...], isError} (JSON 可序列化)。"""
+        result = self._request("tools/call", {"name": name, "arguments": arguments})
+        texts: list[str] = []
+        for chunk in result.get("content") or []:
+            if isinstance(chunk, dict) and chunk.get("type") == "text":
+                texts.append(str(chunk.get("text") or ""))
+        return {
+            "content": texts,
+            "isError": bool(result.get("isError")),
+        }
 
 
 # ------------------------------------------------------------------ Mock MCP Client (不连公网)

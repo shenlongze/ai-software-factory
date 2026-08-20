@@ -820,6 +820,10 @@ class FactoryCLI:
             return self.status()
         if args.command == "doctor":
             return self.doctor(args)
+        if args.command == "tools":
+            return self.tools(args)
+        if args.command == "repo":
+            return self.repo(args)
         if args.command == "service":
             return self.service(args)
         if args.command == "exec":
@@ -1241,6 +1245,61 @@ class FactoryCLI:
             dev_mode=dev_mode,
             cli=self,
         )
+
+    # ------------------------------------------------------------- repo (M1)
+
+    def repo(self, args: argparse.Namespace) -> int:
+        """存量仓库模式 (M1): 理解 → 计划 → (--patch 应用) → 测试。
+
+        LLM 计划可用 → 真调 (ReasoningProvider); 无/失败 → 确定性计划。
+        patch 来自 --patch 文件 (M1 提供确定性输入; LLM 生成 patch 为 M2)。
+        """
+        try:
+            from .session.repo_mode import RepoModeRunner
+        except Exception as exc:  # noqa: BLE001
+            print(f"repo 模式加载失败: {exc}", file=sys.stderr)
+            return 1
+        patch_text = ""
+        if args.patch:
+            try:
+                patch_text = Path(args.patch).read_text(encoding="utf-8")
+            except Exception as exc:  # noqa: BLE001
+                print(f"patch 文件读取失败: {args.patch}: {exc}", file=sys.stderr)
+                return 1
+        # LLM 计划 (失败安全)
+        llm_fn = None
+        try:
+            from .session.reasoning import ReasoningProvider
+            llm_fn = ReasoningProvider()._default_llm_fn()  # noqa: SLF001 — 复用装配链
+        except Exception:  # noqa: BLE001 — 无 LLM → 确定性计划
+            llm_fn = None
+        runner = RepoModeRunner(llm_fn=llm_fn)
+        result = runner.run(args.repo_path, args.target, patch_text=patch_text)
+        print(result.summary)
+        if result.understanding:
+            print(f"  理解: 阶段={result.understanding.get('stage') or '?'} "
+                  f"语言={result.understanding.get('basic') or '?'} "
+                  f"产物={result.understanding.get('artifacts') or 0}")
+        print(f"  计划: {result.plan_reason}")
+        return 0 if result.error == "" else 1
+
+    # ------------------------------------------------------------- tools
+
+    def tools(self, args: argparse.Namespace) -> int:
+        """工具发现与注册 (M1 · 增强层): list — 扫描本机 AI CLI + MCP server;
+        doctor — 同上 + 显示可调用状态。只读, 零修改。"""
+        from .session.tools import discover_all, format_tools
+
+        try:
+            tools = discover_all()
+            print(format_tools(tools))
+            mcp = [t for t in tools if t.kind == "mcp"]
+            if mcp:
+                print(f"\nMCP server {len(mcp)} 个可接入 (后续可在 Agent 循环调用)")
+            return 0
+        except Exception as exc:  # noqa: BLE001 — 失败安全
+            print(f"工具扫描失败: {exc}", file=sys.stderr)
+            return 1
 
     # ------------------------------------------------------------- doctor
 
@@ -2489,6 +2548,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_doctor.add_argument("--json", action="store_true", help="输出结构化 JSON")
     p_doctor.add_argument("--verbose", action="store_true", help="显示检查详情")
     p_doctor.add_argument("--fix", action="store_true", help="先修复可自动修复项 (models.json 种子) 再诊断")
+    p_repo = sub.add_parser("repo", help="存量仓库模式 (M1): 理解→计划→改→测→修")
+    p_repo.add_argument("repo_path", metavar="<path>", help="现有仓库路径")
+    p_repo.add_argument("target", metavar="<目标>", help="要完成的目标 (例如: 加一个导出功能)")
+    p_repo.add_argument("--patch", default=None, help="要应用的 patch 文件 (无 → 只做理解+计划)")
+    p_tools = sub.add_parser("tools", help="工具发现与注册 (增强层: AI CLI + MCP server)")
+    p_tools.add_argument(
+        "tools_action", choices=["list", "doctor"], nargs="?", default="list",
+        metavar="动作", help="list — 发现本机 AI CLI + MCP server; doctor — 含连通性检查",
+    )
     p_config = sub.add_parser(
         "config", help="Factory 运行时配置 (show/set/check/path)"
     )

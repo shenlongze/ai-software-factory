@@ -319,6 +319,8 @@ class TestFactoryCliArgparse:
             "exec",  # S10-083: 执行历史 (真实时间线)
             "run",  # S10-031: 转正 (薄代理 exec CLI cmd_exec_run)
             "run-status",  # S10-031: 转正 (薄代理 exec CLI cmd_exec_status)
+            "repo",  # M1: 存量仓库模式 (理解→计划→改→测→修)
+            "tools",  # M1: 工具发现 (AI CLI + MCP server, 增强层)
         }
 
     def test_start_flags_parsed(self):

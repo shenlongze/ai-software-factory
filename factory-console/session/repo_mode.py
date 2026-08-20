@@ -78,6 +78,8 @@ class RepoModeRunner:
         *,
         patch_text: str = "",
         workdir: Optional[Path] = None,
+        evidence_workspace: Any = None,
+        evidence_slug: str = "",
     ) -> RepoModeResult:
         path = Path(repo_path)
         if not path.is_dir():
@@ -93,6 +95,10 @@ class RepoModeRunner:
             # 3. 修改 (patch → sandbox 副本)
             if patch_text.strip():
                 result = self._apply_and_test(path, result, patch_text)
+                result._patch_text = patch_text  # 证据包用
+            # M1a: 组装证据包 (E1) + 审计 (失败安全)
+            if evidence_workspace is not None and patch_text.strip():
+                self._emit_evidence(evidence_workspace, evidence_slug, result)
             return result
         except Exception as exc:  # noqa: BLE001 — 失败安全
             result.error = str(exc)
@@ -133,6 +139,18 @@ class RepoModeRunner:
         if patch_text.strip():
             return "已提供 patch — 应用并验证"
         return "未提供 patch — 可加 --patch <file> 让 AI Factory 应用修改并跑测试"
+
+    def _emit_evidence(self, workspace: Any, slug: str, result: RepoModeResult) -> None:
+        """组装 + 落盘 + 审计 EvidenceBundle (失败安全, 不阻断 repo 结果)。"""
+        try:
+            from .evidence import EvidenceBuilder, EvidenceStore, emit_evidence_created
+            bundle = EvidenceBuilder.from_repo_result(
+                result, project_id=slug, agent_id="repo"
+            )
+            EvidenceStore(workspace, slug).save(bundle)
+            emit_evidence_created(workspace, bundle)
+        except Exception:  # noqa: BLE001 — 证据包失败不阻断主流程
+            pass
 
     def _apply_and_test(self, path: Path, result: RepoModeResult, patch_text: str) -> RepoModeResult:
         """应用 patch 到 sandbox 副本 → 导出 diff → 跑 pytest → 失败重试一次。"""

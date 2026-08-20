@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from exec.approval import ApprovalError, ApprovalGate
+from exec.approval import ApprovalError, ApprovalGate, classify_risk
 from exec.models import (
     ApprovalDecision,
     Artifact,
@@ -251,3 +251,38 @@ class TestListAndGet:
         result, _ = _result_with_patch(tmp_path)
         record = ApprovalGate(exec_store).request(result, approval_id="APR-custom")
         assert record.id == "APR-custom"
+
+
+class TestRiskClassify:
+    """M1a 分级审批: 爆炸半径 → risk_level/required_roles。"""
+
+    def test_low_single_file(self):
+        level, roles = classify_risk(
+            "--- a/main.py\n+++ b/main.py\n@@ -1 +1,2 @@\n", changed_files=1
+        )
+        assert level == "low"
+        assert roles == ["developer"]
+
+    def test_medium_two_files(self):
+        level, roles = classify_risk(
+            "--- a/a.py\n+++ b/a.py\n--- a/b.py\n+++ b/b.py\n", changed_files=2
+        )
+        assert level == "medium"
+        assert "tech_lead" in roles
+
+    def test_medium_three_files(self):
+        level, _roles = classify_risk("--- a/x\n+++ b/x\n", changed_files=3)
+        assert level == "medium"
+
+    def test_high_dependency_upgrade(self):
+        level, roles = classify_risk(
+            "--- a/requirements.txt\n+++ b/requirements.txt\n+django==5.0\n", changed_files=1
+        )
+        assert level == "high"
+        assert "compliance" in roles
+
+    def test_high_delete(self):
+        level, _roles = classify_risk(
+            "--- a/legacy.py\n+++ /dev/null\n@@ -1 +0,0 @@\n", changed_files=1
+        )
+        assert level == "high"

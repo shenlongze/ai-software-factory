@@ -27,9 +27,35 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+import re
+
 from . import events as exec_events
 from .models import ApprovalDecision, ApprovalRecord, ExecutionResult, new_id, utcnow
 from .store import ExecStore
+
+#: 高风险信号 (爆炸半径大 → 必须 tech_lead/compliance 批准)
+_HIGH_RISK_PATTERNS: tuple[str, ...] = (
+    r"^--- a/.*(?:delete|删除)",
+    r"^\+\+\+ /dev/null",  # 文件删除 (unified diff 标准标记)
+    r"^[-+]\s*(?:rm\s|os\.remove|shutil\.rmtree)",
+    r"requirements\.txt|pyproject\.toml|package\.json",
+    r"^diff --git a/(?:db/|migrations/|infra/|deploy)",
+)
+def classify_risk(patch_text: str, *, changed_files: int = 1) -> tuple[str, list[str]]:
+    """分级审批: 按爆炸半径判定 risk_level 与 required_roles (确定性规则)。
+
+    high  → 删除/依赖升级/基础设施/多模块 → tech_lead (+compliance 若涉密)
+    medium → 跨文件改动/核心配置 → tech_lead
+    low   → 单文件常规修改 → developer
+    """
+    text = str(patch_text or "")
+    if any(re.search(pat, text, re.M) for pat in _HIGH_RISK_PATTERNS):
+        return "high", ["tech_lead", "compliance"]
+    if changed_files >= 3:
+        return "medium", ["tech_lead"]
+    if changed_files >= 2 or "config" in text[:2000].lower():
+        return "medium", ["tech_lead"]
+    return "low", ["developer"]
 
 
 class ApprovalError(Exception):
@@ -55,15 +81,33 @@ class ApprovalGate:
         result: ExecutionResult,
         *,
         approval_id: str | None = None,
+        risk_level: str | None = None,
+        required_roles: list[str] | None = None,
     ) -> ApprovalRecord:
-        """执行结果 → 审批记录 (pending; 应用 patch 前必经此门)。"""
+        """执行结果 → 审批记录 (pending; 应用 patch 前必经此门)。
+
+        分级: risk_level/required_roles 显式传入, 或按 patch 爆炸半径
+        classify_risk 自动判定 (M1a 分级审批)。
+        """
         if result.status.value != "success":
             raise ApprovalError(
                 f"cannot request approval for failed execution: {result.id}"
             )
+        patch_text = ""
+        try:
+            patch_path = self._patch_artifact_path(result)
+            patch_text = Path(patch_path).read_text(encoding="utf-8")
+        except Exception:  # noqa: BLE001 — patch 缺失不影响审批创建
+            patch_text = ""
+        if risk_level is None or required_roles is None:
+            level, roles = classify_risk(patch_text)
+            risk_level = risk_level or level
+            required_roles = required_roles or roles
         record = ApprovalRecord(
             id=approval_id or new_id("APR"),
             request_id=result.request_id,
+            risk_level=str(risk_level or "low"),
+            required_roles=list(required_roles or []),
         )
         self._store.save_approval(record)
         return record

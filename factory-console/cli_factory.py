@@ -824,6 +824,8 @@ class FactoryCLI:
             return self.tools(args)
         if args.command == "repo":
             return self.repo(args)
+        if args.command == "evidence":
+            return self.evidence(args)
         if args.command == "service":
             return self.service(args)
         if args.command == "exec":
@@ -1246,6 +1248,75 @@ class FactoryCLI:
             cli=self,
         )
 
+    # ------------------------------------------------------------- evidence (M1a/E1)
+
+    def evidence(self, args: argparse.Namespace) -> int:
+        """证据包视图 (M1a): list — 各项目证据包清单; show <id> — 单包详情。"""
+        try:
+            from .session.evidence import EvidenceStore
+        except Exception as exc:  # noqa: BLE001
+            print(f"证据包加载失败: {exc}", file=sys.stderr)
+            return 1
+        try:
+            if args.evidence_action == "list":
+                self._evidence_list(args)
+            else:
+                self._evidence_show(args)
+            return 0
+        except Exception as exc:  # noqa: BLE001 — 失败安全
+            print(f"证据包读取失败: {exc}", file=sys.stderr)
+            return 1
+
+    def _evidence_list(self, args: argparse.Namespace) -> None:
+        from .session.evidence import EvidenceStore
+
+        projects_root = self.data_dir / "projects"
+        target = str(args.project or "")
+        found = False
+        for pdir in sorted(projects_root.glob("*")):
+            if target and pdir.name != target:
+                continue
+            bundles = EvidenceStore(self.data_dir, pdir.name).list()
+            if not bundles:
+                continue
+            found = True
+            print(f"项目 {pdir.name} — 证据包 {len(bundles)} 个:")
+            for b in bundles:
+                print(f"  {b.bundle_id} [{b.status}] {b.task_id or '(无目标)'} "
+                      f"变更{len(b.artifacts)}文件 测试{'✅' if b.test_results and b.test_results[0].get('ok') else '—'}")
+        if not found:
+            print("暂无证据包 (运行 factory repo --patch 后自动生成)")
+
+    def _evidence_show(self, args: argparse.Namespace) -> None:
+        from .session.evidence import EvidenceStore
+
+        if not args.bundle_id:
+            print("用法: factory evidence show <bundle_id> [--project X]", file=sys.stderr)
+            return
+        projects_root = self.data_dir / "projects"
+        target = str(args.project or "")
+        for pdir in sorted(projects_root.glob("*")):
+            if target and pdir.name != target:
+                continue
+            bundle = EvidenceStore(self.data_dir, pdir.name).load(args.bundle_id)
+            if bundle is None:
+                continue
+            print(f"证据包: {bundle.bundle_id} [{bundle.status}]")
+            print(f"  项目: {bundle.project_id} | 任务: {bundle.task_id} | Agent: {bundle.agent_id}")
+            print(f"  变更文件 ({len(bundle.artifacts)}): {', '.join(bundle.artifacts) or '(无)'}")
+            if bundle.decisions:
+                print("  决策链:")
+                for d in bundle.decisions:
+                    print(f"    - {d.get('step')}: {str(d.get('reason') or '')[:200]}")
+            for t in bundle.test_results:
+                mark = "✅ 通过" if t.get("ok") else "❌ 失败"
+                print(f"  测试: {mark}")
+                print(f"    {str(t.get('output') or '')[:400]}")
+            if bundle.diff:
+                print(f"  diff ({len(bundle.diff)} 字符): 见项目 evidence/{bundle.bundle_id}.json")
+            return
+        print(f"未找到证据包: {args.bundle_id}")
+
     # ------------------------------------------------------------- repo (M1)
 
     def repo(self, args: argparse.Namespace) -> int:
@@ -1274,7 +1345,11 @@ class FactoryCLI:
         except Exception:  # noqa: BLE001 — 无 LLM → 确定性计划
             llm_fn = None
         runner = RepoModeRunner(llm_fn=llm_fn)
-        result = runner.run(args.repo_path, args.target, patch_text=patch_text)
+        slug = Path(args.repo_path).resolve().name or "repo"
+        result = runner.run(
+            args.repo_path, args.target, patch_text=patch_text,
+            evidence_workspace=self.data_dir, evidence_slug=slug,
+        )
         print(result.summary)
         if result.understanding:
             print(f"  理解: 阶段={result.understanding.get('stage') or '?'} "
@@ -2548,6 +2623,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_doctor.add_argument("--json", action="store_true", help="输出结构化 JSON")
     p_doctor.add_argument("--verbose", action="store_true", help="显示检查详情")
     p_doctor.add_argument("--fix", action="store_true", help="先修复可自动修复项 (models.json 种子) 再诊断")
+    p_evidence = sub.add_parser("evidence", help="证据包 (M1a/E1): 可审计变更证据 diff+test+决策")
+    p_evidence.add_argument(
+        "evidence_action", choices=["list", "show"], nargs="?", default="list",
+        metavar="动作", help="list — 证据包清单; show <id> — 单包详情",
+    )
+    p_evidence.add_argument("bundle_id", nargs="?", default=None, help="证据包 id (show)")
+    p_evidence.add_argument("--project", default=None, help="项目 slug (缺省: 最新)")
     p_repo = sub.add_parser("repo", help="存量仓库模式 (M1): 理解→计划→改→测→修")
     p_repo.add_argument("repo_path", metavar="<path>", help="现有仓库路径")
     p_repo.add_argument("target", metavar="<目标>", help="要完成的目标 (例如: 加一个导出功能)")

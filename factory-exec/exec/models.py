@@ -257,6 +257,8 @@ class ApprovalRecord(_ExecModel):
     id: str
     request_id: str
     decision: ApprovalDecision = ApprovalDecision.PENDING
+    risk_level: str = "low"            # 分级审批: low/medium/high (爆炸半径)
+    required_roles: list[str] = Field(default_factory=list)  # developer/tech_lead/compliance
     decided_by: str = ""
     comment: str = ""
     applied: bool = False

@@ -293,3 +293,44 @@ def test_session_state_restores_current_project(tmp_path):
     )
     sess2._restore_session_state()
     assert sess2.context.current_project == "P-001"
+
+
+# ================================================================== 2026-08-20: 命令/帮助查询给真实命令
+
+def test_help_query_shows_real_commands(capsys):
+    """'help/命令' → 真实命令列表 (不再交给 LLM 编故事)。"""
+    sess = SESS.InteractiveSession(
+        chat_service=_FakeChat2(),
+    )
+    sess._dispatch("项目管理的 命令")
+    out = capsys.readouterr().out
+    assert "系统命令:" in out
+    assert "CLI 命令" in out
+    assert "/project" in out
+    assert "让PM分析" in out
+    assert "AI:" not in out  # 未走聊天
+
+
+def test_bare_project_goes_to_real_list(capsys, tmp_path):
+    """裸 'project' → 真实项目清单 (非聊天)。"""
+    root = tmp_path / "ws"
+    root.mkdir()
+    _write_org_project(root, "P-001", "旅行记账")
+    sess = SESS.InteractiveSession(
+        context_manager=CTX.ContextManager(workspace=str(root)),
+        chat_service=_FakeChat2(),
+    )
+    sess._dispatch("project")
+    out = capsys.readouterr().out
+    assert "项目清单" in out
+    assert "旅行记账" in out
+    assert "AI:" not in out
+
+
+def test_help_english_word(capsys):
+    """'help' (英文) → 真实命令。"""
+    sess = SESS.InteractiveSession(chat_service=_FakeChat2())
+    sess._dispatch("help")
+    out = capsys.readouterr().out
+    assert "系统命令:" in out
+    assert "AI:" not in out

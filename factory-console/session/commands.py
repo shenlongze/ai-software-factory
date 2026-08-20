@@ -59,15 +59,21 @@ class HelpCommand(SlashCommand):
             return 1
         print("你可以直接用自然语言和 AI Factory 对话。例如:")
         print("  你好")
-        print("  什么是 MCP？")
         print("  我想做一个类似 OneNote 的 App")
-        print("  我想开发一个博客")
-        print("  继续开发当前项目")
-        print("  帮我修复当前项目的登录 Bug")
+        print("  让PM分析        — 产品管线 (7 角色资产链)")
+        print("  继续 旅行记账    — 按名称继续项目")
+        print("  哪些项目有PRD   — 真实文档状态")
+        print("  P-xxx 改名叫 新名 — 项目改名")
         print()
         print("系统命令:")
         for cmd in self.registry.list():
             print(f"  /{cmd.name}  {cmd.description}")
+        print()
+        print("CLI 命令 (在系统终端运行 factory 开头):")
+        print("  factory doctor [--fix]   — 诊断 (--fix 修复 models.json 种子)")
+        print("  factory init / start / status")
+        print("  factory project list / status")
+        print("  factory exec history")
         return 0
 
 

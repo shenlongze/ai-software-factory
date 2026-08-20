@@ -547,3 +547,15 @@ class TestModelSeed:
         assert rc == 0
         assert "模型目录就绪" in out
         assert (cli.data_dir / "models.json").is_file()
+
+
+class TestDoctorFix:
+    def test_doctor_fix_seeds_models_json(self, tmp_path, capsys):
+        """2026-08-20: factory doctor --fix → 自动修复 models.json 种子 (WARN → PASS)。"""
+        cli = make_cli(tmp_path)
+        assert not (cli.data_dir / "models.json").exists()
+        rc = run(cli, "doctor", "--fix")
+        out = capsys.readouterr().out
+        assert rc in (0, 1)
+        assert "已修复: models.json" in out
+        assert (cli.data_dir / "models.json").is_file()

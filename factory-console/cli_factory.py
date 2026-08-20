@@ -1252,6 +1252,17 @@ class FactoryCLI:
         """
         from .cli_doctor import build_context, run_doctor
 
+        # --fix: 先修复可自动修复项 (models.json 内置种子; 缺省构造即写入)
+        if getattr(args, "fix", False):
+            try:
+                from .model_catalog import ModelCatalog
+
+                catalog = ModelCatalog(models_file=self.data_dir / "models.json")
+                n = len(catalog.list_models(include_disabled=True))
+                print(f"  ✓ 已修复: models.json 内置模型种子 ({n} 个)")
+            except Exception as exc:  # noqa: BLE001 — 失败安全
+                print(f"  ⚠ models.json 种子修复失败: {exc}")
+
         return run_doctor(
             args.checker,
             json_mode=args.json,
@@ -2477,6 +2488,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_doctor.add_argument("--json", action="store_true", help="输出结构化 JSON")
     p_doctor.add_argument("--verbose", action="store_true", help="显示检查详情")
+    p_doctor.add_argument("--fix", action="store_true", help="先修复可自动修复项 (models.json 种子) 再诊断")
     p_config = sub.add_parser(
         "config", help="Factory 运行时配置 (show/set/check/path)"
     )

@@ -208,6 +208,9 @@ class InteractiveSession:
             return
         intent = self.intent_parser.parse(line)
         if intent is None:
+            # 命令/帮助类查询 → 真实命令列表 (不再交给 LLM 编故事)
+            if self._maybe_show_command_help(line):
+                return
             # S10-075 L2: 普通自然语言 → 真实 LLM 问答 (不再是 "未知命令")
             answer = self.chat_service.answer(line)
             print(answer)
@@ -422,6 +425,22 @@ class InteractiveSession:
                     print(f"  {key}: {execution[key]}")
         else:
             print(f"❌ {result.message}")
+
+    def _maybe_show_command_help(self, line: str) -> bool:
+        """命令/帮助类输入 → 展示真实命令 (slash + CLI), 返回 True 已处理。
+
+        覆盖: "help/帮助/命令/指令/怎么用/使用说明/项目管理的命令" → /help;
+        "project/项目" (裸词) → /project 真实项目清单。
+        """
+        norm = (line or "").strip().strip("，。？！!?、/ 	").lower()
+        if norm in ("project", "项目"):
+            self.registry.execute("/project", self.context)
+            return True
+        help_hits = ("help", "commands", "命令", "指令", "帮助", "怎么用", "使用说明")
+        if norm in help_hits or any(k in norm for k in ("命令", "指令", "怎么用", "使用说明")):
+            self.registry.execute("/help", self.context)
+            return True
+        return False
 
     def _try_resume_with_name(self, raw_line: str) -> bool:
         """'继续 <项目名>' → 解析项目名, 匹配并切换当前项目后继续 (返回 True 已处理)。

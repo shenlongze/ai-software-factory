@@ -94,6 +94,14 @@ Sprint 10 — AI 软件生产工作台
       "dependency": "S10-050/065/066/083 (复用引擎+血缘字段); 计划见 docs/sprint10/S10-084-plan.md",
       "acceptance": "7 角色 (PM/Market/Competitive/UX/Architect/QA/SeniorPM) 真实产出版本化资产 (product/market_analysis/competitive_analysis/ux_flow/architecture/test_plan/prd); 每资产 AuditEvent 含 artifact_reference+parent_event; discovery.md 落盘 (整理需求不创建); LLM 失败→deterministic 兜底; PRD 深度化替代模板; Discovery/PRD 审批门; 需求变更回流 (ChangeProposal→影响分析→审批→资产 v+1→ReplanningEngine); CLI factory product pipeline/artifact/approve + API; 测试 ≥60; 真实 E2E: 客户管理系统 7 资产可见→确认→PRD→工程→执行",
       "estimated_complexity": "XL"
+    },
+    {
+      "id": "S10-087",
+      "title": "回归原设计: 真实 AI Agent 团队重建 (AgentEntity + HandoffBus + 真工具 + 记忆闭环)",
+      "priority": "P0",
+      "dependency": "S10-084 (资产链); 计划见 docs/sprint10/S10-087-agent-rebuild-plan.md",
+      "acceptance": "P0: 7 角色真实 Agent 实体 (各自 system_prompt/skills) + HandoffBus 真实交接, 每资产含 parent_artifact 引用; P1: 工具层 (发现本机 AI CLI codex/hermes/openclaw/claude + MCP stdio 真连接 + AI 委托调用) + 存量仓库模式 (读→改→测试→修复); P2: 记忆/评价闭环 (经验回写 agent 画像并影响决策); 真实 E2E: 一句话→7 Agent 交接→深度 PRD→工程→代码落盘→pytest 绿; 回归 tests/console 全绿; 版本 v1.2.0",
+      "estimated_complexity": "XL"
     }
   ]
 }

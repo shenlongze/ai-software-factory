@@ -246,6 +246,13 @@ def triage_issue(issue: BacklogIssue) -> TriageDecision:
 _REQ_SPEC_RE = re.compile(
     r"([A-Za-z0-9_][A-Za-z0-9_.\-]*)\s*(==|>=|<=|~=|!=)\s*([0-9][0-9A-Za-z.\-]*)"
 )
+#: S10-089: 中文依赖句式 ("升级 requests 到 2.32.0" / "把 X 升级到 V" / "升级 X")
+_CN_UPGRADE_RE = re.compile(
+    r"(?i)(?:升级|更新|升到|升为)\s*([A-Za-z0-9_][A-Za-z0-9_.\-]*)\s*(?:到|为|至|至到|到)\s*([0-9][0-9A-Za-z.\-]*)"
+)
+_CN_UPGRADE_NO_VERSION_RE = re.compile(
+    r"(?i)(?:升级|更新)\s*([A-Za-z0-9_][A-Za-z0-9_.\-]*)"
+)
 #: 缺包短语解析: 缺少 X 依赖 / missing X / add X (包名 = 短语内首个合法包 token)
 _MISSING_RE = re.compile(
     r"(?i)(缺少|缺失|缺|missing|add|依赖)\s*[:：]?\s*([A-Za-z0-9_][A-Za-z0-9_.\-]*)"
@@ -283,6 +290,15 @@ class DependencyPatchGenerator:
         if spec is not None:
             name, op, version = spec.group(1), spec.group(2), spec.group(3)
             return self._add_or_update(req_file, f"{name}{op}{version}", issue)
+        # S10-089: 中文句式 ("升级 requests 到 2.32.0" → requests>=2.32.0)
+        cn = _CN_UPGRADE_RE.search(title)
+        if cn is not None:
+            name, version = cn.group(1), cn.group(2)
+            return self._add_or_update(req_file, f"{name}>={version}", issue)
+        cn2 = _CN_UPGRADE_NO_VERSION_RE.search(title)
+        if cn2 is not None:
+            name = cn2.group(1)
+            return self._pin(req_file, name, issue)
         missing = _MISSING_RE.search(title)
         if missing is not None:
             name = missing.group(2)
@@ -345,7 +361,23 @@ class DependencyPatchGenerator:
             if ln.strip() and not ln.lstrip().startswith("#")
         }
         if name in existing:
-            return old_lines, list(old_lines), False
+            # S10-089: 同名条目 — 已满足目标 → 幂等; 否则版本升级 (替换)
+            target_norm = entry.strip()
+            # 裸包名 (无 specifier) → 已存在即满足
+            if "=" not in target_norm and ">" not in target_norm and "<" not in target_norm and "~" not in target_norm and "!" not in target_norm:
+                return old_lines, list(old_lines), False
+            cur_line = None
+            for ln in old_lines:
+                if not ln.lstrip().startswith("#") and _entry_name(ln) == name:
+                    cur_line = ln.strip()
+                    break
+            if cur_line is not None and _version_satisfies(cur_line, target_norm):
+                return old_lines, list(old_lines), False
+            new_lines = [
+                target_norm if (not ln.lstrip().startswith("#") and _entry_name(ln) == name) else ln
+                for ln in old_lines
+            ]
+            return old_lines, new_lines, True
         new_lines = list(old_lines)
         insert_at = len(new_lines)
         for i, ln in enumerate(new_lines):
@@ -413,6 +445,46 @@ def _entry_name(line: str) -> str:
         if op in text:
             text = text.split(op)[0]
     return text.strip()
+
+
+def _ver_tuple(v: str) -> tuple:
+    """版本 → 比较元组 (数字段优先, 字母段兜底)。"""
+    parts: list = []
+    for seg in str(v).strip().lstrip("=<>~!^ ").split("."):
+        parts.append(int(seg) if seg.isdigit() else seg)
+    return tuple(parts)
+
+
+def _version_satisfies(cur_line: str, target: str) -> bool:
+    """启发式满足判断: 当前条目是否满足目标 specifier (==/>=/<=)。
+
+    无法解析 → False (保守: 走更新)。
+    """
+    m = re.match(
+        r"\s*([A-Za-z0-9_][A-Za-z0-9_.\-]*)\s*(==|>=|<=|~=|!=)\s*([0-9][0-9A-Za-z.\-]*)",
+        target,
+    )
+    if m is None:
+        return False
+    op, spec_v = m.group(2), m.group(3)
+    cur_m = re.match(
+        r"\s*[A-Za-z0-9_][A-Za-z0-9_.\-]*\s*(==|>=|<=|~=)?\s*([0-9][0-9A-Za-z.\-]*)",
+        cur_line,
+    )
+    if cur_m is None:
+        return False
+    cur_v = cur_m.group(2)
+    try:
+        c, s = _ver_tuple(cur_v), _ver_tuple(spec_v)
+    except Exception:  # noqa: BLE001
+        return False
+    if op == "==":
+        return c == s
+    if op == ">=":
+        return c >= s
+    if op == "<=":
+        return c <= s
+    return False
 
 
 # ------------------------------------------------------------------ 积压清道夫

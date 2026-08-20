@@ -1,6 +1,6 @@
 # AI Software Factory — 小白使用教程
 
-> 版本: 1.1.6 | 适用: macOS / Linux | 读完本教程即可安装、使用、排查问题
+> 版本: 1.1.7 | 适用: macOS / Linux | 读完本教程即可安装、使用、排查问题
 > 所有命令均经过真实测试验证 (Clean Environment E2E)
 
 ---
@@ -27,15 +27,15 @@
 
 ```bash
 # 1. 拿到安装包 (wheel 文件, 后缀 .whl)
-#    从发布渠道下载 ai_software_factory-1.1.6-py3-none-any.whl
+#    从发布渠道下载 ai_software_factory-1.1.7-py3-none-any.whl
 
 # 2. 建独立环境 (推荐, 不污染系统 Python)
 python3 -m venv factory-venv
-factory-venv/bin/pip install ai_software_factory-1.1.6-py3-none-any.whl
+factory-venv/bin/pip install ai_software_factory-1.1.7-py3-none-any.whl
 
 # 3. 验证安装
 factory-venv/bin/factory --version
-# → AI Factory v1.1.6   (看到这个就装好了)
+# → AI Factory v1.1.7   (看到这个就装好了)
 ```
 
 > 💡 以后所有命令都要带 `factory-venv/bin/` 前缀。
@@ -102,7 +102,7 @@ factory status                   # 查看运行状态 (端口/进程/数据目�
 
 ```bash
 curl http://127.0.0.1:8011/health
-# → {"status":"ok","version":"1.1.6"}
+# → {"status":"ok","version":"1.1.7"}
 curl http://127.0.0.1:8011/ready
 # → {"status":"ready", ...}
 ```

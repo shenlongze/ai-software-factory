@@ -100,6 +100,35 @@
 
 
 
+### 1.4 当前实现状态对照（工程锚点）
+
+> 2026-08-21 由工程团队标注：本方案书各章在真实代码库中的落地状态。
+> 图例: ✅ 已实现 · 🚧 部分实现 · 📐 仅设计（蓝图）
+> 基线: v1.1.7 · 全量测试 11856+ passed · 三部门循环 M1 完成
+
+| 章节 | 状态 | 真实实现依据（代码） | 待补（里程碑） |
+|---|---|---|---|
+| 一 产品定位 | ✅ | 愿景已对齐（本 §1.1-1.3） | "造专家"落地（M2/M4） |
+| 二 模块化热插拔 | 🚧 | `exec/mcp.py`（MCPClient 协议+Registry）、`session/tools.py`（工具发现） | 统一消息总线/插件规范（M2+） |
+| 三 复杂任务拆解 | 🚧 | `session/pipeline.py`（TaskTree/FeatureTaskGenerator，确定性 DAG 雏形） | 模板库/质量评估（M3） |
+| 四 多 Agent 编排 | 🚧 | S10-084 ProductPipeline（7 角色）、`exec/agent_runtime.py` | AgentEntity+HandoffBus（M2） |
+| 五 审计与可观测 | ✅ | `audit/audit_event.py`（33+ 事件）、`session/observability.py`（exec history/status） | 实时监控/告警（M4） |
+| 六 治理与合规 | ✅ | ReviewGate / ConfirmationGate / budget / ApprovalGate（分级审批，M1a） | — |
+| 七 学习与自我进化 | 🚧 | `memory/`（experience/learning/retrieval/auto_learn）、`exec/evaluator.py` | 经验→画像→决策闭环（M4） |
+| 八 RAG 知识检索 | 🚧 | `memory/retrieval.py`（经验检索） | 领域知识库（T4） |
+| 九 工具生态与集成 | 🚧 | `session/tools.py`（发现 3 CLI+2 MCP）、StdioMCPClient（M1）、skills 注册表 | 消息平台 9.5（P0 5 渠道） |
+| 十 行业工厂 | 🚧 | create_product / pipeline / `repo_mode.py`（IT 工厂） | FactorySpec+第二行业（M5/M6） |
+| 十一 交互场景 | 🚧 | InteractiveSession（CLI REPL ✅）、React 壳（Web 📐） | Web/IDE 入口（M7） |
+| 十二 演进路线 | ✅ | 对齐 `docs/MASTER-PLAN-2026-08.md`（M1-M7） | — |
+| 十三 术语表 | ✅ | 文档 | — |
+| 附录 架构图索引 | ✅ | 文档 | — |
+| 十四 旧版保留 | ✅ | 历史文档归档 | — |
+| 十五 竞品深度对比 | ✅ | 文档（2026-08-21） | — |
+| 十六 竞品优势吸收 | 🚧 | MCP✅ / 沙箱✅ / 工具发现✅ / BYOK📐 | 四层记忆/GEPA（M4） |
+| 十七 自我进化体系 | 🚧 | 自修复✅（replan/repair）、自发现✅（tools）、自监控✅（observability） | 五维闭环接线（M4） |
+
+**要点**：5 章已实现（一/五/六/十二/十三/附录/十四/十五），其余 10 章为"部分实现"，"仅设计"的完整闭环（多 Agent 实体、学习闭环、消息平台、第二行业、Web 入口）正是 M2-M7 里程碑要补的。
+
 ---
 
 ## 二、模块化热插拔架构设计

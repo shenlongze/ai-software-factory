@@ -1,4 +1,8 @@
-# AI Software Factory — 路线图
+# AI Software Factory — 路线图（历史归档）
+
+> [!IMPORTANT] 已取代（2026-08-21）
+> 本路线图为 2026-08-08 版本，已被 [docs/MASTER-PLAN-2026-08.md](./MASTER-PLAN-2026-08.md)（AI Company OS 总体规划 v3）取代。
+> 保留仅因历史引用；新规划一律以 MASTER-PLAN 与 [完整产品方案书](../AI%20Software%20Factory%20—%20完整产品方案书.md) 为准。
 
 > 版本: v3.0 | 日期: 2026-08-08 | 状态: 依 [Reality Audit v1.0](./audit/architecture-reality-audit.md) 校准
 > 校准原则: **先生产, 再连接, 后领域** — 每 Sprint 必须产出"真实可演示的生产结果", 禁止纯工程扩张。

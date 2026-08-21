@@ -1,80 +1,38 @@
-# AI Software Factory — 文档导航 (新人 5 分钟)
+# AI Software Factory — 文档导航（2026-08-21 更新）
 
-> 归属: Phase 14A | 目的: 给新人的**入口索引** — 先看什么、去哪看, 而不是罗列全部文档。
-> 完整路线图与阶段状态见 [docs/roadmap.md](./roadmap.md) 与 [docs/design/](./design/README.md)。
+> 给新人/协作 agent 的入口索引：先看什么、去哪看。历史/被取代文档见 [docs/archive/](./archive/README.md)。
 
-## 5 分钟路径 (新人必读)
+## 5 分钟路径（必读，按顺序）
 
-1. [README.md](../README.md) — 项目是什么 (Vision / Problem / Solution / 四条核心理念)
-2. [status.md](./status.md) — 当前实现状态总表 (什么已实现 / 什么只是蓝图, Reality Audit 校准)
-3. [architecture-overview.md](./architecture-overview.md) — 三区 · 11 层架构总览 (先有地图)
-4. [project-structure.md](./project-structure.md) — 代码在哪、怎么长这样
-5. [adr/0031-decision-intelligence.md](./adr/0031-decision-intelligence.md) + [adr/0033-experience-loop.md](./adr/0033-experience-loop.md) — 认知层两个关键 ADR (决策/经验)
-6. [configuration-model.md](./configuration-model.md) — 怎么配置、配在哪
-7. [quality-report.md](./quality-report.md) — 质量基线: 5493 pytest + 92 Vitest, 全绿才算完成
+1. **完整产品方案书**（仓库根 `AI Software Factory — 完整产品方案书.md`）— **主文档**：21 章蓝图
+   （定位/架构/能力/治理/学习/工具/行业/交互/路线/术语/竞品/自我进化/合规/安全/企业级）+ **§1.4 当前实现状态对照**（✅/🚧/📐 锚定代码）
+2. **总体规划** [MASTER-PLAN-2026-08.md](./MASTER-PLAN-2026-08.md) — AI Company OS 执行主线（业务流/数据流/CLI/API/里程碑 M1-M7）
+3. **节点详设** [MASTER-PLAN-DETAIL-2026-08.md](./MASTER-PLAN-DETAIL-2026-08.md) — 以链路为主线的节点级设计
+4. **[README.md](../README.md)** — 项目是什么（Vision / Problem / Solution）
+5. **[CHANGELOG.md](../CHANGELOG.md)** — 版本与变更（当前 **v1.1.8**）
 
-验证命令 (仓库根目录): `pytest -q` (5493) / `cd factory-console/web/frontend && npx vitest run` (92)。
+## 当前状态（2026-08-21）
 
----
+- **版本**: v1.1.8 · 三部门循环（Claude=产品 · Hermes=架构/Review · Codex=工程）
+- **已交付**: M1 内核切片（repo 模式 + 工具发现 + 真 MCP）· M1a 证据包+分级审批 · M1b 积压清道夫
+- **测试基线**: 全量回归绿（11856+）
+- **下一步**: M2 员工内核（AgentEntity + HandoffBus）· 三部门循环 Claude 用户价值评估
 
 ## 分类导航
 
-### Architecture — 架构
+| 区域 | 入口 | 一句话 |
+|:-----|:-----|:-------|
+| 主蓝图 | 完整产品方案书（仓库根） | 21 章 + 状态对照 + 可行性取舍 |
+| 执行计划 | [MASTER-PLAN-2026-08.md](./MASTER-PLAN-2026-08.md) | M1-M7 里程碑/版本/验收 |
+| 节点详设 | [MASTER-PLAN-DETAIL-2026-08.md](./MASTER-PLAN-DETAIL-2026-08.md) | 链路 + 节点输入/输出/接口 |
+| 架构设计 | [docs/design/](./design/README.md) · [docs/architecture/](./architecture/README.md) | 系统/CLI/运行时设计 |
+| 审计与现状 | [docs/audit/](./audit/README.md) · [docs/architecture/capability-audit/](./architecture/capability-audit/README.md) | 真实能力审计 |
+| 发布与运维 | [USER_GUIDE.md](./USER_GUIDE.md) · [DEPLOYMENT.md](./DEPLOYMENT.md) | 安装/使用/部署 |
+| 历史归档 | [docs/archive/](./archive/README.md) | 已取代/历史文档（不删除） |
+| 每轮交付 | [docs/sprint10/](./sprint10/README.md) | S10-0XX 设计与报告 |
 
-| 文档 | 一句话 | 链接 |
-|:-----|:-------|:-----|
-| 架构总览 | 三区 (Core/Extension/Human) · 11 层, 全系统地图, 先读这篇 | [architecture-overview.md](./architecture-overview.md) |
-| 架构审计报告 | Phase 12A 四层系统审计: 与代码逐项对照的结论 | [system-architecture-review.md](./system-architecture-review.md) |
-| 项目结构 | 目录结构 + 各包职责, 找代码用这篇 | [project-structure.md](./project-structure.md) |
+## 文档纪律
 
-### Design ADR — 架构决策
-
-- **ADR 目录**: `docs/adr/` 编号 0001–0035, 每个 ADR = 一个决策 (为什么这么做, 而不是怎么做)。
-  从 [adr/0001-eventtype-and-events-schema.md](./adr/0001-eventtype-and-events-schema.md) 开始按需阅读;
-  认知层推荐先读 0030–0035 (Intelligence → Decision → Recommendation → Experience → Human Console)。
-
-### User Guide — 用户指南
-
-| 文档 | 一句话 | 链接 |
-|:-----|:-------|:-----|
-| 配置模型 | 全部配置项与分层 (全局/项目/任务), 怎么改配置 | [configuration-model.md](./configuration-model.md) |
-| Human Console | 人类审核台 (普通/专业模式): 看状态、看推荐、批准/驳回 | [human-console-model.md](./human-console-model.md) |
-
-### Demo — 演示与验证
-
-| 文档 | 一句话 | 链接 |
-|:-----|:-------|:-----|
-| 预约系统演示 | Idea→Development 端到端演示场景, 跟着跑一遍最快理解系统 | [demo-scenario.md](./demo-scenario.md) |
-| 真实项目验证 | MarkPad 全生命周期验证记录 (34 事件 / 2 经验 / 6 Artifacts) | [real-world-validation.md](./real-world-validation.md) |
-
-### Development — 开发参与
-
-| 文档 | 一句话 | 链接 |
-|:-----|:-------|:-----|
-| 贡献指南 | 提 PR 的流程、规范与验收标准 (Phase 14A 配套) | [CONTRIBUTING.md](../CONTRIBUTING.md) |
-| 质量报告 | 质量基线: 测试数量、覆盖率、已知缺口, 改代码前先看 | [quality-report.md](./quality-report.md) |
-
-### Business — 商业与场景
-
-| 文档 | 一句话 | 链接 |
-|:-----|:-------|:-----|
-| 商业定位 | Open Source Core + 商业服务的分层策略 (只分析不实现) | [business-positioning.md](./business-positioning.md) |
-| 应用场景 | 5 类目标场景与典型用法 (团队研发/独立开发者/... ) | [use-cases.md](./use-cases.md) |
-
-### 治理 — 许可与安全
-
-| 文档 | 一句话 | 链接 |
-|:-----|:-------|:-----|
-| License 决策 | 为什么 Apache-2.0 而非 MIT | [license-decision.md](./license-decision.md) |
-| 行为准则 | 社区行为规范与举报渠道 | [CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md) |
-| 安全策略 | 漏洞报告渠道 / 支持版本 / 响应时间 | [SECURITY.md](../SECURITY.md) |
-| 反馈闭环设计 | 用户反馈 → Decision → Experience 的接口设计 (未实现) | [feedback-model.md](./feedback-model.md) |
-
----
-
-## 深入阅读 (按需)
-
-- 生命周期: [lifecycle-model.md](./lifecycle-model.md) (12 阶段) / [workflow-model.md](./workflow-model.md)
-- 领域模型: [agent-model.md](./agent-model.md) / [skill-model.md](./skill-model.md) / [memory-model.md](./memory-model.md)
-- 认知层: [intelligence-layer-model.md](./intelligence-layer-model.md) / [decision-intelligence-model.md](./decision-intelligence-model.md) / [recommendation-engine-model.md](./recommendation-engine-model.md) / [experience-learning-model.md](./experience-learning-model.md)
-- 设计与阶段计划: [docs/design/README.md](./design/README.md)
+- **主文档唯一**：规划以 MASTER-PLAN 为准，能力以完整产品方案书为准，旧 roadmap 已归档
+- **状态锚定代码**：任何能力文档标注 ✅/🚧/📐（见方案书 §1.4），防"设计与实现漂移"
+- **归档不删除**：历史文档移 docs/archive/，保留内容与引用

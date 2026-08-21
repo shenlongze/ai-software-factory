@@ -5,6 +5,47 @@
 
 ---
 
+## [v1.1.8] — 2026-08-21
+
+**M1 闭环补全 (Sprint)**: 从证据到签字到落地最后一公里 — approve 后不再死路。
+采纳 Claude 审查 P0/P1: approval apply 接入主 CLI + demo 全 dependency + 解析
+失败模板提示 + evidence/approval 交叉引用。
+
+### Added
+
+- **`factory approval apply <id> [--project <dir>]`** (T1, P0) — 薄代理
+  `ApprovalGate.apply` (主 CLI 经 exec CLI 同源 `cmd_exec_approval_apply`):
+  仅 **APPROVED** 可应用 patch 到目标项目; 未批准/已拒绝 → 硬拒绝 (不绕过
+  门禁); 已应用 → 拒绝重复应用 (幂等); 非 git 目标 → 响亮错误 (应用前须
+  可审计)。
+- **decide approve 后提示下一步** (T1, P0) — 审批通过后打印
+  「已批准。下一步: factory approval apply <id> --project <repo> 可应用」,
+  演示闭环不再死路。
+- **demo/repo issues.json 默认全 dependency** (T2, P0) — 3 个 dependency issue
+  (缺少 requests / 缺少 httpx / 升级 flask 到 3.0.0), 无 LLM 也 3/3 确定性
+  修完; 演示完整闭环: 3/3 修完 + approve + apply 落地。
+- **无 LLM skipped 文案优化** (T2) — bug/feature 未配置 LLM 时明确提示
+  「需要 LLM(未配置)。配置后可用 factory init 解锁 bug/feature 修复」。
+- **dependency 标题解析失败模板提示** (T3, P1) — 无法解析时报告提示
+  「标题无法解析, 建议改成 `缺少 X 依赖` 或 `升级 X 到 V`」。
+- **evidence/approval 交叉引用** (T4, Minor) — `approval list` 每行附证据包
+  id; `evidence show` 附关联审批状态 (请求 input.evidence_bundle_id 锚点);
+  修复 EvidenceStore.list() 排序 (文件名 uuid 字典序 ≠ 创建序 → 按
+  created_at), 保证证据包↔审批一一对应不串包。
+
+### Validation
+
+- 实测 demo 完整闭环: `factory workload backlog --project demo/repo` →
+  3/3 fixed (各自独立证据包 + pending 审批) → `factory approval list` (每行
+  附证据包) → `factory approval decide <id> approve` (提示下一步) →
+  `factory approval apply <id> --project demo/repo` (patch 真实落地) →
+  `factory evidence show` (附审批状态); 重复 apply 硬拒绝。
+- 新增测试: tests/console/test_approval_apply.py (10) + test_workload_backlog
+  新增 5 (3/3 fixed / demo 默认全 dependency / 无 LLM 文案 / 解析失败模板 /
+  交叉引用); 全量回归 0 failed (runtime 沙箱 flaky 除外)。
+
+---
+
 ## [v1.1.7] — 2026-08-20
 
 **M1b 积压清道夫 (E3 第一个可售卖工作负载)**: 分诊 → 执行 → 证据包 → 审批 → 报告

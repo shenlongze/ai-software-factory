@@ -1318,8 +1318,35 @@ class FactoryCLI:
                 print(f"    {str(t.get('output') or '')[:400]}")
             if bundle.diff:
                 print(f"  diff ({len(bundle.diff)} 字符): 见项目 evidence/{bundle.bundle_id}.json")
+            # T4 交叉引用: 关联审批状态 (请求 input.evidence_bundle_id 匹配; 失败安全)
+            approvals = self._approvals_for_bundle(bundle.bundle_id)
+            if approvals:
+                for ap in approvals:
+                    print(f"  审批: {ap['id']} [{ap['decision']}] by {ap.get('decided_by') or '(待审批)'}")
+            else:
+                print("  审批: 无关联审批")
             return
         print(f"未找到证据包: {args.bundle_id}")
+
+    def _approvals_for_bundle(self, bundle_id: str) -> list[dict]:
+        """证据包 → 关联审批 (exec store 请求 input.evidence_bundle_id 匹配)。
+
+        失败安全 → [] (exec 不可用 / 无关联 / 损坏)。
+        """
+        try:
+            from exec.store import ExecStore
+
+            store = ExecStore(self.data_dir / "exec")
+            matched = []
+            for ap in store.list_approvals():
+                req = store.get_request(str(ap.request_id or ""))
+                if req is None:
+                    continue
+                if (req.input or {}).get("evidence_bundle_id") == bundle_id:
+                    matched.append(ap.to_dict())
+            return matched
+        except Exception:  # noqa: BLE001 — 交叉引用失败安全
+            return []
 
     # ------------------------------------------------------------- repo (M1)
 
@@ -1406,7 +1433,7 @@ class FactoryCLI:
         print(report.summary_text())
         print(f"\n证据包: factory evidence list --project {Path(args.project).resolve().name}")
         if not args.no_approval:
-            print("审批: factory approval list (pending; decide 后经 exec apply 应用 patch)")
+            print("审批: factory approval list (pending; decide 后经 approval apply 应用 patch)")
         return 0
 
     def _workload_status(self, args: argparse.Namespace, sweeper_cls: Any) -> int:
@@ -1429,10 +1456,12 @@ class FactoryCLI:
     # ------------------------------------------------------------- approval (M1b/T2)
 
     def approval(self, args: argparse.Namespace) -> int:
-        """factory approval — 审批门 (list: 待审批列表; decide: 复用 ApprovalGate 决策)。
+        """factory approval — 审批门 (list/decide/apply, 复用 ApprovalGate)。
 
         复用 exec CLI 审批层 (exec.cli.cmd_exec_approval_* — ApprovalGate 接线 +
-        审计事件), 与 `factory-exec approval approve/deny/list` 同源。
+        审计事件), 与 `factory-exec approval approve/deny/apply/list` 同源。
+        apply 为薄代理 ApprovalGate.apply: 仅 APPROVED 可应用 patch, 非 git
+        目标硬拒绝 (不绕过门禁)。
         """
         self._ensure_data_dir()
         try:
@@ -1441,6 +1470,17 @@ class FactoryCLI:
                 result = exec_cli.cmd_exec_approval_list(root=self.data_dir, args=args)
                 if getattr(args, "project", None):
                     self._filter_approvals_by_project(result, args.project, self.data_dir)
+            elif args.approval_command == "apply":
+                if not args.approval_id:
+                    print(
+                        "用法: factory approval apply <id> [--project <dir>]",
+                        file=sys.stderr,
+                    )
+                    return 2
+                sub_args = argparse.Namespace(
+                    id=args.approval_id, project=getattr(args, "project", None)
+                )
+                result = exec_cli.cmd_exec_approval_apply(root=self.data_dir, args=sub_args)
             else:
                 if not args.approval_id or not args.decision:
                     print(
@@ -1490,9 +1530,11 @@ class FactoryCLI:
         if result.get("command") == "approval list":
             print(f"审批记录 {result.get('count', 0)} 条 (status={getattr(args, 'status', 'pending')})")
             for ap in result.get("approvals", []):
+                bundle = ap.get("bundle_id") or ""
                 print(
                     f"  {ap['id']}  {ap['decision']:<10} {ap['request_id']}  "
                     f"risk={ap.get('risk_level', 'low')}  by {ap.get('decided_by', '')}"
+                    + (f"  证据包 {bundle}" if bundle else "")
                 )
         elif result.get("command") in ("approval approve", "approval deny"):
             ap = result["approval"]
@@ -1501,6 +1543,12 @@ class FactoryCLI:
             print(f"  decided_by  {ap['decided_by']}")
             if ap.get("comment"):
                 print(f"  comment     {ap['comment']}")
+            if result.get("command") == "approval approve":
+                # M1 闭环: approve 后明确下一步 (演示不再死路)
+                print(f"已批准。下一步: factory approval apply {ap['id']} --project <repo> 可应用")
+        elif result.get("command") == "approval apply":
+            ap = result["approval"]
+            print(f"✔ patch 已应用: {ap['id']} (diff {result.get('patch_lines', 0)} 行)")
         if result.get("event_seq") is not None:
             print(f"  event_seq   {result['event_seq']}")
 
@@ -2797,17 +2845,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-approval", action="store_true",
         help="不自动请求审批 (缺省: 每个成功修复请求 pending 审批)",
     )
-    p_approval = sub.add_parser("approval", help="审批门 (M1b/T2): 待审批列表 + 决策 (复用 ApprovalGate)")
+    p_approval = sub.add_parser("approval", help="审批门 (M1b/T2): 待审批列表 + 决策 + 应用 (复用 ApprovalGate)")
     p_approval.add_argument(
-        "approval_command", choices=["list", "decide"], metavar="动作",
-        help="list — 待审批列表; decide <id> approve|reject — 审批决策",
+        "approval_command", choices=["list", "decide", "apply"], metavar="动作",
+        help="list — 待审批列表; decide <id> approve|reject — 审批决策; "
+             "apply <id> [--project <dir>] — 应用已批准 patch",
     )
-    p_approval.add_argument("approval_id", nargs="?", default=None, metavar="<id>", help="审批记录 id (decide)")
+    p_approval.add_argument("approval_id", nargs="?", default=None, metavar="<id>", help="审批记录 id (decide/apply)")
     p_approval.add_argument(
         "decision", nargs="?", choices=["approve", "reject"], default=None,
         metavar="approve|reject", help="审批决定 (decide)",
     )
-    p_approval.add_argument("--project", default=None, help="(list) 按项目目录过滤")
+    p_approval.add_argument("--project", default=None, help="(list) 按项目目录过滤; (apply) 目标项目目录 (缺省取请求 project_dir)")
     p_approval.add_argument("--status", default="pending", help="(list) 过滤 pending/approved/rejected (缺省 pending)")
     p_approval.add_argument("--by", default="", help="(decide) 审批人 (缺省 cli)")
     p_approval.add_argument("--comment", default="", help="(decide) 审批意见 (reject 反馈给修复循环)")

@@ -307,7 +307,9 @@ class DependencyPatchGenerator:
         if pin is not None:
             name = pin.group(2)
             return self._pin(req_file, name, issue)
-        return "", f"issue 标题无法解析依赖意图: {title!r}"
+        return "", (
+            f"标题无法解析, 建议改成 `缺少 X 依赖` 或 `升级 X 到 V`: {title!r}"
+        )
 
     # ------------------------------------------------------------------ 内部
 
@@ -639,7 +641,9 @@ class BacklogSweeper:
         outcome.bundle_id = self._latest_bundle_id(project_dir, result)
         # 审批请求 (复用 ApprovalGate; Human 决定, 不自动应用)
         if request_approval:
-            outcome.approval_id = self._request_approval(project_dir, issue, patch_text)
+            outcome.approval_id = self._request_approval(
+                project_dir, issue, patch_text, bundle_id=outcome.bundle_id
+            )
         return outcome
 
     def _generate_patch(
@@ -653,8 +657,8 @@ class BacklogSweeper:
             return patch, reason
         if self.llm_fn is None:
             return "", (
-                f"{decision.summary} — 无可用 LLM Provider (未配置或装配失败); "
-                "配置 LLM 后可自动修复 (dependency issue 无需 LLM)"
+                f"{decision.summary} — 需要 LLM(未配置)。"
+                "配置后可用 factory init 解锁 bug/feature 修复"
             )
         try:
             prompt = (
@@ -702,14 +706,22 @@ class BacklogSweeper:
         except Exception:  # noqa: BLE001 — 证据定位失败安全
             return ""
 
-    def _request_approval(self, project_dir: Path, issue: BacklogIssue, patch_text: str) -> str:
-        """复用 ApprovalGate: 执行结果 → pending 审批记录 (不自动应用)。"""
+    def _request_approval(
+        self, project_dir: Path, issue: BacklogIssue, patch_text: str, *, bundle_id: str = ""
+    ) -> str:
+        """复用 ApprovalGate: 执行结果 → pending 审批记录 (不自动应用)。
+
+        bundle_id: 本修复证据包 id — 写入请求 input (T4 交叉引用:
+        approval list 附 bundle_id / evidence show 附审批状态)。
+        """
         if self._approval_gate is None:
             gate, store = self._build_approval()
             if gate is None:
                 return ""
             self._approval_gate, self._exec_store = gate, store
-        return self._request_approval_impl(project_dir, issue, patch_text)
+        return self._request_approval_impl(
+            project_dir, issue, patch_text, bundle_id=bundle_id
+        )
 
     # ------------------------------------------------------------------ 审批 (复用 exec ApprovalGate)
 
@@ -730,10 +742,13 @@ class BacklogSweeper:
         except Exception:  # noqa: BLE001 — exec 不可用 → 不请求审批 (不中断 sweep)
             return None, None
 
-    def _request_approval_impl(self, project_dir: Path, issue: BacklogIssue, patch_text: str) -> str:
+    def _request_approval_impl(
+        self, project_dir: Path, issue: BacklogIssue, patch_text: str, *, bundle_id: str = ""
+    ) -> str:
         """构造 ExecutionRequest/Result + patch artifact → ApprovalGate.request。
 
         返回 approval_id; 失败安全 → "" (不中断 sweep, 证据包仍可见)。
+        input 携带 evidence_bundle_id (T4 交叉引用锚点)。
         """
         try:
             from exec.store import ExecStore
@@ -759,6 +774,7 @@ class BacklogSweeper:
                 input={
                     "project_dir": str(project_dir.resolve()),
                     "source": "backlog_sweeper",
+                    "evidence_bundle_id": str(bundle_id or ""),
                 },
             )
             patch_path = self.workspace / "exec" / "patches" / f"{request.id}.patch"

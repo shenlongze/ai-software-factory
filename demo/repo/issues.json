@@ -1,5 +1,5 @@
 [
   {"id": "ISS-001", "title": "缺少 requests 依赖", "type": "dependency"},
-  {"id": "ISS-002", "title": "main.py 增加 greet 函数 (问候语)", "type": "feature"},
-  {"id": "ISS-003", "title": "add 函数负数相加返回错误", "type": "bug"}
+  {"id": "ISS-002", "title": "缺少 httpx 依赖", "type": "dependency"},
+  {"id": "ISS-003", "title": "升级 flask 到 3.0.0", "type": "dependency"}
 ]

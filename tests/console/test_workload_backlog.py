@@ -198,6 +198,100 @@ class TestBacklogSweeper:
         assert report.fixed == 1
         assert report.outcomes[0].approval_id == ""
 
+    def test_sweep_all_dependency_three_fixed(self, tmp_path):
+        """T2: 3 个 dependency issue → 3/3 确定性修完 (无 LLM 也真实修复)。"""
+        repo = _make_repo(tmp_path, issues=[
+            {"id": "ISS-001", "title": "缺少 requests 依赖", "type": "dependency"},
+            {"id": "ISS-002", "title": "缺少 httpx 依赖", "type": "dependency"},
+            {"id": "ISS-003", "title": "升级 flask 到 3.0.0", "type": "dependency"},
+        ])
+        report = SW.BacklogSweeper(tmp_path / "factory").sweep(repo)
+        assert report.total == 3
+        assert report.triaged == 3
+        assert report.fixed == 3
+        assert report.skipped == 0
+        assert report.failed == 0
+        assert all(o.status == "fixed" for o in report.outcomes)
+        # 每个 issue 独立证据包 + 审批 (不串包)
+        assert len({o.bundle_id for o in report.outcomes}) == 3
+        assert all(o.approval_id.startswith("APR-") for o in report.outcomes)
+
+    def test_demo_issues_default_all_dependency(self):
+        """T2: demo/repo/issues.json 默认全 dependency (演示 3/3 无 LLM 修完)。"""
+        import json as _json
+        demo_issues = _json.loads(
+            (_ROOT / "demo" / "repo" / "issues.json").read_text(encoding="utf-8")
+        )
+        assert len(demo_issues) == 3
+        assert all(isinstance(i, dict) and i.get("type") == "dependency" for i in demo_issues)
+        assert all(str(i.get("title") or "").strip() for i in demo_issues)
+
+    def test_no_llm_skip_copy_mentions_factory_init(self, tmp_path):
+        """T2: 无 LLM bug/feature skipped 文案 → 需要 LLM(未配置) + factory init 解锁。"""
+        repo = _make_repo(tmp_path, issues=[
+            {"id": "ISS-002", "title": "增加 greet 函数", "type": "feature"},
+        ])
+        report = SW.BacklogSweeper(tmp_path / "factory").sweep(repo)
+        outcome = report.outcomes[0]
+        assert outcome.status == "skipped"
+        assert "需要 LLM(未配置)" in outcome.reason
+        assert "factory init" in outcome.reason
+        assert "解锁 bug/feature 修复" in outcome.reason
+
+    def test_unparseable_dependency_title_template_hint(self, tmp_path):
+        """T3: dependency 标题解析失败 → 报告提示模板 (缺少 X 依赖 / 升级 X 到 V)。"""
+        repo = _make_repo(tmp_path, issues=[
+            {"id": "ISS-9", "title": "把那个啥弄一下", "type": "dependency"},
+        ])
+        report = SW.BacklogSweeper(tmp_path / "factory").sweep(repo)
+        outcome = report.outcomes[0]
+        assert outcome.status == "skipped"
+        assert "标题无法解析" in outcome.reason
+        assert "缺少 X 依赖" in outcome.reason
+        assert "升级 X 到 V" in outcome.reason
+
+    def test_cross_reference_approval_evidence(self, tmp_path, capsys):
+        """T4: approval list 每行附 bundle_id; evidence show 附审批状态。"""
+        repo = _make_repo(tmp_path, issues=[
+            {"id": "ISS-001", "title": "缺少 requests 依赖", "type": "dependency"},
+        ])
+        ws = tmp_path / "factory"
+        report = SW.BacklogSweeper(ws).sweep(repo)
+        outcome = report.outcomes[0]
+        assert outcome.bundle_id and outcome.approval_id
+        # approval list (exec CLI 同源) → 每行附 bundle_id
+        import argparse
+        from exec.cli import cmd_exec_approval_list
+
+        result = cmd_exec_approval_list(ws, argparse.Namespace(status=None))
+        assert result["ok"]
+        assert result["approvals"][0]["bundle_id"] == outcome.bundle_id
+        # evidence show (hermetic FactoryCLI) → 附审批状态
+        import importlib as _il
+        import json as _json
+
+        _cli = _il.import_module("factory-console.cli_factory")
+        _cfg = _il.import_module("factory-console.config")
+        cfg_file = tmp_path / "config.json"
+        cfg_file.write_text(
+            _json.dumps({"core": {"data_dir": str(ws)}}), encoding="utf-8"
+        )
+        config = _cfg.ConfigProvider(
+            user_config_file=cfg_file, env_file=tmp_path / ".env", environ={}
+        )
+        cli = _cli.FactoryCLI(config, root=tmp_path)
+        rc = cli.run(
+            _cli.build_parser().parse_args(
+                ["evidence", "show", outcome.bundle_id, "--project", "repo"]
+            )
+        )
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert outcome.bundle_id in out
+        assert "审批" in out
+        assert outcome.approval_id in out
+        assert "pending" in out
+
     def test_sweep_llm_feature_patch(self, tmp_path):
         """feature issue + llm_fn → LLM 生成 patch → 真实修复 (复用 Execution Kernel)。"""
         repo = _make_repo(tmp_path, issues=[

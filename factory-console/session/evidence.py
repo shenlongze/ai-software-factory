@@ -288,7 +288,11 @@ class EvidenceStore:
             return None
 
     def list(self) -> list[EvidenceBundle]:
-        """全部证据包 (按创建时间升序; 无 → [])。"""
+        """全部证据包 (按创建时间升序; 无 → [])。
+
+        排序按 bundle.created_at (ISO 字符串可比; 空/损坏时间戳 → 视作最早),
+        不回退文件名排序 — uuid 字典序 ≠ 创建序 (M1 闭环 T4 修复)。
+        """
         bundles: list[EvidenceBundle] = []
         if not self.root.is_dir():
             return bundles
@@ -299,6 +303,7 @@ class EvidenceStore:
                 ))
             except Exception:  # noqa: BLE001 — 单包损坏跳过
                 continue
+        bundles.sort(key=lambda b: (b.created_at or ""))
         return bundles
 
 

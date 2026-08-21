@@ -397,9 +397,27 @@ def cmd_exec_approval_apply(root: Path, args: Any) -> dict:
     }
 
 
+def _approval_dict_with_bundle(store: ExecStore, record: Any) -> dict:
+    """审批记录 → dict + bundle_id (T4 交叉引用: 请求 input.evidence_bundle_id)。
+
+    无关联证据包 → bundle_id "" (兼容非 backlog 审批/旧数据, 不伪造)。
+    """
+    data = record.to_dict()
+    try:
+        req = store.get_request(str(record.request_id or ""))
+        data["bundle_id"] = str(((req.input or {}).get("evidence_bundle_id") or "")) if req is not None else ""
+    except Exception:  # noqa: BLE001 — 交叉引用失败安全
+        data["bundle_id"] = ""
+    return data
+
+
 def cmd_exec_approval_list(root: Path, args: Any) -> dict:
-    """exec approval list — 审批记录清单 (发 org.execution.viewed 审计)。"""
+    """exec approval list — 审批记录清单 (发 org.execution.viewed 审计)。
+
+    T4: 每行附 bundle_id (证据包交叉引用; 无 → "")。
+    """
     with _logger_scope(root) as logger:
+        store = _exec_store(root)
         records = _approval_gate(root, logger).list(
             status=getattr(args, "status", None) or None
         )
@@ -409,7 +427,7 @@ def cmd_exec_approval_list(root: Path, args: Any) -> dict:
         "ok": True,
         "command": "approval list",
         "count": len(records),
-        "approvals": [r.to_dict() for r in records],
+        "approvals": [_approval_dict_with_bundle(store, r) for r in records],
         "event_seq": event_seq,
         "exit_code": 0,
     }

@@ -2771,7 +2771,7 @@ Phase 3: 生态化
 ### 7.3 工厂模板结构
 
 ```python
-## 行业工厂模板定义
+#### 行业工厂模板定义
 {
     "factory_id": "software_dev_v1",
     "name": "软件开发工厂",
@@ -3508,7 +3508,7 @@ DeepSeek V4 Flash的成本是Claude Opus 4.7的**1/90**。Kimi Code K3的编程�
 **接口定义**：
 
 ```python
-## 插件接口标准
+#### 插件接口标准
 class PluginRegistry:
     """插件注册表——所有组件都通过此注册"""
     
@@ -3520,7 +3520,7 @@ class PluginRegistry:
     def register_sandbox_provider(self, name: str, provider: SandboxProvider): ...
     def register_notifier(self, name: str, notifier: Notifier): ...
 
-## 核心引擎只依赖这些接口，不依赖具体实现
+#### 核心引擎只依赖这些接口，不依赖具体实现
 class Orchestrator:
     def __init__(self, registry: PluginRegistry):
         self.registry = registry
@@ -3616,7 +3616,7 @@ class AgentAdapter(ABC):
         """返回该Agent支持的工具列表"""
         pass
 
-## 内置适配器
+#### 内置适配器
 class ClaudeCodeAdapter(AgentAdapter): ...
 class DeepSeekHarnessAdapter(AgentAdapter): ...
 class CodexCLIAdapter(AgentAdapter): ...
@@ -3764,13 +3764,13 @@ class MemoryLayer(ABC):
     @abstractmethod
     def get_layer_name(self) -> str: ...
 
-## 各层实现
+#### 各层实现
 class PlatformMemory(MemoryLayer): ...
 class OrganizationMemory(MemoryLayer): ...
 class ProjectMemory(MemoryLayer): ...
 class SessionMemory(MemoryLayer): ...
 
-## 记忆管理器——自动路由到正确层级
+#### 记忆管理器——自动路由到正确层级
 class MemoryManager:
     def __init__(self):
         self.layers = {
@@ -4695,7 +4695,7 @@ class IMAdapter(ChannelAdapter):
 #### 3.3 异常检测算法
 
 ```python
-## 异常检测策略
+#### 异常检测策略
 class AnomalyDetector:
     """多策略异常检测"""
     

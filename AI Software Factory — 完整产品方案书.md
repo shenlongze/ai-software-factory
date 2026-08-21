@@ -7,22 +7,22 @@
 ## 目录
 
 1. [产品定位与核心理念](#一产品定位与核心理念)
-2. [复杂任务拆解体系](#二复杂任务拆解体系)
-3. [多 Agent 编排与调用体系](#三多-agent-编排与调用体系)
-4. [审计与可观测体系](#四审计与可观测体系)
-5. [治理与合规体系](#五治理与合规体系)
-6. [学习与自我进化体系](#六学习与自我进化体系)
-7. [RAG 知识检索体系](#七rag-知识检索体系)
-8. [工具生态与集成体系](#八工具生态与集成体系)
-9. [行业工厂体系](#九行业工厂体系)
-10. [全部交互场景设计](#十全部交互场景设计)
-11. [演进路线图](#十一演进路线图)
-12. [完整术语表](#十二完整术语表)
-13. [旧版保留章节（不丢失）](#十三旧版保留章节不丢失)
-14. [竞品深度对比分析](#十四竞品深度对比分析)
-15. [竞品优势吸收与技能定位补充](#十五竞品优势吸收与技能定位补充)
-16. [自我进化体系专项设计](#十六自我进化体系专项设计)
-
+2. [模块化热插拔架构设计](#二模块化热插拔架构设计)
+3. [复杂任务拆解体系](#三复杂任务拆解体系)
+4. [多 Agent 编排与调用体系](#四多-agent-编排与调用体系)
+5. [审计与可观测体系](#五审计与可观测体系)
+6. [治理与合规体系](#六治理与合规体系)
+7. [学习与自我进化体系](#七学习与自我进化体系)
+8. [RAG 知识检索体系](#八rag-知识检索体系)
+9. [工具生态与集成体系](#九工具生态与集成体系)
+10. [行业工厂体系](#十行业工厂体系)
+11. [全部交互场景设计](#十一全部交互场景设计)
+12. [演进路线图](#十二演进路线图)
+13. [完整术语表](#十三完整术语表)
+14. [旧版保留章节（不丢失）](#十四旧版保留章节不丢失)
+15. [竞品深度对比分析](#十五竞品深度对比分析)
+16. [竞品优势吸收与技能定位补充](#十六竞品优势吸收与技能定位补充)
+17. [自我进化体系专项设计](#十七自我进化体系专项设计)
 
 ## 一、产品定位与核心理念
 
@@ -75,7 +75,893 @@
 ```
 
 
-## 二、复杂任务拆解体系
+
+
+---
+
+## 二、模块化热插拔架构设计
+
+> 2026-08-21 补充: 系统基础架构 — 每个模块独立、可热插拔、可替换、可单独配置与版本管理。
+
+
+> 本文档定义AI Factory的模块化架构，确保**每个模块独立、可热插拔、可替换、可版本独立演进**。这是"一切皆插件"架构的系统化落地。
+
+
+### 一、热插拔架构核心原则
+
+#### 1.1 设计原则
+
+| 原则 | 说明 | 体现 |
+|---|---|---|
+| **零信任依赖** | 核心引擎不信任任何模块，假设模块可能失效 | 所有模块调用都有超时、重试、降级、熔断 |
+| **接口契约** | 模块间仅通过标准化接口通信 | 接口版本化，向后兼容 |
+| **动态注册** | 模块运行时注册，无需重启 | 服务发现 + 心跳检测 |
+| **隔离运行** | 模块故障不影响其他模块 | 进程级/容器级隔离 |
+| **独立版本** | 每个模块独立版本管理 | 模块可独立升级/回滚 |
+| **优雅降级** | 模块不可用时系统仍可工作 | 降级策略 + 默认实现 |
+
+#### 1.2 模块独立性定义
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                          模块独立性的五个维度                                       │
+│                                                                                     │
+│  ┌─────────────────────────────────────────────────────────────────────────────┐   │
+│  │ 1. 部署独立 (Deployment Independence)                                      │   │
+│  │    • 每个模块可独立部署                                                    │   │
+│  │    • 模块可以运行在独立的进程/容器中                                        │   │
+│  │    • 模块版本独立                                                          │   │
+│  └─────────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                     │
+│  ┌─────────────────────────────────────────────────────────────────────────────┐   │
+│  │ 2. 配置独立 (Configuration Independence)                                   │   │
+│  │    • 每个模块有自己的配置                                                 │   │
+│  │    • 配置可动态更新，无需重启                                              │   │
+│  │    • 配置变更自动生效                                                      │   │
+│  └─────────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                     │
+│  ┌─────────────────────────────────────────────────────────────────────────────┐   │
+│  │ 3. 生命周期独立 (Lifecycle Independence)                                   │   │
+│  │    • 模块可独立启动/停止/重启                                              │   │
+│  │    • 模块启动顺序不影响整体                                                 │   │
+│  │    • 模块崩溃不影响其他模块                                                │   │
+│  └─────────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                     │
+│  ┌─────────────────────────────────────────────────────────────────────────────┐   │
+│  │ 4. 数据独立 (Data Independence)                                             │   │
+│  │    • 每个模块有自己的数据存储                                               │   │
+│  │    • 不直接读写其他模块的数据                                               │   │
+│  │    • 通过接口交换数据                                                       │   │
+│  └─────────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                     │
+│  ┌─────────────────────────────────────────────────────────────────────────────┐   │
+│  │ 5. 故障独立 (Failure Independence)                                         │   │
+│  │    • 模块故障不传播                                                         │   │
+│  │    • 故障模块自动隔离                                                       │   │
+│  │    • 降级策略确保核心功能可用                                              │   │
+│  └─────────────────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+
+### 二、模块化架构全景
+
+#### 2.1 模块全景图
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                      AI Factory 模块化架构（热插拔全景）                             │
+│                                                                                     │
+│  ┌─────────────────────────────────────────────────────────────────────────────┐   │
+│  │                         入口层模块 (Gateway Layer)                          │   │
+│  │                                                                             │   │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐       │   │
+│  │  │ CLI模块     │  │ TUI模块     │  │ Web模块     │  │ IM适配器    │       │   │
+│  │  │ (可插拔)    │  │ (可插拔)    │  │ (可插拔)    │  │ (可插拔)    │       │   │
+│  │  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘       │   │
+│  └─────────────────────────────────────────────────────────────────────────────┘   │
+│                                      │                                              │
+│  ┌─────────────────────────────────────────────────────────────────────────────┐   │
+│  │                         核心调度层 (Orchestration Layer)                    │   │
+│  │                                                                             │   │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐       │   │
+│  │  │Orchestrator │  │  Scheduler  │  │  Planner    │  │  Governor   │       │   │
+│  │  │ (可插拔)    │  │ (可插拔)    │  │ (可插拔)    │  │ (可插拔)    │       │   │
+│  │  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘       │   │
+│  └─────────────────────────────────────────────────────────────────────────────┘   │
+│                                      │                                              │
+│  ┌─────────────────────────────────────────────────────────────────────────────┐   │
+│  │                         Agent执行层 (Execution Layer)                       │   │
+│  │                                                                             │   │
+│  │  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐         │   │
+│  │  │ Planner  │  │Executor │  │Reviewer │  │Debugger │  │Governor │         │   │
+│  │  │ (可插拔) │  │ (可插拔)│  │ (可插拔)│  │ (可插拔)│  │ (可插拔)│         │   │
+│  │  └─────────┘  └─────────┘  └─────────┘  └─────────┘  └─────────┘         │   │
+│  │                                                                             │   │
+│  │  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐                       │   │
+│  │  │ Learner │  │ Healer  │  │ Monitor │  │Improver │                       │   │
+│  │  │ (可插拔)│  │ (可插拔)│  │ (可插拔)│  │ (可插拔)│                       │   │
+│  │  └─────────┘  └─────────┘  └─────────┘  └─────────┘                       │   │
+│  └─────────────────────────────────────────────────────────────────────────────┘   │
+│                                      │                                              │
+│  ┌─────────────────────────────────────────────────────────────────────────────┐   │
+│  │                         能力层 (Capability Layer)                          │   │
+│  │                                                                             │   │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐       │   │
+│  │  │ RAG模块     │  │ Tool模块    │  │ LLM模块     │  │ Skill模块    │       │   │
+│  │  │ (可插拔)    │  │ (可插拔)    │  │ (可插拔)    │  │ (可插拔)    │       │   │
+│  │  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘       │   │
+│  │                                                                             │   │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                        │   │
+│  │  │ MCP模块     │  │ Sandbox模块 │  │ Notifier模块 │                        │   │
+│  │  │ (可插拔)    │  │ (可插拔)    │  │ (可插拔)    │                        │   │
+│  │  └─────────────┘  └─────────────┘  └─────────────┘                        │   │
+│  └─────────────────────────────────────────────────────────────────────────────┘   │
+│                                      │                                              │
+│  ┌─────────────────────────────────────────────────────────────────────────────┐   │
+│  │                         基础设施层 (Infrastructure Layer)                   │   │
+│  │                                                                             │   │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐       │   │
+│  │  │ Service     │  │ Module      │  │ Message     │  │ Config      │       │   │
+│  │  │ Discovery   │  │ Registry    │  │ Bus         │  │ Center      │       │   │
+│  │  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘       │   │
+│  └─────────────────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### 2.2 完整模块清单
+
+| 层级 | 模块 | 是否必选 | 可插拔 | 说明 |
+|---|---|---|---|---|
+| **入口层** | CLI | ❌ | ✅ | 至少一个入口 |
+| | TUI | ❌ | ✅ | |
+| | Web | ❌ | ✅ | |
+| | IM Adapter | ❌ | ✅ | |
+| **调度层** | Orchestrator | ✅ | ❌ | 核心引擎，不可替换 |
+| | Scheduler | ✅ | ⚠️ | 可换调度算法 |
+| | Planner | ✅ | ⚠️ | 可换拆解策略 |
+| | Governor | ❌ | ✅ | 可换治理实现 |
+| **执行层** | Planner Agent | ❌ | ✅ | |
+| | Executor Agent | ✅ | ⚠️ | 至少一个执行者 |
+| | Reviewer Agent | ❌ | ✅ | |
+| | Debugger Agent | ❌ | ✅ | |
+| | Learner Agent | ❌ | ✅ | |
+| | Healer | ❌ | ✅ | |
+| | Monitor | ❌ | ✅ | |
+| | Improver | ❌ | ✅ | |
+| **能力层** | RAG | ❌ | ✅ | |
+| | Tool | ❌ | ✅ | |
+| | LLM | ✅ | ⚠️ | 至少一个Provider |
+| | Skill | ❌ | ✅ | |
+| | MCP | ❌ | ✅ | |
+| | Sandbox | ❌ | ✅ | |
+| | Notifier | ❌ | ✅ | |
+| **基础层** | Service Discovery | ✅ | ❌ | 基础服务 |
+| | Module Registry | ✅ | ❌ | 基础服务 |
+| | Message Bus | ✅ | ❌ | 基础服务 |
+| | Config Center | ✅ | ❌ | 基础服务 |
+
+
+### 三、热插拔机制详细设计
+
+#### 3.1 模块注册与发现
+
+```python
+#### ============ 模块注册表 ============
+
+class ModuleMetadata:
+    """模块元数据"""
+    name: str
+    version: str
+    description: str
+    dependencies: List[str]  # 依赖的其他模块
+    capabilities: List[str]  # 提供的能力
+    health_check: Optional[str]  # 健康检查端点
+    config_schema: Dict  # 配置Schema
+    status: str  # active | inactive | degraded
+
+class ModuleRegistry:
+    """
+    模块注册表——所有模块在此注册
+    支持：动态注册/注销、健康检查、依赖管理
+    """
+    
+    def __init__(self):
+        self._modules: Dict[str, ModuleMetadata] = {}
+        self._instances: Dict[str, Any] = {}
+        self._health_status: Dict[str, str] = {}
+        self._listeners: List[ModuleEventListener] = []
+    
+    # ========== 注册/注销 ==========
+    
+    def register(self, name: str, instance: Any, metadata: ModuleMetadata) -> bool:
+        """
+        注册模块
+        
+        热插拔支持：
+        - 如果模块已存在，替换实例（无需重启）
+        - 版本检查：新版本必须兼容
+        - 依赖检查：依赖模块必须已注册
+        """
+        if name in self._modules:
+            # 版本检查
+            if not self._is_version_compatible(metadata.version, self._modules[name].version):
+                raise VersionIncompatibleError(
+                    f"Module {name}: version {metadata.version} incompatible with existing {self._modules[name].version}"
+                )
+            # 热替换
+            self._unregister_module(name, graceful=True)
+        
+        # 依赖检查
+        for dep in metadata.dependencies:
+            if dep not in self._modules:
+                raise MissingDependencyError(f"Missing dependency: {dep}")
+        
+        self._modules[name] = metadata
+        self._instances[name] = instance
+        self._health_status[name] = "starting"
+        
+        # 通知监听器
+        self._notify(ModuleEvent(type="registered", name=name, version=metadata.version))
+        
+        return True
+    
+    def unregister(self, name: str, graceful: bool = True) -> bool:
+        """注销模块（热拔插）"""
+        if name not in self._modules:
+            return False
+        
+        # 检查是否有其他模块依赖此模块
+        dependents = self._find_dependents(name)
+        if dependents and graceful:
+            # 通知依赖者正在注销
+            for dep in dependents:
+                self._notify_dependency_deprecating(dep, name)
+        
+        return self._unregister_module(name, graceful)
+    
+    def _unregister_module(self, name: str, graceful: bool) -> bool:
+        """执行注销"""
+        # 1. 停止模块（优雅关闭）
+        instance = self._instances.get(name)
+        if instance and hasattr(instance, 'shutdown'):
+            instance.shutdown()
+        
+        # 2. 移除
+        del self._modules[name]
+        del self._instances[name]
+        del self._health_status[name]
+        
+        # 3. 通知
+        self._notify(ModuleEvent(type="unregistered", name=name))
+        
+        return True
+    
+    # ========== 查询 ==========
+    
+    def get(self, name: str) -> Optional[Any]:
+        """获取模块实例"""
+        return self._instances.get(name)
+    
+    def get_metadata(self, name: str) -> Optional[ModuleMetadata]:
+        """获取模块元数据"""
+        return self._modules.get(name)
+    
+    def list_available(self) -> List[ModuleMetadata]:
+        """列出所有已注册模块"""
+        return list(self._modules.values())
+    
+    def find_by_capability(self, capability: str) -> List[str]:
+        """按能力查找模块"""
+        return [
+            name for name, meta in self._modules.items()
+            if capability in meta.capabilities
+        ]
+    
+    # ========== 健康检查 ==========
+    
+    async def health_check_all(self) -> Dict[str, str]:
+        """检查所有模块健康状态"""
+        results = {}
+        for name, instance in self._instances.items():
+            results[name] = await self._health_check_module(name, instance)
+        self._health_status.update(results)
+        return results
+    
+    async def _health_check_module(self, name: str, instance: Any) -> str:
+        """检查单个模块健康"""
+        if not hasattr(instance, 'health_check'):
+            return "unknown"
+        
+        try:
+            result = await asyncio.wait_for(
+                instance.health_check(),
+                timeout=5.0
+            )
+            return "healthy" if result else "unhealthy"
+        except Exception:
+            return "unhealthy"
+    
+    # ========== 事件监听 ==========
+    
+    def add_listener(self, listener: ModuleEventListener):
+        """添加模块事件监听器"""
+        self._listeners.append(listener)
+    
+    def _notify(self, event: ModuleEvent):
+        for listener in self._listeners:
+            listener.on_module_event(event)
+```
+
+#### 3.2 模块接口标准
+
+```python
+#### ============ 模块接口标准 ============
+
+class Module(ABC):
+    """所有模块的基类"""
+    
+    # ========== 模块元信息 ==========
+    
+    @property
+    @abstractmethod
+    def module_name(self) -> str:
+        """模块名称（唯一标识）"""
+        pass
+    
+    @property
+    @abstractmethod
+    def module_version(self) -> str:
+        """模块版本（语义化版本）"""
+        pass
+    
+    @property
+    @abstractmethod
+    def module_description(self) -> str:
+        """模块描述"""
+        pass
+    
+    @property
+    @abstractmethod
+    def capabilities(self) -> List[str]:
+        """模块提供的能力列表"""
+        pass
+    
+    @property
+    def dependencies(self) -> List[str]:
+        """依赖的其他模块名称"""
+        return []
+    
+    @property
+    def config_schema(self) -> Dict:
+        """配置Schema（用于配置验证和动态更新）"""
+        return {}
+    
+    # ========== 生命周期 ==========
+    
+    @abstractmethod
+    async def start(self) -> None:
+        """启动模块"""
+        pass
+    
+    @abstractmethod
+    async def stop(self) -> None:
+        """停止模块"""
+        pass
+    
+    async def restart(self) -> None:
+        """重启模块（默认实现：stop + start）"""
+        await self.stop()
+        await self.start()
+    
+    @abstractmethod
+    async def health_check(self) -> bool:
+        """健康检查"""
+        pass
+    
+    # ========== 配置管理 ==========
+    
+    async def update_config(self, config: Dict) -> bool:
+        """
+        动态更新配置（无需重启）
+        
+        返回：是否更新成功
+        """
+        # 默认实现：验证 → 应用
+        if self._validate_config(config):
+            self._apply_config(config)
+            return True
+        return False
+    
+    def _validate_config(self, config: Dict) -> bool:
+        """验证配置（子类可覆盖）"""
+        return True
+    
+    def _apply_config(self, config: Dict) -> None:
+        """应用配置（子类可覆盖）"""
+        pass
+    
+    # ========== 状态查询 ==========
+    
+    async def get_status(self) -> ModuleStatus:
+        """获取模块详细状态"""
+        return ModuleStatus(
+            name=self.module_name,
+            version=self.module_version,
+            state=self._state,
+            healthy=await self.health_check(),
+            uptime=self._uptime,
+            metrics=await self.get_metrics(),
+        )
+    
+    async def get_metrics(self) -> Dict:
+        """获取模块指标（子类可覆盖）"""
+        return {}
+    
+    # ========== 版本兼容性 ==========
+    
+    @classmethod
+    def is_compatible_with(cls, version: str) -> bool:
+        """检查是否兼容指定版本"""
+        # 默认：Major版本相同即兼容
+        current = cls.module_version.fget(cls).split('.')
+            target = version.split('.')
+        return current[0] == target[0]
+```
+
+#### 3.3 模块间通信机制
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                          模块间通信机制（解耦 + 热插拔友好）                         │
+│                                                                                     │
+│  ┌─────────────────────────────────────────────────────────────────────────────┐   │
+│  │                         通信方式                                            │   │
+│  │                                                                             │   │
+│  │  ┌─────────────────────────────────────────────────────────────────────┐   │   │
+│  │  │ 方式1: 消息总线 (Message Bus) — 推荐                              │   │   │
+│  │  │   • 发布/订阅模式                                                  │   │   │
+│  │  │   • 模块间完全解耦                                                  │   │   │
+│  │  │   • 支持异步通信                                                   │   │   │
+│  │  │   • 消息持久化（模块重启后恢复）                                    │   │   │
+│  │  │   • 示例: Orchestrator 发布任务 → Executor 订阅执行               │   │   │
+│  │  └─────────────────────────────────────────────────────────────────────┘   │   │
+│  │                                                                             │   │
+│  │  ┌─────────────────────────────────────────────────────────────────────┐   │   │
+│  │  │ 方式2: 接口调用 (RPC) — 适合同步请求                                │   │   │
+│  │  │   • 通过 Registry 获取目标模块实例                                   │   │   │
+│  │  │   • 直接调用接口方法                                                │   │   │
+│  │  │   • 必须包含超时 + 降级                                             │   │   │
+│  │  │   • 示例: Orchestrator 调用 Planner.get_plan()                      │   │   │
+│  │  └─────────────────────────────────────────────────────────────────────┘   │   │
+│  │                                                                             │   │
+│  │  ┌─────────────────────────────────────────────────────────────────────┐   │   │
+│  │  │ 方式3: 共享存储 (Shared Storage) — 适合状态共享                     │   │   │
+│  │  │   • 通过 Working Memory 共享状态                                     │   │   │
+│  │  │   • 不直接依赖其他模块                                              │   │   │
+│  │  │   • 示例: 所有 Agent 读写 Working Memory                            │   │   │
+│  │  └─────────────────────────────────────────────────────────────────────┘   │   │
+│  └─────────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                     │
+│  ┌─────────────────────────────────────────────────────────────────────────────┐   │
+│  │                         通信保障机制                                        │   │
+│  │                                                                             │   │
+│  │  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐                   │   │
+│  │  │  超时控制     │  │  重试机制     │  │  降级策略     │                   │   │
+│  │  │  (Timeout)   │  │  (Retry)      │  │  (Fallback)   │                   │   │
+│  │  └───────────────┘  └───────────────┘  └───────────────┘                   │   │
+│  │                                                                             │   │
+│  │  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐                   │   │
+│  │  │  熔断机制     │  │  背压控制     │  │  死信队列     │                   │   │
+│  │  │  (Circuit    │  │  (Backpressure)│  │  (Dead       │                   │   │
+│  │  │   Breaker)   │  │               │  │   Letter)    │                   │   │
+│  │  └───────────────┘  └───────────────┘  └───────────────┘                   │   │
+│  └─────────────────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### 3.4 消息总线实现
+
+```python
+#### ============ 消息总线 ============
+
+from typing import Dict, Any, Callable, Awaitable, List
+import asyncio
+from dataclasses import dataclass, field
+from datetime import datetime
+import uuid
+
+@dataclass
+class Message:
+    """消息对象"""
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    type: str  # 消息类型
+    source: str  # 发送模块名
+    target: Optional[str] = None  # 目标模块名（None=广播）
+    payload: Any = None
+    timestamp: datetime = field(default_factory=datetime.now)
+    ttl: int = 300  # 生存时间（秒）
+    priority: int = 5  # 优先级 1-10
+    correlation_id: Optional[str] = None  # 关联ID
+
+class MessageBus:
+    """
+    消息总线——模块间通信的中央通道
+    
+    特性：
+    - 发布/订阅模式
+    - 支持点对点和广播
+    - 消息持久化（可选）
+    - 死信队列
+    """
+    
+    def __init__(self):
+        self._subscribers: Dict[str, List[Callable[[Message], Awaitable[None]]]] = {}
+        self._dead_letter_queue: List[Message] = []
+        self._is_running = False
+    
+    def subscribe(self, message_type: str, handler: Callable[[Message], Awaitable[None]]) -> str:
+        """
+        订阅消息
+        
+        参数：
+            message_type: 消息类型（* 表示所有消息）
+            handler: 处理函数
+        
+        返回：订阅ID（用于取消订阅）
+        """
+        if message_type not in self._subscribers:
+            self._subscribers[message_type] = []
+        self._subscribers[message_type].append(handler)
+        return f"{message_type}_{len(self._subscribers[message_type])-1}"
+    
+    def unsubscribe(self, subscription_id: str) -> bool:
+        """取消订阅"""
+        # 实现略
+        pass
+    
+    async def publish(self, message: Message) -> None:
+        """
+        发布消息
+        
+        热插拔支持：
+        - 目标模块不存在 → 放入死信队列
+        - 目标模块未启动 → 缓存消息，待模块启动后重发
+        """
+        # 1. TTL检查
+        if (datetime.now() - message.timestamp).seconds > message.ttl:
+            return  # 消息过期
+        
+        # 2. 查找目标
+        if message.target:
+            # 点对点
+            await self._send_to_target(message)
+        else:
+            # 广播
+            await self._broadcast(message)
+    
+    async def _send_to_target(self, message: Message) -> None:
+        """发送到指定目标"""
+        handlers = self._subscribers.get(message.type, [])
+        handlers += self._subscribers.get("*", [])  # 通配符
+        
+        for handler in handlers:
+            try:
+                await asyncio.wait_for(handler(message), timeout=10.0)
+            except asyncio.TimeoutError:
+                # 超时 → 放入死信队列
+                self._dead_letter_queue.append(message)
+            except Exception:
+                # 其他异常 → 记录日志，继续
+                pass
+    
+    async def _broadcast(self, message: Message) -> None:
+        """广播消息"""
+        for msg_type, handlers in self._subscribers.items():
+            if msg_type == message.type or msg_type == "*":
+                for handler in handlers:
+                    try:
+                        await asyncio.wait_for(handler(message), timeout=10.0)
+                    except Exception:
+                        pass
+    
+    async def replay_dead_letter(self) -> None:
+        """重放死信队列（模块恢复后）"""
+        dead_messages = self._dead_letter_queue.copy()
+        self._dead_letter_queue = []
+        for msg in dead_messages:
+            await self.publish(msg)
+```
+
+#### 3.5 降级与熔断机制
+
+```python
+#### ============ 降级与熔断 ============
+
+class CircuitBreaker:
+    """
+    熔断器——防止级联故障
+    
+    状态：
+    - CLOSED: 正常（允许调用）
+    - OPEN: 熔断（拒绝调用）
+    - HALF_OPEN: 半开（尝试恢复）
+    """
+    
+    def __init__(
+        self,
+        name: str,
+        failure_threshold: int = 5,   # 失败次数阈值
+        timeout_seconds: int = 60,    # 熔断超时时间
+        half_open_max_calls: int = 3, # 半开状态最大调用数
+    ):
+        self.name = name
+        self.failure_threshold = failure_threshold
+        self.timeout_seconds = timeout_seconds
+        self.half_open_max_calls = half_open_max_calls
+        
+        self._state = "CLOSED"
+        self._failure_count = 0
+        self._last_failure_time = None
+        self._half_open_calls = 0
+    
+    async def call(self, func: Callable, fallback: Callable = None) -> Any:
+        """
+        调用受保护函数
+        
+        热插拔支持：
+        - 模块不可用 → 自动熔断 → 调用降级函数
+        """
+        if self._state == "OPEN":
+            if self._should_attempt_half_open():
+                self._state = "HALF_OPEN"
+                self._half_open_calls = 0
+            else:
+                # 熔断中 → 直接降级
+                return await self._fallback(fallback)
+        
+        try:
+            result = await func()
+            self._on_success()
+            return result
+        except Exception as e:
+            self._on_failure()
+            if self._state == "HALF_OPEN":
+                self._state = "OPEN"
+                self._failure_count = 0
+                self._last_failure_time = datetime.now()
+            return await self._fallback(fallback)
+    
+    def _should_attempt_half_open(self) -> bool:
+        if self._last_failure_time is None:
+            return True
+        elapsed = (datetime.now() - self._last_failure_time).seconds
+        return elapsed > self.timeout_seconds
+    
+    def _on_success(self):
+        if self._state == "HALF_OPEN":
+            self._half_open_calls += 1
+            if self._half_open_calls >= self.half_open_max_calls:
+                self._state = "CLOSED"
+                self._failure_count = 0
+        else:
+            self._failure_count = 0
+    
+    def _on_failure(self):
+        self._failure_count += 1
+        if self._state == "CLOSED" and self._failure_count >= self.failure_threshold:
+            self._state = "OPEN"
+            self._last_failure_time = datetime.now()
+    
+    async def _fallback(self, fallback: Callable) -> Any:
+        """调用降级函数"""
+        if fallback:
+            return await fallback()
+        return None
+
+
+class FallbackRegistry:
+    """降级策略注册表"""
+    
+    def __init__(self):
+        self._fallbacks: Dict[str, Callable] = {}
+    
+    def register(self, module_name: str, fallback: Callable):
+        self._fallbacks[module_name] = fallback
+    
+    def get(self, module_name: str) -> Optional[Callable]:
+        return self._fallbacks.get(module_name)
+    
+    def get_default(self, module_name: str) -> Callable:
+        """获取默认降级策略"""
+        return lambda: {
+            "status": "degraded",
+            "message": f"Module {module_name} unavailable, using default fallback"
+        }
+```
+
+
+### 四、各模块独立配置与版本管理
+
+#### 4.1 模块配置管理
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                          模块配置管理                                              │
+│                                                                                     │
+│  配置结构:                                                                         │
+│                                                                                     │
+│  ~/.factory/modules/                                                               │
+│  ├── orchestrator/                                                                 │
+│  │   └── config.yaml          # Orchestrator 配置                                 │
+│  ├── executor/                                                                     │
+│  │   ├── config.yaml          # Executor 配置                                     │
+│  │   └── v1/                  # 版本v1配置                                        │
+│  ├── rag/                                                                          │
+│  │   ├── config.yaml          # RAG 配置                                          │
+│  │   └── custom/                                                                   │
+│  │       └── vector_store.yaml # 自定义向量库配置                                 │
+│  ├── llm/                                                                          │
+│  │   ├── config.yaml          # LLM 配置                                          │
+│  │   ├── deepseek.yaml        # DeepSeek 专属配置                                 │
+│  │   └── providers/           # Provider 插件目录                                  │
+│  │       └── custom_provider.py                                                    │
+│  └── ...                                                                           │
+│                                                                                     │
+│  配置热加载:                                                                       │
+│  ┌─────────────────────────────────────────────────────────────────────────────┐   │
+│  │ 1. 监听配置目录变化                                                        │   │
+│  │ 2. 检测到配置变更 → 验证新配置                                             │   │
+│  │ 3. 验证通过 → 应用新配置（无需重启）                                       │   │
+│  │ 4. 验证失败 → 回滚到旧配置 + 告警                                         │   │
+│  └─────────────────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### 4.2 版本兼容性管理
+
+```python
+#### ============ 版本兼容性管理 ============
+
+class VersionManager:
+    """模块版本管理器"""
+    
+    def __init__(self):
+        self._versions: Dict[str, str] = {}
+        self._compatibility_matrix: Dict[Tuple[str, str], bool] = {}
+    
+    def register_version(self, module: str, version: str):
+        """注册模块版本"""
+        self._versions[module] = version
+    
+    def set_compatibility(self, module_a: str, version_a: str, 
+                          module_b: str, version_b: str, 
+                          compatible: bool):
+        """设置两个模块版本的兼容性"""
+        key = (f"{module_a}@{version_a}", f"{module_b}@{version_b}")
+        self._compatibility_matrix[key] = compatible
+    
+    def check_compatibility(self, module_a: str, module_b: str) -> bool:
+        """检查两个模块当前版本是否兼容"""
+        version_a = self._versions.get(module_a)
+        version_b = self._versions.get(module_b)
+        
+        if not version_a or not version_b:
+            return False
+        
+        key = (f"{module_a}@{version_a}", f"{module_b}@{version_b}")
+        return self._compatibility_matrix.get(key, False)
+    
+    def get_compatible_versions(self, module: str, target_version: str) -> List[str]:
+        """获取与指定版本兼容的所有版本"""
+        compatible = []
+        for version in self._versions.values():
+            if self._is_compatible(target_version, version):
+                compatible.append(version)
+        return compatible
+    
+    def _is_compatible(self, v1: str, v2: str) -> bool:
+        """语义化版本兼容性检查（Major相同即兼容）"""
+        try:
+            m1 = int(v1.split('.')[0])
+            m2 = int(v2.split('.')[0])
+            return m1 == m2
+        except Exception:
+            return v1 == v2
+```
+
+#### 4.3 热插拔场景示例
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                          热插拔场景示例                                            │
+│                                                                                     │
+│  ┌─────────────────────────────────────────────────────────────────────────────┐   │
+│  │ 场景1: 替换LLM Provider                                                    │   │
+│  │                                                                             │   │
+│  │  1. 注册新Provider: llm.register("openai", OpenAIProvider())               │   │
+│  │  2. 系统检测到新Provider                                                    │   │
+│  │  3. 验证新Provider健康: health_check() → ✓                                │   │
+│  │  4. 切换默认Provider: llm.set_default("openai")                           │   │
+│  │  5. 正在运行的任务继续使用旧Provider                                       │   │
+│  │  6. 新任务使用新Provider                                                    │   │
+│  │  7. 旧Provider在无任务后自动回收                                            │   │
+│  │                                                                             │   │
+│  │  影响: 零中断                                                               │   │
+│  └─────────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                     │
+│  ┌─────────────────────────────────────────────────────────────────────────────┐   │
+│  │ 场景2: RAG模块升级                                                         │   │
+│  │                                                                             │   │
+│  │  1. 新版本RAG模块: rag_v2.py                                                │   │
+│  │  2. 注册新模块: registry.register("rag_v2", RAGV2())                       │   │
+│  │  3. 版本检查: v1.0.0 → v2.0.0 (Major变更) → 不兼容                        │   │
+│  │  4. 系统通知: "RAG v2.0.0 与现有模块不兼容，请确认升级"                    │   │
+│  │  5. 用户确认升级                                                           │   │
+│  │  6. 系统逐步迁移: 新任务使用v2，旧任务继续用v1                            │   │
+│  │  7. v1无任务后自动停止                                                      │   │
+│  │                                                                             │   │
+│  │  影响: 任务级别的平滑迁移                                                   │   │
+│  └─────────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                     │
+│  ┌─────────────────────────────────────────────────────────────────────────────┐   │
+│  │ 场景3: 模块故障自动隔离                                                     │   │
+│  │                                                                             │   │
+│  │  1. Monitor检测到Executor模块健康检查失败                                  │   │
+│  │  2. 熔断器自动开启: CircuitBreaker.open()                                 │   │
+│  │  3. 系统切换: 新任务使用备用Executor (降级)                                │   │
+│  │  4. 正在运行的任务: 等待当前任务完成，不中断                               │   │
+│  │  5. 故障模块自动重启: executor.restart()                                   │   │
+│  │  6. 健康检查通过: 熔断器半开 → 逐步恢复                                    │   │
+│  │                                                                             │   │
+│  │  影响: 单个模块故障不影响整体                                               │   │
+│  └─────────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                     │
+│  ┌─────────────────────────────────────────────────────────────────────────────┐   │
+│  │ 场景4: 新增行业工厂                                                         │   │
+│  │                                                                             │   │
+│  │  1. 下载工厂模板: factory_template_ecommerce.yaml                          │   │
+│  │  2. 注册工厂: factory.register("ecommerce", EcommerceFactory())            │   │
+│  │  3. 系统自动: 加载Skill → 注册MCP → 初始化知识库                          │   │
+│  │  4. 工厂立即可用: factory.use("ecommerce")                                │   │
+│  │                                                                             │   │
+│  │  影响: 新能力即插即用                                                       │   │
+│  └─────────────────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+
+### 五、与现有架构的整合清单
+
+| 项目 | 原设计 | 新增设计 | 是否兼容 |
+|---|---|---|---|
+| **模块注册** | 无 | ModuleRegistry | ✅ 新增 |
+| **模块接口** | 部分（Tool/Agent接口） | 统一Module接口 | ⚠️ 需适配 |
+| **消息通信** | 间接（Working Memory） | MessageBus | ✅ 补充 |
+| **熔断降级** | 无 | CircuitBreaker | ✅ 新增 |
+| **版本管理** | 无 | VersionManager | ✅ 新增 |
+| **健康检查** | 无 | health_check() | ✅ 新增 |
+| **配置热加载** | 无 | Config监听 | ✅ 新增 |
+| **模块生命周期** | 无 | start/stop/restart | ✅ 新增 |
+
+
+### 六、实施优先级
+
+| 优先级 | 能力 | 说明 |
+|---|---|---|
+| **P0** | ModuleRegistry | 模块管理基础 |
+| **P0** | Module接口标准 | 所有模块统一接口 |
+| **P0** | 健康检查 | 基础监控 |
+| **P1** | MessageBus | 模块间通信 |
+| **P1** | 配置热加载 | 动态配置 |
+| **P1** | 熔断降级 | 鲁棒性 |
+| **P2** | 版本管理 | 兼容性 |
+| **P2** | 自动发现 | 服务发现 |
+
+
+*本文档定义AI Factory的模块化热插拔架构，确保所有模块可独立部署、升级、替换，系统整体不中断。*
+
+## 三、复杂任务拆解体系
 
 ### 2.1 什么是"复杂任务"
 
@@ -485,7 +1371,7 @@ class SubTask:
 ```
 
 
-## 三、多 Agent 编排与调用体系
+## 四、多 Agent 编排与调用体系
 
 ### 3.1 Agent 角色体系
 
@@ -1053,7 +1939,7 @@ class SubTask:
 ```
 
 
-## 四、审计与可观测体系
+## 五、审计与可观测体系
 
 ### 4.1 审计架构
 
@@ -1351,7 +2237,7 @@ class AuditEventType:
 ```
 
 
-## 五、治理与合规体系
+## 六、治理与合规体系
 
 ### 5.1 治理全景
 
@@ -1512,7 +2398,7 @@ class AuditEventType:
 ```
 
 
-## 六、学习与自我进化体系
+## 七、学习与自我进化体系
 
 ### 6.1 学习架构
 
@@ -1692,7 +2578,7 @@ class ExperienceEvidence:
 | **工具组合** | 工具搭配使用的模式 | "性能分析: 先用 profiler 定位热点，再用 flamegraph 可视化" |
 
 
-## 七、RAG 知识检索体系
+## 八、RAG 知识检索体系
 
 ### 7.1 RAG 架构
 
@@ -1855,7 +2741,7 @@ class ExperienceEvidence:
 ```
 
 
-## 八、工具生态与集成体系
+## 九、工具生态与集成体系
 
 ### 8.1 工具生态架构
 
@@ -1971,7 +2857,7 @@ Agent 决策调用工具
 ```
 
 
-## 九、行业工厂体系
+## 十、行业工厂体系
 
 ### 9.1 工厂定义
 
@@ -2229,7 +3115,7 @@ Agent 决策调用工具
 ```
 
 
-## 十、全部交互场景设计
+## 十一、全部交互场景设计
 
 ### 10.1 交互场景总览
 
@@ -2483,7 +3369,7 @@ Agent 决策调用工具
 ```
 
 
-## 十一、演进路线图
+## 十二、演进路线图
 
 ### 11.1 完整路线图
 
@@ -2585,7 +3471,7 @@ Agent 决策调用工具
 ```
 
 
-## 十二、完整术语表
+## 十三、完整术语表
 
 | 术语 | 英文 | 定义 |
 |---|---|---|
@@ -2661,7 +3547,7 @@ Agent 决策调用工具
 
 ---
 
-## 十三、旧版保留章节（不丢失）
+## 十四、旧版保留章节（不丢失）
 
 > 以下为旧版（v2 结构）独有内容，终极版重构时保留，避免丢失。
 
@@ -2957,7 +3843,7 @@ Phase 3: 生态化
 
 ---
 
-## 十四、竞品深度对比分析
+## 十五、竞品深度对比分析
 
 > 2026-08-21 补充: 系统梳理 2026 年 AI 编程与 Agent 领域核心竞品 (Claude Code / Codex / Cursor / DeepSeek Harness / OpenClaw / Hermes / pi-agent / FactoryKit / Devin)。
 
@@ -3367,7 +4253,7 @@ DeepSeek V4 Flash的成本是Claude Opus 4.7的**1/90**。Kimi Code K3的编程�
 
 ---
 
-## 十五、竞品优势吸收与技能定位补充
+## 十六、竞品优势吸收与技能定位补充
 
 > 2026-08-21 补充: 从 DeepSeek Harness / Hermes / OpenClaw / FactoryKit / pi-agent 吸取的设计元素如何在 AI Factory 落地 (插件架构/子Agent收编/四层记忆/GEPA技能进化/多渠道/沙箱/BYOK/MCP)。
 
@@ -4388,7 +5274,7 @@ class IMAdapter(ChannelAdapter):
 
 ---
 
-## 十六、自我进化体系专项设计
+## 十七、自我进化体系专项设计
 
 > 2026-08-21 补充: 五维自我进化能力 (自我学习/自我监控/自我完善/自我发现/自我修复) 的设计与实现路径 — AI Factory 核心差异化。
 

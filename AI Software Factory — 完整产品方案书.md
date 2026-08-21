@@ -29,8 +29,31 @@
 ### 1.1 一句话定义
 
 > **AI Software Factory 是一个能够创建、管理、运行和进化 AI 公司的操作系统。**
+> **英文名: AI Organization Operating System（AI Company OS）· 中文名: 数字企业运行模型**
 
-### 1.2 核心能力全景图
+### 1.2 核心论断与定位
+
+**一句话类比**：
+
+> LangChain 创建 AI 员工，LangGraph 编排 AI 工作流，而 **AI Software Factory 建立和管理整个 AI 生产组织**。
+
+**核心论断**：
+
+> **AI Factory 是"造专家的工厂"，不是某一个专家。**
+
+- **造专家 = 领域智能产业（AI Domain Intelligence）**
+  `Skill + MCP + Knowledge + Workflow + Evaluation + Learning = 领域智能产业`
+- **专业的人做专业的事**：多 LLM 配合、多 Agent 协作，全自动完成任务
+- **自我提升，但必须可控**（学习闭环 + 审批/预算/审计治理）
+- **适用全行业，软件开发只是第一个行业实例**：
+  IT 工厂（现在）→ 运维工厂 / 电商运营工厂 / 自媒体工厂 / 数据分析工厂 / 办公自动化工厂
+- **民主化**：AI Software Factory 让**每个人**都能经营一家 AI 公司
+
+**铁律**：
+
+> 任何外部工具（skill / MCP / OpenClaw / Hermes…）都不能成为 AI Factory 完成任务的**必要条件**——它们是增强层，不是依赖层。
+
+### 1.3 核心能力全景图
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────┐

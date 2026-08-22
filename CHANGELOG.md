@@ -5,6 +5,44 @@
 
 ---
 
+## [v1.1.9] — 2026-08-22
+
+**M2 员工内核 (Sprint)**: "我要做CRM" → 7 个真实 Agent 实体交接产出 —
+用 AgentEntity/ExpertFactory/HandoffBus 替换"7 个 prompt 换提示词"的单模型循环。
+
+### Added
+
+- **`session/agent_entity.py`** (A1) — AgentEntity 专家身份模型
+  (id/role/industry/provider{id,model}/system_prompt/skills/knowledge_ref/
+  workflow_ref/memory_ref/tools/evaluation_ref/profile): `agt-` 前缀 id
+  (agt-<industry>-<role>-<n>), to_dict/from_dict roundtrip, 缺必填字段明确报错;
+  provider 可空 (无 LLM → 确定性兜底可用)。
+- **`session/agent_registry.py`** (A2) — 工厂层专家注册表
+  (add/get/list/remove/next_id): 行业命名空间 it.* / ops.* 隔离, 同 role 多
+  provider 并存 (id 唯一), agents.json 键值持久化。
+- **`session/expert_factory.py`** (A3) — 专家装配器: assemble(role, industry,
+  skills, knowledge_ref, workflow_ref, provider) → AgentEntity; 校验 skill 存在
+  / workflow 可执行 / knowledge 可挂载, 缺 skill 明确报错 (不静默); build_team
+  装配 7 软件行业专家; 无 LLM → deterministic_content 确定性兜底非空。
+- **`session/handoff_bus.py`** (A4) — 交接总线: send/route (PM→Market→
+  Competitive→UX→Architect→QA→SeniorPM); 消息 {from, to, artifacts[],
+  decisions[], constraints[]}; 血缘双字段 metadata.parent_artifact +
+  parent_event_id; 冲突 → ConflictResolver → ReviewGate 挂起等审批
+  (status=pending_review); 消息落盘 m2_handoffs.json。
+- **product_pipeline 接线** (A5) — "让PM分析" 走真 Agent 链:
+  ExpertFactory.assemble + HandoffBus 替换 7-prompt 循环; 每资产
+  created_by=agent_id (agt- 前缀); M1 资产类型/版本递增/审计血缘零回归。
+- **`tests/console/test_m2_agent_core.py`** (M2-6) — A1-A5 契约测试套件
+  (schema/接口/血缘/错误码, 36 passed)。
+
+### Validation
+
+- `让PM分析` → 7 资产互引 (parent_artifact 链), 每资产 created_by 以 agt- 开头;
+- 引用不存在 skill → ExpertAssemblyError 明确报错; 无 LLM 环境 → 各角色确定性
+  兜底非空; 冲突交接 → ReviewGate 挂起等审批;
+- M1 链路 (repo/evidence/approval/backlog) 零回归。
+
+---
 ## [v1.1.8] — 2026-08-21
 
 **M1 闭环补全 (Sprint)**: 从证据到签字到落地最后一公里 — approve 后不再死路。

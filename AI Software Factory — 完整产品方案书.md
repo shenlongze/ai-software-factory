@@ -2949,6 +2949,21 @@ class AuditEventType:
 ```
 
 
+### 5.5 审计与可观测实现对照（2026-08-22）
+
+| 能力 | 真实实现 | 状态 |
+|---|---|---|
+| 审计事件 | `audit/audit_event.py`：33+ 事件类型 + 血缘字段（artifact_reference/parent_event_id）+ hash 链防篡改 | ✅ |
+| 事件发射 | `audit/audit_emitter.py`：`emit()` 失败安全（审计故障不中断业务） | ✅ |
+| 执行时间线 | `session/observability.py`：`execution_timeline`（时间/角色/模型/token/cost） | ✅ |
+| 项目状态 | `project_status`（阶段/任务/失败原因/证据） | ✅ |
+| 证据包 | `session/evidence.py`：EvidenceBundle + `EVIDENCE_BUNDLE_CREATED` | ✅ |
+| CLI 视图 | `factory exec history / project status / evidence show` | ✅ |
+| 实时监控/告警 | 设计（无实时指标流） | 📐 |
+| 用户审计控制台（Web） | 设计（Web 入口 M7） | 📐 |
+
+**完成度**：审计链 + 可观测 + 证据包已实现（✅）；缺实时监控告警与 Web 控制台（📐）。
+
 ## 六、治理与合规体系
 
 ### 6.1 治理全景
@@ -3370,6 +3385,21 @@ class ExperienceEvidence:
 | **工作流模板** | 可复用的流程模板 | "标准 Bug 修复流程: 复现 → 定位 → 修复 → 验证 → 提交" |
 | **工具组合** | 工具搭配使用的模式 | "性能分析: 先用 profiler 定位热点，再用 flamegraph 可视化" |
 
+
+### 7.5 学习实现对照与完成度（2026-08-22）
+
+| 能力 | 真实实现 | 状态 |
+|---|---|---|
+| 经验存储 | `console/memory/experience_store.py`（五域经验） | ✅ |
+| 经验提取 | `memory/extraction.py` + `auto_learn.py` | ✅ |
+| 学习引擎 | `memory/learning_engine.py` + `learning_trace.py` | ✅ |
+| 检索 | `memory/retrieval.py`（经验检索） | ✅ |
+| 推荐 | `memory/recommendation.py`（四因素评分） | ✅ |
+| 评价 | `exec/evaluator.py`（5 层候选评分） | ✅ |
+| **闭环接线**（经验→画像→决策引用→回写） | 设计（M4 自我提升闭环） | 📐 |
+| 可信度护栏 / 学习开关 | 设计（M4 C5） | 📐 |
+
+**完成度**：学习**存储/提取/检索/推荐/评价**已实现（✅）；**闭环**（画像/决策引用/回写/护栏）待 M4。
 
 ## 八、RAG 知识检索体系
 
@@ -7685,3 +7715,18 @@ SAP 的成功，是"**深厚的行业知识（最佳实践）+ 灵活的技术�
 ---
 
 *本补充文档与主文档 v3.0 完全兼容，新增章节编号为 十八、十九、二十、二十一。*
+
+### 20.6 安全实现对照与完成度（2026-08-22）
+
+| 能力 | 真实实现 | 状态 |
+|---|---|---|
+| 沙箱隔离 | `exec/sandbox.py`：项目副本，原仓库零影响；git 校验 | ✅ |
+| patch 白名单 | `exec/patch_filter.py`：过滤状态文件 + 交付校验 | ✅ |
+| 审批门 | `exec/approval.py` + `review_gate.py`：应用前必批 + 分级 | ✅ |
+| 凭证安全 | config/providers 只写 env 引用（不落明文 key） | ✅ |
+| 数据隔离 | HOME 重定向 / data_dir 独立（测试与多工作区） | ✅ |
+| 威胁模型/纵深防御/事件响应 | 本文档 20.1-20.5（设计） | 📐 |
+| 数据主权/合规认证 | §十八/§21（设计，企业级阶段） | 📐 |
+
+**完成度**：运行时安全（沙箱/patch/审批/凭证/隔离）已实现（✅）；威胁模型/纵深防御/合规认证为企业级阶段（📐，M5+）。
+

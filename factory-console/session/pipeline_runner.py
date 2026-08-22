@@ -1,15 +1,18 @@
-"""factory-console/session/pipeline_runner.py — Product Intelligence Pipeline (S10-084 P0)。
+"""factory-console/session/pipeline_runner.py — Product Intelligence Pipeline (S10-084/M2 A5)。
 
-Idea → PRD 多角色资产链: PM/Market/Competitive/UX/Architect/QA/SeniorPM 依次真实产出
-版本化 Artifact (artifact_registry) + Audit 事件 (ARTIFACT_CREATED, artifact_reference +
-parent_event_id 血缘), 供 PRD/工程/审批消费。
+Idea → PRD 多角色资产链 (M2 员工内核接线): "让PM分析" → 7 个真实 Agent 实体
+(ExpertFactory.assemble) 经 HandoffBus 依次交接产出版本化 Artifact —
+created_by=agent_id (agt- 前缀) + parent_artifact 互引 (血缘双字段)。
 
-- 每个角色: LLM 可用 → 角色 prompt 生成; 失败/无 LLM → deterministic 模板
-  (复用 ProductIntelligenceEngine / pipeline.ProductDocument, 不复制业务)
-- 纯标准库; 失败安全 (单角色失败不中断整链 — 该角色用 deterministic 兜底)
-- 零依赖 Action: 由 actions.product_pipeline 编排 (与 create_product 同模式)
+- A5 契约 (S10-087-M2 §2): 每资产 created_by == agent_id; 资产互引
+  (metadata.parent_artifact + parent_event_id); 无 LLM → 确定性兜底非空
+- 每个角色: LLM 可用 → 角色 system_prompt 生成; 失败/无 LLM → deterministic
+  兜底 (ExpertFactory.deterministic_content, 复用 ProductIntelligenceEngine /
+  pipeline.ProductDocument, 不复制业务)
+- M1 零回归: 资产类型/版本递增/审计事件链 (ARTIFACT_CREATED) 保持
+- 纯标准库; 失败安全 (单角色 LLM 失败不中断整链 — deterministic 兜底)
 
-设计: docs/sprint10/S10-084-plan.md §4-§6
+设计: docs/sprint10/S10-084-plan.md §4-§6 + docs/sprint10/S10-087-M2-员工内核-plan.md §2
 """
 
 from __future__ import annotations
@@ -17,10 +20,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
+from .agent_entity import AgentEntity
 from .artifact_registry import ArtifactRecord, ArtifactRegistry
+from .expert_factory import ExpertFactory, PIPELINE_ROLES
+from .handoff_bus import HandoffBlocked, HandoffBus
 from .product import ProductIntent
 
 #: 角色链 (role_id, artifact_type, 标题) — Operating Model Phase 1-5 对应
+#: (M2: 由 ExpertFactory.assemble 生成对应 AgentEntity, 资产类型随角色定义)
 ROLES: tuple[tuple[str, str, str], ...] = (
     ("pm", "product", "产品策略"),
     ("market", "market_analysis", "市场分析"),
@@ -31,7 +38,7 @@ ROLES: tuple[tuple[str, str, str], ...] = (
     ("prd", "prd", "产品需求文档 (PRD)"),
 )
 
-#: LLM 失败/无 LLM → deterministic 兜底 (不空资产)
+#: 角色 → LLM 提示词后缀 (M2: AgentEntity.system_prompt 为主, 此处仅 LLM 路径增强)
 _ROLE_PROMPTS: dict[str, str] = {
     "pm": "你是产品经理。基于产品信息输出产品策略 (定位/用户价值/核心能力/非目标范围/商业模式), 中文 markdown。",
     "market": "你是市场分析师。输出市场规模/用户趋势/机会窗口, 中文 markdown。",
@@ -56,7 +63,10 @@ class PipelineResult:
             return f"产品管线未产出资产 ({self.project})"
         lines = [f"产品管线完成: {len(self.records)} 个资产 ({self.project}):"]
         for r in self.records:
-            lines.append(f"  v{r.version} {r.type} [{r.created_by}] {r.status}")
+            parent = (r.metadata or {}).get("parent_artifact") or ""
+            lines.append(
+                f"  v{r.version} {r.type} [{r.created_by}] parent={parent or '(根)'} {r.status}"
+            )
         lines.append("可输入 '项目列表' 或 /project 查看; 确认后 '准备开发' 进入工程。")
         return "\n".join(lines)
 
@@ -69,7 +79,7 @@ class PipelineResult:
 
 
 class ProductPipeline:
-    """产品管线编排器: 依次跑 7 角色 → 版本化资产 + 审计事件。"""
+    """产品管线编排器 (M2 A5): ExpertFactory.assemble 7 专家 + HandoffBus 交接。"""
 
     def __init__(
         self,
@@ -77,180 +87,50 @@ class ProductPipeline:
         slug: str,
         *,
         llm_fn: Optional[Callable[[str, str], str]] = None,
+        factory: Optional[ExpertFactory] = None,
+        bus: Optional[HandoffBus] = None,
     ) -> None:
         self.workspace = workspace
         self.slug = str(slug)
         self.llm_fn = llm_fn
         self.registry = ArtifactRegistry(workspace, self.slug)
+        self.factory = factory or ExpertFactory()
+        self.bus = bus or HandoffBus(workspace, self.slug, registry=self.registry)
 
     def run(self, product: ProductIntent, *, source: str = "") -> PipelineResult:
-        """跑完整角色链; 单角色异常 → deterministic 兜底, 不中断。"""
-        result = PipelineResult(project=self.slug)
-        parent_event_id = ""
-        for role_id, artifact_type, _title in ROLES:
-            try:
-                content = self._generate(role_id, product)
-            except Exception:  # noqa: BLE001 — 兜底
-                content = self._deterministic(role_id, product)
-            record = self.registry.write(
-                artifact_type,
-                content,
-                created_by=role_id,
-                source=source or (product.raw or product.name or ""),
-                status="draft",
-                parent_event_id=parent_event_id,
+        """跑完整 Agent 链; 单角色 LLM 异常 → deterministic 兜底, 不中断。"""
+        agents = self.factory.build_team(industry="it")
+        try:
+            handoff = self.bus.route(
+                agents,
+                produce=self._produce,
+                product=product,
+                source=source,
             )
-            # 审计血缘: ARTIFACT_CREATED (失败安全, 不中断业务)
-            record.event_id = self._emit(record, parent_event_id)
-            parent_event_id = record.event_id or parent_event_id
-            result.records.append(record)
-        return result
+        except HandoffBlocked as exc:
+            # 冲突挂起等审批 — 明确报错 (契约 §2.6), 不静默降级
+            raise RuntimeError(f"产品管线阻断 (等待审批 {exc.message.review_id}): {exc}") from exc
+        return PipelineResult(project=self.slug, records=handoff.records)
 
     # ------------------------------------------------------------ 生成
 
-    def _generate(self, role_id: str, product: ProductIntent) -> str:
-        """角色产出: LLM 可用 → LLM; 否则 deterministic (不抛)。"""
+    def _produce(
+        self, agent: AgentEntity, parent_artifact_id: str, product: ProductIntent
+    ) -> str:
+        """角色产出: LLM 可用 → LLM (system_prompt + 产品信息); 否则 deterministic。"""
+        role = str(agent.role or "").lower()
         if self.llm_fn is not None:
             try:
-                prompt = f"{_ROLE_PROMPTS.get(role_id, '')}\n产品: {product.to_summary()}"
-                text = str(self.llm_fn(prompt, role_id) or "").strip()
+                prompt = (
+                    f"{agent.system_prompt or _ROLE_PROMPTS.get(role, '')}\n"
+                    f"上一资产: {parent_artifact_id or '(根, 无)'}\n"
+                    f"产品: {product.to_summary()}"
+                )
+                text = str(self.llm_fn(prompt, role) or "").strip()
                 if text:
                     return text
             except Exception:  # noqa: BLE001 — LLM 失败 → deterministic
                 pass
-        return self._deterministic(role_id, product)
+        return self.factory.deterministic_content(role, product)
 
-    def _deterministic(self, role_id: str, product: ProductIntent) -> str:
-        """确定性模板 (复用现有引擎, 不复制业务)。"""
-        if role_id == "pm":
-            return self._pm_md(product)
-        if role_id == "market":
-            return self._market_md(product)
-        if role_id == "competitive":
-            return self._competitive_md(product)
-        if role_id == "ux":
-            return self._ux_md(product)
-        if role_id == "architect":
-            return self._architect_md(product)
-        if role_id == "qa":
-            return self._qa_md(product)
-        if role_id == "prd":
-            return self._prd_md(product)
-        return f"# {role_id}\n(规则占位)"
-
-    # ------------------------------------------------------------ 各角色模板
-
-    def _pm_md(self, product: ProductIntent) -> str:
-        name = product.name or "(未命名产品)"
-        features = "、".join(product.core_features) if product.core_features else "(待补充)"
-        return (
-            f"# 产品策略: {name}\n\n"
-            f"## 产品定位\n面向 {product.user or '(待补充)'} 的 {name}。\n\n"
-            f"## 用户价值\n{product.problem or '(待补充)'}\n\n"
-            f"## 核心能力\n- {features}\n\n"
-            f"## 非目标范围\n第一版不做: 多端高级定制 / 复杂权限 / 深度数据分析 (规则占位, LLM 可细化)。\n\n"
-            f"## 商业模式\n待评估 (规则占位: 订阅 / 买断 / 增值服务)。\n"
-        )
-
-    def _market_md(self, product: ProductIntent) -> str:
-        try:
-            from .product_intelligence import ProductIntelligenceEngine
-            m = ProductIntelligenceEngine().analyze_market(product)
-            trends = "\n".join(f"- {t}" for t in (m.user_trends or [])) or "- (待补充)"
-            return (
-                f"# 市场分析: {product.name or '(未命名产品)'}\n\n"
-                f"## 市场规模\n{m.market_size or '(待补充)'}\n\n"
-                f"## 用户趋势\n{trends}\n\n"
-                f"## 机会窗口\n{m.opportunity_window or '(待补充)'}\n"
-            )
-        except Exception:  # noqa: BLE001 — 失败安全
-            return "# 市场分析\n\n## 市场规模\n(待补充)\n\n## 用户趋势\n(待补充)\n\n## 机会窗口\n(待补充)\n"
-
-    def _competitive_md(self, product: ProductIntent) -> str:
-        try:
-            from .product_intelligence import ProductIntelligenceEngine
-            c = ProductIntelligenceEngine().analyze_competitor(product)
-            comp_lines = []
-            for comp in (c.competitors or []):
-                comp_lines.append(
-                    f"- {comp.get('name') or '(未命名)'} ({comp.get('category') or '未知'}): "
-                    f"优势 {', '.join(comp.get('strengths') or []) or '(待补充)'}"
-                )
-            if not comp_lines:
-                comp_lines.append("- (待补充)")
-            adv = "\n".join(f"- {a}" for a in (c.advantages or [])) or "- (待补充)"
-            diff = "\n".join(f"- {d}" for d in (c.differentiation_opportunities or [])) or "- (待补充)"
-            return (
-                f"# 竞品分析: {product.name or '(未命名产品)'}\n\n"
-                f"## 竞品\n{chr(10).join(comp_lines)}\n\n"
-                f"## 自身优势\n{adv}\n\n"
-                f"## 差异化机会\n{diff}\n"
-            )
-        except Exception:  # noqa: BLE001 — 失败安全
-            return "# 竞品分析\n\n## 竞品\n(待补充)\n\n## 差异化机会\n(待补充)\n"
-
-    def _ux_md(self, product: ProductIntent) -> str:
-        features = product.core_features or ["(待补充)"]
-        flows = []
-        for f in features:
-            flows.append(f"- {f}: 进入 → 操作 → 完成/反馈")
-        return (
-            f"# 用户体验: {product.name or '(未命名产品)'}\n\n"
-            f"## 用户流程\n{chr(10).join(flows)}\n\n"
-            f"## 页面结构\n首页 / 功能页 / 设置 (规则占位, UX 可细化)\n\n"
-            f"## 信息架构\n按核心功能导航: {' / '.join(features)}\n"
-        )
-
-    def _architect_md(self, product: ProductIntent) -> str:
-        try:
-            from .pipeline import ARCHITECTURE_BY_PLATFORM, DEFAULT_ARCHITECTURE
-            platform = (product.platform or "").lower()
-            arch = ARCHITECTURE_BY_PLATFORM.get(platform, DEFAULT_ARCHITECTURE)
-        except Exception:  # noqa: BLE001
-            arch = "Backend API + Frontend"
-        entities = "、".join(product.core_features) if product.core_features else "核心业务实体"
-        return (
-            f"# 架构设计: {product.name or '(未命名产品)'}\n\n"
-            f"## 技术选型\n{arch} (规则推导, Architect 可细化)\n\n"
-            f"## 系统设计\nFrontend → API → Service → Database\n\n"
-            f"## 数据模型\n{entities} 相关实体 (规则占位, 由工程计划细化)\n\n"
-            f"## 风险分析\n性能 / 安全 / 扩展性 (规则占位)\n"
-        )
-
-    def _qa_md(self, product: ProductIntent) -> str:
-        features = "、".join(product.core_features) if product.core_features else "核心功能"
-        return (
-            f"# 测试方案: {product.name or '(未命名产品)'}\n\n"
-            f"## 覆盖范围\n{features}\n\n"
-            f"## 测试层级\n- 单元测试: 核心逻辑\n- 集成测试: API/模块联动\n"
-            f"- 安全测试: 认证/注入/越权\n- 性能测试: 关键路径响应时间\n"
-            f"(规则占位, QA 可细化)\n"
-        )
-
-    def _prd_md(self, product: ProductIntent) -> str:
-        try:
-            from .pipeline import ProductDocument
-            return ProductDocument.from_product_intent(product)
-        except Exception:  # noqa: BLE001
-            return product.to_summary()
-
-    # ------------------------------------------------------------ 审计血缘
-
-    def _emit(self, record: ArtifactRecord, parent_event_id: str) -> str:
-        """ARTIFACT_CREATED 审计事件 (失败安全 → ""). 返回 audit_id 供血缘链。"""
-        try:
-            from ..audit.audit_emitter import AuditEmitter
-            ev = AuditEmitter(workspace=self.workspace).emit(
-                "ARTIFACT_CREATED",
-                project_id=self.slug,
-                agent_id=record.created_by,
-                actor_type="agent",
-                actor_id=record.created_by,
-                artifact_reference=record.content_ref,
-                parent_event_id=parent_event_id,
-                artifact_type=record.type,
-                artifact_version=record.version,
-            )
-            return str(getattr(ev, "audit_id", "") or "") if ev is not None else ""
-        except Exception:  # noqa: BLE001 — 审计故障不中断
-            return ""
+__all__ = ["ROLES", "PipelineResult", "ProductPipeline"]

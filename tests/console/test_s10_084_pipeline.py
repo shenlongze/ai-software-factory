@@ -88,11 +88,20 @@ class TestProductPipeline:
         for r in result.records:
             assert r.version == 1
             assert r.status == "draft"
-            assert r.created_by in ("pm", "market", "competitive", "ux", "architect", "qa", "prd")
+            # M2 契约: created_by 一律 agent_id (agt- 前缀, 非 role 字符串)
+            assert r.created_by.startswith("agt-")
             # 内容非空 (deterministic 兜底)
             md_path = Path(r.content_ref)
             assert md_path.is_file()
             assert md_path.read_text(encoding="utf-8").strip()
+        # M2 契约: parent_artifact 血缘互引 (每资产指向上一资产)
+        for i, r in enumerate(result.records):
+            expected_parent = result.records[i - 1].id if i > 0 else ""
+            assert (r.metadata or {}).get("parent_artifact") == expected_parent, (
+                r.type,
+                (r.metadata or {}).get("parent_artifact"),
+                expected_parent,
+            )
         assert "7 个资产" in result.summary
 
     def test_rerun_bumps_versions(self, tmp_path):

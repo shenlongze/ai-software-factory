@@ -3072,10 +3072,12 @@ def project_docs(context: ExecutionContext) -> ActionResult:
 
 
 def product_pipeline(context: ExecutionContext) -> ActionResult:
-    """S10-084: 产品管线 (PM/Market/Competitive/UX/Architect/QA/SeniorPM 资产链)。
+    """S10-084 + M2 (A5): 产品管线 (PM→Market→Competitive→UX→Architect→QA→SeniorPM 真 Agent 链)。
 
-    "让PM团队分析/产品管线" → 7 角色产出版本化资产 (artifact_registry) +
-    ARTIFACT_CREATED 审计事件 (artifact_reference/parent_event 血缘)。
+    "让PM团队分析/产品管线" → ExpertFactory.assemble 7 个 AgentEntity →
+    HandoffBus 交接产出版本化资产 (artifact_registry): created_by=agent_id
+    (agt- 前缀) + metadata.parent_artifact / parent_event_id 血缘互引 +
+    ARTIFACT_CREATED 审计事件。
     """
     context.require("user")
     try:

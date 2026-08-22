@@ -389,3 +389,124 @@ class TestHandoffBusContract:
         assert msgs[0]["decisions"] == ["d1"]
         assert msgs[0]["constraints"] == ["c1"]
         assert msgs[0]["artifacts"]
+
+
+# ================================================================ A5 product_pipeline 接线
+
+class TestProductPipelineAgentChain:
+    def test_run_uses_real_agents_with_agt_created_by(self, tmp_path):
+        """契约: 让PM分析 → 7 专家真实产出; 每资产 created_by 以 agt- 开头。"""
+        pipeline = PIPE.ProductPipeline(tmp_path, "crm")
+        result = pipeline.run(_product(), source="conv-1")
+        assert len(result.records) == 7
+        for r in result.records:
+            assert r.created_by.startswith("agt-"), r.created_by
+            assert r.status == "draft"
+            md = Path(r.content_ref).read_text(encoding="utf-8")
+            assert md.strip()  # 内容非空 (无 LLM → deterministic 兜底)
+
+    def test_lineage_parent_artifact_chain(self, tmp_path):
+        """契约: 资产互引 — 每资产 metadata.parent_artifact 指向上一资产。"""
+        pipeline = PIPE.ProductPipeline(tmp_path, "crm")
+        result = pipeline.run(_product())
+        for i, r in enumerate(result.records):
+            expected = result.records[i - 1].id if i > 0 else ""
+            assert (r.metadata or {}).get("parent_artifact") == expected
+            if i > 0:
+                assert r.parent_event_id == result.records[i - 1].event_id
+                assert r.parent_event_id
+
+    def test_llm_failure_falls_back_deterministic_nonempty(self, tmp_path):
+        """契约: 无 LLM 环境 → 各角色确定性兜底非空。"""
+        def boom(prompt, role):
+            raise RuntimeError("llm down")
+        pipeline = PIPE.ProductPipeline(tmp_path, "crm", llm_fn=boom)
+        result = pipeline.run(_product())
+        assert len(result.records) == 7
+        for r in result.records:
+            assert Path(r.content_ref).read_text(encoding="utf-8").strip()
+
+    def test_llm_path_uses_agent_prompt(self, tmp_path):
+        """LLM 路径: 提示词含角色 system_prompt 与上一资产血缘。"""
+        seen = []
+        def capture(prompt, role):
+            seen.append(prompt)
+            return f"# LLM 产出 {role}\n内容非空"
+        pipeline = PIPE.ProductPipeline(tmp_path, "crm", llm_fn=capture)
+        result = pipeline.run(_product())
+        assert len(seen) == 7
+        assert "你是软件行业产品经理" in seen[0]
+        assert "agt-it-pm-1" in seen[1] or "product-v1-" in seen[1]
+        assert all(Path(r.content_ref).read_text(encoding="utf-8").strip()
+                   for r in result.records)
+
+    def test_rerun_bumps_versions(self, tmp_path):
+        pipeline = PIPE.ProductPipeline(tmp_path, "crm")
+        pipeline.run(_product())
+        result = pipeline.run(_product())
+        assert all(r.version == 2 for r in result.records)
+
+    def test_agents_persisted_in_registry_after_build(self, tmp_path):
+        """A3+A2 闭环: 装配 7 专家 → 落盘 agents.json (expert build 语义)。"""
+        reg = REG.AgentRegistry(tmp_path / "agents.json")
+        factory = FACTORY.ExpertFactory(registry=reg)
+        for agent in factory.build_team(provider=_provider()):
+            reg.add(agent)
+        assert reg.count(industry="it") == 7
+        data = reg.load()
+        assert all(str(v["id"]).startswith("agt-") for v in data.values())
+
+
+class TestProductPipelineAction:
+    """A5 接线: actions.product_pipeline ('让PM分析') 走真 Agent 链。"""
+
+    def _run_through_session(self, tmp_path, monkeypatch, capsys):
+        class FakeOrgCli:
+            def __init__(self):
+                self.calls = []
+
+            def cmd_project_register(self, root, args):
+                self.calls.append((root, args))
+                return {
+                    "ok": True,
+                    "project": {"id": "p1", "name": args.name, "slug": "crm"},
+                    "exit_code": 0,
+                }
+
+        import factory_console.session.context as ctx_mod
+        import factory_console.session.session as sess_mod
+        org = FakeOrgCli()
+        monkeypatch.setattr(ACT, "_load_org_cli", lambda: org)
+        root = tmp_path / "ws"
+        root.mkdir()
+        sess = sess_mod.InteractiveSession(
+            context_manager=ctx_mod.ContextManager(workspace=str(root)),
+        )
+        sess._dispatch("我想做CRM")
+        sess._dispatch("客户管理混乱，跟进靠表格")
+        sess._dispatch("销售团队")
+        sess._dispatch("客户跟进、报表")
+        sess._dispatch("y")
+        capsys.readouterr()
+        sess._dispatch("让PM分析")
+        return capsys.readouterr().out, root
+
+    def test_action_pipeline_real_agent_chain(self, tmp_path, monkeypatch, capsys):
+        out, root = self._run_through_session(tmp_path, monkeypatch, capsys)
+        assert "产品管线完成" in out
+        assert "7 个资产" in out
+        # 落盘资产 created_by 以 agt- 开头 + parent_artifact 血缘
+        artifacts = ART.ArtifactRegistry(root, "crm")
+        records = artifacts.list()
+        assert len(records) == 7
+        # 按管线链顺序 (list() 按 type 字典序 — 链序需按 PIPELINE_ROLES 映射)
+        chain_types = [
+            "product", "market_analysis", "competitive_analysis",
+            "ux_flow", "architecture", "test_plan", "prd",
+        ]
+        by_type = {r.type: r for r in records}
+        ordered = [by_type[t] for t in chain_types]
+        for i, r in enumerate(ordered):
+            assert r.created_by.startswith("agt-")
+            expected = ordered[i - 1].id if i > 0 else ""
+            assert (r.metadata or {}).get("parent_artifact") == expected

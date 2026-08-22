@@ -180,3 +180,105 @@ class TestAgentRegistryContract:
         reg = REG.AgentRegistry(tmp_path / "agents.json")
         with pytest.raises(REG.AgentNotFound):
             reg.remove("agt-it-pm-1")
+
+
+# ================================================================ A3 ExpertFactory
+
+class TestExpertFactoryContract:
+    def test_assemble_seven_software_experts(self, tmp_path):
+        """契约: assemble 7 个软件行业专家 (pm/market/competitive/ux/architect/
+        backend/qa — A3 口径 + 管线链角色), 全部 agt-it-* id + 非空技能。"""
+        factory = FACTORY.ExpertFactory()
+        # A3 验收口径: 7 角色 (pm/market/competitive/ux/architect/backend/qa)
+        a3_roles = ["pm", "market", "competitive", "ux", "architect", "backend", "qa"]
+        team = factory.build_team(roles=a3_roles, provider=_provider())
+        assert len(team) == 7
+        assert [a.role for a in team] == a3_roles
+        for agent in team:
+            assert agent.id.startswith("agt-it-")
+            assert agent.id.endswith("-1")
+            assert agent.skills, f"{agent.id} 缺技能"
+            assert agent.provider is not None
+            assert agent.system_prompt
+        # 管线链 7 角色 (A5 用)
+        chain = factory.build_team()
+        assert [a.role for a in chain] == list(FACTORY.PIPELINE_ROLES)
+
+    def test_assemble_uses_registry_numbering(self, tmp_path):
+        """装配编号经注册表 next_id: 已注册专家 → 下个编号 (各角色/行业独立)。"""
+        reg = REG.AgentRegistry(tmp_path / "agents.json")
+        factory = FACTORY.ExpertFactory(registry=reg)
+        a1 = factory.assemble("pm")
+        assert a1.id == "agt-it-pm-1"
+        # assemble 不自动落盘 (KISS: 持久化归 AgentRegistry.add) — "expert build"
+        # 语义 = assemble + add 两步
+        reg.add(a1)
+        a2 = factory.assemble("pm")
+        assert a2.id == "agt-it-pm-2"
+        assert reg.count(industry="it") == 1
+
+    def test_assemble_then_persist_flow(self, tmp_path):
+        """"expert build" 语义: assemble → AgentEntity → registry.add 落盘 agents.json。"""
+        reg = REG.AgentRegistry(tmp_path / "agents.json")
+        factory = FACTORY.ExpertFactory(registry=reg)
+        agent = factory.assemble("pm", provider=_provider())
+        reg.add(agent)
+        assert reg.get("agt-it-pm-1") == agent
+        assert (tmp_path / "agents.json").is_file()
+        assert "agt-it-pm-1" in (tmp_path / "agents.json").read_text(encoding="utf-8")
+
+    def test_missing_skill_raises_clear_error(self, tmp_path):
+        """契约: 引用不存在 skill → 明确报错 (不静默, 列出缺失技能)。"""
+        import pytest
+        factory = FACTORY.ExpertFactory()
+        with pytest.raises(FACTORY.ExpertAssemblyError) as exc:
+            factory.assemble("pm", skills=["product_strategy", "no_such_skill_xyz"])
+        msg = str(exc.value)
+        assert "no_such_skill_xyz" in msg
+        assert "装配" in msg
+
+    def test_unknown_role_raises(self):
+        import pytest
+        factory = FACTORY.ExpertFactory()
+        with pytest.raises(FACTORY.ExpertAssemblyError):
+            factory.assemble("no_such_role")
+
+    def test_unknown_workflow_raises(self):
+        import pytest
+        factory = FACTORY.ExpertFactory()
+        with pytest.raises(FACTORY.ExpertAssemblyError) as exc:
+            factory.assemble("pm", workflow_ref="no_such_workflow")
+        assert "workflow" in str(exc.value)
+
+    def test_unknown_knowledge_raises(self):
+        import pytest
+        factory = FACTORY.ExpertFactory()
+        with pytest.raises(FACTORY.ExpertAssemblyError) as exc:
+            factory.assemble("pm", knowledge_ref="no_such_knowledge")
+        assert "knowledge" in str(exc.value)
+
+    def test_workflow_knowledge_defaults_valid(self):
+        """默认工作流/知识挂载均通过装配校验 (真实内置流程/知识源)。"""
+        factory = FACTORY.ExpertFactory()
+        for role in FACTORY.PIPELINE_ROLES:
+            agent = factory.assemble(role)
+            assert agent.workflow_ref in ("feature-delivery", "")
+            assert agent.knowledge_ref in FACTORY.KNOWLEDGE_SOURCES
+
+    def test_no_llm_deterministic_fallback_nonempty(self):
+        """契约: 无 LLM (provider=None) → 确定性兜底非空 (全 7 角色)。"""
+        factory = FACTORY.ExpertFactory()
+        team = factory.build_team(provider=None)
+        product = _product()
+        for agent in team:
+            assert agent.provider is None
+            md = factory.deterministic_content(agent.role, product)
+            assert md and md.strip(), f"{agent.role} 兜底为空"
+            assert "（待补充）" in md or "#" in md  # 非空可审计
+
+    def test_injected_skill_checker_used(self, tmp_path):
+        """注入 skill 校验器生效 (自定义技能目录可挂载)。"""
+        custom = {"custom_skill_a"}
+        factory = FACTORY.ExpertFactory(skill_exists=lambda s: s in custom)
+        agent = factory.assemble("pm", skills=["custom_skill_a"])
+        assert agent.skills == ["custom_skill_a"]

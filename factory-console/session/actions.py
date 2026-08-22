@@ -3092,7 +3092,17 @@ def product_pipeline(context: ExecutionContext) -> ActionResult:
         from .pipeline_runner import ProductPipeline
         session = getattr(context, "session", None)
         source = str(getattr(session, "session_id", "") or "")
-        pipeline = ProductPipeline(context.workspace, slug)
+        # T1 (S10-088): 生产路径装配默认 LLM — 有 providers.json + key → 真调;
+        # 无 LLM (未配置/装配失败) → llm_fn=None → pipeline 确定性兜底 (诚实, 非空)。
+        # llm_fn 注入点保留: 测试/生产同路径 (ProductPipeline(llm_fn=...)), 无特判。
+        llm_fn = None
+        try:
+            from .reasoning import ReasoningProvider
+
+            llm_fn = ReasoningProvider()._default_llm_fn()  # noqa: SLF001 — 复用装配链
+        except Exception:  # noqa: BLE001 — 无 LLM → 确定性兜底 (明确, 不静默降级)
+            llm_fn = None
+        pipeline = ProductPipeline(context.workspace, slug, llm_fn=llm_fn)
         result = pipeline.run(product, source=source)
         return ActionResult(
             ok=True,

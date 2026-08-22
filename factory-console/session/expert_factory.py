@@ -342,17 +342,26 @@ class ExpertFactory:
         industry: str = DEFAULT_INDUSTRY,
         roles: Optional[list[str]] = None,
         provider: Optional[ProviderRef] = None,
+        persist: bool = True,
     ) -> list[AgentEntity]:
-        """装配专家团队 (缺省: 产品管线 7 角色链 pm→…→prd)。
+        """装配专家团队 (缺省: 产品管线 7 角色链 pm→…→prd) + 落盘注册表。
+
+        S10-088 T4: 装配后逐 agent registry.add 落盘 agents.json (专家可见,
+        'expert build' 语义内置); persist=False → 仅装配不落盘 (测试/临时装配
+        兼容, 不破坏既有调用面)。
 
         逐角色 assemble — 任一角色装配失败 → ExpertAssemblyError (整队失败,
-        不静默跳过, 契约 §2.6)。
+        不静默跳过, 契约 §2.6); 落盘失败 → AgentRegistryError 明确报错。
         """
         role_list = list(roles or PIPELINE_ROLES)
-        return [
+        team = [
             self.assemble(role, industry=industry, provider=provider)
             for role in role_list
         ]
+        if persist:
+            for agent in team:
+                self._registry.add(agent)
+        return team
 
     # ------------------------------------------------------------ 确定性兜底
 

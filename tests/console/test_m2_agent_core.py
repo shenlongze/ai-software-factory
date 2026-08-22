@@ -191,7 +191,7 @@ class TestExpertFactoryContract:
         factory = FACTORY.ExpertFactory()
         # A3 验收口径: 7 角色 (pm/market/competitive/ux/architect/backend/qa)
         a3_roles = ["pm", "market", "competitive", "ux", "architect", "backend", "qa"]
-        team = factory.build_team(roles=a3_roles, provider=_provider())
+        team = factory.build_team(roles=a3_roles, provider=_provider(), persist=False)
         assert len(team) == 7
         assert [a.role for a in team] == a3_roles
         for agent in team:
@@ -201,7 +201,7 @@ class TestExpertFactoryContract:
             assert agent.provider is not None
             assert agent.system_prompt
         # 管线链 7 角色 (A5 用)
-        chain = factory.build_team()
+        chain = factory.build_team(persist=False)
         assert [a.role for a in chain] == list(FACTORY.PIPELINE_ROLES)
 
     def test_assemble_uses_registry_numbering(self, tmp_path):
@@ -268,7 +268,7 @@ class TestExpertFactoryContract:
     def test_no_llm_deterministic_fallback_nonempty(self):
         """契约: 无 LLM (provider=None) → 确定性兜底非空 (全 7 角色)。"""
         factory = FACTORY.ExpertFactory()
-        team = factory.build_team(provider=None)
+        team = factory.build_team(provider=None, persist=False)
         product = _product()
         for agent in team:
             assert agent.provider is None
@@ -290,7 +290,8 @@ class TestHandoffBusContract:
     def _team(self, provider=True):
         factory = FACTORY.ExpertFactory()
         return factory.build_team(
-            provider=_provider() if provider else None
+            provider=_provider() if provider else None,
+            persist=False,  # 交接测试仅用实体, 不落盘 (默认注册表为 home)
         )
 
     def test_send_writes_artifact_with_agent_id(self, tmp_path):
@@ -484,14 +485,22 @@ class TestProductPipelineAgentChain:
         assert all(r.version == 2 for r in result.records)
 
     def test_agents_persisted_in_registry_after_build(self, tmp_path):
-        """A3+A2 闭环: 装配 7 专家 → 落盘 agents.json (expert build 语义)。"""
+        """S10-088 T4: build_team 装配后 registry.add 落盘 agents.json (expert build
+        语义内置, 含 7 个 agt-*); persist=False → 不落盘。"""
         reg = REG.AgentRegistry(tmp_path / "agents.json")
         factory = FACTORY.ExpertFactory(registry=reg)
-        for agent in factory.build_team(provider=_provider()):
-            reg.add(agent)
+        team = factory.build_team(provider=_provider())
+        assert len(team) == 7
         assert reg.count(industry="it") == 7
         data = reg.load()
         assert all(str(v["id"]).startswith("agt-") for v in data.values())
+        assert {a.id for a in reg.list()} == {a.id for a in team}
+        # persist=False → 不落盘 (保留不自动落盘选项)
+        reg2 = REG.AgentRegistry(tmp_path / "agents2.json")
+        factory2 = FACTORY.ExpertFactory(registry=reg2)
+        factory2.build_team(provider=_provider(), persist=False)
+        assert reg2.count() == 0
+        assert not (tmp_path / "agents2.json").is_file()
 
 
 class TestProductPipelineAction:

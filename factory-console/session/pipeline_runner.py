@@ -18,6 +18,7 @@ created_by=agent_id (agt- 前缀) + parent_artifact 互引 (血缘双字段)。
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable, Optional
 
 from .agent_entity import AgentEntity
@@ -97,7 +98,17 @@ class ProductPipeline:
         self.slug = str(slug)
         self.llm_fn = llm_fn
         self.registry = ArtifactRegistry(workspace, self.slug)
-        self.factory = factory or ExpertFactory()
+        # S10-088 T4: build_team 装配后落盘 agents.json — 工厂默认注册表指向项目
+        # 内 agents.json (隔离于 ~/.factory 默认数据空间, 项目内 '查看团队' 可见面)
+        if factory is None:
+            from .agent_registry import AgentRegistry
+
+            factory = ExpertFactory(
+                registry=AgentRegistry(
+                    Path(workspace) / "projects" / str(slug) / "agents.json"
+                )
+            )
+        self.factory = factory
         self.bus = bus or HandoffBus(workspace, self.slug, registry=self.registry)
 
     def run(self, product: ProductIntent, *, source: str = "") -> PipelineResult:

@@ -3587,6 +3587,68 @@ USE（资源视角）: Utilization(利用率) · Saturation(饱和) · Errors(�
 | 告警通道（消息渠道） | 📐 M5（§9.5 落地后） |
 | 自监控闭环（critical→修复） | 📐 M5+ |
 
+#### 5.8.9 具体指标清单（指标ID / 定义 / 来源 / 默认阈值 / 采集）★
+
+| 指标ID | 名称 | 定义 | 来源 | 默认阈值 | 采集 |
+|---|---|---|---|---|---|
+| `llm.latency_p95` | LLM p95 延迟 | 5 分钟窗口内调用延迟 p95 | provider 调用记录 | warn >30s / critical >60s | 每次调用 |
+| `llm.error_rate` | LLM 错误率 | 5 分钟窗口失败/总数 | provider 调用记录 | warn >5% / critical >20% | 5 分钟 |
+| `llm.cost_per_task` | 每任务成本 | usage 聚合（token×单价） | budget + usage | 超预算 → block（§6.2） | 每次 |
+| `exec.success_rate` | 任务成功率 | 滑动窗口 100 任务 | execution_records | warn <80% / critical <50% | 每次 |
+| `exec.duration_p95` | 任务 p95 耗时 | 滑动窗口 100 任务 | execution_records | warn >10min / critical >30min | 每次 |
+| `exec.replan_rate` | 重规划率 | replan 次数/任务数 | replanning_decisions | warn >30% | 每次 |
+| `exec.retry_rate` | 重试率 | 重试/任务数 | execution_state | warn >40% | 每次 |
+| `agent.load` | Agent 负载 | 排队任务数 | agents 队列 | warn >3 / critical >10 | 30s 探针 |
+| `agent.success_rate` | Agent 成功率 | 画像滑动窗口 | AgentMetrics | warn <70% | 每次 |
+| `data.sync_lag` | 投影同步滞后 | 事实源→投影事件时间差 | §8.5.8 同步器 | warn >60s / critical >10min | 60s 探针 |
+| `storage.growth` | 存储增速 | 日增体积 | 文件系统 | warn 超配额 70% | 1h 探针 |
+| `system.health` | 服务健康 | 端口/进程可达 | 心跳 | 失败 → critical | 30s 探针 |
+
+#### 5.8.10 具体告警规则（条件 / 级别 / 动作）★
+
+| 规则 | 条件 | 级别 | 动作 |
+|---|---|---|---|
+| llm.unavailable | 连续 3 次调用失败 | critical | 切备用 provider（§T5）+ 告警 |
+| llm.slow | p95 >30s 连续 5 个窗口 | warn | 告警 + 降级提示（§2 熔断） |
+| exec.fail_burst | 连续 5 任务失败 | critical | 停止队列 + 告警 + 事件响应（§20） |
+| cost.over_budget | 预算消耗 ≥100% | critical | block 全部 action（§6.2）+ 告警 |
+| sync.stale | 同步滞后 >60s | warn | 告警 + 触发投影重放（§8.5.8） |
+| agent.starved | 某 Agent 负载 >10 持续 5 窗口 | warn | 告警 + 建议扩容/改分配（§4.8） |
+| storage.quota | 磁盘使用 >70% | warn | 告警 + 建议归档/清理（§8.5.9） |
+
+**告警去重/抑制**：同源同级别 10 分钟内只发一次；critical 不抑制。
+
+#### 5.8.11 探针与健康检查
+
+| 探针 | 目标 | 频率 | 超时 |
+|---|---|---|---|
+| health | `GET /health`（后端 8011 / 前端 5180） | 30s | 5s |
+| llm | provider ping（最小请求） | 60s | 10s |
+| sync | 投影滞后查询（§8.5.8） | 60s | 5s |
+| storage | 数据目录体积/配额 | 1h | 5s |
+
+#### 5.8.12 时序存储 Schema（M5 落地）
+
+```
+metrics/{day}/{metric_id}.jsonl  （或 DB 时序表）
+每行: {metric_id, ts, value, labels{project_id, agent_id, provider_id}, source, version}
+聚合: 分钟桶 + 小时桶（§8.5.9 分级：只存聚合，原始留事实源）
+保留: 聚合 90 天；原始事实源永久（§8.5.8）
+```
+
+#### 5.8.13 监控 API 与 CLI
+
+```
+CLI:
+  factory monitor status          — 当前健康（服务/LLM/同步）
+  factory monitor alerts          — 活跃告警列表
+  factory monitor metrics <id>    — 单指标时序（如 llm.latency_p95）
+API:
+  GET /api/v1/monitor/health
+  GET /api/v1/monitor/metrics?ids=...&from=&to=
+  GET /api/v1/monitor/alerts?level=critical
+```
+
 ## 六、治理与合规体系
 
 ### 6.1 治理全景

@@ -99,3 +99,84 @@ class TestAgentEntityContract:
         agent = ENTITY.AgentEntity(id="agt-it-pm-1", role="pm", industry="it")
         assert agent.profile.success_rate == 0.0
         assert agent.profile.samples == 0
+
+
+# ================================================================ A2 AgentRegistry
+
+class TestAgentRegistryContract:
+    def test_register_get_list(self, tmp_path):
+        """契约: register→get→list + agents.json 持久化。"""
+        reg = REG.AgentRegistry(tmp_path / "agents.json")
+        agent = ENTITY.AgentEntity(
+            id="agt-it-pm-1", role="pm", industry="it", provider=_provider(),
+            skills=["product_strategy"],
+        )
+        reg.add(agent)
+        assert reg.get("agt-it-pm-1") == agent
+        assert reg.list() == [agent]
+        assert (tmp_path / "agents.json").is_file()
+        # 重新加载 (持久化)
+        reg2 = REG.AgentRegistry(tmp_path / "agents.json")
+        assert reg2.get("agt-it-pm-1") == agent
+
+    def test_same_role_multiple_providers_coexist(self, tmp_path):
+        """契约: 同 role 多 provider 并存 (agent id 唯一键)。"""
+        reg = REG.AgentRegistry(tmp_path / "agents.json")
+        reg.add(ENTITY.AgentEntity(id="agt-it-pm-1", role="pm", industry="it",
+                                   provider=_provider("reasoning", "gpt-4o"),
+                                   skills=["product_strategy"]))
+        reg.add(ENTITY.AgentEntity(id="agt-it-pm-2", role="pm", industry="it",
+                                   provider=_provider("reasoning-b", "claude"),
+                                   skills=["product_strategy"]))
+        agents = reg.list(industry="it")
+        assert len(agents) == 2
+        assert {a.id for a in agents} == {"agt-it-pm-1", "agt-it-pm-2"}
+        assert {a.provider.id for a in agents} == {"reasoning", "reasoning-b"}
+
+    def test_duplicate_id_raises(self, tmp_path):
+        import pytest
+        reg = REG.AgentRegistry(tmp_path / "agents.json")
+        agent = ENTITY.AgentEntity(id="agt-it-pm-1", role="pm", industry="it",
+                                   skills=["product_strategy"])
+        reg.add(agent)
+        with pytest.raises(REG.AgentAlreadyExists):
+            reg.add(agent)
+
+    def test_industry_isolation(self, tmp_path):
+        """契约: 跨行业互不可见 (it.* / ops.*)。"""
+        reg = REG.AgentRegistry(tmp_path / "agents.json")
+        reg.add(ENTITY.AgentEntity(id="agt-it-pm-1", role="pm", industry="it",
+                                   skills=["product_strategy"]))
+        reg.add(ENTITY.AgentEntity(id="agt-ops-qa-1", role="qa", industry="ops",
+                                   skills=["quality_assurance"]))
+        assert reg.count(industry="it") == 1
+        assert reg.count(industry="ops") == 1
+        assert reg.list(industry="it")[0].id == "agt-it-pm-1"
+        assert reg.list(industry="ops")[0].id == "agt-ops-qa-1"
+        assert reg.list() == sorted(reg.list(), key=lambda a: a.id)
+        assert reg.get("agt-it-pm-1") is not None
+        assert reg.get("agt-ops-qa-1") is not None
+
+    def test_invalid_industry_rejected(self, tmp_path):
+        import pytest
+        reg = REG.AgentRegistry(tmp_path / "agents.json")
+        with pytest.raises(REG.InvalidIndustry):
+            reg.add(ENTITY.AgentEntity(id="agt-xyz-pm-1", role="pm", industry="xyz",
+                                       skills=["product_strategy"]))
+        with pytest.raises(REG.InvalidIndustry):
+            reg.next_id("xyz", "pm")
+
+    def test_next_id_sequences_per_industry_role(self, tmp_path):
+        reg = REG.AgentRegistry(tmp_path / "agents.json")
+        assert reg.next_id("it", "pm") == "agt-it-pm-1"
+        reg.add(ENTITY.AgentEntity(id="agt-it-pm-1", role="pm", industry="it",
+                                   skills=["product_strategy"]))
+        assert reg.next_id("it", "pm") == "agt-it-pm-2"
+        assert reg.next_id("it", "qa") == "agt-it-qa-1"   # 各角色独立序号
+        assert reg.next_id("ops", "pm") == "agt-ops-pm-1"  # 各行业独立序号
+
+    def test_remove_missing_raises(self, tmp_path):
+        import pytest
+        reg = REG.AgentRegistry(tmp_path / "agents.json")
+        with pytest.raises(REG.AgentNotFound):
+            reg.remove("agt-it-pm-1")

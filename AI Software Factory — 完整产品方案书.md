@@ -1730,6 +1730,8 @@ factory-core ← factory-console ← factory-exec ← factory-org
 
 ### 3.2 任务拆解的核心机制
 
+
+> 本流程为**目标态 LLM 深度拆解**（M3）；当前实现为确定性拆解（§3.6：FeatureTaskGenerator 功能→Epic→任务四件套）。
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────┐
 │                              任务拆解全流程                                        │
@@ -1991,7 +1993,9 @@ factory-core ← factory-console ← factory-exec ← factory-org
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 3.5 DAG 数据结构完整定义
+### 3.5 DAG 数据结构完整定义（目标态设计）
+
+> 当前实现为确定性任务树（§3.6 的 FeatureTaskGenerator/TaskTree）；本 DAG（input_schema/output_schema/inputs_from）是 LLM 深度拆解（M3）时的完整形态。
 
 ```python
 # ============ 完整 DAG 数据结构 ============

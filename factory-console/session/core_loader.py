@@ -15,8 +15,15 @@ _ROOT = Path(__file__).resolve().parents[2]  # session/ → factory-console/ →
 
 
 def _ensure(path: str) -> None:
-    if path not in sys.path:
-        sys.path.insert(0, path)
+    """确保路径在 sys.path 且优先级最高 (S10-087: 防同名单文件遮蔽包)。
+
+    factory-console/events.py 与 factory-core/events/ 包同名 — 若 factory-core
+    仅存在于 path 尾部, `import events` 会命中单文件模块导致 from events.logger
+    递归失败。_ensure 幂等: 已存在 → 移到最前。
+    """
+    if path in sys.path:
+        sys.path.remove(path)
+    sys.path.insert(0, path)
 
 
 def load_core(module: str, attr: str = "") -> Any:

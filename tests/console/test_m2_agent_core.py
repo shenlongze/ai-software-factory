@@ -317,7 +317,7 @@ class TestHandoffBusContract:
         team = self._team()
         assert [a.role for a in team] == list(FACTORY.PIPELINE_ROLES)
 
-        def produce(agent, prev_id, product):
+        def produce(agent, prev_id, product, prev_content=""):
             return f"# {agent.role}\n消费上一产出: {prev_id or '(根)'}"
 
         result = bus.route(team, produce=produce, product=_product(), source="conv-1")
@@ -339,12 +339,45 @@ class TestHandoffBusContract:
         # 消息落盘
         assert len(bus.load_messages()) == 7
 
+    def test_route_produce_receives_previous_content(self, tmp_path):
+        """S10-088 T2: 后一角色 produce 收到上一资产正文 (交接消费, 非仅 id)。
+
+        断言: 第 4 参 prev_content 含上一环落盘正文 (经 ArtifactRegistry.read
+        回读, 非仅 asset id); 首环 (根) 为空。
+        """
+        bus = BUS.HandoffBus(tmp_path, "crm")
+        team = self._team()
+        received = []
+
+        def produce(agent, prev_id, product, prev_content=""):
+            marker = "根"
+            if prev_content and "MARKER-" in prev_content:
+                marker = prev_content.split("MARKER-")[-1].split("\n")[0]
+            received.append((agent.role, prev_id, prev_content))
+            return f"# {agent.role} 产出\nMARKER-{agent.role}-{marker}"
+
+        result = bus.route(team, produce=produce, product=_product(), source="conv-1")
+        assert len(received) == 7
+        # 首环: 根资产无上一产出 (id 与正文均为空)
+        role0, prev_id0, content0 = received[0]
+        assert prev_id0 == ""
+        assert content0 == ""
+        # 后续每环: prev_id 指向上一资产 id + prev_content 含上一环落盘正文
+        for i in range(1, 7):
+            role, prev_id, content = received[i]
+            assert prev_id == result.records[i - 1].id, role
+            assert content and content.strip(), f"{role} 未收到上一资产正文"
+            prev_role = received[i - 1][0]
+            assert f"MARKER-{prev_role}-" in content, (
+                f"{role} 上一资产正文未传入 (prev_role={prev_role}, content={content[:60]!r})"
+            )
+
     def test_conflict_routes_to_review_gate_pending(self, tmp_path):
         """契约: 冲突 → ConflictResolver → ReviewGate 挂起等审批 (pending_review)。"""
         bus = BUS.HandoffBus(tmp_path, "crm")
         team = self._team()
 
-        def produce(agent, prev_id, product):
+        def produce(agent, prev_id, product, prev_content=""):
             return f"# {agent.role}"
 
         def conflicts_for(index, agent):
@@ -437,6 +470,10 @@ class TestProductPipelineAgentChain:
         assert len(seen) == 7
         assert "你是软件行业产品经理" in seen[0]
         assert "agt-it-pm-1" in seen[1] or "product-v1-" in seen[1]
+        # S10-088 T2: prompt 嵌上一资产正文 (非仅 id) — 根环明确 '(无 — 根资产)'
+        assert "上一资产内容: (无 — 根资产)" in seen[0]
+        assert "上一资产内容:" in seen[1]
+        assert "上一资产内容" in seen[1]
         assert all(Path(r.content_ref).read_text(encoding="utf-8").strip()
                    for r in result.records)
 

@@ -38,6 +38,9 @@ ROLES: tuple[tuple[str, str, str], ...] = (
     ("prd", "prd", "产品需求文档 (PRD)"),
 )
 
+#: S10-088 T2: 交接消费上一资产正文的截断上限 (prompt 只嵌前 2000 字)
+PARENT_CONTENT_LIMIT = 2000
+
 #: 角色 → LLM 提示词后缀 (M2: AgentEntity.system_prompt 为主, 此处仅 LLM 路径增强)
 _ROLE_PROMPTS: dict[str, str] = {
     "pm": "你是产品经理。基于产品信息输出产品策略 (定位/用户价值/核心能力/非目标范围/商业模式), 中文 markdown。",
@@ -115,15 +118,26 @@ class ProductPipeline:
     # ------------------------------------------------------------ 生成
 
     def _produce(
-        self, agent: AgentEntity, parent_artifact_id: str, product: ProductIntent
+        self,
+        agent: AgentEntity,
+        parent_artifact_id: str,
+        product: ProductIntent,
+        parent_content: str = "",
     ) -> str:
-        """角色产出: LLM 可用 → LLM (system_prompt + 产品信息); 否则 deterministic。"""
+        """角色产出: LLM 可用 → LLM (system_prompt + 上一资产内容 + 产品信息); 否则 deterministic。
+
+        S10-088 T2: prompt 嵌 '上一资产内容: <前 PARENT_CONTENT_LIMIT 字>' —
+        后一角色消费前一产出正文 (而非仅 asset id); 血缘 id 仍保留。根资产
+        无上一产出 → '(无 — 根资产)' (明确, 不伪造)。
+        """
         role = str(agent.role or "").lower()
         if self.llm_fn is not None:
             try:
+                prev = str(parent_content or "").strip()[:PARENT_CONTENT_LIMIT]
                 prompt = (
                     f"{agent.system_prompt or _ROLE_PROMPTS.get(role, '')}\n"
                     f"上一资产: {parent_artifact_id or '(根, 无)'}\n"
+                    f"上一资产内容: {prev or '(无 — 根资产)'}\n"
                     f"产品: {product.to_summary()}"
                 )
                 text = str(self.llm_fn(prompt, role) or "").strip()

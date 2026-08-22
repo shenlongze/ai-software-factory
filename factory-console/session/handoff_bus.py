@@ -239,7 +239,7 @@ class HandoffBus:
         self,
         agents: list[AgentEntity],
         *,
-        produce: Callable[[AgentEntity, str, ProductIntent], str],
+        produce: Callable[[AgentEntity, str, ProductIntent, str], str],
         product: ProductIntent,
         source: str = "",
         conflicts_for: Optional[Callable[[int, AgentEntity], list[dict[str, Any]]]] = None,
@@ -248,6 +248,10 @@ class HandoffBus:
     ) -> HandoffResult:
         """跑完整角色链: 每步消费上一资产 → 产出 → 交接 (parent_artifact 互引)。
 
+        S10-088 T2: 交接消费上一产出正文 — 每步从 ArtifactRegistry.read 读
+        上一资产 content, 作为第 4 参传给 produce (prompt 嵌 '上一资产内容'),
+        而非仅传 asset id (血缘双字段仍保留)。
+
         任一交接 pending_review → HandoffBlocked (链停止, 等审批 — 不静默跳过)。
         """
         if not agents:
@@ -255,8 +259,9 @@ class HandoffBus:
         result = HandoffResult(project=self.slug)
         prev_artifact_id = ""
         prev_event_id = ""
+        prev_content = ""  # S10-088 T2: 上一资产正文 (交接消费, 首环为空=根)
         for index, agent in enumerate(agents):
-            content = produce(agent, prev_artifact_id, product)
+            content = produce(agent, prev_artifact_id, product, prev_content)
             artifact_type = self._artifact_type_for(agent)
             consumer = agents[index + 1] if index + 1 < len(agents) else agent
             message, record = self.send(
@@ -287,6 +292,7 @@ class HandoffBus:
             result.messages.append(message)
             prev_artifact_id = record.id
             prev_event_id = record.event_id
+            prev_content = self.registry.read(record)  # S10-088 T2: 交接消费正文
         return result
 
     # ------------------------------------------------------------ 内部

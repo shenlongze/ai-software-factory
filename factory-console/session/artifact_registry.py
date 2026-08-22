@@ -168,6 +168,19 @@ class ArtifactRegistry:
                 return rec
         return None
 
+    def read(self, record: ArtifactRecord) -> str:
+        """读取资产正文 (content_ref → artifact.md); 缺失/损坏 → "" (失败安全)。
+
+        S10-088 T2: HandoffBus.route 交接消费读上一产出正文 (prompt 嵌
+        '上一资产内容'), 而非仅传 asset id。
+        """
+        if record is None or not getattr(record, "content_ref", ""):
+            return ""
+        try:
+            return Path(str(record.content_ref)).read_text(encoding="utf-8")
+        except Exception:  # noqa: BLE001 — 失败安全: 内容缺失/损坏 → 空
+            return ""
+
     def list(self, artifact_type: Optional[str] = None) -> list[ArtifactRecord]:
         """全部资产记录 (按 type/version 升序; 无 → [])。"""
         results: list[ArtifactRecord] = []

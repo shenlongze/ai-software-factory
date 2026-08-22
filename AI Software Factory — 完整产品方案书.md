@@ -3110,6 +3110,32 @@ class AuditEventType:
 ```
 
 
+#### 6.3.5 审批门实现（已实现，对照代码）
+
+| 门 | 职责 | 实现 |
+|---|---|---|
+| **ConfirmationGate** | 敏感 action（create_project/run_task/prepare/execute）执行前 y/N 确认 | ✅ `confirm.py` |
+| **ReviewGate** | 评审请求（request/approve/reject/cancel），`risk=low/medium/high` | ✅ `review_gate.py` |
+| **ApprovalGate** | patch 应用前必批；`classify_risk`（爆炸半径）→ risk_level + required_roles | ✅ `exec/approval.py`（M1a） |
+
+#### 6.3.6 分级审批规则（已实现）
+
+| 爆炸半径 | risk_level | required_roles | 触发 |
+|---|---|---|---|
+| 低（单文件常规修改） | low | developer | 自动推荐 |
+| 中（跨文件/核心配置） | medium | tech_lead | 技术负责人批准 |
+| 高（删除/依赖升级/基础设施） | high | tech_lead + compliance | 人工必批 |
+
+#### 6.3.7 审批方式（部分实现）
+
+| 方式 | 状态 |
+|---|---|
+| 终端交互（y/n/edit） | ✅ 已实现 |
+| 消息渠道异步审批（IM 卡片） | 📐（§9.5 消息平台落地后） |
+| 低风险自动放行（用户配置） | ✅ 部分（ConfirmationGate 非敏感放行） |
+
+> 角色表（Owner/Admin/Operator/Viewer/Auditor）为 **RBAC 设计（📐 未实现）**；当前以三道门 + 统一契约（§二.十）为准。
+
 ## 七、学习与自我进化体系
 
 ### 7.1 学习架构

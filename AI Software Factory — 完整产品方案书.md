@@ -5515,7 +5515,8 @@ Agent 决策调用工具
 | M1a 证据包 + 分级审批 | v1.1.6 | EvidenceBundle + ApprovalGate 分级 | ✅ 已交付 |
 | M1b 积压清道夫 | v1.1.7 | BacklogSweeper（分诊→修复→证据→审批→报告） | ✅ 已交付 |
 | 三部门循环 | v1.1.8 | Claude 用户价值评估 · M2 准备 | 🚧 进行中 |
-| M2 员工内核 | v1.1.9 | AgentEntity + AgentRegistry + 专家装配器 + HandoffBus | 📐 待做 |
+| M2 员工内核 | v1.1.9 | AgentEntity + AgentRegistry + 专家装配器 + HandoffBus | ✅ 已交付 |
+| 专家真干活 (S10-088) | v1.1.10 | 生产路径接真实 LLM + 交接消费上一产出 + PRD 消费专家资产 + build_team 落盘 | ✅ 已交付 |
 | M3 IT 工厂深度 | v1.2.0 | PRD 深度化 + 需求变更回流 + 审批门 + repo 深度 | 📐 待做 |
 | M4 自我提升闭环 | v1.2.1 | 经验→画像→决策引用 + 评价回写 + 护栏 | 📐 待做 |
 | M5 真实 E2E + 模板 | v1.2.2 | 全链路演示 + FactorySpec 自举 + Web 入口 | 📐 待做 |

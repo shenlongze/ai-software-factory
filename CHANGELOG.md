@@ -5,7 +5,37 @@
 
 ---
 
-## [v1.1.9] — 2026-08-22
+## [v1.1.10] — 2026-08-22
+
+**专家真干活 (Sprint, S10-088)**: 生产路径接真实 LLM + 专家交接消费上一产出 +
+PRD 消费专家资产 + 专家团队落盘 — M2→M1 消费链打通 (Claude M2 评估: "骨架诚实、
+产出未兑现" 的下一刀)。
+
+### Added
+
+- **product_pipeline 生产路径接 LLM** (T1) — `actions.product_pipeline` 装配
+  `ReasoningProvider._default_llm_fn()` (有 providers.json + key → 真调 7 专家);
+  无 LLM → 确定性兜底非空 (诚实, 不静默)。`llm_fn` 注入点保留 (测试/生产同路径)。
+- **HandoffBus 交接消费上一产出正文** (T2) — `route` 每步经
+  `ArtifactRegistry.read` 读上一资产 content, 作为 produce 第 4 参传入;
+  `ProductPipeline._produce` prompt 嵌 `上一资产内容: <前 2000 字>` (而非仅 id);
+  血缘双字段 (parent_artifact + parent_event_id) 保留。
+- **prepare_project 消费专家 prd 资产** (T3) — 项目存在 HandoffBus 产出的
+  `prd` 资产 (created_by=agt-*) → 用专家产出生成 PRD.md (M2→M1 打通);
+  无专家资产 → 规则兜底 (向后兼容)。
+- **build_team 落盘专家注册表** (T4) — `ExpertFactory.build_team` 装配后
+  `registry.add` 落盘 agents.json (persist=True 默认, 项目内 agents.json 含 7 个
+  agt-*); `persist=False` 保留不自动落盘选项。
+- **真实产出断言** (T5) — 注入 fake llm_fn → market/全 7 资产含 LLM 真实内容
+  (非 "待补充/规则占位" 段落)。
+
+### Validation
+
+- `我要做CRM` → `让PM分析` → 7 专家 LLM 产出 + 互引 → `准备开发` → PRD.md 含专家内容
+- 全量回归 0 failed (runtime flaky 除外); 版本断言 v1.1.10 同步
+  (pyproject/install.sh/docs/CHANGELOG/test_s10_074_deployment.py)
+
+
 
 **M2 员工内核 (Sprint)**: "我要做CRM" → 7 个真实 Agent 实体交接产出 —
 用 AgentEntity/ExpertFactory/HandoffBus 替换"7 个 prompt 换提示词"的单模型循环。

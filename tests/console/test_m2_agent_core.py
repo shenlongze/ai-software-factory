@@ -1,4 +1,4 @@
-"""test_m2_agent_core.py — M2 员工内核契约测试 (S10-087, v1.1.9, A1-A5 全覆盖)。
+"""test_m2_agent_core.py — M2 员工内核契约测试 (S10-087/S10-088, v1.1.10, A1-A5 + T1-T5 全覆盖)。
 
 覆盖 (契约见 docs/sprint10/S10-087-M2-sprint-spec.md §2):
 - A1 AgentEntity: agt- 前缀 id / to_dict/from_dict roundtrip / 缺字段明确报错

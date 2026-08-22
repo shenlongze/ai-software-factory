@@ -484,6 +484,47 @@ class TestProductPipelineAgentChain:
         result = pipeline.run(_product())
         assert all(r.version == 2 for r in result.records)
 
+    def test_market_asset_contains_llm_real_content(self, tmp_path):
+        """S10-088 T5: 注入 fake llm_fn → market 资产含 LLM 真实内容 (非占位)。
+
+        验收: LLM 可用时 market 资产 ≥1 条非 '待补充/规则占位' 段落 —
+        断言含 fake LLM 输出正文, 且不含规则占位标记。
+        """
+        def fake_llm(prompt, role):
+            return (
+                f"# FAKE-LLM {role} 产出\n\n"
+                f"## 市场规模\n全球 CRM 市场 2026 年约 900 亿美元 (fake 数据)\n\n"
+                f"## 用户趋势\n- 销售团队移动化协作 (fake 洞察)\n\n"
+                f"## 机会窗口\n中小团队自动化跟进 (fake 机会)\n"
+            )
+
+        pipeline = PIPE.ProductPipeline(tmp_path, "crm", llm_fn=fake_llm)
+        result = pipeline.run(_product())
+        by_type = {r.type: r for r in result.records}
+        assert "market_analysis" in by_type
+        market = Path(by_type["market_analysis"].content_ref).read_text(encoding="utf-8")
+        assert "FAKE-LLM market 产出" in market
+        assert "900 亿美元" in market
+        # ≥1 条非 '待补充/规则占位' 段落 (非空 + 无占位标记)
+        assert "待补充" not in market
+        assert "规则占位" not in market
+        assert "fake 数据" in market
+
+    def test_all_assets_contain_llm_content_when_configured(self, tmp_path):
+        """验收 1: 配置 LLM (fake) → '让PM分析' 7 资产全部含 LLM 内容 (非规则占位)。"""
+        def fake_llm(prompt, role):
+            return f"# FAKE-LLM {role}\n\n## 段落\n由 fake LLM 生成的 {role} 真实内容, 非占位。"
+
+        pipeline = PIPE.ProductPipeline(tmp_path, "crm", llm_fn=fake_llm)
+        result = pipeline.run(_product())
+        assert len(result.records) == 7
+        for r in result.records:
+            md = Path(r.content_ref).read_text(encoding="utf-8")
+            assert md.strip()
+            assert "FAKE-LLM" in md, r.type
+            assert "规则占位" not in md, r.type
+            assert "待补充" not in md, r.type
+
     def test_agents_persisted_in_registry_after_build(self, tmp_path):
         """S10-088 T4: build_team 装配后 registry.add 落盘 agents.json (expert build
         语义内置, 含 7 个 agt-*); persist=False → 不落盘。"""

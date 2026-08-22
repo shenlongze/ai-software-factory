@@ -2808,6 +2808,51 @@ class SubTask:
 
 **完成度**：单 Agent 执行真实（✅）；"真团队"（实体+装配+交接）是 M2 主线（📐）。
 
+### 4.7 多 Agent 协作 × 调度执行（衔接 §3.9）★
+
+> 2026-08-22 补充: §3.9 的整链调度如何驱动多 Agent 协作——调度决定"谁就绪、给谁、何时并发"，
+> 协作决定"产物如何交接、如何共识"。
+
+#### 4.7.1 调度驱动协作（DAG → 协作执行）
+
+```
+§3.9 整链调度（关键路径 / 依赖 / 并行 / 资源）
+  → 就绪原子任务（依赖全部完成）
+  → Agent 分配（AgentMatcher：role/skill/成功率）
+  → 协作执行：
+      顺序依赖 → 交接链（HandoffBus：PM→Market→…→SeniorPM）
+      无依赖   → 并行协作（多 Agent 同时，各产 artifact）
+      冲突     → ConflictResolver 串行化
+  → 每步产物 → artifact（parent_artifact 互引）
+  → 关键节点卡口（§3.8：审批 / 风险 / 质量）
+  → 下一批就绪任务
+```
+
+#### 4.7.2 调度情形 → 协作模式映射
+
+| §3.9 调度情形 | 协作模式 | 机制 |
+|---|---|---|
+| 顺序依赖链 | 顺序协作（Sequential） | HandoffBus 交接（上一产出 → 下一输入） |
+| 无依赖并行 | 并行协作（Parallel） | 多 Agent 同时执行，产物独立落盘 |
+| 依赖汇聚节点 | 评审/共识 | 多路产物 → ConflictResolver / ReviewGate |
+| 任务失败 | 修复协作 | ReplanningEngine → 修复 Agent / 重规划 |
+
+#### 4.7.3 交接语义（HandoffBus 在调度中的位置）
+
+- **交接 = 调度中的"顺序边"**：下游 Agent 消费上游产物（`parent_artifact` 引用），不重复理解
+- 交接消息：`{from, to, artifacts[], decisions[], constraints[]}`
+- **关键节点（§3.8）可挂在任意交接点**：如 PM→Market 前审需求、QA 后审测试报告
+
+#### 4.7.4 实现衔接
+
+| 环节 | 状态 |
+|---|---|
+| AgentMatcher / ConflictResolver / artifact_registry / ReplanningEngine / LLMPlanner | ✅ 已有 |
+| AgentEntity / HandoffBus（交接执行） | 📐 M2 |
+| 整链调度器驱动协作（§3.9 就绪队列 → HandoffBus 触发） | 📐 M3 |
+
+**结论**：§3.9 决定"调度节奏"，§4.7 决定"协作方式"——两者在 M2/M3 由 `HandoffBus` + 整链调度器合成"一个会协作的 AI 团队"。
+
 ## 五、审计与可观测体系
 
 ### 5.1 审计架构

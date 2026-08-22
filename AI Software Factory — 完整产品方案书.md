@@ -1425,6 +1425,86 @@ factory_template:
 ---
 
 **一句话总结**：对标SAP不是"复制SAP"，而是**复制SAP的成功范式**——将50年行业知识积累转化为"积木式"的可组合能力，让用户像搭积木一样构建自己的AI工厂，而非从零开始造轮子。
+### 八、真实代码模块地图（工程模块化设计）
+
+> 2026-08-22 补充: 概念层（§二.一~§二.七）落地到**真实代码模块** — 4 大仓 + 子模块职责/依赖/状态/能力映射。防"设计与实现漂移"。
+
+#### 8.1 四大仓职责
+
+| 仓 | 职责 | 边界铁律 |
+|---|---|---|
+| **factory-core** | 领域原语（events/tasks/workflows/execution/validation/agents/understanding/change…） | 冻结，只读复用，不因 console 需求改 |
+| **factory-console** | 人类控制面（session/CLI/API/audit/memory/资产/工具） | 薄调度，不复制 core 业务 |
+| **factory-exec** | Agent 运行时（DeveloperAgent/ExecutionLoop/Evaluator/沙箱/MCP/patch） | 执行引擎，零业务 |
+| **factory-org** | 组织/项目数据（org/projects/space） | 数据面，被 console 代理 |
+
+#### 8.2 核心子模块地图（真实代码 + 状态）
+
+| 模块（真实路径） | 职责 | 状态 |
+|---|---|---|
+| `session/artifact_registry.py` | 版本化资产（v+n 递增） | ✅ |
+| `session/evidence.py` | 证据包（diff+test+决策） | ✅ |
+| `session/repo_mode.py` | 存量仓库模式（理解→改→测→修） | ✅ |
+| `session/workloads/backlog_sweeper.py` | 积压清道夫（分诊→修复→证据→审批→报告） | ✅ |
+| `session/product_intelligence.py` | 8 分析引擎（市场/竞品/画像/MVP…） | ✅ |
+| `session/pipeline.py` | PRD/工程/任务规则生成（确定性兜底） | ✅ |
+| `session/conversation.py` | 发现状态机（控制短语/多段填充） | ✅ |
+| `session/observability.py` | 执行历史/项目状态 | ✅ |
+| `session/tools.py` | 工具发现（AI CLI + MCP server） | ✅ |
+| `session/conflicts.py` | 交接冲突解析（S10-057） | ✅ |
+| `session/review_gate.py` | 审批门（request/approve/reject） | ✅ |
+| `exec/developer.py` | DeveloperAgent（provider/结构化输出） | ✅ |
+| `exec/execution_loop.py` | 计划/执行/决策循环（LLMPlanner） | ✅ |
+| `exec/evaluator.py` | 5 层候选评分 | ✅ |
+| `exec/approval.py` | 分级审批（爆炸半径） | ✅ |
+| `exec/mcp.py` | MCP 客户端（Mock + Stdio 真连） | ✅ |
+| `exec/sandbox.py` | 项目副本沙箱（原仓库零影响） | ✅ |
+| `exec/patch_filter.py` | patch 白名单过滤/交付校验 | ✅ |
+| `console/memory/` | 经验/学习/检索（experience/learning/retrieval） | ✅ |
+| `console/audit/` | 审计链（33+ 事件 + 血缘） | ✅ |
+| `org/` | 组织/项目数据（projects/space） | ✅ |
+| `session/agent_entity.py`（M2 新建） | 专家实体（role/provider/skills/knowledge/eval/memory） | 📐 |
+| `session/agent_registry.py`（M2） | 工厂层专家注册（行业命名空间） | 📐 |
+| `session/expert_factory.py`（M2） | 专家装配器（"造专家"） | 📐 |
+| `session/handoff_bus.py`（M2） | 多 Agent 交接总线 | 📐 |
+| `session/channels/`（M5+） | 消息平台适配器（50+ 长期） | 📐 |
+
+#### 8.3 模块依赖原则（无循环）
+
+```
+factory-core ← factory-console ← factory-exec ← factory-org
+（console 经 core_loader 延迟加载 core/exec；Removal Isolation；禁循环 import）
+```
+
+#### 8.4 21 章 ↔ 模块映射
+
+| 章节 | 主模块 | 状态 |
+|---|---|---|
+| §一 定位 | 文档（§1.4 状态锚点） | ✅ |
+| §二 模块化 | 全模块 + core/agents | 🚧 |
+| §三 任务拆解 | `session/pipeline.py` + `session/orchestrator.py` | 🚧 |
+| §四 多 Agent | `exec/*` + M2（agent_entity/handoff_bus） | 🚧 |
+| §五 审计可观测 | `console/audit` + `session/observability.py` | ✅ |
+| §六 治理 | `review_gate/confirm/budget/exec/approval` | ✅ |
+| §七 学习进化 | `console/memory` + `exec/evaluator.py` | 🚧 |
+| §八 RAG | `console/memory/retrieval.py` | 🚧 |
+| §九 工具/消息 | `session/tools.py` + `exec/mcp.py` | 🚧 |
+| §十 行业工厂 | `org` + `session/workloads` | 🚧 |
+| §十一 交互 | `session/`（CLI ✅ / Web 📐） | 🚧 |
+| §十二 路线 | 文档（MASTER-PLAN） | ✅ |
+| §十三 术语 | 文档 | ✅ |
+| §十五 竞品 | 文档 | ✅ |
+| §十六 优势吸收 | `exec/mcp` + `session/tools` + M4（memory） | 🚧 |
+| §十七 自我进化 | `exec/evaluator` + `console/memory` | 🚧 |
+| §十八~廿一 | 文档/未来（合规/知识图谱/安全/企业级） | 📐 |
+
+#### 8.5 模块化落地原则
+
+1. **新能力先落模块**（指定归属路径），不散落临时文件
+2. **每模块三件套**：边界注释 + 接口 + 测试（不造壳）
+3. **状态随 §1.4 同步更新**（✅/🚧/📐）
+4. **删除/重构先更新本地图**（模块级变更先行文档化）
+
 ## 三、复杂任务拆解体系
 
 ### 3.1 什么是"复杂任务"

@@ -469,6 +469,26 @@ def generate_prd(context: ExecutionContext) -> ActionResult:
     )
 
 
+def _expert_prd_content(workspace: Any, slug: str) -> str:
+    """读项目最近一次专家 prd 资产正文 (HandoffBus '让PM分析' 产出, created_by=agt-*)。
+
+    S10-088 T3 (M2→M1 消费链): prepare_project 优先用专家 PRD 资产生成 PRD.md;
+    无专家资产 (未跑管线 / 非 agent 产出 / 损坏) → "" (调用方规则兜底, 向后兼容)。
+    """
+    try:
+        from .artifact_registry import ArtifactRegistry
+
+        reg = ArtifactRegistry(workspace, slug)
+        record = reg.latest("prd")
+        if record is None:
+            return ""
+        if not str(record.created_by or "").startswith("agt-"):
+            return ""  # 非专家产出 → 规则兜底 (不消费旧角色字符串资产)
+        return reg.read(record) or ""
+    except Exception:  # noqa: BLE001 — 失败安全: 资产缺失/损坏 → 规则兜底
+        return ""
+
+
 def prepare_project(context: ExecutionContext) -> ActionResult:
     """准备工程 (S10-051 P3 高级组合 Action): 一次生成全部管线资产。
 
@@ -497,8 +517,11 @@ def prepare_project(context: ExecutionContext) -> ActionResult:
             error=f"产品信息不完整, 缺失: {detail}",
         )
     product_dir = projects_root / slug
-    # 1) PRD (ProductDocument — 规则生成)
-    prd_text = ProductDocument.from_product_intent(product)
+    # 1) PRD: S10-088 T3 — 优先消费专家 prd 资产 (HandoffBus '让PM分析' 产出,
+    #    created_by=agt-*); 无专家资产 → 规则兜底 (向后兼容, 不破坏既有行为)
+    prd_text = _expert_prd_content(projects_root.parent, slug) or (
+        ProductDocument.from_product_intent(product)
+    )
     prd_path = product_dir / "PRD.md"
     # 2) EngineeringPlan → engineering.json
     plan = EngineeringPlan.from_prd(product, prd_text)

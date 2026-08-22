@@ -547,3 +547,74 @@ class TestProductPipelineAction:
             assert r.created_by.startswith("agt-")
             expected = ordered[i - 1].id if i > 0 else ""
             assert (r.metadata or {}).get("parent_artifact") == expected
+
+
+# ================================================================ S10-088 T3 prepare_project 消费专家 prd 资产
+
+class TestPrepareProjectConsumesExpertPrd:
+    """T3 (M2→M1 消费链): prepare_project 优先用专家 prd 资产 (created_by=agt-*);
+    无专家资产 → 规则兜底 (向后兼容)。"""
+
+    def _make_project(self, root):
+        import json
+        pdir = root / "projects" / "crm"
+        pdir.mkdir(parents=True, exist_ok=True)
+        (pdir / "product.json").write_text(
+            json.dumps({
+                "name": "CRM",
+                "problem": "客户管理混乱, 跟进靠表格",
+                "user": "销售团队",
+                "platform": "web",
+                "core_features": ["客户跟进", "报表"],
+                "status": "prd_ready",
+            }, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        return pdir
+
+    def _ctx(self, root):
+        import factory_console.session.context as ctx_mod
+        sess = ctx_mod.SessionContext(workspace=str(root))
+        sess.current_project = "crm"
+        return ACT.ExecutionContext(workspace=str(root), session=sess, user="user")
+
+    def test_prepare_project_uses_expert_prd_asset(self, tmp_path):
+        """验收 3: 存在专家 prd 资产 → PRD.md 含专家产出内容 (非规则模板)。"""
+        root = tmp_path / "ws"
+        root.mkdir()
+        pdir = self._make_project(root)
+        # HandoffBus 产出的 prd 资产 (created_by=agt-*)
+        reg = ART.ArtifactRegistry(root, "crm")
+        expert_md = "# 专家 PRD 产出\n\n## 市场洞察\n自定义专家内容: CRM 分层定价"
+        reg.write("prd", expert_md, created_by="agt-it-prd-1")
+        result = ACT.prepare_project(self._ctx(root))
+        assert result.ok, result.message
+        prd = (pdir / "PRD.md").read_text(encoding="utf-8")
+        assert "专家 PRD 产出" in prd
+        assert "自定义专家内容" in prd
+        # 非规则模板 (规则模板不含自定义专家内容)
+        assert "分层定价" in prd
+
+    def test_prepare_project_ignores_non_agent_prd_asset(self, tmp_path):
+        """仅专家 (agt-*) 资产被消费; 旧角色字符串资产 → 规则兜底 (向后兼容)。"""
+        root = tmp_path / "ws"
+        root.mkdir()
+        pdir = self._make_project(root)
+        reg = ART.ArtifactRegistry(root, "crm")
+        reg.write("prd", "# 旧角色资产\n不应被消费", created_by="pm")
+        result = ACT.prepare_project(self._ctx(root))
+        assert result.ok, result.message
+        prd = (pdir / "PRD.md").read_text(encoding="utf-8")
+        assert "不应被消费" not in prd
+        assert "产品需求文档 (PRD)" in prd  # 规则模板兜底
+
+    def test_prepare_project_rule_fallback_without_expert_asset(self, tmp_path):
+        """验收 3 兜底: 无专家 prd 资产 → 原规则行为不变 (向后兼容)。"""
+        root = tmp_path / "ws"
+        root.mkdir()
+        pdir = self._make_project(root)
+        result = ACT.prepare_project(self._ctx(root))
+        assert result.ok, result.message
+        prd = (pdir / "PRD.md").read_text(encoding="utf-8")
+        assert "产品需求文档 (PRD)" in prd
+        assert "# CRM — 产品需求文档 (PRD)" in prd

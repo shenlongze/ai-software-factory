@@ -2946,6 +2946,45 @@ B. 运行自产（数据飞轮，系统自己产生）:
 - 所有自产数据都经统一契约（§2.10-11）：事件/记录带 `id/timestamp/source/version` + 血缘 → 可追溯、可重放（§5.6）
 - 外部数据源（知识库/第三方）未来经同一契约接入（T4/M5）
 
+### 4.10 当前 7 角色实现实况（🚧 的真相，M2 升级基线）
+
+> 2026-08-22 补充: §4.6 标"7 角色当前是提示词 🚧"——本节把这句话变成可核对的实况，
+> 并标出哪些是真实能力、哪些是占位模板（M2 升级的精确对象）。
+
+#### 4.10.1 实现方式（当前 `session/pipeline_runner.py`）
+
+```
+7 角色 = ROLES 元组 (pm/market/competitive/ux/architect/qa/prd)
+每个角色:
+  _generate: llm_fn(同一模型) 换 7 个 prompt   ← "换提示词" 的真相
+  失败/无 LLM → _deterministic: 9-23 行规则模板 ← 兜底
+无 Agent 实体 · 无角色记忆/技能/评价 · 角色间不消费上一产出（无交接）
+```
+
+#### 4.10.2 逐角色实况（真实能力 vs 占位）
+
+| 角色 | 产物 | LLM 模式 | 确定性兜底 | 真实性 |
+|---|---|---|---|---|
+| pm | product | prompt | 12 行模板（定位/价值/能力/非目标） | 🟡 模板 |
+| market | market_analysis | prompt | **复用 ProductIntelligenceEngine**（真市场规模/趋势） | 🟢 真引擎 |
+| competitive | competitive_analysis | prompt | **复用 ProductIntelligenceEngine**（真竞品/差异化） | 🟢 真引擎 |
+| ux | ux_flow | prompt | 12 行模板（流程/页面/信息架构占位） | 🔴 占位 |
+| architect | architecture | prompt | 16 行模板（platform→架构规则） | 🟡 规则 |
+| qa | test_plan | prompt | 10 行模板（测试层级占位） | 🔴 占位 |
+| prd | prd | prompt | **复用 ProductDocument**（6 节 PRD） | 🟡 规则 |
+
+**结论**：7 角色中 **2 个有真引擎兜底（market/competitive）**，3 个规则/模板（pm/architect/prd），2 个纯占位（ux/qa）；LLM 模式全是"同一模型换 prompt"。
+
+#### 4.10.3 M2 升级基线（把 🚧 变 ✅ 的精确对象）
+
+| 升级 | 从 | 到（M2） |
+|---|---|---|
+| 实体 | 无 | AgentEntity（role/provider/skills/eval/memory/profile） |
+| 装配 | 无 | ExpertFactory 装配 + 校验（缺 skill 报错） |
+| 交接 | 顺序写 artifact，互不消费 | HandoffBus（下游消费上游产出，parent_artifact） |
+| 评价/记忆 | 无 | evaluation_ref / memory_ref 挂载（M4 闭环） |
+| 占位角色 | ux/qa 模板 | 接真引擎/LLM 深度（M3 深度化） |
+
 ## 五、审计与可观测体系
 
 ### 5.1 审计架构

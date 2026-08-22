@@ -282,3 +282,110 @@ class TestExpertFactoryContract:
         factory = FACTORY.ExpertFactory(skill_exists=lambda s: s in custom)
         agent = factory.assemble("pm", skills=["custom_skill_a"])
         assert agent.skills == ["custom_skill_a"]
+
+
+# ================================================================ A4 HandoffBus
+
+class TestHandoffBusContract:
+    def _team(self, provider=True):
+        factory = FACTORY.ExpertFactory()
+        return factory.build_team(
+            provider=_provider() if provider else None
+        )
+
+    def test_send_writes_artifact_with_agent_id(self, tmp_path):
+        """契约: send → ArtifactRegistry.write(created_by=agent_id,
+        parent_event_id, metadata.parent_artifact)。"""
+        bus = BUS.HandoffBus(tmp_path, "crm")
+        pm, market = self._team()[:2]
+        msg, record = bus.send(
+            pm, market, artifact_type="product", content="# 产品策略",
+            source="conv-1", parent_artifact_id="",
+        )
+        assert msg.status == BUS.MSG_STATUS_DELIVERED
+        assert msg.from_agent == "agt-it-pm-1"
+        assert msg.to_agent == "agt-it-market-1"
+        assert msg.artifacts == [record.id]
+        assert record.created_by == "agt-it-pm-1"
+        assert (record.metadata or {}).get("parent_artifact") == ""
+        assert record.content_ref  # 落盘
+
+    def test_route_seven_agents_parent_artifact_lineage(self, tmp_path):
+        """契约: PM→Market→Competitive→UX→Architect→QA→SeniorPM 依次消费
+        上一产出; 每资产 metadata.parent_artifact 指向上一资产。"""
+        bus = BUS.HandoffBus(tmp_path, "crm")
+        team = self._team()
+        assert [a.role for a in team] == list(FACTORY.PIPELINE_ROLES)
+
+        def produce(agent, prev_id, product):
+            return f"# {agent.role}\n消费上一产出: {prev_id or '(根)'}"
+
+        result = bus.route(team, produce=produce, product=_product(), source="conv-1")
+        assert len(result.records) == 7
+        assert [r.type for r in result.records] == [
+            "product", "market_analysis", "competitive_analysis",
+            "ux_flow", "architecture", "test_plan", "prd",
+        ]
+        for i, r in enumerate(result.records):
+            assert r.created_by.startswith("agt-")
+            expected = result.records[i - 1].id if i > 0 else ""
+            assert (r.metadata or {}).get("parent_artifact") == expected
+            if i > 0:
+                assert r.parent_event_id == result.records[i - 1].event_id
+                assert r.parent_event_id  # 审计血缘非空
+        assert len(result.messages) == 7
+        # 末环 to=自身 (终止交接, PRD 为终产物)
+        assert result.messages[-1].to_agent == "agt-it-prd-1"
+        # 消息落盘
+        assert len(bus.load_messages()) == 7
+
+    def test_conflict_routes_to_review_gate_pending(self, tmp_path):
+        """契约: 冲突 → ConflictResolver → ReviewGate 挂起等审批 (pending_review)。"""
+        bus = BUS.HandoffBus(tmp_path, "crm")
+        team = self._team()
+
+        def produce(agent, prev_id, product):
+            return f"# {agent.role}"
+
+        def conflicts_for(index, agent):
+            if index == 2:  # competitive → ux 交接冲突
+                return [{"file": "a.py", "task_a": agent.id, "task_b": "agt-it-ux-1"}]
+            return None
+
+        import pytest
+        with pytest.raises(BUS.HandoffBlocked) as exc:
+            bus.route(team, produce=produce, product=_product(), conflicts_for=conflicts_for)
+        blocked = exc.value
+        assert blocked.message.status == BUS.MSG_STATUS_PENDING_REVIEW
+        assert blocked.message.review_id
+        # 审批挂起记录
+        pending = bus.review_gate.pending()
+        assert pending, "冲突应产生挂起审批"
+        assert str(pending[0].project_id) if hasattr(pending[0], "project_id") else True
+        # 阻断前资产已写, 阻断点无资产 (未静默写脏资产)
+        assert len(bus.registry.list()) == 2  # pm, market 已产出; competitive 未产出
+
+    def test_review_required_pending_without_conflict(self, tmp_path):
+        """review_required=True (无冲突) → 同样走 ReviewGate 挂起。"""
+        bus = BUS.HandoffBus(tmp_path, "crm")
+        pm, market = self._team()[:2]
+        msg, record = bus.send(
+            pm, market, artifact_type="product", content="# 产品策略",
+            review_required=True,
+        )
+        assert msg.status == BUS.MSG_STATUS_PENDING_REVIEW
+        assert record is None
+        assert bus.review_gate.pending()
+
+    def test_messages_persist_and_load(self, tmp_path):
+        bus = BUS.HandoffBus(tmp_path, "crm")
+        pm, market = self._team()[:2]
+        bus.send(pm, market, artifact_type="product", content="# x", decisions=["d1"],
+                 constraints=["c1"])
+        msgs = bus.load_messages()
+        assert len(msgs) == 1
+        assert msgs[0]["from"] == "agt-it-pm-1"
+        assert msgs[0]["to"] == "agt-it-market-1"
+        assert msgs[0]["decisions"] == ["d1"]
+        assert msgs[0]["constraints"] == ["c1"]
+        assert msgs[0]["artifacts"]

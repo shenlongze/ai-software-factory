@@ -2083,6 +2083,17 @@ class SubTask:
 ```
 
 
+### 3.6 任务拆解实现对照（2026-08-22）
+
+| 能力 | 真实实现 | 状态 |
+|---|---|---|
+| 确定性任务树 | `session/pipeline.py`：TaskTree / FeatureTaskGenerator（功能级 Epic/Task） | ✅ |
+| 依赖图/拓扑 | `session/orchestrator.py`（依赖解析/拓扑/重规划） | ✅ |
+| DAG 数据结构 | `execution_state.json`（tasks/status/error/依赖） | ✅ |
+| 拆解模板库 / 拆解质量评估 | 本文档 2.3/2.4（设计） | 📐 |
+
+**完成度**：确定性任务拆解 + 依赖图已实现（✅）；LLM 深度拆解模板库/质量评估待补（📐，M3）。
+
 ## 四、多 Agent 编排与调用体系
 
 ### 4.1 Agent 角色体系
@@ -2650,6 +2661,18 @@ class SubTask:
 └─────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+
+### 4.6 多 Agent 编排实现对照（2026-08-22）
+
+| 能力 | 真实实现 | 状态 |
+|---|---|---|
+| 单 Agent 执行运行时 | `exec/developer.py` + `execution_loop.py` + `agent_runtime.py` | ✅ |
+| 7 角色资产链（当前实现） | `session/pipeline_runner.py`（S10-084，单模型换提示词） | 🚧 |
+| 专家实体/注册/装配 | `agent_entity/agent_registry/expert_factory`（M2） | 📐 |
+| 交接总线 | `handoff_bus.py`（M2）+ `session/conflicts.py`（冲突，已存在） | 📐 |
+| 多 LLM 分工路由 | 设计（A6 后置） | 📐 |
+
+**完成度**：单 Agent 执行真实（✅）；"真团队"（实体+装配+交接）是 M2 主线（📐）。
 
 ## 五、审计与可观测体系
 
@@ -3610,6 +3633,16 @@ class ExperienceEvidence:
 ```
 
 
+### 8.4 RAG 实现对照（2026-08-22）
+
+| 能力 | 真实实现 | 状态 |
+|---|---|---|
+| 经验检索 | `console/memory/retrieval.py`（经验库检索） | ✅ |
+| 三级 RAG（文档切分/知识图谱/规则库） | 本文档 7.x（设计） | 📐 |
+| 领域知识库 | 设计（T4 增强层） | 📐 |
+
+**完成度**：经验检索已实现（✅）；三级 RAG/领域知识库为设计（📐）。
+
 ## 九、工具生态与集成体系
 
 ### 9.1 工具生态架构
@@ -3793,6 +3826,17 @@ Agent 决策调用工具
 
 - 复用: §二 消息总线/插件接口 · §四 Agent 路由 · §七 记忆/学习 · §八 RAG(FAQ 回流) · §十六 5.1 OpenClaw 多渠道吸收(放大为 50+)
 - 新增: session/channels/ 适配器层 + 消息归一化 + 渠道内审批渲染
+
+### 9.6 工具生态实现对照（2026-08-22）
+
+| 能力 | 真实实现 | 状态 |
+|---|---|---|
+| 工具发现 | `session/tools.py`：AI CLI（codex/hermes/openclaw/claude）+ MCP server 配置扫描 | ✅ |
+| 真 MCP 客户端 | `exec/mcp.py`：StdioMCPClient（JSON-RPC，替换 Mock） | ✅ |
+| Skill 注册表 | `core/agents/skills.py` | ✅ |
+| 消息平台（50+） | §9.5 设计（P0 5 渠道待做） | 📐 |
+
+**完成度**：工具发现 + MCP 真连 + Skill 已实现（✅）；消息平台为设计（📐，M5）。
 
 ## 十、行业工厂体系
 
@@ -4052,6 +4096,17 @@ Agent 决策调用工具
 ```
 
 
+### 10.4 行业工厂实现对照（2026-08-22）
+
+| 能力 | 真实实现 | 状态 |
+|---|---|---|
+| IT 工厂（想法→工程→执行） | `actions.create_product` + `pipeline.py` + `repo_mode.py` + `workloads/backlog_sweeper.py` | ✅ |
+| 积压清道夫（首个可售卖工作负载） | `backlog_sweeper.py`（分诊→修复→证据→审批→报告） | ✅ |
+| FactorySpec 模板 / 第二行业 | 设计（M5/M6） | 📐 |
+| 运维/电商/自媒体/数据/办公工厂 | 本文档 9.x 场景（设计） | 📐 |
+
+**完成度**：IT 工厂闭环已实现（✅）；行业复制（FactorySpec + 第二行业）为设计（📐，M5/M6）。
+
 ## 十一、全部交互场景设计
 
 ### 10.1 交互场景总览
@@ -4305,6 +4360,17 @@ Agent 决策调用工具
 └─────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+
+### 11.5 交互场景实现对照（2026-08-22）
+
+| 能力 | 真实实现 | 状态 |
+|---|---|---|
+| CLI 交互 | `session/InteractiveSession`（意图/发现/命令/会话记忆） | ✅ |
+| 对话指令集 | `/project /help /status` + 自然语言意图（多轮修复后） | ✅ |
+| Web（React 壳） | `factory-console/web/`（React + FastAPI） | 🚧 |
+| IDE 插件 / 自主沙箱 | 设计（M7 入口扩展） | 📐 |
+
+**完成度**：CLI 交互完整（✅）；Web 壳待打通（🚧）；IDE/自主为设计（📐）。
 
 ## 十二、演进路线图
 
@@ -7775,4 +7841,16 @@ SAP 的成功，是"**深厚的行业知识（最佳实践）+ 灵活的技术�
 | 数据主权/合规认证 | §十八/§21（设计，企业级阶段） | 📐 |
 
 **完成度**：运行时安全（沙箱/patch/审批/凭证/隔离）已实现（✅）；威胁模型/纵深防御/合规认证为企业级阶段（📐，M5+）。
+
+### 17.10 五维自我进化 × 代码锚点（2026-08-22）
+
+| 维 | 真实实现 | 状态 |
+|---|---|---|
+| 自我学习 | `console/memory/`（experience/extraction/learning/retrieval） | ✅ 存储/检索，闭环 📐 |
+| 自我监控 | `session/observability.py` + `audit/`（事后查询） | ✅ 事后，实时告警 📐 |
+| 自我完善 | `exec/evaluator.py`（5 层评分） | ✅ 评分，回写决策 📐 |
+| 自我发现 | `session/tools.py`（AI CLI + MCP 发现） | ✅ |
+| 自我修复 | `session/replanning.py` + `quality.py`（repair） | ✅ |
+
+**完成度**：五维**单点全部已实现**（✅）；五维**闭环接线**（画像/决策引用/回写/护栏）待 M4。
 

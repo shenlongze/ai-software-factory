@@ -1608,6 +1608,71 @@ factory-core ← factory-console ← factory-exec ← factory-org
 
 > 落地：M2 起每个新模块（agent_entity/expert_factory/handoff_bus…）**第一天就按本规范实现**（ActionResult + 统一字段 + 契约测试），不欠债。
 
+### 十一、统一数据模型与契约（核心实体 + API + 错误码 + 契约测试）
+
+> 2026-08-22 补充: §二.十 原则的具体落地 —— 核心实体统一字段、API 端点统一、错误码统一、
+> 契约测试作为独立产品纳入平台的强制门槛。
+
+#### 11.1 核心实体统一数据模型（通用字段 + 各实体字段）
+
+**通用字段（所有实体）**：`id / created_at(UTC) / updated_at / source / version / created_by / status`
+
+| 实体 | 前缀 | 专属字段 |
+|---|---|---|
+| **AgentEntity**（专家） | `agt-` | `role / industry / provider{id,model} / system_prompt / skills[] / knowledge_ref / workflow_ref / memory_ref / tools[] / evaluation_ref / profile{success_rate,quality,cost,speed,samples}` |
+| **FactorySpec**（行业工厂） | `fac-` | `industry / employees[] / capabilities[] / workflows[] / governance / assets[]` |
+| **EvidenceBundle**（证据包） | `ev-` | `project_id / task_id / agent_id / diff / test_results[] / logs[] / decisions[] / artifacts[]` |
+| **ApprovalRequest**（审批） | `APR-` | `bundle_id / risk_level(low/medium/high) / required_roles[] / decided_by / decided_at` |
+| **Artifact**（资产） | `art-` | `type / version / parent_artifact / content_ref / event_id` |
+| **ChannelMessage**（消息） | `msg-` | `platform / conversation / sender / text / ts` |
+| **ExecutionTask**（任务） | `task-` | `project_id / agent_id / status / error / code_files` |
+
+#### 11.2 统一 API 端点（/api/v1 全景）
+
+```
+/api/v1
+  /agents            GET/POST    专家列表/创建
+  /agents/{id}       GET/PATCH   专家详情/画像更新
+  /factories         GET/POST    工厂列表/实例化
+  /tasks             POST        跑任务 (idea|repo|autonomous)
+  /tasks/{id}        GET         任务状态 (+ SSE /events)
+  /projects/{id}/artifacts|timeline|status   GET
+  /approvals         GET/POST    审批列表/请求
+  /approvals/{id}    PATCH       审批决策 (approve/reject)
+  /evidence          GET/POST    证据包
+  /tools             GET/POST    /tools/{name}/call
+  /channels          GET/POST    消息渠道
+  /memory/experience|agents       GET
+  /health | /version  GET
+```
+响应一律 `{ok, status, message, data}`（成功）/ `{ok, status, message, error}`（失败）。
+
+#### 11.3 统一错误码
+
+| 码 | 语义 | 场景 |
+|---|---|---|
+| `E400` | 参数/校验错误 | 缺字段、非法值 |
+| `E401` | 权限不足 | 未授权访问 |
+| `E402` | **治理拦截** | 审批未过 / 预算超限 / 审计拒绝 |
+| `E404` | 未找到 | 实体/端点不存在 |
+| `E409` | 冲突 | 重复创建 / 状态冲突 |
+| `E410` | 依赖缺失 | LLM 不可用 / 工具缺失 / 数据缺失 |
+| `E500` | 内部错误 | 未预期异常（失败安全，不吞不伪装） |
+
+错误响应: `{ok:false, status:"error", message:"人类可读", error:{code:"E402", detail:"..."}}`
+
+#### 11.4 契约测试套件（独立产品纳入平台的强制门槛）
+
+| 套件 | 断言 | 目的 |
+|---|---|---|
+| **schema 测试** | 实体字段齐全、类型正确、枚举合法 | 字段统一 |
+| **接口测试** | 端点存在、方法正确、路径/参数一致 | 接口统一 |
+| **返回值测试** | `{ok,status,message,data|error}` 结构一致 | 返回值统一 |
+| **错误码测试** | 失败场景返回正确错误码（E4xx/E5xx） | 错误统一 |
+| **血缘测试** | event_id/parent_event_id/artifact_reference 链完整 | 可审计 |
+
+> 门槛: 任何独立产品（治理/证据/清道夫/知识/渠道…）要纳入 AI Factory 平台生态，**必须先通过契约测试套件**；不通过 = 不纳入（先适配再进，而不是进来再修）。
+
 ## 三、复杂任务拆解体系
 
 ### 3.1 什么是"复杂任务"

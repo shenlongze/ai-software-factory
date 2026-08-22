@@ -2907,6 +2907,45 @@ reason: "skill match 92% (python/api/database), 成功率 95%"
 | 动态分配（调度时实时匹配） | 📐 M3 |
 | 画像优先 / 负载均衡 | 📐 M4 |
 
+### 4.9 数据来源与冷启动（分配/学习/画像的数据从哪来）★
+
+> 2026-08-22 补充: 分配评分、学习画像、经验检索依赖的数据，归纳为**两类来源**：初始配置（人工/预置种子）+ 运行自产（系统执行时产生，越用越准）。
+
+#### 4.9.1 数据来源总表
+
+| 数据 | 来源 | 谁产生 | 状态 |
+|---|---|---|---|
+| Agent 角色/技能/成本画像 | `agents.json`（`~/.factory/agents/`）默认注册表（backend-1/flutter-dev/tester-1 预置）+ 用户可改 | 人工/预置种子 | ✅ |
+| 成功率/绩效 | `execution_records.json` → `AgentMetrics.compute` → `agent_metrics.json` | **系统自产**（每次执行） | ✅ |
+| 成本 | `ExecutionResult.usage`（input/output tokens + estimated_cost）由 Provider 返回并落库 | **系统自产** | ✅ |
+| 经验 | `memory/extraction.py` 从 execution_records/repair_task/replanning_decisions 提取（FAILURE/SUCCESS 模式） | **系统自产** | ✅ |
+| 审计/血缘 | 系统事件（audit 33+ 类型） | **系统自产** | ✅ |
+| 项目/仓库 | `org/projects.json` + 用户仓库 | 用户 + 系统 | ✅ |
+| 领域知识库 | 设计（T4） | 待接入 | 📐 |
+
+#### 4.9.2 两类来源的本质
+
+```
+A. 初始配置（种子，人工/预置）:
+   agents.json（角色/技能/成本画像）— 冷启动的"起点"，只此一处需人工/默认
+
+B. 运行自产（数据飞轮，系统自己产生）:
+   每次执行 → execution_records → 成功率/成本/经验/审计
+   → 分配更准（AgentMatcher）· 画像更可信（AgentProfile）· 经验更丰富（RAG）
+   → 越用越准（自我进化闭环的原料）
+```
+
+#### 4.9.3 冷启动问题（诚实）
+
+- 新 Agent 无历史成功率 → AgentMatcher 用默认因子（`0.5 + 0.5 × 历史`，历史=0 → 0.5）兜底
+- 成本用默认 `avg_cost`；样本不足不计权（§7.5 可信度护栏）
+- **数据飞轮前提**：先用起来（预置种子 + 默认兜底）→ 产生数据 → 分得更准。这是"先跑通再变强"的原因，也是 M4 前分配"够用即可"的原因
+
+#### 4.9.4 与统一契约的关系
+
+- 所有自产数据都经统一契约（§2.10-11）：事件/记录带 `id/timestamp/source/version` + 血缘 → 可追溯、可重放（§5.6）
+- 外部数据源（知识库/第三方）未来经同一契约接入（T4/M5）
+
 ## 五、审计与可观测体系
 
 ### 5.1 审计架构

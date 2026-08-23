@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-#: 标准事件类型注册表 (S10-069 设计 §2 — 52 个, 验收: 30+)
+#: 标准事件类型注册表 (S10-069 设计 §2 — 54 个, 验收: 30+)
 EVENT_TYPES: tuple[str, ...] = (
     "PRODUCT_CREATED",
     "PROJECT_RENAMED",
@@ -78,6 +78,8 @@ EVENT_TYPES: tuple[str, ...] = (
     "DECOMPOSE_COMPLETED",
     "PLAN_KEYPATH_COMPUTED",
     "PLAN_MERGE_MARKED",
+    "EVAL_COMPLETED",
+    "EVAL_REJECTED_FALLBACK",
 )
 
 #: 敏感键精确名 (脱敏: 键名小写/下划线归一后 ∈ 该集合 → 删除)

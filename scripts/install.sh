@@ -39,7 +39,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 PYTHON="${PYTHON:-}"
-VERSION="1.1.13"
+VERSION="1.1.14"
 
 echo "══════════════════════════════════════════════"
 echo "  AI Software Factory 一键安装 v$VERSION"

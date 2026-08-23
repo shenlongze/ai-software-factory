@@ -5,7 +5,36 @@
 
 ---
 
-## [v1.1.13] — 2026-08-24
+## [v1.1.14] — 2026-08-24
+
+**M3d 拆解质量评估 + LLM 深度拆解 (S10-095)**: M3 三部曲之后补上**质量门控** —
+拆解完先验质量（六维确定性评分），不合格诚实降级，不伪造 LLM 质量；同时
+LLM 深度拆解升级为结构化产出并接入门控。
+
+### Added
+
+- **DecompositionEvaluator** (`session/decomposition_evaluator.py`) —
+  `evaluate(decomposition, task, context)` → `{score, dims{完整性25/粒度20/
+  依赖20/可行性15/可测性10/风险10}, decision, reasons}`; 六维确定性规则
+  （完整性=core_features 覆盖 / 粒度=原子四条件通过率 / 依赖=cycle_detect+
+  关键路径合理性 / 可行性=agent∈capabilities / 可测性=verify_cmd 覆盖率 /
+  风险=risks 标注存在），score=Σ(维×权重)。
+- **四档行动** — ≥0.9 `adopt`; 0.7-0.9 `adjust`（`adjust()` 自动修正: 补缺失
+  feature / 补默认 verify_cmd / 修剪依赖环 → 修正后采用，标注 adjusted）;
+  <0.7 `reject`（回退确定性技术层模板, 诚实降级）; <0.5 `ask_user`（返回
+  questions, REPL 层处理后重评）。
+- **decomposer 最小集成** — `decompose()` 后置评估（`evaluator` 可注入,
+  `evaluate_after` 默认开）; `llm_fn` 产出结构化 `{tasks:[{id,name,
+  requirement,depends_on,verify_cmd,est,risks}], summary}` → 质量门控;
+  无 LLM → 确定性 leaves 照常评估（不跳过）; reject/ask_user → 确定性兜底。
+- **落盘 + 审计** — `evaluation{score,dims,decision,reasons}` 进
+  `decomposition.json` state + evidence 证据包（`EvidenceBundle.evaluation`）;
+  审计事件 2 个: `EVAL_COMPLETED` / `EVAL_REJECTED_FALLBACK`（EVENT_TYPES
+  52→54）。
+- **契约测试** `tests/console/test_m3d_evaluator.py` — 17 例: 六维手算对照 /
+  好拆解 adopt / 差拆解 reject 回退 / ask_user questions / adjust 自动修正 /
+  无 LLM 照常评估 / evidence+审计落盘 / 向后兼容（评估器可选、M3a 零变化）。
+
 
 **M3c 并行调度执行 (M3-3, S10-090)**: 原子任务不再简单顺序跑 — 消费
 plan.json (M3b 依赖边) + execution_state → 依赖就绪队列 + 同文件冲突串行化 +

@@ -133,12 +133,17 @@ class DecomposeEngine:
         max_depth: int = DEFAULT_MAX_DEPTH,
         max_tasks: int = DEFAULT_MAX_TASKS,
         audit: Optional[Any] = None,
+        evaluator: Optional[Any] = None,
+        evaluate_after: bool = True,
     ) -> None:
         self.workspace = Path(workspace) if workspace is not None else None
         self.project_id = str(project_id or "")
         self.max_depth = max(int(max_depth or DEFAULT_MAX_DEPTH), 1)
         self.max_tasks = max(int(max_tasks or DEFAULT_MAX_TASKS), 1)
         self._audit = audit  # 显式注入（测试隔离）; None → 运行时懒装配
+        # M3d: 拆解质量评估器（可注入; 默认 None → 后置评估时懒装配默认实例 = 默认开）
+        self._evaluator = evaluator
+        self._evaluate_after = bool(evaluate_after)
         self._reset()
 
     # ------------------------------------------------------------ 状态
@@ -149,6 +154,7 @@ class DecomposeEngine:
         self._seen: set[str] = set()
         self._events: list[str] = []
         self._error: Optional[str] = None
+        self._evaluation: Optional[Any] = None  # M3d EvalResult（后置评估）
 
     def _new_id(self, prefix: str = "task") -> str:
         return f"{prefix}-{uuid.uuid4().hex[:8]}"
@@ -412,11 +418,23 @@ class DecomposeEngine:
 
     @staticmethod
     def _coerce_children(raw: Any, task: dict[str, Any]) -> list[dict[str, Any]]:
-        """LLM 返回值归一（list[dict] / list[str] → 子任务; 非法 → 空）。"""
-        if not isinstance(raw, list):
+        """LLM 返回值归一 → 子任务; 非法 → 空。
+
+        支持两种形态 (S10-095 结构化升级):
+          - 简单 list: [{"name", ...}] / [str]（旧形态, 向后兼容）
+          - 结构化 dict: {"tasks": [{id,name,requirement,depends_on,verify_cmd,
+            est,risks}], "summary": ...}（M3d LLM 深度拆解, 字段透传）
+        """
+        if isinstance(raw, dict):
+            items = raw.get("tasks")
+            if not isinstance(items, list):
+                return []
+        elif isinstance(raw, list):
+            items = raw
+        else:
             return []
         children: list[dict[str, Any]] = []
-        for i, item in enumerate(raw):
+        for i, item in enumerate(items):
             if isinstance(item, dict) and item.get("name"):
                 child = dict(item)
                 child.setdefault("id", f"{task.get('id')}-llm{i}")
@@ -425,6 +443,12 @@ class DecomposeEngine:
                 child.setdefault("agent_type", task.get("agent_type") or "")
                 child.setdefault("parent", task.get("id"))
                 child.setdefault("_split_mode", "final")
+                # M3d 结构化字段归一: est → est_minutes（评估器/叶子统一口径）
+                if "est" in child and "est_minutes" not in child:
+                    try:
+                        child["est_minutes"] = int(child["est"])
+                    except (TypeError, ValueError):
+                        pass
                 children.append(child)
             elif isinstance(item, str) and item.strip():
                 children.append(
@@ -446,7 +470,7 @@ class DecomposeEngine:
         """构造原子叶子（verified=False → unverified 诚实标注，不含内部字段）。"""
         files = self.extract_files(task)
         _ok, verify_cmd = self._verify_cmd_ok(files, explicit=task.get("verify_cmd"))
-        return {
+        leaf = {
             "id": str(task.get("id") or self._new_id()),
             "name": str(task.get("name") or task.get("goal") or "原子任务"),
             "goal": str(task.get("goal") or task.get("requirement") or ""),
@@ -459,6 +483,139 @@ class DecomposeEngine:
             "parent": str(task.get("parent") or ""),
             "source": "atomic" if verified else "unverified",
         }
+        # M3d: LLM 深度拆解字段透传（risks/depends_on 供六维评估; 缺失 → 缺省空）
+        risks = task.get("risks")
+        if isinstance(risks, (list, tuple)):
+            leaf["risks"] = [str(r) for r in risks if str(r).strip()]
+        elif isinstance(risks, str) and risks.strip():
+            leaf["risks"] = [risks]
+        deps = task.get("depends_on")
+        if isinstance(deps, str) and deps.strip():
+            leaf["depends_on"] = [deps]
+        elif isinstance(deps, (list, tuple)):
+            leaf["depends_on"] = [str(d) for d in deps if str(d).strip()]
+        return leaf
+
+    # ------------------------------------------------------------ M3d 后置评估
+
+    def _run_post_evaluation(
+        self,
+        task: dict[str, Any],
+        product: dict[str, Any],
+        capabilities: Optional[dict[str, Any]],
+        llm_fn: Optional[Callable[..., Any]],
+    ) -> None:
+        """M3d 后置质量评估（S10-095 §3/§4/§5; 失败安全, 不中断拆解）。
+
+        decompose() 产出 leaves 后 → DecompositionEvaluator.evaluate() →
+        四档行动:
+          - adopt  (≥0.9)     → 采用当前 leaves
+          - adjust (0.7-0.9)  → evaluator.adjust() 自动修正（补 feature /
+            补 verify / 修剪环）→ 修正后采用（adjusted 标注）; 修正仍 <0.7
+            → 回退确定性（诚实）
+          - reject (<0.7)     → 回退确定性技术层模板（诚实降级, 不伪造 LLM 质量）
+          - ask_user (<0.5)   → 引擎无 REPL 问询 → 确定性兜底 + questions 记录
+            （REPL 层处理后重评）
+        审计: EVAL_COMPLETED（每次评估）+ EVAL_REJECTED_FALLBACK（回退时）;
+        落盘: evaluation 进 decomposition.json state + evidence 证据包。
+        """
+        if not self._evaluate_after:
+            return
+        try:
+            from .decomposition_evaluator import DecompositionEvaluator  # 延迟导入
+
+            if self._evaluator is None:
+                self._evaluator = DecompositionEvaluator(
+                    audit=self._audit,
+                    workspace=self.workspace,
+                    project_id=self.project_id,
+                )
+            context = {"capabilities": capabilities, "product": product}
+            decomposition = {"tasks": list(self._leaves)}
+            result = self._evaluator.evaluate(decomposition, task, context)
+
+            if result.decision == "adjust":
+                adjusted, adj_result = self._evaluator.adjust(decomposition, task, context)
+                self._evaluation = adj_result
+                if adj_result.decision == "adopt":
+                    # 修正后采用（adjusted 标注; 依赖环修剪后 leaves 同步）
+                    self._leaves = list(adjusted["tasks"])
+                else:
+                    # 修正仍 <0.7 → 诚实回退确定性模板
+                    self._fallback_deterministic(task, product, capabilities)
+                    self._emit_eval("EVAL_REJECTED_FALLBACK", adj_result)
+                self._emit_eval("EVAL_COMPLETED", adj_result)
+                self._sync_tree_from_leaves()
+            else:
+                self._evaluation = result
+                self._emit_eval("EVAL_COMPLETED", result)
+                if result.decision == "reject" and llm_fn is not None:
+                    self._fallback_deterministic(task, product, capabilities)
+                    self._emit_eval("EVAL_REJECTED_FALLBACK", result)
+                elif result.decision == "ask_user" and llm_fn is not None:
+                    # 引擎无问询能力 → 确定性兜底（不产出 <0.5 拆解）;
+                    # questions 留在 evaluation 供 REPL 层重评
+                    self._fallback_deterministic(task, product, capabilities)
+            self._save_evaluation_evidence()
+        except Exception as exc:  # noqa: BLE001 — 失败安全: 评估故障不中断拆解
+            self._error = self._error or f"拆解质量评估失败: {exc}"
+
+    def _emit_eval(self, event_type: str, result: Any) -> None:
+        """评估审计事件（失败安全; 事件名同步进 state.events）。"""
+        self._events.append(event_type)
+        try:
+            if self._evaluator is not None:
+                self._evaluator.emit(
+                    event_type, result, task_id=str(self.project_id or "")
+                )
+        except Exception:  # noqa: BLE001 — 失败安全铁律
+            pass
+
+    def _fallback_deterministic(
+        self,
+        task: dict[str, Any],
+        product: dict[str, Any],
+        capabilities: Optional[dict[str, Any]],
+    ) -> None:
+        """回退确定性技术层模板（无 LLM 重跑 _walk; 诚实降级, 不伪造）。"""
+        self._leaves = []
+        self._tree = []
+        self._seen = set()
+        try:
+            self._walk(task, product, capabilities, None, 0, [])
+        except Exception as exc:  # noqa: BLE001 — 失败安全: 回退异常不抛
+            self._error = self._error or str(exc)
+
+    def _sync_tree_from_leaves(self) -> None:
+        """adjust 替换 leaves 后同步 tree 原子节点（无新 id → 跳过, 防重）。"""
+        tree_ids = {str(n.get("id")) for n in self._tree}
+        for lf in self._leaves:
+            if lf["id"] not in tree_ids:
+                self._tree.append(
+                    {
+                        "id": lf["id"],
+                        "name": lf.get("name", ""),
+                        "type": "atomic",
+                        "parent": lf.get("parent") or "",
+                        "children": [],
+                        "verified": bool(lf.get("verified", False)),
+                        "depth": 0,
+                    }
+                )
+
+    def _save_evaluation_evidence(self) -> None:
+        """evaluation 落盘进 evidence 证据包（失败安全 → None）。"""
+        if self._evaluation is None or self.workspace is None or not self.project_id:
+            return
+        from .evidence import save_evaluation_evidence
+
+        save_evaluation_evidence(
+            self.workspace,
+            self.project_id,
+            project_id=self.project_id,
+            task_id=self.project_id,
+            evaluation=self._evaluation.to_dict(),
+        )
 
     def decompose(
         self,
@@ -480,6 +637,8 @@ class DecomposeEngine:
         try:
             product_dict = self._product_dict(product)
             self._walk(task, product_dict, capabilities, llm_fn, depth, list(ancestors or []))
+            # M3d: 后置质量评估（可注入, 默认开; 失败安全: 评估故障不中断拆解）
+            self._run_post_evaluation(task, product_dict, capabilities, llm_fn)
         except Exception as exc:  # noqa: BLE001 — 失败安全: 部分结果 + error
             self._error = str(exc)
         finally:
@@ -607,6 +766,7 @@ class DecomposeEngine:
             "tree": self._tree,
             "events": self._events,
             "error": self._error,
+            "evaluation": self._evaluation.to_dict() if self._evaluation is not None else None,
             "stats": {
                 "depth_cap": self.max_depth,
                 "task_cap": self.max_tasks,

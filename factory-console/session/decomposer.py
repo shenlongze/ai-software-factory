@@ -271,6 +271,22 @@ class DecomposeEngine:
 
     # ------------------------------------------------------------ 确定性拆分
 
+    @staticmethod
+    def _complex_hint(task: dict[str, Any]) -> str:
+        """继承父任务的复杂度语义（如"重构"）→ 子任务不丢失，防伪造原子性。
+
+        "重构用户模块" 若子任务 goal 变成 "实现功能: 用户管理"，复杂度语义
+        丢失 → 子任务被误判原子。加 hint 后 → "重构: 用户管理" → est>10 →
+        final 层 unverified 诚实标注。
+        """
+        text = " ".join(
+            str(task.get(k) or "") for k in ("goal", "requirement", "name")
+        )
+        for kw in COMPLEX_KEYWORDS:
+            if kw in text:
+                return f"{kw}: "
+        return ""
+
     def _split_by_features(
         self, task: dict[str, Any], product: dict[str, Any]
     ) -> list[dict[str, Any]]:
@@ -285,8 +301,8 @@ class DecomposeEngine:
                 {
                     "id": f"{task.get('id')}-f{i}",
                     "name": name,
-                    "goal": f"实现功能: {name}",
-                    "requirement": f"{name} 功能（含数据/接口/页面/测试）",
+                    "goal": f"{self._complex_hint(task)}实现功能: {name}",
+                    "requirement": f"{self._complex_hint(task)}{name} 功能（含数据/接口/页面/测试）",
                     "agent_type": task.get("agent_type") or "",
                     "parent": task.get("id"),
                 }
@@ -307,8 +323,8 @@ class DecomposeEngine:
                 {
                     "id": f"{task.get('id')}-s{i}",
                     "name": part[:40],
-                    "goal": part,
-                    "requirement": part,
+                    "goal": f"{self._complex_hint(task)}{part}",
+                    "requirement": f"{self._complex_hint(task)}{part}",
                     "agent_type": task.get("agent_type") or "",
                     "parent": task.get("id"),
                 }
@@ -534,7 +550,8 @@ class DecomposeEngine:
         children = self._split(task, product, llm_fn)
         if not children:
             # 无法/不再拆分 → unverified 原子（诚实: 能力边界，不假装原子）
-            leaf = self._leaf(task, verified=False)
+            _ok, est = self._est_ok(task)
+            leaf = self._leaf(task, verified=False, est=est)
             leaf["depth"] = depth
             leaf["unsplittable"] = True
             self._emit("DECOMPOSE_ATOMIC", task_id=task_id, verified=False, reason="unsplittable")

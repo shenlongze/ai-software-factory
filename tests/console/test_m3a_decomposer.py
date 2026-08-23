@@ -186,3 +186,28 @@ class TestBackwardCompat:
     def test_task_tree_still_works(self, tmp_path):
         tree = PIPELINE.TaskTree.from_engineering({"modules": ["auth"]})
         assert len(tree.get("tasks", [])) == 4  # db/api/frontend/test
+
+
+class TestComplexSemanticsInheritance:
+    def test_refactor_task_children_honest_unverified(self, tmp_path):
+        """重构/迁移等复杂语义必须传递到子任务——不伪造原子性（§5.12.6③ 铁律）。
+
+        回归: "重构用户模块" 的 goal 在 feature 层曾被 "实现功能: 用户管理"
+        覆盖 → 子任务误判 verified。修复后子任务继承 "重构" hint → unverified。
+        """
+        eng = _engine(tmp_path)
+        r = eng.decompose(
+            {"id": "root", "name": "重构用户模块", "goal": "重构用户模块",
+             "requirement": "重构用户模块的数据库层和后端接口"},
+            product={"core_features": ["用户管理"]},
+            capabilities=STRONG_CAPS,
+        )
+        assert len(r.leaves) >= 1
+        # 含"重构"的子任务必须是 unverified 诚实标注（不是 ≤10min 原子）
+        for leaf in r.leaves:
+            assert leaf["verified"] is False, f"{leaf['id']} 不应伪造原子性"
+            assert leaf["unverified"] is True
+            # 语义已传递: goal 含"重构"
+            assert "重构" in leaf["goal"]
+            # est 记录真实估计（>10 说明判定为超时）
+            assert leaf["est_minutes"] > 10

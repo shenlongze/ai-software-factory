@@ -27,6 +27,7 @@
 19. [知识图谱与结构化知识体系](#十九知识图谱与结构化知识体系)
 20. [安全威胁模型与纵深防御体系](#二十安全威胁模型与纵深防御体系)
 21. [国产化ERP对标与企业级就绪](#二十一国产化erp对标与企业级就绪)
+22. [附录: 完整架构图索引](#附录-完整架构图索引)
 
 ## 一、产品定位与核心理念
 
@@ -108,14 +109,14 @@
 
 > 2026-08-21 由工程团队标注：本方案书各章在真实代码库中的落地状态。
 > 图例: ✅ 已实现 · 🚧 部分实现 · 📐 仅设计（蓝图）
-> 基线: v1.1.7 · 全量测试 11856+ passed · 三部门循环 M1 完成
+> 基线: v1.1.10 · 全量测试 11981+ passed · 三部门循环 M2 完成（T1-T5 专家真干活）
 
 | 章节 | 状态 | 真实实现依据（代码） | 待补（里程碑） |
 |---|---|---|---|
-| 一 产品定位 | ✅ | 愿景已对齐（本 §1.1-1.3） | "造专家"落地（M2/M4） |
+| 一 产品定位 | ✅ | 愿景已对齐（本 §1.1-1.3） | 自我进化闭环（M4） |
 | 二 模块化热插拔 | 🚧 | `exec/mcp.py`（MCPClient 协议+Registry）、`session/tools.py`（工具发现） | 统一消息总线/插件规范（M2+） |
 | 三 复杂任务拆解 | 🚧 | `session/pipeline.py`（TaskTree/FeatureTaskGenerator，确定性 DAG 雏形） | 模板库/质量评估（M3） |
-| 四 多 Agent 编排 | 🚧 | S10-084 ProductPipeline（7 角色）、`exec/agent_runtime.py` | AgentEntity+HandoffBus（M2） |
+| 四 多 Agent 编排 | ✅ | AgentEntity（`session/agent_entity.py`）/ AgentRegistry（`session/agent_registry.py`）/ ExpertFactory（`session/expert_factory.py`）/ HandoffBus（`session/handoff_bus.py`）· 7 角色真干活（T1-T5） | ux/qa 深化 + 记忆回流（M3/M4） |
 | 五 审计与可观测 | ✅ | `audit/audit_event.py`（33+ 事件）、`session/observability.py`（exec history/status） | 实时监控/告警（M4） |
 | 六 治理与合规 | ✅ | ReviewGate / ConfirmationGate / budget / ApprovalGate（分级审批，M1a） | — |
 | 七 学习与自我进化 | 🚧 | `memory/`（experience/learning/retrieval/auto_learn）、`exec/evaluator.py` | 经验→画像→决策闭环（M4） |
@@ -132,7 +133,7 @@
 | 十七 自我进化体系 | 🚧 | 自修复✅（replan/repair）、自发现✅（tools）、自监控✅（observability） | 五维闭环接线（M4） |
 | 十八~二十一 数据/知识/安全/企业级 | 📐 | 本补充章节（2026-08-21 设计） | 随对应里程碑落地 |
 
-**要点**：5 章已实现（一/五/六/十二/十三/附录/十四/十五），其余 10 章为"部分实现"，"仅设计"的完整闭环（多 Agent 实体、学习闭环、消息平台、第二行业、Web 入口）正是 M2-M7 里程碑要补的。
+**要点**：9 项已实现（一/四/五/六/十二/十三/附录/十四/十五），其余 10 章为"部分实现"，"仅设计"的完整闭环（学习闭环、消息平台、第二行业、Web 入口）正是 M3-M7 里程碑要补的。
 
 ### 1.5 可行性评估与实施取舍（把蓝图变成可执行计划）
 

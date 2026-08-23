@@ -117,7 +117,7 @@
 | 二 模块化热插拔 | 🚧 | `exec/mcp.py`（MCPClient 协议+Registry）、`session/tools.py`（工具发现） | 统一消息总线/插件规范（M2+） |
 | 三 复杂任务拆解 | 🚧 | `session/pipeline.py`（TaskTree/FeatureTaskGenerator，确定性 DAG 雏形） | 模板库/质量评估（M3） |
 | 四 多 Agent 编排 | ✅ | AgentEntity（`session/agent_entity.py`）/ AgentRegistry（`session/agent_registry.py`）/ ExpertFactory（`session/expert_factory.py`）/ HandoffBus（`session/handoff_bus.py`）· 7 角色真干活（T1-T5） | ux/qa 深化 + 记忆回流（M3/M4） |
-| 五 审计与可观测 | ✅ | `audit/audit_event.py`（33+ 事件）、`session/observability.py`（exec history/status） | 实时监控/告警（M4） |
+| 五 审计与可观测 | ✅ | `audit/audit_event.py`（50 事件）、`session/observability.py`（exec history/status）、`team_state.py`（团队进度） | 递归进度视图/节点控制（§5.10, M3c+）· 实时监控/告警（M4） |
 | 六 治理与合规 | ✅ | ReviewGate / ConfirmationGate / budget / ApprovalGate（分级审批，M1a） | — |
 | 七 学习与自我进化 | 🚧 | `memory/`（experience/learning/retrieval/auto_learn）、`exec/evaluator.py` | 经验→画像→决策闭环（M4） |
 | 八 RAG 知识检索 | 🚧 | `memory/retrieval.py`（经验检索） | 领域知识库（T4） |
@@ -4280,6 +4280,93 @@ API:  GET /api/v1/audit/report?from=&to=
 | 审计链/证据/决策链（报告的数据） | ✅ 已实现 |
 | `factory audit report` + 报告生成器 | 📐 M5 |
 | 定时周报/月报 + 消息推送 | 📐 M5（§9.5 落地后） |
+
+### 5.10 递归进度管理体系（每层节点都有进度 / 视图 / 控制 / 调整）★
+
+> 2026-08-24 补充（Founder 关键判断）: 项目有进度、子任务有进度、子子任务有进度、
+> 子子子任务也有进度——**但凡是单一节点，都有进度**。进度不是"顶层聚合一次"，
+> 而是**递归存在于每个节点**（对齐 §4.12.9 全层级 loop：每层都是 Autonomous Node）。
+
+#### 5.10.1 核心原则：每节点都是完整进度单元
+
+```
+项目 Node（进度 = 子任务聚合）
+ └─ 子任务 Node（进度 = 子子任务聚合）
+     └─ 子子任务 Node（进度 = 子子子任务聚合）
+         └─ 原子 Node（进度 = 自身执行状态）
+每一层: 进度状态 + 进度数据 + 视图 + 控制 + 调整（完整闭环，缺一不可）
+```
+
+**与"每节点自治"同构**（§4.12.9）: 节点自治解决"能不能做"；递归进度解决
+"做到哪了 / 谁在干 / 下一步谁"——两者都是递归的、每层完整的。
+
+#### 5.10.2 每节点进度模型（5 要素）
+
+| 要素 | 原子节点 | 组合节点（聚合） |
+|---|---|---|
+| **进度状态** | pending / ready / running / success / failed / blocked | 子节点状态聚合（有 running → running；全 success → success；有 failed → failed/partial） |
+| **进度百分比** | 自身 0 / 100（运行中按阶段估算） | Σ(子节点进度 × 权重) / Σ权重（权重 = est_minutes 或价值 P0/P1） |
+| **剩余时间** | 自身 est_minutes − 已耗 | 剩余子树关键路径（§3.9.1，复用 critical_path） |
+| **视图** | 单节点详情（证据/日志/耗时） | 树/全景 + 下钻到任意层 |
+| **控制** | pause / resume / cancel / retry | 递归控制（暂停父 = 暂停整棵子树，§5.10.5） |
+
+#### 5.10.3 进度数据来源与落盘（事实源 + 投影）
+
+- **事实源（唯一）**: 原子节点状态机 `execution_state`（pending→ready→running→success/failed）——只有原子任务真正执行，状态是事实
+- **组合节点进度 = 运行时聚合（投影）**: 不重复落盘，避免"多份进度数据不一致"（§8.5.8 事实源 + 投影原则）
+- 落盘: `execution_state.json`（原子，事实）+ 聚合视图（可缓存投影，标记 `computed_at`）
+- 进度查询 = 读事实源 → 按树结构聚合 → 返回视图（不依赖额外状态文件）
+
+#### 5.10.4 递归视图（3 层，§5.7 可视化体系承载）
+
+| 视图 | 内容 | 载体 |
+|---|---|---|
+| **全景视图** | 整棵任务树进度（每层聚合）+ 关键路径红色高亮 + 谁在干/下一步 | 树形进度图 / 甘特图（§5.7.2） |
+| **节点视图** | 单节点进度详情（状态/百分比/剩余/子节点/控制按钮） | 下钻面板 |
+| **原子视图** | 单任务执行细节（证据/日志/耗时/成本/重试） | 任务详情（§5.4 审计视图） |
+
+交互（§5.7.3）: 下钻任意层 · 筛选（按状态/Agent/风险）· 实时流（执行中进度）· 导出。
+
+#### 5.10.5 递归控制（每节点可控）
+
+```
+原子级:   pause（暂停当前） / resume / cancel（终止+留证据） / retry（重试失败）
+组合级:   递归语义 —— 暂停父 = 暂停整棵子树（保存现场，含各子节点状态）
+         resume 父 = 恢复整棵子树（从暂停/失败点续跑）
+         cancel 父 = 终止子树全部节点 + 保留证据包（§5.6 可回放）
+```
+
+- 恢复机制: 断点续跑（resume 从失败/暂停点继续，复用 orchestrator.resume）
+- 控制动作全部落审计事件（`TASK_PAUSED / TASK_RESUMED / TASK_CANCELLED` 扩展）
+
+#### 5.10.6 递归调整（流程修改）
+
+| 层级 | 调整能力 | 机制 |
+|---|---|---|
+| 原子级 | 改任务（描述/agent/文件/验证命令/估时） | 节点修改 → 影响分析 → 重排 |
+| 组合级 | 增删子节点 / 改依赖边 / 重排子树 | S10-060 动态 DAG（增删+环检测）+ ChangeControl（§10.5.1 变更回流, M3-6） |
+| 跨层 | 上移/下移任务（变更粒度） | 重新拆解（M3a DecomposeEngine 重跑子树） |
+
+**调整影响传播**: 父节点进度重算 → 下游依赖重算 → 关键路径重算（M3b）→
+调度重排（M3c）→ 全部落审计（谁改的/改了什么/何时）。
+
+#### 5.10.7 与现有实现映射
+
+| 项 | 状态 |
+|---|---|
+| 原子节点状态机（事实源） | ✅ 已实现（execution_state） |
+| 团队级进度统计 | ✅ 已实现（team_state.progress: total/completed/running/percent） |
+| 关键路径 / 总工期（剩余时间基础） | ✅ 已实现（critical_path.estimated_duration, M3b） |
+| 调度轮次（下一步基础） | ✅ 已实现（scheduler.schedule_rounds, M3c） |
+| 动态 DAG 调整（组合级增删/环检测） | ✅ 已实现（S10-060） |
+| **组合节点进度聚合**（每层百分比/剩余） | 📐 本设计（聚合器, 小切片可做） |
+| **递归视图**（全景/节点/原子） | 📐 §5.7 可视化 + 本设计（M5 Web 承载） |
+| **递归控制**（节点级 pause/resume/cancel/retry） | 🚧 团队级已有, 节点级待补 |
+| **ChangeControl 变更回流**（跨层调整） | 📐 M3-6 |
+
+**结论**: 递归进度管理的**数据地基已全部就位**（状态机/关键路径/调度轮次/动态 DAG），
+缺的是**聚合器 + 视图 + 节点级控制**三个薄层——不是重设计，是把已有数据按树结构
+组织成"每层可看可管可调"的完整进度单元。
 
 ## 六、治理与合规体系
 

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
 import re
 import sys
 from dataclasses import dataclass
@@ -888,6 +889,25 @@ def execute_project(context: ExecutionContext) -> ActionResult:
             ),
             error=f"项目状态 {status!r} 不允许执行",
         )
+    # M3a (S10-090): 递归原子拆解 — 默认开（FACTORY_DECOMPOSE=0 关闭）。
+    # 失败安全: 拆解故障不中断执行; 结果落盘 decomposition.json + 审计事件,
+    # 不改变执行路径（叶子进执行队列在 M3b）。
+    decomposition_summary: Optional[dict] = None
+    if os.environ.get("FACTORY_DECOMPOSE", "1") != "0":
+        try:
+            from .decomposer import DecomposeEngine
+            _eng = DecomposeEngine(workspace=context.workspace, project_id=slug)
+            _task = {
+                "id": "root",
+                "name": getattr(product, "name", None) or "产品任务",
+                "goal": getattr(product, "to_summary", lambda: str(product))(),
+                "requirement": "实现产品全部核心功能",
+            }
+            _dres = _eng.decompose(_task, product=product)
+            decomposition_summary = _dres.to_dict()
+        except Exception:  # noqa: BLE001 — 失败安全: 拆解故障不中断
+            decomposition_summary = None
+
     orchestrator = ExecutionOrchestrator(context.workspace)
     try:
         if orchestrator.needs_resume(slug):
@@ -916,7 +936,7 @@ def execute_project(context: ExecutionContext) -> ActionResult:
         ok=ok,
         status=STATUS_OK if ok else STATUS_ERROR,
         message=message,
-        data=result.to_dict(),
+        data={**(result.to_dict() or {}), **({"decomposition": decomposition_summary} if decomposition_summary is not None else {})},
         error=None if ok else ("; ".join(result.errors) or "任务执行失败"),
     )
 

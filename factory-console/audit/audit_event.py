@@ -71,6 +71,11 @@ EVENT_TYPES: tuple[str, ...] = (
     "DELIVERY_CREATED",
     "USER_ACCEPTANCE",
     "PROJECT_DELIVERED",
+    "DECOMPOSE_STARTED",
+    "DECOMPOSE_ATOMIC",
+    "DECOMPOSE_SPLIT",
+    "DECOMPOSE_CYCLE_REJECTED",
+    "DECOMPOSE_COMPLETED",
 )
 
 #: 敏感键精确名 (脱敏: 键名小写/下划线归一后 ∈ 该集合 → 删除)

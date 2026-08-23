@@ -5,7 +5,38 @@
 
 ---
 
-## [v1.1.10] — 2026-08-22
+## [v1.1.11] — 2026-08-23
+
+**M3a 递归原子拆解引擎 (Sprint, S10-090)**: 复合任务 → 原子叶子（单 Agent /
+单文件单工具 / 可验证 / ≤10min）— "拆到不能拆" 直接提高执行成功率（"一步一个坑"
+根因 = 任务粒度太粗）。
+
+### Added
+
+- **DecomposeEngine** (`session/decomposer.py`) — 递归拆解: `decompose(task,
+  product, capabilities, llm_fn)` → {leaves, tree, state} + 落盘
+  `projects/<slug>/decomposition.json`。
+- **原子判定四条件** (§3.7.3) — 确定性优先 + LLM 注入点: ① 单 Agent（能力表
+  候选=1）② 单文件（target_file 提取）③ 可验证（语言→验证命令映射）④ ≤10min
+  （关键词启发）。
+- **拆分单向推进** `_split_mode: root→features→technical→final` — 防同层反复
+  拆死循环; final 层仍不原子 → `atomic(unverified)` 诚实标注（能力边界, 不伪造）。
+- **递归防护** — `_max_depth=5` + `_max_tasks=64` + 祖先链环检测 →
+  `DECOMPOSE_CYCLE_REJECTED` 审计事件。
+- **失败安全铁律** — LLM 失败/无 LLM → 确定性拆分非空; 异常 → 部分结果 + error。
+- **审计事件 5 个** — DECOMPOSE_STARTED / ATOMIC / SPLIT / CYCLE_REJECTED /
+  COMPLETED (`audit/audit_event.py` EVENT_TYPES 45→50)。
+- **actions.execute_project 接线** — 执行前拆解（`FACTORY_DECOMPOSE=0` 关闭,
+  默认开; 失败安全不中断执行; data 附 decomposition 摘要）。
+- **契约测试** `tests/console/test_m3a_decomposer.py` — 11 用例: 四条件断言 /
+  深度收敛 / 成环拒绝 / 无 LLM 降级 / 深度上限诚实 / 状态落盘 / 旧流程兼容。
+
+### 边界（不做）
+
+- M3-2 关键路径 / M3-3 并行调度 / M3-4 动态分配 / 质量评估 — 后续 Sprint。
+- 非叶子节点编排 Loop 仅接口/事件占位（M3b+）。
+- 向后兼容: 旧 TaskTree/FeatureTaskGenerator 流程不破坏。
+
 
 **专家真干活 (Sprint, S10-088)**: 生产路径接真实 LLM + 专家交接消费上一产出 +
 PRD 消费专家资产 + 专家团队落盘 — M2→M1 消费链打通 (Claude M2 评估: "骨架诚实、

@@ -5238,6 +5238,82 @@ Agent 决策调用工具
 
 **完成度**：IT 工厂闭环已实现（✅）；行业复制（FactorySpec + 第二行业）为设计（📐，M5/M6）。
 
+
+### 10.5 软件工厂专项细化（第一阶段 V1 产品 ★）
+
+> 2026-08-23 补充（Founder 指示）: 软件工厂 = AI Factory 第一个行业实例（V1 产品）。
+> 本节把"软件工厂"从通用行业章里**细化到可执行**——业务全景 / 角色团队 / 行业知识 / 资产标准 / 工程规范 / V1 里程碑。
+
+#### 10.5.1 软件工厂业务全景流程（细化到每一步）
+
+| 步骤 | 输入 | 角色 | 输出 | 治理点 | 验收 |
+|---|---|---|---|---|---|
+| 1 想法 | 一句话 | 用户+PM | ProductIntent + discovery.md | — | 需求字段齐 |
+| 2 专家装配 | ProductIntent | ExpertFactory | 7 专家（agt-it-*） | skill 校验 | 缺 skill 报错 |
+| 3 交接分析 | 7 专家 | HandoffBus（PM→市场→竞品→UX→架构→QA→PRD） | 7 资产（互引） | 冲突→ReviewGate | parent_artifact 链 |
+| 4 PRD | 分析资产 | SeniorPM | PRD（背景/故事/功能P0../验收） | **PRD 审批门** | 用户批准 |
+| 5 工程计划 | PRD | Architect | engineering/tasks/execution_plan | 计划审批（recommended） | 计划可执行 |
+| 6 任务拆解 | 计划 | TechLead | 原子任务（递归拆到不能拆） | — | 原子可执行 |
+| 7 执行 | 原子任务 | 后端/前端/QA Agent | patch → 代码 | 预算+审计 | 单文件/单工具 |
+| 8 证据/审批 | 变更 | EvidenceBundle + ApprovalGate | diff+测试+决策 | **分级审批** | 证据完整 |
+| 9 交付 | 批准 | Release | 代码落盘+测试报告 | — | pytest 绿 |
+| 10 运维/迭代 | 反馈 | PM | 变更提议 | **需求变更回流** | PRD v2 |
+
+#### 10.5.2 软件工厂角色团队（软件行业专属）
+
+| 角色 | 职责 | 技能（示例） | 工具 | 状态 |
+|---|---|---|---|---|
+| PM | 需求/范围/价值 | 需求分析、优先级 | discovery/PRD | 🚧（4.10：提示词→M2实体✅） |
+| Market | 市场/竞品 | 行业分析 | ProductIntelligence | ✅ 真引擎 |
+| UX | 交互/信息架构 | 流程设计 | ux 模板 | 🔴 占位（M3 深化） |
+| Architect | 技术选型/架构 | python/node/flutter/架构模式 | architecture | 🟡 规则（M3 深化） |
+| QA | 测试方案/质量 | 单元/集成/安全 | test_plan | 🔴 占位（M3） |
+| 后端工程师 | API/业务逻辑 | python/node/go + 框架 | DeveloperAgent | ✅ |
+| 前端工程师 | 页面/交互 | flutter/react | DeveloperAgent | ✅ |
+| DevOps | 构建/部署（M3+） | CI/CD | 待接 | 📐 |
+
+#### 10.5.3 软件工厂行业知识（技术栈/规范，可复用模板）
+
+```
+平台→技术栈（§pipeline 规则已支持）:
+  mobile → Flutter + Backend API
+  web    → Web 前端 + Backend API
+  desktop→ Desktop + Backend API
+后端: Python(FastAPI/Django) / Node(Express) / Go / Java(Spring)
+数据库: SQLite(默认) / PostgreSQL / MySQL（§8.5 外挂）
+测试: pytest（默认执行器）
+```
+
+#### 10.5.4 软件工厂资产标准（每类产物的"长什么样"）
+
+| 资产 | 标准（验收可断言） |
+|---|---|
+| discovery.md | 问题/用户/核心功能/风险（draft） |
+| PRD.md | 背景 + 用户故事 + 功能 P0..Pn + 验收标准（**M3 LLM 深度化**） |
+| architecture.md | 技术选型 + 系统设计 + 数据模型 + 风险 |
+| tasks.json | 功能→Epic→原子任务（M3 递归拆解） |
+| 代码 | 单文件/单工具可验证（原子任务粒度） |
+| test_report | pytest 结果 + 覆盖率（真实运行） |
+| evidence 包 | diff + 测试 + 决策 + 变更文件（✅ 已实现） |
+
+#### 10.5.5 软件工厂工程规范（V1 打磨）
+
+```
+代码: 原子任务粒度（一次一个文件/工具）· 语法校验 + pytest 通过才交付
+测试: 每功能至少 1 测试（test_main.py 模式）· 失败→修复循环（§17.13）
+审批: patch 应用前必批（§6.3）· 高风险（删除/依赖/基础设施）compliance 必批
+PR/交付: 证据包完整 + 测试绿 → 才允许 PR/落盘（M1 收尾: 审批→PR 链路）
+变更: 执行中需求变更 → ChangeProposal → PRD v2 + replan（M3）
+```
+
+#### 10.5.6 V1 软件工厂里程碑（对齐 §1.7 + 待办清单）
+
+| V1 版本 | 内容 | 验收锚点 |
+|---|---|---|
+| **V1.0 可信闭环**（≈M3） | 真实 E2E 全链路（你环境）· PRD 深度化 · 递归原子拆解 · 需求变更回流 | "我要做CRM"→真实代码落盘→pytest 绿→变更 PRD v2 |
+| **V1.1 可用**（≈M5） | expert build CLI · Web 仪表盘 · 消息 P0 5 渠道 · 执行重放 | 用户能用 CLI/Web 造专家、看证据、跑清道夫 |
+| **V1.2 完整**（≈M6+） | 审批→PR 链路 · 记忆回流 E5 · 快照回滚 · 第二行业复制 | 一单"积压清道夫"真实走完：issue→修复→证据→审批→PR |
+
 ## 十一、全部交互场景设计
 
 ### 10.1 交互场景总览

@@ -3306,6 +3306,95 @@ L0 项目缓存命中率目标 > 50%（跨任务复用）
 冲突处理: 同 key 多值 → 最新时间戳优先 + 标注 superseded
 ```
 
+
+### 4.12 核心执行原语：Every Node Is Autonomous（节点自治 ★）★
+
+> 2026-08-23 补充（外部架构评审 + Founder 确认）: 把"每个节点独立完整闭环"钉死为 AI Factory 的**核心执行原则**——
+> 不是"很多 Agent 的软件"，而是**统一的 AI 劳动力生产模型**（Autonomous Node Runtime 承载所有岗位）。
+
+#### 4.12.1 定义：节点 = 自治生产单元（Self-contained Autonomous Production Unit）
+
+```
+Node = Role + Context + Objective + Tools + Loop + Verification + Evidence
+```
+
+#### 4.12.2 节点的 10 项自治属性
+
+| # | 属性 | 说明 |
+|---|---|---|
+| 1 | 明确目标 | Objective（做什么） |
+| 2 | 独立上下文 | 自己的 Context（§4.11，不无限膨胀） |
+| 3 | 自己的 Agent | Role（谁来做） |
+| 4 | 自己的工具 | Tools（用什么） |
+| 5 | 自己的执行 Loop | Execute/Delegate |
+| 6 | 自己的验证机制 | Verify（怎么算对） |
+| 7 | 自己的失败恢复 | Repair/Replan（§17.13） |
+| 8 | 自己的 Evidence | 证据（§5.1-5.6） |
+| 9 | 自己的完成条件 | 明确验收（§1.7） |
+| 10 | 可递归创建子节点 | 复杂 → 拆 Child Nodes |
+
+#### 4.12.3 节点生命周期（标准原语）
+
+```
+Context + Goal + Constraints
+  → Planning
+  → Execute / Delegate（复杂 → 递归创建 Child Nodes）
+  → Observe
+  → Verify
+  → Evidence Produced
+  → PASS → COMPLETE
+  → REPAIR / REPLAN（失败恢复，对应 ReplanningEngine ✅）
+```
+
+#### 4.12.4 递归分解原则（复杂度用递归，不用扩上下文）
+
+```
+Node
+ ├─ 简单 → 自己完成
+ └─ 复杂 → 创建 Child Nodes（各自完整闭环）→ 汇总 → 父节点验证 → 完成
+```
+
+**解决的核心问题**：复杂度通过递归分解，而非不断扩大单个 Agent 的上下文和 Loop（传统 Agent 越 loop 越乱）。
+
+#### 4.12.5 父节点验证铁律（Parent Never Trusts Child）
+
+```
+Child 声称完成 ≠ 完成
+Child → Evidence → Child Verification → Parent Verification
+（对应 §5.6 可追溯/可重放 + §1.7 验收，杜绝"自报告即事实"）
+```
+
+#### 4.12.6 与 AI 公司岗位的对应
+
+```
+产品任务 → 市场研究 / 产品策略 / PRD / UX / 架构 / 后端 / 前端 / QA / DevOps
+每一个 = 节点 = Role + Context + Objective + Tools + Loop + Verification + Evidence
+```
+
+#### 4.12.7 统一 Node Runtime（承载整个 AI 公司所有岗位）
+
+```
+Production Flow: Idea → Brainstorm → PRD → Task Tree
+  → Autonomous Node Runtime（统一执行原语）
+  → Recursive Node（Execute / Verify / Evidence / Repair / Replan / Loop）
+```
+
+**价值**：一套 Runtime 承载所有角色——不重复造"每个 Agent 的执行器"，只换 角色/上下文/目标/工具/证据。
+
+#### 4.12.8 与现有实现映射
+
+| 节点要素 | 现有实现 | 状态 |
+|---|---|---|
+| 执行（Execute） | DeveloperAgent / ExecutionLoop / repo_mode | ✅ |
+| 验证（Verify） | evaluator / pytest | ✅ |
+| 证据（Evidence） | EvidenceBundle | ✅ |
+| 修复（Repair） | quality.repair / ReplanningEngine | ✅ |
+| 重规划（Replan） | ReplanningEngine（8 决策） | ✅ |
+| 递归（Recursive） | §3.7 递归原子拆解 | 📐 M3 |
+| 统一 Node Runtime（标准化） | 各节点分散实现 | 📐 M3 工程化 |
+
+**结论**：节点自治的**大部分原语已实现**（执行/验证/证据/修复/重规划 ✅）；缺的是把它们**标准化为统一 Node Runtime** + **递归闭环**（M3 工程化）。
+
 ## 五、审计与可观测体系
 
 ### 5.1 审计架构

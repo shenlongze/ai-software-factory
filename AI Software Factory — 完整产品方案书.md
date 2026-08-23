@@ -11039,6 +11039,55 @@ Native Runtime + Universal Node + Recursive Node Loop, 外部框架只当执行�
 **审计 vs 监控边界（§5.9）**: 审计记"谁调了什么"（✅ 有: console.viewed 等事件）;
 监控记"调用量/延迟/错误率"（❌ 无: 需补中间件 + §5.8 时序存储）。
 
+#### 22.4.1 能力 → API 映射总表（60 能力 × API 状态）★
+
+> 2026-08-24 补充（Founder 追问: 全部能力有哪些, 哪些 API 没有）: 原则 = **每个能力
+> 必须 CLI + API 双暴露**（§22.1）。审计结果: 60 能力中 **19 有 API（32%）· 41 缺（68%）**。
+
+**✅ 有 API 的能力（19 个 — 项目/审批/运行主流程）**
+
+| 能力 | API 端点 |
+|---|---|
+| create_project / create_product | POST /api/projects |
+| list_projects | GET /api/projects |
+| rename_project | PATCH /api/projects/{id} |
+| discovery_start | POST /api/projects/{id}/discovery/answer·complete |
+| prepare_project | POST /api/projects/{id}/confirm |
+| execute_project | POST /api/projects/{id}/start |
+| show_status | GET /api/projects/{id}/status |
+| project_progress | GET /api/projects/{id}/run-status |
+| project_timeline | GET /api/projects/{id}/timeline |
+| review_view | GET /api/review-feedback · /api/approvals |
+| review_approve | POST /api/approvals/{id}/approve |
+| review_reject | POST /api/approvals/{id}/reject |
+| agent.execute_task | POST /api/runtime/execute |
+| production_session_view | GET/POST /api/runtime-sessions |
+| backlog / sprints / milestones | /api/projects/{id}/backlog·sprints·milestones |
+| workflows / artifacts / tools / skills / mcp | 对应资源端点 |
+
+**❌ 缺 API 的能力（41 个 — 治理/可观测/学习/团队全缺）**
+
+| 能力族 | 数量 | 缺失清单 |
+|---|---|---|
+| 审计族 | 10 | audit_events · audit_trace · audit_chain · audit_decision · audit_explain · audit_task · audit_agent · audit_cost · audit_export · audit_stats |
+| 调试族 | 9 | debug_analyze · debug_history · debug_recommend · debug_stats · debug_session · debug_root_cause · debug_repair · debug_validate · debug_resume |
+| 记忆族 | 5 | memory_search · memory_learn · memory_stats · memory_analyze_agent · memory_export |
+| 产品智能族 | 5 | product_intelligence · product_market · product_persona · product_mvp · product_value |
+| 团队族 | 4 | team_execute · team_dependencies · team_conflicts · team |
+| 工厂治理族 | 3 | factory_status · factory_budget · factory_review |
+| 产品流程族 | 3 | generate_prd · product_pipeline · project_docs |
+| 执行治理族 | 2 | repair_task · accept_project |
+| 其他 | 5 | workforce · task_owner · agent_reason · resume_project · review_cancel |
+
+**判断**: 主流程（建项目→拆解→执行→审批）✅ 通了; 治理/可观测/学习/团队
+（企业最需要对外集成的）❌ 全没 API——API 化原则只执行了 1/3。
+
+**补 API 优先级**: 审计族(10) → 记忆族(5) → 调试族(9) → 产品智能(5) →
+团队(4) → 工厂治理(3) → 产品流程(3) → 执行治理(2) → 其他(5)。
+——审计/记忆是企业最需要的对外能力, 优先补。
+
+**能力→端点映射表 = SDK 文档骨架**（每个能力: CLI ✅ / API ✅|❌ 状态列）。
+
 ### 22.5 商业化模式（三选, 可叠加）
 
 ```

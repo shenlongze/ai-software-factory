@@ -5,6 +5,34 @@
 
 ---
 
+## [v1.1.13] — 2026-08-24
+
+**M3c 并行调度执行 (M3-3, S10-090)**: 原子任务不再简单顺序跑 — 消费
+plan.json (M3b 依赖边) + execution_state → 依赖就绪队列 + 同文件冲突串行化 +
+并发上限分桶 → 调度轮次 (rounds) 落盘 schedule.json (可审计可回放)。
+
+### Added
+
+- **TaskScheduler** (`session/scheduler.py`) — `schedule(plan, state,
+  max_concurrency=1, agent_matcher=None, conflict_resolver=None)` →
+  `{rounds, order, conflicts, state}`; `ready_tasks(completed)` 入度=0 就绪;
+  并发分桶 (`_concurrency_bucket`, max_c=1 → 每轮单任务 = 旧顺序零变化)。
+- **冲突串行化复用** — 同 `target_file` 冲突检测 → `ConflictResolver.resolve`
+  (S10-057, 不修改核心) → 冲突任务不同轮 + `conflicts[]` 记录
+  `{task, reason, resolution}`。
+- **失败安全** — 环 / 无 plan → 降级顺序执行 (`schedule.json` + 执行状态
+  `degraded=True` 诚实标注, 不伪造并行)。
+- **落盘** — `projects/<slug>/schedule.json` `{rounds, order, conflicts,
+  max_concurrency, created_at}` (可审计)。
+- **orchestrator parallel 模式** — `execute_project(mode="parallel",
+  max_concurrency=N)`: 消费 plan.json → rounds 依序执行 (同轮内按现有执行链
+  跑); 默认 solo 完全不变 (零新增落盘字段, state.schedule 仅 parallel 非空)。
+- **契约测试** `tests/console/test_m3c_scheduler.py` — 6 种手算对照 (无依赖
+  并行 / 单链 4 轮串行 / 汇聚先并行后串行 / 同文件冲突串行 / 并发上限分桶 /
+  max_c=1 向后兼容) + 落盘 + 环降级 + orchestrator parallel 集成。
+
+---
+
 ## [v1.1.12] — 2026-08-23
 
 **M3b 关键路径标注 (M3-2, S10-090)**: M3a 原子叶子（树关系）补上横向依赖边

@@ -230,6 +230,10 @@ class ExecutionState:
     governance_status: str = ""
     governance_reason: str = ""
     governance_warnings: list[str] = field(default_factory=list)
+    # M3c (S10-090 M3-3): 并行调度审计视图 (仅 parallel 模式非空才落盘 —
+    # solo/team 缺省零变化): {rounds, max_concurrency, degraded, reason,
+    # schedule_file}
+    schedule: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         """→ dict (落盘/审计视图)。
@@ -254,6 +258,8 @@ class ExecutionState:
             data["last_replan_reason"] = str(self.last_replan_reason or "")
         if str(self.governance_status or ""):
             data["governance_status"] = str(self.governance_status or "")
+        if self.schedule:
+            data["schedule"] = dict(self.schedule)
         if str(self.governance_reason or ""):
             data["governance_reason"] = str(self.governance_reason or "")
         if self.governance_warnings:
@@ -277,6 +283,7 @@ class ExecutionState:
             governance_warnings=[
                 str(w) for w in (data.get("governance_warnings") or [])
             ],
+            schedule=dict(data.get("schedule") or {}),
         )
 
     def save(self, path: Path) -> None:
@@ -1009,6 +1016,9 @@ class ExecutionOrchestrator:
         execute_fn: Optional[ExecuteFn] = None,
         max_retry: int = DEFAULT_MAX_RETRY,
         mode: str = "solo",
+        # M3c (S10-090 M3-3): parallel 模式配置 — 默认 1 = 顺序执行 (旧行为零变化)
+        max_concurrency: int = 1,
+        schedule_file: Optional[Path] = None,
         team_id: str = DEFAULT_TEAM_ID,
         teams_file: Optional[Path] = None,
         agents_file: Optional[Path] = None,
@@ -1084,6 +1094,16 @@ class ExecutionOrchestrator:
           失败 → repair 记录 + 保持 DEVELOPMENT — Repair Loop 保留)
         - team_report.md 生成 (team/tasks/agents/artifacts/validation/conflicts/handoffs)
 
+        mode="parallel" (M3c, S10-090 M3-3 并行调度执行):
+        ① 读 plan.json (M3b 关键路径标注产物) + execution_plan.json
+        ② TaskScheduler.schedule — 依赖就绪队列 + 同文件冲突串行化
+           (ConflictResolver 复用) + 并发分桶 (max_concurrency) → rounds
+        ③ 按 rounds 扁平序重排执行队列 (同轮内按现有执行链跑) → 落盘
+           schedule.json {rounds, order, conflicts, max_concurrency, created_at}
+        ④ 失败安全: 环/无 plan.json → 降级顺序执行 (schedule.json + state.schedule
+           degraded=True 诚实标注, 不伪造并行)
+        ⑤ 向后兼容: max_concurrency=1 = 旧顺序执行 (每轮单任务)
+
         每任务: pending → running → completed/failed (状态逐任务持久化, 可恢复);
         失败: retry_count+1, 最多重试 max_retry 次, 仍失败 → failed (继续下一任务);
         全部完成 → Lifecycle TESTING → (测试门占位通过) → DELIVERED。
@@ -1104,6 +1124,17 @@ class ExecutionOrchestrator:
                 messages_file=messages_file,
                 enable_messages=enable_messages,
             )
+        # M3c (S10-090 M3-3): parallel 模式 — plan.json → TaskScheduler → rounds
+        # 重排执行队列; 失败安全: 环/无 plan → 降级顺序执行 (诚实标注)。
+        schedule_view: Optional[dict[str, Any]] = None
+        if mode == "parallel":
+            plan_tasks, schedule_view = self._parallel_prepare(
+                project_dir,
+                slug,
+                plan_tasks,
+                max_concurrency=int(max_concurrency or 1),
+                schedule_file=schedule_file,
+            )
         state = ExecutionState(
             project=slug,
             status=Lifecycle.DEVELOPMENT,
@@ -1111,6 +1142,8 @@ class ExecutionOrchestrator:
             started_at=datetime.now(timezone.utc).isoformat(),
             tasks=[self._task_record(t) for t in plan_tasks],
         )
+        if schedule_view:
+            state.schedule = schedule_view
         self._save_state(project_dir, state)
         # Lifecycle: EXECUTION_READY → DEVELOPMENT (project.json/product.json status)
         self._set_lifecycle(project_dir, slug, Lifecycle.DEVELOPMENT)
@@ -1362,6 +1395,79 @@ class ExecutionOrchestrator:
             dependencies=dependencies,
             agent_roles=member_roles,
         )
+
+    def _parallel_prepare(
+        self,
+        project_dir: Path,
+        slug: str,
+        plan_tasks: list[dict[str, Any]],
+        *,
+        max_concurrency: int,
+        schedule_file: Optional[Path],
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        """M3c parallel 模式准备 (S10-090 M3-3): plan.json → rounds → 队列重排。
+
+        ① 读 plan.json (M3b 关键路径标注产物: tasks/edges/critical_path/order);
+           缺失/损坏/无任务 → 视为无 plan (走降级路径);
+        ② TaskScheduler.schedule(plan, state, max_concurrency) — 就绪队列 +
+           同文件冲突串行化 (ConflictResolver 复用, 不修改核心) + 并发分桶;
+        ③ 按 rounds 扁平序重排 execution_plan 任务 (同轮内保持原相对序);
+           未出现在 rounds 的任务 (execution_plan 与 plan.json id 不一致时)
+           → 追加在队尾保持原顺序 (诚实: 未调度任务不伪造并行);
+        ④ 落盘 schedule.json (调度器内部, 可审计) + 返回审计视图
+           {rounds, max_concurrency, degraded, reason, schedule_file}。
+        失败安全: 任何异常 → 降级顺序执行 (原队列 + degraded 标注, 不抛)。
+        """
+        from .conflicts import ConflictResolver
+        from .scheduler import TaskScheduler
+
+        sched_file = (
+            Path(schedule_file) if schedule_file is not None else project_dir / "schedule.json"
+        )
+        m3b_plan: Optional[dict[str, Any]] = None
+        plan_path = project_dir / "plan.json"
+        if plan_path.is_file():
+            try:
+                loaded = json.loads(plan_path.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict) and loaded.get("tasks"):
+                    m3b_plan = loaded
+            except Exception:  # noqa: BLE001 — 失败安全: 损坏 → 无 plan 降级
+                m3b_plan = None
+        resolver = ConflictResolver(resolution_file=project_dir / "conflict_resolution.json")
+        try:
+            sched = TaskScheduler(workspace=self.workspace)
+            result = sched.schedule(
+                m3b_plan,
+                {
+                    "completed": [],
+                    "project_dir": str(project_dir),
+                    "schedule_file": str(sched_file),
+                },
+                max_concurrency=max_concurrency,
+                conflict_resolver=resolver,
+                persist=True,
+            )
+        except Exception:  # noqa: BLE001 — 失败安全: 调度异常 → 降级顺序执行
+            result = None
+        by_id = {str(t.get("id") or ""): t for t in plan_tasks}
+        if result is not None and result.order:
+            ordered = [by_id[tid] for tid in result.order if tid in by_id]
+            seen = {str(t.get("id") or "") for t in ordered}
+            ordered += [t for t in plan_tasks if str(t.get("id") or "") not in seen]
+            if ordered:
+                plan_tasks = ordered
+        view = {
+            "rounds": [list(r) for r in (result.rounds if result is not None else [])],
+            "max_concurrency": max_concurrency,
+            "degraded": bool(result.degraded) if result is not None else True,
+            "reason": (
+                result.degradation_reason
+                if result is not None and result.degraded
+                else ("调度器异常 — 降级顺序执行" if result is None else "正常并行调度")
+            ),
+            "schedule_file": str(sched_file),
+        }
+        return plan_tasks, view
 
     def resume(
         self,

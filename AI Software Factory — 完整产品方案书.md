@@ -4368,6 +4368,99 @@ API:  GET /api/v1/audit/report?from=&to=
 缺的是**聚合器 + 视图 + 节点级控制**三个薄层——不是重设计，是把已有数据按树结构
 组织成"每层可看可管可调"的完整进度单元。
 
+### 5.11 多维度统一视图模型（同一任务 · 不同维度 · 数据统一）★
+
+> 2026-08-24 补充（Founder 关键判断）: 同一个任务，在不同维度都应该可以查看——
+> **结果不同而已**。需要**数据统一、结构完整**，将来监控大屏 / 驾驶舱直接复用。
+
+#### 5.11.1 核心原则：一个事实源，N 个投影
+
+```
+同一任务（TaskEntity 唯一事实）
+  ├─ 执行维度: 状态机（pending→running→success/failed）
+  ├─ 进度维度: 百分比 / 剩余时间（§5.10 递归进度）
+  ├─ 成本维度: 花费 / 预算水位（cost_ledger）
+  ├─ 时间维度: 耗时 / 甘特 / 关键路径（§3.9）
+  ├─ 依赖维度: DAG / 上下游 / 汇聚点（§3.5）
+  ├─ 资源维度: Agent / 工具 / 文件
+  └─ 血缘维度: 证据 / 审计链 / 决策链（§5.2）
+每一维 = 同一 TaskEntity 的**投影视图**（查询时计算，不重复存储）
+```
+
+**与 §5.10 的关系**: §5.10 是**纵向递归**（每层节点都有进度）；§5.11 是**横向多维度**
+（每节点有多种视角）。两者叠加 = 完整视图矩阵: **每层节点 × 每个维度** 都可查看。
+
+#### 5.11.2 统一任务实体（TaskEntity Schema — 所有维度的单一结构）
+
+```python
+class TaskEntity:  # 唯一事实，所有维度消费同一 schema
+    # 定义维
+    id: str; name: str; parent: str; children: list[str]
+    depth: int; type: str            # compound | atomic
+    # 执行维
+    status: str                      # pending/ready/running/success/failed/blocked
+    # 资源维
+    agent_type: str; assigned_agent: str; target_file: str
+    verify_cmd: str; est_minutes: int
+    # 成本维（运行时）
+    actual_cost: float; budget: float
+    # 时间维（运行时）
+    started_at: str; completed_at: str; duration_seconds: int
+    # 依赖维
+    depends_on: list[str]; dependents: list[str]
+    # 血缘维
+    evidence_refs: list[str]; audit_events: list[str]
+```
+
+- 原子任务 = `execution_state` 事实；组合节点 = 树结构 + 子节点聚合投影
+- **同一 schema 服务所有端**：CLI / Web / 大屏 / 消息渠道（§9.5）——禁止各端自造数据结构
+
+#### 5.11.3 多维投影层（view layer — 查询时计算，不落盘）
+
+```
+API:  GET /api/v1/tasks/{id}?view=execution|progress|cost|timeline|deps|resources|lineage
+      支持组合: ?view=progress+cost（大屏组合渲染）
+投影 = 纯函数: TaskEntity → 视图 dict（可缓存投影，标 computed_at）
+渲染 = §5.7 图表映射（甘特/树/雷达/折线/热力）
+```
+
+- 投影只读，**不写回事实源**（防"视图改了事实"）
+- 新增维度 = 先扩 TaskEntity schema（§2.11 契约测试）再出投影——结构先行
+
+#### 5.11.4 监控大屏 / 驾驶舱（消费统一数据，不新增数据源）
+
+```
+数据层:  统一 TaskEntity + 事件流（audit）+ 聚合器（dashboard collector）
+聚合层:  按维度聚合（进度/成本/时间/依赖/资源/血缘）
+视图层:  大屏组件 — 树形进度 · 甘特关键路径 · 成本雷达 · Agent 负载热力 · 血缘桑基
+接入:    统一查询 API（view 参数化）— 大屏 = 多个投影的组合渲染
+```
+
+- **大屏 = 投影视图的组合**，不是独立数据系统
+- 多端复用: 同一 TaskEntity 服务 CLI 文本 / Web 大屏 / 消息推送（§9.5）
+- 已有地基: `factory-core/dashboard/` DashboardCollector（FactorySnapshot /
+  TaskSnapshot / AgentSnapshot / MetricsSnapshot）✅
+
+#### 5.11.5 数据统一铁律（防"大屏一套、CLI 一套"）
+
+1. **事实源唯一**: execution_state（执行）/ 树（结构）/ audit（事件）/ cost_ledger（成本）
+2. **投影只读计算**: 任何视图都是 TaskEntity 的投影，不写回事实源
+3. **统一入口**: 任何维度视图 = TaskEntity + view 参数（禁止各端自造数据通路）
+4. **结构完整**: TaskEntity schema 契约化（§2.11.4 契约测试）——新增维度先扩 schema 再出视图
+
+#### 5.11.6 与现有实现映射
+
+| 项 | 状态 |
+|---|---|
+| DashboardCollector（FactorySnapshot/TaskSnapshot/AgentSnapshot） | ✅ 已实现（factory-core/dashboard/） |
+| 执行状态 / 关键路径 / 调度轮次 / 递归进度数据 | ✅ 已实现（execution_state / critical_path / scheduler / team_state） |
+| **TaskEntity 统一 schema**（全维度单一结构） | 📐 本设计（对齐 §2.11 契约） |
+| **多维投影 API**（view 参数化） | 📐 M5（Web/API 层打通时） |
+| **大屏 / 驾驶舱组件** | 📐 §5.7 可视化 + 本设计（M5） |
+
+**结论**: 驾驶舱不是新数据源，是**同一 TaskEntity 的多投影组合**。先把 schema 契约化，
+任何端（CLI/Web/大屏/消息）都消费同一结构——正是"统一设计，零摩擦集成"（§2.9）的落地。
+
 ## 六、治理与合规体系
 
 ### 6.1 治理全景

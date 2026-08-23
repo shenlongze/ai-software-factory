@@ -1559,10 +1559,10 @@ factory_template:
 | `console/memory/` | 经验/学习/检索（experience/learning/retrieval） | ✅ |
 | `console/audit/` | 审计链（33+ 事件 + 血缘） | ✅ |
 | `org/` | 组织/项目数据（projects/space） | ✅ |
-| `session/agent_entity.py`（M2 新建） | 专家实体（role/provider/skills/knowledge/eval/memory） | 📐 |
-| `session/agent_registry.py`（M2） | 工厂层专家注册（行业命名空间） | 📐 |
-| `session/expert_factory.py`（M2） | 专家装配器（"造专家"） | 📐 |
-| `session/handoff_bus.py`（M2） | 多 Agent 交接总线 | 📐 |
+| `session/agent_entity.py`（M2 新建） | 专家实体（role/provider/skills/knowledge/eval/memory/profile） | ✅ |
+| `session/agent_registry.py`（M2） | 工厂层专家注册（行业命名空间 it.*） | ✅ |
+| `session/expert_factory.py`（M2） | 专家装配器（7 角色，缺 skill 明确报错） | ✅ |
+| `session/handoff_bus.py`（M2） | 多 Agent 交接总线（血缘互引+冲突挂起） | ✅ |
 | `session/channels/`（M5+） | 消息平台适配器（50+ 长期） | 📐 |
 
 #### 2.8.3 模块依赖原则（无循环）
@@ -2209,7 +2209,7 @@ class SubTask:
     retry_strategy: str                  # immediate | exponential | skip
     
     # 治理
-    risk_level: str                      # low | medium | high | critical
+    risk_level: str                      # low | medium | high | critical（实现为 3 级 §6.3.6，critical 为扩展位）
     requires_approval: bool              # 是否需要用户审批
     approval_required_before: str | None # 执行前/执行后
     

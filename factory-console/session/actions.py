@@ -908,6 +908,21 @@ def execute_project(context: ExecutionContext) -> ActionResult:
         except Exception:  # noqa: BLE001 — 失败安全: 拆解故障不中断
             decomposition_summary = None
 
+    # M3b (S10-090 M3-2): 关键路径标注 — 默认开（FACTORY_CRITICAL_PATH=0 关闭）。
+    # 失败安全: 标注故障不中断执行; 结果落盘 plan.json + dependencies.json + 审计,
+    # 不改变执行路径（计划层标注; M3-3 并行调度在后续 Sprint）。
+    # 向后兼容: M3a 无依赖边输入 → 引擎默认技术层链兜底（不崩溃）。
+    critical_path_summary: Optional[dict] = None
+    leaves = (decomposition_summary or {}).get("leaves") or []
+    if leaves and os.environ.get("FACTORY_CRITICAL_PATH", "1") != "0":
+        try:
+            from .critical_path import CriticalPathEngine
+            _ceng = CriticalPathEngine(workspace=context.workspace, project_id=slug)
+            _cres = _ceng.compute(leaves)
+            critical_path_summary = _cres.to_dict()
+        except Exception:  # noqa: BLE001 — 失败安全: 标注故障不中断
+            critical_path_summary = None
+
     orchestrator = ExecutionOrchestrator(context.workspace)
     try:
         if orchestrator.needs_resume(slug):
@@ -924,6 +939,10 @@ def execute_project(context: ExecutionContext) -> ActionResult:
     ok = result.failed_tasks == 0
     if ok:
         message = f"项目执行完成: {result.project} — {result.completed_tasks} 任务完成"
+        if critical_path_summary:
+            _cp_text = critical_path_summary.get("summary_text") or ""
+            if _cp_text:
+                message += "\n" + _cp_text
     else:
         # 失败原因可见 (不黑盒): 给出首个错误示例 + 恢复/诊断指引
         detail = (result.errors or ["无详细错误"])[0]
@@ -936,7 +955,11 @@ def execute_project(context: ExecutionContext) -> ActionResult:
         ok=ok,
         status=STATUS_OK if ok else STATUS_ERROR,
         message=message,
-        data={**(result.to_dict() or {}), **({"decomposition": decomposition_summary} if decomposition_summary is not None else {})},
+        data={
+            **(result.to_dict() or {}),
+            **({"decomposition": decomposition_summary} if decomposition_summary is not None else {}),
+            **({"critical_path": critical_path_summary} if critical_path_summary is not None else {}),
+        },
         error=None if ok else ("; ".join(result.errors) or "任务执行失败"),
     )
 

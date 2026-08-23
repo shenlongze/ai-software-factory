@@ -5,6 +5,47 @@
 
 ---
 
+## [v1.1.12] — 2026-08-23
+
+**M3b 关键路径标注 (M3-2, S10-090)**: M3a 原子叶子（树关系）补上横向依赖边
+(DAG) + 关键路径（最长链 CRITICAL 标注）+ merge 汇聚点 + 整链预估 —
+"拆到不能拆" 之后告诉执行层哪些任务在最长链上、哪些是汇聚点（计划层标注,
+不调度）。
+
+### Added
+
+- **CriticalPathEngine** (`session/critical_path.py`) — 依赖边推断 + 关键路径
+  算法 + merge 标注 + 落盘 `projects/<slug>/plan.json` + `dependencies.json`。
+- **依赖边推断 4 来源** (设计 §1) — ① 技术层确定性链（同 feature:
+  db→api→frontend→test, 硬编码模板兜底）② 跨 feature 共享（共享 target_file /
+  共享模块目录, 确定性检测）③ LLM 注入点 `llm_fn(leaves, edges)`（失败 → 跳过,
+  不伪造）④ 落盘 dependencies.json 复用（`load_dependencies` 回注）。
+- **关键路径算法** (设计 §2) — 复用 `dependencies.py` `add_dependency`（成环
+  逐条拒绝 + 审计）→ `topological_order` → `dist[task]=max(dist[dep])+est`
+  → 最长链回溯 → `estimated_duration`。
+- **merge point** (设计 §4) — 入度 ≥ 2 节点 → `merges[]`（只标注, 不调度）。
+- **CRITICAL 落盘** — `plan.json.tasks[]` 每任务 `critical: bool`（关键路径上
+  = True）+ `summary_text` CLI 展示。
+- **失败安全铁律** — 环 → 拒绝 + `PLAN_KEYPATH_COMPUTED(status=cycle_rejected)`
+  审计, 不产出关键路径（诚实不伪造）; LLM 失败 → 确定性技术层链; 异常 →
+  部分结果 + error; 落盘故障 → None。
+- **审计事件 2 个** — PLAN_KEYPATH_COMPUTED / PLAN_MERGE_MARKED
+  (`audit/audit_event.py` EVENT_TYPES 50→52)。
+- **actions.execute_project 接线** — 拆解后前置标注（`FACTORY_CRITICAL_PATH=0`
+  关闭, 默认开; 失败安全不中断执行; data 附 critical_path 摘要 + message 附
+  summary_text）。
+- **契约测试** `tests/console/test_m3b_critical_path.py` — 16 用例: 5 种 DAG
+  （单链/分叉/汇聚/环/无依赖）手算对照 + 技术层链 + 共享/LLM 推断 + 落盘 +
+  审计事件 + M3a 无依赖边向后兼容。
+
+### 边界（不做）
+
+- M3-3 并行调度执行 / M3-4 动态 Agent 分配 / 质量评估 — 后续 Sprint。
+- `dependencies.py` 核心零修改（只读复用）。
+- 向后兼容: M3a decompose 无依赖边输入 → 默认技术层链（不崩溃）。
+
+---
+
 ## [v1.1.11] — 2026-08-23
 
 **M3a 递归原子拆解引擎 (Sprint, S10-090)**: 复合任务 → 原子叶子（单 Agent /

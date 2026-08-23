@@ -3517,6 +3517,89 @@ Task Graph（实例/对象）: 本次任务的节点 + 依赖 + 运行时状态
 **结论**：**Tree 管"拆"、DAG 管"等"、Workflow 管"复用"、Plan 管"决策"**——四者正交互补；
 "Task Graph"是树与 DAG 叠加后的完整任务形态（带层级 DAG），不是第五个独立概念。
 
+**10.7 完整任务模型补全：边语义 / 动态演化 / 状态机 / 资源映射 / 模板嵌套 / Plan 边界**
+
+> 2026-08-23 补充（Founder 追问"这样就完整了？"）: 10.6 只回答了"静态结构"层，
+> 完整任务模型还差 6 块——其中 3 块代码已实现，但概念层没有点破。
+
+**① DAG 的边有两种语义（控制流 vs 数据流，正交）**
+
+```
+depends_on（控制边）: T2 必须在 T1 之后执行        → 时序
+inputs_from（数据边）: T2 消费 T1 的输出            → 数据
+```
+
+| 组合 | 含义 | 例子 |
+|---|---|---|
+| 只有控制边 | T1 先做、T2 后做，但 T2 不用 T1 数据 | 串行构建步骤（lint → build） |
+| 只有数据边 | T2 需要 T1 输出，但可提前准备 | 预取/流式消费 |
+| 两者叠加 | 完整 DAG = 控制 DAG + 数据 DAG | §3.5 SubTask 同时含 depends_on + inputs_from |
+
+> 代码现状：`session/dependencies.py` 已实现控制依赖（拓扑/环检测 ✅）；inputs_from 数据边是 M3 目标态（📐）。
+
+**② 静态图 vs 动态图（图是边执行边演化的活图）**
+
+```
+静态: Workflow 模板 / Task Graph 实例（画完再跑）
+动态: 执行中失败 → Repair/Replan → 增删节点/边 → 图结构变化
+```
+
+> S10-060 已实现动态 DAG：add_task / remove_task / modify_task + 环检测（成环拒绝）✅。
+> 结论：**任务图不是一次画完的蓝图，是带状态、可演化的运行时对象**。
+
+**③ 节点状态机（任务图 = 结构 + 状态快照）**
+
+```
+pending → ready → running → success
+                   ↘ failed → retrying → ready
+                              ↘ skipped（降级/跳过）
+阻塞: 依赖未就绪（控制边未满足）
+```
+
+> 代码现状：§3.5 SubTask.status + `execution_state.json`（tasks/status/error/依赖）✅ 已实现。
+
+**④ 节点 → 资源映射（执行者维）**
+
+```
+SubTask.assigned_agent / tools / rag_required / timeout / budget
+   → AgentMatcher（角色+能力+工具+预算）→ AgentEntity
+```
+
+> 每个节点独立上下文 + 独立工具集（§4.12.1/§4.12.4），映射在创建任务图时确定，失败重规划时可改派（§17.13）。
+
+**⑤ Workflow 可嵌套（模板层也递归）**
+
+```
+Workflow 模板节点本身可以是子 Workflow：
+  bug_fix_workflow
+    ├─ reproduce_workflow（子模板）
+    ├─ fix_task（原子）
+    └─ test_workflow（子模板）
+与任务树递归同构：模板层递归 + 实例层递归 = 同一套递归原语
+```
+
+**⑥ Plan 与 Workflow 的边界（翻译层 + 决策层）**
+
+```
+Workflow = 静态标准做法（模板，跨项目复用）
+Task Graph = 本次实例（结构 + 状态 + 证据）
+Plan = 实例化时的动态决策（LLMPlanner: FINAL / ACTION_REQUIRED）
+     = Workflow 与 Task Graph 之间的"翻译层 + 决策层"（§3.8）
+```
+
+**结论（完整任务模型 = 6 层）**
+
+```
+结构层    Tree（拆解）+ DAG（依赖）
+语义层    控制边（时序）+ 数据边（数据）
+状态层    节点状态机（pending→...→success/failed）
+资源层    节点→Agent/工具/预算 映射
+演化层    静态蓝图 → 动态重规划（增删节点/边）
+决策层    Plan（关键路径/卡口/资源分配）
+```
+
+10.6 是"静态结构"层的完整，加上 10.7 才是**完整任务模型**。
+
 ## 五、审计与可观测体系
 
 ### 5.1 审计架构

@@ -47,6 +47,7 @@ class EvidenceBundle:
     logs: list[dict[str, Any]] = field(default_factory=list)
     decisions: list[dict[str, Any]] = field(default_factory=list)  # 为什么这么做
     artifacts: list[str] = field(default_factory=list)
+    evaluation: Optional[dict[str, Any]] = None  # M3d: 拆解质量评估 {score,dims,decision,...}
     created_at: str = ""
     status: str = "pending"              # pending/approved/rejected/applied
 
@@ -61,6 +62,7 @@ class EvidenceBundle:
             "logs": list(self.logs),
             "decisions": list(self.decisions),
             "artifacts": list(self.artifacts),
+            "evaluation": dict(self.evaluation) if isinstance(self.evaluation, dict) else self.evaluation,
             "created_at": self.created_at,
             "status": self.status,
         }
@@ -78,6 +80,7 @@ class EvidenceBundle:
             logs=list(data.get("logs") or []),
             decisions=list(data.get("decisions") or []),
             artifacts=[str(a) for a in (data.get("artifacts") or [])],
+            evaluation=data.get("evaluation") if isinstance(data.get("evaluation"), dict) else None,
             created_at=str(data.get("created_at") or ""),
             status=str(data.get("status") or "pending"),
         )
@@ -97,6 +100,7 @@ class EvidenceBuilder:
         logs: Optional[list[dict[str, Any]]] = None,
         decisions: Optional[list[dict[str, Any]]] = None,
         artifacts: Optional[list[str]] = None,
+        evaluation: Optional[dict[str, Any]] = None,
     ) -> EvidenceBundle:
         """组装 (字段失败安全缺省; bundle_id 自动生成 ev-<hex8>)。"""
         return EvidenceBundle(
@@ -109,6 +113,7 @@ class EvidenceBuilder:
             logs=list(logs or []),
             decisions=list(decisions or []),
             artifacts=[str(a) for a in (artifacts or [])],
+            evaluation=dict(evaluation) if isinstance(evaluation, dict) else None,
             created_at=_now_iso(),
             status="pending",
         )
@@ -324,3 +329,41 @@ def emit_evidence_created(workspace: Any, bundle: EvidenceBundle) -> str:
         return str(getattr(ev, "audit_id", "") or "") if ev is not None else ""
     except Exception:  # noqa: BLE001 — 审计故障不中断
         return ""
+
+
+def save_evaluation_evidence(
+    workspace: Any,
+    slug: str,
+    *,
+    project_id: str = "",
+    task_id: str = "",
+    evaluation: Optional[dict[str, Any]] = None,
+    agent_id: str = "decomposer",
+    bundle_id: str = "",
+) -> Optional[Path]:
+    """拆解质量评估落盘进 evidence（M3d, S10-095 §4/§5 失败安全）。
+
+    组装 EvaluationBundle（evaluation {score,dims,decision,reasons} 进包体 +
+    decisions 决策链）→ EvidenceStore.save。任何故障 → None（不中断拆解）。
+    """
+    try:
+        if evaluation is None:
+            return None
+        bundle = EvidenceBuilder.build(
+            project_id=project_id or str(slug or ""),
+            task_id=task_id or str(slug or ""),
+            agent_id=agent_id,
+            decisions=[
+                {
+                    "step": "decomposition_eval",
+                    "reason": f"拆解质量评估: decision={evaluation.get('decision')} "
+                              f"score={evaluation.get('score')}",
+                }
+            ],
+            evaluation=evaluation,
+        )
+        if bundle_id:
+            bundle.bundle_id = str(bundle_id)
+        return EvidenceStore(workspace=workspace, slug=slug).save(bundle)
+    except Exception:  # noqa: BLE001 — 失败安全: 证据落盘故障不中断
+        return None

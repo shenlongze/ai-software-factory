@@ -2232,6 +2232,17 @@ class SubTask:
 ```
 
 
+### 3.6 任务拆解实现对照（2026-08-22）
+
+| 能力 | 真实实现 | 状态 |
+|---|---|---|
+| 确定性任务树 | `session/pipeline.py`：TaskTree / FeatureTaskGenerator（功能级 Epic/Task） | ✅ |
+| 依赖图/拓扑 | `session/orchestrator.py`（依赖解析/拓扑/重规划） | ✅ |
+| DAG 数据结构 | `execution_state.json`（tasks/status/error/依赖） | ✅ |
+| 拆解模板库 / 拆解质量评估 | 本文档 3.3/3.4（设计） | 📐 |
+
+**完成度**：确定性任务拆解 + 依赖图已实现（✅）；LLM 深度拆解模板库/质量评估/**递归拆到原子（§3.7）**待补（📐，M3）。
+
 ### 3.7 递归拆解与原子任务（能力边界驱动）★
 
 > 2026-08-22 补充（用户关键判断）: 任务拆解不是一层 DAG，而是**递归分层直到"拆到不能拆"**——
@@ -2361,17 +2372,6 @@ class SubTask:
 
 - ✅ 已实现：拓扑 / ReplanningEngine / AgentMatcher / resume / ConflictResolver
 - 📐 M3：关键路径计算 · 并行调度器 · 冲突自动串行化 · 资源配额
-
-### 3.6 任务拆解实现对照（2026-08-22）
-
-| 能力 | 真实实现 | 状态 |
-|---|---|---|
-| 确定性任务树 | `session/pipeline.py`：TaskTree / FeatureTaskGenerator（功能级 Epic/Task） | ✅ |
-| 依赖图/拓扑 | `session/orchestrator.py`（依赖解析/拓扑/重规划） | ✅ |
-| DAG 数据结构 | `execution_state.json`（tasks/status/error/依赖） | ✅ |
-| 拆解模板库 / 拆解质量评估 | 本文档 2.3/2.4（设计） | 📐 |
-
-**完成度**：确定性任务拆解 + 依赖图已实现（✅）；LLM 深度拆解模板库/质量评估/**递归拆到原子（§3.7）**待补（📐，M3）。
 
 ## 四、多 Agent 编排与调用体系
 

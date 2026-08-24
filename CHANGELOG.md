@@ -3,6 +3,39 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.82] — 2026-08-25
+
+**M5-1 执行重放引擎 + Skill 真调用**。
+
+### Added
+
+- **M5-1 执行重放引擎 (S10-113)**: ReplayEngine — dry-run 时间线重建
+  (execution_records + audit 事件按 timestamp 合并, 耗时 = 相邻时间戳差) /
+  re-exec 同输入重跑 (input_snapshot 还原 → 新 exec_id 记录) / compare 对比报告
+  (步骤/结果/耗时/产物真实 diff, --save 落盘 docs/sprint10/) / L4 快照回滚
+  (项目目录 git 快照, 受限: 需 git 仓库项目目录)
+- **执行记录 input_snapshot**: execute_task 记录补全完整输入 (intent/action/
+  params/context 摘要) — 未来可重放; 旧记录无快照 → re-exec 明确报错不瞎跑
+- **入口**: /board replay <exec_id> (--re-exec / --compare <id2> / --save) +
+  自然语言 "重跑 <exec_id>" → replay_exec 意图路由 (intent.py + router.py)
+- **Skill 真调用**: 外部注册 skill 装配生效 + 执行注入 prompt (不再只是标签)
+
+### Fixed
+
+- **_default_skill_exists 合并 skills.json**: 外部注册 skill (factory skill add)
+  装配校验生效 (之前只查内置 EXPERT_SKILLS/core, 外部注册无效)
+- **执行注入 skills**: cli.cmd_exec_run 读 agents.json → AgentInstance.skills →
+  developer.build_prompt 注入 "You have skills: ..." (Agent 能力声明进 prompt);
+  无 skills 向后兼容 (prompt 不含注入)
+- AgentInstance 加 skills 字段
+
+### 验证
+
+- 契约测试 tests/console/test_s10_113_execution_replay.py 25 passed
+  (dry-run/re-exec/对比/记录完善/入口/L4) · 版本断言同步 v1.1.82 ·
+  全量 console+api 0 新增失败
+- 6 新契约测试 (外部skill装配/内置/注入/兼容/AgentInstance/cli读取) · exec+console 相关 1327 passed
+
 ## [v1.1.81] — 2026-08-25
 
 **P0-10 注册表一致性 + P0-11 对称路径一致性（防遗漏机制）**。

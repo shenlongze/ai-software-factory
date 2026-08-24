@@ -205,6 +205,7 @@ class DeveloperAgent:
         extra_instruction: str = "",
         repo_context: str = "",
         context_text: str = "",
+        skills: list[str] | None = None,
     ) -> str:
         """任务 + 项目上下文 + 内联源文件 (带行号) + 规范 + 反馈 → Provider 提示词。
 
@@ -224,6 +225,13 @@ class DeveloperAgent:
             "You make minimal, correct code changes and return them as structured operations.",
             "",
         ]
+        # S10-114: Agent 技能注入 (外部注册 skill 真生效 — 能力声明进 prompt)
+        if skills:
+            lines += [
+                f"You have the following skills: {', '.join(skills)}.",
+                "Apply these skills to the task where relevant.",
+                "",
+            ]
         if context_text.strip():
             # Context Assembly 主体 (6 节; 行号前缀说明在 Code 节内, 不重复渲染)
             lines += [context_text.strip()]
@@ -584,6 +592,7 @@ class DeveloperAgent:
         repo_context: str = "",
         context: Any = None,
         max_retries: int = 1,
+        skills: list[str] | None = None,
     ) -> DeveloperOutput:
         """调 Provider (内建重试) → 解析 (操作优先) → 报告 (失败 → DeveloperError)。
 
@@ -624,6 +633,7 @@ class DeveloperAgent:
                 source_files=embedded,
                 repo_context=repo_context,
                 context_text=context_text,
+                skills=skills,
                 extra_instruction=(
                     extra_instruction if attempt == 0 else f"{extra_instruction}\n{retry_hint}"
                 ).strip(),

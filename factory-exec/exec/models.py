@@ -96,6 +96,7 @@ class AgentInstance(_ExecModel):
     id: str
     name: str = "Developer Agent"
     agent_type: str = "developer"
+    skills: list[str] = []
 
 
 class ExecutionRequest(_ExecModel):

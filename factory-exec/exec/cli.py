@@ -212,7 +212,22 @@ def cmd_exec_run(root: Path, args: Any) -> dict:
                 employee = _resolve_employee(root, args.employee)
             except ExecCliError as exc:
                 return _error(exc.message, exit_code=exc.exit_code)
-        agent = AgentInstance(id=getattr(args, "agent", None) or "developer-1")
+        agent_id = getattr(args, "agent", None) or "developer-1"
+        # S10-114: 从 agents.json 读该 Agent 的 skills (外部注册, 注入执行 prompt)
+        agent_skills: list[str] = []
+        try:
+            import json as _json
+            from pathlib import Path as _P
+            ag_file = _P(root) / "agents" / "agents.json"
+            if ag_file.is_file():
+                _d = _json.loads(ag_file.read_text(encoding="utf-8")) or {}
+                _agents = _d.get("agents") if isinstance(_d, dict) and "agents" in _d else _d
+                if isinstance(_agents, dict) and agent_id in _agents:
+                    _sk = _agents[agent_id].get("skills") or []
+                    agent_skills = [str(x) for x in _sk]
+        except Exception:  # noqa: BLE001 — 技能读取失败不影响执行
+            pass
+        agent = AgentInstance(id=agent_id, skills=agent_skills)
         try:
             registry = _provider_registry()
             provider_id = getattr(args, "provider", None) or _default_provider_id()

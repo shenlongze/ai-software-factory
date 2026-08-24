@@ -254,13 +254,28 @@ class ExpertFactory:
 
     @staticmethod
     def _default_skill_exists(skill_id: str) -> bool:
-        """缺省技能存在性: EXPERT_SKILLS ∪ core 内置技能 (只读)。"""
+        """缺省技能存在性: EXPERT_SKILLS ∪ core 内置 ∪ 外部注册 (skills.json)。"""
         sid = str(skill_id or "").strip()
         if not sid:
             return False
         if sid in EXPERT_SKILLS:
             return True
-        return sid in _builtin_skill_ids()
+        if sid in _builtin_skill_ids():
+            return True
+        # S10-114: 外部注册 skill (factory skill add → ~/.factory/skills/skills.json)
+        # 也视为存在 — 外部 skill 对装配生效 (Founder: 外部 skill 要真调用)
+        try:
+            import json as _json
+            from pathlib import Path as _P
+            f = _P.home() / ".factory" / "skills" / "skills.json"
+            if f.is_file():
+                d = _json.loads(f.read_text(encoding="utf-8")) or {}
+                reg = d.get("skills") if isinstance(d, dict) and "skills" in d else d
+                if isinstance(reg, dict) and sid in reg:
+                    return True
+        except Exception:  # noqa: BLE001 — 外部读取失败 → 不影响内置校验
+            pass
+        return False
 
     @staticmethod
     def _default_workflow_executable(workflow_id: str) -> bool:

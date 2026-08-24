@@ -2,7 +2,7 @@
 
 > **单一事实来源** — 当前系统到底有哪些功能、每个功能是什么、怎么用（CLI / API / 会话命令）、什么状态、从哪个版本开始有。
 >
-> 版本: **v1.1.81** · 更新: 2026-08-25 · 依据: 实测命令 + 代码核对 + CHANGELOG
+> 版本: **v1.1.82** · 更新: 2026-08-25 · 依据: 实测命令 + 代码核对 + CHANGELOG
 
 ## 0. 文档定位（与其他文档的分工）
 
@@ -206,13 +206,25 @@ API（Web/集成）:   http://127.0.0.1:8011/api/...      e.g. GET /api/board
 - **入口**: `factory exec history [--limit N]` · `factory run-status [--id <id>] [--json]`
 - **状态**: ✅ · **起始**: v1.1.30 域落地
 
+### 5.6 replay — 执行重放（M5-1, v1.1.82）
+- **说明**: 执行重放引擎 — dry-run 按时间线重建单次执行 (execution_records +
+  audit 事件合并, 步骤/agent/结果/耗时 = 相邻时间戳差) / re-exec 同输入重跑
+  (input_snapshot 还原 → 新 exec_id 记录) / compare 两次执行真实 diff
+  (步骤/结果/耗时/产物, --save 落盘 docs/sprint10/replay-compare-<id1>-<id2>.md) /
+  L4 快照回滚 (项目目录 git 快照, 受限: 需 git 仓库项目目录)
+- **入口**: `/board replay <exec_id>`（默认 dry-run）· `--re-exec` ·
+  `--compare <exec2_id>`（缺省对比最近一次）· `--save`；自然语言 "重跑 <exec_id>"
+- **数据**: 新执行记录含 input_snapshot (intent/action/params/context) — 可重放;
+  旧记录无快照 → re-exec 明确报错不瞎跑
+- **状态**: ✅ · **起始**: v1.1.82
+
 ---
 
 ## 6. 展示域（看得见）
 
 ### 6.1 /board — 任务监控面板（核心）
 - **说明**: todolist + 进度条 + 标签；主线（M/P0）vs 周边（长期）分清楚；多源加载：待办清单 + Sprint 验收 + 方案书章节 + 代码证据自动同步
-- **入口（会话）**: `/board` `/board graph [项目]` `/board chain [项目]` `/board timeline` `/board report [--save]` `/board done <id>` `/board unmark <id>` `/board sync`
+- **入口（会话）**: `/board` `/board graph [项目]` `/board chain [项目]` `/board timeline` `/board report [--save]` `/board done <id>` `/board unmark <id>` `/board sync` `/board replay <exec_id> [--re-exec|--compare <id2>|--save]`
 - **入口（Web）**: `GET /api/board`（主面板）`GET /api/board/graph?project=`（依赖图）`GET /api/board/chain?project=`（任务链）`GET /api/board/timeline`（生命线）`GET /api/board?view=report`（汇报）
 - **功能明细**:
   | 子功能 | 说明 | 起始版本 |
@@ -264,6 +276,7 @@ API（Web/集成）:   http://127.0.0.1:8011/api/...      e.g. GET /api/board
   | Agent/Skill 管理 | factory agent/skill list|add|remove + /api/agents + /api/skills + help 补全 | v1.1.78 |
   | 员工管理计划 | 待办清单 A-1~A-4 (补skill/管理面板/MCP/流程) 进 board 周边; 解析支持任意章节 | v1.1.79 |
   | Skill 资产补齐 | A-1: 11 个 skill 补齐, 7 角色装配全成功 (不再缺 skill 兜底) | v1.1.80 |
+  | Skill 真调用 | 外部注册 skill 装配生效 + 执行注入 prompt (不再只是标签) | v1.1.82 |
 - **状态**: ✅（数据真实，空态诚实引导）· **关联**: 待办清单 + docs/sprint10 验收
 
 ### 6.2 /preview — Markdown 预览
@@ -454,6 +467,7 @@ API（Web/集成）:   http://127.0.0.1:8011/api/...      e.g. GET /api/board
 | v1.1.49 | Board 单项目管理视图（全生命周期 11 段, 只读, 项目隔离） | 展示 |
 | v1.1.78 | M3 收尾三件套: ux/qa 真引擎+PRD 深度化 / ChangeControl 变更回流 / 架构审批门 · Agent/Skill 管理 | M3 (7/7) |
 | v1.1.81 | P0-10 注册表一致性 + P0-11 对称路径一致性（防遗漏机制） | 测试/工程保障 |
+| v1.1.82 | M5-1 执行重放引擎 (dry-run/re-exec/对比报告 + input_snapshot) · Skill 真调用 | 执行/工程保障 |
 
 ---
 

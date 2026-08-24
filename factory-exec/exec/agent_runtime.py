@@ -448,6 +448,7 @@ class AgentRuntime:
                     extra_instruction=feedback,
                     repo_context=repo_context,
                     context=assembled_context,
+                    skills=list(getattr(agent, "skills", None) or []),
                 )
             except DeveloperError as exc:
                 return self._fail(

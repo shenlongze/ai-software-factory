@@ -25,6 +25,7 @@
 | 区域 | 入口 | 一句话 |
 |:-----|:-----|:-------|
 | 主蓝图 | 完整产品方案书（仓库根） | 21 章 + 状态对照 + 可行性取舍 |
+| Board 指南 | [board-guide.md](./board-guide.md) | 项目监控面板 8 大视图/配置/数据来源 |
 | 功能文档 | [FEATURES.md](./FEATURES.md) | 当前功能清单/用法/状态（单一事实来源） |
 | 执行计划 | [MASTER-PLAN-2026-08.md](./MASTER-PLAN-2026-08.md) | M1-M7 里程碑/版本/验收 |
 | 节点详设 | [MASTER-PLAN-DETAIL-2026-08.md](./MASTER-PLAN-DETAIL-2026-08.md) | 链路 + 节点输入/输出/接口 |

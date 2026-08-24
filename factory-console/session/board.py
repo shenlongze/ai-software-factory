@@ -1583,7 +1583,7 @@ def render_project_tasktree_html(workspace: Path | str, slug: str) -> str:
         tgl = (
             f"<span class='tgl' onclick=\"var c=this.parentElement.nextElementSibling;"
             f"c.style.display=c.style.display=='none'?'\':'none';"
-            f"this.textContent=this.textContent=='▸'?'▾':'▸'\">▾</span>"
+            f"this.textContent=this.textContent=='▸'?'▾':'▸'\">▸</span>"
             if has_kids else '<span class="tgl ph"></span>'
         )
         tid = str(node.get("id") or "?")
@@ -2048,22 +2048,59 @@ def render_project_docs_html(workspace: Path | str, slug: str) -> str:
   tr.missing td {{ color: #546e7a; }}
   td.dname {{ font-weight: 500; }} td.m {{ color: #78909c; font-size: 12px; }}
   code {{ color: #90a4ae; font-size: 12px; }}
+  .dirrow {{ padding: 4px 6px; cursor: pointer; border-radius: 6px; font-size: 13px; }}
+  .dirrow:hover {{ background: #1f242d; }}
+  .dirrow .tgl {{ display: inline-block; width: 16px; color: #78909c; }}
+  .dirrow .dname {{ color: #8ab4f8; font-weight: 500; }}
+  .dirrow .m {{ color: #546e7a; font-size: 11px; margin-left: 6px; }}
+  .dkids {{ margin-left: 18px; border-left: 1px solid #2a2e37; padding-left: 8px; }}
+  .filerow {{ display: flex; align-items: center; gap: 10px; padding: 3px 8px; border-radius: 5px; font-size: 12px; }}
+  .filerow:hover {{ background: #1f242d; }}
+  .filerow .fname {{ flex: 1; color: #b0b6bf; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+  .filerow .fsize {{ color: #546e7a; font-size: 11px; width: 44px; text-align: right; }}
+  .fview {{ color: #8ab4f8; text-decoration: none; font-size: 11px; }}
+  .fview:hover {{ text-decoration: underline; }}
+  .filters {{ display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }}
+  .f-btn {{ background: #1a1e26; border: 1px solid #2a2e37; color: #b0b6bf; border-radius: 14px; padding: 3px 12px; font-size: 11px; cursor: pointer; }}
+  .f-btn.active {{ background: #1565c0; color: #fff; border-color: #1565c0; }}
 </style></head><body>
 {_board_nav("docs", slug, workspace)}
 <h1>📄 项目文档管理 — {name}</h1>
 {_data_source_html(workspace, slug, "docs")}
 <p class="hint">📂 目录: <code>{_project_docs_root(workspace, slug)}</code>{(" · 🌐 " + _project_repo_url(workspace, slug)) if _project_repo_url(workspace, slug) else ""}<br>项目文档共 <b>{total_docs}</b> 份（文件树, 隐藏文件不显示）· 点击"查看"渲染内容</p>
-<input id="docsearch" placeholder="🔍 搜索文档 (文件名/路径包含)..." style="width:100%;box-sizing:border-box;background:#1a1e26;border:1px solid #2a2e37;color:#e6e6e6;border-radius:6px;padding:8px 12px;font-size:13px;margin-bottom:10px">
+<input id="docsearch" placeholder="🔍 搜索文档 (文件名/路径包含)..." style="width:100%;box-sizing:border-box;background:#1a1e26;border:1px solid #2a2e37;color:#e6e6e6;border-radius:6px;padding:8px 12px;font-size:13px;margin-bottom:8px">
+<div class="filters" id="docfilters">
+  <button class="f-btn active" data-kind="">全部</button>
+  <button class="f-btn" data-kind="md">📄 文档</button>
+  <button class="f-btn" data-kind="json">📦 数据</button>
+  <button class="f-btn" data-kind="yaml">⚙ 配置</button>
+  <button class="f-btn" data-kind="txt">📝 文本</button>
+</div>
 <div id="doctree">{tree_html}</div>
 <script>
-document.getElementById('docsearch').addEventListener('input', function(){{
-  var q = this.value.trim().toLowerCase();
+var curFilter = '';
+var curQ = '';
+function applyFilter(){{
+  var q = curQ;
   document.querySelectorAll('#doctree .filerow').forEach(function(r){{
-    r.style.display = (!q || r.dataset.name.indexOf(q) >= 0) ? '' : 'none';
+    var okQ = !q || r.dataset.name.indexOf(q) >= 0;
+    var okK = !curFilter || r.dataset.kind === curFilter;
+    r.style.display = (okQ && okK) ? '' : 'none';
   }});
   document.querySelectorAll('#doctree .dird').forEach(function(d){{
-    var show = d.textContent.toLowerCase().indexOf(q) >= 0;
-    d.style.display = (show || !q) ? '' : 'none';
+    d.style.display = (!q && !curFilter) ? '' : 'none';
+  }});
+}}
+document.getElementById('docsearch').addEventListener('input', function(){{
+  curQ = this.value.trim().toLowerCase();
+  applyFilter();
+}});
+document.querySelectorAll('#docfilters .f-btn').forEach(function(btn){{
+  btn.addEventListener('click', function(){{
+    document.querySelectorAll('#docfilters .f-btn').forEach(function(b){{ b.classList.remove('active'); }});
+    btn.classList.add('active');
+    curFilter = btn.dataset.kind;
+    applyFilter();
   }});
 }});
 </script>
@@ -2397,32 +2434,39 @@ def _docs_tree(docs: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _render_docs_tree(node: dict[str, Any], slug: str) -> str:
-    """递归渲染文档目录树 (📁 目录可折叠 + 📄 文件行, 带 data-name 供搜索过滤)。"""
+    """递归渲染文档目录树 (默认折叠, 紧凑行, 带 data-name/data-kind 供搜索/筛选)。
+
+    设计: 目录默认 ▸ 折叠 (不拥挤), 点击展开; 文件行紧凑 (图标+名, 路径 hover,
+    大小右置, 查看小按钮)。
+    """
     html = []
     for name in sorted(node["dirs"].keys()):
         sub = node["dirs"][name]
         kids = _render_docs_tree(sub, slug)
         cnt = len(sub["files"]) + sum(len(s2["files"]) for s2 in sub["dirs"].values())
         html.append(
-            f'<div class="dird" data-name="{name}"><div class="dirrow"><span class="tgl" '
-            f'onclick="var k=this.parentElement.parentElement.querySelector(\'.dkids\');'
-            f'k.style.display=k.style.display==\'none\'?\'\':\'none\';'
-            f'this.textContent=this.textContent==\'▸\'?\'▾\':\'▸\'">▾</span>'
-            f'📁 {name} <span class="m">({cnt})</span></div>'
-            f'<div class="dkids">{kids}</div></div>'
+            f"<div class='dird' data-name=\"{name.lower()}\"><div class='dirrow'><span class='tgl' "
+            f"onclick=\"var k=this.parentElement.parentElement.querySelector('.dkids');"
+            f"k.style.display=k.style.display=='none'?'\':'none';"
+            f"this.textContent=this.textContent=='▸'?'▾':'▸'\">▸</span>"
+            f"<span class='dname'>📁 {name}</span> <span class='m'>{cnt}</span></div>"
+            f"<div class='dkids' style='display:none'>{kids}</div></div>"
+            f'<div class="dkids" style="display:none">{kids}</div></div>'
         )
     for f in sorted(node["files"], key=lambda x: x["name"]):
-        icon = "📄" if f["kind"] == "md" else "📦"
+        icon = "📄" if f["kind"] == "md" else ("📦" if f["kind"] in ("json",) else "⚙")
         size = f"{f['size']}B" if f["size"] < 1024 else f"{f['size']/1024:.1f}KB"
         label = f.get("label") if f.get("label") and f["label"] != f["name"] else f["name"]
-        if f["kind"] in ("md", "json", "txt"):
-            view = (f'<a href="/api/board/doc?project={slug}&amp;doc={f["name"]}" '
-                    f'style="color:#8ab4f8">查看</a>')
+        kind_cls = {"md": "k-doc", "json": "k-data", "yaml": "k-cfg", "yml": "k-cfg",
+                    "toml": "k-cfg", "txt": "k-txt"}.get(f["kind"], "k-other")
+        if f["kind"] in ("md", "json", "txt", "yaml", "yml", "toml"):
+            view = (f'<a class="fview" href="/api/board/doc?project={slug}&amp;doc={f["name"]}">查看</a>')
         else:
             view = "<span class='m'>—</span>"
         html.append(
-            f'<div class="filerow" data-name="{f["name"].lower()} {str(label).lower()}">'
-            f'<span class="fname">{icon} {label} <code class="fpath">{f["name"]}</code></span>'
-            f'<span class="fsize">{size}</span><span>{view}</span></div>'
+            f'<div class="filerow {kind_cls}" data-name="{f["name"].lower()} {str(label).lower()}" '
+            f'data-kind="{f["kind"]}">'
+            f'<span class="fname" title="{f["name"]}">{icon} {label}</span>'
+            f'<span class="fsize">{size}</span><span class="fview-wrap">{view}</span></div>'
         )
     return "".join(html)

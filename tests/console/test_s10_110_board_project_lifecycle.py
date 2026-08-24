@@ -1053,7 +1053,8 @@ class TestDocsTreeSearch:
         self._proj(tmp_path)
         html = BOARD.render_project_docs_html(tmp_path, "a")
         assert "📁 docs" in html          # 目录节点
-        assert 'class="tgl"' in html      # 可折叠
+        assert 'tgl' in html              # 可折叠 (单引号 class)
+        assert "display:none" in html     # 默认折叠
         assert 'id="docsearch"' in html   # 搜索框
         assert "指南.md" in html and "README.md" in html
         assert ".github" not in html      # 隐藏已过滤

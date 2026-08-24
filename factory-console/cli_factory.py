@@ -2624,7 +2624,7 @@ class FactoryCLI:
         if action == "status":
             return self._project_status_view(args)
         print(
-            f"错误: project 需要子命令 (create / list / rename), 收到: {action!r}",
+            f"错误: project 需要子命令 (create / list / rename / status), 收到: {action!r}",
             file=sys.stderr,
         )
         return 2
@@ -2652,6 +2652,12 @@ class FactoryCLI:
                 args.company_id = getattr(args, "company", "")  # 对齐 cmd_department_create
                 result = org_cli.cmd_department_create(self.data_dir, args)
             elif ctype == "project":
+                # S10-103: create project 必须显式 --name (不落默认名 — 输入健壮性)
+                # 字段名以 argparse 实际参数名为准: p_create --name → args.name
+                # (project_name 兜底: 统一入口可能复用 rename 的 <id> 位置参数)
+                if not getattr(args, "project_name", None) and not getattr(args, "name", None):
+                    print("错误: create project 需要 --name <项目名>", file=sys.stderr)
+                    return 2
                 if not getattr(args, "repo_path", None):
                     args.repo_path = str(self.data_dir)  # 无 repo → 默认数据目录 (对话/快捷场景)
                 result = org_cli.cmd_project_register(self.data_dir, args)

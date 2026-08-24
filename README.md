@@ -4,7 +4,7 @@
 >
 > 让 AI 像软件公司员工一样工作: 理解需求 → 拆解 → 规划 → 受治理执行 → 证据交付 → 经验沉淀。
 
-`v1.1.23` · M3 完成 · CLI First · 本地部署 · 全事件审计 · Apache-2.0
+`v1.1.24` · M3 完成 · CLI First · 本地部署 · 全事件审计 · Apache-2.0
 
 ---
 
@@ -102,7 +102,7 @@ factory                        # 进入会话: "我想做一个记账 App" → �
 ```
 README.md                           ← 你在这里（总览）
 AI Software Factory — 完整产品方案书.md  ← 22 章完整设计（架构/治理/安全/行业/路线）
-CHANGELOG.md                        ← 版本变更（v1.1.23 最新）
+CHANGELOG.md                        ← 版本变更（v1.1.24 最新）
 docs/MASTER-PLAN-2026-08.md         ← M1-M7 执行主线
 docs/sprint10/S10-097*              ← M3e 收尾（当前 Sprint）
 ```

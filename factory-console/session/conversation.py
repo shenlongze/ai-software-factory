@@ -34,6 +34,7 @@ from typing import Any, Callable, Optional
 
 from .discovery_guide import (
     DEFAULT_SUGGESTIONS,
+    EXIT_COMMANDS,
     HELP_KEYWORDS,
     format_progress,
     lifecycle_line,
@@ -204,6 +205,9 @@ class ConversationResponse:
     #: S10-102: 确认+下一步信号 (approved + next_action → 宿主创建成功后执行;
     #: "prd" → generate_prd; "develop"/"create" 只传信号不执行)
     next_action: Optional[str] = None
+    #: S10-103: 退出会话信号 (True → 宿主应 print 退出提示并 running=False;
+    #: 发现/确认中 exit/quit/再见/退出会话 → 命令分流, 不当字段)
+    exit_requested: bool = False
 
 
 class ConversationManager:
@@ -276,11 +280,23 @@ class ConversationManager:
         if not raw:
             return self._clarify("请输入你的需求描述 (例如: '创建一个项目' 或 '项目列表')")
         if raw.startswith("/"):
-            # slash 命令由 SlashCommandRegistry 处理, 状态机不接管 (状态不变)
+            # S10-103: slash → passthrough=True — 宿主重分发到命令注册表执行
+            # (不再死胡同消息; 状态机不接管, 状态不变)
             return ConversationResponse(
                 state=self.state,
-                message="slash 命令由命令注册表处理, 不走会话状态机",
+                message="",
+                needs_input=True,
+                passthrough=True,
+            )
+        # S10-103: EXIT 命令 → exit_requested (产品流程进行中同样先退出 —
+        # 命令分流在字段收集之前; "退出" 已在产品流程分支由 _product_control
+        # 先处理 → 取消发现, 不走到这里)
+        if raw in EXIT_COMMANDS:
+            return ConversationResponse(
+                state=self.state,
+                message="",
                 needs_input=False,
+                exit_requested=True,
             )
         # S10-050 P4: 产品流程进行中 → 答案直接进产品流程 (多轮追问 / 确认)
         if self.product_intent is not None and self.state in (
@@ -473,6 +489,11 @@ class ConversationManager:
         control = self._product_control(raw)
         if control is not None:
             return control
+        # S10-103: 命令分流 (slash → passthrough; exit/quit → exit_requested) —
+        # 在字段收集之前 ("退出" 已被 _product_control 处理为取消, 不走到这里)
+        cmd = self._command_escape(raw)
+        if cmd is not None:
+            return cmd
         # S10-101: 求助提案挂起 → 处理选择 (y 全填 / 1-3 单选 / 自定义) —
         # 绝不当字段内容收下 (验收 6)
         if self._suggestion_proposal:
@@ -867,6 +888,27 @@ class ConversationManager:
 
     # -------------------------------------------------- 产品流程控制短语 (非答案)
 
+    def _command_escape(self, text: str) -> Optional[ConversationResponse]:
+        """命令分流 (S10-103): slash → passthrough; exit/quit → exit_requested。
+
+        确定性 (不依赖 LLM); 与控制指令并列, 在字段收集之前:
+        - "/status" → passthrough=True (宿主重分发到命令注册表, 不当字段)
+        - exit/quit/退出会话/再见/拜拜/结束 → exit_requested=True (宿主优雅退出)
+        - 其余 → None (正常字段/控制短语处理)
+        注意: "退出" 在 _PRODUCT_CANCEL_PHRASES (取消发现) 与 EXIT_COMMANDS 交集 —
+        调用方须先走 _product_control → "退出" 仍 = 取消发现 (向后兼容)。
+        """
+        norm = str(text or "").strip()
+        if norm.startswith("/"):
+            return ConversationResponse(
+                state=self.state, message="", needs_input=True, passthrough=True
+            )
+        if norm in EXIT_COMMANDS:
+            return ConversationResponse(
+                state=self.state, message="", needs_input=False, exit_requested=True
+            )
+        return None
+
     def _product_control(self, text: str) -> Optional[ConversationResponse]:
         """产品流程中的控制短语检测 (非字段答案 — 回答阶段/确认阶段共用)。
 
@@ -1074,6 +1116,11 @@ class ConversationManager:
         control = self._product_control(answer)
         if control is not None:
             return control
+        # S10-103: 命令分流 (slash → passthrough; exit/quit → exit_requested) —
+        # 在改名/确认分流之前 ("退出" 已被 _product_control 处理为取消, 不走到这里)
+        cmd = self._command_escape(answer)
+        if cmd is not None:
+            return cmd
         raw = (answer or "").strip()
         # 3a. 明确改名命令 ("改名叫墨笺" → rename, S10-081 行为不变)
         rename_to = match_rename(raw)

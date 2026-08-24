@@ -5,6 +5,53 @@
 
 ---
 
+## [v1.1.24] — 2026-08-24
+
+**发现流程命令分流 + CLI 输入健壮性**（S10-103）: 发现/确认两路径中 "/status"/"/help"
+不再被当字段、也不死胡同 — slash → passthrough 交回宿主命令注册表执行; "exit"/"quit"/
+"再见"/"退出会话"/"拜拜"/"结束" → 优雅退出 (exit_requested → running=False);
+"退出" 语义不变 (仍 = 取消发现, 向后兼容); CLI: project 无子命令提示补 status;
+create project 无 --name → 明确错误 rc 2。
+
+### Added
+
+- **共享退出命令集**（`session/discovery_guide.py`）— `EXIT_COMMANDS` frozenset
+  （exit/quit/退出/退出会话/再见/拜拜/结束）: 单一来源, `session.py` 改为从此导入
+  （集合内容不变; conversation 不能 import session — 循环依赖）
+- **conversation 命令分流**（`conversation.py`, 确定性不依赖 LLM）—
+  `_command_escape(text)`: slash → `passthrough=True`（宿主重分发, 不再死胡同）;
+  EXIT_COMMANDS → `exit_requested=True`; `ConversationResponse += exit_requested`;
+  接入 `handle_product_answer` / `handle_product_confirm`（`_product_control` 之后、
+  字段收集之前 — "退出" 仍由控制短语先处理 = 取消发现, 向后兼容）; `handle()` 顶部
+  slash 分支改 passthrough + 产品流程前 EXIT 检查
+- **宿主退出接线**（`session.py`）— `_dispatch` 产品流分支新增 `exit_requested` →
+  `print("已退出会话 — 再见!")` + `self.running = False`（slash 经既有 passthrough
+  重分发 → registry.execute）
+
+### Fixed
+
+- 发现/确认中 `/status` `/help` 被当字段或死胡同 → 现在正常执行命令
+- 发现/确认中 `exit` `quit` 被当字段推进 → 现在优雅退出会话
+- `factory project` 无子命令提示漏 `status` → 提示补全
+  `(create / list / rename / status)`
+- `factory create project` 不强制 `--name` → 现在缺失时明确错误 `rc 2`
+  （错误: create project 需要 --name <项目名>）
+
+### Changed
+
+- `session.py` `EXIT_COMMANDS` 本地定义 → `from .discovery_guide import EXIT_COMMANDS`
+  （集合内容不变, 既有退出行为零变化）
+- `conversation.handle()` slash 分支: 死胡同消息 → `passthrough=True`（宿主重分发）
+
+### Tests
+
+- 新增 `tests/console/test_s10_103_command_routing.py`（契约 1-9 全绿）
+- 既有更新: `test_session_conversation.test_handle_slash_keeps_state`（slash 断言改为
+  passthrough, 注释原因）; 版本断言 v1.1.23 → v1.1.24
+  （`test_s10_074_deployment` / `test_confirmation_intelligence`）
+
+---
+
 ## [v1.1.23] — 2026-08-24
 
 **确认阶段智能分流 + 求助词全覆盖**（S10-102）: "可以，先出prd文档"/"？" 不再被当产品名 —

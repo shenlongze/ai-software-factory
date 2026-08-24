@@ -73,8 +73,9 @@ BANNER = (
     "输入 exit / 退出 结束会话; Ctrl+C / Ctrl+D 亦可。"
 )
 
-#: 退出命令集合 (匹配即优雅退出)
-EXIT_COMMANDS = frozenset({"exit", "quit", "退出", "退出会话", "再见", "拜拜", "结束"})
+#: 退出命令集合 (匹配即优雅退出) — S10-103: 单一来源 discovery_guide.EXIT_COMMANDS
+#: (conversation 不能 import session — 循环依赖; 集合内容不变)
+from .discovery_guide import EXIT_COMMANDS  # noqa: E402
 
 #: 未知输入提示前缀 (slash 未知 + Intent 未识别共用)
 UNKNOWN_PREFIX = "未知命令: "
@@ -227,6 +228,11 @@ class InteractiveSession:
             # 原输入交回普通意图链处理 (不再当字段答案)
             if getattr(resp, "passthrough", False):
                 self._dispatch(line)
+            elif getattr(resp, "exit_requested", False):
+                # S10-103: 发现/确认中 exit/quit/再见/退出会话 → 优雅退出
+                # (退出/取消 等控制短语仍由 conversation 层先处理, 不走到这里)
+                print("已退出会话 — 再见!")
+                self.running = False
             else:
                 message = resp.message
                 # S10-102: 确认+下一步 → 宿主接线 — 创建成功后执行 next_action

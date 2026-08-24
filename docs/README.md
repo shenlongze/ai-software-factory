@@ -9,11 +9,11 @@
 2. **总体规划** [MASTER-PLAN-2026-08.md](./MASTER-PLAN-2026-08.md) — AI Company OS 执行主线（业务流/数据流/CLI/API/里程碑 M1-M7）
 3. **节点详设** [MASTER-PLAN-DETAIL-2026-08.md](./MASTER-PLAN-DETAIL-2026-08.md) — 以链路为主线的节点级设计
 4. **[README.md](../README.md)** — 项目是什么（Vision / Problem / Solution）
-5. **[CHANGELOG.md](../CHANGELOG.md)** — 版本与变更（当前 **v1.1.23**）
+5. **[CHANGELOG.md](../CHANGELOG.md)** — 版本与变更（当前 **v1.1.24**）
 
 ## 当前状态（2026-08-24）
 
-- **版本**: v1.1.23 · 三部门循环（Claude=产品 · Hermes=架构/Review · Codex=工程）
+- **版本**: v1.1.24 · 三部门循环（Claude=产品 · Hermes=架构/Review · Codex=工程）
 - **已交付**: M1 内核（repo/工具/MCP）· M1a 证据+审批 · M1b 积压清道夫 · M2 员工内核（7 角色真干活）· **M3 四部曲**（原子拆解/关键路径/并行调度/质量评估）
 - **测试基线**: 全量 12049 passed / 0 failed
 - **五维评测**: S0/L0/U0/C0/T0 基线（§22.7）

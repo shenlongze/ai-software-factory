@@ -10,6 +10,9 @@
 - HELP_KEYWORDS — 求助关键词确定性硬闸 (LLM 前先查, 两路径共用;
   normalize_help_text 去空白后子串匹配 — "没 想法" 等口语变体全覆盖)
 - DEFAULT_SUGGESTIONS — 每字段确定性建议 (无 LLM 兜底 — 诚实降级, 非伪造 LLM)
+- EXIT_COMMANDS — 退出命令集 (S10-103: 发现/确认两路径命令分流 — slash → 宿主
+  passthrough; exit/quit/退出会话/再见/拜拜/结束 → exit_requested; "退出" 除外 —
+  仍为取消发现, 向后兼容; session.EXIT_COMMANDS 同源导入)
 - S10-102 确认阶段智能分流表 — APPROVE_WORDS / APPROVE_NEXT_ACTIONS /
   RENAME_RE / CLARIFY_WORDS / CONFIRM_DELEGATE_WORDS + 匹配助手
   (normalize_help_text / split_confirm_first / match_approve / match_approve_next /
@@ -121,6 +124,10 @@ def enhanced_line(answers: dict[str, Any]) -> str:
     return "增强(可选): " + " · ".join(parts)
 
 
+#: 退出命令集 (S10-103: 与 session.EXIT_COMMANDS 同源 — conversation 不能 import session,
+#: 循环依赖; 单一来源: session.py 改为从此导入, 集合内容不变)
+EXIT_COMMANDS: frozenset[str] = frozenset({"exit", "quit", "退出", "退出会话", "再见", "拜拜", "结束"})
+
 # ================================================================ S10-102: 确认阶段智能分流表
 
 #: 确认词 (纯确认 — 无下一步动作; 首段切分后小写匹配)
@@ -228,6 +235,7 @@ __all__ = [
     "LIFECYCLE_STAGES",
     "LIFECYCLE_LINE",
     "ENHANCED_LABELS",
+    "EXIT_COMMANDS",
     "HELP_KEYWORDS",
     "DEFAULT_SUGGESTIONS",
     "APPROVE_WORDS",

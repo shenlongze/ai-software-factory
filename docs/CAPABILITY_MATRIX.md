@@ -244,6 +244,27 @@ AI Factory
 - 测试: `tests/console/test_discovery_session_llm.py` 26 passed; 既有 108 DS + 35 analyzer 零改动全绿; 真实 LLM 验收 8/8
 - 边界: conversation 路径未改; 驱动层逃生/CLI 接线未做 (模型层)
 
+## S10-103 更新 (发现流程命令分流 + CLI 输入健壮性, v1.1.24)
+
+> 2026-08-24 | Sprint: 发现/确认两路径中 "/status"/"exit" 不再被当字段 — slash → passthrough
+> 交回宿主命令注册表; exit/quit/再见/退出会话/拜拜/结束 → 优雅退出; "退出" 仍 = 取消发现
+
+| 项 | S10-102 后 | S10-103 后 |
+|---|---|---|
+| 发现中 "/status" | 模型层 handle() 死胡同消息 (非 passthrough) | **passthrough=True** — 宿主重分发 → registry 执行 (状态输出, 不当字段) |
+| 发现中 "exit"/"quit" | 被当 problem 字段 (模型层无分流; REPL 顶部拦截掩盖) | **exit_requested=True** — 宿主 print 退出提示 + running=False (不当字段) |
+| 确认中 slash/exit | 无分流 (slash 死胡同 / exit 当名称) | **同样分流** — handle_product_confirm 接入 _command_escape |
+| "退出" | 取消发现 (S10-084 控制短语) | **语义不变** — _product_control 先处理 → 仍取消发现 (向后兼容) |
+| EXIT_COMMANDS 单一来源 | session.py 本地定义 | **discovery_guide.EXIT_COMMANDS** (session 同源导入, 集合不变) |
+| ConversationResponse | passthrough/next_action | **+ exit_requested** |
+| CLI project 提示 | 漏 status | **提示补全 (create / list / rename / status)** |
+| CLI create project --name | 不强制 | **缺失 → 明确错误 rc 2** |
+
+- 新增: `discovery_guide.EXIT_COMMANDS` · `conversation._command_escape` ·
+  `ConversationResponse.exit_requested` · `session._dispatch` exit_requested 宿主接线
+- 测试: `tests/console/test_s10_103_command_routing.py` 契约 1-9; 全量 console 0 新增失败
+- 边界: 命令分流纯确定性 (不依赖 LLM); "退出" 语义保持; 不新增依赖; prompt_toolkit/历史持久化 → backlog
+
 ## S10-102 更新 (确认阶段智能分流 + 求助词全覆盖, v1.1.23)
 
 > 2026-08-24 | Sprint: "可以，先出prd文档"/"？" 不再被当产品名; "没 想法" 不再填进字段

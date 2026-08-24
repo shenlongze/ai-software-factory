@@ -135,11 +135,15 @@ def test_handle_empty_input_clarification():
 
 
 def test_handle_slash_keeps_state():
-    """slash 文本 → 状态不变 (命令注册表处理, 不在状态机范围)。"""
+    """slash 文本 → 状态不变 + passthrough=True (S10-103: 宿主重分发命令注册表,
+    不再死胡同消息 — 行为变化: needs_input False→True, message 空, passthrough 标记)。"""
     mgr = _manager()
     resp = mgr.handle("/status", _parser())
     assert resp.state == CONV_MOD.ConversationState.DISCOVERY
-    assert resp.needs_input is False
+    assert resp.needs_input is True
+    assert resp.passthrough is True
+    assert resp.exit_requested is False
+    assert resp.message == ""
     assert mgr.pending_intent is None
 
 

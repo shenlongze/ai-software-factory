@@ -3,7 +3,23 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
-## [v1.1.39] — 2026-08-24
+## [v1.1.40] — 2026-08-24
+
+**board 多源加载（设计文档全部任务）**: Sprint + 章节 + 待办清单（Founder: 现在不全）。
+
+### Added
+
+- **Sprint 任务加载**（`board.py`）— 扫描 docs/sprint10/ 96 个 S10 Sprint
+  （完成=有 acceptance 验收报告证据）
+- **章节任务加载**（§1.4 状态表）— 22 章 + 附录, 各带 ✅/🚧 状态 + 待补
+- render_board 合并: 待办清单(M/P0) + Sprint(S10) + 章节(§1.4)
+- 修复 §1.4 解析（过滤 §1.4.5 层级表格行）
+
+### 说明（诚实）
+
+- Sprint 完成判断=acceptance 文件存在（低估: 很多验收在 Hermes 消息未落盘）
+- §22.6 SDK 任务待加（后续）
+
 
 **自动钩子: 主线状态自动同步**（Founder: 需要 — 数据准确实时, 不靠手动记）。
 

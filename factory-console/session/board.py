@@ -105,6 +105,22 @@ def render_board(path: Path = DEFAULT_BACKLOG) -> str:
                 mark = "✅" if t["done"] else "⬜"
                 pri = f"[{t['priority']}]" if t["priority"] else ""
                 buf.append(f"   {mark} {t['id']} {pri} {t['desc']}")
+
+        # 多源加载（设计文档全部任务 — Founder: 现在不全）
+        sprints = _parse_sprints()
+        if sprints:
+            s_done = sum(1 for s in sprints if s["done"])
+            buf.append("")
+            buf.append(f"🧪 Sprint 任务 (S10): {s_done}/{len(sprints)} 完成 (验收报告证据)")
+            for s in sprints:
+                mark = "✅" if s["done"] else "🚧"
+                buf.append(f"   {mark} {s['id']} {s['title']}")
+        s14 = _parse_s14()
+        if s14:
+            buf.append("")
+            buf.append(f"📚 章节任务 (§1.4): {sum(1 for r in s14 if r['status']=='✅')}/{len(s14)} 完成")
+            for r in s14:
+                buf.append(f"   {r['status']} {r['title']} — {r['todo'][:30]}")
         return "\n".join(buf)
     except ImportError:  # noqa: BLE001 — 无 rich → 纯文本
         return "\n".join(
@@ -623,3 +639,70 @@ def sync_mainline(path: Path = DEFAULT_BACKLOG) -> list[str]:
                 if "已标记" in r:
                     marked.append(item_id)
     return marked
+
+
+# ---------------------------------------------------------------- 多源加载（设计文档全部任务）
+
+def _parse_sprints(sprint_dir: Path | None = None) -> list[dict[str, Any]]:
+    """S10 Sprint 任务: 扫描 docs/sprint10/ 文件名 → {id, title, done, files}。
+
+    完成判断: 该 S10 有 *-acceptance*.md（Hermes 验收报告 = 完成的可靠证据）。
+    """
+    if sprint_dir is None:
+        sprint_dir = Path(__file__).resolve().parents[2] / "docs" / "sprint10"
+    if not sprint_dir.is_dir():
+        return []
+    sprints: dict[str, dict[str, Any]] = {}
+    try:
+        files = sorted(sprint_dir.iterdir())
+    except OSError:  # noqa: BLE001
+        return []
+    for f in files:
+        if not f.name.startswith("S10-") or f.suffix != ".md":
+            continue
+        m = re.match(r"(S10-\d+)", f.name)
+        if not m:
+            continue
+        sid = m.group(1)
+        s = sprints.setdefault(sid, {"id": sid, "title": sid, "done": False, "files": 0})
+        s["files"] += 1
+        if "acceptance" in f.name:
+            s["done"] = True
+            # 标题: 取 acceptance 文件名中 '-' 后的描述
+            rest = f.name.replace(f"{sid}-", "").replace("-acceptance.md", "").replace("-prompt.md", "")
+            if rest and rest != f.name:
+                s["title"] = rest[:30]
+    return [sprints[k] for k in sorted(sprints.keys())]
+
+
+def _parse_s14(doc_path: Path | None = None) -> list[dict[str, Any]]:
+    """§1.4 状态表（方案书章节级任务）: {id, title, status, todo}。"""
+    if doc_path is None:
+        doc_path = Path(__file__).resolve().parents[2] / "AI Software Factory — 完整产品方案书.md"
+    if not doc_path.is_file():
+        return []
+    try:
+        text = doc_path.read_text(encoding="utf-8")
+    except OSError:  # noqa: BLE001
+        return []
+    m = re.search(r"图例: ✅ 已实现.*?(?=\n### 1\.5|\n## )", text, re.S)
+    if not m:
+        return []
+    rows = []
+    for line in m.group(0).splitlines():
+        if not line.startswith("|") or "章节" in line:
+            continue
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) < 4:
+            continue
+        # 只解析章节状态行（第一列 = 中文数字/附录 章节名; 过滤 §1.4.5 层级表格行）
+        first = cells[0]
+        if not re.match(r"^[一二三四五六七八九十]+ |^附录", first):
+            continue
+        rows.append({
+            "id": first.replace(" ", "_"),
+            "title": first,
+            "status": cells[1],
+            "todo": cells[3],
+        })
+    return rows

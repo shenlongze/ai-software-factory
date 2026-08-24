@@ -222,6 +222,7 @@ API（Web/集成）:   http://127.0.0.1:8011/api/...      e.g. GET /api/board
   | 单项目管理视图 | `/board project [slug]` 全生命周期 11 段进度（只读, 项目隔离不猜项目） | v1.1.49 |
   | 项目监控聚合 | `/api/board/summary` 项目数/状态分布/生命周期均值/进行中失败任务 + Web 5s 实时刷新 | v1.1.50 |
   | SDK 任务 | §22.3 4 阶段路线第四数据源 + Sprint 判定放宽 (acceptance/completion/final) | v1.1.50 |
+  | 任务树视图 | `/api/board/tasks?project=` epic→feature→task 层级 + 任务状态汇总 + 全页统一返回导航 | v1.1.51 |
 - **状态**: ✅（数据真实，空态诚实引导）· **关联**: 待办清单 + docs/sprint10 验收
 
 ### 6.2 /preview — Markdown 预览

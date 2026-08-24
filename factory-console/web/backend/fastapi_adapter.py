@@ -826,6 +826,18 @@ def build_app(
             return {"projects": 0, "status_dist": {}, "avg_lifecycle_pct": 0,
                     "running_tasks": 0, "failed_tasks": 0}
 
+    @app.get("/api/board/tasks")
+    def api_board_tasks(project: str = ""):
+        """项目任务树 HTML (epic → feature → task, 状态色点)。"""
+        from fastapi.responses import HTMLResponse
+
+        board_mod = _console_import("session.board")
+        try:
+            html = board_mod.render_project_tasktree_html(workspace_root, project)
+        except Exception:  # noqa: BLE001
+            html = "<p>（任务树渲染失败）</p>"
+        return HTMLResponse(content=html)
+
     @app.get("/api/board/timeline")
     def api_board_timeline():
         """生命线 HTML（审计事件时间轴, 纯 CSS）。"""

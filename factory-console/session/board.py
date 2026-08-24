@@ -1126,14 +1126,7 @@ def render_projects_list_html(workspace: Path | str) -> str:
   .pts {{ display: block; font-size: 11px; color: #78909c; margin-top: 6px; }}
   .empty {{ color: #9aa0a6; }}
 </style></head><body>
-<div class="nav">
-  <a href="/api/board">📋 主线面板</a>
-  <a href="/api/board?view=projects" class="active">📁 项目管理</a>
-  <a href="/api/board/graph?project=demo">🔗 依赖图(示例)</a>
-  <a href="/api/board/chain?project=demo">⛓ 任务链(示例)</a>
-  <a href="/api/board/timeline">⏱ 生命线</a>
-  <a href="/api/board?view=report">📄 汇报</a>
-</div>
+{_board_nav("projects")}
 <h1>📁 项目列表（{len(projects)} 个）</h1>
 <p style="color:#9aa0a6;font-size:12px">点击项目卡片查看单项目管理视图（全生命周期）</p>
 <div class="grid">{"".join(cards)}</div>
@@ -1184,11 +1177,19 @@ def render_project_lifecycle_html(workspace: Path | str, project_id: str = "") -
     ts = datetime.datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M") if mtime else "?"
     # S10-110 P1-3: 项目内任务清单 (只读, 上限 20)
     task_rows = _project_task_list(workspace, slug)
+    # S10-110 完善: 任务状态汇总 (完成/进行中/失败/待办)
+    counts = _project_task_status_counts(workspace, slug)
+    counts_html = (
+        f"<p style='font-size:12px;color:#9aa0a6'>✅完成 {counts['done']} · "
+        f"🔵进行中 {counts['running']} · ❌失败 {counts['failed']} · "
+        f"⬜待办 {counts['pending']} · 共 {counts['total']}</p>"
+    ) if counts["total"] else ""
     tasks_card = ""
     if task_rows:
         rows_html = "".join(f"<tr><td>{r}</td></tr>" for r in task_rows)
         tasks_card = (
             "<div class='card'><h2>📋 任务清单</h2>"
+            f"{counts_html}"
             f"<table class='tasks'><tbody>{rows_html}</tbody></table></div>"
         )
     return f"""<!DOCTYPE html>
@@ -1213,14 +1214,7 @@ def render_project_lifecycle_html(workspace: Path | str, project_id: str = "") -
   p {{ font-size: 13px; color: #b0b6bf; }}
   .back {{ color: #8ab4f8; text-decoration: none; font-size: 13px; }}
 </style></head><body>
-<div class="nav">
-  <a href="/api/board">📋 主线面板</a>
-  <a href="/api/board?view=projects">📁 项目管理</a>
-  <a href="/api/board/graph?project={slug}">🔗 依赖图</a>
-  <a href="/api/board/chain?project={slug}">⛓ 任务链</a>
-  <a href="/api/board/timeline">⏱ 生命线</a>
-  <a href="/api/board?view=report">📄 汇报</a>
-</div>
+{_board_nav("projects", slug)}
 <h1>📌 {info.get('name') or slug} <span style="font-size:12px;color:#78909c">({slug})</span></h1>
 <div class="card">
   <h2>🌱 全生命周期 {done_count}/{total} ({pct}%)</h2>
@@ -1382,7 +1376,121 @@ def _board_nav(active: str = "main", project: str = "") -> str:
         ("chain", f"/api/board/chain?project={g}", "⛓ 任务链"),
         ("timeline", "/api/board/timeline", "⏱ 生命线"),
         ("report", "/api/board?view=report", "📄 汇报"),
+        ("tasks", f"/api/board/tasks?project={g}", "🗂 任务树"),
     ]:
         style = f"{base};{act}" if key == active else base
         links += f'<a href="{url}" style="{style}">{label}</a>'
     return f'<div style="margin-bottom:12px">{links}</div>'
+
+
+# ---------------------------------------------------------------- 任务状态汇总 + 任务树 (S10-110 完善)
+
+def _project_task_status_counts(workspace: Path | str, slug: str) -> dict[str, int]:
+    """任务状态汇总 {done,running,failed,pending,total} (只读, 失败安全)。"""
+    es = Path(workspace) / "projects" / slug / "execution_state.json"
+    tasks: list[dict[str, Any]] = []
+    if es.is_file():
+        try:
+            tasks = (json.loads(es.read_text(encoding="utf-8")) or {}).get("tasks") or []
+        except Exception:  # noqa: BLE001
+            tasks = []
+    counts = {"done": 0, "running": 0, "failed": 0, "pending": 0, "total": len(tasks)}
+    for t in tasks:
+        st = str(t.get("status") or "")
+        if st in _DONE_TASK_STATUSES:
+            counts["done"] += 1
+        elif st in ("running", "in_progress", "started"):
+            counts["running"] += 1
+        elif st == "failed":
+            counts["failed"] += 1
+        else:
+            counts["pending"] += 1
+    return counts
+
+
+def _project_task_tree(workspace: Path | str, slug: str) -> list[dict[str, Any]]:
+    """项目任务树 (epic → feature → task): 读 execution_state.json (回退 tasks.json)。"""
+    es = Path(workspace) / "projects" / slug / "execution_state.json"
+    tasks: list[dict[str, Any]] = []
+    if es.is_file():
+        try:
+            tasks = (json.loads(es.read_text(encoding="utf-8")) or {}).get("tasks") or []
+        except Exception:  # noqa: BLE001
+            tasks = []
+    if not tasks:
+        tf = Path(workspace) / "projects" / slug / "tasks.json"
+        if tf.is_file():
+            try:
+                tasks = (json.loads(tf.read_text(encoding="utf-8")) or {}).get("tasks") or []
+            except Exception:  # noqa: BLE001
+                tasks = []
+    epics: dict[str, dict[str, Any]] = {}
+    for t in tasks:
+        epic = str(t.get("epic") or t.get("feature") or "未分组")
+        ep = epics.setdefault(epic, {"epic": epic, "features": {}})
+        feat = str(t.get("feature") or epic)
+        fl = ep["features"].setdefault(feat, {"feature": feat, "tasks": []})
+        fl["tasks"].append(t)
+    return [ep for ep in epics.values()]
+
+
+def render_project_tasktree_html(workspace: Path | str, slug: str) -> str:
+    """项目任务树 HTML (epic → feature → task, 状态色点; 用户要的"无序图"方向)。"""
+    slug = Path(str(slug or "")).name
+    info = _read_product_info(workspace, slug) if slug else None
+    if info is None:
+        return _board_nav("project", slug) + "<p>（项目不存在或未选择）</p>"
+    tree = _project_task_tree(workspace, slug)
+    marks = {"done": "✅", "delivered": "✅", "approved": "✅", "applied": "✅",
+             "running": "🔵", "in_progress": "🔵", "started": "🔵",
+             "failed": "❌", "blocked": "⛔", "pending": "⬜", "todo": "⬜"}
+    cols = {"done": "#43a047", "running": "#1e88e5", "failed": "#e53935",
+            "pending": "#78909c", "blocked": "#fb8c00"}
+    epic_html = []
+    for ep in tree:
+        feat_items = []
+        for fl in ep["features"].values():
+            task_items = []
+            for t in fl["tasks"][:30]:
+                st = str(t.get("status") or "")
+                mark = marks.get(st, "⬜")
+                color = cols.get(st, "#78909c")
+                agent = str(t.get("agent") or "")
+                agent_s = f'<span class="tag">{agent}</span>' if agent else ""
+                task_items.append(
+                    f'<li class="task {st}"><span class="tmark" style="color:{color}">{mark}</span> '
+                    f'{str(t.get("id") or "?")} {str(t.get("name") or "")[:40]}{agent_s} '
+                    f'<span class="tstatus">{st or "待办"}</span></li>'
+                )
+            feat_items.append(
+                f'<div class="feat"><div class="feat-name">📦 {fl["feature"]}</div>'
+                f'<ul>{"".join(task_items)}</ul></div>'
+            )
+        epic_html.append(
+            f'<div class="epic"><div class="epic-name">🗂 {ep["epic"]}</div>'
+            f'<div class="feats">{"".join(feat_items)}</div></div>'
+        )
+    body = "".join(epic_html) if epic_html else "<p>（暂无任务）</p>"
+    counts = _project_task_status_counts(workspace, slug)
+    return f"""<!DOCTYPE html>
+<html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>任务树 — {info.get('name') or slug}</title>
+<style>
+  body {{ font-family: -apple-system, system-ui, sans-serif; margin: 0; padding: 16px; background: #0f1115; color: #e6e6e6; }}
+  h1 {{ font-size: 18px; }}
+  .summary {{ color: #9aa0a6; font-size: 13px; margin: 8px 0 14px; }}
+  .epic {{ background: #1a1e26; border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; }}
+  .epic-name {{ font-weight: 600; color: #ffb74d; margin-bottom: 8px; }}
+  .feat {{ margin: 6px 0 6px 8px; padding-left: 10px; border-left: 2px solid #2a2e37; }}
+  .feat-name {{ font-size: 13px; color: #b0bec5; margin-bottom: 4px; }}
+  ul {{ list-style: none; margin: 0; padding: 0; }}
+  li.task {{ font-size: 12px; padding: 3px 0; color: #b0b6bf; }}
+  .tag {{ font-size: 10px; background: #37474f; color: #b0bec5; border-radius: 4px; padding: 1px 6px; margin-left: 6px; }}
+  .tstatus {{ font-size: 10px; color: #78909c; margin-left: 6px; }}
+</style></head><body>
+{_board_nav("tasks", slug)}
+<h1>🗂 项目任务树 — {info.get('name') or slug}</h1>
+<div class="summary">✅完成 {counts['done']} · 🔵进行中 {counts['running']} · ❌失败 {counts['failed']} · ⬜待办 {counts['pending']} · 共 {counts['total']}</div>
+{body}
+</body></html>"""

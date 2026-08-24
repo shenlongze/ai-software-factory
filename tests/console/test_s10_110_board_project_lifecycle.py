@@ -282,3 +282,39 @@ class TestBoardNav:
         assert "主线面板" in BOARD.render_report_html()
         assert "主线面板" in BOARD.render_projects_list_html(tmp_path)
         assert "主线面板" in BOARD.render_project_lifecycle_html(tmp_path, "demo")
+
+
+# ================================================================== 任务状态汇总 + 任务树
+
+class TestTaskCountsAndTree:
+    def test_status_counts(self, tmp_path):
+        _mk_project(tmp_path, "demo", name="测试产品",
+                    task_statuses=("done", "failed", "running", "pending"))
+        c = BOARD._project_task_status_counts(tmp_path, "demo")
+        assert c == {"done": 1, "running": 1, "failed": 1, "pending": 1, "total": 4}
+
+    def test_task_tree_groups_by_epic(self, tmp_path):
+        _mk_project(tmp_path, "demo", name="测试产品")
+        # 覆盖 execution_state: 加 epic/feature
+        pdir = tmp_path / "projects" / "demo"
+        (pdir / "execution_state.json").write_text(json.dumps({
+            "tasks": [
+                {"id": "t1", "name": "任务1", "epic": "史诗A", "feature": "功能A", "status": "done"},
+                {"id": "t2", "name": "任务2", "epic": "史诗A", "feature": "功能B", "status": "failed"},
+                {"id": "t3", "name": "任务3", "epic": "史诗B", "feature": "功能C", "status": "pending"},
+            ],
+        }), encoding="utf-8")
+        tree = BOARD._project_task_tree(tmp_path, "demo")
+        assert len(tree) == 2  # 史诗A/史诗B
+        assert tree[0]["epic"] == "史诗A"
+        assert len(tree[0]["features"]) == 2
+        html = BOARD.render_project_tasktree_html(tmp_path, "demo")
+        assert "史诗A" in html and "任务1" in html
+        assert "✅完成" in html  # 状态汇总
+        assert "🗂 任务树" in html  # 导航
+
+    def test_lifecycle_html_has_counts_and_tasks_nav(self, tmp_path):
+        _mk_project(tmp_path, "demo", name="测试产品", task_statuses=("done", "failed"))
+        html = BOARD.render_project_lifecycle_html(tmp_path, "demo")
+        assert "✅完成" in html
+        assert "🗂 任务树" in html  # 统一导航含任务树

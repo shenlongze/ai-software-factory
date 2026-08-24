@@ -7429,8 +7429,25 @@ factory <域> <动词> [参数]      # 运维/资源/数据命令（长命令, �
 | **skill** | ✅ skill list | 📐 skill use | 📐 skill config | 📐 skill install | — | 骨架 |
 | **mcp** | 📐 mcp list | 📐 mcp use | 📐 mcp config | 📐 mcp connect | 📐 mcp test | 待建 |
 | **workflow** | 📐 workflow list | 📐 workflow use | 📐 workflow config | 📐 workflow create | — | 待建 |
+| **company** | ✅ company list | 📐 company select | 📐 company config | ✅ company create | 📐 company test | 部分 |
+| **industry** | 📐 industry list | 📐 industry select | 📐 industry config | 📐 industry create(FactorySpec) | — | 待建 |
 | **project** | ✅ project list | 📐 project select | 📐 project config | ✅ project create | — | 部分 |
 | **service** | ✅ service list | — | — | — | — | ✅ |
+
+**组织域管理（company/industry — 组织资源, 带层级语义）**
+
+```
+company list/create ✅（org cli + factory create company）
+company select      → 设置会话 current_company（后续资源命令缺省作用域）
+company config      → 公司级治理策略（预算/审批/合规, §6 下发）
+company hire        → 装配员工（agent 挂公司, org cli 已有）
+industry create     → 实例化行业工厂（FactorySpec: Skill+知识+流程+评价）
+industry select     → 设置 current_industry（行业资源作用域）
+industry config     → 行业工厂配置（模板/知识/评价标准）
+```
+
+组织域管理安全: 敏感操作（create/config/hire）走审计 + 确认门;
+company_id/factory_id 作用域隔离（§7.2.2 ⑤）; select 影响会话上下文。
 
 **管理动词规范（六类, 统一语义）**
 

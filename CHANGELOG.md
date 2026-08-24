@@ -48,6 +48,14 @@ conversation 与 DiscoverySession 两路径同步。
 - 全量 console 回归: 4826 passed / 1 skipped / 0 新增失败（7 个既有环境类失败为沙箱写
   ~/.factory/端口检测/wheel 构建, 沙箱外全绿）
 
+### Fixed
+
+- **DiscoverySession 首问进度前缀**（S10-101 验收修复）: `_guide_message` 幂等（body 已带
+  `流程:` 生命周期行 → 原样返回）+ `_next_question()` 统一装饰 `question` — `start()`
+  `questions[0].question` / `actions.discovery_start` 渲染与 conversation 路径同步带进度/
+  生命周期前缀; `_last_system_question`/`_llm_question_text` 保持原始问题（LLM
+  system_question 上下文干净, 不双重前缀）
+
 
 **DiscoverySession 同步 LLM 化**（S10-100）: "开始做X/我想做X" 发现路径与 conversation 路径行为对齐 —
 LLM 一次产出 + 智能追问 + 理解摘要 + 主动分析, 无 LLM 规则兜底（逐字段零变化）。

@@ -56,6 +56,13 @@ def _start(idea: str = "开始做个记账App", **kw):
     return DIS.DiscoverySession.start(idea, **kw)
 
 
+def _assert_first_question_guided(session):
+    """S10-101 验收: 首问 question 带进度/生命周期前缀 (且问题本体保留)。"""
+    q = session.questions[0].question
+    assert "流程:" in q and "产品定义 0/3:" in q
+    assert "这个产品解决什么问题?" in q
+
+
 def _full_analysis(**overrides) -> dict:
     """完整 product_description 输出 (全 7 字段 extraction — 契约点 1 用)。
 
@@ -309,7 +316,7 @@ class TestNoLlmZeroChange:
         session = _start(analyzer=None)  # 无 provider → 懒装配失败 → 规则兜底
         assert session.current_state == STATES.DISCOVERING
         assert session._ai_generated is False
-        assert session.questions[0].question == "这个产品解决什么问题?"
+        _assert_first_question_guided(session)
         r = session.process_user_input("记账太麻烦")
         assert r["state"] == STATES.CLARIFYING
         assert r["question"].field == "user"
@@ -340,7 +347,7 @@ class TestNoLlmZeroChange:
         session = _start()  # 不注入 → 懒装配失败 → None → 规则
         assert session.current_state == STATES.DISCOVERING
         assert session._ai_generated is False
-        assert session.questions[0].question == "这个产品解决什么问题?"
+        _assert_first_question_guided(session)
         session.process_user_input("记账太麻烦")
         assert session.product_intent.problem == "记账太麻烦"
         assert "未命名产品" in session.product_intent.name
@@ -478,6 +485,65 @@ class TestHelpRequestFlow:
         assert "核心功能有哪些? (用逗号或顿号分隔)" not in resp["message"]  # 非机械
 
 
+# ================================================================== 6.6 S10-101 验收修复: 首问带进度前缀 (幂等 / 原始 system_question)
+
+class TestS101FirstQuestionGuidePrefix:
+    def test_start_first_question_has_guide_prefix(self):
+        """验收: start() 的 questions[0].question 含 流程: + 产品定义 (无 LLM 也成立)。"""
+        s = _start(idea="开始做个记账App", analyzer=None)
+        q = s.questions[0].question
+        assert q.startswith(
+            "流程: [发现]→确认→创建→PRD→工程→开发 (当前: 发现)\n产品定义 0/3:"
+        )
+        assert "这个产品解决什么问题?" in q
+        # 任何消费方 (actions.discovery_start 渲染 / resume / 模型字段) 拿到带进度问题
+        nxt = s._next_question()
+        assert nxt is not None and nxt.question == q
+
+    def test_process_message_prefix_only_once(self):
+        """验收: process_user_input 的 message 前缀只出现一次 (幂等, 不双重)。"""
+        s = _start(idea="开始做个记账App", analyzer=None)
+        r = s.process_user_input("记账太麻烦")
+        msg = r["message"]
+        assert msg.count("流程:") == 1
+        assert msg.count("产品定义") == 1
+        assert msg.count("增强(可选):") == 1
+        # 问题对象与 message 同为带前缀版本 (消费方一致)
+        assert r["question"].question == msg
+
+    def test_last_system_question_is_raw(self):
+        """验收: _last_system_question 不含 流程:/产品定义 (原始问题, LLM 上下文干净)。"""
+        s = _start(idea="开始做个记账App", analyzer=None)
+        assert s._last_system_question == "这个产品解决什么问题?"
+        r = s.process_user_input("记账太麻烦")
+        assert r["state"] == STATES.CLARIFYING
+        assert s._last_system_question == "主要给谁使用?"
+        assert "流程:" not in s._last_system_question
+        assert "产品定义" not in s._last_system_question
+
+    def test_guide_message_idempotent(self):
+        """验收: _guide_message 幂等 — 已带前缀的 body 原样返回。"""
+        s = _start(idea="开始做个记账App", analyzer=None)
+        prefixed = s.questions[0].question
+        assert s._guide_message(prefixed) == prefixed
+        # 未带前缀 → 正常加前缀 (一次)
+        raw = "这个产品解决什么问题?"
+        guided = s._guide_message(raw)
+        assert guided.startswith("流程:") and guided.endswith(raw)
+        assert guided.count("流程:") == 1
+
+    def test_llm_smart_question_llm_text_raw(self):
+        """验收: LLM 智能追问 q_item 带前缀, 但 _llm_question_text/_last_system_question 保持原始。"""
+        llm_fn, calls = _mock_llm(_partial_analysis())
+        session = _start(analyzer=DI.DiscoveryIntentAnalyzer(llm_fn=llm_fn))
+        q = session.questions[-1]
+        assert "流程:" in q.question and "产品定义" in q.question
+        assert "主要给谁用呢" in q.question
+        assert "流程:" not in session._llm_question_text
+        assert "产品定义" not in session._llm_question_text
+        assert session._last_system_question == "主要给谁用呢? (例如: 个人 / 学生 / 小商家)"
+
+
 # ================================================================== 7. 非法 LLM 输出降级
 
 class TestInvalidOutputFallback:
@@ -493,7 +559,7 @@ class TestInvalidOutputFallback:
         session = _start(analyzer=DI.DiscoveryIntentAnalyzer(llm_fn=llm_fn))
         assert session.current_state == STATES.DISCOVERING
         assert session._ai_generated is False
-        assert session.questions[0].question == "这个产品解决什么问题?"
+        _assert_first_question_guided(session)
         r = session.process_user_input("记账太麻烦")
         assert session.product_intent.problem == "记账太麻烦"
 
@@ -516,7 +582,7 @@ class TestInvalidOutputFallback:
         session = _start(analyzer=DI.DiscoveryIntentAnalyzer(llm_fn=broken))
         assert session.current_state == STATES.DISCOVERING
         assert session._ai_generated is False
-        assert session.questions[0].question == "这个产品解决什么问题?"
+        _assert_first_question_guided(session)
 
 
 # ================================================================== 8. 持久化 round-trip

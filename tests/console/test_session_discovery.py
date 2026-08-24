@@ -61,7 +61,11 @@ class TestStart:
         s = _start()
         assert s.questions
         assert s.questions[-1].field == "problem"
-        assert s.questions[-1].question == "这个产品解决什么问题?"
+        # S10-101 验收: 首问 question 带进度/生命周期前缀 (两路径同步)
+        assert s.questions[-1].question.startswith(
+            "流程: [发现]→确认→创建→PRD→工程→开发 (当前: 发现)\n产品定义 0/3:"
+        )
+        assert "这个产品解决什么问题?" in s.questions[-1].question
         assert s.questions[-1].required is True
 
     def test_start_initializes_product_intent(self):

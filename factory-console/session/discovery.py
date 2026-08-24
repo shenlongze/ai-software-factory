@@ -324,7 +324,7 @@ class DiscoverySession:
             first = session._next_question()
             if first is not None:
                 session.questions.append(first)
-                session._last_system_question = first.question
+                session._last_system_question = session._raw_question_text(first.field)
         return session
 
     # ------------------------------------------------------------ S10-101: 引导消息
@@ -334,7 +334,12 @@ class DiscoverySession:
 
         current: 当前生命周期阶段 — 发现/确认 (READY/确认门消息用 "确认")。
         ask_enhanced=False → 不附增强提示 (用户已选不追问增强字段, 不误导)。
+        S10-101 验收修复: 幂等 — body 已以生命周期行 ("流程:") 开头 → 原样返回,
+        不重复加前缀 (_next_question() 已装饰的问题再进 _guide_message 不双重)。
         """
+        body = str(body or "")
+        if body.startswith("流程:"):
+            return body
         required = REQUIRED_FIELDS
         filled = [f for f in required if self._field_filled(f)]
         pending = [f for f in required if not self._field_filled(f)]
@@ -355,17 +360,25 @@ class DiscoverySession:
         """当前应追问的问题 (队列首字段); 队列空 → None。
 
         S10-100: LLM 智能追问文本优先 (_llm_question_text); 否则机械模板。
+        S10-101 验收修复: question 统一带进度/生命周期前缀 (_guide_message 装饰) —
+        任何消费方 (start/resume/actions.discovery_start/questions 模型字段) 都拿到
+        带进度的问题; _llm_question_text 保持原始文本 (LLM 上下文干净)。
         """
         if not self._pending_fields:
             return None
         field_name = self._pending_fields[0]
-        question = self._llm_question_text or self.generate_question(field_name)
+        question = self._raw_question_text(field_name)
         return DiscoveryQuestion(
             field=field_name,
-            question=question,
+            question=self._guide_message(question),
             required=field_name in REQUIRED_FIELDS,
             hint=FIELD_HINTS.get(field_name, ""),
         )
+
+    def _raw_question_text(self, field_name: str) -> str:
+        """当前字段原始问题文本 (无进度前缀 — _last_system_question/_llm_question_text
+        用原始值, 不污染 LLM system_question 上下文)。"""
+        return self._llm_question_text or self.generate_question(field_name)
 
     @staticmethod
     def generate_question(field_name: str) -> str:
@@ -475,7 +488,7 @@ class DiscoverySession:
             return self._ready_response()
         self.current_state = DiscoveryState.CLARIFYING
         self.questions.append(nxt)
-        self._last_system_question = nxt.question
+        self._last_system_question = self._raw_question_text(nxt.field)
         return {
             "state": self.current_state,
             "question": nxt,
@@ -568,11 +581,16 @@ class DiscoverySession:
         }
 
     def _requestion_response(self, note: str) -> dict[str, Any]:
-        """LLM control(非取消)/query → 不当作字段, 重问当前问题 (模型层不逃生)。"""
+        """LLM control(非取消)/query → 不当作字段, 重问当前问题 (模型层不逃生)。
+
+        S10-101 验收修复: question.question 已带前缀 — 消息正文用原始问题重建,
+        避免进度前缀出现两次; _last_system_question 存原始问题。
+        """
         question = self._next_question()
+        body = self._raw_question_text(question.field) if question else ""
         if question is not None:
-            self._last_system_question = question.question
-        message = f"{note}\n{question.question}" if question else note
+            self._last_system_question = body
+        message = f"{note}\n{body}" if question else note
         return {
             "state": self.current_state,
             "question": question,
@@ -676,7 +694,7 @@ class DiscoverySession:
             return self._ready_response()
         self.current_state = DiscoveryState.CLARIFYING
         self.questions.append(nxt)
-        self._last_system_question = nxt.question
+        self._last_system_question = self._raw_question_text(nxt.field)
         return {
             "state": self.current_state,
             "question": nxt,
@@ -780,13 +798,13 @@ class DiscoverySession:
                 message = f"{question}\n(为什么还问: {reason})"
         else:
             nxt = self._next_question()
-            message = nxt.question if nxt else ""
+            message = self._raw_question_text(nxt.field) if nxt else ""
         self.current_state = DiscoveryState.CLARIFYING
         self._last_system_question = question or message
         self._llm_question_text = message
         q_item = DiscoveryQuestion(
             field=missing or "",
-            question=message,
+            question=self._guide_message(message),
             required=(missing in REQUIRED_FIELDS),
             hint=FIELD_HINTS.get(missing or "", ""),
         )
@@ -827,7 +845,7 @@ class DiscoverySession:
         """空回答拒绝: 状态不变, 重新问当前问题。"""
         question = self._next_question()
         if question is not None:
-            self._last_system_question = question.question
+            self._last_system_question = self._raw_question_text(question.field)
         return {
             "state": self.current_state,
             "question": question,

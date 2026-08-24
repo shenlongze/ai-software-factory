@@ -605,6 +605,20 @@ class TestBothPathsConsistent:
         assert "主要给谁用呢" in d_q.question
         assert session._pending_fields[0] == "user" and mgr._product_pending[0] == "user"
 
+    def test_first_question_both_paths_have_lifecycle_prefix(self):
+        """S10-101 验收回归: 两路径首问都带进度/生命周期前缀 (此前 DiscoverySession 缺失)。"""
+        mgr = _manager(analyzer=None)
+        c_resp = mgr.handle("我想做一个记账App")
+        s = _start(idea="开始做个记账App", analyzer=None)
+        lifecycle = "流程: [发现]→确认→创建→PRD→工程→开发 (当前: 发现)"
+        # conversation 路径首问 message 带前缀 (既有一致行为)
+        assert c_resp.message.startswith(lifecycle + "\n产品定义 0/3:")
+        # DiscoverySession 路径首问 questions[0].question 带前缀 (验收修复)
+        assert s.questions[0].question.startswith(lifecycle + "\n产品定义 0/3:")
+        # 两路径首问正文均保留问题本体
+        assert "问题" in c_resp.message
+        assert "这个产品解决什么问题?" in s.questions[0].question
+
 
 # ================================================================== 冒烟: analyzer help_request 契约
 

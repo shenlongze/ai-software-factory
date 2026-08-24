@@ -3,7 +3,23 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
-## [v1.1.44] — 2026-08-24
+## [v1.1.45] — 2026-08-24
+
+**update HTTP API**: /api/system/status + /api/system/update（Founder: 要补 update 的 HTTP API）。
+
+### Added
+
+- **GET /api/system/status** — 系统状态（版本 + 服务清单 + git head/脏标记）
+- **POST /api/system/update[?module=core|console|exec|org]** — 触发更新（git pull + pip install -e .）
+  - 返回步骤结果（每步 ok/detail）· 失败安全（单步失败不崩）
+  - 审计（GOVERNANCE_CHECK 事件记录触发）
+- 仓库根定位（git/pip 在代码仓库运行, 非数据目录）
+
+### 验证
+
+- status: version 1.1.44 + git head ✅
+- update: git pull ✅ + pip install ✅（ok: true）
+
 
 **factory update 增强**: 进度条 + 变更 list（Founder: 增加进度条, 完成后给变更list）。
 

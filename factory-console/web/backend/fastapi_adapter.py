@@ -639,6 +639,21 @@ def _open_event_logger(factory_root: str | Path) -> Any:
         return None  # 事件库不可用 → 静默 (读审计失败不拖垮 API)
 
 
+
+def _git_status() -> dict:
+    """git 状态（只读: 版本/分支/脏标记）。"""
+    import subprocess
+    try:
+        r = subprocess.run(["git", "-C", str(Path(__file__).resolve().parents[3]),
+                            "log", "-1", "--oneline"], capture_output=True, text=True, timeout=10)
+        head = r.stdout.strip() if r.returncode == 0 else ""
+        r2 = subprocess.run(["git", "-C", str(Path(__file__).resolve().parents[3]),
+                             "status", "--porcelain"], capture_output=True, text=True, timeout=10)
+        return {"head": head, "dirty": bool(r2.stdout.strip())}
+    except Exception:  # noqa: BLE001
+        return {"head": "", "dirty": False}
+
+
 def build_app(
     service: Any,
     *,
@@ -715,6 +730,67 @@ def build_app(
     def version() -> dict[str, Any]:
         """版本。"""
         return {"name": "ai-software-factory", "version": _factory_version}
+
+    @app.get("/api/system/status")
+    def api_system_status():
+        """系统状态（版本 + 服务清单 + git, 只读）。"""
+        services = {}
+        try:
+            from ..cli_services import list_services
+
+            for svc in list_services():
+                services[svc.id] = {"label": svc.label}
+        except Exception:  # noqa: BLE001 — 服务清单失败不影响版本
+            services = {}
+        return {
+            "ok": True,
+            "version": _factory_version,
+            "services": list(services.keys()),
+            "git": _git_status(),
+        }
+
+    @app.post("/api/system/update")
+    def api_system_update(module: str = ""):
+        """触发系统更新（git pull + pip install -e .; module 可选 core/console/exec/org）。
+
+        敏感操作: 落审计（当前无认证, 本地单用户场景; 后续加 RBAC/认证）。
+        """
+        import subprocess
+        import sys as _sys
+
+        # 仓库根（git/pip 在代码仓库运行, 非数据目录）
+        root = Path(__file__).resolve().parents[3]
+        # 更新逻辑（同 factory update: git pull + pip install -e .）
+        results = {"steps": []}
+        # 1) git pull
+        try:
+            r = subprocess.run(["git", "-C", str(root), "pull", "--ff-only"],
+                               capture_output=True, text=True, timeout=60)
+            results["steps"].append({"step": "git pull", "ok": r.returncode == 0,
+                                     "detail": r.stdout.strip() or r.stderr.strip()[:200] or "已是最新"})
+        except Exception as exc:  # noqa: BLE001
+            results["steps"].append({"step": "git pull", "ok": False, "detail": str(exc)})
+        # 2) pip install -e .
+        try:
+            r = subprocess.run([_sys.executable, "-m", "pip", "install", "-e", "."],
+                               cwd=str(root), capture_output=True, text=True, timeout=120)
+            results["steps"].append({"step": "pip install", "ok": r.returncode == 0,
+                                     "detail": "依赖已同步" if r.returncode == 0 else r.stderr.strip()[:200]})
+        except Exception as exc:  # noqa: BLE001
+            results["steps"].append({"step": "pip install", "ok": False, "detail": str(exc)})
+        results["version"] = _factory_version
+        results["ok"] = all(s["ok"] for s in results["steps"])
+        # 审计（记录触发）
+        # 审计（通用事件, 失败安全）
+        try:
+            from .audit_emitter import AuditEmitter
+            AuditEmitter(workspace=workspace_root).emit(
+                "GOVERNANCE_CHECK", project_id="", actor_type="api",
+                action=f"system.update:{module or 'all'}",
+            )
+        except Exception:  # noqa: BLE001 — 审计失败不阻断更新
+            pass
+        return results
 
     @app.get("/api/board")
     def api_board(view: str = ""):

@@ -258,3 +258,27 @@ class TestProjectTaskList:
         assert "任务清单" in out
         html = BOARD.render_project_lifecycle_html(tmp_path, "demo")
         assert "任务清单" in html
+
+
+# ================================================================== 导航返回修复
+
+class TestBoardNav:
+    def test_board_nav_has_return_link_and_active(self):
+        """共享导航: 含主线面板返回链接 + 当前页高亮。"""
+        nav = BOARD._board_nav("graph", "P-123")
+        assert "📋 主线面板" in nav and "/api/board\"" in nav
+        assert "background:#1565c0" in nav  # active 高亮
+        # graph 链接用当前项目 (非 demo)
+        assert "graph?project=P-123" in nav
+
+    def test_all_html_pages_include_nav(self, tmp_path):
+        """graph/chain/timeline/report/项目页 全部含返回主线导航 (含空态)。"""
+        _mk_project(tmp_path, "demo", name="测试产品")
+        assert "主线面板" in BOARD.render_graph_html(tmp_path, "demo")
+        assert "主线面板" in BOARD.render_chain_html(tmp_path, "demo")
+        assert "主线面板" in BOARD.render_graph_html(tmp_path, "nope")  # 空态
+        assert "主线面板" in BOARD.render_chain_html(tmp_path, "nope")
+        assert "主线面板" in BOARD.render_timeline_html(tmp_path)
+        assert "主线面板" in BOARD.render_report_html()
+        assert "主线面板" in BOARD.render_projects_list_html(tmp_path)
+        assert "主线面板" in BOARD.render_project_lifecycle_html(tmp_path, "demo")

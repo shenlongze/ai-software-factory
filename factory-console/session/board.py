@@ -504,10 +504,16 @@ def render_graph_html(workspace: Path, project_id: str = "") -> str:
     project_dir = Path(workspace) / "projects" / (project_id or "")
     plan_file = project_dir / "plan.json"
     if not plan_file.is_file():
-        return ("<p>📭 项目未生成计划（无 plan.json）</p>"
-                "<p>真实数据: 项目需执行 M3b（拆解→关键路径）才会生成 plan.json — "
-                "在会话中 '开始开发' 即可</p>"
-                "<p>查看效果: <a href='/api/board/graph?project=demo'>demo 示例图</a></p>")
+        return (f"<!DOCTYPE html><html lang='zh'><head><meta charset='utf-8'>"
+                f"<meta name='viewport' content='width=device-width, initial-scale=1.0'>"
+                f"<title>依赖图 — {project_id or '项目'}</title></head>"
+                f"<body style='background:#0f1115;color:#e6e6e6;font-family:sans-serif;padding:16px'>"
+                f"{_board_nav('graph', project_id)}"
+                f"<p>📭 项目未生成计划（无 plan.json）</p>"
+                f"<p>真实数据: 项目需执行 M3b（拆解→关键路径）才会生成 plan.json — "
+                f"在会话中 '开始开发' 即可</p>"
+                f"<p>查看效果: <a href='/api/board/graph?project=demo' style='color:#8ab4f8'>demo 示例图</a></p>"
+                f"</body></html>")
     try:
         plan = json.loads(plan_file.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):  # noqa: BLE001
@@ -556,6 +562,7 @@ def render_graph_html(workspace: Path, project_id: str = "") -> str:
   .edges {{ margin-top: 16px; background: #1a1d24; border-radius: 8px; padding: 10px 14px; }}
   .edges ul {{ column-count: 2; font-size: 12px; color: #9aa0a6; }}
 </style></head><body>
+{_board_nav("graph", project_id)}
 <h1>🔗 任务依赖图 <span class="legend">(★=CRITICAL 关键路径, 红色边框)</span></h1>
 <div class="graph">{nodes}</div>
 <div class="edges"><b>依赖边:</b><ul>{edges_html}</ul></div>
@@ -567,9 +574,15 @@ def render_chain_html(workspace: Path, project_id: str = "") -> str:
     project_dir = Path(workspace) / "projects" / (project_id or "")
     plan_file = project_dir / "plan.json"
     if not plan_file.is_file():
-        return ("<p>📭 项目未生成计划（无 plan.json）</p>"
-                "<p>真实数据: 项目需执行 M3b 才会生成 — 会话中 '开始开发'</p>"
-                "<p>查看效果: <a href='/api/board/chain?project=demo'>demo 示例任务链</a></p>")
+        return (f"<!DOCTYPE html><html lang='zh'><head><meta charset='utf-8'>"
+                f"<meta name='viewport' content='width=device-width, initial-scale=1.0'>"
+                f"<title>任务链 — {project_id or '项目'}</title></head>"
+                f"<body style='background:#0f1115;color:#e6e6e6;font-family:sans-serif;padding:16px'>"
+                f"{_board_nav('chain', project_id)}"
+                f"<p>📭 项目未生成计划（无 plan.json）</p>"
+                f"<p>真实数据: 项目需执行 M3b 才会生成 — 会话中 '开始开发'</p>"
+                f"<p>查看效果: <a href='/api/board/chain?project=demo' style='color:#8ab4f8'>demo 示例任务链</a></p>"
+                f"</body></html>")
     try:
         plan = json.loads(plan_file.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):  # noqa: BLE001
@@ -617,6 +630,7 @@ def render_chain_html(workspace: Path, project_id: str = "") -> str:
   .total {{ margin-top: 14px; color: #9aa0a6; font-size: 13px; }}
   @media (max-width: 600px) {{ .chain {{ flex-direction: column; }} .carrow {{ transform: rotate(90deg); }} }}
 </style></head><body>
+{_board_nav("chain", project_id)}
 <h1>⛓ 任务链（关键路径）<span class="legend">★=关键节点 ▲=汇聚点</span></h1>
 <div class="chain">{chain}</div>
 <div class="total">总工期: {total_est}min · 关键节点 {len(cpath)} 个 · 汇聚点 {len(merge_ids)} 个</div>
@@ -787,15 +801,23 @@ def _parse_s14(doc_path: Path | None = None) -> list[dict[str, Any]]:
 def render_timeline_html(workspace: Path, limit: int = 20) -> str:
     """生命线 HTML（时间轴: 时间→事件→对象, 纯 CSS 竖线时间轴）。"""
     audit_file = Path(workspace) / "audit" / "audit_events.json"
+
+    def _shell(msg: str) -> str:
+        return (f"<!DOCTYPE html><html lang='zh'><head><meta charset='utf-8'>"
+                f"<meta name='viewport' content='width=device-width, initial-scale=1.0'>"
+                f"<title>生命线</title></head>"
+                f"<body style='background:#0f1115;color:#e6e6e6;font-family:sans-serif;padding:16px'>"
+                f"{_board_nav('timeline')}{msg}</body></html>")
+
     if not audit_file.is_file():
-        return "<p>（未找到 audit_events.json）</p>"
+        return _shell("<p>（未找到 audit_events.json）</p>")
     try:
         data = json.loads(audit_file.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):  # noqa: BLE001
-        return "<p>（审计文件损坏）</p>"
+        return _shell("<p>（审计文件损坏）</p>")
     events = data.get("events") if isinstance(data, dict) else data
     if not isinstance(events, list) or not events:
-        return "<p>（暂无审计事件）</p>"
+        return _shell("<p>（暂无审计事件）</p>")
     events = sorted(events, key=lambda e: str(e.get("timestamp") or ""))[-limit:]
 
     items = []
@@ -831,6 +853,7 @@ def render_timeline_html(workspace: Path, limit: int = 20) -> str:
   .o {{ color: #ffb74d; font-size: 12px; }}
   @media (max-width: 600px) {{ .t {{ display: block; }} }}
 </style></head><body>
+{_board_nav("timeline")}
 <h1>⏱ 生命线（最近 {len(items)} 事件）</h1>
 <ul class="timeline">{"".join(items)}</ul>
 </body></html>"""
@@ -858,7 +881,9 @@ def render_report_html(path: Path = DEFAULT_BACKLOG) -> str:
   h1 {{ font-size: 20px; }} h2 {{ font-size: 16px; color: #ffb74d; border-bottom: 1px solid #2a2e37; padding-bottom: 4px; }}
   li {{ font-size: 13px; color: #b0b6bf; margin: 3px 0; }}
   p {{ color: #9aa0a6; font-size: 13px; }}
-</style></head><body>{"".join(html_body)}
+</style></head><body>
+{_board_nav("report")}
+{"".join(html_body)}
 <p style="margin-top:20px;color:#78909c">会话 /board report --save 可落盘为 markdown</p>
 </body></html>"""
 
@@ -1338,3 +1363,26 @@ def _project_task_list(workspace: Path | str, slug: str) -> list[str]:
         agent_s = f" [{agent}]" if agent else ""
         lines.append(f"{mark} {tid} {name}{agent_s} ({st or '待办'})")
     return lines
+
+
+# ---------------------------------------------------------------- 共享导航 (S10-110 返回修复)
+
+def _board_nav(active: str = "main", project: str = "") -> str:
+    """board 页面共享导航（含返回主线面板; 当前页高亮）— 修复"切换菜单无返回"。"""
+    g = project or "demo"
+    base = ("display:inline-block;background:#1a1d24;border:1px solid #2a2e37;"
+            "color:#b0b6bf;border-radius:6px;padding:6px 14px;font-size:13px;"
+            "text-decoration:none;margin-right:8px;margin-bottom:6px")
+    act = "background:#1565c0;color:#fff;border-color:#1565c0"
+    links = ""
+    for key, url, label in [
+        ("main", "/api/board", "📋 主线面板"),
+        ("projects", "/api/board?view=projects", "📁 项目管理"),
+        ("graph", f"/api/board/graph?project={g}", "🔗 依赖图"),
+        ("chain", f"/api/board/chain?project={g}", "⛓ 任务链"),
+        ("timeline", "/api/board/timeline", "⏱ 生命线"),
+        ("report", "/api/board?view=report", "📄 汇报"),
+    ]:
+        style = f"{base};{act}" if key == active else base
+        links += f'<a href="{url}" style="{style}">{label}</a>'
+    return f'<div style="margin-bottom:12px">{links}</div>'

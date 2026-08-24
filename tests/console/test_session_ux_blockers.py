@@ -334,3 +334,50 @@ def test_help_english_word(capsys):
     out = capsys.readouterr().out
     assert "系统命令:" in out
     assert "AI:" not in out
+
+
+# ================================================================== S10-10x 方向键/行编辑修复
+
+class TestLineEditing:
+    def test_clean_ansi_strips_escape_sequences(self):
+        """方向键/OSC 转义序列剔除 — 防 /exitt 类误输入 (readline 不可用时兜底)。"""
+        clean = SESS._clean_ansi
+        assert clean("/exitt\x1b[B") == "/exitt"       # 方向键下
+        assert clean("\x1b[A\x1b[B\x1b[C\x1b[D") == ""  # 纯方向键 → 空
+        assert clean("正常输入") == "正常输入"          # 正常输入零变化
+        assert clean("\x1b]0;title\x07abc") == "abc"    # OSC 标题
+        assert clean("a\x1b[1;5Cb") == "ab"             # 带参数 CSI
+
+    def test_init_line_editing_sets_history_file(self, tmp_path):
+        """readline 可用 → history 文件指向 <workspace>/history (方向键历史持久化)。"""
+        import readline  # 标准库, macOS/Linux 必有
+        sess = SESS.InteractiveSession(
+            context_manager=CTX.ContextManager(workspace=str(tmp_path)),
+        )
+        sess._init_line_editing()
+        assert sess._history_file == str(tmp_path / "history")
+
+    def test_init_line_editing_fallback_without_readline(self, monkeypatch, tmp_path):
+        """无 readline → 失败安全 (history_file=None, 不崩)。"""
+        import builtins
+        real_import = builtins.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "readline":
+                raise ImportError("no readline (test)")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+        sess = SESS.InteractiveSession(
+            context_manager=CTX.ContextManager(workspace=str(tmp_path)),
+        )
+        sess._init_line_editing()
+        assert sess._history_file is None
+
+    def test_read_input_line_cleans_ansi(self, monkeypatch, tmp_path):
+        """_read_input_line 对 input() 结果做 ANSI 清理 (readline 不可用时兜底防乱码)。"""
+        monkeypatch.setattr("builtins.input", lambda prompt="": "/exitt\x1b[B")
+        sess = SESS.InteractiveSession(
+            context_manager=CTX.ContextManager(workspace=str(tmp_path)),
+        )
+        assert sess._read_input_line("> ") == "/exitt"

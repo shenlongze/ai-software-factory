@@ -3,6 +3,28 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.47] — 2026-08-24
+
+**CLI 交互修复 + 方向键历史 (Founder 实测: 方向键变乱码 /exitt)**。
+
+### Added
+
+- **方向键历史/行编辑** (readline 标准库, 零依赖): ↑↓ 调历史 / ←→ 行内编辑;
+  历史持久化到 <workspace>/history; 无 readline (Windows) 时 ANSI 转义清理兜底
+  (方向键不再产生 ^[[A 乱码、不再拼出 /exitt 误命令)
+
+### Fixed
+
+- **发现阶段"确认+动作"短语** ("可以，先出prd文档"/"先出PRD"): 产品定义不完整时
+  确定性提示缺失字段 (不再被 LLM 当字段回答 / 盲目触发创建)
+- **generate_prd 扫描兜底写错项目** (数据安全): 无显式项目 (current_project/
+  product_intent) 时安全报错, 不把 PRD 写进"最新项目" (实测复现写入旧项目)
+- **/project 读错路径**: 自定义 workspace 会话项目清单跟随工作区 (不再硬编码 ~/.factory)
+
+### 验证
+
+- 全量 12349+ passed / 0 failed · PTY 实测方向键历史调出 /help · /exitt 不再出现
+
 ## [v1.1.46] — 2026-08-24
 
 **factory --version 更新提示**: 检查是否存在可更新版本（Founder）。

@@ -49,6 +49,19 @@ from .renderer import HumanRenderer, Renderer, render_message
 from .router import IntentRouter, UnknownIntentError
 from .slash import SlashCommandRegistry
 
+#: ANSI 转义序列清理 (readline 不可用/非 TTY 时方向键等产生 ^[[A 乱码 — 剔除防误输入)
+_ANSI_ESCAPE_RE = re.compile(
+    r"\x1b\[[0-9;?]*[A-Za-z]"  # CSI: ^[[A / ^[[B / ^[[1;5C ...
+    r"|\x1b\][^\x07]*(?:\x07|\x1b\\)"  # OSC: ^[]0;title^G
+    r"|\x1b[()][A-Z0-9]"  # 字符集
+)
+
+
+def _clean_ansi(text: str) -> str:
+    """剔除 ANSI 转义序列 — 防方向键乱码混入输入 (readline 兜底)。"""
+    return _ANSI_ESCAPE_RE.sub("", text or "")
+
+
 #: 会话 banner (版本单源: pyproject.toml, S10-098 修复 v0.2 硬编码;
 #:  连字符目录非包 → 不依赖相对导入, 独立读 pyproject)
 def _session_version() -> str:
@@ -118,6 +131,8 @@ class InteractiveSession:
         self.prompt = prompt
         self.banner_text = banner if banner is not None else BANNER
         self.running = False
+        #: readline 历史文件 (方向键历史持久化; 无 readline → None)
+        self._history_file: Optional[str] = None
         #: 会话上下文 (Task 002) — slash 命令读写的统一上下文
         self.context_manager = context_manager or ContextManager()
         #: slash 注册表 (Task 003/004) — 默认装配基础命令; 可注入定制
@@ -184,6 +199,7 @@ class InteractiveSession:
         - S10-104: 每轮 _dispatch 后打印 SEPARATOR 分割线 (纯装饰, REPL 层;
           退出/空输入路径不打印)
         """
+        self._init_line_editing()  # S10-1xx: 方向键历史/行编辑 (readline, 零依赖)
         self._banner()
         self._mainline_sync()   # S10-1xx: 自动钩子 — 从代码证据同步主线状态
         self._mainline_alert()  # S10-1xx: 偏离提醒 — 主线未完成提示
@@ -209,6 +225,7 @@ class InteractiveSession:
                 if self.running:
                     print(SEPARATOR)
         self._save_session_state()
+        self._save_line_editing_history()
         return 0
 
     def _banner(self) -> None:
@@ -254,15 +271,48 @@ class InteractiveSession:
         except Exception:  # noqa: BLE001 — 提醒失败不阻断会话
             pass
 
+    def _init_line_editing(self) -> None:
+        """启用方向键历史/行编辑 (readline 标准库, 零依赖)。
+
+        - import readline 即 hook input(): ↑↓ 历史 / ←→ 行内编辑 (仅 TTY 生效)
+        - 历史持久化到 <data_dir>/history (会话间保留, 失败安全)
+        - 无 readline (Windows 等) → 保持裸 input(), ANSI 清理兜底防乱码
+        """
+        try:
+            import readline  # noqa: F401 — 副作用: hook input() 行编辑
+            data_dir = getattr(self.context, "workspace", None) or str(DEFAULT_WORKSPACE)
+            hist = str(Path(data_dir) / "history")
+            try:
+                readline.read_history_file(hist)
+            except (FileNotFoundError, OSError):
+                pass
+            try:
+                readline.set_history_length(500)
+            except Exception:  # noqa: BLE001 — 历史长度设置失败不影响
+                pass
+            self._history_file = hist
+        except Exception:  # noqa: BLE001 — 无 readline → 裸 input() + ANSI 兜底
+            self._history_file = None
+
+    def _save_line_editing_history(self) -> None:
+        """保存 readline 历史 (失败安全: 无 readline/写失败 → 静默)。"""
+        if not self._history_file:
+            return
+        try:
+            import readline
+            readline.write_history_file(self._history_file)
+        except Exception:  # noqa: BLE001
+            pass
+
     def _read_input_line(self, prompt: str) -> str:
         """多行输入 (S10-105 简单检测): 行尾 '\\' → 续行 (提示 '… '), 直到无 '\\';
         拼接 '\n'。prompt_toolkit 缺失 → input() 降级 (诚实, 验收: 无 prompt_toolkit 降级)。"""
-        line = input(prompt)
+        line = _clean_ansi(input(prompt))
         if not line.endswith("\\"):
             return line
         parts = [line.rstrip("\\")]
         while True:
-            more = input("… ")
+            more = _clean_ansi(input("… "))
             if not more.endswith("\\"):
                 parts.append(more)
                 break

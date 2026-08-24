@@ -41,20 +41,20 @@ def _parse_backlog(path: Path) -> list[dict[str, Any]]:
     except OSError:  # noqa: BLE001
         return []
     for line in lines:
-        m = re.match(r"^## (M\d+|P0|长期)[^—]*—?\s*(.*)$", line.strip())
+        m = re.match(r"^## ([^—\s]+)\s*—?\s*(.*)$", line.strip())
         if m:
             cur_group = m.group(1)
             cur_title = m.group(2).strip()
             groups.append({"id": cur_group, "title": cur_title, "tasks": [], "group_done": False})
             continue
         # 组级完成注释: "✅ M2 六项全部交付" → 该组全部完成
-        if cur_group and line.strip().startswith("> ✅") and re.search(cur_group, line):
+        if cur_group and line.strip().startswith("> ✅") and re.search(re.escape(cur_group), line):
             groups[-1]["group_done"] = True
             continue
         if not cur_group or not line.strip().startswith("| "):
             continue
         cells = [c.strip() for c in line.strip().strip("|").split("|")]
-        if len(cells) < 3 or not re.match(r"^(M\d+-|P0-|L-)", cells[0]):
+        if len(cells) < 3 or not re.match(r"^(M\d+-|P0-|L-|A-)", cells[0]):
             continue
         groups[-1]["tasks"].append({
             "id": cells[0],

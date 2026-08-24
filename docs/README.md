@@ -33,6 +33,7 @@
 | 审计与现状 | [docs/audit/](./audit/README.md) · [docs/architecture/capability-audit/](./architecture/capability-audit/README.md) | 真实能力审计 |
 | 发布与运维 | [USER_GUIDE.md](./USER_GUIDE.md) · [DEPLOYMENT.md](./DEPLOYMENT.md) | 安装/使用/部署 |
 | 历史归档 | [docs/archive/](./archive/README.md) | 已取代/历史文档（不删除） |
+| 员工管理路线 | [员工管理-路线计划.md](../员工管理-路线计划.md) | Agent/Skill/MCP 短中远期计划（A-1~A-4） |
 | 每轮交付 | [docs/sprint10/](./sprint10/README.md) | S10-0XX 设计与报告 |
 
 ## 文档纪律

@@ -2,7 +2,7 @@
 
 > **单一事实来源** — 当前系统到底有哪些功能、每个功能是什么、怎么用（CLI / API / 会话命令）、什么状态、从哪个版本开始有。
 >
-> 版本: **v1.1.78** · 更新: 2026-08-25 · 依据: 实测命令 + 代码核对 + CHANGELOG
+> 版本: **v1.1.79** · 更新: 2026-08-25 · 依据: 实测命令 + 代码核对 + CHANGELOG
 
 ## 0. 文档定位（与其他文档的分工）
 
@@ -252,6 +252,7 @@ API（Web/集成）:   http://127.0.0.1:8011/api/...      e.g. GET /api/board
   | AI 执行记录 | 单项目视图显示执行记录(execution_records 按项目过滤) | v1.1.76 |
   | 清单多维度 | /project 列升级: 生命周期/任务进度/最近更新 (替代管线/状态) | v1.1.77 |
   | Agent/Skill 管理 | factory agent/skill list|add|remove + /api/agents + /api/skills + help 补全 | v1.1.78 |
+  | 员工管理计划 | 待办清单 A-1~A-4 (补skill/管理面板/MCP/流程) 进 board 周边; 解析支持任意章节 | v1.1.79 |
 - **状态**: ✅（数据真实，空态诚实引导）· **关联**: 待办清单 + docs/sprint10 验收
 
 ### 6.2 /preview — Markdown 预览

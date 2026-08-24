@@ -1,4 +1,4 @@
-"""tests/console/test_s10_111_m3_finish.py — M3 收尾三件套 (S10-111, v1.1.78)。
+"""tests/console/test_s10_111_m3_finish.py — M3 收尾三件套 (S10-111, v1.1.79)。
 
 覆盖 (计划 §4 契约 1-12):
 M3-5 (ux/qa 真引擎 + PRD 深度化):
@@ -16,7 +16,7 @@ M3-7 (架构审批门):
   10. approve → execution_ready; reject → 不 execution_ready + arch_review.feedback
   11. execute_project 在 pending_arch_review 时拒绝执行; 审批通过后正常执行 (与 v1.1.77 一致)
 全局:
-  12. 版本 v1.1.78 (pyproject + CHANGELOG + FEATURES.md + 待办清单 M3-5/6/7 ✅)
+  12. 版本 v1.1.79 (pyproject + CHANGELOG + FEATURES.md + 待办清单 M3-5/6/7 ✅)
 
 basename 全仓库唯一 (test_s10_111_* 前缀)。
 """
@@ -459,33 +459,33 @@ class TestM37ArchReviewGate:
         assert project["status"] in ("user_acceptance", "delivered")
 
 
-# ================================================================== 全局: 版本 v1.1.78 + 文档
+# ================================================================== 全局: 版本 v1.1.79 + 文档
 
 
 class TestGlobalVersionDocs:
-    """契约 12: 版本 v1.1.78 + CHANGELOG + FEATURES.md + 待办清单 M3-5/6/7 ✅。"""
+    """契约 12: 版本 v1.1.79 + CHANGELOG + FEATURES.md + 待办清单 M3-5/6/7 ✅。"""
 
     def test_pyproject_version_1_1_78(self):
         pyproject = (REPO / "pyproject.toml").read_text(encoding="utf-8")
-        assert re.search(r'^version\s*=\s*"1\.1\.78"', pyproject, re.M), "pyproject 版本非 1.1.78"
+        assert re.search(r'^version\s*=\s*"1\.1\.79"', pyproject, re.M), "pyproject 版本非 1.1.79"
 
     def test_changelog_has_v1_1_78_entry(self):
         changelog = (REPO / "CHANGELOG.md").read_text(encoding="utf-8")
-        assert "## [v1.1.78]" in changelog
+        assert "## [v1.1.79]" in changelog
         assert "M3-5" in changelog or "UX/QA" in changelog or "ux/qa" in changelog
         assert "M3-6" in changelog or "ChangeControl" in changelog or "变更回流" in changelog
         assert "M3-7" in changelog or "审批门" in changelog
 
     def test_features_md_header_and_m3_rows(self):
         features = (REPO / "docs" / "FEATURES.md").read_text(encoding="utf-8")
-        # 头版本行 (版本: **v1.1.78**)
+        # 头版本行 (版本: **v1.1.79**)
         header = next(
             (ln for ln in features.splitlines() if ln.startswith("> 版本:")),
             "",
         )
-        assert "v1.1.78" in header, f"FEATURES 头版本未更新: {header}"
-        # 版本对照表含 v1.1.78 行
-        assert "| v1.1.78 |" in features
+        assert "v1.1.79" in header, f"FEATURES 头版本未更新: {header}"
+        # 版本对照表含 v1.1.79 行
+        assert "| v1.1.79 |" in features
         # M3-5/6/7 已知缺口行 🚧 → ✅
         row = next(
             (ln for ln in features.splitlines() if "M3-5/6/7" in ln),

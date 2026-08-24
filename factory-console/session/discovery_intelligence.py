@@ -1,8 +1,8 @@
 """factory-console/session/discovery_intelligence.py — 发现阶段 LLM 深度介入 (S10-099)。
 
 产品发现 = LLM 理解主路径 + 规则状态机兜底:
-- DiscoveryIntentAnalyzer: 意图理解 (优先级: 控制指令 > 查询 > 字段回答 >
-  产品描述) + 结构化提取 {problem, user, core_features, name, platform,
+- DiscoveryIntentAnalyzer: 意图理解 (优先级: 控制指令 > 查询 > 求助 >
+  字段回答 > 产品描述) + 结构化提取 {problem, user, core_features, name, platform,
   usage_scenarios, mvp_scope, non_functional_requirements} + 缺失原因
   (为什么缺) + 智能追问 (≤3, 优先 1 条) + 主动分析
   (platform/competitors/scope/notes) + 理解摘要 ("我理解你要做 X, 给 Y 用...").
@@ -30,12 +30,13 @@ from typing import Any, Callable, Optional
 
 from .product import parse_core_features
 
-#: 合法意图类别 (优先级: 控制指令 > 查询 > 字段回答 > 产品描述 — prompt 内写明)
+#: 合法意图类别 (优先级: 控制指令 > 查询 > 求助 > 字段回答 > 产品描述 — prompt 内写明)
 VALID_CATEGORIES: tuple[str, ...] = (
     "control",
     "query",
-    "product_description",
+    "help_request",
     "field_answer",
+    "product_description",
 )
 
 #: extraction 契约字段 (缺失补空; S10-100: 加 usage_scenarios/mvp_scope/
@@ -59,8 +60,8 @@ _JSON_OBJECT_RE = re.compile(r"\{.*\}", re.DOTALL)
 
 #: 发现分析 prompt (计划 §2.3 核心交付 — 意图优先级 + 结构化输出契约)
 _DISCOVERY_PROMPT = """你是 AI Factory 的产品经理。用户正在描述一个产品想法, 可能是完整描述、
-字段回答、控制指令或查询。判断意图（优先级: 控制指令 > 查询 > 字段回答 > 产品描述）,
-并尽可能结构化提取产品定义。
+字段回答、控制指令、查询或求助。判断意图（优先级: 控制指令 > 查询 > 求助 >
+字段回答 > 产品描述）, 并尽可能结构化提取产品定义。
 
 【对话历史】(最近 3 轮, 无则空)
 {history}
@@ -73,21 +74,28 @@ _DISCOVERY_PROMPT = """你是 AI Factory 的产品经理。用户正在描述一
 
 【输出要求】只输出一个 JSON 对象, 禁止 markdown 围栏/注释/多余文字:
 {{
-  "category": "control|query|product_description|field_answer",
+  "category": "control|query|help_request|field_answer|product_description",
   "reason": "分类理由（一句）",
   "extraction": {{"problem": "", "user": "", "core_features": [], "name": "", "platform": "", "usage_scenarios": "", "mvp_scope": "", "non_functional_requirements": ""}},
   "missing_reasons": {{"problem": "该字段缺失的原因, 只在输入确实没给时列出"}},
   "smart_questions": ["针对最重要缺失字段的一个具体问题"],
   "proactive": {{"platform": "", "competitors": "", "scope": "", "notes": ""}},
-  "understanding": "一句话理解摘要, 形如: 我理解你要做X, 给Y用, 核心是A/B/C"
+  "understanding": "一句话理解摘要, 形如: 我理解你要做X, 给Y用, 核心是A/B/C",
+  "suggestions": {{"field": "", "items": [], "note": ""}}
 }}
 
 规则:
 - 控制指令（取消/算了/整理/重新开始/查询项目/修改字段）→ category=control, 不提取字段
 - 查询（项目列表/当前项目/进度）→ category=query
+- 求助（给些建议/没有想法/你看着办/帮我出主意 — 用户不是给信息而是求建议）→
+  category=help_request, 不提取字段; suggestions.items 给当前最该补的缺失字段的
+  3-5 条方向性建议, suggestions.field 填该字段, suggestions.note 一句话说明;
+  若无缺失字段则 suggestions.items 留空
 - 产品描述（哪怕不完整）→ category=product_description, 尽力提取; 提取不到的必填字段
   在 missing_reasons 说明为什么缺, smart_questions 只问最重要的一条
-- 纯字段回答（"给程序员用"）→ category=field_answer, 只填对应字段
+- 纯字段回答（"给程序员用"）→ category=field_answer, 只填对应字段; 若还有必填字段
+  缺失, smart_questions 给出下一个最重要缺失字段的追问 (带 missing_reasons 理由),
+  缺失已齐则 smart_questions 留空
 - 若【系统上一轮问题】非空且用户本轮输入明显是对它的回答 → category=field_answer,
   extraction 只填该问题对应的字段, 不当作新产品描述 (不覆盖已填字段)
 - extraction 字段只填输入中明确出现的信息, 不猜测、不编造
@@ -111,14 +119,18 @@ class DiscoveryLLMUnavailable(DiscoveryLLMError):
 class DiscoveryAnalysis:
     """LLM 对用户输入的意图理解 + 结构化提取 (计划 §2.2 输出契约)。
 
-    category: "control" | "query" | "product_description" | "field_answer"
+    category: "control" | "query" | "help_request" | "field_answer" |
+      "product_description"
     reason: 一句分类理由 (可审计)
     extraction: {problem, user, core_features:list, name, platform,
       usage_scenarios, mvp_scope, non_functional_requirements} — 可空
     missing_reasons: 必填缺失字段 → 为什么缺 (智能追问依据)
-    smart_questions: ≤3 条针对性追问 (追问时只取最重要 1 条)
+    smart_questions: ≤3 条针对性追问 (追问时只取最重要 1 条; field_answer
+      时给出下一个最重要缺失字段的追问 — 中间字段 LLM 化契约来源)
     proactive: {platform, competitors, scope, notes} — 用户没说但该有的
     understanding: 一句理解摘要 ("我理解你要做 X, 给 Y 用, 核心是 A/B/C")
+    suggestions: {field, items, note} — help_request 时填充 (当前缺失字段的
+      方向性建议 3-5 条 + 一句说明; 缺省空 dict)
     """
 
     category: str
@@ -128,6 +140,7 @@ class DiscoveryAnalysis:
     smart_questions: list[str] = field(default_factory=list)
     proactive: dict[str, str] = field(default_factory=dict)
     understanding: str = ""
+    suggestions: dict[str, Any] = field(default_factory=dict)
 
 
 class DiscoveryIntentAnalyzer:
@@ -288,6 +301,7 @@ class DiscoveryIntentAnalyzer:
             smart_questions=cls._normalize_questions(data.get("smart_questions")),
             proactive=cls._normalize_proactive(data.get("proactive")),
             understanding=str(data.get("understanding") or "").strip(),
+            suggestions=cls._normalize_suggestions(data.get("suggestions")),
         )
 
     @classmethod
@@ -331,6 +345,29 @@ class DiscoveryIntentAnalyzer:
             str(q).strip() for q in raw if str(q or "").strip()
         ]
         return questions[:MAX_SMART_QUESTIONS]
+
+    @classmethod
+    def _normalize_suggestions(cls, raw: Any) -> dict[str, Any]:
+        """suggestions 归一化 (S10-101): 非 dict → 空; field/note 字符串化;
+        items 列表化 (str → [str]); 缺省补空 — 诚实降级 (缺省空, 上层用默认建议)。"""
+        if not isinstance(raw, dict):
+            return {}
+        field = str(raw.get("field") or "").strip()
+        items_raw = raw.get("items")
+        if isinstance(items_raw, str):
+            items_raw = [items_raw]
+        if isinstance(items_raw, list):
+            items = [
+                str(item).strip()
+                for item in items_raw
+                if str(item or "").strip()
+            ]
+        else:
+            items = []
+        note = str(raw.get("note") or "").strip()
+        if not field and not items and not note:
+            return {}  # 全空 → 空 dict (上层可统一用默认建议, 诚实降级)
+        return {"field": field, "items": items, "note": note}
 
     @classmethod
     def _normalize_proactive(cls, raw: Any) -> dict[str, str]:

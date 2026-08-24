@@ -406,7 +406,9 @@ class TestAnalyzerUnit:
         analyzer = DI.DiscoveryIntentAnalyzer(llm_fn=llm_fn)
         analyzer.analyze("给程序员用", history=["我想做个工具", "主要是命令行工具"])
         prompt = calls[0][0]
-        assert "优先级: 控制指令 > 查询 > 字段回答 > 产品描述" in prompt
+        # S10-101 进度前缀/优先级变更: 求助 > 字段回答 — prompt 优先级有意变更
+        assert "优先级: 控制指令 > 查询 > 求助 >" in prompt
+        assert "字段回答 > 产品描述" in prompt
         assert "我想做个工具" in prompt
         assert "主要是命令行工具" in prompt
         assert "给程序员用" in prompt
@@ -486,6 +488,97 @@ class TestAnalyzerUnit:
         monkeypatch.setattr(REASON, "ReasoningProvider", _BrokenProvider)
         with pytest.raises(DI.DiscoveryLLMUnavailable):
             DI.DiscoveryIntentAnalyzer()
+
+
+# ================================================================== 6.5 S10-101: 求助流 + 中间字段智能 (两路径新增用例)
+
+class TestHelpRequestFlow:
+    """求助: 关键词兜底 (无 LLM) + LLM help_request + 不当字段 + 确认填入。"""
+
+    def _after_start(self, mgr):
+        return mgr.handle("我想做个markdown编辑器, 要typora优点")
+
+    def test_keyword_fallback_without_llm(self):
+        """S10-101 契约 5: analyzer=None "给些建议" → 默认建议 → y 填入。"""
+        mgr = _manager(analyzer=None)
+        self._after_start(mgr)
+        resp = mgr.handle("给些建议")
+        assert "当前缺产品解决什么问题 — 建议方向:" in resp.message
+        assert "1. 现有工具太繁琐" in resp.message
+        assert mgr.product_intent.problem is None  # 未确认前不当字段
+        resp = mgr.handle("y")
+        assert mgr.product_intent.problem == "现有工具太繁琐、效率低/耗时长、信息分散难管理"
+        assert "产品定义 1/3:" in resp.message
+
+    def test_help_not_swallowed_as_field(self):
+        """S10-101 契约 6: "没有想法" 不当字段内容。"""
+        mgr = _manager(analyzer=None)
+        self._after_start(mgr)
+        resp = mgr.handle("没有想法")
+        assert mgr.product_intent.problem is None
+        assert "建议方向" in resp.message
+        resp = mgr.handle("y")
+        assert mgr.product_intent.problem != "没有想法"
+
+    def test_llm_help_request_suggestions_fill(self):
+        """S10-101 契约 4: 非关键词求助 → LLM help_request + suggestions → y 填入。"""
+        help_analysis = {
+            "category": "help_request",
+            "reason": "用户求建议",
+            "extraction": {},
+            "missing_reasons": {},
+            "smart_questions": [],
+            "proactive": {},
+            "understanding": "",
+            "suggestions": {
+                "field": "user",
+                "items": ["给开发者用", "给写作爱好者用"],
+                "note": "想清楚给谁用, 功能才好定",
+            },
+        }
+        llm_fn, calls = _scripted_llm(_partial_analysis(), help_analysis)
+        mgr = _manager(analyzer=DI.DiscoveryIntentAnalyzer(llm_fn=llm_fn))
+        self._after_start(mgr)
+        resp = mgr.handle("帮我想想")  # 非关键词 → LLM help_request
+        assert resp is not None
+        # 当前缺失字段是 user (LLM suggestions.field 对齐实际缺失字段)
+        assert "当前缺目标用户 — 建议方向:" in resp.message
+        assert "1. 给开发者用" in resp.message
+        resp = mgr.handle("2")
+        assert mgr.product_intent.user == "给写作爱好者用"
+        assert "产品定义 3/3:" in resp.message
+
+    def test_field_answer_smart_next_question(self):
+        """S10-101 契约 3: field_answer 后下一问用 LLM smart_questions[0] (非机械)。"""
+        two_missing = _partial_analysis()
+        two_missing["extraction"] = {
+            "problem": "Markdown 编辑体验割裂",
+            "user": "",
+            "core_features": [],
+            "name": "",
+            "platform": "",
+        }
+        two_missing["missing_reasons"] = {
+            "user": "没提到目标用户",
+            "core_features": "没提到核心功能",
+        }
+        field_answer = {
+            "category": "field_answer",
+            "reason": "回答目标用户",
+            "extraction": {"user": "给程序员用"},
+            "missing_reasons": {"core_features": "还没提到核心功能"},
+            "smart_questions": ["核心功能想先覆盖哪些?"],
+            "proactive": {},
+            "understanding": "",
+        }
+        llm_fn, calls = _scripted_llm(two_missing, field_answer)
+        mgr = _manager(analyzer=DI.DiscoveryIntentAnalyzer(llm_fn=llm_fn))
+        self._after_start(mgr)
+        resp = mgr.handle("给程序员用")
+        assert mgr.product_intent.user == "给程序员用"
+        assert mgr._product_pending == ["core_features"]
+        assert "核心功能想先覆盖哪些?" in resp.message
+        assert "(缺失字段: core_features)" not in resp.message  # 非机械
 
 
 # ============================================================== 多轮字段合并边界 (修复)

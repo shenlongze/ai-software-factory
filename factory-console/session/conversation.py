@@ -32,6 +32,12 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Callable, Optional
 
+from .discovery_guide import (
+    DEFAULT_SUGGESTIONS,
+    HELP_KEYWORDS,
+    format_progress,
+    lifecycle_line,
+)
 from .intent import (
     INTENT_CREATE_PRODUCT,
     INTENT_RUN_TASK,
@@ -227,6 +233,8 @@ class ConversationManager:
         #: S10-099: 最近一次成功 LLM 分析 (确认门理解摘要/主动分析来源; 未用 LLM → None)
         self._discovery_analysis: Optional[Any] = None
         self._last_system_question: str = ""  # 上一轮系统追问 (LLM 多轮字段合并边界)
+        #: S10-101: 求助建议挂起 ({"field", "items"}) — 用户 y/1-3/自定义 → 填入字段
+        self._suggestion_proposal: Optional[dict[str, Any]] = None
 
     def transition(self, new_state: ConversationState) -> None:
         """状态迁移: 记录 history (from → to) 后更新 state。
@@ -318,6 +326,7 @@ class ConversationManager:
         self._product_pending = list(_PRODUCT_FIELD_ORDER)
         self._last_system_question = ""  # 新发现重置追问上下文
         self._discovery_analysis = None  # S10-099: 新流程清空上次 LLM 理解
+        self._suggestion_proposal = None  # S10-101: 新流程清空求助提案
         self.pending_intent = None  # 产品流程接管, 不挂起普通 intent
         if self.state != ConversationState.DISCOVERY:
             self.transition(ConversationState.DISCOVERY)
@@ -329,7 +338,7 @@ class ConversationManager:
                 return handled
         return ConversationResponse(
             state=self.state,
-            message=self._next_product_question(),
+            message=self._guide_message(self._next_product_question()),
             needs_input=True,
         )
 
@@ -340,6 +349,20 @@ class ConversationManager:
         field = self._product_pending[0]
         question = FIELD_QUESTIONS.get(field, f"请补充: {field}")
         return f"{question} (缺失字段: {field})"
+
+    def _guide_message(self, body: str, *, current: str = "发现") -> str:
+        """发现阶段消息前缀: 生命周期行 + 必填进度 (S10-101, 确定性, 无 LLM 也显示)。
+
+        current: 当前生命周期阶段 — 发现/确认 (确认门消息用 "确认")。
+        """
+        required = _PRODUCT_FIELD_ORDER
+        filled = [f for f in required if self._product_field_filled(f)]
+        pending = [f for f in required if not self._product_field_filled(f)]
+        return (
+            lifecycle_line(current) + "\n"
+            + format_progress(filled, pending) + "\n"
+            + str(body)
+        )
 
     def _set_product_field(self, field: str, value: str) -> None:
         """填充产品字段: core_features 解析为列表; 其余原样赋值。
@@ -412,7 +435,7 @@ class ConversationManager:
                 lines.append(proactive_line)
         return ConversationResponse(
             state=self.state,
-            message="\n".join(lines),
+            message=self._guide_message("\n".join(lines), current="确认"),
             needs_input=True,
             understanding=understanding,
             proactive=proactive,
@@ -435,23 +458,33 @@ class ConversationManager:
         if not raw:
             return ConversationResponse(
                 state=self.state,
-                message="回答不能为空 — 请补充当前缺失字段",
+                message=self._guide_message("回答不能为空 — 请补充当前缺失字段"),
                 needs_input=True,
             )
         # 控制短语优先 (非答案 — 取消/整理需求/逃生到其它意图/批量问题)
         control = self._product_control(raw)
         if control is not None:
             return control
+        # S10-101: 求助提案挂起 → 处理选择 (y 全填 / 1-3 单选 / 自定义) —
+        # 绝不当字段内容收下 (验收 6)
+        if self._suggestion_proposal:
+            return self._handle_suggestion_choice(raw)
+        # S10-101: 求助关键词确定性硬闸 (LLM 前) — 命中 → 当前缺失字段默认建议
+        if self._is_help_request(raw):
+            offer = self._offer_suggestions()
+            if offer is not None:
+                return offer
         # 批量模式下 "是否补充? → 是/好" → 重新展示剩余问题 (逐条回答)
         if self._product_batch_mode and _strip_tail_punct(raw) in _PRODUCT_SUPPLEMENT_ANSWERS:
             return ConversationResponse(
                 state=self.state,
-                message=self._batch_questions_message(),
+                message=self._guide_message(self._batch_questions_message()),
                 needs_input=True,
             )
         # S10-099: 确定性硬闸未命中且 LLM 可用 → 意图理解分流
-        # (control→既有控制行为 / query→逃生 / product_description→提取合并 /
-        #  field_answer→并入既有逐字段逻辑; LLM 不可用/失败 → 现有逻辑不变)
+        # (control→既有控制行为 / query→逃生 / help_request→建议展示 /
+        #  product_description→提取合并 / field_answer→填当前字段+智能下一问;
+        #  LLM 不可用/失败 → 现有逻辑不变)
         analysis = self._analyze_discovery(raw, history=self._discovery_history(raw))
         if analysis is not None:
             handled = self._handle_llm_analysis(analysis, raw)
@@ -472,7 +505,7 @@ class ConversationManager:
             if self._product_pending:
                 return ConversationResponse(
                     state=self.state,
-                    message=self._pending_question_message(),
+                    message=self._guide_message(self._pending_question_message()),
                     needs_input=True,
                 )
             return self._enter_product_confirmation()
@@ -483,7 +516,7 @@ class ConversationManager:
             # 还有缺失 → 追问下一个 (验收 C: 缺 problem → 追问; 补齐 → 追问 user)
             return ConversationResponse(
                 state=self.state,
-                message=self._pending_question_message(),
+                message=self._guide_message(self._pending_question_message()),
                 needs_input=True,
             )
         return self._enter_product_confirmation()
@@ -541,16 +574,21 @@ class ConversationManager:
 
         - control → 映射既有控制行为 (取消/整理/逃生 — 模糊改写补充网)
         - query → 逃生 (交回宿主按普通意图链)
+        - help_request → 建议展示 + 挂起 proposal (S10-101)
         - product_description → 结构化提取合并 (直入确认 / 智能追问)
-        - field_answer → None (并入既有逐字段逻辑)
+        - field_answer → 填当前字段 + 下一问智能/机械 (S10-101 中间字段 LLM 化)
         """
         category = str(getattr(analysis, "category", "") or "")
         if category == "control":
             return self._apply_llm_control(analysis, text)
         if category == "query":
             return self._escape_product_flow(text)
+        if category == "help_request":
+            return self._apply_help_request(analysis)
         if category == "product_description":
             return self._apply_product_extraction(analysis)
+        if category == "field_answer":
+            return self._apply_field_answer(analysis, text)
         return None
 
     def _apply_llm_control(self, analysis, text: str) -> ConversationResponse:
@@ -631,7 +669,7 @@ class ConversationManager:
             self._last_system_question = q  # 记录机械追问 (LLM 多轮合并边界)
             return ConversationResponse(
                 state=self.state,
-                message=q,
+                message=self._guide_message(q),
                 needs_input=True,
             )
         missing = self._product_pending[0] if self._product_pending else ""
@@ -642,10 +680,157 @@ class ConversationManager:
         self._last_system_question = question  # 记录追问 (LLM 多轮合并边界)
         return ConversationResponse(
             state=self.state,
-            message=message,
+            message=self._guide_message(message),
             needs_input=True,
             ai_generated=True,
         )
+
+    # -------------------------------------------------- S10-101: 中间字段 LLM 化 + 求助流
+
+    def _smart_question_text(self, analysis) -> Optional[str]:
+        """LLM 智能追问文本 (smart_questions[0] 裸问题); 无 → None。
+
+        供 field_answer 之后的下一问 (中间字段 LLM 化契约): 空/失败 → 机械模板。
+        理由由调用方按 missing_reasons 拼接 (与 _smart_question_response 同口径)。
+        """
+        for q in (analysis.smart_questions or []):
+            if str(q or "").strip():
+                return str(q).strip()
+        return None
+
+    def _apply_field_answer(self, analysis, text: str) -> ConversationResponse:
+        """field_answer → 填当前字段 → 下一问优先 LLM smart_questions[0] (带理由);
+        空/失败 → 机械模板 (诚实降级, 验收 "无 LLM 机械追问保留")。
+
+        批量模式 → 剩余问题编号列表 (用户已要求一次看完, 智能单问不打断)。
+        """
+        if not self._product_pending:
+            return self._enter_product_confirmation()  # 防御: 队列空 → 确认
+        field = self._product_pending[0]
+        self._set_product_field(field, text)
+        self._product_pending = self._product_pending[1:]
+        if not self._product_pending:
+            return self._enter_product_confirmation()
+        if self._product_batch_mode:
+            message = self._pending_question_message()
+            self._last_system_question = message
+            return ConversationResponse(
+                state=self.state,
+                message=self._guide_message(message),
+                needs_input=True,
+            )
+        smart = self._smart_question_text(analysis)
+        if smart is not None:
+            missing = self._product_pending[0] if self._product_pending else ""
+            reason = str((analysis.missing_reasons or {}).get(missing) or "").strip()
+            message = smart
+            if reason:
+                message = f"{smart}\n(为什么还问: {reason})"
+            self._last_system_question = smart  # 只记裸问题 (LLM 多轮合并边界)
+            return ConversationResponse(
+                state=self.state,
+                message=self._guide_message(message),
+                needs_input=True,
+                ai_generated=True,
+            )
+        message = self._pending_question_message()
+        self._last_system_question = message
+        return ConversationResponse(
+            state=self.state,
+            message=self._guide_message(message),
+            needs_input=True,
+        )
+
+    @staticmethod
+    def _is_help_request(text: str) -> bool:
+        """求助关键词确定性硬闸 (S10-101): 命中 → 触发求助流 (LLM 前先查)。"""
+        norm = str(text or "")
+        return any(keyword in norm for keyword in HELP_KEYWORDS)
+
+    def _offer_suggestions(self) -> Optional[ConversationResponse]:
+        """求助关键词兜底 (无 LLM): 当前缺失字段 → DEFAULT_SUGGESTIONS → 挂起 proposal。
+
+        无缺失字段 / 无默认建议 → None (交回 LLM/普通逻辑 — 正常输入零影响)。
+        """
+        if not self._product_pending:
+            return None
+        field = self._product_pending[0]
+        items = list(DEFAULT_SUGGESTIONS.get(field, []))
+        if not items:
+            return None
+        return self._suggestions_response(field, items, note="")
+
+    def _apply_help_request(self, analysis) -> Optional[ConversationResponse]:
+        """LLM category=help_request → suggestions 展示 + 挂起 proposal。
+
+        LLM 没给 suggestions/items → DEFAULT_SUGGESTIONS 兜底 (诚实降级);
+        仍无 → None (交回普通逻辑)。
+        """
+        if not self._product_pending:
+            return None
+        suggestions = dict(getattr(analysis, "suggestions", None) or {})
+        field = str(suggestions.get("field") or "").strip()
+        if field not in self._product_pending:
+            field = self._product_pending[0]
+        items = [
+            str(item).strip()
+            for item in (suggestions.get("items") or [])
+            if str(item or "").strip()
+        ]
+        note = str(suggestions.get("note") or "").strip()
+        if not items:
+            items = list(DEFAULT_SUGGESTIONS.get(field, []))
+        if not items:
+            return None
+        return self._suggestions_response(field, items, note=note)
+
+    def _suggestions_response(
+        self, field: str, items: list[str], *, note: str = ""
+    ) -> ConversationResponse:
+        """展示建议 + 挂起 proposal: 用户 y 全填 / 1-3 单选 / 自定义填入。
+
+        求助输入绝不当字段内容收下 (验收 6) — 展示后等用户确认。
+        """
+        label = FIELD_LABELS.get(field, field)
+        self._suggestion_proposal = {"field": field, "items": list(items)}
+        lines = [f"当前缺{label} — 建议方向:"]
+        for idx, item in enumerate(items, 1):
+            lines.append(f"  {idx}. {item}")
+        if note:
+            lines.append(f"({note})")
+        lines.append("(输入 y 用全部建议 / 1-3 选择 / 直接输入自定义)")
+        return ConversationResponse(
+            state=self.state,
+            message=self._guide_message("\n".join(lines)),
+            needs_input=True,
+        )
+
+    def _handle_suggestion_choice(self, text: str) -> ConversationResponse:
+        """处理建议选择: y/yes → 全部填入; 1-3 → 单选; 其它 → 自定义填入。
+
+        填入后: 更新进度 → 继续追问/确认 (S10-101 求助确认填入契约)。
+        """
+        proposal = self._suggestion_proposal or {}
+        field = str(proposal.get("field") or "")
+        items = [str(i) for i in (proposal.get("items") or [])]
+        self._suggestion_proposal = None
+        norm = _strip_tail_punct(text)
+        if norm in ("y", "yes"):
+            value = "、".join(items) if items else text
+        elif items and norm in tuple(str(i) for i in range(1, len(items) + 1)):
+            value = items[int(norm) - 1]
+        else:
+            value = text  # 自定义 (原样填入, 非空已由上层保证)
+        self._set_product_field(field, value)
+        if field in self._product_pending:
+            self._product_pending.remove(field)
+        if self._product_pending:
+            return ConversationResponse(
+                state=self.state,
+                message=self._guide_message(self._pending_question_message()),
+                needs_input=True,
+            )
+        return self._enter_product_confirmation()
 
     def _format_proactive_line(self, proactive: Optional[dict]) -> str:
         """主动分析展示行: "主动建议: 平台=.. · 竞品=.. · 范围=.. · 备注=.."。"""
@@ -704,6 +889,7 @@ class ConversationManager:
         self._product_pending = []
         self._product_batch_mode = False
         self._discovery_analysis = None  # S10-099: LLM 理解随流程一并清空
+        self._suggestion_proposal = None  # S10-101: 求助提案随流程一并清空
         self.pending_intent = None
         if self.state != ConversationState.DISCOVERY:
             self.transition(ConversationState.DISCOVERY)
@@ -769,13 +955,16 @@ class ConversationManager:
                     needs_input=True,
                 )
         self._set_product_field(field, value)
+        self._suggestion_proposal = None  # 编辑已应用 → 求助提案作废 (不残留)
         if field in self._product_pending:
             self._product_pending.remove(field)
         if self._product_pending:
             label = FIELD_LABELS.get(field, field)
             return ConversationResponse(
                 state=self.state,
-                message=f"已更新{label}。\n{self._pending_question_message()}",
+                message=self._guide_message(
+                    f"已更新{label}。\n{self._pending_question_message()}"
+                ),
                 needs_input=True,
             )
         return self._enter_product_confirmation()
@@ -801,7 +990,7 @@ class ConversationManager:
         self._product_batch_mode = True
         return ConversationResponse(
             state=self.state,
-            message=self._batch_questions_message(),
+            message=self._guide_message(self._batch_questions_message()),
             needs_input=True,
         )
 
@@ -818,7 +1007,7 @@ class ConversationManager:
         )
         return ConversationResponse(
             state=self.state,
-            message=(
+            message=self._guide_message(
                 f"可以创建，不过还缺少:\n{missing_lines}\n\n"
                 "是否补充? 直接回答即可 (可一次写完: 用户:...; 功能:...)"
             ),
@@ -920,6 +1109,7 @@ class ConversationManager:
         self._product_pending = []
         self._product_batch_mode = False
         self._discovery_analysis = None  # S10-099: 清空 LLM 理解 (全新会话)
+        self._suggestion_proposal = None  # S10-101: 清空求助提案 (全新会话)
         self.history = []
 
 

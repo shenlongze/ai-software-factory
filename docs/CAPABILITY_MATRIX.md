@@ -243,3 +243,21 @@ AI Factory
 - 实现: `discovery.py` (+359) analyzer 注入/懒装配 + start LLM 一次产出 + process_user_input LLM 分流 (含 v1.1.19 system_question 多轮合并边界) + 确认门增强 + LLM-gated 命名
 - 测试: `tests/console/test_discovery_session_llm.py` 26 passed; 既有 108 DS + 35 analyzer 零改动全绿; 真实 LLM 验收 8/8
 - 边界: conversation 路径未改; 驱动层逃生/CLI 接线未做 (模型层)
+
+## S10-101 更新 (产品发现引导体验, v1.1.22)
+
+> 2026-08-24 | Sprint: 确定性进度/生命周期 + 中间字段智能追问 + 求助建议填入 — 两路径同步
+
+| 项 | S10-100 后 | S10-101 后 |
+|---|---|---|
+| 进度/生命周期 | 无进度提示 (只有问题) | **每轮消息前缀**: "流程: 发现→[当前]→…" + "产品定义 X/3: 字段✅/待填" (纯确定性, 无 LLM 也显示) |
+| 中间字段追问 | field_answer 后机械模板 | **field_answer apply 后下一问优先 LLM smart_questions[0] (带理由)**; 空/失败 → 机械模板 |
+| 求助输入 ("给些建议/没想法") | 被当字段内容收下 | **求助流**: HELP_KEYWORDS 硬闸 / LLM help_request → 建议展示 → 确认填入 (绝不当字段) |
+| 求助兜底 | — | **DEFAULT_SUGGESTIONS 确定性建议** (无 LLM 诚实降级, 非伪造) |
+| 增强字段提示 (DiscoverySession) | 无 | **enhanced_line**: "增强(可选): 使用场景待填 · …" (已填 ✅) |
+
+- 新增: `factory-console/session/discovery_guide.py` (两路径共享唯一来源: lifecycle_line/format_progress/enhanced_line/HELP_KEYWORDS/DEFAULT_SUGGESTIONS)
+- analyzer: `discovery_intelligence.py` VALID_CATEGORIES += `help_request` (优先级: 控制指令 > 查询 > 求助 > 字段回答 > 产品描述); 输出契约 += `suggestions {field, items, note}`
+- 集成: `conversation.py` + `discovery.py` 对称 — 进度前缀 (批量/编辑/重问统一) + 求助 proposal {field, items} (y 全填/1-3 单选/自定义) + 中间字段智能下一问
+- 测试: `tests/console/test_discovery_guide.py` 43 passed + 两路径新增 8 用例; 全量 console 4826 passed / 0 新增失败
+- 边界: lifecycle 流程本身不驱动状态机 (仅引导文案); 求助建议只作用于当前缺失字段

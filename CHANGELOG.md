@@ -5,7 +5,49 @@
 
 ---
 
-## [v1.1.21] — 2026-08-24
+## [v1.1.22] — 2026-08-24
+
+**产品发现引导体验**（S10-101）: 确定性进度/生命周期 + 中间字段智能追问 + 求助建议填入 —
+conversation 与 DiscoverySession 两路径同步。
+
+### Added
+
+- **共享引导模块**（新 `session/discovery_guide.py`）— 两路径唯一来源:
+  - `lifecycle_line` 生命周期行（发现→确认→创建→PRD→工程→开发, 当前阶段 `[ ]` 标出）+
+    `format_progress` 必填进度（"产品定义 X/3: 字段✅/待填", 用 FIELD_LABELS 中文名）—
+    纯状态计算, 无 LLM 也显示（确定性）
+  - `enhanced_line` DiscoverySession 增强字段可选提示（使用场景/MVP范围/非功能要求, 已填 ✅,
+    无待填省略）
+  - `HELP_KEYWORDS` 求助关键词确定性硬闸 + `DEFAULT_SUGGESTIONS` 每字段确定性建议
+    （无 LLM 兜底 — 诚实降级, 非伪造 LLM）
+- **analyzer 契约扩展**（`discovery_intelligence.py`）— `VALID_CATEGORIES` += `help_request`
+  （优先级: 控制指令 > 查询 > 求助 > 字段回答 > 产品描述）; 输出契约 += `suggestions`
+  {field, items, note}; field_answer 时若还有必填缺失 → `smart_questions` 给出下一个最重要
+  缺失字段的追问（带理由）
+- **两路径集成**（`conversation.py` + `discovery.py`, 对称）:
+  - 每个发现阶段消息前缀 `lifecycle_line` + `format_progress`（批量/编辑/重问等分支统一）;
+    READY 3/3 + current=确认
+  - 求助流: HELP_KEYWORDS 硬闸（LLM 前）→ LLM `help_request` + suggestions / 默认建议
+    → 展示 → 挂起 proposal {field, items} → 用户 y 全填 / 1-3 单选 / 自定义填入 → 进度更新;
+    求助输入绝不当字段内容收下
+  - 中间字段: field_answer apply 后下一问优先 `analysis.smart_questions[0]`（带理由）,
+    空/失败 → 机械模板; system_question 多轮合并（v1.1.19）保持不变
+
+### 测试
+
+- 新 `tests/console/test_discovery_guide.py` 43 用例（计划 §2 契约点 1-9: 进度确定性/推进/
+  中间字段智能/求助 LLM+关键词兜底/不当字段/选择自定义/无 LLM 零变化语义/两路径一致 +
+  模块单元）
+- 两路径新增用例: `test_discovery_llm_intelligence.py`（+4 求助流/中间字段）·
+  `test_discovery_session_llm.py`（+4 同）
+- 既有测试更新（仅精确消息断言, 逐条记录）:
+  - `test_discovery_llm_intelligence.py::test_prompt_contains_priority_and_history` —
+    prompt 优先级有意变更（求助 > 字段回答）
+  - `test_discovery_session_llm.py::test_field_answer_fills_current_only` —
+    消息断言更新为 S10-101 进度前缀格式
+- 全量 console 回归: 4826 passed / 1 skipped / 0 新增失败（7 个既有环境类失败为沙箱写
+  ~/.factory/端口检测/wheel 构建, 沙箱外全绿）
+
 
 **DiscoverySession 同步 LLM 化**（S10-100）: "开始做X/我想做X" 发现路径与 conversation 路径行为对齐 —
 LLM 一次产出 + 智能追问 + 理解摘要 + 主动分析, 无 LLM 规则兜底（逐字段零变化）。

@@ -43,6 +43,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional
 
+from .discovery_guide import (
+    DEFAULT_SUGGESTIONS,
+    HELP_KEYWORDS,
+    enhanced_line,
+    format_progress,
+    lifecycle_line,
+)
 from .product import ProductIntent, generate_temp_product_name, parse_core_features
 
 # ---------------------------------------------------------------- 状态常量
@@ -281,6 +288,8 @@ class DiscoverySession:
         self._llm_question_text: str = ""
         #: S10-100: 建议名称候选 (LLM-gated 命名展示; 空 = 无候选)
         self._name_candidates: list[str] = []
+        #: S10-101: 求助建议挂起 ({"field", "items"}) — 用户 y/1-3/自定义 → 填入字段
+        self._suggestion_proposal: Optional[dict[str, Any]] = None
 
     # ------------------------------------------------------------ start
 
@@ -317,6 +326,28 @@ class DiscoverySession:
                 session.questions.append(first)
                 session._last_system_question = first.question
         return session
+
+    # ------------------------------------------------------------ S10-101: 引导消息
+
+    def _guide_message(self, body: str, *, current: str = "发现") -> str:
+        """发现阶段消息前缀: 生命周期行 + 必填进度 + 增强可选提示 (确定性, 无 LLM 也显示)。
+
+        current: 当前生命周期阶段 — 发现/确认 (READY/确认门消息用 "确认")。
+        ask_enhanced=False → 不附增强提示 (用户已选不追问增强字段, 不误导)。
+        """
+        required = REQUIRED_FIELDS
+        filled = [f for f in required if self._field_filled(f)]
+        pending = [f for f in required if not self._field_filled(f)]
+        lines = [
+            lifecycle_line(current),
+            format_progress(filled, pending),
+        ]
+        if self._ask_enhanced:
+            extra = enhanced_line(self.answers)
+            if extra:
+                lines.append(extra)
+        lines.append(str(body))
+        return "\n".join(lines)
 
     # ------------------------------------------------------------ 追问
 
@@ -383,10 +414,12 @@ class DiscoverySession:
 
         流转 (设计 §2 口径):
         1. 空/纯空白回答 → 拒绝 + 重新问 (不静默跳过, 不推进字段)
-        2. S10-100: analyzer 可用 → analyze(text, system_question=最近问题):
+        2. S10-100/101: analyzer 可用 → analyze(text, system_question=最近问题):
            - product_description → 提取合并 (只填缺失不覆盖) → 必填齐 READY /
              仍缺 智能追问 (带理由)
-           - field_answer → 并入现有 apply 逻辑 (当前字段, 不覆盖其它)
+           - field_answer → 填当前字段 (不覆盖其它) → 下一问优先 smart_questions[0]
+             带理由, 空/失败 → 机械模板 (中间字段 LLM 化)
+           - help_request → 建议展示 + 挂起 proposal (y/1-3/自定义 → 填入)
            - control → 取消类 cancel(); 其余 → 不当作字段, 重问当前问题
            - query → 不当作字段, 重问当前问题 (模型层不逃生)
            analyzer None/失败 → 现有逻辑 (零变化)
@@ -412,6 +445,15 @@ class DiscoverySession:
         raw = (text or "").strip()
         if not raw:
             return self._reject_response("回答不能为空 — 请补充当前问题")
+        # S10-101: 求助提案挂起 → 处理选择 (y 全填 / 1-3 单选 / 自定义) —
+        # 绝不当字段内容收下 (验收 6)
+        if self._suggestion_proposal:
+            return self._handle_suggestion_choice(raw)
+        # S10-101: 求助关键词确定性硬闸 (LLM 前) — 命中 → 当前缺失字段默认建议
+        if self._is_help_request(raw):
+            offer = self._offer_suggestions()
+            if offer is not None:
+                return offer
         # S10-100: LLM 意图分流 (失败/None → 规则兜底, 现有逻辑逐字节不变)
         analysis = self._analyze_llm(raw)
         if analysis is not None:
@@ -439,7 +481,7 @@ class DiscoverySession:
             "question": nxt,
             "summary": self.summary,
             "missing_fields": list(self.missing_fields),
-            "message": nxt.question,
+            "message": self._guide_message(nxt.question),
         }
 
     # ------------------------------------------------------------ S10-100: LLM 分流
@@ -487,8 +529,8 @@ class DiscoverySession:
         return False
 
     def _handle_llm_analysis(self, analysis, text: str) -> Optional[dict[str, Any]]:
-        """LLM 意图分流 (计划 §2.3): control/query 不当字段; product_description
-        提取合并; field_answer → None (并入既有规则逻辑, 当前字段不覆盖其它)。"""
+        """LLM 意图分流 (计划 §2.3): control/query 不当字段; help_request 建议展示;
+        product_description 提取合并; field_answer → 填当前字段 + 智能下一问。"""
         category = str(getattr(analysis, "category", "") or "")
         if category == "control":
             if self._is_cancel_control(text):
@@ -500,9 +542,13 @@ class DiscoverySession:
             return self._requestion_response(
                 "这看起来是查询, 不是需求信息 — 请继续回答当前问题"
             )
+        if category == "help_request":
+            return self._apply_help_request(analysis)
         if category == "product_description":
             return self._apply_llm_extraction(analysis)
-        return None  # field_answer → 并入既有规则逻辑
+        if category == "field_answer":
+            return self._apply_field_answer(analysis, text)
+        return None
 
     @staticmethod
     def _is_cancel_control(text: str) -> bool:
@@ -532,8 +578,129 @@ class DiscoverySession:
             "question": question,
             "summary": self.summary,
             "missing_fields": self.detect_missing_fields(),
-            "message": message,
+            "message": self._guide_message(message),
         }
+
+    # ------------------------------------------------------------ S10-101: 求助流 + 中间字段
+
+    @staticmethod
+    def _is_help_request(text: str) -> bool:
+        """求助关键词确定性硬闸 (S10-101): 命中 → 触发求助流 (LLM 前先查)。"""
+        norm = str(text or "")
+        return any(keyword in norm for keyword in HELP_KEYWORDS)
+
+    def _offer_suggestions(self) -> Optional[dict[str, Any]]:
+        """求助关键词兜底 (无 LLM): 当前缺失字段 → DEFAULT_SUGGESTIONS → 挂起 proposal。
+
+        无缺失字段 / 无默认建议 → None (交回 LLM/普通逻辑 — 正常输入零影响)。
+        """
+        if not self._pending_fields:
+            return None
+        field = self._pending_fields[0]
+        items = list(DEFAULT_SUGGESTIONS.get(field, []))
+        if not items:
+            return None
+        return self._suggestions_response(field, items, note="")
+
+    def _apply_help_request(self, analysis) -> Optional[dict[str, Any]]:
+        """LLM category=help_request → suggestions 展示 + 挂起 proposal。
+
+        LLM 没给 suggestions/items → DEFAULT_SUGGESTIONS 兜底 (诚实降级);
+        仍无 → None (交回普通逻辑)。
+        """
+        if not self._pending_fields:
+            return None
+        suggestions = dict(getattr(analysis, "suggestions", None) or {})
+        field = str(suggestions.get("field") or "").strip()
+        if field not in self._pending_fields:
+            field = self._pending_fields[0]
+        items = [
+            str(item).strip()
+            for item in (suggestions.get("items") or [])
+            if str(item or "").strip()
+        ]
+        note = str(suggestions.get("note") or "").strip()
+        if not items:
+            items = list(DEFAULT_SUGGESTIONS.get(field, []))
+        if not items:
+            return None
+        return self._suggestions_response(field, items, note=note)
+
+    def _suggestions_response(
+        self, field: str, items: list[str], *, note: str = ""
+    ) -> dict[str, Any]:
+        """展示建议 + 挂起 proposal: 用户 y 全填 / 1-3 单选 / 自定义填入。
+
+        求助输入绝不当字段内容收下 (验收 6) — 展示后等用户确认。
+        """
+        label = _field_label(field)
+        self._suggestion_proposal = {"field": field, "items": list(items)}
+        lines = [f"当前缺{label} — 建议方向:"]
+        for idx, item in enumerate(items, 1):
+            lines.append(f"  {idx}. {item}")
+        if note:
+            lines.append(f"({note})")
+        lines.append("(输入 y 用全部建议 / 1-3 选择 / 直接输入自定义)")
+        return {
+            "state": self.current_state,
+            "question": None,
+            "summary": self.summary,
+            "missing_fields": self.detect_missing_fields(),
+            "message": self._guide_message("\n".join(lines)),
+        }
+
+    def _handle_suggestion_choice(self, text: str) -> dict[str, Any]:
+        """处理建议选择: y/yes → 全部填入; 1-3 → 单选; 其它 → 自定义填入。
+
+        填入后: 更新进度 → 继续追问/确认 (S10-101 求助确认填入契约)。
+        """
+        proposal = self._suggestion_proposal or {}
+        field = str(proposal.get("field") or "")
+        items = [str(i) for i in (proposal.get("items") or [])]
+        self._suggestion_proposal = None
+        norm = str(text or "").strip()
+        if norm in ("y", "yes"):
+            value = "、".join(items) if items else text
+        elif items and norm in tuple(str(i) for i in range(1, len(items) + 1)):
+            value = items[int(norm) - 1]
+        else:
+            value = text  # 自定义 (原样填入, 非空已由上层保证)
+        self.apply_answer(field, value)
+        if self._pending_fields and self._pending_fields[0] == field:
+            self._pending_fields.pop(0)
+        elif field in self._pending_fields:
+            self._pending_fields.remove(field)
+        self.detect_missing_fields()
+        nxt = self._next_question()
+        if nxt is None:
+            return self._ready_response()
+        self.current_state = DiscoveryState.CLARIFYING
+        self.questions.append(nxt)
+        self._last_system_question = nxt.question
+        return {
+            "state": self.current_state,
+            "question": nxt,
+            "summary": self.summary,
+            "missing_fields": list(self.missing_fields),
+            "message": self._guide_message(nxt.question),
+        }
+
+    def _apply_field_answer(self, analysis, text: str) -> Optional[dict[str, Any]]:
+        """field_answer → 填当前字段 → 下一问优先 LLM smart_questions[0] (带理由);
+        空/失败 → 机械模板 (诚实降级, 中间字段 LLM 化契约)。
+
+        队列空 (防御) → None (交回既有逻辑, 不崩溃)。
+        """
+        if not self._pending_fields:
+            return None
+        field = self._pending_fields[0]
+        self.apply_answer(field, text)
+        self._pending_fields.pop(0)
+        self._llm_question_text = ""  # 已回答当前追问 → 下一问回归模板/新智能追问
+        self.detect_missing_fields()
+        if not self._pending_fields:
+            return self._ready_response()
+        return self._llm_smart_question_response(analysis)
 
     def _apply_llm_extraction(self, analysis) -> dict[str, Any]:
         """LLM 结构化提取合并 (计划 §2.3): 只填缺失字段, pending 只留真正缺失。
@@ -629,7 +796,7 @@ class DiscoverySession:
             "question": q_item,
             "summary": self.summary,
             "missing_fields": self.detect_missing_fields(),
-            "message": message,
+            "message": self._guide_message(message),
         }
 
     @staticmethod
@@ -666,7 +833,7 @@ class DiscoverySession:
             "question": question,
             "summary": self.summary,
             "missing_fields": self.detect_missing_fields(),
-            "message": message,
+            "message": self._guide_message(message),
         }
 
     def _ready_response(self) -> dict[str, Any]:
@@ -685,7 +852,7 @@ class DiscoverySession:
             "question": None,
             "summary": self.summary,
             "missing_fields": [],
-            "message": self._ready_message(),
+            "message": self._guide_message(self._ready_message(), current="确认"),
         }
 
     def _ready_message(self) -> str:
@@ -740,7 +907,7 @@ class DiscoverySession:
             "question": None,
             "summary": self.summary,
             "missing_fields": [],
-            "message": _CONFIRM_PROMPT,
+            "message": self._guide_message(_CONFIRM_PROMPT, current="确认"),
         }
 
     # ------------------------------------------------------------ 摘要/确认
@@ -858,6 +1025,11 @@ class DiscoverySession:
             "_ai_generated": bool(self._ai_generated),
             "_understanding": self._understanding,
             "_proactive": dict(self._proactive),
+            "_suggestion_proposal": (
+                dict(self._suggestion_proposal)
+                if self._suggestion_proposal is not None
+                else None
+            ),
         }
 
     @classmethod
@@ -927,6 +1099,16 @@ class DiscoverySession:
             if isinstance(proactive, dict)
             else {}
         )
+        proposal = data.get("_suggestion_proposal")
+        if isinstance(proposal, dict):
+            session._suggestion_proposal = {
+                "field": str(proposal.get("field") or ""),
+                "items": [
+                    str(i) for i in (proposal.get("items") or [])
+                ],
+            }
+        else:
+            session._suggestion_proposal = None
         return session
 
     @staticmethod

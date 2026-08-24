@@ -3,7 +3,24 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
-## [v1.1.36] — 2026-08-24
+## [v1.1.37] — 2026-08-24
+
+**主线控制机制（从仪表盘到控制系统）**: /board done/unmark + 汇报落盘 + 主线状态真实化。
+
+### Added
+
+- **/board done <id> / unmark <id>**（`board.py`）— 标记主线任务完成/取消
+  （更新待办清单行内 ✅, board 进度实时准确）
+- **/board report --save** — 汇报落盘到 docs/sprint10/progress-report-*.md
+  （同步 Hermes 的素材, 无需手动复制）
+- **主线状态真实化**: 待办清单按真实交付标记（M3-1/2/3/4 ✅ —
+  M3a 拆解/M3b 关键路径/M3c 调度/M3e 动态分配）
+
+### 验证
+
+- done/unmark 更新待办清单 ✅ · report --save 生成 docs/sprint10/progress-report ✅
+- M3 主线 4/7（真实状态）
+
 
 **board 状态分布图 + 交互（hover/筛选）**: 分布条 + 筛选按钮 + hover 高亮（Founder）。
 

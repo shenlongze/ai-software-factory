@@ -537,3 +537,55 @@ def render_chain_html(workspace: Path, project_id: str = "") -> str:
 <div class="chain">{chain}</div>
 <div class="total">总工期: {total_est}min · 关键节点 {len(cpath)} 个 · 汇聚点 {len(merge_ids)} 个</div>
 </body></html>"""
+
+
+# ---------------------------------------------------------------- 主线控制（从仪表盘到控制系统）
+
+def mark_backlog_item(path: Path, item_id: str, done: bool = True) -> str:
+    """标记待办清单项完成/未完成（更新行内 ✅, board 进度实时准确）。
+
+    行内无 ✅ → 加 " ✅" 前缀; 有 ✅ 且 done=False → 去掉。失败安全。
+    """
+    if not path.is_file():
+        return "（未找到待办清单）"
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    except OSError:  # noqa: BLE001
+        return "（待办清单读取失败）"
+    target = str(item_id).strip()
+    found = False
+    for i, line in enumerate(lines):
+        if line.startswith("|") and target in line and re.match(r"^\|\s*" + re.escape(target) + r"\s*\|", line):
+            found = True
+            if done and "✅" not in line:
+                # 在 id 后插入 ✅（保持表格结构: | id | ✅ desc | ...）
+                # 找第一个 | 后的 id 结束位置
+                parts = line.split("|", 3)
+                if len(parts) >= 3:
+                    lines[i] = parts[0] + "|" + parts[1] + "| ✅ " + parts[2].lstrip() + "|" + "|".join(parts[3:])
+            elif not done and "✅" in line:
+                lines[i] = line.replace(" ✅ ", " ").replace("✅ ", "")
+            break
+    if not found:
+        return f"（未找到待办项: {target}）"
+    try:
+        path.write_text("".join(lines), encoding="utf-8")
+    except OSError:  # noqa: BLE001
+        return "（待办清单写入失败）"
+    return f"{'✅ 已标记完成' if done else '⬜ 已标记未完成'}: {target}"
+
+
+def save_report(path: Path = DEFAULT_BACKLOG, out_dir: Path | None = None) -> str:
+    """--report --save: 生成汇报并落盘到 docs/sprint10/（自动同步 Hermes 的素材）。"""
+    report = render_report(path)
+    if out_dir is None:
+        out_dir = Path(__file__).resolve().parents[2] / "docs" / "sprint10"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    from datetime import datetime, timezone
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d")
+    out = out_dir / f"progress-report-{ts}.md"
+    try:
+        out.write_text(report, encoding="utf-8")
+    except OSError:  # noqa: BLE001
+        return "（汇报落盘失败）"
+    return f"汇报已生成: {out}"

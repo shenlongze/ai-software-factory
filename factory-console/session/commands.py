@@ -215,6 +215,9 @@ class BoardCommand(SlashCommand):
       /board chain [项目]  任务链（关键路径 ★ 关键节点 ▲ 汇聚点 + 工期）
       /board timeline     生命线（最近审计事件时间线）
       /board report       生成给 Hermes 的 markdown 汇报
+      /board report --save  汇报落盘到 docs/sprint10/
+      /board done <id>      标记主线任务完成（如 /board done M3-1）
+      /board unmark <id>    取消完成标记
     """
 
     name = "board"
@@ -224,6 +227,7 @@ class BoardCommand(SlashCommand):
         from .board import (
             render_board, render_graph, render_timeline,
             render_chain, render_report,
+            mark_backlog_item, save_report,
         )
         from pathlib import Path
 
@@ -247,7 +251,15 @@ class BoardCommand(SlashCommand):
                     return 1
                 print(render_chain(workspace, project))
             elif view == "report":
-                print(render_report())
+                if "--save" in (args or ""):
+                    print(save_report())
+                else:
+                    print(render_report())
+            elif view in ("done", "unmark"):
+                if len(sub) < 2:
+                    print("用法: /board done <任务ID>  例: /board done M3-1")
+                    return 2
+                print(mark_backlog_item(Path(__file__).resolve().parents[1] / ".." / "docs" / "sprint10" / "待办清单-已发现未落地.md", sub[1], done=(view == "done")))
             elif view == "timeline":
                 if workspace is None:
                     print("（未设置工作区 — 无法读审计事件）")

@@ -7338,6 +7338,40 @@ factory <域> <动词> [参数]      # 运维/资源/数据命令（长命令, �
 | **执行** | run repo workload exec | 跑任务/存量仓库/积压清道夫/执行记录 |
 | **展示** | board dashboard | 监控面板（todolist/依赖图/生命线） |
 
+**域分类（6 类, 含组织域 — 2026-08-24 补充）**
+
+| 域类 | 域 | 说明 |
+|---|---|---|
+| **系统** | init config doctor start stop status version | 环境/配置/诊断/启停 |
+| **资源** | service llm agent skill tool project | 服务/LLM/员工/技能/工具/项目 清单与状态 |
+| **数据** | todo backlog evidence audit memory knowledge | 任务/积压/证据/审计/记忆/知识 查询 |
+| **执行** | run repo workload exec | 跑任务/存量仓库/积压清道夫/执行记录 |
+| **组织** | company department industry(factory) | 公司/部门/行业工厂（§1.4.5 层级） |
+| **展示** | board dashboard | 监控面板（todolist/依赖图/生命线） |
+
+```
+组织域命令示例（域 + 动词 + --company 作用域）:
+  factory company list / create --name X
+  factory department list --company C-1 / create --company C-1 --name X
+  factory industry list / create --template software_dev
+  factory project list --company C-1        # 资源命令带组织作用域
+```
+
+**资源隔离规则（组织层级 × 资源可见性 — "烂事"的核心, 必须设计）**
+
+| 资源 | 隔离级别 | 规则 |
+|---|---|---|
+| 公司级（agent/project/knowledge/audit/experience） | **公司隔离** | A 公司看不见 B 公司（company_id 隔离, §7.2.2） |
+| 部门级（project/employee） | 部门可选 | 部门间可选隔离或公司内共享（department_id 可选） |
+| 行业级（skill/workflow/knowledge/template） | 行业隔离 | 行业工厂专属（FactorySpec 隔离） |
+| 全局（system config/内置 Skill） | 共享 | 所有组织可见 |
+
+```
+命令作用域规则: 组织域命令默认带 --company/--factory 作用域;
+资源命令(list/show)可加 --company/--department 过滤（缺省 = 当前上下文/全部）
+隔离实现: company_id/department_id/factory_id 字段 + 查询过滤（§7.2.2 守则1）
+```
+
 **动词规范（统一动作词）**
 
 ```

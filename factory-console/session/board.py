@@ -1605,8 +1605,15 @@ def render_project_tasktree_html(workspace: Path | str, slug: str) -> str:
         )
         if has_kids:
             kids = "".join(render_node(c) for c in node["children"])
-            return row + f'<div class="tkids">{kids}</div>'
-        return row
+            content = row + f'<div class="tkids">{kids}</div>'
+        else:
+            content = row
+        # L1 模块卡片: 标题栏 + 内容, 模块间明显分隔 (Founder: 太密)
+        if lvl == 1:
+            return (f'<div class="module"><div class="module-title">'
+                    f'{_clean_md_name(node.get("name", ""))}</div>'
+                    f'<div class="module-body">{content}</div></div>')
+        return content
 
     body = "".join(render_node(n) for n in tree) if tree else "<p>（暂无任务）</p>"
     counts = _project_task_status_counts(workspace, slug)
@@ -1641,6 +1648,9 @@ def render_project_tasktree_html(workspace: Path | str, slug: str) -> str:
   .tstatus {{ font-size: 10px; color: #78909c; margin-left: 6px; }}
   .dep {{ font-size: 10px; color: #26c6da; background: #00363f; border-radius: 4px; padding: 1px 6px; margin-left: 6px; }}
   .crit-mark {{ font-size: 10px; color: #ff8a80; background: #4a1414; border-radius: 4px; padding: 1px 6px; margin-left: 6px; }}
+  .module {{ background: #12151b; border: 1px solid #2a2e37; border-radius: 10px; margin: 14px 0; padding: 10px 14px; }}
+  .module-title {{ font-size: 14px; font-weight: 600; color: #ffb74d; padding: 4px 0 8px; border-bottom: 1px solid #2a2e37; margin-bottom: 8px; }}
+  .lvl {{ font-size: 9px; background: #37474f; color: #90a4ae; border-radius: 4px; padding: 1px 5px; margin-right: 6px; }}
   .card {{ background: #1a1e26; border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; }}
   .card h2 {{ font-size: 14px; color: #ffb74d; margin: 0 0 6px; }}
   ul.tl {{ list-style: none; margin: 0; padding: 0; }}
@@ -2170,9 +2180,11 @@ def _project_task_tree_recursive(workspace: Path | str, slug: str) -> list[dict[
                                         for cid, c in by_id.items() if str(c.get("parent") or "") == tid],
         }
 
+    epic_titles = _epic_titles()
     tree = []
     for ep in flat:
-        ep_node = {"id": ep["epic"], "name": ep["epic"], "status": "",
+        ep_id = ep["epic"]
+        ep_node = {"id": ep_id, "name": epic_titles.get(ep_id, ep_id), "status": "",
                    "depth": 1, "children": []}
         for fl in ep["features"].values():
             feat_node = {"id": fl["feature"], "name": fl["feature"], "status": "",
@@ -2189,3 +2201,18 @@ def _project_task_tree_recursive(workspace: Path | str, slug: str) -> list[dict[
             tree.append({"id": t["id"], "name": str(t.get("name") or t["id"]),
                          "status": "", "depth": 3, "children": []})
     return tree
+
+
+def _epic_titles(backlog: Path | None = None) -> dict[str, str]:
+    """主线组标题: 从待办清单 '## M2 员工内核...' 解析 {M2: 'M2 员工内核', ...}。"""
+    if backlog is None:
+        backlog = DEFAULT_BACKLOG
+    titles: dict[str, str] = {}
+    try:
+        for line in backlog.read_text(encoding="utf-8").splitlines():
+            m = re.match(r"^##\s+(M\d+|P0)\s+(.+)$", line.strip())
+            if m:
+                titles[m.group(1)] = f"{m.group(1)} {m.group(2).split('（')[0].split('(')[0].strip()}"
+    except (OSError, UnicodeDecodeError):  # noqa: BLE001
+        pass
+    return titles

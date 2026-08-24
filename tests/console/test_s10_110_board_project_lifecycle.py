@@ -783,3 +783,30 @@ class TestTaskSplit:
         assert all(f"L{i}" in html for i in (1, 2, 3, 4))  # L 标签
         assert "细化" in html                              # 细化按钮
         assert "子任务A" in html                           # L4 子任务显示
+
+
+# ================================================================== 任务树模块分隔 + 组标题
+
+class TestModuleTree:
+    def test_epic_titles_from_backlog(self):
+        titles = BOARD._epic_titles()
+        assert "M2" in titles and "员工内核" in titles["M2"]
+        assert "P0" in titles and "质量" in titles["P0"]
+
+    def test_tree_has_module_cards(self, tmp_path):
+        _mk_project(tmp_path, "a", name="项目A")
+        html = BOARD.render_project_tasktree_html(tmp_path, "a")
+        assert "class=\"module\"" in html  # 模块卡片
+        # L1 标题用组名 (即使无待办清单也 fallback epic id)
+        assert "module-title" in html
+
+    def test_no_duplicate_subtask_in_flat(self, tmp_path):
+        _mk_project(tmp_path, "a", name="项目A")
+        BOARD.split_task(tmp_path, "a", "t1", ["子A"])
+        tree = BOARD._project_task_tree_recursive(tmp_path, "a")
+        # 子任务只出现在父任务 children, 不重复出现在 L3 平铺
+        all_l3 = [t for ep in tree for f in ep["children"] for t in f["children"]]
+        ids = [t["id"] for t in all_l3]
+        assert ids.count("t1-1") == 0  # 子任务不在 L3
+        t1 = next(t for t in all_l3 if t["id"] == "t1")
+        assert [c["id"] for c in t1["children"]] == ["t1-1"]  # 只在 L4

@@ -14,7 +14,7 @@
    无 LLM 规则兜底真实生效 (不伪造)
 10. 宿主接线: session 层 "可以，先出prd文档" → create_product + generate_prd 执行
     (真实 tmp workspace + FakeOrg 桩, 零真实 LLM)
-11. 版本断言 v1.1.63 (另见 test_s10_074_deployment)
+11. 版本断言 v1.1.64 (另见 test_s10_074_deployment)
 
 模块级: discovery_guide 确认表单元 (APPROVE_WORDS/APPROVE_NEXT_ACTIONS/RENAME_RE/
 CLARIFY_WORDS/CONFIRM_DELEGATE_WORDS + match_*) 与 analyzer analyze_confirmation
@@ -652,7 +652,7 @@ class TestSessionWiring:
 
 class TestVersion:
     def test_pyproject_version_bumped(self):
-        """契约点 11: pyproject 版本 v1.1.63 (单源断言见 test_s10_074_deployment)。"""
+        """契约点 11: pyproject 版本 v1.1.64 (单源断言见 test_s10_074_deployment)。"""
         import tomllib
         from pathlib import Path
 
@@ -660,4 +660,4 @@ class TestVersion:
         ver = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))[
             "project"
         ]["version"]
-        assert ver == "1.1.63"
+        assert ver == "1.1.64"

@@ -9,21 +9,23 @@
 2. **总体规划** [MASTER-PLAN-2026-08.md](./MASTER-PLAN-2026-08.md) — AI Company OS 执行主线（业务流/数据流/CLI/API/里程碑 M1-M7）
 3. **节点详设** [MASTER-PLAN-DETAIL-2026-08.md](./MASTER-PLAN-DETAIL-2026-08.md) — 以链路为主线的节点级设计
 4. **[README.md](../README.md)** — 项目是什么（Vision / Problem / Solution）
-5. **[CHANGELOG.md](../CHANGELOG.md)** — 版本与变更（当前 **v1.1.28**）
+5. **[FEATURES.md](./FEATURES.md)** — 功能文档（有哪些功能/怎么用/状态）
+6. **[CHANGELOG.md](../CHANGELOG.md)** — 版本与变更（当前 **v1.1.46**）
 
 ## 当前状态（2026-08-24）
 
-- **版本**: v1.1.28 · 三部门循环（Claude=产品 · Hermes=架构/Review · Codex=工程）
-- **已交付**: M1 内核（repo/工具/MCP）· M1a 证据+审批 · M1b 积压清道夫 · M2 员工内核（7 角色真干活）· **M3 四部曲**（原子拆解/关键路径/并行调度/质量评估）
-- **测试基线**: 全量 12049 passed / 0 failed
+- **版本**: v1.1.46 · 三部门循环（Claude=产品 · Hermes=架构/Review · Codex=工程）
+- **已交付**: M1 内核 · M1a 证据+审批 · M1b 积压清道夫 · M2 员工内核（7 角色真干活）· **M3 全链**（原子拆解/关键路径/并行调度/质量评估/真实执行+动态分配）· 发现 LLM 化 · CLI 命令体系（§11.6）· board 监控面板 · update 更新
+- **测试基线**: 全量 ~5065 passed / 0 failed（console 侧）
 - **五维评测**: S0/L0/U0/C0/T0 基线（§22.7）
-- **下一步**: M3e 收尾（调度器接管真实执行 + 动态分配）→ P0 可靠性评测
+- **下一步**: M3-5/6/7 收尾 → P0 可靠性评测 → §22.6 SDK 任务入 board
 
 ## 分类导航
 
 | 区域 | 入口 | 一句话 |
 |:-----|:-----|:-------|
 | 主蓝图 | 完整产品方案书（仓库根） | 21 章 + 状态对照 + 可行性取舍 |
+| 功能文档 | [FEATURES.md](./FEATURES.md) | 当前功能清单/用法/状态（单一事实来源） |
 | 执行计划 | [MASTER-PLAN-2026-08.md](./MASTER-PLAN-2026-08.md) | M1-M7 里程碑/版本/验收 |
 | 节点详设 | [MASTER-PLAN-DETAIL-2026-08.md](./MASTER-PLAN-DETAIL-2026-08.md) | 链路 + 节点输入/输出/接口 |
 | 架构设计 | [docs/design/](./design/README.md) · [docs/architecture/](./architecture/README.md) | 系统/CLI/运行时设计 |

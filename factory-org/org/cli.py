@@ -681,6 +681,11 @@ def cmd_project_register(root: Path, args: Any) -> dict:
                 project_type=args.project_type,
                 goal=args.goal,
                 project_id=args.id,
+                company_id=getattr(args, "company", "") or "",
+                department_ids=(
+                    [d.strip() for d in str(getattr(args, "departments", "") or "").split(",") if d.strip()]
+                    or None
+                ),
             )
         except ValueError as exc:
             return _error(str(exc))
@@ -713,6 +718,49 @@ def cmd_project_register(root: Path, args: Any) -> dict:
         },
         "exit_code": 0,
     }
+
+
+def cmd_department_create(root: Path, args: Any) -> dict:
+    """department create — 建部门 (Company 直属子节点; 发 org.department.created)。
+
+    渐进式: 前期项目 Solo（无部门），后期建公司+部门 → 项目挂部门（无损升级）。
+    """
+    with _logger_scope(root) as logger:
+        store = _org_store(root)
+        lifecycle = OrgLifecycle(store)
+        try:
+            dept = lifecycle.create_department(
+                args.company_id, args.name, department_id=args.id
+            )
+        except Exception as exc:  # noqa: BLE001 — 亮错
+            return _error(str(exc))
+    return {"ok": True, "department": dept.to_dict(), "exit_code": 0}
+
+
+def cmd_project_link(root: Path, args: Any) -> dict:
+    """project link — 项目关联/解绑部门（多对多可选, 渐进式挂接）。"""
+    with _logger_scope(root) as logger:
+        org_store = _org_store(root)
+        adoption = _project_adoption(root, logger)
+        try:
+            project = adoption.get_project(args.project_id)
+            if project is None:
+                return _error(f"project not found: {args.project_id}")
+            current = set(project.department_ids)
+            deps = [d.strip() for d in (args.departments or "").split(",") if d.strip()]
+            unlinks = [d.strip() for d in (args.unlink or "").split(",") if d.strip()]
+            if deps:
+                for d in deps:
+                    if org_store.get_department(d) is None:
+                        return _error(f"department not found: {d}")
+                current |= set(deps)
+            if unlinks:
+                current -= set(unlinks)
+            updated = project.model_copy(update={"department_ids": sorted(current)})
+            adoption.store.save_project(updated)
+        except Exception as exc:  # noqa: BLE001
+            return _error(str(exc))
+    return {"ok": True, "project": updated.to_dict(), "exit_code": 0}
 
 
 def cmd_project_show(root: Path, args: Any) -> dict:
@@ -783,6 +831,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_cs = csub.add_parser("show", help="公司详情 + 部门/角色 (发 org.company.viewed)")
     json_opt(p_cs)
     p_cs.add_argument("company_id")
+    p_cd = csub.add_parser("department", help="部门管理 (org.department.* 事件)")
+    json_opt(p_cd)
+    dsub = p_cd.add_subparsers(dest="department_command", required=True)
+    p_dc = dsub.add_parser("create", help="建部门 (发 org.department.created)")
+    json_opt(p_dc)
+    p_dc.add_argument("company_id", help="所属公司 ID")
+    p_dc.add_argument("--name", required=True, help="部门名称")
+    p_dc.add_argument("--id", default=None, help="部门 ID (默认自动生成 D-xxx)")
 
     p_emp = sub.add_parser("employee", help="员工管理 (org.employee.* 事件)")
     json_opt(p_emp)
@@ -945,6 +1001,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_reg.add_argument("--project-type", default="", help="项目类型 (app/library/service/cli)")
     p_reg.add_argument("--goal", default="", help="项目目标")
     p_reg.add_argument("--id", default=None, help="项目 ID (默认自动生成 P-xxx)")
+    p_reg.add_argument("--company", default="", help="归属公司 ID (可选, 渐进式)")
+    p_reg.add_argument("--departments", default=None, help="关联部门 ID 逗号分隔 (可选, 多对多)")
+    p_lk = psub.add_parser("link", help="项目关联/解绑部门 (渐进式挂接)")
+    json_opt(p_lk)
+    p_lk.add_argument("project_id")
+    p_lk.add_argument("--departments", default="", help="挂接部门 ID 逗号分隔")
+    p_lk.add_argument("--unlink", default="", help="解绑部门 ID 逗号分隔")
     p_sh = psub.add_parser("show", help="项目详情 + 分析/基线/快照引用")
     json_opt(p_sh)
     p_sh.add_argument("project_id")
@@ -957,6 +1020,7 @@ _CMD_DISPATCH: dict[str, dict[str, Any]] = {
     "company": {
         "create": cmd_company_create,
         "show": cmd_company_show,
+        "department": {"create": cmd_department_create},
     },
     "employee": {
         "hire": cmd_employee_hire,
@@ -995,6 +1059,7 @@ _CMD_DISPATCH: dict[str, dict[str, Any]] = {
         "register": cmd_project_register,
         "show": cmd_project_show,
         "list": cmd_project_list,
+        "link": cmd_project_link,
     },
 }
 
@@ -1002,6 +1067,10 @@ _CMD_DISPATCH: dict[str, dict[str, Any]] = {
 def _dispatch(root: Path, args: Any) -> dict:
     sub = getattr(args, f"{args.command}_command", None) or ""
     fn = _CMD_DISPATCH.get(args.command, {}).get(sub)
+    if isinstance(fn, dict):
+        # 嵌套子命令 (如 company department create → 按 department_command 展平)
+        sub2 = getattr(args, f"{sub}_command", None) or ""
+        fn = fn.get(sub2)
     if fn is None:
         return _error(f"unknown command: {args.command} {sub}", exit_code=2)
     return fn(root, args)

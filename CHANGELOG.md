@@ -40,7 +40,23 @@
 
 ---
 
-## [v1.1.15] — 2026-08-24
+## [v1.1.16] — 2026-08-24
+
+**组织×工作正交数据模型**: Project 关联公司/部门（渐进式, 多对多可选）— 从"单层项目工具"迈向"公司 OS"（§1.4.5）。
+
+### Added
+
+- **Project.company_id + department_ids**（`org/projects.py`）— 归属公司 + 关联部门（多对多可选, 默认值向后兼容）
+- **register 支持 --company/--departments**（`org/cli.py`）— 注册项目即可关联组织（可选, Solo 最简）
+- **company department create**（`org/cli.py`）— Department 模型补 CLI（渐进式建部门）
+- **project link**（`org/cli.py`）— 项目挂接/解绑部门（渐进式: 先项目后组织, 无损升级）
+- **_dispatch 嵌套子命令**（`org/cli.py`）— company department create 展平分发
+
+### 测试
+
+- `tests/org/test_org_project_org_link.py` 5 用例（字段默认/注册关联/link/unlink/错误路径）
+- org 全量 861 passed · 向后兼容（旧项目零破坏）
+
 
 ### Fixed
 

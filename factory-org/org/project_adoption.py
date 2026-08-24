@@ -260,6 +260,8 @@ class ProjectAdoption:
         goal: str = "",
         user_id: str = "",
         project_id: str | None = None,
+        company_id: str = "",
+        department_ids: list[str] | None = None,
     ) -> Project:
         """注册已有项目 (org.project.created + registered; 自动分析/基线/快照)。
 
@@ -296,6 +298,8 @@ class ProjectAdoption:
                 "analysis_ref": analysis.id if analysis else "",
                 "baseline_ref": baseline.id if baseline else "",
                 "snapshot_ref": snapshot.id if snapshot else "",
+                "company_id": company_id,
+                "department_ids": list(department_ids or []),
                 "updated_at": utcnow(),
             }
         )

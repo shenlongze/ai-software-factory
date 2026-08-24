@@ -294,6 +294,9 @@ class Project(_OrgModel):
     snapshot_ref: str = ""               # S9-004: 上下文快照引用
     slug: str = ""                       # S10-009: 目录名
     draft: bool = False                  # S10-009: 草稿标记
+    company_id: str = ""                 # 归属公司 (Solo 为空; Enterprise 关联, 渐进式)
+    department_ids: list[str] = Field(default_factory=list)  # 关联部门(多对多可选):
+                                         # 一项目多部门协作 / 一部门多项目 / 独立Solo
     discovery: dict[str, Any] | None = None  # S10-009: Discovery Session (预留)
     bindings: dict[str, Any] | None = None   # S10-009: 资源 binding (预留)
     metadata: dict[str, Any] = Field(default_factory=dict)  # S10-009: 扩展元数据
@@ -310,6 +313,7 @@ class Project(_OrgModel):
                 "user_id", "goal", "repo_path", "language", "framework",
                 "build_command", "test_command", "project_type",
                 "analysis_ref", "baseline_ref", "snapshot_ref", "slug",
+                "company_id",
             ):
                 if data.get(key) is None:
                     data[key] = ""

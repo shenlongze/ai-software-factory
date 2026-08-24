@@ -111,7 +111,17 @@ def _console_import(name: str):
     return importlib.import_module(_mod)
 
 
-from ... import __version__ as _factory_version
+# 版本单源: 直接读 pyproject.toml（S10-1xx: 相对导入 from ... 会解析到仓库根
+# factory_console 别名包 — 其无 __version__, 导致 ImportError; 改为读 pyproject 独立于包）
+import tomllib
+from pathlib import Path as _PathLib
+
+try:
+    _factory_version = tomllib.loads(
+        (_PathLib(__file__).resolve().parents[3] / "pyproject.toml").read_text(encoding="utf-8")
+    )["project"]["version"]
+except Exception:  # noqa: BLE001 — 版本读取失败 → dev 标记（不阻断）
+    _factory_version = "0.0.0-dev"
 
 
 import sys
@@ -708,7 +718,8 @@ def build_app(
 
         BoardService 声明的访问端点; 返回 {ok, board: <纯文本面板>}。
         """
-        from ..session.board import render_board
+        board_mod = _console_import("session.board")
+        render_board = board_mod.render_board
 
         try:
             board_text = render_board()

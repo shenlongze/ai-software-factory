@@ -3,7 +3,23 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
-## [v1.1.32] — 2026-08-24
+## [v1.1.33] — 2026-08-24
+
+**backend 启动修复（2 个 bug）**: /api/board 可访问。
+
+### Fixed
+
+- **fastapi_adapter __version__ 导入** — `from ... import __version__` 相对导入解析到
+  仓库根 factory_console 别名包（无 __version__）→ ImportError 导致 backend 启动失败
+  → 改为直接读 pyproject.toml（独立于包, 不依赖相对导入）
+- **api_board 模块导入** — `from ..session.board` 相对导入层级错（解析成 web.session）
+  → 改用 _console_import("session.board")（源码/部署态双兼容）
+
+### 验证
+
+- backend 启动成功（8011 LISTEN, health OK）
+- /api/board 返回完整面板（主线 6/41 + M2✅ + M3-M7/P0/长期）
+
 
 **board 增强**: 任务链(关键路径) + 关键节点 + --report 汇报导出（Founder: 需要, 还有任务链/无序图/关键节点）。
 

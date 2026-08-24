@@ -235,6 +235,7 @@ class BoardCommand(SlashCommand):
             render_board, render_graph, render_timeline,
             render_chain, render_report, render_project_lifecycle,
             render_projects_list, render_project_report,
+            _read_default_project, _set_default_project,
             mark_backlog_item, save_report, sync_mainline,
         )
         from pathlib import Path
@@ -263,6 +264,14 @@ class BoardCommand(SlashCommand):
                     print(save_report())
                 else:
                     print(render_report())
+            elif view == "default":
+                # S10-110: 默认项目 (首页优先打开) — /board default 查看 / default <slug> 设置
+                if not project:
+                    cur = _read_default_project(workspace) if workspace else ""
+                    print(f"默认项目: {cur or '（未设置 — /board default <slug> 设置）'}")
+                else:
+                    ok = _set_default_project(workspace, project) if workspace else ""
+                    print(f"✅ 默认项目已设为: {ok or project}（board 首页将优先打开它）")
             elif view == "sync":
                 marked = sync_mainline(
                     Path(__file__).resolve().parents[1] / ".." / "docs" / "sprint10" / "待办清单-已发现未落地.md")

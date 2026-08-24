@@ -3,6 +3,21 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.61] — 2026-08-24
+
+**Board 默认项目（Founder: 可选择默认项目）**。
+
+### Added
+
+- **默认项目设置**: `/board default <slug>` (CLI) + POST `/api/board/default?project=` (Web)
+  + 项目列表/单项目页 "⭐ 设为默认" 链接; 存储 <workspace>/board_default_project
+- **首页优先**: render_project_home 默认项目 > 会话当前项目 > 项目列表
+- **默认标记**: 项目列表卡片 ⭐默认 (金色高亮) + 单项目页 ⭐ 设为默认项目 链接
+
+### 验证
+
+- 4 新契约测试 (读写/首页优先/列表标记/单项目链接) · 全量回归 0 新增失败
+
 ## [v1.1.60] — 2026-08-24
 
 **Board 项目文档管理 + 任务逻辑增强（Founder: 需要文档管理; 任务不能堆）**。

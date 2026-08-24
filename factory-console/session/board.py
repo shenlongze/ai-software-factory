@@ -1136,8 +1136,9 @@ def render_project_lifecycle(workspace: Path | str, project_id: str = "") -> str
 def render_projects_list_html(workspace: Path | str) -> str:
     """项目列表 HTML (select 切换): 卡片网格 + 状态色 + 当前项目标记。"""
     projects = list_projects(workspace)
-    # 会话当前项目 (session_state.json, 只读; 失败安全)
+    # 会话当前项目 + 默认项目 (用户设置, 首页优先打开)
     current = _read_session_current_project(workspace)
+    default = _read_default_project(workspace)
     cards = []
     if not projects:
         cards.append("<p class='empty'>（暂无项目 — 在会话中描述产品想法创建第一个项目）</p>")
@@ -1148,17 +1149,23 @@ def render_projects_list_html(workspace: Path | str) -> str:
             "development": "st-dev", "prd_ready": "st-prd",
             "project_created": "st-new",
         }.get(st, "st-new")
+        if p["slug"] == default:
+            cls = f"{cls} st-default"
         cur_mark = " <span class='cur'>当前</span>" if p["slug"] == current else ""
+        def_mark = " <span class='def'>⭐默认</span>" if p["slug"] == default else ""
         ts = (
             __import__("datetime").datetime.fromtimestamp(p["mtime"]).strftime("%m-%d %H:%M")
             if p["mtime"] else "?"
         )
         cards.append(
             f'<a class="pcard {cls}" href="/api/board?view=project&amp;project={p["slug"]}">'
-            f'<span class="pname">{p["name"]}{cur_mark}</span>'
+            f'<span class="pname">{p["name"]}{def_mark}{cur_mark}</span>'
             f'<span class="pslug">{p["slug"]}</span>'
             f'<span class="pstatus">{st}</span>'
-            f'<span class="pts">{ts}</span></a>'
+            f'<span class="pts">{ts}</span>'
+            f'<span class="setdef" onclick="event.preventDefault();'
+            f"fetch('/api/board/default?project={p['slug']}',{{method:'POST'}})"
+            f'.then(function(){{location.reload();}});">⭐ 设为默认</span></a>'
         )
     return f"""<!DOCTYPE html>
 <html lang="zh"><head><meta charset="utf-8">
@@ -1182,6 +1189,10 @@ def render_projects_list_html(workspace: Path | str) -> str:
   .st-new {{ border-left-color: #546e7a; }} .st-new .pstatus {{ background: #37474f; color: #b0bec5; }}
   .pts {{ display: block; font-size: 11px; color: #78909c; margin-top: 6px; }}
   .empty {{ color: #9aa0a6; }}
+  .st-default {{ border-left-color: #fbc02d; box-shadow: 0 0 0 1px #fbc02d33; }}
+  .def {{ color: #fbc02d; font-size: 11px; margin-left: 6px; }}
+  .cur {{ color: #4fc3f7; font-size: 11px; margin-left: 6px; }}
+  .setdef {{ display: block; font-size: 11px; color: #8ab4f8; margin-top: 8px; cursor: pointer; }}
 </style></head><body>
 {_board_nav("project", "", workspace)}
 <h1>📁 项目列表（{len(projects)} 个）</h1>
@@ -1287,7 +1298,8 @@ def render_project_lifecycle_html(workspace: Path | str, project_id: str = "") -
 </div>
 {tasks_card}
 <div class="card">{task_html}<p>🕐 最近更新: {ts}</p></div>
-<p><a class="back" href="/api/board?view=projects">← 返回项目列表</a></p>
+<p><a class="back" href="/api/board?view=projects">← 返回项目列表</a>
+<span style="margin-left:12px"><a class="back" href="#" onclick="event.preventDefault();fetch('/api/board/default?project={slug}',{{method:'POST'}}).then(function(){{alert('已设为默认项目');}});">⭐ 设为默认项目</a></span></p>
 {_auto_refresh_script(15)}
 </body></html>"""
 
@@ -1659,6 +1671,28 @@ def _project_select_html(workspace: Path | str, current: str, active: str, *, bi
 
 
 
+def _default_project_file(workspace: Path | str) -> Path:
+    return Path(workspace) / "board_default_project"
+
+
+def _read_default_project(workspace: Path | str) -> str:
+    """默认项目 (用户设置, board_default_project 文件; 失败安全 → "")。"""
+    try:
+        return _default_project_file(workspace).read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeDecodeError):  # noqa: BLE001
+        return ""
+
+
+def _set_default_project(workspace: Path | str, slug: str) -> str:
+    """设置默认项目 (写 board_default_project; 返回 slug)。"""
+    slug = Path(str(slug or "")).name
+    try:
+        _default_project_file(workspace).write_text(slug, encoding="utf-8")
+    except OSError:  # noqa: BLE001 — 写失败 → 返回空表示失败
+        return ""
+    return slug
+
+
 def _read_session_current_project(workspace: Path | str) -> str:
     """读会话当前项目 (session_state.json, 只读; 失败安全 → "")。"""
     try:
@@ -1714,7 +1748,8 @@ def render_project_home(workspace: Path | str) -> str:
     未选/无当前项目 → 项目列表引导; 有当前项目 → 该项目的生命周期视图。
     主线面板 (AI Factory 自身进度) 降级为显式入口 (?view=mainline)。
     """
-    current = _read_session_current_project(workspace)
+    # 优先级: 默认项目 (用户设置) > 会话当前项目 > 项目列表
+    current = _read_default_project(workspace) or _read_session_current_project(workspace)
     if current and (Path(workspace) / "projects" / current / "product.json").is_file():
         return render_project_lifecycle_html(workspace, current)
     return render_projects_list_html(workspace)

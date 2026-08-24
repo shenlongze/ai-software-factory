@@ -677,3 +677,35 @@ class TestTaskLogic:
         assert rows[0]["ev"] == "任务开始"
         html = BOARD.render_project_tasktree_html(tmp_path, "demo")
         assert "任务时间线" in html
+
+
+# ================================================================== 默认项目
+
+class TestDefaultProject:
+    def test_set_and_read_default(self, tmp_path):
+        _mk_project(tmp_path, "a", name="项目A")
+        assert BOARD._read_default_project(tmp_path) == ""
+        assert BOARD._set_default_project(tmp_path, "a") == "a"
+        assert BOARD._read_default_project(tmp_path) == "a"
+
+    def test_home_prefers_default(self, tmp_path):
+        _mk_project(tmp_path, "a", name="项目A")
+        _mk_project(tmp_path, "b", name="项目B")
+        (tmp_path / "session_state.json").write_text(
+            json.dumps({"current_project": "b"}), encoding="utf-8")
+        # 默认项目优先于会话当前项目
+        BOARD._set_default_project(tmp_path, "a")
+        home = BOARD.render_project_home(tmp_path)
+        assert "项目A" in home and "项目B" not in home.split("项目A")[0]
+
+    def test_projects_list_marks_default(self, tmp_path):
+        _mk_project(tmp_path, "a", name="项目A")
+        BOARD._set_default_project(tmp_path, "a")
+        html = BOARD.render_projects_list_html(tmp_path)
+        assert "⭐默认" in html
+        assert "设为默认" in html  # 设置入口
+
+    def test_lifecycle_has_set_default_link(self, tmp_path):
+        _mk_project(tmp_path, "a", name="项目A")
+        html = BOARD.render_project_lifecycle_html(tmp_path, "a")
+        assert "设为默认项目" in html

@@ -830,6 +830,15 @@ def build_app(
             return {"projects": 0, "status_dist": {}, "avg_lifecycle_pct": 0,
                     "running_tasks": 0, "failed_tasks": 0}
 
+    @app.post("/api/board/default")
+    def api_board_default(project: str = ""):
+        """设置默认项目 (写 board_default_project; 首页优先打开它)。"""
+        board_mod = _console_import("session.board")
+        slug = board_mod._set_default_project(workspace_root, project)
+        if not slug:
+            return {"ok": False, "error": "设置失败"}
+        return {"ok": True, "default_project": slug}
+
     @app.get("/api/board/docs")
     def api_board_docs(project: str = ""):
         """项目文档管理 HTML (文档资产列表 + 查看链接)。"""

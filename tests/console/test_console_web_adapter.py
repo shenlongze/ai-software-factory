@@ -364,6 +364,10 @@ class TestPermissionBoundary:
                 is_system_update = (
                     route_method == "POST" and path == "/api/system/update"
                 )
+                # v1.1.61: 默认项目设置 (POST /api/board/default — 写偏好文件, 非敏感)
+                is_board_default = (
+                    route_method == "POST" and path == "/api/board/default"
+                )
                 assert (
                     is_approval
                     or is_runtime_lifecycle
@@ -381,6 +385,7 @@ class TestPermissionBoundary:
                     or is_tool_execute
                     or is_mcp_connect
                     or is_system_update
+                    or is_board_default
                 ), (
                     f"写路由超出白名单 (审批决定 + Runtime + 反馈 + 创建 + 启动 + "
                     f"项目管理 + Backlog + Sprint/Milestone/Roadmap + Tool + MCP): "

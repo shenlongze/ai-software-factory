@@ -3,6 +3,36 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.81] — 2026-08-25
+
+**P0-10 注册表一致性 + P0-11 对称路径一致性（防遗漏机制）**。
+
+### Added
+
+- tests/console/test_s10_112_registry_consistency.py — 5 类注册表一致性测试
+  (CLI 命令/意图/action/事件/API, 数据从实现动态读取, 断言两两一致)
+- tests/console/test_s10_112_symmetric_paths.py — 对称路径一致性测试
+  (conversation vs discovery 同输入同推进/同字段; CLI vs API 双入口:
+  agent/skill/project list ↔ /api/agents|skills|projects, board 文档 ↔ docs 配置命令)
+
+### Fixed
+
+- 版本漂移: pyproject 1.1.79 vs CHANGELOG v1.1.80 (1a8ecee 声称 v1.1.80 但
+  pyproject 未同步) → pyproject 同步 1.1.81
+- 意图注册表漂移: 37 个关键词意图只靠 S10-082 同名兜底, 未显式声明路由
+  → DEFAULT_ROUTES 补全显式同名映射 (路由解析逐字节不变)
+- Action 敏感注册表漂移: registry metadata sensitive=True 的 accept_project/
+  org_manage/repair_task/team_execute 只声明未强制 (会话确认门漏接, 与各自
+  docstring "确认门" 口径漂移) → 补入会话确认门; create_project action 已强制
+  但 registry 未标 sensitive → 补标 (create_product 会话内由 conversation 接管)
+- 事件注册表漂移: delivery.py 实际发射 PATCH_APPLIED/CODE_VALIDATED/
+  DELIVERY_COMPLETED/DELIVERY_FAILED 但漏注册 → AuditEmitter 静默丢弃
+  → 补入 EVENT_TYPES (审计记录与实现一致)
+
+### 验证
+
+- 2 个新测试文件 17 passed · 版本断言同步 1.1.81 · 全量回归 0 新增失败
+
 ## [v1.1.80] — 2026-08-25
 
 **A-1 补齐 7 角色 Skill 资产（员工管理计划第一步）**。

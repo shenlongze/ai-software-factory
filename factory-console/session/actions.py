@@ -3586,7 +3586,11 @@ def build_default_actions() -> ActionRegistry:
             description="创建/注册项目 (调 Service Layer: org project register)",
             handler=create_project,
             permission="project",
-            metadata={"service": "org.cli.cmd_project_register", "phase": "S10-048 P0"},
+            metadata={"service": "org.cli.cmd_project_register", "phase": "S10-048 P0",
+                      # S10-112 P0-10: 与确认门一致 — ConfirmationGate 类默认
+                      # sensitive_actions 含 create_project (P0 三件套之一),
+                      # 此前 registry 未标 sensitive=True → 声明与强制漂移; 补标
+                      "sensitive": True, "category": "project"},
         )
     )
     registry.register(

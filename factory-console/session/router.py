@@ -59,6 +59,49 @@ DEFAULT_ROUTES: dict[str, str] = {
     "team_conflicts": "team_conflicts",
     # S10-1xx: 组织管理意图 → org_manage Action (建公司/建部门/项目挂部门)
     "org_manage": "org_manage",
+    # S10-112 P0-10: 注册表补全 — 37 个关键词意图此前依赖 S10-082 同名 action
+    # 兜底 (audit_*/debug_*/memory_*/product_*/review_*/factory_budget/
+    # discovery_start/rename_project/production_session_view 等), 未显式声明
+    # 路由。补为同名显式映射 (路由解析结果与兜底逐字节一致, 行为零变化), 使
+    # DEFAULT_ROUTES 成为完整意图注册表: 新增关键词意图必须在此声明路由,
+    # 否则 P0-10 一致性测试红。
+    "audit_agent": "audit_agent",
+    "audit_chain": "audit_chain",
+    "audit_cost": "audit_cost",
+    "audit_decision": "audit_decision",
+    "audit_events": "audit_events",
+    "audit_explain": "audit_explain",
+    "audit_export": "audit_export",
+    "audit_stats": "audit_stats",
+    "audit_task": "audit_task",
+    "audit_trace": "audit_trace",
+    "debug_analyze": "debug_analyze",
+    "debug_history": "debug_history",
+    "debug_recommend": "debug_recommend",
+    "debug_repair": "debug_repair",
+    "debug_resume": "debug_resume",
+    "debug_root_cause": "debug_root_cause",
+    "debug_session": "debug_session",
+    "debug_stats": "debug_stats",
+    "debug_validate": "debug_validate",
+    "discovery_start": "discovery_start",
+    "factory_budget": "factory_budget",
+    "memory_analyze_agent": "memory_analyze_agent",
+    "memory_export": "memory_export",
+    "memory_learn": "memory_learn",
+    "memory_search": "memory_search",
+    "memory_stats": "memory_stats",
+    "product_intelligence": "product_intelligence",
+    "product_market": "product_market",
+    "product_mvp": "product_mvp",
+    "product_persona": "product_persona",
+    "product_value": "product_value",
+    "production_session_view": "production_session_view",
+    "rename_project": "rename_project",
+    "review_approve": "review_approve",
+    "review_cancel": "review_cancel",
+    "review_reject": "review_reject",
+    "review_view": "review_view",
 }
 class UnknownIntentError(Exception):
     """未路由 Intent (类型无映射或映射 Action 未注册) — 调用方须明确提示, 不静默。"""

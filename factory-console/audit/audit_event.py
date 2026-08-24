@@ -69,6 +69,13 @@ EVENT_TYPES: tuple[str, ...] = (
     "TASK_FAILED",
     "AGENT_ASSIGNED",
     "DELIVERY_CREATED",
+    # S10-112 P0-10: 交付链 4 事件此前被 delivery.py 实际发射 (模块 docstring
+    # 也宣称 "全程审计事件") 但漏注册 → AuditEmitter 失败安全静默丢弃, 审计
+    # 记录与实现漂移; 补入注册表 (不新增业务, 只同步已发射事件)。
+    "PATCH_APPLIED",
+    "CODE_VALIDATED",
+    "DELIVERY_COMPLETED",
+    "DELIVERY_FAILED",
     "USER_ACCEPTANCE",
     "PROJECT_DELIVERED",
     "DECOMPOSE_STARTED",

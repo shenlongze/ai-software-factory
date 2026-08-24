@@ -54,7 +54,7 @@ def _parse_backlog(path: Path) -> list[dict[str, Any]]:
         if not cur_group or not line.strip().startswith("| "):
             continue
         cells = [c.strip() for c in line.strip().strip("|").split("|")]
-        if len(cells) < 3 or not re.match(r"^(M\d+-|P0-|L-|A-|B-|C-|D-)", cells[0]):
+        if len(cells) < 3 or not re.match(r"^(M\d+-|P0-|L-|A-|B-|C-|D-|E-)", cells[0]):
             continue
         groups[-1]["tasks"].append({
             "id": cells[0],

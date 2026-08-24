@@ -185,6 +185,7 @@ class InteractiveSession:
           退出/空输入路径不打印)
         """
         self._banner()
+        self._mainline_alert()  # S10-1xx: 偏离提醒 — 主线未完成提示
         self._restore_session_state()
         self.running = True
         while self.running:
@@ -212,6 +213,30 @@ class InteractiveSession:
     def _banner(self) -> None:
         """打印欢迎横幅 (验收: 显示 AI Factory)。"""
         print(self.banner_text)
+
+    def _mainline_alert(self) -> None:
+        """偏离提醒（S10-1xx, Founder 痛点: 测试中脱离主线, 做多周边, 线没走完）:
+
+        会话启动时检查主线未完成 → 提示（不啰嗦, 主线全完成则不提示）。
+        建议推进主线; /board report --save 可同步汇报 Hermes。
+        """
+        try:
+            from .board import _parse_backlog, MAIN_GROUPS, DEFAULT_BACKLOG
+
+            groups = _parse_backlog(DEFAULT_BACKLOG)
+            undone_main = []
+            for g in groups:
+                if g["id"] not in MAIN_GROUPS or not g["tasks"]:
+                    continue
+                done = sum(1 for t in g["tasks"] if t["done"])
+                total = len(g["tasks"])
+                if done < total:
+                    undone_main.append(f"{g['id']}({done}/{total})")
+            if undone_main:
+                print("⚠️ 主线未完成: " + " ".join(undone_main))
+                print("   建议: 优先推进主线 (推进后 /board done <id> 更新) · /board 看全景 · /board report --save 汇报 Hermes")
+        except Exception:  # noqa: BLE001 — 提醒失败不阻断会话
+            pass
 
     def _read_input_line(self, prompt: str) -> str:
         """多行输入 (S10-105 简单检测): 行尾 '\\' → 续行 (提示 '… '), 直到无 '\\';

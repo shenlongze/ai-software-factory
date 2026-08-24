@@ -250,6 +250,7 @@ API（Web/集成）:   http://127.0.0.1:8011/api/...      e.g. GET /api/board
   | 树去重排序 | 修复渲染重复(dkids) + 排除 demo/examples + 目录上文件下 A-Z | v1.1.75 |
   | 项目删除 | 删除项目(自然语言+/project delete)+确认门审批+PROJECT_DELETED审计 | v1.1.76 |
   | AI 执行记录 | 单项目视图显示执行记录(execution_records 按项目过滤) | v1.1.76 |
+  | 清单多维度 | /project 列升级: 生命周期/任务进度/最近更新 (替代管线/状态) | v1.1.77 |
 - **状态**: ✅（数据真实，空态诚实引导）· **关联**: 待办清单 + docs/sprint10 验收
 
 ### 6.2 /preview — Markdown 预览

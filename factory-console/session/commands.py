@@ -179,14 +179,14 @@ class ProjectCommand(SlashCommand):
         """项目清单 + 状态列 (PRD/管线资产/状态) — 识别垃圾名/文档进度。"""
         current = context.current_project
         print(f"项目清单 ({len(projects)} 个)")
-        print(f"  {'id':<12} {'名称':<16} {'PRD':<4} {'管线':<6} 状态")
+        print(f"  {'id':<14} {'名称':<14} {'PRD':<4} {'生命周期':<12} {'任务':<6} 更新")
         for item in projects:
             pid = item["id"]
             marker = "  (当前)" if pid == current else ""
-            prd, pipeline, status = self._project_brief(pid)
+            prd, lifecycle, task, update = self._project_brief(pid)
             print(
-                f"  {pid:<12} {str(item['name'])[:16]:<16} "
-                f"{prd:<4} {pipeline:<6} {status}{marker}"
+                f"  {pid:<14} {str(item['name'])[:14]:<14} "
+                f"{prd:<4} {lifecycle:<12} {task:<6} {update}{marker}"
             )
         if not projects:
             print("  (无项目 — 使用 `factory project create` 注册)")
@@ -194,27 +194,30 @@ class ProjectCommand(SlashCommand):
         print("提示: /project <id> 切换; 'P-xxx 改名叫 新名' 改名")
         return 0
 
-    def _project_brief(self, pid: str) -> tuple[str, str, str]:
-        """单项目文档进度 (PRD/管线资产数/状态; 失败安全)。"""
+    def _project_brief(self, pid: str) -> tuple[str, str, str, str]:
+        """单项目多维度 (PRD/生命周期/任务进度/最近更新; 失败安全)。"""
         pdir = self.workspace / "projects" / pid
         if not pdir.is_dir():
-            return "—", "—", "—"
+            return "—", "—", "—", "—"
         prd = "✅" if (pdir / "PRD.md").is_file() else "—"
-        artifact_dir = pdir / "artifacts"
-        n = (
-            len([d for d in artifact_dir.glob("*") if d.is_dir()])
-            if artifact_dir.is_dir()
-            else 0
-        )
-        pipeline = f"{n}资产" if n else "—"
-        status = ""
+        lifecycle = "—"
+        task = "—"
+        update = "—"
         try:
-            proj = pdir / "project.json"
-            if proj.is_file():
-                status = str(json.loads(proj.read_text(encoding="utf-8")).get("status") or "")
+            from . import board as _b
+            stages = _b._project_stage_status(self.workspace, pid)
+            done = sum(1 for st in stages if st["done"])
+            cur = next((st for st in stages if not st["done"]), None)
+            lifecycle = f"{done}/11" + (f" {cur['label']}" if cur else " 完成")
+            tp = _b._project_task_progress(self.workspace, pid)
+            task = f"{tp['done']}/{tp['total']}" if tp["total"] else "—"
+            pf = pdir / "product.json"
+            if pf.is_file():
+                import datetime
+                update = datetime.datetime.fromtimestamp(pf.stat().st_mtime).strftime("%m-%d %H:%M")
         except Exception:  # noqa: BLE001 — 失败安全
-            status = ""
-        return prd, pipeline, status or "—"
+            pass
+        return prd, lifecycle, task, update
 
     def _switch(
         self, target: str, projects: list[dict[str, Any]], context: SessionContext

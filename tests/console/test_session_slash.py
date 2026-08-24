@@ -351,18 +351,18 @@ def test_session_records_history(monkeypatch, capsys):
     assert sess.context.history == ["/help"]
 
 def test_project_list_shows_status_columns(tmp_path, capsys):
-    """2026-08-19: /project 加状态列 (PRD/管线资产) — 识别文档进度与垃圾名。"""
+    """v1.1.77: /project 多维度列 (PRD/生命周期/任务/更新) — 替代旧管线/状态。"""
     projects_file = tmp_path / "org" / "projects.json"
     _write_projects(projects_file, {"P-001": {"name": "旅行记账"}, "P-002": {"name": "未命名产品-123"}})
-    # P-001 有 PRD + 管线资产
+    # P-001 有 PRD + product.json (生命周期/任务可判定)
     pdir = tmp_path / "projects" / "P-001"
     pdir.mkdir(parents=True)
     (pdir / "PRD.md").write_text("# PRD", encoding="utf-8")
-    (pdir / "artifacts" / "prd" / "v1").mkdir(parents=True)
-    (pdir / "artifacts" / "market_analysis" / "v1").mkdir(parents=True)
+    (pdir / "product.json").write_text(
+        json.dumps({"name": "旅行记账", "status": "prd_ready"}), encoding="utf-8")
     cmd = CMDS_MOD.ProjectCommand(projects_file=projects_file, workspace=tmp_path)
     assert cmd.execute("", _context()) == 0
     out = capsys.readouterr().out
-    assert "PRD" in out and "管线" in out
+    assert "PRD" in out and "生命周期" in out and "任务" in out
     assert "✅" in out  # P-001 PRD 有
-    assert "2资产" in out  # 管线资产数
+    assert "/11" in out  # 生命周期进度

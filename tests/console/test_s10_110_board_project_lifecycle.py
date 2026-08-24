@@ -1253,3 +1253,21 @@ class TestExecRecords:
         self._proj(tmp_path)
         html = BOARD.render_project_lifecycle_html(tmp_path, "a")
         assert "AI 执行记录" in html and "backend-1" in html
+
+
+# ================================================================== 项目清单多维度
+
+class TestProjectBrief:
+    def test_brief_multi_dimension(self, tmp_path):
+        """清单维度: PRD/生命周期/任务进度/更新时间 (替代旧管线/状态)。"""
+        _mk_project(tmp_path, "a", name="项目A",
+                    files=("PRD.md", "engineering.json", "tasks.json"),
+                    task_statuses=("done", "failed"))
+        from importlib import import_module
+        CMDS = import_module("factory-console.session.commands")
+        pc = CMDS.ProjectCommand(workspace=tmp_path)
+        prd, lifecycle, task, update = pc._project_brief("a")
+        assert prd == "✅"
+        assert lifecycle.startswith("5/11")  # 发现确认PRD工程开发=5
+        assert task == "1/2"
+        assert update != "—"

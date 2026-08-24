@@ -323,10 +323,18 @@ class ConversationManager:
 
         candidates: list[str] = []
         if not pi.name or is_temp_name(pi.name):
+            # 真实 LLM 命名（S10-081 设计: LLM 可用 → AI 建议; 修复: 之前硬编码
+            # llm_fn=None 导致永远走 deterministic 提取 — 模板化根因）
+            try:
+                from .reasoning import ReasoningProvider
+
+                llm_fn = ReasoningProvider()._default_llm_fn()  # noqa: SLF001
+            except Exception:  # noqa: BLE001 — 无 provider/key → 诚实回退 deterministic
+                llm_fn = None
             try:
                 candidates = suggest_names(
                     getattr(pi, "raw", "") or pi.problem or "",
-                    llm_fn=None,
+                    llm_fn=llm_fn,
                     limit=3,
                 )
             except Exception:  # noqa: BLE001 — 命名失败 → 保留原逻辑 (极兜底)

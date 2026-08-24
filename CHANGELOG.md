@@ -7,6 +7,14 @@
 
 ## [v1.1.15] — 2026-08-24
 
+### Fixed
+
+- **产品命名 LLM 未接线（S10-081 设计缺口）** — `conversation.py` 调用
+  `suggest_names` 时硬编码 `llm_fn=None`，导致 LLM 命名 prompt 从未生效，
+  产品名永远走 deterministic 规则提取（"markdown编辑器需"式模板化根因）。
+  修复: 接上 `ReasoningProvider._default_llm_fn()`，无 provider/key → 诚实回退
+  deterministic（不伪造 LLM 结论）。40 相关测试通过。
+
 **M3e 调度器接管真实执行 + 动态分配 (S10-097)**: M3 收尾 — M3a-d 计划层产物
 正式驱动真实执行 (不再走旧 TaskTree 顺序路径)。
 

@@ -801,3 +801,338 @@ def render_report_html(path: Path = DEFAULT_BACKLOG) -> str:
 </style></head><body>{"".join(html_body)}
 <p style="margin-top:20px;color:#78909c">会话 /board report --save 可落盘为 markdown</p>
 </body></html>"""
+
+
+# ---------------------------------------------------------------- 单项目管理视图 (S10-110)
+
+#: 全生命周期 11 段（1-7 现有数据映射; 8-11 占位, 待部署/运维落地）
+PROJECT_LIFECYCLE_STAGES: tuple[tuple[str, str], ...] = (
+    ("discovery", "发现"),
+    ("confirm", "确认"),
+    ("prd", "PRD"),
+    ("engineering", "工程"),
+    ("development", "开发"),
+    ("testing", "测试"),
+    ("acceptance", "验收"),
+    ("delivery", "交付"),
+    ("deploy", "部署"),
+    ("operations", "运维"),
+    ("update", "更新"),
+)
+
+#: 执行状态中视为"已完成"的任务状态（execution_state.json tasks[].status）
+_DONE_TASK_STATUSES = ("done", "delivered", "approved", "applied")
+
+
+def _read_product_info(workspace: Path | str, slug: str) -> Optional[dict[str, Any]]:
+    """读单项目 product.json → {name,status,problem,user,core_features,_mtime} (失败安全)。"""
+    pf = Path(workspace) / "projects" / slug / "product.json"
+    if not pf.is_file():
+        return None
+    try:
+        data = json.loads(pf.read_text(encoding="utf-8")) or {}
+    except Exception:  # noqa: BLE001 — 损坏 → 空壳 (不崩)
+        data = {}
+    try:
+        data["_mtime"] = pf.stat().st_mtime
+    except OSError:  # noqa: BLE001
+        data["_mtime"] = 0.0
+    return data
+
+
+def _project_stage_status(workspace: Path | str, slug: str) -> list[dict[str, Any]]:
+    """单项目生命周期阶段判定 (11 段, 确定性可断言)。
+
+    1-7 映射现有资产; 8-11 (交付/部署/运维/更新) 无数据源 → 占位未开始。
+    """
+    pdir = Path(workspace) / "projects" / slug
+    product_file = pdir / "product.json"
+    status = ""
+    if product_file.is_file():
+        try:
+            status = str((json.loads(product_file.read_text(encoding="utf-8")) or {}).get("status") or "")
+        except Exception:  # noqa: BLE001
+            status = ""
+
+    def has(name: str) -> bool:
+        return (pdir / name).is_file()
+
+    rules: list[tuple[str, str, bool]] = [
+        ("discovery", "发现", product_file.is_file()),
+        ("confirm", "确认", product_file.is_file()),
+        ("prd", "PRD", has("PRD.md")),
+        ("engineering", "工程", has("engineering.json")),
+        ("development", "开发", has("tasks.json")),
+        ("testing", "测试", has("validation_result.json")),
+        ("acceptance", "验收", status == "user_acceptance"),
+        ("delivery", "交付", False),
+        ("deploy", "部署", False),
+        ("operations", "运维", False),
+        ("update", "更新", False),
+    ]
+    return [{"id": sid, "label": label, "done": done} for sid, label, done in rules]
+
+
+def _project_task_progress(workspace: Path | str, slug: str) -> dict[str, int]:
+    """任务进度 {done,total,pct} — 读 execution_state.json tasks[].status (回退 tasks.json)。"""
+    es = Path(workspace) / "projects" / slug / "execution_state.json"
+    tasks: list[dict[str, Any]] = []
+    if es.is_file():
+        try:
+            tasks = (json.loads(es.read_text(encoding="utf-8")) or {}).get("tasks") or []
+        except Exception:  # noqa: BLE001
+            tasks = []
+    if not tasks:
+        tf = Path(workspace) / "projects" / slug / "tasks.json"
+        if tf.is_file():
+            try:
+                tasks = (json.loads(tf.read_text(encoding="utf-8")) or {}).get("tasks") or []
+            except Exception:  # noqa: BLE001
+                tasks = []
+    if not tasks:
+        return {"done": 0, "total": 0, "pct": 0}
+    done = sum(1 for t in tasks if str(t.get("status") or "") in _DONE_TASK_STATUSES)
+    total = len(tasks)
+    return {"done": done, "total": total, "pct": round(done * 100 / total) if total else 0}
+
+
+def list_projects(workspace: Path | str) -> list[dict[str, Any]]:
+    """项目列表 (select 用): {slug,name,status,mtime} — 只读, 失败安全。"""
+    root = Path(workspace) / "projects"
+    if not root.is_dir():
+        return []
+    projects: list[dict[str, Any]] = []
+    for pdir in sorted(root.iterdir()):
+        if not pdir.is_dir():
+            continue
+        pf = pdir / "product.json"
+        if not pf.is_file():
+            continue
+        try:
+            data = json.loads(pf.read_text(encoding="utf-8")) or {}
+            name = str(data.get("name") or pdir.name)
+            status = str(data.get("status") or "?")
+            mtime = pf.stat().st_mtime
+        except Exception:  # noqa: BLE001
+            name, status, mtime = pdir.name, "?", 0.0
+        projects.append({"slug": pdir.name, "name": name, "status": status, "mtime": mtime})
+    projects.sort(key=lambda p: p["mtime"], reverse=True)
+    return projects
+
+
+def render_projects_list(workspace: Path | str) -> str:
+    """项目列表文本 (select 切换用): slug/名/状态/更新时间。"""
+    projects = list_projects(workspace)
+    if not projects:
+        return "（暂无项目 — 在会话中描述产品想法创建第一个项目）"
+    import datetime
+
+    lines = [f"📁 项目列表 ({len(projects)} 个):", ""]
+    for p in projects:
+        ts = (
+            datetime.datetime.fromtimestamp(p["mtime"]).strftime("%m-%d %H:%M")
+            if p["mtime"]
+            else "?"
+        )
+        lines.append(f"  {p['slug']:<16} {str(p['name'])[:16]:<18} [{p['status']}] {ts}")
+    lines.append("")
+    lines.append("查看单项目: /board project <slug>   例: /board project P-e023a04c")
+    return "\n".join(lines)
+
+
+def render_project_lifecycle(workspace: Path | str, project_id: str = "") -> str:
+    """单项目管理视图 (只读, S10-110): 全生命周期 11 段 + 文档产物 + 任务进度 + 更新时间。
+
+    隔离铁律: 只读 projects/<slug>/ 该项目文件; 无显式项目 → 空态提示 (不猜项目)。
+    """
+    slug = Path(str(project_id or "")).name
+    if not slug:
+        return "（未选择项目 — 用 /board project 查看项目列表）"
+    info = _read_product_info(workspace, slug)
+    if info is None:
+        return f"（项目不存在: {slug} — 用 /board project 查看项目列表）"
+    stages = _project_stage_status(workspace, slug)
+    done_count = sum(1 for s in stages if s["done"])
+    total = len(stages)
+    current = next((s for s in stages if not s["done"]), None)
+    bar_len = 24
+    filled = bar_len * done_count // total if total else 0
+    bar = "█" * filled + "░" * (bar_len - filled)
+    stage_txt = " ".join(
+        ("✅" if s["done"] else "●" if s["id"] == (current or {}).get("id") else "○") + s["label"]
+        for s in stages
+    )
+    lines = [
+        f"📌 当前项目: {info.get('name') or slug} ({slug})",
+        f"🌱 全生命周期 {done_count}/{total}: {bar}",
+        f"   {stage_txt}",
+    ]
+    if current:
+        lines.append(f"   当前卡点: {current['label']}（未开始）")
+    pdir = Path(workspace) / "projects" / slug
+
+    def has(name: str) -> str:
+        return "✅" if (pdir / name).is_file() else "—"
+
+    lines.append(
+        f"📄 文档产物: PRD {has('PRD.md')} · 工程 {has('engineering.json')} · 任务 {has('tasks.json')} · 验证 {has('validation_result.json')}"
+    )
+    tp = _project_task_progress(workspace, slug)
+    if tp["total"]:
+        lines.append(f"📊 任务进度: ✅{tp['done']} ⬜{tp['total'] - tp['done']} ({tp['pct']}%)")
+    mtime = info.get("_mtime") or 0
+    if mtime:
+        import datetime
+
+        ts = datetime.datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M")
+        lines.append(f"🕐 最近更新: {ts}")
+    return "\n".join(lines)
+
+
+def render_projects_list_html(workspace: Path | str) -> str:
+    """项目列表 HTML (select 切换): 卡片网格 + 状态色。"""
+    projects = list_projects(workspace)
+    cards = []
+    if not projects:
+        cards.append("<p class='empty'>（暂无项目 — 在会话中描述产品想法创建第一个项目）</p>")
+    for p in projects:
+        st = p["status"]
+        cls = {
+            "user_acceptance": "st-done", "execution_ready": "st-ready",
+            "development": "st-dev", "prd_ready": "st-prd",
+            "project_created": "st-new",
+        }.get(st, "st-new")
+        ts = (
+            __import__("datetime").datetime.fromtimestamp(p["mtime"]).strftime("%m-%d %H:%M")
+            if p["mtime"] else "?"
+        )
+        cards.append(
+            f'<a class="pcard {cls}" href="/api/board?view=project&amp;project={p["slug"]}">'
+            f'<span class="pname">{p["name"]}</span>'
+            f'<span class="pslug">{p["slug"]}</span>'
+            f'<span class="pstatus">{st}</span>'
+            f'<span class="pts">{ts}</span></a>'
+        )
+    return f"""<!DOCTYPE html>
+<html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Factory — 项目列表</title>
+<style>
+  body {{ font-family: -apple-system, system-ui, sans-serif; margin: 0; padding: 16px; background: #0f1115; color: #e6e6e6; }}
+  .nav a {{ color: #8ab4f8; text-decoration: none; margin-right: 12px; font-size: 13px; }}
+  .nav a.active {{ color: #ffb74d; font-weight: 600; }}
+  h1 {{ font-size: 20px; }}
+  .grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }}
+  .pcard {{ background: #1a1e26; border-radius: 8px; padding: 12px; text-decoration: none; color: inherit; display: block; border-left: 3px solid #546e7a; }}
+  .pcard:hover {{ background: #232833; }}
+  .pname {{ display: block; font-size: 15px; font-weight: 600; }}
+  .pslug {{ display: block; font-size: 11px; color: #9aa0a6; margin-top: 2px; }}
+  .pstatus {{ display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 10px; margin-top: 6px; }}
+  .st-done {{ border-left-color: #43a047; }} .st-done .pstatus {{ background: #1b5e20; color: #a5d6a7; }}
+  .st-ready {{ border-left-color: #1e88e5; }} .st-ready .pstatus {{ background: #0d47a1; color: #90caf9; }}
+  .st-dev {{ border-left-color: #fb8c00; }} .st-dev .pstatus {{ background: #e65100; color: #ffcc80; }}
+  .st-prd {{ border-left-color: #8e24aa; }} .st-prd .pstatus {{ background: #4a148c; color: #ce93d8; }}
+  .st-new {{ border-left-color: #546e7a; }} .st-new .pstatus {{ background: #37474f; color: #b0bec5; }}
+  .pts {{ display: block; font-size: 11px; color: #78909c; margin-top: 6px; }}
+  .empty {{ color: #9aa0a6; }}
+</style></head><body>
+<div class="nav">
+  <a href="/api/board">📋 主线面板</a>
+  <a href="/api/board?view=projects" class="active">📁 项目管理</a>
+  <a href="/api/board/graph?project=demo">🔗 依赖图(示例)</a>
+  <a href="/api/board/chain?project=demo">⛓ 任务链(示例)</a>
+  <a href="/api/board/timeline">⏱ 生命线</a>
+  <a href="/api/board?view=report">📄 汇报</a>
+</div>
+<h1>📁 项目列表（{len(projects)} 个）</h1>
+<p style="color:#9aa0a6;font-size:12px">点击项目卡片查看单项目管理视图（全生命周期）</p>
+<div class="grid">{"".join(cards)}</div>
+</body></html>"""
+
+
+def render_project_lifecycle_html(workspace: Path | str, project_id: str = "") -> str:
+    """单项目管理视图 HTML (只读, S10-110): 11 段进度条 + 文档产物 + 任务进度。"""
+    slug = Path(str(project_id or "")).name
+    info = _read_product_info(workspace, slug) if slug else None
+    if info is None:
+        return render_projects_list_html(workspace) if not slug else (
+            f"<!DOCTYPE html><html lang='zh'><head><meta charset='utf-8'><title>项目不存在</title></head>"
+            f"<body style='background:#0f1115;color:#e6e6e6;font-family:sans-serif;padding:16px'>"
+            f"<p>项目不存在: {slug} — <a href='/api/board?view=projects' style='color:#8ab4f8'>返回项目列表</a></p>"
+            f"</body></html>"
+        )
+    stages = _project_stage_status(workspace, slug)
+    done_count = sum(1 for s in stages if s["done"])
+    total = len(stages)
+    pct = round(done_count * 100 / total) if total else 0
+    segs = []
+    colors = {
+        "discovery": "#546e7a", "confirm": "#5c6bc0", "prd": "#8e24aa",
+        "engineering": "#1e88e5", "development": "#fb8c00", "testing": "#00897b",
+        "acceptance": "#43a047", "delivery": "#6d4c41", "deploy": "#3949ab",
+        "operations": "#00838f", "update": "#7b1fa2",
+    }
+    for s in stages:
+        c = colors.get(s["id"], "#555")
+        segs.append(
+            f'<span class="seg {"on" if s["done"] else "off"}" style="border-color:{c}" title="{s["label"]}">'
+            f'{"✓" if s["done"] else "○"}{s["label"]}</span>'
+        )
+    pdir = Path(workspace) / "projects" / slug
+
+    def has(name: str) -> str:
+        return "✅" if (pdir / name).is_file() else "—"
+
+    tp = _project_task_progress(workspace, slug)
+    task_html = (
+        f"<p>📊 任务进度: ✅<b>{tp['done']}</b> ⬜{tp['total'] - tp['done']} ({tp['pct']}%)</p>"
+        if tp["total"] else "<p>📊 任务进度: （暂无任务）</p>"
+    )
+    mtime = info.get("_mtime") or 0
+    import datetime
+
+    ts = datetime.datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M") if mtime else "?"
+    return f"""<!DOCTYPE html>
+<html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{info.get('name') or slug} — 项目视图</title>
+<style>
+  body {{ font-family: -apple-system, system-ui, sans-serif; margin: 0; padding: 16px; background: #0f1115; color: #e6e6e6; }}
+  .nav a {{ color: #8ab4f8; text-decoration: none; margin-right: 12px; font-size: 13px; }}
+  .nav a.active {{ color: #ffb74d; font-weight: 600; }}
+  h1 {{ font-size: 20px; }} h2 {{ font-size: 15px; color: #ffb74d; }}
+  .stages {{ display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }}
+  .seg {{ border: 1px solid; border-radius: 12px; padding: 3px 10px; font-size: 12px; }}
+  .seg.on {{ background: #1b5e20; color: #a5d6a7; border-color: #43a047; }}
+  .seg.off {{ color: #78909c; background: #1a1e26; }}
+  .bar {{ height: 8px; background: #2a2e37; border-radius: 4px; overflow: hidden; margin: 8px 0; }}
+  .bar > div {{ height: 100%; background: linear-gradient(90deg,#43a047,#1e88e5); }}
+  .docs {{ display: flex; gap: 12px; flex-wrap: wrap; font-size: 13px; }}
+  .card {{ background: #1a1e26; border-radius: 8px; padding: 14px; margin-top: 12px; }}
+  p {{ font-size: 13px; color: #b0b6bf; }}
+  .back {{ color: #8ab4f8; text-decoration: none; font-size: 13px; }}
+</style></head><body>
+<div class="nav">
+  <a href="/api/board">📋 主线面板</a>
+  <a href="/api/board?view=projects">📁 项目管理</a>
+  <a href="/api/board/graph?project={slug}">🔗 依赖图</a>
+  <a href="/api/board/chain?project={slug}">⛓ 任务链</a>
+  <a href="/api/board/timeline">⏱ 生命线</a>
+  <a href="/api/board?view=report">📄 汇报</a>
+</div>
+<h1>📌 {info.get('name') or slug} <span style="font-size:12px;color:#78909c">({slug})</span></h1>
+<div class="card">
+  <h2>🌱 全生命周期 {done_count}/{total} ({pct}%)</h2>
+  <div class="bar"><div style="width:{pct}%"></div></div>
+  <div class="stages">{"".join(segs)}</div>
+</div>
+<div class="card">
+  <h2>📄 文档产物</h2>
+  <div class="docs">
+    <span>PRD {has('PRD.md')}</span><span>工程 {has('engineering.json')}</span>
+    <span>任务 {has('tasks.json')}</span><span>验证 {has('validation_result.json')}</span>
+  </div>
+</div>
+<div class="card">{task_html}<p>🕐 最近更新: {ts}</p></div>
+<p><a class="back" href="/api/board?view=projects">← 返回项目列表</a></p>
+</body></html>"""

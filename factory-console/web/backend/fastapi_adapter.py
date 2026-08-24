@@ -793,8 +793,9 @@ def build_app(
         return results
 
     @app.get("/api/board")
-    def api_board(view: str = ""):
-        """任务监控面板 HTML（?view=report 看汇报; 缺省主线面板）。
+    def api_board(view: str = "", project: str = ""):
+        """任务监控面板 HTML（?view=report 汇报; ?view=projects 项目列表;
+        ?view=project&project=<slug> 单项目视图; 缺省主线面板）。
 
         BoardService 声明的访问端点; 返回 HTML 页面（非 JSON）—
         浏览器直接看监控面板（桌面/手机/Pad 响应式）。
@@ -803,7 +804,11 @@ def build_app(
 
         board_mod = _console_import("session.board")
         try:
-            if view == "report":
+            if view == "project":
+                html = board_mod.render_project_lifecycle_html(workspace_root, project)
+            elif view == "projects":
+                html = board_mod.render_projects_list_html(workspace_root)
+            elif view == "report":
                 html = board_mod.render_report_html()
             else:
                 html = board_mod.render_board_html()

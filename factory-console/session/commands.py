@@ -218,6 +218,8 @@ class BoardCommand(SlashCommand):
       /board graph [项目]  任务依赖图（plan.json, CRITICAL=★）
       /board chain [项目]  任务链（关键路径 ★ 关键节点 ▲ 汇聚点 + 工期）
       /board timeline     生命线（最近审计事件时间线）
+      /board project      项目列表（select 切换）
+      /board project <slug>  单项目管理视图（全生命周期, 只读）
       /board report       生成给 Hermes 的 markdown 汇报
       /board report --save  汇报落盘到 docs/sprint10/
       /board done <id>      标记主线任务完成（如 /board done M3-1）
@@ -231,16 +233,15 @@ class BoardCommand(SlashCommand):
     def execute(self, args: str, context: SessionContext) -> int:
         from .board import (
             render_board, render_graph, render_timeline,
-            render_chain, render_report,
+            render_chain, render_report, render_project_lifecycle,
+            render_projects_list,
             mark_backlog_item, save_report, sync_mainline,
         )
         from pathlib import Path
 
-        workspace = (
-            Path(getattr(context, "workspace", None))
-            if getattr(context, "workspace", None)
-            else None
-        )
+        # S10-110: 会话未显式设 workspace → 默认 ~/.factory (与 actions.DEFAULT_WORKSPACE 同口径)
+        ws_val = getattr(context, "workspace", None) or str(Path.home() / ".factory")
+        workspace = Path(ws_val)
         sub = (args or "").strip().split()
         view = sub[0] if sub else "board"
         project = sub[1] if len(sub) > 1 else ""
@@ -269,6 +270,15 @@ class BoardCommand(SlashCommand):
                     print("用法: /board done <任务ID>  例: /board done M3-1")
                     return 2
                 print(mark_backlog_item(Path(__file__).resolve().parents[1] / ".." / "docs" / "sprint10" / "待办清单-已发现未落地.md", sub[1], done=(view == "done")))
+            elif view == "project":
+                # S10-110: 单项目管理视图 (只读) — 无参=项目列表(select), 有参=生命周期视图
+                if workspace is None:
+                    print("（未设置工作区 — 无法读项目）")
+                    return 1
+                if not project:
+                    print(render_projects_list(workspace))
+                else:
+                    print(render_project_lifecycle(workspace, project))
             elif view == "timeline":
                 if workspace is None:
                     print("（未设置工作区 — 无法读审计事件）")

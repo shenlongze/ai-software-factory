@@ -3,6 +3,27 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.49] — 2026-08-24
+
+**Board 单项目管理视图（全生命周期, S10-110）: /board project 只读查看单项目进度**。
+
+### Added
+
+- **单项目管理视图**（`/board project <slug>` + Web `/api/board?view=project&project=`）:
+  全生命周期 11 段进度条（发现→确认→PRD→工程→开发→测试→验收→交付→部署→运维→更新）
+  + 文档产物 + 任务进度 + 更新时间; 当前卡点标注
+- **项目列表 select**（`/board project` 无参 + Web `?view=projects`）: slug/名/状态/时间,
+  点击卡片进入单项目视图
+- **生命周期阶段映射**（确定性）: 1-7 段由现有资产判定 (product.json/PRD.md/
+  engineering.json/tasks.json/validation/status); 8-11 段（交付/部署/运维/更新）
+  占位"未开始"（待部署运维功能落地填充）
+- **项目隔离铁律**: 只读 projects/<slug>/ 该项目文件; 无显式项目 → 空态提示,
+  绝不猜项目/扫描兜底; 空壳目录 (无 product.json) 从列表排除
+
+### 验证
+
+- 12 契约测试 (阶段映射手算 / 列表隔离 / 空态 / 只读 mtime / 会话集成) · 全量回归 0 新增失败
+
 ## [v1.1.48] — 2026-08-24
 
 **需求分析字段错位修复 (T9, Founder 实测复现)**: 问痛点答"给大学生用"被强填 problem /

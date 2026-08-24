@@ -920,3 +920,39 @@ class TestDocsFolder:
         assert "📁 specs/" in html
         # 文档在对应文件夹区块内
         assert "指南.md" in html and "架构.md" in html and "api.json" in html
+
+
+# ================================================================== 文档全类型显示 (不过滤)
+
+class TestDocsAllTypes:
+    def _proj(self, tmp_path):
+        _mk_project(tmp_path, "a", name="项目A")
+        pdir = tmp_path / "projects" / "a"
+        (pdir / "docs").mkdir()
+        (pdir / "docs" / "指南.md").write_text("# 指南", encoding="utf-8")
+        (pdir / "docs" / "图.png").write_bytes(b"\x89PNG fake")
+        (pdir / "docs" / "配置.yaml").write_text("a: 1", encoding="utf-8")
+        (pdir / "docs" / "脚本.py").write_text("print(1)", encoding="utf-8")
+        return tmp_path
+
+    def test_scan_all_types_no_filter(self, tmp_path):
+        self._proj(tmp_path)
+        docs = BOARD.list_project_docs(tmp_path, "a")
+        extra = {d["name"]: d for d in docs if d.get("extra")}
+        assert "docs/指南.md" in extra
+        assert "docs/图.png" in extra      # 图片也列出 (不过滤)
+        assert "docs/配置.yaml" in extra   # yaml 也列出
+        assert "docs/脚本.py" in extra     # py 也列出
+
+    def test_html_all_files_and_view_marks(self, tmp_path):
+        self._proj(tmp_path)
+        html = BOARD.render_project_docs_html(tmp_path, "a")
+        for n in ("指南.md", "图.png", "配置.yaml", "脚本.py"):
+            assert n in html
+        assert "doc=docs/指南.md" in html          # md 可查看
+        assert "doc=docs/图.png" not in html       # png 无查看链接
+
+    def test_view_non_text_hint(self, tmp_path):
+        self._proj(tmp_path)
+        v = BOARD.render_project_doc_view(tmp_path, "a", "docs/图.png")
+        assert "暂不支持在线预览" in v

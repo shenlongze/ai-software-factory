@@ -1934,10 +1934,10 @@ def list_project_docs(workspace: Path | str, slug: str) -> list[dict[str, Any]]:
         except OSError:  # noqa: BLE001
             docs.append({"name": name, "label": label, "kind": kind,
                          "size": 0, "mtime": 0.0, "exists": False, "extra": False, "folder": ""})
-    # 扫描其他真实文档: README.md / docs/ 子目录 / 根目录 .md/.json/.txt
+    # 扫描项目目录全部文件 (Founder: 暂不过滤扩展名 — docs 下所有文件都显示)
     if pdir.is_dir():
         for f in sorted(pdir.rglob("*")):
-            if not f.is_file() or f.suffix.lower() not in (".md", ".json", ".txt"):
+            if not f.is_file():
                 continue
             rel = f.relative_to(pdir)
             if ".git" in rel.parts:
@@ -1992,10 +1992,14 @@ def render_project_docs_html(workspace: Path | str, slug: str) -> str:
         size = f"{d['size']}B" if d["size"] < 1024 else f"{d['size']/1024:.1f}KB"
         icon = "📄" if d["kind"] == "md" else "📦"
         label = d["label"] if d.get("label") and d["label"] != d["name"] else d["name"]
+        if d["kind"] in ("md", "json", "txt"):
+            view = (f'<a href="/api/board/doc?project={slug}&amp;doc={d["name"]}" '
+                    f'style="color:#8ab4f8">查看</a>')
+        else:
+            view = "<span class='m'>—</span>"
         return (f'<tr><td class="dname">{icon} {label}</td>'
                 f'<td><code>{d["name"]}</code></td>'
-                f'<td><a href="/api/board/doc?project={slug}&amp;doc={d["name"]}" '
-                f'style="color:#8ab4f8">查看</a></td>'
+                f'<td>{view}</td>'
                 f'<td class="m">{size}</td><td class="m">{ts}</td></tr>')
 
     blocks = []
@@ -2046,7 +2050,8 @@ def render_project_doc_view(workspace: Path | str, slug: str, doc_name: str) -> 
     except (OSError, ValueError):  # noqa: BLE001
         return "<p>（不支持的文档路径）</p>"
     if f.suffix.lower() not in (".md", ".json", ".txt"):
-        return "<p>（不支持的文档类型）</p>"
+        return (f"<p>（{f.name} 类型 {f.suffix or '无扩展名'} 暂不支持在线预览 — "
+                f"文件已在文档列表列出, 可本地打开）</p>")
     kind = "md" if f.suffix.lower() == ".md" else f.suffix.lower().lstrip(".")
     label = PROJECT_DOC_TYPES.get(str(rel), (str(rel), kind))[0]
     if not f.is_file():

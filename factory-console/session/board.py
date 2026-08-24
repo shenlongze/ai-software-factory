@@ -190,8 +190,11 @@ def render_graph(workspace: Path, project_id: str = "") -> str:
 
 # ---------------------------------------------------------------- 生命线
 
-def render_timeline(workspace: Path, limit: int = 15) -> str:
-    """生命线/时序图（读 audit_events 最近事件, 按时间线渲染）。"""
+def render_timeline(workspace: Path, limit: int = 15, project_id: str = "") -> str:
+    """生命线/时序图（读 audit_events 最近事件, 按时间线渲染）。
+
+    project_id 非空 → 只显示该项目的核心事件 (项目化, 方案 A)。
+    """
     audit_file = Path(workspace) / "audit" / "audit_events.json"
     if not audit_file.is_file():
         return "（未找到 audit_events.json）"
@@ -202,6 +205,12 @@ def render_timeline(workspace: Path, limit: int = 15) -> str:
     events = data.get("events") if isinstance(data, dict) else data
     if not isinstance(events, list) or not events:
         return "（暂无审计事件）"
+    slug = Path(str(project_id or "")).name
+    if slug:
+        # 项目过滤: 只保留该项目的核心事件 (需求确认事件大多无 project_id, 一并过滤)
+        events = [e for e in events if str(e.get("project_id") or "") == slug]
+        if not events:
+            return f"（{slug} 暂无审计事件）"
     # 降噪: 需求确认折叠为汇总行; 核心事件最近 limit 条
     confirm_count = sum(1 for e in events if (e.get("event_type") or "") == "DISCOVERY_CONFIRMED")
     core = [e for e in events if (e.get("event_type") or "") != "DISCOVERY_CONFIRMED"]
@@ -798,8 +807,11 @@ def _parse_s14(doc_path: Path | None = None) -> list[dict[str, Any]]:
     return rows
 
 
-def render_timeline_html(workspace: Path, limit: int = 20) -> str:
-    """生命线 HTML（时间轴: 时间→事件→对象, 纯 CSS 竖线时间轴）。"""
+def render_timeline_html(workspace: Path, limit: int = 20, project_id: str = "") -> str:
+    """生命线 HTML（时间轴: 时间→事件→对象, 纯 CSS 竖线时间轴）。
+
+    project_id 非空 → 只显示该项目的核心事件 (项目化, 方案 A)。
+    """
     audit_file = Path(workspace) / "audit" / "audit_events.json"
 
     def _shell(msg: str) -> str:
@@ -818,6 +830,11 @@ def render_timeline_html(workspace: Path, limit: int = 20) -> str:
     events = data.get("events") if isinstance(data, dict) else data
     if not isinstance(events, list) or not events:
         return _shell("<p>（暂无审计事件）</p>")
+    slug = Path(str(project_id or "")).name
+    if slug:
+        events = [e for e in events if str(e.get("project_id") or "") == slug]
+        if not events:
+            return _shell(f"<p>（{slug} 暂无审计事件）</p>")
     # 降噪: 高频"需求确认"(DISCOVERY_CONFIRMED) 折叠为一行汇总; 核心事件单独显示
     confirm_count = sum(1 for e in events if (e.get("event_type") or "") == "DISCOVERY_CONFIRMED")
     core = [e for e in events if (e.get("event_type") or "") != "DISCOVERY_CONFIRMED"]
@@ -885,9 +902,16 @@ def render_timeline_html(workspace: Path, limit: int = 20) -> str:
 {_auto_refresh_script(0)}</body></html>"""
 
 
-def render_report_html(path: Path = DEFAULT_BACKLOG, workspace: Optional[Path | str] = None) -> str:
-    """汇报 HTML（markdown 汇报 → 简单 HTML 渲染, 浏览器可读）。"""
-    report = render_report(path)
+def render_report_html(path: Path = DEFAULT_BACKLOG, workspace: Optional[Path | str] = None, project_id: str = "") -> str:
+    """汇报 HTML（markdown 汇报 → 简单 HTML 渲染, 浏览器可读）。
+
+    project_id 非空 → 项目汇报 (方案 A); 否则 AI 主线汇报。
+    """
+    slug = Path(str(project_id or "")).name
+    if slug and workspace is not None:
+        report = render_project_report(workspace, slug)
+    else:
+        report = render_report(path)
     html_body = []
     for line in report.splitlines():
         if line.startswith("# "):
@@ -1410,8 +1434,8 @@ def _board_nav(active: str = "project", project: str = "", workspace: Optional[P
         ("tasks", f"/api/board/tasks?project={g}" if g else "/api/board?view=projects", "🗂 任务树"),
         ("graph", f"/api/board/graph?project={g}" if g else "/api/board?view=projects", "🔗 依赖图"),
         ("chain", f"/api/board/chain?project={g}" if g else "/api/board?view=projects", "⛓ 任务链"),
-        ("timeline", "/api/board/timeline", "⏱ 生命线"),
-        ("report", "/api/board?view=report", "📄 汇报"),
+        ("timeline", f"/api/board/timeline?project={g}" if g else "/api/board/timeline", "⏱ 生命线"),
+        ("report", f"/api/board?view=report&project={g}" if g else "/api/board?view=report", "📄 汇报"),
         ("mainline", "/api/board?view=mainline", "📋 AI主线面板"),
     ]
     links = "".join(
@@ -1700,3 +1724,49 @@ def _timeline_obj_name(workspace: Path | str, e: dict[str, Any]) -> str:
     if aid:
         return aid
     return ""
+
+
+# ---------------------------------------------------------------- 项目汇报 (S10-110 方案 A)
+
+def render_project_report(workspace: Path | str, slug: str) -> str:
+    """项目汇报 (markdown, 给 Hermes/用户): 生命周期 + 任务状态 + 文档 + 最近事件。"""
+    slug = Path(str(slug or "")).name
+    info = _read_product_info(workspace, slug)
+    if info is None:
+        return f"（项目不存在: {slug}）"
+    name = info.get("name") or slug
+    stages = _project_stage_status(workspace, slug)
+    done_count = sum(1 for st in stages if st["done"])
+    total = len(stages)
+    stage_txt = " → ".join(
+        f"{st['label']}{'✅' if st['done'] else '○'}" for st in stages
+    )
+    counts = _project_task_status_counts(workspace, slug)
+    pdir = Path(workspace) / "projects" / slug
+
+    def has(n: str) -> str:
+        return "✅" if (pdir / n).is_file() else "—"
+
+    lines = [
+        f"# 项目汇报: {name} ({slug})",
+        "",
+        f"## 生命周期 {done_count}/{total}",
+        stage_txt,
+        "",
+        "## 任务状态",
+        f"✅完成 {counts['done']} · 🔵进行中 {counts['running']} · "
+        f"❌失败 {counts['failed']} · ⬜待办 {counts['pending']} · 共 {counts['total']}",
+        "",
+        "## 文档产物",
+        f"PRD {has('PRD.md')} · 工程 {has('engineering.json')} · "
+        f"任务 {has('tasks.json')} · 验证 {has('validation_result.json')}",
+        "",
+        "## 最近事件",
+    ]
+    t = render_timeline(workspace, limit=8, project_id=slug)
+    lines.extend(
+        f"- {ln.strip()}" for ln in t.splitlines()
+        if ln.strip() and ln.strip() != "│"
+        and not ln.strip().startswith(("⏱", "◉ 需求确认"))
+    )
+    return "\n".join(lines)

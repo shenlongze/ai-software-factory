@@ -14,7 +14,7 @@ Bug (Founder 实测, v1.1.47): 问痛点答"给大学生用" → 被强填 probl
 6. 无 LLM 同生效: analyzer=None (env -u 等价) 规则路径归类一致
 7. 批量模式不受影响: 分号批量回答仍按顺序填
 8. 误伤收敛: "做报表" → core_features (非确认词 — 整句匹配); "现在很痛苦" → problem
-9. 版本断言 v1.1.57 (单源见 test_s10_074_deployment)
+9. 版本断言 v1.1.58 (单源见 test_s10_074_deployment)
 
 模块级: _FIELD_PATTERNS / _FIELD_MATCH_PRIORITY / _resolve_answer_field 单元 +
 ConversationManager 端到端。全部测试零真实 LLM (analyzer=None / scripted analyzer)。
@@ -378,9 +378,9 @@ class TestPriorityAndBatch:
 
 class TestVersion:
     def test_pyproject_version_1_1_48(self):
-        """契约点 9: pyproject 版本 v1.1.57 (单源断言见 test_s10_074_deployment)。"""
+        """契约点 9: pyproject 版本 v1.1.58 (单源断言见 test_s10_074_deployment)。"""
         import tomllib
 
         with open("pyproject.toml", "rb") as fh:
             pp = tomllib.load(fh)
-        assert pp["project"]["version"] == "1.1.57"
+        assert pp["project"]["version"] == "1.1.58"

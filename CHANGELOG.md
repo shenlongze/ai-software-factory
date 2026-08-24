@@ -3,6 +3,22 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.58] — 2026-08-24
+
+**Board 生命线/汇报项目化（Founder 选方案 A: 凡有 project_id 维度即跟随项目选择）**。
+
+### Added
+
+- **生命线项目过滤**: `/api/board/timeline?project=<slug>` + CLI `/board timeline <slug>`
+  只显示该项目审计事件 (按 project_id); 无项目时全局
+- **项目汇报**: `/api/board?view=report&project=<slug>` + CLI `/board report <slug>`
+  markdown 项目汇报 (生命周期/任务状态/文档产物/最近事件); 无项目时仍为 AI 主线汇报
+- **导航跟随**: 生命线/汇报 tab 有项目时带 ?project=, 选项目后全面板切换上下文
+
+### 验证
+
+- 5 新契约测试 (timeline 过滤/HTML 过滤/项目汇报内容/report 项目化/导航跟随) · 全量回归 0 新增失败
+
 ## [v1.1.57] — 2026-08-24
 
 **Board 修复: 项目选择器与 URL 一致 — 不再"选墨笺/URL 是 demo"**。

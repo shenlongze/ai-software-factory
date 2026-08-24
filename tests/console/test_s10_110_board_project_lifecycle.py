@@ -526,3 +526,56 @@ class TestSelectUrlConsistency:
         _mk_project(tmp_path, "a", name="项目A")
         assert "tasks?project=" in BOARD._project_select_html(tmp_path, "a", "tasks")
         assert "view=project&project=" in BOARD._project_select_html(tmp_path, "a", "project")
+
+
+# ================================================================== 生命线/汇报项目化 (方案 A)
+
+class TestTimelineReportProjectized:
+    def _audit(self, root: Path):
+        d = root / "audit"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "audit_events.json").write_text(json.dumps({"events": [
+            {"timestamp": "2026-08-24T12:24:29", "event_type": "PRODUCT_CREATED", "project_id": "a"},
+            {"timestamp": "2026-08-24T12:25:01", "event_type": "TASK_FAILED", "project_id": "a"},
+            {"timestamp": "2026-08-24T12:26:02", "event_type": "TASK_STARTED", "project_id": "b"},
+            {"timestamp": "2026-08-24T12:27:03", "event_type": "ARTIFACT_CREATED", "project_id": "a"},
+        ]}), encoding="utf-8")
+
+    def test_timeline_project_filter(self, tmp_path):
+        _mk_project(tmp_path, "a", name="项目A")
+        _mk_project(tmp_path, "b", name="项目B")
+        self._audit(tmp_path)
+        out = BOARD.render_timeline(tmp_path, limit=20, project_id="a")
+        assert "项目A" in out
+        assert "项目B" not in out          # 只显示项目 a
+        out_b = BOARD.render_timeline(tmp_path, limit=20, project_id="b")
+        assert "项目B" in out_b and "项目A" not in out_b
+
+    def test_timeline_html_project_filter(self, tmp_path):
+        _mk_project(tmp_path, "a", name="项目A")
+        _mk_project(tmp_path, "b", name="项目B")
+        self._audit(tmp_path)
+        html = BOARD.render_timeline_html(tmp_path, project_id="a")
+        # 事件列表只含项目A (项目选择器含全部项目是正常的, 供切换)
+        import re as _re
+        items = _re.findall(r"<li>.*?</li>", html)
+        assert any("项目A" in it for it in items)
+        assert not any("项目B" in it for it in items)
+
+    def test_project_report_content(self, tmp_path):
+        _mk_project(tmp_path, "a", name="项目A", task_statuses=("done", "failed"))
+        r = BOARD.render_project_report(tmp_path, "a")
+        assert "项目汇报" in r and "项目A" in r
+        assert "生命周期" in r and "任务状态" in r and "文档产物" in r
+        assert "✅完成 1" in r
+
+    def test_report_html_projectized(self, tmp_path):
+        _mk_project(tmp_path, "a", name="项目A")
+        html = BOARD.render_report_html(workspace=tmp_path, project_id="a")
+        assert "项目汇报" in html and "项目A" in html
+
+    def test_nav_timeline_report_follow_project(self, tmp_path):
+        _mk_project(tmp_path, "a", name="项目A")
+        nav = BOARD._board_nav("project", "a", tmp_path)
+        assert "timeline?project=a" in nav
+        assert "view=report&project=a" in nav

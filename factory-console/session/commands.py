@@ -234,7 +234,7 @@ class BoardCommand(SlashCommand):
         from .board import (
             render_board, render_graph, render_timeline,
             render_chain, render_report, render_project_lifecycle,
-            render_projects_list,
+            render_projects_list, render_project_report,
             mark_backlog_item, save_report, sync_mainline,
         )
         from pathlib import Path
@@ -257,7 +257,9 @@ class BoardCommand(SlashCommand):
                     return 1
                 print(render_chain(workspace, project))
             elif view == "report":
-                if "--save" in (args or ""):
+                if project:
+                    print(render_project_report(workspace, project))
+                elif "--save" in (args or ""):
                     print(save_report())
                 else:
                     print(render_report())
@@ -283,7 +285,7 @@ class BoardCommand(SlashCommand):
                 if workspace is None:
                     print("（未设置工作区 — 无法读审计事件）")
                     return 1
-                print(render_timeline(workspace))
+                print(render_timeline(workspace, project_id=project))
             else:
                 print(render_board())
         except Exception as exc:  # noqa: BLE001 — 面板失败不崩溃

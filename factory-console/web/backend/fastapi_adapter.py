@@ -812,7 +812,7 @@ def build_app(
                 # AI Factory 自身开发进度 (降级为显式入口, 不再是默认首页)
                 html = board_mod.render_board_html(workspace=workspace_root)
             elif view == "report":
-                html = board_mod.render_report_html()
+                html = board_mod.render_report_html(workspace=workspace_root, project_id=project)
             else:
                 # 项目优先首页: 有当前项目 → 该项目视图; 否则项目列表引导
                 html = board_mod.render_project_home(workspace_root)
@@ -843,13 +843,13 @@ def build_app(
         return HTMLResponse(content=html)
 
     @app.get("/api/board/timeline")
-    def api_board_timeline():
-        """生命线 HTML（审计事件时间轴, 纯 CSS）。"""
+    def api_board_timeline(project: str = ""):
+        """生命线 HTML（审计事件时间轴, 纯 CSS; ?project= 项目过滤）。"""
         from fastapi.responses import HTMLResponse
 
         board_mod = _console_import("session.board")
         try:
-            html = board_mod.render_timeline_html(workspace_root)
+            html = board_mod.render_timeline_html(workspace_root, project_id=project)
         except Exception:  # noqa: BLE001
             html = "<p>（生命线渲染失败）</p>"
         return HTMLResponse(content=html)

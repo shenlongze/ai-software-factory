@@ -1278,9 +1278,13 @@ class TestProjectBrief:
 class TestAgentSkillManage:
     def _cli(self, tmp_path):
         from importlib import import_module
+        import json as _json
         CF = import_module("factory-console.cli_factory")
+        cfg_file = tmp_path / "cfg.json"
+        # data_dir 注入 tmp_path — 隔离, 不污染用户 ~/.factory
+        cfg_file.write_text(_json.dumps({"core": {"data_dir": str(tmp_path)}}), encoding="utf-8")
         cfg = CF.ConfigProvider(
-            user_config_file=tmp_path / "cfg.json",
+            user_config_file=cfg_file,
             env_file=tmp_path / ".env", environ={})
         return CF.FactoryCLI(cfg, root=tmp_path)
 

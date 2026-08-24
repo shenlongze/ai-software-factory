@@ -3,6 +3,28 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.80] — 2026-08-25
+
+**A-1 补齐 7 角色 Skill 资产（员工管理计划第一步）**。
+
+### Added
+
+- skills.json 补齐 11 个 skill: product_management/requirement_analysis/
+  product_documentation/market_research/competitive_analysis/ux_design/
+  software_architecture/software_testing/test_planning/frontend_development/
+  backend_development (现 12 个含 flutter)
+- 7 角色 (pm/market/competitive/ux/architect/qa/prd) ExpertFactory 装配全部
+  成功 (不再缺 skill 走兜底)
+
+### Fixed
+
+- 测试隔离: TestAgentSkillManage 注入 data_dir 到 tmp (修复此前写污染
+  ~/.factory/skills.json)
+
+### 验证
+
+- 3 相关测试 passed · 装配验证 7/7 ✅
+
 ## [v1.1.79] — 2026-08-25
 
 **Board 待办清单解析支持任意章节（员工管理计划可见）**。

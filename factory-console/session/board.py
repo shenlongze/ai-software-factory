@@ -382,8 +382,8 @@ def render_board_html(path: Path = DEFAULT_BACKLOG) -> str:
 </style></head><body>
 <div class="nav">
   <a href="/api/board" class="active">📋 主线面板</a>
-  <a href="/api/board/graph">🔗 依赖图</a>
-  <a href="/api/board/chain">⛓ 任务链</a>
+  <a href="/api/board/graph?project=demo">🔗 依赖图(示例)</a>
+  <a href="/api/board/chain?project=demo">⛓ 任务链(示例)</a>
   <a href="/api/board/timeline">⏱ 生命线</a>
   <a href="/api/board?view=report">📄 汇报</a>
 </div>
@@ -452,7 +452,10 @@ def render_graph_html(workspace: Path, project_id: str = "") -> str:
     project_dir = Path(workspace) / "projects" / (project_id or "")
     plan_file = project_dir / "plan.json"
     if not plan_file.is_file():
-        return "<p>（未找到 plan.json — 项目未生成计划, 或需指定项目）</p>"
+        return ("<p>📭 项目未生成计划（无 plan.json）</p>"
+                "<p>真实数据: 项目需执行 M3b（拆解→关键路径）才会生成 plan.json — "
+                "在会话中 '开始开发' 即可</p>"
+                "<p>查看效果: <a href='/api/board/graph?project=demo'>demo 示例图</a></p>")
     try:
         plan = json.loads(plan_file.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):  # noqa: BLE001
@@ -512,7 +515,9 @@ def render_chain_html(workspace: Path, project_id: str = "") -> str:
     project_dir = Path(workspace) / "projects" / (project_id or "")
     plan_file = project_dir / "plan.json"
     if not plan_file.is_file():
-        return "<p>（未找到 plan.json）</p>"
+        return ("<p>📭 项目未生成计划（无 plan.json）</p>"
+                "<p>真实数据: 项目需执行 M3b 才会生成 — 会话中 '开始开发'</p>"
+                "<p>查看效果: <a href='/api/board/chain?project=demo'>demo 示例任务链</a></p>")
     try:
         plan = json.loads(plan_file.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):  # noqa: BLE001

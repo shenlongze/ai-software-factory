@@ -3,7 +3,20 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
-## [v1.1.41] — 2026-08-24
+## [v1.1.42] — 2026-08-24
+
+**board 无数据引导 + demo 示例**: 依赖图/任务链未生成时显示引导, 导航带示例（Founder: 都没有数据）。
+
+### Fixed
+
+- 主面板导航带 demo 示例（依赖图(示例)/任务链(示例), ?project=demo）
+- graph/chain 无 plan.json 时引导: 未生成计划 + 真实数据来源（执行 M3b）+ demo 链接
+- 真相: 真实项目需执行 M3b（拆解→关键路径）才生成 plan.json
+
+### 验证
+
+- 导航含 graph?project=demo · graph 无项目显示引导（未生成计划/demo 示例图）
+
 
 **board 各种图集成**: 主面板导航 tabs（主线/依赖图/任务链/生命线/汇报 一个入口）。
 

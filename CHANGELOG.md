@@ -3,6 +3,26 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.48] — 2026-08-24
+
+**需求分析字段错位修复 (T9, Founder 实测复现)**: 问痛点答"给大学生用"被强填 problem /
+"支持扫码记账和月度报表"被强填 user / "可以"被强填 core_features。
+
+### Fixed
+
+- **需求分析字段错位 (确定性内容归类, 不依赖 LLM)**: 发现阶段回答先经
+  `_resolve_answer_field` 语义判定 — 命中 user/core_features/problem 模式且该字段
+  未填 → 填匹配字段 (多命中优先级 user > core_features > problem); 未命中 → 填当前
+  字段 (正常回答零变化, 逐字节不变); LLM field_answer 路径与机械单字段路径共用
+- **确认词不当字段值**: 整句为确认词 (APPROVE_WORDS + y/yes) 且当前字段未填 → 不填,
+  提示 "产品定义还不完整, 还缺 {字段}, 请先补充" (state 保持发现, 不推进)
+- 批量模式不受影响 (分号多字段按顺序填)
+
+### 验证
+
+- 契约测试 test_s10_109_field_routing (≥8 用例) 全绿 · env -u 无 LLM 路径同生效 ·
+  全量 console 回归 0 新增失败
+
 ## [v1.1.47] — 2026-08-24
 
 **CLI 交互修复 + 方向键历史 (Founder 实测: 方向键变乱码 /exitt)**。

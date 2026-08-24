@@ -33,6 +33,7 @@ from enum import Enum
 from typing import Any, Callable, Optional
 
 from .discovery_guide import (
+    APPROVE_WORDS,
     DEFAULT_SUGGESTIONS,
     EXIT_COMMANDS,
     HELP_KEYWORDS,
@@ -66,6 +67,40 @@ _TASK_TARGET_KEYS = ("project", "task", "task_id")
 
 #: 产品发现必填字段追问顺序 (设计 §2.3: problem → user → core_features)
 _PRODUCT_FIELD_ORDER: tuple[str, ...] = ("problem", "user", "core_features")
+
+#: S10-109: 字段内容模式 (确定性归类 — 答非所问智能填匹配字段; 模块级常量, 不依赖 LLM)
+_FIELD_PATTERNS: dict[str, tuple[str, ...]] = {
+    "user":          (r"给.{1,12}用", r"面向.{1,12}", r".{1,12}用户", r".{1,12}人群",
+                      r".{1,12}学生", r".{1,12}白领", r".{1,12}开发者", r".{1,12}团队", r".{1,12}企业"),
+    "core_features": (r"支持.{1,20}", r"可以.{1,20}", r"能.{1,20}", r".{1,12}功能",
+                      r".{1,12}报表", r".{1,12}记录", r".{1,12}统计", r".{1,12}导出", r".{1,12}提醒"),
+    "problem":       (r"解决.{1,20}", r".{1,12}麻烦", r".{1,12}痛点", r".{1,12}痛苦",
+                      r".{1,12}难", r".{1,12}不便", r".{1,12}费时", r".{1,12}低效"),
+}
+
+#: S10-109: 字段归属优先级 (多命中 — 规格: user > core_features > problem)
+_FIELD_MATCH_PRIORITY: tuple[str, ...] = ("user", "core_features", "problem")
+
+
+def _resolve_answer_field(text: str, pending: list[str]) -> Optional[str]:
+    """字段归属判定 (S10-109, 确定性, 不依赖 LLM): 确认词整句 → None (不当字段值,
+    调用方提示缺字段); 命中非当前字段模式且该字段未填 → 匹配字段; 未命中 → 当前字段
+    (正常回答零变化, 逐字节不变)。"""
+    norm = str(text or "").strip()
+    if not norm or not pending:
+        return pending[0] if pending else None
+    # 1. 确认词整句匹配 (复用 discovery_guide.APPROVE_WORDS; 整句才触发 —
+    #    "做报表" 不误判; y/yes 已在 APPROVE_WORDS, 显式列出与规格逐字对齐)
+    if norm.lower() in APPROVE_WORDS or norm.lower() in ("y", "yes"):
+        return None
+    # 2. 模式匹配 (优先级 user > core_features > problem; 只填未填字段)
+    for field in _FIELD_MATCH_PRIORITY:
+        if field not in pending:
+            continue
+        if any(re.search(p, norm) for p in _FIELD_PATTERNS.get(field, ())):
+            return field
+    # 3. 未命中 → 当前字段 (兼容正常回答, 逐字节不变)
+    return pending[0]
 
 #: S10-102: 确认词已上收 discovery_guide.APPROVE_WORDS (确定性表唯一来源)
 #: S10-081: 确认阶段取消词 (其余非确认/改名/澄清/委托输入 → 按新分流处理)
@@ -582,9 +617,20 @@ class ConversationManager:
                     needs_input=True,
                 )
             return self._enter_product_confirmation()
-        field = self._product_pending[0]
+        field = _resolve_answer_field(raw, self._product_pending)
+        if field is None:
+            # S10-109: 确认词不当字段值 (机械路径, 无 LLM 同生效) → 不填 + 提示缺字段
+            current = self._product_pending[0]
+            label = FIELD_LABELS.get(current, current)
+            return ConversationResponse(
+                state=self.state,
+                message=self._guide_message(
+                    f"产品定义还不完整, 还缺 {label}, 请先补充"
+                ),
+                needs_input=True,
+            )
         self._set_product_field(field, raw)
-        self._product_pending = self._product_pending[1:]
+        self._product_pending = [f for f in self._product_pending if f != field]
         if self._product_pending:
             # 还有缺失 → 追问下一个 (验收 C: 缺 problem → 追问; 补齐 → 追问 user)
             return ConversationResponse(
@@ -775,13 +821,28 @@ class ConversationManager:
         """field_answer → 填当前字段 → 下一问优先 LLM smart_questions[0] (带理由);
         空/失败 → 机械模板 (诚实降级, 验收 "无 LLM 机械追问保留")。
 
+        S10-109: 字段归属先经 _resolve_answer_field 确定性判定 — 答非所问归类到
+        匹配字段 (未填才填) / 确认词不当字段值 (不填+提示缺字段); 不依赖 LLM。
+
         批量模式 → 剩余问题编号列表 (用户已要求一次看完, 智能单问不打断)。
         """
         if not self._product_pending:
             return self._enter_product_confirmation()  # 防御: 队列空 → 确认
-        field = self._product_pending[0]
+        field = _resolve_answer_field(text, self._product_pending)
+        if field is None:
+            # S10-109: 确认词不当字段值 → 不填, 提示缺字段 (state 保持 DISCOVERY,
+            # pending 不推进; 无 LLM 规则同样生效)
+            current = self._product_pending[0]
+            label = FIELD_LABELS.get(current, current)
+            return ConversationResponse(
+                state=self.state,
+                message=self._guide_message(
+                    f"产品定义还不完整, 还缺 {label}, 请先补充"
+                ),
+                needs_input=True,
+            )
         self._set_product_field(field, text)
-        self._product_pending = self._product_pending[1:]
+        self._product_pending = [f for f in self._product_pending if f != field]
         if not self._product_pending:
             return self._enter_product_confirmation()
         if self._product_batch_mode:

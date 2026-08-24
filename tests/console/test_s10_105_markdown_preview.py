@@ -10,7 +10,7 @@
 5. 多行输入: 行尾 "\\" → 续行拼接 "\\n" (run() 整条进 _dispatch); 单行不受影响
 6. chat 回答渲染: markdown 回答经 render_message (捕获输出含渲染文本)
 7. 非 markdown 消息零变化: 发现/确认消息输出与渲染前一致 (不引入 ANSI/变形)
-8. 版本 v1.1.47 (单源断言见 test_s10_074_deployment)
+8. 版本 v1.1.48 (单源断言见 test_s10_074_deployment)
 
 纯确定性 — 不依赖真实 LLM (chat_service 固定回答 / 无 API key 规则兜底)。
 basename 全仓库唯一 (test_s10_105_* 前缀, tests/console 既有模式)。
@@ -333,8 +333,8 @@ def test_lifecycle_progress_plain_rendering(capsys):
 
 
 def test_pyproject_version_bumped():
-    """契约 8: pyproject 版本 v1.1.47 (单源断言见 test_s10_074_deployment)。"""
+    """契约 8: pyproject 版本 v1.1.48 (单源断言见 test_s10_074_deployment)。"""
     ver = tomllib.loads((_ROOT / "pyproject.toml").read_text(encoding="utf-8"))[
         "project"
     ]["version"]
-    assert ver == "1.1.47"
+    assert ver == "1.1.48"

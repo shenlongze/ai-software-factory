@@ -122,15 +122,19 @@ class TestMultiTurnDiscovery:
         return S.InteractiveSession(chat_service=_FakeChat())
 
     def test_state_preserved_across_turns(self):
+        # S10-109: 字段内容确定性归类 (答非所问自动填匹配字段) — 逐字段答齐
         s = self._session()
         _dispatch(s, "我想做一个类似 OneNote 的 App")
-        _dispatch(s, "主要给程序员用")
-        _dispatch(s, "支持 Markdown")
+        _dispatch(s, "记笔记麻烦")          # problem (当前问)
+        _dispatch(s, "主要给程序员用")      # user (不再被错填进 problem)
+        _dispatch(s, "支持 Markdown")       # core_features
         pi = s.conversation.product_intent
         assert pi is not None
-        assert pi.problem  # 字段已收集
+        assert pi.problem == "记笔记麻烦"  # 字段已正确归类收集
+        assert pi.user == "主要给程序员用"
+        assert pi.core_features == ["支持 Markdown"]
         # 状态推进 (未回落到独立请求)
-        assert s.conversation.state.value in ("discovery", "product_confirmation")
+        assert s.conversation.state.value == "product_confirmation"
 
     def test_confirmation_flow(self):
         s = self._session()

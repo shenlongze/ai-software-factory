@@ -194,7 +194,7 @@ def _check_update_hint() -> str:
             if behind > 0:
                 return f"📦 检测到可更新版本（落后 {behind} 提交）— 运行: factory update"
             if ahead > 0:
-                return f"🚀 本地领先远程 {ahead} 提交（无远程更新, 已是最新）"
+                return f"🚀 本地领先远程 {ahead} 提交（未推送, 远程无新提交可拉）"
             return "✅ 已是最新版本"
         # 未 fetch 过 → 引导检查命令（不主动网络）
         return "检查更新: factory update --check"
@@ -2785,7 +2785,27 @@ class FactoryCLI:
                     ["git", "-C", self.root, "status", "--porcelain"],
                     capture_output=True, text=True, timeout=15)
                 dirty = bool(r.stdout.strip())
-                print(f"Git 状态: {'有未提交改动' if dirty else '工作区干净'}")
+                if not dirty:
+                    print("Git 状态: 工作区干净")
+                else:
+                    # 区分已跟踪修改 vs 未跟踪文件 — 避免"有改动"黑盒
+                    modified = []
+                    untracked = []
+                    for line in r.stdout.splitlines():
+                        code, _, path = line.partition(" ")
+                        path = path.strip()
+                        if not path:
+                            continue
+                        if line.startswith("??"):
+                            untracked.append(path)
+                        else:
+                            modified.append(path)
+                    print(f"Git 状态: 有未提交改动 ({len(modified)} 改 + {len(untracked)} 未跟踪)")
+                    for path in modified:
+                        print(f"  M  {path}")
+                    for path in untracked:
+                        print(f"  ?? {path}")
+                    print("说明: 未跟踪文件不影响 update (git pull 安全); 已跟踪改动建议先提交")
             except Exception as exc:  # noqa: BLE001
                 print(f"Git 检查失败: {exc}")
             return 0

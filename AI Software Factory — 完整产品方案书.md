@@ -7314,6 +7314,65 @@ AI Factory 的注册表: CLI 子命令 · 意图类型 · action 名 · API 端�
 
 **完成度**：CLI 交互完整（✅）；Web 壳待打通（🚧）；IDE/自主为设计（📐）。
 
+### 11.6 命令体系总纲（统一命名规范 + 多端/运维/资源命令不混乱）★
+
+> 2026-08-24 补充（Founder: 后面还有很多运维命令 service list / llm list / todo list 等,
+> 命令会越来越多, 必须体系化）: 命令 = `factory <域> <动词>` 统一结构 +
+> 会话 `/命令` 快捷入口; 新增命令 = 新域 + 标准动词, 有规律可循。
+
+**命令结构（统一）**
+
+```
+factory <域> <动词> [参数]      # 运维/资源/数据命令（长命令, 脚本友好）
+/命令 [参数]                    # 会话快捷入口（交互, 少打字）
+自然语言                        # LLM 理解意图 → 自动映射到命令（v1.1.20）
+```
+
+**域分类（5 类, 每类一组命令）**
+
+| 域类 | 域 | 说明 |
+|---|---|---|
+| **系统** | init config doctor start stop status version | 环境/配置/诊断/启停 |
+| **资源** | service llm agent skill tool project | 服务/LLM/员工/技能/工具/项目 清单与状态 |
+| **数据** | todo backlog evidence audit memory knowledge | 任务/积压/证据/审计/记忆/知识 查询 |
+| **执行** | run repo workload exec | 跑任务/存量仓库/积压清道夫/执行记录 |
+| **展示** | board dashboard | 监控面板（todolist/依赖图/生命线） |
+
+**动词规范（统一动作词）**
+
+```
+list（枚举）· show（详情）· create（创建）· start/stop（启停）·
+status（状态）· config（配置）· test（测试）· export（导出）· delete（删除）
+```
+
+**命令总览（一条命令看全部, 解决"记不住/不知道有哪"）**
+
+```
+factory help          → 按域分类列出全部命令 + 示例
+factory <域> --help   → 该域所有动词
+```
+
+**新增命令规则（零混乱）**
+
+```
+1. 归属一个域（service/llm/todo/...）→ 域下加动词
+2. 动词用标准集（list/show/create/...）→ 不发明新动词
+3. 会话快捷 /命令（可选, 高频操作才加）→ 映射到长命令
+4. 自然语言 → LLM 意图映射（v1.1.20 已有）→ 用户不用记命令
+```
+
+**多端访问（§11.6 衔接）**
+
+```
+启动: factory start（统一）→ 打印所有端地址（Web/移动/Pad 响应式同一地址）
+访问: 浏览器/手机打开地址 · 会话 factory → /命令
+内部: service list 等是"诊断命令"（开发/运维用）, 用户日常不需要
+```
+
+**结论**: 命令体系 = **域 × 动词 矩阵 + 总览命令 + LLM 意图映射**——
+命令再多也有规律（service list / llm list / todo list 同构），
+用户不记命令（自然语言 + help 总览），新增不混乱（域+标准动词）。
+
 ## 十二、演进路线图
 
 > 2026-08-22 更新: 演进路线对齐 [docs/MASTER-PLAN-2026-08.md](../../docs/MASTER-PLAN-2026-08.md)（M1-M7 里程碑 + 三部门循环）；旧 v0.x Phase 规划已废弃。

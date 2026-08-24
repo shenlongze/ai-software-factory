@@ -850,6 +850,10 @@ class FactoryCLI:
             return self.project_cmd(args)
         if args.command == "create":
             return self.create_cmd(args)
+        if args.command == "llm":
+            return self.llm_cmd(args)
+        if args.command == "todo":
+            return self.todo_cmd(args)
         if args.command in STUB_COMMANDS:
             return self._stub(args.command)
         print(f"未知命令: {args.command}", file=sys.stderr)
@@ -2672,6 +2676,42 @@ class FactoryCLI:
             return 1
         return self._emit_proxy_result(org_cli, args, result)
 
+    def llm_cmd(self, args: argparse.Namespace) -> int:
+        """factory llm list — LLM 清单（provider/models, 命令体系 资源域）。"""
+        action = getattr(args, "llm_command", None)
+        if action != "list":
+            print("错误: llm 需要子命令 (list)", file=sys.stderr)
+            return 2
+        try:
+            providers = _load_json_safe(self.data_dir / "providers.json") or {}
+            provs = providers.get("providers") or {}
+        except Exception:  # noqa: BLE001
+            provs = {}
+        if not provs:
+            print("（未配置 LLM provider — 运行 factory init）")
+            return 1
+        print("=== LLM 清单 ===")
+        for pid, info in provs.items():
+            models = (info.get("models") or []) if isinstance(info, dict) else []
+            enabled = info.get("enabled", True) if isinstance(info, dict) else True
+            mark = "✅" if enabled else "⏸"
+            print(f"  {mark} {pid}: {', '.join(models)}")
+        return 0
+
+    def todo_cmd(self, args: argparse.Namespace) -> int:
+        """factory todo list — 主线任务清单（待办清单, 命令体系 数据域）。"""
+        action = getattr(args, "todo_command", None)
+        if action != "list":
+            print("错误: todo 需要子命令 (list)", file=sys.stderr)
+            return 2
+        try:
+            from .session.board import render_board
+            print(render_board())
+        except Exception as exc:  # noqa: BLE001
+            print(f"（todo 读取失败: {exc}）")
+            return 1
+        return 0
+
     def _project_rename(self, args: argparse.Namespace) -> int:
         """factory project rename <id> <name> — 复用 service.confirm_project 事务。
 
@@ -3102,6 +3142,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="代码库路径 (project 可选, 缺省 = 数据目录)",
     )
     p_create.add_argument("--json", action="store_true", help="输出结构化 JSON")
+    p_llm = sub.add_parser("llm", help="LLM 清单 (list — provider/models, 命令体系 资源域)")
+    p_llm.add_argument("llm_command", choices=["list"], nargs="?", default=None, help="list — LLM 清单")
+    p_todo = sub.add_parser("todo", help="主线任务清单 (list — 待办清单, 命令体系 数据域)")
+    p_todo.add_argument("todo_command", choices=["list"], nargs="?", default=None, help="list — 主线任务")
     return parser
 
 

@@ -3,7 +3,23 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
-## [v1.1.29] — 2026-08-24
+## [v1.1.30] — 2026-08-24
+
+**命令体系总纲（§11.6）+ llm/todo 命令落地**: 域×动词 统一结构, 命令再多不混乱。
+
+### Added
+
+- **§11.6 命令体系总纲**（方案书）— `factory <域> <动词>` 统一结构
+  - 5 域: 系统/资源/数据/执行/展示 · 标准动词集(list/show/create/start/stop...)
+  - factory help 总览 · 新增=新域+标准动词 · LLM 意图映射(用户不记命令)
+- **factory llm list** — LLM 清单（provider/models, 资源域）
+- **factory todo list** — 主线任务清单（待办清单, 数据域, 复用 board 渲染）
+- 多端访问衔接: factory start 统一启动 + 打印地址
+
+### 测试
+
+- help 显示 llm/todo · llm 未配置明确提示 · todo 渲染主线面板
+
 
 **service list 显示访问地址**: board 懒加载服务的 url + 访问提示（Founder: "都不知道在哪"）。
 

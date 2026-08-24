@@ -3,7 +3,21 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
-## [v1.1.40] — 2026-08-24
+## [v1.1.41] — 2026-08-24
+
+**board 各种图集成**: 主面板导航 tabs（主线/依赖图/任务链/生命线/汇报 一个入口）。
+
+### Added
+
+- **主面板导航条**（`board.py` render_board_html）— 5 tabs: 主线/依赖图/任务链/生命线/汇报
+- **/api/board/timeline**（`fastapi_adapter.py`）— 生命线 HTML（时间轴, 事件类型配色: 完成绿/运行橙/失败红）
+- **/api/board?view=report** — 汇报 HTML 视图（markdown → 可读页面）
+- render_timeline_html / render_report_html
+
+### 验证
+
+- 主面板导航含 graph/chain/timeline/report ✅ · 汇报视图 ✅ · 生命线 ✅
+
 
 **board 多源加载（设计文档全部任务）**: Sprint + 章节 + 待办清单（Founder: 现在不全）。
 

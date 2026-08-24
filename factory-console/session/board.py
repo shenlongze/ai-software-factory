@@ -344,6 +344,10 @@ def render_board_html(path: Path = DEFAULT_BACKLOG) -> str:
 <meta http-equiv="refresh" content="30">
 <title>AI Factory 监控面板</title>
 <style>
+  .nav {{ display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }}
+  .nav a {{ background: #1a1d24; border: 1px solid #2a2e37; color: #b0b6bf; border-radius: 6px; padding: 6px 14px; font-size: 13px; text-decoration: none; }}
+  .nav a.active {{ background: #1565c0; color: #fff; border-color: #1565c0; }}
+  .nav a:hover {{ background: #2a2e37; }}
   body {{ font-family: -apple-system, system-ui, sans-serif; margin: 0; padding: 16px; background: #0f1115; color: #e6e6e6; }}
   h1 {{ font-size: 20px; margin: 8px 0 4px; }}
   .summary {{ background: #1a1d24; border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; }}
@@ -376,6 +380,13 @@ def render_board_html(path: Path = DEFAULT_BACKLOG) -> str:
   .card:hover {{ transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,.4); transition: .2s; }}
   li:hover {{ color: #fff; }}
 </style></head><body>
+<div class="nav">
+  <a href="/api/board" class="active">📋 主线面板</a>
+  <a href="/api/board/graph">🔗 依赖图</a>
+  <a href="/api/board/chain">⛓ 任务链</a>
+  <a href="/api/board/timeline">⏱ 生命线</a>
+  <a href="/api/board?view=report">📄 汇报</a>
+</div>
 <h1>🎯 AI Factory 任务监控面板</h1>
 <div class="summary">
   <p>主线任务: <b>{done}/{total}</b> 完成 ({pct}%) {("⚠️ 有未完成" if done < total else "✅ 全部完成")}</p>
@@ -706,3 +717,82 @@ def _parse_s14(doc_path: Path | None = None) -> list[dict[str, Any]]:
             "todo": cells[3],
         })
     return rows
+
+
+def render_timeline_html(workspace: Path, limit: int = 20) -> str:
+    """生命线 HTML（时间轴: 时间→事件→对象, 纯 CSS 竖线时间轴）。"""
+    audit_file = Path(workspace) / "audit" / "audit_events.json"
+    if not audit_file.is_file():
+        return "<p>（未找到 audit_events.json）</p>"
+    try:
+        data = json.loads(audit_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):  # noqa: BLE001
+        return "<p>（审计文件损坏）</p>"
+    events = data.get("events") if isinstance(data, dict) else data
+    if not isinstance(events, list) or not events:
+        return "<p>（暂无审计事件）</p>"
+    events = sorted(events, key=lambda e: str(e.get("timestamp") or ""))[-limit:]
+
+    items = []
+    for e in events:
+        ts = str(e.get("timestamp") or "")
+        time_s = ts[11:19] if len(ts) >= 19 else ts
+        date_s = ts[5:10] if len(ts) >= 10 else ""
+        ev = e.get("event_type") or e.get("type") or "?"
+        obj = e.get("task_id") or e.get("agent_id") or e.get("project_id") or ""
+        # 事件类型 → 颜色
+        color = "#4caf50" if "COMPLETE" in ev or "PASS" in ev or "CREATED" in ev else \
+                "#ff9800" if "START" in ev or "RUN" in ev else "#e53935" if "FAIL" in ev or "REJECT" in ev else "#78909c"
+        items.append(
+            f'<li><span class="dot" style="background:{color}"></span>'
+            f'<span class="t">{date_s} {time_s}</span>'
+            f'<span class="e">{ev}</span>'
+            f'<span class="o">{obj}</span></li>'
+        )
+
+    return f"""<!DOCTYPE html>
+<html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>生命线 — 最近事件</title>
+<style>
+  body {{ font-family: -apple-system, system-ui, sans-serif; margin: 0; padding: 16px; background: #0f1115; color: #e6e6e6; }}
+  h1 {{ font-size: 18px; }}
+  ul.timeline {{ list-style: none; margin: 14px 0 0; padding: 0; position: relative; }}
+  ul.timeline:before {{ content: ""; position: absolute; left: 8px; top: 0; bottom: 0; width: 2px; background: #2a2e37; }}
+  li {{ position: relative; padding: 6px 0 6px 30px; font-size: 13px; }}
+  .dot {{ position: absolute; left: 4px; top: 10px; width: 10px; height: 10px; border-radius: 50%; }}
+  .t {{ color: #78909c; margin-right: 10px; font-size: 12px; }}
+  .e {{ color: #e6e6e6; margin-right: 10px; font-weight: 500; }}
+  .o {{ color: #ffb74d; font-size: 12px; }}
+  @media (max-width: 600px) {{ .t {{ display: block; }} }}
+</style></head><body>
+<h1>⏱ 生命线（最近 {len(items)} 事件）</h1>
+<ul class="timeline">{"".join(items)}</ul>
+</body></html>"""
+
+
+def render_report_html(path: Path = DEFAULT_BACKLOG) -> str:
+    """汇报 HTML（markdown 汇报 → 简单 HTML 渲染, 浏览器可读）。"""
+    report = render_report(path)
+    html_body = []
+    for line in report.splitlines():
+        if line.startswith("# "):
+            html_body.append(f"<h1>{line[2:]}</h1>")
+        elif line.startswith("## "):
+            html_body.append(f"<h2>{line[3:]}</h2>")
+        elif line.startswith("- "):
+            html_body.append(f"<li>{line[2:]}</li>")
+        elif line.strip():
+            html_body.append(f"<p>{line}</p>")
+    return f"""<!DOCTYPE html>
+<html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Factory 进度汇报</title>
+<style>
+  body {{ font-family: -apple-system, system-ui, sans-serif; margin: 0; padding: 16px; background: #0f1115; color: #e6e6e6; }}
+  h1 {{ font-size: 20px; }} h2 {{ font-size: 16px; color: #ffb74d; border-bottom: 1px solid #2a2e37; padding-bottom: 4px; }}
+  li {{ font-size: 13px; color: #b0b6bf; margin: 3px 0; }}
+  p {{ color: #9aa0a6; font-size: 13px; }}
+</style></head><body>{"".join(html_body)}
+<p style="margin-top:20px;color:#78909c">会话 /board report --save 可落盘为 markdown</p>
+</body></html>"""

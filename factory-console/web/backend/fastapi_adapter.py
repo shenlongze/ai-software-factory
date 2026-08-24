@@ -830,6 +830,30 @@ def build_app(
             return {"projects": 0, "status_dist": {}, "avg_lifecycle_pct": 0,
                     "running_tasks": 0, "failed_tasks": 0}
 
+    @app.get("/api/board/docs")
+    def api_board_docs(project: str = ""):
+        """项目文档管理 HTML (文档资产列表 + 查看链接)。"""
+        from fastapi.responses import HTMLResponse
+
+        board_mod = _console_import("session.board")
+        try:
+            html = board_mod.render_project_docs_html(workspace_root, project)
+        except Exception:  # noqa: BLE001
+            html = "<p>（文档列表渲染失败）</p>"
+        return HTMLResponse(content=html)
+
+    @app.get("/api/board/doc")
+    def api_board_doc(project: str = "", doc: str = ""):
+        """项目文档查看: markdown 渲染 / JSON 格式化 (只读, 路径白名单)。"""
+        from fastapi.responses import HTMLResponse, PlainTextResponse
+
+        board_mod = _console_import("session.board")
+        try:
+            html = board_mod.render_project_doc_view(workspace_root, project, doc)
+        except Exception:  # noqa: BLE001
+            html = "<p>（文档渲染失败）</p>"
+        return HTMLResponse(content=html)
+
     @app.get("/api/board/tasks")
     def api_board_tasks(project: str = ""):
         """项目任务树 HTML (epic → feature → task, 状态色点)。"""

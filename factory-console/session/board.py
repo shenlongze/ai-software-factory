@@ -1440,6 +1440,7 @@ def _board_nav(active: str = "project", project: str = "", workspace: Optional[P
         ("chain", f"/api/board/chain?project={g}" if g else "/api/board?view=projects", "⛓ 任务链"),
         ("timeline", f"/api/board/timeline?project={g}" if g else "/api/board/timeline", "⏱ 生命线"),
         ("report", f"/api/board?view=report&project={g}" if g else "/api/board?view=report", "📄 汇报"),
+        ("docs", f"/api/board/docs?project={g}" if g else "/api/board?view=projects", "📚 文档"),
         ("mainline", "/api/board?view=mainline", "📋 AI主线面板"),
     ]
     links = "".join(
@@ -1497,6 +1498,14 @@ def _project_task_tree(workspace: Path | str, slug: str) -> list[dict[str, Any]]
                 tasks = (json.loads(tf.read_text(encoding="utf-8")) or {}).get("tasks") or []
             except Exception:  # noqa: BLE001
                 tasks = []
+    if not tasks:
+        # plan.json fallback (demo 等仅依赖计划示例): plan.tasks 无 status → 待办
+        pf = Path(workspace) / "projects" / slug / "plan.json"
+        if pf.is_file():
+            try:
+                tasks = (json.loads(pf.read_text(encoding="utf-8")) or {}).get("tasks") or []
+            except Exception:  # noqa: BLE001
+                tasks = []
     epics: dict[str, dict[str, Any]] = {}
     for t in tasks:
         epic = str(t.get("epic") or t.get("feature") or "未分组")
@@ -1529,6 +1538,8 @@ def render_project_tasktree_html(workspace: Path | str, slug: str) -> str:
              "failed": "❌", "blocked": "⛔", "pending": "⬜", "todo": "⬜"}
     cols = {"done": "#43a047", "running": "#1e88e5", "failed": "#e53935",
             "pending": "#78909c", "blocked": "#fb8c00"}
+    # 任务逻辑: 依赖关系 + 关键路径 (plan.json; 不堆任务 — 有先后逻辑)
+    dep_map, critical = _project_dependency_map(workspace, slug)
     epic_html = []
     for ep in tree:
         feat_items = []
@@ -1540,9 +1551,15 @@ def render_project_tasktree_html(workspace: Path | str, slug: str) -> str:
                 color = cols.get(st, "#78909c")
                 agent = str(t.get("agent") or "")
                 agent_s = f'<span class="tag">{agent}</span>' if agent else ""
+                tid = str(t.get("id") or "?")
+                deps = dep_map.get(tid)
+                dep_s = ""
+                if deps:
+                    dep_s = f'<span class="dep">依赖: {"→".join(deps)}</span>'
+                crit_s = '<span class="crit-mark">★关键</span>' if tid in critical else ""
                 task_items.append(
                     f'<li class="task {st}"><span class="tmark" style="color:{color}">{mark}</span> '
-                    f'{str(t.get("id") or "?")} {str(t.get("name") or "")[:40]}{agent_s} '
+                    f'{tid} {str(t.get("name") or "")[:40]}{crit_s}{agent_s}{dep_s} '
                     f'<span class="tstatus">{st or "待办"}</span></li>'
                 )
             feat_items.append(
@@ -1555,6 +1572,19 @@ def render_project_tasktree_html(workspace: Path | str, slug: str) -> str:
         )
     body = "".join(epic_html) if epic_html else "<p>（暂无任务）</p>"
     counts = _project_task_status_counts(workspace, slug)
+    # 项目任务时间线 (audit 事件; 不堆 — 有先后时间逻辑)
+    tl_rows = _project_task_timeline(workspace, slug, limit=8)
+    tl_html = ""
+    if tl_rows:
+        tl_items = "".join(
+            f'<li><span class="tlt">{r["time"]}</span><span class="tle">{r["ev"]}</span>'
+            f'<span class="tlo">{r["obj"]}</span></li>'
+            for r in tl_rows
+        )
+        tl_html = (
+            "<div class='card'><h2>⏱ 任务时间线（最近事件）</h2>"
+            f"<ul class='tl'>{tl_items}</ul></div>"
+        )
     return f"""<!DOCTYPE html>
 <html lang="zh"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1571,10 +1601,18 @@ def render_project_tasktree_html(workspace: Path | str, slug: str) -> str:
   li.task {{ font-size: 12px; padding: 3px 0; color: #b0b6bf; }}
   .tag {{ font-size: 10px; background: #37474f; color: #b0bec5; border-radius: 4px; padding: 1px 6px; margin-left: 6px; }}
   .tstatus {{ font-size: 10px; color: #78909c; margin-left: 6px; }}
+  .dep {{ font-size: 10px; color: #26c6da; background: #00363f; border-radius: 4px; padding: 1px 6px; margin-left: 6px; }}
+  .crit-mark {{ font-size: 10px; color: #ff8a80; background: #4a1414; border-radius: 4px; padding: 1px 6px; margin-left: 6px; }}
+  .card {{ background: #1a1e26; border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; }}
+  .card h2 {{ font-size: 14px; color: #ffb74d; margin: 0 0 6px; }}
+  ul.tl {{ list-style: none; margin: 0; padding: 0; }}
+  ul.tl li {{ font-size: 12px; padding: 3px 0; color: #b0b6bf; }}
+  .tlt {{ color: #78909c; margin-right: 10px; }} .tle {{ color: #e6e6e6; }} .tlo {{ color: #90caf9; margin-left: 10px; }}
 </style></head><body>
 {_board_nav("tasks", slug, workspace)}
 <h1>🗂 项目任务树 — {info.get('name') or slug}</h1>
 <div class="summary">✅完成 {counts['done']} · 🔵进行中 {counts['running']} · ❌失败 {counts['failed']} · ⬜待办 {counts['pending']} · 共 {counts['total']}</div>
+{tl_html}
 {body}
 {_auto_refresh_script(15)}
 </body></html>"""
@@ -1774,3 +1812,195 @@ def render_project_report(workspace: Path | str, slug: str) -> str:
         and not ln.strip().startswith(("⏱", "◉ 需求确认"))
     )
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------- 项目文档管理 (S10-110 新需求)
+
+#: 项目文档资产: 文件名 → (中文名, 类型)
+PROJECT_DOC_TYPES: dict[str, tuple[str, str]] = {
+    "product.json": ("产品定义", "json"),
+    "PRD.md": ("需求文档", "md"),
+    "engineering.json": ("工程计划", "json"),
+    "tasks.json": ("任务拆分", "json"),
+    "execution_plan.json": ("执行计划", "json"),
+    "execution_state.json": ("执行状态", "json"),
+    "validation_result.json": ("验证结果", "json"),
+    "repair_task.json": ("修复任务", "json"),
+    "plan.json": ("依赖计划", "json"),
+    "project.json": ("项目信息", "json"),
+}
+
+
+def list_project_docs(workspace: Path | str, slug: str) -> list[dict[str, Any]]:
+    """项目文档资产清单 {name, label, kind, size, mtime, exists} (只读, 失败安全)。"""
+    pdir = Path(workspace) / "projects" / slug
+    docs = []
+    for name, (label, kind) in PROJECT_DOC_TYPES.items():
+        f = pdir / name
+        if not f.is_file():
+            docs.append({"name": name, "label": label, "kind": kind,
+                         "size": 0, "mtime": 0.0, "exists": False})
+            continue
+        try:
+            st = f.stat()
+            docs.append({"name": name, "label": label, "kind": kind,
+                         "size": st.st_size, "mtime": st.st_mtime, "exists": True})
+        except OSError:  # noqa: BLE001
+            docs.append({"name": name, "label": label, "kind": kind,
+                         "size": 0, "mtime": 0.0, "exists": False})
+    return docs
+
+
+def render_project_docs_html(workspace: Path | str, slug: str) -> str:
+    """项目文档管理 HTML: 文档资产列表 (名称/类型/大小/更新时间), 点击查看。"""
+    slug = Path(str(slug or "")).name
+    info = _read_product_info(workspace, slug) if slug else None
+    if info is None:
+        return _board_nav("docs", slug, workspace) + "<p>（项目不存在或未选择）</p>"
+    name = info.get("name") or slug
+    docs = list_project_docs(workspace, slug)
+    rows = []
+    for d in docs:
+        if not d["exists"]:
+            rows.append(
+                f'<tr class="missing"><td class="dname">{"📄" if d["kind"]=="md" else "📦"} {d["label"]}</td>'
+                f'<td><code>{d["name"]}</code></td><td class="m">—</td><td class="m">—</td></tr>'
+            )
+            continue
+        import datetime
+        ts = datetime.datetime.fromtimestamp(d["mtime"]).strftime("%m-%d %H:%M") if d["mtime"] else "?"
+        size = f"{d['size']}B" if d["size"] < 1024 else f"{d['size']/1024:.1f}KB"
+        rows.append(
+            f'<tr><td class="dname">{"📄" if d["kind"]=="md" else "📦"} {d["label"]}</td>'
+            f'<td><code>{d["name"]}</code></td>'
+            f'<td><a href="/api/board/doc?project={slug}&amp;doc={d["name"]}" '
+            f'style="color:#8ab4f8">查看</a></td>'
+            f'<td class="m">{size}</td><td class="m">{ts}</td></tr>'
+        )
+    table = "".join(rows) if rows else "<tr><td>（无文档资产）</td></tr>"
+    return f"""<!DOCTYPE html>
+<html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>文档管理 — {name}</title>
+<style>
+  body {{ font-family: -apple-system, system-ui, sans-serif; margin: 0; padding: 16px; background: #0f1115; color: #e6e6e6; }}
+  h1 {{ font-size: 18px; }} .hint {{ color: #9aa0a6; font-size: 12px; margin: 8px 0 14px; }}
+  table {{ width: 100%; border-collapse: collapse; font-size: 13px; background: #1a1e26; border-radius: 8px; }}
+  td {{ padding: 8px 12px; border-bottom: 1px solid #2a2e37; }}
+  tr.missing td {{ color: #546e7a; }}
+  td.dname {{ font-weight: 500; }} td.m {{ color: #78909c; font-size: 12px; }}
+  code {{ color: #90a4ae; font-size: 12px; }}
+</style></head><body>
+{_board_nav("docs", slug, workspace)}
+<h1>📄 项目文档管理 — {name}</h1>
+<p class="hint">共 {sum(1 for d in docs if d['exists'])}/{len(docs)} 份文档已生成 · 点击"查看"渲染内容</p>
+<table><tr><th>文档</th><th>文件</th><th></th><th>大小</th><th>更新时间</th></tr>{table}</table>
+</body></html>"""
+
+
+def render_project_doc_view(workspace: Path | str, slug: str, doc_name: str) -> str:
+    """项目文档查看 HTML: markdown 渲染 / JSON 格式化 (只读, 文件名白名单)。"""
+    slug = Path(str(slug or "")).name
+    doc_name = Path(str(doc_name or "")).name  # 防目录穿越
+    if doc_name not in PROJECT_DOC_TYPES:
+        return "<p>（不支持的文档类型）</p>"
+    label, kind = PROJECT_DOC_TYPES[doc_name]
+    f = Path(workspace) / "projects" / slug / doc_name
+    if not f.is_file():
+        return f"<p>（{doc_name} 未生成）</p>"
+    try:
+        content = f.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):  # noqa: BLE001
+        return "<p>（文档读取失败）</p>"
+    nav = _board_nav("docs", slug, workspace)
+    if kind == "md":
+        # 简单 markdown 渲染 (标题/列表/段落)
+        body = []
+        for line in content.splitlines():
+            if line.startswith("# "):
+                body.append(f"<h1>{line[2:]}</h1>")
+            elif line.startswith("## "):
+                body.append(f"<h2>{line[3:]}</h2>")
+            elif line.startswith("### "):
+                body.append(f"<h3>{line[4:]}</h3>")
+            elif line.startswith("- "):
+                body.append(f"<li>{line[2:]}</li>")
+            elif line.strip():
+                body.append(f"<p>{line}</p>")
+        body_html = "".join(body) if body else "<p>（空文档）</p>"
+    else:
+        import html as _html
+        try:
+            import json as _json
+            formatted = _json.dumps(_json.loads(content), ensure_ascii=False, indent=2)
+        except _json.JSONDecodeError:  # noqa: BLE001
+            formatted = content
+        body_html = f"<pre style='overflow-x:auto;font-size:12px'>{_html.escape(formatted)}</pre>"
+    return f"""<!DOCTYPE html>
+<html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{label} — {slug}</title>
+<style>
+  body {{ font-family: -apple-system, system-ui, sans-serif; margin: 0; padding: 16px; background: #0f1115; color: #e6e6e6; }}
+  h1 {{ font-size: 18px; }} h2 {{ font-size: 15px; color: #ffb74d; border-bottom: 1px solid #2a2e37; padding-bottom: 4px; }}
+  h3 {{ font-size: 13px; color: #b0bec5; }} li {{ font-size: 13px; color: #b0b6bf; margin: 3px 0; }}
+  p {{ font-size: 13px; color: #9aa0a6; }}
+  pre {{ background: #1a1e26; border-radius: 8px; padding: 12px; color: #90caf9; }}
+</style></head><body>
+{nav}
+<h1>📄 {label} — {slug}</h1>
+{body_html}
+</body></html>"""
+
+
+# ---------------------------------------------------------------- 任务逻辑增强 (不堆任务)
+
+def _project_dependency_map(workspace: Path | str, slug: str) -> tuple[dict[str, list[str]], list[str]]:
+    """项目任务依赖: {task_id: [前置任务]} + critical_path (读 plan.json, 失败安全)。"""
+    plan_file = Path(workspace) / "projects" / slug / "plan.json"
+    deps: dict[str, list[str]] = {}
+    critical: list[str] = []
+    if not plan_file.is_file():
+        return deps, critical
+    try:
+        plan = json.loads(plan_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):  # noqa: BLE001
+        return deps, critical
+    edges = plan.get("edges") or []
+    for e in edges:
+        if not isinstance(e, dict):
+            continue
+        src, dst = str(e.get("from") or ""), str(e.get("to") or "")
+        if src and dst:
+            deps.setdefault(dst, []).append(src)
+    critical = [str(t) for t in (plan.get("critical_path") or [])]
+    return deps, critical
+
+
+def _project_task_timeline(workspace: Path | str, slug: str, limit: int = 10) -> list[dict[str, str]]:
+    """项目任务时间线 (读审计事件该项目的 TASK_*/TEST_* 事件, 按时间)。"""
+    slug = Path(str(slug or "")).name
+    audit_file = Path(workspace) / "audit" / "audit_events.json"
+    if not audit_file.is_file():
+        return []
+    try:
+        data = json.loads(audit_file.read_text(encoding="utf-8"))
+        events = data.get("events") if isinstance(data, dict) else data
+    except (OSError, json.JSONDecodeError):  # noqa: BLE001
+        return []
+    if not isinstance(events, list):
+        return []
+    rows = []
+    for e in events:
+        if str(e.get("project_id") or "") != slug:
+            continue
+        ev = str(e.get("event_type") or "")
+        if ev.startswith("TASK_") or ev.startswith("TEST_") or ev == "ARTIFACT_CREATED":
+            ts = str(e.get("timestamp") or "")
+            rows.append({
+                "time": ts[5:16] if len(ts) >= 16 else ts,  # MM-DD HH:MM
+                "ev": EVENT_LABELS.get(ev, ev),
+                "obj": str(e.get("task_id") or e.get("artifact_id") or ""),
+            })
+    rows.sort(key=lambda r: r["time"])
+    return rows[-limit:]

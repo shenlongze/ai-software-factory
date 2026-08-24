@@ -598,3 +598,82 @@ class TestReportMainlineSelect:
         html = BOARD.render_report_html(workspace=tmp_path, project_id="a")
         assert 'value="a" selected' in html
         assert "view=report&project=a" in html    # report tab 带项目
+
+
+# ================================================================== 文档管理 + 任务逻辑
+
+class TestProjectDocs:
+    def _proj(self, tmp_path):
+        _mk_project(tmp_path, "a", name="项目A",
+                    files=("PRD.md", "engineering.json", "tasks.json"))
+        return tmp_path
+
+    def test_list_project_docs(self, tmp_path):
+        self._proj(tmp_path)
+        docs = BOARD.list_project_docs(tmp_path, "a")
+        by_name = {d["name"]: d for d in docs}
+        assert by_name["PRD.md"]["exists"] is True
+        assert by_name["PRD.md"]["label"] == "需求文档"
+        assert by_name["execution_state.json"]["exists"] is True  # _mk_project 生成
+        assert by_name["plan.json"]["exists"] is False            # 未生成 → 存在性诚实
+
+    def test_docs_html(self, tmp_path):
+        self._proj(tmp_path)
+        html = BOARD.render_project_docs_html(tmp_path, "a")
+        assert "项目文档管理" in html and "需求文档" in html
+        assert "doc?project=a" in html  # 查看链接
+
+    def test_doc_view_markdown(self, tmp_path):
+        self._proj(tmp_path)
+        html = BOARD.render_project_doc_view(tmp_path, "a", "PRD.md")
+        assert "需求文档" in html
+
+    def test_doc_view_json_and_traversal_guard(self, tmp_path):
+        self._proj(tmp_path)
+        html = BOARD.render_project_doc_view(tmp_path, "a", "engineering.json")
+        assert "<pre" in html  # JSON 格式化 (pre 标签)
+        bad = BOARD.render_project_doc_view(tmp_path, "a", "../audit_events.json")
+        assert "不支持的文档类型" in bad  # 路径穿越防护
+
+
+class TestTaskLogic:
+    def _plan(self, tmp_path):
+        pdir = tmp_path / "projects" / "demo"
+        pdir.mkdir(parents=True, exist_ok=True)
+        (pdir / "plan.json").write_text(json.dumps({
+            "tasks": [
+                {"id": "db", "name": "数据库", "est_minutes": 10},
+                {"id": "api", "name": "接口", "est_minutes": 10},
+                {"id": "fe", "name": "前端", "est_minutes": 10},
+            ],
+            "edges": [{"from": "db", "to": "api"}, {"from": "api", "to": "fe"}],
+            "critical_path": ["db", "api", "fe"],
+        }), encoding="utf-8")
+        return tmp_path
+
+    def test_dependency_map(self, tmp_path):
+        self._plan(tmp_path)
+        deps, critical = BOARD._project_dependency_map(tmp_path, "demo")
+        assert deps == {"api": ["db"], "fe": ["api"]}
+        assert critical == ["db", "api", "fe"]
+
+    def test_tasktree_deps_and_critical(self, tmp_path):
+        self._plan(tmp_path)
+        html = BOARD.render_project_tasktree_html(tmp_path, "demo")
+        assert "依赖: db" in html          # api 依赖 db
+        assert "关键" in html              # 关键路径标注
+
+    def test_task_timeline_from_audit(self, tmp_path):
+        self._plan(tmp_path)
+        d = tmp_path / "audit"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "audit_events.json").write_text(json.dumps({"events": [
+            {"timestamp": "2026-08-24T12:00:00", "event_type": "TASK_STARTED", "project_id": "demo", "task_id": "db"},
+            {"timestamp": "2026-08-24T12:01:00", "event_type": "TASK_FAILED", "project_id": "demo", "task_id": "db"},
+            {"timestamp": "2026-08-24T12:02:00", "event_type": "TASK_STARTED", "project_id": "other", "task_id": "x"},
+        ]}), encoding="utf-8")
+        rows = BOARD._project_task_timeline(tmp_path, "demo")
+        assert len(rows) == 2               # 只含 demo 的任务事件
+        assert rows[0]["ev"] == "任务开始"
+        html = BOARD.render_project_tasktree_html(tmp_path, "demo")
+        assert "任务时间线" in html

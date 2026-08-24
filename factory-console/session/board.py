@@ -1924,15 +1924,16 @@ def list_project_docs(workspace: Path | str, slug: str) -> list[dict[str, Any]]:
         f = pdir / name
         if not f.is_file():
             docs.append({"name": name, "label": label, "kind": kind,
-                         "size": 0, "mtime": 0.0, "exists": False, "extra": False})
+                         "size": 0, "mtime": 0.0, "exists": False, "extra": False, "folder": ""})
             continue
         try:
             st = f.stat()
             docs.append({"name": name, "label": label, "kind": kind,
-                         "size": st.st_size, "mtime": st.st_mtime, "exists": True, "extra": False})
+                         "size": st.st_size, "mtime": st.st_mtime, "exists": True, "extra": False,
+                         "folder": ""})
         except OSError:  # noqa: BLE001
             docs.append({"name": name, "label": label, "kind": kind,
-                         "size": 0, "mtime": 0.0, "exists": False, "extra": False})
+                         "size": 0, "mtime": 0.0, "exists": False, "extra": False, "folder": ""})
     # 扫描其他真实文档: README.md / docs/ 子目录 / 根目录 .md/.json/.txt
     if pdir.is_dir():
         for f in sorted(pdir.rglob("*")):
@@ -1978,29 +1979,37 @@ def render_project_docs_html(workspace: Path | str, slug: str) -> str:
                 f'style="color:#8ab4f8">查看</a></td>'
                 f'<td class="m">{size}</td><td class="m">{ts}</td></tr>')
 
-    core = [d for d in docs if not d.get("extra")]
-    extra = [d for d in docs if d.get("extra")]
-    core_rows = "".join(_row(d, True) for d in core) or "<tr><td>（无核心资产）</td></tr>"
-    extra_table = ""
-    if extra:
-        # 按文件夹分组: docs/ → 区块; 根目录文件 → "根目录"
-        folders: dict[str, list[dict[str, Any]]] = {}
-        for d in extra:
-            folders.setdefault(d.get("folder") or "", []).append(d)
-        blocks = []
-        for folder in sorted(folders.keys()):
-            rows = "".join(_row(d, False) for d in folders[folder])
-            title = "📁 根目录" if not folder else f"📁 {folder}/"
-            blocks.append(
-                f"<h3 style='font-size:13px;color:#8ab4f8;margin:12px 0 4px'>{title}</h3>"
-                f"<table><tr><th>文档</th><th>文件</th><th></th><th>大小</th><th>更新时间</th></tr>"
-                f"{rows}</table>"
-            )
-        extra_table = (
-            f"<h2 style='font-size:15px;color:#ffb74d;margin:18px 0 6px'>📁 项目全部文档 "
-            f"（按文件夹, 扫描真实文件）</h2>"
-            + "".join(blocks)
+    # 完整目录树: 全部文件 (核心资产 + 扫描) 按文件夹分组
+    folders: dict[str, list] = {}
+    for d in docs:
+        if not d["exists"]:
+            continue
+        folders.setdefault(d.get("folder") or "", []).append(d)
+
+    def _folder_row(d):
+        import datetime
+        ts = datetime.datetime.fromtimestamp(d["mtime"]).strftime("%m-%d %H:%M") if d["mtime"] else "?"
+        size = f"{d['size']}B" if d["size"] < 1024 else f"{d['size']/1024:.1f}KB"
+        icon = "📄" if d["kind"] == "md" else "📦"
+        label = d["label"] if d.get("label") and d["label"] != d["name"] else d["name"]
+        return (f'<tr><td class="dname">{icon} {label}</td>'
+                f'<td><code>{d["name"]}</code></td>'
+                f'<td><a href="/api/board/doc?project={slug}&amp;doc={d["name"]}" '
+                f'style="color:#8ab4f8">查看</a></td>'
+                f'<td class="m">{size}</td><td class="m">{ts}</td></tr>')
+
+    blocks = []
+    for folder in sorted(folders.keys()):
+        rows = "".join(_folder_row(d) for d in folders[folder])
+        title = "📁 根目录" if not folder else f"📁 {folder}/"
+        blocks.append(
+            f"<h3 style='font-size:13px;color:#8ab4f8;margin:12px 0 4px'>{title} "
+            f"<span style='color:#546e7a;font-size:11px'>({len(folders[folder])})</span></h3>"
+            f"<table><tr><th>文档</th><th>文件</th><th></th><th>大小</th><th>更新时间</th></tr>"
+            f"{rows}</table>"
         )
+    all_table = "".join(blocks) if blocks else "<p>（项目暂无文档）</p>"
+    total_docs = sum(len(v) for v in folders.values())
     return f"""<!DOCTYPE html>
 <html lang="zh"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -2017,10 +2026,8 @@ def render_project_docs_html(workspace: Path | str, slug: str) -> str:
 {_board_nav("docs", slug, workspace)}
 <h1>📄 项目文档管理 — {name}</h1>
 {_data_source_html(workspace, slug, "docs")}
-<p class="hint">核心资产 {sum(1 for d in core if d["exists"])}/{len(core)} · 其他文档 {len(extra)} · 点击"查看"渲染内容</p>
-<h2 style="font-size:15px;color:#ffb74d;margin:6px 0">📦 核心资产</h2>
-<table><tr><th>文档</th><th>文件</th><th></th><th>大小</th><th>更新时间</th></tr>{core_rows}</table>
-{extra_table}
+<p class="hint">项目文档共 <b>{total_docs}</b> 份（按目录结构, 扫描真实文件）· 点击"查看"渲染内容</p>
+{all_table}
 </body></html>"""
 def render_project_doc_view(workspace: Path | str, slug: str, doc_name: str) -> str:
     """项目文档查看 HTML: markdown 渲染 / JSON 格式化 (只读, 项目内路径安全)。

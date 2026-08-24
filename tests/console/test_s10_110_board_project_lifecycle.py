@@ -879,7 +879,7 @@ class TestDocsScan:
     def test_docs_html_grouped(self, tmp_path):
         self._proj_with_extra(tmp_path)
         html = BOARD.render_project_docs_html(tmp_path, "a")
-        assert "其他文档" in html
+        assert "📁 根目录" in html and "📁 docs/" in html  # 文件夹分组
         assert "README.md" in html and "指南.md" in html
 
     def test_view_arbitrary_doc_path_safe(self, tmp_path):

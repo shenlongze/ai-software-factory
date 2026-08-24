@@ -112,6 +112,19 @@ _PRODUCT_BATCH_PHRASES: tuple[str, ...] = (
     "一次性问", "一次问完", "一次问", "一起问", "太啰嗦",
 )
 
+#: S10-099: LLM category=control 模糊改写的取消类关键词 (确定性硬闸未命中后 —
+#: "取消掉这个需求吧" 类改写 → 取消; 精确短语仍走 _PRODUCT_CANCEL_PHRASES)
+_LLM_CANCEL_KEYWORDS: tuple[str, ...] = (
+    "取消", "算了", "不做了", "不要了", "不想做", "停止",
+    "放弃", "退出", "重来", "重新开始",
+)
+
+#: S10-099: LLM category=control 模糊改写的整理类关键词 (→ 整理不创建,
+#: 覆盖 "整理一下" 类确定性漏网 — 验收 2)
+_LLM_SUMMARY_KEYWORDS: tuple[str, ...] = (
+    "整理", "汇总", "梳理", "不要创建", "不创建", "只整理", "需求文档",
+)
+
 #: 批量问题模式展示用紧凑问题 (编号列表 — 不重复大段引导语)
 _BATCH_QUESTIONS: dict[str, str] = {
     "problem": "产品解决什么问题? (用户遇到什么困难? 为什么现在的方法不好?)",
@@ -133,6 +146,10 @@ _PRODUCT_CONFIRM_PROMPT = "确认创建这个产品? (y/N)"
 _ENGINEERING_GUIDE = (
     "产品定义完成 — 是否生成工程计划? 输入 '准备开发' 或 '生成工程计划'"
 )
+
+
+#: S10-099: 未显式注入 analyzer 的哨兵 (区分 "未装配" 与 "显式禁用")
+_DISCOVERY_ANALYZER_UNSET = object()
 
 
 class ConversationState(Enum):
@@ -169,6 +186,10 @@ class ConversationResponse:
     passthrough: bool = False
     summary_only: bool = False
     product_snapshot: Optional[dict[str, Any]] = None
+    #: S10-099: LLM 理解摘要 / 主动分析 / AI 产出标记 (缺省零影响 — 前端/日志可区分)
+    understanding: Optional[str] = None
+    proactive: Optional[dict[str, Any]] = None
+    ai_generated: bool = False
 
 
 class ConversationManager:
@@ -182,7 +203,12 @@ class ConversationManager:
     - reset(): 回到初始 DISCOVERY (清空 pending_intent / history)
     """
 
-    def __init__(self, parser: Optional[IntentParser] = None) -> None:
+    def __init__(
+        self,
+        parser: Optional[IntentParser] = None,
+        *,
+        analyzer: Any = _DISCOVERY_ANALYZER_UNSET,
+    ) -> None:
         self.state = ConversationState.DISCOVERY
         self.pending_intent: Optional[IntentObject] = None
         self.history: list[dict[str, Any]] = []
@@ -194,6 +220,12 @@ class ConversationManager:
         self._product_pending: list[str] = []
         #: 批量问题模式 (用户嫌问题多 → 一次性列出剩余必填问题)
         self._product_batch_mode: bool = False
+        #: S10-099: 发现 LLM 分析器 — 注入/懒装配; None = 规则兜底 (诚实降级)
+        #: 显式传 None → 禁用 LLM (确定性测试); 不传 → 首次使用时装配
+        self._discovery_analyzer: Any = _DISCOVERY_ANALYZER_UNSET
+        self._discovery_analyzer_override: Any = analyzer
+        #: S10-099: 最近一次成功 LLM 分析 (确认门理解摘要/主动分析来源; 未用 LLM → None)
+        self._discovery_analysis: Optional[Any] = None
 
     def transition(self, new_state: ConversationState) -> None:
         """状态迁移: 记录 history (from → to) 后更新 state。
@@ -273,6 +305,8 @@ class ConversationManager:
 
         - ProductIntent.name 缺省 → "未命名产品-<ts>" (临时名, 验收 G)
         - 追问顺序 problem → user → core_features (缺什么问什么, 验收 C/F)
+        - S10-099: LLM 可用 → 初始描述即解析 (必填齐直入确认 / 缺则智能追问,
+          验收 1); LLM 不可用/失败 → 现有逐字段追问不变 (诚实降级)
         - 返回当前缺失字段的明确问题 (不静默)
         """
         self.product_intent = ProductIntent(
@@ -281,9 +315,16 @@ class ConversationManager:
             session_id=None,
         )
         self._product_pending = list(_PRODUCT_FIELD_ORDER)
+        self._discovery_analysis = None  # S10-099: 新流程清空上次 LLM 理解
         self.pending_intent = None  # 产品流程接管, 不挂起普通 intent
         if self.state != ConversationState.DISCOVERY:
             self.transition(ConversationState.DISCOVERY)
+        # S10-099: LLM 可用 → 初始描述即解析 (历史=[text], 计划 §3.1)
+        analysis = self._analyze_discovery(text, history=[text])
+        if analysis is not None:
+            handled = self._handle_llm_analysis(analysis, text)
+            if handled is not None:
+                return handled
         return ConversationResponse(
             state=self.state,
             message=self._next_product_question(),
@@ -350,10 +391,30 @@ class ConversationManager:
                 lines.append(f"  {idx}. {cand}")
             lines.append("输入 1-3 选择候选, 或直接输入新名称, 或 y 确认")
         lines.append(_PRODUCT_CONFIRM_PROMPT)
+        # S10-099: LLM 理解摘要 + 主动分析 (仅 LLM 真产出时 — ai_generated 诚实
+        # 标注; 未用 LLM → 现有消息逐字节不变, 验收 4)
+        analysis = self._discovery_analysis
+        understanding: Optional[str] = None
+        proactive: Optional[dict[str, Any]] = None
+        ai_generated = False
+        if analysis is not None:
+            understanding = (
+                str(getattr(analysis, "understanding", "") or "").strip() or None
+            )
+            proactive = dict(getattr(analysis, "proactive", None) or {}) or None
+            ai_generated = True
+            if understanding:
+                lines.insert(0, understanding)
+            proactive_line = self._format_proactive_line(proactive)
+            if proactive_line:
+                lines.append(proactive_line)
         return ConversationResponse(
             state=self.state,
             message="\n".join(lines),
             needs_input=True,
+            understanding=understanding,
+            proactive=proactive,
+            ai_generated=ai_generated,
         )
 
     def handle_product_answer(self, text: str) -> ConversationResponse:
@@ -386,6 +447,14 @@ class ConversationManager:
                 message=self._batch_questions_message(),
                 needs_input=True,
             )
+        # S10-099: 确定性硬闸未命中且 LLM 可用 → 意图理解分流
+        # (control→既有控制行为 / query→逃生 / product_description→提取合并 /
+        #  field_answer→并入既有逐字段逻辑; LLM 不可用/失败 → 现有逻辑不变)
+        analysis = self._analyze_discovery(raw, history=self._discovery_history(raw))
+        if analysis is not None:
+            handled = self._handle_llm_analysis(analysis, raw)
+            if handled is not None:
+                return handled
         if not self._product_pending:
             # 防御: 必填已齐全 (状态异常) → 回到确认
             return self._enter_product_confirmation()
@@ -416,6 +485,180 @@ class ConversationManager:
                 needs_input=True,
             )
         return self._enter_product_confirmation()
+
+    # -------------------------------------------------- S10-099: 发现阶段 LLM 分流
+
+    def _analyze_discovery(self, text: str, *, history=None):
+        """LLM 可用 → analyze; 不可用/失败 → None (规则兜底, 诚实降级, 不伪造)。"""
+        analyzer = self._get_discovery_analyzer()
+        if analyzer is None:
+            return None
+        try:
+            return analyzer.analyze(text, history=history)
+        except Exception:  # noqa: BLE001 — LLM 失败 → 规则兜底 (永不 5xx)
+            return None
+
+    def _get_discovery_analyzer(self):
+        """发现 LLM 分析器 (懒装配 + 缓存; 显式 None → 禁用)。
+
+        装配失败 (无 provider/key) → None → 现有状态机逐字节不变 (验收 3)。
+        """
+        if self._discovery_analyzer is not _DISCOVERY_ANALYZER_UNSET:
+            return self._discovery_analyzer
+        if self._discovery_analyzer_override is not _DISCOVERY_ANALYZER_UNSET:
+            self._discovery_analyzer = self._discovery_analyzer_override
+        else:
+            try:
+                from .discovery_intelligence import DiscoveryIntentAnalyzer
+
+                self._discovery_analyzer = DiscoveryIntentAnalyzer()
+            except Exception:  # noqa: BLE001 — 无 key/provider → 规则兜底
+                self._discovery_analyzer = None
+        return self._discovery_analyzer
+
+    def _discovery_history(self, current: str) -> list[str]:
+        """最近对话轮次 (不含当前输入 — 供 LLM 上下文, prompt 内单独给最新输入)。"""
+        lines: list[str] = []
+        for entry in reversed(self.history):
+            if entry.get("event") != "input":
+                continue
+            text = str(entry.get("text") or "").strip()
+            if text and text != current:
+                lines.append(text)
+                if len(lines) >= 3:
+                    break
+        return list(reversed(lines))
+
+    def _handle_llm_analysis(
+        self, analysis, text: str
+    ) -> Optional[ConversationResponse]:
+        """LLM 意图分流 (确定性硬闸未命中后; 计划 §3.1/§3.2)。
+
+        - control → 映射既有控制行为 (取消/整理/逃生 — 模糊改写补充网)
+        - query → 逃生 (交回宿主按普通意图链)
+        - product_description → 结构化提取合并 (直入确认 / 智能追问)
+        - field_answer → None (并入既有逐字段逻辑)
+        """
+        category = str(getattr(analysis, "category", "") or "")
+        if category == "control":
+            return self._apply_llm_control(analysis, text)
+        if category == "query":
+            return self._escape_product_flow(text)
+        if category == "product_description":
+            return self._apply_product_extraction(analysis)
+        return None
+
+    def _apply_llm_control(self, analysis, text: str) -> ConversationResponse:
+        """LLM category=control → 映射既有控制行为 (验收 2: 模糊改写不被当字段)。
+
+        确定性硬闸已先跑 (未命中) — 这里只处理 "整理一下" 类模糊改写;
+        取消类关键词 → 取消; 整理类关键词 → 整理不创建; 其余 → 逃生 (交回宿主)。
+        """
+        norm = _strip_tail_punct(text)
+        if any(keyword in norm for keyword in _LLM_CANCEL_KEYWORDS):
+            return self._cancel_product_discovery()
+        if any(keyword in norm for keyword in _LLM_SUMMARY_KEYWORDS):
+            return self._summarize_product_only()
+        return self._escape_product_flow(text)
+
+    def _apply_product_extraction(self, analysis) -> ConversationResponse:
+        """LLM 结构化提取合并 (计划 §3.1/§3.2): 只填缺失字段, pending 只留真正缺失。
+
+        - 必填齐 → 直入确认 (LLM 理解摘要 + 主动分析展示, ai_generated 标记)
+        - 仍缺 → 智能追问 (最重要 1 条, 带为什么缺)
+        """
+        self._apply_extraction_to_intent(analysis.extraction or {})
+        self._product_pending = [
+            field
+            for field in _PRODUCT_FIELD_ORDER
+            if not self._product_field_filled(field)
+        ]
+        self._discovery_analysis = analysis
+        if not self._product_pending:
+            return self._enter_product_confirmation()
+        return self._smart_question_response(analysis)
+
+    def _apply_extraction_to_intent(self, extraction: dict) -> None:
+        """把 LLM 提取结果并入 ProductIntent (只填非空且未填字段 — 不覆盖用户已给)。"""
+        pi = self.product_intent  # type: ignore[union-attr]
+        if pi is None:
+            return
+        from .naming import is_temp_name
+
+        problem = str(extraction.get("problem") or "").strip()
+        if problem and not pi.problem:
+            pi.problem = problem
+        user = str(extraction.get("user") or "").strip()
+        if user and not pi.user:
+            pi.user = user
+        features = extraction.get("core_features") or []
+        if features and not pi.core_features:
+            pi.core_features = parse_core_features(features)
+        name = str(extraction.get("name") or "").strip()
+        if name and (not pi.name or is_temp_name(pi.name)):
+            pi.name = name
+        platform = str(extraction.get("platform") or "").strip()
+        if platform and not pi.platform:
+            pi.platform = platform
+
+    def _product_field_filled(self, field: str) -> bool:
+        """字段是否有值 (与 ProductIntent._has_value 同口径: core_features 非空列表)。"""
+        pi = self.product_intent  # type: ignore[union-attr]
+        if pi is None:
+            return False
+        value = getattr(pi, field, None)
+        if field == "core_features":
+            return bool(value)
+        return value not in (None, "")
+
+    def _smart_question_response(self, analysis) -> ConversationResponse:
+        """智能追问: 只问最重要 1 条 (LLM 产出), 带为什么缺 (missing_reasons 话术)。
+
+        无 LLM 追问内容 → 机械追问兜底 (现有 _next_product_question, 逐字节不变)。
+        """
+        question = ""
+        for q in (analysis.smart_questions or []):
+            if str(q or "").strip():
+                question = str(q).strip()
+                break
+        if not question:
+            return ConversationResponse(
+                state=self.state,
+                message=self._next_product_question(),
+                needs_input=True,
+            )
+        missing = self._product_pending[0] if self._product_pending else ""
+        reason = str((analysis.missing_reasons or {}).get(missing) or "").strip()
+        message = question
+        if reason:
+            message = f"{question}\n(为什么还问: {reason})"
+        return ConversationResponse(
+            state=self.state,
+            message=message,
+            needs_input=True,
+            ai_generated=True,
+        )
+
+    def _format_proactive_line(self, proactive: Optional[dict]) -> str:
+        """主动分析展示行: "主动建议: 平台=.. · 竞品=.. · 范围=.. · 备注=.."。"""
+        if not proactive:
+            return ""
+        parts = []
+        for key, label in (
+            ("platform", "平台"),
+            ("competitors", "竞品"),
+            ("scope", "范围"),
+            ("notes", "备注"),
+        ):
+            value = proactive.get(key)
+            if isinstance(value, list):
+                value = "、".join(
+                    str(v).strip() for v in value if str(v or "").strip()
+                )
+            value = str(value or "").strip()
+            if value:
+                parts.append(f"{label}={value}")
+        return "主动建议: " + " · ".join(parts) if parts else ""
 
     # -------------------------------------------------- 产品流程控制短语 (非答案)
 
@@ -452,6 +695,7 @@ class ConversationManager:
         self.product_intent = None
         self._product_pending = []
         self._product_batch_mode = False
+        self._discovery_analysis = None  # S10-099: LLM 理解随流程一并清空
         self.pending_intent = None
         if self.state != ConversationState.DISCOVERY:
             self.transition(ConversationState.DISCOVERY)
@@ -667,6 +911,7 @@ class ConversationManager:
         self.product_intent = None
         self._product_pending = []
         self._product_batch_mode = False
+        self._discovery_analysis = None  # S10-099: 清空 LLM 理解 (全新会话)
         self.history = []
 
 

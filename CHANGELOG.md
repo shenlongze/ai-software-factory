@@ -5,6 +5,41 @@
 
 ---
 
+## [v1.1.16] — 2026-08-24
+
+### Added
+
+- **产品发现阶段 LLM 深度介入 (S10-099)** — 用户描述 → LLM 意图理解 → 结构化提取
+  （替代逐字段追问）→ 智能追问（理解为什么缺）→ 主动分析（平台/竞品/范围）→
+  LLM 理解摘要确认（"我理解你要做 X, 给 Y 用, 核心是 A/B/C, 对吗"）；无 LLM/key →
+  现有状态机零变化（诚实降级, 不伪造 LLM 理解）。
+  - **`session/discovery_intelligence.py`（新）** — `DiscoveryIntentAnalyzer`：
+    意图优先级（控制指令 > 查询 > 字段回答 > 产品描述）+ 结构化提取
+    {problem, user, core_features, name, platform} + 缺失原因 + 智能追问（≤3,
+    优先 1 条）+ 主动分析 + 理解摘要；默认复用 `ReasoningProvider._default_llm_fn()`
+    装配（同命名修复 bcc1b14 模式）；JSON 宽容解析链（剥 code fence →
+    `json.loads` → `{...}` 子串回退）+ schema 校验；任何失败 →
+    `DiscoveryLLMError` → 规则兜底。
+  - **`conversation.py` 最小集成** — `start_product_discovery` 初始描述即解析
+    （必填齐直入确认 / 缺则智能追问）；`handle_product_answer` 确定性 `_product_control`
+    硬闸之后按 LLM category 分流（control→既有控制行为 / query→逃生 /
+    product_description→提取合并 / field_answer→既有逐字段）；
+    `_enter_product_confirmation` 展示 LLM 理解摘要 + 主动分析（仅 LLM 真产出时,
+    `ai_generated` 诚实标注）。
+  - **`ConversationResponse` 新增可选字段** `understanding` / `proactive` /
+    `ai_generated`（缺省零影响, 前端/日志可区分）。
+  - **契约测试** — `tests/console/test_discovery_llm_intelligence.py`（mock LLM
+    注入, 不依赖真实 key；覆盖计划 §5 契约点 1-7）。
+
+### Fixed
+
+- **产品发现"太模板化"根因** — 用户初始自然描述只存 `raw` 从不解析 → 逐字段机械
+  追问。修复: LLM 可用时初始描述即理解提取, 一次产出结构化定义（"我想做个
+  markdown 编辑器..." 一次直达确认）; "整理一下" 类模糊控制不再被当字段（LLM
+  分类 control → 整理不创建）; 无 LLM/key → 规则状态机逐字节不变（诚实降级）。
+
+---
+
 ## [v1.1.15] — 2026-08-24
 
 ### Fixed

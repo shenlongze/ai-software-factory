@@ -161,6 +161,47 @@ def _pkg_version() -> str:
         return "dev"
 
 
+def _check_update_hint() -> str:
+    """--version 更新提示: 快速检查（不主动 fetch 避免每次网络）。
+
+    - 本地有 origin/HEAD 引用（上次 fetch 过）→ 直接比较, 有差异提示更新
+    - 无引用/fetch 过且相同 → 提示已最新或引导 factory update --check
+    - 失败 → 空（不误导, 不阻塞版本显示）
+    """
+    import subprocess
+
+    root = Path(__file__).resolve().parent.parent
+    try:
+        local = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "HEAD"],
+            capture_output=True, text=True, timeout=5)
+        if local.returncode != 0:
+            return ""
+        remote = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "origin/HEAD"],
+            capture_output=True, text=True, timeout=5)
+        if remote.returncode == 0:
+            # ahead/behind 区分（ahead=本地领先, behind=远程有新）
+            rc = subprocess.run(
+                ["git", "-C", str(root), "rev-list", "--left-right", "--count",
+                 "HEAD...origin/HEAD"],
+                capture_output=True, text=True, timeout=5)
+            try:
+                ahead_s, behind_s = (rc.stdout or "0 0").split()
+                ahead, behind = int(ahead_s), int(behind_s)
+            except (ValueError, AttributeError):  # noqa: BLE001
+                ahead, behind = 0, 0
+            if behind > 0:
+                return f"📦 检测到可更新版本（落后 {behind} 提交）— 运行: factory update"
+            if ahead > 0:
+                return f"🚀 本地领先远程 {ahead} 提交（无远程更新, 已是最新）"
+            return "✅ 已是最新版本"
+        # 未 fetch 过 → 引导检查命令（不主动网络）
+        return "检查更新: factory update --check"
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 STUB_COMMANDS: tuple[str, ...] = ()
 
 #: init 引导的 provider 选择项 (与 config.PROVIDER_DEFAULTS 键集对齐)
@@ -3318,6 +3359,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     """
     argv_list = list(sys.argv[1:]) if argv is None else list(argv)
     # 常见拼写别名: --doctor → doctor (用户易把子命令当 flag 输入)
+    if "--version" in argv_list:
+        print(f"AI Factory v{_pkg_version()} / AI Workforce Operating System")
+        hint = _check_update_hint()
+        if hint:
+            print(hint)
+        return 0
     if argv_list == ["--doctor"]:
         argv_list = ["doctor"]
     if not argv_list or argv_list == ["--interactive"]:

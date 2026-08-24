@@ -3,7 +3,23 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
-## [v1.1.45] — 2026-08-24
+## [v1.1.46] — 2026-08-24
+
+**factory --version 更新提示**: 检查是否存在可更新版本（Founder）。
+
+### Added
+
+- `factory --version` 显示版本后检查更新:
+  - 📦 落后远程 N 提交 → 提示 factory update
+  - 🚀 本地领先远程 N 提交 → 诚实显示"无远程更新"
+  - ✅ 已是最新
+  - 未 fetch 过 → 引导 factory update --check
+- ahead/behind 区分（不误报"可更新"当本地领先）· 快速检查不主动网络（用本地引用）
+
+### 验证
+
+- --version: "🚀 本地领先远程 81 提交（无远程更新, 已是最新）"
+
 
 **update HTTP API**: /api/system/status + /api/system/update（Founder: 要补 update 的 HTTP API）。
 

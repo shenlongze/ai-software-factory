@@ -53,9 +53,9 @@ DEFAULT_ROUTES: dict[str, str] = {
     "team_execute": "team_execute",
     "team_dependencies": "team_dependencies",
     "team_conflicts": "team_conflicts",
+    # S10-1xx: 组织管理意图 → org_manage Action (建公司/建部门/项目挂部门)
+    "org_manage": "org_manage",
 }
-
-
 class UnknownIntentError(Exception):
     """未路由 Intent (类型无映射或映射 Action 未注册) — 调用方须明确提示, 不静默。"""
 

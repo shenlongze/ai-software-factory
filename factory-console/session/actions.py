@@ -3185,6 +3185,137 @@ def product_pipeline(context: ExecutionContext) -> ActionResult:
         )
 
 
+def org_manage(context: ExecutionContext) -> ActionResult:
+    """组织管理 (§1.4.5 层级流程): 建公司/建部门/建项目/项目挂部门。
+
+    自然语言: "建个公司叫测试科技" / "建个部门财务部挂到 C-1" /
+    "把记账项目挂到财务部" — LLM 理解复合句 → 操作序列 → org CLI;
+    规则兜底: 关键词 → 单操作。不识别 → 明确请求澄清（不猜测）。
+    """
+    intent = getattr(context, "intent", None)
+    raw = str(getattr(intent, "raw", "") or "") if intent else ""
+    hint = str((intent.parameters or {}).get("hint", "")) if intent else ""
+    ops = _org_llm_parse(raw) or _org_rule_parse(raw, hint)
+    if not ops:
+        return ActionResult(
+            ok=False,
+            status=STATUS_ERROR,
+            message="没听懂组织操作，请说: 建公司 <名> / 建部门 <名> / 把项目 <名> 挂到部门",
+            error="未识别组织管理意图",
+        )
+    # 逐操作调 org CLI（失败安全: 单操作失败不中断, 汇总展示）
+    try:
+        org_cli = _load_org_cli()
+    except Exception as exc:  # noqa: BLE001
+        return ActionResult(ok=False, status=STATUS_ERROR, message=f"组织服务不可用: {exc}", error=str(exc))
+    executed: list[dict] = []
+    for op in ops:
+        result = _org_execute(org_cli, context.workspace, op)
+        executed.append(result)
+    ok_all = all(r.get("ok") for r in executed)
+    lines = []
+    for r in executed:
+        lines.append(
+            ("✅ " if r.get("ok") else "❌ ")
+            + str(r.get("message") or r.get("error") or "")
+        )
+    return ActionResult(
+        ok=ok_all,
+        status=STATUS_OK if ok_all else STATUS_ERROR,
+        message="\n".join(lines),
+        data={"operations": executed},
+        error=None if ok_all else "部分操作失败",
+    )
+
+
+def _org_llm_parse(raw: str) -> list[dict]:
+    """LLM 理解组织操作序列（复合句拆解）。失败/无 key → []（规则兜底）。"""
+    if not raw:
+        return []
+    try:
+        from .reasoning import ReasoningProvider
+        llm_fn = ReasoningProvider()._default_llm_fn()  # noqa: SLF001
+        if llm_fn is None:
+            return []
+        prompt = (
+            "你是组织管理助手。把用户的话转成组织操作序列, 只输出 JSON 数组, "
+            "每个元素: {op: company_create|department_create|project_create|"
+            "project_link, name, company, departments}。"
+            "name=实体名, company=公司ID或名, departments=部门ID或名列表。"
+            "无法理解 → 输出 []。\n用户: " + raw
+        )
+        text_out = str(llm_fn(prompt, "org_manage") or "").strip()
+        import json
+        import re
+        m = re.search(r"\[.*?\]", text_out, re.S)
+        if not m:
+            return []
+        ops = json.loads(m.group(0))
+        if not isinstance(ops, list):
+            return []
+        return [o for o in ops if isinstance(o, dict) and o.get("op")]
+    except Exception:  # noqa: BLE001 — LLM 失败 → 规则兜底
+        return []
+
+
+def _org_rule_parse(raw: str, hint: str) -> list[dict]:
+    """规则兜底: 关键词 → 单操作（不伪造, 只识别明确关键词）。"""
+    raw = raw or hint
+    if "公司" in raw and any(k in raw for k in ("建", "创建", "开", "成立", "注册")):
+        name = _org_extract_name(raw, "公司")
+        return [{"op": "company_create", "name": name, "company": "", "departments": []}]
+    if "部门" in raw and any(k in raw for k in ("建", "创建", "成立", "加个")):
+        name = _org_extract_name(raw, "部门")
+        return [{"op": "department_create", "name": name, "company": "", "departments": []}]
+    if any(k in raw for k in ("挂到", "挂部门", "关联到部门", "归属到")):
+        return [{"op": "project_link", "name": _org_extract_name(raw, "项目"),
+                 "company": "", "departments": [_org_extract_name(raw, "部门")]}]
+    return []
+
+
+def _org_extract_name(raw: str, entity: str) -> str:
+    """从 "建个公司叫测试科技" 提取实体名（规则, 粗糙但兜底）。"""
+    import re
+    # "叫 X" / "名为 X" / "X 公司"（X 在关键词前）
+    m = re.search(r"叫([\u4e00-\u9fa5A-Za-z0-9_-]+)", raw)
+    if m:
+        return m.group(1)
+    if entity == "公司":
+        m = re.search(r"([\u4e00-\u9fa5A-Za-z0-9_-]+?)公司", raw)
+    elif entity == "部门":
+        m = re.search(r"([\u4e00-\u9fa5A-Za-z0-9_-]+?)部门", raw)
+    else:
+        m = re.search(r"([\u4e00-\u9fa5A-Za-z0-9_-]+?)项目", raw)
+    return m.group(1) if m else ""
+
+
+def _org_execute(org_cli: Any, workspace: Any, op: dict) -> dict:
+    """执行单操作 → org CLI（create + link, 复用 Service Layer 不复制业务）。"""
+    from types import SimpleNamespace
+    op_type = str(op.get("op") or "")
+    name = str(op.get("name") or "")
+    company = str(op.get("company") or "")
+    departments = [str(d) for d in (op.get("departments") or []) if str(d)]
+    if op_type == "company_create":
+        args = SimpleNamespace(template="solo", name=name or "未命名公司", id=None)
+        return org_cli.cmd_company_create(workspace, args)
+    if op_type == "department_create":
+        if not company:
+            return {"ok": False, "error": "部门需要公司 (company)", "message": ""}
+        args = SimpleNamespace(company_id=company, name=name or "未命名部门", id=None)
+        return org_cli.cmd_department_create(workspace, args)
+    if op_type == "project_create":
+        args = SimpleNamespace(repo_path=str(workspace), name=name or "未命名项目",
+                               language="", framework="", build_command="",
+                               test_command="", project_type="", goal="", id=None,
+                               company=company, departments=",".join(departments))
+        return org_cli.cmd_project_register(workspace, args)
+    if op_type == "project_link":
+        args = SimpleNamespace(project_id=name, departments=",".join(departments), unlink="")
+        return org_cli.cmd_project_link(workspace, args)
+    return {"ok": False, "error": f"未知操作: {op_type}", "message": ""}
+
+
 def build_default_actions() -> ActionRegistry:
     """装配默认 Action 注册表 (注册式 — 新增 Action 只需 register 一行)。"""
     registry = ActionRegistry()
@@ -3195,6 +3326,16 @@ def build_default_actions() -> ActionRegistry:
             handler=create_project,
             permission="project",
             metadata={"service": "org.cli.cmd_project_register", "phase": "S10-048 P0"},
+        )
+    )
+    registry.register(
+        Action(
+            name="org_manage",
+            description="组织管理 (建公司/建部门/项目挂部门 — LLM 理解+规则兜底 → org CLI)",
+            handler=org_manage,
+            permission="project",
+            metadata={"service": "org.cli (create+link)", "phase": "S10-1xx",
+                      "sensitive": True, "category": "organization"},
         )
     )
     registry.register(

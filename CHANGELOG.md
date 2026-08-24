@@ -5,7 +5,24 @@
 
 ---
 
-## [v1.1.17] — 2026-08-24
+## [v1.1.18] — 2026-08-24
+
+**组织管理对话接入**: "建个公司/建部门/把项目挂到部门" → LLM 理解 + 规则兜底 → org CLI（§1.4.5）。
+
+### Added
+
+- **org_manage action**（`actions.py`）— 自然语言组织操作 → 操作序列 → org CLI (create+link)
+  - LLM 理解复合句（"成立软件公司建个后端部门" → 多操作序列）
+  - 规则兜底（无 LLM/key: 建公司/建部门/挂项目 关键词）
+  - 未识别 → 明确请求澄清（不猜测）
+- **INTENT_ORG_MANAGE**（`intent.py`）— 建公司/建部门/挂项目 关键词规则
+- **路由**（`router.py`）— org_manage → org_manage action
+
+### 测试
+
+- `tests/console/test_org_manage_action.py` 7 用例（意图/路由/规则落盘/未识别）
+- 无 LLM 诚实降级（规则兜底, 不伪造理解）
+
 
 **统一 create 入口**: `factory create <type>` 包装 company/department/project — 便捷铁律落地（§1.4.5）。
 

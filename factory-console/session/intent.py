@@ -57,6 +57,8 @@ INTENT_TEAM = "team"
 #: 团队执行 → execute_project(mode="team"); 团队依赖 → 依赖图视图;
 #: 团队冲突 → 冲突记录视图 (router → team_execute/team_dependencies/team_conflicts)
 INTENT_TEAM_EXECUTE = "team_execute"
+#: S10-1xx: 组织管理意图 (建公司/建部门/项目挂部门 — 统一 create + link, §1.4.5)
+INTENT_ORG_MANAGE = "org_manage"
 INTENT_TEAM_DEPENDENCIES = "team_dependencies"
 INTENT_TEAM_CONFLICTS = "team_conflicts"
 #: S10-065 批次 B: 引导式自然语言意图 (集成层 — 旧关键词不动, 纯新增)
@@ -152,6 +154,12 @@ _KEYWORD_RULES: tuple[tuple[tuple[str, ...], str, Optional[str]], ...] = (
     # 不被 workforce 泛化关键词 "团队" 抢; "创建团队" 不被 create_project "创建" 抢)
     (("创建团队",), INTENT_TEAM, "name"),
     (("团队协作", "协作视图", "团队绩效", "团队负载", "团队管理"), INTENT_TEAM, None),
+    # S10-1xx: 组织管理意图 (建公司/建部门/项目挂部门) — 在 workforce/create_project 之前:
+    # "创建公司/建公司" 含 "公司" 不与 "创建" (create_project) 冲突;
+    # "挂到部门/项目挂到" 处理渐进式挂接 (§1.4.5 组织×工作正交)
+    (("创建公司", "建公司", "建个公司", "开公司", "开个公司", "成立公司", "注册公司"), INTENT_ORG_MANAGE, "company"),
+    (("创建部门", "建部门", "建个部门", "成立部门", "加个部门"), INTENT_ORG_MANAGE, "department"),
+    (("挂到部门", "挂部门", "项目挂到", "关联到部门", "归属到"), INTENT_ORG_MANAGE, "link"),
     # S10-055 Task 005/006: Workforce 意图 — 在 show_status ("状态") 之前
     # ("团队状态" 含 "状态" 不被抢; "谁负责" 不被 run_task 抢; "为什么选择" 独立)
     (("查看团队", "团队状态", "团队成员", "团队情况", "团队"), INTENT_WORKFORCE, None),

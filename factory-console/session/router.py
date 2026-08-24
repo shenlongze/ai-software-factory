@@ -33,6 +33,7 @@ DEFAULT_ROUTES: dict[str, str] = {
     # orchestrator.needs_resume → resume; 无任务 → 全新执行; 复用同一执行链)
     "resume_project": "execute_project",
     # S10-081 P2: rename_project → execute_project? 否 — 特判 REPL (见 session.py)
+    "delete_project": "delete_project",
     "project_progress": "project_progress",
     "product_pipeline": "product_pipeline",
     "project_docs": "project_docs",

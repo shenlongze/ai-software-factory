@@ -1260,6 +1260,22 @@ def render_project_lifecycle_html(workspace: Path | str, project_id: str = "") -
         f"<p>📊 任务进度: ✅<b>{tp['done']}</b> ⬜{tp['total'] - tp['done']} ({tp['pct']}%)</p>"
         if tp["total"] else "<p>📊 任务进度: （暂无任务）</p>"
     )
+    # S10-110: AI 执行记录 (execution_records.json 按项目过滤)
+    exec_rows = _project_exec_records(workspace, slug, limit=10)
+    exec_html = ""
+    if exec_rows:
+        exec_items = "".join(
+            f'<tr><td class="m">{str(r.get("timestamp") or "")[5:16]}</td>'
+            f'<td class="tag-td">{r.get("agent") or "?"}</td>'
+            f'<td>{str(r.get("task") or "")[:20]}</td>'
+            f'<td class="{"ok" if r.get("result")=="success" else "fail"}">{r.get("result") or "?"}</td></tr>'
+            for r in exec_rows
+        )
+        exec_html = (
+            "<div class='card'><h2>⚙ AI 执行记录（最近）</h2>"
+            f"<table class='exec'><tr><th>时间</th><th>Agent</th><th>任务</th><th>结果</th></tr>"
+            f"{exec_items}</table></div>"
+        )
     mtime = info.get("_mtime") or 0
     import datetime
 
@@ -1300,6 +1316,11 @@ def render_project_lifecycle_html(workspace: Path | str, project_id: str = "") -
   .card {{ background: #1a1e26; border-radius: 8px; padding: 14px; margin-top: 12px; }}
   table.tasks {{ width: 100%; border-collapse: collapse; font-size: 12px; }}
   table.tasks td {{ padding: 5px 8px; border-bottom: 1px solid #2a2e37; color: #b0b6bf; }}
+  table.exec {{ width: 100%; border-collapse: collapse; font-size: 12px; }}
+  table.exec td, table.exec th {{ padding: 4px 8px; border-bottom: 1px solid #2a2e37; text-align: left; color: #b0b6bf; }}
+  table.exec th {{ color: #78909c; }}
+  table.exec td.ok {{ color: #4caf50; }} table.exec td.fail {{ color: #e53935; }}
+  .tag-td {{ color: #90caf9; }}
   p {{ font-size: 13px; color: #b0b6bf; }}
   .back {{ color: #8ab4f8; text-decoration: none; font-size: 13px; }}
 </style></head><body>
@@ -1318,6 +1339,7 @@ def render_project_lifecycle_html(workspace: Path | str, project_id: str = "") -
   </div>
 </div>
 {tasks_card}
+{exec_html}
 <div class="card">{task_html}<p>🕐 最近更新: {ts}</p></div>
 <p><a class="back" href="/api/board?view=projects">← 返回项目列表</a>
 <span style="margin-left:12px"><a class="back" href="#" onclick="event.preventDefault();fetch('/api/board/default?project={slug}',{{method:'POST'}}).then(function(){{alert('已设为默认项目');}});">⭐ 设为默认项目</a></span></p>
@@ -2572,3 +2594,39 @@ function save(){{
 }}
 </script>
 </body></html>"""
+
+
+def _project_exec_records(workspace: Path | str, slug: str, limit: int = 10) -> list[dict[str, Any]]:
+    """项目 AI 执行记录 (读 execution_records.json, 按该项目任务名过滤; 失败安全)。"""
+    slug = Path(str(slug or "")).name
+    rec_file = Path(workspace) / "exec" / "execution_records.json"
+    if not rec_file.is_file():
+        return []
+    # 该项目任务名集合
+    task_names: set[str] = set()
+    for src in ("tasks.json", "execution_state.json"):
+        f = Path(workspace) / "projects" / slug / src
+        if not f.is_file():
+            continue
+        try:
+            ts = (json.loads(f.read_text(encoding="utf-8")) or {}).get("tasks") or []
+            for t in ts:
+                nm = str(t.get("name") or "")
+                if nm:
+                    task_names.add(nm)
+        except Exception:  # noqa: BLE001
+            continue
+    if not task_names:
+        return []
+    try:
+        data = json.loads(rec_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):  # noqa: BLE001
+        return []
+    recs = data if isinstance(data, list) else data.get("records") or []
+    matched = [
+        r for r in recs
+        if str(r.get("task") or "") in task_names
+        or any(str(r.get("task") or "") in n for n in task_names)
+    ]
+    matched.sort(key=lambda r: str(r.get("timestamp") or ""))
+    return matched[-limit:]

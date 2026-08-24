@@ -1343,6 +1343,7 @@ def test_gate_class_default_untouched():
     assert CONF_MOD.ConfirmationGate().sensitive_actions == {
         "create_project",
         "run_task",
+        "delete_project",
     }
 
 

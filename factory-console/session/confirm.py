@@ -25,7 +25,7 @@ from .action import ExecutionContext
 from .intent import IntentObject
 
 #: 默认敏感 Action 集合 (设计 §2.5) — 请求确认后才执行
-SENSITIVE_ACTIONS: frozenset[str] = frozenset({"create_project", "run_task"})
+SENSITIVE_ACTIONS: frozenset[str] = frozenset({"create_project", "run_task", "delete_project"})
 
 #: 确认回答集合 (y/yes 不区分大小写; 其余 → 拒绝, 默认 No)
 _APPROVE_ANSWERS: frozenset[str] = frozenset({"y", "yes"})

@@ -93,7 +93,7 @@ def test_nonsensitive_passes_through(capsys):
 
 def test_default_sensitive_actions():
     """默认敏感集合 = {create_project, run_task} (设计 §2.5)。"""
-    assert _gate().sensitive_actions == {"create_project", "run_task"}
+    assert _gate().sensitive_actions == {"create_project", "run_task", "delete_project"}
 
 
 # ------------------------------------------------------------------ D/E: 确认决策 + 可注入输入源

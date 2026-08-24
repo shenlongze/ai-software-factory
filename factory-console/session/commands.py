@@ -132,7 +132,48 @@ class ProjectCommand(SlashCommand):
         projects = read_projects(self._projects_file())
         if not args:
             return self._show(projects, context)
-        return self._switch(args.strip(), projects, context)
+        arg = args.strip()
+        # S10-110: /project delete <id|全部未命名> — 危险操作, 需确认 (y/N)
+        if arg.startswith("delete") or arg.startswith("删除"):
+            return self._delete(arg, projects, context)
+        return self._switch(arg, projects, context)
+
+    def _delete(self, arg: str, projects: list[dict[str, Any]], context: SessionContext) -> int:
+        """删除项目 (危险操作): 确认目标 → y/N 确认 → 执行。"""
+        parts = arg.split(None, 1)
+        target = parts[1].strip() if len(parts) > 1 else ""
+        if not target:
+            print("用法: /project delete <项目ID 或 名称> · /project delete 全部未命名")
+            return 2
+        if target in ("全部未命名", "所有未命名", "all-unnamed"):
+            candidates = [p for p in projects if str(p.get("name") or "").startswith("未命名产品")]
+        else:
+            candidates = [p for p in projects if p["id"] == target or p["name"] == target]
+        if not candidates:
+            print(f"未找到要删除的项目: {target}")
+            return 1
+        print(f"⚠️ 将删除 {len(candidates)} 个项目 (危险操作, 不可恢复):")
+        for p in candidates:
+            print(f"  - {p['id']}  {p['name']}")
+        confirm = input("确认删除? (y/N) ")
+        if confirm.strip().lower() not in ("y", "yes"):
+            print("已取消删除")
+            return 0
+        # 执行: 复用 actions.delete_project
+        from .actions import delete_project as _delete_action
+        from .action import ExecutionContext, IntentObject
+        import sys as _sys
+        from pathlib import Path as _Path
+        scope = "全部未命名" if target in ("全部未命名", "所有未命名", "all-unnamed") else ""
+        pid = "" if scope else target
+        intent = IntentObject(intent_type="delete_project", params={"scope": scope, "target": pid},
+                              raw=arg, source="session")
+        ws = self.workspace or _Path.home() / ".factory"
+        ctx = ExecutionContext(workspace=ws, session=None, user="user",
+                               project=None, intent=intent)
+        result = _delete_action(ctx)
+        print(result.message or ("✅ 删除完成" if result.ok else "❌ 删除失败"))
+        return 0 if result.ok else 1
 
     def _show(self, projects: list[dict[str, Any]], context: SessionContext) -> int:
         """项目清单 + 状态列 (PRD/管线资产/状态) — 识别垃圾名/文档进度。"""

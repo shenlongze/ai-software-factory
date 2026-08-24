@@ -3,6 +3,23 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.76] — 2026-08-24
+
+**项目删除功能 + 删除审批 + AI 执行记录展示（Founder 测试反馈）**。
+
+### Added
+
+- **项目删除**: 意图解析 ("删除全部未命名产品"/"删除项目 X") + actions.delete_project
+  (删目录 + org 记录 + PROJECT_DELETED 审计) + /project delete <id|全部未命名> 命令
+- **删除审批**: delete_project 纳入 ConfirmationGate 敏感集合 — 删除前显示
+  目标清单 + y/N 确认 (危险操作)
+- **AI 执行记录**: 单项目视图加"⚙ AI 执行记录"区块 (execution_records.json
+  按项目任务名过滤, 显示时间/Agent/任务/结果)
+
+### 验证
+
+- 5 新契约测试 (删除全部未命名/单个/未知/执行记录过滤/生命周期含执行记录) · 全量回归 0 新增失败
+
 ## [v1.1.75] — 2026-08-24
 
 **Board 文档树修复: 去重 + 目录上文件下 A-Z + 排除示例目录（Founder: 乱）**。

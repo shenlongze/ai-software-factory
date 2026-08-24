@@ -11,7 +11,7 @@
    "exit" → running=False + 退出提示
 7. handle() slash → passthrough (不再死胡同消息)
 8. CLI: factory project (无子命令) 提示含 status; factory create project (无 --name) → rc 2
-9. 版本 v1.1.75 (单源断言见 test_s10_074_deployment)
+9. 版本 v1.1.76 (单源断言见 test_s10_074_deployment)
 
 命令分流纯确定性 — 全部测试禁用 LLM 分析器 (analyzer=None), 不依赖/不伪造 LLM。
 
@@ -317,10 +317,10 @@ def test_cli_create_project_with_name_succeeds(tmp_path):
 
 
 def test_pyproject_version_bumped():
-    """契约 9: pyproject 版本 v1.1.75 (单源断言见 test_s10_074_deployment)。"""
+    """契约 9: pyproject 版本 v1.1.76 (单源断言见 test_s10_074_deployment)。"""
     import tomllib
 
     ver = tomllib.loads((_ROOT / "pyproject.toml").read_text(encoding="utf-8"))[
         "project"
     ]["version"]
-    assert ver == "1.1.75"
+    assert ver == "1.1.76"

@@ -248,6 +248,8 @@ API（Web/集成）:   http://127.0.0.1:8011/api/...      e.g. GET /api/board
   | 文档配置 | 多文档目录+可配扩展名(默认 md/json/doc/docx)+设置页/CLI 管理 | v1.1.73 |
   | 配置保存修复 | 保存按钮 JS 转义修复 + 保存后自动刷新 + 🔄刷新/↻重置按钮 | v1.1.74 |
   | 树去重排序 | 修复渲染重复(dkids) + 排除 demo/examples + 目录上文件下 A-Z | v1.1.75 |
+  | 项目删除 | 删除项目(自然语言+/project delete)+确认门审批+PROJECT_DELETED审计 | v1.1.76 |
+  | AI 执行记录 | 单项目视图显示执行记录(execution_records 按项目过滤) | v1.1.76 |
 - **状态**: ✅（数据真实，空态诚实引导）· **关联**: 待办清单 + docs/sprint10 验收
 
 ### 6.2 /preview — Markdown 预览

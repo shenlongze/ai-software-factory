@@ -3424,6 +3424,15 @@ def build_default_actions() -> ActionRegistry:
     )
     registry.register(
         Action(
+            name="delete_project",
+            description="删除项目 (危险操作, 需确认门): 删目录 + org 记录 + 审计",
+            handler=delete_project,
+            permission="project",
+            metadata={"sensitive": True, "category": "project"},
+        )
+    )
+    registry.register(
+        Action(
             name="generate_prd",
             description="生成产品需求文档 (ProductIntent → PRD.md, 规则生成)",
             handler=generate_prd,
@@ -4013,3 +4022,106 @@ def build_default_actions() -> ActionRegistry:
         )
     )
     return registry
+
+
+def delete_project(context: ExecutionContext) -> ActionResult:
+    """删除项目 (S10-110, 危险操作需确认门): 删 projects/<slug>/ 目录 + org/projects.json + 审计。
+
+    目标: intent.params 的 scope="全部未命名" → 删所有"未命名产品-*"; 或
+    target (项目 id/名称) → 删单个。返回删除清单。
+    """
+    import shutil
+
+    params = context.intent.params or {}
+    raw = str(context.intent.raw or "")
+    target = str(params.get("target") or "").strip()
+    scope = str(params.get("scope") or "").strip()
+    if not scope and ("全部未命名" in raw or "所有未命名" in raw):
+        scope = "全部未命名"
+    workspace = Path(context.workspace)
+    projects_root = workspace / "projects"
+    org_file = workspace / "org" / "projects.json"
+
+    # 收集候选项目
+    candidates = []
+    try:
+        projects = read_projects(org_file)
+    except Exception:  # noqa: BLE001
+        projects = []
+    if scope == "全部未命名":
+        candidates = [p for p in projects if str(p.get("name") or "").startswith("未命名产品")]
+    elif target:
+        candidates = [
+            p for p in projects
+            if str(p.get("id") or "") == target or str(p.get("name") or "") == target
+        ]
+    if not candidates:
+        return ActionResult(
+            ok=False,
+            status=STATUS_ERROR,
+            message=f"未找到要删除的项目: {target or scope or '?'}",
+            error="未找到要删除的项目",
+        )
+
+    # 执行删除: 目录 + org 记录
+    deleted: list[dict[str, Any]] = []
+    for p in candidates:
+        pid = str(p.get("id") or "")
+        # 项目目录 (projects/<slug>/)
+        slug = _slugify(str(p.get("name") or pid)) if False else pid
+        # 实际项目目录可能是 pid 或 时间戳名 — 优先按 id, 再按 name 目录
+        pdir = projects_root / pid
+        if not pdir.is_dir():
+            # 尝试 name slug 目录
+            name_dir = projects_root / _slugify(str(p.get("name") or ""))
+            if name_dir.is_dir():
+                pdir = name_dir
+            else:
+                pdir = Path("")  # 无目录可删
+        if pdir.is_dir():
+            shutil.rmtree(pdir, ignore_errors=True)
+        deleted.append({"id": pid, "name": str(p.get("name") or pid)})
+
+    # org/projects.json 移除
+    if org_file.is_file():
+        try:
+            data = _read_json_file(org_file)
+            remaining = data.get("projects") or {}
+            for p in deleted:
+                remaining.pop(p["id"], None)
+            data["projects"] = remaining
+            _write_json_file(org_file, data)
+        except Exception:  # noqa: BLE001
+            pass
+
+    # 审计 (PROJECT_DELETED, 失败安全) — 直接 append audit_events.json (与 board 生命线同源)
+    try:
+        audit_file = workspace / "audit" / "audit_events.json"
+        audit_file.parent.mkdir(parents=True, exist_ok=True)
+        import datetime as _dt
+        if audit_file.is_file():
+            data = _read_json_file(audit_file)
+        else:
+            data = {}
+        events = data.get("events") if isinstance(data, dict) else []
+        if not isinstance(events, list):
+            events = []
+        ts = _dt.datetime.now().isoformat(timespec="seconds")
+        for p in deleted:
+            events.append({
+                "timestamp": ts, "event_type": "PROJECT_DELETED",
+                "project_id": p["id"], "actor_type": "user",
+                "detail": f"删除项目 {p['name']} ({p['id']})",
+            })
+        data["events"] = events
+        _write_json_file(audit_file, data)
+    except Exception:  # noqa: BLE001
+        pass
+
+    names = ", ".join(p["name"] for p in deleted)
+    return ActionResult(
+        ok=True,
+        status=STATUS_OK,
+        message=f"✅ 已删除 {len(deleted)} 个项目: {names}",
+        data={"deleted": deleted},
+    )

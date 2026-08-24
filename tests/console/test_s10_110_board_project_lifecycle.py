@@ -1178,3 +1178,78 @@ class TestTreeOrder:
         # docs 子目录文件 a 在 b 前
         dnames = [f["name"] for f in root["dirs"]["docs"]["files"]]
         assert dnames == sorted(dnames)
+
+
+# ================================================================== 项目删除 + 执行记录
+
+class TestDeleteProject:
+    def _proj(self, tmp_path):
+        ws = tmp_path / ".factory"
+        org = ws / "org"; org.mkdir(parents=True)
+        (org / "projects.json").write_text(json.dumps({"projects": {
+            "P-aaa": {"id": "P-aaa", "name": "未命名产品-123"},
+            "P-bbb": {"id": "P-bbb", "name": "旅行记账"},
+        }}, ensure_ascii=False), encoding="utf-8")
+        (ws / "projects").mkdir()
+        (ws / "projects" / "P-aaa").mkdir()
+        (ws / "projects" / "P-aaa" / "product.json").write_text("{}", encoding="utf-8")
+        (ws / "projects" / "P-bbb").mkdir()
+        (ws / "projects" / "P-bbb" / "product.json").write_text("{}", encoding="utf-8")
+        return ws
+
+    def _ctx(self, ws, params, raw):
+        from factory_console.session.action import ExecutionContext, IntentObject
+        return ExecutionContext(workspace=ws, session=None, user="user", project=None,
+                                intent=IntentObject(intent_type="delete_project", params=params, raw=raw, source="test"))
+
+    def test_delete_all_unnamed(self, tmp_path):
+        ws = self._proj(tmp_path)
+        from factory_console.session.actions import delete_project
+        r = delete_project(self._ctx(ws, {}, "删除全部未命名产品"))
+        assert r.ok
+        import json
+        d = json.load(open(ws / "org" / "projects.json"))
+        assert list(d["projects"].keys()) == ["P-bbb"]
+        assert not (ws / "projects" / "P-aaa").exists()
+        assert (ws / "audit" / "audit_events.json").exists()  # 审计
+
+    def test_delete_single(self, tmp_path):
+        ws = self._proj(tmp_path)
+        from factory_console.session.actions import delete_project
+        r = delete_project(self._ctx(ws, {"target": "P-bbb"}, "删除项目 P-bbb"))
+        assert r.ok
+        import json
+        d = json.load(open(ws / "org" / "projects.json"))
+        assert list(d["projects"].keys()) == ["P-aaa"]
+
+    def test_delete_unknown(self, tmp_path):
+        ws = self._proj(tmp_path)
+        from factory_console.session.actions import delete_project
+        r = delete_project(self._ctx(ws, {"target": "nope"}, "删除项目 nope"))
+        assert not r.ok
+
+
+class TestExecRecords:
+    def _proj(self, tmp_path):
+        _mk_project(tmp_path, "a", name="项目A")
+        pdir = tmp_path / "projects" / "a"
+        (pdir / "execution_state.json").write_text(json.dumps({"tasks": [
+            {"id": "t1", "name": "任务一", "status": "done"},
+        ]}), encoding="utf-8")
+        (tmp_path / "exec").mkdir()
+        (tmp_path / "exec" / "execution_records.json").write_text(json.dumps([
+            {"task": "任务一", "agent": "backend-1", "result": "success", "timestamp": "2026-08-24T10:00:00"},
+            {"task": "别的任务", "agent": "x", "result": "failed", "timestamp": "2026-08-24T10:01:00"},
+        ]), encoding="utf-8")
+        return tmp_path
+
+    def test_exec_records_filtered(self, tmp_path):
+        self._proj(tmp_path)
+        recs = BOARD._project_exec_records(tmp_path, "a")
+        assert len(recs) == 1
+        assert recs[0]["task"] == "任务一"
+
+    def test_lifecycle_has_exec_records(self, tmp_path):
+        self._proj(tmp_path)
+        html = BOARD.render_project_lifecycle_html(tmp_path, "a")
+        assert "AI 执行记录" in html and "backend-1" in html

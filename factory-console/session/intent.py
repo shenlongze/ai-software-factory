@@ -68,6 +68,7 @@ INTENT_DISCOVERY_START = "discovery_start"
 INTENT_RESUME_PROJECT = "resume_project"
 #: S10-081 P2: 项目改名 (这个项目改名叫X / 把项目名称改成X)
 INTENT_RENAME_PROJECT = "rename_project"
+INTENT_DELETE_PROJECT = "delete_project"
 INTENT_REVIEW_VIEW = "review_view"
 INTENT_PRODUCTION_SESSION_VIEW = "production_session_view"
 INTENT_REVIEW_APPROVE = "review_approve"
@@ -238,6 +239,9 @@ _KEYWORD_RULES: tuple[tuple[tuple[str, ...], str, Optional[str]], ...] = (
     # S10-050 P1: 产品意图 (想法级) — "我想/做一款/产品/想法/创业" → create_product
     # (idea 参数 = 关键词后剩余文本; 优先级在 run_task/show_status 之后,
     #  "我想看看状态" → show_status、"我想加个功能" → run_task 不被抢)
+    # S10-110: 项目删除 — "删除全部未命名产品" → scope=全部未命名 (固定, 非文本剩余)
+    (("删除全部未命名", "删掉全部未命名", "清理全部未命名"), INTENT_DELETE_PROJECT, None),
+    (("删除项目", "删掉项目", "删除", "删掉", "移除项目", "清理"), INTENT_DELETE_PROJECT, "target"),
     (("我想", "做一款", "产品", "想法", "创业"), INTENT_CREATE_PRODUCT, "idea"),
     # S10-081 P2: 项目改名 — "改名叫X/名称改成X/项目改名为X" → rename (name 参数)
     (("改名叫", "改名为", "名称改成", "名字改成", "项目改名", "改名字"), INTENT_RENAME_PROJECT, "name"),

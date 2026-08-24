@@ -206,19 +206,25 @@ class CostCommand(SlashCommand):
 
 
 class BoardCommand(SlashCommand):
-    """/board — 任务监控面板 (todolist+进度条+标签 / graph 依赖图 / timeline 生命线)。
+    """/board — 任务监控面板 (todolist+进度条+标签 / graph 依赖图 / chain 任务链 /
+    timeline 生命线 / report 汇报导出)。
 
     用法:
       /board              主线面板（主线 vs 周边 + 进度）
       /board graph [项目]  任务依赖图（plan.json, CRITICAL=★）
+      /board chain [项目]  任务链（关键路径 ★ 关键节点 ▲ 汇聚点 + 工期）
       /board timeline     生命线（最近审计事件时间线）
+      /board report       生成给 Hermes 的 markdown 汇报
     """
 
     name = "board"
-    description = "任务监控面板 (主线todolist/依赖图/生命线)"
+    description = "任务监控面板 (主线todolist/依赖图/任务链/生命线/汇报)"
 
     def execute(self, args: str, context: SessionContext) -> int:
-        from .board import render_board, render_graph, render_timeline
+        from .board import (
+            render_board, render_graph, render_timeline,
+            render_chain, render_report,
+        )
         from pathlib import Path
 
         workspace = (
@@ -235,6 +241,13 @@ class BoardCommand(SlashCommand):
                     print("（未设置工作区 — 无法读项目 plan.json）")
                     return 1
                 print(render_graph(workspace, project))
+            elif view == "chain":
+                if workspace is None:
+                    print("（未设置工作区 — 无法读项目 plan.json）")
+                    return 1
+                print(render_chain(workspace, project))
+            elif view == "report":
+                print(render_report())
             elif view == "timeline":
                 if workspace is None:
                     print("（未设置工作区 — 无法读审计事件）")

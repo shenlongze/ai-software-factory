@@ -3,7 +3,21 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
-## [v1.1.31] — 2026-08-24
+## [v1.1.32] — 2026-08-24
+
+**board 增强**: 任务链(关键路径) + 关键节点 + --report 汇报导出（Founder: 需要, 还有任务链/无序图/关键节点）。
+
+### Added
+
+- **/board chain [项目]**（`board.py`）— 任务链（关键路径 critical_path, ★关键节点 ▲汇聚点 + 总工期）
+- **/board report** — 给 Hermes 的 markdown 汇报（主线完成/进行中/未开始 + 周边 + 建议下一步）
+- /board 说明更新（chain/report 子命令）
+
+### 验证
+
+- 任务链: db★→api★→fe★→test★▲（关键 4 节点 + 汇聚 1 + 工期 12min）
+- report: markdown 汇报（M2 ✅ 主线完成）
+
 
 **factory help 命令总览**: 按域分类列出全部命令（§11.6 落地, Founder: 命令在哪查看）。
 

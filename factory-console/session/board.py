@@ -191,3 +191,87 @@ def render_timeline(workspace: Path, limit: int = 15) -> str:
         lines.append(f"{marker} {ev} {('→ ' + obj) if obj else ''}")
         lines.append("│")
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------- 任务链 + 关键节点
+
+def render_chain(workspace: Path, project_id: str = "") -> str:
+    """任务链/关键路径链（plan.json critical_path, 关键节点★ + 汇聚点▲）。"""
+    project_dir = Path(workspace) / "projects" / (project_id or "")
+    plan_file = project_dir / "plan.json"
+    if not plan_file.is_file():
+        return "（未找到 plan.json — 项目未生成计划, 或需指定项目）"
+    try:
+        plan = json.loads(plan_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):  # noqa: BLE001
+        return "（plan.json 损坏）"
+    tasks = {t.get("id", ""): t for t in (plan.get("tasks") or [])}
+    cpath = plan.get("critical_path") or []
+    merges = plan.get("merges") or []
+    if not cpath:
+        return "（plan.json 无关键路径 — 环拒绝/未生成, 诚实不伪造）"
+    merge_ids = set()
+    for m in merges:
+        if isinstance(m, dict):
+            merge_ids.add(m.get("task") or "")
+        elif isinstance(m, str):
+            merge_ids.add(m)
+    lines = ["🔗 任务链（关键路径, ★=关键节点 ▲=汇聚点）:", ""]
+    for i, tid in enumerate(cpath):
+        t = tasks.get(tid, {})
+        star = "★" if t.get("critical") else " "
+        merge = "▲" if tid in merge_ids else " "
+        arrow = " → " if i < len(cpath) - 1 else ""
+        est = t.get("est_minutes")
+        est_s = f" ({est}min)" if est else ""
+        lines.append(f"  {star}{merge} {tid}{est_s} {t.get('name','')[:20]}{arrow}")
+    total_est = sum(
+        int(tasks.get(tid, {}).get("est_minutes") or 0) for tid in cpath
+    )
+    lines.append(f"\n  总工期: {total_est}min · 关键节点 {len(cpath)} 个 · 汇聚点 {len(merge_ids)} 个")
+    return "\n".join(lines)
+
+
+def render_report(path: Path = DEFAULT_BACKLOG) -> str:
+    """--report: 给 Hermes 的 markdown 进度汇报（主线完成/进行中/未开始+周边+建议）。"""
+    groups = _parse_backlog(path)
+    if not groups:
+        return "（未找到待办清单）"
+    main_groups = [g for g in groups if g["id"] in MAIN_GROUPS]
+    side_groups = [g for g in groups if g["id"] in SIDE_GROUPS]
+
+    done_groups = [g for g in main_groups if g["tasks"] and all(t["done"] for t in g["tasks"])]
+    partial_groups = [g for g in main_groups if g["tasks"] and not all(t["done"] for t in g["tasks"]) and any(t["done"] for t in g["tasks"])]
+    todo_groups = [g for g in main_groups if g["tasks"] and not any(t["done"] for t in g["tasks"])]
+
+    lines = ["# AI Factory 进度汇报", ""]
+    lines.append("## 主线完成")
+    if done_groups:
+        for g in done_groups:
+            lines.append(f"- **{g['id']}** ✅ ({len(g['tasks'])}/{len(g['tasks'])}) — {g['title']}")
+    else:
+        lines.append("- （无）")
+    lines.append("\n## 主线进行中")
+    if partial_groups:
+        for g in partial_groups:
+            d = sum(1 for t in g["tasks"] if t["done"])
+            lines.append(f"- **{g['id']}** 🚧 ({d}/{len(g['tasks'])}) — {g['title']}")
+    else:
+        lines.append("- （无）")
+    lines.append("\n## 主线未开始")
+    if todo_groups:
+        for g in todo_groups:
+            lines.append(f"- **{g['id']}** ⬜ (0/{len(g['tasks'])}) — {g['title']}")
+    else:
+        lines.append("- （无）")
+    side_total = sum(len(g["tasks"]) for g in side_groups)
+    lines.append(f"\n## 周边（长期, 非主线）")
+    lines.append(f"- {side_total} 项（不阻塞主线）")
+    lines.append("\n## 建议下一步")
+    if todo_groups:
+        lines.append(f"- 推进未开始主线: {', '.join(g['id'] for g in todo_groups)}")
+    elif partial_groups:
+        lines.append(f"- 收尾进行中主线: {', '.join(g['id'] for g in partial_groups)}")
+    else:
+        lines.append("- 主线全部完成, 进入下一里程碑")
+    return "\n".join(lines)

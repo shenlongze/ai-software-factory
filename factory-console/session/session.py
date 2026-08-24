@@ -47,9 +47,27 @@ from .renderer import HumanRenderer, Renderer
 from .router import IntentRouter, UnknownIntentError
 from .slash import SlashCommandRegistry
 
-#: 会话 banner (v0.2 — AI Workforce Operating System 命名空间)
+#: 会话 banner (版本单源: pyproject.toml, S10-098 修复 v0.2 硬编码;
+#:  连字符目录非包 → 不依赖相对导入, 独立读 pyproject)
+def _session_version() -> str:
+    # 源码态 (仓库根有 pyproject) → pyproject 优先; 安装态 → metadata
+    try:
+        import tomllib
+        from pathlib import Path as _P
+        _pp = _P(__file__).resolve().parent.parent.parent / "pyproject.toml"
+        if _pp.is_file():
+            return tomllib.loads(_pp.read_text(encoding="utf-8"))["project"]["version"]
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from importlib.metadata import version as _v
+        return _v("ai-software-factory")
+    except Exception:  # noqa: BLE001
+        return "0.0.0-dev"
+
+
 BANNER = (
-    "AI Factory v0.2 / AI Workforce Operating System\n"
+    f"AI Factory v{_session_version()} / AI Workforce Operating System\n"
     "输入 exit / 退出 结束会话; Ctrl+C / Ctrl+D 亦可。"
 )
 

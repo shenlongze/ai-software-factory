@@ -160,6 +160,14 @@ _FIELD_LABEL_ALIASES: dict[str, tuple[str, ...]] = {
     "core_features": ("功能", "核心功能", "功能点", "特性"),
 }
 
+#: 确认+动作 标签映射 (S10-10x — 发现阶段缺失提示复用)
+_NEXT_ACTION_LABELS: dict[str, str] = {
+    "prd": "PRD文档",
+    "feature_list": "功能清单",
+    "html": "HTML页面",
+    "docs": "文档",
+}
+
 #: 产品确认提示 (y/N 约定: 回车/其他 → 拒绝)
 _PRODUCT_CONFIRM_PROMPT = "确认创建这个产品? (y/N)"
 
@@ -508,6 +516,28 @@ class ConversationManager:
         del_field = _parse_delete_command(raw)
         if del_field is not None:
             return self._apply_delete_command(del_field)
+        # S10-10x: 发现阶段"确认+动作"短语 ("可以，先出prd文档"/"先出PRD"/"出份功能清单")
+        # → 产品定义不完整 → 明确提示缺失 (不当字段回答/不盲目创建;
+        #   防 create_product 缺失失败 与 generate_prd 扫描兜底写错项目)
+        action_id = match_direct_action(raw) or match_approve_next(raw)
+        if action_id:
+            pending = list(self._product_pending or [])
+            if pending:
+                label = _NEXT_ACTION_LABELS.get(action_id, "该产出")
+                miss = "、".join(
+                    (_BATCH_QUESTIONS.get(f) or f).split("?")[0].split(" (")[0]
+                    for f in pending
+                )
+                return ConversationResponse(
+                    state=self.state,
+                    message=self._guide_message(
+                        f"产品定义还不完整，还缺 {miss} — 补齐后才能生成{label}。"
+                        "请先回答当前问题。"
+                    ),
+                    needs_input=True,
+                )
+            # 必填已齐 (异常状态) → 回确认
+            return self._enter_product_confirmation()
         # S10-101: 求助提案挂起 → 处理选择 (y 全填 / 1-3 单选 / 自定义) —
         # 绝不当字段内容收下 (验收 6)
         if self._suggestion_proposal:

@@ -324,6 +324,11 @@ class TestFactoryCliArgparse:
             "evidence",  # M1a: 证据包 (diff+test+决策, 可审计)
             "workload",  # M1b: 积压清道夫 (backlog/status)
             "approval",  # M1b: 审批门 (list/decide, 复用 ApprovalGate)
+            "create",  # S10-1xx: 统一创建入口 (company/department/project, §1.4.5)
+            "llm",  # v1.1.30: LLM 清单 (资源域)
+            "todo",  # v1.1.30: 主线任务清单 (数据域)
+            "help",  # v1.1.31: 命令总览 (按域分类)
+            "update",  # v1.1.43: 整体/模块更新 (系统域)
         }
 
     def test_start_flags_parsed(self):

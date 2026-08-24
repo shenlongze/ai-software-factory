@@ -37,7 +37,7 @@ _svc = importlib.import_module("factory-console.cli_services")
 _cli = importlib.import_module("factory-console.cli_factory")
 _cfg = importlib.import_module("factory-console.config")
 
-BUILTIN_IDS = ["backend", "frontend", "runtime"]
+BUILTIN_IDS = ["backend", "frontend", "runtime", "board"]  # board: v1.1.28 懒加载服务
 
 
 def make_cli(tmp_path: Path):
@@ -57,8 +57,12 @@ def make_cli(tmp_path: Path):
 
 
 def patch_ports(monkeypatch, value: bool = False) -> None:
-    """端口探测归零 (cli_factory 模块属性 — cli_services 经 _factory 同一引用)。"""
+    """端口探测归零 (cli_factory 模块属性 — cli_services 经 _factory 同一引用)。
+
+    stop 兜底用真实 lsof (_lsof_pids) — 一并归零, 防测试误杀真实端口进程。
+    """
     monkeypatch.setattr(_cli, "_port_in_use", lambda port: value)
+    monkeypatch.setattr(_cli, "_lsof_pids", lambda port: [])
 
 
 def patch_start_checks(monkeypatch) -> None:
@@ -168,7 +172,7 @@ class TestServiceList:
         out = capsys.readouterr().out
         assert rc == 0
         assert "factory service list:" in out
-        assert out.count("stopped") == 3
+        assert out.count("stopped") == len(BUILTIN_IDS)  # backend/frontend/runtime/board
         for sid in BUILTIN_IDS:
             assert sid in out
 

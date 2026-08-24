@@ -122,6 +122,10 @@ class ProjectCommand(SlashCommand):
             return Path(self.projects_file)
         if self.cli is not None:
             return Path(self.cli.data_dir) / "org" / "projects.json"
+        # S10-10x: workspace 优先 — 会话自定义 workspace 时, 项目清单跟随工作区
+        # (org/projects.json), 而非硬编码 ~/.factory (默认 workspace=~/.factory, 行为不变)
+        if self.workspace is not None:
+            return Path(self.workspace) / "org" / "projects.json"
         return DEFAULT_PROJECTS_FILE
 
     def execute(self, args: str, context: SessionContext) -> int:

@@ -950,19 +950,23 @@ def test_full_session_flow_end_to_end(fake_org, capsys, tmp_path):
     ] == "execution_ready"
 
 
-def test_full_session_generate_prd_phrase(fake_org, capsys, tmp_path):
-    """\"生成PRD\" 直接触发 generate_prd action (非敏感, 无需确认)。"""
+def test_full_session_generate_prd_phrase_requires_context(fake_org, capsys, tmp_path):
+    """修复 B: "生成PRD" 无当前项目/进行中产品 → 安全提示, 不猜项目 (扫描兜底禁用)。
+
+    旧行为: 扫描兜底选中"最新 product.json" → 把 PRD 写进任意项目 (多项目环境
+    数据污染, S10-10x 修复)。新行为: 无显式上下文 → 明确提示, 不写。
+    """
     root = tmp_path / "ws"
     root.mkdir()
-    _create_product_on_disk(root)
+    _create_product_on_disk(root)  # 磁盘存在项目 — 但会话无 current_project
     sess = SESS_MOD.InteractiveSession(
         context_manager=CTX_MOD.ContextManager(workspace=str(root)),
         confirmation_gate=_SpyGate(decision=True),
     )
     sess._dispatch("生成PRD")
     out = capsys.readouterr().out
-    assert "PRD 已生成" in out
-    assert (root / "projects" / "scorepocket" / "PRD.md").is_file()
+    assert "未找到产品定义" in out  # 安全提示, 不猜项目
+    assert not (root / "projects" / "scorepocket" / "PRD.md").exists()
 
 
 # ================================================================== 12. 回归 (验收 K)

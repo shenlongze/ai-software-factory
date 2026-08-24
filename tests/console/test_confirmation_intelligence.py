@@ -14,7 +14,7 @@
    无 LLM 规则兜底真实生效 (不伪造)
 10. 宿主接线: session 层 "可以，先出prd文档" → create_product + generate_prd 执行
     (真实 tmp workspace + FakeOrg 桩, 零真实 LLM)
-11. 版本断言 v1.1.28 (另见 test_s10_074_deployment)
+11. 版本断言 v1.1.46 (另见 test_s10_074_deployment)
 
 模块级: discovery_guide 确认表单元 (APPROVE_WORDS/APPROVE_NEXT_ACTIONS/RENAME_RE/
 CLARIFY_WORDS/CONFIRM_DELEGATE_WORDS + match_*) 与 analyzer analyze_confirmation
@@ -585,11 +585,74 @@ class TestSessionWiring:
         assert "PRD 生成失败" in out
 
 
+    # ------------------------------------------------------------ S10-10x 修复
+    def test_discovery_phase_confirm_next_incomplete_fields(self):
+        """修复 A: 发现阶段字段不完整时"可以，先出prd文档" → 提示缺失, 不创建。
+
+        回归场景 (S10-10x): 产品定义缺 user/core_features 时输入"确认+动作"
+        短语 — 之前 LLM 分类不稳定 (当字段回答 / 触发创建), 现在确定性提示缺失。
+        """
+        mgr = _manager()
+        mgr.handle("我想开发一个台球计分APP")
+        mgr.handle("台球比赛计分麻烦")  # 只填 problem — 缺 user/core_features
+        r = mgr.handle("可以，先出prd文档")
+        assert "产品定义还不完整" in r.message
+        assert "目标用户" in r.message
+        assert "核心功能" in r.message
+        assert r.needs_input is True
+        assert getattr(r, "next_action", None) is None
+        # 未触发创建/PRD — 仍在发现流程 (提示里的 "PRD文档" 是缺失引导, 允许)
+        assert "Product Created" not in r.message
+        assert "已生成 PRD" not in r.message
+
+    def test_discovery_phase_direct_action_incomplete_fields(self):
+        """修复 A: 发现阶段 DIRECT_ACTION ("产出份prd文档") 字段不完整 → 同样提示缺失。"""
+        mgr = _manager()
+        mgr.handle("我想开发一个台球计分APP")
+        mgr.handle("台球比赛计分麻烦")
+        r = mgr.handle("产出份prd文档")
+        assert "产品定义还不完整" in r.message
+        assert r.needs_input is True
+        assert getattr(r, "next_action", None) is None
+
+    def test_generate_prd_scan_fallback_disabled(self, tmp_path):
+        """修复 B: generate_prd 无显式项目 → 安全报错, 不写"最新项目" (扫描兜底禁用)。
+
+        回归场景 (S10-10x): 之前无 current_project/product_intent 时扫描兜底
+        选中"最新 product.json", 把 PRD 写进错误项目 (数据污染)。
+        """
+        root = tmp_path / "ws"
+        root.mkdir()
+        old = root / "projects" / "oldproject"
+        old.mkdir(parents=True)
+        (old / "product.json").write_text(
+            json.dumps({
+                "name": "旧项目", "problem": "旧问题", "user": "旧用户",
+                "core_features": ["旧功能"],
+            }, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        ctx = ACTIONS.ExecutionContext(
+            workspace=root,
+            session=None,
+            user="user",
+            project=None,
+            intent=ACTIONS.IntentObject(
+                intent_type="generate_prd", params={}, raw="生成PRD", source="test"
+            ),
+        )
+        res = ACTIONS.generate_prd(ctx)
+        assert res.ok is False
+        assert "未找到产品定义" in res.message
+        # 旧项目未被污染 (PRD.md 未生成)
+        assert not (old / "PRD.md").exists()
+
+
 # ================================================================== 11. 版本 (另见 test_s10_074_deployment)
 
 class TestVersion:
     def test_pyproject_version_bumped(self):
-        """契约点 11: pyproject 版本 v1.1.28 (单源断言见 test_s10_074_deployment)。"""
+        """契约点 11: pyproject 版本 v1.1.46 (单源断言见 test_s10_074_deployment)。"""
         import tomllib
         from pathlib import Path
 
@@ -597,4 +660,4 @@ class TestVersion:
         ver = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))[
             "project"
         ]["version"]
-        assert ver == "1.1.28"
+        assert ver == "1.1.46"

@@ -358,13 +358,18 @@ def _find_product_dir(projects_root: Path, product: ProductIntent) -> Optional[s
 
 def _locate_product(
     context: ExecutionContext,
+    *,
+    scan_fallback: bool = True,
 ) -> tuple[Optional[ProductIntent], Optional[str], Path]:
     """定位当前产品与项目目录 (S10-051 资产读写共用)。
 
     优先级:
     ① context.session.current_project / context.project 显式指向 → projects/<slug>/product.json
     ② context.session.product_intent (会话产品流程产物) → name slug 或同名扫描
-    ③ 扫描兜底: projects/*/product.json 最新一个
+    ③ 扫描兜底: projects/*/product.json 最新一个 (仅 scan_fallback=True 时)
+
+    安全: **写操作调用方必须传 scan_fallback=False** — 无显式项目时禁止
+    猜测"最新项目" (会把 PRD 等产物写进错误项目, S10-10x 修复)。
 
     返回 (ProductIntent | None, slug | None, projects_root) — 未找到 → (None, None, root)。
     """
@@ -401,7 +406,9 @@ def _locate_product(
         if not slug:
             return None, None, projects_root
         return product, slug, projects_root
-    # ③ 扫描兜底: 最新 product.json
+    # ③ 扫描兜底: 最新 product.json (仅显式路径未命中且 scan_fallback=True)
+    if not scan_fallback:
+        return None, None, projects_root
     matches = sorted(projects_root.glob("*/product.json"))
     if matches:
         latest = max(matches, key=lambda p: p.stat().st_mtime)
@@ -423,7 +430,9 @@ def generate_prd(context: ExecutionContext) -> ActionResult:
     纯规则生成 (pipeline.ProductDocument, 不调 LLM); 资产落盘 projects/<slug>/PRD.md。
     """
     context.require("user")
-    product, slug, projects_root = _locate_product(context)
+    # S10-10x: 写操作禁止扫描兜底 — 无显式项目 (current_project/product_intent)
+    # 时安全报错, 绝不把 PRD 写进"最新项目" (防数据污染)
+    product, slug, projects_root = _locate_product(context, scan_fallback=False)
     if product is None or slug is None:
         return ActionResult(
             ok=False,

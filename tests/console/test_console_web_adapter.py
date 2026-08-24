@@ -360,6 +360,10 @@ class TestPermissionBoundary:
                 is_management_write = (
                     "/sprints" in path or "/milestones" in path or "/roadmap" in path
                 )
+                # v1.1.45: 系统更新 (POST /api/system/update — git pull+pip, 有审计)
+                is_system_update = (
+                    route_method == "POST" and path == "/api/system/update"
+                )
                 assert (
                     is_approval
                     or is_runtime_lifecycle
@@ -376,6 +380,7 @@ class TestPermissionBoundary:
                     or is_management_write
                     or is_tool_execute
                     or is_mcp_connect
+                    or is_system_update
                 ), (
                     f"写路由超出白名单 (审批决定 + Runtime + 反馈 + 创建 + 启动 + "
                     f"项目管理 + Backlog + Sprint/Milestone/Roadmap + Tool + MCP): "

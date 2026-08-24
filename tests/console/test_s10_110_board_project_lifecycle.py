@@ -353,5 +353,49 @@ class TestProjectSelect:
 
     def test_project_views_auto_refresh(self, tmp_path):
         _mk_project(tmp_path, "a", name="项目A")
-        assert 'content="15"' in BOARD.render_project_lifecycle_html(tmp_path, "a")
-        assert 'content="15"' in BOARD.render_project_tasktree_html(tmp_path, "a")
+        # v1.1.53: meta refresh 改为 JS 定时刷新 (可配置), 默认 15s
+        assert "setInterval" in BOARD.render_project_lifecycle_html(tmp_path, "a")
+        assert "setInterval" in BOARD.render_project_tasktree_html(tmp_path, "a")
+
+
+# ================================================================== 刷新间隔可选
+
+class TestRefreshSelect:
+    def test_refresh_options(self):
+        """刷新选项: 5/15/30/60/关闭(0)。"""
+        assert BOARD.REFRESH_OPTIONS == (5, 15, 30, 60, 0)
+
+    def test_refresh_select_has_all_options(self):
+        sel = BOARD._refresh_select_html()
+        assert '<select id="factory-refresh"' in sel
+        for n in (5, 15, 30, 60, 0):
+            assert f'value="{n}"' in sel
+        assert "关闭" in sel
+
+    def test_auto_refresh_script_default(self):
+        script = BOARD._auto_refresh_script(15)
+        assert "setInterval" in script
+        assert ": 15;" in script  # 默认 15s
+        assert "factory-refresh" in script
+
+    def test_all_pages_have_refresh_select(self, tmp_path):
+        _mk_project(tmp_path, "a", name="项目A")
+        pages = [
+            BOARD.render_board_html(workspace=tmp_path),
+            BOARD.render_projects_list_html(tmp_path),
+            BOARD.render_project_lifecycle_html(tmp_path, "a"),
+            BOARD.render_project_tasktree_html(tmp_path, "a"),
+            BOARD.render_graph_html(tmp_path, "a"),
+            BOARD.render_chain_html(tmp_path, "a"),
+            BOARD.render_timeline_html(tmp_path),
+            BOARD.render_report_html(),
+        ]
+        for i, html in enumerate(pages):
+            assert 'id="factory-refresh"' in html, f"page {i} 缺刷新选择器"
+
+    def test_auto_refresh_script_in_pages(self, tmp_path):
+        _mk_project(tmp_path, "a", name="项目A")
+        # 有默认刷新的页面: 主线 30 / 单项目 15 / 任务树 15
+        assert "setInterval" in BOARD.render_board_html(workspace=tmp_path)
+        assert "setInterval" in BOARD.render_project_lifecycle_html(tmp_path, "a")
+        assert "setInterval" in BOARD.render_project_tasktree_html(tmp_path, "a")

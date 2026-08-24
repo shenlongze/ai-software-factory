@@ -3,6 +3,22 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.53] — 2026-08-24
+
+**Board 刷新间隔可选: 5s/15s/30s/60s/关闭（Founder）**。
+
+### Added
+
+- **刷新间隔选择器**（导航 select）: 所有视图页可选 5s/15s/30s/60s/关闭,
+  切换后 URL 带 ?refresh=N (0=关闭)
+- **自动刷新 JS 化**（`_auto_refresh_script`）: 替换固定 meta refresh —
+  主线默认 30s, 单项目/任务树默认 15s, 其余默认关闭; 用户可覆盖
+- 默认值: 主线 30 / 单项目 15 / 任务树 15 / graph/chain/timeline/report/列表 0
+
+### 验证
+
+- 5 新契约测试 (选项齐全/select 渲染/script 默认值/8 页全覆盖/默认刷新) · 全量回归 0 新增失败
+
 ## [v1.1.52] — 2026-08-24
 
 **Board 项目选择完成: 全局项目选择器 + 数据准确/实时/同步（Founder）**。

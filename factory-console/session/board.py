@@ -381,7 +381,6 @@ def render_board_html(path: Path = DEFAULT_BACKLOG, workspace: Optional[Path | s
     return f"""<!DOCTYPE html>
 <html lang="zh"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta http-equiv="refresh" content="30">
 <title>AI Factory 监控面板</title>
 <style>
   .nav {{ display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }}
@@ -478,6 +477,7 @@ setInterval(function(){{
   }}).catch(function(){{ /* 网络抖动忽略 */ }});
 }}, 5000);
 </script>
+{_auto_refresh_script(30)}
 </body></html>"""
 
 
@@ -507,7 +507,7 @@ def render_graph_html(workspace: Path, project_id: str = "") -> str:
                 f"<p>真实数据: 项目需执行 M3b（拆解→关键路径）才会生成 plan.json — "
                 f"在会话中 '开始开发' 即可</p>"
                 f"<p>查看效果: <a href='/api/board/graph?project=demo' style='color:#8ab4f8'>demo 示例图</a></p>"
-                f"</body></html>")
+                f"{_auto_refresh_script(0)}</body></html>")
     try:
         plan = json.loads(plan_file.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):  # noqa: BLE001
@@ -560,7 +560,7 @@ def render_graph_html(workspace: Path, project_id: str = "") -> str:
 <h1>🔗 任务依赖图 <span class="legend">(★=CRITICAL 关键路径, 红色边框)</span></h1>
 <div class="graph">{nodes}</div>
 <div class="edges"><b>依赖边:</b><ul>{edges_html}</ul></div>
-</body></html>"""
+{_auto_refresh_script(0)}</body></html>"""
 
 
 def render_chain_html(workspace: Path, project_id: str = "") -> str:
@@ -576,7 +576,7 @@ def render_chain_html(workspace: Path, project_id: str = "") -> str:
                 f"<p>📭 项目未生成计划（无 plan.json）</p>"
                 f"<p>真实数据: 项目需执行 M3b 才会生成 — 会话中 '开始开发'</p>"
                 f"<p>查看效果: <a href='/api/board/chain?project=demo' style='color:#8ab4f8'>demo 示例任务链</a></p>"
-                f"</body></html>")
+                f"{_auto_refresh_script(0)}</body></html>")
     try:
         plan = json.loads(plan_file.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):  # noqa: BLE001
@@ -628,7 +628,7 @@ def render_chain_html(workspace: Path, project_id: str = "") -> str:
 <h1>⛓ 任务链（关键路径）<span class="legend">★=关键节点 ▲=汇聚点</span></h1>
 <div class="chain">{chain}</div>
 <div class="total">总工期: {total_est}min · 关键节点 {len(cpath)} 个 · 汇聚点 {len(merge_ids)} 个</div>
-</body></html>"""
+{_auto_refresh_script(0)}</body></html>"""
 
 
 # ---------------------------------------------------------------- 主线控制（从仪表盘到控制系统）
@@ -801,7 +801,7 @@ def render_timeline_html(workspace: Path, limit: int = 20) -> str:
                 f"<meta name='viewport' content='width=device-width, initial-scale=1.0'>"
                 f"<title>生命线</title></head>"
                 f"<body style='background:#0f1115;color:#e6e6e6;font-family:sans-serif;padding:16px'>"
-                f"{_board_nav('timeline', '', workspace)}{msg}</body></html>")
+                f"{_board_nav('timeline', '', workspace)}{msg}{_auto_refresh_script(0)}</body></html>")
 
     if not audit_file.is_file():
         return _shell("<p>（未找到 audit_events.json）</p>")
@@ -850,7 +850,7 @@ def render_timeline_html(workspace: Path, limit: int = 20) -> str:
 {_board_nav("timeline", "", workspace)}
 <h1>⏱ 生命线（最近 {len(items)} 事件）</h1>
 <ul class="timeline">{"".join(items)}</ul>
-</body></html>"""
+{_auto_refresh_script(0)}</body></html>"""
 
 
 def render_report_html(path: Path = DEFAULT_BACKLOG, workspace: Optional[Path | str] = None) -> str:
@@ -879,7 +879,7 @@ def render_report_html(path: Path = DEFAULT_BACKLOG, workspace: Optional[Path | 
 {_board_nav("report", "", workspace)}
 {"".join(html_body)}
 <p style="margin-top:20px;color:#78909c">会话 /board report --save 可落盘为 markdown</p>
-</body></html>"""
+{_auto_refresh_script(0)}</body></html>"""
 
 
 # ---------------------------------------------------------------- 单项目管理视图 (S10-110)
@@ -1127,7 +1127,7 @@ def render_projects_list_html(workspace: Path | str) -> str:
 <h1>📁 项目列表（{len(projects)} 个）</h1>
 <p style="color:#9aa0a6;font-size:12px">点击项目卡片查看单项目管理视图（全生命周期）</p>
 <div class="grid">{"".join(cards)}</div>
-</body></html>"""
+{_auto_refresh_script(0)}</body></html>"""
 
 
 def render_project_lifecycle_html(workspace: Path | str, project_id: str = "") -> str:
@@ -1139,7 +1139,7 @@ def render_project_lifecycle_html(workspace: Path | str, project_id: str = "") -
             f"<!DOCTYPE html><html lang='zh'><head><meta charset='utf-8'><title>项目不存在</title></head>"
             f"<body style='background:#0f1115;color:#e6e6e6;font-family:sans-serif;padding:16px'>"
             f"<p>项目不存在: {slug} — <a href='/api/board?view=projects' style='color:#8ab4f8'>返回项目列表</a></p>"
-            f"</body></html>"
+            f"{_auto_refresh_script(0)}</body></html>"
         )
     stages = _project_stage_status(workspace, slug)
     done_count = sum(1 for s in stages if s["done"])
@@ -1193,7 +1193,6 @@ def render_project_lifecycle_html(workspace: Path | str, project_id: str = "") -
 <html lang="zh"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{info.get('name') or slug} — 项目视图</title>
-<meta http-equiv="refresh" content="15">
 <style>
   body {{ font-family: -apple-system, system-ui, sans-serif; margin: 0; padding: 16px; background: #0f1115; color: #e6e6e6; }}
   .nav a {{ color: #8ab4f8; text-decoration: none; margin-right: 12px; font-size: 13px; }}
@@ -1229,6 +1228,7 @@ def render_project_lifecycle_html(workspace: Path | str, project_id: str = "") -
 {tasks_card}
 <div class="card">{task_html}<p>🕐 最近更新: {ts}</p></div>
 <p><a class="back" href="/api/board?view=projects">← 返回项目列表</a></p>
+{_auto_refresh_script(15)}
 </body></html>"""
 
 
@@ -1385,6 +1385,7 @@ def _board_nav(active: str = "main", project: str = "", workspace: Optional[Path
     select_html = _project_select_html(workspace, project, active) if workspace is not None else ""
     if select_html:
         links += f'<span style="margin-left:8px">{select_html}</span>'
+    links += _refresh_select_html()
     return f'<div style="margin-bottom:12px">{links}</div>'
 
 
@@ -1481,7 +1482,6 @@ def render_project_tasktree_html(workspace: Path | str, slug: str) -> str:
 <html lang="zh"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>任务树 — {info.get('name') or slug}</title>
-<meta http-equiv="refresh" content="15">
 <style>
   body {{ font-family: -apple-system, system-ui, sans-serif; margin: 0; padding: 16px; background: #0f1115; color: #e6e6e6; }}
   h1 {{ font-size: 18px; }}
@@ -1499,6 +1499,7 @@ def render_project_tasktree_html(workspace: Path | str, slug: str) -> str:
 <h1>🗂 项目任务树 — {info.get('name') or slug}</h1>
 <div class="summary">✅完成 {counts['done']} · 🔵进行中 {counts['running']} · ❌失败 {counts['failed']} · ⬜待办 {counts['pending']} · 共 {counts['total']}</div>
 {body}
+{_auto_refresh_script(15)}
 </body></html>"""
 
 
@@ -1536,3 +1537,39 @@ def _read_session_current_project(workspace: Path | str) -> str:
         return str(state.get("current_project") or "")
     except Exception:  # noqa: BLE001
         return ""
+
+
+#: 刷新间隔选项 (秒; 0=关闭)
+REFRESH_OPTIONS: tuple[int, ...] = (5, 15, 30, 60, 0)
+
+
+def _refresh_select_html() -> str:
+    """刷新间隔选择器 (select): 5s/15s/30s/60s/关闭, 切换后 URL 带 ?refresh=N。"""
+    opts = "".join(
+        f'<option value="{n}">{"关闭" if n == 0 else f"刷新{n}s"}</option>'
+        for n in REFRESH_OPTIONS
+    )
+    style = ("background:#1a1d24;border:1px solid #2a2e37;color:#b0b6bf;"
+             "border-radius:6px;padding:6px 10px;font-size:13px;margin-left:8px")
+    return (f'<select id="factory-refresh" style="{style}" title="自动刷新间隔" '
+            f'onchange="var u=new URL(location.href);'
+            f"if(this.value=='0'){{u.searchParams.delete('refresh')}}"
+            f"else{{u.searchParams.set('refresh',this.value)}};"
+            f"location.href=u.href;\">{opts}</select>")
+
+
+def _auto_refresh_script(default_n: int) -> str:
+    """自动刷新 JS: 读 URL ?refresh= 参数 (缺省 default_n), 设置选择器并定时 reload。
+
+    0 = 关闭自动刷新。所有 board HTML 页面共用 (S10-110 刷新可选)。
+    """
+    return f"""
+<script>
+(function(){{
+  var p = new URLSearchParams(location.search).get('refresh');
+  var n = p ? parseInt(p, 10) : {default_n};
+  var sel = document.getElementById('factory-refresh');
+  if (sel) sel.value = String(n);
+  if (n > 0) setInterval(function(){{ location.reload(); }}, n * 1000);
+}})();
+</script>"""

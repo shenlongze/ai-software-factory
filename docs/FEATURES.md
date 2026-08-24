@@ -220,6 +220,8 @@ API（Web/集成）:   http://127.0.0.1:8011/api/...      e.g. GET /api/board
   | 图集集成 | 导航 tabs：主线/依赖图/任务链/生命线/汇报 | v1.1.41 |
   | 空态引导 | 无数据时显示真实数据来源 + demo 示例 | v1.1.42 |
   | 单项目管理视图 | `/board project [slug]` 全生命周期 11 段进度（只读, 项目隔离不猜项目） | v1.1.49 |
+  | 项目监控聚合 | `/api/board/summary` 项目数/状态分布/生命周期均值/进行中失败任务 + Web 5s 实时刷新 | v1.1.50 |
+  | SDK 任务 | §22.3 4 阶段路线第四数据源 + Sprint 判定放宽 (acceptance/completion/final) | v1.1.50 |
 - **状态**: ✅（数据真实，空态诚实引导）· **关联**: 待办清单 + docs/sprint10 验收
 
 ### 6.2 /preview — Markdown 预览

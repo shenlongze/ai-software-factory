@@ -121,6 +121,13 @@ def render_board(path: Path = DEFAULT_BACKLOG) -> str:
             buf.append(f"📚 章节任务 (§1.4): {sum(1 for r in s14 if r['status']=='✅')}/{len(s14)} 完成")
             for r in s14:
                 buf.append(f"   {r['status']} {r['title']} — {r['todo'][:30]}")
+        sdk = _parse_sdk_tasks()
+        if sdk:
+            buf.append("")
+            buf.append(f"🚀 SDK 任务 (§22.3): {sum(1 for t in sdk if t['done'])}/{len(sdk)} 完成 (4 阶段路线)")
+            for t in sdk:
+                mark = "✅" if t["done"] else "⬜"
+                buf.append(f"   {mark} {t['id']} {t['title']} ({t['version']}) — {t['todo'][:40]}")
         return "\n".join(buf)
     except ImportError:  # noqa: BLE001 — 无 rich → 纯文本
         return "\n".join(
@@ -295,7 +302,7 @@ def render_report(path: Path = DEFAULT_BACKLOG) -> str:
 
 # ---------------------------------------------------------------- HTML 可视化面板
 
-def render_board_html(path: Path = DEFAULT_BACKLOG) -> str:
+def render_board_html(path: Path = DEFAULT_BACKLOG, workspace: Optional[Path | str] = None) -> str:
     """HTML 可视化面板（进度条/标签/分组卡片, 浏览器自适应）。
 
     /api/board 返回 HTML 而非 JSON — 浏览器直接看监控面板。
@@ -309,6 +316,8 @@ def render_board_html(path: Path = DEFAULT_BACKLOG) -> str:
     total = len(main_tasks)
     pct = round(done / total * 100) if total else 0
     side_count = sum(len(g["tasks"]) for g in groups if g["id"] in SIDE_GROUPS)
+    # S10-110 P0-2: 项目监控聚合指标 (workspace 缺省 None → 不显示, 向后兼容)
+    stats = dashboard_stats(workspace) if workspace is not None else None
 
     def bar(pct_done: int, pct_total: int) -> str:
         w = round(pct_done / pct_total * 100) if pct_total else 0
@@ -336,6 +345,37 @@ def render_board_html(path: Path = DEFAULT_BACKLOG) -> str:
         cards.append(
             f'<div class="card {cls}" {data_attrs}><h2>{g["id"]} {tag} {status} {bar(g_done, g_total)} <span class="title">{g["title"]}</span></h2>'
             f'<ul>{"".join(items)}</ul></div>'
+        )
+
+    # S10-110 P0-2: 项目监控总览 (仅 workspace 提供时显示)
+    monitor_html = ""
+    if stats is not None:
+        dist_items = "".join(
+            f"<span><i class='dot d-{k}'></i>{STATUS_LABELS.get(k, k)} {v}</span>"
+            for k, v in sorted(stats["status_dist"].items())
+        )
+        monitor_html = (
+            "<p style='margin-top:10px;border-top:1px solid #2a2e37;padding-top:8px'>"
+            f"📁 项目监控: <b>{stats['projects']}</b> 个 · 生命周期均值 <b>{stats['avg_lifecycle_pct']}%</b> · "
+            f"进行中任务 <b id='mon-running'>{stats['running_tasks']}</b> · "
+            f"失败 <b id='mon-failed'>{stats['failed_tasks']}</b></p>"
+            f"<div class='dist-legend' id='mon-dist'>{dist_items}</div>"
+        )
+
+    # S10-110 P1-1: §22 SDK 任务 (第四数据源) — 作为独立卡片组
+    sdk_tasks = _parse_sdk_tasks()
+    sdk_html = ""
+    if sdk_tasks:
+        sdk_items = "".join(
+            f"<li class=\"{'done' if t['done'] else 'todo'}\">{'✅' if t['done'] else '⬜'} "
+            f"{t['id']} {t['title']} <span style='color:#78909c'>({t['version']})</span> — {t['todo'][:48]}</li>"
+            for t in sdk_tasks
+        )
+        sdk_html = (
+            "<div class='card main' data-kind='main' data-status='todo'>"
+            f"<h2>🚀 SDK 路线 (§22.3) <span class='tag t-main'>主线</span> 🚧 "
+            f"<span class='title'>4 阶段路线: 内核收尾 → SDK化 → 生态 → 商业化</span></h2>"
+            f"<ul>{sdk_items}</ul></div>"
         )
 
     return f"""<!DOCTYPE html>
@@ -403,6 +443,7 @@ def render_board_html(path: Path = DEFAULT_BACKLOG) -> str:
     </div>
   </div>
   <p>周边(长期): {side_count} 项（非主线, 不阻塞）</p>
+  {monitor_html}
 </div>
 <div class="filters">
   <button class="f-btn active" data-filter="all">全部</button>
@@ -413,6 +454,7 @@ def render_board_html(path: Path = DEFAULT_BACKLOG) -> str:
   <button class="f-btn" data-filter="partial">进行中</button>
 </div>
 <div class="groups">{"".join(cards)}</div>
+{sdk_html}
 <p class="side-tip">AI Factory v{_pkg_version_lite()} · 会话 /board 有更多视图（graph/chain/timeline/report）</p>
 <script>
 document.querySelectorAll('.f-btn').forEach(function(btn){{
@@ -431,6 +473,16 @@ document.querySelectorAll('.f-btn').forEach(function(btn){{
     }});
   }});
 }});
+// S10-110 P0-1: 轻量增量刷新 (每 5s fetch /api/board/summary, 不整页刷新)
+setInterval(function(){{
+  fetch('/api/board/summary').then(function(r){{ return r.json(); }}).then(function(d){{
+    if (!d) return;
+    var mon = document.getElementById('mon-running');
+    if (mon) mon.textContent = d.running_tasks;
+    var mf = document.getElementById('mon-failed');
+    if (mf) mf.textContent = d.failed_tasks;
+  }}).catch(function(){{ /* 网络抖动忽略 */ }});
+}}, 5000);
 </script>
 </body></html>"""
 
@@ -682,10 +734,18 @@ def _parse_sprints(sprint_dir: Path | None = None) -> list[dict[str, Any]]:
         sid = m.group(1)
         s = sprints.setdefault(sid, {"id": sid, "title": sid, "done": False, "files": 0})
         s["files"] += 1
-        if "acceptance" in f.name:
+        # S10-110 P1-2: 完成证据放宽 — acceptance(验收)/completion(完成)/
+        # final(终报) 任一存在即视为该 Sprint 有完成证据 (早期 Sprint 无 acceptance
+        # 但 completion/final 报告同样可靠; plan/prompt/设计 不算)
+        if any(k in f.name for k in ("acceptance", "completion", "final")):
             s["done"] = True
-            # 标题: 取 acceptance 文件名中 '-' 后的描述
-            rest = f.name.replace(f"{sid}-", "").replace("-acceptance.md", "").replace("-prompt.md", "")
+            # 标题: 取证据文件名中 '-' 后的描述
+            rest = (
+                f.name.replace(f"{sid}-", "")
+                .replace("-acceptance.md", "").replace("-completion.md", "")
+                .replace("-final-report.md", "").replace("-final.md", "")
+                .replace("-prompt.md", "")
+            )
             if rest and rest != f.name:
                 s["title"] = rest[:30]
     return [sprints[k] for k in sorted(sprints.keys())]
@@ -980,6 +1040,11 @@ def render_project_lifecycle(workspace: Path | str, project_id: str = "") -> str
     tp = _project_task_progress(workspace, slug)
     if tp["total"]:
         lines.append(f"📊 任务进度: ✅{tp['done']} ⬜{tp['total'] - tp['done']} ({tp['pct']}%)")
+    # S10-110 P1-3: 项目内任务清单 (只读 execution_state.json tasks)
+    task_lines = _project_task_list(workspace, slug)
+    if task_lines:
+        lines.append("📋 任务清单:")
+        lines.extend(f"  {ln}" for ln in task_lines)
     mtime = info.get("_mtime") or 0
     if mtime:
         import datetime
@@ -1092,6 +1157,15 @@ def render_project_lifecycle_html(workspace: Path | str, project_id: str = "") -
     import datetime
 
     ts = datetime.datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M") if mtime else "?"
+    # S10-110 P1-3: 项目内任务清单 (只读, 上限 20)
+    task_rows = _project_task_list(workspace, slug)
+    tasks_card = ""
+    if task_rows:
+        rows_html = "".join(f"<tr><td>{r}</td></tr>" for r in task_rows)
+        tasks_card = (
+            "<div class='card'><h2>📋 任务清单</h2>"
+            f"<table class='tasks'><tbody>{rows_html}</tbody></table></div>"
+        )
     return f"""<!DOCTYPE html>
 <html lang="zh"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1109,6 +1183,8 @@ def render_project_lifecycle_html(workspace: Path | str, project_id: str = "") -
   .bar > div {{ height: 100%; background: linear-gradient(90deg,#43a047,#1e88e5); }}
   .docs {{ display: flex; gap: 12px; flex-wrap: wrap; font-size: 13px; }}
   .card {{ background: #1a1e26; border-radius: 8px; padding: 14px; margin-top: 12px; }}
+  table.tasks {{ width: 100%; border-collapse: collapse; font-size: 12px; }}
+  table.tasks td {{ padding: 5px 8px; border-bottom: 1px solid #2a2e37; color: #b0b6bf; }}
   p {{ font-size: 13px; color: #b0b6bf; }}
   .back {{ color: #8ab4f8; text-decoration: none; font-size: 13px; }}
 </style></head><body>
@@ -1133,6 +1209,132 @@ def render_project_lifecycle_html(workspace: Path | str, project_id: str = "") -
     <span>任务 {has('tasks.json')}</span><span>验证 {has('validation_result.json')}</span>
   </div>
 </div>
+{tasks_card}
 <div class="card">{task_html}<p>🕐 最近更新: {ts}</p></div>
 <p><a class="back" href="/api/board?view=projects">← 返回项目列表</a></p>
 </body></html>"""
+
+
+# ---------------------------------------------------------------- 项目监控聚合 (S10-110 P0-2)
+
+def dashboard_stats(workspace: Path | str) -> dict[str, Any]:
+    """项目监控聚合指标（Dashboard 数据源, 只读）:
+
+    {projects, status_dist, avg_lifecycle_pct, running_tasks, failed_tasks}
+    """
+    projects = list_projects(workspace)
+    status_dist: dict[str, int] = {}
+    for p in projects:
+        st = p["status"]
+        status_dist[st] = status_dist.get(st, 0) + 1
+    total_done = total_stages = 0
+    for p in projects:
+        stages = _project_stage_status(workspace, p["slug"])
+        total_done += sum(1 for s in stages if s["done"])
+        total_stages += len(stages)
+    avg_pct = round(total_done * 100 / total_stages) if total_stages else 0
+    running = failed = 0
+    for p in projects:
+        es = Path(workspace) / "projects" / p["slug"] / "execution_state.json"
+        if not es.is_file():
+            continue
+        try:
+            tasks = (json.loads(es.read_text(encoding="utf-8")) or {}).get("tasks") or []
+        except Exception:  # noqa: BLE001
+            continue
+        for t in tasks:
+            st = str(t.get("status") or "")
+            if st in ("running", "in_progress", "started"):
+                running += 1
+            elif st == "failed":
+                failed += 1
+    return {
+        "projects": len(projects),
+        "status_dist": status_dist,
+        "avg_lifecycle_pct": avg_pct,
+        "running_tasks": running,
+        "failed_tasks": failed,
+    }
+
+
+#: 状态中文标签（Dashboard 展示）
+STATUS_LABELS: dict[str, str] = {
+    "project_created": "已创建",
+    "prd_ready": "PRD完成",
+    "execution_ready": "工程就绪",
+    "development": "开发中",
+    "user_acceptance": "已验收",
+}
+
+
+# ---------------------------------------------------------------- §22 SDK 任务 (S10-110 P1-1 第四数据源)
+
+def _parse_sdk_tasks(doc_path: Path | None = None) -> list[dict[str, Any]]:
+    """方案书 §22.3 4 阶段路线 → SDK 任务 (第四数据源)。
+
+    解析 '### 22.3 4 阶段路线' 后的代码块: 每行 '阶段 N <标题> (<版本>): <内容>'
+    → {id, title, version, todo, done}。完成判定: 版本里程碑已过 (阶段 1 对应
+    v1.2 前 = 视为主线未收尾; 这里仅展示, done 按待办清单 M3 完成度推断: 阶段 1
+    依赖 M3 收尾, 其余未开始)。
+    """
+    if doc_path is None:
+        doc_path = Path(__file__).resolve().parents[2] / "AI Software Factory — 完整产品方案书.md"
+    if not doc_path.is_file():
+        return []
+    try:
+        text = doc_path.read_text(encoding="utf-8")
+    except OSError:  # noqa: BLE001
+        return []
+    m = re.search(r"### 22\.3 4 阶段路线\s*\n```\n(.*?)\n```", text, re.S)
+    if not m:
+        return []
+    tasks: list[dict[str, Any]] = []
+    for line in m.group(1).splitlines():
+        line = line.strip()
+        mm = re.match(r"阶段\s*(\d+)\s+(.+?)\s*\(([^)]+)\):\s*(.+)", line)
+        if not mm:
+            continue
+        idx, title, version, todo = mm.groups()
+        # 完成判定: 阶段 1 依赖 M3 收尾 (M3 4/7 → 未完成); 其余未开始
+        done = False
+        tasks.append({
+            "id": f"SDK-{idx}",
+            "title": title.strip(),
+            "version": version.strip(),
+            "todo": todo.strip(),
+            "done": done,
+        })
+    return tasks
+
+
+def _project_task_list(workspace: Path | str, slug: str) -> list[str]:
+    """项目内任务清单 (只读): 每任务 [状态标记] id name (agent)。失败安全。"""
+    es = Path(workspace) / "projects" / slug / "execution_state.json"
+    tasks: list[dict[str, Any]] = []
+    if es.is_file():
+        try:
+            tasks = (json.loads(es.read_text(encoding="utf-8")) or {}).get("tasks") or []
+        except Exception:  # noqa: BLE001
+            tasks = []
+    if not tasks:
+        tf = Path(workspace) / "projects" / slug / "tasks.json"
+        if tf.is_file():
+            try:
+                tasks = (json.loads(tf.read_text(encoding="utf-8")) or {}).get("tasks") or []
+            except Exception:  # noqa: BLE001
+                tasks = []
+    marks = {
+        "done": "✅", "delivered": "✅", "approved": "✅", "applied": "✅",
+        "running": "🔵", "in_progress": "🔵", "started": "🔵",
+        "failed": "❌", "blocked": "⛔", "pending": "⬜", "todo": "⬜",
+    }
+    lines = []
+    for t in tasks[:20]:  # 上限 20 防刷屏
+        tid = str(t.get("id") or "?")
+        name = str(t.get("name") or tid)[:36]
+        st = str(t.get("status") or "")
+        mark = marks.get(st, "⬜")
+        agent = str(t.get("agent") or "")
+        agent_s = f" [{agent}]" if agent else ""
+        lines.append(f"{mark} {tid} {name}{agent_s} ({st or '待办'})")
+    return lines

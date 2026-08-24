@@ -181,3 +181,80 @@ class TestSessionIntegration:
         sess._dispatch("/board")
         out = capsys.readouterr().out
         assert "主线" in out
+
+
+# ================================================================== S10-110 P0/P1 扩展
+
+class TestDashboardStats:
+    def test_dashboard_stats_aggregates(self, tmp_path):
+        _mk_project(tmp_path, "a", name="项目A", status="prd_ready",
+                    task_statuses=("done", "running"))
+        _mk_project(tmp_path, "b", name="项目B", status="user_acceptance",
+                    task_statuses=("failed",))
+        stats = BOARD.dashboard_stats(tmp_path)
+        assert stats["projects"] == 2
+        assert stats["status_dist"] == {"prd_ready": 1, "user_acceptance": 1}
+        assert stats["running_tasks"] == 1
+        assert stats["failed_tasks"] == 1
+        assert 0 <= stats["avg_lifecycle_pct"] <= 100
+
+    def test_render_board_html_includes_monitor(self, tmp_path):
+        _mk_project(tmp_path, "a", name="项目A")
+        html = BOARD.render_board_html(workspace=tmp_path)
+        assert "项目监控" in html
+        assert "/api/board/summary" in html  # 实时刷新 JS
+        assert "mon-running" in html
+
+
+class TestSdkTasks:
+    def test_parse_sdk_tasks_from_doc(self):
+        """§22.3 4 阶段路线 → 4 个 SDK 任务 (第四数据源)。"""
+        tasks = BOARD._parse_sdk_tasks()
+        assert len(tasks) == 4
+        assert tasks[0]["id"] == "SDK-1"
+        assert "内核收尾" in tasks[0]["title"]
+        assert tasks[3]["id"] == "SDK-4"
+        assert "商业化" in tasks[3]["title"]
+
+    def test_render_board_includes_sdk(self):
+        out = BOARD.render_board()
+        assert "SDK 任务" in out
+        assert "SDK-1" in out
+
+
+class TestSprintCriterion:
+    def test_sprint_done_with_completion_or_final(self, tmp_path, monkeypatch):
+        """完成证据放宽: acceptance 或 completion 或 final 任一存在即完成。"""
+        sprint_dir = tmp_path / "sprint10"
+        sprint_dir.mkdir()
+        (sprint_dir / "S10-001-plan.md").write_text("p", encoding="utf-8")
+        (sprint_dir / "S10-001-acceptance.md").write_text("a", encoding="utf-8")
+        (sprint_dir / "S10-002-plan.md").write_text("p", encoding="utf-8")
+        (sprint_dir / "S10-002-completion.md").write_text("c", encoding="utf-8")
+        (sprint_dir / "S10-003-plan.md").write_text("p", encoding="utf-8")
+        (sprint_dir / "S10-003-final-report.md").write_text("f", encoding="utf-8")
+        (sprint_dir / "S10-004-plan.md").write_text("p", encoding="utf-8")
+        sprints = BOARD._parse_sprints(sprint_dir)
+        by_id = {s["id"]: s["done"] for s in sprints}
+        assert by_id["S10-001"] is True   # acceptance
+        assert by_id["S10-002"] is True   # completion
+        assert by_id["S10-003"] is True   # final
+        assert by_id["S10-004"] is False  # 只有 plan → 不算完成
+
+
+class TestProjectTaskList:
+    def test_task_list_marks_status(self, tmp_path):
+        _mk_project(tmp_path, "demo", name="测试产品",
+                    task_statuses=("done", "failed", "running", "pending"))
+        lines = BOARD._project_task_list(tmp_path, "demo")
+        assert len(lines) == 4
+        assert any("✅" in ln and "done" in ln for ln in lines)
+        assert any("❌" in ln and "failed" in ln for ln in lines)
+        assert any("🔵" in ln for ln in lines)
+
+    def test_render_lifecycle_includes_task_list(self, tmp_path):
+        _mk_project(tmp_path, "demo", name="测试产品", task_statuses=("done", "failed"))
+        out = BOARD.render_project_lifecycle(tmp_path, "demo")
+        assert "任务清单" in out
+        html = BOARD.render_project_lifecycle_html(tmp_path, "demo")
+        assert "任务清单" in html

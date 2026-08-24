@@ -3,6 +3,25 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.50] — 2026-08-24
+
+**Board 完善: 监控聚合 + 实时刷新 + SDK 第四数据源 + Sprint 判定放宽 + 项目任务清单**。
+
+### Added
+
+- **项目监控聚合**（`/api/board/summary` + 主线面板总览）: 项目数/状态分布/生命周期均值/
+  进行中任务/失败任务; Web 每 5s 增量刷新（不整页刷新, 轻量 JSON）
+- **§22 SDK 任务第四数据源**（`_parse_sdk_tasks`）: 方案书 §22.3 4 阶段路线
+  （SDK-1 内核收尾 → SDK-4 商业化）进 board 文本+HTML
+- **Sprint 完成判定放宽**: acceptance/completion/final 任一证据即完成
+  （16/96 → 53/99, 早期 Sprint 不再虚低）
+- **项目内任务清单视图**: 生命周期页显示任务列表（状态标记 ✅/🔵/❌/⬜ + agent）,
+  文本+HTML; 上限 20 防刷屏
+
+### 验证
+
+- 7 新契约测试 (dashboard 聚合 / SDK 解析 / Sprint 判定 / 任务清单 / HTML 含监控) · 全量回归 0 新增失败
+
 ## [v1.1.49] — 2026-08-24
 
 **Board 单项目管理视图（全生命周期, S10-110）: /board project 只读查看单项目进度**。

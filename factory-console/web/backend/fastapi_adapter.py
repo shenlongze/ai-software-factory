@@ -811,10 +811,20 @@ def build_app(
             elif view == "report":
                 html = board_mod.render_report_html()
             else:
-                html = board_mod.render_board_html()
+                html = board_mod.render_board_html(workspace=workspace_root)
         except Exception:  # noqa: BLE001 — 面板失败 → 明确错误不 500
             html = "<p>（面板渲染失败）</p>"
         return HTMLResponse(content=html)
+
+    @app.get("/api/board/summary")
+    def api_board_summary():
+        """项目监控聚合 JSON (S10-110 P0-1 实时刷新数据源, 只读)。"""
+        board_mod = _console_import("session.board")
+        try:
+            return board_mod.dashboard_stats(workspace_root)
+        except Exception:  # noqa: BLE001 — 失败安全
+            return {"projects": 0, "status_dist": {}, "avg_lifecycle_pct": 0,
+                    "running_tasks": 0, "failed_tasks": 0}
 
     @app.get("/api/board/timeline")
     def api_board_timeline():

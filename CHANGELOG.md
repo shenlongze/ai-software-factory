@@ -3,7 +3,18 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
-## [v1.1.30] — 2026-08-24
+## [v1.1.31] — 2026-08-24
+
+**factory help 命令总览**: 按域分类列出全部命令（§11.6 落地, Founder: 命令在哪查看）。
+
+### Added
+
+- **factory help**（`cli_factory.py`）— 按 6 类域分组列出命令（非字母序）
+  - 系统/资源/数据/执行/组织/展示 + 其他（动态从 parser 读, 新增自动出现）
+  - 会话命令提示 + 自然语言提示 + 单命令 --help 指引
+- 查看命令的 4 个入口:
+  factory help（按域）· factory --help（字母序）· /help（会话）· factory <命令> --help
+
 
 **命令体系总纲（§11.6）+ llm/todo 命令落地**: 域×动词 统一结构, 命令再多不混乱。
 

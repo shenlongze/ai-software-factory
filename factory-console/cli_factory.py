@@ -850,6 +850,8 @@ class FactoryCLI:
             return self.project_cmd(args)
         if args.command == "create":
             return self.create_cmd(args)
+        if args.command == "help":
+            return self.help_cmd(args)
         if args.command == "llm":
             return self.llm_cmd(args)
         if args.command == "todo":
@@ -2676,6 +2678,41 @@ class FactoryCLI:
             return 1
         return self._emit_proxy_result(org_cli, args, result)
 
+    def help_cmd(self, args: argparse.Namespace) -> int:
+        """factory help — 命令总览（§11.6: 按域分类, 不是字母序）。"""
+        # 从 parser 动态读全部子命令（新增命令自动出现）
+        parser = build_parser()
+        sub_actions = {
+            a.dest: a for a in parser._actions  # noqa: SLF001
+            if isinstance(a, argparse._SubParsersAction)  # noqa: SLF001
+        }
+        choices = sorted(sub_actions["command"].choices)
+
+        # 域映射（§11.6 六类域）
+        domains = {
+            "系统域": ["init", "config", "doctor", "start", "stop", "status", "version"],
+            "资源域": ["service", "llm", "agent", "skill", "tool", "tools", "project"],
+            "数据域": ["todo", "backlog", "evidence", "audit", "memory", "rag", "task"],
+            "执行域": ["run", "repo", "workload", "exec", "run-status"],
+            "组织域": ["company", "department", "industry"],
+            "展示域": ["board", "dashboard"],
+            "其他": [],
+        }
+        # 未映射的进"其他"
+        mapped = {c for grp in domains.values() for c in grp}
+        domains["其他"] = [c for c in choices if c not in mapped]
+
+        print("=== AI Factory 命令总览（factory <域> <动词>）===")
+        for domain, cmds in domains.items():
+            present = [c for c in cmds if c in choices]
+            if present:
+                print(f"{domain}: {' '.join(present)}")
+        print("")
+        print("会话命令（factory 进入后 / 开头）: /board /status /help /preview /project")
+        print("自然语言: 直接描述需求, LLM 理解意图自动执行")
+        print("查看单个命令: factory <命令> --help")
+        return 0
+
     def llm_cmd(self, args: argparse.Namespace) -> int:
         """factory llm list — LLM 清单（provider/models, 命令体系 资源域）。"""
         action = getattr(args, "llm_command", None)
@@ -3146,6 +3183,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_llm.add_argument("llm_command", choices=["list"], nargs="?", default=None, help="list — LLM 清单")
     p_todo = sub.add_parser("todo", help="主线任务清单 (list — 待办清单, 命令体系 数据域)")
     p_todo.add_argument("todo_command", choices=["list"], nargs="?", default=None, help="list — 主线任务")
+    sub.add_parser("help", help="命令总览（按域分类, §11.6）")
     return parser
 
 

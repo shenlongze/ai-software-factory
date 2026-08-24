@@ -2796,8 +2796,11 @@ class FactoryCLI:
             return self._project_rename(args)
         if action == "status":
             return self._project_status_view(args)
+        if action == "reconcile":
+            # S10-115 J-1: 存量生命周期对账 (快照先行, 只修可判定; --dry-run 只读)
+            return self._project_reconcile(args)
         print(
-            f"错误: project 需要子命令 (create / list / rename / status), 收到: {action!r}",
+            f"错误: project 需要子命令 (create / list / rename / status / reconcile), 收到: {action!r}",
             file=sys.stderr,
         )
         return 2
@@ -3171,6 +3174,58 @@ class FactoryCLI:
             print(f"  {p['id']}  {p['name']}")
         return 0
 
+    def _project_reconcile(self, args: argparse.Namespace) -> int:
+        """factory project reconcile [--dry-run] — J-1 生命周期单一来源存量对账。
+
+        S10-115 §1.5: canonical 判定 (①project.json.status 有效 ②product.json.status
+        映射 ③execution_state.lifecycle ④全无/非法 → 跳过如实报告); 修复前每项目
+        快照 .status_snapshot_<ts>.json; --dry-run 只读预览。workspace = 数据目录。
+        """
+        dry_run = bool(getattr(args, "dry_run", False))
+        self._ensure_data_dir()
+        try:
+            from .session.lifecycle_store import reconcile_projects
+
+            report = reconcile_projects(self.data_dir, dry_run=dry_run)
+        except Exception as exc:  # noqa: BLE001 — 失败安全 → 明确错误
+            print(f"错误: 生命周期对账失败 — {exc}", file=sys.stderr)
+            return 1
+        if getattr(args, "json", False):
+            print(
+                json.dumps(
+                    {
+                        "ok": True,
+                        "dry_run": dry_run,
+                        "fixed_count": len(report.fixed),
+                        "skipped_count": len(report.skipped),
+                        **report.to_dict(),
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            return 0
+        mode = "dry-run 预览" if dry_run else "已修复"
+        print(
+            f"生命周期对账 ({mode}): 修复 {len(report.fixed)} · 跳过 {len(report.skipped)}"
+            f" · 快照 {len(report.snapshots)}"
+        )
+        for entry in report.fixed:
+            flag = " [dry-run]" if dry_run else ""
+            print(
+                f"  ✔ {entry['slug']}: → {entry['status']} (源: {entry['source']}){flag}"
+            )
+        for snap in report.snapshots:
+            print(f"  📸 快照: {snap}")
+        for entry in report.skipped:
+            reason = str(entry.get("reason") or "")
+            if reason == "已一致":
+                continue
+            print(f"  ⏭ {entry['slug']}: {reason}")
+        if not report.fixed and not report.skipped:
+            print("  (无项目 — 无需对账)")
+        return 0
+
     def _stub(self, cmd: str) -> int:
         print(f"`factory {cmd}` 尚未实现 — 架构预留子命令 (计划 S10-007 阶段三实现)。")
         return 1
@@ -3449,12 +3504,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_project.add_argument(
         "project_command",
-        choices=["create", "list", "rename", "status"],
+        choices=["create", "list", "rename", "status", "reconcile"],
         nargs="?",
         default=None,
         metavar="动作",
         help="create — 注册已有项目 (代理 org CLI project register); "
-        "list — 只读项目清单 (projects.json)",
+        "list — 只读项目清单 (projects.json); "
+        "reconcile — J-1 生命周期状态单一来源对账 (快照先行, 只修可判定)",
+    )
+    p_project.add_argument(
+        "--dry-run", action="store_true",
+        help="reconcile 只读预览 (不写快照/不修复; 缺省实跑修复)",
     )
     p_project.add_argument("--repo-path", default=None, help="已有代码库路径 (create 必填)")
     p_project.add_argument("project_name", nargs="?", default=None, metavar="<id>", help="项目 ID (rename)")

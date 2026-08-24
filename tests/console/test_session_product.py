@@ -359,7 +359,7 @@ def test_action_writes_product_json(fake_org, tmp_path):
     assert data["problem"] == "台球比赛计分麻烦"
     assert data["core_features"] == ["计分", "比赛记录", "排行榜"]
     assert data["platform"] == "mobile"
-    assert data["status"] == "project_created"
+    assert data["status"] == "product_defined"  # S10-115 J-1: Lifecycle 词汇 (替代旧 project_created)
 
 
 def test_action_project_file_reported(fake_org, tmp_path):
@@ -878,7 +878,7 @@ def test_session_product_flow_end_to_end(fake_org, capsys, tmp_path):
     assert product_files, "product.json 未落盘"
     data = json.loads(product_files[0].read_text(encoding="utf-8"))
     assert data["core_features"] == ["计分", "比赛记录", "排行榜"]
-    assert data["status"] == "project_created"
+    assert data["status"] == "product_defined"  # S10-115 J-1: Lifecycle 词汇 (替代旧 project_created)
 
 
 def test_session_product_flow_cancel(fake_org, capsys, tmp_path):

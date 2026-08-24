@@ -23,6 +23,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import os
 
 
@@ -1628,6 +1629,30 @@ class ConsoleService:
                     f"confirm transaction failed and rolled back: "
                     f"{project_id} → {new_slug}: {exc}"
                 ) from exc
+            # S10-115 J-1: canonical 补缺 (统一入口) — org 镜像字段 lifecycle=
+            # confirmed 保留; project.json.status 缺省 → 统一入口补 canonical=
+            # product_defined (三处同步)。失败安全: 不撤销已提交事务。
+            try:
+                ls_mod = _console_import("session.lifecycle_store")
+                new_dir = space.space_dir(new_slug)
+                pj = new_dir / "project.json"
+                current_status = ""
+                if pj.is_file():
+                    try:
+                        current_status = str(
+                            (json.loads(pj.read_text(encoding="utf-8")) or {})
+                            .get("status") or ""
+                        ).strip()
+                    except Exception:  # noqa: BLE001 — 损坏 → 视为缺省
+                        current_status = ""
+                if not current_status:
+                    ls_mod.set_project_lifecycle(
+                        new_dir,
+                        ls_mod.Lifecycle.PRODUCT_DEFINED,
+                        product_file=new_dir / "product.json",
+                    )
+            except Exception:  # noqa: BLE001 — 失败安全: 不影响 confirm 事务
+                pass
             # 审计 (失败安全: 审计事件失败不撤销已提交事务)
             try:
                 from org import events as org_events

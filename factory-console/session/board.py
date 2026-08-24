@@ -373,12 +373,34 @@ def render_board_html(path: Path = DEFAULT_BACKLOG, workspace: Optional[Path | s
             f"<span><i class='dot d-{k}'></i>{STATUS_LABELS.get(k, k)} {v}</span>"
             for k, v in sorted(stats["status_dist"].items())
         )
+        cons = stats.get("consistency") or {}
+        cons_items = ""
+        if cons.get("drifted") or cons.get("missing_project_json"):
+            rows = []
+            for c in stats.get("drifted_projects") or []:
+                det = []
+                if c.get("project") and c["project"] != c.get("canonical"):
+                    det.append(f"project={c['project']}")
+                if c.get("product") and c["product"] != c.get("canonical"):
+                    det.append(f"product={c['product']}")
+                if c.get("exec") and c["exec"] != c.get("canonical"):
+                    det.append(f"exec={c['exec']}")
+                if "project" in (c.get("missing") or []):
+                    det.append("缺 project.json")
+                rows.append(f"{c.get('name') or c.get('slug')}: {'≠'.join(det) if det else '状态不一致'}")
+            cons_items = (
+                "<p style='margin:6px 0 2px;color:#ffb74d;font-size:12px'>"
+                f"⚠️ 状态一致性: 漂移 <b>{cons.get('drifted', 0)}</b> · 缺 project.json "
+                f"<b>{cons.get('missing_project_json', 0)}</b>（J-1 待修）</p>"
+                + "".join(f"<p style='margin:1px 0;color:#e57373;font-size:11px'>  · {r}</p>" for r in rows)
+            )
         monitor_html = (
             "<p style='margin-top:10px;border-top:1px solid #2a2e37;padding-top:8px'>"
             f"📁 项目监控: <b>{stats['projects']}</b> 个 · 生命周期均值 <b>{stats['avg_lifecycle_pct']}%</b> · "
             f"进行中任务 <b id='mon-running'>{stats['running_tasks']}</b> · "
-            f"失败 <b id='mon-failed'>{stats['failed_tasks']}</b></p>"
-            f"<div class='dist-legend' id='mon-dist'>{dist_items}</div>"
+            f"失败 <b id='mon-failed'>{stats['failed_tasks']}</b> · "
+            f"状态漂移 <b>{cons.get('drifted', 0)}</b></p>"
+            f"<div class='dist-legend' id='mon-dist'>{dist_items}</div>{cons_items}"
         )
 
     # S10-110 P1-1: §22 SDK 任务 (第四数据源) — 作为独立卡片组
@@ -1000,6 +1022,49 @@ def _read_product_info(workspace: Path | str, slug: str) -> Optional[dict[str, A
     return data
 
 
+def _read_status_field(path: Path) -> tuple[bool, str]:
+    """读单文件 status/lifecycle 字段 (失败安全) → (存在?, 值)。"""
+    if not path.is_file():
+        return False, ""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8")) or {}
+    except Exception:  # noqa: BLE001 — 损坏 → 视为缺失 (不崩)
+        return False, ""
+    val = str(data.get("status") or data.get("lifecycle") or "")
+    return True, val
+
+
+def project_state_consistency(workspace: Path | str, slug: str) -> dict[str, Any]:
+    """只读状态对账 (J-1 口径): product.json / project.json / execution_state.json 三轨一致性。
+
+    canonical 优先级: project.json.status → product.json.status (project.json 为事实源,
+    product.json/execution_state 为镜像); 某轨文件缺失 → missing 标记; 存在且值 != canonical
+    → drifted。纯只读, 不改写任何文件 (失败安全, 损坏文件视为缺失)。
+    返回 {slug, name, canonical, project, product, exec, drifted, missing}。
+    """
+    pdir = Path(workspace) / "projects" / slug
+    pj_exists, pj = _read_status_field(pdir / "project.json")
+    pd_exists, pd = _read_status_field(pdir / "product.json")
+    es_exists, es = _read_status_field(pdir / "execution_state.json")
+    name = slug
+    pf = pdir / "product.json"
+    if pf.is_file():
+        try:
+            name = str((json.loads(pf.read_text(encoding="utf-8")) or {}).get("name") or slug)
+        except Exception:  # noqa: BLE001
+            name = slug
+    # canonical: project.json → product.json → 空
+    canonical = pj if pj_exists else (pd if pd_exists else "")
+    missing = [k for k, ok in (("project", pj_exists), ("product", pd_exists), ("exec", es_exists)) if not ok]
+    tracks = {"project": (pj_exists, pj), "product": (pd_exists, pd), "exec": (es_exists, es)}
+    drifted = bool(canonical) and any(ok and v and v != canonical for ok, v in tracks.values())
+    return {
+        "slug": slug, "name": name, "canonical": canonical,
+        "project": pj, "product": pd, "exec": es,
+        "drifted": drifted, "missing": missing,
+    }
+
+
 def _project_stage_status(workspace: Path | str, slug: str) -> list[dict[str, Any]]:
     """单项目生命周期阶段判定 (11 段, 确定性可断言)。
 
@@ -1007,12 +1072,8 @@ def _project_stage_status(workspace: Path | str, slug: str) -> list[dict[str, An
     """
     pdir = Path(workspace) / "projects" / slug
     product_file = pdir / "product.json"
-    status = ""
-    if product_file.is_file():
-        try:
-            status = str((json.loads(product_file.read_text(encoding="utf-8")) or {}).get("status") or "")
-        except Exception:  # noqa: BLE001
-            status = ""
+    # J-1 单一来源口径: 验收阶段判定读 canonical (project.json.status 优先)
+    status = project_state_consistency(workspace, slug)["canonical"]
 
     def has(name: str) -> bool:
         return (pdir / name).is_file()
@@ -1071,10 +1132,11 @@ def list_projects(workspace: Path | str) -> list[dict[str, Any]]:
         try:
             data = json.loads(pf.read_text(encoding="utf-8")) or {}
             name = str(data.get("name") or pdir.name)
-            status = str(data.get("status") or "?")
             mtime = pf.stat().st_mtime
         except Exception:  # noqa: BLE001
-            name, status, mtime = pdir.name, "?", 0.0
+            name, mtime = pdir.name, 0.0
+        # J-1 单一来源: 列表状态读 canonical (project.json.status 优先, 失败安全)
+        status = project_state_consistency(workspace, pdir.name)["canonical"] or "?"
         projects.append({"slug": pdir.name, "name": name, "status": status, "mtime": mtime})
     projects.sort(key=lambda p: p["mtime"], reverse=True)
     return projects
@@ -1280,6 +1342,35 @@ def render_project_lifecycle_html(workspace: Path | str, project_id: str = "") -
     import datetime
 
     ts = datetime.datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M") if mtime else "?"
+    # J-1 状态一致性对账 (只读): product/project/execution_state 三轨
+    cons = project_state_consistency(workspace, slug)
+
+    def _cons_row(label: str, exists: bool, val: str) -> str:
+        if not exists:
+            mark, color, disp = "—", "#78909c", "（缺失）"
+        elif val == cons["canonical"]:
+            mark, color, disp = "✅", "#4caf50", val
+        else:
+            mark, color, disp = "⚠️", "#e57373", val
+        return (f"<tr><td style='color:#9aa0a6;padding:3px 8px'>{label}</td>"
+                f"<td style='padding:3px 8px'>{mark}</td>"
+                f"<td style='color:{color};padding:3px 8px'>{disp}</td></tr>")
+
+    cons_v = (
+        "✅ 三轨一致" if not cons["missing"] and not cons["drifted"]
+        else ("⚠️ 状态漂移" if cons["drifted"] else "⚠️ 状态文件缺失")
+    )
+    cons_html = (
+        "<div class='card'><h2>🔗 状态一致性（J-1 对账）</h2>"
+        f"<p style='font-size:12px;color:#b0b6bf'>事实源 project.json · 镜像 product.json / execution_state.json</p>"
+        f"<table class='tasks'><tbody>"
+        f"{_cons_row('project.json（事实源）', 'project' not in cons['missing'], cons['project'])}"
+        f"{_cons_row('product.json（镜像）', 'product' not in cons['missing'], cons['product'])}"
+        f"{_cons_row('execution_state.json（镜像）', 'exec' not in cons['missing'], cons['exec'])}"
+        f"</tbody></table>"
+        f"<p style='font-size:12px;color:#ffb74d;margin-top:6px'>判定: {cons_v}"
+        f" · 事实源 = {cons['canonical'] or '（无）'}</p></div>"
+    )
     # S10-110 P1-3: 项目内任务清单 (只读, 上限 20)
     task_rows = _project_task_list(workspace, slug)
     # S10-110 完善: 任务状态汇总 (完成/进行中/失败/待办)
@@ -1338,6 +1429,7 @@ def render_project_lifecycle_html(workspace: Path | str, project_id: str = "") -
     <span>任务 {has('tasks.json')}</span><span>验证 {has('validation_result.json')}</span>
   </div>
 </div>
+{cons_html}
 {tasks_card}
 {exec_html}
 <div class="card">{task_html}<p>🕐 最近更新: {ts}</p></div>
@@ -1355,10 +1447,20 @@ def dashboard_stats(workspace: Path | str) -> dict[str, Any]:
     {projects, status_dist, avg_lifecycle_pct, running_tasks, failed_tasks}
     """
     projects = list_projects(workspace)
+    # J-1 单一来源: 状态分布读 canonical (project.json.status 优先), 并做三轨一致性对账
     status_dist: dict[str, int] = {}
+    consistency = {"checked": 0, "drifted": 0, "missing_project_json": 0}
+    drifted_projects: list[dict[str, Any]] = []
     for p in projects:
-        st = p["status"]
+        c = project_state_consistency(workspace, p["slug"])
+        st = c["canonical"] or p["status"]
         status_dist[st] = status_dist.get(st, 0) + 1
+        consistency["checked"] += 1
+        if c["drifted"]:
+            consistency["drifted"] += 1
+            drifted_projects.append(c)
+        if "project" in c["missing"]:
+            consistency["missing_project_json"] += 1
     total_done = total_stages = 0
     for p in projects:
         stages = _project_stage_status(workspace, p["slug"])
@@ -1386,6 +1488,8 @@ def dashboard_stats(workspace: Path | str) -> dict[str, Any]:
         "avg_lifecycle_pct": avg_pct,
         "running_tasks": running,
         "failed_tasks": failed,
+        "consistency": consistency,
+        "drifted_projects": drifted_projects,
     }
 
 

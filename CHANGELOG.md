@@ -3,7 +3,54 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
-## [v1.1.82] — 2026-08-25
+## [v1.1.83] — 2026-08-25
+
+**J-1 生命周期状态单一来源 (S10-115)**: project.json.status 为唯一事实源, 消除
+product.json / project.json / execution_state.json 三轨漂移（写侧统一入口 + 防回退 +
+存量对账; 读侧 board 对账可见）。
+
+### Added
+
+- **统一写入口 set_project_lifecycle** (`session/lifecycle_store.py`): 原子写三处
+  (project.json.status canonical + product.json.status + execution_state.json.lifecycle)
+  + 词汇校验 (∈ Lifecycle.STATUSES) + 防回退守卫 (单调前进, force=True 仅显式例外)
+  + 失败安全 (损坏文件不崩不臆造)
+- **存量对账** `factory project reconcile [--dry-run]`: canonical 判定
+  (①project.json.status ②product.json.status 映射 ③execution_state.lifecycle
+  ④全无/非法 → 跳过如实报告) + 修复前每项目快照 `.status_snapshot_<ts>.json` (三处原值)
+- **LEGACY_STATUS_MAP**: project_created→product_defined / prd_ready→engineering_ready /
+  draft→idea / confirmed→product_defined (对账/守卫兼容)
+- **状态一致性对账 (J-1 读侧)**: board 新增只读三轨对账 — 每个项目读
+  product.json / project.json / execution_state.json 三处状态, 以 project.json.status
+  为事实源 (canonical), product.json / execution_state 为镜像; 漂移/缺失实时标红
+- **监控面板**: 主线面板新增「⚠️ 状态一致性」区块 (漂移数 + 缺 project.json 数 +
+  逐项目漂移明细, 如 日记: product=prd_ready ≠ project=development)
+- **契约测试**: tests/console/test_s10_115_lifecycle_single_source.py (写侧 ≥8:
+  写点枚举/一致性/防回退/对账修复/词汇映射/统一入口/board 读取/回归) +
+  tests/console/test_s10_115_board_consistency.py 12 用例 (读侧)
+
+### Changed
+
+- **写点全部改走统一入口**: orchestrator._set_lifecycle 委托 (加 execution_state 同步 +
+  守卫) · 执行状态/验收 (accept_project) 三处同步 · actions.approve_project_plan 审批通过
+  改走 set_project_lifecycle · service.confirm_project 保留 org 镜像 lifecycle=confirmed,
+  status 缺省 → 统一入口补 canonical=product_defined
+- **generate_prd 防回退**: canonical 存在 → 不写 product.status (development 项目重生成
+  PRD 不再被降级); 无 canonical → product.status=engineering_ready
+- **create_product**: product.status 落盘值 project_created → product_defined (Lifecycle 词汇)
+- **展示口径统一**: 项目列表/状态分布/生命周期验收阶段全部改读 canonical
+  (project.json.status 优先, 回退 product.json), 不再直接展示 product.json 漂移值
+
+### Fixed
+
+- 状态双轨漂移不再被掩盖: 日记 (product=prd_ready vs project=development) 等实测漂移
+  对账可见 + 可一次性确定性修复 (快照先行, 只修可判定)
+
+### 验证
+
+- 写侧契约 ≥8 passed · 读侧契约 12 passed · 回归 tests/console + tests/api 0 新增失败
+  · 版本断言同步 v1.1.83
+
 
 **M5-1 执行重放引擎 + Skill 真调用**。
 

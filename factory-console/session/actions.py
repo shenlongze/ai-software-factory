@@ -44,6 +44,7 @@ from .confirm import ConfirmationGate
 from .execution_replay import ReplayError
 from .conflicts import ConflictDetector
 from .dependencies import TaskDependencyGraph
+from .lifecycle_store import set_project_lifecycle
 from .intent import (
     INTENT_CREATE_PROJECT,
     INTENT_TEAM_CONFLICTS,
@@ -297,7 +298,9 @@ def create_product(context: ExecutionContext) -> ActionResult:
     # product.json 落盘: projects/<slug>/product.json (与 org project.json 同空间)
     slug = str(project.get("slug") or _slugify(product.name) or project.get("id") or "unnamed")
     product_dir = Path(context.workspace) / "projects" / slug
-    product.status = "project_created"
+    # S10-115 J-1: product.json 落盘值用 Lifecycle 词汇 (product_defined 替代旧
+    # project_created); canonical (project.json.status) 由 org/统一入口管理
+    product.status = Lifecycle.PRODUCT_DEFINED
     product_path = product_dir / "product.json"
     try:
         product_path.parent.mkdir(parents=True, exist_ok=True)
@@ -433,7 +436,7 @@ def _locate_product(
 
 
 def generate_prd(context: ExecutionContext) -> ActionResult:
-    """生成产品需求文档 (S10-051 P2): ProductIntent → PRD.md + product.json status=prd_ready。
+    """生成产品需求文档 (S10-051 P2): ProductIntent → PRD.md + product.json status (Lifecycle)。
 
     产品来源: session.product_intent / current_project / 扫描 (见 _locate_product)。
     纯规则生成 (pipeline.ProductDocument, 不调 LLM); 资产落盘 projects/<slug>/PRD.md。
@@ -462,11 +465,28 @@ def generate_prd(context: ExecutionContext) -> ActionResult:
     product_dir = projects_root / slug
     prd_path = product_dir / "PRD.md"
     product_file = product_dir / "product.json"
-    product.status = "prd_ready"
+    # S10-115 J-1 (防回退): project.json.status 为 canonical — PRD 动作不得覆盖。
+    # canonical 存在 → 不写 product.status (镜像由 set_project_lifecycle 在其它
+    # 生命周期写点同步); 无 canonical → product.status=engineering_ready
+    # (旧 prd_ready 的 Lifecycle 等价, 仅落 product.json 不造 canonical)。
+    project_file = product_dir / "project.json"
+    canonical_status = ""
+    if project_file.is_file():
+        try:
+            canonical_status = str(
+                (_read_json_file(project_file)).get("status") or ""
+            ).strip()
+        except Exception:  # noqa: BLE001 — 失败安全: 损坏 → 视为无 canonical
+            canonical_status = ""
+    product_dict = product.to_dict()
+    if canonical_status:
+        product_dict.pop("status", None)
+    else:
+        product_dict["status"] = Lifecycle.ENGINEERING_READY
     try:
         _write_text_file(prd_path, prd_text)
         existing = _read_json_file(product_file) if product_file.is_file() else {}
-        _write_json_file(product_file, {**existing, **product.to_dict()})
+        _write_json_file(product_file, {**existing, **product_dict})
     except Exception as exc:  # noqa: BLE001 — 失败安全: 落盘异常 → 明确错误
         return ActionResult(
             ok=False,
@@ -482,7 +502,7 @@ def generate_prd(context: ExecutionContext) -> ActionResult:
             "prd_file": str(prd_path),
             "product_file": str(product_file),
             "sections": list(ProductDocument.SECTIONS),
-            "status": product.status,
+            "status": product_dict.get("status") or canonical_status,
         },
         error=None,
     )
@@ -784,12 +804,13 @@ def approve_project_plan(context: ExecutionContext) -> ActionResult:
     approved = _ask_confirmation(context, "approve_project_plan", "架构审批")
     now = datetime.now(timezone.utc).isoformat()
     if approved:
+        # S10-115 J-1: 审批决策元数据先落 (status 仍为 gate 值, 不直接写 Lifecycle);
+        # 状态推进 (execution_ready) 经统一入口 set_project_lifecycle 三处同步。
         _write_json_file(
             project_path,
             {
                 **data,
                 "name": data.get("name") or product.name,
-                "status": Lifecycle.EXECUTION_READY,
                 "arch_review": {
                     **arch,
                     "decision": "approved",
@@ -798,13 +819,12 @@ def approve_project_plan(context: ExecutionContext) -> ActionResult:
                 },
             },
         )
-        # product.json status 同步 (与 orchestrator._set_lifecycle 口径一致)
         product_file = projects_root / slug / "product.json"
-        if product_file.is_file():
-            existing = _read_json_file(product_file)
-            _write_json_file(
-                product_file, {**existing, "status": Lifecycle.EXECUTION_READY}
-            )
+        set_project_lifecycle(
+            projects_root / slug,
+            Lifecycle.EXECUTION_READY,
+            product_file=product_file,
+        )
         return ActionResult(
             ok=True,
             status=STATUS_OK,
@@ -822,6 +842,8 @@ def approve_project_plan(context: ExecutionContext) -> ActionResult:
             error=None,
         )
     feedback = "已拒绝 — 请修订工程计划后重新 prepare_project 覆盖 (重新审批)"
+    # S10-115 J-1 白名单: 拒绝分支保持 gate 值 (pending_arch_review 非 Lifecycle,
+    # 状态值不变 — 仅审批元数据更新, 非生命周期推进; 不经统一入口)
     _write_json_file(
         project_path,
         {

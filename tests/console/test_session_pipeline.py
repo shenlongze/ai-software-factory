@@ -566,15 +566,16 @@ def test_generate_prd_file_has_six_sections(fake_org, tmp_path):
 
 
 def test_generate_prd_updates_product_status(fake_org, tmp_path):
+    """S10-115 J-1: 无 canonical → product.status=engineering_ready (旧 prd_ready 的 Lifecycle 等价)。"""
     root = tmp_path / "ws"
     root.mkdir()
     ctx, _ = _create_product_on_disk(root)
     result = ACTIONS_MOD.generate_prd(ctx)
-    assert result.data["status"] == "prd_ready"
+    assert result.data["status"] == "engineering_ready"
     data = json.loads(
         (root / "projects" / "scorepocket" / "product.json").read_text(encoding="utf-8")
     )
-    assert data["status"] == "prd_ready"
+    assert data["status"] == "engineering_ready"
     assert data["name"] == "ScorePocket"
 
 

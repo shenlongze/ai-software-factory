@@ -52,6 +52,7 @@ from .decision import HandoffDecisionEngine
 from .dependencies import TaskDependencyGraph
 from .gap_analyzer import GapAnalyzer
 from .intent import IntentObject
+from .lifecycle_store import LifecycleRegressionError, set_project_lifecycle
 from .llm_gap import LLMGapAnalyzer
 from .llm_task_proposal import LLMTaskProposalEngine
 from .loop_guard import LoopGuard
@@ -984,21 +985,22 @@ class ExecutionOrchestrator:
         state.save(self._state_file(project_dir))
 
     def _set_lifecycle(self, project_dir: Path, slug: str, status: str) -> None:
-        """Lifecycle 落盘: 更新 project.json + product.json 的 status (保留既有字段)。
+        """Lifecycle 落盘: 委托统一入口 set_project_lifecycle (S10-115 J-1)。
 
-        缺省字段兜底 (project.json 缺失 → 新建; product.json 缺失 → 跳过 —
-        orchestrator 不依赖产品资产存在)。
+        三处同步: project.json.status (canonical) + product.json.status +
+        execution_state.json.lifecycle (存在时); 签名兼容 (project_dir, slug, status)。
+        slug 参数保留 (调用方契约); 缺省字段兜底 (project.json 缺失 → 新建;
+        product.json 缺失 → 跳过 — orchestrator 不依赖产品资产存在)。
         """
-        project_file = project_dir / "project.json"
-        existing = _read_json(project_file) if project_file.is_file() else {}
-        _write_json(
-            project_file,
-            {**existing, "name": existing.get("name") or slug, "status": status},
-        )
-        product_file = project_dir / "product.json"
-        if product_file.is_file():
-            existing_p = _read_json(product_file)
-            _write_json(product_file, {**existing_p, "status": status})
+        # 防回退守卫: 正常执行路径单调推进 (EXECUTION_READY → DEVELOPMENT →
+        # TESTING → VALIDATION_PASS → USER_ACCEPTANCE → DELIVERED); resume 已完成
+        # 项目时, 重新验证的瞬态 TESTING/VALIDATION_PASS 写遇 canonical 已领先 →
+        # LifecycleRegressionError → 跳过该瞬态持久化 (canonical 绝不回退, 最终态
+        # USER_ACCEPTANCE/DELIVERED 三处一致; 引擎 state.lifecycle 由 _save_state 管理)
+        try:
+            set_project_lifecycle(project_dir, status)
+        except LifecycleRegressionError:
+            pass
 
     # ------------------------------------------------------------ 执行
 

@@ -2,7 +2,7 @@
 
 > **单一事实来源** — 当前系统到底有哪些功能、每个功能是什么、怎么用（CLI / API / 会话命令）、什么状态、从哪个版本开始有。
 >
-> 版本: **v1.1.82** · 更新: 2026-08-25 · 依据: 实测命令 + 代码核对 + CHANGELOG
+> 版本: **v1.1.83** · 更新: 2026-08-25 · 依据: 实测命令 + 代码核对 + CHANGELOG
 
 ## 0. 文档定位（与其他文档的分工）
 
@@ -35,7 +35,7 @@
 | **资源域** | Agent 管理 | `factory agent list` | ✅ 只读 |
 | **资源域** | Skill 管理 | `factory skill list` | ✅ 只读 |
 | **资源域** | 工具发现 | `factory tools list/doctor` | ✅ |
-| **资源域** | 项目管理 | `factory project create/list/rename/status` | ✅ |
+| **资源域** | 项目管理 | `factory project create/list/rename/status/reconcile` | ✅ |
 | **资源域** | 统一创建入口 | `factory create company/department/project` | ✅ v1.1.17 |
 | **数据域** | 主线任务清单 | `factory todo list` | ✅ v1.1.30 |
 | **数据域** | 证据包 | `factory evidence list/show` | ✅ |
@@ -139,9 +139,12 @@ API（Web/集成）:   http://127.0.0.1:8011/api/...      e.g. GET /api/board
 - **状态**: ✅ · **关联能力**: M1 内核
 
 ### 3.4 project — 项目
-- **说明**: 已有项目接入（create 代理 org CLI / list 只读 / rename / status）
-- **入口**: `factory project create|list|rename|status [--json]`
-- **状态**: ✅ · **关联能力**: C53
+- **说明**: 已有项目接入（create 代理 org CLI / list 只读 / rename / status /
+  reconcile — J-1 生命周期状态单一来源对账）
+- **入口**: `factory project create|list|rename|status|reconcile [--json] [--dry-run]`
+- **状态**: ✅ · **关联能力**: C53 · reconcile **起始**: v1.1.83
+  （对账: canonical=project.json.status; 快照先行 `.status_snapshot_<ts>.json`;
+  --dry-run 只读预览; 无法判定项目如实跳过）
 
 ### 3.5 create — 统一创建入口（§1.4.5 便捷铁律）
 - **说明**: 一个命令创建 公司/部门/项目，组织树×工作树正交关联（Project.department_ids）
@@ -467,6 +470,7 @@ API（Web/集成）:   http://127.0.0.1:8011/api/...      e.g. GET /api/board
 | v1.1.49 | Board 单项目管理视图（全生命周期 11 段, 只读, 项目隔离） | 展示 |
 | v1.1.78 | M3 收尾三件套: ux/qa 真引擎+PRD 深度化 / ChangeControl 变更回流 / 架构审批门 · Agent/Skill 管理 | M3 (7/7) |
 | v1.1.81 | P0-10 注册表一致性 + P0-11 对称路径一致性（防遗漏机制） | 测试/工程保障 |
+| v1.1.83 | J-1 生命周期状态单一来源: set_project_lifecycle 统一写入口 + 防回退 + 存量对账 (factory project reconcile) · Board 三轨只读对账漂移可见 | 生命周期/可信度 |
 | v1.1.82 | M5-1 执行重放引擎 (dry-run/re-exec/对比报告 + input_snapshot) · Skill 真调用 | 执行/工程保障 |
 
 ---

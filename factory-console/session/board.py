@@ -2549,16 +2549,26 @@ def render_docs_config_html(workspace: Path | str, slug: str) -> str:
 <textarea id="cfg-dirs">{dirs_val}</textarea>
 <h2>🔤 支持扩展名（逗号分隔, 默认 md/json/doc/docx）</h2>
 <input id="cfg-exts" value="{exts_val}">
-<div><button onclick="save()">💾 保存配置</button> <span id="msg" style="color:#4caf50;font-size:12px"></span></div>
+<div style="display:flex;gap:10px;align-items:center;margin-top:10px">
+<button onclick="save()">💾 保存配置</button>
+<button onclick="location.href='/api/board/docs?project={slug}'" style="background:#37474f">🔄 刷新文档</button>
+<button onclick="location.href='/api/board/docs/config?project={slug}'" style="background:#37474f">↻ 重置表单</button>
+<span id="msg" style="color:#4caf50;font-size:12px"></span></div>
 <script>
 function save(){{
   var dirs = document.getElementById('cfg-dirs').value.split('\\n').map(function(s){{return s.trim();}}).filter(Boolean);
   var exts = document.getElementById('cfg-exts').value.split(',').map(function(s){{return s.trim();}}).filter(Boolean);
-  fetch('/api/board/docs/config?project={slug}&dirs='+encodeURIComponent(dirs.join('\n'))+'&exts='+encodeURIComponent(exts.join(',')), {{
+  fetch('/api/board/docs/config?project={slug}&dirs='+encodeURIComponent(dirs.join('\\n'))+'&exts='+encodeURIComponent(exts.join(',')), {{
     method: 'POST'
   }}).then(function(r){{return r.json();}}).then(function(d){{
-    document.getElementById('msg').textContent = d.ok ? '✅ 已保存 (' + d.dirs.length + ' 目录, ' + d.exts.length + ' 扩展名)' : '❌ 保存失败';
-  }});
+    var msg = document.getElementById('msg');
+    if (d.ok) {{
+      msg.textContent = '✅ 已保存 (' + d.dirs.length + ' 目录, ' + d.exts.length + ' 扩展名) — 即将刷新文档页';
+      setTimeout(function(){{ location.href = '/api/board/docs?project={slug}'; }}, 1200);
+    }} else {{
+      msg.textContent = '❌ 保存失败';
+    }}
+  }}).catch(function(){{ document.getElementById('msg').textContent = '❌ 保存失败 (网络错误)'; }});
 }}
 </script>
 </body></html>"""

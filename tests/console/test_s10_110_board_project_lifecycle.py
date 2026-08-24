@@ -1111,3 +1111,27 @@ class TestDocsConfig:
         self._proj(tmp_path)
         html = BOARD.render_project_docs_html(tmp_path, "a")
         assert "⚙ 配置" in html
+
+
+# ================================================================== 配置页保存/刷新修复
+
+class TestDocsConfigSave:
+    def _proj(self, tmp_path):
+        _mk_project(tmp_path, "a", name="项目A")
+        return tmp_path
+
+    def test_config_html_js_join_escaped(self, tmp_path):
+        """配置页 JS: dirs.join('\\n') 是字面转义 (非真换行) — 保存按钮可用。"""
+        self._proj(tmp_path)
+        html = BOARD.render_docs_config_html(tmp_path, "a")
+        i = html.find("function save")
+        js = html[i:i+400]
+        assert "join('\\n')" in js  # 字面反斜杠 n (不是真换行)
+        assert "fetch('/api/board/docs/config" in js
+
+    def test_config_html_refresh_buttons(self, tmp_path):
+        self._proj(tmp_path)
+        html = BOARD.render_docs_config_html(tmp_path, "a")
+        assert "🔄 刷新文档" in html
+        assert "↻ 重置表单" in html
+        assert "docs?project=a" in html  # 刷新跳转目标

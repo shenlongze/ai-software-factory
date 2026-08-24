@@ -888,3 +888,35 @@ class TestDocsScan:
         assert "指南" in v
         bad = BOARD.render_project_doc_view(tmp_path, "a", "../audit_events.json")
         assert "不支持的文档路径" in bad
+
+
+# ================================================================== 文档文件夹分组
+
+class TestDocsFolder:
+    def _proj(self, tmp_path):
+        _mk_project(tmp_path, "a", name="项目A")
+        pdir = tmp_path / "projects" / "a"
+        (pdir / "README.md").write_text("# README", encoding="utf-8")
+        (pdir / "docs").mkdir()
+        (pdir / "docs" / "指南.md").write_text("# 指南", encoding="utf-8")
+        (pdir / "docs" / "架构.md").write_text("# 架构", encoding="utf-8")
+        (pdir / "specs").mkdir()
+        (pdir / "specs" / "api.json").write_text("{}", encoding="utf-8")
+        return tmp_path
+
+    def test_extra_has_folder(self, tmp_path):
+        self._proj(tmp_path)
+        docs = BOARD.list_project_docs(tmp_path, "a")
+        extra = {d["name"]: d for d in docs if d.get("extra")}
+        assert extra["README.md"]["folder"] == ""
+        assert extra["docs/指南.md"]["folder"] == "docs"
+        assert extra["specs/api.json"]["folder"] == "specs"
+
+    def test_docs_html_folder_grouped(self, tmp_path):
+        self._proj(tmp_path)
+        html = BOARD.render_project_docs_html(tmp_path, "a")
+        assert "📁 根目录" in html
+        assert "📁 docs/" in html
+        assert "📁 specs/" in html
+        # 文档在对应文件夹区块内
+        assert "指南.md" in html and "架构.md" in html and "api.json" in html

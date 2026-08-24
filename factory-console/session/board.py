@@ -1947,7 +1947,8 @@ def list_project_docs(workspace: Path | str, slug: str) -> list[dict[str, Any]]:
             try:
                 st = f.stat()
                 docs.append({"name": rel_s, "label": rel.name, "kind": f.suffix.lower().lstrip("."),
-                             "size": st.st_size, "mtime": st.st_mtime, "exists": True, "extra": True})
+                             "size": st.st_size, "mtime": st.st_mtime, "exists": True, "extra": True,
+                             "folder": str(rel.parent) if rel.parent != Path(".") else ""})
             except OSError:  # noqa: BLE001
                 continue
     return docs
@@ -1982,12 +1983,23 @@ def render_project_docs_html(workspace: Path | str, slug: str) -> str:
     core_rows = "".join(_row(d, True) for d in core) or "<tr><td>（无核心资产）</td></tr>"
     extra_table = ""
     if extra:
-        extra_rows = "".join(_row(d, False) for d in extra)
+        # 按文件夹分组: docs/ → 区块; 根目录文件 → "根目录"
+        folders: dict[str, list[dict[str, Any]]] = {}
+        for d in extra:
+            folders.setdefault(d.get("folder") or "", []).append(d)
+        blocks = []
+        for folder in sorted(folders.keys()):
+            rows = "".join(_row(d, False) for d in folders[folder])
+            title = "📁 根目录" if not folder else f"📁 {folder}/"
+            blocks.append(
+                f"<h3 style='font-size:13px;color:#8ab4f8;margin:12px 0 4px'>{title}</h3>"
+                f"<table><tr><th>文档</th><th>文件</th><th></th><th>大小</th><th>更新时间</th></tr>"
+                f"{rows}</table>"
+            )
         extra_table = (
-            f"<h2 style='font-size:15px;color:#ffb74d;margin:18px 0 6px'>📁 其他文档 "
-            f"（README / docs / 其他, 扫描项目目录真实文件）</h2>"
-            f"<table><tr><th>文档</th><th>文件</th><th></th><th>大小</th><th>更新时间</th></tr>"
-            f"{extra_rows}</table>"
+            f"<h2 style='font-size:15px;color:#ffb74d;margin:18px 0 6px'>📁 项目全部文档 "
+            f"（按文件夹, 扫描真实文件）</h2>"
+            + "".join(blocks)
         )
     return f"""<!DOCTYPE html>
 <html lang="zh"><head><meta charset="utf-8">

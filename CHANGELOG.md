@@ -3,6 +3,20 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.67] — 2026-08-24
+
+**Board 文档管理按文件夹展示（Founder: 要文件夹显示, 项目下全部文档）**。
+
+### Changed
+
+- list_project_docs 扫描文档带 folder 字段 (父目录, 根目录="")
+- 渲染按文件夹分组: 📁 根目录 / 📁 docs/ / 📁 specs/ 各区块, 项目下全部文档
+  按目录结构展示 (非平铺)
+
+### 验证
+
+- 2 新契约测试 (folder 字段/HTML 文件夹分组) · 全量回归 0 新增失败
+
 ## [v1.1.66] — 2026-08-24
 
 **Board 文档管理扫描真实文件: README/docs 展示（Founder: 项目 readme/docs 没展示）**。

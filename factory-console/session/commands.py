@@ -98,10 +98,11 @@ class StatusCommand(SlashCommand):
 
 
 class ProjectCommand(SlashCommand):
-    """/project — 项目列表 (无参) / 切换 current_project (/project <id>)。"""
+    """/project — 项目列表 (无参) / 切换当前项目 (/project <id>) /
+    需求变更 (/project change <id|名称> "变更内容")。"""
 
     name = "project"
-    description = "项目列表/切换当前项目 (/project [<id>])"
+    description = "项目列表/切换当前项目/需求变更 (/project [<id>|change ...])"
 
     def __init__(
         self,
@@ -136,6 +137,9 @@ class ProjectCommand(SlashCommand):
         # S10-110: /project delete <id|全部未命名> — 危险操作, 需确认 (y/N)
         if arg.startswith("delete") or arg.startswith("删除"):
             return self._delete(arg, projects, context)
+        # S10-111 M3-6: /project change <id|名称> "变更内容" — 需求变更回流
+        if arg.startswith("change") or arg.startswith("变更"):
+            return self._change(arg, projects, context)
         return self._switch(arg, projects, context)
 
     def _delete(self, arg: str, projects: list[dict[str, Any]], context: SessionContext) -> int:
@@ -174,6 +178,75 @@ class ProjectCommand(SlashCommand):
         result = _delete_action(ctx)
         print(result.message or ("✅ 删除完成" if result.ok else "❌ 删除失败"))
         return 0 if result.ok else 1
+
+    def _change(
+        self, arg: str, projects: list[dict[str, Any]], context: SessionContext
+    ) -> int:
+        """需求变更回流 (S10-111 M3-6): /project change <id|名称> "加导出"。
+
+        复用 actions.change_project: propose → impact → ConfirmationGate y/N →
+        y → PRD v2 + 新任务合并 tasks/plan; n → 已拒绝, 未变更。
+        """
+        parts = arg.split(None, 2)
+        if len(parts) < 3:
+            print('用法: /project change <项目ID 或 名称> "变更内容"')
+            print('示例: /project change crm "加导出"')
+            return 2
+        target = parts[1].strip()
+        request = parts[2].strip().strip('"\'')
+        if not target or not request:
+            print('用法: /project change <项目ID 或 名称> "变更内容"')
+            return 2
+        tlow = target.lower()
+        candidates = [
+            p for p in projects
+            if p["id"].lower() == tlow or str(p["name"] or "").lower() == tlow
+        ]
+        if not candidates:
+            print(f"未找到要变更的项目: {target}")
+            return 1
+        pid = candidates[0]["id"]
+        pname = str(candidates[0].get("name") or "")
+        slug = self._resolve_slug(pid, pname)
+        from .action import ExecutionContext as _EC
+        from .action import IntentObject as _IO
+        from .actions import change_project as _change_action
+        from pathlib import Path as _Path
+        intent = _IO(
+            intent_type="change_project",
+            params={"project_id": slug, "request": request},
+            raw=arg,
+            source="session",
+        )
+        ws = self.workspace or _Path.home() / ".factory"
+        ctx = _EC(workspace=ws, session=None, user="user", project=None, intent=intent)
+        result = _change_action(ctx)
+        print(result.message)
+        return 0 if result.ok else 1
+
+    def _resolve_slug(self, pid: str, pname: str) -> str:
+        """org id/名称 → projects/<slug> 目录名 (S10-111 M3-6: change_control 按 slug 落盘)。
+
+        目录名/pid 直配优先; 否则按 product.json name 扫描 (失败安全 → pid 原值)。
+        """
+        ws = self.workspace or Path.home() / ".factory"
+        projects_root = Path(ws) / "projects"
+        for direct in (pid, pname):
+            if direct and (projects_root / str(direct)).is_dir():
+                return str(direct)
+        try:
+            for pdir in sorted(projects_root.iterdir()):
+                if not pdir.is_dir():
+                    continue
+                pf = pdir / "product.json"
+                if not pf.is_file():
+                    continue
+                data = json.loads(pf.read_text(encoding="utf-8"))
+                if str(data.get("name") or "") == pname or pdir.name == pid:
+                    return pdir.name
+        except Exception:  # noqa: BLE001 — 失败安全
+            pass
+        return str(pid)
 
     def _show(self, projects: list[dict[str, Any]], context: SessionContext) -> int:
         """项目清单 + 状态列 (PRD/管线资产/状态) — 识别垃圾名/文档进度。"""

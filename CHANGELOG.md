@@ -3,6 +3,47 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.78] — 2026-08-24
+
+**M3 收尾三件套（S10-111）: ux/qa 真引擎 + PRD 深度化 / ChangeControl 需求变更回流 / 工程计划架构审批门**。
+
+### Added
+
+- **M3-5 UX/QA 真引擎 + PRD 深度化**: ux/qa 角色从模板占位改真引擎 —
+  ux 按 ProductIntent(user/core_features/platform) 生成每功能具体用户流程
+  (3-5 步) + 页面结构 + 信息架构; qa 生成单元/集成/E2E/安全/性能五层测试 +
+  每功能用例方向 + 验证命令; PRD 追加 "User Stories" (每功能一条) +
+  "Acceptance Criteria" (每功能 2-3 条) — 无 LLM 确定性兜底真实产出
+- **M3-6 ChangeControl 需求变更回流**: `/project change <slug> "加导出"` +
+  自然语言 "给XX项目加个导出功能" → propose (规则解析 request/reason) →
+  impact (关键词匹配 PRD 章节/任务/依赖, 手算可枚举 + 过度波及收敛) →
+  ConfirmationGate y/N → y: PRD v2 (变更记录) + DecomposeEngine 拆变更 →
+  新任务合并 tasks.json/plan.json (+execution_plan.json); n: 不写不建, rejected
+- **M3-7 工程计划架构审批门**: prepare_project → status=pending_arch_review +
+  arch_review{summary, requested_at}; "批准工程计划" y → execution_ready;
+  n → pending + feedback (重新 prepare 覆盖); execute_project 非
+  execution_ready 明确阻断 "工程计划待架构审批"
+
+### 验证
+
+- 14 新契约测试 (M3-5/6/7 各 ≥3 + 版本 v1.1.78) · 全量回归 0 新增失败
+
+---
+
+**Agent/Skill 管理命令 + API（Founder: agent list 不能执行, help 不全, 需管理）**。
+
+### Added
+
+- **agent/skill 子命令**: factory agent list|add|remove (--id --role --skills) ·
+  factory skill list|add|remove (--id --name --category) — 修 agent list 报错
+- **help 补全**: factory help 加"常用命令用法"区块 (agent/skill/tools/llm/project 等)
+- **API**: GET /api/agents · GET /api/skills (清单, 与 CLI 同数据源)
+- 修复 agents.json/skills.json 嵌套读取 + 写入循环引用
+
+### 验证
+
+- 3 新契约测试 (agent add/list/remove + skill add/list + help 用法) · 全量回归 0 新增失败
+
 ## [v1.1.77] — 2026-08-24
 
 **项目清单多维度（Founder: 管线/状态含义不清, 是否考虑其他维度）**。

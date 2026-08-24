@@ -40,6 +40,10 @@ INTENT_GENERATE_PRD = "generate_prd"
 #: S10-053 P4: 质量修复意图 (修复失败任务 — RepairManager, 确认门后执行)
 INTENT_REPAIR_TASK = "repair_task"
 INTENT_PREPARE_PROJECT = "prepare_project"
+#: S10-111 M3-6: 需求变更意图 ("给XX项目加个导出功能" → ChangeControl 回流)
+INTENT_CHANGE_PROJECT = "change_project"
+#: S10-111 M3-7: 工程计划架构审批意图 ("批准工程计划" → 审批门通过)
+INTENT_APPROVE_PROJECT_PLAN = "approve_project_plan"
 #: S10-052 P3: 执行编排意图 (开始开发 / 进度查询 — Orchestrator Actions)
 INTENT_EXECUTE_PROJECT = "execute_project"
 INTENT_PROJECT_PROGRESS = "project_progress"
@@ -188,6 +192,10 @@ _KEYWORD_RULES: tuple[tuple[tuple[str, ...], str, Optional[str]], ...] = (
     (("验证修复", "验证一下修复"), INTENT_DEBUG_VALIDATE, None),
     (("继续调试",), INTENT_DEBUG_RESUME, None),
     (("花了多少", "成本", "费用"), INTENT_SHOW_COST, None),
+    # S10-111 M3-6: 需求变更意图 (纯新增, 旧关键词不动) — 必须在 run_task
+    # 裸 "加" 之前 ("加个/加一个/加一项/新增" 更具体 → change_project;
+    # "加测试" 无这些前缀 → 仍归 run_task, 基线零变化)
+    (("加个", "加一项", "加一个", "新增"), INTENT_CHANGE_PROJECT, "request"),
     # S10-049 P0: +"实现" (验收: "帮我实现登录功能" → run_task, objective="登录功能")
     (("加", "修复", "写", "实现"), INTENT_RUN_TASK, "objective"),
     (("项目列表", "有哪些项目", "列出项目", "有什么项目", "现在有什么项目", "我有哪些项目"), INTENT_LIST_PROJECTS, None),
@@ -198,6 +206,9 @@ _KEYWORD_RULES: tuple[tuple[tuple[str, ...], str, Optional[str]], ...] = (
     # S10-051 P1: 工程管线意图 — 优先级在 create_product 之前
     # ("我想生成PRD" 不被 "我想" 抢; "准备开发一个APP" 不被 "开发一个" 抢)
     (("生成PRD", "生成需求文档", "PRD"), INTENT_GENERATE_PRD, None),
+    # S10-111 M3-7: 工程计划架构审批意图 — 必须在 prepare_project ("工程计划")
+    # 与 review_approve ("批准") 之前 ("批准工程计划" 不被 "工程计划"/"批准" 抢)
+    (("批准工程计划", "同意工程计划", "通过工程计划", "工程计划审批", "审批工程计划"), INTENT_APPROVE_PROJECT_PLAN, None),
     (("准备开发", "生成工程计划", "工程计划", "准备工程"), INTENT_PREPARE_PROJECT, None),
     # S10-052 P3: 执行编排意图 — 优先级在 create_product 之前
     # ("开始开发这个产品" 不被 "产品" 抢; "执行项目" 不被 run_task 抢)

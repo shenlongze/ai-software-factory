@@ -35,6 +35,7 @@ from .confirm import ConfirmationGate
 from .context import ContextManager, SessionContext
 from .conversation import ConversationManager, ConversationState
 from .intent import (
+    INTENT_CHANGE_PROJECT,
     INTENT_CREATE_PRODUCT,
     INTENT_CREATE_PROJECT,
     INTENT_CURRENT_PROJECT,
@@ -409,6 +410,10 @@ class InteractiveSession:
         if intent.intent_type == INTENT_RENAME_PROJECT:
             self._rename_project_via_nl(intent, line)
             return
+        # S10-111 M3-6: 自然语言需求变更 ("给XX项目加个导出功能") → ChangeControl 回流
+        if intent.intent_type == INTENT_CHANGE_PROJECT:
+            self._change_project_via_nl(intent, line)
+            return
         # "继续 旅行记账" → 从输入解析项目名并切换当前项目; 无名称/未匹配 → 落回普通路由
         if intent.intent_type == INTENT_RESUME_PROJECT:
             if self._try_resume_with_name(line):
@@ -682,11 +687,13 @@ class InteractiveSession:
             pname = str(proj.get("name") or "")
             if pid == name or pname == name:
                 return pid
-        # 宽松包含匹配 (唯一命中才用, 避免歧义)
+        # 宽松包含匹配 (唯一命中才用, 避免歧义; 不区分大小写)
+        nlow = name.lower()
         hits = [
             str(proj.get("id") or "")
             for proj in projects
-            if name in str(proj.get("name") or "") or str(proj.get("name") or "") in name
+            if nlow in str(proj.get("name") or "").lower()
+            or str(proj.get("name") or "").lower() in nlow
         ]
         if len(hits) == 1:
             return hits[0]
@@ -748,6 +755,80 @@ class InteractiveSession:
             return
         result = action.execute(self._build_action_context(intent2))
         print(result.message)
+
+    def _change_project_via_nl(self, intent: Any, raw_line: str) -> None:
+        """S10-111 M3-6: 自然语言需求变更 — 解析项目 + 请求 → change_project action。
+
+        "给XX项目加个导出功能" → 项目 XX (org 匹配) + 请求 "导出功能";
+        无项目名 → 当前项目; 均无 → 引导 (不猜)。审批在 action 内 (ConfirmationGate y/N)。
+        """
+        params = getattr(intent, "parameters", None) or {}
+        request = str(params.get("request") or "").strip()
+        if not request:
+            print(
+                "你想给项目加什么功能? 例如:\n"
+                "  • 给XX项目加个导出功能\n"
+                "  • 这个项目加一个数据统计"
+            )
+            return
+        pid = self.context.current_project
+        slug = self._slug_for_project(str(pid)) if pid else None
+        raw = str(raw_line or "").strip()
+        match = re.search(r"给(.+?)项目", raw)
+        if match:
+            candidate = match.group(1).strip().strip("，。,. ")
+            if candidate:
+                matched = self._match_project(candidate)
+                if not matched:
+                    print(f"未找到项目 '{candidate}' — 输入 /project 查看项目清单")
+                    return
+                # org id (P-xxx) / 名称 → projects/<slug> 目录名 (change_control 按 slug 落盘)
+                slug = self._slug_for_project(candidate) or self._slug_for_project(matched)
+        if not slug:
+            print(
+                "当前没有正在开发的项目。\n"
+                "你可以: 输入 /project 查看已有项目, 或用 '给XX项目加个功能' 指定。"
+            )
+            return
+        intent2 = IntentObject(
+            intent_type=INTENT_CHANGE_PROJECT,
+            params={"project_id": slug, "request": request},
+            raw=raw_line,
+            source="session",
+        )
+        action = self.action_registry.get("change_project")
+        if action is None:
+            print("❌ 需求变更失败: change_project Action 未注册")
+            return
+        result = action.execute(self._build_action_context(intent2))
+        print(result.message)
+
+    def _slug_for_project(self, target: str) -> Optional[str]:
+        """org id/名称 → projects/<slug> 目录名 (S10-111 M3-6 变更按 slug 落盘)。
+
+        目录名 / product.json name 匹配 (失败安全 → None, 调用方回落原值)。
+        """
+        target = str(target or "").strip()
+        if not target:
+            return None
+        ws = Path(getattr(self.context, "workspace", None) or DEFAULT_WORKSPACE)
+        projects_root = ws / "projects"
+        if (projects_root / target).is_dir():
+            return target
+        tlow = target.lower()
+        for pdir in sorted(projects_root.iterdir()):
+            if not pdir.is_dir():
+                continue
+            pf = pdir / "product.json"
+            if not pf.is_file():
+                continue
+            try:
+                data = json.loads(pf.read_text(encoding="utf-8"))
+            except Exception:  # noqa: BLE001 — 失败安全: 损坏跳过
+                continue
+            if tlow in (pdir.name.lower(), str(data.get("name") or "").lower()):
+                return pdir.name
+        return None
 
     def _show_current_project(self) -> None:
         """S10-076: 只读展示会话当前项目 (不创建/写)。"""

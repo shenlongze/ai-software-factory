@@ -934,6 +934,43 @@ class ExecutionOrchestrator:
             raise PlanNotFoundError(f"execution_plan.json 无任务: {plan_path}")
         return plan
 
+    def _arch_review_blocked(self, project_dir: Path) -> Optional[str]:
+        """S10-111 M3-7 架构审批门: 非 execution_ready/development → 阻断消息。
+
+        - status=execution_ready → 放行 (审批通过, v1.1.77 行为一致)
+        - status=development → 放行 (执行中/恢复路径不受门控)
+        - project.json 缺失 / status 缺失 → 放行 (失败安全, 既有行为不变)
+        - 其它 (pending_arch_review / product_defined / engineering_ready …)
+          → 明确错误 "工程计划待架构审批" (M3a-d 引擎内部逐字节不改 — 仅入口检查)
+        """
+        project_file = project_dir / "project.json"
+        if not project_file.is_file():
+            return None
+        try:
+            data = json.loads(project_file.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001 — 损坏 → 不阻断 (orchestrator 为准)
+            return None
+        status = str(data.get("status") or "")
+        if not status:
+            return None
+        # 放行面: 已审批 (execution_ready) / 执行中或已执行 (development ~ delivered) —
+        # orchestrator 直调重跑等既有行为保持不变 (验收 ⑪: 审批通过后与 v1.1.77 一致)
+        if status in (
+            Lifecycle.EXECUTION_READY,
+            Lifecycle.DEVELOPMENT,
+            Lifecycle.TESTING,
+            Lifecycle.VALIDATION_PASS,
+            Lifecycle.USER_ACCEPTANCE,
+            Lifecycle.DELIVERED,
+        ):
+            return None
+        # 阻断面: 未审批/前置状态 (idea/product_defined/engineering_ready/
+        # pending_arch_review 等) — 工程计划未获架构审批不可执行
+        return (
+            f"工程计划待架构审批: 项目状态 {status!r}, 请先批准工程计划 "
+            f"(approve_project_plan) 后再执行"
+        )
+
     def _state_file(self, project_dir: Path) -> Path:
         """execution_state.json 路径 (projects/<slug>/execution_state.json)。"""
         return project_dir / "execution_state.json"
@@ -1133,6 +1170,10 @@ class ExecutionOrchestrator:
         全部完成 → Lifecycle TESTING → (测试门占位通过) → DELIVERED。
         """
         project_dir, slug = self._locate_project(project_id)
+        # S10-111 M3-7: 架构审批门 — 非 execution_ready 明确阻断 (M3a-d 内部不改)
+        blocked = self._arch_review_blocked(project_dir)
+        if blocked:
+            raise ExecutionStateError(blocked)
         plan = self._load_plan(project_dir)
         plan_tasks = list(plan.get("tasks") or [])
         team_run: Optional[TeamRunContext] = None

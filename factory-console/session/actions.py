@@ -29,6 +29,7 @@ from types import SimpleNamespace
 from typing import Any, Optional
 
 from .action import (
+    STATUS_CANCELLED,
     STATUS_ERROR,
     STATUS_OK,
     Action,
@@ -39,6 +40,7 @@ from .action import (
 from .agents import AgentMatcher, AgentMetrics, AgentRegistry, workforce_snapshot
 from .audit import record_execution
 from .commands import read_projects
+from .confirm import ConfirmationGate
 from .conflicts import ConflictDetector
 from .dependencies import TaskDependencyGraph
 from .intent import (
@@ -78,6 +80,12 @@ DEFAULT_AGENT = "backend-1"
 
 #: 前端 Agent
 FRONTEND_AGENT = "flutter-dev"
+
+#: S10-111 M3-7: 工程计划架构审批门 — prepare_project 后进入待审批态
+#: (审批通过 → execution_ready; 拒绝 → 保持本态 + arch_review.feedback;
+#: 计划修订 = 重新 prepare_project 覆盖 arch_review)。独立于 Lifecycle 线性链
+#: (不插入 STATUSES — 不破坏既有生命周期推进口径)。
+ARCH_REVIEW_PENDING = "pending_arch_review"
 
 #: 审计记录字段 (设计 §2.6): intent/action/agent/task/result/result_id/timestamp
 _RECORD_KEYS = ("intent", "action", "agent", "task", "result", "result_id", "timestamp", "error")
@@ -504,7 +512,9 @@ def prepare_project(context: ExecutionContext) -> ActionResult:
 
     依次: generate_prd (PRD.md) → EngineeringPlan (engineering.json) →
     TaskTree (tasks.json) → AgentAssignment (execution_plan.json, 复用
-    select_agent) → Lifecycle (project.json status=execution_ready)。
+    select_agent) → S10-111 M3-7 架构审批门: project.json
+    status=pending_arch_review + arch_review{summary, requested_at}
+    (不再直接 execution_ready — 审批通过后才可执行; 审批见 approve_project_plan)。
 
     返回 "Project Ready For Engineering." + 4 资产路径 (验收 F)。
     """
@@ -546,9 +556,15 @@ def prepare_project(context: ExecutionContext) -> ActionResult:
         tree, select_agent_fn=select_agent, context=context
     )
     execution_path = product_dir / "execution_plan.json"
-    # 5) Lifecycle: project.json status → execution_ready (保留既有 org 字段)
+    # 5) S10-111 M3-7 架构审批门: project.json status → pending_arch_review
+    #    + arch_review{summary, requested_at} (不再直接 execution_ready;
+    #    审批通过 → approve_project_plan 置 execution_ready)
     project_path = product_dir / "project.json"
-    product.status = Lifecycle.EXECUTION_READY
+    product.status = ARCH_REVIEW_PENDING
+    arch_review = {
+        "summary": _arch_review_summary(product, plan, tree, execution),
+        "requested_at": datetime.now(timezone.utc).isoformat(),
+    }
     try:
         _write_text_file(prd_path, prd_text)
         _write_json_file(engineering_path, plan)
@@ -562,7 +578,8 @@ def prepare_project(context: ExecutionContext) -> ActionResult:
             {
                 **existing_project,
                 "name": product.name,
-                "status": Lifecycle.EXECUTION_READY,
+                "status": ARCH_REVIEW_PENDING,
+                "arch_review": arch_review,
             },
         )
         product_file = product_dir / "product.json"
@@ -587,9 +604,28 @@ def prepare_project(context: ExecutionContext) -> ActionResult:
             "tasks_file": str(tasks_path),
             "execution_file": str(execution_path),
             "project_file": str(project_path),
-            "status": Lifecycle.EXECUTION_READY,
+            "status": ARCH_REVIEW_PENDING,
+            "arch_review": arch_review,
         },
         error=None,
+    )
+
+
+def _arch_review_summary(
+    product: ProductIntent,
+    plan: dict[str, Any],
+    tree: dict[str, Any],
+    execution: dict[str, Any],
+) -> str:
+    """工程计划摘要 (M3-7 审批展示面): 架构选型/任务数/工期估计 (确定性规则)。
+
+    工期 = 任务数 × 8 分钟 (规则估算, 诚实标注 "估算"); 任务数取 tasks.json count。
+    """
+    arch = str((plan or {}).get("architecture") or "Backend API + Frontend")
+    count = int((tree or {}).get("count") or len((execution or {}).get("tasks") or []))
+    return (
+        f"架构选型: {arch}; 任务数: {count}; 工期估计: ~{count * 8} 分钟 (规则估算)。"
+        f" 请审批: 输入 y 批准后进入执行, n 拒绝并要求修订计划。"
     )
 
 
@@ -600,10 +636,216 @@ def _emit_plan_created(context, ws, project):
         AuditEmitter(workspace=ws).emit(
             "PLAN_CREATED", project_id=str(project or "") or str(getattr(context, "project", "") or ""),
             actor_type="user", actor_id=str(getattr(context, "user", "") or ""),
-            decision_reason=f"项目规划完成 (PRD→Engineering→TaskTree→Agent 分配), 状态 EXECUTION_READY",
+            decision_reason=f"项目规划完成 (PRD→Engineering→TaskTree→Agent 分配), 状态 {ARCH_REVIEW_PENDING} (待架构审批)",
         )
     except Exception:  # noqa: BLE001 — 失败安全
         pass
+
+
+def _ask_confirmation(
+    context: ExecutionContext, action_name: str, label: str
+) -> bool:
+    """审批确认 (S10-111 M3-6/7): 复用 ConfirmationGate 交互 y/N。
+
+    变更/架构审批必须显式征询 (不因非敏感直接放行): 实例级把 action 加入
+    sensitive_actions (拷贝, 不改 ConfirmationGate 类默认集合)。注入面:
+    context.intent.metadata["confirm_fn"] (测试/宿主定制输入源, 避免阻塞
+    input); 缺省 gate 内部 input() (无 stdin 可用 → 放行, 保持 P4 语义)。
+    """
+    gate = ConfirmationGate()
+    gate.sensitive_actions = set(gate.sensitive_actions) | {action_name}
+    confirm_fn = None
+    intent = getattr(context, "intent", None)
+    if intent is not None:
+        meta = getattr(intent, "metadata", None) or {}
+        fn = meta.get("confirm_fn")
+        if callable(fn):
+            confirm_fn = fn
+    return gate.confirm(action_name, intent, context, confirm_fn=confirm_fn)
+
+
+def change_project(context: ExecutionContext) -> ActionResult:
+    """需求变更回流 (S10-111 M3-6): propose → impact → ConfirmationGate y/N → apply。
+
+    入口: /project change <slug> "加导出" (commands.ProjectCommand) + 自然语言
+    "给XX项目加个导出功能" (intent → session)。y → PRD v2 + 新任务合并
+    tasks.json/plan.json; n → 不写不建, status=rejected, 消息 "已拒绝, 未变更"。
+    """
+    context.require("user")
+    intent = getattr(context, "intent", None)
+    params = intent.parameters if intent is not None else {}
+    slug = str(
+        params.get("project_id") or params.get("slug") or ""
+    ).strip() or str(context.project or "").strip()
+    request = str(params.get("request") or "").strip()
+    if not slug:
+        return ActionResult(
+            ok=False,
+            status=STATUS_ERROR,
+            message='变更失败: 未指定项目 (用法: /project change <slug> "加导出")',
+            error="未指定项目",
+        )
+    if not request:
+        return ActionResult(
+            ok=False,
+            status=STATUS_ERROR,
+            message='变更失败: 未指定变更内容 (用法: /project change <slug> "加导出")',
+            error="未指定变更内容",
+        )
+    try:
+        from .change_control import ChangeController
+
+        controller = ChangeController(context.workspace)
+        proposal = controller.propose(slug, request)
+        impact = controller.impact(proposal)
+    except Exception as exc:  # noqa: BLE001 — 失败安全: 明确错误
+        return ActionResult(
+            ok=False, status=STATUS_ERROR, message=f"需求变更失败: {exc}", error=str(exc)
+        )
+    summary = (
+        f"需求变更提案: {proposal.id} | 项目: {slug}\n"
+        f"  变更: {proposal.request} | 理由: {proposal.reason}\n"
+        f"  影响 PRD 章节: {', '.join(impact.affected_prd_sections) or '(无直接波及 — 作为新增功能)'}\n"
+        f"  影响任务: {', '.join(impact.affected_tasks) or '(无直接波及)'}\n"
+        f"  影响依赖: {', '.join(impact.affected_dependencies) or '(无)'}\n"
+        f"  {impact.note or ''}"
+    )
+    print(summary)
+    approved = _ask_confirmation(context, "change_project", "需求变更审批")
+    try:
+        result = controller.apply(proposal, approved=approved)
+    except Exception as exc:  # noqa: BLE001 — 失败安全: 落盘异常 → 明确错误
+        return ActionResult(
+            ok=False, status=STATUS_ERROR, message=f"需求变更落地失败: {exc}", error=str(exc)
+        )
+    data = {
+        "proposal": proposal.to_dict(),
+        "impact": impact.to_dict(),
+        "apply": result,
+        "status": result.get("status"),
+    }
+    if approved:
+        return ActionResult(
+            ok=True,
+            status=STATUS_OK,
+            message=result.get("message") or "需求变更已批准并落地",
+            data=data,
+            error=None,
+        )
+    return ActionResult(
+        ok=True,
+        status=STATUS_CANCELLED,
+        message="已拒绝, 未变更",
+        data=data,
+        error=None,
+    )
+
+
+def approve_project_plan(context: ExecutionContext) -> ActionResult:
+    """工程计划架构审批 (S10-111 M3-7): 展示计划摘要 → ConfirmationGate y/N。
+
+    y → project.json status=execution_ready (可开始开发); n → 保持
+    pending_arch_review + arch_review.feedback (计划修订 = 重新 prepare_project
+    覆盖 arch_review, 新摘要重新审批)。
+    """
+    context.require("user")
+    product, slug, projects_root = _locate_product(context)
+    if product is None or slug is None:
+        return ActionResult(
+            ok=False,
+            status=STATUS_ERROR,
+            message="架构审批失败: 未找到产品定义 (请先创建产品)",
+            error="未找到产品定义 (请先创建产品)",
+        )
+    project_path = projects_root / slug / "project.json"
+    data = _read_json_file(project_path) if project_path.is_file() else {}
+    status = str(data.get("status") or "")
+    if status == Lifecycle.EXECUTION_READY:
+        return ActionResult(
+            ok=False,
+            status=STATUS_ERROR,
+            message=f"工程计划已审批通过: {slug} (可直接开始开发)",
+            error="已是 execution_ready",
+        )
+    if status != ARCH_REVIEW_PENDING:
+        return ActionResult(
+            ok=False,
+            status=STATUS_ERROR,
+            message=(
+                f"架构审批失败: 项目状态 {status!r} 非待审批 "
+                f"(需先 prepare_project 生成工程计划)"
+            ),
+            error=f"状态 {status!r} 不可审批",
+        )
+    arch = data.get("arch_review") or {}
+    summary = str(arch.get("summary") or f"项目 {slug} 工程计划待审批")
+    print(f"工程计划待架构审批: {slug}\n{summary}")
+    approved = _ask_confirmation(context, "approve_project_plan", "架构审批")
+    now = datetime.now(timezone.utc).isoformat()
+    if approved:
+        _write_json_file(
+            project_path,
+            {
+                **data,
+                "name": data.get("name") or product.name,
+                "status": Lifecycle.EXECUTION_READY,
+                "arch_review": {
+                    **arch,
+                    "decision": "approved",
+                    "approved_at": now,
+                    "feedback": None,
+                },
+            },
+        )
+        # product.json status 同步 (与 orchestrator._set_lifecycle 口径一致)
+        product_file = projects_root / slug / "product.json"
+        if product_file.is_file():
+            existing = _read_json_file(product_file)
+            _write_json_file(
+                product_file, {**existing, "status": Lifecycle.EXECUTION_READY}
+            )
+        return ActionResult(
+            ok=True,
+            status=STATUS_OK,
+            message=f"工程计划已批准: {slug} — 可开始开发",
+            data={
+                "project": slug,
+                "status": Lifecycle.EXECUTION_READY,
+                "arch_review": {
+                    **arch,
+                    "decision": "approved",
+                    "approved_at": now,
+                    "feedback": None,
+                },
+            },
+            error=None,
+        )
+    feedback = "已拒绝 — 请修订工程计划后重新 prepare_project 覆盖 (重新审批)"
+    _write_json_file(
+        project_path,
+        {
+            **data,
+            "name": data.get("name") or product.name,
+            "status": ARCH_REVIEW_PENDING,
+            "arch_review": {**arch, "decision": "rejected", "reviewed_at": now, "feedback": feedback},
+        },
+    )
+    return ActionResult(
+        ok=True,
+        status=STATUS_CANCELLED,
+        message=f"工程计划未批准: {slug} — {feedback}",
+        data={
+            "project": slug,
+            "status": ARCH_REVIEW_PENDING,
+            "arch_review": {
+                **arch,
+                "decision": "rejected",
+                "reviewed_at": now,
+                "feedback": feedback,
+            },
+        },
+        error=None,
+    )
 
 
 def list_projects(context: ExecutionContext) -> ActionResult:
@@ -889,14 +1131,24 @@ def execute_project(context: ExecutionContext) -> ActionResult:
             status = None
     allowed = (Lifecycle.EXECUTION_READY, Lifecycle.DEVELOPMENT)
     if status and status not in allowed:
+        if status == ARCH_REVIEW_PENDING:
+            # S10-111 M3-7: 待架构审批 → 明确提示走审批门 (不泛化状态错误)
+            message = (
+                "执行项目失败: 工程计划待架构审批 — "
+                "请先批准工程计划 (输入 \"批准工程计划\" 或 /project 审批) 后再执行"
+            )
+            error = "工程计划待架构审批 (pending_arch_review)"
+        else:
+            message = (
+                f"执行项目失败: 项目当前状态 {status!r}, "
+                f"需 {Lifecycle.EXECUTION_READY!r} 或 {Lifecycle.DEVELOPMENT!r}"
+            )
+            error = f"项目状态 {status!r} 不允许执行"
         return ActionResult(
             ok=False,
             status=STATUS_ERROR,
-            message=(
-                f"执行项目失败: 项目当前状态 {status!r}, "
-                f"需 {Lifecycle.EXECUTION_READY!r} 或 {Lifecycle.DEVELOPMENT!r}"
-            ),
-            error=f"项目状态 {status!r} 不允许执行",
+            message=message,
+            error=error,
         )
     # M3a (S10-090): 递归原子拆解 — 默认开（FACTORY_DECOMPOSE=0 关闭）。
     # 失败安全: 拆解故障不中断执行; 结果落盘 decomposition.json + 审计事件,
@@ -3368,6 +3620,26 @@ def build_default_actions() -> ActionRegistry:
             handler=rename_project,
             permission="project",
             metadata={"service": "org/projects.json + product.json", "phase": "S10-081 修复",
+                      "sensitive": False, "category": "project"},
+        )
+    )
+    registry.register(
+        Action(
+            name="change_project",
+            description="需求变更回流 (propose→impact→审批→PRD v2+新任务)",
+            handler=change_project,
+            permission="project",
+            metadata={"service": "change_control.ChangeController", "phase": "S10-111 M3-6",
+                      "sensitive": False, "category": "product"},
+        )
+    )
+    registry.register(
+        Action(
+            name="approve_project_plan",
+            description="工程计划架构审批 (pending_arch_review → execution_ready / feedback)",
+            handler=approve_project_plan,
+            permission="project",
+            metadata={"service": "actions.approve_project_plan", "phase": "S10-111 M3-7",
                       "sensitive": False, "category": "project"},
         )
     )

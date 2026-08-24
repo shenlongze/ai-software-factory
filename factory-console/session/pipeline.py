@@ -131,7 +131,8 @@ class ProductDocument:
     Future Direction。全部字段来自 ProductIntent, 缺失字段显式占位 (不静默)。
     """
 
-    #: PRD 固定 6 节 (验收 A: Overview/Problem/Target User/Core Features/Usage Scenario/Future)
+    #: PRD 固定 8 节 (验收 A: Overview/Problem/Target User/Core Features/Usage
+    #: Scenario/Future + S10-111 M3-5 深度化: User Stories / Acceptance Criteria)
     SECTIONS: tuple[str, ...] = (
         "Product Overview",
         "Problem",
@@ -139,6 +140,8 @@ class ProductDocument:
         "Core Features",
         "Usage Scenario",
         "Future Direction",
+        "User Stories",
+        "Acceptance Criteria",
     )
 
     @classmethod
@@ -179,9 +182,56 @@ class ProductDocument:
                 "## Future Direction",
                 "未来方向: 多端适配 / 数据洞察 / 智能化增强 (规则占位, 后续可由 LLM 增强)。",
                 "",
+                "## User Stories",
             ]
         )
+        lines.extend(cls._user_stories_lines(product))
+        lines.extend(["", "## Acceptance Criteria"])
+        lines.extend(cls._acceptance_criteria_lines(product))
+        lines.append("")
         return "\n".join(lines)
+
+    @classmethod
+    def _user_stories_lines(cls, product: ProductIntent) -> list[str]:
+        """用户故事 (S10-111 M3-5): 每核心功能一条 "作为{user}我想要{feature}以便{价值}"。
+
+        价值 = 产品问题 (problem) 兜底, 缺失 → 功能完成度表述 (确定性, 手算对照:
+        功能数 = 故事数)。
+        """
+        user = product.user or "目标用户"
+        problem = (product.problem or "").strip()
+        features = [str(f) for f in (product.core_features or [])]
+        if not features:
+            return ["- 作为 {user}, 我想要 核心功能, 以便 解决产品要解决的问题"]
+        stories = []
+        for feature in features:
+            value = problem or f"顺畅完成{feature}并保留结果"
+            stories.append(f"- 作为 {user}, 我想要 {feature}, 以便 {value}")
+        return stories
+
+    @classmethod
+    def _acceptance_criteria_lines(cls, product: ProductIntent) -> list[str]:
+        """验收标准 (S10-111 M3-5): 每核心功能 2-3 条 given/when/then 或清单。
+
+        确定性模板 (3 条/功能): 正常路径 / 无效输入 / 结果可追溯。
+        """
+        features = [str(f) for f in (product.core_features or [])]
+        if not features:
+            features = ["核心功能"]
+        lines: list[str] = []
+        for feature in features:
+            lines.append(f"- **{feature}**:")
+            lines.append(
+                f"  - 给定用户已进入 {feature} 页面, 当提交有效输入时, "
+                f"系统完成 {feature} 并给出明确反馈"
+            )
+            lines.append(
+                f"  - 给定输入无效或缺失时, 系统提示错误且不产生脏数据"
+            )
+            lines.append(
+                f"  - 当 {feature} 完成后, 结果在个人中心/历史中可查 (可追溯)"
+            )
+        return lines
 
 
 class EngineeringPlan:

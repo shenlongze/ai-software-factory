@@ -6,7 +6,7 @@ A. ProductIntent → PRD.md (6 节: Overview/Problem/Target User/Core Features/U
 B. EngineeringPlan → engineering.json (architecture/modules/technical_tasks)
 C. TaskTree → tasks.json (Epic/Task/Priority/Agent Type)
 D. AgentAssignment → execution_plan.json (复用 select_agent: frontend→flutter-dev/backend→backend-1)
-E. Lifecycle: project.json status → execution_ready
+E. Lifecycle: project.json status → pending_arch_review (S10-111 M3-7 审批门) → 审批后 execution_ready
 F. prepare_project 一次生成 4 资产 + "Project Ready For Engineering."
 G. prepare_project 敏感 → ConfirmationGate
 H. Conversation: 产品创建后引导 "是否生成工程计划?"
@@ -210,6 +210,8 @@ def test_prd_has_six_sections():
 
 
 def test_prd_sections_constant_exact():
+    # S10-111 M3-5 更新: PRD 深度化 — 追加 User Stories / Acceptance Criteria
+    # (原 6 节保持不变, 新增 2 节收尾; 既有 6 节断言逐一保留)
     assert PIPE_MOD.ProductDocument.SECTIONS == (
         "Product Overview",
         "Problem",
@@ -217,6 +219,8 @@ def test_prd_sections_constant_exact():
         "Core Features",
         "Usage Scenario",
         "Future Direction",
+        "User Stories",
+        "Acceptance Criteria",
     )
 
 
@@ -527,7 +531,12 @@ def test_lifecycle_execution_ready_value():
 
 
 def test_lifecycle_prepare_target_is_execution_ready():
-    """工程准备目标状态 = EXECUTION_READY (验收 E 口径)。"""
+    """工程准备目标状态 = EXECUTION_READY (验收 E 口径)。
+
+    S10-111 M3-7 说明: 线性生命周期链不变 (engineering_ready → execution_ready);
+    prepare_project 实际落盘前先进入 pending_arch_review 审批门 (独立于线性链,
+    审批通过 → execution_ready), 见 test_prepare_project_project_json_status_pending_arch_review。
+    """
     target = PIPE_MOD.Lifecycle.next_status(PIPE_MOD.Lifecycle.ENGINEERING_READY)
     assert target == PIPE_MOD.Lifecycle.EXECUTION_READY
 
@@ -603,7 +612,8 @@ def test_generate_prd_message_and_data(fake_org, tmp_path):
     result = ACTIONS_MOD.generate_prd(ctx)
     assert result.ok
     assert "PRD 已生成" in result.message
-    assert len(result.data["sections"]) == 6
+    # S10-111 M3-5 更新: PRD 8 节 (原 6 节 + User Stories/Acceptance Criteria)
+    assert len(result.data["sections"]) == 8
 
 
 def test_generate_prd_current_project_lookup(fake_org, tmp_path):
@@ -641,8 +651,12 @@ def test_prepare_project_message_ready(fake_org, tmp_path):
     assert result.message == "Project Ready For Engineering."
 
 
-def test_prepare_project_project_json_status_execution_ready(fake_org, tmp_path):
-    """E: project.json status → execution_ready。"""
+def test_prepare_project_project_json_status_pending_arch_review(fake_org, tmp_path):
+    """E + S10-111 M3-7: project.json status → pending_arch_review + arch_review 摘要。
+
+    (原断言 execution_ready 已按新门控更新 — 审批通过后才 execution_ready,
+    见 approve_project_plan; 生命周期线性链常量不变, test_lifecycle_* 仍绿)
+    """
     root = tmp_path / "ws"
     root.mkdir()
     ctx, _ = _create_product_on_disk(root)
@@ -650,7 +664,10 @@ def test_prepare_project_project_json_status_execution_ready(fake_org, tmp_path)
     data = json.loads(
         (root / "projects" / "scorepocket" / "project.json").read_text(encoding="utf-8")
     )
-    assert data["status"] == "execution_ready"
+    assert data["status"] == "pending_arch_review"
+    assert "arch_review" in data
+    assert "summary" in data["arch_review"]
+    assert "requested_at" in data["arch_review"]
 
 
 def test_prepare_project_engineering_json_content(fake_org, tmp_path):
@@ -737,7 +754,9 @@ def test_prepare_project_preserves_existing_project_json_fields(fake_org, tmp_pa
     data = json.loads((pdir / "project.json").read_text(encoding="utf-8"))
     assert data["id"] == "p1"  # org 字段保留
     assert data["repo_path"] == "/tmp/repo"
-    assert data["status"] == "execution_ready"
+    # S10-111 M3-7 更新: prepare 后待架构审批 (原 execution_ready 断言更新)
+    assert data["status"] == "pending_arch_review"
+    assert data["arch_review"]["summary"]
 
 
 def test_prepare_project_assets_paths_in_data(fake_org, tmp_path):
@@ -748,7 +767,9 @@ def test_prepare_project_assets_paths_in_data(fake_org, tmp_path):
     for key in ("prd_file", "engineering_file", "tasks_file", "execution_file"):
         assert key in result.data
         assert Path(result.data[key]).is_file()
-    assert result.data["status"] == "execution_ready"
+    # S10-111 M3-7 更新: prepare 后待架构审批 (原 execution_ready 断言更新)
+    assert result.data["status"] == "pending_arch_review"
+    assert "arch_review" in result.data
 
 
 def test_prepare_project_scan_fallback_lookup(fake_org, tmp_path):
@@ -907,7 +928,8 @@ def test_full_pipeline_create_then_prepare(fake_org, tmp_path):
     ]
     assert sorted(p.name for p in pdir.iterdir()) == expected
     project = json.loads((pdir / "project.json").read_text(encoding="utf-8"))
-    assert project["status"] == "execution_ready"
+    # S10-111 M3-7 更新: prepare 后待架构审批 (原 execution_ready 断言更新)
+    assert project["status"] == "pending_arch_review"
 
 
 def test_full_pipeline_generate_prd_then_prepare(fake_org, tmp_path):
@@ -946,9 +968,11 @@ def test_full_session_flow_end_to_end(fake_org, capsys, tmp_path):
     assert (pdir / "engineering.json").is_file()
     assert (pdir / "tasks.json").is_file()
     assert (pdir / "execution_plan.json").is_file()
+    # S10-111 M3-7 更新: 会话 prepare 后待架构审批 (原 execution_ready 断言更新;
+    # 审批见 approve_project_plan / test_s10_111_m3_finish M3-7)
     assert json.loads((pdir / "project.json").read_text(encoding="utf-8"))[
         "status"
-    ] == "execution_ready"
+    ] == "pending_arch_review"
 
 
 def test_full_session_generate_prd_phrase_requires_context(fake_org, capsys, tmp_path):

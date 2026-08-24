@@ -142,8 +142,11 @@ ROLE_DEFINITIONS: dict[str, dict[str, Any]] = {
         "title": "UX 设计师",
         "artifact_type": "ux_flow",
         "system_prompt": (
-            "你是软件行业 UX 设计师。输出用户体验: 用户流程/页面结构/信息架构, "
-            "中文 markdown, 消费上一角色产出。"
+            "你是软件行业 UX 设计师 (S10-111 M3-5 真引擎)。基于产品信息 "
+            "(目标用户/核心功能/运行平台) 与上游产出, 为每个核心功能输出具体"
+            "用户流程 (每功能 3-5 步, 从功能名推导: 进入页面→选择/输入→操作→"
+            "完成/反馈), 页面结构 (首页/各功能页/个人中心/设置) 与信息架构 "
+            "(按功能主导航 + 用户角色上下文), 中文 markdown, 不含占位标记。"
         ),
         "skills": ["ux_design"],
         "knowledge_ref": "product_intelligence",
@@ -175,8 +178,10 @@ ROLE_DEFINITIONS: dict[str, dict[str, Any]] = {
         "title": "QA 负责人",
         "artifact_type": "test_plan",
         "system_prompt": (
-            "你是软件行业 QA 负责人。输出测试方案: 单元/集成/安全/性能测试, "
-            "中文 markdown, 消费上一角色产出。"
+            "你是软件行业 QA 负责人 (S10-111 M3-5 真引擎)。基于产品信息 "
+            "(核心功能/平台) 与 PRD/上游产出, 输出测试方案: 单元/集成/E2E/"
+            "安全/性能 五层测试 (每核心功能 ≥1 用例方向) + 验证命令, 中文 "
+            "markdown, 不含占位标记。"
         ),
         "skills": ["quality_assurance"],
         "knowledge_ref": "product_intelligence",
@@ -451,15 +456,34 @@ class ExpertFactory:
 
     @staticmethod
     def _ux_md(product: ProductIntent) -> str:
-        features = product.core_features or ["(待补充)"]
+        """UX 真引擎 (S10-111 M3-5): ProductIntent → 用户流程/页面结构/信息架构。
+
+        每核心功能 → 具体 3-5 步用户流程 (从功能名推导: 进入X页→选择/输入→
+        操作→完成/反馈, 非通用一句); 页面结构含首页/每功能页/个人中心/设置;
+        信息架构按功能主导航 + 用户角色上下文。确定性, 无 "规则占位" 标记。
+        """
+        name = product.name or "(未命名产品)"
+        user = product.user or "目标用户"
+        platform = product.platform or "未指定平台"
+        features = [str(f) for f in (product.core_features or [])] or ["核心功能"]
+        # 用户流程: 每功能 3-5 步 (功能名推导)
         flows = []
         for f in features:
-            flows.append(f"- {f}: 进入 → 操作 → 完成/反馈")
+            flows.append(
+                f"- **{f}**: 进入{f}页 → 选择/输入{f}所需信息 → "
+                f"执行{f}操作 → 系统处理 → 完成并给出反馈"
+            )
+        # 页面结构: 首页 / 每功能页 / 个人中心 / 设置
+        pages = ["首页"] + [f"{f}页" for f in features] + ["个人中心", "设置"]
+        # 信息架构: 主导航按功能 + 用户角色上下文
+        nav = " / ".join(features)
         return (
-            f"# 用户体验: {product.name or '(未命名产品)'}\n\n"
+            f"# 用户体验: {name}\n\n"
+            f"## 用户画像\n面向 {user} (平台: {platform}), 使用 {name} 完成核心任务。\n\n"
             f"## 用户流程\n{chr(10).join(flows)}\n\n"
-            f"## 页面结构\n首页 / 功能页 / 设置 (规则占位, UX 可细化)\n\n"
-            f"## 信息架构\n按核心功能导航: {' / '.join(features)}\n"
+            f"## 页面结构\n{chr(10).join(f'- {p}' for p in pages)}\n\n"
+            f"## 信息架构\n主导航按核心功能组织: {nav}; 个人中心承载 {user} "
+            f"的数据与偏好, 设置承载应用配置, 全部入口对 {user} 可见。\n"
         )
 
     @staticmethod
@@ -492,14 +516,42 @@ class ExpertFactory:
 
     @staticmethod
     def _qa_md(product: ProductIntent) -> str:
-        features = "、".join(product.core_features) if product.core_features else "核心功能"
-        return (
-            f"# 测试方案: {product.name or '(未命名产品)'}\n\n"
-            f"## 覆盖范围\n{features}\n\n"
-            f"## 测试层级\n- 单元测试: 核心逻辑\n- 集成测试: API/模块联动\n"
-            f"- 安全测试: 认证/注入/越权\n- 性能测试: 关键路径响应时间\n"
-            f"(规则占位, QA 可细化)\n"
+        """QA 真引擎 (S10-111 M3-5): ProductIntent → 测试方案。
+
+        单元/集成/E2E/安全/性能 五层, 每层按核心功能推导具体用例方向;
+        每核心功能 ≥1 用例方向; 验证命令真实模板。确定性, 无 "规则占位" 标记。
+        """
+        name = product.name or "(未命名产品)"
+        features = [str(f) for f in (product.core_features or [])] or ["核心功能"]
+        layers = [
+            ("单元测试", [f"{f} 核心逻辑单元用例" for f in features]),
+            ("集成测试", [f"{f} 模块与 API 联动集成用例" for f in features]),
+            ("E2E 测试", [f"{f} 端到端用户路径用例" for f in features]),
+            ("安全测试", ["认证/授权边界用例", "注入防护用例 (SQL/命令/XSS)", "越权访问用例"]),
+            ("性能测试", ["关键路径响应时间用例", "并发场景稳定性用例"]),
+        ]
+        lines = [
+            f"# 测试方案: {name}",
+            "",
+            "## 覆盖范围",
+            f"- 核心功能: {'、'.join(features)}",
+            "",
+            "## 测试层级",
+        ]
+        for layer, cases in layers:
+            lines.append(f"- **{layer}**: " + "、".join(cases))
+        lines.extend(
+            [
+                "",
+                "## 验证命令",
+                "- 单元/集成测试: `pytest` (Python) / `flutter test` (Flutter)",
+                "- E2E 冒烟: `python -m pytest tests/e2e -q` (或等价冒烟脚本)",
+                "- 安全静态检查: `ruff check .` / `bandit -r .` (按技术栈)",
+                "- 性能基准: `pytest tests/performance -q` (关键路径)",
+                "",
+            ]
         )
+        return "\n".join(lines)
 
     @staticmethod
     def _prd_md(product: ProductIntent) -> str:

@@ -1427,17 +1427,49 @@ def test_session_full_chain_start_development(fake_exec, capsys, tmp_path):
         confirmation_gate=spy,
     )
     sess._dispatch("准备开发")  # 幂等: prepare_project 重写 4 资产 (fixture 已含)
+    # S10-111 M3-7: 架构审批门 — 批准工程计划后 status=execution_ready 才可执行
+    # (原 准备开发→开始开发 直连按新门控更新; pytest 无 stdin → 内部确认门 EOF
+    # 放行 = 自动批准, 与真实交互 y 等效)
+    sess._dispatch("批准工程计划")
     sess._dispatch("开始开发")
     out = capsys.readouterr().out
     assert "Project Ready For Engineering." in out
+    assert "工程计划已批准" in out
     assert "项目执行完成" in out
 
 
 # ================================================================== 14. 完整 Demo Flow (验收 E/D)
 
 
+def _approve_arch(ctx):
+    """S10-111 M3-7: prepare_project 后走架构审批 (注入 confirm_fn=y) → execution_ready。
+
+    既有 demo 测试原为 prepare 后直接 execute — 按新门控更新: 先审批再执行
+    (v1.1.77 正常路径在审批通过后与旧行为一致, 验收 ⑪)。
+    """
+    intent = ACT_MOD.IntentObject(
+        intent_type="approve_project_plan",
+        params={},
+        metadata={"confirm_fn": lambda: "y"},
+    )
+    ctx2 = ACT_MOD.ExecutionContext(
+        workspace=ctx.workspace,
+        session=ctx.session,
+        user=ctx.user,
+        project=ctx.project,
+        intent=intent,
+    )
+    result = ACTIONS_MOD.approve_project_plan(ctx2)
+    assert result.ok, result.message
+    return result
+
+
 def test_demo_full_pipeline_execute(fake_org, fake_exec, tmp_path):
-    """create_product → prepare_project → execute_project → DELIVERED (全真实 Action)。"""
+    """create_product → prepare_project → 架构审批 → execute_project → DELIVERED (全真实 Action)。
+
+    S10-111 M3-7: prepare 后插入 approve_project_plan (原 prepare 后直接 execute
+    按新门控更新 — 未审批时 orchestrator 明确阻断, 见 test_s10_111_m3_finish)。
+    """
     root = tmp_path / "ws"
     root.mkdir()
     product = PROD_MOD.ProductIntent(
@@ -1453,6 +1485,8 @@ def test_demo_full_pipeline_execute(fake_org, fake_exec, tmp_path):
     assert created.ok, created.message
     prepared = ACTIONS_MOD.prepare_project(ctx)
     assert prepared.ok, prepared.message
+    # S10-111 M3-7: 架构审批门 — 审批通过后才可执行 (原直接 execute 按新门控更新)
+    _approve_arch(ctx)
     executed = ACTIONS_MOD.execute_project(ctx)
     assert executed.ok, executed.message
     assert executed.data["status"] in ("user_acceptance", "delivered")
@@ -1468,6 +1502,8 @@ def test_demo_project_json_delivered(fake_org, fake_exec, tmp_path):
     )
     ACTIONS_MOD.create_product(ctx)
     ACTIONS_MOD.prepare_project(ctx)
+    # S10-111 M3-7: 架构审批门 — 审批通过后才可执行
+    _approve_arch(ctx)
     ACTIONS_MOD.execute_project(ctx)
     project = json.loads(
         (root / "projects" / "scorepocket" / "project.json").read_text(
@@ -1486,6 +1522,8 @@ def test_demo_progress_after_execution(fake_org, fake_exec, tmp_path):
     )
     ACTIONS_MOD.create_product(ctx)
     ACTIONS_MOD.prepare_project(ctx)
+    # S10-111 M3-7: 架构审批门 — 审批通过后才可执行
+    _approve_arch(ctx)
     ACTIONS_MOD.execute_project(ctx)
     progress = ACTIONS_MOD.project_progress(ctx)
     assert progress.data["completed"] == progress.data["tasks_total"]
@@ -1503,6 +1541,8 @@ def test_demo_execution_state_file_exists(fake_org, fake_exec, tmp_path):
     )
     ACTIONS_MOD.create_product(ctx)
     ACTIONS_MOD.prepare_project(ctx)
+    # S10-111 M3-7: 架构审批门 — 审批通过后才可执行
+    _approve_arch(ctx)
     ACTIONS_MOD.execute_project(ctx)
     state = ORCH_MOD.ExecutionState.load(
         root / "projects" / "scorepocket" / "execution_state.json"
@@ -1522,6 +1562,8 @@ def test_demo_reject_after_delivered(fake_org, fake_exec, tmp_path):
     )
     ACTIONS_MOD.create_product(ctx)
     ACTIONS_MOD.prepare_project(ctx)
+    # S10-111 M3-7: 架构审批门 — 审批通过后才可执行
+    _approve_arch(ctx)
     ACTIONS_MOD.execute_project(ctx)
     again = ACTIONS_MOD.execute_project(ctx)
     assert again.ok is False

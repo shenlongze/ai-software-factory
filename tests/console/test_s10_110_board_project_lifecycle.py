@@ -633,7 +633,7 @@ class TestProjectDocs:
         html = BOARD.render_project_doc_view(tmp_path, "a", "engineering.json")
         assert "<pre" in html  # JSON 格式化 (pre 标签)
         bad = BOARD.render_project_doc_view(tmp_path, "a", "../audit_events.json")
-        assert "不支持的文档类型" in bad  # 路径穿越防护
+        assert "不支持的文档路径" in bad  # 路径穿越防护 (v1.1.66 改为路径组件校验)
 
 
 class TestTaskLogic:
@@ -851,3 +851,40 @@ class TestDataSource:
         assert "数据来源" in BOARD.render_graph_html(tmp_path, "a")
         assert "数据来源" in BOARD.render_chain_html(tmp_path, "a")
         assert "数据来源" in BOARD.render_project_docs_html(tmp_path, "a")
+
+
+# ================================================================== 文档扫描 (README/docs)
+
+class TestDocsScan:
+    def _proj_with_extra(self, tmp_path):
+        _mk_project(tmp_path, "a", name="项目A")
+        pdir = tmp_path / "projects" / "a"
+        (pdir / "README.md").write_text("# README\n项目说明", encoding="utf-8")
+        (pdir / "docs").mkdir()
+        (pdir / "docs" / "指南.md").write_text("# 指南", encoding="utf-8")
+        # .git 内文件不应被扫描
+        (pdir / ".git").mkdir()
+        (pdir / ".git" / "config").write_text("x", encoding="utf-8")
+        return tmp_path
+
+    def test_scans_readme_and_docs(self, tmp_path):
+        self._proj_with_extra(tmp_path)
+        docs = BOARD.list_project_docs(tmp_path, "a")
+        extra = [d for d in docs if d.get("extra")]
+        names = [d["name"] for d in extra]
+        assert "README.md" in names
+        assert "docs/指南.md" in names
+        assert ".git/config" not in names  # 排除 .git
+
+    def test_docs_html_grouped(self, tmp_path):
+        self._proj_with_extra(tmp_path)
+        html = BOARD.render_project_docs_html(tmp_path, "a")
+        assert "其他文档" in html
+        assert "README.md" in html and "指南.md" in html
+
+    def test_view_arbitrary_doc_path_safe(self, tmp_path):
+        self._proj_with_extra(tmp_path)
+        v = BOARD.render_project_doc_view(tmp_path, "a", "docs/指南.md")
+        assert "指南" in v
+        bad = BOARD.render_project_doc_view(tmp_path, "a", "../audit_events.json")
+        assert "不支持的文档路径" in bad

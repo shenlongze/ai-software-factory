@@ -1913,52 +1913,82 @@ PROJECT_DOC_TYPES: dict[str, tuple[str, str]] = {
 
 
 def list_project_docs(workspace: Path | str, slug: str) -> list[dict[str, Any]]:
-    """项目文档资产清单 {name, label, kind, size, mtime, exists} (只读, 失败安全)。"""
+    """项目文档资产清单 (只读, 失败安全, 实事求是).
+
+    固定核心资产 (PROJECT_DOC_TYPES) + 扫描项目目录其他真实文档
+    (README.md / docs/ 子目录 / 其他 .md/.json/.txt, 排除 .git 与重复)。
+    """
     pdir = Path(workspace) / "projects" / slug
     docs = []
     for name, (label, kind) in PROJECT_DOC_TYPES.items():
         f = pdir / name
         if not f.is_file():
             docs.append({"name": name, "label": label, "kind": kind,
-                         "size": 0, "mtime": 0.0, "exists": False})
+                         "size": 0, "mtime": 0.0, "exists": False, "extra": False})
             continue
         try:
             st = f.stat()
             docs.append({"name": name, "label": label, "kind": kind,
-                         "size": st.st_size, "mtime": st.st_mtime, "exists": True})
+                         "size": st.st_size, "mtime": st.st_mtime, "exists": True, "extra": False})
         except OSError:  # noqa: BLE001
             docs.append({"name": name, "label": label, "kind": kind,
-                         "size": 0, "mtime": 0.0, "exists": False})
+                         "size": 0, "mtime": 0.0, "exists": False, "extra": False})
+    # 扫描其他真实文档: README.md / docs/ 子目录 / 根目录 .md/.json/.txt
+    if pdir.is_dir():
+        for f in sorted(pdir.rglob("*")):
+            if not f.is_file() or f.suffix.lower() not in (".md", ".json", ".txt"):
+                continue
+            rel = f.relative_to(pdir)
+            if ".git" in rel.parts:
+                continue
+            rel_s = str(rel)
+            if rel_s in PROJECT_DOC_TYPES:
+                continue  # 固定资产已列
+            try:
+                st = f.stat()
+                docs.append({"name": rel_s, "label": rel.name, "kind": f.suffix.lower().lstrip("."),
+                             "size": st.st_size, "mtime": st.st_mtime, "exists": True, "extra": True})
+            except OSError:  # noqa: BLE001
+                continue
     return docs
 
 
 def render_project_docs_html(workspace: Path | str, slug: str) -> str:
-    """项目文档管理 HTML: 文档资产列表 (名称/类型/大小/更新时间), 点击查看。"""
+    """项目文档管理 HTML: 核心资产 + 其他文档 (README/docs 等扫描真实文件)。"""
     slug = Path(str(slug or "")).name
     info = _read_product_info(workspace, slug) if slug else None
     if info is None:
         return _board_nav("docs", slug, workspace) + "<p>（项目不存在或未选择）</p>"
     name = info.get("name") or slug
     docs = list_project_docs(workspace, slug)
-    rows = []
-    for d in docs:
+
+    def _row(d, show_missing):
         if not d["exists"]:
-            rows.append(
-                f'<tr class="missing"><td class="dname">{"📄" if d["kind"]=="md" else "📦"} {d["label"]}</td>'
-                f'<td><code>{d["name"]}</code></td><td class="m">—</td><td class="m">—</td></tr>'
-            )
-            continue
+            if not show_missing:
+                return ""
+            return (f'<tr class="missing"><td class="dname">{"📄" if d["kind"]=="md" else "📦"} {d["label"]}</td>'
+                    f'<td><code>{d["name"]}</code></td><td class="m">—</td><td class="m">—</td></tr>')
         import datetime
         ts = datetime.datetime.fromtimestamp(d["mtime"]).strftime("%m-%d %H:%M") if d["mtime"] else "?"
         size = f"{d['size']}B" if d["size"] < 1024 else f"{d['size']/1024:.1f}KB"
-        rows.append(
-            f'<tr><td class="dname">{"📄" if d["kind"]=="md" else "📦"} {d["label"]}</td>'
-            f'<td><code>{d["name"]}</code></td>'
-            f'<td><a href="/api/board/doc?project={slug}&amp;doc={d["name"]}" '
-            f'style="color:#8ab4f8">查看</a></td>'
-            f'<td class="m">{size}</td><td class="m">{ts}</td></tr>'
+        return (f'<tr><td class="dname">{"📄" if d["kind"]=="md" else "📦"} {d["label"]}</td>'
+                f'<td><code>{d["name"]}</code></td>'
+                f'<td><a href="/api/board/doc?project={slug}&amp;doc={d["name"]}" '
+                f'style="color:#8ab4f8">查看</a></td>'
+                f'<td class="m">{size}</td><td class="m">{ts}</td></tr>')
+
+    core = [d for d in docs if not d.get("extra")]
+    extra = [d for d in docs if d.get("extra")]
+    core_rows = "".join(_row(d, True) for d in core) or "<tr><td>（无核心资产）</td></tr>"
+    extra_table = ""
+    if extra:
+        extra_rows = "".join(_row(d, False) for d in extra)
+        extra_table = (
+            f"<h2 style='font-size:15px;color:#ffb74d;margin:18px 0 6px'>📁 其他文档 "
+            f"（README / docs / 其他, 扫描项目目录真实文件）</h2>"
+            f"<table><tr><th>文档</th><th>文件</th><th></th><th>大小</th><th>更新时间</th></tr>"
+            f"{extra_rows}</table>"
         )
-    table = "".join(rows) if rows else "<tr><td>（无文档资产）</td></tr>"
     return f"""<!DOCTYPE html>
 <html lang="zh"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1975,19 +2005,31 @@ def render_project_docs_html(workspace: Path | str, slug: str) -> str:
 {_board_nav("docs", slug, workspace)}
 <h1>📄 项目文档管理 — {name}</h1>
 {_data_source_html(workspace, slug, "docs")}
-<p class="hint">共 {sum(1 for d in docs if d['exists'])}/{len(docs)} 份文档已生成 · 点击"查看"渲染内容</p>
-<table><tr><th>文档</th><th>文件</th><th></th><th>大小</th><th>更新时间</th></tr>{table}</table>
+<p class="hint">核心资产 {sum(1 for d in core if d["exists"])}/{len(core)} · 其他文档 {len(extra)} · 点击"查看"渲染内容</p>
+<h2 style="font-size:15px;color:#ffb74d;margin:6px 0">📦 核心资产</h2>
+<table><tr><th>文档</th><th>文件</th><th></th><th>大小</th><th>更新时间</th></tr>{core_rows}</table>
+{extra_table}
 </body></html>"""
-
-
 def render_project_doc_view(workspace: Path | str, slug: str, doc_name: str) -> str:
-    """项目文档查看 HTML: markdown 渲染 / JSON 格式化 (只读, 文件名白名单)。"""
+    """项目文档查看 HTML: markdown 渲染 / JSON 格式化 (只读, 项目内路径安全)。
+
+    支持核心资产 + 任意项目内文档 (README.md / docs/xxx.md / 其他), 排除 .git。
+    """
     slug = Path(str(slug or "")).name
-    doc_name = Path(str(doc_name or "")).name  # 防目录穿越
-    if doc_name not in PROJECT_DOC_TYPES:
+    pdir = Path(workspace) / "projects" / slug
+    rel = Path(str(doc_name or ""))
+    # 路径安全: 必须在项目目录内, 非 .git, 扩展名白名单
+    try:
+        f = (pdir / rel).resolve()
+        # 路径组件级校验 (字符串 startswith 会把 projects/a 误匹配 audit_events)
+        if not f.is_relative_to(pdir.resolve()) or ".git" in f.parts:
+            return "<p>（不支持的文档路径）</p>"
+    except (OSError, ValueError):  # noqa: BLE001
+        return "<p>（不支持的文档路径）</p>"
+    if f.suffix.lower() not in (".md", ".json", ".txt"):
         return "<p>（不支持的文档类型）</p>"
-    label, kind = PROJECT_DOC_TYPES[doc_name]
-    f = Path(workspace) / "projects" / slug / doc_name
+    kind = "md" if f.suffix.lower() == ".md" else f.suffix.lower().lstrip(".")
+    label = PROJECT_DOC_TYPES.get(str(rel), (str(rel), kind))[0]
     if not f.is_file():
         return f"<p>（{doc_name} 未生成）</p>"
     try:

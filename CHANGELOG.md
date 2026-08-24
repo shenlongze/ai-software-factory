@@ -3,6 +3,22 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.66] — 2026-08-24
+
+**Board 文档管理扫描真实文件: README/docs 展示（Founder: 项目 readme/docs 没展示）**。
+
+### Added
+
+- **文档扫描**: list_project_docs 扫描项目目录全部真实文档 (README.md / docs/ 子目录 /
+  其他 .md/.json/.txt, 排除 .git 与固定资产), 分组展示"核心资产 + 其他文档"
+- **查看任意项目内文档**: doc 端点支持 README/docs 等, 路径组件级安全校验
+  (is_relative_to 修复 startswith 误匹配: projects/a 曾误匹配 audit_events)
+- AI Factory 自身项目补 README.md + docs/开发文档.md (真实内容来自仓库)
+
+### 验证
+
+- 3 新契约测试 (扫描 README/docs 排除 .git / 分组 / 任意文档查看+穿越防护) · 全量回归 0 新增失败
+
 ## [v1.1.65] — 2026-08-24
 
 **Board 数据实事求是: 数据来源标注 + 剔除臆造数据（Founder 核心要求）**。

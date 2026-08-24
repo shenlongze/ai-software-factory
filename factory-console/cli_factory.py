@@ -848,6 +848,8 @@ class FactoryCLI:
             return self.run_status(args)
         if args.command == "project":
             return self.project_cmd(args)
+        if args.command == "create":
+            return self.create_cmd(args)
         if args.command in STUB_COMMANDS:
             return self._stub(args.command)
         print(f"未知命令: {args.command}", file=sys.stderr)
@@ -2627,6 +2629,43 @@ class FactoryCLI:
         )
         return 2
 
+    def create_cmd(self, args: argparse.Namespace) -> int:
+        """factory create <type> — 统一创建入口 (company/department/project)。
+
+        便捷铁律 (§1.4.5): 前期最简（只建 project 即可用）, 组织是可选增强;
+        渐进式: 项目先 Solo, 后期 project link 挂部门/公司（无损升级）。
+        """
+        ctype = getattr(args, "create_type", "") or ""
+        self._ensure_data_dir()
+        try:
+            org_cli = self._proxy_org_cli()
+        except Exception as exc:  # noqa: BLE001
+            print(f"错误: {exc}", file=sys.stderr)
+            return 1
+        try:
+            if ctype == "company":
+                result = org_cli.cmd_company_create(self.data_dir, args)
+            elif ctype == "department":
+                if not getattr(args, "company", ""):
+                    print("错误: department 需要 --company <id>", file=sys.stderr)
+                    return 2
+                args.company_id = getattr(args, "company", "")  # 对齐 cmd_department_create
+                result = org_cli.cmd_department_create(self.data_dir, args)
+            elif ctype == "project":
+                if not getattr(args, "repo_path", None):
+                    args.repo_path = str(self.data_dir)  # 无 repo → 默认数据目录 (对话/快捷场景)
+                result = org_cli.cmd_project_register(self.data_dir, args)
+            else:
+                print(
+                    f"错误: create 需要类型 (company/department/project), 收到: {ctype!r}",
+                    file=sys.stderr,
+                )
+                return 2
+        except Exception as exc:  # noqa: BLE001 — 失败安全
+            print(f"错误: create {ctype} 失败 — {exc}", file=sys.stderr)
+            return 1
+        return self._emit_proxy_result(org_cli, args, result)
+
     def _project_rename(self, args: argparse.Namespace) -> int:
         """factory project rename <id> <name> — 复用 service.confirm_project 事务。
 
@@ -3032,6 +3071,31 @@ def build_parser() -> argparse.ArgumentParser:
     p_project.add_argument("--goal", default="", help="项目目标")
     p_project.add_argument("--id", default=None, help="项目 ID (默认自动生成 P-xxx)")
     p_project.add_argument("--json", action="store_true", help="输出结构化 JSON")
+    p_create = sub.add_parser(
+        "create", help="统一创建入口 (company/department/project, §1.4.5 便捷铁律)"
+    )
+    p_create.add_argument(
+        "create_type", choices=["company", "department", "project"], help="创建类型"
+    )
+    p_create.add_argument("--name", default="", help="名称 (company/department/project)")
+    p_create.add_argument(
+        "--template", default="solo", choices=["solo", "software_company"],
+        help="公司模板 (company)",
+    )
+    p_create.add_argument("--company", default="", help="所属公司 (department 必填 / project 可选)")
+    p_create.add_argument("--departments", default="", help="关联部门逗号分隔 (project 可选)")
+    p_create.add_argument("--goal", default="", help="项目目标 (project 可选)")
+    p_create.add_argument("--id", default=None, help="实体 ID (默认自动生成 C-/D-/P-xxx)")
+    p_create.add_argument("--language", default="", help="主语言 (project, 缺省自动检测)")
+    p_create.add_argument("--framework", default="", help="框架 (project, 缺省自动检测)")
+    p_create.add_argument("--build-command", default="", help="构建命令 (project)")
+    p_create.add_argument("--test-command", default="", help="测试命令 (project)")
+    p_create.add_argument("--project-type", default="", help="项目类型 (project: app/library/service/cli)")
+    p_create.add_argument(
+        "--repo-path", default=None,
+        help="代码库路径 (project 可选, 缺省 = 数据目录)",
+    )
+    p_create.add_argument("--json", action="store_true", help="输出结构化 JSON")
     return parser
 
 

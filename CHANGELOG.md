@@ -5,7 +5,22 @@
 
 ---
 
-## [v1.1.16] — 2026-08-24
+## [v1.1.17] — 2026-08-24
+
+**统一 create 入口**: `factory create <type>` 包装 company/department/project — 便捷铁律落地（§1.4.5）。
+
+### Added
+
+- **`factory create company|department|project`**（`cli_factory.py`）— 一个入口创建任意层
+  - company: --name [--template] · department: --company --name · project: --name [--company --departments --goal]
+  - project 无 repo 可建（默认数据目录）· 关联公司/部门（可选, Solo 最简）
+- 便捷铁律: 前期只建 project 即可用; 组织可选增强; 渐进式挂接（project link）
+
+### 测试
+
+- `tests/console/test_cli_factory_create.py` 6 用例（三类型/Solo/错误路径）
+- 与 org 数据模型（v1.1.16）衔接: 项目→公司/部门 关联
+
 
 ### Added
 

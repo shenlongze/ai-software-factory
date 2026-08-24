@@ -227,3 +227,19 @@ AI Factory
 - 集成: `conversation.py` (start_product_discovery 初始描述即解析 / handle_product_answer LLM 分流 / 确认门增强)
 - 测试: `tests/console/test_discovery_llm_intelligence.py` 33 passed; 真实 LLM 交互验收 7/7
 - 边界: DiscoverySession (S10-065 "开始做X" 路径) 未动; product_pipeline 深度分析未动
+
+## S10-100 更新 (DiscoverySession 同步 LLM 化, v1.1.21)
+
+> 2026-08-24 | Sprint: "开始做X" 路径 (S10-065 DiscoverySession) 复用 analyzer 同步 LLM 化 — 两路径对齐
+
+| 项 | S10-099 后 | S10-100 后 |
+|---|---|---|
+| conversation 路径 ("我想做X") | LLM 化 ✅ (S10-099) | 不变 (analyzer 契约扩展对其透明) |
+| DiscoverySession 路径 ("开始做X") | 纯规则逐字段 (S10-065) | **LLM 一次产出 + 智能追问带理由 + 理解摘要 + 主动分析 + LLM 命名** |
+| analyzer extraction 契约 | 5 字段 | **8 字段** (+usage_scenarios/mvp_scope/non_functional_requirements, 可选, 向后兼容) |
+| 无 LLM 兜底 | — | 两路径均规则兜底零变化 |
+| 摘要格式对齐 | — | 两路径确认消息结构一致: 理解摘要首行 + 字段 + 建议名称候选 + 主动建议 |
+
+- 实现: `discovery.py` (+359) analyzer 注入/懒装配 + start LLM 一次产出 + process_user_input LLM 分流 (含 v1.1.19 system_question 多轮合并边界) + 确认门增强 + LLM-gated 命名
+- 测试: `tests/console/test_discovery_session_llm.py` 26 passed; 既有 108 DS + 35 analyzer 零改动全绿; 真实 LLM 验收 8/8
+- 边界: conversation 路径未改; 驱动层逃生/CLI 接线未做 (模型层)

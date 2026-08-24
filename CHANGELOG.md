@@ -3,6 +3,24 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.52] — 2026-08-24
+
+**Board 项目选择完成: 全局项目选择器 + 数据准确/实时/同步（Founder）**。
+
+### Added
+
+- **全局项目选择器**（`_board_nav` + `_project_select_html`）: 所有视图页导航含
+  select dropdown, 切换项目后跳转当前视图的对应项目 (graph/chain/tasks) 或
+  单项目视图; 当前项目选中态
+- **数据实时**: 单项目视图 + 任务树 15s 自动刷新 (主线 30s + summary 5s 已有)
+- **数据同步**: 项目列表/选择器标记会话当前项目 (读 session_state.json);
+  导航链接项目上下文传递 (不再默认 demo)
+- **数据准确**: 全部实时读盘 (product.json/execution_state/session_state), 无缓存
+
+### 验证
+
+- 5 新契约测试 (选择器含当前/路由按视图/当前标记/自动刷新) · 全量回归 0 新增失败
+
 ## [v1.1.51] — 2026-08-24
 
 **Board: 导航返回修复 + 任务树视图 + 任务状态汇总（完善任务）**。

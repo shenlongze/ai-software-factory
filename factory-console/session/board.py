@@ -420,13 +420,7 @@ def render_board_html(path: Path = DEFAULT_BACKLOG, workspace: Optional[Path | s
   .card:hover {{ transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,.4); transition: .2s; }}
   li:hover {{ color: #fff; }}
 </style></head><body>
-<div class="nav">
-  <a href="/api/board" class="active">📋 主线面板</a>
-  <a href="/api/board/graph?project=demo">🔗 依赖图(示例)</a>
-  <a href="/api/board/chain?project=demo">⛓ 任务链(示例)</a>
-  <a href="/api/board/timeline">⏱ 生命线</a>
-  <a href="/api/board?view=report">📄 汇报</a>
-</div>
+{_board_nav("main", "", workspace)}
 <h1>🎯 AI Factory 任务监控面板</h1>
 <div class="summary">
   <p>主线任务: <b>{done}/{total}</b> 完成 ({pct}%) {("⚠️ 有未完成" if done < total else "✅ 全部完成")}</p>
@@ -508,7 +502,7 @@ def render_graph_html(workspace: Path, project_id: str = "") -> str:
                 f"<meta name='viewport' content='width=device-width, initial-scale=1.0'>"
                 f"<title>依赖图 — {project_id or '项目'}</title></head>"
                 f"<body style='background:#0f1115;color:#e6e6e6;font-family:sans-serif;padding:16px'>"
-                f"{_board_nav('graph', project_id)}"
+                f"{_board_nav('graph', project_id, workspace)}"
                 f"<p>📭 项目未生成计划（无 plan.json）</p>"
                 f"<p>真实数据: 项目需执行 M3b（拆解→关键路径）才会生成 plan.json — "
                 f"在会话中 '开始开发' 即可</p>"
@@ -562,7 +556,7 @@ def render_graph_html(workspace: Path, project_id: str = "") -> str:
   .edges {{ margin-top: 16px; background: #1a1d24; border-radius: 8px; padding: 10px 14px; }}
   .edges ul {{ column-count: 2; font-size: 12px; color: #9aa0a6; }}
 </style></head><body>
-{_board_nav("graph", project_id)}
+{_board_nav("graph", project_id, workspace)}
 <h1>🔗 任务依赖图 <span class="legend">(★=CRITICAL 关键路径, 红色边框)</span></h1>
 <div class="graph">{nodes}</div>
 <div class="edges"><b>依赖边:</b><ul>{edges_html}</ul></div>
@@ -578,7 +572,7 @@ def render_chain_html(workspace: Path, project_id: str = "") -> str:
                 f"<meta name='viewport' content='width=device-width, initial-scale=1.0'>"
                 f"<title>任务链 — {project_id or '项目'}</title></head>"
                 f"<body style='background:#0f1115;color:#e6e6e6;font-family:sans-serif;padding:16px'>"
-                f"{_board_nav('chain', project_id)}"
+                f"{_board_nav('chain', project_id, workspace)}"
                 f"<p>📭 项目未生成计划（无 plan.json）</p>"
                 f"<p>真实数据: 项目需执行 M3b 才会生成 — 会话中 '开始开发'</p>"
                 f"<p>查看效果: <a href='/api/board/chain?project=demo' style='color:#8ab4f8'>demo 示例任务链</a></p>"
@@ -630,7 +624,7 @@ def render_chain_html(workspace: Path, project_id: str = "") -> str:
   .total {{ margin-top: 14px; color: #9aa0a6; font-size: 13px; }}
   @media (max-width: 600px) {{ .chain {{ flex-direction: column; }} .carrow {{ transform: rotate(90deg); }} }}
 </style></head><body>
-{_board_nav("chain", project_id)}
+{_board_nav("chain", project_id, workspace)}
 <h1>⛓ 任务链（关键路径）<span class="legend">★=关键节点 ▲=汇聚点</span></h1>
 <div class="chain">{chain}</div>
 <div class="total">总工期: {total_est}min · 关键节点 {len(cpath)} 个 · 汇聚点 {len(merge_ids)} 个</div>
@@ -807,7 +801,7 @@ def render_timeline_html(workspace: Path, limit: int = 20) -> str:
                 f"<meta name='viewport' content='width=device-width, initial-scale=1.0'>"
                 f"<title>生命线</title></head>"
                 f"<body style='background:#0f1115;color:#e6e6e6;font-family:sans-serif;padding:16px'>"
-                f"{_board_nav('timeline')}{msg}</body></html>")
+                f"{_board_nav('timeline', '', workspace)}{msg}</body></html>")
 
     if not audit_file.is_file():
         return _shell("<p>（未找到 audit_events.json）</p>")
@@ -853,13 +847,13 @@ def render_timeline_html(workspace: Path, limit: int = 20) -> str:
   .o {{ color: #ffb74d; font-size: 12px; }}
   @media (max-width: 600px) {{ .t {{ display: block; }} }}
 </style></head><body>
-{_board_nav("timeline")}
+{_board_nav("timeline", "", workspace)}
 <h1>⏱ 生命线（最近 {len(items)} 事件）</h1>
 <ul class="timeline">{"".join(items)}</ul>
 </body></html>"""
 
 
-def render_report_html(path: Path = DEFAULT_BACKLOG) -> str:
+def render_report_html(path: Path = DEFAULT_BACKLOG, workspace: Optional[Path | str] = None) -> str:
     """汇报 HTML（markdown 汇报 → 简单 HTML 渲染, 浏览器可读）。"""
     report = render_report(path)
     html_body = []
@@ -882,7 +876,7 @@ def render_report_html(path: Path = DEFAULT_BACKLOG) -> str:
   li {{ font-size: 13px; color: #b0b6bf; margin: 3px 0; }}
   p {{ color: #9aa0a6; font-size: 13px; }}
 </style></head><body>
-{_board_nav("report")}
+{_board_nav("report", "", workspace)}
 {"".join(html_body)}
 <p style="margin-top:20px;color:#78909c">会话 /board report --save 可落盘为 markdown</p>
 </body></html>"""
@@ -1080,8 +1074,10 @@ def render_project_lifecycle(workspace: Path | str, project_id: str = "") -> str
 
 
 def render_projects_list_html(workspace: Path | str) -> str:
-    """项目列表 HTML (select 切换): 卡片网格 + 状态色。"""
+    """项目列表 HTML (select 切换): 卡片网格 + 状态色 + 当前项目标记。"""
     projects = list_projects(workspace)
+    # 会话当前项目 (session_state.json, 只读; 失败安全)
+    current = _read_session_current_project(workspace)
     cards = []
     if not projects:
         cards.append("<p class='empty'>（暂无项目 — 在会话中描述产品想法创建第一个项目）</p>")
@@ -1092,13 +1088,14 @@ def render_projects_list_html(workspace: Path | str) -> str:
             "development": "st-dev", "prd_ready": "st-prd",
             "project_created": "st-new",
         }.get(st, "st-new")
+        cur_mark = " <span class='cur'>当前</span>" if p["slug"] == current else ""
         ts = (
             __import__("datetime").datetime.fromtimestamp(p["mtime"]).strftime("%m-%d %H:%M")
             if p["mtime"] else "?"
         )
         cards.append(
             f'<a class="pcard {cls}" href="/api/board?view=project&amp;project={p["slug"]}">'
-            f'<span class="pname">{p["name"]}</span>'
+            f'<span class="pname">{p["name"]}{cur_mark}</span>'
             f'<span class="pslug">{p["slug"]}</span>'
             f'<span class="pstatus">{st}</span>'
             f'<span class="pts">{ts}</span></a>'
@@ -1126,7 +1123,7 @@ def render_projects_list_html(workspace: Path | str) -> str:
   .pts {{ display: block; font-size: 11px; color: #78909c; margin-top: 6px; }}
   .empty {{ color: #9aa0a6; }}
 </style></head><body>
-{_board_nav("projects")}
+{_board_nav("projects", "", workspace)}
 <h1>📁 项目列表（{len(projects)} 个）</h1>
 <p style="color:#9aa0a6;font-size:12px">点击项目卡片查看单项目管理视图（全生命周期）</p>
 <div class="grid">{"".join(cards)}</div>
@@ -1196,6 +1193,7 @@ def render_project_lifecycle_html(workspace: Path | str, project_id: str = "") -
 <html lang="zh"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{info.get('name') or slug} — 项目视图</title>
+<meta http-equiv="refresh" content="15">
 <style>
   body {{ font-family: -apple-system, system-ui, sans-serif; margin: 0; padding: 16px; background: #0f1115; color: #e6e6e6; }}
   .nav a {{ color: #8ab4f8; text-decoration: none; margin-right: 12px; font-size: 13px; }}
@@ -1214,7 +1212,7 @@ def render_project_lifecycle_html(workspace: Path | str, project_id: str = "") -
   p {{ font-size: 13px; color: #b0b6bf; }}
   .back {{ color: #8ab4f8; text-decoration: none; font-size: 13px; }}
 </style></head><body>
-{_board_nav("projects", slug)}
+{_board_nav("projects", slug, workspace)}
 <h1>📌 {info.get('name') or slug} <span style="font-size:12px;color:#78909c">({slug})</span></h1>
 <div class="card">
   <h2>🌱 全生命周期 {done_count}/{total} ({pct}%)</h2>
@@ -1361,8 +1359,12 @@ def _project_task_list(workspace: Path | str, slug: str) -> list[str]:
 
 # ---------------------------------------------------------------- 共享导航 (S10-110 返回修复)
 
-def _board_nav(active: str = "main", project: str = "") -> str:
-    """board 页面共享导航（含返回主线面板; 当前页高亮）— 修复"切换菜单无返回"。"""
+def _board_nav(active: str = "main", project: str = "", workspace: Optional[Path | str] = None) -> str:
+    """board 页面共享导航（含返回主线面板; 当前页高亮; 项目选择器 select）。
+
+    workspace 提供时显示项目选择器 (select) — 切换项目后跳转到当前视图的对应项目
+    (graph/chain/tasks) 或单项目视图 (其余)。读 list_projects 实时盘数据, 无缓存。
+    """
     g = project or "demo"
     base = ("display:inline-block;background:#1a1d24;border:1px solid #2a2e37;"
             "color:#b0b6bf;border-radius:6px;padding:6px 14px;font-size:13px;"
@@ -1380,6 +1382,9 @@ def _board_nav(active: str = "main", project: str = "") -> str:
     ]:
         style = f"{base};{act}" if key == active else base
         links += f'<a href="{url}" style="{style}">{label}</a>'
+    select_html = _project_select_html(workspace, project, active) if workspace is not None else ""
+    if select_html:
+        links += f'<span style="margin-left:8px">{select_html}</span>'
     return f'<div style="margin-bottom:12px">{links}</div>'
 
 
@@ -1476,6 +1481,7 @@ def render_project_tasktree_html(workspace: Path | str, slug: str) -> str:
 <html lang="zh"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>任务树 — {info.get('name') or slug}</title>
+<meta http-equiv="refresh" content="15">
 <style>
   body {{ font-family: -apple-system, system-ui, sans-serif; margin: 0; padding: 16px; background: #0f1115; color: #e6e6e6; }}
   h1 {{ font-size: 18px; }}
@@ -1489,8 +1495,44 @@ def render_project_tasktree_html(workspace: Path | str, slug: str) -> str:
   .tag {{ font-size: 10px; background: #37474f; color: #b0bec5; border-radius: 4px; padding: 1px 6px; margin-left: 6px; }}
   .tstatus {{ font-size: 10px; color: #78909c; margin-left: 6px; }}
 </style></head><body>
-{_board_nav("tasks", slug)}
+{_board_nav("tasks", slug, workspace)}
 <h1>🗂 项目任务树 — {info.get('name') or slug}</h1>
 <div class="summary">✅完成 {counts['done']} · 🔵进行中 {counts['running']} · ❌失败 {counts['failed']} · ⬜待办 {counts['pending']} · 共 {counts['total']}</div>
 {body}
 </body></html>"""
+
+
+def _project_select_html(workspace: Path | str, current: str, active: str) -> str:
+    """项目选择器 (select dropdown): 切换后跳转到当前视图的对应项目。
+
+    graph/chain/tasks → 对应页面带新项目; 其余 → 单项目视图。实时读盘, 无缓存。
+    """
+    projects = list_projects(workspace)
+    if not projects:
+        return ""
+    route = {
+        "graph": "/api/board/graph?project=",
+        "chain": "/api/board/chain?project=",
+        "tasks": "/api/board/tasks?project=",
+    }.get(active, "/api/board?view=project&project=")
+    opts = []
+    for p in projects:
+        sel = " selected" if p["slug"] == current else ""
+        label = f"{p['name']} ({p['slug']})"
+        opts.append(f'<option value="{p["slug"]}"{sel}>{label}</option>')
+    style = ("background:#1a1d24;border:1px solid #2a2e37;color:#b0b6bf;"
+             "border-radius:6px;padding:6px 10px;font-size:13px;max-width:260px")
+    return (f'<select style="{style}" title="选择项目" '
+            f'onchange="location=\'{route}\'+encodeURIComponent(this.value)">'
+            f'{"".join(opts)}</select>')
+
+
+def _read_session_current_project(workspace: Path | str) -> str:
+    """读会话当前项目 (session_state.json, 只读; 失败安全 → "")。"""
+    try:
+        state = json.loads(
+            (Path(workspace) / "session_state.json").read_text(encoding="utf-8")
+        ) or {}
+        return str(state.get("current_project") or "")
+    except Exception:  # noqa: BLE001
+        return ""

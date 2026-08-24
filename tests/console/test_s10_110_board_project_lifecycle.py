@@ -318,3 +318,40 @@ class TestTaskCountsAndTree:
         html = BOARD.render_project_lifecycle_html(tmp_path, "demo")
         assert "✅完成" in html
         assert "🗂 任务树" in html  # 统一导航含任务树
+
+
+# ================================================================== 项目选择器 + 实时/同步
+
+class TestProjectSelect:
+    def test_nav_includes_project_select(self, tmp_path):
+        """workspace 提供 → 导航含项目选择器 select。"""
+        _mk_project(tmp_path, "a", name="项目A")
+        _mk_project(tmp_path, "b", name="项目B")
+        nav = BOARD._board_nav("graph", "a", tmp_path)
+        assert "<select" in nav
+        assert "项目A" in nav and "项目B" in nav
+        assert "selected" in nav  # 当前项目选中
+        assert "graph?project=" in nav  # 切换跳转到 graph 视图
+
+    def test_nav_select_route_by_active(self, tmp_path):
+        _mk_project(tmp_path, "a", name="项目A")
+        # graph → graph 页面; main → 单项目视图
+        assert "graph?project=" in BOARD._board_nav("graph", "a", tmp_path)
+        assert "view=project" in BOARD._board_nav("main", "", tmp_path)
+
+    def test_project_select_uses_current_slug(self, tmp_path):
+        _mk_project(tmp_path, "a", name="项目A")
+        html = BOARD.render_project_lifecycle_html(tmp_path, "a")
+        assert f"<option value=\"a\"" in html  # 当前项目选中
+
+    def test_session_current_project_marked(self, tmp_path):
+        _mk_project(tmp_path, "a", name="项目A")
+        (tmp_path / "session_state.json").write_text(
+            json.dumps({"current_project": "a"}), encoding="utf-8")
+        html = BOARD.render_projects_list_html(tmp_path)
+        assert "当前</span>" in html
+
+    def test_project_views_auto_refresh(self, tmp_path):
+        _mk_project(tmp_path, "a", name="项目A")
+        assert 'content="15"' in BOARD.render_project_lifecycle_html(tmp_path, "a")
+        assert 'content="15"' in BOARD.render_project_tasktree_html(tmp_path, "a")

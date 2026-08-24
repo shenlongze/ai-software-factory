@@ -2759,30 +2759,77 @@ class FactoryCLI:
             print("   模块独立版本/更新见方案书 §2.4（独立配置与版本管理, 设计预留）")
             # 仍走整体更新（单体仓库实际生效路径）
         print("=== factory update ===")
-        # 1) git pull（更新代码）
-        try:
-            r = subprocess.run(
-                ["git", "-C", self.root, "pull", "--ff-only"],
-                capture_output=True, text=True, timeout=60)
-            if r.returncode == 0:
-                print(f"✅ 代码更新: {r.stdout.strip() or '已是最新'}")
-            else:
-                print(f"⚠️ git pull: {r.stderr.strip()[:200] or r.stdout.strip()[:200]}")
-        except Exception as exc:  # noqa: BLE001
-            print(f"⚠️ git pull 失败: {exc}（跳过, 继续更新依赖）")
-        # 2) 重新安装（editable 同步最新代码 + 依赖）
-        try:
-            r = subprocess.run(
-                [sys.executable, "-m", "pip", "install", "-e", "."],
-                cwd=self.root, capture_output=True, text=True, timeout=120)
-            if r.returncode == 0:
-                print("✅ 依赖/包已更新（editable 指向当前仓库）")
-            else:
-                print(f"⚠️ pip install: {r.stderr.strip()[:200]}")
-        except Exception as exc:  # noqa: BLE001
-            print(f"⚠️ pip install 失败: {exc}")
-        print(f"更新完成 — 当前版本: {_pkg_version()}")
+        # 步骤进度条（简单 [n/m], subprocess 阻塞不适合 rich 动画）
+        steps = [
+            ("拉取最新代码 (git pull)", "git"),
+            ("更新依赖/包 (pip install -e .)", "pip"),
+        ]
+        results = {}
+        for idx, (label, kind) in enumerate(steps, 1):
+            print(f"  [{idx}/{len(steps)}] {label} ...", end="", flush=True)
+            try:
+                if kind == "git":
+                    r = subprocess.run(
+                        ["git", "-C", self.root, "pull", "--ff-only"],
+                        capture_output=True, text=True, timeout=60)
+                    if r.returncode == 0:
+                        results["git"] = r.stdout.strip() or "已是最新"
+                        print(" ✅")
+                    else:
+                        results["git_error"] = r.stderr.strip()[:200] or r.stdout.strip()[:200]
+                        print(" ⚠️")
+                else:
+                    r = subprocess.run(
+                        [sys.executable, "-m", "pip", "install", "-e", "."],
+                        cwd=self.root, capture_output=True, text=True, timeout=120)
+                    if r.returncode == 0:
+                        results["pip"] = "ok"
+                        print(" ✅")
+                    else:
+                        results["pip_error"] = r.stderr.strip()[:200]
+                        print(" ⚠️")
+            except Exception as exc:  # noqa: BLE001
+                results[f"{kind}_error"] = str(exc)
+                print(" ⚠️")
+        # 结果摘要
+        print(f"  更新完成 — 当前版本: {_pkg_version()}")
+        if results.get("git"):
+            print(f"  📦 代码: {results['git']}")
+        if results.get("git_error"):
+            print(f"  ⚠️ git: {results['git_error']}")
+        if results.get("pip"):
+            print("  📦 依赖/包: 已同步（editable 指向当前仓库）")
+        if results.get("pip_error"):
+            print(f"  ⚠️ pip: {results['pip_error']}")
+        # 变更 list（CHANGELOG 当前版本条目）
+        self._print_changelog_changes()
         return 0
+
+    def _print_changelog_changes(self) -> None:
+        """update 后变更 list: 从 CHANGELOG.md 读当前版本条目。"""
+        changelog = Path(self.root) / "CHANGELOG.md"
+        if not changelog.is_file():
+            return
+        try:
+            text = changelog.read_text(encoding="utf-8")
+        except OSError:  # noqa: BLE001
+            return
+        ver = _pkg_version()
+        import re
+        m = re.search(r"## \[v" + re.escape(ver) + r"\].*?(?=## \[v|\Z)", text, re.S)
+        if not m:
+            return
+        lines = []
+        for line in m.group(0).splitlines():
+            s = line.strip()
+            if s.startswith("## "):
+                continue
+            if s.startswith("- ") or s.startswith("**"):
+                lines.append(s)
+        if lines:
+            print(f"  📋 本次变更 (v{ver}):")
+            for line in lines[:12]:
+                print(f"    {line[:80]}")
 
     def llm_cmd(self, args: argparse.Namespace) -> int:
         """factory llm list — LLM 清单（provider/models, 命令体系 资源域）。"""

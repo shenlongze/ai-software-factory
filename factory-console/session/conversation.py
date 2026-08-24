@@ -37,6 +37,12 @@ from .discovery_guide import (
     HELP_KEYWORDS,
     format_progress,
     lifecycle_line,
+    match_approve,
+    match_approve_next,
+    match_clarify,
+    match_delegate,
+    match_rename,
+    normalize_help_text,
 )
 from .intent import (
     INTENT_CREATE_PRODUCT,
@@ -59,9 +65,8 @@ _TASK_TARGET_KEYS = ("project", "task", "task_id")
 #: 产品发现必填字段追问顺序 (设计 §2.3: problem → user → core_features)
 _PRODUCT_FIELD_ORDER: tuple[str, ...] = ("problem", "user", "core_features")
 
-#: 确认回答集合 (y/yes 不区分大小写; 其余 → 拒绝, 默认 No — 同 ConfirmationGate 口径)
-_APPROVE_ANSWERS: frozenset[str] = frozenset({"y", "yes"})
-#: S10-081: 确认阶段取消词 (其余非 y 输入 → 视为改名)
+#: S10-102: 确认词已上收 discovery_guide.APPROVE_WORDS (确定性表唯一来源)
+#: S10-081: 确认阶段取消词 (其余非确认/改名/澄清/委托输入 → 按新分流处理)
 _CANCEL_ANSWERS: frozenset[str] = frozenset({"n", "no", "取消", "算了", "不要"})
 
 #: 产品流程控制短语 — 取消/退出当前产品发现 (非答案; 精确匹配, 不误吞正常字段回答)
@@ -196,6 +201,9 @@ class ConversationResponse:
     understanding: Optional[str] = None
     proactive: Optional[dict[str, Any]] = None
     ai_generated: bool = False
+    #: S10-102: 确认+下一步信号 (approved + next_action → 宿主创建成功后执行;
+    #: "prd" → generate_prd; "develop"/"create" 只传信号不执行)
+    next_action: Optional[str] = None
 
 
 class ConversationManager:
@@ -743,8 +751,12 @@ class ConversationManager:
 
     @staticmethod
     def _is_help_request(text: str) -> bool:
-        """求助关键词确定性硬闸 (S10-101): 命中 → 触发求助流 (LLM 前先查)。"""
-        norm = str(text or "")
+        """求助关键词确定性硬闸 (S10-101/102): normalize 后子串匹配。
+
+        normalize_help_text 去全部空白 — "没 想法"→"没想法" 命中 (口语变体
+        全覆盖, 两路径同步; 命中 → 触发求助流, LLM 前先查)。
+        """
+        norm = normalize_help_text(text)
         return any(keyword in norm for keyword in HELP_KEYWORDS)
 
     def _offer_suggestions(self) -> Optional[ConversationResponse]:
@@ -1033,9 +1045,21 @@ class ConversationManager:
         answer: str,
         confirm_fn: Optional[Callable[[ProductIntent], str]] = None,
     ) -> ConversationResponse:
-        """产品确认: y/yes → PROJECT_CREATION (+ 执行 create_product via confirm_fn)
-        → DONE + "Product Created: X — Ready for Engineering." (验收 D);
-        n/其它 → 重置 DISCOVERY (product_intent 清空, 验收 E)。
+        """S10-102 确认阶段智能分流 (确定性表 → LLM → 改名兜底)。
+
+        顺序 (计划 §1.3):
+        1. 控制短语 (_product_control — 取消/整理/逃生/修改指令) — 最前, 不变
+        2. "创建项目/现在创建" → 等价 y — 不变
+        3. 确定性分流 (无 LLM 全覆盖):
+           a. 明确改名 (RENAME_RE) → 设名 → 重新确认 (S10-081 行为不变)
+           b. 确认+下一步 ("可以，先出prd文档") → approved + next_action (名称不被覆盖!)
+           c. 纯确认 (可以/好/行/y/yes…) → approved (不再当名称)
+           d. 澄清 (？/为什么/什么意思/能改吗…) → _clarify_confirmation (不改名不确认)
+           e. 取消 (n/no/取消/算了/不要/空) → 重置 DISCOVERY (验收 E)
+           f. 委托 (随便/你定/你看吧…) → approved (保持当前名称)
+        4. 确定性未决 且 LLM 可用 → analyze_confirmation → 按 category 路由
+           (other → 改名兜底)
+        5. 兜底 (无 LLM/失败): 裸文本 → 改名 (S10-081 兼容: "墨笺" 行为不变)
 
         confirm_fn: 宿主注入的执行回调 (接收 ProductIntent → 返回展示消息;
         conversation 零依赖, 不直接调 Action)。缺省 → 停留在 PROJECT_CREATION
@@ -1046,19 +1070,30 @@ class ConversationManager:
         # 确认阶段 "创建项目/现在创建" → 等价 y (用户已确认, 直接创建)
         if _strip_tail_punct(answer) in _PRODUCT_CREATE_NOW_PHRASES:
             answer = "y"
-        # 控制短语优先 (取消/需求整理/逃生 — 非改名, 非字段答案)
+        # 控制短语优先 (取消/需求整理/逃生/修改指令 — 非改名, 非字段答案)
         control = self._product_control(answer)
         if control is not None:
             return control
-        approved = (answer or "").strip().lower() in _APPROVE_ANSWERS
-        if not approved:
-            # S10-081: 非 y 输入 → 取消词 → 重置 DISCOVERY (既有验收 E);
-            # 否则视为改名 → 重新进入确认 (消除"未命名产品"最终名)
-            raw = (answer or "").strip()
-            if raw.lower() not in _CANCEL_ANSWERS and raw:
-                self.product_intent.name = raw  # type: ignore[union-attr]
-                return self._enter_product_confirmation()
-            # 验收 E: 确认 n → 重置 DISCOVERY (product_intent / pending 清空)
+        raw = (answer or "").strip()
+        # 3a. 明确改名命令 ("改名叫墨笺" → rename, S10-081 行为不变)
+        rename_to = match_rename(raw)
+        if rename_to:
+            self.product_intent.name = rename_to  # type: ignore[union-attr]
+            return self._enter_product_confirmation()
+        # 3b. 确认+下一步 ("可以，先出prd文档" → approved + next_action, 名称不被覆盖)
+        next_action = match_approve_next(raw)
+        if next_action:
+            return self._approve_product_confirm(
+                next_action=next_action, confirm_fn=confirm_fn
+            )
+        # 3c. 纯确认 ("可以"/"好"/"行"/y/yes → approved, 不再当名称)
+        if match_approve(raw):
+            return self._approve_product_confirm(confirm_fn=confirm_fn)
+        # 3d. 澄清/问号请求 ("？"/"为什么"/"能改吗" → 重展示摘要, 不改名不确认)
+        if match_clarify(raw):
+            return self._clarify_confirmation()
+        # 3e. 取消 (n/no/取消/算了/不要/空 — 验收 E, 行为不变)
+        if not raw or raw.lower() in _CANCEL_ANSWERS:
             cancelled = self.product_intent.name or "(未命名产品)"  # type: ignore[union-attr]
             self._reset_product_flow()
             return ConversationResponse(
@@ -1066,13 +1101,55 @@ class ConversationManager:
                 message=f"已取消产品 {cancelled} — 重新开始产品发现, 请描述你的产品想法",
                 needs_input=True,
             )
-        # 验收 D: y → PROJECT_CREATION → 创建 → DONE
+        # 3f. 委托 ("随便"/"你定" → approved, 保持当前名称)
+        if match_delegate(raw):
+            return self._approve_product_confirm(confirm_fn=confirm_fn)
+        # 4. LLM 分类 (确定性未决 且 LLM 可用 → analyze_confirmation → 按 category 路由)
+        llm = self._analyze_confirmation(raw)
+        if llm is not None:
+            if llm.category in ("approve", "approve_next"):
+                return self._approve_product_confirm(
+                    next_action=llm.next_action or None, confirm_fn=confirm_fn
+                )
+            if llm.category == "rename":
+                if llm.rename_to:
+                    self.product_intent.name = llm.rename_to  # type: ignore[union-attr]
+                return self._enter_product_confirmation()
+            if llm.category == "clarify":
+                return self._clarify_confirmation()
+            if llm.category == "cancel":
+                cancelled = self.product_intent.name or "(未命名产品)"  # type: ignore[union-attr]
+                self._reset_product_flow()
+                return ConversationResponse(
+                    state=self.state,
+                    message=f"已取消产品 {cancelled} — 重新开始产品发现, 请描述你的产品想法",
+                    needs_input=True,
+                )
+            if llm.category == "delegate":
+                return self._approve_product_confirm(confirm_fn=confirm_fn)
+            # other → 改名兜底 (S10-081 兼容)
+        # 5. 兜底 (无 LLM/失败): 裸文本 → 改名 (S10-081: "墨笺" 行为不变)
+        self.product_intent.name = raw  # type: ignore[union-attr]
+        return self._enter_product_confirmation()
+
+    def _approve_product_confirm(
+        self,
+        *,
+        next_action: Optional[str] = None,
+        confirm_fn: Optional[Callable[[ProductIntent], str]] = None,
+    ) -> ConversationResponse:
+        """确认创建 (y/确认词/委托 — S10-102): 走 confirm_fn 创建 → DONE。
+
+        approved + next_action → 响应携带 next_action (宿主创建成功后执行,
+        如 next_action="prd" → generate_prd; develop/create 只传信号)。
+        """
         self.transition(ConversationState.PROJECT_CREATION)
         if confirm_fn is None:
             return ConversationResponse(
                 state=self.state,
                 message="产品已确认 — 等待执行创建 (create_product: ProductIntent → Project)",
                 needs_input=False,
+                next_action=next_action,
             )
         try:
             message = confirm_fn(self.product_intent)
@@ -1092,7 +1169,45 @@ class ConversationManager:
             state=self.state,
             message=f"{base}\n{_ENGINEERING_GUIDE}",
             needs_input=False,
+            next_action=next_action,
         )
+
+    def _clarify_confirmation(self) -> ConversationResponse:
+        """确认阶段澄清 (S10-102): 问号/疑问 → 重展示摘要 + 解释选项。
+
+        不改名不确认 — 用户输入 "？"/"为什么"/"能改吗" 等时说明当前状态与
+        可选操作 (确认创建 / 改名 / 修改需求 / 取消), 等待明确选择。
+        """
+        pi = self.product_intent  # type: ignore[union-attr]
+        summary = pi.to_summary() if pi is not None else ""
+        lines = [
+            summary,
+            "你可以:",
+            "  • 直接输入 y / 可以 / 好 确认创建",
+            "  • 输入新名称改名 (例如: 改名叫墨笺)",
+            "  • 输入修改指令调整需求 (例如: 把目标用户改成学生)",
+            "  • 输入 取消 放弃本次创建",
+        ]
+        return ConversationResponse(
+            state=self.state,
+            message=self._guide_message("\n".join(lines), current="确认"),
+            needs_input=True,
+        )
+
+    def _analyze_confirmation(self, text: str):
+        """确认阶段 LLM 分类 (复用发现分析器; 不可用/失败 → None → 改名兜底)。
+
+        产品摘要 = product_intent.to_summary() (当前名称候选随附);
+        诚实降级: 无 LLM / 调用失败 → 返回 None, 不伪造分类。
+        """
+        analyzer = self._get_discovery_analyzer()
+        if analyzer is None:
+            return None
+        try:
+            summary = self.product_intent.to_summary() if self.product_intent else ""
+            return analyzer.analyze_confirmation(text, product_summary=summary)
+        except Exception:  # noqa: BLE001 — LLM 失败 → 改名兜底 (永不 5xx)
+            return None
 
     def _clarify(self, message: str) -> ConversationResponse:
         """未识别/信息不足 → CLARIFICATION (等待用户输入)。"""

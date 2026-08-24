@@ -49,6 +49,7 @@ from .discovery_guide import (
     enhanced_line,
     format_progress,
     lifecycle_line,
+    normalize_help_text,
 )
 from .product import ProductIntent, generate_temp_product_name, parse_core_features
 
@@ -603,8 +604,12 @@ class DiscoverySession:
 
     @staticmethod
     def _is_help_request(text: str) -> bool:
-        """求助关键词确定性硬闸 (S10-101): 命中 → 触发求助流 (LLM 前先查)。"""
-        norm = str(text or "")
+        """求助关键词确定性硬闸 (S10-101/102): normalize 后子串匹配。
+
+        normalize_help_text 去全部空白 — "没 想法"→"没想法" 命中 (口语变体
+        全覆盖, 与 conversation 路径同步; 命中 → 触发求助流, LLM 前先查)。
+        """
+        norm = normalize_help_text(text)
         return any(keyword in norm for keyword in HELP_KEYWORDS)
 
     def _offer_suggestions(self) -> Optional[dict[str, Any]]:

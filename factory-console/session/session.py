@@ -37,6 +37,7 @@ from .intent import (
     INTENT_CREATE_PRODUCT,
     INTENT_CREATE_PROJECT,
     INTENT_CURRENT_PROJECT,
+    INTENT_GENERATE_PRD,
     INTENT_RENAME_PROJECT,
     INTENT_RESUME_PROJECT,
     IntentObject,
@@ -227,7 +228,12 @@ class InteractiveSession:
             if getattr(resp, "passthrough", False):
                 self._dispatch(line)
             else:
-                print(resp.message)
+                message = resp.message
+                # S10-102: 确认+下一步 → 宿主接线 — 创建成功后执行 next_action
+                # ("prd" → generate_prd; 失败注明, 不阻断创建; develop/create 只传信号)
+                if getattr(resp, "next_action", None) == "prd":
+                    message = f"{message}\n{self._run_prd_after_create()}"
+                print(message)
             return
         intent = self.intent_parser.parse(line)
         if intent is None:
@@ -339,6 +345,33 @@ class InteractiveSession:
                 self.context.metadata["last_created_project"] = self.context.current_project
             return result.message
         raise RuntimeError(result.message or "产品创建失败")
+
+    def _run_prd_after_create(self) -> str:
+        """S10-102 确认+下一步 (next_action="prd"): 创建成功后生成 PRD。
+
+        复用 context.product_intent / current_project (create_product 已落盘
+        projects/<slug>/product.json + 会话当前项目) → 执行 generate_prd action;
+        成功 → "已生成 PRD: projects/<slug>/PRD.md"; 失败 → 注明原因 (不阻断创建)。
+        develop/create next_action 只传信号, 宿主执行留待后续 Sprint。
+        """
+        try:
+            intent = IntentObject(
+                intent_type=INTENT_GENERATE_PRD,
+                params={},
+                raw="生成PRD",
+                source="session",
+            )
+            action = self.action_registry.get("generate_prd")
+            if action is None:
+                return "PRD 生成失败: generate_prd Action 未注册"
+            result = action.execute(self._build_action_context(intent))
+            if result.ok:
+                data = result.data if isinstance(result.data, dict) else {}
+                prd_file = str(data.get("prd_file") or "").strip()
+                return f"已生成 PRD: {prd_file}" if prd_file else "已生成 PRD"
+            return f"PRD 生成失败: {result.message or result.error or '未知错误'}"
+        except Exception as exc:  # noqa: BLE001 — 失败安全: 注明原因, 不阻断创建
+            return f"PRD 生成失败: {exc}"
 
     def _session_state_file(self) -> Path:
         """会话状态文件 (workspace 或 ~/.factory / session_state.json)。"""

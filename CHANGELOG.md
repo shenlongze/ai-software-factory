@@ -5,6 +5,59 @@
 
 ---
 
+## [v1.1.23] — 2026-08-24
+
+**确认阶段智能分流 + 求助词全覆盖**（S10-102）: "可以，先出prd文档"/"？" 不再被当产品名 —
+确认/确认+下一步/改名/澄清/取消/委托 六类分流; "没 想法" 等口语变体不再填进字段; 宿主
+PRD 接线。
+
+### Added
+
+- **确认分流确定性表**（`session/discovery_guide.py` 扩展）— 两路径/可测试唯一来源:
+  - `normalize_help_text` 去全部空白（半角/全角空格/tab/换行 — "没 想法"→"没想法"）;
+    `HELP_KEYWORDS` += 随便/你定/你看吧/你决定/听你的/你来定/都行/都可以/无所谓/你推荐/
+    推荐个/出个主意/想不出来/没想法了/不知道做什么/不知道做啥/帮我拿主意/你帮我定/
+    都听你的/怎么都行
+  - `APPROVE_WORDS`（y/yes/是/确认/同意/可以/好/好的/行/行吧/ok/okay/没问题/就这样/
+    批准/就这么办/妥/搞/做/上）· `APPROVE_NEXT_ACTIONS`（prd/develop/create 动作关键词）·
+    `RENAME_RE`（改名叫X/名字改成X/改名为X/把名字改成X/重命名为X/名字改为X）·
+    `CLARIFY_WORDS`（？/为什么/啥意思/什么意思/解释一下/不明白/没懂/能改吗…）·
+    `CONFIRM_DELEGATE_WORDS`（随便/你定/你看吧/你决定/听你的/你来定/都行/都可以/
+    无所谓/你看着办/都听你的/怎么都行）
+  - 匹配助手: `split_confirm_first` / `match_approve` / `match_approve_next` /
+    `match_rename` / `match_clarify` / `match_delegate`
+- **analyzer 确认分类**（`discovery_intelligence.py`）— `ConfirmationAnalysis`
+  {category: approve|approve_next|rename|clarify|cancel|delegate|other, next_action,
+  rename_to, reason} + `analyze_confirmation(text, product_summary=)`（宽容解析链 +
+  schema 校验, 失败 → `ConfirmationLLMError`）
+- **conversation 分流重构**（`handle_product_confirm`, 确定性表 → LLM → 改名兜底）:
+  控制短语 → 创建项目短语 → 明确改名 → 确认+下一步 → 纯确认 → 澄清 → 取消 → 委托 →
+  LLM 分类 → 裸文本改名兜底; `ConversationResponse.next_action`（approved +
+  next_action 携带信号）; `_clarify_confirmation` 重展示摘要 + 解释选项（不改名不确认）
+- **求助词归一化**（`conversation.py` + `discovery.py` 两路径对称）— `_is_help_request`
+  改用 `normalize_help_text` + 新词表（"没 想法" → 建议流, 不填字段）
+- **宿主 PRD 接线**（`session.py`）— `resp.next_action == "prd"` → 创建成功后执行
+  `generate_prd`（复用 context.product_intent/current_project）→ 消息追加
+  "已生成 PRD: projects/<slug>/PRD.md"; 失败 → 注明原因（不阻断创建）;
+  develop/create 只传信号, 宿主执行留待后续
+
+### Fixed
+
+- **确认阶段误改名**（Founder 实测）: "可以，先出prd文档" 整句被当产品名 →
+  识别为 确认+下一步（approved + next_action=prd）, 名称不被覆盖; "？" 被当名称 →
+  智能澄清（重展示摘要 + 解释选项）
+- **求助词漏网**（Founder 实测）: "没 想法"（带空格）填进 core_features="想法" →
+  去空白归一化 + 词表全覆盖 → 建议流不填字段
+
+### 测试
+
+- 新 `tests/console/test_confirmation_intelligence.py` 34 用例（计划 §2 契约点 1-11:
+  确认+下一步/澄清不改名/向后兼容 y·N·改名叫X·裸文本/确认词不当事名/委托词双阶段/
+  求助空白变体两路径/LLM 分类路由/无 LLM 兜底真实/宿主 PRD 接线成功+失败/版本断言）
+- `tests/console/test_discovery_guide.py` 扩展（+15: normalize_help_text/新词表/
+  确认表与匹配助手单元/两路径"没 想法"→建议流）
+- 全量 console 回归: 0 新增失败（v1.1.22 基线 4826 passed / 1 skipped 之上）
+
 ## [v1.1.22] — 2026-08-24
 
 **产品发现引导体验**（S10-101）: 确定性进度/生命周期 + 中间字段智能追问 + 求助建议填入 —

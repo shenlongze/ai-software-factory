@@ -1,4 +1,4 @@
-"""factory-console/session/discovery_intelligence.py — 发现阶段 LLM 深度介入 (S10-099)。
+"""factory-console/session/discovery_intelligence.py — 发现阶段 LLM 深度介入 (S10-099 + S10-102)。
 
 产品发现 = LLM 理解主路径 + 规则状态机兜底:
 - DiscoveryIntentAnalyzer: 意图理解 (优先级: 控制指令 > 查询 > 求助 >
@@ -12,6 +12,9 @@
 - JSON 解析宽容链: 剥 markdown code fence → json.loads → {..} 子串回退 →
   schema 校验 (category ∈ 合法面; extraction/proactive 缺字段补空;
   smart_questions 截断 ≤3); 任何失败 → DiscoveryLLMError。
+- S10-102: analyze_confirmation — 确认阶段输入分类 (确认/确认+下一步/改名/
+  澄清/取消/委托/其它, 附产品摘要), 失败 → ConfirmationLLMError (上层确定性表
+  兜底 — 无 LLM 规则兜底真实生效, 不伪造 LLM 分类)。
 
 边界:
 - 纯标准库 + 只读引用 session/product.parse_core_features; 零新依赖
@@ -37,6 +40,17 @@ VALID_CATEGORIES: tuple[str, ...] = (
     "help_request",
     "field_answer",
     "product_description",
+)
+
+#: 合法确认分类 (S10-102 §1.2 — 确认阶段输入分类面)
+VALID_CONFIRMATION_CATEGORIES: tuple[str, ...] = (
+    "approve",
+    "approve_next",
+    "rename",
+    "clarify",
+    "cancel",
+    "delegate",
+    "other",
 )
 
 #: extraction 契约字段 (缺失补空; S10-100: 加 usage_scenarios/mvp_scope/
@@ -103,6 +117,39 @@ _DISCOVERY_PROMPT = """你是 AI Factory 的产品经理。用户正在描述一
   只在描述中明确提到才填, 否则留空"""
 
 
+
+#: 确认分析 prompt (S10-102 §1.2 — 确认阶段输入分类契约)
+_CONFIRMATION_PROMPT = """你是 AI Factory 的会话助手。用户正在产品确认阶段回应
+"确认创建这个产品? (y/N)" — 输入可能是确认、确认+下一步、改名、澄清提问、取消或委托。
+
+【当前产品摘要】(用户确认的对象)
+{product_summary}
+
+【用户输入】
+{text}
+
+【输出要求】只输出一个 JSON 对象, 禁止 markdown 围栏/注释/多余文字:
+{{
+  "category": "approve|approve_next|rename|clarify|cancel|delegate|other",
+  "next_action": "prd|develop|create|",
+  "rename_to": "",
+  "reason": "分类理由（一句）"
+}}
+
+规则 (优先级: 确认(含确认+下一步) > 明确改名 > 澄清提问 > 取消 > 委托 > 其它):
+- 确认: 用户同意创建 (可以/好/行/确认/OK/没问题/y 等) → category=approve, 不改名
+- 确认+下一步: 确认同时说出下一步意图 ("可以,先出prd"/"好,开始开发"/"行,创建项目")
+  → category=approve_next, next_action 取 prd|develop|create (无则留空)
+- 明确改名: 用户给出新名称 ("改名叫X"/"名字改成X"/"产品名X") → category=rename,
+  rename_to 填新名称 (不含 "改名叫" 等前缀)
+- 澄清提问: 问号/疑问 (？/为什么/什么意思/能改吗/这是什么/然后呢) → category=clarify,
+  不改名不确认
+- 取消: 拒绝创建 (n/no/取消/算了/不要) → category=cancel
+- 委托: 用户没想法交给你定 (随便/你定/你看吧/都行/无所谓/听你的) → category=delegate,
+  视为确认, 不改名
+- 其它: 无法归入以上 (可能是新的产品名称或自定义指令) → category=other
+  (上层按改名兜底处理, 不伪造分类)
+"""
 class DiscoveryLLMError(Exception):
     """发现阶段 LLM 失败 (调用异常 / 非法 JSON / schema 校验失败)。
 
@@ -113,6 +160,12 @@ class DiscoveryLLMUnavailable(DiscoveryLLMError):
     """无可用 LLM (未配置 provider/key / 装配失败)。
 
     语义: 整个发现 LLM 通道不可用 — 上层直接规则兜底 (现有状态机零变化)。"""
+
+
+class ConfirmationLLMError(DiscoveryLLMError):
+    """确认阶段 LLM 分类失败 (调用异常 / 非法 JSON / schema 校验失败)。
+
+    语义: 上层捕获 → 确定性表 + 改名兜底 (诚实降级, 永不伪造 LLM 分类)。"""
 
 
 @dataclass
@@ -142,6 +195,23 @@ class DiscoveryAnalysis:
     understanding: str = ""
     suggestions: dict[str, Any] = field(default_factory=dict)
 
+
+
+@dataclass
+class ConfirmationAnalysis:
+    """LLM 对确认阶段输入的分类 (计划 §1.2 输出契约)。
+
+    category: "approve" | "approve_next" | "rename" | "clarify" | "cancel" |
+      "delegate" | "other"
+    next_action: approve_next 时 "prd"/"develop"/"create" (非法 → 归一为空)
+    rename_to: rename 时新名称 (不带 "改名叫" 等前缀)
+    reason: 一句分类理由 (可审计)
+    """
+
+    category: str
+    next_action: str = ""
+    rename_to: str = ""
+    reason: str = ""
 
 class DiscoveryIntentAnalyzer:
     """发现阶段 LLM 意图理解 / 结构化提取 (计划 §2.1)。
@@ -214,6 +284,70 @@ class DiscoveryIntentAnalyzer:
         """= analyze 别名 (语义清晰: 一次调用即结构化提取)。"""
         return self.analyze(text, history=history)
 
+
+    # ------------------------------------------------------------ S10-102: 确认分类
+
+    def analyze_confirmation(
+        self,
+        text: str,
+        *,
+        product_summary: str = "",
+    ) -> ConfirmationAnalysis:
+        """1 次 LLM 调用 → 确认阶段输入分类 → 宽容解析 → schema 校验。
+
+        失败 (空输入/调用异常/非法 JSON/category 不合法) → ConfirmationLLMError
+        (上层确定性表兜底 — 确认/改名/澄清/取消/委托 关键词, 诚实降级, 不伪造)。
+        """
+        text = str(text or "").strip()
+        if not text:
+            raise ConfirmationLLMError("输入为空, 无法分类")
+        prompt = self.build_confirmation_prompt(text, product_summary=product_summary)
+        try:
+            raw = self._llm_fn(prompt, "confirm_intent")
+        except Exception as exc:  # noqa: BLE001 — 调用方异常 → 统一失败面
+            raise ConfirmationLLMError(
+                f"confirm_intent: LLM 调用异常: {exc}"
+            ) from exc
+        parsed = self._parse_json(raw)
+        if not isinstance(parsed, dict):
+            raise ConfirmationLLMError(
+                "confirm_intent: LLM 输出非 JSON 对象 "
+                f"(类型 {type(parsed).__name__})"
+            )
+        return self._to_confirmation_analysis(parsed)
+
+    def build_confirmation_prompt(
+        self, text: str, *, product_summary: str = ""
+    ) -> str:
+        """组装确认分析 prompt (产品摘要 + 用户输入)。"""
+        return _CONFIRMATION_PROMPT.format(
+            product_summary=str(product_summary or "").strip() or "(无)",
+            text=str(text or "").strip(),
+        )
+
+    @classmethod
+    def _to_confirmation_analysis(cls, data: dict[str, Any]) -> ConfirmationAnalysis:
+        """确认分类 schema 校验 + 归一化 (计划 §1.2)。
+
+        - category 必须 ∈ 合法面 (非法/缺失 → ConfirmationLLMError → 确定性表兜底)
+        - next_action 只认 prd/develop/create (其它 → 归一为空, 宽容)
+        - rename_to/reason 去空白; 缺失 → ""
+        """
+        category = str(data.get("category") or "").strip()
+        if category not in VALID_CONFIRMATION_CATEGORIES:
+            raise ConfirmationLLMError(
+                f"confirm_intent: category {category!r} 不合法 "
+                f"(合法: {', '.join(VALID_CONFIRMATION_CATEGORIES)})"
+            )
+        next_action = str(data.get("next_action") or "").strip().lower()
+        if next_action not in ("prd", "develop", "create"):
+            next_action = ""
+        return ConfirmationAnalysis(
+            category=category,
+            next_action=next_action,
+            rename_to=str(data.get("rename_to") or "").strip(),
+            reason=str(data.get("reason") or "").strip(),
+        )
     # ------------------------------------------------------------ prompt
 
     def build_prompt(

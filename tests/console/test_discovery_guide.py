@@ -12,10 +12,13 @@
 7. 选择/自定义: y 全填 / "2" 单选 / "自定义内容" 直填
 8. 无 LLM 零变化 (语义): 问题文本/字段顺序与 v1.1.21 一致 (仅加进度前缀)
 9. 两路径行为一致: 同输入 (progress/help/smart) 两路径输出结构相同
+S10-102: 求助词全覆盖 (normalize_help_text + 新词表, "没 想法"→建议流两路径) +
+确认分流表单元 (APPROVE_WORDS/APPROVE_NEXT_ACTIONS/RENAME_RE/CLARIFY_WORDS/
+CONFIRM_DELEGATE_WORDS + match_*)
 
 模块级: discovery_guide 单元 (lifecycle_line/format_progress/enhanced_line/
-HELP_KEYWORDS/DEFAULT_SUGGESTIONS)。全部测试 mock llm_fn 注入 / analyzer=None,
-零真实 LLM 调用。
+HELP_KEYWORDS/DEFAULT_SUGGESTIONS + S10-102 确认表/匹配助手)。全部测试
+mock llm_fn 注入 / analyzer=None, 零真实 LLM 调用。
 """
 
 from __future__ import annotations
@@ -253,6 +256,116 @@ class TestGuideModule:
     def test_default_suggestions_cover_enhanced_fields(self):
         for field in ("usage_scenarios", "mvp_scope", "non_functional_requirements"):
             assert GUIDE.DEFAULT_SUGGESTIONS.get(field)
+
+
+# ================================================================== S10-102: 确认分流表 + 求助归一化 (模块级)
+
+class TestS102GuideTables:
+    def test_normalize_help_text_strips_all_whitespace(self):
+        """normalize_help_text 去全部空白 (半角/全角/tab/换行) — "没 想法"→"没想法"。"""
+        assert GUIDE.normalize_help_text("没 想法") == "没想法"
+        assert GUIDE.normalize_help_text("没\u3000想法") == "没想法"
+        assert GUIDE.normalize_help_text("没\t想\n法") == "没想法"
+        assert GUIDE.normalize_help_text("") == ""
+        assert GUIDE.normalize_help_text(None) == ""
+
+    def test_help_keywords_include_s102_words(self):
+        """求助词全覆盖: 随便/你定/你看吧/你决定/听你的/你来定/都行/都可以/无所谓/
+        你推荐/推荐个/出个主意/想不出来/没想法了/不知道做什么/不知道做啥/帮我拿主意/
+        你帮我定/都听你的/怎么都行。"""
+        for kw in ("随便", "你定", "你看吧", "你决定", "听你的", "你来定", "都行",
+                   "都可以", "无所谓", "你推荐", "推荐个", "出个主意", "想不出来",
+                   "没想法了", "不知道做什么", "不知道做啥", "帮我拿主意", "你帮我定",
+                   "都听你的", "怎么都行"):
+            assert kw in GUIDE.HELP_KEYWORDS
+
+    def test_approve_words_present(self):
+        for w in ("y", "yes", "是", "确认", "同意", "可以", "好", "好的", "行",
+                  "行吧", "ok", "okay", "没问题", "就这样", "批准", "就这么办",
+                  "妥", "搞", "做", "上"):
+            assert w in GUIDE.APPROVE_WORDS
+
+    def test_approve_next_actions_present(self):
+        actions = dict(GUIDE.APPROVE_NEXT_ACTIONS)
+        assert set(actions) == {"prd", "develop", "create"}
+        assert any("prd" in kws for kws in actions.values()) or "prd" in actions
+        prd_kws = [kws for aid, kws in GUIDE.APPROVE_NEXT_ACTIONS if aid == "prd"][0]
+        assert "prd" in prd_kws and "需求文档" in prd_kws
+
+    def test_rename_re_matches(self):
+        assert GUIDE.match_rename("改名叫墨笺") == "墨笺"
+        assert GUIDE.match_rename("名字改成墨笺") == "墨笺"
+        assert GUIDE.match_rename("改名为墨笺") == "墨笺"
+        assert GUIDE.match_rename("把名字改成墨笺") == "墨笺"
+        assert GUIDE.match_rename("重命名为墨笺") == "墨笺"
+        assert GUIDE.match_rename("名字改为墨笺") == "墨笺"
+        assert GUIDE.match_rename("墨笺") is None  # 裸文本 → 改名兜底由调用方处理
+
+    def test_clarify_words_present(self):
+        for w in ("?", "？", "为什么", "啥意思", "什么意思", "解释一下", "不明白",
+                  "没懂", "没明白", "这是什么", "然后呢", "啥", "怎么用", "能改吗"):
+            assert w in GUIDE.CLARIFY_WORDS
+
+    def test_confirm_delegate_words_present(self):
+        for w in ("随便", "你定", "你看吧", "你决定", "听你的", "你来定", "都行",
+                  "都可以", "无所谓", "你看着办", "都听你的", "怎么都行"):
+            assert w in GUIDE.CONFIRM_DELEGATE_WORDS
+
+    def test_match_approve(self):
+        assert GUIDE.match_approve("可以") is True
+        assert GUIDE.match_approve("好") is True
+        assert GUIDE.match_approve("行") is True
+        assert GUIDE.match_approve("Y") is True  # 大小写归一
+        assert GUIDE.match_approve("墨笺") is False
+
+    def test_match_approve_next(self):
+        assert GUIDE.match_approve_next("可以，先出prd文档") == "prd"
+        assert GUIDE.match_approve_next("好，开始开发") == "develop"
+        assert GUIDE.match_approve_next("行，创建项目") == "create"
+        assert GUIDE.match_approve_next("可以，先出PRD文档") == "prd"  # 大小写归一
+        assert GUIDE.match_approve_next("可以") is None  # 纯确认无下一步
+        assert GUIDE.match_approve_next("墨笺") is None
+
+    def test_match_clarify(self):
+        assert GUIDE.match_clarify("？") is True
+        assert GUIDE.match_clarify("?") is True
+        assert GUIDE.match_clarify("为什么") is True
+        assert GUIDE.match_clarify("能改吗") is True
+        assert GUIDE.match_clarify("墨笺") is False
+
+    def test_match_delegate(self):
+        for w in ("随便", "你定", "你看吧", "都行", "无所谓"):
+            assert GUIDE.match_delegate(w) is True
+        assert GUIDE.match_delegate("墨笺") is False
+
+
+class TestHelpWhitespaceSuggestion:
+    """契约点 3 (guide 侧): "没 想法" → 建议流, 不填字段 (两路径)。"""
+
+    def test_conversation_help_with_space(self):
+        mgr = _manager(analyzer=None)
+        mgr.handle("我想做一个台球计分APP")
+        mgr.handle("台球计分麻烦")
+        mgr.handle("台球爱好者")
+        r = mgr.handle("没 想法")
+        assert "建议方向" in r.message
+        assert mgr.product_intent.core_features != ["想法"]
+
+    def test_discovery_help_with_space(self):
+        s = _start(analyzer=None)
+        s.process_user_input("台球计分麻烦")
+        s.process_user_input("台球爱好者")
+        r = s.process_user_input("没 想法")
+        assert "建议方向" in r["message"]
+        assert s.product_intent.core_features != ["想法"]
+
+    def test_delegate_word_field_collection_suggests(self):
+        """"随便" 字段收集阶段 → 建议流 (不填字段)。"""
+        mgr = _manager(analyzer=None)
+        mgr.handle("我想做一个台球计分APP")
+        r = mgr.handle("随便")
+        assert "建议方向" in r.message
+        assert mgr.product_intent.problem is None
 
 
 # ================================================================== 1. 进度确定性 (无 LLM, 两路径)

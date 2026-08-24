@@ -244,6 +244,25 @@ AI Factory
 - 测试: `tests/console/test_discovery_session_llm.py` 26 passed; 既有 108 DS + 35 analyzer 零改动全绿; 真实 LLM 验收 8/8
 - 边界: conversation 路径未改; 驱动层逃生/CLI 接线未做 (模型层)
 
+## S10-102 更新 (确认阶段智能分流 + 求助词全覆盖, v1.1.23)
+
+> 2026-08-24 | Sprint: "可以，先出prd文档"/"？" 不再被当产品名; "没 想法" 不再填进字段
+
+| 项 | S10-101 后 | S10-102 后 |
+|---|---|---|
+| 确认阶段输入 | 非 y/取消 → 一律改名 (S10-081 过宽) | **六类分流**: 确认 / 确认+下一步(prd/develop/create) / 明确改名 / 澄清(？/为什么/能改吗) / 取消 / 委托(随便/你定) — 确定性表 → LLM → 改名兜底 |
+| "可以，先出prd文档" | 整句被当产品名 | **approved + next_action=prd** (名称不被覆盖), 宿主创建成功后自动生成 PRD.md |
+| "？" | 被当名称 "？" | **智能澄清**: 重展示摘要 + 解释选项 (不改名不确认) |
+| 求助词 (字段收集) | "没 想法" 填进 core_features="想法" | **normalize_help_text 去空白 + 词表全覆盖** ("没 想法"/随便/你定/你看吧/无所谓…) → 建议流不填字段 (两路径) |
+| 确认输入分类 LLM | 无 | **analyze_confirmation** (ConfirmationAnalysis: approve/approve_next/rename/clarify/cancel/delegate/other, 失败 → ConfirmationLLMError → 规则兜底) |
+| 宿主接线 | 确认后仅创建 | **next_action="prd" → 创建成功后 generate_prd** (失败注明不阻断; develop/create 只传信号) |
+
+- 新增: `discovery_guide.py` 确认分流确定性表 (APPROVE_WORDS/APPROVE_NEXT_ACTIONS/RENAME_RE/CLARIFY_WORDS/CONFIRM_DELEGATE_WORDS + match_*)
+- analyzer: `discovery_intelligence.py` ConfirmationAnalysis + analyze_confirmation (宽容解析 + schema 校验)
+- 集成: `conversation.py` handle_product_confirm 重构 + `ConversationResponse.next_action` + `_clarify_confirmation`; `discovery.py` + `conversation.py` `_is_help_request` 归一化; `session.py` PRD 宿主接线
+- 测试: `tests/console/test_confirmation_intelligence.py` 34 passed + `test_discovery_guide.py` +15; 全量 console 0 新增失败
+- 边界: 明确改名/裸文本改名/纯 y/N 行为不变; 无 LLM 规则兜底真实生效; develop/create 宿主执行留待后续; DS 确认阶段不改 (模型级 confirm 无改名 bug)
+
 ## S10-101 更新 (产品发现引导体验, v1.1.22)
 
 > 2026-08-24 | Sprint: 确定性进度/生命周期 + 中间字段智能追问 + 求助建议填入 — 两路径同步

@@ -1,4 +1,4 @@
-"""factory-console/session/discovery_guide.py — 产品发现引导体验共享模块 (S10-101)。
+"""factory-console/session/discovery_guide.py — 产品发现引导体验共享模块 (S10-101 + S10-102)。
 
 两路径 (conversation.py + discovery.py) 同步的唯一来源:
 - LIFECYCLE_LINE / lifecycle_line — 生命周期引导文案 (发现→确认→创建→PRD→工程→开发,
@@ -7,8 +7,14 @@
   无 LLM 也显示)
 - enhanced_line — DiscoverySession 增强字段可选提示 (使用场景/MVP范围/非功能要求,
   已填 ✅, 无待填则省略)
-- HELP_KEYWORDS — 求助关键词确定性硬闸 (LLM 前先查, 两路径共用)
+- HELP_KEYWORDS — 求助关键词确定性硬闸 (LLM 前先查, 两路径共用;
+  normalize_help_text 去空白后子串匹配 — "没 想法" 等口语变体全覆盖)
 - DEFAULT_SUGGESTIONS — 每字段确定性建议 (无 LLM 兜底 — 诚实降级, 非伪造 LLM)
+- S10-102 确认阶段智能分流表 — APPROVE_WORDS / APPROVE_NEXT_ACTIONS /
+  RENAME_RE / CLARIFY_WORDS / CONFIRM_DELEGATE_WORDS + 匹配助手
+  (normalize_help_text / split_confirm_first / match_approve / match_approve_next /
+  match_rename / match_clarify / match_delegate — conversation.handle_product_confirm
+  确定性分流唯一来源)
 
 设计: docs/sprint10/S10-101-discovery-guide-plan.md §1.1
 边界:
@@ -18,7 +24,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Iterable
+import re
+from typing import Any, Iterable, Optional
 
 from .product import FIELD_LABELS, REQUIRED_FIELDS
 
@@ -41,6 +48,10 @@ HELP_KEYWORDS: tuple[str, ...] = (
     "没有想法", "没想法", "没思路", "没有思路", "你建议", "你看着办",
     "帮我出主意", "不知道怎么", "你帮我定", "你来定", "推荐一下",
     "有什么建议",
+    # S10-102: 求助词全覆盖 (口语/带空白变体 — normalize_help_text 去空白后命中)
+    "随便", "你定", "你看吧", "你决定", "听你的", "都行", "都可以",
+    "无所谓", "你推荐", "推荐个", "出个主意", "想不出来", "没想法了",
+    "不知道做什么", "不知道做啥", "帮我拿主意", "都听你的", "怎么都行",
 )
 
 #: 每字段确定性建议 (无 LLM 兜底 — 诚实, 不伪造 LLM; 只覆盖字段追问面)
@@ -110,12 +121,127 @@ def enhanced_line(answers: dict[str, Any]) -> str:
     return "增强(可选): " + " · ".join(parts)
 
 
+# ================================================================ S10-102: 确认阶段智能分流表
+
+#: 确认词 (纯确认 — 无下一步动作; 首段切分后小写匹配)
+APPROVE_WORDS: tuple[str, ...] = (
+    "y", "yes", "是", "确认", "同意", "可以", "好", "好的", "行",
+    "行吧", "ok", "okay", "没问题", "就这样", "批准", "就这么办", "妥",
+    "搞", "做", "上",
+)
+
+#: 确认+下一步 动作关键词 → action_id (首段确认词 + 剩余部分含关键词)
+APPROVE_NEXT_ACTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("prd", ("prd", "需求文档", "产品需求文档", "写需求", "出需求")),
+    ("develop", ("开发", "开工", "开始做", "动工")),
+    ("create", ("创建", "建项目", "创建项目")),
+)
+
+#: 明确改名命令 (正则: 改名叫X / 名字改成X / 改名为X / 把名字改成X / 重命名为X / 名字改为X)
+RENAME_RE = re.compile(r"(?:改名叫|名字改成|改名为|把名字改成|重命名为|名字改为)(.+)")
+
+#: 澄清/问号请求 (→ 智能澄清, 不改名不确认)
+CLARIFY_WORDS: tuple[str, ...] = (
+    "?", "？", "为什么", "啥意思", "什么意思", "解释一下", "不明白",
+    "没懂", "没明白", "这是什么", "然后呢", "啥", "怎么用", "能改吗",
+)
+
+#: 确认阶段委托词 (用户没想法交给你定 → 视为确认, 保持当前名称)
+CONFIRM_DELEGATE_WORDS: tuple[str, ...] = (
+    "随便", "你定", "你看吧", "你决定", "听你的", "你来定",
+    "都行", "都可以", "无所谓", "你看着办", "都听你的", "怎么都行",
+)
+
+#: 确认输入首段切分 (按 ,。.!?空白 切 1 次 — 首段 + 剩余部分)
+_CONFIRM_SPLIT_RE = re.compile(r"[，,。.、!?！？\s]+", re.UNICODE)
+
+
+def normalize_help_text(text: str) -> str:
+    """去全部空白 (半角/全角空格/tab/换行) — "没 想法"→"没想法"。
+
+    求助词匹配前归一化: 口语变体 (带空格/全角空格) 与词表对齐。
+    """
+    return re.sub(r"\s+", "", str(text or ""))
+
+
+def split_confirm_first(text: str) -> tuple[str, str]:
+    """确认输入首段切分 → (首段小写, 剩余部分)。
+
+    按 ,。.!?空白 切 1 次 — "可以，先出prd文档" → ("可以", "先出prd文档")。
+    """
+    norm = str(text or "").strip()
+    parts = re.split(_CONFIRM_SPLIT_RE, norm, 1)
+    first = parts[0].strip().lower() if parts else ""
+    rest = parts[1].strip() if len(parts) > 1 else ""
+    return first, rest
+
+
+def match_approve(text: str) -> bool:
+    """纯确认: 首段 ∈ APPROVE_WORDS ("可以"/"好"/"行"/y/yes → True)。"""
+    first, _ = split_confirm_first(text)
+    return first in APPROVE_WORDS
+
+
+def match_approve_next(text: str) -> Optional[str]:
+    """确认+下一步: 首段确认词 且 剩余含动作关键词 → action_id; 否则 None。
+
+    "可以，先出prd文档" → "prd"; "好，开始开发" → "develop"; "行，创建项目" → "create"。
+    """
+    first, rest = split_confirm_first(text)
+    if first not in APPROVE_WORDS:
+        return None
+    rest_lower = rest.lower()
+    for action_id, keywords in APPROVE_NEXT_ACTIONS:
+        if any(kw in rest_lower for kw in keywords):
+            return action_id
+    return None
+
+
+def match_rename(text: str) -> Optional[str]:
+    """明确改名命令 → 新名称; 非改名命令 → None。
+
+    "改名叫墨笺" → "墨笺"; "墨笺" (裸文本) → None (改名兜底由调用方处理)。
+    """
+    m = RENAME_RE.search(str(text or ""))
+    if not m:
+        return None
+    return m.group(1).strip()
+
+
+def match_clarify(text: str) -> bool:
+    """澄清/问号请求: norm ∈ {"?","？"} 或含 CLARIFY_WORDS 词。
+
+    "？" / "为什么" / "能改吗" → True (不改名不确认, 重展示摘要+解释选项)。
+    """
+    norm = str(text or "").strip()
+    if norm in ("?", "？"):
+        return True
+    return any(kw in norm for kw in CLARIFY_WORDS)
+
+
+def match_delegate(text: str) -> bool:
+    """确认阶段委托: norm ∈ CONFIRM_DELEGATE_WORDS → True (视为确认, 不改名)。"""
+    return str(text or "").strip() in CONFIRM_DELEGATE_WORDS
+
+
 __all__ = [
     "LIFECYCLE_STAGES",
     "LIFECYCLE_LINE",
     "ENHANCED_LABELS",
     "HELP_KEYWORDS",
     "DEFAULT_SUGGESTIONS",
+    "APPROVE_WORDS",
+    "APPROVE_NEXT_ACTIONS",
+    "RENAME_RE",
+    "CLARIFY_WORDS",
+    "CONFIRM_DELEGATE_WORDS",
+    "normalize_help_text",
+    "split_confirm_first",
+    "match_approve",
+    "match_approve_next",
+    "match_rename",
+    "match_clarify",
+    "match_delegate",
     "lifecycle_line",
     "format_progress",
     "enhanced_line",

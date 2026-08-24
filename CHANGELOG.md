@@ -3,7 +3,22 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
-## [v1.1.35] — 2026-08-24
+## [v1.1.36] — 2026-08-24
+
+**board 状态分布图 + 交互（hover/筛选）**: 分布条 + 筛选按钮 + hover 高亮（Founder）。
+
+### Added
+
+- **状态分布条**（`board.py`）— 完成绿/未完成灰/周边 三色分布 + 图例
+- **筛选按钮**（内联 JS, 无外部依赖）— 全部/主线/周边/已完成/未完成/进行中
+- **hover 交互** — 卡片上浮 + 阴影, 任务行 hover 高亮
+- 卡片 data-kind/data-status 属性（筛选用）
+
+### 验证
+
+- dist-bar/f-btn/data-kind/li:hover/script 全部渲染
+- 纯 CSS/JS（离线可用, 不引外部 CDN）
+
 
 **board 视觉增强**: graph/chain HTML 可视化 + 自动刷新（Founder: 来, 开始）。
 

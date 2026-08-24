@@ -314,8 +314,11 @@ def render_board_html(path: Path = DEFAULT_BACKLOG) -> str:
             mark = "✅" if t["done"] else "⬜"
             pri = f'<span class="tag t-{t["priority"].lower() if t["priority"] else "none"}">{t["priority"]}</span>' if t["priority"] else ""
             items.append(f'<li class="{"done" if t["done"] else "todo"}">{mark} {t["id"]} {pri} {t["desc"]}</li>')
+        g_done_count = g_done
+        g_todo_count = g_total - g_done
+        data_attrs = f'data-kind="{"main" if is_main else "side"}" data-status="{"done" if g_done == g_total and g_total else ("partial" if g_done else "todo")}"'
         cards.append(
-            f'<div class="card {cls}"><h2>{g["id"]} {tag} {status} {bar(g_done, g_total)} <span class="title">{g["title"]}</span></h2>'
+            f'<div class="card {cls}" {data_attrs}><h2>{g["id"]} {tag} {status} {bar(g_done, g_total)} <span class="title">{g["title"]}</span></h2>'
             f'<ul>{"".join(items)}</ul></div>'
         )
 
@@ -345,15 +348,63 @@ def render_board_html(path: Path = DEFAULT_BACKLOG) -> str:
   .t-main {{ background: #1565c0; }} .t-side {{ background: #546e7a; }}
   .t-p0 {{ background: #c62828; }} .t-p1 {{ background: #e65100; }} .t-p2 {{ background: #616161; }}
   .side-tip {{ color: #78909c; font-size: 12px; margin-top: 12px; }}
+  .dist {{ margin: 8px 0; }}
+  .dist-bar {{ display: flex; height: 10px; border-radius: 5px; overflow: hidden; }}
+  .dist-done {{ background: #4caf50; }} .dist-todo {{ background: #616161; }}
+  .dist-legend {{ font-size: 11px; color: #9aa0a6; margin-top: 4px; display: flex; gap: 14px; }}
+  .dot {{ display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 3px; }}
+  .d-done {{ background: #4caf50; }} .d-todo {{ background: #616161; }} .d-side {{ background: #78909c; }}
+  .filters {{ margin: 10px 0 14px; display: flex; gap: 8px; flex-wrap: wrap; }}
+  .f-btn {{ background: #1a1d24; border: 1px solid #2a2e37; color: #b0b6bf; border-radius: 6px; padding: 4px 12px; font-size: 12px; cursor: pointer; }}
+  .f-btn.active {{ background: #1565c0; color: #fff; border-color: #1565c0; }}
+  .card:hover {{ transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,.4); transition: .2s; }}
+  li:hover {{ color: #fff; }}
 </style></head><body>
 <h1>🎯 AI Factory 任务监控面板</h1>
 <div class="summary">
   <p>主线任务: <b>{done}/{total}</b> 完成 ({pct}%) {("⚠️ 有未完成" if done < total else "✅ 全部完成")}</p>
   {bar(done, total)}
+  <div class="dist" title="状态分布">
+    <div class="dist-bar">
+      <div class="dist-done" style="width:{pct}%"></div>
+      <div class="dist-todo" style="width:{100 - pct}%"></div>
+    </div>
+    <div class="dist-legend">
+      <span><i class="dot d-done"></i>完成 {done}</span>
+      <span><i class="dot d-todo"></i>未完成 {total - done}</span>
+      <span><i class="dot d-side"></i>周边 {side_count}</span>
+    </div>
+  </div>
   <p>周边(长期): {side_count} 项（非主线, 不阻塞）</p>
+</div>
+<div class="filters">
+  <button class="f-btn active" data-filter="all">全部</button>
+  <button class="f-btn" data-filter="main">主线</button>
+  <button class="f-btn" data-filter="side">周边</button>
+  <button class="f-btn" data-filter="done">已完成</button>
+  <button class="f-btn" data-filter="todo">未完成</button>
+  <button class="f-btn" data-filter="partial">进行中</button>
 </div>
 <div class="groups">{"".join(cards)}</div>
 <p class="side-tip">AI Factory v{_pkg_version_lite()} · 会话 /board 有更多视图（graph/chain/timeline/report）</p>
+<script>
+document.querySelectorAll('.f-btn').forEach(function(btn){{
+  btn.addEventListener('click', function(){{
+    document.querySelectorAll('.f-btn').forEach(function(b){{ b.classList.remove('active'); }});
+    btn.classList.add('active');
+    var f = btn.dataset.filter;
+    document.querySelectorAll('.card').forEach(function(card){{
+      var show = (f === 'all') ||
+        (f === 'main' && card.dataset.kind === 'main') ||
+        (f === 'side' && card.dataset.kind === 'side') ||
+        (f === 'done' && card.dataset.status === 'done') ||
+        (f === 'todo' && card.dataset.status === 'todo') ||
+        (f === 'partial' && card.dataset.status === 'partial');
+      card.style.display = show ? '' : 'none';
+    }});
+  }});
+}});
+</script>
 </body></html>"""
 
 

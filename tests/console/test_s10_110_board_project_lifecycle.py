@@ -266,7 +266,7 @@ class TestBoardNav:
     def test_board_nav_has_return_link_and_active(self):
         """共享导航: 含主线面板返回链接 + 当前页高亮。"""
         nav = BOARD._board_nav("graph", "P-123")
-        assert "📋 主线面板" in nav and "/api/board\"" in nav
+        assert "主线面板" in nav and "?view=mainline" in nav  # 降级为显式入口
         assert "background:#1565c0" in nav  # active 高亮
         # graph 链接用当前项目 (非 demo)
         assert "graph?project=P-123" in nav
@@ -399,3 +399,37 @@ class TestRefreshSelect:
         assert "setInterval" in BOARD.render_board_html(workspace=tmp_path)
         assert "setInterval" in BOARD.render_project_lifecycle_html(tmp_path, "a")
         assert "setInterval" in BOARD.render_project_tasktree_html(tmp_path, "a")
+
+
+# ================================================================== 项目优先首页 (架构调整)
+
+class TestProjectFirst:
+    def test_home_uses_current_project(self, tmp_path):
+        """首页: 有当前项目 → 该项目生命周期视图 (项目优先, 非 AI 主线)。"""
+        _mk_project(tmp_path, "a", name="项目A")
+        (tmp_path / "session_state.json").write_text(
+            json.dumps({"current_project": "a"}), encoding="utf-8")
+        home = BOARD.render_project_home(tmp_path)
+        assert "全生命周期" in home
+        assert "任务监控面板" not in home  # AI 主线不再是首页
+
+    def test_home_falls_back_to_list(self, tmp_path):
+        """首页: 无当前项目 → 项目列表引导。"""
+        _mk_project(tmp_path, "a", name="项目A")
+        home = BOARD.render_project_home(tmp_path)
+        assert "项目列表" in home
+
+    def test_nav_has_big_project_select_first(self, tmp_path):
+        """导航: 大项目选择器 (第一步) 置顶, AI 主线面板降级为 tab。"""
+        _mk_project(tmp_path, "a", name="项目A")
+        nav = BOARD._board_nav("project", "a", tmp_path)
+        assert "📁 选择项目:" in nav          # 大选择器
+        assert "AI主线面板" in nav            # 降级 tab
+        assert "?view=mainline" in nav        # 显式入口
+
+    def test_mainline_explicit_view(self, tmp_path):
+        """AI 主线面板走显式 ?view=mainline (不再是默认首页)。"""
+        _mk_project(tmp_path, "a", name="项目A")
+        ml = BOARD.render_board_html(workspace=tmp_path)
+        assert "AI主线面板" in ml
+        assert "任务监控面板" in ml

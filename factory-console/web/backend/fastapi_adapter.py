@@ -808,10 +808,14 @@ def build_app(
                 html = board_mod.render_project_lifecycle_html(workspace_root, project)
             elif view == "projects":
                 html = board_mod.render_projects_list_html(workspace_root)
+            elif view == "mainline":
+                # AI Factory 自身开发进度 (降级为显式入口, 不再是默认首页)
+                html = board_mod.render_board_html(workspace=workspace_root)
             elif view == "report":
                 html = board_mod.render_report_html()
             else:
-                html = board_mod.render_board_html(workspace=workspace_root)
+                # 项目优先首页: 有当前项目 → 该项目视图; 否则项目列表引导
+                html = board_mod.render_project_home(workspace_root)
         except Exception:  # noqa: BLE001 — 面板失败 → 明确错误不 500
             html = "<p>（面板渲染失败）</p>"
         return HTMLResponse(content=html)

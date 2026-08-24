@@ -225,6 +225,7 @@ API（Web/集成）:   http://127.0.0.1:8011/api/...      e.g. GET /api/board
   | 任务树视图 | `/api/board/tasks?project=` epic→feature→task 层级 + 任务状态汇总 + 全页统一返回导航 | v1.1.51 |
   | 项目选择器 | 全页导航 select 切换项目 + 单项目/任务树 15s 自动刷新 + 会话当前项目标记（准确/实时/同步） | v1.1.52 |
   | 刷新间隔可选 | 全页导航 select: 5s/15s/30s/60s/关闭 (?refresh=N, 0=关闭) | v1.1.53 |
+  | 项目优先架构 | 默认首页=当前项目视图 + 大项目选择器置顶 (第一步) + AI 主线面板降级为显式 ?view=mainline | v1.1.54 |
 - **状态**: ✅（数据真实，空态诚实引导）· **关联**: 待办清单 + docs/sprint10 验收
 
 ### 6.2 /preview — Markdown 预览

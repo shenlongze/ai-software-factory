@@ -1359,34 +1359,39 @@ def _project_task_list(workspace: Path | str, slug: str) -> list[str]:
 
 # ---------------------------------------------------------------- 共享导航 (S10-110 返回修复)
 
-def _board_nav(active: str = "main", project: str = "", workspace: Optional[Path | str] = None) -> str:
-    """board 页面共享导航（含返回主线面板; 当前页高亮; 项目选择器 select）。
+def _board_nav(active: str = "project", project: str = "", workspace: Optional[Path | str] = None) -> str:
+    """board 页面共享导航（项目优先: 第一步选项目, 第二步看面板）。
 
-    workspace 提供时显示项目选择器 (select) — 切换项目后跳转到当前视图的对应项目
-    (graph/chain/tasks) 或单项目视图 (其余)。读 list_projects 实时盘数据, 无缓存。
+    行1: 大项目选择器 (select) + 刷新间隔选择器
+    行2: 项目面板 tab (项目视图/任务树/依赖图/任务链/生命线/汇报) + AI 主线 (降级)
     """
-    g = project or "demo"
+    g = project or ""
     base = ("display:inline-block;background:#1a1d24;border:1px solid #2a2e37;"
             "color:#b0b6bf;border-radius:6px;padding:6px 14px;font-size:13px;"
             "text-decoration:none;margin-right:8px;margin-bottom:6px")
     act = "background:#1565c0;color:#fff;border-color:#1565c0"
-    links = ""
-    for key, url, label in [
-        ("main", "/api/board", "📋 主线面板"),
-        ("projects", "/api/board?view=projects", "📁 项目管理"),
-        ("graph", f"/api/board/graph?project={g}", "🔗 依赖图"),
-        ("chain", f"/api/board/chain?project={g}", "⛓ 任务链"),
+    demo = "demo"
+    tabs = [
+        ("project", f"/api/board?view=project&project={g}" if g else "/api/board?view=projects", "📊 项目"),
+        ("tasks", f"/api/board/tasks?project={g or demo}", "🗂 任务树"),
+        ("graph", f"/api/board/graph?project={g or demo}", "🔗 依赖图"),
+        ("chain", f"/api/board/chain?project={g or demo}", "⛓ 任务链"),
         ("timeline", "/api/board/timeline", "⏱ 生命线"),
         ("report", "/api/board?view=report", "📄 汇报"),
-        ("tasks", f"/api/board/tasks?project={g}", "🗂 任务树"),
-    ]:
-        style = f"{base};{act}" if key == active else base
-        links += f'<a href="{url}" style="{style}">{label}</a>'
-    select_html = _project_select_html(workspace, project, active) if workspace is not None else ""
-    if select_html:
-        links += f'<span style="margin-left:8px">{select_html}</span>'
-    links += _refresh_select_html()
-    return f'<div style="margin-bottom:12px">{links}</div>'
+        ("mainline", "/api/board?view=mainline", "📋 AI主线面板"),
+    ]
+    links = "".join(
+        f'<a href="{url}" style="{base};{act}"{" title=当前" if key == active else ""}>{label}</a>'
+        if key == active else f'<a href="{url}" style="{base}">{label}</a>'
+        for key, url, label in tabs
+    )
+    row1 = ""
+    if workspace is not None:
+        row1 += _project_select_html(workspace, project, active, big=True)
+    row1 += _refresh_select_html()
+    return (f'<div style="margin-bottom:12px"><div style="display:flex;align-items:center;'
+            f'flex-wrap:wrap;gap:4px;margin-bottom:8px">{row1}</div>'
+            f'<div style="display:flex;flex-wrap:wrap;gap:4px">{links}</div></div>')
 
 
 # ---------------------------------------------------------------- 任务状态汇总 + 任务树 (S10-110 完善)
@@ -1503,10 +1508,11 @@ def render_project_tasktree_html(workspace: Path | str, slug: str) -> str:
 </body></html>"""
 
 
-def _project_select_html(workspace: Path | str, current: str, active: str) -> str:
-    """项目选择器 (select dropdown): 切换后跳转到当前视图的对应项目。
+def _project_select_html(workspace: Path | str, current: str, active: str, *, big: bool = False) -> str:
+    """项目选择器 (select dropdown, 第一步): 切换后跳转到当前视图的对应项目。
 
     graph/chain/tasks → 对应页面带新项目; 其余 → 单项目视图。实时读盘, 无缓存。
+    big=True → 置顶大选择器 (项目优先首页)。
     """
     projects = list_projects(workspace)
     if not projects:
@@ -1523,9 +1529,17 @@ def _project_select_html(workspace: Path | str, current: str, active: str) -> st
         opts.append(f'<option value="{p["slug"]}"{sel}>{label}</option>')
     style = ("background:#1a1d24;border:1px solid #2a2e37;color:#b0b6bf;"
              "border-radius:6px;padding:6px 10px;font-size:13px;max-width:260px")
-    return (f'<select style="{style}" title="选择项目" '
-            f'onchange="location=\'{route}\'+encodeURIComponent(this.value)">'
-            f'{"".join(opts)}</select>')
+    if big:
+        style = ("background:#11141a;border:2px solid #1565c0;color:#e6e6e6;"
+                 "border-radius:8px;padding:9px 14px;font-size:15px;font-weight:600;"
+                 "max-width:340px")
+    label = "📁 选择项目:" if big else ""
+    return (f'<span style="display:flex;align-items:center;gap:6px">{label}'
+            f'<select style="{style}" title="选择项目" '
+            f"onchange=\"location='{route}'+encodeURIComponent(this.value)\">"
+            f'{"".join(opts)}</select></span>')
+
+
 
 
 def _read_session_current_project(workspace: Path | str) -> str:
@@ -1573,3 +1587,17 @@ def _auto_refresh_script(default_n: int) -> str:
   if (n > 0) setInterval(function(){{ location.reload(); }}, n * 1000);
 }})();
 </script>"""
+
+
+# ---------------------------------------------------------------- 项目优先首页 (S10-110 架构调整)
+
+def render_project_home(workspace: Path | str) -> str:
+    """项目优先首页 (Founder: 选择应该是第一步, 然后才是看面板)。
+
+    未选/无当前项目 → 项目列表引导; 有当前项目 → 该项目的生命周期视图。
+    主线面板 (AI Factory 自身进度) 降级为显式入口 (?view=mainline)。
+    """
+    current = _read_session_current_project(workspace)
+    if current and (Path(workspace) / "projects" / current / "product.json").is_file():
+        return render_project_lifecycle_html(workspace, current)
+    return render_projects_list_html(workspace)

@@ -373,13 +373,29 @@ class BoardService:
         return None  # 无进程, 无操作
 
     def status(self, ctx: ServiceContext) -> ServiceStatus:
+        """诚实状态: board 的 Web 能力依赖 backend — backend 未运行 → 不可访问。
+
+        - backend running → board running（可访问 /api/board）
+        - backend stopped → board stopped（依赖 backend, 诚实不假 running）
+        会话 /board 命令独立可用（不依赖 backend, 见 note）。
+        """
         base = f"http://127.0.0.1:{ctx.backend_port}"
+        backend_running = bool(
+            ctx.cli is not None and ctx.cli._backend_running()
+        )
+        if backend_running:
+            return ServiceStatus(
+                self.id,
+                STATE_RUNNING,
+                "可访问 (懒加载 /api/board)",
+                url=f"{base}/api/board",
+                note="Web: /api/board · 会话: /board",
+            )
         return ServiceStatus(
             self.id,
-            STATE_RUNNING,
-            "懒加载服务 (会话 /board + Web /api/board, 首次访问渲染)",
-            url=f"{base}/api/board",
-            note="访问: 会话 /board · Web /api/board (需 backend 运行)",
+            STATE_STOPPED,
+            "依赖 backend（未运行）— 不可访问 Web /api/board",
+            note="需 factory start 启动 backend; 会话 /board 始终可用",
         )
 
 

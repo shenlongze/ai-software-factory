@@ -2,8 +2,9 @@
 
 产品发现 = LLM 理解主路径 + 规则状态机兜底:
 - DiscoveryIntentAnalyzer: 意图理解 (优先级: 控制指令 > 查询 > 字段回答 >
-  产品描述) + 结构化提取 {problem, user, core_features, name, platform} +
-  缺失原因 (为什么缺) + 智能追问 (≤3, 优先 1 条) + 主动分析
+  产品描述) + 结构化提取 {problem, user, core_features, name, platform,
+  usage_scenarios, mvp_scope, non_functional_requirements} + 缺失原因
+  (为什么缺) + 智能追问 (≤3, 优先 1 条) + 主动分析
   (platform/competitors/scope/notes) + 理解摘要 ("我理解你要做 X, 给 Y 用...").
 - 默认装配: 复用 ReasoningProvider()._default_llm_fn() (exec.cli provider 链,
   同 naming 修复 bcc1b14 模式); llm_fn=None 且无 provider/key → 抛
@@ -37,9 +38,11 @@ VALID_CATEGORIES: tuple[str, ...] = (
     "field_answer",
 )
 
-#: extraction 契约字段 (缺失补空)
+#: extraction 契约字段 (缺失补空; S10-100: 加 usage_scenarios/mvp_scope/
+#: non_functional_requirements — DiscoverySession 7 字段对齐, 可选键)
 EXTRACTION_FIELDS: tuple[str, ...] = (
     "problem", "user", "core_features", "name", "platform",
+    "usage_scenarios", "mvp_scope", "non_functional_requirements",
 )
 
 #: proactive 契约字段
@@ -72,7 +75,7 @@ _DISCOVERY_PROMPT = """你是 AI Factory 的产品经理。用户正在描述一
 {{
   "category": "control|query|product_description|field_answer",
   "reason": "分类理由（一句）",
-  "extraction": {{"problem": "", "user": "", "core_features": [], "name": "", "platform": ""}},
+  "extraction": {{"problem": "", "user": "", "core_features": [], "name": "", "platform": "", "usage_scenarios": "", "mvp_scope": "", "non_functional_requirements": ""}},
   "missing_reasons": {{"problem": "该字段缺失的原因, 只在输入确实没给时列出"}},
   "smart_questions": ["针对最重要缺失字段的一个具体问题"],
   "proactive": {{"platform": "", "competitors": "", "scope": "", "notes": ""}},
@@ -87,7 +90,9 @@ _DISCOVERY_PROMPT = """你是 AI Factory 的产品经理。用户正在描述一
 - 纯字段回答（"给程序员用"）→ category=field_answer, 只填对应字段
 - 若【系统上一轮问题】非空且用户本轮输入明显是对它的回答 → category=field_answer,
   extraction 只填该问题对应的字段, 不当作新产品描述 (不覆盖已填字段)
-- extraction 字段只填输入中明确出现的信息, 不猜测、不编造"""
+- extraction 字段只填输入中明确出现的信息, 不猜测、不编造
+- 使用场景(usage_scenarios)/MVP范围(mvp_scope)/非功能要求(non_functional_requirements)
+  只在描述中明确提到才填, 否则留空"""
 
 
 class DiscoveryLLMError(Exception):
@@ -108,7 +113,8 @@ class DiscoveryAnalysis:
 
     category: "control" | "query" | "product_description" | "field_answer"
     reason: 一句分类理由 (可审计)
-    extraction: {problem, user, core_features:list, name, platform} — 可空
+    extraction: {problem, user, core_features:list, name, platform,
+      usage_scenarios, mvp_scope, non_functional_requirements} — 可空
     missing_reasons: 必填缺失字段 → 为什么缺 (智能追问依据)
     smart_questions: ≤3 条针对性追问 (追问时只取最重要 1 条)
     proactive: {platform, competitors, scope, notes} — 用户没说但该有的
@@ -148,6 +154,11 @@ class DiscoveryIntentAnalyzer:
                     f"无可用 LLM provider (发现阶段规则兜底): {exc}"
                 ) from exc
         self._llm_fn = llm_fn
+
+    @property
+    def llm_fn(self) -> Optional[Callable[..., Any]]:
+        """装配的 LLM 调用函数 (供命名等复用同一 llm_fn — S10-100 命名 LLM-gated)。"""
+        return self._llm_fn
 
     # ------------------------------------------------------------ 主入口
 
@@ -281,7 +292,8 @@ class DiscoveryIntentAnalyzer:
 
     @classmethod
     def _normalize_extraction(cls, raw: Any) -> dict[str, Any]:
-        """extraction 归一化: 非 dict → 空; 缺字段补空; core_features 列表化。"""
+        """extraction 归一化: 非 dict → 空; 缺字段补空; core_features 列表化;
+        字符串字段若为 list → 顿号连接 (宽容)。"""
         if not isinstance(raw, dict):
             raw = {}
         out: dict[str, Any] = {}
@@ -289,6 +301,10 @@ class DiscoveryIntentAnalyzer:
             value = raw.get(key)
             if key == "core_features":
                 out[key] = parse_core_features(value)
+            elif isinstance(value, list):
+                out[key] = "、".join(
+                    str(v).strip() for v in value if str(v or "").strip()
+                )
             else:
                 out[key] = str(value or "").strip() if value not in (None, "") else ""
         return out

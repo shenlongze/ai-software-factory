@@ -5,7 +5,36 @@
 
 ---
 
-## [v1.1.20] — 2026-08-24
+## [v1.1.21] — 2026-08-24
+
+**DiscoverySession 同步 LLM 化**（S10-100）: "开始做X/我想做X" 发现路径与 conversation 路径行为对齐 —
+LLM 一次产出 + 智能追问 + 理解摘要 + 主动分析, 无 LLM 规则兜底（逐字段零变化）。
+
+### Added
+
+- **DiscoverySession LLM 集成**（`discovery.py`）— 复用 `DiscoveryIntentAnalyzer`（同 conversation 模式）
+  - `start("开始做个记账App")` → LLM 提取 7 字段一次填 → 必填齐直达 READY /
+    缺则智能追问 1 条（带 "为什么还问" 理由）
+  - `process_user_input` LLM 分流: product_description 提取合并（只填缺失不覆盖, v1.1.19 边界）·
+    field_answer 并入既有 apply（当前字段）· control(取消类) → cancel ·
+    control(非取消)/query → 不当作字段重问当前问题（模型层不逃生）
+  - 确认门: 理解摘要首行 + 需求摘要 + 建议名称候选 + 主动建议 + 确认提示（ai_generated 诚实标记）;
+    无 LLM → 现有消息逐字节不变
+  - 命名 LLM-gated: 临时名 + analyzer 可用 → suggest_names 候选1设名 + 展示候选;
+    无 LLM → 临时名保留
+  - 持久化: to_dict/from_dict 新增 `_last_system_question/_ai_generated/_understanding/_proactive`
+    （旧会话文件缺省兼容, 不崩）
+- **analyzer 契约扩展**（`discovery_intelligence.py`）— `EXTRACTION_FIELDS` +=
+  `usage_scenarios/mvp_scope/non_functional_requirements`（可选键, 明确提到才填, 否则留空）;
+  prompt 输出 schema 同步 + 规则行; 归一化补默认; conversation 路径只读 5 键, 零行为变化
+
+### 测试
+
+- `tests/console/test_discovery_session_llm.py` 26 用例（一次产出/智能追问带理由/回答并入不覆盖/
+  理解摘要+主动分析/无 LLM 零变化/控制查询不当字段/非法输出降级/持久化 round-trip/命名/analyzer 扩展）
+- 既有 108 discovery + 35 analyzer + conversation 契约测试 0 破
+
+
 
 **LLMIntentParser — 普通对话 LLM 理解意图**（S10-046 §3 Q1 预留扩展点落地）: 每轮对话 LLM 介入。
 

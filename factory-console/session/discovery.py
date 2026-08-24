@@ -14,6 +14,13 @@ Interactive Discovery 模型层: idea → 多轮澄清 → summary → confirm �
   cancel / save / load / list_sessions / resume
 - DiscoveryStateError / SessionNotFoundError — 非法状态流转/会话缺失明确报错
 
+S10-100 (同步 LLM 化, 与 conversation 发现路径对齐):
+- 复用 DiscoveryIntentAnalyzer (discovery_intelligence.py) — 一次产出/智能追问/
+  理解摘要/主动分析; analyzer 注入 (测试用) + 懒装配; None/失败 → 规则兜底
+  (现有逐字段行为逐字节不变, 诚实降级不伪造)
+- LLM 路径标记 _ai_generated; 确认门消息 = 理解摘要首行 + to_text() + 建议名称
+  候选 + 主动建议 + 确认提示; 命名 LLM-gated (临时名 + analyzer 可用 → 候选设名)
+
 字段追问顺序 (S10-065 增强): problem → user → core_features → usage_scenarios →
 mvp_scope → non_functional_requirements (在 S10-050 的 problem/user/core_features
 基础上增加 usage_scenarios/mvp_scope/non_functional_requirements — 可选但建议)。
@@ -78,6 +85,15 @@ SESSIONS_FILE_NAME = "discovery_sessions.json"
 
 #: 确认提示 (READY_FOR_CONFIRMATION 后输入引导)
 _CONFIRM_PROMPT = "请确认产品需求 — 输入 y 确认创建 / n 重新描述 (或 /cancel 取消)"
+
+#: S10-100: 发现 LLM 分析器懒装配哨兵 (区分 "未装配" 与 "显式 None=规则兜底")
+_ANALYZER_UNSET = object()
+
+#: S10-100: LLM category=control 取消类关键词 (模糊改写 → cancel; 其余控制 → 重问)
+_CANCEL_KEYWORDS: tuple[str, ...] = (
+    "取消", "算了", "不做了", "不要了", "不想做了", "停止",
+    "放弃", "退出", "重新开始", "重新描述", "重来",
+)
 
 
 class DiscoveryState:
@@ -231,6 +247,7 @@ class DiscoverySession:
         workspace_id: str = "",
         idea: str = "",
         ask_enhanced: bool = True,
+        analyzer: Optional[Any] = None,
     ) -> None:
         self.session_id = session_id or str(uuid.uuid4())
         self.workspace_id = str(workspace_id or "")
@@ -251,6 +268,19 @@ class DiscoverySession:
         #: 待追问字段队列 (按 FIELD_ORDER; ask_enhanced=False → 仅必填)
         self._pending_fields: list[str] = list(FIELD_ORDER if ask_enhanced else REQUIRED_FIELDS)
         self._ask_enhanced = bool(ask_enhanced)
+        #: S10-100: 发现 LLM 分析器 — 注入/懒装配; None/失败 = 规则兜底 (诚实降级)
+        self._analyzer_override: Any = analyzer
+        self._analyzer: Any = _ANALYZER_UNSET
+        #: S10-100: 多轮字段合并边界 (v1.1.19 模式) — 上一轮系统追问
+        self._last_system_question: str = ""
+        #: S10-100: LLM 真产出标记 / 理解摘要 / 主动分析 (确认门展示)
+        self._ai_generated: bool = False
+        self._understanding: str = ""
+        self._proactive: dict[str, Any] = {}
+        #: S10-100: LLM 智能追问消息 (当前待问字段展示文本; 空 = 机械模板)
+        self._llm_question_text: str = ""
+        #: S10-100: 建议名称候选 (LLM-gated 命名展示; 空 = 无候选)
+        self._name_candidates: list[str] = []
 
     # ------------------------------------------------------------ start
 
@@ -262,33 +292,46 @@ class DiscoverySession:
         workspace_id: str = "",
         ask_enhanced: bool = True,
         session_id: Optional[str] = None,
+        analyzer: Optional[Any] = None,
     ) -> "DiscoverySession":
         """开始一个发现会话: 初始化 + 第一个问题 (problem 追问)。
 
         ask_enhanced=False → 只追问必填 3 字段 (S10-050 兼容口径);
         缺省 True → 必填 + 增强字段 (usage_scenarios/mvp_scope/non_functional)。
+
+        S10-100: analyzer 可用 → analyze(idea) → 必填齐直达 READY (理解摘要+
+        建议名称候选+主动建议) / 缺 → 智能追问 1 条带理由; analyzer None/失败 →
+        现有第一问 (零变化)。
         """
         session = cls(
             session_id=session_id,
             workspace_id=workspace_id,
             idea=idea,
             ask_enhanced=ask_enhanced,
+            analyzer=analyzer,
         )
-        first = session._next_question()
-        if first is not None:
-            session.questions.append(first)
+        handled = session._start_llm(idea)
+        if not handled:
+            first = session._next_question()
+            if first is not None:
+                session.questions.append(first)
+                session._last_system_question = first.question
         return session
 
     # ------------------------------------------------------------ 追问
 
     def _next_question(self) -> Optional[DiscoveryQuestion]:
-        """当前应追问的问题 (队列首字段); 队列空 → None。"""
+        """当前应追问的问题 (队列首字段); 队列空 → None。
+
+        S10-100: LLM 智能追问文本优先 (_llm_question_text); 否则机械模板。
+        """
         if not self._pending_fields:
             return None
         field_name = self._pending_fields[0]
+        question = self._llm_question_text or self.generate_question(field_name)
         return DiscoveryQuestion(
             field=field_name,
-            question=self.generate_question(field_name),
+            question=question,
             required=field_name in REQUIRED_FIELDS,
             hint=FIELD_HINTS.get(field_name, ""),
         )
@@ -340,11 +383,18 @@ class DiscoverySession:
 
         流转 (设计 §2 口径):
         1. 空/纯空白回答 → 拒绝 + 重新问 (不静默跳过, 不推进字段)
-        2. 正常回答 → apply_answer 当前字段 → 队列推进:
+        2. S10-100: analyzer 可用 → analyze(text, system_question=最近问题):
+           - product_description → 提取合并 (只填缺失不覆盖) → 必填齐 READY /
+             仍缺 智能追问 (带理由)
+           - field_answer → 并入现有 apply 逻辑 (当前字段, 不覆盖其它)
+           - control → 取消类 cancel(); 其余 → 不当作字段, 重问当前问题
+           - query → 不当作字段, 重问当前问题 (模型层不逃生)
+           analyzer None/失败 → 现有逻辑 (零变化)
+        3. 正常回答 → apply_answer 当前字段 → 队列推进:
            - 队列空 → READY_FOR_CONFIRMATION + build_summary + 确认提示
            - 还有字段 → CLARIFYING + 下一问 (必填齐全后仍建议增强字段)
-        3. READY_FOR_CONFIRMATION/CONFIRMED 后输入 → 确认引导 (不误食为答案)
-        4. PRODUCT_CREATED/CANCELLED 终态 → 提示 (不崩溃)
+        4. READY_FOR_CONFIRMATION/CONFIRMED 后输入 → 确认引导 (不误食为答案)
+        5. PRODUCT_CREATED/CANCELLED 终态 → 提示 (不崩溃)
         """
         if self.current_state in (DiscoveryState.READY_FOR_CONFIRMATION, DiscoveryState.CONFIRMED):
             return self._confirm_prompt_response()
@@ -362,6 +412,13 @@ class DiscoverySession:
         raw = (text or "").strip()
         if not raw:
             return self._reject_response("回答不能为空 — 请补充当前问题")
+        # S10-100: LLM 意图分流 (失败/None → 规则兜底, 现有逻辑逐字节不变)
+        analysis = self._analyze_llm(raw)
+        if analysis is not None:
+            resp = self._handle_llm_analysis(analysis, raw)
+            if resp is not None:
+                return resp
+        # 现有规则逻辑 (analyzer None/失败 → 逐字段零变化)
         question = self._next_question()
         if question is None:
             # 防御: 队列空但状态未就绪 (状态异常) → 回到确认
@@ -369,12 +426,14 @@ class DiscoverySession:
         self.apply_answer(question.field, raw)
         if self._pending_fields:
             self._pending_fields.pop(0)
+        self._llm_question_text = ""  # 已回答当前追问 → 下一问回归模板/新智能追问
         self.detect_missing_fields()
         nxt = self._next_question()
         if nxt is None:
             return self._ready_response()
         self.current_state = DiscoveryState.CLARIFYING
         self.questions.append(nxt)
+        self._last_system_question = nxt.question
         return {
             "state": self.current_state,
             "question": nxt,
@@ -383,11 +442,225 @@ class DiscoverySession:
             "message": nxt.question,
         }
 
+    # ------------------------------------------------------------ S10-100: LLM 分流
+
+    def _get_analyzer(self):
+        """发现 LLM 分析器 (懒装配 + 缓存; 注入优先)。
+
+        装配失败 (无 provider/key) → None → 现有规则行为逐字节不变 (验收 3)。
+        """
+        if self._analyzer is not _ANALYZER_UNSET:
+            return self._analyzer
+        if self._analyzer_override is not None:
+            self._analyzer = self._analyzer_override
+        else:
+            try:
+                from .discovery_intelligence import DiscoveryIntentAnalyzer
+
+                self._analyzer = DiscoveryIntentAnalyzer()
+            except Exception:  # noqa: BLE001 — 无 key/provider → 规则兜底
+                self._analyzer = None
+        return self._analyzer
+
+    def _analyze_llm(self, text: str):
+        """LLM 可用 → analyze; 不可用/失败 → None (规则兜底, 诚实降级, 不伪造)。"""
+        analyzer = self._get_analyzer()
+        if analyzer is None:
+            return None
+        try:
+            return analyzer.analyze(
+                text, system_question=self._last_system_question
+            )
+        except Exception:  # noqa: BLE001 — LLM 失败 → 规则兜底 (永不 5xx)
+            return None
+
+    def _start_llm(self, idea: str) -> bool:
+        """start() 初始描述即解析 (验收 1): product_description/field_answer →
+        提取合并 (READY / 智能追问); 其它类别/失败 → False (规则第一问, 零变化)。"""
+        analysis = self._analyze_llm(idea)
+        if analysis is None:
+            return False
+        category = str(getattr(analysis, "category", "") or "")
+        if category in ("product_description", "field_answer"):
+            self._apply_llm_extraction(analysis)
+            return True
+        return False
+
+    def _handle_llm_analysis(self, analysis, text: str) -> Optional[dict[str, Any]]:
+        """LLM 意图分流 (计划 §2.3): control/query 不当字段; product_description
+        提取合并; field_answer → None (并入既有规则逻辑, 当前字段不覆盖其它)。"""
+        category = str(getattr(analysis, "category", "") or "")
+        if category == "control":
+            if self._is_cancel_control(text):
+                return self._cancel_response()
+            return self._requestion_response(
+                "这看起来是控制指令, 不是需求信息 — 请继续回答当前问题"
+            )
+        if category == "query":
+            return self._requestion_response(
+                "这看起来是查询, 不是需求信息 — 请继续回答当前问题"
+            )
+        if category == "product_description":
+            return self._apply_llm_extraction(analysis)
+        return None  # field_answer → 并入既有规则逻辑
+
+    @staticmethod
+    def _is_cancel_control(text: str) -> bool:
+        """LLM category=control → 取消类关键词命中 (模糊改写 → cancel)。"""
+        norm = str(text or "").strip()
+        return any(keyword in norm for keyword in _CANCEL_KEYWORDS)
+
+    def _cancel_response(self) -> dict[str, Any]:
+        """LLM control(取消) → cancel → CANCELLED 响应。"""
+        self.cancel()
+        return {
+            "state": self.current_state,
+            "question": None,
+            "summary": self.summary,
+            "missing_fields": self.detect_missing_fields(),
+            "message": "已取消产品需求确认。",
+        }
+
+    def _requestion_response(self, note: str) -> dict[str, Any]:
+        """LLM control(非取消)/query → 不当作字段, 重问当前问题 (模型层不逃生)。"""
+        question = self._next_question()
+        if question is not None:
+            self._last_system_question = question.question
+        message = f"{note}\n{question.question}" if question else note
+        return {
+            "state": self.current_state,
+            "question": question,
+            "summary": self.summary,
+            "missing_fields": self.detect_missing_fields(),
+            "message": message,
+        }
+
+    def _apply_llm_extraction(self, analysis) -> dict[str, Any]:
+        """LLM 结构化提取合并 (计划 §2.3): 只填缺失字段, pending 只留真正缺失。
+
+        - 必填齐 → READY (理解摘要+主动建议+命名候选, ai_generated 标记)
+        - 仍缺 → 智能追问 (最重要 1 条, 带为什么缺)
+        """
+        self._apply_extraction(analysis.extraction or {})
+        order = FIELD_ORDER if self._ask_enhanced else REQUIRED_FIELDS
+        self._pending_fields = [
+            field for field in order if not self._field_filled(field)
+        ]
+        self._ai_generated = True
+        self._understanding = str(
+            getattr(analysis, "understanding", "") or ""
+        ).strip()
+        self._proactive = dict(getattr(analysis, "proactive", None) or {})
+        if self.required_filled():
+            return self._ready_response()
+        return self._llm_smart_question_response(analysis)
+
+    def _apply_extraction(self, extraction: dict) -> None:
+        """把 LLM 提取结果并入 (只填非空且未填字段 — 不覆盖用户已给, v1.1.19 边界)。
+
+        problem/user/core_features/platform/name → ProductIntent (name 仅临时名
+        可换); usage_scenarios/mvp_scope/non_functional_requirements → answers。
+        """
+        from .naming import is_temp_name
+
+        pi = self.product_intent
+        problem = str(extraction.get("problem") or "").strip()
+        if problem and not pi.problem:
+            pi.problem = problem
+        user = str(extraction.get("user") or "").strip()
+        if user and not pi.user:
+            pi.user = user
+        features = extraction.get("core_features") or []
+        if features and not pi.core_features:
+            pi.core_features = parse_core_features(features)
+        name = str(extraction.get("name") or "").strip()
+        if name and (not pi.name or is_temp_name(pi.name)):
+            pi.name = name
+        platform = str(extraction.get("platform") or "").strip()
+        if platform and not pi.platform:
+            pi.platform = platform
+        for key in ("usage_scenarios", "mvp_scope", "non_functional_requirements"):
+            value = str(extraction.get(key) or "").strip()
+            if value and not self.answers.get(key, ""):
+                self.answers[key] = value
+        self.updated_at = _now_iso()
+
+    def _field_filled(self, field: str) -> bool:
+        """字段是否有值 (core_features 非空列表; 其余非 None/非空串)。"""
+        if field == "core_features":
+            return bool(self.product_intent.core_features)
+        if field in ("problem", "user"):
+            return bool(getattr(self.product_intent, field, ""))
+        if field in ("usage_scenarios", "mvp_scope", "non_functional_requirements"):
+            return bool(self.answers.get(field, ""))
+        return False
+
+    def _llm_smart_question_response(self, analysis) -> dict[str, Any]:
+        """智能追问: 只问最重要 1 条 (LLM 产出), 带为什么缺 (missing_reasons 话术)。
+
+        无 LLM 追问内容 → 机械模板兜底 (现有第一问, 逐字节不变)。
+        """
+        question = ""
+        for q in (analysis.smart_questions or []):
+            if str(q or "").strip():
+                question = str(q).strip()
+                break
+        missing = self._pending_fields[0] if self._pending_fields else ""
+        reason = str((analysis.missing_reasons or {}).get(missing) or "").strip()
+        if question:
+            message = question
+            if reason:
+                message = f"{question}\n(为什么还问: {reason})"
+        else:
+            nxt = self._next_question()
+            message = nxt.question if nxt else ""
+        self.current_state = DiscoveryState.CLARIFYING
+        self._last_system_question = question or message
+        self._llm_question_text = message
+        q_item = DiscoveryQuestion(
+            field=missing or "",
+            question=message,
+            required=(missing in REQUIRED_FIELDS),
+            hint=FIELD_HINTS.get(missing or "", ""),
+        )
+        self.questions.append(q_item)
+        return {
+            "state": self.current_state,
+            "question": q_item,
+            "summary": self.summary,
+            "missing_fields": self.detect_missing_fields(),
+            "message": message,
+        }
+
+    @staticmethod
+    def _format_proactive_line(proactive: Optional[dict]) -> str:
+        """主动分析展示行: "主动建议: 平台=.. · 竞品=.. · 范围=.. · 备注=.."。"""
+        if not proactive:
+            return ""
+        parts = []
+        for key, label in (
+            ("platform", "平台"),
+            ("competitors", "竞品"),
+            ("scope", "范围"),
+            ("notes", "备注"),
+        ):
+            value = proactive.get(key)
+            if isinstance(value, list):
+                value = "、".join(
+                    str(v).strip() for v in value if str(v or "").strip()
+                )
+            value = str(value or "").strip()
+            if value:
+                parts.append(f"{label}={value}")
+        return "主动建议: " + " · ".join(parts) if parts else ""
+
     # ------------------------------------------------------------ 内部响应
 
     def _reject_response(self, message: str) -> dict[str, Any]:
         """空回答拒绝: 状态不变, 重新问当前问题。"""
         question = self._next_question()
+        if question is not None:
+            self._last_system_question = question.question
         return {
             "state": self.current_state,
             "question": question,
@@ -397,16 +670,68 @@ class DiscoverySession:
         }
 
     def _ready_response(self) -> dict[str, Any]:
-        """必填/全部字段收集完毕 → READY_FOR_CONFIRMATION + 摘要 + 确认提示。"""
+        """必填/全部字段收集完毕 → READY_FOR_CONFIRMATION + 摘要 + 确认提示。
+
+        S10-100: LLM 真产出 (ai_generated) → 命名候选 + 理解摘要/主动建议消息;
+        否则现有消息逐字节不变 (验收 3)。
+        """
         self.current_state = DiscoveryState.READY_FOR_CONFIRMATION
         self.summary = self.build_summary()
+        if self._ai_generated:
+            self._maybe_suggest_names()
+            self.summary = self.build_summary()  # 名称可能已换为候选1
         return {
             "state": self.current_state,
             "question": None,
             "summary": self.summary,
             "missing_fields": [],
-            "message": f"{self.summary.to_text()}\n{_CONFIRM_PROMPT}",
+            "message": self._ready_message(),
         }
+
+    def _ready_message(self) -> str:
+        """READY 确认消息: LLM 真产出 → 理解摘要首行 + to_text() + 建议名称候选
+        + 主动建议 + 确认提示; 否则现有消息逐字节不变。"""
+        base = f"{self.summary.to_text()}\n{_CONFIRM_PROMPT}"
+        if not self._ai_generated:
+            return base
+        lines: list[str] = []
+        if self._understanding:
+            lines.append(self._understanding)
+        lines.append(self.summary.to_text())
+        if self._name_candidates:
+            lines.append(f"建议名称: {self.product_intent.name or '(未命名)'}")
+            for idx, cand in enumerate(self._name_candidates, 1):
+                lines.append(f"  {idx}. {cand}")
+            lines.append("输入 1-3 选择候选, 或直接输入新名称, 或 y 确认")
+        proactive_line = self._format_proactive_line(self._proactive)
+        if proactive_line:
+            lines.append(proactive_line)
+        lines.append(_CONFIRM_PROMPT)
+        return "\n".join(lines)
+
+    def _maybe_suggest_names(self) -> None:
+        """LLM-gated 命名 (计划 §2.4): ai_generated 且 name 是临时名且 analyzer
+        可用 → suggest_names (analyzer 同一 llm_fn) → 候选1设名 + 展示候选;
+        无 LLM → 临时名保留 (当前行为, 零变化)。"""
+        if not self._ai_generated:
+            return
+        from .naming import is_temp_name, suggest_names
+
+        pi = self.product_intent
+        if not pi.name or not is_temp_name(pi.name):
+            return
+        analyzer = self._get_analyzer()
+        if analyzer is None:
+            return
+        llm_fn = getattr(analyzer, "llm_fn", None)
+        desc = pi.raw or pi.problem or ""
+        try:
+            candidates = suggest_names(desc, llm_fn=llm_fn, limit=3)
+        except Exception:  # noqa: BLE001 — 命名失败 → 保留临时名 (极兜底)
+            candidates = []
+        if candidates:
+            pi.name = candidates[0]
+            self._name_candidates = list(candidates)
 
     def _confirm_prompt_response(self) -> dict[str, Any]:
         """确认/已确认后的输入 → 确认引导 (不误食为答案)。"""
@@ -529,6 +854,10 @@ class DiscoverySession:
             "updated_at": self.updated_at,
             "_pending_fields": list(self._pending_fields),
             "_ask_enhanced": bool(self._ask_enhanced),
+            "_last_system_question": self._last_system_question,
+            "_ai_generated": bool(self._ai_generated),
+            "_understanding": self._understanding,
+            "_proactive": dict(self._proactive),
         }
 
     @classmethod
@@ -588,6 +917,16 @@ class DiscoverySession:
         pending = data.get("_pending_fields")
         if isinstance(pending, list):
             session._pending_fields = [str(f) for f in pending]
+        # S10-100: LLM 状态字段 (旧会话文件缺省 → 默认值, 兼容不崩)
+        session._last_system_question = str(data.get("_last_system_question") or "")
+        session._ai_generated = bool(data.get("_ai_generated", False))
+        session._understanding = str(data.get("_understanding") or "")
+        proactive = data.get("_proactive")
+        session._proactive = (
+            {str(k): str(v) for k, v in proactive.items()}
+            if isinstance(proactive, dict)
+            else {}
+        )
         return session
 
     @staticmethod

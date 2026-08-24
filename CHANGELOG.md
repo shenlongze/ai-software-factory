@@ -3,6 +3,23 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.59] — 2026-08-24
+
+**Board 汇报/AI 主线面板也支持项目选择（Founder: 都需要）**。
+
+### Fixed
+
+- **汇报页导航跟随项目**: render_report_html nav 用 project_id, 选择器选中当前项目,
+  report tab 带 ?project=
+- **AI 主线面板带项目选择器**: render_board_html 加 project 参数, 缺省读会话当前
+  项目 (session_state), 选择器正确选中; 可随时切到项目视图
+- 修正 render_board_html 导航 active 键 (main → mainline) 与项目列表/单项目
+  active 键 (projects → project), 统一 _board_nav 键体系
+
+### 验证
+
+- 2 新契约测试 (AI主线选择器选中当前/汇报导航跟随) · 全量回归 0 新增失败
+
 ## [v1.1.58] — 2026-08-24
 
 **Board 生命线/汇报项目化（Founder 选方案 A: 凡有 project_id 维度即跟随项目选择）**。

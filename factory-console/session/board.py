@@ -317,7 +317,7 @@ def render_report(path: Path = DEFAULT_BACKLOG) -> str:
 
 # ---------------------------------------------------------------- HTML 可视化面板
 
-def render_board_html(path: Path = DEFAULT_BACKLOG, workspace: Optional[Path | str] = None) -> str:
+def render_board_html(path: Path = DEFAULT_BACKLOG, workspace: Optional[Path | str] = None, project: str = "") -> str:
     """HTML 可视化面板（进度条/标签/分组卡片, 浏览器自适应）。
 
     /api/board 返回 HTML 而非 JSON — 浏览器直接看监控面板。
@@ -333,6 +333,10 @@ def render_board_html(path: Path = DEFAULT_BACKLOG, workspace: Optional[Path | s
     side_count = sum(len(g["tasks"]) for g in groups if g["id"] in SIDE_GROUPS)
     # S10-110 P0-2: 项目监控聚合指标 (workspace 缺省 None → 不显示, 向后兼容)
     stats = dashboard_stats(workspace) if workspace is not None else None
+    # AI 主线面板也要可用项目选择器: 缺省读会话当前项目 (Founder: 都需要)
+    cur_proj = str(Path(str(project or "")).name or "")
+    if not cur_proj and workspace is not None:
+        cur_proj = _read_session_current_project(workspace)
 
     def bar(pct_done: int, pct_total: int) -> str:
         w = round(pct_done / pct_total * 100) if pct_total else 0
@@ -434,7 +438,7 @@ def render_board_html(path: Path = DEFAULT_BACKLOG, workspace: Optional[Path | s
   .card:hover {{ transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,.4); transition: .2s; }}
   li:hover {{ color: #fff; }}
 </style></head><body>
-{_board_nav("main", "", workspace)}
+{_board_nav("mainline", cur_proj, workspace)}
 <h1>🎯 AI Factory 任务监控面板</h1>
 <div class="summary">
   <p>主线任务: <b>{done}/{total}</b> 完成 ({pct}%) {("⚠️ 有未完成" if done < total else "✅ 全部完成")}</p>
@@ -932,7 +936,7 @@ def render_report_html(path: Path = DEFAULT_BACKLOG, workspace: Optional[Path | 
   li {{ font-size: 13px; color: #b0b6bf; margin: 3px 0; }}
   p {{ color: #9aa0a6; font-size: 13px; }}
 </style></head><body>
-{_board_nav("report", "", workspace)}
+{_board_nav("report", slug, workspace)}
 {"".join(html_body)}
 <p style="margin-top:20px;color:#78909c">会话 /board report --save 可落盘为 markdown</p>
 {_auto_refresh_script(0)}</body></html>"""
@@ -1179,7 +1183,7 @@ def render_projects_list_html(workspace: Path | str) -> str:
   .pts {{ display: block; font-size: 11px; color: #78909c; margin-top: 6px; }}
   .empty {{ color: #9aa0a6; }}
 </style></head><body>
-{_board_nav("projects", "", workspace)}
+{_board_nav("project", "", workspace)}
 <h1>📁 项目列表（{len(projects)} 个）</h1>
 <p style="color:#9aa0a6;font-size:12px">点击项目卡片查看单项目管理视图（全生命周期）</p>
 <div class="grid">{"".join(cards)}</div>
@@ -1267,7 +1271,7 @@ def render_project_lifecycle_html(workspace: Path | str, project_id: str = "") -
   p {{ font-size: 13px; color: #b0b6bf; }}
   .back {{ color: #8ab4f8; text-decoration: none; font-size: 13px; }}
 </style></head><body>
-{_board_nav("projects", slug, workspace)}
+{_board_nav("project", slug, workspace)}
 <h1>📌 {info.get('name') or slug} <span style="font-size:12px;color:#78909c">({slug})</span></h1>
 <div class="card">
   <h2>🌱 全生命周期 {done_count}/{total} ({pct}%)</h2>

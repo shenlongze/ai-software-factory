@@ -809,8 +809,8 @@ def build_app(
             elif view == "projects":
                 html = board_mod.render_projects_list_html(workspace_root)
             elif view == "mainline":
-                # AI Factory 自身开发进度 (降级为显式入口, 不再是默认首页)
-                html = board_mod.render_board_html(workspace=workspace_root)
+                # AI Factory 自身开发进度 (显式入口; 页面仍带项目选择器)
+                html = board_mod.render_board_html(workspace=workspace_root, project=project)
             elif view == "report":
                 html = board_mod.render_report_html(workspace=workspace_root, project_id=project)
             else:

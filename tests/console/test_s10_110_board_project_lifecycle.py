@@ -579,3 +579,22 @@ class TestTimelineReportProjectized:
         nav = BOARD._board_nav("project", "a", tmp_path)
         assert "timeline?project=a" in nav
         assert "view=report&project=a" in nav
+
+
+# ================================================================== 汇报/AI主线也可选项目
+
+class TestReportMainlineSelect:
+    def test_mainline_nav_selects_current(self, tmp_path):
+        """AI 主线面板也带项目选择器, 缺省选中会话当前项目。"""
+        _mk_project(tmp_path, "a", name="项目A")
+        (tmp_path / "session_state.json").write_text(
+            json.dumps({"current_project": "a"}), encoding="utf-8")
+        html = BOARD.render_board_html(workspace=tmp_path)
+        assert 'value="a" selected' in html       # 选择器选中当前项目
+        assert "view=project&project=a" in html   # 可切到项目视图
+
+    def test_report_nav_follows_project(self, tmp_path):
+        _mk_project(tmp_path, "a", name="项目A")
+        html = BOARD.render_report_html(workspace=tmp_path, project_id="a")
+        assert 'value="a" selected' in html
+        assert "view=report&project=a" in html    # report tab 带项目

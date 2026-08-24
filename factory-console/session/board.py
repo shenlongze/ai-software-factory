@@ -1938,8 +1938,8 @@ def list_project_docs(workspace: Path | str, slug: str) -> list[dict[str, Any]]:
                 continue
             if any(part in _SKIP_DIRS for part in rel.parts):
                 continue
-            if f.name == ".DS_Store":
-                continue
+            if any(part.startswith(".") for part in rel.parts):
+                continue  # . 开头隐藏文件/目录 (.github/.git 等) 不展示
             rel_s = str(rel)
             try:
                 st = f.stat()
@@ -1970,8 +1970,8 @@ def list_project_docs(workspace: Path | str, slug: str) -> list[dict[str, Any]]:
             if not f.is_file():
                 continue
             rel = f.relative_to(pdir)
-            if ".git" in rel.parts:
-                continue
+            if ".git" in rel.parts or any(part.startswith(".") for part in rel.parts):
+                continue  # 隐藏文件/目录不展示
             rel_s = str(rel)
             if rel_s in PROJECT_DOC_TYPES:
                 continue  # 固定资产已列
@@ -2032,18 +2032,10 @@ def render_project_docs_html(workspace: Path | str, slug: str) -> str:
                 f'<td>{view}</td>'
                 f'<td class="m">{size}</td><td class="m">{ts}</td></tr>')
 
-    blocks = []
-    for folder in sorted(folders.keys()):
-        rows = "".join(_folder_row(d) for d in folders[folder])
-        title = "📁 根目录" if not folder else f"📁 {folder}/"
-        blocks.append(
-            f"<h3 style='font-size:13px;color:#8ab4f8;margin:12px 0 4px'>{title} "
-            f"<span style='color:#546e7a;font-size:11px'>({len(folders[folder])})</span></h3>"
-            f"<table><tr><th>文档</th><th>文件</th><th></th><th>大小</th><th>更新时间</th></tr>"
-            f"{rows}</table>"
-        )
-    all_table = "".join(blocks) if blocks else "<p>（项目暂无文档）</p>"
-    total_docs = sum(len(v) for v in folders.values())
+    # 文件树渲染 (可展开折叠) + 搜索
+    tree = _docs_tree(docs)
+    tree_html = _render_docs_tree(tree, slug) if docs else "<p>（项目暂无文档）</p>"
+    total_docs = len(docs)
     return f"""<!DOCTYPE html>
 <html lang="zh"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -2060,8 +2052,21 @@ def render_project_docs_html(workspace: Path | str, slug: str) -> str:
 {_board_nav("docs", slug, workspace)}
 <h1>📄 项目文档管理 — {name}</h1>
 {_data_source_html(workspace, slug, "docs")}
-<p class="hint">📂 目录: <code>{_project_docs_root(workspace, slug)}</code>{(" · 🌐 " + _project_repo_url(workspace, slug)) if _project_repo_url(workspace, slug) else ""}<br>项目文档共 <b>{total_docs}</b> 份（按目录结构, 扫描真实文件）· 点击"查看"渲染内容</p>
-{all_table}
+<p class="hint">📂 目录: <code>{_project_docs_root(workspace, slug)}</code>{(" · 🌐 " + _project_repo_url(workspace, slug)) if _project_repo_url(workspace, slug) else ""}<br>项目文档共 <b>{total_docs}</b> 份（文件树, 隐藏文件不显示）· 点击"查看"渲染内容</p>
+<input id="docsearch" placeholder="🔍 搜索文档 (文件名/路径包含)..." style="width:100%;box-sizing:border-box;background:#1a1e26;border:1px solid #2a2e37;color:#e6e6e6;border-radius:6px;padding:8px 12px;font-size:13px;margin-bottom:10px">
+<div id="doctree">{tree_html}</div>
+<script>
+document.getElementById('docsearch').addEventListener('input', function(){{
+  var q = this.value.trim().toLowerCase();
+  document.querySelectorAll('#doctree .filerow').forEach(function(r){{
+    r.style.display = (!q || r.dataset.name.indexOf(q) >= 0) ? '' : 'none';
+  }});
+  document.querySelectorAll('#doctree .dird').forEach(function(d){{
+    var show = d.textContent.toLowerCase().indexOf(q) >= 0;
+    d.style.display = (show || !q) ? '' : 'none';
+  }});
+}});
+</script>
 </body></html>"""
 def render_project_doc_view(workspace: Path | str, slug: str, doc_name: str) -> str:
     """项目文档查看 HTML: markdown 渲染 / JSON 格式化 (只读, 项目内路径安全)。
@@ -2376,3 +2381,48 @@ def _project_repo_url(workspace: Path | str, slug: str) -> str:
     """项目 git 地址 (product.json repo_url; 失败安全 → "")。"""
     info = _read_product_info(workspace, slug) or {}
     return str(info.get("repo_url") or "").strip()
+
+
+def _docs_tree(docs: list[dict[str, Any]]) -> dict[str, Any]:
+    """文档目录树: {dirs: {名: 子树}, files: [文档]} 递归 (folder 路径拆段)。"""
+    root: dict[str, Any] = {"dirs": {}, "files": []}
+    for d in docs:
+        folder = str(d.get("folder") or "")
+        parts = [p for p in folder.split("/") if p] if folder else []
+        node = root
+        for p in parts:
+            node = node["dirs"].setdefault(p, {"dirs": {}, "files": []})
+        node["files"].append(d)
+    return root
+
+
+def _render_docs_tree(node: dict[str, Any], slug: str) -> str:
+    """递归渲染文档目录树 (📁 目录可折叠 + 📄 文件行, 带 data-name 供搜索过滤)。"""
+    html = []
+    for name in sorted(node["dirs"].keys()):
+        sub = node["dirs"][name]
+        kids = _render_docs_tree(sub, slug)
+        cnt = len(sub["files"]) + sum(len(s2["files"]) for s2 in sub["dirs"].values())
+        html.append(
+            f'<div class="dird" data-name="{name}"><div class="dirrow"><span class="tgl" '
+            f'onclick="var k=this.parentElement.parentElement.querySelector(\'.dkids\');'
+            f'k.style.display=k.style.display==\'none\'?\'\':\'none\';'
+            f'this.textContent=this.textContent==\'▸\'?\'▾\':\'▸\'">▾</span>'
+            f'📁 {name} <span class="m">({cnt})</span></div>'
+            f'<div class="dkids">{kids}</div></div>'
+        )
+    for f in sorted(node["files"], key=lambda x: x["name"]):
+        icon = "📄" if f["kind"] == "md" else "📦"
+        size = f"{f['size']}B" if f["size"] < 1024 else f"{f['size']/1024:.1f}KB"
+        label = f.get("label") if f.get("label") and f["label"] != f["name"] else f["name"]
+        if f["kind"] in ("md", "json", "txt"):
+            view = (f'<a href="/api/board/doc?project={slug}&amp;doc={f["name"]}" '
+                    f'style="color:#8ab4f8">查看</a>')
+        else:
+            view = "<span class='m'>—</span>"
+        html.append(
+            f'<div class="filerow" data-name="{f["name"].lower()} {str(label).lower()}">'
+            f'<span class="fname">{icon} {label} <code class="fpath">{f["name"]}</code></span>'
+            f'<span class="fsize">{size}</span><span>{view}</span></div>'
+        )
+    return "".join(html)

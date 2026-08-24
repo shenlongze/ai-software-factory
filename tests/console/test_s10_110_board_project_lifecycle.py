@@ -622,6 +622,7 @@ class TestProjectDocs:
         html = BOARD.render_project_docs_html(tmp_path, "a")
         assert "项目文档管理" in html and "需求文档" in html
         assert "doc?project=a" in html  # 查看链接
+        assert "docsearch" in html
 
     def test_doc_view_markdown(self, tmp_path):
         self._proj(tmp_path)
@@ -879,8 +880,9 @@ class TestDocsScan:
     def test_docs_html_grouped(self, tmp_path):
         self._proj_with_extra(tmp_path)
         html = BOARD.render_project_docs_html(tmp_path, "a")
-        assert "📁 根目录" in html and "📁 docs/" in html  # 文件夹分组
+        assert "📁 docs" in html  # 文件树目录节点
         assert "README.md" in html and "指南.md" in html
+        assert "docsearch" in html  # 搜索框
 
     def test_view_arbitrary_doc_path_safe(self, tmp_path):
         self._proj_with_extra(tmp_path)
@@ -915,11 +917,9 @@ class TestDocsFolder:
     def test_docs_html_folder_grouped(self, tmp_path):
         self._proj(tmp_path)
         html = BOARD.render_project_docs_html(tmp_path, "a")
-        assert "📁 根目录" in html
-        assert "📁 docs/" in html
-        assert "📁 specs/" in html
-        # 文档在对应文件夹区块内
+        assert "📁 docs" in html and "📁 specs" in html  # 文件树目录节点
         assert "指南.md" in html and "架构.md" in html and "api.json" in html
+        assert "docsearch" in html  # 搜索
 
 
 # ================================================================== 文档全类型显示 (不过滤)
@@ -1014,3 +1014,46 @@ class TestDocsRepoRoot:
             ensure_ascii=False), encoding="utf-8")
         html = BOARD.render_project_docs_html(tmp_path, "a")
         assert str(wd) in html and "github.com/x/y" in html
+
+
+# ================================================================== 文件树 + 搜索 + 隐藏过滤
+
+class TestDocsTreeSearch:
+    def _proj(self, tmp_path):
+        wd = tmp_path / "repo"
+        (wd / "docs").mkdir(parents=True)
+        (wd / "README.md").write_text("# R", encoding="utf-8")
+        (wd / "docs" / "指南.md").write_text("# G", encoding="utf-8")
+        (wd / ".github").mkdir()
+        (wd / ".github" / "workflows").mkdir()
+        (wd / ".github" / "workflows" / "ci.md").write_text("x", encoding="utf-8")  # 隐藏目录
+        (wd / ".secret.md").write_text("x", encoding="utf-8")                        # 隐藏文件
+        pdir = tmp_path / "projects" / "a"
+        pdir.mkdir(parents=True)
+        (pdir / "product.json").write_text(json.dumps(
+            {"name": "项目A", "workspace_dir": str(wd)}, ensure_ascii=False), encoding="utf-8")
+        return tmp_path
+
+    def test_hidden_filtered(self, tmp_path):
+        self._proj(tmp_path)
+        docs = BOARD.list_project_docs(tmp_path, "a")
+        names = [d["name"] for d in docs]
+        assert "README.md" in names and "docs/指南.md" in names
+        assert not any(n.startswith(".github") for n in names)
+        assert ".secret.md" not in names
+
+    def test_docs_tree_structure(self, tmp_path):
+        self._proj(tmp_path)
+        docs = BOARD.list_project_docs(tmp_path, "a")
+        tree = BOARD._docs_tree(docs)
+        assert "docs" in tree["dirs"]
+        assert any(f["name"] == "README.md" for f in tree["files"])
+
+    def test_html_tree_search(self, tmp_path):
+        self._proj(tmp_path)
+        html = BOARD.render_project_docs_html(tmp_path, "a")
+        assert "📁 docs" in html          # 目录节点
+        assert 'class="tgl"' in html      # 可折叠
+        assert 'id="docsearch"' in html   # 搜索框
+        assert "指南.md" in html and "README.md" in html
+        assert ".github" not in html      # 隐藏已过滤

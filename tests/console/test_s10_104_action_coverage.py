@@ -11,7 +11,7 @@
 6. 无 LLM 规则兜底: 1/2/3/5 全部 analyzer=None (确定性规则, 不依赖/不伪造 LLM)
 7. LLM: mock analyze_confirmation 变体 → approve_next + 各 next_action 路由
 8. 宿主: next_action="prd" → PRD 执行; "feature_list"/"html"/"docs" → 信号注释 (不阻断创建)
-9. 版本 v1.1.70 (单源断言见 test_s10_074_deployment)
+9. 版本 v1.1.71 (单源断言见 test_s10_074_deployment)
 
 规则纯确定性 (DIRECT_ACTION / _parse_delete_command); LLM 只做补充分类 — 全部测试
 禁用真实 LLM (analyzer=None 或 mock llm_fn 注入 / _no_provider 规则兜底)。
@@ -475,10 +475,10 @@ class TestHostWiring:
 
 class TestVersion:
     def test_pyproject_version_bumped(self):
-        """契约点 9: pyproject 版本 v1.1.70 (单源断言见 test_s10_074_deployment)。"""
+        """契约点 9: pyproject 版本 v1.1.71 (单源断言见 test_s10_074_deployment)。"""
         import tomllib
 
         ver = tomllib.loads((_ROOT / "pyproject.toml").read_text(encoding="utf-8"))[
             "project"
         ]["version"]
-        assert ver == "1.1.70"
+        assert ver == "1.1.71"

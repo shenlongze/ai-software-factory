@@ -3,7 +3,22 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
-## [v1.1.33] — 2026-08-24
+## [v1.1.34] — 2026-08-24
+
+**/api/board HTML 可视化面板**: 进度条/标签/分组卡片, 浏览器自适应（Founder: 升级为 HTML 可视化）。
+
+### Added
+
+- **render_board_html**（`board.py`）— HTML 面板（纯标准库生成, 无模板依赖）
+  - 进度条（bar 百分比）· 标签色块（P0红/P1橙/主线蓝/周边灰）· 分组卡片
+  - 响应式（grid auto-fill, 桌面/手机/Pad 自适应）
+- **api_board 返回 HTMLResponse**（`fastapi_adapter.py`）— /api/board 浏览器直接看面板
+- 底部显示版本 + 会话 /board 更多视图提示
+
+### 验证
+
+- /api/board 返回完整 HTML（进度条 6/41 + 分组卡片 + 标签）
+
 
 **backend 启动修复（2 个 bug）**: /api/board 可访问。
 

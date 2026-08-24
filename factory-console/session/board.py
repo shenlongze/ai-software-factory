@@ -275,3 +275,92 @@ def render_report(path: Path = DEFAULT_BACKLOG) -> str:
     else:
         lines.append("- 主线全部完成, 进入下一里程碑")
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------- HTML 可视化面板
+
+def render_board_html(path: Path = DEFAULT_BACKLOG) -> str:
+    """HTML 可视化面板（进度条/标签/分组卡片, 浏览器自适应）。
+
+    /api/board 返回 HTML 而非 JSON — 浏览器直接看监控面板。
+    纯标准库生成（无外部模板依赖）; 数据同 render_board（_parse_backlog）。
+    """
+    groups = _parse_backlog(path)
+    if not groups:
+        return "<p>（未找到待办清单）</p>"
+    main_tasks = [t for g in groups if g["id"] in MAIN_GROUPS for t in g["tasks"]]
+    done = sum(1 for t in main_tasks if t["done"])
+    total = len(main_tasks)
+    pct = round(done / total * 100) if total else 0
+    side_count = sum(len(g["tasks"]) for g in groups if g["id"] in SIDE_GROUPS)
+
+    def bar(pct_done: int, pct_total: int) -> str:
+        w = round(pct_done / pct_total * 100) if pct_total else 0
+        return (
+            f'<div class="bar"><div class="bar-fill" style="width:{w}%"></div>'
+            f'<span class="bar-label">{pct_done}/{pct_total}</span></div>'
+        )
+
+    cards = []
+    for g in groups:
+        is_main = g["id"] in MAIN_GROUPS
+        g_done = sum(1 for t in g["tasks"] if t["done"])
+        g_total = len(g["tasks"])
+        cls = "main" if is_main else "side"
+        status = "✅" if g_done == g_total and g_total else "🚧"
+        tag = f'<span class="tag {"t-main" if is_main else "t-side"}">{"主线" if is_main else "周边"}</span>'
+        items = []
+        for t in g["tasks"]:
+            mark = "✅" if t["done"] else "⬜"
+            pri = f'<span class="tag t-{t["priority"].lower() if t["priority"] else "none"}">{t["priority"]}</span>' if t["priority"] else ""
+            items.append(f'<li class="{"done" if t["done"] else "todo"}">{mark} {t["id"]} {pri} {t["desc"]}</li>')
+        cards.append(
+            f'<div class="card {cls}"><h2>{g["id"]} {tag} {status} {bar(g_done, g_total)} <span class="title">{g["title"]}</span></h2>'
+            f'<ul>{"".join(items)}</ul></div>'
+        )
+
+    return f"""<!DOCTYPE html>
+<html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Factory 监控面板</title>
+<style>
+  body {{ font-family: -apple-system, system-ui, sans-serif; margin: 0; padding: 16px; background: #0f1115; color: #e6e6e6; }}
+  h1 {{ font-size: 20px; margin: 8px 0 4px; }}
+  .summary {{ background: #1a1d24; border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; }}
+  .summary p {{ margin: 4px 0; }}
+  .bar {{ background: #2a2e37; border-radius: 6px; height: 18px; position: relative; margin: 6px 0; }}
+  .bar-fill {{ background: #4caf50; border-radius: 6px; height: 100%; transition: width .4s; }}
+  .bar-fill.orange {{ background: #ff9800; }}
+  .bar-label {{ position: absolute; right: 6px; top: 1px; font-size: 11px; }}
+  .groups {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 12px; }}
+  .card {{ background: #1a1d24; border-radius: 10px; padding: 12px 14px; border-left: 4px solid #4caf50; }}
+  .card.side {{ border-left-color: #78909c; }}
+  .card h2 {{ font-size: 15px; margin: 0 0 8px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }}
+  .card h2 .title {{ color: #9aa0a6; font-size: 12px; width: 100%; }}
+  ul {{ list-style: none; margin: 0; padding: 0; max-height: 260px; overflow-y: auto; }}
+  li {{ font-size: 12px; padding: 3px 0; color: #b0b6bf; }}
+  li.done {{ color: #7cb57c; }}
+  .tag {{ font-size: 10px; padding: 2px 6px; border-radius: 4px; }}
+  .t-main {{ background: #1565c0; }} .t-side {{ background: #546e7a; }}
+  .t-p0 {{ background: #c62828; }} .t-p1 {{ background: #e65100; }} .t-p2 {{ background: #616161; }}
+  .side-tip {{ color: #78909c; font-size: 12px; margin-top: 12px; }}
+</style></head><body>
+<h1>🎯 AI Factory 任务监控面板</h1>
+<div class="summary">
+  <p>主线任务: <b>{done}/{total}</b> 完成 ({pct}%) {("⚠️ 有未完成" if done < total else "✅ 全部完成")}</p>
+  {bar(done, total)}
+  <p>周边(长期): {side_count} 项（非主线, 不阻塞）</p>
+</div>
+<div class="groups">{"".join(cards)}</div>
+<p class="side-tip">AI Factory v{_pkg_version_lite()} · 会话 /board 有更多视图（graph/chain/timeline/report）</p>
+</body></html>"""
+
+
+def _pkg_version_lite() -> str:
+    """轻量读版本（HTML 面板底部显示, 失败 → dev）。"""
+    try:
+        import tomllib
+        p = Path(__file__).resolve().parents[2] / "pyproject.toml"
+        return tomllib.loads(p.read_text(encoding="utf-8"))["project"]["version"]
+    except Exception:  # noqa: BLE001
+        return "dev"

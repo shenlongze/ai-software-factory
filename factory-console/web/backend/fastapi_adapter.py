@@ -713,19 +713,20 @@ def build_app(
         return {"name": "ai-software-factory", "version": _factory_version}
 
     @app.get("/api/board")
-    def api_board() -> dict[str, Any]:
-        """任务监控面板（S10-1xx: todolist/依赖图/生命线 — 懒加载渲染）。
+    def api_board():
+        """任务监控面板 HTML 可视化（S10-1xx: 进度条/标签/分组卡片, 浏览器自适应）。
 
-        BoardService 声明的访问端点; 返回 {ok, board: <纯文本面板>}。
+        BoardService 声明的访问端点; 返回 HTML 页面（非 JSON）—
+        浏览器直接看监控面板（桌面/手机/Pad 响应式）。
         """
-        board_mod = _console_import("session.board")
-        render_board = board_mod.render_board
+        from fastapi.responses import HTMLResponse
 
+        board_mod = _console_import("session.board")
         try:
-            board_text = render_board()
+            html = board_mod.render_board_html()
         except Exception:  # noqa: BLE001 — 面板失败 → 明确错误不 500
-            board_text = "（面板渲染失败）"
-        return {"ok": True, "board": board_text}
+            html = "<p>（面板渲染失败）</p>"
+        return HTMLResponse(content=html)
 
     @app.get("/api/dashboard")
     def api_dashboard() -> dict[str, Any]:

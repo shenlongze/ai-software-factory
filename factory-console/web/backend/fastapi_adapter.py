@@ -910,6 +910,21 @@ def build_app(
             html = "<p>（任务树渲染失败）</p>"
         return HTMLResponse(content=html)
 
+    @app.get("/api/agents")
+    def api_agents_list():
+        """Agent 清单 (只读 agents.json)。"""
+        import json as _json
+        from pathlib import Path as _P
+        f = _P(workspace_root) / "agents" / "agents.json"
+        try:
+            d = _json.loads(f.read_text(encoding="utf-8")) or {}
+        except Exception:  # noqa: BLE001
+            d = {}
+        agents = d.get("agents") if isinstance(d, dict) and "agents" in d else d
+        if isinstance(agents, dict):
+            return {"agents": list(agents.values()), "count": len(agents)}
+        return {"agents": [], "count": 0}
+
     @app.get("/api/board/timeline")
     def api_board_timeline(project: str = ""):
         """生命线 HTML（审计事件时间轴, 纯 CSS; ?project= 项目过滤）。"""
@@ -2107,8 +2122,28 @@ def build_app(
 
     @app.get("/api/skills")
     def api_list_skills() -> dict[str, Any]:
-        """Skill 清单 (GET — SkillRegistry 当前可用 Skill; 未装配 → [] 失败安全)。"""
-        return _api.list_skills(service, logger=event_logger)
+        """Skill 清单 (GET — SkillRegistry 内置 + skills.json 注册; 未装配 → [] 失败安全)。"""
+        import json as _json
+        from pathlib import Path as _P
+        result = _api.list_skills(service, logger=event_logger)
+        skills = result.get("skills") if isinstance(result, dict) else result
+        if not isinstance(skills, list):
+            skills = []
+        # 合并 skills.json 注册的外置 skill (v1.1.78 管理命令写入)
+        try:
+            f = _P(workspace_root) / "skills" / "skills.json"
+            d = _json.loads(f.read_text(encoding="utf-8")) or {}
+            reg = d.get("skills") if isinstance(d, dict) and "skills" in d else d
+            if isinstance(reg, dict):
+                known = {s.get("id") for s in skills if isinstance(s, dict)}
+                for sid, sv in reg.items():
+                    if sid not in known and isinstance(sv, dict):
+                        skills.append({"id": sid, "name": sv.get("name", sid),
+                                       "category": sv.get("category", ""),
+                                       "version": sv.get("version", "1.0")})
+        except Exception:  # noqa: BLE001
+            pass
+        return {"skills": skills, "count": len(skills)}
 
     @app.get("/api/agents/{agent_id}/skills")
     def api_agent_skills(agent_id: str) -> dict[str, Any]:

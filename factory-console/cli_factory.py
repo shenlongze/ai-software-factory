@@ -695,13 +695,25 @@ def _write_config_file(path: Path, data: dict[str, Any]) -> None:
     os.replace(tmp, path)
 
 
+def _write_json_file(path: Path, data: Any) -> None:
+    """原子写 JSON (临时文件 + os.replace — 同 _write_config_file 模式)。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.parent / f".{path.name}.{os.getpid()}.tmp"
+    tmp.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    os.replace(tmp, path)
+
+
 def _agent_rows(data_dir: Path) -> list[dict[str, Any]]:
     """agents/agents.json → 行 dict 列表 (id/name/role/skills); 缺失/损坏 → []。
 
     兼容 dict (按 id 索引) 与 list 两种存储形态; 只取展示字段, 不加工。
     """
     data = _load_json_safe(data_dir / "agents" / "agents.json")
-    if isinstance(data, dict):
+    if isinstance(data, dict) and "agents" in data and isinstance(data["agents"], dict):
+        data = list(data["agents"].values())
+    elif isinstance(data, dict):
         data = list(data.values())
     if not isinstance(data, list):
         return []
@@ -739,6 +751,8 @@ def _skill_rows(data_dir: Path) -> list[dict[str, Any]]:
         }
 
     data = _load_json_safe(data_dir / "skills" / "skills.json")
+    if isinstance(data, dict) and "skills" in data and isinstance(data["skills"], dict):
+        data = list(data["skills"].values())
     if isinstance(data, dict):
         data = list(data.values())
     if isinstance(data, list):
@@ -1830,12 +1844,13 @@ class FactoryCLI:
     # ------------------------------------------------------------- 命令组骨架 (S10-026 Task C)
 
     def agent(self, args: argparse.Namespace) -> int:
-        """Agent 管理骨架 (只读): 列出现有 agents (id/name/role/skills)。
-
-        数据源: <data_dir>/agents/agents.json; 缺失/损坏 → 空列表提示,
-        不报错 (薄代理, 无新业务逻辑)。
-        """
-        print("=== Agent 管理 (骨架, 只读) ===")
+        """Agent 管理 (list/add/remove): 列表 / 注册 / 移除 (agents.json)。"""
+        action = getattr(args, "agent_action", "list") or "list"
+        if action == "add":
+            return self._agent_add(args)
+        if action == "remove":
+            return self._agent_remove(args)
+        print("=== Agent 管理 (list) ===")
         rows = _agent_rows(self.data_dir)
         if not rows:
             print("  无 agents 数据 (空列表)")
@@ -1848,12 +1863,62 @@ class FactoryCLI:
         print(f"  共 {len(rows)} 个 agent")
         return 0
 
-    def skill(self, args: argparse.Namespace) -> int:
-        """Skill 管理骨架 (只读): 列出现有 skills (id/name/category/version)。
+    def _agent_add(self, args: argparse.Namespace) -> int:
+        """factory agent add --id --role --skills — 注册 Agent (写 agents.json)。"""
+        aid = str(getattr(args, "id", "") or "").strip()
+        role = str(getattr(args, "role", "") or "").strip()
+        if not aid or not role:
+            print("用法: factory agent add --id <id> --role <role> [--skills a,b,c]")
+            return 2
+        file = self.data_dir / "agents" / "agents.json"
+        file.parent.mkdir(parents=True, exist_ok=True)
+        data = _load_json_safe(file)
+        if not isinstance(data, dict):
+            data = {}
+        if "agents" not in data or not isinstance(data["agents"], dict):
+            data["agents"] = {}
+        skills = [x.strip() for x in str(getattr(args, "skills", "") or "").split(",") if x.strip()]
+        data["agents"][aid] = {"id": aid, "name": aid, "role": role, "skills": skills}
+        try:
+            _write_json_file(file, data)
+        except Exception as exc:  # noqa: BLE001
+            print(f"❌ 写入失败: {exc}")
+            return 1
+        print(f"✅ Agent 已注册: {aid} (role={role}, skills={skills})")
+        return 0
 
-        数据源: <data_dir>/skills/skills.json 或 skills/*.json; 无数据 → 空列表。
-        """
-        print("=== Skill 管理 (骨架, 只读) ===")
+    def _agent_remove(self, args: argparse.Namespace) -> int:
+        """factory agent remove --id <id> — 移除 Agent。"""
+        aid = str(getattr(args, "id", "") or "").strip()
+        if not aid:
+            print("用法: factory agent remove --id <id>")
+            return 2
+        file = self.data_dir / "agents" / "agents.json"
+        data = _load_json_safe(file)
+        agents = data.get("agents", data) if isinstance(data, dict) and "agents" in data else data
+        if isinstance(agents, dict) and aid in agents:
+            del agents[aid]
+            if isinstance(data, dict):
+                data["agents"] = agents
+            try:
+                _write_json_file(file, data)
+            except Exception as exc:  # noqa: BLE001
+                print(f"❌ 写入失败: {exc}")
+                return 1
+            print(f"✅ Agent 已移除: {aid}")
+        else:
+            print(f"未找到 Agent: {aid}")
+            return 1
+        return 0
+
+    def skill(self, args: argparse.Namespace) -> int:
+        """Skill 管理 (list/add/remove): 列表 / 注册 / 移除 (skills.json)。"""
+        action = getattr(args, "skill_action", "list") or "list"
+        if action == "add":
+            return self._skill_add(args)
+        if action == "remove":
+            return self._skill_remove(args)
+        print("=== Skill 管理 (list) ===")
         rows = _skill_rows(self.data_dir)
         if not rows:
             print("  无 skills 数据 (空列表)")
@@ -1864,6 +1929,55 @@ class FactoryCLI:
                 f"| v{row['version']}"
             )
         print(f"  共 {len(rows)} 个 skill")
+        return 0
+
+    def _skill_add(self, args: argparse.Namespace) -> int:
+        """factory skill add --id --name --category — 注册 Skill。"""
+        sid = str(getattr(args, "id", "") or "").strip()
+        sname = str(getattr(args, "name", "") or "").strip()
+        if not sid:
+            print("用法: factory skill add --id <id> [--name <名>] [--category <分类>]")
+            return 2
+        file = self.data_dir / "skills" / "skills.json"
+        file.parent.mkdir(parents=True, exist_ok=True)
+        data = _load_json_safe(file)
+        if not isinstance(data, dict):
+            data = {}
+        if "skills" not in data or not isinstance(data["skills"], dict):
+            data["skills"] = {}
+        data["skills"][sid] = {"id": sid, "name": sname or sid,
+                               "category": str(getattr(args, "category", "") or "") or "general",
+                               "version": "1.0"}
+        try:
+            _write_json_file(file, data)
+        except Exception as exc:  # noqa: BLE001
+            print(f"❌ 写入失败: {exc}")
+            return 1
+        print(f"✅ Skill 已注册: {sid} ({sname or sid})")
+        return 0
+
+    def _skill_remove(self, args: argparse.Namespace) -> int:
+        """factory skill remove --id <id> — 移除 Skill。"""
+        sid = str(getattr(args, "id", "") or "").strip()
+        if not sid:
+            print("用法: factory skill remove --id <id>")
+            return 2
+        file = self.data_dir / "skills" / "skills.json"
+        data = _load_json_safe(file)
+        skills = data.get("skills", data) if isinstance(data, dict) and "skills" in data else data
+        if isinstance(skills, dict) and sid in skills:
+            del skills[sid]
+            if isinstance(data, dict):
+                data["skills"] = skills
+            try:
+                _write_json_file(file, data)
+            except Exception as exc:  # noqa: BLE001
+                print(f"❌ 写入失败: {exc}")
+                return 1
+            print(f"✅ Skill 已移除: {sid}")
+        else:
+            print(f"未找到 Skill: {sid}")
+            return 1
         return 0
 
     def task(self, args: argparse.Namespace) -> int:
@@ -2761,6 +2875,17 @@ class FactoryCLI:
             if present:
                 print(f"{domain}: {' '.join(present)}")
         print("")
+        print("常用命令用法:")
+        print("  agent  list|add|remove    员工管理 (add: --id --role --skills)")
+        print("  skill  list|add|remove    技能管理 (add: --id --name --category)")
+        print("  tools  list|doctor        工具/MCP 发现与连通检查")
+        print("  llm    list               LLM 清单 (provider/models)")
+        print("  project create|list|rename|status  项目管理")
+        print("  service list             服务发现 · update [模块] 更新 · doctor 诊断")
+        print("  run --project <目录>      执行项目 · run-status 结果查询")
+        print("  exec history             执行历史 · evidence list 证据包")
+        print("  help <命令> 或 <命令> --help  查看单命令参数")
+        print("")
         print("会话命令（factory 进入后 / 开头）: /board /status /help /preview /project")
         print("自然语言: 直接描述需求, LLM 理解意图自动执行")
         print("查看单个命令: factory <命令> --help")
@@ -3185,12 +3310,22 @@ def build_parser() -> argparse.ArgumentParser:
     p_config.add_argument(
         "value", nargs="?", metavar="值", help="配置值 (set 动作使用)"
     )
-    sub.add_parser(
-        "agent", help="Agent 管理骨架 (只读: 列出现有 agents 的 id/name/role/skills)"
+    p_agent = sub.add_parser("agent", help="Agent 管理 (list/add/remove)")
+    p_agent.add_argument(
+        "agent_action", nargs="?", choices=["list", "add", "remove"], default="list",
+        metavar="list|add|remove", help="list — 列表; add — 注册 (--id --role --skills); remove — 移除 (--id)",
     )
-    sub.add_parser(
-        "skill", help="Skill 管理骨架 (只读: 列出现有 skills 的 id/name/category/version)"
+    p_agent.add_argument("--id", default="", help="Agent id (add/remove)")
+    p_agent.add_argument("--role", default="", help="角色 (add)")
+    p_agent.add_argument("--skills", default="", help="技能逗号分隔 (add)")
+    p_skill = sub.add_parser("skill", help="Skill 管理 (list/add/remove)")
+    p_skill.add_argument(
+        "skill_action", nargs="?", choices=["list", "add", "remove"], default="list",
+        metavar="list|add|remove", help="list — 列表; add — 注册 (--id --name --category); remove — 移除 (--id)",
     )
+    p_skill.add_argument("--id", default="", help="Skill id (add/remove)")
+    p_skill.add_argument("--name", default="", help="技能名 (add)")
+    p_skill.add_argument("--category", default="", help="分类 (add)")
     sub.add_parser(
         "task", help="Task 管理骨架 (只读: 列出 tasks 的 id/title/status/project)"
     )

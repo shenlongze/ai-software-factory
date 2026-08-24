@@ -1271,3 +1271,44 @@ class TestProjectBrief:
         assert lifecycle.startswith("5/11")  # 发现确认PRD工程开发=5
         assert task == "1/2"
         assert update != "—"
+
+
+# ================================================================== Agent/Skill 管理 + API
+
+class TestAgentSkillManage:
+    def _cli(self, tmp_path):
+        from importlib import import_module
+        CF = import_module("factory-console.cli_factory")
+        cfg = CF.ConfigProvider(
+            user_config_file=tmp_path / "cfg.json",
+            env_file=tmp_path / ".env", environ={})
+        return CF.FactoryCLI(cfg, root=tmp_path)
+
+    def _parse(self, *argv):
+        from importlib import import_module
+        CF = import_module("factory-console.cli_factory")
+        return CF.build_parser().parse_args(list(argv))
+
+    def test_agent_add_list_remove(self, tmp_path, capsys):
+        cli = self._cli(tmp_path)
+        cli.agent(self._parse("agent", "add", "--id", "t1", "--role", "tester", "--skills", "testing"))
+        cli.agent(self._parse("agent", "list"))
+        out = capsys.readouterr().out
+        assert "t1" in out and "tester" in out
+        cli.agent(self._parse("agent", "remove", "--id", "t1"))
+        out2 = capsys.readouterr().out
+        assert "已移除" in out2
+
+    def test_skill_add_list(self, tmp_path, capsys):
+        cli = self._cli(tmp_path)
+        cli.skill(self._parse("skill", "add", "--id", "s1", "--name", "测试", "--category", "testing"))
+        cli.skill(self._parse("skill", "list"))
+        out = capsys.readouterr().out
+        assert "s1" in out and "测试" in out
+
+    def test_help_includes_usage(self, tmp_path, capsys):
+        cli = self._cli(tmp_path)
+        cli.help_cmd(self._parse("help"))
+        out = capsys.readouterr().out
+        assert "agent  list|add|remove" in out
+        assert "skill  list|add|remove" in out

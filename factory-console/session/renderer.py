@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import json
+import re
 from abc import ABC, abstractmethod
 from typing import Any
 
@@ -121,3 +122,53 @@ class JsonRenderer(Renderer):
 def renderer_for(json_flag: bool = False) -> Renderer:
     """渲染器工厂: json_flag=True → JsonRenderer (机器可读); 否则 HumanRenderer。"""
     return JsonRenderer() if json_flag else HumanRenderer()
+
+
+# ---------------------------------------------------------------------------
+# S10-105 — 会话 Markdown 渲染 (CLI REPL 层, 保守启发式 + rich 可选)
+# 设计: docs/sprint10/S10-105-markdown-preview-plan.md §1.1
+# - 只有真文档才触发 (标题/表格/代码围栏), 普通发现/确认消息零影响
+# - rich 只 import 不加依赖; import 失败 → print 原样 (诚实降级, 不崩)
+
+
+def looks_like_markdown(text: str) -> bool:
+    """强 markdown 信号保守判断: 只有真文档才返回 True。
+
+    触发信号 (任一):
+    - 含 ``` 代码围栏
+    - 任一行 ^#{1,6} 标题
+    - 任一行含 | 表格
+    列表标记 (-/1.) 不算 — 发现流程建议/进度消息保持纯文本 (验收: 非 markdown
+    纯文本不变)。
+    """
+    if not isinstance(text, str) or not text:
+        return False
+    if "```" in text:
+        return True
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if re.match(r"^#{1,6}", stripped):
+            return True
+        if "|" in stripped:
+            return True
+    return False
+
+
+def render_message(text: str) -> None:
+    """输出一条用户面消息: markdown → rich 渲染; 否则 print 原样。
+
+    rich 可 import 且 looks_like_markdown → Console().print(Markdown(text));
+    否则 → print(text) 原样 (诚实降级; rich 非终端自动去 ANSI, 测试输出仍可断言)。
+    """
+    if looks_like_markdown(text):
+        try:
+            from rich.console import Console
+            from rich.markdown import Markdown
+
+            Console().print(Markdown(text))
+            return
+        except Exception:  # noqa: BLE001 — rich 缺失/故障 → 诚实降级 print 原样
+            pass
+    print(text)

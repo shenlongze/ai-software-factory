@@ -244,6 +244,25 @@ AI Factory
 - 测试: `tests/console/test_discovery_session_llm.py` 26 passed; 既有 108 DS + 35 analyzer 零改动全绿; 真实 LLM 验收 8/8
 - 边界: conversation 路径未改; 驱动层逃生/CLI 接线未做 (模型层)
 
+## S10-105 更新 (CLI Markdown 渲染 + /preview + 多行输入, v1.1.28)
+
+> 2026-08-24 | Sprint: 会话 REPL 层 — PRD/文档输出 rich.Markdown 渲染;
+> `/preview PRD.md` 渲染显示文件; 行尾 `\` 续行拼接多行输入 (prompt_toolkit 缺失 → input() 降级)
+
+| 项 | S10-104 后 | S10-105 后 |
+|---|---|---|
+| 会话 PRD/文档输出 | 显示 markdown 源码 | **rich.Markdown 渲染** (标题/列表/表格/代码块可读, 不再看源码) |
+| 文档预览 | 只显示路径, 无预览能力 | **/preview PRD.md** 渲染显示 (绝对/相对路径解析: cwd → workspace → 项目目录 → data_dir 兜底; 无参/不存在 → 友好错误 rc 2) |
+| 多行输入 | 仅单行 input() | **行尾 `\` 续行拼接** (提示 `… `, 直到无 `\`; prompt_toolkit 缺失 → input() 降级, 诚实) |
+| 降级 | — | **无 rich/prompt_toolkit 诚实降级** (print 原样, 不崩) |
+| 非 markdown 消息 | 原样 | **原样零变化** (启发式保守: 列表标记不算, 发现/进度消息保持纯文本) |
+
+- 新增: `session/renderer.py` looks_like_markdown + render_message (rich 可选导入);
+  `session/commands.py` PreviewCommand; `session/session.py` _read_input_line + 用户面
+  消息 print 点接入 render_message (chat 回答 / action renderer 输出 / 产品流消息)
+- 测试: `tests/console/test_s10_105_markdown_preview.py` 契约 1-7; 全量 console 0 新增失败
+- 边界: Web 富文本 / 完整编辑器 / prompt_toolkit 完整增强 / /preview HTML 导出 → backlog
+
 ## S10-104 更新 (确认阶段 next_action 全覆盖 + 会话分割线 + 删除指令, v1.1.25)
 
 > 2026-08-24 | Sprint: "产出份prd文档"/"生成PRD"/"出个html"/"出份功能清单" 不再被当改名 —

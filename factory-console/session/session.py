@@ -45,7 +45,7 @@ from .intent import (
     KeywordIntentParser,
 )
 from .llm_intent import LLMIntentParser
-from .renderer import HumanRenderer, Renderer
+from .renderer import HumanRenderer, Renderer, render_message
 from .router import IntentRouter, UnknownIntentError
 from .slash import SlashCommandRegistry
 
@@ -189,7 +189,7 @@ class InteractiveSession:
         self.running = True
         while self.running:
             try:
-                line = input(self.prompt)
+                line = self._read_input_line(self.prompt)
             except (EOFError, KeyboardInterrupt):
                 print()  # 换行, 避免提示符残留在行尾
                 break
@@ -212,6 +212,21 @@ class InteractiveSession:
     def _banner(self) -> None:
         """打印欢迎横幅 (验收: 显示 AI Factory)。"""
         print(self.banner_text)
+
+    def _read_input_line(self, prompt: str) -> str:
+        """多行输入 (S10-105 简单检测): 行尾 '\\' → 续行 (提示 '… '), 直到无 '\\';
+        拼接 '\n'。prompt_toolkit 缺失 → input() 降级 (诚实, 验收: 无 prompt_toolkit 降级)。"""
+        line = input(prompt)
+        if not line.endswith("\\"):
+            return line
+        parts = [line.rstrip("\\")]
+        while True:
+            more = input("… ")
+            if not more.endswith("\\"):
+                parts.append(more)
+                break
+            parts.append(more.rstrip("\\"))
+        return "\n".join(parts)
 
     def _dispatch(self, line: str) -> None:
         """命令分发: "/" 开头 → slash registry; 否则 → Intent 执行链 (S10-048 P1)。
@@ -267,7 +282,7 @@ class InteractiveSession:
                     message = (
                         f"{message}\n[已记录] 将生成{label} — 产出引擎 backlog"
                     )
-                print(message)
+                render_message(message)
             return
         intent = self.intent_parser.parse(line)
         if intent is None:
@@ -278,14 +293,14 @@ class InteractiveSession:
                 return
             # S10-075 L2: 普通自然语言 → 真实 LLM 问答 (不再是 "未知命令")
             answer = self.chat_service.answer(line)
-            print(answer)
+            render_message(answer)
             return
         if not intent.source:
             intent.source = "session"  # 设计 §2.2: 来源标注 (审计)
         # S10-050 P1: 产品意图 → 产品发现流程 (多轮追问), 不走普通 action 路由
         if intent.intent_type == INTENT_CREATE_PRODUCT:
             resp = conv.start_product_discovery(line)
-            print(resp.message)
+            render_message(resp.message)
             return
         # S10-076: 当前项目查询 → 只读展示会话当前项目 (绝不创建/写)
         if intent.intent_type == INTENT_CURRENT_PROJECT:
@@ -318,7 +333,7 @@ class InteractiveSession:
             # UnknownIntentError / intent 名 / route 不存在)
             logger.debug("intent %r 无路由 → chat 降级: %s", intent.intent_type, exc)
             answer = self.chat_service.answer(line)
-            print(answer)
+            render_message(answer)
             return
         context = self._build_action_context(intent)
         # S10-049 P0: 确认判定以 intent 类型为准 (run_task ∈ 敏感集合 →
@@ -342,7 +357,7 @@ class InteractiveSession:
         if action.name in ("agent.execute_task", "execute_project"):
             self._render_execution(action.name, result)
             return
-        print(self.renderer.render(result.to_dict()))
+        render_message(self.renderer.render(result.to_dict()))
 
     def _create_product_fn(self, product_intent: Any) -> str:
         """产品确认回调 (S10-050 P5): 执行 create_product action → 展示消息。

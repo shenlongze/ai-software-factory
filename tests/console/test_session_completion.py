@@ -55,11 +55,12 @@ def _default_names() -> list[str]:
 
 
 def test_slash_bare_prefix_lists_all_commands():
-    """验收 A: "/" TAB → 列出全部 slash 命令 (/help /project /status /cost /exit)。"""
+    """验收 A: "/" TAB → 列出全部 slash 命令 (S10-105: +/preview)。"""
     got = COMP_MOD.SlashCompletionProvider().candidates("/", _context())
     assert got == _default_names()
-    assert got == ["/cost", "/exit", "/help", "/project", "/status"]
-    for name in ("/help", "/project", "/status", "/cost", "/exit"):
+    # S10-105 新增 /preview; S10-106 新增 /board (均按字母序, 默认注册表口径)
+    assert got == ["/board", "/cost", "/exit", "/help", "/preview", "/project", "/status"]
+    for name in ("/help", "/project", "/status", "/cost", "/exit", "/preview", "/board"):
         assert name in got
 
 
@@ -67,11 +68,12 @@ def test_slash_bare_prefix_lists_all_commands():
 
 
 def test_slash_prefix_filters():
-    """验收 B: "/pr" → 过滤出 /project (前缀匹配, 大小写不敏感)。"""
+    """验收 B: "/pr" → 前缀过滤 (/preview + /project — S10-105 新增 /preview)。"""
     provider = COMP_MOD.SlashCompletionProvider()
-    assert provider.candidates("/pr", _context()) == ["/project"]
+    assert provider.candidates("/pr", _context()) == ["/preview", "/project"]
     assert provider.candidates("/st", _context()) == ["/status"]
-    assert provider.candidates("/PR", _context()) == ["/project"]  # 大写输入归一
+    # 大写输入归一 (S10-105: /PR → /preview + /project)
+    assert provider.candidates("/PR", _context()) == ["/preview", "/project"]
 
 
 # ------------------------------------------------------------------ 验收 C: 无匹配 → 空列表
@@ -150,8 +152,8 @@ def test_registry_aggregates_slash_and_extra():
 
     registry.register(ExtraProvider())
     got = registry.candidates("/", _context())
-    # /project 双源去重; 全量字母序
-    assert got == ["/cost", "/exit", "/help", "/project", "/status", "/zzz"]
+    # /project 双源去重; 全量字母序 (S10-105: +/preview; S10-106: +/board)
+    assert got == ["/board", "/cost", "/exit", "/help", "/preview", "/project", "/status", "/zzz"]
     assert got.count("/project") == 1
 
 

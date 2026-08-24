@@ -841,6 +841,30 @@ def build_app(
         except Exception:  # noqa: BLE001
             return {"ok": False, "error": "细化失败"}
 
+    @app.get("/api/board/docs/config")
+    def api_docs_config_get(project: str = ""):
+        """文档配置设置页 (多目录 + 扩展名)。"""
+        from fastapi.responses import HTMLResponse
+        board_mod = _console_import("session.board")
+        try:
+            html = board_mod.render_docs_config_html(workspace_root, project)
+        except Exception:  # noqa: BLE001
+            html = "<p>（配置页渲染失败）</p>"
+        return HTMLResponse(content=html)
+
+    @app.post("/api/board/docs/config")
+    def api_docs_config_post(project: str = "", dirs: str = "", exts: str = ""):
+        """保存文档配置 (dirs 换行分隔, exts 逗号分隔; 或 JSON body)。"""
+        board_mod = _console_import("session.board")
+        try:
+            dir_list = [d.strip() for d in (dirs or "").replace("\n", ",").split(",") if d.strip()]
+            ext_list = [e.strip() for e in (exts or "").split(",") if e.strip()]
+            cfg = board_mod.write_docs_config(workspace_root, project,
+                                              dirs=dir_list, exts=ext_list)
+            return {"ok": True, "dirs": cfg["dirs"], "exts": cfg["exts"]}
+        except Exception:  # noqa: BLE001
+            return {"ok": False, "error": "保存失败"}
+
     @app.post("/api/board/default")
     def api_board_default(project: str = ""):
         """设置默认项目 (写 board_default_project; 首页优先打开它)。"""

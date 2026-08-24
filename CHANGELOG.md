@@ -3,6 +3,23 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.73] — 2026-08-24
+
+**Board 文档管理可配置: 多目录 + 可配扩展名 + 设置页（Founder 重新设计）**。
+
+### Added
+
+- **文档配置** (docs_config.json): dirs (多个文档目录) + exts (支持扩展名,
+  默认 md/json/doc/docx; PPT/Excel 等需额外配置)
+- **多目录展示**: 每个配置目录一棵树 (📂 目录名 + 树)
+- **设置功能**: Web 配置页 (/api/board/docs/config, 表单保存) + CLI
+  (/board docs list|add-dir|add-ext|rm-dir); 文档页 ⚙ 配置入口
+- 系统目录模式含固定核心资产 (中文标签), 扫描文件 extra 标记修复
+
+### 验证
+
+- 5 新契约测试 (默认配置/写配置/多目录+扩展名过滤/配置页/配置链接) · 全量回归 0 新增失败
+
 ## [v1.1.72] — 2026-08-24
 
 **Board 文档管理重新设计: 默认折叠 + 紧凑行 + 类型筛选（Founder: 平铺难受, 需设计）**。

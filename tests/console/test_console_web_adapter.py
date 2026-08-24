@@ -372,6 +372,10 @@ class TestPermissionBoundary:
                 is_board_split = (
                     route_method == "POST" and path == "/api/board/split"
                 )
+                # v1.1.73: 文档配置保存 (POST /api/board/docs/config — 写项目偏好)
+                is_docs_config = (
+                    route_method == "POST" and path == "/api/board/docs/config"
+                )
                 assert (
                     is_approval
                     or is_runtime_lifecycle
@@ -391,6 +395,7 @@ class TestPermissionBoundary:
                     or is_system_update
                     or is_board_default
                     or is_board_split
+                    or is_docs_config
                 ), (
                     f"写路由超出白名单 (审批决定 + Runtime + 反馈 + 创建 + 启动 + "
                     f"项目管理 + Backlog + Sprint/Milestone/Roadmap + Tool + MCP): "

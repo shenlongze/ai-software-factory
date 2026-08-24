@@ -1913,24 +1913,41 @@ PROJECT_DOC_TYPES: dict[str, tuple[str, str]] = {
 
 
 def list_project_docs(workspace: Path | str, slug: str) -> list[dict[str, Any]]:
-    """项目文档资产清单 (只读, 失败安全, 实事求是).
+    """项目文档资产清单 (可配置多目录 + 可配扩展名, 只读, 实事求是).
 
-    根目录 = product.json 的 workspace_dir (项目实际目录/git 仓库) 优先;
-    无 → 系统存储目录 projects/<slug>。
-    - workspace_dir: 扫描该目录全部真实文件 (README/docs/源码等, 按目录结构)
-    - 系统目录: 固定核心资产 + 扫描其他文档
+    读取 docs_config.json: dirs (多个文档目录) + exts (支持的扩展名, 默认
+    md/json/doc/docx)。每个目录独立扫描 (排除隐藏/垃圾), 返回带 source_dir。
+    系统存储目录 (projects/<slug>) 额外含固定核心资产 (PROJECT_DOC_TYPES)。
     """
     pdir = Path(workspace) / "projects" / slug
-    root = _project_docs_root(workspace, slug)
-    is_system = root == pdir
-    if not is_system:
-        # 实际工作目录: 只显示文档类文件 (README/docs/方案书等), 排除源码与垃圾目录
-        docs = []
-        _DOC_EXTS = {".md", ".json", ".txt", ".yaml", ".yml", ".toml", ".rst"}
-        _SKIP_DIRS = {".git", "$SMOKE_ROOT", "__pycache__", "node_modules",
-                      ".venv", "build", "dist", "unused", ".ruff_cache", ".pytest_cache"}
+    cfg = read_docs_config(workspace, slug)
+    exts_set = {str(e).lower() for e in cfg["exts"]}
+    _SKIP_DIRS = {".git", "$SMOKE_ROOT", "__pycache__", "node_modules",
+                  ".venv", "build", "dist", "unused", ".ruff_cache", ".pytest_cache"}
+    docs: list[dict[str, Any]] = []
+    for d in cfg["dirs"]:
+        root = Path(d)
+        src = str(root)
+        is_system = root.resolve() == pdir.resolve()
+        if is_system:
+            # 核心资产 (固定中文标签)
+            for name, (label, kind) in PROJECT_DOC_TYPES.items():
+                f = pdir / name
+                exists = f.is_file()
+                size = mtime = 0.0
+                if exists:
+                    try:
+                        st = f.stat()
+                        size, mtime = st.st_size, st.st_mtime
+                    except OSError:  # noqa: BLE001
+                        pass
+                docs.append({"name": name, "label": label, "kind": kind, "size": size,
+                             "mtime": mtime, "exists": exists, "extra": False,
+                             "folder": "", "source_dir": src})
+        if not root.is_dir():
+            continue
         for f in sorted(root.rglob("*")):
-            if not f.is_file() or f.suffix.lower() not in _DOC_EXTS:
+            if not f.is_file() or f.suffix.lower() not in exts_set:
                 continue
             try:
                 rel = f.relative_to(root)
@@ -1939,52 +1956,20 @@ def list_project_docs(workspace: Path | str, slug: str) -> list[dict[str, Any]]:
             if any(part in _SKIP_DIRS for part in rel.parts):
                 continue
             if any(part.startswith(".") for part in rel.parts):
-                continue  # . 开头隐藏文件/目录 (.github/.git 等) 不展示
+                continue  # 隐藏文件/目录不展示
             rel_s = str(rel)
+            if is_system and rel_s in PROJECT_DOC_TYPES:
+                continue  # 核心资产已列
             try:
                 st = f.stat()
             except OSError:  # noqa: BLE001
                 continue
             docs.append({"name": rel_s, "label": f.name, "kind": f.suffix.lower().lstrip("."),
-                         "size": st.st_size, "mtime": st.st_mtime, "exists": True, "extra": True,
-                         "folder": str(rel.parent) if rel.parent != Path(".") else ""})
-        return docs
-    docs = []
-    for name, (label, kind) in PROJECT_DOC_TYPES.items():
-        f = pdir / name
-        if not f.is_file():
-            docs.append({"name": name, "label": label, "kind": kind,
-                         "size": 0, "mtime": 0.0, "exists": False, "extra": False, "folder": ""})
-            continue
-        try:
-            st = f.stat()
-            docs.append({"name": name, "label": label, "kind": kind,
-                         "size": st.st_size, "mtime": st.st_mtime, "exists": True, "extra": False,
-                         "folder": ""})
-        except OSError:  # noqa: BLE001
-            docs.append({"name": name, "label": label, "kind": kind,
-                         "size": 0, "mtime": 0.0, "exists": False, "extra": False, "folder": ""})
-    # 扫描项目目录全部文件 (Founder: 暂不过滤扩展名 — docs 下所有文件都显示)
-    if pdir.is_dir():
-        for f in sorted(pdir.rglob("*")):
-            if not f.is_file():
-                continue
-            rel = f.relative_to(pdir)
-            if ".git" in rel.parts or any(part.startswith(".") for part in rel.parts):
-                continue  # 隐藏文件/目录不展示
-            rel_s = str(rel)
-            if rel_s in PROJECT_DOC_TYPES:
-                continue  # 固定资产已列
-            try:
-                st = f.stat()
-                docs.append({"name": rel_s, "label": rel.name, "kind": f.suffix.lower().lstrip("."),
-                             "size": st.st_size, "mtime": st.st_mtime, "exists": True, "extra": True,
-                             "folder": str(rel.parent) if rel.parent != Path(".") else ""})
-            except OSError:  # noqa: BLE001
-                continue
+                         "size": st.st_size, "mtime": st.st_mtime, "exists": True,
+                         "extra": True,  # 扫描出的都是额外文档 (核心资产 extra=False)
+                         "folder": str(rel.parent) if rel.parent != Path(".") else "",
+                         "source_dir": src})
     return docs
-
-
 def render_project_docs_html(workspace: Path | str, slug: str) -> str:
     """项目文档管理 HTML: 核心资产 + 其他文档 (README/docs 等扫描真实文件)。"""
     slug = Path(str(slug or "")).name
@@ -2032,9 +2017,21 @@ def render_project_docs_html(workspace: Path | str, slug: str) -> str:
                 f'<td>{view}</td>'
                 f'<td class="m">{size}</td><td class="m">{ts}</td></tr>')
 
-    # 文件树渲染 (可展开折叠) + 搜索
-    tree = _docs_tree(docs)
-    tree_html = _render_docs_tree(tree, slug) if docs else "<p>（项目暂无文档）</p>"
+    # 多目录: 按 source_dir 分组, 每目录一个树 (可配置)
+    dir_groups: dict[str, list[dict[str, Any]]] = {}
+    for d in docs:
+        if d["exists"]:
+            dir_groups.setdefault(d.get("source_dir") or "", []).append(d)
+    tree_blocks = []
+    for src in sorted(dir_groups.keys()):
+        grp = dir_groups[src]
+        tree = _docs_tree(grp)
+        tree_html = _render_docs_tree(tree, slug) if grp else ""
+        tree_blocks.append(
+            f"<h3 style='font-size:13px;color:#8ab4f8;margin:14px 0 4px'>📂 {src} "
+            f"<span style='color:#546e7a;font-size:11px'>({len(grp)})</span></h3>"
+            f"<div class='doctree'>{tree_html}</div>"
+        )
     total_docs = len(docs)
     return f"""<!DOCTYPE html>
 <html lang="zh"><head><meta charset="utf-8">
@@ -2067,7 +2064,7 @@ def render_project_docs_html(workspace: Path | str, slug: str) -> str:
 {_board_nav("docs", slug, workspace)}
 <h1>📄 项目文档管理 — {name}</h1>
 {_data_source_html(workspace, slug, "docs")}
-<p class="hint">📂 目录: <code>{_project_docs_root(workspace, slug)}</code>{(" · 🌐 " + _project_repo_url(workspace, slug)) if _project_repo_url(workspace, slug) else ""}<br>项目文档共 <b>{total_docs}</b> 份（文件树, 隐藏文件不显示）· 点击"查看"渲染内容</p>
+<p class="hint">📂 目录: <code>{_project_docs_root(workspace, slug)}</code>{(" · 🌐 " + _project_repo_url(workspace, slug)) if _project_repo_url(workspace, slug) else ""}<br>项目文档共 <b>{total_docs}</b> 份（文件树, 隐藏文件不显示）· 点击"查看"渲染内容 · <a href="/api/board/docs/config?project={slug}" style="color:#8ab4f8">⚙ 配置</a></p>
 <input id="docsearch" placeholder="🔍 搜索文档 (文件名/路径包含)..." style="width:100%;box-sizing:border-box;background:#1a1e26;border:1px solid #2a2e37;color:#e6e6e6;border-radius:6px;padding:8px 12px;font-size:13px;margin-bottom:8px">
 <div class="filters" id="docfilters">
   <button class="f-btn active" data-kind="">全部</button>
@@ -2076,7 +2073,7 @@ def render_project_docs_html(workspace: Path | str, slug: str) -> str:
   <button class="f-btn" data-kind="yaml">⚙ 配置</button>
   <button class="f-btn" data-kind="txt">📝 文本</button>
 </div>
-<div id="doctree">{tree_html}</div>
+<div id="doctree">{"".join(tree_blocks) if tree_blocks else "<p>（项目暂无文档或未配置目录）</p>"}</div>
 <script>
 var curFilter = '';
 var curQ = '';
@@ -2470,3 +2467,98 @@ def _render_docs_tree(node: dict[str, Any], slug: str) -> str:
             f'<span class="fsize">{size}</span><span class="fview-wrap">{view}</span></div>'
         )
     return "".join(html)
+
+
+# ---------------------------------------------------------------- 文档配置 (可配置多目录+扩展名)
+
+#: 默认支持的文档扩展名 (md/json/doc/docx)
+DEFAULT_DOC_EXTS: tuple[str, ...] = (".md", ".json", ".doc", ".docx")
+
+#: 可在线预览的扩展名
+PREVIEW_EXTS: tuple[str, ...] = (".md", ".json", ".txt", ".yaml", ".yml", ".toml")
+
+
+def _docs_config_file(workspace: Path | str, slug: str) -> Path:
+    return Path(workspace) / "projects" / slug / "docs_config.json"
+
+
+def read_docs_config(workspace: Path | str, slug: str) -> dict[str, Any]:
+    """读取项目文档配置 {dirs, exts}: 缺省 dirs=[workspace_dir 或系统目录], exts=默认。"""
+    config: dict[str, Any] = {}
+    try:
+        d = json.loads(_docs_config_file(workspace, slug).read_text(encoding="utf-8")) or {}
+        if isinstance(d, dict):
+            config = d
+    except (OSError, json.JSONDecodeError):  # noqa: BLE001
+        pass
+    dirs = [str(x) for x in (config.get("dirs") or []) if str(x).strip()]
+    if not dirs:
+        dirs = [str(_project_docs_root(workspace, slug))]
+    exts = [str(x).lower() if str(x).startswith(".") else f".{x}".lower()
+            for x in (config.get("exts") or DEFAULT_DOC_EXTS)]
+    if not exts:
+        exts = list(DEFAULT_DOC_EXTS)
+    return {"dirs": dirs, "exts": exts}
+
+
+def write_docs_config(workspace: Path | str, slug: str, *, dirs: list[str] | None = None,
+                      exts: list[str] | None = None) -> dict[str, Any]:
+    """写项目文档配置 (dirs/exts), 合并现有; 返回更新后配置。"""
+    cur = read_docs_config(workspace, slug)
+    if dirs is not None:
+        cur["dirs"] = [str(x) for x in dirs if str(x).strip()] or [str(_project_docs_root(workspace, slug))]
+    if exts is not None:
+        cur["exts"] = [str(x).lower() if str(x).startswith(".") else f".{x}".lower()
+                       for x in exts if str(x).strip()] or list(DEFAULT_DOC_EXTS)
+    try:
+        _docs_config_file(workspace, slug).parent.mkdir(parents=True, exist_ok=True)
+        _docs_config_file(workspace, slug).write_text(
+            json.dumps(cur, ensure_ascii=False, indent=2), encoding="utf-8")
+    except OSError:  # noqa: BLE001
+        pass
+    return cur
+
+
+def render_docs_config_html(workspace: Path | str, slug: str) -> str:
+    """文档配置设置页 (Founder: 配置放设置中): 多目录 + 扩展名。"""
+    slug = Path(str(slug or "")).name
+    info = _read_product_info(workspace, slug) if slug else None
+    if info is None:
+        return _board_nav("docs", slug, workspace) + "<p>（项目不存在或未选择）</p>"
+    cfg = read_docs_config(workspace, slug)
+    name = info.get("name") or slug
+    dirs_val = "\\n".join(cfg["dirs"])
+    exts_val = ", ".join(cfg["exts"])
+    return f"""<!DOCTYPE html>
+<html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>文档配置 — {name}</title>
+<style>
+  body {{ font-family: -apple-system, system-ui, sans-serif; margin: 0; padding: 16px; background: #0f1115; color: #e6e6e6; }}
+  h1 {{ font-size: 18px; }} h2 {{ font-size: 14px; color: #ffb74d; margin: 16px 0 6px; }}
+  label {{ font-size: 12px; color: #9aa0a6; }}
+  textarea, input {{ width: 100%; box-sizing: border-box; background: #1a1e26; border: 1px solid #2a2e37; color: #e6e6e6; border-radius: 6px; padding: 8px 12px; font-size: 13px; font-family: monospace; }}
+  textarea {{ min-height: 120px; }}
+  button {{ background: #1565c0; color: #fff; border: none; border-radius: 6px; padding: 8px 18px; font-size: 13px; cursor: pointer; margin-top: 10px; }}
+  .hint {{ color: #78909c; font-size: 12px; }}
+</style></head><body>
+{_board_nav("docs", slug, workspace)}
+<h1>⚙ 文档配置 — {name} ({slug})</h1>
+<p class="hint">配置后文档管理按此展示: 多个目录各一棵树, 只显示配置的扩展名</p>
+<h2>📂 文档目录（每行一个）</h2>
+<textarea id="cfg-dirs">{dirs_val}</textarea>
+<h2>🔤 支持扩展名（逗号分隔, 默认 md/json/doc/docx）</h2>
+<input id="cfg-exts" value="{exts_val}">
+<div><button onclick="save()">💾 保存配置</button> <span id="msg" style="color:#4caf50;font-size:12px"></span></div>
+<script>
+function save(){{
+  var dirs = document.getElementById('cfg-dirs').value.split('\\n').map(function(s){{return s.trim();}}).filter(Boolean);
+  var exts = document.getElementById('cfg-exts').value.split(',').map(function(s){{return s.trim();}}).filter(Boolean);
+  fetch('/api/board/docs/config?project={slug}&dirs='+encodeURIComponent(dirs.join('\n'))+'&exts='+encodeURIComponent(exts.join(',')), {{
+    method: 'POST'
+  }}).then(function(r){{return r.json();}}).then(function(d){{
+    document.getElementById('msg').textContent = d.ok ? '✅ 已保存 (' + d.dirs.length + ' 目录, ' + d.exts.length + ' 扩展名)' : '❌ 保存失败';
+  }});
+}}
+</script>
+</body></html>"""

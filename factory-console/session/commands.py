@@ -236,6 +236,7 @@ class BoardCommand(SlashCommand):
             render_chain, render_report, render_project_lifecycle,
             render_projects_list, render_project_report,
             _read_default_project, _set_default_project, split_task,
+            read_docs_config, write_docs_config,
             mark_backlog_item, save_report, sync_mainline,
         )
         from pathlib import Path
@@ -288,6 +289,41 @@ class BoardCommand(SlashCommand):
                           f"{', '.join(t['id'] for t in created)}")
                 else:
                     print(f"❌ 细化失败: 任务 {task_id} 不存在或子任务为空")
+            elif view == "docs":
+                # /board docs list <slug> / add-dir <slug> <路径> / add-ext <slug> <ext>
+                if len(sub) < 2:
+                    print("用法: /board docs list <项目> · add-dir <项目> <目录> · add-ext <项目> <扩展名> · rm-dir <项目> <目录>")
+                    return 2
+                if workspace is None:
+                    print("（未设置工作区）")
+                    return 1
+                action, slug_arg = sub[1], sub[2] if len(sub) > 2 else ""
+                cfg = read_docs_config(workspace, slug_arg)
+                if action == "list":
+                    print(f"📂 文档目录 ({len(cfg['dirs'])}):")
+                    for d in cfg["dirs"]:
+                        print(f"  {d}")
+                    print(f"🔤 扩展名 ({len(cfg['exts'])}): {', '.join(cfg['exts'])}")
+                elif action == "add-dir" and len(sub) >= 4:
+                    path = sub[3]
+                    if path not in cfg["dirs"]:
+                        cfg = write_docs_config(workspace, slug_arg, dirs=cfg["dirs"] + [path])
+                    print(f"✅ 文档目录已更新 ({len(cfg['dirs'])}):")
+                    for d in cfg["dirs"]:
+                        print(f"  {d}")
+                elif action == "add-ext" and len(sub) >= 4:
+                    ext = sub[3] if sub[3].startswith(".") else f".{sub[3]}"
+                    if ext not in cfg["exts"]:
+                        cfg = write_docs_config(workspace, slug_arg, exts=cfg["exts"] + [ext])
+                    print(f"✅ 扩展名已更新: {', '.join(cfg['exts'])}")
+                elif action == "rm-dir" and len(sub) >= 4:
+                    path = sub[3]
+                    cfg = write_docs_config(workspace, slug_arg, dirs=[d for d in cfg["dirs"] if d != path])
+                    print(f"✅ 文档目录已移除 ({len(cfg['dirs'])}):")
+                    for d in cfg["dirs"]:
+                        print(f"  {d}")
+                else:
+                    print("用法: /board docs list|add-dir|add-ext|rm-dir <项目> [值]")
             elif view == "sync":
                 marked = sync_mainline(
                     Path(__file__).resolve().parents[1] / ".." / "docs" / "sprint10" / "待办清单-已发现未落地.md")

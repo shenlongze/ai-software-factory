@@ -935,22 +935,22 @@ class TestDocsAllTypes:
         (pdir / "docs" / "脚本.py").write_text("print(1)", encoding="utf-8")
         return tmp_path
 
-    def test_scan_all_types_no_filter(self, tmp_path):
+    def test_scan_default_exts_only(self, tmp_path):
         self._proj(tmp_path)
         docs = BOARD.list_project_docs(tmp_path, "a")
         extra = {d["name"]: d for d in docs if d.get("extra")}
         assert "docs/指南.md" in extra
-        assert "docs/图.png" in extra      # 图片也列出 (不过滤)
-        assert "docs/配置.yaml" in extra   # yaml 也列出
-        assert "docs/脚本.py" in extra     # py 也列出
+        # 默认 exts = md/json/doc/docx → png/yaml/py 不显示 (需配置)
+        assert "docs/图.png" not in extra
+        assert "docs/配置.yaml" not in extra
+        assert "docs/脚本.py" not in extra
 
     def test_html_all_files_and_view_marks(self, tmp_path):
         self._proj(tmp_path)
         html = BOARD.render_project_docs_html(tmp_path, "a")
-        for n in ("指南.md", "图.png", "配置.yaml", "脚本.py"):
-            assert n in html
+        assert "指南.md" in html                    # md 默认显示
+        assert "图.png" not in html                 # png 默认不显示
         assert "doc=docs/指南.md" in html          # md 可查看
-        assert "doc=docs/图.png" not in html       # png 无查看链接
 
     def test_view_non_text_hint(self, tmp_path):
         self._proj(tmp_path)
@@ -1000,8 +1000,9 @@ class TestDocsRepoRoot:
             {"name": "项目A", "workspace_dir": str(wd)}, ensure_ascii=False), encoding="utf-8")
         docs = BOARD.list_project_docs(tmp_path, "a")
         names = [d["name"] for d in docs]
-        assert "README.md" in names and "docs/指南.md" in names and "配置.yaml" in names
+        assert "README.md" in names and "docs/指南.md" in names
         assert "main.py" not in names  # 源码排除
+        assert "配置.yaml" not in names  # yaml 不在默认 exts (md/json/doc/docx)
 
     def test_html_shows_dir_and_git(self, tmp_path):
         wd = tmp_path / "repo"
@@ -1058,3 +1059,55 @@ class TestDocsTreeSearch:
         assert 'id="docsearch"' in html   # 搜索框
         assert "指南.md" in html and "README.md" in html
         assert ".github" not in html      # 隐藏已过滤
+
+
+# ================================================================== 文档配置 (多目录+扩展名+设置)
+
+class TestDocsConfig:
+    def _proj(self, tmp_path):
+        _mk_project(tmp_path, "a", name="项目A")
+        return tmp_path
+
+    def test_read_default_config(self, tmp_path):
+        self._proj(tmp_path)
+        cfg = BOARD.read_docs_config(tmp_path, "a")
+        assert cfg["dirs"] == [str(tmp_path / "projects" / "a")]  # 缺省系统目录
+        assert cfg["exts"] == [".md", ".json", ".doc", ".docx"]  # 默认扩展名
+
+    def test_write_config(self, tmp_path):
+        self._proj(tmp_path)
+        wd = tmp_path / "repo"
+        wd.mkdir()
+        cfg = BOARD.write_docs_config(tmp_path, "a", dirs=[str(wd)], exts=[".md", ".ppt"])
+        assert cfg["dirs"] == [str(wd)]
+        assert cfg["exts"] == [".md", ".ppt"]
+        # 重读
+        cfg2 = BOARD.read_docs_config(tmp_path, "a")
+        assert cfg2["dirs"] == [str(wd)]
+
+    def test_multi_dir_and_ext_filter(self, tmp_path):
+        wd1 = tmp_path / "docs1"
+        wd1.mkdir()
+        (wd1 / "a.md").write_text("# a", encoding="utf-8")
+        (wd1 / "b.pptx").write_text("x", encoding="utf-8")  # 默认 exts 不含 pptx
+        wd2 = tmp_path / "docs2"
+        wd2.mkdir()
+        (wd2 / "c.json").write_text("{}", encoding="utf-8")
+        self._proj(tmp_path)
+        BOARD.write_docs_config(tmp_path, "a", dirs=[str(wd1), str(wd2)], exts=[".md", ".json"])
+        docs = BOARD.list_project_docs(tmp_path, "a")
+        names = [d["name"] for d in docs]
+        assert "a.md" in names and "c.json" in names
+        assert "b.pptx" not in names  # 扩展名过滤
+        srcs = {d.get("source_dir") for d in docs}
+        assert len(srcs) == 2  # 两个目录
+
+    def test_config_html(self, tmp_path):
+        self._proj(tmp_path)
+        html = BOARD.render_docs_config_html(tmp_path, "a")
+        assert "⚙ 文档配置" in html and "cfg-dirs" in html and "cfg-exts" in html
+
+    def test_docs_html_config_link(self, tmp_path):
+        self._proj(tmp_path)
+        html = BOARD.render_project_docs_html(tmp_path, "a")
+        assert "⚙ 配置" in html

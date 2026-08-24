@@ -211,3 +211,19 @@ AI Factory
 - ❌ 无 Retrieval bypass (统一入口验证测试强制)
 - ❌ 无人工 audit record 依赖 (生产链自动 emit 实证)
 - ❌ 无 Memory 手动数据库 (Debug 闭环自动 learn 实证)
+
+## S10-099 更新 (Discovery LLM 深度介入, v1.1.16)
+
+> 2026-08-24 | Sprint: 发现阶段字段收集从规则状态机升级为 LLM 理解主路径 + 规则兜底
+
+| 能力 | S10-098 前 | S10-099 后 | 证据 |
+|---|---|---|---|
+| C01 Idea Understanding | 规则状态机逐字段收集 (模板化) | **LLM 意图理解 + 结构化提取** (一次产出 problem/user/core_features/name/platform) | 真实 LLM: "我想做个markdown编辑器, 要typora和notepad++优点, 适配手机" → category=product_description + 提取 3 字段 + 理解摘要 |
+| C02 Multi-round Clarification | 机械列模板问题 | **智能追问** (理解为什么缺 → 针对性 1 问带理由); 模糊控制改写 ("整理一下") 也被识别 | 交互实测: 追问 "具体融合哪些优点? (为什么还问: 未说明要解决的具体痛点)" |
+| C03 Requirement Confirmation | 规则摘要 | **确认门增强**: LLM 理解摘要 "我理解你要做X, 给Y用, 核心是A/B/C" + 主动分析 (平台/竞品/范围/备注) | 确认消息含 "我理解你要做一款手机端的markdown编辑器…" + 主动建议 + AI 命名 |
+| 无 LLM 兜底 | — | **规则状态机零变化** (诚实降级, 不伪造) | env -u 无 key: "我想做X" 仍逐字段问, 无 "我理解" 标记 |
+
+- 新增: `factory-console/session/discovery_intelligence.py` (DiscoveryIntentAnalyzer, 复用 ReasoningProvider 装配链)
+- 集成: `conversation.py` (start_product_discovery 初始描述即解析 / handle_product_answer LLM 分流 / 确认门增强)
+- 测试: `tests/console/test_discovery_llm_intelligence.py` 33 passed; 真实 LLM 交互验收 7/7
+- 边界: DiscoverySession (S10-065 "开始做X" 路径) 未动; product_pipeline 深度分析未动

@@ -234,6 +234,9 @@ class ExecutionState:
     # solo/team 缺省零变化): {rounds, max_concurrency, degraded, reason,
     # schedule_file}
     schedule: dict[str, Any] = field(default_factory=dict)
+    # M3e (S10-097): M3 全链调度审计视图 (仅 m3 模式非空才落盘 — solo/team/
+    # parallel 缺省零变化): {rounds, assignments, evidence, degraded, reason}
+    m3: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         """→ dict (落盘/审计视图)。
@@ -264,6 +267,8 @@ class ExecutionState:
             data["governance_reason"] = str(self.governance_reason or "")
         if self.governance_warnings:
             data["governance_warnings"] = list(self.governance_warnings)
+        if self.m3:
+            data["m3"] = dict(self.m3)
         return data
 
     @classmethod
@@ -284,6 +289,7 @@ class ExecutionState:
                 str(w) for w in (data.get("governance_warnings") or [])
             ],
             schedule=dict(data.get("schedule") or {}),
+            m3=dict(data.get("m3") or {}),
         )
 
     def save(self, path: Path) -> None:
@@ -1104,6 +1110,24 @@ class ExecutionOrchestrator:
            degraded=True 诚实标注, 不伪造并行)
         ⑤ 向后兼容: max_concurrency=1 = 旧顺序执行 (每轮单任务)
 
+        mode="m3" (M3e, S10-097 M3 全链 — 调度器接管真实执行 + 动态分配):
+        ① 输入: project + plan.json (M3b, 存在即复用) + execution_state
+        ② 计划链: DecomposeEngine (复合→原子) → CriticalPathEngine (关键路径,
+           落盘 plan.json/dependencies.json) → TaskScheduler (依赖就绪轮次 +
+           同文件冲突 ConflictResolver 串行化)
+        ③ 每轮: AgentMatcher.match 实时动态分配 (skill × 历史成功率, 复用
+           agents.py 不修改) → 分配落盘 state.m3.assignments [{round, task,
+           agent_id}] → ExecutionLoop 执行 (复用 _execute_with_retry + Validator)
+        ④ 每任务回填 execution_state + EvidenceBundle 落盘 evidence/ (M1a 复用)
+        ⑤ 审计 5 事件: EXECUTION_ROUND_STARTED / EXECUTION_TASK_ASSIGNED /
+           EXECUTION_TASK_COMPLETED / EXECUTION_ROUND_COMPLETED /
+           EXECUTION_M3_DEGRADED
+        ⑥ 失败安全: 单任务失败不中断整链 (后续轮次继续); M3 链任何异常 →
+           降级 solo 顺序执行 (EXECUTION_M3_DEGRADED + state.m3.degraded 诚实标注)
+        ⑦ 输出: 同 execute_project 既有结果结构 + state.m3 = {rounds,
+           assignments, evidence}
+        边界: 轮内任务依序执行 (并行线程化后置); 不做原子沙箱 / M3f / M3g。
+
         每任务: pending → running → completed/failed (状态逐任务持久化, 可恢复);
         失败: retry_count+1, 最多重试 max_retry 次, 仍失败 → failed (继续下一任务);
         全部完成 → Lifecycle TESTING → (测试门占位通过) → DELIVERED。
@@ -1174,6 +1198,59 @@ class ExecutionOrchestrator:
                 llm_confidence_threshold,
             )
         )
+        # M3e (S10-097): M3 全链执行 (mode="m3") — 调度器接管真实执行 + 动态分配。
+        # DecomposeEngine → CriticalPathEngine → TaskScheduler 轮次 → 每轮
+        # AgentMatcher 动态分配 → ExecutionLoop 执行 → 证据落盘 → 审计;
+        # 失败安全: M3 链异常 → 降级 solo 顺序执行 (degraded 诚实标注)。
+        if mode == "m3":
+            result = self._execute_m3(
+                project_dir,
+                slug,
+                state,
+                list(plan_tasks),
+                execute_fn=execute_fn,
+                max_retry=max_retry,
+                agents_file=agents_file,
+                max_concurrency=int(max_concurrency or 1),
+                run_solo=lambda: self._run_queue(
+                    project_dir,
+                    slug,
+                    state,
+                    execute_fn=execute_fn,
+                    max_retry=max_retry,
+                    validation_command=validation_command,
+                    plan=plan,
+                    replanner=replanner,
+                    max_replan=int(max_replan or 5),
+                    insert_tasks=list(insert_tasks or []),
+                    dependencies_file=dependencies_file,
+                    gap_analyzer=gap_analyzer,
+                    task_proposal=task_proposal,
+                    task_validator=task_validator,
+                    max_auto_insert_tasks=int(max_auto_insert_tasks or 5),
+                    max_tasks_per_round=int(max_tasks_per_round or 3),
+                    max_total_generated_tasks=int(max_total_generated_tasks or 10),
+                    auto_mode=str(auto_mode or "auto_execute"),
+                    proposals_file=proposals_file,
+                    planning_mode=_planning_mode,
+                    llm_gap_analyzer=llm_gap_analyzer,
+                    llm_task_proposal=llm_task_proposal,
+                    llm_reasoning=llm_reasoning,
+                    llm_trace=llm_trace,
+                    llm_confidence_threshold=float(llm_confidence_threshold or 0.5),
+                    governance=_GovernanceContext(
+                        slug,
+                        budget=budget,
+                        cost_ledger=cost_ledger,
+                        review_gate=review_gate,
+                        policy=policy,
+                        loop_guard=loop_guard,
+                        execution_started=started,
+                    ),
+                ),
+            )
+            result.duration = time.monotonic() - started
+            return result
         # S10-062 批次 C: PlanCritic 执行前检查 (可选) — 计划缺口 → 提案链 →
         # INSERT (不直接改 DAG); 仅 replanner + plan_critic 均提供时启用
         if plan_critic is not None and replanner is not None:
@@ -1468,6 +1545,518 @@ class ExecutionOrchestrator:
             "schedule_file": str(sched_file),
         }
         return plan_tasks, view
+
+    # ------------------------------------------------------------ M3e 全链执行 (S10-097)
+
+    def _m3_emit(
+        self,
+        project_dir: Path,
+        event_type: str,
+        *,
+        task_id: str = "",
+        agent_id: str = "",
+        **fields: Any,
+    ) -> None:
+        """M3 审计事件发射 (失败安全: 审计故障不中断 M3 链)。"""
+        try:
+            from ..audit.audit_emitter import AuditEmitter
+
+            AuditEmitter(workspace=project_dir.parent.parent).emit(
+                event_type,
+                project_id=project_dir.name,
+                task_id=task_id,
+                agent_id=agent_id,
+                **fields,
+            )
+        except Exception:  # noqa: BLE001 — 失败安全铁律
+            pass
+
+    def _m3_plan(
+        self,
+        project_dir: Path,
+        slug: str,
+        *,
+        max_concurrency: int,
+    ) -> Optional[dict[str, Any]]:
+        """M3 计划链 (M3a→M3b→M3c): 复合任务 → 原子叶子 → 关键路径 → 轮次。
+
+        ① plan.json (M3b 产物) 已存在且含任务 → 直接复用 (输入契约);
+        ② 缺失 → DecomposeEngine.decompose (落盘 decomposition.json) →
+           CriticalPathEngine.compute (落盘 plan.json/dependencies.json);
+        ③ TaskScheduler.schedule — 依赖就绪轮次 + 同文件冲突 ConflictResolver
+           串行化 (M3c 复用, 不修改核心) → rounds/order (落盘 schedule.json)。
+        失败安全: 任何异常/无任务 → 返回 None (由调用方降级 solo, 诚实标注)。
+        """
+        from .conflicts import ConflictResolver
+        from .critical_path import CriticalPathEngine
+        from .decomposer import DecomposeEngine
+        from .scheduler import TaskScheduler
+
+        plan: Optional[dict[str, Any]] = None
+        plan_path = project_dir / "plan.json"
+        if plan_path.is_file():
+            try:
+                loaded = json.loads(plan_path.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict) and loaded.get("tasks"):
+                    plan = loaded
+            except Exception:  # noqa: BLE001 — 损坏 → 走全链生成
+                plan = None
+        if plan is None:
+            # M3a: 产品 → 复合根任务 → 原子叶子
+            product: dict[str, Any] = {}
+            product_path = project_dir / "product.json"
+            if product_path.is_file():
+                try:
+                    loaded = json.loads(product_path.read_text(encoding="utf-8"))
+                    if isinstance(loaded, dict):
+                        product = loaded
+                except Exception:  # noqa: BLE001 — 失败安全: 损坏 → 空产品
+                    product = {}
+            name = str(product.get("name") or slug)
+            features = [str(f) for f in (product.get("core_features") or [])]
+            root_task = {
+                "id": "root",
+                "name": name,
+                "goal": str(product.get("problem") or f"实现产品: {name}"),
+                "requirement": (
+                    ("实现产品全部核心功能: " + "、".join(features))
+                    if features
+                    else f"实现产品: {name}"
+                ),
+            }
+            eng = DecomposeEngine(workspace=self.workspace, project_id=slug)
+            dres = eng.decompose(root_task, product=product)
+            if dres.error or not dres.leaves:
+                return None  # 诚实降级: 无原子叶子
+            # M3b: 关键路径 (落盘 plan.json/dependencies.json)
+            ceng = CriticalPathEngine(workspace=self.workspace, project_id=slug)
+            cres = ceng.compute(dres.leaves)
+            if not cres.tasks:
+                return None
+            plan = {
+                "project_id": slug,
+                "tasks": cres.tasks,
+                "edges": cres.edges,
+                "critical_path": cres.critical_path,
+                "order": cres.order,
+            }
+        # M3c: 调度轮次 (依赖就绪 + 冲突串行, ConflictResolver 复用)
+        resolver = ConflictResolver(resolution_file=project_dir / "conflict_resolution.json")
+        sched = TaskScheduler(workspace=self.workspace)
+        sres = sched.schedule(
+            plan,
+            {"completed": [], "project_dir": str(project_dir)},
+            max_concurrency=max_concurrency,
+            conflict_resolver=resolver,
+            persist=True,
+        )
+        if not sres.order:
+            return None  # 诚实降级: 无任务可调度
+        return {
+            "tasks": [dict(t) for t in (plan.get("tasks") or [])],
+            "rounds": [list(r) for r in sres.rounds],
+            "order": list(sres.order),
+            "degraded": bool(sres.degraded),
+            "degradation_reason": str(sres.degradation_reason or ""),
+            "conflicts": [dict(c) for c in sres.conflicts],
+        }
+
+    def _execute_m3(
+        self,
+        project_dir: Path,
+        slug: str,
+        state: ExecutionState,
+        fallback_tasks: list[dict[str, Any]],
+        *,
+        execute_fn: Optional[ExecuteFn],
+        max_retry: int,
+        agents_file: Optional[Path],
+        max_concurrency: int,
+        run_solo: Callable[[], ExecutionResult],
+    ) -> ExecutionResult:
+        """M3 全链执行入口 (S10-097): 计划链 → 轮次动态分配执行 → 证据/审计。
+
+        失败安全: 计划链/执行链任何异常 → 降级 solo 顺序执行 (run_solo,
+        EXECUTION_M3_DEGRADED + state.m3.degraded=True 诚实标注); 单任务失败
+        不中断整链 (标记 failed, 后续轮次继续)。
+        """
+        try:
+            m3 = self._m3_plan(project_dir, slug, max_concurrency=max_concurrency)
+        except Exception as exc:  # noqa: BLE001 — 失败安全: M3 链异常 → 降级 solo
+            return self._m3_degrade(
+                project_dir,
+                slug,
+                state,
+                fallback_tasks,
+                run_solo,
+                reason=f"M3 计划链异常 — 降级 solo 顺序执行: {exc}",
+            )
+        if m3 is None:
+            return self._m3_degrade(
+                project_dir,
+                slug,
+                state,
+                fallback_tasks,
+                run_solo,
+                reason="M3 计划链无可用任务 — 降级 solo 顺序执行",
+            )
+        try:
+            return self._m3_execute_rounds(
+                project_dir,
+                slug,
+                state,
+                m3,
+                execute_fn=execute_fn,
+                max_retry=max_retry,
+                agents_file=agents_file,
+            )
+        except Exception as exc:  # noqa: BLE001 — 失败安全: 执行链异常 → 降级 solo
+            return self._m3_degrade(
+                project_dir,
+                slug,
+                state,
+                fallback_tasks,
+                run_solo,
+                reason=f"M3 执行链异常 — 降级 solo 顺序执行: {exc}",
+            )
+
+    def _m3_degrade(
+        self,
+        project_dir: Path,
+        slug: str,
+        state: ExecutionState,
+        fallback_tasks: list[dict[str, Any]],
+        run_solo: Callable[[], ExecutionResult],
+        *,
+        reason: str,
+    ) -> ExecutionResult:
+        """M3 链异常 → 降级 solo 顺序执行 (诚实标注 degraded, 不伪造 M3 执行)。"""
+        state.tasks = [self._task_record(t) for t in fallback_tasks]
+        state.m3 = {
+            "rounds": [],
+            "assignments": [],
+            "evidence": [],
+            "degraded": True,
+            "reason": str(reason),
+        }
+        self._save_state(project_dir, state)
+        # EXECUTION_M3_DEGRADED 审计 (诚实标注降级)
+        self._m3_emit(
+            project_dir,
+            "EXECUTION_M3_DEGRADED",
+            decision_reason=str(reason),
+            result={"degraded": True, "fallback": "solo"},
+        )
+        return run_solo()
+
+    def _m3_evidence(
+        self,
+        project_dir: Path,
+        slug: str,
+        task: dict[str, Any],
+        outcome: dict[str, Any],
+        validation: ValidationResult,
+    ) -> Optional[dict[str, str]]:
+        """每任务 EvidenceBundle 落盘 (M1a 复用 EvidenceBuilder/EvidenceStore +
+        EVIDENCE_BUNDLE_CREATED 审计)。失败安全: 证据故障不中断执行链。"""
+        try:
+            from .evidence import (
+                EvidenceBuilder,
+                EvidenceStore,
+                emit_evidence_created,
+            )
+
+            task_id = str(task.get("id") or "")
+            diff = str(outcome.get("diff") or "")
+            artifact_path = str(task.get("artifact") or "")
+            if not diff and artifact_path and Path(artifact_path).is_file():
+                try:
+                    diff = Path(artifact_path).read_text(encoding="utf-8")
+                except Exception:  # noqa: BLE001 — 读取失败 → 空 diff
+                    diff = ""
+            logs: list[dict[str, Any]] = []
+            logs.append(
+                EvidenceBuilder._step_log(
+                    "execute",
+                    f"任务 {task_id} 执行完成: {task.get('status')}",
+                    detail=str(task.get("error") or ""),
+                )
+            )
+            if validation is not None:
+                logs.append(
+                    EvidenceBuilder._step_log(
+                        "validation",
+                        "验证通过" if validation.success else "验证失败",
+                        detail="; ".join(validation.errors) if validation.errors else "",
+                    )
+                )
+            test_results = [
+                {
+                    "ok": bool(validation.success),
+                    "output": (
+                        f"tests {getattr(validation, 'tests_total', 0)} "
+                        f"passed {getattr(validation, 'tests_passed', 0)} "
+                        f"failed {getattr(validation, 'tests_failed', 0)}"
+                    ),
+                }
+            ]
+            decisions = [
+                {"step": "assign", "reason": str(task.get("reason") or "")},
+                {"step": "execute", "reason": f"任务 {task_id} 状态 {task.get('status')}"},
+            ]
+            bundle = EvidenceBuilder.build(
+                project_id=slug,
+                task_id=task_id,
+                agent_id=str(task.get("agent") or ""),
+                diff=diff,
+                test_results=test_results,
+                logs=logs,
+                decisions=decisions,
+                artifacts=[artifact_path] if artifact_path else [],
+            )
+            path = EvidenceStore(self.workspace, slug).save(bundle)
+            emit_evidence_created(self.workspace, bundle)
+            return {
+                "task_id": task_id,
+                "bundle_id": bundle.bundle_id,
+                "path": str(path),
+            }
+        except Exception:  # noqa: BLE001 — 证据故障不中断执行链
+            return None
+
+    def _m3_execute_rounds(
+        self,
+        project_dir: Path,
+        slug: str,
+        state: ExecutionState,
+        m3: dict[str, Any],
+        *,
+        execute_fn: Optional[ExecuteFn],
+        max_retry: int,
+        agents_file: Optional[Path],
+    ) -> ExecutionResult:
+        """轮次执行 (M3e): 每轮 EXECUTION_ROUND_STARTED → 任务 AgentMatcher 动态
+        分配 (M3-4) → 执行 → 证据落盘 → EXECUTION_TASK_COMPLETED → 轮结束审计
+        → 下一轮 (依赖就绪由调度轮次保证)。单任务失败不中断整链; 输出同
+        execute_project 既有结果结构 + state.m3 = {rounds, assignments, evidence}。
+        """
+        runner: ExecuteFn = execute_fn if execute_fn is not None else _default_execute_fn
+        # M3-4 动态分配: AgentMatcher 实时匹配 (skill × 历史成功率) — 复用不修改
+        registry = AgentRegistry.load(agents_file)
+        records_file = self.workspace / "exec" / "execution_records.json"
+        metrics = (
+            AgentMetrics.load_from_records(records_file)
+            if records_file.is_file()
+            else {}
+        )
+        matcher = AgentMatcher(registry=registry, metrics=metrics)
+
+        # state.tasks ← 调度任务 (M3 计划产物; 全新执行全 pending)
+        plan_tasks = [dict(t) for t in (m3.get("tasks") or [])]
+        state.tasks = [self._task_record(t) for t in plan_tasks]
+        state.m3 = {
+            "rounds": [list(r) for r in (m3.get("rounds") or [])],
+            "assignments": [],
+            "evidence": [],
+        }
+        if m3.get("degraded"):
+            state.m3["degraded"] = True
+            state.m3["reason"] = str(m3.get("degradation_reason") or "调度降级")
+        self._save_state(project_dir, state)
+
+        completed = failed = 0
+        artifacts: list[str] = []
+        errors: list[str] = []
+        costs: list[str] = []
+        validations: list[ValidationResult] = []
+        state_by_id = {str(t.get("id") or ""): t for t in state.tasks}
+        for rindex, round_ids in enumerate(m3.get("rounds") or [], start=1):
+            round_tasks = [state_by_id[tid] for tid in round_ids if tid in state_by_id]
+            self._m3_emit(
+                project_dir,
+                "EXECUTION_ROUND_STARTED",
+                result={"round": rindex, "tasks": list(round_ids)},
+            )
+            for task in round_tasks:
+                task_id = str(task.get("id") or "")
+                # M3-4: AgentMatcher 实时动态分配 (skill × 历史成功率 × 成本)
+                match = matcher.match(task, registry=registry, metrics=metrics)
+                agent_id = str(match.get("agent") or "")
+                assignment = {
+                    "round": rindex,
+                    "task": task_id,
+                    "agent_id": agent_id,
+                    "matched": bool(agent_id),
+                    "reason": str(match.get("reason") or ""),
+                }
+                state.m3["assignments"].append(assignment)
+                task["agent"] = agent_id
+                task["matched"] = bool(agent_id)
+                task["reason"] = assignment["reason"]
+                self._save_state(project_dir, state)
+                self._m3_emit(
+                    project_dir,
+                    "EXECUTION_TASK_ASSIGNED",
+                    task_id=task_id,
+                    agent_id=agent_id,
+                    decision_reason=(
+                        f"第{rindex}轮任务 {task_id} 分配 agent={agent_id or '无匹配'}: "
+                        + (assignment["reason"] or "")
+                    ),
+                    result={"round": rindex, "matched": bool(agent_id)},
+                )
+                # 执行 (复用 _execute_with_retry — 真实执行 + retry + patch delivery)
+                outcome = self._execute_with_retry(
+                    project_dir, state, task, runner, max_retry
+                )
+                # 质量门 (复用 Validator — 同 solo/team 口径)
+                validation = self.validator.validate(task, outcome)
+                task["validation"] = "passed" if validation.success else "failed"
+                validations.append(validation)
+                self._save_state(project_dir, state)
+                # 证据落盘 (M1a 复用: EvidenceBundle → evidence/<bundle>.json)
+                evidence_ref = self._m3_evidence(
+                    project_dir, slug, task, outcome, validation
+                )
+                if evidence_ref is not None:
+                    state.m3["evidence"].append(evidence_ref)
+                    self._save_state(project_dir, state)
+                if task.get("status") == "completed" and validation.success:
+                    completed += 1
+                    if task.get("artifact"):
+                        artifacts.append(str(task["artifact"]))
+                else:
+                    failed += 1
+                    if task.get("status") == "completed":
+                        # 执行成功但验证失败 → 同 solo 口径标记 failed
+                        task["status"] = "failed"
+                        task["error"] = "; ".join(validation.errors) or "验证失败"
+                        self._save_state(project_dir, state)
+                    reason = str(
+                        task.get("error")
+                        or "; ".join(validation.errors)
+                        or "任务执行失败"
+                    )
+                    errors.append(f"{task_id}: {reason}")
+                    # 失败 → repair_task.json (同 _run_queue 失败处理口径)
+                    RepairManager.create_repair(
+                        project_dir,
+                        task,
+                        reason,
+                        retry_count=int(task.get("retry_count") or 0),
+                    )
+                if isinstance(outcome, dict) and outcome.get("cost"):
+                    costs.append(str(outcome["cost"]))
+                self._m3_emit(
+                    project_dir,
+                    "EXECUTION_TASK_COMPLETED",
+                    task_id=task_id,
+                    agent_id=agent_id,
+                    decision_reason=f"第{rindex}轮任务 {task_id} 完成",
+                    result={
+                        "round": rindex,
+                        "status": str(task.get("status") or ""),
+                        "validation": str(task.get("validation") or ""),
+                        "bundle_id": (
+                            str(evidence_ref.get("bundle_id") or "")
+                            if evidence_ref is not None
+                            else ""
+                        ),
+                    },
+                )
+            self._m3_emit(
+                project_dir,
+                "EXECUTION_ROUND_COMPLETED",
+                result={
+                    "round": rindex,
+                    "tasks": list(round_ids),
+                    "completed": sum(
+                        1 for t in round_tasks if t.get("status") == "completed"
+                    ),
+                    "failed": sum(
+                        1 for t in round_tasks if t.get("status") == "failed"
+                    ),
+                },
+            )
+        # 结果汇总 + Lifecycle (同 _run_queue 终态口径)
+        result = ExecutionResult(
+            project=slug,
+            status=Lifecycle.USER_ACCEPTANCE if failed == 0 else "failed",
+            completed_tasks=completed,
+            failed_tasks=failed,
+            artifacts=artifacts,
+            cost=" · ".join(costs),
+            errors=errors,
+        )
+        if failed == 0:
+            state.status = Lifecycle.TESTING
+            state.lifecycle = Lifecycle.TESTING
+            self._save_state(project_dir, state)
+            self._set_lifecycle(project_dir, slug, Lifecycle.TESTING)
+            state.status = Lifecycle.VALIDATION_PASS
+            state.lifecycle = Lifecycle.VALIDATION_PASS
+            self._save_state(project_dir, state)
+            self._set_lifecycle(project_dir, slug, Lifecycle.VALIDATION_PASS)
+            state.status = Lifecycle.USER_ACCEPTANCE
+            state.lifecycle = Lifecycle.USER_ACCEPTANCE
+            self._save_state(project_dir, state)
+            self._set_lifecycle(project_dir, slug, Lifecycle.USER_ACCEPTANCE)
+        else:
+            state.status = Lifecycle.DEVELOPMENT
+            state.lifecycle = Lifecycle.DEVELOPMENT
+            self._save_state(project_dir, state)
+        # 验证汇总资产化 (同 _run_queue 口径)
+        summary = ValidationResult(
+            success=failed == 0,
+            tests_total=len(validations),
+            tests_passed=sum(1 for v in validations if v.success),
+            tests_failed=sum(1 for v in validations if not v.success),
+            errors=[
+                f"{t.get('id') or t.get('name')}: {err}"
+                for t, v in zip(state.tasks, validations)
+                for err in (v.errors if not v.success else [])
+            ],
+        )
+        self.validator.save(project_dir, slug, summary)
+        self._m3_emit(
+            project_dir,
+            "TEST_PASSED" if failed == 0 else "TEST_FAILED",
+            actor_type="system",
+            actor_id="validator",
+            decision_reason=(
+                f"M3 测试验证通过: {summary.tests_passed}/{summary.tests_total}"
+                if failed == 0
+                else f"M3 测试验证失败: {summary.tests_failed}/{summary.tests_total}"
+            ),
+            result={
+                "tests_total": summary.tests_total,
+                "tests_passed": summary.tests_passed,
+                "tests_failed": summary.tests_failed,
+            },
+        )
+        self._m3_emit(
+            project_dir,
+            "TASK_COMPLETED" if failed == 0 else "TASK_FAILED",
+            actor_type="system",
+            actor_id="orchestrator",
+            decision_reason=(
+                f"M3 生产执行完成: {len(state.tasks)} 任务, "
+                f"{sum(1 for t in state.tasks if t.get('status') == 'completed')} 完成"
+                if failed == 0
+                else f"M3 生产执行有失败: {failed} 任务失败"
+            ),
+            result={"failed": failed, "total": len(state.tasks)},
+        )
+        # S10-071 P0-3: Memory 自动沉淀 (同 _run_queue 口径, 失败安全)
+        try:
+            from ..memory.auto_learn import AutoLearner
+
+            AutoLearner().learn_from_workspace(project_dir.parent.parent)
+        except Exception:  # noqa: BLE001 — 失败安全
+            pass
+        # M1b T3: 执行完成证据包 (同普通执行口径, 失败安全)
+        self._attach_execution_evidence(project_dir, slug, result, state, validations)
+        return result
 
     def resume(
         self,

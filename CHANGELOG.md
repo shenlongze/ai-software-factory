@@ -5,7 +5,38 @@
 
 ---
 
-## [v1.1.14] — 2026-08-24
+## [v1.1.15] — 2026-08-24
+
+**M3e 调度器接管真实执行 + 动态分配 (S10-097)**: M3 收尾 — M3a-d 计划层产物
+正式驱动真实执行 (不再走旧 TaskTree 顺序路径)。
+
+### Added
+
+- **`orchestrator.execute_project(mode="m3")` 全链分支** — DecomposeEngine
+  (复合→原子) → CriticalPathEngine (关键路径, 落盘 plan.json/dependencies.json)
+  → TaskScheduler (依赖就绪轮次 + 同文件冲突 ConflictResolver 串行) → 每轮
+  AgentMatcher 实时动态分配 → ExecutionLoop 执行 (复用 `_execute_with_retry` +
+  Validator) → 每任务 EvidenceBundle 落盘 evidence/ (M1a 复用) → 审计 → 下一轮。
+  默认 `mode="solo"` 旧路径零变化; 输出同既有结果结构 + `state.m3 = {rounds,
+  assignments, evidence}`。
+- **动态分配 M3-4** — 每轮就绪叶子 `AgentMatcher.match` 实时匹配 (skill × 历史
+  成功率, 复用 agents.py 不修改); 分配落盘 `state.m3.assignments`
+  [{round, task, agent_id}]; 空注册表 → 无匹配诚实报告 (不伪造分配)。
+- **审计 5 事件** — `EXECUTION_ROUND_STARTED` / `EXECUTION_TASK_ASSIGNED` /
+  `EXECUTION_TASK_COMPLETED` / `EXECUTION_ROUND_COMPLETED` /
+  `EXECUTION_M3_DEGRADED` (注册表 + 真实发射)。
+- **失败安全** — 单任务失败不中断整链 (标记 failed, 后续轮次继续); M3 链任何
+  异常 → 降级 solo 顺序执行 (`EXECUTION_M3_DEGRADED` + `state.m3.degraded=True`
+  诚实标注, 不伪造 M3 执行)。
+- **契约测试** — `tests/console/test_m3e_full_chain.py`: 全链真实执行 (复合任务
+  → M3 链 → 真实执行 → 项目目录产物) / 动态分配断言 / 旧路径零变化 / 单任务
+  失败不中断 / 冲突串行 (同文件不同轮) / 失败回退 solo。
+
+### 边界 (S10-097 §8, 未做)
+
+- ❌ 轮内并行线程化 (轮内仍依序, 线程后置)
+- ❌ 原子沙箱改造 / M3f / M3g (后续)
+
 
 **M3d 拆解质量评估 + LLM 深度拆解 (S10-095)**: M3 三部曲之后补上**质量门控** —
 拆解完先验质量（六维确定性评分），不合格诚实降级，不伪造 LLM 质量；同时

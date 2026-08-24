@@ -80,6 +80,12 @@ EVENT_TYPES: tuple[str, ...] = (
     "PLAN_MERGE_MARKED",
     "EVAL_COMPLETED",
     "EVAL_REJECTED_FALLBACK",
+    # M3e (S10-097): M3 全链调度执行事件 (5 事件)
+    "EXECUTION_ROUND_STARTED",
+    "EXECUTION_TASK_ASSIGNED",
+    "EXECUTION_TASK_COMPLETED",
+    "EXECUTION_ROUND_COMPLETED",
+    "EXECUTION_M3_DEGRADED",
 )
 
 #: 敏感键精确名 (脱敏: 键名小写/下划线归一后 ∈ 该集合 → 删除)

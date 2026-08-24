@@ -322,6 +322,7 @@ def render_board_html(path: Path = DEFAULT_BACKLOG) -> str:
     return f"""<!DOCTYPE html>
 <html lang="zh"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="refresh" content="30">
 <title>AI Factory 监控面板</title>
 <style>
   body {{ font-family: -apple-system, system-ui, sans-serif; margin: 0; padding: 16px; background: #0f1115; color: #e6e6e6; }}
@@ -364,3 +365,124 @@ def _pkg_version_lite() -> str:
         return tomllib.loads(p.read_text(encoding="utf-8"))["project"]["version"]
     except Exception:  # noqa: BLE001
         return "dev"
+
+
+# ---------------------------------------------------------------- HTML 图/链可视化
+
+def render_graph_html(workspace: Path, project_id: str = "") -> str:
+    """任务依赖图 HTML 可视化（节点+连线, CRITICAL★ 红色高亮, 纯 CSS/SVG）。"""
+    project_dir = Path(workspace) / "projects" / (project_id or "")
+    plan_file = project_dir / "plan.json"
+    if not plan_file.is_file():
+        return "<p>（未找到 plan.json — 项目未生成计划, 或需指定项目）</p>"
+    try:
+        plan = json.loads(plan_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):  # noqa: BLE001
+        return "<p>（plan.json 损坏）</p>"
+    tasks = {t.get("id", ""): t for t in (plan.get("tasks") or [])}
+    edges = plan.get("edges") or []
+    critical = set(plan.get("critical_path") or [])
+    if not tasks:
+        return "<p>（plan.json 无任务）</p>"
+
+    def node_html(tid: str, t: dict) -> str:
+        is_crit = tid in critical
+        crit_cls = "crit" if is_crit else ""
+        crit_mark = " ★" if is_crit else ""
+        est = t.get("est_minutes")
+        est_s = f"<span class='est'>{est}min</span>" if est else ""
+        return (f'<div class="node {crit_cls}" title="{t.get("name","")}">'
+                f'<div class="nid">{tid}{crit_mark}</div>'
+                f'<div class="nname">{t.get("name","")[:16]}</div>{est_s}</div>')
+
+    nodes = "".join(node_html(tid, t) for tid, t in tasks.items())
+    # 边列表（用于 CSS 连线提示或箭头文本）
+    edge_rows = []
+    for e in edges:
+        if isinstance(e, dict):
+            src, dst = e.get("from", ""), e.get("to", "")
+        else:
+            continue
+        if src and dst:
+            edge_rows.append(f"<li>{src} → {dst}</li>")
+    edges_html = "".join(edge_rows) if edge_rows else "<li>（无依赖边）</li>"
+
+    return f"""<!DOCTYPE html>
+<html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>任务依赖图 — {project_id or "项目"}</title>
+<style>
+  body {{ font-family: -apple-system, system-ui, sans-serif; margin: 0; padding: 16px; background: #0f1115; color: #e6e6e6; }}
+  h1 {{ font-size: 18px; }} .legend {{ color: #9aa0a6; font-size: 12px; margin-bottom: 10px; }}
+  .graph {{ display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }}
+  .node {{ background: #1a1d24; border: 2px solid #2a2e37; border-radius: 8px; padding: 8px 12px; min-width: 110px; }}
+  .node.crit {{ border-color: #e53935; background: #2a1416; }}
+  .nid {{ font-weight: bold; color: #ffb74d; }} .node.crit .nid {{ color: #ff7043; }}
+  .nname {{ font-size: 11px; color: #b0b6bf; }} .est {{ font-size: 10px; color: #78909c; }}
+  .arrow {{ color: #546e7a; font-size: 20px; }}
+  .edges {{ margin-top: 16px; background: #1a1d24; border-radius: 8px; padding: 10px 14px; }}
+  .edges ul {{ column-count: 2; font-size: 12px; color: #9aa0a6; }}
+</style></head><body>
+<h1>🔗 任务依赖图 <span class="legend">(★=CRITICAL 关键路径, 红色边框)</span></h1>
+<div class="graph">{nodes}</div>
+<div class="edges"><b>依赖边:</b><ul>{edges_html}</ul></div>
+</body></html>"""
+
+
+def render_chain_html(workspace: Path, project_id: str = "") -> str:
+    """任务链 HTML 可视化（关键路径横向卡片链 + 箭头, ★关键节点 ▲汇聚点）。"""
+    project_dir = Path(workspace) / "projects" / (project_id or "")
+    plan_file = project_dir / "plan.json"
+    if not plan_file.is_file():
+        return "<p>（未找到 plan.json）</p>"
+    try:
+        plan = json.loads(plan_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):  # noqa: BLE001
+        return "<p>（plan.json 损坏）</p>"
+    tasks = {t.get("id", ""): t for t in (plan.get("tasks") or [])}
+    cpath = plan.get("critical_path") or []
+    if not cpath:
+        return "<p>（无关键路径 — 环拒绝/未生成, 诚实不伪造）</p>"
+    merges = plan.get("merges") or []
+    merge_ids = set()
+    for m in merges:
+        if isinstance(m, dict):
+            merge_ids.add(m.get("task") or "")
+        elif isinstance(m, str):
+            merge_ids.add(m)
+
+    chain_parts = []
+    for i, tid in enumerate(cpath):
+        t = tasks.get(tid, {})
+        is_merge = tid in merge_ids
+        marks = "★" + ("▲" if is_merge else "")
+        cls = "crit" if t.get("critical") else ""
+        est = t.get("est_minutes")
+        est_s = f"<span class='est'>{est}min</span>" if est else ""
+        chain_parts.append(
+            f'<div class="cnode {cls}"><div class="cid">{marks} {tid}</div>'
+            f'<div class="cname">{t.get("name","")[:14]}</div>{est_s}</div>'
+        )
+        if i < len(cpath) - 1:
+            chain_parts.append('<div class="carrow">→</div>')
+    total_est = sum(int(tasks.get(tid, {}).get("est_minutes") or 0) for tid in cpath)
+    chain = "".join(chain_parts)
+
+    return f"""<!DOCTYPE html>
+<html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>任务链 — {project_id or "项目"}</title>
+<style>
+  body {{ font-family: -apple-system, system-ui, sans-serif; margin: 0; padding: 16px; background: #0f1115; color: #e6e6e6; }}
+  h1 {{ font-size: 18px; }} .legend {{ color: #9aa0a6; font-size: 12px; }}
+  .chain {{ display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 12px; }}
+  .cnode {{ background: #1a1d24; border: 2px solid #e53935; border-radius: 8px; padding: 8px 12px; min-width: 100px; }}
+  .cid {{ font-weight: bold; color: #ff7043; }} .cname {{ font-size: 11px; color: #b0b6bf; }}
+  .est {{ font-size: 10px; color: #78909c; }} .carrow {{ color: #e53935; font-size: 22px; }}
+  .total {{ margin-top: 14px; color: #9aa0a6; font-size: 13px; }}
+  @media (max-width: 600px) {{ .chain {{ flex-direction: column; }} .carrow {{ transform: rotate(90deg); }} }}
+</style></head><body>
+<h1>⛓ 任务链（关键路径）<span class="legend">★=关键节点 ▲=汇聚点</span></h1>
+<div class="chain">{chain}</div>
+<div class="total">总工期: {total_est}min · 关键节点 {len(cpath)} 个 · 汇聚点 {len(merge_ids)} 个</div>
+</body></html>"""

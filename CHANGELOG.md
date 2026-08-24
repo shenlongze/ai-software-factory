@@ -3,7 +3,22 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
-## [v1.1.34] — 2026-08-24
+## [v1.1.35] — 2026-08-24
+
+**board 视觉增强**: graph/chain HTML 可视化 + 自动刷新（Founder: 来, 开始）。
+
+### Added
+
+- **/api/board/graph?project=X** — 任务依赖图 HTML（节点卡片 + CRITICAL★ 红色高亮 + 依赖边）
+- **/api/board/chain?project=X** — 任务链 HTML（关键路径 ★关键节点 ▲汇聚点 + 总工期, 手机自适应竖排）
+- **/api/board 自动刷新**（30s meta refresh, 实时监控）
+- build_app 加 factory_root（graph/chain 读项目 plan.json 的数据根）
+
+### 验证
+
+- graph: db★/api★/fe★/test★ 红色节点 + extra 普通 + 依赖边
+- chain: ★db→★api→★fe→★▲test + 总工期 12min
+
 
 **/api/board HTML 可视化面板**: 进度条/标签/分组卡片, 浏览器自适应（Founder: 升级为 HTML 可视化）。
 

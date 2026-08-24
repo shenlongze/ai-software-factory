@@ -644,6 +644,7 @@ def build_app(
     *,
     static_dir: str | Path | None = None,
     event_logger: Any = None,
+    factory_root: str | Path | None = None,
 ) -> Any:
     """把已装配 ConsoleService 挂为 FastAPI app (最薄 HTTP 绑定)。
 
@@ -678,6 +679,9 @@ def build_app(
     # 由 Service 层抛出, HTTP 层映射)
     ToolExecuteNotFoundError = _service.ToolExecuteNotFoundError
     ToolExecutePermissionError = _service.ToolExecutePermissionError
+
+    # S10-1xx: 数据根目录（/api/board/graph|chain 读项目 plan.json）
+    workspace_root = Path(factory_root) if factory_root is not None else None
 
     app = FastAPI(title="AI Software Factory — Human Console Web", version=_factory_version)
 
@@ -726,6 +730,30 @@ def build_app(
             html = board_mod.render_board_html()
         except Exception:  # noqa: BLE001 — 面板失败 → 明确错误不 500
             html = "<p>（面板渲染失败）</p>"
+        return HTMLResponse(content=html)
+
+    @app.get("/api/board/graph")
+    def api_board_graph(project: str = ""):
+        """任务依赖图 HTML（plan.json, CRITICAL★ 红色高亮）。"""
+        from fastapi.responses import HTMLResponse
+
+        board_mod = _console_import("session.board")
+        try:
+            html = board_mod.render_graph_html(workspace_root, project)
+        except Exception:  # noqa: BLE001
+            html = "<p>（依赖图渲染失败）</p>"
+        return HTMLResponse(content=html)
+
+    @app.get("/api/board/chain")
+    def api_board_chain(project: str = ""):
+        """任务链 HTML（关键路径 ★关键节点 ▲汇聚点 + 工期）。"""
+        from fastapi.responses import HTMLResponse
+
+        board_mod = _console_import("session.board")
+        try:
+            html = board_mod.render_chain_html(workspace_root, project)
+        except Exception:  # noqa: BLE001
+            html = "<p>（任务链渲染失败）</p>"
         return HTMLResponse(content=html)
 
     @app.get("/api/dashboard")
@@ -2035,7 +2063,7 @@ def create_app(
     root = Path(factory_root) if factory_root is not None else DEFAULT_ROOT
     logger = _open_event_logger(root)
     service = build_console_service(root, event_logger=logger)
-    return build_app(service, static_dir=static_dir, event_logger=logger)
+    return build_app(service, static_dir=static_dir, event_logger=logger, factory_root=root)
 
 
 if __name__ == "__main__":  # pragma: no cover — uvicorn 直接启动入口

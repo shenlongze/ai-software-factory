@@ -7416,6 +7416,55 @@ factory <域> <动词> [参数]      # 运维/资源/数据命令（长命令, �
 隔离实现: company_id/department_id/factory_id 字段 + 查询过滤（§7.2.2 守则1）
 ```
 
+**资源管理矩阵（资源域 × 管理动词 — LLM/Agent/Skill/MCP/流程 全预留）★**
+
+> 2026-08-24 补充（Founder: 各种 llm/agent/skill/mcp/流程 管理, 都需要预留设计）:
+> 资源管理 = **list（查看）+ select（选择）+ config（设定）+ create/install（创建）+
+> test（验证）+ use（启用）** 六类操作, 每类资源统一, 不逐个发明。
+
+| 资源 | list | select/use | config/set | create/install | test | 状态 |
+|---|---|---|---|---|---|---|
+| **llm** | ✅ llm list | 📐 llm select | 📐 llm config | — | 📐 llm test | 部分 |
+| **agent** | ✅ agent list | 📐 agent select | 📐 agent config | 📐 agent hire | 📐 agent test | 骨架 |
+| **skill** | ✅ skill list | 📐 skill use | 📐 skill config | 📐 skill install | — | 骨架 |
+| **mcp** | 📐 mcp list | 📐 mcp use | 📐 mcp config | 📐 mcp connect | 📐 mcp test | 待建 |
+| **workflow** | 📐 workflow list | 📐 workflow use | 📐 workflow config | 📐 workflow create | — | 待建 |
+| **project** | ✅ project list | 📐 project select | 📐 project config | ✅ project create | — | 部分 |
+| **service** | ✅ service list | — | — | — | — | ✅ |
+
+**管理动词规范（六类, 统一语义）**
+
+```
+list    枚举（只读）       select  设为当前上下文（会话 current_llm/agent/...）
+config  设定参数（敏感）    create/install/hire/connect  创建/装配（敏感）
+test    验证可用（只读）    use     启用/指定使用（只读状态变更）
+```
+
+**管理操作安全（config/create/delete 是敏感操作）**
+
+```
+- 敏感操作落审计（谁/何时/改了什么）· 走 ConfirmationGate 确认
+- 组织作用域生效（--company 内配置, 不跨组织）
+- select 改变会话当前上下文（影响后续操作默认值）
+```
+
+**会话当前上下文（select 的语义）**
+
+```
+会话状态: current_company / current_project / current_llm / current_agent
+select 命令设置 → 后续资源命令缺省作用域（§7.2.2 命令作用域）
+/status 显示当前上下文（已有）
+```
+
+**实现预留原则**
+
+```
+- 每类资源先有 list（只读, 已有骨架）→ 再加 select/config（敏感, 审计）
+- 新增资源（mcp/workflow/...）= 资源表加一行 + 实现对应动词
+- 统一契约: 资源 id 引用 + 组织作用域 + 审计事件（§2.11）
+```
+
+
 **动词规范（统一动作词）**
 
 ```

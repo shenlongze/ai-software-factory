@@ -475,3 +475,33 @@ class TestTimelineReadable:
         assert "需求确认" in html and "×3" in html
         assert "产品创建" in html and "项目A" in html
         assert "已折叠" in html
+
+
+# ================================================================== demo/无项目引导
+
+class TestDemoAndNoProject:
+    def test_tasktree_plan_only_project(self, tmp_path):
+        """只有 plan.json 的示例项目 (demo) → 显示'暂无任务', 不误报'项目不存在'。"""
+        pdir = tmp_path / "projects" / "demo"
+        pdir.mkdir(parents=True)
+        (pdir / "plan.json").write_text("{}", encoding="utf-8")
+        html = BOARD.render_project_tasktree_html(tmp_path, "demo")
+        assert "项目不存在" not in html
+        assert "暂无任务" in html
+
+    def test_tasktree_missing_project(self, tmp_path):
+        """完全不存在 → '项目不存在或未选择'。"""
+        html = BOARD.render_project_tasktree_html(tmp_path, "nope")
+        assert "项目不存在" in html
+
+    def test_nav_no_project_leads_to_list(self, tmp_path):
+        """无项目时: 任务树/依赖图/任务链 tab 指向项目列表 (不 fallback demo)。"""
+        nav = BOARD._board_nav("project", "", tmp_path)
+        assert "?view=projects" in nav
+        assert "project=demo" not in nav
+
+    def test_nav_with_project_uses_it(self, tmp_path):
+        """有项目时: tab 指向该项目对应面板。"""
+        nav = BOARD._board_nav("project", "P-1", tmp_path)
+        assert "tasks?project=P-1" in nav
+        assert "graph?project=P-1" in nav

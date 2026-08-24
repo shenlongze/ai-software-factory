@@ -3,6 +3,21 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.56] — 2026-08-24
+
+**Board 修复: 示例项目 demo 误报"项目不存在" + 导航无项目不再 fallback demo**。
+
+### Fixed
+
+- 任务树项目存在性: 有 product.json 或任务资产 (tasks/execution_state/plan) 均视为
+  存在 — demo 等仅有 plan.json 的示例项目显示"暂无任务"（诚实）, 不再误报"项目不存在"
+- 导航无项目时: 任务树/依赖图/任务链 tab 指向项目列表引导（选择是第一步）,
+  不再 fallback 到 demo 示例
+
+### 验证
+
+- 4 新契约测试 (plan-only 项目/完全不存在/无项目导航/有项目导航) · 全量回归 0 新增失败
+
 ## [v1.1.55] — 2026-08-24
 
 **Board 生命线可读化（Founder: 看不懂, 英文粘连+重复刷屏）**。

@@ -1403,11 +1403,13 @@ def _board_nav(active: str = "project", project: str = "", workspace: Optional[P
             "text-decoration:none;margin-right:8px;margin-bottom:6px")
     act = "background:#1565c0;color:#fff;border-color:#1565c0"
     demo = "demo"
+    # 项目优先: 未选项目时, 项目面板 tab (任务树/依赖图/任务链) 指向项目列表引导,
+    # 不再 fallback 到 demo 示例 (Founder: 选择是第一步)
     tabs = [
         ("project", f"/api/board?view=project&project={g}" if g else "/api/board?view=projects", "📊 项目"),
-        ("tasks", f"/api/board/tasks?project={g or demo}", "🗂 任务树"),
-        ("graph", f"/api/board/graph?project={g or demo}", "🔗 依赖图"),
-        ("chain", f"/api/board/chain?project={g or demo}", "⛓ 任务链"),
+        ("tasks", f"/api/board/tasks?project={g}" if g else "/api/board?view=projects", "🗂 任务树"),
+        ("graph", f"/api/board/graph?project={g}" if g else "/api/board?view=projects", "🔗 依赖图"),
+        ("chain", f"/api/board/chain?project={g}" if g else "/api/board?view=projects", "⛓ 任务链"),
         ("timeline", "/api/board/timeline", "⏱ 生命线"),
         ("report", "/api/board?view=report", "📄 汇报"),
         ("mainline", "/api/board?view=mainline", "📋 AI主线面板"),
@@ -1481,9 +1483,19 @@ def render_project_tasktree_html(workspace: Path | str, slug: str) -> str:
     """项目任务树 HTML (epic → feature → task, 状态色点; 用户要的"无序图"方向)。"""
     slug = Path(str(slug or "")).name
     info = _read_product_info(workspace, slug) if slug else None
-    if info is None:
-        return _board_nav("project", slug) + "<p>（项目不存在或未选择）</p>"
+    # 项目存在性: 有 product.json 或任务资产 (tasks/execution_state/plan) 均视为存在
+    # (demo 等仅有 plan.json 的示例项目也能进入, 诚实显示"暂无任务")
+    pdir = Path(workspace) / "projects" / slug if slug else None
+    has_assets = pdir is not None and pdir.is_dir() and any(
+        (pdir / n).exists()
+        for n in ("product.json", "tasks.json", "execution_state.json", "plan.json")
+    )
+    if not has_assets:
+        return _board_nav("project", slug, workspace) + "<p>（项目不存在或未选择）</p>"
     tree = _project_task_tree(workspace, slug)
+    # 名称 fallback: 无 product.json → slug (demo 等示例)
+    if info is None:
+        info = {"name": slug}
     marks = {"done": "✅", "delivered": "✅", "approved": "✅", "applied": "✅",
              "running": "🔵", "in_progress": "🔵", "started": "🔵",
              "failed": "❌", "blocked": "⛔", "pending": "⬜", "todo": "⬜"}

@@ -340,9 +340,55 @@ class RuntimeService:
         )
 
 
+class BoardService:
+    """board: 任务监控面板 — 懒加载服务 (无常驻进程)。
+
+    随 factory start 注册（`factory service list` 可见）; 能力:
+    - 会话 /board 命令（文本面板, 已有 commands.py）
+    - /api/board Web 端点（懒加载 — 首次访问才渲染, 不常驻资源）
+    生命周期: 注册✅ 发现✅ 运行✅(懒加载) 执行✅(/board+/api/board)
+              治理✅(service start/stop) 监控✅(service status)
+    """
+
+    id = "board"
+    label = "任务监控面板 (todolist/依赖图/生命线, 懒加载)"
+    short_label = "监控面板"
+    rollback = "none"
+
+    def port(self, ctx: ServiceContext) -> int | None:
+        return None  # 无独立端口（懒加载端点）
+
+    def start(self, ctx: ServiceContext) -> ServiceHandle:
+        # 懒加载: 不启动进程, 注册端点即可（首次 /api/board 访问渲染）
+        return ServiceHandle(
+            id=self.id,
+            ok=True,
+            pid=None,
+            pid_file=None,
+            port=None,
+            detail="懒加载（/board 会话命令 + /api/board 端点, 首次访问渲染）",
+        )
+
+    def stop(self, handle: ServiceHandle) -> None:
+        return None  # 无进程, 无操作
+
+    def status(self, ctx: ServiceContext) -> ServiceStatus:
+        return ServiceStatus(
+            self.id,
+            STATE_RUNNING,
+            "懒加载服务 (会话 /board + /api/board 端点, 首次访问渲染)",
+            note="懒加载 (无常驻进程)",
+        )
+
+
 def _register_builtin() -> None:
     """内置 3 服务注册 (模块加载时; 未来服务各自 register, 本函数不动)。"""
-    for service in (BackendService(), FrontendService(), RuntimeService()):
+    for service in (
+        BackendService(),
+        FrontendService(),
+        RuntimeService(),
+        BoardService(),  # S10-1xx: 监控面板懒加载服务（随启动注册）
+    ):
         register(service)
 
 

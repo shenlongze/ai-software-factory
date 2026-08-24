@@ -50,7 +50,22 @@ PRD/文档输出经 rich.Markdown 渲染 (标题/列表/表格/代码块可读, 
 - `test_session_completion` 默认命令表断言更新: +/preview (S10-105) +/board (S10-106)
 
 ---
-## [v1.1.27] — 2026-08-24
+## [v1.1.28] — 2026-08-24
+
+**服务生命周期管理（§2.13）+ board 服务落地**: 服务注册/发现/运行/执行/治理/监控 6 阶段规则 + board 懒加载服务。
+
+### Added
+
+- **§2.13 服务生命周期管理**（方案书）— 注册/发现/运行(已有) + 执行/治理/监控(设计)
+  - 随启动组件装配: 注册+懒加载 ≠ 全部常驻; 失败隔离 + 热插拔
+- **BoardService**（`cli_services.py`）— board 注册进 Services Registry
+  - `factory service list` 可见 · status 懒加载 · 会话 /board + /api/board 端点
+- 未来 dashboard/通知/日志 同机制注册（ServiceDef + register 一行）
+
+### 测试
+
+- 服务注册验证: list 含 board · status running(懒加载)
+
 
 **任务监控面板 /board**: todolist + 进度条 + 标签 + 依赖图 + 生命线（Founder 需求）。
 

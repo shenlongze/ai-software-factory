@@ -1960,6 +1960,65 @@ factory-core ← factory-console ← factory-exec ← factory-org
 - **M2**：HandoffBus 交接消息（模块内协作通信）
 - **M3/M5**：跨模块消息总线 + Outbox + 幂等 + 死信（作为模块化底座，独立产品接入同一总线）
 
+### 2.13 服务生命周期管理（注册 / 发现 / 运行 / 执行 / 治理 / 监控）★
+
+> 2026-08-24 补充（Founder: board 一键启动 + 随启动组件 + 服务注册/发现/运行/执行/治理/监控规则）。
+> 核心: **"注册 + 懒加载" ≠ "全部常驻"** — 随启动的是入口/可见性, 不是资源/初始化。
+
+**现状（注册/发现/运行 ✅ 已有）**: `cli_services.py` Services Registry
+- ServiceDef 协议（id/label/start/stop/status + 可选 wait_ready/port/log_path/rollback）
+- _SERVICES 注册表: register 即被发现（factory service list / factory start <id>）
+- **缺: 执行/治理/监控 规则**
+
+**服务生命周期 6 阶段规则**
+
+| 阶段 | 规则 | 现状 |
+|---|---|---|
+| **① 注册 Register** | 服务实现 ServiceDef 协议 + register() → 进注册表 | ✅ 已有 |
+| **② 发现 Discover** | register 即被发现; `factory service list` 枚举 | ✅ 已有 |
+| **③ 运行 Run** | start/stop/status + wait_ready 健康检查 + rollback 失败回滚 | ✅ 已有 |
+| **④ 执行 Execute** | 服务暴露能力（actions/endpoints）; 统一契约（§2.11）调用 | 📐 设计 |
+| **⑤ 治理 Govern** | 启停控制 + 服务审计事件 + 权限（哪些服务用户可启停） | 📐 设计 |
+| **⑥ 监控 Monitor** | 健康/指标/日志; service status + 监控面板（§5.8） | 📐 设计 |
+
+**随启动组件装配（懒加载 + 失败隔离）**
+
+```
+factory start
+  → 扫描注册表, 发现"随启动"服务（board/dashboard/notifier...）
+  → 注册（命令/端点可见）→ 懒加载（首次访问才初始化, 不常驻资源）
+  → 失败隔离（服务装配失败不影响主程序, rollback）
+  → 热插拔（新服务实现 ServiceDef + register 一行即可）
+```
+
+**④ 执行规则（能力调用协议）**
+
+```
+服务暴露能力 = actions（会话命令）+ endpoints（HTTP 端点）
+调用统一契约: 输入/输出/错误码（§2.11）
+board 示例: /board 会话命令（文本面板）+ /api/board Web 端点（懒加载渲染）
+```
+
+**⑤ 治理规则**
+
+```
+启停: factory service start/stop <id>（明确控制）
+审计: 服务启停/能力调用落审计事件（谁/何时/什么服务）
+权限: 服务分级（核心服务用户可启停 / 组件服务按需）
+```
+
+**⑥ 监控规则**
+
+```
+健康: service status（wait_ready 检查）
+指标: 服务存活/调用量/延迟（§5.8 时序存储）
+面板: 监控面板聚合服务状态（§5.10 递归进度）
+```
+
+**落地**: board 服务（id="board"）实现 ServiceDef + register → 随 start 提供
+/api/board 端点（懒加载）+ 会话 /board 命令（已有）。未来 dashboard/通知/日志
+同机制注册。
+
 ## 三、复杂任务拆解体系
 
 ### 3.1 什么是"复杂任务"

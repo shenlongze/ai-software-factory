@@ -3,7 +3,19 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
-## [v1.1.28] — 2026-08-24
+## [v1.1.29] — 2026-08-24
+
+**service list 显示访问地址**: board 懒加载服务的 url + 访问提示（Founder: "都不知道在哪"）。
+
+### Fixed
+
+- **BoardService.status 加 url**（`cli_services.py`）— `http://127.0.0.1:<backend_port>/api/board`
+- **note 访问指引**: 会话 /board · Web /api/board（需 backend 运行）
+- `factory service list` 现在显示:
+  ```
+  board  running  (http://127.0.0.1:8011/api/board)
+  ```
+
 
 **会话 Markdown 渲染 + /preview + 多行输入**（S10-105）:
 PRD/文档输出经 rich.Markdown 渲染 (标题/列表/表格/代码块可读, 不再看源码);

@@ -373,11 +373,13 @@ class BoardService:
         return None  # 无进程, 无操作
 
     def status(self, ctx: ServiceContext) -> ServiceStatus:
+        base = f"http://127.0.0.1:{ctx.backend_port}"
         return ServiceStatus(
             self.id,
             STATE_RUNNING,
-            "懒加载服务 (会话 /board + /api/board 端点, 首次访问渲染)",
-            note="懒加载 (无常驻进程)",
+            "懒加载服务 (会话 /board + Web /api/board, 首次访问渲染)",
+            url=f"{base}/api/board",
+            note="访问: 会话 /board · Web /api/board (需 backend 运行)",
         )
 
 

@@ -1,157 +1,113 @@
 # AI Factory
 
-> **AI Workforce Operating System — for building, managing and governing AI workers.**
+> **AI Workforce Operating System — 创建、管理、运行和进化 AI 公司的操作系统。**
 >
-> 治理驱动的 AI 软件生产平台: 让 AI 像软件公司员工一样工作 — 理解需求 → 规划 → 开发 → 受治理 → 可审计。
+> 让 AI 像软件公司员工一样工作: 理解需求 → 拆解 → 规划 → 受治理执行 → 证据交付 → 经验沉淀。
 
-`v0.1.0` · CLI First · 本地部署 · 全事件审计 · Apache-2.0
+`v1.1.14` · M3 完成 · CLI First · 本地部署 · 全事件审计 · Apache-2.0
 
 ---
 
 ## AI Factory 是什么
 
-AI Factory 是 **AI 员工操作系统 (AI Workforce Operating System)**: 把 AI 从"一问一答的聊天机器人"
-变成**有岗位、有职责、有流程、有审批、有审计、有成本账单的员工**。
+AI Factory 是 **AI 员工操作系统**: 把 AI 从"一问一答的聊天机器人"变成
+**有岗位、有职责、有流程、有拆解、有调度、有审批、有审计、有成本账单的员工**。
 
 ```
-传统开发:   Human → Code
-AI 时代:    Human → AI Organization → AI Workers → Software Output (全部可审计)
+LangChain 创建 AI 员工 · LangGraph 编排 AI 工作流
+AI Factory 建立和管理整个 AI 生产组织
 ```
 
-定位: **Devin 替你干活, AI Factory 管理你的 AI 员工。**
+定位: 不是造单个 Agent, 而是管理 Agent 组织 — "造专家的工厂, 不是某一个专家"。
+软件开发只是第一个行业实例（IT 工厂）; 未来: 运维工厂 / 电商工厂 / 自媒体工厂 / 数据分析工厂 / 办公自动化工厂。
 
-### 核心能力
+## 核心能力（v1.1.14, M3 四部曲完成）
 
-| 能力 | 说明 |
-|---|---|
-| Provider Management | 多 Provider(DeepSeek/OpenAI/Anthropic/Ollama)生命周期 + key 引用安全 |
-| Model Catalog | Provider→Model 两级元数据(capabilities/context/cost) |
-| LLM Router | 五层决策链: User > Agent/Skill > Project > System > Fallback |
-| Agent Runtime | 真实 LLM 执行: Task → Agent → LLM → 沙箱 → Artifact |
-| Skill System | 技能注册 + 权限链(Agent→Skill→Tool) |
-| CLI Control Plane | 17+ 命令统一入口, 无 UI 也完整可用 |
-| Audit Foundation | append-only 事件库: 谁/什么/何时/哪个模型/多少钱 |
+| 能力 | 说明 | 状态 |
+|---|---|---|
+| **多 Provider + Model Catalog** | DeepSeek/OpenAI/Anthropic/Ollama 生命周期 + key 引用安全（不落明文） | ✅ |
+| **LLM Router** | 五层决策链: User > Agent/Skill > Project > System > Fallback | ✅ |
+| **7 角色专家 + 装配器** | PM/Architect/PRD/UX/QA/Market/Competitive 真 LLM 干活 + 缺 skill 明确报错 | ✅ |
+| **递归原子拆解** (M3a) | 复合任务 → 原子叶子（单 Agent/单文件/可验证/≤10min）· 复杂度语义诚实传递 | ✅ |
+| **关键路径** (M3b) | 依赖 DAG → CRITICAL 标记 / 总工期 / merge 汇聚点 | ✅ |
+| **并行调度** (M3c) | 就绪队列 + 并发上限 + 同文件冲突串行 + 轮次落盘 | ✅ |
+| **拆解质量评估** (M3d) | 六维评分（完整性/粒度/依赖/可行/可测/风险）+ 四档行动（adopt/adjust/reject/ask_user）· LLM 门控回退 | ✅ |
+| **证据包 + 分级审批** | diff+test+决策链 → 低/中/高风险分级审批（企业敢签字） | ✅ |
+| **沙箱执行** | 项目副本沙箱（原仓库零影响）+ patch 白名单 + 证据导出 | ✅ |
+| **审计链** | append-only 事件库（52 事件）+ hash 防篡改 + 血缘追溯 | ✅ |
+| **组织记忆** | 经验五维标签（域×技术栈×任务类型×项目×通用度）+ 跨项目共享不混淆 | 🚧 M4 |
+| **治理** | 预算/熔断/审批门/审计/回滚设计（§5.12 体系） | 🚧 |
+| **CLI Control Plane** | 60+ 能力统一入口, 无 UI 也完整可用 | ✅ |
 
----
+## 里程碑
+
+```
+M1 内核切片 (v1.1.5)      repo 模式 + 工具发现 + 真 MCP
+M1a 证据+审批 (v1.1.6)    证据包 + 分级审批
+M1b 积压清道夫 (v1.1.6)   分诊→修复→证据→审批→报告
+M2 员工内核 (v1.1.10)     7 角色 AgentEntity + HandoffBus + 专家装配 + 真干活
+M3 四部曲 (v1.1.14)       原子拆解 → 关键路径 → 并行调度 → 质量评估
+```
 
 ## 它解决什么问题
 
-传统的 AI 编码工具是"一问一答": 你发一个 prompt, 它吐一段代码, 然后呢?
-
-| 痛点 | 后果 |
+| 痛点 | AI Factory 的答案 |
 |---|---|
-| **不可控** | AI 说"完成了"就完成了, 没有独立验证, 也没有人能解释它为什么这么做 |
-| **无审计** | 哪个模型干了什么、花了多少钱、谁批准的 —— 全部无从追溯 |
-| **上下文丢失** | 会话一关就"失忆", 项目背景、历史决策、进行中状态全部归零 |
-| **成本失控** | 所有任务都交给同一个大模型, 账单悄悄膨胀, 无人知晓 |
-| **无法组织** | 多任务、多项目、多人并行时, 没有流程、没有分工、没有记录 |
+| **不可控** | 原子任务 + 质量门控 + 分级审批 + 证据包（每一步可验证） |
+| **一步一个坑** | 拆到原子（§3.7）+ 关键路径 + 调度（8 大失败模式 7/8 有应对） |
+| **无审计** | 52 事件 append-only + hash 防篡改 + 血缘（谁/何时/哪个模型/多少钱） |
+| **上下文丢失** | 项目级 workspace + 组织记忆（经验标签跨项目共享不混淆） |
+| **成本失控** | 预算 + 熔断 + 每任务成本可查 |
+| **不敢让 AI 进生产** | 沙箱 + 证据 + 审批 + 回滚（§5.12/5.13 三件套） |
 
-**AI Factory 把 AI 从"聊天机器人"变成"员工"**: 有岗位、有职责、有流程、
-有审批、有审计、有成本账单。你不是在跟 AI 对话 —— 你是在管理一支 AI 团队。
+## 架构评测（S-R-U-C-T 五维）
+
+```
+当前基线: 安全 S0 · 可靠 L0（12049 测试/0 失败）· 易用 U0 · 完整 C0 · 信赖 T0
+升级路线: §22.9-22.10（4 波: M3 收尾 → 证明级 → SDK 化 → 商业化）
+发布门:   patch=S0+L0+U0+C0+T0 · minor=S1+L1+U1+C1+T1 · major=认证级
+```
 
 ## 快速开始
 
-### 1. 安装 (2 分钟)
-
-> 当前以源码安装为准, 一键脚本自动完成环境搭建; `pip install ai-software-factory` 即将支持。
+### 1. 安装（2 分钟）
 
 ```bash
 git clone https://github.com/shenlongze/ai-software-factory.git
 cd ai-software-factory
-bash scripts/setup.sh        # 自动: Python 3.12+ venv + 安装 + 冒烟验证 (幂等, 可重复执行)
+bash scripts/setup.sh        # Python 3.12+ venv + 安装 + 冒烟验证（幂等）
 ```
 
-### 2. 配置你的 LLM (1 分钟)
+### 2. 配置 LLM（1 分钟）
 
 ```bash
-export DEEPSEEK_API_KEY=sk-xxxx...                              # 你的 DeepSeek API Key
-factory init --non-interactive --provider deepseek              # 生成配置
-factory doctor                                                  # 诊断环境, 全部 PASS 即可开始
+export DEEPSEEK_API_KEY=sk-xxxx...
+factory init --non-interactive --provider deepseek
+factory doctor                  # 诊断环境, 全部 PASS 即可开始
 ```
 
-> Key 只以环境变量引用写入配置 (`env:DEEPSEEK_API_KEY`), **不落盘、不写明文**。
+> Key 只以环境变量引用写入配置（`env:DEEPSEEK_API_KEY`），不落盘不写明文。
 > 支持 provider: `deepseek` / `openai` / `anthropic` / `ollama`。
 
-### 3. 5 分钟体验 (核心)
+### 3. 体验（5 分钟）
 
 ```bash
-factory start                                                   # 启动服务 (backend + frontend)
-# 浏览器打开 http://localhost:8011, 看 AI 员工工作
-
-# 或全 CLI (无需 UI, 一样完整):
-factory project create --repo-path ~/my-app                     # 接入你的已有项目
-factory project list                                            # 查看已注册项目
-factory run --project ~/my-app --task T-001 --agent backend-1   # 派第一个任务
-factory run-status --id <结果ID>                                # 查询执行结果
+factory start                  # 启动服务（backend + frontend, 8011/5180）
+factory                        # 进入会话: "我想做一个记账 App" → 产品发现
+# 或直接: 创建产品 → 开始开发（自动: 拆解 → 调度 → 执行 → 证据 → 审批）
 ```
 
-> `--task T-001` 是任务锚点 ID, 可换成任意编号; 详细目标可用 `--objective` 补充, 验收标准用 `--requirement` 指定。
+## 文档导航
 
-### 你会看到什么
-
-- ✅ **真实 LLM 执行** — 不是 demo 数据, 是真实模型在工作
-- ✅ **审批门** — AI 产出等你批准, 决策权在人
-- ✅ **全审计** — 谁 / 什么 / 何时 / 哪个模型 / 多少钱, 全程可查
-
-### 零污染演示 (可选)
-
-不想碰自己的项目? 用隔离的 Demo Workspace 30 秒看效果:
-
-```bash
-factory demo init       # 创建隔离演示环境 (~/.factory-demo, 不碰你的数据)
-factory demo status     # 查看演示状态
-factory demo reset      # 清空重建
+```
+README.md                           ← 你在这里（总览）
+AI Software Factory — 完整产品方案书.md  ← 22 章完整设计（架构/治理/安全/行业/路线）
+CHANGELOG.md                        ← 版本变更（v1.1.14 最新）
+docs/MASTER-PLAN-2026-08.md         ← M1-M7 执行主线
+docs/sprint10/S10-097*              ← M3e 收尾（当前 Sprint）
 ```
 
-**一条命令体验完整流程**(自动建目录 + 真实 AI 执行 + 展示产物, S10-042):
+## 商业定位
 
-```bash
-factory demo run "给 main.py 加一个 hello 函数"
-# ✔ 任务完成 (status=success, 用时 ~40 秒, 成本 < $0.01)
-# result-id: EXS-xxx → 查看报告: factory run-status --id EXS-xxx
-```
-
-## 能力一览
-
-| 能力 | 说明 |
-|---|---|
-| ✅ **多模型路由** | DeepSeek / OpenAI / Claude / Ollama, 按 能力 / 成本 / 性能 为每个任务选最合适的模型 |
-| ✅ **真实代码执行** | 沙箱内真实执行 + 独立验证 — 自报告 ≠ 完成 |
-| ✅ **人工审批** | 高风险动作必须人工批准, 平台只推荐、不静默执行 |
-| ✅ **全事件审计** | append-only 事件库, 一切操作可追溯、可回放、可对账 |
-| ✅ **项目生命周期** | 项目从接入、任务派发到交付全程可管理 |
-| ✅ **CLI First** | 无 UI 也完整可用, Web 管理台用于观察与审批 |
-
-## 架构 (一句话)
-
-> 治理底座 + 可插拔能力: 事件是唯一事实源, 新能力以扩展注册, 零核心破坏。
-> 技术细节见 [docs/architecture/](./docs/architecture/)。
-
-## Roadmap(不夸大, 诚实区分)
-
-| 状态 | 能力 |
-|---|---|
-| ✅ **Implemented** | 多模型路由 / 真实 LLM 执行 / 审批门 / 全事件审计 / CLI First / 项目生命周期 |
-| 🚧 **In Progress** | Web 管理台增强 / PyPI 发布 / CI 门禁 |
-| 🔮 **Future** | 智能路由(usage 反馈学习)/ Multi-Agent 协作 / RAG 知识库 / 插件市场 / 企业治理版 |
-
-> 详见 [docs/product/vision-zh.md](./docs/product/vision-zh.md) 与 [docs/release/v0.1-checklist.md](./docs/release/v0.1-checklist.md)。
-
-## 开发者
-
-- 源码构建 / 测试 / 贡献指南: [docs/development.md](./docs/development.md)
-- 生命周期模型: [docs/lifecycle-model.md](./docs/lifecycle-model.md)
-- 愿景与理念: [docs/vision.md](./docs/vision.md)
-- 用户指南: [docs/user-guide.md](./docs/user-guide.md) · 应用场景: [docs/use-cases.md](./docs/use-cases.md)
-- 测试基线: **8148 pytest 全绿** (v0.1.0)
-
-## 企业 / 商业
-
-需要私有化部署、审计合规、企业治理版? 欢迎通过 GitHub 联系:
-
-- Issues: <https://github.com/shenlongze/ai-software-factory/issues>
-- 仓库: <https://github.com/shenlongze/ai-software-factory>
-
----
-
-*v0.1.0 · AI Workforce Operating System — 管理你的 AI 员工, 而不是用 AI 聊天。*
+开源核心（CLI/Router/Agent/审计）+ 商业增值（治理/合规/分析）· Community 完整可用。
+SDK 化与商业化路线见方案书 §22。

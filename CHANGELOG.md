@@ -3,6 +3,23 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.63] — 2026-08-24
+
+**Board 任务树递归化 + 任务细化（Founder: 层级不够要 L1-L4, 重点是细化任务）**。
+
+### Added
+
+- **递归任务树 (L1-L4+)**: epic(L1) → feature(L2) → task(L3) → 子任务(L4+),
+  L 徽章 + 缩进 + 展开/折叠 (▾/▸)
+- **任务细化**: `/board task split <slug> <任务ID> <子任务1,子任务2>` (CLI) +
+  POST `/api/board/split?project=&task=&names=` (Web 任务行"细化"按钮) —
+  递归拆子任务 (parent 引用, 写回 tasks.json/execution_state)
+- **数据**: task.parent 引用 + depth 递归 (L 层+1); 读回退 tasks.json/execution_state
+
+### 验证
+
+- 4 新契约测试 (拆分创建子任务/未知任务/递归树 L4/HTML L 标签+细化按钮) · 全量回归 0 新增失败
+
 ## [v1.1.62] — 2026-08-24
 
 **Board 任务链格式优化（Founder: 看着乱, 需要格式）**。

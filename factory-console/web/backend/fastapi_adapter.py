@@ -830,6 +830,17 @@ def build_app(
             return {"projects": 0, "status_dist": {}, "avg_lifecycle_pct": 0,
                     "running_tasks": 0, "failed_tasks": 0}
 
+    @app.post("/api/board/split")
+    def api_board_split(project: str = "", task: str = "", names: str = ""):
+        """细化任务: 拆成多个子任务 (L 层+1), names 逗号分隔 (query)。"""
+        board_mod = _console_import("session.board")
+        try:
+            name_list = [n.strip() for n in (names or "").split(",") if n and n.strip()]
+            created = board_mod.split_task(workspace_root, project, task, name_list)
+            return {"ok": bool(created), "created": [t["id"] for t in created]}
+        except Exception:  # noqa: BLE001
+            return {"ok": False, "error": "细化失败"}
+
     @app.post("/api/board/default")
     def api_board_default(project: str = ""):
         """设置默认项目 (写 board_default_project; 首页优先打开它)。"""

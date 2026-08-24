@@ -745,3 +745,41 @@ class TestChainFormat:
         }), encoding="utf-8")
         html = BOARD.render_chain_html(tmp_path, "demo")
         assert "s-done" in html and "s-fail" in html
+
+
+# ================================================================== 任务细化 (递归树 L1-L4+)
+
+class TestTaskSplit:
+    def test_split_task_creates_subtasks(self, tmp_path):
+        _mk_project(tmp_path, "a", name="项目A")
+        new = BOARD.split_task(tmp_path, "a", "t1", ["子任务A", "子任务B"])
+        assert [t["id"] for t in new] == ["t1-1", "t1-2"]
+        assert new[0]["parent"] == "t1"
+        # 幂等: 再次拆不同名
+        new2 = BOARD.split_task(tmp_path, "a", "t1", ["子任务C"])
+        assert [t["id"] for t in new2] == ["t1-3"]
+
+    def test_split_unknown_task(self, tmp_path):
+        _mk_project(tmp_path, "a", name="项目A")
+        assert BOARD.split_task(tmp_path, "a", "nope", ["x"]) == []
+
+    def test_recursive_tree_l4(self, tmp_path):
+        _mk_project(tmp_path, "a", name="项目A")
+        BOARD.split_task(tmp_path, "a", "t1", ["子任务A", "子任务B"])
+        tree = BOARD._project_task_tree_recursive(tmp_path, "a")
+        # 找到 t1 的 L4 子任务
+        found = None
+        for ep in tree:
+            for feat in ep.get("children", []):
+                for t in feat.get("children", []):
+                    if t["id"] == "t1":
+                        found = t
+        assert found and [c["id"] for c in found["children"]] == ["t1-1", "t1-2"]
+
+    def test_tree_html_lvl_and_split_btn(self, tmp_path):
+        _mk_project(tmp_path, "a", name="项目A")
+        BOARD.split_task(tmp_path, "a", "t1", ["子任务A"])
+        html = BOARD.render_project_tasktree_html(tmp_path, "a")
+        assert all(f"L{i}" in html for i in (1, 2, 3, 4))  # L 标签
+        assert "细化" in html                              # 细化按钮
+        assert "子任务A" in html                           # L4 子任务显示

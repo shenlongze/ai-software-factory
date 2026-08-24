@@ -235,7 +235,7 @@ class BoardCommand(SlashCommand):
             render_board, render_graph, render_timeline,
             render_chain, render_report, render_project_lifecycle,
             render_projects_list, render_project_report,
-            _read_default_project, _set_default_project,
+            _read_default_project, _set_default_project, split_task,
             mark_backlog_item, save_report, sync_mainline,
         )
         from pathlib import Path
@@ -272,6 +272,22 @@ class BoardCommand(SlashCommand):
                 else:
                     ok = _set_default_project(workspace, project) if workspace else ""
                     print(f"✅ 默认项目已设为: {ok or project}（board 首页将优先打开它）")
+            elif view == "task":
+                # /board task split <slug> <任务ID> <子任务1,子任务2> — 细化任务 (L 层+1)
+                if len(sub) < 5 or sub[1] != "split":
+                    print("用法: /board task split <项目slug> <任务ID> <子任务1,子任务2,...>")
+                    return 2
+                if workspace is None:
+                    print("（未设置工作区 — 无法细化任务）")
+                    return 1
+                slug_arg, task_id = sub[2], sub[3]
+                names = [n.strip() for n in " ".join(sub[4:]).split(",") if n.strip()]
+                created = split_task(workspace, slug_arg, task_id, names)
+                if created:
+                    print(f"✅ 已细化 {task_id} → {len(created)} 个子任务: "
+                          f"{', '.join(t['id'] for t in created)}")
+                else:
+                    print(f"❌ 细化失败: 任务 {task_id} 不存在或子任务为空")
             elif view == "sync":
                 marked = sync_mainline(
                     Path(__file__).resolve().parents[1] / ".." / "docs" / "sprint10" / "待办清单-已发现未落地.md")

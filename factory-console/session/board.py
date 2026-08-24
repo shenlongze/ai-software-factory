@@ -1560,8 +1560,7 @@ def render_project_tasktree_html(workspace: Path | str, slug: str) -> str:
     )
     if not has_assets:
         return _board_nav("project", slug, workspace) + "<p>（项目不存在或未选择）</p>"
-    tree = _project_task_tree(workspace, slug)
-    # 名称 fallback: 无 product.json → slug (demo 等示例)
+    tree = _project_task_tree_recursive(workspace, slug)
     if info is None:
         info = {"name": slug}
     marks = {"done": "✅", "delivered": "✅", "approved": "✅", "applied": "✅",
@@ -1569,39 +1568,47 @@ def render_project_tasktree_html(workspace: Path | str, slug: str) -> str:
              "failed": "❌", "blocked": "⛔", "pending": "⬜", "todo": "⬜"}
     cols = {"done": "#43a047", "running": "#1e88e5", "failed": "#e53935",
             "pending": "#78909c", "blocked": "#fb8c00"}
-    # 任务逻辑: 依赖关系 + 关键路径 (plan.json; 不堆任务 — 有先后逻辑)
     dep_map, critical = _project_dependency_map(workspace, slug)
-    epic_html = []
-    for ep in tree:
-        feat_items = []
-        for fl in ep["features"].values():
-            task_items = []
-            for t in fl["tasks"][:30]:
-                st = str(t.get("status") or "")
-                mark = marks.get(st, "⬜")
-                color = cols.get(st, "#78909c")
-                agent = str(t.get("agent") or "")
-                agent_s = f'<span class="tag">{agent}</span>' if agent else ""
-                tid = str(t.get("id") or "?")
-                deps = dep_map.get(tid)
-                dep_s = ""
-                if deps:
-                    dep_s = f'<span class="dep">依赖: {"→".join(deps)}</span>'
-                crit_s = '<span class="crit-mark">★关键</span>' if tid in critical else ""
-                task_items.append(
-                    f'<li class="task {st}"><span class="tmark" style="color:{color}">{mark}</span> '
-                    f'{tid} {str(t.get("name") or "")[:40]}{crit_s}{agent_s}{dep_s} '
-                    f'<span class="tstatus">{st or "待办"}</span></li>'
-                )
-            feat_items.append(
-                f'<div class="feat"><div class="feat-name">📦 {fl["feature"]}</div>'
-                f'<ul>{"".join(task_items)}</ul></div>'
-            )
-        epic_html.append(
-            f'<div class="epic"><div class="epic-name">🗂 {ep["epic"]}</div>'
-            f'<div class="feats">{"".join(feat_items)}</div></div>'
+
+    def render_node(node):
+        st = str(node.get("status") or "")
+        mark = marks.get(st, "⬜")
+        color = cols.get(st, "#78909c")
+        lvl = int(node.get("depth") or 1)
+        lvl_badge = f'<span class="lvl">L{lvl}</span>'
+        indent = (lvl - 1) * 22
+        has_kids = bool(node.get("children"))
+        tgl = (
+            f"<span class='tgl' onclick=\"var c=this.parentElement.nextElementSibling;"
+            f"c.style.display=c.style.display=='none'?'\':'none';"
+            f"this.textContent=this.textContent=='▸'?'▾':'▸'\">▾</span>"
+            if has_kids else '<span class="tgl ph"></span>'
         )
-    body = "".join(epic_html) if epic_html else "<p>（暂无任务）</p>"
+        tid = str(node.get("id") or "?")
+        name = _clean_md_name(node.get("name", ""))[:60]
+        deps = dep_map.get(tid)
+        dep_s = f'<span class="dep">依赖: {"→".join(deps)}</span>' if deps else ""
+        crit_s = '<span class="crit-mark">★关键</span>' if tid in critical else ""
+        split_btn = ""
+        if lvl >= 3:
+            split_btn = (
+                f"<span class='split' title='拆分子任务' onclick=\"var n=prompt('子任务(逗号分隔):','');"
+                f"if(n){{fetch('/api/board/split?project={slug}&task={tid}&names='+encodeURIComponent(n),"
+                f"{{method:'POST'}}).then(function(){{location.reload();}});\">细化</span>"
+            )
+        row = (
+            f'<div class="tnode" style="padding-left:{indent}px">{tgl}{lvl_badge} '
+            f'<span class="tmark" style="color:{color}">{mark}</span> '
+            f'<span class="tid">{tid}</span> <span class="tname">{name}</span>'
+            f'{crit_s}{dep_s}{split_btn}'
+            f'<span class="tstatus">{st or "待办"}</span></div>'
+        )
+        if has_kids:
+            kids = "".join(render_node(c) for c in node["children"])
+            return row + f'<div class="tkids">{kids}</div>'
+        return row
+
+    body = "".join(render_node(n) for n in tree) if tree else "<p>（暂无任务）</p>"
     counts = _project_task_status_counts(workspace, slug)
     # 项目任务时间线 (audit 事件; 不堆 — 有先后时间逻辑)
     tl_rows = _project_task_timeline(workspace, slug, limit=8)
@@ -2063,3 +2070,122 @@ def _project_task_timeline(workspace: Path | str, slug: str, limit: int = 10) ->
             })
     rows.sort(key=lambda r: r["time"])
     return rows[-limit:]
+
+
+# ---------------------------------------------------------------- 任务细化 (递归树 L1-L4+)
+
+def split_task(workspace: Path | str, slug: str, task_id: str, subtask_names: list[str]) -> list[dict[str, Any]]:
+    """细化任务: 把 task_id 拆成多个子任务 (parent=task_id, L 层+1, 写入 tasks.json)。
+
+    返回新增子任务列表 (失败/无父任务 → [])。子任务 id = f"{task_id}-{n}"。
+    """
+    tf = Path(workspace) / "projects" / slug / "tasks.json"
+    es = Path(workspace) / "projects" / slug / "execution_state.json"
+    data: dict[str, Any] = {}
+    tasks: list[dict[str, Any]] = []
+    for src in (tf, es):
+        if not src.is_file():
+            continue
+        try:
+            d = json.loads(src.read_text(encoding="utf-8")) or {}
+        except (OSError, json.JSONDecodeError):  # noqa: BLE001
+            continue
+        ts = d.get("tasks") or []
+        if ts:
+            data = d
+            tasks = ts
+            break
+    parent = next((t for t in tasks if str(t.get("id") or "") == task_id), None)
+    if parent is None:
+        return []
+    names = [n.strip() for n in subtask_names if n and n.strip()]
+    if not names:
+        return []
+    existing = {str(t.get("id") or "") for t in tasks}
+    new_tasks = []
+    n = 1
+    for name in names:
+        tid = f"{task_id}-{n}"
+        while tid in existing:
+            n += 1
+            tid = f"{task_id}-{n}"
+        existing.add(tid)
+        new_tasks.append({
+            "id": tid, "name": name,
+            "epic": str(parent.get("epic") or ""),
+            "feature": str(parent.get("feature") or ""),
+            "parent": task_id,
+            "status": "todo",
+        })
+        n += 1
+    data["tasks"] = tasks + new_tasks
+    data["count"] = len(data["tasks"])
+    target = tf if tf.is_file() else es
+    try:
+        target.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    except OSError:  # noqa: BLE001
+        return []
+    return new_tasks
+
+
+def _project_task_tree_recursive(workspace: Path | str, slug: str) -> list[dict[str, Any]]:
+    """递归任务树 (L1 epic → L2 feature → L3 task → L4+ 子任务, 按 parent 嵌套)。"""
+    flat = _project_task_tree(workspace, slug)  # 复用: 读全部 tasks (epic/feature 分组平铺)
+    # _project_task_tree 返回 epic→feature→task 三层; 转平铺带 parent 的 task 列表
+    all_tasks: list[dict[str, Any]] = []
+    for ep in flat:
+        for fl in ep["features"].values():
+            all_tasks.extend(fl["tasks"])
+    # 补子任务 (parent 引用的 task 已在 all_tasks 中, 追加子任务)
+    es = Path(workspace) / "projects" / slug / "execution_state.json"
+    tf = Path(workspace) / "projects" / slug / "tasks.json"
+    extra: list[dict[str, Any]] = []
+    for src in (es, tf):
+        if not src.is_file():
+            continue
+        try:
+            ts = (json.loads(src.read_text(encoding="utf-8")) or {}).get("tasks") or []
+        except Exception:  # noqa: BLE001
+            continue
+        for t in ts:
+            if t.get("parent"):
+                extra.append(t)
+    all_tasks.extend(extra)
+    # 去重
+    seen: set[str] = set()
+    dedup = []
+    for t in all_tasks:
+        tid = str(t.get("id") or "")
+        if tid and tid not in seen:
+            seen.add(tid)
+            dedup.append(t)
+    by_id = {str(t.get("id") or ""): t for t in dedup}
+    roots = [t for t in dedup if not t.get("parent")]
+
+    def build(t: dict[str, Any], depth: int) -> dict[str, Any]:
+        tid = str(t.get("id") or "")
+        return {
+            "id": tid, "name": str(t.get("name") or tid), "status": str(t.get("status") or ""),
+            "depth": depth, "children": [build(by_id[cid], depth + 1)
+                                        for cid, c in by_id.items() if str(c.get("parent") or "") == tid],
+        }
+
+    tree = []
+    for ep in flat:
+        ep_node = {"id": ep["epic"], "name": ep["epic"], "status": "",
+                   "depth": 1, "children": []}
+        for fl in ep["features"].values():
+            feat_node = {"id": fl["feature"], "name": fl["feature"], "status": "",
+                         "depth": 2, "children": []}
+            for t in fl["tasks"]:
+                if t.get("parent"):
+                    continue  # 子任务由 build 递归挂载, 避免重复
+                feat_node["children"].append(build(t, 3))
+            ep_node["children"].append(feat_node)
+        tree.append(ep_node)
+    # 孤立子任务 (parent 不存在) 兜底: 挂到 "未分组"
+    for t in dedup:
+        if t.get("parent") and str(t.get("parent") or "") not in by_id:
+            tree.append({"id": t["id"], "name": str(t.get("name") or t["id"]),
+                         "status": "", "depth": 3, "children": []})
+    return tree

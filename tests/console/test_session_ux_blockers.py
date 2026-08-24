@@ -381,3 +381,40 @@ class TestLineEditing:
             context_manager=CTX.ContextManager(workspace=str(tmp_path)),
         )
         assert sess._read_input_line("> ") == "/exitt"
+
+
+# ================================================================== S10-10x 主线提醒默认关闭 (产品会话干净)
+
+class TestMainlineAlertDefaultOff:
+    def test_run_no_mainline_alert_by_default(self, monkeypatch, capsys, tmp_path):
+        """产品会话默认不打印主线提醒 (内部开发进度不打扰用户)。"""
+        monkeypatch.delenv("FACTORY_MAINLINE_ALERT", raising=False)
+        monkeypatch.setattr("builtins.input", lambda prompt="": "exit")
+        sess = SESS.InteractiveSession(
+            context_manager=CTX.ContextManager(workspace=str(tmp_path)),
+        )
+        sess.run()
+        out = capsys.readouterr().out
+        assert "主线未完成" not in out
+        assert "自动同步主线" not in out
+
+    def test_run_mainline_alert_with_env(self, monkeypatch, capsys, tmp_path):
+        """FACTORY_MAINLINE_ALERT=1 → 开发纪律模式显示主线提醒。"""
+        monkeypatch.setenv("FACTORY_MAINLINE_ALERT", "1")
+        monkeypatch.setattr("builtins.input", lambda prompt="": "exit")
+        sess = SESS.InteractiveSession(
+            context_manager=CTX.ContextManager(workspace=str(tmp_path)),
+        )
+        sess.run()
+        out = capsys.readouterr().out
+        # 待办清单存在且主线未完成 → 应显示提醒 (M3-M7/P0 未全完成)
+        assert "主线未完成" in out
+
+    def test_board_still_shows_mainline(self, capsys, tmp_path):
+        """/board 主动查看仍显示主线 (功能保留, 仅启动自动提醒关闭)。"""
+        sess = SESS.InteractiveSession(
+            context_manager=CTX.ContextManager(workspace=str(tmp_path)),
+        )
+        sess._dispatch("/board")
+        out = capsys.readouterr().out
+        assert "主线任务" in out

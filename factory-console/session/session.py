@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 
@@ -201,8 +202,12 @@ class InteractiveSession:
         """
         self._init_line_editing()  # S10-1xx: 方向键历史/行编辑 (readline, 零依赖)
         self._banner()
-        self._mainline_sync()   # S10-1xx: 自动钩子 — 从代码证据同步主线状态
-        self._mainline_alert()  # S10-1xx: 偏离提醒 — 主线未完成提示
+        # S10-1xx: 主线同步静默维护 /board 数据 (不打扰产品会话);
+        # 偏离提醒默认关闭 — 内部开发进度不应出现在 AI Factory 产品会话
+        # (Founder 反馈). 开发纪律模式: FACTORY_MAINLINE_ALERT=1 开启自动提醒
+        self._mainline_sync(verbose=os.environ.get("FACTORY_MAINLINE_ALERT") == "1")
+        if os.environ.get("FACTORY_MAINLINE_ALERT") == "1":
+            self._mainline_alert()
         self._restore_session_state()
         self.running = True
         while self.running:
@@ -232,17 +237,18 @@ class InteractiveSession:
         """打印欢迎横幅 (验收: 显示 AI Factory)。"""
         print(self.banner_text)
 
-    def _mainline_sync(self) -> None:
+    def _mainline_sync(self, *, verbose: bool = False) -> None:
         """自动钩子（S10-1xx）: 会话启动时从代码证据自动同步主线完成状态。
 
         代码存在（decomposer/critical_path/scheduler）→ 自动标记对应主线项,
-        让主线进度进会话即真实（不依赖手动 /board done 记忆）。
+        让 /board 主线进度进会话即真实（不依赖手动 /board done 记忆）。
+        默认静默 (verbose=False) — 不打扰产品会话; 开发模式打印标记明细。
         """
         try:
             from .board import sync_mainline, DEFAULT_BACKLOG
 
             marked = sync_mainline(DEFAULT_BACKLOG)
-            if marked:
+            if marked and verbose:
                 print(f"🔧 自动同步主线: {' '.join(marked)}（代码证据确认完成）")
         except Exception:  # noqa: BLE001 — 同步失败不阻断会话
             pass
@@ -252,6 +258,8 @@ class InteractiveSession:
 
         会话启动时检查主线未完成 → 提示（不啰嗦, 主线全完成则不提示）。
         建议推进主线; /board report --save 可同步汇报 Hermes。
+        **默认不在产品会话自动调用** — 由 run() 按 FACTORY_MAINLINE_ALERT=1 显式开启
+        (内部开发进度不打扰最终用户)。
         """
         try:
             from .board import _parse_backlog, MAIN_GROUPS, DEFAULT_BACKLOG

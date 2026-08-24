@@ -43,6 +43,7 @@ from .intent import (
     IntentParser,
     KeywordIntentParser,
 )
+from .llm_intent import LLMIntentParser
 from .renderer import HumanRenderer, Renderer
 from .router import IntentRouter, UnknownIntentError
 from .slash import SlashCommandRegistry
@@ -115,8 +116,12 @@ class InteractiveSession:
         )
         #: Intent 路由 (P0) — 声明式映射 (intent_type → action_name, 无 if/else)
         self.intent_router = intent_router if intent_router is not None else IntentRouter()
-        #: Intent 解析器 (P1) — 默认规则解析; 未来可注入 LLMIntentParser (同接口)
-        self.intent_parser = intent_parser if intent_parser is not None else KeywordIntentParser()
+        #: Intent 解析器 (P1) — 默认 LLM 理解 + 规则兜底 (LLMIntentParser → None
+        #: 时回退 KeywordIntentParser, 诚实降级不伪造)
+        self.intent_parser = (
+            intent_parser if intent_parser is not None else LLMIntentParser()
+        )
+        self._rule_parser = KeywordIntentParser()  # 规则兜底 (LLM 失败/无 key)
         #: 注入式 ExecutionContext (测试/宿主定制); None → 每次派发从会话上下文构建
         self.action_context = action_context
         #: Confirmation Gate (P4 最小治理) — 默认装配 ConfirmationGate:
@@ -225,6 +230,8 @@ class InteractiveSession:
                 print(resp.message)
             return
         intent = self.intent_parser.parse(line)
+        if intent is None:
+            intent = self._rule_parser.parse(line)  # LLM 未识别 → 规则兜底
         if intent is None:
             # 命令/帮助类查询 → 真实命令列表 (不再交给 LLM 编故事)
             if self._maybe_show_command_help(line):

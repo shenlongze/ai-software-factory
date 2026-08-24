@@ -5,7 +5,25 @@
 
 ---
 
-## [v1.1.19] — 2026-08-24
+## [v1.1.20] — 2026-08-24
+
+**LLMIntentParser — 普通对话 LLM 理解意图**（S10-046 §3 Q1 预留扩展点落地）: 每轮对话 LLM 介入。
+
+### Added
+
+- **LLMIntentParser**（`llm_intent.py`）— 自然语言 → LLM 理解 → 注册意图类型 + 参数
+  - 只映射注册意图（安全边界, 不生成任意命令）· 低置信(<0.4)/unknown → None
+  - 无 key/LLM 失败/非法 JSON → None（规则兜底, 诚实降级）
+- **会话装配**（`session.py`）— intent_parser 默认 LLM + `_rule_parser` 规则兜底
+  - 真实 LLM 验证: "建个公司叫测试科技"→org_manage · "查一下现在有哪些项目"→list_projects
+    "帮我修一下登录的bug"→run_task · "把记账项目挂到财务部"→org_manage
+- 纯命令 (/help) 仍走 slash（不该 LLM）
+
+### 测试
+
+- `tests/console/test_llm_intent_parser.py` 8 用例（理解/unknown/安全边界/低置信/无key/失败/非法JSON/code fence）
+- 32 相关 passed（无破坏）
+
 
 **发现阶段多轮字段合并边界修复**（S10-099 遗留改进）: 用户对智能追问的回答被 LLM 当成新产品描述覆盖字段。
 

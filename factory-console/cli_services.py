@@ -413,10 +413,13 @@ def run_service_list(ctx: ServiceContext) -> int:
     for svc in list_services():
         st = svc.status(ctx)
         if st.state == STATE_RUNNING:
-            if st.url:
-                extra = f"(PID {st.pid}, {st.url})"
+            if st.pid:
+                extra = f"(PID {st.pid}, {st.url})" if st.url else f"(PID {st.pid})"
+            elif st.url:
+                # 无 PID = 懒加载/非进程服务 → 显示访问地址（不误导为进程在跑）
+                extra = f"(懒加载, {st.url})"
             else:
-                extra = f"(PID {st.pid})" if st.pid else ""
+                extra = st.note or ""
         else:
             extra = st.note
         print(f"  {st.id:<10}{st.state:<10}{extra}".rstrip())

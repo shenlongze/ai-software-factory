@@ -242,6 +242,7 @@ API（Web/集成）:   http://127.0.0.1:8011/api/...      e.g. GET /api/board
   | 文档文件夹 | 文档按目录结构分组展示 (📁 根目录/docs/specs 区块) | v1.1.67 |
   | 完整目录树 | 文档管理显示项目全部文件按目录分组 (根目录含核心资产+README, docs/specs 各区块) | v1.1.68 |
   | 全类型文档 | 显示全部文件类型 (png/yaml/py 等), 非文本标记—, 文本可预览 | v1.1.69 |
+  | 文档指向实际目录 | product.json workspace_dir/repo_url; 文档管理扫真实仓库文档 (排除源码/垃圾), 显示目录+git | v1.1.70 |
 - **状态**: ✅（数据真实，空态诚实引导）· **关联**: 待办清单 + docs/sprint10 验收
 
 ### 6.2 /preview — Markdown 预览

@@ -956,3 +956,61 @@ class TestDocsAllTypes:
         self._proj(tmp_path)
         v = BOARD.render_project_doc_view(tmp_path, "a", "docs/图.png")
         assert "暂不支持在线预览" in v
+
+
+# ================================================================== 文档指向实际目录/git
+
+class TestDocsRepoRoot:
+    def _proj(self, tmp_path):
+        _mk_project(tmp_path, "a", name="项目A")
+        return tmp_path
+
+    def test_docs_root_workspace_dir_priority(self, tmp_path):
+        self._proj(tmp_path)
+        # 无 workspace_dir → 系统目录
+        assert BOARD._project_docs_root(tmp_path, "a") == tmp_path / "projects" / "a"
+        # 设置 workspace_dir → 优先
+        wd = tmp_path / "repo"
+        wd.mkdir()
+        pdir = tmp_path / "projects" / "a"
+        d = json.loads((pdir / "product.json").read_text(encoding="utf-8"))
+        d["workspace_dir"] = str(wd)
+        (pdir / "product.json").write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
+        assert BOARD._project_docs_root(tmp_path, "a") == wd
+
+    def test_repo_url(self, tmp_path):
+        self._proj(tmp_path)
+        assert BOARD._project_repo_url(tmp_path, "a") == ""
+        pdir = tmp_path / "projects" / "a"
+        d = json.loads((pdir / "product.json").read_text(encoding="utf-8"))
+        d["repo_url"] = "github.com/x/y"
+        (pdir / "product.json").write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
+        assert BOARD._project_repo_url(tmp_path, "a") == "github.com/x/y"
+
+    def test_workspace_dir_scans_docs_only(self, tmp_path):
+        wd = tmp_path / "repo"
+        (wd / "docs").mkdir(parents=True)
+        (wd / "README.md").write_text("# R", encoding="utf-8")
+        (wd / "docs" / "指南.md").write_text("# G", encoding="utf-8")
+        (wd / "main.py").write_text("print(1)", encoding="utf-8")   # 源码排除
+        (wd / "配置.yaml").write_text("a: 1", encoding="utf-8")      # 文档保留
+        pdir = tmp_path / "projects" / "a"
+        pdir.mkdir(parents=True)
+        (pdir / "product.json").write_text(json.dumps(
+            {"name": "项目A", "workspace_dir": str(wd)}, ensure_ascii=False), encoding="utf-8")
+        docs = BOARD.list_project_docs(tmp_path, "a")
+        names = [d["name"] for d in docs]
+        assert "README.md" in names and "docs/指南.md" in names and "配置.yaml" in names
+        assert "main.py" not in names  # 源码排除
+
+    def test_html_shows_dir_and_git(self, tmp_path):
+        wd = tmp_path / "repo"
+        wd.mkdir()
+        (wd / "README.md").write_text("# R", encoding="utf-8")
+        pdir = tmp_path / "projects" / "a"
+        pdir.mkdir(parents=True)
+        (pdir / "product.json").write_text(json.dumps(
+            {"name": "项目A", "workspace_dir": str(wd), "repo_url": "github.com/x/y"},
+            ensure_ascii=False), encoding="utf-8")
+        html = BOARD.render_project_docs_html(tmp_path, "a")
+        assert str(wd) in html and "github.com/x/y" in html

@@ -3,6 +3,25 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.70] — 2026-08-24
+
+**Board 文档管理指向项目实际目录/git 仓库（Founder: 应是实际目录或 git 地址）**。
+
+### Changed
+
+- 项目 product.json 支持 workspace_dir (实际目录) + repo_url (git 地址)
+- 文档管理优先扫描 workspace_dir (真实仓库 README/docs/方案书等),
+  无则系统存储目录; 顶部显示 📂 目录 + 🌐 git
+- workspace_dir 扫描只显示文档类 (.md/.json/.txt/.yaml 等), 排除源码/垃圾
+  (.git/$SMOKE_ROOT/__pycache__/node_modules/.venv/build/dist 等)
+- AI Factory 自身项目配置 workspace_dir=/Users/Shared/work/ai-software-factory
+  + repo_url=github.com/shenlongze/ai-software-factory
+- doc_view 路径安全基于实际根目录
+
+### 验证
+
+- 4 新契约测试 (workspace_dir 优先/repo_url/工作目录仅文档/HTML 显示目录git) · 全量回归 0 新增失败
+
 ## [v1.1.69] — 2026-08-24
 
 **Board 文档管理显示全部文件类型（Founder: docs 下其他文件也要显示, 暂不过滤）**。

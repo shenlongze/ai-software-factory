@@ -1915,10 +1915,40 @@ PROJECT_DOC_TYPES: dict[str, tuple[str, str]] = {
 def list_project_docs(workspace: Path | str, slug: str) -> list[dict[str, Any]]:
     """项目文档资产清单 (只读, 失败安全, 实事求是).
 
-    固定核心资产 (PROJECT_DOC_TYPES) + 扫描项目目录其他真实文档
-    (README.md / docs/ 子目录 / 其他 .md/.json/.txt, 排除 .git 与重复)。
+    根目录 = product.json 的 workspace_dir (项目实际目录/git 仓库) 优先;
+    无 → 系统存储目录 projects/<slug>。
+    - workspace_dir: 扫描该目录全部真实文件 (README/docs/源码等, 按目录结构)
+    - 系统目录: 固定核心资产 + 扫描其他文档
     """
     pdir = Path(workspace) / "projects" / slug
+    root = _project_docs_root(workspace, slug)
+    is_system = root == pdir
+    if not is_system:
+        # 实际工作目录: 只显示文档类文件 (README/docs/方案书等), 排除源码与垃圾目录
+        docs = []
+        _DOC_EXTS = {".md", ".json", ".txt", ".yaml", ".yml", ".toml", ".rst"}
+        _SKIP_DIRS = {".git", "$SMOKE_ROOT", "__pycache__", "node_modules",
+                      ".venv", "build", "dist", "unused", ".ruff_cache", ".pytest_cache"}
+        for f in sorted(root.rglob("*")):
+            if not f.is_file() or f.suffix.lower() not in _DOC_EXTS:
+                continue
+            try:
+                rel = f.relative_to(root)
+            except ValueError:  # noqa: BLE001
+                continue
+            if any(part in _SKIP_DIRS for part in rel.parts):
+                continue
+            if f.name == ".DS_Store":
+                continue
+            rel_s = str(rel)
+            try:
+                st = f.stat()
+            except OSError:  # noqa: BLE001
+                continue
+            docs.append({"name": rel_s, "label": f.name, "kind": f.suffix.lower().lstrip("."),
+                         "size": st.st_size, "mtime": st.st_mtime, "exists": True, "extra": True,
+                         "folder": str(rel.parent) if rel.parent != Path(".") else ""})
+        return docs
     docs = []
     for name, (label, kind) in PROJECT_DOC_TYPES.items():
         f = pdir / name
@@ -2030,7 +2060,7 @@ def render_project_docs_html(workspace: Path | str, slug: str) -> str:
 {_board_nav("docs", slug, workspace)}
 <h1>📄 项目文档管理 — {name}</h1>
 {_data_source_html(workspace, slug, "docs")}
-<p class="hint">项目文档共 <b>{total_docs}</b> 份（按目录结构, 扫描真实文件）· 点击"查看"渲染内容</p>
+<p class="hint">📂 目录: <code>{_project_docs_root(workspace, slug)}</code>{(" · 🌐 " + _project_repo_url(workspace, slug)) if _project_repo_url(workspace, slug) else ""}<br>项目文档共 <b>{total_docs}</b> 份（按目录结构, 扫描真实文件）· 点击"查看"渲染内容</p>
 {all_table}
 </body></html>"""
 def render_project_doc_view(workspace: Path | str, slug: str, doc_name: str) -> str:
@@ -2039,7 +2069,7 @@ def render_project_doc_view(workspace: Path | str, slug: str, doc_name: str) -> 
     支持核心资产 + 任意项目内文档 (README.md / docs/xxx.md / 其他), 排除 .git。
     """
     slug = Path(str(slug or "")).name
-    pdir = Path(workspace) / "projects" / slug
+    pdir = _project_docs_root(workspace, slug)
     rel = Path(str(doc_name or ""))
     # 路径安全: 必须在项目目录内, 非 .git, 扩展名白名单
     try:
@@ -2330,3 +2360,19 @@ def _data_source_html(workspace: Path | str, slug: str, kind: str) -> str:
         return ("<p class='datasrc'>📌 数据来源: projects/<slug>/ 目录实际文件 "
                 "(存在/大小/更新时间, 实时读盘)</p>")
     return ""
+
+
+def _project_docs_root(workspace: Path | str, slug: str) -> Path:
+    """项目文档根目录: product.json 的 workspace_dir (实际目录/git 仓库) 优先;
+    无 → 系统存储目录 projects/<slug> (核心资产+扫描)。"""
+    info = _read_product_info(workspace, slug) or {}
+    wd = str(info.get("workspace_dir") or "").strip()
+    if wd and Path(wd).is_dir():
+        return Path(wd)
+    return Path(workspace) / "projects" / slug
+
+
+def _project_repo_url(workspace: Path | str, slug: str) -> str:
+    """项目 git 地址 (product.json repo_url; 失败安全 → "")。"""
+    info = _read_product_info(workspace, slug) or {}
+    return str(info.get("repo_url") or "").strip()

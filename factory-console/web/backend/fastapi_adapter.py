@@ -702,6 +702,20 @@ def build_app(
         """版本。"""
         return {"name": "ai-software-factory", "version": _factory_version}
 
+    @app.get("/api/board")
+    def api_board() -> dict[str, Any]:
+        """任务监控面板（S10-1xx: todolist/依赖图/生命线 — 懒加载渲染）。
+
+        BoardService 声明的访问端点; 返回 {ok, board: <纯文本面板>}。
+        """
+        from ..session.board import render_board
+
+        try:
+            board_text = render_board()
+        except Exception:  # noqa: BLE001 — 面板失败 → 明确错误不 500
+            board_text = "（面板渲染失败）"
+        return {"ok": True, "board": board_text}
+
     @app.get("/api/dashboard")
     def api_dashboard() -> dict[str, Any]:
         """七域汇总 (11A ConsoleDashboard; 发 console.dashboard.viewed 审计)。"""

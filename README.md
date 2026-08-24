@@ -111,3 +111,27 @@ docs/sprint10/S10-097*              ← M3e 收尾（当前 Sprint）
 
 开源核心（CLI/Router/Agent/审计）+ 商业增值（治理/合规/分析）· Community 完整可用。
 SDK 化与商业化路线见方案书 §22。
+
+## CLI 命令速查（v1.1.29）
+
+```
+会话命令（factory 进入后）:
+  /board             主线面板（todolist+进度条+标签, 主线vs周边）
+  /board graph [项目]  任务依赖图（plan.json, CRITICAL=★）
+  /board timeline     生命线（审计事件时间线）
+  /preview <文件>     Markdown 预览
+  /status /help /project /exit
+
+服务命令:
+  factory start               启动全部内置服务（backend+frontend）
+  factory start <id>          只启动指定服务（backend/frontend/board...）
+  factory service list        服务发现（已注册服务 + 状态 + 访问地址）
+  factory create <type>       统一创建入口（company/department/project）
+  factory doctor              环境诊断
+```
+
+**board 访问**：
+```
+会话: factory → /board（最简单, 无需启动服务）
+Web:  factory start → http://127.0.0.1:8011/api/board（懒加载）
+```

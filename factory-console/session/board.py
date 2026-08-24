@@ -1923,7 +1923,8 @@ def list_project_docs(workspace: Path | str, slug: str) -> list[dict[str, Any]]:
     cfg = read_docs_config(workspace, slug)
     exts_set = {str(e).lower() for e in cfg["exts"]}
     _SKIP_DIRS = {".git", "$SMOKE_ROOT", "__pycache__", "node_modules",
-                  ".venv", "build", "dist", "unused", ".ruff_cache", ".pytest_cache"}
+                  ".venv", "build", "dist", "unused", ".ruff_cache", ".pytest_cache",
+                  "demo", "examples", "unused"}
     docs: list[dict[str, Any]] = []
     for d in cfg["dirs"]:
         root = Path(d)
@@ -2448,7 +2449,6 @@ def _render_docs_tree(node: dict[str, Any], slug: str) -> str:
             f"this.textContent=this.textContent=='▸'?'▾':'▸'\">▸</span>"
             f"<span class='dname'>📁 {name}</span> <span class='m'>{cnt}</span></div>"
             f"<div class='dkids' style='display:none'>{kids}</div></div>"
-            f'<div class="dkids" style="display:none">{kids}</div></div>'
         )
     for f in sorted(node["files"], key=lambda x: x["name"]):
         icon = "📄" if f["kind"] == "md" else ("📦" if f["kind"] in ("json",) else "⚙")

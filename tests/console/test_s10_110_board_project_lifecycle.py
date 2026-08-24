@@ -1135,3 +1135,46 @@ class TestDocsConfigSave:
         assert "🔄 刷新文档" in html
         assert "↻ 重置表单" in html
         assert "docs?project=a" in html  # 刷新跳转目标
+
+
+# ================================================================== 树去重 + 排序 (目录上文件下 A-Z)
+
+class TestTreeOrder:
+    def _proj(self, tmp_path):
+        wd = tmp_path / "repo"
+        wd.mkdir()
+        (wd / "zeta.md").write_text("z", encoding="utf-8")
+        (wd / "alpha.md").write_text("a", encoding="utf-8")
+        (wd / "docs").mkdir()
+        (wd / "docs" / "b.md").write_text("b", encoding="utf-8")
+        (wd / "docs" / "a.md").write_text("a", encoding="utf-8")
+        (wd / "tests").mkdir()
+        (wd / "tests" / "t.md").write_text("t", encoding="utf-8")
+        pdir = tmp_path / "projects" / "a"
+        pdir.mkdir(parents=True)
+        (pdir / "product.json").write_text(json.dumps(
+            {"name": "A", "workspace_dir": str(wd)}, ensure_ascii=False), encoding="utf-8")
+        return tmp_path
+
+    def test_render_no_duplicate_files(self, tmp_path):
+        """渲染文件行数 = 实际文件数 (无重复, 修复 dkids 双行 bug)。"""
+        self._proj(tmp_path)
+        docs = BOARD.list_project_docs(tmp_path, "a")
+        tree = BOARD._docs_tree(docs)
+        out = BOARD._render_docs_tree(tree, "a")
+        assert out.count("filerow") == len(docs)
+
+    def test_dirs_before_files_az(self, tmp_path):
+        """同级: 目录在上(按名), 文件在下(A-Z)。"""
+        self._proj(tmp_path)
+        docs = BOARD.list_project_docs(tmp_path, "a")
+        tree = BOARD._docs_tree(docs)
+        root = tree
+        # 目录名排序
+        assert list(root["dirs"].keys()) == sorted(root["dirs"].keys())
+        # 文件 A-Z: alpha 在 zeta 前
+        names = [f["name"] for f in root["files"]]
+        assert names == sorted(names)
+        # docs 子目录文件 a 在 b 前
+        dnames = [f["name"] for f in root["dirs"]["docs"]["files"]]
+        assert dnames == sorted(dnames)

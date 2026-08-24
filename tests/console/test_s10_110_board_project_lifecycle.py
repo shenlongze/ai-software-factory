@@ -433,3 +433,45 @@ class TestProjectFirst:
         ml = BOARD.render_board_html(workspace=tmp_path)
         assert "AI主线面板" in ml
         assert "任务监控面板" in ml
+
+
+# ================================================================== 生命线可读化
+
+class TestTimelineReadable:
+    def _audit(self, root: Path):
+        d = root / "audit"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "audit_events.json").write_text(json.dumps({"events": [
+            {"timestamp": "2026-08-24T12:39:39", "event_type": "DISCOVERY_CONFIRMED", "project_id": ""},
+            {"timestamp": "2026-08-24T12:39:39", "event_type": "DISCOVERY_CONFIRMED", "project_id": ""},
+            {"timestamp": "2026-08-24T12:39:39", "event_type": "DISCOVERY_CONFIRMED", "project_id": ""},
+            {"timestamp": "2026-08-24T12:24:29", "event_type": "PRODUCT_CREATED", "project_id": "a"},
+            {"timestamp": "2026-08-24T12:25:01", "event_type": "TASK_FAILED", "project_id": "a"},
+        ]}), encoding="utf-8")
+
+    def test_event_labels_chinese(self):
+        assert BOARD.EVENT_LABELS["DISCOVERY_CONFIRMED"] == "需求确认"
+        assert BOARD.EVENT_LABELS["PRODUCT_CREATED"] == "产品创建"
+        assert BOARD.EVENT_LABELS["TASK_FAILED"] == "任务失败"
+
+    def test_obj_name_resolves_project(self, tmp_path):
+        _mk_project(tmp_path, "a", name="项目A")
+        e = {"project_id": "a"}
+        assert BOARD._timeline_obj_name(tmp_path, e) == "项目A"
+
+    def test_timeline_folds_confirms_and_chinese(self, tmp_path):
+        _mk_project(tmp_path, "a", name="项目A")
+        self._audit(tmp_path)
+        out = BOARD.render_timeline(tmp_path, limit=20)
+        assert "需求确认 ×3" in out          # 折叠计数
+        assert "产品创建 项目A" in out        # 中文标签 + 项目名
+        assert "任务失败 项目A" in out
+        assert "DISCOVERY_CONFIRMED" not in out  # 不再刷屏
+
+    def test_timeline_html_readable(self, tmp_path):
+        _mk_project(tmp_path, "a", name="项目A")
+        self._audit(tmp_path)
+        html = BOARD.render_timeline_html(tmp_path)
+        assert "需求确认" in html and "×3" in html
+        assert "产品创建" in html and "项目A" in html
+        assert "已折叠" in html

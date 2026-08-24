@@ -3,6 +3,24 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.55] — 2026-08-24
+
+**Board 生命线可读化（Founder: 看不懂, 英文粘连+重复刷屏）**。
+
+### Changed
+
+- **事件类型中文标签**（EVENT_LABELS 20+ 映射）: DISCOVERY_CONFIRMED→需求确认,
+  PRODUCT_CREATED→产品创建, TASK_STARTED→任务开始 等; 未知类型保留原名
+- **对象名解析**: project_id→项目名 (读 product.json), task/agent 同; 不再裸 ID
+- **高频降噪**: DISCOVERY_CONFIRMED (产品发现确认, 占 94%) 折叠为一行
+  "需求确认 ×N (已折叠)"; 核心事件 (任务/产物/计划/测试/审批/失败) 单独显示
+- **同秒聚合**: 同秒同类型同对象事件合并显示 ×N
+- CLI 文本版 (render_timeline) 同步优化
+
+### 验证
+
+- 4 新契约测试 (中文映射/对象名/折叠+中文/HTML 可读) · 全量回归 0 新增失败
+
 ## [v1.1.54] — 2026-08-24
 
 **Board 信息架构调整: 项目选择第一步, 面板第二步（Founder 核心反馈）**。

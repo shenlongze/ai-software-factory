@@ -202,16 +202,22 @@ def render_timeline(workspace: Path, limit: int = 15) -> str:
     events = data.get("events") if isinstance(data, dict) else data
     if not isinstance(events, list) or not events:
         return "（暂无审计事件）"
-    events = sorted(events, key=lambda e: str(e.get("timestamp") or ""))[-limit:]
+    # 降噪: 需求确认折叠为汇总行; 核心事件最近 limit 条
+    confirm_count = sum(1 for e in events if (e.get("event_type") or "") == "DISCOVERY_CONFIRMED")
+    core = [e for e in events if (e.get("event_type") or "") != "DISCOVERY_CONFIRMED"]
+    core = sorted(core, key=lambda e: str(e.get("timestamp") or ""))[-limit:]
     lines = ["⏱ 生命线 (最近事件, 时间→事件→对象):", ""]
+    if confirm_count:
+        lines.append(f"◉ 需求确认 ×{confirm_count} (产品发现流程, 已折叠)")
     prev_time = ""
-    for e in events:
+    for e in core:
         ts = str(e.get("timestamp") or "")[11:19]  # HH:MM:SS
         marker = "│" if ts == prev_time else f"◉ {ts}"
         prev_time = ts
         ev = e.get("event_type") or e.get("type") or "?"
-        obj = e.get("task_id") or e.get("agent_id") or e.get("project_id") or ""
-        lines.append(f"{marker} {ev} {('→ ' + obj) if obj else ''}")
+        label = EVENT_LABELS.get(ev, ev)
+        obj = _timeline_obj_name(workspace, e)
+        lines.append(f"{marker} {label} {obj}".rstrip())
         lines.append("│")
     return "\n".join(lines)
 
@@ -812,23 +818,47 @@ def render_timeline_html(workspace: Path, limit: int = 20) -> str:
     events = data.get("events") if isinstance(data, dict) else data
     if not isinstance(events, list) or not events:
         return _shell("<p>（暂无审计事件）</p>")
-    events = sorted(events, key=lambda e: str(e.get("timestamp") or ""))[-limit:]
+    # 降噪: 高频"需求确认"(DISCOVERY_CONFIRMED) 折叠为一行汇总; 核心事件单独显示
+    confirm_count = sum(1 for e in events if (e.get("event_type") or "") == "DISCOVERY_CONFIRMED")
+    core = [e for e in events if (e.get("event_type") or "") != "DISCOVERY_CONFIRMED"]
+    core = sorted(core, key=lambda e: str(e.get("timestamp") or ""))[-limit:]
 
-    items = []
-    for e in events:
+    # 聚合降噪: 同秒同类型同对象事件合并显示 ×N
+    agg: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+    for e in core:
         ts = str(e.get("timestamp") or "")
         time_s = ts[11:19] if len(ts) >= 19 else ts
         date_s = ts[5:10] if len(ts) >= 10 else ""
         ev = e.get("event_type") or e.get("type") or "?"
-        obj = e.get("task_id") or e.get("agent_id") or e.get("project_id") or ""
+        obj = _timeline_obj_name(workspace, e)
+        key = (date_s, time_s, ev, obj)
+        if key in agg:
+            agg[key]["count"] += 1
+        else:
+            agg[key] = {"date": date_s, "time": time_s, "ev": ev, "obj": obj, "count": 1}
+
+    items = []
+    if confirm_count:
+        items.append(
+            f'<li><span class="dot" style="background:#78909c"></span>'
+            f'<span class="t">—</span><span class="e">需求确认</span>'
+            f' <span class="cnt">×{confirm_count}</span>'
+            f'<span class="o">· 产品发现流程（已折叠）</span></li>'
+        )
+    for row in agg.values():
+        ev = row["ev"]
+        label = EVENT_LABELS.get(ev, ev)
+        obj = row["obj"]
+        obj_html = f'<span class="o">· {obj}</span>' if obj else ""
+        cnt_html = f' <span class="cnt">×{row["count"]}</span>' if row["count"] > 1 else ""
         # 事件类型 → 颜色
         color = "#4caf50" if "COMPLETE" in ev or "PASS" in ev or "CREATED" in ev else \
                 "#ff9800" if "START" in ev or "RUN" in ev else "#e53935" if "FAIL" in ev or "REJECT" in ev else "#78909c"
         items.append(
             f'<li><span class="dot" style="background:{color}"></span>'
-            f'<span class="t">{date_s} {time_s}</span>'
-            f'<span class="e">{ev}</span>'
-            f'<span class="o">{obj}</span></li>'
+            f'<span class="t">{row["date"]} {row["time"]}</span>'
+            f'<span class="e">{label}</span>{cnt_html}'
+            f'{obj_html}</li>'
         )
 
     return f"""<!DOCTYPE html>
@@ -845,10 +875,12 @@ def render_timeline_html(workspace: Path, limit: int = 20) -> str:
   .t {{ color: #78909c; margin-right: 10px; font-size: 12px; }}
   .e {{ color: #e6e6e6; margin-right: 10px; font-weight: 500; }}
   .o {{ color: #ffb74d; font-size: 12px; }}
+  .cnt {{ color: #fb8c00; font-size: 11px; background: #3e2723; border-radius: 8px; padding: 1px 7px; margin-right: 8px; }}
+  .hint {{ color: #78909c; font-size: 12px; margin-top: 12px; }}
   @media (max-width: 600px) {{ .t {{ display: block; }} }}
 </style></head><body>
 {_board_nav("timeline", "", workspace)}
-<h1>⏱ 生命线（最近 {len(items)} 事件）</h1>
+<h1>⏱ 生命线（核心事件 {len(agg)} 条 + 需求确认 ×{confirm_count}）</h1>
 <ul class="timeline">{"".join(items)}</ul>
 {_auto_refresh_script(0)}</body></html>"""
 
@@ -1601,3 +1633,51 @@ def render_project_home(workspace: Path | str) -> str:
     if current and (Path(workspace) / "projects" / current / "product.json").is_file():
         return render_project_lifecycle_html(workspace, current)
     return render_projects_list_html(workspace)
+
+
+# ---------------------------------------------------------------- 生命线可读化 (S10-110 优化)
+
+#: 审计事件类型 → 中文标签 (生命线展示; 未知类型显示原名)
+EVENT_LABELS: dict[str, str] = {
+    "DISCOVERY_CONFIRMED": "需求确认",
+    "DISCOVERY_STARTED": "需求收集开始",
+    "PRODUCT_CREATED": "产品创建",
+    "PLAN_CREATED": "计划生成",
+    "PLAN_UPDATED": "计划更新",
+    "TASK_STARTED": "任务开始",
+    "TASK_COMPLETED": "任务完成",
+    "TASK_FAILED": "任务失败",
+    "TASK_REPAIRED": "任务修复",
+    "ARTIFACT_CREATED": "产物生成",
+    "TEST_PASSED": "测试通过",
+    "TEST_FAILED": "测试失败",
+    "APPROVAL_REQUESTED": "审批请求",
+    "APPROVAL_APPROVED": "审批通过",
+    "APPROVAL_REJECTED": "审批拒绝",
+    "EVIDENCE_CREATED": "证据生成",
+    "EXECUTION_STARTED": "执行开始",
+    "EXECUTION_COMPLETED": "执行完成",
+    "EXECUTION_FAILED": "执行失败",
+    "PROJECT_DELIVERED": "项目交付",
+    "PROJECT_ARCHIVED": "项目归档",
+}
+
+#: 生命线聚合窗口 (秒) — 同窗口同类型同对象事件合并显示 ×N (降噪)
+TIMELINE_AGGREGATE_SECONDS = 5
+
+
+def _timeline_obj_name(workspace: Path | str, e: dict[str, Any]) -> str:
+    """事件对象名: project_id → 项目名; task_id → 任务名; agent_id → 原样。失败安全。"""
+    pid = str(e.get("project_id") or "")
+    if pid:
+        info = _read_product_info(workspace, pid)
+        if info:
+            return f"{info.get('name') or pid}"
+        return pid
+    tid = str(e.get("task_id") or "")
+    if tid:
+        return tid
+    aid = str(e.get("agent_id") or "")
+    if aid:
+        return aid
+    return ""

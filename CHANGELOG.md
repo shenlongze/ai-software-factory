@@ -3,6 +3,22 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.57] — 2026-08-24
+
+**Board 修复: 项目选择器与 URL 一致 — 不再"选墨笺/URL 是 demo"**。
+
+### Fixed
+
+- 选择器选中态: URL 项目不在注册列表 (demo 等示例/未注册) → 显式加入
+  "slug (示例/未注册)" 选项并选中; 不再因无匹配项默认选第一个项目
+  (浏览器行为), 消除界面与 URL 不一致的误导
+- 选择器切换: 按当前视图 route 跳转 (tasks?project=/view=project&project=),
+  选项目后 URL 即变为所选项目
+
+### 验证
+
+- 3 新契约测试 (未注册项目选中/已注册选中/route 按视图) · 全量回归 0 新增失败
+
 ## [v1.1.56] — 2026-08-24
 
 **Board 修复: 示例项目 demo 误报"项目不存在" + 导航无项目不再 fallback demo**。

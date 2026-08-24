@@ -1567,6 +1567,13 @@ def _project_select_html(workspace: Path | str, current: str, active: str, *, bi
         "tasks": "/api/board/tasks?project=",
     }.get(active, "/api/board?view=project&project=")
     opts = []
+    slugs = {p["slug"] for p in projects}
+    # URL 项目不在注册列表 (demo 等示例/未注册) → 加显式选项并选中, 避免
+    # "界面选墨笺/URL 却是 demo" 的误导 (选择器与 URL 必须一致)
+    if current and current not in slugs:
+        opts.append(
+            f'<option value="{current}" selected>{current} (示例/未注册)</option>'
+        )
     for p in projects:
         sel = " selected" if p["slug"] == current else ""
         label = f"{p['name']} ({p['slug']})"

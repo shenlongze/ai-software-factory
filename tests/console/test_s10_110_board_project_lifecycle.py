@@ -505,3 +505,24 @@ class TestDemoAndNoProject:
         nav = BOARD._board_nav("project", "P-1", tmp_path)
         assert "tasks?project=P-1" in nav
         assert "graph?project=P-1" in nav
+
+
+# ================================================================== 选择器与 URL 一致
+
+class TestSelectUrlConsistency:
+    def test_select_marks_current_missing_project(self, tmp_path):
+        """URL 项目不在注册列表 (demo 示例) → 选择器显式选中它, 不误选第一个项目。"""
+        _mk_project(tmp_path, "a", name="项目A")
+        sel = BOARD._project_select_html(tmp_path, "demo", "tasks")
+        assert 'value="demo" selected' in sel
+        assert 'value="a" selected' not in sel  # 不误选项目A
+
+    def test_select_marks_registered_project(self, tmp_path):
+        _mk_project(tmp_path, "a", name="项目A")
+        sel = BOARD._project_select_html(tmp_path, "a", "tasks")
+        assert 'value="a" selected' in sel
+
+    def test_select_route_follows_view(self, tmp_path):
+        _mk_project(tmp_path, "a", name="项目A")
+        assert "tasks?project=" in BOARD._project_select_html(tmp_path, "a", "tasks")
+        assert "view=project&project=" in BOARD._project_select_html(tmp_path, "a", "project")

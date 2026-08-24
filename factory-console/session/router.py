@@ -42,6 +42,8 @@ DEFAULT_ROUTES: dict[str, str] = {
     "project_docs": "project_docs",
     # S10-053 P4: 质量修复意图 → RepairManager Action (修复失败任务)
     "repair_task": "repair_task",
+    # S10-113 M5-1: 执行重放意图 → ReplayEngine Action (dry-run/re-exec/compare)
+    "replay_exec": "replay_exec",
     # S10-055 Task 005: 项目验收意图 → accept_project Action (USER_ACCEPTANCE → DELIVERED)
     "accept_project": "accept_project",
     # S10-055 Task 005/006: Workforce Intelligence 意图 → Workforce Actions

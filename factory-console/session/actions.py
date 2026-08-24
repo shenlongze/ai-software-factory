@@ -41,6 +41,7 @@ from .agents import AgentMatcher, AgentMetrics, AgentRegistry, workforce_snapsho
 from .audit import record_execution
 from .commands import read_projects
 from .confirm import ConfirmationGate
+from .execution_replay import ReplayError
 from .conflicts import ConflictDetector
 from .dependencies import TaskDependencyGraph
 from .intent import (
@@ -956,6 +957,22 @@ def _usage_summary(usage: Any) -> str:
     return str(usage)
 
 
+
+def _jsonable(value: Any) -> Any:
+    """可序列化过滤 (input_snapshot 只存 JSON 安全值; 失败安全 → 字符串)。
+
+    params 可能含非 JSON 值 (如对象/回调) — 快照只保留可序列化输入,
+    保证 execution_records.json 可落盘可重放; 不改变执行链任何行为。
+    """
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, dict):
+        return {str(k): _jsonable(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(v) for v in value]
+    return str(value)
+
+
 def _record_execution(
     context: AgentExecutionContext,
     execution: AgentExecutionResult,
@@ -978,6 +995,20 @@ def _record_execution(
             "result_id": execution.result_id,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "error": execution.error,
+            # S10-113 M5-1: input_snapshot — 完整输入 (intent/action/params/context 摘要),
+            # 保证未来可重放 (re-exec 还原输入 → 同输入重跑); 只加字段, 执行链零改动
+            "input_snapshot": {
+                "intent": context.intent.intent_type if context.intent else "unknown",
+                "action": "agent.execute_task",
+                "params": _jsonable(params),
+                "context": {
+                    "workspace": str(context.workspace),
+                    "project": str(context.project or ""),
+                    "task_id": str(context.task_id or ""),
+                    "agent_id": str(context.agent_id or ""),
+                    "user": str(context.user or ""),
+                },
+            },
         }
         record_execution(
             record,
@@ -1074,6 +1105,123 @@ def execute_task(context: ExecutionContext) -> ActionResult:
         data={"execution": execution.to_dict()},
         error=error or "任务执行失败",
     )
+
+
+def _replay_rerun_runner(
+    workspace: Any,
+    session: Any,
+    user: str = "user",
+    project: Optional[str] = None,
+) -> Any:
+    """re-exec runner (S10-113 M5-1): input_snapshot → 同输入重跑 execute_task。
+
+    runner(snapshot) -> 新记录 dict: 还原 IntentObject (intent/params) →
+    execute_task 同一执行链 (薄调 exec.cli.cmd_exec_run) → 新记录 (含
+    input_snapshot)。execute_task 自身已审计写记录, 引擎按 result_id 幂等
+    落盘 (不重复写)。失败 → ReplayError (如实报错, 不瞎跑)。
+    """
+
+    def runner(snapshot: dict[str, Any]) -> dict[str, Any]:
+        snap_params = snapshot.get("params") if isinstance(snapshot.get("params"), dict) else {}
+        intent_obj = IntentObject(
+            intent_type=str(snapshot.get("intent") or "execute_task"),
+            params=dict(snap_params),
+            raw="replay re-exec",
+        )
+        new_ctx = ExecutionContext(
+            workspace=workspace,
+            session=session,
+            user=user,
+            project=project,
+            intent=intent_obj,
+        )
+        result = execute_task(new_ctx)
+        if not result.ok:
+            raise ReplayError(f"重跑失败: {result.error or result.message}")
+        execution = result.data.get("execution") if isinstance(result.data, dict) else {}
+        task_id = str(snap_params.get("task_id") or snap_params.get("task") or "")
+        return {
+            "intent": str(snapshot.get("intent") or "execute_task"),
+            "action": "agent.execute_task",
+            "agent": str(execution.get("agent") or ""),
+            "task": str(snap_params.get("objective") or task_id or ""),
+            "result": "success" if execution.get("success") else "failed",
+            "result_id": execution.get("result_id"),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "error": execution.get("error"),
+            "input_snapshot": snapshot,
+        }
+
+    return runner
+
+
+def replay_exec(context: ExecutionContext) -> ActionResult:
+    """执行重放 (S10-113 M5-1): dry-run / re-exec / compare — 薄接 ReplayEngine。
+
+    params:
+      exec_id:     必填 (result_id, 如 EXS-xxx)
+      mode:        dry_run (默认) | re_exec | compare
+      compare_with: compare 模式第二个 exec_id (缺省 → 最近一次记录)
+      save:        compare 落盘目录/文件 (docs/sprint10/)
+    诚实纪律: 无效 id / 缺 input_snapshot → ReplayError 明确错误, 不瞎跑。
+    """
+    params = context.intent.parameters if context.intent else {}
+    exec_id = str(params.get("exec_id") or "").strip()
+    if not exec_id:
+        return ActionResult(
+            ok=False,
+            status=STATUS_ERROR,
+            message="重放失败: 缺少 exec_id",
+            error="缺少 exec_id",
+        )
+    try:
+        from .execution_replay import ReplayEngine, ReplayError
+
+        engine = ReplayEngine(workspace=context.workspace)
+        mode = str(params.get("mode") or "dry_run")
+        if mode == "re_exec":
+            runner = _replay_rerun_runner(
+                context.workspace, context.session, context.user, context.project
+            )
+            new_id = engine.re_exec(exec_id, runner)
+            return ActionResult(
+                ok=True,
+                status=STATUS_OK,
+                message=f"重跑完成: {exec_id} → 新执行 {new_id}",
+                data={"exec_id": exec_id, "new_exec_id": new_id},
+            )
+        if mode == "compare":
+            exec2 = str(params.get("compare_with") or "").strip()
+            if not exec2:
+                exec2 = engine.latest_exec_id(exclude=exec_id) or ""
+            if not exec2:
+                return ActionResult(
+                    ok=False,
+                    status=STATUS_ERROR,
+                    message="对比失败: 缺少第二个 exec_id (且无最近记录可对比)",
+                    error="缺少 compare_with / 无最近记录",
+                )
+            report = engine.compare(exec_id, exec2, save_to=params.get("save"))
+            return ActionResult(
+                ok=True,
+                status=STATUS_OK,
+                message=f"# 执行对比报告: {exec_id} ↔ {exec2}\n\n{report}",
+                data={"exec_id": exec_id, "compare_with": exec2, "report": report},
+            )
+        timeline = engine.dry_run(exec_id)
+        return ActionResult(
+            ok=True,
+            status=STATUS_OK,
+            message=timeline.to_markdown(),
+            data={"exec_id": exec_id, "report": timeline.to_markdown()},
+        )
+    except ReplayError as exc:
+        return ActionResult(
+            ok=False,
+            status=STATUS_ERROR,
+            message=str(exc),
+            error=str(exc),
+        )
 
 
 def execute_project(context: ExecutionContext) -> ActionResult:
@@ -3695,6 +3843,23 @@ def build_default_actions() -> ActionRegistry:
                 "phase": "S10-049 P0",
                 "sensitive": True,
                 "category": "execution",
+            },
+        )
+    )
+    registry.register(
+        Action(
+            name="replay_exec",
+            description=(
+                "执行重放 (M5-1): dry-run 时间线 / re-exec 同输入重跑 / "
+                "compare 对比报告 — 薄接 ReplayEngine"
+            ),
+            handler=replay_exec,
+            permission="user",
+            metadata={
+                "service": "ReplayEngine (execution_replay.py)",
+                "phase": "S10-113 M5-1",
+                "sensitive": False,
+                "category": "replay",
             },
         )
     )

@@ -335,6 +335,8 @@ class BoardCommand(SlashCommand):
       /board graph [项目]  任务依赖图（plan.json, CRITICAL=★）
       /board chain [项目]  任务链（关键路径 ★ 关键节点 ▲ 汇聚点 + 工期）
       /board timeline     生命线（最近审计事件时间线）
+      /board replay <exec_id>  执行重放: dry-run 时间线 (默认) / --re-exec 同输入重跑 /
+                              --compare <exec2_id> 对比 (缺省最近一次) / --save 落盘
       /board project      项目列表（select 切换）
       /board project <slug>  单项目管理视图（全生命周期, 只读）
       /board report       生成给 Hermes 的 markdown 汇报
@@ -459,6 +461,60 @@ class BoardCommand(SlashCommand):
                     print(render_projects_list(workspace))
                 else:
                     print(render_project_lifecycle(workspace, project))
+            elif view == "replay":
+                # S10-113 M5-1: /board replay <exec_id> [--re-exec] [--compare <id2>] [--save]
+                if len(sub) < 2:
+                    print("用法: /board replay <exec_id> [--re-exec] [--compare <exec2_id>] [--save]")
+                    print("  dry-run (默认): 重建执行时间线 (records + audit 事件)")
+                    print("  --re-exec:      同输入重跑 → 新 exec_id 记录")
+                    print("  --compare <id2>: 两次执行对比 (缺省对比最近一次) + --save 落盘 docs/sprint10/")
+                    return 2
+                exec_id = sub[1]
+                rest = sub[2:]
+                mode = "dry_run"
+                compare_with = ""
+                if "--re-exec" in rest:
+                    mode = "re_exec"
+                if "--compare" in rest:
+                    mode = "compare"
+                    idx = rest.index("--compare")
+                    compare_with = rest[idx + 1] if len(rest) > idx + 1 else ""
+                save = "--save" in rest
+                try:
+                    from .actions import _replay_rerun_runner
+                    from .execution_replay import ReplayEngine, ReplayError
+
+                    engine = ReplayEngine(workspace=workspace)
+                    if mode == "re_exec":
+                        runner = _replay_rerun_runner(
+                            workspace,
+                            context,
+                            user="user",
+                            project=getattr(context, "current_project", None),
+                        )
+                        new_id = engine.re_exec(exec_id, runner)
+                        print(f"✅ 重跑完成: {exec_id} → 新执行 {new_id} (记录含 input_snapshot, 可对比)")
+                    elif mode == "compare":
+                        if not compare_with:
+                            compare_with = engine.latest_exec_id(exclude=exec_id) or ""
+                        if not compare_with:
+                            print(f"❌ 对比失败: 缺少第二个 exec_id 且无最近记录 ({exec_id})")
+                            return 1
+                        save_path = None
+                        if save:
+                            save_path = (
+                                Path(__file__).resolve().parents[1] / ".." / "docs" / "sprint10"
+                            )
+                        report = engine.compare(exec_id, compare_with, save_to=save_path)
+                        print(report)
+                        if save_path is not None:
+                            target = save_path / f"replay-compare-{exec_id}-{compare_with}.md"
+                            print(f"\n✅ 对比报告已落盘: {target}")
+                    else:
+                        print(engine.dry_run(exec_id).to_markdown())
+                except ReplayError as exc:
+                    print(f"❌ 重放失败: {exc}")
+                    return 1
             elif view == "timeline":
                 if workspace is None:
                     print("（未设置工作区 — 无法读审计事件）")

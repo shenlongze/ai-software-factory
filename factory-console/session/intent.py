@@ -39,6 +39,8 @@ INTENT_CREATE_PRODUCT = "create_product"
 INTENT_GENERATE_PRD = "generate_prd"
 #: S10-053 P4: 质量修复意图 (修复失败任务 — RepairManager, 确认门后执行)
 INTENT_REPAIR_TASK = "repair_task"
+#: S10-113 M5-1: 执行重放意图 (重跑/重放/回放 <exec_id> → ReplayEngine)
+INTENT_REPLAY_EXEC = "replay_exec"
 INTENT_PREPARE_PROJECT = "prepare_project"
 #: S10-111 M3-6: 需求变更意图 ("给XX项目加个导出功能" → ChangeControl 回流)
 INTENT_CHANGE_PROJECT = "change_project"
@@ -191,6 +193,10 @@ _KEYWORD_RULES: tuple[tuple[tuple[str, ...], str, Optional[str]], ...] = (
     (("自动修复", "自动修复错误"), INTENT_DEBUG_REPAIR, None),
     (("验证修复", "验证一下修复"), INTENT_DEBUG_VALIDATE, None),
     (("继续调试",), INTENT_DEBUG_RESUME, None),
+    # S10-113 M5-1: 执行重放意图 (纯新增, 旧关键词不动)。"重跑/重放/回放/
+    # replay" 不与既有关键词共享子串 (run_task "修复"/"加" 不抢), 无优先级冲突;
+    # exec_id 参数 = 关键词后剩余文本 ("重跑 EXS-xxx" → "EXS-xxx")。
+    (("重跑", "重放", "回放", "replay"), INTENT_REPLAY_EXEC, "exec_id"),
     (("花了多少", "成本", "费用"), INTENT_SHOW_COST, None),
     # S10-111 M3-6: 需求变更意图 (纯新增, 旧关键词不动) — 必须在 run_task
     # 裸 "加" 之前 ("加个/加一个/加一项/新增" 更具体 → change_project;

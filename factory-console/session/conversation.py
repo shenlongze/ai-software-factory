@@ -226,6 +226,7 @@ class ConversationManager:
         self._discovery_analyzer_override: Any = analyzer
         #: S10-099: 最近一次成功 LLM 分析 (确认门理解摘要/主动分析来源; 未用 LLM → None)
         self._discovery_analysis: Optional[Any] = None
+        self._last_system_question: str = ""  # 上一轮系统追问 (LLM 多轮字段合并边界)
 
     def transition(self, new_state: ConversationState) -> None:
         """状态迁移: 记录 history (from → to) 后更新 state。
@@ -315,6 +316,7 @@ class ConversationManager:
             session_id=None,
         )
         self._product_pending = list(_PRODUCT_FIELD_ORDER)
+        self._last_system_question = ""  # 新发现重置追问上下文
         self._discovery_analysis = None  # S10-099: 新流程清空上次 LLM 理解
         self.pending_intent = None  # 产品流程接管, 不挂起普通 intent
         if self.state != ConversationState.DISCOVERY:
@@ -494,7 +496,10 @@ class ConversationManager:
         if analyzer is None:
             return None
         try:
-            return analyzer.analyze(text, history=history)
+            return analyzer.analyze(
+                text, history=history,
+                system_question=self._last_system_question,
+            )
         except Exception:  # noqa: BLE001 — LLM 失败 → 规则兜底 (永不 5xx)
             return None
 
@@ -622,9 +627,11 @@ class ConversationManager:
                 question = str(q).strip()
                 break
         if not question:
+            q = self._next_product_question()
+            self._last_system_question = q  # 记录机械追问 (LLM 多轮合并边界)
             return ConversationResponse(
                 state=self.state,
-                message=self._next_product_question(),
+                message=q,
                 needs_input=True,
             )
         missing = self._product_pending[0] if self._product_pending else ""
@@ -632,6 +639,7 @@ class ConversationManager:
         message = question
         if reason:
             message = f"{question}\n(为什么还问: {reason})"
+        self._last_system_question = question  # 记录追问 (LLM 多轮合并边界)
         return ConversationResponse(
             state=self.state,
             message=message,

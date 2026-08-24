@@ -5,7 +5,20 @@
 
 ---
 
-## [v1.1.18] — 2026-08-24
+## [v1.1.19] — 2026-08-24
+
+**发现阶段多轮字段合并边界修复**（S10-099 遗留改进）: 用户对智能追问的回答被 LLM 当成新产品描述覆盖字段。
+
+### Fixed
+
+- **prompt 注入"系统上一轮问题"**（`discovery_intelligence.py`）— LLM 知道"本轮是对上一问题的回答"→ category=field_answer, 只填对应字段, 不当作新描述
+- **conversation 记录追问轮次**（`conversation.py`）— `_last_system_question` 在智能/机械追问时记录, 传入 analyze; 新发现重置
+- 验证: "手机上没有顺手又好看的 markdown 编辑器" → 并入 problem, 不再覆盖 name（真实 LLM 实测）
+
+### 测试
+
+- `test_discovery_llm_intelligence.py` +2 用例（system_question 注入 + 回答并入不覆盖）→ 35 passed
+
 
 **组织管理对话接入**: "建个公司/建部门/把项目挂到部门" → LLM 理解 + 规则兜底 → org CLI（§1.4.5）。
 

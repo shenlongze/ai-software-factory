@@ -486,3 +486,49 @@ class TestAnalyzerUnit:
         monkeypatch.setattr(REASON, "ReasoningProvider", _BrokenProvider)
         with pytest.raises(DI.DiscoveryLLMUnavailable):
             DI.DiscoveryIntentAnalyzer()
+
+
+# ============================================================== 多轮字段合并边界 (修复)
+
+class TestMultiTurnFieldMerge:
+    """LLM 多轮合并: 用户对智能追问的回答 → field_answer 并入, 不当新描述覆盖。"""
+
+    def test_system_question_injected_and_answer_merged(self):
+        """第 1 轮缺 user → 智能追问; 第 2 轮回答 → system_question 传入 + 并入。"""
+        partial = _partial_analysis()  # 缺 user, 问 "主要给谁用呢?"
+        field_answer = {
+            "category": "field_answer",
+            "reason": "用户回答上一轮问题",
+            "extraction": {"user": "给经常写作的人用"},
+            "missing_reasons": {},
+            "smart_questions": [],
+            "proactive": {},
+            "understanding": "",
+        }
+        llm_fn, calls = _scripted_llm(partial, field_answer)
+        mgr = _manager(analyzer=DI.DiscoveryIntentAnalyzer(llm_fn=llm_fn))
+
+        r1 = mgr.handle("我想做个 markdown 编辑器, 适配手机")
+        assert r1.needs_input is True  # 智能追问
+        # 第 2 轮: 回答追问
+        r2 = mgr.handle("给经常写作的人用")
+        assert r2 is not None
+        # 断言: 第 2 轮 LLM 调用 prompt 注入了 system_question（上一轮追问）
+        assert len(calls) >= 2
+        second_prompt = calls[1][0]
+        assert "主要给谁用呢" in second_prompt  # 系统上一轮问题在 prompt
+        assert "系统上一轮问题" in second_prompt
+        # 断言: user 被并入, 且未覆盖其他已填字段
+        pi = mgr.product_intent
+        assert pi.user == "给经常写作的人用"
+        assert pi.problem  # 已填的 problem 保留（不被覆盖）
+        assert pi.name  # name 保留
+
+    def test_system_question_empty_on_first_turn(self):
+        """第 1 轮 system_question 应为 (无)。"""
+        llm_fn, calls = _mock_llm(_partial_analysis())
+        mgr = _manager(analyzer=DI.DiscoveryIntentAnalyzer(llm_fn=llm_fn))
+        mgr.handle("我想做个 markdown 编辑器")
+        assert len(calls) >= 1
+        assert "系统上一轮问题" in calls[0][0]
+        assert "(无)" in calls[0][0]

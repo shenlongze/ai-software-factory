@@ -62,6 +62,9 @@ _DISCOVERY_PROMPT = """你是 AI Factory 的产品经理。用户正在描述一
 【对话历史】(最近 3 轮, 无则空)
 {history}
 
+【系统上一轮问题】(若有 — 用户本轮输入可能是对它的回答)
+{system_question}
+
 【用户最新输入】
 {text}
 
@@ -82,6 +85,8 @@ _DISCOVERY_PROMPT = """你是 AI Factory 的产品经理。用户正在描述一
 - 产品描述（哪怕不完整）→ category=product_description, 尽力提取; 提取不到的必填字段
   在 missing_reasons 说明为什么缺, smart_questions 只问最重要的一条
 - 纯字段回答（"给程序员用"）→ category=field_answer, 只填对应字段
+- 若【系统上一轮问题】非空且用户本轮输入明显是对它的回答 → category=field_answer,
+  extraction 只填该问题对应的字段, 不当作新产品描述 (不覆盖已填字段)
 - extraction 字段只填输入中明确出现的信息, 不猜测、不编造"""
 
 
@@ -151,6 +156,7 @@ class DiscoveryIntentAnalyzer:
         text: str,
         *,
         history: Optional[list[str]] = None,
+        system_question: str = "",
     ) -> DiscoveryAnalysis:
         """1 次 LLM 调用 → 结构化 JSON → 宽容解析 → schema 校验 → DiscoveryAnalysis。
 
@@ -160,7 +166,7 @@ class DiscoveryIntentAnalyzer:
         text = str(text or "").strip()
         if not text:
             raise DiscoveryLLMError("输入为空, 无法分析")
-        prompt = self.build_prompt(text, history=history)
+        prompt = self.build_prompt(text, history=history, system_question=system_question)
         try:
             raw = self._llm_fn(prompt, "discovery_intent")
         except Exception as exc:  # noqa: BLE001 — 调用方异常 → 统一失败面
@@ -187,9 +193,10 @@ class DiscoveryIntentAnalyzer:
     # ------------------------------------------------------------ prompt
 
     def build_prompt(
-        self, text: str, *, history: Optional[list[str]] = None
+        self, text: str, *, history: Optional[list[str]] = None,
+        system_question: str = "",
     ) -> str:
-        """组装发现分析 prompt (最近 3 轮对话历史 + 用户最新输入)。"""
+        """组装发现分析 prompt (最近 3 轮 + 系统上一轮问题 + 用户最新输入)。"""
         lines: list[str] = []
         if history:
             recent = [
@@ -200,7 +207,11 @@ class DiscoveryIntentAnalyzer:
             for idx, item in enumerate(recent, 1):
                 lines.append(f"{idx}. {item}")
         history_block = "\n".join(lines) if lines else "(无)"
-        return _DISCOVERY_PROMPT.format(history=history_block, text=text)
+        return _DISCOVERY_PROMPT.format(
+            history=history_block,
+            system_question=str(system_question or "").strip() or "(无)",
+            text=text,
+        )
 
     # ------------------------------------------------------------ 解析/校验
 

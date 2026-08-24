@@ -3,6 +3,64 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.27] — 2026-08-24
+
+**任务监控面板 /board**: todolist + 进度条 + 标签 + 依赖图 + 生命线（Founder 需求）。
+
+### Added
+
+- **/board**（`session/board.py` + `commands.py`）— 主线 todolist + 进度条 + 标签
+  - 主线(M2-M7/P0) vs 周边(长期) 分组 · 组级 ✅ 识别 · rich 渲染降级纯文本
+- **/board graph [项目]** — 任务依赖图（plan.json tasks/edges/critical_path, CRITICAL=★）
+- **/board timeline** — 生命线（audit_events 最近事件, 时间→事件→对象）
+- 数据源: 待办清单（主线）+ DashboardCollector 数据层 + plan.json + audit_events
+
+### 测试
+
+- 相关回归 通过（会话/CLI 测试）· 面板失败安全（数据缺失/损坏容错）
+
+
+**会话 Markdown 渲染 + /preview + 多行输入**（S10-105）:
+PRD/文档输出经 rich.Markdown 渲染 (标题/列表/表格/代码块可读, 不再看源码);
+`/preview PRD.md` 渲染显示文件; 行尾 `\` 续行拼接多行输入 (prompt_toolkit
+缺失 → input() 降级, 诚实)。启发式保守 — 非 markdown 纯文本零变化。
+
+### Added
+
+- **会话 Markdown 渲染**（`session/renderer.py`）— `looks_like_markdown(text)`
+  强信号保守判断 (含 ``` 围栏 / 任一行 ^#{1,6} 标题 / 任一行含 | 表格; 列表标记
+  不算 — 发现/进度消息保持纯文本) + `render_message(text)` (rich 可 import 且
+  是 markdown → `Console().print(Markdown(text))`; 否则 print 原样 — 诚实降级,
+  rich 非终端自动去 ANSI)
+- **/preview 命令**（`session/commands.py`）— `PreviewCommand`:
+  `/preview PRD.md` → 路径解析 (绝对直接用; 相对 → cwd → workspace → 项目目录
+  → data_dir 兜底) → 读取 → render_message; 无参/文件不存在/读失败 → 友好错误
+  rc 2 (不崩); 注册进 build_default_registry
+- **多行输入**（`session/session.py`）— `_read_input_line(prompt)`: 行尾 `\`
+  → 续行 (提示 `… `) 直到无 `\`, 拼接 `\n`; run() 的 input 改用它; 拼接结果
+  作为一条输入进既有 _dispatch (多行需求天然支持 \n)
+- 测试: `tests/console/test_s10_105_markdown_preview.py` (契约 1-7)
+
+### Changed
+
+- `session.py` 用户面消息 print 点接入 render_message: chat 回答 (L281/L321)、
+  action 结果 renderer 输出 (L345)、产品流消息 (L270/L288); 错误/退出/分隔线
+  等不接 (保持原样)
+
+### Fixed
+
+- PRD/文档输出在会话中显示源码 (markdown 原文) → 现在 rich 渲染可读
+- 粘贴长需求/多行文本无法输入 → 行尾 `\` 续行拼接 (prompt_toolkit 缺失
+  降级 input(), 不伪造)
+
+### Tests
+
+- 新增 `tests/console/test_s10_105_markdown_preview.py`（契约 1-7 全绿）
+- 版本断言 v1.1.25 → v1.1.26（`test_s10_074_deployment` / `test_s10_103_command_routing`
+  / `test_s10_104_action_coverage` / `test_confirmation_intelligence`）; 消息输出断言
+  全部保持 `in` 包含 (markdown 渲染后非终端无 ANSI)
+
+---
 ## [v1.1.25] — 2026-08-24
 
 **确认阶段 next_action 全覆盖 + 会话分割线 + 删除/清空字段指令**（S10-104）:

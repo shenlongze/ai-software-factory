@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from .context import SessionContext
+from .renderer import render_message
 from .slash import SlashCommand, SlashCommandRegistry
 
 #: 项目清单数据文件默认路径 (与 ConfigProvider.get_data_dir() 默认 ~/.factory 同口径)
@@ -204,6 +205,49 @@ class CostCommand(SlashCommand):
         return 0
 
 
+class BoardCommand(SlashCommand):
+    """/board — 任务监控面板 (todolist+进度条+标签 / graph 依赖图 / timeline 生命线)。
+
+    用法:
+      /board              主线面板（主线 vs 周边 + 进度）
+      /board graph [项目]  任务依赖图（plan.json, CRITICAL=★）
+      /board timeline     生命线（最近审计事件时间线）
+    """
+
+    name = "board"
+    description = "任务监控面板 (主线todolist/依赖图/生命线)"
+
+    def execute(self, args: str, context: SessionContext) -> int:
+        from .board import render_board, render_graph, render_timeline
+        from pathlib import Path
+
+        workspace = (
+            Path(getattr(context, "workspace", None))
+            if getattr(context, "workspace", None)
+            else None
+        )
+        sub = (args or "").strip().split()
+        view = sub[0] if sub else "board"
+        project = sub[1] if len(sub) > 1 else ""
+        try:
+            if view == "graph":
+                if workspace is None:
+                    print("（未设置工作区 — 无法读项目 plan.json）")
+                    return 1
+                print(render_graph(workspace, project))
+            elif view == "timeline":
+                if workspace is None:
+                    print("（未设置工作区 — 无法读审计事件）")
+                    return 1
+                print(render_timeline(workspace))
+            else:
+                print(render_board())
+        except Exception as exc:  # noqa: BLE001 — 面板失败不崩溃
+            print(f"（面板渲染失败: {exc}）")
+            return 1
+        return 0
+
+
 class ExitCommand(SlashCommand):
     """/exit — 退出会话 (设置宿主 session.running=False)。"""
 
@@ -220,6 +264,55 @@ class ExitCommand(SlashCommand):
             self.session.running = False
         print("已退出会话 — 再见!")
         return 0
+
+
+class PreviewCommand(SlashCommand):
+    """/preview — 渲染显示 markdown 文件 (/preview PRD.md)。
+
+    S10-105: 只读渲染显示 (rich.Markdown), 不做 HTML 导出 (backlog);
+    路径解析: 绝对路径直接用; 相对 → 依次尝试 cwd / context.workspace /
+    current_project 目录 (workspace/projects/<slug>) / data_dir 兜底。
+    """
+
+    name = "preview"
+    description = "渲染显示 markdown 文件 (/preview PRD.md)"
+
+    def execute(self, args: str, context: SessionContext) -> int:
+        target = (args or "").strip()
+        if not target:
+            print("用法: /preview <文件> — 渲染显示 markdown 文件 (例如: /preview PRD.md)")
+            return 2
+        path = self._resolve(target, context)
+        if path is None:
+            print(f"❌ 文件不存在: {target} — 检查路径 (相对 cwd/workspace/项目目录)")
+            return 2
+        try:
+            content = path.read_text(encoding="utf-8")
+        except Exception as exc:  # noqa: BLE001 — 读失败 → 友好错误, 不崩溃
+            print(f"❌ 读取失败: {target} ({exc})")
+            return 2
+        render_message(content)
+        return 0
+
+    @staticmethod
+    def _resolve(target: str, context: SessionContext):
+        """路径解析: 绝对 → 直接用; 相对 → cwd → workspace → 项目目录 → data_dir 兜底。"""
+        p = Path(target)
+        if p.is_absolute():
+            return p if p.is_file() else None
+        candidates = [Path.cwd() / p]
+        workspace = str(getattr(context, "workspace", None) or "").strip() or DEFAULT_PROJECTS_FILE.parent.parent
+        ws = Path(workspace)
+        candidates.append(ws / p)
+        slug = str(getattr(context, "current_project", None) or "").strip()
+        if slug:
+            candidates.append(ws / "projects" / slug / p)
+            # data_dir/projects/<slug>/PRD.md 兜底 (slug=current_project; data_dir 缺省 ~/.factory)
+            candidates.append(DEFAULT_PROJECTS_FILE.parent.parent / "projects" / slug / p)
+        for candidate in candidates:
+            if candidate.is_file():
+                return candidate
+        return None
 
 
 def build_default_registry(
@@ -244,5 +337,7 @@ def build_default_registry(
         )
     )
     registry.register(CostCommand())
+    registry.register(PreviewCommand())
+    registry.register(BoardCommand())
     registry.register(ExitCommand(session=session))
     return registry

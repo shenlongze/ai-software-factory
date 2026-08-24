@@ -41,7 +41,7 @@ def _parse_backlog(path: Path) -> list[dict[str, Any]]:
     except OSError:  # noqa: BLE001
         return []
     for line in lines:
-        m = re.match(r"^## ([^—\s]+)\s*—?\s*(.*)$", line.strip())
+        m = re.match(r"^## ([^—\s（(]+)\s*[—（(]?\s*(.*)$", line.strip())
         if m:
             cur_group = m.group(1)
             cur_title = m.group(2).strip()
@@ -54,7 +54,7 @@ def _parse_backlog(path: Path) -> list[dict[str, Any]]:
         if not cur_group or not line.strip().startswith("| "):
             continue
         cells = [c.strip() for c in line.strip().strip("|").split("|")]
-        if len(cells) < 3 or not re.match(r"^(M\d+-|P0-|L-|A-)", cells[0]):
+        if len(cells) < 3 or not re.match(r"^(M\d+-|P0-|L-|A-|B-)", cells[0]):
             continue
         groups[-1]["tasks"].append({
             "id": cells[0],

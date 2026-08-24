@@ -2,13 +2,23 @@
 
 > 版本: v1.0 | 日期: 2026-08-24 | 依据: 方案书 §2.9 模块即产品
 > **主文档《AI Software Factory — 完整产品方案书（终极版）》保留不动**；本说明书按**产品维度**拆出全部可独立成产品的模块，供独立立项/商业化评估。
+> 每个产品已深化为**可立项完整规格**（docs/products/ 目录, 共 8 份）——产品定位/功能范围/架构/验收/商业/里程碑/风险/团队全齐。
 > 统一设计铁律: 每个独立产品相对 AI Factory 都是统一设计（字段/接口/返回值/错误码 §2.11），零摩擦集成。
 
 ---
 
 ## 产品线总览（8 个可独立成产品）
 
-| # | 产品 | 来源章节 | 目标客户 | 商业模式 | 优先级 | 当前状态 |
+| # | 产品 | 来源章节 | 目标客户 | 商业模式 | 优先级 | 当前状态 | 规格文档 |
+|---|---|---|---|---|---|---|---|
+| 1 | **AI 治理平台** | §6 治理与合规 | 企业 CTO/合规/审计 | SaaS / 私有化 | **P0（信任层）** | 🚧 核心已实现（审批/预算/审计） | [governance-platform-spec](docs/products/governance-platform-product-spec.md) |
+| 2 | **AI 变更审计与证据链** | §5 审计与可观测 | 审计/合规/研发管理 | 订阅 | **P0** | ✅ 审计链/证据包已实现 | [audit-evidence-chain-spec](docs/products/audit-evidence-chain-product-spec.md) |
+| 3 | **存量代码清理服务（积压清道夫）** | M1b + §10.5.1 | 企业研发 | 按件 / 订阅 | **P0（首个 wedge）** | ✅ 已实现（分诊→修复→证据→审批） | [backlog-sweeper-spec](docs/products/backlog-sweeper-product-spec.md) |
+| 4 | **AI 工作流编排** | §4 多 Agent 编排 | 开发者 / ISV | 开源 + 云 | P1 | 🚧 内核已实现（M2/M3） | [agent-orchestration-spec](docs/products/agent-orchestration-product-spec.md) |
+| 5 | **企业知识库** | §8 RAG + §19 知识图谱 | 知识密集企业 | 订阅 | P1 | 🚧 经验检索✅ 三级 RAG 📐 | [knowledge-base-spec](docs/products/knowledge-base-product-spec.md) |
+| 6 | **AI 员工渠道平台** | §9.5 消息平台与社区 | 运营 / 客服 | 按渠道 | P2 | 📐 设计（P0 5 渠道待做） | [channel-platform-spec](docs/products/channel-platform-product-spec.md) |
+| 7 | **AI 经验学习平台** | §7 学习 + §17 自我进化 | AI 平台团队 | 订阅 | P2 | 🚧 记忆雏形✅ 闭环 📐 M4 | [learning-platform-spec](docs/products/learning-platform-product-spec.md) |
+| 8 | **行业工厂产品线** | §10 行业工厂 | 行业客户 | 按行业 | P1+ | 🚧 IT 工厂✅ 多行业 📐 | [industry-factory-spec](docs/products/industry-factory-product-spec.md) |
 |---|---|---|---|---|---|---|
 | 1 | **AI 治理平台** | §6 治理与合规 | 企业 CTO/合规/审计 | SaaS / 私有化 | **P0（信任层）** | 🚧 核心已实现（审批/预算/审计） |
 | 2 | **AI 变更审计与证据链** | §5 审计与可观测 | 审计/合规/研发管理 | 订阅 | **P0** | ✅ 审计链/证据包已实现 |

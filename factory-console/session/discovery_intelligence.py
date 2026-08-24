@@ -12,9 +12,10 @@
 - JSON 解析宽容链: 剥 markdown code fence → json.loads → {..} 子串回退 →
   schema 校验 (category ∈ 合法面; extraction/proactive 缺字段补空;
   smart_questions 截断 ≤3); 任何失败 → DiscoveryLLMError。
-- S10-102: analyze_confirmation — 确认阶段输入分类 (确认/确认+下一步/改名/
-  澄清/取消/委托/其它, 附产品摘要), 失败 → ConfirmationLLMError (上层确定性表
-  兜底 — 无 LLM 规则兜底真实生效, 不伪造 LLM 分类)。
+- S10-102/104: analyze_confirmation — 确认阶段输入分类 (确认/确认+下一步/改名/
+  澄清/取消/委托/其它, 附产品摘要; next_action 词汇 {prd/feature_list/html/docs/
+  develop/create} — 无确认前缀动作 = 隐含确认+下一步), 失败 → ConfirmationLLMError
+  (上层确定性表兜底 — 无 LLM 规则兜底真实生效, 不伪造 LLM 分类)。
 
 边界:
 - 纯标准库 + 只读引用 session/product.parse_core_features; 零新依赖
@@ -51,6 +52,12 @@ VALID_CONFIRMATION_CATEGORIES: tuple[str, ...] = (
     "cancel",
     "delegate",
     "other",
+)
+
+#: 合法 next_action 值 (S10-102: prd/develop/create; S10-104 扩展: + feature_list/
+#: html/docs — 确认+下一步 动作词汇全覆盖; 其它 → 归一为空, 宽容)
+VALID_NEXT_ACTIONS: tuple[str, ...] = (
+    "prd", "feature_list", "html", "docs", "develop", "create",
 )
 
 #: extraction 契约字段 (缺失补空; S10-100: 加 usage_scenarios/mvp_scope/
@@ -118,7 +125,8 @@ _DISCOVERY_PROMPT = """你是 AI Factory 的产品经理。用户正在描述一
 
 
 
-#: 确认分析 prompt (S10-102 §1.2 — 确认阶段输入分类契约)
+#: 确认分析 prompt (S10-102 §1.2 + S10-104 next_action 全覆盖 — 词汇
+#: {prd/feature_list/html/docs} + 无确认前缀动作 = 隐含确认 + 下一步)
 _CONFIRMATION_PROMPT = """你是 AI Factory 的会话助手。用户正在产品确认阶段回应
 "确认创建这个产品? (y/N)" — 输入可能是确认、确认+下一步、改名、澄清提问、取消或委托。
 
@@ -131,15 +139,19 @@ _CONFIRMATION_PROMPT = """你是 AI Factory 的会话助手。用户正在产品
 【输出要求】只输出一个 JSON 对象, 禁止 markdown 围栏/注释/多余文字:
 {{
   "category": "approve|approve_next|rename|clarify|cancel|delegate|other",
-  "next_action": "prd|develop|create|",
+  "next_action": "prd|feature_list|html|docs|develop|create|",
   "rename_to": "",
   "reason": "分类理由（一句）"
 }}
 
 规则 (优先级: 确认(含确认+下一步) > 明确改名 > 澄清提问 > 取消 > 委托 > 其它):
 - 确认: 用户同意创建 (可以/好/行/确认/OK/没问题/y 等) → category=approve, 不改名
-- 确认+下一步: 确认同时说出下一步意图 ("可以,先出prd"/"好,开始开发"/"行,创建项目")
-  → category=approve_next, next_action 取 prd|develop|create (无则留空)
+- 确认+下一步: 用户确认并说出下一步意图 → category=approve_next, next_action 取
+  prd|feature_list|html|docs|develop|create (无则留空); 允许无确认前缀 — 纯动作请求
+  视为隐含确认 + 下一步 (如 "生成PRD"/"产出份prd文档" → next_action=prd;
+  "出份功能清单"/"功能清单" → feature_list; "出个html"/"生成html" → html;
+  "文档"/"说明书" → docs; "可以,先出prd" → prd; "好,开始开发" → develop;
+  "行,创建项目" → create)
 - 明确改名: 用户给出新名称 ("改名叫X"/"名字改成X"/"产品名X") → category=rename,
   rename_to 填新名称 (不含 "改名叫" 等前缀)
 - 澄清提问: 问号/疑问 (？/为什么/什么意思/能改吗/这是什么/然后呢) → category=clarify,
@@ -203,7 +215,8 @@ class ConfirmationAnalysis:
 
     category: "approve" | "approve_next" | "rename" | "clarify" | "cancel" |
       "delegate" | "other"
-    next_action: approve_next 时 "prd"/"develop"/"create" (非法 → 归一为空)
+    next_action: approve_next 时 "prd"/"feature_list"/"html"/"docs"/
+      "develop"/"create" (S10-104 扩展; 非法 → 归一为空)
     rename_to: rename 时新名称 (不带 "改名叫" 等前缀)
     reason: 一句分类理由 (可审计)
     """
@@ -330,7 +343,8 @@ class DiscoveryIntentAnalyzer:
         """确认分类 schema 校验 + 归一化 (计划 §1.2)。
 
         - category 必须 ∈ 合法面 (非法/缺失 → ConfirmationLLMError → 确定性表兜底)
-        - next_action 只认 prd/develop/create (其它 → 归一为空, 宽容)
+        - next_action 只认 VALID_NEXT_ACTIONS (prd/feature_list/html/docs/
+          develop/create; 其它 → 归一为空, 宽容)
         - rename_to/reason 去空白; 缺失 → ""
         """
         category = str(data.get("category") or "").strip()
@@ -340,7 +354,7 @@ class DiscoveryIntentAnalyzer:
                 f"(合法: {', '.join(VALID_CONFIRMATION_CATEGORIES)})"
             )
         next_action = str(data.get("next_action") or "").strip().lower()
-        if next_action not in ("prd", "develop", "create"):
+        if next_action not in VALID_NEXT_ACTIONS:
             next_action = ""
         return ConfirmationAnalysis(
             category=category,

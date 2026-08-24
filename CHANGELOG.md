@@ -3,6 +3,60 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.25] — 2026-08-24
+
+**确认阶段 next_action 全覆盖 + 会话分割线 + 删除/清空字段指令**（S10-104）:
+"产出份prd文档"/"生成PRD"/"出个html"/"出份功能清单" 不再被当改名 — 类型扩展
+next_action {prd/feature_list/html/docs} (LLM 分类为主 + 规则补全变体, 无确认前缀
+= 隐含确认+下一步); 每轮回复间加分割线 (REPL 层纯装饰); "把核心功能删掉"/"清空目标用户"
+→ 字段清空 → 重新确认/追问 (绝不当改名)。
+
+### Added
+
+- **直接动作短语规则**（`session/discovery_guide.py`）— `DIRECT_ACTION_PATTERNS`
+  (prd/feature_list/html/docs 正则) + `match_direct_action(norm)` (lower 后匹配,
+  返回首个命中): "产出份prd文档"→prd / "生成PRD"→prd / "出个html"→html /
+  "出份功能清单"→feature_list / "文档"→docs — 确定性, 无确认前缀也命中
+- **LLM 补充分类**（`session/discovery_intelligence.py`）— `analyze_confirmation`
+  prompt 更新: next_action 词汇 {prd/feature_list/html/docs} + 变体示例;
+  approve_next 允许无确认前缀 (纯动作请求 = 隐含确认 + 下一步);
+  `VALID_NEXT_ACTIONS` 扩展 (develop/create 保留 S10-102 兼容)
+- **删除/清空指令**（`session/conversation.py`, 确定性）— `_parse_delete_command`
+  (两序匹配, 复用 `_EDIT_FIELD_ALIASES`: (把|将)?别名+删除动词 /
+  删除动词+别名) + `_apply_delete_command`: 字段有值 → 清空 (core_features → [];
+  其余 → "") → 必填字段 → 迁移 DISCOVERY + pending=[field] + 追问; 可选/其它 →
+  重进确认 (摘要更新); 字段收集期同步支持 (重问); 绝不当改名
+- **会话分割线**（`session.py`）— `SEPARATOR = "─" * 46`, run() 每轮
+  `_dispatch` 后打印 (退出/空输入不打印); 非交互 CLI 不受影响
+- **宿主 next_action 信号**（`session.py`）— feature_list/html/docs →
+  消息追加 `"[已记录] 将生成{label} — 产出引擎 backlog"` (不阻断创建, 产出引擎
+  backlog); prd → generate_prd 既有
+- 测试: `tests/console/test_s10_104_action_coverage.py` (契约 1-9)
+
+### Fixed
+
+- "产出份prd文档"/"生成PRD"/"出个html"/"出份功能清单" 被当改名 → 现在 approved +
+  对应 next_action (名称不被覆盖)
+- "把核心功能删掉"/"清空目标用户" 被当改名 → 现在字段清空 → 重新确认/追问
+- 多轮回复间无视觉分隔 → 每轮回复后加分割线
+
+### Changed
+
+- `handle_product_confirm` 分流顺序: RENAME_RE → **DIRECT_ACTION** → 确认+下一步 →
+  纯确认 → 澄清 → **删除指令** → 取消 → 委托 → LLM → 改名兜底 ("改名叫X" 最优先,
+  不被动作规则抢)
+- `ConversationResponse.next_action` 词汇扩展 {prd, feature_list, html, docs}
+  (develop/create 保留兼容)
+
+### Tests
+
+- 新增 `tests/console/test_s10_104_action_coverage.py`（契约 1-9 全绿）
+- 既有更新: `test_confirmation_intelligence.test_invalid_next_action_normalized`
+  (html 现为合法 next_action, 改用非法值 pdf 断言归一) + 新增
+  `test_new_next_actions_accepted` / `test_prompt_contains_new_next_action_variants`;
+  版本断言 v1.1.24 → v1.1.25（`test_s10_074_deployment` / `test_confirmation_intelligence`
+  / `test_s10_103_command_routing`）
+
 ---
 
 ## [v1.1.24] — 2026-08-24

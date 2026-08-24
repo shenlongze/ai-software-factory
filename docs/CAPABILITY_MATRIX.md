@@ -244,6 +244,29 @@ AI Factory
 - 测试: `tests/console/test_discovery_session_llm.py` 26 passed; 既有 108 DS + 35 analyzer 零改动全绿; 真实 LLM 验收 8/8
 - 边界: conversation 路径未改; 驱动层逃生/CLI 接线未做 (模型层)
 
+## S10-104 更新 (确认阶段 next_action 全覆盖 + 会话分割线 + 删除指令, v1.1.25)
+
+> 2026-08-24 | Sprint: "产出份prd文档"/"生成PRD"/"出个html"/"出份功能清单" 不再被当改名 —
+> next_action 类型扩展 {prd/feature_list/html/docs} (LLM 分类为主 + 规则补全变体);
+> 每轮回复间分割线; "把核心功能删掉"/"清空目标用户" → 字段清空 → 重新确认/追问
+
+| 项 | S10-103 后 | S10-104 后 |
+|---|---|---|
+| "产出份prd文档"/"生成PRD" | 无确认前缀 → 改名兜底 | **DIRECT_ACTION → approved + next_action=prd** (名称不被覆盖) |
+| "出个html" / "出份功能清单" / "文档" | 改名兜底 (无规则) | **next_action=html / feature_list / docs** (确定性规则 + LLM 补充分类; 宿主记信号 backlog, 不阻断创建) |
+| "改名叫X" | 改名 | **不变** (RENAME_RE 最优先, "改名叫prd" 不被动作规则抢) |
+| 多轮回复 | 无分隔 | **SEPARATOR = "─"*46** 每轮回复间 (REPL 层纯装饰; 退出/空输入不打印) |
+| "把核心功能删掉"/"清空目标用户" | 改名兜底 | **字段清空 → 必填 → DISCOVERY + 追问; 可选/其它 → 重进确认** (绝不当改名; 字段收集期同步支持) |
+| next_action 词汇 | prd/develop/create (需确认前缀) | **{prd, feature_list, html, docs}** (develop/create 保留兼容); 无确认前缀 = 隐含确认+下一步 |
+| 确认分流顺序 | 改名 → 确认+下一步 → 纯确认 → 澄清 → 取消 → 委托 | **改名 → DIRECT_ACTION → 确认+下一步 → 纯确认 → 澄清 → 删除指令 → 取消 → 委托** → LLM → 改名兜底 |
+
+- 新增: `discovery_guide.py` DIRECT_ACTION_PATTERNS + match_direct_action (确定性);
+  `conversation.py` _parse_delete_command (复用 _EDIT_FIELD_ALIASES 两序匹配) +
+  _apply_delete_command; `discovery_intelligence.py` 确认 prompt next_action 词汇 +
+  无前缀隐含确认; `session.py` SEPARATOR + NEXT_ACTION_LABELS 宿主信号
+- 测试: `tests/console/test_s10_104_action_coverage.py` 契约 1-9; 全量 console 0 新增失败
+- 边界: 规则纯确定性 (动作/删除); LLM 只做补充分类; 产出引擎 (feature_list/html/docs) → backlog; prompt_toolkit → backlog
+
 ## S10-103 更新 (发现流程命令分流 + CLI 输入健壮性, v1.1.24)
 
 > 2026-08-24 | Sprint: 发现/确认两路径中 "/status"/"exit" 不再被当字段 — slash → passthrough

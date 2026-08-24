@@ -144,6 +144,15 @@ APPROVE_NEXT_ACTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("create", ("创建", "建项目", "创建项目")),
 )
 
+#: S10-104: next_action 动作直接短语 (正则, 无确认前缀 — "生成PRD"/"产出份prd文档"/
+#: "出个html"/"出份功能清单"; 按 action_id 顺序返回首个命中; 纯动作请求 = 隐含确认+下一步)
+DIRECT_ACTION_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("prd",          (r"生成\s*prd", r"产出.*prd", r"出.*prd", r"写.*prd", r"prd")),
+    ("feature_list", (r"功能清单", r"出.*清单", r"清单")),
+    ("html",         (r"出.*html", r"生成.*html", r"做.*页面", r"html")),
+    ("docs",         (r"文档", r"说明书", r"docs")),
+)
+
 #: 明确改名命令 (正则: 改名叫X / 名字改成X / 改名为X / 把名字改成X / 重命名为X / 名字改为X)
 RENAME_RE = re.compile(r"(?:改名叫|名字改成|改名为|把名字改成|重命名为|名字改为)(.+)")
 
@@ -204,6 +213,21 @@ def match_approve_next(text: str) -> Optional[str]:
     return None
 
 
+def match_direct_action(norm: str) -> Optional[str]:
+    """直接动作请求 → action_id (prd/feature_list/html/docs); 非动作请求 → None。
+
+    大小写不敏感 (lower 后匹配); 按 DIRECT_ACTION_PATTERNS 顺序返回首个命中 —
+    "产出份prd文档" → "prd"; "生成PRD" → "prd"; "出个html" → "html";
+    "出份功能清单" → "feature_list"; "改名叫prd" → None (改名由 RENAME_RE 先处理)。
+    """
+    lowered = str(norm or "").lower()
+    for action_id, patterns in DIRECT_ACTION_PATTERNS:
+        for pattern in patterns:
+            if re.search(pattern, lowered):
+                return action_id
+    return None
+
+
 def match_rename(text: str) -> Optional[str]:
     """明确改名命令 → 新名称; 非改名命令 → None。
 
@@ -240,6 +264,7 @@ __all__ = [
     "DEFAULT_SUGGESTIONS",
     "APPROVE_WORDS",
     "APPROVE_NEXT_ACTIONS",
+    "DIRECT_ACTION_PATTERNS",
     "RENAME_RE",
     "CLARIFY_WORDS",
     "CONFIRM_DELEGATE_WORDS",
@@ -247,6 +272,7 @@ __all__ = [
     "split_confirm_first",
     "match_approve",
     "match_approve_next",
+    "match_direct_action",
     "match_rename",
     "match_clarify",
     "match_delegate",

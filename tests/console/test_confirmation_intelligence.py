@@ -14,7 +14,7 @@
    无 LLM 规则兜底真实生效 (不伪造)
 10. 宿主接线: session 层 "可以，先出prd文档" → create_product + generate_prd 执行
     (真实 tmp workspace + FakeOrg 桩, 零真实 LLM)
-11. 版本断言 v1.1.24 (另见 test_s10_074_deployment)
+11. 版本断言 v1.1.25 (另见 test_s10_074_deployment)
 
 模块级: discovery_guide 确认表单元 (APPROVE_WORDS/APPROVE_NEXT_ACTIONS/RENAME_RE/
 CLARIFY_WORDS/CONFIRM_DELEGATE_WORDS + match_*) 与 analyzer analyze_confirmation
@@ -494,11 +494,29 @@ class TestAnalyzerConfirmationContract:
             DI.DiscoveryIntentAnalyzer(llm_fn=boom).analyze_confirmation("随便")
 
     def test_invalid_next_action_normalized(self):
-        """next_action 非 prd/develop/create → 归一为空 (宽容, 不阻断)。"""
-        llm_fn, _ = _mock_llm(_confirmation_payload(next_action="html"))
+        """S10-104: next_action 词汇扩展 {prd/feature_list/html/docs} — html 现为合法
+        (不再归一为空); 非法值 (如 pdf) → 归一为空 (宽容, 不阻断)。"""
+        llm_fn, _ = _mock_llm(_confirmation_payload(next_action="pdf"))
         r = DI.DiscoveryIntentAnalyzer(llm_fn=llm_fn).analyze_confirmation("可以，先出prd")
         assert r.category == "approve_next"
         assert r.next_action == ""
+
+    def test_new_next_actions_accepted(self):
+        """S10-104: feature_list/html/docs 为合法 next_action (不再归一为空)。"""
+        for action in ("feature_list", "html", "docs"):
+            llm_fn, _ = _mock_llm(_confirmation_payload(next_action=action))
+            r = DI.DiscoveryIntentAnalyzer(llm_fn=llm_fn).analyze_confirmation("出个产物")
+            assert r.next_action == action, action
+
+    def test_prompt_contains_new_next_action_variants(self):
+        """S10-104: 确认 prompt 含 next_action 词汇 + 无前缀动作变体示例。"""
+        llm_fn, calls = _mock_llm(_confirmation_payload(next_action="html"))
+        DI.DiscoveryIntentAnalyzer(llm_fn=llm_fn).analyze_confirmation("出个html")
+        prompt = calls[0][0]
+        assert "feature_list" in prompt and "html" in prompt and "docs" in prompt
+        assert "生成PRD" in prompt and "产出份prd文档" in prompt
+        assert "出个html" in prompt and "出份功能清单" in prompt
+        assert "隐含确认" in prompt  # 无确认前缀 = 隐含确认 + 下一步
 
     def test_prompt_contains_summary_and_categories(self):
         llm_fn, calls = _mock_llm(_confirmation_payload())
@@ -571,7 +589,7 @@ class TestSessionWiring:
 
 class TestVersion:
     def test_pyproject_version_bumped(self):
-        """契约点 11: pyproject 版本 v1.1.24 (单源断言见 test_s10_074_deployment)。"""
+        """契约点 11: pyproject 版本 v1.1.25 (单源断言见 test_s10_074_deployment)。"""
         import tomllib
         from pathlib import Path
 
@@ -579,4 +597,4 @@ class TestVersion:
         ver = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))[
             "project"
         ]["version"]
-        assert ver == "1.1.24"
+        assert ver == "1.1.25"

@@ -83,6 +83,18 @@ UNKNOWN_PREFIX = "未知命令: "
 #: Intent 未识别/未路由时的指引后缀 (明确提示, 不静默)
 INTENT_HINT = "试试 /help 或描述 '创建项目'"
 
+#: 会话回复间分割线 (S10-104 — 纯装饰, REPL 层; run() 每轮 _dispatch 后打印;
+#: 退出/空输入不打印; 非交互 CLI 不受影响)
+SEPARATOR = "─" * 46
+
+#: next_action → 中文产出标签 (S10-104 — 宿主信号注释用; 产出引擎 backlog)
+NEXT_ACTION_LABELS: dict[str, str] = {
+    "prd": "PRD文档",
+    "feature_list": "功能清单",
+    "html": "HTML页面",
+    "docs": "文档",
+}
+
 
 class InteractiveSession:
     """交互会话主循环 (session shell) — Task 001 循环 + Task 003/004 slash 集成 + S10-048 P1 Intent 执行链。"""
@@ -169,6 +181,8 @@ class InteractiveSession:
         - Ctrl+C (KeyboardInterrupt) / Ctrl+D (EOFError) → 优雅退出
         - "/" 开头 → slash registry 分发 (/help /status /project /cost /exit 等)
         - 其它输入 → 未知提示 (不崩溃; 后续 Task 接 Intent)
+        - S10-104: 每轮 _dispatch 后打印 SEPARATOR 分割线 (纯装饰, REPL 层;
+          退出/空输入路径不打印)
         """
         self._banner()
         self._restore_session_state()
@@ -188,6 +202,10 @@ class InteractiveSession:
             else:
                 self.context_manager.record(cmd)
                 self._dispatch(cmd)
+                # S10-104: 每轮回复间分割线 (纯装饰; 退出/空输入路径不打印 —
+                # 产品流 exit_requested 已置 running=False)
+                if self.running:
+                    print(SEPARATOR)
         self._save_session_state()
         return 0
 
@@ -235,10 +253,20 @@ class InteractiveSession:
                 self.running = False
             else:
                 message = resp.message
-                # S10-102: 确认+下一步 → 宿主接线 — 创建成功后执行 next_action
-                # ("prd" → generate_prd; 失败注明, 不阻断创建; develop/create 只传信号)
+                # S10-102/104: 确认+下一步 → 宿主接线 — 创建成功后执行 next_action
+                # ("prd" → generate_prd; 失败注明, 不阻断创建; feature_list/html/docs
+                #  → 信号注释 (产出引擎 backlog); develop/create 只传信号)
                 if getattr(resp, "next_action", None) == "prd":
                     message = f"{message}\n{self._run_prd_after_create()}"
+                elif getattr(resp, "next_action", None) in (
+                    "feature_list", "html", "docs",
+                ):
+                    label = NEXT_ACTION_LABELS.get(
+                        resp.next_action, resp.next_action
+                    )
+                    message = (
+                        f"{message}\n[已记录] 将生成{label} — 产出引擎 backlog"
+                    )
                 print(message)
             return
         intent = self.intent_parser.parse(line)

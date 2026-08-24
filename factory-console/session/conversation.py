@@ -41,6 +41,7 @@ from .discovery_guide import (
     match_approve,
     match_approve_next,
     match_clarify,
+    match_direct_action,
     match_delegate,
     match_rename,
     normalize_help_text,
@@ -112,6 +113,14 @@ _EDIT_FIELD_ALIASES: dict[str, tuple[str, ...]] = {
 
 #: 修改指令动词前缀 (无字段别名时, 需显式修改意图才识别为编辑指令)
 _EDIT_VERB_PREFIXES: tuple[str, ...] = ("修改", "改一下", "帮我改", "请修改", "更新", "调整")
+
+#: 删除/清空指令动词 (S10-104 — "把核心功能删掉"/"清空目标用户"; 复用
+#: _EDIT_FIELD_ALIASES 别名; 命中 → 字段清空 → 重新确认/追问, 绝不当改名)
+_DELETE_VERBS: tuple[str, ...] = ("删除", "删掉", "清空", "去掉", "移除", "不要")
+
+#: 删除指令动词 (序 2 — 动词前置: "清空目标用户"/"删除核心功能"; 不含 "不要" —
+#: "不要用户" 非自然删除表达)
+_DELETE_VERBS_PREFIX: tuple[str, ...] = ("清空", "删除", "删掉", "去掉", "移除")
 
 #: 批量模式下 "是否补充?" 的肯定回答 → 重新展示剩余问题
 _PRODUCT_SUPPLEMENT_ANSWERS: frozenset[str] = frozenset({
@@ -202,8 +211,9 @@ class ConversationResponse:
     understanding: Optional[str] = None
     proactive: Optional[dict[str, Any]] = None
     ai_generated: bool = False
-    #: S10-102: 确认+下一步信号 (approved + next_action → 宿主创建成功后执行;
-    #: "prd" → generate_prd; "develop"/"create" 只传信号不执行)
+    #: S10-102/104: 确认+下一步信号 (approved + next_action → 宿主创建成功后执行;
+    #: "prd" → generate_prd; feature_list/html/docs → 信号注释 (产出引擎 backlog);
+    #: develop/create 只传信号不执行)
     next_action: Optional[str] = None
     #: S10-103: 退出会话信号 (True → 宿主应 print 退出提示并 running=False;
     #: 发现/确认中 exit/quit/再见/退出会话 → 命令分流, 不当字段)
@@ -494,6 +504,10 @@ class ConversationManager:
         cmd = self._command_escape(raw)
         if cmd is not None:
             return cmd
+        # S10-104: 删除/清空指令 (字段收集期"清空X" → 重问当前字段; 绝不当字段答案)
+        del_field = _parse_delete_command(raw)
+        if del_field is not None:
+            return self._apply_delete_command(del_field)
         # S10-101: 求助提案挂起 → 处理选择 (y 全填 / 1-3 单选 / 自定义) —
         # 绝不当字段内容收下 (验收 6)
         if self._suggestion_proposal:
@@ -1023,6 +1037,51 @@ class ConversationManager:
             )
         return self._enter_product_confirmation()
 
+    def _apply_delete_command(self, field: str) -> ConversationResponse:
+        """应用删除/清空指令 (S10-104): 字段有值 → 清空 (core_features → []; 其余 → "")。
+
+        必填字段 → 迁移 DISCOVERY + pending 首置该字段 + 追问该字段;
+        可选字段/必填已齐 → 重进确认 (_enter_product_confirmation, 摘要更新)。
+        绝不当改名 — 删除只清字段, 不碰名称语义。
+        """
+        if self.product_intent is None:
+            return self._clarify("请先描述你的产品想法 (例如: '我想开发一个台球计分APP')")
+        pi = self.product_intent  # type: ignore[union-attr]
+        if self._product_field_filled(field):
+            if field == "core_features":
+                pi.core_features = []
+            else:
+                setattr(pi, field, "")
+        self._suggestion_proposal = None  # 删除已应用 → 求助提案作废 (不残留)
+        label = FIELD_LABELS.get(field, field)
+        if field in _PRODUCT_FIELD_ORDER:
+            # 必填字段 → 迁移 DISCOVERY + 追问该字段 (其余已填字段保留)
+            self._product_batch_mode = False
+            self._product_pending = [field] + [
+                f
+                for f in _PRODUCT_FIELD_ORDER
+                if f != field and not self._product_field_filled(f)
+            ]
+            if self.state != ConversationState.DISCOVERY:
+                self.transition(ConversationState.DISCOVERY)
+            return ConversationResponse(
+                state=self.state,
+                message=self._guide_message(
+                    f"已清空{label}。\n{self._next_product_question()}"
+                ),
+                needs_input=True,
+            )
+        # 可选字段 (name/platform): 必填已齐 → 重进确认; 字段收集期 → 重问当前缺失
+        if not self._product_pending:
+            return self._enter_product_confirmation()
+        return ConversationResponse(
+            state=self.state,
+            message=self._guide_message(
+                f"已清空{label}。\n{self._pending_question_message()}"
+            ),
+            needs_input=True,
+        )
+
     def _escape_product_flow(self, text: str) -> ConversationResponse:
         """逃生: 用户输入其它意图 (项目列表/创建项目/当前项目) → 产品流程让位,
         原输入交回宿主按普通意图链处理 (passthrough=True, 不再当字段答案)。"""
@@ -1087,16 +1146,22 @@ class ConversationManager:
         answer: str,
         confirm_fn: Optional[Callable[[ProductIntent], str]] = None,
     ) -> ConversationResponse:
-        """S10-102 确认阶段智能分流 (确定性表 → LLM → 改名兜底)。
+        """S10-102 + S10-104 确认阶段智能分流 (确定性表 → LLM → 改名兜底)。
 
-        顺序 (计划 §1.3):
+        顺序 (计划 §1.3 + S10-104 §1.1/§1.3):
         1. 控制短语 (_product_control — 取消/整理/逃生/修改指令) — 最前, 不变
         2. "创建项目/现在创建" → 等价 y — 不变
         3. 确定性分流 (无 LLM 全覆盖):
-           a. 明确改名 (RENAME_RE) → 设名 → 重新确认 (S10-081 行为不变)
+           a. 明确改名 (RENAME_RE) → 设名 → 重新确认 (S10-081 行为不变,
+              最优先防 "改名叫prd" 被动作规则抢)
+           a'. 直接动作请求 (DIRECT_ACTION — "产出份prd文档"/"生成PRD"/
+              "出个html"/"出份功能清单") → approved + next_action
+              (无确认前缀 = 隐含确认; 名称不被覆盖)
            b. 确认+下一步 ("可以，先出prd文档") → approved + next_action (名称不被覆盖!)
            c. 纯确认 (可以/好/行/y/yes…) → approved (不再当名称)
            d. 澄清 (？/为什么/什么意思/能改吗…) → _clarify_confirmation (不改名不确认)
+           d'. 删除/清空指令 ("把核心功能删掉"/"清空目标用户") → 字段清空 →
+              重确认/追问 (绝不当改名)
            e. 取消 (n/no/取消/算了/不要/空) → 重置 DISCOVERY (验收 E)
            f. 委托 (随便/你定/你看吧…) → approved (保持当前名称)
         4. 确定性未决 且 LLM 可用 → analyze_confirmation → 按 category 路由
@@ -1122,11 +1187,20 @@ class ConversationManager:
         if cmd is not None:
             return cmd
         raw = (answer or "").strip()
-        # 3a. 明确改名命令 ("改名叫墨笺" → rename, S10-081 行为不变)
+        # 3a. 明确改名命令 ("改名叫墨笺" → rename, S10-081 行为不变;
+        # 最优先防 "改名叫prd" 被动作规则抢)
         rename_to = match_rename(raw)
         if rename_to:
             self.product_intent.name = rename_to  # type: ignore[union-attr]
             return self._enter_product_confirmation()
+        # 3a'. S10-104: 直接动作请求 ("产出份prd文档"/"生成PRD"/"出个html"/
+        # "出份功能清单") → approved + next_action (无确认前缀 = 隐含确认+下一步;
+        # 名称不被覆盖)
+        action_id = match_direct_action(raw)
+        if action_id:
+            return self._approve_product_confirm(
+                next_action=action_id, confirm_fn=confirm_fn
+            )
         # 3b. 确认+下一步 ("可以，先出prd文档" → approved + next_action, 名称不被覆盖)
         next_action = match_approve_next(raw)
         if next_action:
@@ -1139,6 +1213,11 @@ class ConversationManager:
         # 3d. 澄清/问号请求 ("？"/"为什么"/"能改吗" → 重展示摘要, 不改名不确认)
         if match_clarify(raw):
             return self._clarify_confirmation()
+        # 3d'. S10-104: 删除/清空指令 ("把核心功能删掉"/"清空目标用户") —
+        # 字段清空 → 重确认/追问, 绝不当改名
+        del_field = _parse_delete_command(raw)
+        if del_field is not None:
+            return self._apply_delete_command(del_field)
         # 3e. 取消 (n/no/取消/算了/不要/空 — 验收 E, 行为不变)
         if not raw or raw.lower() in _CANCEL_ANSWERS:
             cancelled = self.product_intent.name or "(未命名产品)"  # type: ignore[union-attr]
@@ -1188,7 +1267,8 @@ class ConversationManager:
         """确认创建 (y/确认词/委托 — S10-102): 走 confirm_fn 创建 → DONE。
 
         approved + next_action → 响应携带 next_action (宿主创建成功后执行,
-        如 next_action="prd" → generate_prd; develop/create 只传信号)。
+        如 next_action="prd" → generate_prd; feature_list/html/docs → 信号注释;
+        develop/create 只传信号)。
         """
         self.transition(ConversationState.PROJECT_CREATION)
         if confirm_fn is None:
@@ -1303,6 +1383,29 @@ def _parse_edit_command(text: str) -> Optional[tuple[str, str]]:
     if field is None and not norm.startswith(_EDIT_VERB_PREFIXES):
         return None
     return (field or "", value)
+
+
+def _parse_delete_command(text: str) -> Optional[str]:
+    """解析删除/清空指令 → 字段名 (problem/user/core_features/name/platform); 非删除指令 → None。
+
+    匹配 (两序, 复用 _EDIT_FIELD_ALIASES 别名):
+      (把|将)?(别名)(删除|删掉|清空|去掉|移除|不要)  — "把核心功能删掉" / "核心功能不要"
+      (清空|删除|删掉|去掉|移除)(别名)             — "清空目标用户" / "删除核心功能"
+    别名按 _EDIT_FIELD_ALIASES 顺序 (problem→user→core_features→name→platform);
+    未命中 → None (正常字段回答/改名/确认 不受影响)。
+    """
+    norm = (text or "").strip()
+    if not norm:
+        return None
+    for field, aliases in _EDIT_FIELD_ALIASES.items():
+        for alias in aliases:
+            for verb in _DELETE_VERBS:
+                if f"{alias}{verb}" in norm:
+                    return field
+            for verb in _DELETE_VERBS_PREFIX:
+                if f"{verb}{alias}" in norm:
+                    return field
+    return None
 
 
 def _find_edit_marker(text: str) -> tuple[int, str]:

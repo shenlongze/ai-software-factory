@@ -151,6 +151,16 @@ HEALTH_INTERVAL = 0.5
 #: 架构预留子命令 (注册为 stub 不限制扩展; config 已于 Task D 转正, init 已于
 #: Task E 转正; S10-031: project/run 已转正 (薄代理 org/exec CLI) — 当前为空,
 #: 保留常量与 _stub 供未来预留命令复用)
+def _pkg_version() -> str:
+    """轻量读版本（update 命令显示, 失败 → dev）。"""
+    try:
+        import tomllib
+        _pp = Path(__file__).resolve().parent.parent / "pyproject.toml"
+        return tomllib.loads(_pp.read_text(encoding="utf-8"))["project"]["version"]
+    except Exception:  # noqa: BLE001
+        return "dev"
+
+
 STUB_COMMANDS: tuple[str, ...] = ()
 
 #: init 引导的 provider 选择项 (与 config.PROVIDER_DEFAULTS 键集对齐)
@@ -852,6 +862,8 @@ class FactoryCLI:
             return self.create_cmd(args)
         if args.command == "help":
             return self.help_cmd(args)
+        if args.command == "update":
+            return self.update_cmd(args)
         if args.command == "llm":
             return self.llm_cmd(args)
         if args.command == "todo":
@@ -2713,6 +2725,65 @@ class FactoryCLI:
         print("查看单个命令: factory <命令> --help")
         return 0
 
+    def update_cmd(self, args: argparse.Namespace) -> int:
+        """factory update [模块] [--check] — 整体/模块更新（系统域）。
+
+        用法:
+          factory update --check   检查更新（当前版本 + git 状态, 只读）
+          factory update           整体更新（git pull + pip install -e .）
+          factory update <模块>     更新指定模块（core/console/exec/org; 当前单体仓库
+                                   随整体更新, 模块独立版本见 §2.4 设计）
+        """
+        import subprocess
+
+        # --check: 只读检查
+        if getattr(args, "update_check", False):
+            print(f"当前版本: {_pkg_version()}")
+            try:
+                r = subprocess.run(
+                    ["git", "-C", self.root, "status", "--porcelain"],
+                    capture_output=True, text=True, timeout=15)
+                dirty = bool(r.stdout.strip())
+                print(f"Git 状态: {'有未提交改动' if dirty else '工作区干净'}")
+            except Exception as exc:  # noqa: BLE001
+                print(f"Git 检查失败: {exc}")
+            return 0
+
+        module = getattr(args, "update_module", None) or ""
+        if module:
+            valid = {"core", "console", "exec", "org"}
+            if module not in valid:
+                print(f"未知模块: {module} (可用: {', '.join(sorted(valid))})", file=sys.stderr)
+                return 2
+            print(f"⚠️ 更新模块 {module}: 当前为单体仓库（editable 安装）, 模块随整体更新;")
+            print("   模块独立版本/更新见方案书 §2.4（独立配置与版本管理, 设计预留）")
+            # 仍走整体更新（单体仓库实际生效路径）
+        print("=== factory update ===")
+        # 1) git pull（更新代码）
+        try:
+            r = subprocess.run(
+                ["git", "-C", self.root, "pull", "--ff-only"],
+                capture_output=True, text=True, timeout=60)
+            if r.returncode == 0:
+                print(f"✅ 代码更新: {r.stdout.strip() or '已是最新'}")
+            else:
+                print(f"⚠️ git pull: {r.stderr.strip()[:200] or r.stdout.strip()[:200]}")
+        except Exception as exc:  # noqa: BLE001
+            print(f"⚠️ git pull 失败: {exc}（跳过, 继续更新依赖）")
+        # 2) 重新安装（editable 同步最新代码 + 依赖）
+        try:
+            r = subprocess.run(
+                [sys.executable, "-m", "pip", "install", "-e", "."],
+                cwd=self.root, capture_output=True, text=True, timeout=120)
+            if r.returncode == 0:
+                print("✅ 依赖/包已更新（editable 指向当前仓库）")
+            else:
+                print(f"⚠️ pip install: {r.stderr.strip()[:200]}")
+        except Exception as exc:  # noqa: BLE001
+            print(f"⚠️ pip install 失败: {exc}")
+        print(f"更新完成 — 当前版本: {_pkg_version()}")
+        return 0
+
     def llm_cmd(self, args: argparse.Namespace) -> int:
         """factory llm list — LLM 清单（provider/models, 命令体系 资源域）。"""
         action = getattr(args, "llm_command", None)
@@ -3184,6 +3255,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_todo = sub.add_parser("todo", help="主线任务清单 (list — 待办清单, 命令体系 数据域)")
     p_todo.add_argument("todo_command", choices=["list"], nargs="?", default=None, help="list — 主线任务")
     sub.add_parser("help", help="命令总览（按域分类, §11.6）")
+    p_update = sub.add_parser("update", help="整体/模块更新 (--check 只读检查; [模块] 指定更新)")
+    p_update.add_argument("update_module", nargs="?", default=None, help="模块 (core/console/exec/org, 可选)")
+    p_update.add_argument("--check", dest="update_check", action="store_true", help="只检查更新, 不实际更新")
     return parser
 
 

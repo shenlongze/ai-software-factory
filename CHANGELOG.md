@@ -3,6 +3,22 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.62] — 2026-08-24
+
+**Board 任务链格式优化（Founder: 看着乱, 需要格式）**。
+
+### Changed
+
+- **名称清洗**: 去掉 ** 加粗 markdown 标记 (_clean_md_name)
+- **名称完整显示**: 不再截断 14 字符, 卡片内换行 (word-break), hover 完整 title
+- **状态色**: 节点按任务状态着色 (done 绿 / failed 红 / running 蓝)
+- **P0 自然序**: plan.json 生成用自然序 (P0-1→P0-2→...→P0-11, 修复字典序 P0-10 在前)
+- 卡片布局优化: min-width 150px / max-width 220px / 箭头不挤压
+
+### 验证
+
+- 3 新契约测试 (清洗/无 markdown 标记/状态色) · 全量回归 0 新增失败
+
 ## [v1.1.61] — 2026-08-24
 
 **Board 默认项目（Founder: 可选择默认项目）**。

@@ -709,3 +709,39 @@ class TestDefaultProject:
         _mk_project(tmp_path, "a", name="项目A")
         html = BOARD.render_project_lifecycle_html(tmp_path, "a")
         assert "设为默认项目" in html
+
+
+# ================================================================== 任务链格式优化
+
+class TestChainFormat:
+    def _plan(self, tmp_path):
+        pdir = tmp_path / "projects" / "demo"
+        pdir.mkdir(parents=True, exist_ok=True)
+        (pdir / "plan.json").write_text(json.dumps({
+            "tasks": [
+                {"id": "A1", "name": "**任务甲**", "est_minutes": 10},
+                {"id": "A2", "name": "**任务乙**", "est_minutes": 20},
+            ],
+            "edges": [{"from": "A1", "to": "A2"}],
+            "critical_path": ["A1", "A2"],
+        }), encoding="utf-8")
+        return tmp_path
+
+    def test_clean_md_name(self):
+        assert BOARD._clean_md_name("**AgentEntity**") == "AgentEntity"
+        assert BOARD._clean_md_name("普通任务") == "普通任务"
+
+    def test_chain_no_markdown_marks(self, tmp_path):
+        self._plan(tmp_path)
+        html = BOARD.render_chain_html(tmp_path, "demo")
+        assert "**" not in html
+        assert "任务甲" in html and "任务乙" in html  # 名称完整
+
+    def test_chain_status_colors(self, tmp_path):
+        self._plan(tmp_path)
+        pdir = tmp_path / "projects" / "demo"
+        (pdir / "execution_state.json").write_text(json.dumps({
+            "tasks": [{"id": "A1", "status": "done"}, {"id": "A2", "status": "failed"}],
+        }), encoding="utf-8")
+        html = BOARD.render_chain_html(tmp_path, "demo")
+        assert "s-done" in html and "s-fail" in html

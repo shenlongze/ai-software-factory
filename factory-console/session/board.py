@@ -612,17 +612,33 @@ def render_chain_html(workspace: Path, project_id: str = "") -> str:
         elif isinstance(m, str):
             merge_ids.add(m)
 
+    # 任务状态色 (从 execution_state, 失败安全)
+    status_map: dict[str, str] = {}
+    es_file = project_dir / "execution_state.json"
+    if es_file.is_file():
+        try:
+            for _t in (json.loads(es_file.read_text(encoding="utf-8")) or {}).get("tasks") or []:
+                status_map[str(_t.get("id") or "")] = str(_t.get("status") or "")
+        except Exception:  # noqa: BLE001
+            pass
+    state_cls = {"done": "s-done", "delivered": "s-done", "approved": "s-done",
+                 "failed": "s-fail", "blocked": "s-fail", "running": "s-run",
+                 "in_progress": "s-run", "started": "s-run"}
+
     chain_parts = []
     for i, tid in enumerate(cpath):
         t = tasks.get(tid, {})
         is_merge = tid in merge_ids
         marks = "★" + ("▲" if is_merge else "")
         cls = "crit" if t.get("critical") else ""
+        st = state_cls.get(status_map.get(tid, ""), "")
         est = t.get("est_minutes")
+        name = _clean_md_name(t.get("name", ""))
         est_s = f"<span class='est'>{est}min</span>" if est else ""
         chain_parts.append(
-            f'<div class="cnode {cls}"><div class="cid">{marks} {tid}</div>'
-            f'<div class="cname">{t.get("name","")[:14]}</div>{est_s}</div>'
+            f'<div class="cnode {cls} {st}" title="{name}">'
+            f'<div class="cid">{marks} {tid}</div>'
+            f'<div class="cname">{name}</div>{est_s}</div>'
         )
         if i < len(cpath) - 1:
             chain_parts.append('<div class="carrow">→</div>')
@@ -637,9 +653,12 @@ def render_chain_html(workspace: Path, project_id: str = "") -> str:
   body {{ font-family: -apple-system, system-ui, sans-serif; margin: 0; padding: 16px; background: #0f1115; color: #e6e6e6; }}
   h1 {{ font-size: 18px; }} .legend {{ color: #9aa0a6; font-size: 12px; }}
   .chain {{ display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 12px; }}
-  .cnode {{ background: #1a1d24; border: 2px solid #e53935; border-radius: 8px; padding: 8px 12px; min-width: 100px; }}
-  .cid {{ font-weight: bold; color: #ff7043; }} .cname {{ font-size: 11px; color: #b0b6bf; }}
-  .est {{ font-size: 10px; color: #78909c; }} .carrow {{ color: #e53935; font-size: 22px; }}
+  .cnode {{ background: #1a1d24; border: 2px solid #e53935; border-radius: 8px; padding: 10px 14px; min-width: 150px; max-width: 220px; }}
+  .cnode.s-done {{ border-color: #43a047; }} .cnode.s-fail {{ border-color: #e53935; background: #2a1416; }}
+  .cnode.s-run {{ border-color: #1e88e5; background: #0d2a45; }}
+  .cid {{ font-weight: bold; color: #ff7043; font-size: 13px; }}
+  .cname {{ font-size: 11px; color: #b0b6bf; margin: 4px 0; line-height: 1.4; word-break: break-word; }}
+  .est {{ font-size: 10px; color: #78909c; }} .carrow {{ color: #e53935; font-size: 22px; flex-shrink: 0; }}
   .total {{ margin-top: 14px; color: #9aa0a6; font-size: 13px; }}
   @media (max-width: 600px) {{ .chain {{ flex-direction: column; }} .carrow {{ transform: rotate(90deg); }} }}
 </style></head><body>
@@ -1706,6 +1725,11 @@ def _read_session_current_project(workspace: Path | str) -> str:
 
 #: 刷新间隔选项 (秒; 0=关闭)
 REFRESH_OPTIONS: tuple[int, ...] = (5, 15, 30, 60, 0)
+
+
+def _clean_md_name(name: str) -> str:
+    """清洗任务名: 去掉 ** 加粗 / * 斜体 markdown 标记 (展示用)。"""
+    return str(name or "").replace("**", "").replace("*", "")
 
 
 def _refresh_select_html() -> str:

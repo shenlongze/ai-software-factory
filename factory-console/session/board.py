@@ -589,3 +589,37 @@ def save_report(path: Path = DEFAULT_BACKLOG, out_dir: Path | None = None) -> st
     except OSError:  # noqa: BLE001
         return "（汇报落盘失败）"
     return f"汇报已生成: {out}"
+
+
+# ---------------------------------------------------------------- 自动钩子（主线状态自动同步）
+
+#: 代码证据 → 主线项映射（自动 sync 只标证据强=代码存在的项, 诚实不误标）
+MAINLINE_CODE_EVIDENCE: dict[str, str] = {
+    "M3-1": "factory-console/session/decomposer.py",       # M3a 递归原子拆解
+    "M3-2": "factory-console/session/critical_path.py",    # M3b 关键路径
+    "M3-3": "factory-console/session/scheduler.py",        # M3c 并行调度
+    "M3-4": "factory-console/session/scheduler.py",        # M3e 动态分配(全链)
+}
+
+
+def sync_mainline(path: Path = DEFAULT_BACKLOG) -> list[str]:
+    """自动钩子: 从代码存在性推断主线完成 → 自动标记待办清单。
+
+    只标"代码证据存在"的项（真实现了才有代码）; 其余保持手动维护
+    （诚实不误标, M3-5/6/7 等需人工判断）。返回本次新标记的 id 列表。
+    """
+    root = Path(__file__).resolve().parents[2]
+    marked: list[str] = []
+    for item_id, rel in MAINLINE_CODE_EVIDENCE.items():
+        if (root / rel).exists():
+            # 只标记"未标"的（幂等）
+            groups = _parse_backlog(path)
+            already = any(
+                t["id"] == item_id and t["done"]
+                for g in groups for t in g["tasks"]
+            )
+            if not already:
+                r = mark_backlog_item(path, item_id, done=True)
+                if "已标记" in r:
+                    marked.append(item_id)
+    return marked

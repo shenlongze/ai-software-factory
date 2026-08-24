@@ -185,6 +185,7 @@ class InteractiveSession:
           退出/空输入路径不打印)
         """
         self._banner()
+        self._mainline_sync()   # S10-1xx: 自动钩子 — 从代码证据同步主线状态
         self._mainline_alert()  # S10-1xx: 偏离提醒 — 主线未完成提示
         self._restore_session_state()
         self.running = True
@@ -213,6 +214,21 @@ class InteractiveSession:
     def _banner(self) -> None:
         """打印欢迎横幅 (验收: 显示 AI Factory)。"""
         print(self.banner_text)
+
+    def _mainline_sync(self) -> None:
+        """自动钩子（S10-1xx）: 会话启动时从代码证据自动同步主线完成状态。
+
+        代码存在（decomposer/critical_path/scheduler）→ 自动标记对应主线项,
+        让主线进度进会话即真实（不依赖手动 /board done 记忆）。
+        """
+        try:
+            from .board import sync_mainline, DEFAULT_BACKLOG
+
+            marked = sync_mainline(DEFAULT_BACKLOG)
+            if marked:
+                print(f"🔧 自动同步主线: {' '.join(marked)}（代码证据确认完成）")
+        except Exception:  # noqa: BLE001 — 同步失败不阻断会话
+            pass
 
     def _mainline_alert(self) -> None:
         """偏离提醒（S10-1xx, Founder 痛点: 测试中脱离主线, 做多周边, 线没走完）:

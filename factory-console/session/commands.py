@@ -218,6 +218,7 @@ class BoardCommand(SlashCommand):
       /board report --save  汇报落盘到 docs/sprint10/
       /board done <id>      标记主线任务完成（如 /board done M3-1）
       /board unmark <id>    取消完成标记
+      /board sync           自动同步主线（从代码证据推断完成）
     """
 
     name = "board"
@@ -227,7 +228,7 @@ class BoardCommand(SlashCommand):
         from .board import (
             render_board, render_graph, render_timeline,
             render_chain, render_report,
-            mark_backlog_item, save_report,
+            mark_backlog_item, save_report, sync_mainline,
         )
         from pathlib import Path
 
@@ -255,6 +256,10 @@ class BoardCommand(SlashCommand):
                     print(save_report())
                 else:
                     print(render_report())
+            elif view == "sync":
+                marked = sync_mainline(
+                    Path(__file__).resolve().parents[1] / ".." / "docs" / "sprint10" / "待办清单-已发现未落地.md")
+                print(("✅ 自动同步主线: " + ", ".join(marked)) if marked else "主线已同步（无需新标记）")
             elif view in ("done", "unmark"):
                 if len(sub) < 2:
                     print("用法: /board done <任务ID>  例: /board done M3-1")

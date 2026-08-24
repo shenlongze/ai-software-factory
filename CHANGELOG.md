@@ -3,6 +3,24 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.65] — 2026-08-24
+
+**Board 数据实事求是: 数据来源标注 + 剔除臆造数据（Founder 核心要求）**。
+
+### Changed
+
+- **数据来源标注** (_data_source_html): 任务树/依赖图/任务链/文档 各视图顶部
+  显示数据来源 (tasks.json/plan.json 的 meta: source/generated_by/note),
+  明确区分"执行系统记录" vs "待办清单解析/手动登记"
+- **剔除臆造数据**: AI Factory 自身 plan.json 重生成 —
+  去掉全部 est_minutes=30 (无依据估时) + 去掉组内臆造依赖边,
+  只保留有依据的组间里程碑顺序 (M2→M3→M4→M5→M6→M7→P0, 6 条边)
+- plan.json/tasks.json 加 meta 来源字段 (source/generated_by/note)
+
+### 验证
+
+- 3 新契约测试 (meta 读取/来源 HTML/各视图含来源) · 全量回归 0 新增失败
+
 ## [v1.1.64] — 2026-08-24
 
 **Board 任务树: 模块卡片分隔 + L1 组标题（Founder: 模块太密, 标题看不懂）**。

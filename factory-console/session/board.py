@@ -577,6 +577,7 @@ def render_graph_html(workspace: Path, project_id: str = "") -> str:
 </style></head><body>
 {_board_nav("graph", project_id, workspace)}
 <h1>🔗 任务依赖图 <span class="legend">(★=CRITICAL 关键路径, 红色边框)</span></h1>
+{_data_source_html(workspace, project_id, "plan")}
 <div class="graph">{nodes}</div>
 <div class="edges"><b>依赖边:</b><ul>{edges_html}</ul></div>
 {_auto_refresh_script(0)}</body></html>"""
@@ -664,6 +665,7 @@ def render_chain_html(workspace: Path, project_id: str = "") -> str:
 </style></head><body>
 {_board_nav("chain", project_id, workspace)}
 <h1>⛓ 任务链（关键路径）<span class="legend">★=关键节点 ▲=汇聚点</span></h1>
+{_data_source_html(workspace, project_id, "plan")}
 <div class="chain">{chain}</div>
 <div class="total">总工期: {total_est}min · 关键节点 {len(cpath)} 个 · 汇聚点 {len(merge_ids)} 个</div>
 {_auto_refresh_script(0)}</body></html>"""
@@ -1651,6 +1653,8 @@ def render_project_tasktree_html(workspace: Path | str, slug: str) -> str:
   .module {{ background: #12151b; border: 1px solid #2a2e37; border-radius: 10px; margin: 14px 0; padding: 10px 14px; }}
   .module-title {{ font-size: 14px; font-weight: 600; color: #ffb74d; padding: 4px 0 8px; border-bottom: 1px solid #2a2e37; margin-bottom: 8px; }}
   .lvl {{ font-size: 9px; background: #37474f; color: #90a4ae; border-radius: 4px; padding: 1px 5px; margin-right: 6px; }}
+  .datasrc {{ font-size: 11px; color: #90a4ae; background: #12202a; border: 1px dashed #2a4a5a; border-radius: 6px; padding: 6px 10px; margin: 8px 0; }}
+  .srcnote {{ color: #78909c; font-size: 10px; }}
   .card {{ background: #1a1e26; border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; }}
   .card h2 {{ font-size: 14px; color: #ffb74d; margin: 0 0 6px; }}
   ul.tl {{ list-style: none; margin: 0; padding: 0; }}
@@ -1659,6 +1663,7 @@ def render_project_tasktree_html(workspace: Path | str, slug: str) -> str:
 </style></head><body>
 {_board_nav("tasks", slug, workspace)}
 <h1>🗂 项目任务树 — {info.get('name') or slug}</h1>
+{_data_source_html(workspace, slug, "tasks")}
 <div class="summary">✅完成 {counts['done']} · 🔵进行中 {counts['running']} · ❌失败 {counts['failed']} · ⬜待办 {counts['pending']} · 共 {counts['total']}</div>
 {tl_html}
 {body}
@@ -1969,6 +1974,7 @@ def render_project_docs_html(workspace: Path | str, slug: str) -> str:
 </style></head><body>
 {_board_nav("docs", slug, workspace)}
 <h1>📄 项目文档管理 — {name}</h1>
+{_data_source_html(workspace, slug, "docs")}
 <p class="hint">共 {sum(1 for d in docs if d['exists'])}/{len(docs)} 份文档已生成 · 点击"查看"渲染内容</p>
 <table><tr><th>文档</th><th>文件</th><th></th><th>大小</th><th>更新时间</th></tr>{table}</table>
 </body></html>"""
@@ -2216,3 +2222,45 @@ def _epic_titles(backlog: Path | None = None) -> dict[str, str]:
     except (OSError, UnicodeDecodeError):  # noqa: BLE001
         pass
     return titles
+
+
+# ---------------------------------------------------------------- 数据来源标注 (实事求是)
+
+def _file_meta(workspace: Path | str, slug: str, fname: str) -> dict[str, Any]:
+    """读数据文件 meta 字段 (来源/生成方式/说明; 失败安全 → {})."""
+    f = Path(workspace) / "projects" / slug / fname
+    if not f.is_file():
+        return {}
+    try:
+        d = json.loads(f.read_text(encoding="utf-8")) or {}
+    except (OSError, json.JSONDecodeError):  # noqa: BLE001
+        return {}
+    return d.get("meta") or {}
+
+
+def _data_source_html(workspace: Path | str, slug: str, kind: str) -> str:
+    """数据来源标注 HTML (Founder: 所有数据实事求是, 有依据)。
+
+    kind: tasks / plan / docs — 对应数据文件的来源说明。
+    """
+    if kind == "tasks":
+        meta = _file_meta(workspace, slug, "tasks.json")
+        src = meta.get("source") or "tasks.json / execution_state.json (执行系统记录)"
+        note = meta.get("note") or "任务与状态来自实际执行/拆解记录"
+        gen = meta.get("generated_by")
+        gen_s = f" · 生成: {gen}" if gen else ""
+        return (f"<p class='datasrc'>📌 数据来源: {src}{gen_s}<br>"
+                f"<span class='srcnote'>{note}</span></p>")
+    if kind == "plan":
+        meta = _file_meta(workspace, slug, "plan.json")
+        if not meta:
+            return ("<p class='datasrc'>📌 数据来源: plan.json (需执行 M3b 真实拆解产生, "
+                    "当前无计划)</p>")
+        src = meta.get("source", "plan.json")
+        note = meta.get("note", "")
+        return (f"<p class='datasrc'>📌 数据来源: {src}<br>"
+                f"<span class='srcnote'>{note}</span></p>")
+    if kind == "docs":
+        return ("<p class='datasrc'>📌 数据来源: projects/<slug>/ 目录实际文件 "
+                "(存在/大小/更新时间, 实时读盘)</p>")
+    return ""

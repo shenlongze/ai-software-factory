@@ -810,3 +810,44 @@ class TestModuleTree:
         assert ids.count("t1-1") == 0  # 子任务不在 L3
         t1 = next(t for t in all_l3 if t["id"] == "t1")
         assert [c["id"] for c in t1["children"]] == ["t1-1"]  # 只在 L4
+
+
+# ================================================================== 数据来源标注 (实事求是)
+
+class TestDataSource:
+    def _proj_with_meta(self, tmp_path):
+        _mk_project(tmp_path, "a", name="项目A")
+        pdir = tmp_path / "projects" / "a"
+        (pdir / "tasks.json").write_text(json.dumps({
+            "tasks": [{"id": "t1", "name": "任务1", "status": "todo"}],
+            "meta": {"source": "待办清单解析", "generated_by": "bootstrap",
+                     "note": "非执行产生"},
+        }), encoding="utf-8")
+        (pdir / "plan.json").write_text(json.dumps({
+            "tasks": [{"id": "t1", "name": "任务1"}],
+            "edges": [], "critical_path": ["t1"],
+            "meta": {"source": "方案书顺序", "note": "非执行产生"},
+        }), encoding="utf-8")
+        return tmp_path
+
+    def test_file_meta(self, tmp_path):
+        self._proj_with_meta(tmp_path)
+        m = BOARD._file_meta(tmp_path, "a", "tasks.json")
+        assert m.get("source") == "待办清单解析"
+        assert BOARD._file_meta(tmp_path, "a", "nope.json") == {}
+
+    def test_data_source_html_kinds(self, tmp_path):
+        self._proj_with_meta(tmp_path)
+        t = BOARD._data_source_html(tmp_path, "a", "tasks")
+        assert "数据来源" in t and "待办清单解析" in t and "非执行产生" in t
+        p = BOARD._data_source_html(tmp_path, "a", "plan")
+        assert "方案书顺序" in p
+        d = BOARD._data_source_html(tmp_path, "a", "docs")
+        assert "实际文件" in d
+
+    def test_views_include_source(self, tmp_path):
+        self._proj_with_meta(tmp_path)
+        assert "数据来源" in BOARD.render_project_tasktree_html(tmp_path, "a")
+        assert "数据来源" in BOARD.render_graph_html(tmp_path, "a")
+        assert "数据来源" in BOARD.render_chain_html(tmp_path, "a")
+        assert "数据来源" in BOARD.render_project_docs_html(tmp_path, "a")

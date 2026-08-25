@@ -863,6 +863,27 @@ class ConsoleService:
                 raise ValueError(str(exc)) from exc  # 协议不支持 → HTTP 400
             return None  # 其余异常 → 失败安全 (不拖垮 API)
 
+    def remove_mcp_connection(self, connection_id: str) -> bool:
+        """移除 MCP 连接 (S10-116 A-3: `factory mcp remove --id <id>`)。
+
+        MCPRegistry 当前无公开 remove API — 本层直接操作其连接存储
+        (registry._connections, 同一实例跨请求共享 — 与 API POST/GET 同源),
+        移除成功 → True; 连接不存在 / registry 未装配 / 异常 → False (失败安全)。
+        只移除连接 (ToolRegistry 中 source=mcp 的 tool 不在本层清理范围 —
+        Tool 注册表生命周期由 ToolExecutor 治理, 不在此改动语义)。
+        """
+        registry = self._get_mcp_registry()
+        if registry is None:
+            return False
+        try:
+            conns = getattr(registry, "_connections", None)
+            if not isinstance(conns, dict):
+                return False
+            removed = conns.pop(str(connection_id or ""), None)
+            return removed is not None
+        except Exception:  # noqa: BLE001 — 失败安全: 移除失败不拖垮 CLI
+            return False
+
     def mcp_tools(self) -> list[dict[str, Any]]:
         """MCP Tool 清单 (GET /api/mcp/tools — 内部 ToolRegistry source=mcp 过滤)。
 

@@ -165,6 +165,46 @@ class DeveloperOutput:
     retries: int = 0
 
 
+def _route_skill_selection(objective: str, skills: list[str] | None) -> tuple[list[str] | None, str]:
+    """B-1 skill 路由选中: objective → capabilities → 路由 → 选中 skill。
+
+    返回 (selected|None, reason):
+    - (选中列表, reason): 路由命中 → 只注入选中 (reason 可解释)
+    - (None, ""): 无匹配 / 控制面不可用 → 调用方全量注入兜底 (现状)
+    确定性: 纯规则路由 (capability_router.route_skills), 不调 LLM; 导入失败
+    (factory-console 缺失 — Removal Isolation) → 全注入兜底, 不阻断执行。
+    """
+    if not skills:
+        return None, ""
+    module = _load_capability_router()
+    if module is None:
+        return None, ""
+    try:
+        selected, reason = module.route_skills(objective, skills)
+    except Exception:  # noqa: BLE001 — 路由失败安全: 兜底全注入, 不阻断执行
+        return None, ""
+    if not selected or selected == list(skills):
+        # 无匹配 → 设计兜底全注入 (向后兼容)
+        return None, ""
+    return selected, reason
+
+
+def _load_capability_router() -> Any:
+    """延迟加载 factory-console 能力路由 (双名解析: wheel → factory_console /
+    源码 → factory-console; 失败 → None — Removal Isolation 不拖垮 exec)。"""
+    import importlib
+
+    for name in (
+        "factory_console.session.capability_router",
+        "factory-console.session.capability_router",
+    ):
+        try:
+            return importlib.import_module(name)
+        except Exception:  # noqa: BLE001 — 任一解析失败 → 尝试下一名
+            continue
+    return None
+
+
 class DeveloperAgent:
     """Developer Agent MVP: prompt 组装 → Provider (重试) → 操作/diff 解析 → 报告。
 
@@ -225,13 +265,25 @@ class DeveloperAgent:
             "You make minimal, correct code changes and return them as structured operations.",
             "",
         ]
-        # S10-114: Agent 技能注入 (外部注册 skill 真生效 — 能力声明进 prompt)
+        # S10-114/S10-116 B-1: Agent 技能注入 (能力声明进 prompt)。
+        # 路由选中: objective 能力需求 → CapabilityRouter 选中 skill → 只注入选中
+        # (注入 "You have skill X (selected by router: reason)"); 无匹配/路由
+        # 不可用 → 全量注入 (现状, 向后兼容零变化)。
         if skills:
-            lines += [
-                f"You have the following skills: {', '.join(skills)}.",
-                "Apply these skills to the task where relevant.",
-                "",
-            ]
+            selected, skill_reason = _route_skill_selection(objective, skills)
+            if selected is None:
+                lines += [
+                    f"You have the following skills: {', '.join(skills)}.",
+                    "Apply these skills to the task where relevant.",
+                    "",
+                ]
+            else:
+                lines += [
+                    f"You have skill {', '.join(selected)} "
+                    f"(selected by router: {skill_reason}).",
+                    "Apply this skill to the task where relevant.",
+                    "",
+                ]
         if context_text.strip():
             # Context Assembly 主体 (6 节; 行号前缀说明在 Code 节内, 不重复渲染)
             lines += [context_text.strip()]

@@ -353,6 +353,21 @@ class AgentRegistry:
         return roles
 
 
+    @classmethod
+    def to_capability_resources(
+        cls, agents_file: Optional[Path] = None
+    ) -> list[Any]:
+        """AgentRegistry → CapabilityResource (S10-116 B-2, 只读)。
+
+        capabilities = skills + supported_tasks 推导 (显式 capabilities 透传
+        合并); status/load/priority/version 字段透传 (K-2/K-3 只挂字段)。
+        依赖 capability_router (纯标准库, 无循环)。
+        """
+        from .capability_router import build_agent_resources
+
+        return build_agent_resources(cls.load(agents_file))
+
+
 class AgentMatcher:
     """AgentMatcher (设计 §2): task → best agent 综合评分。
 

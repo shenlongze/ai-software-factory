@@ -813,6 +813,9 @@ def build_app(
                 html = board_mod.render_board_html(workspace=workspace_root, project=project)
             elif view == "report":
                 html = board_mod.render_report_html(workspace=workspace_root, project_id=project)
+            elif view == "employees":
+                # S10-116 A-2: 👥 员工 tab (只读: agent/skill/角色定义/装配状态)
+                html = board_mod.render_employees_html(workspace_root)
             else:
                 # 项目优先首页: 有当前项目 → 该项目视图; 否则项目列表引导
                 html = board_mod.render_project_home(workspace_root)

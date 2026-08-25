@@ -115,6 +115,9 @@ ROLE_DEFINITIONS: dict[str, dict[str, Any]] = {
         "skills": ["product_strategy", "market_research"],
         "knowledge_ref": "product_intelligence",
         "workflow_ref": "feature-delivery",
+        "prompt_version": "1.0.0",
+        "changed_at": "2026-08-25",
+        "change_summary": "产品策略产出 (定位/价值/能力/非目标/商业模式) (S10-116 F-4 提示词版本化 v1.0.0)",
     },
     "market": {
         "title": "市场分析师",
@@ -126,6 +129,9 @@ ROLE_DEFINITIONS: dict[str, dict[str, Any]] = {
         "skills": ["market_research"],
         "knowledge_ref": "product_intelligence",
         "workflow_ref": "feature-delivery",
+        "prompt_version": "1.0.0",
+        "changed_at": "2026-08-25",
+        "change_summary": "市场分析产出 (规模/趋势/机会窗口) (S10-116 F-4 提示词版本化 v1.0.0)",
     },
     "competitive": {
         "title": "竞品分析师",
@@ -137,6 +143,9 @@ ROLE_DEFINITIONS: dict[str, dict[str, Any]] = {
         "skills": ["competitor_analysis"],
         "knowledge_ref": "product_intelligence",
         "workflow_ref": "feature-delivery",
+        "prompt_version": "1.0.0",
+        "changed_at": "2026-08-25",
+        "change_summary": "竞品分析产出 (直接/间接/替代/机会点) (S10-116 F-4 提示词版本化 v1.0.0)",
     },
     "ux": {
         "title": "UX 设计师",
@@ -151,6 +160,9 @@ ROLE_DEFINITIONS: dict[str, dict[str, Any]] = {
         "skills": ["ux_design"],
         "knowledge_ref": "product_intelligence",
         "workflow_ref": "feature-delivery",
+        "prompt_version": "1.0.0",
+        "changed_at": "2026-08-25",
+        "change_summary": "UX 真引擎: 用户流程/页面结构/信息架构 (S10-111 M3-5) (S10-116 F-4 提示词版本化 v1.0.0)",
     },
     "architect": {
         "title": "软件架构师",
@@ -162,6 +174,9 @@ ROLE_DEFINITIONS: dict[str, dict[str, Any]] = {
         "skills": ["system_architecture", "backend_engineering"],
         "knowledge_ref": "engineering_plan",
         "workflow_ref": "feature-delivery",
+        "prompt_version": "1.0.0",
+        "changed_at": "2026-08-25",
+        "change_summary": "架构设计产出 (选型/系统/数据模型/风险) (S10-116 F-4 提示词版本化 v1.0.0)",
     },
     "backend": {
         "title": "后端工程师",
@@ -173,6 +188,9 @@ ROLE_DEFINITIONS: dict[str, dict[str, Any]] = {
         "skills": ["backend_engineering"],
         "knowledge_ref": "engineering_plan",
         "workflow_ref": "feature-delivery",
+        "prompt_version": "1.0.0",
+        "changed_at": "2026-08-25",
+        "change_summary": "后端设计产出 (API/数据模型/服务拆分) (S10-116 F-4 提示词版本化 v1.0.0)",
     },
     "qa": {
         "title": "QA 负责人",
@@ -186,6 +204,9 @@ ROLE_DEFINITIONS: dict[str, dict[str, Any]] = {
         "skills": ["quality_assurance"],
         "knowledge_ref": "product_intelligence",
         "workflow_ref": "feature-delivery",
+        "prompt_version": "1.0.0",
+        "changed_at": "2026-08-25",
+        "change_summary": "QA 真引擎: 五层测试方案 (S10-111 M3-5) (S10-116 F-4 提示词版本化 v1.0.0)",
     },
     "prd": {
         "title": "资深产品经理 (SeniorPM)",
@@ -197,6 +218,9 @@ ROLE_DEFINITIONS: dict[str, dict[str, Any]] = {
         "skills": ["prd_writing", "product_strategy"],
         "knowledge_ref": "product_intelligence",
         "workflow_ref": "feature-delivery",
+        "prompt_version": "1.0.0",
+        "changed_at": "2026-08-25",
+        "change_summary": "详细 PRD 产出 (背景/用户故事/功能需求/验收标准) (S10-116 F-4 提示词版本化 v1.0.0)",
     },
 }
 

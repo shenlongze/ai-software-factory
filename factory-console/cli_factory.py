@@ -789,6 +789,80 @@ def _task_rows(data_dir: Path) -> list[dict[str, Any]]:
     return rows
 
 
+def _mcp_persisted_path(data_dir: Path) -> Path:
+    """MCP 连接持久化文件 (CLI 层, <data_dir>/mcp/connections.json; 只读/原子写)。"""
+    return Path(data_dir) / "mcp" / "connections.json"
+
+
+def _load_mcp_persisted(store_file: Path) -> list[dict[str, Any]]:
+    """读持久化 MCP 连接 (缺失/损坏/非 list → []; 失败安全)。"""
+    data = _load_json_safe(store_file)
+    return data if isinstance(data, list) else []
+
+
+def _save_mcp_persisted(store_file: Path, conns: list[dict[str, Any]]) -> None:
+    """原子写持久化 MCP 连接 (临时文件 + os.replace — 同 _write_json_file)。"""
+    store_file.parent.mkdir(parents=True, exist_ok=True)
+    tmp = store_file.parent / f".{store_file.name}.{os.getpid()}.tmp"
+    tmp.write_text(
+        json.dumps(conns, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    os.replace(tmp, store_file)
+
+
+def _append_mcp_persisted(store_file: Path, result: dict[str, Any]) -> None:
+    """connect 成功后追加连接记录 (幂等: 同 id 已存在 → 覆盖更新)。"""
+    conns = _load_mcp_persisted(store_file)
+    conns = [c for c in conns if c.get("id") != result.get("id")]
+    conns.append(
+        {
+            "id": result.get("id"),
+            "name": result.get("name"),
+            "server_url": result.get("server_url"),
+            "transport": result.get("transport", "mock"),
+            "enabled": result.get("enabled", True),
+        }
+    )
+    _save_mcp_persisted(store_file, conns)
+
+
+def _remove_mcp_persisted(store_file: Path, connection_id: str) -> bool:
+    """从持久化文件移除连接; 存在并移除 → True; 无 → False (不写文件)。"""
+    conns = _load_mcp_persisted(store_file)
+    remaining = [c for c in conns if c.get("id") != connection_id]
+    if len(remaining) == len(conns):
+        return False
+    _save_mcp_persisted(store_file, remaining)
+    return True
+
+
+def _restore_mcp_persisted(service: Any, store_file: Path) -> None:
+    """把持久化连接重放进 service 的 MCPRegistry (Mock 重放 — 跨 CLI 调用
+    list/remove 一致; 失败安全: 单连接失败跳过, 不阻断列表)。"""
+    conns = _load_mcp_persisted(store_file)
+    if not conns:
+        return
+    registry = getattr(service, "_get_mcp_registry", lambda: None)()
+    if registry is None:
+        return
+    try:
+        from exec import mcp as _mcp_mod
+    except Exception:  # noqa: BLE001 — exec 缺失 → 无法重放 (跳过)
+        return
+    for conn in conns:
+        try:
+            connection = _mcp_mod.MCPConnection(
+                id=str(conn.get("id") or ""),
+                name=str(conn.get("name") or ""),
+                server_url=str(conn.get("server_url") or ""),
+                transport=str(conn.get("transport") or "mock"),
+                enabled=bool(conn.get("enabled", True)),
+            )
+            registry.register_connection(connection)
+        except Exception:  # noqa: BLE001 — 单连接重放失败安全
+            continue
+
+
 def _find_events_db(data_dir: Path) -> Path | None:
     """定位事件库: 优先 events.db, 兜底 factory.db (须含 events 表)。
 
@@ -897,6 +971,8 @@ class FactoryCLI:
             return self.approval(args)
         if args.command == "service":
             return self.service(args)
+        if args.command == "mcp":
+            return self.mcp(args)
         if args.command == "exec":
             return self._exec_history(args)
         if args.command in ("agent", "skill", "task", "router", "rag", "audit"):
@@ -1306,6 +1382,78 @@ class FactoryCLI:
         if args.service_action == "list":
             return run_service_list(self._service_ctx())
         print(f"未知 service 动作: {args.service_action}", file=sys.stderr)
+        return 2
+
+    def mcp(self, args: argparse.Namespace) -> int:
+        """`factory mcp list|connect|remove` — MCP 外部工具连接管理 (S10-116 A-3)。
+
+        复用 ConsoleService.mcp_connections/create_mcp_connection/remove_mcp_connection
+        (同一 MCPRegistry 实例, 与 API GET/POST 同源); MockMCPClient 诚实标注
+        (transport=mock 不连公网)。CLI 层额外做连接持久化
+        (<data_dir>/mcp/connections.json — Mock 注册表本身是内存态, 跨 CLI 调用
+        需要重放才能 list/remove 一致); exec.mcp / Service 语义零改动。
+        失败安全: 未装配/异常 → 明确报错 rc 1。
+        """
+        from .service import ConsoleService
+
+        store_file = _mcp_persisted_path(self.data_dir)
+        action = getattr(args, "mcp_action", "list") or "list"
+        if action == "list":
+            service = ConsoleService()
+            _restore_mcp_persisted(service, store_file)
+            conns = service.mcp_connections()
+            tools = service.mcp_tools()
+            if conns:
+                print(f"MCP 连接 {len(conns)} 个:")
+                for c in conns:
+                    print(f"  {c['id']}  {c['name']}  {c['server_url']}  "
+                          f"transport={c['transport']}  enabled={c['enabled']}")
+            else:
+                print("  无 MCP 连接 (空列表)")
+            if tools:
+                print(f"MCP Tool {len(tools)} 个 (Mock 诚实标注 — 不连公网):")
+                for t in tools:
+                    print(f"  {t['id']}  {t['name']}  server={t['server']}")
+            else:
+                print("  无 MCP Tool (未连接)")
+            print("  共 %d 个连接 · %d 个 tool" % (len(conns), len(tools)))
+            return 0
+        if action == "connect":
+            name = str(getattr(args, "name", "") or "").strip()
+            url = str(getattr(args, "url", "") or "").strip()
+            if not name or not url:
+                print("用法: factory mcp connect --name <名> --url <地址> [--transport mock]")
+                return 1
+            service = ConsoleService()
+            try:
+                result = service.create_mcp_connection(
+                    name, url, transport=str(getattr(args, "transport", "mock") or "mock")
+                )
+            except ValueError as exc:
+                print(f"❌ {exc}")
+                return 1
+            if result is None:
+                print("❌ MCP 未装配 (factory-exec 不可用)")
+                return 1
+            _append_mcp_persisted(store_file, result)
+            tools = ", ".join(t["id"] for t in (result.get("tools") or [])) or "(无 tool)"
+            print(f"✅ MCP 连接已创建: {result['id']} ({result['name']}) — "
+                  f"transport={result['transport']} · tools: {tools}")
+            return 0
+        if action == "remove":
+            cid = str(getattr(args, "id", "") or "").strip()
+            if not cid:
+                print("用法: factory mcp remove --id <连接 id>")
+                return 1
+            service = ConsoleService()
+            removed = service.remove_mcp_connection(cid)
+            removed = _remove_mcp_persisted(store_file, cid) or removed
+            if removed:
+                print(f"✅ MCP 连接已移除: {cid}")
+                return 0
+            print(f"❌ MCP 连接移除失败或不存在: {cid}")
+            return 1
+        print(f"未知 mcp 动作: {action}", file=sys.stderr)
         return 2
 
     def _service_ctx(self, *, backend_port=None, frontend_port=None, dev_mode=False):
@@ -2861,7 +3009,7 @@ class FactoryCLI:
         # 域映射（§11.6 六类域）
         domains = {
             "系统域": ["init", "config", "doctor", "start", "stop", "status", "version"],
-            "资源域": ["service", "llm", "agent", "skill", "tool", "tools", "project"],
+            "资源域": ["service", "llm", "agent", "skill", "tool", "tools", "mcp", "project"],
             "数据域": ["todo", "backlog", "evidence", "audit", "memory", "rag", "task"],
             "执行域": ["run", "repo", "workload", "exec", "run-status"],
             "组织域": ["company", "department", "industry"],
@@ -2882,6 +3030,7 @@ class FactoryCLI:
         print("  agent  list|add|remove    员工管理 (add: --id --role --skills)")
         print("  skill  list|add|remove    技能管理 (add: --id --name --category)")
         print("  tools  list|doctor        工具/MCP 发现与连通检查")
+        print("  mcp    list|connect|remove  MCP 外部工具连接管理 (A-3)")
         print("  llm    list               LLM 清单 (provider/models)")
         print("  project create|list|rename|status  项目管理")
         print("  service list             服务发现 · update [模块] 更新 · doctor 诊断")
@@ -3381,6 +3530,20 @@ def build_parser() -> argparse.ArgumentParser:
     p_skill.add_argument("--id", default="", help="Skill id (add/remove)")
     p_skill.add_argument("--name", default="", help="技能名 (add)")
     p_skill.add_argument("--category", default="", help="分类 (add)")
+    # S10-116 A-3: MCP 管理 (list/connect/remove — 复用 Service MCP API)
+    p_mcp = sub.add_parser("mcp", help="MCP 管理 (list/connect/remove — 外部工具连接)")
+    p_mcp.add_argument(
+        "mcp_action", nargs="?", choices=["list", "connect", "remove"], default="list",
+        metavar="list|connect|remove",
+        help="list — 连接/Tool 清单; connect — 创建连接 (--name --url [--transport]); "
+             "remove — 移除连接 (--id)",
+    )
+    p_mcp.add_argument("--id", default="", help="MCP 连接 id (remove)")
+    p_mcp.add_argument("--name", default="", help="连接名 (connect, 如 demo)")
+    p_mcp.add_argument("--url", default="", help="服务地址 (connect, 如 mock://demo)")
+    p_mcp.add_argument(
+        "--transport", default="mock", help="传输方式 (仅 mock 可用; stdio/http 响亮拒绝)"
+    )
     sub.add_parser(
         "task", help="Task 管理骨架 (只读: 列出 tasks 的 id/title/status/project)"
     )

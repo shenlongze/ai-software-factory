@@ -329,6 +329,7 @@ class TestFactoryCliArgparse:
             "todo",  # v1.1.30: 主线任务清单 (数据域)
             "help",  # v1.1.31: 命令总览 (按域分类)
             "update",  # v1.1.43: 整体/模块更新 (系统域)
+            "mcp",  # v1.1.85 (S10-116 A-3): MCP 管理 (list/connect/remove)
         }
 
     def test_start_flags_parsed(self):

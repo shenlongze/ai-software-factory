@@ -37,7 +37,7 @@ from .action import (
     ActionResult,
     ExecutionContext,
 )
-from .agents import AgentMatcher, AgentMetrics, AgentRegistry, workforce_snapshot
+from .agents import DEFAULT_AGENTS, AgentMatcher, AgentMetrics, AgentRegistry, workforce_snapshot
 from .audit import record_execution
 from .commands import read_projects
 from .confirm import ConfirmationGate
@@ -914,10 +914,13 @@ def show_status(context: ExecutionContext) -> ActionResult:
 
 
 def select_agent(intent: Optional[IntentObject], context: Optional[ExecutionContext] = None) -> str:
-    """Agent Selector 最小版 (设计 §2.4): params.agent_id 优先; 否则按 objective 关键词:
-    前端/flutter/ui/界面 → flutter-dev; 其余 → backend-1。
+    """Agent Selector (S10-116 B-2 升级): ① params.agent_id 优先 (现状)
+    ② 旧关键词规则优先 (前端/flutter/ui/界面 → flutter-dev; 逐字节保留)
+    ③ 关键词未命中且有多 agent → capability 匹配 (objective 能力需求 → router);
+    无 capability 匹配 → backend-1 (默认, 现状)。
 
     intent/context 均可为 None (失败安全 → 默认 backend-1)。
+    确定性: 纯规则路由 (capability_router), 不调 LLM; 路由失败安全 → backend-1。
     """
     params = intent.parameters if intent is not None else {}
     agent = params.get("agent_id")
@@ -926,7 +929,66 @@ def select_agent(intent: Optional[IntentObject], context: Optional[ExecutionCont
     objective = str(params.get("objective") or "").lower()
     if any(keyword in objective for keyword in _FRONTEND_KEYWORDS):
         return FRONTEND_AGENT
+    routed = _route_agent_by_capability(objective, context)
+    if routed is not None:
+        return routed
     return DEFAULT_AGENT
+
+
+def _route_agent_by_capability(
+    objective: str, context: Optional[ExecutionContext]
+) -> Optional[str]:
+    """B-2 capability 匹配: objective 能力需求 → AgentRegistry 资源 → 路由。
+
+    规则:
+    - 只读 AgentRegistry (workspace agents.json 优先; 无 → 内置默认注册表,
+      不读用户 ~/.factory — 测试隔离 + 确定性)
+    - 单 agent (无选择空间) → None (设计: 多 agent 场景才路由)
+    - 路由命中 → 命中 agent id; 无交集/全 disabled/异常 → None (→ 默认兜底)
+    失败安全: 任何异常 → None, 不阻断旧行为 (backend-1)。
+    """
+    try:
+        agents_file: Optional[Path] = None
+        workspace = getattr(context, "workspace", None) if context is not None else None
+        if workspace:
+            agents_file = _workspace_agents_file(workspace)
+        if agents_file is not None:
+            data: Any = None
+            try:
+                data = json.loads(agents_file.read_text(encoding="utf-8"))
+            except Exception:  # noqa: BLE001 — 损坏 → 内置默认
+                data = None
+            # 兼容两种 agents.json 形态: {"agents": {...}} 包装 / 扁平 {id: agent}
+            if isinstance(data, dict) and isinstance(data.get("agents"), dict):
+                data = data["agents"]
+            agents = AgentRegistry._normalize(data)
+            # S10-116 B-2: priority/version/load 透传 (_normalize 不含这些字段;
+            # K-2/K-3 挂点 — 排序 priority desc 需要原始声明)
+            for aid, raw in (data or {}).items():
+                if aid in agents and isinstance(raw, dict):
+                    for key in ("priority", "version", "load"):
+                        if raw.get(key) is not None:
+                            agents[aid][key] = raw[key]
+        else:
+            # 内置默认注册表 (backend-1/flutter-dev/tester-1 — 同 DEFAULT_AGENTS,
+            # 失败安全且 hermetic: 不读用户 ~/.factory/agents/agents.json)
+            agents = AgentRegistry._normalize(
+                {aid: dict(agent) for aid, agent in DEFAULT_AGENTS.items()}
+            )
+    except Exception:  # noqa: BLE001 — 注册表读取失败 → 不路由 (默认兜底)
+        return None
+    if len(agents) < 2:
+        return None
+    from .capability_router import CapabilityRequest, CapabilityRouter, build_agent_resources, derive_capabilities
+
+    request = CapabilityRequest(
+        objective=objective, capabilities=derive_capabilities(objective)
+    )
+    try:
+        decision = CapabilityRouter(build_agent_resources(agents)).route(request)
+    except Exception:  # noqa: BLE001 — 路由失败安全 → 默认兜底
+        return None
+    return decision.resource_id if decision is not None else None
 
 
 def _agent_reason_for(agent: str, objective: str) -> str:

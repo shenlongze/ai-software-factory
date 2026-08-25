@@ -46,10 +46,21 @@ class TestSkillActivation:
         assert EF.ExpertFactory._default_skill_exists("product_strategy") is True
         assert EF.ExpertFactory._default_skill_exists("no_such_skill_zzz") is False
 
-    def test_build_prompt_injects_skills(self):
+    def test_build_prompt_injects_routed_skill(self):
+        """S10-116 B-1: objective 能力匹配 → 只注入路由选中 skill + reason。"""
         da = DEV.DeveloperAgent(_FakeProvider())
         prompt = da.build_prompt(objective="写个接口", skills=["backend_development", "software_testing"])
-        assert "backend_development, software_testing" in prompt
+        # "接口"→api / "写"→code_generation → backend_development 命中, software_testing 未命中
+        assert "You have skill backend_development" in prompt
+        assert "selected by router:" in prompt
+        assert "software_testing" not in prompt
+        assert "命中 capabilities" in prompt  # reason 可解释
+
+    def test_build_prompt_no_match_falls_back_all(self):
+        """S10-116 B-1 向后兼容: 无能力匹配 → 全量注入 (现状, 零变化)。"""
+        da = DEV.DeveloperAgent(_FakeProvider())
+        prompt = da.build_prompt(objective="xyzabc", skills=["backend_development", "software_testing"])
+        assert "You have the following skills: backend_development, software_testing" in prompt
         assert "Apply these skills" in prompt
 
     def test_build_prompt_no_skills_backward_compat(self):

@@ -2,7 +2,7 @@
 
 > **单一事实来源** — 当前系统到底有哪些功能、每个功能是什么、怎么用（CLI / API / 会话命令）、什么状态、从哪个版本开始有。
 >
-> 版本: **v1.1.84** · 更新: 2026-08-25 · 依据: 实测命令 + 代码核对 + CHANGELOG
+> 版本: **v1.1.85** · 更新: 2026-08-25 · 依据: 实测命令 + 代码核对 + CHANGELOG
 
 ## 0. 文档定位（与其他文档的分工）
 
@@ -137,6 +137,13 @@ API（Web/集成）:   http://127.0.0.1:8011/api/...      e.g. GET /api/board
 - **说明**: 工具发现与注册（增强层 AI CLI + MCP server）
 - **入口**: `factory tools list|doctor`
 - **状态**: ✅ · **关联能力**: M1 内核
+
+### 3.4 mcp — MCP 管理 (S10-116 A-3)
+- **说明**: MCP 外部工具连接管理 — list 连接/Tool 清单 · connect 创建连接
+  (MockMCPClient 诚实标注, transport=mock 不连公网) · remove 移除连接;
+  objective 含工具关键词 → 路由选 MCP tool (B-3)
+- **入口**: `factory mcp list|connect --name <名> --url <地址>|remove --id <id>`
+- **状态**: ✅ · **起始**: v1.1.85 · **关联能力**: M1 内核 / B-3
 
 ### 3.4 project — 项目
 - **说明**: 已有项目接入（create 代理 org CLI / list 只读 / rename / status /
@@ -470,6 +477,7 @@ API（Web/集成）:   http://127.0.0.1:8011/api/...      e.g. GET /api/board
 | v1.1.49 | Board 单项目管理视图（全生命周期 11 段, 只读, 项目隔离） | 展示 |
 | v1.1.78 | M3 收尾三件套: ux/qa 真引擎+PRD 深度化 / ChangeControl 变更回流 / 架构审批门 · Agent/Skill 管理 | M3 (7/7) |
 | v1.1.81 | P0-10 注册表一致性 + P0-11 对称路径一致性（防遗漏机制） | 测试/工程保障 |
+| v1.1.85 | K-1 能力路由+员工管理: B-1~B-4 统一路由层 + A-2 员工 tab + A-3 mcp 管理 + F-4 提示词版本化 | K-1 战役 |
 | v1.1.84 | 战役规划 K 系列（A~J+主线合并统一路线, board 可见） | 规划/防遗漏 |
 | v1.1.83 | J-1 生命周期状态单一来源: set_project_lifecycle 统一写入口 + 防回退 + 存量对账 (factory project reconcile) · Board 三轨只读对账漂移可见 | 生命周期/可信度 |
 | v1.1.82 | M5-1 执行重放引擎 (dry-run/re-exec/对比报告 + input_snapshot) · Skill 真调用 | 执行/工程保障 |

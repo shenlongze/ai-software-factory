@@ -1601,6 +1601,7 @@ def _board_nav(active: str = "project", project: str = "", workspace: Optional[P
         ("report", f"/api/board?view=report&project={g}" if g else "/api/board?view=report", "📄 汇报"),
         ("docs", f"/api/board/docs?project={g}" if g else "/api/board?view=projects", "📚 文档"),
         ("mainline", "/api/board?view=mainline", "📋 AI主线面板"),
+        ("employees", "/api/board?view=employees", "👥 员工"),
     ]
     links = "".join(
         f'<a href="{url}" style="{base};{act}"{" title=当前" if key == active else ""}>{label}</a>'
@@ -1614,6 +1615,252 @@ def _board_nav(active: str = "project", project: str = "", workspace: Optional[P
     return (f'<div style="margin-bottom:12px"><div style="display:flex;align-items:center;'
             f'flex-wrap:wrap;gap:4px;margin-bottom:8px">{row1}</div>'
             f'<div style="display:flex;flex-wrap:wrap;gap:4px">{links}</div></div>')
+
+
+# ---------------------------------------------------------------- 👥 员工 tab (S10-116 A-2, 只读)
+
+#: 通用技能名 (默认注册表 agent skills — 自明技能, 视为已知; 装配状态不误报)
+_GENERIC_SKILLS = frozenset({
+    "python", "api", "database", "flutter", "dart", "ui", "frontend", "test",
+    "qa", "development", "backend", "frontend_development", "backend_development",
+    "software_testing", "testing", "flutter_development",
+})
+
+
+def _employees_known_skills(workspace: Optional[Path]) -> set[str]:
+    """已知 skill 集合 (装配状态判定): EXPERT_SKILLS + core 内置 + 工作区外部
+    注册 + 通用技能名。失败安全 → 至少含通用技能 (不误报默认 agent)。"""
+    known = set(_GENERIC_SKILLS)
+    try:
+        from .expert_factory import EXPERT_SKILLS
+
+        known.update(EXPERT_SKILLS)
+        known.update(_builtin_skill_ids_safe())
+    except Exception:  # noqa: BLE001 — 失败安全
+        pass
+    if workspace is not None:
+        for row in _employees_skills(workspace):
+            if row.get("id"):
+                known.add(str(row["id"]))
+    return known
+
+
+def _builtin_skill_ids_safe() -> set[str]:
+    """core agents.skills 内置技能 id (只读; 失败 → 空)。"""
+    try:
+        from .expert_factory import _builtin_skill_ids
+
+        return set(_builtin_skill_ids())
+    except Exception:  # noqa: BLE001 — 失败安全
+        return set()
+
+
+def _employees_agents(workspace: Optional[Path]) -> list[dict[str, Any]]:
+    """Agent 列表 (只读): workspace agents.json → 规范化行; 缺失 → 内置默认
+    注册表 (backend-1/flutter-dev/tester-1 — 失败安全, 不读用户 ~/.factory)。"""
+    from .agents import DEFAULT_AGENTS, AgentRegistry
+
+    agents: dict[str, dict[str, Any]] = {}
+    file = workspace / "agents" / "agents.json" if workspace is not None else None
+    if file is not None and file.is_file():
+        try:
+            data = json.loads(file.read_text(encoding="utf-8"))
+            registry = (
+                data.get("agents")
+                if isinstance(data, dict) and isinstance(data.get("agents"), dict)
+                else data
+            )
+            if isinstance(registry, dict):
+                agents = AgentRegistry._normalize(registry)
+        except Exception:  # noqa: BLE001 — 损坏 → 默认注册表
+            agents = {}
+    if not agents:
+        agents = {
+            aid: dict(agent) for aid, agent in DEFAULT_AGENTS.items()
+        }
+    rows: list[dict[str, Any]] = []
+    for aid in sorted(agents):
+        agent = agents[aid] or {}
+        rows.append(
+            {
+                "id": aid,
+                "name": str(agent.get("name") or aid),
+                "role": str(agent.get("role") or ""),
+                "skills": [str(s) for s in (agent.get("skills") or [])],
+                "status": str(agent.get("status") or "available"),
+            }
+        )
+    return rows
+
+
+def _employees_skills(workspace: Optional[Path]) -> list[dict[str, Any]]:
+    """Skill 列表 (只读): workspace skills.json + skills/*.json → 规范化行;
+    空 → EXPERT_SKILLS 内置目录 (面板不空白)。失败安全。"""
+    from .expert_factory import EXPERT_SKILLS
+
+    rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    def _add(item: Any) -> None:
+        if not isinstance(item, dict):
+            return
+        sid = str(item.get("id") or "")
+        if not sid or sid in seen:
+            return
+        seen.add(sid)
+        rows.append(
+            {
+                "id": sid,
+                "name": str(item.get("name") or sid),
+                "category": str(item.get("category") or ""),
+                "version": str(item.get("version") or ""),
+                "capabilities": [str(c) for c in (item.get("capabilities") or [])],
+            }
+        )
+
+    if workspace is not None:
+        f = workspace / "skills" / "skills.json"
+        if f.is_file():
+            try:
+                data = json.loads(f.read_text(encoding="utf-8"))
+                registry = (
+                    data.get("skills")
+                    if isinstance(data, dict) and isinstance(data.get("skills"), dict)
+                    else data
+                )
+                if isinstance(registry, dict):
+                    for item in registry.values():
+                        _add(item)
+            except Exception:  # noqa: BLE001 — 损坏 → 跳过 (失败安全)
+                pass
+        try:
+            for path in sorted((workspace / "skills").glob("*.json")):
+                if path.name == "skills.json":
+                    continue
+                data = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(data, dict) and isinstance(data.get("skills"), dict):
+                    for item in data["skills"].values():
+                        _add(item)
+                else:
+                    _add(data)
+        except Exception:  # noqa: BLE001 — 目录形态失败安全
+            pass
+    if not rows:
+        for item in EXPERT_SKILLS.values():
+            _add(item)
+    return rows
+
+
+def _employees_roles() -> list[dict[str, Any]]:
+    """7 角色定义 + 装配状态 (ExpertFactory.assemble 失败安全: 成功 ✅ /
+    缺 skill ⚠️缺skill:x; 现状引擎: ux/qa 真引擎, 其余 规则/LLM)。"""
+    from .expert_factory import ExpertFactory, PIPELINE_ROLES, ROLE_DEFINITIONS
+
+    factory = ExpertFactory()
+    rows: list[dict[str, Any]] = []
+    for role in PIPELINE_ROLES:
+        spec = ROLE_DEFINITIONS.get(role) or {}
+        skills = [str(s) for s in (spec.get("skills") or [])]
+        missing: list[str] = []
+        status = "✅"
+        try:
+            factory.assemble(role)
+        except Exception:  # noqa: BLE001 — 装配失败 → 标记缺失, 不崩
+            status = "⚠️"
+            missing = [s for s in skills if not factory._skill_exists(s)]
+        prompt = str(spec.get("system_prompt") or "")
+        engine = "真引擎" if "真引擎" in prompt else ("占位" if "占位" in prompt else "规则/LLM")
+        rows.append(
+            {
+                "id": role,
+                "title": str(spec.get("title") or role),
+                "skills": skills,
+                "status": status,
+                "missing": missing,
+                "engine": engine,
+                "prompt_version": str(spec.get("prompt_version") or ""),
+            }
+        )
+    return rows
+
+
+def render_employees_html(workspace: Path | str) -> str:
+    """👥 员工 tab — 只读展示 (S10-116 A-2)。
+
+    渲染: Agent 列表 (id/role/skills/装配 ✅/⚠️缺skill:x) + Skill 列表
+    (id/name/category/version) + 7 角色定义 (角色 × skills × 现状引擎 ×
+    装配状态) + 缺失提示。数据源: agents.json + skills.json +
+    ExpertFactory.assemble (失败安全)。
+    只读铁律: 本函数不写任何文件 (渲染后 mtime 不变); 管理动作走 CLI/API。
+    """
+    ws = Path(str(workspace)) if workspace is not None else None
+    agents = _employees_agents(ws)
+    skills = _employees_skills(ws)
+    roles = _employees_roles()
+    known = _employees_known_skills(ws)
+    skill_by_id = {s["id"]: s for s in skills}
+
+    agent_rows = []
+    missing_all: list[str] = []
+    for a in agents:
+        miss = [s for s in (a["skills"] or []) if s not in known and s not in skill_by_id]
+        missing_all.extend(miss)
+        assembly = "✅" if not miss else "⚠️缺skill:" + ",".join(miss)
+        agent_rows.append(
+            f"<tr><td>{a['id']}</td><td>{a['name']}</td><td>{a['role']}</td>"
+            f"<td>{', '.join(a['skills']) or '—'}</td><td>{assembly}</td></tr>"
+        )
+
+    skill_rows = "".join(
+        f"<tr><td>{s['id']}</td><td>{s['name']}</td><td>{s['category'] or '—'}</td>"
+        f"<td>{s['version'] or '—'}</td><td>{', '.join(s['capabilities']) or '—'}</td></tr>"
+        for s in skills
+    )
+
+    role_rows = "".join(
+        f"<tr><td>{r['id']}</td><td>{r['title']}</td>"
+        f"<td>{', '.join(r['skills']) or '—'}</td><td>{r['engine']}</td>"
+        f"<td>{r['status'] if not r['missing'] else '⚠️缺skill:' + ','.join(r['missing'])}</td>"
+        f"<td>{r['prompt_version'] or '—'}</td></tr>"
+        for r in roles
+    )
+
+    missing_note = ""
+    if missing_all:
+        uniq = list(dict.fromkeys(missing_all))
+        missing_note = (
+            "<p style='font-size:12px;color:#ffb74d'>⚠️ 缺失提示: 以下 skill 未在"
+            f"技能注册表找到: {', '.join(uniq)} (管理动作走 factory skill add / agent add)</p>"
+        )
+    else:
+        missing_note = "<p style='font-size:12px;color:#4caf50'>✅ 无缺失 skill (装配完整)</p>"
+
+    return f"""<!DOCTYPE html>
+<html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>👥 员工 — AI Factory</title>
+<style>
+  body {{ font-family: -apple-system, system-ui, sans-serif; margin: 0; padding: 16px; background: #0f1115; color: #e6e6e6; }}
+  h1 {{ font-size: 20px; }} h2 {{ font-size: 15px; color: #ffb74d; margin-top: 20px; }}
+  .card {{ background: #1a1e26; border-radius: 8px; padding: 14px; margin-top: 12px; }}
+  table {{ width: 100%; border-collapse: collapse; font-size: 12px; }}
+  th, td {{ padding: 5px 8px; border-bottom: 1px solid #2a2e37; text-align: left; color: #b0b6bf; }}
+  th {{ color: #78909c; }}
+  p {{ font-size: 13px; color: #b0b6bf; }}
+</style></head><body>
+{_board_nav("employees", "", workspace)}
+<h1>👥 员工 <span style="font-size:12px;color:#78909c">(只读展示 · 管理走 CLI/API)</span></h1>
+<div class="card"><h2>🤖 Agent 列表 ({len(agents)})</h2>
+<table><tr><th>id</th><th>name</th><th>role</th><th>skills</th><th>装配</th></tr>
+{"".join(agent_rows) or "<tr><td colspan='5'>(无 agent)</td></tr>"}</table></div>
+<div class="card"><h2>🧩 Skill 列表 ({len(skills)})</h2>
+<table><tr><th>id</th><th>name</th><th>category</th><th>version</th><th>capabilities</th></tr>
+{skill_rows or "<tr><td colspan='5'>(无 skill)</td></tr>"}</table></div>
+<div class="card"><h2>🎭 7 角色定义 ({len(roles)})</h2>
+<table><tr><th>角色</th><th>标题</th><th>skills</th><th>现状引擎</th><th>装配</th><th>prompt_version</th></tr>
+{role_rows or "<tr><td colspan='6'>(无角色定义)</td></tr>"}</table></div>
+<div class="card">{missing_note}</div>
+</body></html>"""
 
 
 # ---------------------------------------------------------------- 任务状态汇总 + 任务树 (S10-110 完善)

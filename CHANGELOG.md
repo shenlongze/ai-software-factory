@@ -3,7 +3,49 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.85] — 2026-08-25
+
+**K-1 能力路由 + 员工管理 (S10-116)**: B-1~B-4 统一能力路由层 + A-2 员工 tab + A-3 MCP 管理 + F-4 提示词版本化。
+
+### Added
+
+- **统一能力路由层 (B-4)**: `session/capability_router.py` — CapabilityResource{id,type,capabilities,
+  status,load,priority,version} + CapabilityRequest + RouteDecision + CapabilityRouter.route
+  (确定性: capabilities 交集 → priority desc / version desc / load asc / id 排序 → 首个 ready;
+  reason 可解释命中集合 + 排序依据; 纯规则不调 LLM; status/load 只挂字段, K-2/K-3 不实现)
+- **skill 路由 (B-1)**: objective 关键词规则表 → 能力需求 → 路由选中 skill; developer.py 注入改造
+  ("全部 skills" → "路由选中 + reason"); 无匹配 → 全注入兜底 (向后兼容零变化)
+- **agent 路由 (B-2)**: select_agent 升级 — params.agent_id 优先 + 旧关键词逐字节保留
+  (前端/flutter/ui/界面 → flutter-dev) + 新 capability 匹配 (多 agent 且关键词未命中);
+  AgentRegistry.to_capability_resources (capabilities = skills + supported_tasks 推导, 只读)
+- **MCP 路由 + 管理 (B-3/A-3)**: objective 工具关键词 → MCP tool 选择 (Mock 诚实标注);
+  `factory mcp list|connect|remove` CLI — 复用 ConsoleService MCP API (remove 新增
+  remove_mcp_connection); CLI 注册表同步 (P0-10)
+- **board 员工 tab (A-2)**: `_board_nav` 新增 "👥 员工" 视图 (`/api/board?view=employees`) —
+  只读渲染 Agent 列表 (装配 ✅/⚠️缺skill) + Skill 列表 + 7 角色定义 (真引擎/规则 + 装配状态)
+  + 缺失提示; 渲染后 mtime 不变 (只读铁律)
+- **提示词版本管理 (F-4)**: ROLE_DEFINITIONS 8 角色 prompt += prompt_version=1.0.0 /
+  changed_at / change_summary (可追溯, 不改 prompt 语义)
+- **契约测试**: tests/console/test_s10_116_capability_router.py (≥10: 路由确定性/reason/
+  skill 注入/agent 旧行为+新匹配/MCP 路由+CLI/board 只读/F-4/注册表门禁/回归)
+
+### Changed
+
+- 版本 1.1.84 → 1.1.85 (pyproject + FEATURES.md + 版本断言同步)
+- 待办清单: K-1 / B-1~B-4 / A-2/A-3 / F-4 标 ✅ (战役 K-1 第一战役完成)
+- 既有测试同步: test_console_cli (mcp 子命令注册表) / test_s10_116_campaign_plan
+  (K-1 ✅) / 版本断言 (1.1.85) / test_s10_114_skill_activation (注入改路由选中断言)
+
+### 验证
+
+- 契约测试 tests/console/test_s10_116_capability_router.py 全绿 · 聚焦回归
+  (agents/actions/board/cli/expert_factory + 既有 agent/skill/mcp/board 测试) 全绿 ·
+  全量 tests/console + tests/api 0 新增失败 · 实测: 路由确定性+reason / 注入改造 /
+  factory mcp list|connect|remove / board 员工 tab 渲染后 mtime 不变
+
+
 ## [v1.1.84] — 2026-08-25
+
 
 **战役规划 K 系列落盘 + board 可见**。
 

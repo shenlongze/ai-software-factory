@@ -69,6 +69,19 @@ export function AfProjectManage(): JSX.Element {
     api.deleteProject(id).then(refresh).catch((e) => setMsg(`删除失败: ${e}`));
   };
 
+  const archive = (id: string, value: boolean) => {
+    api.updateProject(id, { archived: value }).then(refresh).catch((e) => setMsg(`归档操作失败: ${e}`));
+  };
+
+  const batchArchive = (value: boolean) => {
+    Promise.all([...selected].map((id) => api.updateProject(id, { archived: value })))
+      .then(() => {
+        setMsg(`已${value ? '归档' : '恢复'} ${selected.size} 个项目`);
+        refresh();
+      })
+      .catch((e) => setMsg(`批量归档失败: ${e}`));
+  };
+
   const batchRemove = () => {
     // eslint-disable-next-line no-alert
     if (!window.confirm(`确认删除选中的 ${selected.size} 个项目? (不可恢复)`)) return;
@@ -80,10 +93,13 @@ export function AfProjectManage(): JSX.Element {
       .catch((e) => setMsg(`批量删除失败: ${e}`));
   };
 
+  const [showArchived, setShowArchived] = useState<boolean>(false);
   const sorted = useMemo(
     () => [...projects].sort((a, b) => String(b.last_activity ?? '').localeCompare(String(a.last_activity ?? ''))),
     [projects],
   );
+  const activeList = sorted.filter((p) => !p.archived);
+  const archivedList = sorted.filter((p) => p.archived);
 
   return (
     <div className="af-manage" data-testid="af-project-manage">
@@ -102,6 +118,9 @@ export function AfProjectManage(): JSX.Element {
           </button>
           <button type="button" className="af-preview-btn" onClick={() => batchStar(false)}>
             取消收藏
+          </button>
+          <button type="button" className="af-preview-btn" onClick={() => batchArchive(true)}>
+            📦 批量归档
           </button>
           <button type="button" className="af-preview-btn af-danger" onClick={batchRemove}>
             批量删除
@@ -124,7 +143,7 @@ export function AfProjectManage(): JSX.Element {
             </tr>
           </thead>
           <tbody>
-            {sorted.map((p) => (
+            {activeList.map((p) => (
               <tr key={p.id} data-testid={`af-manage-row-${p.id}`}>
                 <td>
                   <input
@@ -157,6 +176,9 @@ export function AfProjectManage(): JSX.Element {
                     <button type="button" className="af-preview-btn" onClick={() => rename(p.id, p.name)}>
                       改名
                     </button>
+                    <button type="button" className="af-preview-btn" onClick={() => archive(p.id, true)}>
+                      📦 归档
+                    </button>
                     <button
                       type="button"
                       className="af-preview-btn af-danger"
@@ -170,6 +192,63 @@ export function AfProjectManage(): JSX.Element {
             ))}
           </tbody>
         </table>
+      )}
+      {archivedList.length > 0 && (
+        <section className="af-manage-archived" data-testid="af-manage-archived">
+          <button
+            type="button"
+            className="af-project-group af-project-group--toggle"
+            onClick={() => setShowArchived((v) => !v)}
+          >
+            <span>{showArchived ? '▾' : '▸'} 已归档 ({archivedList.length})</span>
+          </button>
+          {showArchived && (
+            <table className="af-manage-table">
+              <thead>
+                <tr>
+                  <th aria-label="选择" />
+                  <th>名称</th>
+                  <th>状态</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {archivedList.map((p) => (
+                  <tr key={p.id} data-testid={`af-archived-row-${p.id}`}>
+                    <td>
+                      <input
+                        type="checkbox"
+                        aria-label={`选择 ${p.name}`}
+                        checked={selected.has(p.id)}
+                        onChange={() => toggleSelect(p.id)}
+                      />
+                    </td>
+                    <td>
+                      <a className="af-manage-name" href={`#/project/${p.id}`}>
+                        {p.name}
+                      </a>
+                    </td>
+                    <td>{p.status}</td>
+                    <td>
+                      <div className="af-manage-ops">
+                        <button type="button" className="af-preview-btn" onClick={() => archive(p.id, false)}>
+                          ♻ 恢复
+                        </button>
+                        <button
+                          type="button"
+                          className="af-preview-btn af-danger"
+                          onClick={() => remove(p.id, p.name)}
+                        >
+                          删除
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </section>
       )}
     </div>
   );

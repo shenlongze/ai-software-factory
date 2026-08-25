@@ -136,7 +136,7 @@ export const api = {
     }),
   // S10-006.5 收尾: 项目管理 — 重命名/改 idea (PATCH → ProjectUpdatedSummary
   // {project_id, name, idea, status}; 空 name/idea / 无事可做 → 400 诚实拒绝)
-  updateProject: (projectId: string, changes: { name?: string; idea?: string; starred?: boolean }) =>
+  updateProject: (projectId: string, changes: { name?: string; idea?: string; starred?: boolean; archived?: boolean }) =>
     patchJson<ProjectUpdatedSummary>(
       `/api/projects/${encodeURIComponent(projectId)}`,
       changes,

@@ -265,6 +265,7 @@ class _UpdateProjectBody(BaseModel):
     name: str | None = None
     idea: str | None = None
     starred: bool | None = None
+    archived: bool | None = None
 
 
 class _EpicBody(BaseModel):
@@ -1281,6 +1282,7 @@ def build_app(
                 name=body.name,
                 idea=body.idea,
                 starred=body.starred,
+                archived=body.archived,
                 logger=event_logger,
             )
         except ValueError as exc:

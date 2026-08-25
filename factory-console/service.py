@@ -1148,6 +1148,7 @@ class ConsoleService:
                 id=project_id,
                 name=definition.name or (org.name if org else project_id),
                 starred=bool(org.starred) if org is not None else False,
+                archived=bool(org.archived) if org is not None else False,
                 description=definition.description,
                 language=definition.language,
                 repository=definition.repository,
@@ -1179,6 +1180,7 @@ class ConsoleService:
                 id=project_id,
                 name=org.name or project_id,
                 starred=bool(org.starred) if org is not None else False,
+                archived=bool(org.archived) if org is not None else False,
                 status=org.lifecycle.value
                 if hasattr(org.lifecycle, "value")
                 else str(org.lifecycle),
@@ -1860,6 +1862,7 @@ class ConsoleService:
         name: str | None = None,
         idea: str | None = None,
         starred: bool | None = None,
+        archived: bool | None = None,
     ) -> Any | None:
         """更新 org 项目 (PATCH /projects/{id} — 重命名/改 idea/收藏)。
 
@@ -1876,8 +1879,8 @@ class ConsoleService:
             raise ValueError("name is required (空名字不落库)")
         if idea is not None and not cleaned_idea:
             raise ValueError("idea is required (空想法不落库)")
-        if not cleaned_name and not cleaned_idea and starred is None:
-            raise ValueError("nothing to update (name/idea/starred 至少提供一项)")
+        if not cleaned_name and not cleaned_idea and starred is None and archived is None:
+            raise ValueError("nothing to update (name/idea/starred/archived 至少提供一项)")
         store = self._project_store
         if store is None:
             return None
@@ -1895,6 +1898,8 @@ class ConsoleService:
                 update["goal"] = cleaned_idea
             if starred is not None:
                 update["starred"] = starred
+            if archived is not None:
+                update["archived"] = archived
             updated = project.model_copy(update=update)
             store.save_project(updated)
             # B4 治理 (S10-010 Task 5): 目录镜像同步 — name 变化 → rename 目录;

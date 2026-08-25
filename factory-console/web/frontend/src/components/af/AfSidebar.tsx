@@ -48,7 +48,7 @@ export function AfSidebar({ activePage, collapsed }: AfSidebarProps): JSX.Elemen
   };
   // K-7a: 左栏 = 项目列表 (新建/搜索/分组, 真实 /api/projects) — Codex 任务列表形态
   const [projects, setProjects] = useState<
-    { id: string; name: string; status?: string | null; starred?: boolean; last_activity?: string | null }[]
+    { id: string; name: string; status?: string | null; starred?: boolean; archived?: boolean; last_activity?: string | null }[]
   >([]);
   const [query, setQuery] = useState('');
   const [creating, setCreating] = useState(false);
@@ -70,7 +70,7 @@ export function AfSidebar({ activePage, collapsed }: AfSidebarProps): JSX.Elemen
   }, []);
 
   const q = query.trim().toLowerCase();
-  const filtered = projects.filter((p) => p.name.toLowerCase().includes(q));
+  const filtered = projects.filter((p) => !p.archived && p.name.toLowerCase().includes(q));
   // Founder 2026-08-26: 收藏 + 最近3 + 全部
   const starredProjects = filtered.filter((p) => p.starred);
   const recentProjects = filtered

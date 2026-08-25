@@ -2848,3 +2848,14 @@
   display: flex;
   gap: 4px;
 }
+
+.af-manage-archived {
+  margin-top: 16px;
+  border-top: 1px solid #2a3140;
+  padding-top: 8px;
+}
+
+.af-manage-archived .af-project-group--toggle {
+  font-size: 12px;
+  color: #9ca3af;
+}

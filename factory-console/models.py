@@ -87,6 +87,7 @@ class ProjectSummary(BaseModel):
     id: str
     name: str = ""
     starred: bool = False                # Founder 2026-08-26: 收藏/关注
+    archived: bool = False               # Founder 2026-08-26: 归档 (软归档可恢复)
     description: str = ""
     language: str = ""
     repository: str = ""

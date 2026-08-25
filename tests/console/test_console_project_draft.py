@@ -482,3 +482,37 @@ class TestProjectStarred:
         pid = created.json()["project_id"]
         r = client.patch(f"/api/projects/{pid}", json={})
         assert r.status_code == 400
+
+
+class TestProjectArchive:
+    """Founder 2026-08-26: 归档 (软归档, 可恢复; 独立于生命周期)。"""
+
+    @pytest.fixture
+    def client(self, factory_root: Path, event_logger):
+        service = _adapter.build_console_service(factory_root, event_logger=event_logger)
+        app = _adapter.build_app(service, event_logger=event_logger)
+        with TestClient(app) as c:
+            yield c
+
+    def test_archive_unarchive(self, client):
+        """PATCH archived=true → 列表 archived=true; false → 恢复。"""
+        created = client.post("/api/projects", json={"idea": "做一个归档测试", "name": "归档测试"})
+        pid = created.json()["project_id"]
+        client.patch(f"/api/projects/{pid}", json={"archived": True})
+        listed = client.get("/api/projects").json()
+        me = next(p for p in listed if p["id"] == pid)
+        assert me["archived"] is True
+        # 恢复
+        client.patch(f"/api/projects/{pid}", json={"archived": False})
+        listed2 = client.get("/api/projects").json()
+        me2 = next(p for p in listed2 if p["id"] == pid)
+        assert me2["archived"] is False
+
+    def test_archive_persists_in_org(self, client, factory_root):
+        """archived 落库 org/projects.json (软归档可恢复)。"""
+        created = client.post("/api/projects", json={"idea": "归档持久化", "name": "归档持久"})
+        pid = created.json()["project_id"]
+        client.patch(f"/api/projects/{pid}", json={"archived": True})
+        import json
+        org = json.load(open(factory_root / "org" / "projects.json"))
+        assert org["projects"][pid]["archived"] is True

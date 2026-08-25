@@ -124,8 +124,10 @@ class HelpCommand(SlashCommand):
 
         # ── CLI 命令 ──
         print("🛠 CLI 命令 (系统终端运行, factory 开头):")
+        group_width = max(self._disp_len(g) for g, _ in self.CLI_GROUPS)
         for group, cmds in self.CLI_GROUPS:
-            print(f"  {group}  {' · '.join(cmds)}")
+            pad = " " * (group_width - self._disp_len(group))
+            print(f"  {group}{pad}  {' · '.join(cmds)}")
         print("  详细: factory <子命令> --help")
         return 0
 

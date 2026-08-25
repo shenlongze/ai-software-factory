@@ -993,6 +993,8 @@ class FactoryCLI:
             return self.create_cmd(args)
         if args.command == "help":
             return self.help_cmd(args)
+        if args.command == "eval":
+            return self.eval_cmd(args)
         if args.command == "update":
             return self.update_cmd(args)
         if args.command == "llm":
@@ -2883,8 +2885,8 @@ class FactoryCLI:
         objective = getattr(args, "objective", None)
         if not task and not objective:
             print(
-                "错误: --task 必填 (任务 ID) / --objective 必填 "
-                "(自然语言目标), 二选一",
+                "[E4001] 错误: --task 必填 (任务 ID) / --objective 必填 "
+                "(自然语言目标), 二选一 (建议: 二选一补齐后重试)",
                 file=sys.stderr,
             )
             return 2
@@ -2925,7 +2927,11 @@ class FactoryCLI:
         action = getattr(args, "project_command", None)
         if action == "create":
             if not getattr(args, "repo_path", None):
-                print("错误: --repo-path 必填 (已有代码库路径)", file=sys.stderr)
+                print(
+                    "[E4002] 错误: --repo-path 必填 (已有代码库路径) "
+                    "(建议: 传入 --repo-path <已有代码库路径> 后重试)",
+                    file=sys.stderr,
+                )
                 return 2
             self._ensure_data_dir()
             try:
@@ -2980,7 +2986,11 @@ class FactoryCLI:
                 # 字段名以 argparse 实际参数名为准: p_create --name → args.name
                 # (project_name 兜底: 统一入口可能复用 rename 的 <id> 位置参数)
                 if not getattr(args, "project_name", None) and not getattr(args, "name", None):
-                    print("错误: create project 需要 --name <项目名>", file=sys.stderr)
+                    print(
+                        "[E4003] 错误: create project 需要 --name <项目名> "
+                        "(建议: 显式传入 --name 后重试)",
+                        file=sys.stderr,
+                    )
                     return 2
                 if not getattr(args, "repo_path", None):
                     args.repo_path = str(self.data_dir)  # 无 repo → 默认数据目录 (对话/快捷场景)
@@ -2995,6 +3005,64 @@ class FactoryCLI:
             print(f"错误: create {ctype} 失败 — {exc}", file=sys.stderr)
             return 1
         return self._emit_proxy_result(org_cli, args, result)
+
+    def eval_cmd(self, args: argparse.Namespace) -> int:
+        """factory eval — K-5 七维评测 + 发布门 (S10-121 P0-1/P0-5, 只读零污染)。
+
+        - 无参数/--check: 只报告 7 维评测 + L0-L3 判定 (不阻断 — 不破坏现有
+          版本流程, 四件套同步照旧)
+        - --gate patch|minor|major: 跑对应等级门禁; 失败/未覆盖 → rc 1 明确阻断
+          (patch=L0 · minor=L0+L1 · major=L0+L1+L2; 未定义维度如实"未覆盖")
+        - --save: 报告落盘 docs/eval-report-<ts>.md; --workspace: 指定数据根
+        - 评测只读: 不改业务逻辑、不写 workspace (零污染真实数据)
+        """
+        from .session.eval_suite import EvalSuite
+
+        workspace = Path(getattr(args, "workspace", "") or self.data_dir)
+        gate = getattr(args, "gate", None)
+        check_only = bool(getattr(args, "eval_check", False))
+        try:
+            report = EvalSuite().run(workspace, gate=gate, repo_root=self.root)
+        except Exception as exc:  # noqa: BLE001 — 失败安全: 评测故障 → 明确错误
+            print(f"[E4101] 错误: 评测运行失败 — {exc}", file=sys.stderr)
+            print(_format_failure(f"评测运行失败 — {exc}"), file=sys.stdout)
+            return 1
+        if getattr(args, "json", False):
+            print(json.dumps(report.to_dict(), ensure_ascii=False, indent=2))
+        else:
+            print(report.to_markdown())
+        if getattr(args, "save", False):
+            ts = time.strftime("%Y%m%d-%H%M%S")
+            out = self.root / "docs" / f"eval-report-{ts}.md"
+            try:
+                out.parent.mkdir(parents=True, exist_ok=True)
+                out.write_text(report.to_markdown() + "\n", encoding="utf-8")
+                print(f"报告已保存: {out}")
+            except Exception as exc:  # noqa: BLE001 — 失败安全: 保存失败不阻断
+                print(f"⚠ 报告保存失败: {exc}", file=sys.stderr)
+        if gate and not check_only:
+            if report.gate_passed:
+                print(f"发布门 {gate} 通过 ✅ (等级 {report.level})")
+                return 0
+            reasons = "; ".join(report.gate_reasons) or "未覆盖/失败"
+            print(
+                f"[E4102] 发布门 {gate} 未通过 — 阻断发布 "
+                f"(等级 {report.level}): {reasons}",
+                file=sys.stderr,
+            )
+            print("❌ Failed", file=sys.stdout)
+            print("", file=sys.stdout)
+            print(f"Reason:", file=sys.stdout)
+            print(f"  发布门 {gate} 未通过 — 阻断发布 (等级 {report.level}): {reasons}", file=sys.stdout)
+            print("", file=sys.stdout)
+            print("Solution:", file=sys.stdout)
+            print(
+                "  补齐未覆盖/失败维度的评测证据 (H-1 端到端/并发/长跑/学习闭环 fixture) "
+                "后重跑 factory eval; 或按实际发布类型调整 --gate 等级",
+                file=sys.stdout,
+            )
+            return 1
+        return 0
 
     def help_cmd(self, args: argparse.Namespace) -> int:
         """factory help — 命令总览（§11.6: 按域分类, 不是字母序）。"""
@@ -3721,6 +3789,24 @@ def build_parser() -> argparse.ArgumentParser:
     p_todo = sub.add_parser("todo", help="主线任务清单 (list — 待办清单, 命令体系 数据域)")
     p_todo.add_argument("todo_command", choices=["list"], nargs="?", default=None, help="list — 主线任务")
     sub.add_parser("help", help="命令总览（按域分类, §11.6）")
+    p_eval = sub.add_parser("eval", help="K-5 七维评测 + 发布门 (只读; --gate patch|minor|major)")
+    p_eval.add_argument(
+        "--gate", choices=["patch", "minor", "major"], default=None,
+        help="发布门: patch=L0 · minor=L0+L1 · major=L0+L1+L2 (失败 → rc 非 0 明确阻断)",
+    )
+    p_eval.add_argument(
+        "--check", dest="eval_check", action="store_true",
+        help="只读模式: 报告等级不阻断 (默认; --gate 时加 --check 也只报告不阻断)",
+    )
+    p_eval.add_argument(
+        "--save", action="store_true",
+        help="报告落盘 docs/eval-report-<ts>.md (评测本身只读, 零污染)",
+    )
+    p_eval.add_argument(
+        "--workspace", default=None,
+        help="被评测数据根 (缺省 = 工厂数据目录; 只读不写业务)",
+    )
+    p_eval.add_argument("--json", action="store_true", help="输出结构化 JSON")
     p_update = sub.add_parser("update", help="整体/模块更新 (--check 只读检查; [模块] 指定更新)")
     p_update.add_argument("update_module", nargs="?", default=None, help="模块 (core/console/exec/org, 可选)")
     p_update.add_argument("--check", dest="update_check", action="store_true", help="只检查更新, 不实际更新")

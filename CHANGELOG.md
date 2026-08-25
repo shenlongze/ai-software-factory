@@ -3,6 +3,24 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.95] — 2026-08-25
+
+### Added — K-5 评测体系渐进 (战役第五战役)
+- **P0-1/C-1 七维评测第一版**: `factory eval` — 正确性/鲁棒性/一致性/性能/安全/长期/用户价值 7 维,
+  每维 ≥1 可断言评测项 (复用 H-1/K-2/K-3/K-4 数据), L0-L3 等级判定 (第一版 L0/L1 可判)
+- **P0-5/C-6 发布门自动化**: `factory eval --gate patch|minor|major` — patch=L0 · minor=L0+L1;
+  失败 → rc 1 明确阻断 [E4102]; --check 只读不阻断 (不破坏现有版本流程)
+- **P0-4/C-5 长跑+并发**: 多项目并发 trace 隔离断言 (K-4); scripts/smoke_longrun.py 长跑冒烟 (可配置);
+  scripts/smoke_24h.py (待长跑如实标注)
+- **H-1 整体流程评测**: 创建→发现→PRD→工程→审批→执行→证据→交付 端到端 fixture, 每节点衔接断言 + J-1 状态投影
+- **F-10 测试覆盖度**: scripts/coverage_report.py (stdlib trace, 模块级报告, 不设达标线)
+- **M5-7 错误码表**: docs/error-codes.md 集中表 + 主要错误路径有码
+- **C-4 中间盲区核对**: docs/eval-blind-spots.md (K-2 已覆盖 vs 仍盲, 如实)
+
+### Fixed
+- eval 评测项语义: 无上下文路径的空 trace_id 属 K-4 设计允许 (audit_trace 诚实判定 未覆盖/通过)
+- 发布门 registry 核对需真实 repo_root (CLI root = 真实仓库)
+
 ## [v1.1.94] — 2026-08-25
 
 **/help CLI 区逐命令树 + 组内对齐 (v1.1.93 补)**。

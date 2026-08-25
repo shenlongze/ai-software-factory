@@ -330,6 +330,7 @@ class TestFactoryCliArgparse:
             "help",  # v1.1.31: 命令总览 (按域分类)
             "update",  # v1.1.43: 整体/模块更新 (系统域)
             "mcp",  # v1.1.85 (S10-116 A-3): MCP 管理 (list/connect/remove)
+            "eval",  # v1.1.95 (S10-121 K-5): 七维评测 + 发布门 (只读; --gate patch|minor|major)
         }
 
     def test_start_flags_parsed(self):

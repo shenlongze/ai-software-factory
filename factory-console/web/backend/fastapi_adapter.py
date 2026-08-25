@@ -1058,6 +1058,9 @@ def build_app(
         except Exception:  # noqa: BLE001
             d = {}
         agents = d.get("agents") if isinstance(d, dict) and "agents" in d else d
+        # Founder 2026-08-26: agents.json 混合格式兼容 — "agents" 键空则回退顶层 agent 记录
+        if isinstance(agents, dict) and not agents and isinstance(d, dict):
+            agents = {k: v for k, v in d.items() if k != "agents" and isinstance(v, dict)}
         if isinstance(agents, dict):
             return {"agents": list(agents.values()), "count": len(agents)}
         return {"agents": [], "count": 0}

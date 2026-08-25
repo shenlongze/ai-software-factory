@@ -172,10 +172,31 @@ describe('AfWorkspaceShell (AI OS 三栏壳)', () => {
     ['workflows', 'Workflow Center module loading — 开发中'],
     ['runtime', 'Runtime Monitor module loading — 开发中'],
     ['audit', 'Audit module loading — 开发中'],
-    ['settings', 'Settings module loading — 开发中'],
   ])('占位页 %s → AfModulePlaceholder (禁空白)', (page, expectedText) => {
     render(<AfWorkspaceShell route={workspaceRoute(page)} />);
     expect(screen.getByTestId('af-module-placeholder')).toHaveTextContent(expectedText);
+  });
+
+  it('settings → AfSettings 设置页 (LLM/Agent/Skill/MCP)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        const stub = (v: unknown) =>
+          Promise.resolve({ ok: true, json: () => Promise.resolve(v) } as Response);
+        if (String(url).includes('/api/projects')) return stub([]);
+        if (String(url).includes('/api/providers')) return stub([]);
+        if (String(url).includes('/api/agents')) return stub({ agents: [] });
+        if (String(url).includes('/api/skills')) return stub({ skills: [] });
+        if (String(url).includes('/api/mcp')) return stub({ connections: [], tools: [] });
+        return stub({});
+      }),
+    );
+    render(<AfWorkspaceShell route={workspaceRoute('settings')} />);
+    expect(await screen.findByTestId('af-settings')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '🤖 LLM / 模型' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '👤 Agent' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '🧩 Skill' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '🔌 MCP' })).toBeInTheDocument();
   });
 
   it('加载中 → af-loading-state', () => {

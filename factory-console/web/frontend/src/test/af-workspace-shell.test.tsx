@@ -2,7 +2,7 @@
  * src/test/af-workspace-shell.test.tsx — AI OS Workspace Shell 三栏壳 (S10-014 Task 004)。
  *
  * 验证 (S10-014-plan §3.1 导航 + §4 Design System + AF-UI-Architecture §2.4 三栏):
- * - 三栏壳渲染: Header + Sidebar (7 导航项) + Main Content + Context Panel
+ * - 三栏壳渲染: Header + Sidebar (7 导航项) + Main Content + 预览窗口 (K-7b)
  * - 默认 dashboard 激活态; 激活态跟随 route.page (aria-current="page")
  * - 导航点击 → window.location.hash 更新 (#/workspace/<page>)
  * - 折叠切换 → 侧栏 class 变化 (af-sidebar--collapsed) + localStorage 持久化
@@ -59,14 +59,14 @@ afterEach(() => {
 });
 
 describe('AfWorkspaceShell (AI OS 三栏壳)', () => {
-  it('渲染三栏壳: Header + Sidebar 7 导航项 + Main + Context Panel', () => {
+  it('渲染三栏壳: Header + Sidebar 7 导航项 + Main + 预览窗口', () => {
     stubFetch({ '/api/dashboard': sampleDashboard({ projects: [] }) });
     render(<AfWorkspaceShell route={workspaceRoute()} />);
     expect(screen.getByTestId('af-workspace-entry')).toBeInTheDocument();
     expect(screen.getByTestId('af-header')).toBeInTheDocument();
     expect(screen.getByTestId('af-sidebar')).toBeInTheDocument();
     expect(screen.getByTestId('af-main-content')).toBeInTheDocument();
-    expect(screen.getByTestId('af-context-panel')).toBeInTheDocument();
+    expect(screen.getByTestId('af-preview-window')).toBeInTheDocument();
     for (const label of NAV_LABELS) {
       expect(screen.getByRole('button', { name: new RegExp(label) })).toBeInTheDocument();
     }

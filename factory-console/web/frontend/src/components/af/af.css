@@ -2367,3 +2367,334 @@
 .af-composer-send:hover {
   filter: brightness(1.1);
 }
+
+/* ============================================= K-7b: 右栏预览窗口 (类浏览器) */
+.af-preview {
+  display: flex;
+  flex-direction: column;
+  width: 420px;
+  flex-shrink: 0;
+  background: var(--af-panel, #161a22);
+  border-left: 1px solid var(--af-border, #2a3140);
+  transition: width 0.2s ease;
+}
+
+.af-preview--collapsed {
+  width: 36px;
+  padding: 12px 8px;
+  align-items: center;
+}
+
+.af-preview--open {
+  width: 420px;
+}
+
+.af-preview-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--af-border, #2a3140);
+}
+
+.af-preview-controls {
+  display: flex;
+  gap: 2px;
+}
+
+.af-preview-btn {
+  min-width: 26px;
+  height: 26px;
+  font-size: 13px;
+  color: var(--af-neutral, #9ca3af);
+  background: transparent;
+  border: 1px solid var(--af-border, #2a3140);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.af-preview-btn:hover:not(:disabled) {
+  color: #e5e7eb;
+  background: rgba(76, 141, 255, 0.08);
+}
+
+.af-preview-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.af-preview-address {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  font: inherit;
+  font-size: 12px;
+  color: #e5e7eb;
+  background: #0f1115;
+  border: 1px solid var(--af-border, #2a3140);
+  border-radius: 6px;
+  outline: none;
+}
+
+.af-preview-address::placeholder {
+  color: #6b7280;
+}
+
+.af-preview-body {
+  flex: 1;
+  min-height: 0;
+  background: #0f1115;
+}
+
+.af-preview-frame {
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: #fff;
+}
+
+.af-preview-empty {
+  padding: 24px 16px;
+  font-size: 12px;
+  color: #6b7280;
+  text-align: center;
+}
+
+/* OS 树 (左栏) */
+.af-os-tree {
+  display: flex;
+  flex-direction: column;
+}
+
+.af-os-node--root {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #e5e7eb;
+  border-radius: 6px;
+}
+
+.af-os-children {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-left: 10px;
+  padding-left: 8px;
+  border-left: 1px solid var(--af-border, #2a3140);
+}
+
+.af-os-icon {
+  width: 16px;
+  flex-shrink: 0;
+  text-align: center;
+  font-size: 13px;
+}
+
+.af-os-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.af-os-leaf {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Composer 分域标签 + 消息 */
+.af-composer-scope {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #0f1115;
+  background: var(--af-primary, #4c8dff);
+  border-radius: 12px;
+  white-space: nowrap;
+}
+
+.af-composer-msg {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: #fbbf24;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ============================================= K-7b: 项目首页 (生命周期 + Todo) */
+.af-project-home {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 960px;
+}
+
+.af-home-card {
+  background: var(--af-panel, #161a22);
+  border: 1px solid var(--af-border, #2a3140);
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+
+.af-home-card h3 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  color: #e5e7eb;
+}
+
+.af-home-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.af-home-note {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.af-lc-bar {
+  height: 8px;
+  background: #2a3140;
+  border-radius: 4px;
+  overflow: hidden;
+  margin: 8px 0;
+}
+
+.af-lc-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #43a047, #4c8dff);
+}
+
+.af-lc-stages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.af-lc-stage {
+  padding: 3px 8px;
+  font-size: 11px;
+  color: #6b7280;
+  border: 1px solid #2a3140;
+  border-radius: 12px;
+}
+
+.af-lc-stage.done {
+  color: #a5d6a7;
+  border-color: #43a047;
+}
+
+.af-lc-stage.current {
+  color: #ffb74d;
+  border-color: #ffb74d;
+  font-weight: 600;
+}
+
+.af-view-toggle {
+  display: flex;
+  gap: 4px;
+}
+
+.af-view-toggle .active {
+  color: #0f1115;
+  background: var(--af-primary, #4c8dff);
+}
+
+.af-todo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.af-todo-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: #0f1115;
+  border: 1px solid #2a3140;
+  border-radius: 8px;
+}
+
+.af-todo-title {
+  flex: 1;
+  font-size: 13px;
+  color: #e5e7eb;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.af-pri {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.af-pri-p0 { background: #c62828; color: #fff; }
+.af-pri-p1 { background: #e65100; color: #fff; }
+.af-pri-p2 { background: #616161; color: #fff; }
+
+.af-todo-pri,
+.af-todo-status {
+  font: inherit;
+  font-size: 11px;
+  color: #e5e7eb;
+  background: #161a22;
+  border: 1px solid #2a3140;
+  border-radius: 6px;
+  padding: 3px 6px;
+}
+
+.af-todo-archived {
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.af-todo-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.af-board-col {
+  background: #0f1115;
+  border: 1px solid #2a3140;
+  border-radius: 8px;
+  padding: 10px;
+  min-height: 120px;
+}
+
+.af-board-col-title {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.af-board-card {
+  background: #161a22;
+  border: 1px solid #2a3140;
+  border-radius: 8px;
+  padding: 8px;
+  margin-bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.af-board-actions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}

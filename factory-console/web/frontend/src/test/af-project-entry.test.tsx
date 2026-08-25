@@ -60,17 +60,11 @@ describe('AfProjectEntry (AI Factory 项目真实入口)', () => {
 
     render(<AfProjectEntry route={projectRoute()} />);
 
-    // S10-014 Task 005: Project Shell Header 也显示项目名 + lifecycle — 断言限定详情区
-    const detail = await screen.findByTestId('af-project-detail');
-    expect(within(detail).getByText('记账 App')).toBeInTheDocument();
-    expect(within(detail).getByText('demo')).toBeInTheDocument();
-    expect(within(detail).getByText('探索')).toBeInTheDocument(); // lifecycle 人话标签
-    expect(within(detail).getByText('活跃')).toBeInTheDocument(); // status 人话标签
-    expect(within(detail).getByText('个人记账工具')).toBeInTheDocument();
-    expect(within(detail).getByText('执行中')).toBeInTheDocument(); // workflow 状态
-    expect(within(detail).getByText(/product/)).toBeInTheDocument(); // 当前阶段
-    expect(within(detail).getByText('50%')).toBeInTheDocument();
-    expect(within(detail).getByText(/最后活动/)).toBeInTheDocument(); // 可用时间字段
+    // K-7b: overview = 项目首页 (af-project-home: 生命周期 + Todo + 运维)
+    const home = await screen.findByTestId('af-project-home');
+    expect(within(home).getByRole('heading', { name: '记账 App' })).toBeInTheDocument();
+    expect(within(home).getByTestId('af-home-lifecycle')).toBeInTheDocument();
+    expect(within(home).getByTestId('af-todo-list')).toBeInTheDocument();
   });
 
   it('404: 项目不存在 → ErrorState "项目不存在或已被删除"', async () => {
@@ -104,7 +98,7 @@ describe('AfProjectEntry (AI Factory 项目真实入口)', () => {
     ).toBeInTheDocument();
   });
 
-  it('工作流时间: 有 workflow_id → 显示创建时间 (GET /api/projects/{id}/workflow)', async () => {
+  it('工作流时间: 项目首页渲染 (K-7b overview → af-project-home)', async () => {
     stubFetch({
       '/api/projects': [sampleProject({ id: 'demo', workflow_id: 'wf-1' })],
       '/api/projects/demo/workflow': sampleWorkflowDetail({
@@ -112,17 +106,17 @@ describe('AfProjectEntry (AI Factory 项目真实入口)', () => {
       }),
     });
     render(<AfProjectEntry route={projectRoute()} />);
-    expect(await screen.findByText(/创建时间/)).toBeInTheDocument();
-    expect(screen.getByText(/2026-08-10/)).toBeInTheDocument();
+    const home = await screen.findByTestId('af-project-home');
+    expect(within(home).getByTestId('af-home-lifecycle')).toBeInTheDocument();
   });
 
-  it('workflow 获取失败 → 降级不阻塞详情 (仍渲染项目名)', async () => {
+  it('workflow 获取失败 → 降级不阻塞首页 (仍渲染项目名)', async () => {
     stubFetch({
       '/api/projects': [sampleProject({ id: 'demo', workflow_id: 'wf-1' })],
       // /api/projects/demo/workflow 未桩 → stubFetch 404 → 降级 null
     });
     render(<AfProjectEntry route={projectRoute()} />);
-    const detail = await screen.findByTestId('af-project-detail');
-    expect(within(detail).getByText('Demo Project')).toBeInTheDocument();
+    const home = await screen.findByTestId('af-project-home');
+    expect(within(home).getByRole('heading', { name: 'Demo Project' })).toBeInTheDocument();
   });
 });

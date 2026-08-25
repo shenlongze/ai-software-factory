@@ -11,6 +11,13 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../api/client';
 
+/** K-7b: 默认一人公司根 (one-person company) — 项目直接挂下面; 部门仅用户显式创建时才出现。 */
+export const PERSONAL_COMPANY = {
+  id: 'personal-company',
+  name: '我的公司',
+  icon: '🏢',
+};
+
 /** 7 个 Workspace 导航项 (与 router.tsx WORKSPACE_ROUTES 对齐, 顺序 = 导航顺序)。 */
 export const WORKSPACE_NAV_ITEMS: readonly { page: string; label: string; icon: string }[] = [
   { page: 'dashboard', label: 'Dashboard', icon: '◈' },
@@ -106,30 +113,39 @@ export function AfSidebar({ activePage, collapsed }: AfSidebarProps): JSX.Elemen
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
-          <div className="af-project-list">
-            {filtered.length === 0 && (
-              <div className="af-project-empty">（暂无项目 — 点新建开始）</div>
-            )}
-            {activeProjects.length > 0 && (
-              <>
-                <div className="af-project-group">进行中</div>
-                {activeProjects.map((p) => (
-                  <button key={p.id} type="button" className="af-project-item" onClick={() => openProject(p.id)}>
-                    {p.name}
-                  </button>
-                ))}
-              </>
-            )}
-            {doneProjects.length > 0 && (
-              <>
-                <div className="af-project-group">已交付</div>
-                {doneProjects.map((p) => (
-                  <button key={p.id} type="button" className="af-project-item" onClick={() => openProject(p.id)}>
-                    {p.name}
-                  </button>
-                ))}
-              </>
-            )}
+          {/* K-7b: OS 层级树 — 一人公司根 → 项目 (部门仅显式创建才出现) */}
+          <div className="af-os-tree" data-testid="af-os-tree">
+            <div className="af-os-node af-os-node--root" title="一人公司根目录 (可 rename / 复制出去)">
+              <span className="af-os-icon" aria-hidden="true">{PERSONAL_COMPANY.icon}</span>
+              <span className="af-os-label">{PERSONAL_COMPANY.name}</span>
+            </div>
+            <div className="af-os-children">
+              {filtered.length === 0 && (
+                <div className="af-project-empty">（暂无项目 — 点新建开始）</div>
+              )}
+              {activeProjects.length > 0 && (
+                <>
+                  <div className="af-project-group">进行中</div>
+                  {activeProjects.map((p) => (
+                    <button key={p.id} type="button" className="af-project-item af-os-leaf" onClick={() => openProject(p.id)}>
+                      <span className="af-os-icon" aria-hidden="true">📁</span>
+                      {p.name}
+                    </button>
+                  ))}
+                </>
+              )}
+              {doneProjects.length > 0 && (
+                <>
+                  <div className="af-project-group">已交付</div>
+                  {doneProjects.map((p) => (
+                    <button key={p.id} type="button" className="af-project-item af-os-leaf" onClick={() => openProject(p.id)}>
+                      <span className="af-os-icon" aria-hidden="true">📁</span>
+                      {p.name}
+                    </button>
+                  ))}
+                </>
+              )}
+            </div>
           </div>
         </div>
       )}

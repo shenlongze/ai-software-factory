@@ -117,7 +117,7 @@ describe('AfProjectShell (AI OS 项目层壳)', () => {
     expect(screen.getByRole('link', { name: /返回工作台/ })).toHaveAttribute('href', '#/workspace');
   });
 
-  it('overview: 渲染真实 Project Entity (GET /api/projects 定位 → 详情)', async () => {
+  it('overview: 渲染项目首页 (K-7b: 生命周期 + Todo)', async () => {
     stubFetch({
       '/api/projects': [
         sampleProject({
@@ -134,14 +134,10 @@ describe('AfProjectShell (AI OS 项目层壳)', () => {
       ],
     });
     render(<AfProjectShell route={projectRoute()} />);
-    const detail = await screen.findByTestId('af-project-detail');
-    expect(within(detail).getByRole('heading', { name: '记账 App' })).toBeInTheDocument();
-    expect(within(detail).getByText('demo')).toBeInTheDocument();
-    expect(within(detail).getByText('探索')).toBeInTheDocument(); // lifecycle 人话标签
-    expect(within(detail).getByText('活跃')).toBeInTheDocument(); // status 人话标签
-    expect(within(detail).getByText('个人记账工具')).toBeInTheDocument();
-    expect(within(detail).getByText('执行中')).toBeInTheDocument(); // workflow 状态
-    expect(within(detail).getByText('50%')).toBeInTheDocument();
+    const home = await screen.findByTestId('af-project-home');
+    expect(within(home).getByRole('heading', { name: '记账 App' })).toBeInTheDocument();
+    expect(within(home).getByTestId('af-home-lifecycle')).toBeInTheDocument();
+    expect(within(home).getByTestId('af-todo-list')).toBeInTheDocument();
   });
 
   it.each([

@@ -26,6 +26,7 @@ import { AfEmptyState, AfErrorState, AfLoadingState } from './AfState';
 import { AfModulePlaceholder } from './AfModulePlaceholder';
 import { AfHeader } from './AfHeader';
 import { AfSidebar, WORKSPACE_NAV_ITEMS } from './AfSidebar';
+import { AfPreviewWindow } from './AfPreviewWindow';
 import './af.css';
 
 /** Workspace 子页人话标签 (对齐 WORKSPACE_ROUTES; Header 子页标签用)。 */
@@ -110,8 +111,6 @@ export interface AfWorkspaceShellProps {
 /** AI OS Workspace 三栏壳 (根节点保留 af-workspace-entry testid — 入口兼容)。 */
 export function AfWorkspaceShell({ route }: AfWorkspaceShellProps): JSX.Element {
   const [collapsed, setCollapsed] = useState<boolean>(readSidebarCollapsed);
-  // K-7a: 右栏默认收起 (不再常驻占 1/3 屏), 按需展开
-  const [contextOpen, setContextOpen] = useState<boolean>(false);
   const [composerText, setComposerText] = useState<string>('');
 
   const toggleSidebar = () => {
@@ -123,12 +122,30 @@ export function AfWorkspaceShell({ route }: AfWorkspaceShellProps): JSX.Element 
 
   const pageLabel = WORKSPACE_PAGE_LABELS[route.page] ?? route.page;
 
+  const [composerMsg, setComposerMsg] = useState<string>('');
+  const [creating, setCreating] = useState<boolean>(false);
+
   const submitComposer = () => {
     const text = composerText.trim();
     if (!text) return;
-    // K-7a: UI 就绪; 真实会话接线留 K-7b (如实标注, 不伪造)
-    // eslint-disable-next-line no-console
-    console.log('[Composer] K-7b 待接线真实对话:', text);
+    // K-7b 分域: workspace = 全局。创建意图 → 真实创建项目; 通用对话 → 诚实占位。
+    const creationHint = /(做|创建|开发|我想|给我做个)/.test(text);
+    if (creationHint) {
+      setCreating(true);
+      setComposerMsg('');
+      api
+        .createProject(text)
+        .then((created) => {
+          setComposerText('');
+          window.location.hash = `#/project/${created.project_id}`;
+        })
+        .catch((err) => {
+          setComposerMsg(`创建失败: ${String(err)}`);
+        })
+        .finally(() => setCreating(false));
+      return;
+    }
+    setComposerMsg('（全局对话：输入产品想法即可创建项目；通用 AI 会话后端待接）');
     setComposerText('');
   };
 
@@ -143,28 +160,16 @@ export function AfWorkspaceShell({ route }: AfWorkspaceShellProps): JSX.Element 
         <main className="af-main-content" data-testid="af-main-content">
           <WorkspacePage route={route} />
         </main>
-        <aside
-          className={`af-context-panel${contextOpen ? '' : ' af-context-panel--collapsed'}`}
-          data-testid="af-context-panel"
-          aria-label="情境面板"
-        >
-          <button
-            type="button"
-            className="af-context-toggle"
-            onClick={() => setContextOpen((v) => !v)}
-            aria-label={contextOpen ? '收起情境面板' : '展开情境面板'}
-          >
-            {contextOpen ? '»' : '«'}
-          </button>
-          {contextOpen && (
-            <span className="af-context-hint">审批 · 质量 · 执行日志 · 产物（K-7b 接入）</span>
-          )}
-        </aside>
+        {/* K-7b: 右栏 = 预览窗口 (类浏览器, 独立收起/展开, 默认展开) */}
+        <AfPreviewWindow />
       </div>
       <footer className="af-composer" data-testid="af-composer">
+        <span className="af-composer-scope" data-testid="af-composer-scope">
+          全局（我的公司）
+        </span>
         <input
           className="af-composer-input"
-          placeholder="继续聊 / 改需求 / /命令…"
+          placeholder="我想做一个记账App / 继续聊…"
           aria-label="对话输入"
           value={composerText}
           onChange={(e) => setComposerText(e.target.value)}
@@ -172,9 +177,10 @@ export function AfWorkspaceShell({ route }: AfWorkspaceShellProps): JSX.Element 
             if (e.key === 'Enter') submitComposer();
           }}
         />
-        <button type="button" className="af-composer-send" onClick={submitComposer}>
-          发送
+        <button type="button" className="af-composer-send" onClick={submitComposer} disabled={creating}>
+          {creating ? '创建中…' : '发送'}
         </button>
+        {composerMsg ? <span className="af-composer-msg">{composerMsg}</span> : null}
       </footer>
     </div>
   );

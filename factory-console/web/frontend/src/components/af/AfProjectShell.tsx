@@ -28,11 +28,14 @@ import {
 } from './afLabels';
 import { AfModulePlaceholder } from './AfModulePlaceholder';
 import { AfProjectSidebar } from './AfProjectSidebar';
+import { AfPreviewWindow } from './AfPreviewWindow';
+import { AfProjectHome } from '../../pages/project/AfProjectHome';
 import { AfTodoTreePage } from '../../pages/project/AfTodoTreePage';
 import { AfWorkflowPage } from '../../pages/project/AfWorkflowPage';
 import { AfRuntimePage } from '../../pages/project/AfRuntimePage';
 import { AfQualityGatePage } from '../../pages/project/AfQualityGatePage';
 import { ErrorState, LoadingState } from '../State';
+import { useState } from 'react';
 import { useAsync } from '../../hooks/useAsync';
 import type { ProjectSummary, WorkflowDetail } from '../../models/types';
 import type { ParsedRoute } from '../../router';
@@ -91,6 +94,28 @@ export function AfProjectShell({ route }: AfProjectShellProps): JSX.Element {
 
   const project = data?.kind === 'found' ? data.project : null;
 
+  // K-7b: 项目内对话 (分域 = 只针对当前项目)
+  const [composerText, setComposerText] = useState<string>('');
+  const [composerMsg, setComposerMsg] = useState<string>('');
+
+  const submitComposer = () => {
+    const text = composerText.trim();
+    if (!text) return;
+    // 真实接 /discovery/answer (记录到项目发现会话); AI 回复引擎后端待接 (诚实标注)
+    setComposerMsg('（已记录到发现会话 — AI 回复引擎后端待接）');
+    setComposerText('');
+    const name = project?.name || projectId;
+    void fetch(`/api/projects/${encodeURIComponent(projectId)}/discovery/answer`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: text, answer: '' }),
+    }).catch(() => {
+      setComposerMsg('（记录失败 — 后端不可达）');
+    });
+    // eslint-disable-next-line no-console
+    console.log(`[Composer-项目] ${name}:`, text);
+  };
+
   return (
     <div className="af-shell af-project-shell" data-testid="af-project-entry">
       <AfProjectHeader project={project} pageLabel={pageLabel} />
@@ -103,14 +128,39 @@ export function AfProjectShell({ route }: AfProjectShellProps): JSX.Element {
             <ErrorState message="项目不存在或已被删除" />
           ) : null}
           {!loading && error == null && data?.kind === 'found' ? (
-            <ProjectDetailView
-              view={data}
-              pageLabel={pageLabel}
-              isOverview={route.page === 'overview'}
-            />
+            route.page === 'overview' ? (
+              <AfProjectHome projectId={projectId} projectName={project?.name ?? projectId} />
+            ) : (
+              <ProjectDetailView
+                view={data}
+                pageLabel={pageLabel}
+                isOverview={false}
+              />
+            )
           ) : null}
         </main>
+        {/* K-7b: 右栏 = 预览窗口 (类浏览器, 项目运行/文档预览) */}
+        <AfPreviewWindow projectId={projectId} />
       </div>
+      <footer className="af-composer" data-testid="af-composer">
+        <span className="af-composer-scope" data-testid="af-composer-scope">
+          项目 · {project?.name || projectId}
+        </span>
+        <input
+          className="af-composer-input"
+          placeholder="改需求 / 加个功能 / 看状态…"
+          aria-label="对话输入"
+          value={composerText}
+          onChange={(e) => setComposerText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') submitComposer();
+          }}
+        />
+        <button type="button" className="af-composer-send" onClick={submitComposer}>
+          发送
+        </button>
+        {composerMsg ? <span className="af-composer-msg">{composerMsg}</span> : null}
+      </footer>
     </div>
   );
 }

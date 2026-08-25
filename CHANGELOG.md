@@ -3,7 +3,23 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
-## [v1.1.83] — 2026-08-25
+## [v1.1.84] — 2026-08-25
+
+**战役规划 K 系列落盘 + board 可见**。
+
+### Added
+
+- **战役规划 (统一路线)**: A~J 周边 + 主线 M4-M7/P0 合并为 10 个战役 (K-1~K-10) —
+  唯一事实源 docs/战役规划-统一路线.md (重叠合并表/总览/每战役验收标准/执行规则/状态追踪)
+- **待办清单 K 系列分组**: board 首组可见 (K-1 能力路由 → K-10 远期), 旧编号 A~J/M 保留可追溯
+- **board 解析扩展**: _parse_backlog 支持 K- 前缀, 战役卡片渲染
+- **总体计划同步**: 当前状态/进行中/路线图/状态追踪 更新至 v1.1.84 + K 系列
+
+### 验证
+
+- 契约测试 tests/console/test_s10_116_campaign_plan.py 4 passed
+  (K 系列解析/文档存在/旧编号不丢失/board 渲染) · 版本断言同步 v1.1.84
+
 
 **J-1 生命周期状态单一来源 (S10-115)**: project.json.status 为唯一事实源, 消除
 product.json / project.json / execution_state.json 三轨漂移（写侧统一入口 + 防回退 +

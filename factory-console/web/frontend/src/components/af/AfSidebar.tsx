@@ -47,9 +47,12 @@ export function AfSidebar({ activePage, collapsed }: AfSidebarProps): JSX.Elemen
     window.location.hash = navPathForPage(page);
   };
   // K-7a: 左栏 = 项目列表 (新建/搜索/分组, 真实 /api/projects) — Codex 任务列表形态
-  const [projects, setProjects] = useState<{ id: string; name: string; status?: string | null }[]>([]);
+  const [projects, setProjects] = useState<
+    { id: string; name: string; status?: string | null; starred?: boolean; last_activity?: string | null }[]
+  >([]);
   const [query, setQuery] = useState('');
   const [creating, setCreating] = useState(false);
+  const [showAll, setShowAll] = useState<boolean>(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -68,8 +71,47 @@ export function AfSidebar({ activePage, collapsed }: AfSidebarProps): JSX.Elemen
 
   const q = query.trim().toLowerCase();
   const filtered = projects.filter((p) => p.name.toLowerCase().includes(q));
-  const activeProjects = filtered.filter((p) => p.status !== 'delivered' && p.status !== 'completed');
-  const doneProjects = filtered.filter((p) => p.status === 'delivered' || p.status === 'completed');
+  // Founder 2026-08-26: 收藏 + 最近3 + 全部
+  const starredProjects = filtered.filter((p) => p.starred);
+  const recentProjects = filtered
+    .filter((p) => !p.starred && p.last_activity)
+    .sort((a, b) => String(b.last_activity ?? '').localeCompare(String(a.last_activity ?? '')))
+    .slice(0, 3);
+  const recentIds = new Set(recentProjects.map((p) => p.id));
+  const starredIds = new Set(starredProjects.map((p) => p.id));
+  const restProjects = filtered.filter((p) => !starredIds.has(p.id) && !recentIds.has(p.id));
+
+  const toggleStar = (p: { id: string; starred?: boolean }) => {
+    api
+      .updateProject(p.id, { starred: !p.starred })
+      .then(() => {
+        setProjects((prev) =>
+          prev.map((x) => (x.id === p.id ? { ...x, starred: !p.starred } : x)),
+        );
+      })
+      .catch((err) => {
+        // eslint-disable-next-line no-alert
+        window.alert(`收藏失败: ${String(err)}`);
+      });
+  };
+
+  const renderProjectRow = (p: { id: string; name: string; starred?: boolean }) => (
+    <div key={p.id} className="af-project-row">
+      <button type="button" className="af-project-item af-os-leaf" onClick={() => openProject(p.id)}>
+        <span className="af-os-icon" aria-hidden="true">📁</span>
+        <span className="af-project-name">{p.name}</span>
+      </button>
+      <button
+        type="button"
+        className={`af-star-btn${p.starred ? ' active' : ''}`}
+        onClick={() => toggleStar(p)}
+        aria-label={p.starred ? `取消收藏 ${p.name}` : `收藏 ${p.name}`}
+        title={p.starred ? '取消收藏' : '收藏'}
+      >
+        {p.starred ? '★' : '☆'}
+      </button>
+    </div>
+  );
 
   const handleCreate = () => {
     const idea = window.prompt('一句话描述你的产品想法（例如: 做一个记账App）');
@@ -113,7 +155,7 @@ export function AfSidebar({ activePage, collapsed }: AfSidebarProps): JSX.Elemen
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
-          {/* K-7b: OS 层级树 — 一人公司根 → 项目 (部门仅显式创建才出现) */}
+          {/* Founder 2026-08-26: 收藏 + 最近3 + 全部 (OS 树) */}
           <div className="af-os-tree" data-testid="af-os-tree">
             <div className="af-os-node af-os-node--root" title="一人公司根目录 (可 rename / 复制出去)">
               <span className="af-os-icon" aria-hidden="true">{PERSONAL_COMPANY.icon}</span>
@@ -123,26 +165,24 @@ export function AfSidebar({ activePage, collapsed }: AfSidebarProps): JSX.Elemen
               {filtered.length === 0 && (
                 <div className="af-project-empty">（暂无项目 — 点新建开始）</div>
               )}
-              {activeProjects.length > 0 && (
+              {starredProjects.length > 0 && (
                 <>
-                  <div className="af-project-group">进行中</div>
-                  {activeProjects.map((p) => (
-                    <button key={p.id} type="button" className="af-project-item af-os-leaf" onClick={() => openProject(p.id)}>
-                      <span className="af-os-icon" aria-hidden="true">📁</span>
-                      {p.name}
-                    </button>
-                  ))}
+                  <div className="af-project-group">⭐ 收藏</div>
+                  {starredProjects.map(renderProjectRow)}
                 </>
               )}
-              {doneProjects.length > 0 && (
+              {recentProjects.length > 0 && (
                 <>
-                  <div className="af-project-group">已交付</div>
-                  {doneProjects.map((p) => (
-                    <button key={p.id} type="button" className="af-project-item af-os-leaf" onClick={() => openProject(p.id)}>
-                      <span className="af-os-icon" aria-hidden="true">📁</span>
-                      {p.name}
-                    </button>
-                  ))}
+                  <div className="af-project-group">🕐 最近</div>
+                  {recentProjects.map(renderProjectRow)}
+                </>
+              )}
+              {restProjects.length > 0 && (
+                <>
+                  <div className="af-project-group af-project-group--toggle" onClick={() => setShowAll((v) => !v)}>
+                    <span>{showAll ? '▾' : '▸'} 全部 ({restProjects.length})</span>
+                  </div>
+                  {showAll && restProjects.map(renderProjectRow)}
                 </>
               )}
             </div>

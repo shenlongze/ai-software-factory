@@ -2711,3 +2711,51 @@
   align-items: center;
   gap: 6px;
 }
+
+/* 收藏/最近/全部 项目行 + 星标 */
+.af-project-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.af-project-row .af-project-item {
+  flex: 1;
+  min-width: 0;
+}
+
+.af-project-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.af-star-btn {
+  width: 22px;
+  height: 22px;
+  font-size: 14px;
+  color: #6b7280;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.af-star-btn:hover {
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.12);
+}
+
+.af-star-btn.active {
+  color: #fbbf24;
+}
+
+.af-project-group--toggle {
+  cursor: pointer;
+  user-select: none;
+}
+
+.af-project-group--toggle:hover {
+  color: #e5e7eb;
+}

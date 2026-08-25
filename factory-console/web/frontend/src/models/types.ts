@@ -15,6 +15,7 @@ export interface ProjectSummary {
   status: string;
   lifecycle_stage: string | null;
   lifecycle_status: string | null;
+  starred?: boolean;                   // 收藏/关注 (Founder 2026-08-26; 旧数据缺省=未收藏)
   pending_approvals: number;
   tasks: Record<string, number>;
   last_activity: string | null;

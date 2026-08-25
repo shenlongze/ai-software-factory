@@ -1124,6 +1124,7 @@ class ConsoleService:
             summary = ProjectSummary(
                 id=project_id,
                 name=definition.name or (org.name if org else project_id),
+                starred=bool(org.starred) if org is not None else False,
                 description=definition.description,
                 language=definition.language,
                 repository=definition.repository,
@@ -1153,6 +1154,7 @@ class ConsoleService:
             summary = ProjectSummary(
                 id=project_id,
                 name=org.name or project_id,
+                starred=bool(org.starred) if org is not None else False,
                 status=org.lifecycle.value
                 if hasattr(org.lifecycle, "value")
                 else str(org.lifecycle),
@@ -1808,13 +1810,14 @@ class ConsoleService:
         *,
         name: str | None = None,
         idea: str | None = None,
+        starred: bool | None = None,
     ) -> Any | None:
-        """更新 org 项目 (PATCH /projects/{id} — 重命名/改 idea)。
+        """更新 org 项目 (PATCH /projects/{id} — 重命名/改 idea/收藏)。
 
-        name/idea 任一提供 → org Project 对应字段 (name/goal) + updated_at
+        name/idea/starred 任一提供 → org Project 对应字段 + updated_at
         落库 (复用 save_project 原子写, 零新数据空间)。错误语义:
         - 显式空 name/idea (strip 后) → ValueError (HTTP 400 — 空字段不落库)
-        - 两者皆空 (未提供任何更新) → ValueError (HTTP 400 — 无事可做)
+        - 三者皆空 (未提供任何更新) → ValueError (HTTP 400 — 无事可做)
         - org store 缺失 / 项目不存在 / org 损坏 → None (HTTP 404, 失败安全)
         成功 → 更新后 org Project (更新摘要由 API 层投影)。
         """
@@ -1824,8 +1827,8 @@ class ConsoleService:
             raise ValueError("name is required (空名字不落库)")
         if idea is not None and not cleaned_idea:
             raise ValueError("idea is required (空想法不落库)")
-        if not cleaned_name and not cleaned_idea:
-            raise ValueError("nothing to update (name/idea 至少提供一项)")
+        if not cleaned_name and not cleaned_idea and starred is None:
+            raise ValueError("nothing to update (name/idea/starred 至少提供一项)")
         store = self._project_store
         if store is None:
             return None
@@ -1841,6 +1844,8 @@ class ConsoleService:
                 update["name"] = cleaned_name
             if cleaned_idea:
                 update["goal"] = cleaned_idea
+            if starred is not None:
+                update["starred"] = starred
             updated = project.model_copy(update=update)
             store.save_project(updated)
             # B4 治理 (S10-010 Task 5): 目录镜像同步 — name 变化 → rename 目录;

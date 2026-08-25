@@ -282,6 +282,7 @@ class Project(_OrgModel):
     name: str
     user_id: str = ""                    # User (想法来源)
     goal: str = ""
+    starred: bool = False                # Founder 2026-08-26: 收藏/关注 (项目属性)
     lifecycle: ProjectState = ProjectState.IDEA
     repo_path: str = ""                  # S9-004: 已有代码库路径
     language: str = ""                   # S9-004: 主语言

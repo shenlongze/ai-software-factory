@@ -558,6 +558,7 @@ def update_project(
     *,
     name: str | None = None,
     idea: str | None = None,
+    starred: bool | None = None,
     logger: Any = None,
 ) -> ProjectUpdatedSummary | None:
     """PATCH /projects/{id} — 更新项目名/idea (S10-006.5 项目管理)。
@@ -568,7 +569,7 @@ def update_project(
     {project_id, name, idea, status} — idea = org Project.goal 原样回显
     (诚实, 不伪造); status 为当前生命周期 (更新不改生命周期)。
     """
-    project = service.update_project(project_id, name=name, idea=idea)
+    project = service.update_project(project_id, name=name, idea=idea, starred=starred)
     if project is None:
         return None
     status = (

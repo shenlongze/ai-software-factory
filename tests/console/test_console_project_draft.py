@@ -436,3 +436,49 @@ class TestDraftRouteFunction:
     def test_complete_no_store_returns_none(self):
         summary = _api.complete_discovery(_NoStoreService(), "P-1")
         assert summary is None
+
+
+class TestProjectStarred:
+    """Founder 2026-08-26 #1: 收藏/关注 (PATCH /api/projects/{id} {starred})。"""
+
+    @pytest.fixture
+    def client(self, factory_root: Path, event_logger):
+        service = _adapter.build_console_service(factory_root, event_logger=event_logger)
+        app = _adapter.build_app(service, event_logger=event_logger)
+        with TestClient(app) as c:
+            yield c
+
+    def test_star_unstar_project(self, client):
+        """PATCH starred=true → 列表 starred=true; PATCH false → 取消。"""
+        created = client.post("/api/projects", json={"idea": "做一个番茄钟 App", "name": "番茄钟"})
+        assert created.status_code == 201
+        pid = created.json()["project_id"]
+        # star
+        r = client.patch(f"/api/projects/{pid}", json={"starred": True})
+        assert r.status_code == 200
+        # 列表含 starred=true
+        listed = client.get("/api/projects").json()
+        me = next(p for p in listed if p["id"] == pid)
+        assert me["starred"] is True
+        # 取消
+        r2 = client.patch(f"/api/projects/{pid}", json={"starred": False})
+        assert r2.status_code == 200
+        listed2 = client.get("/api/projects").json()
+        me2 = next(p for p in listed2 if p["id"] == pid)
+        assert me2["starred"] is False
+
+    def test_star_persists_in_org(self, client, factory_root):
+        """starred 落库 org/projects.json (方案 A: 项目属性)。"""
+        created = client.post("/api/projects", json={"idea": "做一个笔记 App", "name": "笔记"})
+        pid = created.json()["project_id"]
+        client.patch(f"/api/projects/{pid}", json={"starred": True})
+        import json
+        org = json.load(open(factory_root / "org" / "projects.json"))
+        assert org["projects"][pid]["starred"] is True
+
+    def test_star_requires_action(self, client):
+        """无任何更新字段 → 400 (无事可做)。"""
+        created = client.post("/api/projects", json={"idea": "做一个博客", "name": "博客"})
+        pid = created.json()["project_id"]
+        r = client.patch(f"/api/projects/{pid}", json={})
+        assert r.status_code == 400

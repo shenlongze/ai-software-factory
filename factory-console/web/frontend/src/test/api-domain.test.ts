@@ -40,6 +40,7 @@ function proj(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
     repository: '',
     tech_stack: [],
     status: 'active',
+    starred: false,
     lifecycle_stage: null,
     lifecycle_status: null,
     pending_approvals: 0,

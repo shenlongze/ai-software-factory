@@ -86,6 +86,7 @@ class ProjectSummary(BaseModel):
 
     id: str
     name: str = ""
+    starred: bool = False                # Founder 2026-08-26: 收藏/关注
     description: str = ""
     language: str = ""
     repository: str = ""

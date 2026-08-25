@@ -3,7 +3,28 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
-## [v1.1.96] — 2026-08-26
+## [v1.1.97] — 2026-08-26
+
+**项目收藏/关注 + 左栏"收藏/最近3/全部" + K-7b 累积**。
+
+### Added
+
+- **项目收藏 (Founder #1)**: org Project 加 starred 字段 (方案 A: 项目属性, 落库
+  org/projects.json) + PATCH /api/projects/{id} {starred} + ProjectSummary 返回 starred
+- **左栏项目展示**: 收藏 ⭐ 区 (置顶) + 最近 🕐 3 个 (last_activity) + 全部 📋 (可折叠,
+  默认收起) — 项目行 ⭐ 星标切换 (AfSidebar)
+- K-7b 累积: 左栏 OS 树 / 右栏预览窗口 / 项目首页 (生命周期+Todo 列表⇄泳道+运维) /
+  对话分域 / 刷新+自动轮询
+
+### Fixed
+
+- service.list_projects org 循环补 starred (org-only 项目之前漏填)
+
+### 验证
+
+- 契约测试 +3 (star/unstar/落库/无事可做 400) · console+api 回归 0 新增失败 ·
+  前端 667 passed · 实测 PATCH starred 生效 · v1.1.97
+
 
 ### Added — K-6 项目级 RAG (战役第六战役)
 - **M5-2/B-8 KnowledgeStore**: 项目文档入库 (README/docs/PRD/工程/质量/经验 → 片段+元数据索引,

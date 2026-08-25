@@ -3,6 +3,29 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.90] — 2026-08-25
+
+**K-4 trace_id 贯穿 (S10-120)**: 一次请求从入口到执行全程同一 trace_id — 审计/执行/成本可追踪; audit_trace 决策链真正可用。
+
+### Added
+
+- **trace 上下文模块** (`audit/trace_context.py`): ContextVar (线程安全, with 退出自动恢复 — 不跨请求泄漏) — `new_trace_id()` (uuid4 hex) / `get_trace_id()` / `get_correlation_id()` (失败安全 → "") / `set_trace` / `trace_context` (context manager) / `child_correlation(trace_id)` (父子关联: 子动作 correlation = `trace_id:n`, 进程内递增线程安全)
+- **AuditEmitter.emit 自动填充** (`audit/audit_emitter.py`): trace_id/correlation_id 未显式传 (或空) → 读 contextvar 自动填充 (64 发射点零改动; 显式优先不覆盖; 无上下文 → "" 旧行为零变化)
+- **入口生成 trace_id**: InteractiveSession._dispatch 每用户输入包 trace_context (递归/重分发保持同一 trace) · FastAPI 请求中间件每请求 trace_id (X-Trace-ID 可选覆盖 + 响应回带) · cli_factory 命令执行入口包 trace_context · agent_runtime 执行入口包 trace_context (有上下文继承 — 链路不分裂; 策略子任务 correlation 关联)
+- **执行/成本链路**: execution_records 记录 += trace_id (contextvar) · CostLedger.record 缺省 trace_id 读 contextvar (显式优先)
+- **audit_trace 激活**: 审计事件 trace_id 已填充 → 审计追踪/决策链 (S10-069 现成 action) 真正可用
+- **F-9 最小面**: 关键调试日志带 trace_id (审计发射 + 会话分发入口 + 执行入口 — 不铺开)
+- 契约测试: `test_s10_120_trace_chain.py` 14 用例 (设计 §2 契约 1-9 + 版本断言)
+
+### Changed
+
+- 无上下文路径 → trace_id="" (旧行为零变化, 不伪造不泄漏); 审计封存/哈希/血缘语义不变
+- 既有测试更新: 版本断言 1.1.89 → 1.1.90 (test_s10_074/test_s10_103/test_s10_104/test_s10_105/test_s10_109/test_s10_111/test_s10_119/test_confirmation_intelligence)
+
+### 验证
+
+- 契约测试 14 passed · 聚焦回归 (audit/session/actions/cost_ledger) 全绿 · tests/console + tests/api 全量 0 新增失败 · v1.1.90
+
 ## [v1.1.89] — 2026-08-25
 
 **K-3 学习闭环 (S10-119, 主线 M4 全 6 项)**: 让 Agent 变强且可控 — 经验闭环 + 学习护栏 + 决策记忆 + 成本告警 + 画像分配 + L4 快照完整化 + E-2/E-3 评估驱动闭环。

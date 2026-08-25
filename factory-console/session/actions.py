@@ -39,6 +39,7 @@ from .action import (
 )
 from .agents import DEFAULT_AGENTS, AgentMatcher, AgentMetrics, AgentRegistry, workforce_snapshot
 from .audit import record_execution
+from ..audit.trace_context import get_trace_id
 from .commands import read_projects
 from .confirm import ConfirmationGate
 from .execution_replay import ReplayError
@@ -90,7 +91,7 @@ FRONTEND_AGENT = "flutter-dev"
 ARCH_REVIEW_PENDING = "pending_arch_review"
 
 #: 审计记录字段 (设计 §2.6): intent/action/agent/task/result/result_id/timestamp
-_RECORD_KEYS = ("intent", "action", "agent", "task", "result", "result_id", "timestamp", "error", "quality")
+_RECORD_KEYS = ("intent", "action", "agent", "task", "result", "result_id", "timestamp", "error", "quality", "trace_id")
 
 
 @dataclass
@@ -1198,6 +1199,9 @@ def _record_execution(
             "result": "success" if execution.success else "failed",
             "result_id": execution.result_id,
             "timestamp": datetime.now(timezone.utc).isoformat(),
+            # S10-120 K-4: 执行记录带 trace_id (contextvar — 一次请求全程
+            # 同一 trace_id, 执行/审计/成本可追踪; 无上下文 → "" 旧行为零变化)
+            "trace_id": get_trace_id(),
             "error": execution.error,
             # S10-117 C-2: 执行质量分落盘 (score/dimensions/version/scored_at + rules;
             # score=None + reason 诚实标注 — 可审计, 不阻断执行)

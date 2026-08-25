@@ -669,9 +669,10 @@ def build_app(
     PUT 等写动词不注册。
     static_dir 存在 → 挂 SPA 静态托管 (html=True); 否则纯 API 模式。
     """
-    from fastapi import FastAPI, HTTPException, Query
+    from fastapi import FastAPI, HTTPException, Query, Request
     from fastapi.responses import StreamingResponse
     from fastapi.staticfiles import StaticFiles
+    from typing import Callable
 
     # 延迟 import 11A 路由函数 + 事件辅助 (仅依赖 factory-console.api, 无 Web 依赖)
     _api = _console_import("api")
@@ -699,6 +700,22 @@ def build_app(
     workspace_root = Path(factory_root) if factory_root is not None else None
 
     app = FastAPI(title="AI Software Factory — Human Console Web", version=_factory_version)
+
+    # S10-120 K-4: 每请求 trace_id 上下文 (请求头 X-Trace-ID 可选覆盖; 无 →
+    # 自动生成; with 退出自动恢复 — 不跨请求泄漏; 失败安全)。审计/执行/成本
+    # 经 contextvar 自动继承同一 trace_id, 全程可追踪。
+    _trace_ctx = _console_import("audit.trace_context")
+
+    @app.middleware("http")
+    async def _request_trace_middleware(request: Request, call_next: Callable):
+        """每请求包 trace_context: X-Trace-ID 可选覆盖, 响应回带 X-Trace-ID。"""
+        trace_id = str(request.headers.get("X-Trace-ID") or "").strip()
+        if not trace_id:
+            trace_id = _trace_ctx.new_trace_id()
+        with _trace_ctx.trace_context(trace_id):
+            response = await call_next(request)
+        response.headers["X-Trace-ID"] = trace_id
+        return response
 
     def _raise_backlog_error(exc: Exception) -> NoReturn:
         """Backlog + Sprint/Milestone/Roadmap 端点统一错误映射 (404/409/400; 其余原样上抛)。"""

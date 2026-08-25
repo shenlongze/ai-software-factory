@@ -3748,10 +3748,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not argv_list or argv_list == ["--interactive"]:
         from .session.session import InteractiveSession  # 延迟导入 (Removal Isolation)
 
+        # 交互会话: 每用户输入由 session._dispatch 生成独立 trace_id (S10-120)
         return InteractiveSession().run()
     parser = build_parser()
     args = parser.parse_args(argv_list)
-    return FactoryCLI(ConfigProvider()).run(args)
+    # S10-120 K-4: CLI 命令执行入口包 trace_context — 单条命令全程同一
+    # trace_id (审计/执行/成本可追踪); 失败安全: 上下文异常不影响命令结果。
+    from .audit.trace_context import new_trace_id, trace_context
+
+    with trace_context(new_trace_id()):
+        return FactoryCLI(ConfigProvider()).run(args)
 
 
 if __name__ == "__main__":

@@ -25,10 +25,14 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Optional
 
 from .audit_event import EVENT_TYPES, AuditEvent, redact
 from .audit_store import AuditStore
+from .trace_context import get_correlation_id, get_trace_id
+
+logger = logging.getLogger("factory.audit")
 
 __all__ = ["AuditEmitter"]
 
@@ -87,6 +91,19 @@ class AuditEmitter:
                 self._store = AuditStore(workspace=workspace)
             if str(event_type or "") not in EVENT_TYPES:
                 return None
+            # S10-120 K-4: trace_id/correlation_id 未显式传 (或空) → 读
+            # contextvar 自动填充 (显式优先不覆盖; 无上下文 → "" 旧行为零变化;
+            # 失败安全 — get_* 异常返回 "")。
+            if not (fields.get("trace_id") or ""):
+                ctx_trace = get_trace_id()
+                if ctx_trace:
+                    fields = dict(fields)
+                    fields["trace_id"] = ctx_trace
+            if not (fields.get("correlation_id") or ""):
+                ctx_corr = get_correlation_id()
+                if ctx_corr:
+                    fields = dict(fields)
+                    fields["correlation_id"] = ctx_corr
             event_kwargs, extra = self._split_fields(fields)
             event = AuditEvent.create(
                 event_type,
@@ -102,7 +119,13 @@ class AuditEmitter:
                 merged = dict(event.metadata or {})
                 merged.update(extra)
                 event.metadata = redact(merged)
-            return self._store.append(event)
+            event = self._store.append(event)
+            # F-9 最小面: 关键审计发射日志带 trace_id (不铺开; 失败安全)
+            logger.debug(
+                "audit emit %s trace=%s corr=%s",
+                event_type, event.trace_id or "-", event.correlation_id or "-",
+            )
+            return event
         except Exception:  # noqa: BLE001 — 失败安全铁律: 审计故障不抛
             return None
 

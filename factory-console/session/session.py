@@ -50,6 +50,7 @@ from .llm_intent import LLMIntentParser
 from .renderer import HumanRenderer, Renderer, render_message
 from .router import IntentRouter, UnknownIntentError
 from .slash import SlashCommandRegistry
+from ..audit.trace_context import get_trace_id, new_trace_id, trace_context
 
 #: ANSI 转义序列清理 (readline 不可用/非 TTY 时方向键等产生 ^[[A 乱码 — 剔除防误输入)
 _ANSI_ESCAPE_RE = re.compile(
@@ -338,7 +339,29 @@ class InteractiveSession:
         return "\n".join(parts)
 
     def _dispatch(self, line: str) -> None:
-        """命令分发: "/" 开头 → slash registry; 否则 → Intent 执行链 (S10-048 P1)。
+        """命令分发 (S10-120 K-4 入口): 每用户输入包 trace_context — 一次请求
+        从入口到执行全程同一 trace_id (审计/执行/成本可追踪)。
+
+        已处于 trace 上下文 (passthrough 重分发 / _try_resume_with_name 递归
+        分发) → 保持同一 trace, 不重复生成; 无上下文 → 生成新 trace_id。
+        """
+        trace = get_trace_id()
+        if trace:
+            # F-9 最小面: 会话分发入口日志带 trace_id (不铺开)
+            logger.debug("session dispatch trace=%s line=%r", trace, line[:60])
+            self._dispatch_inner(line)
+        else:
+            with trace_context(new_trace_id()):
+                logger.debug(
+                    "session dispatch trace=%s line=%r",
+                    get_trace_id(), line[:60],
+                )
+                self._dispatch_inner(line)
+
+    def _dispatch_inner(self, line: str) -> None:
+        """分发主体 (S10-120: _dispatch 已建 trace 上下文后执行)。
+
+        命令分发: "/" 开头 → slash registry; 否则 → Intent 执行链 (S10-048 P1)。
 
         非 slash 输入:
         - S10-050 P5: 产品流程进行中 (conversation.product_intent 存在, 状态

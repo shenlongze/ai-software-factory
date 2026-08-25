@@ -37,6 +37,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+from ..audit.trace_context import get_trace_id
+
 #: 缺省成本账本文件 (~/.factory/cost/cost_records.json — 设计 §4 资产口径;
 #: 项目级记录 → projects/<slug>/cost_records.json, 由调用方显式指定)
 DEFAULT_LEDGER_FILE = Path.home() / ".factory" / "cost" / "cost_records.json"
@@ -232,6 +234,13 @@ class CostLedger:
             rec = {}
         if trace_id is not None:
             rec["trace_id"] = str(trace_id)
+        elif not (rec.get("trace_id") or ""):
+            # S10-120 K-4: trace_id 未显式传 → 读 contextvar 自动填充 (同一次
+            # 请求全程同一 trace_id; 无上下文 → 不写 "" — 旧行为零变化;
+            # 失败安全: get_trace_id 异常 → "" 不崩)。
+            ctx_trace = get_trace_id()
+            if ctx_trace:
+                rec["trace_id"] = ctx_trace
         if planning_decision_id is not None:
             rec["planning_decision_id"] = str(planning_decision_id)
         rec = CostRecord.from_dict(rec).to_dict()

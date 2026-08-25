@@ -32,9 +32,11 @@ test_result Artifact + 报告明示 FAIL, 审批人决定。
 
 from __future__ import annotations
 
+import importlib
+import logging
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from . import events as exec_events
 from .candidate import SequentialRunner
@@ -54,6 +56,53 @@ from .provider import ProviderInterface
 from .sandbox import Sandbox
 from .store import ExecStore
 from .validation import Validation, ValidationResult
+
+logger = logging.getLogger("factory.exec.agent_runtime")
+
+#: S10-120 K-4: trace 上下文模块 (factory-console.audit.trace_context — 双名
+#: 解析同 cli.py 模式; 延迟导入; 失败安全: 不可导入 → None → trace_id 保持 ""
+#: 旧行为零变化, 执行链不破坏)。
+_TRACE_CTX: Optional[Any] = None
+_TRACE_CTX_TRIED = False
+
+
+def _trace_module() -> Optional[Any]:
+    """trace_context 模块 (双名解析同 _console_import, 缓存; 失败安全 → None)。
+
+    关键: factory_console.audit.trace_context 与 factory-console.audit.trace_context
+    是**两个独立模块对象** (sys.modules 键不同 → ContextVar 各自独立), 若选错
+    名称, session/API 设置的 trace 无法传播到 exec runtime。故按仓库 stub 判定
+    优先使用与 factory-console 代码一致的名称 (源码态 → factory-console; 部署态
+    → factory_console), 保证同一进程共享同一 ContextVar。
+    """
+    global _TRACE_CTX, _TRACE_CTX_TRIED
+    if _TRACE_CTX_TRIED:
+        return _TRACE_CTX
+    _TRACE_CTX_TRIED = True
+    try:
+        import importlib.util as _util
+
+        _spec = _util.find_spec("factory_console")
+        _loc = str(_spec.origin or "") if _spec is not None else ""
+    except (ImportError, ValueError):  # noqa: BLE001 — 失败安全
+        _loc = ""
+    _is_repo_stub = (
+        "factory_console/__init__.py" in _loc.replace("\\", "/")
+        and "site-packages" not in _loc
+    )
+    names = (
+        ("factory-console.audit.trace_context", "factory_console.audit.trace_context")
+        if _is_repo_stub
+        else ("factory_console.audit.trace_context", "factory-console.audit.trace_context")
+    )
+    for name in names:
+        try:
+            _TRACE_CTX = importlib.import_module(name)
+            return _TRACE_CTX
+        except (ImportError, ModuleNotFoundError):  # noqa: BLE001 — 失败安全
+            continue
+    return None
+
 
 #: 项目上下文文件清单上限 (prompt 体积控制; 真实场景 Agent 可自行读文件)
 _PROJECT_CONTEXT_FILE_LIMIT = 60
@@ -293,6 +342,12 @@ class AgentRuntime:
     ) -> ExecutionResult:
         """执行请求 → ExecutionResult (沙箱副本 + patch; 全程失败安全)。
 
+        S10-120 K-4 执行入口: 包 trace_context — 一次请求从入口到执行全程
+        同一 trace_id (审计/执行/成本可追踪)。已处于 trace 上下文 (session
+        dispatch 等调用方) → 继承同一 trace (不分裂链路); 无上下文 (独立
+        执行入口) → 生成新 trace_id。失败安全: trace 模块不可导入 → 旧行为
+        零变化 (trace_id "")。
+
         T5.2 Feature Flag (execution_strategy_enabled, 默认 False):
         - False: 旧流程逐位不变 (Task→LLM→Validation 单次执行 → _execute_legacy)。
         - True: 多 Run 执行策略 (SequentialRunner N 次独立执行 → Candidate 列表
@@ -300,6 +355,28 @@ class AgentRuntime:
           经 last_evaluation 审计); 策略路径异常 → 失败安全回退旧流程 (执行链
           不破坏, 同 T4.1 ranking 回退语义)。
         """
+        mod = _trace_module()
+        trace = mod.get_trace_id() if mod is not None else ""
+        # F-9 最小面: 执行入口日志带 trace_id (不铺开; 失败安全)
+        logger.debug("agent runtime execute trace=%s task=%s", trace or "-", getattr(request, "task_id", "") or "")
+        if trace:
+            return self._execute(request, employee, agent_instance)
+        if mod is not None:
+            with mod.trace_context(mod.new_trace_id()):
+                logger.debug(
+                    "agent runtime execute trace=%s task=%s",
+                    mod.get_trace_id(), getattr(request, "task_id", "") or "",
+                )
+                return self._execute(request, employee, agent_instance)
+        return self._execute(request, employee, agent_instance)
+
+    def _execute(
+        self,
+        request: ExecutionRequest,
+        employee: Any = None,
+        agent_instance: Any = None,
+    ) -> ExecutionResult:
+        """执行请求主体 (S10-120: execute 已建 trace 上下文后执行)。"""
         if self._execution_strategy_enabled:
             try:
                 return self._execute_strategy(request, employee, agent_instance)
@@ -332,10 +409,19 @@ class AgentRuntime:
         """
         provider_id = getattr(self._developer.provider, "provider_id", "")
         model = getattr(self._developer.provider, "model", "") or ""
+        # S10-120 K-4: 子任务 correlation 关联 — 每个候选 Run 是同一 trace 的
+        # 子动作 (correlation_id = f"{trace}:{n}", 唯一可排序; get_chain 可寻)。
+        mod = _trace_module()
+        trace = mod.get_trace_id() if mod is not None else ""
+
+        def _run_executor(_index: int) -> ExecutionResult:
+            if mod is not None and trace:
+                with mod.trace_context(trace, mod.child_correlation(trace)):
+                    return self._execute_legacy(request, employee, agent_instance)
+            return self._execute_legacy(request, employee, agent_instance)
+
         runner = SequentialRunner(
-            executor=lambda _index: self._execute_legacy(
-                request, employee, agent_instance
-            ),
+            executor=_run_executor,
             runs=self._execution_strategy_runs,
             provider=provider_id,
             model=model,

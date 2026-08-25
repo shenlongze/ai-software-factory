@@ -2,7 +2,7 @@
 
 > **单一事实来源** — 当前系统到底有哪些功能、每个功能是什么、怎么用（CLI / API / 会话命令）、什么状态、从哪个版本开始有。
 >
-> 版本: **v1.1.89** · 更新: 2026-08-25 · 依据: 实测命令 + 代码核对 + CHANGELOG
+> 版本: **v1.1.90** · 更新: 2026-08-25 · 依据: 实测命令 + 代码核对 + CHANGELOG
 
 ## 0. 文档定位（与其他文档的分工）
 
@@ -263,6 +263,20 @@ API（Web/集成）:   http://127.0.0.1:8011/api/...      e.g. GET /api/board
   | E-2/E-3 评估闭环 | `session/eval_loop.py`: 低分→分类→建议→应用(repair_task)→复评提升断言 | v1.1.89 |
 - **状态**: ✅ · **关联**: docs/sprint10/S10-119 设计文档 · 待办清单 K-3/M4-1~6
 
+### 5.9 K-4 trace_id 贯穿（v1.1.90）
+- **说明**: 一次请求从入口到执行全程同一 trace_id — 审计/执行/成本可追踪; audit_trace 决策链 (S10-069) 真正可用
+- **入口**: 会话每输入自动 · API 每请求自动 (请求头 `X-Trace-ID` 可覆盖, 响应回带) · CLI 命令自动 · exec 执行自动 · 审计追踪/审计决策链 (`审计追踪 <trace_id>` / `审计决策链 <trace_id>`)
+- **功能明细**:
+  | 子功能 | 说明 | 起始版本 |
+  |---|---|---|
+  | trace 上下文 | `audit/trace_context.py`: ContextVar (线程安全, with 自动恢复不跨请求泄漏) — new_trace_id (uuid4 hex) / get_trace_id / get_correlation_id (失败安全 "") / trace_context / child_correlation (父子关联 trace:n) | v1.1.90 |
+  | emit 自动填充 | AuditEmitter.emit: trace_id/correlation_id 未显式传 → 读 contextvar (64 发射点零改动, 显式优先不覆盖) | v1.1.90 |
+  | 入口生成 | session._dispatch 每用户输入 · FastAPI 每请求中间件 · cli_factory 命令入口 · agent_runtime 执行入口 (有上下文继承不分裂) | v1.1.90 |
+  | 执行/成本链路 | execution_records += trace_id · CostLedger.record 缺省 trace_id 读 contextvar | v1.1.90 |
+  | audit_trace 激活 | 审计事件 trace_id 已填充 → 审计追踪/决策链按 trace 查全链路 (S10-069 action) | v1.1.90 |
+  | F-9 最小面 | 关键调试日志带 trace_id (审计发射/会话分发/执行入口 — 不铺开) | v1.1.90 |
+- **状态**: ✅ · **关联**: docs/sprint10/S10-120-k4-trace-plan.md · 待办清单 K-4/I-1/F-9
+
 ### 6.1 /board — 任务监控面板（核心）
 - **说明**: todolist + 进度条 + 标签；主线（M/P0）vs 周边（长期）分清楚；多源加载：待办清单 + Sprint 验收 + 方案书章节 + 代码证据自动同步
 - **入口（会话）**: `/board` `/board graph [项目]` `/board chain [项目]` `/board timeline` `/board report [--save]` `/board done <id>` `/board unmark <id>` `/board sync` `/board replay <exec_id> [--re-exec|--compare <id2>|--save]`
@@ -510,6 +524,7 @@ API（Web/集成）:   http://127.0.0.1:8011/api/...      e.g. GET /api/board
 | v1.1.49 | Board 单项目管理视图（全生命周期 11 段, 只读, 项目隔离） | 展示 |
 | v1.1.78 | M3 收尾三件套: ux/qa 真引擎+PRD 深度化 / ChangeControl 变更回流 / 架构审批门 · Agent/Skill 管理 | M3 (7/7) |
 | v1.1.81 | P0-10 注册表一致性 + P0-11 对称路径一致性（防遗漏机制） | 测试/工程保障 |
+| v1.1.90 | K-4 trace_id 贯穿 (S10-120): contextvar 入口生成 + emit 自动填充 + audit_trace 可用 + 执行/成本链路 | K-4 战役 |
 | v1.1.89 | K-3 学习闭环 (S10-119): M4-1 经验闭环 + M4-2 学习护栏 + M4-3 决策记忆 + M4-4 成本告警 + M4-5 画像分配 + M4-6 L4 快照 + E-2/E-3 评估闭环 | K-3 战役 |
 | v1.1.88 | Web board 质量视图接线 (view=quality + 📊 导航) — K-2 补 | 监控/质量 |
 | v1.1.87 | 发现对话上下文保持 (逃生挂起) + 委托/求助口语全覆盖 + LLM 失败响亮报错 (网络/超时/限流/5xx) | 会话/可信度 |

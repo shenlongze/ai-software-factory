@@ -494,7 +494,7 @@ class TestHelpLlmPath:
         mgr = _manager(analyzer=DI.DiscoveryIntentAnalyzer(llm_fn=llm_fn))
         mgr.handle("我想做个记账App, 只解决记账麻烦")
         assert mgr._product_pending == ["user", "core_features"]
-        r = mgr.handle("帮我想想")  # 非关键词 → 走 LLM help_request
+        r = mgr.handle("给我出出主意")  # 非关键词 → 走 LLM help_request
         assert r is not None
         assert "当前缺目标用户 — 建议方向:" in r.message
         assert "1. 个人用户" in r.message
@@ -515,7 +515,7 @@ class TestHelpLlmPath:
         )
         session = _start(idea="开始做个记账App",
                          analyzer=DI.DiscoveryIntentAnalyzer(llm_fn=llm_fn))
-        r = session.process_user_input("帮我想想")
+        r = session.process_user_input("给我出出主意")
         assert "当前缺目标用户 — 建议方向:" in r["message"]
         assert "1. 个人用户" in r["message"]
         assert session._suggestion_proposal == {"field": "user", "items": ["个人用户", "小商家"]}
@@ -532,7 +532,7 @@ class TestHelpLlmPath:
         )
         mgr = _manager(analyzer=DI.DiscoveryIntentAnalyzer(llm_fn=llm_fn))
         mgr.handle("我想做个记账App, 只解决记账麻烦")
-        r = mgr.handle("帮我想想")
+        r = mgr.handle("给我出出主意")
         assert "当前缺目标用户 — 建议方向:" in r.message
         assert "1. 个人用户" in r.message  # DEFAULT_SUGGESTIONS["user"] 兜底
 

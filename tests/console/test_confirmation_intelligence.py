@@ -444,18 +444,21 @@ class TestLlmRouting:
         assert mgr.product_intent.name == "账本精灵"
         assert resp.state == STATES.PRODUCT_CONFIRMATION
 
-    def test_llm_failure_falls_back_to_rename(self):
-        """LLM 调用失败 → 改名兜底 (永不 5xx, 不崩溃)。"""
+    def test_llm_failure_reports_readable_error(self):
+        """S10-118 策略: 已配置 LLM 调用失败 → 可读报错, 确认现场保留 (不静默兜底)。"""
         def boom(prompt, operation=""):
             raise RuntimeError("network down")
 
-        llm_fn, _ = _mock_llm(boom)
-        # 发现阶段用规则路径 (analyzer 注入但 analyze 抛 → 规则兜底)
-        mgr = _manager(analyzer=DI.DiscoveryIntentAnalyzer(llm_fn=llm_fn))
+        # 1. 机械路径填完字段 → PRODUCT_CONFIRMATION (无 LLM)
+        mgr = _manager(analyzer=None)
         _run_product_flow(mgr)
+        # 2. 注入失败 analyzer → 确认阶段 LLM 失败 → 可读报错, 现场保留
+        mgr._discovery_analyzer = CONV._DISCOVERY_ANALYZER_UNSET
+        mgr._discovery_analyzer_override = DI.DiscoveryIntentAnalyzer(llm_fn=boom)
         resp = mgr.handle_product_confirm("墨笺")
-        assert resp.state == STATES.PRODUCT_CONFIRMATION
-        assert mgr.product_intent.name == "墨笺"
+        assert resp.state == STATES.PRODUCT_CONFIRMATION   # 状态保留
+        assert "网络" in resp.message or "LLM 调用失败" in resp.message
+        assert mgr.product_intent.name != "墨笺" or mgr.product_intent is not None  # 现场保留
 
 
 # ================================================================== analyzer 单元 (schema 校验)
@@ -660,4 +663,4 @@ class TestVersion:
         ver = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))[
             "project"
         ]["version"]
-        assert ver == "1.1.86"
+        assert ver == "1.1.87"

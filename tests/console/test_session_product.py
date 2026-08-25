@@ -981,8 +981,9 @@ def test_answer_escape_list_projects_passthrough():
     mgr.start_product_discovery("x")
     resp = mgr.handle_product_answer("我现在有哪些项目")
     assert resp.passthrough is True
-    assert mgr.product_intent is None
-    assert mgr._product_pending == []
+    # S10-118: 逃生挂起 —— 现场保留, 不丢上下文 (显式取消才清空)
+    assert mgr.product_intent is not None
+    assert mgr._product_pending == ["problem", "user", "core_features"]
 
 
 def test_answer_batch_phrase_lists_remaining_questions():
@@ -1051,7 +1052,8 @@ def test_confirm_stage_escape_passthrough():
     _run_product_flow(mgr)
     resp = mgr.handle_product_confirm("项目列表")
     assert resp.passthrough is True
-    assert mgr.product_intent is None
+    # S10-118: 逃生挂起 —— 确认现场保留 (显式取消才清空)
+    assert mgr.product_intent is not None
 
 
 # ================================================================== 13. Session 端到端控制短语 (transcript 复现)
@@ -1087,7 +1089,8 @@ def test_session_escape_list_projects_transcript(capsys, tmp_path):
     out = capsys.readouterr().out
     # 空工作区 → 项目清单空表 (表头渲染), 而非产品追问吞掉该命令
     assert "id" in out and "name" in out
-    assert sess.conversation.product_intent is None
+    # S10-118: 逃生挂起 —— 现场保留 (项目清单不吞答案, 也不丢上下文)
+    assert sess.conversation.product_intent is not None
     assert "目标用户是谁" not in out  # 未被吞成 user 追问的答案
 
 

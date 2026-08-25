@@ -366,10 +366,12 @@ class InteractiveSession:
             # S10-084: 需求整理 (summary_only) → discovery.md 资产落盘 (失败安全)
             if getattr(resp, "summary_only", False) and getattr(resp, "product_snapshot", None):
                 self._write_discovery_artifact(resp.product_snapshot)
-            # 逃生 (passthrough) — 产品流程已让位 (product_intent=None),
-            # 原输入交回普通意图链处理 (不再当字段答案)
+            # 逃生 (passthrough) — S10-118 挂起语义: 产品流程现场保留,
+            # 原输入交回普通意图链处理 (不再当字段答案); 重分发时临时摘除
+            # product_intent 防递归, 分发完还原挂起现场 (上下文不断)
             if getattr(resp, "passthrough", False):
-                self._dispatch(line)
+                with conv.product_flow_detached():
+                    self._dispatch(line)
             elif getattr(resp, "exit_requested", False):
                 # S10-103: 发现/确认中 exit/quit/再见/退出会话 → 优雅退出
                 # (退出/取消 等控制短语仍由 conversation 层先处理, 不走到这里)

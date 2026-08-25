@@ -28,9 +28,12 @@ S10-050 产品发现流程 (P4):
 from __future__ import annotations
 
 import re
+from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Callable, Optional
+
+from .reasoning import ReasoningUnavailable
 
 from .discovery_guide import (
     APPROVE_WORDS,
@@ -101,6 +104,75 @@ def _resolve_answer_field(text: str, pending: list[str]) -> Optional[str]:
             return field
     # 3. 未命中 → 当前字段 (兼容正常回答, 逐字节不变)
     return pending[0]
+
+#: S10-118: 已配置 LLM 但调用失败 → 交互层可读报错 (Founder 策略: 未配置才兜底,
+#: 已配置必须走 LLM, 失败响亮报错不静默降级)。
+class LlmCallError(Exception):
+    """LLM 调用失败 (kind ∈ network/timeout/rate_limit/server_error/auth/invalid_response/other)。"""
+
+    def __init__(self, kind: str, detail: str) -> None:
+        self.kind = kind
+        self.detail = str(detail or "")
+        super().__init__(f"{kind}: {self.detail}")
+
+
+_LLM_ERROR_HINTS: dict[str, str] = {
+    "network": "网络连接失败，请检查网络后重试",
+    "timeout": "LLM 响应超时，请稍后重试",
+    "rate_limit": "触发限流（429），请稍等片刻再试",
+    "server_error": "模型服务端错误（5xx），请稍后重试",
+    "auth": "API Key 无效或无权限（401/403），请检查配置：factory config check",
+    "invalid_response": "模型返回内容无法解析，请重试",
+    "other": "LLM 调用失败，请重试",
+}
+
+
+def _classify_llm_error(exc: BaseException) -> LlmCallError:
+    """ReasoningError/ProviderError/httpx 异常链 → 用户可读分类 (确定性规则)。
+
+    优先解析消息中的 http 状态码 (openai http 429 / anthropic http 500 等),
+    再沿 __cause__ 链按异常类型名判 timeout/connect/ratelimit, 最后按消息关键词。
+    """
+    msg = str(exc)
+    # 1. http 状态码
+    m = re.search(r"http\s+(\d{3})", msg)
+    if m:
+        code = int(m.group(1))
+        if code == 429:
+            return LlmCallError("rate_limit", msg)
+        if code in (401, 403):
+            return LlmCallError("auth", msg)
+        if code == 408:
+            return LlmCallError("timeout", msg)
+        if 500 <= code < 600:
+            return LlmCallError("server_error", msg)
+    # 2. __cause__ 链按类型名
+    cur: Optional[BaseException] = exc
+    while cur is not None:
+        tn = type(cur).__name__.lower()
+        ts = str(cur).lower()
+        if "timeout" in tn or "timeout" in ts:
+            return LlmCallError("timeout", msg)
+        if "ratelimit" in tn or "429" in ts:
+            return LlmCallError("rate_limit", msg)
+        if "connect" in tn or "connectionerror" in tn or "networkerror" in tn:
+            return LlmCallError("network", msg)
+        cur = cur.__cause__
+    # 3. 消息关键词 (兜底: 异常链被拍平时也认)
+    low = msg.lower()
+    if "api key" in low or "unauthorized" in low or "401" in low or "403" in low:
+        return LlmCallError("auth", msg)
+    if "timeout" in low or "timed out" in low:
+        return LlmCallError("timeout", msg)
+    if "ratelimit" in low or "rate limit" in low:
+        return LlmCallError("rate_limit", msg)
+    if "network" in low or "connecterror" in low or "connection refused" in low or "dns" in low:
+        return LlmCallError("network", msg)
+    if ("invalid response" in low or "schema" in low or "json" in low
+            or "不合法" in low or "非法" in low):
+        return LlmCallError("invalid_response", msg)
+    return LlmCallError("other", msg)
+
 
 #: S10-102: 确认词已上收 discovery_guide.APPROVE_WORDS (确定性表唯一来源)
 #: S10-081: 确认阶段取消词 (其余非确认/改名/澄清/委托输入 → 按新分流处理)
@@ -408,7 +480,10 @@ class ConversationManager:
         if self.state != ConversationState.DISCOVERY:
             self.transition(ConversationState.DISCOVERY)
         # S10-099: LLM 可用 → 初始描述即解析 (历史=[text], 计划 §3.1)
-        analysis = self._analyze_discovery(text, history=[text])
+        try:
+            analysis = self._analyze_discovery(text, history=[text])
+        except LlmCallError as exc:  # S10-118: 已配置失败 → 可读报错, 状态保留
+            return self._llm_error_response(exc)
         if analysis is not None:
             handled = self._handle_llm_analysis(analysis, text)
             if handled is not None:
@@ -593,7 +668,10 @@ class ConversationManager:
         # (control→既有控制行为 / query→逃生 / help_request→建议展示 /
         #  product_description→提取合并 / field_answer→填当前字段+智能下一问;
         #  LLM 不可用/失败 → 现有逻辑不变)
-        analysis = self._analyze_discovery(raw, history=self._discovery_history(raw))
+        try:
+            analysis = self._analyze_discovery(raw, history=self._discovery_history(raw))
+        except LlmCallError as exc:  # S10-118: 已配置失败 → 可读报错, 状态保留
+            return self._llm_error_response(exc)
         if analysis is not None:
             handled = self._handle_llm_analysis(analysis, raw)
             if handled is not None:
@@ -652,8 +730,11 @@ class ConversationManager:
                 text, history=history,
                 system_question=self._last_system_question,
             )
-        except Exception:  # noqa: BLE001 — LLM 失败 → 规则兜底 (永不 5xx)
+        except ReasoningUnavailable:
+            # S10-118: 未配置 LLM → 确定性兜底 (策略保留)
             return None
+        except Exception as exc:  # noqa: BLE001 — 已配置但失败 → 响亮报错 (不静默)
+            raise _classify_llm_error(exc) from exc
 
     def _get_discovery_analyzer(self):
         """发现 LLM 分析器 (懒装配 + 缓存; 显式 None → 禁用)。
@@ -1042,6 +1123,37 @@ class ConversationManager:
             return self._enter_product_batch_mode()
         return None
 
+    @contextmanager
+    def product_flow_detached(self):
+        """逃生重分发 (S10-118): 临时摘除 product_intent 防递归, 分发完还原挂起现场。
+
+        逃生 (passthrough) 后宿主把原输入交回普通意图链重分发 —— 此时若
+        product_intent 仍在, 会再次进入产品流程 → 死循环。此上下文临时摘除
+        product_intent/state; 重分发若启动了新产品流程 → 保留新的; 否则还原挂起现场。
+        """
+        saved_intent = self.product_intent
+        saved_state = self.state
+        self.product_intent = None
+        try:
+            yield
+        finally:
+            if self.product_intent is None:
+                self.product_intent = saved_intent
+                self.state = saved_state
+
+    def _llm_error_response(self, exc: LlmCallError) -> ConversationResponse:
+        """S10-118: 已配置 LLM 调用失败 → 用户可读报错, 发现流程现场保留 (可重试)。
+
+        不迁移状态、不清 pending —— 用户重发即可继续; 错误分类见 _LLM_ERROR_HINTS。
+        """
+        hint = _LLM_ERROR_HINTS.get(exc.kind, _LLM_ERROR_HINTS["other"])
+        detail = str(exc.detail or "")[:120]
+        return ConversationResponse(
+            state=self.state,
+            message=self._guide_message(f"⚠️ {hint}\n(原始信息: {detail})"),
+            needs_input=True,
+        )
+
     def _reset_product_flow(self) -> None:
         """清空产品流程 (product_intent / pending / 批量模式) → 回 DISCOVERY。"""
         self.product_intent = None
@@ -1174,9 +1286,13 @@ class ConversationManager:
         )
 
     def _escape_product_flow(self, text: str) -> ConversationResponse:
-        """逃生: 用户输入其它意图 (项目列表/创建项目/当前项目) → 产品流程让位,
-        原输入交回宿主按普通意图链处理 (passthrough=True, 不再当字段答案)。"""
-        self._reset_product_flow()
+        """逃生 (S10-118 挂起语义): 用户输入其它意图 (项目列表/创建项目/当前项目) →
+        产品流程让位, 原输入交回宿主按普通意图链处理 (passthrough=True)。
+
+        不再 _reset_product_flow() —— 保留 product_intent/pending 现场 (挂起):
+        用户处理完其它意图后回到发现流程可继续 (Founder: "上下文不能断")。
+        显式取消 (取消/算了) 走 _cancel_product_discovery 才清空; 新想法启动覆盖旧现场。
+        """
         return ConversationResponse(
             state=self.state,
             message="",
@@ -1322,7 +1438,10 @@ class ConversationManager:
         if match_delegate(raw):
             return self._approve_product_confirm(confirm_fn=confirm_fn)
         # 4. LLM 分类 (确定性未决 且 LLM 可用 → analyze_confirmation → 按 category 路由)
-        llm = self._analyze_confirmation(raw)
+        try:
+            llm = self._analyze_confirmation(raw)
+        except LlmCallError as exc:  # S10-118: 已配置失败 → 可读报错, 状态保留
+            return self._llm_error_response(exc)
         if llm is not None:
             if llm.category in ("approve", "approve_next"):
                 return self._approve_product_confirm(
@@ -1424,8 +1543,11 @@ class ConversationManager:
         try:
             summary = self.product_intent.to_summary() if self.product_intent else ""
             return analyzer.analyze_confirmation(text, product_summary=summary)
-        except Exception:  # noqa: BLE001 — LLM 失败 → 改名兜底 (永不 5xx)
+        except ReasoningUnavailable:
+            # S10-118: 未配置 LLM → 兜底 (策略保留)
             return None
+        except Exception as exc:  # noqa: BLE001 — 已配置但失败 → 响亮报错
+            raise _classify_llm_error(exc) from exc
 
     def _clarify(self, message: str) -> ConversationResponse:
         """未识别/信息不足 → CLARIFICATION (等待用户输入)。"""

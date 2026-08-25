@@ -206,7 +206,9 @@ class TestControlNotField:
         resp = mgr.handle("我想看看现在有哪些项目")
         assert resp.passthrough is True
         assert resp.state == STATES.DISCOVERY
-        assert mgr.product_intent is None
+        # S10-118: 逃生挂起 —— 现场保留, 不丢上下文
+        assert mgr.product_intent is not None
+        assert mgr._product_pending
 
 
 # ================================================================== 3. 无 LLM 零变化 (验收 3)
@@ -306,21 +308,18 @@ class TestInvalidOutputFallback:
         "```json\n{not json}\n```",
         "",
     ])
-    def test_non_json_falls_back(self, bad_output):
-        """计划 §5-5: mock 返回非 JSON → 规则兜底逐字段问, 不崩溃。"""
+    def test_non_json_reports_error(self, bad_output):
+        """S10-118 策略: 已配置 LLM 返回非 JSON → 可读报错, 状态保留可重试 (不静默兜底)。"""
         llm_fn, _ = _mock_llm(bad_output)
         mgr = _manager(analyzer=DI.DiscoveryIntentAnalyzer(llm_fn=llm_fn))
         resp = mgr.handle("我想做一个台球计分APP")
         assert resp.state == STATES.DISCOVERY
-        assert resp.ai_generated is False
-        assert mgr.product_intent is not None
-        assert "问题" in resp.message or "痛点" in resp.message
-        resp = mgr.handle("台球比赛计分麻烦")
-        assert mgr.product_intent.problem == "台球比赛计分麻烦"
-        assert "目标用户" in resp.message
+        assert "无法解析" in resp.message
+        assert mgr.product_intent is not None          # 现场保留
+        assert mgr._product_pending                    # 可重试
 
-    def test_missing_schema_falls_back(self):
-        """计划 §5-5: 合法 JSON 但缺 category → schema 校验失败 → 规则兜底。"""
+    def test_missing_schema_reports_error(self):
+        """S10-118 策略: 合法 JSON 但缺 category → 可读报错, 状态保留。"""
         llm_fn, _ = _mock_llm({
             "extraction": {"problem": "X", "user": "Y"},
             "understanding": "我理解你要做 X",
@@ -328,16 +327,18 @@ class TestInvalidOutputFallback:
         mgr = _manager(analyzer=DI.DiscoveryIntentAnalyzer(llm_fn=llm_fn))
         resp = mgr.handle("我想做一个台球计分APP")
         assert resp.state == STATES.DISCOVERY
-        assert resp.ai_generated is False
-        assert "问题" in resp.message or "痛点" in resp.message
+        assert "无法解析" in resp.message
+        assert mgr._product_pending
 
-    def test_llm_exception_falls_back(self):
-        """LLM 调用抛异常 → 规则兜底 (不 5xx, 不伪造理解)。"""
+    def test_llm_exception_reports_error(self):
+        """S10-118 策略: 已配置 LLM 调用抛异常 → 可读报错 (超时), 状态保留。"""
         def broken(prompt, operation=""):
             raise RuntimeError("provider timeout")
 
         mgr = _manager(analyzer=DI.DiscoveryIntentAnalyzer(llm_fn=broken))
         resp = mgr.handle("我想做一个台球计分APP")
+        assert "超时" in resp.message
+        assert mgr._product_pending
         assert resp.state == STATES.DISCOVERY
         assert resp.ai_generated is False
         assert "问题" in resp.message or "痛点" in resp.message
@@ -539,7 +540,7 @@ class TestHelpRequestFlow:
         llm_fn, calls = _scripted_llm(_partial_analysis(), help_analysis)
         mgr = _manager(analyzer=DI.DiscoveryIntentAnalyzer(llm_fn=llm_fn))
         self._after_start(mgr)
-        resp = mgr.handle("帮我想想")  # 非关键词 → LLM help_request
+        resp = mgr.handle("给我出出主意")  # 非关键词 → LLM help_request
         assert resp is not None
         # 当前缺失字段是 user (LLM suggestions.field 对齐实际缺失字段)
         assert "当前缺目标用户 — 建议方向:" in resp.message

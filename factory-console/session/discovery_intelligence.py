@@ -108,10 +108,12 @@ _DISCOVERY_PROMPT = """你是 AI Factory 的产品经理。用户正在描述一
 规则:
 - 控制指令（取消/算了/整理/重新开始/查询项目/修改字段）→ category=control, 不提取字段
 - 查询（项目列表/当前项目/进度）→ category=query
-- 求助（给些建议/没有想法/你看着办/帮我出主意 — 用户不是给信息而是求建议）→
-  category=help_request, 不提取字段; suggestions.items 给当前最该补的缺失字段的
-  3-5 条方向性建议, suggestions.field 填该字段, suggestions.note 一句话说明;
-  若无缺失字段则 suggestions.items 留空
+  (注意: 委托/求助不属于 query —— "你把控一下/给我一点建议/你来定方向" 是求建议,
+  不是查询项目, 必须归 help_request, 不得归 query)
+- 求助（给些建议/没有想法/你看着办/帮我出主意/你把控一下/给我一点建议/你来定方向
+  — 用户不是给信息而是求建议/委托你决定 →）category=help_request, 不提取字段;
+  suggestions.items 给当前最该补的缺失字段的 3-5 条方向性建议, suggestions.field
+  填该字段, suggestions.note 一句话说明; 若无缺失字段则 suggestions.items 留空
 - 产品描述（哪怕不完整）→ category=product_description, 尽力提取; 提取不到的必填字段
   在 missing_reasons 说明为什么缺, smart_questions 只问最重要的一条
 - 纯字段回答（"给程序员用"）→ category=field_answer, 只填对应字段; 若还有必填字段

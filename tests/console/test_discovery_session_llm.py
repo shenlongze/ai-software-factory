@@ -438,7 +438,7 @@ class TestHelpRequestFlow:
         }
         llm_fn, calls = _scripted_llm(_partial_analysis(), help_analysis)
         session = _start(analyzer=DI.DiscoveryIntentAnalyzer(llm_fn=llm_fn))
-        resp = session.process_user_input("帮我想想")  # 非关键词 → LLM help_request
+        resp = session.process_user_input("给我出出主意")  # 非关键词 → LLM help_request
         assert "当前缺目标用户 — 建议方向:" in resp["message"]
         assert "1. 给开发者用" in resp["message"]
         assert session._suggestion_proposal == {

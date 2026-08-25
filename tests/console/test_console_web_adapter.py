@@ -185,7 +185,7 @@ class TestReadOnlyEndpoints:
     def test_projects(self, client):
         resp = client.get("/api/projects")
         assert resp.status_code == 200
-        assert resp.json()[0]["id"] == "demo"
+        assert resp.json()["items"][0]["id"] == "demo"
 
     def test_lifecycle_exists(self, client):
         resp = client.get("/api/projects/demo/lifecycle")
@@ -199,7 +199,7 @@ class TestReadOnlyEndpoints:
     def test_approvals(self, client):
         resp = client.get("/api/approvals")
         assert resp.status_code == 200
-        assert resp.json()[0]["artifact_id"] == "art-1"
+        assert resp.json()["items"][0]["artifact_id"] == "art-1"
 
     def test_approvals_pending_only_query(self, client):
         resp = client.get("/api/approvals?pending_only=true")
@@ -217,17 +217,17 @@ class TestReadOnlyEndpoints:
     def test_recommendations(self, client):
         resp = client.get("/api/recommendations")
         assert resp.status_code == 200
-        assert resp.json()[0]["score"] == 0.92
+        assert resp.json()["items"][0]["score"] == 0.92
 
     def test_experience(self, client):
         resp = client.get("/api/experience")
         assert resp.status_code == 200
-        assert resp.json()[0]["id"] == "exp-1"
+        assert resp.json()["items"][0]["id"] == "exp-1"
 
     def test_providers(self, client):
         resp = client.get("/api/providers")
         assert resp.status_code == 200
-        assert resp.json()[0]["id"] == "hermes"
+        assert resp.json()["items"][0]["id"] == "hermes"
 
     def test_unknown_api_path_404(self, client):
         resp = client.get("/api/does-not-exist")
@@ -261,12 +261,12 @@ class TestProjectManagementEndpoints:
     def test_update_project_empty_name_400(self, client):
         resp = client.patch("/api/projects/demo", json={"name": "   "})
         assert resp.status_code == 400
-        assert "name is required" in resp.json()["detail"]
+        assert "name is required" in resp.json()["error"]["message"]
 
     def test_update_project_empty_body_400(self, client):
         resp = client.patch("/api/projects/demo", json={})
         assert resp.status_code == 400
-        assert "nothing to update" in resp.json()["detail"]
+        assert "nothing to update" in resp.json()["error"]["message"]
 
     def test_update_project_missing_404(self, client):
         resp = client.patch("/api/projects/nope", json={"name": "x"})
@@ -297,7 +297,7 @@ class TestProjectManagementEndpoints:
         with TestClient(app) as c:
             resp = c.delete("/api/projects/demo")
         assert resp.status_code == 409
-        assert "project is running" in resp.json()["detail"]
+        assert "project is running" in resp.json()["error"]["message"]
 
 
 @requires_fastapi

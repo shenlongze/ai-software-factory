@@ -342,7 +342,7 @@ class TestSuggestHttp:
         """idea 空 → 400 (空想法不分析, 不发起 LLM 调用)。"""
         resp = client.post("/api/projects/suggest", json={"idea": "   "})
         assert resp.status_code == 400
-        assert "idea is required" in resp.json()["detail"]
+        assert "idea is required" in resp.json()["error"]["message"]
 
     def test_suggest_fallback_200_with_flag(self, client, monkeypatch):
         """LLM 不可用 → 200 fallback (ai_generated=false + questions=[] — 前端

@@ -27,7 +27,10 @@ function stubFetch(map: Record<string, unknown>): void {
     vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       for (const [k, v] of entries) {
-        if (url.includes(k)) return okResponse(v);
+        if (url.includes(k)) {
+          if (Array.isArray(v)) return okResponse({ items: v, count: v.length }); // API 规范 v1
+          return okResponse(v);
+        }
       }
       return { ok: false, status: 404, json: async () => ({ detail: 'not found' }) } as Response;
     }),

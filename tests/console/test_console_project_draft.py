@@ -160,7 +160,7 @@ class TestDraftCreateHttp:
         created = client.post("/api/projects", json={"idea": "开发一个记账 App"}).json()
         resp = client.get("/api/projects")
         assert resp.status_code == 200
-        ids = [p["id"] for p in resp.json()]
+        ids = [p["id"] for p in resp.json()["items"]]
         assert created["project_id"] in ids
 
     def test_draft_emits_org_project_created(self, client, event_store):
@@ -263,7 +263,7 @@ class TestDiscoveryAnswerHttp:
             json={"question": "Q", "answer": "   "},
         )
         assert resp.status_code == 400
-        assert "answer" in resp.json()["detail"]
+        assert "answer" in resp.json()["error"]["message"]
 
     def test_answer_empty_question_400(self, client):
         """空 question → 400 (空问题不记录)。"""
@@ -457,13 +457,13 @@ class TestProjectStarred:
         r = client.patch(f"/api/projects/{pid}", json={"starred": True})
         assert r.status_code == 200
         # 列表含 starred=true
-        listed = client.get("/api/projects").json()
+        listed = client.get("/api/projects").json()["items"]
         me = next(p for p in listed if p["id"] == pid)
         assert me["starred"] is True
         # 取消
         r2 = client.patch(f"/api/projects/{pid}", json={"starred": False})
         assert r2.status_code == 200
-        listed2 = client.get("/api/projects").json()
+        listed2 = client.get("/api/projects").json()["items"]
         me2 = next(p for p in listed2 if p["id"] == pid)
         assert me2["starred"] is False
 
@@ -499,12 +499,12 @@ class TestProjectArchive:
         created = client.post("/api/projects", json={"idea": "做一个归档测试", "name": "归档测试"})
         pid = created.json()["project_id"]
         client.patch(f"/api/projects/{pid}", json={"archived": True})
-        listed = client.get("/api/projects").json()
+        listed = client.get("/api/projects").json()["items"]
         me = next(p for p in listed if p["id"] == pid)
         assert me["archived"] is True
         # 恢复
         client.patch(f"/api/projects/{pid}", json={"archived": False})
-        listed2 = client.get("/api/projects").json()
+        listed2 = client.get("/api/projects").json()["items"]
         me2 = next(p for p in listed2 if p["id"] == pid)
         assert me2["archived"] is False
 

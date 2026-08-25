@@ -268,7 +268,7 @@ class TestWorkflowStagesEndpoint:
 
         resp = client.get(f"/api/workflows/{wf.id}/stages")
         assert resp.status_code == 200
-        runs = resp.json()
+        runs = resp.json()["items"]
         assert len(runs) == 5
         first = runs[0]
         assert first["status"] == "pending"
@@ -297,7 +297,7 @@ class TestWorkflowStagesEndpoint:
                      "output_artifact_ids": []},
             timestamp=base + timedelta(seconds=12.5),
         )
-        runs = client.get(f"/api/workflows/{wf.id}/stages").json()
+        runs = client.get(f"/api/workflows/{wf.id}/stages").json()["items"]
         first = runs[0]
         assert first["duration_s"] == pytest.approx(12.5)
         assert first["started_at"] == "2026-08-10T12:00:00+00:00"
@@ -314,7 +314,7 @@ class TestWorkflowStagesEndpoint:
             payload={"workflow_id": wf.id, "stage_id": stage.id,
                      "role_id": stage.role_id},
         )
-        runs = client.get(f"/api/workflows/{wf.id}/stages").json()
+        runs = client.get(f"/api/workflows/{wf.id}/stages").json()["items"]
         assert runs[0]["duration_s"] is None
 
     def test_stages_404_unknown_workflow(self, client):
@@ -364,7 +364,7 @@ class TestTimelineEndpoint:
         expected = self._seed_five_types(event_logger, project_id)
         resp = client.get(f"/api/projects/{project_id}/timeline")
         assert resp.status_code == 200
-        body = resp.json()
+        body = resp.json()["items"]
         assert [e["type"] for e in body] == expected
         by_type = {e["type"]: e for e in body}
         assert by_type["stage"]["stage_id"] == "STG-1"
@@ -387,7 +387,7 @@ class TestTimelineEndpoint:
             stage="viewed", action="view console dashboard", result="OK",
             payload={"view": "dashboard"},
         )
-        body = client.get(f"/api/projects/{project_id}/timeline").json()
+        body = client.get(f"/api/projects/{project_id}/timeline").json()["items"]
         assert len(body) == 1
         assert body[0]["event_type"] == "org.workflow.stage_started"
 
@@ -395,7 +395,7 @@ class TestTimelineEndpoint:
         """项目存在但无事件 → [] (诚实空态, 前端空态展示)。"""
         resp = client.get(f"/api/projects/{project_id}/timeline")
         assert resp.status_code == 200
-        assert resp.json() == []
+        assert resp.json() == {"items": [], "count": 0}
 
     def test_timeline_unknown_project_404(self, client):
         assert client.get("/api/projects/nope/timeline").status_code == 404
@@ -409,7 +409,7 @@ class TestTimelineEndpoint:
             )
         body = client.get(
             f"/api/projects/{project_id}/timeline?limit=2"
-        ).json()
+        ).json()["items"]
         assert len(body) == 2
         assert body[-1]["stage_id"] == "STG-2"
 
@@ -976,7 +976,7 @@ class TestRuntimeWorkspaceApi:
         """非法 type (非 browser|terminal) → 400 (语义清晰, 不依赖 422)。"""
         resp = self._create(client, project_id, "docker")
         assert resp.status_code == 400
-        assert "browser|terminal" in resp.json()["detail"]
+        assert "browser|terminal" in resp.json()["error"]["message"]
 
     @requires_fastapi
     def test_create_runtime_unknown_project_404(self, client):
@@ -986,10 +986,10 @@ class TestRuntimeWorkspaceApi:
     @requires_fastapi
     def test_list_runtimes_empty_then_after_create(self, client, project_id):
         """列表: 无实例 → [] (诚实空态); 创建后按 id 排序返回。"""
-        assert client.get(f"/api/projects/{project_id}/runtimes").json() == []
+        assert client.get(f"/api/projects/{project_id}/runtimes").json() == {"items": [], "count": 0}
         self._create(client, project_id, "browser")
         self._create(client, project_id, "terminal")
-        body = client.get(f"/api/projects/{project_id}/runtimes").json()
+        body = client.get(f"/api/projects/{project_id}/runtimes").json()["items"]
         assert len(body) == 2
         assert {r["type"] for r in body} == {"browser", "terminal"}
         assert [r["id"] for r in body] == sorted(r["id"] for r in body)  # id 排序
@@ -1044,7 +1044,7 @@ class TestRuntimeWorkspaceApi:
         client.post(f"/api/runtimes/{created['id']}/start")
         resp = client.post(f"/api/runtimes/{created['id']}/start")
         assert resp.status_code == 409
-        assert "cannot start" in resp.json()["detail"]
+        assert "cannot start" in resp.json()["error"]["message"]
 
     @requires_fastapi
     def test_stop_running_to_stopped(self, client, project_id):

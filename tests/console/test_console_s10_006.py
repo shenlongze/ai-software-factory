@@ -253,7 +253,7 @@ class TestReviewFeedbackHttp:
                 json={"artifact_id": "art-a", "gate_id": "gate-a", "comment": comment},
             )
             assert resp.status_code == 200
-        rounds = [r["round"] for r in client.get("/api/review-feedback?artifact_id=art-a").json()]
+        rounds = [r["round"] for r in client.get("/api/review-feedback?artifact_id=art-a").json()["items"]]
         assert rounds == [1, 2]
 
     def test_http_post_empty_comment_400(self, client):
@@ -263,7 +263,7 @@ class TestReviewFeedbackHttp:
             json={"artifact_id": "art-a", "gate_id": "gate-a", "comment": "   "},
         )
         assert resp.status_code == 400
-        assert "comment" in resp.json()["detail"]
+        assert "comment" in resp.json()["error"]["message"]
 
     def test_http_post_missing_artifact_id_400(self, client):
         """缺 artifact_id → 400 (round 按产物递增, 无产物无意义)。"""
@@ -272,7 +272,7 @@ class TestReviewFeedbackHttp:
             json={"artifact_id": "  ", "gate_id": "gate-a", "comment": "意见"},
         )
         assert resp.status_code == 400
-        assert "artifact_id" in resp.json()["detail"]
+        assert "artifact_id" in resp.json()["error"]["message"]
 
     def test_http_post_missing_store_503(self):
         """缺 store → 503 (失败安全: 审批决定不受反馈保存失败影响)。"""
@@ -296,14 +296,14 @@ class TestReviewFeedbackHttp:
         service.save_review_feedback(
             gate_id="gate-c", artifact_id="art-b", comment="意见C"
         )
-        assert len(client.get("/api/review-feedback").json()) == 3
-        art_a = client.get("/api/review-feedback?artifact_id=art-a").json()
+        assert len(client.get("/api/review-feedback").json()["items"]) == 3
+        art_a = client.get("/api/review-feedback?artifact_id=art-a").json()["items"]
         assert [r["comment"] for r in art_a] == ["意见A", "意见B"]
         gate_b = client.get(
             "/api/review-feedback?artifact_id=art-a&gate_id=gate-b"
-        ).json()
+        ).json()["items"]
         assert [r["comment"] for r in gate_b] == ["意见B"]
-        assert client.get("/api/review-feedback?gate_id=gate-c").json()[0]["artifact_id"] == "art-b"
+        assert client.get("/api/review-feedback?gate_id=gate-c").json()["items"][0]["artifact_id"] == "art-b"
 
     def test_http_get_no_store_empty(self):
         """缺 store → GET 200 [] (失败安全空态)。"""
@@ -312,7 +312,7 @@ class TestReviewFeedbackHttp:
         with TestClient(app) as c:
             resp = c.get("/api/review-feedback?artifact_id=art-a")
         assert resp.status_code == 200
-        assert resp.json() == []
+        assert resp.json() == {"items": [], "count": 0}
 
     def test_http_get_audit_view(self, client, event_store):
         """命中 GET 端点 → console.viewed (view=review_feedback) 只读审计。"""

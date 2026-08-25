@@ -283,7 +283,7 @@ class TestAgentExecutorApi:
                 json={"task_id": "T-nope", "agent_id": "developer-1"},
             )
             assert resp.status_code == 400, resp.text
-            assert "task not found" in resp.json()["detail"]
+            assert "task not found" in resp.json()["error"]["message"]
 
     def test_execute_endpoint_agent_not_found_400(self, tmp_path: Path):
         """agent not found → 400。"""
@@ -296,7 +296,7 @@ class TestAgentExecutorApi:
                 json={"task_id": "T-101", "agent_id": "ghost"},
             )
             assert resp.status_code == 400, resp.text
-            assert "agent not found" in resp.json()["detail"]
+            assert "agent not found" in resp.json()["error"]["message"]
 
     def test_execute_endpoint_empty_fields_400(self, tmp_path: Path):
         """空 task_id/agent_id → 400。"""

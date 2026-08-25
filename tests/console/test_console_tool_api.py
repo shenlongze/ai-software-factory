@@ -224,7 +224,7 @@ class TestToolApi:
                 json={"agent_id": "flutter-dev", "input": {"path": "notes.md"}},
             )
             assert resp.status_code == 403, resp.text
-            assert "permission denied" in resp.json()["detail"]
+            assert "permission denied" in resp.json()["error"]["message"]
 
     def test_execute_endpoint_tool_not_found_404(self, tmp_path: Path):
         """不存在 tool → 404。"""
@@ -235,7 +235,7 @@ class TestToolApi:
                 json={"agent_id": "backend-1", "input": {}},
             )
             assert resp.status_code == 404, resp.text
-            assert "tool not found" in resp.json()["detail"]
+            assert "tool not found" in resp.json()["error"]["message"]
 
     def test_execute_endpoint_empty_agent_400(self, tmp_path: Path):
         """空 agent_id → 400 (执行者必须明确)。"""
@@ -256,4 +256,4 @@ class TestToolApi:
                 json={"agent_id": "backend-1", "input": {}},
             )
             assert resp.status_code == 400, resp.text
-            assert "invalid input" in resp.json()["detail"]
+            assert "invalid input" in resp.json()["error"]["message"]

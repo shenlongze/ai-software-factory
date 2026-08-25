@@ -98,7 +98,7 @@ describe('api client ↔ 真实后端 8011 联调 (S10-014 Task 002)', () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL) => ({
       ok: true,
       status: 200,
-      json: async () => realShape,
+      json: async () => ({ items: realShape, count: realShape.length }), // API 规范 v1
     }));
     vi.stubGlobal('fetch', fetchMock);
     const got = await api.projects();

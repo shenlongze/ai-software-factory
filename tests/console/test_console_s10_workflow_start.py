@@ -207,7 +207,7 @@ class TestWorkflowStartHttp:
         """start 项目不存在 → 404 (诚实: 不存在不假装启动)。"""
         resp = client.post("/api/projects/P-NOT-EXIST/start")
         assert resp.status_code == 404
-        assert "not found" in resp.json()["detail"]
+        assert "not found" in resp.json()["error"]["message"]
 
     def test_start_409_duplicate_while_running(self, client, fake_start):
         """重复启动: 已有运行中的 workflow → 409 (诚实拒绝; 阻塞链 run_async=True)。"""
@@ -221,7 +221,7 @@ class TestWorkflowStartHttp:
             assert entered.wait(timeout=5), "blocking chain not entered"
             second = client.post(f"/api/projects/{pid}/start")
             assert second.status_code == 409
-            assert "already running" in second.json()["detail"]
+            assert "already running" in second.json()["error"]["message"]
         finally:
             release.set()
             _wait_run_finished(pid)
@@ -232,7 +232,7 @@ class TestWorkflowStartHttp:
         pid = self._create_project(client)
         resp = client.post(f"/api/projects/{pid}/start")
         assert resp.status_code == 503
-        assert "key" in resp.json()["detail"].lower()
+        assert "key" in resp.json()["error"]["message"].lower()
 
     # ------------------------------------------------------------- chat
 
@@ -241,7 +241,7 @@ class TestWorkflowStartHttp:
         pid = self._create_project(client)
         resp = client.post(f"/api/projects/{pid}/chat", json={"message": "   "})
         assert resp.status_code == 400
-        assert "message is empty" in resp.json()["detail"]
+        assert "message is empty" in resp.json()["error"]["message"]
 
     def test_chat_404_unknown_project(self, client, fake_start):
         """chat 项目不存在 → 404。"""
@@ -352,7 +352,7 @@ class TestWorkflowStartHttp:
         assert resp.status_code == 200
         timeline = client.get(f"/api/projects/{pid}/timeline")
         assert timeline.status_code == 200
-        events = timeline.json()
+        events = timeline.json()["items"]
         stage_events = [
             e
             for e in events

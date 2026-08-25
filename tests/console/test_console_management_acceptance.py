@@ -310,7 +310,7 @@ class TestScenario3DependencyGate:
             json={"status": "ready"},
         )
         assert resp.status_code == 400
-        assert "dependenc" in resp.json()["detail"]
+        assert "dependenc" in resp.json()["error"]["message"]
         # B 状态未被破坏 (仍 todo)
         detail = client.get(
             f"/api/projects/{project_id}/backlog/task/{b['id']}"
@@ -450,7 +450,7 @@ class TestGovernanceB3DeleteCleanup:
         # rebuild_index 后索引与列表均不含已删项目
         index = space.rebuild_index()
         assert project_id not in index
-        listed = {p["id"] for p in client.get("/api/projects").json()}
+        listed = {p["id"] for p in client.get("/api/projects").json()["items"]}
         assert project_id not in listed
 
 
@@ -495,7 +495,7 @@ class TestGovernanceB4RenameMirror:
         # 既有 management 数据随目录 rename 保留 (零丢失)
         assert (space.space_dir(new_slug) / "management" / "backlog" / "task.json").is_file()
         # 列表仍可见新名
-        listed = {p["id"]: p for p in client.get("/api/projects").json()}
+        listed = {p["id"]: p for p in client.get("/api/projects").json()["items"]}
         assert listed[project_id]["name"] == "Project Alpha"
 
     def test_patch_idea_syncs_mirror(self, project, factory_root: Path):

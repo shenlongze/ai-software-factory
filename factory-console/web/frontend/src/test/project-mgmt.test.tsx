@@ -167,7 +167,7 @@ describe('项目管理 — 重命名 (PATCH)', () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
       if (path === '/api/projects') {
-        return { ok: true, status: 200, json: async () => [PROJECT] } as Response;
+        return { ok: true, status: 200, json: async () => ({ items: [PROJECT], count: 1 }) } as Response;
       }
       if (path === '/api/projects/ledger-app' && init?.method === 'PATCH') {
         return { ok: false, status: 400, json: async () => ({ detail: 'empty name' }) } as Response;
@@ -262,7 +262,7 @@ describe('项目管理 — 删除 (DELETE)', () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
       if (path === '/api/projects') {
-        return { ok: true, status: 200, json: async () => [PROJECT] } as Response;
+        return { ok: true, status: 200, json: async () => ({ items: [PROJECT], count: 1 }) } as Response;
       }
       if (path === '/api/projects/ledger-app' && init?.method === 'DELETE') {
         return { ok: false, status: 409, json: async () => ({ detail: 'project is running' }) } as Response;

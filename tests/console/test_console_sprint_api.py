@@ -202,7 +202,7 @@ class TestSprintCreateHttp:
             f"/api/projects/{project_id}/sprints", json={"name": "   "}
         )
         assert resp.status_code == 400
-        assert "name" in resp.json()["detail"]
+        assert "name" in resp.json()["error"]["message"]
 
     def test_create_sprint_task_ref_missing_400(self, project):
         """task_ref 引用不存在 Task → 400 (引用校验, 输入错误)。"""
@@ -212,7 +212,7 @@ class TestSprintCreateHttp:
             json={"name": "S", "task_refs": ["TASK-nope"]},
         )
         assert resp.status_code == 400
-        assert "task" in resp.json()["detail"]
+        assert "task" in resp.json()["error"]["message"]
 
     def test_create_sprint_project_missing_404(self, factory_root, event_logger):
         """项目不存在 → 404。"""
@@ -259,7 +259,7 @@ class TestSprintListDetailHttp:
         client, project_id = project
         resp = client.get(f"/api/projects/{project_id}/sprints/SPRINT-nope")
         assert resp.status_code == 404
-        assert "sprint" in resp.json()["detail"]
+        assert "sprint" in resp.json()["error"]["message"]
 
     def test_list_sprints_project_missing_404(self, factory_root, event_logger):
         service = _adapter.build_console_service(factory_root, event_logger=event_logger)
@@ -320,7 +320,7 @@ class TestSprintPatchHttp:
             json={"task_refs": ["TASK-nope"]},
         )
         assert resp.status_code == 400
-        assert "task" in resp.json()["detail"]
+        assert "task" in resp.json()["error"]["message"]
 
     def test_patch_sprint_status_planning_to_active_200(self, project):
         """受控转换: planning → active → 200。"""
@@ -354,7 +354,7 @@ class TestSprintPatchHttp:
             json={"status": "completed"},
         )
         assert resp.status_code == 409
-        assert "transition" in resp.json()["detail"]
+        assert "transition" in resp.json()["error"]["message"]
         # 走完合法链后回退 → 409
         for status in ("active", "completed"):
             resp = client.patch(
@@ -377,7 +377,7 @@ class TestSprintPatchHttp:
             json={"status": "paused"},
         )
         assert resp.status_code == 400
-        assert "status" in resp.json()["detail"]
+        assert "status" in resp.json()["error"]["message"]
 
     def test_patch_sprint_missing_404(self, project):
         client, project_id = project
@@ -505,7 +505,7 @@ class TestMilestoneCreateHttp:
             json={"name": "M", "task_refs": ["TASK-nope"]},
         )
         assert resp.status_code == 400
-        assert "task" in resp.json()["detail"]
+        assert "task" in resp.json()["error"]["message"]
 
     def test_create_milestone_empty_name_400(self, project):
         client, project_id = project
@@ -537,7 +537,7 @@ class TestMilestoneListPatchDeleteHttp:
         assert resp.json()["name"] == "Milestone One"
         resp = client.get(f"/api/projects/{project_id}/milestones/MS-nope")
         assert resp.status_code == 404
-        assert "milestone" in resp.json()["detail"]
+        assert "milestone" in resp.json()["error"]["message"]
 
     def test_patch_milestone_fields_200(self, project):
         client, project_id = project
@@ -634,7 +634,7 @@ class TestRoadmapHttp:
             json={"milestone_id": "MS-nope"},
         )
         assert resp.status_code == 400
-        assert "milestone" in resp.json()["detail"]
+        assert "milestone" in resp.json()["error"]["message"]
 
     def test_roadmap_append_dedupes(self, project):
         """重复追加同一 milestone → 去重 (幂等)。"""

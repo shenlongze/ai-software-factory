@@ -256,7 +256,7 @@ describe('RuntimePanel — Create Modal ([+] 创建)', () => {
     const fn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       if (String(input) === RUNTIMES_URL) {
         if (init?.method === 'POST') return okResponse(created);
-        return okResponse(list);
+        return okResponse({ items: list, count: list.length }); // API 规范 v1
       }
       return notFound();
     });
@@ -312,7 +312,7 @@ describe('RuntimePanel — Create Modal ([+] 创建)', () => {
     const fetchMock = stubFetch({ [RUNTIMES_URL]: [] });
     fetchMock.mockImplementation(async (input: RequestInfo, init?: RequestInit) => {
       if (String(input) === RUNTIMES_URL && init?.method === 'POST') return notFound();
-      if (String(input) === RUNTIMES_URL) return okResponse([]);
+      if (String(input) === RUNTIMES_URL) return okResponse({ items: [], count: 0 });
       return notFound();
     });
     render(<RuntimePanel projectId={PROJECT} />);
@@ -394,7 +394,7 @@ describe('RuntimePanel — Browser Instance (iframe + 工具栏)', () => {
         return { ok: false, status: 409, json: async () => ({ detail: 'runtime not running' }) } as Response;
       }
       if (String(input) === RUNTIMES_URL) {
-        return okResponse([browserInstance('rt-b')]);
+        return okResponse({ items: [browserInstance('rt-b')], count: 1 });
       }
       return { ok: false, status: 404, json: async () => ({ detail: 'not found' }) } as Response;
     });
@@ -438,7 +438,7 @@ describe('RuntimePanel — REST 轮询 (2s, 不依赖 SSE runtime.*)', () => {
     });
     expect(screen.getByTestId('runtime-card-rt-1')).toHaveAttribute('data-status', 'starting');
 
-    fetchMock.mockImplementation(async () => okResponse([browserInstance('rt-1', 'running')]));
+    fetchMock.mockImplementation(async () => okResponse({ items: [browserInstance('rt-1', 'running')], count: 1 }));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(RUNTIME_POLL_MS);
     });

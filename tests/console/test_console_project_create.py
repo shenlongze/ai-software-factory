@@ -146,7 +146,7 @@ class TestCreateProjectHttp:
         """idea 空 → 400 (空想法不创建, 语义清晰)。"""
         resp = client.post("/api/projects", json={"idea": "   "})
         assert resp.status_code == 400
-        assert "idea is required" in resp.json()["detail"]
+        assert "idea is required" in resp.json()["error"]["message"]
 
     def test_missing_idea_400(self, client):
         """无 idea 键 (pydantic 422 由路由函数缺省校验) — 兼容: 显式空字符串同 400。"""
@@ -159,7 +159,7 @@ class TestCreateProjectHttp:
             "/api/projects", json={"idea": "做一个博客", "project_type": "quantum"}
         )
         assert resp.status_code == 400
-        assert "project_type" in resp.json()["detail"]
+        assert "project_type" in resp.json()["error"]["message"]
 
     def test_invalid_tech_400(self, client):
         """tech 非法 (非 auto|flutter|react|vue) → 400 宽容收窄。"""
@@ -167,7 +167,7 @@ class TestCreateProjectHttp:
             "/api/projects", json={"idea": "做一个博客", "tech": "assembly"}
         )
         assert resp.status_code == 400
-        assert "tech" in resp.json()["detail"]
+        assert "tech" in resp.json()["error"]["message"]
 
     def test_no_store_503(self):
         """org store 缺失 → 503 (失败安全: 创建不可用, 不拖垮 API)。"""
@@ -181,7 +181,7 @@ class TestCreateProjectHttp:
         created = client.post("/api/projects", json={"idea": "开发一个记账 App"}).json()
         resp = client.get("/api/projects")
         assert resp.status_code == 200
-        ids = [p["id"] for p in resp.json()]
+        ids = [p["id"] for p in resp.json()["items"]]
         assert created["project_id"] in ids
 
     def test_create_emits_org_project_created(self, client, event_store):

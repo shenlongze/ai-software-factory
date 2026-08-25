@@ -47,3 +47,16 @@
   scripts 含 `[E5001]`/`[E5002]`/`[E5101]`; 且本表均已登记
 - 行为断言: `factory run` 缺参数 → stderr 含 `[E4001]` rc 2;
   `factory eval --gate patch` 空 workspace → stderr 含 `[E4102]` rc 1
+
+## E7xxx — HTTP API 域 (API 规范 v1, 2026-08-26)
+
+> 全局异常处理器统一输出 `{"error": {code, message, detail, suggestion}}`; code 缺省 = E7{status}。
+> 契约测试 tests/console/test_s10_125_api_standard.py 断言错误包络 + 集合包络。
+
+| 模块 | CODE | 消息 | 建议下一步 |
+|---|---|---|---|
+| http_api | E7400 | 参数错误 (400) | 见 detail, 修正参数重试 |
+| http_api | E7404 | 资源不存在 (404) | 检查 id/路径 |
+| http_api | E7409 | 冲突/状态非法 (409) | 见 detail (状态机/运行中) |
+| http_api | E7422 | 请求体校验失败 (422) | 见 detail, 修正请求体 |
+| http_api | E7500 | 服务器内部错误 (500) | 查看服务日志 |

@@ -379,7 +379,7 @@ describe('AgentTimeline — 空态 / 错误态', () => {
       return {
         ok: true,
         status: 200,
-        json: async () => [tlEvent({ id: 'e1', type: 'user', message: '重试后的事件' })],
+        json: async () => ({ items: [tlEvent({ id: 'e1', type: 'user', message: '重试后的事件' })], count: 1 }),
       } as Response;
     });
     vi.stubGlobal('fetch', failingFetch);

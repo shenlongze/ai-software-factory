@@ -407,7 +407,7 @@ class TestScenario3LegacyMigration:
         _seed_legacy_project(factory_root)
         resp = client.get("/api/projects")
         assert resp.status_code == 200
-        by_id = {p["id"]: p for p in resp.json()}
+        by_id = {p["id"]: p for p in resp.json()["items"]}
         assert "P-OLD" in by_id
         assert by_id["P-OLD"]["name"] == "ScorePocket"
         assert by_id["P-OLD"]["status"] == "idea"  # 旧 lifecycle 值兼容保留
@@ -453,7 +453,7 @@ class TestScenario3LegacyMigration:
         assert resp.json()["name"] == "ScorePocket Pro"
         org = _org_project(factory_root, "P-OLD")
         assert org is not None and org.name == "ScorePocket Pro"
-        listed = {p["id"]: p for p in client.get("/api/projects").json()}
+        listed = {p["id"]: p for p in client.get("/api/projects").json()["items"]}
         assert listed["P-OLD"]["name"] == "ScorePocket Pro"
 
     def test_legacy_delete_works(self, client, factory_root: Path):
@@ -503,7 +503,7 @@ class TestScenario4IndexRebuild:
         assert not space.index_path.exists()
         resp = client.get("/api/projects")
         assert resp.status_code == 200
-        by_id = {p["id"]: p for p in resp.json()}
+        by_id = {p["id"]: p for p in resp.json()["items"]}
         assert by_id[pid]["name"] == "AI Note"
 
     def test_index_delete_self_heal_on_indexed_operation(self, client, factory_root: Path):
@@ -592,7 +592,7 @@ class TestFullJourneyRegression:
         assert run["runs"][0]["stages"][0]["stage"] == "product"
         assert "total_tokens" in run["runs"][0]["totals"]
         # 7. Timeline 事件可见 (假链写真实 org.* 事件 — 与 Timeline 同 events.db)
-        timeline = client.get(f"/api/projects/{pid}/timeline").json()
+        timeline = client.get(f"/api/projects/{pid}/timeline").json()["items"]
         stage_events = [
             e
             for e in timeline

@@ -115,7 +115,8 @@ async function deleteJson<T>(path: string): Promise<T> {
 /** API 客户端 (查询全 GET; 写路径 = 审批决定/项目创建/Runtime 生命周期 POST + 项目管理 PATCH/DELETE)。 */
 export const api = {
   dashboard: () => getJson<ConsoleDashboard>('/api/dashboard'),
-  projects: () => getJson<ProjectSummary[]>('/api/projects'),
+  // API 规范 v1 (2026-08-26): 集合统一 {items, count} — 前端解包
+  projects: async () => (await getJson<{ items: ProjectSummary[] }>('/api/projects')).items,
   // S10-007 阶段三增强: AI 想法理解 (POST /api/projects/suggest → 建议名称/
   // 一句话理解/澄清问题; ai_generated=false → 规则 fallback, 前端标注"快速模式")
   suggestProject: (idea: string) => sendJson<IdeaSuggestion>('/api/projects/suggest', { idea }),
@@ -166,31 +167,31 @@ export const api = {
     getJson<RunStatusResponse>(
       `/api/projects/${encodeURIComponent(projectId)}/run-status`,
     ),
-  approvals: (pendingOnly = false) =>
-    getJson<ApprovalSummary[]>(`/api/approvals${pendingOnly ? '?pending_only=true' : ''}`),
+  approvals: async (pendingOnly = false) =>
+    (await getJson<{ items: ApprovalSummary[] }>(`/api/approvals${pendingOnly ? '?pending_only=true' : ''}`)).items,
   // S9-002: 组织级审批门 (org ApprovalGate) — 可操作
-  approvalGates: (pendingOnly = false) =>
-    getJson<ApprovalGateSummary[]>(
+  approvalGates: async (pendingOnly = false) =>
+    (await getJson<{ items: ApprovalGateSummary[] }>(
       `/api/approval-gates${pendingOnly ? '?status=pending' : ''}`,
-    ),
+    )).items,
   decision: (decisionId: string) =>
     getJson<DecisionSummary>(`/api/decisions/${encodeURIComponent(decisionId)}`),
-  recommendations: (limit = 10) =>
-    getJson<RecommendationSummary[]>(`/api/recommendations?limit=${limit}`),
-  experience: (limit = 10) => getJson<ExperienceSummary[]>(`/api/experience?limit=${limit}`),
-  providers: () => getJson<ProviderSummary[]>('/api/providers'),
+  recommendations: async (limit = 10) =>
+    (await getJson<{ items: RecommendationSummary[] }>(`/api/recommendations?limit=${limit}`)).items,
+  experience: async (limit = 10) => (await getJson<{ items: ExperienceSummary[] }>(`/api/experience?limit=${limit}`)).items,
+  providers: async () => (await getJson<{ items: ProviderSummary[] }>('/api/providers')).items,
   // S9-002: 组织级 Workflow / Artifact (只读查询)
-  workflows: (projectId?: string) =>
-    getJson<WorkflowSummary[]>(`/api/workflows${projectId ? `?project_id=${encodeURIComponent(projectId)}` : ''}`),
+  workflows: async (projectId?: string) =>
+    (await getJson<{ items: WorkflowSummary[] }>(`/api/workflows${projectId ? `?project_id=${encodeURIComponent(projectId)}` : ''}`)).items,
   workflow: (workflowId: string) =>
     getJson<WorkflowDetail>(`/api/workflows/${encodeURIComponent(workflowId)}`),
-  artifacts: (filters: { projectId?: string; workflowId?: string; type?: string } = {}) => {
+  artifacts: async (filters: { projectId?: string; workflowId?: string; type?: string } = {}) => {
     const params = new URLSearchParams();
     if (filters.projectId) params.set('project_id', filters.projectId);
     if (filters.workflowId) params.set('workflow_id', filters.workflowId);
     if (filters.type) params.set('type', filters.type);
     const qs = params.toString();
-    return getJson<ArtifactSummary[]>(`/api/artifacts${qs ? `?${qs}` : ''}`);
+    return (await getJson<{ items: ArtifactSummary[] }>(`/api/artifacts${qs ? `?${qs}` : ''}`)).items;
   },
   // S9-002: 审批决定 (Console 唯一写路径; source=console 审计由后端落库)
   // S9-003: 可选 comment 透传 (Review 页反馈输入 → gate.comment 持久化;
@@ -213,12 +214,12 @@ export const api = {
     getJson<ArtifactContent>(`/api/artifacts/${encodeURIComponent(artifactId)}/content`),
   // S10-006: 审核反馈历史 (Feedback Loop — GET /api/review-feedback?artifact_id=&gate_id=
   // 过滤均可选; round 升序, 下一轮 Agent 重生成输入按序消费; 缺 store → [] 失败安全)
-  reviewFeedback: (artifactId?: string, gateId?: string) => {
+  reviewFeedback: async (artifactId?: string, gateId?: string) => {
     const params = new URLSearchParams();
     if (artifactId != null && artifactId.length > 0) params.set('artifact_id', artifactId);
     if (gateId != null && gateId.length > 0) params.set('gate_id', gateId);
     const qs = params.toString();
-    return getJson<ReviewFeedback[]>(`/api/review-feedback${qs ? `?${qs}` : ''}`);
+    return (await getJson<{ items: ReviewFeedback[] }>(`/api/review-feedback${qs ? `?${qs}` : ''}`)).items;
   },
   // S10-006: 保存审核反馈 (POST /api/review-feedback — Reject 决定时同步保存结构化
   // 意见; 空意见 → 400 不落库; 缺 store → 503 失败安全)
@@ -237,18 +238,18 @@ export const api = {
   // S10-002: Runtime API (UI 与 CLI 共用; 全部只读 GET)
   projectWorkflow: (projectId: string) =>
     getJson<WorkflowDetail>(`/api/projects/${encodeURIComponent(projectId)}/workflow`),
-  workflowStages: (workflowId: string) =>
-    getJson<StageRunSummary[]>(`/api/workflows/${encodeURIComponent(workflowId)}/stages`),
-  projectTimeline: (projectId: string, limit = 200) =>
-    getJson<TimelineEventSummary[]>(
+  workflowStages: async (workflowId: string) =>
+    (await getJson<{ items: StageRunSummary[] }>(`/api/workflows/${encodeURIComponent(workflowId)}/stages`)).items,
+  projectTimeline: async (projectId: string, limit = 200) =>
+    (await getJson<{ items: TimelineEventSummary[] }>(
       `/api/projects/${encodeURIComponent(projectId)}/timeline?limit=${limit}`,
-    ),
+    )).items,
   // S10-004: Runtime Workspace API (写面 = 实例生命周期 + 截图 — Permission
   // Boundary 扩展; 错误语义: 404 项目/实例不存在 / 400 非法 type / 409 状态机)
-  projectRuntimes: (projectId: string) =>
-    getJson<RuntimeInstance[]>(
+  projectRuntimes: async (projectId: string) =>
+    (await getJson<{ items: RuntimeInstance[] }>(
       `/api/projects/${encodeURIComponent(projectId)}/runtimes`,
-    ),
+    )).items,
   runtimeDetail: (runtimeId: string) =>
     getJson<RuntimeInstance>(`/api/runtimes/${encodeURIComponent(runtimeId)}`),
   createRuntime: (projectId: string, type: 'browser' | 'terminal', artifactId: string | null = null) =>
@@ -301,16 +302,16 @@ export const api = {
       `/api/runtime-sessions/${encodeURIComponent(sessionId)}/cancel`,
       {},
     ),
-  runtimeSessions: (status: 'running' | null = null) =>
-    getJson<RuntimeSessionPayload[]>(
+  runtimeSessions: async (status: 'running' | null = null) =>
+    (await getJson<{ items: RuntimeSessionPayload[] }>(
       `/api/runtime-sessions${status ? '?status=running' : ''}`,
-    ),
+    )).items,
   runtimeSessionDetail: (sessionId: string) =>
     getJson<RuntimeSessionPayload>(
       `/api/runtime-sessions/${encodeURIComponent(sessionId)}`,
     ),
-  taskRuntimeSessions: (taskId: string) =>
-    getJson<RuntimeSessionPayload[]>(`/api/tasks/${encodeURIComponent(taskId)}/runtime`),
+  taskRuntimeSessions: async (taskId: string) =>
+    (await getJson<{ items: RuntimeSessionPayload[] }>(`/api/tasks/${encodeURIComponent(taskId)}/runtime`)).items,
   // S10-016 Task 002: Agent Executor — 让 AI Employee 真正执行任务 (POST /api/runtime/execute)
   executeRuntimeTask: (taskId: string, agentId: string, context?: Record<string, unknown>) =>
     sendJson<ExecuteResponse>(

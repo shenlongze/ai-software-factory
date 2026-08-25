@@ -178,7 +178,7 @@ class TestEpicCreateHttp:
             json={"name": "   ", "description": ""},
         )
         assert resp.status_code == 400
-        assert "name" in resp.json()["detail"]
+        assert "name" in resp.json()["error"]["message"]
 
     def test_create_epic_project_missing_404(self, factory_root, event_logger):
         """项目不存在 → 404 (项目 id 不存在)。"""
@@ -231,7 +231,7 @@ class TestFeatureCreateHttp:
             json={"name": "F", "description": "", "epic_id": "EPIC-nope"},
         )
         assert resp.status_code == 404
-        assert "epic" in resp.json()["detail"]
+        assert "epic" in resp.json()["error"]["message"]
 
     def test_create_feature_empty_name_400(self, project):
         client, project_id = project
@@ -272,7 +272,7 @@ class TestStoryCreateHttp:
             json={"name": "S", "description": "", "feature_id": "FEAT-nope"},
         )
         assert resp.status_code == 404
-        assert "feature" in resp.json()["detail"]
+        assert "feature" in resp.json()["error"]["message"]
 
 
 # ------------------------------------------------------------------ Task
@@ -318,7 +318,7 @@ class TestTaskCreateHttp:
             json={"title": "T", "description": "", "story_id": "STORY-nope"},
         )
         assert resp.status_code == 404
-        assert "story" in resp.json()["detail"]
+        assert "story" in resp.json()["error"]["message"]
 
     def test_create_task_empty_title_400(self, project):
         client, project_id = project
@@ -335,7 +335,7 @@ class TestTaskCreateHttp:
             json={"title": "T", "description": "", "priority": "P9"},
         )
         assert resp.status_code == 400
-        assert "priority" in resp.json()["detail"]
+        assert "priority" in resp.json()["error"]["message"]
 
     def test_create_task_dependency_valid_reference_ok(self, project):
         """dependency 引用已存在任务 → 宽松接受 (自引用/环由 PATCH 场景覆盖 —
@@ -449,7 +449,7 @@ class TestTaskPatchHttp:
             json={"priority": "P9"},
         )
         assert resp.status_code == 400
-        assert "priority" in resp.json()["detail"]
+        assert "priority" in resp.json()["error"]["message"]
 
     def test_patch_task_empty_title_400(self, project):
         client, project_id = project
@@ -486,7 +486,7 @@ class TestTaskPatchHttp:
             json={"status": "done"},
         )
         assert resp.status_code == 409
-        assert "transition" in resp.json()["detail"]
+        assert "transition" in resp.json()["error"]["message"]
 
     def test_patch_task_status_dependency_gate_400(self, project):
         """依赖未满足: B 依赖 A (A 非 DONE) → B 转 ready → 400。"""
@@ -498,7 +498,7 @@ class TestTaskPatchHttp:
             json={"status": "ready"},
         )
         assert resp.status_code == 400
-        assert "dependenc" in resp.json()["detail"]
+        assert "dependenc" in resp.json()["error"]["message"]
 
     def test_patch_task_status_dependency_satisfied_200(self, project):
         """依赖满足: A 走完 todo→ready→in_progress→review→done, B → ready → 200。"""
@@ -527,7 +527,7 @@ class TestTaskPatchHttp:
             json={"dependency": [task["id"]]},
         )
         assert resp.status_code == 400
-        assert "self" in resp.json()["detail"]
+        assert "self" in resp.json()["error"]["message"]
 
     def test_patch_task_dependency_cycle_400(self, project):
         """dependency 环: T1 依赖 T2 后, T2 依赖 T1 → 400 (DFS 环检测)。"""
@@ -544,7 +544,7 @@ class TestTaskPatchHttp:
             json={"dependency": [t1["id"]]},
         )
         assert resp.status_code == 400
-        assert "cycle" in resp.json()["detail"]
+        assert "cycle" in resp.json()["error"]["message"]
 
     def test_patch_task_missing_404(self, project):
         client, project_id = project

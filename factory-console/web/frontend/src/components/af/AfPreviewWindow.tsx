@@ -41,7 +41,11 @@ export function AfPreviewWindow({
           headers: { Accept: 'application/json' },
         });
         if (!cancelled && res.ok) {
-          const list = (await res.json()) as { id?: string; url?: string; status?: string }[];
+          const raw = (await res.json()) as
+            | { id?: string; url?: string; status?: string }[]
+            | { items: { id?: string; url?: string; status?: string }[] };
+          // API 规范 v1: 集合 {items, count}
+          const list = Array.isArray(raw) ? raw : raw.items ?? [];
           const live = list.find((r) => r.status === 'running' || r.status === 'started');
           const defaultUrl = live?.url || (list[0] ? list[0].url : '');
           if (defaultUrl) {

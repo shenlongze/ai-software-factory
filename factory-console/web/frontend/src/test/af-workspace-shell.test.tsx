@@ -183,7 +183,7 @@ describe('AfWorkspaceShell (AI OS 三栏壳)', () => {
       vi.fn((url: string) => {
         const stub = (v: unknown) =>
           Promise.resolve({ ok: true, json: () => Promise.resolve(v) } as Response);
-        if (String(url).includes('/api/projects')) return stub([]);
+        if (String(url).includes('/api/projects')) return stub({ items: [], count: 0 }); // API 规范 v1
         if (String(url).includes('/api/providers')) return stub([]);
         if (String(url).includes('/api/agents')) return stub({ agents: [] });
         if (String(url).includes('/api/skills')) return stub({ skills: [] });

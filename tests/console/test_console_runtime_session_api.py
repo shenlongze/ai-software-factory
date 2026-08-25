@@ -310,11 +310,11 @@ class TestRuntimeSessionApi:
             ]
 
             # 运行中列表: 已终态 → 不含本 session
-            running = client.get("/api/runtime-sessions?status=running").json()
+            running = client.get("/api/runtime-sessions?status=running").json()["items"]
             assert all(s["session_id"] != sid for s in running)
 
             # task 查询
-            task_runtime = client.get("/api/tasks/T-1/runtime").json()
+            task_runtime = client.get("/api/tasks/T-1/runtime").json()["items"]
             assert [s["session_id"] for s in task_runtime] == [sid]
 
     def test_events_endpoint_with_data_and_status_filter(self, tmp_path: Path):
@@ -336,7 +336,7 @@ class TestRuntimeSessionApi:
             )
             assert bad.status_code == 400, bad.text
 
-            running = client.get("/api/runtime-sessions?status=running").json()
+            running = client.get("/api/runtime-sessions?status=running").json()["items"]
             assert [s["session_id"] for s in running] == [sid]
 
     def test_error_semantics_404_409(self, tmp_path: Path):
@@ -398,5 +398,5 @@ class TestRuntimeSessionApi:
                 f"/api/runtime-sessions/{sid}/events",
                 json={"type": "agent_started", "message": "hi"},
             )
-            running = client.get("/api/runtime-sessions?status=running").json()
+            running = client.get("/api/runtime-sessions?status=running").json()["items"]
             assert running[0]["events"][0]["type"] == "agent_started"

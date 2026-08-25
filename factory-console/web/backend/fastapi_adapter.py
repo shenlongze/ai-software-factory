@@ -495,6 +495,11 @@ class _CreateMCPConnectionBody(BaseModel):
 # ------------------------------------------------------------------ 装配
 
 
+def ok_list(items: list[Any]) -> dict[str, Any]:
+    """API 规范 v1 集合包络: {"items": [...], "count": N} (禁止裸数组)。"""
+    return {"items": list(items), "count": len(list(items))}
+
+
 def build_console_service(
     factory_root: str | Path,
     *,
@@ -757,6 +762,34 @@ def build_app(
     workspace_root = Path(factory_root) if factory_root is not None else None
 
     app = FastAPI(title="AI Software Factory — Human Console Web", version=_factory_version)
+
+    # ============ API 规范 v1 (2026-08-26): 错误包络统一 {"error": {code, message, detail, suggestion}}
+    from fastapi.exceptions import RequestValidationError
+    from fastapi.responses import JSONResponse
+
+    def _error_envelope(status: int, message: str, detail: Any = "", suggestion: str = "") -> dict[str, Any]:
+        return {"error": {"code": f"E7{status}", "message": str(message),
+                          "detail": detail, "suggestion": suggestion}}
+
+    @app.exception_handler(HTTPException)
+    async def _http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+        detail = exc.detail
+        if isinstance(detail, dict) and "error" in detail:
+            return JSONResponse(status_code=exc.status_code, content=detail)
+        message = str(detail) if detail else "请求处理失败"
+        return JSONResponse(status_code=exc.status_code,
+                            content=_error_envelope(exc.status_code, message, detail=detail))
+
+    @app.exception_handler(RequestValidationError)
+    async def _validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+        return JSONResponse(status_code=422, content=_error_envelope(
+            422, "请求体校验失败", detail=str(exc.errors()[:2])))
+
+    @app.exception_handler(Exception)
+    async def _generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+        return JSONResponse(status_code=500, content=_error_envelope(
+            500, "服务器内部错误", suggestion="查看服务日志"))
+    # ============================================================
 
     # S10-120 K-4: 每请求 trace_id 上下文 (请求头 X-Trace-ID 可选覆盖; 无 →
     # 自动生成; with 退出自动恢复 — 不跨请求泄漏; 失败安全)。审计/执行/成本
@@ -1120,9 +1153,9 @@ def build_app(
         return dashboard.to_dict()
 
     @app.get("/api/projects")
-    def api_projects() -> list[dict[str, Any]]:
+    def api_projects() -> dict[str, Any]:
         """项目清单 (11A list_projects, 只读投影)。"""
-        return [p.to_dict() for p in _api.list_projects(service, logger=event_logger)]
+        return ok_list([p.to_dict() for p in _api.list_projects(service, logger=event_logger)])
 
     @app.post("/api/projects/suggest", status_code=200)
     def api_suggest_project(body: _SuggestBody) -> dict[str, Any]:
@@ -1735,25 +1768,25 @@ def build_app(
     @app.get("/api/approvals")
     def api_approvals(
         pending_only: bool = Query(default=False),
-    ) -> list[dict[str, Any]]:
+    ) -> dict[str, Any]:
         """审批清单 (11A list_approvals, 只读不决定)。"""
-        return [
+        return ok_list([
             a.to_dict()
             for a in _api.list_approvals(service, logger=event_logger, pending_only=pending_only)
-        ]
+        ])
 
     @app.get("/api/approval-gates")
     def api_approval_gates(
         status: str | None = Query(default=None),
         workflow_id: str | None = Query(default=None),
-    ) -> list[dict[str, Any]]:
+    ) -> dict[str, Any]:
         """org 审批门清单 (S9-002 — Approval 页决定操作对象; 只读查询)。"""
-        return [
+        return ok_list([
             g.to_dict()
             for g in _api.list_approval_gates(
                 service, logger=event_logger, status=status, workflow_id=workflow_id
             )
-        ]
+        ])
 
     @app.get("/api/decisions/{decision_id}")
     def api_decision(decision_id: str) -> dict[str, Any]:
@@ -1766,36 +1799,36 @@ def build_app(
     @app.get("/api/recommendations")
     def api_recommendations(
         limit: int = Query(default=10, ge=1, le=100),
-    ) -> list[dict[str, Any]]:
+    ) -> dict[str, Any]:
         """推荐产物 (11A list_recommendations, 只推荐不执行)。"""
-        return [
+        return ok_list([
             r.to_dict()
             for r in _api.list_recommendations(service, logger=event_logger, limit=limit)
-        ]
+        ])
 
     @app.get("/api/experience")
     def api_experience(
         limit: int = Query(default=10, ge=1, le=100),
-    ) -> list[dict[str, Any]]:
+    ) -> dict[str, Any]:
         """经验记录 (11A list_experience, 六域)。"""
-        return [
+        return ok_list([
             e.to_dict() for e in _api.list_experience(service, logger=event_logger, limit=limit)
-        ]
+        ])
 
     @app.get("/api/providers")
-    def api_providers() -> list[dict[str, Any]]:
+    def api_providers() -> dict[str, Any]:
         """Provider 目录 (11A list_providers)。"""
-        return [p.to_dict() for p in _api.list_providers(service, logger=event_logger)]
+        return ok_list([p.to_dict() for p in _api.list_providers(service, logger=event_logger)])
 
     @app.get("/api/workflows")
     def api_workflows(
         project_id: str | None = Query(default=None),
-    ) -> list[dict[str, Any]]:
+    ) -> dict[str, Any]:
         """组织级 Workflow 运行清单 (S9-002; 阶段链进度聚合, 只读)。"""
-        return [
+        return ok_list([
             w.to_dict()
             for w in _api.list_workflows(service, logger=event_logger, project_id=project_id)
-        ]
+        ])
 
     @app.get("/api/workflows/{workflow_id}")
     def api_workflow_detail(workflow_id: str) -> dict[str, Any]:
@@ -1810,9 +1843,9 @@ def build_app(
         project_id: str | None = Query(default=None),
         workflow_id: str | None = Query(default=None),
         type: str | None = Query(default=None),
-    ) -> list[dict[str, Any]]:
+    ) -> dict[str, Any]:
         """org Artifact 清单 (S9-002; project/workflow/type 过滤, 只读)。"""
-        return [
+        return ok_list([
             a.to_dict()
             for a in _api.list_artifacts(
                 service,
@@ -1821,7 +1854,7 @@ def build_app(
                 workflow_id=workflow_id,
                 type=type,
             )
-        ]
+        ])
 
     @app.get("/api/artifacts/{artifact_id}")
     def api_artifact_detail(artifact_id: str) -> dict[str, Any]:
@@ -1856,7 +1889,7 @@ def build_app(
         return detail.to_dict()
 
     @app.get("/api/workflows/{workflow_id}/stages")
-    def api_workflow_stages(workflow_id: str) -> list[dict[str, Any]]:
+    def api_workflow_stages(workflow_id: str) -> dict[str, Any]:
         """Workflow 阶段运行明细 (S10-002 — 状态/agent/artifacts/duration/cost)。
 
         duration_s 从事件流推导 (stage_started → stage_completed 时间戳差);
@@ -1865,13 +1898,13 @@ def build_app(
         runs = _api.get_workflow_stages(service, workflow_id, logger=event_logger)
         if runs is None:
             raise HTTPException(status_code=404, detail="workflow not found")
-        return [r.to_dict() for r in runs]
+        return ok_list([r.to_dict() for r in runs])
 
     @app.get("/api/projects/{project_id}/timeline")
     def api_project_timeline(
         project_id: str,
         limit: int = Query(default=200, ge=1, le=1000),
-    ) -> list[dict[str, Any]]:
+    ) -> dict[str, Any]:
         """Timeline 事件聚合 (S10-002 — user/stage/artifact/review/error)。
 
         数据源 = events.db org.* 事件 (与 SSE 同源同映射; Timeline 历史
@@ -1882,7 +1915,7 @@ def build_app(
         )
         if events is None:
             raise HTTPException(status_code=404, detail="project not found")
-        return [e.to_dict() for e in events]
+        return ok_list([e.to_dict() for e in events])
 
     @app.get("/api/projects/{project_id}/status")
     def api_project_status(project_id: str) -> dict[str, Any]:
@@ -1960,12 +1993,12 @@ def build_app(
         return instance.to_dict()
 
     @app.get("/api/projects/{project_id}/runtimes")
-    def api_project_runtimes(project_id: str) -> list[dict[str, Any]]:
+    def api_project_runtimes(project_id: str) -> dict[str, Any]:
         """项目 Runtime 实例列表 (无 → []; 项目不存在 → 404)。"""
         instances = _api.list_runtimes(service, project_id, logger=event_logger)
         if instances is None:
             raise HTTPException(status_code=404, detail="project not found")
-        return [r.to_dict() for r in instances]
+        return ok_list([r.to_dict() for r in instances])
 
     @app.get("/api/runtimes/{runtime_id}")
     def api_runtime_detail(runtime_id: str) -> dict[str, Any]:
@@ -2070,7 +2103,7 @@ def build_app(
     def api_review_feedback(
         artifact_id: str | None = Query(default=None),
         gate_id: str | None = Query(default=None),
-    ) -> list[dict[str, Any]]:
+    ) -> dict[str, Any]:
         """审核反馈历史 (GET — 按 artifact/gate 过滤, round 升序)。
 
         无过滤 → 全部记录; 无匹配 → [] (诚实空态); 缺 store → [] (失败
@@ -2082,7 +2115,7 @@ def build_app(
             gate_id=gate_id,
             logger=event_logger,
         )
-        return [r.to_dict() for r in records]
+        return ok_list([r.to_dict() for r in records])
 
     @app.post("/api/review-feedback")
     def api_save_review_feedback(body: _ReviewFeedbackBody) -> dict[str, Any]:
@@ -2208,12 +2241,12 @@ def build_app(
     @app.get("/api/runtime-sessions")
     def api_list_runtime_sessions(
         status: str | None = Query(default=None),
-    ) -> list[dict[str, Any]]:
+    ) -> dict[str, Any]:
         """会话清单 (GET ?status=running — 运行中过滤, 含事件链)。"""
         sessions = _api.list_runtime_sessions(
             service, status=status, logger=event_logger
         )
-        return [s.to_dict() for s in sessions]
+        return ok_list([s.to_dict() for s in sessions])
 
     @app.get("/api/runtime-sessions/{session_id}")
     def api_runtime_session_detail(session_id: str) -> dict[str, Any]:
@@ -2226,12 +2259,12 @@ def build_app(
         return session.to_dict()
 
     @app.get("/api/tasks/{task_id}/runtime")
-    def api_task_runtime_sessions(task_id: str) -> list[dict[str, Any]]:
+    def api_task_runtime_sessions(task_id: str) -> dict[str, Any]:
         """任务会话过滤 (GET — 多次执行 = 多 session; 无 → [] 诚实空态)。"""
         sessions = _api.get_task_runtime_sessions(
             service, task_id, logger=event_logger
         )
-        return [s.to_dict() for s in sessions]
+        return ok_list([s.to_dict() for s in sessions])
 
     # ------------------------------------------- S10-016 Task 002: Agent Executor API
     # Agent 全链路执行入口 (AI Employee Runtime Foundation Task 002): POST

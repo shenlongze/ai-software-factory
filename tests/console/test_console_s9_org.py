@@ -212,7 +212,7 @@ class TestProjectsAggregation:
         wf = build_chain_wf(wlife, project_id)
         resp = client.get("/api/projects")
         assert resp.status_code == 200
-        item = next(p for p in resp.json() if p["id"] == project_id)
+        item = next(p for p in resp.json()["items"] if p["id"] == project_id)
         assert item["workflow_id"] == wf.id
         assert item["workflow_status"] == "draft"
         assert item["progress"] == 0.0
@@ -254,7 +254,7 @@ class TestWorkflowList:
         build_chain_wf(wlife, project_id)
         resp = client.get("/api/workflows")
         assert resp.status_code == 200
-        body = resp.json()
+        body = resp.json()["items"]
         assert len(body) == 1
         assert body[0]["project_id"] == project_id
         assert body[0]["stage_count"] == 5
@@ -371,8 +371,8 @@ class TestArtifactFiltering:
         wf1, _, _, _, _ = self._seed(wlife, project_id)
         resp = client.get(f"/api/artifacts?workflow_id={wf1.id}&type=prd")
         assert resp.status_code == 200
-        assert len(resp.json()) == 1
-        assert resp.json()[0]["workflow_id"] == wf1.id
+        assert len(resp.json()["items"]) == 1
+        assert resp.json()["items"][0]["workflow_id"] == wf1.id
 
 
 # ------------------------------------------------------------------ GET /approval-gates
@@ -408,8 +408,8 @@ class TestApprovalGates:
         gate = wlife.request_approval(wlife.list_stages(wf.id)[0].id)
         resp = client.get("/api/approval-gates?status=pending")
         assert resp.status_code == 200
-        assert resp.json()[0]["id"] == gate.id
-        assert resp.json()[0]["project_id"] == project_id
+        assert resp.json()["items"][0]["id"] == gate.id
+        assert resp.json()["items"][0]["project_id"] == project_id
 
 
 # ------------------------------------------------------------------ POST approve/reject (HTTP)

@@ -71,7 +71,12 @@ export function stubFetch(routes: Record<string, unknown>): ReturnType<typeof vi
   const fn = vi.fn(async (input: RequestInfo | URL) => {
     const path = String(input);
     if (path in routes) {
-      return jsonResponse(routes[path]);
+      const val = routes[path];
+      // API 规范 v1 (2026-08-26): 集合统一 {items, count} — stub 数组自动包络
+      if (Array.isArray(val)) {
+        return jsonResponse({ items: val, count: val.length });
+      }
+      return jsonResponse(val);
     }
     return { ok: false, status: 404, json: async () => ({ detail: 'not found' }) } as Response;
   });

@@ -37,10 +37,12 @@ export async function fetchWorkflowView(projectId: string): Promise<{
   ]);
   if (!workflowRes.ok) throw new ApiError(`${base}/workflow`, workflowRes.status);
   if (!timelineRes.ok) throw new ApiError(`${base}/timeline`, timelineRes.status);
-  const [workflow, timeline] = await Promise.all([
+  const [workflow, timelineRaw] = await Promise.all([
     workflowRes.json() as Promise<WorkflowDetail>,
-    timelineRes.json() as Promise<TimelineEventSummary[]>,
+    timelineRes.json() as Promise<{ items?: TimelineEventSummary[] } | TimelineEventSummary[]>,
   ]);
+  // API 规范 v1: 集合 {items, count}
+  const timeline = Array.isArray(timelineRaw) ? timelineRaw : (timelineRaw.items ?? []);
   return { workflow, timeline };
 }
 

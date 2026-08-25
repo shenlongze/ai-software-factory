@@ -21,7 +21,11 @@ function stubFetch(map: Record<string, unknown>): void {
     vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       for (const [k, v] of entries) {
-        if (url.includes(k)) return okResponse(v);
+        if (url.includes(k)) {
+          // API 规范 v1: 集合 {items, count} — stub 数组自动包络
+          if (Array.isArray(v)) return okResponse({ items: v, count: v.length });
+          return okResponse(v);
+        }
       }
       return { ok: false, status: 404, json: async () => ({ detail: 'not found' }) } as Response;
     }),
@@ -104,8 +108,8 @@ describe('ReviewWorkflowPanel — Decision', () => {
       const url = String(input);
       if (url.includes('/approve')) return okResponse({ ok: true });
       if (url.includes('/api/artifacts/')) return okResponse(ART_DETAIL('product', PRODUCT_META));
-      if (url.includes(GATES_URL)) return okResponse(GATES);
-      if (url.includes(ART_URL)) return okResponse(ARTS);
+      if (url.includes(GATES_URL)) return okResponse({ items: GATES, count: GATES.length });
+      if (url.includes(ART_URL)) return okResponse({ items: ARTS, count: ARTS.length });
       return okResponse([]);
     });
     vi.stubGlobal('fetch', fetchMock);
@@ -123,8 +127,8 @@ describe('ReviewWorkflowPanel — Decision', () => {
       if (url.includes('/reject')) return okResponse({ ok: true });
       if (url.includes('/api/artifacts/')) return okResponse(ART_DETAIL('product', PRODUCT_META));
       if (url.includes(FEEDBACK_URL) && init?.method === 'POST') return okResponse({ id: 'FB-1' });
-      if (url.includes(GATES_URL)) return okResponse(GATES);
-      if (url.includes(ART_URL)) return okResponse(ARTS);
+      if (url.includes(GATES_URL)) return okResponse({ items: GATES, count: GATES.length });
+      if (url.includes(ART_URL)) return okResponse({ items: ARTS, count: ARTS.length });
       return okResponse([]);
     });
     vi.stubGlobal('fetch', fetchMock);
@@ -145,8 +149,8 @@ describe('ReviewWorkflowPanel — Decision', () => {
       if (url.includes('/reject')) return okResponse({ ok: true });
       if (url.includes('/api/artifacts/')) return okResponse(ART_DETAIL('product', PRODUCT_META));
       if (url.includes(FEEDBACK_URL) && init?.method === 'POST') return okResponse({ id: 'FB-1' });
-      if (url.includes(GATES_URL)) return okResponse(GATES);
-      if (url.includes(ART_URL)) return okResponse(ARTS);
+      if (url.includes(GATES_URL)) return okResponse({ items: GATES, count: GATES.length });
+      if (url.includes(ART_URL)) return okResponse({ items: ARTS, count: ARTS.length });
       return okResponse([]);
     });
     vi.stubGlobal('fetch', fetchMock);

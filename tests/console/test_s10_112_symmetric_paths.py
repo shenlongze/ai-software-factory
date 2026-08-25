@@ -229,7 +229,7 @@ class TestCliApiSymmetry:
         with _api_client(root) as client:
             resp = client.get("/api/projects")
             assert resp.status_code == 200
-            api_projects = resp.json()
+            api_projects = resp.json()["items"]
             assert api_projects, "API projects 为空"
 
         api_by_id = {p["id"]: p for p in api_projects}

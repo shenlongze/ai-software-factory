@@ -268,7 +268,7 @@ class TestMCPApi:
                 json={"name": "  ", "server_url": "mock://demo"},
             )
             assert resp.status_code == 400, resp.text
-            assert "name" in resp.json()["detail"]
+            assert "name" in resp.json()["error"]["message"]
 
     def test_create_connection_stdio_400(self, tmp_path: Path):
         """POST stdio 真实协议 → 400 (响亮拒绝 — 本 Task 仅 mock 可用)。"""
@@ -279,7 +279,7 @@ class TestMCPApi:
                 json={"name": "demo-mcp", "server_url": "stdio://x", "transport": "stdio"},
             )
             assert resp.status_code == 400, resp.text
-            assert "unsupported MCP transport" in resp.json()["detail"]
+            assert "unsupported MCP transport" in resp.json()["error"]["message"]
 
     def test_list_tools_endpoint_contains_echo(self, tmp_path: Path):
         """GET /api/mcp/tools → 200 {tools: [...]} — 注册后 echo 在列

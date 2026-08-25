@@ -57,10 +57,18 @@ export function AfProjectHome({
       .catch(() => setRuntimeCount(0));
   };
 
+  // ③ 实时性: 打开拉取 + 手动刷新 + 可选自动轮询 (5/15/30/60s)
+  const [pollMs, setPollMs] = useState<number>(0);
   useEffect(() => {
     loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
+  useEffect(() => {
+    if (pollMs <= 0) return;
+    const t = window.setInterval(loadAll, pollMs);
+    return () => window.clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pollMs, projectId]);
 
   const doneCount = lifecycle?.completed_stages?.length ?? 0;
   const pct = Math.round((doneCount / STAGES.length) * 100);
@@ -202,7 +210,26 @@ export function AfProjectHome({
 
   return (
     <div className="af-project-home" data-testid="af-project-home">
-      <h2 className="af-detail-name">{projectName}</h2>
+      <div className="af-home-head">
+        <h2 className="af-detail-name">{projectName}</h2>
+        <div className="af-home-controls">
+          <select
+            className="af-todo-pri"
+            aria-label="自动刷新间隔"
+            value={String(pollMs)}
+            onChange={(e) => setPollMs(Number(e.target.value))}
+          >
+            <option value="0">不自动</option>
+            <option value="5000">5s</option>
+            <option value="15000">15s</option>
+            <option value="30000">30s</option>
+            <option value="60000">60s</option>
+          </select>
+          <button type="button" className="af-preview-btn" onClick={loadAll} aria-label="刷新数据">
+            ⟳ 刷新
+          </button>
+        </div>
+      </div>
       {lifecycleBar}
       <section className="af-home-card">
         <div className="af-home-card-head">

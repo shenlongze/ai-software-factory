@@ -2698,3 +2698,16 @@
   gap: 4px;
   align-items: center;
 }
+
+.af-home-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.af-home-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}

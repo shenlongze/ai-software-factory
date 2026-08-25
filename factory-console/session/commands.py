@@ -50,37 +50,49 @@ def read_projects(projects_file: Path) -> list[dict[str, Any]]:
 
 
 class HelpCommand(SlashCommand):
-    """/help — 列出可用命令 (name + description)。"""
+    """/help — 树形分层帮助 (自然语言 / 系统命令 / CLI 命令)。"""
 
     name = "help"
     description = "显示可用命令列表"
 
-    #: 自然语言示例 (输入, 说明) — 与真实意图/动作一致, 不编造
-    NL_EXAMPLES: tuple[tuple[str, str], ...] = (
-        ("你好 / 我想做一个记账App", "开始对话 / 创建产品 (多轮发现)"),
-        ("让PM分析 / 让QA分析", "产品管线 — 7 角色资产链"),
-        ("继续 旅行记账", "按名称继续项目"),
-        ("给 墨笺 加个导出功能", "需求变更 → 影响分析 (ChangeControl)"),
-        ("准备开发", "架构审批门 (Architecture Review)"),
-        ("哪些项目有PRD", "真实文档状态"),
-        ("P-xxx 改名叫 新名", "项目改名"),
-        ("审计追踪 <trace_id>", "链路追踪 (K-4 trace_id 贯穿)"),
+    #: 自然语言树 (组 → [(示例, 说明)])
+    NL_TREE: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
+        ("创建", (("我想做一个记账App", "创建产品 · 多轮发现"),)),
+        ("产品管线", (("让PM分析", "7 角色资产链"), ("让QA分析", "质量视角"))),
+        ("项目", (
+            ("继续 旅行记账", "按名称继续项目"),
+            ("哪些项目有PRD", "真实文档状态"),
+            ("P-xxx 改名叫 新名", "项目改名"),
+        )),
+        ("变更 / 审批", (
+            ("给 墨笺 加个导出功能", "影响分析 (ChangeControl)"),
+            ("准备开发", "架构审批门 (Architecture Review)"),
+        )),
+        ("追踪", (("审计追踪 <trace_id>", "链路追踪 (K-4)"),)),
     )
 
-    #: 系统命令展示顺序 (显式排序 — 布局稳定; 未列出的命令仍追加, 不丢)
-    SLASH_ORDER: tuple[str, ...] = (
-        "help", "status", "project", "board", "cost", "preview", "exit",
+    #: 系统命令树 (组 → [(命令, 说明)]; 说明空 → 只显示命令)
+    SLASH_TREE: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
+        ("会话", (
+            ("/help", "显示可用命令列表"),
+            ("/status", "会话状态 (session/workspace/项目/Agent)"),
+            ("/exit", "退出会话"),
+        )),
+        ("项目", (("/project", "项目列表 / 切换 / 需求变更 (/project [<id>|change ...])"),)),
+        ("面板", (
+            ("/board", "任务监控面板"),
+            ("mainline 主线 · graph 依赖图 · chain 任务链 · timeline 生命线", ""),
+            ("replay 重放 · project 项目视图 · quality 质量 · cost 成本 · report 汇报", ""),
+            ("done/unmark 标记 · sync 同步 · docs 文档 · default 默认项目", ""),
+        )),
+        ("工具", (
+            ("/cost", "成本 / 用量信息"),
+            ("/preview", "渲染 markdown 文件 (/preview PRD.md)"),
+        )),
     )
 
-    #: /board 子命令 (与 BoardCommand 实际子命令一致)
-    BOARD_SUBCOMMANDS = (
-        "mainline 主线 · graph 依赖图 · chain 任务链 · timeline 生命线 · "
-        "replay 执行重放 · project 项目视图 · quality 质量 · cost 成本 · "
-        "report 汇报 · done/unmark 标记 · sync 同步 · docs 文档 · default 默认项目"
-    )
-
-    #: CLI 命令分组 (系统终端运行 factory 开头; 与 cli_factory build_parser 一致)
-    CLI_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    #: CLI 命令树 (组 → 子命令列表; 与 cli_factory build_parser 一致)
+    CLI_TREE: tuple[tuple[str, tuple[str, ...]], ...] = (
         ("服务/诊断", ("start", "stop", "status", "service", "doctor", "config", "update", "init")),
         ("项目管理", ("project", "create", "demo", "run")),
         ("资产/员工", ("agent", "skill", "mcp", "tools", "task")),
@@ -90,45 +102,71 @@ class HelpCommand(SlashCommand):
 
     @staticmethod
     def _disp_len(text: str) -> int:
-        """终端显示宽度 (CJK 算 2 — 对齐不再乱)。"""
+        """终端显示宽度 (CJK 算 2 — 对齐)。"""
         return sum(
             2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
             for ch in text
         )
 
-    def _print_rows(self, pairs: list[tuple[str, str]]) -> None:
-        """对齐打印 (左列按显示宽度补空格, CJK 对齐)。"""
-        width = max(self._disp_len(l) for l, _ in pairs)
-        for left, right in pairs:
-            print(f"  {left}{' ' * (width - self._disp_len(left))}  {right}")
+    def _print_group(
+        self,
+        title: str,
+        groups: list[tuple[str, list[tuple[str, str]]]],
+        *,
+        extra_tail: str = "",
+    ) -> None:
+        """树形打印一组: 标题 → 组(├─/└─) → 项(├─/└─)。"""
+        print(title)
+        for gi, (glabel, items) in enumerate(groups):
+            g_last = gi == len(groups) - 1
+            g_branch = "└─" if g_last else "├─"
+            print(f"{g_branch} {glabel}")
+            child_prefix = "   " if g_last else "│  "
+            for ii, (item, desc) in enumerate(items):
+                i_last = ii == len(items) - 1
+                i_branch = "└─" if i_last else "├─"
+                line = f"{child_prefix}{i_branch} {item}"
+                if desc:
+                    line += f"  ——  {desc}"
+                print(line)
+            if extra_tail and g_last:
+                print(f"{child_prefix}└─ {extra_tail}")
 
     def execute(self, args: str, context: SessionContext) -> int:
-        if self.registry is None:
-            print("错误: 命令表不可用 (registry 未注入)")
-            return 1
+        print("📖 AI Factory 帮助")
+        print()
 
         # ── 自然语言 ──
-        print("💬 自然语言示例 (直接输入即可):")
-        self._print_rows([(left, right) for left, right in self.NL_EXAMPLES])
+        nl_groups = [(g, list(items)) for g, items in self.NL_TREE]
+        self._print_group(
+            "💬 自然语言（直接输入，无需 /）:",
+            nl_groups,
+        )
         print()
 
         # ── 系统命令 ──
-        by_name = {c.name: c for c in self.registry.list()}
-        items = [by_name[n] for n in self.SLASH_ORDER if n in by_name]
-        items += [c for c in self.registry.list() if c.name not in self.SLASH_ORDER]
-        print("📁 系统命令:")
-        self._print_rows([(f"/{c.name}", c.description) for c in items])
-        if "board" in by_name:
-            print(f"  /board 子命令: {self.BOARD_SUBCOMMANDS}")
+        by_name = {c.name: c for c in self.registry.list() if self.registry is not None}
+        slash_groups: list[tuple[str, list[tuple[str, str]]]] = []
+        for g, items in self.SLASH_TREE:
+            resolved = [
+                (item, desc or (by_name.get(item.lstrip("/"), type("C", (), {"description": ""})()).description))
+                for item, desc in items
+            ]
+            slash_groups.append((g, resolved))
+        self._print_group(
+            "📁 系统命令:",
+            slash_groups,
+        )
         print()
 
-        # ── CLI 命令 ──
-        print("🛠 CLI 命令 (系统终端运行, factory 开头):")
-        group_width = max(self._disp_len(g) for g, _ in self.CLI_GROUPS)
-        for group, cmds in self.CLI_GROUPS:
-            pad = " " * (group_width - self._disp_len(group))
-            print(f"  {group}{pad}  {' · '.join(cmds)}")
-        print("  详细: factory <子命令> --help")
+        # ── CLI 命令 (树形但每组合一行 — 紧凑清晰) ──
+        print("🛠 CLI 命令（终端运行: factory <子命令>）:")
+        group_width = max(self._disp_len(g) for g, _ in self.CLI_TREE)
+        for gi, (glabel, cmds) in enumerate(self.CLI_TREE):
+            branch = "└─" if gi == len(self.CLI_TREE) - 1 else "├─"
+            pad = " " * (group_width - self._disp_len(glabel))
+            print(f"{branch} {glabel}{pad}  {' · '.join(cmds)}")
+        print("   └─ 详细: factory <子命令> --help")
         return 0
 
 

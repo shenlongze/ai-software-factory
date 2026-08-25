@@ -13,7 +13,7 @@
 10. L4 完整化: 非 git 工作区快照/回滚 fixture 可还原; 不可快照 → 明确报错
 11. E-2/E-3: 低分 → 建议 → 应用 → 复评提升 (至少一条闭环断言)
 12. 注册表: 新命令 (board cost / /cost) 在注册表可见 + 只读
-13. 版本: v1.1.92 断言 (pyproject/CHANGELOG/FEATURES)
+13. 版本: v1.1.93 断言 (pyproject/CHANGELOG/FEATURES)
 
 basename 全仓库唯一 (test_s10_119_* 前缀)。
 """
@@ -610,13 +610,13 @@ class TestRegistryAndVersion:
         assert "无成本记录" in out
 
     def test_version_bumped_119(self):
-        """版本 v1.1.92: pyproject + CHANGELOG + FEATURES 同步。"""
+        """版本 v1.1.93: pyproject + CHANGELOG + FEATURES 同步。"""
         pyproject = (_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-        assert re.search(r'^version\s*=\s*"1\.1\.92"', pyproject, re.M)
+        assert re.search(r'^version\s*=\s*"1\.1\.93"', pyproject, re.M)
         changelog = (_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-        assert "## [v1.1.92]" in changelog
+        assert "## [v1.1.93]" in changelog
         features = (_ROOT / "docs" / "FEATURES.md").read_text(encoding="utf-8")
-        assert "v1.1.92" in features
+        assert "v1.1.93" in features
         # K-3/M4-1~6 待办清单同步
         backlog = (_ROOT / "docs" / "sprint10" / "待办清单-已发现未落地.md").read_text(
             encoding="utf-8")

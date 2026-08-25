@@ -24,7 +24,7 @@ S10-026 Task C (命令组骨架): 新增 agent/skill/task/router/rag/audit 六�
     factory skill   只读列出现有 skills (skills.json / skills/*.json)
     factory task    只读列出 tasks (tasks/*.json: id/title/status)
     factory router  展示 LLMRouter 五层链可用性 + route() 当前决策 (只读)
-    factory rag     明确占位 ("RAG 未实现 — 规划中", 不实现功能)
+    factory rag     query/index/sources (S10-123 K-6: 项目级 RAG 转正)
     factory audit   只读查询事件库 (events.db/factory.db 的 events 表:
                     最近事件列表 + 按类型计数)
 约束: 全部只读展示, 失败安全 (缺失/损坏 → 空列表提示, 永不抛); 不引入
@@ -2223,8 +2223,110 @@ class FactoryCLI:
         return 0
 
     def rag(self, args: argparse.Namespace) -> int:
-        """RAG 管理骨架: 明确占位 — 本 Sprint 不实现 RAG。"""
-        print("RAG 未实现 — 规划中 (S10-026 Task C 命令组骨架占位, 不实现功能)")
+        """项目级 RAG (K-6/S10-123): query 检索问答 / index 入库 / sources 外部源。
+
+        - query <项目> <问题>: 确定性词频检索 (三级分档 raw/summary/knowledge)
+          + 可选外部源 (providers.external_rag 配置) → 片段 + 引用源 + score + reason
+          + RAG_QUERY 审计事件 (E-5, trace_id 由命令入口 K-4 contextvar 自动填充)
+        - index <项目> [--incremental]: 全量入库 / mtime 增量重建 (索引独立
+          .factory_rag, 零污染项目文件; 失败安全: 坏文件跳过)
+        - sources: 已注册外部知识源 (M5-3 接口就绪状态, 真实接入待后续)
+        """
+        action = str(getattr(args, "rag_action", "") or "")
+        if action == "index":
+            return self._rag_index(args)
+        if action == "query":
+            return self._rag_query(args)
+        return self._rag_sources(args)
+
+    def _project_exists(self, slug: str) -> bool:
+        """项目存在性 (projects/<slug> 目录, 路径安全)。"""
+        return (Path(self.data_dir) / "projects" / Path(str(slug or "")).name).is_dir()
+
+    def _rag_index(self, args: argparse.Namespace) -> int:
+        """factory rag index <项目> [--incremental] — 入库/增量重建。"""
+        slug = Path(str(args.project or "")).name
+        if not slug or not self._project_exists(slug):
+            print(f"项目不存在: {slug or '(空)'}")
+            return 1
+        from .retrieval.knowledge_store import KnowledgeStore
+
+        store = KnowledgeStore(self.data_dir, slug)
+        result = store.incremental_ingest() if args.incremental else store.ingest()
+        mode = "增量" if result.incremental else "全量"
+        tiers_txt = ", ".join(f"{k}={v}" for k, v in sorted(result.tiers.items())) or "(无)"
+        print(f"=== RAG 索引 ({mode}) — 项目 {slug} ===")
+        print(f"  扫描文件: {result.files_scanned} → 索引块: {result.chunks_indexed} (分档: {tiers_txt})")
+        if result.changed_files:
+            print(f"  变更文件 ({len(result.changed_files)}): {', '.join(result.changed_files[:10])}")
+        if result.removed_files:
+            print(f"  移除文件 ({len(result.removed_files)}): {', '.join(result.removed_files[:10])}")
+        if result.skipped:
+            print(f"  跳过 ({len(result.skipped)}) — 失败安全:")
+            for item in result.skipped[:10]:
+                print(f"    - {item.get('file')}: {item.get('reason')}")
+        print(f"  索引: {result.index_path}")
+        return 0
+
+    def _rag_query(self, args: argparse.Namespace) -> int:
+        """factory rag query <项目> <问题> [--tiers] [--top-k] — 确定性问答。"""
+        slug = Path(str(args.project or "")).name
+        question = str(args.question or "")
+        if not slug or not question:
+            print("用法: factory rag query <项目> <问题> [--tiers raw,summary,knowledge] [--top-k N]")
+            return 2
+        if not self._project_exists(slug):
+            print(f"项目不存在: {slug}")
+            return 1
+        tiers = [t.strip() for t in str(args.tiers or "").split(",") if t.strip()]
+        from .retrieval.external_source import configured_external_sources
+        from .retrieval.knowledge_store import rag_query
+
+        external = configured_external_sources(self.config)
+        hits, stats = rag_query(
+            self.data_dir, slug, question,
+            tiers=tiers or None, top_k=max(0, int(args.top_k or 5)),
+            external_sources=external,
+        )
+        print(f"=== RAG 查询 — 项目 {slug} ===")
+        print(f"问题: {question}")
+        print(f"分档: {','.join(tiers or ['raw','summary','knowledge'])} · "
+              f"top_k={stats['top_k']} · 本地命中 {stats['local_hits']} · "
+              f"外部命中 {stats['external_hits']}")
+        if not hits:
+            print("未命中 — 若尚未入库, 先运行: factory rag index <项目>")
+            return 0
+        for i, h in enumerate(hits, 1):
+            print(f"#{i} [{h.tier}] score={h.score:.4f} 来源={h.source}")
+            print(f"  文件: {h.file}")
+            frag = h.fragment if len(h.fragment) <= 160 else h.fragment[:160] + "…"
+            print(f"  片段: {frag}")
+            print(f"  reason: {h.reason}")
+        return 0
+
+    def _rag_sources(self, args: argparse.Namespace) -> int:
+        """factory rag sources — 外部知识源 (M5-3 接口就绪状态)。"""
+        from .retrieval.external_source import configured_external_sources, get_external_sources
+
+        all_sources = get_external_sources()
+        configured = configured_external_sources(self.config)
+        cfg_names = {getattr(src, "name", "") for src in configured}
+        print("=== 外部知识源 (M5-3 外挂适配器接口) ===")
+        if not all_sources:
+            print("  无已注册外部源 (接口就绪; 真实接入 Postgres/向量库待后续)")
+        for src in all_sources:
+            name = str(getattr(src, "name", "") or "?")
+            try:
+                ping = bool(src.ping()) if hasattr(src, "ping") else False
+            except Exception:  # noqa: BLE001 — 失败安全
+                ping = False
+            state = "已配置" if name in cfg_names else "未配置"
+            print(f"  - {name}: ping={'✅' if ping else '❌'} ({state})")
+        if cfg_names:
+            print(f"  配置 providers.external_rag: {', '.join(sorted(cfg_names))}")
+        else:
+            print("  配置 providers.external_rag: (未配置 → 空, 不崩)")
+        print("  提示: 真实接入 (企业 Postgres/向量库/知识库) 接口先行, 后续实现")
         return 0
 
     def audit(self, args: argparse.Namespace) -> int:
@@ -3618,7 +3720,23 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser(
         "router", help="LLM Router 管理骨架 (只读: 五层决策链可用性 + 当前决策)"
     )
-    sub.add_parser("rag", help="RAG 管理骨架 (占位 — 规划中, 不实现功能)")
+    p_rag = sub.add_parser("rag", help="项目级 RAG (K-6): query 检索问答 / index 入库 / sources 外部源")
+    p_rag_sub = p_rag.add_subparsers(dest="rag_action", required=True, metavar="query|index|sources")
+    p_rag_query = p_rag_sub.add_parser("query", help="确定性检索问答 (片段 + 引用源 + score + reason, 三级分档)")
+    p_rag_query.add_argument("project", metavar="<项目>", help="项目 slug (projects/<slug>)")
+    p_rag_query.add_argument("question", metavar="<问题>", help="查询问题 (确定性词频打分)")
+    p_rag_query.add_argument(
+        "--tiers", default="raw,summary,knowledge",
+        help="分档过滤 (逗号分隔: raw,summary,knowledge; 默认全开)",
+    )
+    p_rag_query.add_argument("--top-k", type=int, default=5, help="返回条数 (默认 5)")
+    p_rag_index = p_rag_sub.add_parser("index", help="入库/增量重建 (索引独立 .factory_rag, 零污染)")
+    p_rag_index.add_argument("project", metavar="<项目>", help="项目 slug (projects/<slug>)")
+    p_rag_index.add_argument(
+        "--incremental", action="store_true",
+        help="增量重建 (只重扫 mtime/size 变更文件; 默认全量)",
+    )
+    p_rag_sub.add_parser("sources", help="已注册外部知识源 (M5-3 接口就绪状态)")
     p_audit = sub.add_parser(
         "audit", help="审计查询骨架 (只读: events 最近事件列表 + 按类型计数)"
     )

@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-#: 标准事件类型注册表 (S10-069 设计 §2 — 54 个, 验收: 30+)
+#: 标准事件类型注册表 (S10-069 设计 §2 + S10-123 RAG_QUERY, 验收: 30+)
 EVENT_TYPES: tuple[str, ...] = (
     "PRODUCT_CREATED",
     "PROJECT_RENAMED",
@@ -93,6 +93,9 @@ EVENT_TYPES: tuple[str, ...] = (
     "EXECUTION_TASK_COMPLETED",
     "EXECUTION_ROUND_COMPLETED",
     "EXECUTION_M3_DEGRADED",
+    # S10-123 K-6 E-5: 检索动作审计 (RAG_QUERY — KnowledgeStore/外部源查询带
+    # trace_id, K-4 contextvar 自动填充; 检索回路可溯源)
+    "RAG_QUERY",
 )
 
 #: 敏感键精确名 (脱敏: 键名小写/下划线归一后 ∈ 该集合 → 删除)

@@ -2,7 +2,7 @@
 
 > **单一事实来源** — 当前系统到底有哪些功能、每个功能是什么、怎么用（CLI / API / 会话命令）、什么状态、从哪个版本开始有。
 >
-> 版本: **v1.1.95** · 更新: 2026-08-25 · 依据: 实测命令 + 代码核对 + CHANGELOG
+> 版本: **v1.1.96** · 更新: 2026-08-26 · 依据: 实测命令 + 代码核对 + CHANGELOG
 
 ## 0. 文档定位（与其他文档的分工）
 
@@ -41,7 +41,7 @@
 | **数据域** | 证据包 | `factory evidence list/show` | ✅ |
 | **数据域** | 审计查询 | `factory audit` | ✅ |
 | **数据域** | 任务清单 | `factory task list` | ✅ 只读 |
-| **数据域** | RAG | `factory rag` | 📐 占位 |
+| **数据域** | RAG | `factory rag query/index/sources` | ✅ v1.1.96 |
 | **执行域** | 项目执行 | `factory run` | ✅ |
 | **执行域** | 存量仓库模式 | `factory repo` | ✅ M1 |
 | **执行域** | 积压清道夫 | `factory workload backlog/status` | ✅ M1b |
@@ -184,10 +184,14 @@ API（Web/集成）:   http://127.0.0.1:8011/api/...      e.g. GET /api/board
 - **入口**: `factory task list`
 - **状态**: ✅ 只读
 
-### 4.5 rag — RAG 管理骨架
-- **说明**: 三级 RAG 规划中，命令占位不实现功能（诚实标注）
-- **入口**: `factory rag`
-- **状态**: 📐 占位 · **关联能力**: C38-C40（仅测试/未统一）
+### 4.5 rag — 项目级 RAG（K-6, v1.1.96 转正）
+- **说明**: 项目文档入库 (KnowledgeStore, 复用 board 文档扫描, 索引独立 .factory_rag) +
+  三级分档 (raw/summary/knowledge) + 确定性词频检索 (纯规则零依赖, reason 可解释) +
+  增量重建 (mtime) + 外挂适配器接口 (M5-3) + E-5 RAG_QUERY 审计溯源
+- **入口**: `factory rag query <项目> <问题> [--tiers raw,summary,knowledge] [--top-k N]` ·
+  `factory rag index <项目> [--incremental]` · `factory rag sources`
+- **状态**: ✅ · **起始**: v1.1.96 · **诚实标注**: 真实 embedding/LLM 未接入 (接口就绪);
+  doc/docx 二进制文档暂不索引 (跳过记录) · **关联能力**: C38-C40 · **设计**: docs/sprint10/S10-123-k6-rag-plan.md
 
 ---
 
@@ -290,6 +294,25 @@ API（Web/集成）:   http://127.0.0.1:8011/api/...      e.g. GET /api/board
   | M5-7 错误码 | docs/error-codes.md 集中表 (模块:CODE: 消息: 建议下一步) | v1.1.95 |
   | C-4 盲区 | docs/eval-blind-spots.md (K-2 已覆盖 vs 仍盲, 如实) | v1.1.95 |
 - **状态**: ✅ · **关联**: docs/sprint10/S10-121-k5-eval-plan.md · 待办清单 K-5/P0-1/4/5/C-1/4/5/6/H-1/F-10/M5-7
+
+### 6.0a K-6 项目级 RAG（v1.1.96）
+- **说明**: 项目文档知识可检索可复用 — README/docs/PRD/工程/质量/经验 入库 (片段+元数据索引,
+  独立 .factory_rag 零污染) + 三级分档 (raw 原始片段 / summary 章节摘要·目录 / knowledge
+  跨文档知识条目) + 确定性词频检索 (纯规则零依赖, reason 可解释) + 增量重建 (mtime) +
+  外挂适配器接口 (M5-3) + E-5 检索溯源
+- **入口（CLI）**: `factory rag query <项目> <问题> [--tiers raw,summary,knowledge] [--top-k N]` ·
+  `factory rag index <项目> [--incremental]` · `factory rag sources`
+- **入口（Web API）**: `POST /api/rag/query` · `GET /api/rag/sources`
+- **功能明细**:
+  | 子功能 | 说明 | 起始版本 |
+  |---|---|---|
+  | KnowledgeStore 入库 | `retrieval/knowledge_store.py`: 复用 board read_docs_config 扫描 → 片段+元数据索引 (workspace/.factory_rag/<slug>/index.json, 零污染); 失败安全 (坏文件跳过) | v1.1.96 |
+  | 三级分档 | raw (文档片段) / summary (章节摘要·目录) / knowledge (跨文档知识条目: json 键值 + 经验类文档) | v1.1.96 |
+  | 确定性检索 | 词频/TF 打分 (ASCII 词 + CJK 二元子词, 纯规则零依赖, 同输入同输出); embedding/LLM 仅可选 (scorer 注入点, 诚实标注) | v1.1.96 |
+  | 增量重建 | mtime/size 变更文件只重扫; 删除文件块移除; 索引缺失退化全量 | v1.1.96 |
+  | 外挂适配器 | `retrieval/external_source.py`: ExternalKnowledgeSource Protocol + Mock + 注册表 + providers.external_rag (未配置 → 空不崩) | v1.1.96 |
+  | E-5 检索回路 | RAG_QUERY 审计事件带 trace_id (K-4 contextvar 自动填充, 检索动作可溯源) | v1.1.96 |
+- **状态**: ✅ · **诚实标注**: 真实 embedding/LLM 未接入 (接口就绪); doc/docx 二进制文档暂不索引 (跳过记录) · **关联**: docs/sprint10/S10-123-k6-rag-plan.md · 待办清单 K-6/M5-2/M5-3/B-8/F-11/E-5
 
 ### 6.1 /board — 任务监控面板（核心）
 - **说明**: todolist + 进度条 + 标签；主线（M/P0）vs 周边（长期）分清楚；多源加载：待办清单 + Sprint 验收 + 方案书章节 + 代码证据自动同步
@@ -486,6 +509,12 @@ API（Web/集成）:   http://127.0.0.1:8011/api/...      e.g. GET /api/board
 | GET | `/api/dashboard` | 实时聚合（🚧） |
 | GET | `/api/projects/{id}/timeline` `/workflow` | 项目时间线/工作流 |
 
+### 9.7 检索与知识（RAG, v1.1.96）
+| 方法 | 路径 | 说明 | 状态 |
+|---|---|---|---|
+| POST | `/api/rag/query` | 项目级 RAG 检索问答 (确定性片段+引用源+reason; E-5 审计带 trace_id) | ✅ v1.1.96 |
+| GET | `/api/rag/sources` | 外部知识源清单 (M5-3 接口就绪; 未配置 → 空不崩) | ✅ v1.1.96 |
+
 ---
 
 ## 10. 版本对照表（v1.1.5 → v1.1.46）
@@ -494,6 +523,7 @@ API（Web/集成）:   http://127.0.0.1:8011/api/...      e.g. GET /api/board
 
 | 版本 | 核心功能 | 里程碑 |
 |---|---|---|
+| v1.1.96 | K-6 项目级 RAG (S10-123): KnowledgeStore 三级分档 + 确定性词频检索 + factory rag 问答 + 外挂适配器接口 + E-5 RAG_QUERY 溯源 | K-6 战役 |
 | v1.1.5 | M1 内核切片：存量仓库模式 + 工具发现 + 真 MCP | M1 |
 | v1.1.6 | M1a 证据包 + 分级审批 + M1b 积压清道夫（分诊→修复→证据→审批→报告） | M1a/M1b |
 | v1.1.7-8 | 产品方案书 v3.0 终极版合并 + 产品情报管线 + M1 闭环补全（approve 后落地） | M1 |

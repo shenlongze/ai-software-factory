@@ -3,6 +3,29 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.96] — 2026-08-26
+
+### Added — K-6 项目级 RAG (战役第六战役)
+- **M5-2/B-8 KnowledgeStore**: 项目文档入库 (README/docs/PRD/工程/质量/经验 → 片段+元数据索引,
+  复用 board read_docs_config 扫描, 索引独立 .factory_rag 零污染) + 三级分档
+  (raw 原始片段 / summary 章节摘要·目录 / knowledge 跨文档知识条目) + 增量重建
+  (mtime, 失败安全: 坏文件跳过)
+- **确定性检索**: 词频/TF 打分 (ASCII 词 + CJK 二元子词, 纯规则零依赖, 同输入同输出,
+  reason 可解释 "命中关键词 X(tf=N) in 文件 F 片段 C"); embedding/LLM 仅可选接入
+  (scorer 注入点, 规则始终可用, 诚实标注)
+- **M5-3 外挂适配器接口先行**: ExternalKnowledgeSource Protocol + MockExternalSource
+  (确定性) + 注册表 + 配置 providers.external_rag (未配置 → 空不崩); 复用
+  RetrievalSource.EXTERNAL_RAG 挂点
+- **问答入口**: `factory rag query <项目> <问题>` (确定性片段 + 引用源文件+片段+score+reason)
+  + `factory rag index <项目> [--incremental]` + `factory rag sources`;
+  API `POST /api/rag/query` + `GET /api/rag/sources` (只做后端, 禁碰前端)
+- **F-11 知识沉淀**: PRD/工程/经验入索引 (raw/summary/knowledge 分档; 跨项目检索接口预留)
+- **E-5 检索回路**: RAG_QUERY 审计事件带 trace_id (K-4 contextvar 自动填充, 检索动作可溯源)
+
+### Honest Notes
+- 真实 embedding/LLM 检索未接入 (接口就绪, 纯规则为主); 二进制文档 (doc/docx) 与
+  损坏文件无法确定性检索 → 跳过并记录 (失败安全, 不中断)
+
 ## [v1.1.95] — 2026-08-25
 
 ### Added — K-5 评测体系渐进 (战役第五战役)

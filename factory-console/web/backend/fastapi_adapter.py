@@ -162,6 +162,20 @@ class _CreateRuntimeBody(BaseModel):
     artifact_id: str | None = None
 
 
+class _RagQueryBody(BaseModel):
+    """POST /api/rag/query body (S10-123 K-6: 项目级 RAG 检索问答)。
+
+    {project, question, tiers?, top_k?}: project 必填 (slug), question 必填
+    (空 → 400); tiers 可选 (默认 raw/summary/knowledge 全开); top_k 可选 (默认 5)。
+    确定性词频检索 (纯规则, 零 LLM 依赖) — embedding/LLM 仅可选接入 (诚实标注)。
+    """
+
+    project: str = ""
+    question: str = ""
+    tiers: str = "raw,summary,knowledge"
+    top_k: int = 5
+
+
 class _CreateProjectBody(BaseModel):
     """POST /api/projects body (S10-006.5: 用户第一公里创建闭环)。
 
@@ -654,6 +668,47 @@ def _git_status() -> dict:
         return {"head": "", "dirty": False}
 
 
+def _rag_config_shim(factory_root: Any = None) -> Any:
+    """RAG 外部源配置读取 (providers.external_rag 来自 <root>/config.json)。
+
+    与 CLI ConfigProvider 同文件 (config.json providers.external_rag); 缺文件
+    / 损坏 / 未配置 → 空 (失败安全, 不崩)。返回带 get(section, key, default) 的 shim。
+    """
+
+    class _Shim:
+        def __init__(self, data: dict[str, Any]) -> None:
+            self._data = data
+
+        def get(self, section: str, key: str, default: Any = None) -> Any:
+            sec = self._data.get(section)
+            if isinstance(sec, dict):
+                val = sec.get(key)
+                if val is not None:
+                    return val
+            return default
+
+    import json
+
+    data: dict[str, Any] = {}
+    if factory_root is not None:
+        cfg = Path(factory_root) / "config.json"
+        try:
+            raw = json.loads(cfg.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                data = raw
+        except Exception:  # noqa: BLE001 — 失败安全
+            data = {}
+    return _Shim(data)
+
+
+def _safe_ping(src: Any) -> bool:
+    """外部源 ping 探测 (异常/未实现 → False, 失败安全)。"""
+    try:
+        return bool(src.ping()) if hasattr(src, "ping") else False
+    except Exception:  # noqa: BLE001 — 失败安全
+        return False
+
+
 def build_app(
     service: Any,
     *,
@@ -920,6 +975,63 @@ def build_app(
         except Exception:  # noqa: BLE001
             html = "<p>（文档渲染失败）</p>"
         return HTMLResponse(content=html)
+
+    # S10-123 K-6: 项目级 RAG (M5-2/B-8 + M5-3 + E-5) — 只做后端, 不碰前端
+    @app.get("/api/rag/sources")
+    def api_rag_sources():
+        """外部知识源清单 (M5-3 接口就绪状态; 未配置 → 空不崩)。"""
+        ext_mod = _console_import("retrieval.external_source")
+        sources = ext_mod.get_external_sources()
+        configured = ext_mod.configured_external_sources(_rag_config_shim(workspace_root))
+        cfg_names = {str(getattr(src, "name", "") or "") for src in configured}
+        return {
+            "ok": True,
+            "sources": [
+                {
+                    "name": str(getattr(src, "name", "") or ""),
+                    "ping": _safe_ping(src),
+                    "configured": str(getattr(src, "name", "") or "") in cfg_names,
+                }
+                for src in sources
+            ],
+            "configured": sorted(cfg_names),
+            "note": "接口就绪; 真实接入 (Postgres/向量库) 待后续",
+        }
+
+    @app.post("/api/rag/query")
+    def api_rag_query(body: _RagQueryBody) -> dict[str, Any]:
+        """项目级 RAG 检索问答 (确定性词频 + 三级分档 + 可选外部源 + E-5 审计)。
+
+        project/question 缺失 → 400; 检索纯规则确定性 (同输入同输出),
+        未入库/项目不存在 → 空命中 (200, 提示先 index); 失败安全: 任何
+        异常 → 空命中, 不 5xx。
+        """
+        slug = Path(str(body.project or "")).name
+        question = str(body.question or "")
+        if not slug:
+            raise HTTPException(status_code=400, detail="project is required")
+        if not question:
+            raise HTTPException(status_code=400, detail="question is required")
+        tiers = [t.strip() for t in str(body.tiers or "").split(",") if t.strip()] or None
+        top_k = max(0, int(body.top_k or 5))
+        try:
+            ks_mod = _console_import("retrieval.knowledge_store")
+            _rag_query = ks_mod.rag_query
+        except Exception:  # noqa: BLE001 — 失败安全: 模块不可用 → 明确错误
+            return {"ok": False, "project": slug, "hits": [], "stats": {}, "error": "rag module unavailable"}
+        ext_mod = _console_import("retrieval.external_source")
+        external = ext_mod.configured_external_sources(_rag_config_shim(workspace_root))
+        hits, stats = _rag_query(
+            workspace_root, slug, question,
+            tiers=tiers, top_k=top_k, external_sources=external,
+        )
+        return {
+            "ok": True,
+            "project": slug,
+            "question": question,
+            "hits": [h.to_dict() for h in hits],
+            "stats": stats,
+        }
 
     @app.get("/api/board/tasks")
     def api_board_tasks(project: str = ""):

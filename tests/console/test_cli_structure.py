@@ -6,7 +6,7 @@
 - 验收 B: factory agent 只读列出现有 agents (agents.json: id/name/role/skills)
 - 验收 C: factory task 只读列出 tasks (tasks/*.json: id/title/status)
 - 验收 D: factory audit 只读查询事件库 (events.db 最近事件 + 按类型计数)
-- 验收 E: factory rag 明确占位 ("RAG 未实现")
+- 验收 E: factory rag query/index/sources (S10-123 K-6 转正)
 - 验收 F: factory router 骨架展示五层链 + 当前决策 (无 provider → 未命中提示)
 - 验收 G: 无数据时空列表不报错 (rc 0 + 空列表提示); 损坏数据失败安全
 - 验收 H: 既有命令零影响 (status/stop 照常 rc 0); skill 兼容单文件/目录两形态
@@ -306,16 +306,29 @@ class TestAudit:
             conn.close()
 
 
-# ------------------------------------------------------------------ 验收 E: rag 占位
+# ------------------------------------------------------------------ 验收 E: rag 子命令 (S10-123 K-6 转正)
 
 
 class TestRag:
-    def test_rag_placeholder(self, tmp_path, capsys):
+    def test_rag_subcommands_registered(self):
+        """rag query/index/sources 子命令注册齐全。"""
+        args = _cli.build_parser().parse_args(["rag", "query", "demo", "如何部署", "--top-k", "3"])
+        assert args.command == "rag"
+        assert args.rag_action == "query"
+        assert args.project == "demo" and args.question == "如何部署" and args.top_k == 3
+        args = _cli.build_parser().parse_args(["rag", "index", "demo", "--incremental"])
+        assert args.rag_action == "index" and args.project == "demo" and args.incremental is True
+        args = _cli.build_parser().parse_args(["rag", "sources"])
+        assert args.rag_action == "sources"
+
+    def test_rag_sources_no_registry_empty_not_crash(self, tmp_path, capsys):
+        """rag sources 未配置/未注册 → rc 0 + 空不崩 (接口就绪状态)。"""
         cli = make_cli(tmp_path)
-        rc = cli.run(_cli.build_parser().parse_args(["rag"]))
+        rc = cli.run(_cli.build_parser().parse_args(["rag", "sources"]))
         out = capsys.readouterr().out
         assert rc == 0
-        assert "RAG 未实现" in out  # 明确占位, 不假装
+        assert "外部知识源" in out
+        assert "未配置" in out or "无已注册" in out
 
 
 # ------------------------------------------------------------------ 验收 F: router 骨架

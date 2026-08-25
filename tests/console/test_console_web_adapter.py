@@ -376,6 +376,11 @@ class TestPermissionBoundary:
                 is_docs_config = (
                     route_method == "POST" and path == "/api/board/docs/config"
                 )
+                # v1.1.96: RAG 检索问答 (POST /api/rag/query — 只读索引检索,
+                # 确定性规则零副作用 + E-5 审计)
+                is_rag_query = (
+                    route_method == "POST" and path == "/api/rag/query"
+                )
                 assert (
                     is_approval
                     or is_runtime_lifecycle
@@ -396,9 +401,10 @@ class TestPermissionBoundary:
                     or is_board_default
                     or is_board_split
                     or is_docs_config
+                    or is_rag_query
                 ), (
                     f"写路由超出白名单 (审批决定 + Runtime + 反馈 + 创建 + 启动 + "
-                    f"项目管理 + Backlog + Sprint/Milestone/Roadmap + Tool + MCP): "
+                    f"项目管理 + Backlog + Sprint/Milestone/Roadmap + Tool + MCP + RAG): "
                     f"{route_method} {path}"
                 )
 

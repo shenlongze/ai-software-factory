@@ -16,6 +16,19 @@ from .models import (
     RetrievalScore,
     RetrievalSource,
 )
+from .external_source import (
+    MockExternalSource,
+    clear_external_sources,
+    configured_external_sources,
+    get_external_sources,
+    register_external_source,
+)
+from .knowledge_store import (
+    IngestResult,
+    KnowledgeHit,
+    KnowledgeStore,
+    rag_query,
+)
 from .orchestrator import RetrievalOrchestrator
 from .retriever import (
     AuditRetriever,
@@ -34,4 +47,13 @@ __all__ = [
     "ExperienceRetriever",
     "AuditRetriever",
     "ProjectRetriever",
+    "KnowledgeStore",
+    "KnowledgeHit",
+    "IngestResult",
+    "rag_query",
+    "MockExternalSource",
+    "register_external_source",
+    "get_external_sources",
+    "clear_external_sources",
+    "configured_external_sources",
 ]

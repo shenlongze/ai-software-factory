@@ -33,12 +33,14 @@ class TestCampaignBacklog:
         # S10-119 (v1.1.89): K-3 学习闭环主线 M4 已交付
         # S10-120 (v1.1.90): K-4 trace_id 贯穿 (I-1+F-9) 已交付
         # S10-121 (v1.1.95): K-5 评测体系渐进已交付
+        # S10-123 (v1.1.96): K-6 项目级 RAG (M5-2/M5-3+B-8+F-11+E-5) 已交付
         assert by_id["K-1"]["done"] is True
         assert by_id["K-2"]["done"] is True
         assert by_id["K-3"]["done"] is True
         assert by_id["K-4"]["done"] is True
         assert by_id["K-5"]["done"] is True
-        assert all(by_id[f"K-{i}"]["done"] is False for i in range(6, 11))
+        assert by_id["K-6"]["done"] is True
+        assert all(by_id[f"K-{i}"]["done"] is False for i in range(7, 11))
 
     def test_campaign_doc_exists_with_acceptance(self):
         """战役规划文档存在, 含总览 + 每战役验收标准。"""

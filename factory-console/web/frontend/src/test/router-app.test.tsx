@@ -2,15 +2,14 @@
  * src/test/router-app.test.tsx — App.tsx 挂载 AI Factory 真实入口 (S10-014 Task 002b)。
  *
  * 验证:
- * - 空 hash → Human Console 保留 (品牌 + 导航, 不破坏)
+ * - 空 hash → AI Factory 工作台 (K-7a 单入口)
  * - #/workspace (精确) 与 #/workspace/<subpage> → AI Factory 工作台 (真实项目列表)
  * - #/project/:id/... → AI Factory 项目入口 (真实 Project Entity + 子页 placeholder)
  * - #/workspace?project=id 直链 → AI Factory 项目入口 (parseHash 兼容)
- * - Console 导航"工作台" (AppState) → S10-001 Workspace Shell 保留 (双模式并存)
+ * - K-7a: 普通模式/双模式已砍, 仅 workspace/project 两级
  */
 
 import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 import App from '../App';
 import { sampleDashboard, sampleProject, sampleTodoBacklog, stubFetch } from './fixtures';
@@ -41,13 +40,13 @@ afterEach(() => {
 });
 
 describe('AI Factory 真实入口挂载 (App.tsx)', () => {
-  it('空 hash → Human Console 保留 (品牌 + 导航)', () => {
+  it('空 hash → AI Factory 工作台 (K-7a 单入口, 无普通模式导航)', async () => {
     stubConsoleApis();
     render(<App />);
-    expect(screen.getByText('AI Software Factory')).toBeInTheDocument();
-    expect(screen.getByText('Human Console')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Dashboard' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '项目' })).toBeInTheDocument();
+    expect(await screen.findByTestId('af-workspace-entry')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '普通模式' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '专业模式' })).toBeNull();
+    expect(screen.queryByText('Human Console')).toBeNull();
   });
 
   it('#/workspace → AI Factory 工作台 (真实项目列表, 非占位)', async () => {
@@ -106,18 +105,11 @@ describe('AI Factory 真实入口挂载 (App.tsx)', () => {
     ).toBeInTheDocument();
   });
 
-  it('Console 导航"工作台" → S10-001 Workspace Shell 保留 (双模式并存)', async () => {
-    const user = userEvent.setup();
+  it('K-7a: 普通模式已砍 — 无 ModeToggle/工作台按钮', async () => {
     stubConsoleApis();
-    stubFetch({
-      '/api/projects': [
-        { id: 'ledger-app', name: '记账 App', status: 'active', description: 'mock 项目' },
-      ],
-    });
     render(<App />);
-    await user.click(screen.getByRole('button', { name: '工作台' }));
-    expect(await screen.findByTestId('ws-shell')).toBeInTheDocument();
-    expect(screen.getByTestId('ws-header')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '普通模式' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '工作台' })).toBeNull();
   });
 
   it('#/project/markpad (不存在项目) → ErrorState 项目不存在', async () => {

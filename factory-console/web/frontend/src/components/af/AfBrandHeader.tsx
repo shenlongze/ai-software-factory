@@ -1,7 +1,7 @@
 /**
  * components/af/AfBrandHeader.tsx — AI Factory 品牌 Header (AI OS 深色, S10-013 §9)。
  *
- * ◆ AI Factory + 子页/上下文标签 + Human Console 双模式链接 (保留 console 入口)。
+ * ◆ AI Factory + 子页/上下文标签 + 开发者控制台链接 (K-7a: 砍双模式, 指向 board)。
  */
 
 import type { ReactNode } from 'react';
@@ -29,8 +29,12 @@ export function AfBrandHeader({
         </span>
       ) : null}
       <span className="af-header-spacer" />
-      <a className="af-console-link" href="#/" title="切换到 Human Console (只读控制台)">
-        进入 Human Console
+      <a
+        className="af-console-link"
+        href="http://127.0.0.1:8011/api/board"
+        title="打开开发者控制台 (board: 战役/员工/质量/成本/审计监控)"
+      >
+        🛠 开发者控制台
       </a>
       {trailing}
     </header>

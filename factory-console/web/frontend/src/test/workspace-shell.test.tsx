@@ -351,8 +351,7 @@ describe('用户菜单', () => {
 
 // ------------------------------------------------------------------ App 集成 / 路由入口
 describe('App 集成与入口', () => {
-  it('Human Console 导航 "工作台" → Workspace Shell 全屏渲染', async () => {
-    const user = userEvent.setup();
+  it('K-7a: 普通模式导航已砍 — 空 hash 直达 AI Factory 工作台', async () => {
     const emptyDashboard = {
       projects: [],
       approvals: [],
@@ -376,11 +375,8 @@ describe('App 集成与入口', () => {
         <App />
       </ThemeProvider>,
     );
-    await user.click(screen.getByRole('button', { name: '工作台' }));
-    expect(screen.getByTestId('ws-shell')).toBeInTheDocument();
-    expect(screen.getByTestId('ws-header')).toBeInTheDocument();
-    // 全屏 shell 不渲染 Human Console 页脚
-    expect(screen.queryByText(/只读控制台/)).toBeNull();
+    expect(await screen.findByTestId('af-workspace-entry')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '工作台' })).toBeNull();
   });
 
   it('pageFromHash: #/workspace → workspace; 其他 → null', () => {

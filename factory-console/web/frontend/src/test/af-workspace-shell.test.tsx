@@ -198,12 +198,12 @@ describe('AfWorkspaceShell (AI OS 三栏壳)', () => {
     expect(await screen.findByTestId('af-error-state')).toHaveTextContent('network down');
   });
 
-  it('Header: AI Factory 品牌 + 子页标签 + LLM 状态点 + 进入 Human Console 链接', () => {
+  it('Header: AI Factory 品牌 + 子页标签 + LLM 状态点 + 开发者控制台 链接', () => {
     stubFetch({ '/api/dashboard': sampleDashboard({ projects: [] }) });
     render(<AfWorkspaceShell route={workspaceRoute('audit')} />);
     expect(screen.getByText('AI Factory')).toBeInTheDocument();
     expect(screen.getByText('审计')).toBeInTheDocument();
     expect(screen.getByTestId('af-llm-status')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /进入 Human Console/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /开发者控制台/ })).toBeInTheDocument();
   });
 });

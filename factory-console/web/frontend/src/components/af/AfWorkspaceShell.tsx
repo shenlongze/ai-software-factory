@@ -110,6 +110,9 @@ export interface AfWorkspaceShellProps {
 /** AI OS Workspace 三栏壳 (根节点保留 af-workspace-entry testid — 入口兼容)。 */
 export function AfWorkspaceShell({ route }: AfWorkspaceShellProps): JSX.Element {
   const [collapsed, setCollapsed] = useState<boolean>(readSidebarCollapsed);
+  // K-7a: 右栏默认收起 (不再常驻占 1/3 屏), 按需展开
+  const [contextOpen, setContextOpen] = useState<boolean>(false);
+  const [composerText, setComposerText] = useState<string>('');
 
   const toggleSidebar = () => {
     setCollapsed((prev) => {
@@ -119,6 +122,15 @@ export function AfWorkspaceShell({ route }: AfWorkspaceShellProps): JSX.Element 
   };
 
   const pageLabel = WORKSPACE_PAGE_LABELS[route.page] ?? route.page;
+
+  const submitComposer = () => {
+    const text = composerText.trim();
+    if (!text) return;
+    // K-7a: UI 就绪; 真实会话接线留 K-7b (如实标注, 不伪造)
+    // eslint-disable-next-line no-console
+    console.log('[Composer] K-7b 待接线真实对话:', text);
+    setComposerText('');
+  };
 
   return (
     <div
@@ -131,10 +143,39 @@ export function AfWorkspaceShell({ route }: AfWorkspaceShellProps): JSX.Element 
         <main className="af-main-content" data-testid="af-main-content">
           <WorkspacePage route={route} />
         </main>
-        <aside className="af-context-panel" data-testid="af-context-panel" aria-label="情境面板">
-          <span className="af-context-hint">Context Panel — 预留 (Task 005+ 接入)</span>
+        <aside
+          className={`af-context-panel${contextOpen ? '' : ' af-context-panel--collapsed'}`}
+          data-testid="af-context-panel"
+          aria-label="情境面板"
+        >
+          <button
+            type="button"
+            className="af-context-toggle"
+            onClick={() => setContextOpen((v) => !v)}
+            aria-label={contextOpen ? '收起情境面板' : '展开情境面板'}
+          >
+            {contextOpen ? '»' : '«'}
+          </button>
+          {contextOpen && (
+            <span className="af-context-hint">审批 · 质量 · 执行日志 · 产物（K-7b 接入）</span>
+          )}
         </aside>
       </div>
+      <footer className="af-composer" data-testid="af-composer">
+        <input
+          className="af-composer-input"
+          placeholder="继续聊 / 改需求 / /命令…"
+          aria-label="对话输入"
+          value={composerText}
+          onChange={(e) => setComposerText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') submitComposer();
+          }}
+        />
+        <button type="button" className="af-composer-send" onClick={submitComposer}>
+          发送
+        </button>
+      </footer>
     </div>
   );
 }

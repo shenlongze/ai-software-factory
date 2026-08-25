@@ -1669,6 +1669,64 @@ def build_app(
             raise HTTPException(status_code=404, detail="lifecycle not found")
         return summary.to_dict()
 
+    @app.get("/api/projects/{project_id}/workspace")
+    def api_project_workspace(project_id: str) -> dict[str, Any]:
+        """项目工作区汇总 (Founder 2026-08-26: 真实数据源 = workspace 资产)。
+
+        读 ~/.factory/projects/<slug>/ 资产 (board 同口径): product.json 状态 +
+        execution_state.json/tasks.json 任务 + 生命周期阶段判定。
+        org /lifecycle + /backlog 常为空 (项目创建早未走 org 管线) — 前端项目首页
+        以此为准, 有真实数据。失败安全: 无目录/损坏 → 404。
+        """
+        import json as _json
+        from pathlib import Path as _Path
+
+        from factory_console.session.board import (
+            _project_stage_status,
+            _read_product_info,
+        )
+        ws_root = _Path(str(getattr(service, "data_dir", None) or workspace_root))
+        pdir = ws_root / "projects" / _Path(str(project_id)).name
+        if not (pdir / "product.json").is_file():
+            raise HTTPException(status_code=404, detail="project workspace not found")
+        info = _read_product_info(ws_root, project_id) or {}
+        stages = _project_stage_status(ws_root, project_id)
+        done_stages = [st["label"] for st in stages if st["done"]]
+        # 任务: execution_state.json → tasks.json 回退
+        tasks: list[dict[str, Any]] = []
+        es = pdir / "execution_state.json"
+        source = "execution_state"
+        try:
+            if es.is_file():
+                tasks = ( _json.loads(es.read_text(encoding="utf-8")) or {}).get("tasks") or []
+            else:
+                tf = pdir / "tasks.json"
+                if tf.is_file():
+                    source = "tasks"
+                    tasks = (_json.loads(tf.read_text(encoding="utf-8")) or {}).get("tasks") or []
+        except Exception:  # noqa: BLE001
+            tasks = []
+        tasks_out = [
+            {
+                "id": str(t.get("id") or ""),
+                "title": str(t.get("name") or t.get("title") or t.get("id") or ""),
+                "status": str(t.get("status") or "todo"),
+                "priority": t.get("priority") if t.get("priority") is not None else None,
+            }
+            for t in tasks
+            if isinstance(t, dict)
+        ]
+        return {
+            "project_id": project_id,
+            "name": str(info.get("name") or project_id),
+            "lifecycle_status": str(info.get("status") or ""),
+            "stages": [{"id": st["id"], "label": st["label"], "done": st["done"]} for st in stages],
+            "done_stages": done_stages,
+            "progress": round(len(done_stages) * 100 / len(stages)) if stages else 0,
+            "tasks": tasks_out,
+            "task_source": source,
+        }
+
     @app.get("/api/approvals")
     def api_approvals(
         pending_only: bool = Query(default=False),

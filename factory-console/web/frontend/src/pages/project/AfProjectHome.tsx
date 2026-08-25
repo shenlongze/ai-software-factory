@@ -15,6 +15,16 @@ interface LifecycleData {
   next_actions?: string[];
 }
 
+interface WorkspaceData {
+  name?: string;
+  lifecycle_status?: string;
+  stages?: { id: string; label: string; done: boolean }[];
+  done_stages?: string[];
+  progress?: number;
+  tasks?: { id: string; title: string; status: string; priority?: string | null }[];
+  task_source?: string;
+}
+
 interface TaskItem {
   id: string;
   title?: string;
@@ -47,11 +57,23 @@ export function AfProjectHome({
 
   const base = `/api/projects/${encodeURIComponent(projectId)}`;
 
+  const [wsData, setWsData] = useState<WorkspaceData | null>(null);
+
   const loadAll = () => {
-    getJson<LifecycleData>(`${base}/lifecycle`).then(setLifecycle).catch(() => setLifecycle(null));
-    getJson<{ tasks?: TaskItem[] }>(`${base}/backlog`)
-      .then((b) => setTasks(b.tasks ?? []))
-      .catch(() => setTasks([]));
+    // 真实数据优先: workspace 资产汇总 (Founder 2026-08-26); org 端点回退
+    getJson<WorkspaceData>(`${base}/workspace`)
+      .then((w) => {
+        setWsData(w);
+        if (w.lifecycle_status) setLifecycle({ status: w.lifecycle_status });
+        setTasks(w.tasks ?? []);
+      })
+      .catch(() => {
+        setWsData(null);
+        getJson<LifecycleData>(`${base}/lifecycle`).then(setLifecycle).catch(() => setLifecycle(null));
+        getJson<{ tasks?: TaskItem[] }>(`${base}/backlog`)
+          .then((b) => setTasks(b.tasks ?? []))
+          .catch(() => setTasks([]));
+      });
     getJson<unknown[]>(`${base}/runtimes`)
       .then((list) => setRuntimeCount(Array.isArray(list) ? list.length : 0))
       .catch(() => setRuntimeCount(0));
@@ -70,9 +92,10 @@ export function AfProjectHome({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pollMs, projectId]);
 
-  const doneCount = lifecycle?.completed_stages?.length ?? 0;
-  const pct = Math.round((doneCount / STAGES.length) * 100);
-  const currentStage = lifecycle?.current_stage?.name ?? '';
+  const doneCount = wsData ? (wsData.done_stages?.length ?? 0) : (lifecycle?.completed_stages?.length ?? 0);
+  const stageLabels = wsData?.stages?.map((st) => st.label) ?? STAGES;
+  const pct = wsData?.progress ?? Math.round((doneCount / stageLabels.length) * 100);
+  const currentStage = lifecycle?.current_stage?.name ?? (wsData ? stageLabels[doneCount] ?? '' : '');
 
   const patchTask = (taskId: string, body: Record<string, unknown>) => {
     setBusy(taskId);
@@ -103,7 +126,7 @@ export function AfProjectHome({
   }, [tasks]);
 
   const lifecycleBar = (() => {
-    const segs = STAGES.map((label, i) => {
+    const segs = stageLabels.map((label, i) => {
       const done = i < doneCount;
       const current = i === doneCount;
       return (

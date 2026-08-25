@@ -37,7 +37,7 @@ describe('AfWorkspaceEntry (AI Factory 工作台真实入口)', () => {
           }),
       ),
     );
-    render(<AfWorkspaceEntry route={workspaceRoute()} />);
+    render(<AfWorkspaceEntry route={workspaceRoute('projects')} />);
     expect(screen.getByTestId('af-loading-state')).toBeInTheDocument();
     void resolveFetch;
   });
@@ -67,7 +67,7 @@ describe('AfWorkspaceEntry (AI Factory 工作台真实入口)', () => {
     ];
     stubFetch({ '/api/dashboard': sampleDashboard({ projects }) });
 
-    render(<AfWorkspaceEntry route={workspaceRoute()} />);
+    render(<AfWorkspaceEntry route={workspaceRoute('projects')} />);
 
     expect(await screen.findByText('markpad')).toBeInTheDocument();
     expect(screen.getByText('ledger-app')).toBeInTheDocument();
@@ -94,7 +94,7 @@ describe('AfWorkspaceEntry (AI Factory 工作台真实入口)', () => {
 
   it('空列表 → EmptyState (暂无项目)', async () => {
     stubFetch({ '/api/dashboard': sampleDashboard({ projects: [] }) });
-    render(<AfWorkspaceEntry route={workspaceRoute()} />);
+    render(<AfWorkspaceEntry route={workspaceRoute('projects')} />);
     expect(await screen.findByTestId('af-empty-state')).toHaveTextContent(
       '暂无项目 — 输入想法创建一个',
     );
@@ -102,7 +102,7 @@ describe('AfWorkspaceEntry (AI Factory 工作台真实入口)', () => {
 
   it('API 失败 → ErrorState', async () => {
     vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('network down'))));
-    render(<AfWorkspaceEntry route={workspaceRoute()} />);
+    render(<AfWorkspaceEntry route={workspaceRoute('projects')} />);
     expect(await screen.findByTestId('af-error-state')).toHaveTextContent('network down');
   });
 
@@ -113,7 +113,7 @@ describe('AfWorkspaceEntry (AI Factory 工作台真实入口)', () => {
         projects: [sampleProject({ id: 'markpad', name: 'markpad' })],
       }),
     });
-    render(<AfWorkspaceEntry route={workspaceRoute()} />);
+    render(<AfWorkspaceEntry route={workspaceRoute('projects')} />);
     const card = await screen.findByRole('button', { name: /markpad/ });
     await user.click(card);
     expect(window.location.hash).toBe('#/project/markpad');

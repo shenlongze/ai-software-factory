@@ -21,7 +21,7 @@ import { api } from '../../api/client';
 import { useAsync } from '../../hooks/useAsync';
 import type { ParsedRoute } from '../../router';
 import { AfProjectCard } from './AfProjectCard';
-import { AfDashboard } from './AfDashboard';
+import { AfCompanyHome } from '../../pages/workspace/AfCompanyHome';
 import { AfEmptyState, AfErrorState, AfLoadingState } from './AfState';
 import { AfModulePlaceholder } from './AfModulePlaceholder';
 import { AfHeader } from './AfHeader';
@@ -91,14 +91,14 @@ function AfProjectListView(): JSX.Element {
   );
 }
 
-/** Main 页面分发 (S10-015 Task 006): dashboard → Control Center (AfDashboard 6 模块);
+/** Main 页面分发 (K-7b): dashboard → 我的公司首页 (AfCompanyHome 关注项目+待办, 信息量小);
  * projects → 项目列表 (保留); 其余 5 页 → AfModulePlaceholder (禁空白)。 */
 import { AfProjectManage } from '../../pages/workspace/AfProjectManage';
 import { AfSettings } from '../../pages/workspace/AfSettings';
 
 function WorkspacePage({ route }: { route: ParsedRoute }): JSX.Element {
   if (route.page === 'dashboard') {
-    return <AfDashboard />;
+    return <AfCompanyHome />;
   }
   if (route.page === 'projects') {
     return <AfProjectListView />;

@@ -2560,6 +2560,55 @@
   color: #6b7280;
 }
 
+/* ============ K-7b: 我的公司首页 (AfCompanyHome — 关注项目 + 待办) ============ */
+.af-company-home {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 960px;
+}
+
+.af-focused-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.af-focused-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  background: #0f1115;
+  border: 1px solid #2a3140;
+  border-radius: 8px;
+  text-decoration: none;
+  transition: border-color 0.15s ease;
+}
+
+.af-focused-card:hover {
+  border-color: var(--af-primary, #4c8dff);
+}
+
+.af-focused-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e5e7eb;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.af-focused-status {
+  font-size: 11px;
+  color: #4c8dff;
+}
+
+.af-focused-time {
+  font-size: 11px;
+  color: #6b7280;
+}
+
 .af-lc-bar {
   height: 8px;
   background: #2a3140;

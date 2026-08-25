@@ -49,17 +49,18 @@ describe('AI Factory 真实入口挂载 (App.tsx)', () => {
     expect(screen.queryByText('Human Console')).toBeNull();
   });
 
-  it('#/workspace → AI Factory 工作台 (真实项目列表, 非占位)', async () => {
+  it('#/workspace → AI Factory 工作台 (我的公司首页, 非占位)', async () => {
     stubConsoleApis();
     stubFetch({
-      '/api/dashboard': sampleDashboard({
-        projects: [sampleProject({ id: 'markpad', name: 'markpad' })],
-      }),
+      '/api/projects': [sampleProject({ id: 'markpad', name: 'markpad' })],
+      '/api/approvals?pending_only=true': [],
     });
     window.location.hash = '#/workspace';
     render(<App />);
     expect(await screen.findByTestId('af-workspace-entry')).toBeInTheDocument();
-    expect(await screen.findByText('markpad')).toBeInTheDocument();
+    const home = await screen.findByTestId('af-company-home');
+    expect(home).toBeInTheDocument();
+    expect(screen.getAllByText('我的公司').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('AI Factory')).toBeInTheDocument();
     expect(screen.queryByText('Human Console')).toBeNull();
   });

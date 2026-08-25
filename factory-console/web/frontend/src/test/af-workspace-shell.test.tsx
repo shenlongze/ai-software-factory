@@ -20,6 +20,14 @@ function workspaceRoute(page = 'dashboard') {
   return { level: 'workspace' as const, page };
 }
 
+/** 公司首页 (AfCompanyHome) 数据桩: GET /api/projects + /api/approvals?pending_only=true。 */
+function companyStubs(projects: unknown[] = [], approvals: unknown[] = []) {
+  return {
+    '/api/projects': projects,
+    '/api/approvals?pending_only=true': approvals,
+  };
+}
+
 const NAV_LABELS = [
   'Dashboard',
   'Projects',
@@ -60,7 +68,7 @@ afterEach(() => {
 
 describe('AfWorkspaceShell (AI OS 三栏壳)', () => {
   it('渲染三栏壳: Header + Sidebar 7 导航项 + Main + 预览窗口', () => {
-    stubFetch({ '/api/dashboard': sampleDashboard({ projects: [] }) });
+    stubFetch(companyStubs());
     render(<AfWorkspaceShell route={workspaceRoute()} />);
     expect(screen.getByTestId('af-workspace-entry')).toBeInTheDocument();
     expect(screen.getByTestId('af-header')).toBeInTheDocument();
@@ -73,7 +81,7 @@ describe('AfWorkspaceShell (AI OS 三栏壳)', () => {
   });
 
   it('默认 dashboard: Dashboard 导航项激活 (aria-current=page), 其他不激活', () => {
-    stubFetch({ '/api/dashboard': sampleDashboard({ projects: [] }) });
+    stubFetch(companyStubs());
     render(<AfWorkspaceShell route={workspaceRoute()} />);
     expect(screen.getByRole('button', { name: /Dashboard/ })).toHaveAttribute(
       'aria-current',
@@ -94,7 +102,7 @@ describe('AfWorkspaceShell (AI OS 三栏壳)', () => {
 
   it('点击导航项 → 更新 window.location.hash', async () => {
     const user = userEvent.setup();
-    stubFetch({ '/api/dashboard': sampleDashboard({ projects: [] }) });
+    stubFetch(companyStubs());
     render(<AfWorkspaceShell route={workspaceRoute()} />);
     await user.click(screen.getByRole('button', { name: /AI Team/ }));
     expect(window.location.hash).toBe('#/workspace/team');
@@ -106,7 +114,7 @@ describe('AfWorkspaceShell (AI OS 三栏壳)', () => {
 
   it('折叠切换 → 侧栏 class 变化 (af-sidebar--collapsed) + 再次点击恢复', async () => {
     const user = userEvent.setup();
-    stubFetch({ '/api/dashboard': sampleDashboard({ projects: [] }) });
+    stubFetch(companyStubs());
     render(<AfWorkspaceShell route={workspaceRoute()} />);
     const sidebar = screen.getByTestId('af-sidebar');
     expect(sidebar).not.toHaveClass('af-sidebar--collapsed');
@@ -119,7 +127,7 @@ describe('AfWorkspaceShell (AI OS 三栏壳)', () => {
   it('折叠状态持久化到 localStorage (af.sidebar.collapsed=1)', async () => {
     const user = userEvent.setup();
     const store = stubLocalStorage();
-    stubFetch({ '/api/dashboard': sampleDashboard({ projects: [] }) });
+    stubFetch(companyStubs());
     render(<AfWorkspaceShell route={workspaceRoute()} />);
     await user.click(screen.getByRole('button', { name: /折叠侧栏/ }));
     expect(store.get('af.sidebar.collapsed')).toBe('1');
@@ -131,26 +139,30 @@ describe('AfWorkspaceShell (AI OS 三栏壳)', () => {
     expect(screen.getByTestId('af-sidebar')).toHaveClass('af-sidebar--collapsed');
   });
 
-  it('dashboard: 渲染真实项目列表 (GET /api/dashboard)', async () => {
-    stubFetch({
-      '/api/dashboard': sampleDashboard({
-        projects: [
-          sampleProject({
-            id: 'markpad',
-            name: 'markpad',
-            lifecycle_stage: 'development',
-            progress: 0.66,
-          }),
-          sampleProject({ id: 'ledger-app', name: 'ledger-app', lifecycle_stage: null, status: 'idea' }),
+  it('dashboard (我的公司): 关注项目 (收藏+近期) + 待办聚合 (真实 API)', async () => {
+    const recent = new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString();
+    const old = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
+    stubFetch(
+      companyStubs(
+        [
+          sampleProject({ id: 'p-recent', name: '近期项目', starred: true, last_activity: recent, status: 'development' }),
+          sampleProject({ id: 'p-old', name: '旧收藏', starred: true, last_activity: old }),
+          sampleProject({ id: 'p-nostar', name: '未收藏', starred: false, last_activity: recent }),
         ],
-      }),
-    });
+        [
+          { id: 'APR-1', artifact_type: 'prd', gate: 'prd', status: 'pending', project_id: 'p-recent', requested_at: recent },
+        ],
+      ),
+    );
     render(<AfWorkspaceShell route={workspaceRoute()} />);
-    expect(await screen.findByText('markpad')).toBeInTheDocument();
-    expect(screen.getByText('ledger-app')).toBeInTheDocument();
-    expect(screen.getByText('开发')).toBeInTheDocument();
-    expect(screen.getByText('想法')).toBeInTheDocument();
-    expect(screen.getByText('66%')).toBeInTheDocument();
+    expect(await screen.findByTestId('af-company-home')).toBeInTheDocument();
+    // 关注项目: 收藏 + 近期更新 → 展示; 旧收藏/未收藏 → 不占位
+    expect(screen.getByTestId('af-focused-p-recent')).toBeInTheDocument();
+    expect(screen.queryByTestId('af-focused-p-old')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('af-focused-p-nostar')).not.toBeInTheDocument();
+    // 待办: 公司级聚合展示待审批
+    expect(screen.getByTestId('af-todo-APR-1')).toBeInTheDocument();
+    expect(screen.getByText(/PRD · 近期项目/)).toBeInTheDocument();
   });
 
   it('projects 页复用项目列表 (真实数据) + Projects 激活', async () => {
@@ -199,23 +211,23 @@ describe('AfWorkspaceShell (AI OS 三栏壳)', () => {
     expect(screen.getByRole('tab', { name: '🔌 MCP' })).toBeInTheDocument();
   });
 
-  it('加载中 → af-loading-state', () => {
+  it('加载中 → af-loading-state (projects 列表页)', () => {
     vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {})));
-    render(<AfWorkspaceShell route={workspaceRoute()} />);
+    render(<AfWorkspaceShell route={workspaceRoute('projects')} />);
     expect(screen.getByTestId('af-loading-state')).toBeInTheDocument();
   });
 
-  it('空列表 → af-empty-state (暂无项目)', async () => {
+  it('空列表 → af-empty-state (暂无项目, projects 列表页)', async () => {
     stubFetch({ '/api/dashboard': sampleDashboard({ projects: [] }) });
-    render(<AfWorkspaceShell route={workspaceRoute()} />);
+    render(<AfWorkspaceShell route={workspaceRoute('projects')} />);
     expect(await screen.findByTestId('af-empty-state')).toHaveTextContent(
       '暂无项目 — 输入想法创建一个',
     );
   });
 
-  it('API 失败 → af-error-state', async () => {
+  it('API 失败 → af-error-state (projects 列表页)', async () => {
     vi.stubGlobal('fetch', vi.fn(() => Promise.reject(new Error('network down'))));
-    render(<AfWorkspaceShell route={workspaceRoute()} />);
+    render(<AfWorkspaceShell route={workspaceRoute('projects')} />);
     expect(await screen.findByTestId('af-error-state')).toHaveTextContent('network down');
   });
 

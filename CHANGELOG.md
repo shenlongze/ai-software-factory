@@ -3,6 +3,24 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.98] — 2026-08-26
+
+**WebUI 工作台主页面 (我的公司首页) — K-7b 首页定稿**。
+
+### Added
+
+- **#/workspace 默认页改为"我的公司"首页** (AfCompanyHome, 替换信息过重的 AfDashboard):
+  - ⭐ 关注项目: 收藏 + 近期有更新 (近 7 天) 才展示, 无近期更新不占位; 点击卡片进项目
+  - 📋 我的待办: 公司级聚合待审批 (GET /api/approvals?pending_only=true) + 项目级过滤
+    (下拉: 全部(公司) / 按项目; 有 project_id 时按项目切)
+  - 诚实空态: 无收藏/无待办 → 明确提示; 质量待检/成本告警 API 待接入 → 诚实占位不伪造
+
+### 验证
+
+- 前端 672 passed (0 failed) · npm run build 通过 (tsc + vite) · 数据真实:
+  /api/projects 11 项目 + /api/approvals?pending_only=true 1 条真实待审批 (APR-001)
+- 后端零改动 · 前端测试 +5 公司首页用例 (关注/过滤/空态/失败安全); shell/入口/路由用例随新首页更新
+
 ## [v1.1.97] — 2026-08-26
 
 **项目收藏/关注 + 左栏"收藏/最近3/全部" + K-7b 累积**。

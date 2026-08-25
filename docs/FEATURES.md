@@ -2,7 +2,7 @@
 
 > **单一事实来源** — 当前系统到底有哪些功能、每个功能是什么、怎么用（CLI / API / 会话命令）、什么状态、从哪个版本开始有。
 >
-> 版本: **v1.1.85** · 更新: 2026-08-25 · 依据: 实测命令 + 代码核对 + CHANGELOG
+> 版本: **v1.1.86** · 更新: 2026-08-25 · 依据: 实测命令 + 代码核对 + CHANGELOG
 
 ## 0. 文档定位（与其他文档的分工）
 
@@ -48,6 +48,8 @@
 | **执行域** | 执行历史 | `factory exec history` | ✅ v1.1.30 域 |
 | **执行域** | 结果查询 | `factory run-status` | ✅ |
 | **执行域** | 审批门 | `factory approval list/decide/apply` | ✅ M1b |
+| **执行域** | 执行质量分 | `execute_task` 落盘 quality + `/board quality` | ✅ v1.1.86 |
+| **执行域** | PRD/工程计划质量评估 | `prepare_project` 落盘 PRD.quality.json / engineering.quality.json | ✅ v1.1.86 |
 | **展示域** | 任务监控面板 | `/board` + Web `/api/board` | ✅ v1.1.27 |
 | **展示域** | 依赖图/任务链/生命线/汇报 | `/board graph/chain/timeline/report` | ✅ v1.1.32-41 |
 | **展示域** | Markdown 预览 | `/preview <文件>` | ✅ v1.1.28 |
@@ -215,6 +217,20 @@ API（Web/集成）:   http://127.0.0.1:8011/api/...      e.g. GET /api/board
 - **说明**: `factory exec history` 真实执行历史/时间线；`factory run-status` 结果查询
 - **入口**: `factory exec history [--limit N]` · `factory run-status [--id <id>] [--json]`
 - **状态**: ✅ · **起始**: v1.1.30 域落地
+
+### 5.7 执行质量分 + 优选（K-2, v1.1.86）
+- **说明**: 每次执行产出确定性质量分 (纯规则不调 LLM, 复用 T5.3 五层思路:
+  validation 硬条件 + patch/scope/risk/coverage; 失败 → 总分封顶 0.35) —
+  落盘 execution_records.json quality 字段 (score/dimensions/evaluator_version/
+  scored_at/rules, 可审计); 多候选执行 (T5.3) 评估明细透出 (ranking/selected/
+  score_breakdown/rejection_reason); 低分 (score<0.5) 且重试耗尽 → 经能力路由换
+  资源再试一次 (resource_switched), 无替代 → 诚实报告 "低分无替代资源"
+- **PRD/工程计划质量评估 (B-6)**: score_prd + score_engineering (复用 M3d 六维
+  思路, 确定性) — prepare_project 落盘 PRD.quality.json + engineering.quality.json
+- **入口**: `/board quality [项目]`（只读, 渲染后 mtime 不变）·
+  `execute_task` 审计记录自动带 quality 字段
+- **状态**: ✅ · **起始**: v1.1.86
+
 
 ### 5.6 replay — 执行重放（M5-1, v1.1.82）
 - **说明**: 执行重放引擎 — dry-run 按时间线重建单次执行 (execution_records +
@@ -477,6 +493,7 @@ API（Web/集成）:   http://127.0.0.1:8011/api/...      e.g. GET /api/board
 | v1.1.49 | Board 单项目管理视图（全生命周期 11 段, 只读, 项目隔离） | 展示 |
 | v1.1.78 | M3 收尾三件套: ux/qa 真引擎+PRD 深度化 / ChangeControl 变更回流 / 架构审批门 · Agent/Skill 管理 | M3 (7/7) |
 | v1.1.81 | P0-10 注册表一致性 + P0-11 对称路径一致性（防遗漏机制） | 测试/工程保障 |
+| v1.1.86 | K-2 执行质量分+优选: C-2 质量分落盘 + C-3 多候选启用 + B-5 低分换资源 + B-6 PRD/工程评分 | K-2 战役 |
 | v1.1.85 | K-1 能力路由+员工管理: B-1~B-4 统一路由层 + A-2 员工 tab + A-3 mcp 管理 + F-4 提示词版本化 | K-1 战役 |
 | v1.1.84 | 战役规划 K 系列（A~J+主线合并统一路线, board 可见） | 规划/防遗漏 |
 | v1.1.83 | J-1 生命周期状态单一来源: set_project_lifecycle 统一写入口 + 防回退 + 存量对账 (factory project reconcile) · Board 三轨只读对账漂移可见 | 生命周期/可信度 |

@@ -166,6 +166,9 @@ def _default_execute_fn(
             )
         except Exception:  # noqa: BLE001 — 失败安全
             pass
+    quality = execution.get("quality") or {}
+    if not isinstance(quality, dict):
+        quality = {}
     return {
         "success": result.ok,
         "artifact": str(execution.get("artifact") or ""),
@@ -174,6 +177,9 @@ def _default_execute_fn(
         # S10-055 Task 004: Agent 选择理由透传 (execution_plan.json reason →
         # 执行结果; 旧式 plan 无 reason → 空串, 失败安全)
         "reason": str(task.get("reason") or ""),
+        # S10-117 C-2: 执行质量分透传 (score/dimensions/version; B-5 低分换资源
+        # 读此字段; 无分 → {} 中性, 不触发低分策略)
+        "quality": quality,
     }
 
 
@@ -874,11 +880,20 @@ class ExecutionOrchestrator:
     DEFAULT_MAX_RETRY = 1
 
     def __init__(
-        self, workspace: Path, validator: Optional[Validator] = None
+        self,
+        workspace: Path,
+        validator: Optional[Validator] = None,
+        # S10-117 B-5 (K-2): 低分换资源 — 可注入 CapabilityRouter (测试 fixture);
+        # None → 从工作区 agents 注册表构建 (失败安全)
+        resource_router: Optional[Any] = None,
+        low_score_threshold: float = 0.5,
     ) -> None:
         self.workspace = Path(workspace)
         # S10-053 P2: 质量门验证器 (缺省 mock Validator; 测试注入自定义 validator)
         self.validator = validator if validator is not None else Validator()
+        # S10-117 B-5: 替代资源路由器 (K-1 复用, 不重写; None → 默认构建)
+        self._resource_router = resource_router
+        self._low_score_threshold = float(low_score_threshold or 0.5)
 
     # ------------------------------------------------------------ 定位/加载
 
@@ -3039,8 +3054,14 @@ class ExecutionOrchestrator:
         失败: retry_count+1; retry_count <= max_retry → 重试一次; 仍失败 →
         status=failed + error (不无限重试, 继续下一任务)。每次状态变更即持久化。
         runner 异常 → 视为失败 (失败安全, 不裸抛)。
+
+        S10-117 B-5 (K-2): 附加钩子 (不改 pass/fail 基本行为) — 重试耗尽且
+        最终结果为低分 (quality.score < threshold) → 经 K-1 capability_router
+        查替代资源 → 有替代 → 换资源再试一次 (resource_switched=True, 有界);
+        无替代 → 诚实报告 "低分无替代资源" (task.low_quality_report)。
         """
         retries = 0
+        resource_switched = False
         # S10-073 P0-B: 任务开始自动 Audit (TASK_STARTED, 失败安全)
         try:
             from ..audit.audit_emitter import AuditEmitter
@@ -3129,6 +3150,15 @@ class ExecutionOrchestrator:
                 retries += 1
                 task["retry_count"] = retries
                 continue  # 重试 (最多 max_retry 次 — 不无限重试)
+            # S10-117 B-5: 重试耗尽 + 低分 → 换资源再试一次 (附加路径, 有界一次)
+            if self._low_quality_outcome(outcome) and not resource_switched:
+                if self._try_switch_resource(task, project_dir):
+                    resource_switched = True
+                    task["resource_switched"] = True
+                    retries = 0
+                    continue  # 换资源后一次新尝试 (resource_switched 护栏, 不无限换)
+                # 无替代资源 → 诚实报告 (不静默, 不改 pass/fail)
+                task["low_quality_report"] = "低分无替代资源"
             task["status"] = "failed"
             task["retry_count"] = retries
             self._save_state(project_dir, state)
@@ -3144,6 +3174,90 @@ class ExecutionOrchestrator:
             except Exception:  # noqa: BLE001
                 pass
             return outcome
+
+    # ------------------------------------------------------------ S10-117 B-5 低分换资源
+
+    def _low_quality_outcome(self, outcome: dict[str, Any]) -> bool:
+        """B-5: outcome 是否低质量 (quality.score < threshold; 无分 → False 中性)。
+
+        失败安全: quality 缺失/损坏/非数值 → False (不触发低分策略, 不阻断)。
+        """
+        try:
+            quality = (outcome or {}).get("quality") or {}
+            if not isinstance(quality, dict):
+                return False
+            value = quality.get("score")
+            if value is None:
+                return False
+            value = float(value)
+            if value != value or value in (float("inf"), float("-inf")):
+                return False
+            return value < self._low_score_threshold
+        except (TypeError, ValueError):
+            return False
+
+    def _try_switch_resource(self, task: dict[str, Any], project_dir: Path) -> bool:
+        """B-5: 经 K-1 capability_router 查替代资源 (排除当前 agent)。
+
+        有替代 → 更新 task["agent"] + resource_switch_reason → True;
+        无替代 / 路由失败 → False (调用方诚实报告 "低分无替代资源")。
+        resource_router 注入优先; None → 从工作区 agents 注册表构建 (失败安全,
+        与 actions.select_agent 同口径 — 不读用户 ~/.factory, 测试隔离)。
+        """
+        try:
+            current_agent = str(task.get("agent") or "")
+            router = self._resource_router
+            if router is None:
+                router = self._default_resource_router()
+            if router is None:
+                return False
+            from .capability_router import CapabilityRequest, derive_capabilities
+
+            objective = str(task.get("name") or task.get("objective") or "")
+            request = CapabilityRequest(
+                objective=objective, capabilities=derive_capabilities(objective)
+            )
+            decision = router.route(request)
+            if decision is None:
+                return False
+            new_agent = str(decision.resource_id or "")
+            if not new_agent or new_agent == current_agent:
+                return False  # 同资源不算换 (不空转)
+            task["agent"] = new_agent
+            task["resource_switch_reason"] = str(decision.reason or "")
+            return True
+        except Exception:  # noqa: BLE001 — 失败安全: 换资源失败不阻断
+            return False
+
+    def _default_resource_router(self) -> Optional[Any]:
+        """默认替代资源路由器 (工作区 agents.json + 内置默认; 失败安全 → None)。"""
+        try:
+            import json as _json
+
+            from .actions import DEFAULT_AGENTS, _workspace_agents_file
+            from .agents import AgentRegistry
+            from .capability_router import CapabilityRouter, build_agent_resources
+
+            agents_file = _workspace_agents_file(self.workspace)
+            if agents_file is not None:
+                data = _json.loads(agents_file.read_text(encoding="utf-8"))
+                if isinstance(data, dict) and isinstance(data.get("agents"), dict):
+                    data = data["agents"]
+                agents = AgentRegistry._normalize(data)
+                for aid, raw in (data or {}).items():
+                    if aid in agents and isinstance(raw, dict):
+                        for key in ("priority", "version", "load", "quality_score"):
+                            if raw.get(key) is not None:
+                                agents[aid][key] = raw[key]
+            else:
+                agents = AgentRegistry._normalize(
+                    {aid: dict(agent) for aid, agent in DEFAULT_AGENTS.items()}
+                )
+            if len(agents) < 2:
+                return None
+            return CapabilityRouter(build_agent_resources(agents))
+        except Exception:  # noqa: BLE001 — 失败安全: 默认路由构建失败 → None
+            return None
 
     # ------------------------------------------------------------ S10-060 重规划
 

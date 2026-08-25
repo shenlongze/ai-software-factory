@@ -280,6 +280,8 @@ def cmd_exec_run(root: Path, args: Any) -> dict:
         "usage": result.usage,
         "report": result.report,
         "event_seq": event_seq,
+        # S10-117 C-3: 多候选优选评估明细透出 (候选 >1 时非空; 单候选 → {})
+        "evaluation": result.evaluation,
         "exit_code": 0 if result.is_success else 1,
     }
 

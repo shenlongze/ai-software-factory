@@ -325,6 +325,10 @@ class AgentRuntime:
         Best — 评估明细经 runner.last_evaluation / self.last_evaluation
         审计, 为什么选它可解释); 全失败 → 最后一个失败结果 + 诚实拒绝理由
         (不静默伪装成功); 候选列表经 last_candidates 属性可审计。
+
+        S10-117 C-3 (K-2): 多候选优选输出增强 — 评估明细 (selected_candidate_id /
+        ranking / score_breakdown / rejection_reason) 经 result.evaluation 透出
+        (可解释可审计); 单候选路径 (flag 关 → _execute_legacy) 零变化。
         """
         provider_id = getattr(self._developer.provider, "provider_id", "")
         model = getattr(self._developer.provider, "model", "") or ""
@@ -340,6 +344,12 @@ class AgentRuntime:
         self._last_candidates = runner.candidates
         result = runner.select_result()  # T5.3: 经 CandidateEvaluator 正式选择
         self._last_evaluation = runner.last_evaluation
+        # C-3: 评估明细随结果透出 (失败安全: 序列化异常 → 保持缺省 {}, 不破坏结果)
+        if result is not None and self._last_evaluation is not None:
+            try:
+                result.evaluation = self._last_evaluation.model_dump(mode="json")
+            except Exception:  # noqa: BLE001 — 失败安全
+                pass
         return result
 
     def _execute_legacy(

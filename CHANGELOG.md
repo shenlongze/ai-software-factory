@@ -3,6 +3,49 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.86] — 2026-08-25
+
+**K-2 执行质量分 + 优选 (S10-117)**: C-2 执行质量分落盘 + C-3 T5.3 多候选优选启用 + B-5 低分失败策略闭环 + B-6 PRD/工程计划质量评估。
+
+### Added
+
+- **执行质量分 (C-2)**: `session/execution_quality.py` — 确定性评分器 (纯规则不调 LLM):
+  ExecutionQuality{score, dimensions, evaluator_version, scored_at, rules} + score_execution
+  (复用 T5.3 五层思路: validation 硬条件 + patch/scope/risk/coverage; 失败 → 总分封顶 0.35
+  < 低分阈值 0.5); 评分器异常 → score=None + reason (失败安全不阻断); 落盘
+  execution_records.json quality 字段 (score/dimensions/version/scored_at + rules, 可审计)
+- **多候选优选启用 (C-3)**: AgentRuntime 多候选路径评估明细透出 — ExecutionResult.evaluation
+  (selected_candidate_id / ranking / score_breakdown / rejection_reason); 全候选失败 →
+  rejection_reason 非空 (诚实拒绝不静默选最差); 单候选路径零变化 (strategy off → evaluation={})
+- **失败策略闭环 (B-5)**: orchestrator._execute_with_retry 附加钩子 — 低分
+  (quality.score < 0.5) 且重试耗尽 → 经 K-1 capability_router 查替代资源 → 有替代 → 换资源
+  再试一次 (resource_switched + reason); 无替代 → 诚实报告 "低分无替代资源"; 不改 pass/fail
+  基本行为, 不无限重试
+- **路由回写**: CapabilityResource += quality_score (Optional[float], None 中性);
+  route() 排序 key 扩展 (priority desc → quality desc [None 中性] → version desc →
+  load asc → id); K-1 无分 fixture 行为零变化
+- **PRD/工程计划质量评估 (B-6)**: score_prd + score_engineering (复用 M3d 六维思路,
+  确定性规则); 落盘 PRD.quality.json + engineering.quality.json (prepare_project 侧, 失败安全)
+- **展示入口 (只读)**: `/board quality [项目]` — 最近执行质量 (score/dimensions/version)
+  + PRD/工程质量; 渲染后 mtime 不变 (只读铁律)
+- **契约测试**: tests/console/test_s10_117_execution_quality.py (≥10: 质量分确定性/失败安全/
+  多候选优选/单候选零变化/低分换资源/路由回写/PRD+工程评分/展示只读/注册表门禁)
+
+### Changed
+
+- 版本 1.1.85 → 1.1.86 (pyproject + FEATURES.md + 版本断言同步)
+- 待办清单: K-2 / C-2 / C-3 / B-5 / B-6 标 ✅ (战役 K-2 第二战役完成);
+  战役规划状态追踪 K-2 ✅ v1.1.86
+- 既有测试同步: 版本断言 (1.1.86) / test_s10_116_campaign_plan (K-2 ✅)
+
+### 验证
+
+- 契约测试 tests/console/test_s10_117_execution_quality.py 全绿 · 聚焦回归
+  (actions/agent_runtime/evaluator/orchestrator/capability_router/board + 既有执行/路由/
+  评估测试) 全绿 · 全量 tests/console + tests/api 0 新增失败 · 实测: 成功/失败/低质量三类
+  fixture 分数 / 多候选 ranking+rejection / 低分换资源 / PRD+工程评分 / board quality 只读
+
+
 ## [v1.1.85] — 2026-08-25
 
 **K-1 能力路由 + 员工管理 (S10-116)**: B-1~B-4 统一能力路由层 + A-2 员工 tab + A-3 MCP 管理 + F-4 提示词版本化。

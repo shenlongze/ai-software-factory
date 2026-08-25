@@ -90,7 +90,7 @@ FRONTEND_AGENT = "flutter-dev"
 ARCH_REVIEW_PENDING = "pending_arch_review"
 
 #: 审计记录字段 (设计 §2.6): intent/action/agent/task/result/result_id/timestamp
-_RECORD_KEYS = ("intent", "action", "agent", "task", "result", "result_id", "timestamp", "error")
+_RECORD_KEYS = ("intent", "action", "agent", "task", "result", "result_id", "timestamp", "error", "quality")
 
 
 @dataclass
@@ -110,6 +110,8 @@ class AgentExecutionResult:
     result_id: Optional[str] = None
     error: Optional[str] = None
     reason: str = ""
+    # S10-117 C-2: 执行质量分 (0-1 + 维度 + 版本; 评分器故障 → score=None+reason)
+    quality: Optional[dict[str, Any]] = None
 
     def to_dict(self) -> dict[str, Any]:
         """渲染/审计视图 (顶层契约字段 + 摘要键)。"""
@@ -122,6 +124,7 @@ class AgentExecutionResult:
             "result_id": self.result_id,
             "error": self.error,
             "reason": self.reason,
+            "quality": self.quality,
         }
 
 
@@ -606,6 +609,8 @@ def prepare_project(context: ExecutionContext) -> ActionResult:
         product_file = product_dir / "product.json"
         existing_product = _read_json_file(product_file) if product_file.is_file() else {}
         _write_json_file(product_file, {**existing_product, **product.to_dict()})
+        # S10-117 B-6: PRD/工程计划质量分落盘 (确定性评分, 失败安全不阻断)
+        _write_plan_quality_files(product_dir, prd_text, plan, product)
     except Exception as exc:  # noqa: BLE001 — 失败安全: 落盘异常 → 明确错误
         return ActionResult(
             ok=False,
@@ -630,6 +635,27 @@ def prepare_project(context: ExecutionContext) -> ActionResult:
         },
         error=None,
     )
+
+
+def _write_plan_quality_files(
+    product_dir: Path, prd_text: str, plan: dict[str, Any], product: Any
+) -> None:
+    """B-6: PRD/工程计划质量分落盘 (PRD.quality.json + engineering.quality.json)。
+
+    确定性评分器 score_prd/score_engineering (复用 M3d 六维思路); 失败安全:
+    评分/落盘异常不阻断 prepare_project (质量分是附加资产, 不阻塞工程准备)。
+    """
+    try:
+        from .execution_quality import score_engineering, score_prd
+
+        prd_quality = score_prd(prd_text, product)
+        eng_quality = score_engineering(plan, product)
+        _write_json_file(product_dir / "PRD.quality.json", prd_quality.to_dict())
+        _write_json_file(
+            product_dir / "engineering.quality.json", eng_quality.to_dict()
+        )
+    except Exception:  # noqa: BLE001 — 失败安全: 质量分落盘失败不阻断
+        return
 
 
 def _arch_review_summary(
@@ -1057,6 +1083,46 @@ def _jsonable(value: Any) -> Any:
     return str(value)
 
 
+def _execution_quality_of(
+    result: dict[str, Any], execution: AgentExecutionResult
+) -> dict[str, Any]:
+    """C-2: 执行质量分 (确定性评分器 score_execution; 失败安全 → score=None+reason)。
+
+    evidence 从 exec CLI 结果构建 (validation 通过/失败 + patch 产物存在);
+    无更细证据 (scope/risk/coverage) → 评分器按中性处理, 不臆造。
+    纯规则, 不调 LLM; 质量分不阻断执行链 (任何异常 → score=None 诚实标注)。
+    """
+    try:
+        from .execution_quality import score_execution
+
+        artifacts = result.get("artifacts") or []
+        patch_types = {
+            str(a.get("type") or "")
+            for a in artifacts
+            if isinstance(a, dict)
+        }
+        evidence = {
+            "validation_result": {"passed": bool(execution.success)},
+            "patch_apply_result": {
+                "applied": ("patch" in patch_types) or bool(execution.artifact)
+            },
+        }
+        quality = score_execution(
+            {
+                "result": "success" if execution.success else "failed",
+                "error": execution.error,
+            },
+            evidence,
+        )
+        return quality.to_dict()
+    except Exception:  # noqa: BLE001 — 失败安全: 质量分缺失不阻断执行
+        from .execution_quality import ExecutionQuality
+
+        return ExecutionQuality(
+            score=None, reason="quality unavailable (execution result missing)"
+        ).to_dict()
+
+
 def _record_execution(
     context: AgentExecutionContext,
     execution: AgentExecutionResult,
@@ -1079,6 +1145,9 @@ def _record_execution(
             "result_id": execution.result_id,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "error": execution.error,
+            # S10-117 C-2: 执行质量分落盘 (score/dimensions/version/scored_at + rules;
+            # score=None + reason 诚实标注 — 可审计, 不阻断执行)
+            "quality": execution.quality,
             # S10-113 M5-1: input_snapshot — 完整输入 (intent/action/params/context 摘要),
             # 保证未来可重放 (re-exec 还原输入 → 同输入重跑); 只加字段, 执行链零改动
             "input_snapshot": {
@@ -1170,6 +1239,9 @@ def execute_task(context: ExecutionContext) -> ActionResult:
         error=error,
         reason=reason,
     )
+    # S10-117 C-2: 执行质量分 (确定性评分器, 失败安全 → score=None+reason;
+    # 经 AgentExecutionResult 透传到审计记录 + ActionResult.data → orchestrator)
+    execution.quality = _execution_quality_of(result, execution)
     _record_execution(exec_ctx, execution, params, result)
     if ok:
         message = f"任务执行完成: {agent}"

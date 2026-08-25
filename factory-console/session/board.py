@@ -2981,3 +2981,95 @@ def _project_exec_records(workspace: Path | str, slug: str, limit: int = 10) -> 
     ]
     matched.sort(key=lambda r: str(r.get("timestamp") or ""))
     return matched[-limit:]
+
+
+# ================================================================ S10-117 K-2 执行质量 (只读)
+
+
+def _read_quality_file(path: Path) -> Optional[dict[str, Any]]:
+    """读质量分 JSON 文件 (缺失/损坏 → None, 失败安全只读)。"""
+    if not Path(path).is_file():
+        return None
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else None
+    except (OSError, json.JSONDecodeError):  # noqa: BLE001
+        return None
+
+
+def _quality_line(prefix: str, quality: Optional[dict[str, Any]]) -> str:
+    """单条质量分摘要 (score/dimensions/version; score=None 诚实标注 reason)。"""
+    if not quality:
+        return f"{prefix} (无质量分)"
+    score = quality.get("score")
+    if score is None:
+        reason = str(quality.get("reason") or "评分不可用")
+        return f"{prefix} score=None ({reason})"
+    dims = quality.get("dimensions") or {}
+    dim_text = " · ".join(f"{k}={float(v):.2f}" for k, v in sorted(dims.items()))
+    return (
+        f"{prefix} score={float(score):.2f} [{dim_text}] "
+        f"(evaluator={quality.get('evaluator_version') or '-'})"
+    )
+
+
+def render_quality(
+    workspace: Path | str,
+    project_id: str = "",
+    limit: int = 5,
+) -> str:
+    """K-2 执行质量展示 (只读, 不写任何文件): 最近执行 quality + PRD/工程质量。
+
+    数据源 (全部失败安全):
+    - workspace/exec/execution_records.json → 最近执行 quality (score/dimensions/version)
+    - workspace/projects/<slug>/PRD.quality.json + engineering.quality.json
+    - workspace/projects/<slug>/project.json → 项目名
+    """
+    ws = Path(str(workspace or ""))
+    slug = Path(str(project_id or "")).name
+    lines: list[str] = ["📊 执行质量 (S10-117 K-2, 只读)"]
+
+    # 项目 PRD/工程质量 (B-6)
+    if slug:
+        pdir = ws / "projects" / slug
+        info = _read_product_info(ws, slug)
+        name = (info or {}).get("name") or slug
+        lines.append(f"项目: {name} ({slug})")
+        prd_q = _read_quality_file(pdir / "PRD.quality.json")
+        eng_q = _read_quality_file(pdir / "engineering.quality.json")
+        lines.append(_quality_line("  PRD 质量", prd_q))
+        lines.append(_quality_line("  工程计划质量", eng_q))
+        lines.append("")
+    else:
+        lines.append("  (未指定项目 — 仅展示全量执行记录质量)")
+        lines.append("")
+
+    # 最近执行质量 (C-2 落盘)
+    rec_file = ws / "exec" / "execution_records.json"
+    recs: list[dict[str, Any]] = []
+    if rec_file.is_file():
+        try:
+            data = json.loads(rec_file.read_text(encoding="utf-8"))
+            recs = data if isinstance(data, list) else data.get("records") or []
+        except (OSError, json.JSONDecodeError):  # noqa: BLE001
+            recs = []
+    with_quality = [
+        r for r in recs
+        if isinstance(r.get("quality"), dict) and r.get("quality", {}).get("score") is not None
+    ]
+    if not with_quality:
+        lines.append("最近执行: (无带质量分的执行记录)")
+        return "\n".join(lines)
+    with_quality.sort(key=lambda r: str(r.get("timestamp") or ""))
+    lines.append(f"最近 {min(limit, len(with_quality))} 次执行质量:")
+    for rec in with_quality[-limit:]:
+        score = rec["quality"].get("score")
+        agent = str(rec.get("agent") or "?")
+        task = str(rec.get("task") or "")[:32]
+        dims = rec["quality"].get("dimensions") or {}
+        dim_text = " · ".join(f"{k}={float(v):.2f}" for k, v in sorted(dims.items()))
+        lines.append(
+            f"  • {float(score):.2f} agent={agent} task={task} "
+            f"[{dim_text}] v={rec['quality'].get('evaluator_version') or '-'}"
+        )
+    return "\n".join(lines)

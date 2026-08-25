@@ -481,4 +481,4 @@ class TestVersion:
         ver = tomllib.loads((_ROOT / "pyproject.toml").read_text(encoding="utf-8"))[
             "project"
         ]["version"]
-        assert ver == "1.1.85"
+        assert ver == "1.1.86"

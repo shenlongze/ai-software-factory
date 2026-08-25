@@ -188,7 +188,16 @@ class ExecutionResult(_ExecModel):
     error: str = ""
     duration: float = 0.0
     context_score: float | None = None
+    # S10-117 C-3: 多候选优选输出增强 — 候选 >1 时经 CandidateEvaluator 正式选择,
+    # 评估明细 (selected_candidate_id/ranking/score_breakdown/rejection_reason) 随
+    # 结果透出 (可解释可审计); 单候选/旧路径 → 缺省 {} (零变化)。
+    evaluation: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=utcnow)
+
+    @field_validator("evaluation", mode="before")
+    @classmethod
+    def _evaluation_none(cls, v: Any) -> Any:
+        return v if v is not None else {}
 
     @field_validator("status", mode="before")
     @classmethod

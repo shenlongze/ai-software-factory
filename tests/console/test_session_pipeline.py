@@ -921,7 +921,9 @@ def test_full_pipeline_create_then_prepare(fake_org, tmp_path):
     pdir = root / "projects" / "scorepocket"
     expected = [
         "PRD.md",  # 大写 P 排序在前
+        "PRD.quality.json",  # S10-117 B-6: PRD 质量分落盘
         "engineering.json",
+        "engineering.quality.json",  # S10-117 B-6: 工程计划质量分落盘
         "execution_plan.json",
         "product.json",
         "project.json",

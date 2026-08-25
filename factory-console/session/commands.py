@@ -339,6 +339,7 @@ class BoardCommand(SlashCommand):
                               --compare <exec2_id> 对比 (缺省最近一次) / --save 落盘
       /board project      项目列表（select 切换）
       /board project <slug>  单项目管理视图（全生命周期, 只读）
+      /board quality [项目] 执行质量展示（S10-117 K-2, 只读 — 最近执行 + PRD/工程质量）
       /board report       生成给 Hermes 的 markdown 汇报
       /board report --save  汇报落盘到 docs/sprint10/
       /board done <id>      标记主线任务完成（如 /board done M3-1）
@@ -353,7 +354,7 @@ class BoardCommand(SlashCommand):
         from .board import (
             render_board, render_graph, render_timeline,
             render_chain, render_report, render_project_lifecycle,
-            render_projects_list, render_project_report,
+            render_projects_list, render_project_report, render_quality,
             _read_default_project, _set_default_project, split_task,
             read_docs_config, write_docs_config,
             mark_backlog_item, save_report, sync_mainline,
@@ -377,6 +378,12 @@ class BoardCommand(SlashCommand):
                     print("（未设置工作区 — 无法读项目 plan.json）")
                     return 1
                 print(render_chain(workspace, project))
+            elif view == "quality":
+                # S10-117 K-2: 执行质量展示 (只读 — 渲染不写任何文件)
+                if workspace is None:
+                    print("（未设置工作区 — 无法读执行质量）")
+                    return 1
+                print(render_quality(workspace, project))
             elif view == "report":
                 if project:
                     print(render_project_report(workspace, project))

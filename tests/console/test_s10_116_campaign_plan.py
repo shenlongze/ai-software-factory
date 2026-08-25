@@ -29,8 +29,10 @@ class TestCampaignBacklog:
         assert ids == [f"K-{i}" for i in range(1, 11)]
         by_id = {t["id"]: t for t in g["tasks"]}
         # S10-116 (v1.1.85): K-1 能力路由+员工管理已交付
+        # S10-117 (v1.1.86): K-2 执行质量分+优选已交付
         assert by_id["K-1"]["done"] is True
-        assert all(by_id[f"K-{i}"]["done"] is False for i in range(2, 11))
+        assert by_id["K-2"]["done"] is True
+        assert all(by_id[f"K-{i}"]["done"] is False for i in range(3, 11))
 
     def test_campaign_doc_exists_with_acceptance(self):
         """战役规划文档存在, 含总览 + 每战役验收标准。"""

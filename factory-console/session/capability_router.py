@@ -12,7 +12,7 @@ CapabilityRouter.route(request) -> Optional[RouteDecision{resource_id, reason}]
 
 确定性契约 (纯规则, 不调 LLM):
 - 候选 = capabilities 交集非空 (请求能力 ⊆ 资源能力标签)
-- 排序: (priority desc, version desc, load asc, id asc) — 稳定可复现
+- 排序: (priority desc, quality desc [None 中性], version desc, load asc, id asc) — 稳定可复现
 - 取首个 status=ready; 无交集 / 全部 disabled → None
 - reason 可解释: 命中 capabilities + 排序依据 (为什么选它)
 
@@ -110,7 +110,9 @@ class CapabilityResource:
     status: ready | degraded | disabled (K-2 挂点, 本战役只挂字段不实现优选)
     load:   负载值 (K-3 负载均衡挂点, 本战役只挂字段; 排序 load asc 已落位)
     priority: 高=优先 (确定性排序第一键)
-    version:  版本 (确定性排序第二键, 语义化比较)
+    quality_score: 资源质量分 (0-1; None=中性 — 排序 tiebreaker 在 priority 之后、
+    version 之前; K-1 无分 fixture → 行为零变化)
+    version:  版本 (确定性排序第三键, 语义化比较)
     """
 
     id: str
@@ -119,6 +121,7 @@ class CapabilityResource:
     status: str = "ready"
     load: float = 0.0
     priority: int = 0
+    quality_score: Optional[float] = None
     version: str = DEFAULT_VERSION
 
     def __post_init__(self) -> None:
@@ -142,6 +145,18 @@ class CapabilityResource:
         if load < 0:
             raise ValueError(f"CapabilityResource.load 不能为负: {load!r}")
         self.load = load
+        if self.quality_score is not None:
+            try:
+                qs = float(self.quality_score)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"CapabilityResource.quality_score 非法: {self.quality_score!r}"
+                ) from exc
+            if not (0.0 <= qs <= 1.0):
+                raise ValueError(
+                    f"CapabilityResource.quality_score 越界: {qs!r} (须 0-1)"
+                )
+            self.quality_score = qs
         self.capabilities = [str(c) for c in (self.capabilities or [])]
         if not self.version:
             self.version = DEFAULT_VERSION
@@ -181,9 +196,15 @@ def _version_key(version: Any) -> tuple[int, ...]:
 
 
 def _capability_key(resource: CapabilityResource) -> tuple:
-    """路由排序键: (priority desc, version desc, load asc, id asc) — 确定性。"""
+    """路由排序键: (priority desc, quality desc [None 中性], version desc,
+    load asc, id asc) — 确定性; quality_score=None 与 0 区分 (None 中性不压分)。"""
+    # None 中性: 排序键 has_quality=0 (不参与); 有分者 quality desc (高分优先)
+    quality = float(resource.quality_score) if resource.quality_score is not None else 0.0
+    has_quality = 1 if resource.quality_score is not None else 0
     return (
         -int(resource.priority),
+        -has_quality,  # 有分者优先于无分 (tiebreaker 语义; None 中性不压分)
+        -quality,
         tuple(-v for v in _version_key(resource.version)),
         float(resource.load),
         str(resource.id),
@@ -195,7 +216,7 @@ class CapabilityRouter:
 
     route(request) -> Optional[RouteDecision]:
     - 候选 = capabilities 交集非空的资源 (请求 capability 命中资源标签)
-    - 排序: (priority desc, version desc, load asc, id asc)
+    - 排序: (priority desc, quality desc [None 中性], version desc, load asc, id asc)
     - 首个 status=ready → RouteDecision (reason 含命中集合 + 排序依据)
     - 无交集 / 全部 disabled → None (调用方按兜底策略处理)
     """
@@ -223,8 +244,9 @@ class CapabilityRouter:
         candidates.sort(key=_capability_key)
         # 排序依据 (可解释): 前三名描述 + 全量候选 id 序
         ranked_desc = ", ".join(
-            f"{r.type} '{r.id}' (priority={r.priority}, version={r.version}, "
-            f"load={r.load:g})"
+            f"{r.type} '{r.id}' (priority={r.priority}, "
+            f"quality={r.quality_score if r.quality_score is not None else '-'}, "
+            f"version={r.version}, load={r.load:g})"
             for r in candidates[:3]
         )
         all_ids = ", ".join(f"'{r.id}'" for r in candidates)
@@ -235,7 +257,8 @@ class CapabilityRouter:
             reason = (
                 f"{resource.type} '{resource.id}' 命中 capabilities "
                 f"{{{', '.join(matched)}}} (共 {len(candidates)} 候选: {all_ids}; "
-                f"排序按 priority desc → version desc → load asc → id: {ranked_desc})"
+                f"排序按 priority desc → quality desc (None 中性) → "
+                f"version desc → load asc → id: {ranked_desc})"
             )
             return RouteDecision(resource_id=resource.id, reason=reason)
         return None  # 全部候选 disabled → 无可用资源
@@ -245,6 +268,13 @@ class CapabilityRouter:
     @staticmethod
     def from_dict(resource: dict[str, Any]) -> CapabilityResource:
         """dict → CapabilityResource (只取白名单键; 缺省字段兜底)。"""
+        quality_raw = resource.get("quality_score")
+        quality_score: Optional[float] = None
+        if quality_raw is not None:
+            try:
+                quality_score = float(quality_raw)
+            except (TypeError, ValueError):  # noqa: BLE001 — 损坏 → None 中性 (失败安全)
+                quality_score = None
         return CapabilityResource(
             id=str(resource.get("id") or ""),
             type=str(resource.get("type") or ""),
@@ -252,6 +282,7 @@ class CapabilityRouter:
             status=str(resource.get("status") or "ready"),
             load=float(resource.get("load") or 0.0),
             priority=int(resource.get("priority") or 0),
+            quality_score=quality_score,
             version=str(resource.get("version") or DEFAULT_VERSION),
         )
 
@@ -401,6 +432,13 @@ def build_agent_resources(agents: dict[str, dict[str, Any]]) -> list[CapabilityR
                 if val and val not in caps:
                     caps.append(val)
         status = str(agent.get("status") or "").lower()
+        quality_raw = agent.get("quality_score")
+        quality_score: Optional[float] = None
+        if quality_raw is not None:
+            try:
+                quality_score = float(quality_raw)
+            except (TypeError, ValueError):  # noqa: BLE001 — 损坏 → None 中性
+                quality_score = None
         resources.append(
             CapabilityResource(
                 id=str(aid),
@@ -409,6 +447,7 @@ def build_agent_resources(agents: dict[str, dict[str, Any]]) -> list[CapabilityR
                 status=("disabled" if status in ("disabled", "offline") else "ready"),
                 load=float(agent.get("load") or 0.0),
                 priority=int(agent.get("priority") or 0),
+                quality_score=quality_score,
                 version=str(agent.get("version") or DEFAULT_VERSION),
             )
         )

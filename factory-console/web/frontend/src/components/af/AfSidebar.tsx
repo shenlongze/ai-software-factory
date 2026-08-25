@@ -52,7 +52,7 @@ export function AfSidebar({ activePage, collapsed }: AfSidebarProps): JSX.Elemen
   >([]);
   const [query, setQuery] = useState('');
   const [creating, setCreating] = useState(false);
-  const [showAll, setShowAll] = useState<boolean>(true); // 全部默认展开 (Founder: 别藏项目)
+  const [showAll, setShowAll] = useState<boolean>(false); // 全部默认收起 (Founder 2026-08-26: 默认收起, 点开展开)
 
   useEffect(() => {
     let cancelled = false;

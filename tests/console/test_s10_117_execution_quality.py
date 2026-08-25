@@ -574,3 +574,14 @@ class TestRegistryGate:
         src = Path(__file__).read_text(encoding="utf-8")
         count = len([ln for ln in src.splitlines() if ln.startswith("    def test_")])
         assert count >= 10
+
+
+class TestBoardQualityWeb:
+    """S10-118 补: Web board 质量视图接线 (view=quality 路由 + 导航 tab)。"""
+
+    def test_board_nav_has_quality_tab(self):
+        nav = BOARD._board_nav("quality", "P-1")
+        assert "📊 质量" in nav
+        assert "view=quality&project=P-1" in nav
+        nav2 = BOARD._board_nav("mainline", "")
+        assert "view=quality" in nav2

@@ -3,7 +3,19 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
-## [v1.1.87] — 2026-08-25
+## [v1.1.88] — 2026-08-25
+
+**Web board 质量视图接线 (K-2 补)**: render_quality 已交付但 Web 路由未接。
+
+### Added
+
+- **/api/board?view=quality**: fastapi_adapter 接线 (之前 fall-through 到项目首页)
+- **board 导航 📊 质量 tab**: 与 项目/任务树/…/员工 并列; CLI /board quality 早已可用
+
+### 验证
+
+- 契约测试 +1 (nav 含质量 tab/路由) · 回归 console+api 全绿 · v1.1.88
+
 
 **发现对话上下文保持 + LLM 失败响亮报错 (S10-118, Founder 实测修复)**。
 

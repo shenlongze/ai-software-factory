@@ -1600,6 +1600,7 @@ def _board_nav(active: str = "project", project: str = "", workspace: Optional[P
         ("timeline", f"/api/board/timeline?project={g}" if g else "/api/board/timeline", "⏱ 生命线"),
         ("report", f"/api/board?view=report&project={g}" if g else "/api/board?view=report", "📄 汇报"),
         ("docs", f"/api/board/docs?project={g}" if g else "/api/board?view=projects", "📚 文档"),
+        ("quality", f"/api/board?view=quality&project={g}" if g else "/api/board?view=quality", "📊 质量"),
         ("mainline", "/api/board?view=mainline", "📋 AI主线面板"),
         ("employees", "/api/board?view=employees", "👥 员工"),
     ]

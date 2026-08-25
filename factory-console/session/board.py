@@ -3074,3 +3074,68 @@ def render_quality(
             f"[{dim_text}] v={rec['quality'].get('evaluator_version') or '-'}"
         )
     return "\n".join(lines)
+
+
+def render_cost(workspace: Path | str, project_id: str = "") -> str:
+    """K-3 M4-4/D-6 成本可视化 (只读, 不写任何文件): 每项目/每任务实际成本。
+
+    数据源 (全部失败安全):
+    - CostLedger.aggregate (cost_records.json) → 总成本/按 agent/按 task
+    - project_budget.json (项目级预算, 缺省 → 无上限) + BudgetEnforcer →
+      预算等级 (ok/warn/review/block) — 只读展示, 不触发告警/不写审计
+    """
+    ws = Path(str(workspace or ""))
+    slug = Path(str(project_id or "")).name
+    lines: list[str] = ["💰 成本 (S10-119 M4-4/D-6, 只读)"]
+    try:
+        from .cost_ledger import CostLedger
+        from .budget import ProjectBudget, BudgetUsage, BudgetEnforcer
+
+        ledger_file = (
+            ws / "projects" / slug / "cost_records.json"
+            if slug
+            else ws / "cost" / "cost_records.json"
+        )
+        ledger = CostLedger(file=ledger_file)
+        agg = ledger.aggregate()
+        if not agg.get("record_count"):
+            lines.append("  (无成本记录 — 执行后自动回填 cost_records.json)")
+            return "\n".join(lines)
+        lines.append(
+            f"  总成本: ${agg['total_cost']:.4f} USD · {agg['total_tokens']} tokens · "
+            f"{agg['record_count']} 条"
+        )
+        lines.append(
+            f"  分项: 规划 ${agg['planning_cost']:.4f} · 执行 ${agg['execution_cost']:.4f} · "
+            f"修复 ${agg['repair_cost']:.4f} · 重规划 ${agg['replanning_cost']:.4f}"
+        )
+        by_task = agg.get("by_task") or {}
+        if by_task:
+            lines.append("  每任务成本:")
+            for tid, item in sorted(
+                by_task.items(), key=lambda kv: -float(kv[1].get("cost") or 0.0)
+            )[:10]:
+                lines.append(
+                    f"    • {tid[:40]}: ${float(item.get('cost') or 0.0):.4f} "
+                    f"({item.get('tokens') or 0} tokens, {item.get('calls') or 0} 次)"
+                )
+        by_agent = agg.get("by_agent") or {}
+        if by_agent:
+            lines.append("  每 Agent 成本:")
+            for aid, item in sorted(
+                by_agent.items(), key=lambda kv: -float(kv[1].get("cost") or 0.0)
+            )[:10]:
+                lines.append(
+                    f"    • {aid}: ${float(item.get('cost') or 0.0):.4f} "
+                    f"({item.get('calls') or 0} 次)"
+                )
+        # 预算等级 (只读展示 — 不触发告警/阻断, 不写审计)
+        budget = ProjectBudget()
+        if slug:
+            budget = ProjectBudget.load_or_default(ws / "projects" / slug / "project_budget.json")
+        usage = BudgetUsage.from_records(ledger.records(), budget=budget)
+        check = BudgetEnforcer.check(budget, usage)
+        lines.append(f"  预算等级: {check['level']} ({check['reason']})")
+    except Exception as exc:  # noqa: BLE001 — 只读展示失败安全
+        lines.append(f"  (成本渲染失败: {exc})")
+    return "\n".join(lines)

@@ -4,7 +4,7 @@
 /status   显示会话状态 (session/workspace/当前项目/当前 Agent — 来自 SessionContext)
 /project  项目列表 (无参=查看) / 切换 current_project (有参=<id>) — 只读
           projects.json (与 FactoryCLI._project_list 同一数据口径 — 复用, 不复制业务)
-/cost     成本信息接口占位 (会话近期活动摘要; 不复制 exec 用量业务)
+/cost     成本信息 (CostLedger 只读聚合 + 会话近期活动摘要; 不写任何文件)
 /exit     退出会话 (设置宿主 session.running=False)
 
 原则 (S10-046 设计 §6 边界): 命令只做会话内编排, 业务逻辑全部在既有 Service
@@ -305,24 +305,50 @@ class ProjectCommand(SlashCommand):
 
 
 class CostCommand(SlashCommand):
-    """/cost — 成本信息接口 (占位: 会话近期活动摘要; 不复制 exec 用量业务)。"""
+    """/cost — 成本信息 (S10-119 M4-4/D-6: CostLedger 只读聚合 + 会话近期活动摘要)。"""
 
     name = "cost"
-    description = "成本/用量信息 (占位: 会话近期活动摘要)"
+    description = "成本/用量信息 (CostLedger 只读聚合 + 会话近期活动)"
 
     def execute(self, args: str, context: SessionContext) -> int:
-        print("=== 成本/用量 ===")
+        print("=== 成本/用量 (只读) ===")
+        # S10-119 M4-4/D-6: CostLedger 真实聚合 (只读, 不写任何文件)
+        try:
+            from .cost_ledger import CostLedger
+            from .budget import ProjectBudget, BudgetUsage, BudgetEnforcer
+
+            ws_val = getattr(context, "workspace", None) or str(Path.home() / ".factory")
+            ws = Path(ws_val)
+            ledger = CostLedger(file=ws / "cost" / "cost_records.json")
+            agg = ledger.aggregate()
+            if agg.get("record_count"):
+                print(
+                    f"总成本: ${agg['total_cost']:.4f} USD · {agg['total_tokens']} tokens"
+                    f" · {agg['record_count']} 条"
+                )
+                print(
+                    f"分项: 规划 ${agg['planning_cost']:.4f} · 执行 ${agg['execution_cost']:.4f}"
+                    f" · 修复 ${agg['repair_cost']:.4f} · 重规划 ${agg['replanning_cost']:.4f}"
+                )
+                by_agent = agg.get("by_agent") or {}
+                if by_agent:
+                    top = sorted(by_agent.items(), key=lambda kv: -float(kv[1].get("cost") or 0.0))[:5]
+                    print("每 Agent: " + " · ".join(
+                        f"{aid} ${float(v.get('cost') or 0.0):.4f}" for aid, v in top
+                    ))
+                budget = ProjectBudget()
+                usage = BudgetUsage.from_records(ledger.records(), budget=budget)
+                print(f"预算等级: {BudgetEnforcer.check(budget, usage)['level']}")
+            else:
+                print("无成本记录 (执行后自动回填 cost_records.json)")
+        except Exception as exc:  # noqa: BLE001 — 只读展示失败安全
+            print(f"（成本聚合失败: {exc}）")
         print(f"session_id: {context.session_id}")
-        print(f"会话输入数: {len(context.history)}")
         recent = context.history[-RECENT_LIMIT:]
         if recent:
             print("近期活动:")
             for line in recent:
                 print(f"  {line}")
-        print(
-            "说明: 执行成本统计接口 (provider usage / run-status) 由后续 Task 接入, "
-            "本命令不复制执行业务。"
-        )
         return 0
 
 
@@ -340,6 +366,7 @@ class BoardCommand(SlashCommand):
       /board project      项目列表（select 切换）
       /board project <slug>  单项目管理视图（全生命周期, 只读）
       /board quality [项目] 执行质量展示（S10-117 K-2, 只读 — 最近执行 + PRD/工程质量）
+      /board cost [项目]   成本可视化（S10-119 M4-4/D-6, 只读 — 每项目/每任务实际成本）
       /board report       生成给 Hermes 的 markdown 汇报
       /board report --save  汇报落盘到 docs/sprint10/
       /board done <id>      标记主线任务完成（如 /board done M3-1）
@@ -355,6 +382,7 @@ class BoardCommand(SlashCommand):
             render_board, render_graph, render_timeline,
             render_chain, render_report, render_project_lifecycle,
             render_projects_list, render_project_report, render_quality,
+            render_cost,
             _read_default_project, _set_default_project, split_task,
             read_docs_config, write_docs_config,
             mark_backlog_item, save_report, sync_mainline,
@@ -384,6 +412,12 @@ class BoardCommand(SlashCommand):
                     print("（未设置工作区 — 无法读执行质量）")
                     return 1
                 print(render_quality(workspace, project))
+            elif view == "cost":
+                # S10-119 M4-4/D-6: 成本可视化 (只读 — 渲染不写任何文件)
+                if workspace is None:
+                    print("（未设置工作区 — 无法读成本）")
+                    return 1
+                print(render_cost(workspace, project))
             elif view == "report":
                 if project:
                     print(render_project_report(workspace, project))

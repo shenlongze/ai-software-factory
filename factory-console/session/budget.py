@@ -327,3 +327,45 @@ class BudgetEnforcer:
             "action": action,
             "ratio": result["ratio"],
         }
+
+def check_and_alert(
+    budget: Any,
+    usage: Any,
+    *,
+    workspace: Any = None,
+    project_id: str = "",
+    action: str = "",
+) -> dict[str, Any]:
+    """S10-119 M4-4: 预算判定 + 超预算告警 (audit BUDGET_WARNING/BUDGET_BLOCKED)。
+
+    BudgetEnforcer.check → 超预算 (warn/block) → AuditEmitter 发射
+    BUDGET_WARNING / BUDGET_BLOCKED 审计事件 (失败安全, 审计故障不阻断判定);
+    返回 check 结果 dict (level/reason/usage/ratio) — 与 BudgetEnforcer.check
+    同口径 (复用, 不重写判定语义)。
+
+    阻断判定由调用方执行: 调用方见 level=block → 禁止 action (设计 §3);
+    本函数只判定 + 告警 (audit + 消息), 不执行动作。
+    """
+    result = BudgetEnforcer.check(budget, usage)
+    level = str(result.get("level") or "ok")
+    if level in (BudgetEnforcer.LEVEL_WARN, BudgetEnforcer.LEVEL_BLOCK):
+        try:
+            from ..audit.audit_emitter import AuditEmitter
+
+            event_type = (
+                "BUDGET_BLOCKED"
+                if level == BudgetEnforcer.LEVEL_BLOCK
+                else "BUDGET_WARNING"
+            )
+            AuditEmitter(workspace=workspace).emit(
+                event_type,
+                project_id=str(project_id or ""),
+                actor_type="system",
+                decision_reason=(
+                    f"{event_type}: {result.get('reason') or ''}"
+                    + (f" | action={action}" if action else "")
+                ),
+            )
+        except Exception:  # noqa: BLE001 — 失败安全: 审计故障不阻断判定
+            pass
+    return result

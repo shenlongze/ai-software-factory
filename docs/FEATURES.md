@@ -2,7 +2,7 @@
 
 > **单一事实来源** — 当前系统到底有哪些功能、每个功能是什么、怎么用（CLI / API / 会话命令）、什么状态、从哪个版本开始有。
 >
-> 版本: **v1.1.88** · 更新: 2026-08-25 · 依据: 实测命令 + 代码核对 + CHANGELOG
+> 版本: **v1.1.89** · 更新: 2026-08-25 · 依据: 实测命令 + 代码核对 + CHANGELOG
 
 ## 0. 文档定位（与其他文档的分工）
 
@@ -248,6 +248,21 @@ API（Web/集成）:   http://127.0.0.1:8011/api/...      e.g. GET /api/board
 
 ## 6. 展示域（看得见）
 
+### 5.8 K-3 学习闭环（v1.1.89）
+- **说明**: 让 Agent 变强且可控 — 执行完自动经验入库 → 下次同类任务引用 (带 reason); 全部学习路径挂护栏 (开关/样本可信度/预算上限/一键回滚); 审批决策落组织记忆; 成本超预算告警/阻断; 画像优先分配 + 负载均衡; L4 非 git 快照; 低分任务评估驱动修复闭环
+- **入口**: 执行自动 (execute_task) · `/board cost [项目]` · `/cost` · 学习经验 (`memory_learn`) · 分析Agent (`memory_analyze_agent`) · 搜索经验 (`memory_search`)
+- **功能明细**:
+  | 子功能 | 说明 | 起始版本 |
+  |---|---|---|
+  | 经验闭环 (M4-1/B-7/E-1) | `memory/learning_loop.py`: on_execution_complete 自动入库 + resolve_for_task 同类引用 (reason 可解释, 注入执行 prompt) | v1.1.89 |
+  | 学习护栏 (M4-2) | `memory/learning_guards.py`: 总开关/样本可信度(n>=3 主导)/低质量不写/预算上限/快照回滚 | v1.1.89 |
+  | 决策记忆 (M4-3/E5) | `memory/decision_memory.py`: 审批→DECISION_LEARNED→decision_memory.json→下次同类审批带历史 (N 次/批准率) | v1.1.89 |
+  | 成本告警 (M4-4/D-6) | usage→聚合→BudgetEnforcer→超预算 BUDGET_WARNING/BUDGET_BLOCKED 审计 + 执行前阻断 + 回填 task/agent | v1.1.89 |
+  | 画像分配 (M4-5) | capability_router 排序: priority → persona (agent_profiles) → load → quality → version → id | v1.1.89 |
+  | L4 快照 (M4-6) | execution_replay 非 git 目录级快照/还原 (git 路径沿用) | v1.1.89 |
+  | E-2/E-3 评估闭环 | `session/eval_loop.py`: 低分→分类→建议→应用(repair_task)→复评提升断言 | v1.1.89 |
+- **状态**: ✅ · **关联**: docs/sprint10/S10-119 设计文档 · 待办清单 K-3/M4-1~6
+
 ### 6.1 /board — 任务监控面板（核心）
 - **说明**: todolist + 进度条 + 标签；主线（M/P0）vs 周边（长期）分清楚；多源加载：待办清单 + Sprint 验收 + 方案书章节 + 代码证据自动同步
 - **入口（会话）**: `/board` `/board graph [项目]` `/board chain [项目]` `/board timeline` `/board report [--save]` `/board done <id>` `/board unmark <id>` `/board sync` `/board replay <exec_id> [--re-exec|--compare <id2>|--save]`
@@ -303,6 +318,8 @@ API（Web/集成）:   http://127.0.0.1:8011/api/...      e.g. GET /api/board
   | 员工管理计划 | 待办清单 A-1~A-4 (补skill/管理面板/MCP/流程) 进 board 周边; 解析支持任意章节 | v1.1.79 |
   | Skill 资产补齐 | A-1: 11 个 skill 补齐, 7 角色装配全成功 (不再缺 skill 兜底) | v1.1.80 |
   | Skill 真调用 | 外部注册 skill 装配生效 + 执行注入 prompt (不再只是标签) | v1.1.82 |
+  | 执行质量视图 | `/board quality [项目]` 最近执行质量分 + PRD/工程计划质量 (K-2, 只读) | v1.1.88 |
+  | 成本可视化 | `/board cost [项目]` 每项目/每任务/每 Agent 实际成本 + 预算等级 (K-3 M4-4/D-6, 只读) | v1.1.89 |
 - **状态**: ✅（数据真实，空态诚实引导）· **关联**: 待办清单 + docs/sprint10 验收
 
 ### 6.2 /preview — Markdown 预览
@@ -351,7 +368,7 @@ API（Web/集成）:   http://127.0.0.1:8011/api/...      e.g. GET /api/board
 | `/help` | 列出可用命令 | ✅ |
 | `/status` | 会话状态（session/workspace/项目/Agent） | ✅ |
 | `/project` | 项目列表/切换（`/project <id>`） | ✅ |
-| `/cost` | 成本查询 | ✅ |
+| `/cost` | 成本查询 (CostLedger 只读聚合 + 预算等级, K-3 M4-4) | ✅ v1.1.89 |
 | `/preview` | Markdown 预览 | ✅ v1.1.28 |
 | `/board` | 任务监控面板（见 §6.1） | ✅ v1.1.27 |
 | `/exit` | 退出会话 | ✅ |
@@ -493,6 +510,7 @@ API（Web/集成）:   http://127.0.0.1:8011/api/...      e.g. GET /api/board
 | v1.1.49 | Board 单项目管理视图（全生命周期 11 段, 只读, 项目隔离） | 展示 |
 | v1.1.78 | M3 收尾三件套: ux/qa 真引擎+PRD 深度化 / ChangeControl 变更回流 / 架构审批门 · Agent/Skill 管理 | M3 (7/7) |
 | v1.1.81 | P0-10 注册表一致性 + P0-11 对称路径一致性（防遗漏机制） | 测试/工程保障 |
+| v1.1.89 | K-3 学习闭环 (S10-119): M4-1 经验闭环 + M4-2 学习护栏 + M4-3 决策记忆 + M4-4 成本告警 + M4-5 画像分配 + M4-6 L4 快照 + E-2/E-3 评估闭环 | K-3 战役 |
 | v1.1.88 | Web board 质量视图接线 (view=quality + 📊 导航) — K-2 补 | 监控/质量 |
 | v1.1.87 | 发现对话上下文保持 (逃生挂起) + 委托/求助口语全覆盖 + LLM 失败响亮报错 (网络/超时/限流/5xx) | 会话/可信度 |
 | v1.1.86 | K-2 执行质量分+优选: C-2 质量分落盘 + C-3 多候选启用 + B-5 低分换资源 + B-6 PRD/工程评分 | K-2 战役 |

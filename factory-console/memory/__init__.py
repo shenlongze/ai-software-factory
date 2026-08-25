@@ -13,6 +13,9 @@ Future Recommendation。
 - retrieval.py         — ExperienceRetriever (关键词检索 + 相似项目) (G5)
 - recommendation.py    — Recommender (planning/debug 提醒 — 影响未来) (G7)
 - learning_trace.py    — LearningTrace (learning_trace.json 审计) (G8)
+- learning_guards.py   — LearningGuards (K-3 M4-2 学习护栏: 开关/样本/预算/快照)
+- learning_loop.py     — LearningLoop (K-3 M4-1 经验闭环: 执行完入库 + 同类任务引用)
+- decision_memory.py   — DecisionMemory (K-3 M4-3/E5 决策记忆: DECISION_LEARNED → 组织记忆)
 
 设计: docs/sprint10/S10-067-memory-learning-design.md
 边界: 纯标准库, 零新依赖; 失败安全 (缺失/损坏 → 空, 不抛); 关键词+规则
@@ -38,6 +41,9 @@ from .experience_store import (
     experience_store_file,
     memory_dir,
 )
+from .learning_guards import LearningGuards
+from .learning_loop import ExperienceHit, LearningLoop, load_agent_profiles, refresh_agent_profiles
+from .decision_memory import DecisionMemory, DecisionRecord
 from .extraction import ExperienceExtractor
 from .learning_engine import (
     AgentProfile,
@@ -59,10 +65,15 @@ __all__ = [
     "ExperienceExtractor",
     "ExperienceRecord",
     "ExperienceRetriever",
+    "DecisionMemory",
+    "DecisionRecord",
+    "ExperienceHit",
     "ExperienceStore",
     "FAILURE_PATTERN",
     "LEARNING_TRACE_FILE_NAME",
     "LearningEngine",
+    "LearningGuards",
+    "LearningLoop",
     "LearningResult",
     "LearningTrace",
     "PLANNING_EXPERIENCE",
@@ -71,6 +82,8 @@ __all__ = [
     "Recommender",
     "SUCCESS_PATTERN",
     "TYPES",
+    "load_agent_profiles",
+    "refresh_agent_profiles",
     "USER_FEEDBACK",
     "ensure_type",
     "experience_store_file",

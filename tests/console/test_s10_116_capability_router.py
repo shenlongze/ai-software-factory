@@ -145,7 +145,7 @@ class TestUnifiedRouterDeterminism:
             CR.CapabilityRequest(capabilities=["frontend_ui"]))
         assert "命中 capabilities {frontend_ui}" in d.reason
         # S10-117 (K-2): 排序 key 扩展 quality desc (None 中性) — reason 同步
-        assert "排序按 priority desc → quality desc (None 中性) → version desc → load asc → id" in d.reason
+        assert "排序按 priority desc → persona desc (None 中性) → load asc → quality desc (None 中性) → version desc → id" in d.reason
         assert "'skill-b'" in d.reason
         assert "priority=5" in d.reason and "version=2.0.0" in d.reason
         assert "quality=-" in d.reason  # 无分资源中性展示

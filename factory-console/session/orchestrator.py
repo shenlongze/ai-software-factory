@@ -621,8 +621,11 @@ class _GovernanceContext:
         # S10-065: 执行开始时间 (wall-clock, time.monotonic) — max_execution_time
         # 计时基准 (每任务执行前检查 elapsed; None → 不计时)
         execution_started: Optional[float] = None,
+        # S10-119 M4-4: 审计工作区 (成本告警审计发射用; None → 默认 ~/.factory)
+        workspace: Any = None,
     ) -> None:
         self.project_id = str(project_id or "")
+        self.workspace = Path(workspace) if workspace is not None else Path.home() / ".factory"
         self.budget = budget
         self.cost_ledger = cost_ledger
         self.review_gate = review_gate
@@ -700,6 +703,27 @@ class _GovernanceContext:
             return None
         result = BudgetEnforcer.enforce(self.budget, self._usage(), action)
         level = str(result.get("level") or "ok")
+        # S10-119 M4-4: 超预算告警闭环 (audit + 消息) — warn/block 发射审计事件;
+        # 阻断判定语义不变 (block → stop, review → waiting_for_review, warn → 继续)
+        if level in (BudgetEnforcer.LEVEL_WARN, BudgetEnforcer.LEVEL_BLOCK):
+            try:
+                from ..audit.audit_emitter import AuditEmitter
+
+                event_type = (
+                    "BUDGET_BLOCKED"
+                    if level == BudgetEnforcer.LEVEL_BLOCK
+                    else "BUDGET_WARNING"
+                )
+                AuditEmitter(workspace=self.workspace).emit(
+                    event_type,
+                    project_id=self.project_id,
+                    actor_type="system",
+                    decision_reason=(
+                        f"{event_type}: {result.get('reason') or ''} | action={action}"
+                    ),
+                )
+            except Exception:  # noqa: BLE001 — 失败安全: 审计故障不阻断执行
+                pass
         if level == BudgetEnforcer.LEVEL_BLOCK:
             return self._stop(self.STATUS_BLOCKED, result.get("reason") or "")
         if level == BudgetEnforcer.LEVEL_REVIEW:
@@ -1304,6 +1328,7 @@ class ExecutionOrchestrator:
                         policy=policy,
                         loop_guard=loop_guard,
                         execution_started=started,
+                        workspace=project_dir.parent.parent,
                     ),
                 ),
             )
@@ -1380,6 +1405,8 @@ class ExecutionOrchestrator:
                 loop_guard=loop_guard,
                 # S10-065: max_execution_time 计时基准 (从执行开始累积)
                 execution_started=started,
+                # S10-119 M4-4: 审计工作区 (成本告警审计)
+                workspace=project_dir.parent.parent,
             ),
         )
         result.duration = time.monotonic() - started

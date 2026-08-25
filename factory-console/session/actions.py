@@ -826,6 +826,22 @@ def approve_project_plan(context: ExecutionContext) -> ActionResult:
         )
     arch = data.get("arch_review") or {}
     summary = str(arch.get("summary") or f"项目 {slug} 工程计划待审批")
+    # S10-119 M4-3/E5: 决策记忆回流 — 下次同类审批带历史 ("历史同类决策: N 次,
+    # 批准率 X%") + 少审提示 (失败安全: 记忆读取故障 → 不带历史, 不阻断审批)
+    try:
+        from ..memory.decision_memory import DecisionMemory
+
+        hist = DecisionMemory(workspace=context.workspace).history(
+            "project_plan_approval", context_key=slug
+        )
+        if hist.get("total"):
+            print(
+                f"历史同类决策: {hist['total']} 次, "
+                f"批准率 {float(hist['approval_rate'] or 0.0):.0%} "
+                f"(批准 {hist['approved']} / 拒绝 {hist['rejected']})"
+            )
+    except Exception:  # noqa: BLE001 — 失败安全
+        pass
     print(f"工程计划待架构审批: {slug}\n{summary}")
     approved = _ask_confirmation(context, "approve_project_plan", "架构审批")
     now = datetime.now(timezone.utc).isoformat()
@@ -851,6 +867,20 @@ def approve_project_plan(context: ExecutionContext) -> ActionResult:
             Lifecycle.EXECUTION_READY,
             product_file=product_file,
         )
+        # S10-119 M4-3: 审批 → DECISION_LEARNED → 组织记忆 (失败安全)
+        try:
+            from ..memory.decision_memory import DecisionMemory
+
+            DecisionMemory(workspace=context.workspace).record(
+                decision_id=f"arch-{slug}-approved-{now}",
+                type="project_plan_approval",
+                outcome="approved",
+                context=str(slug),
+                actor_id=str(getattr(context, "user", "") or "user"),
+                project_id=str(slug),
+            )
+        except Exception:  # noqa: BLE001 — 失败安全
+            pass
         return ActionResult(
             ok=True,
             status=STATUS_OK,
@@ -879,6 +909,20 @@ def approve_project_plan(context: ExecutionContext) -> ActionResult:
             "arch_review": {**arch, "decision": "rejected", "reviewed_at": now, "feedback": feedback},
         },
     )
+    # S10-119 M4-3: 拒绝决策同样落组织记忆 (失败安全)
+    try:
+        from ..memory.decision_memory import DecisionMemory
+
+        DecisionMemory(workspace=context.workspace).record(
+            decision_id=f"arch-{slug}-rejected-{now}",
+            type="project_plan_approval",
+            outcome="rejected",
+            context=str(slug),
+            actor_id=str(getattr(context, "user", "") or "user"),
+            project_id=str(slug),
+        )
+    except Exception:  # noqa: BLE001 — 失败安全
+        pass
     return ActionResult(
         ok=True,
         status=STATUS_CANCELLED,
@@ -1011,7 +1055,16 @@ def _route_agent_by_capability(
         objective=objective, capabilities=derive_capabilities(objective)
     )
     try:
-        decision = CapabilityRouter(build_agent_resources(agents)).route(request)
+        # S10-119 M4-5: 画像分来源 agent_profiles (失败安全无画像 → 中性;
+        # 高画像/低负载 Agent 优先 — 排序键扩展, K-1 基本逻辑不变)
+        from ..memory.learning_loop import load_agent_profiles
+
+        agent_profiles = load_agent_profiles(
+            getattr(context, "workspace", None) if context is not None else None
+        )
+        decision = CapabilityRouter(
+            build_agent_resources(agents, agent_profiles=agent_profiles)
+        ).route(request)
     except Exception:  # noqa: BLE001 — 路由失败安全 → 默认兜底
         return None
     return decision.resource_id if decision is not None else None
@@ -1134,6 +1187,7 @@ def _record_execution(
     context 为 AgentExecutionContext (task_id/agent_id/project_id 扩展字段入审计);
     测试隔离: records 文件位于 context.workspace 下 (workspace 缺省 ~/.factory),
     审计失败不阻断执行 (record_execution 内部失败安全)。
+    返回记录 dict (S10-119 M4-1 学习钩子用); 审计失败 → None。
     """
     try:
         record = {
@@ -1167,8 +1221,9 @@ def _record_execution(
             record,
             records_file=Path(context.workspace) / "exec" / "execution_records.json",
         )
+        return record
     except Exception:  # noqa: BLE001 — 失败安全: 审计失败不影响执行结果
-        return
+        return None
 
 
 def execute_task(context: ExecutionContext) -> ActionResult:
@@ -1186,6 +1241,19 @@ def execute_task(context: ExecutionContext) -> ActionResult:
     objective = str(params.get("objective") or "")
     task_id = params.get("task_id") or params.get("task") or ""
     project_ref = str(params.get("project") or context.project or context.workspace)
+    # S10-119 M4-1: 经验引用 (护栏内, 失败安全) — 命中 → 执行 prompt 注入
+    # "引用经验 X 因为 Y" (reason 可解释); 无命中/关闭/异常 → 零变化
+    experience_reference = ""
+    try:
+        from ..memory.learning_loop import LearningLoop
+
+        hit = LearningLoop(workspace=context.workspace).resolve_for_task(
+            objective, context.workspace
+        )
+        if hit is not None:
+            experience_reference = hit.reason
+    except Exception:  # noqa: BLE001 — 失败安全: 经验引用故障不阻断执行
+        experience_reference = ""
     agent = select_agent(context.intent, context)
     # S10-055 Task 004: AgentMatcher 可解释理由 (失败安全 → "", 不改变决策)
     reason = _agent_reason_for(agent, objective)
@@ -1199,6 +1267,40 @@ def execute_task(context: ExecutionContext) -> ActionResult:
         agent_id=params.get("agent_id"),
         project_id=params.get("project") or context.project,
     )
+    # S10-119 M4-4: 执行前预算阻断检查 (usage → 聚合 → BudgetEnforcer.check;
+    # 无项目预算配置 → 跳过 (向后兼容); block → 阻断执行 + 告警)
+    try:
+        from .budget import ProjectBudget, BudgetUsage, BudgetEnforcer
+        from .cost_ledger import CostLedger
+
+        budget_file = (
+            Path(context.workspace) / "projects" / str(project_ref).strip().strip("/")
+            / "project_budget.json"
+            if str(project_ref).strip() and project_ref != context.workspace
+            else None
+        )
+        if budget_file is not None and budget_file.is_file():
+            budget = ProjectBudget.load_or_default(budget_file)
+            ledger = CostLedger(file=budget_file.parent / "cost_records.json")
+            usage = BudgetUsage.from_records(ledger.records(), budget=budget)
+            enforce = BudgetEnforcer.enforce(budget, usage, "execute")
+            if enforce.get("level") == BudgetEnforcer.LEVEL_BLOCK:
+                # 告警 (audit BUDGET_BLOCKED) — 复用 M4-4 告警闭环
+                try:
+                    from .budget import check_and_alert
+                    check_and_alert(budget, usage, workspace=context.workspace,
+                                    project_id=str(project_ref), action="execute")
+                except Exception:  # noqa: BLE001 — 告警失败不改变阻断结果
+                    pass
+                return ActionResult(
+                    ok=False,
+                    status=STATUS_ERROR,
+                    message=f"任务执行被预算阻断: {enforce['reason']}",
+                    data={"budget_block": enforce},
+                    error=enforce["reason"],
+                )
+    except Exception:  # noqa: BLE001 — 失败安全: 预算检查故障不阻断执行
+        pass
     if not objective and not task_id:
         return ActionResult(
             ok=False,
@@ -1206,10 +1308,17 @@ def execute_task(context: ExecutionContext) -> ActionResult:
             message="任务执行失败: 缺少任务描述 (objective/task)",
             error="缺少任务描述 (objective/task)",
         )
+    # M4-1: 命中经验 → 执行 prompt 注入 "引用经验 X 因为 Y" (reason 可解释;
+    # 记录/回放仍用原始 objective — 经验引用只作 prompt 上下文, 不污染任务标识)
+    objective_with_ref = (
+        f"{objective}\n\n[经验参考] {experience_reference}"
+        if experience_reference
+        else objective
+    )
     args = SimpleNamespace(
         project=project_ref,
         task=task_id,
-        objective=objective,
+        objective=objective_with_ref,
         agent=agent,
         employee=params.get("employee"),
         provider=params.get("provider"),
@@ -1242,9 +1351,36 @@ def execute_task(context: ExecutionContext) -> ActionResult:
     # S10-117 C-2: 执行质量分 (确定性评分器, 失败安全 → score=None+reason;
     # 经 AgentExecutionResult 透传到审计记录 + ActionResult.data → orchestrator)
     execution.quality = _execution_quality_of(result, execution)
-    _record_execution(exec_ctx, execution, params, result)
+    record = _record_execution(exec_ctx, execution, params, result)
+    # S10-119 M4-1: 执行完成自动经验入库 (护栏内, 失败安全; 低质量/关闭 → 不写)
+    if record is not None:
+        try:
+            from ..memory.learning_loop import LearningLoop
+
+            exp_id = LearningLoop(workspace=context.workspace).on_execution_complete(
+                record, execution.quality, context.workspace
+            )
+            if exp_id:
+                try:
+                    from ..audit.audit_emitter import AuditEmitter
+
+                    AuditEmitter(workspace=context.workspace).emit(
+                        "MEMORY_LEARNED",
+                        project_id=str(exec_ctx.project_id or ""),
+                        task_id=str(exec_ctx.task_id or ""),
+                        agent_id=str(exec_ctx.agent_id or agent or ""),
+                        actor_type="system",
+                        decision_reason=f"执行完成自动学习: 经验 {exp_id}",
+                        memory_reference=exp_id,
+                    )
+                except Exception:  # noqa: BLE001 — 失败安全
+                    pass
+        except Exception:  # noqa: BLE001 — 失败安全: 学习故障不阻断执行
+            pass
     if ok:
         message = f"任务执行完成: {agent}"
+        if experience_reference:
+            message += f" · {experience_reference}"
         if execution.artifact:
             message += f" · 产物 {execution.artifact}"
         return ActionResult(
@@ -2491,6 +2627,20 @@ def review_approve(context: ExecutionContext) -> ActionResult:
             )
         except Exception:  # noqa: BLE001 — 失败安全
             pass
+        # S10-119 M4-3/E5: 评审决策 → DECISION_LEARNED → 组织记忆 (失败安全)
+        try:
+            from ..memory.decision_memory import DecisionMemory
+
+            DecisionMemory(workspace=workspace).record(
+                decision_id=f"review-{review_id}-approved",
+                type="review",
+                outcome="approved",
+                context=str(review_id),
+                actor_id=str(getattr(context, "user", "") or reviewer),
+                project_id=str(getattr(context, "project", "") or ""),
+            )
+        except Exception:  # noqa: BLE001 — 失败安全
+            pass
         return ActionResult(ok=True, status=STATUS_OK,
                             message=f"评审 {review_id} 已批准 ({rec.status}) — 可继续执行。")
     except Exception as exc:  # noqa: BLE001 — 失败安全
@@ -2514,6 +2664,20 @@ def review_reject(context: ExecutionContext) -> ActionResult:
         if not review_id:
             return ActionResult(ok=True, status=STATUS_OK, message="没有待拒绝的评审。")
         rec = gate.reject(review_id, reviewer)
+        # S10-119 M4-3/E5: 拒绝决策 → DECISION_LEARNED → 组织记忆 (失败安全)
+        try:
+            from ..memory.decision_memory import DecisionMemory
+
+            DecisionMemory(workspace=workspace).record(
+                decision_id=f"review-{review_id}-rejected",
+                type="review",
+                outcome="rejected",
+                context=str(review_id),
+                actor_id=str(getattr(context, "user", "") or reviewer),
+                project_id=str(getattr(context, "project", "") or ""),
+            )
+        except Exception:  # noqa: BLE001 — 失败安全
+            pass
         return ActionResult(ok=True, status=STATUS_OK,
                             message=f"评审 {review_id} 已拒绝 ({rec.status}) — 生产停止。")
     except Exception as exc:  # noqa: BLE001 — 失败安全
@@ -2726,8 +2890,11 @@ def memory_learn(context: ExecutionContext) -> ActionResult:
     context.require("user")
     try:
         from ..memory.learning_engine import LearningEngine
+        from ..memory.learning_loop import refresh_agent_profiles
         ws = _memory_workspace(context)
         result = LearningEngine(workspace=ws).run(ws)
+        # S10-119 M4-5: 画像落盘 (capability_router 画像分来源; 护栏内失败安全)
+        refresh_agent_profiles(ws)
         lines = [
             f"学习完成: 提取 {result.extracted_count} 条经验"
             f" → {len(result.patterns)} 个模式 + {len(result.agent_profiles)} 个 Agent 画像",

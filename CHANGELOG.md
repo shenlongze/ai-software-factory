@@ -3,6 +3,31 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.89] — 2026-08-25
+
+**K-3 学习闭环 (S10-119, 主线 M4 全 6 项)**: 让 Agent 变强且可控 — 经验闭环 + 学习护栏 + 决策记忆 + 成本告警 + 画像分配 + L4 快照完整化 + E-2/E-3 评估驱动闭环。
+
+### Added
+
+- **M4-1/B-7/E-1 经验闭环** (`memory/learning_loop.py`): 执行完成后自动经验入库 (`on_execution_complete` — 护栏检查 → 确定性提取 → ExperienceStore.add, 低质量不写诚实返回) + 下次同类任务引用 (`resolve_for_task` → ExperienceHit{experience_id, summary, reason: "引用经验 X 因为 Y (相似度 0.xx)", dominant}) + 执行 prompt 注入 "引用经验 X 因为 Y" (reason 可解释); 闭环可断言: 两次同类任务 → 第二次引用第一次
+- **M4-2 学习护栏** (`memory/learning_guards.py`, 最高优先级): 总开关 (默认 True, 配置可关 → 学习/引用零行为变化) / 样本可信度 (n>=3 才主导, 低样本降权) / 样本质量 (q>=0.5 才写入) / 预算上限 (超限阻断+告警) / 学习状态快照+一键回滚 (画像/经验/决策记忆)
+- **M4-3 决策记忆回流 E5** (`memory/decision_memory.py`): 审批 (approved/rejected) → DECISION_LEARNED 审计 → 组织记忆落盘 decision_memory.json {decision_id,type,outcome,context,learned_at} → 下次同类审批显示 "历史同类决策: N 次, 批准率 X%" (approve_project_plan + review_approve/reject 接入)
+- **M4-4/D-6 成本告警闭环**: CostLedger usage → aggregate (cost_by_task/agent) → BudgetEnforcer.check → 超预算告警 (BUDGET_WARNING/BUDGET_BLOCKED 审计, orchestrator + budget.check_and_alert) + 阻断 (execute_task 执行前检查) → 回填 (cost 关联 task/agent); /board cost <project> + /cost 成本可视化 (只读)
+- **M4-5 画像优先分配 + 负载均衡** (`capability_router`): 排序扩展 (priority desc → persona desc [agent_profiles] → load asc → quality desc → version desc → id); 画像分来源 agent_profiles.json (trigger_learning/学习闭环自动刷新, 失败安全无画像 → 中性); K-1 基本逻辑不动
+- **M4-6 L4 快照完整化** (`execution_replay`): 非 git 工作区目录级快照 (复制基线到 .factory_snapshots/<exec_id>-<ts>/ → 还原清空+复制回); git 路径沿用受限版; 不可快照 → ReplayError 明确
+- **E-2/E-3 评估驱动修复/优化闭环** (`session/eval_loop.py`): 低分任务 → 失败分类 (确定性规则) → 修复建议 → 应用 (repair_task 机制) → 复评 → 分数提升断言 (至少一条可断言闭环)
+
+### Changed
+
+- `execute_task`: 执行前预算阻断检查 (项目预算 block → 明确错误) + 执行完成自动学习/画像刷新/成本回填 (全部护栏内失败安全)
+- `memory_learn` / LearningLoop: Agent 画像刷新落盘 agent_profiles.json (capability_router 数据源)
+- 契约测试: `test_s10_119_learning_loop.py` 29 用例 (设计 §2 契约 1-13 全覆盖)
+- 既有测试更新: capability_router reason 排序文案 (M4-5) · execution_replay L4 非 git 快照契约 (原"需 git 仓库"改为"非 git 目录级快照") · 版本断言 1.1.89
+
+### 验证
+
+- 契约测试 29 passed · 聚焦回归 (memory/actions/capability_router/execution_replay/budget/cost_ledger/board) 全绿 · tests/console + tests/api 全量 0 新增失败 · v1.1.89
+
 ## [v1.1.88] — 2026-08-25
 
 **Web board 质量视图接线 (K-2 补)**: render_quality 已交付但 Web 路由未接。

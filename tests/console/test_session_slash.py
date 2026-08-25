@@ -271,18 +271,20 @@ def test_cost_shows_context_summary(capsys):
     rc = CMDS_MOD.build_default_registry().execute("/cost", ctx)
     out = capsys.readouterr().out
     assert rc == 0
-    assert "=== 成本/用量 ===" in out
+    assert "=== 成本/用量 (只读) ===" in out
     assert ctx.session_id in out
-    assert "会话输入数: 3" in out
     assert "/project demo" in out  # 近期活动摘要
-    assert "不复制执行业务" in out  # 占位接口声明
+    # S10-119 M4-4/D-6: /cost 已接 CostLedger 只读聚合 (不再是占位)
+    assert "无成本记录 (执行后自动回填 cost_records.json)" in out
+    assert "只读" in out
 
 
 def test_cost_empty_history(capsys):
     rc = CMDS_MOD.build_default_registry().execute("/cost", _context())
     out = capsys.readouterr().out
     assert rc == 0
-    assert "会话输入数: 0" in out
+    assert "=== 成本/用量 (只读) ===" in out
+    assert "无成本记录" in out
 
 
 # ------------------------------------------------------------------ /exit

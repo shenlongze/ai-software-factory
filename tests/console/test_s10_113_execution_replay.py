@@ -9,7 +9,8 @@
 4. 对比报告: 两次执行真实 diff (结果/耗时/步骤数) + --save 落盘文件含真实 diff
 5. 记录完善: execute_task 新记录含 input_snapshot (可还原输入)
 6. 入口: /board replay (dry-run/--re-exec/--compare) + 自然语言 "重跑 <id>" → 意图路由
-7. L4 (受限实现): snapshot → rollback 恢复执行前状态 (项目目录 git 仓库)
+7. L4 (S10-119 M4-6 完整化): snapshot → rollback 恢复执行前状态
+   (git 仓库沿用受限版; 非 git 工作区目录级快照可还原)
 
 诚实纪律: dry-run 真实重建 / re-exec 真实重跑 (fake runner 模拟执行链, 断言
 引擎契约) / 对比真实 diff / 缺快照如实报错 — 无 stub 假装成功。
@@ -553,15 +554,20 @@ class TestL4SnapshotRollback:
         with pytest.raises(REPLAY.ReplayError, match="无 L4 快照"):
             _engine(ws).rollback("EXS-001")
 
-    def test_snapshot_requires_git_repo(self, tmp_path):
-        """非 git 仓库项目目录 → snapshot_before 明确错误 (不静默)。"""
+    def test_non_git_uses_dir_copy_snapshot(self, tmp_path):
+        """S10-119 M4-6: 非 git 工作区 → 目录级快照 (不再报"需 git 仓库")。"""
         plain = tmp_path / "plain"
         plain.mkdir()
+        (plain / "a.txt").write_text("v1", encoding="utf-8")
         ws = tmp_path / "ws"
         ws.mkdir()
         _write_records(ws, [_record("EXS-001", project=str(plain))])
-        with pytest.raises(REPLAY.ReplayError, match="需要 git 仓库项目目录"):
-            _engine(ws).snapshot_before("EXS-001")
+        engine = _engine(ws)
+        snap = engine.snapshot_before("EXS-001")
+        assert snap  # 快照路径 (非 git 目录级快照成功)
+        (plain / "a.txt").write_text("v2", encoding="utf-8")
+        engine.rollback("EXS-001")
+        assert (plain / "a.txt").read_text(encoding="utf-8") == "v1"  # 还原
 
 
 # ------------------------------------------------------------------ 一致性 (契约 6 补充: 注册表)

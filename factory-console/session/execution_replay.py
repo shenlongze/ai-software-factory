@@ -14,8 +14,10 @@
     → ReplayError 明确错误, 不瞎跑。
   - compare(exec_id1, exec_id2, save_to=None) -> str: 两次执行真实 diff
     (步骤/结果/耗时/产物); save_to → 写 docs/sprint10/replay-compare-<id1>-<id2>.md。
-  - snapshot_before / rollback (L4, 受限): 项目目录 git 快照 (stash create 基线)
-    → reset --hard 回滚; 非 git 仓库/无项目目录 → ReplayError 明确。
+  - snapshot_before / rollback (L4, S10-119 M4-6 完整化): git 仓库路径沿用
+    受限版 (stash create 基线 → reset --hard + clean -fd 回滚); 非 git 工作区
+    → 目录级快照 (复制基线到 workspace/.factory_snapshots/<exec_id>-<ts>/)
+    → 还原 (清空 + 复制回); 无项目目录/复制失败 → ReplayError 明确 (不静默)。
     说明: 复用 sandbox 同一 git 快照机制 (add/diff/apply 家族), 但 sandbox
     本体操作副本 (create 拷贝 + 独立基线), 对"执行前状态回滚"语义需在
     项目仓库内直接取基线, 故用 git stash create (不修改工作区/索引,
@@ -33,6 +35,7 @@ from __future__ import annotations
 import difflib
 import json
 import os
+import shutil
 import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -303,9 +306,10 @@ class ReplayEngine:
         if not project_dir.is_dir():
             raise ReplayError(f"项目目录不存在: {project_dir} — 无法做 L4 快照")
         if not (project_dir / ".git").is_dir():
-            raise ReplayError(
-                f"L4 快照需要 git 仓库项目目录 (非 git 仓库无法回滚): {project_dir}"
-            )
+            # S10-119 M4-6: 非 git 工作区 → 目录级快照 (复制基线到快照目录)。
+            # 快照目录位于 workspace 下 (项目目录外) — 还原时清空项目目录后复制回,
+            # 保证"执行前状态"精确还原 (含执行期新增文件一并清除)。
+            return self._snapshot_dir_copy(exec_id, record, project_dir)
         staged = self._git(project_dir, "add", "-A")
         if staged.returncode != 0:
             raise ReplayError(
@@ -345,6 +349,11 @@ class ReplayEngine:
         if not isinstance(snap, dict):
             raise ReplayError(f"执行记录 {exec_id} 无 L4 快照 — 请先 snapshot_before")
         project_dir = Path(str(snap.get("project_dir") or ""))
+        method = str(snap.get("method") or "")
+        if method == "dir-copy":
+            # S10-119 M4-6: 非 git 目录级快照还原 (清空项目目录 + 复制回基线)
+            self._rollback_dir_copy(exec_id, record, snap, project_dir)
+            return
         baseline = str(snap.get("baseline") or "")
         if not project_dir.is_dir() or not baseline:
             raise ReplayError(
@@ -360,6 +369,77 @@ class ReplayEngine:
             raise ReplayError(
                 f"L4 回滚失败 (git clean -fd): {clean.stderr.strip()[:300]}"
             )
+        updated = dict(record)
+        updated.pop("pre_snapshot", None)
+        self._update_record(updated)
+
+    def _snapshot_dir_copy(
+        self, exec_id: str, record: dict[str, Any], project_dir: Path
+    ) -> str:
+        """S10-119 M4-6: 非 git 工作区目录级快照 (复制基线到快照目录)。
+
+        - 快照目录: workspace/.factory_snapshots/<exec_id>-<ts>/
+        - 复制项目目录全内容 (symlinks 保留; 排除 .factory_snapshots 自身)
+        - 复制失败 → ReplayError 明确 (不静默); 成功 → 更新 pre_snapshot
+          {project_dir, snapshot_path, method: "dir-copy"} → 返回快照路径。
+        """
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
+        snap_dir = self.workspace / ".factory_snapshots" / f"{exec_id}-{stamp}"
+        try:
+            snap_dir.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(
+                project_dir,
+                snap_dir,
+                symlinks=True,
+                ignore=shutil.ignore_patterns(".factory_snapshots"),
+            )
+        except Exception as exc:  # noqa: BLE001 — 复制失败 → 明确错误, 不静默
+            raise ReplayError(
+                f"L4 非 git 快照失败 (目录复制): {exc} ({project_dir})"
+            ) from exc
+        if not snap_dir.is_dir():
+            raise ReplayError(f"L4 非 git 快照失败: 快照目录未生成 ({snap_dir})")
+        updated = dict(record)
+        updated["pre_snapshot"] = {
+            "project_dir": str(project_dir),
+            "snapshot_path": str(snap_dir),
+            "method": "dir-copy",
+        }
+        self._update_record(updated)
+        return str(snap_dir)
+
+    def _rollback_dir_copy(
+        self,
+        exec_id: str,
+        record: dict[str, Any],
+        snap: dict[str, Any],
+        project_dir: Path,
+    ) -> None:
+        """S10-119 M4-6: 目录级快照还原 (清空项目目录 + 复制回基线内容)。
+
+        精确还原执行前状态: 先删除项目目录全部内容 (含执行期新增文件), 再从
+        快照复制回; 快照缺失/项目目录缺失 → ReplayError 明确 (不静默);
+        成功 → 清除 pre_snapshot (一次性)。
+        """
+        snapshot_path = Path(str(snap.get("snapshot_path") or ""))
+        if not project_dir.is_dir() or not snapshot_path.is_dir():
+            raise ReplayError(
+                f"L4 非 git 回滚信息不完整 (project_dir={project_dir}, "
+                f"snapshot_path={snapshot_path})"
+            )
+        try:
+            for entry in project_dir.iterdir():
+                if entry.name == ".factory_snapshots":
+                    continue
+                if entry.is_dir() and not entry.is_symlink():
+                    shutil.rmtree(entry)
+                else:
+                    entry.unlink()
+            shutil.copytree(snapshot_path, project_dir, dirs_exist_ok=True)
+        except Exception as exc:  # noqa: BLE001 — 还原失败 → 明确错误, 不静默
+            raise ReplayError(
+                f"L4 非 git 回滚失败 (目录还原): {exc} ({project_dir})"
+            ) from exc
         updated = dict(record)
         updated.pop("pre_snapshot", None)
         self._update_record(updated)

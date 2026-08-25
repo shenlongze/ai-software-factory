@@ -99,7 +99,7 @@ class _StubService:
             return None
         return _models.LifecycleSummary(project_id=project_id, status="running", next_actions=["do x"])
 
-    def update_project(self, project_id, *, name=None, idea=None):
+    def update_project(self, project_id, *, name=None, idea=None, starred=None):
         """镜像 service.update_project: 空值 ValueError / 不存在 None。"""
         cleaned_name = name.strip() if isinstance(name, str) else ""
         cleaned_idea = idea.strip() if isinstance(idea, str) else ""

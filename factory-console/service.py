@@ -1116,8 +1116,31 @@ class ConsoleService:
         wf_by_project = self._workflows_by_project()
         summaries: list[ProjectSummary] = []
         seen: set[str] = set()
+        # Founder 2026-08-26: 真实工作区项目 (root/projects/*/product.json) — 列表必须真实完整
+        real_dir_ids: set[str] = set()
+        try:
+            ws_root = Path(getattr(self._workspace, "root", None) or "")
+            if ws_root.is_dir() and (ws_root / "projects").is_dir():
+                for pdir in (ws_root / "projects").iterdir():
+                    if pdir.is_dir() and (pdir / "product.json").is_file():
+                        real_dir_ids.add(pdir.name)
+        except Exception:  # noqa: BLE001
+            real_dir_ids = set()
+        # 示例目录 (examples/) 的定义 (如 markpad) 不冒充用户项目 — 只过滤示例, 不动普通定义
+        example_ids: set[str] = set()
+        try:
+            from project.loader import default_examples_dir as _default_ex
+            ex = Path(_default_ex())
+            if ex.is_dir():
+                for d in ex.iterdir():
+                    if d.is_dir() and (d / "project.yaml").is_file():
+                        example_ids.add(d.name)
+        except Exception:  # noqa: BLE001 — 示例目录不可用 → 不过滤 (失败安全)
+            example_ids = set()
         for definition in definitions:
             project_id = definition.id
+            if project_id in example_ids:
+                continue  # 内置示例不冒充用户项目
             seen.add(project_id)
             org = org_by_id.get(project_id)
             lifecycle = self._lifecycle_for_project(project_id)
@@ -1150,6 +1173,7 @@ class ConsoleService:
         for project_id, org in org_by_id.items():
             if project_id in seen:
                 continue
+            seen.add(project_id)
             lifecycle = self._lifecycle_for_project(project_id)
             summary = ProjectSummary(
                 id=project_id,
@@ -1174,6 +1198,31 @@ class ConsoleService:
             )
             self._apply_workflow_projection(summary, wf_by_project.get(project_id))
             summaries.append(summary)
+        # Founder 2026-08-26: 真实工作区目录项目 (未注册 org/定义) 也列出
+        try:
+            ws_root = Path(getattr(self._workspace, "root", None) or "")
+            if ws_root.is_dir() and (ws_root / "projects").is_dir():
+                for pdir in sorted((ws_root / "projects").iterdir()):
+                    if not pdir.is_dir() or pdir.name in seen:
+                        continue
+                    pf = pdir / "product.json"
+                    if not pf.is_file():
+                        continue
+                    project_id = pdir.name
+                    try:
+                        data = json.loads(pf.read_text(encoding="utf-8")) or {}
+                    except Exception:  # noqa: BLE001
+                        data = {}
+                    seen.add(project_id)
+                    summaries.append(ProjectSummary(
+                        id=project_id,
+                        name=str(data.get("name") or project_id),
+                        starred=False,
+                        status=str(data.get("status") or "active"),
+                        last_activity=self._project_last_activity(project_id),
+                    ))
+        except Exception:  # noqa: BLE001
+            pass
         return summaries
 
     # ------------------------------------------------------------------ POST /projects (S10-006.5)

@@ -91,13 +91,46 @@ class HelpCommand(SlashCommand):
         )),
     )
 
-    #: CLI 命令树 (组 → 子命令列表; 与 cli_factory build_parser 一致)
-    CLI_TREE: tuple[tuple[str, tuple[str, ...]], ...] = (
-        ("服务/诊断", ("start", "stop", "status", "service", "doctor", "config", "update", "init")),
-        ("项目管理", ("project", "create", "demo", "run")),
-        ("资产/员工", ("agent", "skill", "mcp", "tools", "task")),
-        ("生产/执行", ("exec", "approval", "evidence", "repo", "workload", "router")),
-        ("系统", ("audit", "rag", "llm", "todo", "help")),
+    #: CLI 命令树 (组 → [(命令, 说明)]; 说明与 cli_factory build_parser 一致)
+    CLI_TREE: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
+        ("服务/诊断", (
+            ("start", "启动服务 (backend+frontend)"),
+            ("stop", "停止前后端服务"),
+            ("status", "端口/进程/数据目录/LLM 状态"),
+            ("service", "服务注册表管理"),
+            ("doctor", "运行诊断检查"),
+            ("config", "运行时配置 (show/set/check/path)"),
+            ("update", "整体/模块更新 (--check 只读)"),
+            ("init", "首次运行初始化"),
+        )),
+        ("项目管理", (
+            ("project", "已有项目接入 (list 只读)"),
+            ("create", "统一创建入口 (company/department/project)"),
+            ("demo", "隔离 Demo Workspace (零污染)"),
+            ("run", "执行任务 → exec CLI"),
+        )),
+        ("资产/员工", (
+            ("agent", "Agent 管理 (list/add/remove)"),
+            ("skill", "Skill 管理 (list/add/remove)"),
+            ("mcp", "MCP 管理 (list/connect/remove)"),
+            ("tools", "工具发现与注册 (AI CLI + MCP)"),
+            ("task", "Task 管理 (只读列表)"),
+        )),
+        ("生产/执行", (
+            ("exec", "执行记录 (历史/时间线)"),
+            ("approval", "审批门 (待审批/决策/应用)"),
+            ("evidence", "证据包 (diff+test+决策)"),
+            ("repo", "存量仓库模式 (理解→计划→改→测→修)"),
+            ("workload", "积压清道夫 (分诊→执行→证据→报告)"),
+            ("router", "LLM Router 管理 (只读)"),
+        )),
+        ("系统", (
+            ("audit", "审计查询 (只读)"),
+            ("rag", "RAG 管理 (占位)"),
+            ("llm", "LLM 清单 (provider/models)"),
+            ("todo", "主线任务清单"),
+            ("help", "命令总览"),
+        )),
     )
 
     @staticmethod
@@ -122,13 +155,17 @@ class HelpCommand(SlashCommand):
             g_branch = "└─" if g_last else "├─"
             print(f"{g_branch} {glabel}")
             child_prefix = "   " if g_last else "│  "
+            # 组内对齐: 有说明的项按显示宽度补空格 (CJK 感知; 裸续行不参与)
+            desc_items = [it for it, de in items if de]
+            item_width = max((self._disp_len(it) for it in desc_items), default=0)
             for ii, (item, desc) in enumerate(items):
                 i_last = ii == len(items) - 1
                 i_branch = "└─" if i_last else "├─"
-                line = f"{child_prefix}{i_branch} {item}"
                 if desc:
-                    line += f"  ——  {desc}"
-                print(line)
+                    pad = " " * (item_width - self._disp_len(item))
+                    print(f"{child_prefix}{i_branch} {item}{pad}  ——  {desc}")
+                else:
+                    print(f"{child_prefix}{i_branch} {item}")
             if extra_tail and g_last:
                 print(f"{child_prefix}└─ {extra_tail}")
 
@@ -159,14 +196,15 @@ class HelpCommand(SlashCommand):
         )
         print()
 
-        # ── CLI 命令 (树形但每组合一行 — 紧凑清晰) ──
-        print("🛠 CLI 命令（终端运行: factory <子命令>）:")
-        group_width = max(self._disp_len(g) for g, _ in self.CLI_TREE)
-        for gi, (glabel, cmds) in enumerate(self.CLI_TREE):
-            branch = "└─" if gi == len(self.CLI_TREE) - 1 else "├─"
-            pad = " " * (group_width - self._disp_len(glabel))
-            print(f"{branch} {glabel}{pad}  {' · '.join(cmds)}")
-        print("   └─ 详细: factory <子命令> --help")
+        # ── CLI 命令 (逐命令树, 每行一个命令 + 说明) ──
+        cli_groups: list[tuple[str, list[tuple[str, str]]]] = [
+            (g, list(items)) for g, items in self.CLI_TREE
+        ]
+        self._print_group(
+            "🛠 CLI 命令（终端运行: factory <子命令>）:",
+            cli_groups,
+            extra_tail="详细: factory <子命令> --help",
+        )
         return 0
 
 

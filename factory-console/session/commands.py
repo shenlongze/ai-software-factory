@@ -15,6 +15,7 @@ Layer — 本项目清单只读复用规范数据文件 projects.json (org 写�
 from __future__ import annotations
 
 import json
+import unicodedata
 from pathlib import Path
 from typing import Any, Optional
 
@@ -54,27 +55,78 @@ class HelpCommand(SlashCommand):
     name = "help"
     description = "显示可用命令列表"
 
+    #: 自然语言示例 (输入, 说明) — 与真实意图/动作一致, 不编造
+    NL_EXAMPLES: tuple[tuple[str, str], ...] = (
+        ("你好 / 我想做一个记账App", "开始对话 / 创建产品 (多轮发现)"),
+        ("让PM分析 / 让QA分析", "产品管线 — 7 角色资产链"),
+        ("继续 旅行记账", "按名称继续项目"),
+        ("给 墨笺 加个导出功能", "需求变更 → 影响分析 (ChangeControl)"),
+        ("准备开发", "架构审批门 (Architecture Review)"),
+        ("哪些项目有PRD", "真实文档状态"),
+        ("P-xxx 改名叫 新名", "项目改名"),
+        ("审计追踪 <trace_id>", "链路追踪 (K-4 trace_id 贯穿)"),
+    )
+
+    #: 系统命令展示顺序 (显式排序 — 布局稳定; 未列出的命令仍追加, 不丢)
+    SLASH_ORDER: tuple[str, ...] = (
+        "help", "status", "project", "board", "cost", "preview", "exit",
+    )
+
+    #: /board 子命令 (与 BoardCommand 实际子命令一致)
+    BOARD_SUBCOMMANDS = (
+        "mainline 主线 · graph 依赖图 · chain 任务链 · timeline 生命线 · "
+        "replay 执行重放 · project 项目视图 · quality 质量 · cost 成本 · "
+        "report 汇报 · done/unmark 标记 · sync 同步 · docs 文档 · default 默认项目"
+    )
+
+    #: CLI 命令分组 (系统终端运行 factory 开头; 与 cli_factory build_parser 一致)
+    CLI_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
+        ("服务/诊断", ("start", "stop", "status", "service", "doctor", "config", "update", "init")),
+        ("项目管理", ("project", "create", "demo", "run")),
+        ("资产/员工", ("agent", "skill", "mcp", "tools", "task")),
+        ("生产/执行", ("exec", "approval", "evidence", "repo", "workload", "router")),
+        ("系统", ("audit", "rag", "llm", "todo", "help")),
+    )
+
+    @staticmethod
+    def _disp_len(text: str) -> int:
+        """终端显示宽度 (CJK 算 2 — 对齐不再乱)。"""
+        return sum(
+            2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+            for ch in text
+        )
+
+    def _print_rows(self, pairs: list[tuple[str, str]]) -> None:
+        """对齐打印 (左列按显示宽度补空格, CJK 对齐)。"""
+        width = max(self._disp_len(l) for l, _ in pairs)
+        for left, right in pairs:
+            print(f"  {left}{' ' * (width - self._disp_len(left))}  {right}")
+
     def execute(self, args: str, context: SessionContext) -> int:
         if self.registry is None:
             print("错误: 命令表不可用 (registry 未注入)")
             return 1
-        print("你可以直接用自然语言和 AI Factory 对话。例如:")
-        print("  你好")
-        print("  我想做一个类似 OneNote 的 App")
-        print("  让PM分析        — 产品管线 (7 角色资产链)")
-        print("  继续 旅行记账    — 按名称继续项目")
-        print("  哪些项目有PRD   — 真实文档状态")
-        print("  P-xxx 改名叫 新名 — 项目改名")
+
+        # ── 自然语言 ──
+        print("💬 自然语言示例 (直接输入即可):")
+        self._print_rows([(left, right) for left, right in self.NL_EXAMPLES])
         print()
-        print("系统命令:")
-        for cmd in self.registry.list():
-            print(f"  /{cmd.name}  {cmd.description}")
+
+        # ── 系统命令 ──
+        by_name = {c.name: c for c in self.registry.list()}
+        items = [by_name[n] for n in self.SLASH_ORDER if n in by_name]
+        items += [c for c in self.registry.list() if c.name not in self.SLASH_ORDER]
+        print("📁 系统命令:")
+        self._print_rows([(f"/{c.name}", c.description) for c in items])
+        if "board" in by_name:
+            print(f"  /board 子命令: {self.BOARD_SUBCOMMANDS}")
         print()
-        print("CLI 命令 (在系统终端运行 factory 开头):")
-        print("  factory doctor [--fix]   — 诊断 (--fix 修复 models.json 种子)")
-        print("  factory init / start / status")
-        print("  factory project list / status")
-        print("  factory exec history")
+
+        # ── CLI 命令 ──
+        print("🛠 CLI 命令 (系统终端运行, factory 开头):")
+        for group, cmds in self.CLI_GROUPS:
+            print(f"  {group}  {' · '.join(cmds)}")
+        print("  详细: factory <子命令> --help")
         return 0
 
 

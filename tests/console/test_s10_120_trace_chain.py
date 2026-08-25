@@ -11,7 +11,7 @@
 8. 失败安全: contextvar 异常 → "" 不崩
 9. exec runtime 入口: 无上下文生成 trace; 有上下文继承同一 trace; 策略子任务
    correlation 关联 (agent_runtime)
-+ 版本 v1.1.90 断言 (pyproject / CHANGELOG / FEATURES)
++ 版本 v1.1.91 断言 (pyproject / CHANGELOG / FEATURES)
 
 装配: tmp_path 隔离工作区 + importlib (包名含连字符); 禁真实网络/LLM。
 """
@@ -465,10 +465,10 @@ class TestExecRuntimeTrace:
 
 class TestVersionBump:
     def test_v1_1_90_synced(self):
-        """版本 v1.1.90: pyproject + CHANGELOG + FEATURES 同步。"""
+        """版本 v1.1.91: pyproject + CHANGELOG + FEATURES 同步。"""
         pyproject = (_REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-        assert re.search(r'^version\s*=\s*"1\.1\.90"', pyproject, re.M)
+        assert re.search(r'^version\s*=\s*"1\.1\.91"', pyproject, re.M)
         changelog = (_REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-        assert "## [v1.1.90]" in changelog
+        assert "## [v1.1.91]" in changelog
         features = (_REPO_ROOT / "docs" / "FEATURES.md").read_text(encoding="utf-8")
-        assert "v1.1.90" in features
+        assert "v1.1.91" in features

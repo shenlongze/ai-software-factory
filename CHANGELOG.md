@@ -3,7 +3,26 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
-## [v1.1.90] — 2026-08-25
+## [v1.1.91] — 2026-08-25
+
+**/help 完整化 + 布局优化**。
+
+### Fixed
+
+- **命令完整**: 补 需求变更/架构审批门/审计追踪(K-4 trace) 等自然语言示例;
+  CLI 命令按 5 组列全 (start/stop/.../update/init + project/create/demo/run +
+  agent/skill/mcp/tools/task + exec/approval/evidence/repo/workload/router +
+  audit/rag/llm/todo/help); /board 子命令单行列出 (mainline/graph/chain/timeline/
+  replay/project/quality/cost/report/done/unmark/sync/docs/default)
+- **布局对齐**: CJK 显示宽度感知 (east_asian_width) — 中文/命令列对齐不再错位;
+  分区标题 (自然语言/系统命令/CLI 命令) 分组清晰; 系统命令显式排序 (help/status/
+  project/board/cost/preview/exit) 且未列出的注册命令不丢
+
+### 验证
+
+- 既有 help 契约测试全过 (系统命令:/CLI 命令/自然语言/命令名/退出会话) ·
+  console 回归 0 新增失败 · v1.1.91
+
 
 **K-4 trace_id 贯穿 (S10-120)**: 一次请求从入口到执行全程同一 trace_id — 审计/执行/成本可追踪; audit_trace 决策链真正可用。
 

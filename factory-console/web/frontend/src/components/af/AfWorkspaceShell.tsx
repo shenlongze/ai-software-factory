@@ -93,12 +93,17 @@ function AfProjectListView(): JSX.Element {
 
 /** Main 页面分发 (S10-015 Task 006): dashboard → Control Center (AfDashboard 6 模块);
  * projects → 项目列表 (保留); 其余 5 页 → AfModulePlaceholder (禁空白)。 */
+import { AfProjectManage } from '../../pages/workspace/AfProjectManage';
+
 function WorkspacePage({ route }: { route: ParsedRoute }): JSX.Element {
   if (route.page === 'dashboard') {
     return <AfDashboard />;
   }
   if (route.page === 'projects') {
     return <AfProjectListView />;
+  }
+  if (route.page === 'manage') {
+    return <AfProjectManage />;
   }
   const navItem = WORKSPACE_NAV_ITEMS.find((item) => item.page === route.page);
   return <AfModulePlaceholder pageLabel={navItem?.label ?? route.page} />;

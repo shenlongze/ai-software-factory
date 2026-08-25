@@ -2759,3 +2759,92 @@
 .af-project-group--toggle:hover {
   color: #e5e7eb;
 }
+
+.af-project-group--toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.af-manage-link {
+  font-size: 11px;
+  color: var(--af-primary, #4c8dff);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.af-manage-link:hover {
+  background: rgba(76, 141, 255, 0.12);
+}
+
+/* 项目管理页 */
+.af-manage {
+  max-width: 980px;
+}
+
+.af-manage-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.af-manage-batch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: rgba(76, 141, 255, 0.08);
+  border: 1px solid var(--af-border, #2a3140);
+  border-radius: 8px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: #e5e7eb;
+}
+
+.af-danger {
+  color: #e57373;
+  border-color: #c62828;
+}
+
+.af-manage-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.af-manage-table th,
+.af-manage-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid #2a3140;
+  text-align: left;
+  color: #b0b6bf;
+}
+
+.af-manage-table th {
+  color: #78909c;
+  font-size: 11px;
+}
+
+.af-manage-name {
+  color: #e5e7eb;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.af-manage-name:hover {
+  color: var(--af-primary, #4c8dff);
+}
+
+.af-manage-time {
+  color: #6b7280;
+  font-size: 11px;
+}
+
+.af-manage-ops {
+  display: flex;
+  gap: 4px;
+}

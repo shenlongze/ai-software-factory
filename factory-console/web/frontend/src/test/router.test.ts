@@ -11,8 +11,8 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_ROUTE, PROJECT_ROUTES, WORKSPACE_ROUTES, parseHash } from '../router';
 
 describe('S10-014 路由常量表 (§2.3)', () => {
-  it('Workspace 级 7 条路由 (dashboard 默认 + 6 子页)', () => {
-    expect(WORKSPACE_ROUTES).toHaveLength(7);
+  it('Workspace 级 8 条路由 (dashboard 默认 + 7 子页, 含 manage)', () => {
+    expect(WORKSPACE_ROUTES).toHaveLength(8);
     expect(WORKSPACE_ROUTES.map((r) => r.path)).toEqual([
       '#/workspace',
       '#/workspace/projects',
@@ -21,6 +21,7 @@ describe('S10-014 路由常量表 (§2.3)', () => {
       '#/workspace/runtime',
       '#/workspace/audit',
       '#/workspace/settings',
+      '#/workspace/manage',
     ]);
     expect(WORKSPACE_ROUTES.map((r) => r.page)).toEqual([
       'dashboard',
@@ -30,6 +31,7 @@ describe('S10-014 路由常量表 (§2.3)', () => {
       'runtime',
       'audit',
       'settings',
+      'manage',
     ]);
   });
 

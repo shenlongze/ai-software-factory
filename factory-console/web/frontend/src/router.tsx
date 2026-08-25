@@ -21,6 +21,7 @@ export const WORKSPACE_ROUTES: readonly { path: string; page: string }[] = [
   { path: '#/workspace/runtime', page: 'runtime' },
   { path: '#/workspace/audit', page: 'audit' },
   { path: '#/workspace/settings', page: 'settings' },
+  { path: '#/workspace/manage', page: 'manage' },
 ];
 
 /** Project 级路由 (11 条, §2.3; :id = 项目 id 路径段)。 */

@@ -52,7 +52,7 @@ export function AfSidebar({ activePage, collapsed }: AfSidebarProps): JSX.Elemen
   >([]);
   const [query, setQuery] = useState('');
   const [creating, setCreating] = useState(false);
-  const [showAll, setShowAll] = useState<boolean>(false);
+  const [showAll, setShowAll] = useState<boolean>(true); // 全部默认展开 (Founder: 别藏项目)
 
   useEffect(() => {
     let cancelled = false;
@@ -181,6 +181,16 @@ export function AfSidebar({ activePage, collapsed }: AfSidebarProps): JSX.Elemen
                 <>
                   <div className="af-project-group af-project-group--toggle" onClick={() => setShowAll((v) => !v)}>
                     <span>{showAll ? '▾' : '▸'} 全部 ({restProjects.length})</span>
+                    <button
+                      type="button"
+                      className="af-manage-link"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        window.location.hash = '#/workspace/manage';
+                      }}
+                    >
+                      ⚙ 管理
+                    </button>
                   </div>
                   {showAll && restProjects.map(renderProjectRow)}
                 </>

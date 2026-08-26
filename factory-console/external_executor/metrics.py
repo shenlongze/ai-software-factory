@@ -37,6 +37,7 @@ def aggregate_executor_metrics(data_dir: str | Path) -> list[dict[str, Any]]:
         verify_pass = sum(1 for r in verified if (r.get("verify") or {}).get("result") == "pass")
         rework = sum(int((r.get("rework") or {}).get("count", 0)) for r in rs)
         durations = [int(r.get("duration_ms") or 0) for r in rs if r.get("duration_ms")]
+        costs = [float(r["cost_usd"]) for r in rs if r.get("cost_usd") is not None]
         last = max(rs, key=lambda r: str(r.get("timestamp") or ""))
         out.append({
             "executor_id": eid,
@@ -48,6 +49,9 @@ def aggregate_executor_metrics(data_dir: str | Path) -> list[dict[str, Any]]:
             "verify_pass_rate": round(verify_pass / len(verified), 3) if verified else None,
             "verified": len(verified),
             "avg_duration_ms": int(sum(durations) / len(durations)) if durations else None,
+            "cost_total_usd": round(sum(costs), 4) if costs else None,
+            "cost_known": len(costs),
+            "cost_unknown": len(rs) - len(costs),
             "rework_total": rework,
             "last_run_at": last.get("timestamp"),
             "last_result": last.get("result"),

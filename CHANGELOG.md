@@ -3,7 +3,20 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.198] — 2026-08-27
+
+**监控补维度: 成本 + 时间粒度 + 内部 vs 外部对比 (M4.3)**。
+
+### Added
+
+- 成本: EXS 记录 cost_usd (默认 None=unknown 诚实); record_cost 回填 + POST /api/external-ai/cost;
+  概览卡/对比/多维表加成本列 (已知 N · 未知 M)
+- 时间粒度: 趋势按天 / 按小时(近24h) 切换; 按项目的时间序列 (trend_by_project)
+- 对比视图: 内部 vs 外部 并排表 (次数/成功率/首次通过/验证/耗时/成本/回修)
+- 执行器对比: 分组条 (成功/失败)
+
 ## [v1.1.197] — 2026-08-27
+
 
 **fix: 监控菜单双 📊 — i18n label 去掉 emoji (图标单独提供)**。
 

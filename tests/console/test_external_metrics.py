@@ -73,6 +73,8 @@ class TestAggregate:
         assert codex["verify_pass_rate"] == 1.0  # 2 pass / 2 verified
         assert codex["avg_duration_ms"] == pytest.approx((1000 + 2000 + 500) / 3, abs=1)
         assert codex["rework_total"] == 0
+        # 成本: 无 cost_usd 记录 → unknown (诚实)
+        assert codex["cost_total_usd"] is None and codex["cost_known"] == 0
         claude = next(r for r in rows if r["executor_id"] == "claude")
         assert claude["total"] == 3 and claude["failed"] == 3  # 3 条全 failed
         assert claude["first_pass_rate"] == 0.0  # 全部 first_pass False

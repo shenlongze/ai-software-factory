@@ -288,6 +288,14 @@ class _ExternalAiBody(BaseModel):
     allow_dangerous: bool = False
 
 
+class _ExternalAiCostBody(BaseModel):
+    """POST /api/external-ai/cost body (M4.3): {result_id, cost_usd, currency?}。"""
+
+    result_id: str
+    cost_usd: float
+    currency: str = "USD"
+
+
 class _ExternalAiVerifyBody(BaseModel):
     """POST /api/external-ai/verify body (M3): {result_id, method, result, score?, reason?}。"""
 
@@ -1783,6 +1791,24 @@ def build_app(
         )
         result["result_id"] = record.get("result_id")
         return result
+
+    @app.post("/api/external-ai/cost")
+    def api_external_ai_cost(body: _ExternalAiCostBody) -> dict[str, Any]:
+        """M4.3: 给执行记录附加成本 (宿主 CLI 报告/估算后回填; 默认 unknown 不编造)。"""
+        try:
+            _ee_exec = _console_import("external_executor.executor")
+            updated = _ee_exec.record_cost(
+                workspace_root or DEFAULT_ROOT,
+                body.result_id,
+                body.cost_usd,
+                currency=body.currency,
+            )
+        except Exception as exc:  # noqa: BLE001 — 失败 → 诚实错误
+            raise HTTPException(status_code=500, detail=f"成本回填失败: {exc}") from exc
+        if updated is None:
+            raise HTTPException(status_code=404, detail=f"执行记录不存在: {body.result_id}")
+        return {"result_id": body.result_id, "cost_usd": updated.get("cost_usd"),
+                "currency": updated.get("cost_currency", "USD")}
 
     @app.post("/api/external-ai/verify")
     def api_external_ai_verify(body: _ExternalAiVerifyBody) -> dict[str, Any]:

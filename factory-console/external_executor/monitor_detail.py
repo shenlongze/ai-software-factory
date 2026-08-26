@@ -58,6 +58,8 @@ def _summary(records: list[dict]) -> dict[str, Any]:
     verify_pass = sum(1 for r in verified if (r.get("verify") or {}).get("result") == "pass")
     durations = sorted(_duration(r) for r in records if r.get("duration_ms"))
     rework = sum(int((r.get("rework") or {}).get("count", 0)) for r in records)
+    # 成本: 只统计有来源的记录 (无 → unknown, 诚实)
+    costs = [float(r["cost_usd"]) for r in records if r.get("cost_usd") is not None]
     return {
         "total": total, "success": success, "failed": total - success,
         "success_rate": _rate(success, total),
@@ -67,6 +69,10 @@ def _summary(records: list[dict]) -> dict[str, Any]:
         "avg_duration_ms": int(sum(durations) / len(durations)) if durations else None,
         "p90_duration_ms": durations[int(len(durations) * 0.9) - 1] if durations else None,
         "total_rework": rework,
+        "cost_total_usd": round(sum(costs), 4) if costs else None,
+        "cost_avg_usd": round(sum(costs) / len(costs), 4) if costs else None,
+        "cost_known": len(costs),
+        "cost_unknown": len(records) - len(costs),
     }
 
 
@@ -83,6 +89,39 @@ def build_trend(records: list[dict], *, days: int = 14) -> list[dict[str, Any]]:
             else:
                 buckets[d]["failed"] += 1
     return [buckets[d] for d in sorted(buckets)]
+
+
+def build_trend_hourly(records: list[dict], *, hours: int = 24) -> list[dict[str, Any]]:
+    """近 N 小时趋势 (按小时; 用于"今天"粒度)。"""
+    now = datetime.now(timezone.utc)
+    buckets: dict[str, dict] = {}
+    for i in range(hours - 1, -1, -1):
+        h = now - timedelta(hours=i)
+        key = h.strftime("%Y-%m-%dT%H:00")
+        buckets[key] = {"hour": h.strftime("%m-%d %H:00"), "count": 0, "success": 0, "failed": 0}
+    for r in records:
+        ts = str(r.get("timestamp") or "")
+        try:
+            dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            key = dt.strftime("%Y-%m-%dT%H:00")
+        except Exception:  # noqa: BLE001 — 时间解析失败 → 跳过该条
+            continue
+        if key in buckets:
+            buckets[key]["count"] += 1
+            if str(r.get("result") or "") == "success":
+                buckets[key]["success"] += 1
+            else:
+                buckets[key]["failed"] += 1
+    return [buckets[k] for k in sorted(buckets)]
+
+
+def build_trend_by_project(records: list[dict], *, days: int = 14) -> dict[str, list[dict[str, Any]]]:
+    """按项目的时间序列 (外部记录; project_dir 维度)。"""
+    by: dict[str, list[dict]] = defaultdict(list)
+    for r in records:
+        if r.get("executor_id"):
+            by[str(r.get("project_dir") or "（未指定目录）")].append(r)
+    return {k: build_trend(v, days=days) for k, v in by.items()}
 
 
 def _group_stats(groups: dict[str, list[dict]]) -> list[dict[str, Any]]:
@@ -149,6 +188,8 @@ def build_monitor_detail(
             "combined": _summary(records),
         },
         "trend": build_trend(records, days=days),
+        "trend_hourly": build_trend_hourly(records, hours=24),
+        "trend_by_project": build_trend_by_project(records, days=days),
         "by_executor": _group_stats({str(r.get("executor_id")): [x for x in ext if x.get("executor_id") == r.get("executor_id")] for r in ext}),
         "by_agent": _group_stats(dict(by_agent)),
         "by_project": _group_stats(dict(by_project)),

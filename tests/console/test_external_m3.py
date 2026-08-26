@@ -93,6 +93,25 @@ class TestRecordAndVerify:
 
 
 @requires_fastapi
+class TestCost:
+    def test_record_cost_attach(self, tmp_path):
+        rec = _ee.record_invocation(tmp_path, executor_id="claude", mode="blackbox",
+                                    host_agent="", prompt="p", project_dir="", exit_code=0,
+                                    output="", error="", command="c", duration_ms=1,
+                                    cost_usd=0.42)
+        assert rec["cost_usd"] == 0.42
+        # 默认 None (unknown)
+        rec2 = _ee.record_invocation(tmp_path, executor_id="codex", mode="blackbox",
+                                     host_agent="", prompt="p", project_dir="", exit_code=0,
+                                     output="", error="", command="c", duration_ms=1)
+        assert rec2["cost_usd"] is None
+        # 回填成本
+        updated = _ee.record_cost(tmp_path, rec2["result_id"], 0.99)
+        assert updated is not None and updated["cost_usd"] == 0.99
+        # 不存在 → None
+        assert _ee.record_cost(tmp_path, "EXS-nope", 1.0) is None
+
+
 class TestM3Http:
     def _app(self, tmp_path):
         service = _adapter.build_console_service(tmp_path, event_logger=None)

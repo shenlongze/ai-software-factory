@@ -53,13 +53,14 @@ describe('AfMonitorPage (📊 监控中心)', () => {
     stubApi();
     render(<AfMonitorPage />);
     // 概览 (combined)
-    expect(await screen.findByText('执行次数')).toBeInTheDocument();
-    expect(screen.getByText('8')).toBeInTheDocument(); // combined total
-    expect(screen.getByText('75%')).toBeInTheDocument(); // success_rate
+    expect((await screen.findAllByText('执行次数')).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('8').length).toBeGreaterThan(0); // combined total
+    expect(screen.getAllByText('75%').length).toBeGreaterThan(0); // success_rate
     // 多维表: 按执行器
     expect(await screen.findByText('按执行器')).toBeInTheDocument();
     expect(screen.getByText('按 Agent / Skill')).toBeInTheDocument();
     expect(screen.getByText('claude.architecture-examiner')).toBeInTheDocument();
+    expect(screen.getByTestId('af-monitor-compare')).toBeInTheDocument(); // 内部 vs 外部对比
     // 回修原因/验证方式
     expect(screen.getByText('🔄 测试挂了 ×1')).toBeInTheDocument();
     expect(screen.getByText('✅ pytest·pass ×2')).toBeInTheDocument();
@@ -75,7 +76,7 @@ describe('AfMonitorPage (📊 监控中心)', () => {
     render(<AfMonitorPage />);
     await user.click(screen.getByRole('tab', { name: '自身能力' }));
     // 内部 summary total=3
-    expect(await screen.findByText('3')).toBeInTheDocument();
+    expect(screen.getAllByText('3').length).toBeGreaterThan(0);
     // 记录流只含内部 (backend-1), 不含 claude
     expect(screen.getByText('写接口')).toBeInTheDocument();
     expect(screen.queryByText('审查架构')).not.toBeInTheDocument();

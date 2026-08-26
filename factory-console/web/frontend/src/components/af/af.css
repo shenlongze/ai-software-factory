@@ -1910,6 +1910,61 @@
   margin-bottom: 16px;
 }
 
+.af-monitor-granularity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.af-monitor-compare {
+  margin-bottom: 4px;
+}
+
+.af-monitor-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.af-monitor-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.af-monitor-bar-name {
+  flex: none;
+  width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--c-text2);
+  font-family: var(--af-font-mono);
+}
+
+.af-monitor-bar-track {
+  flex: 1;
+  display: flex;
+  height: 12px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--c-input);
+  border: 1px solid var(--c-border);
+}
+
+.af-monitor-bar-ok { background: #22c55e; height: 100%; }
+.af-monitor-bar-fail { background: #ef4444; height: 100%; }
+
+.af-monitor-bar-num {
+  flex: none;
+  width: 30px;
+  text-align: right;
+  color: var(--c-text2);
+}
+
 /* T-9 (v1.1.185): 执行溯源 — exec_ref → 记录/证据包 */
 .af-task-detail-exec {
   margin-top: 4px;

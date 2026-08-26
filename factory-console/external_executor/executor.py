@@ -178,6 +178,7 @@ def record_invocation(
     command: str,
     duration_ms: int,
     trace_id: str = "",
+    cost_usd: float | None = None,
 ) -> dict[str, Any]:
     """追加统一执行记录 (execution_records.json, EXS-* result_id) + report.md 证据。
 
@@ -210,6 +211,7 @@ def record_invocation(
         "first_pass": True,               # 首次通过 (无回修); verify fail 后置 False
         "verify": {"method": "", "result": "unknown", "score": None},
         "rework": {"count": 0, "reasons": []},
+        "cost_usd": cost_usd,             # 成本 (宿主未报告 → None = unknown, 诚实)
     }
     try:
         record_execution(
@@ -277,6 +279,44 @@ def verify_invocation(
         records_file.parent.mkdir(parents=True, exist_ok=True)
         tmp = records_file.with_suffix(records_file.suffix + ".tmp")
         tmp.write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.replace(records_file)
+    except OSError:
+        pass
+    return found
+
+
+def record_cost(
+    data_dir: str | Path,
+    result_id: str,
+    cost_usd: float,
+    *,
+    currency: str = "USD",
+) -> dict[str, Any] | None:
+    """给执行记录附加成本 (宿主 CLI 报告/估算后回填; 失败安全)。
+
+    设计: 成本默认 unknown (不编造); 有来源才记录。"""
+    import json as _json
+
+    from factory_console.session.audit import load_records
+
+    records_file = Path(data_dir) / "exec" / "execution_records.json"
+    records = load_records(records_file)
+    found = None
+    for rec in records:
+        if isinstance(rec, dict) and str(rec.get("result_id") or "") == result_id:
+            found = rec
+            break
+    if found is None:
+        return None
+    try:
+        found["cost_usd"] = float(cost_usd)
+        found["cost_currency"] = str(currency or "USD")
+    except (TypeError, ValueError):
+        return None
+    try:
+        records_file.parent.mkdir(parents=True, exist_ok=True)
+        tmp = records_file.with_suffix(records_file.suffix + ".tmp")
+        tmp.write_text(_json.dumps(records, ensure_ascii=False, indent=2), encoding="utf-8")
         tmp.replace(records_file)
     except OSError:
         pass

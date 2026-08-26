@@ -436,9 +436,11 @@ export interface MonitorSummary {
   verified: number; verify_pass_rate?: number | null;
   avg_duration_ms?: number | null; p90_duration_ms?: number | null;
   total_rework: number;
+  cost_total_usd?: number | null; cost_avg_usd?: number | null;
+  cost_known?: number; cost_unknown?: number;
 }
 export interface MonitorTrendPoint { date: string; count: number; success: number; failed: number }
-export interface MonitorGroup { key: string; total: number; success: number; failed: number; success_rate?: number | null; first_pass_rate?: number | null; verify_pass_rate?: number | null; avg_duration_ms?: number | null; total_rework: number }
+export interface MonitorGroup { key: string; total: number; success: number; failed: number; success_rate?: number | null; first_pass_rate?: number | null; verify_pass_rate?: number | null; avg_duration_ms?: number | null; cost_total_usd?: number | null; total_rework: number }
 export interface MonitorRecent {
   result_id?: string | null; timestamp?: string | null; executor_id?: string | null;
   mode?: string | null; host_agent?: string | null; agent?: string | null;
@@ -452,6 +454,8 @@ export interface MonitorAlert { severity: string; executor_id?: string | null; t
 export interface MonitorDetail {
   summary: { external: MonitorSummary; internal: MonitorSummary; combined: MonitorSummary };
   trend: MonitorTrendPoint[];
+  trend_hourly: Array<{ hour: string; count: number; success: number; failed: number }>;
+  trend_by_project: Record<string, MonitorTrendPoint[]>;
   by_executor: MonitorGroup[];
   by_agent: MonitorGroup[];
   by_project: MonitorGroup[];

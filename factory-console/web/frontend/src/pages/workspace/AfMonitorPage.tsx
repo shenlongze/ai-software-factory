@@ -49,7 +49,57 @@ function SummaryCards({ s }: { s: MonitorSummary }) {
       <Card num={pct(s.first_pass_rate)} label="首次通过率" />
       <Card num={pct(s.verify_pass_rate)} label="验证通过率" sub={`已验证 ${s.verified}`} />
       <Card num={sec(s.avg_duration_ms)} label="平均耗时" sub={`P90 ${sec(s.p90_duration_ms)}`} />
+      <Card num={s.cost_total_usd != null ? `$${s.cost_total_usd}` : '未知'} label="成本" sub={s.cost_known != null ? `已知 ${s.cost_known} · 未知 ${s.cost_unknown ?? 0}` : '宿主未报告'} />
       <Card num={String(s.total_rework)} label="回修总数" />
+    </div>
+  );
+}
+
+/** 对比视图: 内部 vs 外部 并排 (M4.3)。 */
+function CompareView({ ext, internal }: { ext: MonitorSummary; internal: MonitorSummary }) {
+  const row = (label: string, fmt: (s: MonitorSummary) => string) => (
+    <tr key={label}>
+      <td>{label}</td>
+      <td>{fmt(ext)}</td>
+      <td>{fmt(internal)}</td>
+    </tr>
+  );
+  return (
+    <div className="af-monitor-compare" data-testid="af-monitor-compare">
+      <h3 className="af-settings-h3">内部 vs 外部 对比</h3>
+      <table className="af-monitor-table">
+        <thead><tr><th>维度</th><th>外部能力</th><th>自身能力</th></tr></thead>
+        <tbody>
+          {row('执行次数', (s) => String(s.total))}
+          {row('成功率', (s) => pct(s.success_rate))}
+          {row('首次通过率', (s) => pct(s.first_pass_rate))}
+          {row('验证通过率', (s) => pct(s.verify_pass_rate))}
+          {row('平均耗时', (s) => sec(s.avg_duration_ms))}
+          {row('成本', (s) => (s.cost_total_usd != null ? `$${s.cost_total_usd}` : '未知'))}
+          {row('回修', (s) => String(s.total_rework))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** 执行器对比: 简单分组条 (各执行器 成功/失败)。 */
+function ExecutorBars({ rows }: { rows: MonitorGroup[] }) {
+  if (!rows || rows.length === 0) return null;
+  const max = Math.max(1, ...rows.map((r) => r.total));
+  return (
+    <div className="af-monitor-bars" data-testid="af-monitor-bars">
+      <h3 className="af-settings-h3">执行器对比</h3>
+      {rows.map((r) => (
+        <div key={r.key} className="af-monitor-bar-row">
+          <span className="af-monitor-bar-name">{r.key}</span>
+          <div className="af-monitor-bar-track">
+            <div className="af-monitor-bar-ok" style={{ width: `${(r.success / max) * 100}%` }} title={`成功 ${r.success}`} />
+            <div className="af-monitor-bar-fail" style={{ width: `${(r.failed / max) * 100}%` }} title={`失败 ${r.failed}`} />
+          </div>
+          <span className="af-monitor-bar-num">{r.total}</span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -92,19 +142,42 @@ function TrendChart({ trend }: { trend: Array<{ date: string; count: number; suc
   );
 }
 
+function TrendChartHourly({ trend }: { trend: Array<{ hour: string; count: number; success: number; failed: number }> }) {
+  if (!trend || trend.length === 0) return <p className="af-home-note">暂无小时趋势</p>;
+  const w = 760, h = 120, pad = 24;
+  const max = Math.max(1, ...trend.map((t) => t.count));
+  const bw = (w - pad * 2) / trend.length;
+  return (
+    <div className="af-monitor-chart">
+      <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={h} role="img" aria-label="小时趋势">
+        {trend.map((t, i) => (
+          <g key={t.hour}>
+            <rect x={pad + bw * i + bw * 0.25} y={h - pad - (t.count / max) * (h - pad)} width={bw * 0.5} height={(t.count / max) * (h - pad)} fill="#4c8dff" opacity={0.7} rx={2} />
+            <title>{`${t.hour}: ${t.count} 次 (成功 ${t.success})`}</title>
+          </g>
+        ))}
+      </svg>
+      <div className="af-monitor-chart-labels">
+        {trend.filter((_, i) => i % 4 === 0).map((t) => <span key={t.hour}>{t.hour.slice(6)}</span>)}
+      </div>
+    </div>
+  );
+}
+
 function GroupTable({ title, rows }: { title: string; rows: MonitorGroup[] }) {
   if (!rows || rows.length === 0) return null;
   return (
     <>
       <h3 className="af-settings-h3">{title}</h3>
       <table className="af-monitor-table">
-        <thead><tr><th>维度</th><th>次数</th><th>成功率</th><th>首次通过</th><th>验证通过</th><th>平均耗时</th><th>回修</th></tr></thead>
+        <thead><tr><th>维度</th><th>次数</th><th>成功率</th><th>首次通过</th><th>验证通过</th><th>平均耗时</th><th>成本</th><th>回修</th></tr></thead>
         <tbody>
           {rows.map((r) => (
             <tr key={r.key}>
               <td>{r.key}</td><td>{r.total}</td>
               <td>{pct(r.success_rate)}</td><td>{pct(r.first_pass_rate)}</td>
               <td>{pct(r.verify_pass_rate)}</td><td>{sec(r.avg_duration_ms)}</td>
+              <td>{r.cost_total_usd != null ? `$${r.cost_total_usd}` : '—'}</td>
               <td>{r.total_rework}</td>
             </tr>
           ))}
@@ -150,6 +223,7 @@ function RecentStream({ items }: { items: MonitorRecent[] }) {
 export function AfMonitorPage(): JSX.Element {
   const [scope, setScope] = useState<Scope>('all');
   const [days, setDays] = useState(14);
+  const [granularity, setGranularity] = useState<'day' | 'hour'>('day');
   const [data, setData] = useState<MonitorDetail | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -212,8 +286,18 @@ export function AfMonitorPage(): JSX.Element {
       {!loading && !error && data ? (
         <div className="af-monitor-body">
           {summary ? <SummaryCards s={summary} /> : null}
-          <h3 className="af-settings-h3">执行趋势（{scope === 'all' ? '全部' : scope === 'self' ? '自身' : '外部'}）</h3>
-          <TrendChart trend={data.trend} />
+          <CompareView ext={data.summary.external} internal={data.summary.internal} />
+          <div className="af-monitor-granularity">
+            <h3 className="af-settings-h3">执行趋势（{scope === 'all' ? '全部' : scope === 'self' ? '自身' : '外部'}）</h3>
+            <div className="af-settings-tabs" role="tablist" aria-label="趋势粒度">
+              <button type="button" role="tab" aria-selected={granularity === 'day'} className={`af-settings-tab${granularity === 'day' ? ' active' : ''}`} onClick={() => setGranularity('day')}>按天</button>
+              <button type="button" role="tab" aria-selected={granularity === 'hour'} className={`af-settings-tab${granularity === 'hour' ? ' active' : ''}`} onClick={() => setGranularity('hour')}>按小时(近24h)</button>
+            </div>
+          </div>
+          {granularity === 'day'
+            ? <TrendChart trend={data.trend} />
+            : <TrendChartHourly trend={data.trend_hourly} />}
+          <ExecutorBars rows={scope === 'self' ? [] : data.by_executor} />
           <GroupTable title="按执行器" rows={scope === 'self' ? [] : data.by_executor} />
           <GroupTable title="按 Agent / Skill" rows={scopeFilter(data.by_agent)} />
           {scope !== 'self' ? <GroupTable title="按项目目录" rows={data.by_project} /> : null}

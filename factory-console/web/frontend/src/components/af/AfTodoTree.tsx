@@ -447,7 +447,6 @@ function TreeNodeRow({
         ) : null}
         <span className="af-tree-progress-wrap">
           <AfProgressBar value={node.progress} status={node.status} />
-          <span className="af-tree-progress">{node.progress}%</span>
         </span>
       </div>
       {hasChildren && isExpanded ? (

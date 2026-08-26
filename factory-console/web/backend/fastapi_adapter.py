@@ -2891,9 +2891,23 @@ def build_app(
                     )
         except Exception:  # noqa: BLE001 — 模型失败 → 不注入
             model_line = ""
-        # 系统/服务状态 (让会话能答 "webUI/系统运行状态" — TASK-774d9036)
+        # 系统/服务状态 (真实端口探测 — 让会话能答 "webUI/系统运行状态")
+        def _port_up(host: str, port: int) -> bool:
+            import socket
+
+            try:
+                sock = socket.create_connection((host, port), timeout=0.5)
+                sock.close()
+                return True
+            except Exception:  # noqa: BLE001 — 探测失败 → 未运行 (诚实)
+                return False
+
+        frontend_up = _port_up("127.0.0.1", 5180)
+        backend_up = _port_up("127.0.0.1", 8011)
         system_line = (
-            f"系统状态: AI Factory v{_factory_version} · 后端 API 运行中 · "
+            f"系统状态: AI Factory v{_factory_version} · "
+            f"Web 前端 (5180): {'运行中' if frontend_up else '未运行'} · "
+            f"后端 API (8011): {'运行中' if backend_up else '未运行'} · "
             f"数据目录 {workspace_root or DEFAULT_ROOT}"
         )
         if model_line:

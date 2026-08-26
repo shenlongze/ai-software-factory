@@ -3,6 +3,19 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.133] — 2026-08-26
+
+**系统状态事实卡加真实前端/后端端口探测 (Founder: webUI状态总说无数据)**。
+
+### Changed
+
+- system_status 事实卡: AI Factory 版本 + **Web 前端(5180): 运行中/未运行 (socket 探测)**
+  + 后端 API(8011) + 数据目录 + 模型 — 前端状态是真探测, 不再"无数据"
+
+### 验证
+
+- 后端 25 passed · 前端 684 passed
+
 ## [v1.1.132] — 2026-08-26
 
 **会话意图修复: 确定性关键词优先, LLM 不覆写成 chat (复发 bug)**。

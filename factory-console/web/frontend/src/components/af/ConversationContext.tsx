@@ -92,7 +92,13 @@ export function ConversationProvider({ children }: { children: ReactNode }): JSX
       return 'company';
     }
   });
-  const [projectId, setProjectId] = useState<string | null>(null);
+  const [projectId, setProjectIdState] = useState<string | null>(null);
+  // A 方案 (Founder 2026-08-26): 作用域自动跟随当前视图 — 有项目 → project, 否则 company
+  const setProjectId = useCallback((pid: string | null) => {
+    setProjectIdState(pid);
+    const next: SessionScope = pid ? 'project' : 'company';
+    setScopeState((prev) => (prev !== next ? next : prev));
+  }, []);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [messages, setMessages] = useState<SessionMessage[]>([]);
@@ -140,6 +146,12 @@ export function ConversationProvider({ children }: { children: ReactNode }): JSX
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // 作用域切换 (跟随视图) → 清空当前会话/消息, 加载新作用域列表
+  useEffect(() => {
+    setActiveId(null);
+    setMessages([]);
+  }, [scope]);
 
   // 当前会话消息加载
   useEffect(() => {

@@ -77,8 +77,8 @@ export function AfConversationPanel({ projectId, projectName }: AfConversationPa
 
   const scopeLabel =
     ctx.scope === 'project'
-      ? `项目 · ${projectName ?? ctx.projectId ?? '—'}`
-      : '公司 · 全局';
+      ? `📁 项目 · ${projectName ?? ctx.projectId ?? '—'}`
+      : '🏢 公司 · 全局';
 
 
   const renderSessionRow = (s: SessionSummary) => (
@@ -137,15 +137,9 @@ export function AfConversationPanel({ projectId, projectName }: AfConversationPa
       aria-label="AI 会话栏"
     >
       <div className="af-chat-head">
-        <select
-          className="af-chat-scope"
-          aria-label="会话作用域"
-          value={ctx.scope}
-          onChange={(e) => ctx.setScope(e.target.value as 'company' | 'project')}
-        >
-          <option value="company">{t('chat.scope.company')}</option>
-          <option value="project">{t('chat.scope.project')}</option>
-        </select>
+        <span className="af-chat-scope-indicator" data-testid="af-chat-scope" title="作用域自动跟随当前视图">
+          {scopeLabel}
+        </span>
         <button type="button" className="af-chat-btn" onClick={() => void ctx.createSession()} aria-label={t('chat.newSession')}>
           +
         </button>
@@ -163,17 +157,11 @@ export function AfConversationPanel({ projectId, projectName }: AfConversationPa
         </button>
       </div>
 
-      {ctx.scope === 'project' && !ctx.projectId ? (
-        <p className="af-chat-note">请先进入项目后再使用项目级会话（当前在公司/全局）。</p>
-      ) : null}
-
       <div className="af-chat-sessions" data-testid="af-chat-sessions">
         {ctx.loadingSessions ? (
           <p className="af-chat-note">加载会话…</p>
         ) : ctx.sessions.length === 0 ? (
-          <p className="af-chat-note">
-            {ctx.scope === 'project' && !ctx.projectId ? '—' : t('chat.noSessions')}
-          </p>
+          <p className="af-chat-note">{t('chat.noSessions')}</p>
         ) : (
           <>
             {ctx.sessions.filter((x) => x.status !== 'archived').map((s) => renderSessionRow(s))}

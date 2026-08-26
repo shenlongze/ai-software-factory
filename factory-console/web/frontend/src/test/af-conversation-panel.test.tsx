@@ -75,7 +75,7 @@ describe('AfConversationPanel (AI 会话栏 C 列)', () => {
     renderPanel();
     expect(await screen.findByText(/暂无会话/)).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: 'AI 会话输入' })).toBeInTheDocument();
-    expect(screen.getByLabelText('会话作用域')).toBeInTheDocument();
+    expect(screen.getByTestId('af-chat-scope')).toHaveTextContent('公司 · 全局');
   });
 
   it('新建会话 → 列表出现并自动选中', async () => {
@@ -150,16 +150,14 @@ describe('AfConversationPanel (AI 会话栏 C 列)', () => {
     expect(screen.getByTestId('af-conversation-panel')).toBeInTheDocument();
   });
 
-  it('项目级作用域: 无项目 → 提示先进入项目; 有项目 → 作用域标签带项目名', async () => {
+  it('作用域自动跟随视图 (A 方案): 有项目 → 项目; 无项目 → 公司', async () => {
     stubSessionApi();
     const { unmount } = renderPanel('P-1');
-    await userEvent.selectOptions(screen.getByLabelText('会话作用域'), 'project');
-    expect(await screen.findByText(/项目 · P-1/)).toBeInTheDocument();
+    expect(await screen.findByTestId('af-chat-scope')).toHaveTextContent('项目 · P-1');
     unmount();
     stubSessionApi();
     renderPanel(null);
-    await userEvent.selectOptions(screen.getByLabelText('会话作用域'), 'project');
-    expect(await screen.findByText(/请先进入项目/)).toBeInTheDocument();
+    expect(await screen.findByTestId('af-chat-scope')).toHaveTextContent('公司 · 全局');
   });
 });
 

@@ -2,7 +2,7 @@
 
 > **单一事实来源** — 当前系统到底有哪些功能、每个功能是什么、怎么用（CLI / API / 会话命令）、什么状态、从哪个版本开始有。
 >
-> 版本: **v1.1.189** · 更新: 2026-08-27 · 依据: 实测命令 + 代码核对 + CHANGELOG
+> 版本: **v1.1.190** · 更新: 2026-08-27 · 依据: 实测命令 + 代码核对 + CHANGELOG
 
 ## 0. 文档定位（与其他文档的分工）
 
@@ -523,6 +523,7 @@ API（Web/集成）:   http://127.0.0.1:8011/api/...      e.g. GET /api/board
 
 | 版本 | 核心功能 | 里程碑 |
 |---|---|---|
+| v1.1.190 | U-6 诚实增强: 本机 AI 真实调用模板核对 + 探测 (codex/claude/hermes) | 后端/CLI |
 | v1.1.189 | U-3 MCP stdio 真实连接 + U-4 外部 skill 真实加载注入 (SKILL.md) | WebUI/后端/CLI |
 | v1.1.188 | U-6 本机 AI 发现与调度 (codex/claude/hermes 扫描注册+委派执行) | WebUI/后端/CLI |
 | v1.1.187 | T-6 执行中断 checkpoint 落盘/恢复 (exec/checkpoints.json + API) | 后端 |

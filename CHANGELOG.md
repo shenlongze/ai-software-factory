@@ -3,7 +3,20 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.190] — 2026-08-27
+
+**U-6 诚实增强: 发现 ≠ 会用 — 真实调用模板逐项核对 + 探测可用性 (Founder: 他知道如何使用么, 正确使用, 真实使用)**。
+
+### Fixed
+
+- 修正真实调用模板 (本机 --help 逐项核对): hermes 是 `-z PROMPT` (原 `run --dir` 是错的);
+  codex 是 `exec -C --skip-git-repo-check --sandbox workspace-write`; claude 是 `-p --output-format text` (cwd)
+- 扫描时探测每个 CLI (--help/--version 可跑 → verified + usage 首行落记录)
+- CLI `factory local-ai scan` 显示「✅ 用法已核对/⚠️ 未核对」+ 用法行; 新增 `probe --id` 展示真实调用模板
+- 诚实边界: 能跑 ≠ 一次任务真实成功; 委派后以 CLI 退出码为准, 不替 CLI 宣称
+
 ## [v1.1.189] — 2026-08-27
+
 
 **U-3 MCP 真实连接 (stdio) + U-4 外部 skill 真实加载执行 — U 链 6/6 收官**。
 

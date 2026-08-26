@@ -2573,6 +2573,29 @@ class FactoryCLI:
         from . import local_ai as _local_ai
 
         action = getattr(args, "local_ai_action", "scan") or "scan"
+        if action == "probe":
+            aid = str(getattr(args, "id", "") or "").strip()
+            if not aid:
+                print("用法: factory local-ai probe --id <agent_id>")
+                return 2
+            agents_file = self.data_dir / "agents" / "agents.json"
+            from .web.backend.fastapi_adapter import _read_json_map
+
+            data = _read_json_map(agents_file)
+            agents = data.get("agents") if isinstance(data, dict) else None
+            record = agents.get(aid) if isinstance(agents, dict) else None
+            if record is None:
+                print(f"未找到 Agent: {aid} (先 factory local-ai register)")
+                return 1
+            probe = _local_ai.probe_local_ai(record)
+            print(f"=== 本机 AI 探测: {aid} ===")
+            if probe["ok"]:
+                print(f"  ✅ 二进制可执行 (用法: {probe['usage'] or '--help 无输出'})")
+                print(f"  真实调用模板: {' '.join(_local_ai.build_invocation(record, '<prompt>', '<project_dir>'))}")
+                print("  提示: 能跑 ≠ 一次任务真实成功; 委派后以 CLI 退出码为准")
+            else:
+                print(f"  ❌ 不可用: {probe['error']}")
+            return 0 if probe["ok"] else 1
         if action == "scan":
             print("=== 本机 AI 扫描 (codex/claude/hermes) ===")
             found = _local_ai.detect_local_ais()
@@ -2583,7 +2606,10 @@ class FactoryCLI:
                 print(
                     f"  - {f['id']} | {f['name']} | {f['path']}"
                     + (f" | v{f['version']}" if f.get("version") else " | 版本未知")
+                    + (" | ✅ 用法已核对" if f.get("verified") else " | ⚠️ 用法未核对")
                 )
+                if f.get("usage"):
+                    print(f"      用法: {f['usage']}")
             print(f"  共 {len(found)} 个")
             return 0
         agents_file = self.data_dir / "agents" / "agents.json"
@@ -4183,8 +4209,8 @@ def build_parser() -> argparse.ArgumentParser:
         "local-ai", help="本机 AI 发现与调度 (U-6): scan — 扫描; register — 注册为 Agent; run — 委派执行"
     )
     p_local_ai.add_argument(
-        "local_ai_action", nargs="?", choices=["scan", "register", "run"], default="scan",
-        metavar="scan|register|run", help="scan — 扫描本机 codex/claude/hermes; register — 幂等注册为 Agent; run — 委派执行",
+        "local_ai_action", nargs="?", choices=["scan", "register", "run", "probe"], default="scan",
+        metavar="scan|register|run|probe", help="scan — 扫描本机 codex/claude/hermes; register — 幂等注册为 Agent; run — 委派执行; probe — 探测真实可用性",
     )
     p_local_ai.add_argument("--id", default="", help="Agent id (run)")
     p_local_ai.add_argument("--prompt", default="", help="委派执行的 prompt (run)")

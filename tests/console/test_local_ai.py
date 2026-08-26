@@ -115,7 +115,50 @@ class TestRun:
         assert r["exit_code"] == 0 and r["output"] == "done\n"
         assert captured["cmd"][0] == "/usr/bin/codex"
         assert captured["cmd"][1] == "exec"
-        assert "--cd" in captured["cmd"]
+        assert "-C" in captured["cmd"]
+        assert "--sandbox" in captured["cmd"]  # 真实模板 (核对 codex exec --help)
+
+    def test_run_hermes_uses_z_flag(self, monkeypatch):
+        """hermes 真实模板: -z PROMPT (核对 hermes --help; 不是 run --dir)。"""
+        captured: dict[str, Any] = {}
+
+        def fake_run(cmd, **kwargs):
+            captured["cmd"] = cmd
+            captured["cwd"] = kwargs.get("cwd")
+            class R:
+                returncode = 0
+                stdout = "ok"
+                stderr = ""
+            return R()
+
+        monkeypatch.setattr(_local_ai.subprocess, "run", fake_run)
+        rec = {"id": "local-hermes", "binary": "hermes", "path": "/usr/bin/hermes"}
+        r = _local_ai.run_local_ai(rec, "改 bug", project_dir="/tmp/p")
+        assert r["exit_code"] == 0
+        assert captured["cmd"] == ["/usr/bin/hermes", "-z", "改 bug"]
+        assert captured["cwd"] == "/tmp/p"  # hermes 用 cwd 定位项目
+
+    def test_build_invocation_verified_template(self):
+        rec = {"id": "local-codex", "binary": "codex", "path": "/usr/bin/codex"}
+        cmd = _local_ai.build_invocation(rec, "改 bug", "/tmp/p")
+        assert cmd[0] == "/usr/bin/codex"
+        assert cmd[1] == "exec" and "-C" in cmd
+        rec_h = {"id": "local-hermes", "binary": "hermes", "path": "/usr/bin/hermes"}
+        assert _local_ai.build_invocation(rec_h, "hi", "/tmp/p") == ["/usr/bin/hermes", "-z", "hi"]
+
+    def test_probe_detects_usage(self, monkeypatch):
+        def fake_run(cmd, **kwargs):
+            class R:
+                returncode = 0
+                stdout = "Usage: codex [OPTIONS] [PROMPT]\n"
+                stderr = ""
+            return R()
+
+        monkeypatch.setattr(_local_ai.subprocess, "run", fake_run)
+        rec = {"id": "local-codex", "binary": "codex", "path": "/usr/bin/codex"}
+        p = _local_ai.probe_local_ai(rec)
+        assert p["ok"] is True
+        assert "Usage: codex" in p["usage"]
 
     def test_run_missing_binary_honest(self):
         r = _local_ai.run_local_ai({"id": "local-x", "binary": "", "path": ""}, "p")

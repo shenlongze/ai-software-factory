@@ -77,6 +77,8 @@ def detect_local_ais() -> list[dict[str, Any]]:
         if path is None:
             continue
         version = _probe_version(path, binary)
+        # U-6 诚实增强: 探测真实用法 (--help/--version 可跑 → verified; 用法首行落记录)
+        probe = probe_local_ai({"id": f"local-{suffix}", "binary": binary, "path": path})
         found.append(
             {
                 "id": f"local-{suffix}",
@@ -87,6 +89,8 @@ def detect_local_ais() -> list[dict[str, Any]]:
                 "path": path,
                 "version": version,
                 "description": desc,
+                "usage": probe.get("usage") or "",
+                "verified": bool(probe.get("ok")),
             }
         )
     return found
@@ -134,6 +138,10 @@ def register_local_ais(
             existing["path"] = item["path"]
             if item.get("version"):
                 existing["version"] = item["version"]
+            if item.get("usage"):
+                existing["usage"] = item["usage"]
+            if "verified" in item:
+                existing["verified"] = item["verified"]
             if not existing.get("skills"):
                 existing["skills"] = item["skills"]
             touched.append(existing)
@@ -147,6 +155,8 @@ def register_local_ais(
                 "path": item["path"],
                 "version": item.get("version"),
                 "description": item["description"],
+                "usage": item.get("usage") or "",
+                "verified": bool(item.get("verified")),
             }
             agents[aid] = record
             touched.append(record)
@@ -154,12 +164,68 @@ def register_local_ais(
     return touched
 
 
-#: 各本机 AI CLI 的调用参数映射 (project_dir 用 --cd / -C 传入; 失败安全)
-_RUN_ARGS: dict[str, list[str]] = {
-    "codex": ["exec", "--cd"],
-    "claude": ["-p", "--output-format", "text"],
-    "hermes": ["run", "--dir"],
+#: 各本机 AI CLI 的**真实**调用模板 (2026-08-27 本机 --help 逐项核对, 非猜测):
+#:   codex  → codex exec -C <dir> --skip-git-repo-check --sandbox workspace-write "<prompt>"
+#:   claude → claude -p --output-format text "<prompt>"  (cwd=<dir>, 无 --cd)
+#:   hermes → hermes -z "<prompt>"                       (cwd=<dir>, 无 run --dir)
+#: 未知 CLI → 兜底 [path, "<prompt>"] (诚实: 无模板时直接传 prompt)
+_RUN_TEMPLATES: dict[str, dict[str, Any]] = {
+    "codex": {
+        "args": lambda path, cwd, prompt: [
+            path, "exec", "-C", cwd or ".", "--skip-git-repo-check",
+            "--sandbox", "workspace-write", prompt,
+        ],
+        "cwd": None,  # codex 用 -C 指定目录
+        "help_flag": ["exec", "--help"],
+    },
+    "claude": {
+        "args": lambda path, cwd, prompt: [
+            path, "-p", "--output-format", "text", prompt,
+        ],
+        "cwd": True,  # claude 无 --cd, 用进程 cwd 定位项目
+        "help_flag": ["--help"],
+    },
+    "hermes": {
+        "args": lambda path, cwd, prompt: [path, "-z", prompt],
+        "cwd": True,
+        "help_flag": ["--help"],
+    },
 }
+
+
+def probe_local_ai(record: dict[str, Any]) -> dict[str, Any]:
+    """探测 CLI 真实可用性 (跑 --help/--version, 不调 LLM 不花钱)。
+
+    返回 {ok, usage, error}: ok = 二进制可执行且帮助/版本命令退出 0;
+    usage = 真实用法首行 (诚实标注「能跑 ≠ 一次任务真实成功」)。"""
+    binary = str(record.get("binary") or "")
+    path = str(record.get("path") or binary or "")
+    if not path:
+        return {"ok": False, "usage": "", "error": "未找到本机 CLI 二进制路径"}
+    tmpl = _RUN_TEMPLATES.get(binary, {})
+    help_flag = tmpl.get("help_flag") or ["--help"]
+    try:
+        r = subprocess.run(
+            [path, *help_flag], capture_output=True, text=True, timeout=15
+        )
+        text = (r.stdout or r.stderr or "").strip()
+        ok = r.returncode == 0
+        usage = text.splitlines()[0][:120] if text else ""
+        return {"ok": ok, "usage": usage,
+                "error": "" if ok else text[-300:]}
+    except Exception as exc:  # noqa: BLE001 — 探测失败 → 诚实
+        return {"ok": False, "usage": "", "error": f"探测失败: {exc}"}
+
+
+def build_invocation(record: dict[str, Any], prompt: str, project_dir: str = "") -> list[str]:
+    """按真实模板构造调用命令 (未知 CLI → [path, prompt] 兜底)。"""
+    binary = str(record.get("binary") or "")
+    path = str(record.get("path") or binary or "")
+    tmpl = _RUN_TEMPLATES.get(binary)
+    cwd = str(project_dir or "").strip()
+    if tmpl is not None:
+        return list(tmpl["args"](path, cwd, prompt))
+    return [path, prompt]
 
 
 def run_local_ai(
@@ -168,34 +234,24 @@ def run_local_ai(
     project_dir: str = "",
     timeout: int = 600,
 ) -> dict[str, Any]:
-    """委派真实执行: 调本机 CLI (subprocess)。失败安全 → {exit_code, output, error}。
+    """委派真实执行: 调本机 CLI (subprocess, 真实模板)。失败安全 → {exit_code, output, error}。
 
-    codex:  codex exec --cd <dir> --skip-git-repo-check "<prompt>"
-    claude: claude -p --output-format text "<prompt>"  (cwd=<dir>)
-    hermes: hermes run --dir <dir> "<prompt>"
-    """
+    真实模板 (逐项核对本机 --help): codex exec -C + sandbox; claude -p (cwd);
+    hermes -z (cwd)。输出 = 真实 CLI stdout/stderr; 退出码 = CLI 返回码。
+    诚实边界: 一次真实执行的成功与否 = CLI 自己判定 (exit_code), 不替它宣称。"""
     binary = str(record.get("binary") or "")
     path = str(record.get("path") or binary or "")
     if not path:
         return {"exit_code": -1, "output": "", "error": "未找到本机 CLI 二进制路径"}
     cwd = str(project_dir or "").strip() or None
-    args = list(_RUN_ARGS.get(binary, [binary]))  # 未知 CLI → 直接 [binary] 兜底
-    cmd: list[str] = []
-    if binary == "codex":
-        cmd = [path, "exec", "--cd", cwd or ".", "--skip-git-repo-check", prompt]
-    elif binary == "claude":
-        cmd = [path, "-p", "--output-format", "text", prompt]
-    elif binary == "hermes":
-        cmd = [path, "run", "--dir", cwd or ".", prompt]
-    else:
-        cmd = [path, *args, prompt]
+    cmd = build_invocation(record, prompt, project_dir)
     try:
         r = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
             timeout=timeout,
-            cwd=cwd if cwd and binary != "codex" else None,
+            cwd=cwd if _RUN_TEMPLATES.get(binary, {}).get("cwd") else None,
         )
         return {
             "exit_code": r.returncode,

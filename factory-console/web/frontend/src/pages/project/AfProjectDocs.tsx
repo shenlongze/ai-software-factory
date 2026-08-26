@@ -265,14 +265,12 @@ export function AfProjectDocs({ projectId, projectName }: AfProjectDocsProps): J
     });
   }, [extras]);
 
-  // 非关键目录默认折叠 (有章法: 关键目录展开, 杂项收起)
+  // 文档目录默认全部收起 (Founder: 太长了, 收起/展开) — 核心资产/根文档保留
   useEffect(() => {
     if (folders.length > 0) {
       setCollapsedFolders((prev) => {
         if (prev.size > 0) return prev; // 只初始化一次
-        return new Set(
-          folders.filter(([f]) => !DOC_KEY_FOLDERS.includes(f)).map(([f]) => f),
-        );
+        return new Set(folders.map(([f]) => f));
       });
     }
   }, [folders]);

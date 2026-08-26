@@ -50,6 +50,8 @@ describe('AfProjectDocs (项目文档管理)', () => {
     expect(screen.getByText('核心资产（2）')).toBeInTheDocument();
     expect(screen.getByText('文档目录（1）')).toBeInTheDocument();
     expect(screen.getByTestId('af-doc-folder-docs')).toBeInTheDocument();
+    // 目录默认收起 → 点开可见条目
+    await userEvent.click(screen.getByTestId('af-doc-folder-docs'));
     expect(screen.getByText('docs/guide.md')).toBeInTheDocument();
     // 默认选中第一个可读文档 → 渲染 markdown 标题
     expect(await screen.findByRole('heading', { name: '需求' })).toBeInTheDocument();
@@ -73,13 +75,14 @@ describe('AfProjectDocs (项目文档管理)', () => {
     expect(screen.getAllByText('README.md').length).toBeGreaterThan(0);
     // 代码目录 desktop 被排除 (非项目文档)
     expect(screen.queryByText('desktop/README.md')).not.toBeInTheDocument();
-    // 关键目录 docs/products 默认展开 (条目可见)
+    // 所有文档目录默认收起 (太长了): 目录可见, 条目不可见 (折叠初始化异步)
     expect(screen.getByTestId('af-doc-folder-docs-products')).toBeInTheDocument();
-    expect(screen.getByText('agent-product-spec.md')).toBeInTheDocument();
-    // 非关键目录 misc 默认折叠 (目录可见, 条目不可见 — 折叠初始化异步)
     expect(screen.getByTestId('af-doc-folder-misc')).toBeInTheDocument();
-    await waitFor(() => expect(screen.queryByText('misc/note.md')).not.toBeInTheDocument());
-    // 点开 misc → 条目出现
+    await waitFor(() => expect(screen.queryByText('agent-product-spec.md')).not.toBeInTheDocument());
+    expect(screen.queryByText('misc/note.md')).not.toBeInTheDocument();
+    // 点开 docs/products → 条目出现; 点开 misc → 条目出现
+    await userEvent.click(screen.getByTestId('af-doc-folder-docs-products'));
+    expect(screen.getByText('agent-product-spec.md')).toBeInTheDocument();
     await userEvent.click(screen.getByTestId('af-doc-folder-misc'));
     expect(screen.getByText('misc/note.md')).toBeInTheDocument();
   });

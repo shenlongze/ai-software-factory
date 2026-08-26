@@ -1,4 +1,4 @@
-"""tests/console/test_task_exec_writeback.py — 方案A: 执行绑定 + 回写钩子 (v1.1.196)。
+"""tests/console/test_task_exec_writeback.py — 方案A: 执行绑定 + 回写钩子 (v1.1.197)。
 
 Founder 2026-08-26: "任务会自动更新状态么 → 选 A (执行绑定 + 回写)"。
 覆盖 (service.start_task_exec / finish_task_exec + org.management.Task 字段 +

@@ -3,7 +3,16 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.197] — 2026-08-27
+
+**fix: 监控菜单双 📊 — i18n label 去掉 emoji (图标单独提供)**。
+
+### Fixed
+
+- nav.workspace.monitor 值从「📊 监控」改为「监控」(en: Monitor) — 侧边栏 icon+label 不再重复 emoji
+
 ## [v1.1.196] — 2026-08-27
+
 
 **i18n: 补 nav.workspace.monitor 菜单名称 (zh: 📊 监控 / en: 📊 Monitor)**。
 

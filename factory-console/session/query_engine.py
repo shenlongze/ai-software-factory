@@ -31,8 +31,9 @@ _INTENT_RULES: list[tuple[str, tuple[str, ...]]] = [
     ("project_doc", ("文档内容", "讲了什么", "读一下", "内容是什么", ".md", ".json", ".txt", ".docx")),
     ("doc_search", ("检索", "搜索", "搜一下", "查找", "哪些文档提到", "哪份文档", "哪篇文档", "有没有说", "提到")),
     ("project_docs", ("文档", "文档清单", "产物", "产出物", "docs", "dosc", "products", "规格", "product-spec")),
+    ("project_scan", ("扫描", "扫一下", "体检", "全面看", "整体情况", "总览", "盘点", "看进度计划", "进度计划")),
     ("project_status", ("状态", "阶段", "进行", "进度", "生命周期", "卡点", "怎么样", "进展",
-                       "计划", "规划", "里程碑", "扫描", "扫一下", "看看项目")),
+                       "计划", "规划", "里程碑", "看看项目")),
     ("model", ("模型", "什么模型", "deepseek")),
 ]
 
@@ -300,7 +301,20 @@ def build_facts(
         block = model_line or "模型信息待查证 (未配置)"
     elif target is not None:
         name = str(getattr(target, "name", "") or "")
-        if intent == "project_status":
+        if intent == "project_scan":
+            try:
+                from ..session.project_scan import format_scan, scan_project
+
+                report = scan_project(
+                    root,
+                    str(getattr(target, "id", "") or ""),
+                    workflow_status=getattr(target, "workflow_status", None) or None,
+                    current_stage=getattr(target, "current_stage", None) or None,
+                )
+                block = format_scan(report, name)
+            except Exception:  # noqa: BLE001 — 扫描失败 → 诚实降级
+                block = f"项目: {name}\n扫描失败（数据服务不可用）— 请稍后重试。"
+        elif intent == "project_status":
             stats = _project_task_stats(root, str(getattr(target, "id", "") or ""))
             lines = [
                 f"项目: {name}",
@@ -329,9 +343,18 @@ def build_facts(
                     score = d["score"]
             block = f"项目: {name}\n质量分: {score if score is not None else '未生成'}"
         elif intent == "project_tasks":
-            tasks = getattr(target, "tasks", None) or {}
-            counts = " · ".join(f"{k}:{v}" for k, v in sorted(tasks.items())) if tasks else "暂无任务"
-            block = f"项目: {name}\n任务统计: {counts}"
+            stats = _project_task_stats(root, str(getattr(target, "id", "") or ""))
+            if stats:
+                block = (
+                    f"项目: {name}\n任务统计: 共 {stats['total']} 个 "
+                    f"(完成 {stats['done']} · 执行中 {stats['running']} · "
+                    f"阻塞 {stats['blocked']} · 待办 {stats['todo']}, 进度 {stats['pct']}%)"
+                )
+            else:
+                # 无真实任务文件 → fallback org 字段 (兼容旧数据)
+                tasks = getattr(target, "tasks", None) or {}
+                counts = " · ".join(f"{k}:{v}" for k, v in sorted(tasks.items())) if tasks else "暂无任务"
+                block = f"项目: {name}\n任务统计: {counts}"
         elif intent == "project_doc":
             doc_name = _extract_doc_name(question)
             content = _read_doc_snippet(root, target, doc_name)
@@ -394,17 +417,18 @@ def build_facts(
 
 
 #: 合法意图集合 (校验 LLM 输出)
-VALID_INTENTS = {"list_projects", "project_status", "project_quality", "project_tasks",
+VALID_INTENTS = {"list_projects", "project_status", "project_scan", "project_quality", "project_tasks",
                  "project_docs", "project_doc", "doc_search",
                  "model", "system_status", "create_project", "create_task", "chat"}
 
 _INTENT_LLM_PROMPT = """把用户的提问转成标准查询意图 (只输出 JSON, 不要别的):
-{{"intent": "list_projects|project_status|project_quality|project_tasks|project_docs|project_doc|doc_search|model|create_project|create_task|chat",
+{{"intent": "list_projects|project_status|project_scan|project_quality|project_tasks|project_docs|project_doc|doc_search|model|create_project|create_task|chat",
  "project": "用户提到的项目名 (没提到 → null)",
  "task": "用户要做的开发任务描述 (create_task 时填; 否则 null)}}
 规则:
 - 问项目列表/有哪些项目/重点项目 → list_projects
 - 问某项目状态/阶段/进度/怎么样 → project_status (project=项目名)
+- 扫描/全面看/盘点项目整体 (进度+计划+风险+建议) → project_scan
 - 问质量/评分 → project_quality
 - 问任务/todo → project_tasks
 - 问文档清单/有哪些文档 → project_docs

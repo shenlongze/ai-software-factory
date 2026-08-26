@@ -103,8 +103,7 @@ class TestBuildFacts:
         assert _qe._docs_subpath("有哪些文档") == ""
 
 
-    def test_project_status_has_real_stats(self, tmp_path):
-        """扫描项目看进度: 真实任务统计+史诗 (不再敷衍报 org progress=0)。"""
+    def _seed_tasks(self, tmp_path):
         pdir = tmp_path / "workspace" / "projects" / "p" / "management" / "backlog"
         pdir.mkdir(parents=True, exist_ok=True)
         (pdir / "task.json").write_text(
@@ -119,15 +118,39 @@ class TestBuildFacts:
             json.dumps({"epics": {"E1": {"id": "E1", "name": "C 产出物契约"}}}),
             encoding="utf-8",
         )
+
+    def test_project_status_has_real_stats(self, tmp_path):
+        """项目状态: 真实任务统计 (不再敷衍报 org progress=0)。"""
+        self._seed_tasks(tmp_path)
         projects = [_P("p", "演示项目")]
-        facts = _qe.build_facts("扫描项目，看进度，计划", scope="project", project_id="p",
+        facts = _qe.build_facts("项目进展怎么样", scope="project", project_id="p",
                                 projects=projects, root=tmp_path)
         assert "进度: 67% (任务 3: 完成 2" in facts
         assert "史诗 (1): C 产出物契约" in facts
 
-    def test_project_status_trigger_words(self):
-        for q in ("扫描项目", "有哪些计划", "项目规划", "看看项目进展"):
-            assert _qe.parse_intent(q)["intent"] == "project_status", q
+    def test_project_scan_report(self, tmp_path):
+        """扫描项目: 多源扫描报告 (任务树/判断/风险/建议)。"""
+        self._seed_tasks(tmp_path)
+        projects = [_P("p", "演示项目")]
+        facts = _qe.build_facts("扫描项目，看进度，计划", scope="project", project_id="p",
+                                projects=projects, root=tmp_path)
+        assert "项目扫描报告" in facts
+        assert "任务树: 3 任务 (完成 2" in facts
+        assert "判断:" in facts and "风险:" in facts and "建议:" in facts
+        assert "当前无执行中任务" in facts
+
+    def test_project_tasks_real_stats(self, tmp_path):
+        """问任务: 真实统计 (之前 org 字段空 → '暂无任务', 实际 95 个)。"""
+        self._seed_tasks(tmp_path)
+        projects = [_P("p", "演示项目")]
+        facts = _qe.build_facts("项目任务有哪些", scope="project", project_id="p",
+                                projects=projects, root=tmp_path)
+        assert "任务统计: 共 3 个 (完成 2" in facts
+
+    def test_intent_routing_scan_vs_status(self):
+        assert _qe.parse_intent("扫描项目")["intent"] == "project_scan"
+        assert _qe.parse_intent("项目规划")["intent"] == "project_status"
+        assert _qe.parse_intent("看看项目进展")["intent"] == "project_status"
     def test_chat_no_project_required(self, tmp_path):
         facts = _qe.build_facts("你好", scope="company", project_id=None, projects=PROJECTS, root=tmp_path)
         assert "旅行记账" in facts  # 兜底项目列表

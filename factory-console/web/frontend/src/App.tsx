@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AppStateProvider } from './state/AppState';
+import { ConversationProvider } from './components/af/ConversationContext';
 import { parseHash } from './router';
 import { AfWorkspaceEntry } from './pages/workspace/AfWorkspaceEntry';
 import { AfProjectEntry } from './pages/project/AfProjectEntry';
@@ -29,7 +30,9 @@ function Shell(): JSX.Element {
 export default function App(): JSX.Element {
   return (
     <AppStateProvider>
-      <Shell />
+      <ConversationProvider>
+        <Shell />
+      </ConversationProvider>
     </AppStateProvider>
   );
 }

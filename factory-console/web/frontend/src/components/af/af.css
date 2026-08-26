@@ -2940,3 +2940,344 @@
   color: #e5e7eb;
   margin: 8px 0;
 }
+
+/* ============================================= K-7d 布局 v4: 三栏 A|B|C */
+.af-col-a {
+  display: flex;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.af-col-c {
+  display: flex;
+  flex-shrink: 0;
+  width: 340px;
+  min-width: 0;
+  background: var(--af-panel, #161a22);
+  border-left: 1px solid var(--af-border, #2a3140);
+}
+
+/* B 列: 标签页条 (页面 + 预览, VSCode 式) */
+.af-main-content {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow-y: auto;
+}
+
+.af-b-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 8px;
+  background: #13161d;
+  border-bottom: 1px solid var(--af-border, #2a3140);
+  flex-shrink: 0;
+}
+
+.af-b-tab {
+  font: inherit;
+  font-size: 12px;
+  color: #9ca3af;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.af-b-tab:hover {
+  color: #e5e7eb;
+  background: #1c212b;
+}
+
+.af-b-tab--active {
+  color: #e5e7eb;
+  background: #1c212b;
+  border-color: #2a3140;
+}
+
+.af-b-tab--sidebar {
+  margin-right: 4px;
+}
+
+/* 预览标签页 (并入 B): 占满主区, 去掉右侧栏边框 */
+.af-main-content > .af-preview--open {
+  width: 100%;
+  border-left: none;
+  flex: 1;
+  min-height: 0;
+}
+
+.af-main-content > .af-preview--collapsed {
+  border-left: none;
+}
+
+/* B 列页面内容容器 (主区内容替换 padding:0 后的内边距) */
+.af-main-content > section,
+.af-main-content > .af-company-home,
+.af-main-content > .af-project-home,
+.af-main-content > .af-project-detail,
+.af-main-content > .af-settings,
+.af-main-content > .af-project-manage,
+.af-main-content > div,
+.af-main-content > .af-state {
+  margin: 24px;
+}
+
+/* ============================================= K-7e: AI 会话栏 (C 列) */
+.af-chat {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.af-chat--collapsed {
+  width: 36px;
+  align-items: center;
+  padding: 12px 0;
+}
+
+.af-chat-reopen {
+  font-size: 16px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.af-chat-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px;
+  border-bottom: 1px solid var(--af-border, #2a3140);
+}
+
+.af-chat-scope {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 12px;
+  color: #e5e7eb;
+  background: #0f1115;
+  border: 1px solid #2a3140;
+  border-radius: 6px;
+  padding: 4px 6px;
+}
+
+.af-chat-btn {
+  font-size: 12px;
+  color: #9ca3af;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 4px 7px;
+  cursor: pointer;
+}
+
+.af-chat-btn:hover {
+  color: #e5e7eb;
+  background: #1c212b;
+}
+
+.af-chat-btn--on {
+  color: #fbbf24;
+}
+
+.af-chat-note {
+  margin: 8px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.af-chat-sessions {
+  max-height: 40%;
+  overflow-y: auto;
+  border-bottom: 1px solid var(--af-border, #2a3140);
+  padding: 4px 6px;
+}
+
+.af-chat-session {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 4px;
+  border-radius: 6px;
+}
+
+.af-chat-session:hover {
+  background: #1c212b;
+}
+
+.af-chat-session--active {
+  background: rgba(76, 141, 255, 0.12);
+}
+
+.af-chat-session--archived {
+  opacity: 0.55;
+}
+
+.af-chat-session-title {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  font: inherit;
+  font-size: 12px;
+  color: #e5e7eb;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.af-chat-session-ops {
+  display: flex;
+  gap: 2px;
+}
+
+.af-chat-op {
+  font-size: 11px;
+  color: #6b7280;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 1px 3px;
+}
+
+.af-chat-op:hover {
+  color: #e5e7eb;
+}
+
+.af-chat-rename {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 12px;
+  color: #e5e7eb;
+  background: #0f1115;
+  border: 1px solid #4c8dff;
+  border-radius: 4px;
+  padding: 2px 4px;
+}
+
+.af-chat-ctx {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  font-size: 11px;
+  color: #6b7280;
+  border-bottom: 1px solid var(--af-border, #2a3140);
+}
+
+.af-chat-compress {
+  font: inherit;
+  font-size: 10px;
+  color: #6b7280;
+  background: transparent;
+  border: 1px dashed #2a3140;
+  border-radius: 4px;
+  padding: 1px 6px;
+  cursor: not-allowed;
+}
+
+.af-chat-messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.af-chat-msg {
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.af-chat-msg--user {
+  align-self: flex-end;
+  background: rgba(76, 141, 255, 0.16);
+  border: 1px solid rgba(76, 141, 255, 0.35);
+  max-width: 88%;
+}
+
+.af-chat-msg--assistant {
+  align-self: flex-start;
+  background: #1c212b;
+  border: 1px solid #2a3140;
+  max-width: 92%;
+}
+
+.af-chat-msg-meta {
+  font-size: 10px;
+  color: #6b7280;
+  margin-bottom: 3px;
+}
+
+.af-chat-input-row {
+  display: flex;
+  gap: 6px;
+  padding: 8px;
+  border-top: 1px solid var(--af-border, #2a3140);
+}
+
+.af-chat-input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 12px;
+  color: #e5e7eb;
+  background: #0f1115;
+  border: 1px solid #2a3140;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.af-chat-input:focus {
+  outline: none;
+  border-color: #4c8dff;
+}
+
+.af-chat-send {
+  font: inherit;
+  font-size: 12px;
+  color: #0f1115;
+  background: var(--af-primary, #4c8dff);
+  border: none;
+  border-radius: 8px;
+  padding: 0 12px;
+  cursor: pointer;
+}
+
+.af-chat-send:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ============================================= K-7d: 状态栏 */
+.af-statusbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 4px 12px;
+  font-size: 11px;
+  color: #9ca3af;
+  background: #13161d;
+  border-top: 1px solid var(--af-border, #2a3140);
+  flex-shrink: 0;
+}
+
+.af-statusbar-item--right {
+  margin-left: auto;
+}

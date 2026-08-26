@@ -67,14 +67,20 @@ afterEach(() => {
 });
 
 describe('AfWorkspaceShell (AI OS 三栏壳)', () => {
-  it('渲染三栏壳: Header + Sidebar 7 导航项 + Main + 预览窗口', () => {
+  it('渲染三栏壳: Header + Sidebar 7 导航项 + Main + 预览标签页 (K-7d 并入 B)', async () => {
+    const user = userEvent.setup();
     stubFetch(companyStubs());
     render(<AfWorkspaceShell route={workspaceRoute()} />);
     expect(screen.getByTestId('af-workspace-entry')).toBeInTheDocument();
     expect(screen.getByTestId('af-header')).toBeInTheDocument();
     expect(screen.getByTestId('af-sidebar')).toBeInTheDocument();
     expect(screen.getByTestId('af-main-content')).toBeInTheDocument();
-    expect(screen.getByTestId('af-preview-window')).toBeInTheDocument();
+    expect(screen.getByTestId('af-b-tabs')).toBeInTheDocument();
+    // 预览并入 B 列: 点"预览"标签页 → 预览窗口出现在主区
+    await user.click(screen.getByRole('button', { name: '预览' }));
+    expect(await screen.findByTestId('af-preview-window')).toBeInTheDocument();
+    // AI 会话栏 (C 列)
+    expect(screen.getByTestId('af-conversation-panel')).toBeInTheDocument();
     for (const label of NAV_LABELS) {
       expect(screen.getByRole('button', { name: new RegExp(label) })).toBeInTheDocument();
     }
@@ -235,7 +241,7 @@ describe('AfWorkspaceShell (AI OS 三栏壳)', () => {
     stubFetch({ '/api/dashboard': sampleDashboard({ projects: [] }) });
     render(<AfWorkspaceShell route={workspaceRoute('audit')} />);
     expect(screen.getByText('AI Factory')).toBeInTheDocument();
-    expect(screen.getByText('审计')).toBeInTheDocument();
+    expect(screen.getAllByText('审计').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByTestId('af-llm-status')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /开发者控制台/ })).toBeInTheDocument();
   });

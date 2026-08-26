@@ -699,3 +699,24 @@ export interface RunStatusResponse {
   updated_at: string | null;
 }
 
+
+/** K-7e: Web 会话栏 — 会话 (公司/项目作用域, 多线程)。 */
+export interface SessionSummary {
+  id: string;
+  scope: 'company' | 'project';
+  project_id: string | null;
+  title: string;
+  status: 'active' | 'archived';
+  created_at: string;
+  updated_at: string;
+  summary: string | null;
+}
+
+/** K-7e: Web 会话栏 — 消息 (user/assistant, append-only)。 */
+export interface SessionMessage {
+  id: string;
+  session_id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  created_at: string;
+}

@@ -1,22 +1,15 @@
 /**
- * components/af/AfWorkspaceShell.tsx — AI OS Workspace 三栏壳 (S10-014 Task 004)。
+ * components/af/AfWorkspaceShell.tsx — AI OS Workspace 三栏壳 (K-7d 布局 v4)。
  *
- * 依据 (唯一): S10-014-plan §3.1 (Workspace 级 7 导航) + §4 (Design System)
- * + AF-UI-Architecture §2.4 (三栏: Sidebar 240px 可折叠 / Main flex /
- * Context Panel 320px 可隐藏)。
+ * 结构 (AfWorkspaceFrame 三栏, Founder 定稿 A|B|C):
+ *   A 列   — AfSidebar (OS 层级树, 可收起 64px 图标轨)
+ *   B 列   — WorkspacePage (公司首页/项目列表/设置/管理) + 预览标签页 (并入 B)
+ *   C 列   — AfConversationPanel (AI 会话栏, 可收起/可常驻, App 级状态常驻)
+ *   底部   — AfStatusBar (模型/作用域/上下文/版本)
  *
- * 结构:
- *   Header   — ◆ AI Factory 品牌 + 子页标签 + LLM 状态点 + [进入 Human Console] + 折叠按钮
- *   Sidebar  — 7 导航项 (图标+文字, 激活态主色左边框 3px), 240px 可折叠 64px (localStorage 持久)
- *   Main     — 页面分发: dashboard/projects → 真实项目列表 (GET /api/dashboard, 四态);
- *              team/workflows/runtime/audit/settings → AfModulePlaceholder (禁空白)
- *   Context  — 右侧情境面板 (320px, 预留 — Task 005+ 接入)
- *
- * 导航: 点击导航项 → hash 更新 → App.tsx hashchange 重渲染 → 新 route 传入 → 激活态/页面刷新。
- * 折叠: 状态持久 localStorage (af.sidebar.collapsed), 环境无 localStorage 时退化为内存态。
+ * 导航: 点击导航项 → hash 更新 → App.tsx hashchange 重渲染 → 新 route 传入。
  */
 
-import { useState } from 'react';
 import { api } from '../../api/client';
 import { useAsync } from '../../hooks/useAsync';
 import type { ParsedRoute } from '../../router';
@@ -26,7 +19,7 @@ import { AfEmptyState, AfErrorState, AfLoadingState } from './AfState';
 import { AfModulePlaceholder } from './AfModulePlaceholder';
 import { AfHeader } from './AfHeader';
 import { AfSidebar, WORKSPACE_NAV_ITEMS } from './AfSidebar';
-import { AfPreviewWindow } from './AfPreviewWindow';
+import { AfWorkspaceFrame, type AfWorkspaceFrameHandlers } from './AfWorkspaceFrame';
 import './af.css';
 
 /** Workspace 子页人话标签 (对齐 WORKSPACE_ROUTES; Header 子页标签用)。 */
@@ -38,31 +31,12 @@ const WORKSPACE_PAGE_LABELS: Record<string, string> = {
   runtime: '运行时',
   audit: '审计',
   settings: '设置',
+  manage: '项目管理',
 };
 
-/** 侧栏折叠持久化 key。 */
-export const SIDEBAR_COLLAPSED_KEY = 'af.sidebar.collapsed';
-
-function readSidebarCollapsed(): boolean {
-  try {
-    return window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1';
-  } catch {
-    return false; // jsdom/隐私模式无 localStorage → 内存态
-  }
-}
-
-function writeSidebarCollapsed(collapsed: boolean): void {
-  try {
-    window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? '1' : '0');
-  } catch {
-    // 仅内存态, 不阻塞 UI
-  }
-}
-
 /**
- * Dashboard/Projects 页: 真实项目列表 (GET /api/dashboard → 项目卡网格)。
+ * 项目列表页 (GET /api/dashboard → 项目卡网格)。
  * 四态复用 AfState (AI OS 深色): AfLoadingState / AfErrorState / AfEmptyState。
- * 点击项目卡 → #/project/{id} (hash 路由)。
  */
 function AfProjectListView(): JSX.Element {
   const { data, error, loading } = useAsync(() => api.dashboard(), []);
@@ -91,8 +65,6 @@ function AfProjectListView(): JSX.Element {
   );
 }
 
-/** Main 页面分发 (K-7b): dashboard → 我的公司首页 (AfCompanyHome 关注项目+待办, 信息量小);
- * projects → 项目列表 (保留); 其余 5 页 → AfModulePlaceholder (禁空白)。 */
 import { AfProjectManage } from '../../pages/workspace/AfProjectManage';
 import { AfSettings } from '../../pages/workspace/AfSettings';
 
@@ -119,78 +91,20 @@ export interface AfWorkspaceShellProps {
 
 /** AI OS Workspace 三栏壳 (根节点保留 af-workspace-entry testid — 入口兼容)。 */
 export function AfWorkspaceShell({ route }: AfWorkspaceShellProps): JSX.Element {
-  const [collapsed, setCollapsed] = useState<boolean>(readSidebarCollapsed);
-  const [composerText, setComposerText] = useState<string>('');
-
-  const toggleSidebar = () => {
-    setCollapsed((prev) => {
-      writeSidebarCollapsed(!prev);
-      return !prev;
-    });
-  };
-
   const pageLabel = WORKSPACE_PAGE_LABELS[route.page] ?? route.page;
 
-  const [composerMsg, setComposerMsg] = useState<string>('');
-  const [creating, setCreating] = useState<boolean>(false);
-
-  const submitComposer = () => {
-    const text = composerText.trim();
-    if (!text) return;
-    // K-7b 分域: workspace = 全局。创建意图 → 真实创建项目; 通用对话 → 诚实占位。
-    const creationHint = /(做|创建|开发|我想|给我做个)/.test(text);
-    if (creationHint) {
-      setCreating(true);
-      setComposerMsg('');
-      api
-        .createProject(text)
-        .then((created) => {
-          setComposerText('');
-          window.location.hash = `#/project/${created.project_id}`;
-        })
-        .catch((err) => {
-          setComposerMsg(`创建失败: ${String(err)}`);
-        })
-        .finally(() => setCreating(false));
-      return;
-    }
-    setComposerMsg('（全局对话：输入产品想法即可创建项目；通用 AI 会话后端待接）');
-    setComposerText('');
-  };
+  const renderHeader = ({ collapsed, onToggleSidebar }: AfWorkspaceFrameHandlers) => (
+    <AfHeader pageLabel={pageLabel} collapsed={collapsed} onToggleSidebar={onToggleSidebar} />
+  );
 
   return (
-    <div
-      className={`af-shell af-workspace-shell${collapsed ? ' af-shell--sidebar-collapsed' : ''}`}
-      data-testid="af-workspace-entry"
-    >
-      <AfHeader pageLabel={pageLabel} collapsed={collapsed} onToggleSidebar={toggleSidebar} />
-      <div className="af-shell-body">
-        <AfSidebar activePage={route.page} collapsed={collapsed} />
-        <main className="af-main-content" data-testid="af-main-content">
-          <WorkspacePage route={route} />
-        </main>
-        {/* K-7b: 右栏 = 预览窗口 (类浏览器, 独立收起/展开, 默认展开) */}
-        <AfPreviewWindow />
-      </div>
-      <footer className="af-composer" data-testid="af-composer">
-        <span className="af-composer-scope" data-testid="af-composer-scope">
-          全局（我的公司）
-        </span>
-        <input
-          className="af-composer-input"
-          placeholder="我想做一个记账App / 继续聊…"
-          aria-label="对话输入"
-          value={composerText}
-          onChange={(e) => setComposerText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') submitComposer();
-          }}
-        />
-        <button type="button" className="af-composer-send" onClick={submitComposer} disabled={creating}>
-          {creating ? '创建中…' : '发送'}
-        </button>
-        {composerMsg ? <span className="af-composer-msg">{composerMsg}</span> : null}
-      </footer>
-    </div>
+    <AfWorkspaceFrame
+      testId="af-workspace-entry"
+      pageLabel={pageLabel}
+      scopeLabel="公司 · 我的公司"
+      header={renderHeader}
+      sidebar={(collapsed) => <AfSidebar activePage={route.page} collapsed={collapsed} />}
+      main={<WorkspacePage route={route} />}
+    />
   );
 }

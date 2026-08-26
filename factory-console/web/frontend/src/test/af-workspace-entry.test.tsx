@@ -89,7 +89,7 @@ describe('AfWorkspaceEntry (AI Factory 工作台真实入口)', () => {
     render(<AfWorkspaceEntry route={workspaceRoute('projects')} />);
     expect(await screen.findByTestId('af-workspace-entry')).toBeInTheDocument();
     expect(screen.getByText('AI Factory')).toBeInTheDocument();
-    expect(screen.getByText('项目')).toBeInTheDocument();
+    expect(screen.getAllByText('项目').length).toBeGreaterThanOrEqual(1);
   });
 
   it('空列表 → EmptyState (暂无项目)', async () => {

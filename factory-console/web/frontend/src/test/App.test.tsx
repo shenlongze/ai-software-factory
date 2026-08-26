@@ -52,10 +52,11 @@ describe('App Shell (K-7a 单入口)', () => {
     expect(screen.getByText('🛠 开发者控制台')).toBeInTheDocument();
   });
 
-  it('底部 Composer 存在', async () => {
+  it('K-7d: AI 会话栏 (C 列) 常驻 + 状态栏存在', async () => {
     window.location.hash = '';
     renderApp();
-    expect(await screen.findByTestId('af-composer')).toBeInTheDocument();
-    expect(screen.getByRole('textbox', { name: '对话输入' })).toBeInTheDocument();
+    expect(await screen.findByTestId('af-conversation-panel')).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'AI 会话输入' })).toBeInTheDocument();
+    expect(screen.getByTestId('af-statusbar')).toBeInTheDocument();
   });
 });

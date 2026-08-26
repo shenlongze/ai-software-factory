@@ -48,6 +48,8 @@ import {
   type MCPConnection,
   type MCPTool,
   type RunStatusResponse,
+  type SessionMessage,
+  type SessionSummary,
   type StageRunSummary,
   type TimelineEventSummary,
   type WorkflowDetail,
@@ -340,6 +342,26 @@ export const api = {
       transport,
     }),
   mcpTools: () => getJson<{ tools: MCPTool[] }>('/api/mcp/tools'),
+  // K-7e: Web 会话栏 (会话 + 消息 + 回复)
+  sessions: async (scope?: string, projectId?: string) => {
+    const params = new URLSearchParams();
+    if (scope) params.set('scope', scope);
+    if (projectId) params.set('project_id', projectId);
+    const qs = params.toString();
+    return (await getJson<{ items: SessionSummary[] }>(`/api/sessions${qs ? `?${qs}` : ''}`)).items;
+  },
+  createSession: (body: { scope: 'company' | 'project'; project_id?: string | null; title?: string }) =>
+    sendJson<SessionSummary>('/api/sessions', body),
+  updateSession: (id: string, body: { title?: string; status?: string }) =>
+    patchJson<SessionSummary>(`/api/sessions/${encodeURIComponent(id)}`, body),
+  sessionMessages: async (id: string) =>
+    (await getJson<{ items: SessionMessage[] }>(`/api/sessions/${encodeURIComponent(id)}/messages`)).items,
+  sendSessionMessage: (id: string, message: string) =>
+    sendJson<{ user: SessionMessage; assistant: SessionMessage; session: SessionSummary }>(
+      `/api/sessions/${encodeURIComponent(id)}/messages`,
+      { message },
+    ),
+
 } as const;
 
 export type Api = typeof api;

@@ -23,6 +23,12 @@ function projectRoute(page = 'overview') {
   return { level: 'project' as const, page, projectId: 'demo' };
 }
 
+
+/** 侧栏内导航按钮 (K-7d: B 列页面标签页与导航同名 — 查询收窄到侧栏)。 */
+function navButton(name: RegExp) {
+  return within(screen.getByTestId('af-project-sidebar')).getByRole('button', { name });
+}
+
 const NAV_LABELS = [
   'Overview',
   'Vision',
@@ -50,7 +56,7 @@ describe('AfProjectShell (AI OS 项目层壳)', () => {
     expect(screen.getByTestId('af-project-sidebar')).toBeInTheDocument();
     expect(screen.getByTestId('af-main-content')).toBeInTheDocument();
     for (const label of NAV_LABELS) {
-      expect(screen.getByRole('button', { name: new RegExp(label) })).toBeInTheDocument();
+      expect(navButton(new RegExp(label))).toBeInTheDocument();
     }
   });
 
@@ -73,35 +79,29 @@ describe('AfProjectShell (AI OS 项目层壳)', () => {
   it('默认 overview: Overview 导航项激活 (aria-current=page), 其他不激活', () => {
     stubFetch({ '/api/projects': [sampleProject({ id: 'demo' })] });
     render(<AfProjectShell route={projectRoute()} />);
-    expect(screen.getByRole('button', { name: /Overview/ })).toHaveAttribute(
-      'aria-current',
-      'page',
-    );
-    expect(screen.getByRole('button', { name: /Todo Tree/ })).not.toHaveAttribute('aria-current');
-    expect(screen.getByRole('button', { name: /Logs/ })).not.toHaveAttribute('aria-current');
+    expect(navButton(/Overview/)).toHaveAttribute('aria-current', 'page');
+    expect(navButton(/Todo Tree/)).not.toHaveAttribute('aria-current');
+    expect(navButton(/Logs/)).not.toHaveAttribute('aria-current');
   });
 
   it('激活态跟随路由: route.page=todo → Todo Tree 高亮, Overview 不高亮', () => {
     stubFetch({ '/api/projects': [sampleProject({ id: 'demo' })] });
     render(<AfProjectShell route={projectRoute('todo')} />);
-    expect(screen.getByRole('button', { name: /Todo Tree/ })).toHaveAttribute(
-      'aria-current',
-      'page',
-    );
-    expect(screen.getByRole('button', { name: /Overview/ })).not.toHaveAttribute('aria-current');
+    expect(navButton(/Todo Tree/)).toHaveAttribute('aria-current', 'page');
+    expect(navButton(/Overview/)).not.toHaveAttribute('aria-current');
   });
 
   it('点击导航项 → 更新 window.location.hash (overview → #/project/demo, 其余 → #/project/demo/<page>)', async () => {
     const user = userEvent.setup();
     stubFetch({ '/api/projects': [sampleProject({ id: 'demo' })] });
     render(<AfProjectShell route={projectRoute()} />);
-    await user.click(screen.getByRole('button', { name: /Todo Tree/ }));
+    await user.click(navButton(/Todo Tree/));
     expect(window.location.hash).toBe('#/project/demo/todo');
-    await user.click(screen.getByRole('button', { name: /Backlog/ }));
+    await user.click(navButton(/Backlog/));
     expect(window.location.hash).toBe('#/project/demo/backlog');
-    await user.click(screen.getByRole('button', { name: /Vision/ }));
+    await user.click(navButton(/Vision/));
     expect(window.location.hash).toBe('#/project/demo/vision');
-    await user.click(screen.getByRole('button', { name: /Overview/ }));
+    await user.click(navButton(/Overview/));
     expect(window.location.hash).toBe('#/project/demo');
   });
 

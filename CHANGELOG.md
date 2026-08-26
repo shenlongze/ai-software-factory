@@ -3,6 +3,35 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.99] — 2026-08-26
+
+**布局 v4 (K-7d) + AI 会话栏 (K-7e) — 三栏 A|B|C 定稿落地**。
+
+### Added
+
+- **三栏布局 v4 (Founder 定稿 A|B|C)**: A 列 OS 导航 / B 列数据工作区
+  (预览窗口并入 B 列标签页) / C 列 AI 会话栏 (可收起、可常驻) + 底部状态栏
+  (模型/作用域/上下文 tokens/版本) + 快捷键 (Cmd+B 切侧栏 · Cmd+J 切会话 ·
+  Cmd+K 新建会话); 各栏收起状态持久化
+- **AI 会话栏 (C 列)**: 作用域选择 (公司/项目) + 多会话线程 (新建/改名/归档/
+  自动标题) + 真实对话 (项目级注入事实卡) + 上下文指示器 (消息数/tokens/压缩
+  诚实标注 K-7f 待接入) + 发送失败诚实提示
+- **后端会话 API**: GET/POST /api/sessions · PATCH /api/sessions/{id} ·
+  GET/POST /api/sessions/{id}/messages (console_sessions.py — 会话+消息
+  JSON 存储, 线程安全, 失败安全; LLM 回复复用 ReasoningProvider 装配链,
+  不可用 → 诚实降级不假装)
+
+### Changed
+
+- 移除 v3 中央区内 Composer 与右栏独立预览 — 预览入 B 列标签页, 对话入 C 列
+
+### 验证
+
+- 后端: console_sessions 测试 17 passed (存储/回复/HTTP 400/404)
+- 前端: 679 passed (含会话栏 7 用例) · npm run build 通过
+- 数据真实: /api/projects 11 项目 · 会话 API 落盘 console_sessions.json
+  · LLM 不可用 → 诚实降级提示
+
 ## [v1.1.98] — 2026-08-26
 
 **WebUI 工作台主页面 (我的公司首页) — K-7b 首页定稿**。

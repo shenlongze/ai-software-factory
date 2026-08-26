@@ -230,6 +230,25 @@ class _ChatBody(BaseModel):
     message: str
 
 
+class _SessionBody(BaseModel):
+    """POST /api/sessions body (K-7e 会话栏)。
+
+    {scope}: company|project; project 会话必须带 project_id; title 可选
+    (缺省 "新会话", 首条消息后自动取消息前缀)。
+    """
+
+    scope: str
+    project_id: str | None = None
+    title: str | None = None
+
+
+class _SessionPatchBody(BaseModel):
+    """PATCH /api/sessions/{id} body (K-7e): {title?, status?} 改名/归档/恢复。"""
+
+    title: str | None = None
+    status: str | None = None
+
+
 class _DiscoveryAnswerBody(BaseModel):
     """POST /api/projects/{id}/discovery/answer body (S10-009 Task 4).
 
@@ -760,6 +779,12 @@ def build_app(
 
     # S10-1xx: 数据根目录（/api/board/graph|chain 读项目 plan.json）
     workspace_root = Path(factory_root) if factory_root is not None else None
+
+    # K-7e: Web 会话栏存储 (root/console_sessions.json; 与 chat.json 平级)
+    _sessions_mod = _console_import("console_sessions")
+    sessions_store = _sessions_mod.SessionStore(
+        Path(factory_root if factory_root is not None else DEFAULT_ROOT) / "console_sessions.json"
+    )
 
     app = FastAPI(title="AI Software Factory — Human Console Web", version=_factory_version)
 
@@ -2491,6 +2516,77 @@ def build_app(
         if result is None:
             raise HTTPException(status_code=404, detail="project not found")
         return result
+
+    # ============================================== K-7e: 会话栏 (会话 + 消息)
+    @app.get("/api/sessions")
+    def api_sessions(
+        scope: str | None = Query(default=None),
+        project_id: str | None = Query(default=None),
+    ) -> dict[str, Any]:
+        """会话列表 (K-7e 会话栏): scope=company|project 过滤; updated_at 倒序。"""
+        if scope is not None and scope not in _sessions_mod.VALID_SCOPES:
+            raise HTTPException(status_code=400, detail=f"非法作用域: {scope}")
+        return ok_list(sessions_store.list_sessions(scope=scope, project_id=project_id))
+
+    @app.post("/api/sessions")
+    def api_create_session(body: _SessionBody) -> dict[str, Any]:
+        """新建会话 (K-7e): {scope, project_id?, title?}。"""
+        try:
+            return sessions_store.create_session(
+                scope=body.scope, project_id=body.project_id, title=body.title
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.patch("/api/sessions/{session_id}")
+    def api_update_session(session_id: str, body: _SessionPatchBody) -> dict[str, Any]:
+        """更新会话 (K-7e): {title?, status?} — 改名/归档/恢复。"""
+        try:
+            updated = sessions_store.update_session(
+                session_id, title=body.title, status=body.status
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if updated is None:
+            raise HTTPException(status_code=404, detail="session not found")
+        return updated
+
+    @app.get("/api/sessions/{session_id}/messages")
+    def api_session_messages(session_id: str) -> dict[str, Any]:
+        """会话消息列表 (K-7e); 会话不存在 → 404。"""
+        if sessions_store.get_session(session_id) is None:
+            raise HTTPException(status_code=404, detail="session not found")
+        return ok_list(sessions_store.list_messages(session_id))
+
+    @app.post("/api/sessions/{session_id}/messages")
+    def api_session_send(session_id: str, body: _ChatBody) -> dict[str, Any]:
+        """发送消息 (K-7e): 落用户消息 + LLM 回复 (真实/诚实降级)。
+
+        项目级会话注入项目事实卡 (service.list_projects 定位; 失败 → 不注入,
+        不编造)。返回 {user, assistant, session}。"""
+        session = sessions_store.get_session(session_id)
+        if session is None:
+            raise HTTPException(status_code=404, detail="session not found")
+        facts = ""
+        if session.get("scope") == "project" and session.get("project_id"):
+            try:
+                projects = service.list_projects()
+                found = next(
+                    (pp for pp in projects if pp.id == session["project_id"]), None
+                )
+                if found is not None:
+                    facts = (
+                        f"名称: {found.name}\n生命周期: {found.lifecycle_stage or found.status}"
+                        f"\n状态: {found.status}\n进度: {found.progress}"
+                    )
+            except Exception:  # noqa: BLE001 — 事实卡失败 → 不注入 (不编造)
+                facts = ""
+        try:
+            return _sessions_mod.send_message(
+                sessions_store, session_id, body.message, facts=facts
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.get("/api/projects/{project_id}/run-status")
     def api_project_run_status(project_id: str) -> dict[str, Any]:

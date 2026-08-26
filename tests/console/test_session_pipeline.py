@@ -922,9 +922,11 @@ def test_full_pipeline_create_then_prepare(fake_org, tmp_path):
     expected = [
         "PRD.md",  # 大写 P 排序在前
         "PRD.quality.json",  # S10-117 B-6: PRD 质量分落盘
+        "artifacts.manifest.json",  # C-1/C-2: 产出物契约清单 (S10-125 引擎接线)
         "engineering.json",
         "engineering.quality.json",  # S10-117 B-6: 工程计划质量分落盘
         "execution_plan.json",
+        "history",  # C-1/C-2: 产出物历史归档目录 (set_artifact 二次写归档)
         "product.json",
         "project.json",
         "tasks.json",

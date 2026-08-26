@@ -31,12 +31,16 @@ docs/sprint10/S10-057-team-production-design.md §P0-§P5
 from __future__ import annotations
 
 import json
+import logging
 import time
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional
+
+from ..artifact_contract import set_artifact
+from ..audit.trace_context import get_trace_id
 
 from .agents import AgentMatcher, AgentMetrics, AgentRegistry
 from .budget import BudgetEnforcer, BudgetUsage
@@ -100,6 +104,41 @@ PLANNING_MODES: tuple[str, ...] = (
 #: 任务执行函数契约: (task: dict, project_dir: Path, workspace: Path) -> dict
 #: 返回 {success: bool, artifact?: str, error?: str, cost?: str}
 ExecuteFn = Callable[[dict[str, Any], Path, Path], dict[str, Any]]
+
+
+logger = logging.getLogger("factory.session.orchestrator")
+
+
+def _contract_set_artifact(
+    *,
+    root: Any,
+    project_id: str,
+    artifact_type: str,
+    data: Any,
+    producer: str,
+    file: str,
+) -> None:
+    """C-2 契约写入口: 统一走 set_artifact (producer + K-4 trace_id), 失败安全。
+
+    - trace_id: K-4 contextvar 读 (无上下文 → None, 落 manifest 为 null)
+    - 失败安全: set_artifact 异常 → log + 继续 (契约尽力而为, 不阻断引擎;
+      不写直写回退 — 保持直写点归零)
+    """
+    try:
+        set_artifact(
+            root=root,
+            project_id=str(project_id or ""),
+            artifact_type=artifact_type,
+            data=data,
+            producer=producer,
+            trace_id=get_trace_id() or None,
+            file=file,
+        )
+    except Exception as exc:  # noqa: BLE001 — 失败安全铁律
+        logger.warning(
+            "set_artifact 失败 (project=%s type=%s): %s",
+            project_id, artifact_type, exc,
+        )
 
 
 def _write_json(path: Path, data: dict[str, Any]) -> None:
@@ -1020,8 +1059,19 @@ class ExecutionOrchestrator:
         return ExecutionState.load(self._state_file(project_dir))
 
     def _save_state(self, project_dir: Path, state: ExecutionState) -> None:
-        """持久化 state (每任务状态变更后调用 — 可恢复)。"""
-        state.save(self._state_file(project_dir))
+        """持久化 state (每任务状态变更后调用 — 可恢复)。C-2: 经 set_artifact。
+
+        project_dir = <workspace>/projects/<slug> → root=project_dir.parent.parent,
+        project_id=project_dir.name (契约落盘位置与改造前一致)。
+        """
+        _contract_set_artifact(
+            root=project_dir.parent.parent,
+            project_id=project_dir.name,
+            artifact_type="execution_state",
+            data=state.to_dict(),
+            producer="orchestrator",
+            file="execution_state.json",
+        )
 
     def _set_lifecycle(self, project_dir: Path, slug: str, status: str) -> None:
         """Lifecycle 落盘: 委托统一入口 set_project_lifecycle (S10-115 J-1)。
@@ -4033,7 +4083,15 @@ class ExecutionOrchestrator:
                 if added:
                     data.setdefault("tasks", []).extend(added)
                     data["count"] = len(data["tasks"])
-                    _write_json(tasks_file, data)
+                    # C-2: 统一走 set_artifact (tasks.json 同步)
+                    _contract_set_artifact(
+                        root=project_dir.parent.parent,
+                        project_id=project_dir.name,
+                        artifact_type="tasks",
+                        data=data,
+                        producer="orchestrator",
+                        file="tasks.json",
+                    )
             except Exception:  # noqa: BLE001 — 失败安全: tasks.json 同步失败不中断
                 pass
         self._save_state(project_dir, state)
@@ -4062,6 +4120,14 @@ class ExecutionOrchestrator:
         plan["replan_count"] = state.replan_count
         plan["last_replan_reason"] = state.last_replan_reason
         self._save_state(project_dir, state)
-        _write_json(project_dir / "execution_plan.json", plan)
+        # C-2: 统一走 set_artifact (execution_plan.json 版本推进)
+        _contract_set_artifact(
+            root=project_dir.parent.parent,
+            project_id=project_dir.name,
+            artifact_type="execution_plan",
+            data=plan,
+            producer="orchestrator",
+            file="execution_plan.json",
+        )
         if team_run is not None:
             TeamExecutionState.sync_plan_version(project_dir, state.plan_version)

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import logging
 import os
 import re
 import sys
@@ -40,6 +41,7 @@ from .action import (
 from .agents import DEFAULT_AGENTS, AgentMatcher, AgentMetrics, AgentRegistry, workforce_snapshot
 from .audit import record_execution
 from ..audit.trace_context import get_trace_id
+from ..artifact_contract import set_artifact
 from .commands import read_projects
 from .confirm import ConfirmationGate
 from .execution_replay import ReplayError
@@ -68,6 +70,8 @@ from .product import (
     parse_core_features,
 )
 from .progress import ProductProgressTracker
+
+logger = logging.getLogger("factory.session.actions")
 from .quality import RepairManager
 from .teams import DEFAULT_TEAM_MEMBERS, TeamRegistry, TeamService
 from .workspace import WorkspaceContext
@@ -306,16 +310,16 @@ def create_product(context: ExecutionContext) -> ActionResult:
     # project_created); canonical (project.json.status) 由 org/统一入口管理
     product.status = Lifecycle.PRODUCT_DEFINED
     product_path = product_dir / "product.json"
-    try:
-        product_path.parent.mkdir(parents=True, exist_ok=True)
-        product_path.write_text(product.to_json(), encoding="utf-8")
-    except Exception as exc:  # noqa: BLE001 — 失败安全: 落盘异常 → 明确错误
-        return ActionResult(
-            ok=False,
-            status=STATUS_ERROR,
-            message=f"产品创建失败: product.json 落盘失败: {exc}",
-            error=str(exc),
-        )
+    # C-2: 统一走 set_artifact (producer=product-pipeline + K-4 trace_id);
+    # 失败安全: 契约异常 → log + 继续 (不阻断产品创建, 不写直写回退)
+    _contract_set_artifact(
+        root=context.workspace,
+        project_id=slug,
+        artifact_type="product",
+        data=product.to_dict(),
+        producer="product-pipeline",
+        file="product.json",
+    )
     # S10-070: Audit 自动接入 (失败安全 — Audit 故障不中断业务)
     try:
         from ..audit.audit_emitter import AuditEmitter
@@ -358,6 +362,40 @@ def _write_json_file(path: Path, data: dict[str, Any]) -> None:
 def _read_json_file(path: Path) -> dict[str, Any]:
     """读取 JSON 资产 (失败 → 抛, 由调用方失败安全处理)。"""
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _contract_set_artifact(
+    *,
+    root: Any,
+    project_id: str,
+    artifact_type: str,
+    data: Any = None,
+    raw_text: Optional[str] = None,
+    producer: str,
+    file: Optional[str] = None,
+) -> None:
+    """C-2 契约写入口: 统一走 set_artifact (producer + K-4 trace_id), 失败安全。
+
+    - trace_id: K-4 contextvar 读 (无上下文 → None, 落 manifest 为 null)
+    - 失败安全: set_artifact 异常 → log + 继续 (契约尽力而为, 不阻断引擎;
+      不写直写回退 — 保持直写点归零)
+    """
+    try:
+        set_artifact(
+            root=root,
+            project_id=str(project_id or ""),
+            artifact_type=artifact_type,
+            data=data,
+            raw_text=raw_text,
+            producer=producer,
+            trace_id=get_trace_id() or None,
+            file=file,
+        )
+    except Exception as exc:  # noqa: BLE001 — 失败安全铁律
+        logger.warning(
+            "set_artifact 失败 (project=%s type=%s): %s",
+            project_id, artifact_type, exc,
+        )
 
 
 def _find_product_dir(projects_root: Path, product: ProductIntent) -> Optional[str]:
@@ -488,9 +526,25 @@ def generate_prd(context: ExecutionContext) -> ActionResult:
     else:
         product_dict["status"] = Lifecycle.ENGINEERING_READY
     try:
-        _write_text_file(prd_path, prd_text)
+        # C-2: 统一走 set_artifact (markdown 用 raw_text 全文; JSON 用 data 对象)
+        _contract_set_artifact(
+            root=context.workspace,
+            project_id=slug,
+            artifact_type="prd",
+            data=None,
+            raw_text=prd_text,
+            producer="product-pipeline",
+            file="PRD.md",
+        )
         existing = _read_json_file(product_file) if product_file.is_file() else {}
-        _write_json_file(product_file, {**existing, **product_dict})
+        _contract_set_artifact(
+            root=context.workspace,
+            project_id=slug,
+            artifact_type="product",
+            data={**existing, **product_dict},
+            producer="product-pipeline",
+            file="product.json",
+        )
     except Exception as exc:  # noqa: BLE001 — 失败安全: 落盘异常 → 明确错误
         return ActionResult(
             ok=False,
@@ -591,10 +645,40 @@ def prepare_project(context: ExecutionContext) -> ActionResult:
         "requested_at": datetime.now(timezone.utc).isoformat(),
     }
     try:
-        _write_text_file(prd_path, prd_text)
-        _write_json_file(engineering_path, plan)
-        _write_json_file(tasks_path, tree)
-        _write_json_file(execution_path, execution)
+        # C-2: 统一走 set_artifact (PRD raw_text 全文; JSON 用 data 对象)
+        _contract_set_artifact(
+            root=context.workspace,
+            project_id=slug,
+            artifact_type="prd",
+            data=None,
+            raw_text=prd_text,
+            producer="product-pipeline",
+            file="PRD.md",
+        )
+        _contract_set_artifact(
+            root=context.workspace,
+            project_id=slug,
+            artifact_type="engineering",
+            data=plan,
+            producer="product-pipeline",
+            file="engineering.json",
+        )
+        _contract_set_artifact(
+            root=context.workspace,
+            project_id=slug,
+            artifact_type="tasks",
+            data=tree,
+            producer="product-pipeline",
+            file="tasks.json",
+        )
+        _contract_set_artifact(
+            root=context.workspace,
+            project_id=slug,
+            artifact_type="execution_plan",
+            data=execution,
+            producer="product-pipeline",
+            file="execution_plan.json",
+        )
         existing_project = (
             _read_json_file(project_path) if project_path.is_file() else {}
         )
@@ -609,7 +693,14 @@ def prepare_project(context: ExecutionContext) -> ActionResult:
         )
         product_file = product_dir / "product.json"
         existing_product = _read_json_file(product_file) if product_file.is_file() else {}
-        _write_json_file(product_file, {**existing_product, **product.to_dict()})
+        _contract_set_artifact(
+            root=context.workspace,
+            project_id=slug,
+            artifact_type="product",
+            data={**existing_product, **product.to_dict()},
+            producer="product-pipeline",
+            file="product.json",
+        )
         # S10-117 B-6: PRD/工程计划质量分落盘 (确定性评分, 失败安全不阻断)
         _write_plan_quality_files(product_dir, prd_text, plan, product)
     except Exception as exc:  # noqa: BLE001 — 失败安全: 落盘异常 → 明确错误
@@ -3787,9 +3878,14 @@ def rename_project(context: ExecutionContext) -> ActionResult:
             pdata = json.loads(pfile.read_text(encoding="utf-8"))
             if str(pdata.get("name") or "") == old_name:
                 pdata["name"] = new_name
-                pfile.write_text(
-                    json.dumps(pdata, ensure_ascii=False, indent=2) + "\n",
-                    encoding="utf-8",
+                # C-2: 统一走 set_artifact (product.json 名称同步)
+                _contract_set_artifact(
+                    root=workspace,
+                    project_id=pdir.name,
+                    artifact_type="product",
+                    data=pdata,
+                    producer="product-pipeline",
+                    file="product.json",
                 )
                 renamed_product = str(pdir.name)
                 break

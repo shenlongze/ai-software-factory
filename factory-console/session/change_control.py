@@ -26,12 +26,19 @@ propose → impact → approve → PRD v2 → replan: 执行中 "加导出" → 
 from __future__ import annotations
 
 import json
+import logging
 import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional
+
+from ..artifact_contract import set_artifact
+from ..audit.trace_context import get_trace_id
+
+logger = logging.getLogger("factory.session.change_control")
+
 
 #: 变更状态
 STATUS_PROPOSED = "proposed"
@@ -156,6 +163,40 @@ def _write_json(path: Path, data: dict[str, Any]) -> None:
     path.write_text(
         json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
+
+
+def _contract_set_artifact(
+    *,
+    root: Any,
+    project_id: str,
+    artifact_type: str,
+    data: Any = None,
+    raw_text: Optional[str] = None,
+    producer: str,
+    file: Optional[str] = None,
+) -> None:
+    """C-2 契约写入口: 统一走 set_artifact (producer + K-4 trace_id), 失败安全。
+
+    - trace_id: K-4 contextvar 读 (无上下文 → None, 落 manifest 为 null)
+    - 失败安全: set_artifact 异常 → log + 继续 (契约尽力而为, 不阻断引擎;
+      不写直写回退 — 保持直写点归零)
+    """
+    try:
+        set_artifact(
+            root=root,
+            project_id=str(project_id or ""),
+            artifact_type=artifact_type,
+            data=data,
+            raw_text=raw_text,
+            producer=producer,
+            trace_id=get_trace_id() or None,
+            file=file,
+        )
+    except Exception as exc:  # noqa: BLE001 — 失败安全铁律
+        logger.warning(
+            "set_artifact 失败 (project=%s type=%s): %s",
+            project_id, artifact_type, exc,
+        )
 
 
 @dataclass
@@ -501,7 +542,17 @@ class ChangeController:
             f"- 影响任务:\n{tasks}\n"
         )
         updated = existing.rstrip() + "\n\n" + entry
-        _write_text(prd_path, updated)
+        # C-2 追加写场景: 已读现有全文 + 合并 → 整体 set_artifact
+        # (归档旧版=历史不丢; 禁止绕过契约直接 append)
+        _contract_set_artifact(
+            root=self.workspace,
+            project_id=proposal.project_slug,
+            artifact_type="prd",
+            data=None,
+            raw_text=updated,
+            producer="change-control",
+            file="PRD.md",
+        )
         return entry
 
     def _decompose_change(self, proposal: ChangeProposal) -> list[dict[str, Any]]:
@@ -585,7 +636,15 @@ class ChangeController:
         tasks_data["epics"] = epics
         tasks_data["tasks"] = flat
         tasks_data["count"] = len(flat)
-        _write_json(tasks_path, tasks_data)
+        # C-2: 统一走 set_artifact (tasks.json 变更回流)
+        _contract_set_artifact(
+            root=self.workspace,
+            project_id=slug,
+            artifact_type="tasks",
+            data=tasks_data,
+            producer="change-control",
+            file="tasks.json",
+        )
         return {"epics": len(epics), "tasks": len(flat), "added": len(leaves)}
 
     def _merge_plan(
@@ -628,7 +687,15 @@ class ChangeController:
         if "count" in plan_data:
             plan_data["count"] = len(plan_tasks)
         # 追加任务无依赖边 → 保持原 edges/order (TaskScheduler 按新 tasks 重算轮次)
-        _write_json(plan_path, plan_data)
+        # C-2: 统一走 set_artifact (plan.json 变更回流)
+        _contract_set_artifact(
+            root=self.workspace,
+            project_id=slug,
+            artifact_type="plan",
+            data=plan_data,
+            producer="change-control",
+            file="plan.json",
+        )
         return {"tasks": len(plan_tasks), "added": added}
 
     def _merge_execution_plan(
@@ -661,7 +728,15 @@ class ChangeController:
             existing_ids.add(task_id)
         plan_data["tasks"] = tasks
         plan_data["count"] = len(tasks)
-        _write_json(plan_path, plan_data)
+        # C-2: 统一走 set_artifact (execution_plan.json 变更回流)
+        _contract_set_artifact(
+            root=self.workspace,
+            project_id=slug,
+            artifact_type="execution_plan",
+            data=plan_data,
+            producer="change-control",
+            file="execution_plan.json",
+        )
         return {"tasks": len(tasks), "added": len(leaves)}
 
     # ------------------------------------------------------------ 查询

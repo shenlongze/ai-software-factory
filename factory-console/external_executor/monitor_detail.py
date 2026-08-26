@@ -51,7 +51,9 @@ def _duration(r: dict) -> int:
 def _summary(records: list[dict]) -> dict[str, Any]:
     total = len(records)
     success = sum(1 for r in records if str(r.get("result") or "") == "success")
-    first_pass = sum(1 for r in records if r.get("first_pass") is not False)
+    # 首次通过只统计"有该字段"的记录 (内部旧记录无 first_pass → 不虚高)
+    first_pass_known = [r for r in records if r.get("first_pass") is not None]
+    first_pass = sum(1 for r in first_pass_known if r.get("first_pass") is True)
     verified = [r for r in records if (r.get("verify") or {}).get("result") in ("pass", "fail")]
     verify_pass = sum(1 for r in verified if (r.get("verify") or {}).get("result") == "pass")
     durations = sorted(_duration(r) for r in records if r.get("duration_ms"))
@@ -59,7 +61,7 @@ def _summary(records: list[dict]) -> dict[str, Any]:
     return {
         "total": total, "success": success, "failed": total - success,
         "success_rate": _rate(success, total),
-        "first_pass_rate": _rate(first_pass, total),
+        "first_pass_rate": _rate(first_pass, len(first_pass_known)),
         "verified": len(verified),
         "verify_pass_rate": _rate(verify_pass, len(verified)),
         "avg_duration_ms": int(sum(durations) / len(durations)) if durations else None,

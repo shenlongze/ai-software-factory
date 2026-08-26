@@ -3,6 +3,17 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.167] — 2026-08-27
+
+**X-1 数据保护落地: factory backup + factory git (Founder: 数据资产零保护最致命)**。
+
+### Added
+
+- factory backup create/list/restore: ~/.factory → tar.gz (排除 db-wal/shm/debug/__pycache__),
+  恢复路径防穿越 + 合并语义不整体替换
+- factory git status/push: 定期推送机制 (领先提交可查/可推)
+- 真实备份: ~/.factory-backups/factory-20260827-004553.tar.gz (990KB/367 文件)
+
 ## [v1.1.166] — 2026-08-26
 
 **会话工具调用框架 (Founder: 详细分析必须调专业工具, 不靠 LLM 脑补)**。

@@ -979,6 +979,10 @@ class FactoryCLI:
             return self.status()
         if args.command == "doctor":
             return self.doctor(args)
+        if args.command == "backup":
+            return self.backup(args)
+        if args.command == "git":
+            return self.git(args)
         if args.command == "tools":
             return self.tools(args)
         if args.command == "repo":
@@ -1685,6 +1689,77 @@ class FactoryCLI:
             return []
 
     # ------------------------------------------------------------- repo (M1)
+
+    def backup(self, args: argparse.Namespace) -> int:
+        """factory backup — 数据保护 (X-1/D-1): create/list/restore。"""
+        from .backup import create_backup, list_backups, restore_backup
+
+        action = getattr(args, "backup_command", "list") or "list"
+        bdir = getattr(args, "dir", None) or None
+        if action == "create":
+            r = create_backup(self.data_dir, bdir)
+            if not r.get("ok"):
+                print(f"❌ 备份失败: {r.get('error')}", file=sys.stderr)
+                return 1
+            size = r["size"] / 1024
+            print(f"✅ 备份完成: {r['file']} ({size:.1f} KB, {r['count']} 个文件)")
+            return 0
+        if action == "list":
+            rows = list_backups(bdir)
+            if not rows:
+                print("（暂无备份 — 运行 factory backup create）")
+                return 0
+            print(f"=== 数据备份 ({len(rows)}) ===")
+            for row in rows:
+                print(f"  - {row.get('name', row['file'])} ({row['size'] / 1024:.1f} KB)")
+            return 0
+        # restore
+        bf = getattr(args, "backup_file", None) or ""
+        if not bf:
+            print("用法: factory backup restore <备份文件>", file=sys.stderr)
+            return 2
+        r = restore_backup(self.data_dir, bf)
+        if not r.get("ok"):
+            print(f"❌ 恢复失败: {r.get('error')}", file=sys.stderr)
+            return 1
+        print(f"✅ 恢复完成: {r['restored']} 个文件 (来自 {r['file']})")
+        return 0
+
+    def git(self, args: argparse.Namespace) -> int:
+        """factory git — X-1: push/status (定期推送, 数据保护)。"""
+        import subprocess as _sp
+
+        action = getattr(args, "git_command", "status") or "status"
+        repo = getattr(args, "dir", None)
+        if repo is None:
+            # 自动定位: 当前仓库根 (AI Factory 自身) 或 数据目录
+            try:
+                r = _sp.run(["git", "rev-parse", "--show-toplevel"], capture_output=True,
+                            text=True, cwd=str(self.root), timeout=10)
+                repo = (r.stdout or "").strip() or str(self.root)
+            except Exception:  # noqa: BLE001
+                repo = str(self.root)
+        try:
+            if action == "push":
+                branch = _sp.run(["git", "-C", repo, "branch", "--show-current"],
+                                 capture_output=True, text=True, timeout=10).stdout.strip() or "main"
+                ahead = _sp.run(["git", "-C", repo, "rev-list", "--count", f"origin/{branch}..HEAD"],
+                                capture_output=True, text=True, timeout=10).stdout.strip()
+                if ahead.isdigit() and int(ahead) == 0:
+                    print(f"✅ 无更新可推 (已与 origin/{branch} 同步)")
+                    return 0
+                print(f"推送到 origin/{branch} (领先 {ahead} 提交)...")
+                r = _sp.run(["git", "-C", repo, "push", "origin", branch], timeout=120)
+                print(f"✅ 推送完成 (rc={r.returncode})")
+                return r.returncode
+            # status
+            r = _sp.run(["git", "-C", repo, "status", "-sb"], capture_output=True,
+                        text=True, timeout=10)
+            print((r.stdout or r.stderr or "（git status 无输出）").strip())
+            return 0
+        except Exception as exc:  # noqa: BLE001 — 失败安全
+            print(f"❌ git 操作失败: {exc}", file=sys.stderr)
+            return 1
 
     def repo(self, args: argparse.Namespace) -> int:
         """存量仓库模式 (M1): 理解 → 计划 → (--patch 应用) → 测试。
@@ -3882,6 +3957,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_evidence.add_argument("bundle_id", nargs="?", default=None, help="证据包 id (show)")
     p_evidence.add_argument("--project", default=None, help="项目 slug (缺省: 最新)")
+    p_backup = sub.add_parser("backup", help="数据保护 (X-1/D-1): 备份/清单/恢复 ~/.factory")
+    p_backup.add_argument(
+        "backup_command", choices=["create", "list", "restore"], metavar="动作",
+        help="create — 备份数据目录; list — 备份清单; restore <文件> — 恢复",
+    )
+    p_backup.add_argument("backup_file", nargs="?", default=None, help="备份文件 (restore)")
+    p_backup.add_argument("--dir", default=None, help="备份目录 (缺省 ~/.factory-backups)")
+    p_git = sub.add_parser("git", help="Git 操作 (X-1): push — 推送到 origin")
+    p_git.add_argument("git_command", choices=["push", "status"], metavar="动作",
+                       help="push — 推送当前分支到 origin; status — 领先/落后")
+    p_git.add_argument("--dir", default=None, help="仓库目录 (缺省: 自动定位项目/当前仓库)")
     p_repo = sub.add_parser("repo", help="存量仓库模式 (M1): 理解→计划→改→测→修")
     p_repo.add_argument("repo_path", metavar="<path>", help="现有仓库路径")
     p_repo.add_argument("target", metavar="<目标>", help="要完成的目标 (例如: 加一个导出功能)")

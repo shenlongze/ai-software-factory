@@ -1026,6 +1026,8 @@ export interface BacklogTaskItem {
   created_at: string | null;
   updated_at: string | null;
   history: Array<{ time: string; actor: string; action: string; result: string }>;
+  /** 子任务 id (legacy 层级保留, Founder 2026-08-27)。 */
+  children?: string[] | null;
 }
 
 /** GET /api/projects/{id}/backlog 响应 (四分组; 失败安全空态)。 */

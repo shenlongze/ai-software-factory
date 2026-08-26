@@ -1,4 +1,4 @@
-"""tests/console/test_backlog_legacy_merge.py — legacy tasks.json 并入 backlog 树 (v1.1.180)。
+"""tests/console/test_backlog_legacy_merge.py — legacy tasks.json 并入 backlog 树 (v1.1.181)。
 
 Founder: 任务页空 — legacy 有完整 epics/tasks 树, 并入 backlog。
 验证 service.list_backlog: 史诗→模块→故事→任务 四层树 (legacy + management 合并, 去重)。
@@ -61,6 +61,36 @@ class TestLegacyMerge:
         # story 挂任务 (M2 story 有 2 个任务)
         m2_story = next(s for s in backlog["stories"] if "M2" in s["id"])
         assert len(m2_story["children"]) == 2
+
+    def test_legacy_parent_child_hierarchy_preserved(self, tmp_path):
+        """Founder 2026-08-27: 主任务有未完成子任务 → 不拍平进 story, 层级保留。
+        子任务挂主任务 children; story 只挂根任务 (主任务不归档, 树内聚合)。"""
+        pdir = tmp_path / "projects" / "P-2"
+        pdir.mkdir(parents=True, exist_ok=True)
+        (pdir / "tasks.json").write_text(
+            json.dumps(
+                {
+                    "epics": ["M2"],
+                    "tasks": [
+                        {"id": "M2-1", "name": "主任务", "epic": "M2", "feature": "M2", "status": "done"},
+                        {"id": "M2-1-1", "name": "子任务A", "epic": "M2", "feature": "M2", "parent": "M2-1", "status": "todo"},
+                        {"id": "M2-1-2", "name": "子任务B", "epic": "M2", "feature": "M2", "parent": "M2-1", "status": "todo"},
+                        {"id": "M2-2", "name": "独立任务", "epic": "M2", "feature": "M2", "status": "done"},
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        svc = _build_service(tmp_path)
+        backlog = svc.list_backlog("P-2")
+        tasks = {t["id"]: t for t in backlog["tasks"]}
+        # story 只挂根 (主任务 M2-1 + 独立 M2-2), 子任务不拍平进 story
+        m2_story = next(s for s in backlog["stories"] if "M2" in s["id"])
+        assert set(m2_story["children"]) == {"M2-1", "M2-2"}
+        # 主任务带 children; 子任务不带 children
+        assert set(tasks["M2-1"].get("children") or []) == {"M2-1-1", "M2-1-2"}
+        assert "children" not in tasks["M2-1-1"]
+        assert "children" not in tasks["M2-2"]
 
     def test_legacy_tree_no_duplicates(self, tmp_path):
         _seed_legacy(tmp_path, "P-1")

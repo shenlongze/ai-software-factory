@@ -96,6 +96,8 @@ export interface BacklogTask {
   exec_ref?: string | null;
   /** 最近执行结果 id (EXS-*); 空 = 无。 */
   exec_result?: string | null;
+  /** 子任务 id (legacy 层级保留: 主任务有子任务且未全完成 → 不归档, Founder 2026-08-27)。 */
+  children?: string[] | null;
 }
 
 /** GET /api/projects/{id}/backlog 响应 (4 个平行数组 + project_id)。 */

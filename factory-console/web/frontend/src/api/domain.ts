@@ -284,7 +284,7 @@ function toStoryNode(
     .map((id) => taskIndex.get(id))
     .filter((t): t is BacklogTask => t != null)
     .sort((a, b) => compareTaskPriority(a, b, statusById));
-  const weighted = tasks.map((task) => toTaskNode(task));
+  const weighted = tasks.map((task) => toTaskNode(task, taskIndex));
   const status = aggregateStoryStatus(weighted.map((w) => w.node));
   const priority = aggregatePriority(weighted);
   return {
@@ -302,8 +302,45 @@ function toStoryNode(
   };
 }
 
-/** Task → task 叶子节点 (完成 → 100%, 其余 → 0%; 权重 = priorityWeight)。 */
-function toTaskNode(task: BacklogTask): WeightedNode {
+/**
+ * Task → task 节点。有子任务 (task.children, legacy 层级保留) → 聚合子节点:
+ * 状态/进度从子任务派生 — 主任务子任务未全完成 → 不显示完成、不归档 (Founder 2026-08-27);
+ * 无子任务 → 叶子 (完成 → 100%, 其余 → 0%; 权重 = priorityWeight)。
+ */
+function toTaskNode(task: BacklogTask, taskIndex: Map<string, BacklogTask>): WeightedNode {
+  const childIds = task.children ?? [];
+  if (childIds.length > 0) {
+    const statusById = new Map<string, string>();
+    for (const t of taskIndex.values()) {
+      if (t?.id != null) statusById.set(t.id, t.status ?? '');
+    }
+    const children = childIds
+      .map((id) => taskIndex.get(id))
+      .filter((t): t is BacklogTask => t != null)
+      .sort((a, b) => compareTaskPriority(a, b, statusById));
+    const weighted = children.map((t) => toTaskNode(t, taskIndex));
+    const status = aggregateStoryStatus(weighted.map((w) => w.node));
+    const priority = aggregatePriority(weighted);
+    return {
+      node: {
+        id: task.id ?? '',
+        title: task.title ?? '',
+        type: 'task',
+        status,
+        statusLabel: statusLabel(status),
+        progress: weightedProgress(weighted),
+        ...(priority != null ? { priority } : {}),
+        children: weighted.map((w) => w.node),
+        ...(task.created_at != null && task.created_at.length > 0
+          ? { createdAt: task.created_at }
+          : {}),
+        ...(task.updated_at != null && task.updated_at.length > 0
+          ? { updatedAt: task.updated_at }
+          : {}),
+      },
+      weight: sumWeights(weighted),
+    };
+  }
   const status = toDomainStatus(task.status ?? null);
   const prio = normalizePriority(task.priority);
   const { startedAt, completedAt } = deriveTaskTimes(task);

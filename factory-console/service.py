@@ -3953,27 +3953,43 @@ class ConsoleService:
                 {"id": f"{ep}-{feat}", "name": feat, "epic_id": ep, "children": [f"story-{ep}-{feat}"]}
                 for (ep, feat) in groups
             ]
-            stories = [
-                {
-                    "id": f"story-{ep}-{feat}",
-                    "name": f"{ep} · {feat}",
-                    "children": [str(t["id"]) for t in items],
-                }
-                for (ep, feat), items in groups.items()
-            ]
-            tasks = [
-                {
-                    "id": str(t["id"]),
-                    "title": str(t.get("name") or ""),
-                    "status": str(t.get("status") or "todo"),
-                    "epic": ep,
-                    "feature": feat,
-                    "priority": None,
-                    "assignee": "",
-                }
-                for (ep, feat), items in groups.items()
-                for t in items
-            ]
+            stories: list[dict[str, Any]] = []
+            tasks: list[dict[str, Any]] = []
+            for (ep, feat), items in groups.items():
+                # 层级保留 (Founder 2026-08-27): legacy `parent` 字段 → 子任务挂在主任务下,
+                # 不拍平进 story; 主任务有未完成子任务 → 不归档 (前端口径: 有子任务即聚合)
+                by_id = {str(t.get("id") or ""): t for t in items}
+                children_map: dict[str, list[str]] = {}
+                roots: list[str] = []
+                for t in items:
+                    tid = str(t.get("id") or "")
+                    pid = str(t.get("parent") or "")
+                    if pid and pid != tid and pid in by_id:
+                        children_map.setdefault(pid, []).append(tid)
+                    else:
+                        roots.append(tid)
+                stories.append(
+                    {
+                        "id": f"story-{ep}-{feat}",
+                        "name": f"{ep} · {feat}",
+                        "children": roots,
+                    }
+                )
+                for t in items:
+                    tid = str(t.get("id") or "")
+                    entry: dict[str, Any] = {
+                        "id": tid,
+                        "title": str(t.get("name") or ""),
+                        "status": str(t.get("status") or "todo"),
+                        "epic": ep,
+                        "feature": feat,
+                        "priority": None,
+                        "assignee": "",
+                    }
+                    kids = children_map.get(tid)
+                    if kids:
+                        entry["children"] = kids
+                    tasks.append(entry)
             return {"epics": epics, "features": features, "stories": stories, "tasks": tasks}
         return None
 

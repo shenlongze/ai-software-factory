@@ -19,7 +19,7 @@ import { toTodoTree } from '../api/domain';
 import { AfTodoTree } from '../components/af/AfTodoTree';
 import { buildChainLines } from '../pages/project/AfTodoTreePage';
 import type { TodoTree } from '../models/domain';
-import { sampleTodoBacklog, sampleTodoFixture } from './fixtures';
+import { sampleTaskMeta, sampleTodoBacklog, sampleTodoFixture } from './fixtures';
 
 const { tree, meta } = sampleTodoFixture();
 
@@ -270,6 +270,32 @@ describe('AfTodoTree (Todo Tree 组件)', () => {
     expect(within(screen.getByTestId('af-tree-node-story-reg')).getByTestId('af-tree-count-story-reg')).toHaveTextContent('1/2 完成');
     // done 子任务虽隐藏, 计数仍含归档 → 里外数值对得上
     expect(screen.queryByText('用户数据模型')).not.toBeInTheDocument();
+  });
+
+  it('主任务有未完成子任务 → 不归档, 树内聚合显示 (Founder 2026-08-27)', () => {
+    // legacy M2 结构: 主任务 M2-1 标 done 但有 2 个 todo 子任务 → 应留在主树, 不归档
+    const backlog = sampleTodoBacklog({
+      epics: [{ id: 'E1', name: 'M2', description: '', children: ['F1'], created_at: '2026-08-12T00:00:00Z', updated_at: '2026-08-12T00:00:00Z' }],
+      features: [{ id: 'F1', name: 'M2', description: '', children: ['S1'], created_at: '2026-08-12T00:00:00Z', updated_at: '2026-08-12T00:00:00Z' }],
+      stories: [{ id: 'S1', name: 'M2 · M2', description: '', children: ['M2-1', 'M2-2'], created_at: '2026-08-12T00:00:00Z', updated_at: '2026-08-12T00:00:00Z' }],
+      tasks: [
+        { id: 'M2-1', title: '主任务', description: '', status: 'done', priority: 'P0', assignee: '', dependency: [], created_at: '2026-08-12T00:00:00Z', updated_at: '2026-08-12T00:00:00Z', history: [], children: ['M2-1-1', 'M2-1-2'] },
+        { id: 'M2-1-1', title: '子任务A', description: '', status: 'todo', priority: 'P1', assignee: '', dependency: [], created_at: '2026-08-12T00:00:00Z', updated_at: '2026-08-12T00:00:00Z', history: [] },
+        { id: 'M2-1-2', title: '子任务B', description: '', status: 'todo', priority: 'P1', assignee: '', dependency: [], created_at: '2026-08-12T00:00:00Z', updated_at: '2026-08-12T00:00:00Z', history: [] },
+        { id: 'M2-2', title: '独立任务', description: '', status: 'done', priority: 'P2', assignee: '', dependency: [], created_at: '2026-08-12T00:00:00Z', updated_at: '2026-08-12T00:00:00Z', history: [] },
+      ],
+    });
+    render(<AfTodoTree tree={toTodoTree(backlog, '演示')} taskMeta={sampleTaskMeta(backlog)} />);
+    // 主任务在主树 (有子任务未完成 → 不归档), 状态聚合为待办
+    const parent = screen.getByTestId('af-tree-node-M2-1');
+    expect(parent).toBeInTheDocument();
+    expect(within(parent).getByText('待办')).toBeInTheDocument();
+    // 子任务在主树
+    expect(screen.getByTestId('af-tree-node-M2-1-1')).toBeInTheDocument();
+    expect(screen.getByTestId('af-tree-node-M2-1-2')).toBeInTheDocument();
+    // 归档只含独立 done 任务 M2-2 (1 个), 不含主任务 M2-1
+    expect(screen.getByTestId('af-tree-archive-toggle')).toHaveTextContent('已归档 (1)');
+    expect(screen.getByTestId('af-tree-count-M2-1')).toHaveTextContent('0/2 完成');
   });
 
   it('全折叠/全展开: 工具栏按钮一键收起/展开全部', async () => {

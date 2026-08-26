@@ -3,6 +3,24 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.131] — 2026-08-26
+
+**会话能答系统/WebUI 运行状态 (执行会话创建的任务 TASK-774d9036)**。
+
+### Added
+
+- **system_status 意图**: 问"webUI/系统/服务运行状态" → 真实系统状态事实卡
+  (AI Factory 版本 · 后端 API 运行中 · 数据目录 · 当前模型)
+- 闭环: 会话"是否可以优化" → 建任务 TASK-774d9036 → Codex 执行此优化 → 任务标记 done
+
+### 实测
+
+- Q: 了解现在webUI状态么 → 直接答 系统状态 v1.1.x · 后端运行中 · 模型 …
+
+### 验证
+
+- 后端 query_engine 10 passed · 前端 684 passed
+
 ## [v1.1.130] — 2026-08-26
 
 **会话作用域自动跟随当前视图 (Founder A 方案)**。

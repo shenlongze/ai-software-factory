@@ -108,3 +108,17 @@ class TestStandardOutput:
         )
         assert "【结论】" in seen[0]  # 标准输出指令已注入
         assert "不要编造" in seen[0]
+
+
+class TestSystemStatus:
+    def test_system_status_facts(self, tmp_path):
+        facts = _qe.build_facts(
+            "了解现在webUI状态", scope="company", project_id=None, projects=PROJECTS,
+            root=tmp_path, system_line="系统状态: AI Factory v1.1.130 · 后端 API 运行中",
+        )
+        assert "系统状态" in facts
+        assert "v1.1.130" in facts
+
+    def test_system_status_target(self):
+        t = _qe.intent_target("system_status", project_id="p1")
+        assert t == {"url": "#/workspace", "label": "返回工作台"}

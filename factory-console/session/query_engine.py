@@ -22,6 +22,7 @@ from typing import Any
 _INTENT_RULES: list[tuple[str, tuple[str, ...]]] = [
     ("create_project", ("做一个", "创建一个", "开发一个", "帮我做个", "帮我做", "新建一个项目", "做个app", "做个 App", "做个app")),
     ("create_task", ("完善", "优化", "改进", "修复", "修一下", "加个", "增加", "做一下")),
+    ("system_status", ("webui状态", "webui 状态", "系统状态", "运行状态", "服务状态", "服务情况", "现在webui", "系统运行", "前端状态")),
     ("list_projects", ("有哪些项目", "几个项目", "项目列表", "所有项目", "空间内", "重点项目", "项目清单")),
     ("project_quality", ("质量", "评分", "质量分", "分数")),
     ("project_tasks", ("任务", "todo", "待办", "backlog", "排期")),
@@ -75,10 +76,13 @@ def build_facts(
     projects: list[Any],
     root: Path | None,
     model_line: str = "",
+    system_line: str = "",
     hint_project: str | None = None,
 ) -> str:
     """意图 → 真实数据事实块 (查询不到 → 如实待查证; 不编造)。"""
     intent = parse_intent(question)["intent"]
+    if intent == "system_status":
+        return system_line or "系统状态: 服务信息待查证"
     if intent == "chat":
         # 纯对话: 公司级给项目列表兜底; 项目级给基础事实
         if scope == "project" and project_id:
@@ -154,7 +158,7 @@ def build_facts(
 
 #: 合法意图集合 (校验 LLM 输出)
 VALID_INTENTS = {"list_projects", "project_status", "project_quality", "project_tasks",
-                 "project_docs", "model", "create_project", "create_task", "chat"}
+                 "project_docs", "model", "system_status", "create_project", "create_task", "chat"}
 
 _INTENT_LLM_PROMPT = """把用户的提问转成标准查询意图 (只输出 JSON, 不要别的):
 {{"intent": "list_projects|project_status|project_quality|project_tasks|project_docs|model|create_project|create_task|chat",
@@ -168,6 +172,7 @@ _INTENT_LLM_PROMPT = """把用户的提问转成标准查询意图 (只输出 JS
 - 问文档/产物 → project_docs
 - 问用什么模型 → model
 - 完善/优化/修复/加功能 → create_task (task=要做的事, project=目标项目)
+- 问系统/WebUI/服务运行状态 → system_status
 - 其余闲聊 → chat
 用户: {question}
 """
@@ -234,6 +239,7 @@ def intent_target(
         "project_tasks": (f"#/project/{pid}/todo", f"查看{name}任务"),
         "project_docs": (f"#/project/{pid}/docs", f"查看{name}文档"),
         "model": ("#/workspace/settings", "打开设置"),
+        "system_status": ("#/workspace", "返回工作台"),
         "create_project": None,
     }
     hit = targets.get(intent)

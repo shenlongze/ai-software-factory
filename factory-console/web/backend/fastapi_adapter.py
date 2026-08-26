@@ -2891,6 +2891,13 @@ def build_app(
                     )
         except Exception:  # noqa: BLE001 — 模型失败 → 不注入
             model_line = ""
+        # 系统/服务状态 (让会话能答 "webUI/系统运行状态" — TASK-774d9036)
+        system_line = (
+            f"系统状态: AI Factory v{_factory_version} · 后端 API 运行中 · "
+            f"数据目录 {workspace_root or DEFAULT_ROOT}"
+        )
+        if model_line:
+            system_line = f"{system_line}\n{model_line}"
         # 完整链路 (Founder 设计): LLM 转标准意图 → 查询/执行 → 标准输出
         _qmod = _console_import("session.query_engine")
         intent = _qmod.parse_intent_llm(body.message, _sessions_mod.llm_raw)
@@ -2985,6 +2992,7 @@ def build_app(
             projects=projects,
             root=workspace_root,
             model_line=model_line,
+            system_line=system_line,
             hint_project=hint_project,
         )
         reply_extra = (

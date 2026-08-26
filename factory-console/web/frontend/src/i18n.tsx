@@ -74,6 +74,7 @@ export const MESSAGES: Record<Locale, Record<string, string>> = {
     'settings.tab.skill': '🧩 技能',
     'settings.tab.mcp': '🔌 MCP',
     'settings.tab.tools': '🛠 工具',
+    'settings.tab.external': '🌐 外部能力',
     'settings.tab.plugin': '📦 插件',
     'settings.tab.appearance': '🎨 外观',
     'settings.theme.label': '主题',

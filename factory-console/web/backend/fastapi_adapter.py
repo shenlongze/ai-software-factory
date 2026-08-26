@@ -273,6 +273,30 @@ class _LlmConfigBody(BaseModel):
     api_key_ref: str | None = None
 
 
+class _ExternalAiBody(BaseModel):
+    """POST /api/external-ai body (M1): 适配器声明 (字段同 yaml, 由 Schema 校验)。"""
+
+    id: str
+    name: str = ""
+    binary: str = ""
+    discovery: list[str] | None = None
+    version_probe: list[str] | None = None
+    probe_help: list[str] | None = None
+    invocation: dict | None = None
+    host_assets: dict | None = None
+    capabilities: dict | None = None
+    allow_dangerous: bool = False
+
+
+class _ExternalAiRunBody(BaseModel):
+    """POST /api/external-ai/{id}/run body: {prompt, project_dir?, agent?, timeout?}。"""
+
+    prompt: str
+    project_dir: str = ""
+    agent: str = ""
+    timeout: int | None = None
+
+
 class _LocalAiRunBody(BaseModel):
     """POST /api/local-ai/{agent_id}/run body (U-6): {prompt, project_dir?, timeout?}。"""
 
@@ -902,6 +926,30 @@ def _task_exec_trace(root: Path | None, task: dict[str, Any]) -> dict[str, Any]:
     except Exception:  # noqa: BLE001 — 溯源失败 → 保持空 (不阻断详情)
         pass
     return trace
+
+
+def _external_ai_from_body(body: Any) -> Any:
+    """HTTP body → ExternalExecutorAdapter (缺省字段用内置模板填充; Schema 校验失败抛错)。"""
+    from factory_console.external_executor.registry import BUILTIN_ADAPTERS
+    from factory_console.external_executor.schema import ExternalExecutorAdapter
+
+    aid = str(getattr(body, "id", "") or "").strip()
+    defaults = dict(BUILTIN_ADAPTERS.get(aid) or {})
+    merged = {
+        "id": aid,
+        "name": str(getattr(body, "name", "") or "") or defaults.get("name", aid),
+        "binary": str(getattr(body, "binary", "") or "") or defaults.get("binary", aid),
+        "discovery": list(body.discovery) if body.discovery else defaults.get("discovery", ["PATH"]),
+        "version_probe": list(body.version_probe) if body.version_probe else defaults.get("version_probe", ["--version"]),
+        "probe_help": list(body.probe_help) if body.probe_help is not None else defaults.get("probe_help"),
+        "invocation": body.invocation or defaults.get("invocation"),
+        "host_assets": body.host_assets or defaults.get("host_assets"),
+        "capabilities": body.capabilities or defaults.get("capabilities", {}),
+        "allow_dangerous": bool(body.allow_dangerous),
+    }
+    if not merged["invocation"]:
+        raise ValueError("invocation 必填 (怎么调这个 CLI)")
+    return ExternalExecutorAdapter(**merged)
 
 
 def _task_to(service: Any, project_id: str, task_id: str, target: str) -> dict[str, Any] | None:
@@ -1591,6 +1639,119 @@ def build_app(
         except Exception as exc:  # noqa: BLE001 — 委派失败 → 诚实错误
             result = {"exit_code": -1, "output": "", "error": f"委派失败: {exc}"}
         result["agent_id"] = agent_id
+        return result
+
+    # ============ M1 (v1.1.191): 外部执行器通用适配层 — 声明式适配器管理
+    def _external_registry():
+        """ExternalExecutorRegistry (懒装配, 失败安全 None)。"""
+        try:
+            _ext_exec = _console_import("external_executor")
+            return _ext_exec.build_registry(workspace_root or DEFAULT_ROOT)
+        except Exception:  # noqa: BLE001 — 装配失败 → None
+            return None
+
+    @app.get("/api/external-ai")
+    def api_external_ai_list() -> dict[str, Any]:
+        """适配器清单 (含发现/探测状态; 失败安全空)。"""
+        registry = _external_registry()
+        if registry is None:
+            return {"adapters": [], "count": 0}
+        from factory_console.external_executor import executor as _ee_exec
+        items = []
+        for a in registry.list():
+            path = _ee_exec.discover_binary(a)
+            items.append({
+                "id": a.id, "name": a.name, "binary": a.binary,
+                "discovery": list(a.discovery),
+                "invocation": a.invocation.model_dump(mode="json"),
+                "host_assets": a.host_assets.model_dump(mode="json") if a.host_assets else None,
+                "capabilities": a.capabilities.model_dump(mode="json"),
+                "allow_dangerous": a.allow_dangerous,
+                "found": path is not None,
+                "path": path,
+                "builtin": not (Path(workspace_root or DEFAULT_ROOT) / "external-ais" / f"{a.id}.yaml").is_file(),
+            })
+        return {"adapters": items, "count": len(items)}
+
+    @app.post("/api/external-ai/scan")
+    def api_external_ai_scan() -> dict[str, Any]:
+        """扫描全部适配器: 发现 + 探测 → 状态 (失败安全)。"""
+        registry = _external_registry()
+        if registry is None:
+            return {"results": [], "error": "external_executor 模块不可用"}
+        from factory_console.external_executor import executor as _ee_exec
+        results = []
+        for a in registry.list():
+            path = _ee_exec.discover_binary(a)
+            if path is None:
+                results.append({"id": a.id, "name": a.name, "found": False,
+                                "ok": False, "path": None, "error": "未发现二进制"})
+                continue
+            pr = _ee_exec.probe(a, path)
+            results.append({"id": a.id, "name": a.name, "found": True, "path": path,
+                            "ok": pr["ok"], "version": pr.get("version"),
+                            "usage": pr.get("usage"), "error": pr.get("error")})
+        return {"results": results, "count": len(results)}
+
+    @app.post("/api/external-ai")
+    def api_external_ai_save(body: _ExternalAiBody) -> dict[str, Any]:
+        """创建/更新适配器 (写 <data_dir>/external-ais/<id>.yaml; Schema 校验失败 → 400)。"""
+        registry = _external_registry()
+        if registry is None:
+            raise HTTPException(status_code=503, detail="external_executor 模块不可用")
+        try:
+            adapter = _external_ai_from_body(body)
+            registry.save(adapter)
+        except Exception as exc:  # noqa: BLE001 — Schema 校验失败 → 400 (不猜测)
+            raise HTTPException(status_code=400, detail=f"适配器校验失败: {exc}") from exc
+        return {"saved": True, "id": adapter.id, "name": adapter.name}
+
+    @app.delete("/api/external-ai/{adapter_id}")
+    def api_external_ai_remove(adapter_id: str) -> dict[str, Any]:
+        """删除用户适配器 yaml (内置模板不可删 → 404)。"""
+        registry = _external_registry()
+        if registry is None:
+            raise HTTPException(status_code=503, detail="external_executor 模块不可用")
+        if not registry.remove(adapter_id):
+            raise HTTPException(status_code=404, detail=f"未找到用户适配器: {adapter_id}")
+        return {"deleted": True, "id": adapter_id}
+
+    @app.post("/api/external-ai/{adapter_id}/probe")
+    def api_external_ai_probe(adapter_id: str) -> dict[str, Any]:
+        """探测单个适配器可用性 (诚实: 能跑 ≠ 任务真实成功)。"""
+        registry = _external_registry()
+        if registry is None:
+            raise HTTPException(status_code=503, detail="external_executor 模块不可用")
+        adapter = registry.get(adapter_id)
+        if adapter is None:
+            raise HTTPException(status_code=404, detail=f"适配器不存在: {adapter_id}")
+        from factory_console.external_executor import executor as _ee_exec
+        path = _ee_exec.discover_binary(adapter)
+        pr = _ee_exec.probe(adapter, path)
+        return {**pr, "id": adapter_id, "path": path}
+
+    @app.post("/api/external-ai/{adapter_id}/run")
+    def api_external_ai_run(adapter_id: str, body: _ExternalAiRunBody) -> dict[str, Any]:
+        """委派真实执行 (按适配器声明调用宿主 CLI)。"""
+        registry = _external_registry()
+        if registry is None:
+            raise HTTPException(status_code=503, detail="external_executor 模块不可用")
+        adapter = registry.get(adapter_id)
+        if adapter is None:
+            raise HTTPException(status_code=404, detail=f"适配器不存在: {adapter_id}")
+        from factory_console.external_executor import executor as _ee_exec
+        agent_name = str(body.agent or "").strip()
+        if agent_name and not adapter.invocation.agent_flag:
+            agent_name = ""  # 宿主不支持借壳 → 忽略 (不假装)
+        result = _ee_exec.run(
+            adapter, body.prompt,
+            project_dir=str(body.project_dir or ""),
+            agent=agent_name,
+            timeout=body.timeout,
+        )
+        result["id"] = adapter_id
+        result["mode"] = "borrowed-shell" if agent_name else "blackbox"
+        result["host_agent"] = agent_name or None
         return result
 
     @app.get("/api/agents")

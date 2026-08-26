@@ -3,7 +3,22 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.191] — 2026-08-27
+
+**M1 外部执行器通用适配层 (设计文档: docs/sprint10/外部执行器通用适配层-设计.md)**。
+
+### Added
+
+- external_executor 包: schema (Pydantic 严谨校验: 必含 {prompt} / project_dir 三模式 /
+  id 合法) + registry (内置 codex/claude/hermes + <data_dir>/external-ais/*.yaml 覆盖/新增)
+  + 通用执行器 (discover/probe/invoke, 占位符渲染+shlex 转义, agent/skills 借壳 flag)
+- CLI: factory external-ai list|scan|probe|run (声明式, 新增产品 = 写 yaml 不改代码)
+- API: GET/POST/DELETE /api/external-ai + /scan + /{id}/probe + /{id}/run
+- WebUI: 设置 →「🌐 外部能力」tab (适配器列表/扫描/探测/新增/删除)
+- 测试: schema/registry/executor/API 13 用例; 前端 tab 1 用例
+
 ## [v1.1.190] — 2026-08-27
+
 
 **U-6 诚实增强: 发现 ≠ 会用 — 真实调用模板逐项核对 + 探测可用性 (Founder: 他知道如何使用么, 正确使用, 真实使用)**。
 

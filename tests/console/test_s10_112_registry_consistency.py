@@ -437,6 +437,8 @@ class TestApiRegistryConsistency:
             is_local_ai_write = method == "POST" and path.startswith("/api/local-ai")
             # v1.1.189 U-4: 外部 skill 扫描加载 (POST /api/skills/scan)
             is_skill_scan = method == "POST" and path == "/api/skills/scan"
+            # v1.1.191 M1: 外部执行器适配器管理 (POST/DELETE /api/external-ai*)
+            is_external_ai = path.startswith("/api/external-ai")
             assert (
                 is_approval or is_runtime or is_tool_execute or is_mcp_connect
                 or is_review_feedback or is_project_create or is_project_suggest
@@ -447,6 +449,7 @@ class TestApiRegistryConsistency:
                 or is_mcp_remove or is_llm_config
                 or is_agent_write or is_skill_write
                 or is_local_ai_write or is_skill_scan
+                or is_external_ai
             ), f"写路由超出白名单: {method} {path}"
 
     def test_capability_matrix_api_claims_backed(self):

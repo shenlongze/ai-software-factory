@@ -336,6 +336,7 @@ class TestFactoryCliArgparse:
             "backup",  # v1.1.167 (X-1): 数据保护 (create/list/restore)
             "git",  # v1.1.167 (X-1): Git 操作 (status/push)
             "local-ai",  # v1.1.188 (U-6): 本机 AI 发现与调度 (scan/register/run)
+            "external-ai",  # v1.1.191 (M1): 外部执行器通用适配层 (scan/list/probe/run)
         }
 
     def test_start_flags_parsed(self):

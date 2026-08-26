@@ -411,6 +411,8 @@ class TestPermissionBoundary:
                 is_skill_scan = (
                     route_method == "POST" and path == "/api/skills/scan"
                 )
+                # v1.1.191 M1: 外部执行器适配器管理 (POST/DELETE /api/external-ai*)
+                is_external_ai = path.startswith("/api/external-ai")
                 assert (
                     is_approval
                     or is_runtime_lifecycle
@@ -438,6 +440,7 @@ class TestPermissionBoundary:
                     or is_skill_write
                     or is_local_ai_write
                     or is_skill_scan
+                    or is_external_ai
                 ), (
                     f"写路由超出白名单 (审批决定 + Runtime + 反馈 + 创建 + 启动 + "
                     f"项目管理 + Backlog + Sprint/Milestone/Roadmap + Tool + MCP + RAG): "

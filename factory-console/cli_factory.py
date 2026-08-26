@@ -999,6 +999,8 @@ class FactoryCLI:
             return self.mcp(args)
         if args.command == "local-ai":
             return self.local_ai(args)
+        if args.command == "external-ai":
+            return self.external_ai(args)
         if args.command == "exec":
             return self._exec_history(args)
         if args.command in ("agent", "skill", "task", "router", "rag", "audit"):
@@ -2645,6 +2647,87 @@ class FactoryCLI:
             print(f"stderr: {result['error'][:800]}", file=sys.stderr)
         return 0 if result["exit_code"] == 0 else 1
 
+    def external_ai(self, args: argparse.Namespace) -> int:
+        """外部执行器通用适配层 (M1): scan/list/probe/run — 声明式, 不硬编码产品。"""
+        from .external_executor import executor as _ee_exec
+        from .external_executor.registry import build_registry
+
+        registry = build_registry(self.data_dir)
+        action = getattr(args, "external_ai_action", "list") or "list"
+        if action == "list":
+            print("=== 外部执行器适配器 (external-ais/*.yaml + 内置) ===")
+            adapters = registry.list()
+            if not adapters:
+                print("  无适配器")
+                return 0
+            for a in adapters:
+                host = _ee_exec.discover_binary(a)
+                print(
+                    f"  - {a.id} | {a.name} | binary={a.binary}"
+                    + (" | ✅ 已发现" if host else " | ⚠️ 未发现")
+                )
+            print(f"  共 {len(adapters)} 个")
+            return 0
+        if action == "scan":
+            print("=== 外部执行器扫描 (发现 + 探测) ===")
+            found_any = False
+            for a in registry.list():
+                path = _ee_exec.discover_binary(a)
+                if path is None:
+                    print(f"  - {a.id} | {a.name} | ⚠️ 未发现二进制")
+                    continue
+                found_any = True
+                pr = _ee_exec.probe(a, path)
+                print(
+                    f"  - {a.id} | {a.name} | {path}"
+                    + (f" | v{pr['version']}" if pr.get("version") else "")
+                    + (" | ✅ 可用" if pr["ok"] else f" | ⚠️ {pr['error']}")
+                )
+                if pr.get("usage"):
+                    print(f"      用法: {pr['usage']}")
+            print("  扫描完成")
+            return 0
+        aid = str(getattr(args, "id", "") or "").strip()
+        if not aid:
+            print("用法: factory external-ai probe|run --id <适配器id> ...")
+            return 2
+        adapter = registry.get(aid)
+        if adapter is None:
+            print(f"未找到适配器: {aid} (external-ai list)")
+            return 1
+        if action == "probe":
+            path = _ee_exec.discover_binary(adapter)
+            pr = _ee_exec.probe(adapter, path)
+            print(f"=== 外部执行器探测: {aid} ===")
+            if pr["ok"]:
+                print(f"  ✅ 可用 ({path})" + (f" v{pr['version']}" if pr.get("version") else ""))
+                if pr.get("usage"):
+                    print(f"  用法: {pr['usage']}")
+            else:
+                print(f"  ❌ {pr['error']}")
+            return 0 if pr["ok"] else 1
+        # run
+        prompt = str(getattr(args, "prompt", "") or "").strip()
+        if not prompt:
+            print("用法: factory external-ai run --id <id> --prompt <text> [--project <dir>] [--agent <name>]")
+            return 2
+        agent_name = str(getattr(args, "agent", "") or "").strip()
+        if agent_name and not adapter.invocation.agent_flag:
+            print(f"⚠ 适配器 {aid} 未声明 agent_flag — 忽略 --agent (宿主不支持借壳)")
+            agent_name = ""
+        print(f"委派执行: {adapter.name} ({aid})" + (f" agent={agent_name}" if agent_name else ""))
+        result = _ee_exec.run(
+            adapter, prompt,
+            project_dir=str(getattr(args, "project", "") or ""),
+            agent=agent_name,
+        )
+        print(f"exit_code={result['exit_code']}")
+        if result.get("output"):
+            print(result["output"][:2000])
+        if result.get("error"):
+            print(f"stderr: {result['error'][:1000]}", file=sys.stderr)
+        return 0 if result["exit_code"] == 0 else 1
+
     def router(self, args: argparse.Namespace) -> int:
         """LLM Router 管理骨架 (只读): 五层决策链可用性 + 当前决策。
 
@@ -4213,6 +4296,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_local_ai.add_argument("--id", default="", help="Agent id (run)")
     p_local_ai.add_argument("--prompt", default="", help="委派执行的 prompt (run)")
     p_local_ai.add_argument("--project", default="", help="项目目录 (run)")
+    p_external_ai = sub.add_parser(
+        "external-ai", help="外部执行器通用适配层 (M1): scan/list/probe/run — 声明式适配器, 每产品一个 yaml"
+    )
+    p_external_ai.add_argument(
+        "external_ai_action", nargs="?", choices=["scan", "list", "probe", "run"], default="list",
+        metavar="scan|list|probe|run",
+        help="scan — 扫描全部适配器(发现+探测); list — 适配器配置清单; probe — 探测单个; run — 委派执行",
+    )
+    p_external_ai.add_argument("--id", default="", help="适配器 id (probe/run)")
+    p_external_ai.add_argument("--prompt", default="", help="委派执行的 prompt (run)")
+    p_external_ai.add_argument("--project", default="", help="项目目录 (run)")
+    p_external_ai.add_argument("--agent", default="", help="宿主内部 agent (run, 借壳)")
     p_skill = sub.add_parser("skill", help="Skill 管理 (list/add/remove)")
     p_skill.add_argument(
         "skill_action", nargs="?", choices=["list", "add", "remove", "scan"], default="list",

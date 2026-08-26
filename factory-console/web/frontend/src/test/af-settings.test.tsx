@@ -16,10 +16,16 @@ function jsonResponse(v: unknown): Response {
 
 function stubApi(overrides: Record<string, unknown> = {}) {
   const calls: { method: string; url: string; body?: unknown }[] = [];
-  const state: { agents: unknown[]; skills: unknown[]; mcpConnections: unknown[] } = {
+  const state: {
+    agents: unknown[]; skills: unknown[]; mcpConnections: unknown[];
+    externalAi: Array<{ id: string; name: string; binary: string; found: boolean; builtin: boolean }>;
+    scanResults: Array<{ id: string; name: string; found: boolean; ok: boolean; version?: string }>;
+  } = {
     agents: [],
     skills: [],
     mcpConnections: [],
+    externalAi: [],
+    scanResults: [],
   };
   const fn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -39,6 +45,22 @@ function stubApi(overrides: Record<string, unknown> = {}) {
       const rec = { id: body?.id, name: body?.id, role: body?.role, skills: body?.skills ?? [] };
       state.agents.push(rec);
       return jsonResponse(rec);
+    }
+    if (method === 'GET' && url === '/api/external-ai') {
+      return jsonResponse({ adapters: state.externalAi, count: state.externalAi.length });
+    }
+    if (method === 'POST' && url === '/api/external-ai/scan') {
+      state.scanResults = [{ id: 'codex', name: '本机 Codex', found: true, ok: true, version: '0.147.0' }];
+      return jsonResponse({ results: state.scanResults, count: 1 });
+    }
+    if (method === 'POST' && url === '/api/external-ai') {
+      const rec = { id: body?.id, name: body?.name ?? body?.id, binary: body?.binary ?? body?.id, found: false, builtin: false };
+      state.externalAi.push(rec);
+      return jsonResponse({ saved: true, id: rec.id });
+    }
+    if (method === 'DELETE' && url === '/api/external-ai/openclaw') {
+      state.externalAi = state.externalAi.filter((a) => a.id !== 'openclaw');
+      return jsonResponse({ deleted: true });
     }
     if (method === 'POST' && url === '/api/skills/scan') {
       const rec = { id: 'api-review', name: 'API 审查', category: 'external', version: '1.0' };
@@ -158,7 +180,22 @@ describe('AfSettings (设置管理面)', () => {
     expect(calls.some((c) => c.method === 'POST' && c.url === '/api/skills')).toBe(true);
   });
 
-  it('MCP tab: 连接 → POST /api/mcp/connections + 移除 → DELETE', async () => {
+   it('外部能力 tab: 列表 + 扫描 + 保存适配器 (M1)', async () => {
+    const { calls } = stubApi();
+    render(<AfSettings />);
+    await userEvent.click(screen.getByRole('tab', { name: '🌐 外部能力' }));
+    await userEvent.click(screen.getByRole('button', { name: '🔍 扫描全部适配器' }));
+    expect(await screen.findByTestId('af-settings-scan-results')).toHaveTextContent('本机 Codex');
+    expect(calls.some((c) => c.method === 'POST' && c.url === '/api/external-ai/scan')).toBe(true);
+    await userEvent.type(screen.getByLabelText('外部能力 id'), 'openclaw');
+    await userEvent.type(screen.getByLabelText('外部能力二进制'), 'openclaw');
+    await userEvent.click(screen.getByRole('button', { name: '＋ 保存适配器' }));
+    expect(await screen.findByTestId('af-external-ai-openclaw')).toBeInTheDocument();
+    await userEvent.click(within(screen.getByTestId('af-external-ai-openclaw')).getByRole('button', { name: '删除' }));
+    expect(screen.queryByTestId('af-external-ai-openclaw')).not.toBeInTheDocument();
+  });
+
+ it('MCP tab: 连接 → POST /api/mcp/connections + 移除 → DELETE', async () => {
     const { calls } = stubApi();
     render(<AfSettings />);
     await userEvent.click(screen.getByRole('tab', { name: '🔌 MCP' }));

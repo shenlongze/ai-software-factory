@@ -422,6 +422,21 @@ export const api = {
   createAgent: (id: string, role: string, skills: string[]) =>
     sendJson<{ id: string; name: string; role: string; skills: string[] }>('/api/agents', { id, role, skills }),
   deleteAgent: (id: string) => deleteJson<{ deleted: boolean }>(`/api/agents/${encodeURIComponent(id)}`),
+  // M1 (v1.1.191): 外部执行器通用适配层 — 声明式适配器管理
+  externalAi: () => getJson<{ adapters: Array<{
+    id: string; name: string; binary: string; discovery: string[];
+    invocation: Record<string, unknown>; host_assets?: Record<string, unknown> | null;
+    capabilities: Record<string, unknown>; allow_dangerous: boolean;
+    found: boolean; path?: string | null; builtin: boolean;
+  }>; count: number }>('/api/external-ai'),
+  scanExternalAi: () =>
+    sendJson<{ results: Array<{ id: string; name: string; found: boolean; ok: boolean; path?: string | null; version?: string | null; usage?: string; error?: string }>; count: number }>('/api/external-ai/scan', {}),
+  saveExternalAi: (body: Record<string, unknown>) =>
+    sendJson<{ saved: boolean; id: string }>('/api/external-ai', body),
+  deleteExternalAi: (id: string) =>
+    deleteJson<{ deleted: boolean }>(`/api/external-ai/${encodeURIComponent(id)}`),
+  probeExternalAi: (id: string) =>
+    sendJson<{ id: string; ok: boolean; path?: string | null; version?: string; usage?: string; error?: string }>(`/api/external-ai/${encodeURIComponent(id)}/probe`, {}),
   // U-4 (v1.1.189): 扫描外部 SKILL.md → 加载进 skills.json
   scanExternalSkills: (dir?: string) =>
     sendJson<{ loaded: Array<{ id: string; name: string; version?: string }>; count: number }>(

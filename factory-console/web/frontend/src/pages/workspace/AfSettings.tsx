@@ -57,6 +57,7 @@ const TABS = [
   { id: 'skill', label: 'skill' },
   { id: 'mcp', label: 'mcp' },
   { id: 'tools', label: '工具' },
+  { id: 'external', label: 'external' },
   { id: 'plugin', label: 'plugin' },
   { id: 'appearance', label: 'appearance' },
 ] as const;
@@ -153,6 +154,151 @@ function ToolsTab(): JSX.Element {
         );
       })}
       {result ? <p className="af-composer-msg" data-testid="af-tool-result">{result}</p> : null}
+    </section>
+  );
+}
+
+/** M1 (v1.1.191): 外部执行器通用适配层 — 声明式适配器 (每产品一个 yaml, 不改代码)。 */
+function ExternalAiTab(): JSX.Element {
+  const [adapters, setAdapters] = useState<
+    Array<{
+      id: string; name: string; binary: string; found: boolean; path?: string | null;
+      builtin: boolean; capabilities: Record<string, unknown>; invocation: Record<string, unknown>;
+    }>
+  >([]);
+  const [scan, setScan] = useState<Array<{ id: string; name: string; ok: boolean; found: boolean; version?: string | null; error?: string }>>([]);
+  const [form, setForm] = useState({ id: '', name: '', binary: '', invocation: '' });
+  const [flashMsg, setFlashMsg] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const flash = useCallback((text: string) => {
+    setFlashMsg(text);
+    window.setTimeout(() => setFlashMsg(''), 4000);
+  }, []);
+  const load = useCallback(() => {
+    api
+      .externalAi()
+      .then((d) => setAdapters(d.adapters ?? []))
+      .catch(() => setAdapters([]));
+  }, []);
+  useEffect(load, [load]);
+
+  const doScan = useCallback(async () => {
+    setBusy(true);
+    try {
+      const r = await api.scanExternalAi();
+      setScan(r.results ?? []);
+      flash(`扫描完成: ${r.count} 个适配器`);
+      load();
+    } catch (err) {
+      flash(`扫描失败: ${String(err)}`);
+    } finally {
+      setBusy(false);
+    }
+  }, [flash, load]);
+
+  const doProbe = useCallback(async (id: string) => {
+    try {
+      const r = await api.probeExternalAi(id);
+      flash(`${id}: ${r.ok ? '✅ 可用' : `❌ ${r.error ?? 'probe 失败'}`}${r.version ? ` v${r.version}` : ''}`);
+    } catch (err) {
+      flash(`探测失败: ${String(err)}`);
+    }
+  }, [flash]);
+
+  const doSave = useCallback(async () => {
+    const id = form.id.trim();
+    const name = form.name.trim() || id;
+    const binary = form.binary.trim() || id;
+    let invocation: Record<string, unknown>;
+    try {
+      invocation = form.invocation.trim()
+        ? JSON.parse(form.invocation) as Record<string, unknown>
+        : { non_interactive: ['{prompt}'], project_dir: 'cwd' };
+    } catch {
+      flash('调用模板必须是合法 JSON');
+      return;
+    }
+    setBusy(true);
+    try {
+      await api.saveExternalAi({ id, name, binary, invocation });
+      flash(`适配器已保存: ${id}`);
+      setForm({ id: '', name: '', binary: '', invocation: '' });
+      load();
+    } catch (err) {
+      flash(`保存失败: ${String(err)}`);
+    } finally {
+      setBusy(false);
+    }
+  }, [form, flash, load]);
+
+  const doDelete = useCallback(async (id: string) => {
+    try {
+      await api.deleteExternalAi(id);
+      flash(`已删除: ${id}`);
+      load();
+    } catch (err) {
+      flash(`删除失败: ${String(err)}`);
+    }
+  }, [flash, load]);
+
+  return (
+    <section data-testid="af-settings-external-ai">
+      <h3 className="af-settings-h3">🌐 外部能力（外部执行器适配器 · {adapters.length}）</h3>
+      <p className="af-home-note">
+        声明式适配器 — 每个外部 AI CLI（codex/claude/hermes/openclaw…）一个 yaml，新增产品不改代码。
+        扫描/探测验证真实可用性；监控在「📊 监控」页（自身/外部）。
+      </p>
+      <div className="af-settings-form">
+        <button type="button" className="af-settings-action af-settings-action--primary" onClick={() => void doScan()} disabled={busy}>
+          🔍 扫描全部适配器
+        </button>
+      </div>
+      {flashMsg ? <p className="af-composer-msg">{flashMsg}</p> : null}
+      {scan.length > 0 ? (
+        <div className="af-settings-scan-results" data-testid="af-settings-scan-results">
+          {scan.map((r) => (
+            <div key={r.id} className="af-settings-scan-row">
+              <span>{r.name}</span>
+              {r.found ? (
+                <span className={r.ok ? 'af-settings-ok' : 'af-settings-warn'}>
+                  {r.ok ? `✅ 可用${r.version ? ` v${r.version}` : ''}` : `⚠️ ${r.error ?? '不可用'}`}
+                </span>
+              ) : (
+                <span className="af-settings-warn">⚠️ 未发现二进制</span>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : null}
+      <div className="af-settings-form" style={{ marginTop: 8 }}>
+        <input className="af-settings-input" placeholder="适配器 id (如 openclaw)" aria-label="外部能力 id" value={form.id} onChange={(e) => setForm((f) => ({ ...f, id: e.target.value }))} />
+        <input className="af-settings-input" placeholder="名称 (如 本机 OpenClaw)" aria-label="外部能力名称" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+        <input className="af-settings-input" placeholder="二进制名 (如 openclaw)" aria-label="外部能力二进制" value={form.binary} onChange={(e) => setForm((f) => ({ ...f, binary: e.target.value }))} />
+        <input className="af-settings-input af-settings-input--wide" placeholder='调用模板 JSON (如 {"non_interactive":["-z","{prompt}"],"project_dir":"cwd"})' aria-label="外部能力调用模板" value={form.invocation} onChange={(e) => setForm((f) => ({ ...f, invocation: e.target.value }))} />
+        <button type="button" className="af-settings-action af-settings-action--primary" onClick={() => void doSave()} disabled={busy}>＋ 保存适配器</button>
+      </div>
+      {adapters.length > 0 ? (
+        <div className="af-settings-list">
+          {adapters.map((a) => (
+            <div key={a.id} className="af-settings-list-row" data-testid={`af-external-ai-${a.id}`}>
+              <span className="af-settings-list-name">
+                {a.name} <code>{a.id}</code>
+                {a.builtin ? <span className="af-settings-badge">内置</span> : <span className="af-settings-badge">自定义</span>}
+              </span>
+              <span className="af-settings-list-meta">
+                {a.found ? `✅ ${a.path}` : '⚠️ 未发现'} · binary={a.binary}
+              </span>
+              <span className="af-settings-list-actions">
+                <button type="button" className="af-settings-action" onClick={() => void doProbe(a.id)}>探测</button>
+                {!a.builtin ? (
+                  <button type="button" className="af-settings-action af-settings-action--danger" onClick={() => void doDelete(a.id)}>删除</button>
+                ) : null}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -763,6 +909,7 @@ export function AfSettings(): JSX.Element {
         )}
 
         {tab === 'tools' && <ToolsTab />}
+        {tab === 'external' && <ExternalAiTab />}
         {tab === 'plugin' && (
           <section>
             <h3 className="af-settings-h3">📦 插件</h3>

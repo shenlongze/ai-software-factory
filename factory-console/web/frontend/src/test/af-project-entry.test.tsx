@@ -64,7 +64,7 @@ describe('AfProjectEntry (AI Factory 项目真实入口)', () => {
     const home = await screen.findByTestId('af-project-home');
     expect(within(home).getByRole('heading', { name: '记账 App' })).toBeInTheDocument();
     expect(within(home).getByTestId('af-home-lifecycle')).toBeInTheDocument();
-    expect(within(home).getByTestId('af-todo-list')).toBeInTheDocument();
+    expect(within(home).getByTestId('af-home-todo-summary')).toBeInTheDocument();
   });
 
   it('404: 项目不存在 → ErrorState "项目不存在或已被删除"', async () => {

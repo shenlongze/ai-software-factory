@@ -4105,3 +4105,12 @@ body[data-bg='1'] .af-shell {
   margin-top: 6px;
   opacity: 0.8;
 }
+
+/* 概览 Todo 摘要 (A 方案: 未完成前5 + 查看全部) */
+.af-todo-more {
+  text-decoration: none;
+}
+
+.af-todo-row--summary {
+  cursor: default;
+}

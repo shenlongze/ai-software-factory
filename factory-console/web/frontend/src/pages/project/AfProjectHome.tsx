@@ -6,7 +6,7 @@
  * 原则: 简单 · 直接 · 高效 · 易用; 失败安全 (后端不可达 → 空态不崩)。
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { renderInline } from '../../components/af/markdown';
 
 interface LifecycleData {
@@ -34,8 +34,6 @@ interface TaskItem {
 }
 
 const STAGES = ['发现', '确认', 'PRD', '工程', '开发', '测试', '验收', '交付', '部署', '运维', '更新'];
-const TASK_STATUSES = ['todo', 'ready', 'in_progress', 'blocked', 'review', 'done'];
-const PRIORITIES = ['P0', 'P1', 'P2'];
 
 async function getJson<T>(path: string): Promise<T> {
   const res = await fetch(path, { headers: { Accept: 'application/json' } });
@@ -56,9 +54,6 @@ export function AfProjectHome({
   const [failedCount, setFailedCount] = useState<number>(0);
   const [qualityScore, setQualityScore] = useState<number | null>(null);
   const [qualityNote, setQualityNote] = useState<string>('');
-  const [view, setView] = useState<'list' | 'board'>('list');
-  const [busy, setBusy] = useState<string>('');
-  const [showDone, setShowDone] = useState(false);
 
   const base = `/api/projects/${encodeURIComponent(projectId)}`;
 
@@ -130,34 +125,6 @@ export function AfProjectHome({
   const pct = wsData?.progress ?? Math.round((doneCount / stageLabels.length) * 100);
   const currentStage = lifecycle?.current_stage?.name ?? (wsData ? stageLabels[doneCount] ?? '' : '');
 
-  const patchTask = (taskId: string, body: Record<string, unknown>) => {
-    setBusy(taskId);
-    fetch(`${base}/backlog/task/${encodeURIComponent(taskId)}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-      .then((res) => {
-        if (!res.ok) return res.json().then((e) => Promise.reject(new Error(e?.detail || 'HTTP ' + res.status)));
-        loadAll();
-      })
-      .catch((err) => {
-        // eslint-disable-next-line no-alert
-        window.alert(`更新失败: ${String(err)}`);
-      })
-      .finally(() => setBusy(''));
-  };
-
-  const byStatus = useMemo(() => {
-    const map: Record<string, TaskItem[]> = {};
-    for (const st of TASK_STATUSES) map[st] = [];
-    for (const t of tasks) {
-      const st = t.status ?? 'todo';
-      (map[st] ??= []).push(t);
-    }
-    return map;
-  }, [tasks]);
-
   const lifecycleBar = (() => {
     const segs = stageLabels.map((label, i) => {
       const done = i < doneCount;
@@ -189,91 +156,6 @@ export function AfProjectHome({
 
   const pendingTasks = tasks.filter((t) => t.status !== 'done');
   const doneTasks = tasks.filter((t) => t.status === 'done');
-
-  const renderTaskRow = (t: TaskItem) => (
-    <div key={t.id} className="af-todo-row">
-      <span className={`af-pri af-pri-${(t.priority ?? 'P2').toLowerCase()}`}>{t.priority || 'P2'}</span>
-      <span className="af-todo-title">{renderInline(t.title || t.id)}</span>
-      <select
-        className="af-todo-pri"
-        aria-label={`优先级 ${t.id}`}
-        value={t.priority || 'P2'}
-        disabled={busy === t.id}
-        onChange={(e) => patchTask(t.id, { priority: e.target.value })}
-      >
-        {PRIORITIES.map((p) => (
-          <option key={p} value={p}>
-            {p}
-          </option>
-        ))}
-      </select>
-      <select
-        className="af-todo-status"
-        aria-label={`状态 ${t.id}`}
-        value={t.status || 'todo'}
-        disabled={busy === t.id}
-        onChange={(e) => patchTask(t.id, { status: e.target.value })}
-      >
-        {TASK_STATUSES.map((st) => (
-          <option key={st} value={st}>
-            {st}
-          </option>
-        ))}
-      </select>
-      {t.status === 'done' ? (
-        <span className="af-todo-archived" title="已完成 — 审计/溯源见执行记录">
-          ⤓ 已归档
-        </span>
-      ) : null}
-    </div>
-  );
-
-  const todoList = (
-    <div className="af-todo-list" data-testid="af-todo-list">
-      {tasks.length === 0 && <p className="af-home-note">（暂无任务 — 在对话里说"加个功能"生成任务）</p>}
-      {pendingTasks.map(renderTaskRow)}
-      {doneTasks.length > 0 ? (
-        <div className="af-todo-done-block">
-          <button type="button" className="af-todo-done-toggle" onClick={() => setShowDone((v) => !v)}>
-            {showDone ? '▾' : '▸'} ✅ 已完成 {doneTasks.length}（归档）
-          </button>
-          {showDone ? <div className="af-todo-done-list">{doneTasks.map(renderTaskRow)}</div> : null}
-        </div>
-      ) : null}
-    </div>
-  );  const todoBoard = (
-    <div className="af-todo-board" data-testid="af-todo-board">
-      {TASK_STATUSES.filter((st) => st !== 'blocked' && st !== 'review').map((st) => (
-        <div key={st} className="af-board-col" data-status={st}>
-          <h4 className="af-board-col-title">{st}</h4>
-          {(byStatus[st] ?? []).map((t) => (
-            <div key={t.id} className="af-board-card">
-              <span className={`af-pri af-pri-${(t.priority ?? 'P2').toLowerCase()}`}>{t.priority || 'P2'}</span>
-              <span className="af-todo-title">{t.title || t.id}</span>
-              <div className="af-board-actions">
-                <button type="button" className="af-preview-btn" onClick={() => patchTask(t.id, { priority: 'P0' })}>
-                  P0
-                </button>
-                {st !== 'done' ? (
-                  <button
-                    type="button"
-                    className="af-preview-btn"
-                    onClick={() =>
-                      patchTask(t.id, { status: st === 'todo' ? 'ready' : st === 'ready' ? 'in_progress' : 'done' })
-                    }
-                  >
-                    推进
-                  </button>
-                ) : (
-                  <span className="af-todo-archived">已归档</span>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      ))}
-    </div>
-  );
 
   return (
     <div className="af-project-home" data-testid="af-project-home">
@@ -312,27 +194,26 @@ export function AfProjectHome({
           </a>
         </div>
       </section>
-      <section className="af-home-card">
+            <section className="af-home-card" data-testid="af-home-todo-summary">
         <div className="af-home-card-head">
-          <h3>📋 任务 Todo</h3>
-          <div className="af-view-toggle">
-            <button
-              type="button"
-              className={`af-preview-btn${view === 'list' ? ' active' : ''}`}
-              onClick={() => setView('list')}
-            >
-              列表
-            </button>
-            <button
-              type="button"
-              className={`af-preview-btn${view === 'board' ? ' active' : ''}`}
-              onClick={() => setView('board')}
-            >
-              泳道
-            </button>
-          </div>
+          <h3>📋 任务 Todo（未完成 {pendingTasks.length}）</h3>
+          <a className="af-preview-btn af-todo-more" href={`#/project/${projectId}/todo`}>
+            查看全部 →
+          </a>
         </div>
-        {view === 'list' ? todoList : todoBoard}
+        {pendingTasks.length === 0 ? (
+          <p className="af-home-note">（暂无未完成任务 — 在对话里说"加个功能"生成任务）</p>
+        ) : (
+          <div className="af-todo-list">
+            {pendingTasks.slice(0, 5).map((t) => (
+              <div key={t.id} className="af-todo-row af-todo-row--summary">
+                <span className={`af-pri af-pri-${(t.priority ?? 'P2').toLowerCase()}`}>{t.priority || 'P2'}</span>
+                <span className="af-todo-title">{renderInline(t.title || t.id)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        <p className="af-home-note">✅ 已完成 {doneTasks.length} · 全部任务/详情/审计见「任务」页</p>
       </section>
     </div>
   );

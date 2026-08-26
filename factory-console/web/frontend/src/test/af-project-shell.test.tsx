@@ -120,7 +120,7 @@ describe('AfProjectShell (AI OS 项目层壳)', () => {
     const home = await screen.findByTestId('af-project-home');
     expect(within(home).getByRole('heading', { name: '记账 App' })).toBeInTheDocument();
     expect(within(home).getByTestId('af-home-lifecycle')).toBeInTheDocument();
-    expect(within(home).getByTestId('af-todo-list')).toBeInTheDocument();
+    expect(within(home).getByTestId('af-home-todo-summary')).toBeInTheDocument();
   });
 
   it('workflow 页 → 真实 Workflow Viewer (AfWorkflowPage, workflow+timeline 驱动)', async () => {

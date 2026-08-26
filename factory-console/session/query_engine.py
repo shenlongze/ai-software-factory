@@ -27,6 +27,8 @@ _INTENT_RULES: list[tuple[str, tuple[str, ...]]] = [
     ("list_projects", ("有哪些项目", "几个项目", "项目列表", "所有项目", "空间内", "重点项目", "项目清单")),
     ("project_quality", ("质量", "评分", "质量分", "分数")),
     ("project_tasks", ("任务", "todo", "待办", "backlog", "排期")),
+    ("project_doc", ("文档内容", "讲了什么", "读一下", "内容是什么", ".md", ".json", ".txt", ".docx")),
+    ("doc_search", ("检索", "搜索", "搜一下", "查找", "哪些文档提到", "哪份文档", "哪篇文档", "有没有说", "提到")),
     ("project_docs", ("文档", "文档清单", "产物", "产出物", "docs", "dosc", "products", "规格", "product-spec")),
     ("project_status", ("状态", "阶段", "进行", "进度", "生命周期", "卡点", "怎么样", "进展")),
     ("model", ("模型", "什么模型", "deepseek")),
@@ -81,6 +83,89 @@ def _docs_subpath(question: str) -> str:
     # 去掉尾随的疑问词/句尾标点 (只留路径字符)
     tail = re.sub(r"[^\w\-./].*$", "", raw)
     return tail.rstrip("/")
+
+
+def _extract_doc_name(question: str) -> str:
+    """从问句提取文档名 (含扩展名 token 优先; 无 → "")。"""
+    q = str(question or "")
+    m = re.search(r"[\w\u4e00-\u9fff\-./]+\.(?:md|json|txt|docx?)\b", q, re.I)
+    if m:
+        return m.group(0).strip().rstrip("/")
+    return ""
+
+
+def _read_doc_snippet(
+    root: Path | None,
+    target: Any,
+    doc_name: str,
+    *,
+    max_chars: int = 2500,
+) -> str | None:
+    """定位文档 → 读内容前 N 字符 (失败/缺失 → None, 诚实)。
+
+    匹配: name 精确/后缀/包含, 或 label 匹配 (多目录文档按相对名)。
+    """
+    if root is None or not doc_name:
+        return None
+    try:
+        from ..session.board import list_project_docs, read_project_doc_content
+
+        docs = list_project_docs(root, str(getattr(target, "id", "") or ""))
+    except Exception:  # noqa: BLE001
+        return None
+    needle = doc_name.lower()
+    cand = None
+    for d in docs:
+        if not d.get("exists"):
+            continue
+        nm = str(d.get("name") or "").lower()
+        lb = str(d.get("label") or "").lower()
+        if nm == needle or nm.endswith("/" + needle) or lb == needle or needle in nm:
+            cand = d
+            break
+    if cand is None:
+        return None
+    content = ""
+    # 优先按文档 source_dir 直读 (docs_config 可配外部目录, 与 workspace_dir 无关)
+    try:
+        src_dir = Path(str(cand.get("source_dir") or ""))
+        f = (src_dir / str(cand["name"])).resolve()
+        if f.is_relative_to(src_dir.resolve()) and f.is_file():
+            content = f.read_text(encoding="utf-8", errors="ignore")
+    except (OSError, ValueError):  # noqa: BLE001
+        content = ""
+    if not content:
+        # 兜底: 系统核心资产走 read_project_doc_content (路径安全)
+        try:
+            res = read_project_doc_content(root, str(getattr(target, "id", "") or ""), str(cand["name"]))
+            content = str(res.get("content") or "")
+        except Exception:  # noqa: BLE001
+            content = ""
+    if not content:
+        return None
+    return content[:max_chars] + ("\n…(截断)" if len(content) > max_chars else "")
+
+
+def _doc_search_hits(root: Path | None, target: Any, question: str) -> list[dict[str, Any]]:
+    """文档检索 (K-6 RAG): 幂等建索引 → 确定性词频检索, 返回 top 命中文档片段。"""
+    if root is None:
+        return []
+    try:
+        from ..retrieval.knowledge_store import KnowledgeStore, rag_query
+
+        KnowledgeStore(root, str(getattr(target, "id", "") or "")).incremental_ingest()
+        hits, _stats = rag_query(root, str(getattr(target, "id", "") or ""), question, top_k=5)
+        return [
+            {
+                "file": str(getattr(h, "file", "") or getattr(h, "source", "") or ""),
+                "source": str(getattr(h, "source", "") or ""),
+                "fragment": str(getattr(h, "fragment", "") or ""),
+                "score": float(getattr(h, "score", 0) or 0),
+            }
+            for h in hits
+        ]
+    except Exception:  # noqa: BLE001 — 检索失败 → 诚实空
+        return []
 
 
 def build_facts(
@@ -145,6 +230,28 @@ def build_facts(
             tasks = getattr(target, "tasks", None) or {}
             counts = " · ".join(f"{k}:{v}" for k, v in sorted(tasks.items())) if tasks else "暂无任务"
             block = f"项目: {name}\n任务统计: {counts}"
+        elif intent == "project_doc":
+            doc_name = _extract_doc_name(question)
+            content = _read_doc_snippet(root, target, doc_name)
+            if content is None:
+                block = (
+                    f"项目: {name}\n文档: 未找到"
+                    + (f" '{doc_name}'" if doc_name else "")
+                    + "（请说完整文档名, 如 'README.md' / 'API规范.md'; 或先问 '有哪些文档'）"
+                )
+            else:
+                block = f"项目: {name}\n文档: {doc_name}\n--- 内容片段 ---\n{content}"
+        elif intent == "doc_search":
+            hits = _doc_search_hits(root, target, question)
+            if hits:
+                lines = [f"项目: {name}\n文档检索: {question.strip()[:60]}"]
+                for h in hits[:5]:
+                    lines.append(
+                        f"- {h.get('file') or h.get('source') or '?'} — {(h.get('fragment') or '')[:120]}"
+                    )
+                block = "\n".join(lines)
+            else:
+                block = f"项目: {name}\n文档检索: 未检索到相关内容（可换关键词, 或问 '有哪些文档'）"
         elif intent == "project_docs":
             docs = []
             sub = _docs_subpath(question)
@@ -186,10 +293,11 @@ def build_facts(
 
 #: 合法意图集合 (校验 LLM 输出)
 VALID_INTENTS = {"list_projects", "project_status", "project_quality", "project_tasks",
-                 "project_docs", "model", "system_status", "create_project", "create_task", "chat"}
+                 "project_docs", "project_doc", "doc_search",
+                 "model", "system_status", "create_project", "create_task", "chat"}
 
 _INTENT_LLM_PROMPT = """把用户的提问转成标准查询意图 (只输出 JSON, 不要别的):
-{{"intent": "list_projects|project_status|project_quality|project_tasks|project_docs|model|create_project|create_task|chat",
+{{"intent": "list_projects|project_status|project_quality|project_tasks|project_docs|project_doc|doc_search|model|create_project|create_task|chat",
  "project": "用户提到的项目名 (没提到 → null)",
  "task": "用户要做的开发任务描述 (create_task 时填; 否则 null)}}
 规则:
@@ -197,7 +305,9 @@ _INTENT_LLM_PROMPT = """把用户的提问转成标准查询意图 (只输出 JS
 - 问某项目状态/阶段/进度/怎么样 → project_status (project=项目名)
 - 问质量/评分 → project_quality
 - 问任务/todo → project_tasks
-- 问文档/产物 → project_docs
+- 问文档清单/有哪些文档 → project_docs
+- 问某份具体文档内容 (如 'README.md 讲了什么' / '看下 API规范.md') → project_doc
+- 问在文档里检索/搜索关键词 (如 '文档里检索 错误码' / '哪些文档提到 X') → doc_search
 - 问用什么模型 → model
 - 完善/优化/修复/加功能 → create_task (task=要做的事, project=目标项目)
 - 问系统/WebUI/服务运行状态 → system_status

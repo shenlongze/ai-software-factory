@@ -75,6 +75,56 @@ class TestListDocsWithStatus:
         assert len(docs) == 5  # docs/products 4 + docs/other.md 1
 
 
+class TestQueryEngineDocReadSearch:
+    def test_intent_routing(self):
+        assert _qe.parse_intent("README.md 讲了什么")["intent"] == "project_doc"
+        assert _qe.parse_intent("看下 API规范.md 内容")["intent"] == "project_doc"
+        assert _qe.parse_intent("在文档里检索 错误码")["intent"] == "doc_search"
+        assert _qe.parse_intent("哪些文档提到 备份")["intent"] == "doc_search"
+        assert _qe.parse_intent("有哪些文档")["intent"] == "project_docs"
+
+    def test_extract_doc_name(self):
+        assert _qe._extract_doc_name("README.md 讲了什么") == "README.md"
+        assert _qe._extract_doc_name("看下 docs/API规范.md 内容") == "docs/API规范.md"
+        assert _qe._extract_doc_name("有哪些文档") == ""
+
+    def test_read_doc_snippet(self, tmp_path):
+        ws = _setup(tmp_path)
+        (tmp_path / "repo" / "README.md").write_text(
+            "# 项目\n\n这是一个 AI 工厂的说明文档。\n" * 10, encoding="utf-8"
+        )
+
+        class T:
+            id = "p-docs"
+
+        snippet = _qe._read_doc_snippet(ws, T(), "README.md")
+        assert snippet is not None
+        assert "AI 工厂" in snippet
+        assert snippet.count("说明文档") >= 5  # 多段
+        # 不存在的文档 → None (诚实)
+        assert _qe._read_doc_snippet(ws, T(), "NOPE.md") is None
+
+    def test_doc_search_hits(self, tmp_path):
+        ws = _setup(tmp_path)
+        (tmp_path / "repo" / "docs" / "products" / "agent-orchestration-product-spec.md").write_text(
+            DOCS_ROOT_HEADER.format(status="内核已实现") + "\n错误码 E7404 定义在 API 规范。\n",
+            encoding="utf-8",
+        )
+        (tmp_path / "repo" / "docs" / "products" / "backlog-sweeper-product-spec.md").write_text(
+            DOCS_ROOT_HEADER.format(status="MVP") + "\n备份与恢复。\n",
+            encoding="utf-8",
+        )
+
+        class T:
+            id = "p-docs"
+
+        hits = _qe._doc_search_hits(ws, T(), "错误码 E7404")
+        assert hits, "应命中含'错误码 E7404'的文档"
+        assert any("agent-orchestration" in h["file"] for h in hits)
+        # 无命中 → 空 (诚实)
+        assert _qe._doc_search_hits(ws, T(), "不存在的词 qqqzzz") == []
+
+
 class TestQueryEngineDocs:
     def test_trigger_words(self):
         for q in ("看看 docs", "dosc/products 状态", "products 文档", "有哪些文档"):

@@ -3,6 +3,24 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.146] — 2026-08-26
+
+**会话可查看/检索全部文档 (Founder: 其他文档呢, 会话不能查看, 检索么)**。
+
+### Added
+
+- project_doc 意图: 读指定文档内容 (如 "README.md 讲了什么") — 文档名匹配
+  (name/label/包含) → 内容前 2500 字符注入会话; 找不到 → 诚实引导
+- doc_search 意图: 文档检索 (K-6 RAG 正式接入) — 幂等建索引
+  (KnowledgeStore.incremental_ingest) → 确定性词频检索 → 命中文档+片段
+- 触发: .md/.json/.txt + 文档内容/讲了什么 → project_doc; 检索/搜索/提到 →
+  doc_search; 列表意图不变 (有哪些文档 → project_docs)
+
+### 验证
+
+- 后端 6487 passed (新增 4) · 真实数据: README 内容可读, "错误码 E7404"
+  命中 docs/error-codes.md + API规范.md
+
 ## [v1.1.145] — 2026-08-26
 
 **会话文档查询修复: docs/products 完成状态 (Founder 实测: 问"dosc/products"全是未查询到)**。

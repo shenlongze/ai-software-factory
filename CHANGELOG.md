@@ -3,6 +3,14 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.177] — 2026-08-27
+
+**项目头布局: P0 进度摘要独占一行 (Founder: 太挤, 换行)**。
+
+### Changed
+
+- af-tree-root flex-wrap; P0 摘要 flex-basis 100% 独占一行, 完整显示不截断
+
 ## [v1.1.176] — 2026-08-27
 
 **项目头 P0 进度摘要 + 排序切换 (Founder: 项目头增加进度 + 优先级顺序)**。

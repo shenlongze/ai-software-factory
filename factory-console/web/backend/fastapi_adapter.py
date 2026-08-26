@@ -2904,13 +2904,17 @@ def build_app(
             if model_line:
                 facts = f"{facts}\n{model_line}" if facts else model_line
         else:
-            # 公司级事实卡: 真实项目列表 (含重点项目) + 模型
-            names = [
-                f"{pp.name} (⭐ 重点项目)" if pp.starred else pp.name
-                for pp in projects
-                if not pp.archived
-            ]
-            facts = f"项目列表 ({len(names)} 个): {', '.join(names) if names else '暂无项目'}"
+            # 公司级事实卡: 真实项目列表 (含阶段/重点项目) + 模型
+            rows = []
+            for pp in projects:
+                if pp.archived:
+                    continue
+                stage = pp.lifecycle_stage or pp.status or ""
+                star = " ⭐重点项目" if pp.starred else ""
+                rows.append(f"{pp.name} (阶段: {stage}){star}")
+            facts = (
+                f"项目列表 ({len(rows)} 个):\n" + "\n".join(rows) if rows else "项目列表: 暂无项目"
+            )
             if model_line:
                 facts = f"{facts}\n{model_line}"""
         try:

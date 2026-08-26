@@ -3,6 +3,19 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.106] — 2026-08-26
+
+**去掉侧栏重复 ◆ 品牌标记 (Founder 反馈: 左侧多了一个 ◆)**。
+
+### Changed
+
+- 移除 AfSidebar 顶部 af-sidebar-brand (◆) — 顶栏 AfBrandHeader 已有
+  「◆ AI Factory」, 避免双品牌标记
+
+### 验证
+
+- 前端 678 passed · npm run build 通过 · 后端零改动
+
 ## [v1.1.105] — 2026-08-26
 
 **预览默认收起 + 不记住上次状态 (Founder A 方案)**。

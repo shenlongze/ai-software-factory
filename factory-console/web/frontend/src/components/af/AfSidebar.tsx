@@ -138,11 +138,6 @@ export function AfSidebar({ activePage, collapsed }: AfSidebarProps): JSX.Elemen
       data-testid="af-sidebar"
       aria-label="项目列表与工作台导航"
     >
-      <div className="af-sidebar-brand" title="AI Factory" aria-label="AI Factory">
-        <span className="af-brand-mark" aria-hidden="true">
-          ◆
-        </span>
-      </div>
       {!collapsed && (
         <div className="af-project-pane" data-testid="af-project-pane">
           <button type="button" className="af-new-project" onClick={handleCreate} disabled={creating}>

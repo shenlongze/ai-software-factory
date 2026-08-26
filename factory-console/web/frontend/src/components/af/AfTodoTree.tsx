@@ -113,7 +113,12 @@ export function hasTaskNodes(node: TreeNode): boolean {
 
 export function AfTodoTree({ tree, taskMeta = {}, onSelectTask }: AfTodoTreeProps): JSX.Element {
   const root = tree.root;
-  const doneTasks = collectDoneTasks(root);
+  // 归档区按完成时间倒序 (最近完成最前; 无 completedAt → 排最后, 诚实降级)
+  const doneTasks = collectDoneTasks(root).sort((a, b) => {
+    const ta = a.completedAt ?? '';
+    const tb = b.completedAt ?? '';
+    return tb.localeCompare(ta);
+  });
   const hasActive = hasActiveTasks(root);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [filter, setFilter] = useState<'all' | DomainStatus>('all');

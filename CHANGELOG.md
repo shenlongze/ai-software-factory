@@ -3,6 +3,21 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.143] — 2026-08-26
+
+**任务排序: 待办主树按优先级 + 归档区按完成时间 (Founder: 时间还是优先级?) 定案**。
+
+### Changed
+
+- 待办主树 (决策视图): Story 子任务按 优先级 P0→P3 排序, 依赖未满足排后
+  (同后端 org.management.sort_tasks 语义)
+- 已归档区 (回顾视图): 按完成时间倒序 (最近完成最前; 无时间排最后, 诚实降级)
+- toTodoTree 投影 completedAt (done 任务最后更新时间 = 完成时间语义)
+
+### 验证
+
+- 前端 709 passed (新增排序 5 项) · vite build 通过
+
 ## [v1.1.142] — 2026-08-26
 
 **W-3: 项目首页 Todo 编辑/优先级/归档/审计溯源 (Founder: 一次优化完成)**。

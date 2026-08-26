@@ -95,6 +95,30 @@ describe('AfTodoTree 归档 (W-3)', () => {
     expect(screen.getByText(/所有任务已完成/)).toBeInTheDocument();
     expect(screen.getByTestId('af-tree-archive-toggle')).toHaveTextContent('已归档 (6)');
   });
+
+  it('归档区按完成时间倒序 (最近完成最前; 无时间排最后)', async () => {
+    const user = userEvent.setup();
+    const base = sampleTodoBacklog();
+    const backlog = sampleTodoBacklog({
+      tasks: [
+        { ...base.tasks![0], id: 'T-old', title: '较早完成', status: 'done', priority: 'P0', updated_at: '2026-08-10T00:00:00Z' },
+        { ...base.tasks![1], id: 'T-new', title: '最近完成', status: 'done', priority: 'P1', updated_at: '2026-08-20T00:00:00Z' },
+        { ...base.tasks![2], id: 'T-none', title: '无时间', status: 'done', priority: 'P2', updated_at: null },
+        { ...base.tasks![3], id: 'T-active', title: '进行中', status: 'in_progress', priority: 'P1', updated_at: '2026-08-21T00:00:00Z' },
+      ],
+      epics: [{ ...base.epics![0], id: 'E1', name: '阶段一', children: ['F1'] }],
+      features: [{ ...base.features![0], id: 'F1', name: '模块一', children: ['S1'] }],
+      stories: [{ ...base.stories![0], id: 'S1', name: '故事一', children: ['T-old', 'T-new', 'T-none', 'T-active'] }],
+    });
+    render(<AfTodoTree tree={toTodoTree(backlog, '演示项目')} />);
+    await user.click(screen.getByTestId('af-tree-archive-toggle'));
+    const items = screen.getAllByTestId(/^af-tree-archive-item-/);
+    const titles = items.map((el) => el.textContent ?? '');
+    // 倒序: 最近完成 (T-new 08-20) → 较早 (T-old 08-10) → 无时间 (T-none)
+    expect(titles[0]).toContain('最近完成');
+    expect(titles[1]).toContain('较早完成');
+    expect(titles[2]).toContain('无时间');
+  });
 });
 
 // ------------------------------------------------------------------ AfTaskDetailPanel 操作区

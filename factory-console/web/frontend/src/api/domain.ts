@@ -263,15 +263,22 @@ function toModuleNode(
   return buildAggregateNode(feature.id, feature.name, 'module', weighted);
 }
 
-/** Story → task 节点 (状态从子 Task 聚合, 规则 §3.4; children = Task 执行单元)。 */
+/** Story → task 节点 (状态从子 Task 聚合, 规则 §3.4; children = Task 执行单元)。
+ * 排序 (Founder 2026-08-26): 待办主树按优先级 P0→P3, 依赖未满足排后
+ * (同后端 org.management.sort_tasks 语义 — 决策视图: 先做什么由重要性决定)。 */
 function toStoryNode(
   story: BacklogStory,
   taskIndex: Map<string, BacklogTask>,
 ): WeightedNode {
-  const weighted = (story.children ?? [])
+  const statusById = new Map<string, string>();
+  for (const task of taskIndex.values()) {
+    if (task?.id != null) statusById.set(task.id, task.status ?? '');
+  }
+  const tasks = (story.children ?? [])
     .map((id) => taskIndex.get(id))
     .filter((t): t is BacklogTask => t != null)
-    .map((task) => toTaskNode(task));
+    .sort((a, b) => compareTaskPriority(a, b, statusById));
+  const weighted = tasks.map((task) => toTaskNode(task));
   const status = aggregateStoryStatus(weighted.map((w) => w.node));
   return {
     node: {
@@ -299,9 +306,41 @@ function toTaskNode(task: BacklogTask): WeightedNode {
       statusLabel: statusLabel(status),
       progress: status === 'completed' ? 100 : 0,
       children: [],
+      // 归档排序时间: done 后 updated_at 不再变 = 完成时间 (诚实语义: 最后更新)
+      ...(status === 'completed' && task.updated_at != null && task.updated_at.length > 0
+        ? { completedAt: task.updated_at }
+        : {}),
     },
     weight: priorityWeight(task.priority),
   };
+}
+
+/** 优先级排序键 (P0=0 … P3=3; 缺失/未知 → 99 排最后)。 */
+const PRIORITY_RANK: Record<string, number> = { P0: 0, P1: 1, P2: 2, P3: 3 };
+
+function priorityRank(priority: string | null | undefined): number {
+  if (priority == null) return 99;
+  return PRIORITY_RANK[String(priority).trim().toUpperCase()] ?? 99;
+}
+
+/** 任务是否有未满足依赖 (依赖 id 不在表 / 状态非 done → 未满足)。 */
+function hasUnsatisfiedDependency(
+  task: BacklogTask,
+  statusById: Map<string, string>,
+): boolean {
+  return (task.dependency ?? []).some((dep) => statusById.get(dep) !== 'done');
+}
+
+/** 待办主树排序: 依赖未满足排后, 组内优先级 P0 最前 (稳定排序保原始序)。 */
+function compareTaskPriority(
+  a: BacklogTask,
+  b: BacklogTask,
+  statusById: Map<string, string>,
+): number {
+  const aUnsatisfied = hasUnsatisfiedDependency(a, statusById) ? 1 : 0;
+  const bUnsatisfied = hasUnsatisfiedDependency(b, statusById) ? 1 : 0;
+  if (aUnsatisfied !== bUnsatisfied) return aUnsatisfied - bUnsatisfied;
+  return priorityRank(a.priority) - priorityRank(b.priority);
 }
 
 /** 通用聚合节点 (phase/module): 状态=子节点聚合, 进度=加权均值, 权重=子权重和。 */

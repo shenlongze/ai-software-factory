@@ -206,6 +206,75 @@ describe('api/domain — toTodoTree 层级映射 (children id 反向索引)', ()
   });
 });
 
+describe('api/domain — toTodoTree W-3 排序 (优先级 + 依赖感知, Founder 2026-08-26)', () => {
+  function storyOf(tasks: BacklogTask[]): ReturnType<typeof toTodoTree> {
+    const backlog: BacklogResponse = {
+      epics: [bep('E', '阶段', ['F'])],
+      features: [bfeat('F', '模块', ['S'])],
+      stories: [bstory('S', '故事', tasks.map((t) => t.id ?? ''))],
+      tasks,
+    };
+    return toTodoTree(backlog);
+  }
+
+  it('优先级排序: P0 → P1 → P2 → P3 (待办主树决策视图)', () => {
+    const tree = storyOf([
+      btask('T-P2', 'P2 任务', 'todo', 'P2'),
+      btask('T-P0', 'P0 任务', 'todo', 'P0'),
+      btask('T-P3', 'P3 任务', 'todo', 'P3'),
+      btask('T-P1', 'P1 任务', 'todo', 'P1'),
+    ]);
+    const story = tree.root.children[0].children[0].children[0];
+    expect(story.children.map((n) => n.id)).toEqual(['T-P0', 'T-P1', 'T-P2', 'T-P3']);
+  });
+
+  it('依赖未满足排后: P0 依赖未完成 → 排到已满足的 P2 之后', () => {
+    const backlog: BacklogResponse = {
+      epics: [bep('E', '阶段', ['F'])],
+      features: [bfeat('F', '模块', ['S'])],
+      stories: [bstory('S', '故事', ['T-A', 'T-B'])],
+      tasks: [
+        { ...btask('T-A', 'A (P0, 依赖 B)', 'todo', 'P0'), dependency: ['T-B'] },
+        { ...btask('T-B', 'B (P2, 未完成)', 'todo', 'P2') },
+      ],
+    };
+    const story = toTodoTree(backlog).root.children[0].children[0].children[0];
+    // B 无依赖 + P2 在前; A 依赖 B 未 done → 排后 (即使 P0)
+    expect(story.children.map((n) => n.id)).toEqual(['T-B', 'T-A']);
+  });
+
+  it('依赖满足后不排后: 依赖已 done → 按优先级正常排', () => {
+    const backlog: BacklogResponse = {
+      epics: [bep('E', '阶段', ['F'])],
+      features: [bfeat('F', '模块', ['S'])],
+      stories: [bstory('S', '故事', ['T-A', 'T-B'])],
+      tasks: [
+        { ...btask('T-A', 'A (P0, 依赖 B 已 done)', 'todo', 'P0'), dependency: ['T-B'] },
+        { ...btask('T-B', 'B (P2, 已完成)', 'done', 'P2') },
+      ],
+    };
+    const story = toTodoTree(backlog).root.children[0].children[0].children[0];
+    expect(story.children.map((n) => n.id)).toEqual(['T-A', 'T-B']);
+  });
+
+  it('completedAt 投影: done 任务带最后更新时间 (归档排序用); 非 done 不带', () => {
+    const backlog: BacklogResponse = {
+      epics: [bep('E', '阶段', ['F'])],
+      features: [bfeat('F', '模块', ['S'])],
+      stories: [bstory('S', '故事', ['T-D', 'T-T'])],
+      tasks: [
+        { ...btask('T-D', '已完成', 'done'), updated_at: '2026-08-20T10:00:00Z' },
+        { ...btask('T-T', '待办', 'todo'), updated_at: '2026-08-21T10:00:00Z' },
+      ],
+    };
+    const story = toTodoTree(backlog).root.children[0].children[0].children[0];
+    const doneNode = story.children.find((n) => n.id === 'T-D');
+    const todoNode = story.children.find((n) => n.id === 'T-T');
+    expect(doneNode?.completedAt).toBe('2026-08-20T10:00:00Z');
+    expect(todoNode?.completedAt).toBeUndefined();
+  });
+});
+
 describe('api/domain — toTodoTree Task 六态映射 (含 review)', () => {
   it.each([
     ['todo', 'pending'],

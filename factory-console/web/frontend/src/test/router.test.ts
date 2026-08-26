@@ -27,13 +27,14 @@ describe('S10-014 路由常量表 (§2.3)', () => {
     ]);
   });
 
-  it('Project 级 12 条路由 (overview 默认 + 11 子页, :id 模板)', () => {
-    expect(PROJECT_ROUTES).toHaveLength(12);
+  it('Project 级 13 条路由 (overview 默认 + 12 子页, :id 模板, 含 docs)', () => {
+    expect(PROJECT_ROUTES).toHaveLength(13);
     expect(PROJECT_ROUTES.map((r) => r.path)).toEqual([
       '#/project/:id',
       '#/project/:id/vision',
       '#/project/:id/discovery',
       '#/project/:id/prd',
+      '#/project/:id/docs',
       '#/project/:id/roadmap',
       '#/project/:id/backlog',
       '#/project/:id/sprint',
@@ -48,6 +49,7 @@ describe('S10-014 路由常量表 (§2.3)', () => {
       'vision',
       'discovery',
       'prd',
+      'docs',
       'roadmap',
       'backlog',
       'sprint',

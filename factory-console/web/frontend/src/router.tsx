@@ -30,6 +30,7 @@ export const PROJECT_ROUTES: readonly { path: string; page: string }[] = [
   { path: '#/project/:id/vision', page: 'vision' },
   { path: '#/project/:id/discovery', page: 'discovery' },
   { path: '#/project/:id/prd', page: 'prd' },
+  { path: '#/project/:id/docs', page: 'docs' },
   { path: '#/project/:id/roadmap', page: 'roadmap' },
   { path: '#/project/:id/backlog', page: 'backlog' },
   { path: '#/project/:id/sprint', page: 'sprint' },

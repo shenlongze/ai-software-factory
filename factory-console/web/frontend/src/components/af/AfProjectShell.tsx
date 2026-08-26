@@ -34,6 +34,7 @@ import { AfTodoTreePage } from '../../pages/project/AfTodoTreePage';
 import { AfWorkflowPage } from '../../pages/project/AfWorkflowPage';
 import { AfRuntimePage } from '../../pages/project/AfRuntimePage';
 import { AfQualityGatePage } from '../../pages/project/AfQualityGatePage';
+import { AfProjectDocs } from '../../pages/project/AfProjectDocs';
 import { ErrorState, LoadingState } from '../State';
 import { useAsync } from '../../hooks/useAsync';
 import type { ProjectSummary, WorkflowDetail } from '../../models/types';
@@ -46,6 +47,7 @@ export const PROJECT_PAGE_LABELS: Record<string, string> = {
   vision: 'Vision',
   discovery: 'Discovery',
   prd: 'PRD',
+  docs: '文档',
   roadmap: 'Roadmap',
   backlog: 'Backlog',
   sprint: 'Sprint',
@@ -296,6 +298,9 @@ function AfProjectSubPage({
   }
   if (page === 'Quality' && projectId != null) {
     return <AfQualityGatePage projectId={projectId} />;
+  }
+  if (page === '文档' && projectId != null) {
+    return <AfProjectDocs projectId={projectId} projectName={projectName ?? ''} />;
   }
   return <AfModulePlaceholder pageLabel={page} />;
 }

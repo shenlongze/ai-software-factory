@@ -66,6 +66,7 @@ describe('AfProjectShell (AI OS 项目层壳)', () => {
       'vision',
       'discovery',
       'prd',
+      'docs',
       'roadmap',
       'backlog',
       'sprint',

@@ -1083,6 +1083,35 @@ def build_app(
         return HTMLResponse(content=html)
 
     # S10-123 K-6: 项目级 RAG (M5-2/B-8 + M5-3 + E-5) — 只做后端, 不碰前端
+    # ------------------------------------------- 项目文档管理 (v1.1.108, 5180 产品工作台)
+    # 复用 session/board.list_project_docs + read_project_doc_content (路径安全),
+    # 只做 JSON 绑定 — 前端 AfProjectDocs 左树右看。
+    @app.get("/api/projects/{project_id}/docs")
+    def api_project_docs_list(project_id: str) -> dict[str, Any]:
+        """项目文档清单 (GET — 核心资产 + 可配多目录扫描; 未装配 → 空)。"""
+        if workspace_root is None:
+            return ok_list([])
+        board_mod = _console_import("session.board")
+        try:
+            items = board_mod.list_project_docs(workspace_root, project_id)
+        except Exception:  # noqa: BLE001 — 失败安全
+            items = []
+        return ok_list(items)
+
+    @app.get("/api/projects/{project_id}/docs/{doc:path}")
+    def api_project_doc_content(project_id: str, doc: str) -> dict[str, Any]:
+        """项目文档内容 (GET — md/json/txt 文本; 路径安全; 越界 → 404)。"""
+        if workspace_root is None:
+            raise HTTPException(status_code=404, detail="document not found")
+        board_mod = _console_import("session.board")
+        try:
+            result = board_mod.read_project_doc_content(workspace_root, project_id, doc)
+        except Exception:  # noqa: BLE001 — 失败安全
+            result = {"name": doc, "kind": "error", "content": None, "note": "读取失败"}
+        if result.get("error") == "unsupported-path":
+            raise HTTPException(status_code=404, detail="document not found")
+        return result
+
     @app.get("/api/rag/sources")
     def api_rag_sources():
         """外部知识源清单 (M5-3 接口就绪状态; 未配置 → 空不崩)。"""

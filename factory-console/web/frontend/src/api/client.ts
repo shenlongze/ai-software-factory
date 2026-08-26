@@ -33,6 +33,8 @@ import {
   type IdeaSuggestion,
   type LifecycleSummary,
   type LlmProviderConfig,
+  type ProjectDocContent,
+  type ProjectDocSummary,
   type ProjectSummary,
   type ProviderSummary,
   type ProjectUpdatedSummary,
@@ -365,6 +367,12 @@ export const api = {
   createSkill: (id: string, name?: string, category?: string) =>
     sendJson<{ id: string; name: string; category: string; version: string }>('/api/skills', { id, name, category }),
   deleteSkill: (id: string) => deleteJson<{ deleted: boolean }>(`/api/skills/${encodeURIComponent(id)}`),
+  // v1.1.108: 项目文档管理 (左树右看)
+  projectDocs: async (projectId: string) =>
+    (await getJson<{ items: ProjectDocSummary[] }>(`/api/projects/${encodeURIComponent(projectId)}/docs`)).items,
+  projectDocContent: async (projectId: string, doc: string) =>
+    getJson<ProjectDocContent>(`/api/projects/${encodeURIComponent(projectId)}/docs/${doc.replace(/^\//, '')}`),
+
   // K-7e: Web 会话栏 (会话 + 消息 + 回复)
   sessions: async (scope?: string, projectId?: string) => {
     const params = new URLSearchParams();

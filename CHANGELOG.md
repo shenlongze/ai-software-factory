@@ -3,6 +3,27 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.108] — 2026-08-26
+
+**项目文档管理 (Founder 要求: 项目文档管理/查看)**。
+
+### Added
+
+- **📄 文档 项目页 (左树右看)**: 左侧文档清单 (核心资产 PRD/工程计划/任务拆分 +
+  可配目录扫描 docs/), 右侧内容预览 (markdown 简单渲染 / JSON 格式化 / 纯文本);
+  未生成/不支持类型 → 诚实提示不伪造
+- **后端文档 API**: GET /api/projects/{id}/docs (清单) + /docs/{doc:path} (内容,
+  路径安全, 越界 404); 复用 session/board.read_project_doc_content
+
+### Changed
+
+- 项目导航新增 📄 文档 (PRD 之后); 路由 #/project/:id/docs
+
+### 验证
+
+- 后端 docs API 7 passed (清单/内容/嵌套/越界/不支持/缺失) + 相关 49 passed
+- 前端 682 passed (含文档页 4 用例) · npm run build 通过
+
 ## [v1.1.107] — 2026-08-26
 
 **页面适配窗口大小: 固定 100vh + 内部滚动 (Founder 反馈: 页面/会话栏太长)**。

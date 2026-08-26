@@ -741,3 +741,26 @@ export interface AgentInfo {
   skills?: string[];
   status?: string;
 }
+
+/** v1.1.108: 项目文档 — 清单项 (GET /api/projects/{id}/docs)。 */
+export interface ProjectDocSummary {
+  name: string;
+  label: string;
+  kind: string;
+  size: number;
+  mtime: number;
+  exists: boolean;
+  extra: boolean;
+  folder: string;
+  source_dir: string;
+}
+
+/** v1.1.108: 项目文档 — 内容 (GET /api/projects/{id}/docs/{doc})。 */
+export interface ProjectDocContent {
+  name: string;
+  path?: string;
+  label?: string;
+  kind: string;
+  content: string | null;
+  note?: string | null;
+}

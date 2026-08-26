@@ -15,6 +15,7 @@ export const PROJECT_NAV_ITEMS: readonly { page: string; label: string; icon: st
   { page: 'vision', label: 'Vision', icon: '✦' },
   { page: 'discovery', label: 'Discovery', icon: '◉' },
   { page: 'prd', label: 'PRD', icon: '▤' },
+  { page: 'docs', label: '文档', icon: '📄' },
   { page: 'roadmap', label: 'Roadmap', icon: '⇥' },
   { page: 'backlog', label: 'Backlog', icon: '▦' },
   { page: 'sprint', label: 'Sprint', icon: '◔' },

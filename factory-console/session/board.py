@@ -2477,6 +2477,49 @@ document.querySelectorAll('#docfilters .f-btn').forEach(function(btn){{
 }});
 </script>
 </body></html>"""
+def read_project_doc_content(
+    workspace: Path | str, slug: str, doc_name: str
+) -> dict[str, Any]:
+    """项目文档原始内容 (JSON API 用; 路径安全同 render_project_doc_view)。
+
+    支持 md/json/txt 文本预览; 其他类型/缺失/读取失败 → content=None + note
+    (诚实, 不伪造)。路径不在项目内 / .git → {"error": "unsupported-path"}
+    (HTTP 404)。
+    """
+    slug = Path(str(slug or "")).name
+    pdir = _project_docs_root(workspace, slug)
+    rel = Path(str(doc_name or ""))
+    try:
+        f = (pdir / rel).resolve()
+        if not f.is_relative_to(pdir.resolve()) or ".git" in f.parts:
+            return {"error": "unsupported-path"}
+    except (OSError, ValueError):  # noqa: BLE001
+        return {"error": "unsupported-path"}
+    if f.suffix.lower() not in (".md", ".json", ".txt"):
+        return {
+            "name": doc_name,
+            "kind": "unsupported",
+            "content": None,
+            "note": f"{f.suffix or '无扩展名'} 暂不支持在线预览（文件已列出, 可本地打开）",
+        }
+    if not f.is_file():
+        return {"name": doc_name, "kind": "missing", "content": None, "note": "未生成"}
+    try:
+        content = f.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):  # noqa: BLE001
+        return {"name": doc_name, "kind": "error", "content": None, "note": "文档读取失败"}
+    kind = "md" if f.suffix.lower() == ".md" else f.suffix.lower().lstrip(".")
+    label = PROJECT_DOC_TYPES.get(str(rel), (str(rel), kind))[0]
+    return {
+        "name": doc_name,
+        "path": str(rel),
+        "label": label,
+        "kind": kind,
+        "content": content,
+        "note": None,
+    }
+
+
 def render_project_doc_view(workspace: Path | str, slug: str, doc_name: str) -> str:
     """项目文档查看 HTML: markdown 渲染 / JSON 格式化 (只读, 项目内路径安全)。
 

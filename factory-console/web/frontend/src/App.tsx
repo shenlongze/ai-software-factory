@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AppStateProvider } from './state/AppState';
 import { LanguageProvider } from './i18n';
+import { ThemeProvider } from './theme';
 import { ConversationProvider } from './components/af/ConversationContext';
 import { parseHash } from './router';
 import { AfWorkspaceEntry } from './pages/workspace/AfWorkspaceEntry';
@@ -30,12 +31,14 @@ function Shell(): JSX.Element {
 
 export default function App(): JSX.Element {
   return (
-    <LanguageProvider>
-      <AppStateProvider>
-        <ConversationProvider>
-          <Shell />
-        </ConversationProvider>
-      </AppStateProvider>
-    </LanguageProvider>
+    <ThemeProvider>
+      <LanguageProvider>
+        <AppStateProvider>
+          <ConversationProvider>
+            <Shell />
+          </ConversationProvider>
+        </AppStateProvider>
+      </LanguageProvider>
+    </ThemeProvider>
   );
 }

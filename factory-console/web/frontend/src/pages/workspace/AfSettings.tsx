@@ -14,6 +14,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { api } from '../../api/client';
 import { AfLangSwitch, useI18n } from '../../i18n';
+import { useTheme } from '../../theme';
 import type { LlmProviderConfig } from '../../models/types';
 import {
   agentRoleInfo,
@@ -55,12 +56,13 @@ const TABS = [
   { id: 'skill', label: 'skill' },
   { id: 'mcp', label: 'mcp' },
   { id: 'plugin', label: 'plugin' },
-  { id: 'lang', label: 'lang' },
+  { id: 'appearance', label: 'appearance' },
 ] as const;
 type TabId = (typeof TABS)[number]['id'];
 
 export function AfSettings(): JSX.Element {
   const { t } = useI18n();
+  const { theme, setTheme, bg, setBackgroundImage, setBackgroundOpacity, setBackgroundBlur, clearBackground } = useTheme();
   const [tab, setTab] = useState<TabId>('llm');
   const [msg, setMsg] = useState<string>('');
 
@@ -518,9 +520,74 @@ export function AfSettings(): JSX.Element {
           </section>
         )}
 
-        {tab === 'lang' && (
+        {tab === 'appearance' && (
           <section>
-            <h3 className="af-settings-h3">{t('settings.tab.lang')}</h3>
+            <h3 className="af-settings-h3">{t('settings.tab.appearance')}</h3>
+            <div className="af-settings-form">
+              <span className="af-home-note">{t('settings.theme.label')}</span>
+              <select
+                className="af-lang-switch"
+                aria-label="主题 / Theme"
+                value={theme}
+                onChange={(e) => setTheme(e.target.value as 'dark' | 'light')}
+              >
+                <option value="dark">🌙 深色 / Dark</option>
+                <option value="light">☀️ 浅色 / Light</option>
+              </select>
+            </div>
+            <h4 className="af-settings-h4">{t('settings.background.title')}</h4>
+            <div className="af-settings-form">
+              <label className="af-settings-action" style={{ cursor: 'pointer' }}>
+                🖼 {t('settings.background.choose')}
+                <input
+                  type="file"
+                  accept="image/*"
+                  style={{ display: 'none' }}
+                  data-testid="af-bg-file"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (!f) return;
+                    if (f.size > 3 * 1024 * 1024) {
+                      flash('图片过大（>3MB）— 建议用 URL 或压缩后重试');
+                      return;
+                    }
+                    const reader = new FileReader();
+                    reader.onload = () => setBackgroundImage(String(reader.result ?? ''));
+                    reader.readAsDataURL(f);
+                  }}
+                />
+              </label>
+              <input
+                className="af-settings-input af-settings-input--wide"
+                placeholder="或粘贴图片 URL"
+                aria-label="背景图片 URL"
+                data-testid="af-bg-url"
+                defaultValue={bg.image && !bg.image.startsWith('data:') ? bg.image : ''}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && e.currentTarget.value.trim()) {
+                    setBackgroundImage(e.currentTarget.value.trim());
+                  }
+                }}
+              />
+              <button type="button" className="af-settings-action" onClick={() => setBackgroundImage('')}>
+                应用 URL
+              </button>
+              <button type="button" className="af-settings-action af-settings-action--danger" onClick={clearBackground}>
+                清除背景
+              </button>
+            </div>
+            <div className="af-settings-form">
+              <span className="af-home-note">{t('settings.background.opacity')}: {bg.opacity}%</span>
+              <input
+                type="range" min={5} max={90} value={bg.opacity} aria-label="背景不透明度"
+                onChange={(e) => setBackgroundOpacity(Number(e.target.value))}
+              />
+              <span className="af-home-note">{t('settings.background.blur')}: {bg.blur}px</span>
+              <input
+                type="range" min={0} max={30} value={bg.blur} aria-label="背景模糊"
+                onChange={(e) => setBackgroundBlur(Number(e.target.value))}
+              />
+            </div>
             <div className="af-settings-form">
               <span className="af-home-note">{t('settings.lang.label')}</span>
               <AfLangSwitch />

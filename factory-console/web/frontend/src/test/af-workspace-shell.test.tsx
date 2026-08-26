@@ -201,7 +201,7 @@ describe('AfWorkspaceShell (AI OS 三栏壳)', () => {
     expect(screen.getByRole('tab', { name: '👤 AI 员工' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '🧩 技能' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '🔌 MCP' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: '🌐 语言' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '🎨 外观' })).toBeInTheDocument();
   });
 
   it('加载中 → af-loading-state (projects 列表页)', () => {

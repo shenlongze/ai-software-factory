@@ -72,3 +72,21 @@ class TestTaskExecBridge:
         rc = cli.task(_cli.argparse.Namespace(task_action="prompt", task_id="NOPE", project=""))
         assert rc == 1
         assert "未找到任务" in capsys.readouterr().out
+
+
+class TestTaskRowsSync:
+    def test_task_rows_merges_backlog(self, tmp_path):
+        """CLI task list 与 WebUI/会话任务同源: backlog management/task.json 并入。"""
+        root = tmp_path / ".factory"
+        root.mkdir(parents=True, exist_ok=True)
+        _seed_backlog_task(root, "P-1", "TASK-1", "完善导出功能", "desc")
+        (root / "tasks").mkdir(exist_ok=True)
+        (root / "tasks" / "TASK-0.json").write_text(
+            json.dumps({"id": "TASK-0", "title": "旧任务", "status": "done", "project": "P-0"}),
+            encoding="utf-8",
+        )
+        rows = _cli._task_rows(root)
+        ids = {r["id"] for r in rows}
+        assert "TASK-0" in ids and "TASK-1" in ids
+        row = next(r for r in rows if r["id"] == "TASK-1")
+        assert row["project"] == "P-1"

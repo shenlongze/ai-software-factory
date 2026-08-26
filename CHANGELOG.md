@@ -3,6 +3,26 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.128] — 2026-08-26
+
+**CLI/WebUI 任务同源同步 (Founder: 这里的功能和 CLI 同步了么)**。
+
+### Fixed
+
+- `factory task list` 只读旧 tasks/*.json, 看不到会话/WebUI 创建的 backlog 任务
+- 修复: _task_rows 合并两源 (旧 tasks/*.json + management/backlog/task.json) →
+  CLI 与 WebUI/会话任务同源可见
+
+### 同步现状（实测）
+
+- ✅ 项目 / 产出物契约 / 设置(LLM/员工/技能/MCP) / 质量: 同源
+- ✅ 任务: 现在 CLI 也看到会话建的任务 (TASK-9c1d0221)
+- ⚠️ 会话: WebUI 会话(console_sessions.json) 与 CLI REPL 对话为两套存储 (设计使然, 不互通)
+
+### 验证
+
+- 后端 task_exec_bridge 4 passed · 前端 684 passed
+
 ## [v1.1.127] — 2026-08-26
 
 **P2b: 任务→执行链桥 (factory task prompt|run)**。

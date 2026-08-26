@@ -769,9 +769,10 @@ def _skill_rows(data_dir: Path) -> list[dict[str, Any]]:
 
 
 def _task_rows(data_dir: Path) -> list[dict[str, Any]]:
-    """tasks/*.json → 行 dict 列表 (id/title/status/project); 无数据 → []。
+    """任务行 (id/title/status/project) — 合并两源 (WebUI/CLI 同源, P2b 同步):
 
-    每个文件一条任务; 损坏/无 id 的文件跳过 (失败安全)。
+    1. 旧 tasks/*.json (每文件一条)
+    2. backlog management/task.json (会话/WebUI 创建, workspace/projects/*/)
     """
     rows: list[dict[str, Any]] = []
     for path in sorted((data_dir / "tasks").glob("*.json")):
@@ -786,6 +787,25 @@ def _task_rows(data_dir: Path) -> list[dict[str, Any]]:
                 "project": row.get("project", ""),
             }
         )
+    for pdir in sorted((data_dir / "workspace" / "projects").glob("*")):
+        if not pdir.is_dir():
+            continue
+        tf = pdir / "management" / "backlog" / "task.json"
+        data = _load_json_safe(tf) or {}
+        tasks = data.get("tasks") if isinstance(data, dict) else None
+        if not isinstance(tasks, dict):
+            continue
+        for tid, t in tasks.items():
+            if not isinstance(t, dict):
+                continue
+            rows.append(
+                {
+                    "id": str(t.get("id") or tid),
+                    "title": str(t.get("title") or ""),
+                    "status": str(t.get("status") or ""),
+                    "project": str(t.get("project") or pdir.name),
+                }
+            )
     return rows
 
 

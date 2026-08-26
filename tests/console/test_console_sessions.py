@@ -255,3 +255,28 @@ class TestSessionsHttp:
         r = client.post("/api/sessions", json={"scope": "company"})
         sid = r.json()["id"]
         assert client.post(f"/api/sessions/{sid}/messages", json={"message": "  "}).status_code == 400
+
+
+class TestWebAwarePrompts:
+    def test_company_prompt_no_cli_advice(self, tmp_path):
+        """公司级提示词: Web 感知 — 含"全局视图", 不推荐 pwd/CLI。"""
+        store = _sessions.SessionStore(tmp_path / "s.json")
+        sess = store.create_session(scope="company")
+        seen: list[str] = []
+        _sessions.send_message(store, sess["id"], "现在在哪个项目", llm_fn=lambda p: (seen.append(p) or "公司/全局"))
+        assert "公司 / 全局" in seen[0]
+        # 明确"不要建议 CLI", 而非给出 pwd 指令
+        assert "不要建议用户运行" in seen[0]
+        assert "运行 `pwd`" not in seen[0]
+
+    def test_project_prompt_has_facts_and_web(self, tmp_path):
+        store = _sessions.SessionStore(tmp_path / "s.json")
+        sess = store.create_session(scope="project", project_id="P-1")
+        seen: list[str] = []
+        _sessions.send_message(
+            store, sess["id"], "当前是哪个项目",
+            facts="名称: 记账\n生命周期: development", llm_fn=lambda p: (seen.append(p) or "记账"),
+        )
+        assert "名称: 记账" in seen[0]
+        assert "不要建议运行" in seen[0]
+        assert "运行 `pwd`" not in seen[0]

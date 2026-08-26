@@ -4047,3 +4047,33 @@ body[data-bg='1'] .af-shell {
 .af-health-chip:hover {
   border-color: var(--af-primary);
 }
+
+/* 会话 markdown 渲染 */
+.af-chat-msg-body--md {
+  white-space: normal;
+}
+
+.af-chat-msg-body--md p {
+  margin: 4px 0;
+}
+
+.af-chat-msg-body--md ul {
+  margin: 4px 0;
+  padding-left: 18px;
+}
+
+.af-chat-msg-body--md h4,
+.af-chat-msg-body--md h5,
+.af-chat-msg-body--md h6 {
+  margin: 8px 0 4px;
+  color: var(--c-text);
+}
+
+.af-inline-code {
+  font-family: var(--af-font-mono);
+  font-size: 0.9em;
+  background: var(--c-hover);
+  border: 1px solid var(--c-border);
+  border-radius: 4px;
+  padding: 0 4px;
+}

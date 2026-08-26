@@ -10,6 +10,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useConversation } from './ConversationContext';
 import { useI18n } from '../../i18n';
+import { renderMarkdown } from './markdown';
 import type { SessionSummary } from '../../models/types';
 
 function estimateTokens(text: string): number {
@@ -208,7 +209,9 @@ export function AfConversationPanel({ projectId, projectName }: AfConversationPa
               <div className="af-chat-msg-meta">
                 {m.role === 'user' ? '你' : 'AI'} · {fmtTime(m.created_at)}
               </div>
-              <div className="af-chat-msg-body">{m.content}</div>
+              <div className={`af-chat-msg-body${m.role === 'assistant' ? ' af-chat-msg-body--md' : ''}`}>
+                {m.role === 'assistant' ? renderMarkdown(m.content) : m.content}
+              </div>
             </div>
           ))
         )}

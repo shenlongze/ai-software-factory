@@ -3,6 +3,23 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.116] — 2026-08-26
+
+**会话栏体验修复: AI 回复接上下文 + Markdown 渲染**。
+
+### Changed
+
+- **AI 回复 Web 感知** (console_sessions 提示词): 公司级明确"当前视图=公司/全局",
+  项目级直接告知项目名; **不再建议运行 pwd/CLI 命令** (Web 无终端);
+  诚实降级文案改为"设置→LLM 配置"
+- **消息 Markdown 渲染**: AI 回复的标题/粗体/斜体/行内代码/列表/代码块 渲染为
+  格式 (轻量安全渲染器, 无 HTML 注入); 用户消息保持原文
+
+### 验证
+
+- 后端 sessions 19 passed (含 Web 提示词断言: 含"不要建议 CLI", 无 pwd 指令)
+- 前端 683 passed (含 markdown 渲染 2 用例) · build 通过
+
 ## [v1.1.115] — 2026-08-26
 
 **概览页重构 (Founder A 方案): 聚焦状态+下一步, 监控归位导航**。

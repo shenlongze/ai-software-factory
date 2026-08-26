@@ -1804,19 +1804,19 @@ def build_app(
         """M5 路由: 任务 → 选 agent/skill (能力匹配 + 历史加权 + 用户显式 + 兜底)。"""
         registry = _external_registry()
         adapters = registry.list() if registry is not None else []
-        # 导入的外部 agent (agents.json 带 source)
-        imported: list[dict[str, Any]] = []
+        # 全部 agent (外部带 source + 内部员工) — 路由候选池
+        all_agents: list[dict[str, Any]] = []
         try:
             _ag = _read_json_map(Path(workspace_root or DEFAULT_ROOT) / "agents" / "agents.json")
             agents = _ag.get("agents") if isinstance(_ag, dict) and isinstance(_ag.get("agents"), dict) else None
             if isinstance(agents, dict):
-                imported = [v for v in agents.values() if isinstance(v, dict) and v.get("source")]
+                all_agents = [v for v in agents.values() if isinstance(v, dict)]
         except Exception:  # noqa: BLE001
-            imported = []
+            all_agents = []
         try:
             _router = _console_import("external_executor.router")
             return _router.route(
-                body.task, adapters, imported,
+                body.task, adapters, all_agents,
                 workspace_root or DEFAULT_ROOT,
                 explicit_agent=body.explicit_agent,
             )

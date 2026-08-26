@@ -2575,31 +2575,6 @@ class FactoryCLI:
         from . import local_ai as _local_ai
 
         action = getattr(args, "local_ai_action", "scan") or "scan"
-        if action == "route":
-            from .external_executor import router as _ee_router
-
-            task = str(getattr(args, "task", "") or "").strip()
-            if not task:
-                print("用法: factory external-ai route --task <任务描述> [--agent <候选id>]")
-                return 2
-            explicit = str(getattr(args, "id", "") or "").strip()
-            # 导入的外部 agent
-            imported: list[dict] = []
-            try:
-                data = _load_json_safe(self.data_dir / "agents" / "agents.json")
-                agents = data.get("agents") if isinstance(data, dict) else None
-                if isinstance(agents, dict):
-                    imported = [v for v in agents.values() if isinstance(v, dict) and v.get("source")]
-            except Exception:  # noqa: BLE001
-                imported = []
-            r = _ee_router.route(task, registry.list(), imported, self.data_dir, explicit_agent=explicit)
-            print(f"=== 路由: {r['work_type']} ===")
-            print(f"  🎯 选: {r['pick'] or '无'}" + (f" (用户显式)" if r.get("explicit") else f" ({r['reason']})"))
-            if r.get("tier_advice"):
-                print(f"  成本建议: {r['tier_advice']}")
-            if r.get("alternatives"):
-                print(f"  候选: {', '.join(r['alternatives'][:6])}")
-            return 0 if r["pick"] else 1
         if action == "verify":
             rid = str(getattr(args, "result_id", "") or "").strip()
             if not rid:
@@ -2737,6 +2712,31 @@ class FactoryCLI:
                     print(f"      用法: {pr['usage']}")
             print("  扫描完成")
             return 0
+        if action == "route":
+            from .external_executor import router as _ee_router
+
+            task = str(getattr(args, "task", "") or "").strip()
+            if not task:
+                print("用法: factory external-ai route --task <任务描述> [--agent <候选id>]")
+                return 2
+            explicit = str(getattr(args, "id", "") or "").strip()
+            # 导入的外部 agent
+            imported: list[dict] = []
+            try:
+                data = _load_json_safe(self.data_dir / "agents" / "agents.json")
+                agents = data.get("agents") if isinstance(data, dict) else None
+                if isinstance(agents, dict):
+                    imported = [v for v in agents.values() if isinstance(v, dict) and v.get("source")]
+            except Exception:  # noqa: BLE001
+                imported = []
+            r = _ee_router.route(task, registry.list(), imported, self.data_dir, explicit_agent=explicit)
+            print(f"=== 路由: {r['work_type']} ===")
+            print(f"  🎯 选: {r['pick'] or '无'}" + (f" (用户显式)" if r.get("explicit") else f" ({r['reason']})"))
+            if r.get("tier_advice"):
+                print(f"  成本建议: {r['tier_advice']}")
+            if r.get("alternatives"):
+                print(f"  候选: {', '.join(r['alternatives'][:6])}")
+            return 0 if r["pick"] else 1
         aid = str(getattr(args, "id", "") or "").strip()
         if not aid:
             print("用法: factory external-ai <probe|run|assets|import> --id <适配器id> ...")

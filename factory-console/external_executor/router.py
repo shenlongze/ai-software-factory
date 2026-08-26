@@ -101,16 +101,16 @@ def score_candidate(
     key = str(candidate.get("key") or "")
     role = str(candidate.get("role") or "")
     cost_tier = str(candidate.get("cost_tier") or "medium")
-    # 能力匹配: 工作类型要求角色 ⊆ 候选角色/能力
+    # 能力匹配 (硬门槛): 角色命中工作类型 → 1.0; 否则 0.0 (不参与路由, 防历史分压过专业匹配)
     want_roles = _ROLE_BY_WORK.get(work_type, ())
-    cap_hit = 1.0 if (want_roles and role in want_roles) else 0.4
+    cap_hit = 1.0 if (want_roles and role in want_roles) else 0.0
     hs = _history_stats(data_dir, key)
     if hs["runs"] > 0:
         fp = hs["first_pass_rate"] if hs["first_pass_rate"] is not None else 0.5
         vp = hs["verify_pass_rate"] if hs["verify_pass_rate"] is not None else 0.5
         cost_norm = min(1.0, (hs["avg_cost"] or 0.0) / 1.0)      # $1 封顶归一
         dur_norm = min(1.0, (hs["avg_duration"] or 0) / 600000)  # 10 分钟封顶归一
-        score = (w["first_pass"] * fp + w["verify_pass"] * vp
+        score = (cap_hit * (w["first_pass"] * fp + w["verify_pass"] * vp)
                  - w["cost"] * cost_norm - w["duration"] * dur_norm)
         return {"key": key, "role": role, "cost_tier": cost_tier, "work_type": work_type,
                 "score": round(score, 4), "capability_hit": cap_hit, "history": hs,
@@ -120,21 +120,60 @@ def score_candidate(
             "basis": "capability-only (无历史, 诚实)"}
 
 
+_ROLE_NORM: dict[str, str] = {
+    # 英文
+    "tester": "tester", "qa": "tester", "test": "tester",
+    "backend": "backend", "backend-developer": "backend",
+    "frontend": "frontend", "frontend-developer": "frontend",
+    "developer": "developer", "engineer": "developer",
+    "architect": "architect", "architecture": "architect",
+    "security": "security", "security-examiner": "security",
+    "product": "product", "product-manager": "product", "pm": "product",
+    "designer": "designer", "ux": "designer",
+    "writer": "writer", "reviewer": "reviewer",
+    # 中文
+    "测试工程师": "tester", "测试": "tester", "质量": "qa",
+    "后端开发": "backend", "后端": "backend",
+    "前端开发": "frontend", "前端": "frontend",
+    "开发工程师": "developer", "开发": "developer",
+    "架构师": "architect", "架构": "architect",
+    "安全": "security",
+    "产品经理": "product", "产品": "product",
+    "设计师": "designer", "设计": "designer",
+}
+
+
+def normalize_role(role: str) -> str:
+    """角色归一 (中英文 → 标准 role; 未命中 → 原样)。"""
+    r = str(role or "").strip().lower()
+    if r in _ROLE_NORM:
+        return _ROLE_NORM[r]
+    for k, v in _ROLE_NORM.items():
+        if k in r:
+            return v
+    return str(role or "assistant").strip() or "assistant"
+
+
 def build_candidates(
     adapters: list[ExternalExecutorAdapter],
-    imported_agents: list[dict[str, Any]],
+    agents: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """候选池: 导入的外部 agent (executor.role) + 适配器自身 (capabilities.roles)。"""
+    """候选池: 导入的外部 agent (带 source, 角色=推导) + 内部员工 (无 source, 角色=注册 role)
+    + 适配器自身 (capabilities.roles)。内部员工兜底 — 外部无专业匹配时仍能选对。"""
     cands: list[dict[str, Any]] = []
     for a in adapters:
         for role in (a.capabilities.roles or []):
             cands.append({"key": a.id, "name": a.name, "role": role, "cost_tier": a.capabilities.cost_tier,
                           "kind": "executor"})
-    for ag in imported_agents:
+    for ag in agents:
         aid = str(ag.get("id") or "")
-        role = str(ag.get("role") or "assistant")
+        if not aid:
+            continue
+        source = str(ag.get("source") or "")
+        role = normalize_role(str(ag.get("role") or "assistant"))
         cands.append({"key": aid, "name": str(ag.get("name") or aid), "role": role,
-                      "cost_tier": str(ag.get("cost_tier") or "medium"), "kind": "agent",
+                      "cost_tier": str(ag.get("cost_tier") or "medium"),
+                      "kind": "agent" if source else "internal",
                       "host": ag.get("host")})
     # 去重 (同 key 保留第一个)
     seen: set[str] = set()
@@ -173,18 +212,24 @@ def route(
     if not candidates:
         return {"pick": None, "work_type": work_type, "reason": "无候选 (未导入任何外部能力)",
                 "explicit": False, "basis": "fallback-no-candidates", "alternatives": []}
-    scored = sorted(
-        (score_candidate(c, work_type, data_dir, weights) for c in candidates),
-        key=lambda x: x["score"],
-        reverse=True,
-    )
-    best = scored[0]
+    scored = [score_candidate(c, work_type, data_dir, weights) for c in candidates]
+    # ② 能力匹配硬门槛: 有命中角色 → 只在命中的候选中选 (专业的人做专业的事)
+    matching = [s for s in scored if s["capability_hit"] >= 1.0]
+    degraded = False
+    pool = matching if matching else scored
+    if not matching:
+        degraded = True  # ⑥ 兜底: 无专业匹配 → 全候选降级选 (诚实标注)
+    pool_sorted = sorted(pool, key=lambda x: x["score"], reverse=True)
+    best = pool_sorted[0]
     # ④ 成本分级提示: 简单任务 (developer 兜底) 建议 low/medium, 复杂任务 (arch/security) 建议 medium/high
     tier_advice = "low|medium" if work_type in ("developer", "writer", "design") else "medium|high"
+    reason = f"能力匹配({best['role']}) + 历史效果分 {best['score']}"
+    if degraded:
+        reason += " (未匹配专业能力, 已降级)"
     return {
-        "pick": best["key"], "work_type": work_type, "reason": f"能力匹配({best['role']}) + 历史效果分 {best['score']}",
-        "explicit": False, "basis": best["basis"],
+        "pick": best["key"], "work_type": work_type, "reason": reason,
+        "explicit": False, "basis": best["basis"], "degraded": degraded,
         "tier_advice": tier_advice,
-        "alternatives": [s["key"] for s in scored[:8]],
-        "detail": scored[:8],
+        "alternatives": [s["key"] for s in pool_sorted[:8]],
+        "detail": pool_sorted[:8],
     }

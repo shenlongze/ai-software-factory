@@ -163,6 +163,7 @@ class SessionStore:
         scope: str | None = None,
         project_id: str | None = None,
         feature_id: str | None = None,
+        task_id: str | None = None,
     ) -> list[dict[str, Any]]:
         """按作用域过滤; 按 updated_at 倒序 (最近活跃在前)。"""
         with self._lock:
@@ -173,6 +174,8 @@ class SessionStore:
                 if project_id is not None and s.get("project_id") != project_id:
                     continue
                 if feature_id is not None and s.get("feature_id") != feature_id:
+                    continue
+                if task_id is not None and s.get("task_id") != task_id:
                     continue
                 out.append(dict(s))
             out.sort(key=lambda s: s.get("updated_at") or "", reverse=True)

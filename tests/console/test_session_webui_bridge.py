@@ -166,6 +166,31 @@ class TestSessionWebuiBridge:
         assert "当前任务" in block and "语音记账" in block
         assert "下一步" in block and "状态" in block
 
+    def test_task_continue_cross_session(self, app, monkeypatch):
+        """T-3: 新会话继续 → 找到上次锚定该任务的会话 (跨会话恢复)。"""
+        c = app["client"]
+        proj = app["proj"]
+        task = app["task"]
+        _patch_intent(monkeypatch, "task_continue", project=proj.name, task="语音记账")
+        # 会话 A: 锚定任务
+        r = c.post("/api/sessions", json={"scope": "project", "project_id": proj.id, "task_id": task["id"], "title": "A-讨论语音记账"})
+        sid_a = r.json()["id"]
+        r = c.post(f"/api/sessions/{sid_a}/messages", json={"message": "先做导出功能"})
+        assert r.status_code == 200
+        # 会话 B (新, 无锚定): 继续做 → 应定位任务 + 锚定
+        r = c.post("/api/sessions", json={"scope": "project", "project_id": proj.id, "title": "B-继续"})
+        sid_b = r.json()["id"]
+        r = c.post(f"/api/sessions/{sid_b}/messages", json={"message": "继续做 语音记账"})
+        assert r.status_code == 200, r.text
+        assert r.json()["session"]["task_id"] == task["id"]  # B 已锚定
+        # 跨会话定位: 按 task_id 能查到 A 和 B 两个会话
+        from factory_console.console_sessions import SessionStore
+        import json as _json
+        from pathlib import Path
+        store = SessionStore(app["root"] / "console_sessions.json")
+        hit = store.list_sessions(task_id=task["id"])
+        assert len(hit) >= 2, f"跨会话应至少 2 个 (A+B), got {len(hit)}"
+
     def test_settings(self, app, monkeypatch):
         c = app["client"]
         proj = app["proj"]

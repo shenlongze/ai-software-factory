@@ -102,6 +102,16 @@ class TestSessionStore:
         got = store.list_sessions(scope="project", feature_id="FEAT-1")
         assert [s["title"] for s in got] == ["细化A"]
 
+    def test_list_sessions_filter_task_id(self, tmp_path):
+        """T-3: 按 task_id 过滤会话 (跨会话恢复定位上次会话)。"""
+        store = _sessions.SessionStore(tmp_path / "console_sessions.json")
+        store.create_session(scope="project", project_id="P-1", task_id="TASK-1", title="会话A")
+        store.create_session(scope="project", project_id="P-1", task_id="TASK-2", title="会话B")
+        store.create_session(scope="project", project_id="P-1", title="会话C")
+        got = store.list_sessions(task_id="TASK-1")
+        assert [s["title"] for s in got] == ["会话A"]
+        assert store.list_sessions(task_id="TASK-X") == []
+
     def test_update_session_feature_anchor(self, tmp_path):
         store = _sessions.SessionStore(tmp_path / "console_sessions.json")
         s = store.create_session(scope="project", project_id="P-1", feature_id="FEAT-1")

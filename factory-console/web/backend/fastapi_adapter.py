@@ -3381,14 +3381,37 @@ def build_app(
                     status = str(detail.get("status") or "todo")
                     hist = detail.get("history") or []
                     last = hist[-1] if hist else None
-                    last_line = f"最近: {last.get('time','')[:16]} {last.get('actor','')} {last.get('action','')}" if last else "尚无历史"
-                    facts = (
-                        f"已锚定任务「{match['title']}」 (id: {match['id']}, 项目: {tgt.name})\n"
+                    lines = [
+                        f"已锚定任务「{match['title']}」 (id: {match['id']}, 项目: {tgt.name})",
                         f"状态: {status} · 优先级: {detail.get('priority') or '—'}"
-                        f" · exec绑定: {detail.get('exec_ref') or '无'}\n"
-                        f"{last_line}\n"
-                        f"下一步: 说『继续推进』我会接着做；或『标记完成/改成 P0』操作任务。"
-                    )
+                        f" · exec绑定: {detail.get('exec_ref') or '无'}",
+                    ]
+                    if last:
+                        lines.append(f"任务最近: {last.get('time','')[:16]} {last.get('actor','')} {last.get('action','')}")
+                    else:
+                        lines.append("任务最近: 尚无历史")
+                    # T-3: 跨会话恢复 — 找上次讨论过该任务的会话, 接上进展
+                    try:
+                        prev_sessions = [
+                            s for s in sessions_store.list_sessions(task_id=match["id"])
+                            if s.get("id") != session_id
+                        ]
+                        if prev_sessions:
+                            prev = prev_sessions[0]  # 最近活跃
+                            msgs = sessions_store.list_messages(prev["id"])
+                            last_msg = msgs[-1] if msgs else None
+                            prev_line = (
+                                f"上次会话: 「{prev.get('title') or '未命名'}」"
+                                f" ({(prev.get('updated_at') or '')[:16]})"
+                            )
+                            if last_msg:
+                                prev_line += f" · 上次说到: {str(last_msg.get('content') or '')[:60]}"
+                            lines.append(prev_line)
+                            lines.append("→ 跨会话已接上: 可继续讨论/推进 (上下文已注入)")
+                    except Exception:  # noqa: BLE001 — 上次会话定位失败 → 不阻断
+                        pass
+                    lines.append("下一步: 说『继续推进』我会接着做；或『标记完成/改成 P0』操作任务。")
+                    facts = "\n".join(lines)
                     action_target = {"url": f"#/project/{pid}/todo", "label": "查看任务"}
             try:
                 result = _sessions_mod.send_message(

@@ -3,6 +3,16 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.173] — 2026-08-27
+
+**T-3 跨会话恢复: 新会话继续 → 找到上次会话, 接上进展**。
+
+### Added
+
+- SessionStore.list_sessions(task_id) 过滤
+- task_continue 扩展: 定位任务后查上次锚定该任务的会话 (最近活跃),
+  注入「上次会话/上次说到」+ 跨会话已接上提示
+
 ## [v1.1.172] — 2026-08-27
 
 **T-2 任务上下文注入 (Founder: 会话任务连续 — 跨会话上下文延续)**。

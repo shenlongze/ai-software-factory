@@ -3,6 +3,18 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.169] — 2026-08-27
+
+**U-2 统一工具执行链 (Founder: 工具要正确调用 — Registry→Permission→Schema→Execute)**。
+
+### Added
+
+- tools/executor.py: 统一执行链 (Registry→Permission→Schema→Execute)
+- tools/adapters.py: 适配器 fn(root, project_id, params) — code_search/scan/list_tasks/
+  read_doc/backup/git_status/monitor/quality_score
+- 敏感工具确认 (git_ops 等); 规划中工具诚实拒绝; 未绑定执行函数诚实
+- API /api/tools/{id}/execute 先注册表链, 旧 ToolExecutor 兜底
+
 ## [v1.1.168] — 2026-08-27
 
 **U-1 统一工具注册表: 39 内置工具全量注册 (Founder: 工具要和 CLI/WebUI 连接)**。

@@ -467,11 +467,11 @@ class TestGlobalVersionDocs:
 
     def test_pyproject_version_1_1_78(self):
         pyproject = (REPO / "pyproject.toml").read_text(encoding="utf-8")
-        assert re.search(r'^version\s*=\s*"1\.1\.168"', pyproject, re.M), "pyproject 版本非 1.1.168"
+        assert re.search(r'^version\s*=\s*"1\.1\.169"', pyproject, re.M), "pyproject 版本非 1.1.169"
 
     def test_changelog_has_v1_1_78_entry(self):
         changelog = (REPO / "CHANGELOG.md").read_text(encoding="utf-8")
-        assert "## [v1.1.168]" in changelog
+        assert "## [v1.1.169]" in changelog
         assert "M3-5" in changelog or "UX/QA" in changelog or "ux/qa" in changelog
         assert "M3-6" in changelog or "ChangeControl" in changelog or "变更回流" in changelog
         assert "M3-7" in changelog or "审批门" in changelog
@@ -483,9 +483,9 @@ class TestGlobalVersionDocs:
             (ln for ln in features.splitlines() if ln.startswith("> 版本:")),
             "",
         )
-        assert "v1.1.168" in header, f"FEATURES 头版本未更新: {header}"
+        assert "v1.1.169" in header, f"FEATURES 头版本未更新: {header}"
         # 版本对照表含 v1.1.79 行
-        assert "| v1.1.168 |" in features
+        assert "| v1.1.169 |" in features
         # M3-5/6/7 已知缺口行 🚧 → ✅
         row = next(
             (ln for ln in features.splitlines() if "M3-5/6/7" in ln),

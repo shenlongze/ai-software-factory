@@ -2691,8 +2691,28 @@ def build_app(
 
     @app.post("/api/tools/{tool_id}/execute")
     def api_execute_tool(tool_id: str, body: _ToolExecuteBody) -> dict[str, Any]:
-        """执行 Tool (POST — {agent_id, input, context?} → {success, output?,
-        error?}; 直调 ToolExecutor: Lookup→Permission→Schema→Execute)。"""
+        """执行 Tool (U-2: 统一注册表执行链 Registry→Permission→Schema→Execute;
+        非注册表工具 → 旧 ToolExecutor 兜底)。"""
+        # 新: 统一注册表执行链 (39 内置工具)
+        try:
+            from ...tools.executor import execute_tool as _registry_execute
+
+            reg_result = _registry_execute(
+                tool_id,
+                body.input if isinstance(body.input, dict) else {"input": body.input},
+                context={"root": workspace_root, "project_id": body.context.get("project_id")
+                         if isinstance(body.context, dict) else None,
+                         "confirm": bool(isinstance(body.context, dict) and body.context.get("confirm"))},
+            )
+            if reg_result.get("ok") or reg_result.get("error", "").startswith(("工具未注册", "工具", "参数校验", "敏感")):
+                if not reg_result.get("ok") and "未绑定执行函数" in reg_result.get("error", ""):
+                    pass  # 未绑定 → 尝试旧执行器
+                else:
+                    return {"success": reg_result.get("ok"), "output": reg_result.get("output"),
+                            "error": reg_result.get("error")}
+        except Exception:  # noqa: BLE001 — 新链失败 → 旧链兜底
+            pass
+        # 旧: ToolExecutor 兜底
         try:
             result = _api.execute_tool(
                 service,

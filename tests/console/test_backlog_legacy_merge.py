@@ -1,4 +1,4 @@
-"""tests/console/test_backlog_legacy_merge.py — legacy tasks.json 并入 backlog 树 (v1.1.168)。
+"""tests/console/test_backlog_legacy_merge.py — legacy tasks.json 并入 backlog 树 (v1.1.169)。
 
 Founder: 任务页空 — legacy 有完整 epics/tasks 树, 并入 backlog。
 验证 service.list_backlog: 史诗→模块→故事→任务 四层树 (legacy + management 合并, 去重)。

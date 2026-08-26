@@ -3761,17 +3761,121 @@ class ConsoleService:
         result["story_id"] = bound_story
         return result
 
+    def _legacy_tasks(self, project_id: str) -> dict[str, Any] | None:
+        """legacy tasks.json (projects/<id>/tasks.json) → backlog 树 (阶段→模块→任务)。
+
+        Founder 2026-08-26: 任务树空 — legacy 有完整 epics/tasks, 并入 backlog。
+        形状: {epics: [{id,name}], features: [{id,name,epic_id}], tasks: [{id,title,
+        status,epic,feature}]}; 失败安全 (缺文件/损坏 → None)。
+        """
+        ws_root = Path(getattr(self._workspace, "root", None) or "")
+        candidates = []
+        if ws_root.is_dir():
+            candidates = [
+                ws_root / "projects" / project_id,
+                ws_root / "workspace" / "projects" / project_id,
+            ]
+        for pdir in candidates:
+            tf = pdir / "tasks.json"
+            try:
+                data = json.loads(tf.read_text(encoding="utf-8")) or {}
+            except Exception:  # noqa: BLE001
+                continue
+            if not isinstance(data, dict):
+                continue
+            eps = data.get("epics") or []
+            ts = data.get("tasks") or []
+            if not eps and not ts:
+                continue
+            epic_ids = [str(e) for e in eps] if isinstance(eps, list) else []
+            # 按 (epic, feature) 分组 → 构造 史诗→模块→故事→任务 四层树
+            groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
+            for t in ts:
+                if not isinstance(t, dict):
+                    continue
+                tid = str(t.get("id") or "")
+                if not tid:
+                    continue
+                ep = str(t.get("epic") or "")
+                feat = str(t.get("feature") or "") or ep
+                groups.setdefault((ep, feat), []).append(t)
+            if not groups:
+                return None
+            epics = [
+                {
+                    "id": ep,
+                    "name": ep,
+                    "children": [f"{ep}-{feat}" for (gep, feat) in groups if gep == ep],
+                }
+                for ep in epic_ids
+                if any(gep == ep for gep, _ in groups)
+            ]
+            features = [
+                {"id": f"{ep}-{feat}", "name": feat, "epic_id": ep, "children": [f"story-{ep}-{feat}"]}
+                for (ep, feat) in groups
+            ]
+            stories = [
+                {
+                    "id": f"story-{ep}-{feat}",
+                    "name": f"{ep} · {feat}",
+                    "children": [str(t["id"]) for t in items],
+                }
+                for (ep, feat), items in groups.items()
+            ]
+            tasks = [
+                {
+                    "id": str(t["id"]),
+                    "title": str(t.get("name") or ""),
+                    "status": str(t.get("status") or "todo"),
+                    "epic": ep,
+                    "feature": feat,
+                    "priority": None,
+                    "assignee": "",
+                }
+                for (ep, feat), items in groups.items()
+                for t in items
+            ]
+            return {"epics": epics, "features": features, "stories": stories, "tasks": tasks}
+        return None
+
+    @staticmethod
+    def _merge_by_id(base: list[dict[str, Any]], extra: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        seen = {str(x.get("id")) for x in base if x.get("id")}
+        return base + [x for x in extra if str(x.get("id")) not in seen]
+
     def list_backlog(self, project_id: str) -> dict[str, Any] | None:
-        """GET /backlog — 全量分组 (epics/features/stories/tasks; 失败安全空)。"""
+        """GET /backlog — 全量分组 (epics/features/stories/tasks; 失败安全空)。
+
+        合并 legacy tasks.json 树 (阶段→模块→任务) — 任务页不空 (Founder 2026-08-26)。
+        """
         mgmt = self._management_store(project_id)
+        legacy = self._legacy_tasks(project_id)
         if mgmt is None:
+            # 无 management store 但 legacy 有任务树 → 返回 legacy (任务页不空)
+            if legacy:
+                return {
+                    "project_id": project_id,
+                    "epics": legacy["epics"],
+                    "features": legacy["features"],
+                    "stories": legacy.get("stories") or [],
+                    "tasks": legacy["tasks"],
+                }
             return None
+        epics = [e.to_dict() for e in mgmt.list_epics()]
+        features = [f.to_dict() for f in mgmt.list_features()]
+        stories = [s.to_dict() for s in mgmt.list_stories()]
+        tasks = [t.to_dict() for t in mgmt.list_tasks()]
+        if legacy:
+            epics = self._merge_by_id(epics, legacy["epics"])
+            features = self._merge_by_id(features, legacy["features"])
+            stories = self._merge_by_id(stories, legacy.get("stories") or [])
+            tasks = self._merge_by_id(tasks, legacy["tasks"])
         return {
             "project_id": project_id,
-            "epics": [e.to_dict() for e in mgmt.list_epics()],
-            "features": [f.to_dict() for f in mgmt.list_features()],
-            "stories": [s.to_dict() for s in mgmt.list_stories()],
-            "tasks": [t.to_dict() for t in mgmt.list_tasks()],
+            "epics": epics,
+            "features": features,
+            "stories": stories,
+            "tasks": tasks,
         }
 
     def get_task(self, project_id: str, task_id: str) -> dict[str, Any] | None:

@@ -3,6 +3,20 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.139] — 2026-08-26
+
+**任务页树填充: legacy tasks.json 并入 backlog (史诗→模块→故事→任务)**。
+
+### Added
+
+- backlog 合并 legacy tasks.json 树 (Founder: 任务页空): epics(M2..P0)/features/
+  stories/tasks 四层树; mgmt 缺失时 legacy 兜底; 去重合并
+- 任务页 (AfTodoTreePage) 不再空 — 真实 65 节点树渲染
+
+### 验证
+
+- 后端 backlog_legacy_merge 3 passed · 前端 685 passed · DOM 实测任务树渲染
+
 ## [v1.1.138] — 2026-08-26
 
 **运维页快照分页 + 版本说明 (Founder)**。

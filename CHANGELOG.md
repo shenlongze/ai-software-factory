@@ -3,7 +3,22 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.192] — 2026-08-27
+
+**M2 宿主资产发现与导入 (agents/skills/plugins/persona → AI 员工/技能)**。
+
+### Added
+
+- external_executor/host_assets.py + asset_parsers.py: 通用格式解析
+  (toml / md-frontmatter / yaml / keyvalue / skill-md 复用 U-4 / dirs)
+- 标签: source (codex/claude/hermes) + kind (agent/skill/plugin/persona) + role (能力推导)
+- 冲突: ID 命名空间隔离 (codex.<name>) · 幂等刷新 · 手工同 ID 跳过保留
+- API: GET /{id}/assets (只读扫描) + POST /{id}/import (导入)
+- CLI: factory external-ai assets|import
+- WebUI: 外部能力 tab → 资产清单/导入 (分组 source+kind+role)
+
 ## [v1.1.191] — 2026-08-27
+
 
 **M1 外部执行器通用适配层 (设计文档: docs/sprint10/外部执行器通用适配层-设计.md)**。
 

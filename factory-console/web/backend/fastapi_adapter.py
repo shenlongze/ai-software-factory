@@ -1754,6 +1754,46 @@ def build_app(
         result["host_agent"] = agent_name or None
         return result
 
+    # ============ M2 (v1.1.192): 宿主资产发现与导入 (agents/skills/plugins/persona)
+    @app.get("/api/external-ai/{adapter_id}/assets")
+    def api_external_ai_assets(adapter_id: str) -> dict[str, Any]:
+        """扫描适配器宿主资产 (只读, 未导入): agents/skills/plugins/persona。"""
+        registry = _external_registry()
+        if registry is None:
+            raise HTTPException(status_code=503, detail="external_executor 模块不可用")
+        adapter = registry.get(adapter_id)
+        if adapter is None:
+            raise HTTPException(status_code=404, detail=f"适配器不存在: {adapter_id}")
+        try:
+            _host = _console_import("external_executor.host_assets")
+            assets = _host.scan_adapter_assets(adapter)
+        except Exception as exc:  # noqa: BLE001 — 扫描失败 → 诚实错误
+            raise HTTPException(status_code=500, detail=f"资产扫描失败: {exc}") from exc
+        return {"adapter": adapter_id, "assets": assets, "count": len(assets)}
+
+    @app.post("/api/external-ai/{adapter_id}/import")
+    def api_external_ai_import(adapter_id: str) -> dict[str, Any]:
+        """导入资产: agents → AI 员工 (agents.json), skills → skills.json;
+        plugins/persona → catalog (不注册)。命名空间隔离 + 幂等 + 手工冲突跳过。"""
+        registry = _external_registry()
+        if registry is None:
+            raise HTTPException(status_code=503, detail="external_executor 模块不可用")
+        adapter = registry.get(adapter_id)
+        if adapter is None:
+            raise HTTPException(status_code=404, detail=f"适配器不存在: {adapter_id}")
+        try:
+            _host = _console_import("external_executor.host_assets")
+            assets = _host.scan_adapter_assets(adapter)
+            result = _host.import_assets(
+                adapter, assets,
+                agents_file=Path(workspace_root or DEFAULT_ROOT) / "agents" / "agents.json",
+                skills_file=Path(workspace_root or DEFAULT_ROOT) / "skills" / "skills.json",
+            )
+        except Exception as exc:  # noqa: BLE001 — 导入失败 → 诚实错误
+            raise HTTPException(status_code=500, detail=f"资产导入失败: {exc}") from exc
+        result["adapter"] = adapter_id
+        return result
+
     @app.get("/api/agents")
     def api_agents_list():
         """Agent 清单 (只读 agents.json)。"""

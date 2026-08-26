@@ -435,6 +435,10 @@ export const api = {
     sendJson<{ saved: boolean; id: string }>('/api/external-ai', body),
   deleteExternalAi: (id: string) =>
     deleteJson<{ deleted: boolean }>(`/api/external-ai/${encodeURIComponent(id)}`),
+  externalAiAssets: (id: string) =>
+    getJson<{ adapter: string; assets: Array<{ id: string; name: string; kind: string; source: string; role?: string; description?: string; host?: Record<string, unknown> }>; count: number }>(`/api/external-ai/${encodeURIComponent(id)}/assets`),
+  importExternalAi: (id: string) =>
+    sendJson<{ adapter: string; imported_agents: string[]; imported_skills: string[]; skipped: string[]; catalog: Array<{ id: string; name: string }>; imported: number }>(`/api/external-ai/${encodeURIComponent(id)}/import`, {}),
   probeExternalAi: (id: string) =>
     sendJson<{ id: string; ok: boolean; path?: string | null; version?: string; usage?: string; error?: string }>(`/api/external-ai/${encodeURIComponent(id)}/probe`, {}),
   // U-4 (v1.1.189): 扫描外部 SKILL.md → 加载进 skills.json

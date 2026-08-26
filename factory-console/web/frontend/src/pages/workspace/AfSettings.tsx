@@ -241,6 +241,37 @@ function ExternalAiTab(): JSX.Element {
       flash(`删除失败: ${String(err)}`);
     }
   }, [flash, load]);
+  const [assets, setAssets] = useState<Array<{ id: string; name: string; kind: string; role?: string }>>([]);
+  const [assetsFor, setAssetsFor] = useState<string>('');
+  const [importMsg, setImportMsg] = useState('');
+
+  const doAssets = useCallback(async (id: string) => {
+    try {
+      const r = await api.externalAiAssets(id);
+      setAssets(r.assets ?? []);
+      setAssetsFor(id);
+    } catch (err) {
+      flash(`资产扫描失败: ${String(err)}`);
+    }
+  }, [flash]);
+
+  const doImport = useCallback(async (id: string) => {
+    setBusy(true);
+    try {
+      const r = await api.importExternalAi(id);
+      setImportMsg(
+        `👤 Agent ${r.imported_agents.length} · 🧩 Skill ${r.imported_skills.length}` +
+        (r.skipped.length ? ` · ⏭ 跳过 ${r.skipped.length}` : '') +
+        (r.catalog.length ? ` · 📦 Catalog ${r.catalog.length}` : ''),
+      );
+      flash(`导入完成: ${r.imported} 项`);
+      await doAssets(id);
+    } catch (err) {
+      flash(`导入失败: ${String(err)}`);
+    } finally {
+      setBusy(false);
+    }
+  }, [flash, doAssets]);
 
   return (
     <section data-testid="af-settings-external-ai">
@@ -290,11 +321,27 @@ function ExternalAiTab(): JSX.Element {
                 {a.found ? `✅ ${a.path}` : '⚠️ 未发现'} · binary={a.binary}
               </span>
               <span className="af-settings-list-actions">
+                <button type="button" className="af-settings-action" onClick={() => void doAssets(a.id)}>资产</button>
+                <button type="button" className="af-settings-action" onClick={() => void doImport(a.id)} disabled={busy}>导入</button>
                 <button type="button" className="af-settings-action" onClick={() => void doProbe(a.id)}>探测</button>
                 {!a.builtin ? (
                   <button type="button" className="af-settings-action af-settings-action--danger" onClick={() => void doDelete(a.id)}>删除</button>
                 ) : null}
               </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {importMsg ? <p className="af-composer-msg" data-testid="af-external-ai-import-msg">{importMsg}</p> : null}
+      {assetsFor && assets.length > 0 ? (
+        <div className="af-settings-assets" data-testid="af-external-ai-assets">
+          <h4 className="af-settings-h4">资产清单（{assetsFor} · {assets.length}）</h4>
+          {assets.map((a) => (
+            <div key={a.id} className="af-settings-asset-row">
+              <span className="af-settings-badge">{a.kind}</span>
+              <span>{a.name}</span>
+              <code>{a.id}</code>
+              {a.role ? <span className="af-settings-badge">role: {a.role}</span> : null}
             </div>
           ))}
         </div>

@@ -2689,12 +2689,46 @@ class FactoryCLI:
             return 0
         aid = str(getattr(args, "id", "") or "").strip()
         if not aid:
-            print("用法: factory external-ai probe|run --id <适配器id> ...")
+            print("用法: factory external-ai <probe|run|assets|import> --id <适配器id> ...")
             return 2
         adapter = registry.get(aid)
         if adapter is None:
             print(f"未找到适配器: {aid} (external-ai list)")
             return 1
+        if action == "assets":
+            from .external_executor import host_assets as _ee_host
+
+            assets = _ee_host.scan_adapter_assets(adapter)
+            print(f"=== {adapter.name} 宿主资产扫描 ({len(assets)}) ===")
+            if not assets:
+                print("  无资产 (适配器未声明 host_assets 或目录为空)")
+                return 0
+            groups: dict[str, list[dict]] = {}
+            for a in assets:
+                groups.setdefault(str(a["kind"]), []).append(a)
+            for kind in ("agent", "skill", "plugin", "persona"):
+                for a in groups.get(kind, []):
+                    print(f"  [{kind}] {a['id']} | {a.get('name')}"
+                          + (f" | role={a.get('role')}" if a.get("role") else ""))
+            return 0
+        if action == "import":
+            from .external_executor import host_assets as _ee_host
+
+            assets = _ee_host.scan_adapter_assets(adapter)
+            result = _ee_host.import_assets(
+                adapter, assets,
+                agents_file=self.data_dir / "agents" / "agents.json",
+                skills_file=self.data_dir / "skills" / "skills.json",
+            )
+            print(f"=== 导入 {adapter.name} 资产 ===")
+            print(f"  👤 Agent 导入 {len(result['imported_agents'])}: {', '.join(result['imported_agents'][:8]) or '无'}")
+            print(f"  🧩 Skill 导入 {len(result['imported_skills'])}: {', '.join(result['imported_skills'][:8]) or '无'}")
+            if result["skipped"]:
+                print(f"  ⏭ 跳过 (手工冲突) {len(result['skipped'])}: {', '.join(result['skipped'][:5])}")
+            if result["catalog"]:
+                print(f"  📦 Catalog (不注册) {len(result['catalog'])}: {', '.join(c['name'] for c in result['catalog'][:5])}")
+            print(f"  共导入 {result['imported']} 项")
+            return 0
         if action == "probe":
             path = _ee_exec.discover_binary(adapter)
             pr = _ee_exec.probe(adapter, path)
@@ -4300,9 +4334,9 @@ def build_parser() -> argparse.ArgumentParser:
         "external-ai", help="外部执行器通用适配层 (M1): scan/list/probe/run — 声明式适配器, 每产品一个 yaml"
     )
     p_external_ai.add_argument(
-        "external_ai_action", nargs="?", choices=["scan", "list", "probe", "run"], default="list",
-        metavar="scan|list|probe|run",
-        help="scan — 扫描全部适配器(发现+探测); list — 适配器配置清单; probe — 探测单个; run — 委派执行",
+        "external_ai_action", nargs="?", choices=["scan", "list", "probe", "run", "assets", "import"], default="list",
+        metavar="scan|list|probe|run|assets|import",
+        help="scan — 扫描适配器; list — 配置清单; probe — 探测; run — 委派; assets — 扫描宿主资产; import — 导入资产",
     )
     p_external_ai.add_argument("--id", default="", help="适配器 id (probe/run)")
     p_external_ai.add_argument("--prompt", default="", help="委派执行的 prompt (run)")

@@ -288,6 +288,13 @@ class _ExternalAiBody(BaseModel):
     allow_dangerous: bool = False
 
 
+class _ExternalAiRouteBody(BaseModel):
+    """POST /api/external-ai/route body (M5): {task, explicit_agent?}。"""
+
+    task: str
+    explicit_agent: str = ""
+
+
 class _ExternalAiCostBody(BaseModel):
     """POST /api/external-ai/cost body (M4.3): {result_id, cost_usd, currency?}。"""
 
@@ -1791,6 +1798,30 @@ def build_app(
         )
         result["result_id"] = record.get("result_id")
         return result
+
+    @app.post("/api/external-ai/route")
+    def api_external_ai_route(body: _ExternalAiRouteBody) -> dict[str, Any]:
+        """M5 路由: 任务 → 选 agent/skill (能力匹配 + 历史加权 + 用户显式 + 兜底)。"""
+        registry = _external_registry()
+        adapters = registry.list() if registry is not None else []
+        # 导入的外部 agent (agents.json 带 source)
+        imported: list[dict[str, Any]] = []
+        try:
+            _ag = _read_json_map(Path(workspace_root or DEFAULT_ROOT) / "agents" / "agents.json")
+            agents = _ag.get("agents") if isinstance(_ag, dict) and isinstance(_ag.get("agents"), dict) else None
+            if isinstance(agents, dict):
+                imported = [v for v in agents.values() if isinstance(v, dict) and v.get("source")]
+        except Exception:  # noqa: BLE001
+            imported = []
+        try:
+            _router = _console_import("external_executor.router")
+            return _router.route(
+                body.task, adapters, imported,
+                workspace_root or DEFAULT_ROOT,
+                explicit_agent=body.explicit_agent,
+            )
+        except Exception as exc:  # noqa: BLE001 — 路由失败 → 诚实错误
+            raise HTTPException(status_code=500, detail=f"路由失败: {exc}") from exc
 
     @app.post("/api/external-ai/cost")
     def api_external_ai_cost(body: _ExternalAiCostBody) -> dict[str, Any]:

@@ -3,7 +3,21 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.199] — 2026-08-27
+
+**M5 路由层 — 专业的人做专业的事 (能力匹配 + 历史加权 + 成本分级 + 用户显式 + 兜底)**。
+
+### Added
+
+- external_executor/router.py: classify_task (任务→工作类型) · build_candidates (导入 agent + 适配器能力) ·
+  score_candidate (历史加权 4/3/2/1: 首次通过/验证通过/成本/耗时; 无历史→能力匹配分, 诚实标注) ·
+  route (⑤用户显式优先 → ②能力匹配 → ③历史加权排序 → ④成本分级建议 → ⑥兜底)
+- 反馈学习: 委派 → 验证/回修回写 EXS → 路由下次读 EXS 自动更新 (越用越准)
+- API: POST /api/external-ai/route; CLI: factory external-ai route --task
+- 测试: classify/score/route/HTTP 7 用例
+
 ## [v1.1.198] — 2026-08-27
+
 
 **监控补维度: 成本 + 时间粒度 + 内部 vs 外部对比 (M4.3)**。
 

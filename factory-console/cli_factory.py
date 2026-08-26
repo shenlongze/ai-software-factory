@@ -2575,6 +2575,31 @@ class FactoryCLI:
         from . import local_ai as _local_ai
 
         action = getattr(args, "local_ai_action", "scan") or "scan"
+        if action == "route":
+            from .external_executor import router as _ee_router
+
+            task = str(getattr(args, "task", "") or "").strip()
+            if not task:
+                print("用法: factory external-ai route --task <任务描述> [--agent <候选id>]")
+                return 2
+            explicit = str(getattr(args, "id", "") or "").strip()
+            # 导入的外部 agent
+            imported: list[dict] = []
+            try:
+                data = _load_json_safe(self.data_dir / "agents" / "agents.json")
+                agents = data.get("agents") if isinstance(data, dict) else None
+                if isinstance(agents, dict):
+                    imported = [v for v in agents.values() if isinstance(v, dict) and v.get("source")]
+            except Exception:  # noqa: BLE001
+                imported = []
+            r = _ee_router.route(task, registry.list(), imported, self.data_dir, explicit_agent=explicit)
+            print(f"=== 路由: {r['work_type']} ===")
+            print(f"  🎯 选: {r['pick'] or '无'}" + (f" (用户显式)" if r.get("explicit") else f" ({r['reason']})"))
+            if r.get("tier_advice"):
+                print(f"  成本建议: {r['tier_advice']}")
+            if r.get("alternatives"):
+                print(f"  候选: {', '.join(r['alternatives'][:6])}")
+            return 0 if r["pick"] else 1
         if action == "verify":
             rid = str(getattr(args, "result_id", "") or "").strip()
             if not rid:
@@ -2754,6 +2779,31 @@ class FactoryCLI:
                 print(f"  📦 Catalog (不注册) {len(result['catalog'])}: {', '.join(c['name'] for c in result['catalog'][:5])}")
             print(f"  共导入 {result['imported']} 项")
             return 0
+        if action == "route":
+            from .external_executor import router as _ee_router
+
+            task = str(getattr(args, "task", "") or "").strip()
+            if not task:
+                print("用法: factory external-ai route --task <任务描述> [--agent <候选id>]")
+                return 2
+            explicit = str(getattr(args, "id", "") or "").strip()
+            # 导入的外部 agent
+            imported: list[dict] = []
+            try:
+                data = _load_json_safe(self.data_dir / "agents" / "agents.json")
+                agents = data.get("agents") if isinstance(data, dict) else None
+                if isinstance(agents, dict):
+                    imported = [v for v in agents.values() if isinstance(v, dict) and v.get("source")]
+            except Exception:  # noqa: BLE001
+                imported = []
+            r = _ee_router.route(task, registry.list(), imported, self.data_dir, explicit_agent=explicit)
+            print(f"=== 路由: {r['work_type']} ===")
+            print(f"  🎯 选: {r['pick'] or '无'}" + (f" (用户显式)" if r.get("explicit") else f" ({r['reason']})"))
+            if r.get("tier_advice"):
+                print(f"  成本建议: {r['tier_advice']}")
+            if r.get("alternatives"):
+                print(f"  候选: {', '.join(r['alternatives'][:6])}")
+            return 0 if r["pick"] else 1
         if action == "verify":
             rid = str(getattr(args, "result_id", "") or "").strip()
             if not rid:
@@ -4399,11 +4449,12 @@ def build_parser() -> argparse.ArgumentParser:
         "external-ai", help="外部执行器通用适配层 (M1): scan/list/probe/run — 声明式适配器, 每产品一个 yaml"
     )
     p_external_ai.add_argument(
-        "external_ai_action", nargs="?", choices=["scan", "list", "probe", "run", "assets", "import", "verify"], default="list",
-        metavar="scan|list|probe|run|assets|import|verify",
-        help="scan — 扫描; list — 配置; probe — 探测; run — 委派(写执行记录); assets — 宿主资产; import — 导入; verify — 验证回写",
+        "external_ai_action", nargs="?", choices=["scan", "list", "probe", "run", "assets", "import", "verify", "route"], default="list",
+        metavar="scan|list|probe|run|assets|import|verify|route",
+        help="scan — 扫描; list — 配置; probe — 探测; run — 委派(写执行记录); assets — 宿主资产; import — 导入; verify — 验证回写; route — 路由选 agent",
     )
     p_external_ai.add_argument("--result-id", default="", help="执行记录 id (verify)")
+    p_external_ai.add_argument("--task", default="", help="任务描述 (route)")
     p_external_ai.add_argument("--method", default="manual", help="验证方式 (verify: manual/test/reviewer)")
     p_external_ai.add_argument("--result", default="pass", help="验证结果 (verify: pass/fail/unknown)")
     p_external_ai.add_argument("--score", default="", help="验证分数 (verify, 可选)")

@@ -75,9 +75,13 @@ describe('AfWorkspaceShell (AI OS 三栏壳)', () => {
     expect(screen.getByTestId('af-sidebar')).toBeInTheDocument();
     expect(screen.getByTestId('af-main-content')).toBeInTheDocument();
     expect(screen.getByTestId('af-b-tabs')).toBeInTheDocument();
-    // 预览并入 B 列: 点"预览"标签页 → 预览窗口出现在主区
+    // 预览默认收起 (Founder A 方案): 不默认展示, 点标签才打开
+    expect(screen.queryByTestId('af-preview-window')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '预览' }));
     expect(await screen.findByTestId('af-preview-window')).toBeInTheDocument();
+    // 切回页面标签 → 预览关闭
+    await user.click(screen.getByRole('button', { name: /页面:/ }));
+    expect(screen.queryByTestId('af-preview-window')).not.toBeInTheDocument();
     // AI 会话栏 (C 列)
     expect(screen.getByTestId('af-conversation-panel')).toBeInTheDocument();
     for (const label of NAV_LABELS) {

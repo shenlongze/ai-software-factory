@@ -12,7 +12,9 @@
  *   状态栏    — AfStatusBar (模型/作用域/上下文/版本)
  *
  * 快捷键 (VSCode 习惯): Cmd/Ctrl+B 切 A 列 · Cmd/Ctrl+J 切 C 列 · Cmd/Ctrl+K 新建会话。
- * 收起状态持久: af.sidebar.collapsed / af.preview.open (localStorage)。
+ * 收起状态持久: 仅 af.sidebar.collapsed (localStorage)。
+ * 预览 (Founder 2026-08-26 A 方案): 默认收起、不记住上次状态 — 每次进来
+ * 中间显示页面, 预览只在点标签时打开 (纯内存态, 刷新即复位)。
  */
 
 import { useCallback, useEffect, useState } from 'react';
@@ -24,7 +26,6 @@ import { useConversation } from './ConversationContext';
 import './af.css';
 
 export const SIDEBAR_COLLAPSED_KEY = 'af.sidebar.collapsed';
-const PREVIEW_OPEN_KEY = 'af.preview.open';
 
 function readFlag(key: string): boolean {
   try {
@@ -68,8 +69,17 @@ export function AfWorkspaceFrame({
   scopeLabel,
 }: AfWorkspaceFrameProps): JSX.Element {
   const [collapsed, setCollapsed] = useState<boolean>(() => readFlag(SIDEBAR_COLLAPSED_KEY));
-  const [previewOpen, setPreviewOpen] = useState<boolean>(() => readFlag(PREVIEW_OPEN_KEY));
+  const [previewOpen, setPreviewOpen] = useState<boolean>(false); // 默认收起, 不持久
   const conversation = useConversation();
+
+  // 清理历史持久化的预览状态 (旧版本 localStorage af.preview.open) — 一次复位
+  useEffect(() => {
+    try {
+      window.localStorage.removeItem('af.preview.open');
+    } catch {
+      /* 无 localStorage → 忽略 */
+    }
+  }, []);
 
   const toggleSidebar = useCallback(() => {
     setCollapsed((prev) => {
@@ -79,10 +89,7 @@ export function AfWorkspaceFrame({
   }, []);
 
   const togglePreview = useCallback(() => {
-    setPreviewOpen((prev) => {
-      writeFlag(PREVIEW_OPEN_KEY, !prev);
-      return !prev;
-    });
+    setPreviewOpen((prev) => !prev);
   }, []);
 
   // 快捷键: Cmd/Ctrl+B 切侧栏 · J 切会话 · K 新建会话

@@ -1968,6 +1968,31 @@ class FactoryCLI:
     def tools(self, args: argparse.Namespace) -> int:
         """工具发现与注册 (M1 · 增强层): list — 扫描本机 AI CLI + MCP server;
         doctor — 同上 + 显示可调用状态。只读, 零修改。"""
+        action = getattr(args, "tools_action", "list") or "list"
+        if action in ("registry", "show"):
+            from .tools.registry import get_tool, list_tools, summary
+
+            if action == "show":
+                tool = get_tool(getattr(args, "tool_id", None) or "")
+                if tool is None:
+                    print(f"❌ 未找到工具: {getattr(args, 'tool_id', '')} (registry 看清单)", file=sys.stderr)
+                    return 1
+                print(f"=== 工具 {tool['id']} ===")
+                for k in ("name", "stage", "status", "desc", "keywords", "cli", "api", "intent"):
+                    print(f"  {k}: {tool.get(k) or '—'}")
+                return 0
+            s = summary()
+            print(f"=== 内置工具注册表 (U-1) — 共 {s['total']} 个 ===")
+            print(f"状态: 已实现 {s['by_status']['implemented']} · 规划 {s['by_status']['planned']}")
+            for stage in ("设计", "开发", "测试", "部署", "运维"):
+                rows = list_tools(stage)
+                print(f"\n[{stage} · {len(rows)}]")
+                for t in rows:
+                    mark = "✅" if t["status"] == "implemented" else "⬜"
+                    print(f"  {mark} {t['id']:<16} {t['name']}")
+            print("\n详情: factory tools show <id>")
+            return 0
+
         from .session.tools import discover_all, format_tools
 
         try:
@@ -4006,9 +4031,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_approval.add_argument("--comment", default="", help="(decide) 审批意见 (reject 反馈给修复循环)")
     p_tools = sub.add_parser("tools", help="工具发现与注册 (增强层: AI CLI + MCP server)")
     p_tools.add_argument(
-        "tools_action", choices=["list", "doctor"], nargs="?", default="list",
-        metavar="动作", help="list — 发现本机 AI CLI + MCP server; doctor — 含连通性检查",
+        "tools_action", choices=["list", "doctor", "registry", "show"], nargs="?", default="list",
+        metavar="动作",
+        help="list — 发现本机 AI CLI + MCP server; doctor — 含连通性检查; "
+             "registry — 内置工具注册表 (39 工具, U-1); show <id> — 单工具详情",
     )
+    p_tools.add_argument("tool_id", nargs="?", default=None, help="工具 id (show)")
     p_config = sub.add_parser(
         "config", help="Factory 运行时配置 (show/set/check/path)"
     )

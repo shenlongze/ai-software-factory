@@ -2668,8 +2668,26 @@ def build_app(
 
     @app.get("/api/tools")
     def api_list_tools() -> dict[str, Any]:
-        """Tool 清单 (GET — ToolRegistry 当前可用 Tool; 未装配 → [] 失败安全)。"""
-        return _api.list_tools(service, logger=event_logger)
+        """Tool 清单 (U-1: 统一注册表 39 内置工具 + ToolRegistry 运行时工具; 失败安全)。"""
+        try:
+            from ...tools.registry import list_tools as _registry_tools, summary as _registry_summary
+
+            builtin = _registry_tools()
+        except Exception:  # noqa: BLE001 — 注册表缺失 → 空
+            builtin = []
+        try:
+            runtime = _api.list_tools(service, logger=event_logger)
+            runtime_items = runtime.get("tools") if isinstance(runtime, dict) else runtime
+        except Exception:  # noqa: BLE001
+            runtime_items = []
+        if not isinstance(runtime_items, list):
+            runtime_items = []
+        known = {t.get("id") for t in builtin if isinstance(t, dict)}
+        for rt in runtime_items:
+            if isinstance(rt, dict) and rt.get("id") not in known:
+                builtin.append(rt)
+        return {"tools": builtin, "count": len(builtin),
+                "summary": _registry_summary() if builtin else {}}
 
     @app.post("/api/tools/{tool_id}/execute")
     def api_execute_tool(tool_id: str, body: _ToolExecuteBody) -> dict[str, Any]:

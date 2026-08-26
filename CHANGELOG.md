@@ -3,6 +3,17 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.168] — 2026-08-27
+
+**U-1 统一工具注册表: 39 内置工具全量注册 (Founder: 工具要和 CLI/WebUI 连接)**。
+
+### Added
+
+- tools/registry.py: 39 工具唯一事实源 (设计7/开发11/测试7/部署5/运维9;
+  已实现 23 / 规划 16), 每工具: id/name/stage/status/desc/keywords/cli/api/intent/fn
+- CLI: factory tools registry (按阶段清单) / show <id> (详情)
+- API: /api/tools 合并注册表 (39 内置 + 运行时工具)
+
 ## [v1.1.167] — 2026-08-27
 
 **X-1 数据保护落地: factory backup + factory git (Founder: 数据资产零保护最致命)**。

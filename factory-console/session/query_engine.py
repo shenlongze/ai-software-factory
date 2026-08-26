@@ -171,11 +171,20 @@ _INTENT_LLM_PROMPT = """把用户的提问转成标准查询意图 (只输出 JS
 
 
 def parse_intent_llm(question: str, llm_fn: Any) -> dict[str, Any]:
-    """LLM 意图解析 (标准 JSON); 失败/非法 → 确定性 fallback (诚实不崩)。"""
+    """意图解析: 确定性高置信动作优先, 否则 LLM JSON; 失败 → 确定性 fallback。
+
+    创建类动作 (create_project) 是强关键词信号 — 不交给 LLM 覆写成 chat,
+    并从问句确定性提取项目名。
+    """
+    import re
+
+    det = parse_intent(question)
+    if det["intent"] == "create_project":
+        name = re.sub(r"^(做一个|创建一个|开发一个|帮我做个|帮我做|新建一个项目)\s*", "", question.strip())
+        name = name.strip() or None
+        return {"intent": "create_project", "project": (name[:24] if name else None)}
     if llm_fn is not None:
         try:
-            import re
-
             raw = str(llm_fn(_INTENT_LLM_PROMPT.format(question=question)) or "").strip()
             m = re.search(r"\{.*\}", raw, re.DOTALL)
             if m:

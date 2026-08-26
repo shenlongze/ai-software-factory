@@ -1820,6 +1820,18 @@
   margin-left: 8px;
 }
 
+.af-tree-count {
+  margin-left: 8px;
+  flex: none;
+  font-size: 11px;
+  color: var(--c-text2);
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
+  border-radius: 6px;
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+
 .af-tree-progress-wrap .af-progress-bar {
   width: 72px;
 }

@@ -813,11 +813,11 @@ class TestVersionBump:
     def test_v1_1_95_synced(self):
         """契约 11: v1.1.95 — pyproject + CHANGELOG + FEATURES + 待办清单同步。"""
         pyproject = (_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-        assert re.search(r'^version\s*=\s*"1\.1\.179"', pyproject, re.M)
+        assert re.search(r'^version\s*=\s*"1\.1\.180"', pyproject, re.M)
         changelog = (_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-        assert "## [v1.1.179]" in changelog
+        assert "## [v1.1.180]" in changelog
         features = (_ROOT / "docs" / "FEATURES.md").read_text(encoding="utf-8")
-        assert "v1.1.179" in features
+        assert "v1.1.180" in features
         backlog = (_ROOT / "docs" / "sprint10" / "待办清单-已发现未落地.md").read_text(encoding="utf-8")
         for marker in ("K-5", "P0-1", "P0-4", "P0-5", "C-1", "C-4", "C-5", "C-6", "H-1", "F-10", "M5-7"):
             assert marker in backlog

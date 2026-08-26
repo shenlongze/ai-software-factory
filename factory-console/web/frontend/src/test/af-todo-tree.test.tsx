@@ -262,6 +262,16 @@ describe('AfTodoTree (Todo Tree 组件)', () => {
     expect(storyChildren()[1]).toBe('T-a'); // T-a P1 次之
   });
 
+  it('父行完成计数: N/M 完成 (含已归档), 百分比可对账 (Founder 2026-08-27)', () => {
+    render(<AfTodoTree tree={tree} taskMeta={meta} />);
+    // root: 6 任务 1 done (t-reg-db 归档隐藏) → 1/6 完成, 与 17% 对得上
+    expect(screen.getByTestId('af-tree-count-root')).toHaveTextContent('1/6 完成');
+    // story-reg: 2 子任务, 1 done 归档 + 1 执行中 → 1/2 完成
+    expect(within(screen.getByTestId('af-tree-node-story-reg')).getByTestId('af-tree-count-story-reg')).toHaveTextContent('1/2 完成');
+    // done 子任务虽隐藏, 计数仍含归档 → 里外数值对得上
+    expect(screen.queryByText('用户数据模型')).not.toBeInTheDocument();
+  });
+
   it('全折叠/全展开: 工具栏按钮一键收起/展开全部', async () => {
     const user = userEvent.setup();
     render(<AfTodoTree tree={tree} taskMeta={meta} />);

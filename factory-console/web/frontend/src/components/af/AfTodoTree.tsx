@@ -182,6 +182,22 @@ function collectLeafTasks(node: TreeNode, filter: 'all' | DomainStatus): TreeNod
   return node.children.flatMap((c) => collectLeafTasks(c, filter));
 }
 
+/** 子树叶子任务计数 (含已归档 done): {done, total} — 父行百分比可解释 (Founder 2026-08-27: 数值对不上)。 */
+export function countSubtreeTasks(node: TreeNode): { done: number; total: number } {
+  if (node.children.length === 0) {
+    if (node.type !== 'task') return { done: 0, total: 0 };
+    return { done: node.status === 'completed' ? 1 : 0, total: 1 };
+  }
+  let done = 0;
+  let total = 0;
+  for (const child of node.children) {
+    const r = countSubtreeTasks(child);
+    done += r.done;
+    total += r.total;
+  }
+  return { done, total };
+}
+
 /** 树中是否还有任务节点 (页面/组件空态判定)。 */
 export function hasTaskNodes(node: TreeNode): boolean {
   if (node.type === 'task') return true;
@@ -328,6 +344,18 @@ export function AfTodoTree({
         </button>
         <div className="af-tree-root-progress">
           <AfProgressBar value={root.progress} status={root.status} />
+          {(() => {
+            const c = countSubtreeTasks(root);
+            return c.total > 0 ? (
+              <span
+                className="af-tree-count"
+                data-testid="af-tree-count-root"
+                title={`${c.done} 完成 / ${c.total} 总数 (含已归档)`}
+              >
+                {c.done}/{c.total} 完成
+              </span>
+            ) : null;
+          })()}
         </div>
         {chainProgress != null && chainProgress.length > 0 ? (
           <div className="af-tree-chain-progress" data-testid="af-tree-chain-progress" title="任务链完成进度 (同一任务链按系列)">
@@ -465,6 +493,8 @@ function TreeNodeRow({
   const priority = node.priority ?? meta?.priority;
   const owner = node.owner ?? node.agent ?? meta?.owner;
   const isFocus = node.status === 'running'; // 当前焦点: 执行中节点高亮 (§4.6)
+  // 父行计数 (含已归档): 百分比 = done/total, 与可见子任务对得上 (Founder 2026-08-27)
+  const subtreeCounts = hasChildren ? countSubtreeTasks(node) : null;
 
   const rowClass = [
     'af-tree-node',
@@ -585,6 +615,15 @@ function TreeNodeRow({
         ) : null}
         <span className="af-tree-progress-wrap">
           <AfProgressBar value={node.progress} status={node.status} />
+          {subtreeCounts != null && subtreeCounts.total > 0 ? (
+            <span
+              className="af-tree-count"
+              data-testid={`af-tree-count-${node.id}`}
+              title={`${subtreeCounts.done} 完成 / ${subtreeCounts.total} 总数 (含已归档)`}
+            >
+              {subtreeCounts.done}/{subtreeCounts.total} 完成
+            </span>
+          ) : null}
         </span>
         {hasChildren && !isExpanded ? (
           (() => {

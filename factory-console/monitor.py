@@ -159,6 +159,36 @@ def collect_project(
     }
 
 
+#: 质量分告警阈值 (低于 → warning)
+QUALITY_ALERT_THRESHOLD = 0.3
+
+
+def check_alerts(system: dict[str, Any] | None, projects: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """阈值告警: 端口未运行 (critical) / 失败运行 (warning) / 质量偏低 (warning)。"""
+    alerts: list[dict[str, str]] = []
+    if system is not None:
+        if not system.get("frontend", {}).get("up", False):
+            alerts.append({"level": "critical", "scope": "system", "message": "Web 前端 (5180) 未运行"})
+        if not system.get("backend", {}).get("up", False):
+            alerts.append({"level": "critical", "scope": "system", "message": "后端 API (8011) 未运行"})
+    for p in projects:
+        name = str(p.get("name") or p.get("project_id") or "项目")
+        if int(p.get("failed", 0) or 0) > 0:
+            alerts.append({
+                "level": "warning", "scope": "project",
+                "project_id": str(p.get("project_id") or ""),
+                "message": f"{name} 有 {p.get('failed')} 个失败运行实例",
+            })
+        q = p.get("quality")
+        if isinstance(q, (int, float)) and q < QUALITY_ALERT_THRESHOLD:
+            alerts.append({
+                "level": "warning", "scope": "project",
+                "project_id": str(p.get("project_id") or ""),
+                "message": f"{name} 质量分偏低 ({q:.2f})",
+            })
+    return alerts
+
+
 def save_snapshot(root: Path | str, payload: dict[str, Any]) -> bool:
     """快照落盘 (append, 保留最近 MAX_SNAPSHOTS; 失败安全)。"""
     root = Path(root)
@@ -187,4 +217,4 @@ def read_snapshots(root: Path | str, limit: int = 10) -> list[dict[str, Any]]:
     return []
 
 
-__all__ = ["collect_system", "collect_project", "save_snapshot", "read_snapshots", "port_up", "FRONTEND_PORT", "BACKEND_PORT"]
+__all__ = ["collect_system", "collect_project", "save_snapshot", "read_snapshots", "port_up", "check_alerts", "QUALITY_ALERT_THRESHOLD", "FRONTEND_PORT", "BACKEND_PORT"]

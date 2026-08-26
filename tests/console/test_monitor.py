@@ -96,3 +96,23 @@ class TestMonitorHttp:
             assert r.json()["project"]["project_id"] == "p1"
             assert r.json()["system"]["version"]
             assert c.get("/api/projects/NOPE/monitor").status_code == 404
+
+
+class TestAlerts:
+    def test_alerts_detected(self):
+        system = {"frontend": {"up": False}, "backend": {"up": True}}
+        projects = [
+            {"project_id": "p1", "name": "A", "failed": 2, "quality": 0.8},
+            {"project_id": "p2", "name": "B", "failed": 0, "quality": 0.2},
+        ]
+        alerts = _monitor.check_alerts(system, projects)
+        msgs = {a["message"] for a in alerts}
+        assert any("前端" in m for m in msgs)  # critical
+        assert any("失败运行实例" in m for m in msgs)  # warning
+        assert any("质量分偏低" in m for m in msgs)  # warning
+        assert all(a["level"] in ("critical", "warning") for a in alerts)
+
+    def test_no_alerts_when_healthy(self):
+        system = {"frontend": {"up": True}, "backend": {"up": True}}
+        projects = [{"project_id": "p1", "name": "A", "failed": 0, "quality": 0.8}]
+        assert _monitor.check_alerts(system, projects) == []

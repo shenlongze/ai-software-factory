@@ -27,9 +27,15 @@ interface Snapshot {
   system?: { version?: string };
   projects?: MonitorProject[];
 }
+interface AlertItem {
+  level: string;
+  scope: string;
+  project_id?: string;
+  message: string;
+}
 
 export function AfProjectOps({ projectId, projectName }: { projectId: string; projectName?: string }): JSX.Element {
-  const [data, setData] = useState<{ system?: { version: string; frontend: { up: boolean }; backend: { up: boolean }; model: string }; project?: MonitorProject; snapshots?: Snapshot[] } | null>(null);
+  const [data, setData] = useState<{ system?: { version: string; frontend: { up: boolean }; backend: { up: boolean }; model: string }; project?: MonitorProject; snapshots?: Snapshot[]; alerts?: AlertItem[] } | null>(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -39,7 +45,7 @@ export function AfProjectOps({ projectId, projectName }: { projectId: string; pr
       .then((m) => {
         if (cancelled) return;
         const project = (m.projects ?? []).find((p) => p.project_id === projectId);
-        setData({ system: m.system, project, snapshots: m.snapshots ?? [] });
+        setData({ system: m.system, project, snapshots: m.snapshots ?? [], alerts: m.alerts ?? [] });
       })
       .catch(() => {
         if (!cancelled) setError('监控数据加载失败（后端不可达）');
@@ -71,6 +77,19 @@ export function AfProjectOps({ projectId, projectName }: { projectId: string; pr
         </div>
       </section>
 
+      {data?.alerts && data.alerts.length > 0 ? (
+        <section className="af-home-card" data-testid="af-ops-alerts">
+          <h3>⚠️ 告警（{data.alerts.length}）</h3>
+          <div className="af-health-row">
+            {data.alerts.map((a, i) => (
+              <span key={i} className={`af-health-chip${a.level === 'critical' ? ' af-alert--critical' : ' af-alert--warning'}`}>
+                {a.level === 'critical' ? '🔴' : '🟡'} {a.message}
+              </span>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       <section className="af-home-card" data-testid="af-ops-project">
         <h3>📦 项目监控（{projectName ?? projectId}）</h3>
         {data?.project ? (
@@ -94,20 +113,36 @@ export function AfProjectOps({ projectId, projectName }: { projectId: string; pr
       <section className="af-home-card" data-testid="af-ops-trend">
         <h3>📈 最近快照（趋势）</h3>
         {data?.snapshots && data.snapshots.length > 0 ? (
-          <table className="af-manage-table">
-            <thead>
-              <tr><th>时间</th><th>版本</th><th>项目数</th></tr>
-            </thead>
-            <tbody>
-              {data.snapshots.slice(-8).reverse().map((s, i) => (
-                <tr key={i}>
-                  <td>{fmt(s.at)}</td>
-                  <td>{s.system?.version ?? '—'}</td>
-                  <td>{s.projects?.length ?? '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <>
+            <h4 className="af-settings-h4">质量分趋势（当前项目）</h4>
+            <div className="af-ops-trend">
+              {data.snapshots.slice(-8).map((s, i) => {
+                const pj = (s.projects ?? []).find((x) => x.project_id === projectId);
+                const q = pj?.quality;
+                const w = q != null ? Math.round(Math.min(Math.max(q, 0), 1) * 100) : 0;
+                return (
+                  <div key={i} className="af-ops-trend-col" title={`${fmt(s.at)} · 质量 ${q != null ? q.toFixed(2) : '—'}`}>
+                    <div className="af-ops-trend-bar" style={{ height: `${q != null ? Math.max(w, 4) : 4}px` }} />
+                    <span className="af-ops-trend-label">{fmt(s.at).slice(5)}</span>
+                  </div>
+                );
+              })}
+            </div>
+            <table className="af-manage-table">
+              <thead>
+                <tr><th>时间</th><th>版本</th><th>项目数</th></tr>
+              </thead>
+              <tbody>
+                {data.snapshots.slice(-8).reverse().map((s, i) => (
+                  <tr key={i}>
+                    <td>{fmt(s.at)}</td>
+                    <td>{s.system?.version ?? '—'}</td>
+                    <td>{s.projects?.length ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
         ) : (
           <p className="af-home-note">（暂无快照 — 打开监控后自动累积）</p>
         )}

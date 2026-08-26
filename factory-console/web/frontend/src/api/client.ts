@@ -395,6 +395,7 @@ export const api = {
       system: { version: string; frontend: { up: boolean }; backend: { up: boolean }; model: string };
       projects: MonitorProjectView[];
       snapshots: { at: string; system?: { version?: string }; projects?: MonitorProjectView[] }[];
+      alerts: { level: string; scope: string; project_id?: string; message: string }[];
     }>('/api/monitor'),
 
   // K-7e: Web 会话栏 (会话 + 消息 + 回复)

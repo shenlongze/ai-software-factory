@@ -3,6 +3,20 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.136] — 2026-08-26
+
+**监控告警 + 运维页趋势条**。
+
+### Added
+
+- **告警检测** (monitor.check_alerts): 端口未运行 (critical) / 失败运行实例 (warning) /
+  质量分偏低<0.3 (warning); /api/monitor 返回 alerts; 会话 system_status 带告警
+- **运维页**: 告警条 (红/黄) + 质量分趋势条 (快照 mini 柱状)
+
+### 验证
+
+- 后端 monitor 7 passed · 前端 685 passed · build 通过
+
 ## [v1.1.135] — 2026-08-26
 
 **运维页 + 概览健康条统一读 Monitor**。

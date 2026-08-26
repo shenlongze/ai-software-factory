@@ -1132,8 +1132,9 @@ def build_app(
         except Exception:  # noqa: BLE001
             projects = []
         snapshots = _monitor_mod.read_snapshots(workspace_root, limit=10)
-        _monitor_mod.save_snapshot(workspace_root, {"system": system, "projects": projects})
-        return {"system": system, "projects": projects, "snapshots": snapshots}
+        alerts = _monitor_mod.check_alerts(system, projects)
+        _monitor_mod.save_snapshot(workspace_root, {"system": system, "projects": projects, "alerts": alerts})
+        return {"system": system, "projects": projects, "snapshots": snapshots, "alerts": alerts}
 
     @app.get("/api/projects/{project_id}/monitor")
     def api_project_monitor(project_id: str) -> dict[str, Any]:
@@ -2978,6 +2979,12 @@ def build_app(
         )
         if model_line:
             system_line = f"{system_line}\n{model_line}"
+        try:
+            _alerts = _monitor_mod.check_alerts(_sys_mon, [])
+            if _alerts:
+                system_line = f"{system_line}\n⚠️ 告警: " + "；".join(a["message"] for a in _alerts)
+        except Exception:  # noqa: BLE001 — 告警失败 → 忽略
+            pass
         # 完整链路 (Founder 设计): LLM 转标准意图 → 查询/执行 → 标准输出
         _qmod = _console_import("session.query_engine")
         intent = _qmod.parse_intent_llm(body.message, _sessions_mod.llm_raw)

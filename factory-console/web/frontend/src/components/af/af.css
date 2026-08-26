@@ -4171,3 +4171,49 @@ body[data-bg='1'] .af-shell {
   padding: 4px 8px; /* 更矮 */
   font-size: 10px;
 }
+
+/* 运维页: 告警 + 趋势条 */
+.af-alert--critical {
+  color: #fff;
+  background: rgba(239, 68, 68, 0.85);
+  border-color: #ef4444;
+}
+
+.af-alert--warning {
+  color: #7c2d12;
+  background: rgba(245, 158, 11, 0.18);
+  border-color: #f59e0b;
+}
+
+.af-ops-trend {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 90px;
+  padding: 8px;
+  background: var(--c-input);
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  margin-bottom: 10px;
+}
+
+.af-ops-trend-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.af-ops-trend-bar {
+  width: 100%;
+  min-height: 4px;
+  background: var(--af-primary);
+  border-radius: 2px 2px 0 0;
+}
+
+.af-ops-trend-label {
+  font-size: 9px;
+  color: var(--c-text2);
+}

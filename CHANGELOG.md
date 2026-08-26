@@ -3,7 +3,19 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.184] — 2026-08-27
+
+**T-4 任务↔会话双向追溯 (任务能看到哪些会话讨论过它; 会话能看到关联任务)**。
+
+### Added
+
+- 后端: GET /api/sessions 支持 task_id 过滤 + 每条会话富化 task_title;
+  任务详情 GET /api/projects/{id}/backlog/task/{tid} 附 sessions (反向追溯)
+- 前端: 任务详情面板新增「关联会话 (N)」区 — 点击打开对应会话接续上下文
+  (AfTaskDetailPanel sessions + onOpenSession; AfTodoTreePage 选中任务拉详情)
+
 ## [v1.1.183] — 2026-08-27
+
 
 **T-5 端到端实测交付 (会话A建任务 → 会话B继续 → 完成 → 会话C审计, 全程上下文连贯)**。
 

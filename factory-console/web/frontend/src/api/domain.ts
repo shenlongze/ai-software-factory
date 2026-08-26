@@ -34,7 +34,7 @@ import type {
   QualityGateViewModel,
   RuntimeActivity,
   RunningAgent,
-  TaskDetail,
+  TaskDetail, TaskSessionRef,
   TodoTree,
   TreeNode,
   TreeNodeType,
@@ -701,6 +701,8 @@ export interface TaskDetailInput {
   epic_name?: string | null;
   feature_name?: string | null;
   story_name?: string | null;
+  /** 关联会话 (T-4 双向追溯; 后端任务详情返回)。 */
+  sessions?: Array<{ id?: string | null; title?: string | null; updated_at?: string | null; project_id?: string | null }> | null;
 }
 
 /** 空 TaskDetail 降级 (Task 未定位/输入缺失; §6.3 不崩溃)。 */
@@ -861,9 +863,26 @@ function toTaskDetailFromInput(taskRaw?: TaskDetailInput | null): TaskDetail {
     ...(t.epic_name != null && t.epic_name.length > 0 ? { epicName: t.epic_name } : {}),
     ...(t.feature_name != null && t.feature_name.length > 0 ? { featureName: t.feature_name } : {}),
     ...(t.story_name != null && t.story_name.length > 0 ? { storyName: t.story_name } : {}),
+    ...(normalizeTaskSessions(t.sessions).length > 0
+      ? { sessions: normalizeTaskSessions(t.sessions) }
+      : {}),
     history: (t.history ?? []).map(toActivity),
     artifacts: Array.isArray(t.artifacts) ? t.artifacts : [],
   };
+}
+
+/** 关联会话归一 (T-4): 空/非法 → [] (面板不渲染该区)。 */
+function normalizeTaskSessions(
+  sessions: TaskDetailInput['sessions'],
+): TaskSessionRef[] {
+  return (sessions ?? [])
+    .filter((s) => s != null && s.id != null && String(s.id).length > 0)
+    .map((s) => ({
+      id: String(s.id),
+      title: String(s.title ?? '未命名'),
+      ...(s.updated_at != null && s.updated_at.length > 0 ? { updated_at: s.updated_at } : {}),
+      ...(s.project_id != null && s.project_id.length > 0 ? { project_id: s.project_id } : {}),
+    }));
 }
 
 /** 历史/事件条目 → Activity (宽松读取: created_at/time/timestamp, message/action/event_type)。 */

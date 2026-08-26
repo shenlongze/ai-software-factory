@@ -52,6 +52,32 @@ function minimalTaskDetail(): TaskDetail {
 }
 
 describe('AfTaskDetailPanel (Task Detail 统一面板 — 全字段 + 缺失降级)', () => {
+  it('T-4 关联会话: 渲染会话列表, 点击 → onOpenSession (双向追溯)', async () => {
+    const user = userEvent.setup();
+    const onOpen = vi.fn();
+    render(
+      <AfTaskDetailPanel
+        task={fullTaskDetail()}
+        sessions={[
+          { id: 'sess-1', title: '讨论导出', updated_at: '2026-08-26T04:10:00Z', project_id: 'P-1' },
+          { id: 'sess-2', title: '继续推进', updated_at: '2026-08-26T06:21:00Z', project_id: 'P-1' },
+        ]}
+        onOpenSession={onOpen}
+      />,
+    );
+    const section = screen.getByTestId('af-task-detail-sessions');
+    expect(within(section).getByText('关联会话 (2)')).toBeInTheDocument();
+    expect(within(section).getByText('💬 讨论导出')).toBeInTheDocument();
+    expect(within(section).getByText('💬 继续推进')).toBeInTheDocument();
+    await user.click(screen.getByTestId('af-task-detail-session-sess-2'));
+    expect(onOpen).toHaveBeenCalledWith('sess-2');
+  });
+
+  it('T-4 无关联会话 → 不渲染会话区 (诚实降级)', () => {
+    render(<AfTaskDetailPanel task={fullTaskDetail()} sessions={[]} />);
+    expect(screen.queryByTestId('af-task-detail-sessions')).not.toBeInTheDocument();
+  });
+
   it('全字段渲染: 标题/状态/Epic→Feature→Story/负责人/Agent/优先级/依赖/下一步', () => {
     render(<AfTaskDetailPanel task={fullTaskDetail()} />);
     const panel = screen.getByTestId('af-task-detail-panel');

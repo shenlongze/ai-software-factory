@@ -61,7 +61,7 @@ import {
   type WorkflowDetail,
   type WorkflowSummary,
 } from '../models/types';
-import type { BacklogFeature, BacklogTask } from '../models/domain';
+import type { BacklogFeature, BacklogTask, TaskSessionRef } from '../models/domain';
 import type { RegistryTool } from '../models/types';
 
 export class ApiError extends Error {
@@ -157,6 +157,11 @@ export const api = {
   deleteProject: (projectId: string) =>
     deleteJson<{ deleted: boolean; project_id: string }>(
       `/api/projects/${encodeURIComponent(projectId)}`,
+    ),
+  // T-4 (v1.1.184): 任务详情 — 含关联会话 (哪些会话讨论过它, 反向追溯)
+  getBacklogTaskDetail: (projectId: string, taskId: string) =>
+    getJson<BacklogTask & { sessions?: TaskSessionRef[] }>(
+      `/api/projects/${encodeURIComponent(projectId)}/backlog/task/${encodeURIComponent(taskId)}`,
     ),
   // W-3 (v1.1.142): 任务管理 — 编辑/优先级/状态流转 (PATCH → 更新后 Task;
   // 后端单步状态机: 前端按合法路径序列化调用, 非法 → 400/409 诚实报错)

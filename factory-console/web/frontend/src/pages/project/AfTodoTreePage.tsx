@@ -19,7 +19,7 @@
  * projectName: 可选 (Shell 传入项目名 → 树根标题); 缺省 '项目' 兜底 (§6.3)。
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ApiError, api } from '../../api/client';
 import { useConversation } from '../../components/af/ConversationContext';
 import { AfTodoTree, type TaskMeta } from '../../components/af/AfTodoTree';
@@ -27,7 +27,7 @@ import { AfTaskDetailPanel, type TaskPatch } from '../../components/af/AfTaskDet
 import { toTaskDetail, toTodoTree } from '../../api/domain';
 import { AfEmptyState, AfErrorState, AfLoadingState } from '../../components/af/AfState';
 import { useAsync } from '../../hooks/useAsync';
-import type { BacklogResponse, BacklogTask } from '../../models/domain';
+import type { BacklogResponse, BacklogTask, TaskSessionRef } from '../../models/domain';
 
 /** GET /api/projects/{id}/backlog (真实 fetch; 失败 → ApiError, 与 client 同语义)。 */
 export async function fetchProjectBacklog(projectId: string): Promise<BacklogResponse> {
@@ -108,7 +108,35 @@ export interface AfTodoTreePageProps {
 export function AfTodoTreePage({ projectId, projectName }: AfTodoTreePageProps): JSX.Element {
   const [retryTick, setRetryTick] = useState(0);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  // T-4 双向追溯: 选中任务 → 拉详情附带的关联会话 (哪些会话讨论过它)
+  const [taskSessions, setTaskSessions] = useState<TaskSessionRef[]>([]);
   const chat = useConversation();
+
+  useEffect(() => {
+    let alive = true;
+    if (selectedTaskId == null || selectedTaskId.length === 0) {
+      setTaskSessions([]);
+      return;
+    }
+    api
+      .getBacklogTaskDetail(projectId, selectedTaskId)
+      .then((detail) => {
+        if (alive) setTaskSessions(detail.sessions ?? []);
+      })
+      .catch(() => {
+        if (alive) setTaskSessions([]); // 失败 → 空, 不编造
+      });
+    return () => {
+      alive = false;
+    };
+  }, [projectId, selectedTaskId]);
+
+  /** T-4: 点关联会话 → 打开该会话 (会话栏 + 切换 activeId) 接续上下文。 */
+  function handleOpenSession(sessionId: string): void {
+    chat.setProjectId(projectId);
+    chat.selectSession(sessionId);
+    chat.openPanel();
+  }
 
   const { data, error, loading } = useAsync(
     async () => {
@@ -205,6 +233,8 @@ export function AfTodoTreePage({ projectId, projectName }: AfTodoTreePageProps):
                 task={selectedDetail}
                 onClose={() => setSelectedTaskId(null)}
                 onUpdate={handleUpdateTask}
+                sessions={taskSessions}
+                onOpenSession={handleOpenSession}
               />
             </aside>
           ) : null}

@@ -1823,13 +1823,30 @@ def build_app(
 
     @app.get("/api/projects/{project_id}/backlog/task/{task_id}")
     def api_backlog_task_detail(project_id: str, task_id: str) -> dict[str, Any]:
-        """Task 详情 (任务不存在 → 404)。"""
+        """Task 详情 (任务不存在 → 404)。T-4 (v1.1.184): 附 sessions —
+        哪些会话讨论过它 (task_id 锚定反向追溯)。"""
         try:
             task = _api.get_task(service, project_id, task_id, logger=event_logger)
         except Exception as exc:
             _raise_backlog_error(exc)
         if task is None:
             raise HTTPException(status_code=404, detail="project not found")
+        try:
+            related = sessions_store.list_sessions(task_id=task_id)
+            task = {
+                **task,
+                "sessions": [
+                    {
+                        "id": str(s.get("id") or ""),
+                        "title": str(s.get("title") or "未命名"),
+                        "updated_at": s.get("updated_at"),
+                        "project_id": s.get("project_id"),
+                    }
+                    for s in related
+                ],
+            }
+        except Exception:  # noqa: BLE001 — 会话查询失败 → 附空 (不阻断)
+            task = {**task, "sessions": []}
         return task
 
     @app.patch("/api/projects/{project_id}/backlog/task/{task_id}")
@@ -3108,11 +3125,26 @@ def build_app(
     def api_sessions(
         scope: str | None = Query(default=None),
         project_id: str | None = Query(default=None),
+        task_id: str | None = Query(default=None),
     ) -> dict[str, Any]:
-        """会话列表 (K-7e 会话栏): scope=company|project 过滤; updated_at 倒序。"""
+        """会话列表 (K-7e 会话栏): scope=company|project|task_id 过滤; updated_at 倒序。
+        T-4 (v1.1.184): task_id 过滤 (任务侧反向追溯: 哪些会话讨论过它) +
+        每条会话富化 task_title (会话能看到关联任务)。"""
         if scope is not None and scope not in _sessions_mod.VALID_SCOPES:
             raise HTTPException(status_code=400, detail=f"非法作用域: {scope}")
-        return ok_list(sessions_store.list_sessions(scope=scope, project_id=project_id))
+        items = sessions_store.list_sessions(
+            scope=scope, project_id=project_id, task_id=task_id
+        )
+        for s in items:
+            tid = str(s.get("task_id") or "").strip()
+            if not tid:
+                continue
+            try:
+                t = service.get_task(str(s.get("project_id") or ""), tid)
+                s["task_title"] = (t or {}).get("title") if t is not None else None
+            except Exception:  # noqa: BLE001 — 任务查询失败 → 不富化 (诚实降级)
+                s["task_title"] = None
+        return ok_list(items)
 
     @app.post("/api/sessions")
     def api_create_session(body: _SessionBody) -> dict[str, Any]:

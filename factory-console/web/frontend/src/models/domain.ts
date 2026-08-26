@@ -193,6 +193,14 @@ export interface RuntimeActivity extends Activity {
  * S10-015 Task 005 增强: 所属 Epic/Feature/Story (为什么存在) + priority/description/
  * dependency + agent (assignee → ROLE_LABELS 人话)。缺失字段 → undefined (诚实降级)。
  */
+/** 任务关联会话引用 (T-4 双向追溯): 任务能看到哪些会话讨论过它。 */
+export interface TaskSessionRef {
+  id: string;
+  title: string;
+  updated_at?: string | null;
+  project_id?: string | null;
+}
+
 export interface TaskDetail {
   id: string;
   title: string;
@@ -227,6 +235,8 @@ export interface TaskDetail {
   execRef?: string;
   /** 最近执行结果 id (EXS-*); 空 = 无 (审计溯源)。 */
   execResult?: string;
+  /** 关联会话 (T-4 双向追溯): 哪些会话讨论过它 (task_id 锚定反向查询; 空=无)。 */
+  sessions?: TaskSessionRef[];
   history: Activity[];
   artifacts: string[];
 }

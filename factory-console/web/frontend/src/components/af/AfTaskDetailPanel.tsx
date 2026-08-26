@@ -21,7 +21,7 @@
  */
 
 import { useState } from 'react';
-import type { Activity, TaskDetail } from '../../models/domain';
+import type { Activity, TaskDetail, TaskSessionRef } from '../../models/domain';
 import { formatTime } from './afLabels';
 import { AfStatusBadge } from './AfStatusBadge';
 import { AfTimeline, type AfTimelineItem } from './AfTimeline';
@@ -43,6 +43,10 @@ export interface AfTaskDetailPanelProps {
   onClose?: () => void;
   /** 保存回调 (页面 PATCH + 刷新; 返回 Promise — 面板据此显示忙/错误)。缺省 → 不渲染操作区。 */
   onUpdate?: (changes: TaskPatch, taskId: string) => Promise<void>;
+  /** 关联会话 (T-4 双向追溯): 哪些会话讨论过它; 点击 → onOpenSession。 */
+  sessions?: TaskSessionRef[];
+  /** 点关联会话 → 打开该会话 (页面接线 ConversationContext)。 */
+  onOpenSession?: (sessionId: string) => void;
 }
 
 /**
@@ -96,7 +100,13 @@ function DetailField({
 
 const PRIORITIES = ['P0', 'P1', 'P2', 'P3'] as const;
 
-export function AfTaskDetailPanel({ task, onClose, onUpdate }: AfTaskDetailPanelProps): JSX.Element {
+export function AfTaskDetailPanel({
+  task,
+  onClose,
+  onUpdate,
+  sessions,
+  onOpenSession,
+}: AfTaskDetailPanelProps): JSX.Element {
   const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(task.title ?? '');
   const [editDesc, setEditDesc] = useState(task.description ?? '');
@@ -299,6 +309,33 @@ export function AfTaskDetailPanel({ task, onClose, onUpdate }: AfTaskDetailPanel
                 {error}
               </span>
             ) : null}
+          </section>
+        ) : null}
+
+        {sessions != null && sessions.length > 0 ? (
+          <section className="af-task-detail-sessions" data-testid="af-task-detail-sessions">
+            <h4 className="af-task-detail-section-title">
+              关联会话 ({sessions.length})
+            </h4>
+            <p className="af-task-detail-sessions-hint">哪些会话讨论过这个任务 — 点击打开接续上下文</p>
+            <ul className="af-task-detail-sessions-list">
+              {sessions.map((sess) => (
+                <li key={sess.id}>
+                  <button
+                    type="button"
+                    className="af-task-detail-session"
+                    data-testid={`af-task-detail-session-${sess.id}`}
+                    title={`打开会话: ${sess.title}`}
+                    onClick={() => onOpenSession?.(sess.id)}
+                  >
+                    <span className="af-task-detail-session-title">💬 {sess.title}</span>
+                    <span className="af-task-detail-session-meta">
+                      {sess.updated_at != null ? formatTime(sess.updated_at) : ''}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
           </section>
         ) : null}
 

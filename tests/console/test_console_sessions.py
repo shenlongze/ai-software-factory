@@ -242,6 +242,43 @@ def http_app(tmp_path):
 
 @requires_fastapi
 class TestSessionsHttp:
+    def test_task_session_bidirectional_trace(self, http_app):
+        """T-4 双向追溯: 任务能看到哪些会话讨论过它 + 会话能看到关联任务。
+        - GET /api/projects/{id}/backlog/task/{tid} → sessions 列表 (反向追溯)
+        - GET /api/sessions?task_id= → 按任务过滤会话
+        - 会话列表富化 task_title (会话侧看关联任务)"""
+        client, _ = http_app
+        r = client.post("/api/projects", json={"idea": "T4 产品", "name": "T4项目"})
+        assert r.status_code == 201, r.text
+        pid = r.json()["project_id"]
+        r = client.post(f"/api/projects/{pid}/backlog/task", json={"title": "双向追溯任务"})
+        assert r.status_code == 201, r.text
+        tid = r.json()["id"]
+        # 会话锚定该任务
+        r = client.post(
+            "/api/sessions",
+            json={"scope": "project", "project_id": pid, "title": "讨论会话", "task_id": tid},
+        )
+        assert r.status_code == 200, r.text
+        sid = r.json()["id"]
+        # 任务详情附关联会话 (任务侧: 哪些会话讨论过它)
+        r = client.get(f"/api/projects/{pid}/backlog/task/{tid}")
+        assert r.status_code == 200, r.text
+        sessions = r.json().get("sessions") or []
+        assert any(s["id"] == sid for s in sessions), sessions
+        # 按任务过滤会话
+        r = client.get(f"/api/sessions?task_id={tid}")
+        assert r.status_code == 200, r.text
+        items = r.json()["items"]
+        assert [s["id"] for s in items] == [sid]
+        # 会话列表富化 task_title (会话侧: 关联的任务名)
+        assert items[0].get("task_title") == "双向追溯任务"
+        # 未锚定任务 → 会话列表无该 task_id
+        r = client.post("/api/sessions", json={"scope": "project", "project_id": pid, "title": "闲聊"})
+        assert r.status_code == 200
+        r = client.get(f"/api/sessions?task_id={tid}")
+        assert len(r.json()["items"]) == 1  # 只有锚定的那个
+
     def test_create_list_patch_messages(self, http_app):
         client, root = http_app
         r = client.post("/api/sessions", json={"scope": "company"})

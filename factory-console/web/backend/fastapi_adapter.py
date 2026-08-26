@@ -1106,7 +1106,9 @@ def build_app(
                     if ln.startswith("#"):
                         break
                     if ln.strip():
-                        return ln.strip().strip("**").strip()
+                        # 去掉 markdown 加粗与句尾标点
+                        return ln.replace("**", "").strip().strip("。. ")
+
         except Exception:  # noqa: BLE001
             return ""
         return ""

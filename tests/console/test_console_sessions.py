@@ -283,18 +283,20 @@ class TestSessionsHttp:
 
 
 class TestWebAwarePrompts:
-    def test_company_prompt_no_cli_advice(self, tmp_path):
-        """公司级提示词: Web 感知 — 含"全局视图", 不推荐 pwd/CLI。"""
+    def test_company_prompt_capabilities(self, tmp_path):
+        """公司级提示词: Web 感知 + 会话真实能力清单 (Founder: 会话不能自我贬低)。"""
         store = _sessions.SessionStore(tmp_path / "s.json")
         sess = store.create_session(scope="company")
         seen: list[str] = []
         _sessions.send_message(store, sess["id"], "现在在哪个项目", llm_fn=lambda p: (seen.append(p) or "公司/全局"))
         assert "公司 / 全局" in seen[0]
-        # 明确"不要建议 CLI", 而非给出 pwd 指令
-        assert "不要建议用户运行" in seen[0]
-        assert "运行 `pwd`" not in seen[0]
+        # 会话知道自己能真实执行 (建任务/操作/扫描/推送), 不是"不能操作文件系统"
+        assert "我能真实执行的操作" in seen[0]
+        assert "标记完成" in seen[0]
+        assert "git" in seen[0].lower() or "推送" in seen[0]
+        assert "不要建议用户运行" not in seen[0]
 
-    def test_project_prompt_has_facts_and_web(self, tmp_path):
+    def test_project_prompt_has_facts_and_capabilities(self, tmp_path):
         store = _sessions.SessionStore(tmp_path / "s.json")
         sess = store.create_session(scope="project", project_id="P-1")
         seen: list[str] = []
@@ -303,5 +305,5 @@ class TestWebAwarePrompts:
             facts="名称: 记账\n生命周期: development", llm_fn=lambda p: (seen.append(p) or "记账"),
         )
         assert "名称: 记账" in seen[0]
-        assert "不要建议运行" in seen[0]
-        assert "运行 `pwd`" not in seen[0]
+        assert "我能真实执行" in seen[0]
+        assert "不要建议运行" not in seen[0]

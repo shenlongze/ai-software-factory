@@ -2,15 +2,15 @@
  * src/test/af-workspace-shell.test.tsx — AI OS Workspace Shell 三栏壳 (S10-014 Task 004)。
  *
  * 验证 (S10-014-plan §3.1 导航 + §4 Design System + AF-UI-Architecture §2.4 三栏):
- * - 三栏壳渲染: Header + Sidebar (7 导航项) + Main Content + 预览窗口 (K-7b)
+ * - 三栏壳渲染: Header + Sidebar (3 导航项) + Main Content + 预览标签页 (K-7d)
  * - 默认 dashboard 激活态; 激活态跟随 route.page (aria-current="page")
  * - 导航点击 → window.location.hash 更新 (#/workspace/<page>)
  * - 折叠切换 → 侧栏 class 变化 (af-sidebar--collapsed) + localStorage 持久化
- * - dashboard/projects → 真实项目列表 (GET /api/dashboard, 四态)
- * - team/workflows/runtime/audit/settings → AfModulePlaceholder (禁空白)
+ * - 方案 A (Founder 2026-08-26): 导航 3 项 = 我的公司/项目/设置
+ *   (AI Team/Workflow Center/Runtime Monitor/Audit 移 board)
  */
 
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 import { AfWorkspaceShell } from '../components/af/AfWorkspaceShell';
@@ -28,15 +28,14 @@ function companyStubs(projects: unknown[] = [], approvals: unknown[] = []) {
   };
 }
 
-const NAV_LABELS = [
-  'Dashboard',
-  'Projects',
-  'AI Team',
-  'Workflow Center',
-  'Runtime Monitor',
-  'Audit',
-  'Settings',
-];
+const NAV_LABELS = ['我的公司', '项目', '设置'];
+
+/** 侧栏导航按钮 (K-7d: B 列页面标签页与导航可能同名 — 查询收窄到导航区)。 */
+function navButton(name: RegExp) {
+  return within(screen.getByRole('navigation', { name: 'Workspace 导航' })).getByRole('button', {
+    name,
+  });
+}
 
 /** 本环境 window.localStorage 为 undefined (jsdom 已知坑) — 测试注入可控 Storage 桩。 */
 function stubLocalStorage(initial: [string, string][] = []): Map<string, string> {
@@ -82,40 +81,35 @@ describe('AfWorkspaceShell (AI OS 三栏壳)', () => {
     // AI 会话栏 (C 列)
     expect(screen.getByTestId('af-conversation-panel')).toBeInTheDocument();
     for (const label of NAV_LABELS) {
-      expect(screen.getByRole('button', { name: new RegExp(label) })).toBeInTheDocument();
+      expect(navButton(new RegExp(label))).toBeInTheDocument();
     }
   });
 
-  it('默认 dashboard: Dashboard 导航项激活 (aria-current=page), 其他不激活', () => {
+  it('默认 dashboard: 我的公司 导航项激活 (aria-current=page), 其他不激活', () => {
     stubFetch(companyStubs());
     render(<AfWorkspaceShell route={workspaceRoute()} />);
-    expect(screen.getByRole('button', { name: /Dashboard/ })).toHaveAttribute(
-      'aria-current',
-      'page',
-    );
-    expect(screen.getByRole('button', { name: /Projects/ })).not.toHaveAttribute('aria-current');
-    expect(screen.getByRole('button', { name: /Settings/ })).not.toHaveAttribute('aria-current');
+    expect(navButton(/我的公司/)).toHaveAttribute('aria-current', 'page');
+    expect(navButton(/项目/)).not.toHaveAttribute('aria-current');
+    expect(navButton(/设置/)).not.toHaveAttribute('aria-current');
   });
 
-  it('激活态跟随路由: route.page=team → AI Team 高亮, Dashboard 不高亮', () => {
-    render(<AfWorkspaceShell route={workspaceRoute('team')} />);
-    expect(screen.getByRole('button', { name: /AI Team/ })).toHaveAttribute(
-      'aria-current',
-      'page',
-    );
-    expect(screen.getByRole('button', { name: /Dashboard/ })).not.toHaveAttribute('aria-current');
+  it('激活态跟随路由: route.page=projects → 项目 高亮, 我的公司 不高亮', () => {
+    stubFetch({ '/api/dashboard': sampleDashboard({ projects: [] }) });
+    render(<AfWorkspaceShell route={workspaceRoute('projects')} />);
+    expect(navButton(/项目/)).toHaveAttribute('aria-current', 'page');
+    expect(navButton(/我的公司/)).not.toHaveAttribute('aria-current');
   });
 
   it('点击导航项 → 更新 window.location.hash', async () => {
     const user = userEvent.setup();
     stubFetch(companyStubs());
     render(<AfWorkspaceShell route={workspaceRoute()} />);
-    await user.click(screen.getByRole('button', { name: /AI Team/ }));
-    expect(window.location.hash).toBe('#/workspace/team');
-    await user.click(screen.getByRole('button', { name: /Workflow Center/ }));
-    expect(window.location.hash).toBe('#/workspace/workflows');
-    await user.click(screen.getByRole('button', { name: /Settings/ }));
+    await user.click(navButton(/项目/));
+    expect(window.location.hash).toBe('#/workspace/projects');
+    await user.click(navButton(/设置/));
     expect(window.location.hash).toBe('#/workspace/settings');
+    await user.click(navButton(/我的公司/));
+    expect(window.location.hash).toBe('#/workspace');
   });
 
   it('折叠切换 → 侧栏 class 变化 (af-sidebar--collapsed) + 再次点击恢复', async () => {
@@ -141,7 +135,8 @@ describe('AfWorkspaceShell (AI OS 三栏壳)', () => {
 
   it('折叠状态从 localStorage 恢复 (初始折叠)', () => {
     stubLocalStorage([['af.sidebar.collapsed', '1']]);
-    render(<AfWorkspaceShell route={workspaceRoute('team')} />);
+    stubFetch({ '/api/dashboard': sampleDashboard({ projects: [] }) });
+    render(<AfWorkspaceShell route={workspaceRoute('projects')} />);
     expect(screen.getByTestId('af-sidebar')).toHaveClass('af-sidebar--collapsed');
   });
 
@@ -179,20 +174,7 @@ describe('AfWorkspaceShell (AI OS 三栏壳)', () => {
     });
     render(<AfWorkspaceShell route={workspaceRoute('projects')} />);
     expect(await screen.findByText('markpad')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Projects/ })).toHaveAttribute(
-      'aria-current',
-      'page',
-    );
-  });
-
-  it.each([
-    ['team', 'AI Team module loading — 开发中'],
-    ['workflows', 'Workflow Center module loading — 开发中'],
-    ['runtime', 'Runtime Monitor module loading — 开发中'],
-    ['audit', 'Audit module loading — 开发中'],
-  ])('占位页 %s → AfModulePlaceholder (禁空白)', (page, expectedText) => {
-    render(<AfWorkspaceShell route={workspaceRoute(page)} />);
-    expect(screen.getByTestId('af-module-placeholder')).toHaveTextContent(expectedText);
+    expect(navButton(/项目/)).toHaveAttribute('aria-current', 'page');
   });
 
   it('settings → AfSettings 设置页 (LLM/Agent/Skill/MCP)', async () => {
@@ -239,9 +221,9 @@ describe('AfWorkspaceShell (AI OS 三栏壳)', () => {
 
   it('Header: AI Factory 品牌 + 子页标签 + LLM 状态点 + 开发者控制台 链接', () => {
     stubFetch({ '/api/dashboard': sampleDashboard({ projects: [] }) });
-    render(<AfWorkspaceShell route={workspaceRoute('audit')} />);
+    render(<AfWorkspaceShell route={workspaceRoute('projects')} />);
     expect(screen.getByText('AI Factory')).toBeInTheDocument();
-    expect(screen.getAllByText('审计').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('项目').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByTestId('af-llm-status')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /开发者控制台/ })).toBeInTheDocument();
   });

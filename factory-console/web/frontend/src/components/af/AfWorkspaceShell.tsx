@@ -22,14 +22,10 @@ import { AfSidebar, WORKSPACE_NAV_ITEMS } from './AfSidebar';
 import { AfWorkspaceFrame, type AfWorkspaceFrameHandlers } from './AfWorkspaceFrame';
 import './af.css';
 
-/** Workspace 子页人话标签 (对齐 WORKSPACE_ROUTES; Header 子页标签用)。 */
+/** Workspace 子页人话标签 (方案 A: 3 导航 + 管理; Header 子页标签用)。 */
 const WORKSPACE_PAGE_LABELS: Record<string, string> = {
-  dashboard: '工作台',
+  dashboard: '我的公司',
   projects: '项目',
-  team: 'AI 团队',
-  workflows: '工作流中心',
-  runtime: '运行时',
-  audit: '审计',
   settings: '设置',
   manage: '项目管理',
 };

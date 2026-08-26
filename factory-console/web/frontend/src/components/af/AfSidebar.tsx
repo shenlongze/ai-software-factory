@@ -18,15 +18,15 @@ export const PERSONAL_COMPANY = {
   icon: '🏢',
 };
 
-/** 7 个 Workspace 导航项 (与 router.tsx WORKSPACE_ROUTES 对齐, 顺序 = 导航顺序)。 */
+/** Workspace 导航项 (Founder 2026-08-26 方案 A 定稿: 3 项精简)。
+
+ * AI Team / Workflow Center / Runtime Monitor / Audit 移 board (8011,
+ * 开发者/运维控制台) — 5180 = 产品工作台, 职责归位; dashboard → 我的公司。
+ */
 export const WORKSPACE_NAV_ITEMS: readonly { page: string; label: string; icon: string }[] = [
-  { page: 'dashboard', label: 'Dashboard', icon: '◈' },
-  { page: 'projects', label: 'Projects', icon: '▦' },
-  { page: 'team', label: 'AI Team', icon: '◉' },
-  { page: 'workflows', label: 'Workflow Center', icon: '⇄' },
-  { page: 'runtime', label: 'Runtime Monitor', icon: '◎' },
-  { page: 'audit', label: 'Audit', icon: '⧉' },
-  { page: 'settings', label: 'Settings', icon: '⚙' },
+  { page: 'dashboard', label: '我的公司', icon: '🏢' },
+  { page: 'projects', label: '项目', icon: '▦' },
+  { page: 'settings', label: '设置', icon: '⚙' },
 ];
 
 /** 导航项 page → hash 路由 (dashboard 精确 #/workspace, 其余 #/workspace/<page>)。 */

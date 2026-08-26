@@ -3,6 +3,23 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.101] — 2026-08-26
+
+**工作区导航方案 A 落地: 7 项 → 3 项 (我的公司/项目/设置)**。
+
+### Changed
+
+- **导航精简 (Founder 方案 A 定稿)**: Dashboard → **我的公司**; 砍掉
+  AI Team / Workflow Center / Runtime Monitor / Audit 四个占位页 —
+  职责归位 board (8011 开发者/运维控制台); 5180 = 产品工作台
+- **路由同步**: #/workspace/team|workflows|runtime|audit 旧 URL 自动回退
+  我的公司 (不 404); 保留 #/workspace/manage (项目管理, 左栏 ⚙ 管理入口)
+
+### 验证
+
+- 前端 673 passed (导航/路由/激活态/点击测试同步方案 A) · npm run build 通过
+- 后端零改动
+
 ## [v1.1.100] — 2026-08-26
 
 **修复: 目录项目收藏 404 (Founder 实测 ai-factory-self)**。

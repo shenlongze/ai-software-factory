@@ -12,14 +12,14 @@
  * 页面组件由 Task 004 (Workspace Shell) / Task 005 (Project Shell) 实现。
  */
 
-/** Workspace 级路由 (7 条, §2.3; page 顺序 = 导航顺序)。 */
+/** Workspace 级路由 (Founder 2026-08-26 方案 A: 3 导航 + 管理)。
+
+ * team/workflows/runtime/audit 已移 board (开发者控制台) — 旧 URL 自动回退
+ * dashboard (我的公司); manage 为项目管理页 (左栏 ⚙ 管理入口)。
+ */
 export const WORKSPACE_ROUTES: readonly { path: string; page: string }[] = [
   { path: '#/workspace', page: 'dashboard' },
   { path: '#/workspace/projects', page: 'projects' },
-  { path: '#/workspace/team', page: 'team' },
-  { path: '#/workspace/workflows', page: 'workflows' },
-  { path: '#/workspace/runtime', page: 'runtime' },
-  { path: '#/workspace/audit', page: 'audit' },
   { path: '#/workspace/settings', page: 'settings' },
   { path: '#/workspace/manage', page: 'manage' },
 ];

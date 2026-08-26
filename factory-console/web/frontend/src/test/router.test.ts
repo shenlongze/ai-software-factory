@@ -11,25 +11,17 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_ROUTE, PROJECT_ROUTES, WORKSPACE_ROUTES, parseHash } from '../router';
 
 describe('S10-014 路由常量表 (§2.3)', () => {
-  it('Workspace 级 8 条路由 (dashboard 默认 + 7 子页, 含 manage)', () => {
-    expect(WORKSPACE_ROUTES).toHaveLength(8);
+  it('Workspace 级 4 条路由 (方案 A: 我的公司/项目/设置 + 管理)', () => {
+    expect(WORKSPACE_ROUTES).toHaveLength(4);
     expect(WORKSPACE_ROUTES.map((r) => r.path)).toEqual([
       '#/workspace',
       '#/workspace/projects',
-      '#/workspace/team',
-      '#/workspace/workflows',
-      '#/workspace/runtime',
-      '#/workspace/audit',
       '#/workspace/settings',
       '#/workspace/manage',
     ]);
     expect(WORKSPACE_ROUTES.map((r) => r.page)).toEqual([
       'dashboard',
       'projects',
-      'team',
-      'workflows',
-      'runtime',
-      'audit',
       'settings',
       'manage',
     ]);
@@ -68,17 +60,21 @@ describe('S10-014 路由常量表 (§2.3)', () => {
   });
 });
 
-describe('parseHash — Workspace 级 (7 条)', () => {
+describe('parseHash — Workspace 级 (3 导航 + 管理)', () => {
   it.each([
     ['#/workspace', 'dashboard'],
     ['#/workspace/projects', 'projects'],
-    ['#/workspace/team', 'team'],
-    ['#/workspace/workflows', 'workflows'],
-    ['#/workspace/runtime', 'runtime'],
-    ['#/workspace/audit', 'audit'],
     ['#/workspace/settings', 'settings'],
+    ['#/workspace/manage', 'manage'],
   ] as const)('%s → workspace/%s', (hash, page) => {
     expect(parseHash(hash)).toEqual({ level: 'workspace', page });
+  });
+
+  it('已移 board 的旧子页 (team/workflows/runtime/audit) → 回退 dashboard', () => {
+    expect(parseHash('#/workspace/team')).toEqual({ level: 'workspace', page: 'dashboard' });
+    expect(parseHash('#/workspace/workflows')).toEqual({ level: 'workspace', page: 'dashboard' });
+    expect(parseHash('#/workspace/runtime')).toEqual({ level: 'workspace', page: 'dashboard' });
+    expect(parseHash('#/workspace/audit')).toEqual({ level: 'workspace', page: 'dashboard' });
   });
 
   it('Workspace 未知子页 → 默认 dashboard (不崩)', () => {

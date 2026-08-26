@@ -612,11 +612,11 @@ class TestRegistryAndVersion:
     def test_version_bumped_119(self):
         """版本 v1.1.95: pyproject + CHANGELOG + FEATURES 同步。"""
         pyproject = (_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-        assert re.search(r'^version\s*=\s*"1\.1\.165"', pyproject, re.M)
+        assert re.search(r'^version\s*=\s*"1\.1\.166"', pyproject, re.M)
         changelog = (_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-        assert "## [v1.1.165]" in changelog
+        assert "## [v1.1.166]" in changelog
         features = (_ROOT / "docs" / "FEATURES.md").read_text(encoding="utf-8")
-        assert "v1.1.165" in features
+        assert "v1.1.166" in features
         # K-3/M4-1~6 待办清单同步
         backlog = (_ROOT / "docs" / "sprint10" / "待办清单-已发现未落地.md").read_text(
             encoding="utf-8")

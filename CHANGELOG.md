@@ -3,6 +3,22 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.166] — 2026-08-26
+
+**会话工具调用框架 (Founder: 详细分析必须调专业工具, 不靠 LLM 脑补)**。
+
+### Added
+
+- analysis_tools.py: 工具集 scan_project / list_tasks(优先级) / git_status /
+  search_code / read_doc — 全部真实执行, 失败安全
+- deep_analyze 意图: '详细分析/深度分析' → 自动执行工具集 → 证据块 (带【工具】来源)
+  注入 prompt; 分析必须引用证据, 禁止编造数字
+- persona 明确: 开发支持 = 拆解→任务→执行引擎真实产出 (不是只给片段)
+
+### Fixed
+
+- git_push/analysis 相对导入 .. → ... (web.backend 三层路径)
+
 ## [v1.1.165] — 2026-08-26
 
 **会话能力自我认知修复 (Founder: 会话答'不能操作文件系统'是自我贬低)**。

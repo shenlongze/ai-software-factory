@@ -3235,7 +3235,7 @@ def build_app(
 
         if intent.get("intent") == "git_push":
             # 推送仓库到 origin (Founder 2026-08-26: 会话"帮忙推送一下"真实执行)
-            from ..session.project_scan import git_push
+            from ...session.project_scan import git_push
 
             tgt = None
             if hint_project:
@@ -3400,6 +3400,44 @@ def build_app(
                 result["meta"] = {
                     "intent": action, "project": getattr(tgt, "name", None) if tgt is not None else None,
                     "data_source": "live", "target": action_target,
+                }
+                return result
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        if intent.get("intent") == "deep_analyze":
+            # 会话工具调用 (Founder 2026-08-26): 分析必须调专业工具, 结论可溯源
+            from ...session.analysis_tools import run_analysis
+
+            tgt = _resolve_tgt(projects, hint_project, session)
+            if tgt is None:
+                facts = "未定位到目标项目 — 请说项目名。"
+                action_target = {"url": "#/workspace/projects", "label": "查看项目列表"}
+            else:
+                try:
+                    evidence = run_analysis(
+                        workspace_root, str(tgt.id), body.message,
+                        workflow_status=getattr(tgt, "workflow_status", None) or None,
+                        current_stage=getattr(tgt, "current_stage", None) or None,
+                    )
+                except Exception as exc:  # noqa: BLE001 — 工具失败 → 诚实降级
+                    evidence = f"（工具执行失败: {exc}）"
+                facts = (
+                    "【以下全部来自工具真实执行, 引用时标注来源, 禁止编造数字】\n"
+                    + evidence
+                    + "\n\n请输出: 1)结论 2)分析过程(引用上面【工具】证据) 3)数据 4)建议。"
+                )
+                action_target = {"url": f"#/project/{tgt.id}", "label": "查看项目"}
+            try:
+                result = _sessions_mod.send_message(
+                    sessions_store, session_id, body.message, facts=facts,
+                    reply_extra="分析必须引用【工具】证据来源; 工具没提供的不要编造; 分 结论/分析过程/数据/建议。",
+                )
+                result["meta"] = {
+                    "intent": "deep_analyze",
+                    "project": getattr(tgt, "name", None) if tgt is not None else None,
+                    "data_source": "tools",
+                    "target": action_target,
                 }
                 return result
             except ValueError as exc:

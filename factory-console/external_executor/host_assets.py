@@ -97,30 +97,36 @@ def scan_adapter_assets(adapter: ExternalExecutorAdapter) -> list[dict[str, Any]
                     "tags": [],
                     "host": {"cli": adapter.binary, "file": str(f)},
                 })
-    # ---- skills (复用 U-4 SKILL.md 解析; 注册时命名空间前缀) ----
+    # ---- skills (复用 U-4 SKILL.md 解析; 注册时命名空间前缀; 递归找 SKILL.md) ----
+    # hermes 技能两级嵌套 (分类/技能/SKILL.md) — rglob 覆盖任意深度; 分类作 tag
     if spec.skills is not None:
         base = Path(str(spec.skills.dir).replace("~", str(home))).expanduser()
         if base.is_dir():
-            for skill_dir in sorted(d for d in base.iterdir() if d.is_dir()):
-                md = skill_dir / "SKILL.md"
-                if not md.is_file():
-                    continue
-                # 复用 U-4 external_skills.parse_skill_md (路径级解析, 同款 frontmatter)
-                from factory_console import external_skills as _ext_skills
+            from factory_console import external_skills as _ext_skills
 
+            seen: set[str] = set()
+            for md in sorted(base.rglob("SKILL.md")):
                 parsed = _ext_skills.parse_skill_md(md)
                 if not parsed:
                     continue
-                raw_id = str(parsed.get("id") or skill_dir.name).strip()
+                leaf = str(parsed.get("id") or md.parent.name).strip()
+                parent = md.parent.parent.name
+                if parent == base.name:
+                    parent = ""  # 一级目录 (codex/claude)
+                rid = leaf
+                if rid in seen and parent:
+                    rid = f"{parent}.{leaf}"  # 跨分类重名 → 带分类消歧
+                seen.add(rid)
                 assets.append({
-                    "id": f"{src}.{raw_id}",
-                    "name": str(parsed.get("name") or raw_id),
+                    "id": f"{src}.{rid}",
+                    "name": str(parsed.get("name") or leaf),
                     "description": str(parsed.get("description") or ""),
                     "instructions": str(parsed.get("instructions") or ""),
                     "source": src,
                     "kind": "skill",
                     "role": "",
-                    "tags": [],
+                    "tags": [parent] if parent else [],
+                    "category": parent,
                     "host": {"cli": adapter.binary, "file": str(md)},
                 })
     # ---- plugins (catalog: 只列目录) ----

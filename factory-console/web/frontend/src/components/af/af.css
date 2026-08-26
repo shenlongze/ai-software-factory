@@ -1779,6 +1779,137 @@
   font-weight: 600;
 }
 
+.af-monitor-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.af-monitor-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.af-monitor-card-sub {
+  font-size: 11px;
+  color: var(--c-text2);
+}
+
+.af-monitor-chart {
+  border: 1px solid var(--c-border);
+  border-radius: 10px;
+  background: var(--c-card);
+  padding: 10px;
+  margin-bottom: 16px;
+}
+
+.af-monitor-chart-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--c-text2);
+  padding: 0 24px;
+}
+
+.af-monitor-recent {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.af-monitor-recent-row {
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  background: var(--c-card);
+  overflow: hidden;
+}
+
+.af-monitor-recent-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  font: inherit;
+  font-size: 12px;
+  color: var(--c-text);
+  background: transparent;
+  border: none;
+  padding: 8px 12px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.af-monitor-recent-head:hover {
+  background: var(--c-hover);
+}
+
+.af-monitor-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.af-monitor-dot.ok { background: #22c55e; }
+.af-monitor-dot.fail { background: #ef4444; }
+
+.af-monitor-recent-who {
+  flex: none;
+  font-family: var(--af-font-mono);
+  color: var(--c-text2);
+}
+
+.af-monitor-recent-task {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.af-monitor-recent-meta {
+  flex: none;
+  font-size: 11px;
+  color: var(--c-text2);
+}
+
+.af-monitor-recent-result.ok { color: #22c55e; }
+.af-monitor-recent-result.fail { color: #ef4444; }
+
+.af-monitor-recent-detail {
+  border-top: 1px solid var(--c-border);
+  padding: 8px 12px;
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.af-monitor-code {
+  font-family: var(--af-font-mono);
+  font-size: 11px;
+  color: var(--c-text2);
+  word-break: break-all;
+  margin: 0;
+}
+
+.af-monitor-error {
+  color: #ef4444;
+  font-size: 11px;
+  margin: 0;
+}
+
+.af-monitor-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
 /* T-9 (v1.1.185): 执行溯源 — exec_ref → 记录/证据包 */
 .af-task-detail-exec {
   margin-top: 4px;

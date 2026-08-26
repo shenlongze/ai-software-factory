@@ -428,3 +428,35 @@ export interface QualityGateViewModel {
   approval: QualityApproval | null;
   history: QualityHistoryItem[];
 }
+
+/** M4.2 监控中心聚合 (GET /api/external-ai/monitor)。 */
+export interface MonitorSummary {
+  total: number; success: number; failed: number;
+  success_rate?: number | null; first_pass_rate?: number | null;
+  verified: number; verify_pass_rate?: number | null;
+  avg_duration_ms?: number | null; p90_duration_ms?: number | null;
+  total_rework: number;
+}
+export interface MonitorTrendPoint { date: string; count: number; success: number; failed: number }
+export interface MonitorGroup { key: string; total: number; success: number; failed: number; success_rate?: number | null; first_pass_rate?: number | null; verify_pass_rate?: number | null; avg_duration_ms?: number | null; total_rework: number }
+export interface MonitorRecent {
+  result_id?: string | null; timestamp?: string | null; executor_id?: string | null;
+  mode?: string | null; host_agent?: string | null; agent?: string | null;
+  task?: string | null; result?: string | null; duration_ms?: number | null;
+  exit_code?: number | null; first_pass?: boolean | null;
+  verify?: { method?: string; result?: string; score?: number | null } | null;
+  rework?: { count?: number; reasons?: string[] } | null;
+  command?: string | null; error?: string | null;
+}
+export interface MonitorAlert { severity: string; executor_id?: string | null; type: string; detail: string }
+export interface MonitorDetail {
+  summary: { external: MonitorSummary; internal: MonitorSummary; combined: MonitorSummary };
+  trend: MonitorTrendPoint[];
+  by_executor: MonitorGroup[];
+  by_agent: MonitorGroup[];
+  by_project: MonitorGroup[];
+  rework_reasons: Array<{ reason: string; count: number }>;
+  verify_methods: Array<{ method: string; count: number }>;
+  recent: MonitorRecent[];
+  alerts: MonitorAlert[];
+}

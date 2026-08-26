@@ -61,7 +61,7 @@ import {
   type WorkflowDetail,
   type WorkflowSummary,
 } from '../models/types';
-import type { BacklogFeature, BacklogTask, TaskExecTrace, TaskSessionRef } from '../models/domain';
+import type { BacklogFeature, BacklogTask, MonitorDetail, TaskExecTrace, TaskSessionRef } from '../models/domain';
 import type { RegistryTool } from '../models/types';
 
 export class ApiError extends Error {
@@ -429,14 +429,8 @@ export const api = {
     capabilities: Record<string, unknown>; allow_dangerous: boolean;
     found: boolean; path?: string | null; builtin: boolean;
   }>; count: number }>('/api/external-ai'),
-  externalAiMonitor: () =>
-    getJson<{ executors: Array<{
-      executor_id: string; total: number; success: number; failed: number;
-      success_rate: number; first_pass_rate: number; verify_pass_rate?: number | null;
-      verified: number; avg_duration_ms?: number | null; rework_total: number;
-      last_run_at?: string | null; last_result?: string | null; last_mode?: string | null;
-      last_host_agent?: string | null; last_result_id?: string | null;
-    }>; alerts: Array<{ severity: string; executor_id?: string; type: string; detail: string }> }>('/api/external-ai/monitor'),
+  externalAiMonitor: (days = 14, recent = 30) =>
+    getJson<MonitorDetail>(`/api/external-ai/monitor?days=${days}&recent=${recent}`),
   scanExternalAi: () =>
     sendJson<{ results: Array<{ id: string; name: string; found: boolean; ok: boolean; path?: string | null; version?: string | null; usage?: string; error?: string }>; count: number }>('/api/external-ai/scan', {}),
   saveExternalAi: (body: Record<string, unknown>) =>

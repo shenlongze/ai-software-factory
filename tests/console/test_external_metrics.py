@@ -120,7 +120,9 @@ class TestMonitorHttp:
             r = c.get("/api/external-ai/monitor")
             assert r.status_code == 200, r.text
             body = r.json()
-            assert len(body["executors"]) >= 2
-            codex = next(e for e in body["executors"] if e["executor_id"] == "codex")
+            assert body["summary"]["external"]["total"] == 6  # 3 codex + 3 claude
+            codex = next(e for e in body["by_executor"] if e["key"] == "codex")
             assert codex["total"] == 3
+            assert len(body["trend"]) >= 1
+            assert len(body["recent"]) >= 1
             assert isinstance(body["alerts"], list)

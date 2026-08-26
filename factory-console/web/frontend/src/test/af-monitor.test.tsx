@@ -1,8 +1,8 @@
 /**
- * src/test/af-monitor.test.tsx — 📊 监控页 (M4: 自身/外部两 Tab)。
+ * src/test/af-monitor.test.tsx — 📊 监控中心 (M4.2: 概览/趋势/多维/记录流/告警)。
  */
 
-import { render, screen, within } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AfMonitorPage } from '../pages/workspace/AfMonitorPage';
@@ -11,23 +11,35 @@ function jsonResponse(v: unknown): Response {
   return { ok: true, status: 200, json: async () => v } as Response;
 }
 
+const DETAIL = {
+  summary: {
+    external: { total: 5, success: 4, failed: 1, success_rate: 0.8, first_pass_rate: 0.8, verify_pass_rate: 1.0, verified: 2, avg_duration_ms: 2000, p90_duration_ms: 3000, total_rework: 1 },
+    internal: { total: 3, success: 2, failed: 1, success_rate: 0.67, first_pass_rate: 1.0, verify_pass_rate: null, verified: 0, avg_duration_ms: 1000, p90_duration_ms: 1500, total_rework: 0 },
+    combined: { total: 8, success: 6, failed: 2, success_rate: 0.75, first_pass_rate: 0.88, verify_pass_rate: 1.0, verified: 2, avg_duration_ms: 1600, p90_duration_ms: 2500, total_rework: 1 },
+  },
+  trend: [
+    { date: '2026-08-26', count: 5, success: 4, failed: 1 },
+    { date: '2026-08-27', count: 3, success: 2, failed: 1 },
+  ],
+  by_executor: [{ key: 'codex', total: 5, success: 4, failed: 1, success_rate: 0.8, first_pass_rate: 0.8, verify_pass_rate: 1.0, avg_duration_ms: 2000, total_rework: 1 }],
+  by_agent: [
+    { key: 'claude.architecture-examiner', total: 3, success: 2, failed: 1, success_rate: 0.67, first_pass_rate: 1.0, verify_pass_rate: null, avg_duration_ms: 1500, total_rework: 0 },
+    { key: 'backend-1', total: 2, success: 1, failed: 1, success_rate: 0.5, first_pass_rate: 1.0, verify_pass_rate: null, avg_duration_ms: 800, total_rework: 0 },
+  ],
+  by_project: [{ key: '/tmp/p', total: 5, success: 4, failed: 1, success_rate: 0.8, first_pass_rate: 0.8, verify_pass_rate: 1.0, avg_duration_ms: 2000, total_rework: 1 }],
+  rework_reasons: [{ reason: '测试挂了', count: 1 }],
+  verify_methods: [{ method: 'pytest·pass', count: 2 }],
+  recent: [
+    { result_id: 'EXS-1', executor_id: 'claude', host_agent: 'architecture-examiner', task: '审查架构', result: 'success', duration_ms: 2000, timestamp: '2026-08-27T00:00:00Z', verify: { method: 'pytest', result: 'pass', score: 0.9 }, rework: { count: 0, reasons: [] }, command: 'claude -p --agent architecture-examiner' },
+    { result_id: 'EXS-2', executor_id: null, agent: 'backend-1', task: '写接口', result: 'failed', duration_ms: 500, timestamp: '2026-08-26T00:00:00Z', error: 'provider 5xx' },
+  ],
+  alerts: [{ severity: 'high', executor_id: 'codex', type: 'consecutive_failures', detail: '连续失败 3 次' }],
+};
+
 function stubApi() {
   const fn = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
-    if (url === '/api/agents') return jsonResponse({ agents: [
-      { id: 'backend-1', name: 'backend-1', role: 'backend-developer' },
-      { id: 'claude.architecture-examiner', name: '架构审查', role: 'architect', source: 'claude' },
-    ] });
-    if (url === '/api/skills') return jsonResponse({ skills: [{ id: 's1' }, { id: 's2' }] });
-    if (url === '/api/runtime-sessions?status=running') return jsonResponse({ items: [{ id: 'rs1', agent_id: 'backend-1', task_id: 'T1', status: 'RUNNING' }] });
-    if (url === '/api/monitor?limit=5&offset=0') return jsonResponse({ version: 'v1.1.194', frontend: { up: true }, backend: { up: true } });
-    if (url === '/api/external-ai') return jsonResponse({ adapters: [
-      { id: 'codex', name: '本机 Codex', found: true, builtin: true, path: '/usr/bin/codex' },
-    ] });
-    if (url === '/api/external-ai/monitor') return jsonResponse({
-      executors: [{ executor_id: 'codex', total: 5, success: 4, failed: 1, success_rate: 0.8, first_pass_rate: 0.8, verify_pass_rate: 1.0, verified: 2, avg_duration_ms: 2000, rework_total: 0, last_run_at: '2026-08-27T00:00:00Z' }],
-      alerts: [{ severity: 'high', executor_id: 'codex', type: 'consecutive_failures', detail: '连续失败 3 次' }],
-    });
+    if (url.startsWith('/api/external-ai/monitor')) return jsonResponse(DETAIL);
     return jsonResponse({});
   });
   vi.stubGlobal('fetch', fn);
@@ -36,28 +48,45 @@ function stubApi() {
 
 afterEach(() => { vi.unstubAllGlobals(); });
 
-describe('AfMonitorPage (📊 监控)', () => {
-  it('自身能力 tab: 概览卡 + AI 员工(内部/外部) + 执行中', async () => {
+describe('AfMonitorPage (📊 监控中心)', () => {
+  it('概览卡 + 趋势 + 多维 + 记录流 + 告警', async () => {
     stubApi();
     render(<AfMonitorPage />);
-    // 概览卡
-    expect(await screen.findByText('AI 员工（内部 1）')).toBeInTheDocument();
-    expect(screen.getByText('技能')).toBeInTheDocument();
-    expect(screen.getAllByText('执行中任务').length).toBeGreaterThan(0);
-    // 员工列表
-    expect(screen.getByText('backend-1')).toBeInTheDocument();
-    expect(screen.getByText(/架构审查/)).toBeInTheDocument();  // 外部 agent 带源
+    // 概览 (combined)
+    expect(await screen.findByText('执行次数')).toBeInTheDocument();
+    expect(screen.getByText('8')).toBeInTheDocument(); // combined total
+    expect(screen.getByText('75%')).toBeInTheDocument(); // success_rate
+    // 多维表: 按执行器
+    expect(await screen.findByText('按执行器')).toBeInTheDocument();
+    expect(screen.getByText('按 Agent / Skill')).toBeInTheDocument();
+    expect(screen.getByText('claude.architecture-examiner')).toBeInTheDocument();
+    // 回修原因/验证方式
+    expect(screen.getByText('🔄 测试挂了 ×1')).toBeInTheDocument();
+    expect(screen.getByText('✅ pytest·pass ×2')).toBeInTheDocument();
+    // 记录流
+    expect(screen.getByText('审查架构')).toBeInTheDocument();
+    // 告警
+    expect(screen.getByText(/连续失败 3 次/)).toBeInTheDocument();
   });
 
-  it('外部能力 tab: 指标表 + 告警', async () => {
+  it('作用域切换: 自身能力只看内部记录', async () => {
     const user = userEvent.setup();
     stubApi();
     render(<AfMonitorPage />);
-    await user.click(screen.getByRole('tab', { name: '外部能力' }));
-    const table = await screen.findByTestId('af-monitor-table');
-    expect(within(table).getByText('codex')).toBeInTheDocument();
-    expect(within(table).getAllByText('80%').length).toBeGreaterThan(0);  // success_rate/first_pass
-    // 告警
-    expect(await screen.findByText(/连续失败 3 次/)).toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: '自身能力' }));
+    // 内部 summary total=3
+    expect(await screen.findByText('3')).toBeInTheDocument();
+    // 记录流只含内部 (backend-1), 不含 claude
+    expect(screen.getByText('写接口')).toBeInTheDocument();
+    expect(screen.queryByText('审查架构')).not.toBeInTheDocument();
+  });
+
+  it('记录流点击钻取: 显示命令/验证/错误', async () => {
+    const user = userEvent.setup();
+    stubApi();
+    render(<AfMonitorPage />);
+    await user.click(await screen.findByText('审查架构'));
+    expect(await screen.findByText(/验证: pytest · pass/)).toBeInTheDocument();
+    expect(screen.getByText('claude -p --agent architecture-examiner')).toBeInTheDocument();
   });
 });

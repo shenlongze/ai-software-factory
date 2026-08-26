@@ -1,181 +1,250 @@
 /**
- * pages/workspace/AfMonitorPage.tsx — 📊 监控 (M4, 设计文档 §8)。
+ * pages/workspace/AfMonitorPage.tsx — 📊 监控中心 (M4.2, 设计文档 §8 扩展)。
  *
- * Founder 2026-08-27: 监控独立入口, 不进设置; 分两个 Tab:
- *   Tab 1 · 自身能力监控: 内部 AI 员工 / 技能 / 工具 / 执行中 / 系统
- *   Tab 2 · 外部能力监控: 外部执行器指标 (效率/效果/完成率/回修/验证) + 告警
+ * Founder 2026-08-27: 监控太简单, 维度不全 → 监控中心:
+ * - 概览卡: 总执行/成功率/首次通过/验证通过/平均耗时/P90/回修/告警 (全部/自身/外部)
+ * - 趋势图 (SVG 柱状: 近 N 天执行次数 + 成功率折线, 零依赖)
+ * - 多维聚合: 按执行器 / host_agent / 项目 / 回修原因 / 验证方式
+ * - 执行记录流 (最近 N 条, 点击钻取: 命令/验证/回修/错误)
+ * - 告警区; 作用域切换 + 天数筛选 + 刷新
  *
- * 真实数据流 (禁止 mock): /api/agents · /api/skills · /api/runtime-sessions?status=running
- *   · /api/monitor · /api/external-ai · /api/external-ai/monitor
+ * 真实数据流: GET /api/external-ai/monitor?days=&recent= (内部+外部执行记录并轨)
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../../api/client';
 import { AfErrorState, AfLoadingState } from '../../components/af/AfState';
+import type { MonitorDetail, MonitorGroup, MonitorRecent, MonitorSummary } from '../../models/domain';
 
-interface ExecutorMetric {
-  executor_id: string; total: number; success: number; failed: number;
-  success_rate: number; first_pass_rate: number; verify_pass_rate?: number | null;
-  verified: number; avg_duration_ms?: number | null; rework_total: number;
-  last_run_at?: string | null; last_result?: string | null; last_mode?: string | null;
-  last_host_agent?: string | null; last_result_id?: string | null;
-}
-interface Alert { severity: string; executor_id?: string; type: string; detail: string }
-interface Adapter { id: string; name: string; found: boolean; builtin: boolean; path?: string | null }
-
+type Scope = 'all' | 'self' | 'external';
 const SEV = { high: '🔴', medium: '🟠', info: 'ℹ️' } as Record<string, string>;
 
 function pct(v: number | null | undefined): string {
   return v == null ? '—' : `${Math.round(v * 100)}%`;
 }
-
-function formatTime(iso?: string | null): string {
+function sec(ms?: number | null): string {
+  return ms == null ? '—' : ms >= 60000 ? `${(ms / 60000).toFixed(1)}m` : `${Math.round(ms / 1000)}s`;
+}
+function fmt(iso?: string | null): string {
   if (!iso) return '—';
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleString('zh-CN', { hour12: false });
+  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString('zh-CN', { hour12: false });
+}
+
+function Card({ num, label, sub }: { num: string; label: string; sub?: string }) {
+  return (
+    <div className="af-monitor-card">
+      <span className="af-monitor-card-num">{num}</span>
+      <span>{label}</span>
+      {sub ? <span className="af-monitor-card-sub">{sub}</span> : null}
+    </div>
+  );
+}
+
+function SummaryCards({ s }: { s: MonitorSummary }) {
+  return (
+    <div className="af-monitor-cards">
+      <Card num={String(s.total)} label="执行次数" sub={`✓${s.success} · ✗${s.failed}`} />
+      <Card num={pct(s.success_rate)} label="成功率" />
+      <Card num={pct(s.first_pass_rate)} label="首次通过率" />
+      <Card num={pct(s.verify_pass_rate)} label="验证通过率" sub={`已验证 ${s.verified}`} />
+      <Card num={sec(s.avg_duration_ms)} label="平均耗时" sub={`P90 ${sec(s.p90_duration_ms)}`} />
+      <Card num={String(s.total_rework)} label="回修总数" />
+    </div>
+  );
+}
+
+/** SVG 趋势图: 柱 = 执行次数, 折线 = 成功率 (零依赖)。 */
+function TrendChart({ trend }: { trend: Array<{ date: string; count: number; success: number; failed: number }> }) {
+  if (!trend || trend.length === 0) return <p className="af-home-note">暂无趋势数据（有执行后自动出现）</p>;
+  const w = 760, h = 160, pad = 24;
+  const max = Math.max(1, ...trend.map((t) => t.count));
+  const bw = (w - pad * 2) / trend.length;
+  const barH = (c: number) => (c / max) * (h - pad * 2);
+  const line = trend
+    .map((t, i) => {
+      const rate = t.count ? t.success / t.count : 0;
+      const x = pad + bw * i + bw / 2;
+      const y = h - pad - rate * (h - pad * 2);
+      return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(' ');
+  return (
+    <div className="af-monitor-chart">
+      <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={h} role="img" aria-label="执行趋势">
+        {[0.25, 0.5, 0.75, 1].map((g) => (
+          <line key={g} x1={pad} x2={w - pad} y1={h - pad - g * (h - pad * 2)} y2={h - pad - g * (h - pad * 2)} stroke="var(--c-border)" strokeDasharray="4 4" />
+        ))}
+        {trend.map((t, i) => (
+          <g key={t.date}>
+            <rect x={pad + bw * i + bw * 0.2} y={h - pad - barH(t.count)} width={bw * 0.6} height={barH(t.count)} fill="#4c8dff" opacity={0.7} rx={2} />
+            <title>{`${t.date}: ${t.count} 次 (成功 ${t.success})`}</title>
+          </g>
+        ))}
+        <path d={line} fill="none" stroke="#22c55e" strokeWidth={2} />
+      </svg>
+      <div className="af-monitor-chart-labels">
+        {trend.map((t) => (
+          <span key={t.date}>{t.date.slice(5)}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function GroupTable({ title, rows }: { title: string; rows: MonitorGroup[] }) {
+  if (!rows || rows.length === 0) return null;
+  return (
+    <>
+      <h3 className="af-settings-h3">{title}</h3>
+      <table className="af-monitor-table">
+        <thead><tr><th>维度</th><th>次数</th><th>成功率</th><th>首次通过</th><th>验证通过</th><th>平均耗时</th><th>回修</th></tr></thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.key}>
+              <td>{r.key}</td><td>{r.total}</td>
+              <td>{pct(r.success_rate)}</td><td>{pct(r.first_pass_rate)}</td>
+              <td>{pct(r.verify_pass_rate)}</td><td>{sec(r.avg_duration_ms)}</td>
+              <td>{r.total_rework}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </>
+  );
+}
+
+function RecentStream({ items }: { items: MonitorRecent[] }) {
+  const [openId, setOpenId] = useState<string | null>(null);
+  if (!items || items.length === 0) return <p className="af-home-note">暂无执行记录</p>;
+  return (
+    <div className="af-monitor-recent">
+      {items.map((r) => {
+        const rid = r.result_id ?? '';
+        const ok = r.result === 'success';
+        const open = openId === rid;
+        return (
+          <div key={rid || `${r.timestamp}-${Math.random()}`} className={`af-monitor-recent-row${open ? ' open' : ''}`} data-testid={`af-monitor-recent-${rid || 'x'}`}>
+            <button type="button" className="af-monitor-recent-head" onClick={() => setOpenId(open ? null : rid)}>
+              <span className={`af-monitor-dot ${ok ? 'ok' : 'fail'}`} />
+              <span className="af-monitor-recent-who">{r.executor_id ?? ''}{r.host_agent ? `·${r.host_agent}` : ''}{r.agent && !r.executor_id ? `·${r.agent}` : ''}</span>
+              <span className="af-monitor-recent-task">{r.task}</span>
+              <span className="af-monitor-recent-meta">{sec(r.duration_ms)} · {fmt(r.timestamp)}</span>
+              <span className={`af-monitor-recent-result ${ok ? 'ok' : 'fail'}`}>{ok ? '成功' : '失败'}</span>
+            </button>
+            {open ? (
+              <div className="af-monitor-recent-detail">
+                {r.verify && r.verify.result ? <p>✅ 验证: {r.verify.method ?? '—'} · {r.verify.result}{r.verify.score != null ? ` · ${r.verify.score}` : ''}</p> : null}
+                {r.rework && r.rework.count ? <p>🔄 回修 {r.rework.count} 次{r.rework.reasons?.length ? `: ${r.rework.reasons.join('、')}` : ''}</p> : null}
+                {r.command ? <p className="af-monitor-code">{r.command}</p> : null}
+                {r.error ? <p className="af-monitor-error">{r.error}</p> : null}
+              </div>
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 export function AfMonitorPage(): JSX.Element {
-  const [tab, setTab] = useState<'self' | 'external'>('self');
-  const [error, setError] = useState<string>('');
+  const [scope, setScope] = useState<Scope>('all');
+  const [days, setDays] = useState(14);
+  const [data, setData] = useState<MonitorDetail | null>(null);
+  const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
-  const [refreshTick, setRefreshTick] = useState(0);
-
-  // 自身能力数据
-  const [agents, setAgents] = useState<Array<{ id?: string; name?: string; role?: string; status?: string; source?: string }>>([]);
-  const [skillsCount, setSkillsCount] = useState(0);
-  const [running, setRunning] = useState<Array<{ id?: string; agent_id?: string; task_id?: string; status?: string }>>([]);
-  const [sysMon, setSysMon] = useState<Record<string, unknown> | null>(null);
-  // 外部能力数据
-  const [adapters, setAdapters] = useState<Adapter[]>([]);
-  const [executors, setExecutors] = useState<ExecutorMetric[]>([]);
-  const [alerts, setAlerts] = useState<Alert[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const [ag, sk, run, mon, ext, extMon] = await Promise.all([
-        api.agents(),
-        api.skills(),
-        api.runtimeSessions('running'),
-        api.monitor(5, 0),
-        api.externalAi(),
-        api.externalAiMonitor(),
-      ]);
-      setAgents(ag as Array<{ id?: string; name?: string; role?: string; status?: string; source?: string }>);
-      setSkillsCount((sk as { skills?: unknown[] }).skills?.length ?? 0);
-      setRunning(run as Array<{ id?: string; agent_id?: string; task_id?: string; status?: string }>);
-      setSysMon(mon as Record<string, unknown>);
-      setAdapters(ext.adapters ?? []);
-      setExecutors(extMon.executors ?? []);
-      setAlerts(extMon.alerts ?? []);
+      setData(await api.externalAiMonitor(days, 30));
     } catch (err) {
       setError(String(err));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [days]);
 
-  useEffect(() => { void load(); }, [load, refreshTick]);
+  useEffect(() => { void load(); }, [load]);
 
-  const internalCount = agents.filter((a) => !(a.source && a.source !== '')).length;
+  const scopeFilter = useCallback(
+    (rows: MonitorGroup[] | undefined) => {
+      if (!rows) return [];
+      if (scope === 'self') return rows.filter((r) => !r.key.includes('.'));
+      if (scope === 'external') return rows.filter((r) => r.key.includes('.') || ['codex', 'claude', 'hermes'].includes(r.key));
+      return rows;
+    },
+    [scope],
+  );
+
+  const recent = useMemo(() => {
+    if (!data) return [];
+    if (scope === 'self') return data.recent.filter((r) => !r.executor_id);
+    if (scope === 'external') return data.recent.filter((r) => r.executor_id);
+    return data.recent;
+  }, [data, scope]);
+
+  const summary = data?.summary[scope === 'self' ? 'internal' : scope === 'external' ? 'external' : 'combined'] ?? null;
+  const alerts = scope === 'self' ? [] : (data?.alerts ?? []);
 
   return (
     <div className="af-monitor" data-testid="af-monitor">
       <h2 className="af-detail-name">📊 监控</h2>
-      <div className="af-settings-tabs" role="tablist" aria-label="监控分类">
-        <button type="button" role="tab" aria-selected={tab === 'self'} className={`af-settings-tab${tab === 'self' ? ' active' : ''}`} onClick={() => setTab('self')}>自身能力</button>
-        <button type="button" role="tab" aria-selected={tab === 'external'} className={`af-settings-tab${tab === 'external' ? ' active' : ''}`} onClick={() => setTab('external')}>外部能力</button>
+      <div className="af-monitor-toolbar">
+        <div className="af-settings-tabs" role="tablist" aria-label="监控作用域">
+          {(['all', 'self', 'external'] as Scope[]).map((s) => (
+            <button key={s} type="button" role="tab" aria-selected={scope === s}
+              className={`af-settings-tab${scope === s ? ' active' : ''}`} onClick={() => setScope(s)}>
+              {s === 'all' ? '全部' : s === 'self' ? '自身能力' : '外部能力'}
+            </button>
+          ))}
+        </div>
+        <div className="af-monitor-actions">
+          <select className="af-settings-input" aria-label="趋势天数" value={days} onChange={(e) => setDays(Number(e.target.value))}>
+            <option value={7}>近 7 天</option><option value={14}>近 14 天</option><option value={30}>近 30 天</option>
+          </select>
+          <button type="button" className="af-settings-action" onClick={() => void load()}>⟳ 刷新</button>
+        </div>
       </div>
-      <div className="af-monitor-actions">
-        <button type="button" className="af-settings-action" onClick={() => setRefreshTick((t) => t + 1)}>⟳ 刷新</button>
-      </div>
-      {error ? <AfErrorState message={`监控加载失败: ${error}`} onRetry={() => setRefreshTick((t) => t + 1)} /> : null}
+      {error ? <AfErrorState message={`监控加载失败: ${error}`} onRetry={() => void load()} /> : null}
       {loading && !error ? <AfLoadingState label="正在加载监控…" /> : null}
-      {!loading && !error ? (
-        tab === 'self' ? (
-          <div className="af-monitor-self" data-testid="af-monitor-self">
-            <div className="af-monitor-cards">
-              <div className="af-monitor-card"><span className="af-monitor-card-num">{agents.length}</span><span>AI 员工（内部 {internalCount}）</span></div>
-              <div className="af-monitor-card"><span className="af-monitor-card-num">{skillsCount}</span><span>技能</span></div>
-              <div className="af-monitor-card"><span className="af-monitor-card-num">{running.length}</span><span>执行中任务</span></div>
-              <div className="af-monitor-card"><span className="af-monitor-card-num">{alerts.filter((a) => a.severity === 'high').length}</span><span>告警</span></div>
-            </div>
-            <h3 className="af-settings-h3">AI 员工</h3>
-            <div className="af-settings-list">
-              {agents.map((a) => (
-                <div key={a.id ?? ''} className="af-settings-list-row">
-                  <span className="af-settings-list-name">{a.name ?? a.id}{a.source ? ` ⚡${a.source}` : ''}</span>
-                  <span className="af-settings-list-meta">{a.role ?? '—'}</span>
-                </div>
-              ))}
-            </div>
-            <h3 className="af-settings-h3">执行中任务</h3>
-            {running.length === 0 ? <p className="af-home-note">暂无执行中任务</p> : (
-              <div className="af-settings-list">
-                {running.map((r) => (
-                  <div key={r.id ?? ''} className="af-settings-list-row">
-                    <span className="af-settings-list-name">agent: {r.agent_id ?? '—'}</span>
-                    <span className="af-settings-list-meta">task: {r.task_id ?? '—'} · {r.status ?? ''}</span>
-                  </div>
-                ))}
+      {!loading && !error && data ? (
+        <div className="af-monitor-body">
+          {summary ? <SummaryCards s={summary} /> : null}
+          <h3 className="af-settings-h3">执行趋势（{scope === 'all' ? '全部' : scope === 'self' ? '自身' : '外部'}）</h3>
+          <TrendChart trend={data.trend} />
+          <GroupTable title="按执行器" rows={scope === 'self' ? [] : data.by_executor} />
+          <GroupTable title="按 Agent / Skill" rows={scopeFilter(data.by_agent)} />
+          {scope !== 'self' ? <GroupTable title="按项目目录" rows={data.by_project} /> : null}
+          {scope !== 'self' ? (
+            <>
+              <h3 className="af-settings-h3">回修原因 / 验证方式</h3>
+              <div className="af-monitor-chips">
+                {data.rework_reasons.map((r) => <span key={r.reason} className="af-settings-badge">🔄 {r.reason} ×{r.count}</span>)}
+                {data.verify_methods.map((m) => <span key={m.method} className="af-settings-badge">✅ {m.method} ×{m.count}</span>)}
+                {data.rework_reasons.length === 0 && data.verify_methods.length === 0 ? <span className="af-home-note">暂无（有验证/回修后出现）</span> : null}
               </div>
-            )}
-            <h3 className="af-settings-h3">系统</h3>
-            {sysMon ? (
-              <p className="af-home-note">
-                version={String((sysMon as Record<string, unknown>).version ?? '—')} ·
-                frontend={(sysMon as Record<string, unknown>).frontend ? '运行中' : '未运行'} ·
-                backend={(sysMon as Record<string, unknown>).backend ? '运行中' : '未运行'}
-              </p>
-            ) : null}
-          </div>
-        ) : (
-          <div className="af-monitor-external" data-testid="af-monitor-external">
-            <h3 className="af-settings-h3">外部执行器（{adapters.length}）</h3>
-            <div className="af-settings-list">
-              {adapters.map((a) => (
-                <div key={a.id} className="af-settings-list-row">
-                  <span className="af-settings-list-name">{a.name} <code>{a.id}</code>{a.builtin ? ' 内置' : ' 自定义'}</span>
-                  <span className="af-settings-list-meta">{a.found ? `✅ ${a.path}` : '⚠️ 未发现'}</span>
-                </div>
-              ))}
-            </div>
-            <h3 className="af-settings-h3">指标（EXS 执行记录）</h3>
-            {executors.length === 0 ? <p className="af-home-note">暂无委派记录（有委派后自动出现；黑盒层如实标注）</p> : (
-              <table className="af-monitor-table" data-testid="af-monitor-table">
-                <thead><tr><th>执行器</th><th>次数</th><th>成功率</th><th>首次通过</th><th>验证通过</th><th>平均耗时</th><th>回修</th><th>最近</th></tr></thead>
-                <tbody>
-                  {executors.map((m) => (
-                    <tr key={m.executor_id} data-testid={`af-monitor-exec-${m.executor_id}`}>
-                      <td>{m.executor_id}{m.last_host_agent ? ` · ${m.last_host_agent}` : ''}</td>
-                      <td>{m.total}</td>
-                      <td>{pct(m.success_rate)}</td>
-                      <td>{pct(m.first_pass_rate)}</td>
-                      <td>{pct(m.verify_pass_rate)}</td>
-                      <td>{m.avg_duration_ms != null ? `${Math.round(m.avg_duration_ms / 1000)}s` : '—'}</td>
-                      <td>{m.rework_total}</td>
-                      <td>{formatTime(m.last_run_at)}</td>
-                    </tr>
+            </>
+          ) : null}
+          <h3 className="af-settings-h3">执行记录流（最近 {recent.length}）</h3>
+          <RecentStream items={recent} />
+          {scope !== 'self' ? (
+            <>
+              <h3 className="af-settings-h3">告警</h3>
+              {alerts.length === 0 ? <p className="af-home-note">暂无告警</p> : (
+                <div className="af-settings-list">
+                  {alerts.map((a, i) => (
+                    <div key={i} className="af-settings-list-row">
+                      <span className="af-settings-list-name">{SEV[a.severity] ?? '•'} {a.executor_id ?? a.type}</span>
+                      <span className="af-settings-list-meta">{a.detail}</span>
+                    </div>
                   ))}
-                </tbody>
-              </table>
-            )}
-            <h3 className="af-settings-h3">告警</h3>
-            {alerts.length === 0 ? <p className="af-home-note">暂无告警</p> : (
-              <div className="af-settings-list">
-                {alerts.map((a, i) => (
-                  <div key={i} className="af-settings-list-row">
-                    <span className="af-settings-list-name">{SEV[a.severity] ?? '•'} {a.executor_id ?? a.type}</span>
-                    <span className="af-settings-list-meta">{a.detail}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )
+                </div>
+              )}
+            </>
+          ) : null}
+        </div>
       ) : null}
     </div>
   );

@@ -1846,15 +1846,24 @@ def build_app(
 
     # ============ M4 (v1.1.194): 外部执行器监控聚合 (EXS 指标 + 告警)
     @app.get("/api/external-ai/monitor")
-    def api_external_ai_monitor() -> dict[str, Any]:
-        """外部执行器监控: 每执行器指标 (效率/效果/完成率/回修/验证) + 告警。"""
+    def api_external_ai_monitor(
+        days: int = Query(default=14, ge=1, le=90),
+        recent: int = Query(default=30, ge=1, le=100),
+    ) -> dict[str, Any]:
+        """监控中心聚合 (M4.2): 概览/趋势/多维(执行器·agent·项目·回修·验证)/最近执行流/告警。
+        自身能力(内部记录)与外部能力并轨; 失败安全空。"""
         registry = _external_registry()
         adapters = registry.list() if registry is not None else []
         try:
-            _metrics = _console_import("external_executor.metrics")
-            return _metrics.build_monitor(workspace_root or DEFAULT_ROOT, adapters)
+            _detail = _console_import("external_executor.monitor_detail")
+            return _detail.build_monitor_detail(
+                workspace_root or DEFAULT_ROOT, adapters,
+                days=int(days), recent_limit=int(recent),
+            )
         except Exception as exc:  # noqa: BLE001 — 聚合失败 → 诚实空
-            return {"executors": [], "alerts": [{"severity": "high", "type": "aggregation_failed", "detail": str(exc)}]}
+            return {"summary": {}, "trend": [], "by_executor": [], "by_agent": [],
+                    "by_project": [], "rework_reasons": [], "verify_methods": [],
+                    "recent": [], "alerts": [{"severity": "high", "type": "aggregation_failed", "detail": str(exc)}]}
 
     @app.get("/api/agents")
     def api_agents_list():

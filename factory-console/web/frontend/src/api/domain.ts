@@ -286,6 +286,7 @@ function toStoryNode(
     .sort((a, b) => compareTaskPriority(a, b, statusById));
   const weighted = tasks.map((task) => toTaskNode(task));
   const status = aggregateStoryStatus(weighted.map((w) => w.node));
+  const priority = aggregatePriority(weighted);
   return {
     node: {
       id: story.id ?? '',
@@ -294,6 +295,7 @@ function toStoryNode(
       status,
       statusLabel: statusLabel(status),
       progress: weightedProgress(weighted),
+      ...(priority != null ? { priority } : {}),
       children: weighted.map((w) => w.node),
     },
     weight: sumWeights(weighted),
@@ -303,6 +305,7 @@ function toStoryNode(
 /** Task → task 叶子节点 (完成 → 100%, 其余 → 0%; 权重 = priorityWeight)。 */
 function toTaskNode(task: BacklogTask): WeightedNode {
   const status = toDomainStatus(task.status ?? null);
+  const prio = normalizePriority(task.priority);
   return {
     node: {
       id: task.id ?? '',
@@ -311,6 +314,7 @@ function toTaskNode(task: BacklogTask): WeightedNode {
       status,
       statusLabel: statusLabel(status),
       progress: status === 'completed' ? 100 : 0,
+      ...(prio != null ? { priority: prio } : {}),
       children: [],
       // 归档排序时间: done 后 updated_at 不再变 = 完成时间 (诚实语义: 最后更新)
       ...(status === 'completed' && task.updated_at != null && task.updated_at.length > 0
@@ -323,6 +327,26 @@ function toTaskNode(task: BacklogTask): WeightedNode {
 
 /** 优先级排序键 (P0=0 … P3=3; 缺失/未知 → 99 排最后)。 */
 const PRIORITY_RANK: Record<string, number> = { P0: 0, P1: 1, P2: 2, P3: 3 };
+
+/** 规范化优先级 (P0-P3; 缺失/未知 → undefined, 诚实不臆造)。 */
+function normalizePriority(priority: string | null | undefined): string | undefined {
+  if (priority == null) return undefined;
+  const key = String(priority).trim().toUpperCase();
+  return key in PRIORITY_RANK ? key : undefined;
+}
+
+/** 聚合优先级 (史诗/模块/故事): 子节点最高优先级 P0 优先; 无 → undefined。 */
+function aggregatePriority(weighted: WeightedNode[]): string | undefined {
+  let best: string | undefined;
+  for (const w of weighted) {
+    const p = w.node.priority;
+    if (p == null) continue;
+    if (best == null || (PRIORITY_RANK[p] ?? 99) < (PRIORITY_RANK[best] ?? 99)) {
+      best = p;
+    }
+  }
+  return best;
+}
 
 function priorityRank(priority: string | null | undefined): number {
   if (priority == null) return 99;
@@ -358,6 +382,7 @@ function buildAggregateNode(
 ): WeightedNode {
   const children = weighted.map((w) => w.node);
   const status = aggregateStatus(children);
+  const priority = aggregatePriority(weighted);
   return {
     node: {
       id: id ?? '',
@@ -366,6 +391,7 @@ function buildAggregateNode(
       status,
       statusLabel: statusLabel(status),
       progress: weightedProgress(weighted),
+      ...(priority != null ? { priority } : {}),
       children,
     },
     weight: sumWeights(weighted),

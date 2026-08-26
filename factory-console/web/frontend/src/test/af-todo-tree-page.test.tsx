@@ -56,9 +56,9 @@ describe('AfTodoTreePage (Todo Tree 页面 — 真实 backlog 驱动)', () => {
     expect(screen.getByText('实现注册 API')).toBeInTheDocument();
     // 真实请求: 正确的 path + Accept JSON
     expect(fn).toHaveBeenCalledWith(BACKLOG_PATH, expect.objectContaining({ headers: expect.anything() }));
-    // 优先级标签来自真实 backlog.tasks (P0 唯一 / P1 ×2)
-    expect(screen.getByText('P0')).toBeInTheDocument();
-    expect(screen.getAllByText('P1')).toHaveLength(2);
+    // 优先级标签: 任务 P0 向上聚合到史诗/模块/故事 (P0 至少 1 / P1 至少 2)
+    expect(screen.getAllByText('P0').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('P1').length).toBeGreaterThanOrEqual(2);
     // 6 态状态徽标 (fixture 中 todo 状态 task ×2 — 其余为 in_progress/blocked/review/done)
     expect(screen.getAllByText('待办').length).toBeGreaterThanOrEqual(2);
   });

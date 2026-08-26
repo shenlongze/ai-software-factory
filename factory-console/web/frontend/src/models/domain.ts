@@ -117,6 +117,8 @@ export interface TreeNode {
   progress: number;
   /** 模块成熟度 (idea → 💡 想法 / refined → 📦 正式); 仅 module 节点有。 */
   maturity?: string;
+  /** 聚合优先级 (史诗/模块/故事 = 子任务最高 P0 优先; 任务 = 自身)。 */
+  priority?: string;
   agent?: string;
   owner?: string;
   startedAt?: string;

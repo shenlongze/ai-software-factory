@@ -33,9 +33,11 @@ describe('AfTodoTree (Todo Tree 组件)', () => {
     render(<AfTodoTree tree={tree} taskMeta={meta} />);
     // 项目头 (root): 标题 + 进度条 + 状态徽标
     expect(screen.getByText('演示项目')).toBeInTheDocument();
-    expect(screen.getByTestId('af-progress-bar')).toBeInTheDocument();
+    expect(screen.getAllByTestId('af-progress-bar').length).toBeGreaterThanOrEqual(1);
     // 主树节点 (待办视角): 2 阶段 + 2 模块 + 4 故事 + 5 任务 (done 已归档) = 13
     expect(screen.getAllByTestId(/^af-tree-node-/)).toHaveLength(13);
+    // 每个节点行都有进度条 (折叠时也可见 — Founder)
+    expect(screen.getAllByTestId('af-progress-bar').length).toBeGreaterThanOrEqual(13);
     // 归档开关: done 任务 t-reg-db 计数
     expect(screen.getByTestId('af-tree-archive-toggle')).toHaveTextContent('已归档 (1)');
     // 层级: 阶段行标题 → 子容器 → 模块行 → 子容器 → 故事行 → 子容器 → 任务行
@@ -81,7 +83,26 @@ describe('AfTodoTree (Todo Tree 组件)', () => {
   });
 
   it('无优先级数据 → 不渲染优先级标签 (若字段有才显示)', () => {
-    render(<AfTodoTree tree={tree} taskMeta={{}} />);
+    // 任务无 priority 字段 + taskMeta 空 → 全树无优先级徽标
+    const noPrioTree: TodoTree = {
+      root: {
+        id: 'root', title: '无优先级项目', type: 'phase', status: 'pending',
+        statusLabel: '待办', progress: 0, children: [
+          {
+            id: 'm1', title: '模块一', type: 'module', status: 'pending',
+            statusLabel: '待办', progress: 0, children: [
+              {
+                id: 's1', title: '故事一', type: 'task', status: 'pending',
+                statusLabel: '待办', progress: 0, children: [
+                  { id: 't1', title: '任务一', type: 'task', status: 'pending', statusLabel: '待办', progress: 0, children: [] },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    };
+    render(<AfTodoTree tree={noPrioTree} taskMeta={{}} />);
     expect(screen.queryAllByTestId('af-priority')).toHaveLength(0);
   });
 

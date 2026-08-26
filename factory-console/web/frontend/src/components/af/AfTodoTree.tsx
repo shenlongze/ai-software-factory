@@ -256,7 +256,7 @@ export function AfTodoTree({
           <div className="af-tree-archive-list">
             {doneTasks.map((node) => {
               const meta = taskMeta[node.id];
-              const priority = meta?.priority;
+              const priority = node.priority ?? meta?.priority;
               const owner = node.owner ?? node.agent ?? meta?.owner;
               return (
                 <div
@@ -333,7 +333,8 @@ function TreeNodeRow({
   const isTask = node.type === 'task';
   const isIdeaModule = node.type === 'module' && node.maturity === 'idea';
   const meta = taskMeta[node.id];
-  const priority = meta?.priority;
+  // 优先级: 任务 = taskMeta (后端字段); 史诗/模块/故事 = 聚合最高优先级 (P0 优先)
+  const priority = node.priority ?? meta?.priority;
   const owner = node.owner ?? node.agent ?? meta?.owner;
   const isFocus = node.status === 'running'; // 当前焦点: 执行中节点高亮 (§4.6)
 
@@ -421,8 +422,12 @@ function TreeNodeRow({
             ) : null}
           </span>
         ) : null}
-        {isTask && priority != null && priority.length > 0 ? (
-          <span className={`af-priority af-priority--${priority.toUpperCase()}`} data-testid="af-priority">
+        {priority != null && priority.length > 0 ? (
+          <span
+            className={`af-priority af-priority--${priority.toUpperCase()}`}
+            data-testid="af-priority"
+            title={`优先级 ${priority.toUpperCase()}`}
+          >
             {priority.toUpperCase()}
           </span>
         ) : null}
@@ -440,7 +445,10 @@ function TreeNodeRow({
         {isTask && node.blockedReason != null && node.blockedReason.length > 0 ? (
           <span className="af-tree-meta af-tree-meta--blocked">阻塞: {node.blockedReason}</span>
         ) : null}
-        <span className="af-tree-progress">{node.progress}%</span>
+        <span className="af-tree-progress-wrap">
+          <AfProgressBar value={node.progress} status={node.status} />
+          <span className="af-tree-progress">{node.progress}%</span>
+        </span>
       </div>
       {hasChildren && isExpanded ? (
         <div className="af-tree-children" data-testid={`af-tree-children-${node.id}`}>

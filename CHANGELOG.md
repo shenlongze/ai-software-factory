@@ -3,6 +3,20 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.152] — 2026-08-26
+
+**任务树: 优先级可见 + 每行进度条 (Founder: 看不出优先级; 折叠时也要有进度条)**。
+
+### Added
+
+- 史诗/模块/故事聚合最高优先级 (P0 优先) → 树每行显示 P0-P3 徽标
+- 每个节点行内嵌 AfProgressBar (折叠时也可见) + 百分比
+- 任务优先级不再只靠前端 taskMeta (TreeNode.priority 后端投影)
+
+### 验证
+
+- 前端 721 passed (更新 3 项断言) · vite build 通过
+
 ## [v1.1.151] — 2026-08-26
 
 **任务树史诗层排序 (Founder: 树顺序还是不正确 — mgmt 按随机 id 排)**。

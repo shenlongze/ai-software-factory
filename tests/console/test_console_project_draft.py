@@ -483,6 +483,40 @@ class TestProjectStarred:
         r = client.patch(f"/api/projects/{pid}", json={})
         assert r.status_code == 400
 
+    def test_star_directory_only_project(self, client, factory_root):
+        """目录项目 (无 org 记录) 收藏不再 404 (Founder 实测: ai-factory-self)。
+
+        真实工作区目录项目 (projects/<id>/product.json) 无 org 记录 —
+        首次 PATCH starred → 惰性注册 org Project 后落库; 列表 starred=true。
+        """
+        import json
+        pdir = factory_root / "projects" / "dir-only"
+        pdir.mkdir(parents=True, exist_ok=True)
+        (pdir / "product.json").write_text(
+            json.dumps({"name": "目录项目", "status": "development", "raw": "做一个目录项目"}),
+            encoding="utf-8",
+        )
+        (pdir / "project.json").write_text(
+            json.dumps({"name": "目录项目", "status": "development"}), encoding="utf-8",
+        )
+        # 列表先出现 (目录扫描), 未收藏
+        listed = client.get("/api/projects").json()["items"]
+        me = next((p for p in listed if p["id"] == "dir-only"), None)
+        assert me is not None, "目录项目未出现在列表"
+        assert me["starred"] is False
+        # 收藏 → 200 (修复前 404)
+        r = client.patch("/api/projects/dir-only", json={"starred": True})
+        assert r.status_code == 200, r.text
+        # 列表 starred=true
+        listed2 = client.get("/api/projects").json()["items"]
+        me2 = next(p for p in listed2 if p["id"] == "dir-only")
+        assert me2["starred"] is True
+        # 落库 org (单一事实源)
+        org = json.load(open(factory_root / "org" / "projects.json"))
+        assert org["projects"]["dir-only"]["starred"] is True
+        # 状态保留 (目录 project.json status=development)
+        assert me2["status"] == "development"
+
 
 class TestProjectArchive:
     """Founder 2026-08-26: 归档 (软归档, 可恢复; 独立于生命周期)。"""

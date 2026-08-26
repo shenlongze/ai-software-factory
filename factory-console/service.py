@@ -1855,6 +1855,56 @@ class ConsoleService:
         except Exception:
             return False  # org 缺失/损坏 → False (失败安全)
 
+    def _adopt_directory_project(self, project_id: str) -> Any | None:
+        """惰性注册真实工作区目录项目为 org Project (无事件, 保留状态)。
+
+        数据源: <workspace>/projects/<id>/product.json + project.json —
+        与 list_projects 目录扫描同源; 注册后 starred/archived 统一落 org
+        (单一事实源)。找不到目录项目 → None (调用方按 404 处理)。
+        """
+        ws_root = Path(getattr(self._workspace, "root", None) or "")
+        if not ws_root.is_dir():
+            return None
+        pdir = ws_root / "projects" / project_id
+        if not (pdir / "product.json").is_file():
+            return None
+        try:
+            data = json.loads((pdir / "product.json").read_text(encoding="utf-8")) or {}
+        except Exception:  # noqa: BLE001 — 损坏 → 不注册 (失败安全)
+            data = {}
+        meta: dict[str, Any] = {}
+        pj = pdir / "project.json"
+        if pj.is_file():
+            try:
+                meta = json.loads(pj.read_text(encoding="utf-8")) or {}
+            except Exception:  # noqa: BLE001
+                meta = {}
+        try:
+            from org.projects import Project, ProjectState
+        except Exception:  # noqa: BLE001 — org 缺失 → 不注册
+            return None
+        lifecycle = ProjectState.IDEA
+        raw_status = str(data.get("status") or meta.get("status") or "")
+        if raw_status:
+            try:
+                lifecycle = ProjectState.parse(raw_status)
+            except ValueError:
+                lifecycle = ProjectState.IDEA
+        project = Project(
+            id=project_id,
+            name=str(data.get("name") or meta.get("name") or project_id),
+            goal=str(data.get("raw") or meta.get("goal") or ""),
+            lifecycle=lifecycle,
+            starred=bool(meta.get("starred", False)),
+            archived=bool(meta.get("archived", False)),
+            slug=project_id,
+        )
+        try:
+            self._project_store.save_project(project)
+        except Exception:  # noqa: BLE001 — 落库失败 → 不注册 (调用方 404)
+            return None
+        return project
+
     def update_project(
         self,
         project_id: str,
@@ -1890,7 +1940,13 @@ class ConsoleService:
 
             project = store.get_project(project_id)
             if project is None:
-                return None
+                # K-7b 修复 (Founder 实测: 收藏 ai-factory-self → 404):
+                # 真实工作区目录项目 (无 org 记录) 首次写操作 → 惰性注册
+                # org Project (无事件, 保留状态); starred/archived 统一落 org
+                # (单一事实源, 消除目录项目收藏 404 / 双轨漂移)。
+                project = self._adopt_directory_project(project_id)
+                if project is None:
+                    return None
             update: dict[str, Any] = {"updated_at": utcnow()}
             if cleaned_name:
                 update["name"] = cleaned_name

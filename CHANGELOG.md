@@ -3,6 +3,24 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.100] — 2026-08-26
+
+**修复: 目录项目收藏 404 (Founder 实测 ai-factory-self)**。
+
+### Fixed
+
+- **PATCH /api/projects/{id} {starred} 对目录项目不再 404**: 真实工作区目录项目
+  (projects/<id>/product.json, 无 org 记录) 首次写操作 → 惰性注册 org Project
+  (无事件, 保留生命周期状态); starred/archived 统一落 org (单一事实源,
+  消除目录项目收藏 404 / 双轨漂移)。列表状态保留 (lifecycle 同源映射)。
+
+### 验证
+
+- 回归测试 +1 (目录项目 star→列表 starred=true→落 org→状态保留)
+- 实测: PATCH ai-factory-self {starred:true} → 200 · 列表 starred=true ·
+  org 落库 · 无重复条目 (11 项目) · project_draft/web_adapter/lifecycle 相关
+  162 passed
+
 ## [v1.1.99] — 2026-08-26
 
 **布局 v4 (K-7d) + AI 会话栏 (K-7e) — 三栏 A|B|C 定稿落地**。

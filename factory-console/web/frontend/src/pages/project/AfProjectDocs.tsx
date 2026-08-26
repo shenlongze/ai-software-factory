@@ -15,59 +15,7 @@ import { api } from '../../api/client';
 import { useI18n } from '../../i18n';
 import type { ProjectArtifactItem, ProjectDocContent, ProjectDocSummary } from '../../models/types';
 
-/* ---------------------------------------------------------------- markdown */
-function renderMarkdown(text: string): ReactNode[] {
-  const out: ReactNode[] = [];
-  let list: string[] = [];
-  let code: string[] = [];
-  let inCode = false;
-  const flushList = (key: string) => {
-    if (list.length > 0) {
-      out.push(
-        <ul key={key} className="af-doc-list">
-          {list.map((li, i) => (
-            <li key={`${key}-${i}`}>{li}</li>
-          ))}
-        </ul>,
-      );
-      list = [];
-    }
-  };
-  text.split('\n').forEach((line, idx) => {
-    if (line.trim().startsWith('```')) {
-      if (inCode) {
-        out.push(<pre key={`c-${idx}`} className="af-doc-code">{code.join('\n')}</pre>);
-        code = [];
-      }
-      inCode = !inCode;
-      return;
-    }
-    if (inCode) {
-      code.push(line);
-      return;
-    }
-    if (line.startsWith('# ')) {
-      flushList(`l-${idx}`);
-      out.push(<h1 key={`h1-${idx}`}>{line.slice(2)}</h1>);
-    } else if (line.startsWith('## ')) {
-      flushList(`l-${idx}`);
-      out.push(<h2 key={`h2-${idx}`}>{line.slice(3)}</h2>);
-    } else if (line.startsWith('### ')) {
-      flushList(`l-${idx}`);
-      out.push(<h3 key={`h3-${idx}`}>{line.slice(4)}</h3>);
-    } else if (/^[-*]\s+/.test(line)) {
-      list.push(line.replace(/^[-*]\s+/, ''));
-    } else if (line.trim() === '') {
-      flushList(`l-${idx}`);
-    } else {
-      flushList(`l-${idx}`);
-      out.push(<p key={`p-${idx}`}>{line}</p>);
-    }
-  });
-  flushList('end');
-  if (inCode) out.push(<pre key="code-end" className="af-doc-code">{code.join('\n')}</pre>);
-  return out;
-}
+import { renderMarkdown } from '../../components/af/markdown';
 
 function renderContentBody(content: string | null, kind: string, note?: string | null): ReactNode {
   if (content == null) return <p className="af-home-note">{note ?? '（无内容）'}</p>;

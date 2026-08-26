@@ -1792,6 +1792,42 @@
   margin-left: 6px;
 }
 
+/* ============================================================ Markdown 渲染 (v1.1.147)
+ * 表格/引用 (会话回复 + 文档页共用; Founder: markdown 源码显示问题)。 */
+
+.af-md-table {
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 12px;
+  width: 100%;
+}
+
+.af-md-table th,
+.af-md-table td {
+  border: 1px solid var(--c-border);
+  padding: 4px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.af-md-table th {
+  background: rgba(76, 141, 255, 0.1);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.af-md-quote {
+  margin: 8px 0;
+  padding: 4px 10px;
+  border-left: 3px solid #4c8dff;
+  color: var(--c-text-muted, var(--c-text));
+  background: rgba(76, 141, 255, 0.06);
+}
+
+.af-md-quote p {
+  margin: 2px 0;
+}
+
 /* ============================================================ S10-015 Task 006: Dashboard (Control Center)
  * AI 软件公司控制中心 — 6 模块网格 (Active Projects / Running AI Employees / Workflow Status /
  * Blocked Tasks / Recent Runtime Events / Quality Summary)。深色 AI OS 风格, 与既有 af-* 组件一致。 */

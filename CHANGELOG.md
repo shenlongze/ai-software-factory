@@ -3,6 +3,21 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.147] — 2026-08-26
+
+**Markdown 渲染修复: 会话回复 + 文档查看不再显示源码 (Founder: 都是 markdown 问题)**。
+
+### Changed
+
+- markdown.tsx (会话+文档共用): 补 GFM 表格 (table/thead/tbody)、引用 (blockquote)、
+  链接 (安全协议白名单, 拒绝 javascript:/data:)、有序列表
+- AfProjectDocs 复用共享渲染器 (删除重复手写实现 — 之前连粗体都不支持)
+- CSS: af-md-table / af-md-quote 样式
+
+### 验证
+
+- 前端 720 passed (新增 markdown 表格/引用/链接/安全 3) · vite build 通过
+
 ## [v1.1.146] — 2026-08-26
 
 **会话可查看/检索全部文档 (Founder: 其他文档呢, 会话不能查看, 检索么)**。

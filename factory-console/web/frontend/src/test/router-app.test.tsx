@@ -87,9 +87,6 @@ describe('AI Factory 真实入口挂载 (App.tsx)', () => {
     window.location.hash = '#/project/markpad/todo';
     render(<App />);
     expect(await screen.findByTestId('af-project-entry')).toBeInTheDocument();
-    expect(
-      await screen.findByRole('heading', { name: 'markpad' }),
-    ).toBeInTheDocument();
     expect(await screen.findByTestId('af-todo-tree')).toBeInTheDocument();
   });
 

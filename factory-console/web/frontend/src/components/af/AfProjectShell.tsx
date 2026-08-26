@@ -18,14 +18,7 @@
  */
 
 import { api } from '../../api/client';
-import {
-  formatTime,
-  lifecycleLabel,
-  progressPercent,
-  stageCountChips,
-  statusLabel,
-  workflowLabel,
-} from './afLabels';
+import { lifecycleLabel } from './afLabels';
 import { AfModulePlaceholder } from './AfModulePlaceholder';
 import { AfProjectSidebar } from './AfProjectSidebar';
 import { AfWorkspaceFrame, type AfWorkspaceFrameHandlers } from './AfWorkspaceFrame';
@@ -97,7 +90,7 @@ export function AfProjectShell({ route }: AfProjectShellProps): JSX.Element {
   ) : data?.kind === 'found' && route.page === 'overview' ? (
     <AfProjectHome projectId={projectId} projectName={project?.name ?? projectId} />
   ) : data?.kind === 'found' ? (
-    <ProjectDetailView view={data} pageLabel={pageLabel} page={route.page} isOverview={false} />
+    <AfProjectSubPage page={route.page} projectId={projectId} projectName={project?.name ?? projectId} />
   ) : null;
 
   const renderHeader = ({ collapsed, onToggleSidebar }: AfWorkspaceFrameHandlers) => (
@@ -181,97 +174,6 @@ export function AfProjectHeader({ project, pageLabel, collapsed, onToggleSidebar
 }
 
 /** 项目详情视图 (最少: name/lifecycle/status/时间/description/workflow 状态; 子页附加占位)。 */
-function ProjectDetailView({
-  view,
-  page,
-  isOverview,
-}: {
-  view: ProjectView;
-  pageLabel: string;
-  page: string;
-  isOverview: boolean;
-}): JSX.Element {
-  const { project, workflow } = view;
-  const pct = progressPercent(project.progress);
-  const chips = stageCountChips(project.stage_counts);
-  const createdTime = workflow?.created_at ?? null;
-  const lastActivity = project.last_activity ?? null;
-
-  return (
-    <div className="af-project-detail" data-testid="af-project-detail">
-      <div className="af-detail-head">
-        <h2 className="af-detail-name">{project.name}</h2>
-        <span className="af-detail-id">{project.id}</span>
-      </div>
-      <div className="af-detail-badges">
-        <span className="af-badge af-badge-blue">{lifecycleLabel(project)}</span>
-        <span className="af-badge af-badge-gray">{statusLabel(project.status)}</span>
-      </div>
-      {project.description != null && project.description.length > 0 ? (
-        <p className="af-detail-desc">{project.description}</p>
-      ) : null}
-      <div className="af-detail-grid">
-        <div className="af-detail-field">
-          <span className="af-detail-label">工作流</span>
-          <span className="af-detail-value">{workflowLabel(project.workflow_status)}</span>
-          {project.workflow_name != null && project.workflow_name.length > 0 ? (
-            <span className="af-detail-sub">{project.workflow_name}</span>
-          ) : null}
-        </div>
-        <div className="af-detail-field">
-          <span className="af-detail-label">当前阶段</span>
-          <span className="af-detail-value">{project.current_stage ?? '—'}</span>
-          {project.current_stage_status != null && project.current_stage_status.length > 0 ? (
-            <span className="af-detail-sub">状态: {statusLabel(project.current_stage_status)}</span>
-          ) : null}
-        </div>
-        <div className="af-detail-field">
-          <span className="af-detail-label">进度</span>
-          <span className="af-detail-value">{pct}%</span>
-        </div>
-        {chips.length > 0 ? (
-          <div className="af-detail-field">
-            <span className="af-detail-label">阶段统计</span>
-            <span className="af-detail-value">
-              {chips.map((chip) => `${chip.label} ${chip.count}`).join(' · ')}
-            </span>
-          </div>
-        ) : null}
-        {createdTime != null ? (
-          <div className="af-detail-field">
-            <span className="af-detail-label">创建时间</span>
-            <span className="af-detail-value">{formatTime(createdTime)}</span>
-          </div>
-        ) : null}
-        {lastActivity != null ? (
-          <div className="af-detail-field">
-            <span className="af-detail-label">最后活动</span>
-            <span className="af-detail-value">{formatTime(lastActivity)}</span>
-          </div>
-        ) : null}
-      </div>
-      <div className="af-detail-progress">
-        <div className="af-progress-track">
-          <div className="af-progress-fill" style={{ width: `${pct}%` }} />
-        </div>
-      </div>
-      {isOverview ? null : (
-        <AfProjectSubPage
-          page={page}
-          projectId={project?.id}
-          projectName={project?.name}
-        />
-      )}
-    </div>
-  );
-}
-
-/**
- * 子页分发 (S10-015): todo → AfTodoTreePage (真实 backlog 树);
- * workflow → AfWorkflowPage (真实 Workflow Instance 可视化);
- * runtime → AfRuntimePage (真实 Runtime Timeline: 当前执行卡 + 事件流);
- * 其他子页 → AfModulePlaceholder (禁空白, 后续 Sprint 接入)。
- */
 function AfProjectSubPage({
   page,
   projectId,

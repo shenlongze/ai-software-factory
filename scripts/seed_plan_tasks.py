@@ -127,6 +127,15 @@ PLAN: dict[str, dict[str, list[tuple[str, str]]]] = {
             ("L-7", "领域知识库"),
         ],
     },
+    "U 工具矩阵统一 (P0)": {
+        "统一注册表+外部真实化 (Founder 2026-08-26: 工具要和 CLI/WebUI 连接, 外部能力要真实)": [
+            ("U-1", "统一工具注册表: 39 内置工具全量注册 (元数据: id/阶段/描述/参数schema/CLI入口/API端点/会话意图/执行函数)", "P0"),
+            ("U-2", "工具调用链统一: Registry→Permission→Schema→Execute 全覆盖 (复用 ToolExecutor 骨架扩到全部工具)", "P0"),
+            ("U-3", "MCP 真实连接: Mock→真实 transport (SSE/stdio), 连接真实外部 MCP server, 工具真实执行", "P0"),
+            ("U-4", "外部 skill 真实加载执行: 外部 skill 在 agent 执行时真实注入指令", "P0"),
+            ("U-5", "三端工具页统一: CLI(factory tools) / WebUI(设置→工具) / 会话 同源发现/调用/审计", "P0"),
+        ],
+    },
     "T 会话任务连续 (P0)": {
         "跨会话任务上下文 (Founder 2026-08-26: 会话任务连续)": [
             ("T-1", "会话『继续』意图 + 任务级作用域: 说『继续做 XX』→ 定位任务并锚定 (会话带 task_id)", "P0"),

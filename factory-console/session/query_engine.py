@@ -179,18 +179,18 @@ _INTENT_LLM_PROMPT = """把用户的提问转成标准查询意图 (只输出 JS
 
 
 def parse_intent_llm(question: str, llm_fn: Any) -> dict[str, Any]:
-    """意图解析: 确定性高置信动作优先, 否则 LLM JSON; 失败 → 确定性 fallback。
+    """意图解析: 确定性强关键词优先, LLM 只补参数 (project/task), 不覆写意图。
 
-    创建类动作 (create_project) 是强关键词信号 — 不交给 LLM 覆写成 chat,
-    并从问句确定性提取项目名。
+    规则 (Founder 2026-08-26 修复):
+    - 确定性命中非 chat 意图 (webui状态/有哪些项目/做一个/完善…) → 意图锁定,
+      LLM 结果只用于提取 project/task 参数 (防止 LLM 把强信号覆写成 chat)
+    - 确定性 chat → 采信 LLM 意图 (若 LLM 返回合法非 chat)
+    - LLM 失败 → 确定性 fallback
     """
     import re
 
     det = parse_intent(question)
-    if det["intent"] == "create_project":
-        name = re.sub(r"^(做一个|创建一个|开发一个|帮我做个|帮我做|新建一个项目)\s*", "", question.strip())
-        name = name.strip() or None
-        return {"intent": "create_project", "project": (name[:24] if name else None)}
+    llm_result: dict[str, Any] | None = None
     if llm_fn is not None:
         try:
             raw = str(llm_fn(_INTENT_LLM_PROMPT.format(question=question)) or "").strip()
@@ -199,16 +199,30 @@ def parse_intent_llm(question: str, llm_fn: Any) -> dict[str, Any]:
                 d = json.loads(m.group(0))
                 intent = str(d.get("intent") or "").strip()
                 if intent in VALID_INTENTS:
-                    project = str(d.get("project") or "").strip() or None
-                    task = str(d.get("task") or "").strip() or None
-                    return {"intent": intent, "project": project, "task": task}
+                    llm_result = {
+                        "intent": intent,
+                        "project": str(d.get("project") or "").strip() or None,
+                        "task": str(d.get("task") or "").strip() or None,
+                    }
         except Exception:  # noqa: BLE001 — LLM 解析失败 → fallback
-            pass
+            llm_result = None
+
     det_intent = det["intent"]
-    if det_intent == "create_task":
-        desc = re.sub(r"^(请|帮我|给|为|对)?\s*", "", question.strip())
-        return {"intent": "create_task", "project": None, "task": desc[:80]}
-    return {"intent": det_intent, "project": None, "task": None}
+    if det_intent != "chat":
+        # 确定性强信号意图锁定; LLM 只补参数
+        if det_intent == "create_project":
+            name = re.sub(r"^(做一个|创建一个|开发一个|帮我做个|帮我做|新建一个项目)\s*", "", question.strip())
+            name = name.strip() or None
+            return {"intent": "create_project", "project": (name[:24] if name else None), "task": None}
+        return {
+            "intent": det_intent,
+            "project": (llm_result or {}).get("project"),
+            "task": (llm_result or {}).get("task"),
+        }
+    # 确定性 chat → 采信 LLM 合法非 chat 意图
+    if llm_result is not None and llm_result["intent"] != "chat":
+        return llm_result
+    return {"intent": "chat", "project": None, "task": None}
 
 
 #: 标准输出格式 (LLM 转标准输出 — 只基于查询结果, 不编造)

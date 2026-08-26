@@ -3,6 +3,25 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.132] — 2026-08-26
+
+**会话意图修复: 确定性关键词优先, LLM 不覆写成 chat (复发 bug)**。
+
+### Fixed
+
+- "了解现在webUI状态么" 被 LLM 判成"无法查看"闲聊 → 不触发 system_status
+- 修复: 确定性非 chat 意图锁定 (webui状态/有哪些项目/做一个/完善…), LLM 只补
+  project/task 参数; 确定性 chat 才采信 LLM
+
+### 实测
+
+- Q: 了解现在webUI状态么 → system_status 直接答 系统状态 v1.1.x/后端运行/模型
+- Q: 给X完善功能 → create_task (项目由 resolve_project 兜底匹配)
+
+### 验证
+
+- 后端 query_engine 10 + 相关 44 passed · 前端 684 passed
+
 ## [v1.1.131] — 2026-08-26
 
 **会话能答系统/WebUI 运行状态 (执行会话创建的任务 TASK-774d9036)**。

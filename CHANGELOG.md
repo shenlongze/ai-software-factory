@@ -3,6 +3,23 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.114] — 2026-08-26
+
+**项目导航 6 项路由落地 + C-2 集成收尾 (白名单/注册表同步)**。
+
+### Changed
+
+- **项目导航 6 项路由精简**: PROJECT_ROUTES 收敛为 overview/docs/todo/workflow/runtime/
+  quality (全真实页面); 旧 URL (vision/prd/roadmap/backlog/sprint/logs) 自动回退 overview
+- **白名单/注册表同步 (C-2 集成)**: test_s10_112 写路由白名单补 MCP 移除/LLM 配置/
+  Agent/Skill 管理; test_console_api 路由导出补 remove_mcp_connection (v1.1.102 路由
+  未同步注册表 → 2 回归, 本提交修复)
+
+### 验证
+
+- 后端 103 passed (C-2 接线 573 行测试 + 契约 + 白名单 + 导出) · 前端 681 passed
+- 债务清单: C-2 ✅ · 契约缺口 G1-G4 已记录
+
 ## [v1.1.113] — 2026-08-26
 
 **修复: 浅色主题强对比 — 硬编码深色全部变量化**。

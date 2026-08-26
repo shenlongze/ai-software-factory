@@ -247,6 +247,7 @@ class TestRouteExports:
             "product_persona",
             "product_value",
             "reject_approval",
+            "remove_mcp_connection",
             "run_status_route",
             "save_discovery_answer",
             "save_review_feedback",

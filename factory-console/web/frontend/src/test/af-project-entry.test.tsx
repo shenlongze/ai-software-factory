@@ -90,14 +90,6 @@ describe('AfProjectEntry (AI Factory 项目真实入口)', () => {
     expect(await screen.findByTestId('af-todo-tree')).toBeInTheDocument();
   });
 
-  it('子页 placeholder: 其他子页 → "{Page} module loading — 开发中"', async () => {
-    stubFetch({ '/api/projects': [sampleProject({ id: 'demo' })] });
-    render(<AfProjectEntry route={projectRoute('sprint')} />);
-    expect(
-      await screen.findByText('Sprint module loading — 开发中'),
-    ).toBeInTheDocument();
-  });
-
   it('工作流时间: 项目首页渲染 (K-7b overview → af-project-home)', async () => {
     stubFetch({
       '/api/projects': [sampleProject({ id: 'demo', workflow_id: 'wf-1' })],

@@ -27,37 +27,23 @@ describe('S10-014 路由常量表 (§2.3)', () => {
     ]);
   });
 
-  it('Project 级 13 条路由 (overview 默认 + 12 子页, :id 模板, 含 docs)', () => {
-    expect(PROJECT_ROUTES).toHaveLength(13);
+  it('Project 级 6 条路由 (Founder 精简: 全真实页面)', () => {
+    expect(PROJECT_ROUTES).toHaveLength(6);
     expect(PROJECT_ROUTES.map((r) => r.path)).toEqual([
       '#/project/:id',
-      '#/project/:id/vision',
-      '#/project/:id/discovery',
-      '#/project/:id/prd',
       '#/project/:id/docs',
-      '#/project/:id/roadmap',
-      '#/project/:id/backlog',
-      '#/project/:id/sprint',
       '#/project/:id/todo',
       '#/project/:id/workflow',
       '#/project/:id/runtime',
       '#/project/:id/quality',
-      '#/project/:id/logs',
     ]);
     expect(PROJECT_ROUTES.map((r) => r.page)).toEqual([
       'overview',
-      'vision',
-      'discovery',
-      'prd',
       'docs',
-      'roadmap',
-      'backlog',
-      'sprint',
       'todo',
       'workflow',
       'runtime',
       'quality',
-      'logs',
     ]);
   });
 });
@@ -87,18 +73,19 @@ describe('parseHash — Workspace 级 (3 导航 + 管理)', () => {
 describe('parseHash — Project 级 (11 条)', () => {
   it.each([
     ['#/project/markpad', 'overview'],
-    ['#/project/markpad/vision', 'vision'],
-    ['#/project/markpad/discovery', 'discovery'],
-    ['#/project/markpad/prd', 'prd'],
-    ['#/project/markpad/roadmap', 'roadmap'],
-    ['#/project/markpad/backlog', 'backlog'],
-    ['#/project/markpad/sprint', 'sprint'],
+    ['#/project/markpad/docs', 'docs'],
     ['#/project/markpad/todo', 'todo'],
     ['#/project/markpad/workflow', 'workflow'],
     ['#/project/markpad/runtime', 'runtime'],
-    ['#/project/markpad/logs', 'logs'],
+    ['#/project/markpad/quality', 'quality'],
   ] as const)('%s → project/markpad/%s', (hash, page) => {
     expect(parseHash(hash)).toEqual({ level: 'project', page, projectId: 'markpad' });
+  });
+
+  it('已隐藏子页 (vision/prd/roadmap/backlog/sprint/logs) → 回退 overview', () => {
+    expect(parseHash('#/project/markpad/vision')).toEqual({ level: 'project', page: 'overview', projectId: 'markpad' });
+    expect(parseHash('#/project/markpad/prd')).toEqual({ level: 'project', page: 'overview', projectId: 'markpad' });
+    expect(parseHash('#/project/markpad/logs')).toEqual({ level: 'project', page: 'overview', projectId: 'markpad' });
   });
 
   it('Project 未知子页 → 项目 Overview (projectId 不丢)', () => {

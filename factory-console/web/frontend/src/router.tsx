@@ -27,18 +27,11 @@ export const WORKSPACE_ROUTES: readonly { path: string; page: string }[] = [
 /** Project 级路由 (11 条, §2.3; :id = 项目 id 路径段)。 */
 export const PROJECT_ROUTES: readonly { path: string; page: string }[] = [
   { path: '#/project/:id', page: 'overview' },
-  { path: '#/project/:id/vision', page: 'vision' },
-  { path: '#/project/:id/discovery', page: 'discovery' },
-  { path: '#/project/:id/prd', page: 'prd' },
   { path: '#/project/:id/docs', page: 'docs' },
-  { path: '#/project/:id/roadmap', page: 'roadmap' },
-  { path: '#/project/:id/backlog', page: 'backlog' },
-  { path: '#/project/:id/sprint', page: 'sprint' },
   { path: '#/project/:id/todo', page: 'todo' },
   { path: '#/project/:id/workflow', page: 'workflow' },
   { path: '#/project/:id/runtime', page: 'runtime' },
   { path: '#/project/:id/quality', page: 'quality' },
-  { path: '#/project/:id/logs', page: 'logs' },
 ];
 
 /** 合法页面名集合 (parseHash 校验用, 从路由表派生 — 单一数据源)。 */

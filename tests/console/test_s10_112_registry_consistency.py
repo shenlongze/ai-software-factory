@@ -422,6 +422,17 @@ class TestApiRegistryConsistency:
             is_board_split = method == "POST" and path == "/api/board/split"
             is_docs_config = method == "POST" and path == "/api/board/docs/config"
             is_rag_query = method == "POST" and path == "/api/rag/query"
+            # v1.1.102: MCP 移除 + LLM 配置 + Agent/Skill 管理 (与 web 权限边界同源)
+            is_mcp_remove = method == "DELETE" and "/mcp/connections/" in path
+            is_llm_config = method in {"POST", "PATCH"} and path == "/api/config/llm"
+            is_agent_write = (
+                (method == "POST" and path == "/api/agents")
+                or (method == "DELETE" and path.startswith("/api/agents/"))
+            )
+            is_skill_write = (
+                (method == "POST" and path == "/api/skills")
+                or (method == "DELETE" and path.startswith("/api/skills/"))
+            )
             assert (
                 is_approval or is_runtime or is_tool_execute or is_mcp_connect
                 or is_review_feedback or is_project_create or is_project_suggest
@@ -429,6 +440,8 @@ class TestApiRegistryConsistency:
                 or is_project_patch_delete or is_backlog or is_management
                 or is_system_update or is_board_default or is_board_split
                 or is_docs_config or is_rag_query
+                or is_mcp_remove or is_llm_config
+                or is_agent_write or is_skill_write
             ), f"写路由超出白名单: {method} {path}"
 
     def test_capability_matrix_api_claims_backed(self):

@@ -29,26 +29,14 @@ function navButton(name: RegExp) {
   return within(screen.getByTestId('af-project-sidebar')).getByRole('button', { name });
 }
 
-const NAV_LABELS = [
-  'Overview',
-  'Vision',
-  'Discovery',
-  'PRD',
-  'Roadmap',
-  'Backlog',
-  'Sprint',
-  'Todo Tree',
-  'Workflow',
-  'Runtime',
-  'Logs',
-];
+const NAV_LABELS = ['概览', '文档', '任务', '执行', '运行时', '质量'];
 
 afterEach(() => {
   window.location.hash = '';
 });
 
 describe('AfProjectShell (AI OS 项目层壳)', () => {
-  it('渲染项目层壳: Project Header + Sidebar 11 导航项 + Main', () => {
+  it('渲染项目层壳: Project Header + Sidebar 6 导航项 + Main', () => {
     stubFetch({ '/api/projects': [sampleProject({ id: 'demo' })] });
     render(<AfProjectShell route={projectRoute()} />);
     expect(screen.getByTestId('af-project-entry')).toBeInTheDocument();
@@ -60,49 +48,43 @@ describe('AfProjectShell (AI OS 项目层壳)', () => {
     }
   });
 
-  it('PROJECT_NAV_ITEMS 与路由表对齐: 11 项, overview 在前', () => {
+  it('PROJECT_NAV_ITEMS 与路由表对齐: 6 项全真实 (Founder 精简)', () => {
     expect(PROJECT_NAV_ITEMS.map((item) => item.page)).toEqual([
       'overview',
-      'vision',
-      'discovery',
-      'prd',
       'docs',
-      'roadmap',
-      'backlog',
-      'sprint',
       'todo',
       'workflow',
       'runtime',
-      'logs',
+      'quality',
     ]);
   });
 
-  it('默认 overview: Overview 导航项激活 (aria-current=page), 其他不激活', () => {
+  it('默认 overview: 概览 导航项激活 (aria-current=page), 其他不激活', () => {
     stubFetch({ '/api/projects': [sampleProject({ id: 'demo' })] });
     render(<AfProjectShell route={projectRoute()} />);
-    expect(navButton(/Overview/)).toHaveAttribute('aria-current', 'page');
-    expect(navButton(/Todo Tree/)).not.toHaveAttribute('aria-current');
-    expect(navButton(/Logs/)).not.toHaveAttribute('aria-current');
+    expect(navButton(/概览/)).toHaveAttribute('aria-current', 'page');
+    expect(navButton(/任务/)).not.toHaveAttribute('aria-current');
+    expect(navButton(/质量/)).not.toHaveAttribute('aria-current');
   });
 
-  it('激活态跟随路由: route.page=todo → Todo Tree 高亮, Overview 不高亮', () => {
+  it('激活态跟随路由: route.page=todo → 任务 高亮, 概览 不高亮', () => {
     stubFetch({ '/api/projects': [sampleProject({ id: 'demo' })] });
     render(<AfProjectShell route={projectRoute('todo')} />);
-    expect(navButton(/Todo Tree/)).toHaveAttribute('aria-current', 'page');
-    expect(navButton(/Overview/)).not.toHaveAttribute('aria-current');
+    expect(navButton(/任务/)).toHaveAttribute('aria-current', 'page');
+    expect(navButton(/概览/)).not.toHaveAttribute('aria-current');
   });
 
   it('点击导航项 → 更新 window.location.hash (overview → #/project/demo, 其余 → #/project/demo/<page>)', async () => {
     const user = userEvent.setup();
     stubFetch({ '/api/projects': [sampleProject({ id: 'demo' })] });
     render(<AfProjectShell route={projectRoute()} />);
-    await user.click(navButton(/Todo Tree/));
+    await user.click(navButton(/任务/));
     expect(window.location.hash).toBe('#/project/demo/todo');
-    await user.click(navButton(/Backlog/));
-    expect(window.location.hash).toBe('#/project/demo/backlog');
-    await user.click(navButton(/Vision/));
-    expect(window.location.hash).toBe('#/project/demo/vision');
-    await user.click(navButton(/Overview/));
+    await user.click(navButton(/执行/));
+    expect(window.location.hash).toBe('#/project/demo/workflow');
+    await user.click(navButton(/质量/));
+    expect(window.location.hash).toBe('#/project/demo/quality');
+    await user.click(navButton(/概览/));
     expect(window.location.hash).toBe('#/project/demo');
   });
 
@@ -139,16 +121,6 @@ describe('AfProjectShell (AI OS 项目层壳)', () => {
     expect(within(home).getByRole('heading', { name: '记账 App' })).toBeInTheDocument();
     expect(within(home).getByTestId('af-home-lifecycle')).toBeInTheDocument();
     expect(within(home).getByTestId('af-todo-list')).toBeInTheDocument();
-  });
-
-  it.each([
-    ['vision', 'Vision module loading — 开发中'],
-    ['sprint', 'Sprint module loading — 开发中'],
-    ['logs', 'Logs module loading — 开发中'],
-  ])('占位页 %s → AfModulePlaceholder (禁空白)', async (page, expectedText) => {
-    stubFetch({ '/api/projects': [sampleProject({ id: 'demo' })] });
-    render(<AfProjectShell route={projectRoute(page)} />);
-    expect(await screen.findByTestId('af-module-placeholder')).toHaveTextContent(expectedText);
   });
 
   it('workflow 页 → 真实 Workflow Viewer (AfWorkflowPage, workflow+timeline 驱动)', async () => {

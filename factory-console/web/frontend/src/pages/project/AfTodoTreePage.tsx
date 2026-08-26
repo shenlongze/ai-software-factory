@@ -39,22 +39,50 @@ export async function fetchProjectBacklog(projectId: string): Promise<BacklogRes
   return (await res.json()) as BacklogResponse;
 }
 
-/** 任务链进度摘要 (Founder 2026-08-27): 同一任务链 (S/T/U/V/X 系列) 的任务, 非按 P0。 */
-export function buildChainProgress(backlog: BacklogResponse | null | undefined): string {
+/** 战役任务链 (Founder 2026-08-27): 同一任务链 = S/T/U/V/X 系列, 非按 P0 优先级。 */
+export const CAMPAIGN_CHAINS: readonly string[] = ['S', 'T', 'U', 'V', 'X'];
+
+/** 任务链进度摘要 (Founder 2026-08-27): 按系列逐链展示同一任务链上的任务。
+ *  每行 = 一条任务链 (S/T/U/V/X) 自己的 done ✅ + 剩余, 不混其他分类 (C/D/E/F/G/H/I/J/L/W), 也不按 P0 筛。 */
+export function buildChainLines(backlog: BacklogResponse | null | undefined): string[] {
   const tasks = backlog?.tasks ?? [];
-  const chained = tasks.filter((t) => /\[[A-Z]-\d+\]/.test(t.description ?? ''));
-  if (chained.length === 0) return '';
   const label = (t: BacklogTask) => {
     const m = /\[([A-Z]-\d+)\]/.exec(t.description ?? '');
     return m ? m[1] : '';
   };
-  const done = chained.filter((t) => (t.status ?? '') === 'done').map(label).filter(Boolean).sort();
-  const remain = chained.filter((t) => (t.status ?? '') !== 'done').map(label).filter(Boolean).sort();
-  const doneStr = done.length > 0 ? done.map((x) => `${x}✅`).join(' ') : '无';
-  const remainStr = remain.length > 0
-    ? `剩 ${remain.slice(0, 8).join('·')}${remain.length > 8 ? ` 等${remain.length}个` : ''}`
-    : '全部完成 🎉';
-  return `任务链 ${done.length}/${chained.length}: ${doneStr} → ${remainStr}`;
+  const groups = new Map<string, { total: number; done: string[]; remain: string[] }>();
+  for (const t of tasks) {
+    const id = label(t);
+    if (id.length === 0) continue;
+    const chain = id[0];
+    if (!CAMPAIGN_CHAINS.includes(chain)) continue;
+    const g = groups.get(chain) ?? { total: 0, done: [], remain: [] };
+    g.total += 1;
+    ((t.status ?? '') === 'done' ? g.done : g.remain).push(id);
+    groups.set(chain, g);
+  }
+  if (groups.size === 0) return [];
+  const byNum = (a: string, b: string) => {
+    const na = Number(a.split('-')[1] ?? 0);
+    const nb = Number(b.split('-')[1] ?? 0);
+    return na - nb;
+  };
+  return CAMPAIGN_CHAINS.filter((c) => groups.has(c)).map((chain) => {
+    const g = groups.get(chain)!;
+    g.done.sort(byNum);
+    g.remain.sort(byNum);
+    const doneStr = g.done.length > 0 ? g.done.map((x) => `${x}✅`).join(' ') : '';
+    const remainStr =
+      g.remain.length > 0
+        ? `剩 ${g.remain.slice(0, 8).join('·')}${g.remain.length > 8 ? ` 等${g.remain.length}个` : ''}`
+        : '全部完成 🎉';
+    return `${chain} 链 ${g.done.length}/${g.total}: ${[doneStr, remainStr].filter(Boolean).join(' → ')}`;
+  });
+}
+
+/** 兼容旧签名: 多行拼接 (组件改用 buildChainLines 逐行渲染)。 */
+export function buildChainProgress(backlog: BacklogResponse | null | undefined): string {
+  return buildChainLines(backlog).join('\n');
 }
 
 /** backlog.tasks → {id → {priority, owner}} (assignee 空串 → owner undefined, 诚实降级)。 */
@@ -168,7 +196,7 @@ export function AfTodoTreePage({ projectId, projectName }: AfTodoTreePageProps):
               onCreateFeature={handleCreateFeature}
               onDiscussFeature={handleDiscussFeature}
               onRefineFeature={handleRefineFeature}
-              p0Progress={buildChainProgress(data.backlog)}
+              chainProgress={buildChainLines(data.backlog)}
             />
           </div>
           {selectedDetail != null ? (

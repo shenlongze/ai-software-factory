@@ -17,7 +17,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { toTodoTree } from '../api/domain';
 import { AfTodoTree } from '../components/af/AfTodoTree';
-import { buildChainProgress } from '../pages/project/AfTodoTreePage';
+import { buildChainLines } from '../pages/project/AfTodoTreePage';
 import type { TodoTree } from '../models/domain';
 import { sampleTodoBacklog, sampleTodoFixture } from './fixtures';
 
@@ -234,7 +234,7 @@ describe('AfTodoTree (Todo Tree 组件)', () => {
     expect(screen.queryByText(/P2任务/)).not.toBeInTheDocument(); // 08-20 非今日
   });
 
-  it('P0 进度摘要 + 排序切换 (Founder 2026-08-27)', async () => {
+  it('任务链进度摘要 (同一任务链逐链) + 排序切换 (Founder 2026-08-27)', async () => {
     const user = userEvent.setup();
     const backlog = sampleTodoBacklog({
       tasks: [
@@ -246,11 +246,13 @@ describe('AfTodoTree (Todo Tree 组件)', () => {
       features: [{ ...sampleTodoBacklog().features![0], id: 'F1', children: ['S1'] }],
       stories: [{ ...sampleTodoBacklog().stories![0], id: 'S1', children: ['T-a', 'T-b', 'T-c'] }],
     });
-    const chain = buildChainProgress(backlog);
-    expect(chain).toContain('X-3✅'); // done → ✅ (按系列, 不筛优先级)
-    expect(chain).toContain('剩 X-1·X-2'); // X-1 P1 也在链上
-    render(<AfTodoTree tree={toTodoTree(backlog, '演示项目')} p0Progress={chain} />);
-    expect(screen.getByTestId('af-tree-p0-progress')).toHaveTextContent('X-3✅');
+    const chain = buildChainLines(backlog);
+    expect(chain.length).toBe(1); // 只统计战役任务链 (S/T/U/V/X), 其他系列不混入
+    expect(chain[0]).toContain('X-3✅'); // done → ✅ (同一任务链, 不筛优先级)
+    expect(chain[0]).toContain('X 链 1/3');
+    expect(chain[0]).toContain('剩 X-1·X-2'); // X-1 P1 也在链上
+    render(<AfTodoTree tree={toTodoTree(backlog, '演示项目')} chainProgress={chain} />);
+    expect(screen.getByTestId('af-tree-chain-progress')).toHaveTextContent('X-3✅');
     // 排序切换: 默认时间倒序 (T-b 08-22 最新可见) → 切优先级 (T-b P0 最前)
     const storyChildren = () =>
       [...document.querySelectorAll('[data-testid^="af-tree-node-T-"]')].map((n) => n.getAttribute('data-node-id'));

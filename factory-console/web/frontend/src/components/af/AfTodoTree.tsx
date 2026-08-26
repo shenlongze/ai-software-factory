@@ -56,8 +56,8 @@ export interface AfTodoTreeProps {
   onDiscussFeature?: (featureId: string, featureName: string) => void;
   /** 想法模块「转为正式」(maturity idea→refined)。 */
   onRefineFeature?: (featureId: string) => void;
-  /** P0 进度摘要 (页面从 backlog 算: X-1✅ U-1✅ → 剩余; 可选)。 */
-  p0Progress?: string;
+  /** 任务链进度摘要 (页面从 backlog 算, 按系列逐行: T 链 3/9: T-1✅ … → 剩余; 可选)。 */
+  chainProgress?: string[];
 }
 
 /** 过滤选项 (§4.6: [全部][执行中][阻塞][待审核][失败] — 待办/完成不进过滤, 全量可见)。 */
@@ -195,7 +195,7 @@ export function AfTodoTree({
   onCreateFeature,
   onDiscussFeature,
   onRefineFeature,
-  p0Progress,
+  chainProgress,
 }: AfTodoTreeProps): JSX.Element {
   const root = tree.root;
   // 归档区按完成时间倒序 (最近完成最前; 无 completedAt → 排最后, 诚实降级)
@@ -329,10 +329,14 @@ export function AfTodoTree({
         <div className="af-tree-root-progress">
           <AfProgressBar value={root.progress} status={root.status} />
         </div>
-        {p0Progress != null && p0Progress.length > 0 ? (
-          <span className="af-tree-p0-progress" data-testid="af-tree-p0-progress" title="P0 任务完成进度 (系列徽标)">
-            {p0Progress}
-          </span>
+        {chainProgress != null && chainProgress.length > 0 ? (
+          <div className="af-tree-chain-progress" data-testid="af-tree-chain-progress" title="任务链完成进度 (同一任务链按系列)">
+            {chainProgress.map((line, i) => (
+              <div key={`${i}-${line}`} className="af-tree-chain-progress-line">
+                {line}
+              </div>
+            ))}
+          </div>
         ) : null}
       </div>
 

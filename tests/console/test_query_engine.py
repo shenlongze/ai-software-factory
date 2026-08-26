@@ -101,6 +101,33 @@ class TestBuildFacts:
         assert _qe._docs_subpath("我想看看 每一个独立的 dosc/products，现在完成的怎么样了") == "docs/products"
         assert _qe._docs_subpath("docs/products 状态") == "docs/products"
         assert _qe._docs_subpath("有哪些文档") == ""
+
+
+    def test_project_status_has_real_stats(self, tmp_path):
+        """扫描项目看进度: 真实任务统计+史诗 (不再敷衍报 org progress=0)。"""
+        pdir = tmp_path / "workspace" / "projects" / "p" / "management" / "backlog"
+        pdir.mkdir(parents=True, exist_ok=True)
+        (pdir / "task.json").write_text(
+            json.dumps({"tasks": {
+                "T1": {"id": "T1", "title": "完成1", "status": "done"},
+                "T2": {"id": "T2", "title": "完成2", "status": "done"},
+                "T3": {"id": "T3", "title": "待办1", "status": "todo"},
+            }}),
+            encoding="utf-8",
+        )
+        (pdir / "epic.json").write_text(
+            json.dumps({"epics": {"E1": {"id": "E1", "name": "C 产出物契约"}}}),
+            encoding="utf-8",
+        )
+        projects = [_P("p", "演示项目")]
+        facts = _qe.build_facts("扫描项目，看进度，计划", scope="project", project_id="p",
+                                projects=projects, root=tmp_path)
+        assert "进度: 67% (任务 3: 完成 2" in facts
+        assert "史诗 (1): C 产出物契约" in facts
+
+    def test_project_status_trigger_words(self):
+        for q in ("扫描项目", "有哪些计划", "项目规划", "看看项目进展"):
+            assert _qe.parse_intent(q)["intent"] == "project_status", q
     def test_chat_no_project_required(self, tmp_path):
         facts = _qe.build_facts("你好", scope="company", project_id=None, projects=PROJECTS, root=tmp_path)
         assert "旅行记账" in facts  # 兜底项目列表

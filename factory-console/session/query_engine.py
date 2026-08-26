@@ -31,7 +31,8 @@ _INTENT_RULES: list[tuple[str, tuple[str, ...]]] = [
     ("project_doc", ("文档内容", "讲了什么", "读一下", "内容是什么", ".md", ".json", ".txt", ".docx")),
     ("doc_search", ("检索", "搜索", "搜一下", "查找", "哪些文档提到", "哪份文档", "哪篇文档", "有没有说", "提到")),
     ("project_docs", ("文档", "文档清单", "产物", "产出物", "docs", "dosc", "products", "规格", "product-spec")),
-    ("project_status", ("状态", "阶段", "进行", "进度", "生命周期", "卡点", "怎么样", "进展")),
+    ("project_status", ("状态", "阶段", "进行", "进度", "生命周期", "卡点", "怎么样", "进展",
+                       "计划", "规划", "里程碑", "扫描", "扫一下", "看看项目")),
     ("model", ("模型", "什么模型", "deepseek")),
 ]
 
@@ -70,6 +71,93 @@ def _read_json_file(path: Path) -> dict[str, Any] | None:
         return d if isinstance(d, dict) else None
     except (OSError, ValueError):
         return None
+
+
+def _project_task_stats(root: Path | None, project_id: str) -> dict[str, int] | None:
+    """项目真实任务统计 (management backlog + legacy tasks.json 合并; 失败 → None)。
+
+    Founder 2026-08-26: 会话"扫描项目看进度"之前只报 org progress=0, 太敷衍。
+    """
+    if root is None:
+        return None
+    seen: set[str] = set()
+    tasks: list[dict[str, Any]] = []
+    # mgmt store (workspace/projects/<id>/management/backlog/task.json)
+    try:
+        tf = (
+            Path(root) / "workspace" / "projects" / Path(project_id).name
+            / "management" / "backlog" / "task.json"
+        )
+        data = json.loads(tf.read_text(encoding="utf-8")) or {}
+        for t in (data.get("tasks") or {}).values():
+            if isinstance(t, dict) and (t.get("id") not in seen):
+                seen.add(str(t.get("id")))
+                tasks.append(t)
+    except Exception:  # noqa: BLE001 — mgmt 读取失败 → 继续 legacy
+        pass
+    # legacy tasks.json (M2..P0 里程碑树; 按 id 去重合并)
+    try:
+        lf = Path(root) / "projects" / Path(project_id).name / "tasks.json"
+        data = json.loads(lf.read_text(encoding="utf-8")) or {}
+        for t in (data.get("tasks") or []):
+            if isinstance(t, dict) and (t.get("id") not in seen):
+                seen.add(str(t.get("id")))
+                tasks.append(t)
+    except Exception:  # noqa: BLE001 — legacy 失败 → 忽略
+        pass
+    if not tasks:
+        return None
+    statuses = [str(t.get("status") or "todo").lower() for t in tasks if isinstance(t, dict)]
+    done = sum(1 for s in statuses if s in ("done", "completed"))
+    running = sum(1 for s in statuses if s in ("in_progress", "running", "review"))
+    blocked = sum(1 for s in statuses if s in ("blocked", "failed"))
+    todo = len(statuses) - done - running - blocked
+    total = len(statuses)
+    return {
+        "total": total,
+        "done": done,
+        "running": running,
+        "blocked": blocked,
+        "todo": todo,
+        "pct": round(done / total * 100) if total else 0,
+    }
+
+
+def _project_epic_names(root: Path | None, project_id: str) -> dict[str, Any] | None:
+    """项目史诗名称预览 (前 5 + 等 N; mgmt + legacy 合并; 失败 → None)。"""
+    if root is None:
+        return None
+    names: list[str] = []
+    seen: set[str] = set()
+    try:
+        ef = (
+            Path(root) / "workspace" / "projects" / Path(project_id).name
+            / "management" / "backlog" / "epic.json"
+        )
+        data = json.loads(ef.read_text(encoding="utf-8")) or {}
+        for e in (data.get("epics") or {}).values():
+            n = str(e.get("name") or "")
+            if n and n not in seen:
+                seen.add(n)
+                names.append(n)
+    except Exception:  # noqa: BLE001 — mgmt 失败 → legacy
+        pass
+    try:
+        lf = Path(root) / "projects" / Path(project_id).name / "tasks.json"
+        data = json.loads(lf.read_text(encoding="utf-8")) or {}
+        for e in (data.get("epics") or []):
+            n = str(e or "")
+            if n and n not in seen:
+                seen.add(n)
+                names.append(n)
+    except Exception:  # noqa: BLE001 — legacy 失败 → 忽略
+        pass
+    if not names:
+        return None
+    return {
+        "total": len(names),
+        "preview": " · ".join(names[:5]) + (f" 等{len(names) - 5}个" if len(names) > 5 else ""),
+    }
 
 
 def _docs_subpath(question: str) -> str:
@@ -213,12 +301,25 @@ def build_facts(
     elif target is not None:
         name = str(getattr(target, "name", "") or "")
         if intent == "project_status":
-            block = (
-                f"项目: {name}\n生命周期: {_stage(target)}\n"
-                f"进度: {getattr(target, 'progress', None) or 0}\n"
-                f"当前阶段: {getattr(target, 'current_stage', None) or '—'}\n"
-                f"工作流: {getattr(target, 'workflow_status', None) or '未启动'}"
-            )
+            stats = _project_task_stats(root, str(getattr(target, "id", "") or ""))
+            lines = [
+                f"项目: {name}",
+                f"生命周期: {_stage(target)}",
+            ]
+            if stats:
+                lines.append(
+                    f"进度: {stats['pct']}% (任务 {stats['total']}: "
+                    f"完成 {stats['done']} · 执行中 {stats['running']} · "
+                    f"阻塞 {stats['blocked']} · 待办 {stats['todo']})"
+                )
+            else:
+                lines.append(f"进度: {getattr(target, 'progress', None) or 0}")
+            lines.append(f"当前阶段: {getattr(target, 'current_stage', None) or '—'}")
+            lines.append(f"工作流: {getattr(target, 'workflow_status', None) or '未启动'}")
+            epics = _project_epic_names(root, str(getattr(target, "id", "") or ""))
+            if epics:
+                lines.append(f"史诗 ({epics['total']}): {epics['preview']}")
+            block = "\n".join(lines)
         elif intent == "project_quality":
             score = None
             if root is not None:

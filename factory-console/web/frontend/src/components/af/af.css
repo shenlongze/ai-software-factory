@@ -3432,3 +3432,33 @@
   border: 1px solid #2a3140;
   background: #161a22;
 }
+
+/* v1.1.103: 设置 — 表格模式补充 */
+.af-settings-head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.af-settings-form--block {
+  margin-bottom: 12px;
+  padding: 12px;
+  background: #13161d;
+  border: 1px solid #2a3140;
+  border-radius: 10px;
+}
+
+.af-settings-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #e5e7eb;
+  cursor: pointer;
+}
+
+.af-manage-table td {
+  vertical-align: middle;
+}

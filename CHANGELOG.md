@@ -3,6 +3,23 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.103] — 2026-08-26
+
+**设置页表格化 + LLM 新增/编辑 (Founder 反馈)**。
+
+### Added
+
+- **LLM 新增/编辑**: POST /api/config/llm (新增 Provider, upsert) + PATCH 扩展
+  (models/base_url/api_key_ref 编辑); api_key_ref 只收 env: 引用 (明文 key 400
+  响亮拒绝, D8 铁律); GET/POST/PATCH 均每次 reload 磁盘
+- **表格模式**: 设置页从卡片改为**表格全量展示** (LLM/Agent/Skill/MCP/Tool),
+  行内管理动作 (启用停用/默认模型下拉/移除) + 新增/编辑表单
+
+### 验证
+
+- 后端 settings 13 passed (LLM 增改/明文 key 拒绝/404) + 权限边界 2 passed
+- 前端 678 passed (设置 5 用例含新增 Provider) · npm run build 通过
+
 ## [v1.1.102] — 2026-08-26
 
 **设置页完善: LLM/Agent/Skill/MCP 全管理面 (非只读)**。

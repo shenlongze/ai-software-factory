@@ -174,3 +174,74 @@ class TestAgentSkillManage:
         assert d["skills"]["python-api"]["name"] == "Python API"
         assert client.delete("/api/skills/python-api").status_code == 200
         assert client.delete("/api/skills/python-api").status_code == 404
+
+
+@requires_fastapi
+class TestLlmCreateEdit:
+    def test_create_provider_upsert(self, http_app):
+        client, root = http_app
+        r = client.post(
+            "/api/config/llm",
+            json={
+                "provider_id": "openai",
+                "enabled": True,
+                "models": ["gpt-4o"],
+                "base_url": "https://api.openai.com/v1/chat/completions",
+                "api_key_ref": "env:OPENAI_API_KEY",
+            },
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["id"] == "openai"
+        assert body["enabled"] is True
+        assert body["models"] == ["gpt-4o"]
+        # 持久化
+        import json as _json
+        d = _json.load(open(root / "providers.json", encoding="utf-8"))
+        assert d["providers"]["openai"]["api_key_ref"] == "env:OPENAI_API_KEY"
+        assert d["providers"]["openai"]["base_url"].startswith("https://api.openai.com")
+        # upsert: 再 POST 覆盖 models
+        r = client.post(
+            "/api/config/llm", json={"provider_id": "openai", "models": ["gpt-4o", "gpt-4o-mini"]}
+        )
+        assert r.json()["models"] == ["gpt-4o", "gpt-4o-mini"]
+
+    def test_patch_edit_models_and_base_url(self, http_app, monkeypatch):
+        monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
+        client, root = http_app
+        import json as _json
+        (root / "providers.json").write_text(
+            _json.dumps(
+                {
+                    "version": 1,
+                    "providers": {
+                        "deepseek": {
+                            "id": "deepseek",
+                            "enabled": True,
+                            "models": ["deepseek-chat"],
+                            "api_key_ref": "env:DEEPSEEK_API_KEY",
+                        }
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        r = client.patch(
+            "/api/config/llm",
+            json={"provider_id": "deepseek", "models": ["deepseek-chat", "deepseek-reasoner"], "base_url": "https://custom/v1/chat/completions"},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["models"] == ["deepseek-chat", "deepseek-reasoner"]
+        assert r.json()["base_url"] == "https://custom/v1/chat/completions"
+
+    def test_plaintext_key_rejected(self, http_app):
+        client, _ = http_app
+        r = client.post(
+            "/api/config/llm",
+            json={"provider_id": "x", "api_key_ref": "sk-plain-secret"},
+        )
+        assert r.status_code == 400
+
+    def test_patch_missing_404(self, http_app):
+        client, _ = http_app
+        assert client.patch("/api/config/llm", json={"provider_id": "nope"}).status_code == 404

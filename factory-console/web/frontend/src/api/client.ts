@@ -352,8 +352,13 @@ export const api = {
     deleteJson<{ deleted: boolean }>(`/api/mcp/connections/${encodeURIComponent(id)}`),
   // v1.1.102: 设置管理面 (LLM 配置 + Agent/Skill 管理)
   llmConfig: () => getJson<{ providers: LlmProviderConfig[]; selected: { provider_id: string | null; model: string | null } }>('/api/config/llm'),
-  updateLlmConfig: (providerId: string, body: { enabled?: boolean; default_model?: string }) =>
-    patchJson<LlmProviderConfig>('/api/config/llm', { provider_id: providerId, ...body }),
+  updateLlmConfig: (
+    providerId: string,
+    body: { enabled?: boolean; default_model?: string; models?: string[]; base_url?: string; api_key_ref?: string },
+  ) => patchJson<LlmProviderConfig>('/api/config/llm', { provider_id: providerId, ...body }),
+  createLlmConfig: (
+    body: { provider_id: string; enabled?: boolean; default_model?: string; models?: string[]; base_url?: string; api_key_ref?: string },
+  ) => sendJson<LlmProviderConfig>('/api/config/llm', body),
   createAgent: (id: string, role: string, skills: string[]) =>
     sendJson<{ id: string; name: string; role: string; skills: string[] }>('/api/agents', { id, role, skills }),
   deleteAgent: (id: string) => deleteJson<{ deleted: boolean }>(`/api/agents/${encodeURIComponent(id)}`),

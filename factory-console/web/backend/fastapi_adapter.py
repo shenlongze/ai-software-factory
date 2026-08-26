@@ -250,15 +250,20 @@ class _SessionPatchBody(BaseModel):
 
 
 class _LlmConfigBody(BaseModel):
-    """PATCH /api/config/llm body (设置 — LLM 管理面, v1.1.102)。
+    """POST/PATCH /api/config/llm body (设置 — LLM 管理面, v1.1.102)。
 
-    {provider_id, enabled?, default_model?}: 启用/停用 Provider + 设置默认
-    模型 (providers.json 落库; api_key_ref 只存引用, 不存明文 key)。
+    {provider_id, enabled?, default_model?, models?, base_url?, api_key_ref?}:
+    - POST = 新增/覆盖 Provider (upsert); PATCH = 修改已存在 Provider (404 if 缺)
+    - api_key_ref 只接受 env:VAR 引用 (D8 铁律 — 明文 key 400 响亮拒绝)
+    - default_model 存 metadata (不新增字段, 向后兼容)
     """
 
     provider_id: str
     enabled: bool | None = None
     default_model: str | None = None
+    models: list[str] | None = None
+    base_url: str | None = None
+    api_key_ref: str | None = None
 
 
 class _AgentBody(BaseModel):
@@ -2552,26 +2557,63 @@ def build_app(
                 selected_model = _provider_config_view(plane, sp).get("default_model")
         return {"providers": providers, "selected": {"provider_id": selected, "model": selected_model}}
 
+    def _apply_llm_update(plane: Any, body: _LlmConfigBody) -> dict[str, Any]:
+        """应用 LLM 配置更新 (启用/停用 + 默认模型 + models/base_url/api_key_ref)。
+
+        api_key_ref 非 env: 引用 → ValueError (明文 key 不落盘, D8 铁律)。
+        """
+        if body.api_key_ref is not None:
+            ref = body.api_key_ref.strip()
+            if ref and not ref.startswith("env:"):
+                raise ValueError("api_key_ref 只接受 env:VAR 引用 (明文 key 不入 providers.json)")
+        if body.enabled is True:
+            plane.enable(body.provider_id)
+        elif body.enabled is False:
+            plane.disable(body.provider_id)
+        if body.models is not None:
+            plane.set_config(body.provider_id, models=[str(m).strip() for m in body.models if str(m).strip()])
+        if body.base_url is not None:
+            plane.set_config(body.provider_id, base_url=body.base_url.strip() or None)
+        if body.api_key_ref is not None:
+            plane.set_config(body.provider_id, api_key_ref=ref if ref else None)
+        if body.default_model:
+            cur = plane.get_provider(body.provider_id)
+            meta = dict(cur.metadata or {}) if cur else {}
+            meta["default_model"] = body.default_model
+            plane.set_config(body.provider_id, metadata=meta)
+        provider = plane.get_provider(body.provider_id)
+        if provider is None:
+            raise ValueError("provider not found")
+        return _provider_config_view(plane, provider)
+
+    def _llm_plane_reload(plane: Any) -> None:
+        """重读磁盘 (与 GET 一致 — 管理页反映 CLI 外部改动, 不读陈旧内存)。"""
+        try:
+            plane.reload()
+        except Exception:  # noqa: BLE001 — 损坏 → 沿用内存 (失败安全)
+            pass
+
+    @app.post("/api/config/llm")
+    def api_create_llm_config(body: _LlmConfigBody) -> dict[str, Any]:
+        """LLM 配置新增/覆盖 (POST — 新增 Provider, upsert 语义)。"""
+        plane = _llm_plane
+        _llm_plane_reload(plane)
+        try:
+            return _apply_llm_update(plane, body)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     @app.patch("/api/config/llm")
     def api_update_llm_config(body: _LlmConfigBody) -> dict[str, Any]:
-        """LLM 配置更新 (PATCH — 启用/停用 Provider + 默认模型; 不存在 → 404)。"""
+        """LLM 配置修改 (PATCH — 修改已存在 Provider; 不存在 → 404)。"""
         plane = _llm_plane
+        _llm_plane_reload(plane)
         if plane.get_provider(body.provider_id) is None:
             raise HTTPException(status_code=404, detail="provider not found")
         try:
-            if body.enabled is True:
-                plane.enable(body.provider_id)
-            elif body.enabled is False:
-                plane.disable(body.provider_id)
-            if body.default_model:
-                cur = plane.get_provider(body.provider_id)
-                meta = dict(cur.metadata or {}) if cur else {}
-                meta["default_model"] = body.default_model
-                plane.set_config(body.provider_id, metadata=meta)
+            return _apply_llm_update(plane, body)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        provider = plane.get_provider(body.provider_id)
-        return _provider_config_view(plane, provider)
 
     # ------------------------------------------- 设置 — Agent / Skill 管理 (v1.1.102)
     def _read_json_map(path: Any) -> dict[str, Any]:

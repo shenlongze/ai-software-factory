@@ -65,21 +65,43 @@ afterEach(() => {
 });
 
 describe('AfSettings (设置管理面)', () => {
-  it('LLM tab: 渲染 Provider 卡片 + 停用动作调 PATCH /api/config/llm', async () => {
+  it('LLM tab: 表格展示 + 停用动作调 PATCH /api/config/llm', async () => {
     const { calls } = stubApi({
       'GET /api/config/llm': {
         providers: [
-          { id: 'deepseek', enabled: true, models: ['deepseek-chat', 'deepseek-reasoner'], key_configured: true, default_model: 'deepseek-chat' },
+          { id: 'deepseek', enabled: true, models: ['deepseek-chat', 'deepseek-reasoner'], key_configured: true, default_model: 'deepseek-chat', base_url: null },
         ],
         selected: { provider_id: 'deepseek', model: 'deepseek-chat' },
       },
     });
     render(<AfSettings />);
-    const card = await screen.findByTestId('af-llm-deepseek');
-    expect(within(card).getByText('已启用')).toBeInTheDocument();
-    expect(within(card).getByText(/Key 已配置/)).toBeInTheDocument();
-    await userEvent.click(within(card).getByRole('button', { name: '停用' }));
+    // 表格行展示全量信息
+    const row = await screen.findByRole('row', { name: /deepseek/ });
+    expect(within(row).getByText('deepseek-chat, deepseek-reasoner')).toBeInTheDocument();
+    expect(within(row).getByText('🔑 已配置')).toBeInTheDocument();
+    // 停用 (表格内 toggle)
+    const btn = within(row).getAllByRole('button').find((b) => b.textContent === '✅ 启用');
+    await userEvent.click(btn as HTMLButtonElement);
     expect(calls.some((c) => c.method === 'PATCH' && c.url === '/api/config/llm' && (c.body as { enabled?: boolean })?.enabled === false)).toBe(true);
+  });
+
+  it('LLM tab: 新增 Provider → POST /api/config/llm (含模型/base_url/key引用)', async () => {
+    const { calls } = stubApi();
+    render(<AfSettings />);
+    await userEvent.click(screen.getByRole('button', { name: '＋ 新增 Provider' }));
+    await userEvent.type(screen.getByLabelText('Provider id'), 'openai');
+    await userEvent.type(screen.getByLabelText('Provider models'), 'gpt-4o, gpt-4o-mini');
+    await userEvent.type(screen.getByLabelText('Provider base_url'), 'https://api.openai.com/v1/chat/completions');
+    await userEvent.type(screen.getByLabelText('Provider api_key_ref'), 'env:OPENAI_API_KEY');
+    await userEvent.click(screen.getByRole('button', { name: '保存' }));
+    const posted = calls.find((c) => c.method === 'POST' && c.url === '/api/config/llm')?.body as {
+      provider_id: string;
+      models: string[];
+      api_key_ref: string;
+    };
+    expect(posted.provider_id).toBe('openai');
+    expect(posted.models).toEqual(['gpt-4o', 'gpt-4o-mini']);
+    expect(posted.api_key_ref).toBe('env:OPENAI_API_KEY');
   });
 
   it('Agent tab: 注册 → POST /api/agents + 列表刷新', async () => {
@@ -114,9 +136,9 @@ describe('AfSettings (设置管理面)', () => {
     await userEvent.type(screen.getByLabelText('MCP 地址'), 'https://mock.example/tools');
     await userEvent.click(screen.getByRole('button', { name: '＋ 连接' }));
     expect(calls.some((c) => c.method === 'POST' && c.url === '/api/mcp/connections')).toBe(true);
-    // 连接后列表出现 → 移除 → DELETE
-    const card = await screen.findByTestId('af-mcp-mcp-1');
-    await userEvent.click(within(card).getByRole('button', { name: '移除' }));
+    // 连接后表格出现 → 移除 → DELETE
+    const row = await screen.findByRole('row', { name: /weather/ });
+    await userEvent.click(within(row).getByRole('button', { name: '移除' }));
     expect(calls.some((c) => c.method === 'DELETE' && c.url === '/api/mcp/connections/mcp-1')).toBe(true);
   });
 });

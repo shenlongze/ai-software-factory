@@ -381,10 +381,11 @@ class TestPermissionBoundary:
                 is_rag_query = (
                     route_method == "POST" and path == "/api/rag/query"
                 )
-                # v1.1.102: 设置管理面 — LLM 配置 (PATCH /api/config/llm —
-                # 启用/停用 provider + 默认模型, 写 providers.json 配置)
+                # v1.1.102: 设置管理面 — LLM 配置 (POST/PATCH /api/config/llm —
+                # 新增/修改 provider, 写 providers.json 配置; api_key_ref 只收
+                # env: 引用, 明文 key 400 拒绝)
                 is_llm_config = (
-                    route_method == "PATCH" and path == "/api/config/llm"
+                    route_method in {"POST", "PATCH"} and path == "/api/config/llm"
                 )
                 # v1.1.102: MCP 连接移除 (DELETE /api/mcp/connections/{id} —
                 # 与 CLI factory mcp remove 同源)

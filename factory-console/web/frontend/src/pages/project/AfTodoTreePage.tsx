@@ -20,9 +20,9 @@
  */
 
 import { useState } from 'react';
-import { ApiError } from '../../api/client';
+import { ApiError, api } from '../../api/client';
 import { AfTodoTree, type TaskMeta } from '../../components/af/AfTodoTree';
-import { AfTaskDetailPanel } from '../../components/af/AfTaskDetailPanel';
+import { AfTaskDetailPanel, type TaskPatch } from '../../components/af/AfTaskDetailPanel';
 import { toTaskDetail, toTodoTree } from '../../api/domain';
 import { AfEmptyState, AfErrorState, AfLoadingState } from '../../components/af/AfState';
 import { useAsync } from '../../hooks/useAsync';
@@ -74,6 +74,20 @@ export function AfTodoTreePage({ projectId, projectName }: AfTodoTreePageProps):
     [projectId, projectName, retryTick],
   );
 
+  /** W-3: 任务更新 (PATCH 真实后端 + 刷新; statusPath 按受控状态机逐布 PATCH)。
+   *  失败 → 抛错 (面板展示诚实错误; 状态机拒绝/依赖未满足 → 后端 400/409)。 */
+  async function handleUpdateTask(changes: TaskPatch, taskId: string): Promise<void> {
+    const { statusPath, ...patch } = changes;
+    if (statusPath != null && statusPath.length > 0) {
+      for (const status of statusPath) {
+        await api.updateBacklogTask(projectId, taskId, { status });
+      }
+    } else if (Object.keys(patch).length > 0) {
+      await api.updateBacklogTask(projectId, taskId, patch);
+    }
+    setRetryTick((tick) => tick + 1);
+  }
+
   if (loading) {
     return <AfLoadingState label="正在加载任务树…" />;
   }
@@ -101,6 +115,7 @@ export function AfTodoTreePage({ projectId, projectName }: AfTodoTreePageProps):
               <AfTaskDetailPanel
                 task={selectedDetail}
                 onClose={() => setSelectedTaskId(null)}
+                onUpdate={handleUpdateTask}
               />
             </aside>
           ) : null}

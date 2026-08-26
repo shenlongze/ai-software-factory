@@ -90,6 +90,10 @@ export interface BacklogTask {
   created_at?: string | null;
   updated_at?: string | null;
   history?: Array<Record<string, unknown>> | null;
+  /** 执行绑定 (方案A v1.1.141): exec request id EXR-* / 引擎任务 id; 空 = 未绑定。 */
+  exec_ref?: string | null;
+  /** 最近执行结果 id (EXS-*); 空 = 无。 */
+  exec_result?: string | null;
 }
 
 /** GET /api/projects/{id}/backlog 响应 (4 个平行数组 + project_id)。 */
@@ -204,6 +208,13 @@ export interface TaskDetail {
   storyName?: string;
   /** 所属 Sprint (后端 backlog 无此字段 → 恒 undefined, 诚实降级)。 */
   sprintName?: string;
+  /** 后端原始六态 (todo/ready/in_progress/blocked/review/done) — 操作按钮
+      计算合法状态机路径用 (DomainStatus 已归一 pending/running, 丢失原始态)。 */
+  rawStatus?: string;
+  /** 执行绑定 (exec request id EXR-*); 空 = 未绑定 (审计溯源)。 */
+  execRef?: string;
+  /** 最近执行结果 id (EXS-*); 空 = 无 (审计溯源)。 */
+  execResult?: string;
   history: Activity[];
   artifacts: string[];
 }

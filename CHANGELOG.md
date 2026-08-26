@@ -3,6 +3,24 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.142] — 2026-08-26
+
+**W-3: 项目首页 Todo 编辑/优先级/归档/审计溯源 (Founder: 一次优化完成)**。
+
+### Added
+
+- 详情面板操作区: [开始] (todo/ready→in_progress 按受控状态机路径序列化 PATCH) /
+  [完成] (in_progress/review→done) / [重新开始] (blocked→in_progress) /
+  优先级选择 (P0-P3) / 标题+描述内联编辑; 失败展示诚实错误 (400/409)
+- 归档: done 任务不进主树 (待办视角), 工具栏 [已归档 (N)] 默认收起,
+  展开显示全部完成项, 点击看审计; 全部完成 → "所有任务已完成 🎉"
+- 审计溯源增强: 详情面板展示 exec_ref / exec_result (方案A 执行绑定)
+- api.updateBacklogTask (PATCH /backlog/task/{id})
+
+### 验证
+
+- 前端 704 passed (新增 W-3 19 项) · vite build 通过 · 后端零改动 (PATCH 已就绪)
+
 ## [v1.1.141] — 2026-08-26
 
 **方案A: 执行绑定 + 回写钩子 — 任务状态自动更新 (Founder: 选 A)**。

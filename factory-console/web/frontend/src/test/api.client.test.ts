@@ -98,6 +98,7 @@ describe('api client — 只读契约 + S9-002 审批写面 + S10-004 Runtime �
       'suggestProject',
       'taskRuntimeSessions',
       'tools',
+      'updateBacklogTask',
       'updateLlmConfig',
       'updateProject',
       'updateSession',
@@ -106,7 +107,8 @@ describe('api client — 只读契约 + S9-002 审批写面 + S10-004 Runtime �
       'workflows',
     ]);
     // Permission Boundary: 写面 = 审批决定 + Runtime 生命周期 + 项目创建 POST,
-    // 项目管理 PATCH/DELETE (updateProject/deleteProject; 无裸 put/patch 方法名)
+    // 项目管理 PATCH/DELETE (updateProject/deleteProject) + W-3 任务管理
+    // (updateBacklogTask); 无裸 put/patch 方法名
     expect(keys.some((k) => k.toLowerCase().startsWith('put'))).toBe(false);
     expect(
       keys.filter((k) =>
@@ -120,6 +122,7 @@ describe('api client — 只读契约 + S9-002 审批写面 + S10-004 Runtime �
           'createProject',
           'updateProject',
           'deleteProject',
+          'updateBacklogTask',
         ].includes(k),
       ),
     ).toEqual([
@@ -131,6 +134,7 @@ describe('api client — 只读契约 + S9-002 审批写面 + S10-004 Runtime �
       'screenshotRuntime',
       'startRuntime',
       'stopRuntime',
+      'updateBacklogTask',
       'updateProject',
     ]);
   });

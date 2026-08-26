@@ -61,6 +61,7 @@ import {
   type WorkflowDetail,
   type WorkflowSummary,
 } from '../models/types';
+import type { BacklogTask } from '../models/domain';
 
 export class ApiError extends Error {
   readonly status: number;
@@ -155,6 +156,23 @@ export const api = {
   deleteProject: (projectId: string) =>
     deleteJson<{ deleted: boolean; project_id: string }>(
       `/api/projects/${encodeURIComponent(projectId)}`,
+    ),
+  // W-3 (v1.1.142): 任务管理 — 编辑/优先级/状态流转 (PATCH → 更新后 Task;
+  // 后端单步状态机: 前端按合法路径序列化调用, 非法 → 400/409 诚实报错)
+  updateBacklogTask: (
+    projectId: string,
+    taskId: string,
+    changes: {
+      title?: string;
+      description?: string;
+      priority?: string;
+      status?: string;
+      assignee?: string;
+    },
+  ) =>
+    patchJson<BacklogTask>(
+      `/api/projects/${encodeURIComponent(projectId)}/backlog/task/${encodeURIComponent(taskId)}`,
+      changes,
     ),
   lifecycle: (projectId: string) =>
     getJson<LifecycleSummary>(

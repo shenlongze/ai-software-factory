@@ -1,30 +1,66 @@
 /**
- * components/af/AfTaskDetailPanel.tsx — Task Detail 统一面板 (S10-015 Task 005b)。
+ * components/af/AfTaskDetailPanel.tsx — Task Detail 统一面板 (S10-015 Task 005b + W-3)。
  *
  * 依据 (唯一): S10-015-architecture-review §6 (Task Detail 数据流) + 用户 Task 005
  * 设计约束 (TaskDetail 全字段: Epic/Feature/Story 关联 — 为什么存在 / 负责人 / Agent /
  * 优先级 / 依赖 / 历史; 缺失降级, 不崩溃)。
  *
+ * W-3 (v1.1.142, Founder: todo 编辑/优先级/归档/审计溯源):
+ *   - 操作区 (仅 onUpdate 提供时渲染): 状态流转 (开始/完成/重新开始 — 按受控状态机
+ *     合法路径序列化 PATCH) + 优先级选择 + 标题/描述内联编辑; 保存后页面 PATCH + 刷新
+ *   - 审计溯源增强: 展示 exec_ref / exec_result (方案A 执行绑定, 若有)
+ *   - statusPathTo: 受控状态机 (org.management TASK_TRANSITIONS) 合法最短路径
+ *     (todo→[ready,in_progress] / in_progress→[review,done] / blocked→[in_progress] …)
+ *
  * 展示 (Context Panel 基础, Task 006 树节点点击集成):
  *   - 标题 + 状态 (AfStatusBadge)
  *   - 所属: Epic → Feature → Story (为什么存在; 部分缺失 → 显示已有部分; 全缺 → 不渲染)
- *   - 字段: 负责人 / Agent / 优先级 / 依赖 (多值连接) / 下一步 / 开始时间
+ *   - 字段: 负责人 / Agent / 优先级 / 依赖 (多值连接) / 下一步 / 开始时间 / 执行绑定
  *   - 历史: 复用 AfTimeline (time/actor/action/result)
  * 降级 (§6.3): 缺失字段 → '—' 或整体不渲染, 不崩溃。
- * 纯展示组件: 不 fetch; TaskDetail 由父层传入 (来自 toTaskDetail 真实转换)。
  */
 
+import { useState } from 'react';
 import type { Activity, TaskDetail } from '../../models/domain';
 import { formatTime } from './afLabels';
 import { AfStatusBadge } from './AfStatusBadge';
 import { AfTimeline, type AfTimelineItem } from './AfTimeline';
 import './af.css';
 
+/** 任务更新载荷 (页面执行 PATCH; statusPath = 状态机合法路径, 逐布 PATCH 后一次刷新)。 */
+export interface TaskPatch {
+  title?: string;
+  description?: string;
+  priority?: string;
+  status?: string;
+  statusPath?: string[];
+}
+
 export interface AfTaskDetailPanelProps {
   /** 任务详情 (domain; 由 toTaskDetail 真实转换; 空对象 → 降级展示)。 */
   task: TaskDetail;
   /** 关闭回调 (Context Panel 收起; 缺省 → 不渲染关闭按钮)。 */
   onClose?: () => void;
+  /** 保存回调 (页面 PATCH + 刷新; 返回 Promise — 面板据此显示忙/错误)。缺省 → 不渲染操作区。 */
+  onUpdate?: (changes: TaskPatch, taskId: string) => Promise<void>;
+}
+
+/**
+ * 受控状态机合法路径 (org.management TASK_TRANSITIONS: todo→(ready,blocked);
+ * ready→(in_progress,blocked); in_progress→(blocked,review); blocked→(ready,
+ * in_progress); review→(in_progress,done); done→()) — W-3 按钮按此逐步 PATCH。
+ */
+export function statusPathTo(raw: string | undefined, target: 'in_progress' | 'done'): string[] {
+  const s = (raw ?? '').toLowerCase();
+  if (target === 'in_progress') {
+    if (s === 'todo') return ['ready', 'in_progress'];
+    if (s === 'ready' || s === 'blocked') return ['in_progress'];
+    return [];
+  }
+  // target === 'done'
+  if (s === 'in_progress') return ['review', 'done'];
+  if (s === 'review') return ['done'];
+  return [];
 }
 
 /** Activity → AfTimelineItem (状态点色: result → DomainStatus 语义)。 */
@@ -58,7 +94,60 @@ function DetailField({
   );
 }
 
-export function AfTaskDetailPanel({ task, onClose }: AfTaskDetailPanelProps): JSX.Element {
+const PRIORITIES = ['P0', 'P1', 'P2', 'P3'] as const;
+
+export function AfTaskDetailPanel({ task, onClose, onUpdate }: AfTaskDetailPanelProps): JSX.Element {
+  const [editing, setEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState(task.title ?? '');
+  const [editDesc, setEditDesc] = useState(task.description ?? '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const raw = task.rawStatus ?? '';
+  const startPath = statusPathTo(raw, 'in_progress');
+  const finishPath = statusPathTo(raw, 'done');
+  const startLabel = raw === 'blocked' ? '重新开始' : '开始';
+  const canStart = startPath.length > 0;
+  const canFinish = finishPath.length > 0;
+
+  async function apply(changes: TaskPatch): Promise<void> {
+    if (onUpdate == null) return;
+    setBusy(true);
+    setError('');
+    try {
+      await onUpdate(changes, task.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleStart(): Promise<void> {
+    if (startPath.length > 0) await apply({ statusPath: startPath });
+  }
+
+  async function handleFinish(): Promise<void> {
+    if (finishPath.length > 0) await apply({ statusPath: finishPath });
+  }
+
+  async function handlePriority(priority: string): Promise<void> {
+    await apply({ priority });
+  }
+
+  async function handleEditSave(): Promise<void> {
+    const title = editTitle.trim();
+    if (title.length === 0) {
+      setError('标题不能为空');
+      return;
+    }
+    await apply({
+      ...(title !== task.title ? { title } : {}),
+      ...(editDesc !== (task.description ?? '') ? { description: editDesc } : {}),
+    });
+    if (onUpdate != null) setEditing(false);
+  }
+
   const belong = [task.epicName, task.featureName, task.storyName]
     .filter((name): name is string => name != null && name.length > 0)
     .join(' → ');
@@ -105,7 +194,114 @@ export function AfTaskDetailPanel({ task, onClose }: AfTaskDetailPanelProps): JS
             testId="af-task-detail-started"
             value={task.startedAt != null ? formatTime(task.startedAt) : undefined}
           />
+          <DetailField label="执行绑定" testId="af-task-detail-exec-ref" value={task.execRef} />
+          <DetailField label="执行结果" testId="af-task-detail-exec-result" value={task.execResult} />
         </div>
+
+        {onUpdate != null ? (
+          <section className="af-task-detail-ops" data-testid="af-task-detail-ops">
+            <h4 className="af-task-detail-section-title">操作</h4>
+            {!editing ? (
+              <div className="af-task-detail-ops-row">
+                {canStart ? (
+                  <button
+                    type="button"
+                    className="af-btn"
+                    data-testid="af-task-detail-start"
+                    disabled={busy}
+                    onClick={handleStart}
+                  >
+                    {startLabel}
+                  </button>
+                ) : null}
+                {canFinish ? (
+                  <button
+                    type="button"
+                    className="af-btn"
+                    data-testid="af-task-detail-finish"
+                    disabled={busy}
+                    onClick={handleFinish}
+                  >
+                    完成
+                  </button>
+                ) : null}
+                <select
+                  className="af-task-detail-priority-select"
+                  data-testid="af-task-detail-priority-select"
+                  value={task.priority ?? 'P2'}
+                  disabled={busy}
+                  aria-label="优先级"
+                  onChange={(e) => handlePriority(e.target.value)}
+                >
+                  {PRIORITIES.map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="af-btn"
+                  data-testid="af-task-detail-edit"
+                  disabled={busy}
+                  onClick={() => {
+                    setEditTitle(task.title ?? '');
+                    setEditDesc(task.description ?? '');
+                    setEditing(true);
+                    setError('');
+                  }}
+                >
+                  编辑
+                </button>
+              </div>
+            ) : (
+              <div className="af-task-detail-edit" data-testid="af-task-detail-edit-form">
+                <input
+                  className="af-input"
+                  data-testid="af-task-detail-edit-title"
+                  value={editTitle}
+                  aria-label="任务标题"
+                  onChange={(e) => setEditTitle(e.target.value)}
+                />
+                <textarea
+                  className="af-input af-task-detail-edit-desc"
+                  data-testid="af-task-detail-edit-desc"
+                  value={editDesc}
+                  aria-label="任务描述"
+                  rows={3}
+                  onChange={(e) => setEditDesc(e.target.value)}
+                />
+                <div className="af-task-detail-ops-row">
+                  <button
+                    type="button"
+                    className="af-btn"
+                    data-testid="af-task-detail-edit-save"
+                    disabled={busy}
+                    onClick={handleEditSave}
+                  >
+                    保存
+                  </button>
+                  <button
+                    type="button"
+                    className="af-btn"
+                    data-testid="af-task-detail-edit-cancel"
+                    disabled={busy}
+                    onClick={() => setEditing(false)}
+                  >
+                    取消
+                  </button>
+                </div>
+              </div>
+            )}
+            {busy ? <span className="af-task-detail-op-status">保存中…</span> : null}
+            {error.length > 0 ? (
+              <span className="af-task-detail-error" data-testid="af-task-detail-error">
+                {error}
+              </span>
+            ) : null}
+          </section>
+        ) : null}
+
         <section className="af-task-detail-history" data-testid="af-task-detail-history">
           <h4 className="af-task-detail-section-title">历史</h4>
           <AfTimeline items={toTimelineItems(task.history)} />

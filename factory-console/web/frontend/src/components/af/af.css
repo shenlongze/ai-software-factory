@@ -1670,6 +1670,110 @@
   color: var(--c-text);
 }
 
+/* ============================================================ W-3 (v1.1.142): Todo 操作 + 归档 + 审计
+ * Founder: todo 编辑/优先级/归档/审计溯源 — 敏捷管理闭环。
+ * 详情面板操作区 + 执行绑定审计字段 + 树底部已归档区 (默认收起)。 */
+
+.af-btn--active {
+  color: #4c8dff;
+  border-color: #4c8dff;
+  background: rgba(76, 141, 255, 0.12);
+}
+
+.af-input {
+  font: inherit;
+  font-size: 12px;
+  color: var(--c-text);
+  background: var(--af-card, var(--c-card));
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.af-task-detail-ops {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--c-border);
+}
+
+.af-task-detail-ops-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.af-task-detail-priority-select {
+  font: inherit;
+  font-size: 12px;
+  color: var(--c-text);
+  background: var(--af-card, var(--c-card));
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  padding: 4px 8px;
+}
+
+.af-task-detail-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.af-task-detail-edit-desc {
+  resize: vertical;
+  min-height: 56px;
+}
+
+.af-task-detail-op-status {
+  font-size: 12px;
+  color: var(--c-text-muted, var(--c-text));
+  opacity: 0.7;
+}
+
+.af-task-detail-error {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  color: #ff5d5d;
+}
+
+.af-tree-archive {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--c-border);
+}
+
+.af-tree-archive-title {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--c-text);
+}
+
+.af-tree-archive-hint {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: var(--c-text-muted, var(--c-text));
+  opacity: 0.7;
+}
+
+.af-tree-archive-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.af-tree-node--archived {
+  opacity: 0.85;
+}
+
+.af-tree-node--archived .af-tree-title {
+  text-decoration: line-through;
+  text-decoration-color: var(--c-border);
+}
+
 /* ============================================================ S10-015 Task 006: Dashboard (Control Center)
  * AI 软件公司控制中心 — 6 模块网格 (Active Projects / Running AI Employees / Workflow Status /
  * Blocked Tasks / Recent Runtime Events / Quality Summary)。深色 AI OS 风格, 与既有 af-* 组件一致。 */

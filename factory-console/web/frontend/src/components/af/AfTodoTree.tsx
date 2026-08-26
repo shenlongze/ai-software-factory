@@ -15,6 +15,11 @@
  *   - 展开/折叠: 单击箭头 (aria-expanded); 工具栏 [全展开][全折叠]
  *   - 过滤: [全部][执行中][阻塞][待审核][失败] — 只显示匹配任务及其祖先
  *   - 点击任务节点 → onSelectTask(taskId) (Context Panel 联动, Task 006)
+ * W-3 归档 (v1.1.142, Founder: 完成的任务要支持归档):
+ *   - 主树为待办视角: done(completed) 任务不进主树 (归档)
+ *   - 工具栏 [已归档 (N)]: 展开/收起底部归档区 (全部 done 任务, 默认收起);
+ *     点任务 → 详情面板 (审计溯源)
+ *   - 全部已完成 → "所有任务已完成 🎉" 空态 (不再"暂无任务", 诚实区分)
  *
  * 数据:
  *   - tree: TodoTree (domain, 由页面 toTodoTree(backlog) 得到 — 真实数据驱动)
@@ -73,11 +78,31 @@ function collectBranchIds(node: TreeNode): string[] {
   return ids;
 }
 
-/** 过滤可见性: 任务节点按状态匹配; 阶段/模块/故事 = 有匹配后代才可见 (祖先保留)。 */
+/** 过滤可见性: 任务节点按状态匹配; 阶段/模块/故事 = 有匹配后代才可见 (祖先保留)。
+ * W-3 归档: completed(done) 任务不进主树 (归入已归档区, 待办视角)。 */
 function visibleUnderFilter(node: TreeNode, filter: 'all' | DomainStatus): boolean {
-  if (filter === 'all') return true;
-  if (node.type === 'task' && node.status === filter) return true;
+  // 叶子任务 = 执行单元 (Story 节点 type 也是 'task' 但有子任务 — 走下方后代判定)
+  if (node.type === 'task' && node.children.length === 0) {
+    if (node.status === 'completed') return false; // W-3 归档: done 不进主树
+    if (filter === 'all') return true;
+    return node.status === filter;
+  }
   return node.children.some((child) => visibleUnderFilter(child, filter));
+}
+
+/** 归档任务: 全部 done(completed) 叶子任务 (主树已隐藏; 归档区展示 + 审计入口)。
+ * 注意: Story 节点 type 也是 'task' 但有子任务 — 只有无子的叶子任务才算归档项。 */
+function collectDoneTasks(node: TreeNode): TreeNode[] {
+  if (node.children.length > 0) {
+    return node.children.flatMap(collectDoneTasks);
+  }
+  return node.type === 'task' && node.status === 'completed' ? [node] : [];
+}
+
+/** 主树是否还有待办任务 (非 done; 空态区分"暂无任务" vs "全部已完成")。 */
+function hasActiveTasks(node: TreeNode): boolean {
+  if (node.type === 'task') return node.status !== 'completed';
+  return node.children.some(hasActiveTasks);
 }
 
 /** 树中是否还有任务节点 (页面/组件空态判定)。 */
@@ -88,15 +113,18 @@ export function hasTaskNodes(node: TreeNode): boolean {
 
 export function AfTodoTree({ tree, taskMeta = {}, onSelectTask }: AfTodoTreeProps): JSX.Element {
   const root = tree.root;
-  // 空树 → AfEmptyState (禁空白; 用户刚建项目, AI 正在规划)
+  const doneTasks = collectDoneTasks(root);
+  const hasActive = hasActiveTasks(root);
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+  const [filter, setFilter] = useState<'all' | DomainStatus>('all');
+  const [showArchive, setShowArchive] = useState(false);
+
+  // 空树 / 无任何任务 → AfEmptyState (禁空白; 用户刚建项目, AI 正在规划)
   if (root.children.length === 0 || !hasTaskNodes(root)) {
     return (
       <AfEmptyState message="暂无任务 — AI 正在规划" hint="Backlog 生成后将在此展示阶段 → 模块 → 任务进度树" />
     );
   }
-
-  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
-  const [filter, setFilter] = useState<'all' | DomainStatus>('all');
 
   const toggle = (id: string) => {
     setCollapsed((prev) => {
@@ -124,6 +152,17 @@ export function AfTodoTree({ tree, taskMeta = {}, onSelectTask }: AfTodoTreeProp
         <button type="button" className="af-btn af-tree-btn" onClick={collapseAll}>
           全折叠
         </button>
+        {doneTasks.length > 0 ? (
+          <button
+            type="button"
+            className={`af-btn af-tree-btn ${showArchive ? 'af-btn--active' : ''}`}
+            data-testid="af-tree-archive-toggle"
+            aria-expanded={showArchive}
+            onClick={() => setShowArchive((v) => !v)}
+          >
+            已归档 ({doneTasks.length})
+          </button>
+        ) : null}
         <div className="af-tree-filters" role="group" aria-label="状态过滤">
           {TREE_FILTERS.map((f) => (
             <button
@@ -153,7 +192,14 @@ export function AfTodoTree({ tree, taskMeta = {}, onSelectTask }: AfTodoTreeProp
 
       <div className="af-tree-body" data-testid="af-tree-body">
         {visiblePhases.length === 0 ? (
-          <AfEmptyState message="没有匹配的任务" hint="试试切换其他过滤条件" />
+          doneTasks.length > 0 && !hasActive ? (
+            <AfEmptyState
+              message="所有任务已完成 🎉"
+              hint="全部任务已归档 — 展开「已归档」查看完成记录与审计"
+            />
+          ) : (
+            <AfEmptyState message="没有匹配的任务" hint="试试切换其他过滤条件" />
+          )
         ) : (
           visiblePhases.map((phase) => (
             <TreeNodeRow
@@ -168,6 +214,59 @@ export function AfTodoTree({ tree, taskMeta = {}, onSelectTask }: AfTodoTreeProp
           ))
         )}
       </div>
+
+      {showArchive && doneTasks.length > 0 ? (
+        <section className="af-tree-archive" data-testid="af-tree-archive" aria-label="已归档">
+          <h4 className="af-tree-archive-title">📦 已归档 ({doneTasks.length})</h4>
+          <p className="af-tree-archive-hint">已完成任务 — 点击查看审计溯源</p>
+          <div className="af-tree-archive-list">
+            {doneTasks.map((node) => {
+              const meta = taskMeta[node.id];
+              const priority = meta?.priority;
+              const owner = node.owner ?? node.agent ?? meta?.owner;
+              return (
+                <div
+                  key={node.id}
+                  className="af-tree-node af-tree-node--task af-tree-node--clickable af-tree-node--archived"
+                  data-testid={`af-tree-archive-item-${node.id}`}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`已归档任务: ${node.title}`}
+                  onClick={() => onSelectTask?.(node.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      onSelectTask?.(node.id);
+                    }
+                  }}
+                >
+                  <span className="af-tree-icon" aria-hidden="true">
+                    📄
+                  </span>
+                  <span className="af-tree-title">{node.title}</span>
+                  <AfStatusBadge status={node.status} label={node.statusLabel} />
+                  {priority != null && priority.length > 0 ? (
+                    <span
+                      className={`af-priority af-priority--${priority.toUpperCase()}`}
+                      data-testid="af-priority"
+                    >
+                      {priority.toUpperCase()}
+                    </span>
+                  ) : null}
+                  {owner != null && owner.length > 0 ? (
+                    <span className="af-tree-owner" title="负责人 / Agent">
+                      {owner}
+                    </span>
+                  ) : null}
+                  {node.completedAt != null ? (
+                    <span className="af-tree-meta">完成 {formatTime(node.completedAt)}</span>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }

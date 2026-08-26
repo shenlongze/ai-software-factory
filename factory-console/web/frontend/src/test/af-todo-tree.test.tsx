@@ -28,41 +28,56 @@ function nodeRow(id: string): HTMLElement {
 }
 
 describe('AfTodoTree (Todo Tree 组件)', () => {
-  it('渲染完整树: 项目头 + 阶段 → 模块 → 任务 层级 (默认全展开)', () => {
+  it('渲染完整树: 项目头 + 阶段 → 模块 → 任务 层级 (默认全展开; done 任务已归档)', async () => {
+    const user = userEvent.setup();
     render(<AfTodoTree tree={tree} taskMeta={meta} />);
     // 项目头 (root): 标题 + 进度条 + 状态徽标
     expect(screen.getByText('演示项目')).toBeInTheDocument();
     expect(screen.getByTestId('af-progress-bar')).toBeInTheDocument();
-    // 全部节点: 2 阶段 + 2 模块 + 4 故事 + 6 任务 = 14
-    expect(screen.getAllByTestId(/^af-tree-node-/)).toHaveLength(14);
+    // 主树节点 (待办视角): 2 阶段 + 2 模块 + 4 故事 + 5 任务 (done 已归档) = 13
+    expect(screen.getAllByTestId(/^af-tree-node-/)).toHaveLength(13);
+    // 归档开关: done 任务 t-reg-db 计数
+    expect(screen.getByTestId('af-tree-archive-toggle')).toHaveTextContent('已归档 (1)');
     // 层级: 阶段行标题 → 子容器 → 模块行 → 子容器 → 故事行 → 子容器 → 任务行
     expect(within(nodeRow('epic-dev')).getByText('开发阶段')).toBeInTheDocument();
     expect(within(screen.getByTestId('af-tree-children-epic-dev')).getByText('用户系统')).toBeInTheDocument();
     expect(within(screen.getByTestId('af-tree-children-feat-user')).getByText('用户注册')).toBeInTheDocument();
     expect(within(screen.getByTestId('af-tree-children-story-reg')).getByText('实现注册 API')).toBeInTheDocument();
+    // done 任务 t-reg-db 不在主树, 展开归档可见
+    expect(screen.queryByText('用户数据模型')).not.toBeInTheDocument();
+    await user.click(screen.getByTestId('af-tree-archive-toggle'));
+    expect(within(screen.getByTestId('af-tree-archive')).getByText('用户数据模型')).toBeInTheDocument();
   });
 
-  it('状态徽标: 6 态人话正确渲染 (复用 AfStatusBadge)', () => {
+  it('状态徽标: 6 态人话正确渲染 (复用 AfStatusBadge; done 在归档区)', async () => {
+    const user = userEvent.setup();
     render(<AfTodoTree tree={tree} taskMeta={meta} />);
     expect(within(nodeRow('t-reg-api')).getByText('执行中')).toBeInTheDocument();
-    expect(within(nodeRow('t-reg-db')).getByText('已完成')).toBeInTheDocument();
     expect(within(nodeRow('t-login-api')).getByText('阻塞')).toBeInTheDocument();
     expect(within(nodeRow('t-regr-run')).getByText('待审核')).toBeInTheDocument();
     expect(within(nodeRow('t-regr-report')).getByText('失败')).toBeInTheDocument();
     expect(within(nodeRow('t-release-check')).getByText('待办')).toBeInTheDocument();
-    for (const id of ['t-reg-api', 't-reg-db', 't-login-api', 't-regr-run', 't-regr-report', 't-release-check']) {
+    for (const id of ['t-reg-api', 't-login-api', 't-regr-run', 't-regr-report', 't-release-check']) {
       expect(within(nodeRow(id)).getByTestId('af-status-badge')).toBeInTheDocument();
     }
+    // done 任务在归档区 (已完成徽标)
+    await user.click(screen.getByTestId('af-tree-archive-toggle'));
+    const archived = screen.getByTestId('af-tree-archive-item-t-reg-db');
+    expect(within(archived).getByText('已完成')).toBeInTheDocument();
   });
 
-  it('优先级标签: P0/P1/P2/P3 对应色类 (来自 taskMeta)', () => {
+  it('优先级标签: P0/P1/P2/P3 对应色类 (来自 taskMeta; done 在归档区)', async () => {
+    const user = userEvent.setup();
     render(<AfTodoTree tree={tree} taskMeta={meta} />);
     const p0 = within(nodeRow('t-release-check')).getByTestId('af-priority');
     expect(p0).toHaveTextContent('P0');
     expect(p0).toHaveClass('af-priority--P0');
     expect(within(nodeRow('t-reg-api')).getByTestId('af-priority')).toHaveClass('af-priority--P1');
-    expect(within(nodeRow('t-reg-db')).getByTestId('af-priority')).toHaveClass('af-priority--P2');
     expect(within(nodeRow('t-regr-run')).getByTestId('af-priority')).toHaveClass('af-priority--P3');
+    // done 任务 P2 在归档区
+    await user.click(screen.getByTestId('af-tree-archive-toggle'));
+    const archived = screen.getByTestId('af-tree-archive-item-t-reg-db');
+    expect(within(archived).getByTestId('af-priority')).toHaveClass('af-priority--P2');
   });
 
   it('无优先级数据 → 不渲染优先级标签 (若字段有才显示)', () => {
@@ -70,11 +85,14 @@ describe('AfTodoTree (Todo Tree 组件)', () => {
     expect(screen.queryAllByTestId('af-priority')).toHaveLength(0);
   });
 
-  it('叶子任务额外字段: 负责人 (taskMeta.owner) / 开始时间 / 下一步 (若字段有)', () => {
+  it('叶子任务额外字段: 负责人 (taskMeta.owner) / 开始时间 / 下一步 (若字段有)', async () => {
+    const user = userEvent.setup();
     // 负责人来自 taskMeta (真实 assignee 投影)
     render(<AfTodoTree tree={tree} taskMeta={meta} />);
     expect(within(nodeRow('t-reg-api')).getByText('developer')).toBeInTheDocument();
-    expect(within(nodeRow('t-reg-db')).getByText('developer')).toBeInTheDocument();
+    // done 任务 t-reg-db 负责人 → 归档区
+    await user.click(screen.getByTestId('af-tree-archive-toggle'));
+    expect(within(screen.getByTestId('af-tree-archive-item-t-reg-db')).getByText('developer')).toBeInTheDocument();
     // 开始时间/下一步: 手工节点带字段 (Adapter 当前不投影, 组件按"若字段有"诚实展示)
     const richTree: TodoTree = {
       root: {
@@ -239,10 +257,11 @@ describe('AfTodoTree (Todo Tree 组件)', () => {
     expect(onSelectTask).toHaveBeenCalledWith('story-reg');
   });
 
-  it('焦点高亮: 执行中节点带 af-tree-node--focus', () => {
+  it('焦点高亮: 执行中节点带 af-tree-node--focus; done 不在主树', () => {
     render(<AfTodoTree tree={tree} taskMeta={meta} />);
     expect(nodeRow('t-reg-api')).toHaveClass('af-tree-node--focus'); // running
     expect(nodeRow('story-reg')).toHaveClass('af-tree-node--focus'); // running (聚合)
-    expect(nodeRow('t-reg-db')).not.toHaveClass('af-tree-node--focus'); // completed
+    // done 任务 t-reg-db 已归档 → 主树无此节点
+    expect(screen.queryByTestId('af-tree-node-t-reg-db')).not.toBeInTheDocument();
   });
 });

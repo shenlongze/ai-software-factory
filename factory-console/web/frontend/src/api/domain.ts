@@ -662,6 +662,11 @@ function toTaskDetailFromBacklog(
     ...(task.created_at != null && task.created_at.length > 0
       ? { startedAt: task.created_at }
       : {}),
+    rawStatus: task.status ?? '',
+    ...(task.exec_ref != null && task.exec_ref.length > 0 ? { execRef: task.exec_ref } : {}),
+    ...(task.exec_result != null && task.exec_result.length > 0
+      ? { execResult: task.exec_result }
+      : {}),
     nextAction: deriveNextAction(status),
     ...(epic != null && epic.name != null && epic.name.length > 0 ? { epicName: epic.name } : {}),
     ...(feature != null && feature.name != null && feature.name.length > 0

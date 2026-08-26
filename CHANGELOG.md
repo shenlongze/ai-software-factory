@@ -3,7 +3,16 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.196] — 2026-08-27
+
+**i18n: 补 nav.workspace.monitor 菜单名称 (zh: 📊 监控 / en: 📊 Monitor)**。
+
+### Fixed
+
+- 监控页菜单名缺 i18n 键 → 补全 (中英双语); 页头/多语言切换正确显示
+
 ## [v1.1.195] — 2026-08-27
+
 
 **📊 监控中心增强 (Founder: 太简单, 维度不全 → 补全维度)**。
 

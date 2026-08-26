@@ -39,6 +39,7 @@ export const MESSAGES: Record<Locale, Record<string, string>> = {
     // 导航 (workspace)
     'nav.workspace.dashboard': '我的公司',
     'nav.workspace.projects': '项目',
+    'nav.workspace.monitor': '📊 监控',
     'nav.workspace.settings': '设置',
     'nav.section.workspace': '工作区',
     // 导航 (project)
@@ -119,6 +120,7 @@ export const MESSAGES: Record<Locale, Record<string, string>> = {
     'common.unknown': '—',
     'nav.workspace.dashboard': 'My Company',
     'nav.workspace.projects': 'Projects',
+    'nav.workspace.monitor': '📊 Monitor',
     'nav.workspace.settings': 'Settings',
     'nav.section.workspace': 'Workspace',
     'nav.project.overview': 'Overview',

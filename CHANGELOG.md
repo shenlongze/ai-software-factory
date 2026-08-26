@@ -3,6 +3,16 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.172] — 2026-08-27
+
+**T-2 任务上下文注入 (Founder: 会话任务连续 — 跨会话上下文延续)**。
+
+### Added
+
+- 会话锚定 task_id 后每条消息注入【当前任务】: 状态/优先级/exec绑定/最近历史/下一步
+- _task_context_facts helper (可测)
+- 修正 U-1 侧: /api/tools/{id}/execute 未注册工具正确 fallback 旧 ToolExecutor
+
 ## [v1.1.171] — 2026-08-27
 
 **T-1 会话任务连续: 定位任务并锚定 (跨会话继续)**。

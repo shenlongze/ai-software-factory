@@ -333,6 +333,8 @@ class TestFactoryCliArgparse:
             "eval",  # v1.1.95 (S10-121 K-5): 七维评测 + 发布门 (只读; --gate patch|minor|major)
             "artifacts",  # v1.1.109 (C-1): 产出物契约 (list/validate — 全部项目)
             "monitor",  # v1.1.134 (D 系列): 统一监控运维 (系统+项目状态快照)
+            "backup",  # v1.1.167 (X-1): 数据保护 (create/list/restore)
+            "git",  # v1.1.167 (X-1): Git 操作 (status/push)
         }
 
     def test_start_flags_parsed(self):

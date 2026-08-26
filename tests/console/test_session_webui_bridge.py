@@ -148,6 +148,24 @@ class TestSessionWebuiBridge:
         # 会话已锚定 task_id (T-1 核心副作用: 跨会话继续的任务锚点)
         assert body["session"]["task_id"] == task["id"]
 
+    def test_task_context_injected(self, app, monkeypatch):
+        """T-2: 任务上下文注入 (状态/历史/下一步/exec绑定)。"""
+        c = app["client"]
+        svc = app["service"]
+        proj = app["proj"]
+        task = app["task"]
+        # 锚定任务会话 → 发消息不破坏
+        r = c.post("/api/sessions", json={"scope": "project", "project_id": proj.id, "task_id": task["id"]})
+        sid = r.json()["id"]
+        assert r.json()["task_id"] == task["id"]
+        r = c.post(f"/api/sessions/{sid}/messages", json={"message": "继续聊聊这个任务"})
+        assert r.status_code == 200, r.text
+        # helper: 任务上下文块 (状态/下一步)
+        block = _adapter._task_context_facts(svc, proj.id, task["id"])
+        assert block is not None
+        assert "当前任务" in block and "语音记账" in block
+        assert "下一步" in block and "状态" in block
+
     def test_settings(self, app, monkeypatch):
         c = app["client"]
         proj = app["proj"]

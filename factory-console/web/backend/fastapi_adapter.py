@@ -854,6 +854,39 @@ def _feature_facts(service: Any, project_id: str, feature: dict[str, Any]) -> st
     return "\n".join(lines)
 
 
+def _task_context_facts(service: Any, project_id: str, task_id: str) -> str | None:
+    """T-2: 任务上下文事实块 (状态/优先级/exec绑定/最近历史/下一步; 失败 → None)。"""
+    try:
+        task = service.get_task(project_id, task_id)
+    except Exception:  # noqa: BLE001
+        return None
+    if task is None:
+        return None
+    lines = [
+        f"【当前任务】{task.get('title') or '未命名'} (id: {task_id})",
+        f"状态: {task.get('status') or 'todo'} · 优先级: {task.get('priority') or '—'}",
+    ]
+    if task.get("exec_ref"):
+        lines.append(f"exec绑定: {task['exec_ref']} · 结果: {task.get('exec_result') or '—'}")
+    hist = task.get("history") or []
+    if hist:
+        recent = " · ".join(
+            f"{h.get('time', '')[:16]} {h.get('action', '')}" for h in hist[-3:]
+        )
+        lines.append(f"最近历史: {recent}")
+    status = str(task.get("status") or "todo")
+    next_hint = {
+        "todo": "待开始 — 可『开始任务』或『继续推进』",
+        "ready": "待开始 — 可『开始任务』",
+        "in_progress": "执行中 — 可『标记完成』",
+        "review": "待审核 — 可『标记完成』",
+        "blocked": "阻塞 — 可『重新开始』",
+        "done": "已完成 — 可审计历史",
+    }.get(status, "—")
+    lines.append(f"下一步: {next_hint}")
+    return "\n".join(lines)
+
+
 def build_app(
     service: Any,
     *,
@@ -2706,12 +2739,12 @@ def build_app(
                          if isinstance(body.context, dict) else None,
                          "confirm": bool(isinstance(body.context, dict) and body.context.get("confirm"))},
             )
-            if reg_result.get("ok") or reg_result.get("error", "").startswith(("工具未注册", "工具", "参数校验", "敏感")):
-                if not reg_result.get("ok") and "未绑定执行函数" in reg_result.get("error", ""):
-                    pass  # 未绑定 → 尝试旧执行器
-                else:
-                    return {"success": reg_result.get("ok"), "output": reg_result.get("output"),
-                            "error": reg_result.get("error")}
+            reg_err = str(reg_result.get("error") or "")
+            # 注册表明确拒绝 (参数/敏感/规划中/执行失败) → 返回; 未注册/未绑定 → 旧执行器兜底
+            if reg_result.get("ok"):
+                return {"success": True, "output": reg_result.get("output")}
+            if "未注册" not in reg_err and "未绑定执行函数" not in reg_err:
+                return {"success": False, "error": reg_err}
         except Exception:  # noqa: BLE001 — 新链失败 → 旧链兜底
             pass
         # 旧: ToolExecutor 兜底
@@ -3548,6 +3581,16 @@ def build_app(
             system_line=system_line,
             hint_project=hint_project,
         )
+        # T-2 (v1.1.172): 会话锚定任务 → 每条消息注入任务上下文 (跨会话继续)
+        task_id = str(session.get("task_id") or "").strip()
+        project_id = session.get("project_id")
+        if task_id and project_id:
+            try:
+                task_block = _task_context_facts(service, project_id, task_id)
+                if task_block:
+                    facts = f"{facts}\n\n{task_block}"
+            except Exception:  # noqa: BLE001 — 任务注入失败 → 不阻断
+                pass
         # 想法→细化→待办链路: 会话锚定模块 → 注入模块事实卡 (LLM 讨论/细化有据)
         feature_id = str(session.get("feature_id") or "").strip()
         project_id = session.get("project_id")

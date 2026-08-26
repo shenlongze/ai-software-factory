@@ -92,7 +92,9 @@ class TestToolService:
 
         tools = service.list_tools()
 
-        assert [t["id"] for t in tools] == ["filesystem.read"]
+        ids = [t["id"] for t in tools]
+        # 服务层: 旧 ToolRegistry (filesystem.read); HTTP 层才合并统一注册表
+        assert ids == ["filesystem.read"]
         tool = tools[0]
         assert tool["name"] == "Filesystem Read"
         assert tool["description"]
@@ -195,7 +197,10 @@ class TestToolApi:
             resp = client.get("/api/tools")
             assert resp.status_code == 200, resp.text
             tools = resp.json()["tools"]
-            assert [t["id"] for t in tools] == ["filesystem.read"]
+            ids = [t["id"] for t in tools]
+        # U-1: /api/tools = 统一注册表 (39 内置) + 旧 ToolRegistry (filesystem.read 合并)
+        assert "filesystem.read" in ids
+        assert "code_exec" in ids and "monitor" in ids
 
     def test_execute_endpoint_success(self, tmp_path: Path):
         """POST /api/tools/filesystem.read/execute → 200 {success: true,

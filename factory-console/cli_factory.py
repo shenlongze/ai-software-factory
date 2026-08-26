@@ -995,6 +995,8 @@ class FactoryCLI:
             return self.help_cmd(args)
         if args.command == "eval":
             return self.eval_cmd(args)
+        if args.command == "artifacts":
+            return self.artifacts_cmd(args)
         if args.command == "update":
             return self.update_cmd(args)
         if args.command == "llm":
@@ -1005,6 +1007,61 @@ class FactoryCLI:
             return self._stub(args.command)
         print(f"未知命令: {args.command}", file=sys.stderr)
         return 2
+
+    def artifacts_cmd(self, args: argparse.Namespace) -> int:
+        """factory artifacts list|validate — 产出物契约 (C-1, 平台级)。
+
+        list: 项目产出物统一状态 (存在/缺失/版本); 缺省项目 → 全部。
+        validate: 对照 schema 报缺失/漂移/格式不兼容 (任何异常 → 该项目标 error, 不 5xx)。
+        """
+        from .artifact_contract import scan_project, validate_all, validate_project
+
+        action = getattr(args, "artifacts_action", "list") or "list"
+        project = str(getattr(args, "project", "") or "").strip()
+        root = self.data_dir
+        if action == "list":
+            if project:
+                scan = scan_project(root, project)
+                self._print_artifact_scan(scan)
+            else:
+                import factory_console.artifact_contract as _ac
+
+                for pdir in sorted((root / "projects").iterdir()) if (root / "projects").is_dir() else []:
+                    if not pdir.is_dir():
+                        continue
+                    scan = scan_project(root, pdir.name)
+                    self._print_artifact_scan(scan)
+            return 0
+        # validate
+        report = validate_all(root) if not project else validate_project(root, project)
+        if project:
+            self._print_artifact_validate(report, project)
+            return 0 if report.get("ok") else 1
+        ok_all = True
+        for p in report["projects"]:
+            self._print_artifact_validate(p, p["project_id"])
+            ok_all = ok_all and bool(p.get("ok"))
+        print(f"契约版本: v{report.get('contract_version')} · 项目 {len(report['projects'])} · 全部通过: {'是' if ok_all else '否'}")
+        return 0 if ok_all else 1
+
+    def _print_artifact_scan(self, scan: dict) -> None:
+        print(f"📦 产出物 [{scan['project_id']}] 版本 v{scan['meta']['version']} "
+              f"· 更新 {scan['meta']['updated_at'] or '—'}")
+        for item in scan["items"]:
+            mark = "✅" if item["exists"] else "⬜"
+            bad = " ⚠️格式" if item["exists"] and not item["schema_ok"] else ""
+            leg = " 📦存量" if item.get("legacy") else ""
+            ver = f" v{item['version']}" if item.get("version") else ""
+            hist = f" · 历史{len(item.get('versions') or [])}版" if item.get("versions") else ""
+            print(f"  {mark} {item['label']} ({item['file']}){bad}{leg}{ver}{hist}")
+        if scan["drift"]:
+            print("  ⚠️ 非标准文件:", ", ".join(scan["drift"]))
+
+    def _print_artifact_validate(self, report: dict, label: str) -> None:
+        status = "✅ 通过" if report.get("ok") else "❌ 有漂移"
+        print(f"[{label}] {status}")
+        for p in report.get("problems", []):
+            print(f"  - {p['issue']}: {p['detail']}")
 
     # ------------------------------------------------------------- start
 
@@ -3714,6 +3771,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_mcp.add_argument(
         "--transport", default="mock", help="传输方式 (仅 mock 可用; stdio/http 响亮拒绝)"
     )
+    # C-1 产出物契约 (平台级): 全部项目统一产出物标准 + 版本信号 + 校验
+    p_artifacts = sub.add_parser(
+        "artifacts", help="产出物契约 (C-1): list — 项目产出物统一状态; validate — 对照 schema 校验"
+    )
+    p_artifacts.add_argument(
+        "artifacts_action", nargs="?", choices=["list", "validate"], default="list",
+        metavar="list|validate",
+        help="list — 项目产出物清单 (存在/缺失/版本); validate — 对照标准报漂移",
+    )
+    p_artifacts.add_argument("project", nargs="?", default="", help="项目 id (缺省: 全部)")
     sub.add_parser(
         "task", help="Task 管理骨架 (只读: 列出 tasks 的 id/title/status/project)"
     )

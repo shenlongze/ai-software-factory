@@ -3,6 +3,31 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.109] — 2026-08-26
+
+**产出物契约 C-1（平台级, Manifest + 历史 + 追溯）: 全部项目统一产出物标准**。
+
+### Added
+
+- **Manifest 权威清单** (factory-console/artifact_contract.py):
+  每项目 `artifacts.manifest.json` 记录产出物 {type/label/kind/file(当前)/version/
+  producer/trace_id/created_at/updated_at/versions[]} — 固定文件名降为默认约定,
+  manifest 是权威 (路径可改/可多份/可版本化)
+- **历史不丢 + 追溯**: `set_artifact` 更新前旧版归档 `history/<名>.v<N>.<ext>`
+  (git 可 diff); 每版带 producer/trace_id/时间戳; `get_artifact_version` 按版本读历史
+- **统一写入口**: `set_artifact(project, type, data, {producer, trace_id, file?})`
+  校验→归档旧版→写当前→更新 manifest→bump 项目版本 (WebUI 轮询依据)
+- **API**: GET /api/projects/{id}/artifacts (manifest 视图) +
+  /artifacts/{type}/versions/{v} (历史内容, 404 缺失)
+- **CLI**: factory artifacts list|validate (list — 产出物+版本+历史; validate —
+  对照 schema 报 missing/legacy/format/history-missing/no-version/drift)
+- 存量文件标 `legacy` (存在但未纳入契约, 需 set_artifact 迁移); 漂移排除合法辅助文件
+
+### 验证
+
+- 后端 artifact_contract 9 passed + 相关 111 passed · CLI 实测 ai-factory-self
+  与全部项目 · CLI 注册表测试同步 (eval 一致性 P0-10) · 前端零改动 (WebUI 实时 = C-3)
+
 ## [v1.1.108] — 2026-08-26
 
 **项目文档管理 (Founder 要求: 项目文档管理/查看)**。

@@ -1086,6 +1086,33 @@ def build_app(
     # ------------------------------------------- 项目文档管理 (v1.1.108, 5180 产品工作台)
     # 复用 session/board.list_project_docs + read_project_doc_content (路径安全),
     # 只做 JSON 绑定 — 前端 AfProjectDocs 左树右看。
+    # ------------------------------------------- 产出物契约 (C-1, 平台级)
+    # 全部项目的统一产出物状态 (固定 schema + 版本信号) — WebUI 轮询 version
+    # 感知变化; 只读 GET。
+    @app.get("/api/projects/{project_id}/artifacts")
+    def api_project_artifacts(project_id: str) -> dict[str, Any]:
+        """项目产出物统一状态 (GET — {items, meta, drift}; 全部项目通用)。"""
+        if workspace_root is None:
+            return {"project_id": project_id, "items": [], "meta": {"version": 0, "changed_at": None}, "drift": []}
+        _contract = _console_import("artifact_contract")
+        try:
+            return _contract.scan_project(workspace_root, project_id)
+        except Exception:  # noqa: BLE001 — 失败安全
+            return {"project_id": project_id, "items": [], "meta": {"version": 0, "changed_at": None}, "drift": []}
+
+    @app.get("/api/projects/{project_id}/artifacts/{artifact_type}/versions/{version}")
+    def api_project_artifact_version(
+        project_id: str, artifact_type: str, version: int
+    ) -> dict[str, Any]:
+        """产出物某版本内容 (GET — 历史可追溯查看; 不存在 → 404)。"""
+        if workspace_root is None:
+            raise HTTPException(status_code=404, detail="artifact version not found")
+        _contract = _console_import("artifact_contract")
+        result = _contract.get_artifact_version(workspace_root, project_id, artifact_type, version)
+        if result is None:
+            raise HTTPException(status_code=404, detail="artifact version not found")
+        return result
+
     @app.get("/api/projects/{project_id}/docs")
     def api_project_docs_list(project_id: str) -> dict[str, Any]:
         """项目文档清单 (GET — 核心资产 + 可配多目录扫描; 未装配 → 空)。"""

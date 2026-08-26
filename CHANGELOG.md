@@ -3,6 +3,26 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.127] — 2026-08-26
+
+**P2b: 任务→执行链桥 (factory task prompt|run)**。
+
+### Added
+
+- `factory task prompt <id>`: 会话创建的任务 → 生成执行指令 (factory run --project
+  --objective --requirement), 只读
+- `factory task run <id>`: 真实执行 (走 exec CLI 执行链)
+- 任务定位: 旧 tasks/*.json + backlog management/task.json; 项目目录解析
+  (product.json workspace_dir 优先)
+
+### 闭环
+
+会话建任务 → `factory task prompt|run <id>` → 真实执行 → 状态回流 → 会话查进度
+
+### 验证
+
+- 后端 task_exec_bridge 3 passed + 相关 27 passed · 前端 684 passed
+
 ## [v1.1.126] — 2026-08-26
 
 **会话发起开发任务 P2a: 会话"完善X/加功能" → 真实创建任务 (进任务系统)**。

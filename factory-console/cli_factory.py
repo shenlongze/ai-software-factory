@@ -2187,23 +2187,109 @@ class FactoryCLI:
             return 1
         return 0
 
-    def task(self, args: argparse.Namespace) -> int:
-        """Task 管理骨架 (只读): 列出 tasks (id/title/status/project)。
+    def _find_task(self, task_id: str) -> dict[str, Any] | None:
+        """按 id 定位任务: 旧 tasks/*.json + backlog management/task.json (失败 → None)。
 
-        数据源: <data_dir>/tasks/*.json (每文件一条任务); 无数据 → 空列表。
+        返回任务 dict, 附 project (从所属目录推导)。
         """
-        print("=== Task 管理 (骨架, 只读) ===")
-        rows = _task_rows(self.data_dir)
-        if not rows:
-            print("  无 tasks 数据 (空列表)")
+        for path in sorted((self.data_dir / "tasks").glob("*.json")):
+            row = _load_json_safe(path)
+            if isinstance(row, dict) and str(row.get("id", "")) == task_id:
+                return row
+        for pdir in sorted((self.data_dir / "workspace" / "projects").glob("*")):
+            if not pdir.is_dir():
+                continue
+            tf = pdir / "management" / "backlog" / "task.json"
+            data = _load_json_safe(tf) or {}
+            tasks = data.get("tasks") if isinstance(data, dict) else None
+            if isinstance(tasks, dict) and task_id in tasks:
+                row = dict(tasks[task_id])
+                row.setdefault("project", pdir.name)
+                return row
+        return None
+
+    def _task_repo_dir(self, task: dict[str, Any]) -> Path | None:
+        """任务所属项目目录: product.json workspace_dir 优先 → 系统项目目录。"""
+        project = str(task.get("project") or "").strip()
+        if not project:
+            return None
+        candidates = [
+            self.data_dir / "projects" / Path(project).name,
+            self.data_dir / "workspace" / "projects" / Path(project).name,
+        ]
+        for pdir in candidates:
+            if not pdir.is_dir():
+                continue
+            info = _load_json_safe(pdir / "product.json") or {}
+            wd = str(info.get("workspace_dir") or "").strip()
+            if wd and Path(wd).is_dir():
+                return Path(wd)
+            return pdir
+        return None
+
+    def task(self, args: argparse.Namespace) -> int:
+        """Task 管理: list — 列出; prompt — 生成执行指令; run — 执行任务 (走 exec CLI)。
+
+        执行链 (P2b): 会话创建的任务 → `factory task prompt|run <id>` 喂给
+        exec CLI (`factory run --project <repo> --objective <title> --requirement <desc>`)。
+        """
+        action = getattr(args, "task_action", "list") or "list"
+        if action == "list":
+            rows = _task_rows(self.data_dir)
+            print("=== Task 管理 (list) ===")
+            if not rows:
+                print("  无 tasks 数据 (空列表)")
+                return 0
+            for row in rows:
+                print(
+                    f"  - {row['id']} | {row['title']} | {row['status']} "
+                    f"| project={row['project']}"
+                )
+            print(f"  共 {len(rows)} 个 task")
             return 0
-        for row in rows:
-            print(
-                f"  - {row['id']} | {row['title']} | {row['status']} "
-                f"| project={row['project']}"
-            )
-        print(f"  共 {len(rows)} 个 task")
-        return 0
+
+        tid = str(getattr(args, "task_id", "") or "").strip()
+        if not tid:
+            print("用法: factory task prompt|run <task_id> [--project <目录>]")
+            return 2
+        task = self._find_task(tid)
+        if task is None:
+            print(f"未找到任务: {tid}")
+            return 1
+        repo = Path(str(getattr(args, "project", "") or "").strip()) if getattr(args, "project", "") else self._task_repo_dir(task)
+        if repo is None or not repo.is_dir():
+            print(f"无法解析项目目录 (任务 project={task.get('project')}) — 用 --project 指定")
+            return 1
+        import shlex
+
+        objective = str(task.get("title") or task.get("objective") or tid)
+        requirement = str(task.get("description") or task.get("requirement") or "").strip()
+        cmd = (
+            f"factory run --project {shlex.quote(str(repo))} "
+            f"--objective {shlex.quote(objective)}"
+        )
+        if requirement:
+            cmd += f" --requirement {shlex.quote(requirement)}"
+
+        if action == "prompt":
+            print("=== 任务执行指令 (P2b: 交给执行链 / factory run) ===")
+            print(cmd)
+            print(f"项目: {repo} · 任务: {tid}")
+            print(f"目标: {objective}")
+            if requirement:
+                print(f"验收: {requirement}")
+            return 0
+
+        # run → 真实执行 (走 exec CLI)
+        print(f"执行任务 {tid}: {cmd}")
+        try:
+            import subprocess
+
+            r = subprocess.run(cmd, shell=True, cwd=str(repo))
+            return r.returncode
+        except Exception as exc:  # noqa: BLE001 — 执行失败 → 明确错误
+            print(f"执行失败: {exc}")
+            return 1
 
     def router(self, args: argparse.Namespace) -> int:
         """LLM Router 管理骨架 (只读): 五层决策链可用性 + 当前决策。
@@ -3781,9 +3867,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="list — 项目产出物清单 (存在/缺失/版本); validate — 对照标准报漂移",
     )
     p_artifacts.add_argument("project", nargs="?", default="", help="项目 id (缺省: 全部)")
-    sub.add_parser(
-        "task", help="Task 管理骨架 (只读: 列出 tasks 的 id/title/status/project)"
+    p_task = sub.add_parser(
+        "task", help="Task 管理: list — 列出; prompt — 生成执行指令; run — 执行任务 (走 exec CLI)"
     )
+    p_task.add_argument(
+        "task_action", nargs="?", choices=["list", "prompt", "run"], default="list",
+        metavar="list|prompt|run",
+        help="list — 列出任务; prompt — 生成可执行指令 (只读); run — 真实执行",
+    )
+    p_task.add_argument("task_id", nargs="?", default="", help="任务 id (prompt/run 必填)")
+    p_task.add_argument("--project", default="", help="项目目录 (缺省从任务所属项目解析)")
     sub.add_parser(
         "router", help="LLM Router 管理骨架 (只读: 五层决策链可用性 + 当前决策)"
     )

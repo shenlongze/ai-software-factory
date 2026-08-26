@@ -2451,8 +2451,17 @@ class FactoryCLI:
         status_now = str(task.get("status") or "").strip()
         if status_now == "in_progress":
             old_ref = str(task.get("exec_ref") or "无")
+            # T-6: 读 checkpoint (中断时间可查可恢复) — 失败安全
+            cp_line = ""
+            try:
+                for cp in service.list_exec_checkpoints():
+                    if str(cp.get("task_id") or "") == tid:
+                        cp_line = f" · 中断 checkpoint: {str(cp.get('started_at') or '')[:16]}"
+                        break
+            except Exception:  # noqa: BLE001 — checkpoint 读失败 → 不阻断
+                pass
             print(
-                f"⚠ 检测到上次执行中断 (status=in_progress, exec_ref={old_ref}) "
+                f"⚠ 检测到上次执行中断 (status=in_progress, exec_ref={old_ref}{cp_line}) "
                 f"→ 续跑 (重试执行 + 回写)"
             )
             note = f"factory task run 续跑(上次中断): {objective}"

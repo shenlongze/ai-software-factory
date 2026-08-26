@@ -1,4 +1,4 @@
-"""tests/console/test_task_exec_writeback.py — 方案A: 执行绑定 + 回写钩子 (v1.1.186)。
+"""tests/console/test_task_exec_writeback.py — 方案A: 执行绑定 + 回写钩子 (v1.1.187)。
 
 Founder 2026-08-26: "任务会自动更新状态么 → 选 A (执行绑定 + 回写)"。
 覆盖 (service.start_task_exec / finish_task_exec + org.management.Task 字段 +
@@ -272,6 +272,56 @@ class TestTaskExecTrace:
             assert not trace["exec_ref"]  # 空串 (无绑定)
             assert trace["request"] is None
             assert trace["results"] == []
+
+
+class TestExecCheckpoint:
+    """T-6 (D-2): 执行中断 checkpoint 落盘与恢复实测。"""
+
+    def test_checkpoint_written_on_start_cleared_on_finish(self, tmp_path):
+        svc = _build_service(tmp_path)
+        pid, tid = _new_task(svc, tmp_path)
+        svc.start_task_exec(pid, tid, exec_ref="EXR-CP", note="开始执行")
+        cps = svc.list_exec_checkpoints()
+        cp = next((c for c in cps if c["task_id"] == tid), None)
+        assert cp is not None
+        assert cp["exec_ref"] == "EXR-CP"
+        assert cp["project_id"] == pid
+        assert cp["started_at"]
+        # 正常结束 → 清除
+        svc.finish_task_exec(pid, tid, success=True, exec_ref="EXR-CP", exec_result="EXS-CP")
+        cps = svc.list_exec_checkpoints()
+        assert all(c["task_id"] != tid for c in cps)
+
+    def test_interruption_recovery(self, tmp_path):
+        """模拟进程崩溃 (start 后不 finish) → checkpoint 仍在 → 续跑恢复 → 清除。"""
+        svc = _build_service(tmp_path)
+        pid, tid = _new_task(svc, tmp_path)
+        svc.start_task_exec(pid, tid, exec_ref="EXR-CP1", note="第一次启动")
+        # 崩溃: 不 finish, 直接重建 service (模拟进程重启/新进程)
+        svc2 = _build_service(tmp_path)
+        cps = svc2.list_exec_checkpoints()
+        assert any(c["task_id"] == tid and c["exec_ref"] == "EXR-CP1" for c in cps)
+        # 续跑恢复 (start 幂等) → 完成 → checkpoint 清除
+        svc2.start_task_exec(pid, tid, exec_ref="EXR-CP2", note="续跑恢复")
+        svc2.finish_task_exec(pid, tid, success=True, exec_ref="EXR-CP2", exec_result="EXS-CP2")
+        task = svc2.get_task(pid, tid)
+        assert task["status"] == "done"
+        assert all(c["task_id"] != tid for c in svc2.list_exec_checkpoints())
+
+    @pytest.mark.skipif(not _HAS_FASTAPI, reason="fastapi 未安装")
+    def test_api_lists_interrupted_checkpoints(self, tmp_path):
+        svc = _build_service(tmp_path)
+        pid, tid = _new_task(svc, tmp_path)
+        svc.start_task_exec(pid, tid, exec_ref="EXR-API", note="中断中")
+        app = _adapter.build_app(svc, event_logger=None, factory_root=tmp_path)
+        with TestClient(app) as c:
+            r = c.get("/api/exec/checkpoints")
+            assert r.status_code == 200, r.text
+            items = r.json().get("items") or []
+            cp = next((x for x in items if x["task_id"] == tid), None)
+            assert cp is not None
+            assert cp["exec_ref"] == "EXR-API"
+            assert cp["task_title"]  # 富化任务标题
 
 
 class TestCliTaskRunWriteback:

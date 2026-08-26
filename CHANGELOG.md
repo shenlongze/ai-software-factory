@@ -3,7 +3,22 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.187] — 2026-08-27
+
+**T-6 任务中断恢复验证 (D-2): 执行中断 checkpoint 落盘与恢复实测 — T 系列 9/9 收官**。
+
+### Added
+
+- ExecCheckpointStore (exec/checkpoints.json): 执行启动写 checkpoint (task_id →
+  exec_ref/started_at/stage), 结束清除; 进程崩溃 checkpoint 仍在可查
+- service.start_task_exec/finish_task_exec 集成 checkpoint 落盘/清除;
+  service.list_exec_checkpoints() 中断清单
+- API GET /api/exec/checkpoints (附任务标题, 失败安全空)
+- CLI factory task run 续跑提示带中断 checkpoint 时间
+- 实测: checkpoint 落盘 → 模拟崩溃 (重建 service) → checkpoint 仍在 → 续跑恢复 → 清除
+
 ## [v1.1.186] — 2026-08-27
+
 
 **T-7 双轨对齐: 版本/战役成果回填任务树, 计划与执行一致**。
 

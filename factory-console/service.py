@@ -363,6 +363,9 @@ class ConsoleService:
         # 注册编排; 可选注入, 失败安全: 无注入 → 自装配关联系统 ToolRegistry,
         # 失败 → None → API 404/空清单)
         self._mcp_registry = mcp_registry
+        # T-6 (v1.1.187): 执行 checkpoint store (data_dir/exec/checkpoints.json —
+        # 中断恢复实测; 懒装配, 失败安全: 无 workspace → None)
+        self._exec_checkpoint_store: Any = None
 
     # ------------------------------------------------------------------ S10-016: Runtime Session
     # AI Employee Runtime Foundation — Agent 执行会话可见性底座 (谁在跑/跑
@@ -371,6 +374,28 @@ class ConsoleService:
     # 输入校验 (空 agent_id/task_id → ValueError → HTTP 400) + 状态机异常
     # 归一 (exec.RuntimeSessionError → 本模块 RuntimeSessionError → HTTP 409)。
     # 延迟导入 exec 包 (Removal Isolation — 缺 factory-exec 不拖垮 Console)。
+
+    def _get_exec_checkpoint(self) -> Any:
+        """ExecCheckpointStore (懒装配; 失败安全 — 无 workspace/写失败 → None/空)。"""
+        if self._exec_checkpoint_store is None:
+            try:
+                from .exec_checkpoint import ExecCheckpointStore
+
+                ws_root = Path(getattr(self._workspace, "root", None) or "")
+                self._exec_checkpoint_store = ExecCheckpointStore(ws_root) if ws_root else None
+            except Exception:  # noqa: BLE001 — 装配失败 → None (不阻断执行链)
+                self._exec_checkpoint_store = None
+        return self._exec_checkpoint_store
+
+    def list_exec_checkpoints(self) -> list[dict[str, Any]]:
+        """T-6: 进行中/中断的执行 checkpoint (崩溃后可查可恢复; 失败安全空)。"""
+        cp = self._get_exec_checkpoint()
+        if cp is None:
+            return []
+        try:
+            return cp.list()
+        except Exception:  # noqa: BLE001 — 读失败 → 空
+            return []
 
     def _get_session_store(self) -> Any:
         """RuntimeSessionStore (缺失 → None; 失败安全 — 调用方按空/None 处理)。
@@ -4267,6 +4292,18 @@ class ConsoleService:
                     update={"exec_ref": exec_ref, "updated_at": utcnow()}
                 )
             mgmt.save_task(task)
+        # T-6: 执行启动 → 写 checkpoint (进程崩溃后仍可查可恢复)
+        try:
+            cp = self._get_exec_checkpoint()
+            if cp is not None:
+                cp.start(
+                    task_id,
+                    exec_ref=exec_ref,
+                    project_id=resolved,
+                    note=note,
+                )
+        except Exception:  # noqa: BLE001 — checkpoint 失败不阻断执行链
+            pass
         return task.to_dict()
 
     def finish_task_exec(
@@ -4366,6 +4403,13 @@ class ConsoleService:
             updates["exec_ref"] = exec_ref
         task = task.model_copy(update=updates)
         mgmt.save_task(task)
+        # T-6: 执行结束 → 清除 checkpoint (不再视为中断)
+        try:
+            cp = self._get_exec_checkpoint()
+            if cp is not None:
+                cp.finish(task_id)
+        except Exception:  # noqa: BLE001 — checkpoint 失败不阻断回写
+            pass
         return task.to_dict()
 
 

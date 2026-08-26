@@ -3216,6 +3216,28 @@ def build_app(
         return result
 
     # ============================================== K-7e: 会话栏 (会话 + 消息)
+    @app.get("/api/exec/checkpoints")
+    def api_exec_checkpoints() -> dict[str, Any]:
+        """T-6 (v1.1.187): 进行中/中断的执行 checkpoint (崩溃后可查可恢复)。
+        附任务标题; 失败安全空 (不编造)。"""
+        items: list[dict[str, Any]] = []
+        try:
+            items = list(service.list_exec_checkpoints())
+        except Exception:  # noqa: BLE001 — 读失败 → 空
+            items = []
+        for cp in items:
+            pid = str(cp.get("project_id") or "")
+            tid = str(cp.get("task_id") or "")
+            title = None
+            if pid and tid:
+                try:
+                    t = service.get_task(pid, tid)
+                    title = (t or {}).get("title") if t is not None else None
+                except Exception:  # noqa: BLE001 — 任务查询失败 → 不富化
+                    title = None
+            cp["task_title"] = title
+        return ok_list(items)
+
     @app.get("/api/sessions")
     def api_sessions(
         scope: str | None = Query(default=None),

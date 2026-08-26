@@ -77,6 +77,8 @@ describe('api client — 只读契约 + S9-002 审批写面 + S10-004 Runtime �
       'projects',
       'providers',
       'recommendations',
+      'registryExecute',
+      'registryTools',
       'rejectApproval',
       // S10-006: 审核反馈 (Feedback Loop 读/写)
       'reviewFeedback',
@@ -127,6 +129,7 @@ describe('api client — 只读契约 + S9-002 审批写面 + S10-004 Runtime �
           'updateBacklogTask',
           'createBacklogFeature',
           'updateBacklogFeature',
+          'registryExecute',
         ].includes(k),
       ),
     ).toEqual([
@@ -135,6 +138,7 @@ describe('api client — 只读契约 + S9-002 审批写面 + S10-004 Runtime �
       'createProject',
       'createRuntime',
       'deleteProject',
+      'registryExecute',
       'rejectApproval',
       'screenshotRuntime',
       'startRuntime',

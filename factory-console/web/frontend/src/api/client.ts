@@ -62,6 +62,7 @@ import {
   type WorkflowSummary,
 } from '../models/types';
 import type { BacklogFeature, BacklogTask } from '../models/domain';
+import type { RegistryTool } from '../models/types';
 
 export class ApiError extends Error {
   readonly status: number;
@@ -369,6 +370,18 @@ export const api = {
       agent_id: agentId,
       input: toolInput,
     }),
+  // U-1/U-5 (v1.1.170): 统一工具注册表 (39 内置) + 统一执行链 (Registry→Permission→Schema→Execute)
+  registryTools: () =>
+    getJson<{ tools: RegistryTool[]; count: number; summary?: { total: number; by_stage: Record<string, number>; by_status: Record<string, number> } }>('/api/tools'),
+  registryExecute: (
+    toolId: string,
+    input: Record<string, unknown>,
+    context: { project_id?: string | null; confirm?: boolean } = {},
+  ) =>
+    sendJson<{ success: boolean; output?: unknown; error?: string }>(
+      `/api/tools/${encodeURIComponent(toolId)}/execute`,
+      { input, context },
+    ),
   // S10-019 Task 001: Skill — 职业能力清单 + Agent 技能分配
   skills: () => getJson<{ skills: SkillInfo[] }>('/api/skills'),
   agents: async () => {

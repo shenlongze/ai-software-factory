@@ -142,3 +142,44 @@ describe('AfSettings (设置管理面)', () => {
     expect(calls.some((c) => c.method === 'DELETE' && c.url === '/api/mcp/connections/mcp-1')).toBe(true);
   });
 });
+
+describe('AfSettings 工具页 (U-5 统一注册表)', () => {
+  const TOOLS_RESP = {
+    count: 39,
+    summary: { total: 39, by_stage: { 设计: 7, 开发: 11, 测试: 7, 部署: 5, 运维: 9 }, by_status: { implemented: 23, planned: 16 } },
+    tools: [
+      { id: 'code_search', name: '代码检索', stage: '开发', status: 'implemented', desc: '仓库 grep', keywords: ['代码'], cli: null, api: null, intent: null },
+      { id: 'code_review', name: '代码审查', stage: '开发', status: 'planned', desc: '自动审查', keywords: ['审查'], cli: null, api: null, intent: null },
+      { id: 'monitor', name: '监控采集', stage: '运维', status: 'implemented', desc: '服务状态', keywords: ['监控'], cli: 'factory status', api: '/api/monitor', intent: 'monitor' },
+    ],
+  };
+
+  it('工具 tab: 列出注册表工具 + 详情 + 执行', async () => {
+    const user = userEvent.setup();
+    const calls: Array<{ url: string; body: unknown }> = [];
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (init?.method === 'POST' && path.includes('/api/tools/') && path.includes('/execute')) {
+        calls.push({ url: path, body: JSON.parse(String(init.body)) });
+        return { ok: true, status: 200, json: async () => ({ success: true, output: { version: 'v1.1.170' } }) } as Response;
+      }
+      if (path === '/api/tools') {
+        return { ok: true, status: 200, json: async () => TOOLS_RESP } as Response;
+      }
+      return { ok: false, status: 404, json: async () => ({}) } as Response;
+    }));
+    render(<AfSettings />);
+    await user.click(await screen.findByRole('tab', { name: /工具/ }));
+    // 注册表列表 (代码检索 implemented ✅ / 代码审查 planned ⬜)
+    expect(await screen.findByTestId('af-tools-panel')).toBeInTheDocument();
+    expect(screen.getByText(/代码检索/)).toBeInTheDocument();
+    expect(screen.getByText(/代码审查/)).toBeInTheDocument();
+    // 详情
+    await user.click(screen.getAllByRole('button', { name: '详情' })[0]);
+    expect(screen.getByTestId('af-tool-detail-code_search')).toHaveTextContent('代码检索');
+    // 执行 monitor → 结果
+    const execBtn = [...screen.getAllByRole('button')].find((b) => b.textContent === '执行');
+    await user.click(execBtn!);
+    expect(await screen.findByTestId('af-tool-result')).toHaveTextContent('v1.1.170');
+  });
+});

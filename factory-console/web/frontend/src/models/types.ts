@@ -543,6 +543,19 @@ export interface ToolInfo {
   enabled: boolean;
 }
 
+/** U-1/U-5 (v1.1.170): 统一工具注册表条目 (39 内置工具)。 */
+export interface RegistryTool {
+  id: string;
+  name: string;
+  stage: string;
+  status: 'implemented' | 'planned';
+  desc: string;
+  keywords?: string[] | null;
+  cli?: string | null;
+  api?: string | null;
+  intent?: string | null;
+}
+
 /** S10-018 Task 001: Tool 执行结果 (POST /api/tools/{tool_id}/execute)。 */
 export interface ToolResult {
   success: boolean;

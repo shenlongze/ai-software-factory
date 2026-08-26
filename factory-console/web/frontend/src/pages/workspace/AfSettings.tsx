@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { api } from '../../api/client';
+import type { RegistryTool } from '../../models/types';
 import { AfLangSwitch, useI18n } from '../../i18n';
 import { useTheme } from '../../theme';
 import type { LlmProviderConfig } from '../../models/types';
@@ -55,10 +56,106 @@ const TABS = [
   { id: 'agent', label: 'agent' },
   { id: 'skill', label: 'skill' },
   { id: 'mcp', label: 'mcp' },
+  { id: 'tools', label: '工具' },
   { id: 'plugin', label: 'plugin' },
   { id: 'appearance', label: 'appearance' },
 ] as const;
 type TabId = (typeof TABS)[number]['id'];
+
+/** U-5 工具页: 统一注册表 (39 内置工具, 按阶段分组 + 详情 + 可执行)。 */
+function ToolsTab(): JSX.Element {
+  const [tools, setTools] = useState<RegistryTool[]>([]);
+  const [summary, setSummary] = useState<{ total: number; by_status: Record<string, number> } | null>(null);
+  const [selected, setSelected] = useState<RegistryTool | null>(null);
+  const [result, setResult] = useState<string>('');
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .registryTools()
+      .then((d) => {
+        if (cancelled) return;
+        setTools(d.tools ?? []);
+        setSummary(d.summary ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setTools([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const stages = ['设计', '开发', '测试', '部署', '运维'];
+  const byStage = (s: string) => tools.filter((x) => x.stage === s);
+  const statusMark = (s: string) => (s === 'implemented' ? '✅' : '⬜');
+
+  const run = async (tool: RegistryTool) => {
+    setBusy(true);
+    setResult('');
+    try {
+      const input: Record<string, unknown> = {};
+      if (tool.id === 'code_search') input.keyword = 'registry';
+      if (tool.id === 'list_tasks') input.priority = 'P0';
+      if (tool.id === 'read_doc') input.name = 'README.md';
+      const r = await api.registryExecute(tool.id, input, { project_id: 'ai-factory-self' });
+      setResult(r.success ? `✅ ${JSON.stringify(r.output).slice(0, 300)}` : `❌ ${r.error}`);
+    } catch (e) {
+      setResult(`❌ ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section data-testid="af-tools-panel">
+      <div className="af-settings-head-row">
+        <div className="af-doc-group">
+          内置工具注册表（{summary?.total ?? tools.length}）· 已实现 {summary?.by_status?.implemented ?? 0}
+        </div>
+        <span className="af-home-note">U-1/U-2: 39 工具统一注册 + 统一执行链（CLI factory tools / API / 会话同源）</span>
+      </div>
+      {stages.map((s) => {
+        const rows = byStage(s);
+        if (rows.length === 0) return null;
+        return (
+          <div key={s}>
+            <div className="af-doc-group">[{s} · {rows.length}]</div>
+            <table className="af-manage-table">
+              <tbody>
+                {rows.map((tool) => (
+                  <tr key={tool.id}>
+                    <td className="af-doc-item-label">{statusMark(tool.status)} {tool.name}</td>
+                    <td><code>{tool.id}</code></td>
+                    <td className="af-doc-item-meta">{tool.status}</td>
+                    <td>
+                      <button type="button" className="af-btn" onClick={() => setSelected(selected?.id === tool.id ? null : tool)}>
+                        {selected?.id === tool.id ? '收起' : '详情'}
+                      </button>
+                      {tool.status === 'implemented' && ['code_search', 'list_tasks', 'monitor', 'quality_score', 'backup', 'scan', 'read_doc'].includes(tool.id) ? (
+                        <button type="button" className="af-btn" disabled={busy} onClick={() => void run(tool)}>
+                          执行
+                        </button>
+                      ) : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {selected != null && rows.some((x) => x.id === selected.id) ? (
+              <div className="af-settings-card" data-testid={`af-tool-detail-${selected.id}`}>
+                <p><strong>{selected.name}</strong> · {selected.desc}</p>
+                <p>关键词: {selected.keywords?.join('、') ?? '—'} · CLI: {selected.cli ?? '—'} · API: {selected.api ?? '—'}</p>
+              </div>
+            ) : null}
+          </div>
+        );
+      })}
+      {result ? <p className="af-composer-msg" data-testid="af-tool-result">{result}</p> : null}
+    </section>
+  );
+}
 
 export function AfSettings(): JSX.Element {
   const { t } = useI18n();
@@ -595,6 +692,7 @@ export function AfSettings(): JSX.Element {
           </section>
         )}
 
+        {tab === 'tools' && <ToolsTab />}
         {tab === 'plugin' && (
           <section>
             <h3 className="af-settings-h3">📦 插件</h3>

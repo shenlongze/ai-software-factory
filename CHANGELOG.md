@@ -3,6 +3,23 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.170] — 2026-08-27
+
+**U-5 三端工具页统一 (Founder: 工具要和 CLI/WebUI 连接, 三端同源)**。
+
+### Added
+
+- WebUI 设置→工具页: 39 注册表按阶段分组 (✅/⬜) + 详情 + 执行 (统一执行链)
+- 会话 tools_list 意图: "有哪些工具" → 注册表清单 (阶段/状态)
+- client: registryTools / registryExecute
+
+### 三端统一
+
+- CLI: factory tools registry/show ✅ (v1.1.168)
+- API: /api/tools + /api/tools/{id}/execute ✅ (v1.1.168/169)
+- WebUI: 设置→工具页 ✅ (本版)
+- 会话: 工具清单 ✅ (本版)
+
 ## [v1.1.169] — 2026-08-27
 
 **U-2 统一工具执行链 (Founder: 工具要正确调用 — Registry→Permission→Schema→Execute)**。

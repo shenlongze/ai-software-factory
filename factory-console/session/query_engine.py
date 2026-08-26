@@ -15,6 +15,7 @@ project_docs / model / chat (默认对话, 无查询)。
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -26,7 +27,7 @@ _INTENT_RULES: list[tuple[str, tuple[str, ...]]] = [
     ("list_projects", ("有哪些项目", "几个项目", "项目列表", "所有项目", "空间内", "重点项目", "项目清单")),
     ("project_quality", ("质量", "评分", "质量分", "分数")),
     ("project_tasks", ("任务", "todo", "待办", "backlog", "排期")),
-    ("project_docs", ("文档", "文档清单", "产物", "产出物")),
+    ("project_docs", ("文档", "文档清单", "产物", "产出物", "docs", "dosc", "products", "规格", "product-spec")),
     ("project_status", ("状态", "阶段", "进行", "进度", "生命周期", "卡点", "怎么样", "进展")),
     ("model", ("模型", "什么模型", "deepseek")),
 ]
@@ -66,6 +67,20 @@ def _read_json_file(path: Path) -> dict[str, Any] | None:
         return d if isinstance(d, dict) else None
     except (OSError, ValueError):
         return None
+
+
+def _docs_subpath(question: str) -> str:
+    """从问句提取文档子目录 (如 "docs/products" / "dosc/products"; 宽容拼写)。
+
+    规则: 找 docs|dosc 后跟 /xxx 的路径片段; 无 → ""。
+    """
+    m = re.search(r"(?:docs|dosc)\s*/?\s*([\w\-./]+)", str(question or ""), re.I)
+    if not m:
+        return ""
+    raw = m.group(0).strip().replace("dosc", "docs")
+    # 去掉尾随的疑问词/句尾标点 (只留路径字符)
+    tail = re.sub(r"[^\w\-./].*$", "", raw)
+    return tail.rstrip("/")
 
 
 def build_facts(
@@ -132,18 +147,31 @@ def build_facts(
             block = f"项目: {name}\n任务统计: {counts}"
         elif intent == "project_docs":
             docs = []
+            sub = _docs_subpath(question)
             if root is not None:
                 try:
-                    from ..session.board import list_project_docs
+                    from ..session.board import list_docs_with_status
 
-                    docs = [
-                        d.get("label") or d.get("name", "")
-                        for d in list_project_docs(root, str(getattr(target, "id", "") or ""))
-                        if d.get("exists")
-                    ][:20]
+                    docs = list_docs_with_status(
+                        root, str(getattr(target, "id", "") or ""), subpath=sub
+                    )[:20]
                 except Exception:  # noqa: BLE001
                     docs = []
-            block = f"项目: {name}\n文档: {', '.join(docs) if docs else '暂无（未生成）'}"
+            if docs:
+                lines = [f"项目: {name}"]
+                if sub:
+                    lines.append(f"目录: {sub}")
+                for d in docs:
+                    label = d.get("label") or d.get("name", "")
+                    status = str(d.get("status") or "").strip()
+                    lines.append(
+                        f"- {label} — {'✅ 状态: ' + status if status else '状态未标注'}"
+                    )
+                if len(docs) >= 20:
+                    lines.append("(仅显示前 20 个)")
+                block = "\n".join(lines)
+            else:
+                block = f"项目: {name}\n文档: {'暂无（未生成）' if not sub else f'目录 {sub} 无文档（或路径不存在）'}"
         else:
             block = f"项目: {name}\n生命周期: {_stage(target)}"
     else:

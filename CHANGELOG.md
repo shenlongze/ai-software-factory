@@ -3,6 +3,21 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.145] — 2026-08-26
+
+**会话文档查询修复: docs/products 完成状态 (Founder 实测: 问"dosc/products"全是未查询到)**。
+
+### Added
+
+- 意图触发: project_docs 补 docs/dosc/products/规格 (用户拼写容错)
+- list_docs_with_status: 按子目录过滤 (docs/products) + 解析 md 头部 "状态:" 行
+  (8 个产品规格文档统一格式); 无状态 → 诚实"状态未标注"
+- 会话回复: 列目录下每个文档 + ✅ 状态 (如 "channel-platform — 设计完整, 实现 0 (P2)")
+
+### 验证
+
+- 后端 6482 passed (新增 文档状态 7) · 全量唯一失败 = m3e 真实 LLM 链 (DeepSeek 余额/网络环境性)
+
 ## [v1.1.144] — 2026-08-26
 
 **想法→细化→待办 一条链路 (Founder: "和 AI 讨论, 细化后进待办应该是一套逻辑", 1234 不返工)**。

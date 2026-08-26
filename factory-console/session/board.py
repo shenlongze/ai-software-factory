@@ -2345,6 +2345,52 @@ def list_project_docs(workspace: Path | str, slug: str) -> list[dict[str, Any]]:
                          "folder": str(rel.parent) if rel.parent != Path(".") else "",
                          "source_dir": src})
     return docs
+def list_docs_with_status(
+    workspace: Path | str,
+    slug: str,
+    subpath: str = "",
+) -> list[dict[str, Any]]:
+    """文档清单 + 完成状态 (Founder 2026-08-26: "docs/products 完成的怎么样了")。
+
+    - subpath: 子目录过滤 (如 "docs/products"; 宽容 dosc→docs 拼写);
+      空 → 全部文档
+    - status: 解析 md 头部 "状态: xxx" 行 (产品规格文档统一格式);
+      无状态行 → "" (诚实: 不臆造)
+    """
+    docs = list_project_docs(workspace, slug)
+    sub = str(subpath or "").strip().replace("dosc", "docs").replace("\\", "/").lstrip("/")
+    out: list[dict[str, Any]] = []
+    for d in docs:
+        if not d.get("exists"):
+            continue
+        if sub:
+            folder = str(d.get("folder") or "").replace("\\", "/").lower()
+            name = str(d.get("name") or "").replace("\\", "/").lower()
+            if folder != sub.lower() and not name.startswith(sub.lower() + "/"):
+                continue
+        out.append({**d, "status": _doc_status(d)})
+    # 目录过滤后按文件名排序 (稳定, 审计友好)
+    out.sort(key=lambda d: str(d.get("name") or ""))
+    return out
+
+
+def _doc_status(doc: dict[str, Any]) -> str:
+    """解析文档头部 "状态: xxx" (版本行格式: 版本|日期|状态; 失败 → "" 诚实)。"""
+    try:
+        src = Path(str(doc.get("source_dir") or ""))
+        f = src / str(doc.get("name") or "")
+        text = f.read_text(encoding="utf-8", errors="ignore")[:4000]
+    except OSError:
+        return ""
+    for line in text.splitlines()[:20]:
+        line = line.strip()
+        if line.startswith(">") and ("状态" in line):
+            m = re.search(r"状态[:：]\s*(.+)", line)
+            if m:
+                return m.group(1).strip()
+    return ""
+
+
 def render_project_docs_html(workspace: Path | str, slug: str) -> str:
     """项目文档管理 HTML: 核心资产 + 其他文档 (README/docs 等扫描真实文件)。"""
     slug = Path(str(slug or "")).name

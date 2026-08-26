@@ -90,6 +90,17 @@ class TestBuildFacts:
         facts_docs = _qe.build_facts("有哪些文档", scope="company", project_id=None, projects=PROJECTS, root=tmp_path, hint_project="旅行记账")
         assert "文档:" in facts_docs
 
+
+    def test_docs_trigger_words(self):
+        """docs/dosc/products 触发 project_docs (用户实测: 'dosc/products' 之前查不到)。"""
+        for q in ("看看 docs", "dosc/products 状态", "products 文档", "有哪些文档"):
+            assert _qe.parse_intent(q)["intent"] == "project_docs", q
+
+    def test_docs_subpath_extraction(self):
+        """子路径提取: docs/products (宽容 dosc→docs); 无路径 → ''。"""
+        assert _qe._docs_subpath("我想看看 每一个独立的 dosc/products，现在完成的怎么样了") == "docs/products"
+        assert _qe._docs_subpath("docs/products 状态") == "docs/products"
+        assert _qe._docs_subpath("有哪些文档") == ""
     def test_chat_no_project_required(self, tmp_path):
         facts = _qe.build_facts("你好", scope="company", project_id=None, projects=PROJECTS, root=tmp_path)
         assert "旅行记账" in facts  # 兜底项目列表

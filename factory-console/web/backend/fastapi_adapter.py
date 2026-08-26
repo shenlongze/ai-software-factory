@@ -2891,10 +2891,45 @@ def build_app(
                     )
         except Exception:  # noqa: BLE001 — 模型失败 → 不注入
             model_line = ""
-        # 完整链路 (Founder 设计): LLM 转标准意图 → 本地查询真实数据 → 标准输出
+        # 完整链路 (Founder 设计): LLM 转标准意图 → 查询/执行 → 标准输出
         _qmod = _console_import("session.query_engine")
         intent = _qmod.parse_intent_llm(body.message, _sessions_mod.llm_raw)
         hint_project = intent.get("project") if intent.get("intent") != "chat" else None
+
+        # ---- 动作意图 (会话控制操作软件 — 真实执行) ----
+        if intent.get("intent") == "create_project":
+            idea = body.message
+            try:
+                created = service.create_project(idea, name=hint_project)
+            except Exception as exc:  # noqa: BLE001 — 创建失败 → 诚实反馈
+                created = None
+            if created is not None:
+                facts = (
+                    f"项目已创建: {created.name} (id: {created.id}, 阶段: {created.lifecycle})。"
+                    "下一步: 可让我生成 PRD 或开始开发。"
+                )
+                action_project_id = created.id
+                action_target = {"url": f"#/project/{created.id}", "label": "进入项目"}
+            else:
+                facts = "项目创建失败（服务不可用或参数异常）— 请稍后重试。"
+                action_project_id = None
+                action_target = {"url": "#/workspace/projects", "label": "查看项目列表"}
+            try:
+                result = _sessions_mod.send_message(
+                    sessions_store, session_id, body.message, facts=facts,
+                    reply_extra=_qmod.STANDARD_OUTPUT_PROMPT,
+                )
+                result["meta"] = {
+                    "intent": "create_project",
+                    "project": hint_project,
+                    "data_source": "live",
+                    "target": action_target,
+                    "action": "created" if created is not None else "failed",
+                }
+                return result
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+
         facts = _qmod.build_facts(
             body.message,
             scope=str(session.get("scope") or "company"),

@@ -245,3 +245,23 @@ class TestLlmCreateEdit:
     def test_patch_missing_404(self, http_app):
         client, _ = http_app
         assert client.patch("/api/config/llm", json={"provider_id": "nope"}).status_code == 404
+
+
+@requires_fastapi
+class TestSessionCreateProjectAction:
+    def test_conversation_creates_project(self, http_app):
+        """会话动作: '做一个App' → 真实创建项目 + meta.action=created + 跳转 target。"""
+        client, root = http_app
+        r = client.post("/api/sessions", json={"scope": "company"})
+        sid = r.json()["id"]
+        # LLM 意图解析不可用 → 确定性 fallback create_project; 真实创建
+        r = client.post(f"/api/sessions/{sid}/messages", json={"message": "做一个记账App"})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["meta"]["intent"] == "create_project"
+        assert body["meta"]["action"] == "created"
+        assert body["meta"]["target"]["url"].startswith("#/project/")
+        # 项目真实落库 (org)
+        listed = client.get("/api/projects").json()["items"]
+        created_id = body["meta"]["target"]["url"].split("/")[-1]
+        assert any(p["id"] == created_id for p in listed)

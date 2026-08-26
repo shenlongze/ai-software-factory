@@ -3,6 +3,21 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.124] — 2026-08-26
+
+**会话控制操作软件 P1: 会话创建项目 (真实执行)**。
+
+### Added
+
+- **动作意图 create_project**: 会话"做一个记账App" → 真实创建项目 (复用
+  service.create_project) → 标准输出 + 跳转 target (进入项目) + meta.action
+- 确定性意图解析支持创建关键词 (做一个/创建一个/开发一个…); LLM 解析非法 → fallback
+- 设计稿 docs/会话驱动-操作引擎.md: 发起/查看/跳转 + P1/P2/P3
+
+### 验证
+
+- 后端 40 passed (含会话创建项目 HTTP 用例: 真实落库 + target) · 前端 684 passed
+
 ## [v1.1.123] — 2026-08-26
 
 **会话跳转: 查看后直达对应功能页 (Founder: 全部功能可会话发起/查看/跳转)**。

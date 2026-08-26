@@ -20,6 +20,7 @@ from typing import Any
 
 #: 确定性意图关键词 (顺序即优先级)
 _INTENT_RULES: list[tuple[str, tuple[str, ...]]] = [
+    ("create_project", ("做一个", "创建一个", "开发一个", "帮我做个", "帮我做", "新建一个项目", "做个app", "做个 App", "做个app")),
     ("list_projects", ("有哪些项目", "几个项目", "项目列表", "所有项目", "空间内", "重点项目", "项目清单")),
     ("project_quality", ("质量", "评分", "质量分", "分数")),
     ("project_tasks", ("任务", "todo", "待办", "backlog", "排期")),
@@ -152,7 +153,7 @@ def build_facts(
 
 #: 合法意图集合 (校验 LLM 输出)
 VALID_INTENTS = {"list_projects", "project_status", "project_quality", "project_tasks",
-                 "project_docs", "model", "chat"}
+                 "project_docs", "model", "create_project", "chat"}
 
 _INTENT_LLM_PROMPT = """把用户的提问转成标准查询意图 (只输出 JSON, 不要别的):
 {{"intent": "list_projects|project_status|project_quality|project_tasks|project_docs|model|chat",
@@ -216,9 +217,12 @@ def intent_target(
         "project_tasks": (f"#/project/{pid}/todo", f"查看{name}任务"),
         "project_docs": (f"#/project/{pid}/docs", f"查看{name}文档"),
         "model": ("#/workspace/settings", "打开设置"),
+        "create_project": None,
     }
     hit = targets.get(intent)
     if not hit:
+        return None
+    if hit is None:
         return None
     return {"url": hit[0], "label": hit[1]}
 

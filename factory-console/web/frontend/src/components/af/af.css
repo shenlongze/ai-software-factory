@@ -4014,3 +4014,36 @@ body[data-bg='1'] {
 body[data-bg='1'] .af-shell {
   background: transparent;
 }
+
+/* ============================================= 概览健康信号条 (Founder A 方案) */
+.af-health-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.af-health-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--c-text2);
+  margin-right: 4px;
+}
+
+.af-health-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--c-text);
+  background: var(--c-input);
+  border: 1px solid var(--c-border);
+  border-radius: 14px;
+  padding: 4px 12px;
+  text-decoration: none;
+  transition: border-color 0.15s ease;
+}
+
+.af-health-chip:hover {
+  border-color: var(--af-primary);
+}

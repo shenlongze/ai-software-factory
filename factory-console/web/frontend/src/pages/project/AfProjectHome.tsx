@@ -52,6 +52,9 @@ export function AfProjectHome({
   const [lifecycle, setLifecycle] = useState<LifecycleData | null>(null);
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [runtimeCount, setRuntimeCount] = useState<number>(0);
+  const [failedCount, setFailedCount] = useState<number>(0);
+  const [qualityScore, setQualityScore] = useState<number | null>(null);
+  const [qualityNote, setQualityNote] = useState<string>('');
   const [view, setView] = useState<'list' | 'board'>('list');
   const [busy, setBusy] = useState<string>('');
 
@@ -74,9 +77,37 @@ export function AfProjectHome({
           .then((b) => setTasks(b.tasks ?? []))
           .catch(() => setTasks([]));
       });
-    getJson<unknown[]>(`${base}/runtimes`)
-      .then((list) => setRuntimeCount(Array.isArray(list) ? list.length : 0))
-      .catch(() => setRuntimeCount(0));
+    getJson<{ items?: { status?: string }[] }>(`${base}/runtimes`)
+      .then((d) => {
+        const items = d.items ?? [];
+        setRuntimeCount(items.length);
+        setFailedCount(items.filter((r) => r.status === 'failed').length);
+      })
+      .catch(() => {
+        setRuntimeCount(0);
+        setFailedCount(0);
+      });
+    // 质量分: 读 quality.json (真实; 未生成 → 诚实"未评测")
+    getJson<{ content?: string | null; note?: string | null }>(`${base}/docs/quality.json`)
+      .then((q) => {
+        if (q.content) {
+          try {
+            const parsed = JSON.parse(q.content) as { score?: number };
+            setQualityScore(typeof parsed.score === 'number' ? parsed.score : null);
+            setQualityNote(parsed.score != null ? '' : '（无评分）');
+          } catch {
+            setQualityScore(null);
+            setQualityNote('（格式异常）');
+          }
+        } else {
+          setQualityScore(null);
+          setQualityNote(q.note ?? '未评测');
+        }
+      })
+      .catch(() => {
+        setQualityScore(null);
+        setQualityNote('未评测');
+      });
   };
 
   // ③ 实时性: 打开拉取 + 手动刷新 + 可选自动轮询 (5/15/30/60s)
@@ -254,6 +285,20 @@ export function AfProjectHome({
         </div>
       </div>
       {lifecycleBar}
+      <section className="af-home-card" data-testid="af-home-health">
+        <div className="af-health-row">
+          <span className="af-health-title">⚡ 健康信号</span>
+          <a className="af-health-chip" href={`#/project/${projectId}/runtime`}>
+            🖥 运行 {runtimeCount}
+          </a>
+          <a className="af-health-chip" href={`#/project/${projectId}/quality`}>
+            ✅ 质量 {qualityScore != null ? qualityScore.toFixed(2) : qualityNote || '未评测'}
+          </a>
+          <a className="af-health-chip" href={`#/project/${projectId}/workflow`}>
+            ⚠️ 失败 {failedCount}
+          </a>
+        </div>
+      </section>
       <section className="af-home-card">
         <div className="af-home-card-head">
           <h3>📋 任务 Todo</h3>
@@ -275,10 +320,6 @@ export function AfProjectHome({
           </div>
         </div>
         {view === 'list' ? todoList : todoBoard}
-      </section>
-      <section className="af-home-card">
-        <h3>🖥 运维 / 监控</h3>
-        <p className="af-home-note">运行实例 {runtimeCount} 个 · 质量/成本/参与见右栏预览与后续面板</p>
       </section>
     </div>
   );

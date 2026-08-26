@@ -3,6 +3,31 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.119] — 2026-08-26
+
+**会话完整链路: 用户输入 → LLM 转标准意图 → 本地查真实数据 → LLM 转标准输出**。
+
+### Added
+
+- **LLM 意图解析** (session/query_engine.parse_intent_llm): 用户提问 → 结构化 JSON
+  {intent, project}; 非法/失败 → 确定性关键词 fallback (诚实不崩)
+- **本地查询执行器** (build_facts): 按意图查真实数据 — 项目列表(阶段/⭐) / 单项目
+  状态(生命周期/进度/当前阶段/工作流) / 质量分(quality.json) / 任务统计 / 文档清单 /
+  模型 — 查不到 → 如实待查证
+- **标准输出** (STANDARD_OUTPUT_PROMPT): 查询类回答固定格式
+  【结论】/【数据】/【数据来源】/【建议】; 只基于查询结果, 不编造
+- API 返回 meta: {intent, project, data_source: live|chat}
+
+### 实测（真实链路）
+
+- Q: 旅行记账现在什么状态 → meta {intent:project_status, project:旅行记账, live}
+- 【结论】idea 阶段/工作流未启动 ·【数据】生命周期/进度/当前阶段/工作流/模型
+  ·【数据来源】实时查询 ·【建议】推进建议 — 全真实
+
+### 验证
+
+- query_engine 8 passed + 相关 50 passed · 前端 683 passed
+
 ## [v1.1.118] — 2026-08-26
 
 **会话栏实事求是硬规则: 禁止编造项目分类/进度/结论**。

@@ -93,12 +93,8 @@ def _new_id(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex[:10]}"
 
 
-def _llm_answer(prompt: str, *, max_chars: int = DEFAULT_MAX_CHARS) -> str | None:
-    """真实 LLM 回答; 不可用/失败 → None (调用方落诚实引导)。
-
-    复用 ReasoningProvider 装配链 (与 REPL ChatService 同源), 不重建
-    provider 系统; 纯标准库 + 延迟 import (失败安全)。
-    """
+def llm_raw(prompt: str) -> str | None:
+    """真实 LLM 原始输出 (供意图解析等结构化调用); 不可用/失败 → None。"""
     try:
         from .session.reasoning import ReasoningProvider
 
@@ -106,11 +102,17 @@ def _llm_answer(prompt: str, *, max_chars: int = DEFAULT_MAX_CHARS) -> str | Non
         llm_fn = provider._default_llm_fn()  # noqa: SLF001 — 同包复用装配链
         text = llm_fn(prompt, "chat")
         text = str(text or "").strip()
-        if not text:
-            return None
-        return text[:max_chars]
-    except Exception:  # noqa: BLE001 — LLM 挂不影响会话记录 (诚实降级)
+        return text or None
+    except Exception:  # noqa: BLE001 — LLM 挂 → None (调用方 fallback)
         return None
+
+
+def _llm_answer(prompt: str, *, max_chars: int = DEFAULT_MAX_CHARS) -> str | None:
+    """真实 LLM 回答 (截断); 不可用/失败 → None (调用方落诚实引导)。"""
+    text = llm_raw(prompt)
+    if not text:
+        return None
+    return text[:max_chars]
 
 
 class SessionStore:
@@ -283,6 +285,7 @@ def send_message(
     content: str,
     *,
     facts: str = "",
+    reply_extra: str = "",
     llm_fn: Callable[[str], str | None] | None = None,
     max_chars: int = DEFAULT_MAX_CHARS,
 ) -> dict[str, Any]:
@@ -301,7 +304,7 @@ def send_message(
     if user_msg is None:
         raise ValueError("会话不存在")
 
-    prompt = _build_prompt(session, text, facts=facts)
+    prompt = _build_prompt(session, text, facts=facts, reply_extra=reply_extra)
     reply: str | None = None
     if llm_fn is not None:
         try:
@@ -320,8 +323,10 @@ def send_message(
     }
 
 
-def _build_prompt(session: dict[str, Any], question: str, *, facts: str = "") -> str:
-    """按作用域组装 prompt (公司级/项目级均注入真实事实卡)。"""
+def _build_prompt(
+    session: dict[str, Any], question: str, *, facts: str = "", reply_extra: str = ""
+) -> str:
+    """按作用域组装 prompt (真实事实卡 + 可选标准输出指令)。"""
     fact_block = (facts or "").strip() or (
         "项目信息暂缺 (不编造)" if session.get("scope") == "project" else "（暂无）"
     )
@@ -329,6 +334,8 @@ def _build_prompt(session: dict[str, Any], question: str, *, facts: str = "") ->
         system = _PROJECT_PROMPT.format(facts=fact_block)
     else:
         system = _COMPANY_PROMPT.format(facts=fact_block)
+    if reply_extra:
+        system = f"{system}\n{reply_extra}"
     return f"{system}\n\n用户: {question}"
 
 

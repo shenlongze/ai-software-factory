@@ -2868,19 +2868,16 @@ def build_app(
 
     @app.post("/api/sessions/{session_id}/messages")
     def api_session_send(session_id: str, body: _ChatBody) -> dict[str, Any]:
-        """发送消息 (K-7e): 落用户消息 + LLM 回复 (真实/诚实降级)。
+        """发送消息 (K-7e 完整链路): LLM 转标准意图 → 本地查询真实数据 → 标准输出。
 
-        项目级会话注入项目事实卡 (service.list_projects 定位; 失败 → 不注入,
-        不编造)。返回 {user, assistant, session}。"""
+        返回 {user, assistant, session, meta:{intent, project, data_source}}。"""
         session = sessions_store.get_session(session_id)
         if session is None:
             raise HTTPException(status_code=404, detail="session not found")
-        facts = ""
         try:
             projects = service.list_projects()
         except Exception:  # noqa: BLE001 — 列表失败 → 空 (不编造)
             projects = []
-        # 当前 LLM 模型 (真实配置, 供"你用什么模型"直接作答)
         model_line = ""
         try:
             _llm_plane_reload(_llm_plane)
@@ -2894,33 +2891,32 @@ def build_app(
                     )
         except Exception:  # noqa: BLE001 — 模型失败 → 不注入
             model_line = ""
-        if session.get("scope") == "project" and session.get("project_id"):
-            found = next((pp for pp in projects if pp.id == session["project_id"]), None)
-            if found is not None:
-                facts = (
-                    f"名称: {found.name}\n生命周期: {found.lifecycle_stage or found.status}"
-                    f"\n状态: {found.status}\n进度: {found.progress}"
-                )
-            if model_line:
-                facts = f"{facts}\n{model_line}" if facts else model_line
-        else:
-            # 公司级事实卡: 真实项目列表 (含阶段/重点项目) + 模型
-            rows = []
-            for pp in projects:
-                if pp.archived:
-                    continue
-                stage = pp.lifecycle_stage or pp.status or ""
-                star = " ⭐重点项目" if pp.starred else ""
-                rows.append(f"{pp.name} (阶段: {stage}){star}")
-            facts = (
-                f"项目列表 ({len(rows)} 个):\n" + "\n".join(rows) if rows else "项目列表: 暂无项目"
-            )
-            if model_line:
-                facts = f"{facts}\n{model_line}"""
+        # 完整链路 (Founder 设计): LLM 转标准意图 → 本地查询真实数据 → 标准输出
+        _qmod = _console_import("session.query_engine")
+        intent = _qmod.parse_intent_llm(body.message, _sessions_mod.llm_raw)
+        hint_project = intent.get("project") if intent.get("intent") != "chat" else None
+        facts = _qmod.build_facts(
+            body.message,
+            scope=str(session.get("scope") or "company"),
+            project_id=session.get("project_id"),
+            projects=projects,
+            root=workspace_root,
+            model_line=model_line,
+            hint_project=hint_project,
+        )
+        reply_extra = (
+            _qmod.STANDARD_OUTPUT_PROMPT if intent.get("intent") != "chat" else ""
+        )
         try:
-            return _sessions_mod.send_message(
-                sessions_store, session_id, body.message, facts=facts
+            result = _sessions_mod.send_message(
+                sessions_store, session_id, body.message, facts=facts, reply_extra=reply_extra
             )
+            result["meta"] = {
+                "intent": intent.get("intent"),
+                "project": hint_project,
+                "data_source": "live" if intent.get("intent") != "chat" else "chat",
+            }
+            return result
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 

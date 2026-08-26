@@ -149,3 +149,18 @@ class TestArtifactsHttp:
             assert r.status_code == 200
             assert "# v1" in r.json()["content"]
             assert c.get("/api/projects/p1/artifacts/prd/versions/99").status_code == 404
+
+
+@requires_fastapi
+class TestArtifactsVersionHttp:
+    def test_version_signal_endpoint(self, tmp_path):
+        (tmp_path / "projects" / "p1").mkdir(parents=True, exist_ok=True)
+        _ac.set_artifact(tmp_path, "p1", "product", {"name": "x"})
+        _ac.set_artifact(tmp_path, "p1", "product", {"name": "y"})
+        service = _adapter.build_console_service(tmp_path, event_logger=None)
+        app = _adapter.build_app(service, event_logger=None, factory_root=tmp_path)
+        with TestClient(app) as c:
+            r = c.get("/api/projects/p1/artifacts/version")
+            assert r.status_code == 200
+            assert r.json()["version"] == 2
+            assert r.json()["updated_at"] is not None

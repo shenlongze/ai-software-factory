@@ -33,6 +33,7 @@ import {
   type IdeaSuggestion,
   type LifecycleSummary,
   type LlmProviderConfig,
+  type ProjectArtifactItem,
   type ProjectDocContent,
   type ProjectDocSummary,
   type ProjectSummary,
@@ -372,6 +373,20 @@ export const api = {
     (await getJson<{ items: ProjectDocSummary[] }>(`/api/projects/${encodeURIComponent(projectId)}/docs`)).items,
   projectDocContent: async (projectId: string, doc: string) =>
     getJson<ProjectDocContent>(`/api/projects/${encodeURIComponent(projectId)}/docs/${doc.replace(/^\//, '')}`),
+
+  // C-1/C-3: 产出物契约 (manifest 视图 + 版本信号 + 历史内容)
+  projectArtifacts: async (projectId: string) =>
+    getJson<{ items: ProjectArtifactItem[]; meta: { version: number; updated_at: string | null }; drift: string[] }>(
+      `/api/projects/${encodeURIComponent(projectId)}/artifacts`,
+    ),
+  projectArtifactsVersion: async (projectId: string) =>
+    getJson<{ version: number; updated_at: string | null }>(
+      `/api/projects/${encodeURIComponent(projectId)}/artifacts/version`,
+    ),
+  projectArtifactVersion: async (projectId: string, artifactType: string, version: number) =>
+    getJson<{ version: number; file: string; content: string | null }>(
+      `/api/projects/${encodeURIComponent(projectId)}/artifacts/${encodeURIComponent(artifactType)}/versions/${version}`,
+    ),
 
   // K-7e: Web 会话栏 (会话 + 消息 + 回复)
   sessions: async (scope?: string, projectId?: string) => {

@@ -3,6 +3,25 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.110] — 2026-08-26
+
+**C-3 WebUI 实时 + 产出物历史查看 (与 C-2 引擎接线合并版本)**。
+
+### Added
+
+- **📦 产出物 tab** (文档页升级为 文档/产出物 双 Tab): Manifest 视图 — 类型/文件/
+  版本/生产者/trace_id/更新时间 + 漂移提示; 选中产出物 → 内容查看 + **版本链 chips**
+  (点历史版本读取 history 内容, 可追溯)
+- **实时**: 产出物视图 10s 轮询 `GET /api/projects/{id}/artifacts/version`, 版本变化
+  自动重载 + "产出物已更新"提示 (数据同步不再靠手动刷新)
+- **轻量轮询端点**: GET /api/projects/{id}/artifacts/version ({version, updated_at})
+- 存量产出物标 📦存量 (可查看, 未纳入契约)
+
+### 验证
+
+- 后端 artifact_contract 10 passed · 前端 685 passed (含产出物 tab 3 用例) · build 通过
+- 与 C-2 (Hermes 引擎接线) 合并同一版本; 版本文件由本侧统一 bump
+
 ## [v1.1.109] — 2026-08-26
 
 **产出物契约 C-1（平台级, Manifest + 历史 + 追溯）: 全部项目统一产出物标准**。

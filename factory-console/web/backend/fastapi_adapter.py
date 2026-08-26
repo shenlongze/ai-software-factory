@@ -1089,6 +1089,22 @@ def build_app(
     # ------------------------------------------- 产出物契约 (C-1, 平台级)
     # 全部项目的统一产出物状态 (固定 schema + 版本信号) — WebUI 轮询 version
     # 感知变化; 只读 GET。
+    # C-3: 轻量轮询 — 只返回版本信号 (WebUI 每 N 秒轮询, 变化才刷新)
+    @app.get("/api/projects/{project_id}/artifacts/version")
+    def api_project_artifacts_version(project_id: str) -> dict[str, Any]:
+        """产出物版本信号 (GET — {version, updated_at}; 轮询用, 轻量)。"""
+        if workspace_root is None:
+            return {"version": 0, "updated_at": None}
+        _contract = _console_import("artifact_contract")
+        try:
+            meta = _contract.read_manifest(workspace_root, project_id)
+            return {
+                "version": int(meta.get("version", 0) or 0),
+                "updated_at": meta.get("updated_at"),
+            }
+        except Exception:  # noqa: BLE001 — 失败安全
+            return {"version": 0, "updated_at": None}
+
     @app.get("/api/projects/{project_id}/artifacts")
     def api_project_artifacts(project_id: str) -> dict[str, Any]:
         """项目产出物统一状态 (GET — {items, meta, drift}; 全部项目通用)。"""

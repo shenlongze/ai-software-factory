@@ -764,3 +764,20 @@ export interface ProjectDocContent {
   content: string | null;
   note?: string | null;
 }
+
+/** C-1/C-3: 产出物契约 — manifest 条目 (GET /api/projects/{id}/artifacts)。 */
+export interface ProjectArtifactItem {
+  type: string;
+  label: string;
+  kind: string;
+  file: string;
+  exists: boolean;
+  legacy?: boolean;
+  schema_ok: boolean;
+  version: number | null;
+  producer: string | null;
+  trace_id: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  versions: { version: number; file: string; created_at: string | null; producer: string | null; trace_id: string | null }[];
+}

@@ -3,6 +3,20 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.138] — 2026-08-26
+
+**运维页快照分页 + 版本说明 (Founder)**。
+
+### Added
+
+- 快照趋势**分页** (10/页, 上一页/下一页 + 第X/Y页·共N条; /api/monitor?limit&offset)
+- **版本说明**: 快照版本列旁显示该版本 CHANGELOG 摘要 (如 "webUI状态直接下结论")
+- 修复 save_snapshot 只留 10 条 bug (现保留 MAX 200)
+
+### 验证
+
+- 后端 monitor 8 passed · 前端 685 passed · build 通过
+
 ## [v1.1.137] — 2026-08-26
 
 **会话答 webUI 状态: 结论不再"未查询到" (系统状态直接下结论)**。

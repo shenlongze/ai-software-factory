@@ -68,8 +68,22 @@ class TestMonitor:
         assert _monitor.save_snapshot(tmp_path, {"system": {"version": "2"}}) is True
         snaps = _monitor.read_snapshots(tmp_path, limit=10)
         assert len(snaps) == 2
-        assert snaps[-1]["system"]["version"] == "2"
+        assert snaps[0]["system"]["version"] == "2"  # 最新在前
+        assert _monitor.snapshot_count(tmp_path) == 2
         assert (tmp_path / _monitor.SNAPSHOT_FILE).is_file()
+
+    def test_snapshots_pagination(self, tmp_path):
+        for i in range(25):
+            _monitor.save_snapshot(tmp_path, {"system": {"version": f"{i}"}})
+        assert _monitor.snapshot_count(tmp_path) == 25
+        p1 = _monitor.read_snapshots(tmp_path, limit=10, offset=0)
+        p2 = _monitor.read_snapshots(tmp_path, limit=10, offset=10)
+        assert len(p1) == 10 and len(p2) == 10
+        # 最新在前: p1[0] = v24, p2[0] = v14
+        assert p1[0]["system"]["version"] == "24"
+        assert p2[0]["system"]["version"] == "14"
+        p3 = _monitor.read_snapshots(tmp_path, limit=10, offset=20)
+        assert len(p3) == 5
 
 
 @requires_fastapi

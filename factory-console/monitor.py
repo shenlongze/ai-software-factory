@@ -196,7 +196,7 @@ def save_snapshot(root: Path | str, payload: dict[str, Any]) -> bool:
         try:
             f = root / SNAPSHOT_FILE
             f.parent.mkdir(parents=True, exist_ok=True)
-            snaps = read_snapshots(root)
+            snaps = _snapshots_all(root)
             snaps.append({"at": _now_iso(), **payload})
             if len(snaps) > MAX_SNAPSHOTS:
                 snaps = snaps[-MAX_SNAPSHOTS:]
@@ -206,15 +206,25 @@ def save_snapshot(root: Path | str, payload: dict[str, Any]) -> bool:
             return False
 
 
-def read_snapshots(root: Path | str, limit: int = 10) -> list[dict[str, Any]]:
-    root = Path(root)
+def _snapshots_all(root: Path) -> list[dict[str, Any]]:
     try:
-        data = _read_json(root / SNAPSHOT_FILE)
-        if isinstance(data, list):
-            return data[-limit:]
+        data = _read_json(Path(root) / SNAPSHOT_FILE)
+        return data if isinstance(data, list) else []
     except Exception:  # noqa: BLE001
-        pass
-    return []
+        return []
 
 
-__all__ = ["collect_system", "collect_project", "save_snapshot", "read_snapshots", "port_up", "check_alerts", "QUALITY_ALERT_THRESHOLD", "FRONTEND_PORT", "BACKEND_PORT"]
+def snapshot_count(root: Path | str) -> int:
+    return len(_snapshots_all(root))
+
+
+def read_snapshots(root: Path | str, limit: int = 10, offset: int = 0) -> list[dict[str, Any]]:
+    """快照分页: 最新在前 (offset=0 → 最近 limit 条)。"""
+    snaps = _snapshots_all(root)
+    total = len(snaps)
+    end = total - offset
+    start = max(0, end - limit)
+    return list(reversed(snaps[start:end])) if end > start else []
+
+
+__all__ = ["collect_system", "collect_project", "save_snapshot", "read_snapshots", "snapshot_count", "port_up", "check_alerts", "QUALITY_ALERT_THRESHOLD", "FRONTEND_PORT", "BACKEND_PORT"]

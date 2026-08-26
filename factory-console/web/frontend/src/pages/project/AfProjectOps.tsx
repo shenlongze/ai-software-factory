@@ -6,7 +6,7 @@
  * 数据: GET /api/monitor (系统+全部项目+快照, 过滤当前项目)。
  */
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api } from '../../api/client';
 
 interface MonitorProject {
@@ -24,7 +24,7 @@ interface MonitorProject {
 }
 interface Snapshot {
   at: string;
-  system?: { version?: string };
+  system?: { version?: string; version_summary?: string };
   projects?: MonitorProject[];
 }
 interface AlertItem {
@@ -35,25 +35,38 @@ interface AlertItem {
 }
 
 export function AfProjectOps({ projectId, projectName }: { projectId: string; projectName?: string }): JSX.Element {
-  const [data, setData] = useState<{ system?: { version: string; frontend: { up: boolean }; backend: { up: boolean }; model: string }; project?: MonitorProject; snapshots?: Snapshot[]; alerts?: AlertItem[] } | null>(null);
+  const [data, setData] = useState<{ system?: { version: string; version_summary?: string; frontend: { up: boolean }; backend: { up: boolean }; model: string }; project?: MonitorProject; snapshots?: Snapshot[]; alerts?: AlertItem[]; snapshotTotal?: number } | null>(null);
   const [error, setError] = useState('');
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 10;
+
+  const load = useCallback(
+    (pageNum: number) => {
+      let cancelled = false;
+      api
+        .monitor(PAGE_SIZE, pageNum * PAGE_SIZE)
+        .then((m) => {
+          if (cancelled) return;
+          const project = (m.projects ?? []).find((p) => p.project_id === projectId);
+          setData({ system: m.system, project, snapshots: m.snapshots ?? [], alerts: m.alerts ?? [], snapshotTotal: m.snapshot_total ?? 0 });
+        })
+        .catch(() => {
+          if (!cancelled) setError('监控数据加载失败（后端不可达）');
+        });
+      return () => {
+        cancelled = true;
+      };
+    },
+    [projectId],
+  );
 
   useEffect(() => {
-    let cancelled = false;
-    api
-      .monitor()
-      .then((m) => {
-        if (cancelled) return;
-        const project = (m.projects ?? []).find((p) => p.project_id === projectId);
-        setData({ system: m.system, project, snapshots: m.snapshots ?? [], alerts: m.alerts ?? [] });
-      })
-      .catch(() => {
-        if (!cancelled) setError('监控数据加载失败（后端不可达）');
-      });
-    return () => {
-      cancelled = true;
-    };
+    setPage(0);
+    load(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
+
+  const totalPages = Math.max(1, Math.ceil((data?.snapshotTotal ?? 0) / PAGE_SIZE));
 
   const fmt = (iso: string | null | undefined) => (iso ? iso.slice(5, 16).replace('T', ' ') : '—');
   const taskTotal = Object.values(data?.project?.tasks ?? {}).reduce((a, b) => a + b, 0);
@@ -136,12 +149,24 @@ export function AfProjectOps({ projectId, projectName }: { projectId: string; pr
                 {data.snapshots.slice(-8).reverse().map((s, i) => (
                   <tr key={i}>
                     <td>{fmt(s.at)}</td>
-                    <td>{s.system?.version ?? '—'}</td>
+                    <td>
+                      {s.system?.version ?? '—'}
+                      {s.system?.version_summary ? <span className="af-ops-ver-note">{s.system.version_summary}</span> : null}
+                    </td>
                     <td>{s.projects?.length ?? '—'}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            <div className="af-ops-pager">
+              <button type="button" className="af-settings-action" disabled={page <= 0} onClick={() => { setPage(page - 1); load(page - 1); }}>
+                ← 上一页
+              </button>
+              <span className="af-home-note">第 {page + 1}/{totalPages} 页 · 共 {data?.snapshotTotal ?? 0} 条</span>
+              <button type="button" className="af-settings-action" disabled={page >= totalPages - 1} onClick={() => { setPage(page + 1); load(page + 1); }}>
+                下一页 →
+              </button>
+            </div>
           </>
         ) : (
           <p className="af-home-note">（暂无快照 — 打开监控后自动累积）</p>

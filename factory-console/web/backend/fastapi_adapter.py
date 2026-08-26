@@ -1092,11 +1092,33 @@ def build_app(
     # C-3: 轻量轮询 — 只返回版本信号 (WebUI 每 N 秒轮询, 变化才刷新)
     # ------------------------------------------- 统一监控运维 (D 系列, v1.1.134)
     # Monitor 单一采集 → 多处消费 (会话 system_status / 概览健康条 / 运维页 / CLI)
+    def _version_summary(version: str) -> str:
+        """CHANGELOG 对应版本首行摘要 (版本说明; 失败 → '')。"""
+        try:
+            ch = Path(__file__).resolve().parents[3] / "CHANGELOG.md"
+            lines = ch.read_text(encoding="utf-8").splitlines()
+            in_section = False
+            for ln in lines:
+                if ln.startswith(f"## [v{version}]"):
+                    in_section = True
+                    continue
+                if in_section:
+                    if ln.startswith("#"):
+                        break
+                    if ln.strip():
+                        return ln.strip().strip("**").strip()
+        except Exception:  # noqa: BLE001
+            return ""
+        return ""
+
     @app.get("/api/monitor")
-    def api_monitor() -> dict[str, Any]:
-        """系统 + 全部项目监控 (GET — 统一 snapshot + 历史)。"""
+    def api_monitor(
+        limit: int = Query(default=10, ge=1, le=100),
+        offset: int = Query(default=0, ge=0),
+    ) -> dict[str, Any]:
+        """系统 + 全部项目监控 (GET — 统一 snapshot + 历史分页)。"""
         if workspace_root is None:
-            return {"system": None, "projects": [], "snapshots": []}
+            return {"system": None, "projects": [], "snapshots": [], "snapshot_total": 0, "snapshot_offset": 0}
         _monitor_mod = _console_import("monitor")
         model_line = ""
         try:
@@ -1114,6 +1136,7 @@ def build_app(
         system = _monitor_mod.collect_system(
             workspace_root, _factory_version, model_line=model_line
         )
+        system["version_summary"] = _version_summary(_factory_version)
         projects = []
         try:
             for p in service.list_projects():
@@ -1131,10 +1154,18 @@ def build_app(
                     projects.append(pm)
         except Exception:  # noqa: BLE001
             projects = []
-        snapshots = _monitor_mod.read_snapshots(workspace_root, limit=10)
+        snapshots = _monitor_mod.read_snapshots(workspace_root, limit=limit, offset=offset)
+        snapshot_total = _monitor_mod.snapshot_count(workspace_root)
         alerts = _monitor_mod.check_alerts(system, projects)
         _monitor_mod.save_snapshot(workspace_root, {"system": system, "projects": projects, "alerts": alerts})
-        return {"system": system, "projects": projects, "snapshots": snapshots, "alerts": alerts}
+        return {
+            "system": system,
+            "projects": projects,
+            "snapshots": snapshots,
+            "alerts": alerts,
+            "snapshot_total": snapshot_total,
+            "snapshot_offset": offset,
+        }
 
     @app.get("/api/projects/{project_id}/monitor")
     def api_project_monitor(project_id: str) -> dict[str, Any]:
@@ -1161,6 +1192,7 @@ def build_app(
         if pm is None:
             raise HTTPException(status_code=404, detail="project not found")
         system = _monitor_mod.collect_system(workspace_root, _factory_version)
+        system["version_summary"] = _version_summary(_factory_version)
         return {"system": system, "project": pm}
 
     @app.get("/api/projects/{project_id}/artifacts/version")

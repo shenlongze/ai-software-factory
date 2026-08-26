@@ -4217,3 +4217,23 @@ body[data-bg='1'] .af-shell {
   font-size: 9px;
   color: var(--c-text2);
 }
+
+/* 运维页: 版本说明 + 分页 */
+.af-ops-ver-note {
+  display: block;
+  font-size: 10px;
+  color: var(--c-text2);
+  margin-top: 2px;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.af-ops-pager {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 8px;
+}

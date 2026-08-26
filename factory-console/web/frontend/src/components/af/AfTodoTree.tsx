@@ -115,6 +115,14 @@ function hasActiveTasks(node: TreeNode): boolean {
   return node.children.some(hasActiveTasks);
 }
 
+/** 收集分支下可见的叶子任务 (折叠摘要钻取 — legacy M2→feature=M2 无意义时用)。 */
+function collectLeafTasks(node: TreeNode, filter: 'all' | DomainStatus): TreeNode[] {
+  if (node.type === 'task' && node.children.length === 0) {
+    return visibleUnderFilter(node, filter) ? [node] : [];
+  }
+  return node.children.flatMap((c) => collectLeafTasks(c, filter));
+}
+
 /** 树中是否还有任务节点 (页面/组件空态判定)。 */
 export function hasTaskNodes(node: TreeNode): boolean {
   if (node.type === 'task') return true;
@@ -452,17 +460,23 @@ function TreeNodeRow({
           (() => {
             const visibleChildren = node.children.filter((c) => visibleUnderFilter(c, filter));
             if (visibleChildren.length === 0) return null;
+            // legacy 结构 (M2→feature=M2) 子节点名与节点同名 → 钻取到叶子任务名
+            const allSameAsNode =
+              visibleChildren.length > 0 &&
+              visibleChildren.every((c) => c.title.trim() === node.title.trim());
+            const items = allSameAsNode ? collectLeafTasks(node, filter) : visibleChildren;
+            if (items.length === 0) return null;
             return (
               <span
                 className="af-tree-collapsed-summary"
                 data-testid={`af-tree-summary-${node.id}`}
-                title={visibleChildren.map((c) => c.title).join(' · ')}
+                title={items.map((c) => c.title).join(' · ')}
               >
-                {visibleChildren
+                {items
                   .slice(0, 3)
                   .map((c) => c.title)
                   .join(' · ')}
-                {visibleChildren.length > 3 ? ` 等${visibleChildren.length}个` : ''}
+                {items.length > 3 ? ` 等${items.length}个` : ''}
               </span>
             );
           })()

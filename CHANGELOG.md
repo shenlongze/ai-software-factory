@@ -3,6 +3,15 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.155] — 2026-08-26
+
+**折叠摘要钻取真实任务名 (Founder: M2 摘要显示 'M2' 没意义)**。
+
+### Fixed
+
+- legacy 结构 (epic→feature 同名, 如 M2→feature=M2) 折叠摘要钻取到叶子任务名
+  (显示真实任务: AgentEntity/AgentRegistry... 等9个); 正常结构仍显示子模块名
+
 ## [v1.1.154] — 2026-08-26
 
 **任务树折叠摘要 (Founder: 折叠后不清楚里面是什么 — M2/M3/P0 只显示 67%)**。

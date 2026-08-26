@@ -172,6 +172,43 @@ describe('AfTodoTree (Todo Tree 组件)', () => {
     expect(screen.getByText('用户系统')).toBeInTheDocument();
   });
 
+  it('折叠摘要: 子节点名与节点同名 (legacy M2→feature=M2) → 钻取叶子任务名', async () => {
+    const legacyTree: TodoTree = {
+      root: {
+        id: 'root', title: '项目', type: 'phase', status: 'pending', statusLabel: '待办', progress: 0,
+        children: [
+          {
+            id: 'M2', title: 'M2', type: 'phase', status: 'pending', statusLabel: '待办', progress: 0,
+            children: [
+              {
+                id: 'M2-feat', title: 'M2', type: 'module', status: 'pending', statusLabel: '待办', progress: 0,
+                children: [
+                  {
+                    id: 'M2-story', title: 'M2 · M2', type: 'task', status: 'pending', statusLabel: '待办', progress: 0,
+                    children: [
+                      { id: 't1', title: '**AgentEntity** 统一字段', type: 'task', status: 'pending', statusLabel: '待办', progress: 0, children: [] },
+                      { id: 't2', title: '**AgentRegistry** 工厂层', type: 'task', status: 'pending', statusLabel: '待办', progress: 0, children: [] },
+                      { id: 't3', title: 'ExpertFactory 装配器', type: 'task', status: 'pending', statusLabel: '待办', progress: 0, children: [] },
+                      { id: 't4', title: 'HandoffBus 交接', type: 'task', status: 'pending', statusLabel: '待办', progress: 0, children: [] },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    };
+    render(<AfTodoTree tree={legacyTree} />);
+    // 默认展开 → 先折叠 M2 才出现摘要
+    await user.click(screen.getByRole('button', { name: '折叠 M2' }));
+    const summary = screen.getByTestId('af-tree-summary-M2');
+    expect(summary).toHaveTextContent('**AgentEntity** 统一字段');
+    expect(summary).toHaveTextContent('ExpertFactory 装配器');
+    expect(summary).toHaveTextContent('等4个');
+    expect(summary).not.toHaveTextContent('M2 · M2');
+  });
+
   it('全折叠/全展开: 工具栏按钮一键收起/展开全部', async () => {
     const user = userEvent.setup();
     render(<AfTodoTree tree={tree} taskMeta={meta} />);

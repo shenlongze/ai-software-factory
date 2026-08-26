@@ -56,6 +56,8 @@ export interface AfTodoTreeProps {
   onDiscussFeature?: (featureId: string, featureName: string) => void;
   /** 想法模块「转为正式」(maturity idea→refined)。 */
   onRefineFeature?: (featureId: string) => void;
+  /** P0 进度摘要 (页面从 backlog 算: X-1✅ U-1✅ → 剩余; 可选)。 */
+  p0Progress?: string;
 }
 
 /** 过滤选项 (§4.6: [全部][执行中][阻塞][待审核][失败] — 待办/完成不进过滤, 全量可见)。 */
@@ -98,6 +100,23 @@ function collectBranchIds(node: TreeNode): string[] {
 
 /** 过滤可见性: 任务节点按状态匹配; 阶段/模块/故事 = 有匹配后代才可见 (祖先保留)。
  * W-3 归档: completed(done) 任务不进主树 (归入已归档区, 待办视角)。 */
+const PRIORITY_ORDER: Record<string, number> = { P0: 0, P1: 1, P2: 2, P3: 3 };
+
+/** 子节点排序 (Founder 2026-08-27): time=更新时间倒序 / priority=优先级 P0 最前。 */
+function sortChildren(children: TreeNode[], mode: 'time' | 'priority'): TreeNode[] {
+  if (children.length <= 1) return children;
+  return [...children].sort((a, b) => {
+    if (mode === 'priority') {
+      const pa = a.priority != null ? PRIORITY_ORDER[a.priority] ?? 99 : 99;
+      const pb = b.priority != null ? PRIORITY_ORDER[b.priority] ?? 99 : 99;
+      if (pa !== pb) return pa - pb;
+    }
+    const ta = a.updatedAt ?? '';
+    const tb = b.updatedAt ?? '';
+    return tb.localeCompare(ta); // 时间倒序 (最后更新最前)
+  });
+}
+
 function matchesTime(updatedAt: string | undefined, timeKey: string): boolean {
   if (timeKey === 'all') return true;
   if (updatedAt == null || updatedAt.length === 0) return timeKey === 'stale30';
@@ -176,6 +195,7 @@ export function AfTodoTree({
   onCreateFeature,
   onDiscussFeature,
   onRefineFeature,
+  p0Progress,
 }: AfTodoTreeProps): JSX.Element {
   const root = tree.root;
   // 归档区按完成时间倒序 (最近完成最前; 无 completedAt → 排最后, 诚实降级)
@@ -190,6 +210,7 @@ export function AfTodoTree({
   const [filterPriority, setFilterPriority] = useState<string>('all');
   const [filterTime, setFilterTime] = useState<string>('all');
   const [showArchive, setShowArchive] = useState(false);
+  const [sortMode, setSortMode] = useState<'time' | 'priority'>('time');
 
   // 空 backlog (无任何阶段) → AfEmptyState; 有想法模块/空分支 → 渲染树 (想法不能丢)
   if (root.children.length === 0) {
@@ -296,9 +317,23 @@ export function AfTodoTree({
         </span>
         <span className="af-tree-root-title">{root.title}</span>
         <AfStatusBadge status={root.status} label={root.statusLabel} />
+        <button
+          type="button"
+          className="af-sort-toggle"
+          data-testid="af-sort-toggle"
+          title="切换排序: 更新时间 / 优先级"
+          onClick={() => setSortMode((m) => (m === 'time' ? 'priority' : 'time'))}
+        >
+          排序：{sortMode === 'time' ? '更新时间' : '优先级'} ➡️
+        </button>
         <div className="af-tree-root-progress">
           <AfProgressBar value={root.progress} status={root.status} />
         </div>
+        {p0Progress != null && p0Progress.length > 0 ? (
+          <span className="af-tree-p0-progress" data-testid="af-tree-p0-progress" title="P0 任务完成进度 (系列徽标)">
+            {p0Progress}
+          </span>
+        ) : null}
       </div>
 
       </div>
@@ -326,6 +361,7 @@ export function AfTodoTree({
               onRefineFeature={onRefineFeature}
               filterPriority={filterPriority}
               filterTime={filterTime}
+              sortMode={sortMode}
             />
           ))
         )}
@@ -393,6 +429,7 @@ interface TreeNodeRowProps {
   filter: 'all' | DomainStatus;
   filterPriority: string;
   filterTime: string;
+  sortMode: 'time' | 'priority';
   taskMeta: Record<string, TaskMeta>;
   onSelectTask?: (taskId: string) => void;
   onToggle: (id: string) => void;
@@ -406,6 +443,7 @@ function TreeNodeRow({
   filter,
   filterPriority,
   filterTime,
+  sortMode,
   taskMeta,
   onSelectTask,
   onToggle,
@@ -574,7 +612,7 @@ function TreeNodeRow({
       </div>
       {hasChildren && isExpanded ? (
         <div className="af-tree-children" data-testid={`af-tree-children-${node.id}`}>
-          {node.children
+          {sortChildren(node.children, sortMode)
             .filter((child) => visibleUnderFilter(child, filter, filterPriority, filterTime))
             .map((child) => (
               <TreeNodeRow
@@ -589,6 +627,7 @@ function TreeNodeRow({
                 onRefineFeature={onRefineFeature}
                 filterPriority={filterPriority}
                 filterTime={filterTime}
+                sortMode={sortMode}
               />
             ))}
         </div>

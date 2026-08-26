@@ -1027,6 +1027,32 @@
   margin-bottom: 8px;
 }
 
+.af-sort-toggle {
+  font: inherit;
+  font-size: 11px;
+  color: var(--c-text2);
+  background: transparent;
+  border: 1px solid var(--c-border);
+  border-radius: 6px;
+  padding: 2px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.af-sort-toggle:hover {
+  color: #4c8dff;
+  border-color: #4c8dff;
+}
+
+.af-tree-p0-progress {
+  font-size: 11px;
+  color: var(--c-text2);
+  max-width: 420px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .af-tree-root-title {
   font-size: 15px;
   font-weight: 600;

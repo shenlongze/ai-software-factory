@@ -39,6 +39,22 @@ export async function fetchProjectBacklog(projectId: string): Promise<BacklogRes
   return (await res.json()) as BacklogResponse;
 }
 
+/** P0 进度摘要 (Founder 2026-08-27): 系列徽标 X-1✅ U-1✅ ... → 剩余。 */
+export function buildP0Progress(backlog: BacklogResponse | null | undefined): string {
+  const tasks = backlog?.tasks ?? [];
+  const p0 = tasks.filter((t) => (t.priority ?? '').toUpperCase() === 'P0');
+  if (p0.length === 0) return '';
+  const label = (t: BacklogTask) => {
+    const m = /\[([A-Z]-\d+)\]/.exec(t.description ?? '');
+    return m ? m[1] : (t.id ?? '').slice(0, 10);
+  };
+  const done = p0.filter((t) => (t.status ?? '') === 'done').map(label).sort();
+  const remain = p0.filter((t) => (t.status ?? '') !== 'done').map(label).sort();
+  const doneStr = done.length > 0 ? done.map((x) => `${x}✅`).join(' ') : '无';
+  const remainStr = remain.length > 0 ? `剩 ${remain.slice(0, 6).join('·')}${remain.length > 6 ? ` 等${remain.length}个` : ''}` : '全部完成 🎉';
+  return `P0 ${done.length}/${p0.length}: ${doneStr} → ${remainStr}`;
+}
+
 /** backlog.tasks → {id → {priority, owner}} (assignee 空串 → owner undefined, 诚实降级)。 */
 export function buildTaskMeta(tasks: BacklogTask[] | null | undefined): Record<string, TaskMeta> {
   const meta: Record<string, TaskMeta> = {};
@@ -150,6 +166,7 @@ export function AfTodoTreePage({ projectId, projectName }: AfTodoTreePageProps):
               onCreateFeature={handleCreateFeature}
               onDiscussFeature={handleDiscussFeature}
               onRefineFeature={handleRefineFeature}
+              p0Progress={buildP0Progress(data.backlog)}
             />
           </div>
           {selectedDetail != null ? (

@@ -17,6 +17,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { toTodoTree } from '../api/domain';
 import { AfTodoTree } from '../components/af/AfTodoTree';
+import { buildP0Progress } from '../pages/project/AfTodoTreePage';
 import type { TodoTree } from '../models/domain';
 import { sampleTodoBacklog, sampleTodoFixture } from './fixtures';
 
@@ -231,6 +232,32 @@ describe('AfTodoTree (Todo Tree 组件)', () => {
     await user.selectOptions(screen.getByTestId('af-filter-time'), 'today');
     expect(screen.getByText(/P0任务/)).toBeInTheDocument(); // 今日
     expect(screen.queryByText(/P2任务/)).not.toBeInTheDocument(); // 08-20 非今日
+  });
+
+  it('P0 进度摘要 + 排序切换 (Founder 2026-08-27)', async () => {
+    const user = userEvent.setup();
+    const backlog = sampleTodoBacklog({
+      tasks: [
+        { ...sampleTodoBacklog().tasks![0], id: 'T-a', title: 'A', status: 'todo', priority: 'P1', description: '[X-1] x', updated_at: '2026-08-20T00:00:00Z' },
+        { ...sampleTodoBacklog().tasks![1], id: 'T-b', title: 'B', status: 'todo', priority: 'P0', description: '[X-2] x', updated_at: '2026-08-22T00:00:00Z' },
+        { ...sampleTodoBacklog().tasks![2], id: 'T-c', title: 'C', status: 'done', priority: 'P0', description: '[X-3] x', updated_at: '2026-08-23T00:00:00Z' },
+      ],
+      epics: [{ ...sampleTodoBacklog().epics![0], id: 'E1', children: ['F1'] }],
+      features: [{ ...sampleTodoBacklog().features![0], id: 'F1', children: ['S1'] }],
+      stories: [{ ...sampleTodoBacklog().stories![0], id: 'S1', children: ['T-a', 'T-b', 'T-c'] }],
+    });
+    const p0 = buildP0Progress(backlog);
+    expect(p0).toContain('X-3✅'); // done → ✅
+    expect(p0).toContain('剩 X-2'); // X-1 是 P1 不统计
+    render(<AfTodoTree tree={toTodoTree(backlog, '演示项目')} p0Progress={p0} />);
+    expect(screen.getByTestId('af-tree-p0-progress')).toHaveTextContent('X-3✅');
+    // 排序切换: 默认时间倒序 (T-b 08-22 最新可见) → 切优先级 (T-b P0 最前)
+    const storyChildren = () =>
+      [...document.querySelectorAll('[data-testid^="af-tree-node-T-"]')].map((n) => n.getAttribute('data-node-id'));
+    expect(storyChildren()[0]).toBe('T-b'); // 时间倒序: T-b 最新 (T-c done 隐藏)
+    await user.click(screen.getByTestId('af-sort-toggle'));
+    expect(storyChildren()[0]).toBe('T-b'); // 优先级: T-b P0 在前
+    expect(storyChildren()[1]).toBe('T-a'); // T-a P1 次之
   });
 
   it('全折叠/全展开: 工具栏按钮一键收起/展开全部', async () => {

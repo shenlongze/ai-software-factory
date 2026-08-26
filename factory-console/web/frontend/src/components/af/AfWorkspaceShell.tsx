@@ -16,6 +16,7 @@ import { useAsync } from '../../hooks/useAsync';
 import type { ParsedRoute } from '../../router';
 import { AfProjectCard } from './AfProjectCard';
 import { AfCompanyHome } from '../../pages/workspace/AfCompanyHome';
+import { AfMonitorPage } from '../../pages/workspace/AfMonitorPage';
 import { AfEmptyState, AfErrorState, AfLoadingState } from './AfState';
 import { AfModulePlaceholder } from './AfModulePlaceholder';
 import { AfHeader } from './AfHeader';
@@ -27,6 +28,7 @@ import './af.css';
 const WORKSPACE_PAGE_LABELS: Record<string, string> = {
   dashboard: '我的公司',
   projects: '项目',
+  monitor: '监控',
   settings: '设置',
   manage: '项目管理',
 };
@@ -71,6 +73,9 @@ function WorkspacePage({ route }: { route: ParsedRoute }): JSX.Element {
   }
   if (route.page === 'projects') {
     return <AfProjectListView />;
+  }
+  if (route.page === 'monitor') {
+    return <AfMonitorPage />;
   }
   if (route.page === 'manage') {
     return <AfProjectManage />;

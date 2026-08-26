@@ -429,6 +429,14 @@ export const api = {
     capabilities: Record<string, unknown>; allow_dangerous: boolean;
     found: boolean; path?: string | null; builtin: boolean;
   }>; count: number }>('/api/external-ai'),
+  externalAiMonitor: () =>
+    getJson<{ executors: Array<{
+      executor_id: string; total: number; success: number; failed: number;
+      success_rate: number; first_pass_rate: number; verify_pass_rate?: number | null;
+      verified: number; avg_duration_ms?: number | null; rework_total: number;
+      last_run_at?: string | null; last_result?: string | null; last_mode?: string | null;
+      last_host_agent?: string | null; last_result_id?: string | null;
+    }>; alerts: Array<{ severity: string; executor_id?: string; type: string; detail: string }> }>('/api/external-ai/monitor'),
   scanExternalAi: () =>
     sendJson<{ results: Array<{ id: string; name: string; found: boolean; ok: boolean; path?: string | null; version?: string | null; usage?: string; error?: string }>; count: number }>('/api/external-ai/scan', {}),
   saveExternalAi: (body: Record<string, unknown>) =>

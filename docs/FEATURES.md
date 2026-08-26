@@ -2,7 +2,7 @@
 
 > **单一事实来源** — 当前系统到底有哪些功能、每个功能是什么、怎么用（CLI / API / 会话命令）、什么状态、从哪个版本开始有。
 >
-> 版本: **v1.1.193** · 更新: 2026-08-27 · 依据: 实测命令 + 代码核对 + CHANGELOG
+> 版本: **v1.1.194** · 更新: 2026-08-27 · 依据: 实测命令 + 代码核对 + CHANGELOG
 
 ## 0. 文档定位（与其他文档的分工）
 
@@ -523,6 +523,7 @@ API（Web/集成）:   http://127.0.0.1:8011/api/...      e.g. GET /api/board
 
 | 版本 | 核心功能 | 里程碑 |
 |---|---|---|
+| v1.1.194 | M4 📊 监控页 (独立入口; 自身/外部两 Tab; EXS 指标+告警) | WebUI/后端 |
 | v1.1.193 | M3 委派+验证回路 (统一执行记录 EXS 扩展: executor/mode/host + verify/rework 回写) | 后端/CLI |
 | v1.1.192 | M2 宿主资产导入 (codex/claude agents + hermes skills → AI 员工/技能, 标签+命名空间+分组) | WebUI/后端/CLI |
 | v1.1.191 | M1 外部执行器通用适配层 (声明式 yaml: schema/registry/executor + CLI/API/WebUI) | WebUI/后端/CLI |

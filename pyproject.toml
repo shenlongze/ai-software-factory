@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai-software-factory"
-version = "1.1.193"
+version = "1.1.194"
 description = "AI Software Factory — An AI Workforce Operating System (build, manage and govern AI workers)"
 readme = "README.md"
 requires-python = ">=3.12"

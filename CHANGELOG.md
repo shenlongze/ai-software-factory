@@ -3,7 +3,21 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.194] — 2026-08-27
+
+**M4 📊 监控页 — 独立入口, 分自身/外部两 Tab (设计文档 §8)**。
+
+### Added
+
+- 工作台导航新增「📊 监控」独立页 (#/workspace/monitor, 不进设置)
+- Tab 1 自身能力: AI 员工(内部/外部带源) / 技能 / 执行中任务 / 系统监控 概览卡
+- Tab 2 外部能力: 外部执行器指标表 (次数/成功率/首次通过/验证通过/平均耗时/回修)
+  + 告警 (连续失败≥3 / 验证回修 / probe 不可用 / 无记录 unknown)
+- 后端: GET /api/external-ai/monitor (EXS 聚合: metrics.py 效率/效果/完成率/回修/验证)
+- 测试: 后端 metrics 3 用例 + 前端监控页 2 用例
+
 ## [v1.1.193] — 2026-08-27
+
 
 **M3 委派 + 验证回路 (统一执行记录 EXS 扩展 + verify/rework 回写)**。
 

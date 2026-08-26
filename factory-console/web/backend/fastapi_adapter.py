@@ -1844,6 +1844,18 @@ def build_app(
         result["adapter"] = adapter_id
         return result
 
+    # ============ M4 (v1.1.194): 外部执行器监控聚合 (EXS 指标 + 告警)
+    @app.get("/api/external-ai/monitor")
+    def api_external_ai_monitor() -> dict[str, Any]:
+        """外部执行器监控: 每执行器指标 (效率/效果/完成率/回修/验证) + 告警。"""
+        registry = _external_registry()
+        adapters = registry.list() if registry is not None else []
+        try:
+            _metrics = _console_import("external_executor.metrics")
+            return _metrics.build_monitor(workspace_root or DEFAULT_ROOT, adapters)
+        except Exception as exc:  # noqa: BLE001 — 聚合失败 → 诚实空
+            return {"executors": [], "alerts": [{"severity": "high", "type": "aggregation_failed", "detail": str(exc)}]}
+
     @app.get("/api/agents")
     def api_agents_list():
         """Agent 清单 (只读 agents.json)。"""

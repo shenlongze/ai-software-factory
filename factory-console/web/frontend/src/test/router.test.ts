@@ -11,17 +11,19 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_ROUTE, PROJECT_ROUTES, WORKSPACE_ROUTES, parseHash } from '../router';
 
 describe('S10-014 路由常量表 (§2.3)', () => {
-  it('Workspace 级 4 条路由 (方案 A: 我的公司/项目/设置 + 管理)', () => {
-    expect(WORKSPACE_ROUTES).toHaveLength(4);
+  it('Workspace 级 5 条路由 (方案 A: 我的公司/项目/监控/设置 + 管理)', () => {
+    expect(WORKSPACE_ROUTES).toHaveLength(5);
     expect(WORKSPACE_ROUTES.map((r) => r.path)).toEqual([
       '#/workspace',
       '#/workspace/projects',
+      '#/workspace/monitor',
       '#/workspace/settings',
       '#/workspace/manage',
     ]);
     expect(WORKSPACE_ROUTES.map((r) => r.page)).toEqual([
       'dashboard',
       'projects',
+      'monitor',
       'settings',
       'manage',
     ]);

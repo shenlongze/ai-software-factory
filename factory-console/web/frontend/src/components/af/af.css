@@ -1726,6 +1726,59 @@
   margin-top: 4px;
 }
 
+/* M4 (v1.1.194): 📊 监控页 (自身/外部) */
+.af-monitor {
+  max-width: 1200px;
+}
+
+.af-monitor-actions {
+  margin: 8px 0 12px;
+}
+
+.af-monitor-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.af-monitor-card {
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
+  border-radius: 10px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--c-text2);
+}
+
+.af-monitor-card-num {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--c-text);
+}
+
+.af-monitor-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin-bottom: 16px;
+}
+
+.af-monitor-table th,
+.af-monitor-table td {
+  text-align: left;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--c-border);
+}
+
+.af-monitor-table th {
+  color: var(--c-text2);
+  font-weight: 600;
+}
+
 /* T-9 (v1.1.185): 执行溯源 — exec_ref → 记录/证据包 */
 .af-task-detail-exec {
   margin-top: 4px;

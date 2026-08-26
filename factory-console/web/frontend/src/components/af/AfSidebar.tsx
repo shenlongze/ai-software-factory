@@ -27,6 +27,7 @@ export const PERSONAL_COMPANY = {
 export const WORKSPACE_NAV_ITEMS: readonly { page: string; label: string; icon: string }[] = [
   { page: 'dashboard', label: '我的公司', icon: '🏢' },
   { page: 'projects', label: '项目', icon: '▦' },
+  { page: 'monitor', label: '监控', icon: '📊' },
   { page: 'settings', label: '设置', icon: '⚙' },
 ];
 

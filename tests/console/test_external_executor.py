@@ -163,6 +163,7 @@ class TestExecutor:
         a = _minimal_adapter(discovery=["PATH"])
         r = _exec.run(a, "hi", project_dir="/tmp/p")
         assert r["exit_code"] == 0 and r["output"] == "done\n"
+        assert captured["cmd"][0] == "/usr/bin/fake"  # 二进制路径必须在前 (防 -p 被当可执行)
         assert captured["cwd"] == "/tmp/p"
 
 

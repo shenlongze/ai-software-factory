@@ -134,7 +134,8 @@ def run(
     path = discover_binary(adapter)
     if not path:
         return {"exit_code": -1, "output": "", "error": f"未找到二进制: {adapter.binary}", "command": ""}
-    cmd = build_invocation(adapter, prompt, project_dir, agent=agent, skills=skills)
+    # 命令 = [二进制路径, *模板渲染] (模板不含路径 — 防 -p 被当可执行文件)
+    cmd = [path, *build_invocation(adapter, prompt, project_dir, agent=agent, skills=skills)]
     mode = str(adapter.invocation.project_dir or "cwd")
     use_cwd = mode == "cwd" and project_dir
     cwd = str(project_dir or "").strip() if use_cwd else None

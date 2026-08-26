@@ -2814,7 +2814,7 @@ class FactoryCLI:
             host_agent=agent_name,
             prompt=prompt,
             project_dir=str(getattr(args, "project", "") or ""),
-            exit_code=int(result.get("exit_code") or -1),
+            exit_code=int(result.get("exit_code")) if result.get("exit_code") is not None else -1,
             output=str(result.get("output") or ""),
             error=str(result.get("error") or ""),
             command=str(result.get("command") or ""),

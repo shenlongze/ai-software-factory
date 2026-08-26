@@ -92,7 +92,9 @@ Permission Boundary (S9-002 收窄 + S10-004/006/006.5/016-002 扩展): 写路�
 from __future__ import annotations
 
 import importlib
+import json
 import os
+import re
 
 def _console_import(name: str):
     """S10-074: 部署态包名 factory_console; 源码态兼容连字符目录。
@@ -791,6 +793,39 @@ def _safe_ping(src: Any) -> bool:
         return bool(src.ping()) if hasattr(src, "ping") else False
     except Exception:  # noqa: BLE001 — 失败安全
         return False
+
+
+def _task_to(service: Any, project_id: str, task_id: str, target: str) -> dict[str, Any] | None:
+    """任务逐步状态机推进 (S-1: 会话操作任务 — todo→done 多步, 每步审计)。"""
+    try:
+        from org.management import TASK_TRANSITIONS
+    except Exception:  # noqa: BLE001 — org 缺失
+        return None
+    task = service.get_task(project_id, task_id)
+    if task is None:
+        return None
+    path = service._status_path(TASK_TRANSITIONS, task["status"], target)
+    if not path:
+        return None
+    for status in path:
+        try:
+            service.update_task(project_id, task_id, status=status)
+        except Exception:  # noqa: BLE001 — 状态机拒绝 → 停止
+            break
+    return service.get_task(project_id, task_id)
+
+
+def _resolve_tgt(projects: list[Any], hint_project: Any, session: dict[str, Any]) -> Any | None:
+    """定位目标项目 (LLM 项目名 → 会话项目; 失败 → None)。"""
+    if hint_project:
+        for pp in projects:
+            if hint_project in str(getattr(pp, "name", "") or ""):
+                return pp
+    if session.get("project_id"):
+        for pp in projects:
+            if pp.id == session.get("project_id"):
+                return pp
+    return None
 
 
 def _feature_facts(service: Any, project_id: str, feature: dict[str, Any]) -> str:
@@ -3237,6 +3272,134 @@ def build_app(
                     "data_source": "live",
                     "target": action_target,
                     "action": "pushed" if tgt is not None and result.get("ok") else "failed",
+                }
+                return result
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        # ---- S 系列: 会话×软件打通 (Founder 2026-08-26 全部断点, 不糊弄) ----
+        if intent.get("intent") in (
+            "task_action", "create_idea", "project_action",
+            "project_artifacts", "monitor", "settings",
+        ):
+            tgt = _resolve_tgt(projects, hint_project, session)
+            action = intent.get("intent")
+            if tgt is None:
+                facts = "未定位到目标项目 — 请说项目名。"
+                action_target = {"url": "#/workspace/projects", "label": "查看项目列表"}
+            else:
+                pid = str(tgt.id)
+                if action == "task_action":
+                    task_desc = str(intent.get("task") or body.message).strip()
+                    tasks = (service.list_backlog(pid) or {}).get("tasks", [])
+                    match = next((t for t in tasks if task_desc and task_desc != body.message and
+                                  task_desc in str(t.get("title") or "")), None)
+                    if match is None:
+                        # 从消息去掉动作词后匹配
+                        import re as _re
+                        q = _re.sub(r"把|标记|为|完成|开始|归档|优先级|改成|任务", "", body.message).strip()
+                        match = next((t for t in tasks if q and q in str(t.get("title") or "")), None)
+                    if match is None:
+                        cand = "、".join(str(t.get("title") or "")[:20] for t in tasks[:5])
+                        facts = f"未找到匹配任务 — 当前项目任务示例: {cand or '暂无'}"
+                        action_target = {"url": f"#/project/{pid}/todo", "label": "查看任务"}
+                    else:
+                        tid = str(match["id"])
+                        lowered = body.message.lower()
+                        if "优先级" in lowered or re.search(r"改成\s*p[0-3]", lowered):
+                            m = re.search(r"(?:改成|优先级)\s*p([0-3])", lowered)
+                            prio = f"P{m.group(1)}" if m else "P0"
+                            updated = service.update_task(pid, tid, priority=prio)
+                            facts = f"✅ 任务「{match['title']}」优先级 → {updated['priority']}"
+                        elif "完成" in lowered or "归档" in lowered:
+                            updated = _task_to(service, pid, tid, "done")
+                            facts = f"✅ 任务「{match['title']}」已标记完成/归档 (状态 {updated['status']})"
+                        else:  # 开始
+                            updated = _task_to(service, pid, tid, "in_progress")
+                            facts = f"▶ 任务「{match['title']}」已开始 (状态 {updated['status']})"
+                        action_target = {"url": f"#/project/{pid}/todo", "label": "查看任务"}
+                elif action == "create_idea":
+                    idea = str(intent.get("task") or body.message).replace("记录个想法", "").replace("记个想法", "").strip()
+                    if not idea:
+                        idea = "未命名想法"
+                    backlog = service.list_backlog(pid) or {}
+                    epic_id = (backlog.get("epics") or [{}])[0].get("id", "")
+                    created = service.create_feature(pid, name=idea[:30], maturity="idea", epic_id=epic_id)
+                    facts = f"💡 想法已记录: 「{created['name']}」→ 任务树可见, 可点「讨论」细化"
+                    action_target = {"url": f"#/project/{pid}/todo", "label": "查看任务"}
+                elif action == "project_action":
+                    lowered = body.message.lower()
+                    if "收藏" in lowered:
+                        star = not any("取消" in lowered for _ in [1])
+                        service.update_project(pid, starred=star)
+                        facts = f"{'⭐ 已收藏' if star else '☆ 已取消收藏'} {tgt.name}"
+                    elif "删除" in lowered:
+                        try:
+                            service.delete_project(pid)
+                            facts = f"🗑 项目「{tgt.name}」已删除"
+                        except Exception as exc:  # noqa: BLE001
+                            facts = f"删除失败: {exc}"
+                    else:  # 改名
+                        new_name = body.message.replace("改名", "").replace("重命名", "").replace("把", "").strip()
+                        if new_name:
+                            service.update_project(pid, name=new_name)
+                            facts = f"✏️ 项目已改名: {tgt.name} → {new_name}"
+                        else:
+                            facts = "改名需提供新名称（如: 把 旅行记账 改名为 XX）"
+                    action_target = {"url": "#/workspace", "label": "返回工作台"}
+                elif action == "project_artifacts":
+                    arts = service.list_artifacts(project_id=pid)
+                    if arts:
+                        lines = [f"项目: {tgt.name}\n产出物 ({len(arts)}):"]
+                        for a in arts[:10]:
+                            lines.append(f"- {a.label} ({a.file}) v{a.version}{'· trace ' + a.trace_id if a.trace_id else ''}")
+                        facts = "\n".join(lines)
+                    else:
+                        facts = f"项目: {tgt.name}\n产出物: 暂无（引擎产出后自动登记）"
+                    action_target = {"url": f"#/project/{pid}/docs", "label": "查看产出物"}
+                elif action == "monitor":
+                    try:
+                        _mon = _console_import("monitor")
+                        sys_mon = _mon.collect_system(workspace_root or DEFAULT_ROOT, _factory_version, model_line=model_line)
+                        alerts = _mon.check_alerts(sys_mon, [])
+                        facts = (
+                            f"系统监控: AI Factory v{sys_mon['version']} · "
+                            f"前端 ({sys_mon['frontend']['port']}): {'运行中' if sys_mon['frontend']['up'] else '未运行'} · "
+                            f"后端 ({sys_mon['backend']['port']}): {'运行中' if sys_mon['backend']['up'] else '未运行'} · "
+                            f"数据目录 {sys_mon['data_dir']}"
+                        )
+                        if alerts:
+                            facts += "\n⚠️ 告警: " + "；".join(a["message"] for a in alerts)
+                        else:
+                            facts += "\n✅ 无告警"
+                    except Exception as exc:  # noqa: BLE001
+                        facts = f"监控查询失败: {exc}"
+                    action_target = {"url": "#/workspace", "label": "返回工作台"}
+                elif action == "settings":
+                    lines = ["设置概况:"]
+                    try:
+                        provs = service.list_providers()
+                        lines.append(f"- LLM Provider ({len(provs)}): " + "、".join(p.provider_id for p in provs))
+                    except Exception:  # noqa: BLE001
+                        pass
+                    try:
+                        ag_file = Path(workspace_root) / "agents" / "agents.json"
+                        ag = json.loads(ag_file.read_text(encoding="utf-8")) if ag_file.is_file() else {}
+                        agents = (ag.get("agents") or {}) if isinstance(ag, dict) else {}
+                        if isinstance(agents, dict):
+                            lines.append(f"- Agents ({len(agents)}): " + "、".join(str(a.get("name") or k) for k, a in agents.items()))
+                    except Exception:  # noqa: BLE001
+                        pass
+                    facts = "\n".join(lines)
+                    action_target = {"url": "#/workspace/settings", "label": "打开设置"}
+            try:
+                result = _sessions_mod.send_message(
+                    sessions_store, session_id, body.message, facts=facts,
+                    reply_extra=_qmod.STANDARD_OUTPUT_PROMPT,
+                )
+                result["meta"] = {
+                    "intent": action, "project": getattr(tgt, "name", None) if tgt is not None else None,
+                    "data_source": "live", "target": action_target,
                 }
                 return result
             except ValueError as exc:

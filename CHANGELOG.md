@@ -3,6 +3,23 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.163] — 2026-08-26
+
+**S 会话×软件打通 全部 6 断点修复 (Founder: 不能只修测到的那一个, 不能糊弄)**。
+
+### Added
+
+- S-1 会话任务操作: 标记完成/开始/改优先级/归档 (逐步状态机 PATCH, 每步审计)
+- S-2 会话建想法: "记录个想法 XX" → 建 idea feature
+- S-3 会话产出物: 产出物/版本链清单
+- S-4 会话监控: 系统监控 (端口/版本/告警)
+- S-5 会话设置: 设置概况 (providers/agents)
+- S-6 会话项目操作: 收藏/改名/删除 (+ 之前 git 推送)
+
+### 验证
+
+- 后端 6499 passed (新增 S 桥 7) · 真实副作用: 任务→done / priority→P0 / idea feature / starred
+
 ## [v1.1.162] — 2026-08-26
 
 **会话仓库能力: 查 git remote + 真实推送 (Founder: 会话答'没配置远程仓库'是错的)**。

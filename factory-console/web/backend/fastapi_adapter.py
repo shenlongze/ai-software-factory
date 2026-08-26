@@ -244,6 +244,7 @@ class _SessionBody(BaseModel):
     project_id: str | None = None
     title: str | None = None
     feature_id: str | None = None
+    task_id: str | None = None
 
 
 class _SessionPatchBody(BaseModel):
@@ -252,6 +253,7 @@ class _SessionPatchBody(BaseModel):
     title: str | None = None
     status: str | None = None
     feature_id: str | None = None
+    task_id: str | None = None
 
 
 class _LlmConfigBody(BaseModel):
@@ -3088,6 +3090,7 @@ def build_app(
                 project_id=body.project_id,
                 title=body.title,
                 feature_id=body.feature_id,
+                task_id=body.task_id,
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -3101,6 +3104,7 @@ def build_app(
                 title=body.title,
                 status=body.status,
                 feature_id=body.feature_id,
+                task_id=body.task_id,
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -3310,6 +3314,59 @@ def build_app(
                     "data_source": "live",
                     "target": action_target,
                     "action": "pushed" if tgt is not None and result.get("ok") else "failed",
+                }
+                return result
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        # ---- T-1: 会话任务连续 — 定位任务并锚定 (跨会话继续) ----
+        if intent.get("intent") == "task_continue":
+            tgt = _resolve_tgt(projects, hint_project, session)
+            if tgt is None:
+                facts = "未定位到目标项目 — 请说项目名（如: 继续做 语音记账）。"
+                action_target = {"url": "#/workspace/projects", "label": "查看项目列表"}
+            else:
+                pid = str(tgt.id)
+                import re as _re
+
+                task_desc = str(intent.get("task") or "").strip()
+                if not task_desc:
+                    task_desc = _re.sub(r"继续做|接着做|继续任务|继续开发|继续之前|继续推进|继续这个|接着推进", "", body.message).strip()
+                tasks = (service.list_backlog(pid) or {}).get("tasks", [])
+                match = next((t for t in tasks if task_desc and task_desc in str(t.get("title") or "")), None)
+                if match is None:
+                    cand = "、".join(str(t.get("title") or "")[:20] for t in tasks[:6])
+                    facts = f"未找到匹配任务 — 当前项目任务示例: {cand or '暂无'}"
+                    action_target = {"url": f"#/project/{pid}/todo", "label": "查看任务"}
+                else:
+                    # 锚定任务 (会话级作用域 task_id)
+                    try:
+                        sessions_store.update_session(session_id, task_id=match["id"])
+                    except Exception:  # noqa: BLE001 — 锚定失败不阻断
+                        pass
+                    detail = service.get_task(pid, match["id"]) or {}
+                    status = str(detail.get("status") or "todo")
+                    hist = detail.get("history") or []
+                    last = hist[-1] if hist else None
+                    last_line = f"最近: {last.get('time','')[:16]} {last.get('actor','')} {last.get('action','')}" if last else "尚无历史"
+                    facts = (
+                        f"已锚定任务「{match['title']}」 (id: {match['id']}, 项目: {tgt.name})\n"
+                        f"状态: {status} · 优先级: {detail.get('priority') or '—'}"
+                        f" · exec绑定: {detail.get('exec_ref') or '无'}\n"
+                        f"{last_line}\n"
+                        f"下一步: 说『继续推进』我会接着做；或『标记完成/改成 P0』操作任务。"
+                    )
+                    action_target = {"url": f"#/project/{pid}/todo", "label": "查看任务"}
+            try:
+                result = _sessions_mod.send_message(
+                    sessions_store, session_id, body.message, facts=facts,
+                    reply_extra=_qmod.STANDARD_OUTPUT_PROMPT,
+                )
+                result["meta"] = {
+                    "intent": "task_continue",
+                    "project": getattr(tgt, "name", None) if tgt is not None else None,
+                    "data_source": "live",
+                    "target": action_target,
                 }
                 return result
             except ValueError as exc:

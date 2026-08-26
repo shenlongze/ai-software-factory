@@ -190,6 +190,7 @@ class SessionStore:
         project_id: str | None = None,
         title: str | None = None,
         feature_id: str | None = None,
+        task_id: str | None = None,
     ) -> dict[str, Any]:
         if scope not in VALID_SCOPES:
             raise ValueError(f"非法作用域: {scope} (company|project)")
@@ -202,6 +203,7 @@ class SessionStore:
             "scope": scope,
             "project_id": project_id if scope == "project" else None,
             "feature_id": feature_id if scope == "project" else None,
+            "task_id": task_id if scope == "project" else None,
             "title": (title or "").strip() or "新会话",
             "status": "active",
             "created_at": now,
@@ -231,6 +233,7 @@ class SessionStore:
         status: str | None = None,
         summary: str | None = None,
         feature_id: str | None = None,
+        task_id: str | None = None,
     ) -> dict[str, Any] | None:
         with self._lock:
             s = self._data["sessions"].get(session_id)
@@ -246,6 +249,8 @@ class SessionStore:
                 s["summary"] = summary
             if feature_id is not None:
                 s["feature_id"] = feature_id or None
+            if task_id is not None:
+                s["task_id"] = task_id or None
             s["updated_at"] = _now_iso()
             self._save()
             return dict(s)

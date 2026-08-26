@@ -3,6 +3,17 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.171] — 2026-08-27
+
+**T-1 会话任务连续: 定位任务并锚定 (跨会话继续)**。
+
+### Added
+
+- 会话 task_id 锚定 (console_sessions + API): 会话可记住"正在做的任务"
+- task_continue 意图: "继续做 XX" → 定位任务 (标题匹配) → 会话锚定 task_id
+  → 注入任务状态/最近历史/exec绑定/下一步
+- 下一步 (T-2): 锚定后 prompt 持续注入任务上下文
+
 ## [v1.1.170] — 2026-08-27
 
 **U-5 三端工具页统一 (Founder: 工具要和 CLI/WebUI 连接, 三端同源)**。

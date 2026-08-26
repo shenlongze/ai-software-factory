@@ -132,6 +132,22 @@ class TestSessionWebuiBridge:
         assert r.status_code == 200, r.text
         assert r.json()["meta"]["intent"] == "monitor"
 
+    def test_task_continue_anchor(self, app, monkeypatch):
+        """T-1: 说'继续做 XX' → 定位任务 + 会话锚定 task_id + 任务详情。"""
+        c = app["client"]
+        svc = app["service"]
+        proj = app["proj"]
+        task = app["task"]
+        _patch_intent(monkeypatch, "task_continue", project=proj.name, task="语音记账")
+        r = c.post("/api/sessions", json={"scope": "project", "project_id": proj.id})
+        sid = r.json()["id"]
+        r = c.post(f"/api/sessions/{sid}/messages", json={"message": "继续做 语音记账"})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["meta"]["intent"] == "task_continue"
+        # 会话已锚定 task_id (T-1 核心副作用: 跨会话继续的任务锚点)
+        assert body["session"]["task_id"] == task["id"]
+
     def test_settings(self, app, monkeypatch):
         c = app["client"]
         proj = app["proj"]

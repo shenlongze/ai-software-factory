@@ -22,6 +22,7 @@ from typing import Any
 #: 确定性意图关键词 (顺序即优先级)
 _INTENT_RULES: list[tuple[str, tuple[str, ...]]] = [
     ("tools_list", ("有哪些工具", "工具清单", "工具有什么", "内置工具", "能调用哪些工具")),
+    ("task_continue", ("继续做", "接着做", "继续任务", "继续开发", "继续之前", "继续推进", "继续这个", "接着推进")),
     ("deep_analyze", ("详细分析", "深度分析", "分析一下", "全面分析", "分析过程", "深度看", "详细看", "分析下")),
     ("create_project", ("做一个", "创建一个", "开发一个", "帮我做个", "帮我做", "新建一个项目", "做个app", "做个 App", "做个app")),
     ("create_task", ("完善", "优化", "改进", "修复", "修一下", "加个", "增加", "做一下",
@@ -483,7 +484,7 @@ def build_facts(
 #: 合法意图集合 (校验 LLM 输出)
 VALID_INTENTS = {"list_projects", "project_status", "project_scan", "project_quality", "project_tasks",
                  "project_docs", "project_doc", "doc_search",
-                 "deep_analyze", "task_action", "create_idea", "project_artifacts", "monitor", "settings", "project_action", "tools_list",
+                 "deep_analyze", "task_action", "create_idea", "project_artifacts", "monitor", "settings", "project_action", "tools_list", "task_continue",
                  "model", "system_status", "create_project", "create_task", "git_push", "chat"}
 
 _INTENT_LLM_PROMPT = """把用户的提问转成标准查询意图 (只输出 JSON, 不要别的):
@@ -496,6 +497,7 @@ _INTENT_LLM_PROMPT = """把用户的提问转成标准查询意图 (只输出 JS
 - 扫描/全面看/盘点项目整体 (进度+计划+风险+建议) → project_scan
 - 详细分析/深度分析 (多工具+可溯源) → deep_analyze
 - 查有哪些内置工具 → tools_list
+- 继续做/接着做某个任务 → task_continue (task=任务描述)
 - 问质量/评分 → project_quality
 - 问任务/todo → project_tasks
 - 问文档清单/有哪些文档 → project_docs

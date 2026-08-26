@@ -127,6 +127,15 @@ PLAN: dict[str, dict[str, list[tuple[str, str]]]] = {
             ("L-7", "领域知识库"),
         ],
     },
+    "T 任务连续性 (P0)": {
+        "连续性保障 (Founder 2026-08-26 P0)": [
+            ("T-1", "会话『继续』意图: 跨会话继续任务/恢复执行 (触发词 + orchestrator.resume 接线)", "P0"),
+            ("T-2", "跨会话任务定位: 会话说『继续做 XX』→ 定位任务 + 展示状态/下一步/历史", "P0"),
+            ("T-3", "任务中断恢复验证 (D-2): 执行中断 checkpoint 恢复实测", "P0"),
+            ("T-4", "双轨对齐: 版本/战役成果回填任务树 (完成勾选), 计划与执行一致", "P0"),
+            ("T-5", "任务连续性端到端: 想法→待办→执行→完成→下次会话继续, 全链路实测", "P0"),
+        ],
+    },
     "S 会话×软件打通": {
         "断点修复 (Founder 2026-08-26 盘点)": [
             ("S-1", "会话任务操作: 开始/完成/改优先级/归档 (意图接线 PATCH, 后端已就绪)"),
@@ -172,10 +181,14 @@ def main() -> int:
                 created += 1
             backlog = svc.list_backlog(PROJECT) or {}
             task_titles = {t.get("title") for t in backlog.get("tasks", [])}
-            for tid, title in tasks:
+            for item in tasks:
+                if len(item) >= 3:
+                    tid, title, priority = item[0], item[1], item[2]
+                else:
+                    tid, title, priority = item[0], item[1], "P2"
                 if title in task_titles:
                     continue
-                svc.create_task(PROJECT, title=title, description=f"[{tid}] 待办清单未实现项", priority="P2", story_id=story["id"])
+                svc.create_task(PROJECT, title=title, description=f"[{tid}] 待办清单未实现项", priority=priority, story_id=story["id"])
                 created += 1
     print(f"✅ 计划树导入完成: 新增 {created} 节点 (史诗/模块/故事/任务) 于 {PROJECT}")
     backlog = svc.list_backlog(PROJECT) or {}

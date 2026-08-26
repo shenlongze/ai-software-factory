@@ -13,13 +13,6 @@ import { useI18n } from '../../i18n';
 import { renderMarkdown } from './markdown';
 import type { SessionSummary } from '../../models/types';
 
-function estimateTokens(text: string): number {
-  // 粗略估算: 中文约 1 字/token, 英文约 4 字符/token (展示用, 非计费)
-  const cjk = (text.match(/[\u4e00-\u9fff]/g) ?? []).length;
-  const other = text.length - cjk;
-  return Math.ceil(cjk + other / 4);
-}
-
 function fmtTime(iso: string | null | undefined): string {
   if (!iso) return '';
   return iso.slice(5, 16).replace('T', ' ');
@@ -38,6 +31,7 @@ export function AfConversationPanel({ projectId, projectName }: AfConversationPa
   const [input, setInput] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
+  const [showArchived, setShowArchived] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
 
   // 项目级作用域同步当前项目
@@ -86,7 +80,55 @@ export function AfConversationPanel({ projectId, projectName }: AfConversationPa
       ? `项目 · ${projectName ?? ctx.projectId ?? '—'}`
       : '公司 · 全局';
 
-  const totalTokens = ctx.messages.reduce((acc, m) => acc + estimateTokens(m.content), 0);
+
+  const renderSessionRow = (s: SessionSummary) => (
+    <div
+      key={s.id}
+      className={`af-chat-session${s.id === ctx.activeId ? ' af-chat-session--active' : ''}${
+        s.status === 'archived' ? ' af-chat-session--archived' : ''
+      }`}
+      data-testid={`af-session-${s.id}`}
+    >
+      {editingId === s.id ? (
+        <input
+          className="af-chat-rename"
+          aria-label="会话标题"
+          value={editText}
+          onChange={(e) => setEditText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') saveRename(s.id);
+            if (e.key === 'Escape') setEditingId(null);
+          }}
+          autoFocus
+        />
+      ) : (
+        <button
+          type="button"
+          className="af-chat-session-title"
+          onClick={() => ctx.selectSession(s.id)}
+          title={s.title}
+        >
+          {s.status === 'archived' ? '🗄 ' : '● '}
+          {s.title}
+        </button>
+      )}
+      {editingId !== s.id ? (
+        <span className="af-chat-session-ops">
+          <button type="button" className="af-chat-op" onClick={() => startRename(s)} aria-label="改名">
+            ✎
+          </button>
+          <button
+            type="button"
+            className="af-chat-op"
+            onClick={() => ctx.archiveSession(s.id)}
+            aria-label="归档"
+          >
+            🗄
+          </button>
+        </span>
+      ) : null}
+    </div>
+  );
 
   return (
     <aside
@@ -133,69 +175,30 @@ export function AfConversationPanel({ projectId, projectName }: AfConversationPa
             {ctx.scope === 'project' && !ctx.projectId ? '—' : t('chat.noSessions')}
           </p>
         ) : (
-          ctx.sessions.map((s) => (
-            <div
-              key={s.id}
-              className={`af-chat-session${s.id === ctx.activeId ? ' af-chat-session--active' : ''}${
-                s.status === 'archived' ? ' af-chat-session--archived' : ''
-              }`}
-              data-testid={`af-session-${s.id}`}
-            >
-              {editingId === s.id ? (
-                <input
-                  className="af-chat-rename"
-                  aria-label="会话标题"
-                  value={editText}
-                  onChange={(e) => setEditText(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') saveRename(s.id);
-                    if (e.key === 'Escape') setEditingId(null);
-                  }}
-                  autoFocus
-                />
-              ) : (
-                <button
-                  type="button"
-                  className="af-chat-session-title"
-                  onClick={() => ctx.selectSession(s.id)}
-                  title={s.title}
-                >
-                  {s.status === 'archived' ? '🗄 ' : '● '}
-                  {s.title}
-                </button>
-              )}
-              {editingId !== s.id ? (
-                <span className="af-chat-session-ops">
-                  <button type="button" className="af-chat-op" onClick={() => startRename(s)} aria-label="改名">
-                    ✎
+          <>
+            {ctx.sessions.filter((x) => x.status !== 'archived').map((s) => renderSessionRow(s))}
+            {(() => {
+              const archived = ctx.sessions.filter((x) => x.status === 'archived');
+              if (archived.length === 0) return null;
+              return (
+                <div className="af-chat-archived" data-testid="af-chat-archived">
+                  <button type="button" className="af-chat-archived-toggle" onClick={() => setShowArchived((v) => !v)}>
+                    {showArchived ? '▾' : '▸'} 🗄 已归档 {archived.length}
                   </button>
-                  <button
-                    type="button"
-                    className="af-chat-op"
-                    onClick={() => ctx.archiveSession(s.id)}
-                    aria-label="归档"
-                  >
-                    🗄
-                  </button>
-                </span>
-              ) : null}
-            </div>
-          ))
+                  {showArchived ? archived.map(renderSessionRow) : null}
+                </div>
+              );
+            })()}
+          </>
         )}
       </div>
 
       <div className="af-chat-ctx" data-testid="af-chat-ctx">
         <span>{scopeLabel}</span>
         <span>消息 {ctx.messages.length}</span>
-        <span>≈{totalTokens} tokens</span>
-        <button
-          type="button"
-          className="af-chat-compress"
-          title="上下文压缩 (K-7f 规划中 — 摘要落盘/预算触发)"
-          disabled
-        >
-          压缩 (K-7f)
-        </button>
+        <span className="af-chat-compress" title="上下文压缩 (K-7f 规划中)" data-testid="af-chat-compress">
+          压缩 K-7f
+        </span>
       </div>
 
       <div className="af-chat-messages" ref={listRef} data-testid="af-chat-messages">

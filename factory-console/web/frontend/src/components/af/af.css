@@ -4131,3 +4131,43 @@ body[data-bg='1'] .af-shell {
 .af-chat-jump:hover {
   border-color: var(--af-primary);
 }
+
+/* 会话栏紧凑化 (Founder: 占屏幕) */
+.af-chat-sessions {
+  max-height: 132px; /* 收紧: 会话列表只留一小块, 对话内容占大头 */
+}
+
+.af-chat-session-ops {
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.af-chat-session:hover .af-chat-session-ops,
+.af-chat-session--active .af-chat-session-ops {
+  opacity: 1;
+}
+
+.af-chat-archived {
+  margin-top: 2px;
+}
+
+.af-chat-archived-toggle {
+  font: inherit;
+  font-size: 11px;
+  color: var(--c-text2);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+  width: 100%;
+  text-align: left;
+}
+
+.af-chat-archived-toggle:hover {
+  color: var(--c-text);
+}
+
+.af-chat-ctx {
+  padding: 4px 8px; /* 更矮 */
+  font-size: 10px;
+}

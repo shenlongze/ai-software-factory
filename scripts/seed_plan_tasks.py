@@ -45,6 +45,8 @@ PLAN: dict[str, dict[str, list[tuple[str, str]]]] = {
             ("W-2", "PRD/发现/Backlog 占位页做实（读 PRD.md/discovery 对话/tasks, 后端资产已有）"),
             ("W-3", "项目首页 Todo 编辑/归档/审计溯源（敏捷管理完整闭环）"),
             ("W-4", "文档页增强: 搜索/下载/HTML 渲染"),
+            ("W-4b", "Markdown 渲染增强: 任务列表/脚注/嵌套列表/复杂语法 (v1.1.147 手写渲染器待补)"),
+            ("W-4c", "文档语义检索增强: embedding/向量检索 提升中文召回 (当前词频, 口语化查询会漏)"),
             ("W-5", "设置增强: LLM Provider 删除 / Agent 详情页"),
         ],
         "体验与国际化": [

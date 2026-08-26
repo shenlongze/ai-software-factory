@@ -134,6 +134,7 @@ PLAN: dict[str, dict[str, list[tuple[str, str]]]] = {
             ("U-3", "MCP 真实连接: Mock→真实 transport (SSE/stdio), 连接真实外部 MCP server, 工具真实执行", "P0"),
             ("U-4", "外部 skill 真实加载执行: 外部 skill 在 agent 执行时真实注入指令", "P0"),
             ("U-5", "三端工具页统一: CLI(factory tools) / WebUI(设置→工具) / 会话 同源发现/调用/审计", "P0"),
+            ("U-6", "本机 AI 工具发现与调度: 扫描 codex/claude/hermes 安装 → 自动注册为 agent → exec 可委派真实执行", "P0"),
         ],
     },
     "T 会话任务连续 (P0)": {

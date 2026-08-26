@@ -48,6 +48,7 @@ export const MESSAGES: Record<Locale, Record<string, string>> = {
     'nav.project.workflow': '执行',
     'nav.project.runtime': '运行时',
     'nav.project.quality': '质量',
+    'nav.project.ops': '运维',
     // 顶栏/状态栏
     'header.backWorkspace': '← 返回工作台',
     'header.console': '进入 Human Console',
@@ -124,6 +125,7 @@ export const MESSAGES: Record<Locale, Record<string, string>> = {
     'nav.project.workflow': 'Execute',
     'nav.project.runtime': 'Runtime',
     'nav.project.quality': 'Quality',
+    'nav.project.ops': 'Ops',
     'header.backWorkspace': '← Back to Workspace',
     'header.console': 'Human Console',
     'header.llm': 'LLM',

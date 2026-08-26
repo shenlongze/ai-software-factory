@@ -28,6 +28,7 @@ import { AfWorkflowPage } from '../../pages/project/AfWorkflowPage';
 import { AfRuntimePage } from '../../pages/project/AfRuntimePage';
 import { AfQualityGatePage } from '../../pages/project/AfQualityGatePage';
 import { AfProjectDocs } from '../../pages/project/AfProjectDocs';
+import { AfProjectOps } from '../../pages/project/AfProjectOps';
 import { ErrorState, LoadingState } from '../State';
 import { useAsync } from '../../hooks/useAsync';
 import type { ProjectSummary, WorkflowDetail } from '../../models/types';
@@ -42,6 +43,7 @@ export const PROJECT_PAGE_LABELS: Record<string, string> = {
   workflow: '执行',
   runtime: '运行时',
   quality: '质量',
+  ops: '运维',
 };
 
 /** 加载结果: 找到 (含可选 workflow 详情) 或 404。 */
@@ -197,6 +199,9 @@ function AfProjectSubPage({
   }
   if (page === 'docs' && projectId != null) {
     return <AfProjectDocs projectId={projectId} projectName={projectName ?? ''} />;
+  }
+  if (page === 'ops' && projectId != null) {
+    return <AfProjectOps projectId={projectId} projectName={projectName ?? ''} />;
   }
   return <AfModulePlaceholder pageLabel={page} />;
 }

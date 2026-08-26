@@ -1117,8 +1117,15 @@ def build_app(
         projects = []
         try:
             for p in service.list_projects():
+                rt = []
+                try:
+                    rt = service.list_runtimes(p.id) or []
+                except Exception:  # noqa: BLE001
+                    rt = []
                 pm = _monitor_mod.collect_project(
-                    workspace_root, p.id, name=p.name, lifecycle=p.lifecycle_stage or p.status
+                    workspace_root, p.id, name=p.name, lifecycle=p.lifecycle_stage or p.status,
+                    runtimes=len(rt),
+                    failed=sum(1 for r in rt if getattr(r, "status", "") == "failed"),
                 )
                 if pm:
                     projects.append(pm)
@@ -1138,10 +1145,17 @@ def build_app(
             found = next((p for p in service.list_projects() if p.id == project_id), None)
         except Exception:  # noqa: BLE001
             found = None
+        rt = []
+        try:
+            rt = service.list_runtimes(project_id) or []
+        except Exception:  # noqa: BLE001
+            rt = []
         pm = _monitor_mod.collect_project(
             workspace_root, project_id,
             name=found.name if found else project_id,
             lifecycle=(found.lifecycle_stage or found.status) if found else "",
+            runtimes=len(rt),
+            failed=sum(1 for r in rt if getattr(r, "status", "") == "failed"),
         )
         if pm is None:
             raise HTTPException(status_code=404, detail="project not found")

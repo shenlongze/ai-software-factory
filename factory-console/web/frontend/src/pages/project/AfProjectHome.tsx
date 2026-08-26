@@ -74,34 +74,18 @@ export function AfProjectHome({
           .then((b) => setTasks(b.tasks ?? []))
           .catch(() => setTasks([]));
       });
-    getJson<{ items?: { status?: string }[] }>(`${base}/runtimes`)
-      .then((d) => {
-        const items = d.items ?? [];
-        setRuntimeCount(items.length);
-        setFailedCount(items.filter((r) => r.status === 'failed').length);
+    // 健康信号统一读 Monitor (单一数据源, v1.1.134)
+    getJson<{ project?: { runtimes?: number; failed?: number; quality?: number | null } }>(`${base}/monitor`)
+      .then((m) => {
+        const pj = m.project ?? {};
+        setRuntimeCount(pj.runtimes ?? 0);
+        setFailedCount(pj.failed ?? 0);
+        setQualityScore(typeof pj.quality === 'number' ? pj.quality : null);
+        setQualityNote(typeof pj.quality === 'number' ? '' : '未生成');
       })
       .catch(() => {
         setRuntimeCount(0);
         setFailedCount(0);
-      });
-    // 质量分: 读 quality.json (真实; 未生成 → 诚实"未评测")
-    getJson<{ content?: string | null; note?: string | null }>(`${base}/docs/quality.json`)
-      .then((q) => {
-        if (q.content) {
-          try {
-            const parsed = JSON.parse(q.content) as { score?: number };
-            setQualityScore(typeof parsed.score === 'number' ? parsed.score : null);
-            setQualityNote(parsed.score != null ? '' : '（无评分）');
-          } catch {
-            setQualityScore(null);
-            setQualityNote('（格式异常）');
-          }
-        } else {
-          setQualityScore(null);
-          setQualityNote(q.note ?? '未评测');
-        }
-      })
-      .catch(() => {
         setQualityScore(null);
         setQualityNote('未评测');
       });

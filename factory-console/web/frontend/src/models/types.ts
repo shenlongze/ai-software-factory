@@ -781,3 +781,18 @@ export interface ProjectArtifactItem {
   updated_at: string | null;
   versions: { version: number; file: string; created_at: string | null; producer: string | null; trace_id: string | null }[];
 }
+
+/** v1.1.134: 统一监控 — 项目视图 (GET /api/monitor)。 */
+export interface MonitorProjectView {
+  project_id: string;
+  name: string;
+  lifecycle: string;
+  runtimes: number;
+  failed: number;
+  quality: number | null;
+  tasks: Record<string, number>;
+  artifacts_version: number;
+  docs: number;
+  last_activity: string | null;
+  collected_at: string;
+}

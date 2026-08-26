@@ -33,6 +33,7 @@ import {
   type IdeaSuggestion,
   type LifecycleSummary,
   type LlmProviderConfig,
+  type MonitorProjectView,
   type ProjectArtifactItem,
   type ProjectDocContent,
   type ProjectDocSummary,
@@ -387,6 +388,14 @@ export const api = {
     getJson<{ version: number; file: string; content: string | null }>(
       `/api/projects/${encodeURIComponent(projectId)}/artifacts/${encodeURIComponent(artifactType)}/versions/${version}`,
     ),
+
+  // v1.1.134: 统一监控运维 (系统+项目+快照)
+  monitor: () =>
+    getJson<{
+      system: { version: string; frontend: { up: boolean }; backend: { up: boolean }; model: string };
+      projects: MonitorProjectView[];
+      snapshots: { at: string; system?: { version?: string }; projects?: MonitorProjectView[] }[];
+    }>('/api/monitor'),
 
   // K-7e: Web 会话栏 (会话 + 消息 + 回复)
   sessions: async (scope?: string, projectId?: string) => {

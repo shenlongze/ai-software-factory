@@ -27,8 +27,8 @@ describe('S10-014 路由常量表 (§2.3)', () => {
     ]);
   });
 
-  it('Project 级 6 条路由 (Founder 精简: 全真实页面)', () => {
-    expect(PROJECT_ROUTES).toHaveLength(6);
+  it('Project 级 7 条路由 (Founder 精简 + 运维)', () => {
+    expect(PROJECT_ROUTES).toHaveLength(7);
     expect(PROJECT_ROUTES.map((r) => r.path)).toEqual([
       '#/project/:id',
       '#/project/:id/docs',
@@ -36,6 +36,7 @@ describe('S10-014 路由常量表 (§2.3)', () => {
       '#/project/:id/workflow',
       '#/project/:id/runtime',
       '#/project/:id/quality',
+      '#/project/:id/ops',
     ]);
     expect(PROJECT_ROUTES.map((r) => r.page)).toEqual([
       'overview',
@@ -44,6 +45,7 @@ describe('S10-014 路由常量表 (§2.3)', () => {
       'workflow',
       'runtime',
       'quality',
+      'ops',
     ]);
   });
 });
@@ -78,6 +80,7 @@ describe('parseHash — Project 级 (11 条)', () => {
     ['#/project/markpad/workflow', 'workflow'],
     ['#/project/markpad/runtime', 'runtime'],
     ['#/project/markpad/quality', 'quality'],
+    ['#/project/markpad/ops', 'ops'],
   ] as const)('%s → project/markpad/%s', (hash, page) => {
     expect(parseHash(hash)).toEqual({ level: 'project', page, projectId: 'markpad' });
   });

@@ -29,14 +29,14 @@ function navButton(name: RegExp) {
   return within(screen.getByTestId('af-project-sidebar')).getByRole('button', { name });
 }
 
-const NAV_LABELS = ['概览', '文档', '任务', '执行', '运行时', '质量'];
+const NAV_LABELS = ['概览', '文档', '任务', '执行', '运行时', '质量', '运维'];
 
 afterEach(() => {
   window.location.hash = '';
 });
 
 describe('AfProjectShell (AI OS 项目层壳)', () => {
-  it('渲染项目层壳: Project Header + Sidebar 6 导航项 + Main', () => {
+  it('渲染项目层壳: Project Header + Sidebar 7 导航项 + Main', () => {
     stubFetch({ '/api/projects': [sampleProject({ id: 'demo' })] });
     render(<AfProjectShell route={projectRoute()} />);
     expect(screen.getByTestId('af-project-entry')).toBeInTheDocument();
@@ -48,7 +48,7 @@ describe('AfProjectShell (AI OS 项目层壳)', () => {
     }
   });
 
-  it('PROJECT_NAV_ITEMS 与路由表对齐: 6 项全真实 (Founder 精简)', () => {
+  it('PROJECT_NAV_ITEMS 与路由表对齐: 7 项 (Founder 精简 + 运维)', () => {
     expect(PROJECT_NAV_ITEMS.map((item) => item.page)).toEqual([
       'overview',
       'docs',
@@ -56,6 +56,7 @@ describe('AfProjectShell (AI OS 项目层壳)', () => {
       'workflow',
       'runtime',
       'quality',
+      'ops',
     ]);
   });
 

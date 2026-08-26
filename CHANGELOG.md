@@ -3,6 +3,21 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.135] — 2026-08-26
+
+**运维页 + 概览健康条统一读 Monitor**。
+
+### Added
+
+- **🛰 运维页** (项目导航新增): 系统状态 (前端/后端端口+版本+模型) + 项目监控
+  (阶段/质量/任务/产出物/文档/运行实例/失败/最近活动) + 快照趋势表
+- 概览健康信号条改读 Monitor (单一数据源, 不再各自拼 runtimes/quality)
+- Monitor 项目视图补 runtimes/failed (service.list_runtimes 真实)
+
+### 验证
+
+- 前端 685 passed (含运维导航/路由/接口) · build 通过 · 后端 monitor 5 passed
+
 ## [v1.1.134] — 2026-08-26
 
 **统一监控运维 (D 系列): Monitor 单一采集 → 多处消费**。

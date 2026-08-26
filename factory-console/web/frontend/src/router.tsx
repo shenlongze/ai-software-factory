@@ -32,6 +32,7 @@ export const PROJECT_ROUTES: readonly { path: string; page: string }[] = [
   { path: '#/project/:id/workflow', page: 'workflow' },
   { path: '#/project/:id/runtime', page: 'runtime' },
   { path: '#/project/:id/quality', page: 'quality' },
+  { path: '#/project/:id/ops', page: 'ops' },
 ];
 
 /** 合法页面名集合 (parseHash 校验用, 从路由表派生 — 单一数据源)。 */

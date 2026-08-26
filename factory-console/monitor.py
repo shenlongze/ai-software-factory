@@ -77,6 +77,8 @@ def collect_project(
     *,
     name: str | None = None,
     lifecycle: str | None = None,
+    runtimes: int = 0,
+    failed: int = 0,
 ) -> dict[str, Any] | None:
     """项目级监控 (文件信源, 失败安全): 质量分/任务/产出物/文档/最近活动。
 
@@ -146,6 +148,8 @@ def collect_project(
         "project_id": project_id,
         "name": name or project_id,
         "lifecycle": lifecycle or "",
+        "runtimes": runtimes,
+        "failed": failed,
         "quality": q,
         "tasks": _task_stats(tasks),
         "artifacts_version": artifacts_version,

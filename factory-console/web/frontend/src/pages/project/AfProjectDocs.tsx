@@ -17,6 +17,25 @@ import type { ProjectArtifactItem, ProjectDocContent, ProjectDocSummary } from '
 
 import { renderMarkdown } from '../../components/af/markdown';
 
+
+/** 文档树排除的非文档目录 (代码/配置/构建 — 不是"项目文档")。 */
+const DOC_SKIP_FOLDERS = [
+  'desktop', 'tests', 'build', 'dist', 'node_modules', 'factory-core',
+  'factory-console', 'factory-org', 'factory-exec', 'scripts', 'unused',
+  '.github', 'benchmarks', 'examples', 'demo', 'assets', 'resources',
+];
+
+/** 文档树关键目录优先级 (先显示这些, 有章法)。 */
+const DOC_KEY_FOLDERS = [
+  'docs/products',
+  'docs/design',
+  'docs/architecture',
+  'docs/adr',
+  'docs/sprint10',
+  'docs/audits',
+  'docs',
+];
+
 function renderContentBody(content: string | null, kind: string, note?: string | null): ReactNode {
   if (content == null) return <p className="af-home-note">{note ?? '（无内容）'}</p>;
   if (kind === 'md') return <div className="af-doc-md">{renderMarkdown(content)}</div>;
@@ -56,6 +75,7 @@ export function AfProjectDocs({ projectId, projectName }: AfProjectDocsProps): J
   const [activeDoc, setActiveDoc] = useState<string | null>(null);
   const [docContent, setDocContent] = useState<ProjectDocContent | null>(null);
   const [docsLoading, setDocsLoading] = useState(true);
+  const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(() => new Set());
   const [docLoading, setDocLoading] = useState(false);
 
   // ---- 产出物 tab
@@ -208,18 +228,54 @@ export function AfProjectDocs({ projectId, projectName }: AfProjectDocsProps): J
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedType, selectedVersion, artifacts, projectId]);
 
-  // ---- 文档左树渲染
+  // ---- 文档左树渲染 (Founder 2026-08-26: 太乱没章法 → 只显示真文档 + 目录分组)
+  // 规则: 核心资产置顶 → 根文档 → 关键 docs 目录 → 其他目录折叠
+  // 排除: 代码/配置目录 (desktop/tests/factory-*/scripts 等非"项目文档") + extra 非 md
   const core = useMemo(() => docs.filter((d) => !d.extra), [docs]);
-  const extras = useMemo(() => docs.filter((d) => d.extra), [docs]);
+  const extras = useMemo(
+    () =>
+      docs.filter(
+        (d) =>
+          d.extra &&
+          d.name.toLowerCase().endsWith('.md') &&
+          !DOC_SKIP_FOLDERS.some((f) => d.name.toLowerCase().startsWith(`${f}/`)),
+      ),
+    [docs],
+  );
+  const rootDocs = useMemo(() => extras.filter((d) => !d.folder), [extras]);
   const folders = useMemo(() => {
     const m = new Map<string, ProjectDocSummary[]>();
     for (const d of extras) {
-      const folder = d.folder || d.name.split('/')[0];
+      const folder = d.folder; // 根文档 folder='' 归 rootDocs, 不当作目录
+      if (!folder) continue;
       if (!m.has(folder)) m.set(folder, []);
       m.get(folder)?.push(d);
     }
-    return [...m.entries()];
+    // 关键目录优先 (DOC_KEY_FOLDERS 顺序), 其余按字母
+    const entries = [...m.entries()];
+    const rank = (f: string) => {
+      const i = DOC_KEY_FOLDERS.indexOf(f);
+      return i === -1 ? 100 + f.localeCompare('') : i;
+    };
+    return entries.sort((a, b) => {
+      const ra = rank(a[0]);
+      const rb = rank(b[0]);
+      if (ra !== rb) return ra - rb;
+      return a[0].localeCompare(b[0]);
+    });
   }, [extras]);
+
+  // 非关键目录默认折叠 (有章法: 关键目录展开, 杂项收起)
+  useEffect(() => {
+    if (folders.length > 0) {
+      setCollapsedFolders((prev) => {
+        if (prev.size > 0) return prev; // 只初始化一次
+        return new Set(
+          folders.filter(([f]) => !DOC_KEY_FOLDERS.includes(f)).map(([f]) => f),
+        );
+      });
+    }
+  }, [folders]);
 
   const renderDocRow = (d: ProjectDocSummary) => (
     <button
@@ -260,17 +316,41 @@ export function AfProjectDocs({ projectId, projectName }: AfProjectDocsProps): J
               <p className="af-home-note">（暂无文档 — 生成 PRD/工程计划后自动出现）</p>
             ) : (
               <>
-                <div className="af-doc-group">核心资产</div>
+                <div className="af-doc-group">核心资产（{core.length}）</div>
                 {core.map(renderDocRow)}
+                {rootDocs.length > 0 ? (
+                  <>
+                    <div className="af-doc-group">根文档（{rootDocs.length}）</div>
+                    {rootDocs.map(renderDocRow)}
+                  </>
+                ) : null}
                 {folders.length > 0 ? (
                   <>
-                    <div className="af-doc-group">其他文件</div>
-                    {folders.map(([folder, items]) => (
-                      <div key={folder}>
-                        <div className="af-doc-folder">📁 {folder}</div>
-                        {items.map(renderDocRow)}
-                      </div>
-                    ))}
+                    <div className="af-doc-group">文档目录（{folders.length}）</div>
+                    {folders.map(([folder, items]) => {
+                      const collapsed = collapsedFolders.has(folder);
+                      return (
+                        <div key={folder}>
+                          <button
+                            type="button"
+                            className="af-doc-folder"
+                            data-testid={`af-doc-folder-${folder.replace(/\//g, '-')}`}
+                            aria-expanded={!collapsed}
+                            onClick={() =>
+                              setCollapsedFolders((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(folder)) next.delete(folder);
+                                else next.add(folder);
+                                return next;
+                              })
+                            }
+                          >
+                            {collapsed ? '▸' : '▾'} 📁 {folder} <span className="af-doc-folder-count">{items.length}</span>
+                          </button>
+                          {collapsed ? null : items.map(renderDocRow)}
+                        </div>
+                      );
+                    })}
                   </>
                 ) : null}
               </>

@@ -4,7 +4,7 @@
  * 左树右看: 清单分组 + 内容预览 (markdown/JSON); 缺失/不支持 → 诚实提示。
  */
 
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 import { AfProjectDocs } from '../pages/project/AfProjectDocs';
@@ -47,12 +47,41 @@ describe('AfProjectDocs (项目文档管理)', () => {
     });
     render(<AfProjectDocs projectId="p1" projectName="测试项目" />);
     expect(await screen.findByTestId('af-docs')).toBeInTheDocument();
-    expect(screen.getByText('核心资产')).toBeInTheDocument();
-    expect(screen.getByText('其他文件')).toBeInTheDocument();
-    expect(screen.getByText('📁 docs')).toBeInTheDocument();
+    expect(screen.getByText('核心资产（2）')).toBeInTheDocument();
+    expect(screen.getByText('文档目录（1）')).toBeInTheDocument();
+    expect(screen.getByTestId('af-doc-folder-docs')).toBeInTheDocument();
+    expect(screen.getByText('docs/guide.md')).toBeInTheDocument();
     // 默认选中第一个可读文档 → 渲染 markdown 标题
     expect(await screen.findByRole('heading', { name: '需求' })).toBeInTheDocument();
     expect(screen.getByText('功能A')).toBeInTheDocument();
+  });
+
+  it('有章法分组: 排除代码目录, 关键目录展开, 非关键目录默认折叠', async () => {
+    const rich = [
+      { name: 'PRD.md', label: '需求文档', kind: 'md', size: 1, mtime: 1, exists: true, extra: false, folder: '', source_dir: 'sys' },
+      { name: 'README.md', label: 'README.md', kind: 'md', size: 1, mtime: 1, exists: true, extra: true, folder: '', source_dir: 'repo' },
+      { name: 'docs/products/agent-product-spec.md', label: 'agent-product-spec.md', kind: 'md', size: 1, mtime: 1, exists: true, extra: true, folder: 'docs/products', source_dir: 'repo' },
+      { name: 'docs/guide.md', label: 'docs/guide.md', kind: 'md', size: 1, mtime: 1, exists: true, extra: true, folder: 'docs', source_dir: 'repo' },
+      { name: 'desktop/README.md', label: 'desktop/README.md', kind: 'md', size: 1, mtime: 1, exists: true, extra: true, folder: 'desktop', source_dir: 'repo' },
+      { name: 'misc/note.md', label: 'misc/note.md', kind: 'md', size: 1, mtime: 1, exists: true, extra: true, folder: 'misc', source_dir: 'repo' },
+    ];
+    stubDocs(rich, { 'PRD.md': { name: 'PRD.md', label: '需求文档', kind: 'md', content: '# 需求' } });
+    render(<AfProjectDocs projectId="p1" projectName="测试项目" />);
+    await screen.findByTestId('af-docs');
+    // 根文档组 (README)
+    expect(screen.getByText('根文档（1）')).toBeInTheDocument();
+    expect(screen.getAllByText('README.md').length).toBeGreaterThan(0);
+    // 代码目录 desktop 被排除 (非项目文档)
+    expect(screen.queryByText('desktop/README.md')).not.toBeInTheDocument();
+    // 关键目录 docs/products 默认展开 (条目可见)
+    expect(screen.getByTestId('af-doc-folder-docs-products')).toBeInTheDocument();
+    expect(screen.getByText('agent-product-spec.md')).toBeInTheDocument();
+    // 非关键目录 misc 默认折叠 (目录可见, 条目不可见 — 折叠初始化异步)
+    expect(screen.getByTestId('af-doc-folder-misc')).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText('misc/note.md')).not.toBeInTheDocument());
+    // 点开 misc → 条目出现
+    await userEvent.click(screen.getByTestId('af-doc-folder-misc'));
+    expect(screen.getByText('misc/note.md')).toBeInTheDocument();
   });
 
   it('切换文档 → 显示 JSON 格式化内容', async () => {

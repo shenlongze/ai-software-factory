@@ -3,6 +3,22 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.148] — 2026-08-26
+
+**文档页分组重构: 有规律有章法 (Founder: 文档列表太乱, 695 个文件混在一起)**。
+
+### Changed
+
+- 文档树只显示真文档: 排除代码/配置目录 (desktop/tests/factory-*/scripts 等) + extra 非 md
+- 分组: 核心资产(N) → 根文档(N) → 文档目录(N); 关键目录优先
+  (docs/products·design·architecture·adr·sprint10·audits·docs)
+- 非关键目录默认折叠 (可展开); 根目录文件不再被误当目录
+- 目录按钮可折叠/展开 + 数量角标
+
+### 验证
+
+- 前端 721 passed (新增分组规则 1) · vite build 通过
+
 ## [v1.1.147] — 2026-08-26
 
 **Markdown 渲染修复: 会话回复 + 文档查看不再显示源码 (Founder: 都是 markdown 问题)**。

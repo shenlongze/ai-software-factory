@@ -3150,6 +3150,40 @@
   min-width: 0;
 }
 
+/* 分隔条: A/B、B/C 间拖拽调整宽度 (Founder 2026-08-26 中间可调整大小) */
+.af-resizer {
+  flex-shrink: 0;
+  width: 5px;
+  cursor: col-resize;
+  background: transparent;
+  position: relative;
+  z-index: 10;
+  transition: background 0.15s;
+}
+
+.af-resizer:hover,
+.af-resizer:active {
+  background: rgba(76, 141, 255, 0.35);
+}
+
+.af-resizer--left {
+  margin-right: -5px; /* 与侧栏边框重叠, 不占额外空间 */
+}
+
+.af-resizer--right {
+  margin-left: -5px;
+}
+
+.af-col-a {
+  flex-shrink: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.af-col-a .af-sidebar {
+  width: 100%;
+}
+
 .af-col-c {
   display: flex;
   flex-shrink: 0;

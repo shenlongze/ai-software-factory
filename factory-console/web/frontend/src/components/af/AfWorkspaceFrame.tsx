@@ -17,7 +17,7 @@
  * 中间显示页面, 预览只在点标签时打开 (纯内存态, 刷新即复位)。
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { AfPreviewWindow } from './AfPreviewWindow';
 import { AfConversationPanel } from './AfConversationPanel';
@@ -26,6 +26,35 @@ import { useConversation } from './ConversationContext';
 import './af.css';
 
 export const SIDEBAR_COLLAPSED_KEY = 'af.sidebar.collapsed';
+export const SIDEBAR_WIDTH_KEY = 'af.sidebar.width';
+export const CHAT_WIDTH_KEY = 'af.chat.width';
+/** 拖拽宽度范围 (px) — 中间大小可调 (Founder 2026-08-26)。 */
+export const SIDEBAR_WIDTH_MIN = 150;
+export const SIDEBAR_WIDTH_MAX = 420;
+export const CHAT_WIDTH_MIN = 240;
+export const CHAT_WIDTH_MAX = 560;
+export const SIDEBAR_WIDTH_DEFAULT = 240;
+export const CHAT_WIDTH_DEFAULT = 340;
+
+function readNum(key: string, fallback: number): number {
+  try {
+    const n = Number(window.localStorage.getItem(key));
+    return Number.isFinite(n) && n > 0 ? n : fallback;
+  } catch {
+    return fallback;
+  }
+}
+function writeNum(key: string, value: number): void {
+  try {
+    window.localStorage.setItem(key, String(Math.round(value)));
+  } catch {
+    /* 仅内存态 */
+  }
+}
+
+function clamp(v: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, v));
+}
 
 function readFlag(key: string): boolean {
   try {
@@ -70,7 +99,56 @@ export function AfWorkspaceFrame({
 }: AfWorkspaceFrameProps): JSX.Element {
   const [collapsed, setCollapsed] = useState<boolean>(() => readFlag(SIDEBAR_COLLAPSED_KEY));
   const [previewOpen, setPreviewOpen] = useState<boolean>(false); // 默认收起, 不持久
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() =>
+    readNum(SIDEBAR_WIDTH_KEY, SIDEBAR_WIDTH_DEFAULT),
+  );
+  const [chatWidth, setChatWidth] = useState<number>(() =>
+    readNum(CHAT_WIDTH_KEY, CHAT_WIDTH_DEFAULT),
+  );
   const conversation = useConversation();
+
+  // 拖拽分隔条调整 A/C 列宽 (B 列中间 flex:1 自适应 — Founder: 中间可调整大小)
+  const dragRef = useRef<{ side: 'left' | 'right'; startX: number; startW: number } | null>(null);
+  const widthRef = useRef({ sidebar: sidebarWidth, chat: chatWidth });
+  widthRef.current = { sidebar: sidebarWidth, chat: chatWidth };
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      const drag = dragRef.current;
+      if (drag == null) return;
+      const delta = e.clientX - drag.startX;
+      if (drag.side === 'left') {
+        setSidebarWidth(clamp(drag.startW + delta, SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_MAX));
+      } else {
+        setChatWidth(clamp(drag.startW - delta, CHAT_WIDTH_MIN, CHAT_WIDTH_MAX));
+      }
+    };
+    const onUp = () => {
+      const side = dragRef.current?.side;
+      dragRef.current = null;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      if (side === 'left') writeNum(SIDEBAR_WIDTH_KEY, widthRef.current.sidebar);
+      if (side === 'right') writeNum(CHAT_WIDTH_KEY, widthRef.current.chat);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, []);
+
+  const startDrag = (side: 'left' | 'right') => (e: React.MouseEvent) => {
+    e.preventDefault();
+    dragRef.current = {
+      side,
+      startX: e.clientX,
+      startW: side === 'left' ? sidebarWidth : chatWidth,
+    };
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  };
 
   // 清理历史持久化的预览状态 (旧版本 localStorage af.preview.open) — 一次复位
   useEffect(() => {
@@ -119,7 +197,22 @@ export function AfWorkspaceFrame({
     >
       {header({ collapsed, onToggleSidebar: toggleSidebar })}
       <div className="af-shell-body">
-        <aside className="af-col-a">{sidebar(collapsed)}</aside>
+        <aside className="af-col-a" style={{ width: collapsed ? undefined : sidebarWidth }}>
+          {sidebar(collapsed)}
+        </aside>
+        {!collapsed ? (
+          <div
+            className="af-resizer af-resizer--left"
+            data-testid="af-resizer-left"
+            role="separator"
+            aria-label="调整侧栏宽度"
+            onMouseDown={startDrag('left')}
+            onDoubleClick={() => {
+              setSidebarWidth(SIDEBAR_WIDTH_DEFAULT);
+              writeNum(SIDEBAR_WIDTH_KEY, SIDEBAR_WIDTH_DEFAULT);
+            }}
+          />
+        ) : null}
         <main className="af-main-content" data-testid="af-main-content">
           <div className="af-b-tabs" data-testid="af-b-tabs">
             <button
@@ -143,7 +236,18 @@ export function AfWorkspaceFrame({
             {previewOpen ? <AfPreviewWindow projectId={projectId} defaultOpen /> : main}
           </div>
         </main>
-        <aside className="af-col-c">
+        <div
+          className="af-resizer af-resizer--right"
+          data-testid="af-resizer-right"
+          role="separator"
+          aria-label="调整会话栏宽度"
+          onMouseDown={startDrag('right')}
+          onDoubleClick={() => {
+            setChatWidth(CHAT_WIDTH_DEFAULT);
+            writeNum(CHAT_WIDTH_KEY, CHAT_WIDTH_DEFAULT);
+          }}
+        />
+        <aside className="af-col-c" style={{ width: collapsed ? undefined : chatWidth }}>
           <AfConversationPanel projectId={projectId} projectName={projectName} />
         </aside>
       </div>

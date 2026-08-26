@@ -10,7 +10,7 @@
  *   (AI Team/Workflow Center/Runtime Monitor/Audit 移 board)
  */
 
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 import { AfWorkspaceShell } from '../components/af/AfWorkspaceShell';
@@ -231,5 +231,41 @@ describe('AfWorkspaceShell (AI OS 三栏壳)', () => {
     expect(screen.getAllByText('项目').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByTestId('af-llm-status')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /开发者控制台/ })).toBeInTheDocument();
+  });
+});
+
+
+describe('AfWorkspaceFrame 分隔条拖拽 (Founder: 中间可调整大小)', () => {
+  it('拖左分隔条 → 侧栏宽度变化; 拖右分隔条 → 会话栏宽度变化', async () => {
+    const { container } = render(<AfWorkspaceShell route={workspaceRoute()} />);
+    await screen.findByTestId('af-workspace-entry');
+    const leftResizer = screen.getByTestId('af-resizer-left');
+    const rightResizer = screen.getByTestId('af-resizer-right');
+    const sidebar = container.querySelector('.af-col-a') as HTMLElement;
+    const chat = container.querySelector('.af-col-c') as HTMLElement;
+    // 拖左条 +80px (从侧栏右边界往右拖)
+    await fireEvent.mouseDown(leftResizer, { clientX: 300 });
+    await fireEvent.mouseMove(window, { clientX: 380 });
+    await fireEvent.mouseUp(window);
+    const afterSidebar = parseFloat(sidebar.style.width || '240');
+    expect(afterSidebar).toBeGreaterThan(300);
+    expect(afterSidebar).toBeLessThanOrEqual(420); // clamp max
+
+    // 拖右条往左 +60px 会话栏宽
+    await fireEvent.mouseDown(rightResizer, { clientX: 900 });
+    await fireEvent.mouseMove(window, { clientX: 840 });
+    await fireEvent.mouseUp(window);
+    const afterChat = parseFloat(chat.style.width || '340');
+    expect(afterChat).toBeGreaterThan(380);
+    expect(afterChat).toBeLessThanOrEqual(560); // clamp max
+  });
+
+  it('双击分隔条 → 恢复默认宽度', async () => {
+    const { container } = render(<AfWorkspaceShell route={workspaceRoute()} />);
+    await screen.findByTestId('af-workspace-entry');
+    const leftResizer = screen.getByTestId('af-resizer-left');
+    const sidebar = container.querySelector('.af-col-a') as HTMLElement;
+    await fireEvent.doubleClick(leftResizer);
+    expect(parseFloat(sidebar.style.width || '0')).toBe(240);
   });
 });

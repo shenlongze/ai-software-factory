@@ -1726,6 +1726,93 @@
   margin-top: 4px;
 }
 
+/* T-9 (v1.1.185): 执行溯源 — exec_ref → 记录/证据包 */
+.af-task-detail-exec {
+  margin-top: 4px;
+}
+
+.af-task-detail-exec-request {
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  background: var(--c-card);
+  padding: 8px 10px;
+  margin-bottom: 8px;
+}
+
+.af-task-detail-exec-results {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.af-task-detail-exec-result {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  border: 1px solid var(--c-border);
+  border-radius: 8px;
+  background: var(--c-card);
+  padding: 6px 10px;
+}
+
+.af-task-detail-exec-result-id {
+  font-family: var(--af-font-mono);
+  color: var(--c-text);
+}
+
+.af-exec-result {
+  font-size: 11px;
+  border-radius: 6px;
+  padding: 1px 6px;
+}
+
+.af-exec-result--success,
+.af-exec-result--done,
+.af-exec-result--passed {
+  color: #22c55e;
+  background: rgba(34, 197, 94, 0.12);
+}
+
+.af-exec-result--failed,
+.af-exec-result--error {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.12);
+}
+
+.af-exec-result--running,
+.af-exec-result--pending {
+  color: #4c8dff;
+  background: rgba(76, 141, 255, 0.12);
+}
+
+.af-task-detail-exec-error {
+  color: #ef4444;
+  font-size: 11px;
+  width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.af-task-detail-exec-evidence {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.af-task-detail-exec-file {
+  font-size: 11px;
+  font-family: var(--af-font-mono);
+  color: var(--c-text2);
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
+  border-radius: 6px;
+  padding: 2px 8px;
+}
+
 /* T-4 (v1.1.184): 任务↔会话双向追溯 — 关联会话区 */
 .af-task-detail-sessions {
   margin-top: 4px;

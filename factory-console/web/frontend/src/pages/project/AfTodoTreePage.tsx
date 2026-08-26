@@ -27,7 +27,7 @@ import { AfTaskDetailPanel, type TaskPatch } from '../../components/af/AfTaskDet
 import { toTaskDetail, toTodoTree } from '../../api/domain';
 import { AfEmptyState, AfErrorState, AfLoadingState } from '../../components/af/AfState';
 import { useAsync } from '../../hooks/useAsync';
-import type { BacklogResponse, BacklogTask, TaskSessionRef } from '../../models/domain';
+import type { BacklogResponse, BacklogTask, TaskExecTrace, TaskSessionRef } from '../../models/domain';
 
 /** GET /api/projects/{id}/backlog (真实 fetch; 失败 → ApiError, 与 client 同语义)。 */
 export async function fetchProjectBacklog(projectId: string): Promise<BacklogResponse> {
@@ -110,21 +110,30 @@ export function AfTodoTreePage({ projectId, projectName }: AfTodoTreePageProps):
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   // T-4 双向追溯: 选中任务 → 拉详情附带的关联会话 (哪些会话讨论过它)
   const [taskSessions, setTaskSessions] = useState<TaskSessionRef[]>([]);
+  // T-9: 执行溯源 (exec_ref → 记录/证据包) — 与关联会话同一详情请求
+  const [taskExecTrace, setTaskExecTrace] = useState<TaskExecTrace | null>(null);
   const chat = useConversation();
 
   useEffect(() => {
     let alive = true;
     if (selectedTaskId == null || selectedTaskId.length === 0) {
       setTaskSessions([]);
+      setTaskExecTrace(null);
       return;
     }
     api
       .getBacklogTaskDetail(projectId, selectedTaskId)
       .then((detail) => {
-        if (alive) setTaskSessions(detail.sessions ?? []);
+        if (alive) {
+          setTaskSessions(detail.sessions ?? []);
+          setTaskExecTrace(detail.exec_trace ?? null);
+        }
       })
       .catch(() => {
-        if (alive) setTaskSessions([]); // 失败 → 空, 不编造
+        if (alive) {
+          setTaskSessions([]); // 失败 → 空, 不编造
+          setTaskExecTrace(null);
+        }
       });
     return () => {
       alive = false;
@@ -235,6 +244,7 @@ export function AfTodoTreePage({ projectId, projectName }: AfTodoTreePageProps):
                 onUpdate={handleUpdateTask}
                 sessions={taskSessions}
                 onOpenSession={handleOpenSession}
+                execTrace={taskExecTrace}
               />
             </aside>
           ) : null}

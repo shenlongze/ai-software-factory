@@ -21,7 +21,7 @@
  */
 
 import { useState } from 'react';
-import type { Activity, TaskDetail, TaskSessionRef } from '../../models/domain';
+import type { Activity, TaskDetail, TaskExecTrace, TaskSessionRef } from '../../models/domain';
 import { formatTime } from './afLabels';
 import { AfStatusBadge } from './AfStatusBadge';
 import { AfTimeline, type AfTimelineItem } from './AfTimeline';
@@ -47,6 +47,8 @@ export interface AfTaskDetailPanelProps {
   sessions?: TaskSessionRef[];
   /** 点关联会话 → 打开该会话 (页面接线 ConversationContext)。 */
   onOpenSession?: (sessionId: string) => void;
+  /** 执行溯源 (T-9): exec_ref → EXR request → EXS result → 证据包。 */
+  execTrace?: TaskExecTrace | null;
 }
 
 /**
@@ -106,6 +108,7 @@ export function AfTaskDetailPanel({
   onUpdate,
   sessions,
   onOpenSession,
+  execTrace,
 }: AfTaskDetailPanelProps): JSX.Element {
   const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(task.title ?? '');
@@ -308,6 +311,66 @@ export function AfTaskDetailPanel({
               <span className="af-task-detail-error" data-testid="af-task-detail-error">
                 {error}
               </span>
+            ) : null}
+          </section>
+        ) : null}
+
+        {execTrace != null && (execTrace.request != null || (execTrace.results ?? []).length > 0) ? (
+          <section className="af-task-detail-exec" data-testid="af-task-detail-exec">
+            <h4 className="af-task-detail-section-title">执行溯源</h4>
+            <p className="af-task-detail-sessions-hint">exec_ref → 执行记录 → 证据包 (T-9 绑定完整性)</p>
+            {execTrace.exec_ref != null && execTrace.exec_ref.length > 0 ? (
+              <div className="af-task-detail-field">
+                <span className="af-task-detail-label">exec_ref</span>
+                <span className="af-task-detail-value" data-testid="af-task-detail-exec-ref">
+                  {execTrace.exec_ref}
+                </span>
+              </div>
+            ) : null}
+            {execTrace.request != null ? (
+              <div className="af-task-detail-exec-request" data-testid="af-task-detail-exec-request">
+                <div className="af-task-detail-field">
+                  <span className="af-task-detail-label">执行请求</span>
+                  <span className="af-task-detail-value">{execTrace.request.id ?? '—'}</span>
+                </div>
+                <div className="af-task-detail-field">
+                  <span className="af-task-detail-label">目标</span>
+                  <span className="af-task-detail-value">{execTrace.request.objective ?? '—'}</span>
+                </div>
+                {execTrace.request.created_at != null ? (
+                  <div className="af-task-detail-field">
+                    <span className="af-task-detail-label">发起</span>
+                    <span className="af-task-detail-value">{formatTime(execTrace.request.created_at)}</span>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+            {(execTrace.results ?? []).length > 0 ? (
+              <ul className="af-task-detail-exec-results" data-testid="af-task-detail-exec-results">
+                {(execTrace.results ?? []).map((r) => (
+                  <li key={r.result_id ?? ''} className="af-task-detail-exec-result">
+                    <span className="af-task-detail-exec-result-id">{r.result_id ?? '—'}</span>
+                    <span className={`af-exec-result af-exec-result--${String(r.result ?? '').toLowerCase()}`}>
+                      {r.result ?? '—'}
+                    </span>
+                    {r.error != null && r.error.length > 0 ? (
+                      <span className="af-task-detail-exec-error">{String(r.error).slice(0, 120)}</span>
+                    ) : null}
+                    {r.timestamp != null ? (
+                      <span className="af-task-detail-session-meta">{formatTime(String(r.timestamp))}</span>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            {(execTrace.evidence ?? []).length > 0 ? (
+              <div className="af-task-detail-exec-evidence" data-testid="af-task-detail-exec-evidence">
+                {execTrace.evidence?.map((ev) => (
+                  <span key={ev.id} className="af-task-detail-exec-file">
+                    📄 {ev.report ?? ev.test ?? ev.id}
+                  </span>
+                ))}
+              </div>
             ) : null}
           </section>
         ) : null}

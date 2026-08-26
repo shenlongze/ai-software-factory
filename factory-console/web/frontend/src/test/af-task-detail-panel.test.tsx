@@ -78,6 +78,36 @@ describe('AfTaskDetailPanel (Task Detail 统一面板 — 全字段 + 缺失降�
     expect(screen.queryByTestId('af-task-detail-sessions')).not.toBeInTheDocument();
   });
 
+  it('T-9 执行溯源: exec_ref + 请求 + 结果 + 证据包; 无绑定 → 不渲染', () => {
+    render(
+      <AfTaskDetailPanel
+        task={fullTaskDetail()}
+        execTrace={{
+          exec_ref: 'EXR-99',
+          exec_result: 'EXS-99',
+          request: { id: 'EXR-99', objective: '完善导出功能', created_at: '2026-08-26T04:00:00Z' },
+          results: [{ result_id: 'EXS-99', result: 'success', timestamp: '2026-08-26T04:05:00Z' }],
+          evidence: [{ id: 'EXS-99', report: 'EXS-99.report.md' }],
+        }}
+      />,
+    );
+    const section = screen.getByTestId('af-task-detail-exec');
+    expect(within(section).getByTestId('af-task-detail-exec-ref')).toHaveTextContent('EXR-99');
+    expect(within(section).getByText('完善导出功能')).toBeInTheDocument();
+    expect(within(section).getByTestId('af-task-detail-exec-results')).toHaveTextContent('EXS-99');
+    expect(within(section).getByTestId('af-task-detail-exec-evidence')).toHaveTextContent('EXS-99.report.md');
+  });
+
+  it('T-9 无执行绑定 → 不渲染执行溯源区 (诚实降级)', () => {
+    render(
+      <AfTaskDetailPanel
+        task={fullTaskDetail()}
+        execTrace={{ exec_ref: '', exec_result: '', request: null, results: [], evidence: [] }}
+      />,
+    );
+    expect(screen.queryByTestId('af-task-detail-exec')).not.toBeInTheDocument();
+  });
+
   it('全字段渲染: 标题/状态/Epic→Feature→Story/负责人/Agent/优先级/依赖/下一步', () => {
     render(<AfTaskDetailPanel task={fullTaskDetail()} />);
     const panel = screen.getByTestId('af-task-detail-panel');

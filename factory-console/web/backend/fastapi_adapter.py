@@ -797,6 +797,96 @@ def _safe_ping(src: Any) -> bool:
         return False
 
 
+def _exec_request_map(root: Path) -> dict[str, Any]:
+    """exec/requests.json → {EXR: request} (T-9 执行溯源; 失败安全空)。"""
+    try:
+        d = json.loads((root / "exec" / "requests.json").read_text(encoding="utf-8"))
+        return d.get("requests") if isinstance(d, dict) else {}
+    except Exception:  # noqa: BLE001 — 失败安全铁律
+        return {}
+
+
+def _exec_results_map(root: Path) -> dict[str, Any]:
+    """exec/execution_records.json → {EXS: record} (T-9 执行溯源; 失败安全空)。"""
+    try:
+        data = json.loads((root / "exec" / "execution_records.json").read_text(encoding="utf-8"))
+        out: dict[str, Any] = {}
+        for r in data if isinstance(data, list) else []:
+            if isinstance(r, dict) and r.get("result_id"):
+                out[str(r["result_id"])] = r
+        return out
+    except Exception:  # noqa: BLE001 — 失败安全铁律
+        return {}
+
+
+def _task_exec_trace(root: Path | None, task: dict[str, Any]) -> dict[str, Any]:
+    """T-9 (v1.1.185): 任务执行溯源 — exec_ref → EXR request → EXS result → 证据包。
+
+    失败安全: 无 exec_ref / 记录缺失 → 各段 None/[] (不编造); 只读真实文件。"""
+    trace: dict[str, Any] = {
+        "exec_ref": task.get("exec_ref"),
+        "exec_result": task.get("exec_result"),
+        "request": None,
+        "results": [],
+        "evidence": [],
+    }
+    if root is None:
+        return trace
+    exec_ref = str(task.get("exec_ref") or "").strip()
+    if not exec_ref:
+        return trace
+    try:
+        reqs = _exec_request_map(root)
+        req = reqs.get(exec_ref)
+        if req is None:
+            return trace
+        trace["request"] = {
+            "id": str(req.get("id") or ""),
+            "task_id": req.get("task_id"),
+            "objective": str(req.get("objective") or "")[:200],
+            "requirement": str(req.get("requirement") or "")[:200],
+            "status": str(req.get("status") or ""),
+            "created_at": req.get("created_at"),
+        }
+        ids: list[str] = []
+        for o in req.get("output_refs") or []:
+            if o:
+                ids.append(str(o))
+        if task.get("exec_result"):
+            ids.append(str(task["exec_result"]))
+        recs = _exec_results_map(root)
+        seen: set[str] = set()
+        for rid in ids:
+            if rid in seen:
+                continue
+            seen.add(rid)
+            rec = recs.get(rid)
+            if rec is not None:
+                trace["results"].append(
+                    {
+                        "result_id": str(rec.get("result_id") or ""),
+                        "result": str(rec.get("result") or ""),
+                        "intent": str(rec.get("intent") or ""),
+                        "agent": str(rec.get("agent") or ""),
+                        "task": str(rec.get("task") or "")[:120],
+                        "timestamp": rec.get("timestamp"),
+                        "error": str(rec.get("error") or ""),
+                    }
+                )
+            report = root / "exec" / f"{rid}.report.md"
+            test = root / "exec" / f"{rid}.test.txt"
+            ev: dict[str, Any] = {"id": rid}
+            if report.is_file():
+                ev["report"] = report.name
+            if test.is_file():
+                ev["test"] = test.name
+            if ev.get("report") or ev.get("test"):
+                trace["evidence"].append(ev)
+    except Exception:  # noqa: BLE001 — 溯源失败 → 保持空 (不阻断详情)
+        pass
+    return trace
+
+
 def _task_to(service: Any, project_id: str, task_id: str, target: str) -> dict[str, Any] | None:
     """任务逐步状态机推进 (S-1: 会话操作任务 — todo→done 多步, 每步审计)。"""
     try:
@@ -1847,6 +1937,11 @@ def build_app(
             }
         except Exception:  # noqa: BLE001 — 会话查询失败 → 附空 (不阻断)
             task = {**task, "sessions": []}
+        # T-9 (v1.1.185): 执行溯源 (exec_ref → 记录/证据包) — 只读, 失败安全空
+        try:
+            task = {**task, "exec_trace": _task_exec_trace(workspace_root, task)}
+        except Exception:  # noqa: BLE001 — 溯源失败 → 附空 (不阻断)
+            task = {**task, "exec_trace": None}
         return task
 
     @app.patch("/api/projects/{project_id}/backlog/task/{task_id}")

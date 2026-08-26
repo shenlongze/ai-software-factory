@@ -34,7 +34,7 @@ import type {
   QualityGateViewModel,
   RuntimeActivity,
   RunningAgent,
-  TaskDetail, TaskSessionRef,
+  TaskDetail, TaskExecTrace, TaskSessionRef,
   TodoTree,
   TreeNode,
   TreeNodeType,
@@ -703,6 +703,8 @@ export interface TaskDetailInput {
   story_name?: string | null;
   /** 关联会话 (T-4 双向追溯; 后端任务详情返回)。 */
   sessions?: Array<{ id?: string | null; title?: string | null; updated_at?: string | null; project_id?: string | null }> | null;
+  /** 执行溯源 (T-9; 后端任务详情返回 exec_trace)。 */
+  exec_trace?: TaskExecTrace | null;
 }
 
 /** 空 TaskDetail 降级 (Task 未定位/输入缺失; §6.3 不崩溃)。 */
@@ -866,6 +868,7 @@ function toTaskDetailFromInput(taskRaw?: TaskDetailInput | null): TaskDetail {
     ...(normalizeTaskSessions(t.sessions).length > 0
       ? { sessions: normalizeTaskSessions(t.sessions) }
       : {}),
+    ...(t.exec_trace != null ? { execTrace: t.exec_trace } : {}),
     history: (t.history ?? []).map(toActivity),
     artifacts: Array.isArray(t.artifacts) ? t.artifacts : [],
   };

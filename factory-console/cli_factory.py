@@ -2446,13 +2446,25 @@ class FactoryCLI:
             print(f"❌ 服务装配失败, 无法执行/回写: {exc}", file=sys.stderr)
             return 1
         project_id = str(task.get("project") or "").strip()
+        # T-8 (v1.1.185): 续跑检测 — 上次执行中断 (status=in_progress) → 明确续跑
+        # start_task_exec 幂等 (已是 in_progress 仅更新 exec_ref), 重跑即续跑
+        status_now = str(task.get("status") or "").strip()
+        if status_now == "in_progress":
+            old_ref = str(task.get("exec_ref") or "无")
+            print(
+                f"⚠ 检测到上次执行中断 (status=in_progress, exec_ref={old_ref}) "
+                f"→ 续跑 (重试执行 + 回写)"
+            )
+            note = f"factory task run 续跑(上次中断): {objective}"
+        else:
+            note = f"factory task run 启动: {objective}"
         # 1) 绑定 + 启动 (依赖未满足 → 拒绝启动, 不执行)
         try:
             service.start_task_exec(
                 project_id,
                 tid,
                 exec_ref=f"bridge:{tid}",
-                note=f"factory task run 启动: {objective}",
+                note=note,
             )
         except Exception as exc:  # noqa: BLE001 — 启动失败 → 诚实错误, 不执行
             print(f"❌ 任务 {tid} 启动失败 (未执行): {exc}", file=sys.stderr)

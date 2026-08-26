@@ -4242,9 +4242,30 @@ class ConsoleService:
                 )
                 mgmt.save_task(task)
         if exec_ref:
-            task = task.model_copy(
-                update={"exec_ref": exec_ref, "updated_at": utcnow()}
-            )
+            if task.status == target and note:
+                # T-8 (v1.1.185): 幂等续跑 — 已在 in_progress → 追加 exec:resume 审计
+                # (不重复状态转换; 上次中断后重跑可追溯)
+                from org.management import HistoryEntry
+
+                task = task.model_copy(
+                    update={
+                        "history": list(task.history)
+                        + [
+                            HistoryEntry(
+                                time=utcnow().isoformat(),
+                                actor=actor,
+                                action="exec:resume",
+                                result=f"resumed: {note}",
+                            ).to_dict()
+                        ],
+                        "exec_ref": exec_ref,
+                        "updated_at": utcnow(),
+                    }
+                )
+            else:
+                task = task.model_copy(
+                    update={"exec_ref": exec_ref, "updated_at": utcnow()}
+                )
             mgmt.save_task(task)
         return task.to_dict()
 

@@ -3,7 +3,20 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.185] — 2026-08-27
+
+**T-8 执行链续跑 + T-9 任务↔执行绑定完整性 (执行链可靠性)**。
+
+### Added
+
+- T-9: 任务详情附 exec_trace — exec_ref → EXR 请求 → EXS 结果 → 证据包
+  (读 exec/requests.json + execution_records.json + *.report.md/*.test.txt; 只读, 失败安全空)
+  前端任务详情面板「执行溯源」区
+- T-8: factory task run 检测上次中断 (status=in_progress) → 明确「续跑」提示;
+  start_task_exec 幂等续跑追加 exec:resume 审计 (不重复状态转换, 可追溯)
+
 ## [v1.1.184] — 2026-08-27
+
 
 **T-4 任务↔会话双向追溯 (任务能看到哪些会话讨论过它; 会话能看到关联任务)**。
 

@@ -1,4 +1,4 @@
-"""tests/console/test_task_exec_writeback.py — 方案A: 执行绑定 + 回写钩子 (v1.1.184)。
+"""tests/console/test_task_exec_writeback.py — 方案A: 执行绑定 + 回写钩子 (v1.1.185)。
 
 Founder 2026-08-26: "任务会自动更新状态么 → 选 A (执行绑定 + 回写)"。
 覆盖 (service.start_task_exec / finish_task_exec + org.management.Task 字段 +
@@ -31,6 +31,18 @@ for _p in (_ROOT, _ROOT / "factory-core", _ROOT / "factory-org"):
 _adapter = importlib.import_module("factory-console.web.backend.fastapi_adapter")
 _service = importlib.import_module("factory-console.service")
 _cli = importlib.import_module("factory-console.cli_factory")
+
+try:
+    from fastapi.testclient import TestClient
+
+    _HAS_FASTAPI = True
+except Exception:  # noqa: BLE001
+    TestClient = None  # type: ignore[assignment,misc]
+    _HAS_FASTAPI = False
+
+requires_fastapi = pytest.mark.skipif(
+    not _HAS_FASTAPI, reason="fastapi/httpx 未安装 (console 侧 venv 需安装)"
+)
 
 
 def _build_service(root: Path):
@@ -187,6 +199,81 @@ def _seed_project_and_task(cli: _cli.FactoryCLI) -> tuple[str, str, str, str]:
     return proj.id, str(slug), task["id"], task["title"]
 
 
+@requires_fastapi
+class TestTaskExecTrace:
+    def _seed_exec_files(self, root: Path, exec_ref: str, result_id: str) -> None:
+        """写真实 exec/ 记录 + 证据包 (requests.json / execution_records.json / report.md)。"""
+        exec_dir = root / "exec"
+        exec_dir.mkdir(parents=True, exist_ok=True)
+        (exec_dir / "requests.json").write_text(
+            json.dumps(
+                {
+                    "requests": {
+                        exec_ref: {
+                            "id": exec_ref,
+                            "task_id": "TASK-1",
+                            "objective": "完善导出功能",
+                            "requirement": "支持 CSV",
+                            "status": "completed",
+                            "created_at": "2026-08-26T04:00:00Z",
+                            "output_refs": [result_id],
+                        }
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        (exec_dir / "execution_records.json").write_text(
+            json.dumps(
+                [
+                    {
+                        "result_id": result_id,
+                        "intent": "run_task",
+                        "agent": "backend-1",
+                        "task": "完善导出功能",
+                        "result": "success",
+                        "timestamp": "2026-08-26T04:05:00Z",
+                        "error": "",
+                    }
+                ]
+            ),
+            encoding="utf-8",
+        )
+        (exec_dir / f"{result_id}.report.md").write_text("# 执行报告", encoding="utf-8")
+
+    def test_task_detail_attaches_exec_trace(self, tmp_path):
+        """T-9: 任务详情附 exec_trace — exec_ref → EXR request → EXS result → 证据包。"""
+        svc = _build_service(tmp_path)
+        pid, tid = _new_task(svc, tmp_path)
+        self._seed_exec_files(tmp_path, "EXR-T9", "EXS-T9")
+        svc.start_task_exec(pid, tid, exec_ref="EXR-T9", note="启动")
+        svc.finish_task_exec(pid, tid, success=True, exec_ref="EXR-T9", exec_result="EXS-T9")
+        app = _adapter.build_app(svc, event_logger=None, factory_root=tmp_path)
+        with TestClient(app) as c:
+            r = c.get(f"/api/projects/{pid}/backlog/task/{tid}")
+            assert r.status_code == 200, r.text
+            trace = r.json().get("exec_trace") or {}
+            assert trace["exec_ref"] == "EXR-T9"
+            assert trace["exec_result"] == "EXS-T9"
+            assert trace["request"]["id"] == "EXR-T9"
+            assert trace["request"]["objective"] == "完善导出功能"
+            assert trace["results"][0]["result_id"] == "EXS-T9"
+            assert trace["results"][0]["result"] == "success"
+            assert trace["evidence"][0]["report"] == "EXS-T9.report.md"
+
+    def test_task_detail_no_binding_honest_empty(self, tmp_path):
+        """T-9 诚实降级: 无 exec_ref → exec_trace 各段空 (不编造)。"""
+        svc = _build_service(tmp_path)
+        pid, tid = _new_task(svc, tmp_path)
+        app = _adapter.build_app(svc, event_logger=None, factory_root=tmp_path)
+        with TestClient(app) as c:
+            r = c.get(f"/api/projects/{pid}/backlog/task/{tid}")
+            trace = r.json().get("exec_trace") or {}
+            assert not trace["exec_ref"]  # 空串 (无绑定)
+            assert trace["request"] is None
+            assert trace["results"] == []
+
+
 class TestCliTaskRunWriteback:
     def test_run_success_writes_back_done(self, tmp_path):
         cli = _make_cli(tmp_path)
@@ -204,6 +291,29 @@ class TestCliTaskRunWriteback:
         assert task["exec_result"] == "EXS-88"
         actions = [h["action"] for h in task["history"]]
         assert "exec:start" in actions and "exec:completed" in actions
+
+    def test_run_resume_after_interruption(self, tmp_path):
+        """T-8 续跑: 上次执行中断 (status=in_progress) → 再跑检测到 → 续跑 → done。
+        start_task_exec 幂等 (仅更新 exec_ref); history 记录续跑 note。"""
+        cli = _make_cli(tmp_path)
+        pid, _slug, tid, _title = _seed_project_and_task(cli)
+        svc = _build_service(cli.data_dir)
+        # 模拟上次执行中断: 已绑定 + in_progress, 但未回写 (无 finish)
+        svc.start_task_exec(pid, tid, exec_ref="bridge:old", note="第一次启动(中断)")
+        assert svc.get_task(pid, tid)["status"] == "in_progress"
+        # 续跑: 再执行成功
+        cli._proxy_exec_cli = lambda: _FakeExec(
+            {"ok": True, "exit_code": 0, "request_id": "EXR-RESUME", "result_id": "EXS-RESUME",
+             "status": "success", "error": None}
+        )
+        rc = cli.task(_cli.argparse.Namespace(task_action="run", task_id=tid, project=""))
+        assert rc == 0
+        task = svc.get_task(pid, tid)
+        assert task["status"] == "done"
+        assert task["exec_ref"] == "EXR-RESUME"
+        assert task["exec_result"] == "EXS-RESUME"
+        notes = [h.get("result") or "" for h in task["history"]]
+        assert any("续跑" in n for n in notes), notes
 
     def test_run_failure_writes_back_blocked(self, tmp_path):
         cli = _make_cli(tmp_path)

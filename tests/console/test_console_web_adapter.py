@@ -381,6 +381,27 @@ class TestPermissionBoundary:
                 is_rag_query = (
                     route_method == "POST" and path == "/api/rag/query"
                 )
+                # v1.1.102: 设置管理面 — LLM 配置 (PATCH /api/config/llm —
+                # 启用/停用 provider + 默认模型, 写 providers.json 配置)
+                is_llm_config = (
+                    route_method == "PATCH" and path == "/api/config/llm"
+                )
+                # v1.1.102: MCP 连接移除 (DELETE /api/mcp/connections/{id} —
+                # 与 CLI factory mcp remove 同源)
+                is_mcp_remove = (
+                    route_method == "DELETE" and "/mcp/connections/" in path
+                )
+                # v1.1.102: Agent/Skill 管理 (POST /api/agents|skills 注册 +
+                # DELETE /api/agents/{id}|/api/skills/{id} 移除 — 写 agents/
+                # skills.json, 与 CLI factory agent/skill add|remove 同源)
+                is_agent_write = (
+                    (route_method == "POST" and path == "/api/agents")
+                    or (route_method == "DELETE" and path.startswith("/api/agents/"))
+                )
+                is_skill_write = (
+                    (route_method == "POST" and path == "/api/skills")
+                    or (route_method == "DELETE" and path.startswith("/api/skills/"))
+                )
                 assert (
                     is_approval
                     or is_runtime_lifecycle
@@ -402,6 +423,10 @@ class TestPermissionBoundary:
                     or is_board_split
                     or is_docs_config
                     or is_rag_query
+                    or is_llm_config
+                    or is_mcp_remove
+                    or is_agent_write
+                    or is_skill_write
                 ), (
                     f"写路由超出白名单 (审批决定 + Runtime + 反馈 + 创建 + 启动 + "
                     f"项目管理 + Backlog + Sprint/Milestone/Roadmap + Tool + MCP + RAG): "

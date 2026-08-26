@@ -720,3 +720,24 @@ export interface SessionMessage {
   content: string;
   created_at: string;
 }
+
+/** v1.1.102: 设置 — LLM Provider 配置 (GET/PATCH /api/config/llm 管理面)。 */
+export interface LlmProviderConfig {
+  id: string;
+  enabled: boolean;
+  models: string[];
+  base_url: string | null;
+  api_key_ref: string | null;
+  key_configured: boolean;
+  default_model: string | null;
+  metadata: Record<string, unknown>;
+}
+
+/** v1.1.102: 设置 — Agent (GET/POST/DELETE /api/agents 管理面)。 */
+export interface AgentInfo {
+  id?: string;
+  name?: string;
+  role?: string;
+  skills?: string[];
+  status?: string;
+}

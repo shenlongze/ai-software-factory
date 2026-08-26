@@ -30,7 +30,7 @@ from typing import Any
 
 from ..events import record_console_viewed
 
-__all__ = ["create_mcp_connection", "list_mcp_connections", "list_mcp_tools"]
+__all__ = ["create_mcp_connection", "list_mcp_connections", "list_mcp_tools", "remove_mcp_connection"]
 
 
 def list_mcp_connections(service: Any, *, logger: Any = None) -> dict[str, Any]:
@@ -75,3 +75,19 @@ def list_mcp_tools(service: Any, *, logger: Any = None) -> dict[str, Any]:
     """
     record_console_viewed(logger, view="mcp_tools", count=1)
     return {"tools": service.mcp_tools()}
+
+
+def remove_mcp_connection(
+    service: Any,
+    connection_id: str,
+    *,
+    logger: Any = None,
+) -> bool:
+    """DELETE /api/mcp/connections/{id} — 移除 MCP 连接 (S10-116 A-3 Web 化)。
+
+    复用 ConsoleService.remove_mcp_connection (直接操作 MCPRegistry 连接存储,
+    与 CLI `factory mcp remove` 同源)。连接不存在 / registry 未装配 → False
+    (HTTP 层 404 — 幂等失败安全)。审计: console.viewed (view=mcp_connection_remove)。
+    """
+    record_console_viewed(logger, view="mcp_connection_remove", count=1)
+    return service.remove_mcp_connection(connection_id)

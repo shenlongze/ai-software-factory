@@ -249,6 +249,42 @@ class _SessionPatchBody(BaseModel):
     status: str | None = None
 
 
+class _LlmConfigBody(BaseModel):
+    """PATCH /api/config/llm body (设置 — LLM 管理面, v1.1.102)。
+
+    {provider_id, enabled?, default_model?}: 启用/停用 Provider + 设置默认
+    模型 (providers.json 落库; api_key_ref 只存引用, 不存明文 key)。
+    """
+
+    provider_id: str
+    enabled: bool | None = None
+    default_model: str | None = None
+
+
+class _AgentBody(BaseModel):
+    """POST /api/agents body (设置 — Agent 管理, v1.1.102)。
+
+    {id, role, skills?}: 注册 Agent (写 agents/agents.json, 与 CLI
+    factory agent add 同源; 空 id/role → 400)。
+    """
+
+    id: str
+    role: str
+    skills: list[str] = []
+
+
+class _SkillBody(BaseModel):
+    """POST /api/skills body (设置 — Skill 管理, v1.1.102)。
+
+    {id, name?, category?}: 注册 Skill (写 skills/skills.json, 与 CLI
+    factory skill add 同源; 空 id → 400)。
+    """
+
+    id: str
+    name: str | None = None
+    category: str | None = None
+
+
 class _DiscoveryAnswerBody(BaseModel):
     """POST /api/projects/{id}/discovery/answer body (S10-009 Task 4).
 
@@ -784,6 +820,11 @@ def build_app(
     _sessions_mod = _console_import("console_sessions")
     sessions_store = _sessions_mod.SessionStore(
         Path(factory_root if factory_root is not None else DEFAULT_ROOT) / "console_sessions.json"
+    )
+    # 设置管理面: LLM Control Plane (providers.json — 启用/停用/默认模型)
+    _llm_mod = _console_import("llm_control")
+    _llm_plane = _llm_mod.LLMControlPlane(
+        providers_file=Path(factory_root if factory_root is not None else DEFAULT_ROOT) / "providers.json"
     )
 
     app = FastAPI(title="AI Software Factory — Human Console Web", version=_factory_version)
@@ -2458,6 +2499,159 @@ def build_app(
         """MCP Tool 清单 (GET — 内部 ToolRegistry source=mcp 过滤; 内部 Tool
         不混入 MCP 视图; 未装配 → {tools: []} 失败安全)。"""
         return _api.list_mcp_tools(service, logger=event_logger)
+
+    @app.delete("/api/mcp/connections/{connection_id}")
+    def api_delete_mcp_connection(connection_id: str) -> dict[str, Any]:
+        """移除 MCP 连接 (DELETE — 与 CLI `factory mcp remove` 同源; 不存在
+        → 404 幂等失败安全)。"""
+        if not _api.remove_mcp_connection(service, connection_id, logger=event_logger):
+            raise HTTPException(status_code=404, detail="mcp connection not found")
+        return {"deleted": True}
+
+    # ------------------------------------------- 设置 — LLM 管理面 (v1.1.102)
+    def _provider_config_view(plane: Any, p: Any) -> dict[str, Any]:
+        """providers.json 条目 → 前端管理视图 (enabled/模型/key 状态/默认模型)。
+
+        key_configured: 只输出引用是否可解析 (D8 铁律 — key 本体永不入 API)。
+        """
+        key_configured = False
+        try:
+            key_configured = bool(plane.resolve_api_key(p.id))
+        except Exception:  # noqa: BLE001 — key 缺失 → False (诚实)
+            key_configured = False
+        meta = dict(p.metadata or {})
+        default_model = meta.get("default_model") or (p.models[0] if p.models else None)
+        return {
+            "id": p.id,
+            "enabled": bool(p.enabled),
+            "models": list(p.models or []),
+            "base_url": p.base_url,
+            "api_key_ref": p.api_key_ref,
+            "key_configured": key_configured,
+            "default_model": default_model,
+            "metadata": meta,
+        }
+
+    @app.get("/api/config/llm")
+    def api_get_llm_config() -> dict[str, Any]:
+        """LLM 配置 (GET — providers.json 管理面; 只读投影, key 只显示已配置态)。
+
+        每次 reload 磁盘 — 管理页反映 CLI (factory config) 外部改动, 不读陈旧内存。
+        """
+        plane = _llm_plane
+        try:
+            plane.reload()
+        except Exception:  # noqa: BLE001 — 损坏 → 沿用内存 (失败安全)
+            pass
+        providers = [_provider_config_view(plane, p) for p in plane.list_providers()]
+        selected = plane.selected_provider_id()
+        selected_model = None
+        if selected is not None:
+            sp = plane.get_provider(selected)
+            if sp is not None:
+                selected_model = _provider_config_view(plane, sp).get("default_model")
+        return {"providers": providers, "selected": {"provider_id": selected, "model": selected_model}}
+
+    @app.patch("/api/config/llm")
+    def api_update_llm_config(body: _LlmConfigBody) -> dict[str, Any]:
+        """LLM 配置更新 (PATCH — 启用/停用 Provider + 默认模型; 不存在 → 404)。"""
+        plane = _llm_plane
+        if plane.get_provider(body.provider_id) is None:
+            raise HTTPException(status_code=404, detail="provider not found")
+        try:
+            if body.enabled is True:
+                plane.enable(body.provider_id)
+            elif body.enabled is False:
+                plane.disable(body.provider_id)
+            if body.default_model:
+                cur = plane.get_provider(body.provider_id)
+                meta = dict(cur.metadata or {}) if cur else {}
+                meta["default_model"] = body.default_model
+                plane.set_config(body.provider_id, metadata=meta)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        provider = plane.get_provider(body.provider_id)
+        return _provider_config_view(plane, provider)
+
+    # ------------------------------------------- 设置 — Agent / Skill 管理 (v1.1.102)
+    def _read_json_map(path: Any) -> dict[str, Any]:
+        import json as _json
+
+        try:
+            d = _json.loads(Path(path).read_text(encoding="utf-8")) or {}
+        except Exception:  # noqa: BLE001 — 缺失/损坏 → 空 (失败安全)
+            d = {}
+        return d if isinstance(d, dict) else {}
+
+    def _write_json_map(path: Any, data: dict[str, Any]) -> None:
+        import json as _json
+
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        Path(path).write_text(
+            _json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+
+    def _agents_file() -> Any:
+        return Path(workspace_root or DEFAULT_ROOT) / "agents" / "agents.json"
+
+    def _skills_file() -> Any:
+        return Path(workspace_root or DEFAULT_ROOT) / "skills" / "skills.json"
+
+    @app.post("/api/agents")
+    def api_create_agent(body: _AgentBody) -> dict[str, Any]:
+        """注册 Agent (POST — 写 agents.json; 与 CLI factory agent add 同源)。"""
+        aid = body.id.strip()
+        role = body.role.strip()
+        if not aid or not role:
+            raise HTTPException(status_code=400, detail="id/role required (Agent 注册必填 id 与 role)")
+        data = _read_json_map(_agents_file())
+        if not isinstance(data.get("agents"), dict):
+            data["agents"] = {}
+        record = {"id": aid, "name": aid, "role": role, "skills": [str(x) for x in body.skills if str(x).strip()]}
+        data["agents"][aid] = record
+        _write_json_map(_agents_file(), data)
+        return record
+
+    @app.delete("/api/agents/{agent_id}")
+    def api_delete_agent(agent_id: str) -> dict[str, Any]:
+        """移除 Agent (DELETE — 与 CLI factory agent remove 同源; 不存在 → 404)。"""
+        data = _read_json_map(_agents_file())
+        agents = data.get("agents")
+        if not isinstance(agents, dict) or agent_id not in agents:
+            raise HTTPException(status_code=404, detail="agent not found")
+        del agents[agent_id]
+        _write_json_map(_agents_file(), data)
+        return {"deleted": True}
+
+    @app.post("/api/skills")
+    def api_create_skill(body: _SkillBody) -> dict[str, Any]:
+        """注册 Skill (POST — 写 skills.json; 与 CLI factory skill add 同源)。"""
+        sid = body.id.strip()
+        if not sid:
+            raise HTTPException(status_code=400, detail="id required (Skill 注册必填 id)")
+        data = _read_json_map(_skills_file())
+        if not isinstance(data.get("skills"), dict):
+            data["skills"] = {}
+        record = {
+            "id": sid,
+            "name": (body.name or "").strip() or sid,
+            "category": (body.category or "").strip() or "general",
+            "version": "1.0",
+        }
+        data["skills"][sid] = record
+        _write_json_map(_skills_file(), data)
+        return record
+
+    @app.delete("/api/skills/{skill_id}")
+    def api_delete_skill(skill_id: str) -> dict[str, Any]:
+        """移除 Skill (DELETE — 与 CLI factory skill remove 同源; 不存在 → 404)。"""
+        data = _read_json_map(_skills_file())
+        skills = data.get("skills")
+        if not isinstance(skills, dict) or skill_id not in skills:
+            raise HTTPException(status_code=404, detail="skill not found")
+        del skills[skill_id]
+        _write_json_map(_skills_file(), data)
+        return {"deleted": True}
 
     # ------------------------------------------- S10-006.5 P1-A: Workflow 启动 API
     # 用户第一公里闭环: POST start (真实 Agent 执行链, 后台线程) + chat 最小版

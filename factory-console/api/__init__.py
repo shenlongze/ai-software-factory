@@ -59,6 +59,7 @@ from .mcp_api import (
     create_mcp_connection,
     list_mcp_connections,
     list_mcp_tools,
+    remove_mcp_connection,
 )
 from .memory import (
     memory_agent,
@@ -200,6 +201,7 @@ __all__ = [
     "list_experience",
     "list_mcp_connections",
     "list_mcp_tools",
+    "remove_mcp_connection",
     "list_milestones",
     "list_projects",
     "list_providers",

@@ -3,6 +3,30 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.102] — 2026-08-26
+
+**设置页完善: LLM/Agent/Skill/MCP 全管理面 (非只读)**。
+
+### Added
+
+- **LLM 管理**: GET/PATCH /api/config/llm (providers.json 管理面 — 启用/停用
+  Provider + 默认模型; key 只显示已配置态, 不存明文; GET 每次 reload 磁盘,
+  反映 CLI factory config 外部改动)
+- **Agent 管理**: POST/DELETE /api/agents (注册/移除, 与 CLI factory agent
+  add|remove 同源)
+- **Skill 管理**: POST/DELETE /api/skills (注册/移除, 与 CLI factory skill
+  add|remove 同源)
+- **MCP 管理**: DELETE /api/mcp/connections/{id} (移除, 与 CLI factory mcp
+  remove 同源) + 前端连接表单 (注册即连, Mock)
+- **前端设置页**: 卡片式管理 UI (Provider 启用/停用/默认模型下拉 · Agent/Skill
+  注册表单+移除 · MCP 连接表单+移除+Tool 清单) + 动作结果反馈
+
+### 验证
+
+- 后端 settings 测试 9 passed (LLM 配置读写/MCP 移除/Agent-Skill 管理) +
+  权限边界 2 passed (新写路由入白名单)
+- 前端 677 passed (含设置管理面 4 用例) · npm run build 通过
+
 ## [v1.1.101] — 2026-08-26
 
 **工作区导航方案 A 落地: 7 项 → 3 项 (我的公司/项目/设置)**。

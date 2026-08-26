@@ -130,20 +130,32 @@ function matchesTime(updatedAt: string | undefined, timeKey: string): boolean {
   return true;
 }
 
-/** 多维筛选: 状态 + 优先级 + 更新时间 (Founder 2026-08-27 筛选不够/不好用)。 */
+/** 多维筛选: 状态 + 优先级 + 更新时间 (Founder 2026-08-27 筛选不够/不好用)。
+ * hideCompleted=false (默认): 已完成任务在树内显示 (✅) — 完成的任务要在列表里 (Founder 2026-08-27);
+ * hideCompleted=true: done 归入归档区 (原 W-3 待办视角)。 */
 function visibleUnderFilter(
   node: TreeNode,
   filterStatus: 'all' | DomainStatus,
   filterPriority: string,
   filterTime: string,
+  hideCompleted: boolean,
 ): boolean {
   // 叶子任务 = 执行单元 (Story 节点 type 也是 'task' 但有子任务 — 走下方后代判定)
   if (node.type === 'task' && node.children.length === 0) {
     const prioActive = filterPriority !== 'all';
     const timeActive = filterTime !== 'all';
     if (node.status === 'completed') {
-      // W-3 归档: done 默认不进主树; 筛选"已完成"或 优先级/时间激活时可见
-      return filterStatus === 'completed' || (filterStatus === 'all' && (prioActive || timeActive));
+      if (hideCompleted) {
+        // 隐藏已完成: 只在该状态筛或 优先级/时间激活时可见 (原 W-3 归档语义)
+        return filterStatus === 'completed' || (filterStatus === 'all' && (prioActive || timeActive));
+      }
+      // 默认显示已完成: 状态筛"已完成"→显示; 其他具体状态筛→隐藏; 全部→显示
+      if (filterStatus === 'completed' || filterStatus === 'all') {
+        if (prioActive && node.priority !== filterPriority) return false;
+        if (timeActive && !matchesTime(node.updatedAt, filterTime)) return false;
+        return true;
+      }
+      return false;
     }
     if (filterStatus !== 'all' && node.status !== filterStatus) return false;
     if (prioActive && node.priority !== filterPriority) return false;
@@ -155,7 +167,7 @@ function visibleUnderFilter(
     return filterStatus === 'all' && filterPriority === 'all' && filterTime === 'all';
   }
   return node.children.some((c) =>
-    visibleUnderFilter(c, filterStatus, filterPriority, filterTime),
+    visibleUnderFilter(c, filterStatus, filterPriority, filterTime, hideCompleted),
   );
 }
 
@@ -175,11 +187,15 @@ function hasActiveTasks(node: TreeNode): boolean {
 }
 
 /** 收集分支下可见的叶子任务 (折叠摘要钻取 — legacy M2→feature=M2 无意义时用)。 */
-function collectLeafTasks(node: TreeNode, filter: 'all' | DomainStatus): TreeNode[] {
+function collectLeafTasks(
+  node: TreeNode,
+  filter: 'all' | DomainStatus,
+  hideCompleted: boolean,
+): TreeNode[] {
   if (node.type === 'task' && node.children.length === 0) {
-    return visibleUnderFilter(node, filter, 'all', 'all') ? [node] : [];
+    return visibleUnderFilter(node, filter, 'all', 'all', hideCompleted) ? [node] : [];
   }
-  return node.children.flatMap((c) => collectLeafTasks(c, filter));
+  return node.children.flatMap((c) => collectLeafTasks(c, filter, hideCompleted));
 }
 
 /** 子树叶子任务计数 (含已归档 done): {done, total} — 父行百分比可解释 (Founder 2026-08-27: 数值对不上)。 */
@@ -225,7 +241,8 @@ export function AfTodoTree({
   const [filter, setFilter] = useState<'all' | DomainStatus>('all');
   const [filterPriority, setFilterPriority] = useState<string>('all');
   const [filterTime, setFilterTime] = useState<string>('all');
-  const [showArchive, setShowArchive] = useState(false);
+  // Founder 2026-08-27: 默认树内显示已完成任务; 开启「隐藏已完成」→ done 归入归档区
+  const [hideCompleted, setHideCompleted] = useState(false);
   const [sortMode, setSortMode] = useState<'time' | 'priority'>('time');
 
   // 空 backlog (无任何阶段) → AfEmptyState; 有想法模块/空分支 → 渲染树 (想法不能丢)
@@ -251,7 +268,7 @@ export function AfTodoTree({
   const collapseAll = () => setCollapsed(new Set(collectBranchIds(root)));
 
   const visiblePhases = root.children.filter((phase) =>
-    visibleUnderFilter(phase, filter, filterPriority, filterTime),
+    visibleUnderFilter(phase, filter, filterPriority, filterTime, hideCompleted),
   );
 
   return (
@@ -277,12 +294,13 @@ export function AfTodoTree({
         {doneTasks.length > 0 ? (
           <button
             type="button"
-            className={`af-btn af-tree-btn ${showArchive ? 'af-btn--active' : ''}`}
-            data-testid="af-tree-archive-toggle"
-            aria-expanded={showArchive}
-            onClick={() => setShowArchive((v) => !v)}
+            className={`af-btn af-tree-btn ${hideCompleted ? 'af-btn--active' : ''}`}
+            data-testid="af-tree-hide-completed-toggle"
+            aria-pressed={hideCompleted}
+            onClick={() => setHideCompleted((v) => !v)}
+            title="默认已完成任务在树内显示; 开启后隐藏并归入归档区"
           >
-            已归档 ({doneTasks.length})
+            {hideCompleted ? `已归档 (${doneTasks.length})` : '隐藏已完成'}
           </button>
         ) : null}
         <div className="af-tree-filters" role="group" aria-label="状态过滤">
@@ -393,13 +411,14 @@ export function AfTodoTree({
               onRefineFeature={onRefineFeature}
               filterPriority={filterPriority}
               filterTime={filterTime}
+              hideCompleted={hideCompleted}
               sortMode={sortMode}
             />
           ))
         )}
       </div>
 
-      {showArchive && doneTasks.length > 0 ? (
+      {hideCompleted && doneTasks.length > 0 ? (
         <section className="af-tree-archive" data-testid="af-tree-archive" aria-label="已归档">
           <h4 className="af-tree-archive-title">📦 已归档 ({doneTasks.length})</h4>
           <p className="af-tree-archive-hint">已完成任务 — 点击查看审计溯源</p>
@@ -461,6 +480,7 @@ interface TreeNodeRowProps {
   filter: 'all' | DomainStatus;
   filterPriority: string;
   filterTime: string;
+  hideCompleted: boolean;
   sortMode: 'time' | 'priority';
   taskMeta: Record<string, TaskMeta>;
   onSelectTask?: (taskId: string) => void;
@@ -475,6 +495,7 @@ function TreeNodeRow({
   filter,
   filterPriority,
   filterTime,
+  hideCompleted,
   sortMode,
   taskMeta,
   onSelectTask,
@@ -482,7 +503,7 @@ function TreeNodeRow({
   onDiscussFeature,
   onRefineFeature,
 }: TreeNodeRowProps): JSX.Element | null {
-  if (!visibleUnderFilter(node, filter, filterPriority, filterTime)) return null;
+  if (!visibleUnderFilter(node, filter, filterPriority, filterTime, hideCompleted)) return null;
 
   const hasChildren = node.children.length > 0;
   const isExpanded = !collapsed.has(node.id);
@@ -628,14 +649,14 @@ function TreeNodeRow({
         {hasChildren && !isExpanded ? (
           (() => {
             const visibleChildren = node.children.filter((c) =>
-              visibleUnderFilter(c, filter, filterPriority, filterTime),
+              visibleUnderFilter(c, filter, filterPriority, filterTime, hideCompleted),
             );
             if (visibleChildren.length === 0) return null;
             // legacy 结构 (M2→feature=M2) 子节点名与节点同名 → 钻取到叶子任务名
             const allSameAsNode =
               visibleChildren.length > 0 &&
               visibleChildren.every((c) => c.title.trim() === node.title.trim());
-            const items = allSameAsNode ? collectLeafTasks(node, filter) : visibleChildren;
+            const items = allSameAsNode ? collectLeafTasks(node, filter, hideCompleted) : visibleChildren;
             if (items.length === 0) return null;
             return (
               <span
@@ -656,7 +677,7 @@ function TreeNodeRow({
       {hasChildren && isExpanded ? (
         <div className="af-tree-children" data-testid={`af-tree-children-${node.id}`}>
           {sortChildren(node.children, sortMode)
-            .filter((child) => visibleUnderFilter(child, filter, filterPriority, filterTime))
+            .filter((child) => visibleUnderFilter(child, filter, filterPriority, filterTime, hideCompleted))
             .map((child) => (
               <TreeNodeRow
                 key={child.id}
@@ -670,6 +691,7 @@ function TreeNodeRow({
                 onRefineFeature={onRefineFeature}
                 filterPriority={filterPriority}
                 filterTime={filterTime}
+                hideCompleted={hideCompleted}
                 sortMode={sortMode}
               />
             ))}

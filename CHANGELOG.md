@@ -3,6 +3,22 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.107] — 2026-08-26
+
+**页面适配窗口大小: 固定 100vh + 内部滚动 (Founder 反馈: 页面/会话栏太长)**。
+
+### Changed
+
+- 壳 (af-shell/workspace/project) 从 `min-height: 100vh` 改 `height: 100vh +
+  overflow: hidden` — 页面不再随内容变长, 严格适配窗口
+- B 列: 标签条固定, 内容区 `.af-main-scroll` 内部滚动 (滚动不再带走标签条)
+- C 列会话栏: 高度受窗口约束 (`min-height: 0` + `.af-chat height:100%`),
+  消息区内部滚动, 不再整页拉长
+
+### 验证
+
+- 前端 678 passed · npm run build 通过 · 后端零改动
+
 ## [v1.1.106] — 2026-08-26
 
 **去掉侧栏重复 ◆ 品牌标记 (Founder 反馈: 左侧多了一个 ◆)**。

@@ -47,7 +47,8 @@
 }
 
 .af-shell {
-  min-height: 100vh;
+  height: 100vh; /* Founder: 页面适配窗口大小, 不随内容变长 (内部滚动) */
+  overflow: hidden;
   background: #0f1115;
   color: #e5e7eb;
   font-family:
@@ -60,7 +61,8 @@
 .af-workspace-shell {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .af-shell-body {
@@ -892,7 +894,8 @@
 .af-project-shell {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 /* Project Header: ← 返回工作台 + 项目名 + lifecycle 徽标 */
@@ -2953,16 +2956,25 @@
   flex-shrink: 0;
   width: 340px;
   min-width: 0;
+  min-height: 0; /* 会话栏适配窗口高度, 内部滚动 */
   background: var(--af-panel, #161a22);
   border-left: 1px solid var(--af-border, #2a3140);
 }
 
-/* B 列: 标签页条 (页面 + 预览, VSCode 式) */
+/* B 列: 标签页条固定 + 内容区内部滚动 (Founder: 页面适配窗口, 不整页变长) */
 .af-main-content {
   display: flex;
   flex-direction: column;
   padding: 0;
+  overflow: hidden;
+}
+
+.af-main-scroll {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
 }
 
 .af-b-tabs {
@@ -3002,26 +3014,27 @@
 }
 
 /* 预览标签页 (并入 B): 占满主区, 去掉右侧栏边框 */
-.af-main-content > .af-preview--open {
+.af-main-scroll > .af-preview--open {
   width: 100%;
+  height: 100%;
   border-left: none;
   flex: 1;
   min-height: 0;
 }
 
-.af-main-content > .af-preview--collapsed {
+.af-main-scroll > .af-preview--collapsed {
   border-left: none;
 }
 
 /* B 列页面内容容器 (主区内容替换 padding:0 后的内边距) */
-.af-main-content > section,
-.af-main-content > .af-company-home,
-.af-main-content > .af-project-home,
-.af-main-content > .af-project-detail,
-.af-main-content > .af-settings,
-.af-main-content > .af-project-manage,
-.af-main-content > div,
-.af-main-content > .af-state {
+.af-main-scroll > section,
+.af-main-scroll > .af-company-home,
+.af-main-scroll > .af-project-home,
+.af-main-scroll > .af-project-detail,
+.af-main-scroll > .af-settings,
+.af-main-scroll > .af-project-manage,
+.af-main-scroll > div,
+.af-main-scroll > .af-state {
   margin: 24px;
 }
 
@@ -3030,6 +3043,7 @@
   display: flex;
   flex-direction: column;
   width: 100%;
+  height: 100%;
   min-width: 0;
   min-height: 0;
 }

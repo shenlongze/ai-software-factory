@@ -139,7 +139,9 @@ export function AfWorkspaceFrame({
               👁 预览
             </button>
           </div>
-          {previewOpen ? <AfPreviewWindow projectId={projectId} defaultOpen /> : main}
+          <div className="af-main-scroll" data-testid="af-main-scroll">
+            {previewOpen ? <AfPreviewWindow projectId={projectId} defaultOpen /> : main}
+          </div>
         </main>
         <aside className="af-col-c">
           <AfConversationPanel projectId={projectId} projectName={projectName} />

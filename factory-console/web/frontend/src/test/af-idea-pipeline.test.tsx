@@ -119,7 +119,8 @@ describe('想法→细化→待办链路 (v1.1.144)', () => {
     // 想法箱阶段默认展开 → 模块可见; 折叠 → 模块消失
     expect(screen.getByText('AI 记账')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /折叠 想法箱/ }));
-    expect(screen.queryByText('AI 记账')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('af-tree-node-F-idea')).not.toBeInTheDocument();
+    expect(screen.getByTestId('af-tree-summary-E-idea')).toHaveTextContent('AI 记账');
   });
 });
 

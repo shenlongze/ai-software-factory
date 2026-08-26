@@ -161,7 +161,9 @@ describe('AfTodoTree (Todo Tree 组件)', () => {
     const toggle = within(nodeRow('epic-dev')).getByRole('button', { name: '折叠 开发阶段' });
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
     await user.click(toggle);
-    expect(screen.queryByText('用户系统')).not.toBeInTheDocument();
+    // 子节点行隐藏, 折叠摘要显示子模块名 (Founder: 不清楚里面是什么)
+    expect(screen.queryByTestId('af-tree-node-feat-user')).not.toBeInTheDocument();
+    expect(screen.getByTestId('af-tree-summary-epic-dev')).toHaveTextContent('用户系统');
     expect(within(nodeRow('epic-dev')).getByRole('button', { name: '展开 开发阶段' })).toHaveAttribute(
       'aria-expanded',
       'false',
@@ -174,8 +176,8 @@ describe('AfTodoTree (Todo Tree 组件)', () => {
     const user = userEvent.setup();
     render(<AfTodoTree tree={tree} taskMeta={meta} />);
     await user.click(screen.getByRole('button', { name: '全折叠' }));
-    expect(screen.queryByText('用户系统')).not.toBeInTheDocument();
-    expect(screen.queryByText('实现注册 API')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('af-tree-node-feat-user')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('af-tree-node-t-reg-api')).not.toBeInTheDocument();
     // 项目头 + 工具栏仍在 (不空白)
     expect(screen.getByText('演示项目')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '全展开' }));

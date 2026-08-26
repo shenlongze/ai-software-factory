@@ -1742,6 +1742,17 @@
   color: #ff5d5d;
 }
 
+.af-tree-collapsed-summary {
+  font-size: 11px;
+  color: var(--c-text-muted, var(--c-text2));
+  opacity: 0.75;
+  margin-left: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 320px;
+}
+
 .af-tree-progress-wrap {
   display: inline-flex;
   align-items: center;

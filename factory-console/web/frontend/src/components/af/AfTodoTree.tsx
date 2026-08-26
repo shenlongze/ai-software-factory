@@ -448,6 +448,25 @@ function TreeNodeRow({
         <span className="af-tree-progress-wrap">
           <AfProgressBar value={node.progress} status={node.status} />
         </span>
+        {hasChildren && !isExpanded ? (
+          (() => {
+            const visibleChildren = node.children.filter((c) => visibleUnderFilter(c, filter));
+            if (visibleChildren.length === 0) return null;
+            return (
+              <span
+                className="af-tree-collapsed-summary"
+                data-testid={`af-tree-summary-${node.id}`}
+                title={visibleChildren.map((c) => c.title).join(' · ')}
+              >
+                {visibleChildren
+                  .slice(0, 3)
+                  .map((c) => c.title)
+                  .join(' · ')}
+                {visibleChildren.length > 3 ? ` 等${visibleChildren.length}个` : ''}
+              </span>
+            );
+          })()
+        ) : null}
       </div>
       {hasChildren && isExpanded ? (
         <div className="af-tree-children" data-testid={`af-tree-children-${node.id}`}>

@@ -14,6 +14,12 @@ import { useCallback, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { api } from '../../api/client';
 import type { LlmProviderConfig } from '../../models/types';
+import {
+  agentRoleInfo,
+  agentStatusLabel,
+  skillCategoryLabel,
+  skillLabel,
+} from '../../components/af/afLabels';
 
 interface AgentItem {
   id?: string;
@@ -433,42 +439,49 @@ export function AfSettings(): JSX.Element {
 
         {tab === 'agent' && (
           <section>
-            <h3 className="af-settings-h3">👤 Agent（{agents.length}）</h3>
+            <h3 className="af-settings-h3">👤 AI 员工（{agents.length}）</h3>
+            <p className="af-home-note">
+              AI 员工 = 可调度的 AI 角色，各负责软件生产的一类工作（产品/研发/质量…）。名称与职责一目了然，内部代号见提示。
+            </p>
             <div className="af-settings-form">
-              <input className="af-settings-input" placeholder="id (如 pm-1)" aria-label="Agent id" value={agentForm.id} onChange={(e) => setAgentForm((f) => ({ ...f, id: e.target.value }))} />
-              <input className="af-settings-input" placeholder="role (如 product_manager)" aria-label="Agent role" value={agentForm.role} onChange={(e) => setAgentForm((f) => ({ ...f, role: e.target.value }))} />
-              <input className="af-settings-input af-settings-input--wide" placeholder="skills 逗号分隔 (prd,discovery)" aria-label="Agent skills" value={agentForm.skills} onChange={(e) => setAgentForm((f) => ({ ...f, skills: e.target.value }))} />
-              <button type="button" className="af-settings-action af-settings-action--primary" onClick={submitAgent}>＋ 注册 Agent</button>
+              <input className="af-settings-input" placeholder="内部代号 (如 backend-1)" aria-label="Agent id" value={agentForm.id} onChange={(e) => setAgentForm((f) => ({ ...f, id: e.target.value }))} />
+              <input className="af-settings-input" placeholder="角色 (如 产品经理 / backend-developer)" aria-label="Agent role" value={agentForm.role} onChange={(e) => setAgentForm((f) => ({ ...f, role: e.target.value }))} />
+              <input className="af-settings-input af-settings-input--wide" placeholder="技能 逗号分隔 (如 需求分析, 测试)" aria-label="Agent skills" value={agentForm.skills} onChange={(e) => setAgentForm((f) => ({ ...f, skills: e.target.value }))} />
+              <button type="button" className="af-settings-action af-settings-action--primary" onClick={submitAgent}>＋ 注册 AI 员工</button>
             </div>
             {table(
-              ['ID', '名称', '角色', 'Skills', '状态', '操作'],
-              agents.map((a) => [
-                a.id ?? '',
-                a.name ?? '',
-                a.role ?? '',
-                (a.skills ?? []).join(', ') || '—',
-                a.status ?? '—',
-                <button key="d" type="button" className="af-settings-action af-settings-action--danger" onClick={() => removeAgent(a.id ?? '')}>移除</button>,
-              ]),
+              ['名称', '角色', '职责', '技能', '状态', '操作'],
+              agents.map((a) => {
+                const info = agentRoleInfo(a.role);
+                return [
+                  <span key="n" title={`代号: ${a.id ?? ''}`}>{a.name ?? a.id ?? ''}</span>,
+                  `${info.label}${info.group !== '其他' ? `（${info.group}线）` : ''}`,
+                  info.desc,
+                  (a.skills ?? []).map(skillLabel).join('、') || '—',
+                  agentStatusLabel(a.status),
+                  <button key="d" type="button" className="af-settings-action af-settings-action--danger" onClick={() => removeAgent(a.id ?? '')}>移除</button>,
+                ];
+              }),
             )}
           </section>
         )}
 
         {tab === 'skill' && (
           <section>
-            <h3 className="af-settings-h3">🧩 Skill（{skills.length}）</h3>
+            <h3 className="af-settings-h3">🧩 技能（{skills.length}）</h3>
+            <p className="af-home-note">技能 = AI 员工能干的某类活（后端开发 / 测试 / 需求分析…）。</p>
             <div className="af-settings-form">
-              <input className="af-settings-input" placeholder="id (如 python-api)" aria-label="Skill id" value={skillForm.id} onChange={(e) => setSkillForm((f) => ({ ...f, id: e.target.value }))} />
-              <input className="af-settings-input" placeholder="名称" aria-label="Skill name" value={skillForm.name} onChange={(e) => setSkillForm((f) => ({ ...f, name: e.target.value }))} />
-              <input className="af-settings-input" placeholder="分类 (backend/general)" aria-label="Skill category" value={skillForm.category} onChange={(e) => setSkillForm((f) => ({ ...f, category: e.target.value }))} />
-              <button type="button" className="af-settings-action af-settings-action--primary" onClick={submitSkill}>＋ 注册 Skill</button>
+              <input className="af-settings-input" placeholder="内部代号 (如 python-api)" aria-label="Skill id" value={skillForm.id} onChange={(e) => setSkillForm((f) => ({ ...f, id: e.target.value }))} />
+              <input className="af-settings-input" placeholder="名称 (如 Python 接口开发)" aria-label="Skill name" value={skillForm.name} onChange={(e) => setSkillForm((f) => ({ ...f, name: e.target.value }))} />
+              <input className="af-settings-input" placeholder="分类 (后端/前端/测试/通用)" aria-label="Skill category" value={skillForm.category} onChange={(e) => setSkillForm((f) => ({ ...f, category: e.target.value }))} />
+              <button type="button" className="af-settings-action af-settings-action--primary" onClick={submitSkill}>＋ 注册技能</button>
             </div>
             {table(
-              ['ID', '名称', '分类', '版本', '操作'],
+              ['名称', '技能', '分类', '版本', '操作'],
               skills.map((sk) => [
-                sk.id ?? '',
-                sk.name ?? '',
-                sk.category ?? '',
+                <span key="n" title={`代号: ${sk.id ?? ''}`}>{sk.name ?? sk.id ?? ''}</span>,
+                skillLabel(sk.id ?? ''),
+                skillCategoryLabel(sk.category ?? ''),
                 sk.version ?? '',
                 <button key="d" type="button" className="af-settings-action af-settings-action--danger" onClick={() => removeSkill(sk.id ?? '')}>移除</button>,
               ]),

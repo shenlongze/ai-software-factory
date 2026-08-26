@@ -111,7 +111,7 @@ describe('AfSettings (设置管理面)', () => {
     await userEvent.type(screen.getByLabelText('Agent id'), 'pm-1');
     await userEvent.type(screen.getByLabelText('Agent role'), 'product_manager');
     await userEvent.type(screen.getByLabelText('Agent skills'), 'prd, discovery');
-    await userEvent.click(screen.getByRole('button', { name: '＋ 注册 Agent' }));
+    await userEvent.click(screen.getByRole('button', { name: '＋ 注册 AI 员工' }));
     expect(calls.some((c) => c.method === 'POST' && c.url === '/api/agents')).toBe(true);
     const posted = calls.find((c) => c.method === 'POST' && c.url === '/api/agents')?.body as { id: string; skills: string[] };
     expect(posted.id).toBe('pm-1');
@@ -124,7 +124,7 @@ describe('AfSettings (设置管理面)', () => {
     await userEvent.click(screen.getByRole('tab', { name: '🧩 Skill' }));
     await userEvent.type(screen.getByLabelText('Skill id'), 'python-api');
     await userEvent.type(screen.getByLabelText('Skill name'), 'Python API');
-    await userEvent.click(screen.getByRole('button', { name: '＋ 注册 Skill' }));
+    await userEvent.click(screen.getByRole('button', { name: '＋ 注册技能' }));
     expect(calls.some((c) => c.method === 'POST' && c.url === '/api/skills')).toBe(true);
   });
 

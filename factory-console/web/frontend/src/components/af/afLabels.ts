@@ -106,3 +106,98 @@ export function progressPercent(progress: number | null | undefined): number {
   if (!Number.isFinite(raw)) return 0;
   return Math.max(0, Math.min(100, Math.round(raw * 100)));
 }
+
+/* ============================================= v1.1.104: AI 员工/技能人话标签
+ * 普通人友好: 内部 role/skill id → 中文标签+分组+职责说明 (未知值原样兜底)。
+ */
+
+/** AI 员工角色信息 (role → 中文标签/分组/一句职责说明)。 */
+export const AGENT_ROLE_INFO: Record<string, { label: string; group: string; desc: string }> = {
+  // 产品线
+  product_manager: { label: '产品经理', group: '产品', desc: '定义产品需求与方向' },
+  'product-manager': { label: '产品经理', group: '产品', desc: '定义产品需求与方向' },
+  pm: { label: '产品经理', group: '产品', desc: '定义产品需求与方向' },
+  'Product Manager': { label: '产品经理', group: '产品', desc: '定义产品需求与方向' },
+  // 设计线
+  ux: { label: '体验设计师', group: '设计', desc: '界面与交互设计' },
+  designer: { label: '设计师', group: '设计', desc: '视觉与交互设计' },
+  // 研发线
+  architect: { label: '架构师', group: '研发', desc: '设计技术方案与系统架构' },
+  Architect: { label: '架构师', group: '研发', desc: '设计技术方案与系统架构' },
+  'backend-developer': { label: '后端开发', group: '研发', desc: '服务端逻辑与接口开发' },
+  backend_developer: { label: '后端开发', group: '研发', desc: '服务端逻辑与接口开发' },
+  developer: { label: '开发工程师', group: '研发', desc: '编码实现功能' },
+  'frontend-engineer': { label: '前端开发', group: '研发', desc: '界面与前端功能开发' },
+  frontend: { label: '前端开发', group: '研发', desc: '界面与前端功能开发' },
+  'Frontend Engineer': { label: '前端开发', group: '研发', desc: '界面与前端功能开发' },
+  flutter_dev: { label: 'Flutter 开发', group: '研发', desc: '跨平台 App 开发' },
+  'flutter-dev': { label: 'Flutter 开发', group: '研发', desc: '跨平台 App 开发' },
+  // 质量线
+  tester: { label: '测试工程师', group: '质量', desc: '功能与回归测试' },
+  qa: { label: 'QA 工程师', group: '质量', desc: '质量保障与测试' },
+  'qa-engineer': { label: 'QA 工程师', group: '质量', desc: '质量保障与测试' },
+  'QA Engineer': { label: 'QA 工程师', group: '质量', desc: '质量保障与测试' },
+};
+
+/** 角色 → 中文信息 (未知 → 原样 + 自定义说明)。 */
+export function agentRoleInfo(role: string | null | undefined): { label: string; group: string; desc: string } {
+  const key = String(role ?? '').trim();
+  const hit = AGENT_ROLE_INFO[key] ?? AGENT_ROLE_INFO[key.toLowerCase()];
+  return hit ?? { label: key || '未知角色', group: '其他', desc: '自定义角色' };
+}
+
+/** Agent 状态人话标签 (AVAILABLE → 可用; 未知原样)。 */
+export function agentStatusLabel(status: string | null | undefined): string {
+  const s = String(status ?? '').trim().toUpperCase();
+  if (s === 'AVAILABLE') return '可用';
+  if (s === 'BUSY') return '忙碌';
+  if (s === 'OFFLINE' || s === 'DISABLED') return '停用';
+  return status || '—';
+}
+
+/** Skill 人话标签 (skill id → 中文; 未知原样)。 */
+export const SKILL_LABELS: Record<string, string> = {
+  'backend.development': '后端开发',
+  'flutter.development': 'Flutter 开发',
+  flutter: 'Flutter',
+  dart: 'Dart',
+  python: 'Python',
+  development: '开发',
+  testing: '测试',
+  test: '测试',
+  qa: '质量保障',
+  pytest: 'Pytest',
+  product_management: '产品管理',
+  pm: '产品管理',
+  analysis: '需求分析',
+  requirement: '需求',
+  requirement_analysis: '需求分析',
+  architecture: '架构设计',
+  system: '系统设计',
+  design: '设计',
+  ui: 'UI 设计',
+  frontend: '前端',
+  react: 'React',
+  typescript: 'TypeScript',
+  product_documentation: '产品文档',
+};
+
+/** Skill 人话标签函数 (未知名原样)。 */
+export function skillLabel(skill: string | null | undefined): string {
+  const s = String(skill ?? '').trim();
+  return SKILL_LABELS[s] ?? SKILL_LABELS[s.toLowerCase()] ?? (s || '—');
+}
+
+/** Skill 分类人话标签 (backend→后端 等; 未知原样)。 */
+export const SKILL_CATEGORY_LABELS: Record<string, string> = {
+  backend: '后端',
+  frontend: '前端',
+  testing: '测试',
+  general: '通用',
+  product: '产品',
+  design: '设计',
+};
+export function skillCategoryLabel(category: string | null | undefined): string {
+  const c = String(category ?? '').trim();
+  return SKILL_CATEGORY_LABELS[c] ?? SKILL_CATEGORY_LABELS[c.toLowerCase()] ?? (c || '—');
+}

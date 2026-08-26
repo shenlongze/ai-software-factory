@@ -9,6 +9,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useConversation } from './ConversationContext';
+import { useI18n } from '../../i18n';
 import type { SessionSummary } from '../../models/types';
 
 function estimateTokens(text: string): number {
@@ -31,6 +32,7 @@ export interface AfConversationPanelProps {
 }
 
 export function AfConversationPanel({ projectId, projectName }: AfConversationPanelProps): JSX.Element {
+  const { t } = useI18n();
   const ctx = useConversation();
   const [input, setInput] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -52,7 +54,7 @@ export function AfConversationPanel({ projectId, projectName }: AfConversationPa
   if (ctx.collapsed) {
     return (
       <aside className="af-chat af-chat--collapsed" data-testid="af-conversation-panel" aria-label="AI 会话 (已收起)">
-        <button type="button" className="af-chat-reopen" onClick={ctx.toggleCollapsed} aria-label="展开 AI 会话">
+        <button type="button" className="af-chat-reopen" onClick={ctx.toggleCollapsed} aria-label={t('chat.reopen')}>
           💬
         </button>
       </aside>
@@ -98,22 +100,22 @@ export function AfConversationPanel({ projectId, projectName }: AfConversationPa
           value={ctx.scope}
           onChange={(e) => ctx.setScope(e.target.value as 'company' | 'project')}
         >
-          <option value="company">🏢 公司</option>
-          <option value="project">📁 项目</option>
+          <option value="company">{t('chat.scope.company')}</option>
+          <option value="project">{t('chat.scope.project')}</option>
         </select>
-        <button type="button" className="af-chat-btn" onClick={() => void ctx.createSession()} aria-label="新建会话">
+        <button type="button" className="af-chat-btn" onClick={() => void ctx.createSession()} aria-label={t('chat.newSession')}>
           +
         </button>
         <button
           type="button"
           className={`af-chat-btn${ctx.pinned ? ' af-chat-btn--on' : ''}`}
           onClick={ctx.togglePinned}
-          aria-label={ctx.pinned ? '取消常驻' : '常驻'}
-          title={ctx.pinned ? '常驻中' : '设为常驻'}
+          aria-label={ctx.pinned ? t('chat.unpin') : t('chat.pin')}
+          title={ctx.pinned ? t('chat.unpin') : t('chat.pin')}
         >
           📌
         </button>
-        <button type="button" className="af-chat-btn" onClick={ctx.toggleCollapsed} aria-label="收起 AI 会话">
+        <button type="button" className="af-chat-btn" onClick={ctx.toggleCollapsed} aria-label={t('chat.collapse')}>
           »
         </button>
       </div>
@@ -127,9 +129,7 @@ export function AfConversationPanel({ projectId, projectName }: AfConversationPa
           <p className="af-chat-note">加载会话…</p>
         ) : ctx.sessions.length === 0 ? (
           <p className="af-chat-note">
-            {ctx.scope === 'project' && !ctx.projectId
-              ? '—'
-              : '暂无会话 — 点 + 新建（新会话 = 新任务线程）'}
+            {ctx.scope === 'project' && !ctx.projectId ? '—' : t('chat.noSessions')}
           </p>
         ) : (
           ctx.sessions.map((s) => (
@@ -199,9 +199,9 @@ export function AfConversationPanel({ projectId, projectName }: AfConversationPa
 
       <div className="af-chat-messages" ref={listRef} data-testid="af-chat-messages">
         {activeSession == null ? (
-          <p className="af-chat-note">选择一个会话，或点 + 新建后开始对话。</p>
+          <p className="af-chat-note">{t('chat.selectFirst')}</p>
         ) : ctx.messages.length === 0 ? (
-          <p className="af-chat-note">新会话 — 说点什么开始。</p>
+          <p className="af-chat-note">{t('chat.newSessionHint')}</p>
         ) : (
           ctx.messages.map((m) => (
             <div key={m.id} className={`af-chat-msg af-chat-msg--${m.role}`} data-testid={`af-chat-msg-${m.id}`}>
@@ -212,13 +212,13 @@ export function AfConversationPanel({ projectId, projectName }: AfConversationPa
             </div>
           ))
         )}
-        {ctx.sending ? <p className="af-chat-note">AI 思考中…</p> : null}
+        {ctx.sending ? <p className="af-chat-note">{t('chat.sending')}</p> : null}
       </div>
 
       <div className="af-chat-input-row">
         <input
           className="af-chat-input"
-          placeholder={ctx.scope === 'project' ? '改需求 / 看状态 / 分析影响…' : '我想做一个App / 讨论想法…'}
+          placeholder={ctx.scope === 'project' ? t('chat.input.project') : t('chat.input.company')}
           aria-label="AI 会话输入"
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -228,7 +228,7 @@ export function AfConversationPanel({ projectId, projectName }: AfConversationPa
           }}
         />
         <button type="button" className="af-chat-send" onClick={submit} disabled={ctx.sending || !input.trim()}>
-          {ctx.sending ? '…' : '发送'}
+          {ctx.sending ? '…' : t('chat.send')}
         </button>
       </div>
     </aside>

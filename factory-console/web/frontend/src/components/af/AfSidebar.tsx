@@ -10,6 +10,7 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '../../api/client';
+import { useI18n } from '../../i18n';
 
 /** K-7b: 默认一人公司根 (one-person company) — 项目直接挂下面; 部门仅用户显式创建时才出现。 */
 export const PERSONAL_COMPANY = {
@@ -43,6 +44,7 @@ export interface AfSidebarProps {
 }
 
 export function AfSidebar({ activePage, collapsed }: AfSidebarProps): JSX.Element {
+  const { t } = useI18n();
   const navigate = (page: string) => {
     window.location.hash = navPathForPage(page);
   };
@@ -194,23 +196,24 @@ export function AfSidebar({ activePage, collapsed }: AfSidebarProps): JSX.Elemen
           </div>
         </div>
       )}
-      <div className="af-nav-section">工作区</div>
+      <div className="af-nav-section">{t('nav.section.workspace')}</div>
       <nav className="af-nav" aria-label="Workspace 导航">
         {WORKSPACE_NAV_ITEMS.map((item) => {
           const active = item.page === activePage;
+          const label = t(`nav.workspace.${item.page}`);
           return (
             <button
               key={item.page}
               type="button"
               className={`af-nav-item${active ? ' af-nav-item--active' : ''}`}
               aria-current={active ? 'page' : undefined}
-              title={collapsed ? item.label : undefined}
+              title={collapsed ? label : undefined}
               onClick={() => navigate(item.page)}
             >
               <span className="af-nav-icon" aria-hidden="true">
                 {item.icon}
               </span>
-              <span className="af-nav-label">{item.label}</span>
+              <span className="af-nav-label">{label}</span>
             </button>
           );
         })}

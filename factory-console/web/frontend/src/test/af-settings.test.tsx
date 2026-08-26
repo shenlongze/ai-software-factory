@@ -107,7 +107,7 @@ describe('AfSettings (设置管理面)', () => {
   it('Agent tab: 注册 → POST /api/agents + 列表刷新', async () => {
     const { calls } = stubApi();
     render(<AfSettings />);
-    await userEvent.click(screen.getByRole('tab', { name: '👤 Agent' }));
+    await userEvent.click(screen.getByRole('tab', { name: '👤 AI 员工' }));
     await userEvent.type(screen.getByLabelText('Agent id'), 'pm-1');
     await userEvent.type(screen.getByLabelText('Agent role'), 'product_manager');
     await userEvent.type(screen.getByLabelText('Agent skills'), 'prd, discovery');
@@ -121,7 +121,7 @@ describe('AfSettings (设置管理面)', () => {
   it('Skill tab: 注册 → POST /api/skills', async () => {
     const { calls } = stubApi();
     render(<AfSettings />);
-    await userEvent.click(screen.getByRole('tab', { name: '🧩 Skill' }));
+    await userEvent.click(screen.getByRole('tab', { name: '🧩 技能' }));
     await userEvent.type(screen.getByLabelText('Skill id'), 'python-api');
     await userEvent.type(screen.getByLabelText('Skill name'), 'Python API');
     await userEvent.click(screen.getByRole('button', { name: '＋ 注册技能' }));

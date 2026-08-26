@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { api } from '../../api/client';
+import { useI18n } from '../../i18n';
 import type { ProjectArtifactItem, ProjectDocContent, ProjectDocSummary } from '../../models/types';
 
 /* ---------------------------------------------------------------- markdown */
@@ -98,6 +99,7 @@ export interface AfProjectDocsProps {
 }
 
 export function AfProjectDocs({ projectId, projectName }: AfProjectDocsProps): JSX.Element {
+  const { t } = useI18n();
   const [tab, setTab] = useState<'docs' | 'artifacts'>('docs');
   const [msg, setMsg] = useState<string>('');
 
@@ -291,10 +293,10 @@ export function AfProjectDocs({ projectId, projectName }: AfProjectDocsProps): J
       <h2 className="af-detail-name">📄 文档 · {projectName ?? projectId}</h2>
       <div className="af-docs-tabs" role="tablist" aria-label="文档/产出物">
         <button type="button" role="tab" aria-selected={tab === 'docs'} className={`af-docs-tab${tab === 'docs' ? ' active' : ''}`} onClick={() => setTab('docs')}>
-          📄 文档
+          {t('docs.tab.docs')}
         </button>
         <button type="button" role="tab" aria-selected={tab === 'artifacts'} className={`af-docs-tab${tab === 'artifacts' ? ' active' : ''}`} onClick={() => setTab('artifacts')}>
-          📦 产出物{artifactMeta.version > 0 ? ` · v${artifactMeta.version}` : ''}
+          {t('docs.tab.artifacts')}{artifactMeta.version > 0 ? ` · v${artifactMeta.version}` : ''}
         </button>
       </div>
       {msg ? (

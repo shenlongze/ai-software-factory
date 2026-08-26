@@ -11,6 +11,7 @@
  */
 
 import { api } from '../../api/client';
+import { useI18n } from '../../i18n';
 import { useAsync } from '../../hooks/useAsync';
 import type { ParsedRoute } from '../../router';
 import { AfProjectCard } from './AfProjectCard';
@@ -87,7 +88,8 @@ export interface AfWorkspaceShellProps {
 
 /** AI OS Workspace 三栏壳 (根节点保留 af-workspace-entry testid — 入口兼容)。 */
 export function AfWorkspaceShell({ route }: AfWorkspaceShellProps): JSX.Element {
-  const pageLabel = WORKSPACE_PAGE_LABELS[route.page] ?? route.page;
+  const { t } = useI18n();
+  const pageLabel = t(`nav.workspace.${route.page}`) || (WORKSPACE_PAGE_LABELS[route.page] ?? route.page);
 
   const renderHeader = ({ collapsed, onToggleSidebar }: AfWorkspaceFrameHandlers) => (
     <AfHeader pageLabel={pageLabel} collapsed={collapsed} onToggleSidebar={onToggleSidebar} />

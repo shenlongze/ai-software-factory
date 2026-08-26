@@ -9,20 +9,16 @@
  * App.tsx hashchange 重渲染驱动; 壳不持有路由状态, 激活态由 activePage 传入。
  */
 
+import { useI18n } from '../../i18n';
+
 /** 11 个 Project 导航项 (与 router.tsx PROJECT_ROUTES 对齐, 顺序 = 导航顺序)。 */
 export const PROJECT_NAV_ITEMS: readonly { page: string; label: string; icon: string }[] = [
-  { page: 'overview', label: 'Overview', icon: '◈' },
-  { page: 'vision', label: 'Vision', icon: '✦' },
-  { page: 'discovery', label: 'Discovery', icon: '◉' },
-  { page: 'prd', label: 'PRD', icon: '▤' },
+  { page: 'overview', label: '概览', icon: '📋' },
   { page: 'docs', label: '文档', icon: '📄' },
-  { page: 'roadmap', label: 'Roadmap', icon: '⇥' },
-  { page: 'backlog', label: 'Backlog', icon: '▦' },
-  { page: 'sprint', label: 'Sprint', icon: '◔' },
-  { page: 'todo', label: 'Todo Tree', icon: '⧉' },
-  { page: 'workflow', label: 'Workflow', icon: '⇄' },
-  { page: 'runtime', label: 'Runtime', icon: '◎' },
-  { page: 'logs', label: 'Logs', icon: '≡' },
+  { page: 'todo', label: '任务', icon: '🗂' },
+  { page: 'workflow', label: '执行', icon: '⚙️' },
+  { page: 'runtime', label: '运行时', icon: '📈' },
+  { page: 'quality', label: '质量', icon: '✅' },
 ];
 
 /** 导航项 page → hash 路由 (overview 精确 #/project/:id, 其余 #/project/:id/<page>)。 */
@@ -40,6 +36,7 @@ export interface AfProjectSidebarProps {
 }
 
 export function AfProjectSidebar({ projectId, activePage }: AfProjectSidebarProps): JSX.Element {
+  const { t } = useI18n();
   const navigate = (page: string) => {
     window.location.hash = projectNavPathForPage(projectId, page);
   };
@@ -50,14 +47,10 @@ export function AfProjectSidebar({ projectId, activePage }: AfProjectSidebarProp
       data-testid="af-project-sidebar"
       aria-label="项目导航"
     >
-      <div className="af-sidebar-brand" title="AI Factory" aria-label="AI Factory">
-        <span className="af-brand-mark" aria-hidden="true">
-          ◆
-        </span>
-      </div>
       <nav className="af-nav" aria-label="Project 导航">
         {PROJECT_NAV_ITEMS.map((item) => {
           const active = item.page === activePage;
+          const label = t(`nav.project.${item.page}`);
           return (
             <button
               key={item.page}
@@ -69,7 +62,7 @@ export function AfProjectSidebar({ projectId, activePage }: AfProjectSidebarProp
               <span className="af-nav-icon" aria-hidden="true">
                 {item.icon}
               </span>
-              <span className="af-nav-label">{item.label}</span>
+              <span className="af-nav-label">{label}</span>
             </button>
           );
         })}

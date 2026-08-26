@@ -8,6 +8,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
+import { useI18n } from '../../i18n';
 import type { ProjectSummary } from '../../models/types';
 
 interface ApprovalItem {
@@ -36,6 +37,7 @@ function fmtTime(iso: string | null | undefined): string {
 }
 
 export function AfCompanyHome(): JSX.Element {
+  const { t } = useI18n();
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [approvals, setApprovals] = useState<ApprovalItem[]>([]);
   const [filter, setFilter] = useState<string>('all'); // all | project_id
@@ -100,13 +102,13 @@ export function AfCompanyHome(): JSX.Element {
 
   return (
     <div className="af-company-home" data-testid="af-company-home">
-      <h2 className="af-detail-name">我的公司</h2>
+      <h2 className="af-detail-name">{t('company.title')}</h2>
 
       <section className="af-home-card" data-testid="af-home-focused">
-        <h3>⭐ 关注项目（近期有更新）</h3>
+        <h3>{t('company.focused')}</h3>
         {focused.length === 0 ? (
           <p className="af-home-note">
-            （暂无近期有更新的收藏项目 — 收藏后自动出现；或点左栏项目 ⭐ 收藏）
+            {t('company.focusedEmpty')}
           </p>
         ) : (
           <div className="af-focused-grid">
@@ -123,14 +125,14 @@ export function AfCompanyHome(): JSX.Element {
 
       <section className="af-home-card" data-testid="af-home-todo">
         <div className="af-home-card-head">
-          <h3>📋 我的待办</h3>
+          <h3>{t('company.todo')}</h3>
           <select
             className="af-todo-pri"
             aria-label="待办过滤维度"
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
           >
-            <option value="all">全部（公司）</option>
+            <option value="all">{t('company.todoAll')}</option>
             {todoProjects.map((pid) => (
               <option key={pid} value={pid}>
                 {projectNames.get(pid) ?? pid}
@@ -141,7 +143,7 @@ export function AfCompanyHome(): JSX.Element {
         {loading ? (
           <p className="af-home-note">加载中…</p>
         ) : todoItems.length === 0 ? (
-          <p className="af-home-note">✅ 无待处理（当前过滤维度）</p>
+          <p className="af-home-note">{t('company.todoEmpty')}</p>
         ) : (
           <div className="af-todo-list">
             {todoItems.map((a) => (
@@ -156,7 +158,7 @@ export function AfCompanyHome(): JSX.Element {
             ))}
           </div>
         )}
-        <p className="af-home-note">质量待检 / 成本告警 API 待接入（真实数据后自动出现）</p>
+        <p className="af-home-note">{t('company.qaNote')}</p>
       </section>
     </div>
   );

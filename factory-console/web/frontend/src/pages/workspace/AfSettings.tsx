@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { api } from '../../api/client';
+import { AfLangSwitch, useI18n } from '../../i18n';
 import type { LlmProviderConfig } from '../../models/types';
 import {
   agentRoleInfo,
@@ -49,15 +50,17 @@ interface MCPTool {
 }
 
 const TABS = [
-  { id: 'llm', label: '🤖 LLM / 模型' },
-  { id: 'agent', label: '👤 Agent' },
-  { id: 'skill', label: '🧩 Skill' },
-  { id: 'mcp', label: '🔌 MCP' },
-  { id: 'plugin', label: '📦 插件' },
+  { id: 'llm', label: 'llm' },
+  { id: 'agent', label: 'agent' },
+  { id: 'skill', label: 'skill' },
+  { id: 'mcp', label: 'mcp' },
+  { id: 'plugin', label: 'plugin' },
+  { id: 'lang', label: 'lang' },
 ] as const;
 type TabId = (typeof TABS)[number]['id'];
 
 export function AfSettings(): JSX.Element {
+  const { t } = useI18n();
   const [tab, setTab] = useState<TabId>('llm');
   const [msg, setMsg] = useState<string>('');
 
@@ -367,18 +370,18 @@ export function AfSettings(): JSX.Element {
 
   return (
     <div className="af-settings" data-testid="af-settings">
-      <h2 className="af-detail-name">设置</h2>
+      <h2 className="af-detail-name">{t('settings.title')}</h2>
       <div className="af-settings-tabs" role="tablist" aria-label="设置分类">
-        {TABS.map((t) => (
+        {TABS.map((tb) => (
           <button
-            key={t.id}
+            key={tb.id}
             type="button"
             role="tab"
-            aria-selected={tab === t.id}
-            className={`af-settings-tab${tab === t.id ? ' active' : ''}`}
-            onClick={() => setTab(t.id)}
+            aria-selected={tab === tb.id}
+            className={`af-settings-tab${tab === tb.id ? ' active' : ''}`}
+            onClick={() => setTab(tb.id)}
           >
-            {t.label}
+            {t(`settings.tab.${tb.id}`)}
           </button>
         ))}
       </div>
@@ -512,6 +515,16 @@ export function AfSettings(): JSX.Element {
               ['ID', '名称', '来源', '描述'],
               mcpTools.map((t) => [t.id ?? '', t.name ?? '', t.server ?? '', t.description ?? '']),
             )}
+          </section>
+        )}
+
+        {tab === 'lang' && (
+          <section>
+            <h3 className="af-settings-h3">{t('settings.tab.lang')}</h3>
+            <div className="af-settings-form">
+              <span className="af-home-note">{t('settings.lang.label')}</span>
+              <AfLangSwitch />
+            </div>
           </section>
         )}
 

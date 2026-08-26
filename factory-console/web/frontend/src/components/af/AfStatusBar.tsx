@@ -7,6 +7,7 @@
 
 import { useEffect, useState } from 'react';
 import { useConversation } from './ConversationContext';
+import { useI18n } from '../../i18n';
 
 export interface AfStatusBarProps {
   /** 作用域人话标签 (如 "公司 · 我的公司" / "项目 · markpad")。 */
@@ -17,6 +18,7 @@ export function AfStatusBar({ scopeLabel }: AfStatusBarProps): JSX.Element {
   const [model, setModel] = useState<string>('');
   const [version, setVersion] = useState<string>('');
   const ctx = useConversation();
+  const { t } = useI18n();
 
   useEffect(() => {
     let cancelled = false;
@@ -55,11 +57,11 @@ export function AfStatusBar({ scopeLabel }: AfStatusBarProps): JSX.Element {
   return (
     <footer className="af-statusbar" data-testid="af-statusbar">
       <span className="af-statusbar-item" data-testid="af-statusbar-model">
-        ⚡ {model || '模型 —'}
+        ⚡ {model || `${t('statusbar.model')} —`}
       </span>
       <span className="af-statusbar-item">📍 {scopeLabel}</span>
       <span className="af-statusbar-item">
-        💬 会话 {ctx.sessions.length} · 消息 {ctx.messages.length} · ≈{tokens} tokens
+        💬 {t('statusbar.session')} {ctx.sessions.length} · {t('statusbar.msg')} {ctx.messages.length} · ≈{tokens} tokens
       </span>
       <span className="af-statusbar-item af-statusbar-item--right" data-testid="af-statusbar-version">
         {version || 'v—'}

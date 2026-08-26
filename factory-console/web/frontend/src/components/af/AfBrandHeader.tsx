@@ -5,6 +5,7 @@
  */
 
 import type { ReactNode } from 'react';
+import { AfLangSwitch } from '../../i18n';
 
 export interface AfBrandHeaderProps {
   /** 子页/上下文标签 (如 "工作台" / "项目 · Overview")。 */
@@ -36,6 +37,7 @@ export function AfBrandHeader({
       >
         🛠 开发者控制台
       </a>
+      <AfLangSwitch compact />
       {trailing}
     </header>
   );

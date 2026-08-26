@@ -198,9 +198,10 @@ describe('AfWorkspaceShell (AI OS 三栏壳)', () => {
     render(<AfWorkspaceShell route={workspaceRoute('settings')} />);
     expect(await screen.findByTestId('af-settings')).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '🤖 LLM / 模型' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: '👤 Agent' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: '🧩 Skill' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '👤 AI 员工' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '🧩 技能' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '🔌 MCP' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '🌐 语言' })).toBeInTheDocument();
   });
 
   it('加载中 → af-loading-state (projects 列表页)', () => {

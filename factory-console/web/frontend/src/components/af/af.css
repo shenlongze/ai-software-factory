@@ -3699,3 +3699,21 @@
   background: var(--af-primary, #4c8dff);
   border-color: transparent;
 }
+
+/* ============================================= i18n: 语言切换 */
+.af-lang-switch {
+  font: inherit;
+  font-size: 12px;
+  color: #e5e7eb;
+  background: #161a22;
+  border: 1px solid #2a3140;
+  border-radius: 6px;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+.af-lang-switch--compact {
+  font-size: 11px;
+  padding: 2px 6px;
+  margin-right: 6px;
+}

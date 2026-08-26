@@ -3276,18 +3276,52 @@ class ConsoleService:
             return {}
 
     def _project_last_activity(self, project_id: str) -> str | None:
-        """项目维度最近事件时间 (无事件 → None)。"""
-        store = self._events
-        if store is None:
-            return None
-        try:
-            events = store.query(project_id=project_id, limit=1)
-            if not events:
-                return None
-            from events.models import format_timestamp
+        """项目维度最近事件时间 (事件缺失 → 项目目录最新文件 mtime 兜底)。
 
-            return format_timestamp(events[-1].timestamp)
-        except Exception:
+        Founder 2026-08-26: 收藏项目 last_activity=None → 关注区不显示 (严重)。
+        事件 store 空 (旧数据/纯 CLI 操作) 时, 用项目空间最新文件 mtime 兜底,
+        让"近期有更新"有真实语义 (文件被改动 = 有活动)。
+        """
+        store = self._events
+        if store is not None:
+            try:
+                events = store.query(project_id=project_id, limit=1)
+                if events:
+                    from events.models import format_timestamp
+
+                    return format_timestamp(events[-1].timestamp)
+            except Exception:  # noqa: BLE001 — 事件查询失败 → 兜底
+                pass
+        # 兜底: 项目空间目录最新文件 mtime (跳过隐藏/垃圾; 失败 → None)
+        try:
+            space_dir = None
+            if self._project_space is not None and self._project_store is not None:
+                project = self._project_store.get_project(project_id)
+                if project is not None:
+                    self._mount_org()
+                    space_dir = self._project_space.ensure_space(project)
+            if space_dir is None or not space_dir.is_dir():
+                return None
+            latest = 0.0
+            for f in space_dir.rglob("*"):
+                if not f.is_file():
+                    continue
+                rel = f.relative_to(space_dir)
+                if any(part.startswith(".") or part in ("__pycache__", "node_modules", ".git")
+                       for part in rel.parts):
+                    continue
+                try:
+                    st = f.stat()
+                except OSError:  # noqa: BLE001
+                    continue
+                if st.st_mtime > latest:
+                    latest = st.st_mtime
+            if latest <= 0:
+                return None
+            import datetime
+
+            return datetime.datetime.fromtimestamp(latest, datetime.timezone.utc).isoformat()
+        except Exception:  # noqa: BLE001 — 兜底失败 → None (诚实)
             return None
 
     # ------------------------------------------------------------------ 内部: 审批/证据域

@@ -1,7 +1,7 @@
 /**
  * pages/workspace/AfCompanyHome.tsx — 我的公司首页 (Founder 2026-08-26, 信息量小)。
  *
- * ① 关注项目: 收藏 + 近期有更新 (无近期更新不占位)
+ * ① 关注项目: 收藏必显示 (有更新排前; 无活动也显示 — 收藏即关注)
  * ② 我的待办: 公司级聚合 (待审批) + 项目级过滤
  * 数据: GET /api/projects (starred/last_activity) + GET /api/approvals?pending_only=true
  * 原则: 简单 · 克制 · 真实 (质量/成本告警 API 待接入 → 诚实占位)
@@ -29,7 +29,6 @@ async function getJson<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
-const RECENT_DAYS = 7;
 
 function fmtTime(iso: string | null | undefined): string {
   if (!iso) return '';
@@ -67,15 +66,11 @@ export function AfCompanyHome(): JSX.Element {
     };
   }, []);
 
-  // 关注项目: 收藏 + 近期有更新 (无近期更新不占位)
+  // 关注项目: 收藏必显示 (Founder 2026-08-26: 收藏了却看不到 = 严重不同步)
+  // 有 last_activity 排前, 无活动排后 (不因事件缺失隐藏收藏)
   const focused = useMemo(() => {
-    const cutoff = Date.now() - RECENT_DAYS * 24 * 3600 * 1000;
     return projects
       .filter((p) => p.starred)
-      .filter((p) => {
-        if (!p.last_activity) return false; // 无活动 → 不展示
-        return new Date(p.last_activity).getTime() >= cutoff;
-      })
       .sort((a, b) => String(b.last_activity ?? '').localeCompare(String(a.last_activity ?? '')));
   }, [projects]);
 

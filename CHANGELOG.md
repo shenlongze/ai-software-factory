@@ -3,6 +3,20 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.156] — 2026-08-26
+
+**修复: 收藏项目在关注区不显示 (Founder: 数据没有同步, 超级严重)**。
+
+### Fixed
+
+- 关注区 = 收藏必显示 (原: 收藏 + 必须 7 天内 last_activity → 无事件项目被过滤)
+- last_activity 兜底: 事件 store 空 (旧数据/纯 CLI) → 项目空间最新文件 mtime
+- 标题/空态文案更新 (⭐ 关注项目 / 暂无收藏项目)
+
+### 验证
+
+- 前端 722 passed (更新 3) · 后端 相关测试 passed · 真实数据 last_activity 兜底生效
+
 ## [v1.1.155] — 2026-08-26
 
 **折叠摘要钻取真实任务名 (Founder: M2 摘要显示 'M2' 没意义)**。

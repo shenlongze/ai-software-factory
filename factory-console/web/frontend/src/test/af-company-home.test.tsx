@@ -26,11 +26,11 @@ function stubData(projects: unknown[], approvals: unknown[]) {
 }
 
 describe('AfCompanyHome (我的公司首页)', () => {
-  it('关注项目: 仅展示 收藏+近期更新 (无近期/未收藏不占位)', async () => {
+  it('关注项目: 收藏必显示 (有更新排前; 无活动也显示 — Founder 严重同步问题)', async () => {
     stubData(
       [
         sampleProject({ id: 'p1', name: '近期收藏', starred: true, last_activity: recentDays(1), status: 'development' }),
-        sampleProject({ id: 'p2', name: '旧收藏', starred: true, last_activity: recentDays(30) }),
+        sampleProject({ id: 'p2', name: '无活动收藏', starred: true, last_activity: null }),
         sampleProject({ id: 'p3', name: '未收藏', starred: false, last_activity: recentDays(1) }),
       ],
       [],
@@ -38,17 +38,17 @@ describe('AfCompanyHome (我的公司首页)', () => {
     render(<AfCompanyHome />);
     expect(await screen.findByTestId('af-company-home')).toBeInTheDocument();
     expect(screen.getByTestId('af-focused-p1')).toBeInTheDocument();
-    expect(screen.queryByTestId('af-focused-p2')).not.toBeInTheDocument();
+    // 收藏必显示 — 即使 last_activity 为 null (之前被过滤 = 严重不同步)
+    expect(screen.getByTestId('af-focused-p2')).toBeInTheDocument();
     expect(screen.queryByTestId('af-focused-p3')).not.toBeInTheDocument();
-    expect(screen.getByText('近期收藏')).toBeInTheDocument();
   });
 
-  it('无收藏/无近期 → 诚实空态提示 (不伪造数据)', async () => {
+  it('无收藏 → 诚实空态提示 (不伪造数据)', async () => {
     stubData([sampleProject({ id: 'p1', name: '普通项目', starred: false, last_activity: null })], []);
     render(<AfCompanyHome />);
     expect(await screen.findByTestId('af-company-home')).toBeInTheDocument();
     expect(screen.queryByTestId(/af-focused-/)).not.toBeInTheDocument();
-    expect(screen.getByText(/暂无近期有更新的收藏项目/)).toBeInTheDocument();
+    expect(screen.getByText(/暂无收藏项目/)).toBeInTheDocument();
     expect(screen.getByText(/无待处理/)).toBeInTheDocument();
   });
 
@@ -88,7 +88,7 @@ describe('AfCompanyHome (我的公司首页)', () => {
     stubFetch({});
     render(<AfCompanyHome />);
     expect(await screen.findByTestId('af-company-home')).toBeInTheDocument();
-    expect(screen.getByText(/暂无近期有更新的收藏项目/)).toBeInTheDocument();
+    expect(screen.getByText(/暂无收藏项目/)).toBeInTheDocument();
     expect(screen.getByText(/无待处理/)).toBeInTheDocument();
   });
 });

@@ -144,7 +144,7 @@ describe('AfWorkspaceShell (AI OS 三栏壳)', () => {
     expect(screen.getByTestId('af-sidebar')).toHaveClass('af-sidebar--collapsed');
   });
 
-  it('dashboard (我的公司): 关注项目 (收藏+近期) + 待办聚合 (真实 API)', async () => {
+  it('dashboard (我的公司): 关注项目 (收藏必显示) + 待办聚合 (真实 API)', async () => {
     const recent = new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString();
     const old = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
     stubFetch(
@@ -161,9 +161,9 @@ describe('AfWorkspaceShell (AI OS 三栏壳)', () => {
     );
     render(<AfWorkspaceShell route={workspaceRoute()} />);
     expect(await screen.findByTestId('af-company-home')).toBeInTheDocument();
-    // 关注项目: 收藏 + 近期更新 → 展示; 旧收藏/未收藏 → 不占位
+    // 关注项目: 收藏必显示 (有更新排前; 旧收藏也显示 — Founder 严重同步问题); 未收藏不占位
     expect(screen.getByTestId('af-focused-p-recent')).toBeInTheDocument();
-    expect(screen.queryByTestId('af-focused-p-old')).not.toBeInTheDocument();
+    expect(screen.getByTestId('af-focused-p-old')).toBeInTheDocument();
     expect(screen.queryByTestId('af-focused-p-nostar')).not.toBeInTheDocument();
     // 待办: 公司级聚合展示待审批
     expect(screen.getByTestId('af-todo-APR-1')).toBeInTheDocument();

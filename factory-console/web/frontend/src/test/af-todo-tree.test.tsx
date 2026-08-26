@@ -173,6 +173,7 @@ describe('AfTodoTree (Todo Tree 组件)', () => {
   });
 
   it('折叠摘要: 子节点名与节点同名 (legacy M2→feature=M2) → 钻取叶子任务名', async () => {
+    const user = userEvent.setup();
     const legacyTree: TodoTree = {
       root: {
         id: 'root', title: '项目', type: 'phase', status: 'pending', statusLabel: '待办', progress: 0,
@@ -200,8 +201,8 @@ describe('AfTodoTree (Todo Tree 组件)', () => {
       },
     };
     render(<AfTodoTree tree={legacyTree} />);
-    // 默认展开 → 先折叠 M2 才出现摘要
-    await user.click(screen.getByRole('button', { name: '折叠 M2' }));
+    // 默认展开 → 先折叠 M2 才出现摘要 (M2 module 也有同名按钮 → 用 epic 行内按钮)
+    await user.click(within(nodeRow('M2')).getByRole('button', { name: '折叠 M2' }));
     const summary = screen.getByTestId('af-tree-summary-M2');
     expect(summary).toHaveTextContent('**AgentEntity** 统一字段');
     expect(summary).toHaveTextContent('ExpertFactory 装配器');

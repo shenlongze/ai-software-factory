@@ -4114,3 +4114,20 @@ body[data-bg='1'] .af-shell {
 .af-todo-row--summary {
   cursor: default;
 }
+
+/* 会话跳转按钮 (发起/查看后直达功能页) */
+.af-chat-jump {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--af-primary);
+  border: 1px solid var(--c-border);
+  border-radius: 12px;
+  padding: 3px 10px;
+  text-decoration: none;
+  background: var(--c-input);
+}
+
+.af-chat-jump:hover {
+  border-color: var(--af-primary);
+}

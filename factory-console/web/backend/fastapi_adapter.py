@@ -2911,10 +2911,18 @@ def build_app(
             result = _sessions_mod.send_message(
                 sessions_store, session_id, body.message, facts=facts, reply_extra=reply_extra
             )
+            target = _qmod.intent_target(
+                intent.get("intent"),
+                project_id=session.get("project_id") or (
+                    next((pp.id for pp in projects if pp.name == hint_project), None) if hint_project else None
+                ),
+                project_name=hint_project,
+            )
             result["meta"] = {
                 "intent": intent.get("intent"),
                 "project": hint_project,
                 "data_source": "live" if intent.get("intent") != "chat" else "chat",
+                "target": target,
             }
             return result
         except ValueError as exc:

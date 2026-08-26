@@ -200,4 +200,26 @@ STANDARD_OUTPUT_PROMPT = """
 - 查询结果里没有的 → 在【结论】里明确说"当前未查询到", 不猜测。
 """
 
-__all__ = ["parse_intent", "parse_intent_llm", "resolve_project", "build_facts", "STANDARD_OUTPUT_PROMPT", "VALID_INTENTS"]
+
+#: 意图 → 跳转深链 (发起/查看后直达对应功能页)
+def intent_target(
+    intent: str, *, project_id: str | None = None, project_name: str | None = None
+) -> dict[str, str] | None:
+    if intent == "chat":
+        return None
+    pid = project_id or ""
+    name = project_name or "项目"
+    targets = {
+        "list_projects": ("#/workspace/projects", "查看项目列表"),
+        "project_status": (f"#/project/{pid}", f"查看{name}概览"),
+        "project_quality": (f"#/project/{pid}/quality", f"查看{name}质量"),
+        "project_tasks": (f"#/project/{pid}/todo", f"查看{name}任务"),
+        "project_docs": (f"#/project/{pid}/docs", f"查看{name}文档"),
+        "model": ("#/workspace/settings", "打开设置"),
+    }
+    hit = targets.get(intent)
+    if not hit:
+        return None
+    return {"url": hit[0], "label": hit[1]}
+
+__all__ = ["parse_intent", "parse_intent_llm", "resolve_project", "build_facts", "STANDARD_OUTPUT_PROMPT", "VALID_INTENTS", "intent_target"]

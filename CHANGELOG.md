@@ -3,6 +3,22 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.123] — 2026-08-26
+
+**会话跳转: 查看后直达对应功能页 (Founder: 全部功能可会话发起/查看/跳转)**。
+
+### Added
+
+- **intent_target**: query_engine 意图 → 深链 {url,label}
+  (项目列表→#/workspace/projects · 状态→项目页 · 质量/任务/文档→对应页 · 模型→设置)
+- **API meta.target**: 会话回复带跳转目标
+- **前端跳转按钮**: assistant 消息下方「→ 查看任务 / 查看质量 / …」点击直达
+- 设计稿 docs/会话驱动-操作引擎.md (发起/查看/跳转 + P1/P2/P3)
+
+### 验证
+
+- 后端 query_engine 27 passed · 前端 684 passed (含跳转按钮用例) · build 通过
+
 ## [v1.1.122] — 2026-08-26
 
 **去掉子页顶部重复的项目详情块 (Founder: 文档/任务/执行/运行时/质量 上面都有, 没用)**。

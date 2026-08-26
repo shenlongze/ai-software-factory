@@ -162,3 +162,35 @@ describe('AfConversationPanel (AI 会话栏 C 列)', () => {
     expect(await screen.findByText(/请先进入项目/)).toBeInTheDocument();
   });
 });
+
+describe('会话跳转按钮 (发起/查看后直达功能页)', () => {
+  it('assistant 消息带 meta.target → 渲染跳转链接', async () => {
+    const fn = stubSessionApi({
+      onSend: () => ({
+        id: 'msg-a',
+        session_id: 'sess-1',
+        role: 'assistant',
+        content: '任务统计: done:3',
+        created_at: '2026-08-26T00:00:01Z',
+      }),
+    });
+    // 让 send 返回 meta.target
+    const orig = fn.getMockImplementation();
+    fn.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const res = await (orig as (i: RequestInfo | URL, init?: RequestInit) => Promise<Response>)(input, init);
+      const body = await res.json();
+      return {
+        ok: true,
+        json: async () => ({ ...body, meta: { intent: 'project_tasks', project: 'p1', data_source: 'live', target: { url: '#/project/p1/todo', label: '查看任务' } } }),
+      } as Response;
+    });
+    renderPanel();
+    await userEvent.click(screen.getByLabelText('新建会话'));
+    await screen.findByTestId(/af-session-sess-1/);
+    await userEvent.type(screen.getByRole('textbox', { name: 'AI 会话输入' }), '有什么任务');
+    await userEvent.click(screen.getByRole('button', { name: '发送' }));
+    const jump = await screen.findByTestId(/af-chat-jump-msg-a/);
+    expect(jump).toHaveTextContent('查看任务');
+    expect(jump).toHaveAttribute('href', '#/project/p1/todo');
+  });
+});

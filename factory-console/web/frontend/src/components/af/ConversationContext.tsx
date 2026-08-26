@@ -13,6 +13,9 @@ import type { ReactNode } from 'react';
 import { api } from '../../api/client';
 import type { SessionMessage, SessionSummary } from '../../models/types';
 
+/** 前端会话消息 (assistant 可带跳转 target — 来自后端 meta.target)。 */
+export type ChatMessage = SessionMessage & { target?: { url: string; label: string } | null };
+
 export type SessionScope = 'company' | 'project';
 
 const COLLAPSED_KEY = 'af.chat.collapsed';
@@ -39,7 +42,7 @@ export interface ConversationContextValue {
   projectId: string | null;
   sessions: SessionSummary[];
   activeId: string | null;
-  messages: SessionMessage[];
+  messages: ChatMessage[];
   loadingSessions: boolean;
   sending: boolean;
   collapsed: boolean;
@@ -231,7 +234,7 @@ export function ConversationProvider({ children }: { children: ReactNode }): JSX
         setMessages((prev) => [
           ...prev.filter((m) => !m.id.startsWith('tmp-')),
           result.user,
-          result.assistant,
+          { ...result.assistant, target: result.meta?.target ?? null },
         ]);
         await refresh();
       } catch {

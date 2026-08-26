@@ -212,6 +212,11 @@ export function AfConversationPanel({ projectId, projectName }: AfConversationPa
               <div className={`af-chat-msg-body${m.role === 'assistant' ? ' af-chat-msg-body--md' : ''}`}>
                 {m.role === 'assistant' ? renderMarkdown(m.content) : m.content}
               </div>
+              {m.role === 'assistant' && m.target && m.target.url ? (
+                <a className="af-chat-jump" href={m.target.url} data-testid={`af-chat-jump-${m.id}`}>
+                  → {m.target.label}
+                </a>
+              ) : null}
             </div>
           ))
         )}

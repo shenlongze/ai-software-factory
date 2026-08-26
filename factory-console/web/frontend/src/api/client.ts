@@ -403,7 +403,12 @@ export const api = {
   sessionMessages: async (id: string) =>
     (await getJson<{ items: SessionMessage[] }>(`/api/sessions/${encodeURIComponent(id)}/messages`)).items,
   sendSessionMessage: (id: string, message: string) =>
-    sendJson<{ user: SessionMessage; assistant: SessionMessage; session: SessionSummary }>(
+    sendJson<{
+      user: SessionMessage;
+      assistant: SessionMessage;
+      session: SessionSummary;
+      meta?: { intent?: string; project?: string | null; data_source?: string; target?: { url: string; label: string } | null };
+    }>(
       `/api/sessions/${encodeURIComponent(id)}/messages`,
       { message },
     ),

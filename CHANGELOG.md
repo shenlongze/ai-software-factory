@@ -3,6 +3,16 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.174] — 2026-08-27
+
+**任务时间显示 + 按更新时间排序 (Founder: 需要创建/进行中/完成时间 + 最后更新最前)**。
+
+### Added
+
+- 任务树行显示 创建时间 🕐 / 完成时间 ✓ (done); 进行中状态徽标已有
+- 时间推导: startedAt/completedAt 从 history 状态转换推导 (in_progress/done), done 无历史→updated_at
+- 排序: story 内任务按更新时间倒序 (最后更新最前), 依赖未满足排后
+
 ## [v1.1.173] — 2026-08-27
 
 **T-3 跨会话恢复: 新会话继续 → 找到上次会话, 接上进展**。

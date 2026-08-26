@@ -306,6 +306,7 @@ function toStoryNode(
 function toTaskNode(task: BacklogTask): WeightedNode {
   const status = toDomainStatus(task.status ?? null);
   const prio = normalizePriority(task.priority);
+  const { startedAt, completedAt } = deriveTaskTimes(task);
   return {
     node: {
       id: task.id ?? '',
@@ -316,13 +317,44 @@ function toTaskNode(task: BacklogTask): WeightedNode {
       progress: status === 'completed' ? 100 : 0,
       ...(prio != null ? { priority: prio } : {}),
       children: [],
-      // 归档排序时间: done 后 updated_at 不再变 = 完成时间 (诚实语义: 最后更新)
-      ...(status === 'completed' && task.updated_at != null && task.updated_at.length > 0
-        ? { completedAt: task.updated_at }
+      // Founder 2026-08-27: 任务时间 (创建/进行中/完成) — 树行显示 + 按更新时间排序
+      ...(task.created_at != null && task.created_at.length > 0
+        ? { createdAt: task.created_at }
         : {}),
+      ...(task.updated_at != null && task.updated_at.length > 0
+        ? { updatedAt: task.updated_at }
+        : {}),
+      ...(startedAt != null ? { startedAt } : {}),
+      ...(completedAt != null ? { completedAt } : {}),
     },
     weight: priorityWeight(task.priority),
   };
+}
+
+/** 从 history 推导 开始/完成 时间 (进入 in_progress / done 的转换时间; 无 → undefined)。 */
+function deriveTaskTimes(task: BacklogTask): { startedAt?: string; completedAt?: string } {
+  let startedAt: string | undefined;
+  let completedAt: string | undefined;
+  for (const h of task.history ?? []) {
+    const time = typeof h?.time === 'string' ? h.time : undefined;
+    const result = String(h?.result ?? '');
+    const action = String(h?.action ?? '');
+    if (time == null) continue;
+    if (startedAt == null && (result.includes('in_progress') || result.includes('toward in_progress'))) {
+      startedAt = time;
+    }
+    if (completedAt == null && (result.includes('done') || result.includes('DONE'))) {
+      completedAt = time;
+    }
+    if (completedAt == null && action === 'exec:completed') {
+      completedAt = time;
+    }
+  }
+  // done 且无 history 明确时间 → updated_at 兜底 (终态后不再变)
+  if (completedAt == null && task.status === 'done' && task.updated_at != null && task.updated_at.length > 0) {
+    completedAt = task.updated_at;
+  }
+  return { startedAt, completedAt };
 }
 
 /** 优先级排序键 (P0=0 … P3=3; 缺失/未知 → 99 排最后)。 */
@@ -361,7 +393,7 @@ function hasUnsatisfiedDependency(
   return (task.dependency ?? []).some((dep) => statusById.get(dep) !== 'done');
 }
 
-/** 待办主树排序: 依赖未满足排后, 组内优先级 P0 最前 (稳定排序保原始序)。 */
+/** 待办主树排序 (Founder 2026-08-27): 依赖未满足排后, 组内按更新时间倒序 (最后更新最前)。 */
 function compareTaskPriority(
   a: BacklogTask,
   b: BacklogTask,
@@ -370,6 +402,9 @@ function compareTaskPriority(
   const aUnsatisfied = hasUnsatisfiedDependency(a, statusById) ? 1 : 0;
   const bUnsatisfied = hasUnsatisfiedDependency(b, statusById) ? 1 : 0;
   if (aUnsatisfied !== bUnsatisfied) return aUnsatisfied - bUnsatisfied;
+  const ta = a.updated_at ?? '';
+  const tb = b.updated_at ?? '';
+  if (ta !== tb) return tb.localeCompare(ta); // 倒序: 最后更新最前
   return priorityRank(a.priority) - priorityRank(b.priority);
 }
 

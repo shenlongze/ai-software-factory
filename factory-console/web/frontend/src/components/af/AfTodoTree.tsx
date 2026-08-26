@@ -455,6 +455,16 @@ function TreeNodeRow({
         {isTask && node.blockedReason != null && node.blockedReason.length > 0 ? (
           <span className="af-tree-meta af-tree-meta--blocked">阻塞: {node.blockedReason}</span>
         ) : null}
+        {isTask && node.createdAt != null ? (
+          <span className="af-tree-meta" title={`创建 ${formatTime(node.createdAt)}`}>
+            🕐 {formatTime(node.createdAt)}
+          </span>
+        ) : null}
+        {isTask && node.status === 'completed' && node.completedAt != null ? (
+          <span className="af-tree-meta af-tree-meta--done" title={`完成 ${formatTime(node.completedAt)}`}>
+            ✓ {formatTime(node.completedAt)}
+          </span>
+        ) : null}
         <span className="af-tree-progress-wrap">
           <AfProgressBar value={node.progress} status={node.status} />
         </span>

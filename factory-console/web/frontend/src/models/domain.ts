@@ -119,6 +119,10 @@ export interface TreeNode {
   maturity?: string;
   /** 聚合优先级 (史诗/模块/故事 = 子任务最高 P0 优先; 任务 = 自身)。 */
   priority?: string;
+  /** 创建时间 (任务 created_at; 展示用)。 */
+  createdAt?: string;
+  /** 最后更新时间 (任务 updated_at; 排序用 — 最后更新最前)。 */
+  updatedAt?: string;
   agent?: string;
   owner?: string;
   startedAt?: string;

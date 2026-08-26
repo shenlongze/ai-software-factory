@@ -257,6 +257,44 @@ describe('api/domain — toTodoTree W-3 排序 (优先级 + 依赖感知, Founde
     expect(story.children.map((n) => n.id)).toEqual(['T-A', 'T-B']);
   });
 
+  it('按更新时间倒序: 最后更新的任务排最上面 (Founder 2026-08-27)', () => {
+    const backlog: BacklogResponse = {
+      epics: [bep('E', '阶段', ['F'])],
+      features: [bfeat('F', '模块', ['S'])],
+      stories: [bstory('S', '故事', ['T-old', 'T-mid', 'T-new'])],
+      tasks: [
+        { ...btask('T-old', '最早', 'todo'), updated_at: '2026-08-25T00:00:00Z' },
+        { ...btask('T-new', '最新', 'todo'), updated_at: '2026-08-27T00:00:00Z' },
+        { ...btask('T-mid', '中间', 'todo'), updated_at: '2026-08-26T00:00:00Z' },
+      ],
+    };
+    const story = toTodoTree(backlog).root.children[0].children[0].children[0];
+    expect(story.children.map((n) => n.id)).toEqual(['T-new', 'T-mid', 'T-old']);
+  });
+
+  it('创建/进行中/完成时间投影 (从 history 推导)', () => {
+    const backlog: BacklogResponse = {
+      epics: [bep('E', '阶段', ['F'])],
+      features: [bfeat('F', '模块', ['S'])],
+      stories: [bstory('S', '故事', ['T-done'])],
+      tasks: [
+        {
+          ...btask('T-done', '已完成', 'done'),
+          created_at: '2026-08-20T00:00:00Z',
+          updated_at: '2026-08-22T00:00:00Z',
+          history: [
+            { time: '2026-08-21T01:00:00Z', actor: 'x', action: 'transition', result: 'in_progress' },
+            { time: '2026-08-22T02:00:00Z', actor: 'x', action: 'transition', result: 'done' },
+          ],
+        },
+      ],
+    };
+    const leaf = toTodoTree(backlog).root.children[0].children[0].children[0].children[0];
+    expect(leaf.createdAt).toBe('2026-08-20T00:00:00Z');
+    expect(leaf.startedAt).toBe('2026-08-21T01:00:00Z');  // 进入 in_progress
+    expect(leaf.completedAt).toBe('2026-08-22T02:00:00Z');  // 进入 done
+  });
+
   it('completedAt 投影: done 任务带最后更新时间 (归档排序用); 非 done 不带', () => {
     const backlog: BacklogResponse = {
       epics: [bep('E', '阶段', ['F'])],

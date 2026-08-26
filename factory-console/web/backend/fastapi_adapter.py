@@ -1090,6 +1090,64 @@ def build_app(
     # 全部项目的统一产出物状态 (固定 schema + 版本信号) — WebUI 轮询 version
     # 感知变化; 只读 GET。
     # C-3: 轻量轮询 — 只返回版本信号 (WebUI 每 N 秒轮询, 变化才刷新)
+    # ------------------------------------------- 统一监控运维 (D 系列, v1.1.134)
+    # Monitor 单一采集 → 多处消费 (会话 system_status / 概览健康条 / 运维页 / CLI)
+    @app.get("/api/monitor")
+    def api_monitor() -> dict[str, Any]:
+        """系统 + 全部项目监控 (GET — 统一 snapshot + 历史)。"""
+        if workspace_root is None:
+            return {"system": None, "projects": [], "snapshots": []}
+        _monitor_mod = _console_import("monitor")
+        model_line = ""
+        try:
+            _llm_plane_reload(_llm_plane)
+            pid = _llm_plane.selected_provider_id()
+            if pid is not None:
+                sp = _llm_plane.get_provider(pid)
+                if sp is not None:
+                    model_line = (
+                        f"{_provider_config_view(_llm_plane, sp).get('default_model')} "
+                        f"(provider: {pid})"
+                    )
+        except Exception:  # noqa: BLE001
+            model_line = ""
+        system = _monitor_mod.collect_system(
+            workspace_root, _factory_version, model_line=model_line
+        )
+        projects = []
+        try:
+            for p in service.list_projects():
+                pm = _monitor_mod.collect_project(
+                    workspace_root, p.id, name=p.name, lifecycle=p.lifecycle_stage or p.status
+                )
+                if pm:
+                    projects.append(pm)
+        except Exception:  # noqa: BLE001
+            projects = []
+        snapshots = _monitor_mod.read_snapshots(workspace_root, limit=10)
+        _monitor_mod.save_snapshot(workspace_root, {"system": system, "projects": projects})
+        return {"system": system, "projects": projects, "snapshots": snapshots}
+
+    @app.get("/api/projects/{project_id}/monitor")
+    def api_project_monitor(project_id: str) -> dict[str, Any]:
+        """单项目监控 (GET — 统一采集)。"""
+        if workspace_root is None:
+            raise HTTPException(status_code=404, detail="project not found")
+        _monitor_mod = _console_import("monitor")
+        try:
+            found = next((p for p in service.list_projects() if p.id == project_id), None)
+        except Exception:  # noqa: BLE001
+            found = None
+        pm = _monitor_mod.collect_project(
+            workspace_root, project_id,
+            name=found.name if found else project_id,
+            lifecycle=(found.lifecycle_stage or found.status) if found else "",
+        )
+        if pm is None:
+            raise HTTPException(status_code=404, detail="project not found")
+        system = _monitor_mod.collect_system(workspace_root, _factory_version)
+        return {"system": system, "project": pm}
+
     @app.get("/api/projects/{project_id}/artifacts/version")
     def api_project_artifacts_version(project_id: str) -> dict[str, Any]:
         """产出物版本信号 (GET — {version, updated_at}; 轮询用, 轻量)。"""
@@ -2891,24 +2949,18 @@ def build_app(
                     )
         except Exception:  # noqa: BLE001 — 模型失败 → 不注入
             model_line = ""
-        # 系统/服务状态 (真实端口探测 — 让会话能答 "webUI/系统运行状态")
-        def _port_up(host: str, port: int) -> bool:
-            import socket
-
-            try:
-                sock = socket.create_connection((host, port), timeout=0.5)
-                sock.close()
-                return True
-            except Exception:  # noqa: BLE001 — 探测失败 → 未运行 (诚实)
-                return False
-
-        frontend_up = _port_up("127.0.0.1", 5180)
-        backend_up = _port_up("127.0.0.1", 8011)
+        # 系统/服务状态 (统一监控 Monitor — 端口探测 + 版本 + 模型)
+        _monitor_mod = _console_import("monitor")
+        _sys_mon = _monitor_mod.collect_system(
+            workspace_root or DEFAULT_ROOT, _factory_version, model_line=model_line
+        )
         system_line = (
-            f"系统状态: AI Factory v{_factory_version} · "
-            f"Web 前端 (5180): {'运行中' if frontend_up else '未运行'} · "
-            f"后端 API (8011): {'运行中' if backend_up else '未运行'} · "
-            f"数据目录 {workspace_root or DEFAULT_ROOT}"
+            f"系统状态: AI Factory v{_sys_mon['version']} · "
+            f"Web 前端 ({_sys_mon['frontend']['port']}): "
+            f"{'运行中' if _sys_mon['frontend']['up'] else '未运行'} · "
+            f"后端 API ({_sys_mon['backend']['port']}): "
+            f"{'运行中' if _sys_mon['backend']['up'] else '未运行'} · "
+            f"数据目录 {_sys_mon['data_dir']}"
         )
         if model_line:
             system_line = f"{system_line}\n{model_line}"

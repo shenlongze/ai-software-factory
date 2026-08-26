@@ -3,6 +3,22 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.134] — 2026-08-26
+
+**统一监控运维 (D 系列): Monitor 单一采集 → 多处消费**。
+
+### Added
+
+- **monitor.py**: 统一采集器 — 系统 (前端/后端端口探测+版本+模型) + 项目
+  (质量分/任务统计/产出物版本/文档数/最近活动) + 快照落盘 (历史趋势)
+- **API**: GET /api/monitor (系统+全部项目+快照) + /api/projects/{id}/monitor
+- **CLI**: factory monitor — 系统+全部项目 状态快照
+- **接线**: 会话 system_status 改读 Monitor (不再 adapter 内临时拼)
+
+### 验证
+
+- 后端 monitor 5 + 相关 30 passed · 前端 684 passed
+
 ## [v1.1.133] — 2026-08-26
 
 **系统状态事实卡加真实前端/后端端口探测 (Founder: webUI状态总说无数据)**。

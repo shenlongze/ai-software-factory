@@ -1017,6 +1017,8 @@ class FactoryCLI:
             return self.eval_cmd(args)
         if args.command == "artifacts":
             return self.artifacts_cmd(args)
+        if args.command == "monitor":
+            return self.monitor_cmd(args)
         if args.command == "update":
             return self.update_cmd(args)
         if args.command == "llm":
@@ -1082,6 +1084,38 @@ class FactoryCLI:
         print(f"[{label}] {status}")
         for p in report.get("problems", []):
             print(f"  - {p['issue']}: {p['detail']}")
+
+    def monitor_cmd(self, args: argparse.Namespace) -> int:
+        """factory monitor — 统一监控运维: 系统 + 全部项目 状态快照。
+
+        真实数据: 前端/后端端口探测 · 版本 · 质量分 · 任务统计 · 产出物版本。
+        """
+        from .monitor import collect_project, collect_system
+
+        root = self.data_dir
+        sys_mon = collect_system(root, _pkg_version())
+        fe = "运行中" if sys_mon["frontend"]["up"] else "未运行"
+        be = "运行中" if sys_mon["backend"]["up"] else "未运行"
+        print(f"⚡ 系统监控: AI Factory v{sys_mon['version']}")
+        print(f"  Web 前端 ({sys_mon['frontend']['port']}): {fe} · 后端 ({sys_mon['backend']['port']}): {be}")
+        print(f"  数据目录: {sys_mon['data_dir']}")
+        if sys_mon["model"]:
+            print(f"  模型: {sys_mon['model']}")
+        print("📦 项目监控:")
+        if (root / "projects").is_dir():
+            for pdir in sorted((root / "projects").iterdir()):
+                if not pdir.is_dir():
+                    continue
+                pm = collect_project(root, pdir.name)
+                if pm is None:
+                    continue
+                q = f"{pm['quality']:.2f}" if pm["quality"] is not None else "未评测"
+                tasks = sum(pm["tasks"].values())
+                print(
+                    f"  - {pm['name']} | 阶段:{pm['lifecycle'] or '—'} | 质量:{q} "
+                    f"| 任务:{tasks} | 产出物 v{pm['artifacts_version']} | 文档:{pm['docs']}"
+                )
+        return 0
 
     # ------------------------------------------------------------- start
 
@@ -3887,6 +3921,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="list — 项目产出物清单 (存在/缺失/版本); validate — 对照标准报漂移",
     )
     p_artifacts.add_argument("project", nargs="?", default="", help="项目 id (缺省: 全部)")
+    sub.add_parser(
+        "monitor", help="统一监控运维 (D 系列): 系统+全部项目 状态快照 (端口/质量/任务/产出物)"
+    )
     p_task = sub.add_parser(
         "task", help="Task 管理: list — 列出; prompt — 生成执行指令; run — 执行任务 (走 exec CLI)"
     )

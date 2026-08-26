@@ -3082,9 +3082,12 @@ def build_app(
             system_line=system_line,
             hint_project=hint_project,
         )
-        reply_extra = (
-            _qmod.STANDARD_OUTPUT_PROMPT if intent.get("intent") != "chat" else ""
-        )
+        if intent.get("intent") == "system_status":
+            reply_extra = _qmod.SYSTEM_STATUS_OUTPUT_PROMPT
+        else:
+            reply_extra = (
+                _qmod.STANDARD_OUTPUT_PROMPT if intent.get("intent") != "chat" else ""
+            )
         try:
             result = _sessions_mod.send_message(
                 sessions_store, session_id, body.message, facts=facts, reply_extra=reply_extra

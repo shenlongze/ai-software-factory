@@ -225,6 +225,14 @@ def parse_intent_llm(question: str, llm_fn: Any) -> dict[str, Any]:
     return {"intent": "chat", "project": None, "task": None}
 
 
+#: 系统状态专用输出 (禁止再说"未查询到" — 事实卡就是状态)
+SYSTEM_STATUS_OUTPUT_PROMPT = """
+【系统状态回答要求】
+- 事实卡已给出 Web 工作台/前端/后端运行状态, 直接下结论:
+  如 "Web 工作台运行正常 (前端 5180 运行中)" 或 "前端 5180 未运行"。
+- 禁止再写 "未查询到 webUI 状态" / "事实卡仅包含基础环境信息" —— 事实卡就是状态。
+"""
+
 #: 标准输出格式 (LLM 转标准输出 — 只基于查询结果, 不编造)
 STANDARD_OUTPUT_PROMPT = """
 【输出要求 — 标准格式】
@@ -263,4 +271,4 @@ def intent_target(
         return None
     return {"url": hit[0], "label": hit[1]}
 
-__all__ = ["parse_intent", "parse_intent_llm", "resolve_project", "build_facts", "STANDARD_OUTPUT_PROMPT", "VALID_INTENTS", "intent_target"]
+__all__ = ["parse_intent", "parse_intent_llm", "resolve_project", "build_facts", "STANDARD_OUTPUT_PROMPT", "SYSTEM_STATUS_OUTPUT_PROMPT", "VALID_INTENTS", "intent_target"]

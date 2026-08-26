@@ -383,4 +383,4 @@ class TestVersion:
 
         with open("pyproject.toml", "rb") as fh:
             pp = tomllib.load(fh)
-        assert pp["project"]["version"] == "1.1.140"
+        assert pp["project"]["version"] == "1.1.141"

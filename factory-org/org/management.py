@@ -138,6 +138,11 @@ class Task(_OrgModel):
     priority: P0-P3 (默认 P2 Normal); status: todo/ready/in_progress/blocked/
     review/done (默认 todo); dependency: 前置任务 id 列表; history: 审计链
     [{time, actor, action, result}]。
+
+    S10 方案A (执行绑定+回写): exec_ref = 执行绑定 (exec request id EXR-* /
+    引擎任务 id; 空 = 未绑定); exec_result = 最近执行结果 id (EXS-*)。exec
+    启动/完成时由桥自动回写状态与审计 (exec:started / exec:completed /
+    exec:failed)。
     """
 
     id: str
@@ -150,6 +155,8 @@ class Task(_OrgModel):
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
     history: list[HistoryEntry] = Field(default_factory=list)
+    exec_ref: str = ""
+    exec_result: str = ""
 
     @field_validator("priority", mode="before")
     @classmethod

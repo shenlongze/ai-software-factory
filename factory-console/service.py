@@ -3975,6 +3975,219 @@ class ConsoleService:
             raise BacklogNotFoundError(f"task not found: {task_id}")
         return {"deleted": True, "task_id": task_id}
 
+    # --------------------------------- S10 方案A: 执行绑定 + 回写钩子
+    # Founder 2026-08-26: "任务会自动更新状态么 → 选 A (执行绑定 + 回写)"。
+    # - start_task_exec: exec 启动前 todo/ready → in_progress + exec_ref + 审计
+    #   (依赖未满足 → ValueError 拒绝启动, 诚实不跑)
+    # - finish_task_exec: exec 完成后成功 → in_progress→review→done / 失败 →
+    #   blocked + exec_ref/exec_result + 审计 (幂等: 已是目标态仅更新绑定字段)
+    # - _status_path: 受控状态机 BFS 找合法路径 (逐步 transition_task, 每步
+    #   追加审计链 — 不跳级, 状态机语义零破坏)
+
+    def _resolve_project_id(self, project_id: str) -> str | None:
+        """按 org 项目 id 或 space slug 解析项目 id (id 优先, slug 匹配兜底)。
+
+        CLI 桥 (factory task run) 从目录名拿到的是 slug; API 拿的是 org id
+        (P-xxx / ai-factory-self)。统一在此解析 — 两入口同源。
+        """
+        store = self._project_store
+        if store is None:
+            return None
+        if store.get_project(project_id) is not None:
+            return project_id
+        slug = str(project_id or "").strip()
+        if not slug:
+            return None
+        for proj in store.list_projects():
+            if _derived_slug(proj) == slug:
+                return proj.id
+        return None
+
+    @staticmethod
+    def _status_path(
+        transitions: dict[Any, tuple[Any, ...]],
+        start: Any,
+        target: Any,
+    ) -> list[Any] | None:
+        """BFS 找受控状态机合法路径 (返回中间步序列, 含 target, 不含 start)。
+
+        None → 不可达 (拒绝 — 不跳级不回退)。
+        """
+        from collections import deque
+
+        if start == target:
+            return []
+        queue: deque[tuple[Any, list[Any]]] = deque([(start, [])])
+        seen = {start}
+        while queue:
+            cur, path = queue.popleft()
+            for nxt in transitions.get(cur, ()):
+                if nxt in seen:
+                    continue
+                new_path = path + [nxt]
+                if nxt == target:
+                    return new_path
+                seen.add(nxt)
+                queue.append((nxt, new_path))
+        return None
+
+    def start_task_exec(
+        self,
+        project_id: str,
+        task_id: str,
+        *,
+        exec_ref: str = "",
+        actor: str = "exec-bridge",
+        note: str = "",
+    ) -> dict[str, Any] | None:
+        """执行绑定+启动: Task → in_progress (走合法路径), 记录 exec_ref + 审计。
+
+        幂等: 已是 in_progress → 仅更新 exec_ref (不重复转换)。
+        依赖未满足 / 无合法路径 → BacklogStateError/ValueError (诚实拒绝启动)。
+        """
+        resolved = self._resolve_project_id(project_id)
+        if resolved is None:
+            return None
+        mgmt = self._management_store(resolved)
+        if mgmt is None:
+            return None
+        task = mgmt.get_task(task_id)
+        if task is None:
+            raise BacklogNotFoundError(f"task not found: {task_id}")
+        self._mount_org()
+        from org.management import TASK_TRANSITIONS, TaskStatus, transition_task
+        from org.models import utcnow
+
+        target = TaskStatus.IN_PROGRESS
+        if task.status != target:
+            path = self._status_path(TASK_TRANSITIONS, task.status, target)
+            if path is None:
+                raise BacklogStateError(
+                    f"illegal task transition: {task.status.value} -> "
+                    f"in_progress (no legal path)"
+                )
+            for i, step in enumerate(path):
+                is_last = i == len(path) - 1
+                task = transition_task(
+                    task,
+                    step,
+                    actor=actor,
+                    action="exec:start",
+                    result=(
+                        f"started{(': ' + note) if note else ''}"
+                        if is_last
+                        else "toward in_progress"
+                    ),
+                    dependency_status=self._task_status_map(mgmt),
+                )
+                mgmt.save_task(task)
+        if exec_ref:
+            task = task.model_copy(
+                update={"exec_ref": exec_ref, "updated_at": utcnow()}
+            )
+            mgmt.save_task(task)
+        return task.to_dict()
+
+    def finish_task_exec(
+        self,
+        project_id: str,
+        task_id: str,
+        *,
+        success: bool,
+        exec_ref: str = "",
+        exec_result: str = "",
+        error: str = "",
+        actor: str = "exec-bridge",
+    ) -> dict[str, Any] | None:
+        """执行回写: 成功 → done (in_progress→review→done); 失败 → blocked。
+
+        幂等: 已是 done/blocked → 仅更新 exec_ref/exec_result + 审计 (不重复
+        转换); todo/ready 未启动过 → 先走到 in_progress 再回写 (合法路径)。
+        """
+        resolved = self._resolve_project_id(project_id)
+        if resolved is None:
+            return None
+        mgmt = self._management_store(resolved)
+        if mgmt is None:
+            return None
+        task = mgmt.get_task(task_id)
+        if task is None:
+            raise BacklogNotFoundError(f"task not found: {task_id}")
+        self._mount_org()
+        from org.management import TASK_TRANSITIONS, TaskStatus, transition_task
+        from org.models import utcnow
+
+        target = TaskStatus.DONE if success else TaskStatus.BLOCKED
+        action = "exec:completed" if success else "exec:failed"
+        result = (
+            f"done (result={exec_result or '-'})"
+            if success
+            else f"failed{(': ' + error) if error else ''}"
+        )
+        if task.status != target:
+            # 未启动过 → 先合法走到 in_progress (依赖满足才可推进)
+            if task.status in (TaskStatus.TODO, TaskStatus.READY):
+                start_path = self._status_path(
+                    TASK_TRANSITIONS, task.status, TaskStatus.IN_PROGRESS
+                )
+                if start_path is None:
+                    raise BacklogStateError(
+                        f"illegal task transition: {task.status.value} -> "
+                        f"in_progress (no legal path)"
+                    )
+                for step in start_path:
+                    task = transition_task(
+                        task,
+                        step,
+                        actor=actor,
+                        action="exec:start",
+                        result="toward in_progress",
+                        dependency_status=self._task_status_map(mgmt),
+                    )
+                    mgmt.save_task(task)
+            path = self._status_path(TASK_TRANSITIONS, task.status, target)
+            if path is None:
+                raise BacklogStateError(
+                    f"illegal task transition: {task.status.value} -> "
+                    f"{target.value} (no legal path)"
+                )
+            for i, step in enumerate(path):
+                is_last = i == len(path) - 1
+                task = transition_task(
+                    task,
+                    step,
+                    actor=actor,
+                    action=action if is_last else "exec:progress",
+                    result=result if is_last else f"toward {target.value}",
+                    dependency_status=self._task_status_map(mgmt),
+                )
+                mgmt.save_task(task)
+        else:
+            # 已是目标态 → 追加审计 (重跑/回写幂等), 不重复转换
+            from org.management import HistoryEntry
+
+            task = task.model_copy(
+                update={
+                    "history": list(task.history)
+                    + [
+                        HistoryEntry(
+                            time=utcnow().isoformat(),
+                            actor=actor,
+                            action=action,
+                            result=result,
+                        ).to_dict()
+                    ],
+                    "updated_at": utcnow(),
+                }
+            )
+        updates: dict[str, Any] = {"exec_result": exec_result, "updated_at": utcnow()}
+        if exec_ref:
+            updates["exec_ref"] = exec_ref
+        task = task.model_copy(update=updates)
+        mgmt.save_task(task)
+        return task.to_dict()
+
+
     # --------------------------------- S10-010 Task 4: Sprint/Milestone/Roadmap API
     # 执行窗口与路线 (AF-PRD-v1.md 4.4/4.5 + project-management-system.md §五/§十):
     # Sprint/Milestone 引用 Task (非包含 — 引用不影响 Task 本身); Roadmap 引用

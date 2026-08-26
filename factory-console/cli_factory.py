@@ -2334,16 +2334,77 @@ class FactoryCLI:
                 print(f"验收: {requirement}")
             return 0
 
-        # run → 真实执行 (走 exec CLI)
+        # run → 真实执行 (走 exec CLI) + 方案A: 执行绑定 + 回写钩子
+        # Founder 2026-08-26: 任务状态自动更新 — 启动前 todo→in_progress,
+        # 完成后成功→done / 失败→blocked (exec_ref/exec_result 落库 + 审计)。
         print(f"执行任务 {tid}: {cmd}")
         try:
-            import subprocess
+            from .web.backend.fastapi_adapter import build_console_service
 
-            r = subprocess.run(cmd, shell=True, cwd=str(repo))
-            return r.returncode
-        except Exception as exc:  # noqa: BLE001 — 执行失败 → 明确错误
-            print(f"执行失败: {exc}")
+            service = build_console_service(self.data_dir)
+        except Exception as exc:  # noqa: BLE001 — 装配失败 → 诚实错误
+            print(f"❌ 服务装配失败, 无法执行/回写: {exc}", file=sys.stderr)
             return 1
+        project_id = str(task.get("project") or "").strip()
+        # 1) 绑定 + 启动 (依赖未满足 → 拒绝启动, 不执行)
+        try:
+            service.start_task_exec(
+                project_id,
+                tid,
+                exec_ref=f"bridge:{tid}",
+                note=f"factory task run 启动: {objective}",
+            )
+        except Exception as exc:  # noqa: BLE001 — 启动失败 → 诚实错误, 不执行
+            print(f"❌ 任务 {tid} 启动失败 (未执行): {exc}", file=sys.stderr)
+            return 1
+        # 2) 执行 (in-process exec CLI — 与 factory run 同链路, 结构化结果)
+        ok = False
+        error = ""
+        exec_ref = ""
+        exec_result = ""
+        try:
+            exec_cli = self._proxy_exec_cli()
+            exec_args = argparse.Namespace(
+                project=str(repo),
+                task=tid,
+                objective=objective,
+                requirement=requirement,
+                employee=None,
+                agent=None,
+                provider=None,
+                test_cmd=None,
+            )
+            result = exec_cli.cmd_exec_run(root=self.data_dir, args=exec_args)
+            ok = bool(result.get("ok")) and int(result.get("exit_code", 0) or 0) == 0
+            error = str(result.get("error") or result.get("status") or "")
+            exec_ref = str(result.get("request_id") or "")
+            exec_result = str(result.get("result_id") or "")
+        except Exception as exc:  # noqa: BLE001 — 执行异常 → 回写 blocked
+            error = str(exc)
+        # 3) 回写 (成功 → done; 失败 → blocked) + 审计
+        try:
+            service.finish_task_exec(
+                project_id,
+                tid,
+                success=ok,
+                exec_ref=exec_ref,
+                exec_result=exec_result,
+                error=error,
+            )
+        except Exception as exc:  # noqa: BLE001 — 回写失败 → 明确提示, 不吞
+            print(f"⚠️ 状态回写失败: {exc}", file=sys.stderr)
+        if ok:
+            print(
+                f"✅ 任务 {tid} 执行完成 → backlog done "
+                f"(exec_ref={exec_ref} result={exec_result})"
+            )
+            return 0
+        print(
+            f"❌ 任务 {tid} 执行失败 → backlog blocked"
+            + (f": {error}" if error else ""),
+            file=sys.stderr,
+        )
+        return 1
 
     def router(self, args: argparse.Namespace) -> int:
         """LLM Router 管理骨架 (只读): 五层决策链可用性 + 当前决策。

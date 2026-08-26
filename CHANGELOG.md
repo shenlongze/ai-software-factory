@@ -3,6 +3,27 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.141] — 2026-08-26
+
+**方案A: 执行绑定 + 回写钩子 — 任务状态自动更新 (Founder: 选 A)**。
+
+### Added
+
+- Task 模型: exec_ref (执行绑定 EXR-*) / exec_result (执行结果 EXS-*) 字段
+- service.start_task_exec: 执行启动前 todo/ready → in_progress (走合法状态机,
+  依赖未满足拒绝启动) + exec_ref + 审计 exec:start
+- service.finish_task_exec: 执行完成后 成功 → done / 失败 → blocked +
+  exec_ref/exec_result + 审计 exec:completed / exec:failed (幂等)
+- _status_path: 受控状态机 BFS 合法路径 (不跳级不回退); _resolve_project_id:
+  org id / space slug 双入口解析
+- factory task run: 启动前绑定 → 执行 (in-process exec CLI) → 完成回写,
+  树里任务状态自动更新 (不再永远 todo)
+
+### 验证
+
+- test_task_exec_writeback 17 passed · org+console+api 全量 6457 passed
+  (8 失败 = 沙箱权限/联网环境性, 非本改动)
+
 ## [v1.1.140] — 2026-08-26
 
 **计划数据全量导入 backlog (Founder: 把我们之前的计划, 和没有实现的全部数据都做进去)**。

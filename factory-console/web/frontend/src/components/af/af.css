@@ -13,26 +13,38 @@
 
 /* --------------------------------------------------- AI OS tokens (:root) */
 :root {
-  --af-bg: #0f1115;
-  --af-panel: #161a22;
-  --af-card: #1d232e;
+  --af-bg: var(--c-input);
+  --af-panel: var(--c-panel);
+  --af-card: var(--c-card);
   --af-primary: #4c8dff;
   --af-success: #22c55e;
   --af-warning: #f59e0b;
   --af-danger: #ef4444;
   --af-blocked: #8b5cf6;
-  --af-neutral: #9ca3af;
-  --af-border: #2a3140;
+  --af-neutral: var(--c-text2);
+  --af-border: var(--c-border);
   /* 状态色语义 (6 态: 完成绿/执行中蓝/待办灰/阻塞紫/失败红/待审核橙) */
   --af-status-completed: #22c55e;
   --af-status-running: #4c8dff;
-  --af-status-pending: #9ca3af;
+  --af-status-pending: var(--c-text2);
   --af-status-blocked: #8b5cf6;
   --af-status-failed: #ef4444;
   --af-status-review: #f59e0b;
   --af-font-sans: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei',
     'Segoe UI', Roboto, sans-serif;
   --af-font-mono: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+  /* 语义色 (变量化 — 浅色主题统一覆盖, Founder 2026-08-26 强对比修复) */
+  --c-border: var(--c-border);
+  --c-border2: var(--c-border2);
+  --c-text: var(--c-text);
+  --c-text2: var(--c-text2);
+  --c-panel: var(--c-panel);
+  --c-card: var(--c-card);
+  --c-card2: var(--c-card2);
+  --c-input: var(--c-input);
+  --c-surface: var(--c-surface);
+  --c-hover: var(--c-hover);
+  --c-deep: var(--c-deep);
 }
 
 /* 执行中呼吸动画 (§4.4: 透明度 0.6→1, 1.2s) */
@@ -49,8 +61,8 @@
 .af-shell {
   height: 100vh; /* Founder: 页面适配窗口大小, 不随内容变长 (内部滚动) */
   overflow: hidden;
-  background: #0f1115;
-  color: #e5e7eb;
+  background: var(--c-input);
+  color: var(--c-text);
   font-family:
     -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI',
     Roboto, sans-serif;
@@ -79,8 +91,8 @@
   width: 240px;
   flex-shrink: 0;
   padding: 16px 12px;
-  background: var(--af-panel, #161a22);
-  border-right: 1px solid var(--af-border, #2a3140);
+  background: var(--af-panel, var(--c-panel));
+  border-right: 1px solid var(--af-border, var(--c-border));
   overflow: hidden;
   transition: width 0.2s ease, padding 0.2s ease;
 }
@@ -115,7 +127,7 @@
   padding: 8px 10px;
   font: inherit;
   font-size: 13px;
-  color: var(--af-neutral, #9ca3af);
+  color: var(--af-neutral, var(--c-text2));
   background: transparent;
   border: none;
   border-left: 3px solid transparent;
@@ -127,7 +139,7 @@
 }
 
 .af-nav-item:hover {
-  color: #e5e7eb;
+  color: var(--c-text);
   background: rgba(76, 141, 255, 0.08);
 }
 
@@ -167,8 +179,8 @@
   width: 320px;
   flex-shrink: 0;
   padding: 16px;
-  background: var(--af-panel, #161a22);
-  border-left: 1px solid var(--af-border, #2a3140);
+  background: var(--af-panel, var(--c-panel));
+  border-left: 1px solid var(--af-border, var(--c-border));
 }
 
 /* Todo Tree 页: 树 + 右侧 Task Detail 面板 (S10-015 Task 005 闭环) */
@@ -185,7 +197,7 @@
 
 .af-context-hint {
   font-size: 12px;
-  color: var(--af-neutral, #9ca3af);
+  color: var(--af-neutral, var(--c-text2));
 }
 
 /* Header 附加: LLM 状态点 (中性灰占位) + 折叠按钮 */
@@ -194,8 +206,8 @@
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: var(--af-neutral, #9ca3af);
-  border: 1px solid var(--af-border, #2a3140);
+  color: var(--af-neutral, var(--c-text2));
+  border: 1px solid var(--af-border, var(--c-border));
   border-radius: 8px;
   padding: 4px 10px;
 }
@@ -204,15 +216,15 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--af-neutral, #9ca3af);
+  background: var(--af-neutral, var(--c-text2));
 }
 
 .af-collapse-btn {
   font: inherit;
   font-size: 12px;
-  color: var(--af-neutral, #9ca3af);
+  color: var(--af-neutral, var(--c-text2));
   background: transparent;
-  border: 1px solid var(--af-border, #2a3140);
+  border: 1px solid var(--af-border, var(--c-border));
   border-radius: 8px;
   padding: 4px 10px;
   cursor: pointer;
@@ -230,8 +242,8 @@
   align-items: center;
   gap: 10px;
   padding: 14px 24px;
-  background: #161a22;
-  border-bottom: 1px solid #2a3140;
+  background: var(--c-panel);
+  border-bottom: 1px solid var(--c-border);
 }
 
 .af-brand-mark {
@@ -249,9 +261,9 @@
 
 .af-subpage-label {
   font-size: 12px;
-  color: #9ca3af;
-  background: #1d232e;
-  border: 1px solid #2a3140;
+  color: var(--c-text2);
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
   border-radius: 6px;
   padding: 2px 8px;
 }
@@ -263,9 +275,9 @@
 .af-console-link,
 .af-back-link {
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--c-text2);
   text-decoration: none;
-  border: 1px solid #2a3140;
+  border: 1px solid var(--c-border);
   border-radius: 8px;
   padding: 4px 10px;
   transition: color 0.15s, border-color 0.15s;
@@ -304,8 +316,8 @@
   text-align: left;
   font: inherit;
   color: inherit;
-  background: #1d232e;
-  border: 1px solid #2a3140;
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
   border-radius: 12px;
   padding: 16px;
   cursor: pointer;
@@ -346,7 +358,7 @@
 
 .af-card-desc {
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--c-text2);
   margin: 0 0 10px;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -363,7 +375,7 @@
 
 .af-card-stage {
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--c-text2);
 }
 
 /* ---------------------------------------------------------------- Badges */
@@ -396,7 +408,7 @@
 }
 
 .af-badge-gray {
-  color: #9ca3af;
+  color: var(--c-text2);
   background: rgba(156, 163, 175, 0.12);
 }
 
@@ -408,7 +420,7 @@
   gap: 6px;
   font-size: 12px;
   line-height: 1.5;
-  color: #e5e7eb;
+  color: var(--c-text);
 }
 
 .af-status-dot {
@@ -416,7 +428,7 @@
   height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
-  background: var(--af-status-pending, #9ca3af);
+  background: var(--af-status-pending, var(--c-text2));
 }
 
 .af-status-dot--completed {
@@ -474,7 +486,7 @@
   flex: 1;
   height: 4px;
   border-radius: 2px;
-  background: #2a3140;
+  background: var(--c-border);
   overflow: hidden;
 }
 
@@ -487,7 +499,7 @@
 
 .af-progress-text {
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--c-text2);
   min-width: 40px;
   text-align: right;
   font-variant-numeric: tabular-nums;
@@ -502,17 +514,17 @@
 
 .af-chip {
   font-size: 12px;
-  color: #9ca3af;
-  background: #161a22;
-  border: 1px solid #2a3140;
+  color: var(--c-text2);
+  background: var(--c-panel);
+  border: 1px solid var(--c-border);
   border-radius: 6px;
   padding: 1px 8px;
 }
 
 /* ---------------------------------------------------------- Project detail */
 .af-project-detail {
-  background: #1d232e;
-  border: 1px solid #2a3140;
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
   border-radius: 12px;
   padding: 20px;
 }
@@ -533,10 +545,10 @@
 
 .af-detail-id {
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--c-text2);
   font-family: 'SF Mono', 'JetBrains Mono', Menlo, monospace;
-  background: #161a22;
-  border: 1px solid #2a3140;
+  background: var(--c-panel);
+  border: 1px solid var(--c-border);
   border-radius: 6px;
   padding: 2px 8px;
 }
@@ -568,17 +580,17 @@
 
 .af-detail-label {
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--c-text2);
 }
 
 .af-detail-value {
   font-size: 14px;
-  color: #e5e7eb;
+  color: var(--c-text);
 }
 
 .af-detail-sub {
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--c-text2);
 }
 
 .af-detail-progress {
@@ -588,9 +600,9 @@
 /* ------------------------------------------------------------ Placeholder */
 .af-module-placeholder {
   font-size: 14px;
-  color: #9ca3af;
-  background: #161a22;
-  border: 1px dashed #2a3140;
+  color: var(--c-text2);
+  background: var(--c-panel);
+  border: 1px dashed var(--c-border);
   border-radius: 12px;
   padding: 24px;
   text-align: center;
@@ -612,9 +624,9 @@
   padding: 32px 16px;
   text-align: center;
   font-size: 14px;
-  color: #9ca3af;
-  background: #161a22;
-  border: 1px dashed #2a3140;
+  color: var(--c-text2);
+  background: var(--c-panel);
+  border: 1px dashed var(--c-border);
   border-radius: 12px;
 }
 
@@ -630,14 +642,14 @@
   gap: 10px;
   padding: 24px 16px;
   font-size: 14px;
-  color: #9ca3af;
+  color: var(--c-text2);
 }
 
 .af-loading-spinner {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  border: 2px solid #2a3140;
+  border: 2px solid var(--c-border);
   border-top-color: var(--af-primary, #4c8dff);
   animation: af-spin 0.8s linear infinite;
 }
@@ -663,16 +675,16 @@
 }
 
 .af-error-message {
-  color: #e5e7eb;
+  color: var(--c-text);
 }
 
 /* 基础按钮 (次按钮 = 透明 + 边框, §9.4) */
 .af-btn {
   font: inherit;
   font-size: 12px;
-  color: #e5e7eb;
+  color: var(--c-text);
   background: transparent;
-  border: 1px solid #2a3140;
+  border: 1px solid var(--c-border);
   border-radius: 8px;
   padding: 4px 12px;
   cursor: pointer;
@@ -689,8 +701,8 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  background: var(--af-card, #1d232e);
-  border: 1px solid var(--af-border, #2a3140);
+  background: var(--af-card, var(--c-card));
+  border: 1px solid var(--af-border, var(--c-border));
   border-radius: 12px;
   padding: 16px;
   transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
@@ -715,8 +727,8 @@
   align-items: center;
   justify-content: center;
   font-size: 20px;
-  background: #161a22;
-  border: 1px solid #2a3140;
+  background: var(--c-panel);
+  border: 1px solid var(--c-border);
   border-radius: 10px;
   flex-shrink: 0;
 }
@@ -740,7 +752,7 @@
 
 .af-agent-role {
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--c-text2);
 }
 
 .af-agent-status {
@@ -764,12 +776,12 @@
   justify-content: space-between;
   gap: 8px;
   padding-top: 10px;
-  border-top: 1px solid #2a3140;
+  border-top: 1px solid var(--c-border);
 }
 
 .af-agent-version {
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--c-text2);
   font-family: var(--af-font-mono, 'SF Mono', Menlo, monospace);
 }
 
@@ -780,7 +792,7 @@
 
 .af-agent-stat {
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--c-text2);
   font-variant-numeric: tabular-nums;
 }
 
@@ -800,7 +812,7 @@
   flex-shrink: 0;
   padding-top: 2px;
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--c-text2);
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
@@ -819,7 +831,7 @@
   border-radius: 50%;
   margin-top: 4px;
   flex-shrink: 0;
-  background: var(--af-status-pending, #9ca3af);
+  background: var(--af-status-pending, var(--c-text2));
 }
 
 .af-timeline-dot--completed {
@@ -848,7 +860,7 @@
 .af-timeline-line {
   flex: 1;
   width: 2px;
-  background: #2a3140;
+  background: var(--c-border);
   margin: 4px 0;
 }
 
@@ -862,12 +874,12 @@
 
 .af-timeline-actor {
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--c-text2);
 }
 
 .af-timeline-action {
   font-size: 14px;
-  color: #e5e7eb;
+  color: var(--c-text);
 }
 
 .af-timeline-result {
@@ -881,9 +893,9 @@
 
 .af-timeline-empty {
   font-size: 14px;
-  color: #9ca3af;
-  background: #161a22;
-  border: 1px dashed #2a3140;
+  color: var(--c-text2);
+  background: var(--c-panel);
+  border: 1px dashed var(--c-border);
   border-radius: 12px;
   padding: 24px;
   text-align: center;
@@ -923,8 +935,8 @@
 
 /* 树容器 (面板卡片) */
 .af-todo-tree {
-  background: #1d232e;
-  border: 1px solid #2a3140;
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
   border-radius: 12px;
   padding: 16px;
 }
@@ -952,9 +964,9 @@
 .af-filter-chip {
   font: inherit;
   font-size: 12px;
-  color: #9ca3af;
-  background: #161a22;
-  border: 1px solid #2a3140;
+  color: var(--c-text2);
+  background: var(--c-panel);
+  border: 1px solid var(--c-border);
   border-radius: 980px;
   padding: 2px 12px;
   cursor: pointer;
@@ -979,8 +991,8 @@
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
-  background: #161a22;
-  border: 1px solid #2a3140;
+  background: var(--c-panel);
+  border: 1px solid var(--c-border);
   border-radius: 10px;
   margin-bottom: 8px;
 }
@@ -1011,7 +1023,7 @@
   padding: 5px 8px;
   border-radius: 8px;
   font-size: 13px;
-  color: #e5e7eb;
+  color: var(--c-text);
   transition: background 0.15s;
 }
 
@@ -1050,7 +1062,7 @@
   font: inherit;
   font-size: 11px;
   line-height: 1;
-  color: #9ca3af;
+  color: var(--c-text2);
   background: transparent;
   border: none;
   border-radius: 4px;
@@ -1087,7 +1099,7 @@
   margin-left: auto;
   flex-shrink: 0;
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--c-text2);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1095,9 +1107,9 @@
 .af-tree-owner {
   flex-shrink: 0;
   font-size: 11px;
-  color: #9ca3af;
-  background: #161a22;
-  border: 1px solid #2a3140;
+  color: var(--c-text2);
+  background: var(--c-panel);
+  border: 1px solid var(--c-border);
   border-radius: 6px;
   padding: 0 6px;
 }
@@ -1117,7 +1129,7 @@
 .af-tree-children {
   margin-left: 15px;
   padding-left: 10px;
-  border-left: 1px solid #2a3140;
+  border-left: 1px solid var(--c-border);
   display: flex;
   flex-direction: column;
   animation: af-tree-expand 0.12s ease;
@@ -1160,7 +1172,7 @@
 }
 
 .af-priority--P3 {
-  color: #9ca3af;
+  color: var(--c-text2);
   background: rgba(156, 163, 175, 0.14);
 }
 
@@ -1178,8 +1190,8 @@
   flex-wrap: wrap;
   gap: 10px;
   padding: 12px 16px;
-  background: #161a22;
-  border: 1px solid #2a3140;
+  background: var(--c-panel);
+  border: 1px solid var(--c-border);
   border-radius: 12px;
 }
 
@@ -1187,7 +1199,7 @@
   margin: 0;
   font-size: 15px;
   font-weight: 600;
-  color: #e5e7eb;
+  color: var(--c-text);
 }
 
 /* isMock 降级警告 (演示数据 — 非真实执行, 禁冒充) */
@@ -1212,8 +1224,8 @@
 }
 
 .af-wf-section {
-  background: #161a22;
-  border: 1px solid #2a3140;
+  background: var(--c-panel);
+  border: 1px solid var(--c-border);
   border-radius: 12px;
   padding: 14px 16px;
 }
@@ -1222,7 +1234,7 @@
   margin: 0 0 10px;
   font-size: 13px;
   font-weight: 600;
-  color: #e5e7eb;
+  color: var(--c-text);
 }
 
 .af-wf-section-sub {
@@ -1250,8 +1262,8 @@
   align-items: center;
   gap: 12px;
   padding: 10px 12px;
-  background: #1d232e;
-  border: 1px solid #2a3140;
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
   border-radius: 10px;
 }
 
@@ -1265,7 +1277,7 @@
 }
 
 .af-wf-stage--pending {
-  border-left: 3px solid var(--af-status-pending, #9ca3af);
+  border-left: 3px solid var(--af-status-pending, var(--c-text2));
   opacity: 0.72;
 }
 
@@ -1297,9 +1309,9 @@
   justify-content: center;
   font-size: 12px;
   font-weight: 600;
-  color: #9ca3af;
-  background: #161a22;
-  border: 1px solid #2a3140;
+  color: var(--c-text2);
+  background: var(--c-panel);
+  border: 1px solid var(--c-border);
   border-radius: 50%;
 }
 
@@ -1321,12 +1333,12 @@
 .af-wf-stage-name {
   font-size: 14px;
   font-weight: 600;
-  color: #e5e7eb;
+  color: var(--c-text);
 }
 
 .af-wf-stage-agent {
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--c-text2);
 }
 
 .af-wf-stage-done {
@@ -1393,12 +1405,12 @@
   gap: 8px;
   margin-top: 10px;
   padding-top: 10px;
-  border-top: 1px solid #2a3140;
+  border-top: 1px solid var(--c-border);
 }
 
 .af-wf-template-name {
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--c-text2);
 }
 
 .af-wf-template-seq {
@@ -1407,7 +1419,7 @@
   align-items: center;
   gap: 4px;
   font-size: 12px;
-  color: #e5e7eb;
+  color: var(--c-text);
 }
 
 .af-wf-template-step {
@@ -1428,13 +1440,13 @@
   margin: 0 0 12px;
   font-size: 16px;
   font-weight: 600;
-  color: #e5e7eb;
+  color: var(--c-text);
 }
 
 /* 当前执行卡 (面板卡片) */
 .af-runtime-card {
-  background: #1a1f2a;
-  border: 1px solid #2a3140;
+  background: var(--c-deep);
+  border: 1px solid var(--c-border);
   border-radius: 10px;
   padding: 14px 16px;
   margin-bottom: 16px;
@@ -1451,7 +1463,7 @@
 .af-runtime-card-title {
   font-size: 13px;
   font-weight: 600;
-  color: #9ca3af;
+  color: var(--c-text2);
   text-transform: uppercase;
   letter-spacing: 0.4px;
 }
@@ -1486,7 +1498,7 @@
 
 .af-runtime-value {
   font-size: 13px;
-  color: #e5e7eb;
+  color: var(--c-text);
   overflow-wrap: anywhere;
 }
 
@@ -1544,7 +1556,7 @@
   margin: 0 0 8px;
   font-size: 13px;
   font-weight: 600;
-  color: #e5e7eb;
+  color: var(--c-text);
 }
 
 .af-runtime-section-sub {
@@ -1557,8 +1569,8 @@
 /* 右侧 Context Panel 基础 (Task 006 树节点点击集成); 缺失字段 → '—' 降级 */
 
 .af-task-detail-panel {
-  background: #161a22;
-  border: 1px solid #2a3140;
+  background: var(--c-panel);
+  border: 1px solid var(--c-border);
   border-radius: 10px;
   min-width: 0;
   display: flex;
@@ -1572,14 +1584,14 @@
   justify-content: space-between;
   gap: 8px;
   padding: 14px 16px 10px;
-  border-bottom: 1px solid #2a3140;
+  border-bottom: 1px solid var(--c-border);
 }
 
 .af-task-detail-title {
   margin: 0;
   font-size: 15px;
   font-weight: 600;
-  color: #e5e7eb;
+  color: var(--c-text);
   overflow-wrap: anywhere;
 }
 
@@ -1591,15 +1603,15 @@
   align-items: center;
   justify-content: center;
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--c-text2);
   background: transparent;
-  border: 1px solid #2a3140;
+  border: 1px solid var(--c-border);
   border-radius: 6px;
   cursor: pointer;
 }
 
 .af-task-detail-close:hover {
-  color: #e5e7eb;
+  color: var(--c-text);
   border-color: #4c8dff;
 }
 
@@ -1618,7 +1630,7 @@
 .af-task-detail-belong {
   margin: 0;
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--c-text2);
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
@@ -1643,7 +1655,7 @@
 
 .af-task-detail-value {
   font-size: 13px;
-  color: #e5e7eb;
+  color: var(--c-text);
   overflow-wrap: anywhere;
 }
 
@@ -1655,7 +1667,7 @@
   margin: 0 0 8px;
   font-size: 13px;
   font-weight: 600;
-  color: #e5e7eb;
+  color: var(--c-text);
 }
 
 /* ============================================================ S10-015 Task 006: Dashboard (Control Center)
@@ -1677,7 +1689,7 @@
 .af-dashboard-sub {
   margin: 0;
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--c-text2);
 }
 
 .af-dashboard-grid {
@@ -1697,8 +1709,8 @@
   flex-direction: column;
   gap: 12px;
   padding: 14px 16px;
-  background: #1a1d24;
-  border: 1px solid #2b303b;
+  background: var(--c-deep);
+  border: 1px solid var(--c-border2);
   border-radius: 10px;
   min-width: 0;
 }
@@ -1707,7 +1719,7 @@
   margin: 0;
   font-size: 14px;
   font-weight: 600;
-  color: #e5e7eb;
+  color: var(--c-text);
   display: flex;
   align-items: baseline;
   gap: 8px;
@@ -1722,10 +1734,10 @@
 /* 诚实空态 (模块级, 不用 AfEmptyState 避免与全局空态 testid 冲突) */
 .af-dash-empty {
   padding: 14px 12px;
-  border: 1px dashed #2b303b;
+  border: 1px dashed var(--c-border2);
   border-radius: 8px;
   font-size: 13px;
-  color: #9ca3af;
+  color: var(--c-text2);
   text-align: center;
 }
 
@@ -1744,11 +1756,11 @@
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
-  background: #14161c;
-  border: 1px solid #2b303b;
+  background: var(--c-card2);
+  border: 1px solid var(--c-border2);
   border-radius: 8px;
   font-size: 13px;
-  color: #e5e7eb;
+  color: var(--c-text);
 }
 
 .af-dash-agent-name {
@@ -1758,7 +1770,7 @@
 
 .af-dash-agent-task,
 .af-dash-agent-stage {
-  color: #9ca3af;
+  color: var(--c-text2);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1781,8 +1793,8 @@
   flex-direction: column;
   gap: 8px;
   padding: 10px 12px;
-  background: #14161c;
-  border: 1px solid #2b303b;
+  background: var(--c-card2);
+  border: 1px solid var(--c-border2);
   border-radius: 8px;
   color: inherit;
   cursor: pointer;
@@ -1803,7 +1815,7 @@
 .af-dash-wf-name {
   font-size: 13px;
   font-weight: 600;
-  color: #e5e7eb;
+  color: var(--c-text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1811,7 +1823,7 @@
 
 .af-dash-wf-stage {
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--c-text2);
 }
 
 .af-dash-wf-chain {
@@ -1829,11 +1841,11 @@
   align-items: center;
   gap: 6px;
   padding: 4px 8px;
-  background: #1a1d24;
-  border: 1px solid #2b303b;
+  background: var(--c-deep);
+  border: 1px solid var(--c-border2);
   border-radius: 6px;
   font-size: 12px;
-  color: #e5e7eb;
+  color: var(--c-text);
 }
 
 .af-dash-wf-step--active {
@@ -1867,8 +1879,8 @@
   flex-direction: column;
   gap: 4px;
   padding: 10px 12px;
-  background: #14161c;
-  border: 1px solid #2b303b;
+  background: var(--c-card2);
+  border: 1px solid var(--c-border2);
   border-radius: 8px;
   color: inherit;
   cursor: pointer;
@@ -1882,14 +1894,14 @@
 .af-dash-blocked-name {
   font-size: 13px;
   font-weight: 600;
-  color: #e5e7eb;
+  color: var(--c-text);
 }
 
 .af-dash-blocked-reason,
 .af-dash-blocked-owner,
 .af-dash-blocked-next {
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--c-text2);
 }
 
 /* ⑥ Quality Summary */
@@ -1906,21 +1918,21 @@
   justify-content: space-between;
   gap: 8px;
   padding: 8px 10px;
-  background: #14161c;
-  border: 1px solid #2b303b;
+  background: var(--c-card2);
+  border: 1px solid var(--c-border2);
   border-radius: 8px;
 }
 
 .af-dash-quality-row dt {
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--c-text2);
 }
 
 .af-dash-quality-row dd {
   margin: 0;
   font-size: 13px;
   font-weight: 600;
-  color: #e5e7eb;
+  color: var(--c-text);
   text-align: right;
   overflow-wrap: anywhere;
 }
@@ -1941,7 +1953,7 @@
 .af-quality-sub {
   margin: 0;
   font-size: 13px;
-  color: #9ca3af;
+  color: var(--c-text2);
 }
 
 .af-quality-grid {
@@ -1951,8 +1963,8 @@
 }
 
 .af-quality-module {
-  background: #1d232e;
-  border: 1px solid #2a3140;
+  background: var(--c-card);
+  border: 1px solid var(--c-border);
   border-radius: 12px;
   padding: 14px 16px;
   display: flex;
@@ -1964,7 +1976,7 @@
   margin: 0;
   font-size: 15px;
   font-weight: 600;
-  color: #e5e7eb;
+  color: var(--c-text);
   display: flex;
   align-items: baseline;
   gap: 8px;
@@ -1973,7 +1985,7 @@
 .af-quality-module-sub {
   font-size: 12px;
   font-weight: 400;
-  color: #9ca3af;
+  color: var(--c-text2);
 }
 
 /* ① Current Quality Gate 卡 */
@@ -2008,21 +2020,21 @@
   align-items: center;
   gap: 6px;
   padding: 4px 8px;
-  background: #14161c;
-  border: 1px solid #2b303b;
+  background: var(--c-card2);
+  border: 1px solid var(--c-border2);
   border-radius: 8px;
 }
 
 .af-quality-field dt {
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--c-text2);
 }
 
 .af-quality-field dd {
   margin: 0;
   font-size: 13px;
   font-weight: 600;
-  color: #e5e7eb;
+  color: var(--c-text);
 }
 
 /* ② Required Checks 列表 */
@@ -2040,8 +2052,8 @@
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
-  background: #14161c;
-  border: 1px solid #2b303b;
+  background: var(--c-card2);
+  border: 1px solid var(--c-border2);
   border-radius: 8px;
 }
 
@@ -2073,20 +2085,20 @@
 }
 
 .af-quality-check--unavailable .af-quality-check-icon {
-  color: #9ca3af;
+  color: var(--c-text2);
   background: rgba(156, 163, 175, 0.12);
 }
 
 .af-quality-check-name {
   font-size: 13px;
   font-weight: 600;
-  color: #e5e7eb;
+  color: var(--c-text);
 }
 
 .af-quality-check-detail {
   flex: 1;
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--c-text2);
   text-align: right;
   overflow-wrap: anywhere;
 }
@@ -2097,8 +2109,8 @@
   flex-direction: column;
   gap: 8px;
   padding: 12px;
-  background: #14161c;
-  border: 1px solid #2b303b;
+  background: var(--c-card2);
+  border: 1px solid var(--c-border2);
   border-radius: 8px;
 }
 
@@ -2114,15 +2126,15 @@
 .af-quality-decision-unavailable {
   font-size: 12px;
   font-weight: 400;
-  color: #9ca3af;
+  color: var(--c-text2);
   padding: 2px 8px;
-  border: 1px solid #2b303b;
+  border: 1px solid var(--c-border2);
   border-radius: 6px;
 }
 
 .af-quality-decision-reason {
   font-size: 13px;
-  color: #9ca3af;
+  color: var(--c-text2);
   overflow-wrap: anywhere;
 }
 
@@ -2132,26 +2144,26 @@
   flex-direction: column;
   gap: 6px;
   padding: 12px;
-  background: #14161c;
-  border: 1px solid #2b303b;
+  background: var(--c-card2);
+  border: 1px solid var(--c-border2);
   border-radius: 8px;
 }
 
 .af-quality-approval-status {
   font-size: 15px;
   font-weight: 600;
-  color: #e5e7eb;
+  color: var(--c-text);
 }
 
 .af-quality-approval-by,
 .af-quality-approval-time {
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--c-text2);
 }
 
 .af-quality-approval-comment {
   font-size: 13px;
-  color: #9ca3af;
+  color: var(--c-text2);
   overflow-wrap: anywhere;
 }
 
@@ -2160,9 +2172,9 @@
   padding: 12px;
   font-size: 13px;
   font-weight: 600;
-  color: #9ca3af;
-  background: #14161c;
-  border: 1px dashed #2b303b;
+  color: var(--c-text2);
+  background: var(--c-card2);
+  border: 1px dashed var(--c-border2);
   border-radius: 8px;
   text-align: center;
 }
@@ -2170,7 +2182,7 @@
 .af-quality-empty {
   padding: 12px;
   font-size: 13px;
-  color: #9ca3af;
+  color: var(--c-text2);
   text-align: center;
 }
 
@@ -2201,7 +2213,7 @@
   flex-direction: column;
   gap: 8px;
   padding-bottom: 8px;
-  border-bottom: 1px solid var(--af-border, #2a3140);
+  border-bottom: 1px solid var(--af-border, var(--c-border));
 }
 
 .af-new-project {
@@ -2209,7 +2221,7 @@
   font: inherit;
   font-size: 13px;
   font-weight: 600;
-  color: #0f1115;
+  color: var(--c-input);
   background: var(--af-primary, #4c8dff);
   border: none;
   border-radius: 6px;
@@ -2232,9 +2244,9 @@
   padding: 7px 10px;
   font: inherit;
   font-size: 12px;
-  color: #e5e7eb;
-  background: #0f1115;
-  border: 1px solid var(--af-border, #2a3140);
+  color: var(--c-text);
+  background: var(--c-input);
+  border: 1px solid var(--af-border, var(--c-border));
   border-radius: 6px;
   outline: none;
 }
@@ -2263,7 +2275,7 @@
   padding: 6px 10px;
   font: inherit;
   font-size: 13px;
-  color: var(--af-neutral, #9ca3af);
+  color: var(--af-neutral, var(--c-text2));
   background: transparent;
   border: none;
   border-radius: 6px;
@@ -2275,7 +2287,7 @@
 }
 
 .af-project-item:hover {
-  color: #e5e7eb;
+  color: var(--c-text);
   background: rgba(76, 141, 255, 0.08);
 }
 
@@ -2301,8 +2313,8 @@
   width: 320px;
   flex-shrink: 0;
   padding: 16px;
-  background: var(--af-panel, #161a22);
-  border-left: 1px solid var(--af-border, #2a3140);
+  background: var(--af-panel, var(--c-panel));
+  border-left: 1px solid var(--af-border, var(--c-border));
   transition: width 0.2s ease, padding 0.2s ease;
 }
 
@@ -2316,16 +2328,16 @@
   width: 24px;
   height: 24px;
   font-size: 14px;
-  color: var(--af-neutral, #9ca3af);
+  color: var(--af-neutral, var(--c-text2));
   background: transparent;
-  border: 1px solid var(--af-border, #2a3140);
+  border: 1px solid var(--af-border, var(--c-border));
   border-radius: 6px;
   cursor: pointer;
   flex-shrink: 0;
 }
 
 .af-context-toggle:hover {
-  color: #e5e7eb;
+  color: var(--c-text);
   background: rgba(76, 141, 255, 0.08);
 }
 
@@ -2335,8 +2347,8 @@
   gap: 8px;
   align-items: center;
   padding: 12px 16px;
-  background: var(--af-panel, #161a22);
-  border-top: 1px solid var(--af-border, #2a3140);
+  background: var(--af-panel, var(--c-panel));
+  border-top: 1px solid var(--af-border, var(--c-border));
 }
 
 .af-composer-input {
@@ -2344,9 +2356,9 @@
   padding: 9px 12px;
   font: inherit;
   font-size: 13px;
-  color: #e5e7eb;
-  background: #0f1115;
-  border: 1px solid var(--af-border, #2a3140);
+  color: var(--c-text);
+  background: var(--c-input);
+  border: 1px solid var(--af-border, var(--c-border));
   border-radius: 8px;
   outline: none;
 }
@@ -2360,7 +2372,7 @@
   font: inherit;
   font-size: 13px;
   font-weight: 600;
-  color: #0f1115;
+  color: var(--c-input);
   background: var(--af-primary, #4c8dff);
   border: none;
   border-radius: 8px;
@@ -2377,8 +2389,8 @@
   flex-direction: column;
   width: 420px;
   flex-shrink: 0;
-  background: var(--af-panel, #161a22);
-  border-left: 1px solid var(--af-border, #2a3140);
+  background: var(--af-panel, var(--c-panel));
+  border-left: 1px solid var(--af-border, var(--c-border));
   transition: width 0.2s ease;
 }
 
@@ -2397,7 +2409,7 @@
   align-items: center;
   gap: 6px;
   padding: 8px 10px;
-  border-bottom: 1px solid var(--af-border, #2a3140);
+  border-bottom: 1px solid var(--af-border, var(--c-border));
 }
 
 .af-preview-controls {
@@ -2409,15 +2421,15 @@
   min-width: 26px;
   height: 26px;
   font-size: 13px;
-  color: var(--af-neutral, #9ca3af);
+  color: var(--af-neutral, var(--c-text2));
   background: transparent;
-  border: 1px solid var(--af-border, #2a3140);
+  border: 1px solid var(--af-border, var(--c-border));
   border-radius: 6px;
   cursor: pointer;
 }
 
 .af-preview-btn:hover:not(:disabled) {
-  color: #e5e7eb;
+  color: var(--c-text);
   background: rgba(76, 141, 255, 0.08);
 }
 
@@ -2432,9 +2444,9 @@
   padding: 5px 8px;
   font: inherit;
   font-size: 12px;
-  color: #e5e7eb;
-  background: #0f1115;
-  border: 1px solid var(--af-border, #2a3140);
+  color: var(--c-text);
+  background: var(--c-input);
+  border: 1px solid var(--af-border, var(--c-border));
   border-radius: 6px;
   outline: none;
 }
@@ -2446,7 +2458,7 @@
 .af-preview-body {
   flex: 1;
   min-height: 0;
-  background: #0f1115;
+  background: var(--c-input);
 }
 
 .af-preview-frame {
@@ -2476,7 +2488,7 @@
   padding: 6px 10px;
   font-size: 13px;
   font-weight: 600;
-  color: #e5e7eb;
+  color: var(--c-text);
   border-radius: 6px;
 }
 
@@ -2486,7 +2498,7 @@
   gap: 1px;
   margin-left: 10px;
   padding-left: 8px;
-  border-left: 1px solid var(--af-border, #2a3140);
+  border-left: 1px solid var(--af-border, var(--c-border));
 }
 
 .af-os-icon {
@@ -2514,7 +2526,7 @@
   padding: 4px 10px;
   font-size: 11px;
   font-weight: 600;
-  color: #0f1115;
+  color: var(--c-input);
   background: var(--af-primary, #4c8dff);
   border-radius: 12px;
   white-space: nowrap;
@@ -2539,8 +2551,8 @@
 }
 
 .af-home-card {
-  background: var(--af-panel, #161a22);
-  border: 1px solid var(--af-border, #2a3140);
+  background: var(--af-panel, var(--c-panel));
+  border: 1px solid var(--af-border, var(--c-border));
   border-radius: 10px;
   padding: 14px 16px;
 }
@@ -2548,7 +2560,7 @@
 .af-home-card h3 {
   margin: 0 0 10px;
   font-size: 14px;
-  color: #e5e7eb;
+  color: var(--c-text);
 }
 
 .af-home-card-head {
@@ -2582,8 +2594,8 @@
   flex-direction: column;
   gap: 4px;
   padding: 10px 12px;
-  background: #0f1115;
-  border: 1px solid #2a3140;
+  background: var(--c-input);
+  border: 1px solid var(--c-border);
   border-radius: 8px;
   text-decoration: none;
   transition: border-color 0.15s ease;
@@ -2596,7 +2608,7 @@
 .af-focused-name {
   font-size: 13px;
   font-weight: 600;
-  color: #e5e7eb;
+  color: var(--c-text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2614,7 +2626,7 @@
 
 .af-lc-bar {
   height: 8px;
-  background: #2a3140;
+  background: var(--c-border);
   border-radius: 4px;
   overflow: hidden;
   margin: 8px 0;
@@ -2635,7 +2647,7 @@
   padding: 3px 8px;
   font-size: 11px;
   color: #6b7280;
-  border: 1px solid #2a3140;
+  border: 1px solid var(--c-border);
   border-radius: 12px;
 }
 
@@ -2656,7 +2668,7 @@
 }
 
 .af-view-toggle .active {
-  color: #0f1115;
+  color: var(--c-input);
   background: var(--af-primary, #4c8dff);
 }
 
@@ -2671,15 +2683,15 @@
   align-items: center;
   gap: 10px;
   padding: 8px 10px;
-  background: #0f1115;
-  border: 1px solid #2a3140;
+  background: var(--c-input);
+  border: 1px solid var(--c-border);
   border-radius: 8px;
 }
 
 .af-todo-title {
   flex: 1;
   font-size: 13px;
-  color: #e5e7eb;
+  color: var(--c-text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2700,9 +2712,9 @@
 .af-todo-status {
   font: inherit;
   font-size: 11px;
-  color: #e5e7eb;
-  background: #161a22;
-  border: 1px solid #2a3140;
+  color: var(--c-text);
+  background: var(--c-panel);
+  border: 1px solid var(--c-border);
   border-radius: 6px;
   padding: 3px 6px;
 }
@@ -2719,8 +2731,8 @@
 }
 
 .af-board-col {
-  background: #0f1115;
-  border: 1px solid #2a3140;
+  background: var(--c-input);
+  border: 1px solid var(--c-border);
   border-radius: 8px;
   padding: 10px;
   min-height: 120px;
@@ -2729,14 +2741,14 @@
 .af-board-col-title {
   margin: 0 0 8px;
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--c-text2);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
 .af-board-card {
-  background: #161a22;
-  border: 1px solid #2a3140;
+  background: var(--c-panel);
+  border: 1px solid var(--c-border);
   border-radius: 8px;
   padding: 8px;
   margin-bottom: 8px;
@@ -2809,7 +2821,7 @@
 }
 
 .af-project-group--toggle:hover {
-  color: #e5e7eb;
+  color: var(--c-text);
 }
 
 .af-project-group--toggle {
@@ -2850,11 +2862,11 @@
   gap: 8px;
   padding: 10px 12px;
   background: rgba(76, 141, 255, 0.08);
-  border: 1px solid var(--af-border, #2a3140);
+  border: 1px solid var(--af-border, var(--c-border));
   border-radius: 8px;
   margin-bottom: 12px;
   font-size: 12px;
-  color: #e5e7eb;
+  color: var(--c-text);
 }
 
 .af-danger {
@@ -2871,7 +2883,7 @@
 .af-manage-table th,
 .af-manage-table td {
   padding: 8px 10px;
-  border-bottom: 1px solid #2a3140;
+  border-bottom: 1px solid var(--c-border);
   text-align: left;
   color: #b0b6bf;
 }
@@ -2882,7 +2894,7 @@
 }
 
 .af-manage-name {
-  color: #e5e7eb;
+  color: var(--c-text);
   text-decoration: none;
   font-weight: 500;
 }
@@ -2903,13 +2915,13 @@
 
 .af-manage-archived {
   margin-top: 16px;
-  border-top: 1px solid #2a3140;
+  border-top: 1px solid var(--c-border);
   padding-top: 8px;
 }
 
 .af-manage-archived .af-project-group--toggle {
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--c-text2);
 }
 
 /* 设置页 */
@@ -2924,15 +2936,15 @@
   padding: 6px 14px;
   font: inherit;
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--c-text2);
   background: transparent;
-  border: 1px solid #2a3140;
+  border: 1px solid var(--c-border);
   border-radius: 16px;
   cursor: pointer;
 }
 
 .af-settings-tab.active {
-  color: #0f1115;
+  color: var(--c-input);
   background: var(--af-primary, #4c8dff);
   border-color: var(--af-primary, #4c8dff);
   font-weight: 600;
@@ -2940,7 +2952,7 @@
 
 .af-settings-h3 {
   font-size: 13px;
-  color: #e5e7eb;
+  color: var(--c-text);
   margin: 8px 0;
 }
 
@@ -2957,8 +2969,8 @@
   width: 340px;
   min-width: 0;
   min-height: 0; /* 会话栏适配窗口高度, 内部滚动 */
-  background: var(--af-panel, #161a22);
-  border-left: 1px solid var(--af-border, #2a3140);
+  background: var(--af-panel, var(--c-panel));
+  border-left: 1px solid var(--af-border, var(--c-border));
 }
 
 /* B 列: 标签页条固定 + 内容区内部滚动 (Founder: 页面适配窗口, 不整页变长) */
@@ -2982,15 +2994,15 @@
   align-items: center;
   gap: 2px;
   padding: 6px 8px;
-  background: #13161d;
-  border-bottom: 1px solid var(--af-border, #2a3140);
+  background: var(--c-surface);
+  border-bottom: 1px solid var(--af-border, var(--c-border));
   flex-shrink: 0;
 }
 
 .af-b-tab {
   font: inherit;
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--c-text2);
   background: transparent;
   border: 1px solid transparent;
   border-radius: 6px;
@@ -2999,14 +3011,14 @@
 }
 
 .af-b-tab:hover {
-  color: #e5e7eb;
-  background: #1c212b;
+  color: var(--c-text);
+  background: var(--c-hover);
 }
 
 .af-b-tab--active {
-  color: #e5e7eb;
-  background: #1c212b;
-  border-color: #2a3140;
+  color: var(--c-text);
+  background: var(--c-hover);
+  border-color: var(--c-border);
 }
 
 .af-b-tab--sidebar {
@@ -3066,7 +3078,7 @@
   align-items: center;
   gap: 4px;
   padding: 8px;
-  border-bottom: 1px solid var(--af-border, #2a3140);
+  border-bottom: 1px solid var(--af-border, var(--c-border));
 }
 
 .af-chat-scope {
@@ -3074,16 +3086,16 @@
   min-width: 0;
   font: inherit;
   font-size: 12px;
-  color: #e5e7eb;
-  background: #0f1115;
-  border: 1px solid #2a3140;
+  color: var(--c-text);
+  background: var(--c-input);
+  border: 1px solid var(--c-border);
   border-radius: 6px;
   padding: 4px 6px;
 }
 
 .af-chat-btn {
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--c-text2);
   background: transparent;
   border: 1px solid transparent;
   border-radius: 6px;
@@ -3092,8 +3104,8 @@
 }
 
 .af-chat-btn:hover {
-  color: #e5e7eb;
-  background: #1c212b;
+  color: var(--c-text);
+  background: var(--c-hover);
 }
 
 .af-chat-btn--on {
@@ -3109,7 +3121,7 @@
 .af-chat-sessions {
   max-height: 40%;
   overflow-y: auto;
-  border-bottom: 1px solid var(--af-border, #2a3140);
+  border-bottom: 1px solid var(--af-border, var(--c-border));
   padding: 4px 6px;
 }
 
@@ -3122,7 +3134,7 @@
 }
 
 .af-chat-session:hover {
-  background: #1c212b;
+  background: var(--c-hover);
 }
 
 .af-chat-session--active {
@@ -3139,7 +3151,7 @@
   text-align: left;
   font: inherit;
   font-size: 12px;
-  color: #e5e7eb;
+  color: var(--c-text);
   background: transparent;
   border: none;
   cursor: pointer;
@@ -3163,7 +3175,7 @@
 }
 
 .af-chat-op:hover {
-  color: #e5e7eb;
+  color: var(--c-text);
 }
 
 .af-chat-rename {
@@ -3171,8 +3183,8 @@
   min-width: 0;
   font: inherit;
   font-size: 12px;
-  color: #e5e7eb;
-  background: #0f1115;
+  color: var(--c-text);
+  background: var(--c-input);
   border: 1px solid #4c8dff;
   border-radius: 4px;
   padding: 2px 4px;
@@ -3186,7 +3198,7 @@
   padding: 6px 8px;
   font-size: 11px;
   color: #6b7280;
-  border-bottom: 1px solid var(--af-border, #2a3140);
+  border-bottom: 1px solid var(--af-border, var(--c-border));
 }
 
 .af-chat-compress {
@@ -3194,7 +3206,7 @@
   font-size: 10px;
   color: #6b7280;
   background: transparent;
-  border: 1px dashed #2a3140;
+  border: 1px dashed var(--c-border);
   border-radius: 4px;
   padding: 1px 6px;
   cursor: not-allowed;
@@ -3228,8 +3240,8 @@
 
 .af-chat-msg--assistant {
   align-self: flex-start;
-  background: #1c212b;
-  border: 1px solid #2a3140;
+  background: var(--c-hover);
+  border: 1px solid var(--c-border);
   max-width: 92%;
 }
 
@@ -3243,7 +3255,7 @@
   display: flex;
   gap: 6px;
   padding: 8px;
-  border-top: 1px solid var(--af-border, #2a3140);
+  border-top: 1px solid var(--af-border, var(--c-border));
 }
 
 .af-chat-input {
@@ -3251,9 +3263,9 @@
   min-width: 0;
   font: inherit;
   font-size: 12px;
-  color: #e5e7eb;
-  background: #0f1115;
-  border: 1px solid #2a3140;
+  color: var(--c-text);
+  background: var(--c-input);
+  border: 1px solid var(--c-border);
   border-radius: 8px;
   padding: 8px 10px;
 }
@@ -3266,7 +3278,7 @@
 .af-chat-send {
   font: inherit;
   font-size: 12px;
-  color: #0f1115;
+  color: var(--c-input);
   background: var(--af-primary, #4c8dff);
   border: none;
   border-radius: 8px;
@@ -3286,9 +3298,9 @@
   gap: 16px;
   padding: 4px 12px;
   font-size: 11px;
-  color: #9ca3af;
-  background: #13161d;
-  border-top: 1px solid var(--af-border, #2a3140);
+  color: var(--c-text2);
+  background: var(--c-surface);
+  border-top: 1px solid var(--af-border, var(--c-border));
   flex-shrink: 0;
 }
 
@@ -3309,8 +3321,8 @@
   flex-direction: column;
   gap: 8px;
   padding: 12px 14px;
-  background: #0f1115;
-  border: 1px solid #2a3140;
+  background: var(--c-input);
+  border: 1px solid var(--c-border);
   border-radius: 10px;
 }
 
@@ -3331,7 +3343,7 @@
 .af-settings-card-name {
   font-size: 13px;
   font-weight: 600;
-  color: #e5e7eb;
+  color: var(--c-text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3351,9 +3363,9 @@
 
 .af-settings-chip {
   font-size: 11px;
-  color: #9ca3af;
-  background: #161a22;
-  border: 1px solid #2a3140;
+  color: var(--c-text2);
+  background: var(--c-panel);
+  border: 1px solid var(--c-border);
   border-radius: 12px;
   padding: 2px 8px;
   display: inline-flex;
@@ -3364,9 +3376,9 @@
 .af-settings-select {
   font: inherit;
   font-size: 11px;
-  color: #e5e7eb;
-  background: #0f1115;
-  border: 1px solid #2a3140;
+  color: var(--c-text);
+  background: var(--c-input);
+  border: 1px solid var(--c-border);
   border-radius: 6px;
   padding: 1px 4px;
 }
@@ -3381,9 +3393,9 @@
 .af-settings-input {
   font: inherit;
   font-size: 12px;
-  color: #e5e7eb;
-  background: #0f1115;
-  border: 1px solid #2a3140;
+  color: var(--c-text);
+  background: var(--c-input);
+  border: 1px solid var(--c-border);
   border-radius: 8px;
   padding: 7px 10px;
   min-width: 160px;
@@ -3402,9 +3414,9 @@
 .af-settings-action {
   font: inherit;
   font-size: 12px;
-  color: #e5e7eb;
-  background: #1c212b;
-  border: 1px solid #2a3140;
+  color: var(--c-text);
+  background: var(--c-hover);
+  border: 1px solid var(--c-border);
   border-radius: 8px;
   padding: 5px 12px;
   cursor: pointer;
@@ -3415,7 +3427,7 @@
 }
 
 .af-settings-action--primary {
-  color: #0f1115;
+  color: var(--c-input);
   background: var(--af-primary, #4c8dff);
   border-color: transparent;
 }
@@ -3432,7 +3444,7 @@
 .af-settings-h4 {
   margin: 16px 0 4px;
   font-size: 13px;
-  color: #e5e7eb;
+  color: var(--c-text);
 }
 
 .af-badge-green {
@@ -3442,9 +3454,9 @@
 }
 
 .af-badge-gray {
-  color: #9ca3af;
-  border: 1px solid #2a3140;
-  background: #161a22;
+  color: var(--c-text2);
+  border: 1px solid var(--c-border);
+  background: var(--c-panel);
 }
 
 /* v1.1.103: 设置 — 表格模式补充 */
@@ -3459,8 +3471,8 @@
 .af-settings-form--block {
   margin-bottom: 12px;
   padding: 12px;
-  background: #13161d;
-  border: 1px solid #2a3140;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
   border-radius: 10px;
 }
 
@@ -3469,7 +3481,7 @@
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: #e5e7eb;
+  color: var(--c-text);
   cursor: pointer;
 }
 
@@ -3491,8 +3503,8 @@
   flex-direction: column;
   gap: 2px;
   padding: 10px;
-  background: #13161d;
-  border: 1px solid #2a3140;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
   border-radius: 10px;
   max-height: calc(100vh - 180px);
   overflow-y: auto;
@@ -3506,7 +3518,7 @@
 
 .af-doc-folder {
   font-size: 11px;
-  color: #9ca3af;
+  color: var(--c-text2);
   margin: 6px 0 2px;
 }
 
@@ -3518,7 +3530,7 @@
   text-align: left;
   font: inherit;
   font-size: 12px;
-  color: #e5e7eb;
+  color: var(--c-text);
   background: transparent;
   border: none;
   border-radius: 6px;
@@ -3527,7 +3539,7 @@
 }
 
 .af-doc-item:hover {
-  background: #1c212b;
+  background: var(--c-hover);
 }
 
 .af-doc-item--active {
@@ -3554,8 +3566,8 @@
   flex: 1;
   min-width: 0;
   padding: 14px 18px;
-  background: #13161d;
-  border: 1px solid #2a3140;
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
   border-radius: 10px;
   max-height: calc(100vh - 180px);
   overflow-y: auto;
@@ -3567,19 +3579,19 @@
   gap: 10px;
   margin-bottom: 10px;
   padding-bottom: 8px;
-  border-bottom: 1px solid #2a3140;
+  border-bottom: 1px solid var(--c-border);
 }
 
 .af-doc-title {
   font-size: 14px;
   font-weight: 600;
-  color: #e5e7eb;
+  color: var(--c-text);
 }
 
 .af-doc-kind {
   font-size: 10px;
-  color: #9ca3af;
-  border: 1px solid #2a3140;
+  color: var(--c-text2);
+  border: 1px solid var(--c-border);
   border-radius: 4px;
   padding: 1px 6px;
 }
@@ -3587,19 +3599,19 @@
 .af-doc-md h1 {
   font-size: 18px;
   margin: 0 0 10px;
-  color: #e5e7eb;
+  color: var(--c-text);
 }
 
 .af-doc-md h2 {
   font-size: 15px;
   margin: 14px 0 6px;
-  color: #e5e7eb;
+  color: var(--c-text);
 }
 
 .af-doc-md h3 {
   font-size: 13px;
   margin: 10px 0 4px;
-  color: #e5e7eb;
+  color: var(--c-text);
 }
 
 .af-doc-md p {
@@ -3625,8 +3637,8 @@
   font-size: 12px;
   line-height: 1.6;
   color: #a5d6a7;
-  background: #0f1115;
-  border: 1px solid #2a3140;
+  background: var(--c-input);
+  border: 1px solid var(--c-border);
   border-radius: 8px;
   padding: 12px;
   overflow-x: auto;
@@ -3644,7 +3656,7 @@
 .af-docs-tab {
   font: inherit;
   font-size: 12px;
-  color: #9ca3af;
+  color: var(--c-text2);
   background: transparent;
   border: 1px solid transparent;
   border-radius: 8px;
@@ -3653,14 +3665,14 @@
 }
 
 .af-docs-tab:hover {
-  color: #e5e7eb;
-  background: #1c212b;
+  color: var(--c-text);
+  background: var(--c-hover);
 }
 
 .af-docs-tab.active {
-  color: #e5e7eb;
-  background: #1c212b;
-  border-color: #2a3140;
+  color: var(--c-text);
+  background: var(--c-hover);
+  border-color: var(--c-border);
 }
 
 .af-artifact-meta {
@@ -3678,24 +3690,24 @@
   gap: 6px;
   margin-bottom: 10px;
   padding: 8px;
-  background: #0f1115;
-  border: 1px solid #2a3140;
+  background: var(--c-input);
+  border: 1px solid var(--c-border);
   border-radius: 8px;
 }
 
 .af-version-chip {
   font: inherit;
   font-size: 11px;
-  color: #9ca3af;
-  background: #161a22;
-  border: 1px solid #2a3140;
+  color: var(--c-text2);
+  background: var(--c-panel);
+  border: 1px solid var(--c-border);
   border-radius: 12px;
   padding: 2px 10px;
   cursor: pointer;
 }
 
 .af-version-chip.active {
-  color: #0f1115;
+  color: var(--c-input);
   background: var(--af-primary, #4c8dff);
   border-color: transparent;
 }
@@ -3704,9 +3716,9 @@
 .af-lang-switch {
   font: inherit;
   font-size: 12px;
-  color: #e5e7eb;
-  background: #161a22;
-  border: 1px solid #2a3140;
+  color: var(--c-text);
+  background: var(--c-panel);
+  border: 1px solid var(--c-border);
   border-radius: 6px;
   padding: 3px 8px;
   cursor: pointer;
@@ -3720,6 +3732,17 @@
 
 /* ============================================= 主题: 浅色 (Founder 2026-08-26) */
 [data-theme='light'] {
+  --c-border: #d9dee6;
+  --c-border2: #e5e9ef;
+  --c-text: #1f2937;
+  --c-text2: #6b7280;
+  --c-panel: #ffffff;
+  --c-card: #ffffff;
+  --c-card2: #ffffff;
+  --c-input: #ffffff;
+  --c-surface: #ffffff;
+  --c-hover: #eef1f5;
+  --c-deep: #f8fafc;
   --af-bg: #f3f5f8;
   --af-panel: #ffffff;
   --af-card: #ffffff;

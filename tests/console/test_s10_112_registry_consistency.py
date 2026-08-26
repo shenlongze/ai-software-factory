@@ -433,6 +433,8 @@ class TestApiRegistryConsistency:
                 (method == "POST" and path == "/api/skills")
                 or (method == "DELETE" and path.startswith("/api/skills/"))
             )
+            # v1.1.188 U-6: 本机 AI 注册 + 委派执行 (POST /api/local-ai/*)
+            is_local_ai_write = method == "POST" and path.startswith("/api/local-ai")
             assert (
                 is_approval or is_runtime or is_tool_execute or is_mcp_connect
                 or is_review_feedback or is_project_create or is_project_suggest
@@ -442,6 +444,7 @@ class TestApiRegistryConsistency:
                 or is_docs_config or is_rag_query
                 or is_mcp_remove or is_llm_config
                 or is_agent_write or is_skill_write
+                or is_local_ai_write
             ), f"写路由超出白名单: {method} {path}"
 
     def test_capability_matrix_api_claims_backed(self):

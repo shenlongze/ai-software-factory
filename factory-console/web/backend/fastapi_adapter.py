@@ -273,6 +273,14 @@ class _LlmConfigBody(BaseModel):
     api_key_ref: str | None = None
 
 
+class _LocalAiRunBody(BaseModel):
+    """POST /api/local-ai/{agent_id}/run body (U-6): {prompt, project_dir?, timeout?}。"""
+
+    prompt: str
+    project_dir: str = ""
+    timeout: int = 600
+
+
 class _AgentBody(BaseModel):
     """POST /api/agents body (设置 — Agent 管理, v1.1.102)。
 
@@ -1530,6 +1538,51 @@ def build_app(
         except Exception:  # noqa: BLE001
             html = "<p>（任务树渲染失败）</p>"
         return HTMLResponse(content=html)
+
+    # ============ U-6 (v1.1.188): 本机 AI 发现与调度 (codex/claude/hermes)
+    @app.get("/api/local-ai")
+    def api_local_ai_scan() -> dict[str, Any]:
+        """扫描本机 AI CLI (codex/claude/hermes) — 只读探测, 不注册。"""
+        try:
+            _local_ai_mod = _console_import("local_ai")
+            detected = _local_ai_mod.detect_local_ais()
+        except Exception:  # noqa: BLE001 — 扫描失败 → 空 (不编造)
+            detected = []
+        return {"detected": detected, "count": len(detected)}
+
+    @app.post("/api/local-ai/register")
+    def api_local_ai_register() -> dict[str, Any]:
+        """扫描 + 幂等注册本机 AI 为 Agent (写 agents.json; 失败安全)。"""
+        try:
+            _local_ai_mod = _console_import("local_ai")
+            detected = _local_ai_mod.detect_local_ais()
+            registered = _local_ai_mod.register_local_ais(_agents_file(), detected)
+        except Exception as exc:  # noqa: BLE001 — 注册失败 → 诚实错误
+            return {"registered": [], "error": str(exc)}
+        return {"registered": registered, "count": len(registered), "detected": len(detected)}
+
+    @app.post("/api/local-ai/{agent_id}/run")
+    def api_local_ai_run(agent_id: str, body: _LocalAiRunBody) -> dict[str, Any]:
+        """委派真实执行: 调本机 CLI (codex/claude/hermes) 执行 prompt。"""
+        data = _read_json_map(_agents_file())
+        agents = data.get("agents") if isinstance(data, dict) else None
+        record = None
+        if isinstance(agents, dict):
+            record = agents.get(agent_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail=f"agent not found: {agent_id}")
+        try:
+            _local_ai_mod = _console_import("local_ai")
+            result = _local_ai_mod.run_local_ai(
+                record,
+                body.prompt,
+                project_dir=body.project_dir,
+                timeout=body.timeout,
+            )
+        except Exception as exc:  # noqa: BLE001 — 委派失败 → 诚实错误
+            result = {"exit_code": -1, "output": "", "error": f"委派失败: {exc}"}
+        result["agent_id"] = agent_id
+        return result
 
     @app.get("/api/agents")
     def api_agents_list():

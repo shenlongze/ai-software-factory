@@ -420,6 +420,10 @@ export const api = {
   createAgent: (id: string, role: string, skills: string[]) =>
     sendJson<{ id: string; name: string; role: string; skills: string[] }>('/api/agents', { id, role, skills }),
   deleteAgent: (id: string) => deleteJson<{ deleted: boolean }>(`/api/agents/${encodeURIComponent(id)}`),
+  // U-6 (v1.1.188): 本机 AI 发现与注册 (codex/claude/hermes)
+  scanLocalAi: () => getJson<{ detected: Array<{ id: string; name: string; path: string; version?: string | null }>; count: number }>('/api/local-ai'),
+  registerLocalAi: () =>
+    sendJson<{ registered: AgentInfo[]; count: number; detected: number }>('/api/local-ai/register', {}),
   createSkill: (id: string, name?: string, category?: string) =>
     sendJson<{ id: string; name: string; category: string; version: string }>('/api/skills', { id, name, category }),
   deleteSkill: (id: string) => deleteJson<{ deleted: boolean }>(`/api/skills/${encodeURIComponent(id)}`),

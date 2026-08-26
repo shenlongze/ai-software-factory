@@ -3,7 +3,22 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.188] — 2026-08-27
+
+**U-6 本机 AI 发现与调度 (codex/claude/hermes → 自动注册为 Agent → exec 可委派真实执行)**。
+
+### Added
+
+- local_ai.py: 扫描 PATH + 常见安装目录探测 codex/claude/hermes (版本探测失败诚实 None);
+  幂等注册进 agents.json (已存在 → 刷新 path/version, 不覆盖用户 role/name);
+  run_local_ai 委派真实执行 (subprocess 调本机 CLI, codex exec/claude -p/hermes run)
+- API: GET /api/local-ai (只读扫描) · POST /api/local-ai/register (幂等注册) ·
+  POST /api/local-ai/{agent_id}/run (委派执行)
+- CLI: factory local-ai scan|register|run
+- WebUI: 设置 → AI 员工 tab「🔍 扫描本机 AI」按钮 (注册后列表刷新)
+
 ## [v1.1.187] — 2026-08-27
+
 
 **T-6 任务中断恢复验证 (D-2): 执行中断 checkpoint 落盘与恢复实测 — T 系列 9/9 收官**。
 

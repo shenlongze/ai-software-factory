@@ -997,6 +997,8 @@ class FactoryCLI:
             return self.service(args)
         if args.command == "mcp":
             return self.mcp(args)
+        if args.command == "local-ai":
+            return self.local_ai(args)
         if args.command == "exec":
             return self._exec_history(args)
         if args.command in ("agent", "skill", "task", "router", "rag", "audit"):
@@ -2526,6 +2528,59 @@ class FactoryCLI:
             file=sys.stderr,
         )
         return 1
+
+    def local_ai(self, args: argparse.Namespace) -> int:
+        """本机 AI 发现与调度 (U-6): scan — 扫描; register — 注册为 Agent; run — 委派执行。"""
+        from . import local_ai as _local_ai
+
+        action = getattr(args, "local_ai_action", "scan") or "scan"
+        if action == "scan":
+            print("=== 本机 AI 扫描 (codex/claude/hermes) ===")
+            found = _local_ai.detect_local_ais()
+            if not found:
+                print("  未发现已安装的本机 AI CLI (PATH 无 codex/claude/hermes)")
+                return 0
+            for f in found:
+                print(
+                    f"  - {f['id']} | {f['name']} | {f['path']}"
+                    + (f" | v{f['version']}" if f.get("version") else " | 版本未知")
+                )
+            print(f"  共 {len(found)} 个")
+            return 0
+        agents_file = self.data_dir / "agents" / "agents.json"
+        if action == "register":
+            registered = _local_ai.register_local_ais(agents_file)
+            if not registered:
+                print("未发现本机 AI CLI — 无可注册 (PATH 检查 codex/claude/hermes)")
+                return 0
+            for a in registered:
+                print(f"✅ 已注册 Agent: {a['id']} | {a['name']} | {a.get('path')}")
+            print(f"  共 {len(registered)} 个")
+            return 0
+        # run
+        aid = str(getattr(args, "id", "") or "").strip()
+        prompt = str(getattr(args, "prompt", "") or "").strip()
+        if not aid or not prompt:
+            print("用法: factory local-ai run --id <agent_id> --prompt <text> [--project <目录>]")
+            return 2
+        from .web.backend.fastapi_adapter import _read_json_map
+
+        data = _read_json_map(agents_file)
+        agents = data.get("agents") if isinstance(data, dict) else None
+        record = agents.get(aid) if isinstance(agents, dict) else None
+        if record is None:
+            print(f"未找到 Agent: {aid} (先 factory local-ai register)")
+            return 1
+        print(f"委派执行: {record.get('name')} (prompt: {prompt[:60]})…")
+        result = _local_ai.run_local_ai(
+            record, prompt, project_dir=str(getattr(args, "project", "") or "")
+        )
+        print(f"exit_code={result['exit_code']}")
+        if result.get("output"):
+            print(result["output"][:1500])
+        if result.get("error"):
+            print(f"stderr: {result['error'][:800]}", file=sys.stderr)
+        return 0 if result["exit_code"] == 0 else 1
 
     def router(self, args: argparse.Namespace) -> int:
         """LLM Router 管理骨架 (只读): 五层决策链可用性 + 当前决策。
@@ -4085,6 +4140,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_agent.add_argument("--id", default="", help="Agent id (add/remove)")
     p_agent.add_argument("--role", default="", help="角色 (add)")
     p_agent.add_argument("--skills", default="", help="技能逗号分隔 (add)")
+    p_local_ai = sub.add_parser(
+        "local-ai", help="本机 AI 发现与调度 (U-6): scan — 扫描; register — 注册为 Agent; run — 委派执行"
+    )
+    p_local_ai.add_argument(
+        "local_ai_action", nargs="?", choices=["scan", "register", "run"], default="scan",
+        metavar="scan|register|run", help="scan — 扫描本机 codex/claude/hermes; register — 幂等注册为 Agent; run — 委派执行",
+    )
+    p_local_ai.add_argument("--id", default="", help="Agent id (run)")
+    p_local_ai.add_argument("--prompt", default="", help="委派执行的 prompt (run)")
+    p_local_ai.add_argument("--project", default="", help="项目目录 (run)")
     p_skill = sub.add_parser("skill", help="Skill 管理 (list/add/remove)")
     p_skill.add_argument(
         "skill_action", nargs="?", choices=["list", "add", "remove"], default="list",

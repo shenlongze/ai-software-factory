@@ -211,6 +211,20 @@ export function AfSettings(): JSX.Element {
       .then((d) => setSkills(d.skills ?? []))
       .catch(() => setSkills([]));
   }, []);
+  // U-6 (v1.1.188): 扫描本机 AI (codex/claude/hermes) → 幂等注册为 Agent
+  const scanLocalAi = useCallback(async () => {
+    try {
+      const r = await api.registerLocalAi();
+      flash(
+        r.count > 0
+          ? `本机 AI 已注册 ${r.count} 个: ${r.registered.map((a) => a.id).join(', ')}`
+          : '未发现本机 AI CLI（PATH 里没有 codex/claude/hermes）',
+      );
+      loadAgents();
+    } catch (err) {
+      flash(`本机 AI 扫描失败: ${String(err)}`);
+    }
+  }, [flash, loadAgents]);
   const loadMcp = useCallback(() => {
     api
       .mcpConnections()
@@ -550,6 +564,15 @@ export function AfSettings(): JSX.Element {
               <input className="af-settings-input" placeholder="角色 (如 产品经理 / backend-developer)" aria-label="Agent role" value={agentForm.role} onChange={(e) => setAgentForm((f) => ({ ...f, role: e.target.value }))} />
               <input className="af-settings-input af-settings-input--wide" placeholder="技能 逗号分隔 (如 需求分析, 测试)" aria-label="Agent skills" value={agentForm.skills} onChange={(e) => setAgentForm((f) => ({ ...f, skills: e.target.value }))} />
               <button type="button" className="af-settings-action af-settings-action--primary" onClick={submitAgent}>＋ 注册 AI 员工</button>
+              <button
+                type="button"
+                className="af-settings-action"
+                data-testid="af-settings-scan-local-ai"
+                title="扫描本机安装的 codex/claude/hermes 并注册为 AI 员工"
+                onClick={() => void scanLocalAi()}
+              >
+                🔍 扫描本机 AI
+              </button>
             </div>
             {table(
               ['名称', '角色', '职责', '技能', '状态', '操作'],

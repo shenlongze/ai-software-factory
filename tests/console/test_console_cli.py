@@ -335,6 +335,7 @@ class TestFactoryCliArgparse:
             "monitor",  # v1.1.134 (D 系列): 统一监控运维 (系统+项目状态快照)
             "backup",  # v1.1.167 (X-1): 数据保护 (create/list/restore)
             "git",  # v1.1.167 (X-1): Git 操作 (status/push)
+            "local-ai",  # v1.1.188 (U-6): 本机 AI 发现与调度 (scan/register/run)
         }
 
     def test_start_flags_parsed(self):

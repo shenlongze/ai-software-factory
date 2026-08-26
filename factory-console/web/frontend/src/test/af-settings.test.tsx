@@ -7,7 +7,7 @@
 
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AfSettings } from '../pages/workspace/AfSettings';
 
 function jsonResponse(v: unknown): Response {
@@ -39,6 +39,11 @@ function stubApi(overrides: Record<string, unknown> = {}) {
       const rec = { id: body?.id, name: body?.id, role: body?.role, skills: body?.skills ?? [] };
       state.agents.push(rec);
       return jsonResponse(rec);
+    }
+    if (method === 'POST' && url === '/api/local-ai/register') {
+      const rec = { id: 'local-codex', name: '本机 Codex', role: 'developer', skills: ['codex'], binary: 'codex', path: '/usr/bin/codex' };
+      state.agents.push(rec);
+      return jsonResponse({ registered: [rec], count: 1, detected: 1 });
     }
     if (method === 'POST' && url === '/api/skills') {
       const rec = { id: body?.id, name: body?.name ?? body?.id, category: body?.category ?? 'general', version: '1.0' };
@@ -116,6 +121,16 @@ describe('AfSettings (设置管理面)', () => {
     const posted = calls.find((c) => c.method === 'POST' && c.url === '/api/agents')?.body as { id: string; skills: string[] };
     expect(posted.id).toBe('pm-1');
     expect(posted.skills).toEqual(['prd', 'discovery']);
+  });
+
+  it('Agent tab: 扫描本机 AI → POST /api/local-ai/register + 列表刷新 (U-6)', async () => {
+    const { calls } = stubApi();
+    render(<AfSettings />);
+    await userEvent.click(screen.getByRole('tab', { name: '👤 AI 员工' }));
+    await userEvent.click(screen.getByTestId('af-settings-scan-local-ai'));
+    expect(await screen.findByText(/本机 AI 已注册 1 个/)).toBeInTheDocument();
+    expect(await screen.findByText('本机 Codex')).toBeInTheDocument();
+    expect(calls.some((c) => c.method === 'POST' && c.url === '/api/local-ai/register')).toBe(true);
   });
 
   it('Skill tab: 注册 → POST /api/skills', async () => {

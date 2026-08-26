@@ -403,6 +403,10 @@ class TestPermissionBoundary:
                     (route_method == "POST" and path == "/api/skills")
                     or (route_method == "DELETE" and path.startswith("/api/skills/"))
                 )
+                # v1.1.188 U-6: 本机 AI 注册 + 委派执行 (POST /api/local-ai/*)
+                is_local_ai_write = (
+                    route_method == "POST" and path.startswith("/api/local-ai")
+                )
                 assert (
                     is_approval
                     or is_runtime_lifecycle
@@ -428,6 +432,7 @@ class TestPermissionBoundary:
                     or is_mcp_remove
                     or is_agent_write
                     or is_skill_write
+                    or is_local_ai_write
                 ), (
                     f"写路由超出白名单 (审批决定 + Runtime + 反馈 + 创建 + 启动 + "
                     f"项目管理 + Backlog + Sprint/Milestone/Roadmap + Tool + MCP + RAG): "

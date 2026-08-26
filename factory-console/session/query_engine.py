@@ -168,6 +168,32 @@ def _project_epic_names(root: Path | None, project_id: str) -> dict[str, Any] | 
     }
 
 
+def _priority_tasks(root: Path | None, project_id: str, prio: str) -> list[dict[str, Any]] | None:
+    """按优先级读任务清单 (mgmt 任务 priority 字段; 失败 → None)。"""
+    if root is None:
+        return None
+    tasks: list[dict[str, Any]] = []
+    try:
+        tf = (
+            Path(root) / "workspace" / "projects" / Path(project_id).name
+            / "management" / "backlog" / "task.json"
+        )
+        data = json.loads(tf.read_text(encoding="utf-8")) or {}
+        for t in (data.get("tasks") or {}).values():
+            if isinstance(t, dict) and str(t.get("priority") or "").upper() == prio:
+                tasks.append(t)
+    except Exception:  # noqa: BLE001
+        return None
+    return tasks if tasks else None
+
+
+def _extract_priority(question: str) -> str | None:
+    """从问句提取优先级 (P0-P3; 无 → None)。"""
+    q = str(question or "").lower()
+    m = re.search(r"p([0-3])", q)
+    return f"P{m.group(1)}" if m else None
+
+
 def _docs_subpath(question: str) -> str:
     """从问句提取文档子目录 (如 "docs/products" / "dosc/products"; 宽容拼写)。
 
@@ -350,18 +376,34 @@ def build_facts(
                     score = d["score"]
             block = f"项目: {name}\n质量分: {score if score is not None else '未生成'}"
         elif intent == "project_tasks":
-            stats = _project_task_stats(root, str(getattr(target, "id", "") or ""))
-            if stats:
-                block = (
-                    f"项目: {name}\n任务统计: 共 {stats['total']} 个 "
-                    f"(完成 {stats['done']} · 执行中 {stats['running']} · "
-                    f"阻塞 {stats['blocked']} · 待办 {stats['todo']}, 进度 {stats['pct']}%)"
-                )
+            prio = _extract_priority(question)
+            if prio is not None:
+                # 按优先级任务清单 (Founder 2026-08-26: 查 P0 任务不能只给整体统计)
+                ptasks = _priority_tasks(root, str(getattr(target, "id", "") or ""), prio)
+                if ptasks:
+                    lines = [f"项目: {name}\n{prio} 任务 ({len(ptasks)}):"]
+                    for t in ptasks[:12]:
+                        st = str(t.get("status") or "todo")
+                        mark = "✅" if st in ("done", "completed") else "⬜"
+                        lines.append(f"- {mark} [{st}] {str(t.get('title') or '')[:50]}")
+                    if len(ptasks) > 12:
+                        lines.append(f"  ... 等{len(ptasks) - 12}个")
+                    block = "\n".join(lines)
+                else:
+                    block = f"项目: {name}\n{prio} 任务: 暂无（当前 {name} 未标 {prio} 任务）"
             else:
-                # 无真实任务文件 → fallback org 字段 (兼容旧数据)
-                tasks = getattr(target, "tasks", None) or {}
-                counts = " · ".join(f"{k}:{v}" for k, v in sorted(tasks.items())) if tasks else "暂无任务"
-                block = f"项目: {name}\n任务统计: {counts}"
+                stats = _project_task_stats(root, str(getattr(target, "id", "") or ""))
+                if stats:
+                    block = (
+                        f"项目: {name}\n任务统计: 共 {stats['total']} 个 "
+                        f"(完成 {stats['done']} · 执行中 {stats['running']} · "
+                        f"阻塞 {stats['blocked']} · 待办 {stats['todo']}, 进度 {stats['pct']}%)"
+                    )
+                else:
+                    # 无真实任务文件 → fallback org 字段 (兼容旧数据)
+                    tasks = getattr(target, "tasks", None) or {}
+                    counts = " · ".join(f"{k}:{v}" for k, v in sorted(tasks.items())) if tasks else "暂无任务"
+                    block = f"项目: {name}\n任务统计: {counts}"
         elif intent == "project_doc":
             doc_name = _extract_doc_name(question)
             content = _read_doc_snippet(root, target, doc_name)

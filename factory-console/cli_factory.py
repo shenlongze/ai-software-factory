@@ -2579,9 +2579,7 @@ class FactoryCLI:
                 print("用法: factory local-ai probe --id <agent_id>")
                 return 2
             agents_file = self.data_dir / "agents" / "agents.json"
-            from .web.backend.fastapi_adapter import _read_json_map
-
-            data = _read_json_map(agents_file)
+            data = _load_json_safe(agents_file)
             agents = data.get("agents") if isinstance(data, dict) else None
             record = agents.get(aid) if isinstance(agents, dict) else None
             if record is None:

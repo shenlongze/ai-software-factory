@@ -411,7 +411,7 @@ function TreeNodeRow({
                 type="button"
                 className="af-btn af-tree-btn"
                 data-testid={`af-tree-discuss-${node.id}`}
-                title="和 AI 讨论细化这个模块"
+                title="在会话中细化: 说「帮我把这个想法细化成任务」→ 任务自动进待办"
                 onClick={() => onDiscussFeature(node.id, node.title)}
               >
                 💬 讨论

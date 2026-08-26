@@ -22,7 +22,8 @@ from typing import Any
 #: 确定性意图关键词 (顺序即优先级)
 _INTENT_RULES: list[tuple[str, tuple[str, ...]]] = [
     ("create_project", ("做一个", "创建一个", "开发一个", "帮我做个", "帮我做", "新建一个项目", "做个app", "做个 App", "做个app")),
-    ("create_task", ("完善", "优化", "改进", "修复", "修一下", "加个", "增加", "做一下")),
+    ("create_task", ("完善", "优化", "改进", "修复", "修一下", "加个", "增加", "做一下",
+                     "细化", "拆解", "拆任务", "拆成", "整理成任务", "转成任务", "落地成任务")),
     ("system_status", ("webui状态", "webui 状态", "系统状态", "运行状态", "服务状态", "服务情况", "现在webui", "系统运行", "前端状态")),
     ("list_projects", ("有哪些项目", "几个项目", "项目列表", "所有项目", "空间内", "重点项目", "项目清单")),
     ("project_quality", ("质量", "评分", "质量分", "分数")),
@@ -309,7 +310,7 @@ _INTENT_LLM_PROMPT = """把用户的提问转成标准查询意图 (只输出 JS
 - 问某份具体文档内容 (如 'README.md 讲了什么' / '看下 API规范.md') → project_doc
 - 问在文档里检索/搜索关键词 (如 '文档里检索 错误码' / '哪些文档提到 X') → doc_search
 - 问用什么模型 → model
-- 完善/优化/修复/加功能 → create_task (task=要做的事, project=目标项目)
+- 完善/优化/修复/加功能/细化/拆解想法 → create_task (task=要做的事, project=目标项目)
 - 问系统/WebUI/服务运行状态 → system_status
 - 其余闲聊 → chat
 用户: {question}

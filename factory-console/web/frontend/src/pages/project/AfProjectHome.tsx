@@ -7,6 +7,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
+import { renderInline } from '../../components/af/markdown';
 
 interface LifecycleData {
   status?: string;
@@ -57,6 +58,7 @@ export function AfProjectHome({
   const [qualityNote, setQualityNote] = useState<string>('');
   const [view, setView] = useState<'list' | 'board'>('list');
   const [busy, setBusy] = useState<string>('');
+  const [showDone, setShowDone] = useState(false);
 
   const base = `/api/projects/${encodeURIComponent(projectId)}`;
 
@@ -110,8 +112,8 @@ export function AfProjectHome({
       });
   };
 
-  // ③ 实时性: 打开拉取 + 手动刷新 + 可选自动轮询 (5/15/30/60s)
-  const [pollMs, setPollMs] = useState<number>(0);
+  // ③ 实时性: 打开拉取 + 默认 15s 自动轮询 (Founder: todo 要实时) + 手动刷新
+  const [pollMs, setPollMs] = useState<number>(15000);
   useEffect(() => {
     loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -185,50 +187,61 @@ export function AfProjectHome({
     );
   })();
 
-  const todoList = (
-    <div className="af-todo-list" data-testid="af-todo-list">
-      {tasks.length === 0 && <p className="af-home-note">（暂无任务 — 在对话里说"加个功能"生成任务）</p>}
-      {tasks.map((t) => (
-        <div key={t.id} className="af-todo-row">
-          <span className={`af-pri af-pri-${(t.priority ?? 'P2').toLowerCase()}`}>{t.priority || 'P2'}</span>
-          <span className="af-todo-title">{t.title || t.id}</span>
-          <select
-            className="af-todo-pri"
-            aria-label={`优先级 ${t.id}`}
-            value={t.priority || 'P2'}
-            disabled={busy === t.id}
-            onChange={(e) => patchTask(t.id, { priority: e.target.value })}
-          >
-            {PRIORITIES.map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
-          </select>
-          <select
-            className="af-todo-status"
-            aria-label={`状态 ${t.id}`}
-            value={t.status || 'todo'}
-            disabled={busy === t.id}
-            onChange={(e) => patchTask(t.id, { status: e.target.value })}
-          >
-            {TASK_STATUSES.map((st) => (
-              <option key={st} value={st}>
-                {st}
-              </option>
-            ))}
-          </select>
-          {t.status === 'done' ? (
-            <span className="af-todo-archived" title="已完成 — 审计/溯源见执行记录">
-              ⤓ 已归档
-            </span>
-          ) : null}
-        </div>
-      ))}
+  const pendingTasks = tasks.filter((t) => t.status !== 'done');
+  const doneTasks = tasks.filter((t) => t.status === 'done');
+
+  const renderTaskRow = (t: TaskItem) => (
+    <div key={t.id} className="af-todo-row">
+      <span className={`af-pri af-pri-${(t.priority ?? 'P2').toLowerCase()}`}>{t.priority || 'P2'}</span>
+      <span className="af-todo-title">{renderInline(t.title || t.id)}</span>
+      <select
+        className="af-todo-pri"
+        aria-label={`优先级 ${t.id}`}
+        value={t.priority || 'P2'}
+        disabled={busy === t.id}
+        onChange={(e) => patchTask(t.id, { priority: e.target.value })}
+      >
+        {PRIORITIES.map((p) => (
+          <option key={p} value={p}>
+            {p}
+          </option>
+        ))}
+      </select>
+      <select
+        className="af-todo-status"
+        aria-label={`状态 ${t.id}`}
+        value={t.status || 'todo'}
+        disabled={busy === t.id}
+        onChange={(e) => patchTask(t.id, { status: e.target.value })}
+      >
+        {TASK_STATUSES.map((st) => (
+          <option key={st} value={st}>
+            {st}
+          </option>
+        ))}
+      </select>
+      {t.status === 'done' ? (
+        <span className="af-todo-archived" title="已完成 — 审计/溯源见执行记录">
+          ⤓ 已归档
+        </span>
+      ) : null}
     </div>
   );
 
-  const todoBoard = (
+  const todoList = (
+    <div className="af-todo-list" data-testid="af-todo-list">
+      {tasks.length === 0 && <p className="af-home-note">（暂无任务 — 在对话里说"加个功能"生成任务）</p>}
+      {pendingTasks.map(renderTaskRow)}
+      {doneTasks.length > 0 ? (
+        <div className="af-todo-done-block">
+          <button type="button" className="af-todo-done-toggle" onClick={() => setShowDone((v) => !v)}>
+            {showDone ? '▾' : '▸'} ✅ 已完成 {doneTasks.length}（归档）
+          </button>
+          {showDone ? <div className="af-todo-done-list">{doneTasks.map(renderTaskRow)}</div> : null}
+        </div>
+      ) : null}
+    </div>
+  );  const todoBoard = (
     <div className="af-todo-board" data-testid="af-todo-board">
       {TASK_STATUSES.filter((st) => st !== 'blocked' && st !== 'review').map((st) => (
         <div key={st} className="af-board-col" data-status={st}>

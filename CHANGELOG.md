@@ -3,6 +3,21 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.120] — 2026-08-26
+
+**概览 Todo 实时化 + 聚焦未完成 (Founder: todo 不是实时数据)**。
+
+### Changed
+
+- **默认 15s 自动轮询** (原默认"不自动"): 任务/健康信号实时更新, 不再手动刷新才变
+- **Todo 聚焦未完成**: 列表只显示未完成任务 (todo/ready/in_progress/blocked/review);
+  已完成折叠为「✅ 已完成 N（归档）」可展开; 任务标题 markdown 渲染 (去 ** 符号)
+- 看板保留 done 列 (Kanban 正常语义)
+
+### 验证
+
+- 前端 683 passed · build 通过 · 后端零改动
+
 ## [v1.1.119] — 2026-08-26
 
 **会话完整链路: 用户输入 → LLM 转标准意图 → 本地查真实数据 → LLM 转标准输出**。

@@ -38,6 +38,21 @@ def _new_project(svc: Any) -> str:
     return proj.id
 
 
+class TestBacklogOrdering:
+    def test_epics_sorted_by_name(self, tmp_path):
+        """有章法: 史诗按名称排序 (mgmt 随机 id 不乱序; 字母优先, 中文尾部)。"""
+        svc = _build_service(tmp_path)
+        pid = _new_project(svc)
+        svc.create_epic(pid, name="Z 收尾")
+        svc.create_epic(pid, name="A 起步")
+        svc.create_epic(pid, name="中文史诗")
+        backlog = svc.list_backlog(pid) or {}
+        names = [e["name"] for e in backlog["epics"]]
+        assert names == sorted(names), f"史诗未按名称排序: {names}"
+        assert names[0] == "A 起步"
+        assert names[-1] == "中文史诗"  # 中文 unicode 靠后
+
+
 class TestFeatureMaturity:
     def test_feature_model_default_refined(self):
         from org.management import Feature

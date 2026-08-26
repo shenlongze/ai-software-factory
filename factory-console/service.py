@@ -3975,6 +3975,11 @@ class ConsoleService:
             features = self._merge_by_id(features, legacy["features"])
             stories = self._merge_by_id(stories, legacy.get("stories") or [])
             tasks = self._merge_by_id(tasks, legacy["tasks"])
+        # 有章法排序 (Founder 2026-08-26: 树顺序乱 — mgmt 按随机 id 排):
+        # 史诗/模块/故事按名称 (ASCII 字母优先, 中文尾部); 任务保持 v1.1.143 优先级+依赖排序
+        epics.sort(key=lambda e: str(e.get("name") or ""))
+        features.sort(key=lambda f: str(f.get("name") or ""))
+        stories.sort(key=lambda s: str(s.get("name") or ""))
         return {
             "project_id": project_id,
             "epics": epics,

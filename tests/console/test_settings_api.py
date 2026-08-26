@@ -265,3 +265,26 @@ class TestSessionCreateProjectAction:
         listed = client.get("/api/projects").json()["items"]
         created_id = body["meta"]["target"]["url"].split("/")[-1]
         assert any(p["id"] == created_id for p in listed)
+
+
+@requires_fastapi
+class TestSessionCreateTaskAction:
+    def test_conversation_creates_task(self, http_app):
+        """会话: '给X完善功能' → 真实创建任务 + meta.action=created + 跳转任务页。"""
+        client, _ = http_app
+        # 先建一个项目
+        r = client.post("/api/projects", json={"idea": "做一个测试项目A", "name": "测试项目A"})
+        pid = r.json()["project_id"]
+        r = client.post("/api/sessions", json={"scope": "company"})
+        sid = r.json()["id"]
+        # LLM 不可用 → 确定性 fallback create_task; hint_project 由 LLM 提取不到 → 从问句/项目匹配
+        r = client.post(f"/api/sessions/{sid}/messages", json={"message": f"给 测试项目A 完善导出功能"})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["meta"]["intent"] == "create_task"
+        assert body["meta"]["action"] == "created", r.text
+        assert body["meta"]["target"]["url"] == f"#/project/{pid}/todo"
+        # 任务真实落库
+        backlog = client.get(f"/api/projects/{pid}/backlog").json()
+        tasks = backlog.get("tasks", [])
+        assert any("导出" in str(t.get("title", "")) for t in tasks), tasks

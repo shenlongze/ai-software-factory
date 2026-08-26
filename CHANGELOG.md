@@ -3,6 +3,21 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.126] — 2026-08-26
+
+**会话发起开发任务 P2a: 会话"完善X/加功能" → 真实创建任务 (进任务系统)**。
+
+### Added
+
+- **动作意图 create_task**: 会话"给X完善功能/优化Y" → 真实创建 backlog 任务
+  (复用 _api.create_task; title/描述/优先级 P2) → 标准输出 + 跳转任务页 + meta.action
+- LLM 提取项目名+任务描述; 确定性 fallback 从问句匹配项目 (resolve_project)
+- 未定位项目 → 如实提示 + 项目列表
+
+### 验证
+
+- 后端 93 passed (含会话建任务 HTTP: 真实落库+跳转) · 前端 684 passed
+
 ## [v1.1.125] — 2026-08-26
 
 **会话创建项目修复: 创建类动作确定性优先 (不被 LLM 覆写成 chat)**。

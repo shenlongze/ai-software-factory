@@ -58,9 +58,10 @@ class TestParseIntent:
 
     def test_llm_parse_and_fallback(self):
         r = _qe.parse_intent_llm("旅行记账什么状态", lambda p: '{"intent":"project_status","project":"旅行记账"}')
-        assert r == {"intent": "project_status", "project": "旅行记账"}
+        assert r == {"intent": "project_status", "project": "旅行记账", "task": None}
         r2 = _qe.parse_intent_llm("有哪些项目", lambda p: 'not json')
         assert r2["intent"] == "list_projects"  # fallback 到确定性
+        assert r2.get("task") is None
         r3 = _qe.parse_intent_llm("有哪些项目", lambda p: '{"intent":"bogus"}')
         assert r3["intent"] == "list_projects"  # 非法意图 → fallback
 

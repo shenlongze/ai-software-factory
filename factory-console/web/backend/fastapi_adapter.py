@@ -2897,6 +2897,54 @@ def build_app(
         hint_project = intent.get("project") if intent.get("intent") != "chat" else None
 
         # ---- 动作意图 (会话控制操作软件 — 真实执行) ----
+        if intent.get("intent") == "create_task":
+            task = intent.get("task") or body.message
+            # 定位目标项目: LLM 提取的项目名 → 会话项目
+            tgt = None
+            if hint_project:
+                tgt = next((pp for pp in projects if hint_project in str(getattr(pp, "name", "") or "")), None)
+            if tgt is None:
+                tgt = _qmod.resolve_project(body.message, projects)  # 确定性从问句匹配项目名
+            if tgt is None and session.get("project_id"):
+                tgt = next((pp for pp in projects if pp.id == session.get("project_id")), None)
+            if tgt is None:
+                facts = (
+                    "未定位到目标项目 — 请说项目名 (如: 给 旅行记账 完善导出功能)。"
+                    f"\n项目列表: {', '.join(pp.name for pp in projects) if projects else '暂无项目'}"
+                )
+                action_target = {"url": "#/workspace/projects", "label": "查看项目列表"}
+            else:
+                try:
+                    created = _api.create_task(
+                        service, tgt.id, title=str(task)[:80], description=body.message, priority="P2"
+                    )
+                except Exception:  # noqa: BLE001 — 创建失败 → 诚实反馈
+                    created = None
+                if created is not None:
+                    facts = (
+                        f"任务已创建: {created.get('title')} (id: {created.get('id')}, 项目: {tgt.name}, "
+                        "优先级: P2)。将由执行链按流程处理。"
+                    )
+                    action_target = {"url": f"#/project/{tgt.id}/todo", "label": f"查看{tgt.name}任务"}
+                else:
+                    facts = f"任务创建失败（{tgt.name} 任务服务不可用）— 请稍后重试。"
+                    action_target = {"url": f"#/project/{tgt.id}/todo", "label": f"查看{tgt.name}任务"}
+            try:
+                result = _sessions_mod.send_message(
+                    sessions_store, session_id, body.message, facts=facts,
+                    reply_extra=_qmod.STANDARD_OUTPUT_PROMPT,
+                )
+                result["meta"] = {
+                    "intent": "create_task",
+                    "project": getattr(tgt, "name", None) if tgt is not None else None,
+                    "data_source": "live",
+                    "target": action_target,
+                    "action": "created" if tgt is not None and created is not None else "failed",
+                }
+                return result
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+
         if intent.get("intent") == "create_project":
             idea = body.message
             try:

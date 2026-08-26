@@ -21,6 +21,7 @@ from typing import Any
 #: 确定性意图关键词 (顺序即优先级)
 _INTENT_RULES: list[tuple[str, tuple[str, ...]]] = [
     ("create_project", ("做一个", "创建一个", "开发一个", "帮我做个", "帮我做", "新建一个项目", "做个app", "做个 App", "做个app")),
+    ("create_task", ("完善", "优化", "改进", "修复", "修一下", "加个", "增加", "做一下")),
     ("list_projects", ("有哪些项目", "几个项目", "项目列表", "所有项目", "空间内", "重点项目", "项目清单")),
     ("project_quality", ("质量", "评分", "质量分", "分数")),
     ("project_tasks", ("任务", "todo", "待办", "backlog", "排期")),
@@ -153,11 +154,12 @@ def build_facts(
 
 #: 合法意图集合 (校验 LLM 输出)
 VALID_INTENTS = {"list_projects", "project_status", "project_quality", "project_tasks",
-                 "project_docs", "model", "create_project", "chat"}
+                 "project_docs", "model", "create_project", "create_task", "chat"}
 
 _INTENT_LLM_PROMPT = """把用户的提问转成标准查询意图 (只输出 JSON, 不要别的):
-{{"intent": "list_projects|project_status|project_quality|project_tasks|project_docs|model|chat",
- "project": "用户提到的项目名 (没提到 → null)}}
+{{"intent": "list_projects|project_status|project_quality|project_tasks|project_docs|model|create_project|create_task|chat",
+ "project": "用户提到的项目名 (没提到 → null)",
+ "task": "用户要做的开发任务描述 (create_task 时填; 否则 null)}}
 规则:
 - 问项目列表/有哪些项目/重点项目 → list_projects
 - 问某项目状态/阶段/进度/怎么样 → project_status (project=项目名)
@@ -165,6 +167,7 @@ _INTENT_LLM_PROMPT = """把用户的提问转成标准查询意图 (只输出 JS
 - 问任务/todo → project_tasks
 - 问文档/产物 → project_docs
 - 问用什么模型 → model
+- 完善/优化/修复/加功能 → create_task (task=要做的事, project=目标项目)
 - 其余闲聊 → chat
 用户: {question}
 """
@@ -192,10 +195,15 @@ def parse_intent_llm(question: str, llm_fn: Any) -> dict[str, Any]:
                 intent = str(d.get("intent") or "").strip()
                 if intent in VALID_INTENTS:
                     project = str(d.get("project") or "").strip() or None
-                    return {"intent": intent, "project": project}
+                    task = str(d.get("task") or "").strip() or None
+                    return {"intent": intent, "project": project, "task": task}
         except Exception:  # noqa: BLE001 — LLM 解析失败 → fallback
             pass
-    return {"intent": parse_intent(question)["intent"], "project": None}
+    det_intent = det["intent"]
+    if det_intent == "create_task":
+        desc = re.sub(r"^(请|帮我|给|为|对)?\s*", "", question.strip())
+        return {"intent": "create_task", "project": None, "task": desc[:80]}
+    return {"intent": det_intent, "project": None, "task": None}
 
 
 #: 标准输出格式 (LLM 转标准输出 — 只基于查询结果, 不编造)

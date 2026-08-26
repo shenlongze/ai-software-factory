@@ -33,18 +33,21 @@
   --af-font-sans: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei',
     'Segoe UI', Roboto, sans-serif;
   --af-font-mono: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
-  /* 语义色 (变量化 — 浅色主题统一覆盖, Founder 2026-08-26 强对比修复) */
-  --c-border: var(--c-border);
-  --c-border2: var(--c-border2);
-  --c-text: var(--c-text);
-  --c-text2: var(--c-text2);
-  --c-panel: var(--c-panel);
-  --c-card: var(--c-card);
-  --c-card2: var(--c-card2);
-  --c-input: var(--c-input);
-  --c-surface: var(--c-surface);
-  --c-hover: var(--c-hover);
-  --c-deep: var(--c-deep);
+  /* 语义色 (深色默认真实值 — Founder 2026-08-26: 之前是自引用循环无效,
+     导致 --c-text2 等未定义, 文件夹/次要文本颜色不受主题管理; 浅色由
+     [data-theme='light'] 统一覆盖) */
+  --c-border: #2a3140;
+  --c-border2: #2f3744;
+  --c-text: #e6e8ee;
+  --c-text2: #9aa1ae;
+  --c-text-muted: #9aa1ae;
+  --c-panel: #161a22;
+  --c-card: #1d232e;
+  --c-card2: #232a37;
+  --c-input: #1d232e;
+  --c-surface: #1d232e;
+  --c-hover: #232a37;
+  --c-deep: #0f1115;
 }
 
 /* 执行中呼吸动画 (§4.4: 透明度 0.6→1, 1.2s) */

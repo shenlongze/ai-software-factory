@@ -3,6 +3,22 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.150] — 2026-08-26
+
+**修复: 深色主题 --c-* 语义色未定义 (Founder: 文件夹颜色没被主题统一管理)**。
+
+### Fixed
+
+- af.css :root 的 --c-border/text/text2/panel/card/input/surface/hover/deep 原为
+  自引用 (var(--c-*) = 循环无效) → 只有浅色主题有真实值, 深色下文件夹等次要文本
+  颜色不受主题管理 (fallback 继承)
+- 补深色默认真实值 (对齐 afTokens 色板: text2=#9aa1ae 等); 浅色覆盖不变
+
+### 验证
+
+- headless Chrome 实测: 深色 folder-color=rgb(154,161,174) / 浅色=rgb(107,114,128)
+- 前端 721 passed · vite build 通过
+
 ## [v1.1.149] — 2026-08-26
 
 **文档目录默认全部收起 (Founder: 太长了, 收起/展开)**。

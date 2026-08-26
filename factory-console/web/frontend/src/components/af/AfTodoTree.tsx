@@ -175,6 +175,7 @@ export function AfTodoTree({
 
   return (
     <div className="af-todo-tree" data-testid="af-todo-tree">
+      <div className="af-tree-head" data-testid="af-tree-head">
       <div className="af-tree-toolbar" data-testid="af-tree-toolbar">
         <button type="button" className="af-btn af-tree-btn" onClick={expandAll}>
           全展开
@@ -230,6 +231,7 @@ export function AfTodoTree({
         </div>
       </div>
 
+      </div>
       <div className="af-tree-body" data-testid="af-tree-body">
         {visiblePhases.length === 0 ? (
           doneTasks.length > 0 && !hasActive ? (

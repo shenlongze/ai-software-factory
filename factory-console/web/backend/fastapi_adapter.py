@@ -288,6 +288,16 @@ class _ExternalAiBody(BaseModel):
     allow_dangerous: bool = False
 
 
+class _ExternalAiVerifyBody(BaseModel):
+    """POST /api/external-ai/verify body (M3): {result_id, method, result, score?, reason?}。"""
+
+    result_id: str
+    method: str = "manual"
+    result: str = "pass"       # pass | fail | unknown
+    score: float | None = None
+    reason: str = ""
+
+
 class _ExternalAiRunBody(BaseModel):
     """POST /api/external-ai/{id}/run body: {prompt, project_dir?, agent?, timeout?}。"""
 
@@ -1743,16 +1753,56 @@ def build_app(
         agent_name = str(body.agent or "").strip()
         if agent_name and not adapter.invocation.agent_flag:
             agent_name = ""  # 宿主不支持借壳 → 忽略 (不假装)
+        import time as _time
+
+        _t0 = _time.monotonic()
         result = _ee_exec.run(
             adapter, body.prompt,
             project_dir=str(body.project_dir or ""),
             agent=agent_name,
             timeout=body.timeout,
         )
+        _dur_ms = int((_time.monotonic() - _t0) * 1000)
         result["id"] = adapter_id
         result["mode"] = "borrowed-shell" if agent_name else "blackbox"
         result["host_agent"] = agent_name or None
+        # M3: 统一执行记录 (EXS + 证据包) — 监控/路由/审计消费
+        record = _ee_exec.record_invocation(
+            workspace_root or DEFAULT_ROOT,
+            executor_id=adapter_id,
+            mode=result["mode"],
+            host_agent=agent_name,
+            prompt=body.prompt,
+            project_dir=str(body.project_dir or ""),
+            exit_code=int(result.get("exit_code") or -1),
+            output=str(result.get("output") or ""),
+            error=str(result.get("error") or ""),
+            command=str(result.get("command") or ""),
+            duration_ms=_dur_ms,
+            trace_id=_trace_ctx.get_trace_id() if _trace_ctx is not None else "",
+        )
+        result["result_id"] = record.get("result_id")
         return result
+
+    @app.post("/api/external-ai/verify")
+    def api_external_ai_verify(body: _ExternalAiVerifyBody) -> dict[str, Any]:
+        """M3: 验证回写 — 更新执行记录 verify + rework (fail → rework+1)。"""
+        try:
+            _ee_exec = _console_import("external_executor.executor")
+            updated = _ee_exec.verify_invocation(
+                workspace_root or DEFAULT_ROOT,
+                body.result_id,
+                method=body.method,
+                result=body.result,
+                score=body.score,
+                reason=body.reason,
+            )
+        except Exception as exc:  # noqa: BLE001 — 验证失败 → 诚实错误
+            raise HTTPException(status_code=500, detail=f"验证回写失败: {exc}") from exc
+        if updated is None:
+            raise HTTPException(status_code=404, detail=f"执行记录不存在: {body.result_id}")
+        return {"result_id": body.result_id, "verify": updated.get("verify"),
+                "first_pass": updated.get("first_pass"), "rework": updated.get("rework")}
 
     # ============ M2 (v1.1.192): 宿主资产发现与导入 (agents/skills/plugins/persona)
     @app.get("/api/external-ai/{adapter_id}/assets")

@@ -2575,6 +2575,31 @@ class FactoryCLI:
         from . import local_ai as _local_ai
 
         action = getattr(args, "local_ai_action", "scan") or "scan"
+        if action == "verify":
+            rid = str(getattr(args, "result_id", "") or "").strip()
+            if not rid:
+                print("用法: factory external-ai verify --result-id <EXS-...> --result pass|fail [--method ...] [--reason ...]")
+                return 2
+            score = None
+            raw_score = str(getattr(args, "score", "") or "").strip()
+            if raw_score:
+                try:
+                    score = float(raw_score)
+                except ValueError:
+                    print("--score 必须是数字")
+                    return 2
+            updated = _ee_exec.verify_invocation(
+                self.data_dir, rid,
+                method=str(getattr(args, "method", "") or "manual"),
+                result=str(getattr(args, "result", "") or "pass"),
+                score=score,
+                reason=str(getattr(args, "reason", "") or ""),
+            )
+            if updated is None:
+                print(f"未找到执行记录: {rid}")
+                return 1
+            print(f"✅ 验证已回写 {rid}: {updated.get('verify')} · first_pass={updated.get('first_pass')} · rework={updated.get('rework')}")
+            return 0
         if action == "probe":
             aid = str(getattr(args, "id", "") or "").strip()
             if not aid:
@@ -2729,6 +2754,31 @@ class FactoryCLI:
                 print(f"  📦 Catalog (不注册) {len(result['catalog'])}: {', '.join(c['name'] for c in result['catalog'][:5])}")
             print(f"  共导入 {result['imported']} 项")
             return 0
+        if action == "verify":
+            rid = str(getattr(args, "result_id", "") or "").strip()
+            if not rid:
+                print("用法: factory external-ai verify --result-id <EXS-...> --result pass|fail [--method ...] [--reason ...]")
+                return 2
+            score = None
+            raw_score = str(getattr(args, "score", "") or "").strip()
+            if raw_score:
+                try:
+                    score = float(raw_score)
+                except ValueError:
+                    print("--score 必须是数字")
+                    return 2
+            updated = _ee_exec.verify_invocation(
+                self.data_dir, rid,
+                method=str(getattr(args, "method", "") or "manual"),
+                result=str(getattr(args, "result", "") or "pass"),
+                score=score,
+                reason=str(getattr(args, "reason", "") or ""),
+            )
+            if updated is None:
+                print(f"未找到执行记录: {rid}")
+                return 1
+            print(f"✅ 验证已回写 {rid}: {updated.get('verify')} · first_pass={updated.get('first_pass')} · rework={updated.get('rework')}")
+            return 0
         if action == "probe":
             path = _ee_exec.discover_binary(adapter)
             pr = _ee_exec.probe(adapter, path)
@@ -2756,6 +2806,21 @@ class FactoryCLI:
             agent=agent_name,
         )
         print(f"exit_code={result['exit_code']}")
+        # M3: 统一执行记录 (EXS + 证据包)
+        record = _ee_exec.record_invocation(
+            self.data_dir,
+            executor_id=aid,
+            mode="borrowed-shell" if agent_name else "blackbox",
+            host_agent=agent_name,
+            prompt=prompt,
+            project_dir=str(getattr(args, "project", "") or ""),
+            exit_code=int(result.get("exit_code") or -1),
+            output=str(result.get("output") or ""),
+            error=str(result.get("error") or ""),
+            command=str(result.get("command") or ""),
+            duration_ms=0,
+        )
+        print(f"result_id={record.get('result_id')}")
         if result.get("output"):
             print(result["output"][:2000])
         if result.get("error"):
@@ -4334,10 +4399,15 @@ def build_parser() -> argparse.ArgumentParser:
         "external-ai", help="外部执行器通用适配层 (M1): scan/list/probe/run — 声明式适配器, 每产品一个 yaml"
     )
     p_external_ai.add_argument(
-        "external_ai_action", nargs="?", choices=["scan", "list", "probe", "run", "assets", "import"], default="list",
-        metavar="scan|list|probe|run|assets|import",
-        help="scan — 扫描适配器; list — 配置清单; probe — 探测; run — 委派; assets — 扫描宿主资产; import — 导入资产",
+        "external_ai_action", nargs="?", choices=["scan", "list", "probe", "run", "assets", "import", "verify"], default="list",
+        metavar="scan|list|probe|run|assets|import|verify",
+        help="scan — 扫描; list — 配置; probe — 探测; run — 委派(写执行记录); assets — 宿主资产; import — 导入; verify — 验证回写",
     )
+    p_external_ai.add_argument("--result-id", default="", help="执行记录 id (verify)")
+    p_external_ai.add_argument("--method", default="manual", help="验证方式 (verify: manual/test/reviewer)")
+    p_external_ai.add_argument("--result", default="pass", help="验证结果 (verify: pass/fail/unknown)")
+    p_external_ai.add_argument("--score", default="", help="验证分数 (verify, 可选)")
+    p_external_ai.add_argument("--reason", default="", help="回修原因 (verify fail, 可选)")
     p_external_ai.add_argument("--id", default="", help="适配器 id (probe/run)")
     p_external_ai.add_argument("--prompt", default="", help="委派执行的 prompt (run)")
     p_external_ai.add_argument("--project", default="", help="项目目录 (run)")

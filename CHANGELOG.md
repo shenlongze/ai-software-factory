@@ -3,7 +3,23 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.193] — 2026-08-27
+
+**M3 委派 + 验证回路 (统一执行记录 EXS 扩展 + verify/rework 回写)**。
+
+### Added
+
+- record_invocation: 外部委派写统一执行记录 (EXS-*) + report.md 证据包;
+  扩展字段 executor_id/mode(blackbox|borrowed-shell)/host_agent/duration_ms/
+  first_pass/verify/rework — 监控/路由/审计统一消费
+- verify_invocation: 验证回写 (pass/fail/unknown + score); fail → first_pass=False
+  + rework.count+1 + reason (原子直写, 不嵌套)
+- API: run 返回 result_id + 记录落盘; POST /api/external-ai/verify 回写
+- CLI: external-ai run 打印 result_id; external-ai verify --result-id --result ...
+- 借壳委派 (imported agent → host CLI + --agent) 经 agent_flag 声明驱动
+
 ## [v1.1.192] — 2026-08-27
+
 
 **M2 宿主资产发现与导入 (agents/skills/plugins/persona → AI 员工/技能)**。
 

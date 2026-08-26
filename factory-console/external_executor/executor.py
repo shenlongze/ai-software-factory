@@ -11,9 +11,11 @@
 
 from __future__ import annotations
 
+import json
 import shlex
 import shutil
 import subprocess
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -157,3 +159,124 @@ def run(
         return {"exit_code": -1, "output": "", "error": f"执行超时 ({timeout}s)", "command": " ".join(cmd)[:400]}
     except Exception as exc:  # noqa: BLE001 — 执行失败 → 诚实错误
         return {"exit_code": -1, "output": "", "error": f"执行失败: {exc}", "command": " ".join(cmd)[:400]}
+
+
+# ------------------------------------------------------------------ M3: 统一执行记录 + 验证回路
+
+def record_invocation(
+    data_dir: str | Path,
+    *,
+    executor_id: str,
+    mode: str,
+    host_agent: str,
+    prompt: str,
+    project_dir: str,
+    exit_code: int,
+    output: str,
+    error: str,
+    command: str,
+    duration_ms: int,
+    trace_id: str = "",
+) -> dict[str, Any]:
+    """追加统一执行记录 (execution_records.json, EXS-* result_id) + report.md 证据。
+
+    设计文档 §7: EXS 扩展字段 executor_id/mode/host_agent/duration_ms/first_pass/
+    verify/rework — 监控/路由/审计统一消费, 不区分内部/外部执行器。"""
+    from datetime import datetime, timezone
+
+    from factory_console.session.audit import record_execution
+
+    rid = f"EXS-{uuid.uuid4().hex[:8]}"
+    record = {
+        "intent": "external_ai.invoke",
+        "action": "external_ai.invoke",
+        "agent": f"{executor_id}.{host_agent}" if host_agent else executor_id,
+        "task": str(prompt or "")[:200],
+        "result": "success" if exit_code == 0 else "failed",
+        "result_id": rid,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "trace_id": str(trace_id or ""),
+        # M3 扩展字段 (设计文档 §7)
+        "executor_id": str(executor_id),
+        "mode": str(mode),                # blackbox | borrowed-shell
+        "host_agent": str(host_agent or ""),
+        "project_dir": str(project_dir or ""),
+        "duration_ms": int(duration_ms or 0),
+        "exit_code": int(exit_code or 0),
+        "command": str(command or "")[:400],
+        "error": str(error or "")[:3000],
+        "output_snippet": str(output or "")[:1000],
+        "first_pass": True,               # 首次通过 (无回修); verify fail 后置 False
+        "verify": {"method": "", "result": "unknown", "score": None},
+        "rework": {"count": 0, "reasons": []},
+    }
+    try:
+        record_execution(
+            record,
+            records_file=Path(data_dir) / "exec" / "execution_records.json",
+        )
+        # 证据包 (T-9 溯源: EXS-*.report.md)
+        report = Path(data_dir) / "exec" / f"{rid}.report.md"
+        try:
+            report.parent.mkdir(parents=True, exist_ok=True)
+            report.write_text(
+                f"# 外部执行器委派记录 {rid}\n\n"
+                f"- executor: {executor_id} · mode: {mode}"
+                + (f" · host_agent: {host_agent}" if host_agent else "")
+                + f"\n- exit_code: {exit_code} · duration_ms: {duration_ms}\n"
+                + f"- command: {command}\n\n"
+                + (f"## 输出\n```\n{str(output or '')[:3000]}\n```\n" if output else "")
+                + (f"## 错误\n```\n{error}\n```\n" if error else ""),
+                encoding="utf-8",
+            )
+        except OSError:
+            pass
+    except Exception:  # noqa: BLE001 — 记录失败不阻断委派
+        pass
+    return record
+
+
+def verify_invocation(
+    data_dir: str | Path,
+    result_id: str,
+    *,
+    method: str,
+    result: str,
+    score: float | None = None,
+    reason: str = "",
+) -> dict[str, Any] | None:
+    """验证回写: 更新执行记录的 verify + rework (设计文档 §8)。
+
+    result: pass|fail|unknown; fail → first_pass=False + rework.count+1 + reason。"""
+    from factory_console.session.audit import load_records
+
+    records_file = Path(data_dir) / "exec" / "execution_records.json"
+    records = load_records(records_file)
+    found = None
+    for rec in records:
+        if isinstance(rec, dict) and str(rec.get("result_id") or "") == result_id:
+            found = rec
+            break
+    if found is None:
+        return None
+    method = str(method or "").strip() or "manual"
+    result = str(result or "unknown").strip().lower()
+    if result not in ("pass", "fail", "unknown"):
+        result = "unknown"
+    score = float(score) if score is not None else None
+    found["verify"] = {"method": method, "result": result, "score": score}
+    if result == "fail":
+        found["first_pass"] = False
+        rework = found.setdefault("rework", {"count": 0, "reasons": []})
+        rework["count"] = int(rework.get("count", 0)) + 1
+        if reason:
+            rework["reasons"].append(str(reason)[:200])
+    # 原子直写整表 (不能用 record_execution — 那是 append, 会嵌套)
+    try:
+        records_file.parent.mkdir(parents=True, exist_ok=True)
+        tmp = records_file.with_suffix(records_file.suffix + ".tmp")
+        tmp.write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.replace(records_file)
+    except OSError:
+        pass
+    return found

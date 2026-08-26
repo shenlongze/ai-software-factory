@@ -3,6 +3,21 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.140] — 2026-08-26
+
+**计划数据全量导入 backlog (Founder: 把我们之前的计划, 和没有实现的全部数据都做进去)**。
+
+### Added
+
+- scripts/seed_plan_tasks.py: 把待办清单/债务清单全部未实现项导入 ai-factory-self 真实 backlog
+  (幂等, 按名查重可重跑): C-4/C-5/C-6/G1-G4 · W-2~W-5 · K-7f/g · J-2/J-3 · H-2~H-4 ·
+  D-1~D-8/E-4 · F-1/F-2/F-3/F-5/F-6/F-7/F-10/F-12 · G-5/G-6 · I-2/I-3 · DATA-1/2 · L-1~L-7
+- 四层树 (史诗→模块→故事→任务), 任务页可见全部未实现债务 — 现有 backlog:
+  epics=18 · features=20 · stories=20 · tasks=93
+
+### 验证
+
+- seed 幂等重跑 0 新增 · backlog 计数核对 · 前端任务树 DOM 实测
 ## [v1.1.139] — 2026-08-26
 
 **任务页树填充: legacy tasks.json 并入 backlog (史诗→模块→故事→任务)**。

@@ -3,7 +3,25 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.183] — 2026-08-27
+
+**T-5 端到端实测交付 (会话A建任务 → 会话B继续 → 完成 → 会话C审计, 全程上下文连贯)**。
+
+### Added
+
+- tests/console/test_t5_task_continuity_e2e.py: 真实 HTTP + 真实 service/store e2e
+  (LLM 仅 stub 参数补齐): 建任务落库 → 继续做锚定 task_id → 跨会话恢复
+  (上次会话/上次说到) → T-2 上下文注入 (【当前任务】状态/历史/下一步进 prompt)
+  → 标记完成状态机逐步 done → 会话C 审计看到终态 + 历史链
+
+### Fixed (T-5 实测抓出)
+
+- 意图优先级: task_action (标记完成/开始任务/改优先级…) 提到 create_task 之前 —
+  「标记完成 完善导出功能」不再被「完善」抢成 create_task
+- T-3「上次说到」取用户最后说的原话 (role=user), 不再显示 AI 回复
+
 ## [v1.1.182] — 2026-08-27
+
 
 **任务树默认显示已完成任务 (Founder 2026-08-27: 那5个完成的任务没有显示啊) — 纯前端行为, 不动后端/数据结构**。
 

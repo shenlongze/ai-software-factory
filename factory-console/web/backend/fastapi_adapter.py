@@ -3399,13 +3399,17 @@ def build_app(
                         if prev_sessions:
                             prev = prev_sessions[0]  # 最近活跃
                             msgs = sessions_store.list_messages(prev["id"])
-                            last_msg = msgs[-1] if msgs else None
+                            # 上次说到 = 用户最后说的原话 (不是 AI 回复) — Founder 2026-08-27 T-5 实测
+                            last_user = next(
+                                (m for m in reversed(msgs) if m.get("role") == "user"),
+                                None,
+                            )
                             prev_line = (
                                 f"上次会话: 「{prev.get('title') or '未命名'}」"
                                 f" ({(prev.get('updated_at') or '')[:16]})"
                             )
-                            if last_msg:
-                                prev_line += f" · 上次说到: {str(last_msg.get('content') or '')[:60]}"
+                            if last_user:
+                                prev_line += f" · 上次说到: {str(last_user.get('content') or '')[:60]}"
                             lines.append(prev_line)
                             lines.append("→ 跨会话已接上: 可继续讨论/推进 (上下文已注入)")
                     except Exception:  # noqa: BLE001 — 上次会话定位失败 → 不阻断

@@ -56,6 +56,16 @@ class TestParseIntent:
         assert _qe.parse_intent("你用什么模型")["intent"] == "model"
         assert _qe.parse_intent("你好")["intent"] == "chat"
 
+    def test_action_intent_priority_over_content_verb(self):
+        """Founder 2026-08-27 (T-5 实测抓出): '标记完成 完善导出功能' 应解析为
+        task_action (动作词优先), 不能因任务标题含 '完善' 被抢成 create_task。"""
+        assert _qe.parse_intent("标记完成 完善导出功能")["intent"] == "task_action"
+        assert _qe.parse_intent("标为完成 优化导出")["intent"] == "task_action"
+        assert _qe.parse_intent("开始任务 做导出")["intent"] == "task_action"
+        # 无动作词 → 仍是内容意图
+        assert _qe.parse_intent("完善导出功能")["intent"] == "create_task"
+        assert _qe.parse_intent("继续做 完善导出功能")["intent"] == "task_continue"
+
     def test_llm_parse_and_fallback(self):
         r = _qe.parse_intent_llm("旅行记账什么状态", lambda p: '{"intent":"project_status","project":"旅行记账"}')
         assert r == {"intent": "project_status", "project": "旅行记账", "task": None}

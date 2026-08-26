@@ -399,11 +399,13 @@ export const api = {
     ),
   // S10-020 Task 001: MCP — 外部 MCP 服务连接 + 导入 Tool
   mcpConnections: () => getJson<{ connections: MCPConnection[] }>('/api/mcp/connections'),
-  createMCPConnection: (name: string, serverUrl: string, transport?: string) =>
+  createMCPConnection: (name: string, serverUrl: string, transport?: string, opts?: { command?: string; args?: string[] }) =>
     sendJson<{ id: string; tools: MCPTool[] }>('/api/mcp/connections', {
       name,
       server_url: serverUrl,
       transport,
+      ...(opts?.command != null && opts.command.length > 0 ? { command: opts.command } : {}),
+      ...(opts?.args != null ? { args: opts.args } : {}),
     }),
   mcpTools: () => getJson<{ tools: MCPTool[] }>('/api/mcp/tools'),
   deleteMCPConnection: (id: string) =>
@@ -420,6 +422,12 @@ export const api = {
   createAgent: (id: string, role: string, skills: string[]) =>
     sendJson<{ id: string; name: string; role: string; skills: string[] }>('/api/agents', { id, role, skills }),
   deleteAgent: (id: string) => deleteJson<{ deleted: boolean }>(`/api/agents/${encodeURIComponent(id)}`),
+  // U-4 (v1.1.189): 扫描外部 SKILL.md → 加载进 skills.json
+  scanExternalSkills: (dir?: string) =>
+    sendJson<{ loaded: Array<{ id: string; name: string; version?: string }>; count: number }>(
+      '/api/skills/scan',
+      dir != null && dir.length > 0 ? { dir } : {},
+    ),
   // U-6 (v1.1.188): 本机 AI 发现与注册 (codex/claude/hermes)
   scanLocalAi: () => getJson<{ detected: Array<{ id: string; name: string; path: string; version?: string | null }>; count: number }>('/api/local-ai'),
   registerLocalAi: () =>

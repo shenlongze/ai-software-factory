@@ -293,6 +293,12 @@ class _AgentBody(BaseModel):
     skills: list[str] = []
 
 
+class _SkillScanBody(BaseModel):
+    """POST /api/skills/scan body (U-4): {dir?} — 外部 SKILL.md 目录 (缺省内置)。"""
+
+    dir: str = ""
+
+
 class _SkillBody(BaseModel):
     """POST /api/skills body (设置 — Skill 管理, v1.1.102)。
 
@@ -579,6 +585,9 @@ class _CreateMCPConnectionBody(BaseModel):
     name: str = ""
     server_url: str = ""
     transport: str = "mock"
+    # U-3 (v1.1.189): stdio 真实连接 — command/args 拉起子进程
+    command: str = ""
+    args: list[str] | None = None
 
 
 # ------------------------------------------------------------------ 装配
@@ -3003,6 +3012,8 @@ def build_app(
                 body.name,
                 body.server_url,
                 transport=body.transport,
+                command=body.command,
+                args=body.args,
                 logger=event_logger,
             )
         except ValueError as exc:
@@ -3179,6 +3190,25 @@ def build_app(
         del agents[agent_id]
         _write_json_map(_agents_file(), data)
         return {"deleted": True}
+
+    @app.post("/api/skills/scan")
+    def api_scan_external_skills(body: _SkillScanBody = _SkillScanBody()) -> dict[str, Any]:
+        """U-4 (v1.1.189): 扫描外部 SKILL.md → 幂等加载进 skills.json
+        (默认 <data_dir>/skills/external/*/SKILL.md; 可传 dir)。"""
+        try:
+            _ext_skills = _console_import("external_skills")
+        except Exception:  # noqa: BLE001 — 模块缺失 → 诚实空
+            return {"loaded": [], "error": "external_skills 模块不可用"}
+        dirs: list[Path] = []
+        if body.dir.strip():
+            dirs.append(Path(body.dir.strip()).expanduser())
+        else:
+            dirs.append(Path(workspace_root or DEFAULT_ROOT) / "skills" / "external")
+        try:
+            loaded = _ext_skills.load_external_skills(_skills_file(), dirs)
+        except Exception as exc:  # noqa: BLE001 — 加载失败 → 诚实错误
+            return {"loaded": [], "error": str(exc)}
+        return {"loaded": loaded, "count": len(loaded), "dirs": [str(d) for d in dirs]}
 
     @app.post("/api/skills")
     def api_create_skill(body: _SkillBody) -> dict[str, Any]:

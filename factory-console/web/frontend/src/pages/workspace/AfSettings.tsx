@@ -211,6 +211,20 @@ export function AfSettings(): JSX.Element {
       .then((d) => setSkills(d.skills ?? []))
       .catch(() => setSkills([]));
   }, []);
+  // U-4 (v1.1.189): 扫描外部 SKILL.md → 加载进 skills.json (执行真实注入指令)
+  const scanExternalSkills = useCallback(async () => {
+    try {
+      const r = await api.scanExternalSkills();
+      flash(
+        r.count > 0
+          ? `外部 Skill 已加载 ${r.count} 个: ${r.loaded.map((sk) => sk.id).join(', ')}`
+          : '未发现外部 SKILL.md（放 <data_dir>/skills/external/<id>/SKILL.md）',
+      );
+      loadSkills();
+    } catch (err) {
+      flash(`外部 Skill 扫描失败: ${String(err)}`);
+    }
+  }, [flash, loadSkills]);
   // U-6 (v1.1.188): 扫描本机 AI (codex/claude/hermes) → 幂等注册为 Agent
   const scanLocalAi = useCallback(async () => {
     try {
@@ -388,20 +402,26 @@ export function AfSettings(): JSX.Element {
       .catch((err) => flash(`移除失败: ${String(err)}`));
   };
 
-  const [mcpForm, setMcpForm] = useState({ name: '', server_url: '' });
+  const [mcpForm, setMcpForm] = useState({ name: '', server_url: '', transport: 'mock', command: '' });
   const submitMcp = () => {
     const name = mcpForm.name.trim();
     const serverUrl = mcpForm.server_url.trim();
+    const transport = mcpForm.transport.trim() || 'mock';
+    const command = mcpForm.command.trim();
     if (!name || !serverUrl) {
       flash('MCP 连接必填名称与地址');
       return;
     }
+    if (transport === 'stdio' && !command) {
+      flash('stdio 连接需要填写启动命令 (如 npx @modelcontextprotocol/server-filesystem /tmp)');
+      return;
+    }
     api
-      .createMCPConnection(name, serverUrl, 'mock')
+      .createMCPConnection(name, serverUrl, transport, { command })
       .then(() => {
-        setMcpForm({ name: '', server_url: '' });
+        setMcpForm({ name: '', server_url: '', transport: 'mock', command: '' });
         loadMcp();
-        flash(`MCP 已连接: ${name}`);
+        flash(`MCP 已连接: ${name} (${transport})`);
       })
       .catch((err) => flash(`连接失败: ${String(err)}`));
   };
@@ -600,6 +620,15 @@ export function AfSettings(): JSX.Element {
               <input className="af-settings-input" placeholder="名称 (如 Python 接口开发)" aria-label="Skill name" value={skillForm.name} onChange={(e) => setSkillForm((f) => ({ ...f, name: e.target.value }))} />
               <input className="af-settings-input" placeholder="分类 (后端/前端/测试/通用)" aria-label="Skill category" value={skillForm.category} onChange={(e) => setSkillForm((f) => ({ ...f, category: e.target.value }))} />
               <button type="button" className="af-settings-action af-settings-action--primary" onClick={submitSkill}>＋ 注册技能</button>
+              <button
+                type="button"
+                className="af-settings-action"
+                data-testid="af-settings-scan-external-skills"
+                title="扫描 <data_dir>/skills/external/*/SKILL.md 并加载 (执行真实注入指令)"
+                onClick={() => void scanExternalSkills()}
+              >
+                🔍 扫描外部 Skill
+              </button>
             </div>
             {table(
               ['名称', '技能', '分类', '版本', '操作'],
@@ -619,7 +648,25 @@ export function AfSettings(): JSX.Element {
             <h3 className="af-settings-h3">🔌 MCP 连接（{mcps.length}）· Tool（{mcpTools.length}）</h3>
             <div className="af-settings-form">
               <input className="af-settings-input" placeholder="名称 (如 weather-mcp)" aria-label="MCP 名称" value={mcpForm.name} onChange={(e) => setMcpForm((f) => ({ ...f, name: e.target.value }))} />
-              <input className="af-settings-input af-settings-input--wide" placeholder="服务地址 (mock: 任意 URL)" aria-label="MCP 地址" value={mcpForm.server_url} onChange={(e) => setMcpForm((f) => ({ ...f, server_url: e.target.value }))} />
+              <input className="af-settings-input af-settings-input--wide" placeholder="服务地址 (mock: 任意 URL; stdio: 命令说明)" aria-label="MCP 地址" value={mcpForm.server_url} onChange={(e) => setMcpForm((f) => ({ ...f, server_url: e.target.value }))} />
+              <select
+                className="af-settings-input"
+                aria-label="MCP 传输"
+                value={mcpForm.transport}
+                onChange={(e) => setMcpForm((f) => ({ ...f, transport: e.target.value }))}
+              >
+                <option value="mock">mock（不连网，演示）</option>
+                <option value="stdio">stdio（真实 MCP server）</option>
+              </select>
+              {mcpForm.transport === 'stdio' ? (
+                <input
+                  className="af-settings-input af-settings-input--wide"
+                  placeholder="启动命令 (如 npx @modelcontextprotocol/server-filesystem /tmp)"
+                  aria-label="MCP stdio 命令"
+                  value={mcpForm.command}
+                  onChange={(e) => setMcpForm((f) => ({ ...f, command: e.target.value }))}
+                />
+              ) : null}
               <button type="button" className="af-settings-action af-settings-action--primary" onClick={submitMcp}>＋ 连接</button>
             </div>
             {table(

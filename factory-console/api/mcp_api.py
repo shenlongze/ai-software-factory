@@ -50,6 +50,8 @@ def create_mcp_connection(
     server_url: str,
     *,
     transport: str = "mock",
+    command: str = "",
+    args: list[str] | None = None,
     logger: Any = None,
 ) -> dict[str, Any] | None:
     """POST /api/mcp/connections — 创建 MCP 连接 (注册即连接 + Tool 注册)。
@@ -63,7 +65,9 @@ def create_mcp_connection(
     审计: console.viewed (view=mcp_connection_create)。
     """
     record_console_viewed(logger, view="mcp_connection_create", count=1)
-    return service.create_mcp_connection(name, server_url, transport=transport)
+    return service.create_mcp_connection(
+        name, server_url, transport=transport, command=command, args=args
+    )
 
 
 def list_mcp_tools(service: Any, *, logger: Any = None) -> dict[str, Any]:

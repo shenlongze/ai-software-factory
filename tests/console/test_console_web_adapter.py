@@ -407,6 +407,10 @@ class TestPermissionBoundary:
                 is_local_ai_write = (
                     route_method == "POST" and path.startswith("/api/local-ai")
                 )
+                # v1.1.189 U-4: 外部 skill 扫描加载 (POST /api/skills/scan)
+                is_skill_scan = (
+                    route_method == "POST" and path == "/api/skills/scan"
+                )
                 assert (
                     is_approval
                     or is_runtime_lifecycle
@@ -433,6 +437,7 @@ class TestPermissionBoundary:
                     or is_agent_write
                     or is_skill_write
                     or is_local_ai_write
+                    or is_skill_scan
                 ), (
                     f"写路由超出白名单 (审批决定 + Runtime + 反馈 + 创建 + 启动 + "
                     f"项目管理 + Backlog + Sprint/Milestone/Roadmap + Tool + MCP + RAG): "

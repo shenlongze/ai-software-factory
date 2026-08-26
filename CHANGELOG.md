@@ -3,7 +3,22 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.189] — 2026-08-27
+
+**U-3 MCP 真实连接 (stdio) + U-4 外部 skill 真实加载执行 — U 链 6/6 收官**。
+
+### Added
+
+- U-3: MCP stdio 真实连接 — MCPConnection 增 command/args, client_for 接 StdioMCPClient
+  (JSON-RPC 2.0 子进程全链路 connect→discover→call); service/api/cli 支持
+  transport=stdio (--cmd); http/sse 仍响亮拒绝; WebUI MCP 表单 transport 选择+命令
+- U-4: external_skills.py 扫描 <dir>/*/SKILL.md → 解析 frontmatter+正文 → 幂等加载进
+  skills.json; Service._get_skill_registry 把外部 skill 注册进 SkillRegistry →
+  AgentExecutionLoop 真实注入指令 (SkillContext.instructions); API POST /api/skills/scan;
+  CLI factory skill scan; WebUI 技能 tab「扫描外部 Skill」
+
 ## [v1.1.188] — 2026-08-27
+
 
 **U-6 本机 AI 发现与调度 (codex/claude/hermes → 自动注册为 Agent → exec 可委派真实执行)**。
 

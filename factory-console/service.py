@@ -694,9 +694,47 @@ class ConsoleService:
                 if tool_mod is not None
                 else None
             )
-            return mod.SkillRegistry.with_system_skills(tool_registry=tool_registry)
+            registry = mod.SkillRegistry.with_system_skills(tool_registry=tool_registry)
+            # U-4 (v1.1.189): 外部 skill (skills.json, 含 SKILL.md 扫描加载)
+            # 一并注册进 SkillRegistry → AgentExecutionLoop 真实注入指令
+            self._register_external_skills(registry)
+            return registry
         except Exception:
             return None  # 自装配失败安全 — 不拖垮 API
+
+    def _register_external_skills(self, registry: Any) -> None:
+        """把 skills.json 的外部 skill 注册进 SkillRegistry (失败安全跳过)。
+
+        幂等: 已注册 id 跳过 (不冲突); 缺 instructions → 空注入 (诚实)。"""
+        try:
+            ws_root = Path(getattr(self._workspace, "root", None) or "")
+            f = ws_root / "skills" / "skills.json"
+            d = json.loads(f.read_text(encoding="utf-8")) or {}
+            reg = d.get("skills") if isinstance(d, dict) and "skills" in d else d
+            if not isinstance(reg, dict):
+                return
+            mod = self._skill_mod()
+            for sid, sv in reg.items():
+                if not isinstance(sv, dict) or not sid:
+                    continue
+                if registry.get(sid) is not None:
+                    continue
+                try:
+                    skill = mod.Skill(
+                        id=str(sid),
+                        name=str(sv.get("name") or sid),
+                        description=str(sv.get("description") or ""),
+                        category=str(sv.get("category") or "external"),
+                        version=str(sv.get("version") or "1.0.0"),
+                        tools=[],
+                        instructions=str(sv.get("instructions") or ""),
+                        enabled=bool(sv.get("enabled", True)),
+                    )
+                    registry.register(skill)
+                except Exception:  # noqa: BLE001 — 单条失败跳过 (不阻断)
+                    continue
+        except Exception:  # noqa: BLE001 — skills.json 缺失/损坏 → 跳过
+            return
 
     def list_skills(self) -> dict[str, Any]:
         """Skill 清单 (GET /api/skills — SkillRegistry 当前可用 Skill)。
@@ -839,19 +877,23 @@ class ConsoleService:
         server_url: str,
         *,
         transport: str = "mock",
+        command: str = "",
+        args: list[str] | None = None,
     ) -> dict[str, Any] | None:
         """创建 MCP 连接 (POST /api/mcp/connections — 注册即连接 + Tool 注册)。
 
         错误语义:
         - 空 name/server_url → ValueError (HTTP 400 — 连接标识/地址必填)
-        - stdio/http 真实协议 → MCPConnectionError 归一 ValueError (HTTP 400 —
-          本 Task 仅 mock 可用, 响亮拒绝不假装连接成功)
+        - transport=stdio 但无 command → ValueError (HTTP 400 — 真实 stdio
+          需要拉起命令; U-3 v1.1.189: stdio 真实可用, http/sse 仍响亮拒绝)
+        - http/sse 真实协议 → MCPConnectionError 归一 ValueError (HTTP 400 —
+          不假装可用)
         - store/exec 未装配 (空构造无注入 + 自装配失败) → None (HTTP 404
           失败安全)
         成功 → {id, name, server_url, transport, enabled, created_at,
         tools: [{id, name, server}]} (连接摘要 + 注册 Tool 摘要 — 注册即
-        连接: Mock 不连公网, Tool 进内部 ToolRegistry, 执行权仍在
-        ToolExecutor 最小权限表)。
+        连接: Mock 不连公网; stdio 真实拉起子进程 JSON-RPC 2.0; Tool 进
+        内部 ToolRegistry, 执行权仍在 ToolExecutor 最小权限表)。
         """
         cleaned_name = str(name or "").strip()
         cleaned_url = str(server_url or "").strip()
@@ -859,6 +901,10 @@ class ConsoleService:
             raise ValueError("name is required (连接名称必填)")
         if not cleaned_url:
             raise ValueError("server_url is required (服务地址必填)")
+        transport = str(transport or "mock").strip().lower() or "mock"
+        command = str(command or "").strip()
+        if transport == "stdio" and not command:
+            raise ValueError("stdio transport requires command (真实 MCP stdio 需要启动命令)")
         registry = self._get_mcp_registry()
         if registry is None:
             return None
@@ -870,7 +916,9 @@ class ConsoleService:
                 id=mod.new_mcp_connection_id(),
                 name=cleaned_name,
                 server_url=cleaned_url,
-                transport=str(transport or "mock").strip() or "mock",
+                transport=transport,
+                command=command,
+                args=list(args or []),
             )
             tools, _client = registry.register_connection(connection)
             return {

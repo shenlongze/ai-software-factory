@@ -363,7 +363,7 @@ class TestMCPRouting:
         assert rc == 0 and "mcp-1" in out and "echo" in out and "Mock 诚实标注" in out
         # connect
         monkeypatch.setattr(SERVICE.ConsoleService, "create_mcp_connection",
-                            lambda self, name, url, transport="mock": {
+                            lambda self, name, url, transport="mock", command="", args=None: {
                                 "id": "mcp-9", "name": name, "server_url": url,
                                 "transport": transport, "enabled": True,
                                 "tools": [{"id": "echo", "name": "echo", "server": name}]})

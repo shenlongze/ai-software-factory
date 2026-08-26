@@ -92,6 +92,10 @@ class MCPConnection(BaseModel):
     name: str
     server_url: str
     transport: str = "mock"
+    # U-3 (v1.1.189): stdio 真实连接 — command/args 拉起子进程 (JSON-RPC 2.0);
+    # mock 忽略; http/sse 仍响亮拒绝 (不假装可用)
+    command: str = ""
+    args: list[str] = Field(default_factory=list)
     enabled: bool = True
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=utcnow)
@@ -563,15 +567,27 @@ class MCPRegistry:
 
     @staticmethod
     def client_for(connection: MCPConnection) -> MCPClient:
-        """MCP Client 工厂 (不绑 SDK): mock → MockMCPClient; stdio/http 真实
-        协议 → MCPConnectionError 响亮拒绝 (本 Task 禁止连公网, 不假装可用)。"""
+        """MCP Client 工厂 (不绑 SDK): mock → MockMCPClient; stdio → 真实
+        JSON-RPC 2.0 子进程客户端; http/sse → MCPConnectionError 响亮拒绝
+        (U-3 v1.1.189: stdio 真实可用; 公网 http/sse 仍不假装可用)。"""
         transport = str(connection.transport or "").strip().lower()
         if transport == "mock":
             return MockMCPClient()
+        if transport == "stdio":
+            command = str(connection.command or "").strip()
+            if not command:
+                raise MCPConnectionError(
+                    f"mcp stdio requires command (connection {connection.id!r})"
+                )
+            return StdioMCPClient(
+                command,
+                list(connection.args or []),
+                name=str(connection.name or "stdio"),
+            )
         raise MCPConnectionError(
             f"unsupported MCP transport: {connection.transport!r} "
-            f"(connection {connection.id!r}; only 'mock' is available — "
-            "real MCP protocols are not supported in this task)"
+            f"(connection {connection.id!r}; available: mock|stdio — "
+            "http/sse not supported)"
         )
 
     def get_connection(self, connection_id: str) -> MCPConnection | None:

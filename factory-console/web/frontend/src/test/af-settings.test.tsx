@@ -40,6 +40,11 @@ function stubApi(overrides: Record<string, unknown> = {}) {
       state.agents.push(rec);
       return jsonResponse(rec);
     }
+    if (method === 'POST' && url === '/api/skills/scan') {
+      const rec = { id: 'api-review', name: 'API 审查', category: 'external', version: '1.0' };
+      state.skills.push(rec);
+      return jsonResponse({ loaded: [rec], count: 1 });
+    }
     if (method === 'POST' && url === '/api/local-ai/register') {
       const rec = { id: 'local-codex', name: '本机 Codex', role: 'developer', skills: ['codex'], binary: 'codex', path: '/usr/bin/codex' };
       state.agents.push(rec);
@@ -131,6 +136,16 @@ describe('AfSettings (设置管理面)', () => {
     expect(await screen.findByText(/本机 AI 已注册 1 个/)).toBeInTheDocument();
     expect(await screen.findByText('本机 Codex')).toBeInTheDocument();
     expect(calls.some((c) => c.method === 'POST' && c.url === '/api/local-ai/register')).toBe(true);
+  });
+
+  it('Skill tab: 扫描外部 SKILL.md → POST /api/skills/scan + 列表刷新 (U-4)', async () => {
+    const { calls } = stubApi();
+    render(<AfSettings />);
+    await userEvent.click(screen.getByRole('tab', { name: '🧩 技能' }));
+    await userEvent.click(screen.getByTestId('af-settings-scan-external-skills'));
+    expect(await screen.findByText(/外部 Skill 已加载 1 个/)).toBeInTheDocument();
+    expect(await screen.findByText('API 审查')).toBeInTheDocument();
+    expect(calls.some((c) => c.method === 'POST' && c.url === '/api/skills/scan')).toBe(true);
   });
 
   it('Skill tab: 注册 → POST /api/skills', async () => {

@@ -78,6 +78,86 @@ def _mcp_assembled(tmp_path: Path, *, with_tool_registry: bool = True):
     return registry, executor
 
 
+# ------------------------------------------------------------------ U-3: stdio 真实连接
+
+_FAKE_STDIO_SERVER = """import json, sys
+def read_msg():
+    line = sys.stdin.readline()
+    return json.loads(line) if line.strip() else None
+def send(msg):
+    print(json.dumps(msg), flush=True)
+while True:
+    msg = read_msg()
+    if msg is None:
+        break
+    method = msg.get("method")
+    if method == "initialize":
+        send({"jsonrpc": "2.0", "id": msg["id"], "result": {
+            "protocolVersion": "2024-11-05", "capabilities": {},
+            "serverInfo": {"name": "fake-stdio", "version": "1.0"}}})
+    elif method == "notifications/initialized":
+        pass
+    elif method == "tools/list":
+        send({"jsonrpc": "2.0", "id": msg["id"], "result": {"tools": [
+            {"name": "add", "description": "a+b", "inputSchema": {
+                "type": "object", "properties": {"a": {"type": "number"}, "b": {"type": "number"}},
+                "required": ["a", "b"]}}]}})
+    elif method == "tools/call":
+        a = msg["params"]["arguments"]
+        send({"jsonrpc": "2.0", "id": msg["id"], "result": {
+            "content": [{"type": "text", "text": str(a["a"] + a["b"])}], "isError": False}})
+"""
+
+
+class TestMCPStdioRealConnection:
+    """U-3 (v1.1.189): stdio 真实连接 — JSON-RPC 2.0 子进程全链路 (不是 mock)。"""
+
+    def test_stdio_connect_discover_call(self, tmp_path: Path):
+        script = tmp_path / "fake_mcp_server.py"
+        script.write_text(_FAKE_STDIO_SERVER, encoding="utf-8")
+        registry, executor = _mcp_assembled(tmp_path)
+        service = _service_mod.ConsoleService(
+            mcp_registry=registry, tool_executor=executor
+        )
+        created = service.create_mcp_connection(
+            "real-stdio",
+            "stdio://fake",
+            transport="stdio",
+            command=sys.executable,
+            args=[str(script)],
+        )
+        assert created is not None, "stdio 连接失败"
+        assert created["transport"] == "stdio"
+        tools = created.get("tools") or []
+        assert any(t["name"] == "add" for t in tools), tools
+        # 真实执行: 经 ToolExecutor 调 stdio server (JSON-RPC tools/call)
+        tool_id = next(t["id"] for t in tools if t["name"] == "add")
+        result = executor.execute(tool_id, {"a": 2, "b": 3}, "agent-1")
+        assert result.ok, result.error
+        assert "5" in str(result.output)
+
+    def test_stdio_requires_command(self, tmp_path: Path):
+        registry, executor = _mcp_assembled(tmp_path)
+        service = _service_mod.ConsoleService(
+            mcp_registry=registry, tool_executor=executor
+        )
+        with pytest.raises(ValueError, match="command"):
+            service.create_mcp_connection(
+                "bad", "stdio://x", transport="stdio", command=""
+            )
+
+    def test_http_still_rejected(self, tmp_path: Path):
+        """http/sse 仍响亮拒绝 (不假装可用) — 诚实边界。"""
+        registry, executor = _mcp_assembled(tmp_path)
+        service = _service_mod.ConsoleService(
+            mcp_registry=registry, tool_executor=executor
+        )
+        with pytest.raises(ValueError, match="unsupported"):
+            service.create_mcp_connection(
+                "http", "http://localhost:8080", transport="http"
+            )
+
+
 # ------------------------------------------------------------------ 路由导出
 
 
@@ -137,15 +217,17 @@ class TestMCPService:
         with pytest.raises(ValueError, match="server_url"):
             service.create_mcp_connection("demo", "  ")
 
-    def test_create_mcp_connection_stdio_rejected(self, tmp_path: Path):
-        """stdio 真实协议 → ValueError (HTTP 400 — MCPConnectionError 归一;
-        本 Task 仅 mock 可用, 响亮拒绝不假装连接成功)。"""
+    def test_create_mcp_connection_stdio_requires_command(self, tmp_path: Path):
+        """U-3: stdio 无 command → ValueError (HTTP 400 — 真实 stdio 需要启动命令);
+        http 仍响亮拒绝 (不假装可用)。"""
         registry, executor = _mcp_assembled(tmp_path)
         service = _service_mod.ConsoleService(
             mcp_registry=registry, tool_executor=executor
         )
-        with pytest.raises(ValueError, match="unsupported MCP transport"):
+        with pytest.raises(ValueError, match="command"):
             service.create_mcp_connection("demo", "stdio://x", transport="stdio")
+        with pytest.raises(ValueError, match="unsupported MCP transport"):
+            service.create_mcp_connection("demo", "http://x", transport="http")
 
     def test_create_mcp_connection_success_registers_echo(self, tmp_path: Path):
         """mock 连接注册成功 (注册即连接 + Tool 注册) → 摘要含 echo。"""
@@ -270,8 +352,9 @@ class TestMCPApi:
             assert resp.status_code == 400, resp.text
             assert "name" in resp.json()["error"]["message"]
 
-    def test_create_connection_stdio_400(self, tmp_path: Path):
-        """POST stdio 真实协议 → 400 (响亮拒绝 — 本 Task 仅 mock 可用)。"""
+    def test_create_connection_stdio_requires_command_400(self, tmp_path: Path):
+        """POST stdio 无 command → 400 (诚实: 真实 stdio 需要启动命令);
+        http → 400 (仍不支持, 不假装可用)。"""
         root = tmp_path / "factory"
         with _api_client(root) as client:
             resp = client.post(
@@ -279,7 +362,13 @@ class TestMCPApi:
                 json={"name": "demo-mcp", "server_url": "stdio://x", "transport": "stdio"},
             )
             assert resp.status_code == 400, resp.text
-            assert "unsupported MCP transport" in resp.json()["error"]["message"]
+            assert "command" in resp.json()["error"]["message"]
+            resp = client.post(
+                "/api/mcp/connections",
+                json={"name": "demo-mcp", "server_url": "http://x", "transport": "http"},
+            )
+            assert resp.status_code == 400, resp.text
+            assert "unsupported" in resp.json()["error"]["message"]
 
     def test_list_tools_endpoint_contains_echo(self, tmp_path: Path):
         """GET /api/mcp/tools → 200 {tools: [...]} — 注册后 echo 在列

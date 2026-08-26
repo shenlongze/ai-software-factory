@@ -1540,13 +1540,25 @@ class FactoryCLI:
         if action == "connect":
             name = str(getattr(args, "name", "") or "").strip()
             url = str(getattr(args, "url", "") or "").strip()
+            transport = str(getattr(args, "transport", "mock") or "mock").lower()
+            command = str(getattr(args, "cmd", "") or "").strip()
+            args_raw = str(getattr(args, "args", "") or "").strip()
+            args_list = [a for a in args_raw.split() if a] if args_raw else []
             if not name or not url:
-                print("用法: factory mcp connect --name <名> --url <地址> [--transport mock]")
+                print("用法: factory mcp connect --name <名> --url <地址> "
+                      "[--transport mock|stdio] [--cmd <cmd>] [--args <a b c>]")
+                return 1
+            if transport == "stdio" and not command:
+                print("stdio 连接需要 --cmd <启动命令> (如 npx @modelcontextprotocol/server-filesystem /tmp)")
                 return 1
             service = ConsoleService()
             try:
                 result = service.create_mcp_connection(
-                    name, url, transport=str(getattr(args, "transport", "mock") or "mock")
+                    name,
+                    url,
+                    transport=transport,
+                    command=command,
+                    args=args_list,
                 )
             except ValueError as exc:
                 print(f"❌ {exc}")
@@ -2281,6 +2293,8 @@ class FactoryCLI:
             return self._skill_add(args)
         if action == "remove":
             return self._skill_remove(args)
+        if action == "scan":
+            return self._skill_scan(args)
         print("=== Skill 管理 (list) ===")
         rows = _skill_rows(self.data_dir)
         if not rows:
@@ -2292,6 +2306,31 @@ class FactoryCLI:
                 f"| v{row['version']}"
             )
         print(f"  共 {len(rows)} 个 skill")
+        return 0
+
+    def _skill_scan(self, args: argparse.Namespace) -> int:
+        """U-4: factory skill scan [--dir <目录>] — 扫描外部 SKILL.md → 加载进 skills.json。
+        缺省目录: <data_dir>/skills/external/*/SKILL.md (Codex 风格 frontmatter+正文)。"""
+        from . import external_skills as _ext
+
+        file = self.data_dir / "skills" / "skills.json"
+        dirs: list[str] = []
+        explicit = str(getattr(args, "dir", "") or "").strip()
+        if explicit:
+            dirs.append(explicit)
+        else:
+            dirs.append(str(self.data_dir / "skills" / "external"))
+        print("=== 外部 Skill 扫描 (SKILL.md) ===")
+        loaded = _ext.load_external_skills(file, dirs)
+        if not loaded:
+            print(f"  未发现 SKILL.md ({'; '.join(dirs)}) — 放 <dir>/<skill-id>/SKILL.md")
+            return 0
+        for sk in loaded:
+            print(
+                f"  ✅ {sk['id']} | {sk['name']} | v{sk.get('version')}"
+                + (f" | 指令 {len(sk.get('instructions') or '')} 字" if sk.get("instructions") else "")
+            )
+        print(f"  共 {len(loaded)} 个")
         return 0
 
     def _skill_add(self, args: argparse.Namespace) -> int:
@@ -4152,9 +4191,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_local_ai.add_argument("--project", default="", help="项目目录 (run)")
     p_skill = sub.add_parser("skill", help="Skill 管理 (list/add/remove)")
     p_skill.add_argument(
-        "skill_action", nargs="?", choices=["list", "add", "remove"], default="list",
-        metavar="list|add|remove", help="list — 列表; add — 注册 (--id --name --category); remove — 移除 (--id)",
+        "skill_action", nargs="?", choices=["list", "add", "remove", "scan"], default="list",
+        metavar="list|add|remove|scan", help="list — 列表; add — 注册 (--id --name --category); remove — 移除 (--id); scan — 扫描外部 SKILL.md (--dir)",
     )
+    p_skill.add_argument("--dir", default="", help="外部 skill 目录 (scan; 缺省 <data_dir>/skills/external)")
     p_skill.add_argument("--id", default="", help="Skill id (add/remove)")
     p_skill.add_argument("--name", default="", help="技能名 (add)")
     p_skill.add_argument("--category", default="", help="分类 (add)")
@@ -4170,8 +4210,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_mcp.add_argument("--name", default="", help="连接名 (connect, 如 demo)")
     p_mcp.add_argument("--url", default="", help="服务地址 (connect, 如 mock://demo)")
     p_mcp.add_argument(
-        "--transport", default="mock", help="传输方式 (仅 mock 可用; stdio/http 响亮拒绝)"
+        "--transport", default="mock", help="传输方式 (mock|stdio; http/sse 响亮拒绝; U-3 stdio 真实可用)"
     )
+    p_mcp.add_argument("--cmd", default="", help="stdio 启动命令 (transport=stdio 必填, 如 npx @modelcontextprotocol/server-filesystem)")
+    p_mcp.add_argument("--args", default="", help="stdio 命令参数 (空格分隔)")
     # C-1 产出物契约 (平台级): 全部项目统一产出物标准 + 版本信号 + 校验
     p_artifacts = sub.add_parser(
         "artifacts", help="产出物契约 (C-1): list — 项目产出物统一状态; validate — 对照 schema 校验"

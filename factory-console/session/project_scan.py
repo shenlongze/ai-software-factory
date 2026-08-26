@@ -211,6 +211,71 @@ def _judgments(tree: dict[str, Any] | None, versions: dict[str, Any] | None,
     return judgments, risks, suggestions
 
 
+def _git_info(root: Path | None, project_id: str) -> dict[str, Any] | None:
+    """仓库信息 (git remote/分支/领先落后; 只读命令, 失败 → None 诚实)。
+
+    定位 repo 目录: project.json workspace_dir → repo_path → docs_config dirs
+    (AI Factory 自身 = 源码仓库根)。Founder 2026-08-26: 会话答"没配置远程仓库"
+    是错的 — 真实 git remote 存在但事实卡没查。
+    """
+    import subprocess
+
+    if root is None:
+        return None
+    candidates: list[str] = []
+    try:
+        pj = (
+            Path(root) / "workspace" / "projects" / Path(project_id).name / "project.json"
+        )
+        data = _read_json_map(pj)
+        for k in ("workspace_dir", "repo_path"):
+            v = str(data.get(k) or "").strip()
+            if v:
+                candidates.append(v)
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from ..session.board import read_docs_config
+
+        candidates += read_docs_config(root, project_id)["dirs"]
+    except Exception:  # noqa: BLE001
+        pass
+    repo_dir: str | None = None
+    for c in candidates:
+        try:
+            if c and (Path(c) / ".git").is_dir():
+                repo_dir = c
+                break
+        except Exception:  # noqa: BLE001
+            continue
+    if not repo_dir:
+        return None
+
+    def _git(*args: str) -> str:
+        try:
+            r = subprocess.run(
+                ["git", "-C", repo_dir, *args],
+                capture_output=True, text=True, timeout=10,
+            )
+            return (r.stdout or "").strip()
+        except Exception:  # noqa: BLE001
+            return ""
+
+    remote = _git("remote", "get-url", "origin")
+    branch = _git("branch", "--show-current")
+    ahead = ""
+    if branch and remote:
+        ahead = _git("rev-list", "--count", f"origin/{branch}..HEAD")
+    if not remote and not branch:
+        return None
+    return {
+        "remote": remote or "（未配置 origin）",
+        "branch": branch or "—",
+        "ahead": ahead if ahead.isdigit() else None,
+        "dir": repo_dir,
+    }
+
+
 def scan_project(
     root: Path | str | None,
     project_id: str,
@@ -226,6 +291,7 @@ def scan_project(
         "versions": None,
         "campaigns": None,
         "quality": None,
+        "repo": None,
         "workflow": {"status": workflow_status or "未启动", "stage": current_stage or "—"},
         "judgments": [],
         "risks": [],
@@ -238,6 +304,7 @@ def scan_project(
     report["versions"] = _version_line(root, project_id)
     report["campaigns"] = _campaign_line(root, project_id)
     report["quality"] = _quality(root, project_id)
+    report["repo"] = _git_info(root, project_id)
     judgments, risks, suggestions = _judgments(
         report["task_tree"], report["versions"], report["campaigns"],
         report["quality"], workflow_status,
@@ -246,6 +313,44 @@ def scan_project(
     report["risks"] = risks
     report["suggestions"] = suggestions
     return report
+
+
+def git_push(root: Path | str | None, project_id: str) -> dict[str, Any]:
+    """推送仓库到 origin (Founder 2026-08-26: 会话"帮忙推送一下"真实执行)。
+
+    先查状态 (remote/ahead): 无更新 → 不推 (诚实); 有更新 → git push origin 当前分支。
+    失败安全: 返回 ok=False + 明确错误 (网络/凭据/非 git), 不假装成功。
+    """
+    import subprocess
+
+    info = _git_info(Path(root) if root else None, project_id)
+    if info is None or info.get("dir") is None:
+        return {"ok": False, "error": "未检测到 git 仓库（无法推送）"}
+    repo = info["dir"]
+    branch = info.get("branch") or "main"
+    ahead = info.get("ahead")
+    if ahead is not None and int(ahead) == 0:
+        return {
+            "ok": True, "pushed": False,
+            "remote": info.get("remote", ""), "branch": branch,
+            "message": "无更新可推（已与 origin 同步）",
+        }
+    try:
+        r = subprocess.run(
+            ["git", "-C", repo, "push", "origin", branch],
+            capture_output=True, text=True, timeout=120,
+        )
+        out = (r.stdout or "").strip()
+        err = (r.stderr or "").strip()
+        if r.returncode == 0:
+            return {
+                "ok": True, "pushed": True,
+                "remote": info.get("remote", ""), "branch": branch,
+                "message": out or "推送成功",
+            }
+        return {"ok": False, "error": err or out or f"git push 失败 (rc {r.returncode})"}
+    except Exception as exc:  # noqa: BLE001 — 失败安全
+        return {"ok": False, "error": f"git push 执行失败: {exc}"}
 
 
 def format_scan(report: dict[str, Any], project_name: str = "") -> str:
@@ -277,6 +382,12 @@ def format_scan(report: dict[str, Any], project_name: str = "") -> str:
     lines.append(f"4. 工作流: {wf.get('status')} (阶段 {wf.get('stage')})")
     quality = report.get("quality")
     lines.append(f"5. 质量: {quality['score'] if quality else '未生成'}")
+    repo = report.get("repo")
+    if repo:
+        ahead = f"领先 {repo['ahead']} 提交" if repo.get("ahead") is not None else "状态待查"
+        lines.append(f"6. 仓库: {repo['remote']} (分支 {repo['branch']}, {ahead})")
+    else:
+        lines.append("6. 仓库: 未检测到 git 仓库")
     if report.get("judgments"):
         lines.append("判断:")
         lines.extend(f"- {j}" for j in report["judgments"])

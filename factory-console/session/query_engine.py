@@ -31,6 +31,7 @@ _INTENT_RULES: list[tuple[str, tuple[str, ...]]] = [
     ("project_doc", ("文档内容", "讲了什么", "读一下", "内容是什么", ".md", ".json", ".txt", ".docx")),
     ("doc_search", ("检索", "搜索", "搜一下", "查找", "哪些文档提到", "哪份文档", "哪篇文档", "有没有说", "提到")),
     ("project_docs", ("文档", "文档清单", "产物", "产出物", "docs", "dosc", "products", "规格", "product-spec")),
+    ("git_push", ("推送", "推到", "push", "上传到 github", "推到 github", "推送到 github")),
     ("project_scan", ("扫描", "扫一下", "体检", "全面看", "整体情况", "总览", "盘点", "看进度计划", "进度计划")),
     ("project_status", ("状态", "阶段", "进行", "进度", "生命周期", "卡点", "怎么样", "进展",
                        "计划", "规划", "里程碑", "看看项目")),
@@ -419,10 +420,10 @@ def build_facts(
 #: 合法意图集合 (校验 LLM 输出)
 VALID_INTENTS = {"list_projects", "project_status", "project_scan", "project_quality", "project_tasks",
                  "project_docs", "project_doc", "doc_search",
-                 "model", "system_status", "create_project", "create_task", "chat"}
+                 "model", "system_status", "create_project", "create_task", "git_push", "chat"}
 
 _INTENT_LLM_PROMPT = """把用户的提问转成标准查询意图 (只输出 JSON, 不要别的):
-{{"intent": "list_projects|project_status|project_scan|project_quality|project_tasks|project_docs|project_doc|doc_search|model|create_project|create_task|chat",
+{{"intent": "list_projects|project_status|project_scan|project_quality|project_tasks|project_docs|project_doc|doc_search|model|create_project|create_task|git_push|chat",
  "project": "用户提到的项目名 (没提到 → null)",
  "task": "用户要做的开发任务描述 (create_task 时填; 否则 null)}}
 规则:
@@ -436,6 +437,7 @@ _INTENT_LLM_PROMPT = """把用户的提问转成标准查询意图 (只输出 JS
 - 问在文档里检索/搜索关键词 (如 '文档里检索 错误码' / '哪些文档提到 X') → doc_search
 - 问用什么模型 → model
 - 完善/优化/修复/加功能/细化/拆解想法 → create_task (task=要做的事, project=目标项目)
+- 推送代码到 github/远程 → git_push
 - 问系统/WebUI/服务运行状态 → system_status
 - 其余闲聊 → chat
 用户: {question}

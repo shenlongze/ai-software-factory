@@ -3198,6 +3198,50 @@ def build_app(
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+        if intent.get("intent") == "git_push":
+            # 推送仓库到 origin (Founder 2026-08-26: 会话"帮忙推送一下"真实执行)
+            from ..session.project_scan import git_push
+
+            tgt = None
+            if hint_project:
+                tgt = next((pp for pp in projects if hint_project in str(getattr(pp, "name", "") or "")), None)
+            if tgt is None and session.get("project_id"):
+                tgt = next((pp for pp in projects if pp.id == session.get("project_id")), None)
+            if tgt is None:
+                facts = "未定位到目标项目 — 请说项目名（如: 把 AI Factory 自身推送到 github）"
+                action_target = {"url": "#/workspace/projects", "label": "查看项目列表"}
+            else:
+                try:
+                    result = git_push(workspace_root, str(tgt.id))
+                except Exception as exc:  # noqa: BLE001 — 失败安全
+                    result = {"ok": False, "error": f"推送执行异常: {exc}"}
+                if result.get("ok"):
+                    if result.get("pushed"):
+                        facts = (
+                            f"✅ 已推送 {tgt.name} → {result.get('remote')} "
+                            f"(分支 {result.get('branch')}): {result.get('message')}"
+                        )
+                    else:
+                        facts = f"{tgt.name}: {result.get('message')}（远程 {result.get('remote')}）"
+                else:
+                    facts = f"推送失败: {result.get('error')}"
+                action_target = {"url": "#/workspace", "label": "返回工作台"}
+            try:
+                result = _sessions_mod.send_message(
+                    sessions_store, session_id, body.message, facts=facts,
+                    reply_extra=_qmod.STANDARD_OUTPUT_PROMPT,
+                )
+                result["meta"] = {
+                    "intent": "git_push",
+                    "project": getattr(tgt, "name", None) if tgt is not None else None,
+                    "data_source": "live",
+                    "target": action_target,
+                    "action": "pushed" if tgt is not None and result.get("ok") else "failed",
+                }
+                return result
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+
         facts = _qmod.build_facts(
             body.message,
             scope=str(session.get("scope") or "company"),

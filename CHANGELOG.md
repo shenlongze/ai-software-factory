@@ -3,6 +3,15 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.162] — 2026-08-26
+
+**会话仓库能力: 查 git remote + 真实推送 (Founder: 会话答'没配置远程仓库'是错的)**。
+
+### Added
+
+- 扫描报告加仓库维度: git remote/分支/领先提交 (定位 workspace_dir/repo_path/docs_config dirs)
+- 会话 git_push 意图: "帮忙推送一下" → 真实 git push origin 当前分支 (无更新不推, 失败安全)
+
 ## [v1.1.161] — 2026-08-26
 
 **项目扫描器 (Founder: 扫描项目必须完整强壮实事求是) + 会话任务统计修复**。

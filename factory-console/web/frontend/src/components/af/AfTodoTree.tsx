@@ -61,10 +61,22 @@ export interface AfTodoTreeProps {
 /** 过滤选项 (§4.6: [全部][执行中][阻塞][待审核][失败] — 待办/完成不进过滤, 全量可见)。 */
 export const TREE_FILTERS: readonly { key: 'all' | DomainStatus; label: string }[] = [
   { key: 'all', label: '全部' },
+  { key: 'pending', label: '待办' },
   { key: 'running', label: '执行中' },
   { key: 'blocked', label: '阻塞' },
   { key: 'review', label: '待审核' },
   { key: 'failed', label: '失败' },
+  { key: 'completed', label: '已完成' },
+] as const;
+
+/** 优先级筛选 (Founder 2026-08-27: 筛选不够, 补维度)。 */
+export const PRIORITY_FILTERS = ['all', 'P0', 'P1', 'P2', 'P3'] as const;
+/** 更新时间筛选: all=全部 / today=今日 / week=近7天 / stale30=超30天未更新。 */
+export const TIME_FILTERS = [
+  { key: 'all', label: '全部时间' },
+  { key: 'today', label: '今日更新' },
+  { key: 'week', label: '近7天' },
+  { key: 'stale30', label: '超30天未动' },
 ] as const;
 
 /** 节点类型图标 (阶段 📁 / 模块 📦 / 任务 📄)。 */
@@ -86,18 +98,46 @@ function collectBranchIds(node: TreeNode): string[] {
 
 /** 过滤可见性: 任务节点按状态匹配; 阶段/模块/故事 = 有匹配后代才可见 (祖先保留)。
  * W-3 归档: completed(done) 任务不进主树 (归入已归档区, 待办视角)。 */
-function visibleUnderFilter(node: TreeNode, filter: 'all' | DomainStatus): boolean {
+function matchesTime(updatedAt: string | undefined, timeKey: string): boolean {
+  if (timeKey === 'all') return true;
+  if (updatedAt == null || updatedAt.length === 0) return timeKey === 'stale30';
+  const d = new Date(updatedAt).getTime();
+  if (Number.isNaN(d)) return timeKey === 'stale30';
+  const now = Date.now();
+  const day = 24 * 3600 * 1000;
+  if (timeKey === 'today') return now - d < day;
+  if (timeKey === 'week') return now - d < 7 * day;
+  if (timeKey === 'stale30') return now - d > 30 * day;
+  return true;
+}
+
+/** 多维筛选: 状态 + 优先级 + 更新时间 (Founder 2026-08-27 筛选不够/不好用)。 */
+function visibleUnderFilter(
+  node: TreeNode,
+  filterStatus: 'all' | DomainStatus,
+  filterPriority: string,
+  filterTime: string,
+): boolean {
   // 叶子任务 = 执行单元 (Story 节点 type 也是 'task' 但有子任务 — 走下方后代判定)
   if (node.type === 'task' && node.children.length === 0) {
-    if (node.status === 'completed') return false; // W-3 归档: done 不进主树
-    if (filter === 'all') return true;
-    return node.status === filter;
+    const prioActive = filterPriority !== 'all';
+    const timeActive = filterTime !== 'all';
+    if (node.status === 'completed') {
+      // W-3 归档: done 默认不进主树; 筛选"已完成"或 优先级/时间激活时可见
+      return filterStatus === 'completed' || (filterStatus === 'all' && (prioActive || timeActive));
+    }
+    if (filterStatus !== 'all' && node.status !== filterStatus) return false;
+    if (prioActive && node.priority !== filterPriority) return false;
+    if (timeActive && !matchesTime(node.updatedAt, filterTime)) return false;
+    return true;
   }
-  // 空分支 (想法模块 💡 / 空 Epic): "全部"下可见 — 想法不能丢 (想法→细化→待办链路)
+  // 空分支 (想法模块 💡 / 空 Epic): 仅"全部+无附加筛选"下可见
   if (node.children.length === 0) {
-    return filter === 'all';
+    return filterStatus === 'all' && filterPriority === 'all' && filterTime === 'all';
   }
-  return node.children.some((child) => visibleUnderFilter(child, filter));
+  return node.children.some((c) =>
+    visibleUnderFilter(c, filterStatus, filterPriority, filterTime),
+  );
 }
 
 /** 归档任务: 全部 done(completed) 叶子任务 (主树已隐藏; 归档区展示 + 审计入口)。
@@ -118,7 +158,7 @@ function hasActiveTasks(node: TreeNode): boolean {
 /** 收集分支下可见的叶子任务 (折叠摘要钻取 — legacy M2→feature=M2 无意义时用)。 */
 function collectLeafTasks(node: TreeNode, filter: 'all' | DomainStatus): TreeNode[] {
   if (node.type === 'task' && node.children.length === 0) {
-    return visibleUnderFilter(node, filter) ? [node] : [];
+    return visibleUnderFilter(node, filter, 'all', 'all') ? [node] : [];
   }
   return node.children.flatMap((c) => collectLeafTasks(c, filter));
 }
@@ -147,6 +187,8 @@ export function AfTodoTree({
   const hasActive = hasActiveTasks(root);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const [filter, setFilter] = useState<'all' | DomainStatus>('all');
+  const [filterPriority, setFilterPriority] = useState<string>('all');
+  const [filterTime, setFilterTime] = useState<string>('all');
   const [showArchive, setShowArchive] = useState(false);
 
   // 空 backlog (无任何阶段) → AfEmptyState; 有想法模块/空分支 → 渲染树 (想法不能丢)
@@ -171,7 +213,9 @@ export function AfTodoTree({
   const expandAll = () => setCollapsed(new Set());
   const collapseAll = () => setCollapsed(new Set(collectBranchIds(root)));
 
-  const visiblePhases = root.children.filter((phase) => visibleUnderFilter(phase, filter));
+  const visiblePhases = root.children.filter((phase) =>
+    visibleUnderFilter(phase, filter, filterPriority, filterTime),
+  );
 
   return (
     <div className="af-todo-tree" data-testid="af-todo-tree">
@@ -217,6 +261,32 @@ export function AfTodoTree({
             </button>
           ))}
         </div>
+        <select
+          className="af-filter-select"
+          aria-label="按优先级筛选"
+          data-testid="af-filter-priority"
+          value={filterPriority}
+          onChange={(e) => setFilterPriority(e.target.value)}
+        >
+          {PRIORITY_FILTERS.map((p) => (
+            <option key={p} value={p}>
+              {p === 'all' ? '全部优先级' : p}
+            </option>
+          ))}
+        </select>
+        <select
+          className="af-filter-select"
+          aria-label="按更新时间筛选"
+          data-testid="af-filter-time"
+          value={filterTime}
+          onChange={(e) => setFilterTime(e.target.value)}
+        >
+          {TIME_FILTERS.map((f) => (
+            <option key={f.key} value={f.key}>
+              {f.label}
+            </option>
+          ))}
+        </select>
       </div>
 
       {/* 项目头 (root): 整体完成度 + 状态 */}
@@ -254,6 +324,8 @@ export function AfTodoTree({
               onToggle={toggle}
               onDiscussFeature={onDiscussFeature}
               onRefineFeature={onRefineFeature}
+              filterPriority={filterPriority}
+              filterTime={filterTime}
             />
           ))
         )}
@@ -319,6 +391,8 @@ interface TreeNodeRowProps {
   node: TreeNode;
   collapsed: Set<string>;
   filter: 'all' | DomainStatus;
+  filterPriority: string;
+  filterTime: string;
   taskMeta: Record<string, TaskMeta>;
   onSelectTask?: (taskId: string) => void;
   onToggle: (id: string) => void;
@@ -330,13 +404,15 @@ function TreeNodeRow({
   node,
   collapsed,
   filter,
+  filterPriority,
+  filterTime,
   taskMeta,
   onSelectTask,
   onToggle,
   onDiscussFeature,
   onRefineFeature,
 }: TreeNodeRowProps): JSX.Element | null {
-  if (!visibleUnderFilter(node, filter)) return null;
+  if (!visibleUnderFilter(node, filter, filterPriority, filterTime)) return null;
 
   const hasChildren = node.children.length > 0;
   const isExpanded = !collapsed.has(node.id);
@@ -470,7 +546,9 @@ function TreeNodeRow({
         </span>
         {hasChildren && !isExpanded ? (
           (() => {
-            const visibleChildren = node.children.filter((c) => visibleUnderFilter(c, filter));
+            const visibleChildren = node.children.filter((c) =>
+              visibleUnderFilter(c, filter, filterPriority, filterTime),
+            );
             if (visibleChildren.length === 0) return null;
             // legacy 结构 (M2→feature=M2) 子节点名与节点同名 → 钻取到叶子任务名
             const allSameAsNode =
@@ -497,7 +575,7 @@ function TreeNodeRow({
       {hasChildren && isExpanded ? (
         <div className="af-tree-children" data-testid={`af-tree-children-${node.id}`}>
           {node.children
-            .filter((child) => visibleUnderFilter(child, filter))
+            .filter((child) => visibleUnderFilter(child, filter, filterPriority, filterTime))
             .map((child) => (
               <TreeNodeRow
                 key={child.id}
@@ -509,6 +587,8 @@ function TreeNodeRow({
                 onToggle={onToggle}
                 onDiscussFeature={onDiscussFeature}
                 onRefineFeature={onRefineFeature}
+                filterPriority={filterPriority}
+                filterTime={filterTime}
               />
             ))}
         </div>

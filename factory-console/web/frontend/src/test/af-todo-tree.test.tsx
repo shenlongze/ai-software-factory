@@ -18,7 +18,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { toTodoTree } from '../api/domain';
 import { AfTodoTree } from '../components/af/AfTodoTree';
 import type { TodoTree } from '../models/domain';
-import { sampleTodoFixture } from './fixtures';
+import { sampleTodoBacklog, sampleTodoFixture } from './fixtures';
 
 const { tree, meta } = sampleTodoFixture();
 
@@ -208,6 +208,29 @@ describe('AfTodoTree (Todo Tree 组件)', () => {
     expect(summary).toHaveTextContent('ExpertFactory 装配器');
     expect(summary).toHaveTextContent('等4个');
     expect(summary).not.toHaveTextContent('M2 · M2');
+  });
+
+  it('多维筛选: 按优先级 P0 + 按更新时间 (Founder 2026-08-27)', async () => {
+    const user = userEvent.setup();
+    const backlog = sampleTodoBacklog({
+      tasks: [
+        { ...sampleTodoBacklog().tasks![0], id: 'T-p0', title: 'P0任务', status: 'todo', priority: 'P0', updated_at: '2026-08-27T00:00:00Z' },
+        { ...sampleTodoBacklog().tasks![1], id: 'T-p2', title: 'P2任务', status: 'todo', priority: 'P2', updated_at: '2026-08-20T00:00:00Z' },
+      ],
+      epics: [{ ...sampleTodoBacklog().epics![0], id: 'E1', children: ['F1'] }],
+      features: [{ ...sampleTodoBacklog().features![0], id: 'F1', children: ['S1'] }],
+      stories: [{ ...sampleTodoBacklog().stories![0], id: 'S1', children: ['T-p0', 'T-p2'] }],
+    });
+    render(<AfTodoTree tree={toTodoTree(backlog, '演示项目')} />);
+    // 选优先级 P0 → 只显示 P0 任务
+    await user.selectOptions(screen.getByTestId('af-filter-priority'), 'P0');
+    expect(screen.getByText(/P0任务/)).toBeInTheDocument();
+    expect(screen.queryByText(/P2任务/)).not.toBeInTheDocument();
+    // 清优先级 + 选时间 今日 → 只显示今日更新
+    await user.selectOptions(screen.getByTestId('af-filter-priority'), 'all');
+    await user.selectOptions(screen.getByTestId('af-filter-time'), 'today');
+    expect(screen.getByText(/P0任务/)).toBeInTheDocument(); // 今日
+    expect(screen.queryByText(/P2任务/)).not.toBeInTheDocument(); // 08-20 非今日
   });
 
   it('全折叠/全展开: 工具栏按钮一键收起/展开全部', async () => {

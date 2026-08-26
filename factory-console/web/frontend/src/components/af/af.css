@@ -977,6 +977,20 @@
   margin-left: auto;
 }
 
+.af-filter-select {
+  font: inherit;
+  font-size: 12px;
+  color: var(--c-text);
+  background: var(--af-card, var(--c-panel));
+  border: 1px solid var(--c-border);
+  border-radius: 6px;
+  padding: 3px 6px;
+}
+
+.af-filter-select:focus {
+  border-color: #4c8dff;
+}
+
 .af-filter-chip {
   font: inherit;
   font-size: 12px;

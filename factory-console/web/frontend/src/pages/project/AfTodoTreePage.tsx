@@ -39,20 +39,22 @@ export async function fetchProjectBacklog(projectId: string): Promise<BacklogRes
   return (await res.json()) as BacklogResponse;
 }
 
-/** P0 进度摘要 (Founder 2026-08-27): 系列徽标 X-1✅ U-1✅ ... → 剩余。 */
-export function buildP0Progress(backlog: BacklogResponse | null | undefined): string {
+/** 任务链进度摘要 (Founder 2026-08-27): 同一任务链 (S/T/U/V/X 系列) 的任务, 非按 P0。 */
+export function buildChainProgress(backlog: BacklogResponse | null | undefined): string {
   const tasks = backlog?.tasks ?? [];
-  const p0 = tasks.filter((t) => (t.priority ?? '').toUpperCase() === 'P0');
-  if (p0.length === 0) return '';
+  const chained = tasks.filter((t) => /\[[A-Z]-\d+\]/.test(t.description ?? ''));
+  if (chained.length === 0) return '';
   const label = (t: BacklogTask) => {
     const m = /\[([A-Z]-\d+)\]/.exec(t.description ?? '');
-    return m ? m[1] : (t.id ?? '').slice(0, 10);
+    return m ? m[1] : '';
   };
-  const done = p0.filter((t) => (t.status ?? '') === 'done').map(label).sort();
-  const remain = p0.filter((t) => (t.status ?? '') !== 'done').map(label).sort();
+  const done = chained.filter((t) => (t.status ?? '') === 'done').map(label).filter(Boolean).sort();
+  const remain = chained.filter((t) => (t.status ?? '') !== 'done').map(label).filter(Boolean).sort();
   const doneStr = done.length > 0 ? done.map((x) => `${x}✅`).join(' ') : '无';
-  const remainStr = remain.length > 0 ? `剩 ${remain.slice(0, 6).join('·')}${remain.length > 6 ? ` 等${remain.length}个` : ''}` : '全部完成 🎉';
-  return `P0 ${done.length}/${p0.length}: ${doneStr} → ${remainStr}`;
+  const remainStr = remain.length > 0
+    ? `剩 ${remain.slice(0, 8).join('·')}${remain.length > 8 ? ` 等${remain.length}个` : ''}`
+    : '全部完成 🎉';
+  return `任务链 ${done.length}/${chained.length}: ${doneStr} → ${remainStr}`;
 }
 
 /** backlog.tasks → {id → {priority, owner}} (assignee 空串 → owner undefined, 诚实降级)。 */
@@ -166,7 +168,7 @@ export function AfTodoTreePage({ projectId, projectName }: AfTodoTreePageProps):
               onCreateFeature={handleCreateFeature}
               onDiscussFeature={handleDiscussFeature}
               onRefineFeature={handleRefineFeature}
-              p0Progress={buildP0Progress(data.backlog)}
+              p0Progress={buildChainProgress(data.backlog)}
             />
           </div>
           {selectedDetail != null ? (

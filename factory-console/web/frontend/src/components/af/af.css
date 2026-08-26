@@ -1774,6 +1774,24 @@
   text-decoration-color: var(--c-border);
 }
 
+/* ============================================================ 想法→细化→待办链路 (v1.1.144)
+ * 💡 想法模块 (maturity=idea): 徽标 + 操作 (和 AI 讨论 / 转正式)。 */
+
+.af-tree-idea-badge {
+  font-size: 11px;
+  color: #b78a2a;
+  border: 1px solid rgba(183, 138, 42, 0.55);
+  border-radius: 6px;
+  padding: 0 6px;
+  white-space: nowrap;
+}
+
+.af-tree-node-actions {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: 6px;
+}
+
 /* ============================================================ S10-015 Task 006: Dashboard (Control Center)
  * AI 软件公司控制中心 — 6 模块网格 (Active Projects / Running AI Employees / Workflow Status /
  * Blocked Tasks / Recent Runtime Events / Quality Summary)。深色 AI OS 风格, 与既有 af-* 组件一致。 */

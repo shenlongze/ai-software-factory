@@ -3,6 +3,26 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.144] — 2026-08-26
+
+**想法→细化→待办 一条链路 (Founder: "和 AI 讨论, 细化后进待办应该是一套逻辑", 1234 不返工)**。
+
+### Added
+
+- Feature.maturity (idea|refined): 想法模块 💡 / 正式模块 📦; PATCH /backlog/feature/{id}
+  (改名/描述/成熟度); create_feature 支持 maturity=idea
+- 树: 空模块/想法模块不再被隐藏 (想法不能丢); 💡 想法 徽标 + [💬 讨论] [✓ 转正式]
+  + 工具栏 [＋ 新建模块]
+- 会话模块锚点: Session.feature_id + prompt 注入模块事实卡 (名称/成熟度/已有任务)
+- 会话 create_task 绑定模块: 锚定模块时自动建/复用 Story → 任务挂到模块下进待办
+  (修复孤儿任务 — TASK-774d9036 之前建了树里看不见); Feature 下出现任务 → 自动转 refined
+- Story.feature_id 反向引用 (任务→story→feature 溯源)
+
+### 验证
+
+- 后端 6476 passed (新增 想法链路 8 + 会话锚点 3) · 前端 717 passed (新增 想法链路 8)
+- 修复已确认孤儿任务问题; 会话作用域扩展 (K-7g 部分)
+
 ## [v1.1.143] — 2026-08-26
 
 **任务排序: 待办主树按优先级 + 归档区按完成时间 (Founder: 时间还是优先级?) 定案**。

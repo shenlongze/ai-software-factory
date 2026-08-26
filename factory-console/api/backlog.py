@@ -57,15 +57,21 @@ def create_feature(
     name: str,
     description: str = "",
     epic_id: str = "",
+    maturity: str = "refined",
     logger: Any = None,
 ) -> dict[str, Any] | None:
-    """POST /backlog/feature — 创建 Feature (可选绑定 Epic; epic.children 追加)。
+    """POST /backlog/feature — 创建 Feature (可选绑定 Epic; epic.children 追加;
+    maturity idea|refined — 想法模块 💡, 默认 refined 兼容)。
 
     BacklogNotFoundError → epic_id 不存在 (HTTP 404, 子级绑定不存在);
-    ValueError → 空 name (HTTP 400)。
+    ValueError → 空 name / 非法 maturity (HTTP 400)。
     """
     return service.create_feature(
-        project_id, name=name, description=description, epic_id=epic_id
+        project_id,
+        name=name,
+        description=description,
+        epic_id=epic_id,
+        maturity=maturity,
     )
 
 

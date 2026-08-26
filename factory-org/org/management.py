@@ -207,11 +207,17 @@ class Epic(_OrgModel):
 
 
 class Feature(_OrgModel):
-    """Feature (周/月 — 用户可感知功能; children = Story id 引用)。"""
+    """Feature (周/月 — 用户可感知功能; children = Story id 引用)。
+
+    maturity (Founder 2026-08-26 想法→细化→待办链路): idea = 未细化的想法模块
+    (树里 💡 显示, 可"和 AI 讨论"细化); refined = 已细化/正式模块 (默认, 兼容既有)。
+    细化完成 (Feature 下出现 Task) 或手动 PATCH 时 idea → refined。
+    """
 
     id: str
     name: str
     description: str = ""
+    maturity: str = "refined"          # idea | refined
     children: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
@@ -221,13 +227,26 @@ class Feature(_OrgModel):
     def _children_none(cls, v: Any) -> Any:
         return _norm_list(v)
 
+    @field_validator("maturity", mode="before")
+    @classmethod
+    def _maturity_valid(cls, v: Any) -> str:
+        val = str(v or "refined").strip().lower()
+        if val not in ("idea", "refined"):
+            raise ValueError(f"invalid feature maturity: {v!r} (idea|refined)")
+        return val
+
 
 class Story(_OrgModel):
-    """Story (周 — 用户需求描述; children = Task id 引用)。"""
+    """Story (周 — 用户需求描述; children = Task id 引用)。
+
+    feature_id: 所属 Feature (反向引用, 想法→细化→待办链路: 任务→story→feature
+    溯源 + 细化完成自动转 refined; 旧数据缺省 "" 兼容)。
+    """
 
     id: str
     name: str
     description: str = ""
+    feature_id: str = ""
     children: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)

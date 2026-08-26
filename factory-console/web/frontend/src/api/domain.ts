@@ -260,7 +260,13 @@ function toModuleNode(
     .map((id) => storyIndex.get(id))
     .filter((s): s is BacklogStory => s != null)
     .map((story) => toStoryNode(story, taskIndex));
-  return buildAggregateNode(feature.id, feature.name, 'module', weighted);
+  const node = buildAggregateNode(feature.id, feature.name, 'module', weighted);
+  // 想法→细化→待办链路: 模块成熟度透传 (idea → 💡 想法 / refined → 📦 正式)
+  const maturity = String(feature.maturity ?? 'refined').trim().toLowerCase();
+  if (maturity === 'idea') {
+    node.node.maturity = 'idea';
+  }
+  return node;
 }
 
 /** Story → task 节点 (状态从子 Task 聚合, 规则 §3.4; children = Task 执行单元)。

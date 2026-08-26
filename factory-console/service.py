@@ -3623,8 +3623,13 @@ class ConsoleService:
         name: str,
         description: str = "",
         epic_id: str = "",
+        maturity: str = "refined",
     ) -> dict[str, Any] | None:
-        """POST /backlog/feature — 创建 Feature (可选绑定 Epic)。"""
+        """POST /backlog/feature — 创建 Feature (可选绑定 Epic; maturity=idea|refined)。
+
+        想法→细化→待办链路 (Founder 2026-08-26): maturity=idea 建"想法模块"
+        (树里 💡 显示, 会话细化后转 refined)。
+        """
         mgmt = self._management_store(project_id)
         if mgmt is None:
             return None
@@ -3639,6 +3644,7 @@ class ConsoleService:
             id=new_id("FEAT"),
             name=cleaned,
             description=str(description or "").strip(),
+            maturity=maturity,
         )
         bound_epic = str(epic_id or "").strip()
         if bound_epic:
@@ -3657,6 +3663,57 @@ class ConsoleService:
         result = feature.to_dict()
         result["epic_id"] = bound_epic
         return result
+
+    def get_feature(self, project_id: str, feature_id: str) -> dict[str, Any] | None:
+        """GET Feature 详情 (不存在 → BacklogNotFoundError; 会话锚定/前端展示用)。"""
+        mgmt = self._management_store(project_id)
+        if mgmt is None:
+            return None
+        feature = mgmt.get_feature(feature_id)
+        if feature is None:
+            raise BacklogNotFoundError(f"feature not found: {feature_id}")
+        return feature.to_dict()
+
+    def update_feature(
+        self,
+        project_id: str,
+        feature_id: str,
+        *,
+        name: Any = None,
+        description: Any = None,
+        maturity: Any = None,
+    ) -> dict[str, Any] | None:
+        """PATCH /backlog/feature/{id} — 改名/描述/成熟度 (idea↔refined; 非法 → 400)。"""
+        mgmt = self._management_store(project_id)
+        if mgmt is None:
+            return None
+        feature = mgmt.get_feature(feature_id)
+        if feature is None:
+            raise BacklogNotFoundError(f"feature not found: {feature_id}")
+        self._mount_org()
+        from org.management import Feature
+        from org.models import utcnow
+
+        updates: dict[str, Any] = {}
+        if name is not None:
+            cleaned = str(name).strip()
+            if not cleaned:
+                raise ValueError("name is required (空名字不落库)")
+            updates["name"] = cleaned
+        if description is not None:
+            updates["description"] = str(description)
+        if maturity is not None:
+            val = str(maturity).strip().lower()
+            if val not in ("idea", "refined"):
+                raise ValueError(
+                    f"invalid feature maturity: {maturity!r} (idea|refined)"
+                )
+            updates["maturity"] = val
+        if not updates:
+            raise ValueError("nothing to update (empty patch)")
+        updated = feature.model_copy(update={**updates, "updated_at": utcnow()})
+        mgmt.save_feature(updated)
+        return updated.to_dict()
 
     def create_story(
         self,
@@ -3687,6 +3744,8 @@ class ConsoleService:
             feature = mgmt.get_feature(bound_feature)
             if feature is None:
                 raise BacklogNotFoundError(f"feature not found: {bound_feature}")
+            # 反向引用 (任务→story→feature 溯源 + 细化自动转 refined)
+            story = story.model_copy(update={"feature_id": bound_feature})
             mgmt.save_feature(
                 feature.model_copy(
                     update={
@@ -3756,10 +3815,56 @@ class ConsoleService:
                     }
                 )
             )
+            # 想法→细化→待办链路: Feature 下出现 Task → idea 自动转 refined
+            self._refine_feature_if_idea(mgmt, story)
         mgmt.save_task(task)
         result = task.to_dict()
         result["story_id"] = bound_story
         return result
+
+    def _refine_feature_if_idea(self, mgmt: Any, story: Any) -> None:
+        """Feature.maturity idea → refined (Feature 下已有 Task = 已细化)。"""
+        fid = str(getattr(story, "feature_id", "") or "").strip()
+        if not fid:
+            # 旧数据无反向引用 → 反查 feature.children 兜底
+            for feature in mgmt.list_features():
+                if story.id in (feature.children or []):
+                    fid = feature.id
+                    break
+        if not fid:
+            return
+        feature = mgmt.get_feature(fid)
+        if feature is None or feature.maturity != "idea":
+            return
+        from org.models import utcnow
+
+        mgmt.save_feature(
+            feature.model_copy(update={"maturity": "refined", "updated_at": utcnow()})
+        )
+
+    def ensure_story_for_feature(
+        self, project_id: str, feature_id: str, *, name: str = ""
+    ) -> str | None:
+        """会话细化链路: 找 Feature 下已有 Story (复用第一个), 无 → 自动建一个。
+
+        返回 story_id; 项目/Feature 不存在 → None (调用方诚实反馈)。
+        """
+        mgmt = self._management_store(project_id)
+        if mgmt is None:
+            return None
+        feature = mgmt.get_feature(feature_id)
+        if feature is None:
+            return None
+        if feature.children:
+            first = feature.children[0]
+            if mgmt.get_story(first) is not None:
+                return first
+        created = self.create_story(
+            project_id,
+            name=str(name or "").strip() or feature.name or "细化任务",
+            feature_id=feature_id,
+        )
+        return created["id"] if created else None
 
     def _legacy_tasks(self, project_id: str) -> dict[str, Any] | None:
         """legacy tasks.json (projects/<id>/tasks.json) → backlog 树 (阶段→模块→任务)。

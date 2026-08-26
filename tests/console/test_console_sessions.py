@@ -86,6 +86,31 @@ class TestSessionStore:
         with pytest.raises(ValueError):
             store.update_session(s["id"], status="bogus")
 
+    # ---- 想法→细化→待办链路 (v1.1.144): 模块锚点 feature_id ----
+    def test_create_session_with_feature_anchor(self, tmp_path):
+        store = _sessions.SessionStore(tmp_path / "console_sessions.json")
+        s = store.create_session(scope="project", project_id="P-1", feature_id="FEAT-1")
+        assert s["feature_id"] == "FEAT-1"
+        s2 = store.create_session(scope="project", project_id="P-1")
+        assert s2["feature_id"] is None
+
+    def test_list_sessions_filter_feature(self, tmp_path):
+        store = _sessions.SessionStore(tmp_path / "console_sessions.json")
+        store.create_session(scope="project", project_id="P-1", feature_id="FEAT-1", title="细化A")
+        store.create_session(scope="project", project_id="P-1", feature_id="FEAT-2", title="细化B")
+        store.create_session(scope="project", project_id="P-1", title="项目级")
+        got = store.list_sessions(scope="project", feature_id="FEAT-1")
+        assert [s["title"] for s in got] == ["细化A"]
+
+    def test_update_session_feature_anchor(self, tmp_path):
+        store = _sessions.SessionStore(tmp_path / "console_sessions.json")
+        s = store.create_session(scope="project", project_id="P-1", feature_id="FEAT-1")
+        upd = store.update_session(s["id"], feature_id="FEAT-2")
+        assert upd["feature_id"] == "FEAT-2"
+        # None = 不修改 (API 惯例: 未提供字段不更新)
+        upd2 = store.update_session(s["id"], title="改名")
+        assert upd2["feature_id"] == "FEAT-2"
+
     def test_append_messages_and_auto_title(self, tmp_path):
         store = _sessions.SessionStore(tmp_path / "console_sessions.json")
         s = store.create_session(scope="company")

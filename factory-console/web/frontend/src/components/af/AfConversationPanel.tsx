@@ -77,7 +77,9 @@ export function AfConversationPanel({ projectId, projectName }: AfConversationPa
 
   const scopeLabel =
     ctx.scope === 'project'
-      ? `📁 项目 · ${projectName ?? ctx.projectId ?? '—'}`
+      ? ctx.featureId != null && ctx.featureName != null
+        ? `📁 项目 · ${projectName ?? ctx.projectId ?? '—'} · 💡 ${ctx.featureName}`
+        : `📁 项目 · ${projectName ?? ctx.projectId ?? '—'}`
       : '🏢 公司 · 全局';
 
 

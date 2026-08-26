@@ -231,22 +231,25 @@ class _ChatBody(BaseModel):
 
 
 class _SessionBody(BaseModel):
-    """POST /api/sessions body (K-7e 会话栏)。
+    """POST /api/sessions body (K-7e + 想法→细化→待办链路)。
 
     {scope}: company|project; project 会话必须带 project_id; title 可选
-    (缺省 "新会话", 首条消息后自动取消息前缀)。
+    (缺省 "新会话", 首条消息后自动取消息前缀); feature_id 可选 — 模块级
+    锚点 (点想法模块「和 AI 讨论」→ 会话细化该模块, create_task 自动绑定)。
     """
 
     scope: str
     project_id: str | None = None
     title: str | None = None
+    feature_id: str | None = None
 
 
 class _SessionPatchBody(BaseModel):
-    """PATCH /api/sessions/{id} body (K-7e): {title?, status?} 改名/归档/恢复。"""
+    """PATCH /api/sessions/{id} body (K-7e): {title?, status?, feature_id?}。"""
 
     title: str | None = None
     status: str | None = None
+    feature_id: str | None = None
 
 
 class _LlmConfigBody(BaseModel):
@@ -341,15 +344,29 @@ class _EpicBody(BaseModel):
 
 
 class _FeatureBody(BaseModel):
-    """POST /api/projects/{id}/backlog/feature body (S10-010 Task 3)。
+    """POST /api/projects/{id}/backlog/feature body (S10-010 Task 3 + 想法链路)。
 
-    {name, description?, epic_id?}: epic_id 可选绑定 (宽松 — 提供时校验
-    Epic 存在 → 不存在 404; 绑定 = epic.children 追加引用, 非包含)。
+    {name, description?, epic_id?, maturity?}: epic_id 可选绑定 (宽松 — 提供时校验
+    Epic 存在 → 不存在 404; 绑定 = epic.children 追加引用, 非包含);
+    maturity idea|refined (默认 refined; idea = 想法模块 💡, 会话细化后转 refined)。
     """
 
     name: str
     description: str = ""
     epic_id: str = ""
+    maturity: str = "refined"
+
+
+class _FeaturePatchBody(BaseModel):
+    """PATCH /api/projects/{id}/backlog/feature/{feature_id} body (想法链路)。
+
+    {name?, description?, maturity?}: maturity idea↔refined (非法 → 400);
+    空 name → 400; 全空 → 400 (无事可做, 诚实拒绝)。
+    """
+
+    name: str | None = None
+    description: str | None = None
+    maturity: str | None = None
 
 
 class _StoryBody(BaseModel):
@@ -774,6 +791,30 @@ def _safe_ping(src: Any) -> bool:
         return bool(src.ping()) if hasattr(src, "ping") else False
     except Exception:  # noqa: BLE001 — 失败安全
         return False
+
+
+def _feature_facts(service: Any, project_id: str, feature: dict[str, Any]) -> str:
+    """模块事实卡 (想法→细化→待办链路): 名称/成熟度/描述/已有 Story·Task。"""
+    lines = [f"- 模块: {feature.get('name') or '未命名'}"]
+    maturity = str(feature.get("maturity") or "refined")
+    lines.append(f"- 成熟度: {'💡 想法 (未细化)' if maturity == 'idea' else '📦 正式 (已细化)'}")
+    if feature.get("description"):
+        lines.append(f"- 描述: {feature['description']}")
+    try:
+        backlog = service.list_backlog(project_id) or {}
+        story_ids = set(feature.get("children") or [])
+        task_ids: set[str] = set()
+        for st in backlog.get("stories", []):
+            if st.get("id") in story_ids:
+                task_ids.update(st.get("children") or [])
+        tasks = [t for t in backlog.get("tasks", []) if t.get("id") in task_ids]
+    except Exception:  # noqa: BLE001 — 任务清单失败 → 省略
+        tasks = []
+    if tasks:
+        lines.append(f"- 已有任务 ({len(tasks)}): " + "、".join(t.get("title", "") for t in tasks[:8]))
+    else:
+        lines.append("- 已有任务: 暂无 (待细化)")
+    return "\n".join(lines)
 
 
 def build_app(
@@ -1631,6 +1672,28 @@ def build_app(
                 name=body.name,
                 description=body.description,
                 epic_id=body.epic_id,
+                maturity=body.maturity,
+                logger=event_logger,
+            )
+        except Exception as exc:
+            _raise_backlog_error(exc)
+        if feature is None:
+            raise HTTPException(status_code=404, detail="project not found")
+        return feature
+
+    @app.patch("/api/projects/{project_id}/backlog/feature/{feature_id}")
+    def api_patch_backlog_feature(
+        project_id: str, feature_id: str, body: _FeaturePatchBody
+    ) -> dict[str, Any]:
+        """PATCH Feature — 改名/描述/成熟度 (idea↔refined; 非法 → 400/404)。"""
+        try:
+            feature = _api.update_feature(
+                service,
+                project_id,
+                feature_id,
+                name=body.name,
+                description=body.description,
+                maturity=body.maturity,
                 logger=event_logger,
             )
         except Exception as exc:
@@ -2948,7 +3011,10 @@ def build_app(
         """新建会话 (K-7e): {scope, project_id?, title?}。"""
         try:
             return sessions_store.create_session(
-                scope=body.scope, project_id=body.project_id, title=body.title
+                scope=body.scope,
+                project_id=body.project_id,
+                title=body.title,
+                feature_id=body.feature_id,
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -2958,7 +3024,10 @@ def build_app(
         """更新会话 (K-7e): {title?, status?} — 改名/归档/恢复。"""
         try:
             updated = sessions_store.update_session(
-                session_id, title=body.title, status=body.status
+                session_id,
+                title=body.title,
+                status=body.status,
+                feature_id=body.feature_id,
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -3042,16 +3111,39 @@ def build_app(
                 )
                 action_target = {"url": "#/workspace/projects", "label": "查看项目列表"}
             else:
+                # 想法→细化→待办链路: 会话锚定模块 (feature_id) → 任务绑定到该模块
+                feature_id = str(session.get("feature_id") or "").strip()
+                bound_story = ""
+                bound_feature = None
+                try:
+                    if feature_id:
+                        bound_feature = service.get_feature(tgt.id, feature_id)
+                        if bound_feature is not None:
+                            bound_story = (
+                                service.ensure_story_for_feature(tgt.id, feature_id) or ""
+                            )
+                except Exception:  # noqa: BLE001 — 绑定失败 → 不阻断 (回退孤儿, 诚实标注)
+                    bound_feature = None
                 try:
                     created = _api.create_task(
-                        service, tgt.id, title=str(task)[:80], description=body.message, priority="P2"
+                        service,
+                        tgt.id,
+                        title=str(task)[:80],
+                        description=body.message,
+                        priority="P2",
+                        story_id=bound_story,
                     )
                 except Exception:  # noqa: BLE001 — 创建失败 → 诚实反馈
                     created = None
                 if created is not None:
+                    location = (
+                        f" (模块: {bound_feature.get('name')})"
+                        if bound_feature is not None
+                        else " (未绑定模块 — 任务在项目级待办)"
+                    )
                     facts = (
-                        f"任务已创建: {created.get('title')} (id: {created.get('id')}, 项目: {tgt.name}, "
-                        "优先级: P2)。将由执行链按流程处理。"
+                        f"任务已创建: {created.get('title')} (id: {created.get('id')}, "
+                        f"项目: {tgt.name}{location}, 优先级: P2)。已进入待办树。"
                     )
                     action_target = {"url": f"#/project/{tgt.id}/todo", "label": f"查看{tgt.name}任务"}
                 else:
@@ -3116,6 +3208,17 @@ def build_app(
             system_line=system_line,
             hint_project=hint_project,
         )
+        # 想法→细化→待办链路: 会话锚定模块 → 注入模块事实卡 (LLM 讨论/细化有据)
+        feature_id = str(session.get("feature_id") or "").strip()
+        project_id = session.get("project_id")
+        if feature_id and project_id:
+            try:
+                feature = service.get_feature(project_id, feature_id)
+                if feature is not None:
+                    module_facts = _feature_facts(service, project_id, feature)
+                    facts = f"{facts}\n\n【当前细化模块】\n{module_facts}"
+            except Exception:  # noqa: BLE001 — 模块事实失败 → 不注入 (诚实降级)
+                pass
         if intent.get("intent") == "system_status":
             reply_extra = _qmod.SYSTEM_STATUS_OUTPUT_PROMPT
         else:

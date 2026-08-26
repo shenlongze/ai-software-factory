@@ -50,6 +50,12 @@ export interface AfTodoTreeProps {
   taskMeta?: Record<string, TaskMeta>;
   /** 点击任务节点回调 (taskId; Context Panel 联动, Task 006)。 */
   onSelectTask?: (taskId: string) => void;
+  /** 想法→细化→待办链路 (v1.1.144): 新建想法模块 (maturity=idea)。 */
+  onCreateFeature?: () => void;
+  /** 点想法模块「和 AI 讨论」→ 会话锚定该模块 (细化)。 */
+  onDiscussFeature?: (featureId: string, featureName: string) => void;
+  /** 想法模块「转为正式」(maturity idea→refined)。 */
+  onRefineFeature?: (featureId: string) => void;
 }
 
 /** 过滤选项 (§4.6: [全部][执行中][阻塞][待审核][失败] — 待办/完成不进过滤, 全量可见)。 */
@@ -87,6 +93,10 @@ function visibleUnderFilter(node: TreeNode, filter: 'all' | DomainStatus): boole
     if (filter === 'all') return true;
     return node.status === filter;
   }
+  // 空分支 (想法模块 💡 / 空 Epic): "全部"下可见 — 想法不能丢 (想法→细化→待办链路)
+  if (node.children.length === 0) {
+    return filter === 'all';
+  }
   return node.children.some((child) => visibleUnderFilter(child, filter));
 }
 
@@ -111,7 +121,14 @@ export function hasTaskNodes(node: TreeNode): boolean {
   return node.children.some(hasTaskNodes);
 }
 
-export function AfTodoTree({ tree, taskMeta = {}, onSelectTask }: AfTodoTreeProps): JSX.Element {
+export function AfTodoTree({
+  tree,
+  taskMeta = {},
+  onSelectTask,
+  onCreateFeature,
+  onDiscussFeature,
+  onRefineFeature,
+}: AfTodoTreeProps): JSX.Element {
   const root = tree.root;
   // 归档区按完成时间倒序 (最近完成最前; 无 completedAt → 排最后, 诚实降级)
   const doneTasks = collectDoneTasks(root).sort((a, b) => {
@@ -124,8 +141,8 @@ export function AfTodoTree({ tree, taskMeta = {}, onSelectTask }: AfTodoTreeProp
   const [filter, setFilter] = useState<'all' | DomainStatus>('all');
   const [showArchive, setShowArchive] = useState(false);
 
-  // 空树 / 无任何任务 → AfEmptyState (禁空白; 用户刚建项目, AI 正在规划)
-  if (root.children.length === 0 || !hasTaskNodes(root)) {
+  // 空 backlog (无任何阶段) → AfEmptyState; 有想法模块/空分支 → 渲染树 (想法不能丢)
+  if (root.children.length === 0) {
     return (
       <AfEmptyState message="暂无任务 — AI 正在规划" hint="Backlog 生成后将在此展示阶段 → 模块 → 任务进度树" />
     );
@@ -157,6 +174,16 @@ export function AfTodoTree({ tree, taskMeta = {}, onSelectTask }: AfTodoTreeProp
         <button type="button" className="af-btn af-tree-btn" onClick={collapseAll}>
           全折叠
         </button>
+        {onCreateFeature != null ? (
+          <button
+            type="button"
+            className="af-btn af-tree-btn"
+            data-testid="af-tree-create-feature"
+            onClick={onCreateFeature}
+          >
+            ＋ 新建模块
+          </button>
+        ) : null}
         {doneTasks.length > 0 ? (
           <button
             type="button"
@@ -215,6 +242,8 @@ export function AfTodoTree({ tree, taskMeta = {}, onSelectTask }: AfTodoTreeProp
               taskMeta={taskMeta}
               onSelectTask={onSelectTask}
               onToggle={toggle}
+              onDiscussFeature={onDiscussFeature}
+              onRefineFeature={onRefineFeature}
             />
           ))
         )}
@@ -283,6 +312,8 @@ interface TreeNodeRowProps {
   taskMeta: Record<string, TaskMeta>;
   onSelectTask?: (taskId: string) => void;
   onToggle: (id: string) => void;
+  onDiscussFeature?: (featureId: string, featureName: string) => void;
+  onRefineFeature?: (featureId: string) => void;
 }
 
 function TreeNodeRow({
@@ -292,12 +323,15 @@ function TreeNodeRow({
   taskMeta,
   onSelectTask,
   onToggle,
+  onDiscussFeature,
+  onRefineFeature,
 }: TreeNodeRowProps): JSX.Element | null {
   if (!visibleUnderFilter(node, filter)) return null;
 
   const hasChildren = node.children.length > 0;
   const isExpanded = !collapsed.has(node.id);
   const isTask = node.type === 'task';
+  const isIdeaModule = node.type === 'module' && node.maturity === 'idea';
   const meta = taskMeta[node.id];
   const priority = meta?.priority;
   const owner = node.owner ?? node.agent ?? meta?.owner;
@@ -352,10 +386,41 @@ function TreeNodeRow({
           <span className="af-tree-toggle af-tree-toggle--spacer" aria-hidden="true" />
         )}
         <span className="af-tree-icon" aria-hidden="true">
-          {TYPE_ICONS[node.type]}
+          {isIdeaModule ? '💡' : TYPE_ICONS[node.type]}
         </span>
         <span className="af-tree-title">{node.title}</span>
+        {isIdeaModule ? (
+          <span className="af-tree-idea-badge" data-testid="af-tree-idea-badge">
+            想法
+          </span>
+        ) : null}
         <AfStatusBadge status={node.status} label={node.statusLabel} />
+        {isIdeaModule && (onDiscussFeature != null || onRefineFeature != null) ? (
+          <span className="af-tree-node-actions" onClick={(e) => e.stopPropagation()}>
+            {onDiscussFeature != null ? (
+              <button
+                type="button"
+                className="af-btn af-tree-btn"
+                data-testid={`af-tree-discuss-${node.id}`}
+                title="和 AI 讨论细化这个模块"
+                onClick={() => onDiscussFeature(node.id, node.title)}
+              >
+                💬 讨论
+              </button>
+            ) : null}
+            {onRefineFeature != null ? (
+              <button
+                type="button"
+                className="af-btn af-tree-btn"
+                data-testid={`af-tree-refine-${node.id}`}
+                title="想法已细化完成, 转为正式模块"
+                onClick={() => onRefineFeature(node.id)}
+              >
+                ✓ 转正式
+              </button>
+            ) : null}
+          </span>
+        ) : null}
         {isTask && priority != null && priority.length > 0 ? (
           <span className={`af-priority af-priority--${priority.toUpperCase()}`} data-testid="af-priority">
             {priority.toUpperCase()}
@@ -390,6 +455,8 @@ function TreeNodeRow({
                 taskMeta={taskMeta}
                 onSelectTask={onSelectTask}
                 onToggle={onToggle}
+                onDiscussFeature={onDiscussFeature}
+                onRefineFeature={onRefineFeature}
               />
             ))}
         </div>

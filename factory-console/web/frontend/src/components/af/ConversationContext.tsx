@@ -40,6 +40,10 @@ function writeFlag(key: string, value: boolean): void {
 export interface ConversationContextValue {
   scope: SessionScope;
   projectId: string | null;
+  /** 模块锚点 (想法→细化→待办链路): 会话细化该模块 (create_task 自动绑定)。 */
+  featureId: string | null;
+  /** 模块锚点名 (作用域指示器显示, 人话)。 */
+  featureName: string | null;
   sessions: SessionSummary[];
   activeId: string | null;
   messages: ChatMessage[];
@@ -49,9 +53,11 @@ export interface ConversationContextValue {
   pinned: boolean;
   setScope: (scope: SessionScope) => void;
   setProjectId: (pid: string | null) => void;
+  setFeatureId: (fid: string | null, name?: string) => void;
   toggleCollapsed: () => void;
   togglePinned: () => void;
-  createSession: (title?: string) => Promise<SessionSummary | null>;
+  openPanel: () => void;
+  createSession: (title?: string, featureId?: string | null) => Promise<SessionSummary | null>;
   selectSession: (id: string) => void;
   renameSession: (id: string, title: string) => void;
   archiveSession: (id: string) => void;
@@ -63,6 +69,8 @@ export interface ConversationContextValue {
 const DEFAULT_CONTEXT: ConversationContextValue = {
   scope: 'company',
   projectId: null,
+  featureId: null,
+  featureName: null,
   sessions: [],
   activeId: null,
   messages: [],
@@ -72,8 +80,10 @@ const DEFAULT_CONTEXT: ConversationContextValue = {
   pinned: false,
   setScope: () => {},
   setProjectId: () => {},
+  setFeatureId: () => {},
   toggleCollapsed: () => {},
   togglePinned: () => {},
+  openPanel: () => {},
   createSession: async () => null,
   selectSession: () => {},
   renameSession: () => {},
@@ -93,11 +103,23 @@ export function ConversationProvider({ children }: { children: ReactNode }): JSX
     }
   });
   const [projectId, setProjectIdState] = useState<string | null>(null);
+  const [featureId, setFeatureIdState] = useState<string | null>(null);
+  const [featureName, setFeatureNameState] = useState<string | null>(null);
   // A 方案 (Founder 2026-08-26): 作用域自动跟随当前视图 — 有项目 → project, 否则 company
   const setProjectId = useCallback((pid: string | null) => {
     setProjectIdState(pid);
+    // 模块锚点属于项目 — 切换项目/回公司时清空 (避免串作用域)
+    setFeatureIdState(null);
+    setFeatureNameState(null);
     const next: SessionScope = pid ? 'project' : 'company';
     setScopeState((prev) => (prev !== next ? next : prev));
+  }, []);
+  const setFeatureId = useCallback((fid: string | null, name?: string) => {
+    setFeatureIdState(fid);
+    setFeatureNameState(fid ? (name ?? null) : null);
+  }, []);
+  const openPanel = useCallback(() => {
+    setCollapsed(false);
   }, []);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -178,12 +200,13 @@ export function ConversationProvider({ children }: { children: ReactNode }): JSX
   }, []);
 
   const createSession = useCallback(
-    async (title?: string): Promise<SessionSummary | null> => {
+    async (title?: string, fid?: string | null): Promise<SessionSummary | null> => {
       try {
         const created = await api.createSession({
           scope,
           project_id: scope === 'project' ? projectId : null,
           title,
+          feature_id: fid !== undefined ? fid : featureId,
         });
         await refresh();
         setActiveId(created.id);
@@ -192,7 +215,7 @@ export function ConversationProvider({ children }: { children: ReactNode }): JSX
         return null;
       }
     },
-    [scope, projectId, refresh],
+    [scope, projectId, featureId, refresh],
   );
 
   const renameSession = useCallback(
@@ -272,6 +295,8 @@ export function ConversationProvider({ children }: { children: ReactNode }): JSX
     () => ({
       scope,
       projectId,
+      featureId,
+      featureName,
       sessions,
       activeId,
       messages,
@@ -281,8 +306,10 @@ export function ConversationProvider({ children }: { children: ReactNode }): JSX
       pinned,
       setScope,
       setProjectId,
+      setFeatureId,
       toggleCollapsed,
       togglePinned,
+      openPanel,
       createSession,
       selectSession,
       renameSession,
@@ -293,6 +320,8 @@ export function ConversationProvider({ children }: { children: ReactNode }): JSX
     [
       scope,
       projectId,
+      featureId,
+      featureName,
       sessions,
       activeId,
       messages,
@@ -302,8 +331,11 @@ export function ConversationProvider({ children }: { children: ReactNode }): JSX
       pinned,
       setScope,
       setProjectId,
+      setFeatureId,
+      setFeatureNameState,
       toggleCollapsed,
       togglePinned,
+      openPanel,
       createSession,
       selectSession,
       renameSession,

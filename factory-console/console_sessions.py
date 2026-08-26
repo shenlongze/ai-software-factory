@@ -155,7 +155,11 @@ class SessionStore:
 
     # ------------------------------------------------------------ 会话
     def list_sessions(
-        self, *, scope: str | None = None, project_id: str | None = None
+        self,
+        *,
+        scope: str | None = None,
+        project_id: str | None = None,
+        feature_id: str | None = None,
     ) -> list[dict[str, Any]]:
         """按作用域过滤; 按 updated_at 倒序 (最近活跃在前)。"""
         with self._lock:
@@ -164,6 +168,8 @@ class SessionStore:
                 if scope is not None and s.get("scope") != scope:
                     continue
                 if project_id is not None and s.get("project_id") != project_id:
+                    continue
+                if feature_id is not None and s.get("feature_id") != feature_id:
                     continue
                 out.append(dict(s))
             out.sort(key=lambda s: s.get("updated_at") or "", reverse=True)
@@ -180,6 +186,7 @@ class SessionStore:
         scope: str,
         project_id: str | None = None,
         title: str | None = None,
+        feature_id: str | None = None,
     ) -> dict[str, Any]:
         if scope not in VALID_SCOPES:
             raise ValueError(f"非法作用域: {scope} (company|project)")
@@ -191,6 +198,7 @@ class SessionStore:
             "id": sid,
             "scope": scope,
             "project_id": project_id if scope == "project" else None,
+            "feature_id": feature_id if scope == "project" else None,
             "title": (title or "").strip() or "新会话",
             "status": "active",
             "created_at": now,
@@ -219,6 +227,7 @@ class SessionStore:
         title: str | None = None,
         status: str | None = None,
         summary: str | None = None,
+        feature_id: str | None = None,
     ) -> dict[str, Any] | None:
         with self._lock:
             s = self._data["sessions"].get(session_id)
@@ -232,6 +241,8 @@ class SessionStore:
                 s["status"] = status
             if summary is not None:
                 s["summary"] = summary
+            if feature_id is not None:
+                s["feature_id"] = feature_id or None
             s["updated_at"] = _now_iso()
             self._save()
             return dict(s)

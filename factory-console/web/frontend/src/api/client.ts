@@ -61,7 +61,7 @@ import {
   type WorkflowDetail,
   type WorkflowSummary,
 } from '../models/types';
-import type { BacklogTask } from '../models/domain';
+import type { BacklogFeature, BacklogTask } from '../models/domain';
 
 export class ApiError extends Error {
   readonly status: number;
@@ -172,6 +172,24 @@ export const api = {
   ) =>
     patchJson<BacklogTask>(
       `/api/projects/${encodeURIComponent(projectId)}/backlog/task/${encodeURIComponent(taskId)}`,
+      changes,
+    ),
+  // 想法→细化→待办链路 (v1.1.144): 模块管理 — 建想法模块 (maturity=idea) / 改名/转正式
+  createBacklogFeature: (
+    projectId: string,
+    body: { name: string; description?: string; epic_id?: string; maturity?: 'idea' | 'refined' },
+  ) =>
+    sendJson<BacklogFeature>(
+      `/api/projects/${encodeURIComponent(projectId)}/backlog/feature`,
+      body,
+    ),
+  updateBacklogFeature: (
+    projectId: string,
+    featureId: string,
+    changes: { name?: string; description?: string; maturity?: 'idea' | 'refined' },
+  ) =>
+    patchJson<BacklogFeature>(
+      `/api/projects/${encodeURIComponent(projectId)}/backlog/feature/${encodeURIComponent(featureId)}`,
       changes,
     ),
   lifecycle: (projectId: string) =>
@@ -426,9 +444,13 @@ export const api = {
     const qs = params.toString();
     return (await getJson<{ items: SessionSummary[] }>(`/api/sessions${qs ? `?${qs}` : ''}`)).items;
   },
-  createSession: (body: { scope: 'company' | 'project'; project_id?: string | null; title?: string }) =>
-    sendJson<SessionSummary>('/api/sessions', body),
-  updateSession: (id: string, body: { title?: string; status?: string }) =>
+  createSession: (body: {
+    scope: 'company' | 'project';
+    project_id?: string | null;
+    title?: string;
+    feature_id?: string | null;
+  }) => sendJson<SessionSummary>('/api/sessions', body),
+  updateSession: (id: string, body: { title?: string; status?: string; feature_id?: string | null }) =>
     patchJson<SessionSummary>(`/api/sessions/${encodeURIComponent(id)}`, body),
   sessionMessages: async (id: string) =>
     (await getJson<{ items: SessionMessage[] }>(`/api/sessions/${encodeURIComponent(id)}/messages`)).items,

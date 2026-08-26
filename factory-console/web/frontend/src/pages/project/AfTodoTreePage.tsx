@@ -21,6 +21,7 @@
 
 import { useState } from 'react';
 import { ApiError, api } from '../../api/client';
+import { useConversation } from '../../components/af/ConversationContext';
 import { AfTodoTree, type TaskMeta } from '../../components/af/AfTodoTree';
 import { AfTaskDetailPanel, type TaskPatch } from '../../components/af/AfTaskDetailPanel';
 import { toTaskDetail, toTodoTree } from '../../api/domain';
@@ -61,6 +62,7 @@ export interface AfTodoTreePageProps {
 export function AfTodoTreePage({ projectId, projectName }: AfTodoTreePageProps): JSX.Element {
   const [retryTick, setRetryTick] = useState(0);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const chat = useConversation();
 
   const { data, error, loading } = useAsync(
     async () => {
@@ -88,6 +90,43 @@ export function AfTodoTreePage({ projectId, projectName }: AfTodoTreePageProps):
     setRetryTick((tick) => tick + 1);
   }
 
+  /** 想法→细化→待办链路: 新建想法模块 (maturity=idea, 挂第一个 Epic; 无 Epic → 提示)。 */
+  async function handleCreateFeature(): Promise<void> {
+    const name = window.prompt('新建模块 (想法): 输入模块名', '');
+    const title = (name ?? '').trim();
+    if (title.length === 0) return;
+    const backlogData = data?.backlog;
+    const firstEpic = backlogData?.epics?.[0];
+    try {
+      await api.createBacklogFeature(projectId, {
+        name: title,
+        ...(firstEpic?.id != null ? { epic_id: firstEpic.id } : {}),
+        maturity: 'idea',
+      });
+      setRetryTick((tick) => tick + 1);
+    } catch (err) {
+      window.alert(`新建模块失败: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  /** 想法→细化→待办链路: 点「和 AI 讨论」→ 会话锚定该模块 (打开会话栏 + 建锚定会话)。 */
+  function handleDiscussFeature(featureId: string, featureName: string): void {
+    chat.setProjectId(projectId);
+    chat.setFeatureId(featureId, featureName);
+    chat.openPanel();
+    void chat.createSession(`细化: ${featureName}`, featureId);
+  }
+
+  /** 想法→细化→待办链路: 想法模块「转为正式」(maturity idea→refined)。 */
+  async function handleRefineFeature(featureId: string): Promise<void> {
+    try {
+      await api.updateBacklogFeature(projectId, featureId, { maturity: 'refined' });
+      setRetryTick((tick) => tick + 1);
+    } catch (err) {
+      window.alert(`转为正式失败: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
   if (loading) {
     return <AfLoadingState label="正在加载任务树…" />;
   }
@@ -108,6 +147,9 @@ export function AfTodoTreePage({ projectId, projectName }: AfTodoTreePageProps):
               tree={data.tree}
               taskMeta={data.meta}
               onSelectTask={setSelectedTaskId}
+              onCreateFeature={handleCreateFeature}
+              onDiscussFeature={handleDiscussFeature}
+              onRefineFeature={handleRefineFeature}
             />
           </div>
           {selectedDetail != null ? (

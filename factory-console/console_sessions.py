@@ -42,9 +42,15 @@ _COMPANY_PROMPT = """你是 AI Factory OS 的 AI 产品经理和技术负责人�
 2. 引导创建项目 (输入想法即可创建)
 3. 发现需求缺口, 协助技术实现
 4. 诚实边界: 只描述 AI Factory 真实支持的能力链路; 不虚构未实现能力;
-   需要真实数据时, 引导用户查看 Web 项目页/开发者控制台, 不猜测。
+   需要真实数据时, 用下面"当前空间事实"里的数据直接回答; 事实里没有的,
+   如实说"待查证"并引导查看 Web 项目页/开发者控制台, 不猜测。
 5. **Web 环境**: 这是图形界面, 没有终端。不要建议用户运行 pwd / ls / project list
    等命令行 —— 引导他们用左侧导航/设置/开发者控制台即可。
+6. **用户问当前有哪些项目 / 重点项目 / 用什么模型时, 直接从事实卡回答**
+   (列出真实项目名, 重点项目带 ⭐), 不要只说"请到某页面查看"。
+
+当前空间事实:
+{facts}
 
 回答简洁、准确、友好, 用中文。当前作用域: 公司 (全局)。
 """
@@ -310,12 +316,14 @@ def send_message(
 
 
 def _build_prompt(session: dict[str, Any], question: str, *, facts: str = "") -> str:
-    """按作用域组装 prompt (公司级 persona / 项目级事实卡)。"""
+    """按作用域组装 prompt (公司级/项目级均注入真实事实卡)。"""
+    fact_block = (facts or "").strip() or (
+        "项目信息暂缺 (不编造)" if session.get("scope") == "project" else "（暂无）"
+    )
     if session.get("scope") == "project":
-        fact_block = (facts or "").strip() or "项目信息暂缺 (不编造)"
         system = _PROJECT_PROMPT.format(facts=fact_block)
     else:
-        system = _COMPANY_PROMPT
+        system = _COMPANY_PROMPT.format(facts=fact_block)
     return f"{system}\n\n用户: {question}"
 
 

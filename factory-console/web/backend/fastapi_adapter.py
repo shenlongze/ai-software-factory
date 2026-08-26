@@ -2876,19 +2876,43 @@ def build_app(
         if session is None:
             raise HTTPException(status_code=404, detail="session not found")
         facts = ""
-        if session.get("scope") == "project" and session.get("project_id"):
-            try:
-                projects = service.list_projects()
-                found = next(
-                    (pp for pp in projects if pp.id == session["project_id"]), None
-                )
-                if found is not None:
-                    facts = (
-                        f"名称: {found.name}\n生命周期: {found.lifecycle_stage or found.status}"
-                        f"\n状态: {found.status}\n进度: {found.progress}"
+        try:
+            projects = service.list_projects()
+        except Exception:  # noqa: BLE001 — 列表失败 → 空 (不编造)
+            projects = []
+        # 当前 LLM 模型 (真实配置, 供"你用什么模型"直接作答)
+        model_line = ""
+        try:
+            _llm_plane_reload(_llm_plane)
+            pid = _llm_plane.selected_provider_id()
+            if pid is not None:
+                sp = _llm_plane.get_provider(pid)
+                if sp is not None:
+                    model_line = (
+                        f"当前 LLM 模型: {_provider_config_view(_llm_plane, sp).get('default_model')} "
+                        f"(provider: {pid})"
                     )
-            except Exception:  # noqa: BLE001 — 事实卡失败 → 不注入 (不编造)
-                facts = ""
+        except Exception:  # noqa: BLE001 — 模型失败 → 不注入
+            model_line = ""
+        if session.get("scope") == "project" and session.get("project_id"):
+            found = next((pp for pp in projects if pp.id == session["project_id"]), None)
+            if found is not None:
+                facts = (
+                    f"名称: {found.name}\n生命周期: {found.lifecycle_stage or found.status}"
+                    f"\n状态: {found.status}\n进度: {found.progress}"
+                )
+            if model_line:
+                facts = f"{facts}\n{model_line}" if facts else model_line
+        else:
+            # 公司级事实卡: 真实项目列表 (含重点项目) + 模型
+            names = [
+                f"{pp.name} (⭐ 重点项目)" if pp.starred else pp.name
+                for pp in projects
+                if not pp.archived
+            ]
+            facts = f"项目列表 ({len(names)} 个): {', '.join(names) if names else '暂无项目'}"
+            if model_line:
+                facts = f"{facts}\n{model_line}"""
         try:
             return _sessions_mod.send_message(
                 sessions_store, session_id, body.message, facts=facts

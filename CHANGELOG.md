@@ -3,7 +3,19 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.204] — 2026-08-27
+
+**WebUI 会话事实卡进度用真实任务统计 (Founder: AI 报 0.0% 但项目已 ~28%)**。
+
+### Fixed
+
+- build_facts chat 意图 (项目级会话「你好」) 兜底事实卡: 进度改用 _project_task_stats
+  真实任务完成率 (原 org p.progress 未启动工作流 = 0, 虚报)
+- 例: 「你好」→「进度: 27% (任务 134: 完成 36 · 执行中 0 · 阻塞 0 · 待办 98)」
+- 测试: 造真实 backlog 断言进度 67% (2/3 done)
+
 ## [v1.1.203] — 2026-08-27
+
 
 **CLI 会话上下文连续 — 普通问答路径补多轮历史 (Founder: 上下文有没有了)**。
 

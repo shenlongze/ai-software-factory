@@ -165,6 +165,21 @@ class TestBuildFacts:
         facts = _qe.build_facts("你好", scope="company", project_id=None, projects=PROJECTS, root=tmp_path)
         assert "旅行记账" in facts  # 兜底项目列表
 
+    def test_chat_project_fact_uses_real_task_progress(self, tmp_path):
+        """v1.1.204: 项目级 chat 事实卡进度用真实任务统计, 不用 org progress=0 (虚报)。"""
+        # 造一个真实 backlog (mgmt task.json)
+        pdir = tmp_path / "workspace" / "projects" / "P-1" / "management" / "backlog"
+        pdir.mkdir(parents=True)
+        (pdir / "task.json").write_text(json.dumps({"tasks": {
+            "T1": {"id": "T1", "title": "a", "status": "done"},
+            "T2": {"id": "T2", "title": "b", "status": "done"},
+            "T3": {"id": "T3", "title": "c", "status": "todo"},
+        }}), encoding="utf-8")
+        proj = [type("P", (), {"id": "P-1", "name": "测试项目", "lifecycle_stage": "development", "progress": 0.0})()]
+        facts = _qe.build_facts("你好", scope="project", project_id="P-1", projects=proj, root=tmp_path)
+        assert "进度: 67%" in facts  # 2/3 done — 真实任务, 不是 0.0
+        assert "完成 2" in facts
+
 
 class TestStandardOutput:
     def test_reply_extra_injected(self, tmp_path):

@@ -327,7 +327,15 @@ def build_facts(
         if scope == "project" and project_id:
             p = next((pp for pp in projects if pp.id == project_id), None)
             if p is not None:
-                return f"名称: {p.name}\n生命周期: {_stage(p)}\n进度: {p.progress}"
+                # v1.1.204: 进度用真实任务统计 (org p.progress 未启动工作流 = 0, 会虚报)
+                stats = _project_task_stats(root, str(getattr(p, "id", "") or ""))
+                if stats:
+                    return (
+                        f"名称: {p.name}\n生命周期: {_stage(p)}\n进度: {stats['pct']}% "
+                        f"(任务 {stats['total']}: 完成 {stats['done']} · 执行中 {stats['running']} · "
+                        f"阻塞 {stats['blocked']} · 待办 {stats['todo']})"
+                    )
+                return f"名称: {p.name}\n生命周期: {_stage(p)}\n进度: {getattr(p, 'progress', None) or 0}"
         return f"项目列表: {', '.join(pp.name for pp in projects) if projects else '暂无项目'}"
 
     # 项目归属: LLM 意图的项目名优先 → 提问匹配 → 项目级会话当前项目

@@ -388,32 +388,36 @@ class TestConflictResolverDecision:
         r = CONF.ConflictResolver()
         assert r.classify([{"task_a": "T1", "task_b": "T2", "file": "x.py"}]) == "SERIALIZE"
 
-    def test_execution_decision_no_conflict(self):
-        r = CONF.ConflictResolver()
+    def _resolver(self, tmp_path):
+        # resolution_file 注入 tmp 隔离 — 绝不写真实 ~/.factory (测试隔离铁律)
+        return CONF.ConflictResolver(resolution_file=tmp_path / "cr.json")
+
+    def test_execution_decision_no_conflict(self, tmp_path):
+        r = self._resolver(tmp_path)
         r.resolve([], [{"id": "T1"}])
         d = r.execution_decision()
         assert d["decision"] == "NO_CONFLICT"
 
-    def test_execution_decision_serialize(self):
-        r = CONF.ConflictResolver()
+    def test_execution_decision_serialize(self, tmp_path):
+        r = self._resolver(tmp_path)
         r.resolve([{"task_a": "T1", "task_b": "T2", "file": "main.py"}], [{"id": "T1"}, {"id": "T2"}])
         d = r.execution_decision()
         assert d["decision"] == "SERIALIZE"
 
-    def test_execution_decision_reason(self):
-        r = CONF.ConflictResolver()
+    def test_execution_decision_reason(self, tmp_path):
+        r = self._resolver(tmp_path)
         r.resolve([{"task_a": "T1", "task_b": "T2", "file": "main.py"}], [{"id": "T1"}, {"id": "T2"}])
         d = r.execution_decision()
         assert "main.py" in d["reason"]
 
-    def test_execution_decision_conflicting(self):
-        r = CONF.ConflictResolver()
+    def test_execution_decision_conflicting(self, tmp_path):
+        r = self._resolver(tmp_path)
         r.resolve([{"task_a": "T1", "task_b": "T2", "file": "main.py"}], [{"id": "T1"}, {"id": "T2"}])
         d = r.execution_decision()
         assert d.get("conflicting_tasks")
 
-    def test_execution_decision_strategy(self):
-        r = CONF.ConflictResolver()
+    def test_execution_decision_strategy(self, tmp_path):
+        r = self._resolver(tmp_path)
         r.resolve([{"task_a": "T1", "task_b": "T2", "file": "main.py"}], [{"id": "T1"}, {"id": "T2"}])
         d = r.execution_decision()
         assert "strategy" in d or "reason" in d

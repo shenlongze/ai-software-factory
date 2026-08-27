@@ -130,6 +130,8 @@ def tool_schemas(data_dir: str | Path | None = None) -> list[dict[str, Any]]:
                      "properties": {"title": {"type": "string"}, "priority": {"type": "string"}}}}}),
         _fc("chain_next", "推进下一个任务", "执行链逐任务推进: 委派执行→验证→回写", {}),
         _fc("chain_status", "执行链进度", "查询当前执行链进度 (完成数/当前任务)", {}),
+        _fc("knowledge_search", "知识检索", "在项目文档中检索知识点/历史结论, 返回片段+来源 (跨会话记忆/项目知识)",
+            {"query": {"type": "string"}}, ["query"]),
     ]
     if data_dir is not None:
         try:
@@ -383,6 +385,24 @@ def dispatch(
                 project_id=project_id,
                 skills=[str(x) for x in (args.get("skills") or []) if str(x).strip()],
             )
+        if tool_id == "knowledge_search":
+            try:
+                from ..retrieval.knowledge_store import rag_query
+
+                query = str(args.get("query") or "").strip()
+                if not query:
+                    return {"ok": False, "error": "需要 query"}
+                hits, _stats = rag_query(root, project_id, query, top_k=5)
+                if not hits:
+                    return {"ok": True, "output": "知识检索未命中 (项目文档中无相关内容)"}
+                lines = [f"知识检索命中 {len(hits)} 条:"]
+                for h in hits[:5]:
+                    src = str(getattr(h, "source", "") or getattr(h, "doc", "") or "")
+                    frag = str(getattr(h, "fragment", "") or getattr(h, "text", "") or "")[:200]
+                    lines.append(f"- [{src}] {frag}")
+                return {"ok": True, "output": "\n".join(lines)}
+            except Exception as exc:  # noqa: BLE001 — 检索失败 → 诚实
+                return {"ok": False, "error": f"知识检索失败: {exc}"}
         if tool_id == "chain_start":
             from .exec_state import ExecState
 
@@ -528,6 +548,15 @@ def run_agent_native(
                 f"用户质疑的上一轮回答: {last_ai[:800]}\n"
                 "请重新查询真实数据验证, 然后诚实承认错误或给出修正。"
             )})
+    # 跨会话记忆注入 (S-4): 项目级记忆 → 上下文 ("继续上次"可接上)
+    try:
+        from .project_memory import MemoryStore
+
+        _mem_block = MemoryStore.load(data_dir, project_id).inject_block()
+        if _mem_block:
+            messages.append({"role": "system", "content": _mem_block})
+    except Exception:  # noqa: BLE001 — 记忆不可用不阻断
+        pass
     calls: list[dict[str, Any]] = []
     ctx: dict[str, Any] = {"session_store": session_store, "session_id": session_id,
                            "pending_plan": None, "intent": intent}

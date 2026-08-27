@@ -323,4 +323,4 @@ def test_pyproject_version_bumped():
     ver = tomllib.loads((_ROOT / "pyproject.toml").read_text(encoding="utf-8"))[
         "project"
     ]["version"]
-    assert ver == "1.1.218"
+    assert ver == "1.1.219"

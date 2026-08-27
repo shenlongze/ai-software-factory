@@ -3925,7 +3925,15 @@ def build_app(
                     try:
                         _tl.append("assistant", str(agent_result.get("answer") or "")[:2000])
                         _tl.save(workspace_root or DEFAULT_ROOT)
-                    except Exception:  # noqa: BLE001 — 账本失败不阻断回复
+                        # S-4 跨会话记忆: 当前话题摘要写入项目记忆 (去重, 可审计)
+                        _mem = _console_import("session.project_memory").MemoryStore.load(
+                            workspace_root or DEFAULT_ROOT, str(session.get("project_id") or ""))
+                        _cur = _tl._active()
+                        if _cur and _cur.get("summary"):
+                            _mem.add(f"话题[{_cur.get('label')}]: {str(_cur.get('summary'))[:200]}",
+                                     source="session")
+                        _mem.save(workspace_root or DEFAULT_ROOT)
+                    except Exception:  # noqa: BLE001 — 账本/记忆失败不阻断回复
                         pass
                 # 新计划 → 存待审批
                 for c in calls:

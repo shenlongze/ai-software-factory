@@ -1025,3 +1025,64 @@ class TestSessionEval:
         r = ej.run_eval(lambda q: "chat")
         assert r["total"] >= 12
         assert r["ok"] is False  # 全 chat 不通过 (诚实)
+
+
+class TestProjectMemory:
+    """S-4 跨会话记忆: 存储/去重/注入/持久化。"""
+
+    def test_memory_add_recent_dedup(self, tmp_path):
+        from factory_console.session import project_memory as pm
+
+        mem = pm.MemoryStore("P-1")
+        mem.add("已定: 用 Flutter 做记账App", source="session")
+        mem.add("已定: 用 Flutter 做记账App", source="session")  # 去重
+        mem.add("用户偏好深色主题", source="session")
+        assert len(mem.entries) == 2
+        rec = mem.recent(1)
+        assert rec[0]["text"] == "用户偏好深色主题"  # 最新在前
+        block = mem.inject_block()
+        assert "项目历史记忆" in block and "Flutter" in block
+
+    def test_memory_persist_roundtrip(self, tmp_path):
+        from factory_console.session import project_memory as pm
+
+        mem = pm.MemoryStore("P-1")
+        mem.add("结论: 先做登录", source="session")
+        mem.save(tmp_path)
+        loaded = pm.MemoryStore.load(tmp_path, "P-1")
+        assert loaded.entries[0]["text"] == "结论: 先做登录"
+
+    def test_memory_injected_into_new_session(self, tmp_path, monkeypatch):
+        """新会话 (跨会话) 注入项目记忆 — "继续上次"可接上。"""
+        from factory_console.session import project_memory as pm
+
+        mem = pm.MemoryStore("P-1")
+        mem.add("上次进展: 登录接口已完成, 下一步 JWT 鉴权", source="session")
+        mem.save(tmp_path)
+        monkeypatch.setattr(_ag, "understand_intent", lambda message, **kw: _intent("develop"))
+        seen: dict = {}
+
+        def fake_call(messages, tools, **kw):
+            seen["sys"] = [m["content"] for m in messages if m["role"] == "system"]
+            return {"content": "好的", "tool_calls": []}
+
+        monkeypatch.setattr(_ag, "call_with_tools", fake_call)
+        _ag.run_agent_native("继续做", data_dir=tmp_path, project_id="P-1")
+        joined = "\n".join(seen["sys"])
+        assert "项目历史记忆" in joined
+        assert "JWT 鉴权" in joined  # 上次进展可见
+
+    def test_knowledge_search_tool(self, tmp_path, monkeypatch):
+        """knowledge_search: 项目知识检索进工具面 + dispatch。"""
+        ids = {t["function"]["name"] for t in _ag.tool_schemas(tmp_path)}
+        assert "knowledge_search" in ids
+        # stub rag_query 返回命中
+        class _Hit:
+            source = "docs/prd.md"
+            fragment = "登录需要 JWT 鉴权"
+
+        import factory_console.retrieval.knowledge_store as ks
+        monkeypatch.setattr(ks, "rag_query", lambda root, pid, q, top_k=5: ([_Hit()], {}))
+        r = _ag.dispatch("knowledge_search", {"query": "JWT"}, root=tmp_path, project_id="P-1")
+        assert r["ok"] is True
+        assert "JWT 鉴权" in r["output"] and "docs/prd.md" in r["output"]

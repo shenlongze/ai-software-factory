@@ -85,6 +85,9 @@ class TestRunAgentNative:
     def test_tool_call_loop_and_answer(self, tmp_path, monkeypatch):
         plan = {"goal": "登录", "tasks": [{"title": "注册接口", "priority": "P0"}],
                 "order": ["注册接口"], "acceptance": ["自测通过"], "ask_approval": True}
+        # 意图门固定为 develop (避免消费 call_with_tools stub)
+        monkeypatch.setattr(_ag, "understand_intent",
+                            lambda message, **kw: _intent("develop", summary=message))
         # plan_development 内部不再走 call_with_tools (确定性 stub)
         monkeypatch.setattr(_ag, "plan_development", lambda goal, detail, **kw: plan)
         responses = [
@@ -170,6 +173,9 @@ class TestHardConvergence:
     def test_hard_stop_at_tool_limit(self, tmp_path, monkeypatch):
         loop_rounds = []
         final_round = []
+        # 意图门固定为 question (避免意图理解消费 tools=None 分支)
+        monkeypatch.setattr(_ag, "understand_intent",
+                            lambda message, **kw: _intent("question"))
 
         def fake_call(messages, tools, **kw):
             if tools is None:
@@ -193,6 +199,8 @@ class TestHardConvergence:
         assert r["answer"] and "登录" in r["answer"]
 
     def test_insufficient_info_asks_clarification(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(_ag, "understand_intent",
+                            lambda message, **kw: _intent("question"))
         def fake_call(messages, tools, **kw):
             if tools is None:
                 return {"content": "我还需要澄清: 你要做的是 App 还是 Web? 目标用户是谁?",
@@ -210,6 +218,8 @@ class TestHardConvergence:
 
     def test_round_limit_also_forces_convergence(self, tmp_path, monkeypatch):
         """未达工具上限但轮数用尽 → 同样强制收敛 (每轮 1 个工具, max_rounds=3)。"""
+        monkeypatch.setattr(_ag, "understand_intent",
+                            lambda message, **kw: _intent("question"))
         def fake_call(messages, tools, **kw):
             if tools is None:
                 return {"content": "好的, 已确认项目状态。", "tool_calls": []}
@@ -223,3 +233,118 @@ class TestHardConvergence:
         # 3 轮 × 1 工具 = 3 < 6, 但轮数用尽 → 强制收敛轮已跑
         assert len(r["calls"]) == 3
         assert r["answer"] == "好的, 已确认项目状态。"
+
+
+
+def _intent(intent: str, **over: Any) -> dict[str, Any]:
+    """测试用固定意图结构。"""
+    d = {"intent": intent, "target": {"type": "project", "id": None}, "need": "info",
+         "emotion": "neutral", "summary": "测试意图", "followup": None, "source": "stub"}
+    d.update(over)
+    return d
+
+
+class TestIntentCore:
+    """IntentCore: 真正 get 用户意图 (LLM 结构化 + 规则兜底), 不堆关键词。"""
+
+    def test_understand_intent_llm_json(self):
+        intent = _ag.understand_intent(
+            "把登录功能做完，包括注册和 JWT",
+            llm_fn=lambda p: ('{"intent": "develop", "target": {"type": "project", "id": "P-1"}, '
+                              '"need": "creation", "emotion": "neutral", '
+                              '"summary": "用户要做登录+注册+JWT", "followup": null}'),
+        )
+        assert intent["intent"] == "develop"
+        assert intent["target"]["type"] == "project"
+        assert intent["need"] == "creation"
+        assert intent["source"] == "llm"
+
+    def test_understand_intent_llm_bad_output_falls_back(self):
+        intent = _ag.understand_intent("你好", llm_fn=lambda p: "我无法理解")
+        assert intent["intent"] == "chat"  # 规则兜底
+        assert intent["source"] == "fallback"
+
+    def test_fallback_rules(self):
+        assert _ag.understand_intent("你好", llm_fn=None)["intent"] == "chat"
+        assert _ag.understand_intent("这回答太不负责了吧", llm_fn=None)["intent"] == "challenge"
+        assert _ag.understand_intent("把登录功能做完", llm_fn=None)["intent"] == "develop"
+        assert _ag.understand_intent("项目进度怎么样了？", llm_fn=None)["intent"] == "question"
+        assert _ag.understand_intent("把 P0 任务标记完成", llm_fn=None)["intent"] == "operate"
+        assert _ag.understand_intent("", llm_fn=None)["intent"] == "clarify"
+
+    def test_route_for(self):
+        assert "project_status" in _ag.route_for("question")
+        assert "重新查询真实数据" in _ag.route_for("challenge")
+        assert "plan_development" in _ag.route_for("develop")
+        assert "external_route" in _ag.route_for("external")
+        assert "澄清" in _ag.route_for("clarify")
+
+    def test_format_intent(self):
+        text = _ag.format_intent(_intent("challenge", emotion="dissatisfied"))
+        assert "意图理解" in text and "challenge" in text and "dissatisfied" in text
+
+
+class TestIntentGate:
+    """意图门: 按意图注入路由约束; clarify 直接追问; challenge 强制自查。"""
+
+    def test_clarify_direct_ask_no_tools(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(_ag, "understand_intent", lambda message, **kw: _intent("clarify"))
+        got: dict = {}
+
+        def fake_call(messages, tools, **kw):
+            got["tools"] = tools
+            got["sys"] = [m["content"] for m in messages if m["role"] == "system"]
+            return {"content": "我还没理解，请补充你想做什么？", "tool_calls": []}
+
+        monkeypatch.setattr(_ag, "call_with_tools", fake_call)
+        r = _ag.run_agent_native("？？", data_dir=tmp_path, project_id="P-1")
+        assert r["intent"]["intent"] == "clarify"
+        assert got["tools"] is None  # 不给工具 → 只能追问
+        assert r["calls"] == []  # 不调研
+        assert "补充" in r["answer"]
+
+    def test_clarify_llm_down_honest_fallback(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(_ag, "understand_intent", lambda message, **kw: _intent("clarify"))
+
+        def boom(messages, tools, **kw):
+            raise RuntimeError("no key")
+
+        monkeypatch.setattr(_ag, "call_with_tools", boom)
+        r = _ag.run_agent_native("？？", data_dir=tmp_path, project_id="P-1")
+        assert r["intent"]["intent"] == "clarify"
+        assert "补充" in r["answer"]  # 诚实兜底追问, 不编造
+
+    def test_challenge_injects_last_answer(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(_ag, "understand_intent", lambda message, **kw: _intent("challenge"))
+        history = [
+            {"role": "user", "content": "项目进度？"},
+            {"role": "assistant", "content": "进度 27%（旧数据）"},
+        ]
+        seen: dict = {}
+
+        def fake_call(messages, tools, **kw):
+            seen["content"] = "\n".join(m["content"] for m in messages if m["role"] == "system")
+            return {"content": "我重新查了，实际进度 30%，之前数据过时了。", "tool_calls": []}
+
+        monkeypatch.setattr(_ag, "call_with_tools", fake_call)
+        r = _ag.run_agent_native("这回答不负责吧", data_dir=tmp_path, project_id="P-1", history=history)
+        assert "用户质疑的上一轮回答" in seen["content"]
+        assert "进度 27%" in seen["content"]
+        assert "重新查询真实数据" in seen["content"]
+        assert "过时" in r["answer"] or "修正" in r["answer"]
+
+    def test_develop_route_injected(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(_ag, "understand_intent", lambda message, **kw: _intent("develop"))
+        seen: dict = {}
+
+        def fake_call(messages, tools, **kw):
+            seen["sys"] = [m["content"] for m in messages if m["role"] == "system"]
+            return {"content": "好的", "tool_calls": []}
+
+        monkeypatch.setattr(_ag, "call_with_tools", fake_call)
+        r = _ag.run_agent_native("把登录做完", data_dir=tmp_path, project_id="P-1")
+        joined = "\n".join(seen["sys"])
+        assert "意图理解" in joined
+        assert "plan_development" in joined  # 开发意图 → 必须出计划审批
+        assert r["intent"]["intent"] == "develop"
+

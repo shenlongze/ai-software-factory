@@ -19,6 +19,8 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Callable
 
+from .intent_core import format_intent, route_for, understand_intent
+
 # ---------------------------------------------------------------- DeepSeek 原生 FC
 
 def _provider_conf(data_dir: str | Path) -> dict[str, Any]:
@@ -156,7 +158,7 @@ def plan_development(goal: str, detail: str, *, llm_fn: Callable[[str], str]) ->
     raw = ""
     try:
         raw = str(llm_fn(prompt) or "").strip()
-    except Exception as exc:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
         raw = ""
     import re
 
@@ -342,7 +344,7 @@ def dispatch(
                     pass
             return {"ok": True, "output": f"已锚定任务「{match.get('title')}」({match.get('id')}), 状态 {match.get('status') or 'todo'}"}
         if tool_id == "external_route":
-            from ..external_executor.router import route, build_candidates
+            from ..external_executor.router import route
             from ..external_executor.registry import build_registry
 
             adapters = build_registry(root).list() if root else []
@@ -370,27 +372,51 @@ def run_agent_native(
     session_store: Any = None,
     session_id: str = "",
     max_rounds: int = MAX_ROUNDS,
+    history: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """原生 function calling Agent 循环。
+    """原生 function calling Agent 循环 (IntentCore 门 = 第一步)。
 
-    模型读上下文+工具 → 返回 tool_calls → 执行 → 结果回喂 → 循环 → 最终回答。
-    返回 {answer, calls, evidence, rejected?} — LLM 不可用/非 agent → rejected 回退。"""
+    先真正听懂用户意图 (intent×target×need×emotion) → 按意图注入路由约束 →
+    模型读上下文+工具 → 返回 tool_calls → 执行 → 回喂 → 循环 → 最终回答。
+    返回 {answer, calls, evidence, intent, rejected?} — LLM 不可用/非 agent → rejected 回退。"""
+    intent = understand_intent(
+        question, llm_fn=lambda p: _simple_llm(p, data_dir=data_dir), history=history,
+    )
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": _AGENT_SYSTEM},
+        {"role": "system", "content": format_intent(intent) + "\n" + route_for(intent["intent"])},
         {"role": "user", "content": question},
     ]
     calls: list[dict[str, Any]] = []
-    ctx: dict[str, Any] = {"session_store": session_store, "session_id": session_id, "pending_plan": None}
+    ctx: dict[str, Any] = {"session_store": session_store, "session_id": session_id,
+                           "pending_plan": None, "intent": intent}
     # 注入 llm_fn 供 plan_development 内部用 (复用原生通道的简化版)
     ctx["llm_fn"] = lambda p: _simple_llm(p, data_dir=data_dir)
     tools = tool_schemas()
     total_calls = 0
+    # 质疑自查: 把上一轮回答注入上下文 → 强制验证再回应
+    if intent["intent"] == "challenge":
+        last_ai = _last_assistant_text(history)
+        if last_ai:
+            messages.append({"role": "system", "content": (
+                f"用户质疑的上一轮回答: {last_ai[:800]}\n"
+                "请逐条重新查询真实数据验证, 然后诚实承认错误或给出修正。"
+            )})
+    # 意图不明 → 直接追问, 不进工具循环 (Founder: 3 loop 后还不清醒就追问)
+    if intent["intent"] == "clarify":
+        try:
+            resp = call_with_tools(messages, None, data_dir=data_dir)
+            content = resp.get("content") or ""
+        except Exception:  # noqa: BLE001 — LLM 不可用 → 诚实兜底追问
+            content = ""
+        return {"answer": (content or "我还没完全理解你的需求，请补充：你想做什么？要我查什么？")[:2000],
+                "calls": calls, "evidence": [], "intent": intent}
     try:
         for _ in range(max_rounds):
             resp = call_with_tools(messages, tools, data_dir=data_dir)
             tcs = resp.get("tool_calls") or []
             if not tcs:
-                return {"answer": resp.get("content") or "（模型未输出）", "calls": calls,
+                return {"answer": resp.get("content") or "（模型未输出）", "calls": calls, "intent": intent,
                         "evidence": [{"tool": c["tool"], "ok": c["ok"], "output": str(c.get("output") or c.get("error") or "")[:300]} for c in calls]}
             messages.append({"role": "assistant", "content": resp.get("content") or "", "tool_calls": tcs})
             for tc in tcs:
@@ -418,12 +444,23 @@ def run_agent_native(
         )})
         resp = call_with_tools(messages, None, data_dir=data_dir)  # 不给工具 → 必收敛
         content = resp.get("content") or ""
-        return {"answer": content[:2000], "calls": calls,
+        return {"answer": content[:2000], "calls": calls, "intent": intent,
                 "evidence": [{"tool": c["tool"], "ok": c["ok"], "output": str(c.get("output") or c.get("error") or "")[:300]} for c in calls]}
     except Exception as exc:  # noqa: BLE001 — LLM 不可用 → 回退旧路由
         return {"answer": "", "rejected": True, "calls": calls, "evidence": [],
                 "reason": f"原生 FC 不可用: {exc}"}
 
+
+
+
+def _last_assistant_text(history: list[dict[str, Any]] | None) -> str:
+    """最近一条 assistant 消息内容 (质疑自查注入用)。"""
+    if not history:
+        return ""
+    for h in reversed(history):
+        if isinstance(h, dict) and h.get("role") == "assistant" and str(h.get("content") or "").strip():
+            return str(h["content"])
+    return ""
 
 def _simple_llm(prompt: str, *, data_dir: str | Path) -> str:
     """无工具单轮 LLM (plan_development 内部用)。"""
@@ -436,10 +473,12 @@ def _simple_llm(prompt: str, *, data_dir: str | Path) -> str:
 
 # ---------------------------------------------------------------- 兼容旧调用 (WebUI 接线用)
 
-def run_agent(question, *, root, project_id, llm_fn, service=None, max_rounds=3, session_store=None, session_id=""):
-    """入口: 原生 FC; 失败 → 回退 prompt 协议 (v1) → 仍失败 → rejected。"""
+def run_agent(question, *, root, project_id, llm_fn, service=None, max_rounds=3,
+                session_store=None, session_id="", history=None):
+    """入口: 原生 FC (IntentCore 门); 失败 → 回退 prompt 协议 (v1) → 仍失败 → rejected。"""
     native = run_agent_native(question, data_dir=root, project_id=project_id, service=service,
-                              session_store=session_store, session_id=session_id, max_rounds=max_rounds)
+                              session_store=session_store, session_id=session_id,
+                              max_rounds=max_rounds, history=history)
     if not native.get("rejected"):
         return native
     return native

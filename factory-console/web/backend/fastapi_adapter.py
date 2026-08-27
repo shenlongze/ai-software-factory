@@ -3890,6 +3890,10 @@ def build_app(
                     "如果意图不明 → 先追问。"
                 )
             try:
+                try:
+                    _history = sessions_store.list_messages(session_id)
+                except Exception:  # noqa: BLE001 — 历史不可用 → 不阻塞
+                    _history = []
                 agent_result = _agmod.run_agent(
                     _agent_message,
                     root=workspace_root or DEFAULT_ROOT,
@@ -3899,6 +3903,7 @@ def build_app(
                     max_rounds=3,
                     session_store=sessions_store,
                     session_id=session_id,
+                    history=_history,
                 )
             except Exception:  # noqa: BLE001 — Agent 循环异常 → 回退旧路由
                 agent_result = None

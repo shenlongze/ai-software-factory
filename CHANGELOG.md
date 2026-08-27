@@ -1,4 +1,21 @@
 # Changelog
+## [v1.1.208] — 2026-08-27
+
+**IntentCore 意图理解层落地 (v2 设计 §2): 每轮先真正 get 用户意图 (intent×target×need×emotion), 再按意图路由专业能力 — 不靠关键词**。
+
+### Added
+
+- factory-console/session/intent_core.py: LLM 结构化意图理解 (question/challenge/chat/delegate/develop/operate/external/clarify × 对象 × 需要 × 情绪 × 摘要 × 追问) + 规则兜底 (LLM 不可用/输出坏 → 不赌不编)
+- 意图门接入 Agent 循环 (run_agent_native 第一步): 意图 + 路由约束注入上下文, 模型带意图执行, 不被词面劫持
+- Router 专业能力线: 查询→数据工具带证据; 质疑→强制自查重查→承认/修正; 聊天→自然对话; 开发/派活→plan_development 出计划审批; 操作→动作工具; 外部→external_route; 意图不明→直接追问 (不进工具循环)
+- 质疑自查: challenge 意图自动注入上一轮回答 → 重新查询真实数据验证 → 诚实修正 (不嘴硬)
+- WebUI: 项目级会话传历史 (sessions_store.list_messages) 供意图上下文 + 质疑自查
+
+### Changed
+
+- Agent 循环第一步从"直接工具循环"改为"意图门 → 路由约束 → 工具循环"
+- clarify 意图直接追问, 不调用工具 (Founder: 3 次 loop 后还不清醒就追问)
+
 ## [v1.1.207] — 2026-08-27
 
 **会话 Agent 循环 v2: 原生 function calling + 计划→审批→执行 + 硬收敛护栏 (Founder: 真正 get 到用户意图, 不行就 loop, 3 次 loop 后还不清醒就追问)**。

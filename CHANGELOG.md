@@ -1,4 +1,26 @@
 # Changelog
+## [v1.1.217] — 2026-08-27
+
+**S10-126 M1: 说人话 (S-6) + 可观测 (S-1) + 做人事 (S-5) 三线落地**。
+
+### Added
+
+- **S-6 对话自然度** (dialog_style.py): 风格分级 (闲聊简短/查询清晰/分析深入/质疑先共情/动作确认) +
+  模板解放 (取消【结论】【数据】硬标签 → 自然段落, 信息不丢) + 情绪回应 + 详略分级; agent 循环 + 旧路由双接入
+- **S-1 会话可观测** (session_audit.py): 每轮落 jsonl 审计 (intent/工具/耗时/收敛方式/回答) + 按天聚合
+  (意图分布/工具成功率/平均轮数/耗时/硬收敛率); agent_loop 全收敛点接入 (autonomous/reflection/hard_cap/rejected)
+- **S-5 会话执行状态机** (exec_state.py): plan→审批→逐任务委派执行(路由选外部AI→delegate_external)→验证→
+  交付汇报→进度可查; 会话工具面 chain_start/chain_next/chain_status
+
+### Changed
+
+- _AGENT_SYSTEM: 去硬结构标签要求, 改"自然段落 + 信息不丢"
+- STANDARD_OUTPUT_PROMPT: 模板 → 自然对话 (保留关键数字/来源)
+
+### Fixed
+
+- ExecState.next: 验证通过直接 done (verifying 中间态导致进度为 0); finish 返回交付汇报
+
 ## [v1.1.216] — 2026-08-27
 
 **会话架构范式转变: AgentLoop v3 — 推翻"意图门硬路由", 采用 agentic 自主循环 + Reflection 自评 (Founder: 推翻, 用最有效的方案)**。

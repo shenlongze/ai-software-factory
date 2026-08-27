@@ -125,6 +125,11 @@ def tool_schemas(data_dir: str | Path | None = None) -> list[dict[str, Any]]:
                                     "priority": {"type": "string"}}, "required": ["title"]}},
              "delegate": {"type": "boolean", "description": "是否委派外部AI执行"}}),
         _fc("external_route", "外部AI路由", "为任务选择最合适外部AI agent", {"task": {"type": "string"}}, ["task"]),
+        _fc("chain_start", "启动执行链(做人事)", "审批通过后启动执行链: 按计划建任务列表, 逐任务执行",
+            {"goal": {"type": "string"}, "tasks": {"type": "array", "items": {"type": "object",
+                     "properties": {"title": {"type": "string"}, "priority": {"type": "string"}}}}}),
+        _fc("chain_next", "推进下一个任务", "执行链逐任务推进: 委派执行→验证→回写", {}),
+        _fc("chain_status", "执行链进度", "查询当前执行链进度 (完成数/当前任务)", {}),
     ]
     if data_dir is not None:
         try:
@@ -151,7 +156,9 @@ _AGENT_SYSTEM = """你是 AI Factory 的会话 Agent（自主执行者）。
 4. 敏感动作 (建任务/改任务/委派执行/推送) → 用户明确要求或计划已审批才执行
 5. 【主动收敛】每次工具调用后自评: 信息够 → 直接给最终答案 (带证据); 不够 → 继续查; 需澄清 → 提问
 6. 简单查询/闲聊 → 直接答 (需要实时数据才调工具)
-7. 用中文回答, 简洁准确"""
+7. 【像人说话】自然段落回答, 不要用【结论】【数据】【数据来源】等模板标签;
+   关键数字和来源保留, 但组织得像人报告; 简短场景≤3句, 复杂才展开
+8. 用中文回答, 简洁准确"""
 
 
 #: Reflection 自评提示 (v1.1.216: 每轮工具后注入, 主动收敛, 不等用户追问)
@@ -376,6 +383,74 @@ def dispatch(
                 project_id=project_id,
                 skills=[str(x) for x in (args.get("skills") or []) if str(x).strip()],
             )
+        if tool_id == "chain_start":
+            from .exec_state import ExecState
+
+            plan = ctx.get("pending_plan") or {}
+            tasks = args.get("tasks") or plan.get("tasks") or []
+            goal = str(args.get("goal") or plan.get("goal") or "")[:120]
+            if not tasks:
+                return {"ok": False, "error": "没有任务 (先 plan_development 出计划)"}
+            st = ExecState.load(root, (ctx or {}).get("session_id") or "")
+            r = st.start({"goal": goal or "执行链", "tasks": tasks,
+                          "acceptance": plan.get("acceptance") or []})
+            st.save(root)
+            if not r.get("ok"):
+                return r
+            return {"ok": True, "output": (
+                f"✅ 执行链已启动: {goal or '执行链'} ({len(tasks)} 个任务)。"
+                "说『继续』/『推进』逐任务执行; 『进度』查看状态; 敏感任务会先确认。")}
+        if tool_id == "chain_next":
+            from .exec_state import ExecState
+
+            st = ExecState.load(root, (ctx or {}).get("session_id") or "")
+            if st.state.get("status") != "running":
+                return {"ok": False, "error": "没有运行中的执行链 (先 chain_start)"}
+
+            def _exec_fn(task):
+                # 委派外部 AI 执行 (真实): 路由选 agent → delegate_external
+                from ..external_executor.router import route
+                from ..external_executor.registry import build_registry
+
+                adapters = build_registry(root).list() if root else []
+                agents = []
+                try:
+                    import json as _j
+                    d = _j.loads((Path(root) / "agents" / "agents.json").read_text(encoding="utf-8"))
+                    ag = d.get("agents") if isinstance(d, dict) else None
+                    if isinstance(ag, dict):
+                        agents = [v for v in ag.values() if isinstance(v, dict)]
+                except Exception:  # noqa: BLE001
+                    agents = []
+                rr = route(str(task.get("title") or ""), adapters, agents, root)
+                pick = rr.get("pick")
+                if not pick:
+                    return {"ok": False, "error": "无可用外部执行器 (设置→外部AI 配置)"}
+                from .external_tools import delegate_external
+
+                return delegate_external(root, pick, str(task.get("title") or ""), project_id=project_id)
+
+            r = st.next(_exec_fn)
+            st.save(root)
+            if r.get("finished"):
+                # 全部完成 → 交付汇报
+                d = st.deliver()
+                return {"ok": True, "output": d.get("output")}
+            return {"ok": r.get("ok"), "output": (
+                f"任务『{r.get('task')}』: {'✅ 完成' if r.get('ok') else '❌ 失败'} · "
+                f"{r.get('output') or ''} · 进度 {r.get('progress')}。说『继续』推进下一个。")}
+        if tool_id == "chain_status":
+            from .exec_state import ExecState
+
+            st = ExecState.load(root, (ctx or {}).get("session_id") or "")
+            stt = st.status()
+            if stt.get("status") == "idle":
+                return {"ok": True, "output": "当前没有执行链 (先出计划并审批, 说『开始执行』)"}
+            lines = [f"执行链: {stt.get('status')} · 进度 {stt.get('progress')}"]
+            lines.append("目标: " + str(stt.get("goal") or ""))
+            for t in stt.get("tasks") or []:
+                lines.append(f"- {t.get('status')} [{t.get('priority')}] {t.get('title')}")
+            return {"ok": True, "output": "\n".join(lines)}
         if tool_id == "external_route":
             from ..external_executor.router import route
             from ..external_executor.registry import build_registry
@@ -417,9 +492,12 @@ def run_agent_native(
     intent = understand_intent(
         question, llm_fn=lambda p: _simple_llm(p, data_dir=data_dir), history=history,
     )
+    from .dialog_style import style_instruction
+
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": _AGENT_SYSTEM},
         {"role": "system", "content": format_intent(intent) + "\n" + route_for(intent["intent"])},
+        {"role": "system", "content": style_instruction(question, intent.get("intent"), intent.get("emotion"))},
         {"role": "user", "content": question},
     ]
     # ---- 上下文连贯性: 话题账本视图优先, fallback 最近4轮 ----
@@ -456,13 +534,21 @@ def run_agent_native(
     ctx["llm_fn"] = lambda p: _simple_llm(p, data_dir=data_dir)
     tools = tool_schemas(data_dir)
     total_calls = 0
+    import time as _time
+    _start_ms = _time.monotonic() * 1000
+    _converge = "reflection"
     try:
         for _ in range(max_rounds):
             resp = call_with_tools(messages, tools, data_dir=data_dir)
             tcs = resp.get("tool_calls") or []
             if not tcs:
                 # 模型自主收敛 (直接回答/追问) — agentic: 不强制拦截
-                return {"answer": resp.get("content") or "（模型未输出）", "calls": calls, "intent": intent,
+                if total_calls == 0:
+                    _converge = "autonomous"
+                _answer = resp.get("content") or "（模型未输出）"
+                _audit_sess(data_dir, session_id, question, intent, calls,
+                            total_calls, max_rounds, _start_ms, _converge, _answer)
+                return {"answer": _answer, "calls": calls, "intent": intent,
                         "evidence": [{"tool": c["tool"], "ok": c["ok"], "output": str(c.get("output") or c.get("error") or "")[:300]} for c in calls]}
             messages.append({"role": "assistant", "content": resp.get("content") or "", "tool_calls": tcs})
             for tc in tcs:
@@ -492,9 +578,14 @@ def run_agent_native(
         )})
         resp = call_with_tools(messages, None, data_dir=data_dir)  # 不给工具 → 必收敛
         content = resp.get("content") or ""
+        _converge = "hard_cap" if total_calls >= MAX_TOOL_CALLS else "reflection"
+        _audit_sess(data_dir, session_id, question, intent, calls,
+                    total_calls, max_rounds, _start_ms, _converge, content)
         return {"answer": content[:2000], "calls": calls, "intent": intent,
                 "evidence": [{"tool": c["tool"], "ok": c["ok"], "output": str(c.get("output") or c.get("error") or "")[:300]} for c in calls]}
     except Exception as exc:  # noqa: BLE001 — LLM 不可用 → 回退旧路由
+        _audit_sess(data_dir, session_id, question, intent, calls,
+                    total_calls, max_rounds, _start_ms, "rejected", "")
         return {"answer": "", "rejected": True, "calls": calls, "evidence": [],
                 "reason": f"原生 FC 不可用: {exc}"}
 
@@ -524,6 +615,26 @@ def _last_assistant_text(history: list[dict[str, Any]] | None) -> str:
         if isinstance(h, dict) and h.get("role") == "assistant" and str(h.get("content") or "").strip():
             return str(h["content"])
     return ""
+
+
+
+def _audit_sess(data_dir, session_id, question, intent, calls, total_calls, rounds,
+                start_ms, converge, answer) -> None:
+    """会话审计落盘 (S-1; 失败静默)。"""
+    try:
+        from .session_audit import audit
+
+        audit(
+            data_dir, session_id=session_id, question=question,
+            intent=str((intent or {}).get("intent") or ""),
+            emotion=str((intent or {}).get("emotion") or ""),
+            tools=[str(c.get("tool") or "") for c in calls],
+            total_calls=total_calls, rounds=rounds,
+            duration_ms=int((__import__("time").monotonic() * 1000) - start_ms),
+            answer_len=len(str(answer or "")), converge=converge, answer=answer,
+        )
+    except Exception:  # noqa: BLE001 — 审计失败不阻断会话
+        pass
 
 def _simple_llm(prompt: str, *, data_dir: str | Path) -> str:
     """无工具单轮 LLM (plan_development 内部用)。"""

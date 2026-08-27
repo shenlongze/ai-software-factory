@@ -752,3 +752,180 @@ class TestAgenticV3:
         assert "用户意图参考" in joined
         assert "仅供参考" in joined
         assert "严格按此意图" not in joined
+
+
+class TestDialogStyle:
+    """S-6 对话自然度: 风格分级/模板解放/情绪回应/详略分级。"""
+
+    def test_style_selection(self):
+        from factory_console.session import dialog_style as ds
+
+        assert ds.style_for("你好", "chat", "neutral")["name"] == "闲聊"
+        assert ds.style_for("项目进度怎么样", "question", "neutral")["name"] == "查询"
+        assert ds.style_for("这回答不负责吧", "challenge", "dissatisfied")["name"] == "质疑回应"
+        assert ds.style_for("把登录做完", "develop", "neutral")["name"] == "动作"
+        assert ds.style_for("分析项目利弊", "deep_analyze", "neutral")["name"] == "分析"
+
+    def test_style_injected_into_agent_loop(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(_ag, "understand_intent", lambda message, **kw: _intent("chat"))
+        seen: dict = {}
+
+        def fake_call(messages, tools, **kw):
+            seen["sys"] = [m["content"] for m in messages if m["role"] == "system"]
+            return {"content": "你好！", "tool_calls": []}
+
+        monkeypatch.setattr(_ag, "call_with_tools", fake_call)
+        _ag.run_agent_native("你好", data_dir=tmp_path, project_id="P-1")
+        joined = "\n".join(seen["sys"])
+        assert "回答风格" in joined
+        assert "3 句以内" in joined  # 闲聊简短
+
+    def test_standard_output_no_template_labels(self):
+        from factory_console.session import query_engine as qe
+
+        # 旧模板的"按固定结构回答"已移除; 新模板要求自然对话 + 不用标签
+        assert "按以下固定结构回答" not in qe.STANDARD_OUTPUT_PROMPT
+        assert "自然" in qe.STANDARD_OUTPUT_PROMPT
+        assert "不要使用" in qe.STANDARD_OUTPUT_PROMPT
+        assert "简短场景控制篇幅" in qe.STANDARD_OUTPUT_PROMPT
+
+
+class TestSessionAudit:
+    """S-1 会话可观测: 每轮落审计 + 指标聚合。"""
+
+    def test_audit_written(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(_ag, "understand_intent", lambda message, **kw: _intent("question"))
+
+        def fake_call(messages, tools, **kw):
+            return {"content": "进度 27%", "tool_calls": []}
+
+        monkeypatch.setattr(_ag, "call_with_tools", fake_call)
+        r = _ag.run_agent_native("项目进度", data_dir=tmp_path, project_id="P-1", session_id="s-audit")
+        assert not r.get("rejected")
+        day = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()[:10]
+        path = tmp_path / "session_audit" / f"{day}.jsonl"
+        assert path.exists()
+        import json as _j
+        rec = _j.loads(path.read_text(encoding="utf-8").splitlines()[0])
+        assert rec["session_id"] == "s-audit"
+        assert rec["intent"] == "question"
+        assert rec["converge"] == "autonomous"
+        assert rec["answer_len"] > 0
+
+    def test_aggregate(self, tmp_path):
+        from factory_console.session import session_audit as sa
+
+        sa.audit(tmp_path, session_id="s1", question="进度", intent="question", emotion="neutral",
+                 tools=["project_status"], total_calls=1, rounds=1, duration_ms=100,
+                 answer_len=10, converge="autonomous", answer="x")
+        sa.audit(tmp_path, session_id="s1", question="扫描", intent="code_scan", emotion="neutral",
+                 tools=["code_scan"], total_calls=2, rounds=2, duration_ms=200,
+                 answer_len=20, converge="hard_cap", answer="y")
+        agg = sa.aggregate(tmp_path)
+        assert agg["total"] == 2
+        assert agg["intent_dist"].get("question") == 1
+        assert agg["hard_cap_rate"] == 0.5
+        assert agg["avg_duration_ms"] == 150
+        assert agg["tool_success"].get("code_scan") == {"calls": 1}
+
+
+class TestExecState:
+    """S-5 执行状态机 (做人事): plan→逐任务委派+验证→交付。"""
+
+    def _plan(self):
+        return {"goal": "做登录", "acceptance": ["自测通过"],
+                "tasks": [{"title": "注册接口", "priority": "P0"},
+                          {"title": "登录接口", "priority": "P0"},
+                          {"title": "JWT 鉴权", "priority": "P1"}]}
+
+    def test_start_and_next_flow(self, tmp_path):
+        from factory_console.session import exec_state as es
+
+        st = es.ExecState("s-ex")
+        r = st.start(self._plan())
+        assert r["ok"] and st.state["status"] == "running"
+        assert len(st.state["tasks"]) == 3
+
+        calls = []
+
+        def exec_fn(task):
+            calls.append(task["title"])
+            return {"ok": True, "output": f"{task['title']} 完成", "verify": {"method": "exec", "result": "pass"}}
+
+        r = st.next(exec_fn)
+        assert r["ok"] and r["task"] == "注册接口" and r["status"] == "done"
+        assert r["progress"] == "1/3 完成"
+        st.next(exec_fn)
+        r = st.next(exec_fn)
+        assert r.get("finished") is True
+        assert st.state["status"] == "done"
+        assert calls == ["注册接口", "登录接口", "JWT 鉴权"]
+
+    def test_failure_marks_failed(self, tmp_path):
+        from factory_console.session import exec_state as es
+
+        st = es.ExecState("s-ex")
+        st.start({"goal": "x", "tasks": [{"title": "A", "priority": "P0"}, {"title": "B", "priority": "P0"}]})
+        r = st.next(lambda task: {"ok": False, "error": "沙箱拒绝"})
+        assert r["ok"] is False and r["status"] == "failed"
+        assert "失败" in st.progress()
+
+    def test_deliver_report(self, tmp_path):
+        from factory_console.session import exec_state as es
+
+        st = es.ExecState("s-ex")
+        st.start(self._plan())
+        for _ in range(3):
+            st.next(lambda task: {"ok": True, "output": "done"})
+        d = st.deliver()
+        assert d["ok"] is True
+        assert "交付完成" in d["output"]
+        assert "注册接口" in d["output"] and "验收" in d["output"]
+
+    def test_persist_roundtrip(self, tmp_path):
+        from factory_console.session import exec_state as es
+
+        st = es.ExecState("s-p")
+        st.start({"goal": "g", "tasks": [{"title": "A", "priority": "P0"}]})
+        st.save(tmp_path)
+        loaded = es.ExecState.load(tmp_path, "s-p")
+        assert loaded.state["status"] == "running"
+        assert loaded.state["tasks"][0]["title"] == "A"
+
+    def test_chain_tools_end_to_end(self, tmp_path, monkeypatch):
+        """chain_start → chain_next (stub 委派+验证) → chain_status → 全部完成。"""
+        from factory_console.session import exec_state as es
+
+        svc = _service(tmp_path)
+        proj = svc.create_project("chain", name="ChainDemo")
+        # stub 外部路由 + 委派
+        monkeypatch.setattr("factory_console.external_executor.router.route",
+                            lambda task, adapters, agents, root, **kw: {"pick": "codex.architect"})
+        monkeypatch.setattr("factory_console.external_executor.executor.run",
+                            lambda adapter, prompt, project_dir="", **kw: {
+                                "exit_code": 0, "output": "OK", "error": "", "command": "codex"})
+        # agents.json 候选
+        (tmp_path / "agents").mkdir(parents=True, exist_ok=True)
+        import json as _j
+        (tmp_path / "agents" / "agents.json").write_text(_j.dumps({"agents": {
+            "codex.architect": {"id": "codex.architect", "name": "A", "role": "architect",
+                                "description": "d", "source": "codex", "kind": "agent"}}}), encoding="utf-8")
+
+        plan = {"goal": "登录", "tasks": [{"title": "注册接口", "priority": "P0"},
+                                         {"title": "登录接口", "priority": "P0"}],
+                "acceptance": ["自测通过"]}
+        ctx = {"pending_plan": plan, "session_id": "s-chain", "llm_fn": lambda p: ""}
+        # chain_start
+        r = _ag.dispatch("chain_start", {"goal": "登录"}, root=tmp_path, project_id=proj.id,
+                         service=svc, ctx=ctx)
+        assert r["ok"] and "已启动" in r["output"]
+        st = es.ExecState.load(tmp_path, "s-chain")
+        assert st.state["status"] == "running"
+        # chain_next × 2 → 全部完成
+        r1 = _ag.dispatch("chain_next", {}, root=tmp_path, project_id=proj.id, service=svc, ctx=ctx)
+        assert r1["ok"] and "注册接口" in r1["output"]
+        r2 = _ag.dispatch("chain_next", {}, root=tmp_path, project_id=proj.id, service=svc, ctx=ctx)
+        assert r2["ok"] and ("完成" in r2["output"] or "交付" in r2["output"])
+        # chain_status
+        r3 = _ag.dispatch("chain_status", {}, root=tmp_path, project_id=proj.id, service=svc, ctx=ctx)
+        assert r3["ok"] and "2/2 完成" in r3["output"]

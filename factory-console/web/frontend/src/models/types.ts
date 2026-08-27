@@ -732,6 +732,8 @@ export interface SessionMessage {
   role: 'user' | 'assistant';
   content: string;
   created_at: string;
+  /** v1.1.224: 执行过程可视化 — assistant 消息携带本轮工具调用记录 */
+  meta?: { tool_calls?: { tool: string; ok?: boolean }[] } | null;
 }
 
 /** v1.1.102: 设置 — LLM Provider 配置 (GET/PATCH /api/config/llm 管理面)。 */

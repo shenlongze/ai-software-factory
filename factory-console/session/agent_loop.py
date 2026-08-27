@@ -629,6 +629,16 @@ def run_agent_native(
             "请先重新理解用户真正要什么: 重述用户问题, 如果之前的理解/工具方向错了, 立刻纠正; "
             "回答必须围绕用户纠正后的真实意图, 不要继续原方向。"
         )})
+    # ---- 代码 vs 文档偏好 (Founder: 要"架构/逻辑/实现"= 真实代码, 不是 docs 文档) ----
+    _code_sigs = ("代码逻辑", "代码怎么", "怎么实现", "实现原理", "怎么做的", "代码结构",
+                  "源码", "工作原理", "代码分析", "怎么写的", "逻辑", "架构", "实现细节")
+    _doc_sigs = ("文档", "设计文档", "说明书", "readme", "文档目录", "方案书", "规格书")
+    if any(sig in question for sig in _code_sigs) and not any(sig in question for sig in _doc_sigs):
+        messages.append({"role": "system", "content": (
+            "【重要】用户要的是【真实代码】: 请用 read_code / code_scan / search_code / project_structure "
+            "读代码文件(.py/.ts 等) 分析代码逻辑、关键函数、调用链; "
+            "不要读 docs/ 下的文档, 除非用户明确说'看文档/方案/说明书'。"
+        )})
     # ---- 上下文连贯性: 话题账本视图优先, fallback 最近4轮 ----
     hist_block = context_view if (context_view or "").strip() else _history_text(history)
     if hist_block:

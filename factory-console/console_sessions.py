@@ -270,7 +270,7 @@ class SessionStore:
             return list(self._data["messages"].get(session_id, []))
 
     def append_message(
-        self, session_id: str, role: str, content: str
+        self, session_id: str, role: str, content: str, *, meta: dict[str, Any] | None = None
     ) -> dict[str, Any] | None:
         if role not in ("user", "assistant"):
             raise ValueError("非法角色: user|assistant")
@@ -285,6 +285,8 @@ class SessionStore:
                 "content": content,
                 "created_at": _now_iso(),
             }
+            if meta:
+                record["meta"] = meta
             messages = self._data["messages"].setdefault(session_id, [])
             messages.append(record)
             if len(messages) > MAX_MESSAGES_PER_SESSION:
@@ -310,6 +312,7 @@ def send_message(
     reply_extra: str = "",
     llm_fn: Callable[[str], str | None] | None = None,
     max_chars: int = DEFAULT_MAX_CHARS,
+    assistant_meta: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """追加用户消息 + 生成 assistant 回复 (真实 LLM / 诚实降级)。
 
@@ -367,7 +370,7 @@ def send_message(
             _ledger.save(str(Path(store._path).parent))
         except Exception:  # noqa: BLE001 — 账本失败不阻断回复
             pass
-    assistant_msg = store.append_message(session_id, "assistant", reply)
+    assistant_msg = store.append_message(session_id, "assistant", reply, meta=assistant_meta)
     return {
         "user": user_msg,
         "assistant": assistant_msg,

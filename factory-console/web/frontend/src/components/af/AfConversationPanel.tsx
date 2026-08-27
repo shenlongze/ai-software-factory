@@ -202,6 +202,19 @@ export function AfConversationPanel({ projectId, projectName }: AfConversationPa
               <div className="af-chat-msg-meta">
                 {m.role === 'user' ? '你' : 'AI'} · {fmtTime(m.created_at)}
               </div>
+              {m.role === 'assistant' && m.meta?.tool_calls?.length ? (
+                <div className="af-chat-tools" data-testid={`af-chat-tools-${m.id}`}>
+                  {m.meta.tool_calls.map((tc, i) => (
+                    <span
+                      key={i}
+                      className={`af-chat-tool af-chat-tool--${tc.ok ? 'ok' : 'fail'}`}
+                      data-testid={`af-chat-tool-${m.id}-${i}`}
+                    >
+                      {tc.ok ? '✅' : '❌'} 调用了 {tc.tool}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
               <div className={`af-chat-msg-body${m.role === 'assistant' ? ' af-chat-msg-body--md' : ''}`}>
                 {m.role === 'assistant' ? renderMarkdown(m.content) : m.content}
               </div>

@@ -1,4 +1,16 @@
 # Changelog
+## [v1.1.224] — 2026-08-28
+
+**执行过程可视化 + 代码优先偏好 (Founder: 看不到执行过程 / 要代码却读文档)**。
+
+### Added
+
+- 前端会话消息渲染工具调用徽章 (✅/❌ 调用了 xx 工具) — assistant 消息 meta.tool_calls 落库 + 展示,
+  "看不到执行过程"根治 (像 Codex/Claude 显示正在做什么)
+- 后端: SessionStore.append_message 支持 meta; send_message 支持 assistant_meta; adapter 传 tool_calls 入库
+- 代码优先偏好约束: 用户要"架构/逻辑/实现/源码"且没提文档 → 强制读代码文件(.py/.ts), 不读 docs 文档
+  (Founder 实测: "查看架构设计"被理解成读文档)
+
 ## [v1.1.223] — 2026-08-28
 
 **治理"所答非所问": Reflection 相关性自检 + 用户纠正强制重对齐 (Founder: 为什么所答非所问)**。

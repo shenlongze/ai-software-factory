@@ -3955,6 +3955,9 @@ def build_app(
                         facts=facts,
                         reply_extra="回答必须引用上面【工具执行证据】; 工具没提供的不要编造; 分 结论/证据/数据/建议。",
                         llm_fn=lambda _p, _a=agent_result.get("answer", ""): _a,
+                        assistant_meta={"tool_calls": [
+                            {"tool": c["tool"], "ok": c.get("ok")} for c in calls
+                        ]},
                     )
                 except ValueError as exc:
                     raise HTTPException(status_code=400, detail=str(exc)) from exc

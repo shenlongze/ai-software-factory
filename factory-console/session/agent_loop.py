@@ -20,11 +20,12 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .intent_core import format_intent, route_for, understand_intent
+from . import llm_gateway as _lg  # S10-127 M1: 模型无关网关 (模块级, 测试可 patch)
 
 # ---------------------------------------------------------------- DeepSeek 原生 FC
 
 def _provider_conf(data_dir: str | Path) -> dict[str, Any]:
-    """读 providers.json 定位可用 provider (deepseek) + env key。"""
+    """读 providers.json 定位可用 provider (deepseek) + env key (最后兜底)。"""
     try:
         d = json.loads((Path(data_dir) / "providers.json").read_text(encoding="utf-8"))
         ps = d.get("providers") if isinstance(d, dict) and isinstance(d.get("providers"), dict) else d
@@ -50,6 +51,79 @@ def _api_key(conf: dict[str, Any]) -> str:
         return ""
 
 
+#: 模型装配缓存 (按 data_dir) — 避免每轮重建 plane/catalog/router
+_model_conf_cache: dict[str, dict[str, Any]] = {}
+
+
+def _resolve_model_conf(
+    data_dir: str | Path,
+    *,
+    explicit_provider: str | None = None,
+    explicit_model: str | None = None,
+    need_fc: bool = False,
+) -> dict[str, Any]:
+    """S10-127 M1.2: 会话 LLM 装配 — LLMRouter(L1-L5) + ModelCatalog + ControlPlane。
+
+    返回 {provider, model, base_url, api_key, capabilities?}; 任何异常 →
+    旧 _provider_conf 兜底 (失败安全, 不阻断会话)。"""
+    key = f"{data_dir}|{explicit_provider}|{explicit_model}|{need_fc}"
+    if key in _model_conf_cache:
+        return dict(_model_conf_cache[key])
+    try:
+        from ..llm_control import LLMControlPlane
+        from ..model_catalog import ModelCatalog
+        from ..llm_router import LLMRouter
+
+        plane = LLMControlPlane(providers_file=Path(data_dir) / "providers.json")
+        catalog = None
+        if (Path(data_dir) / "models.json").is_file():
+            catalog = ModelCatalog(models_file=Path(data_dir) / "models.json")
+        router = LLMRouter(control_plane=plane, model_catalog=catalog)
+
+        choice = None
+        try:
+            choice = router.route(
+                explicit_provider=explicit_provider,
+                explicit_model=explicit_model,
+                required_capabilities=["fc"] if need_fc else None,
+            )
+        except Exception:  # noqa: BLE001 — 路由异常 → 走 fallback (不阻断)
+            choice = None
+
+        provider_id = None
+        model_id = None
+        if choice is not None:
+            provider_id = choice.provider_id
+            model_id = choice.model_id
+        if provider_id is None:
+            provider_id = plane.selected_provider_id()
+        if provider_id is None:
+            raise RuntimeError("no enabled provider with resolvable key")
+
+        conf = plane.resolve_runtime_config(provider_id)
+        if conf is None:
+            raise RuntimeError(f"provider {provider_id} runtime config unavailable")
+        # 模型选择: route choice > provider default_model > models[0] > old conf
+        if model_id:
+            conf["model"] = model_id
+        else:
+            pc = plane.get_provider(provider_id)
+            if pc is not None:
+                meta = dict(pc.metadata or {})
+                conf["model"] = meta.get("default_model") or (pc.models[0] if pc.models else conf["model"])
+        if catalog is not None:
+            mi = catalog.get_model(conf["model"])
+            if mi is not None:
+                conf["capabilities"] = list(mi.capabilities or [])
+        conf["provider"] = provider_id
+        _model_conf_cache[key] = conf
+        return dict(conf)
+    except Exception:  # noqa: BLE001 — 装配失败 → 旧路径 (诚实降级)
+        conf = _provider_conf(data_dir)
+        return {"provider": conf["id"], "model": conf["model"], "base_url": conf["base_url"],
+                "api_key": _api_key(conf)}
+
+
 def call_with_tools(
     messages: list[dict[str, Any]],
     tools: list[dict[str, Any]] | None,
@@ -57,32 +131,40 @@ def call_with_tools(
     data_dir: str | Path,
     temperature: float = 0.2,
     timeout: int = 120,
+    explicit_provider: str | None = None,
+    explicit_model: str | None = None,
 ) -> dict[str, Any]:
-    """DeepSeek OpenAI 兼容原生 function calling。
+    """模型无关原生 function calling (S10-127 M1): LLMRouter 装配 + llm_gateway 适配。
 
-    返回 OpenAI 形状: {content?, tool_calls?} — 失败抛异常 (调用方诚实降级)。"""
-    conf = _provider_conf(data_dir)
-    key = _api_key(conf)
-    if not key:
-        raise RuntimeError("LLM API key 未配置")
-    body: dict[str, Any] = {
-        "model": conf.get("model") or "deepseek-chat",
-        "messages": messages,
-        "temperature": temperature,
-    }
-    if tools:
-        body["tools"] = tools
-        body["tool_choice"] = "auto"
-    req = urllib.request.Request(
-        conf["base_url"],
-        data=json.dumps(body).encode("utf-8"),
-        headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"},
-        method="POST",
+    返回 OpenAI 形状: {content?, tool_calls?, no_fc?} — 失败抛异常 (调用方诚实降级)。
+    no_fc=True 表示模型无 tool-use 能力 (M1.3: 调用方走纯文本收敛)。"""
+    conf = _resolve_model_conf(
+        data_dir, explicit_provider=explicit_provider, explicit_model=explicit_model,
+        need_fc=bool(tools),
     )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        data = json.loads(resp.read().decode("utf-8"))
-    msg = (data.get("choices") or [{}])[0].get("message") or {}
-    return {"content": msg.get("content") or "", "tool_calls": msg.get("tool_calls") or []}
+    key = conf.get("api_key") or ""
+    provider = conf.get("provider") or "deepseek"
+    if not key and provider != "ollama":
+        raise RuntimeError("LLM API key 未配置")
+    caps = conf.get("capabilities")
+    fc_ok = True
+    if caps is not None:
+        fc_ok = _lg.supports_tool_use(caps)
+    if tools and not fc_ok:
+        # M1.3 能力协商: 模型无 tool-use → 降级纯文本 (不传工具, 必收敛)
+        tools = None
+    resp = _lg.complete(
+        messages, tools,
+        provider_id=provider,
+        model=conf.get("model") or "deepseek-chat",
+        base_url=conf.get("base_url") or "",
+        api_key=key,
+        temperature=temperature,
+        timeout=timeout,
+    )
+    if tools is None and not fc_ok:
+        resp["no_fc"] = True
+    return resp
 
 
 # ---------------------------------------------------------------- 会话动作工具 (原生 schema)

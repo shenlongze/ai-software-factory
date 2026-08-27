@@ -1909,6 +1909,27 @@ def build_app(
                         score=verify_out.get("score"),
                         reason=str(verify_out.get("reason") or ""),
                     )
+                else:
+                    # M7.2 审查验证钩子: 无本地钩子的审查类任务 → 派 reviewer 交叉审查
+                    review_types = ("arch", "security", "review", "design", "product", "writer")
+                    if str(route_result.get("work_type") or "") in review_types:
+                        rv = _ee_exec.reviewer_verify(
+                            workspace_root or DEFAULT_ROOT,
+                            adapters, all_agents,
+                            body.task, str(body.project_dir or ""),
+                            str(result.get("output") or ""),
+                            str(route_result.get("work_type") or ""),
+                            preferred_adapter=adapter_id,
+                        )
+                        verify_out = rv
+                        if rv.get("result") != "unknown":
+                            _ee_exec.verify_invocation(
+                                workspace_root or DEFAULT_ROOT, str(record.get("result_id") or ""),
+                                method=str(rv.get("method") or "reviewer"),
+                                result=str(rv.get("result") or "unknown"),
+                                score=rv.get("score"),
+                                reason=str(rv.get("reason") or ""),
+                            )
             except Exception:  # noqa: BLE001 — 验证失败不阻断 (诚实 unknown)
                 verify_out = {"method": "", "result": "unknown", "score": None, "reason": "自动验证异常"}
         return {"route": route_result, "execution": {

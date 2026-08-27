@@ -3,7 +3,20 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.202] — 2026-08-27
+
+**M7.2 审查验证钩子 — 架构/安全/审查类任务验证 = 派 reviewer 交叉审查**。
+
+### Added
+
+- executor.reviewer_verify: 主 agent 产出后, 再派一个 reviewer agent (候选池 role=reviewer,
+  同适配器家族优先) 交叉审查 → 解析 PASS/FAIL/unknown; 审查委派本身也记 EXS (可审计+贡献历史)
+- auto 端点: 本地验证 unknown 且任务为审查类 (arch/security/review/design/product/writer)
+  → 自动触发 reviewer 交叉审查 → 回写 (fail → first_pass=False + rework+1)
+- 测试: reviewer_verify 2 后端 (同家族选择/FAIL 解析/无 reviewer 诚实 unknown)
+
 ## [v1.1.201] — 2026-08-27
+
 
 **M7 验证钩子自动化 — auto 闭环最后一环 (委派 → 自动验证 → 效果分回写 → 路由学习)**。
 

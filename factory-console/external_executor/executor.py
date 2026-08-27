@@ -374,3 +374,82 @@ def auto_verify(
     # ③ 无自动钩子 → 诚实 unknown (人工/审查验证)
     return {"method": "", "result": "unknown", "score": None,
             "reason": "无自动验证钩子 (需人工或审查验证, 不编造)"}
+
+
+def reviewer_verify(
+    data_dir: str | Path,
+    adapters: list[Any],
+    agents: list[dict[str, Any]],
+    task: str,
+    project_dir: str,
+    primary_output: str,
+    work_type: str,
+    *,
+    preferred_adapter: str = "",
+    timeout: int = 900,
+) -> dict[str, Any]:
+    """审查验证钩子 (M7.2): 主 agent 产出后, 再派一个 reviewer 交叉审查 → PASS/FAIL。
+
+    - 选 reviewer: 候选池 role=reviewer 的 agent (优先同适配器家族, 其次任意 reviewer);
+      无 reviewer → unknown (诚实, 不硬凑)
+    - prompt: 任务 + 产出, 只答 PASS/FAIL + 一句理由
+    - 审查委派本身也记一条 EXS (可审计 + 贡献该 reviewer 的历史效果分)
+    - 解析: 输出含 FAIL → fail; 含 PASS → pass; 否则 unknown (不编造)"""
+    from .registry import ExternalExecutorRegistry
+    from . import router as _router
+
+    # 候选 reviewer: role=reviewer 的 agent (external), 同家族优先
+    reviewers: list[dict[str, Any]] = []
+    for ag in agents:
+        if not ag.get("source"):
+            continue
+        if str(ag.get("role") or "") == "reviewer":
+            reviewers.append(ag)
+    if not reviewers:
+        return {"method": "", "result": "unknown", "score": None,
+                "reason": "无 reviewer agent (未导入), 无法交叉审查"}
+    if preferred_adapter:
+        same_family = [r for r in reviewers if str(r.get("id") or "").startswith(preferred_adapter + ".")]
+        if same_family:
+            reviewers = same_family
+    reviewer = reviewers[0]
+    rid = str(reviewer.get("id") or "")
+    adapter_id = rid.split(".")[0]
+    host_agent = rid[len(adapter_id) + 1:] if "." in rid else ""
+    registry = ExternalExecutorRegistry(data_dir)
+    adapter = registry.get(adapter_id)
+    if adapter is None:
+        return {"method": "", "result": "unknown", "score": None,
+                "reason": f"适配器不存在: {adapter_id}"}
+    if host_agent and not adapter.invocation.agent_flag:
+        host_agent = ""
+    prompt = (
+        "你是验证者 (reviewer)。下面是某次任务的产出，请严格审查是否达标。\n"
+        f"任务: {str(task)[:500]}\n"
+        f"产出:\n{str(primary_output)[:4000]}\n\n"
+        "只回答一行: PASS 或 FAIL（可加一句理由）。"
+    )
+    result = run(adapter, prompt, project_dir=project_dir, agent=host_agent, timeout=timeout)
+    out = str(result.get("output") or "")
+    up = out.upper()
+    if "FAIL" in up:
+        verdict, score = "fail", 0.0
+    elif "PASS" in up:
+        verdict, score = "pass", 1.0
+    else:
+        verdict, score = "unknown", None
+    # 审查委派也记录 (可审计 + reviewer 历史)
+    try:
+        record_invocation(
+            data_dir, executor_id=adapter_id,
+            mode="borrowed-shell" if host_agent else "blackbox", host_agent=host_agent,
+            prompt=prompt, project_dir=project_dir,
+            exit_code=int(result.get("exit_code")) if result.get("exit_code") is not None else -1,
+            output=out, error=str(result.get("error") or ""),
+            command=str(result.get("command") or ""), duration_ms=0,
+        )
+    except Exception:  # noqa: BLE001
+        pass
+    return {"method": f"reviewer:{rid}", "result": verdict, "score": score,
+            "reason": "" if verdict != "unknown" else "reviewer 未给出 PASS/FAIL (诚实 unknown)",
+            "review_output": out[:500]}

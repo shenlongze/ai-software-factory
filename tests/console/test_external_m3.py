@@ -152,6 +152,53 @@ class TestAutoVerify:
         assert "不编造" in v["reason"]
 
 
+class TestReviewerVerify:
+    def _setup(self, tmp_path):
+        from factory_console.external_executor.registry import build_registry
+        from factory_console.external_executor.schema import ExternalExecutorAdapter
+
+        reg = build_registry(tmp_path)
+        reg.save(ExternalExecutorAdapter(
+            id="claude", name="Claude", binary="claude",
+            invocation={"non_interactive": ["-p", "{prompt}"], "project_dir": "cwd",
+                        "agent_flag": ["--agent", "{agent}"]},
+            capabilities={"roles": ["architect", "reviewer"]},
+        ))
+        agents = [
+            {"id": "claude.architecture-examiner", "name": "架构审查", "role": "architect", "source": "claude"},
+            {"id": "claude.evidence-verifier", "name": "证据验证", "role": "reviewer", "source": "claude"},
+            {"id": "codex.security-privacy-examiner", "name": "安全", "role": "security", "source": "codex"},
+        ]
+        return reg.list(), agents
+
+    def test_reviewer_picks_same_family_and_parses_fail(self, tmp_path, monkeypatch):
+        adapters, agents = self._setup(tmp_path)
+        calls: list[list[str]] = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append(cmd)
+            class R:
+                returncode = 0
+                stdout = "FAIL: 架构风险过高"
+                stderr = ""
+            return R()
+
+        monkeypatch.setattr(_ee.subprocess, "run", fake_run)
+        monkeypatch.setattr(_ee.shutil, "which", lambda name: "/usr/bin/claude")
+        v = _ee.reviewer_verify(tmp_path, adapters, agents, "审查架构", "/tmp/p",
+                                "产出报告...", "arch", preferred_adapter="claude")
+        assert v["result"] == "fail" and v["score"] == 0.0
+        assert v["method"] == "reviewer:claude.evidence-verifier"  # 同家族 reviewer
+        assert "--agent" in calls[-1]  # 借壳
+
+    def test_reviewer_unknown_if_no_reviewer(self, tmp_path):
+        adapters, agents = self._setup(tmp_path)
+        agents = [a for a in agents if a.get("role") != "reviewer"]
+        v = _ee.reviewer_verify(tmp_path, adapters, agents, "x", "/tmp/p", "out", "arch")
+        assert v["result"] == "unknown"
+        assert "无 reviewer" in v["reason"]
+
+
 class TestM3Http:
     def _app(self, tmp_path):
         service = _adapter.build_console_service(tmp_path, event_logger=None)

@@ -230,6 +230,13 @@ def tool_schemas(data_dir: str | Path | None = None) -> list[dict[str, Any]]:
                 tools.append(ext)
         except Exception:  # noqa: BLE001 — 外部工具面失败 → 不阻断内置工具
             pass
+        # S10-127 P2.3: MCP 工具进工具面 (mcp__<server>__<tool>; 失败跳过)
+        try:
+            from .mcp_tools import mcp_tool_schemas
+
+            tools.extend(mcp_tool_schemas(data_dir))
+        except Exception:  # noqa: BLE001 — MCP 不可用不阻断
+            pass
     return tools
 
 
@@ -738,6 +745,10 @@ def dispatch(
             for t in stt.get("tasks") or []:
                 lines.append(f"- {t.get('status')} [{t.get('priority')}] {t.get('title')}")
             return {"ok": True, "output": "\n".join(lines)}
+        if tool_id.startswith("mcp__"):
+            from .mcp_tools import dispatch_mcp
+
+            return dispatch_mcp(tool_id, args, str(root) if root else None)
         if tool_id == "tool_search":
             from .tool_search import discover_tools
 

@@ -1,4 +1,17 @@
 # Changelog
+## [v1.1.210] — 2026-08-27
+
+**会话上下文连贯性补齐 (Founder: 上下文断了是大事) — Agent 主循环 + WebUI 旧路由都注入历史, 不再失忆**。
+
+### Added
+
+- Agent 主循环历史注入 (run_agent_native): 最近 4 轮对话注入 system 上下文
+  (意图门之后, 工具循环之前) — 模型回答/执行保持上下文连贯, 引用前文有依据
+- 锚定任务上下文注入: 会话 task_id 锚定的任务 (标题/状态) 注入主循环 — 回答与执行围绕该任务
+- WebUI 旧路由历史注入 (console_sessions.send_message): 最近 4 轮注入 prompt —
+  此前仅 CLI (v1.1.203) 有, WebUI 会话全局失忆, 补齐
+- 测试: 历史注入 agent 主循环 / 锚定任务注入 / WebUI send_message 第二轮带前文 (31 passed)
+
 ## [v1.1.209] — 2026-08-27
 
 **质疑自查钩子加深 + 外部能力进工具面 (v2 设计 §2.2 external / §6 质疑验证 落地)**。

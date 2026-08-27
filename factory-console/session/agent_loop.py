@@ -408,6 +408,26 @@ def run_agent_native(
         {"role": "system", "content": format_intent(intent) + "\n" + route_for(intent["intent"])},
         {"role": "user", "content": question},
     ]
+    # ---- 上下文连贯性 (Founder: 上下文断了是大事): 历史 + 锚定任务注入主循环 ----
+    hist_block = _history_text(history)
+    if hist_block:
+        messages.append({"role": "system", "content": (
+            f"【最近对话】(保持上下文连贯, 引用前文时注明; 与本次问题矛盾处以后者为准)\n{hist_block}"
+        )})
+    if session_store is not None and session_id and service is not None:
+        try:
+            _s = session_store.get_session(session_id) if hasattr(session_store, "get_session") else None
+            _tid = (_s or {}).get("task_id") if isinstance(_s, dict) else None
+            if _tid:
+                _tasks = (service.list_backlog(project_id) or {}).get("tasks", [])
+                _match = next((t for t in _tasks if str(t.get("id") or "") == str(_tid)), None)
+                if _match:
+                    messages.append({"role": "system", "content": (
+                        f"【当前锚定任务】{_match.get('title')} ({_tid}) · 状态 {_match.get('status') or 'todo'}\n"
+                        "回答与执行请围绕该任务。"
+                    )})
+        except Exception:  # noqa: BLE001 — 锚定注入失败不阻断
+            pass
     calls: list[dict[str, Any]] = []
     ctx: dict[str, Any] = {"session_store": session_store, "session_id": session_id,
                            "pending_plan": None, "intent": intent}
@@ -485,6 +505,25 @@ def run_agent_native(
                 "reason": f"原生 FC 不可用: {exc}"}
 
 
+
+
+
+
+def _history_text(history: list[dict[str, Any]] | None, max_turns: int = 4) -> str:
+    """最近 N 轮对话 → 文本块 (注入 Agent 主循环, 保持上下文连贯)。"""
+    if not history:
+        return ""
+    lines = []
+    for h in history[-(max_turns * 2):]:
+        if not isinstance(h, dict):
+            continue
+        role = h.get("role")
+        content = str(h.get("content") or "").strip()
+        if role not in ("user", "assistant") or not content:
+            continue
+        who = "用户" if role == "user" else "AI"
+        lines.append(f"{who}: {content[:300]}")
+    return "\n".join(lines)
 
 
 def _last_assistant_text(history: list[dict[str, Any]] | None) -> str:

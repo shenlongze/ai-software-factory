@@ -459,3 +459,68 @@ class TestExternalTools:
         r = et.delegate_external(tmp_path, "codex.architect", "审查")
         assert r["ok"] is False
         assert "沙箱拒绝" in r["error"]
+
+
+class TestContextContinuity:
+    """上下文连贯性 (v1.1.210): Agent 主循环注入历史 + 锚定任务; WebUI 旧路由历史注入。"""
+
+    def test_history_injected_into_agent_loop(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(_ag, "understand_intent", lambda message, **kw: _intent("question"))
+        history = [
+            {"role": "user", "content": "我想做个记账App"},
+            {"role": "assistant", "content": "好的，帮你梳理记账App需求"},
+            {"role": "user", "content": "先做基础功能"},
+        ]
+        seen: dict = {}
+
+        def fake_call(messages, tools, **kw):
+            seen["sys"] = [m["content"] for m in messages if m["role"] == "system"]
+            return {"content": "好的", "tool_calls": []}
+
+        monkeypatch.setattr(_ag, "call_with_tools", fake_call)
+        _ag.run_agent_native("继续", data_dir=tmp_path, project_id="P-1", history=history)
+        joined = "\n".join(seen["sys"])
+        assert "最近对话" in joined
+        assert "记账App" in joined          # 前文内容可见 → 不失忆
+        assert "先做基础功能" in joined
+
+    def test_anchored_task_injected(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(_ag, "understand_intent", lambda message, **kw: _intent("question"))
+        svc = _service(tmp_path)
+        proj = svc.create_project("ctx", name="CtxDemo")
+        task = svc.create_task(proj.id, title="登录接口", description="POST /login", priority="P0")
+
+        class _FakeStore:
+            def get_session(self, sid):
+                return {"id": sid, "task_id": task["id"]}
+
+        seen: dict = {}
+
+        def fake_call(messages, tools, **kw):
+            seen["sys"] = [m["content"] for m in messages if m["role"] == "system"]
+            return {"content": "继续任务", "tool_calls": []}
+
+        monkeypatch.setattr(_ag, "call_with_tools", fake_call)
+        _ag.run_agent_native("继续", data_dir=tmp_path, project_id=proj.id,
+                             service=svc, session_store=_FakeStore(), session_id="s1")
+        joined = "\n".join(seen["sys"])
+        assert "当前锚定任务" in joined
+        assert "登录接口" in joined
+
+    def test_send_message_injects_history(self, tmp_path):
+        from factory_console.console_sessions import SessionStore, send_message
+
+        store = SessionStore(tmp_path / "sessions.json")
+        s = store.create_session(scope="project", project_id="P-1", title="t")
+        prompts: list[str] = []
+
+        def llm(prompt):
+            prompts.append(prompt)
+            return "回复一"
+
+        send_message(store, s["id"], "第一句", llm_fn=llm)
+        send_message(store, s["id"], "第二句", llm_fn=llm)
+        assert "最近对话" not in prompts[0]      # 首轮无历史
+        assert "最近对话" in prompts[1]          # 第二轮注入前文
+        assert "第一句" in prompts[1]            # 上一轮用户消息
+        assert "回复一" in prompts[1]            # 上一轮 AI 回答

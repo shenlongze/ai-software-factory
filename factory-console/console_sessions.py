@@ -326,7 +326,22 @@ def send_message(
     if user_msg is None:
         raise ValueError("会话不存在")
 
-    prompt = _build_prompt(session, text, facts=facts, reply_extra=reply_extra)
+    # 上下文连贯性 (v1.1.210): 最近 4 轮历史注入 (排除刚追加的当前消息) — CLI 同款,
+    # WebUI 旧路由此前失忆, 补上
+    history_block = ""
+    try:
+        _msgs = store.list_messages(session_id)
+        _recent = [m for m in _msgs[:-1] if isinstance(m, dict) and m.get("role") in ("user", "assistant")][-8:]
+        if _recent:
+            history_block = "\n".join(
+                f"{'用户' if m['role'] == 'user' else 'AI'}: {str(m.get('content') or '')[:300]}"
+                for m in _recent
+            )
+    except Exception:  # noqa: BLE001 — 历史不可用 → 不阻断
+        history_block = ""
+
+    prompt = _build_prompt(session, text, facts=facts, reply_extra=reply_extra,
+                           history_block=history_block)
     reply: str | None = None
     if llm_fn is not None:
         try:
@@ -346,9 +361,10 @@ def send_message(
 
 
 def _build_prompt(
-    session: dict[str, Any], question: str, *, facts: str = "", reply_extra: str = ""
+    session: dict[str, Any], question: str, *, facts: str = "", reply_extra: str = "",
+    history_block: str = "",
 ) -> str:
-    """按作用域组装 prompt (真实事实卡 + 可选标准输出指令)。"""
+    """按作用域组装 prompt (真实事实卡 + 最近对话 + 可选标准输出指令)。"""
     fact_block = (facts or "").strip() or (
         "项目信息暂缺 (不编造)" if session.get("scope") == "project" else "（暂无）"
     )
@@ -356,6 +372,8 @@ def _build_prompt(
         system = _PROJECT_PROMPT.format(facts=fact_block)
     else:
         system = _COMPANY_PROMPT.format(facts=fact_block)
+    if history_block:
+        system = f"{system}\n\n【最近对话】(保持上下文连贯; 与本次问题矛盾处以后者为准)\n{history_block}"
     if reply_extra:
         system = f"{system}\n{reply_extra}"
     return f"{system}\n\n用户: {question}"

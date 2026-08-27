@@ -3,7 +3,20 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.203] — 2026-08-27
+
+**CLI 会话上下文连续 — 普通问答路径补多轮历史 (Founder: 上下文有没有了)**。
+
+### Fixed
+
+- ChatService 加会话内历史 (最近 8 轮 user/assistant) 注入 prompt:
+  「todo list」后再说「可以」会记得刚才在聊 Todo List (不再孤立无上下文)
+- 根因: CLI REPL 闲聊路径每次独立 LLM 调用, 无历史; T 系列只覆盖 WebUI 会话栏
+- 历史: 每轮 user/assistant 都记录 (含失败引导); HISTORY_TURNS=0 可关 (旧行为)
+- 测试: 第二轮 prompt 含上一轮 (history 注入)
+
 ## [v1.1.202] — 2026-08-27
+
 
 **M7.2 审查验证钩子 — 架构/安全/审查类任务验证 = 派 reviewer 交叉审查**。
 

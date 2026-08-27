@@ -37,7 +37,9 @@ _CHAT_PROMPT = """你是 AI Factory 的 AI 产品经理和技术负责人。
   '哪些项目有PRD'、/project) 查看真实数据, 不要猜测项目有没有文档。
 - 不确定当前系统状态时, 引导用户运行 factory doctor / factory status。
 
-用户问题: {question}
+最近对话 (按时间顺序, 供上下文参考):
+{history}
+当前用户问题: {question}
 """
 
 #: 无 LLM 时的诚实引导 (不假装回答)
@@ -61,10 +63,29 @@ _PROVIDER_UNAVAILABLE = (
 
 
 class ChatService:
-    """普通问答服务: 真实 LLM 回答, 失败 → 引导。"""
+    """普通问答服务: 真实 LLM 回答, 失败 → 引导。
+
+    S10-075 → v1.1.203: 会话内多轮上下文 — REPL 闲聊路径每次输入不再孤立,
+    最近 N 轮 (用户/AI) 注入 prompt ("可以" 记得刚才在聊 Todo List)。
+    """
+
+    #: 注入 prompt 的最近轮数 (够用不臃肿; 0 → 无历史, 旧行为)
+    HISTORY_TURNS = 8
 
     def __init__(self, reasoning_provider: Optional[object] = None) -> None:
         self._provider = reasoning_provider
+        #: 会话内历史: [{"role": "user"|"assistant", "content": str}, ...]
+        self._history: list[dict[str, str]] = []
+
+    def _history_block(self) -> str:
+        """最近 N 轮 → 文本块 (无历史 → 占位 "（无）")。"""
+        if not self._history:
+            return "（无 — 这是本次会话的第一句）"
+        lines = []
+        for h in self._history[-self.HISTORY_TURNS * 2:]:
+            who = "用户" if h["role"] == "user" else "AI"
+            lines.append(f"{who}: {h['content'][:300]}")
+        return "\n".join(lines)
 
     def _provider_ready(self) -> bool:
         if self._provider is not None:
@@ -107,17 +128,26 @@ class ChatService:
             return _FALLBACK
         if not self._provider_ready():
             # S10-076: Provider 不可用 ≠ 用户目标不明确 — 明确区分
+            self._history.append({"role": "assistant", "content": _PROVIDER_UNAVAILABLE})
             if verbose:
                 reason = self._provider_unavailable_reason()
                 return f"{_PROVIDER_UNAVAILABLE}\n(细节: {reason})"
             return _PROVIDER_UNAVAILABLE
+        # 记录本轮用户输入 (即使失败也保留 — 失败引导也算上下文)
+        self._history.append({"role": "user", "content": q})
         try:
             llm_fn = self._provider._default_llm_fn()  # noqa: SLF001 — 同包复用装配链
-            text = llm_fn(_CHAT_PROMPT.format(question=q), "chat")
+            text = llm_fn(
+                _CHAT_PROMPT.format(history=self._history_block(), question=q),
+                "chat",
+            )
             text = str(text or "").strip()
             if not text:
+                self._history.append({"role": "assistant", "content": _FALLBACK})
                 return _FALLBACK
-            return text[:max_chars]
+            reply = text[:max_chars]
+            self._history.append({"role": "assistant", "content": reply})
+            return reply
         except Exception as exc:  # noqa: BLE001 — LLM 调用失败 → 明确不可用
             # S10-078: 细节仅进日志 (默认不向 REPL stderr 倾倒内部异常)
             logger.debug("chat answer failed: %s", exc)

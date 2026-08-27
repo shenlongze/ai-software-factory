@@ -147,6 +147,27 @@ class TestMultiTurnDiscovery:
 
 
 class TestChatService:
+    def test_history_injected_into_prompt(self):
+        """v1.1.203: 会话内多轮上下文 — 第二次提问的 prompt 带上一轮 (可以记得 Todo List)。"""
+        prompts: list[str] = []
+
+        class FakeProvider:
+            def _default_llm_fn(self):
+                def fn(prompt: str, kind: str) -> str:
+                    prompts.append(prompt)
+                    return "好，继续"
+                return fn
+
+        cs = CHAT.ChatService(reasoning_provider=FakeProvider())
+        cs.answer("我想做一个 Todo List 应用")
+        cs.answer("可以")
+        # 第二轮的 prompt 应包含上一轮 (用户: 我想做一个 Todo List 应用)
+        assert len(prompts) == 2
+        assert "Todo List" in prompts[1] or "todo" in prompts[1].lower()
+        assert "用户:" in prompts[1]
+        # 历史里也有 assistant 轮
+        assert any(h["role"] == "assistant" for h in cs._history)
+
     def test_fallback_when_no_llm(self):
         """无 LLM → 引导 (诚实, 不假装回答)。"""
         cs = CHAT.ChatService(reasoning_provider=object())  # 无 _default_llm_fn

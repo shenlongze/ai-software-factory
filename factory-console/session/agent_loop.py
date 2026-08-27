@@ -103,6 +103,8 @@ def tool_schemas(data_dir: str | Path | None = None) -> list[dict[str, Any]]:
         _fc("code_scan", "扫描代码", "扫描项目仓库代码: 文件数/行数/语言分布/测试文件/TODO/大文件/最近改动/git", {}),
         _fc("project_scan", "扫描项目", "扫描项目整体: 任务树/版本线/战役线/质量/风险建议", {}),
         _fc("project_structure", "项目结构", "查看项目真实结构: 仓库顶层目录树/模块划分/文件分布/入口文件 (用户说'了解项目结构/有哪些模块/目录'时用)", {}),
+        _fc("read_code", "读取代码", "读取指定文件的代码内容(带行号, 支持分页), 用于理解代码逻辑/实现/调用链。参数 path 为仓库内相对路径, 或 keyword 定位文件; 文件大时用 offset 翻页",
+            {"path": {"type": "string"}, "keyword": {"type": "string"}, "offset": {"type": "integer"}}),
         _fc("search_code", "代码检索", "在仓库中检索关键词, 返回命中文件", {"keyword": {"type": "string"}}, ["keyword"]),
         _fc("project_status", "项目状态", "查询项目实时状态: 生命周期/进度(真实任务完成率)/当前阶段/工作流", {}),
         _fc("project_tasks", "任务清单", "查询项目任务 (按优先级或全部统计)", {"priority": {"type": "string", "enum": ["P0", "P1", "P2", "P3"]}}),
@@ -385,6 +387,84 @@ def dispatch(
                 project_id=project_id,
                 skills=[str(x) for x in (args.get("skills") or []) if str(x).strip()],
             )
+        if tool_id == "read_code":
+            from .code_scan import locate_repo
+            from pathlib import Path as _P
+
+            repo = locate_repo(root, project_id)
+            if repo is None:
+                return {"ok": False, "error": "未定位到代码仓库目录"}
+            repo = _P(repo).resolve()
+            path = str(args.get("path") or "").strip()
+            keyword = str(args.get("keyword") or "").strip()
+            offset = int(args.get("offset") or 0)
+            if path:
+                target = (repo / path).resolve()
+                if str(target) != str(repo) and not str(target).startswith(str(repo) + "/"):
+                    return {"ok": False, "error": "路径越界: 只能读仓库内文件"}
+                rel = path
+            elif keyword:
+                # 关键词定位: 文件名匹配优先, 再内容扫描 (纯 Python, 不依赖 subprocess/git_status)
+                _code_exts = (".py", ".ts", ".tsx", ".js", ".jsx", ".go", ".rs", ".java",
+                              ".vue", ".swift", ".kt", ".c", ".cpp", ".h", ".md")
+                hits: list[str] = []
+                try:
+                    for f in repo.rglob("*"):
+                        if not f.is_file() or f.suffix not in _code_exts:
+                            continue
+                        if keyword in f.name:
+                            hits.append(str(f))
+                            if len(hits) >= 20:
+                                break
+                except Exception:  # noqa: BLE001
+                    hits = []
+                if not hits:
+                    _scanned = 0
+                    try:
+                        for f in repo.rglob("*"):
+                            if not f.is_file() or f.suffix not in _code_exts:
+                                continue
+                            _scanned += 1
+                            if _scanned > 1200:
+                                break
+                            try:
+                                if keyword in f.read_text(encoding="utf-8", errors="ignore")[:200000]:
+                                    hits.append(str(f))
+                                    if len(hits) >= 20:
+                                        break
+                            except OSError:
+                                continue
+                    except Exception:  # noqa: BLE001
+                        pass
+                if not hits:
+                    return {"ok": False, "error": f"未找到含『{keyword}』的文件"}
+                target = _P(hits[0]).resolve()
+                try:
+                    rel = str(target.relative_to(repo))
+                except ValueError:
+                    return {"ok": False, "error": "命中文件不在仓库内"}
+            else:
+                return {"ok": False, "error": "需要 path 或 keyword"}
+            if not target.is_file():
+                return {"ok": False, "error": f"文件不存在: {rel}"}
+            if target.suffix not in (".py", ".ts", ".tsx", ".js", ".jsx", ".go", ".rs", ".java",
+                                     ".vue", ".swift", ".kt", ".md", ".json", ".yaml", ".yml",
+                                     ".sh", ".toml", ".sql", ".html", ".css", ".c", ".cpp", ".h"):
+                return {"ok": False, "error": f"非代码/文本文件: {rel}"}
+            try:
+                lines = target.read_text(encoding="utf-8", errors="ignore").splitlines()
+            except OSError as exc:
+                return {"ok": False, "error": f"读取失败: {exc}"}
+            total = len(lines)
+            start = max(0, min(offset, total))
+            shown = lines[start:start + 120]
+            header = f"文件 {rel} (共 {total} 行)"
+            if start > 0:
+                header += f" · 从第 {start + 1} 行"
+            if start + len(shown) < total:
+                header += f" · 已显示 {start + 1}-{start + len(shown)} 行, 需要继续可调 offset={start + len(shown)}"
+            body = "\n".join(f"{i + 1}: {line}" for i, line in enumerate(shown, start=start))
+            return {"ok": True, "output": header + "\n" + body[:6000]}
         if tool_id == "knowledge_search":
             try:
                 from ..retrieval.knowledge_store import rag_query

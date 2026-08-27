@@ -1,4 +1,19 @@
 # Changelog
+## [v1.1.221] — 2026-08-28
+
+**新增 read_code 工具: 会话能真正"读代码讲逻辑" (Founder: "我要的是查看代码逻辑, 不是文档")**。
+
+### Added
+
+- read_code 工具: 读仓库内文件代码 (带行号 + 分页 offset, 支持 path 相对路径 / keyword 定位)
+  — 模型可多次调用读完整文件, 理解实现/调用链; 路径越界拒绝 (安全)
+- keyword 定位: 文件名匹配 + 内容扫描 (纯 Python, 不依赖 subprocess/git_status — 沙箱/跨平台一致)
+- 会话工具面新增 read_code (code_scan 统计概况 + read_code 读逻辑 互补)
+
+### Fixed
+
+- 实测会话: 用户要"代码逻辑"时模型编造不存在工具 read_file → 补真实 read_code
+
 ## [v1.1.220] — 2026-08-28
 
 **修复: 旧路由质疑信号缺失 — "是真正影响项目的么" 无 LLM 时被判 chat (Founder 实测 WebUI 仍答非所问)**。

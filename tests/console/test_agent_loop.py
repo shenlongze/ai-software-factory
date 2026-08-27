@@ -1086,3 +1086,47 @@ class TestProjectMemory:
         r = _ag.dispatch("knowledge_search", {"query": "JWT"}, root=tmp_path, project_id="P-1")
         assert r["ok"] is True
         assert "JWT 鉴权" in r["output"] and "docs/prd.md" in r["output"]
+
+
+class TestReadCode:
+    """read_code (v1.1.221): 读代码讲逻辑 — 路径/关键词/分页/越界安全。"""
+
+    def _seed_repo(self, tmp_path):
+        repo = tmp_path / "repo"
+        (repo / "src").mkdir(parents=True)
+        (repo / "src" / "main.py").write_text(
+            "def hello():\n    return 1\n\ndef world():\n    return 2\n" * 30, encoding="utf-8")
+        proj = tmp_path / "workspace" / "projects" / "P-1"
+        proj.mkdir(parents=True)
+        (proj / "project.json").write_text('{"id": "P-1", "workspace_dir": "%s"}' % repo, encoding="utf-8")
+        return repo
+
+    def test_read_by_path(self, tmp_path):
+        self._seed_repo(tmp_path)
+        r = _ag.dispatch("read_code", {"path": "src/main.py"}, root=tmp_path, project_id="P-1")
+        assert r["ok"] is True
+        assert "def hello()" in r["output"]
+        assert "共 150 行" in r["output"]
+        assert "1: " in r["output"]  # 行号
+
+    def test_read_by_keyword(self, tmp_path):
+        self._seed_repo(tmp_path)
+        r = _ag.dispatch("read_code", {"keyword": "def world"}, root=tmp_path, project_id="P-1")
+        assert r["ok"] is True
+        assert "main.py" in r["output"]
+
+    def test_path_escape_rejected(self, tmp_path):
+        self._seed_repo(tmp_path)
+        r = _ag.dispatch("read_code", {"path": "../../../etc/passwd"}, root=tmp_path, project_id="P-1")
+        assert r["ok"] is False
+        assert "越界" in r["error"]
+
+    def test_pagination_offset(self, tmp_path):
+        self._seed_repo(tmp_path)
+        r = _ag.dispatch("read_code", {"path": "src/main.py", "offset": 60}, root=tmp_path, project_id="P-1")
+        assert r["ok"] is True
+        assert "从第 61 行" in r["output"]
+
+    def test_tool_in_schema(self, tmp_path):
+        ids = {t["function"]["name"] for t in _ag.tool_schemas(tmp_path)}
+        assert "read_code" in ids

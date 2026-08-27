@@ -358,6 +358,19 @@ def execute_plan(
 
 # ---------------------------------------------------------------- Agent 循环 (原生 FC)
 
+_hooks_instance = None
+
+
+def _get_hooks():
+    """会话级 Hooks 单例 (S10-127 M4) — 延迟构造, 不拖 session 包。"""
+    global _hooks_instance
+    if _hooks_instance is None:
+        from .session_hooks import build_default_hooks
+
+        _hooks_instance = build_default_hooks()
+    return _hooks_instance
+
+
 def dispatch(
     tool_id: str,
     args: dict[str, Any],
@@ -368,6 +381,16 @@ def dispatch(
     ctx: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """工具调度 → 真实函数 (与 v1 相同; 补 plan/execute)。"""
+    # S10-127 M4.3: PreToolUse 动作门 (deny 短路)
+    try:
+        _hres = _get_hooks().fire("PreToolUse", {
+            "tool_id": tool_id, "args": args, "project_id": project_id,
+            "session_id": (ctx or {}).get("session_id") or ""})
+        _denied = _get_hooks().denied(_hres)
+        if _denied:
+            return {"ok": False, "error": f"已拦截 (S10-127 M4.3): {_denied.get('reason')}"}
+    except Exception:  # noqa: BLE001 — hooks 失败不阻断
+        pass
     if tool_id in ("plan_development", "execute_plan"):
         ctx = ctx or {}
         if tool_id == "plan_development":
@@ -743,6 +766,23 @@ def dispatch(
     return {"ok": False, "error": f"未知工具: {tool_id}"}
 
 
+def _finish_session_hooks(
+    data_dir: str | Path, project_id: str, session_id: str,
+    question: str, messages: list[dict[str, Any]], answer: str,
+) -> None:
+    """S10-127 M4.2: 会话收尾 — PreCompact 写交接 + SessionEnd 提取记忆。"""
+    try:
+        _h = _get_hooks()
+        _h.fire("PreCompact", {
+            "data_dir": data_dir, "project_id": project_id, "session_id": session_id,
+            "question": question, "last_answer": str(answer or "")[:200]})
+        _h.fire("SessionEnd", {
+            "data_dir": data_dir, "project_id": project_id, "session_id": session_id,
+            "messages": messages})
+    except Exception:  # noqa: BLE001 — hooks 失败不阻断
+        pass
+
+
 def run_agent_native(
     question: str,
     *,
@@ -837,6 +877,15 @@ def run_agent_native(
             messages.append({"role": "system", "content": _spine_block})
     except Exception:  # noqa: BLE001 — Spine 不可用不阻断
         pass
+    # S10-127 M4.1: SessionStart hooks → 注入续接内容
+    try:
+        _hook_inj = _get_hooks().injected(_get_hooks().fire("SessionStart", {
+            "data_dir": data_dir, "project_id": project_id, "session_id": session_id,
+            "question": question}))
+        if _hook_inj:
+            messages.append({"role": "system", "content": _hook_inj})
+    except Exception:  # noqa: BLE001 — hooks 不阻断
+        pass
     calls: list[dict[str, Any]] = []
     all_tools = tool_schemas(data_dir)
     ctx: dict[str, Any] = {"session_store": session_store, "session_id": session_id,
@@ -884,6 +933,13 @@ def run_agent_native(
                     from .tool_search import expand_matches
 
                     tools = expand_matches(all_tools, tools, result.get("matches") or [])
+                # S10-127 M4.1: PostToolUse 审计
+                try:
+                    _get_hooks().fire("PostToolUse", {
+                        "tool_id": tid, "args": args, "project_id": project_id,
+                        "session_id": session_id, "result_ok": bool(result.get("ok"))})
+                except Exception:  # noqa: BLE001
+                    pass
                 total_calls += 1
                 calls.append({"tool": tid, "params": args, "ok": result.get("ok"),
                               "output": result.get("output"), "error": result.get("error"),
@@ -897,6 +953,10 @@ def run_agent_native(
             messages.append({"role": "system", "content": REFLECTION_PROMPT})
         # 硬收敛轮 (不允许再调工具): 信息不足 → 明确追问 (Founder: 3 loop 后还不清醒就追问)
         from .answer_verify import self_check_prompt
+        try:
+            _finish_session_hooks(data_dir, project_id, session_id, question, messages, content)
+        except Exception:  # noqa: BLE001
+            pass
 
         messages.append({"role": "system", "content": (
             "已调用工具达到上限。现在必须收敛，且【禁止再调用任何工具】。"

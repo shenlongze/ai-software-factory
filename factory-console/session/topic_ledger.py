@@ -35,6 +35,9 @@ VIEW_OTHER_SUMMARY = 60
 VIEW_OTHER_MAX = 8
 #: running summary 总长上限 (字)
 SUMMARY_MAX = 600
+#: P1.2 语义快路径阈值 (Dice 词重叠): ≥ 延续, < 切换兜底
+CONTINUE_SIM = 0.30
+SWITCH_SIM = 0.12
 #: 冻结块保留最近几条原文 (切回时给一点近况)
 FROZEN_KEEP_MSGS = 2
 
@@ -124,11 +127,52 @@ class TopicLedger:
         topic["frozen"] = True
 
     # ------------------------------------------------------------ 话题判断
+    def _topic_ref(self, topic: dict[str, Any]) -> str:
+        """话题参考文本 (label + summary + 最近消息) — 语义快路径比对用。"""
+        parts = [str(topic.get("label") or "")]
+        if topic.get("summary"):
+            parts.append(str(topic["summary"]))
+        for m in (topic.get("messages") or [])[-2:]:
+            if m.get("content"):
+                parts.append(str(m["content"])[:200])
+        return " ".join(parts)
+
+    @staticmethod
+    def _semantic_similarity(a: str, b: str) -> float:
+        """零依赖词重叠 (Dice): 中文 bigram + 英文词。相关度高、无关低。"""
+        def _grams(t: str) -> set[str]:
+            out: set[str] = set()
+            low = (t or "").lower()
+            for chunk in re.findall(r"[\u4e00-\u9fff]+", low):
+                if len(chunk) <= 2:
+                    out.add(chunk)
+                else:
+                    for i in range(len(chunk) - 1):
+                        out.add(chunk[i:i + 2])
+            for w in re.findall(r"[a-z0-9]+", low):
+                out.add(w)
+            return out
+        ga, gb = _grams(a), _grams(b)
+        if not ga or not gb:
+            return 0.0
+        inter = len(ga & gb)
+        return 2.0 * inter / (len(ga) + len(gb))
+
     def _decide(self, message: str, *, llm_fn: Callable[[str], str] | None) -> dict[str, Any]:
-        """延续判断 (二分类, 不碎片): 续/切(新建|切回)。无 LLM → 续 (稳)。"""
+        """延续判断 (二分类, 不碎片): 续/切(新建|切回)。
+
+        P1.2 语义快路径: 词重叠 Dice ≥ CONTINUE_SIM → 直接续 (免 LLM);
+        无 LLM → 相似度兜底 (高续低切); 否则 LLM 判定。"""
         cur = self._active()
         if cur is None:
             return {"continue": False, "label": message[:12], "switch_to": None}
+        sim = self._semantic_similarity(message, self._topic_ref(cur))
+        if sim >= CONTINUE_SIM:
+            return {"continue": True, "label": None, "switch_to": None}
+        if llm_fn is None:
+            if sim < SWITCH_SIM:
+                return {"continue": False, "label": message[:12], "switch_to": None}
+            return {"continue": True, "label": None, "switch_to": None}
         if llm_fn is not None:
             try:
                 raw = str(llm_fn(_CONTINUE_PROMPT.format(

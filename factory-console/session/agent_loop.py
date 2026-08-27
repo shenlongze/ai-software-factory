@@ -115,6 +115,7 @@ def _resolve_model_conf(
             mi = catalog.get_model(conf["model"])
             if mi is not None:
                 conf["capabilities"] = list(mi.capabilities or [])
+                conf["context_window"] = mi.context_window
         conf["provider"] = provider_id
         _model_conf_cache[key] = conf
         return dict(conf)
@@ -806,8 +807,16 @@ def run_agent_native(
     )
     from .dialog_style import style_instruction
 
+    # S10-127 P1.1: 分模型 prompt 模板 (强模型完整指令+自主; 弱模型精简+严收敛)
+    from .model_prompt import pick_prompt
+
+    _mconf = _resolve_model_conf(data_dir, need_fc=True)
+    _mp = pick_prompt(_mconf.get("capabilities"), _mconf.get("context_window"))
+    _max_calls = _mp["max_tool_calls"]
+    _agent_system = _mp["system"]
+    _reflection = _mp["reflection"]
     messages: list[dict[str, Any]] = [
-        {"role": "system", "content": _AGENT_SYSTEM},
+        {"role": "system", "content": _agent_system},
         {"role": "system", "content": format_intent(intent) + "\n" + route_for(intent["intent"])},
         {"role": "system", "content": style_instruction(question, intent.get("intent"), intent.get("emotion"))},
         {"role": "user", "content": question},
@@ -951,10 +960,10 @@ def run_agent_native(
                               "plan": result.get("plan")})
                 messages.append({"role": "tool", "tool_call_id": tc.get("id") or "", "content": json.dumps(result, ensure_ascii=False)[:3000]})
             # 硬上限 → 停 (最后强制收敛)
-            if total_calls >= MAX_TOOL_CALLS:
+            if total_calls >= _max_calls:
                 break
             # Reflection 自评: 主动收敛 (不等 3-loop 兜底)
-            messages.append({"role": "system", "content": REFLECTION_PROMPT})
+            messages.append({"role": "system", "content": _reflection})
         # 硬收敛轮 (不允许再调工具): 信息不足 → 明确追问 (Founder: 3 loop 后还不清醒就追问)
         from .answer_verify import self_check_prompt
         try:
@@ -971,7 +980,7 @@ def run_agent_native(
         messages.append({"role": "system", "content": self_check_prompt()})
         resp = call_with_tools(messages, None, data_dir=data_dir)  # 不给工具 → 必收敛
         content = resp.get("content") or ""
-        _converge = "hard_cap" if total_calls >= MAX_TOOL_CALLS else "reflection"
+        _converge = "hard_cap" if total_calls >= _max_calls else "reflection"
         _audit_sess(data_dir, session_id, question, intent, calls,
                     total_calls, max_rounds, _start_ms, _converge, content)
         return {"answer": content[:2000], "calls": calls, "intent": intent,

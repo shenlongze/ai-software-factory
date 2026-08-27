@@ -382,11 +382,15 @@ def dispatch(
     ctx: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """工具调度 → 真实函数 (与 v1 相同; 补 plan/execute)。"""
-    # S10-127 M4.3: PreToolUse 动作门 (deny 短路)
+    # S10-127 M4.3 + P1.5: PreToolUse 动作门 (deny 短路; 权限模式 plan/auto)
     try:
+        from .session_hooks import load_permission_mode
+
         _hres = _get_hooks().fire("PreToolUse", {
             "tool_id": tool_id, "args": args, "project_id": project_id,
-            "session_id": (ctx or {}).get("session_id") or ""})
+            "session_id": (ctx or {}).get("session_id") or "",
+            "data_dir": str(root) if root else "",
+            "permission_mode": load_permission_mode(str(root) if root else None)})
         _denied = _get_hooks().denied(_hres)
         if _denied:
             return {"ok": False, "error": f"已拦截 (S10-127 M4.3): {_denied.get('reason')}"}

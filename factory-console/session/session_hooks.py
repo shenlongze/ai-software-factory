@@ -41,6 +41,25 @@ SENSITIVE_TOOLS = {
 }
 #: 危险/破坏性动作 (默认 deny — 当前无此类工具, 框架预留)
 DANGEROUS_TOOLS = {"git_push", "delete", "remove", "reset"}
+#: 权限模式 (P1.5): plan=只读(写工具deny) / acceptEdits=允许编辑 / auto=规则分类审计 / normal=默认
+PERMISSION_MODES = ("normal", "plan", "acceptEdits", "auto")
+
+
+def load_permission_mode(data_dir: str | None) -> str:
+    """从 <data_dir>/session_permissions.json 读权限模式 (缺省 normal)。"""
+    if not data_dir:
+        return "normal"
+    try:
+        import json as _json
+        from pathlib import Path as _P
+
+        d = _json.loads((_P(data_dir) / "session_permissions.json").read_text(encoding="utf-8"))
+        m = str(d.get("permission_mode") or "")
+        if m in PERMISSION_MODES:
+            return m
+    except Exception:  # noqa: BLE001 — 缺/坏 → normal
+        pass
+    return "normal"
 
 
 class SessionHooks:
@@ -206,14 +225,24 @@ def session_end_hook(ctx: dict[str, Any]) -> None:
 
 
 def pre_tool_use_hook(ctx: dict[str, Any]) -> dict[str, Any] | None:
-    """PreToolUse: 危险/破坏性动作 → deny; 敏感动作 → 仅审计标记 (不误伤现有审批流程)。
+    """PreToolUse 动作门 (S10-127 M4.3 + P1.5 权限模式):
+    - 危险/破坏性动作 → 永远 deny
+    - plan 模式 (只读) → 写操作 (SENSITIVE_TOOLS) deny
+    - auto 模式 → 敏感动作标记 audit (放行, 由审计/审批层处理)
+    - acceptEdits/normal → 放行 (现有审批流程处理)
 
-    ctx: {tool_id, args, ...}
+    ctx: {tool_id, args, permission_mode?, ...}
     """
     tool_id = str(ctx.get("tool_id") or "")
     if tool_id in DANGEROUS_TOOLS:
         return {"action": "deny", "reason": f"工具 {tool_id} 属于破坏性动作, 已默认拦截 (S10-127 M4.3)"}
-    # 敏感动作: 由现有审批逻辑处理, 这里仅记录审计 (dispatch 调方写 session_audit)
+    mode = str(ctx.get("permission_mode") or load_permission_mode(ctx.get("data_dir")))
+    if mode not in PERMISSION_MODES:
+        mode = "normal"
+    if mode == "plan" and tool_id in SENSITIVE_TOOLS:
+        return {"action": "deny",
+                "reason": f"plan 模式(只读): 写操作 {tool_id} 已拦截; 切 acceptEdits/auto 或明确授权后再执行 (S10-127 P1.5)"}
+    # 敏感动作: 由现有审批逻辑处理; auto 模式记录审计 (dispatch 调方写 session_audit)
     return None
 
 

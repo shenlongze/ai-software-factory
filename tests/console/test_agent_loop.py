@@ -283,6 +283,18 @@ class TestIntentCore:
         text = _ag.format_intent(_intent("challenge", emotion="dissatisfied"))
         assert "意图理解" in text and "challenge" in text and "dissatisfied" in text
 
+    def test_skeptical_verification(self):
+        """怀疑/确认式质疑 (是真正影响项目的么/靠谱吗) → challenge 验证, 不误伤普通查询。"""
+        for q in ("是真正影响项目的么", "你说的这些真的会影响项目吗",
+                  "这些任务确实是关键的吗", "靠谱吗", "能确定吗", "数据是真的吗"):
+            r = _ag.understand_intent(q, llm_fn=None)
+            assert r["intent"] == "challenge", q
+            assert r["need"] == "verification", q
+            assert r["emotion"] == "skeptical", q
+        # 普通查询/开发不受影响
+        assert _ag.understand_intent("项目进度是多少？", llm_fn=None)["intent"] == "question"
+        assert _ag.understand_intent("把登录做完", llm_fn=None)["intent"] == "develop"
+
 
 class TestIntentGate:
     """意图门: 按意图注入路由约束; clarify 直接追问; challenge 强制自查。"""

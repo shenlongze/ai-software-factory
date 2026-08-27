@@ -40,7 +40,9 @@ _INTENT_PROMPT = """你是 AI Factory 的意图理解器。用户消息千变万
 
 判定规则:
 - question: 要信息/查询 (进度/状态/这是什么/扫描/分析利弊)
-- challenge: 质疑/不满/纠错 (这回答不负责/上次不对吧/你瞎猜/太敷衍/数据不对) → 用户要的是验证+修正
+- challenge: 质疑/不满/纠错 (这回答不负责/上次不对吧/你瞎猜/太敷衍/数据不对)
+  + 怀疑/确认式质疑 ("是真的吗/确实吗/能确定吗/靠谱吗/真正影响项目吗/可信吗/保证吗")
+  → 用户要的是验证+证据, 不是泛泛肯定; need=verification, emotion=skeptical
 - chat: 打招呼/闲聊/讨论 (你好/聊聊/你觉得呢)
 - delegate/develop: 派活/开发 (把XX做完/开发XX/写个XX/帮我做XX/继续做XX)
 - operate: 操作现有东西 (开始/标记/删除/改名/推送/创建任务/执行计划)
@@ -172,6 +174,10 @@ def _fallback_intent(message: str, history: list[dict[str, Any]] | None) -> dict
     if any(k in msg for k in ("不负责", "糊弄", "敷衍", "太差", "不对吧", "错了", "假的",
                                "骗", "瞎猜", "不满意", "垃圾", "无语", "蒙我", "合理吗")):
         return {**base, "intent": "challenge", "need": "verification", "emotion": "dissatisfied"}
+    # 怀疑/确认式质疑 ("是真的吗/确实吗/能确定吗/靠谱吗/真正影响项目吗" → 要验证+证据)
+    _skeptical = ("真正", "真的", "确实", "确定", "保证", "靠谱", "可信", "准确", "属实", "当真")
+    if any(k in msg for k in _skeptical) and re.search(r"(吗|么|？|\?|不|没有|未必|确定)", msg):
+        return {**base, "intent": "challenge", "need": "verification", "emotion": "skeptical"}
     # 打招呼
     if re.match(r"^(你好|您好|hi|hello|hey|在吗|嗨|早上好|下午好|晚上好)[!！。.,，\s]*$", low):
         return {**base, "intent": "chat"}

@@ -1,4 +1,17 @@
 # Changelog
+## [v1.1.212] — 2026-08-27
+
+**修复: 怀疑/确认式质疑被误判为 clarify — "是真正影响项目的么/靠谱吗" 现在走 challenge 验证路径 (Founder 实测会话答非所问)**。
+
+### Fixed
+
+- 实测 WebUI 会话 "是真正影响项目的么" 被判 clarify → 模型泛答 "项目和能力都真实" (答非所问)
+- intent_core: fallback + LLM prompt 补「怀疑/确认式质疑」识别
+  ("是真的吗/确实吗/能确定吗/靠谱吗/真正影响项目吗/可信吗/数据属实吗" → challenge,
+  need=verification, emotion=skeptical) — 走验证路径: 重查数据→证据→结论/修正
+- 不误伤: "项目进度是多少？" 仍 question; "把登录做完" 仍 develop
+- 测试: 6 句质疑验证 + 2 句不误伤 (39 passed)
+
 ## [v1.1.211] — 2026-08-27
 
 **会话话题账本 (TopicLedger v2) — 会话级上下文分块/取舍/压缩 (Founder: 聊B时不带A细节, 回A时A的摘要+最近细节都在)**。

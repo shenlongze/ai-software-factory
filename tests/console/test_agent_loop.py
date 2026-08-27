@@ -348,3 +348,114 @@ class TestIntentGate:
         assert "plan_development" in joined  # 开发意图 → 必须出计划审批
         assert r["intent"]["intent"] == "develop"
 
+
+
+class TestChallengeVerificationGate:
+    """质疑自查加深: challenge 首轮只给验证工具 + 未验证前置强制再查。"""
+
+    def test_challenge_first_round_only_verification_tools(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(_ag, "understand_intent", lambda message, **kw: _intent("challenge"))
+        rounds: list[list[str]] = []
+
+        def fake_call(messages, tools, **kw):
+            rounds.append([t["function"]["name"] for t in (tools or [])])
+            return {"content": "好", "tool_calls": []}
+
+        monkeypatch.setattr(_ag, "call_with_tools", fake_call)
+        _ag.run_agent_native("这回答不负责吧", data_dir=tmp_path, project_id="P-1")
+        # 第一轮 (非收敛轮) 的工具面 = 验证工具子集
+        names = set(next(r for r in rounds if r))
+        assert {"project_status", "code_scan", "project_scan", "search_code"} <= names
+        # 挑战轮不给动作/计划/外部工具 (只验证, 不执行)
+        assert not (names & {"task_action", "create_task", "plan_development",
+                             "execute_plan", "delegate_external", "external_route"})
+
+    def test_challenge_no_tool_first_round_forces_recheck(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(_ag, "understand_intent", lambda message, **kw: _intent("challenge"))
+        sys_msgs: list[list[str]] = []
+
+        def fake_call(messages, tools, **kw):
+            sys_msgs.append([m["content"] for m in messages if m["role"] == "system"])
+            if tools is None:  # 强制收敛轮
+                return {"content": "已重新核实: 数据无误。", "tool_calls": []}
+            return {"content": "（直接回答不调工具）", "tool_calls": []}
+
+        monkeypatch.setattr(_ag, "call_with_tools", fake_call)
+        r = _ag.run_agent_native("数据不对吧", data_dir=tmp_path, project_id="P-1", max_rounds=3)
+        joined = "\n".join(str(x) for sub in sys_msgs for x in sub)
+        assert "没有调用任何验证工具" in joined  # 首轮直接答被驳回 → 强制先验证
+        assert not r.get("rejected")
+        assert "重新核实" in r["answer"]
+
+
+class TestExternalTools:
+    """外部能力动态工具面: 通用设计 — 新增外部 agent 无需改代码。"""
+
+    def _seed_agents(self, tmp_path, agents=None):
+        (tmp_path / "agents").mkdir(parents=True, exist_ok=True)
+        (tmp_path / "agents" / "agents.json").write_text(json.dumps(
+            {"agents": agents or {
+                "codex.architect": {"id": "codex.architect", "name": "Architect", "role": "architect",
+                                    "description": "架构审查", "source": "codex", "kind": "agent"},
+                "claude.security": {"id": "claude.security", "name": "Sec", "role": "security",
+                                    "description": "安全评估", "source": "claude", "kind": "agent"},
+            }}, ensure_ascii=False), encoding="utf-8")
+
+    def test_external_tool_schema_with_agents(self, tmp_path):
+        from factory_console.session import external_tools as et
+
+        self._seed_agents(tmp_path)
+        schema = et.external_tool_schema(tmp_path)
+        assert schema is not None
+        fn = schema["function"]
+        assert fn["name"] == "delegate_external"
+        assert "codex.architect" in fn["description"]
+        assert "agent_id" in fn["parameters"]["properties"]
+        assert "task" in fn["parameters"]["required"]
+
+    def test_external_tool_schema_none_without_agents(self, tmp_path):
+        from factory_console.session import external_tools as et
+
+        assert et.external_tool_schema(tmp_path) is None
+
+    def test_tool_schemas_includes_external_when_available(self, tmp_path):
+        self._seed_agents(tmp_path)
+        ids = {t["function"]["name"] for t in _ag.tool_schemas(tmp_path)}
+        assert "delegate_external" in ids
+        assert "plan_development" in ids
+
+    def test_tool_schemas_no_external_without_data(self):
+        ids = {t["function"]["name"] for t in _ag.tool_schemas(None)}
+        assert "delegate_external" not in ids
+
+    def test_delegate_external_missing_adapter(self, tmp_path):
+        from factory_console.session import external_tools as et
+
+        r = et.delegate_external(tmp_path, "nope.agent", "任务")
+        assert r["ok"] is False
+        assert "未注册" in r["error"]
+
+    def test_delegate_external_runs(self, tmp_path, monkeypatch):
+        from factory_console.session import external_tools as et
+        import factory_console.external_executor.executor as ex
+
+        self._seed_agents(tmp_path)
+        monkeypatch.setattr(ex, "run", lambda adapter, prompt, project_dir="", **kw: {
+            "exit_code": 0, "output": "架构审查完成: OK", "error": "", "command": "codex exec ..."})
+        monkeypatch.setattr(ex, "record_invocation", lambda *a, **kw: {})
+        r = et.delegate_external(tmp_path, "codex.architect", "审查这个架构", project_id="P-1")
+        assert r["ok"] is True
+        assert "架构审查完成" in r["output"]
+        assert r["agent"] == "codex.architect"
+
+    def test_delegate_external_failure_honest(self, tmp_path, monkeypatch):
+        from factory_console.session import external_tools as et
+        import factory_console.external_executor.executor as ex
+
+        self._seed_agents(tmp_path)
+        monkeypatch.setattr(ex, "run", lambda adapter, prompt, project_dir="", **kw: {
+            "exit_code": 1, "output": "", "error": "沙箱拒绝", "command": "codex exec ..."})
+        monkeypatch.setattr(ex, "record_invocation", lambda *a, **kw: {})
+        r = et.delegate_external(tmp_path, "codex.architect", "审查")
+        assert r["ok"] is False
+        assert "沙箱拒绝" in r["error"]

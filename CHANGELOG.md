@@ -1,4 +1,22 @@
 # Changelog
+## [v1.1.209] — 2026-08-27
+
+**质疑自查钩子加深 + 外部能力进工具面 (v2 设计 §2.2 external / §6 质疑验证 落地)**。
+
+### Added
+
+- 外部能力动态工具面 (factory-console/session/external_tools.py): delegate_external 工具 —
+  会话 Agent 可直接委派外部 codex/claude/hermes agent 真实执行 (executor.run 统一契约 +
+  record_invocation 落监控/审计); 候选自动发现 (registry + agents.json), 通用设计 —
+  新增外部 agent/执行器无需改代码, 无候选不加工具 (不膨胀工具面)
+- 质疑自查加深: challenge 意图首轮工具面 = 仅验证工具 (status/scan/search/docs/git/monitor,
+  不给动作/计划/外部工具); 首轮未调验证工具直接答 → 强制驳回再查一轮 (不放过)
+- 工具面 data_dir 感知: tool_schemas(data_dir) 动态追加外部工具 (无 data_dir → 纯内置)
+
+### Fixed
+
+- delegate_external exit_code=0 误判失败 (0 or -1 → -1 的 falsy 坑) — 改用 get(key, -1)
+
 ## [v1.1.208] — 2026-08-27
 
 **IntentCore 意图理解层落地 (v2 设计 §2): 每轮先真正 get 用户意图 (intent×target×need×emotion), 再按意图路由专业能力 — 不靠关键词**。

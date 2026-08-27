@@ -94,9 +94,12 @@ def _fc(tid: str, name: str, desc: str, props: dict[str, Any], required: list[st
     }}
 
 
-def tool_schemas() -> list[dict[str, Any]]:
-    """会话动作工具面 (原生 function calling schema)。"""
-    return [
+def tool_schemas(data_dir: str | Path | None = None) -> list[dict[str, Any]]:
+    """会话动作工具面 (原生 function calling schema)。
+
+    data_dir 非空 → 动态追加外部能力工具 delegate_external (候选来自 registry+agents.json,
+    通用设计: 新增外部 agent 无需改代码; 无候选 → 不加, 不膨胀工具面)。"""
+    tools = [
         _fc("code_scan", "扫描代码", "扫描项目仓库代码: 文件数/行数/语言分布/测试文件/TODO/大文件/最近改动/git", {}),
         _fc("project_scan", "扫描项目", "扫描项目整体: 任务树/版本线/战役线/质量/风险建议", {}),
         _fc("search_code", "代码检索", "在仓库中检索关键词, 返回命中文件", {"keyword": {"type": "string"}}, ["keyword"]),
@@ -122,6 +125,16 @@ def tool_schemas() -> list[dict[str, Any]]:
              "delegate": {"type": "boolean", "description": "是否委派外部AI执行"}}),
         _fc("external_route", "外部AI路由", "为任务选择最合适外部AI agent", {"task": {"type": "string"}}, ["task"]),
     ]
+    if data_dir is not None:
+        try:
+            from .external_tools import external_tool_schema
+
+            ext = external_tool_schema(data_dir)
+            if ext:
+                tools.append(ext)
+        except Exception:  # noqa: BLE001 — 外部工具面失败 → 不阻断内置工具
+            pass
+    return tools
 
 
 # ---------------------------------------------------------------- 计划-审批-执行
@@ -343,6 +356,14 @@ def dispatch(
                 except Exception:  # noqa: BLE001
                     pass
             return {"ok": True, "output": f"已锚定任务「{match.get('title')}」({match.get('id')}), 状态 {match.get('status') or 'todo'}"}
+        if tool_id == "delegate_external":
+            from .external_tools import delegate_external
+
+            return delegate_external(
+                root, str(args.get("agent_id") or ""), str(args.get("task") or ""),
+                project_id=project_id,
+                skills=[str(x) for x in (args.get("skills") or []) if str(x).strip()],
+            )
         if tool_id == "external_route":
             from ..external_executor.router import route
             from ..external_executor.registry import build_registry
@@ -392,7 +413,12 @@ def run_agent_native(
                            "pending_plan": None, "intent": intent}
     # 注入 llm_fn 供 plan_development 内部用 (复用原生通道的简化版)
     ctx["llm_fn"] = lambda p: _simple_llm(p, data_dir=data_dir)
-    tools = tool_schemas()
+    tools = tool_schemas(data_dir)
+    # 质疑自查加深: challenge 首轮只给验证工具 (拿真实数据), 不给动作/计划工具
+    if intent["intent"] == "challenge":
+        verify_names = {"code_scan", "project_scan", "search_code", "project_status",
+                        "project_tasks", "project_docs", "git_status", "monitor"}
+        tools = [t for t in tools if (t.get("function") or {}).get("name") in verify_names]
     total_calls = 0
     # 质疑自查: 把上一轮回答注入上下文 → 强制验证再回应
     if intent["intent"] == "challenge":
@@ -416,6 +442,14 @@ def run_agent_native(
             resp = call_with_tools(messages, tools, data_dir=data_dir)
             tcs = resp.get("tool_calls") or []
             if not tcs:
+                # 质疑自查: 首轮未调验证工具直接答 → 强制先验证再答 (不放过)
+                if intent["intent"] == "challenge" and total_calls == 0:
+                    messages.append({"role": "system", "content": (
+                        "你还没有调用任何验证工具。请先调用验证工具 (project_status/project_scan/"
+                        "code_scan/search_code/project_tasks/git_status/monitor) 重新拿真实数据, "
+                        "再给出结论/修正; 不要凭印象回答。"
+                    )})
+                    continue
                 return {"answer": resp.get("content") or "（模型未输出）", "calls": calls, "intent": intent,
                         "evidence": [{"tool": c["tool"], "ok": c["ok"], "output": str(c.get("output") or c.get("error") or "")[:300]} for c in calls]}
             messages.append({"role": "assistant", "content": resp.get("content") or "", "tool_calls": tcs})

@@ -1130,3 +1130,14 @@ class TestReadCode:
     def test_tool_in_schema(self, tmp_path):
         ids = {t["function"]["name"] for t in _ag.tool_schemas(tmp_path)}
         assert "read_code" in ids
+
+    def test_read_dir_lists_files(self, tmp_path):
+        """read_code 支持目录: 返回文件/子目录列表 (模型据此选文件读)。"""
+        repo = self._seed_repo(tmp_path)
+        (repo / "docs" / "architecture").mkdir(parents=True)
+        (repo / "docs" / "architecture" / "overview.md").write_text("# 架构", encoding="utf-8")
+        (repo / "docs" / "architecture" / "adr").mkdir()
+        r = _ag.dispatch("read_code", {"path": "docs/architecture"}, root=tmp_path, project_id="P-1")
+        assert r["ok"] is True
+        assert "overview.md" in r["output"]
+        assert "adr/" in r["output"]

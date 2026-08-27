@@ -103,7 +103,10 @@ def tool_schemas(data_dir: str | Path | None = None) -> list[dict[str, Any]]:
         _fc("code_scan", "扫描代码", "扫描项目仓库代码: 文件数/行数/语言分布/测试文件/TODO/大文件/最近改动/git", {}),
         _fc("project_scan", "扫描项目", "扫描项目整体: 任务树/版本线/战役线/质量/风险建议", {}),
         _fc("project_structure", "项目结构", "查看项目真实结构: 仓库顶层目录树/模块划分/文件分布/入口文件 (用户说'了解项目结构/有哪些模块/目录'时用)", {}),
-        _fc("read_code", "读取代码", "读取指定文件的代码内容(带行号, 支持分页), 用于理解代码逻辑/实现/调用链。参数 path 为仓库内相对路径, 或 keyword 定位文件; 文件大时用 offset 翻页",
+        _fc("read_code", "读取代码", "读取指定文件的代码内容(带行号, 支持分页), 用于理解代码逻辑/实现/调用链。"
+            "规则: 1) 通常从 offset=0 从头读起; 除非之前已读过该文件或用 offset 翻页; "
+            "2) 读完必须基于内容向用户解释代码逻辑/关键函数/调用链, 不要只贴代码不给解释; "
+            "3) 文件很大时分多次读取完整后再解释。参数 path 为仓库内相对路径, 或 keyword 定位文件",
             {"path": {"type": "string"}, "keyword": {"type": "string"}, "offset": {"type": "integer"}}),
         _fc("search_code", "代码检索", "在仓库中检索关键词, 返回命中文件", {"keyword": {"type": "string"}}, ["keyword"]),
         _fc("project_status", "项目状态", "查询项目实时状态: 生命周期/进度(真实任务完成率)/当前阶段/工作流", {}),
@@ -445,8 +448,24 @@ def dispatch(
                     return {"ok": False, "error": "命中文件不在仓库内"}
             else:
                 return {"ok": False, "error": "需要 path 或 keyword"}
+            # 目录 → 返回文件/子目录列表 (模型据此决定读哪个文件)
+            if target.is_dir():
+                items = sorted(target.iterdir())
+                lines = [f"目录 {rel}/ (共 {len(items)} 项):"]
+                for f in items[:60]:
+                    if f.is_dir():
+                        lines.append(f"  📁 {f.name}/")
+                    else:
+                        try:
+                            sz = f.stat().st_size
+                        except OSError:
+                            sz = 0
+                        lines.append(f"  📄 {f.name} ({sz}B)")
+                if len(items) > 60:
+                    lines.append(f"  … 等 {len(items)} 项")
+                return {"ok": True, "output": "\n".join(lines)}
             if not target.is_file():
-                return {"ok": False, "error": f"文件不存在: {rel}"}
+                return {"ok": False, "error": f"路径不存在: {rel}"}
             if target.suffix not in (".py", ".ts", ".tsx", ".js", ".jsx", ".go", ".rs", ".java",
                                      ".vue", ".swift", ".kt", ".md", ".json", ".yaml", ".yml",
                                      ".sh", ".toml", ".sql", ".html", ".css", ".c", ".cpp", ".h"):

@@ -1,4 +1,17 @@
 # Changelog
+## [v1.1.218] — 2026-08-27
+
+**S10-126 M2: 验证闭环 (S-2) + 会话质量评估 (S-3)**。
+
+### Added
+
+- **S-2 回答验证闭环** (answer_verify.py): 数字一致性校验器 (回答关键数字须在查询结果可复核, 只标记不阻断) +
+  无证据不结论 (S-2.2: 查询/分析类未调工具直接答 → 强制先查再说) + 回答自检 (S-2.3: 硬收敛前逐句检查结论证据)
+- **S-3 会话质量评估** (eval_judge.py + session_eval_cases.json): 12 条真实会话数据集 (8+ 意图 + 已知坑:
+  扫描代码/项目结构/质疑/调整任务…) + LLM-judge 评分 (证据规则锚定 + LLM 判分降级) + run_eval 通过率 ≥90% 门
+- IntentCore fallback 补 4 意图 (code_scan/project_structure/list_projects/analyze + 调整任务), 无 LLM 降级路径质量提升
+- eval 数据暴露并修正: 旧路由意图体系对齐 (质疑→deep_analyze, 开发→create_task)
+
 ## [v1.1.217] — 2026-08-27
 
 **S10-126 M1: 说人话 (S-6) + 可观测 (S-1) + 做人事 (S-5) 三线落地**。

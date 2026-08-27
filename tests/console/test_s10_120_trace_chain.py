@@ -467,8 +467,8 @@ class TestVersionBump:
     def test_v1_1_90_synced(self):
         """版本 v1.1.95: pyproject + CHANGELOG + FEATURES 同步。"""
         pyproject = (_REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-        assert re.search(r'^version\s*=\s*"1\.1\.217"', pyproject, re.M)
+        assert re.search(r'^version\s*=\s*"1\.1\.218"', pyproject, re.M)
         changelog = (_REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-        assert "## [v1.1.217]" in changelog
+        assert "## [v1.1.218]" in changelog
         features = (_REPO_ROOT / "docs" / "FEATURES.md").read_text(encoding="utf-8")
-        assert "v1.1.217" in features
+        assert "v1.1.218" in features

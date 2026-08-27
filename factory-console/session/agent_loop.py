@@ -542,6 +542,12 @@ def run_agent_native(
             resp = call_with_tools(messages, tools, data_dir=data_dir)
             tcs = resp.get("tool_calls") or []
             if not tcs:
+                # S-2.2 无证据不结论: 查询/分析类完全没调工具直接答 → 强制先查再说
+                if total_calls == 0 and intent["intent"] in ("question", "deep_analyze", "analyze"):
+                    from .answer_verify import no_evidence_prompt
+
+                    messages.append({"role": "system", "content": no_evidence_prompt()})
+                    continue
                 # 模型自主收敛 (直接回答/追问) — agentic: 不强制拦截
                 if total_calls == 0:
                     _converge = "autonomous"
@@ -571,11 +577,14 @@ def run_agent_native(
             # Reflection 自评: 主动收敛 (不等 3-loop 兜底)
             messages.append({"role": "system", "content": REFLECTION_PROMPT})
         # 硬收敛轮 (不允许再调工具): 信息不足 → 明确追问 (Founder: 3 loop 后还不清醒就追问)
+        from .answer_verify import self_check_prompt
+
         messages.append({"role": "system", "content": (
             "已调用工具达到上限。现在必须收敛，且【禁止再调用任何工具】。"
             "如果信息足够: 开发类需求 → 直接输出计划文本(目标/任务/顺序/验收)并请用户审批; "
             "其他 → 给出最终回答。如果信息仍不足 → 明确向用户提出澄清问题（追问），不要继续调研。"
         )})
+        messages.append({"role": "system", "content": self_check_prompt()})
         resp = call_with_tools(messages, None, data_dir=data_dir)  # 不给工具 → 必收敛
         content = resp.get("content") or ""
         _converge = "hard_cap" if total_calls >= MAX_TOOL_CALLS else "reflection"

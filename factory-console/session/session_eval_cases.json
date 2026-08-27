@@ -1,0 +1,17 @@
+{
+  "_comment": "S-3 会话 eval 数据集 (v1.1.218): 真实会话踩坑 + 8 类意图覆盖。expect_tools 期望调用的工具集 (含=需要调, 空=不调); expect_answer_has 期望回答含词。",
+  "cases": [
+    {"id": "c1", "question": "你好", "intent": "chat", "expect_tools": [], "expect_answer_has": ["你好"]},
+    {"id": "c2", "question": "项目进度怎么样", "intent": "project_status", "expect_tools": ["project_status"], "expect_answer_has": []},
+    {"id": "c3", "question": "扫描代码", "intent": "code_scan", "expect_tools": ["code_scan"], "expect_answer_has": ["文件", "行"]},
+    {"id": "c4", "question": "了解项目真实结构", "intent": "project_structure", "expect_tools": ["project_structure"], "expect_answer_has": ["📁"]},
+    {"id": "c5", "question": "是真正影响项目的么", "intent": "deep_analyze", "expect_tools": [], "expect_answer_has": ["查", "验证"]},
+    {"id": "c6", "question": "把登录功能做完", "intent": "create_task", "expect_tools": ["plan_development"], "expect_answer_has": ["审批"]},
+    {"id": "c7", "question": "把 P0 任务标记完成", "intent": "task_action", "expect_tools": ["task_action"], "expect_answer_has": []},
+    {"id": "c8", "question": "调整任务", "intent": "task_action", "expect_tools": [], "expect_answer_has": ["哪个任务", "任务"]},
+    {"id": "c9", "question": "有哪些项目", "intent": "list_projects", "expect_tools": [], "expect_answer_has": ["项目"]},
+    {"id": "c10", "question": "分析项目利弊", "intent": "deep_analyze", "expect_tools": [], "expect_answer_has": ["结论", "建议"]},
+    {"id": "c11", "question": "推送代码到 github", "intent": "git_push", "expect_tools": [], "expect_answer_has": []},
+    {"id": "c12", "question": "标记完成 完善导出功能", "intent": "task_action", "expect_tools": ["task_action"], "expect_answer_has": []}
+  ]
+}

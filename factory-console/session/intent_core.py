@@ -180,15 +180,29 @@ def _fallback_intent(message: str, history: list[dict[str, Any]] | None) -> dict
     if re.match(r"^(你好|您好|hi|hello|hey|在吗|嗨|早上好|下午好|晚上好)[!！。.,，\s]*$", low):
         return {**base, "intent": "chat"}
     # 操作现有东西 (动作) — "把 X 标记完成/删除/改名…" 均 operate
-    if re.search(r"(标记|删除|改名|归档|收藏|推送|批准|创建任务|执行计划)", msg) \
+    if re.search(r"(标记|删除|改名|归档|收藏|推送|批准|创建任务|执行计划|调整任务|修改任务|改优先级)", msg) \
             or re.search(r"^(把|将|给|帮我)?\s*(开始|完成)\s", msg):
         return {**base, "intent": "operate", "need": "action"}
+    # 代码扫描 (在"扫描"泛词前精确匹配)
+    if any(k in msg for k in ("扫描代码", "扫代码", "代码扫描", "代码结构", "代码规模",
+                               "仓库代码", "看看代码", "看下代码", "代码文件", "代码统计")):
+        return {**base, "intent": "code_scan", "need": "info"}
+    # 项目结构
+    if any(k in msg for k in ("项目结构", "真实结构", "目录结构", "目录树", "文件树", "模块结构",
+                               "有哪些模块", "有哪些目录", "项目组成", "模块划分", "了解结构", "看结构")):
+        return {**base, "intent": "project_structure", "need": "info"}
+    # 项目列表
+    if any(k in msg for k in ("有哪些项目", "项目列表", "所有项目", "几个项目", "重点项目", "项目清单")):
+        return {**base, "intent": "list_projects", "need": "info"}
+    # 分析/评估
+    if any(k in msg for k in ("分析", "评估", "利弊", "优缺点", "值不值得", "怎么看", "评价", "建议", "对比")):
+        return {**base, "intent": "analyze", "need": "info"}
     # 开发/派活
     if re.search(r"(把.{0,20}(做完|做好|搞定|实现)|开发|写个|做个|做一个|帮我做|实现|搭建|设计一个|重构|继续做|接着做)", msg):
         return {**base, "intent": "develop", "need": "creation"}
     # 查询
     if "?" in msg or "？" in msg or any(k in msg for k in ("多少", "什么", "怎么", "哪些", "进度",
-                                                             "状态", "扫描", "分析", "清单", "列表", "怎么样")):
+                                                             "状态", "扫描", "清单", "列表", "怎么样")):
         return {**base, "intent": "question"}
     # 默认: 信息不足 → 追问 (Founder: 意图不明不瞎猜)
     return {**base, "intent": "clarify", "followup": "请补充你想做什么/要查什么"}

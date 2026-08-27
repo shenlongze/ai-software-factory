@@ -903,12 +903,18 @@ def run_agent_native(
         "【工具面】当前已加载部分常用工具; 需要其他能力时调用 tool_search 搜索并加载。"
     )})
     total_calls = 0
+    _usage_prompt = 0
+    _usage_completion = 0
     import time as _time
     _start_ms = _time.monotonic() * 1000
     _converge = "reflection"
     try:
         for _ in range(max_rounds):
             resp = call_with_tools(messages, tools, data_dir=data_dir)
+            _u = resp.get("usage") or {}
+            if _u:
+                _usage_prompt += int(_u.get("prompt_tokens") or 0)
+                _usage_completion += int(_u.get("completion_tokens") or 0)
             tcs = resp.get("tool_calls") or []
             if not tcs:
                 # S-2.2 无证据不结论: 查询/分析类完全没调工具直接答 → 强制先查再说
@@ -922,7 +928,8 @@ def run_agent_native(
                     _converge = "autonomous"
                 _answer = resp.get("content") or "（模型未输出）"
                 _audit_sess(data_dir, session_id, question, intent, calls,
-                            total_calls, max_rounds, _start_ms, _converge, _answer)
+                            total_calls, max_rounds, _start_ms, _converge, _answer,
+                            _usage_prompt, _usage_completion)
                 try:
                     _finish_session_hooks(data_dir, project_id, session_id, question, messages, _answer)
                 except Exception:  # noqa: BLE001
@@ -987,12 +994,14 @@ def run_agent_native(
         content = resp.get("content") or ""
         _converge = "hard_cap" if total_calls >= _max_calls else "reflection"
         _audit_sess(data_dir, session_id, question, intent, calls,
-                    total_calls, max_rounds, _start_ms, _converge, content)
+                    total_calls, max_rounds, _start_ms, _converge, content,
+                    _usage_prompt, _usage_completion)
         return {"answer": content[:2000], "calls": calls, "intent": intent,
                 "evidence": [{"tool": c["tool"], "ok": c["ok"], "output": str(c.get("output") or c.get("error") or "")[:300]} for c in calls]}
     except Exception as exc:  # noqa: BLE001 — LLM 不可用 → 回退旧路由
         _audit_sess(data_dir, session_id, question, intent, calls,
-                    total_calls, max_rounds, _start_ms, "rejected", "")
+                    total_calls, max_rounds, _start_ms, "rejected", "",
+                    _usage_prompt, _usage_completion)
         return {"answer": "", "rejected": True, "calls": calls, "evidence": [],
                 "reason": f"原生 FC 不可用: {exc}"}
 
@@ -1026,8 +1035,8 @@ def _last_assistant_text(history: list[dict[str, Any]] | None) -> str:
 
 
 def _audit_sess(data_dir, session_id, question, intent, calls, total_calls, rounds,
-                start_ms, converge, answer) -> None:
-    """会话审计落盘 (S-1; 失败静默)。"""
+                start_ms, converge, answer, prompt_tokens=0, completion_tokens=0) -> None:
+    """会话审计落盘 (S-1; 失败静默; P2.1 含 token 统计)。"""
     try:
         from .session_audit import audit
 
@@ -1039,6 +1048,7 @@ def _audit_sess(data_dir, session_id, question, intent, calls, total_calls, roun
             total_calls=total_calls, rounds=rounds,
             duration_ms=int((__import__("time").monotonic() * 1000) - start_ms),
             answer_len=len(str(answer or "")), converge=converge, answer=answer,
+            prompt_tokens=int(prompt_tokens or 0), completion_tokens=int(completion_tokens or 0),
         )
     except Exception:  # noqa: BLE001 — 审计失败不阻断会话
         pass

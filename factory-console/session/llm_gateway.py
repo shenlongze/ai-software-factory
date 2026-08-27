@@ -155,7 +155,9 @@ def _anthropic_complete(
         "temperature": temperature,
     }
     if system:
-        body["system"] = system
+        # P2.1 提示缓存意识: system 块加 cache_control (Anthropic 前缀缓存)
+        body["system"] = [{"type": "text", "text": system,
+                           "cache_control": {"type": "ephemeral"}}]
     if anth_tools:
         body["tools"] = anth_tools
     req = urllib.request.Request(
@@ -170,7 +172,11 @@ def _anthropic_complete(
     )
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         data = json.loads(resp.read().decode("utf-8"))
-    return _from_anthropic(data)
+    out = _from_anthropic(data)
+    _u = data.get("usage") or {}
+    out["usage"] = {"prompt_tokens": _u.get("input_tokens") or 0,
+                    "completion_tokens": _u.get("output_tokens") or 0}
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -285,7 +291,12 @@ def _gemini_complete(
     )
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         data = json.loads(resp.read().decode("utf-8"))
-    return _from_gemini(data)
+    out = _from_gemini(data)
+    _um = data.get("usageMetadata") or {}
+    if _um:
+        out["usage"] = {"prompt_tokens": _um.get("promptTokenCount") or 0,
+                        "completion_tokens": _um.get("candidatesTokenCount") or 0}
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -315,7 +326,12 @@ def _openai_compat_complete(
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         data = json.loads(resp.read().decode("utf-8"))
     msg = (data.get("choices") or [{}])[0].get("message") or {}
-    return {"content": msg.get("content") or "", "tool_calls": msg.get("tool_calls") or []}
+    out = {"content": msg.get("content") or "", "tool_calls": msg.get("tool_calls") or []}
+    _u = data.get("usage") or {}
+    if _u:
+        out["usage"] = {"prompt_tokens": _u.get("prompt_tokens") or 0,
+                        "completion_tokens": _u.get("completion_tokens") or 0}
+    return out
 
 
 # ---------------------------------------------------------------------------

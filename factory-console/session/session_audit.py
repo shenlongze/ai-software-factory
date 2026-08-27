@@ -35,6 +35,8 @@ def audit(
     answer_len: int,
     converge: str,  # autonomous | reflection | hard_cap | rejected
     answer: str = "",
+    prompt_tokens: int = 0,  # P2.1 提示缓存意识: token 统计
+    completion_tokens: int = 0,
 ) -> None:
     """追加一条会话审计记录 (<data_dir>/session_audit/<YYYY-MM-DD>.jsonl)。"""
     if not data_dir:
@@ -51,6 +53,8 @@ def audit(
             "total_calls": int(total_calls), "rounds": int(rounds),
             "duration_ms": int(duration_ms), "answer_len": int(answer_len),
             "converge": str(converge), "answer": str(answer)[:500],
+            "prompt_tokens": int(prompt_tokens or 0),
+            "completion_tokens": int(completion_tokens or 0),
         }
         lines = []
         if path.exists():

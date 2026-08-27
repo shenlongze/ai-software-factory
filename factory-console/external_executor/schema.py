@@ -81,6 +81,21 @@ class CapabilitiesSpec(BaseModel):
     cost_tier: str = "medium"     # low | medium | high
 
 
+class ExecutorPermissions(BaseModel):
+    """执行器权限 (网关 G3): 工作目录白名单 + 命令黑名单 + 危险放行。
+
+    - allowed_project_dirs: 空 = 不限制; 非空 = project_dir 必须在白名单内 (前缀匹配)
+    - disallowed_commands: 子串黑名单 (命中即拒绝)
+    - allow_dangerous: True = 绕过 sandbox 危险黑名单 (默认 False, 安全默认)
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    allowed_project_dirs: list[str] = []
+    disallowed_commands: list[str] = []
+    allow_dangerous: bool = False
+
+
 class ExternalExecutorAdapter(BaseModel):
     """一个外部 AI CLI 的完整适配器 (yaml 文件 ↔ 本模型)。"""
 
@@ -96,7 +111,8 @@ class ExternalExecutorAdapter(BaseModel):
     host_assets: HostAssetsSpec | None = None
     capabilities: CapabilitiesSpec = CapabilitiesSpec()
     extensions: dict[str, Any] = {}
-    allow_dangerous: bool = False
+    allow_dangerous: bool = False  # 兼容旧字段 (permissions.allow_dangerous 优先)
+    permissions: ExecutorPermissions = ExecutorPermissions()
 
     @field_validator("id")
     @classmethod

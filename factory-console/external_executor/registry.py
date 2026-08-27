@@ -108,12 +108,17 @@ class ExternalExecutorRegistry:
         return self._dir
 
     def _load_dir(self) -> None:
-        """用户 yaml 覆盖内置 (同 id 覆盖; 新增 id 追加)。"""
+        """用户声明覆盖内置 (同 id 覆盖; 新增 id 追加)。支持 *.yaml 与 *.json (网关 G3)。"""
         if not self._dir.is_dir():
             return
-        for f in sorted(self._dir.glob("*.yaml")):
+        for f in sorted(list(self._dir.glob("*.yaml")) + list(self._dir.glob("*.json"))):
             try:
-                adapter = adapter_from_yaml(f.read_text(encoding="utf-8"))
+                if f.suffix == ".yaml":
+                    adapter = adapter_from_yaml(f.read_text(encoding="utf-8"))
+                else:
+                    import json as _json
+
+                    adapter = ExternalExecutorAdapter(**_json.loads(f.read_text(encoding="utf-8")))
             except Exception:  # noqa: BLE001 — 单个损坏 → 跳过 (不拖垮注册表)
                 continue
             self._adapters[adapter.id] = adapter

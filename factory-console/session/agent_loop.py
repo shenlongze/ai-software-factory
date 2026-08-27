@@ -496,7 +496,32 @@ def dispatch(
                     sstore.update_session(sid, task_id=str(match["id"]))
                 except Exception:  # noqa: BLE001
                     pass
-            return {"ok": True, "output": f"已锚定任务「{match.get('title')}」({match.get('id')}), 状态 {match.get('status') or 'todo'}"}
+            # S10-127 M3.3: 续接信息 — Spine handoff/resume + 执行链 checkpoint
+            _resume_lines = [f"已锚定任务「{match.get('title')}」({match.get('id')}), 状态 {match.get('status') or 'todo'}"]
+            try:
+                from .handoff import ProjectSpine
+
+                _sp = ProjectSpine.load(root, project_id)
+                _rp = _sp.data.get("resume_point") or {}
+                if _rp.get("task_id") == str(match.get("id")):
+                    _resume_lines.append(f"上次进展: {_rp.get('note') or '—'}")
+                _hc = _sp.data.get("handoff_card") or {}
+                if _hc.get("progress"):
+                    _resume_lines.append(f"交接进度: {_hc.get('progress')}")
+                    for _ns in (_hc.get("next_steps") or [])[:3]:
+                        _resume_lines.append(f"下一步: {_ns}")
+            except Exception:  # noqa: BLE001 — Spine 不可用不阻断
+                pass
+            try:
+                from .exec_state import ExecState
+
+                _st = ExecState.load(root, sid or "")
+                if _st.state.get("status") == "running":
+                    _prog = _st.progress() or {}
+                    _resume_lines.append(f"执行链进度: {_prog.get('progress') or _prog}")
+            except Exception:  # noqa: BLE001
+                pass
+            return {"ok": True, "output": "\n".join(_resume_lines)}
         if tool_id == "delegate_external":
             from .external_tools import delegate_external
 
@@ -802,6 +827,15 @@ def run_agent_native(
         if _mem_block:
             messages.append({"role": "system", "content": _mem_block})
     except Exception:  # noqa: BLE001 — 记忆不可用不阻断
+        pass
+    # S10-127 M3.3: 跨会话交接 Spine 注入 (Closure over replay — 只投影摘要+交接面)
+    try:
+        from .handoff import ProjectSpine
+
+        _spine_block = ProjectSpine.load(data_dir, project_id).view()
+        if _spine_block:
+            messages.append({"role": "system", "content": _spine_block})
+    except Exception:  # noqa: BLE001 — Spine 不可用不阻断
         pass
     calls: list[dict[str, Any]] = []
     all_tools = tool_schemas(data_dir)

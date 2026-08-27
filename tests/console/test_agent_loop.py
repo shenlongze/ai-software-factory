@@ -520,7 +520,133 @@ class TestContextContinuity:
 
         send_message(store, s["id"], "第一句", llm_fn=llm)
         send_message(store, s["id"], "第二句", llm_fn=llm)
-        assert "最近对话" not in prompts[0]      # 首轮无历史
-        assert "最近对话" in prompts[1]          # 第二轮注入前文
+        assert "AI:" not in prompts[0]           # 首轮无历史 AI 回答
+        assert "当前话题" in prompts[1]          # 第二轮注入话题视图 (v1.1.211)
         assert "第一句" in prompts[1]            # 上一轮用户消息
         assert "回复一" in prompts[1]            # 上一轮 AI 回答
+
+
+class TestTopicLedger:
+    """话题账本 (v1.1.211): 会话级分块/取舍/压缩 — 聊B不带A细节, 回A切回。"""
+
+    def _llm(self, prompt):
+        """真实行为 stub: 首条B切走, 后续延续, 回A切回。"""
+        msg = prompt.split("用户最新消息: ")[1].strip()
+        if "回到记账" in msg:
+            return '{"continue": false, "label": "记账App", "switch_to": "t1"}'
+        if msg.startswith("关于台球计分的问题B0"):
+            return '{"continue": false, "label": "台球计分", "switch_to": null}'
+        if "台球" in msg or "记账" in msg:
+            return '{"continue": true}'
+        return '{"continue": true}'
+
+    def test_topic_split_and_switch_back(self, tmp_path):
+        from factory_console.session import topic_ledger as tl
+
+        ledger = tl.TopicLedger("s1")
+        for i in range(3):
+            ledger.append("user", f"关于记账App的问题A{i}", llm_fn=self._llm)
+            ledger.append("assistant", f"记账回复{i}", llm_fn=self._llm)
+        ledger.append("user", "关于台球计分的问题B0", llm_fn=self._llm)
+        ledger.append("assistant", "台球回复0", llm_fn=self._llm)
+        ledger.append("user", "关于台球计分的问题B1", llm_fn=self._llm)
+        ledger.append("assistant", "台球回复1", llm_fn=self._llm)
+        ledger.append("user", "回到记账App继续", llm_fn=self._llm)
+
+        assert len(ledger.topics) == 2  # A + B, 不碎片
+        a = next(t for t in ledger.topics if "记账" in str(t.get("label")) or t.get("id") == "t1")
+        b = next(t for t in ledger.topics if t is not a)
+        # 回A后: A 是当前块 (未冻结), B 冻结
+        assert a.get("frozen") is False
+        assert b.get("frozen") is True
+        # 切走时 B 只留最近2条原文
+        assert len(b["messages"]) <= 2
+
+    def test_build_view_tradeoff(self, tmp_path):
+        from factory_console.session import topic_ledger as tl
+
+        ledger = tl.TopicLedger("s1")
+        for i in range(3):
+            ledger.append("user", f"关于记账App的问题A{i}", llm_fn=self._llm)
+            ledger.append("assistant", f"记账回复{i}", llm_fn=self._llm)
+        ledger.append("user", "关于台球计分的问题B0", llm_fn=self._llm)
+        view_b = ledger.build_view()
+        # 聊B时: 当前话题=台球, A 只占一行 (其他话题)
+        assert "台球计分" in view_b
+        assert "其他话题" in view_b
+        # 回到A: 视图切回
+        ledger.append("assistant", "台球回复0", llm_fn=self._llm)
+        ledger.append("user", "回到记账App继续", llm_fn=self._llm)
+        view_a = ledger.build_view()
+        assert "当前话题" in view_a
+        # 记账是当前块 (最近消息可见), 台球在"其他话题"一行
+        assert "回到记账App继续" in view_a
+        assert "关于台球计分" not in view_a  # B 的细节不再注入 (只一行摘要)
+
+    def test_rolling_compress(self, tmp_path):
+        from factory_console.session import topic_ledger as tl
+
+        ledger = tl.TopicLedger("s1")
+        for i in range(tl.COMPRESS_AT + 2):
+            ledger.append("user", f"连续聊话题X第{i}轮", llm_fn=lambda p: '{"continue": true}')
+            ledger.append("assistant", f"回复{i}", llm_fn=lambda p: '{"continue": true}')
+        cur = ledger._active()
+        assert len(cur["messages"]) <= tl.COMPRESS_AT + 1  # 滚动压缩生效
+        assert cur.get("summary")  # 有摘要 (兜底拼接)
+        # 视图总大小受控 (不会随对话无限增长)
+        assert len(ledger.build_view()) < 3000
+
+    def test_persist_roundtrip(self, tmp_path):
+        from factory_console.session import topic_ledger as tl
+
+        ledger = tl.TopicLedger("s9")
+        ledger.append("user", "聊聊记账App", llm_fn=lambda p: '{"continue": true}')
+        ledger.append("assistant", "好的", llm_fn=lambda p: '{"continue": true}')
+        ledger.save(tmp_path)
+        loaded = tl.TopicLedger.load(tmp_path, "s9")
+        assert len(loaded.topics) == 1
+        assert loaded.topics[0]["label"]
+
+    def test_llm_down_keeps_current_block(self, tmp_path):
+        from factory_console.session import topic_ledger as tl
+
+        ledger = tl.TopicLedger("s1")
+        ledger.append("user", "第一句", llm_fn=None)
+        ledger.append("assistant", "回复", llm_fn=None)
+        ledger.append("user", "第二句", llm_fn=None)  # LLM 挂 → 归当前块
+        assert len(ledger.topics) == 1
+
+
+class TestContextViewInjection:
+    """context_view (话题账本视图) 优先注入 Agent 主循环。"""
+
+    def test_context_view_priority(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(_ag, "understand_intent", lambda message, **kw: _intent("question"))
+        seen: dict = {}
+
+        def fake_call(messages, tools, **kw):
+            seen["sys"] = [m["content"] for m in messages if m["role"] == "system"]
+            return {"content": "好", "tool_calls": []}
+
+        monkeypatch.setattr(_ag, "call_with_tools", fake_call)
+        _ag.run_agent_native("继续", data_dir=tmp_path, project_id="P-1",
+                             context_view="【当前话题 · 记账App】\n用户: 上一轮问题")
+        joined = "\n".join(seen["sys"])
+        assert "当前话题 · 记账App" in joined
+
+    def test_send_message_topic_view(self, tmp_path):
+        from factory_console.console_sessions import SessionStore, send_message
+
+        store = SessionStore(tmp_path / "sessions.json")
+        s = store.create_session(scope="project", project_id="P-1", title="t")
+        prompts: list[str] = []
+
+        def llm(prompt):
+            prompts.append(prompt)
+            return "回复一"
+
+        send_message(store, s["id"], "我想做个记账App", llm_fn=llm)
+        send_message(store, s["id"], "先做基础功能", llm_fn=llm)
+        # 第二轮 prompt 含话题视图 (当前话题 + 第一轮内容)
+        assert "当前话题" in prompts[1]
+        assert "记账App" in prompts[1]

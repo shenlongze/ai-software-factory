@@ -394,6 +394,7 @@ def run_agent_native(
     session_id: str = "",
     max_rounds: int = MAX_ROUNDS,
     history: list[dict[str, Any]] | None = None,
+    context_view: str | None = None,
 ) -> dict[str, Any]:
     """原生 function calling Agent 循环 (IntentCore 门 = 第一步)。
 
@@ -408,8 +409,8 @@ def run_agent_native(
         {"role": "system", "content": format_intent(intent) + "\n" + route_for(intent["intent"])},
         {"role": "user", "content": question},
     ]
-    # ---- 上下文连贯性 (Founder: 上下文断了是大事): 历史 + 锚定任务注入主循环 ----
-    hist_block = _history_text(history)
+    # ---- 上下文连贯性 (Founder: 上下文断了是大事): 话题账本视图优先, fallback 最近4轮 ----
+    hist_block = context_view if (context_view or "").strip() else _history_text(history)
     if hist_block:
         messages.append({"role": "system", "content": (
             f"【最近对话】(保持上下文连贯, 引用前文时注明; 与本次问题矛盾处以后者为准)\n{hist_block}"
@@ -547,11 +548,11 @@ def _simple_llm(prompt: str, *, data_dir: str | Path) -> str:
 # ---------------------------------------------------------------- 兼容旧调用 (WebUI 接线用)
 
 def run_agent(question, *, root, project_id, llm_fn, service=None, max_rounds=3,
-                session_store=None, session_id="", history=None):
+                session_store=None, session_id="", history=None, context_view=None):
     """入口: 原生 FC (IntentCore 门); 失败 → 回退 prompt 协议 (v1) → 仍失败 → rejected。"""
     native = run_agent_native(question, data_dir=root, project_id=project_id, service=service,
                               session_store=session_store, session_id=session_id,
-                              max_rounds=max_rounds, history=history)
+                              max_rounds=max_rounds, history=history, context_view=context_view)
     if not native.get("rejected"):
         return native
     return native

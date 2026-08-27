@@ -1,4 +1,19 @@
 # Changelog
+## [v1.1.211] — 2026-08-27
+
+**会话话题账本 (TopicLedger v2) — 会话级上下文分块/取舍/压缩 (Founder: 聊B时不带A细节, 回A时A的摘要+最近细节都在)**。
+
+### Added
+
+- factory-console/session/topic_ledger.py: 单会话多议题分块 —
+  延续判断(二分类, 不碎片) + 显式切换(冻结旧块/新建/按"回到XX"切回旧块) + running summary(增量合成)
+- 取舍注入: build_view = 当前话题详细(摘要+最近 6 轮) + 其他话题每块一行摘要(≤60字, 最多8块)
+  → 控制 token: 聊 B 时 A 只占一行; 回 A 时 A 摘要+近况都在, 不掺 B 细节
+- 滚动压缩: 块内消息 >12 → 最老 6 条经 LLM 合成进摘要(兜底取关键句, 不编造); 冻结块只留最近 2 条原文
+- 接入: Agent 主循环 context_view 优先(话题视图), fallback 最近 4 轮; WebUI 旧路由 send_message 同款;
+  AI 回答也进账本(块内对话完整)
+- 持久化: <data_dir>/session_topics/<session_id>.json; 失败安全(LLM 挂/文件坏 → 归当前块, 不崩)
+
 ## [v1.1.210] — 2026-08-27
 
 **会话上下文连贯性补齐 (Founder: 上下文断了是大事) — Agent 主循环 + WebUI 旧路由都注入历史, 不再失忆**。

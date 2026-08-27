@@ -3894,6 +3894,16 @@ def build_app(
                     _history = sessions_store.list_messages(session_id)
                 except Exception:  # noqa: BLE001 — 历史不可用 → 不阻塞
                     _history = []
+                # 话题账本 (v1.1.211): 当前消息进账本 → 注入视图 (当前话题详细+其他话题一行摘要)
+                _ctx_view = ""
+                try:
+                    _tl = _console_import("session.topic_ledger").TopicLedger.load(
+                        workspace_root or DEFAULT_ROOT, session_id)
+                    _tl.append("user", body.message, llm_fn=_sessions_mod.llm_raw)
+                    _tl.save(workspace_root or DEFAULT_ROOT)
+                    _ctx_view = _tl.build_view(skip_last=1)
+                except Exception:  # noqa: BLE001 — 账本不可用 → 回退固定历史
+                    _ctx_view = ""
                 agent_result = _agmod.run_agent(
                     _agent_message,
                     root=workspace_root or DEFAULT_ROOT,
@@ -3904,11 +3914,19 @@ def build_app(
                     session_store=sessions_store,
                     session_id=session_id,
                     history=_history,
+                    context_view=_ctx_view,
                 )
             except Exception:  # noqa: BLE001 — Agent 循环异常 → 回退旧路由
                 agent_result = None
             if agent_result is not None and agent_result.get("answer"):
                 calls = agent_result.get("calls") or []
+                # AI 回答也进话题账本 (保持块内对话完整)
+                if _ctx_view:
+                    try:
+                        _tl.append("assistant", str(agent_result.get("answer") or "")[:2000])
+                        _tl.save(workspace_root or DEFAULT_ROOT)
+                    except Exception:  # noqa: BLE001 — 账本失败不阻断回复
+                        pass
                 # 新计划 → 存待审批
                 for c in calls:
                     if c.get("plan"):

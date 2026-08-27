@@ -326,19 +326,27 @@ def send_message(
     if user_msg is None:
         raise ValueError("会话不存在")
 
-    # 上下文连贯性 (v1.1.210): 最近 4 轮历史注入 (排除刚追加的当前消息) — CLI 同款,
-    # WebUI 旧路由此前失忆, 补上
+    # 上下文连贯性 (v1.1.210→v1.1.211): 话题账本视图优先 (当前话题详细+其他话题一行摘要),
+    # 不可用 → fallback 最近 4 轮 (排除刚追加的当前消息)
     history_block = ""
+    _ledger = None
     try:
-        _msgs = store.list_messages(session_id)
-        _recent = [m for m in _msgs[:-1] if isinstance(m, dict) and m.get("role") in ("user", "assistant")][-8:]
-        if _recent:
-            history_block = "\n".join(
-                f"{'用户' if m['role'] == 'user' else 'AI'}: {str(m.get('content') or '')[:300]}"
-                for m in _recent
-            )
-    except Exception:  # noqa: BLE001 — 历史不可用 → 不阻断
-        history_block = ""
+        from .session.topic_ledger import TopicLedger
+
+        _ledger = TopicLedger.load(str(Path(store._path).parent), session_id)
+        _ledger.append("user", text)
+        history_block = _ledger.build_view(skip_last=1)
+    except Exception:  # noqa: BLE001 — 账本不可用 → fallback 固定历史
+        try:
+            _msgs = store.list_messages(session_id)
+            _recent = [m for m in _msgs[:-1] if isinstance(m, dict) and m.get("role") in ("user", "assistant")][-8:]
+            if _recent:
+                history_block = "\n".join(
+                    f"{'用户' if m['role'] == 'user' else 'AI'}: {str(m.get('content') or '')[:300]}"
+                    for m in _recent
+                )
+        except Exception:  # noqa: BLE001 — 历史不可用 → 不阻断
+            history_block = ""
 
     prompt = _build_prompt(session, text, facts=facts, reply_extra=reply_extra,
                            history_block=history_block)
@@ -352,6 +360,13 @@ def send_message(
         reply = _llm_answer(prompt, max_chars=max_chars)
     if not reply:
         reply = _FALLBACK
+    # AI 回答也进话题账本 (保持块内对话完整)
+    if _ledger is not None:
+        try:
+            _ledger.append("assistant", reply)
+            _ledger.save(str(Path(store._path).parent))
+        except Exception:  # noqa: BLE001 — 账本失败不阻断回复
+            pass
     assistant_msg = store.append_message(session_id, "assistant", reply)
     return {
         "user": user_msg,

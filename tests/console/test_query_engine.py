@@ -55,6 +55,12 @@ class TestParseIntent:
         assert _qe.parse_intent("有哪些文档")["intent"] == "project_docs"
         assert _qe.parse_intent("你用什么模型")["intent"] == "model"
         assert _qe.parse_intent("你好")["intent"] == "chat"
+        # v1.1.213: "扫描代码" → code_scan, "扫描项目" 不被劫持
+        assert _qe.parse_intent("扫描代码")["intent"] == "code_scan"
+        assert _qe.parse_intent("扫代码")["intent"] == "code_scan"
+        assert _qe.parse_intent("看看代码结构")["intent"] == "code_scan"
+        assert _qe.parse_intent("扫描项目")["intent"] == "project_scan"
+        assert _qe.parse_intent("扫描项目整体情况")["intent"] == "project_scan"
 
     def test_analysis_intents_route_to_deep_analyze(self):
         """v1.1.206 语义门: 分析/评估措辞 → deep_analyze (不靠堆关键词, 不被命令词劫持)。"""

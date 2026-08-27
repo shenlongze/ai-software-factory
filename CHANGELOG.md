@@ -1,4 +1,18 @@
 # Changelog
+## [v1.1.213] — 2026-08-27
+
+**修复: "扫描代码" 答非所问 — 路由到真实 code_scan (读盘), 不再答"未执行代码扫描" (Founder 实测会话)**。
+
+### Fixed
+
+- 实测会话 "扫描代码" 被旧路由关键词 "扫描" → project_scan, 答"未执行代码扫描, 可建任务配置扫描工具"
+  (实际 v1.1.207 已有真实 code_scan: 文件数/LOC/语言/测试/TODO/最近改动/git)
+- query_engine: 新增 code_scan 意图 (扫描代码/扫代码/看代码结构/代码规模/仓库代码…),
+  置于 project_scan 之前优先匹配; LLM prompt 加规则; 处理分支调 scan_repo + format_code_scan
+- 不误伤: "扫描项目/扫描项目整体情况" 仍 project_scan
+- intent_core route_for(question) 加区分提示: "扫描代码"→code_scan, "扫描项目"→project_scan (agent 循环路径)
+- 实测: code_scan 在真实数据目录 (~/.factory) 定位 ai-factory-self → /Users/Shared/work/ai-software-factory 仓库, 扫描成功
+
 ## [v1.1.212] — 2026-08-27
 
 **修复: 怀疑/确认式质疑被误判为 clarify — "是真正影响项目的么/靠谱吗" 现在走 challenge 验证路径 (Founder 实测会话答非所问)**。

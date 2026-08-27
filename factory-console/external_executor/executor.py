@@ -136,6 +136,16 @@ def run(
         return {"exit_code": -1, "output": "", "error": f"未找到二进制: {adapter.binary}", "command": ""}
     # 命令 = [二进制路径, *模板渲染] (模板不含路径 — 防 -p 被当可执行文件)
     cmd = [path, *build_invocation(adapter, prompt, project_dir, agent=agent, skills=skills)]
+    # S10-127 P2.2: 系统级沙箱最小版 — 危险命令校验 (fail-closed)
+    try:
+        from factory_console.session.sandbox import validate_command
+
+        ok_v, reason = validate_command(cmd)
+        if not ok_v:
+            return {"exit_code": -1, "output": "",
+                    "error": f"沙箱拦截: {reason} (S10-127 P2.2)", "command": " ".join(cmd)[:400]}
+    except Exception:  # noqa: BLE001 — 沙箱不可用 → 放行 (外部执行器不受阻)
+        pass
     mode = str(adapter.invocation.project_dir or "cwd")
     use_cwd = mode == "cwd" and project_dir
     cwd = str(project_dir or "").strip() if use_cwd else None

@@ -3,7 +3,19 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.200] — 2026-08-27
+
+**M6: WebUI 路由入口 + 路由接入执行链 (全自动闭环 route → 委派 → 记录)**。
+
+### Added
+
+- WebUI 监控页外部 tab:「🧭 路由测试」框 — 输入任务 → 显示选谁+理由+候选; 「🚀 路由+委派」一键闭环
+- API: POST /api/external-ai/auto (route → 解析适配器/借壳 → run → EXS 记录); 内部员工候选诚实标注不代跑
+- CLI: factory external-ai auto --task
+- 路由 tie-break: 具体导入 agent 优先于通用执行器; pick_kind 透传
+
 ## [v1.1.199] — 2026-08-27
+
 
 **M5 路由层 — 专业的人做专业的事 (能力匹配 + 历史加权 + 成本分级 + 用户显式 + 兜底)**。
 

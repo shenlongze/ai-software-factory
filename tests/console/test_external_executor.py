@@ -146,7 +146,7 @@ class TestExecutor:
         cmd = _exec.build_invocation(a, "hi", "/tmp/p", agent="arch")
         assert cmd == ["-p", "hi", "--agent", "arch"]
 
-    def test_run_mock(self, monkeypatch):
+    def test_run_mock(self, tmp_path, monkeypatch):
         captured: dict[str, Any] = {}
 
         def fake_run(cmd, **kwargs):
@@ -161,10 +161,10 @@ class TestExecutor:
         monkeypatch.setattr(_exec.subprocess, "run", fake_run)
         monkeypatch.setattr(_exec.shutil, "which", lambda name: "/usr/bin/fake")
         a = _minimal_adapter(discovery=["PATH"])
-        r = _exec.run(a, "hi", project_dir="/tmp/p")
+        r = _exec.run(a, "hi", project_dir=str(tmp_path))
         assert r["exit_code"] == 0 and r["output"] == "done\n"
         assert captured["cmd"][0] == "/usr/bin/fake"  # 二进制路径必须在前 (防 -p 被当可执行)
-        assert captured["cwd"] == "/tmp/p"
+        assert captured["cwd"] == str(tmp_path)  # cwd 模式 + 目录存在 → 用 cwd
 
 
 @requires_fastapi

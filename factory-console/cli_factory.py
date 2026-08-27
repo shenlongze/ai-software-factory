@@ -2575,6 +2575,52 @@ class FactoryCLI:
         from . import local_ai as _local_ai
 
         action = getattr(args, "local_ai_action", "scan") or "scan"
+        if action == "auto":
+            from .external_executor import router as _ee_router
+            from .external_executor import executor as _ee_exec
+
+            task = str(getattr(args, "task", "") or "").strip()
+            if not task:
+                print("用法: factory external-ai auto --task <任务> [--project <目录>] [--id <显式agent>]")
+                return 2
+            explicit = str(getattr(args, "id", "") or "").strip()
+            imported: list[dict] = []
+            try:
+                data = _load_json_safe(self.data_dir / "agents" / "agents.json")
+                agents = data.get("agents") if isinstance(data, dict) else None
+                if isinstance(agents, dict):
+                    imported = [v for v in agents.values() if isinstance(v, dict)]
+            except Exception:  # noqa: BLE001
+                imported = []
+            r = _ee_router.route(task, registry.list(), imported, self.data_dir, explicit_agent=explicit)
+            print(f"=== 自动闭环: {r['work_type']} ===")
+            print(f"  🎯 选: {r['pick'] or '无'} ({r['reason']})")
+            if not r.get("pick"):
+                return 1
+            if r.get("pick_kind") == "internal":
+                print(f"  ⚠ 内部员工 {r['pick']} — 外部执行器不代跑内部链 (诚实)")
+                return 1
+            adapter_id = r["pick"].split(".")[0] if "." in r["pick"] else r["pick"]
+            host_agent = r["pick"][len(adapter_id) + 1:] if "." in r["pick"] else ""
+            adapter = registry.get(adapter_id)
+            if adapter is None:
+                print(f"  ❌ 适配器不存在: {adapter_id}")
+                return 1
+            if host_agent and not adapter.invocation.agent_flag:
+                host_agent = ""
+            result = _ee_exec.run(adapter, task, project_dir=str(getattr(args, "project", "") or ""), agent=host_agent)
+            record = _ee_exec.record_invocation(
+                self.data_dir, executor_id=adapter_id,
+                mode="borrowed-shell" if host_agent else "blackbox", host_agent=host_agent,
+                prompt=task, project_dir=str(getattr(args, "project", "") or ""),
+                exit_code=int(result.get("exit_code")) if result.get("exit_code") is not None else -1,
+                output=str(result.get("output") or ""), error=str(result.get("error") or ""),
+                command=str(result.get("command") or ""), duration_ms=0,
+            )
+            print(f"  🚀 委派: {adapter_id}" + (f" agent={host_agent}" if host_agent else "") + f" → exit={result.get('exit_code')} · result_id={record.get('result_id')}")
+            if result.get("output"):
+                print("  " + str(result["output"])[:500].replace("\n", "\n  "))
+            return 0 if result.get("exit_code") == 0 else 1
         if action == "verify":
             rid = str(getattr(args, "result_id", "") or "").strip()
             if not rid:
@@ -2804,6 +2850,52 @@ class FactoryCLI:
             if r.get("alternatives"):
                 print(f"  候选: {', '.join(r['alternatives'][:6])}")
             return 0 if r["pick"] else 1
+        if action == "auto":
+            from .external_executor import router as _ee_router
+            from .external_executor import executor as _ee_exec
+
+            task = str(getattr(args, "task", "") or "").strip()
+            if not task:
+                print("用法: factory external-ai auto --task <任务> [--project <目录>] [--id <显式agent>]")
+                return 2
+            explicit = str(getattr(args, "id", "") or "").strip()
+            imported: list[dict] = []
+            try:
+                data = _load_json_safe(self.data_dir / "agents" / "agents.json")
+                agents = data.get("agents") if isinstance(data, dict) else None
+                if isinstance(agents, dict):
+                    imported = [v for v in agents.values() if isinstance(v, dict)]
+            except Exception:  # noqa: BLE001
+                imported = []
+            r = _ee_router.route(task, registry.list(), imported, self.data_dir, explicit_agent=explicit)
+            print(f"=== 自动闭环: {r['work_type']} ===")
+            print(f"  🎯 选: {r['pick'] or '无'} ({r['reason']})")
+            if not r.get("pick"):
+                return 1
+            if r.get("pick_kind") == "internal":
+                print(f"  ⚠ 内部员工 {r['pick']} — 外部执行器不代跑内部链 (诚实)")
+                return 1
+            adapter_id = r["pick"].split(".")[0] if "." in r["pick"] else r["pick"]
+            host_agent = r["pick"][len(adapter_id) + 1:] if "." in r["pick"] else ""
+            adapter = registry.get(adapter_id)
+            if adapter is None:
+                print(f"  ❌ 适配器不存在: {adapter_id}")
+                return 1
+            if host_agent and not adapter.invocation.agent_flag:
+                host_agent = ""
+            result = _ee_exec.run(adapter, task, project_dir=str(getattr(args, "project", "") or ""), agent=host_agent)
+            record = _ee_exec.record_invocation(
+                self.data_dir, executor_id=adapter_id,
+                mode="borrowed-shell" if host_agent else "blackbox", host_agent=host_agent,
+                prompt=task, project_dir=str(getattr(args, "project", "") or ""),
+                exit_code=int(result.get("exit_code")) if result.get("exit_code") is not None else -1,
+                output=str(result.get("output") or ""), error=str(result.get("error") or ""),
+                command=str(result.get("command") or ""), duration_ms=0,
+            )
+            print(f"  🚀 委派: {adapter_id}" + (f" agent={host_agent}" if host_agent else "") + f" → exit={result.get('exit_code')} · result_id={record.get('result_id')}")
+            if result.get("output"):
+                print("  " + str(result["output"])[:500].replace("\n", "\n  "))
+            return 0 if result.get("exit_code") == 0 else 1
         if action == "verify":
             rid = str(getattr(args, "result_id", "") or "").strip()
             if not rid:
@@ -4449,9 +4541,9 @@ def build_parser() -> argparse.ArgumentParser:
         "external-ai", help="外部执行器通用适配层 (M1): scan/list/probe/run — 声明式适配器, 每产品一个 yaml"
     )
     p_external_ai.add_argument(
-        "external_ai_action", nargs="?", choices=["scan", "list", "probe", "run", "assets", "import", "verify", "route"], default="list",
-        metavar="scan|list|probe|run|assets|import|verify|route",
-        help="scan — 扫描; list — 配置; probe — 探测; run — 委派(写执行记录); assets — 宿主资产; import — 导入; verify — 验证回写; route — 路由选 agent",
+        "external_ai_action", nargs="?", choices=["scan", "list", "probe", "run", "assets", "import", "verify", "route", "auto"], default="list",
+        metavar="scan|list|probe|run|assets|import|verify|route|auto",
+        help="scan — 扫描; list — 配置; probe — 探测; run — 委派(写执行记录); assets — 宿主资产; import — 导入; verify — 验证回写; route — 路由选 agent; auto — 路由+委派闭环",
     )
     p_external_ai.add_argument("--result-id", default="", help="执行记录 id (verify)")
     p_external_ai.add_argument("--task", default="", help="任务描述 (route)")

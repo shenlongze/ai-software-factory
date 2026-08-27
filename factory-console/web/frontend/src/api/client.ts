@@ -431,6 +431,10 @@ export const api = {
   }>; count: number }>('/api/external-ai'),
   externalAiMonitor: (days = 14, recent = 30) =>
     getJson<MonitorDetail>(`/api/external-ai/monitor?days=${days}&recent=${recent}`),
+  routeExternalAi: (task: string, explicitAgent = '') =>
+    sendJson<{ pick?: string | null; pick_kind?: string | null; work_type: string; reason: string; alternatives: string[]; degraded?: boolean; tier_advice?: string }>('/api/external-ai/route', { task, explicit_agent: explicitAgent }),
+  autoExternalAi: (task: string, projectDir = '', explicitAgent = '') =>
+    sendJson<{ route: { pick?: string | null; work_type: string; reason: string; alternatives: string[] }; execution?: { executor_id?: string; mode?: string; host_agent?: string; exit_code?: number; output?: string; error?: string; result_id?: string } | null; note?: string }>('/api/external-ai/auto', { task, project_dir: projectDir, explicit_agent: explicitAgent }),
   scanExternalAi: () =>
     sendJson<{ results: Array<{ id: string; name: string; found: boolean; ok: boolean; path?: string | null; version?: string | null; usage?: string; error?: string }>; count: number }>('/api/external-ai/scan', {}),
   saveExternalAi: (body: Record<string, unknown>) =>

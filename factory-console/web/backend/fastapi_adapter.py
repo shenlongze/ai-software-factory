@@ -288,6 +288,15 @@ class _ExternalAiBody(BaseModel):
     allow_dangerous: bool = False
 
 
+class _ExternalAiAutoBody(BaseModel):
+    """POST /api/external-ai/auto body (M6): {task, project_dir?, explicit_agent?, timeout?}。"""
+
+    task: str
+    project_dir: str = ""
+    explicit_agent: str = ""
+    timeout: int | None = None
+
+
 class _ExternalAiRouteBody(BaseModel):
     """POST /api/external-ai/route body (M5): {task, explicit_agent?}。"""
 
@@ -1822,6 +1831,70 @@ def build_app(
             )
         except Exception as exc:  # noqa: BLE001 — 路由失败 → 诚实错误
             raise HTTPException(status_code=500, detail=f"路由失败: {exc}") from exc
+
+    @app.post("/api/external-ai/auto")
+    def api_external_ai_auto(body: _ExternalAiAutoBody) -> dict[str, Any]:
+        """M6 全自动闭环: 路由选 agent → 委派执行 → 统一执行记录。
+        内部员工候选 → 诚实标注走内部链 (外部执行器不代跑, 不假装)。"""
+        registry = _external_registry()
+        adapters = registry.list() if registry is not None else []
+        all_agents: list[dict[str, Any]] = []
+        try:
+            _ag = _read_json_map(Path(workspace_root or DEFAULT_ROOT) / "agents" / "agents.json")
+            agents = _ag.get("agents") if isinstance(_ag, dict) and isinstance(_ag.get("agents"), dict) else None
+            if isinstance(agents, dict):
+                all_agents = [v for v in agents.values() if isinstance(v, dict)]
+        except Exception:  # noqa: BLE001
+            all_agents = []
+        try:
+            _router = _console_import("external_executor.router")
+            route_result = _router.route(
+                body.task, adapters, all_agents,
+                workspace_root or DEFAULT_ROOT,
+                explicit_agent=body.explicit_agent,
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=500, detail=f"路由失败: {exc}") from exc
+        pick = route_result.get("pick")
+        pick_kind = route_result.get("pick_kind")
+        if not pick:
+            return {"route": route_result, "execution": None, "note": "无候选，未执行"}
+        if pick_kind == "internal":
+            return {"route": route_result, "execution": None,
+                    "note": f"选到内部员工 {pick} — 外部执行器不代跑内部链 (诚实, 不假装)"}
+        # 解析适配器: agent → <adapter>.<host_agent>; executor → <adapter>
+        adapter_id = pick.split(".")[0] if "." in pick else pick
+        host_agent = pick[len(adapter_id) + 1:] if "." in pick else ""
+        adapter = registry.get(adapter_id) if registry is not None else None
+        if adapter is None:
+            return {"route": route_result, "execution": None,
+                    "note": f"适配器不存在: {adapter_id} — 未执行"}
+        if host_agent and not adapter.invocation.agent_flag:
+            host_agent = ""  # 宿主不支持借壳 → 降级黑盒 (诚实)
+        import time as _time
+        _ee_exec = _console_import("external_executor.executor")
+        _t0 = _time.monotonic()
+        result = _ee_exec.run(adapter, body.task,
+                              project_dir=str(body.project_dir or ""),
+                              agent=host_agent,
+                              timeout=body.timeout)
+        _dur_ms = int((_time.monotonic() - _t0) * 1000)
+        mode = "borrowed-shell" if host_agent else "blackbox"
+        record = _ee_exec.record_invocation(
+            workspace_root or DEFAULT_ROOT,
+            executor_id=adapter_id, mode=mode, host_agent=host_agent,
+            prompt=body.task, project_dir=str(body.project_dir or ""),
+            exit_code=int(result.get("exit_code")) if result.get("exit_code") is not None else -1,
+            output=str(result.get("output") or ""), error=str(result.get("error") or ""),
+            command=str(result.get("command") or ""), duration_ms=_dur_ms,
+            trace_id=_trace_ctx.get_trace_id() if _trace_ctx is not None else "",
+        )
+        result["result_id"] = record.get("result_id")
+        return {"route": route_result, "execution": {
+            "executor_id": adapter_id, "mode": mode, "host_agent": host_agent,
+            "exit_code": result.get("exit_code"), "output": str(result.get("output") or "")[:2000],
+            "error": str(result.get("error") or "")[:1000], "result_id": record.get("result_id"),
+        }}
 
     @app.post("/api/external-ai/cost")
     def api_external_ai_cost(body: _ExternalAiCostBody) -> dict[str, Any]:

@@ -40,6 +40,8 @@ function stubApi() {
   const fn = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url.startsWith('/api/external-ai/monitor')) return jsonResponse(DETAIL);
+    if (url === '/api/external-ai/route') return jsonResponse({ pick: 'claude.architecture-examiner', pick_kind: 'agent', work_type: 'arch', reason: '能力匹配(architect) + 历史效果分 5.5', alternatives: ['claude.architecture-examiner', 'codex.architecture-examiner'], degraded: false, tier_advice: 'medium|high' });
+    if (url === '/api/external-ai/auto') return jsonResponse({ route: { pick: 'claude.architecture-examiner', work_type: 'arch', reason: '能力匹配(architect) + 历史效果分 5.5', alternatives: [] }, execution: { executor_id: 'claude', mode: 'borrowed-shell', host_agent: 'architecture-examiner', exit_code: 0, output: '审查完成', result_id: 'EXS-A1' } });
     return jsonResponse({});
   });
   vi.stubGlobal('fetch', fn);
@@ -80,6 +82,22 @@ describe('AfMonitorPage (📊 监控中心)', () => {
     // 记录流只含内部 (backend-1), 不含 claude
     expect(screen.getByText('写接口')).toBeInTheDocument();
     expect(screen.queryByText('审查架构')).not.toBeInTheDocument();
+  });
+
+  it('路由测试: 输入任务 → 显示选谁/理由/候选; 一键委派', async () => {
+    const user = userEvent.setup();
+    stubApi();
+    render(<AfMonitorPage />);
+    await user.click(screen.getByRole('tab', { name: '外部能力' }));
+    await user.type(screen.getByLabelText('路由任务'), '帮忙审查系统架构');
+    await user.click(screen.getByRole('button', { name: '🧭 路由' }));
+    const result = await screen.findByTestId('af-monitor-route-result');
+    expect(result).toHaveTextContent('claude.architecture-examiner');
+    expect(result).toHaveTextContent('arch');
+    // 一键委派
+    await user.click(screen.getByRole('button', { name: '🚀 路由+委派' }));
+    const exec = await screen.findByTestId('af-monitor-route-exec');
+    expect(exec).toHaveTextContent('EXS-A1');
   });
 
   it('记录流点击钻取: 显示命令/验证/错误', async () => {

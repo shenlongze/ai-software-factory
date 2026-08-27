@@ -104,6 +104,8 @@ def score_candidate(
     # 能力匹配 (硬门槛): 角色命中工作类型 → 1.0; 否则 0.0 (不参与路由, 防历史分压过专业匹配)
     want_roles = _ROLE_BY_WORK.get(work_type, ())
     cap_hit = 1.0 if (want_roles and role in want_roles) else 0.0
+    kind = str(candidate.get("kind") or "agent")
+    kind_priority = {"agent": 0, "executor": 1, "internal": 2}.get(kind, 1)
     hs = _history_stats(data_dir, key)
     if hs["runs"] > 0:
         fp = hs["first_pass_rate"] if hs["first_pass_rate"] is not None else 0.5
@@ -114,9 +116,11 @@ def score_candidate(
                  - w["cost"] * cost_norm - w["duration"] * dur_norm)
         return {"key": key, "role": role, "cost_tier": cost_tier, "work_type": work_type,
                 "score": round(score, 4), "capability_hit": cap_hit, "history": hs,
+                "kind": kind, "kind_priority": kind_priority,
                 "basis": "history+capability"}
     return {"key": key, "role": role, "cost_tier": cost_tier, "work_type": work_type,
             "score": round(cap_hit, 4), "capability_hit": cap_hit, "history": hs,
+            "kind": kind, "kind_priority": kind_priority,
             "basis": "capability-only (无历史, 诚实)"}
 
 
@@ -204,13 +208,16 @@ def route(
     if explicit_agent:
         hit = next((c for c in candidates if c["key"] == explicit_agent), None)
         return {
-            "pick": explicit_agent, "work_type": work_type,
+            "pick": explicit_agent,
+            "pick_kind": str((hit or {}).get("kind") or "agent"),
+            "work_type": work_type,
             "reason": f"用户显式指定 ({hit['role'] if hit else '未在候选池'})",
             "explicit": True, "basis": "user-explicit",
             "alternatives": [c["key"] for c in candidates[:8]],
         }
     if not candidates:
-        return {"pick": None, "work_type": work_type, "reason": "无候选 (未导入任何外部能力)",
+        return {"pick": None, "pick_kind": None, "work_type": work_type,
+                "reason": "无候选 (未导入任何外部能力)",
                 "explicit": False, "basis": "fallback-no-candidates", "alternatives": []}
     scored = [score_candidate(c, work_type, data_dir, weights) for c in candidates]
     # ② 能力匹配硬门槛: 有命中角色 → 只在命中的候选中选 (专业的人做专业的事)
@@ -219,7 +226,7 @@ def route(
     pool = matching if matching else scored
     if not matching:
         degraded = True  # ⑥ 兜底: 无专业匹配 → 全候选降级选 (诚实标注)
-    pool_sorted = sorted(pool, key=lambda x: x["score"], reverse=True)
+    pool_sorted = sorted(pool, key=lambda x: (x["score"], -x["kind_priority"]), reverse=True)
     best = pool_sorted[0]
     # ④ 成本分级提示: 简单任务 (developer 兜底) 建议 low/medium, 复杂任务 (arch/security) 建议 medium/high
     tier_advice = "low|medium" if work_type in ("developer", "writer", "design") else "medium|high"
@@ -227,7 +234,8 @@ def route(
     if degraded:
         reason += " (未匹配专业能力, 已降级)"
     return {
-        "pick": best["key"], "work_type": work_type, "reason": reason,
+        "pick": best["key"], "pick_kind": str(best.get("kind") or "agent"),
+        "work_type": work_type, "reason": reason,
         "explicit": False, "basis": best["basis"], "degraded": degraded,
         "tier_advice": tier_advice,
         "alternatives": [s["key"] for s in pool_sorted[:8]],

@@ -220,6 +220,69 @@ function RecentStream({ items }: { items: MonitorRecent[] }) {
   );
 }
 
+/** M6: 路由测试 + 自动闭环 (选谁 + 理由 + 候选; 一键委派)。 */
+function RouteTest(): JSX.Element {
+  const [task, setTask] = useState('');
+  const [explicit, setExplicit] = useState('');
+  const [route, setRoute] = useState<{ pick?: string | null; work_type: string; reason: string; alternatives: string[]; degraded?: boolean } | null>(null);
+  const [exec, setExec] = useState<{ exit_code?: number; output?: string; result_id?: string; note?: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  const doRoute = useCallback(async () => {
+    if (!task.trim()) { setMsg('请输入任务描述'); return; }
+    setBusy(true); setExec(null); setMsg('');
+    try {
+      const r = await api.routeExternalAi(task, explicit.trim());
+      setRoute(r);
+      setMsg(r.pick ? `选: ${r.pick} — ${r.reason}` : `无候选: ${r.reason}`);
+    } catch (err) {
+      setMsg(`路由失败: ${String(err)}`);
+    } finally { setBusy(false); }
+  }, [task, explicit]);
+
+  const doAuto = useCallback(async () => {
+    if (!task.trim()) { setMsg('请输入任务描述'); return; }
+    setBusy(true); setMsg('');
+    try {
+      const r = await api.autoExternalAi(task, '', explicit.trim());
+      setRoute(r.route);
+      setExec(r.execution ?? { note: r.note ?? '无执行' });
+    } catch (err) {
+      setMsg(`自动闭环失败: ${String(err)}`);
+    } finally { setBusy(false); }
+  }, [task, explicit]);
+
+  return (
+    <div className="af-monitor-route" data-testid="af-monitor-route">
+      <h3 className="af-settings-h3">🧭 路由测试（专业的人做专业的事）</h3>
+      <div className="af-settings-form">
+        <input className="af-settings-input af-settings-input--wide" placeholder="输入任务描述，如: 帮忙审查系统架构" aria-label="路由任务" value={task} onChange={(e) => setTask(e.target.value)} />
+        <input className="af-settings-input" placeholder="显式指定 agent (可选)" aria-label="路由显式agent" value={explicit} onChange={(e) => setExplicit(e.target.value)} />
+        <button type="button" className="af-settings-action af-settings-action--primary" onClick={() => void doRoute()} disabled={busy}>🧭 路由</button>
+        <button type="button" className="af-settings-action" onClick={() => void doAuto()} disabled={busy}>🚀 路由+委派</button>
+      </div>
+      {msg ? <p className="af-composer-msg">{msg}</p> : null}
+      {route ? (
+        <div className="af-monitor-route-result" data-testid="af-monitor-route-result">
+          <p><strong>🎯 选: {route.pick ?? '无'}</strong>（{route.work_type} · {route.reason}{route.degraded ? ' ⚠️已降级' : ''}）</p>
+          {route.alternatives.length > 0 ? <p className="af-home-note">候选: {route.alternatives.slice(0, 6).join(' · ')}</p> : null}
+        </div>
+      ) : null}
+      {exec ? (
+        <div className="af-monitor-route-exec" data-testid="af-monitor-route-exec">
+          {exec.note ? <p>⚠️ {exec.note}</p> : (
+            <>
+              <p>🚀 委派完成: exit={exec.exit_code} · result_id={exec.result_id}</p>
+              {exec.output ? <p className="af-monitor-code">{exec.output.slice(0, 500)}</p> : null}
+            </>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function AfMonitorPage(): JSX.Element {
   const [scope, setScope] = useState<Scope>('all');
   const [days, setDays] = useState(14);
@@ -301,6 +364,7 @@ export function AfMonitorPage(): JSX.Element {
           <GroupTable title="按执行器" rows={scope === 'self' ? [] : data.by_executor} />
           <GroupTable title="按 Agent / Skill" rows={scopeFilter(data.by_agent)} />
           {scope !== 'self' ? <GroupTable title="按项目目录" rows={data.by_project} /> : null}
+          {scope !== 'self' ? <RouteTest /> : null}
           {scope !== 'self' ? (
             <>
               <h3 className="af-settings-h3">回修原因 / 验证方式</h3>

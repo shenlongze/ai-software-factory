@@ -38,10 +38,13 @@ except Exception:
 requires_fastapi = pytest.mark.skipif(not _HAS_FASTAPI, reason="fastapi 未安装")
 
 
-def _make_adapter(aid: str, role: str, tier: str = "medium"):
+def _make_adapter(aid: str, role: str, tier: str = "medium", *, agent_flag: bool = False):
+    invocation: dict = {"non_interactive": ["{prompt}"], "project_dir": "cwd"}
+    if agent_flag:
+        invocation["agent_flag"] = ["--agent", "{agent}"]
     return _schema.ExternalExecutorAdapter(
         id=aid, name=aid, binary=aid,
-        invocation={"non_interactive": ["{prompt}"], "project_dir": "cwd"},
+        invocation=invocation,
         capabilities={"roles": [role], "cost_tier": tier},
     )
 
@@ -126,12 +129,70 @@ class TestRoute:
 
 
 @requires_fastapi
+class TestAutoHttp:
+    def test_auto_full_loop(self, tmp_path, monkeypatch):
+        """M6 自动闭环: 路由 → 委派 → 记录 (mock 执行器)。"""
+        from factory_console.external_executor.registry import build_registry
+        from factory_console.external_executor import executor as _ee_exec
+
+        reg = build_registry(tmp_path)
+        reg.save(_make_adapter("claude", "architect", agent_flag=True))
+        (tmp_path / "agents").mkdir(parents=True, exist_ok=True)
+        (tmp_path / "agents" / "agents.json").write_text(json.dumps({"agents": {
+            "claude.architecture-examiner": {"id": "claude.architecture-examiner", "name": "架构审查",
+                                              "role": "architect", "source": "claude",
+                                              "host": {"cli": "claude", "file": "x"}}
+        }}), encoding="utf-8")
+
+        def fake_run(cmd, **kwargs):
+            class R:
+                returncode = 0
+                stdout = "审查报告"
+                stderr = ""
+            return R()
+
+        monkeypatch.setattr(_ee_exec.subprocess, "run", fake_run)
+        monkeypatch.setattr(_ee_exec.shutil, "which", lambda name: "/usr/bin/claude")
+        service = _adapter.build_console_service(tmp_path, event_logger=None)
+        app = _adapter.build_app(service, event_logger=None, factory_root=tmp_path)
+        with TestClient(app) as c:
+            r = c.post("/api/external-ai/auto", json={"task": "审查系统架构", "project_dir": "/tmp/p"})
+            assert r.status_code == 200, r.text
+            body = r.json()
+            assert body["route"]["pick"] == "claude.architecture-examiner"
+            assert body["execution"]["executor_id"] == "claude"
+            assert body["execution"]["host_agent"] == "architecture-examiner"
+            assert body["execution"]["result_id"].startswith("EXS-")
+            # 记录落盘
+            records = json.loads((tmp_path / "exec" / "execution_records.json").read_text(encoding="utf-8"))
+            assert any(x["result_id"] == body["execution"]["result_id"] for x in records)
+
+    def test_auto_internal_honest(self, tmp_path):
+        """选到内部员工 → 诚实标注不代跑。"""
+        from factory_console.external_executor.registry import build_registry
+
+        reg = build_registry(tmp_path)
+        (tmp_path / "agents").mkdir(parents=True, exist_ok=True)
+        (tmp_path / "agents" / "agents.json").write_text(json.dumps({"agents": {
+            "tester-1": {"id": "tester-1", "name": "tester-1", "role": "测试工程师"}
+        }}), encoding="utf-8")
+        service = _adapter.build_console_service(tmp_path, event_logger=None)
+        app = _adapter.build_app(service, event_logger=None, factory_root=tmp_path)
+        with TestClient(app) as c:
+            r = c.post("/api/external-ai/auto", json={"task": "给登录写单元测试"})
+            assert r.status_code == 200, r.text
+            body = r.json()
+            assert body["execution"] is None
+            assert "内部员工" in (body.get("note") or "")
+
+
+@requires_fastapi
 class TestRouteHttp:
     def test_route_endpoint(self, tmp_path):
         from factory_console.external_executor.registry import build_registry
 
         reg = build_registry(tmp_path)
-        reg.save(_make_adapter("claude", "architect"))
+        reg.save(_make_adapter("claude", "architect", agent_flag=True))
         # 导入一个外部 agent
         (tmp_path / "agents").mkdir(parents=True, exist_ok=True)
         (tmp_path / "agents" / "agents.json").write_text(json.dumps({"agents": {

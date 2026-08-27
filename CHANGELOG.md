@@ -3,7 +3,21 @@
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。
 
+## [v1.1.201] — 2026-08-27
+
+**M7 验证钩子自动化 — auto 闭环最后一环 (委派 → 自动验证 → 效果分回写 → 路由学习)**。
+
+### Added
+
+- executor.auto_verify: ①适配器 extensions.verify_hook (显式命令) → ②默认 pytest
+  (test/developer 任务且项目有 pytest) → ③无钩子 → unknown 诚实 (不编造)
+- auto 端点/CLI: 委派后自动跑验证 → verify_invocation 回写 EXS (pass/fail + score;
+  fail → first_pass=False + rework+1) → 路由下次读效果分自动学习
+- WebUI 路由测试: 委派结果展示验证行 (method/result/score)
+- 测试: auto_verify 3 后端 + 前端 verify 展示
+
 ## [v1.1.200] — 2026-08-27
+
 
 **M6: WebUI 路由入口 + 路由接入执行链 (全自动闭环 route → 委派 → 记录)**。
 

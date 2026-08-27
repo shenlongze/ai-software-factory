@@ -289,12 +289,13 @@ class _ExternalAiBody(BaseModel):
 
 
 class _ExternalAiAutoBody(BaseModel):
-    """POST /api/external-ai/auto body (M6): {task, project_dir?, explicit_agent?, timeout?}。"""
+    """POST /api/external-ai/auto body (M6): {task, project_dir?, explicit_agent?, timeout?, verify?}。"""
 
     task: str
     project_dir: str = ""
     explicit_agent: str = ""
     timeout: int | None = None
+    verify: bool = True
 
 
 class _ExternalAiRouteBody(BaseModel):
@@ -1890,11 +1891,31 @@ def build_app(
             trace_id=_trace_ctx.get_trace_id() if _trace_ctx is not None else "",
         )
         result["result_id"] = record.get("result_id")
+        # M7 验证钩子: 委派后自动验证 → 效果分回写 (闭环最后一环)
+        verify_out: dict[str, Any] = {"method": "", "result": "unknown", "score": None, "reason": ""}
+        if body.verify:
+            try:
+                verify_out = _ee_exec.auto_verify(
+                    str(body.project_dir or ""),
+                    str(route_result.get("work_type") or ""),
+                    verify_hook=(adapter.extensions or {}).get("verify_hook"),
+                    timeout=300,
+                )
+                if verify_out.get("result") != "unknown":
+                    _ee_exec.verify_invocation(
+                        workspace_root or DEFAULT_ROOT, str(record.get("result_id") or ""),
+                        method=str(verify_out.get("method") or "auto"),
+                        result=str(verify_out.get("result") or "unknown"),
+                        score=verify_out.get("score"),
+                        reason=str(verify_out.get("reason") or ""),
+                    )
+            except Exception:  # noqa: BLE001 — 验证失败不阻断 (诚实 unknown)
+                verify_out = {"method": "", "result": "unknown", "score": None, "reason": "自动验证异常"}
         return {"route": route_result, "execution": {
             "executor_id": adapter_id, "mode": mode, "host_agent": host_agent,
             "exit_code": result.get("exit_code"), "output": str(result.get("output") or "")[:2000],
             "error": str(result.get("error") or "")[:1000], "result_id": record.get("result_id"),
-        }}
+        }, "verify": verify_out}
 
     @app.post("/api/external-ai/cost")
     def api_external_ai_cost(body: _ExternalAiCostBody) -> dict[str, Any]:

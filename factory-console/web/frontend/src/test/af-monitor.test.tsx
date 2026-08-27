@@ -41,7 +41,7 @@ function stubApi() {
     const url = String(input);
     if (url.startsWith('/api/external-ai/monitor')) return jsonResponse(DETAIL);
     if (url === '/api/external-ai/route') return jsonResponse({ pick: 'claude.architecture-examiner', pick_kind: 'agent', work_type: 'arch', reason: '能力匹配(architect) + 历史效果分 5.5', alternatives: ['claude.architecture-examiner', 'codex.architecture-examiner'], degraded: false, tier_advice: 'medium|high' });
-    if (url === '/api/external-ai/auto') return jsonResponse({ route: { pick: 'claude.architecture-examiner', work_type: 'arch', reason: '能力匹配(architect) + 历史效果分 5.5', alternatives: [] }, execution: { executor_id: 'claude', mode: 'borrowed-shell', host_agent: 'architecture-examiner', exit_code: 0, output: '审查完成', result_id: 'EXS-A1' } });
+    if (url === '/api/external-ai/auto') return jsonResponse({ route: { pick: 'claude.architecture-examiner', work_type: 'arch', reason: '能力匹配(architect) + 历史效果分 5.5', alternatives: [] }, execution: { executor_id: 'claude', mode: 'borrowed-shell', host_agent: 'architecture-examiner', exit_code: 0, output: '审查完成', result_id: 'EXS-A1' }, verify: { method: 'pytest', result: 'pass', score: 1.0 } });
     return jsonResponse({});
   });
   vi.stubGlobal('fetch', fn);
@@ -98,6 +98,7 @@ describe('AfMonitorPage (📊 监控中心)', () => {
     await user.click(screen.getByRole('button', { name: '🚀 路由+委派' }));
     const exec = await screen.findByTestId('af-monitor-route-exec');
     expect(exec).toHaveTextContent('EXS-A1');
+    expect(exec).toHaveTextContent('验证 (pytest): pass');
   });
 
   it('记录流点击钻取: 显示命令/验证/错误', async () => {

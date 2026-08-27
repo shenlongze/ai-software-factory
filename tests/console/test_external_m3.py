@@ -112,6 +112,46 @@ class TestCost:
         assert _ee.record_cost(tmp_path, "EXS-nope", 1.0) is None
 
 
+class TestAutoVerify:
+    def test_pytest_verify_test_task(self, tmp_path, monkeypatch):
+        (tmp_path / "tests").mkdir(parents=True)
+        (tmp_path / "pytest.ini").write_text("[pytest]", encoding="utf-8")
+        captured: dict[str, Any] = {}
+
+        def fake_run(cmd, **kwargs):
+            captured["cmd"] = cmd
+            captured["cwd"] = kwargs.get("cwd")
+            class R:
+                returncode = 0
+                stdout = "5 passed"
+                stderr = ""
+            return R()
+
+        monkeypatch.setattr(_ee.subprocess, "run", fake_run)
+        v = _ee.auto_verify(str(tmp_path), "test")
+        assert v["result"] == "pass" and v["method"] == "pytest"
+        assert captured["cwd"] == str(tmp_path)
+
+    def test_verify_hook_explicit(self, tmp_path, monkeypatch):
+        def fake_run(cmd, **kwargs):
+            class R:
+                returncode = 1
+                stdout = ""
+                stderr = "FAILED"
+            return R()
+        monkeypatch.setattr(_ee.subprocess, "run", fake_run)
+        v = _ee.auto_verify(str(tmp_path), "review",
+                            verify_hook={"name": "schema-check", "command": ["check", "--strict"]})
+        assert v["method"] == "schema-check" and v["result"] == "fail"
+        assert "FAILED" in v["reason"]
+
+    def test_no_hook_unknown_honest(self, tmp_path):
+        # 空目录 + review 任务 → 无自动钩子 → unknown
+        v = _ee.auto_verify(str(tmp_path), "review")
+        assert v["result"] == "unknown"
+        assert "不编造" in v["reason"]
+
+
 class TestM3Http:
     def _app(self, tmp_path):
         service = _adapter.build_console_service(tmp_path, event_logger=None)

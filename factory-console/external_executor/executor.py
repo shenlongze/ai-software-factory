@@ -321,3 +321,56 @@ def record_cost(
     except OSError:
         pass
     return found
+
+
+def auto_verify(
+    project_dir: str,
+    work_type: str,
+    *,
+    verify_hook: dict[str, Any] | None = None,
+    timeout: int = 600,
+) -> dict[str, Any]:
+    """自动验证 (设计文档 §4.5 verify_hook + §8 验证): 委派后跑验证 → 效果分。
+
+    优先级:
+    ① 适配器 extensions.verify_hook (显式命令, 如 pytest/自定义)
+    ② 默认: test/developer 任务且项目有 pytest → pytest -q
+    ③ 无钩子/不适用 → unknown (诚实: 需人工或审查验证, 不编造)
+
+    返回 {method, result(pass|fail|unknown), score, reason}。"""
+    project = str(project_dir or "").strip()
+    if not project or not Path(project).is_dir():
+        return {"method": "", "result": "unknown", "score": None,
+                "reason": "无项目目录, 无法验证"}
+    # ① 显式 verify_hook
+    if verify_hook and verify_hook.get("command"):
+        cmd = [str(x) for x in verify_hook["command"]]
+        name = str(verify_hook.get("name") or "verify_hook")
+        try:
+            r = subprocess.run(cmd, cwd=project, capture_output=True, text=True, timeout=timeout)
+            ok = r.returncode == 0
+            return {"method": name, "result": "pass" if ok else "fail",
+                    "score": 1.0 if ok else 0.0,
+                    "reason": "" if ok else (r.stdout or r.stderr or "")[-300:]}
+        except Exception as exc:  # noqa: BLE001 — 验证失败 → unknown 诚实
+            return {"method": name, "result": "unknown", "score": None,
+                    "reason": f"验证执行失败: {exc}"}
+    # ② 默认 pytest (test/developer 任务, 项目有 pytest 迹象)
+    has_pytest = (
+        (Path(project) / "pytest.ini").is_file()
+        or (Path(project) / "pyproject.toml").is_file()
+        or (Path(project) / "tests").is_dir()
+    )
+    if work_type in ("test", "developer") and has_pytest:
+        try:
+            r = subprocess.run(["pytest", "-q"], cwd=project, capture_output=True, text=True, timeout=timeout)
+            ok = r.returncode == 0
+            return {"method": "pytest", "result": "pass" if ok else "fail",
+                    "score": 1.0 if ok else 0.0,
+                    "reason": "" if ok else (r.stdout or r.stderr or "")[-300:]}
+        except Exception as exc:  # noqa: BLE001 — pytest 不可用 → unknown
+            return {"method": "pytest", "result": "unknown", "score": None,
+                    "reason": f"pytest 不可用: {exc}"}
+    # ③ 无自动钩子 → 诚实 unknown (人工/审查验证)
+    return {"method": "", "result": "unknown", "score": None,
+            "reason": "无自动验证钩子 (需人工或审查验证, 不编造)"}

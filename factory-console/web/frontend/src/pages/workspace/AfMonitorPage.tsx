@@ -226,6 +226,7 @@ function RouteTest(): JSX.Element {
   const [explicit, setExplicit] = useState('');
   const [route, setRoute] = useState<{ pick?: string | null; work_type: string; reason: string; alternatives: string[]; degraded?: boolean } | null>(null);
   const [exec, setExec] = useState<{ exit_code?: number; output?: string; result_id?: string; note?: string } | null>(null);
+  const [verify, setVerify] = useState<{ method?: string; result?: string; score?: number | null; reason?: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
 
@@ -248,6 +249,7 @@ function RouteTest(): JSX.Element {
       const r = await api.autoExternalAi(task, '', explicit.trim());
       setRoute(r.route);
       setExec(r.execution ?? { note: r.note ?? '无执行' });
+      setVerify((r as { verify?: { method?: string; result?: string; score?: number | null; reason?: string } }).verify ?? null);
     } catch (err) {
       setMsg(`自动闭环失败: ${String(err)}`);
     } finally { setBusy(false); }
@@ -274,6 +276,11 @@ function RouteTest(): JSX.Element {
           {exec.note ? <p>⚠️ {exec.note}</p> : (
             <>
               <p>🚀 委派完成: exit={exec.exit_code} · result_id={exec.result_id}</p>
+              {verify ? (
+                <p className={verify.result === 'pass' ? 'af-monitor-recent-result ok' : verify.result === 'fail' ? 'af-monitor-recent-result fail' : 'af-home-note'}>
+                  ✅ 验证 ({verify.method ?? '—'}): {verify.result}{verify.score != null ? ` · score=${verify.score}` : ''}
+                </p>
+              ) : null}
               {exec.output ? <p className="af-monitor-code">{exec.output.slice(0, 500)}</p> : null}
             </>
           )}

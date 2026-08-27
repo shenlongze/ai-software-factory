@@ -2780,6 +2780,19 @@ class FactoryCLI:
                 command=str(result.get("command") or ""), duration_ms=0,
             )
             print(f"  🚀 委派: {adapter_id}" + (f" agent={host_agent}" if host_agent else "") + f" → exit={result.get('exit_code')} · result_id={record.get('result_id')}")
+            # M7 自动验证
+            v = _ee_exec.auto_verify(
+                str(getattr(args, "project", "") or ""), str(r.get("work_type") or ""),
+                verify_hook=(adapter.extensions or {}).get("verify_hook"),
+            )
+            if v.get("result") != "unknown":
+                _ee_exec.verify_invocation(self.data_dir, str(record.get("result_id") or ""),
+                                           method=str(v.get("method") or "auto"),
+                                           result=str(v.get("result") or "unknown"),
+                                           score=v.get("score"), reason=str(v.get("reason") or ""))
+                print(f"  ✅ 验证 ({v.get('method')}): {v.get('result')} · score={v.get('score')}")
+            else:
+                print(f"  ⚠ 验证: unknown ({v.get('reason')})")
             if result.get("output"):
                 print("  " + str(result["output"])[:500].replace("\n", "\n  "))
             return 0 if result.get("exit_code") == 0 else 1
@@ -2893,6 +2906,19 @@ class FactoryCLI:
                 command=str(result.get("command") or ""), duration_ms=0,
             )
             print(f"  🚀 委派: {adapter_id}" + (f" agent={host_agent}" if host_agent else "") + f" → exit={result.get('exit_code')} · result_id={record.get('result_id')}")
+            # M7 自动验证
+            v = _ee_exec.auto_verify(
+                str(getattr(args, "project", "") or ""), str(r.get("work_type") or ""),
+                verify_hook=(adapter.extensions or {}).get("verify_hook"),
+            )
+            if v.get("result") != "unknown":
+                _ee_exec.verify_invocation(self.data_dir, str(record.get("result_id") or ""),
+                                           method=str(v.get("method") or "auto"),
+                                           result=str(v.get("result") or "unknown"),
+                                           score=v.get("score"), reason=str(v.get("reason") or ""))
+                print(f"  ✅ 验证 ({v.get('method')}): {v.get('result')} · score={v.get('score')}")
+            else:
+                print(f"  ⚠ 验证: unknown ({v.get('reason')})")
             if result.get("output"):
                 print("  " + str(result["output"])[:500].replace("\n", "\n  "))
             return 0 if result.get("exit_code") == 0 else 1

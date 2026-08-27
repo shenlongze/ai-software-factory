@@ -232,6 +232,38 @@ def tool_schemas(data_dir: str | Path | None = None) -> list[dict[str, Any]]:
     return tools
 
 
+#: S10-127 M2.2 动态工具面 — 首轮核心工具 (通用高频, 覆盖大多数会话场景)
+CORE_TOOL_IDS = [
+    "project_status", "project_tasks", "project_scan", "code_scan",
+    "read_code", "git_status", "monitor", "knowledge_search",
+]
+
+
+def _initial_tools(
+    question: str,
+    all_tools: list[dict[str, Any]],
+    top_k: int = 5,
+) -> list[dict[str, Any]]:
+    """首轮可见工具 = 核心 + 按问题预检索 top-k + tool_search 元工具 (去重)。
+
+    21 工具不再全量塞给弱模型 — 选择压力骤降 (治"扫代码返回文档")。
+    """
+    from .tool_search import TOOL_SEARCH_ID, discover_tools, tool_search_schema
+
+    want = {t: None for t in CORE_TOOL_IDS}  # 保序
+    for t in all_tools:
+        name = str((t.get("function") or {}).get("name") or "")
+        if name in want:
+            want[name] = t
+    for t in discover_tools(all_tools, question, top_k=top_k):
+        name = str((t.get("function") or {}).get("name") or "")
+        if name not in want:
+            want[name] = t
+    out = [t for t in want.values() if t is not None]
+    out.append(tool_search_schema())
+    return out
+
+
 # ---------------------------------------------------------------- 计划-审批-执行
 
 _AGENT_SYSTEM = """你是 AI Factory 的会话 Agent（自主执行者）。
@@ -653,6 +685,19 @@ def dispatch(
             for t in stt.get("tasks") or []:
                 lines.append(f"- {t.get('status')} [{t.get('priority')}] {t.get('title')}")
             return {"ok": True, "output": "\n".join(lines)}
+        if tool_id == "tool_search":
+            from .tool_search import discover_tools
+
+            all_tools = (ctx or {}).get("all_tools") or []
+            q = str(args.get("query") or "")
+            max_r = int(args.get("max_results") or 5)
+            hits = discover_tools(all_tools, q, top_k=max_r)
+            names = [str((t.get("function") or {}).get("name") or "") for t in hits]
+            if not names:
+                return {"ok": True, "output": (
+                    "未找到匹配工具, 试试更具体的关键词 (如 '扫描项目' / '读取代码' / '创建任务' / '查看文档')")}
+            return {"ok": True, "matches": names,
+                    "output": "匹配工具: " + ", ".join(names) + " (已加入可用列表, 可直接调用)"}
         if tool_id == "external_route":
             from ..external_executor.router import route
             from ..external_executor.registry import build_registry
@@ -759,10 +804,15 @@ def run_agent_native(
     except Exception:  # noqa: BLE001 — 记忆不可用不阻断
         pass
     calls: list[dict[str, Any]] = []
+    all_tools = tool_schemas(data_dir)
     ctx: dict[str, Any] = {"session_store": session_store, "session_id": session_id,
-                           "pending_plan": None, "intent": intent}
+                           "pending_plan": None, "intent": intent, "all_tools": all_tools}
     ctx["llm_fn"] = lambda p: _simple_llm(p, data_dir=data_dir)
-    tools = tool_schemas(data_dir)
+    # S10-127 M2.2: 动态工具面 — 首轮核心+预检索+tool_search, 命中累积加入
+    tools = _initial_tools(question, all_tools)
+    messages.append({"role": "system", "content": (
+        "【工具面】当前已加载部分常用工具; 需要其他能力时调用 tool_search 搜索并加载。"
+    )})
     total_calls = 0
     import time as _time
     _start_ms = _time.monotonic() * 1000
@@ -795,6 +845,11 @@ def run_agent_native(
                 except Exception:  # noqa: BLE001
                     args = {}
                 result = dispatch(tid, args, root=data_dir, project_id=project_id, service=service, ctx=ctx)
+                # tool_search 命中 → 累积加入可见工具 (Eino 模式)
+                if tid == "tool_search" and result.get("matches"):
+                    from .tool_search import expand_matches
+
+                    tools = expand_matches(all_tools, tools, result.get("matches") or [])
                 total_calls += 1
                 calls.append({"tool": tid, "params": args, "ok": result.get("ok"),
                               "output": result.get("output"), "error": result.get("error"),

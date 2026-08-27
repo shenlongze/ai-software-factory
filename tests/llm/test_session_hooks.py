@@ -86,6 +86,7 @@ def test_session_end_extracts_memory(sh, tmp_path):
     from factory_console.session.project_memory import MemoryStore
 
     msgs = [
+        {"role": "system", "content": "【系统】必须围绕用户问题回答, 不要再调用工具"},  # 噪音, 不应提取
         {"role": "assistant", "content": "我决定采用 Server Actions 方案"},
         {"role": "user", "content": "报错 401 权限失败, 解决方法是换 api key"},
         {"role": "assistant", "content": "记住以后都用 Pydantic 校验"},
@@ -99,6 +100,8 @@ def test_session_end_extracts_memory(sh, tmp_path):
     # 权威: agent_claim (AI 自述, 低权威)
     for e in mem.entries:
         assert e["authority"] == "agent_claim"
+    # system 提示不提取 (无噪音)
+    assert not any("不要再调用工具" in e["text"] for e in mem.entries)
 
 
 def test_dispatch_integration_deny_and_allow():

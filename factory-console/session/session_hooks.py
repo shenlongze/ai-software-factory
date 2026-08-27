@@ -175,6 +175,9 @@ def session_end_hook(ctx: dict[str, Any]) -> None:
         texts: list[str] = []
         msgs = ctx.get("messages") or ctx.get("transcript") or []
         for m in msgs:
+            # 只从真实对话提取 (user/assistant), 排除 system 提示 (避免噪音记忆)
+            if str(m.get("role") or "") not in ("user", "assistant"):
+                continue
             c = str(m.get("content") or "")
             if c:
                 texts.append(c)

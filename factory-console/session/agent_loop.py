@@ -917,6 +917,10 @@ def run_agent_native(
                 _answer = resp.get("content") or "（模型未输出）"
                 _audit_sess(data_dir, session_id, question, intent, calls,
                             total_calls, max_rounds, _start_ms, _converge, _answer)
+                try:
+                    _finish_session_hooks(data_dir, project_id, session_id, question, messages, _answer)
+                except Exception:  # noqa: BLE001
+                    pass
                 return {"answer": _answer, "calls": calls, "intent": intent,
                         "evidence": [{"tool": c["tool"], "ok": c["ok"], "output": str(c.get("output") or c.get("error") or "")[:300]} for c in calls]}
             messages.append({"role": "assistant", "content": resp.get("content") or "", "tool_calls": tcs})

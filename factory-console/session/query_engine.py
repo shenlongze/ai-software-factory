@@ -43,6 +43,9 @@ _INTENT_RULES: list[tuple[str, tuple[str, ...]]] = [
     ("git_push", ("推送", "推到", "push", "上传到 github", "推到 github", "推送到 github")),
     ("code_scan", ("扫描代码", "扫代码", "代码扫描", "看代码结构", "代码结构", "代码规模",
                    "看下代码", "看看代码", "仓库代码", "扫一下代码", "代码文件", "代码统计", "代码情况")),
+    ("project_structure", ("项目结构", "真实结构", "目录结构", "目录树", "文件树", "模块结构",
+                           "有哪些模块", "有哪些目录", "项目组成", "模块划分", "架构组成",
+                           "了解结构", "看结构", "顶层目录", "由哪些模块", "结构是怎么样")),
     ("project_scan", ("扫描", "扫一下", "体检", "全面看", "整体情况", "总览", "盘点", "看进度计划", "进度计划")),
     ("project_status", ("状态", "阶段", "进行", "进度", "生命周期", "卡点", "怎么样", "进展",
                        "计划", "规划", "里程碑", "看看项目")),
@@ -386,6 +389,14 @@ def build_facts(
                 block = format_code_scan(report, name)
             except Exception:  # noqa: BLE001 — 扫描失败 → 诚实降级
                 block = f"项目: {name}\n代码扫描失败（数据服务不可用）— 请稍后重试。"
+        elif intent == "project_structure":
+            try:
+                from ..session.code_scan import format_structure, scan_structure
+
+                report = scan_structure(root, str(getattr(target, "id", "") or ""))
+                block = format_structure(report, name)
+            except Exception:  # noqa: BLE001 — 结构扫描失败 → 诚实降级
+                block = f"项目: {name}\n结构扫描失败（数据服务不可用）— 请稍后重试。"
         elif intent == "project_scan":
             try:
                 from ..session.project_scan import format_scan, scan_project
@@ -518,7 +529,7 @@ def build_facts(
 
 
 #: 合法意图集合 (校验 LLM 输出)
-VALID_INTENTS = {"list_projects", "project_status", "project_scan", "code_scan", "project_quality", "project_tasks",
+VALID_INTENTS = {"list_projects", "project_status", "project_scan", "code_scan", "project_structure", "project_quality", "project_tasks",
                  "project_docs", "project_doc", "doc_search",
                  "deep_analyze", "task_action", "create_idea", "project_artifacts", "monitor", "settings", "project_action", "tools_list", "task_continue",
                  "model", "system_status", "create_project", "create_task", "git_push", "chat"}
@@ -532,6 +543,7 @@ _INTENT_LLM_PROMPT = """把用户的提问转成标准查询意图 (只输出 JS
 - 问某项目状态/阶段/进度/怎么样 → project_status (project=项目名)
 - 扫描/全面看/盘点项目整体 (进度+计划+风险+建议) → project_scan
 - 扫描代码/代码结构/仓库代码/代码规模 → code_scan (真实读盘: 文件数/LOC/语言/测试/TODO/最近改动/git)
+- 项目结构/目录树/有哪些模块/项目组成/了解结构 → project_structure (仓库顶层目录树+文件分布+入口)
 - 分析/评估/利弊/优缺点/值不值得/怎么看/评价/建议/改进 (多工具+可溯源) → deep_analyze
   (注意: 即使短语含'继续做/完善'等词, 只要是分析评估语义 → deep_analyze, 不是 task_continue/create_task)
 - 查有哪些内置工具 → tools_list

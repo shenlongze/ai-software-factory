@@ -55,7 +55,7 @@ _INTENT_PROMPT = """你是 AI Factory 的意图理解器。用户消息千变万
 
 #: 意图 → 专业能力线 (Router 表, 设计文档 §2.2)
 _ROUTE_GUIDE = {
-    "question": "查询意图: 必须调用数据工具 (project_status/project_tasks/project_scan/code_scan/search_code/project_docs/git_status/monitor) 拿真实数据, 带证据回答; 不要凭空答。注意区分: 用户说'扫描代码/代码结构/仓库代码' → 用 code_scan; '扫描项目/整体情况' → 用 project_scan。",
+    "question": "查询意图: 必须调用数据工具 (project_status/project_tasks/project_scan/code_scan/search_code/project_docs/git_status/monitor) 拿真实数据, 带证据回答; 不要凭空答。注意区分: 用户说'扫描代码/代码结构/仓库代码' → 用 code_scan; '扫描项目/整体情况' → 用 project_scan; '项目结构/目录树/有哪些模块/项目组成/了解结构' → 用 project_structure。",
     "challenge": "质疑/纠错意图: 用户认为上次回答有问题。先【重新查询真实数据验证】, 再诚实承认错误或给出修正; 绝不对着干/嘴硬/糊弄。若上次回答在上下文中, 逐条核对。",
     "chat": "聊天意图: 自然对话即可。除非用户明确要实时数据, 不需要调用工具。",
     "delegate": "分派/开发意图: 先快速了解现状 (最多 2-3 个了解工具), 然后必须调 plan_development 出计划 (目标/任务/顺序/验收) 请求用户审批; 不要无限探索。",

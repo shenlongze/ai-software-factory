@@ -17,7 +17,10 @@ from typing import Any
 
 #: 忽略目录 (不扫依赖/产物)
 _IGNORE_DIRS = {".git", "node_modules", "__pycache__", "dist", "build", ".venv",
-                "venv", ".next", "coverage", ".factory", "unused", ".pytest_cache"}
+                "venv", ".next", "coverage", ".factory", "unused", ".pytest_cache",
+                # 构建产物/工具目录 (v1.1.214: desktop/src-tauri/target 2.3G 混入)
+                "target", ".github", ".ruff_cache", ".idea", ".vscode", ".turbo",
+                "Pods", ".dart_tool", ".gradle", ".cache"}
 
 #: 语言分组 (扩展名 → 语言)
 _LANG_BY_EXT: dict[str, str] = {
@@ -172,4 +175,71 @@ def format_code_scan(report: dict[str, Any], project_name: str = "") -> str:
     git = report.get("git") or {}
     if git:
         lines.append(f"7. git: 分支 {git.get('branch')}" + (f" · 领先 {git.get('ahead')} 提交" if git.get("ahead") else ""))
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------- 项目结构 (v1.1.214)
+
+def scan_structure(
+    root: Path | str | None,
+    project_id: str,
+    *,
+    max_children: int = 8,
+) -> dict[str, Any]:
+    """项目真实结构: 仓库顶层目录树 + 文件/LOC 分布 + 入口文件 (确定性读盘)。
+
+    不编造: 只给目录名/文件数/行数, 描述由上层模型基于数据总结。
+    """
+    repo = locate_repo(root, project_id)
+    if repo is None:
+        return {"ok": False, "error": "未定位到代码仓库目录 (project.json 无 workspace_dir/repo_path)"}
+    top_dirs = sorted(
+        (d for d in repo.iterdir() if d.is_dir() and d.name not in _IGNORE_DIRS),
+        key=lambda d: d.name,
+    )
+    top_files = sorted(
+        (f for f in repo.iterdir() if f.is_file() and f.name not in _IGNORE_DIRS),
+        key=lambda f: f.name,
+    )
+    dirs: list[dict[str, Any]] = []
+    for d in top_dirs:
+        files = [f for f in d.rglob("*") if f.is_file()
+                 and not any(part in _IGNORE_DIRS for part in f.parts)]
+        loc = 0
+        for f in files[:2000]:
+            try:
+                loc += sum(1 for _ in f.open("rb"))
+            except OSError:
+                pass
+        subdirs = sorted(
+            (s.name for s in d.iterdir() if s.is_dir() and s.name not in _IGNORE_DIRS),
+        )[:max_children]
+        dirs.append({
+            "name": d.name, "files": len(files), "loc": int(loc),
+            "subdirs": list(subdirs),
+        })
+    entry = [f.name for f in top_files if f.name.lower() in (
+        "readme.md", "pyproject.toml", "package.json", "go.mod", "cargo.toml",
+        "requirements.txt", "makefile", "dockerfile", "index.js", "main.py",
+    )]
+    return {
+        "ok": True, "repo": str(repo),
+        "root_files": len(top_files), "dirs": dirs,
+        "entry_files": entry,
+    }
+
+
+def format_structure(report: dict[str, Any], project_name: str = "") -> str:
+    """项目结构 → 结构化文本 (目录树 + 分布; 数据全确定性读入)。"""
+    if not report.get("ok"):
+        return f"【项目结构】{report.get('error')}"
+    lines = [f"【项目结构 · {project_name or report.get('repo')}】"]
+    lines.append(f"仓库: {report['repo']}")
+    lines.append(f"顶层: {len(report['dirs'])} 个目录 · 根目录 {report['root_files']} 个文件")
+    for d in report["dirs"]:
+        sub = " / ".join(d["subdirs"]) if d["subdirs"] else "—"
+        lines.append(f"- 📁 {d['name']}/ ({d['files']} 文件 · {d['loc']} 行)"
+                     + (f" → {sub}" if d["subdirs"] else ""))
+    if report.get("entry_files"):
+        lines.append("入口/关键文件: " + ", ".join(report["entry_files"]))
     return "\n".join(lines)

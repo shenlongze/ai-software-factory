@@ -102,6 +102,7 @@ def tool_schemas(data_dir: str | Path | None = None) -> list[dict[str, Any]]:
     tools = [
         _fc("code_scan", "扫描代码", "扫描项目仓库代码: 文件数/行数/语言分布/测试文件/TODO/大文件/最近改动/git", {}),
         _fc("project_scan", "扫描项目", "扫描项目整体: 任务树/版本线/战役线/质量/风险建议", {}),
+        _fc("project_structure", "项目结构", "查看项目真实结构: 仓库顶层目录树/模块划分/文件分布/入口文件 (用户说'了解项目结构/有哪些模块/目录'时用)", {}),
         _fc("search_code", "代码检索", "在仓库中检索关键词, 返回命中文件", {"keyword": {"type": "string"}}, ["keyword"]),
         _fc("project_status", "项目状态", "查询项目实时状态: 生命周期/进度(真实任务完成率)/当前阶段/工作流", {}),
         _fc("project_tasks", "任务清单", "查询项目任务 (按优先级或全部统计)", {"priority": {"type": "string", "enum": ["P0", "P1", "P2", "P3"]}}),
@@ -268,6 +269,11 @@ def dispatch(
 
             rr = scan_project(root, project_id)
             return {"ok": True, "output": format_scan(rr, project_id)}
+        if tool_id == "project_structure":
+            from .code_scan import scan_structure, format_structure
+
+            rr = scan_structure(root, project_id)
+            return {"ok": rr.get("ok"), "output": format_structure(rr, project_id)}
         if tool_id == "search_code":
             from .analysis_tools import search_code
 

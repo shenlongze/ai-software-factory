@@ -1,4 +1,19 @@
 # Changelog
+## [v1.1.214] — 2026-08-27
+
+**新增"项目结构"能力 + 路由 — "了解项目真实结构" 不再答进度状态 (Founder 实测会话)**。
+
+### Added
+
+- code_scan.scan_structure: 项目真实结构 (仓库顶层目录树 + 每目录文件/LOC + 二级子目录 + 入口文件),
+  确定性读盘不编造; 构建产物/工具目录忽略 (target/.github/.ruff_cache/.idea/.vscode/.turbo/Pods/.dart_tool…
+  — desktop/src-tauri/target 2.3G 混入 323 万行 → 过滤后 1.3 万行)
+- query_engine: project_structure 意图 (项目结构/目录树/有哪些模块/项目组成/了解结构/看结构…)
+  + LLM prompt 规则 + 处理分支 format_structure
+- agent_loop: project_structure 工具 + dispatch; intent_core route_for 加区分提示
+- 不误伤: "扫描项目/扫描代码" 仍 project_scan/code_scan
+- 测试: 结构扫描(忽略构建产物/LOC 统计) + 路由 4 新断言 (query+agent 60 passed)
+
 ## [v1.1.213] — 2026-08-27
 
 **修复: "扫描代码" 答非所问 — 路由到真实 code_scan (读盘), 不再答"未执行代码扫描" (Founder 实测会话)**。

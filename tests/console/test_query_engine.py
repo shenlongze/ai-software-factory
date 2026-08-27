@@ -61,6 +61,11 @@ class TestParseIntent:
         assert _qe.parse_intent("看看代码结构")["intent"] == "code_scan"
         assert _qe.parse_intent("扫描项目")["intent"] == "project_scan"
         assert _qe.parse_intent("扫描项目整体情况")["intent"] == "project_scan"
+        # v1.1.214: 项目结构 → project_structure (目录树/模块), 不误伤扫描项目
+        assert _qe.parse_intent("了解项目真实结构")["intent"] == "project_structure"
+        assert _qe.parse_intent("项目结构")["intent"] == "project_structure"
+        assert _qe.parse_intent("有哪些模块")["intent"] == "project_structure"
+        assert _qe.parse_intent("目录结构")["intent"] == "project_structure"
 
     def test_analysis_intents_route_to_deep_analyze(self):
         """v1.1.206 语义门: 分析/评估措辞 → deep_analyze (不靠堆关键词, 不被命令词劫持)。"""

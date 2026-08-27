@@ -662,3 +662,38 @@ class TestContextViewInjection:
         # 第二轮 prompt 含话题视图 (当前话题 + 第一轮内容)
         assert "当前话题" in prompts[1]
         assert "记账App" in prompts[1]
+
+
+class TestProjectStructure:
+    """项目结构 (v1.1.214): 目录树/模块分布 — "了解项目真实结构" 不再答进度状态。"""
+
+    def test_scan_structure_real(self, tmp_path):
+        from factory_console.session import code_scan as cs
+
+        # 构造迷你仓库 + project.json 指向它
+        repo = tmp_path / "myrepo"
+        (repo / "src").mkdir(parents=True)
+        (repo / "docs").mkdir()
+        (repo / "target").mkdir()  # 构建产物应被忽略
+        (repo / "src" / "main.py").write_text("print(1)\nprint(2)\n", encoding="utf-8")
+        (repo / "src" / "util.py").write_text("x=1\n", encoding="utf-8")
+        (repo / "docs" / "readme.md").write_text("# r\n", encoding="utf-8")
+        (repo / "target" / "big.bin").write_bytes(b"0" * 100)
+        proj_dir = tmp_path / "workspace" / "projects" / "P-1"
+        proj_dir.mkdir(parents=True)
+        (proj_dir / "project.json").write_text(
+            '{"id": "P-1", "workspace_dir": "%s"}' % repo, encoding="utf-8")
+
+        r = cs.scan_structure(tmp_path, "P-1")
+        assert r["ok"] is True
+        names = [d["name"] for d in r["dirs"]]
+        assert "src" in names and "docs" in names
+        assert "target" not in names  # 构建产物忽略
+        src = next(d for d in r["dirs"] if d["name"] == "src")
+        assert src["files"] == 2 and src["loc"] == 3
+        text = cs.format_structure(r, "Demo")
+        assert "src/" in text and "main.py" in (text) or "2 文件" in text
+
+    def test_tool_schema_includes_structure(self, tmp_path):
+        ids = {t["function"]["name"] for t in _ag.tool_schemas(tmp_path)}
+        assert "project_structure" in ids

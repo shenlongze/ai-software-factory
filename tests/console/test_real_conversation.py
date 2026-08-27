@@ -90,3 +90,19 @@ class TestRealConversationRegression:
         # 不误伤: 常规查询语义不变
         assert _qe.parse_intent_llm("项目进度怎么样", _llm)["intent"] == "project_status"
         assert _qe.parse_intent_llm("把登录做完", _llm)["intent"] == "create_task"
+
+
+class TestSkepticalSignal:
+    """Founder 实测: "是真正影响项目的么" 无 LLM 时被判 chat → 确定性走验证。"""
+
+    def test_skeptical_deep_analyze_without_llm(self):
+        # 不依赖 LLM 的确定性质疑信号 → deep_analyze (多工具+证据), 不是 chat
+        assert _qe.parse_intent_llm("是真正影响项目的么", None)["intent"] == "deep_analyze"
+        assert _qe.parse_intent_llm("你说的这些真的会影响项目吗", None)["intent"] == "deep_analyze"
+        assert _qe.parse_intent_llm("能确定吗", None)["intent"] == "deep_analyze"
+        assert _qe.parse_intent_llm("靠谱吗", None)["intent"] == "deep_analyze"
+
+    def test_not_hijacking_normal_queries(self):
+        assert _qe.parse_intent_llm("项目进度怎么样", None)["intent"] == "project_status"
+        assert _qe.parse_intent_llm("扫描代码", None)["intent"] == "code_scan"
+        assert _qe.parse_intent_llm("项目结构", None)["intent"] == "project_structure"

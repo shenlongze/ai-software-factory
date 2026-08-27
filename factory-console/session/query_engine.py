@@ -76,6 +76,11 @@ _STRONG_ANALYSIS_SIGNALS: tuple[str, ...] = (
     "分析", "评估", "利弊", "优缺点", "优劣", "值不值得", "值不值",
     "怎么看", "如何看", "评价", "评判", "对比", "建议",
 )
+#: 确定性质疑/验证信号 (Founder 实测: "是真正影响项目的么" 无 LLM 时被判 chat → 必须走验证)
+_SKEPTICAL_SIGNALS: tuple[str, ...] = (
+    "是真正", "真的会", "确实是", "能确定", "靠谱吗", "可信吗", "数据是真的吗",
+    "属实", "当真", "确实吗", "确定吗", "真的吗", "保证吗", "是真实的",
+)
 #: 弱分析信号 — 语义含糊 (怎么样/改进/优化), 只有 LLM 判分析才 deep_analyze
 _WEAK_ANALYSIS_SIGNALS: tuple[str, ...] = ("怎么样", "改进", "如何改进", "优化方案")
 
@@ -603,6 +608,10 @@ def parse_intent_llm(question: str, llm_fn: Any) -> dict[str, Any]:
     import re
 
     det = parse_intent(question)
+    # 确定性质疑/验证信号 (Founder: "是真正影响项目的么/靠谱吗/能确定吗" → 验证语义)
+    # 无论 LLM 是否可用都走 deep_analyze (多工具+证据), 不是 chat 泛答
+    if any(sig in str(question or "") for sig in _SKEPTICAL_SIGNALS):
+        return {"intent": "deep_analyze", "project": None, "task": None}
     # 语义分析门 (分析/评估/质疑验证 → deep_analyze 多工具+证据, 不靠关键词)
     if is_analysis_request(question):
         llm_result = _llm_intent(question, llm_fn)

@@ -1,4 +1,16 @@
 # Changelog
+## [v1.1.220] — 2026-08-28
+
+**修复: 旧路由质疑信号缺失 — "是真正影响项目的么" 无 LLM 时被判 chat (Founder 实测 WebUI 仍答非所问)**。
+
+### Fixed
+
+- 实测会话 "扫描代码/项目结构" 已由 v1.1.213/214 修复, 但 WebUI 后端进程为旧代码 → 未加载; 需重启后端
+- query_engine 补确定性质疑/验证信号 (_SKEPTICAL_SIGNALS: 是真正/真的会/确实是/能确定/靠谱吗/可信吗/属实…)
+  → 无 LLM 也判 deep_analyze (多工具+证据), 不是 chat 泛答
+- 不误伤: "项目进度怎么样" 仍 project_status; "扫描代码" 仍 code_scan; "项目结构" 仍 project_structure
+- 测试: 4 质疑 + 3 不误伤断言 (real_conversation 93 passed)
+
 ## [v1.1.219] — 2026-08-27
 
 **S10-126 M3: 跨会话记忆 (S-4) + 项目知识检索 — "继续上次"能接上**。

@@ -1,4 +1,25 @@
 # Changelog
+## [v1.1.207] — 2026-08-27
+
+**会话 Agent 循环 v2: 原生 function calling + 计划→审批→执行 + 硬收敛护栏 (Founder: 真正 get 到用户意图, 不行就 loop, 3 次 loop 后还不清醒就追问)**。
+
+### Added
+
+- 会话 Agent 循环 (factory-console/session/agent_loop.py): DeepSeek 原生 tool_calls (不是 prompt 套 JSON) —
+  模型读上下文+工具 → 执行 → 结果回喂 → 循环 → 最终回答 (带证据)
+- 14 个会话动作工具: code_scan/project_scan/search_code/project_status/project_tasks/task_action/
+  create_task/project_docs/git_status/monitor/task_continue/external_route + plan_development/execute_plan
+- 计划→审批→执行闭环: 开发类需求 → 出计划 (目标/任务/顺序/验收) → 用户语义判断审批
+  (可以/开始→execute_plan 真实建任务进 backlog; 要改→重写计划; 意图不明→追问) — 不靠关键词
+- 真实代码扫描 (code_scan.py): 仓库文件数/LOC/语言分布/测试文件/TODO/大文件/最近改动/git (确定性读盘, 不编造)
+- WebUI 接线: 项目级会话默认走 Agent 循环 (fastapi_adapter), 待审批计划跨消息持久化 (session_plans.json),
+  Agent 不可用 → 回退旧意图路由
+
+### Changed
+
+- 硬收敛护栏: 工具调用达上限 (MAX_TOOL_CALLS=6) → 硬停, 最后强制一轮收敛 (不再给工具 tools=None);
+  信息仍不足 → 明确向用户追问澄清, 不无限调研/不编造
+
 
 > AI Software Factory — 变更日志 (Keep a Changelog 风格, 中文)。
 > 版本语义: `v1.0.0-rc1` 为 v1.0 发布候选 (Release Candidate), 功能冻结, 只做文档与修复。

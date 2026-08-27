@@ -3874,7 +3874,68 @@ def build_app(
                 system_line = f"{system_line}\n⚠️ 告警: " + "；".join(a["message"] for a in _alerts)
         except Exception:  # noqa: BLE001 — 告警失败 → 忽略
             pass
-        # 完整链路 (Founder 设计): LLM 转标准意图 → 查询/执行 → 标准输出
+        # ---- v1.1.207: 会话 Agent 循环 = 默认入口 (项目级) + 计划→审批→执行
+        if session.get("scope") == "project" and session.get("project_id"):
+            _agmod = _console_import("session.agent_loop")
+            _plan_store = _agmod.PendingPlanStore(workspace_root or DEFAULT_ROOT)
+            _pending = _plan_store.get(session_id)
+            # 待审批计划注入上下文 → 模型语义判断批准/驳回/调整 (不用关键词)
+            _agent_message = body.message
+            if _pending:
+                _agent_message = (
+                    f"【当前有待审批的开发计划】\n{_agmod.plan_to_text(_pending)}\n\n"
+                    f"用户最新消息: {body.message}\n\n"
+                    "请语义判断: 如果用户同意(可以/开始/同意/没问题等语气) → 调 execute_plan 执行该计划; "
+                    "如果用户提出修改/不满意 → 用 plan_development 重写计划(吸收意见); "
+                    "如果意图不明 → 先追问。"
+                )
+            try:
+                agent_result = _agmod.run_agent(
+                    _agent_message,
+                    root=workspace_root or DEFAULT_ROOT,
+                    project_id=str(session.get("project_id") or ""),
+                    llm_fn=_sessions_mod.llm_raw,
+                    service=service,
+                    max_rounds=3,
+                    session_store=sessions_store,
+                    session_id=session_id,
+                )
+            except Exception:  # noqa: BLE001 — Agent 循环异常 → 回退旧路由
+                agent_result = None
+            if agent_result is not None and agent_result.get("answer"):
+                calls = agent_result.get("calls") or []
+                # 新计划 → 存待审批
+                for c in calls:
+                    if c.get("plan"):
+                        _plan_store.save(session_id, c["plan"])
+                        break
+                evidence_lines = [
+                    f"- 工具 {c['tool']}: {'✅' if c.get('ok') else '❌'} "
+                    f"{str(c.get('output') or c.get('error') or '')[:300]}"
+                    for c in calls
+                ]
+                facts = (
+                    "【工具执行证据】\n" + ("\n".join(evidence_lines) if evidence_lines else "（未调用工具）")
+                    + "\n\n请基于工具证据输出最终回答; 引用来源, 不编造。"
+                )
+                try:
+                    result = _sessions_mod.send_message(
+                        sessions_store, session_id, body.message,
+                        facts=facts,
+                        reply_extra="回答必须引用上面【工具执行证据】; 工具没提供的不要编造; 分 结论/证据/数据/建议。",
+                        llm_fn=lambda _p, _a=agent_result.get("answer", ""): _a,
+                    )
+                except ValueError as exc:
+                    raise HTTPException(status_code=400, detail=str(exc)) from exc
+                result["meta"] = {
+                    "intent": "agent", "project": session.get("project_id"),
+                    "data_source": "tools" if calls else "chat",
+                    "target": {"url": f"#/project/{session.get('project_id')}", "label": "查看项目"},
+                    "tool_calls": [{"tool": c["tool"], "ok": c.get("ok")} for c in calls],
+                }
+                return result
+
+        # 完整链路 (Founder 设计): LLM 转标准意图 → 查询/执行 → 标准输出 (Agent 不可用/非 agent 模式时兜底)
         _qmod = _console_import("session.query_engine")
         intent = _qmod.parse_intent_llm(body.message, _sessions_mod.llm_raw)
         hint_project = intent.get("project") if intent.get("intent") != "chat" else None

@@ -868,23 +868,15 @@ def run_agent_native(
                 f"用户质疑的上一轮回答: {last_ai[:800]}\n"
                 "请重新查询真实数据验证, 然后诚实承认错误或给出修正。"
             )})
-    # 跨会话记忆注入 (S-4): 项目级记忆 → 上下文 ("继续上次"可接上)
+    # S10-127 P1.3: L0/L1/L2 分层上下文注入 (按模型能力选深度; 复用 M3 权威分层)
     try:
-        from .project_memory import MemoryStore
+        from .context_layers import build_context, pick_depth
 
-        _mem_block = MemoryStore.load(data_dir, project_id).inject_block()
-        if _mem_block:
-            messages.append({"role": "system", "content": _mem_block})
-    except Exception:  # noqa: BLE001 — 记忆不可用不阻断
-        pass
-    # S10-127 M3.3: 跨会话交接 Spine 注入 (Closure over replay — 只投影摘要+交接面)
-    try:
-        from .handoff import ProjectSpine
-
-        _spine_block = ProjectSpine.load(data_dir, project_id).view()
-        if _spine_block:
-            messages.append({"role": "system", "content": _spine_block})
-    except Exception:  # noqa: BLE001 — Spine 不可用不阻断
+        _depth = pick_depth(_mp.get("tier"), _mconf.get("context_window"))
+        _ctx_block = build_context(data_dir, project_id, depth=_depth)
+        if _ctx_block:
+            messages.append({"role": "system", "content": _ctx_block})
+    except Exception:  # noqa: BLE001 — 上下文不可用不阻断
         pass
     # S10-127 M4.1: SessionStart hooks → 注入续接内容
     try:

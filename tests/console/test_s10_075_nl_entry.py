@@ -14,6 +14,7 @@ from pathlib import Path
 from importlib import import_module
 
 S = import_module("factory-console.session.session")
+CONV = import_module("factory-console.session.conversation")
 CHAT = import_module("factory-console.session.chat")
 
 
@@ -41,7 +42,11 @@ def _dispatch(session, line: str) -> str:
 
 class TestGeneralConversation:
     def _session(self):
-        return S.InteractiveSession(chat_service=_FakeChat())
+        return S.InteractiveSession(
+            chat_service=_FakeChat(),
+            # 确定性测试模式: 发现流程禁用 LLM (不依赖真实 LLM/网络)
+            conversation_manager=CONV.ConversationManager(analyzer=None),
+        )
 
     def test_greeting_answered(self):
         out = _dispatch(self._session(), "你好")
@@ -70,7 +75,11 @@ class TestGeneralConversation:
 
 class TestSystemCommands:
     def _session(self):
-        return S.InteractiveSession(chat_service=_FakeChat())
+        return S.InteractiveSession(
+            chat_service=_FakeChat(),
+            # 确定性测试模式: 发现流程禁用 LLM (不依赖真实 LLM/网络)
+            conversation_manager=CONV.ConversationManager(analyzer=None),
+        )
 
     def test_slash_help(self):
         out = _dispatch(self._session(), "/help")
@@ -119,7 +128,11 @@ class TestFactoryIntent:
 
 class TestMultiTurnDiscovery:
     def _session(self):
-        return S.InteractiveSession(chat_service=_FakeChat())
+        return S.InteractiveSession(
+            chat_service=_FakeChat(),
+            # 确定性测试模式: 发现流程禁用 LLM (不依赖真实 LLM/网络)
+            conversation_manager=CONV.ConversationManager(analyzer=None),
+        )
 
     def test_state_preserved_across_turns(self):
         # S10-109: 字段内容确定性归类 (答非所问自动填匹配字段) — 逐字段答齐

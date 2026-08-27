@@ -858,6 +858,8 @@ def test_session_gate_receives_prepare_project_intent(fake_org, capsys, tmp_path
     sess = SESS_MOD.InteractiveSession(
         context_manager=CTX_MOD.ContextManager(workspace=str(root)),
         confirmation_gate=spy,
+        # 确定性测试模式: 发现流程禁用 LLM (不依赖真实 LLM/网络)
+        conversation_manager=CONV_MOD.ConversationManager(analyzer=None),
     )
     sess._dispatch("准备开发")
     assert len(spy.calls) == 1
@@ -958,6 +960,8 @@ def test_full_session_flow_end_to_end(fake_org, capsys, tmp_path):
     sess = SESS_MOD.InteractiveSession(
         context_manager=CTX_MOD.ContextManager(workspace=str(root)),
         confirmation_gate=spy,
+        # 确定性测试模式: 发现流程禁用 LLM (不依赖真实 LLM/网络)
+        conversation_manager=CONV_MOD.ConversationManager(analyzer=None),
     )
     sess._dispatch("我想开发一个台球计分APP")
     sess._dispatch("解决台球比赛计分麻烦")

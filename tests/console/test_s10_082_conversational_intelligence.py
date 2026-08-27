@@ -18,6 +18,7 @@ import contextlib
 from importlib import import_module
 
 S = import_module("factory-console.session.session")
+CONV = import_module("factory-console.session.conversation")
 INT = import_module("factory-console.session.intent")
 NAMING = import_module("factory-console.session.naming")
 
@@ -42,7 +43,11 @@ def _dispatch(session, line: str) -> str:
 
 
 def _session():
-    return S.InteractiveSession(chat_service=_FakeChat())
+    return S.InteractiveSession(
+        chat_service=_FakeChat(),
+        # 确定性测试模式: 发现流程禁用 LLM (不依赖真实 LLM/网络)
+        conversation_manager=CONV.ConversationManager(analyzer=None),
+    )
 
 
 class TestChatFallback:

@@ -562,12 +562,15 @@ class TestProductPipelineAction:
 
         import factory_console.session.context as ctx_mod
         import factory_console.session.session as sess_mod
+        import factory_console.session.conversation as conv_mod
         org = FakeOrgCli()
         monkeypatch.setattr(ACT, "_load_org_cli", lambda: org)
         root = tmp_path / "ws"
         root.mkdir()
         sess = sess_mod.InteractiveSession(
             context_manager=ctx_mod.ContextManager(workspace=str(root)),
+            # 确定性测试模式: 发现流程禁用 LLM (不依赖真实 LLM/网络)
+            conversation_manager=conv_mod.ConversationManager(analyzer=None),
         )
         sess._dispatch("我想做CRM")
         sess._dispatch("客户管理混乱，跟进靠表格")

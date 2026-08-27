@@ -23,9 +23,7 @@ from typing import Any
 _INTENT_RULES: list[tuple[str, tuple[str, ...]]] = [
     ("tools_list", ("有哪些工具", "工具清单", "工具有什么", "内置工具", "能调用哪些工具")),
     ("task_continue", ("继续做", "接着做", "继续任务", "继续开发", "继续之前", "继续推进", "继续这个", "接着推进")),
-    ("deep_analyze", ("详细分析", "深度分析", "分析一下", "全面分析", "分析过程", "深度看", "详细看", "分析下",
-                     "分析利弊", "利弊", "优缺点", "优劣势", "重新分析", "理解整个项目", "重新理解",
-                     "深度理解")),
+    ("deep_analyze", ("详细分析", "深度分析", "分析一下", "全面分析", "分析过程", "深度看", "详细看", "分析下")),
     ("create_project", ("做一个", "创建一个", "开发一个", "帮我做个", "帮我做", "新建一个项目", "做个app", "做个 App", "做个app")),
     ("task_action", ("标记完成", "标为完成", "标记开始", "开始任务", "改优先级", "改成p0", "改成p1", "改成p2", "改成p3", "归档任务", "完成任务", "完成这个任务")),
     ("create_task", ("完善", "优化", "改进", "修复", "修一下", "加个", "增加", "做一下",
@@ -48,6 +46,24 @@ _INTENT_RULES: list[tuple[str, tuple[str, ...]]] = [
                        "计划", "规划", "里程碑", "看看项目")),
     ("model", ("模型", "什么模型", "deepseek")),
 ]
+
+#: 分析/评估语义信号 (Founder 2026-08-27: 不能一味堆关键词, 用户说法千变万化 → 语义门)
+#: 命中 → 交给 LLM 语义决策 (deep_analyze), 不被"继续做/完善"等命令关键词劫持
+_ANALYSIS_SIGNALS: tuple[str, ...] = (
+    "分析", "评估", "利弊", "优缺点", "优劣", "值不值得", "值不值",
+    "怎么看", "如何看", "评价", "评判", "对比", "建议", "改进",
+    "如何改进", "优化方案", "怎么样",
+)
+
+
+def is_analysis_request(question: str) -> bool:
+    """是否分析/评估类请求 (语义信号; 未命中 → False 走常规)。"""
+    q = str(question or "")
+    for sig in _ANALYSIS_SIGNALS:
+        if sig in q:
+            return True
+    return False
+
 
 #: 确定性意图解析 (无 LLM 依赖; 未命中 → chat)
 def parse_intent(question: str) -> dict[str, Any]:
@@ -505,7 +521,8 @@ _INTENT_LLM_PROMPT = """把用户的提问转成标准查询意图 (只输出 JS
 - 问项目列表/有哪些项目/重点项目 → list_projects
 - 问某项目状态/阶段/进度/怎么样 → project_status (project=项目名)
 - 扫描/全面看/盘点项目整体 (进度+计划+风险+建议) → project_scan
-- 详细分析/深度分析/分析利弊/理解整个项目 (多工具+可溯源) → deep_analyze
+- 分析/评估/利弊/优缺点/值不值得/怎么看/评价/建议/改进 (多工具+可溯源) → deep_analyze
+  (注意: 即使短语含'继续做/完善'等词, 只要是分析评估语义 → deep_analyze, 不是 task_continue/create_task)
 - 查有哪些内置工具 → tools_list
 - 继续做/接着做某个任务 → task_continue (task=任务描述)
 - 问质量/评分 → project_quality
@@ -558,6 +575,15 @@ def parse_intent_llm(question: str, llm_fn: Any) -> dict[str, Any]:
             llm_result = None
 
     det_intent = det["intent"]
+    # Founder 2026-08-27: 语义分析门 — 分析/评估类请求 (值不值得继续做/评估现状/怎么看)
+    # 交给 LLM 语义决策, 不被"继续做/完善"等命令关键词劫持; LLM 失败/chat → deep_analyze
+    if is_analysis_request(question):
+        if llm_result is not None and llm_result["intent"] not in ("chat", "task_continue", "create_task", "task_action"):
+            return llm_result
+        if llm_result is not None and llm_result["intent"] == "deep_analyze":
+            return llm_result
+        # 分析信号但 LLM 没给明确非命令意图 → 语义归 deep_analyze (不盲猜成命令/闲聊)
+        return {"intent": "deep_analyze", "project": (llm_result or {}).get("project"), "task": None}
     if det_intent != "chat":
         # 确定性强信号意图锁定; LLM 只补参数
         if det_intent == "create_project":

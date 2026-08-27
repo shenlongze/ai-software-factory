@@ -24,6 +24,7 @@ INT = import_module("factory-console.session.intent")
 PIPE = import_module("factory-console.session.pipeline_runner")
 PROD = import_module("factory-console.session.product")
 SESS = import_module("factory-console.session.session")
+CONV_MOD = import_module("factory-console.session.conversation")
 
 
 class FakeOrgCli:
@@ -137,6 +138,8 @@ class TestPipelineActionAndIntent:
         root.mkdir()
         sess = SESS.InteractiveSession(
             context_manager=CTX.ContextManager(workspace=str(root)),
+            # 确定性测试模式: 发现流程禁用 LLM (不依赖真实 LLM/网络)
+            conversation_manager=CONV_MOD.ConversationManager(analyzer=None),
         )
         sess._dispatch("我想开发一个 Todo 管理 API，目标是学习后端开发。")
         sess._dispatch("手动测试太慢")
@@ -161,6 +164,8 @@ class TestDiscoveryArtifact:
         root.mkdir()
         sess = SESS.InteractiveSession(
             context_manager=CTX.ContextManager(workspace=str(root)),
+            # 确定性测试模式: 发现流程禁用 LLM (不依赖真实 LLM/网络)
+            conversation_manager=CONV_MOD.ConversationManager(analyzer=None),
         )
         sess._dispatch("我想开发一个记账软件")
         sess._dispatch("记账麻烦")

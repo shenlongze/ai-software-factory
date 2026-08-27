@@ -409,8 +409,15 @@ class TestEnvGate:
 
 
 class TestValidate:
-    def test_missing_env_key_warns(self, tmp_path, capsys):
-        """providers.json 生成但 env key 未配置 → ⚠ WARN (rc 0) + 下一步提示。"""
+    def test_missing_env_key_warns(self, tmp_path, capsys, monkeypatch):
+        """providers.json 生成但 env key 未配置 → ⚠ WARN (rc 0) + 下一步提示。
+
+        hermetic: 清空 LLM env — 本机若配置了 DEEPSEEK_API_KEY, init 校验会
+        判"可解析"而非"缺少 key" (环境依赖, 开发者机器必现)。
+        """
+        for _k in ("DEEPSEEK_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY",
+                   "LLM_API_KEY", "LLM_PROVIDER", "LLM_MODEL", "LLM_BASE_URL"):
+            monkeypatch.delenv(_k, raising=False)
         cli = make_cli(tmp_path)
         rc = run(cli, "init", "--non-interactive", "--provider", "deepseek")
         out = capsys.readouterr().out

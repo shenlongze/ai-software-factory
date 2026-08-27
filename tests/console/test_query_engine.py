@@ -56,6 +56,12 @@ class TestParseIntent:
         assert _qe.parse_intent("你用什么模型")["intent"] == "model"
         assert _qe.parse_intent("你好")["intent"] == "chat"
 
+    def test_analysis_intents_route_to_deep_analyze(self):
+        """v1.1.205: 分析利弊/优缺点/理解整个项目 → deep_analyze (不再掉进 chat 盲猜)。"""
+        for q in ("分析一下这个项目的利弊", "分析利弊", "这个项目的优缺点是什么",
+                  "重新扫描理解整个项目", "深度理解这个项目"):
+            assert _qe.parse_intent(q)["intent"] == "deep_analyze", q
+
     def test_action_intent_priority_over_content_verb(self):
         """Founder 2026-08-27 (T-5 实测抓出): '标记完成 完善导出功能' 应解析为
         task_action (动作词优先), 不能因任务标题含 '完善' 被抢成 create_task。"""

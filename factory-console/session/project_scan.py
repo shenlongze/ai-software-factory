@@ -93,6 +93,15 @@ def _task_tree_stats(root: Path, project_id: str) -> dict[str, Any] | None:
         p = str(t.get("priority") or "").upper()
         if p in ("P0", "P1", "P2", "P3"):
             prio[p] = prio.get(p, 0) + 1
+    # 系列/模块级 (v1.1.205): 按描述 [A-Z]-N 系列统计完成度 — 扫描有模块粒度
+    series: dict[str, dict[str, int]] = {}
+    for t in tasks:
+        m = re.search(r"\[([A-Z])-\d+\]", str(t.get("description") or ""))
+        key = m.group(1) if m else "其他"
+        g = series.setdefault(key, {"total": 0, "done": 0})
+        g["total"] += 1
+        if str(t.get("status") or "").lower() in ("done", "completed"):
+            g["done"] += 1
     return {
         "total": len(tasks),
         "done": done,
@@ -101,6 +110,7 @@ def _task_tree_stats(root: Path, project_id: str) -> dict[str, Any] | None:
         "todo": todo,
         "pct": round(done / len(tasks) * 100) if tasks else 0,
         "priority": prio,
+        "series": series,
     }
 
 
@@ -364,6 +374,14 @@ def format_scan(report: dict[str, Any], project_name: str = "") -> str:
             counted = sum(prio.values())
             suffix = f" (其余 {tree['total'] - counted} 个未标优先级)" if counted < tree["total"] else ""
             lines.append("   优先级: " + " · ".join(f"{k}×{v}" for k, v in sorted(prio.items())) + suffix)
+    series = tree.get("series") or {}
+    if series:
+        parts = []
+        for k in sorted(series):
+            g = series[k]
+            mark = "✅" if g["done"] == g["total"] else f"⬜ {g['done']}/{g['total']}"
+            parts.append(f"{k} {mark}")
+        lines.append("   按系列: " + " · ".join(parts))
     else:
         lines.append("1. 任务树: 暂无任务数据")
     versions = report.get("versions")

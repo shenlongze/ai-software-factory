@@ -52,8 +52,20 @@ class TestLLMIntentParser:
         fn, _ = _llm('{"intent_type": "list_projects", "params": {}, "confidence": 0.3}')
         assert LLM_INTENT.LLMIntentParser(llm_fn=fn).parse("随便") is None
 
-    def test_no_llm_returns_none(self):
-        """无 key/装配失败 → None（上层规则兜底, 诚实降级）。"""
+    def test_no_llm_returns_none(self, tmp_path, monkeypatch):
+        """无 key/装配失败 → None（上层规则兜底, 诚实降级）。
+
+        hermetic: 隔离 HOME + 清空 LLM env — 本机若配置了 provider/key,
+        _default_llm_fn 会懒装配出真实 LLM, 使"无 LLM"断言失效 (环境依赖)。
+        """
+        home = tmp_path / "home"
+        home.mkdir()
+        monkeypatch.setenv("HOME", str(home))
+        for _k in (
+            "LLM_PROVIDER", "LLM_MODEL", "LLM_BASE_URL", "LLM_API_KEY",
+            "OPENAI_API_KEY", "DEEPSEEK_API_KEY", "ANTHROPIC_API_KEY",
+        ):
+            monkeypatch.delenv(_k, raising=False)
         assert LLM_INTENT.LLMIntentParser(llm_fn=None)._llm() is None
         assert LLM_INTENT.LLMIntentParser(llm_fn=None).parse("建个公司") is None
 

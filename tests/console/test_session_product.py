@@ -53,6 +53,8 @@ STATES = CONV_MOD.ConversationState
 # ------------------------------------------------------------------ 工具
 
 def _manager(**kw):
+    # 实验: 显式禁用 LLM (analyzer=None → 确定性规则模式, 不依赖真实 LLM/网络)
+    kw.setdefault('analyzer', None)
     return CONV_MOD.ConversationManager(**kw)
 
 
@@ -831,6 +833,8 @@ def test_regression_session_dispatch_create_project(monkeypatch, capsys, tmp_pat
     monkeypatch.setattr(ACTIONS_MOD, "_load_org_cli", lambda: fake)
     sess = SESS_MOD.InteractiveSession(
         context_manager=CTX_MOD.ContextManager(workspace=str(root)),
+        # 确定性测试模式: analyzer=None 显式禁用 LLM (不依赖真实 LLM/网络)
+        conversation_manager=CONV_MOD.ConversationManager(analyzer=None),
     )
     sess._dispatch("创建一个APP")
     assert len(fake.calls) == 1
@@ -856,6 +860,8 @@ def test_session_product_flow_end_to_end(fake_org, capsys, tmp_path):
     root.mkdir()
     sess = SESS_MOD.InteractiveSession(
         context_manager=CTX_MOD.ContextManager(workspace=str(root)),
+        # 确定性测试模式: analyzer=None 显式禁用 LLM (不依赖真实 LLM/网络)
+        conversation_manager=CONV_MOD.ConversationManager(analyzer=None),
     )
     sess._dispatch("我想开发一个台球计分APP")
     sess._dispatch("解决台球比赛计分麻烦")
@@ -887,6 +893,8 @@ def test_session_product_flow_cancel(fake_org, capsys, tmp_path):
     root.mkdir()
     sess = SESS_MOD.InteractiveSession(
         context_manager=CTX_MOD.ContextManager(workspace=str(root)),
+        # 确定性测试模式: analyzer=None 显式禁用 LLM (不依赖真实 LLM/网络)
+        conversation_manager=CONV_MOD.ConversationManager(analyzer=None),
     )
     sess._dispatch("我想开发一个台球计分APP")
     sess._dispatch("解决台球比赛计分麻烦")
@@ -905,6 +913,8 @@ def test_session_product_intent_stored_after_confirm(fake_org, capsys, tmp_path)
     root.mkdir()
     sess = SESS_MOD.InteractiveSession(
         context_manager=CTX_MOD.ContextManager(workspace=str(root)),
+        # 确定性测试模式: analyzer=None 显式禁用 LLM (不依赖真实 LLM/网络)
+        conversation_manager=CONV_MOD.ConversationManager(analyzer=None),
     )
     sess._dispatch("我想开发一个台球计分APP")
     sess._dispatch("解决台球比赛计分麻烦")
@@ -923,6 +933,8 @@ def test_session_slash_not_intercepted_by_product_flow(capsys, tmp_path):
     root.mkdir()
     sess = SESS_MOD.InteractiveSession(
         context_manager=CTX_MOD.ContextManager(workspace=str(root)),
+        # 确定性测试模式: analyzer=None 显式禁用 LLM (不依赖真实 LLM/网络)
+        conversation_manager=CONV_MOD.ConversationManager(analyzer=None),
     )
     sess._dispatch("我想开发一个台球计分APP")
     sess._dispatch("/status")
@@ -1064,6 +1076,8 @@ def test_session_summary_without_create_transcript(fake_org, capsys, tmp_path):
     root.mkdir()
     sess = SESS_MOD.InteractiveSession(
         context_manager=CTX_MOD.ContextManager(workspace=str(root)),
+        # 确定性测试模式: analyzer=None 显式禁用 LLM (不依赖真实 LLM/网络)
+        conversation_manager=CONV_MOD.ConversationManager(analyzer=None),
     )
     sess._dispatch("你好，我想做一个软件产品")
     sess._dispatch("我想做一个帮助小团队管理客户关系的系统")
@@ -1083,6 +1097,8 @@ def test_session_escape_list_projects_transcript(capsys, tmp_path):
     root.mkdir()
     sess = SESS_MOD.InteractiveSession(
         context_manager=CTX_MOD.ContextManager(workspace=str(root)),
+        # 确定性测试模式: analyzer=None 显式禁用 LLM (不依赖真实 LLM/网络)
+        conversation_manager=CONV_MOD.ConversationManager(analyzer=None),
     )
     sess._dispatch("我想开发一个 Todo 管理 API，目标是学习后端开发")
     sess._dispatch("我现在有哪些项目")
@@ -1100,6 +1116,8 @@ def test_session_create_now_nudge_transcript(capsys, tmp_path):
     root.mkdir()
     sess = SESS_MOD.InteractiveSession(
         context_manager=CTX_MOD.ContextManager(workspace=str(root)),
+        # 确定性测试模式: analyzer=None 显式禁用 LLM (不依赖真实 LLM/网络)
+        conversation_manager=CONV_MOD.ConversationManager(analyzer=None),
     )
     sess._dispatch("我想开发一个 Todo 管理 API，目标是学习后端开发")
     sess._dispatch("现在创建项目")
@@ -1116,6 +1134,8 @@ def test_session_batch_question_transcript(capsys, tmp_path):
     root.mkdir()
     sess = SESS_MOD.InteractiveSession(
         context_manager=CTX_MOD.ContextManager(workspace=str(root)),
+        # 确定性测试模式: analyzer=None 显式禁用 LLM (不依赖真实 LLM/网络)
+        conversation_manager=CONV_MOD.ConversationManager(analyzer=None),
     )
     sess._dispatch("我想开发一个 Todo 管理 API，目标是学习后端开发")
     sess._dispatch("手动测试太慢")
@@ -1133,6 +1153,8 @@ def test_session_multi_part_batch_answer_transcript(capsys, tmp_path):
     root.mkdir()
     sess = SESS_MOD.InteractiveSession(
         context_manager=CTX_MOD.ContextManager(workspace=str(root)),
+        # 确定性测试模式: analyzer=None 显式禁用 LLM (不依赖真实 LLM/网络)
+        conversation_manager=CONV_MOD.ConversationManager(analyzer=None),
     )
     sess._dispatch("我想开发一个 Todo 管理 API，目标是学习后端开发")
     sess._dispatch("现在创建项目")

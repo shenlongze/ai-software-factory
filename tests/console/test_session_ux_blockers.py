@@ -18,6 +18,7 @@ ACT = import_module("factory-console.session.actions")
 CTX = import_module("factory-console.session.context")
 ORCH = import_module("factory-console.session.orchestrator")
 SESS = import_module("factory-console.session.session")
+CONV_MOD = import_module("factory-console.session.conversation")
 INT = import_module("factory-console.session.intent")
 
 
@@ -70,6 +71,8 @@ class _FakeOrchestrator:
 
 
 def _session(workspace=None, **kw):
+    # 确定性测试模式: analyzer=None 显式禁用 LLM (不依赖真实 LLM/网络)
+    kw.setdefault("conversation_manager", CONV_MOD.ConversationManager(analyzer=None))
     return SESS.InteractiveSession(
         chat_service=_FakeChat(),
         context_manager=CTX.ContextManager(workspace=workspace) if workspace else None,
@@ -146,6 +149,7 @@ def test_resume_with_project_name_switches_and_resumes(monkeypatch, capsys, tmp_
     sess = SESS.InteractiveSession(
         context_manager=CTX.ContextManager(workspace=str(root)),
         chat_service=_FakeChat2(),
+        conversation_manager=CONV_MOD.ConversationManager(analyzer=None),
     )
     sess._dispatch("我想做一个旅行记账软件")
     sess._dispatch("出差报销对账麻烦")
@@ -193,6 +197,7 @@ def test_project_docs_intent_and_real_data(monkeypatch, capsys, tmp_path):
     sess = SESS.InteractiveSession(
         context_manager=CTX.ContextManager(workspace=str(root)),
         chat_service=_FakeChat2(),
+        conversation_manager=CONV_MOD.ConversationManager(analyzer=None),
     )
     sess._dispatch("我想开发一个台球计分APP")
     sess._dispatch("计分麻烦")

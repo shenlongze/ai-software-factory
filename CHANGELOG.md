@@ -1,4 +1,24 @@
 # Changelog
+## [v1.1.215] — 2026-08-27
+
+**意图解析彻底重构: 从"关键词优先"倒转为"LLM 语义优先, 关键词只做兜底/防退化" (Founder: 会话问题不能靠一味加关键词)**。
+
+### Changed
+
+- query_engine.parse_intent_llm v2: 旧逻辑"确定性强关键词优先, LLM 只补参数"是病根
+  ("扫描代码"被"扫描"锁死成 project_scan; "了解项目真实结构"关键词未命中后 LLM 判错)
+  → 改为 LLM 完整语义判定优先 (强 prompt: 意图优先级+语义示例+质疑验证语义), 关键词表退居:
+  (a) LLM 不可用/输出坏 → 兜底; (b) 防退化: LLM 判 chat 但确定性是明确操作 (task_action/
+  create_task/task_continue/git_push/project_action/create_idea) → 锁操作, 不能被"聊没"
+- 分析信号分级: 强信号 (分析/评估/利弊/值不值得/建议…) → 强制 deep_analyze (不被命令词劫持);
+  弱信号 (怎么样/改进) + LLM 含糊 → 采信确定性 (修复预存误伤: "项目进度怎么样"被"怎么样"劫持成分析)
+
+### Added
+
+- 真实会话回归测试 (tests/console/test_real_conversation.py): Founder 实测踩坑固化 —
+  扫描代码→code_scan / 项目结构→project_structure / 质疑→deep_analyze / 调整任务→task_action /
+  防退化 / 无 LLM 兜底 / 不误伤 (7 断言)
+
 ## [v1.1.214] — 2026-08-27
 
 **新增"项目结构"能力 + 路由 — "了解项目真实结构" 不再答进度状态 (Founder 实测会话)**。

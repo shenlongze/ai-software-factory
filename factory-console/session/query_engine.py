@@ -70,6 +70,22 @@ def is_analysis_request(question: str) -> bool:
     return False
 
 
+#: 强分析信号 — 语义明确是分析/评估 (值不值得/利弊/优缺点/评价/建议…)
+#: 即使确定性命中命令词 (继续做/完善) 也覆盖 → deep_analyze
+_STRONG_ANALYSIS_SIGNALS: tuple[str, ...] = (
+    "分析", "评估", "利弊", "优缺点", "优劣", "值不值得", "值不值",
+    "怎么看", "如何看", "评价", "评判", "对比", "建议",
+)
+#: 弱分析信号 — 语义含糊 (怎么样/改进/优化), 只有 LLM 判分析才 deep_analyze
+_WEAK_ANALYSIS_SIGNALS: tuple[str, ...] = ("怎么样", "改进", "如何改进", "优化方案")
+
+
+def is_strong_analysis_request(question: str) -> bool:
+    """是否强分析信号 (值不值得/利弊/评估… → 强制 deep_analyze)。"""
+    q = str(question or "")
+    return any(sig in q for sig in _STRONG_ANALYSIS_SIGNALS)
+
+
 #: 确定性意图解析 (无 LLM 依赖; 未命中 → chat)
 def parse_intent(question: str) -> dict[str, Any]:
     q = str(question or "").strip().lower()
@@ -544,6 +560,8 @@ _INTENT_LLM_PROMPT = """把用户的提问转成标准查询意图 (只输出 JS
 - 扫描/全面看/盘点项目整体 (进度+计划+风险+建议) → project_scan
 - 扫描代码/代码结构/仓库代码/代码规模 → code_scan (真实读盘: 文件数/LOC/语言/测试/TODO/最近改动/git)
 - 项目结构/目录树/有哪些模块/项目组成/了解结构 → project_structure (仓库顶层目录树+文件分布+入口)
+- 用户质疑/怀疑/要验证 ("是真的吗/靠谱吗/真正影响项目吗/数据对吗/能确定吗") → deep_analyze (多工具+证据验证, 不是泛泛肯定)
+语义优先: 用语义判断意图, 不要死抠单个词。"扫描代码"→code_scan (不是 project_scan); "了解项目真实结构"→project_structure (不是 project_status); 明确操作词(标记完成/推送/改名)即使带修饰 → 对应操作意图
 - 分析/评估/利弊/优缺点/值不值得/怎么看/评价/建议/改进 (多工具+可溯源) → deep_analyze
   (注意: 即使短语含'继续做/完善'等词, 只要是分析评估语义 → deep_analyze, 不是 task_continue/create_task)
 - 查有哪些内置工具 → tools_list
@@ -568,60 +586,83 @@ _INTENT_LLM_PROMPT = """把用户的提问转成标准查询意图 (只输出 JS
 """
 
 
-def parse_intent_llm(question: str, llm_fn: Any) -> dict[str, Any]:
-    """意图解析: 确定性强关键词优先, LLM 只补参数 (project/task), 不覆写意图。
+#: 明确操作意图 (语义明确, LLM 判 chat 属退化 → 锁确定性, 防止"聊没")
+_OP_LOCKED_INTENTS = {"task_action", "create_task", "task_continue",
+                      "git_push", "project_action", "create_idea"}
 
-    规则 (Founder 2026-08-26 修复):
-    - 确定性命中非 chat 意图 (webui状态/有哪些项目/做一个/完善…) → 意图锁定,
-      LLM 结果只用于提取 project/task 参数 (防止 LLM 把强信号覆写成 chat)
-    - 确定性 chat → 采信 LLM 意图 (若 LLM 返回合法非 chat)
-    - LLM 失败 → 确定性 fallback
+
+def parse_intent_llm(question: str, llm_fn: Any) -> dict[str, Any]:
+    """意图解析 v2 (v1.1.215): LLM 语义优先, 关键词只做兜底/防退化。
+
+    彻底方案 (Founder 2026-08-27: 不能一味加关键词, 要语义):
+    - LLM 完整语义判定 (强 prompt: 意图优先级 + 语义示例 + 质疑/验证语义)
+    - 关键词表 (_INTENT_RULES) 退居: (a) LLM 不可用/输出坏 → 兜底;
+      (b) 防退化: LLM 判 chat 但确定性是明确操作 → 用确定性 (操作语义明确, 不能被聊没)
+    - LLM 判非 chat 且合法 → 采信 LLM (含 project/task 参数), 语义覆盖关键词误判
     """
     import re
 
     det = parse_intent(question)
-    llm_result: dict[str, Any] | None = None
-    if llm_fn is not None:
-        try:
-            raw = str(llm_fn(_INTENT_LLM_PROMPT.format(question=question)) or "").strip()
-            m = re.search(r"\{.*\}", raw, re.DOTALL)
-            if m:
-                d = json.loads(m.group(0))
-                intent = str(d.get("intent") or "").strip()
-                if intent in VALID_INTENTS:
-                    llm_result = {
-                        "intent": intent,
-                        "project": str(d.get("project") or "").strip() or None,
-                        "task": str(d.get("task") or "").strip() or None,
-                    }
-        except Exception:  # noqa: BLE001 — LLM 解析失败 → fallback
-            llm_result = None
-
-    det_intent = det["intent"]
-    # Founder 2026-08-27: 语义分析门 — 分析/评估类请求 (值不值得继续做/评估现状/怎么看)
-    # 交给 LLM 语义决策, 不被"继续做/完善"等命令关键词劫持; LLM 失败/chat → deep_analyze
+    # 语义分析门 (分析/评估/质疑验证 → deep_analyze 多工具+证据, 不靠关键词)
     if is_analysis_request(question):
+        llm_result = _llm_intent(question, llm_fn)
         if llm_result is not None and llm_result["intent"] not in ("chat", "task_continue", "create_task", "task_action"):
             return llm_result
-        if llm_result is not None and llm_result["intent"] == "deep_analyze":
-            return llm_result
-        # 分析信号但 LLM 没给明确非命令意图 → 语义归 deep_analyze (不盲猜成命令/闲聊)
+        # 强分析信号 (值不值得/利弊/评估/建议…) → 即使 det 命中命令词也 deep_analyze
+        if is_strong_analysis_request(question):
+            return {"intent": "deep_analyze",
+                    "project": (llm_result or {}).get("project"), "task": None}
+        # 弱信号 (怎么样) + LLM 含糊 → 采信确定性 (避免"项目进度怎么样"被劫持成分析)
+        if det["intent"] != "chat":
+            return {"intent": det["intent"],
+                    "project": (llm_result or {}).get("project"),
+                    "task": (llm_result or {}).get("task")}
         return {"intent": "deep_analyze", "project": (llm_result or {}).get("project"), "task": None}
-    if det_intent != "chat":
-        # 确定性强信号意图锁定; LLM 只补参数
-        if det_intent == "create_project":
+
+    llm_result = _llm_intent(question, llm_fn)
+    if llm_result is not None:
+        # 防退化: LLM 判 chat 但确定性是明确操作 → 锁确定性 (操作不能被聊没)
+        if llm_result["intent"] == "chat" and det["intent"] in _OP_LOCKED_INTENTS:
+            if det["intent"] == "create_project":
+                name = re.sub(r"^(做一个|创建一个|开发一个|帮我做个|帮我做|新建一个项目)\s*", "", question.strip())
+                name = name.strip() or None
+                return {"intent": "create_project", "project": (name[:24] if name else None), "task": None}
+            return {"intent": det["intent"],
+                    "project": llm_result.get("project"), "task": llm_result.get("task")}
+        # LLM 语义优先: 即使关键词命中不同意图, 采信 LLM (扫描代码→code_scan 不被"扫描"劫持)
+        return llm_result
+    # LLM 不可用/输出坏 → 关键词兜底 (纯降级保护)
+    if det["intent"] != "chat":
+        if det["intent"] == "create_project":
             name = re.sub(r"^(做一个|创建一个|开发一个|帮我做个|帮我做|新建一个项目)\s*", "", question.strip())
             name = name.strip() or None
             return {"intent": "create_project", "project": (name[:24] if name else None), "task": None}
-        return {
-            "intent": det_intent,
-            "project": (llm_result or {}).get("project"),
-            "task": (llm_result or {}).get("task"),
-        }
-    # 确定性 chat → 采信 LLM 合法非 chat 意图
-    if llm_result is not None and llm_result["intent"] != "chat":
-        return llm_result
+        return {"intent": det["intent"], "project": None, "task": None}
     return {"intent": "chat", "project": None, "task": None}
+
+
+def _llm_intent(question: str, llm_fn: Any) -> dict[str, Any] | None:
+    """LLM 语义意图解析 (独立; 失败/非法 → None 由调用方兜底)。"""
+    import re
+
+    if llm_fn is None:
+        return None
+    try:
+        raw = str(llm_fn(_INTENT_LLM_PROMPT.format(question=question)) or "").strip()
+        m = re.search(r"\{.*\}", raw, re.DOTALL)
+        if not m:
+            return None
+        d = json.loads(m.group(0))
+        intent = str(d.get("intent") or "").strip()
+        if intent not in VALID_INTENTS:
+            return None
+        return {
+            "intent": intent,
+            "project": str(d.get("project") or "").strip() or None,
+            "task": str(d.get("task") or "").strip() or None,
+        }
+    except Exception:  # noqa: BLE001 — LLM 失败 → None (兜底)
+        return None
 
 
 #: 系统状态专用输出 (禁止再说"未查询到" — 事实卡就是状态)

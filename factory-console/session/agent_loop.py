@@ -140,23 +140,29 @@ def tool_schemas(data_dir: str | Path | None = None) -> list[dict[str, Any]]:
 
 # ---------------------------------------------------------------- 计划-审批-执行
 
-_AGENT_SYSTEM = """你是 AI Factory 的会话 Agent（软件开发操作员）。
+_AGENT_SYSTEM = """你是 AI Factory 的会话 Agent（自主执行者）。
 
-铁律（Founder 2026-08-27）:
-0. 【真正听懂用户意图】先语义理解用户在做什么（提问/质疑/聊天/派活/开发/操作/情绪）;
-   【不行就 loop】意图不明或需求不清 → 追问澄清（loop），绝不猜、绝不强行套模板;
-   用户质疑/纠正 → 先自查数据、诚实修正，不嘴硬。
-工作方式（计划→审批→执行→验证→交付）:
-1. 需要真实数据或执行 → 调工具（带证据）
-2. 开发类需求 → 先快速了解现状（最多 2-3 个了解工具: project_status/code_scan/search_code），
-   然后必须调 plan_development 出计划（目标/任务/顺序/验收标准），展示给用户审批；不要无限探索
-3. 用户同意 → 调 execute_plan 执行；用户要改 → 重写计划（吸收意见，loop）
-4. 简单查询/闲聊 → 直接答，不调工具
-5. 敏感动作（建任务/改任务/委派执行/推送）→ 用户明确要求或计划已审批才执行
-6. 输出带证据；查不到 → 明确说"未查询到"，不编造
-7. 用中文回答，简洁准确"""
+铁律 (v1.1.216 agentic 重写):
+0. 【真正听懂用户】先语义理解用户意图 (提问/质疑/聊天/派活/开发/操作/情绪);
+   意图不明或需求不清 → 追问澄清, 绝不猜、绝不强行套模板
+1. 需要真实数据/执行 → 调工具 (带证据); 查不到 → 明确说"未查询到", 不编造
+2. 用户质疑/纠正 → 先重新查证, 诚实承认错误或给出修正, 不嘴硬不糊弄
+3. 开发类需求 → 先快速了解现状, 然后出计划 (目标/任务/顺序/验收) 请求用户审批, 不无限探索
+4. 敏感动作 (建任务/改任务/委派执行/推送) → 用户明确要求或计划已审批才执行
+5. 【主动收敛】每次工具调用后自评: 信息够 → 直接给最终答案 (带证据); 不够 → 继续查; 需澄清 → 提问
+6. 简单查询/闲聊 → 直接答 (需要实时数据才调工具)
+7. 用中文回答, 简洁准确"""
 
-# 循环护栏 (Founder: 3次loop后还不清醒就追问 — 不无限调研/无限重试): 工具调用硬上限
+
+#: Reflection 自评提示 (v1.1.216: 每轮工具后注入, 主动收敛, 不等用户追问)
+REFLECTION_PROMPT = """【自评收敛】基于以上工具结果, 自主判断:
+- 信息足够回答用户 → 直接给出最终答案 (引用工具证据; 不编造; 分 结论/证据/数据/建议)
+- 信息不足 → 继续调用必要工具 (不要重复已执行的; 最多再查几次就收敛)
+- 需要用户补充 → 向用户提出澄清问题
+给出最终答案时不要再调用工具。"""
+
+
+# 循环护栏 (Founder: 3次loop后还不清醒就追问 — 不无限调研/无限重试)
 MAX_TOOL_CALLS = 6
 MAX_ROUNDS = 4
 
@@ -402,11 +408,12 @@ def run_agent_native(
     history: list[dict[str, Any]] | None = None,
     context_view: str | None = None,
 ) -> dict[str, Any]:
-    """原生 function calling Agent 循环 (IntentCore 门 = 第一步)。
+    """AgentLoop v3 (agentic + reflection, v1.1.216).
 
-    先真正听懂用户意图 (intent×target×need×emotion) → 按意图注入路由约束 →
-    模型读上下文+工具 → 返回 tool_calls → 执行 → 回喂 → 循环 → 最终回答。
-    返回 {answer, calls, evidence, intent, rejected?} — LLM 不可用/非 agent → rejected 回退。"""
+    推翻 v2 的"意图门硬路由": 意图降级为软参考 (不拦截/不锁工具),
+    模型在循环里自主决策 (调工具/直接答/追问), 每轮工具后 Reflection 自评主动收敛,
+    硬收敛 (上限 + 强制收敛轮 + 3-loop 追问) 保留为最后兜底。
+    返回 {answer, calls, evidence, intent, rejected?} — LLM 不可用 → rejected 回退。"""
     intent = understand_intent(
         question, llm_fn=lambda p: _simple_llm(p, data_dir=data_dir), history=history,
     )
@@ -415,7 +422,7 @@ def run_agent_native(
         {"role": "system", "content": format_intent(intent) + "\n" + route_for(intent["intent"])},
         {"role": "user", "content": question},
     ]
-    # ---- 上下文连贯性 (Founder: 上下文断了是大事): 话题账本视图优先, fallback 最近4轮 ----
+    # ---- 上下文连贯性: 话题账本视图优先, fallback 最近4轮 ----
     hist_block = context_view if (context_view or "").strip() else _history_text(history)
     if hist_block:
         messages.append({"role": "system", "content": (
@@ -435,48 +442,26 @@ def run_agent_native(
                     )})
         except Exception:  # noqa: BLE001 — 锚定注入失败不阻断
             pass
-    calls: list[dict[str, Any]] = []
-    ctx: dict[str, Any] = {"session_store": session_store, "session_id": session_id,
-                           "pending_plan": None, "intent": intent}
-    # 注入 llm_fn 供 plan_development 内部用 (复用原生通道的简化版)
-    ctx["llm_fn"] = lambda p: _simple_llm(p, data_dir=data_dir)
-    tools = tool_schemas(data_dir)
-    # 质疑自查加深: challenge 首轮只给验证工具 (拿真实数据), 不给动作/计划工具
-    if intent["intent"] == "challenge":
-        verify_names = {"code_scan", "project_scan", "search_code", "project_status",
-                        "project_tasks", "project_docs", "git_status", "monitor"}
-        tools = [t for t in tools if (t.get("function") or {}).get("name") in verify_names]
-    total_calls = 0
-    # 质疑自查: 把上一轮回答注入上下文 → 强制验证再回应
+    # 质疑自查: 注入上一轮回答 → 上下文引导验证 (不锁工具, 模型自主)
     if intent["intent"] == "challenge":
         last_ai = _last_assistant_text(history)
         if last_ai:
             messages.append({"role": "system", "content": (
                 f"用户质疑的上一轮回答: {last_ai[:800]}\n"
-                "请逐条重新查询真实数据验证, 然后诚实承认错误或给出修正。"
+                "请重新查询真实数据验证, 然后诚实承认错误或给出修正。"
             )})
-    # 意图不明 → 直接追问, 不进工具循环 (Founder: 3 loop 后还不清醒就追问)
-    if intent["intent"] == "clarify":
-        try:
-            resp = call_with_tools(messages, None, data_dir=data_dir)
-            content = resp.get("content") or ""
-        except Exception:  # noqa: BLE001 — LLM 不可用 → 诚实兜底追问
-            content = ""
-        return {"answer": (content or "我还没完全理解你的需求，请补充：你想做什么？要我查什么？")[:2000],
-                "calls": calls, "evidence": [], "intent": intent}
+    calls: list[dict[str, Any]] = []
+    ctx: dict[str, Any] = {"session_store": session_store, "session_id": session_id,
+                           "pending_plan": None, "intent": intent}
+    ctx["llm_fn"] = lambda p: _simple_llm(p, data_dir=data_dir)
+    tools = tool_schemas(data_dir)
+    total_calls = 0
     try:
         for _ in range(max_rounds):
             resp = call_with_tools(messages, tools, data_dir=data_dir)
             tcs = resp.get("tool_calls") or []
             if not tcs:
-                # 质疑自查: 首轮未调验证工具直接答 → 强制先验证再答 (不放过)
-                if intent["intent"] == "challenge" and total_calls == 0:
-                    messages.append({"role": "system", "content": (
-                        "你还没有调用任何验证工具。请先调用验证工具 (project_status/project_scan/"
-                        "code_scan/search_code/project_tasks/git_status/monitor) 重新拿真实数据, "
-                        "再给出结论/修正; 不要凭印象回答。"
-                    )})
-                    continue
+                # 模型自主收敛 (直接回答/追问) — agentic: 不强制拦截
                 return {"answer": resp.get("content") or "（模型未输出）", "calls": calls, "intent": intent,
                         "evidence": [{"tool": c["tool"], "ok": c["ok"], "output": str(c.get("output") or c.get("error") or "")[:300]} for c in calls]}
             messages.append({"role": "assistant", "content": resp.get("content") or "", "tool_calls": tcs})
@@ -494,10 +479,12 @@ def run_agent_native(
                               "pending_plan": bool(result.get("pending_plan")),
                               "plan": result.get("plan")})
                 messages.append({"role": "tool", "tool_call_id": tc.get("id") or "", "content": json.dumps(result, ensure_ascii=False)[:3000]})
-            # 循环护栏 (Founder: 3次loop后还不清醒就追问): 到上限 → 硬停, 强制收敛
+            # 硬上限 → 停 (最后强制收敛)
             if total_calls >= MAX_TOOL_CALLS:
                 break
-        # 护栏/达轮数 → 最后强制一轮收敛 (不允许再调工具)
+            # Reflection 自评: 主动收敛 (不等 3-loop 兜底)
+            messages.append({"role": "system", "content": REFLECTION_PROMPT})
+        # 硬收敛轮 (不允许再调工具): 信息不足 → 明确追问 (Founder: 3 loop 后还不清醒就追问)
         messages.append({"role": "system", "content": (
             "已调用工具达到上限。现在必须收敛，且【禁止再调用任何工具】。"
             "如果信息足够: 开发类需求 → 直接输出计划文本(目标/任务/顺序/验收)并请用户审批; "
@@ -510,10 +497,6 @@ def run_agent_native(
     except Exception as exc:  # noqa: BLE001 — LLM 不可用 → 回退旧路由
         return {"answer": "", "rejected": True, "calls": calls, "evidence": [],
                 "reason": f"原生 FC 不可用: {exc}"}
-
-
-
-
 
 
 def _history_text(history: list[dict[str, Any]] | None, max_turns: int = 4) -> str:

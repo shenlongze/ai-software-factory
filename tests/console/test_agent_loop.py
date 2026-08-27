@@ -281,7 +281,7 @@ class TestIntentCore:
 
     def test_format_intent(self):
         text = _ag.format_intent(_intent("challenge", emotion="dissatisfied"))
-        assert "意图理解" in text and "challenge" in text and "dissatisfied" in text
+        assert "用户意图参考" in text and "challenge" in text and "dissatisfied" in text
 
     def test_skeptical_verification(self):
         """怀疑/确认式质疑 (是真正影响项目的么/靠谱吗) → challenge 验证, 不误伤普通查询。"""
@@ -299,23 +299,23 @@ class TestIntentCore:
 class TestIntentGate:
     """意图门: 按意图注入路由约束; clarify 直接追问; challenge 强制自查。"""
 
-    def test_clarify_direct_ask_no_tools(self, tmp_path, monkeypatch):
+    def test_clarify_model_autonomously_asks(self, tmp_path, monkeypatch):
+        """v3 agentic: 意图不明不拦截, 模型自主决定直接追问 (不调工具)。"""
         monkeypatch.setattr(_ag, "understand_intent", lambda message, **kw: _intent("clarify"))
         got: dict = {}
 
         def fake_call(messages, tools, **kw):
             got["tools"] = tools
-            got["sys"] = [m["content"] for m in messages if m["role"] == "system"]
             return {"content": "我还没理解，请补充你想做什么？", "tool_calls": []}
 
         monkeypatch.setattr(_ag, "call_with_tools", fake_call)
         r = _ag.run_agent_native("？？", data_dir=tmp_path, project_id="P-1")
         assert r["intent"]["intent"] == "clarify"
-        assert got["tools"] is None  # 不给工具 → 只能追问
-        assert r["calls"] == []  # 不调研
+        assert r["calls"] == []          # 模型自主选择不调研直接追问
         assert "补充" in r["answer"]
 
-    def test_clarify_llm_down_honest_fallback(self, tmp_path, monkeypatch):
+    def test_llm_down_rejected(self, tmp_path, monkeypatch):
+        """v3: LLM 不可用 → rejected 回退 (不编造)。"""
         monkeypatch.setattr(_ag, "understand_intent", lambda message, **kw: _intent("clarify"))
 
         def boom(messages, tools, **kw):
@@ -323,8 +323,7 @@ class TestIntentGate:
 
         monkeypatch.setattr(_ag, "call_with_tools", boom)
         r = _ag.run_agent_native("？？", data_dir=tmp_path, project_id="P-1")
-        assert r["intent"]["intent"] == "clarify"
-        assert "补充" in r["answer"]  # 诚实兜底追问, 不编造
+        assert r.get("rejected") is True
 
     def test_challenge_injects_last_answer(self, tmp_path, monkeypatch):
         monkeypatch.setattr(_ag, "understand_intent", lambda message, **kw: _intent("challenge"))
@@ -356,8 +355,8 @@ class TestIntentGate:
         monkeypatch.setattr(_ag, "call_with_tools", fake_call)
         r = _ag.run_agent_native("把登录做完", data_dir=tmp_path, project_id="P-1")
         joined = "\n".join(seen["sys"])
-        assert "意图理解" in joined
-        assert "plan_development" in joined  # 开发意图 → 必须出计划审批
+        assert "用户意图参考" in joined
+        assert "plan_development" in joined  # 开发意图 → 提示出计划审批
         assert r["intent"]["intent"] == "develop"
 
 
@@ -365,37 +364,38 @@ class TestIntentGate:
 class TestChallengeVerificationGate:
     """质疑自查加深: challenge 首轮只给验证工具 + 未验证前置强制再查。"""
 
-    def test_challenge_first_round_only_verification_tools(self, tmp_path, monkeypatch):
+    def test_challenge_injects_verification_context(self, tmp_path, monkeypatch):
+        """v3 agentic: challenge 不锁工具, 但注入验证上下文引导 (模型自主查证)。"""
         monkeypatch.setattr(_ag, "understand_intent", lambda message, **kw: _intent("challenge"))
-        rounds: list[list[str]] = []
+        seen: dict = {}
 
         def fake_call(messages, tools, **kw):
-            rounds.append([t["function"]["name"] for t in (tools or [])])
+            seen["sys"] = [m["content"] for m in messages if m["role"] == "system"]
+            seen["tools"] = [t["function"]["name"] for t in (tools or [])]
             return {"content": "好", "tool_calls": []}
 
         monkeypatch.setattr(_ag, "call_with_tools", fake_call)
         _ag.run_agent_native("这回答不负责吧", data_dir=tmp_path, project_id="P-1")
-        # 第一轮 (非收敛轮) 的工具面 = 验证工具子集
-        names = set(next(r for r in rounds if r))
-        assert {"project_status", "code_scan", "project_scan", "search_code"} <= names
-        # 挑战轮不给动作/计划/外部工具 (只验证, 不执行)
-        assert not (names & {"task_action", "create_task", "plan_development",
-                             "execute_plan", "delegate_external", "external_route"})
+        joined = "\n".join(seen["sys"])
+        assert "重新查询真实数据验证" in joined
+        # 工具面不锁 (v3 agentic): 验证工具在, 其他工具也在 (模型自主选)
+        names = set(seen["tools"])
+        assert "code_scan" in names and "project_status" in names
+        assert "task_action" in names and "plan_development" in names
 
-    def test_challenge_no_tool_first_round_forces_recheck(self, tmp_path, monkeypatch):
+    def test_challenge_autonomous_answer_accepted(self, tmp_path, monkeypatch):
+        """v3 agentic: 模型自主决定收敛 (直接答), 不强制拦截; 上下文含验证引导。"""
         monkeypatch.setattr(_ag, "understand_intent", lambda message, **kw: _intent("challenge"))
         sys_msgs: list[list[str]] = []
 
         def fake_call(messages, tools, **kw):
             sys_msgs.append([m["content"] for m in messages if m["role"] == "system"])
-            if tools is None:  # 强制收敛轮
-                return {"content": "已重新核实: 数据无误。", "tool_calls": []}
-            return {"content": "（直接回答不调工具）", "tool_calls": []}
+            return {"content": "已重新核实: 数据无误。", "tool_calls": []}
 
         monkeypatch.setattr(_ag, "call_with_tools", fake_call)
-        r = _ag.run_agent_native("数据不对吧", data_dir=tmp_path, project_id="P-1", max_rounds=3)
+        r = _ag.run_agent_native("数据不对吧", data_dir=tmp_path, project_id="P-1")
         joined = "\n".join(str(x) for sub in sys_msgs for x in sub)
-        assert "没有调用任何验证工具" in joined  # 首轮直接答被驳回 → 强制先验证
+        assert "重新查询真实数据验证" in joined
         assert not r.get("rejected")
         assert "重新核实" in r["answer"]
 
@@ -697,3 +697,58 @@ class TestProjectStructure:
     def test_tool_schema_includes_structure(self, tmp_path):
         ids = {t["function"]["name"] for t in _ag.tool_schemas(tmp_path)}
         assert "project_structure" in ids
+
+
+class TestAgenticV3:
+    """AgentLoop v3 (v1.1.216): 意图软参考 + 模型自主 + Reflection 主动收敛。"""
+
+    def test_model_autonomous_answer_without_gate(self, tmp_path, monkeypatch):
+        """意图门不再拦截: 模型直接答 (无工具调用) → 接受 (不强制走某条路径)。"""
+        monkeypatch.setattr(_ag, "understand_intent", lambda message, **kw: _intent("chat"))
+        seen: dict = {}
+
+        def fake_call(messages, tools, **kw):
+            seen["tools"] = tools
+            return {"content": "你好！有什么可以帮你？", "tool_calls": []}
+
+        monkeypatch.setattr(_ag, "call_with_tools", fake_call)
+        r = _ag.run_agent_native("你好", data_dir=tmp_path, project_id="P-1")
+        assert not r.get("rejected")
+        assert r["calls"] == []
+        assert "你好" in r["answer"]
+
+    def test_reflection_injected_after_tool_calls(self, tmp_path, monkeypatch):
+        """工具调用后注入 Reflection 自评 (主动收敛, 不等用户追问)。"""
+        monkeypatch.setattr(_ag, "understand_intent", lambda message, **kw: _intent("question"))
+        seen: dict = {}
+
+        def fake_call(messages, tools, **kw):
+            seen["sys"] = [m["content"] for m in messages if m["role"] == "system"]
+            if tools is None:  # 强制收敛轮
+                return {"content": "结论: 项目进度 27%", "tool_calls": []}
+            return {"content": "", "tool_calls": [
+                {"id": "c1", "type": "function", "function": {
+                    "name": "project_status", "arguments": "{}"}}]}
+
+        monkeypatch.setattr(_ag, "call_with_tools", fake_call)
+        r = _ag.run_agent_native("项目进度", data_dir=tmp_path, project_id="P-1", max_rounds=3)
+        joined = "\n".join(seen["sys"])
+        assert "自评收敛" in joined          # Reflection 注入
+        assert "信息足够" in joined or "继续调用" in joined
+        assert len(r["calls"]) >= 1
+
+    def test_soft_intent_reference_not_route(self, tmp_path, monkeypatch):
+        """意图降级为软参考: 注入'用户意图参考', 不写'严格按此意图执行'。"""
+        monkeypatch.setattr(_ag, "understand_intent", lambda message, **kw: _intent("develop"))
+        seen: dict = {}
+
+        def fake_call(messages, tools, **kw):
+            seen["sys"] = [m["content"] for m in messages if m["role"] == "system"]
+            return {"content": "好", "tool_calls": []}
+
+        monkeypatch.setattr(_ag, "call_with_tools", fake_call)
+        _ag.run_agent_native("把登录做完", data_dir=tmp_path, project_id="P-1")
+        joined = "\n".join(seen["sys"])
+        assert "用户意图参考" in joined
+        assert "仅供参考" in joined
+        assert "严格按此意图" not in joined

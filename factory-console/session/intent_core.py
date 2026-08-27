@@ -55,14 +55,14 @@ _INTENT_PROMPT = """你是 AI Factory 的意图理解器。用户消息千变万
 
 #: 意图 → 专业能力线 (Router 表, 设计文档 §2.2)
 _ROUTE_GUIDE = {
-    "question": "查询意图: 必须调用数据工具 (project_status/project_tasks/project_scan/code_scan/search_code/project_docs/git_status/monitor) 拿真实数据, 带证据回答; 不要凭空答。注意区分: 用户说'扫描代码/代码结构/仓库代码' → 用 code_scan; '扫描项目/整体情况' → 用 project_scan; '项目结构/目录树/有哪些模块/项目组成/了解结构' → 用 project_structure。",
-    "challenge": "质疑/纠错意图: 用户认为上次回答有问题。先【重新查询真实数据验证】, 再诚实承认错误或给出修正; 绝不对着干/嘴硬/糊弄。若上次回答在上下文中, 逐条核对。",
-    "chat": "聊天意图: 自然对话即可。除非用户明确要实时数据, 不需要调用工具。",
-    "delegate": "分派/开发意图: 先快速了解现状 (最多 2-3 个了解工具), 然后必须调 plan_development 出计划 (目标/任务/顺序/验收) 请求用户审批; 不要无限探索。",
-    "develop": "开发意图: 先快速了解现状 (最多 2-3 个了解工具), 然后必须调 plan_development 出计划 (目标/任务/顺序/验收) 请求用户审批; 不要无限探索。",
-    "operate": "操作意图: 调用动作工具执行 (task_action/create_task/execute_plan/task_continue); 敏感动作先确认再执行。",
-    "external": "外部专业意图: 先了解任务背景, 再调 external_route 选外部 AI agent, 说明选择理由。",
-    "clarify": "意图不明: 不要调用任何工具, 直接向用户提出澄清问题 (追问), 等用户补充。",
+    "question": "若用户要查询/扫描: 应调用对应数据工具 (project_status/project_tasks/project_scan/code_scan/project_structure/search_code/project_docs/git_status/monitor) 拿真实数据再答, 不凭空答。区分: '扫描代码/代码结构' → code_scan; '扫描项目/整体情况' → project_scan; '项目结构/目录树/有哪些模块' → project_structure。",
+    "challenge": "若用户质疑/纠错: 先【重新查询真实数据验证】, 再诚实承认错误或给出修正; 绝不对着干/嘴硬/糊弄。",
+    "chat": "若只是聊天/打招呼: 自然对话即可, 除非用户要实时数据否则不必调工具。",
+    "delegate": "若用户派活/开发: 先快速了解现状 (最多 2-3 个了解工具), 然后调 plan_development 出计划 (目标/任务/顺序/验收) 请求用户审批; 不要无限探索。",
+    "develop": "若用户要开发/实现: 先快速了解现状 (最多 2-3 个了解工具), 然后调 plan_development 出计划 (目标/任务/顺序/验收) 请求用户审批; 不要无限探索。",
+    "operate": "若用户要操作: 调用动作工具执行 (task_action/create_task/execute_plan/task_continue); 敏感动作先确认再执行。",
+    "external": "若用户要外部专业能力: 先了解任务背景, 再调 external_route / delegate_external 选外部 AI agent。",
+    "clarify": "若意图不明: 直接向用户提出澄清问题 (追问), 不要瞎猜。",
 }
 
 
@@ -98,16 +98,14 @@ def route_for(intent: str) -> str:
 
 
 def format_intent(intent: dict[str, Any]) -> str:
-    """意图 → 注入消息文本 (让模型带意图执行, 不被词面劫持)。"""
+    """意图 → 软参考提示 (v1.1.216 agentic: 仅供参考, 不硬路由, 以模型语义判断为准)。"""
     t = intent.get("target") or {}
     return (
-        f"【意图理解 (来源: {intent.get('source', 'llm')})】\n"
-        f"- 意图: {intent.get('intent')}\n"
-        f"- 对象: {t.get('type') or 'general'}{(' (' + str(t.get('id')) + ')') if t.get('id') else ''}\n"
-        f"- 需要: {intent.get('need')}\n"
-        f"- 情绪: {intent.get('emotion')}\n"
-        f"- 用户要什么: {intent.get('summary') or ''}\n"
-        f"请严格按此意图执行对应专业能力; 不要被用户表面的词误导。"
+        f"【用户意图参考 (来源: {intent.get('source', 'llm')}, 仅供参考)】\n"
+        f"- 疑似意图: {intent.get('intent')} · 对象: {t.get('type') or 'general'}"
+        f"{(' (' + str(t.get('id')) + ')') if t.get('id') else ''} · 需要: {intent.get('need')} · 情绪: {intent.get('emotion')}\n"
+        f"- 用户大概要: {intent.get('summary') or ''}\n"
+        f"请以对话语义为准自主判断如何回答/行动; 若与实际意图不符, 忽略此参考。"
     )
 
 

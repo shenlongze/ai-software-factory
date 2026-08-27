@@ -3829,13 +3829,130 @@ def build_app(
         return ok_list(sessions_store.list_messages(session_id))
 
     @app.post("/api/sessions/{session_id}/messages")
-    def api_session_send(session_id: str, body: _ChatBody) -> dict[str, Any]:
+    def api_session_send(session_id: str, body: _ChatBody,
+                         stream: bool = Query(default=False)) -> Any:
         """发送消息 (K-7e 完整链路): LLM 转标准意图 → 本地查询真实数据 → 标准输出。
 
-        返回 {user, assistant, session, meta:{intent, project, data_source}}。"""
+        返回 {user, assistant, session, meta:{intent, project, data_source}}。
+        S10-127 P1.4: ?stream=1 → SSE 流式 (工具调用实时事件 + done 最终结果)。"""
         session = sessions_store.get_session(session_id)
         if session is None:
             raise HTTPException(status_code=404, detail="session not found")
+        # ---- S10-127 P1.4: 流式分支 (工具调用实时推送, 独立路径不扰同步) ----
+        if stream:
+            import queue as _q
+            import threading as _th
+            from fastapi.responses import StreamingResponse
+
+            _evq: "_q.Queue" = _q.Queue()
+
+            def _on_event(e: dict) -> None:
+                try:
+                    _evq.put(e)
+                except Exception:  # noqa: BLE001
+                    pass
+
+            def _work() -> None:
+                try:
+                    _agmod = _console_import("session.agent_loop")
+                    _tl = None
+                    _ctx_view = ""
+                    try:
+                        _tl = _console_import("session.topic_ledger").TopicLedger.load(
+                            workspace_root or DEFAULT_ROOT, session_id)
+                        _tl.append("user", body.message, llm_fn=_sessions_mod.llm_raw)
+                        _tl.save(workspace_root or DEFAULT_ROOT)
+                        _ctx_view = _tl.build_view(skip_last=1)
+                    except Exception:  # noqa: BLE001
+                        pass
+                    _plan_store2 = _agmod.PendingPlanStore(workspace_root or DEFAULT_ROOT)
+                    _pending = _plan_store2.get(session_id)
+                    _agent_message = body.message
+                    if _pending:
+                        _agent_message = (
+                            f"【当前有待审批的开发计划】\n{_agmod.plan_to_text(_pending)}\n\n"
+                            f"用户最新消息: {body.message}\n\n"
+                            "请语义判断: 同意(可以/开始/同意/没问题) → 调 execute_plan; "
+                            "修改/不满意 → plan_development 重写; 意图不明 → 追问。"
+                        )
+                    _history = []
+                    try:
+                        _history = sessions_store.list_messages(session_id)
+                    except Exception:  # noqa: BLE001
+                        pass
+                    agent_result = _agmod.run_agent(
+                        _agent_message,
+                        root=workspace_root or DEFAULT_ROOT,
+                        project_id=str(session.get("project_id") or ""),
+                        llm_fn=_sessions_mod.llm_raw,
+                        service=service,
+                        max_rounds=3,
+                        session_store=sessions_store,
+                        session_id=session_id,
+                        history=_history,
+                        context_view=_ctx_view,
+                        on_event=_on_event,
+                    )
+                    result = None
+                    if agent_result is not None and agent_result.get("answer"):
+                        calls = agent_result.get("calls") or []
+                        if _tl is not None and _ctx_view:
+                            try:
+                                _tl.append("assistant", str(agent_result.get("answer") or "")[:2000])
+                                _tl.save(workspace_root or DEFAULT_ROOT)
+                            except Exception:  # noqa: BLE001
+                                pass
+                        for c in calls:
+                            if c.get("plan"):
+                                _plan_store2.save(session_id, c["plan"])
+                                break
+                        evidence_lines = [
+                            f"- 工具 {c['tool']}: {'✅' if c.get('ok') else '❌'} "
+                            f"{str(c.get('output') or c.get('error') or '')[:300]}" for c in calls
+                        ]
+                        facts = (
+                            "【工具执行证据】\n" + ("\n".join(evidence_lines) if evidence_lines else "（未调用工具）")
+                            + "\n\n请基于工具证据输出最终回答; 引用来源, 不编造。"
+                        )
+                        try:
+                            result = _sessions_mod.send_message(
+                                sessions_store, session_id, body.message, facts=facts,
+                                reply_extra="回答必须引用上面【工具执行证据】; 工具没提供的不要编造; 分 结论/证据/数据/建议。",
+                                llm_fn=lambda _p, _a=agent_result.get("answer", ""): _a,
+                                assistant_meta={"tool_calls": [
+                                    {"tool": c["tool"], "ok": c.get("ok")} for c in calls
+                                ]},
+                            )
+                            result["meta"] = {
+                                "intent": "agent", "project": session.get("project_id"),
+                                "data_source": "tools" if calls else "chat",
+                                "target": {"url": f"#/project/{session.get('project_id')}", "label": "查看项目"},
+                                "tool_calls": [{"tool": c["tool"], "ok": c.get("ok")} for c in calls],
+                            }
+                        except Exception:  # noqa: BLE001
+                            result = None
+                    if result is None:
+                        result = {
+                            "user": None, "assistant": None,
+                            "session": sessions_store.get_session(session_id),
+                            "meta": {"intent": "agent", "project": session.get("project_id"),
+                                     "data_source": "none",
+                                     "error": "agent 未产出答案 (见后端日志)"},
+                        }
+                    _evq.put({"type": "done", "result": result})
+                except Exception as exc:  # noqa: BLE001
+                    _evq.put({"type": "error", "message": str(exc)})
+
+            _th.Thread(target=_work, daemon=True).start()
+
+            def _gen():
+                while True:
+                    e = _evq.get()
+                    yield f"data: {json.dumps(e, ensure_ascii=False)}\n\n"
+                    if e.get("type") in ("done", "error"):
+                        break
+
+            return StreamingResponse(_gen(), media_type="text/event-stream")
         try:
             projects = service.list_projects()
         except Exception:  # noqa: BLE001 — 列表失败 → 空 (不编造)

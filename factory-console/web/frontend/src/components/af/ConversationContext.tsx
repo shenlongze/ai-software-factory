@@ -265,12 +265,54 @@ export function ConversationProvider({ children }: { children: ReactNode }): JSX
         },
       ]);
       try {
-        const result = await api.sendSessionMessage(target as string, text);
+        // S10-127 P1.4: 优先流式 (工具调用实时展示); 失败/不支持 → 回退同步
+        const assistantId = `tmp-ai-${Date.now()}`;
         setMessages((prev) => [
-          ...prev.filter((m) => !m.id.startsWith('tmp-')),
-          result.user,
-          { ...result.assistant, target: result.meta?.target ?? null },
+          ...prev,
+          {
+            id: assistantId,
+            session_id: target as string,
+            role: 'assistant',
+            content: '（思考中…）',
+            created_at: new Date().toISOString(),
+            meta: { tool_calls: [] },
+          },
         ]);
+        let streamed = false;
+        const ok = await api.sessionSendStream(target as string, text, (e) => {
+          if (e.type === 'tool') {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId
+                  ? {
+                      ...m,
+                      meta: {
+                        tool_calls: [
+                          ...(m.meta?.tool_calls ?? []),
+                          { tool: e.tool ?? '', ok: e.ok ?? false },
+                        ],
+                      },
+                    }
+                  : m,
+              ),
+            );
+          } else if (e.type === 'done' && e.result) {
+            streamed = true;
+            setMessages((prev) =>
+              prev.map((m) => (m.id === assistantId ? (e.result?.assistant ?? m) : m)),
+            );
+          }
+        });
+        if (!ok || !streamed) {
+          // 回退同步
+          setMessages((prev) => prev.filter((m) => m.id !== assistantId));
+          const result = await api.sendSessionMessage(target as string, text);
+          setMessages((prev) => [
+            ...prev.filter((m) => !m.id.startsWith('tmp-')),
+            result.user,
+            { ...result.assistant, target: result.meta?.target ?? null },
+          ]);
+        }
         await refresh();
       } catch {
         // 失败 → 保留用户消息, 追加诚实提示

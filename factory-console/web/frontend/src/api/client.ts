@@ -519,6 +519,59 @@ export const api = {
       `/api/sessions/${encodeURIComponent(id)}/messages`,
       { message },
     ),
+  /** S10-127 P1.4: 流式发送 (SSE) — 工具调用实时事件 + done 最终结果; 不支持/失败 → false。 */
+  sessionSendStream: async (
+    id: string,
+    message: string,
+    onEvent: (e: {
+      type: string;
+      tool?: string;
+      ok?: boolean;
+      result?: {
+        user?: SessionMessage;
+        assistant?: SessionMessage;
+        meta?: {
+          intent?: string;
+          project?: string | null;
+          data_source?: string;
+          target?: { url: string; label: string } | null;
+          tool_calls?: { tool: string; ok?: boolean }[];
+        };
+      };
+      error?: string;
+    }) => void,
+  ): Promise<boolean> => {
+    try {
+      const res = await fetch(`/api/sessions/${encodeURIComponent(id)}/messages?stream=1`, {
+        method: 'POST',
+        headers: { Accept: 'text/event-stream', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message }),
+      });
+      if (!res.ok || !res.body) return false;
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const parts = buf.split('\n\n');
+        buf = parts.pop() ?? '';
+        for (const part of parts) {
+          const line = part.split('\n').find((l) => l.startsWith('data: '));
+          if (!line) continue;
+          try {
+            onEvent(JSON.parse(line.slice(6)));
+          } catch {
+            /* ignore malformed */
+          }
+        }
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  },
 
 } as const;
 

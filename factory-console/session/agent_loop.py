@@ -795,6 +795,7 @@ def run_agent_native(
     max_rounds: int = MAX_ROUNDS,
     history: list[dict[str, Any]] | None = None,
     context_view: str | None = None,
+    on_event: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     """AgentLoop v3 (agentic + reflection, v1.1.216).
 
@@ -945,6 +946,14 @@ def run_agent_native(
                         "session_id": session_id, "result_ok": bool(result.get("ok"))})
                 except Exception:  # noqa: BLE001
                     pass
+                # S10-127 P1.4: 流式事件 (工具执行中实时推送)
+                if on_event is not None:
+                    try:
+                        on_event({"type": "tool", "tool": tid,
+                                  "ok": bool(result.get("ok")),
+                                  "error": str(result.get("error") or "")[:200]})
+                    except Exception:  # noqa: BLE001 — 事件推送失败不阻断
+                        pass
                 total_calls += 1
                 calls.append({"tool": tid, "params": args, "ok": result.get("ok"),
                               "output": result.get("output"), "error": result.get("error"),
@@ -1042,11 +1051,22 @@ def _simple_llm(prompt: str, *, data_dir: str | Path) -> str:
 # ---------------------------------------------------------------- 兼容旧调用 (WebUI 接线用)
 
 def run_agent(question, *, root, project_id, llm_fn, service=None, max_rounds=3,
-                session_store=None, session_id="", history=None, context_view=None):
-    """入口: 原生 FC (IntentCore 门); 失败 → 回退 prompt 协议 (v1) → 仍失败 → rejected。"""
+                session_store=None, session_id="", history=None, context_view=None,
+                on_event=None):
+    """入口: 原生 FC (IntentCore 门); 失败 → 回退 prompt 协议 (v1) → 仍失败 → rejected。
+
+    S10-127 P1.4: on_event 流式回调 — 工具事件由 native 发, done 在此发。"""
     native = run_agent_native(question, data_dir=root, project_id=project_id, service=service,
                               session_store=session_store, session_id=session_id,
-                              max_rounds=max_rounds, history=history, context_view=context_view)
+                              max_rounds=max_rounds, history=history, context_view=context_view,
+                              on_event=on_event)
+    if on_event is not None:
+        try:
+            on_event({"type": "done", "answer": native.get("answer") or "",
+                      "rejected": bool(native.get("rejected")),
+                      "calls": [c.get("tool") for c in native.get("calls") or []]})
+        except Exception:  # noqa: BLE001
+            pass
     if not native.get("rejected"):
         return native
     return native

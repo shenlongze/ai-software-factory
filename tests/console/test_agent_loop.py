@@ -1141,3 +1141,58 @@ class TestReadCode:
         assert r["ok"] is True
         assert "overview.md" in r["output"]
         assert "adr/" in r["output"]
+
+
+class TestAnswerAlignment:
+    """所答非所问治理 (v1.1.223): Reflection 相关性自检 + 用户纠正强制重对齐。"""
+
+    def test_reflection_checks_relevance(self, tmp_path, monkeypatch):
+        """Reflection 含"答非所问检查"(回答是否对应用户问题)。"""
+        monkeypatch.setattr(_ag, "understand_intent", lambda message, **kw: _intent("question"))
+        seen: dict = {}
+
+        def fake_call(messages, tools, **kw):
+            seen["sys"] = [m["content"] for m in messages if m["role"] == "system"]
+            if tools is None:
+                return {"content": "结论", "tool_calls": []}
+            return {"content": "", "tool_calls": [
+                {"id": "c1", "type": "function", "function": {"name": "project_status", "arguments": "{}"}}]}
+
+        monkeypatch.setattr(_ag, "call_with_tools", fake_call)
+        _ag.run_agent_native("项目进度", data_dir=tmp_path, project_id="P-1", max_rounds=2)
+        joined = "\n".join(seen["sys"])
+        assert "答非所问" in joined          # 相关性自检注入
+        assert "用户的问题" in joined or "重述" in joined
+
+    def test_user_correction_forces_realign(self, tmp_path, monkeypatch):
+        """用户纠正("我要的是代码逻辑, 不是文档") → 注入重对齐约束。"""
+        monkeypatch.setattr(_ag, "understand_intent", lambda message, **kw: _intent("question"))
+        seen: dict = {}
+
+        def fake_call(messages, tools, **kw):
+            seen["sys"] = [m["content"] for m in messages if m["role"] == "system"]
+            return {"content": "好的", "tool_calls": []}
+
+        monkeypatch.setattr(_ag, "call_with_tools", fake_call)
+        _ag.run_agent_native("我要的是查看代码逻辑呀，不是文档", data_dir=tmp_path, project_id="P-1")
+        joined = "\n".join(seen["sys"])
+        assert "正在纠正方向" in joined
+        assert "重新理解用户真正要什么" in joined
+
+    def test_hard_cap_forces_alignment(self, tmp_path, monkeypatch):
+        """硬收敛轮强制对齐用户问题 (重述 + 答非所问说明)。"""
+        monkeypatch.setattr(_ag, "understand_intent", lambda message, **kw: _intent("question"))
+        seen: dict = {}
+
+        def fake_call(messages, tools, **kw):
+            if tools is None:
+                seen["sys"] = [m["content"] for m in messages if m["role"] == "system"]
+                return {"content": "最终答案", "tool_calls": []}
+            return {"content": "", "tool_calls": [
+                {"id": "c1", "type": "function", "function": {"name": "project_status", "arguments": "{}"}}]}
+
+        monkeypatch.setattr(_ag, "call_with_tools", fake_call)
+        _ag.run_agent_native("项目进度", data_dir=tmp_path, project_id="P-1", max_rounds=1)
+        joined = "\n".join(seen["sys"])
+        assert "强制对齐" in joined
+        assert "项目进度" in joined  # 用户问题锚点注入

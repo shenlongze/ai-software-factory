@@ -169,11 +169,12 @@ _AGENT_SYSTEM = """你是 AI Factory 的会话 Agent（自主执行者）。
 
 
 #: Reflection 自评提示 (v1.1.216: 每轮工具后注入, 主动收敛, 不等用户追问)
-REFLECTION_PROMPT = """【自评收敛】基于以上工具结果, 自主判断:
-- 信息足够回答用户 → 直接给出最终答案 (引用工具证据; 不编造; 分 结论/证据/数据/建议)
-- 信息不足 → 继续调用必要工具 (不要重复已执行的; 最多再查几次就收敛)
-- 需要用户补充 → 向用户提出澄清问题
-给出最终答案时不要再调用工具。"""
+REFLECTION_PROMPT = """【自评收敛】基于以上工具结果, 回答前先检查两点:
+① 信息足够吗? 不足 → 继续调用必要工具 (不重复已执行的; 最多再查几次); 需用户补充 → 提问
+② 【答非所问检查】我即将给出的回答, 是否直接回答了用户当前的问题?
+   - 先把用户的问题在心里重述一遍; 回答必须围绕它, 不能跑偏到别的方向
+   - 如果工具结果与用户问题无关/不完整 → 不要硬答, 继续查或说明缺口
+对齐后再给最终答案 (引用工具证据; 不编造)。给出最终答案时不要再调用工具。"""
 
 
 # 循环护栏 (Founder: 3次loop后还不清醒就追问 — 不无限调研/无限重试)
@@ -619,6 +620,15 @@ def run_agent_native(
         {"role": "system", "content": style_instruction(question, intent.get("intent"), intent.get("emotion"))},
         {"role": "user", "content": question},
     ]
+    # ---- 用户纠正信号: 检测"不是/我说的是/我要的是/理解错" → 强制重对齐 (治所答非所问) ----
+    _correct_sigs = ("不是", "我说的是", "我要的是", "理解错", "答非所问", "没回答", "跑偏",
+                     "不是这个", "不对", "你听错了", "我指的是", "你答的")
+    if any(sig in question for sig in _correct_sigs):
+        messages.append({"role": "system", "content": (
+            "用户正在纠正方向(『" + question[:120] + "』)。"
+            "请先重新理解用户真正要什么: 重述用户问题, 如果之前的理解/工具方向错了, 立刻纠正; "
+            "回答必须围绕用户纠正后的真实意图, 不要继续原方向。"
+        )})
     # ---- 上下文连贯性: 话题账本视图优先, fallback 最近4轮 ----
     hist_block = context_view if (context_view or "").strip() else _history_text(history)
     if hist_block:
@@ -709,8 +719,9 @@ def run_agent_native(
 
         messages.append({"role": "system", "content": (
             "已调用工具达到上限。现在必须收敛，且【禁止再调用任何工具】。"
-            "如果信息足够: 开发类需求 → 直接输出计划文本(目标/任务/顺序/验收)并请用户审批; "
-            "其他 → 给出最终回答。如果信息仍不足 → 明确向用户提出澄清问题（追问），不要继续调研。"
+            "回答前【强制对齐】: 用户的问题是『" + question + "』, 你的回答必须直接回答它; "
+            "如果工具结果答非所问, 明确说明并回到用户的问题; 如果信息仍不足 → 明确追问, 不硬答。"
+            "如果用户纠正过方向(如说'不是XX/我说的是XX'), 以用户最新纠正为准。"
         )})
         messages.append({"role": "system", "content": self_check_prompt()})
         resp = call_with_tools(messages, None, data_dir=data_dir)  # 不给工具 → 必收敛

@@ -218,6 +218,7 @@ def tool_schemas(data_dir: str | Path | None = None) -> list[dict[str, Any]]:
                      "properties": {"title": {"type": "string"}, "priority": {"type": "string"}}}}}),
         _fc("chain_next", "推进下一个任务", "执行链逐任务推进: 委派执行→验证→回写", {}),
         _fc("chain_status", "执行链进度", "查询当前执行链进度 (完成数/当前任务)", {}),
+        _fc("gateway_status", "外部任务进度", "查询外部执行器任务进度 (最近/按项目/统计)", {"project": {"type": "string"}}),
         _fc("knowledge_search", "知识检索", "在项目文档中检索知识点/历史结论, 返回片段+来源 (跨会话记忆/项目知识)",
             {"query": {"type": "string"}}, ["query"]),
     ]
@@ -702,27 +703,17 @@ def dispatch(
                 return {"ok": False, "error": "没有运行中的执行链 (先 chain_start)"}
 
             def _exec_fn(task):
-                # 委派外部 AI 执行 (真实): 路由选 agent → delegate_external
-                from ..external_executor.router import route
-                from ..external_executor.registry import build_registry
+                # 委派外部 AI 执行 (真实): 走执行器网关 (G1-G4: 选执行器/注册/验证/回填/审计)
+                from ..external_executor.gateway import gateway_execute
 
-                adapters = build_registry(root).list() if root else []
-                agents = []
-                try:
-                    import json as _j
-                    d = _j.loads((Path(root) / "agents" / "agents.json").read_text(encoding="utf-8"))
-                    ag = d.get("agents") if isinstance(d, dict) else None
-                    if isinstance(ag, dict):
-                        agents = [v for v in ag.values() if isinstance(v, dict)]
-                except Exception:  # noqa: BLE001
-                    agents = []
-                rr = route(str(task.get("title") or ""), adapters, agents, root)
-                pick = rr.get("pick")
-                if not pick:
-                    return {"ok": False, "error": "无可用外部执行器 (设置→外部AI 配置)"}
-                from .external_tools import delegate_external
-
-                return delegate_external(root, pick, str(task.get("title") or ""), project_id=project_id)
+                title = str(task.get("title") or "")
+                r = gateway_execute(title, data_dir=root, project_id=project_id, max_retry=1)
+                if not r.get("ok"):
+                    return {"ok": False, "error": r.get("error") or "外部执行失败"}
+                return {"ok": True, "output": (
+                    f"{r.get('executor')} 完成 (任务 {r.get('task_id')}) · "
+                    f"验证 {r.get('verify', {}).get('result') or 'unknown'} · "
+                    f"{str(r.get('output') or '')[:300]}")}
 
             r = st.next(_exec_fn)
             st.save(root)
@@ -733,6 +724,23 @@ def dispatch(
             return {"ok": r.get("ok"), "output": (
                 f"任务『{r.get('task')}』: {'✅ 完成' if r.get('ok') else '❌ 失败'} · "
                 f"{r.get('output') or ''} · 进度 {r.get('progress')}。说『继续』推进下一个。")}
+        if tool_id == "gateway_status":
+            try:
+                from ..external_executor.task_registry import ExternalTaskRegistry
+
+                _reg = ExternalTaskRegistry.load(root)
+                _proj = str(args.get("project") or "").strip()
+                tasks = _reg.list(project_id=_proj) if _proj else _reg.list()[:10]
+                stats = _reg.stats()
+                lines = [f"外部任务控制面: 共 {stats['total']} · {stats.get('status')} · 总重试 {stats.get('total_retries')}"]
+                if not tasks:
+                    lines.append("（暂无外部执行任务 — 委派后自动记录）")
+                for t in tasks[:10]:
+                    lines.append(f"- {t.get('id')} [{t.get('status')}] {t.get('owner')}: "
+                                 f"{str(t.get('task') or '')[:50]} · 验证 {t.get('verify', {}).get('result')}")
+                return {"ok": True, "output": "\n".join(lines)}
+            except Exception as exc:  # noqa: BLE001
+                return {"ok": False, "error": f"外部任务进度不可用: {exc}"}
         if tool_id == "chain_status":
             from .exec_state import ExecState
 

@@ -2785,12 +2785,20 @@ class FactoryCLI:
                 str(getattr(args, "project", "") or ""), str(r.get("work_type") or ""),
                 verify_hook=(adapter.extensions or {}).get("verify_hook"),
             )
+            # M7.2: 本地验证 unknown + 审查类任务 → reviewer 交叉审查
+            if v.get("result") == "unknown" and str(r.get("work_type") or "") in ("arch", "security", "review", "design", "product", "writer"):
+                v = _ee_exec.reviewer_verify(
+                    self.data_dir, registry.list(), imported, task,
+                    str(getattr(args, "project", "") or ""), str(result.get("output") or ""),
+                    str(r.get("work_type") or ""), preferred_adapter=adapter_id,
+                )
             if v.get("result") != "unknown":
                 _ee_exec.verify_invocation(self.data_dir, str(record.get("result_id") or ""),
                                            method=str(v.get("method") or "auto"),
                                            result=str(v.get("result") or "unknown"),
                                            score=v.get("score"), reason=str(v.get("reason") or ""))
-                print(f"  ✅ 验证 ({v.get('method')}): {v.get('result')} · score={v.get('score')}")
+                print(f"  ✅ 验证 ({v.get('method')}): {v.get('result')} · score={v.get('score')}"
+                      + (f" · {v.get('reason')}" if v.get("reason") else ""))
             else:
                 print(f"  ⚠ 验证: unknown ({v.get('reason')})")
             if result.get("output"):
@@ -2911,12 +2919,20 @@ class FactoryCLI:
                 str(getattr(args, "project", "") or ""), str(r.get("work_type") or ""),
                 verify_hook=(adapter.extensions or {}).get("verify_hook"),
             )
+            # M7.2: 本地验证 unknown + 审查类任务 → reviewer 交叉审查
+            if v.get("result") == "unknown" and str(r.get("work_type") or "") in ("arch", "security", "review", "design", "product", "writer"):
+                v = _ee_exec.reviewer_verify(
+                    self.data_dir, registry.list(), imported, task,
+                    str(getattr(args, "project", "") or ""), str(result.get("output") or ""),
+                    str(r.get("work_type") or ""), preferred_adapter=adapter_id,
+                )
             if v.get("result") != "unknown":
                 _ee_exec.verify_invocation(self.data_dir, str(record.get("result_id") or ""),
                                            method=str(v.get("method") or "auto"),
                                            result=str(v.get("result") or "unknown"),
                                            score=v.get("score"), reason=str(v.get("reason") or ""))
-                print(f"  ✅ 验证 ({v.get('method')}): {v.get('result')} · score={v.get('score')}")
+                print(f"  ✅ 验证 ({v.get('method')}): {v.get('result')} · score={v.get('score')}"
+                      + (f" · {v.get('reason')}" if v.get("reason") else ""))
             else:
                 print(f"  ⚠ 验证: unknown ({v.get('reason')})")
             if result.get("output"):

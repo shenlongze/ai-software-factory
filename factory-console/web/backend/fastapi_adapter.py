@@ -3028,7 +3028,7 @@ def build_app(
         since_seq: int = Query(default=0, ge=0),
         poll_interval: float = Query(default=1.0, ge=0.05),
         max_polls: int | None = Query(default=None, ge=1),
-    ) -> StreamingResponse:
+    ) -> Any:
         """SSE 事件流 (S10-002 — Timeline 实时增量驱动; 只读 GET)。
 
         推送: stage.started / stage.completed / artifact.created /

@@ -5149,7 +5149,7 @@ body[data-bg='1'] .af-shell {
 .bw-card-pad { padding: 12px; }
 .bw-company-head {
   display: grid;
-  grid-template-columns: 30px minmax(140px, 1.4fr) 90px 190px 130px;
+  grid-template-columns: 30px minmax(140px, 1.4fr) 190px 90px 130px;
   gap: 10px;
   padding: 6px 12px;
   font-size: 11px;
@@ -5161,7 +5161,7 @@ body[data-bg='1'] .af-shell {
 .bw-company-list { list-style: none; margin: 0; padding: 4px 0; display: flex; flex-direction: column; gap: 2px; }
 .bw-company-item {
   display: grid;
-  grid-template-columns: 30px minmax(140px, 1.4fr) 90px 190px 130px;
+  grid-template-columns: 30px minmax(140px, 1.4fr) 190px 90px 130px;
   align-items: center;
   gap: 10px;
   padding: 7px 12px;

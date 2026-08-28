@@ -121,7 +121,7 @@ function MyCompanyTab({ onOpen }: { onOpen: (t: Omit<WorkspaceTab, 'id'>) => voi
       ) : (
         <>
         <div className="bw-company-head">
-          <span>#</span><span>项目</span><span>状态</span><span>任务进度</span><span>更新时间</span>
+          <span>#</span><span>项目</span><span>任务进度</span><span>状态</span><span>更新时间</span>
         </div>
         <ol className="bw-company-list">
           {projects.map((p, idx) => {
@@ -135,11 +135,6 @@ function MyCompanyTab({ onOpen }: { onOpen: (t: Omit<WorkspaceTab, 'id'>) => voi
                 >
                   {p.starred ? '⭐ ' : ''}{p.name}
                 </button>
-                {(() => {
-                  const st = p.lifecycle_stage || p.status || '';
-                  const meta = STATUS_META[st.toLowerCase()] || { label: st || '—', icon: '' };
-                  return <span className="bw-badge bw-badge--stage">{meta.icon} {meta.label}</span>;
-                })()}
                 <span className="bw-task-progress">
                   <span className="bw-progress" title={(() => {
                     const dev = (p.stage_progress || {}).开发 || { done: 0, total: 0 };
@@ -162,6 +157,11 @@ function MyCompanyTab({ onOpen }: { onOpen: (t: Omit<WorkspaceTab, 'id'>) => voi
                     return <span className="bw-task-num">{dev.done}/{dev.total}</span>;
                   })()}
                 </span>
+                {(() => {
+                  const st = p.lifecycle_stage || p.status || '';
+                  const meta = STATUS_META[st.toLowerCase()] || { label: st || '—', icon: '' };
+                  return <span className="bw-badge bw-badge--stage">{meta.icon} {meta.label}</span>;
+                })()}
                 <span className="bw-company-meta">更新 {p.updated_at || '—'}</span>
               </li>
             );

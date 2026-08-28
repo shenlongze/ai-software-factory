@@ -265,6 +265,9 @@ export function AfConversationPanel({ projectId, projectName }: AfConversationPa
                   </ul>
                 </div>
               ) : null}
+              {m.role === 'assistant' && ctx.uiPrefs.show_thinking && m.meta?.thinking_steps?.length ? (
+                <ThinkingChain steps={m.meta.thinking_steps} />
+              ) : null}
               <div className={`af-chat-msg-body${m.role === 'assistant' ? ' af-chat-msg-body--md' : ''}`}>
                 {m.role === 'assistant' ? renderMarkdown(m.content) : m.content}
               </div>
@@ -296,5 +299,32 @@ export function AfConversationPanel({ projectId, projectName }: AfConversationPa
         </button>
       </div>
     </aside>
+  );
+}
+
+/** T3: 思考链可视化 — 可折叠展示流式 thinking 事件 (默认收起, 点击展开)。 */
+function ThinkingChain({ steps }: { steps: { round: number; detail: string }[] }): JSX.Element {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="af-chat-thinking" data-testid="af-chat-thinking">
+      <button
+        type="button"
+        className="af-chat-thinking-toggle"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+      >
+        {open ? '▾' : '▸'} 思考过程 ({steps.length} 步)
+      </button>
+      {open ? (
+        <ul className="af-chat-thinking-steps">
+          {steps.map((s, i) => (
+            <li key={i} className="af-chat-thinking-step" data-testid={`af-chat-thinking-step-${i}`}>
+              <span className="af-chat-thinking-round">#{s.round || i + 1}</span>
+              <span className="af-chat-thinking-detail">{s.detail}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
   );
 }

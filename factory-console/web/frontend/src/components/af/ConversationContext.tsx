@@ -298,19 +298,29 @@ export function ConversationProvider({ children }: { children: ReactNode }): JSX
             role: 'assistant',
             content: '（思考中…）',
             created_at: new Date().toISOString(),
-            meta: { tool_calls: [] },
+            meta: { tool_calls: [], thinking_steps: [] },
           },
         ]);
         let streamed = false;
         const ok = await api.sessionSendStream(target as string, text, (e) => {
           if (e.type === 'thinking') {
-            // U1: 思考过程 — 占位消息显示"思考中…" + 模型思考内容
+            // T3: 思考链可视化 — 存独立 thinking_steps 数组 (含 round), 不污染 content
             const detail = (e as { detail?: string }).detail;
+            const round = (e as { round?: number }).round ?? 0;
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === assistantId
-                  ? { ...m, content: detail ? `（思考中…）
-💭 ${detail}` : '（思考中…）' }
+                  ? {
+                      ...m,
+                      content: '（思考中…）',
+                      meta: {
+                        ...(m.meta ?? {}),
+                        thinking_steps: [
+                          ...(m.meta?.thinking_steps ?? []),
+                          { round, detail: detail ?? '' },
+                        ],
+                      },
+                    }
                   : m,
               ),
             );

@@ -748,6 +748,8 @@ export interface SessionMessage {
       command?: string;
       error?: string;
     }[];
+    /** T3 (v1.1.271): 思考链可视化 — 流式 thinking 事件存独立数组, 不污染 content */
+    thinking_steps?: { round: number; detail: string }[];
   } | null;
 }
 

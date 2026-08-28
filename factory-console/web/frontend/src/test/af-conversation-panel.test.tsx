@@ -106,14 +106,48 @@ describe('AfConversationPanel (AI 会话栏 C 列)', () => {
   });
 
   it('发送失败 → 诚实错误提示', async () => {
-    const fn = stubSessionApi();
+    // 发送失败 = messages POST 返回非 ok (SSE 读不到 body) → 回退同步也失败 → 诚实提示
+    const fn = stubSessionApi({
+      onSend: () => {
+        throw new Error('network down');
+      },
+    });
+    void fn;
     renderPanel();
     await userEvent.click(screen.getByLabelText('新建会话'));
     await screen.findByTestId(/af-session-sess-1/);
-    fn.mockRejectedValueOnce(new Error('network down'));
     await userEvent.type(screen.getByRole('textbox', { name: 'AI 会话输入' }), 'hi');
     await userEvent.click(screen.getByRole('button', { name: '发送' }));
     expect(await screen.findByText(/发送失败/)).toBeInTheDocument();
+  });
+
+  it('T3: 思考链可视化 — 有 thinking_steps 时显示可折叠思考区', async () => {
+    // onSend 返回带 thinking_steps 的 assistant 消息 (模拟后端已完成落库的消息)
+    stubSessionApi({
+      onSend: () => ({
+        id: 'msg-a',
+        session_id: 'sess-1',
+        role: 'assistant',
+        content: '最终回答',
+        created_at: '2026-08-26T00:00:01Z',
+        meta: {
+          thinking_steps: [
+            { round: 1, detail: '先分析需求' },
+            { round: 2, detail: '再查代码' },
+          ],
+        },
+      }),
+    });
+    renderPanel();
+    await userEvent.click(screen.getByLabelText('新建会话'));
+    await screen.findByTestId(/af-session-sess-1/);
+    await userEvent.type(screen.getByRole('textbox', { name: 'AI 会话输入' }), '查一下代码');
+    await userEvent.click(screen.getByRole('button', { name: '发送' }));
+    // 思考区显示步数, 默认收起; 点击展开显示细节
+    expect(await screen.findByText(/思考过程 \(2 步\)/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /思考过程/ }));
+    expect(await screen.findByText(/先分析需求/)).toBeInTheDocument();
+    expect(await screen.findByText(/再查代码/)).toBeInTheDocument();
   });
 
   it('改名 (✎) → 行内输入保存', async () => {

@@ -5365,3 +5365,4 @@ body[data-bg='1'] .af-shell {
 }
 .bw-approval-list--history .bw-approval-item--history .bw-approval-status { min-width: 62px; }
 .bw-approval-list--history .bw-approval-cmd { max-width: 100%; flex: 1; }
+.bw-approval-time { color: var(--c-text2, #9aa1ae); font-size: 11px; }

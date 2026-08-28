@@ -97,7 +97,7 @@ function MyCompanyTab({ onOpen }: { onOpen: (t: Omit<WorkspaceTab, 'id'>) => voi
   const [collapsed, setCollapsed] = useState(false);
   const [board, setBoard] = useState<{ running_tasks?: number; failed_tasks?: number; avg_lifecycle_pct?: number } | null>(null);
   const [approvals, setApprovals] = useState<{ id: string; session_id?: string; command?: string; created_at?: string }[]>([]);
-  const [approvalHistory, setApprovalHistory] = useState<{ id: string; command?: string; status?: string; result?: string; session_id?: string }[]>([]);
+  const [approvalHistory, setApprovalHistory] = useState<{ id: string; command?: string; status?: string; result?: string; session_id?: string; resolved_at?: string }[]>([]);
   const [system, setSystem] = useState<{ system?: { version?: string; model?: string; frontend?: { up?: boolean }; backend?: { up?: boolean } } } | null>(null);
   const [acting, setActing] = useState<string | null>(null);
   const [approvalTab, setApprovalTab] = useState<'pending' | 'history'>('pending');
@@ -203,7 +203,7 @@ function MyCompanyTab({ onOpen }: { onOpen: (t: Omit<WorkspaceTab, 'id'>) => voi
             {approvalHistory.slice(0, 10).map((h) => (
               <li key={h.id} className="bw-approval-item bw-approval-item--history">
                 <span className="bw-approval-status">{h.status === 'approved' ? '✅ 已批准' : '✕ 已拒绝'}</span>
-                <code className="bw-approval-cmd">{h.command || ''}</code>
+                <span className="bw-approval-time">{h.resolved_at ? h.resolved_at.slice(5, 16) : ''}</span>
               </li>
             ))}
           </ul>

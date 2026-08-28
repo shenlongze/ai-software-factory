@@ -3906,6 +3906,30 @@ def build_app(
             raise HTTPException(status_code=404, detail="session not found")
         return ok_list(sessions_store.list_messages(session_id))
 
+    @app.get("/api/approvals/all")
+    def api_all_approvals() -> dict[str, Any]:
+        """公司级待审批聚合 (v1.1.290): 扫全部会话的 pending 批准 → 首页审批卡。"""
+        try:
+            from factory_console.session.approval_store import list_approvals
+        except Exception:  # noqa: BLE001
+            return {"pending": [], "count": 0}
+        root = str(workspace_root) if workspace_root is not None else None
+        if not root:
+            return {"pending": [], "count": 0}
+        import glob as _glob
+
+        pending = []
+        for f in _glob.glob(str(Path(root) / "session_approvals" / "*.json")):
+            sid = Path(f).stem
+            try:
+                lst = list_approvals(root, sid)
+                for it in lst.get("pending") or []:
+                    it["session_id"] = sid
+                    pending.append(it)
+            except Exception:  # noqa: BLE001
+                continue
+        return {"pending": pending, "count": len(pending)}
+
     @app.get("/api/sessions/{session_id}/approvals")
     def api_session_approvals(session_id: str) -> dict[str, Any]:
         """待批准命令列表 (S8-4): {pending, history, count} — bash 写操作批准门。"""

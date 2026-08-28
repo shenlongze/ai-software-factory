@@ -84,7 +84,7 @@ const STATUS_META: Record<string, { label: string; icon: string }> = {
 };
 
 interface CompanyProject {
-  id: string; name: string; status?: string; starred?: boolean;
+  id: string; name: string; status?: string; starred?: boolean; archived?: boolean;
   lifecycle_stage?: string | null; repository?: string;
   created_at?: string | null; updated_at?: string | null;
   pending_plan_count?: number;
@@ -95,6 +95,43 @@ function MyCompanyTab({ onOpen }: { onOpen: (t: Omit<WorkspaceTab, 'id'>) => voi
   const [projects, setProjects] = useState<CompanyProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [collapsed, setCollapsed] = useState(false);
+  const [board, setBoard] = useState<{ running_tasks?: number; failed_tasks?: number; avg_lifecycle_pct?: number } | null>(null);
+  const [approvals, setApprovals] = useState<{ id: string; session_id?: string; command?: string; created_at?: string }[]>([]);
+  const [system, setSystem] = useState<{ system?: { version?: string; model?: string; frontend?: { up?: boolean }; backend?: { up?: boolean } } } | null>(null);
+  const [acting, setActing] = useState<string | null>(null);
+
+  const loadHome = () => {
+    fetch('/api/board/summary', { headers: { Accept: 'application/json' } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d && setBoard(d))
+      .catch(() => {});
+    fetch('/api/approvals/all', { headers: { Accept: 'application/json' } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d && setApprovals(d.pending ?? []))
+      .catch(() => {});
+    fetch('/api/monitor', { headers: { Accept: 'application/json' } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d && setSystem(d))
+      .catch(() => {});
+  };
+
+  const actApproval = async (sid: string | undefined, aid: string, action: 'approve' | 'reject') => {
+    if (!sid || !aid || acting) return;
+    setActing(aid);
+    try {
+      await fetch(`/api/sessions/${encodeURIComponent(sid)}/approvals/${encodeURIComponent(aid)}/${action}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+      });
+      loadHome();
+    } catch { /* 失败安全 */ }
+    setActing(null);
+  };
+
+  // 指标: 任务汇总
+  const totalTasks = projects.reduce((a, p) => a + ((p.stage_progress?.开发?.total) || 0), 0);
+  const doneTasks = projects.reduce((a, p) => a + ((p.stage_progress?.开发?.done) || 0), 0);
+  const taskPct = totalTasks ? Math.round((doneTasks / totalTasks) * 100) : 0;
+  const activeCount = projects.filter((p) => !p.archived && p.status !== 'archived').length;
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -114,7 +151,59 @@ function MyCompanyTab({ onOpen }: { onOpen: (t: Omit<WorkspaceTab, 'id'>) => voi
   return (
     <div className="bw-home bw-home--company" data-testid="bw-home">
       <h2>🏢 我的公司</h2>
-      <p className="bw-home-sub">公司级工作台 — 按最近更新排序，点项目进入</p>
+      <p className="bw-home-sub">公司级工作台</p>
+
+      {/* 指标卡 */}
+      <div className="bw-metrics" data-testid="bw-metrics">
+        <div className="bw-metric"><span className="bw-metric-num">{projects.length}</span><span className="bw-metric-label">项目</span></div>
+        <div className="bw-metric"><span className="bw-metric-num">{activeCount}</span><span className="bw-metric-label">活跃</span></div>
+        <div className="bw-metric"><span className="bw-metric-num">{taskPct}%</span><span className="bw-metric-label">任务完成</span></div>
+        <div className="bw-metric"><span className="bw-metric-num">{board?.running_tasks ?? 0}</span><span className="bw-metric-label">运行任务</span></div>
+        <div className="bw-metric"><span className="bw-metric-num">{board?.avg_lifecycle_pct ?? 0}%</span><span className="bw-metric-label">平均进度</span></div>
+      </div>
+
+      {/* 快捷操作 */}
+      <div className="bw-quick" data-testid="bw-quick">
+        <button type="button" className="bw-btn" onClick={() => onOpen({ type: 'newtab', title: '新标签页' })}>➕ 新建项目</button>
+        <button type="button" className="bw-btn" onClick={() => onOpen({ type: 'newtab', title: '新标签页' })}>💬 发起会话</button>
+        <button type="button" className="bw-btn" onClick={() => onOpen({ type: 'newtab', title: '新标签页' })}>📋 建任务</button>
+      </div>
+
+      {/* 待办审批 */}
+      <div className="bw-card" data-testid="bw-approvals">
+        <div className="bw-card-head">📋 待办审批 ({approvals.length})</div>
+        {approvals.length === 0 ? (
+          <p className="bw-muted bw-card-pad">暂无待审批</p>
+        ) : (
+          <ul className="bw-approval-list">
+            {approvals.map((a) => (
+              <li key={a.id} className="bw-approval-item">
+                <code className="bw-approval-cmd">{a.command || ''}</code>
+                <span className="bw-approval-btn-group">
+                  <button type="button" className="bw-btn bw-btn--ok" disabled={acting != null} onClick={() => actApproval(a.session_id, a.id, 'approve')}>
+                    {acting === a.id ? '…' : '✓ 批准'}
+                  </button>
+                  <button type="button" className="bw-btn bw-btn--no" disabled={acting != null} onClick={() => actApproval(a.session_id, a.id, 'reject')}>
+                    ✕ 拒绝
+                  </button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {/* 系统状态 */}
+      <div className="bw-card" data-testid="bw-system">
+        <div className="bw-card-head">⚙️ 系统状态</div>
+        <div className="bw-system-row">
+          <span>版本 {system?.system?.version || '—'}</span>
+          <span>后端 {system?.system?.backend?.up ? '✅' : '❌'}</span>
+          <span>前端 {system?.system?.frontend?.up ? '✅' : '❌'}</span>
+          <span>模型 {system?.system?.model || '—'}</span>
+        </div>
+      </div>
+
       <div className="bw-company-card" data-testid="bw-company-card">
         <button
           type="button"

@@ -217,9 +217,11 @@ def tool_schemas(data_dir: str | Path | None = None) -> list[dict[str, Any]]:
                                     "priority": {"type": "string"}}, "required": ["title"]}},
              "delegate": {"type": "boolean", "description": "是否委派外部AI执行"}}),
         _fc("external_route", "外部AI路由", "为任务选择最合适外部AI agent", {"task": {"type": "string"}}, ["task"]),
-        _fc("chain_start", "启动执行链(做人事)", "审批通过后启动执行链: 按计划建任务列表, 逐任务执行",
+        _fc("chain_start", "启动执行链(做人事)", "审批通过后启动执行链: 按计划建任务列表, 逐任务执行; "
+            "auto=true 时后台自动执行全部任务 (Promised Work), 完成主动推送交付汇报",
             {"goal": {"type": "string"}, "tasks": {"type": "array", "items": {"type": "object",
-                     "properties": {"title": {"type": "string"}, "priority": {"type": "string"}}}}}),
+                     "properties": {"title": {"type": "string"}, "priority": {"type": "string"}}}},
+             "auto": {"type": "boolean", "description": "true=后台自动执行全部任务并主动回报"}}),
         _fc("chain_next", "推进下一个任务", "执行链逐任务推进: 委派执行→验证→回写", {}),
         _fc("chain_status", "执行链进度", "查询当前执行链进度 (完成数/当前任务)", {}),
         _fc("gateway_status", "外部任务进度", "查询外部执行器任务进度 (最近/按项目/统计)", {"project": {"type": "string"}}),
@@ -386,6 +388,74 @@ def execute_plan(
 # ---------------------------------------------------------------- Agent 循环 (原生 FC)
 
 _hooks_instance = None
+
+
+def _chain_auto_worker(root: Any, project_id: str, session_id: str, service: Any, st: Any) -> None:
+    """W1 (v1.1.248): Promised Work (OpenClaw) — 后台自动逐任务执行到完成.
+
+    每步: 委派外部AI → 验证 → 回写 backlog → 同步进度卡;
+    全部完成: deliver 交付汇报 → 追加会话消息 (主动回报, 用户不用手动"继续")。
+    失败安全: 任何异常吞掉不阻断执行链。
+    """
+    try:
+        from ..external_executor.gateway import gateway_execute
+
+        def _exec_fn(task):
+            title = str(task.get("title") or "")
+            r = gateway_execute(title, data_dir=root, project_id=project_id, max_retry=1)
+            if not r.get("ok"):
+                return {"ok": False, "error": r.get("error") or "外部执行失败"}
+            return {"ok": True,
+                    "output": (f"{r.get('executor')} 完成 (任务 {r.get('task_id')}) · "
+                               f"验证 {r.get('verify', {}).get('result') or 'unknown'} · "
+                               f"{str(r.get('output') or '')[:300]}"),
+                    "verify": dict(r.get("verify") or {}),
+                    "exec_ref": str(r.get("task_id") or "")}
+
+        from .progress_card import sync_from_exec
+
+        while st.state.get("status") == "running":
+            r = st.next(_exec_fn)
+            st.save(root)
+            # 回写 backlog (Hermes kanban_complete 思路)
+            _idx = st.state.get("current_index", -1)
+            _stasks = st.state.get("tasks") or []
+            if 0 <= _idx < len(_stasks) and service is not None:
+                _cur = _stasks[_idx]
+                _bid = str(_cur.get("backlog_id") or "")
+                if _bid:
+                    try:
+                        _v = _cur.get("verify") or {}
+                        service.finish_task_exec(
+                            project_id, _bid,
+                            success=_cur.get("status") == "done",
+                            exec_ref=str(_v.get("exec_ref") or "") or _bid,
+                            exec_result=(f"{str(_cur.get('result') or '')[:300]}"
+                                         + (f" · 验证 {_v.get('result') or 'unknown'}" if _v else "")),
+                            actor="session-chain-auto",
+                        )
+                    except Exception:  # noqa: BLE001 — 回写失败不阻断
+                        pass
+            try:
+                sync_from_exec(root, session_id, st)
+            except Exception:  # noqa: BLE001 — 落卡失败不阻断
+                pass
+            if r.get("finished") or not r.get("ok"):
+                break
+        # 完成 → 交付汇报主动推送会话 (Promised Work)
+        try:
+            d = st.deliver()
+            if d.get("ok"):
+                from ..console_sessions import SessionStore
+
+                store = SessionStore(Path(root) / "console_sessions.json")
+                if store.get_session(session_id):
+                    store.append_message(session_id, "assistant", d.get("output"),
+                                         meta={"kind": "chain_delivery"})
+        except Exception:  # noqa: BLE001 — 推送失败不阻断
+            pass
+    except Exception:  # noqa: BLE001 — 后台异常不阻断
+        pass
 
 
 def _get_hooks():
@@ -785,11 +855,28 @@ def dispatch(
                 sync_from_exec(root, (ctx or {}).get("session_id") or "", st)
             except Exception:  # noqa: BLE001 — 落卡失败不阻断
                 pass
+            # W1 (v1.1.248): Promised Work — auto=true → 后台自动执行, 完成主动回报
+            _sid = (ctx or {}).get("session_id") or ""
+            if args.get("auto"):
+                import threading as _th
+
+                _t = _th.Thread(
+                    target=_chain_auto_worker,
+                    args=(root, project_id, _sid, service, st),
+                    daemon=True,
+                )
+                _t.start()
+                return {"ok": True, "output": (
+                    f"✅ 执行链已启动并后台自动执行 (Promised Work): {goal or '执行链'} "
+                    f"({len(tasks)} 个任务, 已建 backlog {_created_n} 个)。"
+                    "后台逐任务委派执行中, 每个完成后结果回写 backlog; "
+                    "全部完成会自动推送交付汇报。『进度』可随时查看。")}
             return {"ok": True, "output": (
                 f"✅ 执行链已启动: {goal or '执行链'} ({len(tasks)} 个任务, "
                 f"已建 backlog 任务 {_created_n} 个)。"
                 "说『继续』/『推进』逐任务执行(每个完成后结果回写 backlog); "
-                "『进度』查看状态; 敏感任务会先确认。")}
+                "『进度』查看状态; 敏感任务会先确认。"
+                "也可以说『自动执行』(auto) 后台全部跑完。")}
         if tool_id == "chain_next":
             from .exec_state import ExecState
 

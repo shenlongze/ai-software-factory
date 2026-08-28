@@ -3919,6 +3919,7 @@ def build_app(
         import glob as _glob
 
         pending = []
+        history: list[dict[str, Any]] = []
         for f in _glob.glob(str(Path(root) / "session_approvals" / "*.json")):
             sid = Path(f).stem
             try:
@@ -3926,9 +3927,14 @@ def build_app(
                 for it in lst.get("pending") or []:
                     it["session_id"] = sid
                     pending.append(it)
+                for h in (lst.get("history") or [])[-6:]:
+                    h = dict(h)
+                    h["session_id"] = sid
+                    history.append(h)
             except Exception:  # noqa: BLE001
                 continue
-        return {"pending": pending, "count": len(pending)}
+        history.sort(key=lambda h: str(h.get("resolved_at") or h.get("created_at") or ""), reverse=True)
+        return {"pending": pending, "history": history[:20], "count": len(pending)}
 
     @app.get("/api/sessions/{session_id}/approvals")
     def api_session_approvals(session_id: str) -> dict[str, Any]:

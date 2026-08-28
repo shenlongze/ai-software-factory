@@ -5344,3 +5344,5 @@ body[data-bg='1'] .af-shell {
 .bw-home.bw-home--company > *:last-child {
   margin-bottom: 0 !important;
 }
+.bw-approval-status { font-size: 11px; color: var(--c-text2, #9aa1ae); white-space: nowrap; }
+.bw-approval-result { font-size: 11px; color: #16a34a; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 30%; }

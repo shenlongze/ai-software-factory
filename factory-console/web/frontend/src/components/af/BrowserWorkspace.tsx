@@ -97,6 +97,7 @@ function MyCompanyTab({ onOpen }: { onOpen: (t: Omit<WorkspaceTab, 'id'>) => voi
   const [collapsed, setCollapsed] = useState(false);
   const [board, setBoard] = useState<{ running_tasks?: number; failed_tasks?: number; avg_lifecycle_pct?: number } | null>(null);
   const [approvals, setApprovals] = useState<{ id: string; session_id?: string; command?: string; created_at?: string }[]>([]);
+  const [approvalHistory, setApprovalHistory] = useState<{ id: string; command?: string; status?: string; result?: string; session_id?: string }[]>([]);
   const [system, setSystem] = useState<{ system?: { version?: string; model?: string; frontend?: { up?: boolean }; backend?: { up?: boolean } } } | null>(null);
   const [acting, setActing] = useState<string | null>(null);
 
@@ -107,7 +108,11 @@ function MyCompanyTab({ onOpen }: { onOpen: (t: Omit<WorkspaceTab, 'id'>) => voi
       .catch(() => {});
     fetch('/api/approvals/all', { headers: { Accept: 'application/json' } })
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => d && setApprovals(d.pending ?? []))
+      .then((d) => {
+        if (!d) return;
+        setApprovals(d.pending ?? []);
+        setApprovalHistory(d.history ?? []);
+      })
       .catch(() => {});
     fetch('/api/monitor', { headers: { Accept: 'application/json' } })
       .then((r) => (r.ok ? r.json() : null))
@@ -184,6 +189,22 @@ function MyCompanyTab({ onOpen }: { onOpen: (t: Omit<WorkspaceTab, 'id'>) => voi
           </ul>
         )}
       </div>
+
+      {/* 最近处理 (审批历史) */}
+      {approvalHistory.length > 0 && (
+        <div className="bw-card" data-testid="bw-approval-history">
+          <div className="bw-card-head">🗂 最近处理</div>
+          <ul className="bw-approval-list">
+            {approvalHistory.slice(0, 5).map((h) => (
+              <li key={h.id} className="bw-approval-item">
+                <span className="bw-approval-status">{h.status === 'approved' ? '✅ 已批准' : '✕ 已拒绝'}</span>
+                <code className="bw-approval-cmd">{h.command || ''}</code>
+                <span className="bw-approval-result">{h.result ? String(h.result).slice(0, 60) + (String(h.result).length > 60 ? '…' : '') : ''}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* 系统状态 */}
       <div className="bw-card" data-testid="bw-system">

@@ -186,6 +186,35 @@ describe('AfConversationPanel (AI 会话栏 C 列)', () => {
     expect((await screen.findAllByText(/command not found/)).length).toBeGreaterThan(0);
   });
 
+  it('T5: 证据链 — 有 evidence 时显示证据来源, 展开可见工具+结果', async () => {
+    stubSessionApi({
+      onSend: () => ({
+        id: 'msg-a',
+        session_id: 'sess-1',
+        role: 'assistant',
+        content: '基于工具结果给出回答',
+        created_at: '2026-08-26T00:00:01Z',
+        meta: {
+          evidence: [
+            { tool: 'project_status', ok: true, output: '生命周期: 开发中, 任务 5/8 完成' },
+            { tool: 'git_status', ok: false, output: 'error: 无法读取' },
+          ],
+        },
+      }),
+    });
+    renderPanel();
+    await userEvent.click(screen.getByLabelText('新建会话'));
+    await screen.findByTestId(/af-session-sess-1/);
+    await userEvent.type(screen.getByRole('textbox', { name: 'AI 会话输入' }), '项目状态如何');
+    await userEvent.click(screen.getByRole('button', { name: '发送' }));
+    // 证据来源显示条数, 默认收起; 点击展开显示工具+结果
+    expect(await screen.findByText(/证据来源 \(2\)/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /证据来源/ }));
+    expect(await screen.findByText(/project_status/)).toBeInTheDocument();
+    expect(await screen.findByText(/任务 5\/8 完成/)).toBeInTheDocument();
+    expect(await screen.findByText(/git_status/)).toBeInTheDocument();
+  });
+
   it('改名 (✎) → 行内输入保存', async () => {
     stubSessionApi({
       onCreate: () => ({

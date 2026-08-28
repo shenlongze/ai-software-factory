@@ -4023,15 +4023,32 @@ def build_app(
                                 sessions_store, session_id, body.message, facts=facts,
                                 reply_extra="回答必须引用上面【工具执行证据】; 工具没提供的不要编造; 分 结论/证据/数据/建议。",
                                 llm_fn=lambda _p, _a=agent_result.get("answer", ""): _a,
-                                assistant_meta={"tool_calls": [
-                                    {"tool": c["tool"], "ok": c.get("ok")} for c in calls
-                                ]},
+                                assistant_meta={
+                                    "tool_calls": [
+                                        {"tool": c["tool"], "ok": c.get("ok")} for c in calls
+                                    ],
+                                    # T5 (v1.1.280): 证据链 — 结构化工具证据 (tool/ok/output摘要), 前端可溯源
+                                    "evidence": [
+                                        {
+                                            "tool": c["tool"],
+                                            "ok": c.get("ok"),
+                                            "output": str(c.get("output") or c.get("error") or "")[:300],
+                                        } for c in calls
+                                    ],
+                                },
                             )
                             result["meta"] = {
                                 "intent": "agent", "project": session.get("project_id"),
                                 "data_source": "tools" if calls else "chat",
                                 "target": {"url": f"#/project/{session.get('project_id')}", "label": "查看项目"},
                                 "tool_calls": [{"tool": c["tool"], "ok": c.get("ok")} for c in calls],
+                                "evidence": [
+                                    {
+                                        "tool": c["tool"],
+                                        "ok": c.get("ok"),
+                                        "output": str(c.get("output") or c.get("error") or "")[:300],
+                                    } for c in calls
+                                ],
                             }
                         except Exception:  # noqa: BLE001
                             result = None
@@ -4183,9 +4200,19 @@ def build_app(
                         facts=facts,
                         reply_extra="回答必须引用上面【工具执行证据】; 工具没提供的不要编造; 分 结论/证据/数据/建议。",
                         llm_fn=lambda _p, _a=agent_result.get("answer", ""): _a,
-                        assistant_meta={"tool_calls": [
-                            {"tool": c["tool"], "ok": c.get("ok")} for c in calls
-                        ]},
+                        assistant_meta={
+                            "tool_calls": [
+                                {"tool": c["tool"], "ok": c.get("ok")} for c in calls
+                            ],
+                            # T5 (v1.1.280): 证据链 — 结构化工具证据
+                            "evidence": [
+                                {
+                                    "tool": c["tool"],
+                                    "ok": c.get("ok"),
+                                    "output": str(c.get("output") or c.get("error") or "")[:300],
+                                } for c in calls
+                            ],
+                        },
                     )
                 except ValueError as exc:
                     raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -4194,6 +4221,13 @@ def build_app(
                     "data_source": "tools" if calls else "chat",
                     "target": {"url": f"#/project/{session.get('project_id')}", "label": "查看项目"},
                     "tool_calls": [{"tool": c["tool"], "ok": c.get("ok")} for c in calls],
+                    "evidence": [
+                        {
+                            "tool": c["tool"],
+                            "ok": c.get("ok"),
+                            "output": str(c.get("output") or c.get("error") or "")[:300],
+                        } for c in calls
+                    ],
                 }
                 return result
 

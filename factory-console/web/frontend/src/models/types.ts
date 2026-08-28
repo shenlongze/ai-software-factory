@@ -754,6 +754,8 @@ export interface SessionMessage {
     }[];
     /** T3 (v1.1.271): 思考链可视化 — 流式 thinking 事件存独立数组, 不污染 content */
     thinking_steps?: { round: number; detail: string }[];
+    /** T5 (v1.1.280): 证据链 — 结构化工具证据 (tool/ok/output摘要), 前端可溯源 */
+    evidence?: { tool: string; ok?: boolean; output?: string }[];
   } | null;
 }
 

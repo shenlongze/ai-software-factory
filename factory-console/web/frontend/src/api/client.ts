@@ -548,6 +548,8 @@ export const api = {
           data_source?: string;
           target?: { url: string; label: string } | null;
           tool_calls?: { tool: string; ok?: boolean }[];
+          /** T5: 证据链 */
+          evidence?: { tool: string; ok?: boolean; output?: string }[];
         };
       };
     }) => void,

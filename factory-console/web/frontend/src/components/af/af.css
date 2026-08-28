@@ -4861,6 +4861,53 @@ body[data-bg='1'] .af-shell {
   color: var(--af-primary, #0071e3);
 }
 
+/* T5: 证据链 */
+.af-chat-evidence {
+  margin-top: 6px;
+  border-left: 2px solid var(--c-border, rgba(0, 0, 0, 0.1));
+  padding-left: 10px;
+}
+.af-chat-evidence-toggle {
+  background: none;
+  border: none;
+  color: var(--c-muted, #86868b);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 1px 0;
+}
+.af-chat-evidence-toggle:hover {
+  color: var(--af-primary, #0071e3);
+}
+.af-chat-evidence-list {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+}
+.af-chat-evidence-item {
+  margin: 4px 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.af-chat-evidence-head {
+  font-weight: 600;
+  font-family: var(--af-font-mono, monospace);
+  font-size: 11px;
+}
+.af-chat-evidence-item--ok .af-chat-evidence-head {
+  color: #34c759;
+}
+.af-chat-evidence-item--fail .af-chat-evidence-head {
+  color: #ff3b30;
+}
+.af-chat-evidence-output {
+  display: block;
+  color: var(--c-muted, #86868b);
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin-top: 2px;
+  font-size: 11px;
+}
+
 /* 概览 Todo: 未完成聚焦 + 已完成折叠 */
 .af-todo-done-block {
   margin-top: 8px;

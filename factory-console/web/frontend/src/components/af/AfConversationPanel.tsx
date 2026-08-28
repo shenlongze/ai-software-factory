@@ -286,6 +286,9 @@ export function AfConversationPanel({ projectId, projectName }: AfConversationPa
               <div className={`af-chat-msg-body${m.role === 'assistant' ? ' af-chat-msg-body--md' : ''}`}>
                 {m.role === 'assistant' ? renderMarkdown(m.content) : m.content}
               </div>
+              {m.role === 'assistant' && m.meta?.evidence?.length ? (
+                <EvidenceList evidence={m.meta.evidence} />
+              ) : null}
               {m.role === 'assistant' && m.target && m.target.url ? (
                 <a className="af-chat-jump" href={m.target.url} data-testid={`af-chat-jump-${m.id}`}>
                   → {m.target.label}
@@ -385,4 +388,33 @@ function lastUserMessage(msgs: { role: string; content: string }[]): string {
     if (msgs[i].role === 'user') return msgs[i].content;
   }
   return '';
+}
+
+/** T5: 证据链 — 回答引用的工具证据, 可折叠 (默认收起, 显示条数)。 */
+function EvidenceList({ evidence }: { evidence: { tool: string; ok?: boolean; output?: string }[] }): JSX.Element {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="af-chat-evidence" data-testid="af-chat-evidence">
+      <button
+        type="button"
+        className="af-chat-evidence-toggle"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+      >
+        {open ? '▾' : '▸'} 证据来源 ({evidence.length})
+      </button>
+      {open ? (
+        <ul className="af-chat-evidence-list">
+          {evidence.map((ev, i) => (
+            <li key={i} className={`af-chat-evidence-item af-chat-evidence-item--${ev.ok ? 'ok' : 'fail'}`}>
+              <span className="af-chat-evidence-head">
+                {ev.ok ? '✅' : '❌'} {ev.tool}
+              </span>
+              {ev.output ? <span className="af-chat-evidence-output">{ev.output}</span> : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
 }

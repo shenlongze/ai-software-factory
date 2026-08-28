@@ -227,6 +227,10 @@ def tool_schemas(data_dir: str | Path | None = None) -> list[dict[str, Any]]:
         _fc("gateway_status", "外部任务进度", "查询外部执行器任务进度 (最近/按项目/统计)", {"project": {"type": "string"}}),
         _fc("knowledge_search", "知识检索", "在项目文档中检索知识点/历史结论, 返回片段+来源 (跨会话记忆/项目知识)",
             {"query": {"type": "string"}}, ["query"]),
+        # ---- W4 (v1.1.250): Core Memory — 模型自编辑 human 块 (Letta self-editing) ----
+        _fc("memory_update", "更新Core记忆(Human块)", "自编辑长期记忆 (Letta core memory): 记录用户偏好/项目上下文/关键事实/任务状态, "
+            "下次会话延续。重要信息值得记 → 调用; append=true 追加到已有记忆。上限 1500 字符",
+            {"text": {"type": "string"}, "append": {"type": "boolean"}}, ["text"]),
         # ---- S8 (v1.1.246): 通用执行/搜索工具 — 一劳永逸, 不预置专用工具 ----
         _fc("web_search", "网络搜索", "在互联网搜索 (DuckDuckGo, 无需key)。返回标题+链接+摘要。"
             "【何时用】本地/项目内/常识解决不了, 或需要实时/最新/外部信息, 或用户明确要求'去网上查'时才用; "
@@ -779,6 +783,17 @@ def dispatch(
                 return {"ok": True, "output": "\n".join(lines)}
             except Exception as exc:  # noqa: BLE001 — 检索失败 → 诚实
                 return {"ok": False, "error": f"知识检索失败: {exc}"}
+        # ---- W4 (v1.1.250): Core Memory 自编辑 ----
+        if tool_id == "memory_update":
+            from .memory_core import update_human
+
+            return {
+                "ok": True,
+                "output": "已更新 Core Memory (human 块) · " + json.dumps(
+                    update_human(root, str(args.get("text") or ""), append=bool(args.get("append"))),
+                    ensure_ascii=False)[:500],
+                "need_approval": False,
+            }
         # ---- S8 (v1.1.246): 通用搜索/执行 ----
         if tool_id == "bash_exec":
             from .web_tools import bash_exec
@@ -1016,6 +1031,21 @@ def _finish_session_hooks(
     question: str, messages: list[dict[str, Any]], answer: str,
 ) -> None:
     """S10-127 M4.2: 会话收尾 — PreCompact 写交接 + SessionEnd 提取记忆。"""
+    # W4 (v1.1.250): 会话收尾提取 → 更新 core human 块 (轻量, 不调 LLM)
+    try:
+        from .memory_core import extract_and_update
+
+        _sess = None
+        try:
+            from ..console_sessions import SessionStore
+
+            _store = SessionStore(Path(data_dir) / "console_sessions.json")
+            _sess = _store.get_session(session_id) if _store is not None else None
+        except Exception:  # noqa: BLE001 — 会话读取失败 → 空
+            pass
+        extract_and_update(data_dir, _sess, question, answer)
+    except Exception:  # noqa: BLE001 — 提取失败不阻断
+        pass
     try:
         _h = _get_hooks()
         _h.fire("PreCompact", {
@@ -1062,6 +1092,8 @@ def run_agent_native(
     _reflection = _mp["reflection"]
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": _agent_system},
+        # W4 (v1.1.250): Core Memory 注入 (persona + human 自编辑块, Letta)
+        {"role": "system", "content": _core_render(data_dir)},
         {"role": "system", "content": format_intent(intent) + "\n" + route_for(intent["intent"])},
         {"role": "system", "content": style_instruction(question, intent.get("intent"), intent.get("emotion"))},
         {"role": "user", "content": question},
@@ -1375,6 +1407,16 @@ def run_agent_native(
                     _usage_prompt, _usage_completion)
         return {"answer": "", "rejected": True, "calls": calls, "evidence": [],
                 "reason": f"原生 FC 不可用: {exc}"}
+
+
+def _core_render(data_dir: str | Path | None) -> str:
+    """W4: Core Memory 渲染注入 (persona + human)。失败安全 → 空。"""
+    try:
+        from .memory_core import render
+
+        return render(data_dir)
+    except Exception:  # noqa: BLE001
+        return ""
 
 
 def _history_text(history: list[dict[str, Any]] | None, max_turns: int = 4) -> str:

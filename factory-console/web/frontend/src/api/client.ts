@@ -42,6 +42,7 @@ import {
   type ProjectUpdatedSummary,
   type RecommendationSummary,
   type ReviewFeedback,
+  type AuditEventItem,
   type ProjectCreatedSummary,
   type RuntimeEventPayload,
   type RuntimeInstance,
@@ -240,9 +241,10 @@ export const api = {
     if (filters.projectId) params.set('project_id', filters.projectId);
     if (filters.workflowId) params.set('workflow_id', filters.workflowId);
     if (filters.type) params.set('type', filters.type);
-    const qs = params.toString();
-    return (await getJson<{ items: ArtifactSummary[] }>(`/api/artifacts${qs ? `?${qs}` : ''}`)).items;
+    return (await getJson<{ items: ArtifactSummary[] }>(`/api/artifacts?${params.toString()}`)).items;
   },
+  /** T8: 审计事件查询 (只读) */
+  audit: (query = '') => getJson<{ items: AuditEventItem[]; count: number; counts: Record<string, number> }>(`/api/audit?${query}`),
   // S9-002: 审批决定 (Console 唯一写路径; source=console 审计由后端落库)
   // S9-003: 可选 comment 透传 (Review 页反馈输入 → gate.comment 持久化;
   //         空串不发送键 — S9-002 无 body 调用兼容)

@@ -834,3 +834,16 @@ export interface MonitorProjectView {
   last_activity: string | null;
   collected_at: string;
 }
+
+/** T8 (v1.1.288): 审计事件 (GET /api/audit)。 */
+export interface AuditEventItem {
+  event_type?: string;
+  action?: string;
+  timestamp?: string;
+  trace_id?: string;
+  project_id?: string;
+  decision?: string;
+  result?: { ok?: boolean } | null;
+  evidence?: unknown[];
+  event_hash?: string;
+}

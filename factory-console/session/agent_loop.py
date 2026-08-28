@@ -1424,6 +1424,14 @@ def run_agent_native(
                 if len(_res_json) > _budget:
                     _trunc += f"\n...(结果过长, 截断至 {_budget} 字符; 如需要更详细请针对性查询)"
                 messages.append({"role": "tool", "tool_call_id": tc.get("id") or "", "content": _trunc})
+                # v1.1.266: 关键工具失败 → 注入"失败处理规则" (失败≠无数据, 重试或追问, 禁止编结论)
+                if not result.get("ok") and tid in ("code_scan", "project_scan", "repo_map",
+                                                     "read_code", "search_code", "project_structure"):
+                    messages.append({"role": "system", "content": (
+                        "工具执行失败。处理规则: ① 换工具/换路径/换参数重试 (不要重复同一调用); "
+                        "② 仍失败 → 明确询问用户 (如『请确认项目源码路径』), 或诚实说明『定位失败, 需要确认』; "
+                        "③ 【禁止】基于失败推断『无数据/无代码/项目不存在/仓库为空』等结论 — 失败≠没有, 别胡说。"
+                    )})
             # S2: 本轮工具调用全失败 → 累计无进展轮数; 有成功 → 清零
             _round_results = [c.get("ok") for c in calls[-len(tcs):]]
             if _round_results and not any(_round_results):

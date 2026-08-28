@@ -3,6 +3,8 @@
 Founder 2026-08-27: "数据真不真靠自觉" — 回答要能复核:
 - verify_numbers: 回答中的关键数字 (百分比/数量+单位) 必须在 reference (查询结果/事实卡) 中能找到,
   找不到 → 标记"可能无据" (提示修正, 不阻断)
+- verify_details (W8 强化, v1.1.261): 数字 + 色值(#xxx)/版本/类名/文件路径 细节须能在 reference 中找到,
+  找不到 → 强制修正或标注"未查到具体值" (治"方向对、细节编")
 - no_evidence_no_conclusion: 查询/分析类若无工具证据 → 拒绝空答 (S-2.2, agent 循环用)
 失败安全: 解析失败 → 不误报 (返回 ok)。
 """
@@ -42,6 +44,43 @@ def verify_numbers(answer: str, reference: str) -> dict[str, Any]:
     unverified = [n for n in ans_nums if n not in ref]
     return {"ok": not unverified, "unverified": unverified,
             "note": "回答数字在查询结果中无对应" if unverified else "数字与查询结果一致"}
+
+
+#: 细节模式 (W8 强化 — 治"结论方向对、具体值编造")
+_DETAIL_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"#[0-9a-fA-F]{3,8}\b"), "色值"),                       # #f5f7fa
+    (re.compile(r"\bv?\d+\.\d+\.\d+\b"), "版本"),                 # v1.1.260
+    (re.compile(r"\.(?:af|app|shell|workspace|console)-[\w-]+"), "类名"),  # .af-card-name
+    (re.compile(r"[\w./-]*/(?:[\w-]+\.)+[a-z]{1,6}\b"), "路径"),      # factory-console/web/.../af.css
+    (re.compile(r"\b[\w-]+\.(?:py|tsx?|jsx?|css|json|md|dart)\b"), "文件"),  # af.css / actions.py
+]
+
+
+def extract_details(text: str) -> list[tuple[str, str]]:
+    """提取回答里的可验证细节 (色值/版本/类名/路径/文件) → [(token, 类型)] 去重。"""
+    out: list[tuple[str, str]] = []
+    for pat, kind in _DETAIL_PATTERNS:
+        for m in pat.finditer(str(text or "")):
+            tok = m.group(0)
+            if (tok, kind) not in out:
+                out.append((tok, kind))
+    return out
+
+
+def verify_details(answer: str, reference: str) -> dict[str, Any]:
+    """W8 强化: 数字 + 细节(色值/版本/类名/路径/文件) 须能在 reference 中找到。
+
+    返回 {ok, unverified: [token(类型)], note}。回答明说"未查到/不确定" → 放行。
+    只标记不阻断 (注入修正轮); reference 空 → 只做数字校验。"""
+    chk_num = verify_numbers(answer, reference)
+    ref = str(reference or "")
+    unverified = list(chk_num.get("unverified") or [])
+    if ref and not any(k in answer for k in ("未查询到", "未找到", "不确定", "无法确认", "暂无")):
+        for tok, kind in extract_details(answer):
+            if tok not in ref:
+                unverified.append(f"{tok}({kind})")
+    return {"ok": not unverified, "unverified": unverified,
+            "note": "回答细节在查询结果中无对应" if unverified else "细节与查询结果一致"}
 
 
 def no_evidence_prompt() -> str:

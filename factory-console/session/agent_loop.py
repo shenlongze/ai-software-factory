@@ -1307,20 +1307,21 @@ def run_agent_native(
 
                     messages.append({"role": "system", "content": no_evidence_prompt()})
                     continue
-                # W8 (v1.1.253): 输出 guardrail — 数字证据校验 (OpenAI SDK Guardrails 思路)
-                # 模型直接回答但答案含关键数字 → 与已调工具结果比对; 无据数字 → 强制修正轮 (fail-fast)
+                # W8 (v1.1.253 + v1.1.261 强化): 输出 guardrail — 数字+细节证据校验
+                # 回答含数字/色值/版本/类名/路径 → 与已调工具结果比对; 无据 → 强制修正 (治"方向对、细节编")
                 _answer = _strip_fake_toolcalls(resp.get("content") or "（模型未输出）")
                 if calls:
-                    from .answer_verify import verify_numbers
+                    from .answer_verify import verify_details
 
                     _ref_text = "\n".join(
                         str(c.get("output") or c.get("error") or "") for c in calls)
-                    _chk = verify_numbers(_answer, _ref_text)
+                    _chk = verify_details(_answer, _ref_text)
                     if not _chk.get("ok") and total_calls < max_rounds - 1:
                         messages.append({"role": "system", "content": (
-                            "【输出校验未通过 (W8)】你回答中的这些数字在已调工具结果里找不到依据: "
+                            "【输出校验未通过 (W8 强化)】你回答中的这些数字/色值/版本/类名/路径在已调工具结果里找不到依据: "
                             + ", ".join(_chk.get("unverified") or []) + "。"
-                            "请修正: 删除无据数字, 或明确标注『未查到』, 或基于工具结果重述; 不要编造数字。"
+                            "请修正: 删除无据细节, 或明确标注『未查到具体值』, 或基于工具结果重述; "
+                            "不要编造具体色值/路径/数字。"
                         )})
                         continue
                 # 模型自主收敛 (直接回答/追问) — agentic: 不强制拦截

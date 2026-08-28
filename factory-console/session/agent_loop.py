@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.request
 from pathlib import Path
 from typing import Any, Callable
@@ -1093,6 +1094,15 @@ def run_agent_native(
                 _usage_completion += int(_u.get("completion_tokens") or 0)
             tcs = resp.get("tool_calls") or []
             if not tcs:
+                # S1.1 (v1.1.244): 文本模拟工具调用检测 — 回答里写 <tool_calls> 但没走真实通道 (deepseek 常见)
+                _content = resp.get("content") or ""
+                if re.search(r"<tool_calls>|```tool_calls|</tool_calls>|<invoke name=", _content):
+                    messages.append({"role": "system", "content": (
+                        "检测到你在回答文本里写了 <tool_calls> 但没有真实发起工具调用 — 这只是描述, 不是执行。"
+                        "如果你确实需要调用工具 (如 plan_development/project_docs 等), 请通过真正的函数调用通道发起; "
+                        "不需要的话, 直接基于已有结果给出回答。"
+                    )})
+                    continue
                 # S-2.2 无证据不结论: 查询/分析类完全没调工具直接答 → 强制先查再说
                 if total_calls == 0 and intent["intent"] in ("question", "deep_analyze", "analyze"):
                     from .answer_verify import no_evidence_prompt

@@ -150,6 +150,42 @@ describe('AfConversationPanel (AI 会话栏 C 列)', () => {
     expect(await screen.findByText(/再查代码/)).toBeInTheDocument();
   });
 
+  it('T4: 工具详情 — 失败工具显示参数/结果详情 + 重试按钮', async () => {
+    stubSessionApi({
+      onSend: () => ({
+        id: 'msg-a',
+        session_id: 'sess-1',
+        role: 'assistant',
+        content: '最终回答',
+        created_at: '2026-08-26T00:00:01Z',
+        meta: {
+          tool_calls: [
+            {
+              tool: 'bash_exec',
+              ok: false,
+              duration_ms: 42,
+              error: 'command not found',
+              params: '{"command":"ls /tmp"}',
+              output: 'bash: ls: command not found',
+            },
+          ],
+        },
+      }),
+    });
+    renderPanel();
+    await userEvent.click(screen.getByLabelText('新建会话'));
+    await screen.findByTestId(/af-session-sess-1/);
+    await userEvent.type(screen.getByRole('textbox', { name: 'AI 会话输入' }), '跑个命令');
+    await userEvent.click(screen.getByRole('button', { name: '发送' }));
+    // 失败工具: 显示错误 + 详情按钮 + 重试按钮
+    expect(await screen.findByText(/command not found/)).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /重试/ })).toBeInTheDocument();
+    // 展开详情 → 显示参数和结果 (错误文本出现在徽章+结果两处, 用 getAllByText)
+    await userEvent.click(screen.getByRole('button', { name: /详情/ }));
+    expect(await screen.findByText(/ls \/tmp/)).toBeInTheDocument();
+    expect((await screen.findAllByText(/command not found/)).length).toBeGreaterThan(0);
+  });
+
   it('改名 (✎) → 行内输入保存', async () => {
     stubSessionApi({
       onCreate: () => ({

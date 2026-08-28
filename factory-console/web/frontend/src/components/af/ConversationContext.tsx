@@ -344,6 +344,9 @@ export function ConversationProvider({ children }: { children: ReactNode }): JSX
                             approval_id: e.approval_id ?? '',
                             command: e.command ?? '',
                             error: e.error ?? '',
+                            // T4: 全息展示 — 参数预览 + 结果截断
+                            params: e.params ?? '',
+                            output: e.output ?? '',
                           },
                         ],
                       },

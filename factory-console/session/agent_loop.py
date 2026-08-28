@@ -1454,7 +1454,10 @@ def run_agent_native(
                                   # S8-4: bash 写操作批准 — 透传审批字段给前端
                                   "need_approval": bool(result.get("need_approval")),
                                   "approval_id": str(result.get("approval_id") or ""),
-                                  "command": str(result.get("command") or "")[:2000]})
+                                  "command": str(result.get("command") or "")[:2000],
+                                  # T4 (v1.1.279): 全息展示 — 参数预览 + 结果截断 (完整结果在 calls 里)
+                                  "params": json.dumps(args, ensure_ascii=False)[:500],
+                                  "output": str(result.get("output") or "")[:2000]})
                     except Exception:  # noqa: BLE001 — 事件推送失败不阻断
                         pass
                 total_calls += 1

@@ -260,6 +260,21 @@ export function AfConversationPanel({ projectId, projectName }: AfConversationPa
                           {tc.error.length > 120 ? tc.error.slice(0, 120) + '…' : tc.error}
                         </span>
                       ) : null}
+                      {/* T4: 参数/结果可折叠详情 */}
+                      {tc.params || tc.output ? (
+                        <ToolDetail params={tc.params} output={tc.output} />
+                      ) : null}
+                      {/* T4: 失败重试 — 重新发送上一条用户消息 */}
+                      {tc.ok === false && !tc.need_approval && ctx.messages.length >= 2 ? (
+                        <button
+                          type="button"
+                          className="af-chat-retry"
+                          disabled={ctx.sending}
+                          onClick={() => void ctx.send(lastUserMessage(ctx.messages))}
+                        >
+                          ⟳ 重试
+                        </button>
+                      ) : null}
                     </li>
                   ))}
                   </ul>
@@ -327,4 +342,47 @@ function ThinkingChain({ steps }: { steps: { round: number; detail: string }[] }
       ) : null}
     </div>
   );
+}
+
+/** T4: 工具详情 — 参数预览 + 结果截断, 可折叠 (默认收起)。 */
+function ToolDetail({ params, output }: { params?: string; output?: string }): JSX.Element {
+  const [open, setOpen] = useState(false);
+  const hasParams = Boolean(params);
+  const hasOutput = Boolean(output);
+  return (
+    <div className="af-chat-tool-detail" data-testid="af-chat-tool-detail">
+      <button
+        type="button"
+        className="af-chat-tool-detail-toggle"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+      >
+        {open ? '▾' : '▸'} 详情
+      </button>
+      {open ? (
+        <div className="af-chat-tool-detail-body">
+          {hasParams ? (
+            <pre className="af-chat-tool-detail-pre" data-testid="af-chat-tool-params">
+              <span className="af-chat-tool-detail-label">参数</span>
+              {params}
+            </pre>
+          ) : null}
+          {hasOutput ? (
+            <pre className="af-chat-tool-detail-pre" data-testid="af-chat-tool-output">
+              <span className="af-chat-tool-detail-label">结果</span>
+              {output}
+            </pre>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** T4: 取最近一条用户消息 (失败重试用)。 */
+function lastUserMessage(msgs: { role: string; content: string }[]): string {
+  for (let i = msgs.length - 1; i >= 0; i -= 1) {
+    if (msgs[i].role === 'user') return msgs[i].content;
+  }
+  return '';
 }

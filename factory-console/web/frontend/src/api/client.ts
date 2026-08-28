@@ -535,6 +535,10 @@ export const api = {
       approval_id?: string;
       command?: string;
       error?: string;
+      /** T4: 工具参数预览 (JSON 字符串) */
+      params?: string;
+      /** T4: 工具结果截断 */
+      output?: string;
       result?: {
         user?: SessionMessage;
         assistant?: SessionMessage;

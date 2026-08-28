@@ -4802,6 +4802,65 @@ body[data-bg='1'] .af-shell {
   word-break: break-word;
 }
 
+/* T4: 工具详情 + 重试 */
+.af-chat-tool-detail {
+  margin-top: 4px;
+}
+.af-chat-tool-detail-toggle {
+  background: none;
+  border: none;
+  color: var(--c-muted, #86868b);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 1px 0;
+}
+.af-chat-tool-detail-toggle:hover {
+  color: var(--af-primary, #0071e3);
+}
+.af-chat-tool-detail-body {
+  margin: 4px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.af-chat-tool-detail-pre {
+  margin: 0;
+  padding: 6px 8px;
+  background: var(--c-hover, rgba(0, 0, 0, 0.04));
+  border: 1px solid var(--c-border, rgba(0, 0, 0, 0.1));
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 160px;
+  overflow-y: auto;
+  color: var(--c-text, inherit);
+}
+.af-chat-tool-detail-label {
+  display: block;
+  font-weight: 600;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--c-muted, #86868b);
+  margin-bottom: 2px;
+}
+.af-chat-retry {
+  margin-top: 4px;
+  background: none;
+  border: 1px solid var(--c-border, rgba(0, 0, 0, 0.1));
+  border-radius: 6px;
+  color: var(--c-text, inherit);
+  font-size: 12px;
+  padding: 2px 10px;
+  cursor: pointer;
+}
+.af-chat-retry:hover {
+  border-color: var(--af-primary, #0071e3);
+  color: var(--af-primary, #0071e3);
+}
+
 /* 概览 Todo: 未完成聚焦 + 已完成折叠 */
 .af-todo-done-block {
   margin-top: 8px;

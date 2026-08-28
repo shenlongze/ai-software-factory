@@ -82,7 +82,6 @@ const STATUS_META: Record<string, { label: string; icon: string }> = {
   done: { label: '完成', icon: '🎉' },
   archived: { label: '归档', icon: '📦' },
 };
-const LIFE_STAGES = ['想法', '讨论', '设计', '开发'];
 
 interface CompanyProject {
   id: string; name: string; status?: string; starred?: boolean;
@@ -122,7 +121,7 @@ function MyCompanyTab({ onOpen }: { onOpen: (t: Omit<WorkspaceTab, 'id'>) => voi
       ) : (
         <>
         <div className="bw-company-head">
-          <span>#</span><span>项目</span><span>状态</span><span>全生命周期进度</span><span>未完成</span><span>更新时间</span>
+          <span>#</span><span>项目</span><span>状态</span><span>任务进度</span><span>未完成</span><span>更新时间</span>
         </div>
         <ol className="bw-company-list">
           {projects.map((p, idx) => {
@@ -142,23 +141,18 @@ function MyCompanyTab({ onOpen }: { onOpen: (t: Omit<WorkspaceTab, 'id'>) => voi
                   return <span className="bw-badge bw-badge--stage">{meta.icon} {meta.label}</span>;
                 })()}
                 <span className="bw-progress" title={(() => {
-                  const sp = p.stage_progress || {};
-                  return LIFE_STAGES.map((s) => {
-                    const v = sp[s];
-                    return `${s} ${v ? Math.round((v.pct || 0) * 100) : 0}%`;
-                  }).join(' · ');
+                  const dev = (p.stage_progress || {}).开发 || { done: 0, total: 0 };
+                  return `完成 ${dev.done}/${dev.total} 任务`;
                 })()}>
                   <span
                     className={`bw-progress-fill${(() => {
-                      const sp = p.stage_progress || {};
-                      const vals = LIFE_STAGES.map((s) => sp[s]?.pct ?? 0);
-                      const avg = vals.reduce((a, b) => a + b, 0) / (vals.length || 1);
-                      return avg >= 0.7 ? ' bw-progress--high' : avg >= 0.3 ? ' bw-progress--mid' : '';
+                      const dev = (p.stage_progress || {}).开发 || { pct: 0 };
+                      const pct = dev.pct || 0;
+                      return pct >= 0.7 ? ' bw-progress--high' : pct >= 0.3 ? ' bw-progress--mid' : '';
                     })()}`}
                     style={{ width: `${(() => {
-                      const sp = p.stage_progress || {};
-                      const vals = LIFE_STAGES.map((s) => sp[s]?.pct ?? 0);
-                      return Math.round((vals.reduce((a, b) => a + b, 0) / (vals.length || 1)) * 100);
+                      const dev = (p.stage_progress || {}).开发 || { pct: 0 };
+                      return Math.round((dev.pct || 0) * 100);
                     })()}%` }}
                   />
                 </span>

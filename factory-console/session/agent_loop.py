@@ -231,6 +231,10 @@ def tool_schemas(data_dir: str | Path | None = None) -> list[dict[str, Any]]:
         _fc("memory_update", "更新Core记忆(Human块)", "自编辑长期记忆 (Letta core memory): 记录用户偏好/项目上下文/关键事实/任务状态, "
             "下次会话延续。重要信息值得记 → 调用; append=true 追加到已有记忆。上限 1500 字符",
             {"text": {"type": "string"}, "append": {"type": "boolean"}}, ["text"]),
+        # ---- W5 (v1.1.251): skills 按需检索 (OpenClaw <available_skills>) ----
+        _fc("skill_search", "技能检索", "检索可用技能库 (147+ 技能: 产品/开发/质量/运维等)。"
+            "需要专业技能/专业方法时调用, 返回技能名字+分类+路径, 再按路径读取 SKILL.md 加载指引",
+            {"query": {"type": "string"}, "max_results": {"type": "integer"}}, ["query"]),
         # ---- S8 (v1.1.246): 通用执行/搜索工具 — 一劳永逸, 不预置专用工具 ----
         _fc("web_search", "网络搜索", "在互联网搜索 (DuckDuckGo, 无需key)。返回标题+链接+摘要。"
             "【何时用】本地/项目内/常识解决不了, 或需要实时/最新/外部信息, 或用户明确要求'去网上查'时才用; "
@@ -783,6 +787,12 @@ def dispatch(
                 return {"ok": True, "output": "\n".join(lines)}
             except Exception as exc:  # noqa: BLE001 — 检索失败 → 诚实
                 return {"ok": False, "error": f"知识检索失败: {exc}"}
+        # ---- W5 (v1.1.251): skills 按需检索 ----
+        if tool_id == "skill_search":
+            from .skill_search import list_skills
+
+            return list_skills(root, str(args.get("query") or ""),
+                               top_k=int(args.get("max_results") or 10))
         # ---- W4 (v1.1.250): Core Memory 自编辑 ----
         if tool_id == "memory_update":
             from .memory_core import update_human
@@ -1094,6 +1104,8 @@ def run_agent_native(
         {"role": "system", "content": _agent_system},
         # W4 (v1.1.250): Core Memory 注入 (persona + human 自编辑块, Letta)
         {"role": "system", "content": _core_render(data_dir)},
+        # W5 (v1.1.251): skills 索引提示 (紧凑, 按需 skill_search)
+        {"role": "system", "content": _skills_index(data_dir)},
         {"role": "system", "content": format_intent(intent) + "\n" + route_for(intent["intent"])},
         {"role": "system", "content": style_instruction(question, intent.get("intent"), intent.get("emotion"))},
         {"role": "user", "content": question},
@@ -1407,6 +1419,16 @@ def run_agent_native(
                     _usage_prompt, _usage_completion)
         return {"answer": "", "rejected": True, "calls": calls, "evidence": [],
                 "reason": f"原生 FC 不可用: {exc}"}
+
+
+def _skills_index(data_dir: str | Path | None) -> str:
+    """W5: skills 紧凑索引提示 (OpenClaw <available_skills>)。失败安全 → 空。"""
+    try:
+        from .skill_search import index_prompt
+
+        return index_prompt(data_dir)
+    except Exception:  # noqa: BLE001
+        return ""
 
 
 def _core_render(data_dir: str | Path | None) -> str:

@@ -120,11 +120,17 @@ def _from_anthropic(data: dict[str, Any]) -> dict[str, Any]:
     """Anthropic 响应 → OpenAI 形状 {content, tool_calls}。"""
     content_parts: list[str] = []
     tool_calls: list[dict[str, Any]] = []
+    reasoning_parts: list[str] = []
     for block in data.get("content") or []:
         btype = block.get("type")
         if btype == "text":
             if block.get("text"):
                 content_parts.append(str(block["text"]))
+        elif btype == "thinking":
+            if block.get("thinking"):
+                reasoning_parts.append(str(block["thinking"]))
+        elif btype == "redacted_thinking":
+            reasoning_parts.append("（思考已脱敏）")
         elif btype == "tool_use":
             tool_calls.append({
                 "id": block.get("id") or "",
@@ -134,7 +140,10 @@ def _from_anthropic(data: dict[str, Any]) -> dict[str, Any]:
                     "arguments": json.dumps(block.get("input") or {}, ensure_ascii=False),
                 },
             })
-    return {"content": "\n".join(p for p in content_parts if p), "tool_calls": tool_calls}
+    out = {"content": "\n".join(p for p in content_parts if p), "tool_calls": tool_calls}
+    if reasoning_parts:
+        out["reasoning"] = "\n".join(p for p in reasoning_parts if p)
+    return out
 
 
 def _anthropic_complete(
@@ -247,9 +256,12 @@ def _from_gemini(data: dict[str, Any]) -> dict[str, Any]:
         parts = (cands[0].get("content") or {}).get("parts") or [] if cands else []
     except Exception:  # noqa: BLE001
         parts = []
+    reasoning_parts: list[str] = []
     for part in parts:
         if "text" in part and part.get("text"):
             content_parts.append(str(part["text"]))
+        if "thought" in part and part.get("thought"):
+            reasoning_parts.append(str(part["thought"]))
         if "functionCall" in part:
             fc = part["functionCall"]
             tool_calls.append({
@@ -260,7 +272,10 @@ def _from_gemini(data: dict[str, Any]) -> dict[str, Any]:
                     "arguments": json.dumps(fc.get("args") or {}, ensure_ascii=False),
                 },
             })
-    return {"content": "\n".join(p for p in content_parts if p), "tool_calls": tool_calls}
+    out = {"content": "\n".join(p for p in content_parts if p), "tool_calls": tool_calls}
+    if reasoning_parts:
+        out["reasoning"] = "\n".join(p for p in reasoning_parts if p)
+    return out
 
 
 def _gemini_complete(
@@ -327,6 +342,10 @@ def _openai_compat_complete(
         data = json.loads(resp.read().decode("utf-8"))
     msg = (data.get("choices") or [{}])[0].get("message") or {}
     out = {"content": msg.get("content") or "", "tool_calls": msg.get("tool_calls") or []}
+    # 思考内容: DeepSeek reasoner (reasoning_content) / OpenAI o 系列 (reasoning)
+    _r = msg.get("reasoning_content") or msg.get("reasoning") or ""
+    if _r:
+        out["reasoning"] = str(_r)
     _u = data.get("usage") or {}
     if _u:
         out["usage"] = {"prompt_tokens": _u.get("prompt_tokens") or 0,

@@ -304,11 +304,13 @@ export function ConversationProvider({ children }: { children: ReactNode }): JSX
         let streamed = false;
         const ok = await api.sessionSendStream(target as string, text, (e) => {
           if (e.type === 'thinking') {
-            // U1: 思考过程 — 占位消息显示"思考中…"
+            // U1: 思考过程 — 占位消息显示"思考中…" + 模型思考内容
+            const detail = (e as { detail?: string }).detail;
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === assistantId
-                  ? { ...m, content: '（思考中…）' }
+                  ? { ...m, content: detail ? `（思考中…）
+💭 ${detail}` : '（思考中…）' }
                   : m,
               ),
             );

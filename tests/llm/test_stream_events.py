@@ -27,10 +27,11 @@ def test_run_agent_streams_thinking_tool_done(monkeypatch):
         if tools:
             seq["tools_calls"] += 1
             if seq["tools_calls"] == 1:
-                return {"content": "", "tool_calls": [
-                    {"id": "1", "type": "function",
-                     "function": {"name": "project_scan", "arguments": "{}"}}]}
-            return {"content": "最终回答", "tool_calls": []}
+                return {"content": "", "reasoning": "用户要项目状态, 我调 project_scan 查真实数据",
+                        "tool_calls": [
+                            {"id": "1", "type": "function",
+                             "function": {"name": "project_scan", "arguments": "{}"}}]}
+            return {"content": "最终回答", "reasoning": "工具结果已足够, 收敛回答", "tool_calls": []}
         return {"content": "意图OK", "tool_calls": []}
 
     monkeypatch.setattr(_al, "call_with_tools", fake_cwt)
@@ -41,6 +42,9 @@ def test_run_agent_streams_thinking_tool_done(monkeypatch):
                       on_event=events.append, max_rounds=2)
     types = [e.get("type") for e in events]
     assert "thinking" in types, types
+    # 思考内容 detail (模型 reasoning)
+    assert any(e.get("type") == "thinking" and e.get("detail") for e in events), events
+    assert any("project_scan" in str(e.get("detail") or "") for e in events if e.get("type") == "thinking")
     assert "tool" in types, types
     tool_ev = next(e for e in events if e.get("type") == "tool")
     assert tool_ev["tool"] == "project_scan"

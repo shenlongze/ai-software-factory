@@ -929,14 +929,21 @@ def run_agent_native(
     _converge = "reflection"
     try:
         for _ in range(max_rounds):
-            # U1: 思考过程事件 (前端显示"思考中…"并计时)
+            # U1: 思考过程事件 (前端显示"思考中…"; 模型有 reasoning → 带思考内容)
             if on_event is not None:
                 try:
                     on_event({"type": "thinking", "round": total_calls + 1,
-                              "label": f"正在思考… (第 {total_calls + 1} 轮)"})
+                              "status": "start", "label": f"正在思考… (第 {total_calls + 1} 轮)"})
                 except Exception:  # noqa: BLE001
                     pass
             resp = call_with_tools(messages, tools, data_dir=data_dir)
+            _r = resp.get("reasoning") or ""
+            if _r and on_event is not None:
+                try:
+                    on_event({"type": "thinking", "round": total_calls + 1,
+                              "status": "detail", "detail": str(_r)[:500]})
+                except Exception:  # noqa: BLE001
+                    pass
             _u = resp.get("usage") or {}
             if _u:
                 _usage_prompt += int(_u.get("prompt_tokens") or 0)

@@ -344,7 +344,7 @@
 .af-card-name {
   font-size: 15px;
   font-weight: 600;
-  color: #f5f7fa;
+  color: var(--c-text); /* v1.1.260: 主题化 — 原来写死 #f5f7fa 亮色主题看不清 */
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

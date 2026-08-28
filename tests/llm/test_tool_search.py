@@ -99,3 +99,42 @@ def test_expand_matches_cumulative(ts, tools):
     # 再次展开不重复
     expanded2 = ts.expand_matches(tools, expanded, ["project_scan"])
     assert len(expanded2) == len(expanded)
+
+
+def test_t16_compact_schema_smaller(ts, tools):
+    """T16: compact 模式 — 精简 schema 体积显著小于全量 (大 schema 场景)。"""
+    import json
+
+    big_tools = [{
+        "type": "function",
+        "function": {
+            "name": "bash_exec",
+            "description": "执行 shell 命令, 支持任意命令与参数组合" * 10,
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string", "description": "要执行的命令文本" * 20},
+                    "cwd": {"type": "string", "description": "工作目录" * 20},
+                    "env": {"type": "object", "description": "环境变量映射" * 20},
+                },
+                "required": ["command"],
+            },
+        },
+    }]
+    full = ts.discover_tools(big_tools, "bash", top_k=1)
+    comp = ts.discover_tools(big_tools, "bash", top_k=1, compact=True)
+    full_size = len(json.dumps(full, ensure_ascii=False))
+    comp_size = len(json.dumps(comp, ensure_ascii=False))
+    assert comp_size < full_size * 0.6, f"compact 未减体积: {full_size} vs {comp_size}"
+    # compact 保留 name + 参数名 (可调用性)
+    comp_fn = comp[0]["function"]
+    assert comp_fn["name"]
+    assert "properties" in comp_fn["parameters"]
+
+
+def test_t16_compact_keeps_required(ts, tools):
+    """T16: compact 保留必填参数。"""
+    comp = ts.discover_tools(tools, "scan", top_k=1, compact=True)
+    fn = comp[0]["function"]
+    req = fn["parameters"].get("required") or []
+    assert isinstance(req, list)

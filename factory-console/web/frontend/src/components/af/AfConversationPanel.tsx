@@ -220,6 +220,21 @@ export function AfConversationPanel({ projectId, projectName }: AfConversationPa
               <div className="af-chat-msg-meta">
                 {m.role === 'user' ? '你' : 'AI'} · {fmtTime(m.created_at)}
               </div>
+              {/* T16: 回滚到此 — 截断到该条 (编辑/重来) */}
+              {ctx.messages.length > 1 && (
+                <button
+                  type="button"
+                  className="af-chat-rollback"
+                  title="回滚到此轮 (删除后续消息)"
+                  disabled={ctx.sending}
+                  onClick={() => {
+                    const idx = ctx.messages.findIndex((x) => x.id === m.id);
+                    if (idx >= 0) void ctx.truncate(idx + 1);
+                  }}
+                >
+                  ↩ 回滚到此
+                </button>
+              )}
               {m.role === 'assistant' && ctx.uiPrefs.show_execution && m.meta?.tool_calls?.length ? (
                 <div className="af-chat-tools" data-testid={`af-chat-tools-${m.id}`}>
                   <ul className="af-chat-tools" data-testid={`af-chat-tools-${m.id}`}>

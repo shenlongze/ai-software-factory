@@ -269,6 +269,17 @@ class SessionStore:
         with self._lock:
             return list(self._data["messages"].get(session_id, []))
 
+    def delete_messages_after(self, session_id: str, keep_n: int) -> list[dict[str, Any]]:
+        """T16: 截断消息到前 keep_n 条 (编辑/回滚: 删后续轮次)。返回剩余。"""
+        with self._lock:
+            msgs = self._data["messages"].get(session_id, [])
+            if keep_n < 0:
+                keep_n = 0
+            if len(msgs) > keep_n:
+                self._data["messages"][session_id] = msgs[:keep_n]
+                self._save()
+            return list(self._data["messages"].get(session_id, []))
+
     def append_message(
         self, session_id: str, role: str, content: str, *, meta: dict[str, Any] | None = None
     ) -> dict[str, Any] | None:

@@ -117,13 +117,31 @@ def discover_tools(
     tools: list[dict[str, Any]],
     query: str,
     top_k: int = 5,
+    *,
+    compact: bool = False,
 ) -> list[dict[str, Any]]:
-    """按 query 检索 top-k 工具 (全 schema)。query 空 → 空列表。"""
+    """按 query 检索 top-k 工具。compact=True → 精简 schema (参数名+必填, 省 token)。"""
     if not tools or not (query or "").strip():
         return []
     scored = [(score_tool(t, query), t) for t in tools if score_tool(t, query) > 0]
     scored.sort(key=lambda x: (-x[0], str((x[1].get("function") or {}).get("name") or "")))
-    return [t for _, t in scored[:top_k]]
+    hits = [t for _, t in scored[:top_k]]
+    if not compact:
+        return hits
+    # T16 (v1.1.303): compact — 只保留 name/description(截断)/参数名/必填, 去类型细节
+    out: list[dict[str, Any]] = []
+    for t in hits:
+        fn = dict(t.get("function") or {})
+        props = fn.get("parameters", {}).get("properties", {}) if isinstance(fn.get("parameters"), dict) else {}
+        required = fn.get("parameters", {}).get("required", []) if isinstance(fn.get("parameters"), dict) else []
+        fn["parameters"] = {
+            "type": "object",
+            "properties": {k: {"type": (v.get("type") if isinstance(v, dict) else "string")} for k, v in props.items()},
+            "required": list(required),
+        }
+        fn["description"] = str(fn.get("description") or "")[:120]
+        out.append({"type": t.get("type") or "function", "function": fn})
+    return out
 
 
 def catalog_summary(tools: list[dict[str, Any]], max_len: int = 2200) -> str:

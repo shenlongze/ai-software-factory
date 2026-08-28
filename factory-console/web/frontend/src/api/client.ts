@@ -245,6 +245,11 @@ export const api = {
   },
   /** T8: 审计事件查询 (只读) */
   audit: (query = '') => getJson<{ items: AuditEventItem[]; count: number; counts: Record<string, number> }>(`/api/audit?${query}`),
+  /** T16: 截断会话消息到前 keep_n 条 (编辑/回滚) */
+  truncateSession: (sessionId: string, keepN: number) =>
+    fetch(`/api/sessions/${encodeURIComponent(sessionId)}/messages?keep_n=${keepN}`, { method: 'DELETE' })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('truncate failed'))))
+      .then((d) => d as { ok: boolean; remaining: number }),
   // S9-002: 审批决定 (Console 唯一写路径; source=console 审计由后端落库)
   // S9-003: 可选 comment 透传 (Review 页反馈输入 → gate.comment 持久化;
   //         空串不发送键 — S9-002 无 body 调用兼容)

@@ -64,6 +64,8 @@ export interface ConversationContextValue {
   renameSession: (id: string, title: string) => void;
   archiveSession: (id: string) => void;
   send: (content: string) => Promise<void>;
+  /** T16: 截断到前 keep_n 条消息 (回滚/编辑前置) */
+  truncate: (keepN: number) => Promise<void>;
   refresh: () => void;
 }
 
@@ -93,6 +95,7 @@ const DEFAULT_CONTEXT: ConversationContextValue = {
   renameSession: () => {},
   archiveSession: () => {},
   send: async () => {},
+  truncate: async () => {},
   refresh: () => {},
 };
 
@@ -391,6 +394,22 @@ export function ConversationProvider({ children }: { children: ReactNode }): JSX
     [activeId, sending, createSession, refresh],
   );
 
+  const truncate = useCallback(
+    async (keepN: number): Promise<void> => {
+      if (!activeId) return;
+      try {
+        await api.truncateSession(activeId, keepN);
+        setMessages([]); // 截断后从后端重拉
+        await refresh();
+        const list = await api.sessionMessages(activeId);
+        setMessages(list);
+      } catch {
+        /* 失败保持原样 */
+      }
+    },
+    [activeId, refresh],
+  );
+
   const value = useMemo<ConversationContextValue>(
     () => ({
       scope,
@@ -417,6 +436,7 @@ export function ConversationProvider({ children }: { children: ReactNode }): JSX
       renameSession,
       archiveSession,
       send,
+      truncate,
       refresh,
     }),
     [
@@ -443,6 +463,7 @@ export function ConversationProvider({ children }: { children: ReactNode }): JSX
       renameSession,
       archiveSession,
       send,
+      truncate,
       refresh,
     ],
   );

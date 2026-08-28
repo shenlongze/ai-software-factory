@@ -3968,6 +3968,23 @@ def build_app(
             snaps = []
         return {"items": snaps, "count": len(snaps)}
 
+    @app.delete("/api/sessions/{session_id}/messages")
+    def api_session_truncate(session_id: str, keep_n: int = Query(default=0, ge=0)) -> dict[str, Any]:
+        """T16: 截断会话消息到前 keep_n 条 (编辑/回滚: 删后续轮次后重发)。"""
+        if sessions_store.get_session(session_id) is None:
+            raise HTTPException(status_code=404, detail="session not found")
+        remaining = sessions_store.delete_messages_after(session_id, keep_n)
+        # 同步清空该会话的快照 (上下文已变, 旧快照失效)
+        try:
+            from factory_console.session.session_snapshots import _snap_path
+
+            _p = _snap_path(workspace_root or DEFAULT_ROOT, session_id)
+            if _p.exists():
+                _p.unlink()
+        except Exception:  # noqa: BLE001
+            pass
+        return {"ok": True, "remaining": len(remaining)}
+
     @app.get("/api/approvals/all")
     def api_all_approvals() -> dict[str, Any]:
         """公司级待审批聚合 (v1.1.290): 扫全部会话的 pending 批准 → 首页审批卡。"""

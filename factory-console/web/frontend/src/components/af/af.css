@@ -3925,6 +3925,26 @@
   color: #6b7280;
   margin-bottom: 3px;
 }
+.af-chat-rollback {
+  float: right;
+  background: none;
+  border: none;
+  color: #86868b;
+  font-size: 11px;
+  cursor: pointer;
+  padding: 0 2px;
+  opacity: 0;
+}
+.af-chat-msg:hover .af-chat-rollback {
+  opacity: 1;
+}
+.af-chat-rollback:hover {
+  color: #ff9500;
+}
+.af-chat-rollback:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
 
 .af-chat-input-row {
   display: flex;

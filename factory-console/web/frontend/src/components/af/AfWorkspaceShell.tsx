@@ -66,6 +66,7 @@ function AfProjectListView(): JSX.Element {
 
 import { AfProjectManage } from '../../pages/workspace/AfProjectManage';
 import { AfSettings } from '../../pages/workspace/AfSettings';
+import { AuditPage } from '../../pages/AuditPage';
 
 function WorkspacePage({ route }: { route: ParsedRoute }): JSX.Element {
   if (route.page === 'dashboard') {
@@ -82,6 +83,9 @@ function WorkspacePage({ route }: { route: ParsedRoute }): JSX.Element {
   }
   if (route.page === 'settings') {
     return <AfSettings />;
+  }
+  if (route.page === 'audit') {
+    return <AuditPage />;
   }
   const navItem = WORKSPACE_NAV_ITEMS.find((item) => item.page === route.page);
   return <AfModulePlaceholder pageLabel={navItem?.label ?? route.page} />;

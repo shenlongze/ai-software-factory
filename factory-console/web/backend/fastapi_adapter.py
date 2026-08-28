@@ -2874,6 +2874,44 @@ def build_app(
             raise HTTPException(status_code=404, detail="artifact not found")
         return content.to_dict()
 
+    # ------------------------------------------------- T8: 审计视图 API
+    @app.get("/api/audit")
+    def api_audit(
+        event_type: str | None = Query(default=None),
+        session_id: str | None = Query(default=None),
+        limit: int = Query(default=50, ge=1, le=500),
+    ) -> dict[str, Any]:
+        """T8: 审计事件查询 (只读) — 合并 events.db + audit_events.json。
+
+        支持 event_type / session_id 过滤, 按时间倒序, 返回最近 limit 条。
+        数据源缺失 → 空列表 (失败安全)。
+        """
+        try:
+            from factory_console.audit.audit_store import AuditStore
+
+            store = AuditStore(workspace=None, file=str(Path(workspace_root or DEFAULT_ROOT) / "audit" / "audit_events.json"))
+            events = store.events()
+        except Exception:  # noqa: BLE001 — 审计存储缺失/坏 → 空
+            events = []
+        items = []
+        for ev in events:
+            d = ev.to_dict() if hasattr(ev, "to_dict") else ev
+            items.append(d)
+        # 过滤
+        if event_type:
+            items = [x for x in items if x.get("event_type") == event_type]
+        if session_id:
+            items = [x for x in items if x.get("trace_id") == session_id]
+        # 时间倒序 + 截断
+        items.sort(key=lambda x: str(x.get("timestamp") or ""), reverse=True)
+        items = items[:limit]
+        # 类型计数 (全量, 不受 limit 影响)
+        counts: dict[str, int] = {}
+        for x in items:
+            t = str(x.get("event_type") or "UNKNOWN")
+            counts[t] = counts.get(t, 0) + 1
+        return {"items": items, "count": len(items), "counts": counts}
+
     # ------------------------------------------------- S10-002: Runtime API
     # UI 与 CLI 共用 (Adapter 层只读 + SSE; 零 Core 修改, 只消费 org.* 查询)。
 

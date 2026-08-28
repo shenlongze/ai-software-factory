@@ -4908,6 +4908,112 @@ body[data-bg='1'] .af-shell {
   font-size: 11px;
 }
 
+/* T8: 审计视图 */
+.af-audit {
+  padding: 20px;
+}
+.af-audit-title {
+  font-size: 20px;
+  margin: 0 0 12px;
+}
+.af-audit-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+  align-items: center;
+}
+.af-audit-input {
+  padding: 6px 10px;
+  border: 1px solid var(--c-border, rgba(0, 0, 0, 0.1));
+  border-radius: 8px;
+  font-size: 13px;
+  background: var(--c-bg, #fff);
+  color: var(--c-text, inherit);
+  min-width: 200px;
+}
+.af-audit-btn {
+  padding: 6px 12px;
+  border: 1px solid var(--c-border, rgba(0, 0, 0, 0.1));
+  border-radius: 8px;
+  background: none;
+  color: var(--c-text, inherit);
+  font-size: 13px;
+  cursor: pointer;
+}
+.af-audit-btn:hover {
+  border-color: var(--af-primary, #0071e3);
+  color: var(--af-primary, #0071e3);
+}
+.af-audit-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.af-audit-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.af-audit-count-chip {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--c-hover, rgba(0, 0, 0, 0.05));
+  font-size: 12px;
+  color: var(--c-muted, #86868b);
+}
+.af-audit-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.af-audit-table th,
+.af-audit-table td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--c-border, rgba(0, 0, 0, 0.06));
+}
+.af-audit-table th {
+  font-weight: 600;
+  color: var(--c-muted, #86868b);
+  font-size: 12px;
+}
+.af-audit-td-time {
+  white-space: nowrap;
+  color: var(--c-muted, #86868b);
+  font-size: 12px;
+}
+.af-audit-td-action {
+  font-family: var(--af-font-mono, monospace);
+  font-size: 12px;
+}
+.af-audit-td-id {
+  color: var(--c-muted, #86868b);
+  font-size: 12px;
+}
+.af-audit-type {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--c-hover, rgba(0, 0, 0, 0.05));
+}
+.af-audit-type--tool_call {
+  color: #0071e3;
+  background: rgba(0, 113, 227, 0.1);
+}
+.af-audit-type--approval_requested,
+.af-audit-type--approval_decided {
+  color: #ff9500;
+  background: rgba(255, 149, 0, 0.1);
+}
+.af-audit-type--task_created,
+.af-audit-type--plan_created {
+  color: #34c759;
+  background: rgba(52, 199, 89, 0.1);
+}
+
 /* 概览 Todo: 未完成聚焦 + 已完成折叠 */
 .af-todo-done-block {
   margin-top: 8px;

@@ -4043,6 +4043,13 @@ def build_app(
                                      "data_source": "none",
                                      "error": "agent 未产出答案 (见后端日志)"},
                         }
+                    # v1.1.263: 防御 — done 发出前清洗 result 里 assistant content (防文本模拟泄漏)
+                    try:
+                        _ac = (result or {}).get("assistant") or {}
+                        if _ac and _ac.get("content"):
+                            _ac["content"] = _agmod._strip_fake_toolcalls(str(_ac["content"]))
+                    except Exception:  # noqa: BLE001
+                        pass
                     _evq.put({"type": "done", "result": result})
                 except Exception as exc:  # noqa: BLE001
                     _evq.put({"type": "error", "message": str(exc)})

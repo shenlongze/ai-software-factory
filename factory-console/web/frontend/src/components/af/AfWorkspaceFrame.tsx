@@ -89,16 +89,13 @@ export interface AfWorkspaceFrameProps {
 
 export function AfWorkspaceFrame({
   testId,
-  pageLabel,
   projectId,
   projectName,
   header,
   sidebar,
-  main,
   scopeLabel,
 }: AfWorkspaceFrameProps): JSX.Element {
   const [collapsed, setCollapsed] = useState<boolean>(() => readFlag(SIDEBAR_COLLAPSED_KEY));
-  const [previewOpen, setPreviewOpen] = useState<boolean>(false); // 默认收起, 不持久
   const [sidebarWidth, setSidebarWidth] = useState<number>(() =>
     readNum(SIDEBAR_WIDTH_KEY, SIDEBAR_WIDTH_DEFAULT),
   );
@@ -166,10 +163,6 @@ export function AfWorkspaceFrame({
     });
   }, []);
 
-  const togglePreview = useCallback(() => {
-    setPreviewOpen((prev) => !prev);
-  }, []);
-
   // 快捷键: Cmd/Ctrl+B 切侧栏 · J 切会话 · K 新建会话
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -214,26 +207,9 @@ export function AfWorkspaceFrame({
           />
         ) : null}
         <main className="af-main-content" data-testid="af-main-content">
-          <div className="af-b-tabs" data-testid="af-b-tabs">
-            <button
-              type="button"
-              className={`af-b-tab${!previewOpen ? ' af-b-tab--active' : ''}`}
-              onClick={() => setPreviewOpen(false)}
-              aria-label={`页面: ${pageLabel}`}
-            >
-              {pageLabel}
-            </button>
-            <button
-              type="button"
-              className={`af-b-tab${previewOpen ? ' af-b-tab--active' : ''}`}
-              onClick={togglePreview}
-              aria-label="工作区"
-            >
-              🧭 工作区
-            </button>
-          </div>
-          <div className="af-main-scroll" data-testid="af-main-scroll">
-            {previewOpen ? <BrowserWorkspace projectId={projectId} /> : main}
+          {/* v1.1.271: 去掉"页面/工作区"切换头 — B 列直接是类浏览器多标签工作区 */}
+          <div className="af-main-scroll af-main-scroll--ws" data-testid="af-main-scroll">
+            <BrowserWorkspace projectId={projectId} />
           </div>
         </main>
         <div

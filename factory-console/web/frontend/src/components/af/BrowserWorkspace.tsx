@@ -19,12 +19,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import './af.css';
 
-export type TabType = 'home' | 'newtab' | 'browser' | 'doc' | 'artifact' | 'file' | 'terminal' | 'audit';
+export type TabType = 'home' | 'project' | 'newtab' | 'browser' | 'doc' | 'artifact' | 'file' | 'terminal' | 'audit';
 
 export interface WorkspaceTab {
   id: string;
   type: TabType;
   title: string;
+  projectId?: string | null;  // 项目作用域
   url?: string;        // browser / 运行应用 URL
   docPath?: string;    // 文档相对路径
   artifactType?: string;
@@ -62,27 +63,74 @@ function TabContent({ tab, projectId, onOpen }: {
       return <Placeholder icon="💻" title="终端 (二期)" note="后端 shell 桥接入后可用" />;
     case 'audit':
       return <Placeholder icon="🔍" title="审查 (二期)" note="定义审查范围后实现" />;
+    case 'project':
+      return <ProjectTab projectId={tab.projectId || projectId} onOpen={onOpen} />;
     case 'home':
     default:
-      return <HomeTab projectId={projectId} onOpen={onOpen} />;
+      return <MyCompanyTab onOpen={onOpen} />;
   }
 }
 
-// ---------------------------------------------------------------- 首页 (项目状态, 固定)
-function HomeTab({ projectId, onOpen }: { projectId?: string | null; onOpen: (t: Omit<WorkspaceTab, 'id'>) => void }): JSX.Element {
+// ---------------------------------------------------------------- 首页 (我的公司, 固定不可关)
+function MyCompanyTab({ onOpen }: { onOpen: (t: Omit<WorkspaceTab, 'id'>) => void }): JSX.Element {
+  const [projects, setProjects] = useState<{ id: string; name: string; status?: string; starred?: boolean }[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/projects', { headers: { Accept: 'application/json' } });
+        if (res.ok) {
+          const raw = (await res.json()) as { items?: unknown[] } | unknown[];
+          const list = Array.isArray(raw) ? raw : (raw as { items?: unknown[] }).items ?? [];
+          if (!cancelled) setProjects(list as { id: string; name: string; status?: string; starred?: boolean }[]);
+        }
+      } catch { /* 失败安全 */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
   return (
     <div className="bw-home" data-testid="bw-home">
-      <h2>🏠 项目状态</h2>
-      <p className="bw-home-sub">当前项目: {projectId || '（未选择项目）'}</p>
+      <h2>🏢 我的公司</h2>
+      <p className="bw-home-sub">公司级工作台 — 点项目进入，或打开新标签</p>
       <div className="bw-home-grid">
-        <button type="button" className="bw-home-card" onClick={() => onOpen({ type: 'newtab', title: '新标签页' })}>
-          ➕ 打开新标签
+        {projects.map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            className="bw-home-card"
+            onClick={() => onOpen({ type: 'project', title: p.name, projectId: p.id })}
+          >
+            {p.starred ? '⭐ ' : ''}{p.name}
+            <span className="bw-home-card-status"> · {p.status || 'idea'}</span>
+          </button>
+        ))}
+        {!projects.length ? <p className="bw-muted">暂无项目 — 点 ➕ 新建或从侧栏创建</p> : null}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- 项目页 (点"我的公司"项目打开)
+function ProjectTab({ projectId, onOpen }: {
+  projectId?: string | null;
+  onOpen: (t: Omit<WorkspaceTab, 'id'>) => void;
+}): JSX.Element {
+  return (
+    <div className="bw-home" data-testid="bw-project">
+      <h2>📁 项目 · {projectId || ''}</h2>
+      <p className="bw-home-sub">快捷入口</p>
+      <div className="bw-home-grid">
+        <button type="button" className="bw-home-card" onClick={() => onOpen({ type: 'newtab', title: '新标签页', projectId })}>
+          ➕ 新标签页
+        </button>
+        <button type="button" className="bw-home-card" onClick={() => onOpen({ type: 'doc', title: '项目文档', docPath: '', projectId })}>
+          📄 项目文档
+        </button>
+        <button type="button" className="bw-home-card" onClick={() => onOpen({ type: 'file', title: '文件浏览', filePath: '', projectId })}>
+          🗂 文件
         </button>
         <button type="button" className="bw-home-card" onClick={() => onOpen({ type: 'browser', title: '浏览器', url: '' })}>
           🌐 浏览器
-        </button>
-        <button type="button" className="bw-home-card" onClick={() => onOpen({ type: 'doc', title: '项目文档', docPath: '' })}>
-          📄 项目文档
         </button>
       </div>
     </div>
@@ -253,7 +301,7 @@ export function BrowserWorkspace({ projectId, projectName }: BrowserWorkspacePro
 
   // 初始化: 固定首页 tab
   useEffect(() => {
-    setTabs([{ id: 'home', type: 'home', title: projectName ? `${projectName} · 项目状态` : '🏠 项目状态' }]);
+    setTabs([{ id: 'home', type: 'home', title: '🏢 我的公司' }]);
     setActiveId('home');
   }, [projectId, projectName]);
 

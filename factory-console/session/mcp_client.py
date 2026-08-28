@@ -50,7 +50,7 @@ class McpClient:
             init = self._request("initialize", {
                 "protocolVersion": _PROTOCOL_VERSION,
                 "capabilities": {},
-                "clientInfo": {"name": "ai-factory", "version": "1.1.284"},
+                "clientInfo": {"name": "ai-factory", "version": "1.1.287"},
             })
             self._notify("notifications/initialized", {})
             if isinstance(init, dict) and init.get("protocolVersion"):

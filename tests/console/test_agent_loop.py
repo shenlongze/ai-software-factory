@@ -1165,8 +1165,10 @@ class TestAnswerAlignment:
         assert "用户的问题" in joined or "重述" in joined
 
     def test_user_correction_forces_realign(self, tmp_path, monkeypatch):
-        """用户纠正("我要的是代码逻辑, 不是文档") → 注入重对齐约束。"""
-        monkeypatch.setattr(_ag, "understand_intent", lambda message, **kw: _intent("question"))
+        """用户纠正("我要的是代码逻辑, 不是文档") → LLM 语义识别 correction → 注入重对齐约束。
+        (S3 v1.1.243: 纠正信号由 intent.correction 语义判定, 不再用关键词硬编码)"""
+        monkeypatch.setattr(_ag, "understand_intent",
+                            lambda message, **kw: _intent("question", correction=True, mode="code"))
         seen: dict = {}
 
         def fake_call(messages, tools, **kw):

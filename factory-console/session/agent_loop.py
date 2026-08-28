@@ -856,24 +856,25 @@ def run_agent_native(
         {"role": "system", "content": style_instruction(question, intent.get("intent"), intent.get("emotion"))},
         {"role": "user", "content": question},
     ]
-    # ---- 用户纠正信号: 检测"不是/我说的是/我要的是/理解错" → 强制重对齐 (治所答非所问) ----
-    _correct_sigs = ("不是", "我说的是", "我要的是", "理解错", "答非所问", "没回答", "跑偏",
-                     "不是这个", "不对", "你听错了", "我指的是", "你答的")
-    if any(sig in question for sig in _correct_sigs):
+    # ---- S3 (v1.1.243): 纠正信号由 LLM 语义判定 (intent.correction), 不再用关键词 ----
+    if intent.get("correction"):
         messages.append({"role": "system", "content": (
-            "用户正在纠正方向(『" + question[:120] + "』)。"
+            "用户正在纠正方向(『" + question[:120] + "』, 意图理解: " + str(intent.get("summary") or "")[:80] + ")。"
             "请先重新理解用户真正要什么: 重述用户问题, 如果之前的理解/工具方向错了, 立刻纠正; "
             "回答必须围绕用户纠正后的真实意图, 不要继续原方向。"
         )})
-    # ---- 代码 vs 文档偏好 (Founder: 要"架构/逻辑/实现"= 真实代码, 不是 docs 文档) ----
-    _code_sigs = ("代码逻辑", "代码怎么", "怎么实现", "实现原理", "怎么做的", "代码结构",
-                  "源码", "工作原理", "代码分析", "怎么写的", "逻辑", "架构", "实现细节")
-    _doc_sigs = ("文档", "设计文档", "说明书", "readme", "文档目录", "方案书", "规格书")
-    if any(sig in question for sig in _code_sigs) and not any(sig in question for sig in _doc_sigs):
+    # ---- S3 (v1.1.243): 产出模式由 LLM 语义判定 (intent.mode), 不再用关键词 ----
+    _mode = intent.get("mode") or "general"
+    if _mode == "code":
         messages.append({"role": "system", "content": (
             "【重要】用户要的是【真实代码】: 请用 read_code / code_scan / search_code / project_structure "
             "读代码文件(.py/.ts 等) 分析代码逻辑、关键函数、调用链; "
             "不要读 docs/ 下的文档, 除非用户明确说'看文档/方案/说明书'。"
+        )})
+    elif _mode == "doc":
+        messages.append({"role": "system", "content": (
+            "【用户要文档类产出】: 优先 project_docs / 文档检索; 如需要可配合 code_scan 佐证, "
+            "但不要用大量代码文件内容替代文档说明。"
         )})
     # ---- 上下文连贯性: 话题账本视图优先, fallback 最近4轮 ----
     hist_block = context_view if (context_view or "").strip() else _history_text(history)
@@ -903,6 +904,17 @@ def run_agent_native(
                 f"用户质疑的上一轮回答: {last_ai[:800]}\n"
                 "请重新查询真实数据验证, 然后诚实承认错误或给出修正。"
             )})
+    # ---- S4 (v1.1.243): live plan — 多步任务先规划再执行, 边做边更新 (Pi update_plan + Cline Plan) ----
+    _needs_plan = (
+        intent.get("intent") in ("analyze", "deep_analyze", "develop", "operate", "plan")
+        or intent.get("mode") == "plan"
+    )
+    if _needs_plan:
+        messages.append({"role": "system", "content": (
+            "【多步任务规划】这是多步任务。开始执行前, 先在心里列一份简短计划: 目标 → 步骤(按序) → 验证方式。"
+            "然后按计划执行: 每一步用对应工具拿到真实结果; 每完成一步, 在后续回复中标注『✓ 已完成: <这步做了什么>』; "
+            "不要跳步, 不要漏步骤; 步骤全部完成后对照计划检查是否回答了用户的完整需求, 再给最终回答。"
+        )})
     # S10-127 P1.3: L0/L1/L2 分层上下文注入 (按模型能力选深度; 复用 M3 权威分层)
     try:
         from .context_layers import build_context, pick_depth
@@ -947,6 +959,39 @@ def run_agent_native(
     import time as _time
     _start_ms = _time.monotonic() * 1000
     _converge = "reflection"
+    # ---- S2 (v1.1.243): 循环护栏 — 无进展检测 / 同工具连续失败 / 整轮超时 ----
+    _guard: dict[str, Any] = {
+        "tool_fail_streak": {},     # 工具名 → 连续失败次数
+        "all_fail_rounds": 0,       # 连续"整轮全失败"轮数
+        "warned_fail": set(),       # 已注入换策略提示的工具
+        "warned_no_progress": False,
+        "force_converge": False,    # 超时 → 强制收敛
+        "max_turn_ms": 240_000,     # 整轮超时上限 240s (OpenClaw 硬超时思路)
+    }
+
+    def _guard_inject() -> None:
+        """循环护栏: 检测到异常模式 → 注入约束提示 (治原地打转/假装成功)。"""
+        if _time.monotonic() * 1000 - _start_ms > _guard["max_turn_ms"] and not _guard["force_converge"]:
+            _guard["force_converge"] = True
+            messages.append({"role": "system", "content": (
+                "【超时护栏】本轮执行已超过时限。请立即收敛: 基于已有结果直接回答用户问题; "
+                "信息不足则明确追问; 【禁止再调用工具】。"
+            )})
+            return
+        for tid, streak in list(_guard["tool_fail_streak"].items()):
+            if streak >= 2 and tid not in _guard["warned_fail"]:
+                _guard["warned_fail"].add(tid)
+                messages.append({"role": "system", "content": (
+                    f"【护栏】工具 {tid} 已连续失败 {streak} 次。不要重复调用它; "
+                    "换一种方式: 换工具 / 换参数 / 换查询词 / 拆小步骤, 或直接基于已有信息回答并说明缺失。"
+                )})
+        if _guard["all_fail_rounds"] >= 2 and not _guard["warned_no_progress"]:
+            _guard["warned_no_progress"] = True
+            messages.append({"role": "system", "content": (
+                "【护栏】最近两轮工具调用全部失败/无实质进展。停止原地打转: "
+                "要么换一个完全不同的方法重试一次, 要么直接基于已有信息回答用户并如实说明哪些没查到。"
+            )})
+
     try:
         for _ in range(max_rounds):
             # U1: 思考过程事件 (前端显示"思考中…"; 模型有 reasoning → 带思考内容)
@@ -956,6 +1001,7 @@ def run_agent_native(
                               "status": "start", "label": f"正在思考… (第 {total_calls + 1} 轮)"})
                 except Exception:  # noqa: BLE001
                     pass
+            _guard_inject()
             resp = call_with_tools(messages, tools, data_dir=data_dir)
             _r = resp.get("reasoning") or ""
             if _r and on_event is not None:
@@ -989,6 +1035,8 @@ def run_agent_native(
                     pass
                 return {"answer": _answer, "calls": calls, "intent": intent,
                         "evidence": [{"tool": c["tool"], "ok": c["ok"], "output": str(c.get("output") or c.get("error") or "")[:300]} for c in calls]}
+            if _guard["force_converge"]:
+                break
             messages.append({"role": "assistant", "content": resp.get("content") or "", "tool_calls": tcs})
             for tc in tcs:
                 fn = tc.get("function") or {}
@@ -1005,6 +1053,11 @@ def run_agent_native(
                     from .tool_search import expand_matches
 
                     tools = expand_matches(all_tools, tools, result.get("matches") or [])
+                # S2: 同工具连续失败统计
+                if result.get("ok"):
+                    _guard["tool_fail_streak"][tid] = 0
+                else:
+                    _guard["tool_fail_streak"][tid] = _guard["tool_fail_streak"].get(tid, 0) + 1
                 # S10-127 M4.1: PostToolUse 审计
                 try:
                     _get_hooks().fire("PostToolUse", {
@@ -1027,9 +1080,25 @@ def run_agent_native(
                               "pending_plan": bool(result.get("pending_plan")),
                               "plan": result.get("plan")})
                 messages.append({"role": "tool", "tool_call_id": tc.get("id") or "", "content": json.dumps(result, ensure_ascii=False)[:3000]})
+            # S2: 本轮工具调用全失败 → 累计无进展轮数; 有成功 → 清零
+            _round_results = [c.get("ok") for c in calls[-len(tcs):]]
+            if _round_results and not any(_round_results):
+                _guard["all_fail_rounds"] += 1
+            else:
+                _guard["all_fail_rounds"] = 0
             # 硬上限 → 停 (最后强制收敛)
             if total_calls >= _max_calls:
                 break
+            # S4: 计划进度回注 (多步任务: 已完成动作清单 + 对照提醒)
+            if _needs_plan and calls:
+                _done = " → ".join(
+                    f"{c['tool']}{'✅' if c.get('ok') else '❌'}" for c in calls[-6:]
+                ) or "（无）"
+                messages.append({"role": "system", "content": (
+                    f"【计划进度】已执行: {_done}\n"
+                    "请对照你列的计划: 还有哪些步骤没做? 是否需要换工具拿更准的数据? "
+                    "步骤完成 → 标注『✓』并继续; 全部完成或受阻 → 给最终回答。"
+                )})
             # Reflection 自评: 主动收敛 (不等 3-loop 兜底)
             messages.append({"role": "system", "content": _reflection})
         # 硬收敛轮 (不允许再调工具): 信息不足 → 明确追问 (Founder: 3 loop 后还不清醒就追问)
@@ -1039,6 +1108,17 @@ def run_agent_native(
         except Exception:  # noqa: BLE001
             pass
 
+        # S5 (v1.1.243): 防过度声称 — 失败的工具调用不得声称成功 (Hermes file-mutation verifier 思路)
+        _failed_calls = [c for c in calls if not c.get("ok")]
+        if _failed_calls:
+            _fail_desc = "; ".join(
+                f"{c['tool']}→{str(c.get('error') or '失败')[:80]}" for c in _failed_calls[-5:]
+            )
+            messages.append({"role": "system", "content": (
+                "【验证提醒】以下工具调用失败了: " + _fail_desc + "。"
+                "回答时不得声称这些操作已成功; 如实说明失败原因, 或基于其他成功结果回答; "
+                "如果这些失败影响结论, 明确标注'该项未完成/未验证'。"
+            )})
         messages.append({"role": "system", "content": (
             "已调用工具达到上限。现在必须收敛，且【禁止再调用任何工具】。"
             "回答前【强制对齐】: 用户的问题是『" + question + "』, 你的回答必须直接回答它; "

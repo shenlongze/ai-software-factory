@@ -1,4 +1,4 @@
-"""factory-console/session/intent_core.py — 会话意图理解层 (IntentCore v1, v1.1.208).
+"""factory-console/session/intent_core.py — 会话意图理解层 (IntentCore v1, v1.1.208; S3 v1.1.243 加 correction/mode 语义字段).
 
 Founder 2026-08-27: 不能一味用关键词, 一定要真正 get 到用户的意图; 不行就 loop,
 3 次 loop 后还不清醒就追问。
@@ -34,6 +34,8 @@ _INTENT_PROMPT = """你是 AI Factory 的意图理解器。用户消息千变万
   "target": {{"type": "project|task|doc|system|external|general", "id": null}},
   "need": "info|action|verification|correction|creation|execution",
   "emotion": "neutral|satisfied|dissatisfied|urgent|skeptical",
+  "correction": false,
+  "mode": "general|code|doc|plan|action",
   "summary": "一句话: 用户到底要什么",
   "followup": null
 }}
@@ -49,6 +51,13 @@ _INTENT_PROMPT = """你是 AI Factory 的意图理解器。用户消息千变万
 - external: 要外部专业能力 (审查架构/安全评估/竞品分析)
 - clarify: 信息不足, 无法判断用户要什么 → 需要追问
 
+correction 判定: 用户在纠正/否定上一轮的理解或回答方向 ("不是/我说的是/我要的是/理解错/答非所问/跑偏/你答的/我说的不是这个") → true; 普通质疑用 challenge+verification。
+mode 判定 (用户主要想要什么产出):
+- code: 要真实代码/实现原理/源码/架构/代码逻辑/怎么实现/工作原理 (注意: "架构"指代码架构 → code, 不是文档)
+- doc: 要文档/说明书/方案/readme/规格书/设计文档
+- plan: 要计划/方案设计/步骤/路线图
+- action: 要执行操作 (开始/标记/创建/删除/推送/执行)
+- general: 其他
 情绪判定: dissatisfied/skeptical 信号 (不负责/糊弄/敷衍/太差/不对/假的/骗) 必须标出。
 {history_block}用户消息: {message}
 """
@@ -105,6 +114,7 @@ def format_intent(intent: dict[str, Any]) -> str:
         f"- 疑似意图: {intent.get('intent')} · 对象: {t.get('type') or 'general'}"
         f"{(' (' + str(t.get('id')) + ')') if t.get('id') else ''} · 需要: {intent.get('need')} · 情绪: {intent.get('emotion')}\n"
         f"- 用户大概要: {intent.get('summary') or ''}\n"
+        f"- 纠正信号: {'是 (用户正在纠正方向)' if intent.get('correction') else '否'} · 产出模式: {intent.get('mode') or 'general'}\n"
         f"请以对话语义为准自主判断如何回答/行动; 若与实际意图不符, 忽略此参考。"
     )
 
@@ -150,11 +160,17 @@ def _normalize(d: dict[str, Any], message: str, history: list[dict[str, Any]] | 
     if emotion not in EMOTIONS:
         emotion = "neutral"
     summary = str(d.get("summary") or "").strip()[:200] or message[:80]
+    correction = bool(d.get("correction"))
+    mode = str(d.get("mode") or "general").lower()
+    if mode not in ("code", "doc", "general", "plan", "action"):
+        mode = "general"
     return {
         "intent": intent,
         "target": {"type": ttype, "id": (t.get("id") if isinstance(t, dict) else None)},
         "need": need,
         "emotion": emotion,
+        "correction": correction,
+        "mode": mode,
         "summary": summary,
         "followup": d.get("followup") if isinstance(d.get("followup"), (str, type(None))) else None,
         "source": "llm",
@@ -167,7 +183,8 @@ def _fallback_intent(message: str, history: list[dict[str, Any]] | None) -> dict
     low = msg.lower()
     summary = msg[:80] or "（空消息）"
     base = {"target": {"type": "general", "id": None}, "need": "info",
-            "emotion": "neutral", "summary": summary, "followup": None, "source": "fallback"}
+            "emotion": "neutral", "correction": False, "mode": "general",
+            "summary": summary, "followup": None, "source": "fallback"}
     # 质疑/不满 (含负面情绪信号 → challenge, 优先)
     if any(k in msg for k in ("不负责", "糊弄", "敷衍", "太差", "不对吧", "错了", "假的",
                                "骗", "瞎猜", "不满意", "垃圾", "无语", "蒙我", "合理吗")):

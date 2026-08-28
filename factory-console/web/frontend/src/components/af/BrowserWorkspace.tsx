@@ -122,13 +122,29 @@ function MyCompanyTab({ onOpen }: { onOpen: (t: Omit<WorkspaceTab, 'id'>) => voi
                   {p.starred ? '⭐ ' : ''}{p.name}
                 </button>
                 <span className="bw-badge bw-badge--stage">{p.lifecycle_stage || p.status || '—'}</span>
+                <span className="bw-progress" title={(() => {
+                  const sp = p.stage_progress || {};
+                  return ['想法', '讨论', '设计', '开发'].map((s) => {
+                    const v = sp[s];
+                    return `${s} ${v ? Math.round((v.pct || 0) * 100) : 0}%`;
+                  }).join(' · ');
+                })()}>
+                  <span
+                    className={`bw-progress-fill${(() => {
+                      const sp = p.stage_progress || {};
+                      const vals = ['想法', '讨论', '设计', '开发'].map((s) => sp[s]?.pct ?? 0);
+                      const avg = vals.reduce((a, b) => a + b, 0) / (vals.length || 1);
+                      return avg >= 0.7 ? ' bw-progress--high' : avg >= 0.3 ? ' bw-progress--mid' : '';
+                    })()}`}
+                    style={{ width: `${(() => {
+                      const sp = p.stage_progress || {};
+                      const vals = ['想法', '讨论', '设计', '开发'].map((s) => sp[s]?.pct ?? 0);
+                      return Math.round((vals.reduce((a, b) => a + b, 0) / (vals.length || 1)) * 100);
+                    })()}%` }}
+                  />
+                </span>
                 <span className="bw-company-plan">未完成 {p.pending_plan_count ?? 0}</span>
                 <span className="bw-company-meta">更新 {p.updated_at || '—'}</span>
-                {p.repository ? (
-                  <a className="bw-company-repo" href={p.repository} target="_blank" rel="noreferrer" title={p.repository}>
-                    🔗 仓库
-                  </a>
-                ) : <span className="bw-company-repo bw-muted">🔗 无仓库</span>}
               </li>
             );
           })}

@@ -5093,16 +5093,19 @@ body[data-bg='1'] .af-shell {
 
 
 
-/* 我的公司 — 单行对齐列表 (v1.1.280, A 方案) */
+
+/* 我的公司 — 单行对齐列表 (v1.1.282: 状态+全生命周期进度条, 去仓库) */
 .bw-home--company { padding: 12px 16px; }
-.bw-company-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.bw-company-card { border: 1px solid var(--c-border, #2a3140); border-radius: 10px; background: var(--c-surface, #1d232e); overflow: hidden; }
+.bw-company-card-head { padding: 8px 12px; font-size: 13px; font-weight: 700; color: var(--c-text, #e6e8ee); border-bottom: 1px solid var(--c-border, #2a3140); background: var(--c-panel, #1d232e); }
+.bw-card-pad { padding: 12px; }
+.bw-company-list { list-style: none; margin: 0; padding: 4px 0; display: flex; flex-direction: column; gap: 2px; }
 .bw-company-item {
   display: grid;
-  grid-template-columns: 30px minmax(140px, 1.4fr) 90px 80px 130px 90px;
+  grid-template-columns: 30px minmax(140px, 1.4fr) 80px 140px 70px 120px;
   align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  border-radius: 6px;
+  gap: 10px;
+  padding: 6px 12px;
   font-size: 12px;
 }
 .bw-company-item:hover { background: var(--c-hover, #232a37); }
@@ -5113,10 +5116,7 @@ body[data-bg='1'] .af-shell {
 .bw-badge { font-size: 11px; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--c-border, #2a3140); color: var(--c-text2, #9aa1ae); white-space: nowrap; text-align: center; }
 .bw-badge--stage { color: #4da3ff; border-color: rgba(77, 163, 255, 0.35); }
 .bw-company-plan, .bw-company-meta { color: var(--c-text2, #9aa1ae); white-space: nowrap; }
-.bw-company-repo { color: var(--c-text2, #9aa1ae); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-decoration: none; }
-.bw-company-repo:hover { color: #4da3ff; }
-
-/* 我的公司 — 外层卡片 (v1.1.281) */
-.bw-company-card { border: 1px solid var(--c-border, #2a3140); border-radius: 10px; background: var(--c-surface, #1d232e); overflow: hidden; }
-.bw-company-card-head { padding: 8px 12px; font-size: 13px; font-weight: 700; color: var(--c-text, #e6e8ee); border-bottom: 1px solid var(--c-border, #2a3140); background: var(--c-panel, #1d232e); }
-.bw-card-pad { padding: 12px; }
+.bw-progress { display: inline-block; width: 100%; height: 8px; border-radius: 5px; background: var(--c-input, #161a22); border: 1px solid var(--c-border, #2a3140); overflow: hidden; cursor: help; }
+.bw-progress-fill { display: block; height: 100%; border-radius: 5px; background: #4da3ff; transition: width 0.3s; }
+.bw-progress--high { background: #16a34a; }
+.bw-progress--mid { background: #d97706; }

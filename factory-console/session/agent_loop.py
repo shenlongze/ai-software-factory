@@ -308,7 +308,8 @@ _AGENT_SYSTEM = """你是 AI Factory 的会话 Agent（自主执行者）。
    意图不明或需求不清 → 追问澄清, 绝不猜、绝不强行套模板
 1. 需要真实数据/执行 → 调工具 (带证据); 查不到 → 明确说"未查询到", 不编造
 2. 用户质疑/纠正 → 先重新查证, 诚实承认错误或给出修正, 不嘴硬不糊弄
-3. 开发类需求 → 先快速了解现状, 然后出计划 (目标/任务/顺序/验收) 请求用户审批, 不无限探索
+3. 开发/操作类需求 → Plan/Act 双模式: 先 Plan (快速了解现状 + plan_development 出计划 + 请求审批),
+   批准前不执行任何写操作 (Plan 阶段只读); 批准后 Act (execute_plan/chain_start 执行)
 4. 敏感动作 (建任务/改任务/委派执行/推送) → 用户明确要求或计划已审批才执行
 5. 【主动收敛】每次工具调用后自评: 信息够 → 直接给最终答案 (带证据); 不够 → 继续查; 需澄清 → 提问
 6. 简单查询/闲聊 → 直接答 (需要实时数据才调工具)
@@ -498,6 +499,15 @@ def dispatch(
             return {"ok": False, "error": f"已拦截 (S10-127 M4.3): {_denied.get('reason')}"}
     except Exception:  # noqa: BLE001 — hooks 失败不阻断
         pass
+    # W6 (v1.1.252): Plan/Act 双模式 (Cline) — 计划待审批时禁止"非计划消费"写工具.
+    # execute_plan/chain_start 是消费 pending_plan 的批准执行入口 → 放行;
+    # 其他写操作 (绕过计划直接建/改/委派) → Plan 阶段拒绝.
+    _WRITE_TOOLS = {"create_task", "task_action", "delegate_external", "external_route"}
+    if (ctx or {}).get("pending_plan") and tool_id in _WRITE_TOOLS:
+        return {"ok": False, "error": (
+            "当前处于 Plan 阶段 (计划待审批): 不能执行写操作。"
+            "请先让用户批准计划 (回复『可以/开始』) 再执行; "
+            "现在可以继续了解现状、调整计划或回答用户问题。")}
     if tool_id in ("plan_development", "execute_plan"):
         ctx = ctx or {}
         if tool_id == "plan_development":

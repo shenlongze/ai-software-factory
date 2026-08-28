@@ -231,6 +231,10 @@ def tool_schemas(data_dir: str | Path | None = None) -> list[dict[str, Any]]:
         _fc("memory_update", "更新Core记忆(Human块)", "自编辑长期记忆 (Letta core memory): 记录用户偏好/项目上下文/关键事实/任务状态, "
             "下次会话延续。重要信息值得记 → 调用; append=true 追加到已有记忆。上限 1500 字符",
             {"text": {"type": "string"}, "append": {"type": "boolean"}}, ["text"]),
+        # ---- T1 (v1.1.305): 手动上下文压缩 — 长会话聚焦 (压缩 → 交接 → 精简上下文) ----
+        _fc("compact_context", "压缩上下文", "长会话聚焦: 当前话题摘要 + PreCompact 交接写入 Spine + 记忆沉淀, "
+            "返回压缩后上下文块。会话变慢/跑偏/要重新聚焦时调用; 不影响历史消息",
+            {"focus": {"type": "string"}}, ["focus"]),
         # ---- W5 (v1.1.251): skills 按需检索 (OpenClaw <available_skills>) ----
         _fc("skill_search", "技能检索", "检索可用技能库 (147+ 技能: 产品/开发/质量/运维等)。"
             "需要专业技能/专业方法时调用, 返回技能名字+分类+路径, 再按路径读取 SKILL.md 加载指引",
@@ -1082,6 +1086,46 @@ def dispatch(
                     "未找到匹配工具, 试试更具体的关键词 (如 '扫描项目' / '读取代码' / '创建任务' / '查看文档')")}
             return {"ok": True, "matches": names,
                     "output": "匹配工具: " + ", ".join(names) + " (已加入可用列表, 可直接调用)"}
+        if tool_id == "compact_context":
+            # T1 (v1.1.305): 手动上下文压缩 — 摘要 + PreCompact 交接 + 记忆沉淀
+            try:
+                from .handoff import ProjectSpine
+                from .project_memory import MemoryStore
+                from .context_layers import build_context, pick_depth
+
+                focus = str(args.get("focus") or "")[:120]
+                dd = str(root or "")
+                summary_parts = ["【上下文压缩】"]
+                # 1) PreCompact 交接写 Spine
+                try:
+                    _h2 = _get_hooks()
+                    _h2.fire("PreCompact", {
+                        "data_dir": dd, "project_id": project_id, "session_id": (ctx or {}).get("session_id") or "",
+                        "question": focus, "last_answer": focus})
+                    summary_parts.append("- 交接卡已写入 Spine (新会话可续接)")
+                except Exception:  # noqa: BLE001
+                    pass
+                # 2) 当前问题摘要记忆
+                if focus:
+                    try:
+                        mem = MemoryStore.load(dd, project_id)
+                        mem.add(f"话题聚焦: {focus}", source="session", kind="pattern", authority="agent_claim")
+                        mem.save(dd)
+                    except Exception:  # noqa: BLE001
+                        pass
+                # 3) 返回压缩后上下文 (聚焦相关)
+                try:
+                    _mp2 = _model_profile(dd) if "_model_profile" in dir() else {}
+                    _depth = pick_depth(_mp2.get("tier"), _mp2.get("context_window"))
+                    block = build_context(dd, project_id, depth=_depth, query=focus)
+                    if block:
+                        summary_parts.append("【压缩后上下文】")
+                        summary_parts.append(block[:800])
+                except Exception:  # noqa: BLE001
+                    pass
+                return {"ok": True, "output": "\n".join(summary_parts)}
+            except Exception as exc:  # noqa: BLE001
+                return {"ok": False, "error": f"压缩失败: {exc}"}
         if tool_id == "external_route":
             from ..external_executor.router import route
             from ..external_executor.registry import build_registry

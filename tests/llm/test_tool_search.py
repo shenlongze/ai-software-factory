@@ -138,3 +138,22 @@ def test_t16_compact_keeps_required(ts, tools):
     fn = comp[0]["function"]
     req = fn["parameters"].get("required") or []
     assert isinstance(req, list)
+
+
+def test_t1_compact_context_tool(tmp_path):
+    """T1: compact_context 工具 — 压缩后返回上下文块, 不崩。"""
+    from factory_console.session import agent_loop as al
+
+    r = al.dispatch("compact_context", {"focus": "版本管理"}, root=str(tmp_path),
+                    project_id="P-t1", ctx={"session_id": "sess-t1"})
+    assert r.get("ok") is True
+    assert "【上下文压缩】" in str(r.get("output") or "")
+
+
+def test_t1_compact_context_schema_registered():
+    """T1: compact_context 在工具 schema 中 (模型可调用)。"""
+    from factory_console.session.agent_loop import tool_schemas
+
+    schemas = tool_schemas()
+    names = {str((t.get("function") or {}).get("name") or "") for t in schemas}
+    assert "compact_context" in names

@@ -811,13 +811,15 @@ class TestRegistry:
 
 class TestVersionBump:
     def test_v1_1_95_synced(self):
-        """契约 11: v1.1.95 — pyproject + CHANGELOG + FEATURES + 待办清单同步。"""
+        """契约 11: pyproject + CHANGELOG + FEATURES + 待办清单同步 (动态读 pyproject 真源)。"""
+        import tomllib as _tl
+        _ver = _tl.loads((_ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
         pyproject = (_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-        assert re.search(r'^version\s*=\s*"1\.1\.224"', pyproject, re.M)
+        assert re.search(rf'^version\s*=\s*"{re.escape(_ver)}"', pyproject, re.M)
         changelog = (_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-        assert "## [v1.1.224]" in changelog
+        assert f"## [v{_ver}]" in changelog
         features = (_ROOT / "docs" / "FEATURES.md").read_text(encoding="utf-8")
-        assert "v1.1.224" in features
+        assert f"v{_ver}" in features
         backlog = (_ROOT / "docs" / "sprint10" / "待办清单-已发现未落地.md").read_text(encoding="utf-8")
         for marker in ("K-5", "P0-1", "P0-4", "P0-5", "C-1", "C-4", "C-5", "C-6", "H-1", "F-10", "M5-7"):
             assert marker in backlog

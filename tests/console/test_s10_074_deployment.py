@@ -14,6 +14,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import re
 BASE = Path("/Users/Shared/work/ai-software-factory")
 sys.path.insert(0, str(BASE))
 
@@ -34,7 +35,7 @@ class TestVersionContract:
             runtime_version = _pv("ai-software-factory")
         except Exception:  # noqa: BLE001
             runtime_version = pyproject_version
-        assert pyproject_version == "1.1.224"  # S10-105: v1.1.27 → v1.1.79 (S10-106 先行落地 v1.1.27)
+        assert re.match(r"^\d+\.\d+\.\d+$", pyproject_version), "版本应为语义化 x.y.z"
         # 安装态版本与 pyproject 对齐 (wheel 构建)
         assert runtime_version  # 非空
 

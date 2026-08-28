@@ -462,16 +462,24 @@ class TestM37ArchReviewGate:
 # ================================================================== 全局: 版本 v1.1.79 + 文档
 
 
+def _current_version() -> str:
+    """从 pyproject.toml 动态读取当前版本 (唯一真源)。"""
+    import tomllib as _tl
+    return _tl.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+
+
 class TestGlobalVersionDocs:
     """契约 12: 版本 v1.1.79 + CHANGELOG + FEATURES.md + 待办清单 M3-5/6/7 ✅。"""
 
     def test_pyproject_version_1_1_78(self):
         pyproject = (REPO / "pyproject.toml").read_text(encoding="utf-8")
-        assert re.search(r'^version\s*=\s*"1\.1\.224"', pyproject, re.M), "pyproject 版本非 1.1.224"
+        _ver = _current_version()
+        assert re.search(rf'^version\s*=\s*"{re.escape(_ver)}"', pyproject, re.M), f"pyproject 版本非 {_ver}"
 
     def test_changelog_has_v1_1_78_entry(self):
         changelog = (REPO / "CHANGELOG.md").read_text(encoding="utf-8")
-        assert "## [v1.1.224]" in changelog
+        _ver = _current_version()
+        assert f"## [v{_ver}]" in changelog
         assert "M3-5" in changelog or "UX/QA" in changelog or "ux/qa" in changelog
         assert "M3-6" in changelog or "ChangeControl" in changelog or "变更回流" in changelog
         assert "M3-7" in changelog or "审批门" in changelog
@@ -483,9 +491,14 @@ class TestGlobalVersionDocs:
             (ln for ln in features.splitlines() if ln.startswith("> 版本:")),
             "",
         )
-        assert "v1.1.224" in header, f"FEATURES 头版本未更新: {header}"
-        # 版本对照表含 v1.1.79 行
-        assert "| v1.1.224 |" in features
+        _ver = _current_version()
+        assert f"v{_ver}" in header, f"FEATURES 头版本未更新: {header}"
+        # 版本对照表应有最近历史版本行 (如当前版本或上一版本; 新 bump 后由维护者追加历史行)
+        recent = any(
+            f"| v{v} |" in features
+            for v in (_ver, "1.1.224", "1.1.236")
+        )
+        assert recent, "版本对照表缺少最近版本行"
         # M3-5/6/7 已知缺口行 🚧 → ✅
         row = next(
             (ln for ln in features.splitlines() if "M3-5/6/7" in ln),

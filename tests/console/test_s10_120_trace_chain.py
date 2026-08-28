@@ -465,10 +465,12 @@ class TestExecRuntimeTrace:
 
 class TestVersionBump:
     def test_v1_1_90_synced(self):
-        """版本 v1.1.95: pyproject + CHANGELOG + FEATURES 同步。"""
+        """版本同步: pyproject + CHANGELOG + FEATURES 三处一致 (动态读 pyproject 真源)。"""
+        import tomllib as _tl
+        _ver = _tl.loads((_REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
         pyproject = (_REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
-        assert re.search(r'^version\s*=\s*"1\.1\.224"', pyproject, re.M)
+        assert re.search(rf'^version\s*=\s*"{re.escape(_ver)}"', pyproject, re.M)
         changelog = (_REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-        assert "## [v1.1.224]" in changelog
+        assert f"## [v{_ver}]" in changelog
         features = (_REPO_ROOT / "docs" / "FEATURES.md").read_text(encoding="utf-8")
-        assert "v1.1.224" in features
+        assert f"v{_ver}" in features

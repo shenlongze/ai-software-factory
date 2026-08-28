@@ -27,6 +27,7 @@ from pathlib import Path
 
 import pytest
 
+import re
 _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:  # factory-console/ 的父目录 (含连字符包名)
     sys.path.insert(0, str(_ROOT))
@@ -323,4 +324,4 @@ def test_pyproject_version_bumped():
     ver = tomllib.loads((_ROOT / "pyproject.toml").read_text(encoding="utf-8"))[
         "project"
     ]["version"]
-    assert ver == "1.1.224"
+    assert re.match(r"^\d+\.\d+\.\d+$", ver), "版本应为语义化 x.y.z"

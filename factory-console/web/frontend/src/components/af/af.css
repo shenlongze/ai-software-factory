@@ -5182,3 +5182,7 @@ body[data-bg='1'] .af-shell {
 .bw-task-progress { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
 .bw-task-progress .bw-progress { flex: 1; }
 .bw-task-num { color: var(--c-text2, #9aa1ae); font-size: 11px; white-space: nowrap; }
+
+/* 项目行分隔线 (v1.1.287) */
+.bw-company-item { border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
+.bw-company-item:last-child { border-bottom: none; }

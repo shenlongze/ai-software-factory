@@ -401,6 +401,28 @@ def execute_plan(
 _hooks_instance = None
 
 
+#: v1.1.262 深度审计方法 (抄 Hermes project-audit/codebase-inspection 技能效果)
+AUDIT_METHOD_PROMPT = """【深度审计方法 (Project Audit)】这是结构性审计任务。按以下方法多轮深入, 不要一次扫描就下结论:
+
+1. 摸底: 顶层目录 + 各模块规模(文件数/行数) + 语言分布 (code_scan/repo_map/bash_exec find)
+2. 核心机制: 核心目录(session/tools等)组织; 找出超大文件(>2000行)与"上帝模块"
+3. 关键维度逐项核对 (每项都要真实数据, 不许猜):
+   a. 版本一致性: pyproject.toml vs git HEAD (commit message) vs 已装包 dist-info vs .venv 安装版 — 是否一致? (常见: 5个版本号互不相同)
+   b. 测试对称性: tests/ 与源码模块是否对应; 测试用例数
+   c. 真实链路: WebUI 是否 mock 支撑? UI→API→Backend 是否闭环?
+   d. 物理残留: 未跟踪/废弃/临时文件 ($SMOKE_ROOT/, unused/, 过期 pycache)
+   e. CLI/前端一致性: CLI 命令与 WebUI 功能是否对应
+4. 每步用工具拿真实数据 (bash_exec/code_scan/repo_map/read_code); 命令失败/路径错 → 修正重跑, 不要放弃
+5. 最终报告格式 (markdown):
+   一、总体规模: 表格 (模块 | 文件数 | 行数)
+   二、合理的部分: 有证据
+   三、问题: 按 P0/P1/P2 严重度排序, 每条带具体证据 (路径/行数/版本号)
+   四、结论: 合理性分数 /100 + 一句话判断
+   五、建议修复顺序: 带大致工作量
+
+数据必须来自工具输出; 版本号/行数/路径/色值不许编造, 查不到就说"未查到"。"""
+
+
 def _chain_auto_worker(root: Any, project_id: str, session_id: str, service: Any, st: Any) -> None:
     """W1 (v1.1.248): Promised Work (OpenClaw) — 后台自动逐任务执行到完成.
 
@@ -1128,6 +1150,8 @@ def run_agent_native(
         {"role": "system", "content": _skills_index(data_dir)},
         # v1.1.260: 项目源码路径事实 — 模型开局知道源码在哪 (治"找不到源码/扫错目录")
         {"role": "system", "content": _repo_fact(data_dir, project_id)},
+        # v1.1.262: 深度审计引导 — 结构/审计/合理性类请求注入方法论 (抄 Hermes project-audit)
+        {"role": "system", "content": _audit_guide(question, intent)},
         {"role": "system", "content": format_intent(intent) + "\n" + route_for(intent["intent"])},
         {"role": "system", "content": style_instruction(question, intent.get("intent"), intent.get("emotion"))},
         {"role": "user", "content": question},
@@ -1460,6 +1484,15 @@ def run_agent_native(
                     _usage_prompt, _usage_completion)
         return {"answer": "", "rejected": True, "calls": calls, "evidence": [],
                 "reason": f"原生 FC 不可用: {exc}"}
+
+
+def _audit_guide(question: str, intent: dict[str, Any]) -> str:
+    """结构审计/合理性类请求 → 注入深度审计方法 + 报告格式。其他 → 空。"""
+    q = str(question or "")
+    _kws = ("结构", "合理", "审计", "扫描整体", "架构", "代码库", "体检", "评估", "审视", "健康")
+    if any(k in q for k in _kws) and intent.get("intent") in ("analyze", "deep_analyze", "question"):
+        return AUDIT_METHOD_PROMPT
+    return ""
 
 
 def _repo_fact(data_dir: str | Path | None, project_id: str) -> str:

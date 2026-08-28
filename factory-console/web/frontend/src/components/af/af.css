@@ -5307,7 +5307,7 @@ body[data-bg='1'] .af-shell {
 .bw-approval-list { list-style: none; margin: 0; padding: 4px 12px; display: flex; flex-direction: column; gap: 6px; }
 .bw-approval-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05); font-size: 12px; }
 .bw-approval-item:last-child { border-bottom: none; }
-.bw-approval-cmd { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: var(--c-text, #e6e8ee); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60%; }
+.bw-approval-cmd { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #a5d6a7; background: var(--c-input, #161a22); border: 1px solid var(--c-border, #2a3140); border-radius: 6px; padding: 3px 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 62%; }
 .bw-approval-btn-group { display: inline-flex; gap: 6px; }
 .bw-btn--ok { color: #16a34a; border-color: rgba(34, 197, 94, 0.35); }
 .bw-btn--no { color: #dc2626; border-color: rgba(239, 68, 68, 0.35); }

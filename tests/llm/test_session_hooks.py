@@ -250,3 +250,32 @@ def test_t10_session_end_no_messages_no_crash(sh, tmp_path):
     session_end_hook({"data_dir": str(tmp_path), "project_id": "P-t10", "messages": []})
     sp = ProjectSpine.load(str(tmp_path), "P-t10")
     assert not (sp.data.get("handoff_card") or {})
+
+
+def test_t11_session_end_full_sentence_extraction(sh, tmp_path):
+    """T11: SessionEnd 提取 — 完整句而非残句, decision/error→solution 入记忆。"""
+    from factory_console.session.project_memory import MemoryStore
+    from factory_console.session.session_hooks import session_end_hook
+
+    ctx = {
+        "data_dir": str(tmp_path),
+        "project_id": "P-t11",
+        "session_id": "sess-t11",
+        "messages": [
+            {"role": "assistant", "content": (
+                "版本号统一用 pyproject 作为唯一真源, 决定采用这个方案。"
+                "遇到 sed 兼容问题, 解决办法是改用 head/tail 拼接。"
+            )},
+        ],
+    }
+    session_end_hook(ctx)
+    mem = MemoryStore.load(str(tmp_path), "P-t11")
+    texts = [e["text"] for e in mem.entries]
+    kinds = {e["text"]: e["kind"] for e in mem.entries}
+    # 无残句 (不以括号/冒号结尾)
+    for t in texts:
+        assert not t.endswith((")", "）", ":", "：", "，", ",")), f"残句: {t}"
+    # decision + error→solution 都提取
+    assert any("pyproject" in t for t in texts)
+    assert any("sed 兼容" in t for t in texts)
+    assert kinds.get(next(t for t in texts if "sed 兼容" in t)) == "error"

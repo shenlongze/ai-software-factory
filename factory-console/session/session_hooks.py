@@ -232,7 +232,7 @@ def pre_compact_hook(ctx: dict[str, Any]) -> None:
 #: 提取规则 (保守, 无 LLM 不幻觉): (正则, kind)
 _EXTRACT_RULES = [
     (r"(决定|采用|选定|选择用|决定用)[^。\n]{2,60}", "decision"),
-    (r"(报错|错误|失败|异常)[^。\n]{0,30}(解决|修复|改为|换成|原因是)[^。\n]{2,60}", "error"),
+    (r"(报错|错误|失败|异常|遇到|碰到)[^。\n]{0,30}(解决|修复|改为|换成|原因是|办法)[^。\n]{2,60}", "error"),
     (r"(记住|以后|总是|今后|不要再|必须)[^。\n]{2,60}", "learning"),
     (r"(统一|规范|模式是|套路是|标准是)[^。\n]{2,60}", "pattern"),
 ]
@@ -267,7 +267,18 @@ def session_end_hook(ctx: dict[str, Any]) -> None:
         added = 0
         for pattern, kind in _EXTRACT_RULES:
             for mm in re.finditer(pattern, blob):
-                snippet = mm.group(0).strip().replace("\n", " ")[:180]
+                # T11 (v1.1.293): 完整句提取 — 回溯到句首, 不从中途截 (旧版产出'以后者为准)'残句)
+                start = mm.start()
+                sent_start = max(blob.rfind("\n", 0, start), blob.rfind("。", 0, start), blob.rfind(";", 0, start)) + 1
+                end = mm.end()
+                sent_end_m = re.search(r"[。;\n]", blob[end:])
+                sent_end = end + (sent_end_m.end() if sent_end_m else min(len(blob) - end, 60))
+                snippet = blob[sent_start:sent_end].strip().replace("\n", " ")[:180]
+                # 质量过滤: 过短 / 残句结尾 / 无主语残片
+                if len(snippet) < 8:
+                    continue
+                if snippet.endswith((")", "）", ":", "：", "，", ",")):
+                    continue
                 before = len(mem.entries)
                 mem.add(snippet, source="session", kind=kind, authority="agent_claim")
                 if len(mem.entries) > before:

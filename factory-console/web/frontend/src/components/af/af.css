@@ -5056,3 +5056,8 @@ body[data-bg='1'] .af-shell {
 .bw-company-plan, .bw-company-meta { color: var(--c-text2, #9aa1ae); white-space: nowrap; }
 .bw-company-repo { color: var(--c-text2, #9aa1ae); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-decoration: none; }
 .bw-company-repo:hover { color: #4da3ff; }
+
+/* 我的公司 — 外层卡片 (v1.1.281) */
+.bw-company-card { border: 1px solid var(--c-border, #2a3140); border-radius: 10px; background: var(--c-surface, #1d232e); overflow: hidden; }
+.bw-company-card-head { padding: 8px 12px; font-size: 13px; font-weight: 700; color: var(--c-text, #e6e8ee); border-bottom: 1px solid var(--c-border, #2a3140); background: var(--c-panel, #1d232e); }
+.bw-card-pad { padding: 12px; }

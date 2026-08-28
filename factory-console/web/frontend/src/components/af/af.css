@@ -5358,3 +5358,10 @@ body[data-bg='1'] .af-shell {
 .bw-tab { background: none; border: none; color: var(--c-text2, #9aa1ae); cursor: pointer; font-size: 11px; padding: 2px 10px; border-radius: 8px; }
 .bw-tab:hover { background: var(--c-hover, #232a37); }
 .bw-tab--on { color: var(--c-text, #e6e8ee); background: var(--c-input, #161a22); }
+.bw-approval-list--history .bw-approval-item--history {
+  justify-content: flex-start;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+.bw-approval-list--history .bw-approval-item--history .bw-approval-status { min-width: 62px; }
+.bw-approval-list--history .bw-approval-cmd { max-width: 100%; flex: 1; }

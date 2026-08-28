@@ -153,6 +153,53 @@ def scan_repo(root: Path | str | None, project_id: str) -> dict[str, Any]:
     }
 
 
+def scan_todos(root: Path | str | None, project_id: str, *, path_filter: str = "",
+               max_items: int = 50) -> dict[str, Any]:
+    """扫描 TODO/FIXME 明细 (文件:行:内容) — 供会话"扫 TODO"用 (确定性读盘)。
+
+    返回 {ok, repo, total, items: [{file, line, text}], filtered: 是否被 path 过滤}。
+    """
+    repo = locate_repo(root, project_id)
+    if repo is None:
+        return {"ok": False, "error": "未定位到代码仓库目录"}
+    repo = Path(repo)
+    items: list[dict[str, Any]] = []
+    files = [f for f in repo.rglob("*") if f.is_file()
+             and not any(part in _IGNORE_DIRS for part in f.parts)]
+    for f in files:
+        if f.suffix not in (".py", ".ts", ".tsx", ".js", ".jsx", ".go", ".rs", ".java", ".md"):
+            continue
+        rel = str(f.relative_to(repo))
+        if path_filter and path_filter not in rel:
+            continue
+        try:
+            lines = f.read_text(encoding="utf-8", errors="ignore").splitlines()
+        except OSError:
+            continue
+        for i, line in enumerate(lines, 1):
+            if re.search(r"TODO|FIXME", line):
+                items.append({"file": rel, "line": i, "text": line.strip()[:120]})
+                if len(items) >= max_items:
+                    return {"ok": True, "repo": str(repo), "total": len(items),
+                            "items": items, "filtered": bool(path_filter), "truncated": True}
+    return {"ok": True, "repo": str(repo), "total": len(items),
+            "items": items, "filtered": bool(path_filter), "truncated": False}
+
+
+def format_todos(result: dict[str, Any], max_show: int = 30) -> str:
+    """TODO 明细 → 文本 (喂 LLM; 数据确定性)。"""
+    if not result.get("ok"):
+        return f"【TODO 扫描】{result.get('error')}"
+    items = result.get("items") or []
+    lines = [f"【TODO/FIXME 明细 · 共 {result.get('total')} 处"
+             + (" (已截断)" if result.get("truncated") else "") + "】"]
+    for it in items[:max_show]:
+        lines.append(f"- {it['file']}:{it['line']}: {it['text']}")
+    if not items:
+        lines.append("（无 TODO/FIXME）")
+    return "\n".join(lines)
+
+
 def format_code_scan(report: dict[str, Any], project_name: str = "") -> str:
     """代码扫描报告 → 结构化文本 (喂 LLM 总结; 数据全确定性读入)。"""
     if not report.get("ok"):

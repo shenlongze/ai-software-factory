@@ -184,6 +184,9 @@ def tool_schemas(data_dir: str | Path | None = None) -> list[dict[str, Any]]:
     通用设计: 新增外部 agent 无需改代码; 无候选 → 不加, 不膨胀工具面)。"""
     tools = [
         _fc("code_scan", "扫描代码", "扫描项目仓库代码: 文件数/行数/语言分布/测试文件/TODO/大文件/最近改动/git", {}),
+        _fc("scan_todos", "扫描TODO", "列出仓库 TODO/FIXME 具体位置 (文件:行:内容), 可按路径过滤",
+            {"path": {"type": "string", "description": "可选: 路径子串过滤 (如 factory-console/session)"},
+             "max_items": {"type": "integer"}}),
         _fc("project_scan", "扫描项目", "扫描项目整体: 任务树/版本线/战役线/质量/风险建议", {}),
         _fc("project_structure", "项目结构", "查看项目真实结构: 仓库顶层目录树/模块划分/文件分布/入口文件 (用户说'了解项目结构/有哪些模块/目录'时用)", {}),
         _fc("read_code", "读取代码", "读取指定文件的代码内容(带行号, 支持分页), 用于理解代码逻辑/实现/调用链。"
@@ -430,6 +433,14 @@ def dispatch(
         ctx["pending_plan"] = None
         return r
     try:
+        if tool_id == "scan_todos":
+            from .code_scan import format_todos, scan_todos
+
+            _pf = str(args.get("path") or "").strip()
+            _mi = int(args.get("max_items") or 50)
+            _r = scan_todos(root, project_id, path_filter=_pf, max_items=_mi)
+            return {"ok": _r.get("ok", False), "output": format_todos(_r),
+                    "error": _r.get("error") or ""}
         if tool_id == "code_scan":
             from .code_scan import scan_repo, format_code_scan
 
@@ -918,9 +929,18 @@ def run_agent_native(
     ctx["llm_fn"] = lambda p: _simple_llm(p, data_dir=data_dir)
     # S10-127 M2.2: 动态工具面 — 首轮核心+预检索+tool_search, 命中累积加入
     tools = _initial_tools(question, all_tools)
-    messages.append({"role": "system", "content": (
-        "【工具面】当前已加载部分常用工具; 需要其他能力时调用 tool_search 搜索并加载。"
-    )})
+    try:
+        from .tool_search import catalog_summary
+
+        _catalog = catalog_summary(all_tools)
+        messages.append({"role": "system", "content": (
+            f"【工具面】首轮已加载常用工具: {[str((t.get('function') or {}).get('name')) for t in tools]}.\n"
+            f"完整工具目录 (含未加载的执行类工具, 用户问'能调用哪些工具/有什么能力'时据此回答):\n{_catalog}"
+        )})
+    except Exception:  # noqa: BLE001 — 目录不可用 → 简单提示
+        messages.append({"role": "system", "content": (
+            "【工具面】当前已加载部分常用工具; 需要其他能力时调用 tool_search 搜索并加载。"
+        )})
     total_calls = 0
     _usage_prompt = 0
     _usage_completion = 0

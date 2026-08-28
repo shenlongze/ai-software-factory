@@ -204,13 +204,6 @@ function MyCompanyTab({ onOpen }: { onOpen: (t: Omit<WorkspaceTab, 'id'>) => voi
               <li key={h.id} className="bw-approval-item bw-approval-item--history">
                 <span className="bw-approval-status">{h.status === 'approved' ? '✅ 已批准' : '✕ 已拒绝'}</span>
                 <code className="bw-approval-cmd">{h.command || ''}</code>
-                <span className="bw-approval-result">{(() => {
-                  const r = String(h.result || '');
-                  // 去掉 "✅ 已批准执行: <命令>" 前缀, 只留 执行成功/失败 结果
-                  const m = r.match(/(执行成功|执行失败)[:：]\s*([\s\S]*)/);
-                  const brief = m ? `${m[1]}${m[2] || ''}` : r;
-                  return brief.slice(0, 50) + (brief.length > 50 ? '…' : '');
-                })()}</span>
               </li>
             ))}
           </ul>

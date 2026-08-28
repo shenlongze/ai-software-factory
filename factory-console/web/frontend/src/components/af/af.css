@@ -4952,3 +4952,41 @@ body[data-bg='1'] .af-shell {
 .af-chat-tool-head { display: inline-flex; align-items: center; gap: 4px; }
 .af-chat-tool-body { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .af-chat-tool-error { color: #dc2626; font-size: 10px; word-break: break-all; }
+
+/* ===== 类浏览器多标签工作区 (BrowserWorkspace, v1.1.270) ===== */
+.bw { display: flex; flex-direction: column; height: 100%; min-width: 0; background: var(--c-input, #161a22); }
+.bw-bar { display: flex; align-items: center; gap: 2px; padding: 4px 6px 0; background: var(--c-panel, #1d232e); border-bottom: 1px solid var(--c-border, #2a3140); overflow-x: auto; }
+.bw-tab { display: inline-flex; align-items: center; gap: 6px; max-width: 200px; padding: 5px 10px; border-radius: 8px 8px 0 0; background: transparent; color: var(--c-text2, #9aa1ae); cursor: pointer; font-size: 12px; white-space: nowrap; border: 1px solid transparent; border-bottom: none; }
+.bw-tab--active { background: var(--c-surface, #1d232e); color: var(--c-text, #e6e8ee); border-color: var(--c-border, #2a3140); }
+.bw-tab--home { font-weight: 600; }
+.bw-tab-title { overflow: hidden; text-overflow: ellipsis; }
+.bw-tab-close { background: none; border: none; color: var(--c-text2, #9aa1ae); cursor: pointer; font-size: 13px; padding: 0 2px; line-height: 1; }
+.bw-tab-close:hover { color: #dc2626; }
+.bw-add { background: none; border: none; color: var(--c-text2, #9aa1ae); cursor: pointer; font-size: 16px; padding: 3px 8px; border-radius: 6px; }
+.bw-add:hover { background: var(--c-hover, #232a37); color: var(--c-text, #e6e8ee); }
+.bw-body { flex: 1; min-height: 0; overflow: hidden; }
+.bw-frame { width: 100%; height: 100%; border: none; background: #fff; }
+.bw-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 8px; color: var(--c-text2, #9aa1ae); }
+.bw-placeholder-icon { font-size: 40px; }
+.bw-placeholder-title { font-size: 16px; font-weight: 600; color: var(--c-text, #e6e8ee); }
+.bw-placeholder-note { font-size: 12px; }
+.bw-newtab { padding: 16px 20px; overflow-y: auto; height: 100%; }
+.bw-newtab-address { display: flex; gap: 6px; margin-bottom: 14px; }
+.bw-newtab-address input { flex: 1; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--c-border, #2a3140); background: var(--c-input, #161a22); color: var(--c-text, #e6e8ee); font-size: 13px; }
+.bw-btn { padding: 6px 12px; border-radius: 8px; border: 1px solid var(--c-border, #2a3140); background: var(--c-surface, #1d232e); color: var(--c-text, #e6e8ee); cursor: pointer; font-size: 12px; }
+.bw-btn:hover { background: var(--c-hover, #232a37); }
+.bw-newtab-sections { display: grid; gap: 14px; }
+.bw-newtab-sections section h3 { margin: 0 0 6px; font-size: 13px; color: var(--c-text2, #9aa1ae); }
+.bw-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.bw-list button { width: 100%; text-align: left; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--c-border, #2a3140); background: var(--c-surface, #1d232e); color: var(--c-text, #e6e8ee); cursor: pointer; font-size: 12px; }
+.bw-list button:hover { background: var(--c-hover, #232a37); }
+.bw-muted { color: var(--c-text2, #9aa1ae); font-size: 12px; }
+.bw-row { display: flex; gap: 8px; }
+.bw-home { padding: 20px; height: 100%; overflow-y: auto; }
+.bw-home h2 { margin: 0 0 4px; }
+.bw-home-sub { color: var(--c-text2, #9aa1ae); font-size: 12px; margin: 0 0 16px; }
+.bw-home-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
+.bw-home-card { padding: 16px; border-radius: 10px; border: 1px solid var(--c-border, #2a3140); background: var(--c-surface, #1d232e); color: var(--c-text, #e6e8ee); cursor: pointer; font-size: 13px; text-align: left; }
+.bw-home-card:hover { background: var(--c-hover, #232a37); }
+.bw-doc { height: 100%; overflow: auto; padding: 12px; }
+.bw-doc-raw { font-family: ui-monospace, Menlo, monospace; font-size: 12px; white-space: pre-wrap; color: var(--c-text, #e6e8ee); }

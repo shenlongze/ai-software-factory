@@ -19,7 +19,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { AfPreviewWindow } from './AfPreviewWindow';
+import { BrowserWorkspace } from './BrowserWorkspace';
 import { AfConversationPanel } from './AfConversationPanel';
 import { AfStatusBar } from './AfStatusBar';
 import { useConversation } from './ConversationContext';
@@ -227,13 +227,13 @@ export function AfWorkspaceFrame({
               type="button"
               className={`af-b-tab${previewOpen ? ' af-b-tab--active' : ''}`}
               onClick={togglePreview}
-              aria-label="预览"
+              aria-label="工作区"
             >
-              👁 预览
+              🧭 工作区
             </button>
           </div>
           <div className="af-main-scroll" data-testid="af-main-scroll">
-            {previewOpen ? <AfPreviewWindow projectId={projectId} defaultOpen /> : main}
+            {previewOpen ? <BrowserWorkspace projectId={projectId} /> : main}
           </div>
         </main>
         <div

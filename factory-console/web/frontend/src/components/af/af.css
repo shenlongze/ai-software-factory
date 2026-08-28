@@ -5149,7 +5149,7 @@ body[data-bg='1'] .af-shell {
 .bw-card-pad { padding: 12px; }
 .bw-company-head {
   display: grid;
-  grid-template-columns: 30px minmax(140px, 1.4fr) 90px 150px 80px 130px;
+  grid-template-columns: 30px minmax(140px, 1.4fr) 90px 190px 130px;
   gap: 10px;
   padding: 6px 12px;
   font-size: 11px;
@@ -5161,7 +5161,7 @@ body[data-bg='1'] .af-shell {
 .bw-company-list { list-style: none; margin: 0; padding: 4px 0; display: flex; flex-direction: column; gap: 2px; }
 .bw-company-item {
   display: grid;
-  grid-template-columns: 30px minmax(140px, 1.4fr) 90px 150px 80px 130px;
+  grid-template-columns: 30px minmax(140px, 1.4fr) 90px 190px 130px;
   align-items: center;
   gap: 10px;
   padding: 7px 12px;
@@ -5179,3 +5179,6 @@ body[data-bg='1'] .af-shell {
 .bw-progress-fill { display: block; height: 100%; border-radius: 5px; background: #4da3ff; transition: width 0.3s; }
 .bw-progress--high { background: #16a34a; }
 .bw-progress--mid { background: #d97706; }
+.bw-task-progress { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.bw-task-progress .bw-progress { flex: 1; }
+.bw-task-num { color: var(--c-text2, #9aa1ae); font-size: 11px; white-space: nowrap; }

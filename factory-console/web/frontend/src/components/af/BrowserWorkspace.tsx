@@ -121,7 +121,7 @@ function MyCompanyTab({ onOpen }: { onOpen: (t: Omit<WorkspaceTab, 'id'>) => voi
       ) : (
         <>
         <div className="bw-company-head">
-          <span>#</span><span>项目</span><span>状态</span><span>任务进度</span><span>未完成</span><span>更新时间</span>
+          <span>#</span><span>项目</span><span>状态</span><span>任务进度</span><span>更新时间</span>
         </div>
         <ol className="bw-company-list">
           {projects.map((p, idx) => {
@@ -140,23 +140,28 @@ function MyCompanyTab({ onOpen }: { onOpen: (t: Omit<WorkspaceTab, 'id'>) => voi
                   const meta = STATUS_META[st.toLowerCase()] || { label: st || '—', icon: '' };
                   return <span className="bw-badge bw-badge--stage">{meta.icon} {meta.label}</span>;
                 })()}
-                <span className="bw-progress" title={(() => {
-                  const dev = (p.stage_progress || {}).开发 || { done: 0, total: 0 };
-                  return `完成 ${dev.done}/${dev.total} 任务`;
-                })()}>
-                  <span
-                    className={`bw-progress-fill${(() => {
-                      const dev = (p.stage_progress || {}).开发 || { pct: 0 };
-                      const pct = dev.pct || 0;
-                      return pct >= 0.7 ? ' bw-progress--high' : pct >= 0.3 ? ' bw-progress--mid' : '';
-                    })()}`}
-                    style={{ width: `${(() => {
-                      const dev = (p.stage_progress || {}).开发 || { pct: 0 };
-                      return Math.round((dev.pct || 0) * 100);
-                    })()}%` }}
-                  />
+                <span className="bw-task-progress">
+                  <span className="bw-progress" title={(() => {
+                    const dev = (p.stage_progress || {}).开发 || { done: 0, total: 0 };
+                    return `完成 ${dev.done}/${dev.total} 任务`;
+                  })()}>
+                    <span
+                      className={`bw-progress-fill${(() => {
+                        const dev = (p.stage_progress || {}).开发 || { pct: 0 };
+                        const pct = dev.pct || 0;
+                        return pct >= 0.7 ? ' bw-progress--high' : pct >= 0.3 ? ' bw-progress--mid' : '';
+                      })()}`}
+                      style={{ width: `${(() => {
+                        const dev = (p.stage_progress || {}).开发 || { pct: 0 };
+                        return Math.round((dev.pct || 0) * 100);
+                      })()}%` }}
+                    />
+                  </span>
+                  {(() => {
+                    const dev = (p.stage_progress || {}).开发 || { done: 0, total: 0 };
+                    return <span className="bw-task-num">{dev.done}/{dev.total}</span>;
+                  })()}
                 </span>
-                <span className="bw-company-plan">未完成 {p.pending_plan_count ?? 0}</span>
                 <span className="bw-company-meta">更新 {p.updated_at || '—'}</span>
               </li>
             );

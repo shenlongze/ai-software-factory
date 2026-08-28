@@ -3983,11 +3983,12 @@ def build_app(
                         _history = sessions_store.list_messages(session_id)
                     except Exception:  # noqa: BLE001
                         pass
-                    agent_result = _agmod.run_agent(
+                    # v1.1.263: 流式分支切到 v3 run_agent_native (清洗/护栏/W8/审计引导/源码路径全生效)
+                    # 旧 run_agent(v1) 无清洗 — 文本模拟 <tool_calls> 泄漏到会话的根因
+                    agent_result = _agmod.run_agent_native(
                         _agent_message,
-                        root=workspace_root or DEFAULT_ROOT,
+                        data_dir=workspace_root or DEFAULT_ROOT,
                         project_id=str(session.get("project_id") or ""),
-                        llm_fn=_sessions_mod.llm_raw,
                         service=service,
                         max_rounds=3,
                         session_store=sessions_store,

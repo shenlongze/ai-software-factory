@@ -371,6 +371,14 @@ def send_message(
         except Exception:  # noqa: BLE001 — 账本失败不阻断回复
             pass
     assistant_msg = store.append_message(session_id, "assistant", reply, meta=assistant_meta)
+    # T13 (v1.1.299): 会话时间旅行 — 每轮落库后存快照 (消息数+上下文哈希)
+    try:
+        from .session_snapshots import snapshot_round
+
+        _all = store.list_messages(session_id)
+        snapshot_round(str(Path(store._path).parent), session_id, _all, note=text[:60])
+    except Exception:  # noqa: BLE001 — 快照失败不阻断回复
+        pass
     return {
         "user": user_msg,
         "assistant": assistant_msg,

@@ -3906,6 +3906,17 @@ def build_app(
             raise HTTPException(status_code=404, detail="session not found")
         return ok_list(sessions_store.list_messages(session_id))
 
+    @app.get("/api/sessions/{session_id}/snapshots")
+    def api_session_snapshots(session_id: str) -> dict[str, Any]:
+        """T13: 会话时间旅行 — 列出所有快照轮次 (只读)。"""
+        try:
+            from factory_console.session.session_snapshots import list_snapshots
+
+            snaps = list_snapshots(workspace_root or DEFAULT_ROOT, session_id)
+        except Exception:  # noqa: BLE001 — 快照不可用 → 空
+            snaps = []
+        return {"items": snaps, "count": len(snaps)}
+
     @app.get("/api/approvals/all")
     def api_all_approvals() -> dict[str, Any]:
         """公司级待审批聚合 (v1.1.290): 扫全部会话的 pending 批准 → 首页审批卡。"""

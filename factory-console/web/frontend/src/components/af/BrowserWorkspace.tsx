@@ -73,6 +73,17 @@ function TabContent({ tab, projectId, onOpen }: {
 }
 
 // ---------------------------------------------------------------- 首页 (我的公司, 固定不可关)
+const STATUS_META: Record<string, { label: string; icon: string }> = {
+  idea: { label: '构想', icon: '💡' },
+  confirmed: { label: '确认', icon: '✅' },
+  design: { label: '设计', icon: '📐' },
+  development: { label: '开发', icon: '🔧' },
+  testing: { label: '测试', icon: '🧪' },
+  done: { label: '完成', icon: '🎉' },
+  archived: { label: '归档', icon: '📦' },
+};
+const LIFE_STAGES = ['想法', '讨论', '设计', '开发'];
+
 interface CompanyProject {
   id: string; name: string; status?: string; starred?: boolean;
   lifecycle_stage?: string | null; repository?: string;
@@ -109,6 +120,10 @@ function MyCompanyTab({ onOpen }: { onOpen: (t: Omit<WorkspaceTab, 'id'>) => voi
       {loading ? <p className="bw-muted bw-card-pad">加载中…</p> : projects.length === 0 ? (
         <p className="bw-muted bw-card-pad">暂无项目 — 点 ➕ 新建或从侧栏创建</p>
       ) : (
+        <>
+        <div className="bw-company-head">
+          <span>#</span><span>项目</span><span>状态</span><span>全生命周期进度</span><span>未完成</span><span>更新时间</span>
+        </div>
         <ol className="bw-company-list">
           {projects.map((p, idx) => {
             return (
@@ -121,10 +136,14 @@ function MyCompanyTab({ onOpen }: { onOpen: (t: Omit<WorkspaceTab, 'id'>) => voi
                 >
                   {p.starred ? '⭐ ' : ''}{p.name}
                 </button>
-                <span className="bw-badge bw-badge--stage">{p.lifecycle_stage || p.status || '—'}</span>
+                {(() => {
+                  const st = p.lifecycle_stage || p.status || '';
+                  const meta = STATUS_META[st.toLowerCase()] || { label: st || '—', icon: '' };
+                  return <span className="bw-badge bw-badge--stage">{meta.icon} {meta.label}</span>;
+                })()}
                 <span className="bw-progress" title={(() => {
                   const sp = p.stage_progress || {};
-                  return ['想法', '讨论', '设计', '开发'].map((s) => {
+                  return LIFE_STAGES.map((s) => {
                     const v = sp[s];
                     return `${s} ${v ? Math.round((v.pct || 0) * 100) : 0}%`;
                   }).join(' · ');
@@ -132,13 +151,13 @@ function MyCompanyTab({ onOpen }: { onOpen: (t: Omit<WorkspaceTab, 'id'>) => voi
                   <span
                     className={`bw-progress-fill${(() => {
                       const sp = p.stage_progress || {};
-                      const vals = ['想法', '讨论', '设计', '开发'].map((s) => sp[s]?.pct ?? 0);
+                      const vals = LIFE_STAGES.map((s) => sp[s]?.pct ?? 0);
                       const avg = vals.reduce((a, b) => a + b, 0) / (vals.length || 1);
                       return avg >= 0.7 ? ' bw-progress--high' : avg >= 0.3 ? ' bw-progress--mid' : '';
                     })()}`}
                     style={{ width: `${(() => {
                       const sp = p.stage_progress || {};
-                      const vals = ['想法', '讨论', '设计', '开发'].map((s) => sp[s]?.pct ?? 0);
+                      const vals = LIFE_STAGES.map((s) => sp[s]?.pct ?? 0);
                       return Math.round((vals.reduce((a, b) => a + b, 0) / (vals.length || 1)) * 100);
                     })()}%` }}
                   />
@@ -149,6 +168,7 @@ function MyCompanyTab({ onOpen }: { onOpen: (t: Omit<WorkspaceTab, 'id'>) => voi
             );
           })}
         </ol>
+        </>
       )}
       </div>
     </div>

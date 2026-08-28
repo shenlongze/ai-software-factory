@@ -133,7 +133,7 @@ function MyCompanyTab({ onOpen }: { onOpen: (t: Omit<WorkspaceTab, 'id'>) => voi
                   >
                     {p.starred ? '⭐ ' : ''}{p.name}
                   </button>
-                  <span className="bw-badge bw-badge--stage">{p.lifecycle_stage || '未定义阶段'}</span>
+                  <span className="bw-badge bw-badge--stage">{p.lifecycle_stage || p.status || '—'}</span>
                   <span className="bw-badge">未完成计划: {p.pending_plan_count ?? 0}</span>
                   {p.repository ? (
                     <a className="bw-company-repo" href={p.repository} target="_blank" rel="noreferrer" title={p.repository}>

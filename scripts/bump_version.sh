@@ -25,6 +25,9 @@ _tmp_changelog="$(mktemp)"
 } > "$_tmp_changelog"
 mv "$_tmp_changelog" CHANGELOG.md
 
+# 4. docs/FEATURES.md 头部版本行 (> 版本: **vX.Y.Z**)
+sed -i '' -E 's/^> 版本: \*\*v[0-9]+\.[0-9]+\.[0-9]+\*\*/> 版本: **v'"$NEW_VERSION"'**/' docs/FEATURES.md
+
 echo "✅ 版本已统一为 $NEW_VERSION:"
 echo "  pyproject.toml:            $(grep '^version' pyproject.toml)"
 echo "  mcp_client.py:             $(grep -o '\"version\": \"[0-9.]*\"' factory-console/session/mcp_client.py)"

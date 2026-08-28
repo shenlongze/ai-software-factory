@@ -1335,7 +1335,10 @@ def run_agent_native(
                         "evidence": [{"tool": c["tool"], "ok": c["ok"], "output": str(c.get("output") or c.get("error") or "")[:300]} for c in calls]}
             if _guard["force_converge"]:
                 break
-            messages.append({"role": "assistant", "content": resp.get("content") or "", "tool_calls": tcs})
+            # 中间 assistant 消息入历史前也清洗文本模拟 <tool_calls> (模型可能同时输出真实调用+文本噪音)
+            messages.append({"role": "assistant",
+                             "content": _strip_fake_toolcalls(resp.get("content") or ""),
+                             "tool_calls": tcs})
             for tc in tcs:
                 fn = tc.get("function") or {}
                 tid = fn.get("name") or ""

@@ -5324,3 +5324,23 @@ body[data-bg='1'] .af-shell {
 .bw-home--company > .bw-company-card:last-of-type {
   margin-bottom: 0;
 }
+
+/* 首页布局统一 (v1.1.293) — 强制: 垂直流 + 所有子元素间距 14px, 不重叠 */
+.bw-home.bw-home--company {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 0 !important;
+  padding: 16px 20px !important;
+  overflow-y: auto;
+  height: 100%;
+  box-sizing: border-box;
+}
+.bw-home.bw-home--company > * {
+  margin-bottom: 14px !important;
+  flex: none !important;
+  width: 100% !important;
+  box-sizing: border-box;
+}
+.bw-home.bw-home--company > *:last-child {
+  margin-bottom: 0 !important;
+}

@@ -65,7 +65,7 @@ function TabContent({ tab, projectId, onOpen }: {
     case 'audit':
       return <Placeholder icon="🔍" title="审查 (二期)" note="定义审查范围后实现" />;
     case 'project':
-      return <ProjectTab projectId={tab.projectId || projectId} />;
+      return <ProjectTab projectId={tab.projectId || projectId} projectName={tab.title} />;
     case 'home':
     default:
       return <MyCompanyTab onOpen={onOpen} />;
@@ -155,11 +155,11 @@ function MyCompanyTab({ onOpen }: { onOpen: (t: Omit<WorkspaceTab, 'id'>) => voi
 }
 
 // ---------------------------------------------------------------- 项目页 (点"我的公司"项目打开 → 真实项目概览)
-function ProjectTab({ projectId }: { projectId?: string | null }): JSX.Element {
+function ProjectTab({ projectId, projectName }: { projectId?: string | null; projectName?: string }): JSX.Element {
   if (!projectId) return <Placeholder icon="📁" title="项目" note="未指定项目" />;
   return (
     <div className="bw-project" data-testid="bw-project">
-      <AfProjectHome projectId={projectId} projectName={projectId} />
+      <AfProjectHome projectId={projectId} projectName={projectName || projectId} />
     </div>
   );
 }

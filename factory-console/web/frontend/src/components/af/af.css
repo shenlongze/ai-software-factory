@@ -5062,3 +5062,6 @@ body[data-bg='1'] .af-shell {
   min-height: 0;
 }
 .af-main-scroll > .bw .bw-body { min-height: 0; }
+
+/* 项目 tab 内容: 内边距 + 滚动 (v1.1.278) */
+.bw-project { height: 100%; overflow-y: auto; padding: 16px 20px; }

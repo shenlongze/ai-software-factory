@@ -1496,20 +1496,30 @@ def _audit_guide(question: str, intent: dict[str, Any]) -> str:
 
 
 def _repo_fact(data_dir: str | Path | None, project_id: str) -> str:
-    """项目源码仓库路径事实 (从 locate_repo 拿; 失败安全 → 空)。"""
+    """项目源码仓库路径事实 (locate_repo → 兜底已知工作区 → 失败给指引)。"""
     try:
         from .code_scan import locate_repo
 
         repo = locate_repo(data_dir, project_id)
-        if repo:
-            return (
-                f"【项目源码】当前项目源码仓库在: {repo}。"
-                "查代码/结构/实现用 read_code/search_code/code_scan/repo_map (参数为仓库内相对路径); "
-                "不要用 bash find 在数据目录扫源码。"
-            )
-    except Exception:  # noqa: BLE001 — 定位失败 → 空
-        pass
-    return ""
+    except Exception:  # noqa: BLE001
+        repo = None
+    if repo is None:
+        # 兜底: 当前开发环境 AI Factory 自身源码在本地工作区
+        _known = Path("/Users/Shared/work/ai-software-factory")
+        if _known.is_dir():
+            repo = _known
+    if repo:
+        return (
+            f"【项目源码】当前项目源码仓库在: {repo}。"
+            "查代码/结构/实现用 read_code/search_code/code_scan/repo_map (参数为仓库内相对路径); "
+            "不要用 bash find 在数据目录扫源码。"
+            "如果 code_scan 报『未定位仓库/仓库为空』, 是 project_id 或路径问题 — "
+            "用 bash_exec 检查上面仓库路径, 不要据此下结论『项目无代码』。"
+        )
+    return (
+        "【项目源码】未能自动定位源码仓库。查代码前先用 bash_exec 找仓库 (如 find /Users/Shared -maxdepth 3 "
+        "-name '*.git' 2>/dev/null 或 ls 常见工作目录); 不要因为定位失败就断定项目没有代码。"
+    )
 
 
 def _skills_index(data_dir: str | Path | None) -> str:

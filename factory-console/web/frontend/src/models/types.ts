@@ -741,6 +741,7 @@ export interface SessionMessage {
       need_approval?: boolean;
       approval_id?: string;
       command?: string;
+      error?: string;
     }[];
   } | null;
 }

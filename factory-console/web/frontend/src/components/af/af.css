@@ -4945,3 +4945,10 @@ body[data-bg='1'] .af-shell {
 .af-chat-approve { background: rgba(34, 197, 94, 0.15); color: #16a34a; border-color: rgba(34, 197, 94, 0.4); }
 .af-chat-reject { background: rgba(239, 68, 68, 0.12); color: #dc2626; border-color: rgba(239, 68, 68, 0.35); }
 .af-chat-approve:disabled, .af-chat-reject:disabled { opacity: 0.5; cursor: wait; }
+
+/* 工具调用列表 (v1.1.257): 竖排列表 + 失败原因 */
+.af-chat-tools { display: flex; flex-direction: column; gap: 3px; margin: 4px 0; padding: 0; list-style: none; }
+.af-chat-tool { display: flex; flex-direction: column; gap: 2px; font-size: 11px; padding: 3px 8px; border-radius: 8px; background: var(--surface-2, #f0f0f0); color: var(--text-2, #555); border: 1px solid var(--border, #ddd); }
+.af-chat-tool-head { display: inline-flex; align-items: center; gap: 4px; }
+.af-chat-tool-body { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.af-chat-tool-error { color: #dc2626; font-size: 10px; word-break: break-all; }

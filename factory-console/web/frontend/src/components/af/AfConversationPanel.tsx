@@ -222,44 +222,47 @@ export function AfConversationPanel({ projectId, projectName }: AfConversationPa
               </div>
               {m.role === 'assistant' && ctx.uiPrefs.show_execution && m.meta?.tool_calls?.length ? (
                 <div className="af-chat-tools" data-testid={`af-chat-tools-${m.id}`}>
-                  {m.meta.tool_calls.map((tc, i) =>
-                    tc.need_approval ? (
-                      <span
-                        key={i}
-                        className="af-chat-tool af-chat-tool--approval"
-                        data-testid={`af-chat-tool-approval-${m.id}-${i}`}
-                      >
-                        ⚠️ 需批准: <code className="af-chat-tool-cmd">{tc.command}</code>
-                        <button
-                          type="button"
-                          className="af-chat-approve"
-                          disabled={actingApproval != null}
-                          onClick={() => handleApproval(tc.approval_id, 'approve')}
-                        >
-                          {actingApproval === tc.approval_id ? '…' : '✓ 批准'}
-                        </button>
-                        <button
-                          type="button"
-                          className="af-chat-reject"
-                          disabled={actingApproval != null}
-                          onClick={() => handleApproval(tc.approval_id, 'reject')}
-                        >
-                          ✕ 拒绝
-                        </button>
-                      </span>
-                    ) : (
-                      <span
-                        key={i}
-                        className={`af-chat-tool af-chat-tool--${tc.ok ? 'ok' : 'fail'}`}
-                        data-testid={`af-chat-tool-${m.id}-${i}`}
-                      >
-                        {tc.ok ? '✅' : '❌'} 调用了 {tc.tool}
+                  <ul className="af-chat-tools" data-testid={`af-chat-tools-${m.id}`}>
+                  {m.meta.tool_calls.map((tc, i) => (
+                    <li
+                      key={i}
+                      className={`af-chat-tool af-chat-tool--${tc.ok ? 'ok' : tc.need_approval ? 'approval' : 'fail'}`}
+                      data-testid={`af-chat-tool-${m.id}-${i}`}
+                    >
+                      <span className="af-chat-tool-head">
+                        {tc.need_approval ? '⚠️' : tc.ok ? '✅' : '❌'} {tc.tool}
                         {ctx.uiPrefs.show_timing && tc.duration_ms != null
                           ? ` · ${tc.duration_ms >= 1000 ? (tc.duration_ms / 1000).toFixed(1) + 's' : tc.duration_ms + 'ms'}`
                           : ''}
                       </span>
-                    ),
-                  )}
+                      {tc.need_approval ? (
+                        <span className="af-chat-tool-body">
+                          <code className="af-chat-tool-cmd">{tc.command}</code>
+                          <button
+                            type="button"
+                            className="af-chat-approve"
+                            disabled={actingApproval != null}
+                            onClick={() => handleApproval(tc.approval_id, 'approve')}
+                          >
+                            {actingApproval === tc.approval_id ? '…' : '✓ 批准'}
+                          </button>
+                          <button
+                            type="button"
+                            className="af-chat-reject"
+                            disabled={actingApproval != null}
+                            onClick={() => handleApproval(tc.approval_id, 'reject')}
+                          >
+                            ✕ 拒绝
+                          </button>
+                        </span>
+                      ) : !tc.ok && tc.error ? (
+                        <span className="af-chat-tool-body af-chat-tool-error" title={tc.error}>
+                          {tc.error.length > 120 ? tc.error.slice(0, 120) + '…' : tc.error}
+                        </span>
+                      ) : null}
+                    </li>
+                  ))}
+                  </ul>
                 </div>
               ) : null}
               <div className={`af-chat-msg-body${m.role === 'assistant' ? ' af-chat-msg-body--md' : ''}`}>

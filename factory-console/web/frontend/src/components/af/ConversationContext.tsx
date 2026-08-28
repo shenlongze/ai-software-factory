@@ -333,6 +333,7 @@ export function ConversationProvider({ children }: { children: ReactNode }): JSX
                             need_approval: e.need_approval ?? false,
                             approval_id: e.approval_id ?? '',
                             command: e.command ?? '',
+                            error: e.error ?? '',
                           },
                         ],
                       },

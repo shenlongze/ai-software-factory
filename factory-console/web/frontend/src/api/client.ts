@@ -534,6 +534,7 @@ export const api = {
       need_approval?: boolean;
       approval_id?: string;
       command?: string;
+      error?: string;
       result?: {
         user?: SessionMessage;
         assistant?: SessionMessage;
@@ -545,7 +546,6 @@ export const api = {
           tool_calls?: { tool: string; ok?: boolean }[];
         };
       };
-      error?: string;
     }) => void,
   ): Promise<boolean> => {
     try {

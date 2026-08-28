@@ -1307,7 +1307,7 @@ def run_agent_native(
                     continue
                 # W8 (v1.1.253): 输出 guardrail — 数字证据校验 (OpenAI SDK Guardrails 思路)
                 # 模型直接回答但答案含关键数字 → 与已调工具结果比对; 无据数字 → 强制修正轮 (fail-fast)
-                _answer = resp.get("content") or "（模型未输出）"
+                _answer = _strip_fake_toolcalls(resp.get("content") or "（模型未输出）")
                 if calls:
                     from .answer_verify import verify_numbers
 
@@ -1464,6 +1464,15 @@ def _skills_index(data_dir: str | Path | None) -> str:
         return index_prompt(data_dir)
     except Exception:  # noqa: BLE001
         return ""
+
+
+def _strip_fake_toolcalls(text: str) -> str:
+    """清洗最终回答里的文本模拟工具调用 (模型把 <tool_calls> 写进回答 → 删除, 防"假装调用")。"""
+    t = str(text or "")
+    t = re.sub(r"```tool_calls[\s\S]*?```", "", t)
+    t = re.sub(r"<tool_calls>[\s\S]*?</tool_calls>", "", t)
+    t = re.sub(r"<invoke name=\"[^\"]*\"[\s\S]*?</invoke>", "", t)
+    return re.sub(r"\n{3,}", "\n\n", t).strip()
 
 
 def _core_render(data_dir: str | Path | None) -> str:

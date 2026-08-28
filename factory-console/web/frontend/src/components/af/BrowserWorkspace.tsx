@@ -131,7 +131,6 @@ function MyCompanyTab({ onOpen }: { onOpen: (t: Omit<WorkspaceTab, 'id'>) => voi
   const totalTasks = projects.reduce((a, p) => a + ((p.stage_progress?.开发?.total) || 0), 0);
   const doneTasks = projects.reduce((a, p) => a + ((p.stage_progress?.开发?.done) || 0), 0);
   const taskPct = totalTasks ? Math.round((doneTasks / totalTasks) * 100) : 0;
-  const activeCount = projects.filter((p) => !p.archived && p.status !== 'archived').length;
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -145,6 +144,7 @@ function MyCompanyTab({ onOpen }: { onOpen: (t: Omit<WorkspaceTab, 'id'>) => voi
       } catch { /* 失败安全 */ }
       if (!cancelled) setLoading(false);
     })();
+    loadHome();
     return () => { cancelled = true; };
   }, []);
 
@@ -156,17 +156,9 @@ function MyCompanyTab({ onOpen }: { onOpen: (t: Omit<WorkspaceTab, 'id'>) => voi
       {/* 指标卡 */}
       <div className="bw-metrics" data-testid="bw-metrics">
         <div className="bw-metric"><span className="bw-metric-num">{projects.length}</span><span className="bw-metric-label">项目</span></div>
-        <div className="bw-metric"><span className="bw-metric-num">{activeCount}</span><span className="bw-metric-label">活跃</span></div>
         <div className="bw-metric"><span className="bw-metric-num">{taskPct}%</span><span className="bw-metric-label">任务完成</span></div>
         <div className="bw-metric"><span className="bw-metric-num">{board?.running_tasks ?? 0}</span><span className="bw-metric-label">运行任务</span></div>
         <div className="bw-metric"><span className="bw-metric-num">{board?.avg_lifecycle_pct ?? 0}%</span><span className="bw-metric-label">平均进度</span></div>
-      </div>
-
-      {/* 快捷操作 */}
-      <div className="bw-quick" data-testid="bw-quick">
-        <button type="button" className="bw-btn" onClick={() => onOpen({ type: 'newtab', title: '新标签页' })}>➕ 新建项目</button>
-        <button type="button" className="bw-btn" onClick={() => onOpen({ type: 'newtab', title: '新标签页' })}>💬 发起会话</button>
-        <button type="button" className="bw-btn" onClick={() => onOpen({ type: 'newtab', title: '新标签页' })}>📋 建任务</button>
       </div>
 
       {/* 待办审批 */}

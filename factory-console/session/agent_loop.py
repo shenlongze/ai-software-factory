@@ -235,6 +235,10 @@ def tool_schemas(data_dir: str | Path | None = None) -> list[dict[str, Any]]:
         _fc("skill_search", "技能检索", "检索可用技能库 (147+ 技能: 产品/开发/质量/运维等)。"
             "需要专业技能/专业方法时调用, 返回技能名字+分类+路径, 再按路径读取 SKILL.md 加载指引",
             {"query": {"type": "string"}, "max_results": {"type": "integer"}}, ["query"]),
+        # ---- W7 (v1.1.253): 代码库符号地图 (Aider repo map 思路) ----
+        _fc("repo_map", "代码库地图", "生成代码库符号地图 (文件+关键 def/class, 按问题相关性排名, token 预算内)。"
+            "理解项目代码结构/找实现位置/分析架构时先调用, 再按需 read_code 深入; 不用全量读文件",
+            {"query": {"type": "string"}, "max_chars": {"type": "integer"}}, ["query"]),
         # ---- S8 (v1.1.246): 通用执行/搜索工具 — 一劳永逸, 不预置专用工具 ----
         _fc("web_search", "网络搜索", "在互联网搜索 (DuckDuckGo, 无需key)。返回标题+链接+摘要。"
             "【何时用】本地/项目内/常识解决不了, 或需要实时/最新/外部信息, 或用户明确要求'去网上查'时才用; "
@@ -797,6 +801,12 @@ def dispatch(
                 return {"ok": True, "output": "\n".join(lines)}
             except Exception as exc:  # noqa: BLE001 — 检索失败 → 诚实
                 return {"ok": False, "error": f"知识检索失败: {exc}"}
+        # ---- W7 (v1.1.253): 代码库符号地图 ----
+        if tool_id == "repo_map":
+            from .repo_map import build_repo_map
+
+            return build_repo_map(root, project_id, str(args.get("query") or ""),
+                                  max_chars=int(args.get("max_chars") or 1500))
         # ---- W5 (v1.1.251): skills 按需检索 ----
         if tool_id == "skill_search":
             from .skill_search import list_skills
@@ -1295,10 +1305,25 @@ def run_agent_native(
 
                     messages.append({"role": "system", "content": no_evidence_prompt()})
                     continue
+                # W8 (v1.1.253): 输出 guardrail — 数字证据校验 (OpenAI SDK Guardrails 思路)
+                # 模型直接回答但答案含关键数字 → 与已调工具结果比对; 无据数字 → 强制修正轮 (fail-fast)
+                _answer = resp.get("content") or "（模型未输出）"
+                if calls:
+                    from .answer_verify import verify_numbers
+
+                    _ref_text = "\n".join(
+                        str(c.get("output") or c.get("error") or "") for c in calls)
+                    _chk = verify_numbers(_answer, _ref_text)
+                    if not _chk.get("ok") and total_calls < max_rounds - 1:
+                        messages.append({"role": "system", "content": (
+                            "【输出校验未通过 (W8)】你回答中的这些数字在已调工具结果里找不到依据: "
+                            + ", ".join(_chk.get("unverified") or []) + "。"
+                            "请修正: 删除无据数字, 或明确标注『未查到』, 或基于工具结果重述; 不要编造数字。"
+                        )})
+                        continue
                 # 模型自主收敛 (直接回答/追问) — agentic: 不强制拦截
                 if total_calls == 0:
                     _converge = "autonomous"
-                _answer = resp.get("content") or "（模型未输出）"
                 _audit_sess(data_dir, session_id, question, intent, calls,
                             total_calls, max_rounds, _start_ms, _converge, _answer,
                             _usage_prompt, _usage_completion)

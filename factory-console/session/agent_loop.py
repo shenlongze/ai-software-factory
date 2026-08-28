@@ -1126,6 +1126,8 @@ def run_agent_native(
         {"role": "system", "content": _core_render(data_dir)},
         # W5 (v1.1.251): skills 索引提示 (紧凑, 按需 skill_search)
         {"role": "system", "content": _skills_index(data_dir)},
+        # v1.1.260: 项目源码路径事实 — 模型开局知道源码在哪 (治"找不到源码/扫错目录")
+        {"role": "system", "content": _repo_fact(data_dir, project_id)},
         {"role": "system", "content": format_intent(intent) + "\n" + route_for(intent["intent"])},
         {"role": "system", "content": style_instruction(question, intent.get("intent"), intent.get("emotion"))},
         {"role": "user", "content": question},
@@ -1457,6 +1459,23 @@ def run_agent_native(
                     _usage_prompt, _usage_completion)
         return {"answer": "", "rejected": True, "calls": calls, "evidence": [],
                 "reason": f"原生 FC 不可用: {exc}"}
+
+
+def _repo_fact(data_dir: str | Path | None, project_id: str) -> str:
+    """项目源码仓库路径事实 (从 locate_repo 拿; 失败安全 → 空)。"""
+    try:
+        from .code_scan import locate_repo
+
+        repo = locate_repo(data_dir, project_id)
+        if repo:
+            return (
+                f"【项目源码】当前项目源码仓库在: {repo}。"
+                "查代码/结构/实现用 read_code/search_code/code_scan/repo_map (参数为仓库内相对路径); "
+                "不要用 bash find 在数据目录扫源码。"
+            )
+    except Exception:  # noqa: BLE001 — 定位失败 → 空
+        pass
+    return ""
 
 
 def _skills_index(data_dir: str | Path | None) -> str:

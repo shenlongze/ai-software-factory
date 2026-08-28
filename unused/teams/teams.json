@@ -1,0 +1,37 @@
+{
+  "software-team": {
+    "team_id": "software-team",
+    "name": "AI Software Team",
+    "members": [
+      {
+        "agent": "pm-agent",
+        "role": "product_manager"
+      },
+      {
+        "agent": "architect-agent",
+        "role": "architect"
+      },
+      {
+        "agent": "backend-1",
+        "role": "backend"
+      },
+      {
+        "agent": "flutter-dev",
+        "role": "frontend"
+      },
+      {
+        "agent": "qa-agent",
+        "role": "qa"
+      }
+    ],
+    "projects": [],
+    "created_at": "2026-08-28T05:20:24.865995+00:00"
+  },
+  "mobile-team": {
+    "team_id": "mobile-team",
+    "name": "Mobile Team",
+    "members": [],
+    "projects": [],
+    "created_at": "2026-08-28T05:21:59.456570+00:00"
+  }
+}

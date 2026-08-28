@@ -73,9 +73,9 @@ class TestUnifiedRetrieve:
 class TestNoBypass:
     def test_actions_memory_search_unified(self):
         """memory_search action 不再直接调 ExperienceRetriever。"""
-        c = Path("/Users/Shared/work/ai-software-factory/factory-console/session/actions.py")
+        c = Path("/Users/Shared/work/ai-software-factory/factory-console/session/actions_memory.py")
         content = c.read_text(encoding="utf-8")
-        # memory_search 函数体用 unified
+        # memory_search 函数体用 unified (R1: 已拆至 actions_memory.py)
         seg = content[content.find("def memory_search"):content.find("def memory_learn")]
         assert "retrieve_experience" in seg
         assert "ExperienceRetriever(ExperienceStore" not in seg

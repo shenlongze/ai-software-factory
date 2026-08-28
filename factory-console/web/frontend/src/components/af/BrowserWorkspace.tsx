@@ -123,23 +123,27 @@ function MyCompanyTab({ onOpen }: { onOpen: (t: Omit<WorkspaceTab, 'id'>) => voi
             });
             return (
               <li key={p.id} className="bw-company-item" data-testid={`bw-company-${p.id}`}>
-                <span className="bw-company-idx">{idx + 1}.</span>
-                <button
-                  type="button"
-                  className="bw-company-name"
-                  onClick={() => onOpen({ type: 'project', title: p.name, projectId: p.id })}
-                >
-                  {p.starred ? '⭐ ' : ''}{p.name}
-                </button>
-                <span className="bw-company-meta">
+                <div className="bw-company-row bw-company-row--top">
+                  <span className="bw-company-idx">{idx + 1}.</span>
+                  <button
+                    type="button"
+                    className="bw-company-name"
+                    onClick={() => onOpen({ type: 'project', title: p.name, projectId: p.id })}
+                  >
+                    {p.starred ? '⭐ ' : ''}{p.name}
+                  </button>
+                  <span className="bw-badge bw-badge--stage">{p.lifecycle_stage || '未定义阶段'}</span>
+                  <span className="bw-badge">未完成计划: {p.pending_plan_count ?? 0}</span>
+                  {p.repository ? (
+                    <a className="bw-company-repo" href={p.repository} target="_blank" rel="noreferrer" title={p.repository}>
+                      🔗 仓库
+                    </a>
+                  ) : <span className="bw-company-repo bw-muted">🔗 无仓库</span>}
+                </div>
+                <div className="bw-company-row bw-company-row--meta">
                   创建 {p.created_at || '—'} · 更新 {p.updated_at || '—'}
-                </span>
-                <span className="bw-company-stage">阶段: {p.lifecycle_stage || '—'}</span>
-                <span className="bw-company-plan">未完成计划: {p.pending_plan_count ?? 0}</span>
-                {p.repository ? (
-                  <a className="bw-company-repo" href={p.repository} target="_blank" rel="noreferrer">🔗 {p.repository}</a>
-                ) : <span className="bw-company-repo bw-muted">🔗 无仓库</span>}
-                <span className="bw-company-stages">{stageCells}</span>
+                </div>
+                <div className="bw-company-row bw-company-row--stages">{stageCells}</div>
               </li>
             );
           })}

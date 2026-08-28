@@ -218,3 +218,35 @@ def test_t7_governance_rules_missing_file_empty(sh, tmp_path):
     from factory_console.session.session_hooks import load_governance_rules
 
     assert load_governance_rules(str(tmp_path)) == []
+
+
+def test_t10_session_end_writes_spine_handoff(sh, tmp_path):
+    """T10: SessionEnd 写 Spine 交接卡 — 会话结束固化进展 (新会话'继续做XX'有据可依)。"""
+    from factory_console.session.handoff import ProjectSpine
+    from factory_console.session.session_hooks import session_end_hook
+
+    ctx = {
+        "data_dir": str(tmp_path),
+        "project_id": "P-t10",
+        "session_id": "sess-t10",
+        "messages": [
+            {"role": "user", "content": "继续做版本管理功能"},
+            {"role": "assistant", "content": "好的, 已完成版本对齐, 下一步做 bump 脚本"},
+        ],
+    }
+    session_end_hook(ctx)
+    sp = ProjectSpine.load(str(tmp_path), "P-t10")
+    hc = sp.data.get("handoff_card") or {}
+    assert hc.get("progress"), "handoff 应有进度"
+    assert "已完成版本对齐" in str(hc.get("progress"))
+    assert "继续做版本管理功能" in (hc.get("next_steps") or [])
+
+
+def test_t10_session_end_no_messages_no_crash(sh, tmp_path):
+    """T10: SessionEnd 无消息 → 不写 handoff, 不崩。"""
+    from factory_console.session.handoff import ProjectSpine
+    from factory_console.session.session_hooks import session_end_hook
+
+    session_end_hook({"data_dir": str(tmp_path), "project_id": "P-t10", "messages": []})
+    sp = ProjectSpine.load(str(tmp_path), "P-t10")
+    assert not (sp.data.get("handoff_card") or {})

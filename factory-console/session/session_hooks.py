@@ -277,6 +277,28 @@ def session_end_hook(ctx: dict[str, Any]) -> None:
             if added >= 8:
                 break
         mem.save(data_dir)
+        # T10 (v1.1.292): SessionEnd 也写 Spine 交接卡 — 会话结束固化进展,
+        # 新会话"继续做 XX"有据可依 (PreCompact 只在压缩时写, 普通结束会漏)
+        try:
+            from .handoff import ProjectSpine
+
+            sp = ProjectSpine.load(data_dir, project_id)
+            last_user = ""
+            last_assistant = ""
+            for m in msgs:
+                if str(m.get("role") or "") == "user":
+                    last_user = str(m.get("content") or "")[:150]
+                elif str(m.get("role") or "") == "assistant":
+                    last_assistant = str(m.get("content") or "")[:200]
+            if last_user or last_assistant:
+                sp.set_handoff(
+                    progress=f"会话 {ctx.get('session_id') or ''} 结束: {last_assistant or last_user}",
+                    next_steps=[last_user] if last_user else [],
+                    source="agent_claim",
+                )
+                sp.save(data_dir)
+        except Exception:  # noqa: BLE001 — Spine 失败不阻断
+            pass
         return None
     except Exception:  # noqa: BLE001
         return None

@@ -1279,9 +1279,7 @@ class ConsoleService:
                 created_at=self._project_timestamps(project_id)[0],
                 updated_at=self._project_timestamps(project_id)[1],
                 stage_progress=self._project_stage_progress(project_id, tasks.get(project_id, {})),
-                pending_plan_count=sum(
-                    int(v or 0) for k, v in (tasks.get(project_id, {}) or {}).items()
-                    if k not in ("done",)),
+                pending_plan_count=self._project_backlog_stats(project_id).get("pending", 0),
             )
             self._apply_workflow_projection(summary, wf_by_project.get(project_id))
             summaries.append(summary)
@@ -1310,9 +1308,7 @@ class ConsoleService:
                         created_at=self._project_timestamps(project_id)[0],
                         updated_at=self._project_timestamps(project_id)[1],
                         stage_progress=self._project_stage_progress(project_id, tasks.get(project_id, {})),
-                        pending_plan_count=sum(
-                            int(v or 0) for k, v in (tasks.get(project_id, {}) or {}).items()
-                            if k not in ("done",)),
+                        pending_plan_count=self._project_backlog_stats(project_id).get("pending", 0),
                     ))
         except Exception:  # noqa: BLE001
             pass
@@ -3392,6 +3388,29 @@ class ConsoleService:
         except Exception:  # noqa: BLE001 — 失败安全
             return None, None
 
+    def _project_backlog_stats(self, project_id: str) -> dict[str, int]:
+        """项目 backlog 任务统计 {total, done, pending}: 读 management/backlog/task.json (与 WebUI 任务树同源)。"""
+        try:
+            pdir = Path(getattr(self._workspace, "root", None) or "") / "projects" / str(project_id)
+            tf = pdir / "management" / "backlog" / "task.json"
+            if not tf.is_file():
+                # 兜底: 项目目录内任意 task.json
+                for cand in pdir.rglob("task.json"):
+                    if "backlog" in str(cand):
+                        tf = cand
+                        break
+            if not tf.is_file():
+                return {"total": 0, "done": 0, "pending": 0}
+            import json as _json
+
+            data = _json.loads(tf.read_text(encoding="utf-8")) or {}
+            tasks_map = data.get("tasks") or {}
+            done = sum(1 for t in tasks_map.values() if str(t.get("status") or "") == "done")
+            total = len(tasks_map)
+            return {"total": total, "done": done, "pending": total - done}
+        except Exception:  # noqa: BLE001 — 失败安全
+            return {"total": 0, "done": 0, "pending": 0}
+
     def _project_stage_progress(self, project_id: str, tasks: dict[str, int]) -> dict[str, dict[str, Any]]:
         """各生命周期阶段完成度: 想法/讨论/设计/开发 (基于产物存在 + 任务完成度)。"""
         try:
@@ -3414,10 +3433,9 @@ class ConsoleService:
         # 设计: 工程计划/架构产物
         eng = any((pdir / f).exists() for f in ("engineering.json", "engineering.md", "plan.json", "architecture.md"))
         _stage("设计", 1 if eng else 0, 1)
-        # 开发: 任务完成度 (todo/ready/in_progress/blocked/review 未完成; done 完成)
-        total = sum(int(v or 0) for v in tasks.values())
-        done = int(tasks.get("done") or 0)
-        _stage("开发", done, total)
+        # 开发: backlog 任务完成度 (与 WebUI 任务树同源)
+        bs = self._project_backlog_stats(project_id)
+        _stage("开发", bs.get("done", 0), bs.get("total", 0))
         return stages
 
     def _project_last_activity(self, project_id: str) -> str | None:

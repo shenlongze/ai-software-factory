@@ -1240,6 +1240,12 @@ class ConsoleService:
                 pending_approvals=self._pending_approvals_for_project(project_id),
                 tasks=tasks.get(project_id, {}),
                 last_activity=self._project_last_activity(project_id),
+                created_at=self._project_timestamps(project_id)[0],
+                updated_at=self._project_timestamps(project_id)[1],
+                stage_progress=self._project_stage_progress(project_id, tasks.get(project_id, {})),
+                pending_plan_count=sum(
+                    int(v or 0) for k, v in (tasks.get(project_id, {}) or {}).items()
+                    if k not in ("done",)),
             )
             self._apply_workflow_projection(summary, wf_by_project.get(project_id))
             summaries.append(summary)
@@ -1270,6 +1276,12 @@ class ConsoleService:
                 pending_approvals=self._pending_approvals_for_project(project_id),
                 tasks=tasks.get(project_id, {}),
                 last_activity=self._project_last_activity(project_id),
+                created_at=self._project_timestamps(project_id)[0],
+                updated_at=self._project_timestamps(project_id)[1],
+                stage_progress=self._project_stage_progress(project_id, tasks.get(project_id, {})),
+                pending_plan_count=sum(
+                    int(v or 0) for k, v in (tasks.get(project_id, {}) or {}).items()
+                    if k not in ("done",)),
             )
             self._apply_workflow_projection(summary, wf_by_project.get(project_id))
             summaries.append(summary)
@@ -1295,7 +1307,21 @@ class ConsoleService:
                         starred=False,
                         status=str(data.get("status") or "active"),
                         last_activity=self._project_last_activity(project_id),
+                        created_at=self._project_timestamps(project_id)[0],
+                        updated_at=self._project_timestamps(project_id)[1],
+                        stage_progress=self._project_stage_progress(project_id, tasks.get(project_id, {})),
+                        pending_plan_count=sum(
+                            int(v or 0) for k, v in (tasks.get(project_id, {}) or {}).items()
+                            if k not in ("done",)),
                     ))
+        except Exception:  # noqa: BLE001
+            pass
+        # v1.1.272: 近期修改排最上 (updated_at 倒序; None 最后, 保持稳定序)
+        try:
+            summaries.sort(
+                key=lambda s: (s.updated_at or ""),
+                reverse=True,
+            )
         except Exception:  # noqa: BLE001
             pass
         return summaries
@@ -3347,6 +3373,52 @@ class ConsoleService:
             return out
         except Exception:
             return {}
+
+    def _project_timestamps(self, project_id: str) -> tuple[str | None, str | None]:
+        """项目创建/更新时间: 目录最早/最新文件 mtime → ISO (无目录 → None, None)。"""
+        try:
+            pdir = Path(getattr(self._workspace, "root", None) or "") / "projects" / str(project_id)
+            if not pdir.is_dir():
+                return None, None
+            mt = [p.stat().st_mtime for p in pdir.rglob("*") if p.is_file()]
+            if not mt:
+                return None, None
+            import datetime as _dt
+
+            def _iso(ts: float) -> str:
+                return _dt.datetime.fromtimestamp(ts, tz=_dt.timezone.utc).strftime("%Y-%m-%d %H:%M")
+
+            return _iso(min(mt)), _iso(max(mt))
+        except Exception:  # noqa: BLE001 — 失败安全
+            return None, None
+
+    def _project_stage_progress(self, project_id: str, tasks: dict[str, int]) -> dict[str, dict[str, Any]]:
+        """各生命周期阶段完成度: 想法/讨论/设计/开发 (基于产物存在 + 任务完成度)。"""
+        try:
+            pdir = Path(getattr(self._workspace, "root", None) or "") / "projects" / str(project_id)
+        except Exception:  # noqa: BLE001
+            pdir = Path("")
+        stages: dict[str, dict[str, Any]] = {}
+
+        def _stage(name: str, done: int, total: int) -> None:
+            stages[name] = {
+                "done": done, "total": total,
+                "pct": round(done / total, 4) if total else 0.0,
+            }
+
+        # 想法: 项目定义存在
+        _stage("想法", 1 if (pdir / "product.json").exists() or (pdir / "project.json").exists() else 0, 1)
+        # 讨论: PRD/需求文档产物
+        prd = any((pdir / f).exists() for f in ("PRD.md", "prd.md", "requirements.md", "需求.md"))
+        _stage("讨论", 1 if prd else 0, 1)
+        # 设计: 工程计划/架构产物
+        eng = any((pdir / f).exists() for f in ("engineering.json", "engineering.md", "plan.json", "architecture.md"))
+        _stage("设计", 1 if eng else 0, 1)
+        # 开发: 任务完成度 (todo/ready/in_progress/blocked/review 未完成; done 完成)
+        total = sum(int(v or 0) for v in tasks.values())
+        done = int(tasks.get("done") or 0)
+        _stage("开发", done, total)
+        return stages
 
     def _project_last_activity(self, project_id: str) -> str | None:
         """项目维度最近事件时间 (事件缺失 → 项目目录最新文件 mtime 兜底)。

@@ -28,6 +28,11 @@ export interface ProjectSummary {
   current_stage_status: string | null;
   progress: number;
   stage_counts: Record<string, number>;
+  // v1.1.272: 我的公司列表 — 创建/更新 + 各阶段完成度 + 未完成计划
+  created_at?: string | null;
+  updated_at?: string | null;
+  stage_progress?: Record<string, { done: number; total: number; pct: number }>;
+  pending_plan_count?: number;
 }
 
 /** POST /api/projects 创建结果 (S10-006.5 用户创建闭环投影)。 */

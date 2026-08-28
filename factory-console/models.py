@@ -106,6 +106,11 @@ class ProjectSummary(BaseModel):
     current_stage_status: str | None = None
     progress: float = Field(default=0.0, ge=0.0, le=1.0)
     stage_counts: dict[str, int] = Field(default_factory=dict)
+    # v1.1.272: 我的公司列表 — 创建/更新时间 + 各阶段完成度 + 未完成计划
+    created_at: str | None = None
+    updated_at: str | None = None
+    stage_progress: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    pending_plan_count: int = Field(default=0, ge=0)
 
     @field_validator("tech_stack", mode="before")
     @classmethod

@@ -72,8 +72,17 @@ function TabContent({ tab, projectId, onOpen }: {
 }
 
 // ---------------------------------------------------------------- 首页 (我的公司, 固定不可关)
+interface CompanyProject {
+  id: string; name: string; status?: string; starred?: boolean;
+  lifecycle_stage?: string | null; repository?: string;
+  created_at?: string | null; updated_at?: string | null;
+  pending_plan_count?: number;
+  stage_progress?: Record<string, { done: number; total: number; pct: number }>;
+}
+
 function MyCompanyTab({ onOpen }: { onOpen: (t: Omit<WorkspaceTab, 'id'>) => void }): JSX.Element {
-  const [projects, setProjects] = useState<{ id: string; name: string; status?: string; starred?: boolean }[]>([]);
+  const [projects, setProjects] = useState<CompanyProject[]>([]);
+  const [loading, setLoading] = useState(true);
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -82,30 +91,60 @@ function MyCompanyTab({ onOpen }: { onOpen: (t: Omit<WorkspaceTab, 'id'>) => voi
         if (res.ok) {
           const raw = (await res.json()) as { items?: unknown[] } | unknown[];
           const list = Array.isArray(raw) ? raw : (raw as { items?: unknown[] }).items ?? [];
-          if (!cancelled) setProjects(list as { id: string; name: string; status?: string; starred?: boolean }[]);
+          if (!cancelled) setProjects(list as CompanyProject[]);
         }
       } catch { /* 失败安全 */ }
+      if (!cancelled) setLoading(false);
     })();
     return () => { cancelled = true; };
   }, []);
+
+  const stageOrder = ['想法', '讨论', '设计', '开发'];
+  const stageIcon: Record<string, string> = { 想法: '💡', 讨论: '💬', 设计: '📐', 开发: '🛠' };
+
   return (
-    <div className="bw-home" data-testid="bw-home">
+    <div className="bw-home bw-home--company" data-testid="bw-home">
       <h2>🏢 我的公司</h2>
-      <p className="bw-home-sub">公司级工作台 — 点项目进入，或打开新标签</p>
-      <div className="bw-home-grid">
-        {projects.map((p) => (
-          <button
-            key={p.id}
-            type="button"
-            className="bw-home-card"
-            onClick={() => onOpen({ type: 'project', title: p.name, projectId: p.id })}
-          >
-            {p.starred ? '⭐ ' : ''}{p.name}
-            <span className="bw-home-card-status"> · {p.status || 'idea'}</span>
-          </button>
-        ))}
-        {!projects.length ? <p className="bw-muted">暂无项目 — 点 ➕ 新建或从侧栏创建</p> : null}
-      </div>
+      <p className="bw-home-sub">公司级工作台 — 按最近更新排序，点项目进入</p>
+      {loading ? <p className="bw-muted">加载中…</p> : projects.length === 0 ? (
+        <p className="bw-muted">暂无项目 — 点 ➕ 新建或从侧栏创建</p>
+      ) : (
+        <ol className="bw-company-list">
+          {projects.map((p, idx) => {
+            const sp = p.stage_progress || {};
+            const stageCells = stageOrder.map((s) => {
+              const v = sp[s];
+              const pct = v ? Math.round((v.pct || 0) * 100) : 0;
+              return (
+                <span key={s} className={`bw-stage bw-stage--${v && v.done >= v.total ? 'done' : pct > 0 ? 'part' : 'todo'}`}>
+                  {stageIcon[s]} {s} {v ? `${pct}%` : '—'}
+                </span>
+              );
+            });
+            return (
+              <li key={p.id} className="bw-company-item" data-testid={`bw-company-${p.id}`}>
+                <span className="bw-company-idx">{idx + 1}.</span>
+                <button
+                  type="button"
+                  className="bw-company-name"
+                  onClick={() => onOpen({ type: 'project', title: p.name, projectId: p.id })}
+                >
+                  {p.starred ? '⭐ ' : ''}{p.name}
+                </button>
+                <span className="bw-company-meta">
+                  创建 {p.created_at || '—'} · 更新 {p.updated_at || '—'}
+                </span>
+                <span className="bw-company-stage">阶段: {p.lifecycle_stage || '—'}</span>
+                <span className="bw-company-plan">未完成计划: {p.pending_plan_count ?? 0}</span>
+                {p.repository ? (
+                  <a className="bw-company-repo" href={p.repository} target="_blank" rel="noreferrer">🔗 {p.repository}</a>
+                ) : <span className="bw-company-repo bw-muted">🔗 无仓库</span>}
+                <span className="bw-company-stages">{stageCells}</span>
+              </li>
+            );
+          })}
+        </ol>
+      )}
     </div>
   );
 }

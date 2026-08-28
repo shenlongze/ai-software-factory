@@ -401,6 +401,21 @@ def execute_plan(
 _hooks_instance = None
 
 
+#: v1.1.267 深度调研方法 (抄 Hermes 调研风格: 先查本地→并行收集→深挖源码→结构化可执行输出)
+RESEARCH_METHOD_PROMPT = """【深度调研方法 (Research)】这是调研/研究/对比类任务。按以下方法做, 要细致、准确、可执行:
+
+1. 先查本地已有 (避免重复劳动): knowledge_search 查项目知识/记忆; 查 docs/ 下是否已有同类调研文档
+2. 并行收集: web_search 搜 GitHub/官方文档/权威来源; 识别本地是否有可深挖的一手资料 (本地安装的源码、AGENTS.md、README)
+3. 深挖一手资料: 用 read_code/read 读本地源码/文档原文, 引用真实内容 (函数名/设计原则/许可证); GitHub API 搜准确仓库名, 核对 star/许可证
+4. 结构化输出 (markdown 分节):
+   一、核心对象怎么做的 (机制/设计, 引用真实代码或文档)
+   二、生态/同类对比 (表格: 项目 | 定位 | 许可证 | 可借鉴点)
+   三、直接结论: 能抄什么分档 (✅可直接抄代码 MIT/Apache / ⚠️只能抄架构 AGPL/商用条款 / 🔧设计启示)
+   四、落地优先级: P0/P1 带大致工作量
+
+数据必须真实 (仓库名/star数/许可证/文件路径来自工具输出); 查不到 → 说"未查到", 不许编造。"""
+
+
 #: v1.1.262 深度审计方法 (抄 Hermes project-audit/codebase-inspection 技能效果)
 AUDIT_METHOD_PROMPT = """【深度审计方法 (Project Audit)】这是结构性审计任务。按以下方法多轮深入, 不要一次扫描就下结论:
 
@@ -1152,6 +1167,8 @@ def run_agent_native(
         {"role": "system", "content": _repo_fact(data_dir, project_id)},
         # v1.1.262: 深度审计引导 — 结构/审计/合理性类请求注入方法论 (抄 Hermes project-audit)
         {"role": "system", "content": _audit_guide(question, intent)},
+        # v1.1.267: 深度调研引导 — 调研/研究/对比类请求注入方法论 (抄 Hermes 调研风格)
+        {"role": "system", "content": _research_guide(question, intent)},
         {"role": "system", "content": format_intent(intent) + "\n" + route_for(intent["intent"])},
         {"role": "system", "content": style_instruction(question, intent.get("intent"), intent.get("emotion"))},
         {"role": "user", "content": question},
@@ -1492,6 +1509,16 @@ def run_agent_native(
                     _usage_prompt, _usage_completion)
         return {"answer": "", "rejected": True, "calls": calls, "evidence": [],
                 "reason": f"原生 FC 不可用: {exc}"}
+
+
+def _research_guide(question: str, intent: dict[str, Any]) -> str:
+    """调研/研究/对比类请求 → 注入深度调研方法。其他 → 空。"""
+    q = str(question or "")
+    _kws = ("调研", "研究", "对比", "开源", "怎么做的", "如何处理", "如何实现", "查一下", "了解一下",
+            "分析一下", "哪个好", "区别", "抄", "借鉴", "方案", "机制", "设计哲学")
+    if any(k in q for k in _kws) and intent.get("intent") in ("analyze", "deep_analyze", "question"):
+        return RESEARCH_METHOD_PROMPT
+    return ""
 
 
 def _audit_guide(question: str, intent: dict[str, Any]) -> str:

@@ -4761,6 +4761,47 @@ body[data-bg='1'] .af-shell {
   padding: 0 4px;
 }
 
+/* T3: 思考链可视化 */
+.af-chat-thinking {
+  margin: 6px 0;
+  border-left: 2px solid var(--af-primary, #0071e3);
+  padding-left: 10px;
+}
+.af-chat-thinking-toggle {
+  background: none;
+  border: none;
+  color: var(--c-muted, #86868b);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 0;
+}
+.af-chat-thinking-toggle:hover {
+  color: var(--af-primary, #0071e3);
+}
+.af-chat-thinking-steps {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+}
+.af-chat-thinking-step {
+  display: flex;
+  gap: 8px;
+  margin: 4px 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.af-chat-thinking-round {
+  flex: 0 0 auto;
+  color: var(--af-primary, #0071e3);
+  font-weight: 600;
+  font-family: var(--af-font-mono, monospace);
+}
+.af-chat-thinking-detail {
+  color: var(--c-muted, #86868b);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* 概览 Todo: 未完成聚焦 + 已完成折叠 */
 .af-todo-done-block {
   margin-top: 8px;
@@ -5011,3 +5052,13 @@ body[data-bg='1'] .af-shell {
 .bw-stage { font-size: 11px; padding: 2px 8px; border-radius: 10px; border: 1px solid var(--c-border, #2a3140); color: var(--c-text2, #9aa1ae); white-space: nowrap; }
 .bw-stage--done { color: #16a34a; border-color: rgba(34, 197, 94, 0.3); background: rgba(34, 197, 94, 0.08); }
 .bw-stage--part { color: #d97706; border-color: rgba(217, 119, 6, 0.3); background: rgba(217, 119, 6, 0.08); }
+
+/* 类浏览器工作区: 占满 B 列, 无空隙 (v1.1.277 覆盖 af-main-scroll>div 的 24px margin) */
+.af-main-scroll > .bw {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  flex: 1;
+  min-height: 0;
+}
+.af-main-scroll > .bw .bw-body { min-height: 0; }

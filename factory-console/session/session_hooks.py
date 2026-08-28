@@ -63,6 +63,63 @@ def load_permission_mode(data_dir: str | None) -> str:
     return "normal"
 
 
+#: T7 治理规则文件名 (数据目录下)
+GOVERNANCE_RULES_FILE = "governance_rules.json"
+
+
+def load_governance_rules(data_dir: str | None) -> list[dict[str, Any]]:
+    """T7: 从 <data_dir>/governance_rules.json 加载治理规则 (红线可配置)。
+
+    每条规则:
+      {"tool": "bash_exec", "arg_pattern": "rm -rf|DROP TABLE", "action": "deny", "reason": "..."}
+      tool: 工具名 (支持 * 通配) | arg_pattern: 参数正则 (可选) | action: deny|require_approval
+    匹配顺序: 第一条命中即生效。缺文件 → 空规则 (仅内置硬编码红线)。
+    """
+    if not data_dir:
+        return []
+    try:
+        import json as _json
+        from pathlib import Path as _P
+
+        p = _P(data_dir) / GOVERNANCE_RULES_FILE
+        if not p.exists():
+            return []
+        d = _json.loads(p.read_text(encoding="utf-8"))
+        rules = d.get("rules") or []
+        valid = []
+        for r in rules:
+            if str(r.get("tool") or ""):
+                valid.append({
+                    "tool": str(r.get("tool")),
+                    "arg_pattern": str(r.get("arg_pattern") or ""),
+                    "action": str(r.get("action") or "deny"),
+                    "reason": str(r.get("reason") or f"治理规则拦截 {r.get('tool')}"),
+                })
+        return valid
+    except Exception:  # noqa: BLE001 — 缺/坏 → 空规则, 不阻断
+        return []
+
+
+def _rule_match(rule: dict[str, Any], tool_id: str, args: Any) -> bool:
+    """T7: 规则是否命中 — 工具名匹配 (* 通配) + 参数正则匹配 (可选)。"""
+    tool_pat = str(rule.get("tool") or "")
+    if tool_pat == "*":
+        pass
+    elif tool_pat.endswith("*"):
+        if not tool_id.startswith(tool_pat[:-1]):
+            return False
+    elif tool_id != tool_pat:
+        return False
+    arg_pat = str(rule.get("arg_pattern") or "")
+    if arg_pat:
+        try:
+            if not re.search(arg_pat, str(args or "")):
+                return False
+        except re.error:
+            return False
+    return True
+
+
 class SessionHooks:
     """会话级 Hook 注册表 + 分发。"""
 
@@ -226,15 +283,26 @@ def session_end_hook(ctx: dict[str, Any]) -> None:
 
 
 def pre_tool_use_hook(ctx: dict[str, Any]) -> dict[str, Any] | None:
-    """PreToolUse 动作门 (S10-127 M4.3 + P1.5 权限模式):
+    """PreToolUse 动作门 (S10-127 M4.3 + P1.5 权限模式 + T7 治理规则):
+    - T7 治理规则 (governance_rules.json) 优先: 命中 deny → 拦截; require_approval → 转审批
     - 危险/破坏性动作 → 永远 deny
     - plan 模式 (只读) → 写操作 (SENSITIVE_TOOLS) deny
     - auto 模式 → 敏感动作标记 audit (放行, 由审计/审批层处理)
     - acceptEdits/normal → 放行 (现有审批流程处理)
 
-    ctx: {tool_id, args, permission_mode?, ...}
+    ctx: {tool_id, args, permission_mode?, data_dir, ...}
     """
     tool_id = str(ctx.get("tool_id") or "")
+    args = ctx.get("args")
+    # T7: 治理规则优先 (可配置红线)
+    for rule in load_governance_rules(ctx.get("data_dir")):
+        if not _rule_match(rule, tool_id, args):
+            continue
+        action = str(rule.get("action") or "deny")
+        reason = str(rule.get("reason") or f"治理规则拦截 {tool_id}")
+        if action == "require_approval":
+            return {"action": "allow", "require_approval": True, "reason": reason}
+        return {"action": "deny", "reason": reason}
     if tool_id in DANGEROUS_TOOLS:
         return {"action": "deny", "reason": f"工具 {tool_id} 属于破坏性动作, 已默认拦截 (S10-127 M4.3)"}
     mode = str(ctx.get("permission_mode") or load_permission_mode(ctx.get("data_dir")))

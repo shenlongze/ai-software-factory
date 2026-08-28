@@ -158,3 +158,63 @@ def test_post_tool_use_fail_safe_on_missing_data_dir(sh, tmp_path):
 
     post_tool_use_hook({"tool_id": "bash_exec", "args": {}})
     # 不抛异常即通过
+
+
+def test_t7_governance_rules_deny(sh, tmp_path):
+    """T7: 治理规则 — 命中 deny 规则 → 拦截。"""
+    import json
+
+    from factory_console.session.session_hooks import pre_tool_use_hook
+
+    (tmp_path / "governance_rules.json").write_text(json.dumps({
+        "rules": [
+            {"tool": "bash_exec", "arg_pattern": "rm -rf", "action": "deny", "reason": "禁止删库"},
+        ]
+    }), encoding="utf-8")
+    r = pre_tool_use_hook({
+        "tool_id": "bash_exec", "args": {"command": "rm -rf /tmp/x"}, "data_dir": str(tmp_path),
+    })
+    assert r is not None and r.get("action") == "deny"
+    assert "禁止删库" in str(r.get("reason"))
+
+
+def test_t7_governance_rules_require_approval(sh, tmp_path):
+    """T7: 治理规则 — require_approval 规则 → 标记转审批 (不拦截)。"""
+    import json
+
+    from factory_console.session.session_hooks import pre_tool_use_hook
+
+    (tmp_path / "governance_rules.json").write_text(json.dumps({
+        "rules": [
+            {"tool": "git_push", "action": "require_approval", "reason": "推送需审批"},
+        ]
+    }), encoding="utf-8")
+    r = pre_tool_use_hook({
+        "tool_id": "git_push", "args": {}, "data_dir": str(tmp_path),
+    })
+    assert r is not None and r.get("action") == "allow"
+    assert r.get("require_approval") is True
+
+
+def test_t7_governance_rules_no_match_passes(sh, tmp_path):
+    """T7: 治理规则 — 未命中规则的工具放行 (不误伤)。"""
+    import json
+
+    from factory_console.session.session_hooks import pre_tool_use_hook
+
+    (tmp_path / "governance_rules.json").write_text(json.dumps({
+        "rules": [
+            {"tool": "bash_exec", "arg_pattern": "rm -rf", "action": "deny", "reason": "禁止删库"},
+        ]
+    }), encoding="utf-8")
+    r = pre_tool_use_hook({
+        "tool_id": "bash_exec", "args": {"command": "ls -la"}, "data_dir": str(tmp_path),
+    })
+    assert r is None  # 放行
+
+
+def test_t7_governance_rules_missing_file_empty(sh, tmp_path):
+    """T7: 治理规则文件缺失 → 空规则, 不阻断。"""
+    from factory_console.session.session_hooks import load_governance_rules
+
+    assert load_governance_rules(str(tmp_path)) == []

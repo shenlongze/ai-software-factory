@@ -1,0 +1,21 @@
+{
+  "rules": [
+    {
+      "tool": "bash_exec",
+      "arg_pattern": "rm -rf|DROP TABLE|TRUNCATE|DELETE FROM",
+      "action": "deny",
+      "reason": "破坏性操作: 禁止删库/删表/清表 (T7 治理红线)"
+    },
+    {
+      "tool": "bash_exec",
+      "arg_pattern": "git push --force|git reset --hard",
+      "action": "deny",
+      "reason": "强制推送/硬重置有数据丢失风险, 已拦截 (T7 治理红线)"
+    },
+    {
+      "tool": "git_push",
+      "action": "require_approval",
+      "reason": "git 推送需人工审批 (T7 治理规则)"
+    }
+  ]
+}

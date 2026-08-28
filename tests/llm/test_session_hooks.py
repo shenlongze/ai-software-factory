@@ -313,3 +313,39 @@ def test_t12_post_tool_use_dual_write_events_db(sh, tmp_path):
     conn = sqlite3.connect(tmp_path / "factory.db")
     rows = conn.execute("SELECT type, action, source FROM events WHERE type='tool.call'").fetchall()
     assert any(r[1] == "bash_exec" for r in rows)
+
+
+def test_t14_trace_aggregates_tools(tmp_path):
+    """T14: 追溯聚合 — 工具调用/耗时/失败统计 (audit_events.json 按会话)。"""
+    import json
+
+    from factory_console.session.session_hooks import post_tool_use_hook
+
+    ctx_ok = {
+        "tool_id": "bash_exec", "args": {"command": "ls"}, "project_id": "P-t14",
+        "session_id": "sess-t14", "result_ok": True, "duration_ms": 30, "data_dir": str(tmp_path),
+    }
+    ctx_fail = {
+        "tool_id": "project_scan", "args": {"path": "src"}, "project_id": "P-t14",
+        "session_id": "sess-t14", "result_ok": False, "duration_ms": 120, "data_dir": str(tmp_path),
+    }
+    post_tool_use_hook(ctx_ok)
+    post_tool_use_hook(ctx_fail)
+
+    # 手动聚合 (模拟 API 逻辑: 按 trace_id + TOOL_CALL)
+    store = __import__("factory_console.audit.audit_store", fromlist=["AuditStore"]).AuditStore(
+        workspace=None, file=str(tmp_path / "audit" / "audit_events.json"))
+    tools = []
+    for ev in store.events():
+        d = ev.to_dict() if hasattr(ev, "to_dict") else ev
+        if d.get("trace_id") != "sess-t14" or d.get("event_type") != "TOOL_CALL":
+            continue
+        evd = (d.get("evidence") or [{}])[0] if isinstance(d.get("evidence"), list) else {}
+        tools.append({
+            "tool": d.get("action"),
+            "ok": bool(d.get("result", {}).get("ok")) if isinstance(d.get("result"), dict) else False,
+            "duration_ms": int(evd.get("duration_ms") or 0),
+        })
+    assert len(tools) == 2
+    assert sum(1 for t in tools if not t["ok"]) == 1  # 1 失败
+    assert sum(int(t["duration_ms"]) for t in tools) == 150  # 30+120

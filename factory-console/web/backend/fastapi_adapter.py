@@ -2912,6 +2912,57 @@ def build_app(
             counts[t] = counts.get(t, 0) + 1
         return {"items": items, "count": len(items), "counts": counts}
 
+    @app.get("/api/audit/trace")
+    def api_audit_trace(session_id: str) -> dict[str, Any]:
+        """T14: 追溯查询 — 按会话聚合: 工具调用/耗时/结果 + events 库工具事件。
+
+        '这个会话做了什么/调了哪些工具/哪些失败' 一键查。只读。
+        """
+        out: dict[str, Any] = {"session_id": session_id, "tools": [], "tool_count": 0,
+                               "failed": 0, "total_duration_ms": 0, "events": []}
+        # 1) audit_events.json (TOOL_CALL, trace_id=session)
+        try:
+            from factory_console.audit.audit_store import AuditStore
+
+            store = AuditStore(workspace=None, file=str(Path(workspace_root or DEFAULT_ROOT) / "audit" / "audit_events.json"))
+            for ev in store.events():
+                d = ev.to_dict() if hasattr(ev, "to_dict") else ev
+                if d.get("trace_id") != session_id:
+                    continue
+                if d.get("event_type") != "TOOL_CALL":
+                    continue
+                evd = (d.get("evidence") or [{}])[0] if isinstance(d.get("evidence"), list) else {}
+                out["tools"].append({
+                    "tool": d.get("action"),
+                    "ok": bool(d.get("result", {}).get("ok")) if isinstance(d.get("result"), dict) else False,
+                    "duration_ms": int(evd.get("duration_ms") or 0),
+                    "args": str(evd.get("args") or "")[:120],
+                    "ts": d.get("timestamp"),
+                })
+        except Exception:  # noqa: BLE001 — 审计不可用 → 仅 events 库
+            pass
+        # 2) events 库 (tool.call, task_id=session)
+        try:
+            from events.logger import EventLogger
+            from events.store import EventStore
+
+            db = Path(workspace_root or DEFAULT_ROOT) / "factory.db"
+            if db.exists():
+                store = EventStore(db)
+                for ev in store.by_task(session_id):
+                    out["events"].append({
+                        "type": ev.type if hasattr(ev, "type") else str(getattr(ev, "event_type", "")),
+                        "action": ev.action if hasattr(ev, "action") else "",
+                        "ts": str(getattr(ev, "timestamp", "") or ""),
+                    })
+        except Exception:  # noqa: BLE001 — events 库不可用 → 仅审计
+            pass
+        # 聚合
+        out["tool_count"] = len(out["tools"])
+        out["failed"] = sum(1 for t in out["tools"] if not t["ok"])
+        out["total_duration_ms"] = sum(int(t["duration_ms"] or 0) for t in out["tools"])
+        return out
+
     # ------------------------------------------------- S10-002: Runtime API
     # UI 与 CLI 共用 (Adapter 层只读 + SSE; 零 Core 修改, 只消费 org.* 查询)。
 

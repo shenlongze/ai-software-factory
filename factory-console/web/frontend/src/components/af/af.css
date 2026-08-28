@@ -5184,5 +5184,5 @@ body[data-bg='1'] .af-shell {
 .bw-task-num { color: var(--c-text2, #9aa1ae); font-size: 11px; white-space: nowrap; }
 
 /* 项目行分隔线 (v1.1.287) */
-.bw-company-item { border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
+.bw-company-item { border-bottom: 1px solid var(--c-border, #2a3140); }
 .bw-company-item:last-child { border-bottom: none; }

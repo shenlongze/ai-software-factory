@@ -17,6 +17,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
+import { AfProjectHome } from '../../pages/project/AfProjectHome';
 import './af.css';
 
 export type TabType = 'home' | 'project' | 'newtab' | 'browser' | 'doc' | 'artifact' | 'file' | 'terminal' | 'audit';
@@ -64,7 +65,7 @@ function TabContent({ tab, projectId, onOpen }: {
     case 'audit':
       return <Placeholder icon="🔍" title="审查 (二期)" note="定义审查范围后实现" />;
     case 'project':
-      return <ProjectTab projectId={tab.projectId || projectId} onOpen={onOpen} />;
+      return <ProjectTab projectId={tab.projectId || projectId} />;
     case 'home':
     default:
       return <MyCompanyTab onOpen={onOpen} />;
@@ -153,29 +154,12 @@ function MyCompanyTab({ onOpen }: { onOpen: (t: Omit<WorkspaceTab, 'id'>) => voi
   );
 }
 
-// ---------------------------------------------------------------- 项目页 (点"我的公司"项目打开)
-function ProjectTab({ projectId, onOpen }: {
-  projectId?: string | null;
-  onOpen: (t: Omit<WorkspaceTab, 'id'>) => void;
-}): JSX.Element {
+// ---------------------------------------------------------------- 项目页 (点"我的公司"项目打开 → 真实项目概览)
+function ProjectTab({ projectId }: { projectId?: string | null }): JSX.Element {
+  if (!projectId) return <Placeholder icon="📁" title="项目" note="未指定项目" />;
   return (
-    <div className="bw-home" data-testid="bw-project">
-      <h2>📁 项目 · {projectId || ''}</h2>
-      <p className="bw-home-sub">快捷入口</p>
-      <div className="bw-home-grid">
-        <button type="button" className="bw-home-card" onClick={() => onOpen({ type: 'newtab', title: '新标签页', projectId })}>
-          ➕ 新标签页
-        </button>
-        <button type="button" className="bw-home-card" onClick={() => onOpen({ type: 'doc', title: '项目文档', docPath: '', projectId })}>
-          📄 项目文档
-        </button>
-        <button type="button" className="bw-home-card" onClick={() => onOpen({ type: 'file', title: '文件浏览', filePath: '', projectId })}>
-          🗂 文件
-        </button>
-        <button type="button" className="bw-home-card" onClick={() => onOpen({ type: 'browser', title: '浏览器', url: '' })}>
-          🌐 浏览器
-        </button>
-      </div>
+    <div className="bw-project" data-testid="bw-project">
+      <AfProjectHome projectId={projectId} projectName={projectId} />
     </div>
   );
 }

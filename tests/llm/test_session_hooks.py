@@ -279,3 +279,37 @@ def test_t11_session_end_full_sentence_extraction(sh, tmp_path):
     assert any("pyproject" in t for t in texts)
     assert any("sed 兼容" in t for t in texts)
     assert kinds.get(next(t for t in texts if "sed 兼容" in t)) == "error"
+
+
+def test_t12_post_tool_use_dual_write_events_db(sh, tmp_path):
+    """T12: PostToolUse 双写 — audit_events.json + events 表 (统一事件库)。"""
+    import json
+    import sqlite3
+
+    from events.logger import EventLogger
+    from events.store import EventStore
+    from factory_console.session.session_hooks import post_tool_use_hook
+
+    # 预建 events 表
+    EventLogger(EventStore(tmp_path / "factory.db")).record("system.init", source="test")
+
+    ctx = {
+        "tool_id": "bash_exec",
+        "args": {"command": "ls"},
+        "project_id": "P-t12",
+        "session_id": "sess-t12",
+        "result_ok": True,
+        "duration_ms": 42,
+        "data_dir": str(tmp_path),
+    }
+    post_tool_use_hook(ctx)
+
+    # 1) audit_events.json
+    aj = json.loads((tmp_path / "audit" / "audit_events.json").read_text(encoding="utf-8"))
+    assert aj[-1]["event_type"] == "TOOL_CALL"
+    assert aj[-1]["action"] == "bash_exec"
+
+    # 2) events 表
+    conn = sqlite3.connect(tmp_path / "factory.db")
+    rows = conn.execute("SELECT type, action, source FROM events WHERE type='tool.call'").fetchall()
+    assert any(r[1] == "bash_exec" for r in rows)

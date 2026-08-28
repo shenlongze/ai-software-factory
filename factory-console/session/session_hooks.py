@@ -361,21 +361,20 @@ def build_default_hooks() -> SessionHooks:
 
 
 def post_tool_use_hook(ctx: dict[str, Any]) -> None:
-    """T6: PostToolUse → 每次工具调用写审计事件 (audit_events.json, TOOL_CALL)。
-
-    ctx: {tool_id, args, project_id, session_id, result_ok, duration_ms, data_dir}
-    失败安全: 审计失败不阻断会话 (仅记日志)。
+    """T6+T12: PostToolUse → 工具调用全量审计, 双写:
+    1) audit_events.json (AuditStore TOOL_CALL, T6)
+    2) events 表 (EventLogger.tool_call, T12 统一事件库 — factory.db)
+    失败安全: 任一写失败不阻断会话。
     """
+    data_dir = ctx.get("data_dir")
+    tool_id = str(ctx.get("tool_id") or "")
+    if not data_dir or not tool_id:
+        return None
     try:
         from ..audit.audit_event import AuditEvent
         from ..audit.audit_store import AuditStore
 
-        data_dir = ctx.get("data_dir")
-        if not data_dir:
-            return None
-        tool_id = str(ctx.get("tool_id") or "")
-        if not tool_id:
-            return None
+        # T6: audit_events.json
         store = AuditStore(workspace=None, file=str(Path(data_dir) / "audit" / "audit_events.json"))
         ev = AuditEvent.create(
             "TOOL_CALL",
@@ -398,7 +397,26 @@ def post_tool_use_hook(ctx: dict[str, Any]) -> None:
             result={"ok": bool(ctx.get("result_ok"))},
         )
         store.append(ev)
-        return None
     except Exception:  # noqa: BLE001 — 审计失败不阻断会话
         logger.warning("post_tool_use_hook audit failed: %s", exc_info=True)
-        return None
+    # T12: 统一事件库 — events 表 (factory.db; 失败安全)
+    try:
+        from events.logger import EventLogger
+        from events.store import EventStore
+
+        db = Path(data_dir) / "factory.db"
+        if db.exists():
+            logger_ = EventLogger(EventStore(db))
+            logger_.tool_call(
+                task_id=str(ctx.get("session_id") or ""),
+                tool=tool_id,
+                arg_summary=str(ctx.get("args") or "")[:200],
+                result_summary=("OK" if ctx.get("result_ok") else str(ctx.get("result_ok")))[:200],
+                duration_s=float(int(ctx.get("duration_ms") or 0)) / 1000.0,
+                project_id=str(ctx.get("project_id") or ""),
+                agent_id="session-agent",
+                source="session_hooks",
+            )
+    except Exception:  # noqa: BLE001 — 事件库不可用不阻断
+        logger.warning("post_tool_use_hook events failed: %s", exc_info=True)
+    return None

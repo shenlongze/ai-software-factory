@@ -1,4 +1,4 @@
-"""factory-console/session/exec_state.py — 会话执行状态机 (S-5, v1.1.217).
+"""factory-console/session/exec_state.py — 会话执行状态机 (S-5, v1.1.217; P0-A v1.1.244 backlog 回写).
 
 Founder 2026-08-27: "做人事" — 会话真把事办了:
 说"把 X 做完" → 出计划 → 审批 → 逐任务执行(委派+验证) → 交付汇报 → 进度可查。
@@ -87,7 +87,8 @@ class ExecState:
             "status": "running",
             "tasks": [{"title": str(t.get("title") or "")[:80],
                        "priority": str(t.get("priority") or "P2"),
-                       "status": "todo", "result": "", "verify": {}} for t in tasks],
+                       "status": "todo", "result": "", "verify": {},
+                       "backlog_id": str(t.get("backlog_id") or "")} for t in tasks],
             "current_index": -1,
             "created_at": _now_iso(), "updated_at": _now_iso(),
         }
@@ -148,12 +149,18 @@ class ExecState:
         self.state["status"] = "done"
         goal = (self.state.get("plan") or {}).get("goal") or ""
         lines = [f"✅ 交付完成: {goal}"]
-        lines.append(f"共 {len(tasks)} 个任务全部完成:")
+        lines.append(f"共 {len(tasks)} 个任务全部完成 (结果已回写 backlog 任务):")
         for t in tasks:
-            lines.append(f"- ✅ {t.get('title')} ({t.get('priority')})")
+            _v = t.get("verify") or {}
+            _bid = t.get("backlog_id") or ""
+            lines.append(
+                f"- ✅ {t.get('title')} ({t.get('priority')})"
+                + (f" [任务 {_bid}]" if _bid else "")
+                + (f" · 验证 {_v.get('result') or 'unknown'}" if _v else "")
+            )
         acc = (self.state.get("plan") or {}).get("acceptance") or []
         if acc:
             lines.append("验收: " + "；".join(str(a) for a in acc))
-        lines.append("证据: 每个任务 result 可追溯到执行记录 (exec/EXS-*)。")
+        lines.append("证据: 每个任务 result/verify 已写入对应 backlog 任务 exec_result (可跨会话查询)。")
         lines.append("下一步: 可让用户验收, 或继续新任务。")
         return {"ok": True, "output": "\n".join(lines)}

@@ -413,6 +413,13 @@ def dispatch(
             plan = plan_development(str(args.get("goal") or ""), str(args.get("detail") or ""),
                                     llm_fn=ctx.get("llm_fn") or (lambda p: ""))
             ctx["pending_plan"] = plan
+            # P0-B (v1.1.244): 计划落 durable progress_card (OpenClaw 思路)
+            try:
+                from .progress_card import save_from_plan
+
+                save_from_plan(root, (ctx or {}).get("session_id") or "", plan)
+            except Exception:  # noqa: BLE001 — 落卡失败不阻断
+                pass
             lines = [f"📋 开发计划 (请审批):\n目标: {plan.get('goal')}"]
             lines.append("任务:")
             for i, t in enumerate(plan.get("tasks") or [], 1):
@@ -697,15 +704,44 @@ def dispatch(
             goal = str(args.get("goal") or plan.get("goal") or "")[:120]
             if not tasks:
                 return {"ok": False, "error": "没有任务 (先 plan_development 出计划)"}
+            # P0-A (v1.1.244): 执行链 ↔ backlog 打通 — 启动时真实建任务, 映射 backlog_id
+            _enriched: list[dict[str, Any]] = []
+            _created_n = 0
+            for _t in tasks:
+                _t2 = dict(_t)
+                _bid = ""
+                if service is not None:
+                    try:
+                        _c = service.create_task(
+                            project_id, title=str(_t.get("title") or "")[:80],
+                            description=str(_t.get("description") or ""),
+                            priority=str(_t.get("priority") or "P2"),
+                        )
+                        if _c:
+                            _bid = str(_c.get("id") or "")
+                            _created_n += 1
+                    except Exception:  # noqa: BLE001 — 建任务失败不阻断执行链
+                        _bid = ""
+                _t2["backlog_id"] = _bid
+                _enriched.append(_t2)
             st = ExecState.load(root, (ctx or {}).get("session_id") or "")
-            r = st.start({"goal": goal or "执行链", "tasks": tasks,
+            r = st.start({"goal": goal or "执行链", "tasks": _enriched,
                           "acceptance": plan.get("acceptance") or []})
             st.save(root)
             if not r.get("ok"):
                 return r
+            # P0-B: 执行链启动 → 同步 progress_card
+            try:
+                from .progress_card import sync_from_exec
+
+                sync_from_exec(root, (ctx or {}).get("session_id") or "", st)
+            except Exception:  # noqa: BLE001 — 落卡失败不阻断
+                pass
             return {"ok": True, "output": (
-                f"✅ 执行链已启动: {goal or '执行链'} ({len(tasks)} 个任务)。"
-                "说『继续』/『推进』逐任务执行; 『进度』查看状态; 敏感任务会先确认。")}
+                f"✅ 执行链已启动: {goal or '执行链'} ({len(tasks)} 个任务, "
+                f"已建 backlog 任务 {_created_n} 个)。"
+                "说『继续』/『推进』逐任务执行(每个完成后结果回写 backlog); "
+                "『进度』查看状态; 敏感任务会先确认。")}
         if tool_id == "chain_next":
             from .exec_state import ExecState
 
@@ -721,13 +757,45 @@ def dispatch(
                 r = gateway_execute(title, data_dir=root, project_id=project_id, max_retry=1)
                 if not r.get("ok"):
                     return {"ok": False, "error": r.get("error") or "外部执行失败"}
-                return {"ok": True, "output": (
-                    f"{r.get('executor')} 完成 (任务 {r.get('task_id')}) · "
-                    f"验证 {r.get('verify', {}).get('result') or 'unknown'} · "
-                    f"{str(r.get('output') or '')[:300]}")}
+                return {"ok": True,
+                        "output": (
+                            f"{r.get('executor')} 完成 (任务 {r.get('task_id')}) · "
+                            f"验证 {r.get('verify', {}).get('result') or 'unknown'} · "
+                            f"{str(r.get('output') or '')[:300]}"),
+                        "verify": dict(r.get("verify") or {}),
+                        "exec_ref": str(r.get("task_id") or "")}
 
             r = st.next(_exec_fn)
             st.save(root)
+            # P0-B: 执行链推进 → 同步 progress_card
+            try:
+                from .progress_card import sync_from_exec
+
+                sync_from_exec(root, (ctx or {}).get("session_id") or "", st)
+            except Exception:  # noqa: BLE001 — 落卡失败不阻断
+                pass
+            # P0-A (v1.1.244): 执行结果回写 backlog — 完成带 summary+验证 (Hermes kanban_complete 思路)
+            _idx = st.state.get("current_index", -1)
+            _stasks = st.state.get("tasks") or []
+            if 0 <= _idx < len(_stasks) and service is not None:
+                _cur = _stasks[_idx]
+                _bid = str(_cur.get("backlog_id") or "")
+                if _bid:
+                    try:
+                        _v = _cur.get("verify") or {}
+                        _cur_ok = _cur.get("status") == "done"
+                        service.finish_task_exec(
+                            project_id, _bid,
+                            success=_cur_ok,
+                            exec_ref=str(_v.get("exec_ref") or "") or _bid,
+                            exec_result=(
+                                f"{str(_cur.get('result') or '')[:300]}"
+                                + (f" · 验证 {_v.get('result') or 'unknown'}" if _v else "")
+                            ),
+                            actor="session-chain",
+                        )
+                    except Exception:  # noqa: BLE001 — 回写失败不阻断执行链
+                        pass
             if r.get("finished"):
                 # 全部完成 → 交付汇报
                 d = st.deliver()
@@ -754,11 +822,20 @@ def dispatch(
                 return {"ok": False, "error": f"外部任务进度不可用: {exc}"}
         if tool_id == "chain_status":
             from .exec_state import ExecState
+            from .progress_card import load_card, text as _card_text
 
-            st = ExecState.load(root, (ctx or {}).get("session_id") or "")
+            _sid = (ctx or {}).get("session_id") or ""
+            st = ExecState.load(root, _sid)
             stt = st.status()
             if stt.get("status") == "idle":
+                # 有计划卡但未启动 → 展示计划卡
+                _card = load_card(root, _sid)
+                if _card:
+                    return {"ok": True, "output": _card_text(_card) + "\n（计划已就绪, 说『开始执行』启动执行链）"}
                 return {"ok": True, "output": "当前没有执行链 (先出计划并审批, 说『开始执行』)"}
+            _card = load_card(root, _sid)
+            if _card:
+                return {"ok": True, "output": _card_text(_card)}
             lines = [f"执行链: {stt.get('status')} · 进度 {stt.get('progress')}"]
             lines.append("目标: " + str(stt.get("goal") or ""))
             for t in stt.get("tasks") or []:
@@ -1079,7 +1156,19 @@ def run_agent_native(
                               "output": result.get("output"), "error": result.get("error"),
                               "pending_plan": bool(result.get("pending_plan")),
                               "plan": result.get("plan")})
-                messages.append({"role": "tool", "tool_call_id": tc.get("id") or "", "content": json.dumps(result, ensure_ascii=False)[:3000]})
+                # P0-C (v1.1.244): 工具结果分级截断 — 长报告/扫描/读取给大预算, 否则小预算 (Hermes 100k 思路)
+                _tool_budget = {
+                    "project_scan": 20000, "code_scan": 20000, "project_structure": 20000,
+                    "read_code": 16000, "project_tasks": 12000, "project_docs": 12000,
+                    "search_code": 12000, "scan_todos": 12000, "chain_status": 8000,
+                    "gateway_status": 8000, "knowledge_search": 8000, "git_status": 6000,
+                }
+                _res_json = json.dumps(result, ensure_ascii=False)
+                _budget = _tool_budget.get(tid, 6000)
+                _trunc = _res_json[:_budget]
+                if len(_res_json) > _budget:
+                    _trunc += f"\n...(结果过长, 截断至 {_budget} 字符; 如需要更详细请针对性查询)"
+                messages.append({"role": "tool", "tool_call_id": tc.get("id") or "", "content": _trunc})
             # S2: 本轮工具调用全失败 → 累计无进展轮数; 有成功 → 清零
             _round_results = [c.get("ok") for c in calls[-len(tcs):]]
             if _round_results and not any(_round_results):

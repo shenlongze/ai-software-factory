@@ -3868,6 +3868,19 @@ def build_app(
             raise HTTPException(status_code=404, detail="session not found")
         return ok_list(sessions_store.list_messages(session_id))
 
+    @app.get("/api/sessions/{session_id}/progress-card")
+    def api_session_progress_card(session_id: str) -> dict[str, Any]:
+        """进度卡 (P0-B v1.1.244, OpenClaw progress_card 思路): 计划/执行链持久化进度。
+        返回 {card, text, has_card} — 供前端展示与轮询。"""
+        try:
+            from factory_console.session.progress_card import load_card, text as _card_text
+        except Exception:  # noqa: BLE001
+            return {"card": {}, "text": "", "has_card": False}
+        card = load_card(str(workspace_root) if workspace_root is not None else None, session_id)
+        if not card:
+            return {"card": {}, "text": "", "has_card": False}
+        return {"card": card, "text": _card_text(card), "has_card": True}
+
     @app.post("/api/sessions/{session_id}/messages")
     def api_session_send(session_id: str, body: _ChatBody,
                          stream: bool = Query(default=False)) -> Any:

@@ -101,21 +101,47 @@ def is_strong_model(capabilities: list[str] | None, context_window: int | None) 
     return False
 
 
+#: A0 (v1.1.268): Provider 特化行为参数 — 引导/清洗按模型配置, 核心 loop 零感知 (抄 Hermes Provider ABC)
+#: 换 LLM = 改这里 traits (或 providers.json), 不改主循环。
+#: anti_fake_toolcall: 强防"文本模拟 <tool_calls>" (deepseek 常见失败模式)
+#: no_verbal_confirm: 禁止口头确认/只说不做 (deepseek 常见)
+#: needs_enforcement: 需要强执行纪律注入
+DEFAULT_TRAITS: dict[str, Any] = {
+    "anti_fake_toolcall": False,
+    "no_verbal_confirm": False,
+    "needs_enforcement": True,
+}
+
+#: provider 前缀 → traits (deepseek 系列特化; 其余用默认)
+_PROVIDER_TRAITS: dict[str, dict[str, Any]] = {
+    "deepseek": {"anti_fake_toolcall": True, "no_verbal_confirm": True, "needs_enforcement": True},
+    "deepseek-reasoner": {"anti_fake_toolcall": True, "no_verbal_confirm": True, "needs_enforcement": True},
+}
+
+
+def traits_for_provider(provider_id: str | None) -> dict[str, Any]:
+    """按 provider 前缀取 traits; 未知 → 默认 (模型无关)。"""
+    pid = str(provider_id or "").strip().lower()
+    for prefix, tr in _PROVIDER_TRAITS.items():
+        if pid.startswith(prefix) or prefix in pid:
+            return dict(DEFAULT_TRAITS, **tr)
+    return dict(DEFAULT_TRAITS)
+
+
 def pick_prompt(
     capabilities: list[str] | None = None,
     context_window: int | None = None,
+    provider_id: str | None = None,
 ) -> dict[str, Any]:
-    """按模型选 prompt 模板 → {system, reflection, max_tool_calls, tier}。"""
-    if is_strong_model(capabilities, context_window):
-        return {
-            "system": AGENT_SYSTEM_STRONG,
-            "reflection": REFLECTION_STRONG,
-            "max_tool_calls": STRONG_MAX_TOOL_CALLS,
-            "tier": "strong",
-        }
-    return {
-        "system": AGENT_SYSTEM_LIGHT,
-        "reflection": REFLECTION_LIGHT,
-        "max_tool_calls": LIGHT_MAX_TOOL_CALLS,
-        "tier": "light",
+    """按模型选 prompt 模板 → {system, reflection, max_tool_calls, tier, traits}。
+
+    traits 由 provider 决定 (A0): deepseek 需要防文本模拟/禁口头确认; 其他模型默认不需要。"""
+    strong = is_strong_model(capabilities, context_window)
+    base = {
+        "system": AGENT_SYSTEM_STRONG if strong else AGENT_SYSTEM_LIGHT,
+        "reflection": REFLECTION_STRONG if strong else REFLECTION_LIGHT,
+        "max_tool_calls": STRONG_MAX_TOOL_CALLS if strong else LIGHT_MAX_TOOL_CALLS,
+        "tier": "strong" if strong else "light",
     }
+    base["traits"] = traits_for_provider(provider_id)
+    return base

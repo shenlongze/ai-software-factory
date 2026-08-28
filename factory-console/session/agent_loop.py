@@ -1153,7 +1153,8 @@ def run_agent_native(
     from .model_prompt import pick_prompt
 
     _mconf = _resolve_model_conf(data_dir, need_fc=True)
-    _mp = pick_prompt(_mconf.get("capabilities"), _mconf.get("context_window"))
+    _mp = pick_prompt(_mconf.get("capabilities"), _mconf.get("context_window"),
+                      _mconf.get("provider"))
     _max_calls = _mp["max_tool_calls"]
     _agent_system = _mp["system"]
     _reflection = _mp["reflection"]
@@ -1333,9 +1334,10 @@ def run_agent_native(
                 _usage_completion += int(_u.get("completion_tokens") or 0)
             tcs = resp.get("tool_calls") or []
             if not tcs:
-                # S1.1 (v1.1.244): 文本模拟工具调用检测 — 回答里写 <tool_calls> 但没走真实通道 (deepseek 常见)
+                # S1.1 (v1.1.244): 文本模拟工具调用检测 — 按 provider traits 开关 (A0: deepseek 需要, 强模型默认不需要)
                 _content = resp.get("content") or ""
-                if re.search(r"<tool_calls>|```tool_calls|</tool_calls>|<invoke name=", _content):
+                _anti_fake = bool((_mp.get("traits") or {}).get("anti_fake_toolcall"))
+                if _anti_fake and re.search(r"<tool_calls>|```tool_calls|</tool_calls>|<invoke name=", _content):
                     messages.append({"role": "system", "content": (
                         "检测到你在回答文本里写了 <tool_calls> 但没有真实发起工具调用 — 这只是描述, 不是执行。"
                         "如果你确实需要调用工具 (如 plan_development/project_docs 等), 请通过真正的函数调用通道发起; "

@@ -5250,8 +5250,15 @@ body[data-bg='1'] .af-shell {
 
 /* 我的公司 — 表头 + 对齐列表 (v1.1.283) */
 .bw-home--company { padding: 12px 16px; }
-.bw-company-card { border: none; border-radius: 10px; background: transparent; overflow: hidden; }
-.bw-company-card-head { padding: 8px 12px; font-size: 13px; font-weight: 700; color: var(--c-text, #e6e8ee); border-bottom: 1px solid var(--c-border, #2a3140); background: var(--c-panel, #1d232e); }
+.bw-company-card { border: 1px solid var(--c-border, #2a3140); border-radius: 10px; background: var(--c-surface, #1d232e); overflow: hidden; }
+.bw-company-card-head {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; text-align: left; cursor: pointer;
+  padding: 8px 12px; font-size: 13px; font-weight: 700;
+  color: var(--c-text, #e6e8ee);
+  background: transparent; border: none;
+}
+.bw-company-card-head:hover { background: rgba(255, 255, 255, 0.03); }
 .bw-card-pad { padding: 12px; }
 .bw-company-head {
   display: grid;

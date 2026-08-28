@@ -329,6 +329,10 @@ export function ConversationProvider({ children }: { children: ReactNode }): JSX
                             tool: e.tool ?? '',
                             ok: e.ok ?? false,
                             duration_ms: e.duration_ms ?? 0,
+                            // S8-4: bash 写操作批准 — 需批准时带命令/审批ID
+                            need_approval: e.need_approval ?? false,
+                            approval_id: e.approval_id ?? '',
+                            command: e.command ?? '',
                           },
                         ],
                       },

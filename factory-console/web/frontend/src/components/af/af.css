@@ -4926,3 +4926,22 @@ body[data-bg='1'] .af-shell {
 .af-chat-tool { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: var(--surface-2, #f0f0f0); color: var(--text-2, #555); border: 1px solid var(--border, #ddd); }
 .af-chat-tool--ok { background: rgba(34, 197, 94, 0.12); color: #16a34a; border-color: rgba(34, 197, 94, 0.3); }
 .af-chat-tool--fail { background: rgba(239, 68, 68, 0.12); color: #dc2626; border-color: rgba(239, 68, 68, 0.3); }
+
+/* S8-4: bash 写操作批准卡 (Hermes Approval) */
+.af-chat-tool--approval {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: rgba(250, 204, 21, 0.12); color: #a16207;
+  border-color: rgba(250, 204, 21, 0.4); padding: 4px 8px;
+}
+.af-chat-tool-cmd {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px; max-width: 320px; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; vertical-align: middle;
+}
+.af-chat-approve, .af-chat-reject {
+  font-size: 11px; padding: 1px 8px; border-radius: 8px; cursor: pointer;
+  border: 1px solid; line-height: 1.4;
+}
+.af-chat-approve { background: rgba(34, 197, 94, 0.15); color: #16a34a; border-color: rgba(34, 197, 94, 0.4); }
+.af-chat-reject { background: rgba(239, 68, 68, 0.12); color: #dc2626; border-color: rgba(239, 68, 68, 0.35); }
+.af-chat-approve:disabled, .af-chat-reject:disabled { opacity: 0.5; cursor: wait; }

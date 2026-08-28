@@ -715,10 +715,21 @@ def dispatch(
         if tool_id == "bash_exec":
             from .web_tools import bash_exec
 
-            return bash_exec(
-                str(args.get("command") or ""),
-                timeout=int(args.get("timeout") or 30),
-            )
+            _cmd = str(args.get("command") or "")
+            _r = bash_exec(_cmd, timeout=int(args.get("timeout") or 30))
+            if _r.get("need_approval"):
+                # S8-4: 登记待批准 → 返回 approval_id (前端/会话显示批准卡)
+                from .approval_store import request_approval
+
+                _ap = request_approval(root, (ctx or {}).get("session_id") or "", _cmd)
+                _r["approval_id"] = _ap.get("id") or ""
+                _r["command"] = _cmd[:2000]
+                _r["error"] = (
+                    f"该命令涉及写操作/敏感操作, 需要批准后执行。"
+                    f"审批ID: {_ap.get('id') or 'N/A'} · 命令: {_cmd[:200]}。"
+                    "请用户确认批准 (或调用批准 API)。"
+                )
+            return _r
         if tool_id == "web_search":
             from .web_tools import web_search
 
@@ -1194,7 +1205,11 @@ def run_agent_native(
                         on_event({"type": "tool", "tool": tid,
                                   "ok": bool(result.get("ok")),
                                   "error": str(result.get("error") or "")[:200],
-                                  "duration_ms": _tool_dur})
+                                  "duration_ms": _tool_dur,
+                                  # S8-4: bash 写操作批准 — 透传审批字段给前端
+                                  "need_approval": bool(result.get("need_approval")),
+                                  "approval_id": str(result.get("approval_id") or ""),
+                                  "command": str(result.get("command") or "")[:2000]})
                     except Exception:  # noqa: BLE001 — 事件推送失败不阻断
                         pass
                 total_calls += 1

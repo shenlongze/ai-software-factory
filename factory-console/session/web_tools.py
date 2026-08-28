@@ -160,8 +160,9 @@ def web_fetch(url: str, max_chars: int = FETCH_MAX_CHARS) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # bash_exec — 沙箱执行 (黑名单 + 批准标记 + 超时 + 截断)
 # ---------------------------------------------------------------------------
-def bash_exec(command: str, timeout: int = DEFAULT_TIMEOUT) -> dict[str, Any]:
-    """执行 shell 命令。危险命令 → 拒绝; 写/敏感 → need_approval (调用方走批准门);
+def bash_exec(command: str, timeout: int = DEFAULT_TIMEOUT, force: bool = False) -> dict[str, Any]:
+    """执行 shell 命令。危险命令 → 永远拒绝 (force 也不放行); 写/敏感 → need_approval
+    (调用方走批准门; force=True 由批准门放行后跳过 approval 检查);
     只读查询类 (curl/python3/grep/cat/ls…) → 直接执行。"""
     t0 = _now_ms()
     cmd = str(command or "").strip()
@@ -175,8 +176,8 @@ def bash_exec(command: str, timeout: int = DEFAULT_TIMEOUT) -> dict[str, Any]:
     if _match_any(cmd, DANGEROUS_PATTERNS):
         return {"ok": False, "error": "危险命令被拦截 (含 rm -rf /、sudo、格式化、管道直执行等)",
                 "need_approval": False, "duration_ms": _now_ms() - t0}
-    # 2) 写/敏感操作 → 批准门
-    if _match_any(cmd, APPROVAL_PATTERNS):
+    # 2) 写/敏感操作 → 批准门 (force=True 表示已获用户批准, 放行)
+    if _match_any(cmd, APPROVAL_PATTERNS) and not force:
         return {"ok": False, "error": (
             "该命令涉及写操作/敏感操作 (重定向/删改/安装/git push 等), 需要用户批准后执行。"
             f"命令: {cmd[:200]}"),

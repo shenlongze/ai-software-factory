@@ -531,6 +531,9 @@ export const api = {
       tool?: string;
       ok?: boolean;
       duration_ms?: number;
+      need_approval?: boolean;
+      approval_id?: string;
+      command?: string;
       result?: {
         user?: SessionMessage;
         assistant?: SessionMessage;

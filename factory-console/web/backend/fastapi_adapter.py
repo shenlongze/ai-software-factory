@@ -3868,6 +3868,56 @@ def build_app(
             raise HTTPException(status_code=404, detail="session not found")
         return ok_list(sessions_store.list_messages(session_id))
 
+    @app.get("/api/sessions/{session_id}/approvals")
+    def api_session_approvals(session_id: str) -> dict[str, Any]:
+        """待批准命令列表 (S8-4): {pending, history, count} — bash 写操作批准门。"""
+        try:
+            from factory_console.session.approval_store import list_approvals
+        except Exception:  # noqa: BLE001
+            return {"pending": [], "history": [], "count": 0}
+        return list_approvals(str(workspace_root) if workspace_root is not None else None, session_id)
+
+    @app.post("/api/sessions/{session_id}/approvals/{approval_id}/approve")
+    def api_session_approval_approve(session_id: str, approval_id: str) -> dict[str, Any]:
+        """批准并执行待批准命令 (S8-4): 结果追加为会话消息 + 返回执行结果。"""
+        try:
+            from factory_console.session.approval_store import get_pending, resolve
+            from factory_console.session.web_tools import bash_exec
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=500, detail=f"模块不可用: {exc}") from exc
+        root = str(workspace_root) if workspace_root is not None else None
+        item = get_pending(root, session_id, approval_id)
+        if item is None:
+            raise HTTPException(status_code=404, detail="待批准项不存在或已处理")
+        cmd = str(item.get("command") or "")
+        # 批准后执行 (force=True 跳过 approval 检查; 危险命令仍被拦截)
+        result = bash_exec(cmd, force=True)
+        summary = (
+            f"✅ 已批准执行: {cmd[:200]}\n"
+            f"{'执行成功: ' + str(result.get('output') or '')[:1500] if result.get('ok') else '执行失败: ' + str(result.get('error') or '')[:1500]}"
+        )
+        resolve(root, session_id, approval_id, "approved", result=summary)
+        # 结果追加为会话消息 (模型下次可见) — 复用闭包 sessions_store 同一实例 (避免旧内存缓存)
+        try:
+            if sessions_store is not None and sessions_store.get_session(session_id):
+                sessions_store.append_message(session_id, "assistant", summary, meta={"kind": "approval_result"})
+        except Exception:  # noqa: BLE001 — 追加失败不影响返回
+            pass
+        return {"ok": True, "approval_id": approval_id, "result": result, "summary": summary}
+
+    @app.post("/api/sessions/{session_id}/approvals/{approval_id}/reject")
+    def api_session_approval_reject(session_id: str, approval_id: str) -> dict[str, Any]:
+        """拒绝待批准命令 (S8-4): 标记拒绝, 不执行。"""
+        try:
+            from factory_console.session.approval_store import get_pending, resolve
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=500, detail=f"模块不可用: {exc}") from exc
+        root = str(workspace_root) if workspace_root is not None else None
+        if get_pending(root, session_id, approval_id) is None:
+            raise HTTPException(status_code=404, detail="待批准项不存在或已处理")
+        resolve(root, session_id, approval_id, "rejected", result="用户拒绝执行")
+        return {"ok": True, "approval_id": approval_id, "status": "rejected"}
+
     @app.get("/api/sessions/{session_id}/progress-card")
     def api_session_progress_card(session_id: str) -> dict[str, Any]:
         """进度卡 (P0-B v1.1.244, OpenClaw progress_card 思路): 计划/执行链持久化进度。

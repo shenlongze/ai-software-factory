@@ -416,6 +416,15 @@ RESEARCH_METHOD_PROMPT = """【深度调研方法 (Research)】这是调研/研�
 数据必须真实 (仓库名/star数/许可证/文件路径来自工具输出); 查不到 → 说"未查到", 不许编造。"""
 
 
+#: A (v1.1.269): 兑现文本模拟时允许的工具白名单 (查询/读取类; 写操作仍走批准门)
+_SESSION_TOOL_WHITELIST = {
+    "project_status", "project_tasks", "project_scan", "code_scan", "project_structure",
+    "read_code", "search_code", "scan_todos", "project_docs", "git_status", "monitor",
+    "repo_map", "skill_search", "knowledge_search", "gateway_status", "chain_status",
+    "web_search", "web_fetch", "bash_exec",
+}
+
+
 #: v1.1.262 深度审计方法 (抄 Hermes project-audit/codebase-inspection 技能效果)
 AUDIT_METHOD_PROMPT = """【深度审计方法 (Project Audit)】这是结构性审计任务。按以下方法多轮深入, 不要一次扫描就下结论:
 
@@ -1338,6 +1347,29 @@ def run_agent_native(
                 _content = resp.get("content") or ""
                 _anti_fake = bool((_mp.get("traits") or {}).get("anti_fake_toolcall"))
                 if _anti_fake and re.search(r"<tool_calls>|```tool_calls|</tool_calls>|<invoke name=", _content):
+                    # A (v1.1.269): 代码级兑现 — 提取文本模拟的 invoke, 真实执行并回喂 (不靠模型自觉)
+                    _fake = _extract_fake_invokes(_content)
+                    _real = None
+                    for _f in _fake[:1]:  # 一次兑现一个, 避免批量误执行
+                        _fn = str(_f.get("name") or "")
+                        if _fn in {t["function"]["name"] for t in tools} or _fn in _SESSION_TOOL_WHITELIST:
+                            _fr = dispatch(_fn, _f.get("args") or {}, root=root, project_id=project_id,
+                                           service=service, ctx=ctx)
+                            _real = {"name": _fn, "args": _f.get("args") or {}, "result": _fr}
+                            break
+                    if _real:
+                        total_calls += 1
+                        calls.append({"tool": _real["name"], "params": _real["args"],
+                                      "ok": _real["result"].get("ok"), "output": _real["result"].get("output"),
+                                      "error": _real["result"].get("error")})
+                        _tj = json.dumps(_real["result"], ensure_ascii=False)
+                        messages.append({"role": "tool", "tool_call_id": f"fake-{total_calls}",
+                                         "content": _tj[:6000]})
+                        messages.append({"role": "system", "content": (
+                            "已把你文本里写的工具调用(未走真实通道)自动兑现执行。"
+                            "请基于真实工具结果继续回答; 以后需要工具请直接用真实调用通道。"
+                        )})
+                        continue
                     messages.append({"role": "system", "content": (
                         "检测到你在回答文本里写了 <tool_calls> 但没有真实发起工具调用 — 这只是描述, 不是执行。"
                         "如果你确实需要调用工具 (如 plan_development/project_docs 等), 请通过真正的函数调用通道发起; "
@@ -1567,6 +1599,33 @@ def _skills_index(data_dir: str | Path | None) -> str:
         return index_prompt(data_dir)
     except Exception:  # noqa: BLE001
         return ""
+
+
+def _extract_fake_invokes(text: str) -> list[dict[str, Any]]:
+    """A (v1.1.269): 从回答文本提取 <invoke name=..><parameter name=..>..</invoke> 模拟调用 → [{name, args}].
+
+    用于"代码级兑现": 模型把工具调用写成文本(没走真实通道) → 系统提取并真实执行, 不靠模型自觉。"""
+    out: list[dict[str, Any]] = []
+    for m in re.finditer(
+        r'<invoke name="([^"]+)"[^>]*>([\s\S]*?)</invoke>',
+        str(text or ""),
+    ):
+        name = m.group(1).strip()
+        body = m.group(2) or ""
+        args: dict[str, Any] = {}
+        for pm in re.finditer(r'<parameter name="([^"]+)">([\s\S]*?)</parameter>', body):
+            key = pm.group(1).strip()
+            val = pm.group(2).strip()
+            # 尝试 JSON 解析 (参数可能是 json); 失败当字符串
+            try:
+                import json as _j
+
+                args[key] = _j.loads(val)
+            except Exception:  # noqa: BLE001
+                args[key] = val
+        if name:
+            out.append({"name": name, "args": args})
+    return out
 
 
 def _strip_fake_toolcalls(text: str) -> str:

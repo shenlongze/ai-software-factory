@@ -49,6 +49,8 @@ export interface ConversationContextValue {
   messages: ChatMessage[];
   loadingSessions: boolean;
   sending: boolean;
+  uiPrefs: { show_thinking: boolean; show_execution: boolean; show_timing: boolean };
+  setUiPrefs: (p: { show_thinking?: boolean; show_execution?: boolean; show_timing?: boolean }) => void;
   collapsed: boolean;
   pinned: boolean;
   setScope: (scope: SessionScope) => void;
@@ -76,6 +78,8 @@ const DEFAULT_CONTEXT: ConversationContextValue = {
   messages: [],
   loadingSessions: false,
   sending: false,
+  uiPrefs: { show_thinking: true, show_execution: true, show_timing: true },
+  setUiPrefs: () => {},
   collapsed: false,
   pinned: false,
   setScope: () => {},
@@ -126,6 +130,25 @@ export function ConversationProvider({ children }: { children: ReactNode }): JSX
   const [messages, setMessages] = useState<SessionMessage[]>([]);
   const [loadingSessions, setLoadingSessions] = useState<boolean>(true);
   const [sending, setSending] = useState<boolean>(false);
+  const [uiPrefs, setUiPrefsState] = useState({ show_thinking: true, show_execution: true, show_timing: true });
+
+  // U3: 加载 UI 显示偏好 (失败默认全开)
+  useEffect(() => {
+    void api
+      .getUiPrefs()
+      .then((p) => setUiPrefsState({ ...p }))
+      .catch(() => {
+        /* 默认 */
+      });
+  }, []);
+
+  const setUiPrefs = useCallback((p: { show_thinking?: boolean; show_execution?: boolean; show_timing?: boolean }) => {
+    setUiPrefsState((prev) => {
+      const next = { ...prev, ...p };
+      void api.setUiPrefs(next).catch(() => {});
+      return next;
+    });
+  }, []);
   const [collapsed, setCollapsed] = useState<boolean>(() => readFlag(COLLAPSED_KEY));
   const [pinned, setPinned] = useState<boolean>(() => readFlag(PINNED_KEY));
 
@@ -280,16 +303,31 @@ export function ConversationProvider({ children }: { children: ReactNode }): JSX
         ]);
         let streamed = false;
         const ok = await api.sessionSendStream(target as string, text, (e) => {
-          if (e.type === 'tool') {
+          if (e.type === 'thinking') {
+            // U1: 思考过程 — 占位消息显示"思考中…"
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId
+                  ? { ...m, content: '（思考中…）' }
+                  : m,
+              ),
+            );
+          } else if (e.type === 'tool') {
+            // U2: 执行过程 — 徽章带耗时
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === assistantId
                   ? {
                       ...m,
+                      content: '（执行中…）',
                       meta: {
                         tool_calls: [
                           ...(m.meta?.tool_calls ?? []),
-                          { tool: e.tool ?? '', ok: e.ok ?? false },
+                          {
+                            tool: e.tool ?? '',
+                            ok: e.ok ?? false,
+                            duration_ms: e.duration_ms ?? 0,
+                          },
                         ],
                       },
                     }
@@ -344,6 +382,8 @@ export function ConversationProvider({ children }: { children: ReactNode }): JSX
       messages,
       loadingSessions,
       sending,
+      uiPrefs,
+      setUiPrefs,
       collapsed,
       pinned,
       setScope,

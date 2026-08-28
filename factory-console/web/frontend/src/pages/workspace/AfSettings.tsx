@@ -15,6 +15,7 @@ import type { ReactNode } from 'react';
 import { api } from '../../api/client';
 import type { RegistryTool } from '../../models/types';
 import { AfLangSwitch, useI18n } from '../../i18n';
+import { useConversation } from '../../components/af/ConversationContext';
 import { useTheme } from '../../theme';
 import type { LlmProviderConfig } from '../../models/types';
 import {
@@ -60,6 +61,7 @@ const TABS = [
   { id: 'external', label: 'external' },
   { id: 'plugin', label: 'plugin' },
   { id: 'appearance', label: 'appearance' },
+  { id: 'display', label: '显示' },
 ] as const;
 type TabId = (typeof TABS)[number]['id'];
 
@@ -159,6 +161,51 @@ function ToolsTab(): JSX.Element {
 }
 
 /** M1 (v1.1.191): 外部执行器通用适配层 — 声明式适配器 (每产品一个 yaml, 不改代码)。 */
+/** U3: 会话显示偏好 (思考过程/执行过程/计时 开关)。 */
+function DisplayTab(): JSX.Element {
+  const ctx = useConversation();
+  const toggle = (key: 'show_thinking' | 'show_execution' | 'show_timing') => {
+    ctx.setUiPrefs({ [key]: !ctx.uiPrefs[key] });
+  };
+  return (
+    <section data-testid="af-settings-display">
+      <h2>会话显示</h2>
+      <p style={{ opacity: 0.7, marginTop: -8 }}>
+        控制会话过程中是否显示 AI 的思考过程与工具执行过程（含耗时）。
+      </p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 16 }}>
+        <label style={{ display: 'flex', gap: 8, alignItems: 'center', cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={ctx.uiPrefs.show_thinking}
+            onChange={() => toggle('show_thinking')}
+            data-testid="ui-prefs-thinking"
+          />
+          显示思考过程（AI 回答前"思考中…"状态）
+        </label>
+        <label style={{ display: 'flex', gap: 8, alignItems: 'center', cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={ctx.uiPrefs.show_execution}
+            onChange={() => toggle('show_execution')}
+            data-testid="ui-prefs-execution"
+          />
+          显示执行过程（工具调用徽章）
+        </label>
+        <label style={{ display: 'flex', gap: 8, alignItems: 'center', cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={ctx.uiPrefs.show_timing}
+            onChange={() => toggle('show_timing')}
+            data-testid="ui-prefs-timing"
+          />
+          显示耗时（思考/执行的毫秒或秒）
+        </label>
+      </div>
+    </section>
+  );
+}
+
 function ExternalAiTab(): JSX.Element {
   const [adapters, setAdapters] = useState<
     Array<{
@@ -955,6 +1002,7 @@ export function AfSettings(): JSX.Element {
           </section>
         )}
 
+        {tab === 'display' && <DisplayTab />}
         {tab === 'tools' && <ToolsTab />}
         {tab === 'external' && <ExternalAiTab />}
         {tab === 'plugin' && (

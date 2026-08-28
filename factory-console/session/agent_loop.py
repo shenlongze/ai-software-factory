@@ -929,6 +929,13 @@ def run_agent_native(
     _converge = "reflection"
     try:
         for _ in range(max_rounds):
+            # U1: 思考过程事件 (前端显示"思考中…"并计时)
+            if on_event is not None:
+                try:
+                    on_event({"type": "thinking", "round": total_calls + 1,
+                              "label": f"正在思考… (第 {total_calls + 1} 轮)"})
+                except Exception:  # noqa: BLE001
+                    pass
             resp = call_with_tools(messages, tools, data_dir=data_dir)
             _u = resp.get("usage") or {}
             if _u:
@@ -963,7 +970,9 @@ def run_agent_native(
                     args = json.loads(fn.get("arguments") or "{}")
                 except Exception:  # noqa: BLE001
                     args = {}
+                _tool_t0 = __import__("time").monotonic()
                 result = dispatch(tid, args, root=data_dir, project_id=project_id, service=service, ctx=ctx)
+                _tool_dur = int((__import__("time").monotonic() - _tool_t0) * 1000)
                 # tool_search 命中 → 累积加入可见工具 (Eino 模式)
                 if tid == "tool_search" and result.get("matches"):
                     from .tool_search import expand_matches
@@ -976,12 +985,13 @@ def run_agent_native(
                         "session_id": session_id, "result_ok": bool(result.get("ok"))})
                 except Exception:  # noqa: BLE001
                     pass
-                # S10-127 P1.4: 流式事件 (工具执行中实时推送)
+                # S10-127 P1.4 + U2: 流式事件 (工具执行中实时推送 + 耗时)
                 if on_event is not None:
                     try:
                         on_event({"type": "tool", "tool": tid,
                                   "ok": bool(result.get("ok")),
-                                  "error": str(result.get("error") or "")[:200]})
+                                  "error": str(result.get("error") or "")[:200],
+                                  "duration_ms": _tool_dur})
                     except Exception:  # noqa: BLE001 — 事件推送失败不阻断
                         pass
                 total_calls += 1

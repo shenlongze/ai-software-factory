@@ -3507,6 +3507,46 @@ def build_app(
             "metadata": meta,
         }
 
+    # ---- U3: UI 显示偏好 (思考过程/执行过程 开关 + 计时) ----
+    def _ui_prefs_path() -> Path:
+        return Path(factory_root or DEFAULT_ROOT) / "ui_prefs.json"
+
+    def _load_ui_prefs() -> dict[str, Any]:
+        try:
+            import json as _j
+
+            d = _j.loads(_ui_prefs_path().read_text(encoding="utf-8"))
+            return d if isinstance(d, dict) else {}
+        except Exception:  # noqa: BLE001 — 缺/坏 → 默认
+            return {}
+
+    @app.get("/api/config/ui-prefs")
+    def api_get_ui_prefs() -> dict[str, Any]:
+        """UI 显示偏好 (U3): {show_thinking, show_execution, show_timing}。"""
+        d = _load_ui_prefs()
+        return {
+            "show_thinking": bool(d.get("show_thinking", True)),
+            "show_execution": bool(d.get("show_execution", True)),
+            "show_timing": bool(d.get("show_timing", True)),
+        }
+
+    @app.put("/api/config/ui-prefs")
+    def api_set_ui_prefs(body: dict[str, Any]) -> dict[str, Any]:
+        """保存 UI 显示偏好 (原子写 ui_prefs.json)。"""
+        d = _load_ui_prefs()
+        for k in ("show_thinking", "show_execution", "show_timing"):
+            if k in body:
+                d[k] = bool(body[k])
+        try:
+            _ui_prefs_path().write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
+        except OSError as exc:
+            raise HTTPException(status_code=500, detail=f"保存失败: {exc}") from exc
+        return {
+            "show_thinking": bool(d.get("show_thinking", True)),
+            "show_execution": bool(d.get("show_execution", True)),
+            "show_timing": bool(d.get("show_timing", True)),
+        }
+
     @app.get("/api/config/llm")
     def api_get_llm_config() -> dict[str, Any]:
         """LLM 配置 (GET — providers.json 管理面; 只读投影, key 只显示已配置态)。

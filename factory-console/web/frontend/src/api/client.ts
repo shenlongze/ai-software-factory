@@ -509,6 +509,9 @@ export const api = {
     patchJson<SessionSummary>(`/api/sessions/${encodeURIComponent(id)}`, body),
   sessionMessages: async (id: string) =>
     (await getJson<{ items: SessionMessage[] }>(`/api/sessions/${encodeURIComponent(id)}/messages`)).items,
+  getUiPrefs: () => getJson<{ show_thinking: boolean; show_execution: boolean; show_timing: boolean }>('/api/config/ui-prefs'),
+  setUiPrefs: (body: { show_thinking?: boolean; show_execution?: boolean; show_timing?: boolean }) =>
+    sendJson<{ show_thinking: boolean; show_execution: boolean; show_timing: boolean }>('/api/config/ui-prefs', body),
   sendSessionMessage: (id: string, message: string) =>
     sendJson<{
       user: SessionMessage;
@@ -527,6 +530,7 @@ export const api = {
       type: string;
       tool?: string;
       ok?: boolean;
+      duration_ms?: number;
       result?: {
         user?: SessionMessage;
         assistant?: SessionMessage;

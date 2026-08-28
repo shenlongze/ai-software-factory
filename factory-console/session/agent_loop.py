@@ -1247,7 +1247,8 @@ def run_agent_native(
         from .context_layers import build_context, pick_depth
 
         _depth = pick_depth(_mp.get("tier"), _mconf.get("context_window"))
-        _ctx_block = build_context(data_dir, project_id, depth=_depth)
+        # T9: query=question → 记忆相关召回 (跨会话记忆精准注入)
+        _ctx_block = build_context(data_dir, project_id, depth=_depth, query=question)
         if _ctx_block:
             messages.append({"role": "system", "content": _ctx_block})
     except Exception:  # noqa: BLE001 — 上下文不可用不阻断

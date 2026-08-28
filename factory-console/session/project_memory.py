@@ -25,6 +25,27 @@ MAX_ENTRIES = 200
 KINDS = ("decision", "learning", "error", "pattern", "observation")
 
 
+def _query_tokens(query: str) -> list[str]:
+    """T9: 查询词分词 — 英文按词, 中文按 2-gram (轻量, 无依赖)。"""
+    import re as _re
+
+    q = str(query or "").lower().strip()
+    if not q:
+        return []
+    tokens: list[str] = []
+    for word in _re.split(r"[\s,，。；;:：!?！？/\\()（）\[\]{}]+", q):
+        w = word.strip()
+        if not w:
+            continue
+        if _re.search(r"[a-z0-9]", w):
+            tokens.append(w)  # 英文/数字整词
+        else:
+            # 中文: 2-gram
+            for i in range(0, len(w) - 1):
+                tokens.append(w[i : i + 2])
+    return [t for t in tokens if len(t) >= 2][:20]
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -92,15 +113,27 @@ class MemoryStore:
         self.entries.append({"text": text[:300], "source": str(source)[:40],
                              "kind": kind, "authority": authority, "ts": _now_iso()})
 
-    def recent(self, n: int = 5) -> list[dict[str, Any]]:
-        """最近 N 条 (最新在前, 按权威加权排序 — 高权威优先, 同权威按时间衰减)。"""
+    def recent(self, n: int = 5, query: str | None = None) -> list[dict[str, Any]]:
+        """最近 N 条 (最新在前, 按权威加权排序 — 高权威优先, 同权威按时间衰减)。
+
+        query 非空 → 关键词相关性加权 (T9): 命中查询词的记忆优先召回,
+        让"最近 N 条"不再是纯时间序, 而是"与当前问题相关 + 权威 + 新鲜"。
+        """
         now = datetime.now(timezone.utc)
         scored = []
+        # T9: 查询词分词 (中文按字/英文按词, 简单有效)
+        q_tokens = _query_tokens(query) if query else []
         for e in self.entries:
             age_h = max((now - _parse_ts(e.get("ts") or "")).total_seconds() / 3600.0, 0.0)
             decay = 1.0 / (1.0 + age_h / 24.0)  # 半衰 ~24h
             rank = _authority_rank(e.get("authority"))
-            scored.append((rank * 10.0 + decay, e))
+            score = rank * 10.0 + decay
+            if q_tokens:
+                text = str(e.get("text") or "").lower()
+                hits = sum(1 for t in q_tokens if t in text)
+                if hits:
+                    score += min(hits, 3) * 5.0  # 每个命中词 +5, 封顶 +15
+            scored.append((score, e))
         scored.sort(key=lambda x: -x[0])
         return [e for _, e in scored[:n]]
 
@@ -108,9 +141,9 @@ class MemoryStore:
         """按类型取 (error/learning 等)。"""
         return [e for e in self.recent(n * 3) if e.get("kind") == kind][:n]
 
-    def inject_block(self, n: int = 5) -> str:
-        """注入文本块: 【项目历史记忆】 (带类型 + 权威标注)。"""
-        rec = self.recent(n)
+    def inject_block(self, n: int = 5, query: str | None = None) -> str:
+        """注入文本块: 【项目历史记忆】 (带类型 + 权威标注; query 相关优先)。"""
+        rec = self.recent(n, query=query)
         if not rec:
             return ""
         lines = ["【项目历史记忆】(跨会话, 供参考; 标注来源等级, 低等级仅参考不作事实)"]

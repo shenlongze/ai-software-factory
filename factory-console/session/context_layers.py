@@ -54,20 +54,20 @@ def _l0(sp: Any) -> str:
     return "\n".join(lines)
 
 
-def _l1(sp: Any, mem: Any) -> str:
-    # L1: 复用 M3 权威分层 (≥repo_evidence), 少带记忆 (弱模型省 token)
-    parts = [sp.view(min_authority=3), mem.inject_block(3)]
+def _l1(sp: Any, mem: Any, query: str | None = None) -> str:
+    # L1: 复用 M3 权威分层 (≥repo_evidence), 少带记忆 (弱模型省 token; T9 相关优先)
+    parts = [sp.view(min_authority=3), mem.inject_block(3, query=query)]
     return "\n".join(x for x in parts if x)
 
 
-def _l2(sp: Any, mem: Any) -> str:
-    # L2: 全量 Spine 视图 + 更多记忆 (强模型/深任务)
-    parts = [sp.view(), mem.inject_block(8)]
+def _l2(sp: Any, mem: Any, query: str | None = None) -> str:
+    # L2: 全量 Spine 视图 + 更多记忆 (强模型/深任务; T9 相关优先)
+    parts = [sp.view(), mem.inject_block(8, query=query)]
     return "\n".join(x for x in parts if x)
 
 
-def build_context(data_dir: str | Path, project_id: str, *, depth: str = "l1") -> str:
-    """按 depth 组装分层上下文块 (无数据 → 空串)。"""
+def build_context(data_dir: str | Path, project_id: str, *, depth: str = "l1", query: str | None = None) -> str:
+    """按 depth 组装分层上下文块 (无数据 → 空串; query → 记忆相关召回)。"""
     if not data_dir or not project_id:
         return ""
     try:
@@ -78,11 +78,11 @@ def build_context(data_dir: str | Path, project_id: str, *, depth: str = "l1") -
         if l0:
             parts.append(l0)
         if depth in ("l1", "l2"):
-            l1 = _l1(sp, mem)
+            l1 = _l1(sp, mem, query=query)
             if l1:
                 parts.append(l1)
         if depth == "l2":
-            l2 = _l2(sp, mem)
+            l2 = _l2(sp, mem, query=query)
             if l2:
                 parts.append(l2)
         if not parts:

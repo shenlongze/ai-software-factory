@@ -3370,10 +3370,19 @@ class ConsoleService:
         except Exception:
             return {}
 
+    def _project_dir(self, project_id: str) -> Path:
+        """项目真实目录: 优先 workspace/projects/<id> (含 management/backlog), fallback 旧 projects/<id>。"""
+        root = Path(getattr(self._workspace, "root", None) or "")
+        for base in ("workspace/projects", "projects"):
+            p = root / base / str(project_id)
+            if p.is_dir():
+                return p
+        return root / "workspace" / "projects" / str(project_id)
+
     def _project_timestamps(self, project_id: str) -> tuple[str | None, str | None]:
         """项目创建/更新时间: 目录最早/最新文件 mtime → ISO (无目录 → None, None)。"""
         try:
-            pdir = Path(getattr(self._workspace, "root", None) or "") / "projects" / str(project_id)
+            pdir = self._project_dir(project_id)
             if not pdir.is_dir():
                 return None, None
             mt = [p.stat().st_mtime for p in pdir.rglob("*") if p.is_file()]
@@ -3391,7 +3400,7 @@ class ConsoleService:
     def _project_backlog_stats(self, project_id: str) -> dict[str, int]:
         """项目 backlog 任务统计 {total, done, pending}: 读 management/backlog/task.json (与 WebUI 任务树同源)。"""
         try:
-            pdir = Path(getattr(self._workspace, "root", None) or "") / "projects" / str(project_id)
+            pdir = self._project_dir(project_id)
             tf = pdir / "management" / "backlog" / "task.json"
             if not tf.is_file():
                 # 兜底: 项目目录内任意 task.json
@@ -3414,7 +3423,7 @@ class ConsoleService:
     def _project_stage_progress(self, project_id: str, tasks: dict[str, int]) -> dict[str, dict[str, Any]]:
         """各生命周期阶段完成度: 想法/讨论/设计/开发 (基于产物存在 + 任务完成度)。"""
         try:
-            pdir = Path(getattr(self._workspace, "root", None) or "") / "projects" / str(project_id)
+            pdir = self._project_dir(project_id)
         except Exception:  # noqa: BLE001
             pdir = Path("")
         stages: dict[str, dict[str, Any]] = {}

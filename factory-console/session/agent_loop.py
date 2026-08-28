@@ -225,6 +225,18 @@ def tool_schemas(data_dir: str | Path | None = None) -> list[dict[str, Any]]:
         _fc("gateway_status", "外部任务进度", "查询外部执行器任务进度 (最近/按项目/统计)", {"project": {"type": "string"}}),
         _fc("knowledge_search", "知识检索", "在项目文档中检索知识点/历史结论, 返回片段+来源 (跨会话记忆/项目知识)",
             {"query": {"type": "string"}}, ["query"]),
+        # ---- S8 (v1.1.246): 通用执行/搜索工具 — 一劳永逸, 不预置专用工具 ----
+        _fc("web_search", "网络搜索", "在互联网搜索 (DuckDuckGo, 无需key)。返回标题+链接+摘要。"
+            "【何时用】本地/项目内/常识解决不了, 或需要实时/最新/外部信息, 或用户明确要求'去网上查'时才用; "
+            "不要对常识/项目内问题联网搜索",
+            {"query": {"type": "string"}, "max_results": {"type": "integer"}}, ["query"]),
+        _fc("web_fetch", "网页抓取", "抓取指定 URL 内容 (转纯文本, 去标签)。用于: 打开搜索结果链接、调用公开 JSON/文本 API。"
+            "超时 15s, 上限 20k 字符",
+            {"url": {"type": "string"}, "max_chars": {"type": "integer"}}, ["url"]),
+        _fc("bash_exec", "本地命令执行(沙箱)", "在本地沙箱执行 shell 命令。只读查询类直接执行 "
+            "(curl/python3/grep/cat/ls/echo 等); 写操作/敏感命令 (重定向/删改/安装/git push) 需用户批准; 危险命令被拦截。"
+            "用于: 本地计算、调 API、跑脚本、处理文件。默认超时 30s",
+            {"command": {"type": "string"}, "timeout": {"type": "integer"}}, ["command"]),
     ]
     if data_dir is not None:
         try:
@@ -249,6 +261,8 @@ def tool_schemas(data_dir: str | Path | None = None) -> list[dict[str, Any]]:
 CORE_TOOL_IDS = [
     "project_status", "project_tasks", "project_scan", "code_scan",
     "read_code", "git_status", "monitor", "knowledge_search",
+    # S8 (v1.1.246): 通用执行/搜索 — 万能手脚, 首轮可见 (否则弱模型不会主动 tool_search 发现)
+    "bash_exec", "web_search", "web_fetch",
 ]
 
 
@@ -697,6 +711,28 @@ def dispatch(
                 return {"ok": True, "output": "\n".join(lines)}
             except Exception as exc:  # noqa: BLE001 — 检索失败 → 诚实
                 return {"ok": False, "error": f"知识检索失败: {exc}"}
+        # ---- S8 (v1.1.246): 通用搜索/执行 ----
+        if tool_id == "bash_exec":
+            from .web_tools import bash_exec
+
+            return bash_exec(
+                str(args.get("command") or ""),
+                timeout=int(args.get("timeout") or 30),
+            )
+        if tool_id == "web_search":
+            from .web_tools import web_search
+
+            return web_search(
+                str(args.get("query") or ""),
+                max_results=int(args.get("max_results") or 8),
+            )
+        if tool_id == "web_fetch":
+            from .web_tools import web_fetch
+
+            return web_fetch(
+                str(args.get("url") or ""),
+                max_chars=int(args.get("max_chars") or 20_000),
+            )
         if tool_id == "chain_start":
             from .exec_state import ExecState
 

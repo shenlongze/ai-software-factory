@@ -1437,11 +1437,12 @@ def run_agent_native(
                     _guard["tool_fail_streak"][tid] = 0
                 else:
                     _guard["tool_fail_streak"][tid] = _guard["tool_fail_streak"].get(tid, 0) + 1
-                # S10-127 M4.1: PostToolUse 审计
+                # S10-127 M4.1 + T6: PostToolUse 审计 (工具调用全量落盘)
                 try:
                     _get_hooks().fire("PostToolUse", {
                         "tool_id": tid, "args": args, "project_id": project_id,
-                        "session_id": session_id, "result_ok": bool(result.get("ok"))})
+                        "session_id": session_id, "result_ok": bool(result.get("ok")),
+                        "data_dir": data_dir, "duration_ms": _tool_dur})
                 except Exception:  # noqa: BLE001
                     pass
                 # S10-127 P1.4 + U2: 流式事件 (工具执行中实时推送 + 耗时)

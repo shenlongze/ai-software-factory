@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 import re
+from pathlib import Path
 from typing import Any, Callable
 
 logger = logging.getLogger("factory.session_hooks")
@@ -247,10 +248,56 @@ def pre_tool_use_hook(ctx: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def build_default_hooks() -> SessionHooks:
-    """默认注册表 (M4.2 内置 hooks + M4.3 动作门)。"""
+    """默认注册表 (M4.2 内置 hooks + M4.3 动作门 + T6 工具审计)。"""
     h = SessionHooks()
     h.register("SessionStart", session_start_hook)
     h.register("PreCompact", pre_compact_hook)
     h.register("SessionEnd", session_end_hook)
     h.register("PreToolUse", pre_tool_use_hook)
+    # T6 (v1.1.281): 工具调用全量审计 — PostToolUse 写 audit_events.json (TOOL_CALL)
+    h.register("PostToolUse", post_tool_use_hook)
     return h
+
+
+def post_tool_use_hook(ctx: dict[str, Any]) -> None:
+    """T6: PostToolUse → 每次工具调用写审计事件 (audit_events.json, TOOL_CALL)。
+
+    ctx: {tool_id, args, project_id, session_id, result_ok, duration_ms, data_dir}
+    失败安全: 审计失败不阻断会话 (仅记日志)。
+    """
+    try:
+        from ..audit.audit_event import AuditEvent
+        from ..audit.audit_store import AuditStore
+
+        data_dir = ctx.get("data_dir")
+        if not data_dir:
+            return None
+        tool_id = str(ctx.get("tool_id") or "")
+        if not tool_id:
+            return None
+        store = AuditStore(workspace=None, file=str(Path(data_dir) / "audit" / "audit_events.json"))
+        ev = AuditEvent.create(
+            "TOOL_CALL",
+            trace_id=str(ctx.get("session_id") or ""),
+            project_id=str(ctx.get("project_id") or ""),
+            agent_id="session-agent",
+            actor_type="agent",
+            actor_id="session-llm",
+            action=tool_id,
+            source="session_hooks",
+            decision="allow",
+            decision_reason="tool executed",
+            evidence=[
+                {
+                    "args": str(ctx.get("args") or "")[:500],
+                    "ok": bool(ctx.get("result_ok")),
+                    "duration_ms": int(ctx.get("duration_ms") or 0),
+                }
+            ],
+            result={"ok": bool(ctx.get("result_ok"))},
+        )
+        store.append(ev)
+        return None
+    except Exception:  # noqa: BLE001 — 审计失败不阻断会话
+        logger.warning("post_tool_use_hook audit failed: %s", exc_info=True)
+        return None

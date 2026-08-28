@@ -114,3 +114,47 @@ def test_dispatch_integration_deny_and_allow():
     # 普通工具放行 (不被 hooks 拦截; /tmp 无真实数据 → 执行层报错, 但非"拦截")
     r2 = _al.dispatch("project_scan", {}, root="/tmp", project_id="p", service=None, ctx={})
     assert "拦截" not in str(r2.get("error") or "")
+
+
+def test_post_tool_use_audit_writes_tool_call(sh, tmp_path):
+    """T6: PostToolUse 审计 — 每次工具调用写 TOOL_CALL 事件到 audit_events.json。"""
+    import json
+
+    from factory_console.session.session_hooks import post_tool_use_hook
+
+    ctx = {
+        "tool_id": "bash_exec",
+        "args": {"command": "ls -la"},
+        "project_id": "P-t6-test",
+        "session_id": "sess-t6",
+        "result_ok": True,
+        "duration_ms": 42,
+        "data_dir": str(tmp_path),
+    }
+    post_tool_use_hook(ctx)
+    path = tmp_path / "audit" / "audit_events.json"
+    assert path.exists(), "审计文件应落盘"
+    events = json.loads(path.read_text(encoding="utf-8"))
+    assert len(events) == 1
+    ev = events[0]
+    assert ev["event_type"] == "TOOL_CALL"
+    assert ev["action"] == "bash_exec"
+    assert ev["trace_id"] == "sess-t6"
+    assert ev["project_id"] == "P-t6-test"
+    assert ev["result"] == {"ok": True}
+    assert ev["evidence"][0]["duration_ms"] == 42
+    assert ev["event_hash"], "防篡改 hash 链不应为空"
+
+
+def test_post_tool_use_hook_registered_by_default(sh):
+    """T6: build_default_hooks 必须注册 PostToolUse (工具全量审计默认开启)。"""
+    h = sh.build_default_hooks()
+    assert len(h._registry["PostToolUse"]) == 1
+
+
+def test_post_tool_use_fail_safe_on_missing_data_dir(sh, tmp_path):
+    """T6: data_dir 缺失时审计静默跳过, 不抛异常 (失败安全)。"""
+    from factory_console.session.session_hooks import post_tool_use_hook
+
+    post_tool_use_hook({"tool_id": "bash_exec", "args": {}})
+    # 不抛异常即通过

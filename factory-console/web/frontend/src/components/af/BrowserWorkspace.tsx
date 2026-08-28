@@ -100,6 +100,7 @@ function MyCompanyTab({ onOpen }: { onOpen: (t: Omit<WorkspaceTab, 'id'>) => voi
   const [approvalHistory, setApprovalHistory] = useState<{ id: string; command?: string; status?: string; result?: string; session_id?: string }[]>([]);
   const [system, setSystem] = useState<{ system?: { version?: string; model?: string; frontend?: { up?: boolean }; backend?: { up?: boolean } } } | null>(null);
   const [acting, setActing] = useState<string | null>(null);
+  const [approvalTab, setApprovalTab] = useState<'pending' | 'history'>('pending');
 
   const loadHome = () => {
     fetch('/api/board/summary', { headers: { Accept: 'application/json' } })
@@ -166,36 +167,40 @@ function MyCompanyTab({ onOpen }: { onOpen: (t: Omit<WorkspaceTab, 'id'>) => voi
         <div className="bw-metric"><span className="bw-metric-num">{board?.avg_lifecycle_pct ?? 0}%</span><span className="bw-metric-label">平均进度</span></div>
       </div>
 
-      {/* 待办审批 */}
+      {/* 待办审批 + 已审批 (tab) */}
       <div className="bw-card" data-testid="bw-approvals">
-        <div className="bw-card-head">📋 待办审批 ({approvals.length})</div>
-        {approvals.length === 0 ? (
-          <p className="bw-muted bw-card-pad">暂无待审批</p>
+        <div className="bw-card-head bw-card-head--tabs">
+          <span>📋 审批 ({approvals.length})</span>
+          <span className="bw-tabs">
+            <button type="button" className={`bw-tab${approvalTab === 'pending' ? ' bw-tab--on' : ''}`} onClick={() => setApprovalTab('pending')}>待办</button>
+            <button type="button" className={`bw-tab${approvalTab === 'history' ? ' bw-tab--on' : ''}`} onClick={() => setApprovalTab('history')}>已审批</button>
+          </span>
+        </div>
+        {approvalTab === 'pending' ? (
+          approvals.length === 0 ? (
+            <p className="bw-muted bw-card-pad">暂无待审批</p>
+          ) : (
+            <ul className="bw-approval-list">
+              {approvals.map((a) => (
+                <li key={a.id} className="bw-approval-item">
+                  <code className="bw-approval-cmd">{a.command || ''}</code>
+                  <span className="bw-approval-btn-group">
+                    <button type="button" className="bw-btn bw-btn--ok" disabled={acting != null} onClick={() => actApproval(a.session_id, a.id, 'approve')}>
+                      {acting === a.id ? '…' : '✓ 批准'}
+                    </button>
+                    <button type="button" className="bw-btn bw-btn--no" disabled={acting != null} onClick={() => actApproval(a.session_id, a.id, 'reject')}>
+                      ✕ 拒绝
+                    </button>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )
+        ) : approvalHistory.length === 0 ? (
+          <p className="bw-muted bw-card-pad">暂无已审批记录</p>
         ) : (
           <ul className="bw-approval-list">
-            {approvals.map((a) => (
-              <li key={a.id} className="bw-approval-item">
-                <code className="bw-approval-cmd">{a.command || ''}</code>
-                <span className="bw-approval-btn-group">
-                  <button type="button" className="bw-btn bw-btn--ok" disabled={acting != null} onClick={() => actApproval(a.session_id, a.id, 'approve')}>
-                    {acting === a.id ? '…' : '✓ 批准'}
-                  </button>
-                  <button type="button" className="bw-btn bw-btn--no" disabled={acting != null} onClick={() => actApproval(a.session_id, a.id, 'reject')}>
-                    ✕ 拒绝
-                  </button>
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-
-      {/* 最近处理 (审批历史) */}
-      {approvalHistory.length > 0 && (
-        <div className="bw-card" data-testid="bw-approval-history">
-          <div className="bw-card-head">🗂 最近处理</div>
-          <ul className="bw-approval-list">
-            {approvalHistory.slice(0, 5).map((h) => (
+            {approvalHistory.slice(0, 10).map((h) => (
               <li key={h.id} className="bw-approval-item">
                 <span className="bw-approval-status">{h.status === 'approved' ? '✅ 已批准' : '✕ 已拒绝'}</span>
                 <code className="bw-approval-cmd">{h.command || ''}</code>
@@ -203,8 +208,8 @@ function MyCompanyTab({ onOpen }: { onOpen: (t: Omit<WorkspaceTab, 'id'>) => voi
               </li>
             ))}
           </ul>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* 系统状态 */}
       <div className="bw-card" data-testid="bw-system">

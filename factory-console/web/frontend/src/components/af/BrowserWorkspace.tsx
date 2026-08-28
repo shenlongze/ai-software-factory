@@ -104,8 +104,10 @@ function MyCompanyTab({ onOpen }: { onOpen: (t: Omit<WorkspaceTab, 'id'>) => voi
     <div className="bw-home bw-home--company" data-testid="bw-home">
       <h2>🏢 我的公司</h2>
       <p className="bw-home-sub">公司级工作台 — 按最近更新排序，点项目进入</p>
-      {loading ? <p className="bw-muted">加载中…</p> : projects.length === 0 ? (
-        <p className="bw-muted">暂无项目 — 点 ➕ 新建或从侧栏创建</p>
+      <div className="bw-company-card" data-testid="bw-company-card">
+        <div className="bw-company-card-head">📁 项目</div>
+      {loading ? <p className="bw-muted bw-card-pad">加载中…</p> : projects.length === 0 ? (
+        <p className="bw-muted bw-card-pad">暂无项目 — 点 ➕ 新建或从侧栏创建</p>
       ) : (
         <ol className="bw-company-list">
           {projects.map((p, idx) => {
@@ -132,6 +134,7 @@ function MyCompanyTab({ onOpen }: { onOpen: (t: Omit<WorkspaceTab, 'id'>) => voi
           })}
         </ol>
       )}
+      </div>
     </div>
   );
 }

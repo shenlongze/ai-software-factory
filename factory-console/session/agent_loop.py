@@ -260,22 +260,20 @@ def tool_schemas(data_dir: str | Path | None = None) -> list[dict[str, Any]]:
 
 
 #: S10-127 M2.2 动态工具面 — 首轮核心工具 (通用高频, 覆盖大多数会话场景)
+# W3 (v1.1.249): Progressive Disclosure (Pi) — 首轮只 5 个最高频; 其余靠预检索 top-k + tool_search 按需
 CORE_TOOL_IDS = [
-    "project_status", "project_tasks", "project_scan", "code_scan",
-    "read_code", "git_status", "monitor", "knowledge_search",
-    # S8 (v1.1.246): 通用执行/搜索 — 万能手脚, 首轮可见 (否则弱模型不会主动 tool_search 发现)
-    "bash_exec", "web_search", "web_fetch",
+    "project_status", "project_scan", "code_scan", "bash_exec", "web_search",
 ]
 
 
 def _initial_tools(
     question: str,
     all_tools: list[dict[str, Any]],
-    top_k: int = 5,
+    top_k: int = 3,
 ) -> list[dict[str, Any]]:
-    """首轮可见工具 = 核心 + 按问题预检索 top-k + tool_search 元工具 (去重)。
+    """首轮可见工具 = 核心(5) + 按问题预检索 top-k + tool_search 元工具 (W3 精简).
 
-    21 工具不再全量塞给弱模型 — 选择压力骤降 (治"扫代码返回文档")。
+    全量 25 工具不塞给弱模型 — 首轮 ≤9 个, 选择压力骤降; 其他走 tool_search 按需。
     """
     from .tool_search import TOOL_SEARCH_ID, discover_tools, tool_search_schema
 

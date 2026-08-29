@@ -3894,6 +3894,104 @@ def build_app(
             cp["task_title"] = title
         return ok_list(items)
 
+    @app.get("/api/agents")
+    def api_list_agents() -> dict[str, Any]:
+        """Agent 列表 (S9)。"""
+        from factory_console.session.agent_registry import AgentRegistry
+
+        root = Path(factory_root if factory_root is not None else DEFAULT_ROOT)
+        reg = AgentRegistry(agents_file=root / "agents" / "factory_agents.json")
+        return {"items": [a.to_dict() for a in reg.list()], "count": len(reg.list())}
+
+    @app.get("/api/agents/{agent_id}")
+    def api_get_agent(agent_id: str) -> dict[str, Any]:
+        """Agent 详情 (S9)。"""
+        from factory_console.session.agent_registry import AgentRegistry
+
+        root = Path(factory_root if factory_root is not None else DEFAULT_ROOT)
+        reg = AgentRegistry(agents_file=root / "agents" / "factory_agents.json")
+        a = reg.get(agent_id)
+        if a is None:
+            raise HTTPException(status_code=404, detail=f"Agent 不存在: {agent_id}")
+        return a.to_dict()
+
+    @app.post("/api/agent-runs")
+    def api_create_agent_run(body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """创建并执行 AgentRun (S9): {agent_id, workflow_id, input?, auto_start?}。"""
+        try:
+            from factory_console.agent_kernel import (
+                create_agent_run, run_agent, AgentKernelError,
+            )
+            from factory_console.production_run import build_executor_factory
+
+            root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+            agent_id = str(body.get("agent_id") or "")
+            workflow_id = str(body.get("workflow_id") or "")
+            if not agent_id or not workflow_id:
+                raise HTTPException(status_code=400, detail="agent_id + workflow_id 必填")
+            run = create_agent_run(root, agent_id, trigger="api",
+                                   input_artifacts=body.get("input_artifacts") or [])
+            auto_start = bool(body.get("auto_start", True))
+            if auto_start:
+                done = run_agent(root, run["agent_run_id"], workflow_id=workflow_id,
+                                 executor_factory=build_executor_factory(root),
+                                 workflow_input=body.get("input") or {})
+                return done
+            return run
+        except AgentKernelError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=500, detail=f"AgentRun 失败: {exc}") from exc
+
+    @app.get("/api/agent-runs/{run_id}")
+    def api_get_agent_run(run_id: str) -> dict[str, Any]:
+        """AgentRun 状态 (S9)。"""
+        from factory_console.agent_kernel import get_agent_run
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        run = get_agent_run(root, run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail=f"AgentRun 不存在: {run_id}")
+        return run
+
+    @app.get("/api/agent-runs/{run_id}/history")
+    def api_agent_run_history(run_id: str) -> dict[str, Any]:
+        """AgentRun 历史 (S9)。"""
+        from factory_console.agent_kernel import get_agent_run
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        run = get_agent_run(root, run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail=f"AgentRun 不存在: {run_id}")
+        return {"run_id": run_id, "history": run.get("history", [])}
+
+    @app.get("/api/agent-runs")
+    def api_list_agent_runs() -> dict[str, Any]:
+        """AgentRun 列表 (S9)。"""
+        from factory_console.agent_kernel import list_agent_runs
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return {"items": list_agent_runs(root), "count": len(list_agent_runs(root))}
+
+    @app.get("/api/handoffs")
+    def api_list_handoffs() -> dict[str, Any]:
+        """Handoff 列表 (S9)。"""
+        from factory_console.agent_kernel import list_handoffs
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return {"items": list_handoffs(root), "count": len(list_handoffs(root))}
+
+    @app.get("/api/handoffs/{handoff_id}")
+    def api_get_handoff(handoff_id: str) -> dict[str, Any]:
+        """Handoff 详情 (S9)。"""
+        from factory_console.agent_kernel import get_handoff
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        h = get_handoff(root, handoff_id)
+        if h is None:
+            raise HTTPException(status_code=404, detail=f"Handoff 不存在: {handoff_id}")
+        return h
+
     @app.post("/api/production-runs")
     def api_create_production_run(body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
         """创建并启动 ProductionRun (S6): {workflow_id, input?, auto_start?}。"""

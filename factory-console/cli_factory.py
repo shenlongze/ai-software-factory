@@ -1017,6 +1017,8 @@ class FactoryCLI:
             return self.run_status(args)
         if args.command == "production":
             return self.production_cmd(args)
+        if args.command == "agent-run":
+            return self.agent_run_cmd(args)
         if args.command == "project":
             return self.project_cmd(args)
         if args.command == "create":
@@ -4047,6 +4049,117 @@ class FactoryCLI:
             print(f"  {r_.get('run_id')} | {r_.get('workflow_id')} | {r_.get('state')} | {r_.get('created_at')}")
         return 0
 
+    def agent_run_cmd(self, args: argparse.Namespace) -> int:
+        """factory agent-run — Agent Kernel (S9): run/status/history/list/handoff。
+
+        薄代理 → agent_kernel (CLI 与 API 共享同一 Service)。
+        """
+        import json as _json
+
+        from factory_console.agent_kernel import (
+            create_agent_run, run_agent, get_agent_run, list_agent_runs,
+            create_handoff, get_handoff, list_handoffs, AgentKernelError,
+        )
+
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        action = getattr(args, "action", "list") or "list"
+
+        if action == "run":
+            agent_id = getattr(args, "agent_id", None)
+            workflow = getattr(args, "workflow", None)
+            if not agent_id or not workflow:
+                print("[E4013] 错误: agent_id 和 --workflow 必填 "
+                      "(factory agent-run run <agent_id> --workflow wf-1)", file=sys.stderr)
+                return 2
+            try:
+                input_data = _json.loads(getattr(args, "input", "{}") or "{}")
+            except ValueError:
+                print("[E4014] 错误: --input 必须是 JSON", file=sys.stderr)
+                return 2
+            try:
+                run = create_agent_run(root, agent_id, trigger="cli")
+                from factory_console.production_run import build_executor_factory
+                done = run_agent(root, run["agent_run_id"], workflow_id=workflow,
+                                 executor_factory=build_executor_factory(root),
+                                 workflow_input=input_data)
+                print(f"agent_run_id: {done['agent_run_id']}")
+                print(f"agent_id: {done['agent_id']}")
+                print(f"production_run_id: {done.get('production_run_id')}")
+                print(f"state: {done['state']}")
+                print(f"output_artifacts: {done.get('output_artifacts')}")
+                if done.get("failure"):
+                    print(f"failure: {done['failure']}")
+                return 0 if done["state"] == "COMPLETED" else 1
+            except AgentKernelError as exc:
+                print(f"[E4015] 错误: {exc}", file=sys.stderr)
+                return 1
+
+        if action == "status":
+            rid = getattr(args, "agent_id", None)
+            if not rid:
+                print("[E4016] 错误: AgentRun id 必填 (factory agent-run status <run_id>)",
+                      file=sys.stderr)
+                return 2
+            try:
+                run = get_agent_run(root, rid)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[E4017] 错误: {exc}", file=sys.stderr)
+                return 1
+            if run is None:
+                print(f"[E4018] AgentRun 不存在: {rid}", file=sys.stderr)
+                return 1
+            print(f"agent_run_id: {run['agent_run_id']} | agent: {run['agent_id']} | state: {run['state']}")
+            print(f"production_run_id: {run.get('production_run_id')}")
+            print(f"input_artifacts: {run.get('input_artifacts')}")
+            print(f"output_artifacts: {run.get('output_artifacts')}")
+            if run.get("failure"):
+                print(f"failure: {run['failure']}")
+            return 0
+
+        if action == "history":
+            rid = getattr(args, "agent_id", None)
+            if not rid:
+                print("[E4019] 错误: AgentRun id 必填", file=sys.stderr)
+                return 2
+            run = get_agent_run(root, rid)
+            if run is None:
+                print(f"[E4020] AgentRun 不存在: {rid}", file=sys.stderr)
+                return 1
+            print(f"agent_run_id: {rid} | state: {run['state']}")
+            for ev in run.get("history", []):
+                print(f"  [{ev.get('at')}] {ev.get('from')} → {ev.get('to')}: {ev.get('note')}")
+            return 0
+
+        if action == "handoff":
+            from_run = getattr(args, "from_run", None)
+            to_agent = getattr(args, "to_agent", None)
+            artifacts = [a.strip() for a in (getattr(args, "artifacts", "") or "").split(",") if a.strip()]
+            if not from_run or not to_agent or not artifacts:
+                print("[E4021] 错误: --from-run --to-agent --artifacts 必填", file=sys.stderr)
+                return 2
+            try:
+                h = create_handoff(root, from_agent_run_id=from_run, to_agent_id=to_agent,
+                                   input_artifacts=artifacts)
+                print(f"handoff_id: {h['handoff_id']}")
+                print(f"from: {h['from_agent_id']} → to: {h['to_agent_id']}")
+                print(f"artifacts: {h['input_artifacts']}")
+                return 0
+            except AgentKernelError as exc:
+                print(f"[E4022] 错误: {exc}", file=sys.stderr)
+                return 1
+
+        if action == "handoffs":
+            for h in list_handoffs(root):
+                print(f"  {h['handoff_id']} | {h['from_agent_id']} → {h['to_agent_id']} "
+                      f"| {h['status']} | {h['created_at']}")
+            return 0
+
+        # list
+        for r_ in sorted(list_agent_runs(root), key=lambda x: x.get("created_at", ""), reverse=True):
+            print(f"  {r_.get('agent_run_id')} | {r_.get('agent_id')} | {r_.get('state')} "
+                  f"| {r_.get('created_at')}")
+        return 0
+
     def project_cmd(self, args: argparse.Namespace) -> int:
         """factory project — create 代理 org.cli.cmd_project_register; list 只读 projects.json。"""
         action = getattr(args, "project_command", None)
@@ -4777,6 +4890,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_prod.add_argument("--workflow", help="workflow_id (run 用)")
     p_prod.add_argument("--input", default="{}", help="输入 JSON (run 用, 如 {'prompt': '...'})")
     p_prod.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+    # S9: Agent Kernel CLI
+    p_agent2 = sub.add_parser("agent-run", help="Agent Kernel (S9): run/status/history/handoff — 专业 AI 员工")
+    p_agent2.add_argument("action", nargs="?", default="list",
+                         choices=["run", "status", "history", "list", "handoff", "handoffs"],
+                         help="动作: run 启动 Agent / status 查询 / history 历史 / list 列表 / handoff 交接")
+    p_agent2.add_argument("agent_id", nargs="?", help="Agent id (run 用) 或 AgentRun id (status/history 用)")
+    p_agent2.add_argument("--workflow", help="workflow_id (run 用)")
+    p_agent2.add_argument("--input", default="{}", help="输入 JSON (run 用)")
+    p_agent2.add_argument("--to-agent", help="handoff: 接收 Agent id")
+    p_agent2.add_argument("--artifacts", default="", help="handoff: artifact ids 逗号分隔")
+    p_agent2.add_argument("--from-run", help="handoff: 来源 AgentRun id")
+    p_agent2.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     p_mcp.add_argument(
         "mcp_action", nargs="?", choices=["list", "connect", "remove"], default="list",
         metavar="list|connect|remove",

@@ -106,10 +106,11 @@ def build_invocation(
         if "{skills}" in part:
             part = part.replace("{skills}", esc(",".join(skills or [])))
         out.append(part)
-    # project_dir flag 模式: 在模板后插入 "<参数名> <目录>" (codex: -C <dir>)
+    # project_dir flag 模式: 仅在模板未含 {project_dir} 时插入 "<参数名> <目录>"
+    # (S4 修复: codex 模板已含 "-C {project_dir}", flag 模式重复插入导致 "--cd 多次使用")
     if mode.startswith("flag:"):
         flag = mode.split(":", 1)[1].strip()
-        if flag:
+        if flag and "{project_dir}" not in " ".join(template):
             out.extend([flag, esc(pdir or ".")])
     # 借壳: agent/skills 指定时插入声明的 flag (§4.2 agent_flag/skills_flag)
     if agent and adapter.invocation.agent_flag:

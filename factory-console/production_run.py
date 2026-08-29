@@ -204,6 +204,139 @@ def _record(root: Path | str, run: dict[str, Any], to_state: str, *, actor: str,
 
 # ------------------------------------------------------------------ 执行 (串行)
 
+# ------------------------------------------------------------------ 真实 Executor 接线 (S4)
+
+#: 模块加载时锁定 build_registry 原始引用 (防测试 patch 污染全局 registry)
+from .external_executor import registry as _ext_registry  # noqa: E402
+
+_BUILD_REGISTRY = _ext_registry.build_registry
+
+def _extract_code(output: str) -> str:
+    """从 executor 输出提取代码 (markdown 围栏 → 裸代码; 非围栏 → 原样)。"""
+    import re
+
+    text = str(output or "")
+    blocks = re.findall(r"```(?:python|py|text|bash|sh)?\s*\n(.*?)```", text, re.S)
+    if blocks:
+        # 多个块 → 拼接 (保持顺序)
+        return "\n".join(b.strip("\n") for b in blocks) + "\n"
+    return text.strip("\n") + "\n"
+
+
+def _to_patch(executor_name: str, output: str, input_data: dict[str, Any]) -> str:
+    """把 executor 输出转成合法 git patch。
+
+    - 输出本身是 patch (含 diff --git) → 原样返回
+    - 否则: 提取代码 → 写入 input 指定的目标文件 (target_file) →
+      用 git diff 生成 patch (临时 git 仓库)。
+    返回 patch 文本 (空 = 无变更)。
+    """
+    import re
+    import subprocess as _sp
+
+    text = str(output or "")
+    if "diff --git" in text:
+        return text
+    target = str(input_data.get("target_file") or "generated.py")
+    code = _extract_code(text)
+    if not code.strip():
+        return ""
+    # 临时目录: 空 git 仓库 + 目标文件 → git add → git diff 生成 patch
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td)
+        f = repo / target
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(code, encoding="utf-8")
+        for c in (["init", "-q"], ["add", "-A"]):
+            _sp.run(["git", "-C", str(repo), *c], capture_output=True, text=True, timeout=30)
+        # 从空基线 diff → 新文件 patch
+        proc = _sp.run(["git", "-C", str(repo), "diff", "--cached", "--no-color", "--", target],
+                       capture_output=True, text=True, timeout=30)
+        patch = proc.stdout or ""
+        # git diff --cached 对未提交新文件输出 index 0000000..; 需要 --no-index 或先 commit
+        if not patch:
+            _sp.run(["git", "-C", str(repo), "-c", "user.email=f@l", "-c", "user.name=f",
+                     "commit", "-q", "-m", "base"], capture_output=True, text=True, timeout=30)
+            _sp.run(["git", "-C", str(repo), "rm", "-q", "--cached", target], capture_output=True, text=True, timeout=30)
+            proc2 = _sp.run(["git", "-C", str(repo), "diff", "--no-color", "--", target],
+                            capture_output=True, text=True, timeout=30)
+            patch = proc2.stdout or ""
+        return patch
+
+
+def build_executor_factory(
+    root: Path | str,
+    *,
+    prompt_builder: Callable[[str, dict[str, Any]], str] | None = None,
+    timeout: int | None = None,
+) -> Callable[[str], Callable[[dict[str, Any]], dict[str, Any]]]:
+    """把 executor_name 路由到真实外部 executor (S4)。
+
+    executor_name → registry adapter (codex/claude/hermes) → adapt_external_executor.
+    prompt_builder(executor_name, node_input) → prompt 文本 (默认用 input 的 prompt 字段).
+    返回 executor_factory(node_id) → executor_fn(input) 与 S3 execute_production_run 兼容。
+    """
+    from .external_executor.executor import run as ext_run
+
+    reg = _BUILD_REGISTRY(str(root))
+
+    def _build(executor_name: str) -> Callable[[dict[str, Any]], dict[str, Any]]:
+        try:
+            adapter = reg.get(executor_name) if hasattr(reg, "get") else None
+        except Exception:  # noqa: BLE001 — registry 被测试 patch 或损坏 → 不可用
+            adapter = None
+        if adapter is None:
+            def _missing(input_data):
+                return {"ok": False, "error": f"未知 executor: {executor_name}",
+                        "artifact_type": "report",
+                        "verification": {"result": "FAIL", "error": "unknown executor"}}
+            return _missing
+
+        def _fn(input_data: dict[str, Any]) -> dict[str, Any]:
+            prompt = ""
+            if prompt_builder:
+                prompt = prompt_builder(executor_name, input_data)
+            else:
+                prompt = str(input_data.get("prompt") or "")
+            if not prompt:
+                return {"ok": False, "error": f"executor {executor_name}: 无 prompt",
+                        "artifact_type": "report",
+                        "verification": {"result": "FAIL", "error": "no prompt"}}
+            project_dir = str(input_data.get("project_dir") or "")
+            agent = str(input_data.get("agent") or "")
+            r = ext_run(adapter, prompt, project_dir, agent=agent, timeout=timeout)
+            ok = r.get("exit_code") == 0
+            output = r.get("output") or ""
+            # S4: 真实执行可靠性 — exit_code=0 但无输出 → 重试一次 (外部 CLI 偶发空)
+            if ok and not output.strip():
+                r = ext_run(adapter, prompt, project_dir, agent=agent, timeout=timeout)
+                ok = r.get("exit_code") == 0
+                output = r.get("output") or ""
+                if ok and not output.strip():
+                    ok = False
+                    r["error"] = (r.get("error") or "") + f" | executor {executor_name} 返回空输出"
+            # S4: 真实 executor 输出可能是自由代码 (非 git patch) — 转成合法 patch
+            patch_text = _to_patch(executor_name, output, input_data)
+            return {
+                "ok": ok,
+                "output": output,
+                "patch_text": patch_text,
+                "error": r.get("error") or "",
+                "artifact_type": input_data.get("artifact_type", "code_change"),
+                "verification": {"result": "PASS" if ok else "FAIL",
+                                 "source": f"executor {executor_name} exit_code={r.get('exit_code')}",
+                                 "command": r.get("command") or ""},
+            }
+        return _fn
+
+    def _factory(node_id: str) -> Callable[[dict[str, Any]], dict[str, Any]]:
+        return _build(node_id)
+
+    return _factory
+
+
 def execute_production_run(
     root: Path | str,
     run_id: str,

@@ -169,7 +169,23 @@ def list_production_runs(root: Path | str) -> list[dict[str, Any]]:
 def _write(root: Path | str, run: dict[str, Any]) -> None:
     p = _prun_path(root, run["run_id"])
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(run, ensure_ascii=False, indent=2), encoding="utf-8")
+    # S7: atomic write (temp + rename) — 防崩溃半写 corrupt JSON
+    import os
+    import tempfile
+
+    fd, tmp = tempfile.mkstemp(dir=str(p.parent), prefix=".tmp-", suffix=".json")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(run, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, p)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def _record(root: Path | str, run: dict[str, Any], to_state: str, *, actor: str, note: str) -> None:
@@ -344,6 +360,7 @@ def execute_production_run(
     executor_factory: Callable[[str], Callable[[dict[str, Any]], dict[str, Any]]],
     artifact_root: Path | str | None = None,
     actor: str = "system",
+    resume: bool = False,
 ) -> dict[str, Any]:
     """执行 ProductionRun: 串行依赖解析 → 每 Node create NodeRun + execute。
 
@@ -358,8 +375,14 @@ def execute_production_run(
         run = get_production_run(root, run_id)
         if run is None:
             raise ProductionRunError(f"ProductionRun 不存在: {run_id}")
-        if run.get("state") != "PENDING":
+        if run.get("state") != "PENDING" and not resume:
             raise ProductionRunError(f"非 PENDING (当前: {run.get('state')})")
+        if run.get("state") != "PENDING" and resume:
+            # S7: resume 重置为 PENDING (终态由 recovery.resume 提前拦截)
+            run["state"] = "PENDING"
+            run["status"] = "PENDING"
+            run["history"].append({"from": run.get("state"), "to": "PENDING",
+                                   "actor": actor, "at": _now_iso(), "note": "resume reset"})
         wf = get_workflow(root, run["workflow_id"])
         _record(root, run, "RUNNING", actor=actor, note="started")
         run["started_at"] = _now_iso()
@@ -371,9 +394,22 @@ def execute_production_run(
     artifacts: dict[str, str] = {}            # node_id -> artifact_id
     ar = Path(artifact_root or root)
 
+    # resume 模式: 预载已完成的 NodeRun (跳过, 禁止重复执行 — S7)
+    if resume:
+        for nr in run.get("node_runs", []):
+            nid = nr.get("node_id")
+            if nr.get("state") == "COMPLETED":
+                executed[nid] = {"run_id": nr.get("run_id"), "artifact_id": nr.get("artifact_id"),
+                                 "state": "COMPLETED"}
+                if nr.get("artifact_id"):
+                    artifacts[nid] = nr["artifact_id"]
+
     for node_spec in nodes:
         node_id = node_spec["node_id"]
         deps = node_spec.get("depends_on", [])
+        # 已完成 → 跳过 (不重建 NodeRun)
+        if node_id in executed and executed[node_id]["state"] == "COMPLETED":
+            continue
         # 依赖检查
         dep_failed = None
         for dep in deps:
@@ -439,6 +475,8 @@ def execute_production_run(
 
         with _lock:
             run = get_production_run(root, run_id)
+            # S7: resume 时替换该 node 的旧记录 (旧 RUNNING 无完成证据, 重跑)
+            run["node_runs"] = [n for n in run.get("node_runs", []) if n.get("node_id") != node_id]
             run["node_runs"].append({
                 "node_id": node_id, "run_id": nr["run_id"],
                 "state": done["state"], "artifact_id": done.get("artifact_id"),

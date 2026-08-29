@@ -242,6 +242,92 @@ def _verify_role_output(role: str, content: str) -> dict[str, Any]:
     return {"result": "PASS", "error": "", "checks": []}
 
 
+# ------------------------------------------------------------------ S12: Developer 自愈 (真实 pytest + 自动 Repair)
+
+#: Developer 内置最小测试集 (验证 add/subtract/multiply/divide + 除零)
+BUILTIN_CALC_TESTS = (
+    "import app\n"
+    "import pytest\n\n"
+    "def test_add():\n    assert app.add(10, 20) == 30\n\n"
+    "def test_subtract():\n    assert app.subtract(20, 5) == 15\n\n"
+    "def test_multiply():\n    assert app.multiply(3, 4) == 12\n\n"
+    "def test_divide():\n    assert app.divide(10, 2) == 5\n\n"
+    "def test_divide_by_zero():\n    with pytest.raises(ValueError):\n        app.divide(1, 0)\n"
+)
+
+
+def build_developer_repair_fn(root: Path | str, *, idea: str, arch: str):
+    """真实 Codex 修复: 接收 failed artifact + pytest failure evidence → 新代码。
+
+    输入显式: failed_artifact + verification (pytest evidence), 无 hidden state。
+    """
+    from .workflow_runner import load_llm_key, has_llm_key
+    from .config import get_config
+    from .session.llm_gateway import complete as _llm_complete
+    from .external_executor.registry import build_registry
+    from .external_executor.executor import run as ext_run
+    import re
+
+    reg = build_registry(str(root))
+
+    def _repair(failed_artifact: dict[str, Any], verification: dict[str, Any],
+                ctx: dict[str, Any]) -> dict[str, Any]:
+        adapter = reg.get("codex")
+        if adapter is None:
+            return {"ok": False, "error": "codex 不可用", "artifact_type": "report",
+                    "verification": {"result": "FAIL", "error": "no codex"}}
+        # 原始代码 (failed artifact payload)
+        payload = failed_artifact.get("payload") or {}
+        orig_code = payload.get("content") or ""
+        # pytest 失败证据
+        stdout = verification.get("stdout") or ""
+        stderr = verification.get("stderr") or ""
+        prompt = (
+            f"以下 Python 计算器代码未通过 pytest。修复它使其通过全部测试。\n"
+            f"要求: add/subtract/multiply/divide 函数, divide(1,0) 必须 raise ValueError。\n"
+            f"只输出完整修正后的 Python 代码。\n"
+            f"当前代码:\n{orig_code[:3000]}\n"
+            f"pytest 输出:\n{(stdout + stderr)[:2000]}"
+        )
+        code = ""
+        last_err = ""
+        for attempt in range(2):
+            r = ext_run(adapter, prompt, project_dir="", timeout=120)
+            if r.get("exit_code") != 0:
+                last_err = r.get("error", "")
+                continue
+            code = (r.get("output") or "").strip()
+            m = re.search(r"```(?:python|py)?\s*\n(.*?)```", code, re.S)
+            if m:
+                code = m.group(1)
+            else:
+                lines = code.splitlines()
+                start = 0
+                for i, ln in enumerate(lines):
+                    if ln.startswith("def ") or ln.startswith("import ") or ln.startswith("#!/"):
+                        start = i
+                        break
+                code = "\n".join(lines[start:]) if start else code
+            if "def add" not in code:
+                last_err = "no add"
+                continue
+            try:
+                compile(code, "<code>", "exec")
+                break
+            except SyntaxError as exc:
+                last_err = f"syntax: {exc}"
+        if "def add" not in code:
+            return {"ok": False, "error": f"repair 失败: {last_err}", "artifact_type": "report",
+                    "verification": {"result": "FAIL", "error": "repair no add"}}
+        # repair 后真实 pytest (内置测试)
+        ver = verify_code_with_pytest(code, BUILTIN_CALC_TESTS)
+        return {"ok": ver["status"] == "PASS", "output": {"content": code},
+                "patch_text": "", "error": ver.get("stderr", ""),
+                "artifact_type": "code_change", "verification": ver, "content": code}
+
+    return _repair
+
+
 # ------------------------------------------------------------------ S11: 真实 pytest QA
 
 def verify_code_with_pytest(
@@ -391,6 +477,12 @@ def build_real_executor_factory(root: Path | str):
                     return {"ok": False, "error": f"语法错误: {exc}", "artifact_type": "report",
                             "verification": {"result": "FAIL", "error": f"syntax: {exc}"}}
                 ver = _verify_role_output(role, code)
+                # S12: Developer 生成后立即内置 pytest 验证 (真实 subprocess)
+                pytest_ver = verify_code_with_pytest(code, BUILTIN_CALC_TESTS)
+                if pytest_ver["status"] != "PASS":
+                    return {"ok": False, "error": f"内置 pytest 失败: {pytest_ver.get('stderr', '')[:200]}",
+                            "artifact_type": "code_change",
+                            "verification": pytest_ver, "content": code}
                 return {"ok": ver["result"] == "PASS", "output": {"content": code},
                         "patch_text": "", "error": ver.get("error") or "",
                         "artifact_type": "code_change", "verification": ver, "content": code}
@@ -465,11 +557,13 @@ def run_professional_workflow(
     *,
     idea: str,
     executor_factory: Callable[[str], Callable[[dict[str, Any]], dict[str, Any]]] | None = None,
+    max_repair: int = 1,
 ) -> dict[str, Any]:
     """执行完整专业生产线: PM → Architect → Developer → QA (AgentRun 串行 + Handoff)。
 
     每 Agent 独立 AgentRun → ProductionRun → Artifact → Verification。
     Agent 间只通过 Handoff (Artifact references)。
+    max_repair: Developer 的自动修复次数 (S12: pytest FAIL → 自动 repair)。
     """
     ensure_professional_agents(root)
     factory = executor_factory or build_llm_executor_factory(root)
@@ -488,11 +582,20 @@ def run_professional_workflow(
         # 执行 (经 Production Kernel, executor 是专业 LLM executor)
         # 注意: execute 按 node_id 路由 (workflow node="work") → 用闭包固定 role
         role_factory = _bind_role(factory, role)
+        # S12: Developer 启用自动修复 (pytest FAIL → 真实 codex repair)
+        repair_fn = None
+        rmax = 1
+        if role == "software_developer" and max_repair > 0:
+            arch_ctx = _load_artifact_contexts(root, input_artifacts)
+            arch = str(next(iter(arch_ctx.values()), "") or "")
+            repair_fn = build_developer_repair_fn(root, idea=idea, arch=arch)
+            rmax = max_repair + 1  # 首次 + max_repair 次修复
         done = run_agent(root, arun["agent_run_id"], workflow_id=f"wf-{role}",
                          executor_factory=role_factory,
                          workflow_input={"idea": idea,
                                          "context": _load_artifact_contexts(root, input_artifacts),
-                                         "target_file": ROLE_TARGETS.get(role, "out.md")})
+                                         "target_file": ROLE_TARGETS.get(role, "out.md")},
+                         max_attempts=rmax, repair_fn=repair_fn)
         runs[role] = done
         if done["state"] != "COMPLETED":
             return {"workflow_id": PROFESSIONAL_WORKFLOW_ID, "idea": idea,

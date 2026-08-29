@@ -178,6 +178,8 @@ def run_agent(
     executor_factory: Callable[[str], Callable[[dict[str, Any]], dict[str, Any]]],
     workflow_input: dict[str, Any] | None = None,
     actor: str = "system",
+    max_attempts: int = 1,
+    repair_fn: Callable[[dict[str, Any], dict[str, Any], dict[str, Any]], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """执行 AgentRun: 创建 ProductionRun 底座 → execute → 关联 output artifacts。
 
@@ -218,7 +220,9 @@ def run_agent(
 
         done = execute_production_run(root, prun["run_id"],
                                       executor_factory=executor_factory,
-                                      artifact_root=str(root))
+                                      artifact_root=str(root),
+                                      max_attempts=max_attempts,
+                                      repair_fn=repair_fn)
         # 关联 output artifacts
         with _lock:
             run = get_agent_run(root, run_id)

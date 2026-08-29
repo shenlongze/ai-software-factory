@@ -361,6 +361,8 @@ def execute_production_run(
     artifact_root: Path | str | None = None,
     actor: str = "system",
     resume: bool = False,
+    max_attempts: int = 1,
+    repair_fn: Callable[[dict[str, Any], dict[str, Any], dict[str, Any]], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """执行 ProductionRun: 串行依赖解析 → 每 Node create NodeRun + execute。
 
@@ -471,7 +473,9 @@ def execute_production_run(
         executor_fn = executor_factory(node_id)
         done = execute_node_run(ar, nr["run_id"], executor_fn=executor_fn,
                                 executor_name=node_spec.get("executor_name", "node-exec"),
-                                artifact_root=str(ar))
+                                artifact_root=str(ar),
+                                max_attempts=max_attempts,
+                                repair_fn=repair_fn)
 
         with _lock:
             run = get_production_run(root, run_id)

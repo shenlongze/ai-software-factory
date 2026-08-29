@@ -3992,6 +3992,75 @@ def build_app(
             raise HTTPException(status_code=404, detail=f"Handoff 不存在: {handoff_id}")
         return h
 
+    @app.post("/api/production-runs/{run_id}/approval-requests")
+    def api_request_approval(run_id: str, body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """创建 ApprovalRequest (S17)。"""
+        from factory_console import governance_service as _gov
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _gov.request_approval(
+                root, production_run_id=run_id,
+                artifact_ids=body.get("artifact_ids", []),
+                requested_by=body.get("requested_by", "human"),
+                policy_id=body.get("policy_id", "production_apply"))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/production-runs/{run_id}/governance")
+    def api_governance(run_id: str, action: str = "release") -> dict[str, Any]:
+        """Governance Gate 检查 (S17)。"""
+        from factory_console import governance_service as _gov
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return _gov.check_governance(root, run_id, action=action)
+
+    @app.get("/api/approval-requests")
+    def api_list_approvals(run_id: str = "") -> dict[str, Any]:
+        """Approval 列表 (S17)。"""
+        from factory_console import governance_service as _gov
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        items = _gov.list_approvals(root, production_run_id=run_id or None)
+        return {"items": items, "count": len(items)}
+
+    @app.get("/api/approval-requests/{approval_id}")
+    def api_get_approval(approval_id: str) -> dict[str, Any]:
+        """Approval 详情 (S17)。"""
+        from factory_console import governance_service as _gov
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        a = _gov.get_approval(root, approval_id)
+        if a is None:
+            raise HTTPException(status_code=404, detail=f"Approval 不存在: {approval_id}")
+        return a
+
+    @app.post("/api/approval-requests/{approval_id}/approve")
+    def api_approve(approval_id: str, body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """批准 (S17, human only)。"""
+        from factory_console import governance_service as _gov
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _gov.approve(root, approval_id,
+                                decided_by=body.get("decided_by", "human"),
+                                reason=body.get("reason", ""))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+    @app.post("/api/approval-requests/{approval_id}/reject")
+    def api_reject(approval_id: str, body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """拒绝 (S17, human only)。"""
+        from factory_console import governance_service as _gov
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _gov.reject(root, approval_id,
+                               decided_by=body.get("decided_by", "human"),
+                               reason=body.get("reason", ""))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+
     @app.get("/api/workforce")
     def api_workforce_list() -> dict[str, Any]:
         """Workforce workflows (S16)。"""

@@ -1019,6 +1019,10 @@ class FactoryCLI:
             return self.production_cmd(args)
         if args.command == "workflow":
             return self.workflow_cmd(args)
+        if args.command == "governance":
+            return self.governance_cmd(args)
+        if args.command == "approval-request":
+            return self.approval_cmd(args)
         if args.command == "workforce":
             return self.workforce_cmd(args)
         if args.command == "experience":
@@ -4095,6 +4099,126 @@ class FactoryCLI:
             print(f"  {r_.get('run_id')} | {r_.get('workflow_id')} | {r_.get('state')} | {r_.get('created_at')}")
         return 0
 
+    def governance_cmd(self, args: argparse.Namespace) -> int:
+        """factory governance — Governance (S17): check/status。
+
+        薄代理 → governance_service (CLI 与 API 共享同一 Service)。
+        """
+        from factory_console.governance_service import (
+            check_governance, list_approvals, POLICIES,
+        )
+
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        action = getattr(args, "action", "check") or "check"
+        target = getattr(args, "target", None)
+
+        if action == "check":
+            if not target:
+                print("[E4032] 错误: production_run_id 必填 (factory governance check <run_id>)",
+                      file=sys.stderr)
+                return 2
+            g = check_governance(root, target, action="release")
+            print(f"production_run_id: {target}")
+            print(f"allowed: {g['allowed']}")
+            print(f"reason: {g['reason'] or 'OK'}")
+            print(f"policy: {g['policy_id']}")
+            print(f"missing: {g.get('missing')}")
+            return 0
+
+        if action == "status":
+            if not target:
+                print("[E4033] 错误: production_run_id 必填 (factory governance status <run_id>)",
+                      file=sys.stderr)
+                return 2
+            g = check_governance(root, target, action="release")
+            approvals = list_approvals(root, production_run_id=target)
+            print(f"production_run_id: {target}")
+            print(f"gate: allowed={g['allowed']} reason={g['reason'] or 'OK'}")
+            print(f"approvals ({len(approvals)}):")
+            for a in approvals:
+                print(f"  {a['approval_id']} | {a['decision']} | by={a['decided_by']} "
+                      f"| at={a['decided_at']} | artifacts={a['artifact_ids']}")
+            return 0
+
+        return 1
+
+    def approval_cmd(self, args: argparse.Namespace) -> int:
+        """factory approval — Approval (S17): list/show/request/approve/reject。
+
+        薄代理 → governance_service。
+        """
+        from factory_console.governance_service import (
+            request_approval, approve, reject, get_approval, list_approvals,
+        )
+
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        action = getattr(args, "action", "list") or "list"
+        target = getattr(args, "target", None)
+
+        if action == "list":
+            for a in list_approvals(root):
+                print(f"  {a['approval_id']} | {a['decision']} | run={a['production_run_id']} "
+                      f"| by={a['requested_by']}")
+            return 0
+
+        if action == "show":
+            if not target:
+                print("[E4034] 错误: approval_id 必填 (factory approval show <id>)", file=sys.stderr)
+                return 2
+            a = get_approval(root, target)
+            if a is None:
+                print(f"[E4035] Approval 不存在: {target}", file=sys.stderr)
+                return 1
+            import json as _json
+            print(_json.dumps(a, ensure_ascii=False, indent=2))
+            return 0
+
+        if action == "request":
+            if not target:
+                print("[E4036] 错误: production_run_id 必填 (factory approval request <run_id>)",
+                      file=sys.stderr)
+                return 2
+            artifacts = [x for x in getattr(args, "artifact", "").split(",") if x]
+            try:
+                a = request_approval(root, production_run_id=target, artifact_ids=artifacts,
+                                     requested_by=getattr(args, "by", "human") or "human")
+            except Exception as exc:  # noqa: BLE001
+                print(f"[E4037] 错误: {exc}", file=sys.stderr)
+                return 1
+            print(f"approval_id: {a['approval_id']}")
+            print(f"decision: {a['decision']} | artifacts: {a['artifact_ids']}")
+            return 0
+
+        if action == "approve":
+            if not target:
+                print("[E4038] 错误: approval_id 必填 (factory approval approve <id>)",
+                      file=sys.stderr)
+                return 2
+            try:
+                a = approve(root, target, decided_by=getattr(args, "by", "human") or "human",
+                            reason=getattr(args, "reason", "") or "")
+            except Exception as exc:  # noqa: BLE001
+                print(f"[E4039] 错误: {exc}", file=sys.stderr)
+                return 1
+            print(f"approval_id: {a['approval_id']} | decision: {a['decision']} | by={a['decided_by']}")
+            return 0
+
+        if action == "reject":
+            if not target:
+                print("[E4040] 错误: approval_id 必填 (factory approval reject <id>)",
+                      file=sys.stderr)
+                return 2
+            try:
+                a = reject(root, target, decided_by=getattr(args, "by", "human") or "human",
+                           reason=getattr(args, "reason", "") or "")
+            except Exception as exc:  # noqa: BLE001
+                print(f"[E4041] 错误: {exc}", file=sys.stderr)
+                return 1
+            print(f"approval_id: {a['approval_id']} | decision: {a['decision']} | by={a['decided_by']}")
+            return 0
+
+        return 1
+
     def workforce_cmd(self, args: argparse.Namespace) -> int:
         """factory workforce — Multi-Agent Workforce (S16): list/agents/runs/status。
 
@@ -5069,6 +5193,23 @@ def build_parser() -> argparse.ArgumentParser:
     p_prod.add_argument("--input", default="{}", help="输入 JSON (run 用, 如 {'prompt': '...'})")
     p_prod.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     sub.add_parser("workflow", help="Workflow 列表 (S10): factory workflow list — 专业生产线")
+    # S17: Governance CLI
+    p_gov = sub.add_parser("governance", help="Governance (S17): check/status — 审批门")
+    p_gov.add_argument("action", nargs="?", default="check",
+                       choices=["check", "status"],
+                       help="动作: check 检查门 / status 完整状态")
+    p_gov.add_argument("target", nargs="?", help="production_run_id")
+    p_gov.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+    p_appr = sub.add_parser("approval-request", help="Approval (S17): list/show/request/approve/reject — Governance 审批")
+    p_appr.add_argument("action", nargs="?", default="list",
+                        choices=["list", "show", "request", "approve", "reject"],
+                        help="动作: list 列表 / show 详情 / request 请求 / approve 批准 / reject 拒绝")
+    p_appr.add_argument("target", nargs="?", help="approval_id 或 production_run_id (request)")
+    p_appr.add_argument("--reason", default="", help="批准/拒绝理由")
+    p_appr.add_argument("--by", default="human", help="操作者身份 (approve/reject)")
+    p_appr.add_argument("--artifact", default="", help="request 用: artifact_ids (逗号分隔)")
+    p_appr.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+
     # S16: Workforce CLI
     p_wf = sub.add_parser("workforce", help="Multi-Agent Workforce (S16): list/agents/runs/status")
     p_wf.add_argument("action", nargs="?", default="list",

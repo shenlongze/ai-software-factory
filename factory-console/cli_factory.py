@@ -1017,6 +1017,8 @@ class FactoryCLI:
             return self.run_status(args)
         if args.command == "production":
             return self.production_cmd(args)
+        if args.command == "workflow":
+            return self.workflow_cmd(args)
         if args.command == "agent-run":
             return self.agent_run_cmd(args)
         if args.command == "project":
@@ -3919,6 +3921,24 @@ class FactoryCLI:
                 print("[E4002] 错误: --input 必须是 JSON", file=sys.stderr)
                 return 2
             try:
+                # S10: 专业 workflow (software-product-production) → 专业编排
+                from factory_console.professional_workflow import (
+                    PROFESSIONAL_WORKFLOW_ID, run_professional_workflow,
+                )
+
+                if workflow == PROFESSIONAL_WORKFLOW_ID:
+                    result = run_professional_workflow(
+                        root, idea=input_data.get("idea") or input_data.get("prompt") or "")
+                    print(f"workflow: {PROFESSIONAL_WORKFLOW_ID}")
+                    print(f"state: {result['state']}")
+                    if result.get("failure"):
+                        print(f"failure: {result['failure']}")
+                    for role, r_ in (result.get("runs") or {}).items():
+                        print(f"  {role}: {r_.get('state')} artifacts={r_.get('output_artifacts')}")
+                    print(f"handoffs: {len(result.get('handoffs', []))}")
+                    print(f"final_artifacts: {result.get('final_artifacts')}")
+                    return 0 if result["state"] == "COMPLETED" else 1
+
                 run = _svc_create(root, workflow, input_data=input_data, trigger="cli")
                 print(f"run_id: {run['run_id']}")
                 print(f"workflow_id: {run['workflow_id']}")
@@ -4047,6 +4067,21 @@ class FactoryCLI:
         print(f"production runs: {len(runs)}")
         for r_ in sorted(runs, key=lambda x: x.get("created_at", ""), reverse=True):
             print(f"  {r_.get('run_id')} | {r_.get('workflow_id')} | {r_.get('state')} | {r_.get('created_at')}")
+        return 0
+
+    def workflow_cmd(self, args: argparse.Namespace) -> int:
+        """factory workflow — Workflow 列表 (S10)。"""
+        from factory_console.professional_workflow import (
+            PROFESSIONAL_WORKFLOW_ID, PROFESSIONAL_ROLES,
+        )
+
+        print("Workflows:")
+        print(f"  {PROFESSIONAL_WORKFLOW_ID}")
+        print("    Professional AI Workforce Production Line:")
+        for role in PROFESSIONAL_ROLES:
+            print(f"      - {role}")
+        print("    用法: factory production run --workflow software-product-production "
+              "--input '{\"idea\": \"...\"}'")
         return 0
 
     def agent_run_cmd(self, args: argparse.Namespace) -> int:
@@ -4887,9 +4922,10 @@ def build_parser() -> argparse.ArgumentParser:
                         choices=["run", "status", "history", "list", "analyze", "recover"],
                         help="动作: run 启动 / status 查询 / history 历史 / list 列表 / analyze 恢复分析 / recover 恢复")
     p_prod.add_argument("run_id", nargs="?", help="ProductionRun id")
-    p_prod.add_argument("--workflow", help="workflow_id (run 用)")
+    p_prod.add_argument("--workflow", help="workflow_id (run 用, 支持 software-product-production)")
     p_prod.add_argument("--input", default="{}", help="输入 JSON (run 用, 如 {'prompt': '...'})")
     p_prod.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+    sub.add_parser("workflow", help="Workflow 列表 (S10): factory workflow list — 专业生产线")
     # S9: Agent Kernel CLI
     p_agent2 = sub.add_parser("agent-run", help="Agent Kernel (S9): run/status/history/handoff — 专业 AI 员工")
     p_agent2.add_argument("action", nargs="?", default="list",

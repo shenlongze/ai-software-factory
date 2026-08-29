@@ -52,7 +52,10 @@ def verify_pytest(workspace: Path | str, timeout: int = 120) -> dict[str, Any]:
     """真实 pytest 运行 (subprocess)。workspace 内必须有 pytest 可用。"""
     ws = Path(workspace)
     t0 = time.time()
-    cmd = ["python", "-m", "pytest", "-q", "--no-header"]
+    # S11: 用当前解释器 (sys.executable) — factory-venv 无 pytest, 项目 venv 有
+    import sys as _sys
+
+    cmd = [_sys.executable, "-m", "pytest", "-q", "--no-header"]
     try:
         proc = subprocess.run(cmd, cwd=str(ws), capture_output=True, text=True, timeout=timeout)
         rc = proc.returncode

@@ -334,6 +334,8 @@ def execute_node_run(
         # Verification
         verification = result.get("verification") or {"result": "PASS", "source": "default"}
         v_result = verification.get("result")
+        if v_result is None:
+            v_result = verification.get("status")  # S11: pytest 结果用 status 字段
         if v_result not in VERIFY_RESULTS:
             v_result = "INCONCLUSIVE"
 

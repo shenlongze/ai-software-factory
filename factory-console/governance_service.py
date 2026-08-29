@@ -79,6 +79,10 @@ def _approvals_file(root: Path | str) -> Path:
     return Path(root) / "governance" / "approvals.json"
 
 
+def _approvals_lock(root: Path | str) -> Path:
+    return Path(root) / "governance" / "approvals.lock"
+
+
 def _load_approvals(root: Path | str) -> list[dict[str, Any]]:
     try:
         d = json.loads(_approvals_file(root).read_text(encoding="utf-8"))
@@ -140,9 +144,13 @@ def request_approval(root: Path | str, *, production_run_id: str,
     from datetime import timedelta
     req["expires_at"] = (datetime.fromtimestamp(_now_epoch(), tz=timezone.utc)
                          + timedelta(seconds=APPROVAL_TTL_SECONDS)).isoformat(timespec="seconds")
-    data = _load_approvals(root)
-    data.append(req)
-    _save_approvals(root, data)
+    # S20.5: 跨进程锁 (read-modify-write 串行化)
+    from .integrity_lock import file_lock
+
+    with file_lock(_approvals_lock(root)):
+        data = _load_approvals(root)
+        data.append(req)
+        _save_approvals(root, data)
     _audit(root, "APPROVAL_REQUESTED", {"approval_id": req["approval_id"],
                                         "run_id": production_run_id,
                                         "requested_by": requested_by})
@@ -154,28 +162,32 @@ def decide_approval(root: Path | str, approval_id: str, *, decision: str,
     """Approve/Reject (requester != approver, append-only history)。"""
     if decision not in (APPROVAL_APPROVED, APPROVAL_REJECTED):
         raise ValueError(f"未知 decision: {decision}")
-    data = _load_approvals(root)
-    for req in data:
-        if req["approval_id"] != approval_id:
-            continue
-        if req["decision"] != APPROVAL_PENDING:
-            raise ValueError(f"Approval 已决 (当前: {req['decision']})")
-        if req["requested_by"] == decided_by:
-            raise PermissionError(f"self-approve 禁止: requester == approver ({decided_by})")
-        if decided_by not in ("human", "Human", "user", "admin") and decided_by not in AGENT_APPROVERS:
-            # 非 human 身份默认拒绝 (Agent 不能 approve)
-            raise PermissionError(f"approver 必须是 human (当前: {decided_by})")
-        req["decision"] = decision
-        req["decided_by"] = decided_by
-        req["decided_at"] = _now_iso()
-        req["reason"] = reason
-        req["history"].append({"from": APPROVAL_PENDING, "to": decision,
-                               "actor": decided_by, "at": _now_iso(), "note": reason})
-        _save_approvals(root, data)
-        _audit(root, "APPROVAL_DECIDED", {"approval_id": approval_id, "decision": decision,
-                                          "decided_by": decided_by, "reason": reason})
-        return req
-    raise ValueError(f"Approval 不存在: {approval_id}")
+    from .integrity_lock import file_lock
+
+    # S20.5: 跨进程锁 (approve/reject read-modify-write 串行化)
+    with file_lock(_approvals_lock(root)):
+        data = _load_approvals(root)
+        for req in data:
+            if req["approval_id"] != approval_id:
+                continue
+            if req["decision"] != APPROVAL_PENDING:
+                raise ValueError(f"Approval 已决 (当前: {req['decision']})")
+            if req["requested_by"] == decided_by:
+                raise PermissionError(f"self-approve 禁止: requester == approver ({decided_by})")
+            if decided_by not in ("human", "Human", "user", "admin") and decided_by not in AGENT_APPROVERS:
+                # 非 human 身份默认拒绝 (Agent 不能 approve)
+                raise PermissionError(f"approver 必须是 human (当前: {decided_by})")
+            req["decision"] = decision
+            req["decided_by"] = decided_by
+            req["decided_at"] = _now_iso()
+            req["reason"] = reason
+            req["history"].append({"from": APPROVAL_PENDING, "to": decision,
+                                   "actor": decided_by, "at": _now_iso(), "note": reason})
+            _save_approvals(root, data)
+            _audit(root, "APPROVAL_DECIDED", {"approval_id": approval_id, "decision": decision,
+                                              "decided_by": decided_by, "reason": reason})
+            return req
+        raise ValueError(f"Approval 不存在: {approval_id}")
 
 
 def approve(root: Path | str, approval_id: str, *, decided_by: str = "human",

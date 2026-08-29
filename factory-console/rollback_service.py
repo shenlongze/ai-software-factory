@@ -63,6 +63,10 @@ def _rollbacks_file(root: Path | str) -> Path:
     return Path(root) / "rollbacks" / "rollbacks.json"
 
 
+def _rollbacks_lock(root: Path | str) -> Path:
+    return Path(root) / "rollbacks" / "rollbacks.lock"
+
+
 def _load(root: Path | str) -> list[dict[str, Any]]:
     try:
         d = json.loads(_rollbacks_file(root).read_text(encoding="utf-8"))
@@ -85,19 +89,22 @@ def _save(root: Path | str, data: list[dict[str, Any]]) -> None:
 
 
 def _transition(root: Path | str, rb: dict[str, Any], to: str, *, actor: str, note: str) -> dict[str, Any]:
-    if to not in TRANSITIONS.get(rb["state"], ()):
-        raise ValueError(f"非法 Rollback 状态转换: {rb['state']} → {to}")
-    rb["state"] = to
-    rb["history"].append({"from": rb["history"][-1]["to"] if rb["history"] else None,
-                          "to": to, "actor": actor, "at": _now_iso(), "note": note})
-    data = _load(root)
-    for i, r in enumerate(data):
-        if r["rollback_id"] == rb["rollback_id"]:
-            data[i] = rb
-            break
-    else:
-        data.append(rb)
-    _save(root, data)
+    from .integrity_lock import file_lock
+
+    with file_lock(_rollbacks_lock(root)):
+        if to not in TRANSITIONS.get(rb["state"], ()):
+            raise ValueError(f"非法 Rollback 状态转换: {rb['state']} → {to}")
+        rb["state"] = to
+        rb["history"].append({"from": rb["history"][-1]["to"] if rb["history"] else None,
+                              "to": to, "actor": actor, "at": _now_iso(), "note": note})
+        data = _load(root)
+        for i, r in enumerate(data):
+            if r["rollback_id"] == rb["rollback_id"]:
+                data[i] = rb
+                break
+        else:
+            data.append(rb)
+        _save(root, data)
     _audit(root, f"ROLLBACK_{to}", {"rollback_id": rb["rollback_id"],
                                     "target_release_id": rb["target_release_id"], "note": note})
     return rb
@@ -143,29 +150,34 @@ def create(root: Path | str, target_release_id: str, *, created_by: str = "relea
            reason: str = "") -> dict[str, Any]:
     """创建 Rollback (幂等: 已有非 terminal 的返回现有)。"""
     target = _validate_target(root, target_release_id)
-    data = _load(root)
-    for r in data:
-        if r["target_release_id"] == target_release_id and r["state"] not in TERMINAL:
-            return r
-    rb = {
-        "rollback_id": f"rb-{uuid.uuid4().hex[:10]}",
-        "project_id": target.get("project_id") or "",
-        "target_release_id": target_release_id,
-        "from_release_id": "",
-        "artifact_ids": list(target.get("artifact_ids", [])),
-        "verification_ids": [],
-        "approval_ids": [],
-        "state": ST_PENDING,
-        "reason": reason,
-        "evidence": [],
-        "history": [{"from": None, "to": ST_PENDING, "actor": created_by,
-                     "at": _now_iso(), "note": "created"}],
-        "created_at": _now_iso(),
-        "completed_at": "",
-        "failure_reason": "",
-    }
-    data.append(rb)
-    _save(root, data)
+    from .integrity_lock import file_lock
+
+    # S20.5: 跨进程锁 (幂等检查 + append 串行化)
+    with file_lock(_rollbacks_lock(root)):
+        data = _load(root)
+        for r in data:
+            if r["target_release_id"] == target_release_id and r["state"] not in TERMINAL:
+                return r
+        rb = {
+            "rollback_id": f"rb-{uuid.uuid4().hex[:10]}",
+            "project_id": target.get("project_id") or "",
+            "target_release_id": target_release_id,
+            "from_release_id": "",
+            "artifact_ids": list(target.get("artifact_ids", [])),
+            "verification_ids": [],
+            "approval_ids": [],
+            "state": ST_PENDING,
+            "reason": reason,
+            "evidence": [],
+            "verification_attempts": [],
+            "history": [{"from": None, "to": ST_PENDING, "actor": created_by,
+                         "at": _now_iso(), "note": "created"}],
+            "created_at": _now_iso(),
+            "completed_at": "",
+            "failure_reason": "",
+        }
+        data.append(rb)
+        _save(root, data)
     _audit(root, "ROLLBACK_CREATED", {"rollback_id": rb["rollback_id"],
                                       "target_release_id": target_release_id})
     return rb
@@ -301,32 +313,17 @@ def execute(root: Path | str, rollback_id: str, *, actor: str = "release_enginee
                              "result": applied, "workspace": str(ws)})
         rb = get_rollback(root, rollback_id)
         rb["evidence"] = evidence
-        # S20: Rollback Verification — apply 后真实验证 (workspace + pytest)
-        from .verification import verify_pytest, verify_python_syntax
+        # S20.5: Rollback Verification — apply 后真实验证 (复用 release pipeline)
+        from .release_service import _run_verification as _run_rel_verification
 
         rb = _transition(root, rb, "VERIFYING", actor=actor, note="rollback verification started")
         try:
-            checks = []
-            syn = verify_python_syntax(ws)
-            checks.append({"check_id": f"chk-{uuid.uuid4().hex[:8]}", "type": "python_syntax",
-                           "command": "compileall", "status": "PASS" if syn.get("status") == "PASS" else "FAIL",
-                           "exit_code": syn.get("exit_code", 0), "stdout": syn.get("stdout", ""),
-                           "stderr": syn.get("stderr", ""), "duration": syn.get("duration", 0),
-                           "evidence": syn})
-            test_files = list(ws.glob("test_*.py")) + list(ws.glob("*_test.py"))
-            if test_files:
-                pt = verify_pytest(ws)
-                checks.append({"check_id": f"chk-{uuid.uuid4().hex[:8]}", "type": "pytest",
-                               "command": "pytest -q", "status": "PASS" if pt.get("status") == "PASS" else "FAIL",
-                               "exit_code": pt.get("exit_code", 1), "stdout": pt.get("stdout", ""),
-                               "stderr": pt.get("stderr", ""), "duration": pt.get("duration", 0),
-                               "evidence": pt})
-            all_pass = all(c["status"] == "PASS" for c in checks)
+            checks, all_pass, failure_reason, attempts = _run_rel_verification(root, ws, rb)
             rb = get_rollback(root, rollback_id)
+            rb["verification_attempts"] = attempts
             rb["verification_checks"] = checks
             if not all_pass:
-                rb["failure_reason"] = "rollback verification failed: " + "; ".join(
-                    f"{c['type']}={c['status']}" for c in checks if c["status"] != "PASS")
+                rb["failure_reason"] = failure_reason or "rollback verification failed"
                 rb = _transition(root, rb, "FAILED", actor=actor, note="rollback verification failed")
                 return {"rollback": rb, "failed": True, "error": rb["failure_reason"]}
             _audit(root, "ROLLBACK_VERIFICATION_COMPLETED",
@@ -337,6 +334,7 @@ def execute(root: Path | str, rollback_id: str, *, actor: str = "release_enginee
             rb = _transition(root, rb, "FAILED", actor=actor, note=f"verification error: {exc}")
             return {"rollback": rb, "failed": True, "error": str(exc)}
         rb = get_rollback(root, rollback_id)
+        rb["verification_attempts"] = attempts
         rb["verification_checks"] = checks
         rb["completed_at"] = _now_iso()
         rb = _transition(root, rb, "ROLLED_BACK", actor=actor, note="rollback completed (verified)")
@@ -353,3 +351,42 @@ def history(root: Path | str, rollback_id: str) -> list[dict[str, Any]]:
     if rb is None:
         raise ValueError(f"Rollback 不存在: {rollback_id}")
     return rb.get("history", [])
+
+
+# ------------------------------------------------------------------ S20.5: VERIFYING Recovery
+
+def recover_verifying(root: Path | str, rollback_id: str, *, actor: str = "recovery") -> dict[str, Any]:
+    """Rollback VERIFYING 中断恢复 (S20.5 GAP-2)。
+
+    注意: 不在外层持锁 (内部 _transition 已逐个加锁, 避免 flock 重入死锁)。
+    """
+    rb = get_rollback(root, rollback_id)
+    if rb is None:
+        raise ValueError(f"Rollback 不存在: {rollback_id}")
+    if rb["state"] != "VERIFYING":
+        return {"rollback": rb, "recovered": False,
+                "reason": f"state={rb['state']} (非 VERIFYING, 无需恢复)"}
+    attempts = rb.get("verification_attempts", [])
+    for a in reversed(attempts):
+        if a.get("result") == "PASS":
+            rb["completed_at"] = _now_iso()
+            rb = _transition(root, rb, "ROLLED_BACK", actor=actor,
+                             note="recovered: verification PASS evidence found")
+            return {"rollback": rb, "recovered": True, "reason": "verification PASS evidence"}
+    # 无 PASS evidence → 重新 verification
+    from .release_service import _run_verification as _run_rel_verification
+
+    ws = Path(root) / "workspace"
+    checks, all_pass, failure_reason, attempts = _run_rel_verification(root, ws, rb)
+    rb = get_rollback(root, rollback_id)
+    rb["verification_attempts"] = attempts
+    rb["verification_checks"] = checks
+    if not all_pass:
+        rb["failure_reason"] = failure_reason or "rollback verification failed"
+        rb = _transition(root, rb, "FAILED", actor=actor,
+                         note="recovered: re-verification failed (真实失败, 不伪造)")
+        return {"rollback": rb, "recovered": False, "reason": "re-verification failed"}
+    rb["completed_at"] = _now_iso()
+    rb = _transition(root, rb, "ROLLED_BACK", actor=actor,
+                     note="recovered: re-verification PASS")
+    return {"rollback": rb, "recovered": True, "reason": "re-verification PASS"}

@@ -60,6 +60,10 @@ def _releases_file(root: Path | str) -> Path:
     return Path(root) / "releases" / "releases.json"
 
 
+def _releases_lock(root: Path | str) -> Path:
+    return Path(root) / "releases" / "releases.lock"
+
+
 def _load(root: Path | str) -> list[dict[str, Any]]:
     try:
         d = json.loads(_releases_file(root).read_text(encoding="utf-8"))
@@ -82,20 +86,23 @@ def _save(root: Path | str, data: list[dict[str, Any]]) -> None:
 
 
 def _transition(root: Path | str, rel: dict[str, Any], to: str, *, actor: str, note: str) -> dict[str, Any]:
-    if to not in TRANSITIONS.get(rel["state"], ()):
-        raise ValueError(f"非法 Release 状态转换: {rel['state']} → {to}")
-    rel["state"] = to
-    rel["history"].append({"from": rel["history"][-1]["to"] if rel["history"] else None,
-                           "to": to, "actor": actor, "at": _now_iso(), "note": note})
-    # 持久化 (替换同 release_id 记录)
-    data = _load(root)
-    for i, r in enumerate(data):
-        if r["release_id"] == rel["release_id"]:
-            data[i] = rel
-            break
-    else:
-        data.append(rel)
-    _save(root, data)
+    from .integrity_lock import file_lock
+
+    with file_lock(_releases_lock(root)):
+        if to not in TRANSITIONS.get(rel["state"], ()):
+            raise ValueError(f"非法 Release 状态转换: {rel['state']} → {to}")
+        rel["state"] = to
+        rel["history"].append({"from": rel["history"][-1]["to"] if rel["history"] else None,
+                               "to": to, "actor": actor, "at": _now_iso(), "note": note})
+        # 持久化 (替换同 release_id 记录)
+        data = _load(root)
+        for i, r in enumerate(data):
+            if r["release_id"] == rel["release_id"]:
+                data[i] = rel
+                break
+        else:
+            data.append(rel)
+        _save(root, data)
     _audit(root, f"RELEASE_{to}", {"release_id": rel["release_id"], "run_id": rel["production_run_id"], "note": note})
     return rel
 
@@ -105,29 +112,34 @@ def create(root: Path | str, production_run_id: str, *, created_by: str = "relea
     run = get_production_run(root, production_run_id)
     if run is None:
         raise ValueError(f"ProductionRun 不存在: {production_run_id}")
-    data = _load(root)
-    # 幂等: 同 run 已有 active (非 terminal) release → 返回
-    for r in data:
-        if r["production_run_id"] == production_run_id and r["state"] not in TERMINAL:
-            return r
-    rel = {
-        "release_id": f"rel-{uuid.uuid4().hex[:10]}",
-        "production_run_id": production_run_id,
-        "project_id": run.get("project_id") or "",
-        "artifact_ids": list(run.get("artifacts", [])),
-        "verification_ids": [],
-        "evaluation_ids": [],
-        "approval_ids": [],
-        "state": ST_PENDING,
-        "created_at": _now_iso(),
-        "started_at": "",
-        "completed_at": "",
-        "failure_reason": "",
-        "history": [{"from": None, "to": ST_PENDING, "actor": created_by, "at": _now_iso(), "note": "created"}],
-        "evidence": [],
-    }
-    data.append(rel)
-    _save(root, data)
+    from .integrity_lock import file_lock
+
+    # S20.5: 跨进程锁 (幂等检查 + append 串行化)
+    with file_lock(_releases_lock(root)):
+        data = _load(root)
+        # 幂等: 同 run 已有 active (非 terminal) release → 返回
+        for r in data:
+            if r["production_run_id"] == production_run_id and r["state"] not in TERMINAL:
+                return r
+        rel = {
+            "release_id": f"rel-{uuid.uuid4().hex[:10]}",
+            "production_run_id": production_run_id,
+            "project_id": run.get("project_id") or "",
+            "artifact_ids": list(run.get("artifacts", [])),
+            "verification_ids": [],
+            "evaluation_ids": [],
+            "approval_ids": [],
+            "state": ST_PENDING,
+            "created_at": _now_iso(),
+            "started_at": "",
+            "completed_at": "",
+            "failure_reason": "",
+            "history": [{"from": None, "to": ST_PENDING, "actor": created_by, "at": _now_iso(), "note": "created"}],
+            "evidence": [],
+            "verification_attempts": [],
+        }
+        data.append(rel)
+        _save(root, data)
     _audit(root, "RELEASE_CREATED", {"release_id": rel["release_id"], "run_id": production_run_id})
     return rel
 
@@ -240,37 +252,16 @@ def execute(root: Path | str, release_id: str, *, actor: str = "release_engineer
                              "workspace": str(ws)})
         rel = get_release(root, release_id)
         rel["evidence"] = evidence
-        # S20: Release Verification Pipeline — apply 后真实验证 (pytest/syntax)
+        # S20.5: Release Verification Pipeline — apply 后真实验证 + bounded retry
         rel = _transition(root, rel, ST_VERIFYING, actor=actor, note="release verification started")
         try:
-            from .verification import verify_pytest, verify_python_syntax
-            from factory_console.audit.audit_event import AuditEvent
-            from factory_console.audit.audit_store import AuditStore
-
-            checks = []
-            # 1) Python 语法 (workspace 内所有 .py)
-            syn = verify_python_syntax(ws)
-            checks.append({"check_id": f"chk-{uuid.uuid4().hex[:8]}", "type": "python_syntax",
-                           "command": "compileall", "status": "PASS" if syn.get("status") == "PASS" else "FAIL",
-                           "exit_code": syn.get("exit_code", 0), "stdout": syn.get("stdout", ""),
-                           "stderr": syn.get("stderr", ""), "duration": syn.get("duration", 0),
-                           "evidence": syn})
-            # 2) pytest (workspace 有 test 文件才跑)
-            test_files = list(ws.glob("test_*.py")) + list(ws.glob("*_test.py"))
-            if test_files:
-                pt = verify_pytest(ws)
-                checks.append({"check_id": f"chk-{uuid.uuid4().hex[:8]}", "type": "pytest",
-                               "command": "pytest -q", "status": "PASS" if pt.get("status") == "PASS" else "FAIL",
-                               "exit_code": pt.get("exit_code", 1), "stdout": pt.get("stdout", ""),
-                               "stderr": pt.get("stderr", ""), "duration": pt.get("duration", 0),
-                               "evidence": pt})
-            all_pass = all(c["status"] == "PASS" for c in checks)
+            checks, all_pass, failure_reason, attempts = _run_verification(root, ws, rel)
             rel = get_release(root, release_id)
+            rel["verification_attempts"] = attempts
             rel["verification_checks"] = checks
             if not all_pass:
                 # 真实失败 → FAILED (不 fake)
-                rel["failure_reason"] = f"release verification failed: " + "; ".join(
-                    f"{c['type']}={c['status']}" for c in checks if c["status"] != "PASS")
+                rel["failure_reason"] = failure_reason or "release verification failed"
                 rel = _transition(root, rel, ST_FAILED, actor=actor,
                                   note=f"release verification failed")
                 _audit(root, "RELEASE_VERIFICATION_FAILED",
@@ -284,6 +275,7 @@ def execute(root: Path | str, release_id: str, *, actor: str = "release_engineer
             rel = _transition(root, rel, ST_FAILED, actor=actor, note=f"verification error: {exc}")
             return {"release": rel, "failed": True, "error": str(exc)}
         rel = get_release(root, release_id)
+        rel["verification_attempts"] = attempts
         rel["verification_checks"] = checks
         rel["completed_at"] = _now_iso()
         rel = _transition(root, rel, ST_RELEASED, actor=actor, note="release completed (verified)")
@@ -300,6 +292,92 @@ def history(root: Path | str, release_id: str) -> list[dict[str, Any]]:
     if rel is None:
         raise ValueError(f"Release 不存在: {release_id}")
     return rel.get("history", [])
+
+
+# ------------------------------------------------------------------ S20.5: Verification Pipeline (复用)
+
+def _run_verification(root: Path | str, ws: Path, rel: dict[str, Any]) -> tuple[list[dict[str, Any]], bool, str, list[dict[str, Any]]]:
+    """Run verification checks with bounded retry. Returns (checks, all_pass, failure_reason, attempts)."""
+    from .verification import verify_pytest, verify_python_syntax
+    from .retry_policy import is_retryable_verification, MAX_VERIFICATION_ATTEMPTS
+
+    attempts: list[dict[str, Any]] = list(rel.get("verification_attempts", []))
+    checks: list[dict[str, Any]] = []
+    all_pass = False
+    failure_reason = ""
+    for attempt_no in range(1, MAX_VERIFICATION_ATTEMPTS + 1):
+        checks = []
+        syn = verify_python_syntax(ws)
+        checks.append({"check_id": f"chk-{uuid.uuid4().hex[:8]}", "type": "python_syntax",
+                       "command": "compileall", "status": "PASS" if syn.get("status") == "PASS" else "FAIL",
+                       "exit_code": syn.get("exit_code", 0), "stdout": syn.get("stdout", ""),
+                       "stderr": syn.get("stderr", ""), "duration": syn.get("duration", 0),
+                       "evidence": syn})
+        test_files = list(ws.glob("test_*.py")) + list(ws.glob("*_test.py"))
+        if test_files:
+            pt = verify_pytest(ws)
+            checks.append({"check_id": f"chk-{uuid.uuid4().hex[:8]}", "type": "pytest",
+                           "command": "pytest -q", "status": "PASS" if pt.get("status") == "PASS" else "FAIL",
+                           "exit_code": pt.get("exit_code", 1), "stdout": pt.get("stdout", ""),
+                           "stderr": pt.get("stderr", ""), "duration": pt.get("duration", 0),
+                           "evidence": pt})
+        all_pass = all(c["status"] == "PASS" for c in checks)
+        attempts.append({"attempt": attempt_no, "result": "PASS" if all_pass else "FAIL",
+                         "checks": checks, "at": _now_iso()})
+        if all_pass:
+            break
+        failed = [c for c in checks if c["status"] != "PASS"]
+        retryable = all(is_retryable_verification(c) for c in failed)
+        failure_reason = "release verification failed: " + "; ".join(
+            f"{c['type']}={c['status']}" for c in failed)
+        if not retryable or attempt_no >= MAX_VERIFICATION_ATTEMPTS:
+            break
+        _audit(root, "VERIFICATION_RETRY_STARTED",
+               {"release_id": rel["release_id"], "attempt": attempt_no, "reason": failure_reason})
+    return checks, all_pass, failure_reason, attempts
+
+
+# ------------------------------------------------------------------ S20.5: VERIFYING Recovery
+
+def recover_verifying(root: Path | str, release_id: str, *, actor: str = "recovery") -> dict[str, Any]:
+    """Release VERIFYING 中断恢复 (S20.5 GAP-2)。
+
+    基于持久化事实:
+    - verification_attempts 有 PASS → 安全完成 RELEASED
+    - 无 PASS evidence → 重新 verification (bounded retry)
+    - 全部 FAIL (non-retryable) → 保持真实失败 FAILED (不伪造)
+
+    注意: 不在外层持锁 (内部 _transition 已逐个加锁, 避免 flock 重入死锁)。
+    """
+    rel = get_release(root, release_id)
+    if rel is None:
+        raise ValueError(f"Release 不存在: {release_id}")
+    if rel["state"] != ST_VERIFYING:
+        return {"release": rel, "recovered": False,
+                "reason": f"state={rel['state']} (非 VERIFYING, 无需恢复)"}
+    # 已有 PASS evidence → 安全完成
+    attempts = rel.get("verification_attempts", [])
+    for a in reversed(attempts):
+        if a.get("result") == "PASS":
+            rel["completed_at"] = _now_iso()
+            rel = _transition(root, rel, ST_RELEASED, actor=actor,
+                              note="recovered: verification PASS evidence found")
+            return {"release": rel, "recovered": True, "reason": "verification PASS evidence"}
+    # 无 PASS evidence → 重新 verification
+    ws = Path(root) / "workspace"
+    checks, all_pass, failure_reason, attempts = _run_verification(root, ws, rel)
+    rel = get_release(root, release_id)
+    rel["verification_attempts"] = attempts
+    rel["verification_checks"] = checks
+    if not all_pass:
+        rel["failure_reason"] = failure_reason or "release verification failed"
+        rel = _transition(root, rel, ST_FAILED, actor=actor,
+                          note="recovered: re-verification failed (真实失败, 不伪造)")
+        return {"release": rel, "recovered": False, "reason": "re-verification failed"}
+    rel["completed_at"] = _now_iso()
+    rel = _transition(root, rel, ST_RELEASED, actor=actor,
+                      note="recovered: re-verification PASS")
+    return {"release": rel, "recovered": True, "reason": "re-verification PASS"}
 
 
 def _audit(root: Path | str, event_type: str, payload: dict[str, Any]) -> None:

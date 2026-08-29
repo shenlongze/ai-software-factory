@@ -253,12 +253,16 @@ def execute_node_run(
     agent: str | None = None,
     model: str | None = None,
     artifact_root: Path | str | None = None,
+    max_attempts: int = 1,
+    repair_fn: Callable[[dict[str, Any], dict[str, Any], dict[str, Any]], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """执行 NodeRun: PENDING→RUNNING→(产出 Artifact)→VERIFYING→COMPLETED/FAILED。
+    """执行 NodeRun: PENDING→RUNNING→(Artifact)→VERIFYING→COMPLETED/FAILED (S5 Repair Loop)。
 
-    executor_fn: 统一契约 execute(input) → {ok, output/patch_text, error, artifact_type}
-    产出 Artifact (走 S1 artifact_lifecycle, GENERATED) — NodeRun 不直接改 Workspace。
-    verification_fn 注入或默认 {result: PASS} (S2 只接入 Verification, 不 Repair)。
+    executor_fn: 统一契约 execute(input) → {ok, output/patch_text, error, artifact_type, verification}
+    repair_fn: 统一契约 repair(failed_artifact, verification, diagnosis_ctx) → 新执行结果
+      (与 executor_fn 同形状; 缺省 → 无 repair, max_attempts=1 即 S2 行为)
+    max_attempts: 最大尝试次数 (含首次); verification FAIL → 若 attempts < max → REPAIRING → 重试
+    Artifact 不可变: 每次尝试产出新 Artifact (A→FAIL, B→PASS), 历史保留在 run.attempts
     """
     with _lock:
         run = get_node_run(root, run_id)
@@ -272,70 +276,114 @@ def execute_node_run(
         run["agent"] = agent
         run["model"] = model
         run["started_at"] = _now_iso()
+        run.setdefault("attempts", [])
         _write_run(root, run)
 
-    # 执行 (锁外 — 真实 subprocess 可能长)
-    try:
-        result = executor_fn(run.get("input") or {})
-    except Exception as exc:  # noqa: BLE001
-        with _lock:
-            run = get_node_run(root, run_id)
-            run["failure_reason"] = f"executor exception: {exc}"
-            _record(root, run, "FAILED", actor="system", note=str(exc)[:120])
-        return run
-
-    # 执行失败 → FAILED
-    if not result.get("ok"):
-        with _lock:
-            run = get_node_run(root, run_id)
-            run["failure_reason"] = str(result.get("error") or "executor returned not ok")[:300]
-            _record(root, run, "FAILED", actor="system", note=run["failure_reason"][:120])
-        return run
-
-    # 产出 Artifact (S1 Lifecycle, GENERATED; NodeRun 不直接改 Workspace — I8/I9)
-    artifact = None
     ar = Path(artifact_root or root)
-    try:
-        from .artifact_lifecycle import create_artifact
+    attempts_used = 0
+    current_input = dict(run.get("input") or {})
 
-        artifact = create_artifact(
-            ar,
-            artifact_type=result.get("artifact_type", "code_change"),
-            payload=result.get("output") or {},
-            patch_text=result.get("patch_text"),
-            project_id=run.get("input", {}).get("project_id"),
-            node_run_id=run_id,
-            producer=executor_name,
-        )
-    except Exception as exc:  # noqa: BLE001
+    while True:
+        attempts_used += 1
+        # 执行 (锁外 — 真实 subprocess 可能长)
+        try:
+            result = executor_fn(current_input)
+        except Exception as exc:  # noqa: BLE001
+            result = {"ok": False, "error": f"executor exception: {exc}", "artifact_type": "report"}
+
+        if not result.get("ok"):
+            # 执行失败: 若允许 retry 且 attempts 未满 → 重试 (transient); 否则 FAILED
+            if attempts_used < max_attempts:
+                with _lock:
+                    run = get_node_run(root, run_id)
+                    run["attempts"].append({"attempt": attempts_used, "state": "RETRY",
+                                            "reason": str(result.get("error") or "")[:200]})
+                    _record(root, run, "REPAIRING", actor="system", note=f"retry {attempts_used}")
+                continue
+            with _lock:
+                run = get_node_run(root, run_id)
+                run["failure_reason"] = str(result.get("error") or "executor returned not ok")[:300]
+                _record(root, run, "FAILED", actor="system", note=run["failure_reason"][:120])
+            return run
+
+        # 产出 Artifact (S1 Lifecycle, GENERATED; 每次尝试新 Artifact — 不可变 I10)
+        try:
+            from .artifact_lifecycle import create_artifact
+
+            artifact = create_artifact(
+                ar,
+                artifact_type=result.get("artifact_type", "code_change"),
+                payload=result.get("output") or {},
+                patch_text=result.get("patch_text"),
+                project_id=run.get("input", {}).get("project_id"),
+                node_run_id=run_id,
+                producer=executor_name,
+            )
+        except Exception as exc:  # noqa: BLE001
+            with _lock:
+                run = get_node_run(root, run_id)
+                run["failure_reason"] = f"artifact creation failed: {exc}"
+                _record(root, run, "FAILED", actor="system", note="artifact failed")
+            return run
+
         with _lock:
             run = get_node_run(root, run_id)
-            run["failure_reason"] = f"artifact creation failed: {exc}"
-            _record(root, run, "FAILED", actor="system", note="artifact failed")
-        return run
+            run["artifact_id"] = artifact["artifact_id"]
+            _record(root, run, "VERIFYING", actor="system", note=f"artifact produced (attempt {attempts_used})")
 
-    with _lock:
-        run = get_node_run(root, run_id)
-        run["artifact_id"] = artifact["artifact_id"]
-        _record(root, run, "VERIFYING", actor="system", note="artifact produced")
+        # Verification
+        verification = result.get("verification") or {"result": "PASS", "source": "default"}
+        v_result = verification.get("result")
+        if v_result not in VERIFY_RESULTS:
+            v_result = "INCONCLUSIVE"
 
-    # Verification (S2 只记录结果, 不 Repair)
-    verification = result.get("verification") or {"result": "PASS", "source": "default"}
-    v_result = verification.get("result")
-    if v_result not in VERIFY_RESULTS:
-        v_result = "INCONCLUSIVE"
+        # 记录 attempt
+        with _lock:
+            run = get_node_run(root, run_id)
+            run["verification"] = verification
+            run["attempts"].append({
+                "attempt": attempts_used,
+                "state": "VERIFIED",
+                "artifact_id": artifact["artifact_id"],
+                "verification": {"status": v_result, **verification},
+            })
+            _write_run(root, run)
 
-    with _lock:
-        run = get_node_run(root, run_id)
-        run["verification"] = verification
         if v_result == "PASS":
-            run["completed_at"] = _now_iso()
-            _record(root, run, "COMPLETED", actor="system", note="verification PASS")
-        else:
-            run["failure_reason"] = f"verification {v_result}: {str(verification.get('error') or '')[:200]}"
-            _record(root, run, "FAILED", actor="system", note=f"verification {v_result}")
-        _write_run(root, run)
-        return run
+            with _lock:
+                run = get_node_run(root, run_id)
+                run["completed_at"] = _now_iso()
+                _record(root, run, "COMPLETED", actor="system", note="verification PASS")
+            return run
+
+        # FAIL → Repair (若允许且未到上限)
+        if attempts_used >= max_attempts or repair_fn is None:
+            with _lock:
+                run = get_node_run(root, run_id)
+                run["failure_reason"] = (
+                    f"verification {v_result} (attempt {attempts_used}/{max_attempts}): "
+                    f"{str(verification.get('error') or verification.get('stderr') or '')[:200]}")
+                _record(root, run, "FAILED", actor="system", note=f"verification {v_result}")
+            return run
+
+        # Repair: 基于失败 Artifact + Verification evidence → 新执行结果
+        with _lock:
+            run = get_node_run(root, run_id)
+            _record(root, run, "REPAIRING", actor="system", note=f"repair attempt {attempts_used}")
+        try:
+            repaired = repair_fn(artifact, verification, run.get("input") or {})
+            current_input = dict(run.get("input") or {})
+            # Repair 结果作为下一轮执行输入 (显式传递, 无 hidden state)
+            if repaired.get("input"):
+                current_input.update(repaired["input"])
+            executor_fn = lambda _inp, _r=repaired: _r  # noqa: E731 — repair 结果即执行结果
+        except Exception as exc:  # noqa: BLE001
+            with _lock:
+                run = get_node_run(root, run_id)
+                run["failure_reason"] = f"repair exception: {exc}"
+                _record(root, run, "FAILED", actor="system", note="repair failed")
+            return run
+        # 继续循环 (attempts_used 已 +1, 下一轮 verify repaired 结果)
 
 
 # ------------------------------------------------------------------ 兼容真实 Executor

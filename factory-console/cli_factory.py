@@ -1015,6 +1015,8 @@ class FactoryCLI:
             return self.run_cmd(args)
         if args.command == "run-status":
             return self.run_status(args)
+        if args.command == "production":
+            return self.production_cmd(args)
         if args.command == "project":
             return self.project_cmd(args)
         if args.command == "create":
@@ -3887,6 +3889,105 @@ class FactoryCLI:
             return 1
         return self._emit_proxy_result(exec_cli, args, result)
 
+    def production_cmd(self, args: argparse.Namespace) -> int:
+        """factory production — Production Kernel 入口 (S6): run/status/history/list。
+
+        薄代理 → production_service (CLI 与 API 共享同一 Service 层)。
+        """
+        import json as _json
+
+        from factory_console.production_service import (
+            create as _svc_create, start as _svc_start, status as _svc_status,
+            history as _svc_history, list_runs as _svc_list, ProductionServiceError,
+        )
+
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        action = getattr(args, "action", "status") or "status"
+
+        if action == "run":
+            workflow = getattr(args, "workflow", None)
+            if not workflow:
+                print("[E4001] 错误: --workflow 必填 (如 factory production run --workflow wf-1)",
+                      file=sys.stderr)
+                return 2
+            try:
+                input_data = _json.loads(getattr(args, "input", "{}") or "{}")
+            except ValueError:
+                print("[E4002] 错误: --input 必须是 JSON", file=sys.stderr)
+                return 2
+            try:
+                run = _svc_create(root, workflow, input_data=input_data, trigger="cli")
+                print(f"run_id: {run['run_id']}")
+                print(f"workflow_id: {run['workflow_id']}")
+                print(f"state: {run['state']}")
+                print("启动执行 (真实外部 executor)...")
+                from factory_console.production_run import build_executor_factory
+                factory = build_executor_factory(root)
+                done = _svc_start(root, run["run_id"], executor_factory=factory,
+                                  artifact_root=str(root))
+                print(f"final_state: {done['state']}")
+                if done.get("failure"):
+                    print(f"failure: {done['failure']}")
+                for nr in done.get("node_runs", []):
+                    print(f"  node {nr.get('node_id')}: {nr.get('state')} "
+                          f"artifact={nr.get('artifact_id')}")
+                print(f"artifacts: {len(done.get('artifacts', []))}")
+                return 0 if done["state"] in ("COMPLETED",) else 1
+            except ProductionServiceError as exc:
+                print(f"[E4003] 错误: {exc}", file=sys.stderr)
+                return 1
+
+        if action == "status":
+            run_id = getattr(args, "run_id", None)
+            if not run_id:
+                print("[E4004] 错误: run_id 必填 (factory production status <run_id>)",
+                      file=sys.stderr)
+                return 2
+            try:
+                st = _svc_status(root, run_id)
+            except ProductionServiceError as exc:
+                print(f"[E4005] 错误: {exc}", file=sys.stderr)
+                return 1
+            print(f"run_id: {st['run_id']} | workflow: {st.get('workflow_id')} | state: {st['state']}")
+            for nr in st.get("node_runs", []):
+                line = f"  node {nr.get('node_id')}: {nr.get('state')}"
+                if nr.get("verification"):
+                    line += f" | verification={nr.get('verification', {}).get('result')}"
+                if nr.get("attempts"):
+                    line += f" | attempts={nr['attempts']}"
+                print(line)
+            if st.get("failure"):
+                print(f"failure: {st['failure']}")
+            return 0
+
+        if action == "history":
+            run_id = getattr(args, "run_id", None)
+            if not run_id:
+                print("[E4006] 错误: run_id 必填 (factory production history <run_id>)",
+                      file=sys.stderr)
+                return 2
+            try:
+                h = _svc_history(root, run_id)
+            except ProductionServiceError as exc:
+                print(f"[E4007] 错误: {exc}", file=sys.stderr)
+                return 1
+            print(f"run_id: {h['run_id']} | state: {h['state']}")
+            for ev in h.get("history", []):
+                print(f"  [{ev.get('at')}] {ev.get('from')} → {ev.get('to')} "
+                      f"({ev.get('actor')}): {ev.get('note')}")
+            return 0
+
+        # list
+        try:
+            runs = _svc_list(root)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[E4008] 错误: {exc}", file=sys.stderr)
+            return 1
+        print(f"production runs: {len(runs)}")
+        for r_ in sorted(runs, key=lambda x: x.get("created_at", ""), reverse=True):
+            print(f"  {r_.get('run_id')} | {r_.get('workflow_id')} | {r_.get('state')} | {r_.get('created_at')}")
+        return 0
+
     def project_cmd(self, args: argparse.Namespace) -> int:
         """factory project — create 代理 org.cli.cmd_project_register; list 只读 projects.json。"""
         action = getattr(args, "project_command", None)
@@ -4608,6 +4709,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_skill.add_argument("--category", default="", help="分类 (add)")
     # S10-116 A-3: MCP 管理 (list/connect/remove — 复用 Service MCP API)
     p_mcp = sub.add_parser("mcp", help="MCP 管理 (list/connect/remove — 外部工具连接)")
+    # S6: ProductionRun CLI (生产入口)
+    p_prod = sub.add_parser("production", help="生产运行 (S6): run/status/history — Production Kernel")
+    p_prod.add_argument("action", nargs="?", default="status",
+                        choices=["run", "status", "history", "list"],
+                        help="动作: run 启动 / status 查询 / history 历史 / list 列表")
+    p_prod.add_argument("run_id", nargs="?", help="ProductionRun id")
+    p_prod.add_argument("--workflow", help="workflow_id (run 用)")
+    p_prod.add_argument("--input", default="{}", help="输入 JSON (run 用, 如 {'prompt': '...'})")
+    p_prod.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     p_mcp.add_argument(
         "mcp_action", nargs="?", choices=["list", "connect", "remove"], default="list",
         metavar="list|connect|remove",

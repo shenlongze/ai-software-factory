@@ -1092,7 +1092,7 @@ def build_app(
     PUT 等写动词不注册。
     static_dir 存在 → 挂 SPA 静态托管 (html=True); 否则纯 API 模式。
     """
-    from fastapi import FastAPI, HTTPException, Query, Request
+    from fastapi import Body, FastAPI, HTTPException, Query, Request
     from fastapi.responses import StreamingResponse
     from fastapi.staticfiles import StaticFiles
     from typing import Callable
@@ -3893,6 +3893,63 @@ def build_app(
                     title = None
             cp["task_title"] = title
         return ok_list(items)
+
+    @app.post("/api/production-runs")
+    def api_create_production_run(body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """创建并启动 ProductionRun (S6): {workflow_id, input?, auto_start?}。"""
+        try:
+            from factory_console import production_service as _psvc
+            from factory_console.production_run import build_executor_factory
+
+            root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+            workflow_id = str(body.get("workflow_id") or "")
+            if not workflow_id:
+                raise HTTPException(status_code=400, detail="workflow_id 必填")
+            input_data = body.get("input") or {}
+            run = _psvc.create(root, workflow_id, input_data=input_data, trigger="api")
+            auto_start = bool(body.get("auto_start", True))
+            if auto_start:
+                factory = build_executor_factory(root)
+                done = _psvc.start(root, run["run_id"], executor_factory=factory,
+                                   artifact_root=root)
+                st = _psvc.status(root, run["run_id"])
+                st["final_state"] = done["state"]
+                return st
+            return run
+        except _psvc.ProductionServiceError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=500, detail=f"ProductionRun 启动失败: {exc}") from exc
+
+    @app.get("/api/production-runs/{run_id}")
+    def api_get_production_run(run_id: str) -> dict[str, Any]:
+        """ProductionRun 状态 (S6)。"""
+        try:
+            from factory_console import production_service as _psvc
+
+            root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+            return _psvc.status(root, run_id)
+        except _psvc.ProductionServiceError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/api/production-runs/{run_id}/history")
+    def api_production_run_history(run_id: str) -> dict[str, Any]:
+        """ProductionRun append-only 历史 (S6)。"""
+        try:
+            from factory_console import production_service as _psvc
+
+            root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+            return _psvc.history(root, run_id)
+        except _psvc.ProductionServiceError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/api/production-runs")
+    def api_list_production_runs() -> dict[str, Any]:
+        """ProductionRun 列表 (S6)。"""
+        from factory_console import production_service as _psvc
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return ok_list(_psvc.list_runs(root))
 
     @app.get("/api/sessions")
     def api_sessions(

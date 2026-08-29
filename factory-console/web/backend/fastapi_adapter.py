@@ -3992,6 +3992,37 @@ def build_app(
             raise HTTPException(status_code=404, detail=f"Handoff 不存在: {handoff_id}")
         return h
 
+    @app.get("/api/workforce")
+    def api_workforce_list() -> dict[str, Any]:
+        """Workforce workflows (S16)。"""
+        from factory_console import workforce as _wf
+
+        return {"workflows": list(_wf.WORKFORCE_WORKFLOWS.items())}
+
+    @app.get("/api/workforce/agents")
+    def api_workforce_agents() -> dict[str, Any]:
+        """Workforce 角色/Agent 列表 (S16, 含 capabilities)。"""
+        from factory_console import workforce as _wf
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return {"items": _wf.list_agents(root), "count": len(_wf.list_agents(root))}
+
+    @app.get("/api/workforce/runs/{run_id}")
+    def api_workforce_run(run_id: str) -> dict[str, Any]:
+        """Workforce run lineage (S16, 全链)。"""
+        from factory_console import workforce as _wf
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return _wf.workforce_lineage(root, run_id)
+
+    @app.get("/api/workforce/runs")
+    def api_workforce_runs() -> dict[str, Any]:
+        """Workforce 任务列表 (S16)。"""
+        from factory_console import workforce as _wf
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return {"items": _wf.get_tasks(root)}
+
     @app.get("/api/experiences")
     def api_list_experiences(status: str | None = Query(default=None)) -> dict[str, Any]:
         """经验列表 (S14)。"""

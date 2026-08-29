@@ -64,8 +64,9 @@ def test_professional_agents_have_prompts_and_skills(tmp_path):
 
 def test_workflow_definition(tmp_path):
     assert PROFESSIONAL_WORKFLOW_ID == "software-product-production"
-    assert list(PROFESSIONAL_ROLES) == ["product_manager", "software_architect",
-                                        "software_developer", "qa_engineer"]
+    # S16: 核心 4 角色是子集 (扩展了 market/ux/release)
+    assert {"product_manager", "software_architect",
+            "software_developer", "qa_engineer"} <= set(PROFESSIONAL_ROLES)
 
 
 # --- 3. Handoff artifact-only + no-hidden-state ---
@@ -227,8 +228,9 @@ def test_professional_workflow_full_e2e_deterministic(tmp_path):
 
     result = run_professional_workflow(str(tmp_path), idea="calculator app", executor_factory=factory)
     assert result["state"] == "COMPLETED", result.get("failure")
-    # 4 个 AgentRun 全完成
-    for role in PROFESSIONAL_ROLES:
+    # 4 个核心 AgentRun 全完成 (workflow 实际跑的核心链)
+    CORE_ROLES = ["product_manager", "software_architect", "software_developer", "qa_engineer"]
+    for role in CORE_ROLES:
         assert result["runs"][role]["state"] == "COMPLETED", role
     # 3 个 Handoff
     assert len(result["handoffs"]) == 3
@@ -236,8 +238,8 @@ def test_professional_workflow_full_e2e_deterministic(tmp_path):
     assert len(result["final_artifacts"]) == 1
     # lineage: 每个 handoff 的输入 = 前序 AgentRun 输出
     for i, h in enumerate(result["handoffs"]):
-        assert h["from_agent_id"] == f"agt-it-{list(PROFESSIONAL_ROLES)[i]}-1"
-        assert h["to_agent_id"] == f"agt-it-{list(PROFESSIONAL_ROLES)[i+1]}-1"
+        assert h["from_agent_id"] == f"agt-it-{CORE_ROLES[i]}-1"
+        assert h["to_agent_id"] == f"agt-it-{CORE_ROLES[i + 1]}-1"
 
 
 # --- 9. 真实 E2E: Apply → Workspace ---

@@ -1019,6 +1019,8 @@ class FactoryCLI:
             return self.production_cmd(args)
         if args.command == "workflow":
             return self.workflow_cmd(args)
+        if args.command == "workforce":
+            return self.workforce_cmd(args)
         if args.command == "experience":
             return self.experience_cmd(args)
         if args.command == "agent-run":
@@ -4093,6 +4095,53 @@ class FactoryCLI:
             print(f"  {r_.get('run_id')} | {r_.get('workflow_id')} | {r_.get('state')} | {r_.get('created_at')}")
         return 0
 
+    def workforce_cmd(self, args: argparse.Namespace) -> int:
+        """factory workforce — Multi-Agent Workforce (S16): list/agents/runs/status。
+
+        薄代理 → workforce (CLI 与 API 共享同一 Service)。
+        """
+        from factory_console.workforce import (
+            WORKFORCE_WORKFLOWS, list_agents as _list_agents, get_tasks,
+            workforce_lineage,
+        )
+
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        action = getattr(args, "action", "list") or "list"
+        target = getattr(args, "target", None)
+
+        if action == "list":
+            for wf, roles in WORKFORCE_WORKFLOWS.items():
+                print(f"  {wf}: {' → '.join(roles)}")
+            return 0
+
+        if action == "agents":
+            for a in _list_agents(root):
+                print(f"  {a.get('id')} | {a.get('role')} | caps={a.get('capabilities')}")
+            return 0
+
+        if action == "runs":
+            for t in get_tasks(root):
+                print(f"  {t.get('task_id')} | {t.get('role')} | {t.get('status')} "
+                      f"| {t.get('objective', '')[:40]}")
+            return 0
+
+        if action == "status":
+            if not target:
+                print("[E4031] 错误: production_run_id 必填 (factory workforce status <run_id>)",
+                      file=sys.stderr)
+                return 2
+            lg = workforce_lineage(root, target)
+            print(f"production_run_id: {target}")
+            print(f"workflow: {lg.get('workflow_id')} | state: {lg.get('state')}")
+            print(f"experiences: {lg.get('experiences')} | decisions: {len(lg.get('decisions', []))}")
+            print(f"artifacts: {lg.get('artifacts')}")
+            for n in lg.get("nodes", []):
+                print(f"  node {n.get('node_id')}: {n.get('state')} "
+                      f"| attempts={n.get('attempts')} | artifact={n.get('artifact_id')}")
+            return 0
+
+        return 1
+
     def experience_cmd(self, args: argparse.Namespace) -> int:
         """factory experience — 生产经验 (S14): list/get/retrieve/extract。
 
@@ -5020,6 +5069,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_prod.add_argument("--input", default="{}", help="输入 JSON (run 用, 如 {'prompt': '...'})")
     p_prod.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     sub.add_parser("workflow", help="Workflow 列表 (S10): factory workflow list — 专业生产线")
+    # S16: Workforce CLI
+    p_wf = sub.add_parser("workforce", help="Multi-Agent Workforce (S16): list/agents/runs/status")
+    p_wf.add_argument("action", nargs="?", default="list",
+                      choices=["list", "agents", "runs", "status"],
+                      help="动作: list workflows / agents 角色列表 / runs 任务列表 / status 详情")
+    p_wf.add_argument("target", nargs="?", help="production_run_id (status)")
+    p_wf.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+
     # S14: Experience CLI
     p_exp = sub.add_parser("experience", help="生产经验 (S14/S15): list/get/retrieve/extract — Evidence-backed")
     p_exp.add_argument("action", nargs="?", default="list",

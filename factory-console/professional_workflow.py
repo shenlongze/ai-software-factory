@@ -74,6 +74,22 @@ PROFESSIONAL_ROLES: dict[str, dict[str, Any]] = {
         ),
         "skills": ["pytest_execution"],
     },
+    # S16: 扩展角色
+    "market_analyst": {
+        "name": "市场分析师",
+        "system_prompt": "你是市场分析师。分析市场/竞品/用户需求, 输出市场分析文档。",
+        "skills": ["market_research", "competitive_analysis"],
+    },
+    "ux_designer": {
+        "name": "UX 设计师",
+        "system_prompt": "你是 UX 设计师。基于 PRD 设计用户体验和界面结构, 输出设计文档。",
+        "skills": ["design_ux"],
+    },
+    "release_engineer": {
+        "name": "发布工程师",
+        "system_prompt": "你是发布工程师。执行发布准备和发布验证, 不得绕过必要验证。",
+        "skills": ["release_prepare", "release_verify"],
+    },
 }
 
 #: 每 Agent 的 artifact 文件名 (由 executor 产出 → Artifact)
@@ -82,6 +98,10 @@ ROLE_TARGETS: dict[str, str] = {
     "software_architect": "architecture.md",
     "software_developer": "app.py",
     "qa_engineer": "test_app.py",
+    # S16: 扩展角色
+    "market_analyst": "market_analysis.md",
+    "ux_designer": "ux_design.md",
+    "release_engineer": "release_notes.md",
 }
 
 
@@ -516,6 +536,24 @@ def build_real_executor_factory(root: Path | str):
                         "patch_text": "", "error": pytest_result.get("stderr") or "",
                         "artifact_type": "test", "verification": pytest_result,
                         "content": test_content}
+
+            # S16: 通用文档角色 (market_analyst/ux_designer/release_engineer)
+            if role in ("market_analyst", "ux_designer", "release_engineer"):
+                try:
+                    content = _llm_call(
+                        cfg["system_prompt"],
+                        f"任务背景: {idea[:2000]}\n"
+                        f"上下文:\n{str(next(iter(context.values()), '') or '')[:2000]}\n"
+                        f"请输出 {role} 专业文档 (markdown, 含必要章节)。"
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    return {"ok": False, "error": f"LLM 失败: {exc}", "artifact_type": "report",
+                            "verification": {"result": "FAIL", "error": str(exc)[:200]}}
+                ver = {"result": "PASS" if len(content) > 50 else "FAIL",
+                       "error": "" if len(content) > 50 else "内容过短"}
+                return {"ok": ver["result"] == "PASS", "output": {"content": content},
+                        "patch_text": "", "error": ver.get("error") or "",
+                        "artifact_type": "document", "verification": ver, "content": content}
 
             return {"ok": False, "error": f"未知角色: {role}", "artifact_type": "report",
                     "verification": {"result": "FAIL", "error": "unknown role"}}

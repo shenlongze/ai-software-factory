@@ -1019,6 +1019,8 @@ class FactoryCLI:
             return self.production_cmd(args)
         if args.command == "workflow":
             return self.workflow_cmd(args)
+        if args.command == "release":
+            return self.release_cmd(args)
         if args.command == "governance":
             return self.governance_cmd(args)
         if args.command == "approval-request":
@@ -4099,6 +4101,93 @@ class FactoryCLI:
             print(f"  {r_.get('run_id')} | {r_.get('workflow_id')} | {r_.get('state')} | {r_.get('created_at')}")
         return 0
 
+    def release_cmd(self, args: argparse.Namespace) -> int:
+        """factory release — Release (S18): list/status/check/create/execute/history。
+
+        薄代理 → release_service (CLI 与 API 共享同一 Service)。
+        """
+        from factory_console.release_service import (
+            create as _create, get_release as _get, list_releases as _list,
+            check as _check, execute as _execute, history as _history,
+        )
+
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        action = getattr(args, "action", "list") or "list"
+        target = getattr(args, "target", None)
+
+        if action == "list":
+            for r in _list(root):
+                print(f"  {r['release_id']} | {r['state']} | run={r['production_run_id']} "
+                      f"| artifacts={len(r['artifact_ids'])}")
+            return 0
+
+        if action == "status":
+            if not target:
+                print("[E4042] 错误: release_id 必填 (factory release status <id>)", file=sys.stderr)
+                return 2
+            r = _get(root, target)
+            if r is None:
+                print(f"[E4043] Release 不存在: {target}", file=sys.stderr)
+                return 1
+            print(f"release_id: {r['release_id']}")
+            print(f"state: {r['state']} | run: {r['production_run_id']}")
+            print(f"approval_ids: {r.get('approval_ids')}")
+            print(f"evidence: {len(r.get('evidence', []))} items")
+            if r.get('failure_reason'):
+                print(f"failure: {r['failure_reason']}")
+            return 0
+
+        if action == "check":
+            if not target:
+                print("[E4044] 错误: release_id 必填 (factory release check <id>)", file=sys.stderr)
+                return 2
+            g = _check(root, target)
+            print(f"release: {target} | allowed: {g['allowed']}")
+            print(f"reason: {g['reason'] or 'OK'} | missing: {g.get('missing')}")
+            return 0
+
+        if action == "create":
+            if not target:
+                print("[E4045] 错误: production_run_id 必填 (factory release create <run_id>)",
+                      file=sys.stderr)
+                return 2
+            try:
+                r = _create(root, target)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[E4046] 错误: {exc}", file=sys.stderr)
+                return 1
+            print(f"release_id: {r['release_id']} | state: {r['state']}")
+            return 0
+
+        if action == "execute":
+            if not target:
+                print("[E4047] 错误: release_id 必填 (factory release execute <id>)", file=sys.stderr)
+                return 2
+            try:
+                r = _execute(root, target)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[E4048] 错误: {exc}", file=sys.stderr)
+                return 1
+            rel = r["release"]
+            print(f"release_id: {rel['release_id']} | state: {rel['state']}")
+            if r.get("blocked"):
+                print(f"BLOCKED: {r.get('reason')} missing={r.get('missing')}")
+            if r.get("failed"):
+                print(f"FAILED: {r.get('error')}")
+            if r.get("already_released"):
+                print("already released (no-op)")
+            return 0
+
+        if action == "history":
+            if not target:
+                print("[E4049] 错误: release_id 必填 (factory release history <id>)", file=sys.stderr)
+                return 2
+            for h in _history(root, target):
+                print(f"  {h.get('from')} → {h.get('to')} | {h.get('actor')} | {h.get('note', '')}")
+            return 0
+
+        return 1
+
     def governance_cmd(self, args: argparse.Namespace) -> int:
         """factory governance — Governance (S17): check/status。
 
@@ -5193,6 +5282,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_prod.add_argument("--input", default="{}", help="输入 JSON (run 用, 如 {'prompt': '...'})")
     p_prod.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     sub.add_parser("workflow", help="Workflow 列表 (S10): factory workflow list — 专业生产线")
+    # S18: Release CLI
+    p_rel = sub.add_parser("release", help="Release (S18): list/status/check/create/execute/history")
+    p_rel.add_argument("action", nargs="?", default="list",
+                       choices=["list", "status", "check", "create", "execute", "history"],
+                       help="动作: list 列表 / status 详情 / check 门检查 / create 创建 / execute 执行 / history 历史")
+    p_rel.add_argument("target", nargs="?", help="release_id 或 production_run_id (create/check)")
+    p_rel.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+
     # S17: Governance CLI
     p_gov = sub.add_parser("governance", help="Governance (S17): check/status — 审批门")
     p_gov.add_argument("action", nargs="?", default="check",

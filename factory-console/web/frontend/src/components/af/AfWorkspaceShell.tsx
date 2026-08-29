@@ -17,6 +17,7 @@ import type { ParsedRoute } from '../../router';
 import { AfProjectCard } from './AfProjectCard';
 import { AfCompanyHome } from '../../pages/workspace/AfCompanyHome';
 import { AfMonitorPage } from '../../pages/workspace/AfMonitorPage';
+import ProductionPage from '../../pages/ProductionPage';
 import { AfEmptyState, AfErrorState, AfLoadingState } from './AfState';
 import { AfModulePlaceholder } from './AfModulePlaceholder';
 import { AfHeader } from './AfHeader';
@@ -77,6 +78,9 @@ function WorkspacePage({ route }: { route: ParsedRoute }): JSX.Element {
   }
   if (route.page === 'monitor') {
     return <AfMonitorPage />;
+  }
+  if (route.page === 'production') {
+    return <ProductionPage />;
   }
   if (route.page === 'manage') {
     return <AfProjectManage />;

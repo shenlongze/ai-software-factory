@@ -21,6 +21,7 @@ export const WORKSPACE_ROUTES: readonly { path: string; page: string }[] = [
   { path: '#/workspace', page: 'dashboard' },
   { path: '#/workspace/projects', page: 'projects' },
   { path: '#/workspace/monitor', page: 'monitor' },
+  { path: '#/workspace/production', page: 'production' },
   { path: '#/workspace/settings', page: 'settings' },
   { path: '#/workspace/manage', page: 'manage' },
 ];

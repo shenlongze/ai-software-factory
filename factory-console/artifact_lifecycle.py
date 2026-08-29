@@ -298,6 +298,11 @@ def approve_artifact(
         else:
             art.setdefault("approval_ids", []).append(approval["approval_id"])
             _write_artifact(root, art)
+        # S18: APPROVED 转换后也记录 approval_ids (I12: Apply 需要 Approval 记录)
+        art = get_artifact(root, artifact_id)
+        if art is not None and approval["approval_id"] not in art.get("approval_ids", []):
+            art.setdefault("approval_ids", []).append(approval["approval_id"])
+            _write_artifact(root, art)
         return approval
 
 
@@ -325,6 +330,18 @@ def apply_artifact(
             raise ArtifactError(f"Apply 前置: 状态必须 APPROVED (当前: {art.get('state')}) — I1")
         if not approval and not art.get("approval_ids"):
             raise ArtifactError("Apply 需要 Approval 记录 (I12)")
+        # S18: approval 未传但已有 approval_ids → 从 governance 读取 (I12 满足)
+        if not approval and art.get("approval_ids"):
+            try:
+                from .governance_service import get_approval as _get_appr
+                for aid_ in art["approval_ids"]:
+                    ap_ = _get_appr(root, aid_)
+                    if ap_ and ap_.get("decision") == "APPROVED":
+                        approval = {"approval_id": aid_, "state": "APPROVED",
+                                    "decided_by": ap_.get("decided_by")}
+                        break
+            except Exception:  # noqa: BLE001
+                approval = None
         if not art.get("patch_text"):
             # 无 patch → 视为无变更 (仍记录 APPLIED)
             art["workspace"] = str(workspace_dir)

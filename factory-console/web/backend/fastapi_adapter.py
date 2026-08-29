@@ -4061,6 +4061,70 @@ def build_app(
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(status_code=403, detail=str(exc)) from exc
 
+    @app.post("/api/production-runs/{run_id}/releases")
+    def api_create_release(run_id: str) -> dict[str, Any]:
+        """创建 Release (S18)。"""
+        from factory_console import release_service as _rel
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _rel.create(root, run_id)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/releases")
+    def api_list_releases(run_id: str = "") -> dict[str, Any]:
+        """Release 列表 (S18)。"""
+        from factory_console import release_service as _rel
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        items = _rel.list_releases(root, production_run_id=run_id or None)
+        return {"items": items, "count": len(items)}
+
+    @app.get("/api/releases/{release_id}")
+    def api_get_release(release_id: str) -> dict[str, Any]:
+        """Release 详情 (S18)。"""
+        from factory_console import release_service as _rel
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        r = _rel.get_release(root, release_id)
+        if r is None:
+            raise HTTPException(status_code=404, detail=f"Release 不存在: {release_id}")
+        return r
+
+    @app.get("/api/releases/{release_id}/history")
+    def api_release_history(release_id: str) -> dict[str, Any]:
+        """Release 历史 (S18, append-only)。"""
+        from factory_console import release_service as _rel
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return {"release_id": release_id, "history": _rel.history(root, release_id)}
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/api/production-runs/{run_id}/release")
+    def api_run_release(run_id: str) -> dict[str, Any]:
+        """ProductionRun 的 Release 视图 (S18)。"""
+        from factory_console import release_service as _rel
+        from factory_console import governance_service as _gov
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        releases = _rel.list_releases(root, production_run_id=run_id)
+        gate = _gov.check_governance(root, run_id, action="release")
+        return {"run_id": run_id, "releases": releases, "gate": gate}
+
+    @app.post("/api/releases/{release_id}/execute")
+    def api_execute_release(release_id: str) -> dict[str, Any]:
+        """执行 Release (S18, 经 Governance + Lifecycle)。"""
+        from factory_console import release_service as _rel
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _rel.execute(root, release_id)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     @app.get("/api/workforce")
     def api_workforce_list() -> dict[str, Any]:
         """Workforce workflows (S16)。"""

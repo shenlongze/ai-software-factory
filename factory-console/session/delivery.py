@@ -56,9 +56,13 @@ def apply_patch(project_dir: Path, patch_text: str) -> tuple[bool, str]:
     返回 (成功, 消息)。patch 为空 → 视为无变更成功。
     容错链 (S10-083): git apply → --recount --ignore-whitespace → patch -p1 --fuzz。
     """
-    text = str(patch_text or "").strip()
+    text = str(patch_text or "").lstrip()
     if not text:
         return True, "no changes"
+    # S1 (v1.1.307): strip() 破坏尾部换行导致 git apply "corrupt patch at line N"
+    # (patch 以内容行结尾时, 最后一行必须保留 trailing newline)
+    if not text.endswith("\n"):
+        text += "\n"
     if not ensure_git_repo(project_dir):
         return False, "project not a git repo and git init failed"
 

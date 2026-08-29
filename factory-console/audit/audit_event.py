@@ -63,6 +63,13 @@ EVENT_TYPES: tuple[str, ...] = (
     "REVIEW_REQUESTED",
     "REVIEW_APPROVED",
     "REVIEW_REJECTED",
+    # S1/S2 (v1.1.308): Production Core 事件 — Artifact Lifecycle + Node Runtime
+    "ARTIFACT_TRANSITION",
+    "NODE_RUN_CREATED",
+    "NODE_RUN_STARTED",
+    "NODE_RUN_VERIFYING",
+    "NODE_RUN_COMPLETED",
+    "NODE_RUN_FAILED",
     "TASK_BLOCKED",
     "TASK_COMPLETED",
     "TASK_STARTED",

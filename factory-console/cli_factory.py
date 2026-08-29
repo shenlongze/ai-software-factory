@@ -4133,6 +4133,17 @@ class FactoryCLI:
                 print(f"  {e.get('id')} | conf={e.get('confidence')} | {e.get('problem', '')[:80]}")
             return 0
 
+        if action == "search":
+            if not target:
+                print("[E4030] 错误: query 必填 (factory experience search '<role>:<task>')", file=sys.stderr)
+                return 2
+            from factory_console.production_guidance import retrieve_guidance
+            role, _, ctx = target.partition(":")
+            for g in retrieve_guidance(root, role, ctx or target):
+                print(f"  {g.get('experience_id')} | rel={g.get('relevance')} | conf={g.get('confidence')} "
+                      f"| {g.get('summary', '')[:70]}")
+            return 0
+
         if action == "extract":
             if not target:
                 print("[E4028] 错误: production_run_id 必填 (factory experience extract <id>)", file=sys.stderr)
@@ -5010,10 +5021,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_prod.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     sub.add_parser("workflow", help="Workflow 列表 (S10): factory workflow list — 专业生产线")
     # S14: Experience CLI
-    p_exp = sub.add_parser("experience", help="生产经验 (S14): list/get/retrieve/extract — Evidence-backed")
+    p_exp = sub.add_parser("experience", help="生产经验 (S14/S15): list/get/retrieve/extract — Evidence-backed")
     p_exp.add_argument("action", nargs="?", default="list",
-                       choices=["list", "get", "retrieve", "extract"],
-                       help="动作: list 列表 / get 详情 / retrieve 检索 / extract 从生产提取")
+                       choices=["list", "get", "retrieve", "extract", "search"],
+                       help="动作: list 列表 / get 详情 / retrieve 检索 / extract 从生产提取 / search 引导检索")
     p_exp.add_argument("target", nargs="?", help="experience_id (get) 或 production_run_id (extract) 或 query (retrieve)")
     p_exp.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     # S9: Agent Kernel CLI

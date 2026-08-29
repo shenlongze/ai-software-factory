@@ -4001,6 +4001,22 @@ def build_app(
         return {"items": _pexp.list_experiences(root, status=status),
                 "count": len(_pexp.list_experiences(root, status=status))}
 
+    @app.get("/api/experiences/search")
+    def api_search_experiences(role: str = "", q: str = "") -> dict[str, Any]:
+        """引导检索相关经验 (S15, 确定性 relevance)。"""
+        from factory_console import production_guidance as _pg
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return {"items": _pg.retrieve_guidance(root, role, q)}
+
+    @app.get("/api/production-runs/{run_id}/lineage")
+    def api_production_lineage(run_id: str) -> dict[str, Any]:
+        """Production 双向 lineage (S15: usage + decisions)。"""
+        from factory_console import production_guidance as _pg
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return _pg.production_lineage(root, run_id)
+
     @app.get("/api/experiences/{experience_id}")
     def api_get_experience(experience_id: str) -> dict[str, Any]:
         """经验详情 (S14)。"""

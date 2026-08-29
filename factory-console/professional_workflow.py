@@ -558,12 +558,17 @@ def run_professional_workflow(
     idea: str,
     executor_factory: Callable[[str], Callable[[dict[str, Any]], dict[str, Any]]] | None = None,
     max_repair: int = 1,
+    experience_guidance: bool = False,
+    guidance_limit: int = 3,
+    record_usage: bool = True,
 ) -> dict[str, Any]:
     """执行完整专业生产线: PM → Architect → Developer → QA (AgentRun 串行 + Handoff)。
 
     每 Agent 独立 AgentRun → ProductionRun → Artifact → Verification。
     Agent 间只通过 Handoff (Artifact references)。
     max_repair: Developer 的自动修复次数 (S12: pytest FAIL → 自动 repair)。
+    experience_guidance: S15 — 检索相关 Experience 注入 Agent context (Guidance, 非指令)。
+    record_usage: S15 — 记录 experience usage + decision (双向 lineage)。
     """
     ensure_professional_agents(root)
     factory = executor_factory or build_llm_executor_factory(root)
@@ -582,6 +587,11 @@ def run_professional_workflow(
         # 执行 (经 Production Kernel, executor 是专业 LLM executor)
         # 注意: execute 按 node_id 路由 (workflow node="work") → 用闭包固定 role
         role_factory = _bind_role(factory, role)
+        # S15: Experience Guidance 注入 (Guidance, 非指令 — Agent 可 ACCEPT/REJECT)
+        guidance = []
+        if experience_guidance:
+            from .production_guidance import retrieve_guidance
+            guidance = retrieve_guidance(root, role, idea, limit=guidance_limit)
         # S12: Developer 启用自动修复 (pytest FAIL → 真实 codex repair)
         repair_fn = None
         rmax = 1
@@ -590,12 +600,33 @@ def run_professional_workflow(
             arch = str(next(iter(arch_ctx.values()), "") or "")
             repair_fn = build_developer_repair_fn(root, idea=idea, arch=arch)
             rmax = max_repair + 1  # 首次 + max_repair 次修复
+        wf_input = {"idea": idea,
+                    "context": _load_artifact_contexts(root, input_artifacts),
+                    "target_file": ROLE_TARGETS.get(role, "out.md")}
+        if guidance:
+            wf_input["experience_guidance"] = guidance
         done = run_agent(root, arun["agent_run_id"], workflow_id=f"wf-{role}",
                          executor_factory=role_factory,
-                         workflow_input={"idea": idea,
-                                         "context": _load_artifact_contexts(root, input_artifacts),
-                                         "target_file": ROLE_TARGETS.get(role, "out.md")},
+                         workflow_input=wf_input,
                          max_attempts=rmax, repair_fn=repair_fn)
+        # S15: 记录 usage + decision (双向 lineage)
+        if record_usage and guidance:
+            from .production_guidance import record_usage as _record_usage, record_decision
+            for g in guidance:
+                exp_id = g.get("experience_id")
+                if not exp_id:
+                    continue
+                # 模拟 Agent 决策 (确定性: 高 relevance → accept; 低 → partial)
+                decision = "accept" if g.get("relevance", 0) >= 60 else "partial_apply"
+                dec = record_decision(root, agent_run_id=arun["agent_run_id"],
+                                      production_run_id=done.get("production_run_id") or "",
+                                      experience_ids=[exp_id], decision=decision,
+                                      reason=f"relevance={g.get('relevance')} (role/task match)")
+                _record_usage(root, production_run_id=done.get("production_run_id") or "",
+                              experience_id=exp_id, agent_run_id=arun["agent_run_id"],
+                              relevance=int(g.get("relevance", 0)),
+                              applied=done["state"] == "COMPLETED",
+                              decision_id=dec["decision_id"])
         runs[role] = done
         if done["state"] != "COMPLETED":
             return {"workflow_id": PROFESSIONAL_WORKFLOW_ID, "idea": idea,

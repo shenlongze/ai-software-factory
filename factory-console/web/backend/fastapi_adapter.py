@@ -3992,6 +3992,48 @@ def build_app(
             raise HTTPException(status_code=404, detail=f"Handoff 不存在: {handoff_id}")
         return h
 
+    @app.get("/api/experiences")
+    def api_list_experiences(status: str | None = Query(default=None)) -> dict[str, Any]:
+        """经验列表 (S14)。"""
+        from factory_console import production_experience as _pexp
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return {"items": _pexp.list_experiences(root, status=status),
+                "count": len(_pexp.list_experiences(root, status=status))}
+
+    @app.get("/api/experiences/{experience_id}")
+    def api_get_experience(experience_id: str) -> dict[str, Any]:
+        """经验详情 (S14)。"""
+        from factory_console import production_experience as _pexp
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        e = _pexp.get_experience(root, experience_id)
+        if e is None:
+            raise HTTPException(status_code=404, detail=f"Experience 不存在: {experience_id}")
+        return e
+
+    @app.post("/api/experiences/retrieve")
+    def api_retrieve_experiences(body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """确定性检索相关经验 (S14, 只返回 ACTIVE)。"""
+        from factory_console import production_experience as _pexp
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        context = str(body.get("context") or "")
+        limit = int(body.get("limit") or 5)
+        return {"items": _pexp.retrieve(root, context, limit=limit)}
+
+    @app.post("/api/production-runs/{run_id}/experience")
+    def api_extract_experience(run_id: str, body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """从 ProductionRun 提取经验 (S14, 幂等)。"""
+        try:
+            from factory_console import production_experience as _pexp
+
+            root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+            force = bool(body.get("force", False))
+            return _pexp.extract(root, run_id, force=force)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
     @app.post("/api/production-runs")
     def api_create_production_run(body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
         """创建并启动 ProductionRun (S6): {workflow_id, input?, auto_start?}。"""

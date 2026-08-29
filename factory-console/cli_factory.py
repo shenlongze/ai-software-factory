@@ -1019,6 +1019,8 @@ class FactoryCLI:
             return self.production_cmd(args)
         if args.command == "workflow":
             return self.workflow_cmd(args)
+        if args.command == "experience":
+            return self.experience_cmd(args)
         if args.command == "agent-run":
             return self.agent_run_cmd(args)
         if args.command == "project":
@@ -4091,6 +4093,65 @@ class FactoryCLI:
             print(f"  {r_.get('run_id')} | {r_.get('workflow_id')} | {r_.get('state')} | {r_.get('created_at')}")
         return 0
 
+    def experience_cmd(self, args: argparse.Namespace) -> int:
+        """factory experience — 生产经验 (S14): list/get/retrieve/extract。
+
+        薄代理 → production_experience (CLI 与 API 共享同一 Service)。
+        """
+        from factory_console.production_experience import (
+            extract as _extract, list_experiences as _list, get_experience as _get,
+            retrieve as _retrieve,
+        )
+
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        action = getattr(args, "action", "list") or "list"
+        target = getattr(args, "target", None)
+
+        if action == "list":
+            for e in _list(root):
+                print(f"  {e.get('id')} | {e.get('type')} | {e.get('status', 'ACTIVE')} "
+                      f"| conf={e.get('confidence')} | {e.get('problem', '')[:60]}")
+            return 0
+
+        if action == "get":
+            if not target:
+                print("[E4025] 错误: experience_id 必填 (factory experience get <id>)", file=sys.stderr)
+                return 2
+            e = _get(root, target)
+            if e is None:
+                print(f"[E4026] Experience 不存在: {target}", file=sys.stderr)
+                return 1
+            import json as _json
+            print(_json.dumps(e, ensure_ascii=False, indent=2))
+            return 0
+
+        if action == "retrieve":
+            if not target:
+                print("[E4027] 错误: query 必填 (factory experience retrieve '<context>')", file=sys.stderr)
+                return 2
+            for e in _retrieve(root, target):
+                print(f"  {e.get('id')} | conf={e.get('confidence')} | {e.get('problem', '')[:80]}")
+            return 0
+
+        if action == "extract":
+            if not target:
+                print("[E4028] 错误: production_run_id 必填 (factory experience extract <id>)", file=sys.stderr)
+                return 2
+            try:
+                e = _extract(root, target)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[E4029] 错误: {exc}", file=sys.stderr)
+                return 1
+            print(f"experience_id: {e.get('id')}")
+            print(f"source_production_run_id: {e.get('source_production_run_id')}")
+            print(f"status: {e.get('status')} | confidence: {e.get('confidence')}")
+            print(f"type: {e.get('type')}")
+            print(f"problem: {e.get('problem', '')[:100]}")
+            print(f"evidence_refs: {e.get('evidence_refs')}")
+            return 0
+
+        return 1
+
     def workflow_cmd(self, args: argparse.Namespace) -> int:
         """factory workflow — Workflow 列表 (S10)。"""
         from factory_console.professional_workflow import (
@@ -4948,6 +5009,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_prod.add_argument("--input", default="{}", help="输入 JSON (run 用, 如 {'prompt': '...'})")
     p_prod.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     sub.add_parser("workflow", help="Workflow 列表 (S10): factory workflow list — 专业生产线")
+    # S14: Experience CLI
+    p_exp = sub.add_parser("experience", help="生产经验 (S14): list/get/retrieve/extract — Evidence-backed")
+    p_exp.add_argument("action", nargs="?", default="list",
+                       choices=["list", "get", "retrieve", "extract"],
+                       help="动作: list 列表 / get 详情 / retrieve 检索 / extract 从生产提取")
+    p_exp.add_argument("target", nargs="?", help="experience_id (get) 或 production_run_id (extract) 或 query (retrieve)")
+    p_exp.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     # S9: Agent Kernel CLI
     p_agent2 = sub.add_parser("agent-run", help="Agent Kernel (S9): run/status/history/handoff — 专业 AI 员工")
     p_agent2.add_argument("action", nargs="?", default="list",

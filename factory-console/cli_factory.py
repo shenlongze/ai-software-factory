@@ -1019,6 +1019,8 @@ class FactoryCLI:
             return self.production_cmd(args)
         if args.command == "workflow":
             return self.workflow_cmd(args)
+        if args.command == "rollback":
+            return self.rollback_cmd(args)
         if args.command == "release":
             return self.release_cmd(args)
         if args.command == "governance":
@@ -4101,6 +4103,92 @@ class FactoryCLI:
             print(f"  {r_.get('run_id')} | {r_.get('workflow_id')} | {r_.get('state')} | {r_.get('created_at')}")
         return 0
 
+    def rollback_cmd(self, args: argparse.Namespace) -> int:
+        """factory rollback — Rollback (S19): list/status/check/create/execute/history。
+
+        薄代理 → rollback_service (CLI 与 API 共享同一 Service)。
+        """
+        from factory_console.rollback_service import (
+            create as _create, get_rollback as _get, list_rollbacks as _list,
+            check as _check, execute as _execute, history as _history,
+        )
+
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        action = getattr(args, "action", "list") or "list"
+        target = getattr(args, "target", None)
+
+        if action == "list":
+            for r in _list(root):
+                print(f"  {r['rollback_id']} | {r['state']} | target={r['target_release_id']} "
+                      f"| from={r.get('from_release_id') or '-'}")
+            return 0
+
+        if action == "status":
+            if not target:
+                print("[E4050] 错误: rollback_id 必填 (factory rollback status <id>)", file=sys.stderr)
+                return 2
+            r = _get(root, target)
+            if r is None:
+                print(f"[E4051] Rollback 不存在: {target}", file=sys.stderr)
+                return 1
+            print(f"rollback_id: {r['rollback_id']}")
+            print(f"state: {r['state']} | target: {r['target_release_id']} | from: {r.get('from_release_id') or '-'}")
+            print(f"evidence: {len(r.get('evidence', []))} items")
+            if r.get('failure_reason'):
+                print(f"failure: {r['failure_reason']}")
+            return 0
+
+        if action == "check":
+            if not target:
+                print("[E4052] 错误: rollback_id 必填 (factory rollback check <id>)", file=sys.stderr)
+                return 2
+            g = _check(root, target)
+            print(f"rollback: {target} | allowed: {g['allowed']}")
+            print(f"reason: {g['reason'] or 'OK'} | missing: {g.get('missing')}")
+            return 0
+
+        if action == "create":
+            if not target:
+                print("[E4053] 错误: target_release_id 必填 (factory rollback create <release_id>)",
+                      file=sys.stderr)
+                return 2
+            try:
+                r = _create(root, target)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[E4054] 错误: {exc}", file=sys.stderr)
+                return 1
+            print(f"rollback_id: {r['rollback_id']} | state: {r['state']} | target: {r['target_release_id']}")
+            return 0
+
+        if action == "execute":
+            if not target:
+                print("[E4055] 错误: rollback_id 必填 (factory rollback execute <id>)", file=sys.stderr)
+                return 2
+            try:
+                r = _execute(root, target)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[E4056] 错误: {exc}", file=sys.stderr)
+                return 1
+            rb = r["rollback"]
+            print(f"rollback_id: {rb['rollback_id']} | state: {rb['state']}")
+            if r.get("blocked"):
+                print(f"BLOCKED: {r.get('reason')} missing={r.get('missing')}")
+            if r.get("failed"):
+                print(f"FAILED: {r.get('error')}")
+            if r.get("already_rolled_back"):
+                print("already rolled back (no-op)")
+            return 0
+
+        if action == "history":
+            if not target:
+                print("[E4057] 错误: rollback_id 必填 (factory rollback history <id>)", file=sys.stderr)
+                return 2
+            for h in _history(root, target):
+                print(f"  {h.get('from')} → {h.get('to')} | {h.get('actor')} | {h.get('note', '')}")
+            return 0
+
+        return 1
+
     def release_cmd(self, args: argparse.Namespace) -> int:
         """factory release — Release (S18): list/status/check/create/execute/history。
 
@@ -5282,6 +5370,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_prod.add_argument("--input", default="{}", help="输入 JSON (run 用, 如 {'prompt': '...'})")
     p_prod.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     sub.add_parser("workflow", help="Workflow 列表 (S10): factory workflow list — 专业生产线")
+    # S19: Rollback CLI
+    p_rb = sub.add_parser("rollback", help="Rollback (S19): list/status/check/create/execute/history")
+    p_rb.add_argument("action", nargs="?", default="list",
+                      choices=["list", "status", "check", "create", "execute", "history"],
+                      help="动作: list 列表 / status 详情 / check 门检查 / create 创建 / execute 执行 / history 历史")
+    p_rb.add_argument("target", nargs="?", help="rollback_id 或 target_release_id (create)")
+    p_rb.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+
     # S18: Release CLI
     p_rel = sub.add_parser("release", help="Release (S18): list/status/check/create/execute/history")
     p_rel.add_argument("action", nargs="?", default="list",

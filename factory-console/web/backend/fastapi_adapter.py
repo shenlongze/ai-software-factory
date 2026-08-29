@@ -4125,6 +4125,70 @@ def build_app(
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    @app.post("/api/releases/{release_id}/rollbacks")
+    def api_create_rollback(release_id: str) -> dict[str, Any]:
+        """创建 Rollback (S19, target = release_id)。"""
+        from factory_console import rollback_service as _rb
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _rb.create(root, release_id)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/rollbacks")
+    def api_list_rollbacks() -> dict[str, Any]:
+        """Rollback 列表 (S19)。"""
+        from factory_console import rollback_service as _rb
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        items = _rb.list_rollbacks(root)
+        return {"items": items, "count": len(items)}
+
+    @app.get("/api/rollbacks/{rollback_id}")
+    def api_get_rollback(rollback_id: str) -> dict[str, Any]:
+        """Rollback 详情 (S19)。"""
+        from factory_console import rollback_service as _rb
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        r = _rb.get_rollback(root, rollback_id)
+        if r is None:
+            raise HTTPException(status_code=404, detail=f"Rollback 不存在: {rollback_id}")
+        return r
+
+    @app.get("/api/rollbacks/{rollback_id}/history")
+    def api_rollback_history(rollback_id: str) -> dict[str, Any]:
+        """Rollback 历史 (S19, append-only)。"""
+        from factory_console import rollback_service as _rb
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return {"rollback_id": rollback_id, "history": _rb.history(root, rollback_id)}
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/api/rollbacks/{rollback_id}/check")
+    def api_rollback_check(rollback_id: str) -> dict[str, Any]:
+        """Rollback Gate 检查 (S19)。"""
+        from factory_console import rollback_service as _rb
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _rb.check(root, rollback_id)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/api/rollbacks/{rollback_id}/execute")
+    def api_execute_rollback(rollback_id: str) -> dict[str, Any]:
+        """执行 Rollback (S19, 经 Governance + Lifecycle)。"""
+        from factory_console import rollback_service as _rb
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _rb.execute(root, rollback_id)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     @app.get("/api/workforce")
     def api_workforce_list() -> dict[str, Any]:
         """Workforce workflows (S16)。"""

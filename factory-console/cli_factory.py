@@ -4011,6 +4011,28 @@ class FactoryCLI:
                 print(f"[E4012] 错误: {exc}", file=sys.stderr)
                 return 1
 
+        if action == "evaluate":
+            run_id = getattr(args, "run_id", None)
+            if not run_id:
+                print("[E4023] 错误: run_id 必填 (factory production evaluate <run_id>)",
+                      file=sys.stderr)
+                return 2
+            try:
+                from factory_console.production_evaluation import evaluate as _eval
+                ev = _eval(root, run_id)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[E4024] 错误: {exc}", file=sys.stderr)
+                return 1
+            print(f"evaluation_id: {ev['evaluation_id']}")
+            print(f"production_run_id: {ev['production_run_id']}")
+            print(f"status: {ev['status']} | overall_score: {ev['overall_score']}")
+            for k, d in ev["dimensions"].items():
+                print(f"  {k}: {d['score']} ({'PASS' if d['pass'] else 'FAIL'})")
+            print(f"repair_count: {ev['repair_count']} | verification_attempts: {ev['verification_attempts']} "
+                  f"| historical_failures: {ev['historical_failures']}")
+            print(f"final_artifact_id: {ev['final_artifact_id']}")
+            return 0
+
         if action == "status":
             run_id = getattr(args, "run_id", None)
             if not run_id:
@@ -4919,8 +4941,8 @@ def build_parser() -> argparse.ArgumentParser:
     # S6: ProductionRun CLI (生产入口)
     p_prod = sub.add_parser("production", help="生产运行 (S6): run/status/history — Production Kernel")
     p_prod.add_argument("action", nargs="?", default="status",
-                        choices=["run", "status", "history", "list", "analyze", "recover"],
-                        help="动作: run 启动 / status 查询 / history 历史 / list 列表 / analyze 恢复分析 / recover 恢复")
+                        choices=["run", "status", "history", "list", "analyze", "recover", "evaluate"],
+                        help="动作: run 启动 / status 查询 / history 历史 / list 列表 / analyze 恢复分析 / recover 恢复 / evaluate 质量评价")
     p_prod.add_argument("run_id", nargs="?", help="ProductionRun id")
     p_prod.add_argument("--workflow", help="workflow_id (run 用, 支持 software-product-production)")
     p_prod.add_argument("--input", default="{}", help="输入 JSON (run 用, 如 {'prompt': '...'})")

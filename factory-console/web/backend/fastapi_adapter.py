@@ -4045,6 +4045,17 @@ def build_app(
         except _psvc.ProductionServiceError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+    @app.get("/api/production-runs/{run_id}/evaluation")
+    def api_production_run_evaluation(run_id: str, force: bool = False) -> dict[str, Any]:
+        """ProductionRun 质量评价 (S13, 确定性, 幂等)。"""
+        try:
+            from factory_console import production_evaluation as _peval
+
+            root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+            return _peval.evaluate(root, run_id, force=force)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
     @app.get("/api/production-runs/{run_id}")
     def api_get_production_run(run_id: str) -> dict[str, Any]:
         """ProductionRun 状态 (S6)。"""

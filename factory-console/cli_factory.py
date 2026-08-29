@@ -3898,7 +3898,8 @@ class FactoryCLI:
 
         from factory_console.production_service import (
             create as _svc_create, start as _svc_start, status as _svc_status,
-            history as _svc_history, list_runs as _svc_list, ProductionServiceError,
+            history as _svc_history, list_runs as _svc_list, analyze as _svc_analyze,
+            recover as _svc_recover, ProductionServiceError,
         )
 
         root = Path(getattr(args, "data_dir", None) or self.data_dir)
@@ -3937,6 +3938,57 @@ class FactoryCLI:
                 print(f"[E4003] 错误: {exc}", file=sys.stderr)
                 return 1
 
+        if action == "analyze":
+            run_id = getattr(args, "run_id", None)
+            if not run_id:
+                print("[E4009] 错误: run_id 必填 (factory production analyze <run_id>)",
+                      file=sys.stderr)
+                return 2
+            try:
+                a = _svc_analyze(root, run_id)
+            except ProductionServiceError as exc:
+                print(f"[E4010] 错误: {exc}", file=sys.stderr)
+                return 1
+            print(f"Production Run: {a['run_id']}")
+            print(f"State: {a['state']} | recoverable: {a['recoverable']} ({a['recoverable_state']})")
+            print(f"Reason: {a['reason']}")
+            print("Recovery Analysis:")
+            for p in a["plan"]:
+                print(f"  {p['node_id']}: {p.get('node_run_state') or '未执行'} → {p['action']}")
+            print(f"Recommended: {a['recommended_action']}")
+            return 0
+
+        if action == "recover":
+            run_id = getattr(args, "run_id", None)
+            if not run_id:
+                print("[E4011] 错误: run_id 必填 (factory production recover <run_id>)",
+                      file=sys.stderr)
+                return 2
+            try:
+                a = _svc_analyze(root, run_id)
+                if a["recoverable_state"] == "already_completed":
+                    print(f"Production Run: {run_id}")
+                    print("State: COMPLETED — 无需恢复 (no-op)")
+                    return 0
+                print(f"Production Run: {run_id}")
+                print(f"State: {a['state']}")
+                print("Recovery Analysis:")
+                for p in a["plan"]:
+                    print(f"  {p['node_id']}: {p.get('node_run_state') or '未执行'} → {p['action']}")
+                print("恢复执行 (真实外部 executor)...")
+                from factory_console.production_run import build_executor_factory
+                factory = build_executor_factory(root)
+                r = _svc_recover(root, run_id, executor_factory=factory, artifact_root=str(root))
+                print(f"Final State: {r['final_state']}")
+                if r.get("message"):
+                    print(r["message"])
+                for nr in r.get("node_results", []):
+                    print(f"  node {nr.get('node_id')}: {nr.get('state')}")
+                return 0 if r["final_state"] in ("COMPLETED", "already completed, no-op") else 1
+            except ProductionServiceError as exc:
+                print(f"[E4012] 错误: {exc}", file=sys.stderr)
+                return 1
+
         if action == "status":
             run_id = getattr(args, "run_id", None)
             if not run_id:
@@ -3955,9 +4007,16 @@ class FactoryCLI:
                     line += f" | verification={nr.get('verification', {}).get('result')}"
                 if nr.get("attempts"):
                     line += f" | attempts={nr['attempts']}"
+                if nr.get("failure_reason"):
+                    line += f" | failure={nr['failure_reason'][:60]}"
                 print(line)
+                for tl in nr.get("timeline", [])[-3:]:
+                    print(f"      [{tl.get('at')}] {tl.get('state')}: {tl.get('note')}")
             if st.get("failure"):
                 print(f"failure: {st['failure']}")
+            rec = st.get("recovery") or {}
+            print(f"recovery: recoverable={rec.get('recoverable')} ({rec.get('recoverable_state')}) "
+                  f"| {rec.get('reason')} | recommended={rec.get('recommended_action')}")
             return 0
 
         if action == "history":
@@ -4712,8 +4771,8 @@ def build_parser() -> argparse.ArgumentParser:
     # S6: ProductionRun CLI (生产入口)
     p_prod = sub.add_parser("production", help="生产运行 (S6): run/status/history — Production Kernel")
     p_prod.add_argument("action", nargs="?", default="status",
-                        choices=["run", "status", "history", "list"],
-                        help="动作: run 启动 / status 查询 / history 历史 / list 列表")
+                        choices=["run", "status", "history", "list", "analyze", "recover"],
+                        help="动作: run 启动 / status 查询 / history 历史 / list 列表 / analyze 恢复分析 / recover 恢复")
     p_prod.add_argument("run_id", nargs="?", help="ProductionRun id")
     p_prod.add_argument("--workflow", help="workflow_id (run 用)")
     p_prod.add_argument("--input", default="{}", help="输入 JSON (run 用, 如 {'prompt': '...'})")

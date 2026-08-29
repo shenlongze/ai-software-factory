@@ -3921,6 +3921,32 @@ def build_app(
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(status_code=500, detail=f"ProductionRun 启动失败: {exc}") from exc
 
+    @app.post("/api/production-runs/{run_id}/recover")
+    def api_recover_production_run(run_id: str, body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """执行 Recovery (S8): analyze → resume → 最终状态。"""
+        try:
+            from factory_console import production_service as _psvc
+            from factory_console.production_run import build_executor_factory
+
+            root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+            factory = build_executor_factory(root)
+            return _psvc.recover(root, run_id, executor_factory=factory, artifact_root=root)
+        except _psvc.ProductionServiceError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=500, detail=f"Recovery 失败: {exc}") from exc
+
+    @app.get("/api/production-runs/{run_id}/recovery")
+    def api_production_run_recovery(run_id: str) -> dict[str, Any]:
+        """Recovery 只读分析 (S8, side-effect free)。"""
+        try:
+            from factory_console import production_service as _psvc
+
+            root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+            return _psvc.analyze(root, run_id)
+        except _psvc.ProductionServiceError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
     @app.get("/api/production-runs/{run_id}")
     def api_get_production_run(run_id: str) -> dict[str, Any]:
         """ProductionRun 状态 (S6)。"""

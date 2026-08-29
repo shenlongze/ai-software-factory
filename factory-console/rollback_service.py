@@ -34,6 +34,7 @@ ST_PENDING = "PENDING"
 ST_GATED = "GATED"
 ST_APPROVED = "APPROVED"
 ST_ROLLING_BACK = "ROLLING_BACK"
+ST_VERIFYING = "VERIFYING"
 ST_ROLLED_BACK = "ROLLED_BACK"
 ST_BLOCKED = "BLOCKED"
 ST_REJECTED = "REJECTED"
@@ -45,7 +46,8 @@ TRANSITIONS = {
     ST_PENDING: (ST_GATED, ST_BLOCKED, ST_REJECTED, ST_FAILED),
     ST_GATED: (ST_APPROVED, ST_BLOCKED, ST_REJECTED, ST_FAILED),
     ST_APPROVED: (ST_ROLLING_BACK, ST_BLOCKED, ST_REJECTED, ST_FAILED),
-    ST_ROLLING_BACK: (ST_ROLLED_BACK, ST_FAILED),
+    ST_ROLLING_BACK: (ST_VERIFYING, ST_FAILED),  # S20: apply → verifying
+    ST_VERIFYING: (ST_ROLLED_BACK, ST_FAILED),   # S20: verify → rolled_back / failed
     ST_ROLLED_BACK: (),
     ST_BLOCKED: (),
     ST_REJECTED: (),
@@ -299,8 +301,45 @@ def execute(root: Path | str, rollback_id: str, *, actor: str = "release_enginee
                              "result": applied, "workspace": str(ws)})
         rb = get_rollback(root, rollback_id)
         rb["evidence"] = evidence
+        # S20: Rollback Verification — apply 后真实验证 (workspace + pytest)
+        from .verification import verify_pytest, verify_python_syntax
+
+        rb = _transition(root, rb, "VERIFYING", actor=actor, note="rollback verification started")
+        try:
+            checks = []
+            syn = verify_python_syntax(ws)
+            checks.append({"check_id": f"chk-{uuid.uuid4().hex[:8]}", "type": "python_syntax",
+                           "command": "compileall", "status": "PASS" if syn.get("status") == "PASS" else "FAIL",
+                           "exit_code": syn.get("exit_code", 0), "stdout": syn.get("stdout", ""),
+                           "stderr": syn.get("stderr", ""), "duration": syn.get("duration", 0),
+                           "evidence": syn})
+            test_files = list(ws.glob("test_*.py")) + list(ws.glob("*_test.py"))
+            if test_files:
+                pt = verify_pytest(ws)
+                checks.append({"check_id": f"chk-{uuid.uuid4().hex[:8]}", "type": "pytest",
+                               "command": "pytest -q", "status": "PASS" if pt.get("status") == "PASS" else "FAIL",
+                               "exit_code": pt.get("exit_code", 1), "stdout": pt.get("stdout", ""),
+                               "stderr": pt.get("stderr", ""), "duration": pt.get("duration", 0),
+                               "evidence": pt})
+            all_pass = all(c["status"] == "PASS" for c in checks)
+            rb = get_rollback(root, rollback_id)
+            rb["verification_checks"] = checks
+            if not all_pass:
+                rb["failure_reason"] = "rollback verification failed: " + "; ".join(
+                    f"{c['type']}={c['status']}" for c in checks if c["status"] != "PASS")
+                rb = _transition(root, rb, "FAILED", actor=actor, note="rollback verification failed")
+                return {"rollback": rb, "failed": True, "error": rb["failure_reason"]}
+            _audit(root, "ROLLBACK_VERIFICATION_COMPLETED",
+                   {"rollback_id": rollback_id, "checks": checks})
+        except Exception as exc:  # noqa: BLE001
+            rb = get_rollback(root, rollback_id)
+            rb["failure_reason"] = f"verification error: {exc}"
+            rb = _transition(root, rb, "FAILED", actor=actor, note=f"verification error: {exc}")
+            return {"rollback": rb, "failed": True, "error": str(exc)}
+        rb = get_rollback(root, rollback_id)
+        rb["verification_checks"] = checks
         rb["completed_at"] = _now_iso()
-        rb = _transition(root, rb, ST_ROLLED_BACK, actor=actor, note="rollback completed")
+        rb = _transition(root, rb, "ROLLED_BACK", actor=actor, note="rollback completed (verified)")
         return {"rollback": rb, "already_rolled_back": False}
     except Exception as exc:  # noqa: BLE001
         rb = get_rollback(root, rollback_id)

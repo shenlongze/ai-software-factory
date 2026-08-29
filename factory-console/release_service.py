@@ -31,6 +31,7 @@ ST_PENDING = "PENDING"
 ST_GATED = "GATED"
 ST_APPROVED = "APPROVED"
 ST_RELEASING = "RELEASING"
+ST_VERIFYING = "VERIFYING"
 ST_RELEASED = "RELEASED"
 ST_BLOCKED = "BLOCKED"
 ST_REJECTED = "REJECTED"
@@ -42,7 +43,8 @@ TRANSITIONS = {
     ST_PENDING: (ST_GATED, ST_BLOCKED, ST_REJECTED, ST_FAILED),
     ST_GATED: (ST_APPROVED, ST_BLOCKED, ST_REJECTED, ST_FAILED),
     ST_APPROVED: (ST_RELEASING, ST_BLOCKED, ST_REJECTED, ST_FAILED),
-    ST_RELEASING: (ST_RELEASED, ST_FAILED),
+    ST_RELEASING: (ST_VERIFYING, ST_FAILED),  # S20: apply → verifying
+    ST_VERIFYING: (ST_RELEASED, ST_FAILED),   # S20: verify → released / failed
     ST_RELEASED: (),
     ST_BLOCKED: (),
     ST_REJECTED: (),
@@ -238,8 +240,53 @@ def execute(root: Path | str, release_id: str, *, actor: str = "release_engineer
                              "workspace": str(ws)})
         rel = get_release(root, release_id)
         rel["evidence"] = evidence
+        # S20: Release Verification Pipeline — apply 后真实验证 (pytest/syntax)
+        rel = _transition(root, rel, ST_VERIFYING, actor=actor, note="release verification started")
+        try:
+            from .verification import verify_pytest, verify_python_syntax
+            from factory_console.audit.audit_event import AuditEvent
+            from factory_console.audit.audit_store import AuditStore
+
+            checks = []
+            # 1) Python 语法 (workspace 内所有 .py)
+            syn = verify_python_syntax(ws)
+            checks.append({"check_id": f"chk-{uuid.uuid4().hex[:8]}", "type": "python_syntax",
+                           "command": "compileall", "status": "PASS" if syn.get("status") == "PASS" else "FAIL",
+                           "exit_code": syn.get("exit_code", 0), "stdout": syn.get("stdout", ""),
+                           "stderr": syn.get("stderr", ""), "duration": syn.get("duration", 0),
+                           "evidence": syn})
+            # 2) pytest (workspace 有 test 文件才跑)
+            test_files = list(ws.glob("test_*.py")) + list(ws.glob("*_test.py"))
+            if test_files:
+                pt = verify_pytest(ws)
+                checks.append({"check_id": f"chk-{uuid.uuid4().hex[:8]}", "type": "pytest",
+                               "command": "pytest -q", "status": "PASS" if pt.get("status") == "PASS" else "FAIL",
+                               "exit_code": pt.get("exit_code", 1), "stdout": pt.get("stdout", ""),
+                               "stderr": pt.get("stderr", ""), "duration": pt.get("duration", 0),
+                               "evidence": pt})
+            all_pass = all(c["status"] == "PASS" for c in checks)
+            rel = get_release(root, release_id)
+            rel["verification_checks"] = checks
+            if not all_pass:
+                # 真实失败 → FAILED (不 fake)
+                rel["failure_reason"] = f"release verification failed: " + "; ".join(
+                    f"{c['type']}={c['status']}" for c in checks if c["status"] != "PASS")
+                rel = _transition(root, rel, ST_FAILED, actor=actor,
+                                  note=f"release verification failed")
+                _audit(root, "RELEASE_VERIFICATION_FAILED",
+                       {"release_id": release_id, "checks": checks})
+                return {"release": rel, "failed": True, "error": rel["failure_reason"]}
+            _audit(root, "RELEASE_VERIFICATION_COMPLETED",
+                   {"release_id": release_id, "checks": checks})
+        except Exception as exc:  # noqa: BLE001
+            rel = get_release(root, release_id)
+            rel["failure_reason"] = f"verification error: {exc}"
+            rel = _transition(root, rel, ST_FAILED, actor=actor, note=f"verification error: {exc}")
+            return {"release": rel, "failed": True, "error": str(exc)}
+        rel = get_release(root, release_id)
+        rel["verification_checks"] = checks
         rel["completed_at"] = _now_iso()
-        rel = _transition(root, rel, ST_RELEASED, actor=actor, note="release completed")
+        rel = _transition(root, rel, ST_RELEASED, actor=actor, note="release completed (verified)")
         return {"release": rel, "already_released": False}
     except Exception as exc:  # noqa: BLE001
         rel = get_release(root, release_id)

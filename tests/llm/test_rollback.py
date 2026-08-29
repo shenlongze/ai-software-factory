@@ -141,7 +141,7 @@ def test_real_rollback_e2e(tmp_path):
     assert any(e["type"] == "rollback_apply" for e in r["rollback"]["evidence"])
     # 状态机历史
     states = [h["to"] for h in r["rollback"]["history"]]
-    assert states == ["PENDING", "GATED", "APPROVED", "ROLLING_BACK", "ROLLED_BACK"]
+    assert states == ["PENDING", "GATED", "APPROVED", "ROLLING_BACK", "VERIFYING", "ROLLED_BACK"]
 
 
 # --- Idempotency ---

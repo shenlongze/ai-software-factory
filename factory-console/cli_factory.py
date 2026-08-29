@@ -4266,6 +4266,20 @@ class FactoryCLI:
                 print("already released (no-op)")
             return 0
 
+        if action == "verify":
+            if not target:
+                print("[E4058] 错误: release_id 必填 (factory release verify <id>)", file=sys.stderr)
+                return 2
+            rel = _get(root, target)
+            if rel is None:
+                print(f"[E4059] Release 不存在: {target}", file=sys.stderr)
+                return 1
+            for c in rel.get("verification_checks", []):
+                print(f"  {c.get('type')}: {c.get('status')} | exit={c.get('exit_code')} | {c.get('stdout', '')[:60]}")
+            if not rel.get("verification_checks"):
+                print("  (无 verification checks — release 未验证)")
+            return 0
+
         if action == "history":
             if not target:
                 print("[E4049] 错误: release_id 必填 (factory release history <id>)", file=sys.stderr)
@@ -5379,10 +5393,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_rb.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
 
     # S18: Release CLI
-    p_rel = sub.add_parser("release", help="Release (S18): list/status/check/create/execute/history")
+    p_rel = sub.add_parser("release", help="Release (S18/S20): list/status/check/create/execute/history/verify")
     p_rel.add_argument("action", nargs="?", default="list",
-                       choices=["list", "status", "check", "create", "execute", "history"],
-                       help="动作: list 列表 / status 详情 / check 门检查 / create 创建 / execute 执行 / history 历史")
+                       choices=["list", "status", "check", "create", "execute", "history", "verify"],
+                       help="动作: list 列表 / status 详情 / check 门检查 / create 创建 / execute 执行 / history 历史 / verify 验证")
     p_rel.add_argument("target", nargs="?", help="release_id 或 production_run_id (create/check)")
     p_rel.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
 

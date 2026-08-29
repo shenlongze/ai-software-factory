@@ -57,6 +57,24 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def _now_epoch() -> float:
+    """可注入 clock (S20: 测试用 fake clock)。"""
+    return _CLOCK()
+
+#: 可测试 clock (默认真实时间)
+_CLOCK = lambda: datetime.now(timezone.utc).timestamp()  # noqa: E731
+
+
+def set_clock(fn) -> None:
+    """注入 clock (S20 测试: fake clock 控制 expiration)。"""
+    global _CLOCK
+    _CLOCK = fn
+
+
+#: Approval TTL (秒) — policy 级默认有效期
+APPROVAL_TTL_SECONDS = 24 * 3600  # 24h
+
+
 def _approvals_file(root: Path | str) -> Path:
     return Path(root) / "governance" / "approvals.json"
 
@@ -108,6 +126,7 @@ def request_approval(root: Path | str, *, production_run_id: str,
         "artifact_ids": list(artifact_ids),
         "requested_by": requested_by,
         "requested_at": _now_iso(),
+        "expires_at": _now_iso(),  # S20: 由 _set_expires 更新为 requested + TTL
         "decision": APPROVAL_PENDING,
         "decided_by": "",
         "decided_at": "",
@@ -117,6 +136,10 @@ def request_approval(root: Path | str, *, production_run_id: str,
         "history": [{"from": None, "to": APPROVAL_PENDING, "actor": requested_by,
                      "at": _now_iso(), "note": "created"}],
     }
+    # S20: expires_at = now + TTL
+    from datetime import timedelta
+    req["expires_at"] = (datetime.fromtimestamp(_now_epoch(), tz=timezone.utc)
+                         + timedelta(seconds=APPROVAL_TTL_SECONDS)).isoformat(timespec="seconds")
     data = _load_approvals(root)
     data.append(req)
     _save_approvals(root, data)
@@ -199,20 +222,33 @@ def check_governance(root: Path | str, production_run_id: str, *,
     ver_ok = run.get("state") == "COMPLETED"
     if policy.get("required_verification") and not ver_ok:
         missing.append("verification")
-    # approval (绑定 run + artifact, 不可 stale)
+    # approval (绑定 run + artifact, 不可 stale; S20: 不可 expired)
     approvals = list_approvals(root, production_run_id=production_run_id)
     approved = None
+    approved_expired = False
     for a in approvals:
         if a["decision"] == APPROVAL_APPROVED:
-            approved = a
-            break
-    if policy.get("approval_required") and approved is None:
-        missing.append("approval")
+            approved = a  # S20: 取最新 (最后一个) APPROVED
+    if policy.get("approval_required"):
+        if approved is None:
+            missing.append("approval")
+        else:
+            # S20: expiration check (now >= expires_at → expired)
+            expires_at = approved.get("expires_at") or ""
+            try:
+                exp_ts = datetime.fromisoformat(expires_at.replace("Z", "+00:00")).timestamp()
+                if _now_epoch() >= exp_ts:
+                    approved_expired = True
+                    approved = None
+                    missing.append("approval_expired")
+            except (ValueError, TypeError):
+                missing.append("approval_expired")  # 无法解析 → 视为不可靠
     allowed = len(missing) == 0
     return {"allowed": allowed,
             "reason": "" if allowed else f"缺少: {', '.join(missing)}",
             "policy_id": action, "policy": policy,
-            "missing": missing, "approval": approved}
+            "missing": missing, "approval": approved,
+            "approval_expired": approved_expired}
 
 
 # ------------------------------------------------------------------ Release Gate

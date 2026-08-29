@@ -4189,6 +4189,32 @@ def build_app(
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    @app.get("/api/releases/{release_id}/verification")
+    def api_release_verification(release_id: str) -> dict[str, Any]:
+        """Release Verification 结果 (S20)。"""
+        from factory_console import release_service as _rel
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        r = _rel.get_release(root, release_id)
+        if r is None:
+            raise HTTPException(status_code=404, detail=f"Release 不存在: {release_id}")
+        return {"release_id": release_id, "state": r["state"],
+                "verification_checks": r.get("verification_checks", []),
+                "failure_reason": r.get("failure_reason", "")}
+
+    @app.get("/api/rollbacks/{rollback_id}/verification")
+    def api_rollback_verification(rollback_id: str) -> dict[str, Any]:
+        """Rollback Verification 结果 (S20)。"""
+        from factory_console import rollback_service as _rb
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        r = _rb.get_rollback(root, rollback_id)
+        if r is None:
+            raise HTTPException(status_code=404, detail=f"Rollback 不存在: {rollback_id}")
+        return {"rollback_id": rollback_id, "state": r["state"],
+                "verification_checks": r.get("verification_checks", []),
+                "failure_reason": r.get("failure_reason", "")}
+
     @app.get("/api/workforce")
     def api_workforce_list() -> dict[str, Any]:
         """Workforce workflows (S16)。"""

@@ -79,7 +79,7 @@ def test_release_state_machine(tmp_path):
     r = execute(str(tmp_path), rel["release_id"])
     assert r["release"]["state"] == ST_RELEASED
     states = [h["to"] for h in r["release"]["history"]]
-    assert states == [ST_PENDING, "GATED", "APPROVED", "RELEASING", ST_RELEASED]
+    assert states == [ST_PENDING, "GATED", "APPROVED", "RELEASING", "VERIFYING", ST_RELEASED]
 
 
 # --- Governance: missing approval → BLOCKED ---

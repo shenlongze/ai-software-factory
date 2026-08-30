@@ -1019,6 +1019,8 @@ class FactoryCLI:
             return self.production_cmd(args)
         if args.command == "workflow":
             return self.workflow_cmd(args)
+        if args.command == "entity":
+            return self.entity_cmd(args)
         if args.command == "strategy":
             return self.strategy_cmd(args)
         if args.command == "optimize":
@@ -4151,6 +4153,67 @@ class FactoryCLI:
             print(f"  {r_.get('run_id')} | {r_.get('workflow_id')} | {r_.get('state')} | {r_.get('created_at')}")
         return 0
 
+    def entity_cmd(self, args: argparse.Namespace) -> int:
+        """factory entity — Entity (S43): Unified Entity/Data Contract。
+
+        薄代理 → unified_contract (CLI 与 API 共享同一 Service)。
+        """
+        from factory_console.unified_contract import (
+            create_entity as _create, get_entity as _get, entities as _list,
+            trace_lineage as _trace, store_entity as _store, ID_PREFIXES,
+            ENTITY_RELATIONS, LIFECYCLE_STATES, ERROR_CODES,
+        )
+
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        action = getattr(args, "action", "list") or "list"
+        target = getattr(args, "target", None)
+
+        if action == "create":
+            try:
+                e = _create(getattr(args, "type", "task"),
+                            created_by=getattr(args, "by", "human"),
+                            parent_id=getattr(args, "parent", ""))
+                _store(str(root), e)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[E4270] 错误: {exc}", file=sys.stderr)
+                return 1
+            print(f"entity: {e['id']} | {e['type']} | v{e['version']} | {e['status']}")
+            return 0
+
+        if action == "show":
+            if not target:
+                print("[E4271] 错误: entity_id 必填 (factory entity show <id>)", file=sys.stderr)
+                return 2
+            try:
+                e = _get(str(root), target)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[E4272] 错误: {exc}", file=sys.stderr)
+                return 1
+            print(f"entity: {e['id']} | {e['type']} | v{e['version']} | {e['status']} | parent: {e.get('parent_id', '')}")
+            return 0
+
+        if action == "list":
+            for e in _list(str(root)):
+                print(f"  {e['id']} | {e['type']} | v{e['version']} | {e['status']}")
+            return 0
+
+        if action == "trace":
+            if not target:
+                print("[E4273] 错误: entity_id 必填 (factory entity trace <id>)", file=sys.stderr)
+                return 2
+            for x in _trace(str(root), target):
+                print(f"  {x['type']} {x['id']} | v{x['version']} | {x['status']}")
+            return 0
+
+        if action == "contracts":
+            print(f"ID_PREFIXES: {sorted(ID_PREFIXES)}")
+            print(f"RELATIONS: {ENTITY_RELATIONS}")
+            print(f"LIFECYCLE: {LIFECYCLE_STATES}")
+            print(f"ERROR_CODES: {sorted(ERROR_CODES)}")
+            return 0
+
+        return 1
+
     def strategy_cmd(self, args: argparse.Namespace) -> int:
         """factory strategy — Strategy (S42): Intelligence Strategy Kernel。
 
@@ -7094,6 +7157,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_prod.add_argument("--input", default="{}", help="输入 JSON (run 用, 如 {'prompt': '...'})")
     p_prod.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     sub.add_parser("workflow", help="Workflow 列表 (S10): factory workflow list — 专业生产线")
+    # S43: Unified Contract CLI
+    p_uc = sub.add_parser("entity", help="Entity (S43): create/show/list/trace — Unified Entity/Data Contract")
+    p_uc.add_argument("action", nargs="?", default="list",
+                      choices=["create", "show", "list", "trace", "contracts"])
+    p_uc.add_argument("target", nargs="?", help="entity_id")
+    p_uc.add_argument("--type", default="task", help="entity type (create 用)")
+    p_uc.add_argument("--parent", default="", help="parent_id (create 用)")
+    p_uc.add_argument("--by", default="human", help="created_by (create 用)")
+    p_uc.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+
     # S42: Intelligence Strategy CLI
     p_is = sub.add_parser("strategy", help="Strategy (S42): strategy/execute/history/lineage — Intelligence Strategy Kernel")
     p_is.add_argument("action", nargs="?", default="strategy",

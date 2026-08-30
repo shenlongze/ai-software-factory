@@ -705,3 +705,23 @@ AI Factory
 - Intelligence Strategy = REAL (Learning/Healing/Optimization 统一 Contract + Adapter)
 - Learning [STOP] 语义保持 (S37); 共享 S38 管道 (不复制)
 - 无新 Intelligence 能力 (仅抽象/统一/复用)
+
+## S43 更新 (Unified Entity/Data Contract, Master Plan S42, v1.1.350)
+
+### Reality Status
+| 能力 | Status | 证据 |
+|------|--------|------|
+| ID Contract (统一前缀, 禁自建 ID) | REAL | test_unified_contract 12/12 |
+| Universal Entity Contract (14 基础字段) | REAL | test_entity_contract |
+| Version Contract (乐观并发 VERSION_CONFLICT) | REAL | test_version_optimistic_concurrency |
+| Lifecycle Engine (Created→…→Retired; 非法迁移拒绝) | REAL | test_lifecycle_engine |
+| Command/Response Contract | REAL | test_command_response |
+| Event Contract (correlation/causation) | REAL | test_event_contract |
+| Error/Pagination/Realtime Contract | REAL | test_error / pagination / realtime |
+| 13 实体统一关系 + Lineage 追溯 | REAL | test_relations_and_lineage |
+| CLI/API | REAL | test_cli / test_api (openapi 293) |
+
+### 诚实声明
+- Unified Contract = REAL (冻结统一数据与接口基础; Master Plan S42)
+- 复用 audit_event correlation_id; 未建第二套 Event/Governance/Audit
+- 编号说明: 本 Sprint = Master Plan "S42 Unified Entity/Data Contract" (顺延 S43 避免与已交付 Intelligence Strategy Kernel 冲突)

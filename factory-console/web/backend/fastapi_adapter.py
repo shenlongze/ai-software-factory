@@ -5671,6 +5671,60 @@ def build_app(
         return {"items": _is.strategy_lineage(root, strategy_id),
                 "count": len(_is.strategy_lineage(root, strategy_id))}
 
+    @app.post("/api/entities")
+    def api_create_entity(body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """创建 Universal Entity (S43, 统一 Contract)。"""
+        from factory_console import unified_contract as _uc
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            e = _uc.create_entity(body.get("type", "task"),
+                                  created_by=body.get("created_by", "human"),
+                                  owner=body.get("owner", ""),
+                                  parent_id=body.get("parent_id", ""),
+                                  project_id=body.get("project_id", ""),
+                                  metadata=body.get("metadata", {}))
+            return _uc.store_entity(root, e)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/entities/{entity_id}")
+    def api_get_entity(entity_id: str) -> dict[str, Any]:
+        """Entity 详情 (S43)。"""
+        from factory_console import unified_contract as _uc
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _uc.get_entity(root, entity_id)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/api/entities")
+    def api_list_entities(entity_type: str = "") -> dict[str, Any]:
+        """Entities 列表 (S43)。"""
+        from factory_console import unified_contract as _uc
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        items = _uc.entities(root, entity_type=entity_type)
+        return _uc.make_page(items=items, page=1, page_size=len(items) or 20)
+
+    @app.get("/api/entities/{entity_id}/lineage")
+    def api_entity_lineage(entity_id: str) -> dict[str, Any]:
+        """Entity Lineage 追溯 (S43)。"""
+        from factory_console import unified_contract as _uc
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return {"lineage": _uc.trace_lineage(root, entity_id)}
+
+    @app.get("/api/contracts")
+    def api_contracts() -> dict[str, Any]:
+        """Unified Contracts 总览 (S43)。"""
+        from factory_console import unified_contract as _uc
+
+        return {"id_prefixes": _uc.ID_PREFIXES, "relations": _uc.ENTITY_RELATIONS,
+                "lifecycle": _uc.LIFECYCLE_STATES, "error_codes": _uc.ERROR_CODES,
+                "entity_fields": list(_uc.ENTITY_FIELDS)}
+
     @app.get("/api/workforce")
     def api_workforce_list() -> dict[str, Any]:
         """Workforce workflows (S16)。"""

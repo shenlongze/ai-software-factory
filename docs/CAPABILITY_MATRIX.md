@@ -664,3 +664,24 @@ AI Factory
 - Governed Self-Optimization = REAL (Opportunity→Candidate(s)→Evaluation→Decision→Governance→Canary→Promotion)
 - NO_CHANGE 合法 (不强行 Promotion); Metrics 诚实 (数据不足 NOT_AVAILABLE)
 - 复用 S33/S38/S21/S37 (不建第二套引擎); 24 Invariants 保持
+
+## S41 更新 (Full-System Audit & Closure Verification, v1.1.348)
+
+### Reality Status (纯审计, 不改既有状态)
+| 能力 | Status | 证据 |
+|------|--------|------|
+| Full Architecture Audit | PASS | docs/audit/s41/architecture-audit.md (无 DUPLICATED/MISPLACED) |
+| Capability Tree | PASS | docs/architecture/ai-factory-os/capability-tree.md |
+| Lifecycle Trace (全链闭环) | PASS | docs/audit/s41/lifecycle-audit.md (无断点) |
+| Node Independence | PASS | docs/audit/s41/node-independence-audit.md |
+| Context Explosion | NO RISK | docs/audit/s41/context-cost-audit.md (Budget/JIT) |
+| Memory 非第二 SSOT | PASS | docs/audit/s41/memory-audit.md |
+| Governance (最强 AI 约束) | PASS | docs/audit/s41/governance-audit.md |
+| Evidence Integrity | PASS | docs/audit/s41/evidence-integrity-audit.md |
+| Invariants (22/22) | PASS | docs/audit/s41/invariants-audit.md |
+| Overall Score | 88.6/100 | docs/audit/s41/s41-final-report.md |
+
+### 诚实声明
+- S41 = 纯审计 (零业务代码修改)
+- 3 项 PARTIAL: 真实 LLM Optimization E2E / 前端 Control Tower UI / 并行 DAG (Top 10 priorities)
+- Effectiveness 仍 NOT_YET_PROVEN (S24-S29 延续; 需真实 LLM 实验)

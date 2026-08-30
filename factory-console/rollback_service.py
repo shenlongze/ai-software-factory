@@ -311,6 +311,29 @@ def execute(root: Path | str, rollback_id: str, *, actor: str = "release_enginee
             applied = apply_artifact(root, aid, workspace_dir=ws, approval=gov_approval)
             evidence.append({"artifact_id": aid, "type": "rollback_apply",
                              "result": applied, "workspace": str(ws)})
+        # S21: 完整 workspace 恢复 — 删除比 target 更新的 RELEASED release 引入的文件
+        def _patch_files(art: dict[str, Any]) -> list[str]:
+            import re as _re
+            return [m.group(2) for m in
+                    _re.finditer(r"^diff --git a/(\S+) b/(\S+)", art.get("patch_text") or "", _re.M)]
+
+        target_files = {f for a in rb["artifact_ids"]
+                        for f in _patch_files(get_artifact(root, a) or {})}
+        newer_files: list[str] = []
+        for rel_ in list_releases(root):
+            if rel_["release_id"] == rb["target_release_id"] or rel_.get("state") != "RELEASED":
+                continue
+            for aid_ in rel_.get("artifact_ids", []):
+                art_ = get_artifact(root, aid_)
+                if art_ is None:
+                    continue
+                for f in _patch_files(art_):
+                    fpath = ws / f
+                    if fpath.exists() and fpath.is_file() and f not in target_files:
+                        fpath.unlink()
+                        newer_files.append(f)
+        if newer_files:
+            evidence.append({"type": "rollback_cleanup", "files": newer_files, "workspace": str(ws)})
         rb = get_rollback(root, rollback_id)
         rb["evidence"] = evidence
         # S20.5: Rollback Verification — apply 后真实验证 (复用 release pipeline)

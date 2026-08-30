@@ -1019,6 +1019,8 @@ class FactoryCLI:
             return self.production_cmd(args)
         if args.command == "workflow":
             return self.workflow_cmd(args)
+        if args.command == "health":
+            return self.health_cmd(args)
         if args.command == "rollback":
             return self.rollback_cmd(args)
         if args.command == "release":
@@ -4103,6 +4105,78 @@ class FactoryCLI:
             print(f"  {r_.get('run_id')} | {r_.get('workflow_id')} | {r_.get('state')} | {r_.get('created_at')}")
         return 0
 
+    def health_cmd(self, args: argparse.Namespace) -> int:
+        """factory health — Health (S21): check/incidents/incident/recover。
+
+        薄代理 → health_service (CLI 与 API 共享同一 Service)。
+        """
+        from factory_console.health_service import (
+            health_check as _check, create_incident as _mk_incident,
+            get_incident as _get_inc, list_incidents as _list_inc, recover as _recover,
+            run_health as _run_health,
+        )
+
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        action = getattr(args, "action", "incidents") or "incidents"
+        target = getattr(args, "target", None)
+
+        if action in ("check", "health"):
+            if not target:
+                print("[E4060] 错误: release_id 必填 (factory health check <release_id>)",
+                      file=sys.stderr)
+                return 2
+            try:
+                hc = _check(root, target)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[E4061] 错误: {exc}", file=sys.stderr)
+                return 1
+            print(f"health_check: {hc['health_check_id']} | result: {hc['result']}")
+            for c in hc.get("checks", []):
+                print(f"  {c['check_type']}: {c['status']} | {c.get('detail', '')}")
+            return 0
+
+        if action == "incidents":
+            for inc in _list_inc(root):
+                print(f"  {inc['incident_id']} | {inc['status']} | release={inc['release_id']} "
+                      f"| sev={inc['severity']} | action={inc['recommended_action']}")
+            return 0
+
+        if action == "incident":
+            if not target:
+                print("[E4062] 错误: incident_id 必填 (factory health incident <id>)", file=sys.stderr)
+                return 2
+            inc = _get_inc(root, target)
+            if inc is None:
+                print(f"[E4063] Incident 不存在: {target}", file=sys.stderr)
+                return 1
+            print(f"incident: {inc['incident_id']} | status: {inc['status']} | sev: {inc['severity']}")
+            print(f"release: {inc['release_id']} | health: {inc['health_result']} | failed: {inc['failed_checks']}")
+            print(f"action: {inc['recommended_action']} | rollback: {inc.get('rollback_id') or '-'}")
+            if inc.get("failure_reason"):
+                print(f"failure: {inc['failure_reason']}")
+            return 0
+
+        if action == "recover":
+            if not target:
+                print("[E4064] 错误: incident_id 必填 (factory health recover <id>)", file=sys.stderr)
+                return 2
+            try:
+                r = _recover(root, target)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[E4065] 错误: {exc}", file=sys.stderr)
+                return 1
+            inc = r["incident"]
+            print(f"incident: {inc['incident_id']} | status: {inc['status']}")
+            if r.get("resolved"):
+                print(f"RESOLVED via rollback {inc.get('rollback_id')}")
+            if r.get("failed"):
+                print(f"FAILED: {r.get('error')}")
+            if r.get("already_resolved"):
+                print("already resolved (no-op)")
+            return 0
+
+        return 1
+
     def rollback_cmd(self, args: argparse.Namespace) -> int:
         """factory rollback — Rollback (S19): list/status/check/create/execute/history。
 
@@ -5384,6 +5458,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_prod.add_argument("--input", default="{}", help="输入 JSON (run 用, 如 {'prompt': '...'})")
     p_prod.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     sub.add_parser("workflow", help="Workflow 列表 (S10): factory workflow list — 专业生产线")
+    # S21: Health CLI
+    p_health = sub.add_parser("health", help="Health (S21): check/incidents/incident/recover")
+    p_health.add_argument("action", nargs="?", default="incidents",
+                          choices=["check", "health", "incidents", "incident", "recover"],
+                          help="动作: check <release_id> 健康检查 / incidents 列表 / incident <id> 详情 / recover <id> 自动恢复")
+    p_health.add_argument("target", nargs="?", help="release_id (check) 或 incident_id (incident/recover)")
+    p_health.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+
     # S19: Rollback CLI
     p_rb = sub.add_parser("rollback", help="Rollback (S19): list/status/check/create/execute/history")
     p_rb.add_argument("action", nargs="?", default="list",

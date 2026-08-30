@@ -4215,6 +4215,59 @@ def build_app(
                 "verification_checks": r.get("verification_checks", []),
                 "failure_reason": r.get("failure_reason", "")}
 
+    @app.get("/api/production-runs/{run_id}/health")
+    def api_run_health(run_id: str) -> dict[str, Any]:
+        """Run 健康检查 (S21, 最新 RELEASED release)。"""
+        from factory_console import health_service as _h
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _h.run_health(root, run_id)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/api/releases/{release_id}/health-check")
+    def api_health_check(release_id: str) -> dict[str, Any]:
+        """Release Health Check (S21)。"""
+        from factory_console import health_service as _h
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _h.health_check(root, release_id)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/health-incidents")
+    def api_list_incidents() -> dict[str, Any]:
+        """Health Incidents 列表 (S21)。"""
+        from factory_console import health_service as _h
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        items = _h.list_incidents(root)
+        return {"items": items, "count": len(items)}
+
+    @app.get("/api/health-incidents/{incident_id}")
+    def api_get_incident(incident_id: str) -> dict[str, Any]:
+        """Health Incident 详情 (S21)。"""
+        from factory_console import health_service as _h
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        inc = _h.get_incident(root, incident_id)
+        if inc is None:
+            raise HTTPException(status_code=404, detail=f"Incident 不存在: {incident_id}")
+        return inc
+
+    @app.post("/api/health-incidents/{incident_id}/recover")
+    def api_recover_incident(incident_id: str) -> dict[str, Any]:
+        """Automatic Recovery (S21, 经 rollback_service)。"""
+        from factory_console import health_service as _h
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _h.recover(root, incident_id)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     @app.get("/api/workforce")
     def api_workforce_list() -> dict[str, Any]:
         """Workforce workflows (S16)。"""

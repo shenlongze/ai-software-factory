@@ -7,6 +7,7 @@ interface Release { release_id: string; state: string; production_run_id: string
 interface Approval { approval_id: string; decision: string; production_run_id: string; requested_by: string; artifact_ids: string[]; }
 interface Gate { allowed: boolean; reason?: string; missing?: string[]; }
 interface ReleaseView { releases: Release[]; gate: Gate; }
+interface OpsOverview { projects: number; releases_active: number; releases_total: number; health_states: Record<string, number>; open_incidents: number; schedules_enabled: number; schedules: number; health_checks_total: number; recoveries: number; rollbacks: number; }
 
 const api = async <T,>(path: string, init?: RequestInit): Promise<T> => {
   const res = await fetch(`/api${path}`, { headers: { 'Content-Type': 'application/json' }, ...init });
@@ -21,6 +22,7 @@ const Badge = ({ state }: { state: string }) => (
 export default function ProductionPage() {
   const [runs, setRuns] = useState<Run[]>([]);
   const [approvals, setApprovals] = useState<Approval[]>([]);
+  const [overview, setOverview] = useState<OpsOverview | null>(null);
   const [selected, setSelected] = useState<string>('');
   const [view, setView] = useState<ReleaseView | null>(null);
   const [err, setErr] = useState('');
@@ -29,6 +31,7 @@ export default function ProductionPage() {
     try {
       setRuns(await api<{ items: Run[] }>('/production-runs').then(r => r.items ?? []));
       setApprovals(await api<{ items: Approval[] }>('/approval-requests').then(r => r.items ?? []));
+      setOverview(await api<OpsOverview>('/operations/overview'));
     } catch (e) { setErr(String(e)); }
   }, []);
 
@@ -104,6 +107,25 @@ export default function ProductionPage() {
           )}
         </section>
       )}
+
+      <section>
+        <h3>Production Control Tower — Overview</h3>
+        {overview ? (
+          <table>
+            <tbody>
+              <tr><td>Projects</td><td>{overview.projects}</td>
+                  <td>Active Releases</td><td>{overview.releases_active}/{overview.releases_total}</td></tr>
+              <tr><td>Health</td>
+                  <td>{Object.entries(overview.health_states).map(([k, v]) => `${k}:${v}`).join(' ')}</td>
+                  <td>Open Incidents</td><td>{overview.open_incidents}</td></tr>
+              <tr><td>Schedules</td><td>{overview.schedules_enabled}/{overview.schedules}</td>
+                  <td>Health Checks</td><td>{overview.health_checks_total}</td></tr>
+              <tr><td>Recoveries</td><td>{overview.recoveries}</td>
+                  <td>Rollbacks</td><td>{overview.rollbacks}</td></tr>
+            </tbody>
+          </table>
+        ) : <p>Loading overview...</p>}
+      </section>
 
       <section>
         <h3>Approval Center</h3>

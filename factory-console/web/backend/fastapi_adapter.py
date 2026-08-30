@@ -4268,6 +4268,123 @@ def build_app(
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    @app.get("/api/operations/overview")
+    def api_ops_overview() -> dict[str, Any]:
+        """Control Plane Overview (S22)。"""
+        from factory_console import ops_projection as _p
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return _p.overview(root)
+
+    @app.get("/api/operations/projects")
+    def api_ops_projects() -> dict[str, Any]:
+        """所有 project 健康 (S22)。"""
+        from factory_console import ops_projection as _p
+        from factory_console.release_service import list_releases
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        projects = sorted({r.get("project_id") or "" for r in list_releases(root)})
+        return {"items": [_p.project_health(root, pid) for pid in projects], "count": len(projects)}
+
+    @app.get("/api/projects/{project_id}/health")
+    def api_project_health(project_id: str) -> dict[str, Any]:
+        """Project Health (S22, Multi-Release)。"""
+        from factory_console import ops_projection as _p
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return _p.project_health(root, project_id)
+
+    @app.get("/api/projects/{project_id}/health/history")
+    def api_project_health_history(project_id: str) -> dict[str, Any]:
+        """Project Health History (S22, 全 release 时间线)。"""
+        from factory_console import ops_projection as _p
+        from factory_console.release_service import list_releases
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        rels = [r for r in list_releases(root) if (r.get("project_id") or "") == project_id]
+        return {"project_id": project_id,
+                "items": [_p.release_health_history(root, r["release_id"]) for r in rels]}
+
+    @app.get("/api/releases/{release_id}/health")
+    def api_release_health(release_id: str) -> dict[str, Any]:
+        """Release Health (S22)。"""
+        from factory_console import ops_projection as _p
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _p.release_health(root, release_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/api/releases/{release_id}/health/history")
+    def api_release_health_history(release_id: str) -> dict[str, Any]:
+        """Release Health History (S22)。"""
+        from factory_console import ops_projection as _p
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return {"release_id": release_id, "timeline": _p.release_health_history(root, release_id)}
+
+    @app.get("/api/releases/compare")
+    def api_release_compare(release_a: str, release_b: str) -> dict[str, Any]:
+        """Release Health Comparison (S22)。"""
+        from factory_console import ops_projection as _p
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return _p.compare_releases(root, release_a, release_b)
+
+    @app.get("/api/schedules")
+    def api_list_schedules_api() -> dict[str, Any]:
+        """Schedules 列表 (S22)。"""
+        from factory_console import ops_scheduler as _s
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        items = _s.list_schedules(root)
+        return {"items": items, "count": len(items)}
+
+    @app.post("/api/schedules")
+    def api_create_schedule_api(body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """创建 Schedule (S22)。"""
+        from factory_console import ops_scheduler as _s
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _s.create_schedule(root, project_id=body.get("project_id", ""),
+                                      release_id=body.get("release_id", ""),
+                                      interval_seconds=body.get("interval_seconds", 300))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/schedules/{schedule_id}/disable")
+    def api_disable_schedule(schedule_id: str) -> dict[str, Any]:
+        """禁用 Schedule (S22)。"""
+        from factory_console import ops_scheduler as _s
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _s.disable_schedule(root, schedule_id)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/api/schedules/{schedule_id}/enable")
+    def api_enable_schedule(schedule_id: str) -> dict[str, Any]:
+        """启用 Schedule (S22)。"""
+        from factory_console import ops_scheduler as _s
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _s.enable_schedule(root, schedule_id)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.delete("/api/schedules/{schedule_id}")
+    def api_delete_schedule(schedule_id: str) -> dict[str, Any]:
+        """删除 Schedule (S22)。"""
+        from factory_console import ops_scheduler as _s
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        _s.delete_schedule(root, schedule_id)
+        return {"deleted": schedule_id}
+
     @app.get("/api/workforce")
     def api_workforce_list() -> dict[str, Any]:
         """Workforce workflows (S16)。"""

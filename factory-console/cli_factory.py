@@ -1019,6 +1019,10 @@ class FactoryCLI:
             return self.production_cmd(args)
         if args.command == "workflow":
             return self.workflow_cmd(args)
+        if args.command == "ops":
+            return self.ops_cmd(args)
+        if args.command == "schedule":
+            return self.schedule_cmd(args)
         if args.command == "health":
             return self.health_cmd(args)
         if args.command == "rollback":
@@ -4105,6 +4109,128 @@ class FactoryCLI:
             print(f"  {r_.get('run_id')} | {r_.get('workflow_id')} | {r_.get('state')} | {r_.get('created_at')}")
         return 0
 
+    def ops_cmd(self, args: argparse.Namespace) -> int:
+        """factory ops — Ops (S22): Control Plane 投影。
+
+        薄代理 → ops_projection (CLI 与 API 共享同一 Service)。
+        """
+        from factory_console.ops_projection import (
+            overview as _ov, project_health as _ph, release_health as _rh,
+            release_health_history as _hist,
+        )
+        from factory_console.health_service import list_incidents
+        from factory_console.ops_scheduler import list_schedules
+        from factory_console.release_service import list_releases
+
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        action = getattr(args, "action", "status") or "status"
+        target = getattr(args, "target", None)
+
+        if action == "status":
+            ov = _ov(root)
+            print(f"projects: {ov['projects']} | releases: {ov['releases_active']}/{ov['releases_total']}")
+            print(f"health: {ov['health_states']} | open_incidents: {ov['open_incidents']}")
+            print(f"schedules: {ov['schedules_enabled']}/{ov['schedules']} | checks: {ov['health_checks_total']}")
+            print(f"recoveries: {ov['recoveries']} | rollbacks: {ov['rollbacks']}")
+            return 0
+
+        if action == "health":
+            if not target:
+                print("[E4066] 错误: project_id 必填 (factory ops health <project_id>)", file=sys.stderr)
+                return 2
+            ph = _ph(root, target)
+            print(f"project {target}: {ph['health_state']} | {ph.get('explain', '')}")
+            for rv in ph.get("releases", []):
+                print(f"  {rv['release_id']}: {rv['health_state']} | checks={rv['checks_count']} "
+                      f"| open_inc={rv['open_incidents']} | {rv.get('explain', '')}")
+            return 0
+
+        if action == "history":
+            if not target:
+                print("[E4067] 错误: release_id 必填 (factory ops history <release_id>)", file=sys.stderr)
+                return 2
+            for t in _hist(root, target):
+                print(f"  {t.get('at', '')} | {t.get('kind')} | {t.get('result', t.get('status', ''))}")
+            return 0
+
+        if action == "incidents":
+            for inc in list_incidents(root):
+                print(f"  {inc['incident_id']} | {inc['status']} | release={inc['release_id']} | sev={inc['severity']}")
+            return 0
+
+        if action == "schedules":
+            for s in list_schedules(root):
+                print(f"  {s['schedule_id']} | {'ON' if s['enabled'] else 'OFF'} | release={s.get('release_id')} "
+                      f"| interval={s.get('interval_seconds')}s | last={s.get('last_result')}")
+            return 0
+
+        if action == "releases":
+            for r in list_releases(root):
+                print(f"  {r['release_id']} | {r['state']} | run={r.get('production_run_id')}")
+            return 0
+
+        return 1
+
+    def schedule_cmd(self, args: argparse.Namespace) -> int:
+        """factory schedule — Schedule (S22): create/list/status/disable/enable/delete。
+
+        薄代理 → ops_scheduler。
+        """
+        from factory_console.ops_scheduler import (
+            create_schedule as _create, list_schedules as _list, get_schedule as _get,
+            disable_schedule as _disable, enable_schedule as _enable, delete_schedule as _delete,
+        )
+
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        action = getattr(args, "action", "list") or "list"
+        target = getattr(args, "target", None)
+
+        if action == "create":
+            if not target:
+                print("[E4068] 错误: release_id 必填 (factory schedule create <release_id>)",
+                      file=sys.stderr)
+                return 2
+            s = _create(root, release_id=target, interval_seconds=getattr(args, "interval", 300))
+            print(f"schedule: {s['schedule_id']} | release={target} | interval={s['interval_seconds']}s")
+            return 0
+
+        if action == "list":
+            for s in _list(root):
+                print(f"  {s['schedule_id']} | {'ON' if s['enabled'] else 'OFF'} | release={s.get('release_id')} "
+                      f"| interval={s.get('interval_seconds')}s | last={s.get('last_result')}")
+            return 0
+
+        if action == "status":
+            if not target:
+                print("[E4069] 错误: schedule_id 必填 (factory schedule status <id>)", file=sys.stderr)
+                return 2
+            s = _get(root, target)
+            if s is None:
+                print(f"[E4070] Schedule 不存在: {target}", file=sys.stderr)
+                return 1
+            print(f"schedule: {s['schedule_id']} | {'ON' if s['enabled'] else 'OFF'}")
+            print(f"release: {s.get('release_id')} | interval: {s.get('interval_seconds')}s")
+            print(f"next: {s.get('next_run_at')} | last: {s.get('last_run_at')} | result: {s.get('last_result')}")
+            return 0
+
+        if action in ("disable", "enable"):
+            if not target:
+                print(f"[E4071] 错误: schedule_id 必填 (factory schedule {action} <id>)", file=sys.stderr)
+                return 2
+            s = _disable(root, target) if action == "disable" else _enable(root, target)
+            print(f"schedule {target}: {'disabled' if action == 'disable' else 'enabled'}")
+            return 0
+
+        if action == "delete":
+            if not target:
+                print("[E4072] 错误: schedule_id 必填 (factory schedule delete <id>)", file=sys.stderr)
+                return 2
+            _delete(root, target)
+            print(f"schedule {target}: deleted")
+            return 0
+
+        return 1
+
     def health_cmd(self, args: argparse.Namespace) -> int:
         """factory health — Health (S21): check/incidents/incident/recover。
 
@@ -5458,6 +5584,23 @@ def build_parser() -> argparse.ArgumentParser:
     p_prod.add_argument("--input", default="{}", help="输入 JSON (run 用, 如 {'prompt': '...'})")
     p_prod.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     sub.add_parser("workflow", help="Workflow 列表 (S10): factory workflow list — 专业生产线")
+    # S22: Ops CLI
+    p_ops = sub.add_parser("ops", help="Ops (S22): status/health/history/incidents/schedules/releases — Control Plane")
+    p_ops.add_argument("action", nargs="?", default="status",
+                       choices=["status", "health", "history", "incidents", "schedules", "releases"],
+                       help="动作: status 总览 / health <project> 项目健康 / history <release> 历史 / incidents 列表 / schedules 列表 / releases 列表")
+    p_ops.add_argument("target", nargs="?", help="project_id 或 release_id")
+    p_ops.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+
+    # S22: Schedule CLI
+    p_sch = sub.add_parser("schedule", help="Schedule (S22): create/list/status/disable/enable/delete")
+    p_sch.add_argument("action", nargs="?", default="list",
+                       choices=["create", "list", "status", "disable", "enable", "delete"],
+                       help="动作: create <release_id> 创建 / list 列表 / status <id> 详情 / disable|enable <id> / delete <id>")
+    p_sch.add_argument("target", nargs="?", help="release_id (create) 或 schedule_id (status/disable/enable/delete)")
+    p_sch.add_argument("--interval", type=int, default=300, help="间隔秒 (create)")
+    p_sch.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+
     # S21: Health CLI
     p_health = sub.add_parser("health", help="Health (S21): check/incidents/incident/recover")
     p_health.add_argument("action", nargs="?", default="incidents",

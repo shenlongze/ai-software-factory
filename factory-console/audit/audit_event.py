@@ -186,6 +186,9 @@ EVENT_TYPES: tuple[str, ...] = (
     "OPTIMIZATION_REJECTED",
     "OPTIMIZATION_NO_CHANGE",
     "OPTIMIZATION_ROLLED_BACK",
+    # S42: Intelligence Strategy 事件
+    "STRATEGY_REGISTERED",
+    "STRATEGY_EXECUTED",
     # S19: Rollback 事件
     "ROLLBACK_CREATED",
     "ROLLBACK_GATED",

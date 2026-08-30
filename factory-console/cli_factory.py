@@ -1019,6 +1019,8 @@ class FactoryCLI:
             return self.production_cmd(args)
         if args.command == "workflow":
             return self.workflow_cmd(args)
+        if args.command == "strategy":
+            return self.strategy_cmd(args)
         if args.command == "optimize":
             return self.optimize_cmd(args)
         if args.command == "heal":
@@ -4149,6 +4151,65 @@ class FactoryCLI:
             print(f"  {r_.get('run_id')} | {r_.get('workflow_id')} | {r_.get('state')} | {r_.get('created_at')}")
         return 0
 
+    def strategy_cmd(self, args: argparse.Namespace) -> int:
+        """factory strategy — Strategy (S42): Intelligence Strategy Kernel。
+
+        薄代理 → intelligence_strategy (CLI 与 API 共享同一 Service)。
+        """
+        from factory_console.intelligence_strategy import (
+            register_strategy as _reg, strategies as _strats,
+            execute_strategy as _exec, executions as _execs,
+            strategy_lineage as _lineage, _default_adapters,
+        )
+
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        action = getattr(args, "action", "strategy") or "strategy"
+        target = getattr(args, "target", None)
+
+        if action == "strategy":
+            _default_adapters(str(root))
+            try:
+                sid = target or f"{getattr(args, 'strategy_type', 'LEARNING').lower()}.default"
+                r = _reg(str(root), strategy_id=sid,
+                         strategy_type=getattr(args, "strategy_type", "LEARNING"),
+                         version=getattr(args, "version", "1.0.0"),
+                         capabilities=[f"{getattr(args, 'strategy_type', 'LEARNING').lower()}.run"])
+            except Exception as exc:  # noqa: BLE001
+                print(f"[E4260] 错误: {exc}", file=sys.stderr)
+                return 1
+            print(f"strategy: {r['strategy_id']} | {r['strategy_type']} | v{r['version']}")
+            return 0
+
+        if action == "execute":
+            if not target:
+                print("[E4261] 错误: strategy_id 必填 (factory intelligence execute <sid>)", file=sys.stderr)
+                return 2
+            try:
+                import json as _json
+                payload = _json.loads(getattr(args, "payload", "{}") or "{}")
+                e = _exec(str(root), strategy_id=target, payload=payload)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[E4262] 错误: {exc}", file=sys.stderr)
+                return 1
+            print(f"execute: {e['execution_id']} | {e['strategy_type']} | v{e['strategy_version']}")
+            print(f"  result: {e['result']}")
+            return 0
+
+        if action == "history":
+            for e in _execs(str(root)):
+                print(f"  {e['execution_id']} | {e['strategy_id']} | v{e['strategy_version']} | {e['created_at']}")
+            return 0
+
+        if action == "lineage":
+            if not target:
+                print("[E4263] 错误: strategy_id 必填 (factory intelligence lineage <sid>)", file=sys.stderr)
+                return 2
+            for e in _lineage(str(root), target):
+                print(f"  {e['execution_id']} | v{e['strategy_version']} | {e['result'].get('outcome', e['result'].get('decision', '?'))}")
+            return 0
+
+        return 1
+
     def optimize_cmd(self, args: argparse.Namespace) -> int:
         """factory optimize — Optimize (S40): Governed Self-Optimization。
 
@@ -7033,6 +7094,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_prod.add_argument("--input", default="{}", help="输入 JSON (run 用, 如 {'prompt': '...'})")
     p_prod.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     sub.add_parser("workflow", help="Workflow 列表 (S10): factory workflow list — 专业生产线")
+    # S42: Intelligence Strategy CLI
+    p_is = sub.add_parser("strategy", help="Strategy (S42): strategy/execute/history/lineage — Intelligence Strategy Kernel")
+    p_is.add_argument("action", nargs="?", default="strategy",
+                      choices=["strategy", "execute", "history", "lineage"])
+    p_is.add_argument("target", nargs="?", help="strategy_id / execution_id")
+    p_is.add_argument("--strategy-type", default="LEARNING", help="LEARNING/HEALING/OPTIMIZATION (strategy 用)")
+    p_is.add_argument("--version", default="1.0.0", help="version (strategy 用)")
+    p_is.add_argument("--payload", default="{}", help="payload JSON (execute 用)")
+    p_is.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+
     # S40: Optimization CLI
     p_opt = sub.add_parser("optimize", help="Optimize (S40): opportunity/candidates/evaluate/decide/history — Governed Self-Optimization")
     p_opt.add_argument("action", nargs="?", default="history",

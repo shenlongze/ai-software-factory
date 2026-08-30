@@ -5623,6 +5623,54 @@ def build_app(
                 "candidates": _oe.candidates(root),
                 "decisions": _oe.decisions(root)}
 
+    @app.post("/api/intelligence/strategies")
+    def api_register_strategy(body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """注册 IntelligenceStrategy (S42, 经 Plugin Kernel)。"""
+        from factory_console import intelligence_strategy as _is
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            _is._default_adapters(root)
+            return _is.register_strategy(
+                root, strategy_id=body.get("strategy_id", ""),
+                strategy_type=body.get("strategy_type", "LEARNING"),
+                version=body.get("version", "1.0.0"),
+                capabilities=body.get("capabilities", ["intelligence.run"]),
+                cost_budget=body.get("cost_budget", 1.0))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/intelligence/strategies/{strategy_id}/execute")
+    def api_execute_strategy(strategy_id: str,
+                             body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """执行 IntelligenceStrategy (S42, 统一入口)。"""
+        from factory_console import intelligence_strategy as _is
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            _is._default_adapters(root)
+            return _is.execute_strategy(root, strategy_id=strategy_id,
+                                        payload=body.get("payload", {}))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/intelligence/strategies")
+    def api_strategies() -> dict[str, Any]:
+        """IntelligenceStrategies 列表 (S42)。"""
+        from factory_console import intelligence_strategy as _is
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return {"items": _is.strategies(root), "count": len(_is.strategies(root))}
+
+    @app.get("/api/intelligence/strategies/{strategy_id}/executions")
+    def api_strategy_executions(strategy_id: str) -> dict[str, Any]:
+        """Strategy 历史执行 (S42, 版本 lineage)。"""
+        from factory_console import intelligence_strategy as _is
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return {"items": _is.strategy_lineage(root, strategy_id),
+                "count": len(_is.strategy_lineage(root, strategy_id))}
+
     @app.get("/api/workforce")
     def api_workforce_list() -> dict[str, Any]:
         """Workforce workflows (S16)。"""

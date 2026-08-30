@@ -685,3 +685,23 @@ AI Factory
 - S41 = 纯审计 (零业务代码修改)
 - 3 项 PARTIAL: 真实 LLM Optimization E2E / 前端 Control Tower UI / 并行 DAG (Top 10 priorities)
 - Effectiveness 仍 NOT_YET_PROVEN (S24-S29 延续; 需真实 LLM 实验)
+
+## S42 更新 (Intelligence Strategy Kernel, v1.1.349)
+
+### Reality Status
+| 能力 | Status | 证据 |
+|------|--------|------|
+| IntelligenceStrategy Contract (type/version/capabilities/budget) | REAL | test_intelligence_strategy 12/12 |
+| Learning/Healing/Optimization 统一为 Strategy | REAL | test_learning_is_strategy / healing / optimization |
+| Plugin Registry 复用 (type=strategy, 唯一) | REAL | test_strategy_registry_reuses_plugin_registry |
+| Shared Pipeline 未重复 (S38 唯一) | REAL | test_shared_pipeline_not_duplicated |
+| DISABLED → 拒绝 | REAL | test_disabled_strategy_rejected |
+| 替换零 Core 修改 | REAL | test_strategy_replacement_without_core_change |
+| 版本 lineage (历史可解释) | REAL | test_strategy_version_in_lineage |
+| StrategyEvidence + 治理 | REAL | test_strategy_evidence_created |
+| CLI/API | REAL | test_cli / test_api (openapi 289) |
+
+### 诚实声明
+- Intelligence Strategy = REAL (Learning/Healing/Optimization 统一 Contract + Adapter)
+- Learning [STOP] 语义保持 (S37); 共享 S38 管道 (不复制)
+- 无新 Intelligence 能力 (仅抽象/统一/复用)

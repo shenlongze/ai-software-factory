@@ -5363,6 +5363,57 @@ def build_app(
         items = _ci.memory_conflicts(root)
         return {"items": items, "count": len(items)}
 
+    @app.post("/api/learning/observations")
+    def api_create_observation(body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """LearningObservation (S37, 来源须为 Production Evidence)。"""
+        from factory_console import learning_engine_v2 as _le
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _le.create_observation(root, source_type=body.get("source_type", ""),
+                                          source_id=body.get("source_id", ""),
+                                          pattern_key=body.get("pattern_key", ""),
+                                          outcome=body.get("outcome", "UNKNOWN"),
+                                          scope=body.get("scope", "node"))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/learning/run")
+    def api_run_learning() -> dict[str, Any]:
+        """运行 Learning (S37, discovery → evaluate → conflicts; STOP)。"""
+        from factory_console import learning_engine_v2 as _le
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return _le.run_learning(root)
+
+    @app.get("/api/learning/candidates")
+    def api_learning_candidates() -> dict[str, Any]:
+        """Learning Candidates + Quality (S37)。"""
+        from factory_console import learning_engine_v2 as _le
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return {"items": _le.candidates(root), "quality": _le.learning_quality(root)}
+
+    @app.get("/api/learning/candidates/{candidate_id}")
+    def api_learning_candidate(candidate_id: str) -> dict[str, Any]:
+        """Learning Candidate 详情 (S37)。"""
+        from factory_console import learning_engine_v2 as _le
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        for c in _le.candidates(root):
+            if c["candidate_id"] == candidate_id:
+                return c
+        raise HTTPException(status_code=404, detail=f"Candidate 不存在: {candidate_id}")
+
+    @app.get("/api/learning/conflicts")
+    def api_learning_conflicts() -> dict[str, Any]:
+        """Learning Conflicts (S37)。"""
+        from factory_console import learning_engine_v2 as _le
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        items = _le.learning_conflicts(root)
+        return {"items": items, "count": len(items)}
+
     @app.get("/api/workforce")
     def api_workforce_list() -> dict[str, Any]:
         """Workforce workflows (S16)。"""

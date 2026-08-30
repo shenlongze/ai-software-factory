@@ -578,3 +578,24 @@ AI Factory
 - Context Intelligence = REAL (Utility/Ranking/Budget 分配/Feedback 全真实)
 - Efficiency metric cost_per_successful_run = NOT_AVAILABLE (真实数据不足诚实)
 - 未做: LLM ranking / Autonomous Learning / Self-Healing (S36 明确排除)
+
+## S37 更新 (Evidence-driven Workforce Learning, v1.1.344)
+
+### Reality Status
+| 能力 | Status | 证据 |
+|------|--------|------|
+| LearningObservation (来源白名单, 禁 conversation/LLM) | REAL | test_learning_engine_v2 12/12 |
+| LearningHypothesis/Candidate | REAL | test_lifecycle |
+| Learning Lifecycle (OBSERVED→…→VALIDATED/REJECTED/SUPERSEDED) | REAL | test_lifecycle (非法迁移拒绝) |
+| Evidence Evaluation (小样本降权/足够验证/失败拒绝) | REAL | test_evaluation_* / test_negative_learning_rejected |
+| Negative Learning (失败完整保存) | REAL | test_negative_learning_rejected |
+| ContextFeedback 消费 (S36 → S37) | REAL | test_context_feedback_integration |
+| Learning Conflict (VALIDATED vs REJECTED → CONFLICT) | REAL | test_conflict_preserved |
+| Learning Plugin (type=learning, 替换不修改 Core) | REAL | test_learning_plugin_replacement |
+| Governance (Learning 不修改 Production) | REAL | test_learning_does_not_modify_production |
+| CLI/API | REAL | test_cli / test_api (openapi 271) |
+
+### 诚实声明
+- Evidence-driven Learning = REAL (Observation→Hypothesis→Candidate→Evaluation→STOP)
+- Promotion (改 Production) 未实现 — S38 显式 (S37 Governance Boundary)
+- Cost = estimated; Quality metrics 真实 (数据不足 → NOT_AVAILABLE)

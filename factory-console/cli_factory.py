@@ -1019,6 +1019,8 @@ class FactoryCLI:
             return self.production_cmd(args)
         if args.command == "workflow":
             return self.workflow_cmd(args)
+        if args.command == "learn":
+            return self.learn_cmd(args)
         if args.command == "context-rank":
             return self.context_rank_cmd(args)
         if args.command == "memory-lifecycle":
@@ -4141,6 +4143,75 @@ class FactoryCLI:
             print(f"  {r_.get('run_id')} | {r_.get('workflow_id')} | {r_.get('state')} | {r_.get('created_at')}")
         return 0
 
+    def learn_cmd(self, args: argparse.Namespace) -> int:
+        """factory learn — Learn (S37): Evidence-driven Learning。
+
+        薄代理 → learning_engine_v2 (CLI 与 API 共享同一 Service)。
+        """
+        from factory_console.learning_engine_v2 import (
+            create_observation as _obs, run_learning as _run,
+            candidates as _cands, learning_quality as _quality,
+            evaluate_candidate as _eval, learning_conflicts as _cfs,
+            observations as _obss,
+        )
+
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        action = getattr(args, "action", "run") or "run"
+        target = getattr(args, "target", None)
+
+        if action == "observe":
+            try:
+                o = _obs(str(root), source_type=getattr(args, "source_type", "production_run"),
+                         source_id=getattr(args, "source_id", "") or f"auto-{len(_obss(str(root)))}",
+                         pattern_key=target or "pattern",
+                         outcome=getattr(args, "outcome", "UNKNOWN"),
+                         scope=getattr(args, "scope", "node"))
+            except Exception as exc:  # noqa: BLE001
+                print(f"[E4210] 错误: {exc}", file=sys.stderr)
+                return 1
+            print(f"observe: {o['observation_id']} | {o['pattern_key']} | {o['outcome']}")
+            return 0
+
+        if action == "run":
+            rl = _run(str(root))
+            print(f"learn: created={len(rl['created'])} results={len(rl['results'])} "
+                  f"conflicts={len(rl['conflicts'])} evidence={rl['evidence_count']}")
+            for r in rl["results"]:
+                print(f"  {r['candidate_id']} | {r['result']} | {r['explain']}")
+            return 0
+
+        if action == "candidates":
+            q = _quality(str(root))
+            print(f"candidates: {q['learning_candidates']} | validated: {q['validated_candidates']} "
+                  f"| rejected: {q['rejected_candidates']} | conflicted: {q['conflicted_candidates']}")
+            for c in _cands(str(root)):
+                print(f"  {c['candidate_id']} | {c['type']} | {c['lifecycle']} | {c['content'][:40]}")
+            return 0
+
+        if action == "evaluate":
+            if not target:
+                print("[E4211] 错误: candidate_id 必填 (factory learn evaluate <id>)", file=sys.stderr)
+                return 2
+            try:
+                r = _eval(str(root), target, evidence_count=3, success_count=3, failure_count=0)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[E4212] 错误: {exc}", file=sys.stderr)
+                return 1
+            print(f"evaluate: {r['result']} | {r['explain']}")
+            return 0
+
+        if action == "conflicts":
+            for c in _cfs(str(root)):
+                print(f"  {c['conflict_id']} | {c['pattern_key']} | {c['status']} | {c['explain']}")
+            return 0
+
+        if action == "history":
+            for o in _obss(str(root)):
+                print(f"  {o['observation_id']} | {o['pattern_key']} | {o['outcome']} | {o['source_type']}")
+            return 0
+
+        return 1
+
     def context_rank_cmd(self, args: argparse.Namespace) -> int:
         """factory context-rank — Context Intelligence (S36)。
 
@@ -6710,6 +6781,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_prod.add_argument("--input", default="{}", help="输入 JSON (run 用, 如 {'prompt': '...'})")
     p_prod.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     sub.add_parser("workflow", help="Workflow 列表 (S10): factory workflow list — 专业生产线")
+    # S37: Learning CLI
+    p_learn = sub.add_parser("learn", help="Learn (S37): observe/run/candidates/inspect/evaluate/conflicts/history — Evidence-driven Learning")
+    p_learn.add_argument("action", nargs="?", default="run",
+                         choices=["observe", "run", "candidates", "inspect", "evaluate", "conflicts", "history"])
+    p_learn.add_argument("target", nargs="?", help="pattern_key / candidate_id")
+    p_learn.add_argument("--source-type", default="production_run", help="observation 来源 (observe 用)")
+    p_learn.add_argument("--source-id", default="", help="source_id (observe 用)")
+    p_learn.add_argument("--outcome", default="UNKNOWN", help="SUCCESS/FAILURE/UNKNOWN (observe 用)")
+    p_learn.add_argument("--scope", default="node", help="scope")
+    p_learn.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+
     # S36: Context Intelligence CLI
     p_ci = sub.add_parser("context-rank", help="Context Rank (S36): rank/progressive/feedback — Context Intelligence")
     p_ci.add_argument("action", nargs="?", default="rank",

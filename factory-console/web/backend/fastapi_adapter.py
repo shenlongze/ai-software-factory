@@ -4385,6 +4385,83 @@ def build_app(
         _s.delete_schedule(root, schedule_id)
         return {"deleted": schedule_id}
 
+    @app.post("/api/intelligence/analyses")
+    def api_create_analysis(body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """对 Incident 执行 RCA (S23)。"""
+        from factory_console import production_intelligence as _i
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _i.analyze_incident(root, body.get("incident_id", ""))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/intelligence/analyses/{analysis_id}")
+    def api_get_analysis(analysis_id: str) -> dict[str, Any]:
+        """Analysis 详情 (S23)。"""
+        from factory_console import production_intelligence as _i
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        a = _i.get_analysis(root, analysis_id)
+        if a is None:
+            raise HTTPException(status_code=404, detail=f"Analysis 不存在: {analysis_id}")
+        return a
+
+    @app.get("/api/incidents/{incident_id}/analysis")
+    def api_incident_analysis(incident_id: str) -> dict[str, Any]:
+        """Incident RCA (S23)。"""
+        from factory_console import production_intelligence as _i
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _i.analyze_incident(root, incident_id)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/api/incidents/{incident_id}/root-causes")
+    def api_incident_root_causes(incident_id: str) -> dict[str, Any]:
+        """Incident Root Causes (S23)。"""
+        from factory_console import production_intelligence as _i
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        an = _i.analyze_incident(root, incident_id)
+        return {"incident_id": incident_id, "analysis_id": an["analysis_id"],
+                "root_cause_candidates": an.get("root_cause_candidates", [])}
+
+    @app.get("/api/incidents/{incident_id}/recommendations")
+    def api_incident_recommendations(incident_id: str) -> dict[str, Any]:
+        """Incident Recommendations (S23)。"""
+        from factory_console import production_intelligence as _i
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        an = _i.analyze_incident(root, incident_id)
+        return {"incident_id": incident_id, "analysis_id": an["analysis_id"],
+                "recommendations": an.get("recommendations", [])}
+
+    @app.get("/api/intelligence/{analysis_id}/evidence")
+    def api_intelligence_evidence(analysis_id: str) -> dict[str, Any]:
+        """Analysis Evidence (S23, 可追溯)。"""
+        from factory_console import production_intelligence as _i
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return {"analysis_id": analysis_id, "evidence": _i.analysis_evidence(root, analysis_id)}
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/api/recommendations/{recommendation_id}/decide")
+    def api_decide_recommendation(recommendation_id: str, body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """Recommendation 决策 (S23, 经 Governance)。"""
+        from factory_console import production_intelligence as _i
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _i.decide_recommendation(root, recommendation_id,
+                                            decision=body.get("decision", ""),
+                                            decided_by=body.get("decided_by", "human"))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     @app.get("/api/workforce")
     def api_workforce_list() -> dict[str, Any]:
         """Workforce workflows (S16)。"""

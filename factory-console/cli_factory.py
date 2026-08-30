@@ -1019,6 +1019,8 @@ class FactoryCLI:
             return self.production_cmd(args)
         if args.command == "workflow":
             return self.workflow_cmd(args)
+        if args.command == "intelligence":
+            return self.intelligence_cmd(args)
         if args.command == "ops":
             return self.ops_cmd(args)
         if args.command == "schedule":
@@ -4109,6 +4111,84 @@ class FactoryCLI:
             print(f"  {r_.get('run_id')} | {r_.get('workflow_id')} | {r_.get('state')} | {r_.get('created_at')}")
         return 0
 
+    def intelligence_cmd(self, args: argparse.Namespace) -> int:
+        """factory intelligence — Intelligence (S23): RCA + Recommendations。
+
+        薄代理 → production_intelligence (CLI 与 API 共享同一 Service)。
+        """
+        from factory_console.production_intelligence import (
+            analyze_incident as _analyze, get_analysis as _get, list_analyses as _list,
+            analysis_evidence as _evidence, list_recommendations as _recs,
+            intelligence_metrics as _metrics,
+        )
+
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        action = getattr(args, "action", "history") or "history"
+        target = getattr(args, "target", None)
+
+        if action == "analyze":
+            if not target:
+                print("[E4080] 错误: incident_id 必填 (factory intelligence analyze <incident>)",
+                      file=sys.stderr)
+                return 2
+            an = _analyze(root, target)
+            print(f"analysis: {an['analysis_id']} | status: {an['status']}")
+            for rc in an.get("root_cause_candidates", []):
+                print(f"  RC: {rc['category']} | conf: {rc['confidence']} | {rc['status']}")
+            for r in an.get("recommendations", []):
+                print(f"  REC: {r['type']} | risk: {r['risk']} | approval: {r['requires_approval']}")
+            return 0
+
+        if action == "show":
+            if not target:
+                print("[E4081] 错误: analysis_id 必填 (factory intelligence show <id>)", file=sys.stderr)
+                return 2
+            an = _get(root, target)
+            if an is None:
+                print(f"[E4082] Analysis 不存在: {target}", file=sys.stderr)
+                return 1
+            print(f"analysis: {an['analysis_id']} | status: {an['status']} | type: {an['analysis_type']}")
+            print(f"incident: {an.get('incident_id')} | release: {an.get('release_id')}")
+            print(f"signals: {len(an.get('signals', []))} | correlations: {len(an.get('correlations', []))}")
+            print(f"evidence_refs: {an.get('evidence_refs')}")
+            return 0
+
+        if action in ("root-cause", "recommendations"):
+            if not target:
+                print(f"[E4083] 错误: incident_id 必填 (factory intelligence {action} <incident>)",
+                      file=sys.stderr)
+                return 2
+            an = _analyze(root, target) if not _list(root, incident_id=target) else _list(root, incident_id=target)[-1]
+            if action == "root-cause":
+                for rc in an.get("root_cause_candidates", []):
+                    print(f"  {rc['category']} | conf: {rc['confidence']} | {rc['status']} | refs: {rc['evidence_refs']}")
+            else:
+                for r in an.get("recommendations", []):
+                    print(f"  {r['type']} | risk: {r['risk']} | approval: {r['requires_approval']} | status: {r['status']}")
+            return 0
+
+        if action == "evidence":
+            if not target:
+                print("[E4084] 错误: analysis_id 必填 (factory intelligence evidence <id>)", file=sys.stderr)
+                return 2
+            for e in _evidence(root, target):
+                print(f"  {e['ref']} | resolved: {e['resolved']} | kind: {e.get('kind', '')}")
+            return 0
+
+        if action == "history":
+            for an in _list(root):
+                print(f"  {an['analysis_id']} | {an['status']} | incident={an.get('incident_id')} "
+                      f"| candidates={len(an.get('root_cause_candidates', []))}")
+            return 0
+
+        if action == "metrics":
+            m = _metrics(root)
+            for k, v in m.items():
+                print(f"  {k}: {v}")
+            return 0
+
+        return 1
+
     def ops_cmd(self, args: argparse.Namespace) -> int:
         """factory ops — Ops (S22): Control Plane 投影。
 
@@ -5584,6 +5664,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_prod.add_argument("--input", default="{}", help="输入 JSON (run 用, 如 {'prompt': '...'})")
     p_prod.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     sub.add_parser("workflow", help="Workflow 列表 (S10): factory workflow list — 专业生产线")
+    # S23: Intelligence CLI
+    p_intel = sub.add_parser("intelligence", help="Intelligence (S23): analyze/show/root-cause/recommendations/evidence/history")
+    p_intel.add_argument("action", nargs="?", default="history",
+                         choices=["analyze", "show", "root-cause", "recommendations", "evidence", "history", "metrics"],
+                         help="动作: analyze <incident> 分析 / show <analysis> 详情 / root-cause <incident> 根因 / recommendations <incident> 建议 / evidence <analysis> 证据 / history 历史 / metrics 指标")
+    p_intel.add_argument("target", nargs="?", help="incident_id 或 analysis_id")
+    p_intel.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+
     # S22: Ops CLI
     p_ops = sub.add_parser("ops", help="Ops (S22): status/health/history/incidents/schedules/releases — Control Plane")
     p_ops.add_argument("action", nargs="?", default="status",

@@ -164,8 +164,9 @@ def execute_subtask(root: Path | str, task_id: str, *,
     t = get_entity(root, task_id)
     if t["type"] != "task":
         raise ValueError(f"非 task 实体: {task_id}")
-    node_specs = nodes or [{"node_id": "exec", "name": "执行", "type": "engineering",
-                            "executor_name": "agent"}]
+    # 默认 node: node_id 带 role 段 (x-<role>) 使真实 executor factory 可路由
+    node_specs = nodes or [{"node_id": "dev-software_developer", "name": "执行",
+                            "type": "engineering", "executor_name": "software_developer"}]
     wf_id = f"task-{task_id[-8:]}"
     try:
         register_workflow(root, workflow_id=wf_id, name=wf_id, nodes=node_specs)

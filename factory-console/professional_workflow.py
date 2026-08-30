@@ -148,7 +148,7 @@ def build_llm_executor_factory(root: Path | str):
 
     def _factory(agent_id: str) -> Callable[[dict[str, Any]], dict[str, Any]]:
         # agent_id 是 role (executor_name=node)
-        role = agent_id.split("-")[-2] if "-" in agent_id else agent_id
+        role = agent_id.split("-")[-1] if "-" in agent_id else agent_id
         cfg = PROFESSIONAL_ROLES.get(role)
         system_prompt = cfg["system_prompt"] if cfg else "你是一个专业员工。"
         target = ROLE_TARGETS.get(role, f"{role}.md")
@@ -407,7 +407,7 @@ def build_real_executor_factory(root: Path | str):
         return (resp.get("content") or "").strip()
 
     def _factory(agent_id: str) -> Callable[[dict[str, Any]], dict[str, Any]]:
-        role = agent_id.split("-")[-2] if "-" in agent_id else agent_id
+        role = agent_id.split("-")[-1] if "-" in agent_id else agent_id
         cfg = PROFESSIONAL_ROLES.get(role, {})
 
         def _fn(input_data: dict[str, Any]) -> dict[str, Any]:
@@ -454,7 +454,8 @@ def build_real_executor_factory(root: Path | str):
                             "verification": {"result": "FAIL", "error": "no codex"}}
                 prompt = (
                     f"基于以下架构设计, 编写一个完整的 Python 计算器应用 (calculator.py):\n"
-                    f"要求: 包含 add(a,b) 和 subtract(a,b) 函数。只输出 Python 代码。\n"
+                    f"要求: 包含 add(a,b), subtract(a,b), multiply(a,b), divide(a,b) 四个函数。\n"
+                    f"divide(1, 0) 必须 raise ValueError。只输出 Python 代码。\n"
                     f"架构:\n{arch[:2000]}\n"
                     f"想法: {idea}"
                 )

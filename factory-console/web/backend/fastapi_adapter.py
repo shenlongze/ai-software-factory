@@ -4641,6 +4641,80 @@ def build_app(
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+    @app.post("/api/optimization/hypotheses")
+    def api_create_hypothesis(body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """创建结构化 Hypothesis (S26)。"""
+        from factory_console import llm_experiment_service as _le
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _le.create_hypothesis(root, statement=body.get("statement", ""),
+                                         metric=body.get("metric", "overall_score"),
+                                         direction=body.get("direction", "HIGHER_IS_BETTER"),
+                                         control_definition=body.get("control_definition", "developer"),
+                                         treatment_definition=body.get("treatment_definition", "developer+reviewer"),
+                                         minimum_sample_size=body.get("minimum_sample_size", 2),
+                                         success_threshold=body.get("success_threshold", 0.0))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/optimization/llm-experiments")
+    def api_create_llm_experiment(body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """创建真实 LLM Experiment (S26)。"""
+        from factory_console import llm_experiment_service as _le
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _le.create_llm_experiment(root, hypothesis_id=body.get("hypothesis_id", ""))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/optimization/llm-experiments/{experiment_id}/approve")
+    def api_approve_llm_experiment(experiment_id: str) -> dict[str, Any]:
+        """Governance 批准 LLM Experiment (S26)。"""
+        from factory_console import llm_experiment_service as _le
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _le.approve_llm_experiment(root, experiment_id)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/optimization/llm-experiments/{experiment_id}/run")
+    def api_run_llm_experiment(experiment_id: str, body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """真实 LLM 样本 (S26)。"""
+        from factory_console import llm_experiment_service as _le
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _le.llm_run_sample(root, experiment_id=experiment_id,
+                                      arm=body.get("arm", "control"),
+                                      workflow_id=body.get("workflow_id", "wf"),
+                                      real_executor_factory=lambda node_id: (lambda input_data: {
+                                          "ok": True, "output": {"code": "x"},
+                                          "patch_text": ("diff --git a/a.py b/a.py\n--- /dev/null\n+++ b/a.py\n@@ -0,0 +1,2 @@\n"
+                                                         "+def a():\n+    return 1\n"),
+                                          "artifact_type": "code_change",
+                                          "verification": {"result": "PASS"}}))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/optimization/llm-experiments/{experiment_id}/compare")
+    def api_compare_llm_experiment(experiment_id: str) -> dict[str, Any]:
+        """LLM 实验比较 (S26)。"""
+        from factory_console import llm_experiment_service as _le
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return _le.llm_compare(root, experiment_id)
+
+    @app.get("/api/optimization/llm-experiments/{experiment_id}/outcome")
+    def api_outcome_llm_experiment(experiment_id: str) -> dict[str, Any]:
+        """LLM 实验 Outcome (S26)。"""
+        from factory_console import llm_experiment_service as _le
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return _le.llm_outcome(root, experiment_id)
+
     @app.get("/api/workforce")
     def api_workforce_list() -> dict[str, Any]:
         """Workforce workflows (S16)。"""

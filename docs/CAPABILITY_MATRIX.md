@@ -375,3 +375,20 @@ AI Factory
 ### 诚实声明
 - Adaptive Workforce Infrastructure = REAL
 - Optimization Effectiveness = NOT YET PROVEN (真实执行差异已证明, 改善未证明)
+
+## S26 更新 (Real LLM Optimization Experiment, v1.1.333)
+
+### Reality Status
+| 能力 | Status | 证据 |
+|------|--------|------|
+| 结构化 Hypothesis (metric/direction/threshold/min_sample 冻结) | REAL | test_llm_experiment 10/10; frozen=True 断言 |
+| Real LLM Experiment (真实 provider 对照) | REAL | test_real_llm_experiment_e2e: 4 次真实 deepseek 调用 |
+| Budget Guard (超限 STOPPED) | REAL | test_budget_guard: BUDGET_EXCEEDED |
+| Sample Eligibility (ELIGIBLE/INELIGIBLE/FAILED) | REAL | test_sample_eligibility |
+| PROVEN 硬性保护 (样本不足 → INCONCLUSIVE) | REAL | test_insufficient_sample_inconclusive |
+| Real Experiment Evidence (诚实记录失败) | REAL | docs/audit/s26-real-experiment-evidence.md |
+| Optimization Effectiveness | NOT_YET_PROVEN | 真实 LLM 实验 INCONCLUSIVE (全部样本 INCOMPLETE, 诚实报告) |
+
+### 诚实声明
+- Real LLM Experiment Infrastructure = REAL (真实 provider 调用 + 真实失败记录)
+- Optimization Effectiveness = NOT_YET_PROVEN (真实实验 INCONCLUSIVE; 不伪造 IMPROVED)

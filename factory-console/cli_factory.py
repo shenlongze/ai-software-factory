@@ -1019,6 +1019,8 @@ class FactoryCLI:
             return self.production_cmd(args)
         if args.command == "workflow":
             return self.workflow_cmd(args)
+        if args.command == "llm-experiment":
+            return self.llm_experiment_cmd(args)
         if args.command == "variant":
             return self.variant_cmd(args)
         if args.command == "optimization":
@@ -4115,6 +4117,94 @@ class FactoryCLI:
             print(f"  {r_.get('run_id')} | {r_.get('workflow_id')} | {r_.get('state')} | {r_.get('created_at')}")
         return 0
 
+    def llm_experiment_cmd(self, args: argparse.Namespace) -> int:
+        """factory llm-experiment — LLM Experiment (S26)。
+
+        薄代理 → llm_experiment_service (CLI 与 API 共享同一 Service)。
+        """
+        from factory_console.llm_experiment_service import (
+            create_hypothesis as _hyp, create_llm_experiment as _create,
+            approve_llm_experiment as _approve, llm_run_sample as _run,
+            llm_compare as _compare, llm_outcome as _outcome,
+        )
+
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        action = getattr(args, "action", "status") or "status"
+        target = getattr(args, "target", None)
+
+        if action == "hypothesis":
+            h = _hyp(root, statement="reviewer 改善质量", metric=getattr(args, "metric", "overall_score"),
+                     direction="HIGHER_IS_BETTER", control_definition="developer",
+                     treatment_definition="developer+reviewer")
+            print(f"hypothesis: {h['hypothesis_id']} | metric: {h['metric']} | frozen: {h['frozen']}")
+            print(f"  threshold: {h['success_threshold']} | min_sample: {h['minimum_sample_size']}")
+            return 0
+
+        if action == "create":
+            if not target:
+                print("[E4110] 错误: hypothesis_id 必填 (factory llm-experiment create <hyp>)",
+                      file=sys.stderr)
+                return 2
+            exp = _create(root, hypothesis_id=target)
+            print(f"experiment: {exp['experiment_id']} | status: {exp['status']}")
+            print(f"  approval: {exp['governance']['approval_id']} (factory llm-experiment approve {exp['experiment_id']})")
+            return 0
+
+        if action == "approve":
+            if not target:
+                print("[E4111] 错误: experiment_id 必填 (factory llm-experiment approve <exp>)",
+                      file=sys.stderr)
+                return 2
+            exp = _approve(root, target)
+            print(f"experiment: {target} | status: {exp['status']}")
+            return 0
+
+        if action == "run":
+            if not target:
+                print("[E4112] 错误: experiment_id 必填 (factory llm-experiment run <exp> <arm>)",
+                      file=sys.stderr)
+                return 2
+            try:
+                s = _run(root, experiment_id=target, arm=getattr(args, "arm", "control"),
+                         workflow_id=getattr(args, "workflow", "wf"),
+                         real_executor_factory=lambda node_id: (lambda input_data: {
+                             "ok": True, "output": {"code": "x"},
+                             "patch_text": ("diff --git a/a.py b/a.py\n--- /dev/null\n+++ b/a.py\n@@ -0,0 +1,2 @@\n"
+                                            "+def a():\n+    return 1\n"),
+                             "artifact_type": "code_change", "verification": {"result": "PASS"}}))
+            except Exception as exc:  # noqa: BLE001
+                print(f"[E4113] 错误: {exc}", file=sys.stderr)
+                return 1
+            print(f"sample: {s.get('arm')} | run: {s.get('production_run_id')} | eligible: {s.get('eligible')} "
+                  f"| metric: {s.get('metric_value')} | reason: {s.get('reason', '')}")
+            return 0
+
+        if action == "compare":
+            if not target:
+                print("[E4114] 错误: experiment_id 必填 (factory llm-experiment compare <exp>)",
+                      file=sys.stderr)
+                return 2
+            try:
+                cmp = _compare(root, target)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[E4116] 错误: {exc}", file=sys.stderr)
+                return 1
+            print(f"compare: {cmp['result']} | effectiveness: {cmp['effectiveness']}")
+            print(f"  {cmp.get('reason', '')}")
+            return 0
+
+        if action == "outcome":
+            if not target:
+                print("[E4115] 错误: experiment_id 必填 (factory llm-experiment outcome <exp>)",
+                      file=sys.stderr)
+                return 2
+            oc = _outcome(root, target)
+            print(f"outcome: {oc['result']} | effectiveness: {oc['effectiveness']}")
+            print(f"  reason: {oc['reason']}")
+            return 0
+
+        return 1
+
     def variant_cmd(self, args: argparse.Namespace) -> int:
         """factory variant — Variant (S25): Adaptive Workforce。
 
@@ -5830,6 +5920,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_prod.add_argument("--input", default="{}", help="输入 JSON (run 用, 如 {'prompt': '...'})")
     p_prod.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     sub.add_parser("workflow", help="Workflow 列表 (S10): factory workflow list — 专业生产线")
+    # S26: LLM Experiment CLI
+    p_llmexp = sub.add_parser("llm-experiment", help="LLM Experiment (S26): hypothesis/create/approve/run/compare/outcome")
+    p_llmexp.add_argument("action", nargs="?", default="status",
+                          choices=["hypothesis", "create", "approve", "run", "compare", "outcome"],
+                          help="动作: hypothesis 建假设 / create <hyp> 建实验 / approve <exp> 批准 / run <exp> <arm> 样本 / compare <exp> 比较 / outcome <exp> 结果")
+    p_llmexp.add_argument("target", nargs="?", help="hypothesis_id 或 experiment_id")
+    p_llmexp.add_argument("--arm", default="control", help="control|treatment (run 用)")
+    p_llmexp.add_argument("--workflow", default="wf", help="workflow_id (run 用)")
+    p_llmexp.add_argument("--metric", default="overall_score", help="metric (hypothesis 用)")
+    p_llmexp.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+
     # S25: Adaptive CLI
     p_adapt = sub.add_parser("variant", help="Variant (S25): create/approve/run/lineage — Adaptive Workforce")
     p_adapt.add_argument("action", nargs="?", default="list",

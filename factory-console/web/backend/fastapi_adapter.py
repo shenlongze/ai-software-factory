@@ -5183,6 +5183,98 @@ def build_app(
         items = _ps.selection_history(root)
         return {"items": items, "count": len(items)}
 
+    @app.post("/api/context/requests")
+    def api_create_context_request(body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """创建 ContextRequest (S35)。"""
+        from factory_console import context_runtime as _cr
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _cr.create_context_request(
+                root, node_id=body.get("node_id", "node-1"),
+                purpose=body.get("purpose", "context"),
+                scopes=body.get("scopes", ["node"]),
+                project_id=body.get("project_id", ""),
+                budget=body.get("budget"))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/context/requests/{request_id}/resolve")
+    def api_resolve_context(request_id: str) -> dict[str, Any]:
+        """Context Resolution (S35)。"""
+        from factory_console import context_runtime as _cr
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _cr.resolve_context(root, request_id)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/api/context/history")
+    def api_context_history() -> dict[str, Any]:
+        """Context History (S35, snapshot 可追溯)。"""
+        from factory_console import context_runtime as _cr
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        items = _cr.context_history(root)
+        return {"items": items, "count": len(items)}
+
+    @app.get("/api/memory")
+    def api_memory_list() -> dict[str, Any]:
+        """Memory 列表 (S35)。"""
+        from factory_console.context_runtime import _init_local_memory, LocalMemoryPlugin
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        _init_local_memory(root)
+        r = LocalMemoryPlugin(root).handle("list", {})
+        return {"items": r.get("entries", []), "count": len(r.get("entries", []))}
+
+    @app.get("/api/memory/{memory_id}")
+    def api_memory_get(memory_id: str) -> dict[str, Any]:
+        """Memory 详情 (S35)。"""
+        from factory_console.context_runtime import _init_local_memory, LocalMemoryPlugin
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        _init_local_memory(root)
+        e = LocalMemoryPlugin(root).handle("get", {"memory_id": memory_id})
+        if e is None:
+            raise HTTPException(status_code=404, detail=f"Memory 不存在: {memory_id}")
+        return e
+
+    @app.get("/api/memory/candidates")
+    def api_memory_candidates() -> dict[str, Any]:
+        """Memory Candidates (S35)。"""
+        from factory_console import context_runtime as _cr
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        items = _cr.memory_candidates(root)
+        return {"items": items, "count": len(items)}
+
+    @app.post("/api/memory/candidates")
+    def api_create_memory_candidate(body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """创建 MemoryCandidate (S35, 不自动长期化)。"""
+        from factory_console import context_runtime as _cr
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _cr.create_memory_candidate(root, content=body.get("content", ""),
+                                               scope=body.get("scope", "node"),
+                                               source_type=body.get("source_type", "manual"),
+                                               source_id=body.get("source_id", ""))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/memory/candidates/{candidate_id}/promote")
+    def api_promote_memory_candidate(candidate_id: str) -> dict[str, Any]:
+        """Promote MemoryCandidate (S35, governed)。"""
+        from factory_console import context_runtime as _cr
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _cr.promote_memory_candidate(root, candidate_id)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     @app.get("/api/workforce")
     def api_workforce_list() -> dict[str, Any]:
         """Workforce workflows (S16)。"""

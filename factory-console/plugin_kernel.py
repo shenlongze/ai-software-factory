@@ -25,7 +25,9 @@ from typing import Any, Callable
 
 #: Plugin types
 PLUGIN_TYPES = ("agent", "skill", "tool", "mcp", "provider", "model",
-                "runtime", "executor", "workflow", "artifact_type", "domain")
+                "runtime", "executor", "workflow", "artifact_type", "domain",
+                "memory", "retriever", "reranker", "compressor", "evaluator",
+                "experimenter", "observer", "repairer")
 
 #: Lifecycle
 PL_STATES = ("DISCOVERED", "REGISTERED", "ENABLED", "DISABLED", "RETIRED")

@@ -142,6 +142,12 @@ EVENT_TYPES: tuple[str, ...] = (
     "AGENT_PROFILE_BOUND",
     # S33: Performance Selection 事件
     "PERFORMANCE_SELECTION",
+    # S35: Context/Memory 事件
+    "CONTEXT_REQUESTED",
+    "CONTEXT_RESOLVED",
+    "CONTEXT_REJECTED",
+    "MEMORY_CANDIDATE_CREATED",
+    "MEMORY_PROMOTED",
     # S19: Rollback 事件
     "ROLLBACK_CREATED",
     "ROLLBACK_GATED",

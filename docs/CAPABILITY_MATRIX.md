@@ -536,3 +536,25 @@ AI Factory
 - S34 = 架构审查 + 设计 (无大规模实现, 按指令)
 - Intelligence Plane = DESIGN (S35+ 实现)
 - 无 Stub / 无重复 SSOT / CLI+API 原则保持
+
+## S35 更新 (Context & Memory Runtime Foundation, v1.1.342)
+
+### Reality Status
+| 能力 | Status | 证据 |
+|------|--------|------|
+| ContextRequest (scope 校验 + budget) | REAL | test_context_runtime 10/10 |
+| ContextBudget (超预算 → COMPRESSED/TRUNCATED/REJECTED) | REAL | test_context_budget |
+| Context Resolution (deterministic, JIT scope 过滤) | REAL | test_context_resolution |
+| ContextSnapshot (不可变, 历史可解释) | REAL | test_context_resolution / history |
+| MemoryCandidate → Promote (governed, 不自动长期化) | REAL | test_candidate_promote |
+| LocalMemoryPlugin (deterministic, provenance/version/scope) | REAL | test_memory_query_scope |
+| Memory Plugin 替换 (Core 零修改) | REAL | test_memory_plugin_replacement |
+| Governance (未授权 scope 拒绝; disabled 拒绝) | REAL | test_scope_governance / test_disabled_memory_rejected |
+| Cost 记账 (estimated 明确) | REAL | test_token_cost_estimate |
+| CLI/API | REAL | test_cli / test_api (openapi 258) |
+
+### 诚实声明
+- Context Runtime = REAL (Request/Budget/Resolver/Snapshot 全真实)
+- Memory = REAL (Plugin Contract + Local 实现, 无 vendor 依赖)
+- Cost = estimated (无真实 token 数时明确标记, 不伪装)
+- 未做: LLM ranking / Vector DB / 自动对话记忆 (S35 明确排除)

@@ -1019,6 +1019,10 @@ class FactoryCLI:
             return self.production_cmd(args)
         if args.command == "workflow":
             return self.workflow_cmd(args)
+        if args.command == "context":
+            return self.context_cmd(args)
+        if args.command == "memory":
+            return self.memory_cmd(args)
         if args.command == "select":
             return self.select_cmd(args)
         if args.command == "composition":
@@ -4133,6 +4137,110 @@ class FactoryCLI:
             print(f"  {r_.get('run_id')} | {r_.get('workflow_id')} | {r_.get('state')} | {r_.get('created_at')}")
         return 0
 
+    def context_cmd(self, args: argparse.Namespace) -> int:
+        """factory context — Context (S35): Context Control Plane。
+
+        薄代理 → context_runtime (CLI 与 API 共享同一 Service)。
+        """
+        from factory_console.context_runtime import (
+            create_context_request as _req, resolve_context as _resolve,
+            context_history as _history,
+        )
+
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        action = getattr(args, "action", "request") or "request"
+        target = getattr(args, "target", None)
+
+        if action == "request":
+            scopes = [s for s in getattr(args, "scope", "node").split(",") if s]
+            req = _req(str(root), node_id=getattr(args, "node", "node-1"),
+                       purpose=getattr(args, "purpose", "") or "context",
+                       scopes=scopes)
+            print(f"request: {req['context_request_id']} | scope: {req['scope']} | budget: {req['budget']['max_input_tokens']}")
+            return 0
+
+        if action == "resolve":
+            if not target:
+                print("[E4190] 错误: request_id 必填 (factory context resolve <req>)", file=sys.stderr)
+                return 2
+            snap = _resolve(str(root), target)
+            d = snap["decision"]
+            print(f"resolve: {d['status']} | selected: {len(snap['selected_items'])} "
+                  f"| tokens: {d['selected_tokens']}/{d['requested_tokens']} | cost: {d['estimated_cost']}")
+            return 0
+
+        if action == "history":
+            for s in _history(str(root)):
+                print(f"  {s['snapshot_id']} | {s['node_id']} | {s['decision']['status']} | {s['created_at']}")
+            return 0
+
+        return 1
+
+    def memory_cmd(self, args: argparse.Namespace) -> int:
+        """factory memory — Memory (S35): Memory Plugin。
+
+        薄代理 → context_runtime (CLI 与 API 共享同一 Service)。
+        """
+        from factory_console.context_runtime import (
+            memory_query as _query, create_memory_candidate as _candidate,
+            promote_memory_candidate as _promote, memory_candidates as _cands,
+            _init_local_memory,
+        )
+        from factory_console.context_runtime import LocalMemoryPlugin
+
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        action = getattr(args, "action", "list") or "list"
+        target = getattr(args, "target", None)
+        _init_local_memory(str(root))
+        plugin = LocalMemoryPlugin(str(root))
+
+        if action == "list":
+            r = plugin.handle("list", {})
+            for e in r.get("entries", []):
+                print(f"  {e['memory_id']} | {e['scope']} | v{e['version']} | {e['content'][:40]}")
+            return 0
+
+        if action == "get":
+            if not target:
+                print("[E4191] 错误: memory_id 必填 (factory memory get <id>)", file=sys.stderr)
+                return 2
+            e = plugin.handle("get", {"memory_id": target})
+            if e is None:
+                print(f"[E4192] Memory 不存在: {target}", file=sys.stderr)
+                return 1
+            print(f"memory: {e['memory_id']} | {e['scope']} | v{e['version']} | {e['content']}")
+            return 0
+
+        if action == "query":
+            r = plugin.handle("query", {"scopes": [getattr(args, "scope", "node")]})
+            print(f"query: {r['count']} entries")
+            return 0
+
+        if action == "candidates":
+            for c in _cands(str(root)):
+                print(f"  {c['candidate_id']} | {c['status']} | {c['scope']} | {c['content'][:40]}")
+            return 0
+
+        if action == "candidate":
+            c = _candidate(str(root), content=getattr(args, "content", "") or "memory",
+                           scope=getattr(args, "scope", "node"))
+            print(f"candidate: {c['candidate_id']} | {c['status']} | scope: {c['scope']}")
+            return 0
+
+        if action == "promote":
+            if not target:
+                print("[E4193] 错误: candidate_id 必填 (factory memory promote <id>)", file=sys.stderr)
+                return 2
+            try:
+                e = _promote(str(root), target)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[E4194] 错误: {exc}", file=sys.stderr)
+                return 1
+            print(f"promoted: {e['memory_id']} | scope: {e['scope']} | version: {e['version']}")
+            return 0
+
+        return 1
+
     def select_cmd(self, args: argparse.Namespace) -> int:
         """factory select — Select (S33): Performance-aware Selection。
 
@@ -6502,6 +6610,25 @@ def build_parser() -> argparse.ArgumentParser:
     p_prod.add_argument("--input", default="{}", help="输入 JSON (run 用, 如 {'prompt': '...'})")
     p_prod.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     sub.add_parser("workflow", help="Workflow 列表 (S10): factory workflow list — 专业生产线")
+    # S35: Context/Memory CLI
+    p_ctx = sub.add_parser("context", help="Context (S35): request/resolve/history — Context Control Plane")
+    p_ctx.add_argument("action", nargs="?", default="request",
+                       choices=["request", "resolve", "history", "inspect"],
+                       help="动作: request 请求 / resolve <req> 解析 / history 历史 / inspect <snap> 详情")
+    p_ctx.add_argument("target", nargs="?", help="request_id 或 snapshot_id")
+    p_ctx.add_argument("--purpose", default="", help="purpose (request 用)")
+    p_ctx.add_argument("--scope", default="node", help="scope 逗号分隔 (request 用)")
+    p_ctx.add_argument("--node", default="node-1", help="node_id (request 用)")
+    p_ctx.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+
+    p_mem = sub.add_parser("memory", help="Memory (S35): list/get/query/candidates/promote — Memory Plugin")
+    p_mem.add_argument("action", nargs="?", default="list",
+                       choices=["list", "get", "query", "candidates", "promote", "candidate"])
+    p_mem.add_argument("target", nargs="?", help="memory_id / candidate_id")
+    p_mem.add_argument("--content", default="", help="content (candidate 用)")
+    p_mem.add_argument("--scope", default="node", help="scope (candidate/query 用)")
+    p_mem.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+
     # S33: Selection CLI
     p_sel = sub.add_parser("select", help="Select (S33): select/rank/perf/history/cold-start — Performance-aware Selection")
     p_sel.add_argument("action", nargs="?", default="select",

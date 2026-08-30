@@ -115,9 +115,13 @@ def request_approval(root: Path | str, *, production_run_id: str,
     policy = POLICIES.get(policy_id)
     if policy is None:
         raise ValueError(f"未知 policy: {policy_id}")
-    run = get_production_run(root, production_run_id)
-    if run is None:
-        raise ValueError(f"ProductionRun 不存在: {production_run_id}")
+    # S24/S25: 非 production_run 主体 (experiment/workforce_variant) 不强制绑定 run
+    if subject_type in ("experiment", "workforce_variant"):
+        pass
+    else:
+        run = get_production_run(root, production_run_id)
+        if run is None:
+            raise ValueError(f"ProductionRun 不存在: {production_run_id}")
     # Artifact 必须存在
     for aid in artifact_ids:
         if get_artifact(root, aid) is None:

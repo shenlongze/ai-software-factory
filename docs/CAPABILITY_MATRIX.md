@@ -359,3 +359,19 @@ AI Factory
 ### 诚实声明
 - Optimization Infrastructure = REAL
 - Optimization Effectiveness = NOT YET PROVEN (需真实 LLM 生产数据 + 对照实验)
+
+## S25 更新 (Adaptive Workforce & Optimization Validation, v1.1.332)
+
+### Reality Status
+| 能力 | Status | 证据 |
+|------|--------|------|
+| Adaptive Workforce Infrastructure (WorkforceVariant) | REAL | test_adaptive_workforce 11/11; control 1 role vs treatment 2 roles 真实配置差异 |
+| Workforce Experiment Assignment (run→variant 注入 input 持久化) | REAL | test_run_persists_variant; input 含 _variant_id/_variant_type/_experiment_id |
+| Governance (未批准 Treatment → run blocked) | REAL | test_unapproved_treatment_blocked |
+| Variant Isolation (control/treatment 独立 + experiment 不污染) | REAL | test_variant_isolation |
+| Variant Lineage (variant→assignment→runs) | REAL | test_variant_lineage |
+| Optimization Effectiveness | NOT YET PROVEN | 真实执行差异已建立 (variant_path); 仍需真实 LLM 生产数据对照实验证明改善 |
+
+### 诚实声明
+- Adaptive Workforce Infrastructure = REAL
+- Optimization Effectiveness = NOT YET PROVEN (真实执行差异已证明, 改善未证明)

@@ -1019,6 +1019,8 @@ class FactoryCLI:
             return self.production_cmd(args)
         if args.command == "workflow":
             return self.workflow_cmd(args)
+        if args.command == "variant":
+            return self.variant_cmd(args)
         if args.command == "optimization":
             return self.optimization_cmd(args)
         if args.command == "intelligence":
@@ -4113,6 +4115,80 @@ class FactoryCLI:
             print(f"  {r_.get('run_id')} | {r_.get('workflow_id')} | {r_.get('state')} | {r_.get('created_at')}")
         return 0
 
+    def variant_cmd(self, args: argparse.Namespace) -> int:
+        """factory variant — Variant (S25): Adaptive Workforce。
+
+        薄代理 → adaptive_workforce (CLI 与 API 共享同一 Service)。
+        """
+        from factory_console.adaptive_workforce import (
+            create_variant as _create, approve_variant as _approve,
+            run_with_variant as _run, variant_lineage as _lineage,
+            list_variants as _list,
+        )
+
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        action = getattr(args, "action", "list") or "list"
+        target = getattr(args, "target", None)
+
+        if action == "create":
+            if not target:
+                print("[E4100] 错误: experiment_id 必填 (factory variant create <experiment>)",
+                      file=sys.stderr)
+                return 2
+            v = _create(root, experiment_id=target, variant_type=getattr(args, "vtype", "treatment"))
+            print(f"variant: {v['variant_id']} | type: {v['variant_type']} | status: {v['status']}")
+            print(f"  config: {v['effective_configuration']}")
+            print(f"  approval: {v['approval_id']} (factory variant approve {v['variant_id']})")
+            return 0
+
+        if action == "approve":
+            if not target:
+                print("[E4101] 错误: variant_id 必填 (factory variant approve <variant>)", file=sys.stderr)
+                return 2
+            try:
+                v = _approve(root, target)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[E4105] 错误: {exc}", file=sys.stderr)
+                return 1
+            print(f"variant: {target} | status: {v['status']}")
+            return 0
+
+        if action == "run":
+            if not target:
+                print("[E4102] 错误: variant_id 必填 (factory variant run <variant>)", file=sys.stderr)
+                return 2
+            try:
+                r = _run(root, variant_id=target, workflow_id=getattr(args, "workflow", "wf"),
+                         base_factory=lambda node_id: (lambda input_data: {
+                             "ok": True, "output": {"code": "x"},
+                             "patch_text": ("diff --git a/a.py b/a.py\n--- /dev/null\n+++ b/a.py\n@@ -0,0 +1,2 @@\n"
+                                            "+def a():\n+    return 1\n"),
+                             "artifact_type": "code_change",
+                             "verification": {"result": "PASS"}}))
+            except Exception as exc:  # noqa: BLE001
+                print(f"[E4103] 错误: {exc}", file=sys.stderr)
+                return 1
+            print(f"run: {r['production_run_id']} | variant: {r['variant_type']} | state: {r['state']}")
+            print(f"  variant_evidence: {r['variant_evidence']}")
+            return 0
+
+        if action == "lineage":
+            if not target:
+                print("[E4104] 错误: variant_id 必填 (factory variant lineage <variant>)", file=sys.stderr)
+                return 2
+            lg = _lineage(root, target)
+            print(f"variant: {lg['variant_id']} | {lg['variant_type']} | status: {lg['status']}")
+            print(f"  change: {lg['change_definition']} | experiment: {lg['experiment_id']}")
+            print(f"  runs: {len(lg['production_runs'])}")
+            return 0
+
+        if action == "list":
+            for v in _list(root):
+                print(f"  {v['variant_id']} | {v['variant_type']} | {v['status']} | exp={v['experiment_id']}")
+            return 0
+
+        return 1
+
     def optimization_cmd(self, args: argparse.Namespace) -> int:
         """factory optimization — Optimization (S24): Baseline/Experiment/Outcome。
 
@@ -5754,6 +5830,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_prod.add_argument("--input", default="{}", help="输入 JSON (run 用, 如 {'prompt': '...'})")
     p_prod.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     sub.add_parser("workflow", help="Workflow 列表 (S10): factory workflow list — 专业生产线")
+    # S25: Adaptive CLI
+    p_adapt = sub.add_parser("variant", help="Variant (S25): create/approve/run/lineage — Adaptive Workforce")
+    p_adapt.add_argument("action", nargs="?", default="list",
+                         choices=["create", "approve", "run", "lineage", "list"],
+                         help="动作: create <exp> <control|treatment> 创建 / approve <variant> 批准 / run <variant> <wf> 执行 / lineage <variant> 血缘 / list 列表")
+    p_adapt.add_argument("target", nargs="?", help="experiment_id 或 variant_id")
+    p_adapt.add_argument("--type", dest="vtype", default="treatment", help="control|treatment (create 用)")
+    p_adapt.add_argument("--workflow", default="wf", help="workflow_id (run 用)")
+    p_adapt.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+
     # S24: Optimization CLI
     p_opt = sub.add_parser("optimization", help="Optimization (S24): analyze/baseline/experiment/run/compare/outcome")
     p_opt.add_argument("action", nargs="?", default="analyze",

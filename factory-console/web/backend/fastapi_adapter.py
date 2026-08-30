@@ -4570,6 +4570,77 @@ def build_app(
         root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
         return _o.lineage(root, optimization_id)
 
+    @app.post("/api/optimization/variants")
+    def api_create_variant(body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """创建 WorkforceVariant (S25)。"""
+        from factory_console import adaptive_workforce as _aw
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _aw.create_variant(root, experiment_id=body.get("experiment_id", ""),
+                                      variant_type=body.get("variant_type", "treatment"))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/optimization/variants")
+    def api_list_variants() -> dict[str, Any]:
+        """Variants 列表 (S25)。"""
+        from factory_console import adaptive_workforce as _aw
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        items = _aw.list_variants(root)
+        return {"items": items, "count": len(items)}
+
+    @app.get("/api/optimization/variants/{variant_id}")
+    def api_get_variant(variant_id: str) -> dict[str, Any]:
+        """Variant 详情 (S25)。"""
+        from factory_console import adaptive_workforce as _aw
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        v = _aw.get_variant(root, variant_id)
+        if v is None:
+            raise HTTPException(status_code=404, detail=f"Variant 不存在: {variant_id}")
+        return v
+
+    @app.post("/api/optimization/variants/{variant_id}/approve")
+    def api_approve_variant(variant_id: str) -> dict[str, Any]:
+        """Governance 批准 Variant (S25)。"""
+        from factory_console import adaptive_workforce as _aw
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _aw.approve_variant(root, variant_id)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/optimization/variants/{variant_id}/run")
+    def api_run_variant(variant_id: str, body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """用 Variant 执行真实 Production Run (S25)。"""
+        from factory_console import adaptive_workforce as _aw
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _aw.run_with_variant(
+                root, variant_id=variant_id, workflow_id=body.get("workflow_id", "wf"),
+                base_factory=lambda node_id: (lambda input_data: {
+                    "ok": True, "output": {"code": "x"},
+                    "patch_text": ("diff --git a/a.py b/a.py\n--- /dev/null\n+++ b/a.py\n@@ -0,0 +1,2 @@\n"
+                                   "+def a():\n+    return 1\n"),
+                    "artifact_type": "code_change", "verification": {"result": "PASS"}}))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/optimization/variants/{variant_id}/lineage")
+    def api_variant_lineage(variant_id: str) -> dict[str, Any]:
+        """Variant Lineage (S25)。"""
+        from factory_console import adaptive_workforce as _aw
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _aw.variant_lineage(root, variant_id)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
     @app.get("/api/workforce")
     def api_workforce_list() -> dict[str, Any]:
         """Workforce workflows (S16)。"""

@@ -1019,6 +1019,8 @@ class FactoryCLI:
             return self.production_cmd(args)
         if args.command == "workflow":
             return self.workflow_cmd(args)
+        if args.command == "experiment":
+            return self.experiment_cmd(args)
         if args.command == "recovery":
             return self.recovery_cmd(args)
         if args.command == "reliability":
@@ -4121,6 +4123,112 @@ class FactoryCLI:
             print(f"  {r_.get('run_id')} | {r_.get('workflow_id')} | {r_.get('state')} | {r_.get('created_at')}")
         return 0
 
+    def experiment_cmd(self, args: argparse.Namespace) -> int:
+        """factory experiment — Experiment (S29): Effectiveness。
+
+        薄代理 → effectiveness_service (CLI 与 API 共享同一 Service)。
+        """
+        from factory_console.effectiveness_service import (
+            create_effectiveness_experiment as _create,
+            approve_effectiveness_experiment as _approve,
+            run_effectiveness_sample as _run,
+            experiment_population as _pop,
+            effectiveness_compare as _compare,
+            effectiveness_outcome as _outcome,
+            effectiveness_lineage as _lineage,
+        )
+
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        action = getattr(args, "action", "create") or "create"
+        target = getattr(args, "target", None)
+
+        if action == "create":
+            exp = _create(root, minimum_sample_size=getattr(args, "min_sample", 2))
+            print(f"experiment: {exp['experiment_id']} | frozen: {exp['frozen']} | status: {exp['status']}")
+            print(f"  metric: {exp['metric']} | min_sample: {exp['minimum_sample_size']} | threshold: {exp['success_threshold']}")
+            print(f"  approval: {exp['governance']['approval_id']} (factory experiment approve {exp['experiment_id']})")
+            return 0
+
+        if action == "approve":
+            if not target:
+                print("[E4140] 错误: experiment_id 必填 (factory experiment approve <exp>)", file=sys.stderr)
+                return 2
+            exp = _approve(root, target)
+            print(f"experiment: {target} | status: {exp['status']}")
+            return 0
+
+        if action == "run":
+            if not target:
+                print("[E4141] 错误: experiment_id 必填 (factory experiment run <exp> <arm>)", file=sys.stderr)
+                return 2
+            try:
+                s = _run(root, experiment_id=target, arm=getattr(args, "arm", "control"),
+                         workflow_id=getattr(args, "workflow", "wf"),
+                         executor_factory=lambda node_id: (lambda input_data: {
+                             "ok": True, "output": {"code": "x"},
+                             "patch_text": ("diff --git a/a.py b/a.py\n--- /dev/null\n+++ b/a.py\n@@ -0,0 +1,2 @@\n"
+                                            "+def a():\n+    return 1\n"),
+                             "artifact_type": "code_change", "verification": {"result": "PASS"}}),
+                         repair_fn=lambda fa, v, ctx: {
+                             "ok": True, "output": {"code": "x"},
+                             "patch_text": ("diff --git a/a.py b/a.py\n--- /dev/null\n+++ b/a.py\n@@ -0,0 +1,2 @@\n"
+                                            "+def a():\n+    return 1\n"),
+                             "artifact_type": "code_change", "verification": {"result": "PASS"}})
+            except Exception as exc:  # noqa: BLE001
+                print(f"[E4142] 错误: {exc}", file=sys.stderr)
+                return 1
+            print(f"sample: {s.get('arm')} | initial: {s.get('initial_outcome')} | final: {s.get('final_outcome')} "
+                  f"| recovery: {len(s.get('recovery_attempts', []))} | eligible: {s.get('eligible')}")
+            return 0
+
+        if action == "compare":
+            if not target:
+                print("[E4143] 错误: experiment_id 必填 (factory experiment compare <exp>)", file=sys.stderr)
+                return 2
+            try:
+                cmp = _compare(root, target)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[E4147] 错误: {exc}", file=sys.stderr)
+                return 1
+            print(f"compare: {cmp['result']} | effectiveness: {cmp['effectiveness']}")
+            print(f"  {cmp.get('reason', '')}")
+            return 0
+
+        if action == "outcome":
+            if not target:
+                print("[E4144] 错误: experiment_id 必填 (factory experiment outcome <exp>)", file=sys.stderr)
+                return 2
+            oc = _outcome(root, target)
+            print(f"outcome: {oc['result']} | effectiveness: {oc['effectiveness']}")
+            print(f"  {oc['reason']}")
+            return 0
+
+        if action == "population":
+            if not target:
+                print("[E4145] 错误: experiment_id 必填 (factory experiment population <exp>)", file=sys.stderr)
+                return 2
+            try:
+                pop = _pop(root, target)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[E4148] 错误: {exc}", file=sys.stderr)
+                return 1
+            print(f"population: total={pop['total']} control={pop['assigned_control']} treatment={pop['assigned_treatment']}")
+            print(f"  completed={pop['completed']} failed={pop['failed']} recovered={pop['recovered']} unrecovered={pop['unrecovered']}")
+            print(f"  eligible={pop['eligible']} ineligible={pop['ineligible']}")
+            return 0
+
+        if action == "evidence":
+            if not target:
+                print("[E4146] 错误: experiment_id 必填 (factory experiment evidence <exp>)", file=sys.stderr)
+                return 2
+            lg = _lineage(root, target)
+            print(f"lineage: exp={lg['experiment_id']} | frozen={lg['frozen']} | samples={len(lg['samples'])}")
+            for s in lg["samples"]:
+                print(f"  {s['arm']}: initial={s['initial_outcome']} final={s['final_outcome']} recovery={s['recovery_attempts']}")
+            return 0
+
+        return 1
+
     def recovery_cmd(self, args: argparse.Namespace) -> int:
         """factory recovery — Recovery (S28): 生产质量恢复。
 
@@ -6080,6 +6188,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_prod.add_argument("--input", default="{}", help="输入 JSON (run 用, 如 {'prompt': '...'})")
     p_prod.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     sub.add_parser("workflow", help="Workflow 列表 (S10): factory workflow list — 专业生产线")
+    # S29: Effectiveness CLI
+    p_eff = sub.add_parser("experiment", help="Experiment (S29): create/approve/run/compare/outcome/population — Effectiveness")
+    p_eff.add_argument("action", nargs="?", default="create",
+                       choices=["create", "approve", "run", "compare", "outcome", "population", "evidence"],
+                       help="动作: create 建实验 / approve <exp> 批准 / run <exp> <arm> 样本 / compare <exp> 比较 / outcome <exp> 结果 / population <exp> 人群 / evidence <exp> lineage")
+    p_eff.add_argument("target", nargs="?", help="experiment_id")
+    p_eff.add_argument("--arm", default="control", help="control|treatment (run 用)")
+    p_eff.add_argument("--workflow", default="wf", help="workflow_id (run 用)")
+    p_eff.add_argument("--min-sample", type=int, default=2, help="minimum_sample_size")
+    p_eff.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+
     # S28: Recovery CLI
     p_rec = sub.add_parser("recovery", help="Recovery (S28): inspect/attempts/retry/status/evidence — 生产质量恢复")
     p_rec.add_argument("action", nargs="?", default="status",

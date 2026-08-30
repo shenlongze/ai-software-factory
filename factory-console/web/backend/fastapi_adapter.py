@@ -4717,10 +4717,18 @@ def build_app(
 
     @app.get("/api/experiments/{experiment_id}/samples")
     def api_experiment_samples(experiment_id: str) -> dict[str, Any]:
-        """Experiment samples 列表 (S27)。"""
+        """Experiment samples 列表 (S27/S29 兼容)。"""
         from factory_console import llm_experiment_service as _le
+        from factory_console import effectiveness_service as _ef
 
         root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        # S29 effectiveness experiment 优先
+        try:
+            exp = _ef._get_exp(root, experiment_id)  # noqa: SLF001
+            return {"samples": exp["samples"], "count": len(exp["samples"])}
+        except Exception:  # noqa: BLE001
+            pass
+        # S26/S27 llm experiment
         try:
             exp = _le._get_llm_exp(root, experiment_id)  # noqa: SLF001
         except Exception as exc:  # noqa: BLE001
@@ -4826,6 +4834,98 @@ def build_app(
             return _rs.recovery_evidence(root, recovery_attempt_id)
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/api/experiments")
+    def api_create_experiment(body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """创建 Effectiveness Experiment (S29, frozen contract)。"""
+        from factory_console import effectiveness_service as _ef
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _ef.create_effectiveness_experiment(
+                root, metric=body.get("metric", "final_success_rate"),
+                minimum_sample_size=body.get("minimum_sample_size", 2),
+                control_definition=body.get("control_definition", "developer"),
+                treatment_definition=body.get("treatment_definition", "developer+reviewer"))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/experiments/{experiment_id}")
+    def api_get_experiment(experiment_id: str) -> dict[str, Any]:
+        """Experiment 详情 (S29)。"""
+        from factory_console import effectiveness_service as _ef
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _ef._get_exp(root, experiment_id)  # noqa: SLF001
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/api/experiments/{experiment_id}/approve")
+    def api_approve_experiment(experiment_id: str) -> dict[str, Any]:
+        """Governance 批准 (S29)。"""
+        from factory_console import effectiveness_service as _ef
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _ef.approve_effectiveness_experiment(root, experiment_id)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/experiments/{experiment_id}/run")
+    def api_run_experiment(experiment_id: str, body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """Run Recovery-aware sample (S29)。"""
+        from factory_console import effectiveness_service as _ef
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _ef.run_effectiveness_sample(
+                root, experiment_id=experiment_id, arm=body.get("arm", "control"),
+                workflow_id=body.get("workflow_id", "wf"),
+                executor_factory=lambda node_id: (lambda input_data: {
+                    "ok": True, "output": {"code": "x"},
+                    "patch_text": ("diff --git a/a.py b/a.py\n--- /dev/null\n+++ b/a.py\n@@ -0,0 +1,2 @@\n"
+                                   "+def a():\n+    return 1\n"),
+                    "artifact_type": "code_change", "verification": {"result": "PASS"}}),
+                repair_fn=lambda fa, v, ctx: {
+                    "ok": True, "output": {"code": "x"},
+                    "patch_text": ("diff --git a/a.py b/a.py\n--- /dev/null\n+++ b/a.py\n@@ -0,0 +1,2 @@\n"
+                                   "+def a():\n+    return 1\n"),
+                    "artifact_type": "code_change", "verification": {"result": "PASS"}})
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/experiments/{experiment_id}/population")
+    def api_experiment_population(experiment_id: str) -> dict[str, Any]:
+        """Population Contract (S29, 完整 denominator)。"""
+        from factory_console import effectiveness_service as _ef
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return _ef.experiment_population(root, experiment_id)
+
+    @app.get("/api/experiments/{experiment_id}/compare")
+    def api_compare_experiment(experiment_id: str) -> dict[str, Any]:
+        """Recovery-aware Comparison + PROVEN Gate (S29)。"""
+        from factory_console import effectiveness_service as _ef
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return _ef.effectiveness_compare(root, experiment_id)
+
+    @app.get("/api/experiments/{experiment_id}/outcome")
+    def api_outcome_experiment(experiment_id: str) -> dict[str, Any]:
+        """Experiment Outcome (S29)。"""
+        from factory_console import effectiveness_service as _ef
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return _ef.effectiveness_outcome(root, experiment_id)
+
+    @app.get("/api/experiments/{experiment_id}/evidence")
+    def api_evidence_experiment(experiment_id: str) -> dict[str, Any]:
+        """Evidence Lineage (S29)。"""
+        from factory_console import effectiveness_service as _ef
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return _ef.effectiveness_lineage(root, experiment_id)
 
     @app.get("/api/workforce")
     def api_workforce_list() -> dict[str, Any]:

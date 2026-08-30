@@ -127,6 +127,8 @@ EVENT_TYPES: tuple[str, ...] = (
     "LLM_EXPERIMENT_OUTCOME",
     # S28: Recovery 事件
     "RECOVERY_ATTEMPT",
+    # S29: Effectiveness 事件
+    "EFFECTIVENESS_OUTCOME",
     # S19: Rollback 事件
     "ROLLBACK_CREATED",
     "ROLLBACK_GATED",

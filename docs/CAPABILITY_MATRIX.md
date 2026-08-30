@@ -426,3 +426,20 @@ AI Factory
 - Production Recovery Infrastructure = REAL (真实 LLM FAIL→REPAIR→PASS 闭环已证明)
 - Real LLM Recovery = PROVEN (本次真实 E2E: RECOVERED attempt-1)
 - Optimization Effectiveness = NOT_YET_PROVEN
+
+## S29 更新 (Optimization Effectiveness & Controlled Experiment, v1.1.336)
+
+### Reality Status
+| 能力 | Status | 证据 |
+|------|--------|------|
+| Recovery-aware Sample (initial/final/recovery_attempts) | REAL | test_effectiveness 11/11; test_recovery_aware_sample |
+| Population Contract (完整 denominator, initial vs final 分层) | REAL | test_population_denominator; experiment_population |
+| Recovery-aware Comparison (initial/final/recovery_rate/mean_attempts) | REAL | test_recovery_aware_comparison |
+| PROVEN Gate (12 条件; 样本不足 → INCONCLUSIVE) | REAL | test_insufficient_samples_inconclusive; Case A 测试 |
+| Frozen Contract (hypothesis/metric/threshold/min_sample 不可改) | REAL | test_frozen_contract |
+| Real LLM Effectiveness Experiment | REAL | docs/audit/s29-real-e2e-evidence.md; 真实 E2E UNCHANGED |
+| Optimization Effectiveness | NOT_YET_PROVEN | 真实实验 control==treatment (1.0 vs 1.0) → UNCHANGED (诚实) |
+
+### 诚实声明
+- Optimization Effectiveness = NOT_YET_PROVEN (真实 LLM 实验无差异; 不伪造 IMPROVED)
+- Experiment Reliability = REAL (Recovery-aware + PROVEN Gate 全真实)

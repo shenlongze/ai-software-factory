@@ -519,3 +519,20 @@ AI Factory
 - Performance-aware Selection = REAL (Evidence → score → deterministic selection)
 - 无样本时诚实 unknown (sample_count=0, 不造 confidence)
 - 未做: LLM ranking / Learning / Self-Healing (S33 明确排除)
+
+## S34 更新 (AI Factory OS Architecture Review, v1.1.341)
+
+### Reality Status
+| 能力 | Status | 证据 |
+|------|--------|------|
+| Architecture Review (S0.5-S33 真实审计) | REAL | docs/architecture/ai-factory-os-architecture-review.md |
+| OS Planes (Production/Workforce/Plugin/Evidence/Governance) | REAL | 审计确认 5 Plane 组件全 REAL |
+| Core/Plugin 边界 | REAL | 冻结: Core governs capability, 不实现 capability |
+| Intelligence Plane 设计 (Memory/Context/Learning/Promotion) | DESIGN | intelligence-plane-proposal.md + memory-context-contract.md |
+| Context Control Plane Contract | DESIGN | Budget/JIT/Utility 冻结 (S35 实现) |
+| Architecture Invariants (15 条) | 13/15 满足 | 2 条 Context 相关由 S35 建立 |
+
+### 诚实声明
+- S34 = 架构审查 + 设计 (无大规模实现, 按指令)
+- Intelligence Plane = DESIGN (S35+ 实现)
+- 无 Stub / 无重复 SSOT / CLI+API 原则保持

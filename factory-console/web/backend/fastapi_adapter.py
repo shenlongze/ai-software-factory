@@ -4927,6 +4927,117 @@ def build_app(
         root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
         return _ef.effectiveness_lineage(root, experiment_id)
 
+    @app.post("/api/organizations")
+    def api_create_organization(body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """创建 Organization (S30)。"""
+        from factory_console import workforce_os as _wfos
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return _wfos.create_organization(root, name=body.get("name", "AI Factory"))
+
+    @app.get("/api/organizations")
+    def api_list_organizations() -> dict[str, Any]:
+        """Organizations 列表 (S30)。"""
+        from factory_console import workforce_os as _wfos
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        items = _wfos.list_organizations(root)
+        return {"items": items, "count": len(items)}
+
+    @app.post("/api/workforces")
+    def api_create_workforce(body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """创建 Workforce (S30)。"""
+        from factory_console import workforce_os as _wfos
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return _wfos.create_workforce(root, dept_id=body.get("dept_id", ""),
+                                      name=body.get("name", "production"))
+
+    @app.get("/api/workforces")
+    def api_list_workforces() -> dict[str, Any]:
+        """Workforces 列表 (S30)。"""
+        from factory_console import workforce_os as _wfos
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        items = _wfos.list_workforces(root)
+        return {"items": items, "count": len(items)}
+
+    @app.get("/api/workforces/{workforce_id}")
+    def api_get_workforce(workforce_id: str) -> dict[str, Any]:
+        """Workforce 详情 (S30)。"""
+        from factory_console import workforce_os as _wfos
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _wfos.get_workforce(root, workforce_id)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/api/workforces/{workforce_id}/status")
+    def api_workforce_status(workforce_id: str, body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """Workforce Lifecycle 迁移 (S30)。"""
+        from factory_console import workforce_os as _wfos
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _wfos.workforce_status(root, workforce_id, target=body.get("status", "ACTIVE"))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/workforces/{workforce_id}/attach")
+    def api_workforce_attach(workforce_id: str, body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """Attach AgentProfile (S30)。"""
+        from factory_console import workforce_os as _wfos
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _wfos.attach_agent(root, workforce_id=workforce_id, role=body.get("role", ""))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/agent-profiles")
+    def api_list_agents_profiles() -> dict[str, Any]:
+        """AgentProfiles 列表 (S30)。"""
+        from factory_console import workforce_os as _wfos
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        items = _wfos.list_agent_profiles(root)
+        return {"items": items, "count": len(items)}
+
+    @app.get("/api/agents/{agent_id}/performance")
+    def api_agent_performance(agent_id: str) -> dict[str, Any]:
+        """Agent Performance (S30, 从 Evidence 投影)。"""
+        from factory_console import workforce_os as _wfos
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return _wfos.agent_performance(root, agent_id)
+
+    @app.get("/api/capabilities")
+    def api_capabilities() -> dict[str, Any]:
+        """Capability Contract (S30)。"""
+        from factory_console import workforce_os as _wfos
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        items = _wfos.capabilities_list(root)
+        return {"items": items, "count": len(items)}
+
+    @app.post("/api/workforces/select")
+    def api_select_agent(body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """确定性 Agent Selection (S30)。"""
+        from factory_console import workforce_os as _wfos
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return _wfos.select_agent_deterministic(root,
+                                                required_capability=body.get("capability", ""))
+
+    @app.get("/api/workforce-os/lineage")
+    def api_workforce_os_lineage() -> dict[str, Any]:
+        """Workforce OS Lineage (S30)。"""
+        from factory_console import workforce_os as _wfos
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return _wfos.workforce_os_lineage(root)
+
     @app.get("/api/workforce")
     def api_workforce_list() -> dict[str, Any]:
         """Workforce workflows (S16)。"""

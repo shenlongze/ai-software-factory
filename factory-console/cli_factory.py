@@ -1019,6 +1019,10 @@ class FactoryCLI:
             return self.production_cmd(args)
         if args.command == "workflow":
             return self.workflow_cmd(args)
+        if args.command == "org":
+            return self.org_cmd(args)
+        if args.command == "workforce-os":
+            return self.workforce_os_cmd(args)
         if args.command == "experiment":
             return self.experiment_cmd(args)
         if args.command == "recovery":
@@ -4123,6 +4127,103 @@ class FactoryCLI:
             print(f"  {r_.get('run_id')} | {r_.get('workflow_id')} | {r_.get('state')} | {r_.get('created_at')}")
         return 0
 
+    def org_cmd(self, args: argparse.Namespace) -> int:
+        """factory org — Org (S30): Organization Foundation。"""
+        from factory_console.workforce_os import create_organization, list_organizations
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        action = getattr(args, "action", "list") or "list"
+        if action == "create":
+            org = create_organization(str(root), name=getattr(args, "target", None) or "AI Factory")
+            print(f"organization: {org['org_id']} | {org['name']}")
+            return 0
+        for o in list_organizations(str(root)):
+            print(f"  {o['org_id']} | {o['name']} | depts: {len(o['departments'])}")
+        return 0
+
+    def workforce_os_cmd(self, args: argparse.Namespace) -> int:
+        """factory workforce-os — Workforce OS (S30)。
+
+        薄代理 → workforce_os (CLI 与 API 共享同一 Service)。
+        """
+        from factory_console.workforce_os import (
+            create_workforce as _create, workforce_status as _status,
+            attach_agent as _attach, list_agent_profiles as _agents,
+            capabilities_list as _caps, select_agent_deterministic as _select,
+            agent_performance as _perf, workforce_os_lineage as _lineage,
+            list_workforces as _list,
+        )
+
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        action = getattr(args, "action", "list") or "list"
+        target = getattr(args, "target", None)
+
+        if action == "create":
+            wf = _create(str(root), name=target or "production")
+            print(f"workforce: {wf['workforce_id']} | status: {wf['status']} | roles: {len(wf['roles'])}")
+            return 0
+
+        if action == "status":
+            if not target:
+                print("[E4150] 错误: workforce_id 必填 (factory workforce-os status <wf>)", file=sys.stderr)
+                return 2
+            try:
+                wf = _status(str(root), target, target=getattr(args, "status", "ACTIVE"))
+            except Exception as exc:  # noqa: BLE001
+                print(f"[E4151] 错误: {exc}", file=sys.stderr)
+                return 1
+            print(f"workforce: {target} | status: {wf['status']}")
+            return 0
+
+        if action == "attach":
+            if not target or not getattr(args, "role", ""):
+                print("[E4152] 错误: 需要 workforce_id + --role (factory workforce-os attach <wf> --role <r>)",
+                      file=sys.stderr)
+                return 2
+            try:
+                p = _attach(str(root), workforce_id=target, role=getattr(args, "role"))
+            except Exception as exc:  # noqa: BLE001
+                print(f"[E4153] 错误: {exc}", file=sys.stderr)
+                return 1
+            print(f"agent: {p['agent_id']} | role: {p['role']} | caps: {len(p['capabilities'])}")
+            return 0
+
+        if action == "agents":
+            for p in _agents(str(root)):
+                print(f"  {p['agent_id']} | {p['role']} | caps: {p['capabilities']} | tools: {p['tools']}")
+            return 0
+
+        if action == "capabilities":
+            for c in _caps(str(root)):
+                print(f"  {c['capability']} | {c['role']} | permitted: {c['permitted']}")
+            return 0
+
+        if action == "select":
+            cap = getattr(args, "capability", "") or target or ""
+            sel = _select(str(root), required_capability=cap)
+            print(f"select: {sel.get('selected')} | {sel.get('agent_id', '')} {sel.get('role', '')} | {sel.get('reason', '')}")
+            return 0
+
+        if action == "perf":
+            if not target:
+                print("[E4154] 错误: agent_id 必填 (factory workforce-os perf <agent>)", file=sys.stderr)
+                return 2
+            p = _perf(str(root), target)
+            print(f"performance: {p['sample_count']} samples | success: {p.get('success_rate')} "
+                  f"| verification_pass: {p.get('verification_pass_rate')} | {p['explain']}")
+            return 0
+
+        if action == "lineage":
+            lg = _lineage(str(root))
+            print(f"orgs: {len(lg['organizations'])} | workforces: {len(lg['workforces'])}")
+            return 0
+
+        if action == "list":
+            for w in _list(str(root)):
+                print(f"  {w['workforce_id']} | {w['name']} | {w['status']} | agents: {len(w['agents'])}")
+            return 0
+
+        return 1
+
     def experiment_cmd(self, args: argparse.Namespace) -> int:
         """factory experiment — Experiment (S29): Effectiveness。
 
@@ -6188,6 +6289,22 @@ def build_parser() -> argparse.ArgumentParser:
     p_prod.add_argument("--input", default="{}", help="输入 JSON (run 用, 如 {'prompt': '...'})")
     p_prod.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     sub.add_parser("workflow", help="Workflow 列表 (S10): factory workflow list — 专业生产线")
+    # S30: Workforce OS CLI
+    p_wfos = sub.add_parser("org", help="Org (S30): create/list — Organization Foundation")
+    p_wfos.add_argument("action", nargs="?", default="list", choices=["create", "list"],
+                        help="动作: create <name> 创建 / list 列表")
+    p_wfos.add_argument("target", nargs="?", help="name (create 用)")
+    p_wfos.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+
+    p_wf2 = sub.add_parser("workforce-os", help="Workforce OS (S30): create/status/attach/agents/capabilities/select/perf/lineage")
+    p_wf2.add_argument("action", nargs="?", default="list",
+                       choices=["create", "status", "attach", "agents", "capabilities", "select", "perf", "lineage", "list"])
+    p_wf2.add_argument("target", nargs="?", help="workforce_id / role / capability / agent_id")
+    p_wf2.add_argument("--status", default="ACTIVE", help="目标状态 (status 用)")
+    p_wf2.add_argument("--role", default="", help="角色 (attach/select 用)")
+    p_wf2.add_argument("--capability", default="", help="能力 (select 用)")
+    p_wf2.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+
     # S29: Effectiveness CLI
     p_eff = sub.add_parser("experiment", help="Experiment (S29): create/approve/run/compare/outcome/population — Effectiveness")
     p_eff.add_argument("action", nargs="?", default="create",

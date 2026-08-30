@@ -129,6 +129,10 @@ EVENT_TYPES: tuple[str, ...] = (
     "RECOVERY_ATTEMPT",
     # S29: Effectiveness 事件
     "EFFECTIVENESS_OUTCOME",
+    # S30: Workforce OS 事件
+    "WORKFORCE_ORGANIZATION_CREATED",
+    "WORKFORCE_CREATED",
+    "WORKFORCE_STATUS_CHANGED",
     # S19: Rollback 事件
     "ROLLBACK_CREATED",
     "ROLLBACK_GATED",

@@ -443,3 +443,22 @@ AI Factory
 ### 诚实声明
 - Optimization Effectiveness = NOT_YET_PROVEN (真实 LLM 实验无差异; 不伪造 IMPROVED)
 - Experiment Reliability = REAL (Recovery-aware + PROVEN Gate 全真实)
+
+## S30 更新 (Workforce Intelligence & Organization Foundation, v1.1.337)
+
+### Reality Status
+| 能力 | Status | 证据 |
+|------|--------|------|
+| Organization/Department/Workforce 层级 + lineage | REAL | test_workforce_os 10/10; test_org_hierarchy |
+| Workforce Lifecycle (DRAFT→ACTIVE→SUSPENDED→RETIRED; 非法迁移拒绝; append-only) | REAL | test_lifecycle |
+| AgentProfile (role/capabilities/skills/tools/model/policies binding) | REAL | test_agent_profile_binding |
+| Capability Contract (确定性, 非 prompt) | REAL | test_capability_contract; capabilities_list 16 |
+| 确定性 Agent Selection (capability match → permission; 非 LLM) | REAL | test_deterministic_selection |
+| Performance Profile (从 Production Evidence 投影; 无数据 → 0 诚实) | REAL | test_performance_projection |
+| Governance (非 DRAFT 不可 attach) | REAL | test_attach_requires_draft |
+| Workforce OS E2E (org→wf→agent→select→task→run 链) | REAL | 测试 + CLI/API |
+
+### 诚实声明
+- Workforce OS Infrastructure = REAL (层级/Lifecycle/Profile/Selection/Performance 全真实)
+- Performance 投影基于真实 Production Evidence (sample_count=0 时诚实, 不造数据)
+- 未做真实 LLM E2E (S30 重点 = Organization Foundation; 复用 S11 真实 LLM 链)

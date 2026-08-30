@@ -148,4 +148,58 @@ def tree_status(root: Path | str, task_tree_id: str) -> dict[str, Any]:
     return {"task_tree_id": task_tree_id, "title": tree["title"],
             "progress": task_progress(root, task_tree_id),
             "tasks": [{"id": t["id"], "title": t.get("title", ""), "status": t.get("status"),
-                       "depends_on": t.get("depends_on", [])} for t in tasks]}
+                       "depends_on": t.get("depends_on", []),
+                       "production_run_id": t.get("production_run_id", "")} for t in tasks]}
+
+
+def execute_subtask(root: Path | str, task_id: str, *,
+                    executor_factory, artifact_root: Path | str,
+                    nodes: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """子任务 → 真实 production_run 执行 (Task 是 What, Node 是 How)。
+
+    每个子任务独立 NodeRun (Node 独立性保持), 产生 Evidence。
+    """
+    from .production_run import register_workflow, create_production_run, execute_production_run
+
+    t = get_entity(root, task_id)
+    if t["type"] != "task":
+        raise ValueError(f"非 task 实体: {task_id}")
+    node_specs = nodes or [{"node_id": "exec", "name": "执行", "type": "engineering",
+                            "executor_name": "agent"}]
+    wf_id = f"task-{task_id[-8:]}"
+    try:
+        register_workflow(root, workflow_id=wf_id, name=wf_id, nodes=node_specs)
+    except Exception:  # noqa: BLE001
+        pass
+    run = create_production_run(root, wf_id)
+    t["production_run_id"] = run["run_id"]
+    t["status"] = "RUNNING"
+    bump_version(t, actor="system", note="run created")
+    store_entity(root, t)
+    result = execute_production_run(root, run["run_id"], executor_factory=executor_factory,
+                                    artifact_root=str(artifact_root))
+    result_state = result.get("state", "UNKNOWN")
+    t = get_entity(root, task_id)
+    t["status"] = "COMPLETED" if result_state == "COMPLETED" else "FAILED"
+    t["run_state"] = result_state
+    bump_version(t, actor="system", note=f"run {result_state}")
+    store_entity(root, t)
+    return {"task_id": task_id, "production_run_id": run["run_id"],
+            "state": result_state, "task_status": t["status"]}
+
+
+def execute_tree(root: Path | str, task_tree_id: str, *,
+                 executor_factory, artifact_root: Path | str,
+                 nodes: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """Task Tree 串行执行 (依赖顺序, 每个子任务真实执行; 失败停止)。"""
+    tree = get_tree(root, task_tree_id)
+    results = []
+    for tid in tree["subtasks"]:
+        r = execute_subtask(root, tid, executor_factory=executor_factory,
+                            artifact_root=artifact_root, nodes=nodes)
+        results.append(r)
+        if r["state"] != "COMPLETED":
+            break  # 串行依赖: 失败停止
+    return {"task_tree_id": task_tree_id, "results": results,
+            "progress": task_progress(root, task_tree_id),
+            "summary": f"{len([r for r in results if r['state'] == 'COMPLETED'])}/{len(tree['subtasks'])} 子任务完成"}

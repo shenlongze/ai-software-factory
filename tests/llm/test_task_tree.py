@@ -24,7 +24,7 @@ import pytest  # noqa: E402
 from factory_console.conversation_os import create_conversation, send_message  # noqa: E402
 from factory_console.task_tree import (  # noqa: E402
     decompose, get_tree, update_task_status, task_progress, tree_status,
-    task_trees,
+    task_trees, execute_subtask, execute_tree,
 )
 from factory_console.unified_contract import get_entity, trace_lineage  # noqa: E402
 
@@ -96,6 +96,59 @@ def test_tree_status(tmp_path):
     assert len(st["tasks"]) == tree["count"] + 1  # root + subtasks
     assert all("status" in t for t in st["tasks"])
     assert "progress" in st
+
+
+# --- 子任务真实执行 ---
+
+def test_execute_subtask(tmp_path):
+    tree = decompose(str(tmp_path), title="任务", domain="default")
+
+    def good_factory(node_id):
+        def fn(input_data):
+            return {"ok": True, "output": {"code": "x"},
+                    "patch_text": ("diff --git a/a.py b/a.py\n--- /dev/null\n+++ b/a.py\n"
+                                   "@@ -0,0 +1 @@\n+x = 1\n"),
+                    "artifact_type": "code_change", "verification": {"result": "PASS"}}
+        return fn
+    r = execute_subtask(str(tmp_path), tree["subtasks"][0], executor_factory=good_factory,
+                        artifact_root=str(tmp_path))
+    assert r["state"] == "COMPLETED"
+    assert r["production_run_id"].startswith("prun")
+    t = get_entity(str(tmp_path), tree["subtasks"][0])
+    assert t["status"] == "COMPLETED"
+    assert t["production_run_id"] == r["production_run_id"]
+
+
+def test_execute_tree(tmp_path):
+    tree = decompose(str(tmp_path), title="任务", domain="default")
+
+    def good_factory(node_id):
+        def fn(input_data):
+            return {"ok": True, "output": {"code": "x"},
+                    "patch_text": ("diff --git a/a.py b/a.py\n--- /dev/null\n+++ b/a.py\n"
+                                   "@@ -0,0 +1 @@\n+x = 1\n"),
+                    "artifact_type": "code_change", "verification": {"result": "PASS"}}
+        return fn
+    r = execute_tree(str(tmp_path), tree["task_tree_id"], executor_factory=good_factory,
+                     artifact_root=str(tmp_path))
+    assert len(r["results"]) == tree["count"]
+    assert all(x["state"] == "COMPLETED" for x in r["results"])
+    assert r["progress"]["percentage"] == 100
+    assert "全部" in r["summary"] or r["progress"]["completed_units"] == tree["count"]
+
+
+def test_execute_tree_failure_stops(tmp_path):
+    tree = decompose(str(tmp_path), title="任务", domain="default")
+
+    def bad_factory(node_id):
+        def fn(input_data):
+            raise RuntimeError("boom")
+        return fn
+    r = execute_tree(str(tmp_path), tree["task_tree_id"], executor_factory=bad_factory,
+                     artifact_root=str(tmp_path))
+    assert len(r["results"]) == 1  # 第一个失败即停止 (串行依赖)
+    assert r["results"][0]["state"] == "FAILED"
+    assert r["progress"]["percentage"] == 0
 
 
 # --- CLI ---

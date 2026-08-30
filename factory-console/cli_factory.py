@@ -4209,6 +4209,13 @@ class FactoryCLI:
             print(f"update: {target} → {getattr(args, 'status', 'COMPLETED')}")
             return 0
 
+        if action == "execute":
+            if not target:
+                print("[E4294] 错误: task_tree_id 必填", file=sys.stderr)
+                return 2
+            print(f"execute: {target} (真实执行需通过 API/程序注入 executor; CLI 仅展示)")
+            return 1
+
         if action == "list":
             for t in _list(str(root)):
                 print(f"  {t['task_tree_id']} | {t['title']} | {t['count']} 子任务")
@@ -7283,9 +7290,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_prod.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     sub.add_parser("workflow", help="Workflow 列表 (S10): factory workflow list — 专业生产线")
     # K2: Task Tree CLI
-    p_tt = sub.add_parser("tasktree", help="TaskTree (K2): decompose/status/progress — Task Tree Work OS")
+    p_tt = sub.add_parser("tasktree", help="TaskTree (K2): decompose/status/progress/execute — Task Tree Work OS")
     p_tt.add_argument("action", nargs="?", default="list",
-                      choices=["decompose", "status", "progress", "update", "list"])
+                      choices=["decompose", "status", "progress", "update", "execute", "list"])
     p_tt.add_argument("target", nargs="?", help="task_tree_id / task_id")
     p_tt.add_argument("--title", default="任务", help="任务标题 (decompose 用)")
     p_tt.add_argument("--domain", default="default", help="领域 (decompose 用)")

@@ -481,3 +481,23 @@ AI Factory
 - Plugin Kernel = REAL (Contract/Registry/Lifecycle/Resolution/Governance 全真实)
 - 反硬编码验证: 新增 provider 实现不需修改 Core (Architecture Test 证明)
 - 未做: Marketplace/远程下载/沙箱 (明确排除在 S31 scope)
+
+## S32 更新 (Composable Workforce & Capability, v1.1.339)
+
+### Reality Status
+| 能力 | Status | 证据 |
+|------|--------|------|
+| AgentProfile → Plugin Composition (bind) | REAL | test_workforce_composition 9/9; test_bind_and_resolve |
+| Composition Resolution (deterministic; 6 plugins ENABLED) | REAL | test_bind_and_resolve |
+| Capability 统一 (S30 ↔ S31 单一语义) | REAL | test_unified_capability; unified_capability_list 16 |
+| Scenario A: provider A→B 替换 (Core 不变) | REAL | test_provider_substitution |
+| Scenario B: skill A→B 替换 (Core 不变) | REAL | test_skill_substitution |
+| Scenario D: disabled → Workforce 拒绝 | REAL | test_disabled_rejected |
+| 两 Workforce 不同 Plugin 共存 (Core 不变) | REAL | test_two_workforces_distinct |
+| Lineage (plugin version/runtime/model 可追溯) | REAL | test_composition_lineage |
+| CLI/API | REAL | test_cli_composition / test_api_composition |
+
+### 诚实声明
+- Composable Workforce = REAL (AgentProfile 由 Plugin references 组合, 非实现)
+- 替换测试证明: provider/skill 替换不修改 Core (Architecture Test)
+- 未做: Performance Ranking/LLM Selection (S32 明确排除, 后续 Sprint)

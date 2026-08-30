@@ -138,6 +138,8 @@ EVENT_TYPES: tuple[str, ...] = (
     "PLUGIN_UNREGISTERED",
     "PLUGIN_STATUS_CHANGED",
     "PLUGIN_EXECUTED",
+    # S32: Composition 事件
+    "AGENT_PROFILE_BOUND",
     # S19: Rollback 事件
     "ROLLBACK_CREATED",
     "ROLLBACK_GATED",

@@ -5102,6 +5102,50 @@ def build_app(
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+    @app.post("/api/agent-profiles/{agent_profile_id}/bind")
+    def api_bind_agent_profile(agent_profile_id: str,
+                               body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """AgentProfile 绑定 Plugin Composition (S32)。"""
+        from factory_console import workforce_composition as _wc
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _wc.bind_agent_profile(root, agent_profile_id=agent_profile_id,
+                                          provider_plugin_id=body.get("provider_plugin_id", ""))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/agent-profiles/{agent_profile_id}/composition")
+    def api_agent_composition(agent_profile_id: str) -> dict[str, Any]:
+        """AgentProfile Composition (S32, 确定性解析)。"""
+        from factory_console import workforce_composition as _wc
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _wc.resolve_agent_composition(root, agent_profile_id)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/api/agent-profiles/{agent_profile_id}/lineage")
+    def api_agent_composition_lineage(agent_profile_id: str) -> dict[str, Any]:
+        """AgentProfile Composition Lineage (S32)。"""
+        from factory_console import workforce_composition as _wc
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _wc.composition_lineage(root, agent_profile_id)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/api/capabilities/unified")
+    def api_unified_capabilities() -> dict[str, Any]:
+        """统一 Capability 视图 (S32)。"""
+        from factory_console import workforce_composition as _wc
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        items = _wc.unified_capability_list(root)
+        return {"items": items, "count": len(items)}
+
     @app.get("/api/workforce")
     def api_workforce_list() -> dict[str, Any]:
         """Workforce workflows (S16)。"""

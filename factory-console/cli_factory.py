@@ -1019,6 +1019,8 @@ class FactoryCLI:
             return self.production_cmd(args)
         if args.command == "workflow":
             return self.workflow_cmd(args)
+        if args.command == "composition":
+            return self.composition_cmd(args)
         if args.command == "plugin":
             return self.plugin_cmd(args)
         if args.command == "org":
@@ -4129,6 +4131,66 @@ class FactoryCLI:
             print(f"  {r_.get('run_id')} | {r_.get('workflow_id')} | {r_.get('state')} | {r_.get('created_at')}")
         return 0
 
+    def composition_cmd(self, args: argparse.Namespace) -> int:
+        """factory composition — Composition (S32): Composable Workforce。
+
+        薄代理 → workforce_composition (CLI 与 API 共享同一 Service)。
+        """
+        from factory_console.workforce_composition import (
+            bind_agent_profile as _bind, resolve_agent_composition as _resolve,
+            unified_capability_list as _caps, composition_lineage as _lineage,
+        )
+
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        action = getattr(args, "action", "resolve") or "resolve"
+        target = getattr(args, "target", None)
+
+        if action == "bind":
+            if not target:
+                print("[E4170] 错误: agent_profile_id 必填 (factory composition bind <agent>)",
+                      file=sys.stderr)
+                return 2
+            try:
+                p = _bind(str(root), agent_profile_id=target,
+                          provider_plugin_id=getattr(args, "provider", "") or None)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[E4171] 错误: {exc}", file=sys.stderr)
+                return 1
+            print(f"bound: {target} | provider: {p['composition']['provider_plugin_id']}")
+            return 0
+
+        if action == "resolve":
+            if not target:
+                print("[E4172] 错误: agent_profile_id 必填 (factory composition resolve <agent>)",
+                      file=sys.stderr)
+                return 2
+            try:
+                r = _resolve(str(root), target)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[E4173] 错误: {exc}", file=sys.stderr)
+                return 1
+            print(f"resolve: {r['ok']} | plugins: {len(r['plugins'])} | caps: {r['capabilities']}")
+            print(f"  {r['explain']}")
+            return 0
+
+        if action == "capabilities":
+            for c in _caps(str(root)):
+                print(f"  {c['capability']} | {c['role']} | plugin: {c['plugin_capability']} | resolvable: {c['resolvable']}")
+            return 0
+
+        if action == "lineage":
+            if not target:
+                print("[E4174] 错误: agent_profile_id 必填 (factory composition lineage <agent>)",
+                      file=sys.stderr)
+                return 2
+            lg = _lineage(str(root), target)
+            print(f"lineage: {lg['agent_profile_id']} | {lg['role']}")
+            print(f"  runtime: {lg['runtime']} | model: {lg['model']} | provider: {lg['provider']}")
+            print(f"  versions: {lg['plugin_versions']}")
+            return 0
+
+        return 1
+
     def plugin_cmd(self, args: argparse.Namespace) -> int:
         """factory plugin — Plugin (S31): Plugin Kernel。
 
@@ -6378,6 +6440,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_prod.add_argument("--input", default="{}", help="输入 JSON (run 用, 如 {'prompt': '...'})")
     p_prod.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     sub.add_parser("workflow", help="Workflow 列表 (S10): factory workflow list — 专业生产线")
+    # S32: Composition CLI
+    p_comp = sub.add_parser("composition", help="Composition (S32): bind/resolve/capabilities/lineage — Composable Workforce")
+    p_comp.add_argument("action", nargs="?", default="resolve",
+                        choices=["bind", "resolve", "capabilities", "lineage"],
+                        help="动作: bind <agent> 绑定 / resolve <agent> 解析 / capabilities 能力视图 / lineage <agent> 血缘")
+    p_comp.add_argument("target", nargs="?", help="agent_profile_id 或 capability")
+    p_comp.add_argument("--provider", default="", help="provider_plugin_id (bind 用)")
+    p_comp.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+
     # S31: Plugin CLI
     p_plug = sub.add_parser("plugin", help="Plugin (S31): list/inspect/enable/disable/status/health — Plugin Kernel")
     p_plug.add_argument("action", nargs="?", default="list",

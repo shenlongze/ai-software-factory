@@ -260,3 +260,41 @@ def test_correlation_not_causation(tmp_path):
     an = analyze_incident(str(tmp_path), inc_id)
     for c in an["correlations"]:
         assert "correlation ≠ causation" in c["note"]
+
+
+# --- Explainability: Production Intelligence must explain itself ---
+
+def test_root_cause_explains_itself(tmp_path):
+    """每个 RootCauseCandidate 必须有 explain (确定性, 引用真实证据/权重)。"""
+    inc_id = _make_incident(tmp_path)
+    an = analyze_incident(str(tmp_path), inc_id)
+    for rc in an["root_cause_candidates"]:
+        assert rc.get("explain"), f"{rc['category']} 缺 explain"
+        explain = rc["explain"]
+        # explain 必须包含真实构成: 置信度公式 + 证据类型
+        assert "置信度" in explain
+        assert "支持证据" in explain
+        if rc["status"] != "INCONCLUSIVE":
+            assert "×" in explain  # 权重可见
+            # explain 引用的 refs 与 evidence_refs 一致 (可追溯)
+            assert all(s.get("ref") in rc["evidence_refs"] for s in rc["supporting_signals"] if s.get("ref"))
+
+
+def test_recommendation_explains_itself(tmp_path):
+    """Recommendation 必须有 reason (基于候选 explain)。"""
+    inc_id = _make_incident(tmp_path)
+    an = analyze_incident(str(tmp_path), inc_id)
+    for r in an["recommendations"]:
+        assert r.get("reason"), f"{r['type']} 缺 reason"
+        assert len(r["reason"]) > 10
+
+
+def test_explainability_output(tmp_path):
+    """真实 explain 输出示例 (Evidence 可读)。"""
+    inc_id = _make_incident(tmp_path)
+    an = analyze_incident(str(tmp_path), inc_id)
+    rel_reg = next(c for c in an["root_cause_candidates"] if c["category"] == "release_regression")
+    # 解释必须能回答 "为什么 SUPPORTED": 提及健康检查失败 + 时间相关 + 置信度
+    explain = rel_reg["explain"]
+    assert "health_check_failed" in explain or "health" in explain
+    assert str(rel_reg["confidence"]) in explain

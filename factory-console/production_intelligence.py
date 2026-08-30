@@ -228,7 +228,8 @@ def _build_candidates(root: Path | str, incident: dict[str, Any], signals: list[
                        "description": "Release 后出现健康退化",
                        "confidence": score, "evidence_refs": _dedup(refs),
                        "supporting_signals": supporting, "contradicting_signals": contradicting,
-                       "status": _status(score)})
+                       "status": _status(score),
+                       "explain": _explain_candidate("release_regression", score, supporting, contradicting)})
     # Candidate 2: Configuration mismatch (incident 有配置类 signal)
     cfg_signals = [s for s in signals if "config" in str(s.get("detail", "")).lower()]
     refs2 = [s["source_ref"] for s in cfg_signals]
@@ -239,19 +240,37 @@ def _build_candidates(root: Path | str, incident: dict[str, Any], signals: list[
                        "description": "配置不匹配 (证据不足时低置信度)",
                        "confidence": score2, "evidence_refs": refs2,
                        "supporting_signals": supporting2, "contradicting_signals": [],
-                       "status": _status(score2)})
+                       "status": _status(score2),
+                       "explain": _explain_candidate("configuration_mismatch", score2, supporting2, [])})
     # 证据不足 → INCONCLUSIVE
     if not candidates or all(c["status"] == RC_WEAK for c in candidates):
         candidates.append({"candidate_id": f"rc-{uuid.uuid4().hex[:8]}", "category": "inconclusive",
                            "description": "证据不足, 无法确定根因", "confidence": 0.0,
                            "evidence_refs": [], "supporting_signals": [],
-                           "contradicting_signals": [], "status": RC_INCONCLUSIVE})
+                           "contradicting_signals": [], "status": RC_INCONCLUSIVE,
+                           "explain": "[inconclusive] 支持证据: 无; 证据不足, 无法确定根因 (正式结论)"})
     return candidates
 
 
 def _dedup(items: list[str]) -> list[str]:
     seen = set()
     return [x for x in items if not (x in seen or seen.add(x))]
+
+
+def _explain_candidate(category: str, score: float, supporting: list[dict[str, Any]],
+                       contradicting: list[dict[str, Any]]) -> str:
+    """确定性解释: 基于真实 supporting/contradicting signals + 权重 (非 LLM)。"""
+    parts = []
+    if supporting:
+        sig_desc = ", ".join(f"{s.get('signal', s.get('evidence_type', ''))}({s.get('evidence_type', '')}×{s.get('weight', 0)})"
+                             for s in supporting)
+        parts.append(f"支持证据: {sig_desc}")
+    else:
+        parts.append("支持证据: 无")
+    if contradicting:
+        parts.append(f"反证: {', '.join(s.get('signal', '') for s in contradicting)}")
+    parts.append(f"置信度 {score} = 加权支持/2 - 反证惩罚(0.5×{len(contradicting)})")
+    return f"[{category}] " + "; ".join(parts)
 
 
 def _confidence(supporting: list[dict[str, Any]], contradicting: list[dict[str, Any]]) -> float:
@@ -305,6 +324,7 @@ def _build_recommendations(root: Path | str, analysis_id: str, candidates: list[
         recs.append({"recommendation_id": f"rec-{uuid.uuid4().hex[:10]}",
                      "analysis_id": analysis_id, "type": "ROLLBACK_RELEASE",
                      "description": f"回滚 Release {incident.get('release_id')} (高置信度 release regression)",
+                     "reason": f"基于 {top['status']} 候选: {top.get('explain', '')}",
                      "priority": "high", "confidence": top["confidence"],
                      "risk": "HIGH", "requires_approval": True,
                      "evidence_refs": top["evidence_refs"],
@@ -312,6 +332,7 @@ def _build_recommendations(root: Path | str, analysis_id: str, candidates: list[
     recs.append({"recommendation_id": f"rec-{uuid.uuid4().hex[:10]}",
                  "analysis_id": analysis_id, "type": "INVESTIGATE_CONFIGURATION",
                  "description": "调查配置状态 (低置信度候选)", "priority": "low",
+                 "reason": "配置类信号证据不足, 仅建议调查 (风险 LOW)",
                  "confidence": next((c["confidence"] for c in candidates if c["category"] == "configuration_mismatch"), 0.1),
                  "risk": "LOW", "requires_approval": False,
                  "evidence_refs": [], "status": "PENDING", "decision": "", "outcome": ""})

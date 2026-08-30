@@ -767,3 +767,20 @@ AI Factory
 - Task Tree = REAL (K2 最小实现: 分解/依赖/进度; Task 是 What, Node 是 How)
 - 复用 S43 task_ 实体 + K1 conversation (不建第二套 Task 模型)
 - 进度 = Projection (可重建, 非第二事实源)
+
+## K2 更新 (Control Tower, v1.1.353)
+
+### Reality Status
+| 能力 | Status | 证据 |
+|------|--------|------|
+| Work 概览 (conversations/tasks/executions 分布) | REAL | test_control_tower 7/7 |
+| Workforce 状态 (running/waiting/blocked/error/idle) | REAL | test_workforce_status |
+| Governance 待办 (PENDING approvals) | REAL | test_governance_pending_empty |
+| 实时事件流 (correlation 可追溯) | REAL | test_realtime_stream |
+| Control Tower 总览 (全投影合成) | REAL | test_control_tower |
+| CLI/API | REAL | test_cli / test_api (openapi 306) |
+
+### 诚实声明
+- Control Tower = REAL (全从真实 Entities/Runs/Approvals/Events 投影, 可重建非第二事实源)
+- 复用 S3 list_production_runs + S17 approvals + S43 entities (不建第二套状态系统)
+- 无伪实时: 每次查询实时计算

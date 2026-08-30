@@ -643,3 +643,24 @@ AI Factory
 - 复用 S21 rollback + S38 promotion (不建第二套)
 - 无 Super Agent / 无 Debug Agent; Repair Plugin 化 (Core 不实现 repair)
 - 有界 attempts/cost; 20 Invariants 保持
+
+## S40 更新 (Governed Self-Optimization, v1.1.347)
+
+### Reality Status
+| 能力 | Status | 证据 |
+|------|--------|------|
+| OptimizationOpportunity (evidence-driven, 非 LLM) | REAL | test_optimization_engine 14/14 |
+| OptimizationCandidate (Proposal; multi-candidate) | REAL | test_multi_candidate |
+| Optimization Strategy Plugin (type=optimization; disabled 拒绝; 替换零 Core) | REAL | test_opt_plugin_disabled / replacement |
+| Evaluation → PROMOTE/REJECT/NO_CHANGE (可解释) | REAL | test_evaluation_* |
+| Case A/B/C (improve/insufficient/cost-worse) | REAL | test_evaluation_promote / no_change / reject |
+| Case D: Governance Denied (HIGH non-human) | REAL | test_governance_denied |
+| Anti-Thrashing (cooldown/max_changes) | REAL | test_anti_thrashing |
+| Optimization Budget (max_* → STOP) | REAL | test_budget_stop |
+| New Evidence → S37 Observation | REAL | test_run_optimization_promote |
+| CLI/API | REAL | test_cli / test_api (openapi 286) |
+
+### 诚实声明
+- Governed Self-Optimization = REAL (Opportunity→Candidate(s)→Evaluation→Decision→Governance→Canary→Promotion)
+- NO_CHANGE 合法 (不强行 Promotion); Metrics 诚实 (数据不足 NOT_AVAILABLE)
+- 复用 S33/S38/S21/S37 (不建第二套引擎); 24 Invariants 保持

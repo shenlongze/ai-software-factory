@@ -5556,6 +5556,73 @@ def build_app(
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+    @app.post("/api/optimizations/opportunities")
+    def api_create_opportunity(body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """创建 OptimizationOpportunity (S40, evidence-driven)。"""
+        from factory_console import optimization_engine as _oe
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _oe.create_opportunity(
+                root, source=body.get("source", "performance"),
+                target_type=body.get("target_type", "provider"),
+                target_id=body.get("target_id", ""),
+                metric=body.get("metric", "success_rate"),
+                current_value=body.get("current_value", 0.0),
+                risk=body.get("risk", "MEDIUM"))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/optimizations/candidates")
+    def api_create_optimization_candidate(body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """创建 OptimizationCandidate (S40, Proposal)。"""
+        from factory_console import optimization_engine as _oe
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _oe.create_candidate(
+                root, opportunity_id=body.get("opportunity_id", ""),
+                strategy_plugin_id=body.get("strategy_plugin_id", ""),
+                target=body.get("target", ""),
+                proposed_change=body.get("proposed_change", ""),
+                risk=body.get("risk", "MEDIUM"))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/optimizations/candidates/{candidate_id}/evaluate")
+    def api_evaluate_optimization(candidate_id: str,
+                                  body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """Optimization Evaluation (S40, PROMOTE/REJECT/NO_CHANGE)。"""
+        from factory_console import optimization_engine as _oe
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _oe.evaluate_optimization(
+                root, candidate_id,
+                baseline_metrics=body.get("baseline_metrics", {}),
+                candidate_metrics=body.get("candidate_metrics", {}),
+                sample_count=body.get("sample_count", 0))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/optimizations/metrics")
+    def api_optimization_metrics() -> dict[str, Any]:
+        """Optimization Metrics (S40)。"""
+        from factory_console import optimization_engine as _oe
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return _oe.optimization_metrics(root)
+
+    @app.get("/api/optimizations/history")
+    def api_optimization_history() -> dict[str, Any]:
+        """Optimization History (S40)。"""
+        from factory_console import optimization_engine as _oe
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return {"opportunities": _oe.opportunities(root),
+                "candidates": _oe.candidates(root),
+                "decisions": _oe.decisions(root)}
+
     @app.get("/api/workforce")
     def api_workforce_list() -> dict[str, Any]:
         """Workforce workflows (S16)。"""

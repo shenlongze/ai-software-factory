@@ -28,7 +28,7 @@ PLUGIN_TYPES = ("agent", "skill", "tool", "mcp", "provider", "model",
                 "runtime", "executor", "workflow", "artifact_type", "domain",
                 "memory", "retriever", "reranker", "compressor", "evaluator",
                 "experimenter", "observer", "repairer", "strategy", "learning",
-                "repair")
+                "repair", "optimization")
 
 #: Lifecycle
 PL_STATES = ("DISCOVERED", "REGISTERED", "ENABLED", "DISABLED", "RETIRED")

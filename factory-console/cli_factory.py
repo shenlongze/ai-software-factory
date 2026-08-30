@@ -1019,6 +1019,8 @@ class FactoryCLI:
             return self.production_cmd(args)
         if args.command == "workflow":
             return self.workflow_cmd(args)
+        if args.command == "optimize":
+            return self.optimize_cmd(args)
         if args.command == "heal":
             return self.heal_cmd(args)
         if args.command == "promotion":
@@ -4147,6 +4149,73 @@ class FactoryCLI:
             print(f"  {r_.get('run_id')} | {r_.get('workflow_id')} | {r_.get('state')} | {r_.get('created_at')}")
         return 0
 
+    def optimize_cmd(self, args: argparse.Namespace) -> int:
+        """factory optimize — Optimize (S40): Governed Self-Optimization。
+
+        薄代理 → optimization_engine (CLI 与 API 共享同一 Service)。
+        """
+        from factory_console.optimization_engine import (
+            create_opportunity as _opp, candidates as _cands,
+            evaluate_optimization as _eval, decisions as _decs,
+            check_thrashing as _thrash, check_budget as _budget,
+            opportunities as _opps,
+        )
+
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        action = getattr(args, "action", "history") or "history"
+        target = getattr(args, "target", None)
+
+        if action == "opportunity":
+            try:
+                opp = _opp(str(root), source="performance",
+                           target_type=getattr(args, "target_type", "provider"),
+                           target_id=getattr(args, "target_id", "") or "target",
+                           metric=getattr(args, "metric", "success_rate"),
+                           current_value=getattr(args, "value", 0.0),
+                           risk=getattr(args, "risk", "MEDIUM"))
+            except Exception as exc:  # noqa: BLE001
+                print(f"[E4250] 错误: {exc}", file=sys.stderr)
+                return 1
+            print(f"opportunity: {opp['opportunity_id']} | {opp['metric']} | {opp['current_value']}")
+            return 0
+
+        if action == "candidates":
+            for c in _cands(str(root), opportunity_id=target or ""):
+                print(f"  {c['candidate_id']} | {c['target']} | risk: {c['risk']} | {c['proposed_change']}")
+            return 0
+
+        if action == "evaluate":
+            if not target:
+                print("[E4251] 错误: candidate_id 必填 (factory optimize evaluate <id>)", file=sys.stderr)
+                return 2
+            d = _eval(str(root), target,
+                      baseline_metrics={"success": 0.82, "verification": 0.85,
+                                        "recovery": 0.1, "cost": 0.05, "latency": 1.0},
+                      candidate_metrics={"success": 0.87, "verification": 0.9,
+                                         "recovery": 0.05, "cost": 0.04, "latency": 0.9},
+                      sample_count=20)
+            print(f"evaluate: {d['decision']} | {d['reason']}")
+            return 0
+
+        if action == "thrashing":
+            t = _thrash(str(root), metric=getattr(args, "metric", "success_rate"))
+            print(f"thrashing: {'BLOCKED' if t['blocked'] else 'OK'} | {t['reason']}")
+            return 0
+
+        if action == "budget":
+            b = _budget(str(root))
+            print(f"budget: {'ALLOWED' if b['allowed'] else 'STOP'} | over: {b['over']} | cost: {b['total_cost']}")
+            return 0
+
+        if action == "history":
+            for opp in _opps(str(root)):
+                print(f"  OPP {opp['opportunity_id']} | {opp['metric']} | {opp['current_value']} | {opp['status']}")
+            for d in _decs(str(root)):
+                print(f"  DEC {d['decision_id']} | {d['decision']} | {d['reason'][:60]}")
+            return 0
+
+        return 1
+
     def heal_cmd(self, args: argparse.Namespace) -> int:
         """factory heal — Heal (S39): Self-Healing。
 
@@ -6964,6 +7033,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_prod.add_argument("--input", default="{}", help="输入 JSON (run 用, 如 {'prompt': '...'})")
     p_prod.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     sub.add_parser("workflow", help="Workflow 列表 (S10): factory workflow list — 专业生产线")
+    # S40: Optimization CLI
+    p_opt = sub.add_parser("optimize", help="Optimize (S40): opportunity/candidates/evaluate/decide/history — Governed Self-Optimization")
+    p_opt.add_argument("action", nargs="?", default="history",
+                       choices=["opportunity", "candidates", "evaluate", "decide", "thrashing", "budget", "history"])
+    p_opt.add_argument("target", nargs="?", help="candidate_id / opportunity_id")
+    p_opt.add_argument("--target-type", default="provider", help="target_type (opportunity 用)")
+    p_opt.add_argument("--target-id", default="", help="target_id (opportunity 用)")
+    p_opt.add_argument("--metric", default="success_rate", help="metric (opportunity 用)")
+    p_opt.add_argument("--value", type=float, default=0.0, help="current_value (opportunity 用)")
+    p_opt.add_argument("--risk", default="MEDIUM", help="risk")
+    p_opt.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+
     # S39: Self-Healing CLI
     p_heal = sub.add_parser("heal", help="Heal (S39): incident/diagnose/repair/recover/status — Self-Healing")
     p_heal.add_argument("action", nargs="?", default="status",

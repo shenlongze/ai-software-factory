@@ -103,7 +103,8 @@ def create_observation(root: Path | str, *, source_type: str, source_id: str,
                        scope: str = "node", detail: str = "") -> dict[str, Any]:
     """Observation 来源必须是 Production Evidence (source_type 白名单)。"""
     if source_type not in ("production_run", "node_run", "verification", "recovery",
-                           "evaluation", "context_feedback", "experience", "performance"):
+                           "evaluation", "context_feedback", "experience", "performance",
+                           "optimization"):
         raise ValueError(f"非法 observation 来源: {source_type} (禁 Conversation/LLM imagination)")
     if outcome not in ("SUCCESS", "FAILURE", "UNKNOWN"):
         raise ValueError(f"非法 outcome: {outcome}")

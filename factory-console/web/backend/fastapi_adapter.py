@@ -5038,6 +5038,70 @@ def build_app(
         root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
         return _wfos.workforce_os_lineage(root)
 
+    @app.get("/api/plugins")
+    def api_list_plugins() -> dict[str, Any]:
+        """Plugins 列表 (S31)。"""
+        from factory_console import plugin_kernel as _pk
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        items = _pk.list_plugins(root)
+        return {"items": items, "count": len(items)}
+
+    @app.get("/api/plugins/{plugin_id}")
+    def api_get_plugin(plugin_id: str) -> dict[str, Any]:
+        """Plugin 详情 (S31)。"""
+        from factory_console import plugin_kernel as _pk
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        p = _pk.get_plugin(root, plugin_id)
+        if p is None:
+            raise HTTPException(status_code=404, detail=f"Plugin 不存在: {plugin_id}")
+        return p
+
+    @app.post("/api/plugins/{plugin_id}/enable")
+    def api_enable_plugin(plugin_id: str) -> dict[str, Any]:
+        """启用 Plugin (S31)。"""
+        from factory_console import plugin_kernel as _pk
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _pk.plugin_status(root, plugin_id, target="ENABLED")
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/plugins/{plugin_id}/disable")
+    def api_disable_plugin(plugin_id: str) -> dict[str, Any]:
+        """禁用 Plugin (S31)。"""
+        from factory_console import plugin_kernel as _pk
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _pk.plugin_status(root, plugin_id, target="DISABLED")
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/plugins/{plugin_id}/status")
+    def api_plugin_status(plugin_id: str) -> dict[str, Any]:
+        """Plugin 状态 (S31)。"""
+        from factory_console import plugin_kernel as _pk
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        p = _pk.get_plugin(root, plugin_id)
+        if p is None:
+            raise HTTPException(status_code=404, detail=f"Plugin 不存在: {plugin_id}")
+        return {"plugin_id": plugin_id, "status": p["status"]}
+
+    @app.get("/api/plugins/{plugin_id}/health")
+    def api_plugin_health(plugin_id: str) -> dict[str, Any]:
+        """Plugin 健康 (S31)。"""
+        from factory_console import plugin_kernel as _pk
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _pk.plugin_health(root, plugin_id)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
     @app.get("/api/workforce")
     def api_workforce_list() -> dict[str, Any]:
         """Workforce workflows (S16)。"""

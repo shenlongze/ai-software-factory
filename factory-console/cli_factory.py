@@ -1019,6 +1019,8 @@ class FactoryCLI:
             return self.production_cmd(args)
         if args.command == "workflow":
             return self.workflow_cmd(args)
+        if args.command == "plugin":
+            return self.plugin_cmd(args)
         if args.command == "org":
             return self.org_cmd(args)
         if args.command == "workforce-os":
@@ -4127,6 +4129,93 @@ class FactoryCLI:
             print(f"  {r_.get('run_id')} | {r_.get('workflow_id')} | {r_.get('state')} | {r_.get('created_at')}")
         return 0
 
+    def plugin_cmd(self, args: argparse.Namespace) -> int:
+        """factory plugin — Plugin (S31): Plugin Kernel。
+
+        薄代理 → plugin_kernel (CLI 与 API 共享同一 Service)。
+        """
+        from factory_console.plugin_kernel import (
+            list_plugins as _list, get_plugin as _get, plugin_status as _status,
+            plugin_health as _health, resolve_plugin as _resolve,
+        )
+
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        action = getattr(args, "action", "list") or "list"
+        target = getattr(args, "target", None)
+
+        if action == "list":
+            for p in _list(str(root)):
+                print(f"  {p['plugin_id']} | {p['type']} | {p['status']} | caps: {p['capabilities']}")
+            return 0
+
+        if action == "inspect":
+            if not target:
+                print("[E4160] 错误: plugin_id 必填 (factory plugin inspect <id>)", file=sys.stderr)
+                return 2
+            p = _get(str(root), target)
+            if p is None:
+                print(f"[E4161] Plugin 不存在: {target}", file=sys.stderr)
+                return 1
+            print(f"plugin: {p['plugin_id']} | {p['name']} v{p['version']} | {p['type']} | {p['vendor']}")
+            print(f"  caps: {p['capabilities']} | deps: {p['dependencies']} | perms: {p['permissions']}")
+            print(f"  status: {p['status']} | history: {len(p['history'])}")
+            return 0
+
+        if action == "enable":
+            if not target:
+                print("[E4162] 错误: plugin_id 必填 (factory plugin enable <id>)", file=sys.stderr)
+                return 2
+            try:
+                p = _status(str(root), target, target="ENABLED")
+            except Exception as exc:  # noqa: BLE001
+                print(f"[E4163] 错误: {exc}", file=sys.stderr)
+                return 1
+            print(f"plugin: {target} | status: {p['status']}")
+            return 0
+
+        if action == "disable":
+            if not target:
+                print("[E4164] 错误: plugin_id 必填 (factory plugin disable <id>)", file=sys.stderr)
+                return 2
+            try:
+                p = _status(str(root), target, target="DISABLED")
+            except Exception as exc:  # noqa: BLE001
+                print(f"[E4165] 错误: {exc}", file=sys.stderr)
+                return 1
+            print(f"plugin: {target} | status: {p['status']}")
+            return 0
+
+        if action == "status":
+            if not target:
+                print("[E4166] 错误: plugin_id 必填 (factory plugin status <id>)", file=sys.stderr)
+                return 2
+            p = _get(str(root), target)
+            if p is None:
+                print(f"[E4167] Plugin 不存在: {target}", file=sys.stderr)
+                return 1
+            print(f"plugin: {target} | status: {p['status']}")
+            return 0
+
+        if action == "health":
+            if not target:
+                print("[E4168] 错误: plugin_id 必填 (factory plugin health <id>)", file=sys.stderr)
+                return 2
+            try:
+                h = _health(str(root), target)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[E4169] 错误: {exc}", file=sys.stderr)
+                return 1
+            print(f"plugin: {target} | health: {h['health']} | deps_ok: {h['dependencies_ok']}")
+            return 0
+
+        if action == "resolve":
+            cap = target or ""
+            res = _resolve(str(root), required_capability=cap)
+            print(f"resolve: {res.get('resolved')} | {res.get('plugin_id', '')} | {res.get('reason', '')}")
+            return 0
+
+        return 1
+
     def org_cmd(self, args: argparse.Namespace) -> int:
         """factory org — Org (S30): Organization Foundation。"""
         from factory_console.workforce_os import create_organization, list_organizations
@@ -6289,6 +6378,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_prod.add_argument("--input", default="{}", help="输入 JSON (run 用, 如 {'prompt': '...'})")
     p_prod.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     sub.add_parser("workflow", help="Workflow 列表 (S10): factory workflow list — 专业生产线")
+    # S31: Plugin CLI
+    p_plug = sub.add_parser("plugin", help="Plugin (S31): list/inspect/enable/disable/status/health — Plugin Kernel")
+    p_plug.add_argument("action", nargs="?", default="list",
+                        choices=["list", "inspect", "enable", "disable", "status", "health", "resolve"],
+                        help="动作: list 列表 / inspect <id> 详情 / enable <id> 启用 / disable <id> 禁用 / status <id> 状态 / health <id> 健康 / resolve <cap> 解析")
+    p_plug.add_argument("target", nargs="?", help="plugin_id 或 capability")
+    p_plug.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+
     # S30: Workforce OS CLI
     p_wfos = sub.add_parser("org", help="Org (S30): create/list — Organization Foundation")
     p_wfos.add_argument("action", nargs="?", default="list", choices=["create", "list"],

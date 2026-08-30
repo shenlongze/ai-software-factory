@@ -462,3 +462,22 @@ AI Factory
 - Workforce OS Infrastructure = REAL (层级/Lifecycle/Profile/Selection/Performance 全真实)
 - Performance 投影基于真实 Production Evidence (sample_count=0 时诚实, 不造数据)
 - 未做真实 LLM E2E (S30 重点 = Organization Foundation; 复用 S11 真实 LLM 链)
+
+## S31 更新 (Everything-is-a-Plugin Foundation, v1.1.338)
+
+### Reality Status
+| 能力 | Status | 证据 |
+|------|--------|------|
+| Plugin Contract (plugin_id/type/capabilities/dependencies/permissions) | REAL | test_plugin_kernel 12/12; test_register_get_list |
+| Plugin Registry (register/get/list/unregister; SSOT) | REAL | test_bootstrap_builtin |
+| Plugin Lifecycle (DISCOVERED→REGISTERED→ENABLED→DISABLED→RETIRED; 非法迁移拒绝) | REAL | test_lifecycle |
+| 确定性 Resolution (capability→eligible→permission; 非 LLM) | REAL | test_deterministic_resolution |
+| Plugin Governance (禁用拒绝执行; 自提升权限拒绝) | REAL | test_disabled_execution_rejected / test_self_elevate_rejected |
+| 真实 Provider Plugin (deepseek/ollama/anthropic/codex executor) | REAL | bootstrap 4 内置; 真实执行 |
+| **反硬编码 (新增实现不改 Core)** | REAL | test_add_second_impl_without_core_change (2 个新 provider 无 Core 修改) |
+| CLI/API (list/inspect/enable/disable/status/health) | REAL | test_cli_plugin / test_api_plugin |
+
+### 诚实声明
+- Plugin Kernel = REAL (Contract/Registry/Lifecycle/Resolution/Governance 全真实)
+- 反硬编码验证: 新增 provider 实现不需修改 Core (Architecture Test 证明)
+- 未做: Marketplace/远程下载/沙箱 (明确排除在 S31 scope)

@@ -622,3 +622,24 @@ AI Factory
 - Governed Promotion = REAL (Candidate→Evaluation→Experiment→Comparison→Governance→Canary→Promotion)
 - Learning 不能直接修改 Production (一切经 Promotion Contract)
 - Cost = estimated; Canary Rollback 复用 S21 (不建第二套)
+
+## S39 更新 (Autonomous Recovery & Self-Healing, v1.1.346)
+
+### Reality Status
+| 能力 | Status | 证据 |
+|------|--------|------|
+| Incident Contract (evidence-driven, 非 LLM) | REAL | test_self_healing 12/12 |
+| Diagnosis (FACT/HYPOTHESIS/UNKNOWN) | REAL | test_diagnosis |
+| RepairCandidate (Proposal, 非 Production Change) | REAL | test_repair_candidate |
+| Repair Strategy Plugin (type=repair; disabled 拒绝) | REAL | test_repair_plugin_disabled / replacement |
+| Self-Healing 完整闭环 (→RECOVERED) | REAL | test_self_healing_recovered (全 lifecycle 链) |
+| Human Gate (CRITICAL non-human → UNRESOLVED) | REAL | test_self_healing_human_gate |
+| Canary FAIL → ROLLED_BACK (S21 语义) | REAL | test_self_healing_canary_fail_rollback |
+| Recovery Evidence → S37 Learning | REAL | test_recovery_evidence_learning |
+| CLI/API | REAL | test_cli / test_api (openapi 281) |
+
+### 诚实声明
+- Self-Healing = REAL (Incident→Diagnosis→RepairCandidate→Evaluation→Governance→Canary→Promotion→Recovery Evidence→Learning)
+- 复用 S21 rollback + S38 promotion (不建第二套)
+- 无 Super Agent / 无 Debug Agent; Repair Plugin 化 (Core 不实现 repair)
+- 有界 attempts/cost; 20 Invariants 保持

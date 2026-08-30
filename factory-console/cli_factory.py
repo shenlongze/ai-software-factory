@@ -1019,6 +1019,8 @@ class FactoryCLI:
             return self.production_cmd(args)
         if args.command == "workflow":
             return self.workflow_cmd(args)
+        if args.command == "heal":
+            return self.heal_cmd(args)
         if args.command == "promotion":
             return self.promotion_cmd(args)
         if args.command == "learn":
@@ -4145,6 +4147,69 @@ class FactoryCLI:
             print(f"  {r_.get('run_id')} | {r_.get('workflow_id')} | {r_.get('state')} | {r_.get('created_at')}")
         return 0
 
+    def heal_cmd(self, args: argparse.Namespace) -> int:
+        """factory heal — Heal (S39): Self-Healing。
+
+        薄代理 → self_healing (CLI 与 API 共享同一 Service)。
+        """
+        from factory_console.self_healing import (
+            create_incident as _inc, create_diagnosis as _dia,
+            create_repair_candidate as _rc, recovery_status as _status,
+            recovery_history as _hist,
+        )
+
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        action = getattr(args, "action", "status") or "status"
+        target = getattr(args, "target", None)
+
+        if action == "incident":
+            try:
+                inc = _inc(str(root), source="verification",
+                           production_run_id=getattr(args, "run_id", "") or "auto",
+                           node_id=getattr(args, "node", "node-1"),
+                           failure_type=getattr(args, "failure_type", "failure"),
+                           severity=getattr(args, "severity", "MEDIUM"))
+            except Exception as exc:  # noqa: BLE001
+                print(f"[E4240] 错误: {exc}", file=sys.stderr)
+                return 1
+            print(f"incident: {inc['incident_id']} | {inc['failure_type']} | {inc['status']}")
+            return 0
+
+        if action == "diagnose":
+            if not target:
+                print("[E4241] 错误: incident_id 必填 (factory heal diagnose <inc>)", file=sys.stderr)
+                return 2
+            dia = _dia(str(root), target, kind="FACT", statement="failure",
+                       evidence_refs=["verification:auto"])
+            print(f"diagnose: {dia['diagnosis_id']} | {dia['kind']}")
+            return 0
+
+        if action == "repair":
+            if not target:
+                print("[E4242] 错误: incident_id 必填 (factory heal repair <inc>)", file=sys.stderr)
+                return 2
+            rc = _rc(str(root), target, repair_strategy_plugin_id="repair.coderepair",
+                     target="node", proposed_change="repair", risk=getattr(args, "risk", "MEDIUM"))
+            print(f"repair: {rc['candidate_id']} | risk: {rc['risk']}")
+            return 0
+
+        if action == "status":
+            if not target:
+                print("[E4243] 错误: incident_id 必填 (factory heal status <inc>)", file=sys.stderr)
+                return 2
+            st = _status(str(root), target)
+            print(f"status: {st['status']} | attempts: {st['attempts']}")
+            for h in st["history"]:
+                print(f"  {h['from']} → {h['to']} | {h['at']}")
+            return 0
+
+        if action == "history":
+            for i in _hist(str(root)):
+                print(f"  {i['incident_id']} | {i['failure_type']} | {i['status']} | {i['detected_at']}")
+            return 0
+
+        return 1
+
     def promotion_cmd(self, args: argparse.Namespace) -> int:
         """factory promotion — Promotion (S38): Governed Promotion。
 
@@ -6899,6 +6964,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_prod.add_argument("--input", default="{}", help="输入 JSON (run 用, 如 {'prompt': '...'})")
     p_prod.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     sub.add_parser("workflow", help="Workflow 列表 (S10): factory workflow list — 专业生产线")
+    # S39: Self-Healing CLI
+    p_heal = sub.add_parser("heal", help="Heal (S39): incident/diagnose/repair/recover/status — Self-Healing")
+    p_heal.add_argument("action", nargs="?", default="status",
+                        choices=["incident", "diagnose", "repair", "recover", "status", "history"])
+    p_heal.add_argument("target", nargs="?", help="incident_id")
+    p_heal.add_argument("--run-id", default="", help="production_run_id (incident 用)")
+    p_heal.add_argument("--node", default="node-1", help="node_id (incident 用)")
+    p_heal.add_argument("--failure-type", default="failure", help="failure_type (incident 用)")
+    p_heal.add_argument("--severity", default="MEDIUM", help="severity")
+    p_heal.add_argument("--risk", default="MEDIUM", help="risk (repair 用)")
+    p_heal.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+
     # S38: Promotion CLI
     p_prom = sub.add_parser("promotion", help="Promotion (S38): evaluate/experiment/decide/canary/promote/history — Governed Promotion")
     p_prom.add_argument("action", nargs="?", default="history",

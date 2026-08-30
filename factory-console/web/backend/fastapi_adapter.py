@@ -5504,6 +5504,58 @@ def build_app(
         return {"candidates": _ps.promotion_candidates(root),
                 "snapshots": _ps.promotion_snapshots(root)}
 
+    @app.post("/api/incidents")
+    def api_create_incident(body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """创建 Incident (S39, 来自真实 Production Evidence)。"""
+        from factory_console import self_healing as _sh
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _sh.create_incident(root, source=body.get("source", "verification"),
+                                       production_run_id=body.get("production_run_id", ""),
+                                       node_id=body.get("node_id", "node-1"),
+                                       failure_type=body.get("failure_type", "failure"),
+                                       severity=body.get("severity", "MEDIUM"),
+                                       scope=body.get("scope", "node"))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/incidents/{incident_id}/recover")
+    def api_run_self_healing(incident_id: str,
+                             body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """Self-Healing 完整闭环 (S39)。"""
+        from factory_console import self_healing as _sh
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _sh.run_self_healing(root, incident_id,
+                                        executor_factory=body.get("executor_factory"),
+                                        artifact_root=root,
+                                        risk=body.get("risk", "MEDIUM"),
+                                        human_actor=body.get("actor", "human"))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/incidents")
+    def api_incidents() -> dict[str, Any]:
+        """Incidents 列表 (S39)。"""
+        from factory_console import self_healing as _sh
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        items = _sh.recovery_history(root)
+        return {"items": items, "count": len(items)}
+
+    @app.get("/api/incidents/{incident_id}/status")
+    def api_incident_status(incident_id: str) -> dict[str, Any]:
+        """Incident 状态 (S39)。"""
+        from factory_console import self_healing as _sh
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _sh.recovery_status(root, incident_id)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
     @app.get("/api/workforce")
     def api_workforce_list() -> dict[str, Any]:
         """Workforce workflows (S16)。"""

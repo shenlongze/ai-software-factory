@@ -5275,6 +5275,94 @@ def build_app(
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    @app.post("/api/context/rank")
+    def api_context_rank(body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """Context Utility Ranking (S36)。"""
+        from factory_console import context_intelligence as _ci
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return _ci.rank_context(root, purpose=body.get("purpose", "context"),
+                                scopes=body.get("scopes", ["node"]),
+                                budget_tokens=body.get("budget_tokens", 4000))
+
+    @app.post("/api/context/progressive")
+    def api_context_progressive(body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """Progressive Context (S36)。"""
+        from factory_console import context_intelligence as _ci
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return _ci.progressive_context(root, node_id=body.get("node_id", "node-1"),
+                                       purpose=body.get("purpose", "context"),
+                                       scopes=body.get("scopes", ["node"]),
+                                       initial_budget=body.get("initial_budget", 1000),
+                                       max_total=body.get("max_total", 3000))
+
+    @app.post("/api/context/feedback")
+    def api_context_feedback(body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """ContextFeedback (S36)。"""
+        from factory_console import context_intelligence as _ci
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _ci.context_feedback(root, snapshot_id=body.get("snapshot_id", ""),
+                                        node_run_id=body.get("node_run_id", ""),
+                                        execution_result=body.get("execution_result", "UNKNOWN"),
+                                        usefulness=body.get("usefulness", "UNKNOWN"))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/context/efficiency")
+    def api_context_efficiency() -> dict[str, Any]:
+        """Context Efficiency (S36)。"""
+        from factory_console import context_intelligence as _ci
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        fbs = _ci.context_feedbacks(root)
+        return {"feedback_count": len(fbs),
+                "context_cost_per_successful_run": "NOT_AVAILABLE",
+                "explain": "真实数据不足时诚实 NOT_AVAILABLE"}
+
+    @app.post("/api/memory/{memory_id}/lifecycle")
+    def api_memory_lifecycle(memory_id: str, body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """Memory Lifecycle 迁移 (S36)。"""
+        from factory_console import context_intelligence as _ci
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _ci.memory_lifecycle(root, memory_id, target=body.get("status", "ACTIVE"),
+                                        superseded_by=body.get("superseded_by", ""))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/memory/{memory_id}/history")
+    def api_memory_history(memory_id: str) -> dict[str, Any]:
+        """Memory Lineage (S36)。"""
+        from factory_console import context_intelligence as _ci
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _ci.memory_history(root, memory_id)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/api/memory-conflicts/detect")
+    def api_memory_conflicts_detect() -> dict[str, Any]:
+        """Memory Conflict 检测 (S36)。"""
+        from factory_console import context_intelligence as _ci
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        cfs = _ci.detect_memory_conflicts(root)
+        return {"items": cfs, "count": len(cfs)}
+
+    @app.get("/api/memory-conflicts")
+    def api_memory_conflicts() -> dict[str, Any]:
+        """Memory Conflicts 列表 (S36)。"""
+        from factory_console import context_intelligence as _ci
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        items = _ci.memory_conflicts(root)
+        return {"items": items, "count": len(items)}
+
     @app.get("/api/workforce")
     def api_workforce_list() -> dict[str, Any]:
         """Workforce workflows (S16)。"""

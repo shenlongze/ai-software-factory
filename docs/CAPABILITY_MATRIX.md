@@ -558,3 +558,23 @@ AI Factory
 - Memory = REAL (Plugin Contract + Local 实现, 无 vendor 依赖)
 - Cost = estimated (无真实 token 数时明确标记, 不伪装)
 - 未做: LLM ranking / Vector DB / 自动对话记忆 (S35 明确排除)
+
+## S36 更新 (Context Intelligence & Memory Optimization, v1.1.343)
+
+### Reality Status
+| 能力 | Status | 证据 |
+|------|--------|------|
+| ContextUtility (relevance/evidence/freshness/confidence/scope/cost) | REAL | test_context_intelligence 11/11 |
+| Budget-aware Selection (utility desc → 最优组合) | REAL | test_budget_selection / test_budget_overflow_rejected |
+| Progressive Context (受预算, 总 <= max) | REAL | test_progressive_budget |
+| ContextFeedback (USEFUL/UNKNOWN 诚实) | REAL | test_context_feedback |
+| Memory Lifecycle (CANDIDATE→ACTIVE→SUPERSEDED→RETIRED) | REAL | test_memory_lifecycle (非法迁移拒绝) |
+| Memory Freshness (valid_until 过期排除) | REAL | test_memory_freshness |
+| Memory Conflict (evidence 解决, 非 last-write-wins) | REAL | test_memory_conflict |
+| ContextStrategy Plugin (替换不修改 Core) | REAL | test_strategy_plugin_replacement |
+| CLI/API | REAL | test_cli / test_api (openapi 266) |
+
+### 诚实声明
+- Context Intelligence = REAL (Utility/Ranking/Budget 分配/Feedback 全真实)
+- Efficiency metric cost_per_successful_run = NOT_AVAILABLE (真实数据不足诚实)
+- 未做: LLM ranking / Autonomous Learning / Self-Healing (S36 明确排除)

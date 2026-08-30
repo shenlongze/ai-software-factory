@@ -27,7 +27,7 @@ from typing import Any, Callable
 PLUGIN_TYPES = ("agent", "skill", "tool", "mcp", "provider", "model",
                 "runtime", "executor", "workflow", "artifact_type", "domain",
                 "memory", "retriever", "reranker", "compressor", "evaluator",
-                "experimenter", "observer", "repairer")
+                "experimenter", "observer", "repairer", "strategy")
 
 #: Lifecycle
 PL_STATES = ("DISCOVERED", "REGISTERED", "ENABLED", "DISABLED", "RETIRED")

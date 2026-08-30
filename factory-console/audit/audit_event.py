@@ -148,6 +148,9 @@ EVENT_TYPES: tuple[str, ...] = (
     "CONTEXT_REJECTED",
     "MEMORY_CANDIDATE_CREATED",
     "MEMORY_PROMOTED",
+    # S36: Context Intelligence 事件
+    "CONTEXT_FEEDBACK",
+    "MEMORY_LIFECYCLE_CHANGED",
     # S19: Rollback 事件
     "ROLLBACK_CREATED",
     "ROLLBACK_GATED",

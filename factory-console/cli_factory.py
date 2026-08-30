@@ -1019,6 +1019,10 @@ class FactoryCLI:
             return self.production_cmd(args)
         if args.command == "workflow":
             return self.workflow_cmd(args)
+        if args.command == "context-rank":
+            return self.context_rank_cmd(args)
+        if args.command == "memory-lifecycle":
+            return self.memory_lifecycle_cmd(args)
         if args.command == "context":
             return self.context_cmd(args)
         if args.command == "memory":
@@ -4137,6 +4141,102 @@ class FactoryCLI:
             print(f"  {r_.get('run_id')} | {r_.get('workflow_id')} | {r_.get('state')} | {r_.get('created_at')}")
         return 0
 
+    def context_rank_cmd(self, args: argparse.Namespace) -> int:
+        """factory context-rank — Context Intelligence (S36)。
+
+        薄代理 → context_intelligence (CLI 与 API 共享同一 Service)。
+        """
+        from factory_console.context_intelligence import (
+            rank_context as _rank, progressive_context as _prog,
+            context_feedback as _fb, context_feedbacks as _fbs,
+        )
+
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        action = getattr(args, "action", "rank") or "rank"
+        target = getattr(args, "target", None)
+
+        if action == "rank":
+            scopes = [s for s in getattr(args, "scope", "node").split(",") if s]
+            rk = _rank(str(root), purpose=target or "context", scopes=scopes,
+                       budget_tokens=getattr(args, "budget", 4000))
+            for s in rk["selected"]:
+                print(f"  {s['memory_id']} | utility: {s['utility']} | tokens: {s['tokens']} | {s['content'][:30]}")
+            print(f"rank: selected={len(rk['selected'])} rejected={len(rk['rejected'])} "
+                  f"tokens={rk['selected_tokens']} cost={rk['estimated_cost']}")
+            return 0
+
+        if action == "progressive":
+            scopes = [s for s in getattr(args, "scope", "node").split(",") if s]
+            pr = _prog(str(root), node_id="node-1", purpose=target or "context",
+                       scopes=scopes, initial_budget=1000, max_total=3000)
+            print(f"progressive: rounds={pr['rounds']} total={pr['total_context_cost']} "
+                  f"<= {pr['max_total']} | {pr['explain']}")
+            return 0
+
+        if action == "feedback":
+            if not target:
+                print("[E4200] 错误: snapshot_id 必填 (factory context-rank feedback <snap>)", file=sys.stderr)
+                return 2
+            fb = _fb(str(root), snapshot_id=target, execution_result="UNKNOWN", usefulness="UNKNOWN")
+            print(f"feedback: {fb['feedback_id']} | usefulness: {fb['usefulness']}")
+            return 0
+
+        if action == "efficiency":
+            fbs = _fbs(str(root))
+            print(f"efficiency: feedbacks={len(fbs)}")
+            return 0
+
+        return 1
+
+    def memory_lifecycle_cmd(self, args: argparse.Namespace) -> int:
+        """factory memory-lifecycle — Memory Lifecycle (S36)。
+
+        薄代理 → context_intelligence (CLI 与 API 共享同一 Service)。
+        """
+        from factory_console.context_intelligence import (
+            memory_lifecycle as _lc, memory_history as _hist,
+            detect_memory_conflicts as _detect, memory_conflicts as _cfs,
+        )
+
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        action = getattr(args, "action", "conflicts") or "conflicts"
+        target = getattr(args, "target", None)
+
+        if action == "lifecycle":
+            if not target:
+                print("[E4201] 错误: memory_id 必填 (factory memory-lifecycle lifecycle <id>)", file=sys.stderr)
+                return 2
+            try:
+                e = _lc(str(root), target, target=getattr(args, "status", "ACTIVE"),
+                        superseded_by=getattr(args, "superseded_by", ""))
+            except Exception as exc:  # noqa: BLE001
+                print(f"[E4202] 错误: {exc}", file=sys.stderr)
+                return 1
+            print(f"memory: {target} | lifecycle: {e['lifecycle']}")
+            return 0
+
+        if action == "history":
+            if not target:
+                print("[E4203] 错误: memory_id 必填 (factory memory-lifecycle history <id>)", file=sys.stderr)
+                return 2
+            h = _hist(str(root), target)
+            print(f"memory: {target} | lifecycle: {h['lifecycle']} | v{h['version']}")
+            for t in h["lifecycle_history"]:
+                print(f"  {t['from']} → {t['to']} | {t['at']}")
+            return 0
+
+        if action == "detect":
+            cfs = _detect(str(root))
+            print(f"detect: {len(cfs)} conflicts")
+            return 0
+
+        if action == "conflicts":
+            for c in _cfs(str(root)):
+                print(f"  {c['conflict_id']} | {c['scope']} | {c['status']} | {c['explain']}")
+            return 0
+
+        return 1
+
     def context_cmd(self, args: argparse.Namespace) -> int:
         """factory context — Context (S35): Context Control Plane。
 
@@ -6610,6 +6710,24 @@ def build_parser() -> argparse.ArgumentParser:
     p_prod.add_argument("--input", default="{}", help="输入 JSON (run 用, 如 {'prompt': '...'})")
     p_prod.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     sub.add_parser("workflow", help="Workflow 列表 (S10): factory workflow list — 专业生产线")
+    # S36: Context Intelligence CLI
+    p_ci = sub.add_parser("context-rank", help="Context Rank (S36): rank/progressive/feedback — Context Intelligence")
+    p_ci.add_argument("action", nargs="?", default="rank",
+                      choices=["rank", "progressive", "feedback", "efficiency"],
+                      help="动作: rank 排序 / progressive 渐进 / feedback 反馈 / efficiency 效率")
+    p_ci.add_argument("target", nargs="?", help="purpose / snapshot_id")
+    p_ci.add_argument("--scope", default="node", help="scope 逗号分隔")
+    p_ci.add_argument("--budget", type=int, default=4000, help="budget tokens")
+    p_ci.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+
+    p_mli = sub.add_parser("memory-lifecycle", help="Memory Lifecycle (S36): lifecycle/history/conflicts — Memory Optimization")
+    p_mli.add_argument("action", nargs="?", default="conflicts",
+                       choices=["lifecycle", "history", "conflicts", "detect"])
+    p_mli.add_argument("target", nargs="?", help="memory_id")
+    p_mli.add_argument("--status", default="ACTIVE", help="目标状态 (lifecycle 用)")
+    p_mli.add_argument("--superseded-by", default="", help="superseded_by (lifecycle 用)")
+    p_mli.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+
     # S35: Context/Memory CLI
     p_ctx = sub.add_parser("context", help="Context (S35): request/resolve/history — Context Control Plane")
     p_ctx.add_argument("action", nargs="?", default="request",

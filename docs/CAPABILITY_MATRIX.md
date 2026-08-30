@@ -749,3 +749,21 @@ AI Factory
 - 复用 S43 Unified Contract + S30 workforce + S3 production + S5 verification + S39 healing (不建第二套)
 - Governance 唯一最小扩展: request_approval 支持 conversation 主体 (K1 必需)
 - Intent 理解 = deterministic 规则 (非裸 LLM); Work 触发真实执行 (非 mock)
+
+## K2 更新 (Task Tree Work OS, v1.1.352)
+
+### Reality Status
+| 能力 | Status | 证据 |
+|------|--------|------|
+| 需求 → Task Tree 分解 (确定性模板) | REAL | test_task_tree 7/7 |
+| 子任务 parent/children 层级 | REAL | test_decompose |
+| Conversation → Requirement → Task Tree | REAL | test_decompose_from_conversation |
+| 串行依赖 (depends_on) | REAL | test_serial_dependencies |
+| 统一进度投影 (completed/total/percentage) | REAL | test_progress_projection |
+| Task 状态更新 (S43 lifecycle) | REAL | test_tree_status |
+| CLI/API | REAL | test_cli / test_api (openapi 302) |
+
+### 诚实声明
+- Task Tree = REAL (K2 最小实现: 分解/依赖/进度; Task 是 What, Node 是 How)
+- 复用 S43 task_ 实体 + K1 conversation (不建第二套 Task 模型)
+- 进度 = Projection (可重建, 非第二事实源)

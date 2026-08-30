@@ -1019,6 +1019,8 @@ class FactoryCLI:
             return self.production_cmd(args)
         if args.command == "workflow":
             return self.workflow_cmd(args)
+        if args.command == "tasktree":
+            return self.tasktree_cmd(args)
         if args.command == "chat":
             return self.chat_cmd(args)
         if args.command == "entity":
@@ -4155,6 +4157,65 @@ class FactoryCLI:
             print(f"  {r_.get('run_id')} | {r_.get('workflow_id')} | {r_.get('state')} | {r_.get('created_at')}")
         return 0
 
+    def tasktree_cmd(self, args: argparse.Namespace) -> int:
+        """factory tasktree — TaskTree (K2): Task Tree Work OS。
+
+        薄代理 → task_tree (CLI 与 API 共享同一 Service)。
+        """
+        from factory_console.task_tree import (
+            decompose as _decomp, get_tree as _get, task_progress as _prog,
+            tree_status as _status, update_task_status as _update,
+            task_trees as _list,
+        )
+
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        action = getattr(args, "action", "list") or "list"
+        target = getattr(args, "target", None)
+
+        if action == "decompose":
+            try:
+                t = _decomp(str(root), title=getattr(args, "title", "任务"),
+                            domain=getattr(args, "domain", "default"),
+                            source_conv_id=getattr(args, "conv", ""))
+            except Exception as exc:  # noqa: BLE001
+                print(f"[E4290] 错误: {exc}", file=sys.stderr)
+                return 1
+            print(f"tasktree: {t['task_tree_id']} | {t['count']} 子任务 | req: {t['requirement_id'][:12]}")
+            return 0
+
+        if action == "status":
+            if not target:
+                print("[E4291] 错误: task_tree_id 必填", file=sys.stderr)
+                return 2
+            st = _status(str(root), target)
+            print(f"tasktree: {st['title']} | progress {st['progress']['percentage']}%")
+            for t in st["tasks"]:
+                print(f"  {t['id'][:14]} | {t['status']} | {t['title'][:30]}")
+            return 0
+
+        if action == "progress":
+            if not target:
+                print("[E4292] 错误: task_tree_id 必填", file=sys.stderr)
+                return 2
+            p = _prog(str(root), target)
+            print(f"progress: {p['completed_units']}/{p['total_units']} = {p['percentage']}% | source: {p['source']}")
+            return 0
+
+        if action == "update":
+            if not target:
+                print("[E4293] 错误: task_id 必填", file=sys.stderr)
+                return 2
+            _update(str(root), target, status=getattr(args, "status", "COMPLETED"))
+            print(f"update: {target} → {getattr(args, 'status', 'COMPLETED')}")
+            return 0
+
+        if action == "list":
+            for t in _list(str(root)):
+                print(f"  {t['task_tree_id']} | {t['title']} | {t['count']} 子任务")
+            return 0
+
+        return 1
+
     def chat_cmd(self, args: argparse.Namespace) -> int:
         """factory chat — Chat (K1): Conversation OS。
 
@@ -7221,6 +7282,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_prod.add_argument("--input", default="{}", help="输入 JSON (run 用, 如 {'prompt': '...'})")
     p_prod.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     sub.add_parser("workflow", help="Workflow 列表 (S10): factory workflow list — 专业生产线")
+    # K2: Task Tree CLI
+    p_tt = sub.add_parser("tasktree", help="TaskTree (K2): decompose/status/progress — Task Tree Work OS")
+    p_tt.add_argument("action", nargs="?", default="list",
+                      choices=["decompose", "status", "progress", "update", "list"])
+    p_tt.add_argument("target", nargs="?", help="task_tree_id / task_id")
+    p_tt.add_argument("--title", default="任务", help="任务标题 (decompose 用)")
+    p_tt.add_argument("--domain", default="default", help="领域 (decompose 用)")
+    p_tt.add_argument("--conv", default="", help="conversation_id (decompose 用)")
+    p_tt.add_argument("--status", default="COMPLETED", help="目标状态 (update 用)")
+    p_tt.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+
     # K1: Conversation OS CLI
     p_conv = sub.add_parser("chat", help="Chat (K1): new/send/status/requirement/decision — Conversation OS")
     p_conv.add_argument("action", nargs="?", default="new",

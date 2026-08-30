@@ -5797,6 +5797,55 @@ def build_app(
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    @app.post("/api/task-trees")
+    def api_decompose_task_tree(body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """Task Tree 分解 (K2, 需求 → 任务树)。"""
+        from factory_console import task_tree as _tt
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _tt.decompose(root, title=body.get("title", "任务"),
+                                 description=body.get("description", ""),
+                                 domain=body.get("domain", "default"),
+                                 source_conv_id=body.get("source_conversation_id", ""),
+                                 source_req_id=body.get("source_requirement_id", ""))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/task-trees/{task_tree_id}/progress")
+    def api_task_tree_progress(task_tree_id: str) -> dict[str, Any]:
+        """Task Tree 进度投影 (K2)。"""
+        from factory_console import task_tree as _tt
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _tt.task_progress(root, task_tree_id)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/api/task-trees/{task_tree_id}/status")
+    def api_task_tree_status(task_tree_id: str) -> dict[str, Any]:
+        """Task Tree 状态 (K2, 每任务 + 依赖 + 进度)。"""
+        from factory_console import task_tree as _tt
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _tt.tree_status(root, task_tree_id)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/api/tasks/{task_id}/status")
+    def api_update_task_status(task_id: str,
+                               body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """Task 状态更新 (K2)。"""
+        from factory_console import task_tree as _tt
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _tt.update_task_status(root, task_id, status=body.get("status", "COMPLETED"))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     @app.get("/api/workforce")
     def api_workforce_list() -> dict[str, Any]:
         """Workforce workflows (S16)。"""

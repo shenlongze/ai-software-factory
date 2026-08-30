@@ -5414,6 +5414,96 @@ def build_app(
         items = _le.learning_conflicts(root)
         return {"items": items, "count": len(items)}
 
+    @app.post("/api/promotions/candidates")
+    def api_create_promotion_candidate(body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """创建 PromotionCandidate (S38, 从 S37 LearningCandidate)。"""
+        from factory_console import promotion_service as _ps
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _ps.create_promotion_candidate(
+                root, learning_candidate_id=body.get("learning_candidate_id", ""),
+                target=body.get("target", "memory"),
+                baseline_ref=body.get("baseline_ref", ""),
+                candidate_ref=body.get("candidate_ref", ""),
+                scope=body.get("scope", "node"), risk=body.get("risk", "MEDIUM"))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/promotions/candidates/{candidate_id}/evaluate")
+    def api_evaluate_promotion(candidate_id: str,
+                               body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """Evaluation (S38, baseline vs candidate)。"""
+        from factory_console import promotion_service as _ps
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _ps.evaluate_candidate(
+                root, candidate_id,
+                baseline_metrics=body.get("baseline_metrics", {}),
+                candidate_metrics=body.get("candidate_metrics", {}),
+                sample_count=body.get("sample_count", 0))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/promotions/candidates/{candidate_id}/experiments")
+    def api_create_promotion_experiment(candidate_id: str,
+                                        body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """Experiment (S38)。"""
+        from factory_console import promotion_service as _ps
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return _ps.create_experiment(root, candidate_id=candidate_id,
+                                     max_runs=body.get("max_runs", 10))
+
+    @app.post("/api/promotions/candidates/{candidate_id}/decide")
+    def api_decide_promotion(candidate_id: str,
+                             body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """Governance Decision (S38, Human Gate 强制)。"""
+        from factory_console import promotion_service as _ps
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _ps.decide_promotion(root, candidate_id,
+                                        decision=body.get("decision", "APPROVE"),
+                                        actor=body.get("actor", "human"))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/promotions/candidates/{candidate_id}/canary")
+    def api_create_canary(candidate_id: str,
+                          body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """Canary (S38)。"""
+        from factory_console import promotion_service as _ps
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return _ps.create_canary(root, candidate_id=candidate_id,
+                                 max_runs=body.get("max_runs", 3))
+
+    @app.post("/api/promotions/canaries/{canary_id}/promote")
+    def api_promote(canary_id: str,
+                    body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """Promote (S38, Canary PASS 后; immutable Snapshot)。"""
+        from factory_console import promotion_service as _ps
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            from factory_console.promotion_service import _find
+            can = _find(root, "canaries", "canary_id", canary_id)
+            return _ps.promote(root, can["candidate_id"], canary_id=canary_id,
+                               actor=body.get("actor", "human"))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/promotions/history")
+    def api_promotion_history() -> dict[str, Any]:
+        """Promotion History + Snapshots (S38)。"""
+        from factory_console import promotion_service as _ps
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return {"candidates": _ps.promotion_candidates(root),
+                "snapshots": _ps.promotion_snapshots(root)}
+
     @app.get("/api/workforce")
     def api_workforce_list() -> dict[str, Any]:
         """Workforce workflows (S16)。"""

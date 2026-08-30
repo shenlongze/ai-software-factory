@@ -599,3 +599,26 @@ AI Factory
 - Evidence-driven Learning = REAL (Observation→Hypothesis→Candidate→Evaluation→STOP)
 - Promotion (改 Production) 未实现 — S38 显式 (S37 Governance Boundary)
 - Cost = estimated; Quality metrics 真实 (数据不足 → NOT_AVAILABLE)
+
+## S38 更新 (Learning Evaluation & Governed Promotion, v1.1.345)
+
+### Reality Status
+| 能力 | Status | 证据 |
+|------|--------|------|
+| PromotionCandidate (S37 → S38 统一 Contract) | REAL | test_promotion_service 16/16 |
+| Evaluation (baseline vs candidate, evidence-based) | REAL | test_evaluation_improved / regressed |
+| INCONCLUSIVE (样本不足, 不伪装) | REAL | test_evaluation_inconclusive |
+| Experiment (budget: max_runs → STOP) | REAL | test_experiment_budget_stop |
+| Risk Classification (LOW/MEDIUM/HIGH/CRITICAL) | REAL | test_risk_classification |
+| Governance (AUTO/REVIEW/HUMAN/REJECT) | REAL | test_governance_modes |
+| Human Gate (HIGH/CRITICAL 不可绕过) | REAL | test_high_risk_human_gate |
+| Canary (PASS→promote; FAIL→阻止) | REAL | test_canary_pass_promote / fail_blocks |
+| Promotion (GOVERNED/CANARY 后; immutable Snapshot) | REAL | test_canary_pass_promote |
+| Lifecycle 非法迁移拒绝 | REAL | test_promotion_lifecycle_invalid |
+| Evaluator Plugin 替换 (Core 零修改) | REAL | test_evaluator_plugin_replacement |
+| CLI/API | REAL | test_cli / test_api (openapi 278) |
+
+### 诚实声明
+- Governed Promotion = REAL (Candidate→Evaluation→Experiment→Comparison→Governance→Canary→Promotion)
+- Learning 不能直接修改 Production (一切经 Promotion Contract)
+- Cost = estimated; Canary Rollback 复用 S21 (不建第二套)

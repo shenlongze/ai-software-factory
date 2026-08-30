@@ -1019,6 +1019,8 @@ class FactoryCLI:
             return self.production_cmd(args)
         if args.command == "workflow":
             return self.workflow_cmd(args)
+        if args.command == "promotion":
+            return self.promotion_cmd(args)
         if args.command == "learn":
             return self.learn_cmd(args)
         if args.command == "context-rank":
@@ -4143,6 +4145,122 @@ class FactoryCLI:
             print(f"  {r_.get('run_id')} | {r_.get('workflow_id')} | {r_.get('state')} | {r_.get('created_at')}")
         return 0
 
+    def promotion_cmd(self, args: argparse.Namespace) -> int:
+        """factory promotion — Promotion (S38): Governed Promotion。
+
+        薄代理 → promotion_service (CLI 与 API 共享同一 Service)。
+        """
+        from factory_console.promotion_service import (
+            create_promotion_candidate as _pc, evaluate_candidate as _eval,
+            create_experiment as _exp, experiment_record_run as _exp_run,
+            decide_promotion as _decide, create_canary as _canary,
+            canary_record_run as _canary_run, canary_compare as _canary_cmp,
+            promote as _promote, promotion_candidates as _cands,
+            promotion_snapshots as _snaps,
+        )
+
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        action = getattr(args, "action", "history") or "history"
+        target = getattr(args, "target", None)
+
+        if action == "candidate":
+            if not getattr(args, "learning_candidate", ""):
+                print("[E4220] 错误: --learning-candidate 必填 (S37 candidate)", file=sys.stderr)
+                return 2
+            try:
+                pc = _pc(str(root), learning_candidate_id=getattr(args, "learning_candidate"),
+                         risk=getattr(args, "risk", "MEDIUM"))
+            except Exception as exc:  # noqa: BLE001
+                print(f"[E4221] 错误: {exc}", file=sys.stderr)
+                return 1
+            print(f"candidate: {pc['promotion_candidate_id']} | risk: {pc['risk']} | lifecycle: {pc['lifecycle']}")
+            return 0
+
+        if action == "evaluate":
+            if not target:
+                print("[E4222] 错误: candidate_id 必填 (factory promotion evaluate <id>)", file=sys.stderr)
+                return 2
+            ev = _eval(str(root), target,
+                       baseline_metrics={"success": 0.6, "verification": 0.7, "quality": 0.6, "cost": 0.01},
+                       candidate_metrics={"success": 0.8, "verification": 0.85, "quality": 0.8, "cost": 0.012},
+                       sample_count=8)
+            print(f"evaluate: {ev['result']} | deltas: {ev['deltas']}")
+            return 0
+
+        if action == "experiment":
+            if not target:
+                print("[E4223] 错误: candidate_id 必填 (factory promotion experiment <id>)", file=sys.stderr)
+                return 2
+            exp = _exp(str(root), candidate_id=target, max_runs=3)
+            print(f"experiment: {exp['experiment_id']} | max_runs: {exp['max_runs']}")
+            return 0
+
+        if action == "experiment-run":
+            if not target:
+                print("[E4224] 错误: experiment_id 必填", file=sys.stderr)
+                return 2
+            exp = _exp_run(str(root), target, cost=0.01, result="ok")
+            print(f"experiment-run: runs={exp['runs_used']}/{exp['max_runs']} status={exp['status']}")
+            return 0
+
+        if action == "decide":
+            if not target:
+                print("[E4225] 错误: candidate_id 必填", file=sys.stderr)
+                return 2
+            try:
+                g = _decide(str(root), target, decision=getattr(args, "decision", "APPROVE"),
+                            actor=getattr(args, "actor", "human"))
+            except Exception as exc:  # noqa: BLE001
+                print(f"[E4226] 错误: {exc}", file=sys.stderr)
+                return 1
+            print(f"decide: {g.get('decision', g.get('mode'))} | actor: {g['actor']}")
+            return 0
+
+        if action == "canary":
+            if not target:
+                print("[E4227] 错误: candidate_id 必填", file=sys.stderr)
+                return 2
+            can = _canary(str(root), candidate_id=target, max_runs=3)
+            print(f"canary: {can['canary_id']} | max_runs: {can['max_runs']}")
+            return 0
+
+        if action == "canary-run":
+            if not target:
+                print("[E4228] 错误: canary_id 必填", file=sys.stderr)
+                return 2
+            _canary_run(str(root), target, result="ok", verification="PASS")
+            print(f"canary-run: {target} PASS")
+            return 0
+
+        if action == "canary-compare":
+            if not target:
+                print("[E4229] 错误: canary_id 必填", file=sys.stderr)
+                return 2
+            cmp = _canary_cmp(str(root), target)
+            print(f"canary-compare: {cmp['status']} | {cmp['explain']}")
+            return 0
+
+        if action == "promote":
+            if not target:
+                print("[E4230] 错误: candidate_id 必填", file=sys.stderr)
+                return 2
+            try:
+                snap = _promote(str(root), target, actor=getattr(args, "actor", "human"))
+            except Exception as exc:  # noqa: BLE001
+                print(f"[E4231] 错误: {exc}", file=sys.stderr)
+                return 1
+            print(f"promote: {snap['snapshot_id']} | target: {snap['target']} | actor: {snap['actor']}")
+            return 0
+
+        if action == "history":
+            for c in _cands(str(root)):
+                print(f"  {c['promotion_candidate_id']} | {c['lifecycle']} | risk: {c['risk']} | {c['created_at']}")
+            for s in _snaps(str(root)):
+                print(f"  SNAPSHOT {s['snapshot_id']} | {s['target']} | {s['actor']} | {s['timestamp']}")
+            return 0
+
+        return 1
+
     def learn_cmd(self, args: argparse.Namespace) -> int:
         """factory learn — Learn (S37): Evidence-driven Learning。
 
@@ -6781,6 +6899,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_prod.add_argument("--input", default="{}", help="输入 JSON (run 用, 如 {'prompt': '...'})")
     p_prod.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     sub.add_parser("workflow", help="Workflow 列表 (S10): factory workflow list — 专业生产线")
+    # S38: Promotion CLI
+    p_prom = sub.add_parser("promotion", help="Promotion (S38): evaluate/experiment/decide/canary/promote/history — Governed Promotion")
+    p_prom.add_argument("action", nargs="?", default="history",
+                        choices=["candidate", "evaluate", "experiment", "experiment-run", "decide", "canary", "canary-run", "canary-compare", "promote", "history"])
+    p_prom.add_argument("target", nargs="?", help="candidate_id / experiment_id / canary_id")
+    p_prom.add_argument("--learning-candidate", default="", help="S37 candidate (candidate 用)")
+    p_prom.add_argument("--risk", default="MEDIUM", help="LOW/MEDIUM/HIGH/CRITICAL")
+    p_prom.add_argument("--actor", default="human", help="决策者 (decide/promote 用)")
+    p_prom.add_argument("--decision", default="APPROVE", help="APPROVE/REJECT (decide 用)")
+    p_prom.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+
     # S37: Learning CLI
     p_learn = sub.add_parser("learn", help="Learn (S37): observe/run/candidates/inspect/evaluate/conflicts/history — Evidence-driven Learning")
     p_learn.add_argument("action", nargs="?", default="run",

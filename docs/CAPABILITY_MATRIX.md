@@ -501,3 +501,21 @@ AI Factory
 - Composable Workforce = REAL (AgentProfile 由 Plugin references 组合, 非实现)
 - 替换测试证明: provider/skill 替换不修改 Core (Architecture Test)
 - 未做: Performance Ranking/LLM Selection (S32 明确排除, 后续 Sprint)
+
+## S33 更新 (Performance-aware Workforce Selection, v1.1.340)
+
+### Reality Status
+| 能力 | Status | 证据 |
+|------|--------|------|
+| Performance 从真实 Production Evidence 投影 | REAL | test_performance_selection 9/9; sample_count/success_rate 断言 |
+| 确定性 Ranking (capability→permission→policy→score) | REAL | test_deterministic_ranking (相同输入→相同排序) |
+| Governance 优先于 Performance | REAL | test_governance_over_performance (self_elevate → rejected) |
+| Cold-start (sample_count=0 不锁死) | REAL | test_cold_start (registration_order) |
+| Performance Snapshot (历史可解释) | REAL | test_selection_and_snapshot / test_performance_history |
+| Evidence 驱动替换 (Selection 变化) | REAL | test_evidence_driven_selection_change (A→B) |
+| CLI/API | REAL | test_cli_select / test_api_select |
+
+### 诚实声明
+- Performance-aware Selection = REAL (Evidence → score → deterministic selection)
+- 无样本时诚实 unknown (sample_count=0, 不造 confidence)
+- 未做: LLM ranking / Learning / Self-Healing (S33 明确排除)

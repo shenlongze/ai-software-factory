@@ -5146,6 +5146,43 @@ def build_app(
         items = _wc.unified_capability_list(root)
         return {"items": items, "count": len(items)}
 
+    @app.post("/api/workforces/select-ranked")
+    def api_select_ranked(body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """Performance-aware Selection (S33, deterministic)。"""
+        from factory_console import performance_selection as _ps
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return _ps.select_plugin(root, required_capability=body.get("capability", ""))
+
+    @app.get("/api/plugins/{plugin_id}/performance")
+    def api_plugin_performance(plugin_id: str) -> dict[str, Any]:
+        """Plugin Performance (S33, 从 Evidence 投影)。"""
+        from factory_console import performance_selection as _ps
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _ps.plugin_performance(root, plugin_id)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/api/plugins/{plugin_id}/performance-history")
+    def api_plugin_performance_history(plugin_id: str) -> dict[str, Any]:
+        """Plugin Performance History (S33, snapshot 可追溯)。"""
+        from factory_console import performance_selection as _ps
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        items = _ps.plugin_performance_history(root, plugin_id)
+        return {"items": items, "count": len(items)}
+
+    @app.get("/api/selection/history")
+    def api_selection_history() -> dict[str, Any]:
+        """Selection History (S33)。"""
+        from factory_console import performance_selection as _ps
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        items = _ps.selection_history(root)
+        return {"items": items, "count": len(items)}
+
     @app.get("/api/workforce")
     def api_workforce_list() -> dict[str, Any]:
         """Workforce workflows (S16)。"""

@@ -140,6 +140,8 @@ EVENT_TYPES: tuple[str, ...] = (
     "PLUGIN_EXECUTED",
     # S32: Composition 事件
     "AGENT_PROFILE_BOUND",
+    # S33: Performance Selection 事件
+    "PERFORMANCE_SELECTION",
     # S19: Rollback 事件
     "ROLLBACK_CREATED",
     "ROLLBACK_GATED",

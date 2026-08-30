@@ -1019,6 +1019,8 @@ class FactoryCLI:
             return self.production_cmd(args)
         if args.command == "workflow":
             return self.workflow_cmd(args)
+        if args.command == "select":
+            return self.select_cmd(args)
         if args.command == "composition":
             return self.composition_cmd(args)
         if args.command == "plugin":
@@ -4131,6 +4133,66 @@ class FactoryCLI:
             print(f"  {r_.get('run_id')} | {r_.get('workflow_id')} | {r_.get('state')} | {r_.get('created_at')}")
         return 0
 
+    def select_cmd(self, args: argparse.Namespace) -> int:
+        """factory select — Select (S33): Performance-aware Selection。
+
+        薄代理 → performance_selection (CLI 与 API 共享同一 Service)。
+        """
+        from factory_console.performance_selection import (
+            select_plugin as _select, rank_plugins as _rank,
+            plugin_performance as _perf, selection_history as _history,
+            cold_start_strategy as _cold,
+        )
+
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        action = getattr(args, "action", "select") or "select"
+        target = getattr(args, "target", None)
+
+        if action == "select":
+            if not target:
+                print("[E4180] 错误: capability 必填 (factory select select <cap>)", file=sys.stderr)
+                return 2
+            sel = _select(str(root), required_capability=target)
+            if not sel.get("selected"):
+                print(f"select: NO | {sel.get('reason', '')}")
+                return 1
+            print(f"select: {sel['plugin_id']} v{sel['version']} | score: {sel['ranking_score']}")
+            print(f"  {sel['reason']}")
+            return 0
+
+        if action == "rank":
+            if not target:
+                print("[E4181] 错误: capability 必填 (factory select rank <cap>)", file=sys.stderr)
+                return 2
+            rk = _rank(str(root), required_capability=target)
+            for c in rk["candidates"]:
+                print(f"  {c['plugin_id']} | score: {c['ranking_score']} | sample: {c['performance']['sample_count']}")
+            return 0
+
+        if action == "perf":
+            if not target:
+                print("[E4182] 错误: plugin_id 必填 (factory select perf <plugin>)", file=sys.stderr)
+                return 2
+            p = _perf(str(root), target)
+            print(f"perf: {p['plugin_id']} | sample: {p['sample_count']} | score: {p['ranking_score']}")
+            print(f"  {p['explain']}")
+            return 0
+
+        if action == "history":
+            for s in _history(str(root), capability=target or ""):
+                print(f"  {s['snapshot_id']} | {s['capability']} → {s['selected_plugin']} | score: {s['ranking_score']} | {s['created_at']}")
+            return 0
+
+        if action == "cold-start":
+            if not target:
+                print("[E4183] 错误: capability 必填 (factory select cold-start <cap>)", file=sys.stderr)
+                return 2
+            cs = _cold(str(root), required_capability=target)
+            print(f"cold-start: {cs['strategy']} | {cs['note']}")
+            return 0
+
+        return 1
+
     def composition_cmd(self, args: argparse.Namespace) -> int:
         """factory composition — Composition (S32): Composable Workforce。
 
@@ -6440,6 +6502,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_prod.add_argument("--input", default="{}", help="输入 JSON (run 用, 如 {'prompt': '...'})")
     p_prod.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     sub.add_parser("workflow", help="Workflow 列表 (S10): factory workflow list — 专业生产线")
+    # S33: Selection CLI
+    p_sel = sub.add_parser("select", help="Select (S33): select/rank/perf/history/cold-start — Performance-aware Selection")
+    p_sel.add_argument("action", nargs="?", default="select",
+                       choices=["select", "rank", "perf", "history", "cold-start"],
+                       help="动作: select <cap> 选择 / rank <cap> 排序 / perf <plugin> 性能 / history <cap> 历史 / cold-start <cap> 冷启动")
+    p_sel.add_argument("target", nargs="?", help="capability 或 plugin_id")
+    p_sel.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+
     # S32: Composition CLI
     p_comp = sub.add_parser("composition", help="Composition (S32): bind/resolve/capabilities/lineage — Composable Workforce")
     p_comp.add_argument("action", nargs="?", default="resolve",

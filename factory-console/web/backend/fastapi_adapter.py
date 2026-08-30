@@ -4715,6 +4715,58 @@ def build_app(
         root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
         return _le.llm_outcome(root, experiment_id)
 
+    @app.get("/api/experiments/{experiment_id}/samples")
+    def api_experiment_samples(experiment_id: str) -> dict[str, Any]:
+        """Experiment samples 列表 (S27)。"""
+        from factory_console import llm_experiment_service as _le
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            exp = _le._get_llm_exp(root, experiment_id)  # noqa: SLF001
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return {"samples": exp.get("llm_experiment", {}).get("samples", [])}
+
+    @app.get("/api/experiment-samples/{sample_id}/classification")
+    def api_sample_classification(sample_id: str) -> dict[str, Any]:
+        """Sample 失败分类 (S27)。"""
+        from factory_console import experiment_reliability as _er
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            info = _er.inspect_sample(root, sample_id)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return info["classification"]
+
+    @app.get("/api/experiment-samples/{sample_id}/eligibility")
+    def api_sample_eligibility(sample_id: str) -> dict[str, Any]:
+        """Sample 资格 (S27)。"""
+        from factory_console import experiment_reliability as _er
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            info = _er.inspect_sample(root, sample_id)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return info["eligibility"]
+
+    @app.get("/api/experiments/{experiment_id}/failures")
+    def api_experiment_failures(experiment_id: str) -> dict[str, Any]:
+        """失败分布 (S27)。"""
+        from factory_console import experiment_reliability as _er
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return _er.experiment_reliability(root, experiment_id)
+
+    @app.get("/api/experiments/{experiment_id}/reliability")
+    def api_experiment_reliability(experiment_id: str) -> dict[str, Any]:
+        """Reliability 聚合 (S27)。"""
+        from factory_console import experiment_reliability as _er
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return _er.experiment_reliability(root, experiment_id)
+
     @app.get("/api/workforce")
     def api_workforce_list() -> dict[str, Any]:
         """Workforce workflows (S16)。"""

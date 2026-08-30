@@ -1019,6 +1019,8 @@ class FactoryCLI:
             return self.production_cmd(args)
         if args.command == "workflow":
             return self.workflow_cmd(args)
+        if args.command == "reliability":
+            return self.reliability_cmd(args)
         if args.command == "llm-experiment":
             return self.llm_experiment_cmd(args)
         if args.command == "variant":
@@ -4117,6 +4119,78 @@ class FactoryCLI:
             print(f"  {r_.get('run_id')} | {r_.get('workflow_id')} | {r_.get('state')} | {r_.get('created_at')}")
         return 0
 
+    def reliability_cmd(self, args: argparse.Namespace) -> int:
+        """factory reliability — Reliability (S27): Experiment 可靠性。
+
+        薄代理 → experiment_reliability (CLI 与 API 共享同一 Service)。
+        """
+        from factory_console.experiment_reliability import (
+            production_outcome as _oc, classify_failure as _cls,
+            sample_eligibility as _elig, experiment_reliability as _rel,
+            inspect_sample as _inspect,
+        )
+
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        action = getattr(args, "action", "reliability") or "reliability"
+        target = getattr(args, "target", None)
+
+        if action == "inspect":
+            if not target:
+                print("[E4120] 错误: sample/run_id 必填 (factory reliability inspect <id>)",
+                      file=sys.stderr)
+                return 2
+            try:
+                info = _inspect(root, target)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[E4121] 错误: {exc}", file=sys.stderr)
+                return 1
+            print(f"sample: {target}")
+            print(f"  outcome: {info['outcome']['outcome']} | {info['outcome']['explain']}")
+            print(f"  classification: {info['classification']['classification']} "
+                  f"(conf={info['classification']['confidence']})")
+            print(f"  eligibility: {info['eligibility']['eligibility']} | {info['eligibility']['explain']}")
+            return 0
+
+        if action == "classify":
+            if not target:
+                print("[E4122] 错误: run_id 必填 (factory reliability classify <run>)", file=sys.stderr)
+                return 2
+            c = _cls(root, target)
+            print(f"classification: {c['classification']} | confidence: {c['confidence']}")
+            print(f"  {c['explain']}")
+            return 0
+
+        if action == "eligibility":
+            if not target:
+                print("[E4123] 错误: run_id 必填 (factory reliability eligibility <run>)", file=sys.stderr)
+                return 2
+            e = _elig(root, target)
+            print(f"eligibility: {e['eligibility']} | failure_class: {e['failure_class']}")
+            print(f"  {e['explain']}")
+            return 0
+
+        if action == "failures":
+            if not target:
+                print("[E4124] 错误: experiment_id 必填 (factory reliability failures <exp>)",
+                      file=sys.stderr)
+                return 2
+            rel = _rel(root, target)
+            print(f"failures: {rel['failure_classification_distribution']}")
+            return 0
+
+        if action == "reliability":
+            if not target:
+                print("[E4125] 错误: experiment_id 必填 (factory reliability reliability <exp>)",
+                      file=sys.stderr)
+                return 2
+            rel = _rel(root, target)
+            print(f"reliability: total={rel['total_samples']} eligible={rel['eligible_samples']} "
+                  f"ineligible={rel['ineligible_samples']}")
+            print(f"  dist: {rel['failure_classification_distribution']}")
+            return 0
+
+        return 1
+
     def llm_experiment_cmd(self, args: argparse.Namespace) -> int:
         """factory llm-experiment — LLM Experiment (S26)。
 
@@ -5920,6 +5994,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_prod.add_argument("--input", default="{}", help="输入 JSON (run 用, 如 {'prompt': '...'})")
     p_prod.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     sub.add_parser("workflow", help="Workflow 列表 (S10): factory workflow list — 专业生产线")
+    # S27: Reliability CLI
+    p_rel = sub.add_parser("reliability", help="Reliability (S27): inspect/classify/eligibility/failures/reliability — Experiment 可靠性")
+    p_rel.add_argument("action", nargs="?", default="reliability",
+                       choices=["inspect", "classify", "eligibility", "failures", "reliability"],
+                       help="动作: inspect <run|sample> 详情 / classify <run> 失败分类 / eligibility <run> 样本资格 / failures <exp> 失败分布 / reliability <exp> 聚合")
+    p_rel.add_argument("target", nargs="?", help="run_id / sample_id / experiment_id")
+    p_rel.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+
     # S26: LLM Experiment CLI
     p_llmexp = sub.add_parser("llm-experiment", help="LLM Experiment (S26): hypothesis/create/approve/run/compare/outcome")
     p_llmexp.add_argument("action", nargs="?", default="status",

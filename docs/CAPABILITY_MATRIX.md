@@ -392,3 +392,20 @@ AI Factory
 ### 诚实声明
 - Real LLM Experiment Infrastructure = REAL (真实 provider 调用 + 真实失败记录)
 - Optimization Effectiveness = NOT_YET_PROVEN (真实实验 INCONCLUSIVE; 不伪造 IMPROVED)
+
+## S27 更新 (Production Experiment Reliability, v1.1.334)
+
+### Reality Status
+| 能力 | Status | 证据 |
+|------|--------|------|
+| Production Outcome Contract (COMPLETED/INCOMPLETE/FAILED/BLOCKED/CANCELLED) | REAL | test_experiment_reliability 10/10; production_outcome 断言 |
+| Failure Classification (VERIFICATION/AGENT/GOV/BUDGET/UNKNOWN + evidence_refs + explain) | REAL | test_verification_failure_classified (conf=1.0); UNKNOWN 不猜测 |
+| Evaluation Quality Contract (EVALUATION_INVALID) | REAL | test_evaluation_invalid |
+| Sample Eligibility (ELIGIBLE/INELIGIBLE + reason/classification) | REAL | test_completed_sample_eligible |
+| Selection Bias 保护 (完整 denominator) | REAL | test_selection_bias_protection (3 samples 全保留) |
+| S26 Failure Re-analysis (4 samples = VERIFICATION_FAILURE) | REAL | docs/audit/s27-real-e2e-evidence.md; 真实 LLM E2E |
+| Optimization Effectiveness | NOT_YET_PROVEN | S26 重跑: 4 样本全 VERIFICATION_FAILURE → INCONCLUSIVE (诚实) |
+
+### 诚实声明
+- Production Experiment Reliability = REAL (分类/资格/denominator 全真实)
+- Optimization Effectiveness = NOT_YET_PROVEN (S26 失败根因已查明 = VERIFICATION_FAILURE; 改善未证明)

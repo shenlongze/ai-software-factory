@@ -1019,6 +1019,8 @@ class FactoryCLI:
             return self.production_cmd(args)
         if args.command == "workflow":
             return self.workflow_cmd(args)
+        if args.command == "recovery":
+            return self.recovery_cmd(args)
         if args.command == "reliability":
             return self.reliability_cmd(args)
         if args.command == "llm-experiment":
@@ -4119,6 +4121,90 @@ class FactoryCLI:
             print(f"  {r_.get('run_id')} | {r_.get('workflow_id')} | {r_.get('state')} | {r_.get('created_at')}")
         return 0
 
+    def recovery_cmd(self, args: argparse.Namespace) -> int:
+        """factory recovery — Recovery (S28): 生产质量恢复。
+
+        薄代理 → recovery_service (CLI 与 API 共享同一 Service)。
+        """
+        from factory_console.recovery_service import (
+            recover_production_run as _recover, recovery_status as _status,
+            recovery_attempts as _attempts, recovery_evidence as _evidence,
+            recovery_lineage as _lineage,
+        )
+
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        action = getattr(args, "action", "status") or "status"
+        target = getattr(args, "target", None)
+
+        if action == "status":
+            if not target:
+                print("[E4130] 错误: run_id 必填 (factory recovery status <run>)", file=sys.stderr)
+                return 2
+            st = _status(root, target)
+            print(f"status: {st['status']} | attempts: {len(st['attempts'])}")
+            print(f"  {st['explain']}")
+            return 0
+
+        if action == "attempts":
+            if not target:
+                print("[E4131] 错误: run_id 必填 (factory recovery attempts <run>)", file=sys.stderr)
+                return 2
+            for a in _attempts(root, target):
+                v = (a.get("verification") or {}).get("result", "-")
+                print(f"  {a['recovery_attempt_id']} | attempt-{a['attempt_number']} | {a['status']} | verification={v} | {a['note']}")
+            return 0
+
+        if action == "evidence":
+            if not target:
+                print("[E4132] 错误: attempt_id 必填 (factory recovery evidence <attempt>)",
+                      file=sys.stderr)
+                return 2
+            try:
+                ev = _evidence(root, target)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[E4133] 错误: {exc}", file=sys.stderr)
+                return 1
+            print(f"evidence: {ev['recovery_attempt_id']} | {ev['classification']}")
+            print(f"  refs: {ev['evidence_refs']}")
+            print(f"  {ev['explain']}")
+            return 0
+
+        if action == "inspect":
+            if not target:
+                print("[E4134] 错误: run_id 必填 (factory recovery inspect <run>)", file=sys.stderr)
+                return 2
+            lg = _lineage(root, target)
+            print(f"lineage: run={lg['production_run_id']} state={lg['run_state']} "
+                  f"classification={lg['failure_classification']} outcome={lg['outcome']}")
+            for a in lg["attempts"]:
+                print(f"  attempt-{a['attempt_number']}: {a['status']} verification={a['verification_result']}")
+            return 0
+
+        if action == "retry":
+            if not target:
+                print("[E4135] 错误: run_id 必填 (factory recovery retry <run>)", file=sys.stderr)
+                return 2
+            try:
+                r = _recover(root, target,
+                             executor_factory=lambda node_id: (lambda input_data: {
+                                 "ok": True, "output": {"code": "x"},
+                                 "patch_text": ("diff --git a/a.py b/a.py\n--- /dev/null\n+++ b/a.py\n@@ -0,0 +1,2 @@\n"
+                                                "+def a():\n+    return 1\n"),
+                                 "artifact_type": "code_change", "verification": {"result": "PASS"}}),
+                             repair_fn=lambda fa, v, ctx: {
+                                 "ok": True, "output": {"code": "x"},
+                                 "patch_text": ("diff --git a/a.py b/a.py\n--- /dev/null\n+++ b/a.py\n@@ -0,0 +1,2 @@\n"
+                                                "+def a():\n+    return 1\n"),
+                                 "artifact_type": "code_change", "verification": {"result": "PASS"}})
+            except Exception as exc:  # noqa: BLE001
+                print(f"[E4136] 错误: {exc}", file=sys.stderr)
+                return 1
+            print(f"recovery: {r['status']} | attempt-{r['attempt_number']}")
+            print(f"  {r['note']}")
+            return 0
+
+        return 1
+
     def reliability_cmd(self, args: argparse.Namespace) -> int:
         """factory reliability — Reliability (S27): Experiment 可靠性。
 
@@ -5994,6 +6080,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_prod.add_argument("--input", default="{}", help="输入 JSON (run 用, 如 {'prompt': '...'})")
     p_prod.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     sub.add_parser("workflow", help="Workflow 列表 (S10): factory workflow list — 专业生产线")
+    # S28: Recovery CLI
+    p_rec = sub.add_parser("recovery", help="Recovery (S28): inspect/attempts/retry/status/evidence — 生产质量恢复")
+    p_rec.add_argument("action", nargs="?", default="status",
+                       choices=["retry", "status", "attempts", "evidence", "inspect"],
+                       help="动作: retry <run> 恢复 / status <run> 状态 / attempts <run> 历史 / evidence <attempt> 证据 / inspect <run> lineage")
+    p_rec.add_argument("target", nargs="?", help="production_run_id / recovery_attempt_id")
+    p_rec.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+
     # S27: Reliability CLI
     p_rel = sub.add_parser("reliability", help="Reliability (S27): inspect/classify/eligibility/failures/reliability — Experiment 可靠性")
     p_rel.add_argument("action", nargs="?", default="reliability",

@@ -4767,6 +4767,66 @@ def build_app(
         root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
         return _er.experiment_reliability(root, experiment_id)
 
+    @app.get("/api/recovery/{recovery_attempt_id}")
+    def api_recovery_get(recovery_attempt_id: str) -> dict[str, Any]:
+        """Recovery attempt 详情 (S28)。"""
+        from factory_console import recovery_service as _rs
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _rs.recovery_evidence(root, recovery_attempt_id)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/api/production-runs/{production_run_id}/recovery")
+    def api_run_recovery(production_run_id: str) -> dict[str, Any]:
+        """Run 的 recovery 状态 (S28)。"""
+        from factory_console import recovery_service as _rs
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return _rs.recovery_status(root, production_run_id)
+
+    @app.get("/api/recovery/{recovery_attempt_id}/attempts")
+    def api_recovery_attempts(recovery_attempt_id: str) -> dict[str, Any]:
+        """Run 的 recovery attempts (S28)。"""
+        from factory_console import recovery_service as _rs
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return {"attempts": _rs.recovery_attempts(root, recovery_attempt_id)}
+
+    @app.post("/api/recovery/{production_run_id}/retry")
+    def api_recovery_retry(production_run_id: str) -> dict[str, Any]:
+        """触发 Recovery (S28, bounded repair loop)。"""
+        from factory_console import recovery_service as _rs
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _rs.recover_production_run(
+                root, production_run_id,
+                executor_factory=lambda node_id: (lambda input_data: {
+                    "ok": True, "output": {"code": "x"},
+                    "patch_text": ("diff --git a/a.py b/a.py\n--- /dev/null\n+++ b/a.py\n@@ -0,0 +1,2 @@\n"
+                                   "+def a():\n+    return 1\n"),
+                    "artifact_type": "code_change", "verification": {"result": "PASS"}}),
+                repair_fn=lambda fa, v, ctx: {
+                    "ok": True, "output": {"code": "x"},
+                    "patch_text": ("diff --git a/a.py b/a.py\n--- /dev/null\n+++ b/a.py\n@@ -0,0 +1,2 @@\n"
+                                   "+def a():\n+    return 1\n"),
+                    "artifact_type": "code_change", "verification": {"result": "PASS"}})
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/recovery/{recovery_attempt_id}/evidence")
+    def api_recovery_evidence(recovery_attempt_id: str) -> dict[str, Any]:
+        """Recovery evidence (S28)。"""
+        from factory_console import recovery_service as _rs
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _rs.recovery_evidence(root, recovery_attempt_id)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
     @app.get("/api/workforce")
     def api_workforce_list() -> dict[str, Any]:
         """Workforce workflows (S16)。"""

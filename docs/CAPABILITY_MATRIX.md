@@ -409,3 +409,20 @@ AI Factory
 ### 诚实声明
 - Production Experiment Reliability = REAL (分类/资格/denominator 全真实)
 - Optimization Effectiveness = NOT_YET_PROVEN (S26 失败根因已查明 = VERIFICATION_FAILURE; 改善未证明)
+
+## S28 更新 (Production Quality Recovery & Verification Closure, v1.1.335)
+
+### Reality Status
+| 能力 | Status | 证据 |
+|------|--------|------|
+| Recovery Infrastructure (bounded repair loop: FAIL→repair→re-verify→PASS→RECOVERED) | REAL | test_recovery 9/9 + S8 旧测试兼容 18/18 |
+| Recovery Policy (VERIFICATION_FAILURE 可 repair; AGENT/GOV/UNKNOWN 不自动) | REAL | test_policy / test_case_c_blocked |
+| Verification Closure (新 verification_id, 禁复用旧; 历史 append-only) | REAL | test_new_verification_id |
+| Idempotency (已终态 → ALREADY_CLOSED) | REAL | test_idempotent |
+| Real LLM Recovery (真实 codex repair → RECOVERED) | REAL | docs/audit/s28-real-e2e-evidence.md; 真实 LLM E2E attempt-1 RECOVERED |
+| Optimization Effectiveness | NOT_YET_PROVEN | S26 失败已可 Recovery; 改善仍未证明 |
+
+### 诚实声明
+- Production Recovery Infrastructure = REAL (真实 LLM FAIL→REPAIR→PASS 闭环已证明)
+- Real LLM Recovery = PROVEN (本次真实 E2E: RECOVERED attempt-1)
+- Optimization Effectiveness = NOT_YET_PROVEN

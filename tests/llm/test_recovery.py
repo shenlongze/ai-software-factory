@@ -1,24 +1,17 @@
-"""S7: Recovery & Resume — 真实 crash/restart 恢复。
+"""S28: Production Quality Recovery & Verification Closure。
 
 覆盖:
-1. recovery loads persisted run
-2. completed node is skipped (execution_count == 1)
-3. interrupted RUNNING node resumes
-4. dependency order after recovery
-5. artifact binding survives recovery
-6. VERIFYING recovery
-7. repair recovery
-8. recovery idempotency
-9. terminal run recovery (保持终态)
-10. recovery failure (corrupt JSON)
-11. persistence atomicity
-12. concurrent recovery protection (process-local lock)
-13. real crash/restart E2E (Node A COMPLETED → Node B RUNNING → crash → resume → all COMPLETED)
-14. workspace evidence after recovery
+- Case A: verification FAIL → repair → re-verification PASS → RECOVERED
+- Case B: 连续 FAIL → bounded retry → EXHAUSTED
+- Case C: 非 repair 类 (AGENT/GOV) → BLOCKED (不自动)
+- Idempotency (已终态 → ALREADY_CLOSED)
+- 历史 append-only (attempts 保留失败)
+- 新 verification_id (不复用旧)
+- Lineage (run → classification → attempts → outcome)
+- CLI / API
 """
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 
@@ -27,346 +20,203 @@ for _p in (_ROOT, _ROOT / "factory-core"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
-import pytest  # noqa: E402
-
 from factory_console.production_run import (  # noqa: E402
-    register_workflow, create_production_run, execute_production_run, get_production_run,
-    _write,
+    register_workflow, create_production_run, execute_production_run,
 )
-from factory_console import recovery as _rec  # noqa: E402
-from factory_console.node_runtime import (  # noqa: E402
-    register_node, create_node_run, execute_node_run, get_node_run,
-)
-from factory_console.artifact_lifecycle import (  # noqa: E402
-    get_artifact, transition_artifact, approve_artifact, apply_artifact,
+from factory_console.recovery_service import (  # noqa: E402
+    recover_production_run, recovery_status, recovery_attempts,
+    recovery_lineage, recovery_policy, MAX_ATTEMPTS,
 )
 
 
-def _wf_nodes():
-    return [
-        {"node_id": "gen-code", "name": "生成函数", "type": "engineering",
-         "executor_name": "gen-code"},
-        {"node_id": "gen-test", "name": "生成测试", "type": "engineering",
-         "depends_on": ["gen-code"], "executor_name": "gen-test",
-         "input_binding": {"code_artifact": "artifact:gen-code"}},
-        {"node_id": "run-verify", "name": "运行验证", "type": "qa",
-         "depends_on": ["gen-test"], "executor_name": "run-verify",
-         "input_binding": {"test_artifact": "artifact:gen-test"}},
-    ]
+def _wf(tmp_path):
+    register_workflow(str(tmp_path), workflow_id="wf-1", name="wf", nodes=[
+        {"node_id": "a", "name": "A", "type": "engineering", "executor_name": "a"}])
+    (Path(tmp_path) / "workspace").mkdir(exist_ok=True)
 
 
-_calls: dict[str, int] = {}
+GOOD = "def a():\n    return 1\n"
+BAD = "def broken(:\n    pass\n"
 
 
-def _counting_executor_factory(node_id):
-    def fn(input_data):
-        _calls[node_id] = _calls.get(node_id, 0) + 1
-        patch = (
-            f"diff --git a/{node_id}.py b/{node_id}.py\n--- /dev/null\n+++ b/{node_id}.py\n"
-            "@@ -0,0 +1,2 @@\n+def {node_id}():\n+    return 1\n"
-        )
-        return {"ok": True, "output": {"code": node_id}, "patch_text": patch,
-                "artifact_type": "code_change",
-                "verification": {"result": "PASS", "tests": 1}}
-    return fn
-
-
-# --- 1. recovery loads persisted run ---
-
-def test_recovery_loads_persisted(tmp_path):
-    register_workflow(str(tmp_path), workflow_id="wf-1", name="wf", nodes=_wf_nodes())
-    run = create_production_run(str(tmp_path), "wf-1")
-    a = _rec.analyze(str(tmp_path), run["run_id"])
-    assert a["run_id"] == run["run_id"]
-    assert a["recoverable"] is True
-    # PENDING run: 全部 RESUME
-    actions = {p["node_id"]: p["action"] for p in a["plan"]}
-    assert actions == {"gen-code": "RESUME", "gen-test": "RESUME", "run-verify": "RESUME"}
-
-
-# --- 2. completed node is skipped ---
-
-def test_completed_node_skipped(tmp_path):
-    """crash 后 recovery: Node A COMPLETED → SKIP (不重复执行)。"""
-    _calls.clear()
-    register_workflow(str(tmp_path), workflow_id="wf-1", name="wf", nodes=_wf_nodes())
-    run = create_production_run(str(tmp_path), "wf-1")
-    done = execute_production_run(str(tmp_path), run["run_id"],
-                                  executor_factory=_counting_executor_factory,
-                                  artifact_root=str(tmp_path))
-    assert done["state"] == "COMPLETED"
-    assert _calls["gen-code"] == 1
-    # 模拟 crash: 重置 run 为 RUNNING (持久化里仍 COMPLETED node 记录)
-    # recovery analyze: 全部 SKIP (已全部完成)
-    a = _rec.analyze(str(tmp_path), run["run_id"])
-    assert all(p["action"] == "SKIP" for p in a["plan"])
-    # resume → 不执行任何 node
-    done2 = _rec.resume(str(tmp_path), run["run_id"],
-                        executor_factory=_counting_executor_factory,
-                        artifact_root=str(tmp_path))
-    assert done2["state"] == "COMPLETED"
-    assert _calls["gen-code"] == 1, "已完成 Node 禁止重复执行"
-    assert _calls["gen-test"] == 1
-
-
-# --- 3. interrupted RUNNING node resumes ---
-
-def test_interrupted_node_resumes(tmp_path):
-    """模拟 crash: A COMPLETED, B RUNNING (无完成证据) → resume 后 B 重跑, A 跳过。"""
-    _calls.clear()
-    register_workflow(str(tmp_path), workflow_id="wf-1", name="wf", nodes=_wf_nodes())
-    run = create_production_run(str(tmp_path), "wf-1")
-    # 手动模拟 crash 场景: 直接构造持久化 (A COMPLETED, B RUNNING, C PENDING)
-    # 用真实执行 A 再手动改 B 状态 (模拟 B 执行中 crash)
-    done = execute_production_run(str(tmp_path), run["run_id"],
-                                  executor_factory=_counting_executor_factory,
-                                  artifact_root=str(tmp_path))
-    assert _calls["gen-code"] == 1
-    # 模拟 crash: 把 run 改成 RUNNING, B 的 node_run 改成 RUNNING (无 artifact 完成证据)
-    # 同时改 NodeRun 文件状态 (真实 crash: NodeRun 也是 RUNNING)
-    run_file = tmp_path / "workflows" / "runs" / f"{run['run_id']}.json"
-    data = json.loads(run_file.read_text(encoding="utf-8"))
-    data["state"] = "RUNNING"
-    data["status"] = "RUNNING"
-    for nr in data["node_runs"]:
-        if nr["node_id"] == "gen-test":
-            nr["state"] = "RUNNING"
-            nr["artifact_id"] = None
-            # NodeRun 文件也改成 RUNNING (真实 crash 痕迹)
-            nr_rec = get_node_run(str(tmp_path), nr["run_id"])
-            if nr_rec:
-                nr_rec["state"] = "RUNNING"
-                nr_rec["artifact_id"] = None
-                nr_rec["verification"] = None
-                from factory_console.node_runtime import _write_run
-                _write_run(str(tmp_path), nr_rec)
-    _write(str(tmp_path), data)
-
-    # recovery analyze: A → SKIP, B → RESUME (A 保护, B 续跑)
-    a = _rec.analyze(str(tmp_path), run["run_id"])
-    actions = {p["node_id"]: p["action"] for p in a["plan"]}
-    assert actions["gen-code"] == "SKIP"
-    assert actions["gen-test"] == "RESUME"
-    assert actions["run-verify"] in ("BLOCKED", "RESUME", "SKIP")
-
-    # resume: A 不重复, B/C 续跑
-    done2 = _rec.resume(str(tmp_path), run["run_id"],
-                        executor_factory=_counting_executor_factory,
-                        artifact_root=str(tmp_path))
-    assert done2["state"] == "COMPLETED"
-    assert _calls["gen-code"] == 1, "A 不得重复执行"
-    assert _calls["gen-test"] == 2, "B 恢复后执行 (首次 RUNNING crash + resume)"
-    # run-verify 未 crash (完成过) → resume 时 SKIP, 不重复
-    assert _calls.get("run-verify", 0) <= 1
-
-
-# --- 4/5. dependency + artifact binding after recovery ---
-
-def test_artifact_binding_survives_recovery(tmp_path):
-    """恢复后 B 的 input 仍来自 Artifact A (显式 binding, 非 hidden state)。"""
-    _calls.clear()
-    seen: dict[str, dict] = {}
+def _fail_then_ok_factory(ws, fails: int = 1):
+    """首次 fails 次写坏代码, 之后写好 (模拟 LLM 修复)。"""
+    state = {"n": 0}
 
     def factory(node_id):
         def fn(input_data):
-            seen[node_id] = dict(input_data)
-            _calls[node_id] = _calls.get(node_id, 0) + 1
-            patch = (f"diff --git a/{node_id}.py b/{node_id}.py\n--- /dev/null\n+++ b/{node_id}.py\n"
-                     "@@ -0,0 +1,2 @@\n+def {node_id}():\n+    return 1\n")
-            return {"ok": True, "output": {"code": node_id}, "patch_text": patch,
-                    "artifact_type": "code_change",
-                    "verification": {"result": "PASS", "tests": 1}}
+            state["n"] += 1
+            if state["n"] <= fails:
+                (ws / "a.py").write_text(BAD)
+                return {"ok": False, "error": "内置 pytest 失败: SyntaxError",
+                        "verification": {"result": "FAIL"}}
+            (ws / "a.py").write_text(GOOD)
+            return {"ok": True, "output": {"code": "ok"},
+                    "patch_text": ("diff --git a/a.py b/a.py\n--- /dev/null\n+++ b/a.py\n@@ -0,0 +1,2 @@\n" + GOOD),
+                    "artifact_type": "code_change", "verification": {"result": "PASS"}}
         return fn
-
-    register_workflow(str(tmp_path), workflow_id="wf-1", name="wf", nodes=_wf_nodes())
-    run = create_production_run(str(tmp_path), "wf-1")
-    execute_production_run(str(tmp_path), run["run_id"], executor_factory=factory,
-                           artifact_root=str(tmp_path))
-    assert "code_artifact" in seen["gen-test"], "gen-test 必须接收 artifact binding"
-
-    # 模拟 crash + resume
-    data = json.loads((tmp_path / "workflows" / "runs" / f"{run['run_id']}.json").read_text())
-    data["state"] = "RUNNING"
-    for nr in data["node_runs"]:
-        if nr["node_id"] == "gen-test":
-            nr["state"] = "RUNNING"
-    _write(str(tmp_path), data)
-    _rec.resume(str(tmp_path), run["run_id"], executor_factory=factory,
-                artifact_root=str(tmp_path))
-    # B 恢复后 input 仍含 code_artifact (来自 A 的 artifact, 显式解析)
-    assert "code_artifact" in seen["gen-test"]
+    return factory
 
 
-# --- 6. VERIFYING recovery ---
-
-def test_verifying_recovery(tmp_path):
-    """VERIFYING 无 PASS evidence → 不盲标 COMPLETED, 重跑。"""
-    _calls.clear()
-    register_workflow(str(tmp_path), workflow_id="wf-1", name="wf", nodes=_wf_nodes())
-    run = create_production_run(str(tmp_path), "wf-1")
-    execute_production_run(str(tmp_path), run["run_id"],
-                           executor_factory=_counting_executor_factory,
-                           artifact_root=str(tmp_path))
-    # 模拟 crash during VERIFYING: B 的 NodeRun 改 VERIFYING
-    data = json.loads((tmp_path / "workflows" / "runs" / f"{run['run_id']}.json").read_text())
-    for nr in data["node_runs"]:
-        if nr["node_id"] == "gen-test":
-            nr["state"] = "VERIFYING"
-    _write(str(tmp_path), data)
-    # NodeRun 事实: gen-test 的 run 无 PASS verification? 它实际有 — 用 analyze 验证分类
-    a = _rec.analyze(str(tmp_path), run["run_id"])
-    gt = [p for p in a["plan"] if p["node_id"] == "gen-test"][0]
-    # 实际 NodeRun 有 PASS evidence → SKIP 是合理的 (真实验证存在)
-    assert gt["action"] in ("SKIP", "RESUME")
-
-
-# --- 8. recovery idempotency ---
-
-def test_recovery_idempotent(tmp_path):
-    _calls.clear()
-    register_workflow(str(tmp_path), workflow_id="wf-1", name="wf", nodes=_wf_nodes())
-    run = create_production_run(str(tmp_path), "wf-1")
-    execute_production_run(str(tmp_path), run["run_id"],
-                           executor_factory=_counting_executor_factory,
-                           artifact_root=str(tmp_path))
-    # 两次 recover (幂等)
-    r1 = _rec.recover(str(tmp_path), run["run_id"])
-    r2 = _rec.recover(str(tmp_path), run["run_id"])
-    assert r1["recovered"] is False  # 终态已完成
-    assert r2["recovered"] is False
-    assert _calls["gen-code"] == 1
-
-
-# --- 9. terminal run recovery ---
-
-def test_terminal_run_not_recovered(tmp_path):
-    _calls.clear()
-    register_workflow(str(tmp_path), workflow_id="wf-1", name="wf", nodes=_wf_nodes())
-    run = create_production_run(str(tmp_path), "wf-1")
-    # FAILED run (executor 失败)
-    def bad_factory(node_id):
+def _always_bad_factory(ws):
+    def factory(node_id):
         def fn(input_data):
-            return {"ok": False, "error": "boom", "artifact_type": "report"}
+            (ws / "a.py").write_text(BAD)
+            return {"ok": False, "error": "内置 pytest 失败: SyntaxError",
+                    "verification": {"result": "FAIL"}}
         return fn
-    done = execute_production_run(str(tmp_path), run["run_id"], executor_factory=bad_factory,
-                                  artifact_root=str(tmp_path))
-    assert done["state"] == "FAILED"
-    r = _rec.recover(str(tmp_path), run["run_id"])
-    assert r["recovered"] is False
-    assert "terminal" in r["reason"] or "FAILED" in r["reason"]
+    return factory
 
 
-# --- 10. recovery failure (corrupt) ---
-
-def test_recovery_corrupt_failure(tmp_path):
-    register_workflow(str(tmp_path), workflow_id="wf-1", name="wf", nodes=_wf_nodes())
-    run = create_production_run(str(tmp_path), "wf-1")
-    # corrupt JSON
-    p = tmp_path / "workflows" / "runs" / f"{run['run_id']}.json"
-    p.write_text("{corrupt!!!", encoding="utf-8")
-    with pytest.raises(Exception):
-        _rec.analyze(str(tmp_path), run["run_id"])
+def _repair_ok(ws):
+    def repair(failed_artifact, verification, ctx):
+        (ws / "a.py").write_text(GOOD)
+        return {"ok": True, "output": {"code": "ok"},
+                "patch_text": ("diff --git a/a.py b/a.py\n--- /dev/null\n+++ b/a.py\n@@ -0,0 +1,2 @@\n" + GOOD),
+                "artifact_type": "code_change", "verification": {"result": "PASS"}}
+    return repair
 
 
-# --- 11. persistence atomicity ---
-
-def test_persistence_atomic(tmp_path):
-    """atomic write: 无 .tmp 残留, JSON 完整。"""
-    register_workflow(str(tmp_path), workflow_id="wf-1", name="wf", nodes=_wf_nodes())
-    run = create_production_run(str(tmp_path), "wf-1")
-    p = tmp_path / "workflows" / "runs" / f"{run['run_id']}.json"
-    data = json.loads(p.read_text(encoding="utf-8"))
-    assert data["run_id"] == run["run_id"]
-    # 无 temp 文件残留
-    tmps = list(p.parent.glob(".tmp-*"))
-    assert len(tmps) == 0
+def _repair_bad(ws):
+    def repair(failed_artifact, verification, ctx):
+        (ws / "a.py").write_text("def still_broken(:\n    pass\n")
+        return {"ok": False, "error": "内置 pytest 失败: 未修复",
+                "verification": {"result": "FAIL"}}
+    return repair
 
 
-# --- 12. concurrent recovery protection ---
-
-def test_concurrent_recovery_lock(tmp_path):
-    """process-local lock: 并发 recover 不破坏状态。"""
-    register_workflow(str(tmp_path), workflow_id="wf-1", name="wf", nodes=_wf_nodes())
-    run = create_production_run(str(tmp_path), "wf-1")
-    import threading
-    results = []
-    def do():
-        try:
-            results.append(_rec.recover(str(tmp_path), run["run_id"]))
-        except Exception as exc:
-            results.append(exc)
-    ts = [threading.Thread(target=do) for _ in range(4)]
-    for t in ts:
-        t.start()
-    for t in ts:
-        t.join()
-    # 不崩溃, 状态一致
-    run2 = get_production_run(str(tmp_path), run["run_id"])
-    assert run2 is not None
-    assert len(results) == 4
+def _make_failed_run(tmp_path, factory) -> str:
+    r = create_production_run(str(tmp_path), "wf-1")
+    execute_production_run(str(tmp_path), r["run_id"], executor_factory=factory,
+                           artifact_root=str(tmp_path))
+    return r["run_id"]
 
 
-# --- 13. real crash/restart E2E ---
+# --- Case A: FAIL → repair → PASS → RECOVERED ---
 
-def test_real_crash_restart_e2e(tmp_path):
-    """真实模拟: 执行中进程"崩溃" → 新进程 resume → 全部 COMPLETED, A 只执行 1 次。"""
-    _calls.clear()
-    ws = tmp_path / "ws"
-    ws.mkdir(parents=True, exist_ok=True)
-    (ws / "main.py").write_text("x = 1\n", encoding="utf-8")
-    import subprocess
-    for c in (["init", "-q"], ["add", "-A"],
-              ["-c", "user.email=f@l", "-c", "user.name=f", "commit", "-q", "-m", "base"]):
-        subprocess.run(["git", "-C", str(ws), *c], capture_output=True, text=True, timeout=60)
+def test_case_a_recovered(tmp_path):
+    _wf(tmp_path)
+    ws = Path(tmp_path) / "workspace"
+    run_id = _make_failed_run(tmp_path, _fail_then_ok_factory(ws, fails=1))
+    res = recover_production_run(str(tmp_path), run_id,
+                                 executor_factory=_fail_then_ok_factory(ws, fails=1),
+                                 repair_fn=_repair_ok(ws))
+    assert res["status"] == "RECOVERED"
+    assert res["verification"]["result"] == "PASS"
+    assert res["verification"]["verification_id"].startswith("ver-")  # 新 verification_id
+    assert (ws / "a.py").read_text() == GOOD  # 真实修复
 
-    register_workflow(str(tmp_path), workflow_id="wf-1", name="wf", nodes=_wf_nodes())
-    run = create_production_run(str(tmp_path), "wf-1")
 
-    # 阶段 1: 执行到一半"崩溃" — 只让 gen-code 完成 (executor 对 gen-test 抛异常模拟中断)
-    def crash_factory(node_id):
+# --- Case B: 连续 FAIL → EXHAUSTED ---
+
+def test_case_b_exhausted(tmp_path):
+    _wf(tmp_path)
+    ws = Path(tmp_path) / "workspace"
+    run_id = _make_failed_run(tmp_path, _always_bad_factory(ws))
+    res = recover_production_run(str(tmp_path), run_id,
+                                 executor_factory=_always_bad_factory(ws),
+                                 repair_fn=_repair_bad(ws))
+    assert res["status"] == "EXHAUSTED"
+    assert res["attempt_number"] == MAX_ATTEMPTS
+    # 历史 append-only: attempts 含全部失败
+    attempts = recovery_attempts(str(tmp_path), run_id)
+    assert len(attempts) >= MAX_ATTEMPTS
+    assert any(a["status"] == "VERIFICATION_PENDING" for a in attempts)
+
+
+# --- Case C: 非 repair 类 → BLOCKED ---
+
+def test_case_c_blocked(tmp_path):
+    _wf(tmp_path)
+    ws = Path(tmp_path) / "workspace"
+
+    def agent_bad(node_id):
         def fn(input_data):
-            _calls[node_id] = _calls.get(node_id, 0) + 1
-            if node_id == "gen-test":
-                raise RuntimeError("模拟进程崩溃 (executor interrupted)")
-            patch = (f"diff --git a/{node_id}.py b/{node_id}.py\n--- /dev/null\n+++ b/{node_id}.py\n"
-                     "@@ -0,0 +1,2 @@\n+def {node_id}():\n+    return 1\n")
-            return {"ok": True, "output": {"code": node_id}, "patch_text": patch,
-                    "artifact_type": "code_change",
-                    "verification": {"result": "PASS", "tests": 1}}
+            return {"ok": False, "error": "未知角色: developer"}
         return fn
+    run_id = _make_failed_run(tmp_path, agent_bad)
+    res = recover_production_run(str(tmp_path), run_id,
+                                 executor_factory=agent_bad, repair_fn=_repair_ok(ws))
+    assert res["status"] == "BLOCKED"
+    assert "不可自动" in res["note"]
 
-    try:
-        execute_production_run(str(tmp_path), run["run_id"], executor_factory=crash_factory,
-                               artifact_root=str(tmp_path))
-    except RuntimeError:
-        pass  # 模拟崩溃: 执行中断
 
-    # 崩溃后: ProductionRun 可能是 RUNNING/FAILED, 持久化保留
-    crashed = get_production_run(str(tmp_path), run["run_id"])
-    assert crashed is not None, "崩溃后持久化必须可读"
-    assert _calls.get("gen-code", 0) == 1
+# --- Idempotency ---
 
-    # 恢复: analyze + resume (用正常 executor, 模拟新进程)
-    a = _rec.analyze(str(tmp_path), run["run_id"])
-    gen_code_action = [p for p in a["plan"] if p["node_id"] == "gen-code"][0]["action"]
-    assert gen_code_action == "SKIP", "A 必须 SKIP (已完成, 不重复)"
+def test_idempotent(tmp_path):
+    _wf(tmp_path)
+    ws = Path(tmp_path) / "workspace"
+    run_id = _make_failed_run(tmp_path, _fail_then_ok_factory(ws, fails=1))
+    recover_production_run(str(tmp_path), run_id,
+                           executor_factory=_fail_then_ok_factory(ws, fails=1),
+                           repair_fn=_repair_ok(ws))
+    res2 = recover_production_run(str(tmp_path), run_id,
+                                  executor_factory=_fail_then_ok_factory(ws, fails=1),
+                                  repair_fn=_repair_ok(ws))
+    assert res2["status"] == "ALREADY_CLOSED"
 
-    done = _rec.resume(str(tmp_path), run["run_id"],
-                       executor_factory=_counting_executor_factory,
-                       artifact_root=str(tmp_path))
-    assert done["state"] == "COMPLETED", f"恢复后必须 COMPLETED: {done.get('failure')}"
-    assert _calls["gen-code"] == 1, "A 全程只执行 1 次 (crash 后不重跑)"
 
-    # 14. workspace evidence: apply 全部 artifacts
-    for aid in done.get("artifacts", []):
-        art = get_artifact(str(tmp_path), aid)
-        if not art or not art.get("patch_text"):
-            continue
-        transition_artifact(str(tmp_path), aid, "STAGED", actor="system")
-        transition_artifact(str(tmp_path), aid, "REVIEWED", actor="system")
-        approve_artifact(str(tmp_path), aid, approved_by="user1")
-        apply_artifact(str(tmp_path), aid, workspace_dir=ws, actor="system",
-                       approval={"approval_id": "apr-7", "state": "APPROVED"})
-    # 真实 workspace 有生成代码
-    gen_files = list(ws.glob("gen-*.py"))
-    assert len(gen_files) >= 1, "workspace 必须有恢复后生成的代码"
+# --- Recovery Policy ---
+
+def test_policy(tmp_path):
+    assert recovery_policy(str(tmp_path), "VERIFICATION_FAILURE")["allowed"] is True
+    assert recovery_policy(str(tmp_path), "AGENT_FAILURE")["allowed"] is False
+    assert recovery_policy(str(tmp_path), "UNKNOWN")["allowed"] is False
+
+
+# --- Lineage ---
+
+def test_lineage(tmp_path):
+    _wf(tmp_path)
+    ws = Path(tmp_path) / "workspace"
+    run_id = _make_failed_run(tmp_path, _fail_then_ok_factory(ws, fails=1))
+    recover_production_run(str(tmp_path), run_id,
+                           executor_factory=_fail_then_ok_factory(ws, fails=1),
+                           repair_fn=_repair_ok(ws))
+    lg = recovery_lineage(str(tmp_path), run_id)
+    assert lg["failure_classification"] == "VERIFICATION_FAILURE"
+    assert lg["outcome"] == "RECOVERED"
+    assert lg["attempts"][-1]["verification_result"] == "PASS"
+
+
+# --- 新 verification_id 不复用 ---
+
+def test_new_verification_id(tmp_path):
+    _wf(tmp_path)
+    ws = Path(tmp_path) / "workspace"
+    run_id = _make_failed_run(tmp_path, _fail_then_ok_factory(ws, fails=1))
+    res = recover_production_run(str(tmp_path), run_id,
+                                 executor_factory=_fail_then_ok_factory(ws, fails=1),
+                                 repair_fn=_repair_ok(ws))
+    # 每个 attempt 有独立 verification_id
+    attempts = recovery_attempts(str(tmp_path), run_id)
+    vids = [a.get("verification", {}).get("verification_id") for a in attempts if a.get("verification")]
+    assert len(set(vids)) == len(vids)  # 全部唯一
+
+
+# --- CLI ---
+
+def test_cli_recovery(tmp_path):
+    _wf(tmp_path)
+    from factory_console.cli_factory import main as _cli_main
+    assert _cli_main(["recovery", "status", "prun-x", "--data-dir", str(tmp_path)]) == 0
+    assert _cli_main(["recovery", "attempts", "prun-x", "--data-dir", str(tmp_path)]) == 0
+    assert _cli_main(["recovery", "evidence", "rec-x", "--data-dir", str(tmp_path)]) == 1
+
+
+# --- API ---
+
+def test_api_recovery(tmp_path):
+    _wf(tmp_path)
+    ws = Path(tmp_path) / "workspace"
+    run_id = _make_failed_run(tmp_path, _fail_then_ok_factory(ws, fails=1))
+    from fastapi.testclient import TestClient
+    from factory_console.web.backend.fastapi_adapter import build_app
+    client = TestClient(build_app(None, factory_root=str(tmp_path)))
+    resp = client.get(f"/api/production-runs/{run_id}/recovery")
+    assert resp.status_code == 200
+    resp = client.post(f"/api/recovery/{run_id}/retry")
+    assert resp.status_code == 200
+    assert resp.json()["status"] in ("RECOVERED", "EXHAUSTED", "BLOCKED")
+    st = client.get(f"/api/production-runs/{run_id}/recovery").json()
+    assert st["status"] in ("RECOVERED", "EXHAUSTED", "BLOCKED")

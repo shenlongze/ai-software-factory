@@ -5725,6 +5725,78 @@ def build_app(
                 "lifecycle": _uc.LIFECYCLE_STATES, "error_codes": _uc.ERROR_CODES,
                 "entity_fields": list(_uc.ENTITY_FIELDS)}
 
+    @app.post("/api/conversations")
+    def api_create_conversation(body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """创建 Conversation (K1, S43 Entity)。"""
+        from factory_console import conversation_os as _co
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return _co.create_conversation(root, title=body.get("title", "新会话"),
+                                       created_by=body.get("created_by", "human"))
+
+    @app.post("/api/conversations/{conversation_id}/messages")
+    def api_send_message(conversation_id: str,
+                         body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """发送用户消息 (K1, Intent 理解 + 多轮 + 回复)。"""
+        from factory_console import conversation_os as _co
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _co.send_message(root, conversation_id,
+                                    body.get("message", ""), actor=body.get("actor", "human"))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/conversations")
+    def api_conversations() -> dict[str, Any]:
+        """Conversations 列表 (K1)。"""
+        from factory_console import conversation_os as _co
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        items = _co.conversations(root)
+        return {"items": items, "count": len(items)}
+
+    @app.get("/api/conversations/{conversation_id}")
+    def api_get_conversation(conversation_id: str) -> dict[str, Any]:
+        """Conversation 详情 (K1)。"""
+        from factory_console import conversation_os as _co
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _co.get_conversation(root, conversation_id)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/api/conversations/{conversation_id}/requirements")
+    def api_extract_requirement(conversation_id: str,
+                                body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """提取 Requirement (K1, req_ 实体)。"""
+        from factory_console import conversation_os as _co
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _co.extract_requirement(root, conversation_id,
+                                           title=body.get("title", "需求"),
+                                           description=body.get("description", ""),
+                                           acceptance=body.get("acceptance_criteria", ""))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/conversations/{conversation_id}/decisions")
+    def api_create_decision(conversation_id: str,
+                            body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """创建 Decision (K1, decision_ 实体, 不可覆盖)。"""
+        from factory_console import conversation_os as _co
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _co.create_decision(root, conversation_id,
+                                       statement=body.get("statement", ""),
+                                       proposed_by=body.get("proposed_by", "ai"),
+                                       decision=body.get("decision", "ACCEPT"))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     @app.get("/api/workforce")
     def api_workforce_list() -> dict[str, Any]:
         """Workforce workflows (S16)。"""

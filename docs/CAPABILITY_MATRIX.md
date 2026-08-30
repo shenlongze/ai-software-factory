@@ -725,3 +725,27 @@ AI Factory
 - Unified Contract = REAL (冻结统一数据与接口基础; Master Plan S42)
 - 复用 audit_event correlation_id; 未建第二套 Event/Governance/Audit
 - 编号说明: 本 Sprint = Master Plan "S42 Unified Entity/Data Contract" (顺延 S43 避免与已交付 Intelligence Strategy Kernel 冲突)
+
+## K1 更新 (Conversation OS Reality, v1.1.351)
+
+### Reality Status
+| 能力 | Status | 证据 |
+|------|--------|------|
+| 用户进入 + 多轮讨论 | REAL | test_conversation_os 10/10 |
+| Intent 理解 (DISCUSS/DECIDE/APPROVE/EXECUTE/ASK_STATUS/CLARIFY) | REAL | test_user_entry_and_intent |
+| Goal/Topic 稳定 (不跑题) | REAL | test_multi_turn_discussion |
+| Decision 保留 + 用户纠正 (不覆盖历史) | REAL | test_user_correction |
+| Requirement 提取 (req_ 实体可追溯) | REAL | test_requirement_decision_entities |
+| Decision 实体 (decision_ 前缀) | REAL | test_requirement_decision_entities |
+| Work 触发 (Conversation→真实执行→evidence) | REAL | test_trigger_work |
+| Result 呈现 (说人话) | REAL | test_trigger_work (summary) |
+| 状态追问 + 为什么失败 (evidence-backed) | REAL | test_status_followup / test_explain_and_repair |
+| 修复 (S39 复用, 不重新开始) | REAL | test_explain_and_repair |
+| Golden Scenario 全链 | REAL | test_golden_scenario |
+| CLI/API | REAL | test_cli / test_api (openapi 298) |
+
+### 诚实声明
+- Conversation OS = REAL (普通用户可通过对话驱动 OS: 讨论→决策→执行→结果→继续)
+- 复用 S43 Unified Contract + S30 workforce + S3 production + S5 verification + S39 healing (不建第二套)
+- Governance 唯一最小扩展: request_approval 支持 conversation 主体 (K1 必需)
+- Intent 理解 = deterministic 规则 (非裸 LLM); Work 触发真实执行 (非 mock)

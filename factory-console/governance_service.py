@@ -116,7 +116,8 @@ def request_approval(root: Path | str, *, production_run_id: str,
     if policy is None:
         raise ValueError(f"未知 policy: {policy_id}")
     # S24/S25: 非 production_run 主体 (experiment/workforce_variant) 不强制绑定 run
-    if subject_type in ("experiment", "workforce_variant"):
+    # K1: conversation 主体 (对话触发的工作审批)
+    if subject_type in ("experiment", "workforce_variant", "conversation"):
         pass
     else:
         run = get_production_run(root, production_run_id)

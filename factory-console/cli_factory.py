@@ -1019,6 +1019,8 @@ class FactoryCLI:
             return self.production_cmd(args)
         if args.command == "workflow":
             return self.workflow_cmd(args)
+        if args.command == "chat":
+            return self.chat_cmd(args)
         if args.command == "entity":
             return self.entity_cmd(args)
         if args.command == "strategy":
@@ -4153,6 +4155,68 @@ class FactoryCLI:
             print(f"  {r_.get('run_id')} | {r_.get('workflow_id')} | {r_.get('state')} | {r_.get('created_at')}")
         return 0
 
+    def chat_cmd(self, args: argparse.Namespace) -> int:
+        """factory chat — Chat (K1): Conversation OS。
+
+        薄代理 → conversation_os (CLI 与 API 共享同一 Service)。
+        """
+        from factory_console.conversation_os import (
+            create_conversation as _new, send_message as _send,
+            get_conversation as _get, conversations as _list,
+            extract_requirement as _req, create_decision as _dec,
+        )
+
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        action = getattr(args, "action", "new") or "new"
+        target = getattr(args, "target", None)
+
+        if action == "new":
+            conv = _new(str(root), title=getattr(args, "title", "新会话"))
+            print(f"chat: {conv['id']} | {conv['metadata'].get('title')} | OPEN")
+            print("  回复: factory chat send <conv> --message '...'")
+            return 0
+
+        if action == "send":
+            if not target or not getattr(args, "message", ""):
+                print("[E4280] 错误: 需 conversation_id + --message", file=sys.stderr)
+                return 2
+            r = _send(str(root), target, getattr(args, "message"))
+            print(f"[{r['intent']}] {r['reply']['text']}")
+            return 0
+
+        if action == "status":
+            if not target:
+                print("[E4281] 错误: conversation_id 必填", file=sys.stderr)
+                return 2
+            c = _get(str(root), target)
+            print(f"chat: {c['id']} | v{c['version']} | 消息 {len(c.get('messages', []))}")
+            for m in c.get("messages", [])[-5:]:
+                print(f"  [{m['intent']}] {m['content'][:60]}")
+            return 0
+
+        if action == "requirement":
+            if not target:
+                print("[E4282] 错误: conversation_id 必填", file=sys.stderr)
+                return 2
+            rq = _req(str(root), target, title=getattr(args, "title", "需求"))
+            print(f"requirement: {rq['id']} | {rq['title']}")
+            return 0
+
+        if action == "decision":
+            if not target:
+                print("[E4283] 错误: conversation_id 必填", file=sys.stderr)
+                return 2
+            d = _dec(str(root), target, statement=getattr(args, "message", "决策"))
+            print(f"decision: {d['id']} | {d['decision']}")
+            return 0
+
+        if action == "list":
+            for c in _list(str(root)):
+                print(f"  {c['id']} | {c['metadata'].get('title', '')} | v{c['version']} | 消息 {len(c.get('messages', []))}")
+            return 0
+
+        return 1
+
     def entity_cmd(self, args: argparse.Namespace) -> int:
         """factory entity — Entity (S43): Unified Entity/Data Contract。
 
@@ -7157,6 +7221,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_prod.add_argument("--input", default="{}", help="输入 JSON (run 用, 如 {'prompt': '...'})")
     p_prod.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     sub.add_parser("workflow", help="Workflow 列表 (S10): factory workflow list — 专业生产线")
+    # K1: Conversation OS CLI
+    p_conv = sub.add_parser("chat", help="Chat (K1): new/send/status/requirement/decision — Conversation OS")
+    p_conv.add_argument("action", nargs="?", default="new",
+                        choices=["new", "send", "status", "requirement", "decision", "list"])
+    p_conv.add_argument("target", nargs="?", help="conversation_id")
+    p_conv.add_argument("--message", default="", help="用户消息 (send 用)")
+    p_conv.add_argument("--title", default="新会话", help="会话标题 (new 用)")
+    p_conv.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+
     # S43: Unified Contract CLI
     p_uc = sub.add_parser("entity", help="Entity (S43): create/show/list/trace — Unified Entity/Data Contract")
     p_uc.add_argument("action", nargs="?", default="list",

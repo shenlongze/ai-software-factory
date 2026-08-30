@@ -5846,6 +5846,38 @@ def build_app(
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    @app.get("/api/control-tower")
+    def api_control_tower() -> dict[str, Any]:
+        """Control Tower 总览 (K2, 全真实投影)。"""
+        from factory_console import control_tower as _ct
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return _ct.control_tower(root)
+
+    @app.get("/api/control-tower/workforce")
+    def api_tower_workforce_status() -> dict[str, Any]:
+        """Workforce 状态 (K2, 谁在干什么)。"""
+        from factory_console import control_tower as _ct
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return _ct.workforce_status(root)
+
+    @app.get("/api/control-tower/governance")
+    def api_tower_governance_pending() -> dict[str, Any]:
+        """Governance 待办 (K2, PENDING approvals)。"""
+        from factory_console import control_tower as _ct
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return _ct.governance_pending(root)
+
+    @app.get("/api/control-tower/realtime")
+    def api_tower_realtime_stream() -> dict[str, Any]:
+        """最近事件流 (K2, correlation 可追溯)。"""
+        from factory_console import control_tower as _ct
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return _ct.realtime_stream(root)
+
     @app.get("/api/workforce")
     def api_workforce_list() -> dict[str, Any]:
         """Workforce workflows (S16)。"""

@@ -1019,6 +1019,8 @@ class FactoryCLI:
             return self.production_cmd(args)
         if args.command == "workflow":
             return self.workflow_cmd(args)
+        if args.command == "tower":
+            return self.tower_cmd(args)
         if args.command == "tasktree":
             return self.tasktree_cmd(args)
         if args.command == "chat":
@@ -4157,6 +4159,56 @@ class FactoryCLI:
             print(f"  {r_.get('run_id')} | {r_.get('workflow_id')} | {r_.get('state')} | {r_.get('created_at')}")
         return 0
 
+    def tower_cmd(self, args: argparse.Namespace) -> int:
+        """factory tower — Tower (K2): Control Tower。
+
+        薄代理 → control_tower (CLI 与 API 共享同一 Service)。
+        """
+        from factory_console.control_tower import (
+            control_tower as _ct, work_overview as _wo,
+            workforce_status as _ws, governance_pending as _gp,
+            realtime_stream as _rt,
+        )
+
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        action = getattr(args, "action", "overview") or "overview"
+
+        if action == "overview":
+            ct = _ct(str(root))
+            print(f"control tower @ {ct['calculated_at']}")
+            w = ct["work"]
+            print(f"  conversations: {w['conversations']} ({w['conversation_open']} open)")
+            print(f"  tasks: {w['tasks']} | states: {w['task_states']}")
+            print(f"  executions: {w['executions']} | states: {w['execution_states']}")
+            print(f"  workforce: running={ct['workforce']['running']} waiting={ct['workforce']['waiting']} "
+                  f"blocked={ct['workforce']['blocked']} error={ct['workforce']['error']} idle={ct['workforce']['idle']}")
+            print(f"  pending approvals: {ct['governance']['pending_approvals']}")
+            return 0
+
+        if action == "workforce":
+            ws = _ws(str(root))
+            print(f"workforce: running={ws['running']} waiting={ws['waiting']} "
+                  f"blocked={ws['blocked']} error={ws['error']} idle={ws['idle']}")
+            for t in ws["active_tasks"]:
+                print(f"  {t['id'][:12]} | {t['status']} | {t['title'][:30]}")
+            return 0
+
+        if action == "governance":
+            gp = _gp(str(root))
+            print(f"governance: {gp['pending_approvals']} pending")
+            for a in gp["items"]:
+                print(f"  {a['approval_id']} | {a['subject_type']} | by {a['requested_by']}")
+            return 0
+
+        if action == "realtime":
+            rt = _rt(str(root))
+            print(f"realtime: {rt['count']} events")
+            for e in rt["events"][:8]:
+                print(f"  {e['timestamp']} | {e['event_type']} | {e['correlation_id'][:16]}")
+            return 0
+
+        return 1
+
     def tasktree_cmd(self, args: argparse.Namespace) -> int:
         """factory tasktree — TaskTree (K2): Task Tree Work OS。
 
@@ -7289,6 +7341,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_prod.add_argument("--input", default="{}", help="输入 JSON (run 用, 如 {'prompt': '...'})")
     p_prod.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     sub.add_parser("workflow", help="Workflow 列表 (S10): factory workflow list — 专业生产线")
+    # K2: Control Tower CLI
+    p_ct = sub.add_parser("tower", help="Tower (K2): overview/workforce/governance/realtime — Control Tower")
+    p_ct.add_argument("action", nargs="?", default="overview",
+                      choices=["overview", "workforce", "governance", "realtime"])
+    p_ct.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+
     # K2: Task Tree CLI
     p_tt = sub.add_parser("tasktree", help="TaskTree (K2): decompose/status/progress/execute — Task Tree Work OS")
     p_tt.add_argument("action", nargs="?", default="list",

@@ -4462,6 +4462,114 @@ def build_app(
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    @app.post("/api/optimization/analyze")
+    def api_optimization_analyze() -> dict[str, Any]:
+        """Optimization Analysis (S24)。"""
+        from factory_console import optimization_service as _o
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return _o.analyze(root)
+
+    @app.get("/api/optimization/analyses/{analysis_id}")
+    def api_optimization_analysis_get(analysis_id: str) -> dict[str, Any]:
+        """Analysis 详情 (S24)。"""
+        from factory_console import optimization_service as _o
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        a = _o.get_analysis(root, analysis_id)
+        if a is None:
+            raise HTTPException(status_code=404, detail=f"Analysis 不存在: {analysis_id}")
+        return a
+
+    @app.get("/api/optimization/hypotheses")
+    def api_optimization_hypotheses() -> dict[str, Any]:
+        """Hypotheses 列表 (S24)。"""
+        from factory_console import optimization_service as _o
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        items = _o.hypotheses(root)
+        return {"items": items, "count": len(items)}
+
+    @app.post("/api/optimization/baselines")
+    def api_optimization_baseline() -> dict[str, Any]:
+        """创建真实 Baseline (S24)。"""
+        from factory_console import optimization_service as _o
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return _o.create_baseline(root)
+
+    @app.get("/api/optimization/baselines/{baseline_id}")
+    def api_optimization_baseline_get(baseline_id: str) -> dict[str, Any]:
+        """Baseline 详情 (S24)。"""
+        from factory_console import optimization_service as _o
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        bl = _o.get_baseline(root, baseline_id)
+        if bl is None:
+            raise HTTPException(status_code=404, detail=f"Baseline 不存在: {baseline_id}")
+        return bl
+
+    @app.post("/api/optimization/experiments")
+    def api_optimization_experiment(body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """创建 Experiment (S24, 需 Governance 批准)。"""
+        from factory_console import optimization_service as _o
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _o.create_experiment(root, baseline_id=body.get("baseline_id", ""),
+                                        control_definition=body.get("control_definition", "current"),
+                                        treatment_definition=body.get("treatment_definition", "optimized"),
+                                        metric=body.get("metric", "repair_count"))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/optimization/experiments/{experiment_id}")
+    def api_optimization_experiment_get(experiment_id: str) -> dict[str, Any]:
+        """Experiment 详情 (S24)。"""
+        from factory_console import optimization_service as _o
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        exp = _o.get_experiment(root, experiment_id)
+        if exp is None:
+            raise HTTPException(status_code=404, detail=f"Experiment 不存在: {experiment_id}")
+        return exp
+
+    @app.post("/api/optimization/experiments/{experiment_id}/run")
+    def api_optimization_run(experiment_id: str, body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """执行 Experiment 臂 (S24, 需批准)。"""
+        from factory_console import optimization_service as _o
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _o.run_experiment(root, experiment_id, run_id=body.get("run_id", ""),
+                                     arm=body.get("arm", "treatment"))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/optimization/experiments/{experiment_id}/compare")
+    def api_optimization_compare(experiment_id: str) -> dict[str, Any]:
+        """Measurement + Comparison (S24)。"""
+        from factory_console import optimization_service as _o
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return _o.compare(root, experiment_id)
+
+    @app.get("/api/optimization/experiments/{experiment_id}/outcome")
+    def api_optimization_outcome(experiment_id: str) -> dict[str, Any]:
+        """Optimization Outcome (S24)。"""
+        from factory_console import optimization_service as _o
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return _o.outcome(root, experiment_id)
+
+    @app.get("/api/optimization/{optimization_id}/lineage")
+    def api_optimization_lineage(optimization_id: str) -> dict[str, Any]:
+        """Optimization Lineage (S24)。"""
+        from factory_console import optimization_service as _o
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return _o.lineage(root, optimization_id)
+
     @app.get("/api/workforce")
     def api_workforce_list() -> dict[str, Any]:
         """Workforce workflows (S16)。"""

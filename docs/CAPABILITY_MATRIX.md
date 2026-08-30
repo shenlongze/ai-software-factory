@@ -343,3 +343,19 @@ AI Factory
 - 集成: `conversation.py` + `discovery.py` 对称 — 进度前缀 (批量/编辑/重问统一) + 求助 proposal {field, items} (y 全填/1-3 单选/自定义) + 中间字段智能下一问
 - 测试: `tests/console/test_discovery_guide.py` 43 passed + 两路径新增 8 用例; 全量 console 4826 passed / 0 新增失败
 - 边界: lifecycle 流程本身不驱动状态机 (仅引导文案); 求助建议只作用于当前缺失字段
+
+## S24 更新 (Workforce Optimization & Production Optimization, v1.1.331)
+
+### Reality Status
+| 能力 | Status | 证据 |
+|------|--------|------|
+| Optimization Infrastructure (Analysis/Baseline/Experiment/Measurement/Comparison/Outcome) | REAL | test_optimization 9/9; 真实 production runs 度量 |
+| Baseline (真实数据; 不足→BASELINE_INSUFFICIENT) | REAL | test_baseline_real_data / test_baseline_insufficient |
+| Experiment Governance (未批准 blocked) | REAL | test_experiment_requires_approval |
+| Outcome 诚实 (确定性 executor → UNCHANGED 不伪造) | REAL | test_real_experiment_e2e_honest_unchanged |
+| Lineage (fact→analysis→baseline→experiment→measurement→outcome) | REAL | 测试断言 chain keys |
+| Optimization Effectiveness | NOT YET PROVEN | 确定性 executor 下 Baseline==Treatment (UNCHANGED); 需真实 LLM 生产差异数据 |
+
+### 诚实声明
+- Optimization Infrastructure = REAL
+- Optimization Effectiveness = NOT YET PROVEN (需真实 LLM 生产数据 + 对照实验)

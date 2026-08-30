@@ -1019,6 +1019,8 @@ class FactoryCLI:
             return self.production_cmd(args)
         if args.command == "workflow":
             return self.workflow_cmd(args)
+        if args.command == "optimization":
+            return self.optimization_cmd(args)
         if args.command == "intelligence":
             return self.intelligence_cmd(args)
         if args.command == "ops":
@@ -4111,6 +4113,94 @@ class FactoryCLI:
             print(f"  {r_.get('run_id')} | {r_.get('workflow_id')} | {r_.get('state')} | {r_.get('created_at')}")
         return 0
 
+    def optimization_cmd(self, args: argparse.Namespace) -> int:
+        """factory optimization — Optimization (S24): Baseline/Experiment/Outcome。
+
+        薄代理 → optimization_service (CLI 与 API 共享同一 Service)。
+        """
+        from factory_console.optimization_service import (
+            analyze as _analyze, create_baseline as _baseline, create_experiment as _experiment,
+            approve_experiment as _approve, run_experiment as _run, compare as _compare,
+            outcome as _outcome, lineage as _lineage,
+        )
+
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        action = getattr(args, "action", "analyze") or "analyze"
+        target = getattr(args, "target", None)
+
+        if action == "analyze":
+            an = _analyze(root)
+            print(f"analysis: {an['analysis_id']} | status: {an['status']} | runs evidence: {len(an['evidence_refs'])}")
+            for s in an.get("signals", []):
+                print(f"  signal: {s['signal_type']} = {s['value']} (sample={s.get('sample_size')})")
+            for c in an.get("candidates", []):
+                print(f"  candidate: {c['target']} | conf: {c['confidence']} | {c['explain']}")
+            return 0
+
+        if action == "baseline":
+            an = _analyze(root)
+            bl = _baseline(root, analysis_id=an["analysis_id"])
+            print(f"baseline: {bl['baseline_id']} | status: {bl['status']} | runs: {bl['sample_size']}")
+            print(f"  explain: {bl['explain']}")
+            return 0
+
+        if action == "experiment":
+            if not target:
+                print("[E4090] 错误: baseline_id 必填 (factory optimization experiment <baseline>)",
+                      file=sys.stderr)
+                return 2
+            exp = _experiment(root, baseline_id=target, control_definition="current",
+                              treatment_definition="optimized", metric="repair_count")
+            print(f"experiment: {exp['experiment_id']} | status: {exp['status']}")
+            print(f"  approval: {exp['governance']['approval_id']} (factory optimization approve {exp['experiment_id']})")
+            return 0
+
+        if action == "approve":
+            if not target:
+                print("[E4091] 错误: experiment_id 必填 (factory optimization approve <exp>)", file=sys.stderr)
+                return 2
+            exp = _approve(root, target)
+            print(f"experiment: {target} | status: {exp['status']}")
+            return 0
+
+        if action == "run":
+            if not target or not getattr(args, "run_arg", None):
+                print("[E4092] 错误: 需要 experiment_id + --run <run_id>", file=sys.stderr)
+                return 2
+            rec = _run(root, target, run_id=getattr(args, "run_arg"), arm=getattr(args, "arm", "treatment"))
+            print(f"run: {rec['run_id']} | arm: {rec['arm']} | metrics: {rec['metrics']}")
+            return 0
+
+        if action == "compare":
+            if not target:
+                print("[E4093] 错误: experiment_id 必填 (factory optimization compare <exp>)", file=sys.stderr)
+                return 2
+            cmp = _compare(root, target)
+            print(f"compare: {cmp['result']} | {cmp.get('reason', '')}")
+            for m in cmp.get("measurements", []):
+                print(f"  {m['metric']}: control={m['control_value']} treatment={m['treatment_value']} "
+                      f"delta={m['delta']} ({m['delta_percent']}%)")
+            return 0
+
+        if action == "outcome":
+            if not target:
+                print("[E4094] 错误: experiment_id 必填 (factory optimization outcome <exp>)", file=sys.stderr)
+                return 2
+            oc = _outcome(root, target)
+            print(f"outcome: {oc['result']} | experience_written: {oc['experience_written']}")
+            print(f"  reason: {oc['reason']}")
+            return 0
+
+        if action == "lineage":
+            if not target:
+                print("[E4095] 错误: experiment_id 必填 (factory optimization lineage <exp>)", file=sys.stderr)
+                return 2
+            lg = _lineage(root, target)
+            print(f"lineage chain: {list(lg['chain'].keys())}")
+            return 0
+
+        return 1
+
     def intelligence_cmd(self, args: argparse.Namespace) -> int:
         """factory intelligence — Intelligence (S23): RCA + Recommendations。
 
@@ -5664,6 +5754,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_prod.add_argument("--input", default="{}", help="输入 JSON (run 用, 如 {'prompt': '...'})")
     p_prod.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     sub.add_parser("workflow", help="Workflow 列表 (S10): factory workflow list — 专业生产线")
+    # S24: Optimization CLI
+    p_opt = sub.add_parser("optimization", help="Optimization (S24): analyze/baseline/experiment/run/compare/outcome")
+    p_opt.add_argument("action", nargs="?", default="analyze",
+                       choices=["analyze", "baseline", "experiment", "approve", "run", "compare", "outcome", "lineage"],
+                       help="动作: analyze 分析 / baseline 基线 / experiment 实验 / approve <exp> 批准 / run <exp> <run> <arm> 执行臂 / compare <exp> 比较 / outcome <exp> 结果 / lineage <exp> 血缘")
+    p_opt.add_argument("target", nargs="?", help="experiment_id 或 baseline_id")
+    p_opt.add_argument("--run", dest="run_arg", default=None, help="run_id (run 用)")
+    p_opt.add_argument("--arm", default="treatment", help="control|treatment (run 用)")
+    p_opt.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+
     # S23: Intelligence CLI
     p_intel = sub.add_parser("intelligence", help="Intelligence (S23): analyze/show/root-cause/recommendations/evidence/history")
     p_intel.add_argument("action", nargs="?", default="history",

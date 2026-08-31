@@ -20,7 +20,7 @@ interface ProjectSummaryRow {
   archived?: boolean;
 }
 
-export function AfProjectsView(): JSX.Element {
+export function AfProjectsView({ onSelectProject }: { onSelectProject?: (id: string) => void }): JSX.Element {
   const [projects, setProjects] = useState<ProjectSummaryRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -59,7 +59,12 @@ export function AfProjectsView(): JSX.Element {
       ) : (
         <div className="af-projects-list">
           {projects.map((p) => (
-            <a key={p.id} className="af-project-card" href={`#/project/${encodeURIComponent(p.id)}`}>
+            <button
+              key={p.id}
+              type="button"
+              className="af-project-card"
+              onClick={() => onSelectProject?.(p.id)}
+            >
               <div className="af-project-card-row">
                 <span className="af-project-card-name">{p.name || p.id}</span>
                 {p.lifecycle_stage ? (
@@ -74,7 +79,7 @@ export function AfProjectsView(): JSX.Element {
                 <span>状态: {p.status || '—'}</span>
                 {p.starred ? <span>⭐ 收藏</span> : null}
               </div>
-            </a>
+            </button>
           ))}
         </div>
       )}

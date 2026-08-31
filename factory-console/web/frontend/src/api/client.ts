@@ -179,6 +179,19 @@ export const api = {
     sendJson<OsApprovalDecision>(`/api/approvals/${approvalId}/decide`, { decision }),
   // API 规范 v1 (2026-08-26): 集合统一 {items, count} — 前端解包
   projects: async () => (await getJson<{ items: ProjectSummary[] }>('/api/projects')).items,
+  // S35-UI: org 项目详情 + 进度 (统一后端 — ProjectWorkspace 用, 非 os 双体系)
+  projectDetail: (projectId: string) =>
+    getJson<{
+      project?: { id?: string; name?: string; status?: string; lifecycle_stage?: string; goal?: string };
+      counts?: { requirements?: number; plans?: number; tasks?: number; runs?: number };
+      repository?: { enabled?: boolean; status?: string; branch?: string; remote?: string };
+    }>(`/api/projects/${encodeURIComponent(projectId)}`),
+  projectProgress: (projectId: string) =>
+    getJson<{
+      tasks?: { total?: number; done?: number; running?: number; todo?: number };
+      progress_pct?: number;
+      latest_run?: { run_id?: string; status?: string } | null;
+    }>(`/api/projects/${encodeURIComponent(projectId)}/progress`),
   // S10-007 阶段三增强: AI 想法理解 (POST /api/projects/suggest → 建议名称/
   // 一句话理解/澄清问题; ai_generated=false → 规则 fallback, 前端标注"快速模式")
   suggestProject: (idea: string) => sendJson<IdeaSuggestion>('/api/projects/suggest', { idea }),

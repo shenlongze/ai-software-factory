@@ -7,7 +7,7 @@
  * - 点击卡片 → #/project/:id (项目详情)
  */
 
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { AfProjectsView } from '../components/af/AfProjectsView';
 import { stubFetch } from './fixtures';
@@ -39,13 +39,14 @@ describe('AfProjectsView 项目管理视图 (S35-UI)', () => {
     expect(screen.getByText(/后端不可达|暂无项目/)).toBeInTheDocument();
   });
 
-  it('点击项目卡片 → 项目详情 hash', async () => {
+  it('点击项目卡片 → 回调选中 (不跳独立页)', async () => {
     stubFetch({
       '/api/projects': [{ id: 'P-b0adfaa6', name: '飞机大战', lifecycle_stage: 'idea', status: 'idea' }],
     });
-    window.location.hash = '';
-    render(<AfProjectsView />);
-    const link = await screen.findByRole('link', { name: /飞机大战/ });
-    expect(link.getAttribute('href')).toBe('#/project/P-b0adfaa6');
+    let selected = '';
+    render(<AfProjectsView onSelectProject={(id) => { selected = id; }} />);
+    const card = await screen.findByRole('button', { name: /飞机大战/ });
+    fireEvent.click(card);
+    expect(selected).toBe('P-b0adfaa6');
   });
 });

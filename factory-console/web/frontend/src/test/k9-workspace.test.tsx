@@ -20,19 +20,6 @@ const conv = {
 
 const reply = { message_id: 'm2', intent: 'EXECUTE', reply: { text: '好的,开始执行', status: 'OK' }, conversation_version: 2 };
 
-const projStatus = {
-  project_id: 'project_1', title: '测试项目', status: 'ACTIVE',
-  progress: { completed: 1, failed: 0, running: 1, blocked: 0, waiting: 1, total: 3, percentage: 33 },
-  sprints: [{
-    sprint_id: 'sprint_1', title: 'S1', status: 'ACTIVE',
-    progress: { completed: 1, failed: 0, running: 1, blocked: 0, total: 3, percentage: 33 },
-    tasks: [
-      { id: 'task_1', title: '任务A', status: 'COMPLETED', production_run_id: 'r1' },
-      { id: 'task_2', title: '任务B', status: 'RUNNING', production_run_id: 'r2' },
-    ],
-  }],
-};
-
 function mockApi() {
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     const u = String(url);
@@ -40,9 +27,9 @@ function mockApi() {
     if (u.includes('/api/conversations') && u.includes('/messages')) return { ok: true, json: async () => reply };
     if (u.includes('/api/conversations/conv_1')) return { ok: true, json: async () => conv };
     if (u.includes('/api/conversations')) return { ok: true, json: async () => ({ items: [conv], count: 1 }) };
-    if (u.includes('/api/projects-os') && u.includes('/status')) return { ok: true, json: async () => projStatus };
+    if (u.includes('/api/projects/') && u.includes('/progress')) return { ok: true, json: async () => ({ tasks: { total: 3, done: 1, running: 1, todo: 1 }, progress_pct: 33, latest_run: null }) };
     if (u.includes('/api/projects/') && u.includes('/runs')) return { ok: true, json: async () => ({ project_id: 'project_1', runs: [{ run_id: 'R-TEST-1', status: 'running', totals: { total_tokens: 100 } }], count: 1 }) };
-    if (u.includes('/api/projects-os')) return { ok: true, json: async () => ({ items: [{ id: 'project_1', title: '测试项目' }] }) };
+    if (u.includes('/api/projects')) return { ok: true, json: async () => ({ items: [{ id: 'project_1', name: '测试项目', status: 'ACTIVE', lifecycle_stage: 'build' }], count: 1 }) };
     if (u.includes('/api/ops/overview')) return { ok: true, json: async () => ({ projects: { total: 1, running: 0, waiting: 0, blocked: 0, approval: 1, failed: 0 }, workforce: { running: 1, waiting: 0, blocked: 0, error: 0, idle: 0 }, recent_activity: [{ event_type: 'TOOL_CALL', timestamp: '2026-08-31T11:00:00+00:00', trace_id: 'sess-1' }], calculated_at: 'now' }) };
     // ConversationContext 数据源 — 新 UI 使用 sessions API
     if (u.includes('/api/sessions') && u.includes('/messages')) {
@@ -107,7 +94,6 @@ describe('AfWorkspace (K9 右栏)', () => {
     expect(screen.getByRole('tab', { name: /预览/ })).toBeTruthy();
     expect(screen.getByRole('tab', { name: /Diff/ })).toBeTruthy();
     expect(screen.getByRole('tab', { name: /证据/ })).toBeTruthy();
-    await waitFor(() => expect(screen.getByText(/任务B/)).toBeTruthy());
   });
 
   it('Tab 可手动切换', async () => {

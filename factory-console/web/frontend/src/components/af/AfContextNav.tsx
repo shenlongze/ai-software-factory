@@ -118,10 +118,14 @@ export function AfContextNav({
   const [creating, setCreating] = useState(false);
 
   const loadProjects = useCallback(() => {
-    fetch('/api/projects-os')
+    // S35-UI: org /api/projects (统一后端 — 与项目列表/详情同源, 非 os 双体系)
+    fetch('/api/projects')
       .then((r) => r.json())
-      .then((data: { items?: Array<{ id: string; title: string; status?: string }> }) => {
-        if (data?.items) setProjects(data.items.slice(0, 5));
+      .then((data: { items?: Array<{ id: string; name: string; status?: string | null }> }) => {
+        if (data?.items)
+          setProjects(
+            data.items.slice(0, 5).map((p) => ({ id: p.id, title: p.name, status: p.status ?? undefined })),
+          );
       })
       .catch(() => { /* ignore */ });
   }, []);

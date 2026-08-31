@@ -160,29 +160,37 @@ function ArtifactPanel(): JSX.Element {
 // ===== S32-004B: Project Workspace (点击项目后右栏完整切换 — 真实数据) =====
 function ProjectWorkspace({ projectId, onClear }: { projectId: string; onClear: () => void }): JSX.Element {
   const [proj, setProj] = useState<{ title?: string; status?: string; id?: string } | null>(null);
-  const [detail, setDetail] = useState<OsProjectStatus | null>(null);
+  const [detail, setDetail] = useState<{ progress: { total: number; completed: number; running: number; failed: number } } | null>(null);
   const [runs, setRuns] = useState<Array<{ run_id: string; status: string; updated_at?: string; totals?: Record<string, number> }>>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    // ① 项目基本信息 (osProjects 真实)
+    // ① 项目基本信息 (org /api/projects — 统一后端, 非 os 双体系)
     api
-      .osProjects()
+      .projects()
       .then((list) => {
         const found = list.find((p) => p.id === projectId);
-        if (!cancelled) setProj(found ? { title: found.title, status: found.status, id: found.id } : null);
+        if (!cancelled)
+          setProj(found ? { title: found.name, status: found.status ?? found.lifecycle_stage, id: found.id } : null);
       })
       .catch(() => {
         if (!cancelled) setProj({ id: projectId, title: projectId, status: undefined });
       });
-    // ② 项目详情 (osProjectStatus 真实 progress/tasks)
+    // ② 项目进度 (org /api/projects/{id}/progress — tasks 真实统计)
     api
-      .osProjectStatus(projectId)
+      .projectProgress(projectId)
       .then((s) => {
         if (!cancelled) {
-          setDetail(s);
+          setDetail({
+            progress: {
+              total: s.tasks?.total ?? 0,
+              completed: s.tasks?.done ?? 0,
+              running: s.tasks?.running ?? 0,
+              failed: 0,
+            },
+          });
           setLoading(false);
         }
       })
@@ -241,20 +249,6 @@ function ProjectWorkspace({ projectId, onClear }: { projectId: string; onClear: 
                   </span>
                   <code className="ai-pj-ws-run-id">{r.run_id}</code>
                   <span className="ai-run-state">{r.status}</span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* 真实任务 (osProjectStatus.sprints[].tasks) */}
-          {detail && detail.sprints && detail.sprints.length > 0 && (
-            <div className="ai-pj-ws-section" data-testid="af-pj-tasks">
-              <div className="ai-pj-ws-sec-title">最近任务</div>
-              {detail.sprints.slice(0, 2).flatMap((sp) => sp.tasks ?? []).slice(0, 4).map((t) => (
-                <div key={t.id} className="ai-pj-ws-task">
-                  <span className="ai-pj-ws-task-dot" aria-hidden="true" />
-                  <span className="ai-pj-ws-task-title">{t.title}</span>
-                  <span className="ai-pj-ws-task-status">{t.status}</span>
                 </div>
               ))}
             </div>

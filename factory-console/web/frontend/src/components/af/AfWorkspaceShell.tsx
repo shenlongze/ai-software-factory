@@ -118,7 +118,20 @@ export function AfWorkspaceShell({ route, initialProjectId }: AfWorkspaceShellPr
       )}
       main={<AfConversationCenter />}
       workspace={
-        activeNav === 'projects' ? <AfProjectsView /> : activeNav === 'sessions' ? <AfSessionsView /> : <AfWorkspace />
+        activeNav === 'projects' ? (
+          <AfProjectsView
+            onSelectProject={(id) => {
+              // S35-UI: 方案A — 项目点击不跳独立页, 右栏打开 (会话驱动)
+              ctx.setProjectId(id);
+              setActiveNav('home');
+              navigate(`#/workspace?project=${encodeURIComponent(id)}`);
+            }}
+          />
+        ) : activeNav === 'sessions' ? (
+          <AfSessionsView />
+        ) : (
+          <AfWorkspace />
+        )
       }
     />
   );

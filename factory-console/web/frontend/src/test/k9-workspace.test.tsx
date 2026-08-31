@@ -112,11 +112,12 @@ describe('AfWorkspace (K9 右栏)', () => {
 });
 
 describe('AfContextNav (K9 左栏)', () => {
-  it('渲染 Context 导航 (品牌/对话/项目/运行/审批)', async () => {
+  it('渲染 Context 导航 (品牌/对话/项目/最近 — S31-002)', async () => {
     wrap(<AfContextNav collapsed={false} />);
     await waitFor(() => expect(screen.getByText('AI Factory')).toBeTruthy());
-    expect(screen.getByText(/我的工作/)).toBeTruthy();
+    expect(screen.getAllByText(/对话/).length).toBeGreaterThan(0);
     await waitFor(() => expect(screen.getByText(/测试项目/)).toBeTruthy());
-    expect(screen.getByText(/待审批/)).toBeTruthy();
+    // S31-002: Module 菜单 (待审批) 不进入一级导航
+    expect(screen.queryByText(/待审批/)).toBeNull();
   });
 });

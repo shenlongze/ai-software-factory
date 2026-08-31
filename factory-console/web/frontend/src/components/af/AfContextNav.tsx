@@ -1,27 +1,23 @@
 /**
- * components/af/AfContextNav.tsx — AI Enterprise Workbench Context Navigator (V2).
+ * components/af/AfContextNav.tsx — AI Enterprise Workbench Context Navigator (V2, S31-002)。
  *
- * 设计文档 §4-6: 区分 Global 与 Project 两种上下文 — 不混成一棵树。
+ * S31-001 Audit 结论: 后台 Module 不应变成一级菜单 (Agents/Workforce/Skills/Models
+ * /Policies/Audit 全部隐藏)。左栏 = Context: 用户"现在在什么事上"。
  *
- * Global 模式 (无当前项目):
- *   ◆ AI Factory
- *   ⌂ Home
- *   ▣ Projects
- *   — INTELLIGENCE —
- *   ◎ Agents   ◎ Workforce   ◎ Skills   ◎ Models
- *   — GOVERNANCE —
- *   ◌ Approvals   ◌ Policies   ◌ Audit
- *   — SYSTEM —
- *   ⚙ Settings
+ * Global 模式 (S31-002 Conversation-first):
+ *   ⌕ Search
+ *   对话 (Conversations — 活跃会话, 一级)
+ *   项目 (Projects — 真实列表)
+ *   最近 (Recent — 最近会话)
+ *   ⚙ (设置/治理收敛到开发者模式, 弱化)
  *
- * Project 模式 (有当前项目 ScorePocket):
+ * Project 模式 (有当前项目):
  *   ← Projects
  *   ScorePocket  Development  ● Running
- *   Overview · Conversation · Tasks · Artifacts · Runs · Agents · Files · Settings
+ *   当前任务 · 进展 · 产物 · 运行 (来自 Conversation/Run 上下文)
  *
- * 底部: 用户信息 + 当前工作会话列表 (来自 ConversationContext)。
- *
- * 数据来源: 真实 ConversationContext (不伪造) — sessions 列表显示当前活跃会话。
+ * 数据来源: 真实 ConversationContext + API (不伪造)。
+ * 后台 Module 通过 ⚙ 进入 (开发者/治理), 不进一级导航。
  */
 
 import { useEffect, useMemo, useState } from 'react';
@@ -49,20 +45,12 @@ interface ContextNavProps {
   onSelectProject?: (id: string) => void;
 }
 
-const GLOBAL_NAV: NavItem[] = [
-  { id: 'home', label: 'Home', icon: '⌂' },
-  { id: 'projects', label: 'Projects', icon: '▣' },
-  // INTELLIGENCE
-  { id: 'agents', label: 'Agents', icon: '◎', section: '智能体' },
-  { id: 'workforce', label: 'Workforce', icon: '⊞', section: '智能体' },
-  { id: 'skills', label: 'Skills', icon: '◈', section: '智能体' },
-  { id: 'models', label: 'Models', icon: '⚡', section: '智能体' },
-  // GOVERNANCE
-  { id: 'approvals', label: '待审批', icon: '◌', section: '治理', badge: '1' },
-  { id: 'policies', label: 'Policies', icon: '⬡', section: '治理' },
-  { id: 'audit', label: 'Audit', icon: '⎔', section: '治理' },
-  // SYSTEM
-  { id: 'settings', label: 'Settings', icon: '⚙', section: '系统' },
+// S31-002: 一级导航只剩 Context 对象。后台 Module (Agents/Workforce/Skills/Models/
+// Policies/Audit) 收敛到 ⚙ 设置/开发者 — 不暴露给普通用户。
+const CONTEXT_NAV: NavItem[] = [
+  { id: 'conversation', label: '对话', icon: '💬' },
+  { id: 'projects', label: '项目', icon: '▣' },
+  { id: 'recent', label: '最近', icon: '◷' },
 ];
 
 interface ProjectInfo {
@@ -201,41 +189,52 @@ export function AfContextNav({
     );
   }
 
-  // Global mode
+  // Global mode — S31-002 Conversation-first Context
   return (
-    <nav className="ai-sidebar ai-sidebar--v2 ai-sidebar--global" data-testid="af-context-nav" aria-label="AI Factory Global Navigation">
+    <nav className="ai-sidebar ai-sidebar--v2 ai-sidebar--global" data-testid="af-context-nav" aria-label="AI Factory Context Navigation">
       {/* Brand */}
       <div className="ai-brand-row ai-brand-row--v2">
         <span className="ai-brand-logo" aria-hidden="true">◆</span>
         <span className="ai-brand-text">AI Factory</span>
       </div>
 
-      {/* Nav Items (带 section 分组) */}
+      {/* Context 一级导航 (对话/项目/最近 — 用户任务视角, 非 Module 清单) */}
       <div className="ai-nav-list">
-        {GLOBAL_NAV.map((item, idx) => {
-          // Section header
-          const prevSection = idx > 0 ? GLOBAL_NAV[idx - 1].section : undefined;
-          const showSection = item.section && item.section !== prevSection;
-          return (
-            <div key={item.id}>
-              {showSection && (
-                <div className="ai-section-title">{item.section}</div>
-              )}
-              <button
-                type="button"
-                className={`ai-nav-item${activeNav === item.id ? ' ai-nav-item--active' : ''}`}
-                onClick={() => onSelectNav?.(item.id)}
-              >
-                <span className="ai-nav-icon">{item.icon}</span>
-                <span className="ai-nav-label">{item.label}</span>
-                {item.badge && <span className="ai-nav-badge">{item.badge}</span>}
-              </button>
-            </div>
-          );
-        })}
+        {CONTEXT_NAV.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={`ai-nav-item${activeNav === item.id ? ' ai-nav-item--active' : ''}`}
+            onClick={() => onSelectNav?.(item.id)}
+          >
+            <span className="ai-nav-icon">{item.icon}</span>
+            <span className="ai-nav-label">{item.label}</span>
+          </button>
+        ))}
       </div>
 
-      {/* Recent / Current Work sessions */}
+      {/* 对话 (Conversations — 一级, 活跃会话真实列表) */}
+      <div className="ai-sessions-block">
+        <div className="ai-section-title">对话</div>
+        {currentSessions.length === 0 ? (
+          <div className="ai-nav-empty">暂无会话 — 在中栏说一句"我想做…"开始</div>
+        ) : (
+          currentSessions.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              className={`ai-nav-item ai-nav-item--sub${ctx.activeId === s.id ? ' ai-nav-item--active' : ''}`}
+              onClick={() => onSelectConversation?.(s.id)}
+              title={s.title || s.id}
+            >
+              <span className="ai-nav-icon">💬</span>
+              <span className="ai-nav-label">{s.title || `Session ${s.id.slice(-4)}`}</span>
+            </button>
+          ))
+        )}
+      </div>
+
+      {/* 项目 (Projects — 真实列表) */}
       {projects.length > 0 && (
         <div className="ai-sessions-block">
           <div className="ai-section-title">项目</div>
@@ -253,10 +252,12 @@ export function AfContextNav({
           ))}
         </div>
       )}
-      {currentSessions.length > 0 && (
+
+      {/* 最近 (Recent — 最近更新会话, 简化复用列表) */}
+      {currentSessions.length > 1 && (
         <div className="ai-sessions-block">
-          <div className="ai-section-title">我的工作</div>
-          {currentSessions.map((s) => (
+          <div className="ai-section-title">最近</div>
+          {currentSessions.slice(0, 3).map((s) => (
             <button
               key={s.id}
               type="button"
@@ -264,7 +265,7 @@ export function AfContextNav({
               onClick={() => onSelectConversation?.(s.id)}
               title={s.title || s.id}
             >
-              <span className="ai-nav-icon">💬</span>
+              <span className="ai-nav-icon">◷</span>
               <span className="ai-nav-label">{s.title || `Session ${s.id.slice(-4)}`}</span>
             </button>
           ))}

@@ -3974,6 +3974,7 @@ class ConsoleService:
         priority: Any = None,
         dependency: Any = None,
         story_id: str = "",
+        plan_id: str = "",  # S34/S35-P0-4: Plan→Task 关联
     ) -> dict[str, Any] | None:
         """POST /backlog/task — 创建 Task (可选绑定 Story; priority/dependency 校验)。
 
@@ -4007,6 +4008,7 @@ class ConsoleService:
             description=str(description or "").strip(),
             priority=prio,
             dependency=deps,
+            plan_id=str(plan_id or ""),  # S34/S35-P0-4
         )
         bound_story = str(story_id or "").strip()
         if bound_story:

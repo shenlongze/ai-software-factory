@@ -587,3 +587,38 @@ def test_chain_start_uses_project_id_arg(tmp_path: Path) -> None:
                  root=ws, project_id="", service=svc, ctx=ctx)
     assert r["ok"] is True
     assert svc.create_task.call_args.args[0] == "P-z"
+
+
+# ---- S34/S35-P0: 幂等 + plan_id 落库 + 工具自动注入 ----
+
+def test_execute_plan_idempotent(tmp_path: Path) -> None:
+    """execute_plan 同 plan_id 幂等 (不重复创建任务)。"""
+    import json as _json
+    from unittest.mock import MagicMock
+
+    from factory_console.session.agent_loop import execute_plan
+
+    svc = MagicMock()
+    # list_backlog 返回已含 plan_id 的任务 → 幂等短路
+    svc.list_backlog.return_value = {"tasks": [{"id": "T-1", "title": "旧", "priority": "P0", "plan_id": "plan_x"}]}
+    r = execute_plan({"plan_id": "plan_x", "tasks": [{"title": "新", "priority": "P0"}]},
+                     project_id="P-abc", service=svc)
+    assert r["ok"] is True
+    assert r.get("idempotent") is True
+    assert not svc.create_task.called  # 未再创建
+
+
+def test_task_carries_plan_id(tmp_path: Path) -> None:
+    """execute_plan 建任务带 plan_id (Plan→Task 链落库)。"""
+    from unittest.mock import MagicMock
+
+    from factory_console.session.agent_loop import execute_plan
+
+    svc = MagicMock()
+    svc.list_backlog.return_value = {"tasks": []}
+    svc.create_task.return_value = {"id": "T-2", "title": "x", "priority": "P0"}
+    r = execute_plan({"plan_id": "plan_y", "tasks": [{"title": "T", "priority": "P0"}]},
+                     project_id="P-abc", service=svc)
+    assert r["ok"] is True
+    # create_task 收到 plan_id
+    assert svc.create_task.call_args.kwargs.get("plan_id") == "plan_y"

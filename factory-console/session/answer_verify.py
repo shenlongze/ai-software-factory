@@ -92,6 +92,21 @@ def no_evidence_prompt() -> str:
     )
 
 
+def production_claim_prompt() -> str:
+    """S34/S35-P0-1/6: 生产对象声明必须基于工具结果 — LLM 是解释器, 不是事实来源。"""
+    return (
+        "【生产声明约束】你在回答中声称的任何生产对象必须来自真实工具结果, 禁止自行推断:\n"
+        "- 说『项目已创建』→ 必须有 create_project 工具返回的 project_id\n"
+        "- 说『计划已生成/已重新生成』→ 必须有 plan_development 工具返回的 plan_id\n"
+        "  (没有 plan_id 只能说『计划已生成』的意图, 或调用 plan_development 生成)\n"
+        "- 说『任务已创建』→ 必须有 execute_plan/chain_start 返回的 task_ids\n"
+        "- 说『已开始执行』→ 必须有 chain_start/execute_plan 返回的 run_id 或明确执行状态\n"
+        "  (若工具返回失败/未返回 ID, 必须如实说明, 不得声称成功)\n"
+        "- 查询计划/任务/进度 → 必须先调用 project_plan/project_tasks/project_status 且传 project_id\n"
+        "未满足以上条件时, 如实说『尚未创建/尚未执行/需要先执行XX』。"
+    )
+
+
 def self_check_prompt() -> str:
     """S-2.3: 回答后自评 — 硬收敛前注入, 强制检查结论证据。"""
     return (

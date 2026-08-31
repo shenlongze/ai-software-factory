@@ -401,21 +401,31 @@ def execute_plan(
         return {"ok": False, "error": "任务服务不可用"}
     _plan_id = str(plan.get("plan_id") or "")
     created: list[dict[str, Any]] = []
+    # S34/S35-P0-3: 幂等 — plan_id 已执行过则返回已有任务, 不重复创建
+    if _plan_id and service is not None:
+        try:
+            _existing = (service.list_backlog(project_id) or {}).get("tasks") or []
+            _same_plan = [t for t in _existing if str(t.get("plan_id") or "") == _plan_id]
+            if _same_plan:
+                return {
+                    "ok": True, "idempotent": True,
+                    "output": f"计划 {_plan_id} 已执行过 (任务已存在 {len(_same_plan)} 个, 不重复创建)。",
+                    "created": [{"id": t.get("id"), "title": t.get("title"),
+                                 "priority": t.get("priority"), "plan_id": _plan_id}
+                                for t in _same_plan],
+                    "plan_id": _plan_id,
+                }
+        except Exception:  # noqa: BLE001 — 幂等检查失败 → 继续 (保守)
+            pass
     for t in (plan.get("tasks") or [])[:20]:
         try:
             c = service.create_task(
                 project_id, title=str(t.get("title") or "")[:80],
                 description=str(t.get("description") or ""),
                 priority=str(t.get("priority") or "P2"),
+                plan_id=_plan_id,  # S34/S35-P0-4: 任务关联计划
             )
             if c:
-                # P0-E: 任务落库后回写 plan_id (task→plan 关联)
-                if _plan_id and hasattr(c, "__setitem__") and isinstance(c, dict):
-                    try:
-                        c["plan_id"] = _plan_id
-                        c["project_id"] = project_id
-                    except Exception:  # noqa: BLE001
-                        pass
                 created.append({"id": c.get("id"), "title": c.get("title"),
                                 "priority": c.get("priority"), "plan_id": _plan_id})
         except Exception as exc:  # noqa: BLE001 — 单条失败跳过 (诚实标注)
@@ -1163,6 +1173,27 @@ def dispatch(
             st.save(root)
             if not r.get("ok"):
                 return r
+            # S34/S35-P0-2: 生成真实 run_id (会话执行链 Run), 关联 session/plan/task
+            try:
+                import uuid as _uuid
+
+                _run_id = f"R{int(__import__('time').time() * 1000)}"
+                st.state["run_id"] = _run_id
+                st.state["project_id"] = _cs_project_id
+                st.state["plan_id"] = plan.get("plan_id") or ""
+                st.state["session_id"] = (ctx or {}).get("session_id") or ""
+                st.save(root)
+                # 关联 session.run_ids (会话 Run 卡可见)
+                try:
+                    if (ctx or {}).get("session_id"):
+                        from factory_console.console_sessions import _sessions_store as _ss  # noqa: F401
+                        sessions_store_mod = __import__("factory_console.console_sessions", fromlist=["SessionStore"])
+                        _st = sessions_store_mod.SessionStore(str(Path(root) / "console_sessions.json"))
+                        _st.add_run((ctx or {}).get("session_id"), _run_id)
+                except Exception:  # noqa: BLE001 — 关联失败不阻断
+                    pass
+            except Exception:  # noqa: BLE001 — run_id 生成失败 → 用时间戳
+                _run_id = f"R{int(__import__('time').time() * 1000)}"
             # P0-B: 执行链启动 → 同步 progress_card
             try:
                 from .progress_card import sync_from_exec
@@ -1177,17 +1208,17 @@ def dispatch(
 
                 _t = _th.Thread(
                     target=_chain_auto_worker,
-                    args=(root, project_id, _sid, service, st),
+                    args=(root, _cs_project_id, _sid, service, st),
                     daemon=True,
                 )
                 _t.start()
-                return {"ok": True, "output": (
-                    f"✅ 执行链已启动并后台自动执行 (Promised Work): {goal or '执行链'} "
+                return {"ok": True, "run_id": _run_id, "output": (
+                    f"✅ 执行链已启动并后台自动执行 (Run {_run_id}): {goal or '执行链'} "
                     f"({len(tasks)} 个任务, 已建 backlog {_created_n} 个)。"
                     "后台逐任务委派执行中, 每个完成后结果回写 backlog; "
                     "全部完成会自动推送交付汇报。『进度』可随时查看。")}
-            return {"ok": True, "output": (
-                f"✅ 执行链已启动: {goal or '执行链'} ({len(tasks)} 个任务, "
+            return {"ok": True, "run_id": _run_id, "output": (
+                f"✅ 执行链已启动 (Run {_run_id}): {goal or '执行链'} ({len(tasks)} 个任务, "
                 f"已建 backlog 任务 {_created_n} 个)。"
                 "说『继续』/『推进』逐任务执行(每个完成后结果回写 backlog); "
                 "『进度』查看状态; 敏感任务会先确认。"
@@ -1656,6 +1687,10 @@ def run_agent_native(
 
                     messages.append({"role": "system", "content": no_evidence_prompt()})
                     continue
+                # S34/S35-P0-1/6: 生产声明约束 — LLM 声称计划/任务/执行必须有工具 ID 证据
+                from .answer_verify import production_claim_prompt
+
+                messages.append({"role": "system", "content": production_claim_prompt()})
                 # W8 (v1.1.253 + v1.1.261 强化): 输出 guardrail — 数字+细节证据校验
                 # 回答含数字/色值/版本/类名/路径 → 与已调工具结果比对; 无据 → 强制修正 (治"方向对、细节编")
                 _answer = _strip_fake_toolcalls(resp.get("content") or "（模型未输出）")
@@ -1715,7 +1750,42 @@ def run_agent_native(
                 except Exception:  # noqa: BLE001
                     args = {}
                 _tool_t0 = __import__("time").monotonic()
-                result = dispatch(tid, args, root=data_dir, project_id=project_id, service=service, ctx=ctx)
+                # S34/S35-P0-5: Context→Tool Argument 注入 — 项目类工具结果学习 project_id,
+                # 后续项目相关工具调用自动补参 (AI 识别项目后不再丢 project_id)
+                _resolved_project_id = ""
+                try:
+                    if args.get("project_id"):
+                        _resolved_project_id = str(args["project_id"])
+                    elif tid in ("project_list", "project_status", "project_scan",
+                                 "project_tasks", "project_structure", "project_plan"):
+                        # 项目查询类: 从会话 project_id 或 AI 已传参数取
+                        _resolved_project_id = str(project_id or "")
+                except Exception:  # noqa: BLE001
+                    pass
+                # 项目相关写/查工具自动补 project_id (非项目工具不动)
+                if _resolved_project_id and not args.get("project_id"):
+                    if tid in ("project_tasks", "project_status", "project_scan",
+                               "project_structure", "chain_start", "chain_next",
+                               "chain_status", "task_action", "execute_plan",
+                               "create_task", "project_plan", "plan_development",
+                               "execute_task"):
+                        _args = dict(args)
+                        _args["project_id"] = _resolved_project_id
+                        args = _args
+                result = dispatch(tid, args, root=data_dir, project_id=_resolved_project_id or project_id, service=service, ctx=ctx)
+                # 工具结果带 project_id → 学习 (本轮后续工具调用自动注入)
+                if not _resolved_project_id:
+                    _rpid = str(result.get("project_id") or "").strip()
+                    if _rpid:
+                        _resolved_project_id = _rpid
+                        # 用学习到的 project_id 重跑项目查询类工具 (修正空参查询)
+                        if tid in ("project_tasks", "project_status", "project_scan",
+                                   "project_structure") and result.get("ok") is False:
+                            _args2 = dict(args)
+                            _args2["project_id"] = _resolved_project_id
+                            result = dispatch(tid, _args2, root=data_dir,
+                                              project_id=_resolved_project_id,
+                                              service=service, ctx=ctx)
                 _tool_dur = int((__import__("time").monotonic() - _tool_t0) * 1000)
                 # tool_search 命中 → 累积加入可见工具 (Eino 模式)
                 if tid == "tool_search" and result.get("matches"):

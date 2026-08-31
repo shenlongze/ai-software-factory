@@ -152,6 +152,7 @@ class Task(_OrgModel):
     status: TaskStatus = TaskStatus.TODO
     assignee: str = ""
     dependency: list[str] = Field(default_factory=list)
+    plan_id: str = ""  # S34/S35-P0-4: Plan→Task 关联 (创建时注入)
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
     history: list[HistoryEntry] = Field(default_factory=list)

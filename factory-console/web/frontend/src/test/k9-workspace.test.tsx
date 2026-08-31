@@ -6,7 +6,7 @@
  */
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ConversationProvider } from '../components/af/ConversationContext';
+import { ConversationProvider, useConversation } from '../components/af/ConversationContext';
 import { AfConversationCenter } from '../components/af/AfConversationCenter';
 import { AfWorkspace, deriveProfile, tabForIntent } from '../components/af/AfWorkspace';
 import { AfContextNav } from '../components/af/AfContextNav';
@@ -280,5 +280,46 @@ describe('Progress Card (S34-CORE-C4)', () => {
       expect(card?.textContent).toContain('任务A');
       expect(card?.textContent).toContain('任务B');
     });
+  });
+});
+
+// S35-UI: 会话即项目属性 — 切换会话同步 projectId/scope
+describe('Session→Project 同步 (S35)', () => {
+  it('切换到公司会话 → 清除项目锚定', async () => {
+    const sessionsMock = [
+      { id: 'sess-comp', scope: 'company', project_id: null, title: '公司会话', status: 'active' },
+      { id: 'sess-proj', scope: 'project', project_id: 'P-abc', title: '项目会话', status: 'active' },
+    ];
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const u = String(url);
+      if (u.includes('/api/sessions') && u.includes('/messages')) return { ok: true, json: async () => ({ items: [], count: 0 }) };
+      if (u.includes('/api/sessions')) return { ok: true, json: async () => ({ items: sessionsMock, count: 2 }) };
+      if (u.includes('/api/projects')) return { ok: true, json: async () => ({ items: [], count: 0 }) };
+      return { ok: true, json: async () => ({}) };
+    }));
+    let capturedProjectId: string | null = 'P-abc';
+    let sessionCount = 0;
+    function Probe() {
+      const ctx = useConversation();
+      capturedProjectId = ctx.projectId;
+      sessionCount = ctx.sessions.length;
+      return (
+        <button type="button" onClick={() => ctx.selectSession('sess-comp')}>
+          select-comp
+        </button>
+      );
+    }
+    render(
+      <ConversationProvider initialProjectId="P-abc">
+        <Probe />
+      </ConversationProvider>,
+    );
+    // 初始锚定 P-abc (URL 恢复)
+    await waitFor(() => expect(capturedProjectId).toBe('P-abc'));
+    // 等会话列表加载完成 (sessionsRef 有数据后 selectSession 才能同步)
+    await waitFor(() => expect(sessionCount).toBe(2));
+    // 切换到公司会话 → 清空
+    fireEvent.click(screen.getByText('select-comp'));
+    await waitFor(() => expect(capturedProjectId).toBeNull());
   });
 });

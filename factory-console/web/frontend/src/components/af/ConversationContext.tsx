@@ -8,7 +8,7 @@
  * 数据: 真实 API (GET/POST /api/sessions + messages), 失败安全空态。
  */
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { api } from '../../api/client';
 import type { SessionMessage, SessionSummary } from '../../models/types';
@@ -153,6 +153,9 @@ export function ConversationProvider({ children, initialProjectId }: { children:
   const [loadingSessions, setLoadingSessions] = useState<boolean>(true);
   const [sending, setSending] = useState<boolean>(false);
   const [uiPrefs, setUiPrefsState] = useState({ show_thinking: true, show_execution: true, show_timing: true });
+  // S35-UI: sessions 最新引用 (selectSession 同步 projectId 用, 避免闭包捕获旧值)
+  const sessionsRef = useRef<SessionSummary[]>([]);
+  sessionsRef.current = sessions;
 
   // U3: 加载 UI 显示偏好 (失败默认全开)
   useEffect(() => {
@@ -242,6 +245,19 @@ export function ConversationProvider({ children, initialProjectId }: { children:
 
   const selectSession = useCallback((id: string) => {
     setActiveId(id);
+    // S35-UI: 会话即项目属性 — 切换会话时同步 projectId/scope
+    // (会话的 project_id 是唯一事实源; 公司会话 → 清项目, 项目会话 → 锚定)
+    // 用 sessionsRef 读最新列表 (避免 useCallback 闭包捕获旧 sessions)
+    const found = sessionsRef.current.find((s) => s.id === id);
+    if (found) {
+      const pid = found.project_id ?? null;
+      setProjectIdState(pid);
+      if (pid) {
+        setScopeState('project');
+      } else {
+        setScopeState('company');
+      }
+    }
   }, []);
 
   const createSession = useCallback(

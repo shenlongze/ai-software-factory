@@ -7461,17 +7461,17 @@ body[data-bg='1'] .af-shell {
 }
 
 .ai-msg-bubble--ai {
-  background: var(--c-card, #232a37);
-  color: #e6e8ee;
-  border: 1px solid var(--c-border, #2a3140);
+  background: var(--c-card, #f5f5f7);
+  color: #1d232e; /* S34-001 P0-2: 亮色背景深色文字 (原 #e6e8ee 白底不可见) */
+  border: 1px solid var(--c-border, #e5e7eb);
   border-top-left-radius: 4px;
 }
 
 /* 执行状态卡片 */
 .ai-execution-card {
   padding: 12px 16px;
-  background: var(--c-card, #232a37);
-  border: 1px solid var(--c-border, #2a3140);
+  background: var(--c-card, #f5f5f7);
+  border: 1px solid var(--c-border, #e5e7eb);
   border-radius: 12px;
   border-top-left-radius: 4px;
   max-width: 720px;
@@ -7488,13 +7488,13 @@ body[data-bg='1'] .af-shell {
 .ai-execution-title {
   font-size: 13px;
   font-weight: 700;
-  color: #f5f7fa;
+  color: #1d232e; /* S34-001 P0-2: 亮色背景深色 (原 #f5f7fa 白底不可见) */
 }
 
 .ai-execution-status {
   font-size: 10px;
   font-weight: 600;
-  color: #4c8dff;
+  color: #1d5fbf; /* 加深蓝色 (原 #4c8dff 浅) */
   padding: 2px 8px;
   background: rgba(76, 141, 255, 0.14);
   border-radius: 10px;
@@ -7509,7 +7509,7 @@ body[data-bg='1'] .af-shell {
 
 .ai-execution-text {
   font-size: 13px;
-  color: #9aa1ae;
+  color: #4b5563; /* S34-001 P0-2: 加深 (原 #9aa1ae 浅) */
 }
 
 .ai-execution-dots {

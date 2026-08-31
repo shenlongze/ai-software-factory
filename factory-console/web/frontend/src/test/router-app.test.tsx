@@ -68,7 +68,7 @@ describe('AI Factory 真实入口挂载 (App.tsx)', () => {
     render(<App />);
     expect(await screen.findByTestId('af-workspace-entry')).toBeInTheDocument();
     // K9: 默认进入 Conversation (Human Console Front Door)
-    expect(await screen.findByText(/和公司说话/)).toBeInTheDocument();
+    expect(await screen.findByText(/你今天想做什么/)).toBeInTheDocument();
     expect(screen.getAllByText('AI Factory').length).toBeGreaterThanOrEqual(1);
   });
 
@@ -92,7 +92,7 @@ describe('AI Factory 真实入口挂载 (App.tsx)', () => {
     render(<App />);
     expect(await screen.findByTestId('af-workspace-entry')).toBeInTheDocument();
     // K9: 中栏 Conversation 常驻
-    expect(await screen.findByText(/和公司说话/)).toBeInTheDocument();
+    expect(await screen.findByText(/你今天想做什么/)).toBeInTheDocument();
   });
 
   it('#/project/markpad/todo → AI Factory 项目入口 (Project Entity + 真实 Todo Tree)', async () => {

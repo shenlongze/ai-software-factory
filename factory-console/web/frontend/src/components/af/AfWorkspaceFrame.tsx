@@ -32,8 +32,8 @@ export const SIDEBAR_WIDTH_MIN = 150;
 export const SIDEBAR_WIDTH_MAX = 420;
 export const CHAT_WIDTH_MIN = 240;
 export const CHAT_WIDTH_MAX = 560;
-export const SIDEBAR_WIDTH_DEFAULT = 240;
-export const CHAT_WIDTH_DEFAULT = 340;
+export const SIDEBAR_WIDTH_DEFAULT = 260;
+export const CHAT_WIDTH_DEFAULT = 520;
 
 function readNum(key: string, fallback: number): number {
   try {

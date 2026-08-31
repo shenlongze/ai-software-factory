@@ -57,7 +57,8 @@ describe('App Shell (K-7a 单入口)', () => {
     renderApp();
     expect(await screen.findByTestId('af-context-nav')).toBeInTheDocument();
     expect(screen.getAllByText('AI Factory').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText('🛠 开发者控制台')).toBeInTheDocument();
+    // 开发者控制台 = 弱化图标 (K9 UI 第一刀收敛)
+    expect(screen.getByTitle('开发者控制台 (开发/运维)')).toBeInTheDocument();
   });
 
   it('K9: 中栏 Conversation + 右栏 Workspace + 状态栏', async () => {

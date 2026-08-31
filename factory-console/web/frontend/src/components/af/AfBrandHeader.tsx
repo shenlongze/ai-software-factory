@@ -32,11 +32,12 @@ export function AfBrandHeader({
       ) : null}
       <span className="af-header-spacer" />
       <a
-        className="af-console-link"
+        className="af-console-link af-console-link--quiet"
         href="http://127.0.0.1:8011/api/board"
-        title="打开开发者控制台 (board: 战役/员工/质量/成本/审计监控)"
+        title="开发者控制台 (开发/运维)"
+        aria-label="开发者控制台"
       >
-        🛠 开发者控制台
+        🛠
       </a>
       <AfLangSwitch compact />
       <AfThemeSwitch compact />

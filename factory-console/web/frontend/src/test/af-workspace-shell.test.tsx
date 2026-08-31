@@ -53,10 +53,10 @@ describe('AfWorkspaceShell (K9 Human Workspace 三栏壳)', () => {
     expect(screen.getByTestId('af-workspace')).toBeInTheDocument();
   });
 
-  it('中栏 Conversation = 默认主入口 (和公司说话)', async () => {
+  it('中栏 Conversation = 唯一主入口 (引导式对话)', async () => {
     stubFetch(companyStubs());
     render(<AfWorkspaceShell route={workspaceRoute()} />);
-    expect(await screen.findByText(/和公司说话/)).toBeInTheDocument();
+    expect(await screen.findByText(/你今天想做什么/)).toBeInTheDocument();
   });
 
   it('右栏 Workspace Tab 齐全 (任务/代码/预览/Diff/证据)', async () => {

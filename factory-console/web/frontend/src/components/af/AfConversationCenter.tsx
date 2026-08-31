@@ -144,8 +144,11 @@ export function AfConversationCenter(): JSX.Element {
         <div className="af-conv-messages" data-testid="af-conv-messages">
           {loading && <div className="af-conv-hint">加载中…</div>}
           {error && <div className="af-conv-hint af-conv-hint--error">⚠️ {error}</div>}
-          {messages.length === 0 && !loading && (
-            <div className="af-conv-empty">{t('chat.talkHint')}</div>
+          {messages.length === 0 && !loading && !error && (
+            <div className="af-conv-empty" data-testid="af-conv-guide">
+              <div className="af-conv-guide-title">{t('chat.guideTitle')}</div>
+              <div className="af-conv-guide-sub">{t('chat.guideSub')}</div>
+            </div>
           )}
           {messages.map((m, i) => (
             <div key={i} className={`af-msg af-msg--${m.actor === 'human' ? 'human' : 'ai'}`}>

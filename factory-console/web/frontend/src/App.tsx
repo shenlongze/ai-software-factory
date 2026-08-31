@@ -39,8 +39,12 @@ function AppRouter(): JSX.Element {
   // S32-004B: #/workspace?project=id → 注入 Context (不离开 Workbench)
   const contextProjectId = route.level === 'workspace' ? route.projectId ?? null : null;
   return (
-    <ConversationProvider initialProjectId={contextProjectId}>
-      {route.level === 'project' ? <AfProjectEntry route={route} /> : <AfWorkspaceEntry route={route} />}
+    <ConversationProvider key="conv-root" initialProjectId={contextProjectId}>
+      {route.level === 'project' ? (
+        <AfProjectEntry route={route} />
+      ) : (
+        <AfWorkspaceEntry route={route} initialProjectId={contextProjectId} />
+      )}
     </ConversationProvider>
   );
 }

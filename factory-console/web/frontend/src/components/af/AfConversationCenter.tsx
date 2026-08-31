@@ -183,12 +183,14 @@ export function AfConversationCenter(): JSX.Element {
     bottomRef.current?.scrollIntoView?.({ behavior: 'smooth' });
   }, [ctx.messages]);
 
-  // 自动选中第一个会话
+  // 自动选中第一个会话 (S35-UI 修复: 用 autoSelectFirst — 只 setActiveId, 不动 projectId/scope。
+  // 旧实现用 selectSession, 在 scope 切换瞬间读到旧 sessions 会把 projectId 同步成
+  // 旧会话的 project_id=null, 覆盖用户刚选择的项目 — Bug: 下拉选项目后又被清空)
   useEffect(() => {
     if (ctx.activeId == null && ctx.sessions.length > 0) {
-      ctx.selectSession(ctx.sessions[0].id);
+      ctx.autoSelectFirst(ctx.sessions[0].id);
     }
-  }, [ctx.activeId, ctx.sessions, ctx.selectSession]);
+  }, [ctx.activeId, ctx.sessions, ctx.autoSelectFirst]);
 
   // 推导当前执行阶段文案 — S34-003B: 感知工具完成阶段, 不显示矛盾状态
   const executionLabel = useMemo(() => {
@@ -377,12 +379,9 @@ export function AfConversationCenter(): JSX.Element {
               <ProjectScopeSelect
                 value={ctx.projectId}
                 onChange={(pid: string | null) => {
+                  // S35-UI: 只 setProjectId (状态驱动), 不改 hash — 避免 hash 变化触发
+                  // AppRouter 重渲染导致 ConversationProvider 状态重置
                   ctx.setProjectId(pid);
-                  if (pid) {
-                    window.location.hash = `#/workspace?project=${encodeURIComponent(pid)}`;
-                  } else {
-                    window.location.hash = '#/workspace';
-                  }
                 }}
               />
               <button type="button" className="ai-tb-btn ai-tb-btn--icon" title="Attach" aria-label="Attach">+</button>

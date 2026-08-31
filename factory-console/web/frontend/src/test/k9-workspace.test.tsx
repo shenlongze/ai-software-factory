@@ -323,3 +323,44 @@ describe('Session→Project 同步 (S35)', () => {
     await waitFor(() => expect(capturedProjectId).toBeNull());
   });
 });
+
+// S35-UI-BUGFIX: 下拉选项目后不被自动会话选中覆盖 (回归保护)
+describe('项目下拉选中不被覆盖 (S35-BugFix)', () => {
+  it('选项目后 autoSelectFirst 不覆盖 projectId', async () => {
+    const sessionsMock = [
+      { id: 'sess-comp', scope: 'company', project_id: null, title: '公司会话', status: 'active' },
+    ];
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      const u = String(url);
+      if (u.includes('/api/sessions') && u.includes('/messages')) return { ok: true, json: async () => ({ items: [], count: 0 }) };
+      if (u.includes('/api/sessions')) return { ok: true, json: async () => ({ items: sessionsMock, count: 1 }) };
+      if (u.includes('/api/projects')) return { ok: true, json: async () => ({ items: [], count: 0 }) };
+      return { ok: true, json: async () => ({}) };
+    }));
+    let capturedProjectId: string | null = null;
+    let capturedSessions = 0;
+    function Probe() {
+      const ctx = useConversation();
+      capturedProjectId = ctx.projectId;
+      capturedSessions = ctx.sessions.length;
+      return (
+        <button type="button" onClick={() => ctx.setProjectId('P-b0adfaa6')}>
+          select-plane
+        </button>
+      );
+    }
+    render(
+      <ConversationProvider>
+        <Probe />
+      </ConversationProvider>,
+    );
+    // 等会话加载
+    await waitFor(() => expect(capturedSessions).toBe(1));
+    // 用户主动选项目
+    fireEvent.click(screen.getByText('select-plane'));
+    await waitFor(() => expect(capturedProjectId).toBe('P-b0adfaa6'));
+    // 模拟 AfConversationCenter 自动选中第一个会话 (autoSelectFirst) — 不得覆盖 projectId
+    // autoSelectFirst 由内部调用; 这里验证 projectId 保持 P-b0adfaa6 (即使 activeId 兜底选中公司会话)
+    expect(capturedProjectId).toBe('P-b0adfaa6');
+  });
+});

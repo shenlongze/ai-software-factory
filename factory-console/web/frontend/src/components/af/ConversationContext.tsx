@@ -21,6 +21,7 @@ export type SessionScope = 'company' | 'project';
 const COLLAPSED_KEY = 'af.chat.collapsed';
 const PINNED_KEY = 'af.chat.pinned';
 const SCOPE_KEY = 'af.chat.scope';
+const PROJECT_KEY = 'af.chat.project';
 
 function readFlag(key: string): boolean {
   try {
@@ -68,6 +69,8 @@ export interface ConversationContextValue {
   openPanel: () => void;
   createSession: (title?: string, featureId?: string | null) => Promise<SessionSummary | null>;
   selectSession: (id: string) => void;
+  /** S35-UI: 自动兜底选中会话 (activeId=null) — 只 setActiveId, 不动 projectId/scope */
+  autoSelectFirst: (id: string) => void;
   renameSession: (id: string, title: string) => void;
   archiveSession: (id: string) => void;
   send: (content: string) => Promise<void>;
@@ -103,6 +106,7 @@ const DEFAULT_CONTEXT: ConversationContextValue = {
   openPanel: () => {},
   createSession: async () => null,
   selectSession: () => {},
+  autoSelectFirst: () => {},
   renameSession: () => {},
   archiveSession: () => {},
   send: async () => {},
@@ -121,7 +125,24 @@ export function ConversationProvider({ children, initialProjectId }: { children:
     }
   });
   // S32-004B: initialProjectId — URL ?project= 恢复 Context (Refresh 后项目仍在)
-  const [projectId, setProjectIdState] = useState<string | null>(initialProjectId ?? null);
+  // S35-UI: projectId 持久化 localStorage (重挂载/刷新不丢 — 会话项目锚定健壮性)
+  const [projectId, setProjectIdState] = useState<string | null>(() => {
+    if (initialProjectId) return initialProjectId;
+    try {
+      return window.localStorage.getItem(PROJECT_KEY);
+    } catch {
+      return null;
+    }
+  });
+  // 同步 localStorage (任何 setProjectIdState 后)
+  useEffect(() => {
+    try {
+      if (projectId) window.localStorage.setItem(PROJECT_KEY, projectId);
+      else window.localStorage.removeItem(PROJECT_KEY);
+    } catch {
+      /* noop */
+    }
+  }, [projectId]);
   const [featureId, setFeatureIdState] = useState<string | null>(null);
   const [featureName, setFeatureNameState] = useState<string | null>(null);
   // K9 Human Workspace: 右栏当前 Tab (联动驱动, 被动跟随 + 用户可手动切)
@@ -139,6 +160,12 @@ export function ConversationProvider({ children, initialProjectId }: { children:
     setFeatureNameState(null);
     const next: SessionScope = pid ? 'project' : 'company';
     setScopeState((prev) => (prev !== next ? next : prev));
+    // S35-UI: 同步 localStorage (重挂载/刷新恢复 — 会话项目锚定健壮性)
+    try {
+      window.localStorage.setItem(SCOPE_KEY, next);
+    } catch {
+      /* noop */
+    }
   }, []);
   const setFeatureId = useCallback((fid: string | null, name?: string) => {
     setFeatureIdState(fid);
@@ -258,6 +285,13 @@ export function ConversationProvider({ children, initialProjectId }: { children:
         setScopeState('company');
       }
     }
+  }, []);
+
+  /** S35-UI: 自动兜底选中会话 (activeId=null 时) — 只 setActiveId, 不同步 projectId/scope。
+   *  根因修复: 自动选中在 scope 切换瞬间读到旧 sessions, selectSession 把 projectId
+   *  同步成旧会话的 project_id=null, 覆盖用户刚选择的项目。自动兜底不改变项目锚定。 */
+  const autoSelectFirst = useCallback((id: string) => {
+    setActiveId(id);
   }, []);
 
   const createSession = useCallback(
@@ -490,6 +524,7 @@ export function ConversationProvider({ children, initialProjectId }: { children:
       openPanel,
       createSession,
       selectSession,
+      autoSelectFirst,
       renameSession,
       archiveSession,
       send,
@@ -521,6 +556,7 @@ export function ConversationProvider({ children, initialProjectId }: { children:
       openPanel,
       createSession,
       selectSession,
+      autoSelectFirst,
       renameSession,
       archiveSession,
       send,

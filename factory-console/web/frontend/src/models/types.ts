@@ -742,6 +742,15 @@ export interface SessionRunSummary {
   node_runs?: unknown[];
 }
 
+/** S32-004: 项目真实 Run 摘要 (workflow_runs/{project_id}/ 真实 progress)。 */
+export interface ProjectRunSummary {
+  run_id: string;
+  status: string;
+  stages?: unknown[];
+  totals?: Record<string, number>;
+  updated_at?: string;
+}
+
 /** K-7e: Web 会话栏 — 消息 (user/assistant, append-only)。 */
 export interface SessionMessage {
   id: string;

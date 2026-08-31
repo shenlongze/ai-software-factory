@@ -1498,6 +1498,36 @@ def build_app(
         system["version_summary"] = _version_summary(_factory_version)
         return {"system": system, "project": pm}
 
+    @app.get("/api/projects/{project_id}/runs")
+    def api_project_runs(project_id: str) -> dict[str, Any]:
+        """S32-004: 项目真实 Run 列表 (workflow_runs/{project_id}/ 真实 progress)。
+
+        返回 {project_id, runs: [{run_id, status, updated_at, stages, totals}]}。
+        全部来自真实执行事实 — 不伪造, 无 run 则空列表。
+        """
+        root = Path(str(factory_root if factory_root is not None else DEFAULT_ROOT))
+        runs_dir = root / "workflow_runs" / project_id
+        runs = []
+        if runs_dir.is_dir():
+            for run_dir in sorted(runs_dir.iterdir(), key=lambda p: p.name, reverse=True):
+                if not run_dir.is_dir():
+                    continue
+                progress = run_dir / "progress.json"
+                if not progress.exists():
+                    continue
+                try:
+                    p = json.loads(progress.read_text(encoding="utf-8"))
+                    runs.append({
+                        "run_id": run_dir.name,
+                        "status": p.get("status", "unknown"),
+                        "updated_at": p.get("updated_at"),
+                        "stages": p.get("stages", []),
+                        "totals": p.get("totals", {}),
+                    })
+                except (OSError, ValueError):
+                    continue
+        return {"project_id": project_id, "runs": runs, "count": len(runs)}
+
     @app.get("/api/projects/{project_id}/artifacts/version")
     def api_project_artifacts_version(project_id: str) -> dict[str, Any]:
         """产出物版本信号 (GET — {version, updated_at}; 轮询用, 轻量)。"""

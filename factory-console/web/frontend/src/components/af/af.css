@@ -8073,3 +8073,15 @@ body[data-bg='1'] .af-shell {
 .ai-nav-status { font-size: 10px; color: #999; text-transform: uppercase; margin-left: auto; }
 .ai-nav-status--active { color: #34c759; }
 .ai-nav-status--idea { color: #f5a623; }
+
+/* S32-004: 项目 Run 列表 */
+.af-runs-list { display: flex; flex-direction: column; gap: 6px; }
+.af-run-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.af-run-dot { width: 14px; text-align: center; }
+.af-run-dot--running { color: #f5a623; }
+.af-run-dot--completed { color: #34c759; }
+.af-run-dot--failed { color: #ff3b30; }
+.af-run-code { font-family: ui-monospace, monospace; color: #555; }
+.af-run-state { text-transform: uppercase; font-size: 11px; color: #888; }
+.af-run-tokens { color: #999; font-size: 11px; }
+.af-run-time { margin-left: auto; color: #aaa; font-size: 11px; }

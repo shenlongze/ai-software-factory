@@ -38,6 +38,7 @@ import {
   type ProjectDocContent,
   type ProjectDocSummary,
   type ProjectSummary,
+  type ProjectRunSummary,
   type ProviderSummary,
   type ProjectUpdatedSummary,
   type RecommendationSummary,
@@ -194,10 +195,10 @@ export const api = {
   // S10-006.5 收尾: 项目管理 — 重命名/改 idea (PATCH → ProjectUpdatedSummary
   // {project_id, name, idea, status}; 空 name/idea / 无事可做 → 400 诚实拒绝)
   updateProject: (projectId: string, changes: { name?: string; idea?: string; starred?: boolean; archived?: boolean }) =>
-    patchJson<ProjectUpdatedSummary>(
-      `/api/projects/${encodeURIComponent(projectId)}`,
-      changes,
-    ),
+    patchJson<ProjectUpdatedSummary>(`/api/projects/${encodeURIComponent(projectId)}`, changes),
+  // S32-004: 项目真实 Run 列表 (workflow_runs 真实 progress)
+  projectRuns: (projectId: string) =>
+    getJson<{ project_id: string; runs: ProjectRunSummary[]; count: number }>(`/api/projects/${encodeURIComponent(projectId)}/runs`),
   // S10-006.5 收尾: 项目管理 — 删除 (DELETE → {deleted: true, project_id};
   // 运行中 → 409 由后端拒绝, 前端提示"正在开发中")
   deleteProject: (projectId: string) =>

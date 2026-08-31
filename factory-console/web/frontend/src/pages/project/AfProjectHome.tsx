@@ -54,6 +54,8 @@ export function AfProjectHome({
   const [failedCount, setFailedCount] = useState<number>(0);
   const [qualityScore, setQualityScore] = useState<number | null>(null);
   const [qualityNote, setQualityNote] = useState<string>('');
+  // S32-004: 项目真实 Run 列表
+  const [runs, setRuns] = useState<Array<{ run_id: string; status: string; updated_at?: string; totals?: Record<string, number> }>>([]);
 
   const base = `/api/projects/${encodeURIComponent(projectId)}`;
 
@@ -89,6 +91,10 @@ export function AfProjectHome({
         setQualityScore(null);
         setQualityNote('未评测');
       });
+    // S32-004: 真实 Run 列表
+    getJson<{ runs?: Array<{ run_id: string; status: string; updated_at?: string; totals?: Record<string, number> }> }>(`${base}/runs`)
+      .then((d) => setRuns(d.runs ?? []))
+      .catch(() => setRuns([]));
   };
 
   // ③ 实时性: 打开拉取 + 默认 15s 自动轮询 (Founder: todo 要实时) + 手动刷新
@@ -177,6 +183,33 @@ export function AfProjectHome({
             ⚠️ 失败 {failedCount}
           </a>
         </div>
+      </section>
+      {/* S32-004: 真实 Run 列表 (来自 /api/projects/{id}/runs, 非前端模拟) */}
+      <section className="af-home-card" data-testid="af-home-runs">
+        <div className="af-home-card-head">
+          <h3>▶ 执行记录（{runs.length}）</h3>
+        </div>
+        {runs.length === 0 ? (
+          <p className="af-home-note">暂无执行 — AI Factory 开始工作时会显示真实 Run。</p>
+        ) : (
+          <div className="af-runs-list">
+            {runs.map((r) => (
+              <div key={r.run_id} className="af-run-row">
+                <span className={`af-run-dot af-run-dot--${r.status}`}>
+                  {r.status === 'running' ? '●' : r.status === 'completed' ? '✓' : '✗'}
+                </span>
+                <code className="af-run-code">{r.run_id}</code>
+                <span className="af-run-state">{r.status}</span>
+                {r.totals && r.totals.total_tokens != null && (
+                  <span className="af-run-tokens">tokens {r.totals.total_tokens}</span>
+                )}
+                {r.updated_at && (
+                  <span className="af-run-time">{new Date(r.updated_at).toLocaleTimeString()}</span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </section>
             <section className="af-home-card" data-testid="af-home-todo-summary">
         <div className="af-home-card-head">

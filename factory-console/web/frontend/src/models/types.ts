@@ -847,3 +847,100 @@ export interface AuditEventItem {
   evidence?: unknown[];
   event_hash?: string;
 }
+
+// ─── K6: Human Console 类型 (Conversation OS / Control Tower / Project OS) ───
+
+export interface ConversationSummary {
+  id: string;
+  type?: string;
+  version?: number;
+  status?: string;
+  metadata?: { title?: string };
+  messages?: Array<{ id: string; content: string; intent: string; actor: string; at: string }>;
+  state?: {
+    goal?: string;
+    current_topic?: string;
+    confirmed_decisions?: string[];
+    pending_questions?: string[];
+    requirements?: string[];
+    work_items?: Array<{ id: string; title: string; status: string; production_run_id?: string; evidence_id?: string }>;
+  };
+  project_id?: string;
+}
+
+export interface ConversationReply {
+  message_id: string;
+  intent: string;
+  reply: { text: string; status: string };
+  conversation_version: number;
+}
+
+export interface ConversationDetail extends ConversationSummary {}
+
+export interface ConversationQuality {
+  conversation_id: string;
+  messages: number;
+  scores: Record<string, number>;
+  quality_score: number;
+  evaluated_at: string;
+}
+
+export interface OpsOverview {
+  projects: { total: number; running: number; waiting: number; blocked: number; approval: number; failed: number };
+  workforce: { running: number; waiting: number; blocked: number; error: number; idle: number };
+  recent_activity: Array<{ timestamp?: string; event_type?: string; correlation_id?: string }>;
+  calculated_at: string;
+}
+
+export interface OpsWhoWorking {
+  agents: Array<{
+    agent: string; tasks: number; state: string;
+    current_work?: string; idle_reason?: string; blocking_reason?: string;
+  }>;
+  count: number;
+  calculated_at: string;
+}
+
+export interface OpsDrill {
+  project: { id: string; title: string; status: string; progress: { completed: number; total: number; percentage: number } };
+  sprints: Array<{
+    sprint: { id: string; title: string; status: string; progress: { completed: number; total: number; percentage: number } };
+    tasks: Array<{
+      id: string; title: string; status: string; operational_state: string;
+      production_run_id?: string; why?: string;
+      run?: { run_id?: string; state?: string; nodes?: unknown[] };
+      evidence?: Array<{ id: string; state?: string; refs?: string[] }>;
+    }>;
+  }>;
+}
+
+export interface OpsSnapshot {
+  snapshot_id: string;
+  taken_at: string;
+  state: unknown;
+}
+
+export interface OsProjectSummary {
+  id: string; title: string; status?: string;
+  source_conversation_id?: string; source_requirement_id?: string;
+}
+
+export interface OsProjectDetail extends OsProjectSummary { sprints?: string[]; }
+
+export interface OsProjectStatus {
+  project_id: string; title: string; status: string;
+  progress: { completed: number; failed: number; running: number; blocked: number; waiting: number; total: number; percentage: number };
+  sprints: Array<{
+    sprint_id: string; title: string; status: string;
+    progress: { completed: number; failed: number; running: number; blocked: number; total: number; percentage: number };
+    tasks: Array<{ id: string; title: string; status: string; production_run_id?: string; updated_at?: string }>;
+  }>;
+}
+
+export interface OsApproval {
+  approval_id: string; status: string; task_id: string; risk: string;
+}
+
+export interface OsApprovalDecision {
+  approval_id: string; decision: string; decided_by: string; decided_at?: string;
+}

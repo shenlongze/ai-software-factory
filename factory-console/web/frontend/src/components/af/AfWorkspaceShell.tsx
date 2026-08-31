@@ -68,8 +68,20 @@ function AfProjectListView(): JSX.Element {
 import { AfProjectManage } from '../../pages/workspace/AfProjectManage';
 import { AfSettings } from '../../pages/workspace/AfSettings';
 import { AuditPage } from '../../pages/AuditPage';
+import { ConversationPage } from '../../pages/ConversationPage';
+import { WorkPage } from '../../pages/WorkPage';
+import { ControlTowerPage } from '../../pages/ControlTowerPage';
 
 function WorkspacePage({ route }: { route: ParsedRoute }): JSX.Element {
+  if (route.page === 'conversation') {
+    return <ConversationPage />;
+  }
+  if (route.page === 'work') {
+    return <WorkPage />;
+  }
+  if (route.page === 'tower') {
+    return <ControlTowerPage />;
+  }
   if (route.page === 'dashboard') {
     return <AfCompanyHome />;
   }

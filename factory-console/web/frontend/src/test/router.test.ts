@@ -11,19 +11,27 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_ROUTE, PROJECT_ROUTES, WORKSPACE_ROUTES, parseHash } from '../router';
 
 describe('S10-014 路由常量表 (§2.3)', () => {
-  it('Workspace 级 5 条路由 (方案 A: 我的公司/项目/监控/设置 + 管理)', () => {
-    expect(WORKSPACE_ROUTES).toHaveLength(5);
+  it('Workspace 级 9 条路由 (K6: Conversation 默认 + Work + Tower 三入口 + 管理)', () => {
+    expect(WORKSPACE_ROUTES).toHaveLength(9);
     expect(WORKSPACE_ROUTES.map((r) => r.path)).toEqual([
       '#/workspace',
+      '#/workspace/conversation',
+      '#/workspace/work',
+      '#/workspace/tower',
       '#/workspace/projects',
       '#/workspace/monitor',
+      '#/workspace/production',
       '#/workspace/settings',
       '#/workspace/manage',
     ]);
     expect(WORKSPACE_ROUTES.map((r) => r.page)).toEqual([
-      'dashboard',
+      'conversation',
+      'conversation',
+      'work',
+      'tower',
       'projects',
       'monitor',
+      'production',
       'settings',
       'manage',
     ]);
@@ -52,9 +60,12 @@ describe('S10-014 路由常量表 (§2.3)', () => {
   });
 });
 
-describe('parseHash — Workspace 级 (3 导航 + 管理)', () => {
+describe('parseHash — Workspace 级 (K6 三入口 + 管理)', () => {
   it.each([
-    ['#/workspace', 'dashboard'],
+    ['#/workspace', 'conversation'],
+    ['#/workspace/conversation', 'conversation'],
+    ['#/workspace/work', 'work'],
+    ['#/workspace/tower', 'tower'],
     ['#/workspace/projects', 'projects'],
     ['#/workspace/settings', 'settings'],
     ['#/workspace/manage', 'manage'],
@@ -62,15 +73,15 @@ describe('parseHash — Workspace 级 (3 导航 + 管理)', () => {
     expect(parseHash(hash)).toEqual({ level: 'workspace', page });
   });
 
-  it('已移 board 的旧子页 (team/workflows/runtime/audit) → 回退 dashboard', () => {
-    expect(parseHash('#/workspace/team')).toEqual({ level: 'workspace', page: 'dashboard' });
-    expect(parseHash('#/workspace/workflows')).toEqual({ level: 'workspace', page: 'dashboard' });
-    expect(parseHash('#/workspace/runtime')).toEqual({ level: 'workspace', page: 'dashboard' });
-    expect(parseHash('#/workspace/audit')).toEqual({ level: 'workspace', page: 'dashboard' });
+  it('已移 board 的旧子页 (team/workflows/runtime/audit) → 回退 conversation', () => {
+    expect(parseHash('#/workspace/team')).toEqual({ level: 'workspace', page: 'conversation' });
+    expect(parseHash('#/workspace/workflows')).toEqual({ level: 'workspace', page: 'conversation' });
+    expect(parseHash('#/workspace/runtime')).toEqual({ level: 'workspace', page: 'conversation' });
+    expect(parseHash('#/workspace/audit')).toEqual({ level: 'workspace', page: 'conversation' });
   });
 
-  it('Workspace 未知子页 → 默认 dashboard (不崩)', () => {
-    expect(parseHash('#/workspace/nope')).toEqual({ level: 'workspace', page: 'dashboard' });
+  it('Workspace 未知子页 → 默认 conversation (不崩)', () => {
+    expect(parseHash('#/workspace/nope')).toEqual({ level: 'workspace', page: 'conversation' });
   });
 });
 
@@ -127,11 +138,11 @@ describe('parseHash — S10-003 直链兼容 + 非法/默认', () => {
     });
   });
 
-  it('#/workspace?project= (空 id) → workspace/dashboard', () => {
-    expect(parseHash('#/workspace?project=')).toEqual({ level: 'workspace', page: 'dashboard' });
+  it('#/workspace?project= (空 id) → workspace/conversation', () => {
+    expect(parseHash('#/workspace?project=')).toEqual({ level: 'workspace', page: 'conversation' });
   });
 
-  it('空 hash / 纯 # / 未知路径 / 缺 project id → 默认 workspace/dashboard', () => {
+  it('空 hash / 纯 # / 未知路径 / 缺 project id → 默认 workspace/conversation', () => {
     expect(parseHash('')).toEqual(DEFAULT_ROUTE);
     expect(parseHash('#')).toEqual(DEFAULT_ROUTE);
     expect(parseHash('#/unknown')).toEqual(DEFAULT_ROUTE);

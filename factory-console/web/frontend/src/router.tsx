@@ -12,13 +12,16 @@
  * 页面组件由 Task 004 (Workspace Shell) / Task 005 (Project Shell) 实现。
  */
 
-/** Workspace 级路由 (Founder 2026-08-26 方案 A: 3 导航 + 管理)。
+/** Workspace 级路由 (K6 Human Console: Conversation 默认 + Work + Tower 三入口)。
 
  * team/workflows/runtime/audit 已移 board (开发者控制台) — 旧 URL 自动回退
- * dashboard (我的公司); manage 为项目管理页 (左栏 ⚙ 管理入口)。
+ * conversation (默认首页); manage 为项目管理页 (左栏 ⚙ 管理入口)。
  */
 export const WORKSPACE_ROUTES: readonly { path: string; page: string }[] = [
-  { path: '#/workspace', page: 'dashboard' },
+  { path: '#/workspace', page: 'conversation' },
+  { path: '#/workspace/conversation', page: 'conversation' },
+  { path: '#/workspace/work', page: 'work' },
+  { path: '#/workspace/tower', page: 'tower' },
   { path: '#/workspace/projects', page: 'projects' },
   { path: '#/workspace/monitor', page: 'monitor' },
   { path: '#/workspace/production', page: 'production' },
@@ -48,8 +51,8 @@ export interface ParsedRoute {
   projectId?: string;
 }
 
-/** 默认路由 (无法识别 / 空 hash → Workspace Dashboard)。 */
-export const DEFAULT_ROUTE: ParsedRoute = { level: 'workspace', page: 'dashboard' };
+/** 默认路由 (无法识别 / 空 hash → Workspace Conversation 首页)。 */
+export const DEFAULT_ROUTE: ParsedRoute = { level: 'workspace', page: 'conversation' };
 
 /**
  * 解析 URL hash → 两级路由。
@@ -82,7 +85,7 @@ export function parseHash(hash: string): ParsedRoute {
     const page = segments[1];
     return {
       level: 'workspace',
-      page: page != null && WORKSPACE_PAGES.includes(page) ? page : 'dashboard',
+      page: page != null && WORKSPACE_PAGES.includes(page) ? page : 'conversation',
     };
   }
 

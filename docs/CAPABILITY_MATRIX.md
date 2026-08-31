@@ -842,3 +842,21 @@ AI Factory
 - Conversation Quality = REAL (8 维评分 + G1-G20 全过)
 - Web Conversation 页 = PARTIAL (前端接旧 /api/sessions; 新 /api/conversations 未接 UI)
 - Intent 规则级 (LLM 辅助为后续); SSE 推送层未实现
+
+## K6 更新 (Human Console & Real User Usability, v1.1.358)
+
+### Reality Status
+| 能力 | Status | 证据 |
+|------|--------|------|
+| Conversation 默认首页 (Web) | REAL | test_k6-human-console 6/6 |
+| 三一级入口 (对话/工作/控制塔) | REAL | router.test 23/23 |
+| Work 视图 (Project→Sprint→Task) | REAL | test_k6-human-console |
+| Control Tower 视图 (谁在工作/钻取) | REAL | test_k6-human-console |
+| Approval UI (经 governance) | REAL | test_k6-human-console |
+| Web/API/CLI 统一 Contract | REAL | api.client 扩展 (全经 Service) |
+| UI 零业务状态 (无第二 SSOT) | REAL | 全 API 驱动 |
+
+### 诚实声明
+- Human Console = REAL (普通用户通过 Web Conversation 使用 OS)
+- 前端既有测试 39 失败 (历史遗留, 与 K6 无关); SSE 推送未实现 (polling fallback)
+- Task Detail 独立页 = 后续 (现 drill 内嵌)

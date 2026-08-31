@@ -61,6 +61,19 @@ import {
   type TimelineEventSummary,
   type WorkflowDetail,
   type WorkflowSummary,
+  type ConversationSummary,
+  type ConversationDetail,
+  type ConversationReply,
+  type ConversationQuality,
+  type OpsOverview,
+  type OpsWhoWorking,
+  type OpsDrill,
+  type OpsSnapshot,
+  type OsProjectSummary,
+  type OsProjectDetail,
+  type OsProjectStatus,
+  type OsApproval,
+  type OsApprovalDecision,
 } from '../models/types';
 import type { BacklogFeature, BacklogTask, MonitorDetail, TaskExecTrace, TaskSessionRef } from '../models/domain';
 import type { RegistryTool } from '../models/types';
@@ -126,6 +139,34 @@ async function deleteJson<T>(path: string): Promise<T> {
 /** API 客户端 (查询全 GET; 写路径 = 审批决定/项目创建/Runtime 生命周期 POST + 项目管理 PATCH/DELETE)。 */
 export const api = {
   dashboard: () => getJson<ConsoleDashboard>('/api/dashboard'),
+
+  // K6: Conversation OS (Human Console 默认入口)
+  conversations: async () => (await getJson<{ items: ConversationSummary[] }>('/api/conversations')).items,
+  createConversation: (title: string) =>
+    sendJson<ConversationDetail>('/api/conversations', { title }),
+  sendConversationMessage: (conversationId: string, message: string) =>
+    sendJson<ConversationReply>(`/api/conversations/${conversationId}/messages`, { message }),
+  getConversation: (conversationId: string) =>
+    getJson<ConversationDetail>(`/api/conversations/${conversationId}`),
+  conversationQuality: (conversationId: string) =>
+    getJson<ConversationQuality>(`/api/quality/${conversationId}`),
+
+  // K6: Control Tower / Operational State
+  opsOverview: () => getJson<OpsOverview>('/api/ops/overview'),
+  opsWhoWorking: () => getJson<OpsWhoWorking>('/api/ops/who-working'),
+  opsDrill: (projectId: string) => getJson<OpsDrill>(`/api/ops/drill/${projectId}`),
+  opsSnapshot: () => getJson<OpsSnapshot>('/api/ops/snapshot'),
+
+  // K6: Project OS
+  osProjects: async () => (await getJson<{ items: OsProjectSummary[] }>('/api/projects-os')).items ?? [],
+  osCreateProject: (title: string, convId: string) =>
+    sendJson<OsProjectDetail>('/api/projects-os', { title, source_conversation_id: convId }),
+  osProjectStatus: (projectId: string) =>
+    getJson<OsProjectStatus>(`/api/projects-os/${projectId}/status`),
+  osApproveTask: (taskId: string, risk = 'HIGH') =>
+    sendJson<OsApproval>('/api/tasks/' + taskId + '/approval', { risk }),
+  osDecideApproval: (approvalId: string, decision: 'approve' | 'reject') =>
+    sendJson<OsApprovalDecision>(`/api/approvals/${approvalId}/decide`, { decision }),
   // API 规范 v1 (2026-08-26): 集合统一 {items, count} — 前端解包
   projects: async () => (await getJson<{ items: ProjectSummary[] }>('/api/projects')).items,
   // S10-007 阶段三增强: AI 想法理解 (POST /api/projects/suggest → 建议名称/

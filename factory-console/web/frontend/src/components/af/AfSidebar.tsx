@@ -19,12 +19,16 @@ export const PERSONAL_COMPANY = {
   icon: '🏢',
 };
 
-/** Workspace 导航项 (Founder 2026-08-26 方案 A 定稿: 3 项精简)。
+/** Workspace 导航项 (K6 Human Console: 三一级入口)。
 
- * AI Team / Workflow Center / Runtime Monitor / Audit 移 board (8011,
- * 开发者/运维控制台) — 5180 = 产品工作台, 职责归位; dashboard → 我的公司。
+ * Conversation = 默认首页 (普通用户唯一主要入口)。
+ * Work = Projects/Sprints/Tasks。Control Tower = 实时观察。
+ * 底层能力 (dashboard/audit/settings) 保留可访问 (drill-down 兼容)。
  */
 export const WORKSPACE_NAV_ITEMS: readonly { page: string; label: string; icon: string }[] = [
+  { page: 'conversation', label: '对话', icon: '💬' },
+  { page: 'work', label: '工作', icon: '📋' },
+  { page: 'tower', label: '控制塔', icon: '🛰' },
   { page: 'dashboard', label: '我的公司', icon: '🏢' },
   { page: 'projects', label: '项目', icon: '▦' },
   { page: 'monitor', label: '监控', icon: '📊' },
@@ -32,9 +36,9 @@ export const WORKSPACE_NAV_ITEMS: readonly { page: string; label: string; icon: 
   { page: 'settings', label: '设置', icon: '⚙' },
 ];
 
-/** 导航项 page → hash 路由 (dashboard 精确 #/workspace, 其余 #/workspace/<page>)。 */
+/** 导航项 page → hash 路由 (conversation/dashboard 精确 #/workspace, 其余 #/workspace/<page>)。 */
 export function navPathForPage(page: string): string {
-  if (page === 'dashboard') return '#/workspace';
+  if (page === 'conversation' || page === 'dashboard') return '#/workspace';
   return `#/workspace/${page}`;
 }
 

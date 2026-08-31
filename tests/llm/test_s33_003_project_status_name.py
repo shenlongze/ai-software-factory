@@ -690,3 +690,29 @@ def test_session_store_delete(tmp_path: Path) -> None:
     assert st.delete_session(sid) is True
     assert st.get_session(sid) is None
     assert st.delete_session(sid) is False
+
+
+# ---- S35-BUGFIX: 空回答强制重试 (工具执行后 LLM 输出协议 → 清洗空 → 重试) ----
+
+def test_empty_answer_forces_retry(tmp_path: Path) -> None:
+    """清洗后空回答 (工具已执行) → 必须重试, 不落库空回复。"""
+    import subprocess
+    import sys
+
+    _root = str(Path(__file__).resolve().parents[2])
+    _code = (
+        "import sys; sys.path.insert(0, " + repr(_root) + "); "
+        "from factory_console.session import agent_loop\n"
+        "cleaned = agent_loop._strip_fake_toolcalls(\"<tool_calls><invoke name='x'/></tool_calls>\")\n"
+        "assert cleaned == '', repr(cleaned)\n"
+        "import inspect; src = inspect.getsource(agent_loop)\n"
+        "assert 'empty_retries' in src\n"
+        "assert 'empty_retries\\\"] < 3' in src\n"
+        "idx = src.find('not _answer.strip()) and calls')\n"
+        "snip = src[idx:idx+200]\n"
+        "assert 'total_calls < max_rounds' not in snip\n"
+        "print('OK: empty-answer retry verified')\n"
+    )
+    r = subprocess.run([sys.executable, "-c", _code], capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, f"subprocess failed: {r.stderr}\n{r.stdout}"
+    assert "OK" in r.stdout

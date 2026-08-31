@@ -7029,7 +7029,12 @@ def build_app(
                                 client_msg_id=body.client_msg_id,
                                 assistant_meta={
                                     "tool_calls": [
-                                        {"tool": c["tool"], "ok": c.get("ok")} for c in calls
+                                        {
+                                            "tool": c["tool"],
+                                            "ok": c.get("ok"),
+                                            "params": c.get("params"),
+                                            "output": str(c.get("output") or c.get("error") or "")[:500],
+                                        } for c in calls
                                     ],
                                     # T5 (v1.1.280): 证据链 — 结构化工具证据 (tool/ok/output摘要), 前端可溯源
                                     "evidence": [
@@ -7049,7 +7054,14 @@ def build_app(
                                 "intent": "agent", "project": session.get("project_id"),
                                 "data_source": "tools" if calls else "chat",
                                 "target": {"url": f"#/project/{session.get('project_id')}", "label": "查看项目"},
-                                "tool_calls": [{"tool": c["tool"], "ok": c.get("ok")} for c in calls],
+                                "tool_calls": [
+                                    {
+                                        "tool": c["tool"],
+                                        "ok": c.get("ok"),
+                                        "params": c.get("params"),
+                                        "output": str(c.get("output") or c.get("error") or "")[:500],
+                                    } for c in calls
+                                ],
                                 "evidence": [
                                     {
                                         "tool": c["tool"],
@@ -7214,7 +7226,12 @@ def build_app(
                         llm_fn=lambda _p, _a=agent_result.get("answer", ""): _a,
                         assistant_meta={
                             "tool_calls": [
-                                {"tool": c["tool"], "ok": c.get("ok")} for c in calls
+                                {
+                                    "tool": c["tool"],
+                                    "ok": c.get("ok"),
+                                    "params": c.get("params"),
+                                    "output": str(c.get("output") or c.get("error") or "")[:500],
+                                } for c in calls
                             ],
                             # T5 (v1.1.280): 证据链 — 结构化工具证据
                             "evidence": [
@@ -7232,7 +7249,14 @@ def build_app(
                     "intent": "agent", "project": session.get("project_id"),
                     "data_source": "tools" if calls else "chat",
                     "target": {"url": f"#/project/{session.get('project_id')}", "label": "查看项目"},
-                    "tool_calls": [{"tool": c["tool"], "ok": c.get("ok")} for c in calls],
+                    "tool_calls": [
+                        {
+                            "tool": c["tool"],
+                            "ok": c.get("ok"),
+                            "params": c.get("params"),
+                            "output": str(c.get("output") or c.get("error") or "")[:500],
+                        } for c in calls
+                    ],
                     "evidence": [
                         {
                             "tool": c["tool"],

@@ -1596,6 +1596,7 @@ def run_agent_native(
         "all_fail_rounds": 0,       # 连续"整轮全失败"轮数
         "warned_fail": set(),       # 已注入换策略提示的工具
         "warned_no_progress": False,
+        "empty_retries": 0,         # S35-BUGFIX: 空回答连续重试次数 (上限防死循环)
         "force_converge": False,    # 超时 → 强制收敛
         "max_turn_ms": 240_000,     # 整轮超时上限 240s (OpenClaw 硬超时思路)
     }
@@ -1695,7 +1696,10 @@ def run_agent_native(
                 # 回答含数字/色值/版本/类名/路径 → 与已调工具结果比对; 无据 → 强制修正 (治"方向对、细节编")
                 _answer = _strip_fake_toolcalls(resp.get("content") or "（模型未输出）")
                 # P0 回归修复: 清洗后为空但工具已执行 → 强制自然语言总结 (不能返回空/协议)
-                if (not _answer.strip()) and calls and total_calls < max_rounds - 1:
+                # S35-BUGFIX: 空回答无条件重试 (轮次用尽也重试 — 空回答不可交付, 优于超轮;
+                # empty_retries 上限 3 次防死循环)
+                if (not _answer.strip()) and calls and _guard["empty_retries"] < 3:
+                    _guard["empty_retries"] += 1
                     messages.append({"role": "system", "content": (
                         "你刚才的输出是内部工具调用协议 (DSML), 不是给用户的回答。"
                         "请基于已执行的工具结果, 用自然语言直接回答用户的原始问题; "

@@ -53,10 +53,10 @@ function mockApi() {
           assistant: { id: 'm3', session_id: 'conv_1', role: 'assistant', content: '好的,开始执行', created_at: 't3' },
         }) };
       }
-      // GET messages (含 AI markdown 回复 — S34-001 测试)
+      // GET messages (含 AI markdown 回复 — S34-001 测试; run_ids 关联 — S34-002)
       return { ok: true, json: async () => ({ items: [
         { id: 'm1', session_id: 'conv_1', role: 'user', content: '我想做一个 App', created_at: 't1' },
-        { id: 'm2', session_id: 'conv_1', role: 'assistant', content: '好的，**开始执行**！\n\n- 任务 A\n- 任务 B', created_at: 't2' },
+        { id: 'm2', session_id: 'conv_1', role: 'assistant', content: '好的，**开始执行**！\n\n- 任务 A\n- 任务 B', created_at: 't2', meta: { run_ids: ['R-TEST-1'], tool_calls: [] } },
       ] }) };
     }
     // S31-004: Session → Run 关联 (Runs 卡) — 必须在 /api/sessions 列表之前匹配

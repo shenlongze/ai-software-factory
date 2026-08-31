@@ -37,3 +37,32 @@ def test_project_status_org_missing_falls_back(tmp_path: Path) -> None:
     # 无 org/projects.json → 不崩溃, 用目录名兜底
     st = project_status(ws, ws / "projects" / "P-def")
     assert st.get("project") == "P-def"
+
+
+# ---- S34-002: assistant_meta.run_ids 归属 (消息→Run 关联) ----
+
+def test_assistant_meta_run_ids_binding(tmp_path: Path) -> None:
+    """send_message assistant_meta 应携带 run_ids 且持久化 (GET 返回)。"""
+    from factory_console.console_sessions import SessionStore, send_message
+
+    store = SessionStore(tmp_path / "console_sessions.json")
+    s = store.create_session(scope="company", title="S34-002")
+    sid = s["id"]
+
+    def _fake_llm(_prompt: str) -> str:
+        return "开始执行，已创建 Run。"
+
+    result = send_message(
+        store, sid, "开始执行",
+        llm_fn=_fake_llm,
+        assistant_meta={
+            "tool_calls": [{"tool": "start_workflow", "ok": True}],
+            "run_ids": ["R-S34-002"],
+        },
+    )
+    # assistant 消息 meta 持久化 run_ids
+    assert result["assistant"]["meta"]["run_ids"] == ["R-S34-002"]
+    # GET messages 返回同一 meta (刷新后归属不丢)
+    msgs = store.list_messages(sid)
+    asst = [m for m in msgs if m.get("role") == "assistant"][0]
+    assert asst["meta"]["run_ids"] == ["R-S34-002"]

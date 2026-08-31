@@ -185,7 +185,17 @@ export function AfConversationCenter(): JSX.Element {
           // ========== 消息流 ==========
           <div className="ai-msg-stream">
             {ctx.messages.map((m, idx) => (
-              <MessageBubble key={m.id ?? idx} role={m.role} content={m.content} meta={m.meta ?? undefined} />
+              <MessageBubble
+                key={m.id ?? idx}
+                role={m.role}
+                content={m.content}
+                meta={m.meta ?? undefined}
+                runs={runs}
+                expandedRunId={expandedRun}
+                onToggleRun={(id) => setExpandedRun(expandedRun === id ? null : id)}
+                runsCollapsed={runsCollapsed}
+                onToggleRunsCollapsed={() => setRunsCollapsed(!runsCollapsed)}
+              />
             ))}
 
             {/* 发送中 — S34-001 P0-3: 自然 Working 状态 (非永久消息) */}
@@ -209,66 +219,6 @@ export function AfConversationCenter(): JSX.Element {
               </div>
             )}
 
-            {/* S30-004 P0-2 + S34-001 P0-5: 真实 Run 状态卡 — 执行上下文 (非第二条 AI 消息) */}
-            {!ctx.sending && runs.length > 0 && (
-              <div className="ai-run-context" data-testid="af-runs-card">
-                <div className="ai-run-context-head">
-                  <span className="ai-run-context-label">执行中 · {runs.length} 个 Run</span>
-                  <span className="ai-run-context-toggle" role="button" aria-label="折叠/展开执行" onClick={() => setRunsCollapsed(!runsCollapsed)}>
-                    {runsCollapsed ? '展开 ▾' : '收起 ▴'}
-                  </span>
-                </div>
-                {!runsCollapsed && (
-                  <div className="ai-run-context-body">
-                    {runs.map((r) => (
-                      <div key={r.run_id}>
-                        <button
-                          type="button"
-                          className="ai-run-item"
-                          data-testid="af-run-item"
-                          onClick={() => setExpandedRun(expandedRun === r.run_id ? null : r.run_id)}
-                        >
-                          <span className={`ai-run-status ai-run-status--${r.status}`}>
-                            {r.status === 'running' ? '●' : r.status === 'completed' ? '✓' : '✗'}
-                          </span>
-                          <span className="ai-run-id">{r.run_id}</span>
-                          <span className="ai-run-state">{r.status}</span>
-                          <span className="ai-run-expand">{expandedRun === r.run_id ? '▾' : '▸'}</span>
-                        </button>
-                        {/* S31-004: Execution Detail (progressive disclosure, 真实 stages) */}
-                        {expandedRun === r.run_id && (
-                          <div className="ai-run-detail" data-testid="af-run-detail">
-                            {Array.isArray(r.stages) && r.stages.length > 0 ? (
-                              r.stages.map((s, i) => {
-                                const stage = s as { role?: string; stage?: string; status?: string; latency_s?: number };
-                                return (
-                                  <div key={i} className="ai-run-stage">
-                                    <span className={`ai-run-stage-state ai-run-stage-state--${(stage.status ?? '').toLowerCase()}`}>
-                                      {stage.status === 'COMPLETED' ? '✓' : stage.status === 'RUNNING' || stage.status === 'running' ? '●' : '○'}
-                                    </span>
-                                    <span className="ai-run-stage-role">{ROLE_LABELS[stage.role ?? ''] ?? stage.role ?? stage.stage ?? 'stage'}</span>
-                                    {stage.latency_s != null && (
-                                      <span className="ai-run-stage-latency">{stage.latency_s.toFixed(1)}s</span>
-                                    )}
-                                  </div>
-                                );
-                              })
-                            ) : (
-                              <div className="ai-run-detail-empty">暂无执行阶段</div>
-                            )}
-                            {r.totals && Object.keys(r.totals).length > 0 && (
-                              <div className="ai-run-totals-line">
-                                tokens {r.totals.total_tokens ?? '-'} · cost ${(r.totals.cost_usd_est ?? 0).toFixed(4)}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
             <div ref={bottomRef} />
           </div>
         )}
@@ -348,15 +298,24 @@ export function AfConversationCenter(): JSX.Element {
 interface MessageBubbleProps {
   role: string;
   content: string;
-  meta?: { thinking_steps?: unknown[]; tool_calls?: unknown[] };
+  meta?: { thinking_steps?: unknown[]; tool_calls?: unknown[]; run_ids?: string[] };
+  /** S34-002: 本会话真实 Runs (按消息 meta.run_ids 过滤归属) */
+  runs?: SessionRunSummary[];
+  /** S34-002: Run 展开/折叠状态 (消息级) */
+  expandedRunId?: string | null;
+  onToggleRun?: (id: string) => void;
+  runsCollapsed?: boolean;
+  onToggleRunsCollapsed?: () => void;
 }
 
-function MessageBubble({ role, content, meta }: MessageBubbleProps): JSX.Element {
+function MessageBubble({ role, content, meta, runs = [], expandedRunId, onToggleRun, runsCollapsed, onToggleRunsCollapsed }: MessageBubbleProps): JSX.Element {
   const isUser = role === 'user';
-  // S34-001: 空内容 + 无工具调用 → 不渲染 (执行状态卡负责提示)
-  if (!isUser && !content.trim() && !(meta?.tool_calls && meta.tool_calls.length > 0)) {
+  // S34-001: 空内容 + 无工具调用 + 无 Run → 不渲染 (执行状态卡负责提示)
+  if (!isUser && !content.trim() && !(meta?.tool_calls && meta.tool_calls.length > 0) && !(meta?.run_ids && meta.run_ids.length > 0)) {
     return <></>;
   }
+  // S34-002: 本消息触发的 Run (真实过滤, 非全局)
+  const msgRuns = (meta?.run_ids ?? []).map((rid) => runs.find((r) => r.run_id === rid)).filter((r): r is SessionRunSummary => r != null);
 
   return (
     <div className={`ai-msg ai-msg--${isUser ? 'user' : 'ai'}`}>
@@ -368,11 +327,71 @@ function MessageBubble({ role, content, meta }: MessageBubbleProps): JSX.Element
         <div className="ai-msg-role">{isUser ? 'You' : 'AI Factory'}</div>
         <div className={`ai-msg-bubble ai-msg-bubble--${isUser ? 'user' : 'ai'}`}>
           {/* S34-001: AI 回复 + 用户输入都支持 Markdown (安全渲染, 零依赖) */}
-          <div className="ai-msg-text">{renderMarkdown(content)}</div>
+          {content && <div className="ai-msg-text">{renderMarkdown(content)}</div>}
 
           {/* AI 消息: 如果有 tool_calls, 渲染结构化执行卡片 */}
           {!isUser && meta?.tool_calls && meta.tool_calls.length > 0 && (
             <ToolCallList toolCalls={meta.tool_calls as Array<{ name?: string; tool?: string; args?: Record<string, unknown>; status?: string }>} />
+          )}
+
+          {/* S34-002: 本条回复触发的 Run — 执行证据属于这条 AI 回复, 不是全局 */}
+          {!isUser && msgRuns.length > 0 && (
+            <div className="ai-run-context" data-testid={`af-run-context-${msgRuns[0].run_id}`}>
+              <div className="ai-run-context-head">
+                <span className="ai-run-context-label">执行中 · {msgRuns.length} 个 Run</span>
+                <span className="ai-run-context-toggle" role="button" aria-label="折叠/展开执行" onClick={onToggleRunsCollapsed}>
+                  {runsCollapsed ? '展开 ▾' : '收起 ▴'}
+                </span>
+              </div>
+              {!runsCollapsed && (
+                <div className="ai-run-context-body">
+                  {msgRuns.map((r) => (
+                    <div key={r.run_id}>
+                      <button
+                        type="button"
+                        className="ai-run-item"
+                        data-testid="af-run-item"
+                        onClick={() => onToggleRun?.(r.run_id)}
+                      >
+                        <span className={`ai-run-status ai-run-status--${r.status}`}>
+                          {r.status === 'running' ? '●' : r.status === 'completed' ? '✓' : '✗'}
+                        </span>
+                        <span className="ai-run-id">{r.run_id}</span>
+                        <span className="ai-run-state">{r.status}</span>
+                        <span className="ai-run-expand">{expandedRunId === r.run_id ? '▾' : '▸'}</span>
+                      </button>
+                      {expandedRunId === r.run_id && (
+                        <div className="ai-run-detail" data-testid="af-run-detail">
+                          {Array.isArray(r.stages) && r.stages.length > 0 ? (
+                            r.stages.map((s, i) => {
+                              const stage = s as { role?: string; stage?: string; status?: string; latency_s?: number };
+                              return (
+                                <div key={i} className="ai-run-stage">
+                                  <span className={`ai-run-stage-state ai-run-stage-state--${(stage.status ?? '').toLowerCase()}`}>
+                                    {stage.status === 'COMPLETED' ? '✓' : stage.status === 'RUNNING' || stage.status === 'running' ? '●' : '○'}
+                                  </span>
+                                  <span className="ai-run-stage-role">{ROLE_LABELS[stage.role ?? ''] ?? stage.role ?? stage.stage ?? 'stage'}</span>
+                                  {stage.latency_s != null && (
+                                    <span className="ai-run-stage-latency">{stage.latency_s.toFixed(1)}s</span>
+                                  )}
+                                </div>
+                              );
+                            })
+                          ) : (
+                            <div className="ai-run-detail-empty">暂无执行阶段</div>
+                          )}
+                          {r.totals && Object.keys(r.totals).length > 0 && (
+                            <div className="ai-run-totals-line">
+                              tokens {r.totals.total_tokens ?? '-'} · cost ${(r.totals.cost_usd_est ?? 0).toFixed(4)}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
         </div>
       </div>

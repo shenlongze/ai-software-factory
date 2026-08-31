@@ -6523,6 +6523,12 @@ def build_app(
             def _work() -> None:
                 try:
                     _agmod = _console_import("session.agent_loop")
+                    # S34-002: 本轮触发前的 Run 集合 — 完成后差集 = 本条消息触发的 Run
+                    _before_run_ids: set[str] = set()
+                    try:
+                        _before_run_ids = set(sessions_store.session_runs(session_id))
+                    except Exception:  # noqa: BLE001
+                        pass
                     _tl = None
                     _ctx_view = ""
                     try:
@@ -6600,6 +6606,8 @@ def build_app(
                                             "output": str(c.get("output") or c.get("error") or "")[:300],
                                         } for c in calls
                                     ],
+                                    # S34-002: 本条消息触发的 Run (差集 = 本轮新增) — UI 归属 AI 回复
+                                    "run_ids": sorted(set(sessions_store.session_runs(session_id)) - _before_run_ids),
                                 },
                             )
                             result["meta"] = {

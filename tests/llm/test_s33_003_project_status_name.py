@@ -372,3 +372,23 @@ def test_send_message_idempotent(tmp_path: Path) -> None:
     r3 = send_message(store, sid, "再见", llm_fn=_fake_llm, client_msg_id="cid-2")
     assert calls["n"] == 2
     assert r3.get("idempotent") is None
+
+
+# ---- S34 P0-5: send_message 落库清洗 ----
+
+def test_send_message_strips_protocol_on_store(tmp_path: Path) -> None:
+    """send_message 落库前清洗 Tool Protocol (所有路径出口防线)。"""
+    from factory_console.console_sessions import SessionStore, send_message
+
+    store = SessionStore(tmp_path / "console_sessions.json")
+    s = store.create_session(scope="company", title="清洗")
+    sid = s["id"]
+
+    def _leaky_llm(_p: str) -> str:
+        return "<tool_calls>\n<invoke name=\"project_list\">\n</invoke>\n</tool_calls>\n正常回答"
+
+    r = send_message(store, sid, "项目列表", llm_fn=_leaky_llm)
+    content = str(r["assistant"]["content"])
+    assert "<tool_calls>" not in content
+    assert "<invoke" not in content
+    assert "正常回答" in content  # 不损坏真实内容

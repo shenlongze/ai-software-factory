@@ -475,6 +475,13 @@ def send_message(
         reply = _llm_answer(prompt, max_chars=max_chars)
     if not reply:
         reply = _FALLBACK
+    # P0-5: 落库前统一清洗 Tool Protocol 泄漏 (所有路径的出口防线)
+    try:
+        from .session.agent_loop import _strip_fake_toolcalls
+
+        reply = _strip_fake_toolcalls(reply)
+    except Exception:  # noqa: BLE001 — 清洗失败不阻断
+        pass
     # AI 回答也进话题账本 (保持块内对话完整)
     if _ledger is not None:
         try:

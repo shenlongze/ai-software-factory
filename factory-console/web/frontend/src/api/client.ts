@@ -192,6 +192,19 @@ export const api = {
       progress_pct?: number;
       latest_run?: { run_id?: string; status?: string } | null;
     }>(`/api/projects/${encodeURIComponent(projectId)}/progress`),
+  // S35-UI: 项目 Tab 统一数据 (任务/工作区 — org)
+  projectTasks: (projectId: string) =>
+    getJson<{
+      tasks?: Array<{ id?: string; title?: string; status?: string; priority?: string | null; plan_id?: string }>;
+      count?: number;
+    }>(`/api/projects/${encodeURIComponent(projectId)}/tasks`),
+  projectWorkspace: (projectId: string) =>
+    getJson<{
+      project_id?: string;
+      root_path?: string;
+      stages?: Array<{ id?: string; label?: string; done?: boolean }>;
+      git?: { enabled?: boolean; status?: string; branch?: string; remote?: string };
+    }>(`/api/projects/${encodeURIComponent(projectId)}/workspace`),
   // S10-007 阶段三增强: AI 想法理解 (POST /api/projects/suggest → 建议名称/
   // 一句话理解/澄清问题; ai_generated=false → 规则 fallback, 前端标注"快速模式")
   suggestProject: (idea: string) => sendJson<IdeaSuggestion>('/api/projects/suggest', { idea }),

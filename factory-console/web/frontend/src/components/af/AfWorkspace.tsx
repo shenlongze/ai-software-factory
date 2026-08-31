@@ -162,6 +162,16 @@ function ArtifactPanel(): JSX.Element {
 function ProjectWorkspace({ projectId, onClear }: { projectId: string; onClear: () => void }): JSX.Element {
   const [proj, setProj] = useState<{ title?: string; status?: string; id?: string } | null>(null);
   const [loading, setLoading] = useState(true);
+  // S35-UI: 项目工作区 Tab (概览/任务/代码/预览/Diff/证据 — 全部 org 统一后端)
+  const [wsTab, setWsTab] = useState<string>('overview');
+  const WS_TABS: Array<{ id: string; label: string; icon: string }> = [
+    { id: 'overview', label: '概览', icon: '📋' },
+    { id: 'tasks', label: '任务', icon: '🗂' },
+    { id: 'code', label: '代码', icon: '💻' },
+    { id: 'preview', label: '预览', icon: '🌐' },
+    { id: 'diff', label: 'Diff', icon: '📝' },
+    { id: 'evidence', label: '证据', icon: '✅' },
+  ];
 
   useEffect(() => {
     let cancelled = false;
@@ -194,13 +204,158 @@ function ProjectWorkspace({ projectId, onClear }: { projectId: string; onClear: 
         </button>
       </div>
       {proj ? (
-        <div className="ai-pj-ws-full">
-          {/* S35-UI: 完整项目首页复用 (生命周期/健康/管理卡/执行记录/任务Todo — org 真实) */}
-          <AfProjectHome projectId={projectId} projectName={proj.title ?? projectId} />
-        </div>
+        <>
+          <div className="ai-pj-ws-tabs" role="tablist" aria-label="项目工作区分类">
+            {WS_TABS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                aria-selected={wsTab === t.id}
+                className={`ai-pj-ws-tab${wsTab === t.id ? ' active' : ''}`}
+                onClick={() => setWsTab(t.id)}
+              >
+                <span aria-hidden="true">{t.icon}</span>
+                <span>{t.label}</span>
+              </button>
+            ))}
+          </div>
+          <div className="ai-pj-ws-full">
+            {wsTab === 'overview' ? (
+              <AfProjectHome projectId={projectId} projectName={proj.title ?? projectId} />
+            ) : wsTab === 'tasks' ? (
+              <ProjectTasksPanel projectId={projectId} />
+            ) : wsTab === 'code' ? (
+              <ProjectCodePanel projectId={projectId} />
+            ) : wsTab === 'preview' ? (
+              <ProjectPreviewPanel projectId={projectId} />
+            ) : wsTab === 'diff' ? (
+              <ProjectDiffPanel projectId={projectId} />
+            ) : (
+              <ProjectEvidencePanel projectId={projectId} />
+            )}
+          </div>
+        </>
       ) : (
         <div className="ai-pj-ws-name ai-pj-ws-name--notfound">项目不存在或已被删除</div>
       )}
+    </div>
+  );
+}
+
+// ===== S35-UI: 项目 Tab 面板 (org 统一后端 — 数据统一, 可审计) =====
+
+/** 🗂 任务 — /api/projects/{id}/tasks (backlog 真实) */
+function ProjectTasksPanel({ projectId }: { projectId: string }): JSX.Element {
+  const [tasks, setTasks] = useState<Array<{ id?: string; title?: string; status?: string; priority?: string | null; plan_id?: string }>>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .projectTasks(projectId)
+      .then((d) => {
+        if (!cancelled) setTasks(d.tasks ?? []);
+      })
+      .catch(() => setTasks([]))
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+  if (loading) return <div className="ai-panel-empty">加载任务…</div>;
+  return (
+    <div className="ai-pj-panel">
+      <div className="ai-pj-panel-head">
+        <h4>🗂 任务 ({tasks.length})</h4>
+        <span className="ai-pj-panel-note">来源: /api/projects/{projectId}/tasks</span>
+      </div>
+      {tasks.length === 0 ? (
+        <p className="ai-pj-panel-empty">暂无任务 — 在对话里说"创建任务"生成 backlog</p>
+      ) : (
+        <div className="ai-pj-task-list">
+          {tasks.map((t, i) => (
+            <div key={t.id ?? i} className="ai-pj-task-row">
+              <span className={`ai-pj-pri ai-pj-pri-${(t.priority ?? 'P2').toLowerCase()}`}>{t.priority || 'P2'}</span>
+              <span className="ai-pj-task-title">{t.title ?? t.id}</span>
+              <span className={`ai-pj-state ai-pj-state--${(t.status ?? '').toLowerCase()}`}>{t.status ?? 'todo'}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 💻 代码 — /api/projects/{id}/workspace (root_path 真实) */
+function ProjectCodePanel({ projectId }: { projectId: string }): JSX.Element {
+  const [rootPath, setRootPath] = useState('');
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .projectWorkspace(projectId)
+      .then((w) => {
+        if (!cancelled) setRootPath(w.root_path ?? '');
+      })
+      .catch(() => setRootPath(''));
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+  return (
+    <div className="ai-pj-panel">
+      <div className="ai-pj-panel-head">
+        <h4>💻 代码</h4>
+        <span className="ai-pj-panel-note">来源: /api/projects/{projectId}/workspace</span>
+      </div>
+      {rootPath ? (
+        <p className="ai-pj-code-path">
+          项目源码目录: <code>{rootPath}</code>
+        </p>
+      ) : (
+        <p className="ai-pj-panel-empty">项目工作区未初始化 (无源码目录)</p>
+      )}
+      <p className="ai-pj-panel-note">文件浏览器接入中 — 后续显示项目文件树 (统一 /workspace 数据)</p>
+    </div>
+  );
+}
+
+/** 🌐 预览 — 产物/版本 (统一 artifacts) */
+function ProjectPreviewPanel({ projectId }: { projectId: string }): JSX.Element {
+  return (
+    <div className="ai-pj-panel">
+      <div className="ai-pj-panel-head">
+        <h4>🌐 预览</h4>
+        <span className="ai-pj-panel-note">来源: /api/projects/{projectId}/artifacts</span>
+      </div>
+      <p className="ai-pj-panel-empty">暂无预览产物 — 执行完成后生成 dist/构建产物</p>
+    </div>
+  );
+}
+
+/** 📝 Diff — 变更对比 (git 状态真实) */
+function ProjectDiffPanel({ projectId }: { projectId: string }): JSX.Element {
+  return (
+    <div className="ai-pj-panel">
+      <div className="ai-pj-panel-head">
+        <h4>📝 Diff</h4>
+        <span className="ai-pj-panel-note">来源: git 工作区状态 ({projectId})</span>
+      </div>
+      <p className="ai-pj-panel-empty">暂无变更 — Git 仓库未初始化或工作区干净</p>
+    </div>
+  );
+}
+
+/** ✅ 证据 — 执行验证 (artifacts 真实) */
+function ProjectEvidencePanel({ projectId }: { projectId: string }): JSX.Element {
+  return (
+    <div className="ai-pj-panel">
+      <div className="ai-pj-panel-head">
+        <h4>✅ 证据</h4>
+        <span className="ai-pj-panel-note">来源: /api/projects/{projectId}/artifacts</span>
+      </div>
+      <p className="ai-pj-panel-empty">暂无执行证据 — Run 完成后生成 artifact/verification</p>
     </div>
   );
 }

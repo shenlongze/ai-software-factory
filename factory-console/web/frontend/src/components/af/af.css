@@ -8251,3 +8251,25 @@ body[data-bg='1'] .af-shell {
 .ai-pj-ws-full .af-detail-path { font-size: 13px; }
 .ai-pj-ws-full .af-todo-row { font-size: 13px; }
 .ai-pj-ws-full .af-health-title { font-size: 14px; }
+
+/* S35-UI: 项目工作区 Tab 栏 + 面板 */
+.ai-pj-ws-tabs { display: flex; gap: 4px; padding: 6px 0 8px; border-bottom: 1px solid var(--af-border, #e5e5ea); margin-bottom: 8px; overflow-x: auto; }
+.ai-pj-ws-tab { display: flex; align-items: center; gap: 4px; padding: 5px 10px; border: none; background: transparent; color: #6e6e73; font-size: 13px; border-radius: 8px; cursor: pointer; white-space: nowrap; }
+.ai-pj-ws-tab:hover { background: #f0f0f5; }
+.ai-pj-ws-tab.active { background: #0071e3; color: #fff; font-weight: 600; }
+.ai-pj-panel { padding: 4px 2px; }
+.ai-pj-panel-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 10px; }
+.ai-pj-panel-head h4 { margin: 0; font-size: 14px; }
+.ai-pj-panel-note { font-size: 11px; color: #86868b; }
+.ai-pj-panel-empty { color: #86868b; font-size: 13px; padding: 16px 0; }
+.ai-pj-task-list { display: flex; flex-direction: column; gap: 6px; }
+.ai-pj-task-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: #fafafa; border-radius: 8px; font-size: 13px; }
+.ai-pj-pri { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 4px; }
+.ai-pj-pri-p0 { background: #ffd6d6; color: #d70015; }
+.ai-pj-pri-p1 { background: #ffe8c8; color: #b25000; }
+.ai-pj-pri-p2 { background: #e8e8ed; color: #6e6e73; }
+.ai-pj-pri-p3 { background: #d6f0ff; color: #0066b8; }
+.ai-pj-task-title { flex: 1; color: #1d1d1f; }
+.ai-pj-state { font-size: 11px; padding: 1px 6px; border-radius: 4px; background: #f0f0f5; color: #6e6e73; }
+.ai-pj-code-path { font-size: 13px; color: #3a3a3c; }
+.ai-pj-code-path code { font-size: 12px; background: #f0f0f5; padding: 2px 6px; border-radius: 6px; word-break: break-all; }

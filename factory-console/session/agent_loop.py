@@ -199,7 +199,7 @@ def tool_schemas(data_dir: str | Path | None = None) -> list[dict[str, Any]]:
             {"path": {"type": "string", "description": "可选: 路径子串过滤 (如 factory-console/session)"},
              "max_items": {"type": "integer"}}),
         _fc("project_scan", "扫描项目", "扫描项目整体: 任务树/版本线/战役线/质量/风险建议", {}),
-        _fc("project_list", "项目列表", "列出所有项目: ID/名称/进度/阶段/描述 (用户问'项目列表/有哪些项目/项目清单'时用)", {}),
+        _fc("project_list", "项目列表", "列出所有项目, 用 markdown 表格呈现 (列: 项目ID/名称/进度/阶段/描述; 用户问'项目列表/有哪些项目/项目清单'时用)", {}),
         _fc("project_structure", "项目结构", "查看项目真实结构: 仓库顶层目录树/模块划分/文件分布/入口文件 (用户说'了解项目结构/有哪些模块/目录'时用)", {}),
         _fc("read_code", "读取代码", "读取指定文件的代码内容(带行号, 支持分页), 用于理解代码逻辑/实现/调用链。"
             "规则: 1) 通常从 offset=0 从头读起; 除非之前已读过该文件或用 offset 翻页; "
@@ -648,7 +648,7 @@ def dispatch(
                 _projs = _org.get("projects") if isinstance(_org, dict) else {}
             except Exception:  # noqa: BLE001
                 _projs = {}
-            lines = [f"共 {len(_projs)} 个项目:"]
+            _rows = []
             for _pid, _p in _projs.items():
                 if not isinstance(_p, dict):
                     continue
@@ -659,10 +659,17 @@ def dispatch(
                 _pct = _stats.get("pct") if _stats else None
                 _stage = _life or "unknown"
                 _prog = f"{_pct}%" if _pct is not None else "—"
-                lines.append(
-                    f"- ID={_pid} | 名称={_name} | 进度={_prog} | 阶段={_stage}"
-                    + (f" | 描述={_goal[:40]}" if _goal else "")
-                )
+                _rows.append((_pid, _name, _prog, _stage, _goal))
+            lines = [
+                f"共 {len(_rows)} 个项目:",
+                "",
+                "| 项目ID | 名称 | 进度 | 阶段 | 描述 |",
+                "|--------|------|------|------|------|",
+            ]
+            for _pid, _name, _prog, _stage, _goal in _rows:
+                lines.append(f"| {_pid} | {_name} | {_prog} | {_stage} | {_goal} |")
+            lines.append("")
+            lines.append("(表格输出 — 直接基于以上真实数据向用户展示, 保持表格形式; 描述为空则写—)")
             return {"ok": True, "output": "\n".join(lines)}
         if tool_id == "project_status":
             from .query_engine import _project_task_stats

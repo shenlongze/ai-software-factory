@@ -197,7 +197,7 @@ def test_strip_fake_toolcalls_keeps_normal_after_dsml() -> None:
 # ---- 项目列表工具 (project_list) ----
 
 def test_project_list_full_fields(tmp_path: Path) -> None:
-    """project_list 返回 ID/名称/进度/阶段/描述 (org 数据 + 任务统计)。"""
+    """project_list 返回 markdown 表格 (ID/名称/进度/阶段/描述)。"""
     import json as _json
 
     from factory_console.session.agent_loop import dispatch
@@ -213,7 +213,9 @@ def test_project_list_full_fields(tmp_path: Path) -> None:
     r = dispatch("project_list", {}, root=ws, project_id="P-abc")
     assert r["ok"] is True
     out = str(r["output"])
-    assert "共 2 个项目" in out
-    assert "P-abc" in out and "旅行记账" in out
-    assert "阶段=idea" in out
-    assert "描述=旅行支出乱" in out
+    # markdown 表格: 表头 + 分隔行 + 数据行
+    assert "| 项目ID | 名称 | 进度 | 阶段 | 描述 |" in out
+    assert "|--------|" in out
+    assert "| P-abc | 旅行记账 |" in out
+    assert "| P-def | 番茄钟 |" in out
+    assert "阶段=idea" not in out  # 不再是键值对行, 是表格

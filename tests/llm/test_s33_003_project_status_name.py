@@ -105,3 +105,31 @@ def test_strip_fake_toolcalls_unpaired_tags() -> None:
     cleaned = _strip_fake_toolcalls(unpaired)
     assert "<tool_calls>" not in cleaned
     assert "<invoke" not in cleaned
+
+
+# ---- S34-003B: cost 估算 (usage.estimated_cost_usd) ----
+
+def test_model_prices_deepseek() -> None:
+    """deepseek 价格表匹配 (chat 档 0.27/1.10)。"""
+    from factory_console.session.llm_gateway import _model_prices
+
+    assert _model_prices("deepseek-chat") == (0.27, 1.10)
+    assert _model_prices("deepseek-v4-flash") == (0.27, 1.10)
+    assert _model_prices("unknown-model") == (0.0, 0.0)
+
+
+def test_complete_usage_cost_estimated() -> None:
+    """complete 返回 usage 带 estimated_cost_usd (真实价格估算)。"""
+    from unittest.mock import patch
+
+    import factory_console.session.llm_gateway as lg
+
+    with patch.object(lg, "_openai_compat_complete", return_value={
+        "content": "ok",
+        "usage": {"prompt_tokens": 1000, "completion_tokens": 1000},
+    }):
+        out = lg.complete([], None, provider_id="deepseek", model="deepseek-chat",
+                          base_url="", api_key="x")
+    u = out["usage"]
+    # 1000/1M * 0.27 + 1000/1M * 1.10 = 0.00137
+    assert abs(u["estimated_cost_usd"] - 0.00137) < 1e-6

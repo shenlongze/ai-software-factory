@@ -1328,6 +1328,7 @@ def run_agent_native(
     total_calls = 0
     _usage_prompt = 0
     _usage_completion = 0
+    _usage_cost = 0.0
     import time as _time
     _start_ms = _time.monotonic() * 1000
     _converge = "reflection"
@@ -1386,6 +1387,7 @@ def run_agent_native(
             if _u:
                 _usage_prompt += int(_u.get("prompt_tokens") or 0)
                 _usage_completion += int(_u.get("completion_tokens") or 0)
+                _usage_cost += float(_u.get("estimated_cost_usd") or 0.0)
             tcs = resp.get("tool_calls") or []
             if not tcs:
                 # S1.1 (v1.1.244): 文本模拟工具调用检测 — 按 provider traits 开关 (A0: deepseek 需要, 强模型默认不需要)
@@ -1462,7 +1464,8 @@ def run_agent_native(
                                   "prompt_tokens": _usage_prompt,
                                   "completion_tokens": _usage_completion,
                                   "total_tokens": _usage_prompt + _usage_completion,
-                                  "elapsed_s": round((_time.monotonic() * 1000 - _start_ms) / 1000, 1)}}
+                                  "elapsed_s": round((_time.monotonic() * 1000 - _start_ms) / 1000, 1),
+                                  "estimated_cost_usd": round(_usage_cost, 6)}}
             if _guard["force_converge"]:
                 break
             # 中间 assistant 消息入历史前也清洗文本模拟 <tool_calls> (模型可能同时输出真实调用+文本噪音)
@@ -1587,12 +1590,26 @@ def run_agent_native(
         messages.append({"role": "system", "content": self_check_prompt()})
         resp = call_with_tools(messages, None, data_dir=data_dir)  # 不给工具 → 必收敛
         content = resp.get("content") or ""
+        # S34-003B: 反射轮 usage 也累加 (工具调用循环后必走此路径)
+        _u2 = resp.get("usage") or {}
+        if _u2:
+            _usage_prompt += int(_u2.get("prompt_tokens") or 0)
+            _usage_completion += int(_u2.get("completion_tokens") or 0)
+            _usage_cost += float(_u2.get("estimated_cost_usd") or 0.0)
         _converge = "hard_cap" if total_calls >= _max_calls else "reflection"
         _audit_sess(data_dir, session_id, question, intent, calls,
                     total_calls, max_rounds, _start_ms, _converge, content,
                     _usage_prompt, _usage_completion)
         return {"answer": content[:2000], "calls": calls, "intent": intent,
-                "evidence": [{"tool": c["tool"], "ok": c["ok"], "output": str(c.get("output") or c.get("error") or "")[:300]} for c in calls]}
+                "evidence": [{"tool": c["tool"], "ok": c["ok"], "output": str(c.get("output") or c.get("error") or "")[:300]} for c in calls],
+                # S34-003B: 执行详情 — 真实用量 (与 1457 一致)
+                "usage": {"model": str(_mconf.get("model") or ""),
+                          "context_window": int(_mconf.get("context_window") or 0),
+                          "prompt_tokens": _usage_prompt,
+                          "completion_tokens": _usage_completion,
+                          "total_tokens": _usage_prompt + _usage_completion,
+                          "elapsed_s": round((_time.monotonic() * 1000 - _start_ms) / 1000, 1),
+                          "estimated_cost_usd": round(_usage_cost, 6)}}
     except Exception as exc:  # noqa: BLE001 — LLM 不可用 → 回退旧路由
         _audit_sess(data_dir, session_id, question, intent, calls,
                     total_calls, max_rounds, _start_ms, "rejected", "",

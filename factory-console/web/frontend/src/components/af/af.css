@@ -8139,3 +8139,4 @@ body[data-bg='1'] .af-shell {
 .ai-tool-usage-ctx { font-family: ui-monospace, monospace; color: #6b7280; }
 .ai-tool-usage-bar { color: #4c8dff; letter-spacing: -1px; }
 .ai-tool-usage-tokens, .ai-tool-usage-time { color: #6b7280; }
+.ai-tool-usage-cost { color: #6b7280; font-weight: 600; }

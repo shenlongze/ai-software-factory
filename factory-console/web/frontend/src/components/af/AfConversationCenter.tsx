@@ -407,7 +407,7 @@ function MessageBubble({ role, content, meta, runs = [], expandedRunId, onToggle
   );
 }
 
-function ToolCallList({ toolCalls, usage }: { toolCalls: Array<{ name?: string; tool?: string; args?: Record<string, unknown>; status?: string }>; usage?: { model?: string; context_window?: number; prompt_tokens?: number; completion_tokens?: number; total_tokens?: number; elapsed_s?: number } }): JSX.Element {
+function ToolCallList({ toolCalls, usage }: { toolCalls: Array<{ name?: string; tool?: string; args?: Record<string, unknown>; status?: string }>; usage?: { model?: string; context_window?: number; prompt_tokens?: number; completion_tokens?: number; total_tokens?: number; elapsed_s?: number; estimated_cost_usd?: number } }): JSX.Element {
   // S34-001 P0-4: 默认 compact — 执行证据融入对话, 不抢占主视觉
   const [open, setOpen] = useState(false);
   const okCount = toolCalls.filter((tc) => (tc.status ?? 'ok') === 'ok').length;
@@ -451,6 +451,7 @@ function ToolCallList({ toolCalls, usage }: { toolCalls: Array<{ name?: string; 
                 </span>
               )}
               {usage.total_tokens != null && <span className="ai-tool-usage-tokens">🧠 {usage.total_tokens.toLocaleString()}</span>}
+              {usage.estimated_cost_usd != null && usage.estimated_cost_usd > 0 && <span className="ai-tool-usage-cost">💰 ${usage.estimated_cost_usd.toFixed(4)}</span>}
               {usage.elapsed_s != null && <span className="ai-tool-usage-time">⏲ {usage.elapsed_s}s</span>}
             </div>
           )}

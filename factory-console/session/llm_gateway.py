@@ -374,19 +374,60 @@ def complete(
     """
     kind = provider_kind(provider_id, base_url)
     if kind == "anthropic":
-        return _anthropic_complete(
+        out = _anthropic_complete(
             messages, tools, model=model, base_url=base_url,
             api_key=api_key, temperature=temperature, timeout=timeout,
         )
-    if kind == "gemini":
-        return _gemini_complete(
+    elif kind == "gemini":
+        out = _gemini_complete(
             messages, tools, model=model, base_url=base_url,
             api_key=api_key, temperature=temperature, timeout=timeout,
         )
-    return _openai_compat_complete(
-        messages, tools, model=model, base_url=base_url,
-        api_key=api_key, temperature=temperature, timeout=timeout,
-    )
+    else:
+        out = _openai_compat_complete(
+            messages, tools, model=model, base_url=base_url,
+            api_key=api_key, temperature=temperature, timeout=timeout,
+        )
+    # S34-003B: 统一 cost 估算 — usage.estimated_cost_usd (按 model 价格表, 找不到 → 0 不阻塞)
+    try:
+        _u = out.get("usage") or {}
+        if _u.get("prompt_tokens") or _u.get("completion_tokens"):
+            _pp, _cp = _model_prices(model)
+            out["usage"] = {
+                **_u,
+                "estimated_cost_usd": round(
+                    (int(_u.get("prompt_tokens") or 0) / 1_000_000 * _pp)
+                    + (int(_u.get("completion_tokens") or 0) / 1_000_000 * _cp),
+                    6,
+                ),
+            }
+    except Exception:  # noqa: BLE001 — cost 估算失败不阻塞
+        pass
+    return out
+
+
+#: 每百万 token 价格表 (USD) — prompt/completion; 未知模型 → (0, 0) 不估算
+_MODEL_PRICES: dict[str, tuple[float, float]] = {
+    "deepseek-chat": (0.27, 1.10),        # DeepSeek V3 官方价
+    "deepseek-v4-flash": (0.27, 1.10),    # Flash 档
+    "deepseek-reasoner": (0.55, 2.19),    # R1 官方价
+    "deepseek-v4-pro": (0.55, 2.19),      # Pro 档
+    "gpt-4o": (2.50, 10.00),
+    "gpt-4o-mini": (0.15, 0.60),
+    "claude-sonnet-4": (3.00, 15.00),
+    "claude-haiku": (0.80, 4.00),
+}
+
+
+def _model_prices(model: str) -> tuple[float, float]:
+    """按模型名匹配价格 (子串匹配, 如 deepseek-v4-flash → deepseek-chat 档)。"""
+    m = str(model or "").lower()
+    if m in _MODEL_PRICES:
+        return _MODEL_PRICES[m]
+    for key, prices in _MODEL_PRICES.items():
+        if key in m:
+            return prices
+    return (0.0, 0.0)
 
 
 def supports_tool_use(capabilities: list[str] | None) -> bool:

@@ -6074,8 +6074,8 @@ body[data-bg='1'] .af-shell {
 
 .ai-input-wrap {
   position: relative;
-  background: var(--c-card, #1d232e);
-  border: 1px solid var(--c-border, #2a3140);
+  background: var(--c-card, #ffffff);
+  border: 1px solid var(--c-border, #e5e7eb);
   border-radius: 16px;
   padding: 14px 16px 48px;
   transition: border-color 0.15s, box-shadow 0.15s;
@@ -6094,7 +6094,7 @@ body[data-bg='1'] .af-shell {
   font: inherit;
   font-size: 14px;
   line-height: 1.6;
-  color: #e6e8ee;
+  color: #1d232e; /* S34-001: 输入文字深色 */
   background: transparent;
   border: none;
   outline: none;
@@ -7598,8 +7598,8 @@ body[data-bg='1'] .af-shell {
 
 .ai-input-wrap {
   position: relative;
-  background: var(--c-card, #232a37);
-  border: 1px solid var(--c-border, #2a3140);
+  background: var(--c-card, #ffffff);
+  border: 1px solid var(--c-border, #e5e7eb);
   border-radius: 16px;
   padding: 14px 16px 48px;
   transition: border-color 0.15s, box-shadow 0.15s;
@@ -7618,7 +7618,7 @@ body[data-bg='1'] .af-shell {
   font: inherit;
   font-size: 14px;
   line-height: 1.6;
-  color: #e6e8ee;
+  color: #1d232e; /* S34-001: 输入文字深色 (原 #e6e8ee 浅) */
   background: transparent;
   border: none;
   outline: none;

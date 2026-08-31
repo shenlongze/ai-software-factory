@@ -12,21 +12,14 @@
  * 页面组件由 Task 004 (Workspace Shell) / Task 005 (Project Shell) 实现。
  */
 
-/** Workspace 级路由 (K6 Human Console: Conversation 默认 + Work + Tower 三入口)。
+/** Workspace 级路由 (S32-001 IA Freeze: 唯一 Conversation 主入口)。
 
- * team/workflows/runtime/audit 已移 board (开发者控制台) — 旧 URL 自动回退
- * conversation (默认首页); manage 为项目管理页 (左栏 ⚙ 管理入口)。
+ * 旧路由 (work/tower/projects/monitor/production/settings/manage) 已删除 —
+ * 死页面清理 (S31-007: 17 UNUSED) 后无产品职责, 旧 URL 自动回退 conversation。
  */
 export const WORKSPACE_ROUTES: readonly { path: string; page: string }[] = [
   { path: '#/workspace', page: 'conversation' },
   { path: '#/workspace/conversation', page: 'conversation' },
-  { path: '#/workspace/work', page: 'work' },
-  { path: '#/workspace/tower', page: 'tower' },
-  { path: '#/workspace/projects', page: 'projects' },
-  { path: '#/workspace/monitor', page: 'monitor' },
-  { path: '#/workspace/production', page: 'production' },
-  { path: '#/workspace/settings', page: 'settings' },
-  { path: '#/workspace/manage', page: 'manage' },
 ];
 
 /** Project 级路由 (11 条, §2.3; :id = 项目 id 路径段)。 */

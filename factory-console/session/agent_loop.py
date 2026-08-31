@@ -231,10 +231,12 @@ def tool_schemas(data_dir: str | Path | None = None) -> list[dict[str, Any]]:
              "delegate": {"type": "boolean", "description": "是否委派外部AI执行"}}),
         _fc("external_route", "外部AI路由", "为任务选择最合适外部AI agent", {"task": {"type": "string"}}, ["task"]),
         _fc("chain_start", "启动执行链(做人事)", "审批通过后启动执行链: 按计划建任务列表, 逐任务执行; "
-            "auto=true 时后台自动执行全部任务 (Promised Work), 完成主动推送交付汇报",
+            "auto=true 时后台自动执行全部任务 (Promised Work), 完成主动推送交付汇报; "
+            "company 会话必须传 project_id (目标项目 ID)",
             {"goal": {"type": "string"}, "tasks": {"type": "array", "items": {"type": "object",
                      "properties": {"title": {"type": "string"}, "priority": {"type": "string"}}}},
-             "auto": {"type": "boolean", "description": "true=后台自动执行全部任务并主动回报"}}),
+             "auto": {"type": "boolean", "description": "true=后台自动执行全部任务并主动回报"},
+             "project_id": {"type": "string", "description": "目标项目 ID (company 会话必须传)"}}),
         _fc("chain_next", "推进下一个任务", "执行链逐任务推进: 委派执行→验证→回写", {}),
         _fc("chain_status", "执行链进度", "查询当前执行链进度 (完成数/当前任务)", {}),
         _fc("gateway_status", "外部任务进度", "查询外部执行器任务进度 (最近/按项目/统计)", {"project": {"type": "string"}}),
@@ -720,6 +722,21 @@ def dispatch(
         # execute_plan
         plan = ctx.get("pending_plan") or {}
         if not plan:
+            # S34-P0-FIX: pending_plan 不跨轮 → 从持久化 session_plans 恢复 (真实)
+            try:
+                import json as _json
+
+                _spf = Path(root) / "session_plans.json"
+                if _spf.is_file():
+                    _sp = _json.loads(_spf.read_text(encoding="utf-8"))
+                    _sid = (ctx or {}).get("session_id") or ""
+                    _cand = _sp.get(_sid) or {}
+                    if isinstance(_cand, dict) and _cand.get("plan_id"):
+                        plan = _cand
+                        ctx["pending_plan"] = plan
+            except Exception:  # noqa: BLE001
+                plan = {}
+        if not plan:
             return {"ok": False, "error": "没有待审批的计划 (先 plan_development)"}
         tasks = args.get("tasks") or plan.get("tasks") or []
         if tasks:
@@ -728,6 +745,15 @@ def dispatch(
         _exec_project_id = str(plan.get("project_id") or project_id or "").strip()
         r = execute_plan(plan, project_id=_exec_project_id, service=service,
                          delegate=bool(args.get("delegate") or plan.get("delegate")))
+        # S34-P0-FIX: 执行前批准真实审批 (approve API — 计划批准 → 任务创建)
+        if r.get("ok") and plan.get("approval_id"):
+            try:
+                from factory_console.governance_service import approve
+
+                approve(root, str(plan["approval_id"]), decided_by="human")
+                r["approval"] = "approved"
+            except Exception as exc:  # noqa: BLE001 — 批准失败诚实标注
+                r["approval_error"] = str(exc)
         ctx["pending_plan"] = None
         return r
     try:
@@ -1105,6 +1131,8 @@ def dispatch(
             from .exec_state import ExecState
 
             plan = ctx.get("pending_plan") or {}
+            # S34-P0-FIX: chain_start 也用 plan.project_id (company 会话 AI 识别项目后)
+            _cs_project_id = str(args.get("project_id") or plan.get("project_id") or project_id or "").strip()
             tasks = args.get("tasks") or plan.get("tasks") or []
             goal = str(args.get("goal") or plan.get("goal") or "")[:120]
             if not tasks:
@@ -1115,10 +1143,10 @@ def dispatch(
             for _t in tasks:
                 _t2 = dict(_t)
                 _bid = ""
-                if service is not None:
+                if service is not None and _cs_project_id:
                     try:
                         _c = service.create_task(
-                            project_id, title=str(_t.get("title") or "")[:80],
+                            _cs_project_id, title=str(_t.get("title") or "")[:80],
                             description=str(_t.get("description") or ""),
                             priority=str(_t.get("priority") or "P2"),
                         )

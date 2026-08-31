@@ -545,3 +545,45 @@ def test_approval_carries_subject_ref(tmp_path: Path) -> None:
                           requested_by="agent", subject_type="conversation",
                           subject_id="sess-1", subject_ref="plan_abc")
     assert ar["subject_ref"] == "plan_abc"
+
+
+# ---- S34-P0-FIX: 跨轮 plan 恢复 + chain_start project_id ----
+
+def test_execute_plan_recovers_persisted_plan(tmp_path: Path) -> None:
+    """execute_plan 跨轮从 session_plans 恢复 (pending_plan 不依赖 ctx)。"""
+    import json as _json
+    from unittest.mock import MagicMock
+
+    from factory_console.session.agent_loop import dispatch
+
+    ws = tmp_path / "factory"
+    (ws / "requirements").mkdir(parents=True)
+    # 预置持久化 plan (模拟上一轮 plan_development)
+    _json.dump({"sess-9": {"plan_id": "plan_recover", "project_id": "P-y",
+                           "tasks": [{"title": "T1", "priority": "P0"}],
+                           "acceptance": []}}, open(ws / "session_plans.json", "w"))
+    svc = MagicMock()
+    svc.create_task.return_value = {"id": "T-1", "title": "T1", "priority": "P0"}
+    ctx = {"session_id": "sess-9"}  # ctx 无 pending_plan (跨轮)
+    r = dispatch("execute_plan", {}, root=ws, project_id="", service=svc, ctx=ctx)
+    assert r["ok"] is True
+    assert svc.create_task.called
+    assert svc.create_task.call_args.args[0] == "P-y"  # 用 plan 的 project_id
+
+
+def test_chain_start_uses_project_id_arg(tmp_path: Path) -> None:
+    """chain_start 用 args.project_id 建 backlog 任务 (company 会话)。"""
+    import json as _json
+    from unittest.mock import MagicMock
+
+    from factory_console.session.agent_loop import dispatch
+
+    ws = tmp_path / "factory"
+    svc = MagicMock()
+    svc.create_task.return_value = {"id": "T-9", "title": "x", "priority": "P0"}
+    ctx = {"session_id": "sess-10"}
+    r = dispatch("chain_start",
+                 {"project_id": "P-z", "tasks": [{"title": "任务", "priority": "P0"}]},
+                 root=ws, project_id="", service=svc, ctx=ctx)
+    assert r["ok"] is True
+    assert svc.create_task.call_args.args[0] == "P-z"

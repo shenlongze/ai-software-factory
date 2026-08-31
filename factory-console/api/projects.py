@@ -206,6 +206,21 @@ def create_project(
     )
     if summary is None:
         return None
+    # S34-P0-D: 项目创建后初始化目录骨架 (Project Management 可见性)
+    # 通过 ConsoleService 的 management store 懒建 (workspace/projects/{slug}/management)
+    try:
+        _proj_id = summary.id
+        service.list_backlog(_proj_id)  # 触发 ensure_space + management 骨架 (幂等)
+        # 同时确保 projects/{id} 目录 (旧兼容路径)
+        import pathlib
+
+        _ws = getattr(service, "_workspace", None)
+        _root = getattr(_ws, "root", None) if _ws else None
+        if _root:
+            _pd = pathlib.Path(_root) / "projects" / _proj_id
+            _pd.mkdir(parents=True, exist_ok=True)
+    except Exception:  # noqa: BLE001 — 目录初始化失败不阻断创建 (诚实: 后续懒建)
+        pass
     status = (
         summary.lifecycle.value
         if hasattr(summary.lifecycle, "value")

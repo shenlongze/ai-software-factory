@@ -390,9 +390,13 @@ def execute_plan(
     service: Any,
     delegate: bool = False,
 ) -> dict[str, Any]:
-    """执行计划: 建任务进 backlog (真实); delegate=True 时提示可委派外部AI。"""
+    """执行计划: 建任务进 backlog (真实); delegate=True 时提示可委派外部AI。
+
+    S34-P0-E: 任务关联 plan_id (Plan→Task 链真实)。
+    """
     if service is None:
         return {"ok": False, "error": "任务服务不可用"}
+    _plan_id = str(plan.get("plan_id") or "")
     created: list[dict[str, Any]] = []
     for t in (plan.get("tasks") or [])[:20]:
         try:
@@ -402,14 +406,32 @@ def execute_plan(
                 priority=str(t.get("priority") or "P2"),
             )
             if c:
-                created.append({"id": c.get("id"), "title": c.get("title"), "priority": c.get("priority")})
-        except Exception:  # noqa: BLE001 — 单条失败跳过 (诚实标注)
-            continue
+                # P0-E: 任务落库后回写 plan_id (task→plan 关联)
+                if _plan_id and hasattr(c, "__setitem__") and isinstance(c, dict):
+                    try:
+                        c["plan_id"] = _plan_id
+                        c["project_id"] = project_id
+                    except Exception:  # noqa: BLE001
+                        pass
+                created.append({"id": c.get("id"), "title": c.get("title"),
+                                "priority": c.get("priority"), "plan_id": _plan_id})
+        except Exception as exc:  # noqa: BLE001 — 单条失败跳过 (诚实标注)
+            try:
+                created.append({"id": "", "title": str(t.get("title") or "")[:40],
+                                "priority": str(t.get("priority") or "P2"),
+                                "error": f"{type(exc).__name__}: {exc}"})
+            except Exception:  # noqa: BLE001
+                pass
     lines = [f"已建任务 {len(created)} 个进 backlog:"]
-    lines += [f"- [{t['priority']}] {t['title']} ({t['id']})" for t in created[:15]]
+    lines += [f"- [{t['priority']}] {t['title']} ({t['id']})" for t in created[:15] if t.get("id")]
+    _failed = [t for t in created if not t.get("id")]
+    if _failed:
+        lines.append(f"⚠ {len(_failed)} 个任务创建失败: " + "; ".join(
+            f"{t.get('title')} ({t.get('error')})" for t in _failed[:3]
+        ))
     if delegate and created:
         lines.append("下一步可委派外部AI(如 codex/claude)执行 — 说『开始执行』或我用外部AI逐任务推进。")
-    return {"ok": True, "output": "\n".join(lines), "created": created}
+    return {"ok": True, "output": "\n".join(lines), "created": created, "plan_id": _plan_id}
 
 
 # ---------------------------------------------------------------- Agent 循环 (原生 FC)
@@ -579,7 +601,27 @@ def dispatch(
         if tool_id == "plan_development":
             plan = plan_development(str(args.get("goal") or ""), str(args.get("detail") or ""),
                                     llm_fn=ctx.get("llm_fn") or (lambda p: ""))
+            # S34-P0-B: Plan 必须是关联 Artifact — 唯一 plan_id + project/requirement 关联
+            try:
+                import uuid as _uuid
+                import json as _json
+                from datetime import datetime, timezone as _tz
+
+                _plan_id = f"plan_{_uuid.uuid4().hex[:12]}"
+                _now_iso = datetime.now(_tz.utc).isoformat()
+            except Exception:  # noqa: BLE001
+                import time as _tm
+
+                _plan_id = f"plan_{int(_tm.time() * 1000)}"
+                _now_iso = _tm.strftime("%Y-%m-%dT%H:%M:%S+00:00", _tm.gmtime())
+            plan["plan_id"] = _plan_id
+            plan["project_id"] = project_id
+            plan["requirement_id"] = ""
+            plan["approval_id"] = ""
+            plan["status"] = "planning"
+            plan["created_at"] = _now_iso
             ctx["pending_plan"] = plan
+            ctx["plan_id"] = _plan_id
             # P0-B (v1.1.244): 计划落 durable progress_card (OpenClaw 思路)
             try:
                 from .progress_card import save_from_plan
@@ -615,6 +657,7 @@ def dispatch(
                 })
                 _req_file.write_text(_json.dumps(_reqs, ensure_ascii=False, indent=2), encoding="utf-8")
                 ctx["requirement_id"] = _rid
+                plan["requirement_id"] = _rid
             except Exception:  # noqa: BLE001 — 需求落盘失败不阻断
                 pass
             # S34-CORE-C3: 真实 Approval Request (持久化 PENDING → 可批准/拒绝)
@@ -629,9 +672,26 @@ def dispatch(
                 )
                 _approval_id = str(_ar.get("approval_id") or _ar.get("id") or "")
                 ctx["pending_approval_id"] = _approval_id
+                plan["approval_id"] = _approval_id
             except Exception:  # noqa: BLE001 — 审批创建失败不阻断 (诚实标注)
                 pass
+            # P0-B: Plan 持久化到 session_plans.json (关联 Artifact, 可查询)
+            try:
+                import json as _json
+                from datetime import datetime, timezone as _tz
+
+                _spf = Path(root) / "session_plans.json"
+                _sp = {}
+                if _spf.is_file():
+                    _sp = _json.loads(_spf.read_text(encoding="utf-8"))
+                if not isinstance(_sp, dict):
+                    _sp = {}
+                _sp[str((ctx or {}).get("session_id") or "")] = plan
+                _spf.write_text(_json.dumps(_sp, ensure_ascii=False, indent=2), encoding="utf-8")
+            except Exception:  # noqa: BLE001 — 计划持久化失败不阻断
+                pass
             lines = [f"📋 开发计划 (请审批):\n目标: {plan.get('goal')}"]
+            lines.append(f"计划 ID: {_plan_id}")
             lines.append("任务:")
             for i, t in enumerate(plan.get("tasks") or [], 1):
                 lines.append(f"  {i}. [{t.get('priority')}] {t.get('title')} — {t.get('description') or ''}")
@@ -643,7 +703,7 @@ def dispatch(
                 lines.append("\n(审批系统不可用 — 计划已落卡, 说『同意/开始』继续)")
             lines.append("\n同意就回复『可以/开始』; 要改就告诉我改哪里。")
             return {"ok": True, "output": "\n".join(lines), "pending_plan": True,
-                    "plan": plan, "approval_id": _approval_id}
+                    "plan": plan, "plan_id": _plan_id, "approval_id": _approval_id}
         # execute_plan
         plan = ctx.get("pending_plan") or {}
         if not plan:

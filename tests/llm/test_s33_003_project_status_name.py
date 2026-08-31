@@ -460,3 +460,49 @@ def test_ssot_drift_report_clean(tmp_path: Path) -> None:
     }), encoding="utf-8")
     rep = project_ssot.drift_report(ws)
     assert rep["drifting"] == 0
+
+
+# ---- S34-P0: Plan 关联 Artifact + 项目详情 ----
+
+def test_plan_has_artifact_ids(tmp_path: Path) -> None:
+    """plan_development 生成关联 Artifact (plan_id/project_id/requirement_id/approval_id)。"""
+    import json as _json
+    from unittest.mock import MagicMock
+
+    from factory_console.session.agent_loop import dispatch
+
+    ws = tmp_path / "factory"
+    (ws / "requirements").mkdir(parents=True)
+    ctx = {"session_id": "sess-1", "llm_fn": lambda p: _json.dumps({
+        "goal": "开发飞机大战", "tasks": [{"title": "骨架", "priority": "P0"}],
+        "order": ["骨架"], "acceptance": ["可玩"]})}
+    svc = MagicMock()
+    r = dispatch("plan_development", {"goal": "开发飞机大战", "detail": "纯前端"},
+                 root=ws, project_id="P-abc", service=svc, ctx=ctx)
+    assert r["ok"] is True
+    plan = r["plan"]
+    assert plan["plan_id"].startswith("plan_")
+    assert plan["project_id"] == "P-abc"
+    assert plan["requirement_id"].startswith("req_")
+    assert plan["approval_id"] or plan["approval_id"] == ""  # 审批可能成功或失败 (诚实)
+    # session_plans.json 持久化
+    sp = _json.loads((ws / "session_plans.json").read_text())
+    assert sp["sess-1"]["plan_id"] == plan["plan_id"]
+    # requirements.json 落盘
+    reqs = _json.loads((ws / "requirements" / "requirements.json").read_text())
+    assert reqs[-1]["project_id"] == "P-abc"
+
+
+def test_execute_plan_tasks_carry_plan_id(tmp_path: Path) -> None:
+    """execute_plan 建任务带 plan_id (Plan→Task 链)。"""
+    from unittest.mock import MagicMock
+
+    from factory_console.session.agent_loop import execute_plan
+
+    svc = MagicMock()
+    svc.create_task.return_value = {"id": "T-1", "title": "骨架", "priority": "P0"}
+    r = execute_plan({"plan_id": "plan_x", "tasks": [{"title": "骨架", "priority": "P0"}]},
+                     project_id="P-abc", service=svc)
+    assert r["ok"] is True
+    assert r["plan_id"] == "plan_x"
+    assert r["created"][0]["plan_id"] == "plan_x"

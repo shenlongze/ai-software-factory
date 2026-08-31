@@ -1472,6 +1472,110 @@ def build_app(
             "snapshot_offset": offset,
         }
 
+    @app.get("/api/projects/{project_id}")
+    def api_project_detail(project_id: str) -> dict[str, Any]:
+        """S34-P0-A: 项目详情 (统一 Projection — project/requirement/plan/tasks/runs)。
+
+        全部来自 Production Truth (org + management + workflow_runs + requirements),
+        不伪造; 项目不存在 → 404。
+        """
+        root = Path(str(factory_root if factory_root is not None else DEFAULT_ROOT))
+        try:
+            found = next((p for p in service.list_projects() if p.id == project_id), None)
+        except Exception:  # noqa: BLE001
+            found = None
+        if found is None:
+            raise HTTPException(status_code=404, detail=f"project not found: {project_id}")
+        project = {
+            "id": found.id,
+            "name": getattr(found, "name", "") or found.id,
+            "status": getattr(found, "status", ""),
+            "lifecycle_stage": getattr(found, "lifecycle_stage", "") or getattr(found, "status", ""),
+            "goal": getattr(found, "goal", ""),
+            "project_type": getattr(found, "project_type", ""),
+            "framework": getattr(found, "framework", ""),
+            "repo_path": getattr(found, "repo_path", ""),
+            "created_at": getattr(found, "created_at", ""),
+            "updated_at": getattr(found, "updated_at", ""),
+        }
+        # requirement (requirements.json 按 project_id 过滤)
+        requirements = []
+        try:
+            _rf = root / "requirements" / "requirements.json"
+            if _rf.is_file():
+                import json as _rj
+
+                for _r in _rj.loads(_rf.read_text(encoding="utf-8")):
+                    if _r.get("project_id") == project_id:
+                        requirements.append(_r)
+        except Exception:  # noqa: BLE001
+            pass
+        # plan (session_plans 里 goal 匹配? 直接查 requirements 关联的计划不可靠 → 返回原始字段)
+        plans = []
+        try:
+            _pf = root / "session_plans.json"
+            if _pf.is_file():
+                import json as _pj
+
+                _pd = _pj.loads(_pf.read_text(encoding="utf-8"))
+                for _sid, _plan in _pd.items():
+                    if isinstance(_plan, dict) and _plan.get("project_id") == project_id:
+                        plans.append({**_plan, "session_id": _sid})
+        except Exception:  # noqa: BLE001
+            pass
+        # tasks (management backlog 真实)
+        tasks = []
+        try:
+            _b = service.list_backlog(project_id) or {}
+            tasks = _b.get("tasks", [])
+        except Exception:  # noqa: BLE001
+            tasks = []
+        # runs (workflow_runs/{project_id}/)
+        runs = []
+        try:
+            _rd = root / "workflow_runs" / project_id
+            if _rd.is_dir():
+                import json as _rk
+
+                for _run_dir in sorted(_rd.iterdir(), key=lambda p: p.name, reverse=True)[:10]:
+                    _pp = _run_dir / "progress.json"
+                    if _pp.is_file():
+                        try:
+                            _p = _rk.loads(_pp.read_text(encoding="utf-8"))
+                            runs.append({
+                                "run_id": _run_dir.name,
+                                "status": _p.get("status"),
+                                "stages": _p.get("stages", []),
+                                "totals": _p.get("totals", {}),
+                                "updated_at": _p.get("updated_at"),
+                            })
+                        except Exception:  # noqa: BLE001
+                            continue
+        except Exception:  # noqa: BLE001
+            runs = []
+        # git 状态 (诚实: 未初始化 → not_initialized)
+        repository = {"status": "not_initialized", "path": ""}
+        try:
+            _git_dir = root / "projects" / project_id / ".git"
+            if _git_dir.is_dir():
+                repository = {"status": "initialized", "path": str(_git_dir)}
+        except Exception:  # noqa: BLE001
+            pass
+        return {
+            "project": project,
+            "requirements": requirements,
+            "plans": plans,
+            "tasks": tasks,
+            "runs": runs,
+            "repository": repository,
+            "counts": {
+                "requirements": len(requirements),
+                "plans": len(plans),
+                "tasks": len(tasks),
+                "runs": len(runs),
+            },
+        }
+
     @app.get("/api/projects/{project_id}/monitor")
     def api_project_monitor(project_id: str) -> dict[str, Any]:
         """单项目监控 (GET — 统一采集)。"""

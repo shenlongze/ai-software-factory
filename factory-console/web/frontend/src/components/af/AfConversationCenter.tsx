@@ -353,6 +353,10 @@ interface MessageBubbleProps {
 
 function MessageBubble({ role, content, meta }: MessageBubbleProps): JSX.Element {
   const isUser = role === 'user';
+  // S34-001: 空内容 + 无工具调用 → 不渲染 (执行状态卡负责提示)
+  if (!isUser && !content.trim() && !(meta?.tool_calls && meta.tool_calls.length > 0)) {
+    return <></>;
+  }
 
   return (
     <div className={`ai-msg ai-msg--${isUser ? 'user' : 'ai'}`}>

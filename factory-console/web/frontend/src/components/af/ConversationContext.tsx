@@ -318,7 +318,7 @@ export function ConversationProvider({ children, initialProjectId }: { children:
             id: assistantId,
             session_id: target as string,
             role: 'assistant',
-            content: '（思考中…）',
+            content: '', // S34-001: 不显示占位 "思考中" — 执行状态卡负责提示
             created_at: new Date().toISOString(),
             meta: { tool_calls: [], thinking_steps: [] },
           },
@@ -334,7 +334,7 @@ export function ConversationProvider({ children, initialProjectId }: { children:
                 m.id === assistantId
                   ? {
                       ...m,
-                      content: '（思考中…）',
+                      content: m.content || '', // S34-001: 不覆盖为空 — 执行卡负责状态
                       meta: {
                         ...(m.meta ?? {}),
                         thinking_steps: [
@@ -353,7 +353,7 @@ export function ConversationProvider({ children, initialProjectId }: { children:
                 m.id === assistantId
                   ? {
                       ...m,
-                      content: '（执行中…）',
+                      content: m.content || '', // S34-001: 不覆盖 — 执行卡负责状态
                       meta: {
                         tool_calls: [
                           ...(m.meta?.tool_calls ?? []),

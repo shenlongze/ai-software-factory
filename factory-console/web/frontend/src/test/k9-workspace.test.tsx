@@ -250,6 +250,9 @@ describe('Execution State (S34-003B)', () => {
     await waitFor(() => {
       expect(document.querySelector('[data-testid="af-tool-usage"]')).toBeTruthy();
       expect(document.querySelector('.ai-tool-usage-model')?.textContent).toContain('deepseek-v4-flash');
+      // S34-003B: 上下文进度条 + tokens 标签
+      expect(document.querySelector('.ai-tool-usage-ctx')?.textContent).toContain('24%');
+      expect(document.querySelector('.ai-tool-usage-tokens')?.textContent).toContain('tokens');
     });
   });
 });

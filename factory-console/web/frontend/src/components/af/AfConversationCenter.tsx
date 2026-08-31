@@ -450,7 +450,7 @@ function ToolCallList({ toolCalls, usage }: { toolCalls: Array<{ name?: string; 
                   {Math.round((usage.prompt_tokens / usage.context_window) * 100)}%
                 </span>
               )}
-              {usage.total_tokens != null && <span className="ai-tool-usage-tokens">🧠 {usage.total_tokens.toLocaleString()}</span>}
+              {usage.total_tokens != null && <span className="ai-tool-usage-tokens">🧠 {usage.total_tokens.toLocaleString()} tokens</span>}
               {usage.estimated_cost_usd != null && usage.estimated_cost_usd > 0 && <span className="ai-tool-usage-cost">💰 ${usage.estimated_cost_usd.toFixed(4)}</span>}
               {usage.elapsed_s != null && <span className="ai-tool-usage-time">⏲ {usage.elapsed_s}s</span>}
             </div>

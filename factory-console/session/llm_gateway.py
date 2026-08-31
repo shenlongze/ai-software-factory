@@ -430,6 +430,30 @@ def _model_prices(model: str) -> tuple[float, float]:
     return (0.0, 0.0)
 
 
+#: 模型上下文窗口 (tokens) — 未知 → 0 (前端不显示进度条)
+_MODEL_CONTEXTS: dict[str, int] = {
+    "deepseek-chat": 65536,          # DeepSeek V3 (64K)
+    "deepseek-reasoner": 65536,      # R1 (64K)
+    "deepseek-v4-flash": 1048576,    # Flash 档 (1M)
+    "deepseek-v4-pro": 65536,
+    "gpt-4o": 128000,
+    "gpt-4o-mini": 128000,
+    "claude-sonnet-4": 200000,
+    "claude-haiku": 200000,
+}
+
+
+def model_context_window(model: str) -> int:
+    """按模型名查上下文窗口 (子串匹配; 未知 → 0)。"""
+    m = str(model or "").lower()
+    if m in _MODEL_CONTEXTS:
+        return _MODEL_CONTEXTS[m]
+    for key, cw in _MODEL_CONTEXTS.items():
+        if key in m:
+            return cw
+    return 0
+
+
 def supports_tool_use(capabilities: list[str] | None) -> bool:
     """模型 capabilities 是否支持原生 function calling (M1.3 能力协商)。"""
     caps = [str(c).lower() for c in (capabilities or [])]

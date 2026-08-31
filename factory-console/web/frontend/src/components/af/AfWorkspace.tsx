@@ -69,7 +69,7 @@ export function tabForIntent(intent: string): WorkspaceTabId {
 }
 
 /** 推导 ProfileKey — 根据 sending 状态 + 最后一条用户消息内容 */
-function deriveProfile(sending: boolean, lastUserMessage?: string): ProfileKey {
+export function deriveProfile(sending: boolean, lastUserMessage?: string): ProfileKey {
   if (!sending) return 'default';
   const msg = (lastUserMessage ?? '').toLowerCase();
   if (/prd|product|competitor|market|discover|需求|竞品|市场/.test(msg)) return 'prd';

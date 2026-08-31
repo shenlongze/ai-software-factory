@@ -381,6 +381,12 @@ export function ConversationProvider({ children, initialProjectId }: { children:
             setMessages((prev) =>
               prev.map((m) => (m.id === assistantId ? (e.result?.assistant ?? m) : m)),
             );
+            // S33-006/007/008: 自动联动 Workspace Context — 后端 meta.project 真实关联
+            // (项目创建/任务执行后右栏自动跟随, 中央 Conversation 不离开)
+            const rmeta = (e.result as { meta?: { project?: string | null; target?: { url?: string } } })?.meta;
+            if (rmeta?.project) {
+              setProjectIdState(rmeta.project);
+            }
           }
         });
         if (!ok || !streamed) {

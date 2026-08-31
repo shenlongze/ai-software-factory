@@ -8,7 +8,7 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ConversationProvider } from '../components/af/ConversationContext';
 import { AfConversationCenter } from '../components/af/AfConversationCenter';
-import { AfWorkspace } from '../components/af/AfWorkspace';
+import { AfWorkspace, deriveProfile, tabForIntent } from '../components/af/AfWorkspace';
 import { AfContextNav } from '../components/af/AfContextNav';
 
 const conv = {
@@ -194,6 +194,24 @@ describe('Project Workspace (S32-004B)', () => {
     expect(screen.getByText(/项目 Workspace/)).toBeTruthy();
     expect(screen.getByText(/测试项目/)).toBeTruthy();
     expect(screen.getByLabelText(/清除项目 Context/)).toBeTruthy();
+  });
+});
+
+// S33-006/007/008: 会话 → Workspace 自动联动
+describe('Conversation → Workspace 联动 (S33)', () => {
+  it('tabForIntent 意图→Tab 映射 (真实) ', () => {
+    expect(tabForIntent('EXECUTE')).toBe('task');
+    expect(tabForIntent('ASK_STATUS')).toBe('task');
+    expect(tabForIntent('DECIDE')).toBe('code');
+    expect(tabForIntent('CLARIFY')).toBe('code');
+  });
+  it('deriveProfile 消息→profile (真实, 非关键词正则 — 后端意图)', () => {
+    // 发送中按消息内容推导 (执行中默认 coding)
+    expect(deriveProfile(true, '继续开发登录功能')).toBe('coding');
+    expect(deriveProfile(true, '这个 bug 为什么失败')).toBe('debug');
+    expect(deriveProfile(true, '分析一下竞品')).toBe('prd');
+    expect(deriveProfile(true, '运行测试')).toBe('qa');
+    expect(deriveProfile(false, '任意')).toBe('default');
   });
 });
 

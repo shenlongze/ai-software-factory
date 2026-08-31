@@ -870,7 +870,36 @@ def dispatch(
                 lines = [f"{prio} 任务 ({len(tasks)}):"] + [f"- {str(t.get('title') or '')[:50]} [{t.get('status')}]" for t in tasks[:12]]
                 return {"ok": True, "output": "\n".join(lines) if tasks else f"{prio} 任务: 暂无"}
             st = _project_task_stats(root, project_id)
-            return {"ok": True, "output": f"任务 {st['total']}: 完成 {st['done']} · 执行中 {st['running']} · 阻塞 {st['blocked']} · 待办 {st['todo']} ({st['pct']}%)" if st else "暂无"}
+            if not st:
+                return {"ok": True, "output": "暂无任务数据"}
+            # S35-UI: 查询任务默认返回明细列表 (统计 + 每任务标题/状态/优先级)
+            # 任务读取与 _project_task_stats 一致: mgmt task.json + legacy tasks.json 合并
+            _tasks: list[dict[str, Any]] = []
+            _seen: set[str] = set()
+            for _tf in (
+                Path(root) / "workspace" / "projects" / Path(project_id).name
+                / "management" / "backlog" / "task.json",
+                Path(root) / "projects" / Path(project_id).name / "tasks.json",
+            ):
+                try:
+                    _data = json.loads(_tf.read_text(encoding="utf-8")) or {}
+                    _list = (_data.get("tasks") or {})
+                    _list = _list.values() if isinstance(_list, dict) else _list
+                    for t in _list:
+                        if isinstance(t, dict) and str(t.get("id")) not in _seen:
+                            _seen.add(str(t.get("id")))
+                            _tasks.append(t)
+                except Exception:  # noqa: BLE001
+                    continue
+            lines = [f"任务 {st['total']}: 完成 {st['done']} · 执行中 {st['running']} · 阻塞 {st['blocked']} · 待办 {st['todo']} ({st['pct']}%)"]
+            for t in _tasks[:30]:
+                _prio = str(t.get("priority") or "·")
+                _st = str(t.get("status") or "todo")
+                _title = str(t.get("title") or t.get("name") or t.get("id") or "")
+                lines.append(f"- [{_prio}] {_title[:60]} ({_st})")
+            if len(_tasks) > 30:
+                lines.append(f"... 共 {len(_tasks)} 个任务, 显示前 30")
+            return {"ok": True, "output": "\n".join(lines)}
         if tool_id == "task_action":
             if service is None:
                 return {"ok": False, "error": "任务服务不可用"}

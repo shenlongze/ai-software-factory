@@ -447,6 +447,26 @@ interface MessageBubbleProps {
 
 function MessageBubble({ role, content, meta, runs = [], expandedRunId, onToggleRun, runsCollapsed, onToggleRunsCollapsed }: MessageBubbleProps): JSX.Element {
   const isUser = role === 'user';
+  const ctx = useConversation();
+  // S35-UI: 回答里的"查看具体任务列表" → 可点击链接, 点击发送指令 (便捷入口)
+  const actionText = (c: string): string =>
+    c.replace('查看具体任务列表', '[查看具体任务列表](#action:查看具体任务列表)');
+  const onSendQuick = (cmd: string) => {
+    void ctx.send(cmd);
+  };
+  // S35-UI: project_tasks 回答固定模板 — 第一行总数, 无序列表各状态, 引导句
+  // (工具 output 已有统计数据; AI 自由文本不可靠 → 前端用模板渲染标准回答)
+  const taskStatsText = (() => {
+    const tc = meta?.tool_calls as Array<{ tool?: string; output?: string }> | undefined;
+    const pt = tc?.find((t) => t.tool === 'project_tasks');
+    const out = pt?.output ?? '';
+    const m = /总数 (\d+)[^|]*\| 待办 (\d+) \| 完成 (\d+) \| 执行中 (\d+) \| 阻塞 (\d+)/.exec(out);
+    if (!m) return null;
+    const [, total, todo, done, running, blocked] = m;
+    return `当前项目共有 ${total} 个任务\n\n- 待办: ${todo} 个\n- 完成: ${done} 个\n- 执行中: ${running} 个\n- 阻塞: ${blocked} 个\n\n需要我[查看具体任务列表](#action:查看具体任务列表)，或者帮你启动某个任务吗？`;
+  })();
+  // S35-UI: 有 project_tasks 工具结果 → 用固定模板回答 (替换 AI 自由文本)
+  const displayContent = taskStatsText ?? (isUser ? content : actionText(content));
   // S34-001: 空内容 + 无工具调用 + 无 Run → 不渲染 (执行状态卡负责提示)
   if (!isUser && !content.trim() && !(meta?.tool_calls && meta.tool_calls.length > 0) && !(meta?.run_ids && meta.run_ids.length > 0)) {
     return <></>;
@@ -464,7 +484,7 @@ function MessageBubble({ role, content, meta, runs = [], expandedRunId, onToggle
         <div className="ai-msg-role">{isUser ? 'You' : 'AI Factory'}</div>
         <div className={`ai-msg-bubble ai-msg-bubble--${isUser ? 'user' : 'ai'}`}>
           {/* S34-001: AI 回复 + 用户输入都支持 Markdown (安全渲染, 零依赖) */}
-          {content && <div className="ai-msg-text">{renderMarkdown(content)}</div>}
+          {content && <div className="ai-msg-text">{renderMarkdown(displayContent, onSendQuick)}</div>}
 
           {/* AI 消息: 如果有 tool_calls, 渲染结构化执行卡片 */}
           {!isUser && meta?.tool_calls && meta.tool_calls.length > 0 && (

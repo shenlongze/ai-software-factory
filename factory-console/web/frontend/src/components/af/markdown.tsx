@@ -12,8 +12,9 @@ import type { ReactNode } from 'react';
 /** 安全链接: 拒绝危险协议 (javascript:/data:/vbscript:) 与空白/尖括号; 允许相对路径。 */
 const URL_SAFE_RE = /^(?!\s*(?:javascript|data|vbscript):)[^\s<>"']+$/;
 
-/** 行内渲染: **粗体** · *斜体* · `代码` · [链接](url) (安全拆分, 无 HTML)。 */
-export function renderInline(text: string): ReactNode[] {
+/** 行内渲染: **粗体** · *斜体* · `代码` · [链接](url) (安全拆分, 无 HTML)。
+ *  onLinkClick: 可选回调 — `#action:xxx` 内部指令链接点击时触发 (发送快捷指令)。 */
+export function renderInline(text: string, onLinkClick?: (cmd: string) => void): ReactNode[] {
   const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\[[^\]\n]+\]\([^)\s]+\))/g);
   return parts.map((p, i) => {
     if (p.startsWith('**') && p.endsWith('**') && p.length > 4) {
@@ -32,10 +33,28 @@ export function renderInline(text: string): ReactNode[] {
     const link = /^\[([^\]\n]+)\]\(([^)\s]+)\)$/.exec(p);
     if (link != null) {
       const url = link[2].trim();
+      // S35-UI: 内部指令链接 (#action:指令) — 点击发送快捷指令, 不跳转
+      const action = /^#action:(.+)$/.exec(url);
+      if (action != null) {
+        const cmd = action[1];
+        return (
+          <a
+            key={i}
+            href="#"
+            className="af-action-link"
+            onClick={(e) => {
+              e.preventDefault();
+              onLinkClick?.(cmd);
+            }}
+          >
+            {renderInline(link[1], onLinkClick)}
+          </a>
+        );
+      }
       if (URL_SAFE_RE.test(url)) {
         return (
           <a key={i} href={url} target={url.startsWith('http') ? '_blank' : undefined} rel="noreferrer">
-            {renderInline(link[1])}
+            {renderInline(link[1], onLinkClick)}
           </a>
         );
       }
@@ -75,14 +94,14 @@ function collectTable(lines: string[], start: number): { rows: string[][]; next:
   return { rows: [header, ...rows], next };
 }
 
-function renderTable(rows: string[][]): ReactNode {
+function renderTable(rows: string[][], onLinkClick?: (cmd: string) => void): ReactNode {
   const [header, ...body] = rows;
   return (
     <table key={`tbl-${Math.random().toString(36).slice(2, 8)}`} className="af-md-table">
       <thead>
         <tr>
           {header.map((h, i) => (
-            <th key={i}>{renderInline(h)}</th>
+            <th key={i}>{renderInline(h, onLinkClick)}</th>
           ))}
         </tr>
       </thead>
@@ -90,7 +109,7 @@ function renderTable(rows: string[][]): ReactNode {
         {body.map((r, ri) => (
           <tr key={ri}>
             {r.map((c, ci) => (
-              <td key={ci}>{renderInline(c)}</td>
+              <td key={ci}>{renderInline(c, onLinkClick)}</td>
             ))}
           </tr>
         ))}
@@ -99,8 +118,9 @@ function renderTable(rows: string[][]): ReactNode {
   );
 }
 
-/** 块级渲染: 标题/列表/有序列表/代码块/段落/引用/表格。 */
-export function renderMarkdown(text: string): ReactNode[] {
+/** 块级渲染: 标题/列表/有序列表/代码块/段落/引用/表格。
+ *  onLinkClick: 透传给行内 — `#action:xxx` 链接点击发送快捷指令。 */
+export function renderMarkdown(text: string, onLinkClick?: (cmd: string) => void): ReactNode[] {
   const out: ReactNode[] = [];
   const lines = String(text ?? '').split('\n');
   let list: string[] = [];
@@ -114,7 +134,7 @@ export function renderMarkdown(text: string): ReactNode[] {
       out.push(
         <ul key={key}>
           {list.map((li, i) => (
-            <li key={`${key}-${i}`}>{renderInline(li)}</li>
+            <li key={`${key}-${i}`}>{renderInline(li, onLinkClick)}</li>
           ))}
         </ul>,
       );
@@ -126,7 +146,7 @@ export function renderMarkdown(text: string): ReactNode[] {
       out.push(
         <ol key={key}>
           {ordered.map((li, i) => (
-            <li key={`${key}-${i}`}>{renderInline(li)}</li>
+            <li key={`${key}-${i}`}>{renderInline(li, onLinkClick)}</li>
           ))}
         </ol>,
       );
@@ -138,7 +158,7 @@ export function renderMarkdown(text: string): ReactNode[] {
       out.push(
         <blockquote key={key} className="af-md-quote">
           {quote.map((q, i) => (
-            <p key={`${key}-${i}`}>{renderInline(q)}</p>
+            <p key={`${key}-${i}`}>{renderInline(q, onLinkClick)}</p>
           ))}
         </blockquote>,
       );
@@ -169,20 +189,20 @@ export function renderMarkdown(text: string): ReactNode[] {
       flushQuote(`q-${idx}`);
       const table = collectTable(lines, idx);
       if (table != null) {
-        out.push(renderTable(table.rows));
+        out.push(renderTable(table.rows, onLinkClick));
         idx = table.next;
         continue;
       }
     }
     if (line.startsWith('# ')) {
       flushList(`l-${idx}`); flushOrdered(`o-${idx}`); flushQuote(`q-${idx}`);
-      out.push(<h4 key={`h1-${idx}`}>{renderInline(line.slice(2))}</h4>);
+      out.push(<h4 key={`h1-${idx}`}>{renderInline(line.slice(2), onLinkClick)}</h4>);
     } else if (line.startsWith('## ')) {
       flushList(`l-${idx}`); flushOrdered(`o-${idx}`); flushQuote(`q-${idx}`);
-      out.push(<h5 key={`h2-${idx}`}>{renderInline(line.slice(3))}</h5>);
+      out.push(<h5 key={`h2-${idx}`}>{renderInline(line.slice(3), onLinkClick)}</h5>);
     } else if (line.startsWith('### ')) {
       flushList(`l-${idx}`); flushOrdered(`o-${idx}`); flushQuote(`q-${idx}`);
-      out.push(<h6 key={`h3-${idx}`}>{renderInline(line.slice(4))}</h6>);
+      out.push(<h6 key={`h3-${idx}`}>{renderInline(line.slice(4), onLinkClick)}</h6>);
     } else if (/^[-*]\s+/.test(line)) {
       flushOrdered(`o-${idx}`); flushQuote(`q-${idx}`);
       list.push(line.replace(/^[-*]\s+/, ''));
@@ -196,7 +216,7 @@ export function renderMarkdown(text: string): ReactNode[] {
       flushList(`l-${idx}`); flushOrdered(`o-${idx}`); flushQuote(`q-${idx}`);
     } else {
       flushList(`l-${idx}`); flushOrdered(`o-${idx}`); flushQuote(`q-${idx}`);
-      out.push(<p key={`p-${idx}`}>{renderInline(line)}</p>);
+      out.push(<p key={`p-${idx}`}>{renderInline(line, onLinkClick)}</p>);
     }
     idx += 1;
   }

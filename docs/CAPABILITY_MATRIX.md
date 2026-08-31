@@ -860,3 +860,22 @@ AI Factory
 - Human Console = REAL (普通用户通过 Web Conversation 使用 OS)
 - 前端既有测试 39 失败 (历史遗留, 与 K6 无关); SSE 推送未实现 (polling fallback)
 - Task Detail 独立页 = 后续 (现 drill 内嵌)
+
+## K7 更新 (Real User Closed-Loop Acceptance, v1.1.359)
+
+### Reality Status
+| 能力 | Status | 证据 |
+|------|--------|------|
+| Golden User Journeys (10 个) | REAL | test_k7_journeys 10/10 |
+| Conversation → Work 双向闭环 | REAL | J1-J10 全链 |
+| 真实 LLM E2E (codex) | REAL | k7-e2e-evidence |
+| 失败/Recovery 诚实呈现 | REAL | J5/J6 |
+| Approval 不可绕过 | REAL | J7 |
+| Replan/Resume | REAL | J8/J10 |
+| 状态一致性 (Backend=API=UI) | REAL | K7 E2E |
+| 审计完整性 (lineage 全链) | REAL | k7-governance-lineage-audit |
+
+### 诚实声明
+- K7 = 验收 Sprint (无新架构; 组合验证 K1-K6)
+- 修复 1 个 P2 (ASK_STATUS pattern)
+- P3: SSE 推送未实现; P4: 通用任务 prompt 硬编码计算器 (DEFERRED)

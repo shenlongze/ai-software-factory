@@ -39,7 +39,7 @@ INTENTS = ("DISCUSS", "DECIDE", "APPROVE", "EXECUTE", "ASK_STATUS", "CLARIFY")
 INTENT_PATTERNS = {
     "APPROVE": (r"确认|同意|可以|approve|yes|ok|就这么办|开始吧|批准", "DISCUSS"),
     "EXECUTE": (r"帮我(做|创建|写|实现|开发|执行|跑)|开始(做|开发|执行|写)|直接(做|建)|动手", "DISCUSS"),
-    "ASK_STATUS": (r"进展|状态|进度|怎么样了|完成了吗|为什么(失败|报错)|测试(结果|为什么)", "DISCUSS"),
+    "ASK_STATUS": (r"进展|状态|进度|怎么样了|完成了吗|为什么(失败|报错)|测试(结果|为什么)|做到哪里|做到哪了|在做什么", "DISCUSS"),
     "DECIDE": (r"决定|改成|改为|用(这个|那个)|选|目标(是|为)|用户(是|为)|定位", "DISCUSS"),
     "CLARIFY": (r"什么意思|不明白|解释|举例|具体(一点|来说)|能再说", "DISCUSS"),
 }

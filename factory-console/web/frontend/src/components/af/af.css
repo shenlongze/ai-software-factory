@@ -8085,3 +8085,13 @@ body[data-bg='1'] .af-shell {
 .af-run-state { text-transform: uppercase; font-size: 11px; color: #888; }
 .af-run-tokens { color: #999; font-size: 11px; }
 .af-run-time { margin-left: auto; color: #aaa; font-size: 11px; }
+
+/* S32-004B: 项目 Context 卡 */
+.ai-pj-ctx { border: 1px solid #e5e5ea; border-radius: 10px; padding: 10px 12px; margin: 8px 10px; background: #fff; }
+.ai-pj-ctx-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.ai-pj-ctx-label { font-size: 11px; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: .04em; }
+.ai-pj-ctx-clear { border: none; background: none; color: #999; font-size: 11px; cursor: pointer; }
+.ai-pj-ctx-clear:hover { color: #ff3b30; }
+.ai-pj-ctx-name { font-size: 14px; font-weight: 600; color: #111; }
+.ai-pj-ctx-meta { display: flex; align-items: center; gap: 8px; margin-top: 2px; font-size: 11px; color: #999; }
+.ai-pj-ctx-meta code { font-family: ui-monospace, monospace; font-size: 11px; }

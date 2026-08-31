@@ -112,7 +112,7 @@ const DEFAULT_CONTEXT: ConversationContextValue = {
 
 const ConversationContext = createContext<ConversationContextValue>(DEFAULT_CONTEXT);
 
-export function ConversationProvider({ children }: { children: ReactNode }): JSX.Element {
+export function ConversationProvider({ children, initialProjectId }: { children: ReactNode; initialProjectId?: string | null }): JSX.Element {
   const [scope, setScopeState] = useState<SessionScope>(() => {
     try {
       return window.localStorage.getItem(SCOPE_KEY) === 'project' ? 'project' : 'company';
@@ -120,7 +120,8 @@ export function ConversationProvider({ children }: { children: ReactNode }): JSX
       return 'company';
     }
   });
-  const [projectId, setProjectIdState] = useState<string | null>(null);
+  // S32-004B: initialProjectId — URL ?project= 恢复 Context (Refresh 后项目仍在)
+  const [projectId, setProjectIdState] = useState<string | null>(initialProjectId ?? null);
   const [featureId, setFeatureIdState] = useState<string | null>(null);
   const [featureName, setFeatureNameState] = useState<string | null>(null);
   // K9 Human Workspace: 右栏当前 Tab (联动驱动, 被动跟随 + 用户可手动切)

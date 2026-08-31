@@ -181,6 +181,23 @@ describe('Project Navigation (S32-004A)', () => {
   });
 });
 
+// S32-004B: Contextual Project Selection — 右栏项目 Context
+describe('Project Context (S32-004B)', () => {
+  it('项目选中时右栏显示 Project Context 卡 (真实)', async () => {
+    // 初始注入 project context (模拟 URL ?project= 恢复)
+    const { rerender } = render(
+      <ConversationProvider initialProjectId="project_1">
+        <AfWorkspace />
+      </ConversationProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId('af-project-context')).toBeTruthy());
+    expect(screen.getByText(/项目 Context/)).toBeTruthy();
+    // 清除按钮存在
+    expect(screen.getByLabelText(/清除项目 Context/)).toBeTruthy();
+    void rerender;
+  });
+});
+
 // S32-006: Command Center — Recent Results (真实 recent_activity)
 describe('Command Center (S31-006)', () => {
   it('Welcome Hero 显示 Recent Results (真实事件流)', async () => {

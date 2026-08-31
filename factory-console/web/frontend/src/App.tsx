@@ -13,7 +13,20 @@ import { AfProjectEntry } from './pages/project/AfProjectEntry';
  *   #/project/:id[/<subpage>] → AfProjectEntry (项目工作区)
  *   #/workspace?project=id → parseHash 直链 → AfProjectEntry
  */
-function Shell(): JSX.Element {
+export default function App(): JSX.Element {
+  return (
+    <ThemeProvider>
+      <LanguageProvider>
+        <AppStateProvider>
+          <AppRouter />
+        </AppStateProvider>
+      </LanguageProvider>
+    </ThemeProvider>
+  );
+}
+
+/** 路由 + Context 注入 (S32-004B: URL ?project= 恢复项目 Context)。 */
+function AppRouter(): JSX.Element {
   const [, setHashTick] = useState(0);
   useEffect(() => {
     const onChange = () => setHashTick((tick) => tick + 1);
@@ -23,22 +36,11 @@ function Shell(): JSX.Element {
 
   const raw = window.location.hash || '#/workspace';
   const route = parseHash(raw);
-  if (route.level === 'project') {
-    return <AfProjectEntry route={route} />;
-  }
-  return <AfWorkspaceEntry route={route} />;
-}
-
-export default function App(): JSX.Element {
+  // S32-004B: #/workspace?project=id → 注入 Context (不离开 Workbench)
+  const contextProjectId = route.level === 'workspace' ? route.projectId ?? null : null;
   return (
-    <ThemeProvider>
-      <LanguageProvider>
-        <AppStateProvider>
-          <ConversationProvider>
-            <Shell />
-          </ConversationProvider>
-        </AppStateProvider>
-      </LanguageProvider>
-    </ThemeProvider>
+    <ConversationProvider initialProjectId={contextProjectId}>
+      {route.level === 'project' ? <AfProjectEntry route={route} /> : <AfWorkspaceEntry route={route} />}
+    </ConversationProvider>
   );
 }

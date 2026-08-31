@@ -11,11 +11,13 @@
  */
 
 import { useI18n } from '../../i18n';
+import { useEffect } from 'react';
 import type { ParsedRoute } from '../../router';
 import { AfHeader } from './AfHeader';
 import { AfContextNav } from './AfContextNav';
 import { AfConversationCenter } from './AfConversationCenter';
 import { AfWorkspace } from './AfWorkspace';
+import { useConversation } from './ConversationContext';
 import { AfWorkspaceFrame, type AfWorkspaceFrameHandlers } from './AfWorkspaceFrame';
 import './af.css';
 
@@ -30,10 +32,21 @@ const WORKSPACE_PAGE_LABELS: Record<string, string> = {
 
 export interface AfWorkspaceShellProps {
   route: ParsedRoute;
+  /** S32-004B: URL ?project= 注入的项目 Context (Refresh 恢复用)。 */
+  initialProjectId?: string | null;
 }
-export function AfWorkspaceShell({ route }: AfWorkspaceShellProps): JSX.Element {
+export function AfWorkspaceShell({ route, initialProjectId }: AfWorkspaceShellProps): JSX.Element {
   const { t } = useI18n();
+  const ctx = useConversation();
   const pageLabel = t(`nav.workspace.${route.page}`) || (WORKSPACE_PAGE_LABELS[route.page] ?? route.page);
+
+  // S32-004B: URL ?project= 恢复项目 Context (挂载时注入一次)
+  useEffect(() => {
+    if (initialProjectId && initialProjectId.length > 0 && ctx.projectId !== initialProjectId) {
+      ctx.setProjectId(initialProjectId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialProjectId]);
 
   const renderHeader = ({ collapsed, onToggleSidebar }: AfWorkspaceFrameHandlers) => (
     <AfHeader pageLabel={pageLabel} collapsed={collapsed} onToggleSidebar={onToggleSidebar} />
@@ -41,7 +54,7 @@ export function AfWorkspaceShell({ route }: AfWorkspaceShellProps): JSX.Element 
 
   // K9 Human Workspace 三栏:
   // 左 = AfContextNav (Context), 中 = AfConversationCenter (唯一主入口), 右 = AfWorkspace (AI 工作现场)
-  // S32-004A: 项目/会话点击 → hash 导航 (App.tsx hashchange → 真实页面)
+  // S32-004B: 项目点击 → Context 选择 (setProjectId), 不离开 Workbench
   const navigate = (hash: string) => {
     window.location.hash = hash;
   };
@@ -54,7 +67,15 @@ export function AfWorkspaceShell({ route }: AfWorkspaceShellProps): JSX.Element 
       sidebar={(collapsed) => (
         <AfContextNav
           collapsed={collapsed}
-          onSelectProject={(id) => navigate(id ? `#/project/${encodeURIComponent(id)}` : '#/workspace')}
+          onSelectProject={(id) => {
+            if (id) {
+              ctx.setProjectId(id);
+              navigate(`#/workspace?project=${encodeURIComponent(id)}`);
+            } else {
+              ctx.setProjectId(null);
+              navigate('#/workspace');
+            }
+          }}
           onSelectConversation={() => navigate('#/workspace')}
         />
       )}

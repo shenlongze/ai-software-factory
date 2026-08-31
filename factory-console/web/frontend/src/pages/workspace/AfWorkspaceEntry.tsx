@@ -13,6 +13,6 @@
 import type { ParsedRoute } from '../../router';
 import { AfWorkspaceShell } from '../../components/af/AfWorkspaceShell';
 
-export function AfWorkspaceEntry({ route }: { route: ParsedRoute }): JSX.Element {
-  return <AfWorkspaceShell route={route} />;
+export function AfWorkspaceEntry({ route, initialProjectId }: { route: ParsedRoute; initialProjectId?: string | null }): JSX.Element {
+  return <AfWorkspaceShell route={route} initialProjectId={initialProjectId} />;
 }

@@ -119,10 +119,10 @@ describe('parseHash — Project 级 (11 条)', () => {
 });
 
 describe('parseHash — S10-003 直链兼容 + 非法/默认', () => {
-  it('#/workspace?project=ledger-app → project/overview (直链重定向 §2.3)', () => {
+  it('#/workspace?project=ledger-app → workspace 级 + project context (S32-004B)', () => {
     expect(parseHash('#/workspace?project=ledger-app')).toEqual({
-      level: 'project',
-      page: 'overview',
+      level: 'workspace',
+      page: 'conversation',
       projectId: 'ledger-app',
     });
   });

@@ -63,12 +63,17 @@ export function parseHash(hash: string): ParsedRoute {
   const pathPart = qIndex >= 0 ? raw.slice(0, qIndex) : raw;
   const query = qIndex >= 0 ? raw.slice(qIndex + 1) : '';
 
-  // S10-003 直链兼容: #/workspace?project=<id> → project/overview (§2.3)
-  if (pathPart === '/workspace' && query.length > 0) {
-    const projectId = new URLSearchParams(query).get('project');
-    if (projectId != null && projectId.length > 0) {
-      return { level: 'project', page: 'overview', projectId };
+  // S32-004B: #/workspace?project=<id> → workspace 级 + project context
+  // (不再重定向独立 Project Page — 项目是 Context, 不是页面)
+  const projectFromQuery = (() => {
+    if (pathPart === '/workspace' && query.length > 0) {
+      const projectId = new URLSearchParams(query).get('project');
+      return projectId != null && projectId.length > 0 ? projectId : null;
     }
+    return null;
+  })();
+  if (projectFromQuery != null) {
+    return { level: 'workspace', page: 'conversation', projectId: projectFromQuery };
   }
 
   const segments = pathPart.split('/').filter((s) => s.length > 0);

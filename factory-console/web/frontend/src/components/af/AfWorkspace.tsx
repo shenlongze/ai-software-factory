@@ -157,6 +157,57 @@ function ArtifactPanel(): JSX.Element {
   );
 }
 
+// ===== S32-004B: Project Context Card (真实项目投影, 不伪造) =====
+function ProjectContextCard({ projectId, onClear }: { projectId: string; onClear: () => void }): JSX.Element {
+  const [proj, setProj] = useState<{ title?: string; status?: string; id?: string } | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    api
+      .osProjects()
+      .then((list) => {
+        const found = list.find((p) => p.id === projectId);
+        if (!cancelled) {
+          setProj(found ? { title: found.title, status: found.status, id: found.id } : null);
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setProj({ id: projectId, title: projectId, status: undefined });
+          setLoading(false);
+        }
+      });
+    return () => { cancelled = true; };
+  }, [projectId]);
+
+  if (loading) return <div className="ai-panel-empty">项目加载中…</div>;
+
+  return (
+    <div className="ai-pj-ctx" data-testid="af-project-context">
+      <div className="ai-pj-ctx-head">
+        <span className="ai-pj-ctx-label">项目 Context</span>
+        <button type="button" className="ai-pj-ctx-clear" onClick={onClear} aria-label="清除项目 Context">
+          ✕ 清除
+        </button>
+      </div>
+      {proj ? (
+        <>
+          <div className="ai-pj-ctx-name">{proj.title ?? proj.id}</div>
+          <div className="ai-pj-ctx-meta">
+            <code>{proj.id}</code>
+            {proj.status && <span className={`ai-nav-status ai-nav-status--${proj.status.toLowerCase()}`}>{proj.status}</span>}
+          </div>
+        </>
+      ) : (
+        <div className="ai-pj-ctx-name">项目不存在</div>
+      )}
+    </div>
+  );
+}
+
 // ===== Task Panel =====
 function TaskPanel(): JSX.Element {
   const [projects, setProjects] = useState<Array<{ id: string; title: string }>>([]);
@@ -580,6 +631,11 @@ export function AfWorkspace(): JSX.Element {
           </svg>
         </button>
       </div>
+
+      {/* S32-004B: 项目 Context 卡 — 项目选中时右栏显示真实项目 */}
+      {ctx.projectId && (
+        <ProjectContextCard projectId={ctx.projectId} onClear={() => ctx.setProjectId(null)} />
+      )}
 
       {/* Approval Card — 内联显示 (不单独页面) */}
       {showApproval && <ApprovalCard />}

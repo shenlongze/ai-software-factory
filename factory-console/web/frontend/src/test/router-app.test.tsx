@@ -107,17 +107,15 @@ describe('AI Factory 真实入口挂载 (App.tsx)', () => {
     expect(await screen.findByTestId('af-todo-tree')).toBeInTheDocument();
   });
 
-  it('#/workspace?project=ledger-app 直链 → AI Factory 项目入口 (S10-003 兼容)', async () => {
+  it('#/workspace?project=ledger-app → workspace 级 + Context 注入 (S32-004B)', async () => {
     stubConsoleApis();
     stubFetch({
       '/api/projects': [sampleProject({ id: 'ledger-app', name: 'ledger-app' })],
     });
     window.location.hash = '#/workspace?project=ledger-app';
     render(<App />);
-    expect(await screen.findByTestId('af-project-entry')).toBeInTheDocument();
-    expect(
-      await screen.findByRole('heading', { name: 'ledger-app' }),
-    ).toBeInTheDocument();
+    // S32-004B: 不进入独立项目页 — 保持 Workbench (af-workspace-entry)
+    expect(await screen.findByTestId('af-workspace-entry')).toBeInTheDocument();
   });
 
   it('K-7a: 普通模式已砍 — 无 ModeToggle/工作台按钮', async () => {

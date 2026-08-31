@@ -6808,6 +6808,15 @@ body[data-bg='1'] .af-shell {
   background: transparent;
   cursor: col-resize;
   transition: background 0.15s;
+  /* S35-UI: 扩大热区 (视觉 4px, 命中 12px) — 拖拽更容易 */
+}
+.af-workspace-shell .af-resizer::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  right: -4px;
 }
 .af-workspace-shell .af-resizer:hover {
   background: rgba(76, 141, 255, 0.3);

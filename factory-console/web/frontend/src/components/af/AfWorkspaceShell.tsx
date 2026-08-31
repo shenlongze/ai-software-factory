@@ -41,13 +41,23 @@ export function AfWorkspaceShell({ route }: AfWorkspaceShellProps): JSX.Element 
 
   // K9 Human Workspace 三栏:
   // 左 = AfContextNav (Context), 中 = AfConversationCenter (唯一主入口), 右 = AfWorkspace (AI 工作现场)
+  // S32-004A: 项目/会话点击 → hash 导航 (App.tsx hashchange → 真实页面)
+  const navigate = (hash: string) => {
+    window.location.hash = hash;
+  };
   return (
     <AfWorkspaceFrame
       testId="af-workspace-entry"
       pageLabel={pageLabel}
       scopeLabel="公司 · AI Factory"
       header={renderHeader}
-      sidebar={(collapsed) => <AfContextNav collapsed={collapsed} />}
+      sidebar={(collapsed) => (
+        <AfContextNav
+          collapsed={collapsed}
+          onSelectProject={(id) => navigate(id ? `#/project/${encodeURIComponent(id)}` : '#/workspace')}
+          onSelectConversation={() => navigate('#/workspace')}
+        />
+      )}
       main={<AfConversationCenter />}
       workspace={<AfWorkspace />}
     />

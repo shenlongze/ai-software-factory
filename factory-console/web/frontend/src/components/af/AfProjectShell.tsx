@@ -65,8 +65,30 @@ export function AfProjectShell({ route }: AfProjectShellProps): JSX.Element {
 
   const { data, error, loading } = useAsync<LoadResult>(
     async () => {
+      // S32-004A: 双项目源兼容 — 先查 console 项目, 找不到 fallback OS 项目 (左栏来源)
       const projects = await api.projects();
-      const found = projects.find((p) => p.id === projectId);
+      let found = projects.find((p) => p.id === projectId);
+      if (found == null) {
+        try {
+          const osProjects = await api.osProjects();
+          const osFound = osProjects.find((p) => p.id === projectId);
+          if (osFound != null) {
+            found = {
+              id: osFound.id,
+              name: osFound.title ?? osFound.id,
+              description: '',
+              language: '',
+              repository: '',
+              tech_stack: [],
+              status: osFound.status ?? 'active',
+              lifecycle_stage: null,
+              lifecycle_status: null,
+            } as unknown as ProjectSummary;
+          }
+        } catch {
+          /* OS fallback 失败 → 保持 notfound */
+        }
+      }
       if (found == null) return { kind: 'notfound' };
       let workflow: WorkflowDetail | null = null;
       if (found.workflow_id != null && found.workflow_id.length > 0) {

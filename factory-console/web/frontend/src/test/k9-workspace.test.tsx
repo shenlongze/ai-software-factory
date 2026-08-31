@@ -163,7 +163,25 @@ describe('Project Management (S32-003)', () => {
   });
 });
 
-// S31-006: Command Center — Recent Results (真实 recent_activity)
+// S32-004A: Project 点击 → hash 导航 (Shell 传 onSelectProject)
+describe('Project Navigation (S32-004A)', () => {
+  it('AfContextNav 项目点击调用 onSelectProject', async () => {
+    let selected = '';
+    render(
+      <ConversationProvider>
+        <AfContextNav
+          collapsed={false}
+          onSelectProject={(id) => { selected = id; }}
+        />
+      </ConversationProvider>,
+    );
+    await waitFor(() => expect(screen.getByText(/测试项目/)).toBeTruthy());
+    fireEvent.click(screen.getByText(/测试项目/));
+    expect(selected).toBe('project_1');
+  });
+});
+
+// S32-006: Command Center — Recent Results (真实 recent_activity)
 describe('Command Center (S31-006)', () => {
   it('Welcome Hero 显示 Recent Results (真实事件流)', async () => {
     // 覆盖: 空会话 + 空消息 → Hero 显示 (Command Center)

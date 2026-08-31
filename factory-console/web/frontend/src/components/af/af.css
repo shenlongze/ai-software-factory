@@ -8187,3 +8187,24 @@ body[data-bg='1'] .af-shell {
 .af-project-card-id { font-size: 11px; color: #86868b; }
 .af-project-card-desc { margin: 0; font-size: 12px; color: #6e6e73; }
 .af-project-card-meta { font-size: 11px; color: #86868b; }
+
+/* S35-UI: 会话管理视图 (右栏) */
+.af-sessions-view { display: flex; flex-direction: column; gap: 10px; padding: 16px; height: 100%; overflow-y: auto; }
+.af-sessions-head { display: flex; align-items: baseline; justify-content: space-between; }
+.af-sessions-head h3 { margin: 0; font-size: 15px; color: #1d1d1f; }
+.af-sessions-count { font-size: 12px; color: #86868b; }
+.af-sessions-search { padding: 8px 12px; border: 1px solid #d2d2d7; border-radius: 10px; font-size: 13px; outline: none; }
+.af-sessions-search:focus { border-color: #0071e3; }
+.af-sessions-toggle { align-self: flex-start; font-size: 12px; color: #0071e3; background: none; border: none; cursor: pointer; padding: 2px 0; }
+.af-sessions-note { font-size: 13px; color: #86868b; }
+.af-sessions-empty { justify-content: center; align-items: center; color: #86868b; font-size: 13px; }
+.af-sessions-list { display: flex; flex-direction: column; gap: 6px; }
+.af-session-row { display: flex; align-items: center; gap: 6px; padding: 10px 12px; border: 1px solid #e8e8ed; border-radius: 12px; background: #fff; }
+.af-session-row.active { border-color: #0071e3; background: #f5f9ff; }
+.af-session-main { flex: 1; text-align: left; background: none; border: none; cursor: pointer; display: flex; flex-direction: column; gap: 2px; padding: 0; }
+.af-session-title { font-size: 13px; font-weight: 600; color: #1d1d1f; }
+.af-session-meta { font-size: 11px; color: #86868b; }
+.af-session-ops { display: flex; gap: 4px; }
+.af-session-op { width: 24px; height: 24px; border: none; background: none; border-radius: 6px; cursor: pointer; font-size: 13px; color: #6e6e73; }
+.af-session-op:hover { background: #f0f0f5; }
+.af-session-op--danger:hover { color: #d70015; }

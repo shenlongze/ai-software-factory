@@ -309,6 +309,16 @@ class SessionStore:
             if s is not None:
                 s["updated_at"] = _now_iso()
 
+    def delete_session(self, session_id: str) -> bool:
+        """S35-UI: 删除会话 (本体 + 消息; 不存在 → False)。"""
+        with self._lock:
+            s = self._data["sessions"].get(session_id)
+            if s is None:
+                return False
+            del self._data["sessions"][session_id]
+            self._data.get("messages", {}).pop(session_id, None)
+            return True
+
     def add_run(self, session_id: str, run_id: str) -> bool:
         """S30-003: Session ↔ Run 一级关联 (幂等追加, 1:N 集合)。
 

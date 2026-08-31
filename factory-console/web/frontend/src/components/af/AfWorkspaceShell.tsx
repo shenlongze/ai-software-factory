@@ -11,13 +11,14 @@
  */
 
 import { useI18n } from '../../i18n';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ParsedRoute } from '../../router';
 import { AfHeader } from './AfHeader';
 import { AfContextNav } from './AfContextNav';
 import { AfConversationCenter } from './AfConversationCenter';
 import { AfWorkspace } from './AfWorkspace';
 import { AfProjectsView } from './AfProjectsView';
+import { AfSessionsView } from './AfSessionsView';
 import { useConversation } from './ConversationContext';
 import { AfWorkspaceFrame, type AfWorkspaceFrameHandlers } from './AfWorkspaceFrame';
 import './af.css';
@@ -43,8 +44,12 @@ export function AfWorkspaceShell({ route, initialProjectId }: AfWorkspaceShellPr
 
   // S35-UI: 左侧一级导航 (对话/项目/最近) 激活态 + 右栏视图切换
   const [activeNav, setActiveNav] = useState<string>(route.page === 'conversation' ? 'conversation' : 'home');
+  const navChoiceRef = useRef<string | null>(null);
   useEffect(() => {
-    setActiveNav(route.page === 'conversation' ? 'conversation' : 'home');
+    // 仅当非显式导航选择时, 跟随路由重置 (避免点"对话"后立即被路由覆盖)
+    if (navChoiceRef.current == null) {
+      setActiveNav(route.page === 'conversation' ? 'conversation' : 'home');
+    }
   }, [route.page]);
 
   // S32-004B: URL ?project= 恢复项目 Context (挂载时注入一次)
@@ -68,11 +73,17 @@ export function AfWorkspaceShell({ route, initialProjectId }: AfWorkspaceShellPr
   // S35-UI: 一级导航 onSelectNav — 对话/项目/最近 (修复点击无反应)
   const handleSelectNav = useCallback(
     (id: string) => {
-      setActiveNav(id);
-      if (id === 'conversation' || id === 'recent') {
+      navChoiceRef.current = id;
+      if (id === 'conversation') {
+        // 对话 → 会话管理视图 (真实 /api/sessions)
+        setActiveNav('sessions');
+        navigate('#/workspace');
+      } else if (id === 'recent') {
+        setActiveNav('recent');
         navigate('#/workspace');
       } else if (id === 'projects') {
         // 项目 → 右栏项目管理视图 (真实 /api/projects), 不离开 Workbench
+        setActiveNav('projects');
         navigate('#/workspace');
       }
     },
@@ -102,7 +113,9 @@ export function AfWorkspaceShell({ route, initialProjectId }: AfWorkspaceShellPr
         />
       )}
       main={<AfConversationCenter />}
-      workspace={activeNav === 'projects' ? <AfProjectsView /> : <AfWorkspace />}
+      workspace={
+        activeNav === 'projects' ? <AfProjectsView /> : activeNav === 'sessions' ? <AfSessionsView /> : <AfWorkspace />
+      }
     />
   );
 }

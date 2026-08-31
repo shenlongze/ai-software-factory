@@ -6632,6 +6632,13 @@ def build_app(
             raise HTTPException(status_code=404, detail="session not found")
         return updated
 
+    @app.delete("/api/sessions/{session_id}")
+    def api_delete_session(session_id: str) -> dict[str, Any]:
+        """S35-UI: 删除会话 (本体 + 消息); 不存在 → 404。"""
+        if not sessions_store.delete_session(session_id):
+            raise HTTPException(status_code=404, detail="session not found")
+        return {"ok": True, "session_id": session_id, "deleted": True}
+
     @app.get("/api/sessions/{session_id}/messages")
     def api_session_messages(session_id: str) -> dict[str, Any]:
         """会话消息列表 (K-7e); 会话不存在 → 404。

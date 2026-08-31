@@ -673,3 +673,20 @@ def test_project_detail_repo_path_not_factory_root(tmp_path: Path) -> None:
     out = _r.stdout.strip().splitlines()
     assert "P1 /Users/agentdev/.factory" in out[0]
     assert "P2 /tmp/workspace/projects/P-x" in out[1]
+
+
+# ---- S35-UI: 会话管理 (delete_session) ----
+
+def test_session_store_delete(tmp_path: Path) -> None:
+    """delete_session 删除本体+消息; 不存在 → False。"""
+    from factory_console.console_sessions import SessionStore
+
+    f = tmp_path / "sessions.json"
+    st = SessionStore(f)
+    st.create_session(scope="company", title="T1")
+    sid = st.list_sessions()[0]["id"]
+    st.append_message(sid, "user", "hi")
+    assert st.message_count(sid) == 1
+    assert st.delete_session(sid) is True
+    assert st.get_session(sid) is None
+    assert st.delete_session(sid) is False

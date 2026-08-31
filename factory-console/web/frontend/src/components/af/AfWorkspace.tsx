@@ -424,19 +424,66 @@ function TerminalPanel(): JSX.Element {
 }
 
 function FilesPanel(): JSX.Element {
+  const [files, setFiles] = useState<Array<{ id: string; ref?: string; type?: string }>>([]);
+  const [selected, setSelected] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .artifacts({})
+      .then((list) => {
+        if (cancelled) return;
+        setFiles(list.slice(0, 20));
+        if (list.length > 0) setSelected(list[0].id);
+      })
+      .catch(() => { /* 失败静默 */ });
+    return () => { cancelled = true; };
+  }, []);
+
   return (
     <div className="ai-panel-content">
-      <div className="ai-panel-empty">
-        <div className="ai-panel-empty-icon">📁</div>
-        <div className="ai-panel-empty-title">项目文件</div>
-        <div className="ai-panel-empty-desc">文件浏览器会在有文件时自动显示</div>
-      </div>
+      {files.length === 0 ? (
+        <div className="ai-panel-empty">
+          <div className="ai-panel-empty-icon">📁</div>
+          <div className="ai-panel-empty-title">项目文件</div>
+          <div className="ai-panel-empty-desc">文件浏览器会在有文件时自动显示</div>
+        </div>
+      ) : (
+        <div className="ai-file-list">
+          {files.map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              className={`ai-file-item${selected === f.id ? ' ai-file-item--active' : ''}`}
+              onClick={() => setSelected(f.id)}
+            >
+              <span className="ai-file-icon">{f.type === 'code' ? '📄' : '◈'}</span>
+              <span className="ai-file-name">{f.ref ?? f.type ?? f.id}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-// ===== Approval Card (设计文档 §19 — 内联显示) =====
+// ===== Approval Card (S31-003: 真实审批数据 — 非硬编码) =====
 function ApprovalCard(): JSX.Element {
+  const [approvals, setApprovals] = useState<Array<{ id: string; subject_type?: string; status?: string; created_at?: string }>>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .approvals(true)
+      .then((list) => {
+        if (!cancelled) setApprovals(Array.isArray(list) ? list.slice(0, 3) : []);
+      })
+      .catch(() => { /* 失败静默 — 不伪造 */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  if (approvals.length === 0) return <div className="ai-approval-card ai-approval-card--empty">无待审批</div>;
+
   return (
     <div className="ai-approval-card">
       <div className="ai-approval-head">
@@ -444,14 +491,16 @@ function ApprovalCard(): JSX.Element {
         <span className="ai-approval-title">Human Approval Required</span>
       </div>
       <div className="ai-approval-body">
-        <div className="ai-approval-item"><span className="ai-approval-label">Artifact</span><span>PRD v3</span></div>
-        <div className="ai-approval-item"><span className="ai-approval-label">Changes</span><span>17</span></div>
-        <div className="ai-approval-item"><span className="ai-approval-label">Evidence</span><span>12</span></div>
-        <div className="ai-approval-item"><span className="ai-approval-label">Validation</span><span className="ai-approval-pass">Passed</span></div>
+        {approvals.map((a) => (
+          <div key={a.id} className="ai-approval-item">
+            <span className="ai-approval-label">{a.subject_type ?? 'approval'}</span>
+            <span>{a.id}</span>
+            <span className={`ai-approval-pass ${a.status === 'pending' ? '' : 'ai-approval-state'}`}>{a.status ?? 'pending'}</span>
+          </div>
+        ))}
       </div>
       <div className="ai-approval-actions">
-        <button type="button" className="ai-approval-btn ai-approval-btn--reject">Reject</button>
-        <button type="button" className="ai-approval-btn ai-approval-btn--approve">Approve</button>
+        <button type="button" className="ai-approval-btn ai-approval-btn--approve" onClick={() => void api.osDecideApproval(approvals[0].id, 'approve')}>Approve</button>
       </div>
     </div>
   );
@@ -501,7 +550,14 @@ export function AfWorkspace(): JSX.Element {
     <div className="ai-workspace ai-workspace--v2" data-testid="af-workspace">
       {/* Workspace Header */}
       <div className="ai-ws-header ai-ws-header--v2">
-        <div className="ai-ws-label">Workspace</div>
+        <div className="ai-ws-label">
+          Workspace
+          {ctx.activeId && (
+            <span className="ai-ws-context" title={`Session: ${ctx.activeId}`}>
+              {ctx.sending ? '· 执行中' : '· 就绪'}
+            </span>
+          )}
+        </div>
         <div className="ai-ws-tabs-inline" role="tablist" aria-label="Workspace panels">
           {availableTabs.map((t) => (
             <button

@@ -17,6 +17,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useConversation } from './ConversationContext';
 import { api } from '../../api/client';
+import { AfProjectHome } from '../../pages/project/AfProjectHome';
 import type { OsProjectStatus } from '../../models/types';
 import './af.css';
 
@@ -160,8 +161,6 @@ function ArtifactPanel(): JSX.Element {
 // ===== S32-004B: Project Workspace (点击项目后右栏完整切换 — 真实数据) =====
 function ProjectWorkspace({ projectId, onClear }: { projectId: string; onClear: () => void }): JSX.Element {
   const [proj, setProj] = useState<{ title?: string; status?: string; id?: string } | null>(null);
-  const [detail, setDetail] = useState<{ progress: { total: number; completed: number; running: number; failed: number } } | null>(null);
-  const [runs, setRuns] = useState<Array<{ run_id: string; status: string; updated_at?: string; totals?: Record<string, number> }>>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -177,33 +176,10 @@ function ProjectWorkspace({ projectId, onClear }: { projectId: string; onClear: 
       })
       .catch(() => {
         if (!cancelled) setProj({ id: projectId, title: projectId, status: undefined });
-      });
-    // ② 项目进度 (org /api/projects/{id}/progress — tasks 真实统计)
-    api
-      .projectProgress(projectId)
-      .then((s) => {
-        if (!cancelled) {
-          setDetail({
-            progress: {
-              total: s.tasks?.total ?? 0,
-              completed: s.tasks?.done ?? 0,
-              running: s.tasks?.running ?? 0,
-              failed: 0,
-            },
-          });
-          setLoading(false);
-        }
       })
-      .catch(() => {
+      .finally(() => {
         if (!cancelled) setLoading(false);
       });
-    // ③ 项目 Runs (真实 workflow_runs)
-    api
-      .projectRuns(projectId)
-      .then((d) => {
-        if (!cancelled) setRuns(d.runs ?? []);
-      })
-      .catch(() => { /* 无 run 保持空 */ });
     return () => { cancelled = true; };
   }, [projectId]);
 
@@ -218,42 +194,10 @@ function ProjectWorkspace({ projectId, onClear }: { projectId: string; onClear: 
         </button>
       </div>
       {proj ? (
-        <>
-          <div className="ai-pj-ws-name">{proj.title ?? proj.id}</div>
-          <div className="ai-pj-ws-meta">
-            <code>{proj.id}</code>
-            {proj.status && <span className={`ai-nav-status ai-nav-status--${proj.status.toLowerCase()}`}>{proj.status}</span>}
-          </div>
-
-          {/* 真实进度 (osProjectStatus.progress — 不伪造) */}
-          {detail && detail.progress && (
-            <div className="ai-pj-ws-section" data-testid="af-pj-progress">
-              <div className="ai-pj-ws-sec-title">进度</div>
-              <div className="ai-pj-ws-progress">
-                <span className="ai-pj-ws-pill">✓ {detail.progress.completed} 完成</span>
-                <span className="ai-pj-ws-pill ai-pj-ws-pill--run">● {detail.progress.running} 运行中</span>
-                <span className="ai-pj-ws-pill ai-pj-ws-pill--fail">✗ {detail.progress.failed} 失败</span>
-                <span className="ai-pj-ws-pill">{detail.progress.total} 总任务</span>
-              </div>
-            </div>
-          )}
-
-          {/* 真实 Run (workflow_runs — 当前执行) */}
-          {runs.length > 0 && (
-            <div className="ai-pj-ws-section" data-testid="af-pj-runs">
-              <div className="ai-pj-ws-sec-title">当前执行</div>
-              {runs.slice(0, 3).map((r) => (
-                <div key={r.run_id} className="ai-pj-ws-run">
-                  <span className={`ai-run-dot ai-run-dot--${r.status}`}>
-                    {r.status === 'running' ? '●' : r.status === 'completed' ? '✓' : '✗'}
-                  </span>
-                  <code className="ai-pj-ws-run-id">{r.run_id}</code>
-                  <span className="ai-run-state">{r.status}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </>
+        <div className="ai-pj-ws-full">
+          {/* S35-UI: 完整项目首页复用 (生命周期/健康/管理卡/执行记录/任务Todo — org 真实) */}
+          <AfProjectHome projectId={projectId} projectName={proj.title ?? projectId} />
+        </div>
       ) : (
         <div className="ai-pj-ws-name ai-pj-ws-name--notfound">项目不存在或已被删除</div>
       )}

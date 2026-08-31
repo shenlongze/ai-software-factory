@@ -48,6 +48,9 @@ export interface ConversationContextValue {
   workspaceTab: string;
   /** K9: 设置右栏 Tab (联动规则表 PRD §5 驱动); payload 可带 Tab 上下文。 */
   setWorkspaceTab: (tab: string, payload?: unknown) => void;
+  /** K9: 当前中栏会话 id (左栏 Context 与中栏 ConversationCenter 共享 — 修复双会话断链)。 */
+  workspaceConversationId: string | null;
+  setWorkspaceConversationId: (id: string | null) => void;
   sessions: SessionSummary[];
   activeId: string | null;
   messages: ChatMessage[];
@@ -81,6 +84,8 @@ const DEFAULT_CONTEXT: ConversationContextValue = {
   featureName: null,
   workspaceTab: 'task',
   setWorkspaceTab: () => {},
+  workspaceConversationId: null,
+  setWorkspaceConversationId: () => {},
   sessions: [],
   activeId: null,
   messages: [],
@@ -120,6 +125,8 @@ export function ConversationProvider({ children }: { children: ReactNode }): JSX
   const [featureName, setFeatureNameState] = useState<string | null>(null);
   // K9 Human Workspace: 右栏当前 Tab (联动驱动, 被动跟随 + 用户可手动切)
   const [workspaceTab, setWorkspaceTabState] = useState<string>('task');
+  // K9: 中栏会话 id (左栏↔中栏共享; 联动修复)
+  const [workspaceConversationId, setWorkspaceConversationId] = useState<string | null>(null);
   const setWorkspaceTab = useCallback((tab: string, _payload?: unknown) => {
     setWorkspaceTabState(tab);
   }, []);
@@ -429,6 +436,8 @@ export function ConversationProvider({ children }: { children: ReactNode }): JSX
       featureName,
       workspaceTab,
       setWorkspaceTab,
+      workspaceConversationId,
+      setWorkspaceConversationId,
       sessions,
       activeId,
       messages,
@@ -459,6 +468,8 @@ export function ConversationProvider({ children }: { children: ReactNode }): JSX
       featureName,
       workspaceTab,
       setWorkspaceTab,
+      workspaceConversationId,
+      setWorkspaceConversationId,
       sessions,
       activeId,
       messages,

@@ -14,10 +14,13 @@ import './af.css';
 
 interface ContextNavProps {
   collapsed: boolean;
+  /** 点击会话/项目时回调 (K9 修复: 左栏 Context 联动中栏 Conversation)。 */
+  onSelectConversation?: (id: string) => void;
+  onSelectProject?: (id: string) => void;
 }
 
 export function AfContextNav({ collapsed }: ContextNavProps): JSX.Element {
-  const { setWorkspaceTab, setProjectId } = useConversation();
+  const { setWorkspaceTab, setProjectId, setWorkspaceConversationId } = useConversation();
   const [conversations, setConversations] = useState<Array<{ id: string; title: string }>>([]);
   const [projects, setProjects] = useState<Array<{ id: string; title: string }>>([]);
   const [overview, setOverview] = useState<OpsOverview | null>(null);
@@ -58,7 +61,16 @@ export function AfContextNav({ collapsed }: ContextNavProps): JSX.Element {
 
       <div className="af-context-section">我的工作</div>
       {conversations.slice(0, 5).map((c) => (
-        <button key={c.id} type="button" className="af-context-item af-context-item--sub" onClick={() => setWorkspaceTab('task')}>
+        <button
+          key={c.id}
+          type="button"
+          className="af-context-item af-context-item--sub"
+          onClick={() => {
+            // K9 修复: 左栏会话 → 中栏加载该会话
+            setWorkspaceConversationId(c.id);
+            setWorkspaceTab('task');
+          }}
+        >
           <span className="af-context-ellipsis">{c.title}</span>
         </button>
       ))}

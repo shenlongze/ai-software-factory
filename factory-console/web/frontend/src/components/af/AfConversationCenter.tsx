@@ -35,11 +35,18 @@ export function AfConversationCenter(): JSX.Element {
   const [error, setError] = useState('');
   const [sending, setSending] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const { setWorkspaceTab } = useConversation();
+  const { setWorkspaceTab, workspaceConversationId, setWorkspaceConversationId } = useConversation();
 
   useEffect(() => {
     void load();
   }, []);
+
+  // K9 修复: 左栏 Context 点击会话 → 中栏加载该会话 (共享会话 id)
+  useEffect(() => {
+    if (workspaceConversationId && workspaceConversationId !== activeId) {
+      void loadConversation(workspaceConversationId);
+    }
+  }, [workspaceConversationId]);
 
   const load = async () => {
     setLoading(true);
@@ -75,6 +82,7 @@ export function AfConversationCenter(): JSX.Element {
   const newConversation = async () => {
     try {
       const c = await api.createConversation('新会话 ' + new Date().toLocaleTimeString());
+      setWorkspaceConversationId(c.id);
       await load();
       setActiveId(c.id);
       setMessages([]);
@@ -120,7 +128,10 @@ export function AfConversationCenter(): JSX.Element {
           <div
             key={c.id}
             className={`af-conv-item${c.id === activeId ? ' af-conv-item--active' : ''}`}
-            onClick={() => void loadConversation(c.id)}
+            onClick={() => {
+              setWorkspaceConversationId(c.id);
+              void loadConversation(c.id);
+            }}
           >
             <div className="af-conv-item-title">{c.metadata?.title ?? '会话'}</div>
             <div className="af-conv-item-meta">{c.id.slice(0, 12)}</div>

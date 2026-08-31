@@ -539,11 +539,12 @@ function MessageBubble({ role, content, meta, runs = [], expandedRunId, onToggle
 function ToolCallList({ toolCalls, usage }: { toolCalls: Array<{ name?: string; tool?: string; args?: Record<string, unknown>; status?: string; params?: unknown; output?: string }>; usage?: { model?: string; context_window?: number; prompt_tokens?: number; completion_tokens?: number; total_tokens?: number; elapsed_s?: number; estimated_cost_usd?: number } }): JSX.Element {
   // S34-001 P0-4: 默认 compact — 执行证据融入对话, 不抢占主视觉
   const [open, setOpen] = useState(false);
-  // S35-UI: 每个工具可独立展开 — 显示输入参数 + 输出结果
-  const [openIdx, setOpenIdx] = useState<number | null>(null);
   const okCount = toolCalls.filter((tc) => (tc.status ?? 'ok') === 'ok').length;
   const count = toolCalls.length;
   const visible = open ? toolCalls : toolCalls.slice(0, 4);
+
+  // S35-UI: 超 100 字符截断 + 省略号 (悬停 title 看全部) — table 风格可换行
+  const clip = (s: string): string => (s.length > 100 ? `${s.slice(0, 100)}…` : s);
 
   return (
     <div className="ai-tool-calls">
@@ -556,38 +557,32 @@ function ToolCallList({ toolCalls, usage }: { toolCalls: Array<{ name?: string; 
           {visible.map((tc, i) => {
             const name = tc.name ?? tc.tool ?? `Tool ${i + 1}`;
             const status = tc.status ?? 'ok';
-            const expanded = openIdx === i;
             const params = tc.params ?? tc.args;
+            const paramsText = params != null ? (typeof params === 'string' ? params : JSON.stringify(params)) : '';
             return (
               <div key={i} className="ai-tool-call">
-                <button
-                  type="button"
-                  className="ai-tool-call-head"
-                  onClick={() => setOpenIdx(expanded ? null : i)}
-                >
+                <div className="ai-tool-call-head">
                   <span className={`ai-tool-dot ai-tool-dot--${status}`} aria-hidden="true" />
                   <span className="ai-tool-name">{name}</span>
                   <span className="ai-tool-status">{status === 'ok' ? '✓' : status === 'fail' ? '✕' : '…'}</span>
-                  <span className="ai-tool-call-toggle" aria-hidden="true">{expanded ? '▴' : '▾'}</span>
-                </button>
-                {expanded && (
-                  <div className="ai-tool-call-detail">
-                    {params != null && (
-                      <div className="ai-tool-call-block">
-                        <span className="ai-tool-call-block-label">输入</span>
-                        <span className="ai-tool-call-line">{typeof params === 'string' ? params : JSON.stringify(params)}</span>
-                      </div>
-                    )}
-                    {tc.output != null && tc.output !== '' && (
-                      <div className="ai-tool-call-block">
-                        <span className="ai-tool-call-block-label">输出</span>
-                        <span className="ai-tool-call-line">{tc.output}</span>
-                      </div>
-                    )}
-                    {params == null && (!tc.output || tc.output === '') && (
-                      <div className="ai-tool-call-empty">(无输入/输出记录)</div>
-                    )}
-                  </div>
+                </div>
+                {(paramsText !== '' || (tc.output != null && tc.output !== '')) && (
+                  <table className="ai-tool-call-table">
+                    <tbody>
+                      {paramsText !== '' && (
+                        <tr>
+                          <td className="ai-tool-call-label">输入</td>
+                          <td className="ai-tool-call-val" title={paramsText}>{clip(paramsText)}</td>
+                        </tr>
+                      )}
+                      {tc.output != null && tc.output !== '' && (
+                        <tr>
+                          <td className="ai-tool-call-label">输出</td>
+                          <td className="ai-tool-call-val" title={tc.output}>{clip(tc.output)}</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
                 )}
               </div>
             );

@@ -109,7 +109,11 @@ export function AfWorkspaceShell({ route, initialProjectId }: AfWorkspaceShellPr
               navigate('#/workspace');
             }
           }}
-          onSelectConversation={() => navigate('#/workspace')}
+          onSelectConversation={(id) => {
+            // 会话点击 → 真实切换 (selectSession), 不离开 Workbench
+            if (id) ctx.selectSession(id);
+            navigate('#/workspace');
+          }}
         />
       )}
       main={<AfConversationCenter />}

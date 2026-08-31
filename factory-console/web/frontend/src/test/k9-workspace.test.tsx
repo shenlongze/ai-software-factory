@@ -147,7 +147,7 @@ describe('Command Center (S31-006)', () => {
   it('Welcome Hero 显示 Recent Results (真实事件流)', async () => {
     // 覆盖: 空会话 + 空消息 → Hero 显示 (Command Center)
     const originalFetch = globalThis.fetch;
-    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       const u = String(url);
       if (u.includes('/api/ops/overview')) return { ok: true, json: async () => ({ projects: { total: 1, running: 1, waiting: 0, blocked: 0, approval: 0, failed: 0 }, workforce: { running: 1, waiting: 0, blocked: 0, error: 0, idle: 0 }, recent_activity: [{ event_type: 'TOOL_CALL', timestamp: '2026-08-31T11:00:00+00:00', trace_id: 'sess-1' }], calculated_at: 'now' }) };
       if (u.includes('/api/sessions') && u.includes('/messages')) return { ok: true, json: async () => ({ items: [], count: 0 }) };

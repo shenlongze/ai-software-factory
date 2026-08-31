@@ -33,13 +33,22 @@ def _provider_conf(data_dir: str | Path) -> dict[str, Any]:
         if isinstance(ps, dict):
             for pid, p in ps.items():
                 if isinstance(p, dict) and p.get("enabled"):
+                    _cw = 0
+                    try:
+                        _m0 = (p.get("models") or ["deepseek-chat"])[0]
+                        _md = (p.get("model_catalog") or {}).get(_m0) or {}
+                        _cw = int(_md.get("context_window") or 0)
+                    except Exception:  # noqa: BLE001
+                        _cw = 0
                     return {"id": pid, "base_url": str(p.get("base_url") or ""),
                             "model": str((p.get("models") or ["deepseek-chat"])[0]),
+                            "context_window": _cw,
                             "api_key_ref": str(p.get("api_key_ref") or "env:DEEPSEEK_API_KEY")}
     except Exception:  # noqa: BLE001
         pass
     return {"id": "deepseek", "base_url": "https://api.deepseek.com/v1/chat/completions",
-            "model": "deepseek-chat", "api_key_ref": "env:DEEPSEEK_API_KEY"}
+            "model": "deepseek-chat", "context_window": 0,
+            "api_key_ref": "env:DEEPSEEK_API_KEY"}
 
 
 def _api_key(conf: dict[str, Any]) -> str:
@@ -123,6 +132,7 @@ def _resolve_model_conf(
     except Exception:  # noqa: BLE001 — 装配失败 → 旧路径 (诚实降级)
         conf = _provider_conf(data_dir)
         return {"provider": conf["id"], "model": conf["model"], "base_url": conf["base_url"],
+                "context_window": int(conf.get("context_window") or 0),
                 "api_key": _api_key(conf)}
 
 
@@ -1332,6 +1342,11 @@ def run_agent_native(
     import time as _time
     _start_ms = _time.monotonic() * 1000
     _converge = "reflection"
+    # S34-003B: 上下文窗口兜底 (providers.json 无 catalog 时按模型名查表)
+    try:
+        from .llm_gateway import model_context_window as _lg_model_cw
+    except Exception:  # noqa: BLE001
+        _lg_model_cw = lambda _m: 0
     # ---- S2 (v1.1.243): 循环护栏 — 无进展检测 / 同工具连续失败 / 整轮超时 ----
     _guard: dict[str, Any] = {
         "tool_fail_streak": {},     # 工具名 → 连续失败次数
@@ -1432,6 +1447,14 @@ def run_agent_native(
                 # W8 (v1.1.253 + v1.1.261 强化): 输出 guardrail — 数字+细节证据校验
                 # 回答含数字/色值/版本/类名/路径 → 与已调工具结果比对; 无据 → 强制修正 (治"方向对、细节编")
                 _answer = _strip_fake_toolcalls(resp.get("content") or "（模型未输出）")
+                # P0 回归修复: 清洗后为空但工具已执行 → 强制自然语言总结 (不能返回空/协议)
+                if (not _answer.strip()) and calls and total_calls < max_rounds - 1:
+                    messages.append({"role": "system", "content": (
+                        "你刚才的输出是内部工具调用协议 (DSML), 不是给用户的回答。"
+                        "请基于已执行的工具结果, 用自然语言直接回答用户的原始问题; "
+                        "禁止再输出任何 <tool_calls>/<invoke>/<parameter> 标签。"
+                    )})
+                    continue
                 if calls:
                     from .answer_verify import verify_details
 
@@ -1460,7 +1483,7 @@ def run_agent_native(
                         "evidence": [{"tool": c["tool"], "ok": c["ok"], "output": str(c.get("output") or c.get("error") or "")[:300]} for c in calls],
                         # S34-003B: 执行详情 — 模型/上下文/tokens 真实用量 (前端 ToolCallList 展示)
                         "usage": {"model": str(_mconf.get("model") or ""),
-                                  "context_window": int(_mconf.get("context_window") or 0),
+                                  "context_window": int(_mconf.get("context_window") or 0) or _lg_model_cw(str(_mconf.get("model") or "")),
                                   "prompt_tokens": _usage_prompt,
                                   "completion_tokens": _usage_completion,
                                   "total_tokens": _usage_prompt + _usage_completion,
@@ -1604,7 +1627,7 @@ def run_agent_native(
                 "evidence": [{"tool": c["tool"], "ok": c["ok"], "output": str(c.get("output") or c.get("error") or "")[:300]} for c in calls],
                 # S34-003B: 执行详情 — 真实用量 (与 1457 一致)
                 "usage": {"model": str(_mconf.get("model") or ""),
-                          "context_window": int(_mconf.get("context_window") or 0),
+                          "context_window": int(_mconf.get("context_window") or 0) or _lg_model_cw(str(_mconf.get("model") or "")),
                           "prompt_tokens": _usage_prompt,
                           "completion_tokens": _usage_completion,
                           "total_tokens": _usage_prompt + _usage_completion,
@@ -1706,16 +1729,26 @@ def _strip_fake_toolcalls(text: str) -> str:
 
     S34-003B 强化: 覆盖 <tool_calls> 块、<invoke> 调用、<parameter> 参数标签,
     无论是否配对/带属性 — 内部 Tool Protocol 绝不进入用户正文。
+    兼容 DSML 全角变体 (模型可能输出 <｜DSML｜tool_calls> — U+FF5C 竖线伪装)。
     """
     t = str(text or "")
+    # 全角竖线 U+FF5C → ASCII | (模型转义变体归一化: <｜DSML｜tool_calls> → <|DSML|tool_calls>)
+    t = t.replace("｜", "|")
     t = re.sub(r"```tool_calls[\s\S]*?```", "", t)
     t = re.sub(r"```tool_call[\s\S]*?```", "", t)
+    # DSML 前缀包装: <|DSML|tool_calls> / <||DSML||invoke ...> / <||DSML||parameter ...>
+    # 任意 DSML 包裹标签 (0-2 竖线) → 还原为普通标签名再走常规清洗
+    t = re.sub(r"<\|{0,2}\s*DSML\s*\|{0,2}(tool_calls|invoke|parameter)([^>]*)>",
+               lambda m: f"<{m.group(1)}{m.group(2)}>", t)
+    # DSML 变体整块: <tool_calls> ... (可能无配对闭合 → 删到文本尾)
+    t = re.sub(r"<tool_calls>[\s\S]*?(?:</tool_calls>|$)", "", t)
     # 整块优先 (含嵌套 <parameter>): 先删完整块, 再删残留散标签
     t = re.sub(r"<tool_calls>[\s\S]*?</tool_calls>", "", t)
     t = re.sub(r"<invoke[^>]*name=\"[^\"]*\"[\s\S]*?</invoke>", "", t)
     t = re.sub(r"<invoke[^>]*>[\s\S]*?</invoke>", "", t)
     t = re.sub(r"<parameter[^>]*>[\s\S]*?</parameter>", "", t)
     t = re.sub(r"</?tool_calls>", "", t)
+    t = re.sub(r"<\|?\s*DSML\s*\|?tool_calls>", "", t)
     t = re.sub(r"</?invoke[^>]*>", "", t)
     t = re.sub(r"</?parameter[^>]*>", "", t)
     return re.sub(r"\n{3,}", "\n\n", t).strip()

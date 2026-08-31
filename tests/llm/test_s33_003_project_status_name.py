@@ -133,3 +133,62 @@ def test_complete_usage_cost_estimated() -> None:
     u = out["usage"]
     # 1000/1M * 0.27 + 1000/1M * 1.10 = 0.00137
     assert abs(u["estimated_cost_usd"] - 0.00137) < 1e-6
+
+
+# ---- S34-003B: 模型上下文窗口 ----
+
+def test_model_context_window_known() -> None:
+    """deepseek-chat → 64K; v4-flash → 1M; 未知 → 0。"""
+    from factory_console.session.llm_gateway import model_context_window
+
+    assert model_context_window("deepseek-chat") == 65536
+    assert model_context_window("deepseek-v4-flash") == 1048576
+    assert model_context_window("unknown-model") == 0
+
+
+def test_agent_loop_usage_context_fallback() -> None:
+    """usage.context_window 为 0 时兜底到模型表 (deepseek-chat → 64K)。"""
+    from factory_console.session.llm_gateway import model_context_window
+
+    _mconf = {"model": "deepseek-chat", "context_window": 0}
+    cw = int(_mconf.get("context_window") or 0) or model_context_window(str(_mconf.get("model") or ""))
+    assert cw == 65536
+
+
+# ---- P0 回归: DSML 全角变体泄漏 ----
+
+def test_strip_fake_toolcalls_dsml_fullwidth() -> None:
+    """模型输出全角 DSML 变体 <｜DSML｜tool_calls> / <||DSML||invoke> → 全清除。"""
+    from factory_console.session.agent_loop import _strip_fake_toolcalls
+
+    leaky = (
+        "<｜DSML｜tool_calls>\n"
+        "<｜DSML｜invoke name=\"bash_exec\">\n"
+        "<｜DSML｜parameter name=\"command\">for d in /projects/*/; do ls; done</｜DSML｜parameter>\n"
+        "<｜DSML｜/invoke>\n"
+        "<｜DSML｜/tool_calls>"
+    )
+    cleaned = _strip_fake_toolcalls(leaky)
+    assert cleaned.strip() == ""
+    for bad in ("DSML", "tool_calls", "<invoke", "<parameter"):
+        assert bad not in cleaned
+
+
+def test_strip_fake_toolcalls_dsml_double_pipe() -> None:
+    """双竖线变体 <||DSML||tool_calls> → 清除。"""
+    from factory_console.session.agent_loop import _strip_fake_toolcalls
+
+    leaky = "回答。<||DSML||tool_calls>\n<||DSML||invoke name=\"bash_exec\">\n</||DSML||invoke>\n<||DSML||/tool_calls>"
+    cleaned = _strip_fake_toolcalls(leaky)
+    assert "DSML" not in cleaned
+    assert "回答" in cleaned
+
+
+def test_strip_fake_toolcalls_keeps_normal_after_dsml() -> None:
+    """DSML 块清除后自然语言保留。"""
+    from factory_console.session.agent_loop import _strip_fake_toolcalls
+
+    text = "目前共有 2 个项目。\n\n<||DSML||tool_calls>\n<||DSML||invoke name=\"bash_exec\">\n</||DSML||invoke>\n<||DSML||/tool_calls>"
+    cleaned = _strip_fake_toolcalls(text)
+    assert "目前共有 2 个项目" in cleaned
+    assert "DSML" not in cleaned

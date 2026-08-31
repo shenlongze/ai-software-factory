@@ -209,7 +209,7 @@ def tool_schemas(data_dir: str | Path | None = None) -> list[dict[str, Any]]:
             {"path": {"type": "string"}, "keyword": {"type": "string"}, "offset": {"type": "integer"}}),
         _fc("search_code", "代码检索", "在仓库中检索关键词, 返回命中文件", {"keyword": {"type": "string"}}, ["keyword"]),
         _fc("project_status", "项目状态", "查询项目实时状态: 生命周期/进度(真实任务完成率)/当前阶段/工作流", {}),
-        _fc("project_tasks", "任务清单", "查询项目任务 (按优先级或全部统计)", {"priority": {"type": "string", "enum": ["P0", "P1", "P2", "P3"]}}),
+        _fc("project_tasks", "任务清单", "查询项目任务: 默认返回统计; 用户要求'查看任务列表/具体任务'时传 detail=true 返回任务明细表格 (任务/模块/优先级/类型/状态)", {"priority": {"type": "string", "enum": ["P0", "P1", "P2", "P3"]}, "detail": {"type": "string", "enum": ["true", "false"]}}),
         _fc("task_action", "任务操作(执行)", "对任务执行动作: start/done/priority (需任务标题)",
             {"title": {"type": "string"}, "action": {"type": "string", "enum": ["start", "done", "priority"]},
              "priority": {"type": "string", "enum": ["P0", "P1", "P2", "P3"]}}, ["title", "action"]),
@@ -872,16 +872,68 @@ def dispatch(
             st = _project_task_stats(root, project_id)
             if not st:
                 return {"ok": True, "output": "暂无任务数据"}
+            # S35-UI: detail=true → 返回任务明细 markdown 表格 (查看具体任务列表)
+            if str(args.get("detail") or "").lower() in ("1", "true", "yes"):
+                _tasks: list[dict[str, Any]] = []
+                _seen: set[str] = set()
+                for _tf in (
+                    Path(root) / "workspace" / "projects" / Path(project_id).name
+                    / "management" / "backlog" / "task.json",
+                    Path(root) / "projects" / Path(project_id).name / "tasks.json",
+                ):
+                    try:
+                        _data = json.loads(_tf.read_text(encoding="utf-8")) or {}
+                        _list = (_data.get("tasks") or {})
+                        _list = _list.values() if isinstance(_list, dict) else _list
+                        for t in _list:
+                            if isinstance(t, dict) and str(t.get("id")) not in _seen:
+                                _seen.add(str(t.get("id")))
+                                _tasks.append(t)
+                    except Exception:  # noqa: BLE001
+                        continue
+                if not _tasks:
+                    return {"ok": True, "output": "暂无任务数据"}
+                lines = ["| 任务 | 模块 | 优先级 | 类型 | 状态 |", "| --- | --- | --- | --- | --- |"]
+                for t in _tasks[:50]:
+                    _name = str(t.get("name") or t.get("title") or t.get("id") or "")
+                    _mod = str(t.get("feature") or t.get("epic") or "—")
+                    _prio = str(t.get("priority") or "—")
+                    _type = str(t.get("agent_type") or "—")
+                    _st = str(t.get("status") or "todo")
+                    lines.append(f"| {_name} | {_mod} | {_prio} | {_type} | {_st} |")
+                return {"ok": True, "output": "\n".join(lines)}
             # S35-UI: 回答格式强制 — 第一行总数, 下面无序列表各状态, 末尾引导句
             # (前端会把"查看具体任务列表"渲染成可点击链接, 点击发送指令)
+            # P0/P1 数量: 双路径读任务 (mgmt + legacy) 按 priority 统计
+            _all_tasks: list[dict[str, Any]] = []
+            _seen: set[str] = set()
+            for _tf in (
+                Path(root) / "workspace" / "projects" / Path(project_id).name
+                / "management" / "backlog" / "task.json",
+                Path(root) / "projects" / Path(project_id).name / "tasks.json",
+            ):
+                try:
+                    _data = json.loads(_tf.read_text(encoding="utf-8")) or {}
+                    _list = (_data.get("tasks") or {})
+                    _list = _list.values() if isinstance(_list, dict) else _list
+                    for t in _list:
+                        if isinstance(t, dict) and str(t.get("id")) not in _seen:
+                            _seen.add(str(t.get("id")))
+                            _all_tasks.append(t)
+                except Exception:  # noqa: BLE001
+                    continue
+            _p0n = sum(1 for t in _all_tasks if str(t.get("priority") or "").upper() == "P0")
+            _p1n = sum(1 for t in _all_tasks if str(t.get("priority") or "").upper() == "P1")
             return {"ok": True, "output": (
-                f"任务统计: 总数 {st['total']} | 待办 {st['todo']} | 完成 {st['done']} | 执行中 {st['running']} | 阻塞 {st['blocked']} | 进度 {st['pct']}%\n"
+                f"任务统计: 总数 {st['total']} | 待办 {st['todo']} | 完成 {st['done']} | 执行中 {st['running']} | 阻塞 {st['blocked']} | P0 {_p0n} | P1 {_p1n} | 进度 {st['pct']}%\n"
                 f"【回答模板 — 必须严格按此格式输出, 不要输出本说明】\n"
                 f"当前项目共有 {st['total']} 个任务\n\n"
                 f"- 待办: {st['todo']} 个\n"
                 f"- 完成: {st['done']} 个\n"
                 f"- 执行中: {st['running']} 个\n"
-                f"- 阻塞: {st['blocked']} 个\n\n"
+                f"- 阻塞: {st['blocked']} 个\n"
+                f"- P0: {_p0n} 个\n"
+                f"- P1: {_p1n} 个\n\n"
                 f"需要我查看具体任务列表，或者帮你启动某个任务吗？"
             )}
         if tool_id == "task_action":

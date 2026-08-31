@@ -11,29 +11,15 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_ROUTE, PROJECT_ROUTES, WORKSPACE_ROUTES, parseHash } from '../router';
 
 describe('S10-014 路由常量表 (§2.3)', () => {
-  it('Workspace 级 9 条路由 (K6: Conversation 默认 + Work + Tower 三入口 + 管理)', () => {
-    expect(WORKSPACE_ROUTES).toHaveLength(9);
+  it('Workspace 级 2 条路由 (S32-001 IA Freeze: 唯一 Conversation 主入口)', () => {
+    expect(WORKSPACE_ROUTES).toHaveLength(2);
     expect(WORKSPACE_ROUTES.map((r) => r.path)).toEqual([
       '#/workspace',
       '#/workspace/conversation',
-      '#/workspace/work',
-      '#/workspace/tower',
-      '#/workspace/projects',
-      '#/workspace/monitor',
-      '#/workspace/production',
-      '#/workspace/settings',
-      '#/workspace/manage',
     ]);
     expect(WORKSPACE_ROUTES.map((r) => r.page)).toEqual([
       'conversation',
       'conversation',
-      'work',
-      'tower',
-      'projects',
-      'monitor',
-      'production',
-      'settings',
-      'manage',
     ]);
   });
 
@@ -60,17 +46,20 @@ describe('S10-014 路由常量表 (§2.3)', () => {
   });
 });
 
-describe('parseHash — Workspace 级 (K6 三入口 + 管理)', () => {
+describe('parseHash — Workspace 级 (S32-001 收敛)', () => {
   it.each([
     ['#/workspace', 'conversation'],
     ['#/workspace/conversation', 'conversation'],
-    ['#/workspace/work', 'work'],
-    ['#/workspace/tower', 'tower'],
-    ['#/workspace/projects', 'projects'],
-    ['#/workspace/settings', 'settings'],
-    ['#/workspace/manage', 'manage'],
   ] as const)('%s → workspace/%s', (hash, page) => {
     expect(parseHash(hash)).toEqual({ level: 'workspace', page });
+  });
+
+  it('已删除的旧子页 (work/tower/projects/settings/manage) → 回退 conversation', () => {
+    expect(parseHash('#/workspace/work')).toEqual({ level: 'workspace', page: 'conversation' });
+    expect(parseHash('#/workspace/tower')).toEqual({ level: 'workspace', page: 'conversation' });
+    expect(parseHash('#/workspace/projects')).toEqual({ level: 'workspace', page: 'conversation' });
+    expect(parseHash('#/workspace/settings')).toEqual({ level: 'workspace', page: 'conversation' });
+    expect(parseHash('#/workspace/manage')).toEqual({ level: 'workspace', page: 'conversation' });
   });
 
   it('已移 board 的旧子页 (team/workflows/runtime/audit) → 回退 conversation', () => {

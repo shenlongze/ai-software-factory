@@ -42,7 +42,7 @@ function mockApi() {
     if (u.includes('/api/conversations')) return { ok: true, json: async () => ({ items: [conv], count: 1 }) };
     if (u.includes('/api/projects-os') && u.includes('/status')) return { ok: true, json: async () => projStatus };
     if (u.includes('/api/projects-os')) return { ok: true, json: async () => ({ items: [{ id: 'project_1', title: '测试项目' }] }) };
-    if (u.includes('/api/ops/overview')) return { ok: true, json: async () => ({ projects: { total: 1, running: 0, waiting: 0, blocked: 0, approval: 1, failed: 0 }, workforce: { running: 1, waiting: 0, blocked: 0, error: 0, idle: 0 }, recent_activity: [], calculated_at: 'now' }) };
+    if (u.includes('/api/ops/overview')) return { ok: true, json: async () => ({ projects: { total: 1, running: 0, waiting: 0, blocked: 0, approval: 1, failed: 0 }, workforce: { running: 1, waiting: 0, blocked: 0, error: 0, idle: 0 }, recent_activity: [{ event_type: 'TOOL_CALL', timestamp: '2026-08-31T11:00:00+00:00', trace_id: 'sess-1' }], calculated_at: 'now' }) };
     // ConversationContext 数据源 — 新 UI 使用 sessions API
     if (u.includes('/api/sessions') && u.includes('/messages')) {
       if (method === 'POST') {
@@ -139,5 +139,29 @@ describe('Run 卡 Execution Detail (S31-004)', () => {
       expect(detail.textContent).toContain('产品经理'); // ROLE_LABELS 人话
       expect(detail.textContent).toContain('tokens');
     });
+  });
+});
+
+// S31-006: Command Center — Recent Results (真实 recent_activity)
+describe('Command Center (S31-006)', () => {
+  it('Welcome Hero 显示 Recent Results (真实事件流)', async () => {
+    // 覆盖: 空会话 + 空消息 → Hero 显示 (Command Center)
+    const originalFetch = globalThis.fetch;
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      const u = String(url);
+      if (u.includes('/api/ops/overview')) return { ok: true, json: async () => ({ projects: { total: 1, running: 1, waiting: 0, blocked: 0, approval: 0, failed: 0 }, workforce: { running: 1, waiting: 0, blocked: 0, error: 0, idle: 0 }, recent_activity: [{ event_type: 'TOOL_CALL', timestamp: '2026-08-31T11:00:00+00:00', trace_id: 'sess-1' }], calculated_at: 'now' }) };
+      if (u.includes('/api/sessions') && u.includes('/messages')) return { ok: true, json: async () => ({ items: [], count: 0 }) };
+      if (u.includes('/api/sessions')) return { ok: true, json: async () => ({ items: [], count: 0 }) };
+      if (u.includes('/api/conversations')) return { ok: true, json: async () => ({ items: [], count: 0 }) };
+      return { ok: true, json: async () => ({}) };
+    }));
+    wrap(<AfConversationCenter />);
+    // Hero 出现 (无消息时) + Active Work (running=1) + Recent Results
+    await waitFor(() => expect(screen.getByText(/What do you want to accomplish/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('af-active-work')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('af-recent-results')).toBeTruthy());
+    expect(screen.getByText(/1 个任务运行中/)).toBeTruthy();
+    expect(screen.getByText(/TOOL_CALL/)).toBeTruthy();
+    globalThis.fetch = originalFetch;
   });
 });

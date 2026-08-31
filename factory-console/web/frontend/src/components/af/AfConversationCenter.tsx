@@ -44,9 +44,23 @@ export function AfConversationCenter(): JSX.Element {
   const [input, setInput] = useState('');
   const [runs, setRuns] = useState<SessionRunSummary[]>([]);
   const [expandedRun, setExpandedRun] = useState<string | null>(null);
+  // S31-006: Command Center — Active Work + Recent Results (真实 opsOverview)
+  const [overview, setOverview] = useState<{ projects?: { running?: number; total?: number }; recent_activity?: Array<{ event_type?: string; timestamp?: string; trace_id?: string }> } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const hasMessages = ctx.messages.length > 0;
+
+  // S31-006: Command Center — 加载真实运行概览 (Active Work / Recent Results)
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .opsOverview()
+      .then((d) => {
+        if (!cancelled) setOverview(d);
+      })
+      .catch(() => { /* 失败静默 — 不伪造 */ });
+    return () => { cancelled = true; };
+  }, []);
 
   // S30-004 P0-2: 加载 Session 关联的真实 Run (activeId 变化时拉取, 后端 Source of Truth)
   useEffect(() => {
@@ -134,6 +148,35 @@ export function AfConversationCenter(): JSX.Element {
                 </button>
               ))}
             </div>
+
+            {/* S31-006: Active Work — 真实运行中 (来自 opsOverview, 非前端模拟) */}
+            {overview && (overview.projects?.running ?? 0) > 0 && (
+              <div className="ai-cc-section" data-testid="af-active-work">
+                <div className="ai-cc-section-title">正在进行</div>
+                <div className="ai-cc-active">
+                  <span className="ai-cc-dot ai-cc-dot--running" aria-hidden="true" />
+                  <span>{overview.projects?.running ?? 0} 个任务运行中</span>
+                </div>
+              </div>
+            )}
+
+            {/* S31-006: Recent Results — 真实最近活动 (事件流) */}
+            {overview && Array.isArray(overview.recent_activity) && overview.recent_activity.length > 0 && (
+              <div className="ai-cc-section" data-testid="af-recent-results">
+                <div className="ai-cc-section-title">最近</div>
+                <div className="ai-cc-recent">
+                  {overview.recent_activity.slice(0, 4).map((ev, i) => (
+                    <div key={i} className="ai-cc-recent-item">
+                      <span className="ai-cc-recent-icon">✓</span>
+                      <span className="ai-cc-recent-type">{ev.event_type ?? 'event'}</span>
+                      <span className="ai-cc-recent-time">
+                        {ev.timestamp ? new Date(ev.timestamp).toLocaleTimeString() : ''}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           // ========== 消息流 ==========

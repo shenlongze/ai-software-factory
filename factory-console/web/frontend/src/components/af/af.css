@@ -8047,3 +8047,16 @@ body[data-bg='1'] .af-shell {
 .ai-run-stage-latency { margin-left: auto; color: #999; font-size: 11px; }
 .ai-run-detail-empty { color: #999; font-size: 12px; }
 .ai-run-totals-line { margin-top: 4px; padding-top: 4px; border-top: 1px dashed #eee; color: #888; font-size: 11px; }
+
+/* S31-006: Command Center — Active Work + Recent Results */
+.ai-cc-section { margin-top: 14px; text-align: left; width: 100%; max-width: 460px; }
+.ai-cc-section-title { font-size: 12px; font-weight: 600; color: #888; margin-bottom: 6px; text-transform: uppercase; letter-spacing: .04em; }
+.ai-cc-active { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #333; padding: 6px 0; }
+.ai-cc-dot { width: 8px; height: 8px; border-radius: 50%; }
+.ai-cc-dot--running { background: #f5a623; animation: ai-cc-pulse 1.5s infinite; }
+@keyframes ai-cc-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
+.ai-cc-recent { display: flex; flex-direction: column; gap: 4px; }
+.ai-cc-recent-item { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #555; }
+.ai-cc-recent-icon { color: #34c759; }
+.ai-cc-recent-type { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ai-cc-recent-time { color: #aaa; font-size: 11px; }

@@ -186,6 +186,9 @@ def start_project_workflow(
     runs_dir: str | Path,
     chain_factory: Callable[..., dict[str, Any]] | None = None,
     run_async: bool = True,
+    task_id: str = "",  # S34-P0-5: Task→Run 关联
+    plan_id: str = "",  # S34-P0-5: Plan→Run 关联
+    session_id: str = "",  # S34-P0-5: Session→Run 关联
 ) -> dict[str, Any]:
     """POST /projects/{id}/start 执行入口: key 校验 → 后台线程启动真实链。
 
@@ -218,6 +221,9 @@ def start_project_workflow(
         events_db_path=Path(events_db_path),
         runs_dir=Path(runs_dir),
         chain_factory=chain_factory,
+        task_id=task_id,  # S34-P0-5
+        plan_id=plan_id,  # S34-P0-5
+        session_id=session_id,  # S34-P0-5
     )
     if run_async:
         thread = threading.Thread(
@@ -253,6 +259,28 @@ def _thread_main(**kwargs: Any) -> None:
     run_id: str = kwargs["run_id"]
     runs_dir: Path = kwargs["runs_dir"]
     report_path = _run_dirs(runs_dir, project_id, run_id)["report"]
+    # S34-P0-5: Run↔Task/Plan/Session 关联写入 progress (真实可追溯)
+    try:
+        _rel = {
+            "task_id": str(kwargs.get("task_id") or ""),
+            "plan_id": str(kwargs.get("plan_id") or ""),
+            "session_id": str(kwargs.get("session_id") or ""),
+        }
+        _prog_path = _run_dirs(runs_dir, project_id, run_id)["progress"]
+        _prog_path.parent.mkdir(parents=True, exist_ok=True)
+        _existing = {}
+        try:
+            import json as _json
+
+            if _prog_path.is_file():
+                _existing = _json.loads(_prog_path.read_text(encoding="utf-8")) or {}
+        except Exception:  # noqa: BLE001
+            _existing = {}
+        if _existing and not _existing.get("task_id"):
+            _existing.update(_rel)
+            _write_json(_prog_path, _existing)
+    except Exception:  # noqa: BLE001 — 关联写入失败不阻断
+        pass
 
     def _check_cancel() -> bool:
         try:

@@ -506,3 +506,42 @@ def test_execute_plan_tasks_carry_plan_id(tmp_path: Path) -> None:
     assert r["ok"] is True
     assert r["plan_id"] == "plan_x"
     assert r["created"][0]["plan_id"] == "plan_x"
+
+
+# ---- S34-P0-3/4/5: Plan 完整字段 / Approval 关联 / Run 关联 ----
+
+def test_plan_full_artifact_fields(tmp_path: Path) -> None:
+    """Plan 拥有完整 Artifact 字段 (version/architecture/milestones/risks/task_ids)。"""
+    import json as _json
+    from unittest.mock import MagicMock
+
+    from factory_console.session.agent_loop import dispatch
+
+    ws = tmp_path / "factory"
+    (ws / "requirements").mkdir(parents=True)
+    ctx = {"session_id": "sess-2", "llm_fn": lambda p: _json.dumps({
+        "goal": "飞机大战", "tasks": [{"title": "T1", "priority": "P0"}],
+        "order": ["T1"], "acceptance": ["可玩"]})}
+    svc = MagicMock()
+    r = dispatch("plan_development", {"goal": "飞机大战", "detail": "纯前端"},
+                 root=ws, project_id="P-x", service=svc, ctx=ctx)
+    plan = r["plan"]
+    assert plan["version"] == 1
+    assert "architecture" in plan
+    assert "milestones" in plan
+    assert "dependencies" in plan
+    assert "risks" in plan
+    assert "task_ids" in plan
+    assert plan["status"] == "planning"
+
+
+def test_approval_carries_subject_ref(tmp_path: Path) -> None:
+    """request_approval 支持 subject_ref (plan_id 关联)。"""
+    from factory_console.governance_service import request_approval
+
+    ws = tmp_path / "factory"
+    (ws / "governance").mkdir(parents=True)
+    ar = request_approval(ws, production_run_id="", artifact_ids=[],
+                          requested_by="agent", subject_type="conversation",
+                          subject_id="sess-1", subject_ref="plan_abc")
+    assert ar["subject_ref"] == "plan_abc"

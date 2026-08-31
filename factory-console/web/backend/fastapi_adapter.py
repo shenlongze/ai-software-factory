@@ -1576,6 +1576,84 @@ def build_app(
             },
         }
 
+    @app.get("/api/projects/{project_id}/plan")
+    def api_project_plan(project_id: str) -> dict[str, Any]:
+        """S34-P0-3: 项目真实 Plan (关联 Artifact 查询, 不重新生成)。"""
+        root = Path(str(factory_root if factory_root is not None else DEFAULT_ROOT))
+        try:
+            found = next((p for p in service.list_projects() if p.id == project_id), None)
+        except Exception:  # noqa: BLE001
+            found = None
+        if found is None:
+            raise HTTPException(status_code=404, detail=f"project not found: {project_id}")
+        plans = []
+        try:
+            _pf = root / "session_plans.json"
+            if _pf.is_file():
+                import json as _pj
+
+                _pd = _pj.loads(_pf.read_text(encoding="utf-8"))
+                for _sid, _plan in _pd.items():
+                    if isinstance(_plan, dict) and _plan.get("project_id") == project_id:
+                        plans.append({**_plan, "session_id": _sid})
+        except Exception:  # noqa: BLE001
+            plans = []
+        # 按 updated_at/created_at 最新优先
+        plans.sort(key=lambda p: str(p.get("created_at") or ""), reverse=True)
+        return {"project_id": project_id, "plans": plans, "count": len(plans),
+                "latest": plans[0] if plans else None}
+
+    @app.get("/api/projects/{project_id}/progress")
+    def api_project_progress(project_id: str) -> dict[str, Any]:
+        """S34-P0-5: 项目真实进度 (task 统计 + 最新 Run — Production Truth)。"""
+        root = Path(str(factory_root if factory_root is not None else DEFAULT_ROOT))
+        try:
+            found = next((p for p in service.list_projects() if p.id == project_id), None)
+        except Exception:  # noqa: BLE001
+            found = None
+        if found is None:
+            raise HTTPException(status_code=404, detail=f"project not found: {project_id}")
+        # tasks (management backlog 真实)
+        tasks = []
+        try:
+            _b = service.list_backlog(project_id) or {}
+            tasks = _b.get("tasks", [])
+        except Exception:  # noqa: BLE001
+            tasks = []
+        done = sum(1 for t in tasks if str(t.get("status") or "").lower() in ("done", "completed", "COMPLETED"))
+        running = sum(1 for t in tasks if str(t.get("status") or "").lower() in ("running", "in_progress", "RUNNING"))
+        # 最新 run
+        latest_run = None
+        try:
+            _rd = root / "workflow_runs" / project_id
+            if _rd.is_dir():
+                import json as _rk
+
+                for _run_dir in sorted(_rd.iterdir(), key=lambda p: p.name, reverse=True)[:1]:
+                    _pp = _run_dir / "progress.json"
+                    if _pp.is_file():
+                        try:
+                            _p = _rk.loads(_pp.read_text(encoding="utf-8"))
+                            latest_run = {
+                                "run_id": _run_dir.name,
+                                "status": _p.get("status"),
+                                "totals": _p.get("totals", {}),
+                                "task_id": _p.get("task_id", ""),
+                                "plan_id": _p.get("plan_id", ""),
+                                "session_id": _p.get("session_id", ""),
+                                "updated_at": _p.get("updated_at"),
+                            }
+                        except Exception:  # noqa: BLE001
+                            latest_run = None
+        except Exception:  # noqa: BLE001
+            latest_run = None
+        return {
+            "project_id": project_id,
+            "tasks": {"total": len(tasks), "done": done, "running": running, "todo": max(0, len(tasks) - done - running)},
+            "progress_pct": round((done / len(tasks) * 100) if tasks else 0, 1),
+            "latest_run": latest_run,
+        }
+
     @app.get("/api/projects/{project_id}/monitor")
     def api_project_monitor(project_id: str) -> dict[str, Any]:
         """单项目监控 (GET — 统一采集)。"""
@@ -6494,6 +6572,47 @@ def build_app(
         _liveness.request_cancel(project_id, run_id)
         return {"ok": True, "run_id": run_id, "status": status,
                 "detail": "cancel requested"}
+
+    @app.post("/api/projects/import")
+    def api_project_import(body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """S34-P0: 导入已有项目 (本地目录 / Git 仓库) → org Project SSOT。
+
+        复用 Core cmd_project_register (注册 + 分析 + 基线 + 快照);
+        repo_path 必填且必须存在 (目录或 .git); 失败 → 4xx 明确错误。
+        """
+        import json as _json
+
+        root = Path(str(factory_root if factory_root is not None else DEFAULT_ROOT))
+        _repo = str(body.get("repo_path") or "").strip()
+        _name = str(body.get("name") or "").strip()
+        if not _repo:
+            raise HTTPException(status_code=400, detail="repo_path is required (导入需要目录或 Git 仓库路径)")
+        _repo_path = Path(_repo).expanduser()
+        if not _repo_path.is_dir():
+            raise HTTPException(status_code=400, detail=f"repo_path 不存在: {_repo}")
+        try:
+            import sys as _sys
+
+            _org_path = str(root.parent / "factory-org")
+            if _org_path not in _sys.path:
+                _sys.path.insert(0, _org_path)
+            from org.cli import cmd_project_register
+            from types import SimpleNamespace as _NS
+
+            _r = cmd_project_register(
+                root,
+                _NS(repo_path=str(_repo_path), name=_name or None, language=None,
+                    framework=None, build_command=None, test_command=None,
+                    project_type=None, goal=str(body.get("goal") or ""),
+                    id=None, company="", departments=None),
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=500, detail=f"import failed: {exc}") from exc
+        _proj = _r.get("project") or {}
+        if not _r.get("ok") or not _proj:
+            raise HTTPException(status_code=400, detail=f"import failed: {_r.get('error') or '未知原因'}")
+        return {"ok": True, "project": _proj, "project_id": _proj.get("id"),
+                "name": _proj.get("name"), "message": f"项目已导入: {_proj.get('name') or _proj.get('id')}"}
 
     @app.post("/api/projects/ssot-align")
     def api_projects_ssot_align() -> dict[str, Any]:

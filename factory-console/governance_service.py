@@ -110,8 +110,12 @@ def request_approval(root: Path | str, *, production_run_id: str,
                      artifact_ids: list[str], requested_by: str,
                      policy_id: str = "production_apply",
                      subject_type: str = "production_run",
-                     subject_id: str = "") -> dict[str, Any]:
-    """创建 ApprovalRequest (PENDING, append-only)。"""
+                     subject_id: str = "",
+                     subject_ref: str = "") -> dict[str, Any]:
+    """创建 ApprovalRequest (PENDING, append-only)。
+
+    subject_ref (S34-P0-4): 可选关联对象 ID (如 plan_id) — 审批↔对象双向可追溯。
+    """
     policy = POLICIES.get(policy_id)
     if policy is None:
         raise ValueError(f"未知 policy: {policy_id}")
@@ -132,6 +136,7 @@ def request_approval(root: Path | str, *, production_run_id: str,
         "approval_id": f"appr-{uuid.uuid4().hex[:10]}",
         "subject_type": subject_type,
         "subject_id": subject_id or production_run_id,
+        "subject_ref": subject_ref,  # S34-P0-4: 关联对象 ID (plan_id 等)
         "production_run_id": production_run_id,
         "artifact_ids": list(artifact_ids),
         "requested_by": requested_by,

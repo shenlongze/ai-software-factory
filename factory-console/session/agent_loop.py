@@ -221,8 +221,9 @@ def tool_schemas(data_dir: str | Path | None = None) -> list[dict[str, Any]]:
         _fc("monitor", "系统监控", "查询系统/服务运行状态", {}),
         _fc("task_continue", "继续任务(锚定)", "用户想继续某任务时: 按标题定位并锚定到会话", {"task": {"type": "string"}}, ["task"]),
         _fc("plan_development", "开发计划(出计划)", "开发类需求: 产出结构化计划(目标/任务/顺序/验收) → 请求审批。"
-            "当用户要求'做/开发/实现/完善某个功能'时调用",
-            {"goal": {"type": "string"}, "detail": {"type": "string"}}),
+            "当用户要求'做/开发/实现/完善某个功能'时调用; company 会话先 project_list 查项目, 用 project_id 参数显式指定目标项目",
+            {"goal": {"type": "string"}, "detail": {"type": "string"},
+             "project_id": {"type": "string", "description": "目标项目 ID (company 会话必须传)"}}),
         _fc("execute_plan", "执行计划(审批后)", "审批通过后: 按计划建任务进 backlog, 可委派外部AI执行",
             {"tasks": {"type": "array", "items": {"type": "object",
                      "properties": {"title": {"type": "string"}, "description": {"type": "string"},
@@ -599,6 +600,8 @@ def dispatch(
     if tool_id in ("plan_development", "execute_plan"):
         ctx = ctx or {}
         if tool_id == "plan_development":
+            # S34-P0: project_id 优先取工具参数 (company 会话 AI 识别项目后显式传入)
+            _plan_project_id = str(args.get("project_id") or project_id or "").strip()
             plan = plan_development(str(args.get("goal") or ""), str(args.get("detail") or ""),
                                     llm_fn=ctx.get("llm_fn") or (lambda p: ""))
             # S34-P0-B: Plan 必须是关联 Artifact — 唯一 plan_id + project/requirement 关联
@@ -615,11 +618,20 @@ def dispatch(
                 _plan_id = f"plan_{int(_tm.time() * 1000)}"
                 _now_iso = _tm.strftime("%Y-%m-%dT%H:%M:%S+00:00", _tm.gmtime())
             plan["plan_id"] = _plan_id
-            plan["project_id"] = project_id
+            plan["project_id"] = _plan_project_id
             plan["requirement_id"] = ""
             plan["approval_id"] = ""
             plan["status"] = "planning"
             plan["created_at"] = _now_iso
+            # S34-P0-3: 完整 Plan Artifact 字段 (缺省补全, LLM 有则保留)
+            plan.setdefault("version", 1)
+            plan.setdefault("assumptions", [])
+            plan.setdefault("architecture", "")
+            plan.setdefault("milestones", [])
+            plan.setdefault("dependencies", [])
+            plan.setdefault("risks", [])
+            plan.setdefault("task_ids", [])
+            plan.setdefault("updated_at", _now_iso)
             ctx["pending_plan"] = plan
             ctx["plan_id"] = _plan_id
             # P0-B (v1.1.244): 计划落 durable progress_card (OpenClaw 思路)
@@ -649,7 +661,7 @@ def dispatch(
                 _reqs.append({
                     "id": _rid,
                     "session_id": (ctx or {}).get("session_id") or "",
-                    "project_id": project_id,
+                    "project_id": _plan_project_id,
                     "title": str(plan.get("goal") or "")[:80],
                     "description": str(args.get("detail") or "")[:500],
                     "status": "VALIDATED",
@@ -669,6 +681,7 @@ def dispatch(
                     root, production_run_id="", artifact_ids=[],
                     requested_by="agent", subject_type="conversation",
                     subject_id=(ctx or {}).get("session_id") or "",
+                    subject_ref=_plan_id,  # S34-P0-4: 审批引用 plan_id
                 )
                 _approval_id = str(_ar.get("approval_id") or _ar.get("id") or "")
                 ctx["pending_approval_id"] = _approval_id
@@ -711,7 +724,9 @@ def dispatch(
         tasks = args.get("tasks") or plan.get("tasks") or []
         if tasks:
             plan["tasks"] = tasks
-        r = execute_plan(plan, project_id=project_id, service=service,
+        # S34-P0: 执行目标项目 = plan 的 project_id (优先) 或会话 project_id
+        _exec_project_id = str(plan.get("project_id") or project_id or "").strip()
+        r = execute_plan(plan, project_id=_exec_project_id, service=service,
                          delegate=bool(args.get("delegate") or plan.get("delegate")))
         ctx["pending_plan"] = None
         return r

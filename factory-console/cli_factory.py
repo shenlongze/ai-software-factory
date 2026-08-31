@@ -1019,6 +1019,8 @@ class FactoryCLI:
             return self.production_cmd(args)
         if args.command == "workflow":
             return self.workflow_cmd(args)
+        if args.command == "ct":
+            return self.ct_cmd(args)
         if args.command == "projectos":
             return self.projectos_cmd(args)
         if args.command == "tower":
@@ -4160,6 +4162,59 @@ class FactoryCLI:
         for r_ in sorted(runs, key=lambda x: x.get("created_at", ""), reverse=True):
             print(f"  {r_.get('run_id')} | {r_.get('workflow_id')} | {r_.get('state')} | {r_.get('created_at')}")
         return 0
+
+    def ct_cmd(self, args: argparse.Namespace) -> int:
+        """factory ct — CT (K4): Control Tower & Real-time。
+
+        薄代理 → operational_state (CLI 与 API 共享同一 Service)。
+        """
+        from factory_console.operational_state import (
+            global_overview as _go, who_is_working as _wiw,
+            drill_down as _dd, snapshot as _snap,
+        )
+
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        action = getattr(args, "action", "overview") or "overview"
+        target = getattr(args, "target", None)
+
+        if action == "overview":
+            go = _go(str(root))
+            print(f"AI FACTORY @ {go['calculated_at']}")
+            print(f"Projects: {go['projects']}")
+            print(f"Workforce: running={go['workforce']['running']} waiting={go['workforce']['waiting']} "
+                  f"blocked={go['workforce']['blocked']} error={go['workforce']['error']} idle={go['workforce']['idle']}")
+            print("Recent activity:")
+            for e in go["recent_activity"][:5]:
+                print(f"  {e.get('timestamp', '')} | {e.get('event_type', '')}")
+            return 0
+
+        if action == "whoworking":
+            wiw = _wiw(str(root))
+            print(f"who is working: {wiw['count']} agents")
+            for a in wiw["agents"]:
+                print(f"  {a['agent'][:16]} | {a['state']} | {a['current_work'][:24]}"
+                      + (f" | {a.get('idle_reason', '')}" if a.get("idle_reason") else ""))
+            return 0
+
+        if action == "drill":
+            if not target:
+                print("[E4310] 错误: project_id 必填", file=sys.stderr)
+                return 2
+            dd = _dd(str(root), target)
+            print(f"project {dd['project']['title']} | {dd['project']['status']} | "
+                  f"{dd['project']['progress']['percentage']}%")
+            for sp in dd["sprints"]:
+                print(f"  sprint {sp['sprint']['title']} | {sp['sprint']['progress']['percentage']}%")
+                for t in sp["tasks"][:5]:
+                    print(f"    {t['id'][:12]} | {t['status']} | {t['why'][:40]}")
+            return 0
+
+        if action == "snapshot":
+            s = _snap(str(root))
+            print(f"snapshot: {s['snapshot_id']} @ {s['taken_at']}")
+            return 0
+
+        return 1
 
     def projectos_cmd(self, args: argparse.Namespace) -> int:
         """factory projectos — ProjectOS (K3): Real Project Operating Loop。
@@ -7421,6 +7476,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_prod.add_argument("--input", default="{}", help="输入 JSON (run 用, 如 {'prompt': '...'})")
     p_prod.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     sub.add_parser("workflow", help="Workflow 列表 (S10): factory workflow list — 专业生产线")
+    # K4: Operational State CLI
+    p_ct4 = sub.add_parser("ct", help="CT (K4): overview/whoworking/drill/snapshot — Control Tower & Real-time")
+    p_ct4.add_argument("action", nargs="?", default="overview",
+                       choices=["overview", "whoworking", "drill", "snapshot"])
+    p_ct4.add_argument("target", nargs="?", help="project_id (drill 用)")
+    p_ct4.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+
     # K3: Project OS CLI
     p_proj = sub.add_parser("projectos", help="ProjectOS (K3): create/sprint/status/replan/approve — Real Project Operating Loop")
     p_proj.add_argument("action", nargs="?", default="list",

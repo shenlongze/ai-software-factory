@@ -805,3 +805,22 @@ AI Factory
 - Project OS = REAL (持续运营闭环: 讨论→执行→查询→改需求→审批→继续)
 - 无第二套 SSOT (全从真实 entities/runs/approvals 投影)
 - Governance 唯一扩展: request_approval 支持 task 主体
+
+## K4 更新 (Control Tower & Real-time Operations, v1.1.356)
+
+### Reality Status
+| 能力 | Status | 证据 |
+|------|--------|------|
+| Operational State Contract (Task 8 态/Agent 6 态) | REAL | test_operational_state 9/9 |
+| 全链路钻取 (project→sprint→task→run→evidence + why) | REAL | test_drill_down |
+| 谁在工作 (agent 级真实依据 + Idle 原因) | REAL | test_who_is_working |
+| Global Operations View | REAL | test_global_overview |
+| Snapshot + 断线恢复一致性 | REAL | test_snapshot_consistency |
+| 实时一致性 (task→tower 投影) | REAL | test_realtime_consistency |
+| 并发无污染 (多 project) | REAL | test_concurrent_projects |
+| CLI/API | REAL | test_cli / test_api (openapi 316) |
+
+### 诚实声明
+- Control Tower = REAL (全从真实 SSOT 投影; 无第二套状态; 非 LLM 计算状态)
+- Realtime = PARTIAL (polling-based; SSE/WebSocket Contract 已定义, 推送层未实现)
+- View ≠ Execute (tower 只读; 操作经 governance)

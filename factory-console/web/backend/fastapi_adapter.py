@@ -5924,6 +5924,41 @@ def build_app(
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    @app.get("/api/ops/overview")
+    def api_ct_overview() -> dict[str, Any]:
+        """Global Operations View (K4)。"""
+        from factory_console import operational_state as _os
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return _os.global_overview(root)
+
+    @app.get("/api/ops/who-working")
+    def api_ct_who_working() -> dict[str, Any]:
+        """谁在工作 (K4, agent 级真实依据)。"""
+        from factory_console import operational_state as _os
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return _os.who_is_working(root)
+
+    @app.get("/api/ops/drill/{project_id}")
+    def api_ct_drill(project_id: str) -> dict[str, Any]:
+        """Project 全链路钻取 (K4, project→sprint→task→run→evidence)。"""
+        from factory_console import operational_state as _os
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _os.drill_down(root, project_id)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/api/ops/snapshot")
+    def api_ct_snapshot() -> dict[str, Any]:
+        """一致性快照 (K4, 断线恢复)。"""
+        from factory_console import operational_state as _os
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        return _os.snapshot(root)
+
     @app.get("/api/control-tower")
     def api_control_tower() -> dict[str, Any]:
         """Control Tower 总览 (K2, 全真实投影)。"""

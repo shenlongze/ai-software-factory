@@ -200,6 +200,7 @@ def tool_schemas(data_dir: str | Path | None = None) -> list[dict[str, Any]]:
              "max_items": {"type": "integer"}}),
         _fc("project_scan", "扫描项目", "扫描项目整体: 任务树/版本线/战役线/质量/风险建议", {}),
         _fc("project_list", "项目列表", "列出所有项目, 用 markdown 表格呈现 (列: 项目ID/名称/进度/阶段/描述; 用户问'项目列表/有哪些项目/项目清单'时用)", {}),
+        _fc("create_project", "创建项目", "创建新项目 (用户明确要'新建/创建/做一个XXX项目'且当前无匹配项目时用; 先确认名称与需求再调用; 参数: name 项目名, goal 项目目标描述)", {"name": {"type": "string", "description": "项目名称"}, "goal": {"type": "string", "description": "项目目标/描述"}}),
         _fc("project_structure", "项目结构", "查看项目真实结构: 仓库顶层目录树/模块划分/文件分布/入口文件 (用户说'了解项目结构/有哪些模块/目录'时用)", {}),
         _fc("read_code", "读取代码", "读取指定文件的代码内容(带行号, 支持分页), 用于理解代码逻辑/实现/调用链。"
             "规则: 1) 通常从 offset=0 从头读起; 除非之前已读过该文件或用 offset 翻页; "
@@ -637,6 +638,40 @@ def dispatch(
                 return {"ok": False, "error": "需要 keyword"}
             files = search_code(root, project_id, kw)
             return {"ok": True, "output": "命中:\n" + "\n".join(f"- {f['file']}" for f in files) if files else "未命中"}
+        if tool_id == "create_project":
+            # S34-P0-F2: 创建项目 (company 会话可用) — 真实注册 + 返回 project_id
+            _name = str(args.get("name") or "").strip()
+            _goal = str(args.get("goal") or "").strip()
+            if not _name:
+                return {"ok": False, "output": "创建项目需要 name (项目名称)。请向用户确认项目名称后重试。"}
+            _repo = str(args.get("repo_path") or str(root))
+            try:
+                import sys as _sys
+
+                _org_path = str(Path(root).parent / "factory-org")
+                if _org_path not in _sys.path:
+                    _sys.path.insert(0, _org_path)
+                from org.cli import cmd_project_register
+                from types import SimpleNamespace as _NS
+
+                _r = cmd_project_register(
+                    Path(root),
+                    _NS(repo_path=_repo, name=_name, language=None, framework=None,
+                        build_command=None, test_command=None, project_type=None,
+                        goal=_goal or None, id=None, company="", departments=None),
+                )
+            except Exception as exc:  # noqa: BLE001
+                return {"ok": False, "output": f"项目创建失败: {exc}"}
+            _proj = _r.get("project") or {}
+            _pid = _proj.get("id") or _proj.get("project_id") or ""
+            if not _r.get("ok") or not _pid:
+                return {"ok": False, "output": f"项目创建失败: {_r.get('error') or '未知原因'}"}
+            return {"ok": True, "output": (
+                f"项目已创建: {_pid} | 名称: {_proj.get('name') or _name} | "
+                f"goal: {_goal or _proj.get('goal') or '—'}。"
+                f"项目 ID 为 {_pid}, 后续可用 project_status 查看进度。"
+            ), "project_id": _pid}
+
         if tool_id == "project_list":
             # 项目清单 — 完整字段: ID/名称/进度/阶段/描述 (org 数据 + 任务统计)
             from .query_engine import _project_task_stats
@@ -1696,7 +1731,18 @@ def _audit_guide(question: str, intent: dict[str, Any]) -> str:
 
 
 def _repo_fact(data_dir: str | Path | None, project_id: str) -> str:
-    """项目源码仓库路径事实 (locate_repo → 兜底已知工作区 → 失败给指引)。"""
+    """项目源码仓库路径事实 (locate_repo → 兜底已知工作区 → 失败给指引)。
+
+    S34-P0-F1: project_id 空 (company scope) → 绝不注入"当前项目源码" —
+    AI 不得因系统存在工作区就假设有当前项目。
+    """
+    if not project_id or not str(project_id).strip():
+        return (
+            "【当前上下文】你处于公司级会话，当前没有绑定任何项目。"
+            "不要假设存在'当前项目'，不要自动选择/猜测项目。"
+            "用户提到具体项目时：先用 project_list 查项目清单；"
+            "要创建新项目时：先向用户确认需求与名称，再调用创建项目流程。"
+        )
     try:
         from .code_scan import locate_repo
 

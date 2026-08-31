@@ -6391,6 +6391,29 @@ def build_app(
         return {"ok": True, "run_id": run_id, "status": status,
                 "detail": "cancel requested"}
 
+    @app.post("/api/projects/ssot-align")
+    def api_projects_ssot_align() -> dict[str, Any]:
+        """S34-P0-F3: 以 org 为 SSOT 对齐 project.json 缓存漂移 (幂等)。"""
+        try:
+            from factory_console import project_ssot
+
+            root = Path(str(factory_root if factory_root is not None else DEFAULT_ROOT))
+            result = project_ssot.ensure_org_truth(root)
+            return {"ok": True, **result}
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=500, detail=f"ssot align failed: {exc}") from exc
+
+    @app.get("/api/projects/ssot-drift")
+    def api_projects_ssot_drift() -> dict[str, Any]:
+        """S34-P0-F3: 只读漂移报告 (审计用)。"""
+        try:
+            from factory_console import project_ssot
+
+            root = Path(str(factory_root if factory_root is not None else DEFAULT_ROOT))
+            return {"ok": True, **project_ssot.drift_report(root)}
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=500, detail=f"drift report failed: {exc}") from exc
+
     @app.post("/api/runs/reconcile")
     def api_runs_reconcile() -> dict[str, Any]:
         """P0-01: 僵尸 Run reconciliation — running + 线程死 + 心跳超时 → STALE。

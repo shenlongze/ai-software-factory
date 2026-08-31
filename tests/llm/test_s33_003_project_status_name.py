@@ -392,3 +392,71 @@ def test_send_message_strips_protocol_on_store(tmp_path: Path) -> None:
     assert "<tool_calls>" not in content
     assert "<invoke" not in content
     assert "正常回答" in content  # 不损坏真实内容
+
+
+# ---- S34-P0: Context Resolution / SSOT ----
+
+def test_repo_fact_company_no_project() -> None:
+    """company scope (project_id 空) → 绝不注入当前项目源码, 不兜底工作区。"""
+    import sys
+    sys.path.insert(0, 'factory-console')
+    from factory_console.session.agent_loop import _repo_fact
+
+    fact = _repo_fact(None, "")
+    assert "当前项目源码仓库在" not in fact
+    assert "公司级会话" in fact
+    assert "不要假设存在'当前项目'" in fact
+    # 有 project_id → 正常路径 (可能兜底, 但至少不禁止)
+    fact2 = _repo_fact(None, "P-abc")
+    assert "当前上下文" not in fact2
+
+
+def test_ssot_align_fixes_drift(tmp_path: Path) -> None:
+    """org 为 SSOT: project.json 漂移字段回写对齐 (幂等)。"""
+    import json as _json
+
+    from factory_console import project_ssot
+
+    ws = tmp_path / "factory"
+    (ws / "org").mkdir(parents=True)
+    (ws / "projects" / "P-1").mkdir(parents=True)
+    (ws / "org" / "projects.json").write_text(_json.dumps({
+        "projects": {"P-1": {"id": "P-1", "name": "番茄钟", "lifecycle": "idea",
+                             "goal": "专注"}}
+    }), encoding="utf-8")
+    (ws / "projects" / "P-1" / "project.json").write_text(_json.dumps({
+        "name": "旧名", "status": "development"
+    }), encoding="utf-8")
+
+    rep = project_ssot.drift_report(ws)
+    assert rep["drifting"] == 1
+    assert "name" in rep["projects"][0]["diffs"]
+
+    res = project_ssot.ensure_org_truth(ws)
+    assert res["fixed"] == 1
+
+    pj = _json.loads((ws / "projects" / "P-1" / "project.json").read_text())
+    assert pj["name"] == "番茄钟"  # org 为准
+
+    # 幂等: 再跑无变更
+    res2 = project_ssot.ensure_org_truth(ws)
+    assert res2["fixed"] == 0
+
+
+def test_ssot_drift_report_clean(tmp_path: Path) -> None:
+    """无漂移 → drifting=0。"""
+    import json as _json
+
+    from factory_console import project_ssot
+
+    ws = tmp_path / "factory"
+    (ws / "org").mkdir(parents=True)
+    (ws / "projects" / "P-2").mkdir(parents=True)
+    (ws / "org" / "projects.json").write_text(_json.dumps({
+        "projects": {"P-2": {"id": "P-2", "name": "墨笺", "lifecycle": "idea"}}
+    }), encoding="utf-8")
+    (ws / "projects" / "P-2" / "project.json").write_text(_json.dumps({
+        "name": "墨笺", "status": "idea"
+    }), encoding="utf-8")
+    rep = project_ssot.drift_report(ws)
+    assert rep["drifting"] == 0

@@ -43,8 +43,6 @@ describe('api client ↔ 真实后端 8011 联调 (S10-014 Task 002)', () => {
     expect(String(fetchMock.mock.calls[0][0])).toBe('/api/projects');
     expect(Array.isArray(projects)).toBe(true);
     expect(projects.length).toBeGreaterThan(0);
-    const names = projects.map((p) => p.name);
-    expect(names).toContain('markpad');
     // 环境数据可变化 (后端重启后项目集不同) — 契约断言: 至少一个非 markpad 项目
     // 或所有项目都满足结构 (id/name 非空) — 不硬编码具体项目名
     expect(projects.every((p) => typeof p.id === 'string' && p.id.length > 0)).toBe(true);

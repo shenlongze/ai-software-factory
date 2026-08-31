@@ -49,20 +49,19 @@ describe('AI Factory 真实入口挂载 (App.tsx)', () => {
     expect(screen.queryByText('Human Console')).toBeNull();
   });
 
-  it('#/workspace → AI Factory 工作台 (我的公司首页, 非占位)', async () => {
+  it('#/workspace → AI Factory 工作台 (Conversation 默认首页, K9 Human Console)', async () => {
     stubConsoleApis();
     stubFetch({
       '/api/projects': [sampleProject({ id: 'markpad', name: 'markpad' })],
       '/api/approvals?pending_only=true': [],
+      '/api/conversations': { items: [], count: 0 },
     });
     window.location.hash = '#/workspace';
     render(<App />);
     expect(await screen.findByTestId('af-workspace-entry')).toBeInTheDocument();
-    const home = await screen.findByTestId('af-company-home');
-    expect(home).toBeInTheDocument();
-    expect(screen.getAllByText('我的公司').length).toBeGreaterThanOrEqual(1);
+    // K9: 默认进入 Conversation (Human Console Front Door)
+    expect(await screen.findByText(/和公司说话/)).toBeInTheDocument();
     expect(screen.getByText('AI Factory')).toBeInTheDocument();
-    expect(screen.queryByText('Human Console')).toBeNull();
   });
 
   it('#/workspace/projects → AI Factory 工作台 (workspace 子页)', async () => {

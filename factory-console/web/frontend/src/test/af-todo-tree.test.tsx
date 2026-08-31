@@ -216,7 +216,8 @@ describe('AfTodoTree (Todo Tree 组件)', () => {
       features: [{ ...sampleTodoBacklog().features![0], id: 'F1', children: ['S1'] }],
       stories: [{ ...sampleTodoBacklog().stories![0], id: 'S1', children: ['T-p0', 'T-p2'] }],
     });
-    render(<AfTodoTree tree={toTodoTree(backlog, '演示项目')} />);
+    const tree = toTodoTree(backlog, '演示项目');
+    render(<AfTodoTree tree={tree} />);
     // 选优先级 P0 → 只显示 P0 任务
     await user.selectOptions(screen.getByTestId('af-filter-priority'), 'P0');
     expect(screen.getByText(/P0任务/)).toBeInTheDocument();

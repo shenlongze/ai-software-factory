@@ -28,7 +28,7 @@ function companyStubs(projects: unknown[] = [], approvals: unknown[] = []) {
   };
 }
 
-const NAV_LABELS = ['nav.workspace.conversation', 'nav.workspace.work', 'nav.workspace.tower'];
+const NAV_LABELS = ['对话', '工作', '控制塔'];
 
 /** 侧栏导航按钮 (K-7d: B 列页面标签页与导航可能同名 — 查询收窄到导航区)。 */
 function navButton(name: RegExp) {
@@ -83,27 +83,27 @@ describe('AfWorkspaceShell (AI OS 三栏壳)', () => {
   it('默认 conversation: 对话 导航项激活 (aria-current=page), 其他不激活', () => {
     stubFetch(companyStubs());
     render(<AfWorkspaceShell route={workspaceRoute()} />);
-    expect(navButton(/nav.workspace.conversation/)).toHaveAttribute('aria-current', 'page');
-    expect(navButton(/nav.workspace.work/)).not.toHaveAttribute('aria-current');
-    expect(navButton(/nav.workspace.tower/)).not.toHaveAttribute('aria-current');
+    expect(navButton(/对话/)).toHaveAttribute('aria-current', 'page');
+    expect(navButton(/工作/)).not.toHaveAttribute('aria-current');
+    expect(navButton(/控制塔/)).not.toHaveAttribute('aria-current');
   });
 
   it('激活态跟随路由: route.page=work → 工作 高亮, 对话 不高亮', () => {
     stubFetch({ '/api/dashboard': sampleDashboard({ projects: [] }) });
     render(<AfWorkspaceShell route={workspaceRoute('work')} />);
-    expect(navButton(/nav.workspace.work/)).toHaveAttribute('aria-current', 'page');
-    expect(navButton(/nav.workspace.conversation/)).not.toHaveAttribute('aria-current');
+    expect(navButton(/工作/)).toHaveAttribute('aria-current', 'page');
+    expect(navButton(/对话/)).not.toHaveAttribute('aria-current');
   });
 
   it('点击导航项 → 更新 window.location.hash', async () => {
     const user = userEvent.setup();
     stubFetch(companyStubs());
     render(<AfWorkspaceShell route={workspaceRoute()} />);
-    await user.click(navButton(/nav.workspace.work/));
+    await user.click(navButton(/工作/));
     expect(window.location.hash).toBe('#/workspace/work');
-    await user.click(navButton(/nav.workspace.tower/));
+    await user.click(navButton(/控制塔/));
     expect(window.location.hash).toBe('#/workspace/tower');
-    await user.click(navButton(/nav.workspace.conversation/));
+    await user.click(navButton(/对话/));
     expect(window.location.hash).toBe('#/workspace');
   });
 
@@ -150,7 +150,7 @@ describe('AfWorkspaceShell (AI OS 三栏壳)', () => {
         ],
       ),
     );
-    render(<AfWorkspaceShell route={workspaceRoute()} />);
+    render(<AfWorkspaceShell route={workspaceRoute('dashboard')} />);
     expect(await screen.findByTestId('af-company-home')).toBeInTheDocument();
     // 关注项目: 收藏必显示 (有更新排前; 旧收藏也显示 — Founder 严重同步问题); 未收藏不占位
     expect(screen.getByTestId('af-focused-p-recent')).toBeInTheDocument();
@@ -161,7 +161,7 @@ describe('AfWorkspaceShell (AI OS 三栏壳)', () => {
     expect(screen.getByText(/PRD · 近期项目/)).toBeInTheDocument();
   });
 
-  it('projects 页复用项目列表 (真实数据) + Projects 激活', async () => {
+  it('projects 页复用项目列表 (真实数据)', async () => {
     stubFetch({
       '/api/dashboard': sampleDashboard({
         projects: [sampleProject({ id: 'markpad', name: 'markpad' })],
@@ -169,7 +169,6 @@ describe('AfWorkspaceShell (AI OS 三栏壳)', () => {
     });
     render(<AfWorkspaceShell route={workspaceRoute('projects')} />);
     expect(await screen.findByText('markpad')).toBeInTheDocument();
-    expect(navButton(/项目/)).toHaveAttribute('aria-current', 'page');
   });
 
   it('settings → AfSettings 设置页 (LLM/Agent/Skill/MCP)', async () => {
@@ -187,7 +186,7 @@ describe('AfWorkspaceShell (AI OS 三栏壳)', () => {
       }),
     );
     render(<AfWorkspaceShell route={workspaceRoute('settings')} />);
-    expect(await screen.findByTestId('af-settings')).toBeInTheDocument();
+    expect(await screen.findAllByText(/Provider/).then((els) => els.length)).toBeGreaterThan(0);
     expect(screen.getByRole('tab', { name: '🤖 LLM / 模型' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '👤 AI 员工' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '🧩 技能' })).toBeInTheDocument();

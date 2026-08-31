@@ -19,7 +19,6 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { BrowserWorkspace } from './BrowserWorkspace';
 import { AfConversationPanel } from './AfConversationPanel';
 import { AfStatusBar } from './AfStatusBar';
 import { useConversation } from './ConversationContext';
@@ -94,6 +93,7 @@ export function AfWorkspaceFrame({
   header,
   sidebar,
   scopeLabel,
+  main,
 }: AfWorkspaceFrameProps): JSX.Element {
   const [collapsed, setCollapsed] = useState<boolean>(() => readFlag(SIDEBAR_COLLAPSED_KEY));
   const [sidebarWidth, setSidebarWidth] = useState<number>(() =>
@@ -207,9 +207,10 @@ export function AfWorkspaceFrame({
           />
         ) : null}
         <main className="af-main-content" data-testid="af-main-content">
-          {/* v1.1.271: 去掉"页面/工作区"切换头 — B 列直接是类浏览器多标签工作区 */}
+          {/* K9: B 列渲染传入的 main (WorkspacePage — Conversation/Work/Tower 三入口) */}
+          {/* BrowserWorkspace 旧多标签工作区已由 Human Console 三入口取代 (K9 收敛) */}
           <div className="af-main-scroll af-main-scroll--ws" data-testid="af-main-scroll">
-            <BrowserWorkspace projectId={projectId} />
+            {main}
           </div>
         </main>
         <div

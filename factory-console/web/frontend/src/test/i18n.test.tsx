@@ -28,24 +28,24 @@ afterEach(() => {
 });
 
 describe('i18n 中英文切换', () => {
-  it('默认中文: 导航显示 我的公司/项目/设置', async () => {
+  it('默认中文: 导航显示 对话/工作/控制塔 (K9 三入口)', async () => {
     stubFetch({ '/api/projects': [], '/api/approvals?pending_only=true': [] });
     renderShell();
     const nav = () => within(screen.getByRole('navigation', { name: 'Workspace 导航' }));
     expect(await screen.findByRole('navigation', { name: 'Workspace 导航' })).toBeInTheDocument();
-    expect(nav().getByRole('button', { name: /我的公司/ })).toBeInTheDocument();
-    expect(nav().getByRole('button', { name: /项目/ })).toBeInTheDocument();
-    expect(nav().getByRole('button', { name: /设置/ })).toBeInTheDocument();
+    expect(nav().getByRole('button', { name: /对话/ })).toBeInTheDocument();
+    expect(nav().getByRole('button', { name: /工作/ })).toBeInTheDocument();
+    expect(nav().getByRole('button', { name: /控制塔/ })).toBeInTheDocument();
   });
 
-  it('切换 English → 导航变 My Company / Projects / Settings', async () => {
+  it('切换 English → 导航变 Conversation / Work / Control Tower', async () => {
     stubFetch({ '/api/projects': [], '/api/approvals?pending_only=true': [] });
     renderShell();
     const nav = () => within(screen.getByRole('navigation', { name: 'Workspace 导航' }));
     await screen.findByRole('navigation', { name: 'Workspace 导航' });
     await userEvent.selectOptions(screen.getByTestId('af-lang-switch'), 'en');
-    expect(await nav().findByRole('button', { name: /My Company/ })).toBeInTheDocument();
-    expect(nav().getByRole('button', { name: /Projects/ })).toBeInTheDocument();
-    expect(nav().getByRole('button', { name: /Settings/ })).toBeInTheDocument();
+    expect(await nav().findByRole('button', { name: /Conversation/ })).toBeInTheDocument();
+    expect(nav().getByRole('button', { name: /Work/ })).toBeInTheDocument();
+    expect(nav().getByRole('button', { name: /Control Tower/ })).toBeInTheDocument();
   });
 });

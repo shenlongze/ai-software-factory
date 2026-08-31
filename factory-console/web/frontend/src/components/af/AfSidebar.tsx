@@ -19,22 +19,29 @@ export const PERSONAL_COMPANY = {
   icon: '🏢',
 };
 
-/** Workspace 导航项 (K6 Human Console: 三一级入口)。
+/** Workspace 导航项 (K9 收敛: 三一级入口 + 专业区 HIDE)。
 
  * Conversation = 默认首页 (普通用户唯一主要入口)。
  * Work = Projects/Sprints/Tasks。Control Tower = 实时观察。
- * 底层能力 (dashboard/audit/settings) 保留可访问 (drill-down 兼容)。
+ * 专业区 (dashboard/audit/settings) HIDE 在一级导航 — 保留路由可访问 (drill-down 兼容)。
  */
 export const WORKSPACE_NAV_ITEMS: readonly { page: string; label: string; icon: string }[] = [
   { page: 'conversation', label: '对话', icon: '💬' },
   { page: 'work', label: '工作', icon: '📋' },
   { page: 'tower', label: '控制塔', icon: '🛰' },
+  // 专业区 (HIDE: 从一级导航移除, 路由保留)
   { page: 'dashboard', label: '我的公司', icon: '🏢' },
   { page: 'projects', label: '项目', icon: '▦' },
   { page: 'monitor', label: '监控', icon: '📊' },
   { page: 'audit', label: '审计', icon: '🔍' },
   { page: 'settings', label: '设置', icon: '⚙' },
 ];
+
+/** 一级导航 (K9: 仅三入口, 普通用户可见)。 */
+export const PRIMARY_NAV_PAGES: readonly string[] = ['conversation', 'work', 'tower'];
+
+/** 专业区导航 (HIDE: 一级导航不显示, 路由保留)。 */
+export const PRO_NAV_PAGES: readonly string[] = ['dashboard', 'projects', 'monitor', 'audit', 'settings'];
 
 /** 导航项 page → hash 路由 (conversation/dashboard 精确 #/workspace, 其余 #/workspace/<page>)。 */
 export function navPathForPage(page: string): string {
@@ -204,7 +211,7 @@ export function AfSidebar({ activePage, collapsed }: AfSidebarProps): JSX.Elemen
       )}
       <div className="af-nav-section">{t('nav.section.workspace')}</div>
       <nav className="af-nav" aria-label="Workspace 导航">
-        {WORKSPACE_NAV_ITEMS.map((item) => {
+        {WORKSPACE_NAV_ITEMS.filter((item) => PRIMARY_NAV_PAGES.includes(item.page)).map((item) => {
           const active = item.page === activePage;
           const label = t(`nav.workspace.${item.page}`);
           return (

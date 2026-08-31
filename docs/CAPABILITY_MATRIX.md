@@ -879,3 +879,20 @@ AI Factory
 - K7 = 验收 Sprint (无新架构; 组合验证 K1-K6)
 - 修复 1 个 P2 (ASK_STATUS pattern)
 - P3: SSE 推送未实现; P4: 通用任务 prompt 硬编码计算器 (DEFERRED)
+
+## K9 更新 (WebUI Convergence & Human Console, v1.1.360)
+
+### Reality Status
+| 能力 | Status | 证据 |
+|------|--------|------|
+| IA 收敛 (三入口 + 专业区 HIDE) | REAL | AfSidebar PRIMARY_NAV_PAGES |
+| Conversation = OS Front Door | REAL | 默认入口, K6/K7/K9 E2E |
+| Agent 状态单一来源 (ops) | REAL | P1-1 收敛 |
+| Approval 单一链路 | REAL | P1-2 收敛 |
+| /api/board 不再作数据源 | REAL | 新页全走 ops/projects-os |
+| WebUI 无第二业务状态 | REAL | K6 证明 |
+
+### 诚实声明
+- K9 = 收敛 Sprint (无新 Core 能力)
+- 前端既有 34 测试失败 = 历史漂移 (旧页面数据测试, DEFERRED)
+- SSE 推送未实现 (P3)

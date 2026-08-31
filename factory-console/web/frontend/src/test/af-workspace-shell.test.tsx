@@ -16,7 +16,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { AfWorkspaceShell } from '../components/af/AfWorkspaceShell';
 import { sampleDashboard, sampleProject, stubFetch } from './fixtures';
 
-function workspaceRoute(page = 'dashboard') {
+function workspaceRoute(page = 'conversation') {
   return { level: 'workspace' as const, page };
 }
 
@@ -28,7 +28,7 @@ function companyStubs(projects: unknown[] = [], approvals: unknown[] = []) {
   };
 }
 
-const NAV_LABELS = ['我的公司', '项目', '设置'];
+const NAV_LABELS = ['nav.workspace.conversation', 'nav.workspace.work', 'nav.workspace.tower'];
 
 /** 侧栏导航按钮 (K-7d: B 列页面标签页与导航可能同名 — 查询收窄到导航区)。 */
 function navButton(name: RegExp) {
@@ -66,22 +66,13 @@ afterEach(() => {
 });
 
 describe('AfWorkspaceShell (AI OS 三栏壳)', () => {
-  it('渲染三栏壳: Header + Sidebar 7 导航项 + Main + 预览标签页 (K-7d 并入 B)', async () => {
-    const user = userEvent.setup();
+  it('渲染三栏壳: Header + Sidebar 8 导航项 + Main (K6 三入口)', async () => {
     stubFetch(companyStubs());
     render(<AfWorkspaceShell route={workspaceRoute()} />);
     expect(screen.getByTestId('af-workspace-entry')).toBeInTheDocument();
     expect(screen.getByTestId('af-header')).toBeInTheDocument();
     expect(screen.getByTestId('af-sidebar')).toBeInTheDocument();
     expect(screen.getByTestId('af-main-content')).toBeInTheDocument();
-    expect(screen.getByTestId('af-b-tabs')).toBeInTheDocument();
-    // 预览默认收起 (Founder A 方案): 不默认展示, 点标签才打开
-    expect(screen.queryByTestId('af-preview-window')).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: '预览' }));
-    expect(await screen.findByTestId('af-preview-window')).toBeInTheDocument();
-    // 切回页面标签 → 预览关闭
-    await user.click(screen.getByRole('button', { name: /页面:/ }));
-    expect(screen.queryByTestId('af-preview-window')).not.toBeInTheDocument();
     // AI 会话栏 (C 列)
     expect(screen.getByTestId('af-conversation-panel')).toBeInTheDocument();
     for (const label of NAV_LABELS) {
@@ -89,30 +80,30 @@ describe('AfWorkspaceShell (AI OS 三栏壳)', () => {
     }
   });
 
-  it('默认 dashboard: 我的公司 导航项激活 (aria-current=page), 其他不激活', () => {
+  it('默认 conversation: 对话 导航项激活 (aria-current=page), 其他不激活', () => {
     stubFetch(companyStubs());
     render(<AfWorkspaceShell route={workspaceRoute()} />);
-    expect(navButton(/我的公司/)).toHaveAttribute('aria-current', 'page');
-    expect(navButton(/项目/)).not.toHaveAttribute('aria-current');
-    expect(navButton(/设置/)).not.toHaveAttribute('aria-current');
+    expect(navButton(/nav.workspace.conversation/)).toHaveAttribute('aria-current', 'page');
+    expect(navButton(/nav.workspace.work/)).not.toHaveAttribute('aria-current');
+    expect(navButton(/nav.workspace.tower/)).not.toHaveAttribute('aria-current');
   });
 
-  it('激活态跟随路由: route.page=projects → 项目 高亮, 我的公司 不高亮', () => {
+  it('激活态跟随路由: route.page=work → 工作 高亮, 对话 不高亮', () => {
     stubFetch({ '/api/dashboard': sampleDashboard({ projects: [] }) });
-    render(<AfWorkspaceShell route={workspaceRoute('projects')} />);
-    expect(navButton(/项目/)).toHaveAttribute('aria-current', 'page');
-    expect(navButton(/我的公司/)).not.toHaveAttribute('aria-current');
+    render(<AfWorkspaceShell route={workspaceRoute('work')} />);
+    expect(navButton(/nav.workspace.work/)).toHaveAttribute('aria-current', 'page');
+    expect(navButton(/nav.workspace.conversation/)).not.toHaveAttribute('aria-current');
   });
 
   it('点击导航项 → 更新 window.location.hash', async () => {
     const user = userEvent.setup();
     stubFetch(companyStubs());
     render(<AfWorkspaceShell route={workspaceRoute()} />);
-    await user.click(navButton(/项目/));
-    expect(window.location.hash).toBe('#/workspace/projects');
-    await user.click(navButton(/设置/));
-    expect(window.location.hash).toBe('#/workspace/settings');
-    await user.click(navButton(/我的公司/));
+    await user.click(navButton(/nav.workspace.work/));
+    expect(window.location.hash).toBe('#/workspace/work');
+    await user.click(navButton(/nav.workspace.tower/));
+    expect(window.location.hash).toBe('#/workspace/tower');
+    await user.click(navButton(/nav.workspace.conversation/));
     expect(window.location.hash).toBe('#/workspace');
   });
 

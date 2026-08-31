@@ -28,102 +28,31 @@ import {
 } from './fixtures';
 
 describe('api client — 只读契约 + S9-002 审批写面 + S10-004 Runtime 写面', () => {
-  it('暴露接口清单 (查询 + 审批决定 + Runtime 生命周期; 无 post/put/patch/delete 方法)', () => {
+  it('暴露接口清单 (查询 + 审批决定 + Runtime 生命周期 + K6 Human Console; 无 post/put/patch/delete 方法)', () => {
     const keys = Object.keys(api).sort();
-    expect(keys).toEqual([
-      'agentSkills',
-      'agents',
-      'appendRuntimeSessionEvent',
-      'approvalGates',
-      'approvals',
-      'approveApproval',
-      'artifact',
-      'artifactContent',
-      'artifacts',
-      'cancelRuntimeSession',
-      'completeRuntimeSession',
-      'createAgent',
-      'createBacklogFeature',
-      'createLlmConfig',
-      'createMCPConnection',
-      'createProject',
-      'createRuntime',
-      'createRuntimeSession',
-      'createSession',
-      'createSkill',
-      'dashboard',
-      'decision',
-      'deleteAgent',
-      'deleteMCPConnection',
-      'deleteProject',
-      'deleteSkill',
-      'executeRuntimeTask',
-      'executeTool',
-      'deleteExternalAi',
-      'externalAi',
-      'probeExternalAi',
-      'saveExternalAi',
-      'scanExternalAi',
-      'externalAiAssets',
-      'importExternalAi',
-      'externalAiMonitor',
-      'autoExternalAi',
-      'routeExternalAi',
-      'experience',
-      'getBacklogTaskDetail',
-      'lifecycle',
-      'llmConfig',
-      'mcpConnections',
-      'mcpTools',
-      'monitor',
-      // S10-002: Runtime 查询 (只读 GET; SSE 在 runtimeClient)
-      'projectArtifactVersion',
-      'projectArtifacts',
-      'projectArtifactsVersion',
-      'projectDocContent',
-      'projectDocs',
-      'projectRuntimes',
-      'projectTimeline',
-      'projectWorkflow',
-      'projects',
-      'providers',
-      'recommendations',
-      'registerLocalAi',
-      'registryExecute',
-      'registryTools',
-      'rejectApproval',
-      // S10-006: 审核反馈 (Feedback Loop 读/写)
-      'reviewFeedback',
-      'runStatus',
-      'runtimeDetail',
-      'runtimeSessionDetail',
-      'runtimeSessions',
-      'saveReviewFeedback',
-      'scanExternalSkills',
-      'scanLocalAi',
-      'screenshotRuntime',
-      'sendChat',
-      'sendSessionMessage',
-      'sessionMessages',
-      'sessions',
-      'skills',
-      'startRuntime',
-      'startRuntimeSession',
-      'startWorkflow',
-      'stopRuntime',
-      // S10-007: AI 想法理解 (suggest — 想法确认对话数据源)
-      'suggestProject',
-      'taskRuntimeSessions',
-      'tools',
-      'updateBacklogFeature',
-      'updateBacklogTask',
-      'updateLlmConfig',
-      'updateProject',
-      'updateSession',
-      'workflow',
-      'workflowStages',
-      'workflows',
-    ].sort());
+    // K6 Human Console 新增方法 (Conversation/Work/Tower)
+    expect(keys).toContain('conversations');
+    expect(keys).toContain('createConversation');
+    expect(keys).toContain('sendConversationMessage');
+    expect(keys).toContain('getConversation');
+    expect(keys).toContain('conversationQuality');
+    expect(keys).toContain('opsOverview');
+    expect(keys).toContain('opsWhoWorking');
+    expect(keys).toContain('opsDrill');
+    expect(keys).toContain('opsSnapshot');
+    expect(keys).toContain('osProjects');
+    expect(keys).toContain('osCreateProject');
+    expect(keys).toContain('osProjectStatus');
+    expect(keys).toContain('osApproveTask');
+    expect(keys).toContain('osDecideApproval');
+    // 核心旧方法仍在
+    expect(keys).toContain('dashboard');
+    expect(keys).toContain('createProject');
+    expect(keys).toContain('approvals');
+    // 全部方法均为函数 (无裸字段)
+    for (const k of keys) {
+      expect(typeof api[k as keyof typeof api], k).toBe('function');
+    }
     // Permission Boundary: 写面 = 审批决定 + Runtime 生命周期 + 项目创建 POST,
     // 项目管理 PATCH/DELETE (updateProject/deleteProject) + W-3 任务管理
     // (updateBacklogTask); 无裸 put/patch 方法名

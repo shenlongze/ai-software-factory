@@ -282,7 +282,8 @@ export const api = {
     if (filters.projectId) params.set('project_id', filters.projectId);
     if (filters.workflowId) params.set('workflow_id', filters.workflowId);
     if (filters.type) params.set('type', filters.type);
-    return (await getJson<{ items: ArtifactSummary[] }>(`/api/artifacts?${params.toString()}`)).items;
+    const qs = params.toString();
+    return (await getJson<{ items: ArtifactSummary[] }>(`/api/artifacts${qs ? `?${qs}` : ''}`)).items;
   },
   /** T8: 审计事件查询 (只读) */
   audit: (query = '') => getJson<{ items: AuditEventItem[]; count: number; counts: Record<string, number> }>(`/api/audit?${query}`),

@@ -44,6 +44,10 @@ export interface ConversationContextValue {
   featureId: string | null;
   /** 模块锚点名 (作用域指示器显示, 人话)。 */
   featureName: string | null;
+  /** K9 Human Workspace: 右栏当前 Tab (联动驱动, 被动跟随 + 用户可手动切)。 */
+  workspaceTab: string;
+  /** K9: 设置右栏 Tab (联动规则表 PRD §5 驱动); payload 可带 Tab 上下文。 */
+  setWorkspaceTab: (tab: string, payload?: unknown) => void;
   sessions: SessionSummary[];
   activeId: string | null;
   messages: ChatMessage[];
@@ -75,6 +79,8 @@ const DEFAULT_CONTEXT: ConversationContextValue = {
   projectId: null,
   featureId: null,
   featureName: null,
+  workspaceTab: 'task',
+  setWorkspaceTab: () => {},
   sessions: [],
   activeId: null,
   messages: [],
@@ -112,6 +118,11 @@ export function ConversationProvider({ children }: { children: ReactNode }): JSX
   const [projectId, setProjectIdState] = useState<string | null>(null);
   const [featureId, setFeatureIdState] = useState<string | null>(null);
   const [featureName, setFeatureNameState] = useState<string | null>(null);
+  // K9 Human Workspace: 右栏当前 Tab (联动驱动, 被动跟随 + 用户可手动切)
+  const [workspaceTab, setWorkspaceTabState] = useState<string>('task');
+  const setWorkspaceTab = useCallback((tab: string, _payload?: unknown) => {
+    setWorkspaceTabState(tab);
+  }, []);
   // A 方案 (Founder 2026-08-26): 作用域自动跟随当前视图 — 有项目 → project, 否则 company
   const setProjectId = useCallback((pid: string | null) => {
     setProjectIdState(pid);
@@ -416,6 +427,8 @@ export function ConversationProvider({ children }: { children: ReactNode }): JSX
       projectId,
       featureId,
       featureName,
+      workspaceTab,
+      setWorkspaceTab,
       sessions,
       activeId,
       messages,
@@ -444,6 +457,8 @@ export function ConversationProvider({ children }: { children: ReactNode }): JSX
       projectId,
       featureId,
       featureName,
+      workspaceTab,
+      setWorkspaceTab,
       sessions,
       activeId,
       messages,

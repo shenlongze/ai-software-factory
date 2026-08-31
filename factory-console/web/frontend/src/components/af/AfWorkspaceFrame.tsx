@@ -83,6 +83,8 @@ export interface AfWorkspaceFrameProps {
   header: (handlers: AfWorkspaceFrameHandlers) => ReactNode;
   sidebar: (collapsed: boolean) => ReactNode;
   main: ReactNode;
+  /** K9 Human Workspace: 右栏 Workbench (缺省时回退 AfConversationPanel)。 */
+  workspace?: ReactNode;
   scopeLabel: string;
 }
 
@@ -94,6 +96,7 @@ export function AfWorkspaceFrame({
   sidebar,
   scopeLabel,
   main,
+  workspace,
 }: AfWorkspaceFrameProps): JSX.Element {
   const [collapsed, setCollapsed] = useState<boolean>(() => readFlag(SIDEBAR_COLLAPSED_KEY));
   const [sidebarWidth, setSidebarWidth] = useState<number>(() =>
@@ -207,8 +210,7 @@ export function AfWorkspaceFrame({
           />
         ) : null}
         <main className="af-main-content" data-testid="af-main-content">
-          {/* K9: B 列渲染传入的 main (WorkspacePage — Conversation/Work/Tower 三入口) */}
-          {/* BrowserWorkspace 旧多标签工作区已由 Human Console 三入口取代 (K9 收敛) */}
+          {/* K9 Human Workspace: B 列 = 中栏 (ConversationCenter — 唯一主入口) */}
           <div className="af-main-scroll af-main-scroll--ws" data-testid="af-main-scroll">
             {main}
           </div>
@@ -217,7 +219,7 @@ export function AfWorkspaceFrame({
           className="af-resizer af-resizer--right"
           data-testid="af-resizer-right"
           role="separator"
-          aria-label="调整会话栏宽度"
+          aria-label="调整工作台宽度"
           onMouseDown={startDrag('right')}
           onDoubleClick={() => {
             setChatWidth(CHAT_WIDTH_DEFAULT);
@@ -225,7 +227,8 @@ export function AfWorkspaceFrame({
           }}
         />
         <aside className="af-col-c" style={{ width: collapsed ? undefined : chatWidth }}>
-          <AfConversationPanel projectId={projectId} projectName={projectName} />
+          {/* K9 Human Workspace: C 列 = 右栏 (Workspace — AI 工作现场) */}
+          {workspace ?? <AfConversationPanel projectId={projectId} projectName={projectName} />}
         </aside>
       </div>
       <AfStatusBar scopeLabel={scopeLabel} />

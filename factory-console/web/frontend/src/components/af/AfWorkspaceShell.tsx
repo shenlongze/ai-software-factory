@@ -10,22 +10,16 @@
  * 导航: 点击导航项 → hash 更新 → App.tsx hashchange 重渲染 → 新 route 传入。
  */
 
-import { api } from '../../api/client';
 import { useI18n } from '../../i18n';
-import { useAsync } from '../../hooks/useAsync';
 import type { ParsedRoute } from '../../router';
-import { AfProjectCard } from './AfProjectCard';
-import { AfCompanyHome } from '../../pages/workspace/AfCompanyHome';
-import { AfMonitorPage } from '../../pages/workspace/AfMonitorPage';
-import ProductionPage from '../../pages/ProductionPage';
-import { AfEmptyState, AfErrorState, AfLoadingState } from './AfState';
-import { AfModulePlaceholder } from './AfModulePlaceholder';
 import { AfHeader } from './AfHeader';
-import { AfSidebar, WORKSPACE_NAV_ITEMS } from './AfSidebar';
+import { AfContextNav } from './AfContextNav';
+import { AfConversationCenter } from './AfConversationCenter';
+import { AfWorkspace } from './AfWorkspace';
 import { AfWorkspaceFrame, type AfWorkspaceFrameHandlers } from './AfWorkspaceFrame';
 import './af.css';
 
-/** Workspace 子页人话标签 (方案 A: 3 导航 + 管理; Header 子页标签用)。 */
+/** Workspace 子页人话标签 (K9: Header 子页标签用)。 */
 const WORKSPACE_PAGE_LABELS: Record<string, string> = {
   dashboard: '我的公司',
   projects: '项目',
@@ -34,84 +28,9 @@ const WORKSPACE_PAGE_LABELS: Record<string, string> = {
   manage: '项目管理',
 };
 
-/**
- * 项目列表页 (GET /api/dashboard → 项目卡网格)。
- * 四态复用 AfState (AI OS 深色): AfLoadingState / AfErrorState / AfEmptyState。
- */
-function AfProjectListView(): JSX.Element {
-  const { data, error, loading } = useAsync(() => api.dashboard(), []);
-  const projects = data?.projects ?? [];
-  const showList = !loading && error == null && data != null && projects.length > 0;
-  const showEmpty = !loading && error == null && data != null && projects.length === 0;
-
-  const openProject = (id: string) => {
-    window.location.hash = `#/project/${encodeURIComponent(id)}`;
-  };
-
-  return (
-    <section>
-      <h2 className="af-section-title">项目列表</h2>
-      {loading ? <AfLoadingState label="正在加载工作台数据…" /> : null}
-      {error != null ? <AfErrorState message={`工作台数据加载失败: ${error}`} /> : null}
-      {showEmpty ? <AfEmptyState message="暂无项目 — 输入想法创建一个" /> : null}
-      {showList ? (
-        <div className="af-project-grid">
-          {projects.map((project) => (
-            <AfProjectCard key={project.id} project={project} onOpen={openProject} />
-          ))}
-        </div>
-      ) : null}
-    </section>
-  );
-}
-
-import { AfProjectManage } from '../../pages/workspace/AfProjectManage';
-import { AfSettings } from '../../pages/workspace/AfSettings';
-import { AuditPage } from '../../pages/AuditPage';
-import { ConversationPage } from '../../pages/ConversationPage';
-import { WorkPage } from '../../pages/WorkPage';
-import { ControlTowerPage } from '../../pages/ControlTowerPage';
-
-function WorkspacePage({ route }: { route: ParsedRoute }): JSX.Element {
-  if (route.page === 'conversation') {
-    return <ConversationPage />;
-  }
-  if (route.page === 'work') {
-    return <WorkPage />;
-  }
-  if (route.page === 'tower') {
-    return <ControlTowerPage />;
-  }
-  if (route.page === 'dashboard') {
-    return <AfCompanyHome />;
-  }
-  if (route.page === 'projects') {
-    return <AfProjectListView />;
-  }
-  if (route.page === 'monitor') {
-    return <AfMonitorPage />;
-  }
-  if (route.page === 'production') {
-    return <ProductionPage />;
-  }
-  if (route.page === 'manage') {
-    return <AfProjectManage />;
-  }
-  if (route.page === 'settings') {
-    return <AfSettings />;
-  }
-  if (route.page === 'audit') {
-    return <AuditPage />;
-  }
-  const navItem = WORKSPACE_NAV_ITEMS.find((item) => item.page === route.page);
-  return <AfModulePlaceholder pageLabel={navItem?.label ?? route.page} />;
-}
-
 export interface AfWorkspaceShellProps {
   route: ParsedRoute;
 }
-
-/** AI OS Workspace 三栏壳 (根节点保留 af-workspace-entry testid — 入口兼容)。 */
 export function AfWorkspaceShell({ route }: AfWorkspaceShellProps): JSX.Element {
   const { t } = useI18n();
   const pageLabel = t(`nav.workspace.${route.page}`) || (WORKSPACE_PAGE_LABELS[route.page] ?? route.page);
@@ -120,14 +39,17 @@ export function AfWorkspaceShell({ route }: AfWorkspaceShellProps): JSX.Element 
     <AfHeader pageLabel={pageLabel} collapsed={collapsed} onToggleSidebar={onToggleSidebar} />
   );
 
+  // K9 Human Workspace 三栏:
+  // 左 = AfContextNav (Context), 中 = AfConversationCenter (唯一主入口), 右 = AfWorkspace (AI 工作现场)
   return (
     <AfWorkspaceFrame
       testId="af-workspace-entry"
       pageLabel={pageLabel}
-      scopeLabel="公司 · 我的公司"
+      scopeLabel="公司 · AI Factory"
       header={renderHeader}
-      sidebar={(collapsed) => <AfSidebar activePage={route.page} collapsed={collapsed} />}
-      main={<WorkspacePage route={route} />}
+      sidebar={(collapsed) => <AfContextNav collapsed={collapsed} />}
+      main={<AfConversationCenter />}
+      workspace={<AfWorkspace />}
     />
   );
 }

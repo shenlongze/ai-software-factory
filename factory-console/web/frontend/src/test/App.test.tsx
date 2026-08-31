@@ -28,6 +28,15 @@ function renderApp() {
     '/api/experience?limit=20': [],
     '/api/providers': [],
     '/api/recommendations?limit=20': [],
+    '/api/conversations': { items: [], count: 0 },
+    '/api/projects-os': { items: [], count: 0 },
+    '/api/sessions': { items: [], count: 0 },
+    '/api/ops/overview': {
+      projects: { total: 0, running: 0, waiting: 0, blocked: 0, approval: 0, failed: 0 },
+      workforce: { running: 0, waiting: 0, blocked: 0, error: 0, idle: 0 },
+      recent_activity: [],
+      calculated_at: 'now',
+    },
   });
   return render(<App />);
 }
@@ -43,20 +52,19 @@ describe('App Shell (K-7a 单入口)', () => {
     expect(screen.queryByText('Human Console')).toBeNull();
   });
 
-  it('左栏项目列表 (新建/搜索/分组) + 开发者控制台链接', async () => {
+  it('左栏 Context 导航 (K9) + 开发者控制台链接', async () => {
     window.location.hash = '';
     renderApp();
-    expect(await screen.findByTestId('af-project-pane')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '＋ 新建项目' })).toBeInTheDocument();
-    expect(screen.getByRole('textbox', { name: '搜索项目' })).toBeInTheDocument();
+    expect(await screen.findByTestId('af-context-nav')).toBeInTheDocument();
+    expect(screen.getAllByText('AI Factory').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('🛠 开发者控制台')).toBeInTheDocument();
   });
 
-  it('K-7d: AI 会话栏 (C 列) 常驻 + 状态栏存在', async () => {
+  it('K9: 中栏 Conversation + 右栏 Workspace + 状态栏', async () => {
     window.location.hash = '';
     renderApp();
-    expect(await screen.findByTestId('af-conversation-panel')).toBeInTheDocument();
-    expect(screen.getByRole('textbox', { name: 'AI 会话输入' })).toBeInTheDocument();
+    expect(await screen.findByTestId('af-conv-center')).toBeInTheDocument();
+    expect(await screen.findByTestId('af-workspace')).toBeInTheDocument();
     expect(screen.getByTestId('af-statusbar')).toBeInTheDocument();
   });
 });

@@ -55,26 +55,44 @@ describe('AI Factory 真实入口挂载 (App.tsx)', () => {
       '/api/projects': [sampleProject({ id: 'markpad', name: 'markpad' })],
       '/api/approvals?pending_only=true': [],
       '/api/conversations': { items: [], count: 0 },
+      '/api/projects-os': { items: [], count: 0 },
+      '/api/sessions': { items: [], count: 0 },
+      '/api/ops/overview': {
+        projects: { total: 0, running: 0, waiting: 0, blocked: 0, approval: 0, failed: 0 },
+        workforce: { running: 0, waiting: 0, blocked: 0, error: 0, idle: 0 },
+        recent_activity: [],
+        calculated_at: 'now',
+      },
     });
     window.location.hash = '#/workspace';
     render(<App />);
     expect(await screen.findByTestId('af-workspace-entry')).toBeInTheDocument();
     // K9: 默认进入 Conversation (Human Console Front Door)
     expect(await screen.findByText(/和公司说话/)).toBeInTheDocument();
-    expect(screen.getByText('AI Factory')).toBeInTheDocument();
+    expect(screen.getAllByText('AI Factory').length).toBeGreaterThanOrEqual(1);
   });
 
-  it('#/workspace/projects → AI Factory 工作台 (workspace 子页)', async () => {
+  it('#/workspace/projects → AI Factory 工作台 (K9 中栏恒为 Conversation, 路由保留)', async () => {
     stubConsoleApis();
     stubFetch({
       '/api/dashboard': sampleDashboard({
         projects: [sampleProject({ id: 'markpad', name: 'markpad' })],
       }),
+      '/api/conversations': { items: [], count: 0 },
+      '/api/projects-os': { items: [], count: 0 },
+      '/api/sessions': { items: [], count: 0 },
+      '/api/ops/overview': {
+        projects: { total: 0, running: 0, waiting: 0, blocked: 0, approval: 0, failed: 0 },
+        workforce: { running: 0, waiting: 0, blocked: 0, error: 0, idle: 0 },
+        recent_activity: [],
+        calculated_at: 'now',
+      },
     });
     window.location.hash = '#/workspace/projects';
     render(<App />);
     expect(await screen.findByTestId('af-workspace-entry')).toBeInTheDocument();
-    expect(await screen.findByText('markpad')).toBeInTheDocument();
+    // K9: 中栏 Conversation 常驻
+    expect(await screen.findByText(/和公司说话/)).toBeInTheDocument();
   });
 
   it('#/project/markpad/todo → AI Factory 项目入口 (Project Entity + 真实 Todo Tree)', async () => {

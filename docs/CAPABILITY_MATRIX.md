@@ -897,3 +897,21 @@ AI Factory
 - **补强**: B 列 P1 修复 (Frame 忽略 main → 三入口真实挂载) + i18n 翻译
 - 前端测试: 基线 34 失败 → 1 失败 (af-todo-tree 历史漂移, DEFERRED)
 - SSE 推送未实现 (P3)
+
+## K9 方向修订 (Human Workspace, v1.1.361)
+
+### Reality Status
+| 能力 | Status | 证据 |
+|------|--------|------|
+| 三栏 Human Workspace (Context/Conversation/Workspace) | REAL | af-workspace-shell 3/3 + entry 3/3 |
+| 中栏 Conversation = 唯一主入口 | REAL | App 3/3 |
+| 右栏 Workbench (5 Tab) | REAL | k9-workspace 6/6 |
+| 消息卡片 (6 种) + 审批操作 | REAL | AfMessageCard |
+| Intent→Workspace 联动 | REAL | tabForIntent |
+| 左栏 Context 导航 (动态) | REAL | AfContextNav |
+| UI 零业务状态 (全 API) | REAL | 组件测试 |
+
+### 诚实声明
+- 前端 747/748 (af-todo-tree 历史漂移, DEFERRED)
+- Workspace Code/Preview/Diff/Evidence 面板为占位文案 (数据接入后续 Sprint)
+- SSE 推送未实现 (polling fallback)

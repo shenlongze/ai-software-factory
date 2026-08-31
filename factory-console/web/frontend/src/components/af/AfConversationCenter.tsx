@@ -18,6 +18,78 @@ import type { SessionRunSummary } from '../../models/types';
 import { renderMarkdown } from './markdown';
 import './af.css';
 
+/** S35-UI: 会话项目选择下拉 — 选中项目 → 会话只对该项目起作用 (scope=project), 未选=系统级 */
+function ProjectScopeSelect({
+  value,
+  onChange,
+}: {
+  value: string | null;
+  onChange: (pid: string | null) => void;
+}): JSX.Element {
+  const [projects, setProjects] = useState<Array<{ id: string; name: string }>>([]);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    api
+      .projects()
+      .then((list) => setProjects(list.map((p) => ({ id: p.id, name: p.name || p.id }))))
+      .catch(() => setProjects([]));
+  }, []);
+
+  const current = projects.find((p) => p.id === value);
+
+  return (
+    <div className="ai-tb-proj-scope" data-testid="af-project-scope">
+      <button
+        type="button"
+        className={`ai-tb-proj-btn${value ? ' active' : ''}`}
+        onClick={() => setOpen((v) => !v)}
+        title="选择会话作用项目 — 未选择则系统级(公司)"
+      >
+        <span aria-hidden="true">📁</span>
+        <span>{value ? current?.name ?? value : '全部(系统)'}</span>
+        <span className="ai-tb-proj-caret" aria-hidden="true">▾</span>
+      </button>
+      {open && (
+        <div className="ai-tb-proj-menu" role="listbox" aria-label="会话作用项目">
+          <button
+            type="button"
+            role="option"
+            aria-selected={!value}
+            className="ai-tb-proj-opt"
+            onClick={() => {
+              onChange(null);
+              setOpen(false);
+            }}
+          >
+            <span className="ai-tb-proj-opt-icon" aria-hidden="true">🌐</span>
+            <span>全部(系统级)</span>
+            {!value ? <span className="ai-tb-proj-check" aria-hidden="true">✓</span> : null}
+          </button>
+          {projects.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              role="option"
+              aria-selected={value === p.id}
+              className="ai-tb-proj-opt"
+              onClick={() => {
+                onChange(p.id);
+                setOpen(false);
+              }}
+            >
+              <span className="ai-tb-proj-opt-icon" aria-hidden="true">📁</span>
+              <span className="ai-tb-proj-opt-name">{p.name}</span>
+              <span className="ai-tb-proj-opt-id">{p.id}</span>
+              {value === p.id ? <span className="ai-tb-proj-check" aria-hidden="true">✓</span> : null}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // 执行阶段人话映射 (用于 "AI 正在做什么")
 
 // S31-004: 角色人话标签 (不暴露内部角色名给普通用户)
@@ -301,6 +373,18 @@ export function AfConversationCenter(): JSX.Element {
                 </svg>
                 Auto
               </span>
+              {/* S35-UI: 会话项目选择 — 选中后会话只对该项目起作用 (scope=project), 未选=系统级 */}
+              <ProjectScopeSelect
+                value={ctx.projectId}
+                onChange={(pid: string | null) => {
+                  ctx.setProjectId(pid);
+                  if (pid) {
+                    window.location.hash = `#/workspace?project=${encodeURIComponent(pid)}`;
+                  } else {
+                    window.location.hash = '#/workspace';
+                  }
+                }}
+              />
               <button type="button" className="ai-tb-btn ai-tb-btn--icon" title="Attach" aria-label="Attach">+</button>
             </div>
 

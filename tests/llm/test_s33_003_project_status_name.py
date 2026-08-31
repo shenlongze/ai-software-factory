@@ -192,3 +192,28 @@ def test_strip_fake_toolcalls_keeps_normal_after_dsml() -> None:
     cleaned = _strip_fake_toolcalls(text)
     assert "目前共有 2 个项目" in cleaned
     assert "DSML" not in cleaned
+
+
+# ---- 项目列表工具 (project_list) ----
+
+def test_project_list_full_fields(tmp_path: Path) -> None:
+    """project_list 返回 ID/名称/进度/阶段/描述 (org 数据 + 任务统计)。"""
+    import json as _json
+
+    from factory_console.session.agent_loop import dispatch
+
+    ws = tmp_path / "factory"
+    (ws / "org").mkdir(parents=True)
+    (ws / "org" / "projects.json").write_text(_json.dumps({
+        "projects": {
+            "P-abc": {"id": "P-abc", "name": "旅行记账", "lifecycle": "idea", "goal": "旅行支出乱"},
+            "P-def": {"id": "P-def", "name": "番茄钟", "lifecycle": "development", "goal": "专注"},
+        }
+    }), encoding="utf-8")
+    r = dispatch("project_list", {}, root=ws, project_id="P-abc")
+    assert r["ok"] is True
+    out = str(r["output"])
+    assert "共 2 个项目" in out
+    assert "P-abc" in out and "旅行记账" in out
+    assert "阶段=idea" in out
+    assert "描述=旅行支出乱" in out

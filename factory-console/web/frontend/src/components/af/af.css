@@ -8067,3 +8067,9 @@ body[data-bg='1'] .af-shell {
 .ai-nav-op { border: none; background: none; color: #aaa; font-size: 11px; cursor: pointer; padding: 2px 4px; opacity: 0; transition: opacity .15s; }
 .ai-nav-item-row:hover .ai-nav-op { opacity: 1; }
 .ai-nav-op:hover { color: #0071e3; }
+
+/* S32-003: 项目创建 + 状态 */
+.ai-nav-op--create { margin-left: auto; font-size: 14px; opacity: 1; }
+.ai-nav-status { font-size: 10px; color: #999; text-transform: uppercase; margin-left: auto; }
+.ai-nav-status--active { color: #34c759; }
+.ai-nav-status--idea { color: #f5a623; }

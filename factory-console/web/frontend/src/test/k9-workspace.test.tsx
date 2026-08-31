@@ -154,6 +154,15 @@ describe('Conversation Management (S32-002)', () => {
   });
 });
 
+// S32-003: Project — 新建项目入口 (真实 POST /api/projects)
+describe('Project Management (S32-003)', () => {
+  it('项目块有新建项目按钮', async () => {
+    wrap(<AfContextNav collapsed={false} />);
+    await waitFor(() => expect(screen.getByLabelText(/新建项目/)).toBeTruthy());
+    expect(screen.getByLabelText(/新建项目/)).toBeTruthy();
+  });
+});
+
 // S31-006: Command Center — Recent Results (真实 recent_activity)
 describe('Command Center (S31-006)', () => {
   it('Welcome Hero 显示 Recent Results (真实事件流)', async () => {

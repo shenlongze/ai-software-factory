@@ -20,8 +20,9 @@
  * 后台 Module 通过 ⚙ 进入 (开发者/治理), 不进一级导航。
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useConversation } from './ConversationContext';
+import { api } from '../../api/client';
 import './af.css';
 
 export type NavMode = 'global' | 'project';
@@ -113,19 +114,22 @@ export function AfContextNav({
   );
 
   // Global 模式下拉项目列表 (展示第一个活跃项目)
-  const [projects, setProjects] = useState<Array<{ id: string; title: string }>>([]);
+  const [projects, setProjects] = useState<Array<{ id: string; title: string; status?: string }>>([]);
+  const [creating, setCreating] = useState(false);
+
+  const loadProjects = useCallback(() => {
+    fetch('/api/projects-os')
+      .then((r) => r.json())
+      .then((data: { items?: Array<{ id: string; title: string; status?: string }> }) => {
+        if (data?.items) setProjects(data.items.slice(0, 5));
+      })
+      .catch(() => { /* ignore */ });
+  }, []);
 
   useEffect(() => {
     if (mode === 'project') return;
-    let cancelled = false;
-    fetch('/api/projects-os')
-      .then((r) => r.json())
-      .then((data: { items?: Array<{ id: string; title: string }> }) => {
-        if (!cancelled && data?.items) setProjects(data.items.slice(0, 3));
-      })
-      .catch(() => { /* ignore */ });
-    return () => { cancelled = true; };
-  }, [mode]);
+    loadProjects();
+  }, [mode, loadProjects]);
 
   const currentSessions = useMemo(
     () => ctx.sessions.filter((s) => s.status !== 'archived').slice(0, 8),
@@ -262,10 +266,36 @@ export function AfContextNav({
       </div>
 
       {/* 项目 (Projects — 真实列表) */}
-      {projects.length > 0 && (
-        <div className="ai-sessions-block">
-          <div className="ai-section-title">项目</div>
-          {projects.map((p) => (
+      <div className="ai-sessions-block">
+        <div className="ai-section-title">
+          项目
+          <button
+            type="button"
+            className="ai-nav-op ai-nav-op--create"
+            title="新建项目"
+            aria-label="新建项目"
+            onClick={(e) => {
+              e.stopPropagation();
+              const idea = window.prompt('项目想法 (idea):');
+              if (idea && idea.trim()) {
+                setCreating(true);
+                api
+                  .createProject(idea.trim())
+                  .then(() => {
+                    setCreating(false);
+                    loadProjects();
+                  })
+                  .catch(() => setCreating(false));
+              }
+            }}
+          >
+            {creating ? '…' : '＋'}
+          </button>
+        </div>
+        {projects.length === 0 ? (
+          <div className="ai-nav-empty">暂无项目 — 点 ＋ 创建</div>
+        ) : (
+          projects.map((p) => (
             <button
               key={p.id}
               type="button"
@@ -275,10 +305,13 @@ export function AfContextNav({
             >
               <span className="ai-nav-icon">📁</span>
               <span className="ai-nav-label">{p.title}</span>
+              {p.status && (
+                <span className={`ai-nav-status ai-nav-status--${(p.status ?? '').toLowerCase()}`}>{p.status}</span>
+              )}
             </button>
-          ))}
-        </div>
-      )}
+          ))
+        )}
+      </div>
 
       {/* 最近 (Recent — 最近更新会话, 简化复用列表) */}
       {currentSessions.length > 1 && (

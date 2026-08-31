@@ -11,12 +11,13 @@
  */
 
 import { useI18n } from '../../i18n';
-import { useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { ParsedRoute } from '../../router';
 import { AfHeader } from './AfHeader';
 import { AfContextNav } from './AfContextNav';
 import { AfConversationCenter } from './AfConversationCenter';
 import { AfWorkspace } from './AfWorkspace';
+import { AfProjectsView } from './AfProjectsView';
 import { useConversation } from './ConversationContext';
 import { AfWorkspaceFrame, type AfWorkspaceFrameHandlers } from './AfWorkspaceFrame';
 import './af.css';
@@ -40,6 +41,12 @@ export function AfWorkspaceShell({ route, initialProjectId }: AfWorkspaceShellPr
   const ctx = useConversation();
   const pageLabel = t(`nav.workspace.${route.page}`) || (WORKSPACE_PAGE_LABELS[route.page] ?? route.page);
 
+  // S35-UI: 左侧一级导航 (对话/项目/最近) 激活态 + 右栏视图切换
+  const [activeNav, setActiveNav] = useState<string>(route.page === 'conversation' ? 'conversation' : 'home');
+  useEffect(() => {
+    setActiveNav(route.page === 'conversation' ? 'conversation' : 'home');
+  }, [route.page]);
+
   // S32-004B: URL ?project= 恢复项目 Context (挂载时注入一次)
   useEffect(() => {
     if (initialProjectId && initialProjectId.length > 0 && ctx.projectId !== initialProjectId) {
@@ -58,6 +65,19 @@ export function AfWorkspaceShell({ route, initialProjectId }: AfWorkspaceShellPr
   const navigate = (hash: string) => {
     window.location.hash = hash;
   };
+  // S35-UI: 一级导航 onSelectNav — 对话/项目/最近 (修复点击无反应)
+  const handleSelectNav = useCallback(
+    (id: string) => {
+      setActiveNav(id);
+      if (id === 'conversation' || id === 'recent') {
+        navigate('#/workspace');
+      } else if (id === 'projects') {
+        // 项目 → 右栏项目管理视图 (真实 /api/projects), 不离开 Workbench
+        navigate('#/workspace');
+      }
+    },
+    [],
+  );
   return (
     <AfWorkspaceFrame
       testId="af-workspace-entry"
@@ -67,6 +87,8 @@ export function AfWorkspaceShell({ route, initialProjectId }: AfWorkspaceShellPr
       sidebar={(collapsed) => (
         <AfContextNav
           collapsed={collapsed}
+          activeNav={activeNav}
+          onSelectNav={handleSelectNav}
           onSelectProject={(id) => {
             if (id) {
               ctx.setProjectId(id);
@@ -80,7 +102,7 @@ export function AfWorkspaceShell({ route, initialProjectId }: AfWorkspaceShellPr
         />
       )}
       main={<AfConversationCenter />}
-      workspace={<AfWorkspace />}
+      workspace={activeNav === 'projects' ? <AfProjectsView /> : <AfWorkspace />}
     />
   );
 }

@@ -8170,3 +8170,20 @@ body[data-bg='1'] .af-shell {
 .af-detail-sub { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
 .af-detail-list { margin: 0; padding-left: 16px; display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #1d1d1f; }
 @media (max-width: 720px) { .af-detail-grid { grid-template-columns: 1fr; } }
+
+/* S35-UI: 项目管理视图 (右栏) */
+.af-projects-view { display: flex; flex-direction: column; gap: 12px; padding: 16px; height: 100%; overflow-y: auto; }
+.af-projects-head { display: flex; align-items: baseline; justify-content: space-between; }
+.af-projects-head h3 { margin: 0; font-size: 15px; color: #1d1d1f; }
+.af-projects-count { font-size: 12px; color: #86868b; }
+.af-projects-note { font-size: 13px; color: #86868b; }
+.af-projects-empty { justify-content: center; align-items: center; color: #86868b; font-size: 13px; }
+.af-projects-list { display: flex; flex-direction: column; gap: 8px; }
+.af-project-card { display: flex; flex-direction: column; gap: 4px; padding: 12px; border: 1px solid #e8e8ed; border-radius: 12px; background: #fff; text-decoration: none; transition: border-color .15s, box-shadow .15s; }
+.af-project-card:hover { border-color: #0071e3; box-shadow: 0 2px 8px rgba(0,0,0,.06); }
+.af-project-card-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.af-project-card-name { font-size: 14px; font-weight: 600; color: #1d1d1f; }
+.af-project-card-stage { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: #f0f0f5; color: #6e6e73; }
+.af-project-card-id { font-size: 11px; color: #86868b; }
+.af-project-card-desc { margin: 0; font-size: 12px; color: #6e6e73; }
+.af-project-card-meta { font-size: 11px; color: #86868b; }

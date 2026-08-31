@@ -8060,3 +8060,10 @@ body[data-bg='1'] .af-shell {
 .ai-cc-recent-icon { color: #34c759; }
 .ai-cc-recent-type { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ai-cc-recent-time { color: #aaa; font-size: 11px; }
+
+/* S32-002: 会话管理 (重命名/归档) */
+.ai-nav-item-row { display: flex; align-items: center; gap: 2px; }
+.ai-nav-item-row .ai-nav-item { flex: 1; min-width: 0; }
+.ai-nav-op { border: none; background: none; color: #aaa; font-size: 11px; cursor: pointer; padding: 2px 4px; opacity: 0; transition: opacity .15s; }
+.ai-nav-item-row:hover .ai-nav-op { opacity: 1; }
+.ai-nav-op:hover { color: #0071e3; }

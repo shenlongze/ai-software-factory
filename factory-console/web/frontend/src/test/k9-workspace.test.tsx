@@ -142,6 +142,18 @@ describe('Run 卡 Execution Detail (S31-004)', () => {
   });
 });
 
+// S32-002: Conversation Management — 重命名/归档 (真实 PATCH /api/sessions)
+describe('Conversation Management (S32-002)', () => {
+  it('会话项有重命名/归档操作按钮', async () => {
+    wrap(<AfContextNav collapsed={false} />);
+    await waitFor(() => expect(screen.getByText(/测试会话/)).toBeTruthy());
+    const rename = screen.getByLabelText(/重命名/);
+    expect(rename).toBeTruthy();
+    const archive = screen.getByLabelText(/归档/);
+    expect(archive).toBeTruthy();
+  });
+});
+
 // S31-006: Command Center — Recent Results (真实 recent_activity)
 describe('Command Center (S31-006)', () => {
   it('Welcome Hero 显示 Recent Results (真实事件流)', async () => {

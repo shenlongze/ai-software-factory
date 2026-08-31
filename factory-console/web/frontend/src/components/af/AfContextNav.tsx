@@ -220,16 +220,43 @@ export function AfContextNav({
           <div className="ai-nav-empty">暂无会话 — 在中栏说一句"我想做…"开始</div>
         ) : (
           currentSessions.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              className={`ai-nav-item ai-nav-item--sub${ctx.activeId === s.id ? ' ai-nav-item--active' : ''}`}
-              onClick={() => onSelectConversation?.(s.id)}
-              title={s.title || s.id}
-            >
-              <span className="ai-nav-icon">💬</span>
-              <span className="ai-nav-label">{s.title || `Session ${s.id.slice(-4)}`}</span>
-            </button>
+            <div key={s.id} className="ai-nav-item-row">
+              <button
+                type="button"
+                className={`ai-nav-item ai-nav-item--sub${ctx.activeId === s.id ? ' ai-nav-item--active' : ''}`}
+                onClick={() => onSelectConversation?.(s.id)}
+                title={s.title || s.id}
+              >
+                <span className="ai-nav-icon">💬</span>
+                <span className="ai-nav-label">{s.title || `Session ${s.id.slice(-4)}`}</span>
+              </button>
+              {/* S32-002: 重命名 / 归档 (真实 PATCH /api/sessions/{id}) */}
+              <button
+                type="button"
+                className="ai-nav-op"
+                title="重命名"
+                aria-label={`重命名 ${s.title || s.id}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const next = window.prompt('会话标题:', s.title || '');
+                  if (next && next.trim()) ctx.renameSession(s.id, next.trim());
+                }}
+              >
+                ✎
+              </button>
+              <button
+                type="button"
+                className="ai-nav-op"
+                title="归档"
+                aria-label={`归档 ${s.title || s.id}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  ctx.archiveSession(s.id);
+                }}
+              >
+                ⎋
+              </button>
+            </div>
           ))
         )}
       </div>

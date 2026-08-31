@@ -476,6 +476,70 @@ function MessageBubble({ role, content, meta, runs = [], expandedRunId, onToggle
   if (!isUser && !content.trim() && !(meta?.tool_calls && meta.tool_calls.length > 0) && !(meta?.run_ids && meta.run_ids.length > 0)) {
     return <></>;
   }
+  // S35-UI: 建议任务解析 — 回答里的建议任务 → 可操作按钮
+  // (支持: "- P0: 标题(理由)" / "**P0 级**" 小节 / "1. **标题**——理由" 编号列表)
+  const suggestedTasks = (() => {
+    if (isUser || !content) return [];
+    const lines = content.split('\n');
+    const out: Array<{ prio: string; title: string; reason: string }> = [];
+    let curPrio: string | null = null;
+    let listMode = false;
+    let suggestCtx = false; // 检测到"建议/缺口/补充"上下文后才解析编号列表
+    for (const line of lines) {
+      const t = line.trim();
+      if (!t) continue;
+      // 建议上下文触发词 (进入建议任务区) — 强触发词才启用编号解析
+      if (!suggestCtx && /还缺|缺口|需要补充|补充任务|补充建议|建议.{0,3}(补充|增加|新增|添加)/.test(t)) {
+        suggestCtx = true;
+      }
+      // 小节头: **P0 级** / **P0 优先级** / P0 级 / **一、安全与认证类** (排除"类"结尾的小节头)
+      const headM = /^\*{0,2}\s*P([0-2])\s*[级优先级]*\s*\*{0,2}/.exec(t);
+      const isClassHead = /^(\*\*)?[一二三四五六七八九十]、.*类(\*\*)?$/.test(t);
+      // 直接条目: - P0: 标题(理由)
+      const itemM = /^[-*]\s*P([0-2])[：:]\s*(.+)$/.exec(t);
+      // 编号条目: 1. **标题**——理由 / 1. 标题：理由 (仅数字编号, - 开头走 subM)
+      const numM = /^\d+[.)]\s*\*{0,2}(.+?)\*{0,2}\s*(?:[：:—–-]|$)\s*(.*)$/.exec(t);
+      // 小节下条目: - **标题**：理由
+      const subM = /^[-*]\s*\*{0,2}(.+?)\*{0,2}[：:]\s*(.*)$/.exec(t);
+      if (itemM) {
+        const title = itemM[2].trim();
+        if (/^\d+\s*个?$/.test(title)) continue;
+        const reasonM = /^(.*?)[（(]([^）)]*)[)）]\s*$/.exec(title);
+        out.push({ prio: `P${itemM[1]}`, title: reasonM ? reasonM[1].trim() : title, reason: reasonM ? reasonM[2].trim() : '' });
+        curPrio = null;
+        listMode = false;
+      } else if (headM) {
+        curPrio = `P${headM[1]}`;
+      } else if (curPrio && subM && subM[1]) {
+        const title = subM[1].trim();
+        if (/^\d+\s*个?$/.test(title)) continue;
+        if (title.length > 30 || /^(以上|这些|综上|如果你|需要|建议|优先级|补充|还有)/.test(title)) continue;
+        out.push({ prio: curPrio, title, reason: subM[2].trim() });
+        listMode = true;
+      } else if (suggestCtx && numM && numM[1] && !isClassHead) {
+        const title = numM[1].trim();
+        if (/^\d+\s*个?$/.test(title)) continue;
+        if (title.length > 30 || /^(以上|这些|综上|如果你|需要|建议|优先级|补充|还有|判断|先看|从产品|现有|覆盖)/.test(title)) continue;
+        out.push({ prio: curPrio ?? 'P1', title, reason: (numM[2] ?? '').trim() });
+        listMode = true;
+      } else if (!/^\d+[.)]/.test(t) && !t.startsWith('-') && !t.startsWith('*') && !t.startsWith('#')) {
+        // 非列表行 (段落/总结) → 结束编号列表 (避免把总结当任务)
+        if (listMode && /^(以上|这些|综上|如果|需要|建议|优先|总结|判断)/.test(t)) {
+          listMode = false;
+          curPrio = null;
+        }
+      }
+    }
+    return out;
+  })();
+  const addOneTask = (t: { prio: string; title: string }) => {
+    void ctx.send(`创建任务: ${t.title} (${t.prio})`);
+  };
+  const addAllTasks = () => {
+    if (suggestedTasks.length === 0) return;
+    const cmd = suggestedTasks.map((t) => `创建任务: ${t.title} (${t.prio})`).join('; ');
+    void ctx.send(cmd);
+  };
   // S34-002: 本消息触发的 Run (真实过滤, 非全局)
   const msgRuns = (meta?.run_ids ?? []).map((rid) => runs.find((r) => r.run_id === rid)).filter((r): r is SessionRunSummary => r != null);
 
@@ -490,6 +554,27 @@ function MessageBubble({ role, content, meta, runs = [], expandedRunId, onToggle
         <div className={`ai-msg-bubble ai-msg-bubble--${isUser ? 'user' : 'ai'}`}>
           {/* S34-001: AI 回复 + 用户输入都支持 Markdown (安全渲染, 零依赖) */}
           {content && <div className="ai-msg-text">{renderMarkdown(displayContent, onSendQuick)}</div>}
+
+          {/* S35-UI: 建议任务操作 — AI 分析回答里的 P0/P1/P2 建议 → 加入任务清单 */}
+          {!isUser && suggestedTasks.length > 0 && (
+            <div className="ai-suggest-tasks" data-testid="af-suggest-tasks">
+              {suggestedTasks.map((t, i) => (
+                <div key={i} className="ai-suggest-task">
+                  <span className={`ai-suggest-prio ai-suggest-prio--${t.prio.toLowerCase()}`}>{t.prio}</span>
+                  <span className="ai-suggest-title">{t.title}</span>
+                  {t.reason && <span className="ai-suggest-reason">{t.reason}</span>}
+                  <button type="button" className="ai-suggest-add" onClick={() => addOneTask(t)}>
+                    加入任务清单
+                  </button>
+                </div>
+              ))}
+              {suggestedTasks.length > 1 && (
+                <button type="button" className="ai-suggest-add-all" onClick={addAllTasks}>
+                  全部加入任务清单 ({suggestedTasks.length})
+                </button>
+              )}
+            </div>
+          )}
 
           {/* AI 消息: 如果有 tool_calls, 渲染结构化执行卡片 */}
           {!isUser && meta?.tool_calls && meta.tool_calls.length > 0 && (

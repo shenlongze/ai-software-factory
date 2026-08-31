@@ -8298,3 +8298,17 @@ body[data-bg='1'] .af-shell {
 .ai-tool-call-th { width: 50%; text-align: left; font-weight: 600; color: #86868b; background: rgba(0,0,0,0.03); text-transform: uppercase; letter-spacing: .03em; }
 .ai-tool-call-td { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #6e6e73; word-break: break-all; }
 .ai-tool-call-empty { font-size: 11px; color: #86868b; font-style: italic; }
+
+/* S35-UI: 建议任务操作 — AI 分析回答里的 P0/P1/P2 → 加入任务清单 */
+.ai-suggest-tasks { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; padding: 8px; border: 1px solid rgba(0,113,227,0.2); border-radius: 10px; background: rgba(0,113,227,0.04); }
+.ai-suggest-task { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.ai-suggest-prio { flex-shrink: 0; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 4px; color: #fff; }
+.ai-suggest-prio--p0 { background: #ff453a; }
+.ai-suggest-prio--p1 { background: #ff9f0a; }
+.ai-suggest-prio--p2 { background: #64d2ff; }
+.ai-suggest-title { font-weight: 500; }
+.ai-suggest-reason { color: #86868b; font-size: 11px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ai-suggest-add { flex-shrink: 0; font-size: 11px; padding: 2px 8px; border: 1px solid #0071e3; border-radius: 6px; background: #fff; color: #0071e3; cursor: pointer; }
+.ai-suggest-add:hover { background: #0071e3; color: #fff; }
+.ai-suggest-add-all { margin-top: 4px; font-size: 12px; padding: 4px 12px; border: none; border-radius: 8px; background: #0071e3; color: #fff; cursor: pointer; }
+.ai-suggest-add-all:hover { opacity: 0.9; }

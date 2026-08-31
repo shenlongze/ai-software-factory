@@ -1757,6 +1757,20 @@ def run_agent_native(
                 from .answer_verify import production_claim_prompt
 
                 messages.append({"role": "system", "content": production_claim_prompt()})
+                # S35-UI: 建议任务格式引导 — 用户要"分析任务/补充任务/建议任务"时,
+                # 建议项必须用 "- P0: 标题(理由)" 格式 (前端渲染"加入任务清单"按钮)
+                if re.search(r"分析.{0,6}任务|补充.{0,6}任务|建议.{0,6}任务|还缺|缺口|需要补充", question):
+                    messages.append({"role": "system", "content": (
+                        "输出'建议补充的任务'清单时, 必须严格逐条用以下格式 (这是给程序的接口, 不是排版建议):\n"
+                        "- P0: 任务标题(简短理由)\n"
+                        "- P1: 任务标题(简短理由)\n"
+                        "- P2: 任务标题(简短理由)\n"
+                        "硬性要求:\n"
+                        "1. 每行以 '- ' 开头, 接着 P0/P1/P2 + 英文冒号 + 空格;\n"
+                        "2. 禁止用 '**P0 级**' '**P0:**' 'P0 级' 等变体;\n"
+                        "3. 理由用半角括号 () 或中文括号 () 紧跟在标题后;\n"
+                        "4. 建议任务全部用此格式集中列出 (可以放在回答末尾的'建议任务'小节), 每条一行。"
+                    )})
                 # W8 (v1.1.253 + v1.1.261 强化): 输出 guardrail — 数字+细节证据校验
                 # 回答含数字/色值/版本/类名/路径 → 与已调工具结果比对; 无据 → 强制修正 (治"方向对、细节编")
                 _answer = _strip_fake_toolcalls(resp.get("content") or "（模型未输出）")

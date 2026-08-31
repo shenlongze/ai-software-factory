@@ -824,3 +824,21 @@ AI Factory
 - Control Tower = REAL (全从真实 SSOT 投影; 无第二套状态; 非 LLM 计算状态)
 - Realtime = PARTIAL (polling-based; SSE/WebSocket Contract 已定义, 推送层未实现)
 - View ≠ Execute (tower 只读; 操作经 governance)
+
+## K5 更新 (Conversation Experience & Production Usability, v1.1.357)
+
+### Reality Status
+| 能力 | Status | 证据 |
+|------|--------|------|
+| 用户语言质量 (8 项维度) | REAL | test_conversation_quality 8/8 |
+| Golden Conversation Suite (G1-G20) | REAL | test_golden_suite_all (20/20) |
+| 真实 LLM 多轮对话 E2E | REAL | Golden Suite 20/20 (codex) |
+| 失败诚实呈现 (不幻觉) | REAL | test_no_hallucination / G19 |
+| 不过度行动 (讨论不执行) | REAL | test_no_overaction |
+| Context 保持 (长对话不跑题不遗忘) | REAL | test_no_forget_no_drift |
+| CLI/API | REAL | test_cli / test_api (openapi 318) |
+
+### 诚实声明
+- Conversation Quality = REAL (8 维评分 + G1-G20 全过)
+- Web Conversation 页 = PARTIAL (前端接旧 /api/sessions; 新 /api/conversations 未接 UI)
+- Intent 规则级 (LLM 辅助为后续); SSE 推送层未实现

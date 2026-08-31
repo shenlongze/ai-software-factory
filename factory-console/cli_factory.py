@@ -1019,6 +1019,8 @@ class FactoryCLI:
             return self.production_cmd(args)
         if args.command == "workflow":
             return self.workflow_cmd(args)
+        if args.command == "quality":
+            return self.quality_cmd(args)
         if args.command == "ct":
             return self.ct_cmd(args)
         if args.command == "projectos":
@@ -4162,6 +4164,37 @@ class FactoryCLI:
         for r_ in sorted(runs, key=lambda x: x.get("created_at", ""), reverse=True):
             print(f"  {r_.get('run_id')} | {r_.get('workflow_id')} | {r_.get('state')} | {r_.get('created_at')}")
         return 0
+
+    def quality_cmd(self, args: argparse.Namespace) -> int:
+        """factory quality — Quality (K5): Conversation Quality & Golden Suite。
+
+        薄代理 → conversation_quality / golden_suite (CLI 与 API 共享同一 Service)。
+        """
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        action = getattr(args, "action", "suite") or "suite"
+        target = getattr(args, "target", None)
+
+        if action == "suite":
+            from factory_console.golden_suite import run_suite
+            r = run_suite(str(root))
+            print(f"Golden Suite: {r['passed']}/{r['total']}")
+            for s in r["scenarios"]:
+                mark = "✅" if s["passed"] else "❌"
+                print(f"  {mark} {s['scenario']}: {s['evidence']}")
+            return 0
+
+        if action == "report":
+            if not target:
+                print("[E4320] 错误: conversation_id 必填", file=sys.stderr)
+                return 2
+            from factory_console.conversation_quality import quality_report
+            q = quality_report(str(root), target)
+            print(f"quality: {q['quality_score']}/100 ({q['messages']} msgs)")
+            for k, v in q["scores"].items():
+                print(f"  {k}: {v}")
+            return 0
+
+        return 1
 
     def ct_cmd(self, args: argparse.Namespace) -> int:
         """factory ct — CT (K4): Control Tower & Real-time。
@@ -7476,6 +7509,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_prod.add_argument("--input", default="{}", help="输入 JSON (run 用, 如 {'prompt': '...'})")
     p_prod.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     sub.add_parser("workflow", help="Workflow 列表 (S10): factory workflow list — 专业生产线")
+    # K5: Conversation Quality CLI
+    p_q = sub.add_parser("quality", help="Quality (K5): report/suite — Conversation Quality & Golden Suite")
+    p_q.add_argument("action", nargs="?", default="suite",
+                     choices=["report", "suite"])
+    p_q.add_argument("target", nargs="?", help="conversation_id (report 用)")
+    p_q.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+
     # K4: Operational State CLI
     p_ct4 = sub.add_parser("ct", help="CT (K4): overview/whoworking/drill/snapshot — Control Tower & Real-time")
     p_ct4.add_argument("action", nargs="?", default="overview",

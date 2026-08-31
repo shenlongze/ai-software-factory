@@ -181,6 +181,7 @@ def create_project(
     project_type: str = "",
     tech: str = "",
     logger: Any = None,
+    factory_root: str = "",  # S35-P0-B: 工厂根 (目录初始化 + repo_path 回写)
 ) -> ProjectCreatedSummary | None:
     """POST /projects — 从 idea 创建 org 项目 (S10-006.5 创建闭环)。
 
@@ -211,14 +212,44 @@ def create_project(
     try:
         _proj_id = summary.id
         service.list_backlog(_proj_id)  # 触发 ensure_space + management 骨架 (幂等)
-        # 同时确保 projects/{id} 目录 (旧兼容路径)
+        # S35-P0-B: 真实 repo_path = workspace/projects/{slug 或 id} (非 ~/.factory 根)
+        # 用 data_dir/根目录 (不依赖 service._workspace 内部属性)
         import pathlib
 
-        _ws = getattr(service, "_workspace", None)
-        _root = getattr(_ws, "root", None) if _ws else None
-        if _root:
-            _pd = pathlib.Path(_root) / "projects" / _proj_id
-            _pd.mkdir(parents=True, exist_ok=True)
+        _root_candidates = []
+        try:
+            _root_candidates.append(pathlib.Path(str(getattr(service, "data_dir", "") or "")))
+        except Exception:  # noqa: BLE001
+            pass
+        if factory_root:
+            _root_candidates.append(pathlib.Path(factory_root))
+        _root_candidates = [_c for _c in _root_candidates if str(_c)]
+        # slug: draft 项目用完整 name slug, 正式项目用 name slug 或 id
+        _slug = str(getattr(summary, "slug", "") or "").strip() or _proj_id
+        for _cand in _root_candidates:
+            if not _cand.is_dir():
+                continue
+            # workspace 布局 (ensure_space): workspace/projects/{slug} + 旧兼容 projects/{id}
+            _ws_dir = _cand / "workspace" / "projects" / _slug
+            _ws_dir.mkdir(parents=True, exist_ok=True)
+            _legacy_dir = _cand / "projects" / _proj_id
+            _legacy_dir.mkdir(parents=True, exist_ok=True)
+            _real_repo = str(_ws_dir)
+            # 写回 org Project.repo_path (真实工作目录; git 探测由详情 API 实时做)
+            try:
+                _svc_store = getattr(service, "_project_store", None)
+                if _svc_store is not None:
+                    _org_proj = _svc_store.get_project(_proj_id)
+                    if _org_proj is not None and _org_proj.repo_path != _real_repo:
+                        from datetime import datetime as _dt
+
+                        _org_proj = _org_proj.model_copy(
+                            update={"repo_path": _real_repo, "updated_at": _dt.now()}
+                        )
+                        _svc_store.save_project(_org_proj)
+            except Exception:  # noqa: BLE001 — repo_path 回写失败不阻断
+                pass
+            break
     except Exception:  # noqa: BLE001 — 目录初始化失败不阻断创建 (诚实: 后续懒建)
         pass
     status = (

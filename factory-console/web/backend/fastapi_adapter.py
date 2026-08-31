@@ -1553,14 +1553,24 @@ def build_app(
                             continue
         except Exception:  # noqa: BLE001
             runs = []
-        # git 状态 (诚实: 未初始化 → not_initialized)
-        repository = {"status": "not_initialized", "path": ""}
+        # git 状态 (诚实: 未初始化 → not_initialized; 实时探测 branch/HEAD/dirty)
+        repository = {"enabled": False, "status": "not_initialized", "path": ""}
         try:
-            _git_dir = root / "projects" / project_id / ".git"
-            if _git_dir.is_dir():
-                repository = {"status": "initialized", "path": str(_git_dir)}
-        except Exception:  # noqa: BLE001
-            pass
+            from factory_console.session.project_scan import _git_info as _pgit
+
+            _ginfo = _pgit(root, project_id)
+            if _ginfo and _ginfo.get("dir"):
+                repository = {
+                    "enabled": True,
+                    "status": "initialized",
+                    "path": str(_ginfo.get("dir")),
+                    "remote": _ginfo.get("remote") or "",
+                    "branch": _ginfo.get("branch") or "",
+                    "ahead": _ginfo.get("ahead"),
+                    "behind": _ginfo.get("behind"),
+                }
+        except Exception:  # noqa: BLE001 — git 探测失败 → 诚实 not_initialized/unknown
+            repository = {"enabled": False, "status": "unknown", "path": ""}
         return {
             "project": project,
             "requirements": requirements,
@@ -1575,6 +1585,71 @@ def build_app(
                 "runs": len(runs),
             },
         }
+
+    @app.get("/api/projects/{project_id}/requirements")
+    def api_project_requirements(project_id: str) -> dict[str, Any]:
+        """S35-P0-D: 项目 Requirement 列表 (Project 1—N Requirement)。"""
+        root = Path(str(factory_root if factory_root is not None else DEFAULT_ROOT))
+        try:
+            found = next((p for p in service.list_projects() if p.id == project_id), None)
+        except Exception:  # noqa: BLE001
+            found = None
+        if found is None:
+            raise HTTPException(status_code=404, detail=f"project not found: {project_id}")
+        requirements = []
+        try:
+            _rf = root / "requirements" / "requirements.json"
+            if _rf.is_file():
+                import json as _rj
+
+                for _r in _rj.loads(_rf.read_text(encoding="utf-8")):
+                    if _r.get("project_id") == project_id:
+                        requirements.append(_r)
+        except Exception:  # noqa: BLE001
+            pass
+        return {"project_id": project_id, "requirements": requirements, "count": len(requirements)}
+
+    @app.get("/api/projects/{project_id}/plans")
+    def api_project_plans(project_id: str) -> dict[str, Any]:
+        """S35: 项目 Plan 列表 (Project 1—N Plan)。"""
+        root = Path(str(factory_root if factory_root is not None else DEFAULT_ROOT))
+        try:
+            found = next((p for p in service.list_projects() if p.id == project_id), None)
+        except Exception:  # noqa: BLE001
+            found = None
+        if found is None:
+            raise HTTPException(status_code=404, detail=f"project not found: {project_id}")
+        plans = []
+        try:
+            _pf = root / "session_plans.json"
+            if _pf.is_file():
+                import json as _pj
+
+                _pd = _pj.loads(_pf.read_text(encoding="utf-8"))
+                for _sid, _plan in _pd.items():
+                    if isinstance(_plan, dict) and _plan.get("project_id") == project_id:
+                        plans.append({**_plan, "session_id": _sid})
+        except Exception:  # noqa: BLE001
+            plans = []
+        plans.sort(key=lambda p: str(p.get("created_at") or ""), reverse=True)
+        return {"project_id": project_id, "plans": plans, "count": len(plans)}
+
+    @app.get("/api/projects/{project_id}/tasks")
+    def api_project_tasks(project_id: str) -> dict[str, Any]:
+        """S35: 项目 Task 列表 (backlog 真实)。"""
+        try:
+            found = next((p for p in service.list_projects() if p.id == project_id), None)
+        except Exception:  # noqa: BLE001
+            found = None
+        if found is None:
+            raise HTTPException(status_code=404, detail=f"project not found: {project_id}")
+        tasks = []
+        try:
+            _b = service.list_backlog(project_id) or {}
+            tasks = _b.get("tasks", [])
+        except Exception:  # noqa: BLE001
+            tasks = []
+        return {"project_id": project_id, "tasks": tasks, "count": len(tasks)}
 
     @app.get("/api/projects/{project_id}/plan")
     def api_project_plan(project_id: str) -> dict[str, Any]:
@@ -2385,6 +2460,7 @@ def build_app(
                 project_type=project_type,
                 tech=tech,
                 logger=event_logger,
+                factory_root=str(factory_root) if factory_root else "",
             )
         else:
             # S10-009 Task 4: 无 name → unnamed draft (DISCOVERY, draft=true)
@@ -2925,7 +3001,6 @@ def build_app(
     @app.get("/api/projects/{project_id}/workspace")
     def api_project_workspace(project_id: str) -> dict[str, Any]:
         """项目工作区汇总 (Founder 2026-08-26: 真实数据源 = workspace 资产)。
-
         读 ~/.factory/projects/<slug>/ 资产 (board 同口径): product.json 状态 +
         execution_state.json/tasks.json 任务 + 生命周期阶段判定。
         org /lifecycle + /backlog 常为空 (项目创建早未走 org 管线) — 前端项目首页
@@ -2939,9 +3014,44 @@ def build_app(
             _read_product_info,
         )
         ws_root = _Path(str(getattr(service, "data_dir", None) or workspace_root))
-        pdir = ws_root / "projects" / _Path(str(project_id)).name
-        if not (pdir / "product.json").is_file():
-            raise HTTPException(status_code=404, detail="project workspace not found")
+
+        def _git_probe(_pid: str) -> dict[str, Any]:
+            """实时 Git 探测 (诚实: 未初始化 → enabled=false; 失败 → unknown)。"""
+            try:
+                from factory_console.session.project_scan import _git_info as _pgit
+
+                _g = _pgit(ws_root, _pid)
+                if _g and _g.get("dir"):
+                    return {
+                        "enabled": True,
+                        "status": "initialized",
+                        "path": str(_g.get("dir")),
+                        "remote": _g.get("remote") or "",
+                        "branch": _g.get("branch") or "",
+                        "ahead": _g.get("ahead"),
+                        "behind": _g.get("behind"),
+                    }
+            except Exception:  # noqa: BLE001
+                pass
+            return {"enabled": False, "status": "not_initialized", "path": ""}
+        # S35-P0-C: 项目工作区 = workspace/projects/{slug} (ensure_space 布局)
+        # slug 优先 (draft 用完整 name), 兜底 id; 旧兼容 projects/{id}
+        _pid = _Path(str(project_id)).name
+        _slug = _pid
+        try:
+            from org.space import ProjectSpaceStore as _PSS
+
+            _pss = _PSS(ws_root)
+            _slug = _pss.get_slug(_pid) or _pid
+        except Exception:  # noqa: BLE001
+            _slug = _pid
+        pdir = ws_root / "workspace" / "projects" / _slug
+        if not pdir.is_dir():
+            pdir_legacy = ws_root / "projects" / _pid
+            if pdir_legacy.is_dir():
+                pdir = pdir_legacy
+            else:
+                raise HTTPException(status_code=404, detail="project workspace not found")
         info = _read_product_info(ws_root, project_id) or {}
         stages = _project_stage_status(ws_root, project_id)
         done_stages = [st["label"] for st in stages if st["done"]]
@@ -2973,11 +3083,15 @@ def build_app(
             "project_id": project_id,
             "name": str(info.get("name") or project_id),
             "lifecycle_status": str(info.get("status") or ""),
+            "root_path": str(pdir),
+            "exists": True,
             "stages": [{"id": st["id"], "label": st["label"], "done": st["done"]} for st in stages],
             "done_stages": done_stages,
             "progress": round(len(done_stages) * 100 / len(stages)) if stages else 0,
             "tasks": tasks_out,
             "task_source": source,
+            # S35-P0-C: Git 契约 (实时探测; 未初始化 → enabled=false)
+            "git": _git_probe(project_id),
         }
 
     @app.get("/api/approvals")

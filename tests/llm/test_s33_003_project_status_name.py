@@ -622,3 +622,54 @@ def test_task_carries_plan_id(tmp_path: Path) -> None:
     assert r["ok"] is True
     # create_task 收到 plan_id
     assert svc.create_task.call_args.kwargs.get("plan_id") == "plan_y"
+
+
+# ---- S35-P0: Project Git Contract / Workspace / Requirement 关系 ----
+
+def test_project_model_has_git_fields(tmp_path: Path) -> None:
+    """Project model 拥有 Git 契约字段 (S35-P0-A)。
+
+    用 subprocess 隔离 (org import 依赖 events 包, 测试间 sys.path 污染)。
+    """
+    import subprocess
+    import sys as _sys
+
+    _code = (
+        "import sys; sys.path.insert(0, 'factory-org'); sys.path.insert(0, 'factory-core'); "
+        "from org.projects import Project, ProjectState; "
+        "p = Project(id='P-git1', name='测试', lifecycle=ProjectState.IDEA); "
+        "print('GIT', p.git_enabled, p.git_repo_url, p.git_default_branch); "
+        "p2 = p.model_copy(update={'git_enabled': True, 'git_repo_url': 'https://github.com/x/y'}); "
+        "print('GIT2', p2.git_enabled, p2.git_repo_url)"
+    )
+    _r = subprocess.run(
+        [_sys.executable, "-c", _code],
+        capture_output=True, text=True, cwd=str(Path(__file__).resolve().parents[2]),
+    )
+    assert _r.returncode == 0, _r.stderr
+    out = _r.stdout.strip().splitlines()
+    assert "GIT False  main" in out[0]
+    assert "GIT2 True https://github.com/x/y" in out[1]
+
+
+def test_project_detail_repo_path_not_factory_root(tmp_path: Path) -> None:
+    """repo_path 必须指向真实项目目录 (非 ~/.factory 根)。"""
+    import subprocess
+    import sys as _sys
+
+    _code = (
+        "import sys; sys.path.insert(0, 'factory-org'); sys.path.insert(0, 'factory-core'); "
+        "from org.projects import Project; "
+        "p = Project(id='P-x', name='x', repo_path='/Users/agentdev/.factory'); "
+        "print('P1', p.repo_path); "
+        "p2 = p.model_copy(update={'repo_path': '/tmp/workspace/projects/P-x'}); "
+        "print('P2', p2.repo_path)"
+    )
+    _r = subprocess.run(
+        [_sys.executable, "-c", _code],
+        capture_output=True, text=True, cwd=str(Path(__file__).resolve().parents[2]),
+    )
+    assert _r.returncode == 0, _r.stderr
+    out = _r.stdout.strip().splitlines()
+    assert "P1 /Users/agentdev/.factory" in out[0]
+    assert "P2 /tmp/workspace/projects/P-x" in out[1]

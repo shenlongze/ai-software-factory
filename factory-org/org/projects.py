@@ -302,6 +302,14 @@ class Project(_OrgModel):
     discovery: dict[str, Any] | None = None  # S10-009: Discovery Session (预留)
     bindings: dict[str, Any] | None = None   # S10-009: 资源 binding (预留)
     metadata: dict[str, Any] = Field(default_factory=dict)  # S10-009: 扩展元数据
+    # S35-P0-A: Project Git Contract (真实仓库状态; 未启用 → git_enabled=false)
+    git_enabled: bool = False
+    git_repo_url: str = ""                    # 远程仓库 URL (无 → "")
+    git_provider: str = ""                    # github/gitlab/gitee/local/none
+    git_default_branch: str = "main"          # 默认分支 (未初始化记录)
+    git_current_branch: str = ""              # 当前分支 (实时查询优先)
+    git_head_commit: str = ""                 # HEAD commit (实时查询优先)
+    git_working_tree: str = ""                # clean/dirty/untracked
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
 

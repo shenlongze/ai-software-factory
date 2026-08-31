@@ -8312,3 +8312,8 @@ body[data-bg='1'] .af-shell {
 .ai-suggest-add:hover { background: #0071e3; color: #fff; }
 .ai-suggest-add-all { margin-top: 4px; font-size: 12px; padding: 4px 12px; border: none; border-radius: 8px; background: #0071e3; color: #fff; cursor: pointer; }
 .ai-suggest-add-all:hover { opacity: 0.9; }
+
+/* S35-UI: 意图澄清快捷操作 — AI 分析出可能意图 → 点击直接发送 */
+.ai-intent-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.ai-intent-action { font-size: 12px; padding: 4px 12px; border: 1px solid rgba(0,113,227,0.35); border-radius: 16px; background: rgba(0,113,227,0.06); color: #0071e3; cursor: pointer; }
+.ai-intent-action:hover { background: #0071e3; color: #fff; }

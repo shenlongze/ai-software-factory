@@ -540,6 +540,29 @@ function MessageBubble({ role, content, meta, runs = [], expandedRunId, onToggle
     const cmd = suggestedTasks.map((t) => `创建任务: ${t.title} (${t.prio})`).join('; ');
     void ctx.send(cmd);
   };
+  // S35-UI: 意图澄清快捷操作 — AI 回答里 "比如:/例如:" 后的意图列表 → 按钮
+  // (用户输入模糊时 AI 列出可能意图, 点击直接发送, 不用打字)
+  const intentActions = (() => {
+    if (isUser || !content) return [];
+    const lines = content.split('\n');
+    const out: string[] = [];
+    let inList = false;
+    for (const line of lines) {
+      const t = line.trim();
+      if (!t) continue;
+      if (!inList && /(比如|例如)[：:]/.test(t)) { inList = true; continue; }
+      if (inList) {
+        // 结束词: 段落/总结/引导
+        if (/^(告诉我|如果你|请|直接|或者|需要|我帮|要我|我可以|总结|以上|如果|可以)/.test(t) || t.length > 24) {
+          inList = false;
+          continue;
+        }
+        const item = t.replace(/^[-*•·]\s*/, '').replace(/\*{1,2}/g, '').trim();
+        if (item && item.length <= 24) out.push(item);
+      }
+    }
+    return out.slice(0, 5);
+  })();
   // S34-002: 本消息触发的 Run (真实过滤, 非全局)
   const msgRuns = (meta?.run_ids ?? []).map((rid) => runs.find((r) => r.run_id === rid)).filter((r): r is SessionRunSummary => r != null);
 
@@ -573,6 +596,17 @@ function MessageBubble({ role, content, meta, runs = [], expandedRunId, onToggle
                   全部加入任务清单 ({suggestedTasks.length})
                 </button>
               )}
+            </div>
+          )}
+
+          {/* S35-UI: 意图澄清快捷操作 — 点击直接发送 (不用打字) */}
+          {!isUser && intentActions.length > 0 && (
+            <div className="ai-intent-actions" data-testid="af-intent-actions">
+              {intentActions.map((a, i) => (
+                <button key={i} type="button" className="ai-intent-action" onClick={() => void ctx.send(a)}>
+                  {a}
+                </button>
+              ))}
             </div>
           )}
 

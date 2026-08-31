@@ -157,52 +157,111 @@ function ArtifactPanel(): JSX.Element {
   );
 }
 
-// ===== S32-004B: Project Context Card (真实项目投影, 不伪造) =====
-function ProjectContextCard({ projectId, onClear }: { projectId: string; onClear: () => void }): JSX.Element {
+// ===== S32-004B: Project Workspace (点击项目后右栏完整切换 — 真实数据) =====
+function ProjectWorkspace({ projectId, onClear }: { projectId: string; onClear: () => void }): JSX.Element {
   const [proj, setProj] = useState<{ title?: string; status?: string; id?: string } | null>(null);
+  const [detail, setDetail] = useState<OsProjectStatus | null>(null);
+  const [runs, setRuns] = useState<Array<{ run_id: string; status: string; updated_at?: string; totals?: Record<string, number> }>>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    // ① 项目基本信息 (osProjects 真实)
     api
       .osProjects()
       .then((list) => {
         const found = list.find((p) => p.id === projectId);
+        if (!cancelled) setProj(found ? { title: found.title, status: found.status, id: found.id } : null);
+      })
+      .catch(() => {
+        if (!cancelled) setProj({ id: projectId, title: projectId, status: undefined });
+      });
+    // ② 项目详情 (osProjectStatus 真实 progress/tasks)
+    api
+      .osProjectStatus(projectId)
+      .then((s) => {
         if (!cancelled) {
-          setProj(found ? { title: found.title, status: found.status, id: found.id } : null);
+          setDetail(s);
           setLoading(false);
         }
       })
       .catch(() => {
-        if (!cancelled) {
-          setProj({ id: projectId, title: projectId, status: undefined });
-          setLoading(false);
-        }
+        if (!cancelled) setLoading(false);
       });
+    // ③ 项目 Runs (真实 workflow_runs)
+    api
+      .projectRuns(projectId)
+      .then((d) => {
+        if (!cancelled) setRuns(d.runs ?? []);
+      })
+      .catch(() => { /* 无 run 保持空 */ });
     return () => { cancelled = true; };
   }, [projectId]);
 
-  if (loading) return <div className="ai-panel-empty">项目加载中…</div>;
+  if (loading && !proj) return <div className="ai-panel-empty">项目加载中…</div>;
 
   return (
-    <div className="ai-pj-ctx" data-testid="af-project-context">
-      <div className="ai-pj-ctx-head">
-        <span className="ai-pj-ctx-label">项目 Context</span>
-        <button type="button" className="ai-pj-ctx-clear" onClick={onClear} aria-label="清除项目 Context">
+    <div className="ai-pj-ws" data-testid="af-project-workspace">
+      <div className="ai-pj-ws-head">
+        <span className="ai-pj-ws-label">项目 Workspace</span>
+        <button type="button" className="ai-pj-ws-clear" onClick={onClear} aria-label="清除项目 Context">
           ✕ 清除
         </button>
       </div>
       {proj ? (
         <>
-          <div className="ai-pj-ctx-name">{proj.title ?? proj.id}</div>
-          <div className="ai-pj-ctx-meta">
+          <div className="ai-pj-ws-name">{proj.title ?? proj.id}</div>
+          <div className="ai-pj-ws-meta">
             <code>{proj.id}</code>
             {proj.status && <span className={`ai-nav-status ai-nav-status--${proj.status.toLowerCase()}`}>{proj.status}</span>}
           </div>
+
+          {/* 真实进度 (osProjectStatus.progress — 不伪造) */}
+          {detail && detail.progress && (
+            <div className="ai-pj-ws-section" data-testid="af-pj-progress">
+              <div className="ai-pj-ws-sec-title">进度</div>
+              <div className="ai-pj-ws-progress">
+                <span className="ai-pj-ws-pill">✓ {detail.progress.completed} 完成</span>
+                <span className="ai-pj-ws-pill ai-pj-ws-pill--run">● {detail.progress.running} 运行中</span>
+                <span className="ai-pj-ws-pill ai-pj-ws-pill--fail">✗ {detail.progress.failed} 失败</span>
+                <span className="ai-pj-ws-pill">{detail.progress.total} 总任务</span>
+              </div>
+            </div>
+          )}
+
+          {/* 真实 Run (workflow_runs — 当前执行) */}
+          {runs.length > 0 && (
+            <div className="ai-pj-ws-section" data-testid="af-pj-runs">
+              <div className="ai-pj-ws-sec-title">当前执行</div>
+              {runs.slice(0, 3).map((r) => (
+                <div key={r.run_id} className="ai-pj-ws-run">
+                  <span className={`ai-run-dot ai-run-dot--${r.status}`}>
+                    {r.status === 'running' ? '●' : r.status === 'completed' ? '✓' : '✗'}
+                  </span>
+                  <code className="ai-pj-ws-run-id">{r.run_id}</code>
+                  <span className="ai-run-state">{r.status}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* 真实任务 (osProjectStatus.sprints[].tasks) */}
+          {detail && detail.sprints && detail.sprints.length > 0 && (
+            <div className="ai-pj-ws-section" data-testid="af-pj-tasks">
+              <div className="ai-pj-ws-sec-title">最近任务</div>
+              {detail.sprints.slice(0, 2).flatMap((sp) => sp.tasks ?? []).slice(0, 4).map((t) => (
+                <div key={t.id} className="ai-pj-ws-task">
+                  <span className="ai-pj-ws-task-dot" aria-hidden="true" />
+                  <span className="ai-pj-ws-task-title">{t.title}</span>
+                  <span className="ai-pj-ws-task-status">{t.status}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </>
       ) : (
-        <div className="ai-pj-ctx-name">项目不存在</div>
+        <div className="ai-pj-ws-name ai-pj-ws-name--notfound">项目不存在或已被删除</div>
       )}
     </div>
   );
@@ -632,41 +691,43 @@ export function AfWorkspace(): JSX.Element {
         </button>
       </div>
 
-      {/* S32-004B: 项目 Context 卡 — 项目选中时右栏显示真实项目 */}
-      {ctx.projectId && (
-        <ProjectContextCard projectId={ctx.projectId} onClear={() => ctx.setProjectId(null)} />
-      )}
+      {/* S32-004B: 项目选中 → 右栏主体切换为 Project Workspace (真实数据) */}
+      {ctx.projectId ? (
+        <ProjectWorkspace projectId={ctx.projectId} onClear={() => ctx.setProjectId(null)} />
+      ) : (
+        <>
+          {/* Approval Card — 内联显示 (不单独页面) */}
+          {showApproval && <ApprovalCard />}
 
-      {/* Approval Card — 内联显示 (不单独页面) */}
-      {showApproval && <ApprovalCard />}
+          {/* 空闲态: 快速入口 */}
+          {isIdle && (
+            <div className="ai-ws-empty">
+              <div className="ai-ws-empty-title">Workspace</div>
+              <div className="ai-ws-empty-sub">AI Factory will surface the right tools as it works</div>
+              <div className="ai-ws-quick-starts">
+                <button type="button" className="ai-quick-card">
+                  <span className="ai-quick-icon">📁</span>
+                  <span className="ai-quick-label">Files</span>
+                </button>
+                <button type="button" className="ai-quick-card">
+                  <span className="ai-quick-icon">🌐</span>
+                  <span className="ai-quick-label">Preview</span>
+                </button>
+                <button type="button" className="ai-quick-card">
+                  <span className="ai-quick-icon">⌨</span>
+                  <span className="ai-quick-label">终端</span>
+                </button>
+              </div>
+            </div>
+          )}
 
-      {/* 空闲态: 快速入口 */}
-      {isIdle && (
-        <div className="ai-ws-empty">
-          <div className="ai-ws-empty-title">Workspace</div>
-          <div className="ai-ws-empty-sub">AI Factory will surface the right tools as it works</div>
-          <div className="ai-ws-quick-starts">
-            <button type="button" className="ai-quick-card">
-              <span className="ai-quick-icon">📁</span>
-              <span className="ai-quick-label">Files</span>
-            </button>
-            <button type="button" className="ai-quick-card">
-              <span className="ai-quick-icon">🌐</span>
-              <span className="ai-quick-label">Preview</span>
-            </button>
-            <button type="button" className="ai-quick-card">
-              <span className="ai-quick-icon">⌨</span>
-              <span className="ai-quick-label">终端</span>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* 动态面板内容 */}
-      {!isIdle && (
-        <div className="ai-ws-body">
-          {renderTabContent()}
-        </div>
+          {/* 动态面板内容 */}
+          {!isIdle && (
+            <div className="ai-ws-body">
+              {renderTabContent()}
+            </div>
+          )}
+        </>
       )}
     </div>
   );

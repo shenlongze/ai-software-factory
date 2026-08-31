@@ -41,6 +41,7 @@ function mockApi() {
     if (u.includes('/api/conversations/conv_1')) return { ok: true, json: async () => conv };
     if (u.includes('/api/conversations')) return { ok: true, json: async () => ({ items: [conv], count: 1 }) };
     if (u.includes('/api/projects-os') && u.includes('/status')) return { ok: true, json: async () => projStatus };
+    if (u.includes('/api/projects/') && u.includes('/runs')) return { ok: true, json: async () => ({ project_id: 'project_1', runs: [{ run_id: 'R-TEST-1', status: 'running', totals: { total_tokens: 100 } }], count: 1 }) };
     if (u.includes('/api/projects-os')) return { ok: true, json: async () => ({ items: [{ id: 'project_1', title: '测试项目' }] }) };
     if (u.includes('/api/ops/overview')) return { ok: true, json: async () => ({ projects: { total: 1, running: 0, waiting: 0, blocked: 0, approval: 1, failed: 0 }, workforce: { running: 1, waiting: 0, blocked: 0, error: 0, idle: 0 }, recent_activity: [{ event_type: 'TOOL_CALL', timestamp: '2026-08-31T11:00:00+00:00', trace_id: 'sess-1' }], calculated_at: 'now' }) };
     // ConversationContext 数据源 — 新 UI 使用 sessions API
@@ -181,20 +182,18 @@ describe('Project Navigation (S32-004A)', () => {
   });
 });
 
-// S32-004B: Contextual Project Selection — 右栏项目 Context
-describe('Project Context (S32-004B)', () => {
-  it('项目选中时右栏显示 Project Context 卡 (真实)', async () => {
-    // 初始注入 project context (模拟 URL ?project= 恢复)
-    const { rerender } = render(
+// S32-004B: Contextual Project Selection — 右栏 Project Workspace
+describe('Project Workspace (S32-004B)', () => {
+  it('项目选中时右栏切换为 Project Workspace (真实数据)', async () => {
+    render(
       <ConversationProvider initialProjectId="project_1">
         <AfWorkspace />
       </ConversationProvider>,
     );
-    await waitFor(() => expect(screen.getByTestId('af-project-context')).toBeTruthy());
-    expect(screen.getByText(/项目 Context/)).toBeTruthy();
-    // 清除按钮存在
+    await waitFor(() => expect(screen.getByTestId('af-project-workspace')).toBeTruthy());
+    expect(screen.getByText(/项目 Workspace/)).toBeTruthy();
+    expect(screen.getByText(/测试项目/)).toBeTruthy();
     expect(screen.getByLabelText(/清除项目 Context/)).toBeTruthy();
-    void rerender;
   });
 });
 

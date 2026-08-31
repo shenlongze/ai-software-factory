@@ -5860,6 +5860,21 @@ def build_app(
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    @app.get("/api/projects-os")
+    def api_os_list_projects() -> dict[str, Any]:
+        """Project 列表投影 (K9 Workspace: 左栏 Context + 右栏 Task/Evidence 数据源)。
+
+        SSOT: project_os.projects() — 无第二套状态。
+        """
+        from factory_console import project_os as _po
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            items = _po.projects(root)
+            return {"items": items, "count": len(items)}
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     @app.post("/api/projects-os/{project_id}/sprints")
     def api_os_create_sprint(project_id: str,
                              body: dict[str, Any] = Body(default={})) -> dict[str, Any]:

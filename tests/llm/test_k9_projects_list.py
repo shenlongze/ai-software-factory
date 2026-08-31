@@ -1,0 +1,39 @@
+"""K9 Workspace: GET /api/projects-os 列表投影 (SSOT, 无第二套状态)。"""
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+_ROOT = Path(__file__).resolve().parents[2]
+for _p in (_ROOT, _ROOT / "factory-core"):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
+
+import pytest  # noqa: E402
+
+from factory_console import project_os as _po  # noqa: E402
+from factory_console.conversation_os import create_conversation  # noqa: E402
+
+
+def test_list_projects_returns_created(tmp_path):
+    conv = create_conversation(str(tmp_path), title="P")
+    _po.create_project(str(tmp_path), title="项目A", source_conv_id=conv["id"])
+    _po.create_project(str(tmp_path), title="项目B", source_conv_id=conv["id"])
+    items = _po.projects(str(tmp_path))
+    assert len(items) == 2
+    assert {p["title"] for p in items} == {"项目A", "项目B"}
+    # 字段契约: id/title/status/source_conversation_id
+    assert all(p["id"].startswith("project_") for p in items)
+    assert all("source_conversation_id" in p for p in items)
+
+
+def test_list_empty(tmp_path):
+    assert _po.projects(str(tmp_path)) == []
+
+
+def test_list_after_create_sprint(tmp_path):
+    conv = create_conversation(str(tmp_path), title="P")
+    proj = _po.create_project(str(tmp_path), title="项目", source_conv_id=conv["id"])
+    _po.create_sprint(str(tmp_path), proj["id"], title="S1")
+    items = _po.projects(str(tmp_path))
+    assert len(items) == 1

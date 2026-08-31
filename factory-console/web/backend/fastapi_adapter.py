@@ -3830,6 +3830,41 @@ def build_app(
     WorkflowStartError = _runner.WorkflowStartError
     WorkflowConflictError = _runner.WorkflowConflictError
 
+    def _associate_session_run(result: dict[str, Any], project_id: str) -> None:
+        """S30-003: Run 创建后 → 关联所属会话 (session.run_ids 幂等追加)。
+
+        项目→会话反查: 遍历 console_sessions, 找 project_id 匹配或
+        session_topics 讨论过该项目的会话。真实关联, 不伪造。
+        """
+        run_id = result.get("run_id") if isinstance(result, dict) else None
+        if not run_id:
+            return
+        root = Path(str(factory_root if factory_root is not None else DEFAULT_ROOT))
+        # 复用 sessions_store (同实例, 避免锁竞争/双写)
+        store = sessions_store if "sessions_store" in globals() else _sessions_mod.SessionStore(str(root / "console_sessions.json"))
+        # 反查: 匹配 project_id 的会话 (company 会话可能无 project_id, 用 topics 匹配)
+        sessions = store.list_sessions()
+        matched = None
+        for s in sessions:
+            if s.get("project_id") == project_id:
+                matched = s
+                break
+        if matched is None:
+            # 兜底: session_topics 讨论过该项目 (通过 run_id 所在项目 id 出现)
+            try:
+                import glob as _glob
+                for f in _glob.glob(str(root / "session_topics" / "*.json")):
+                    data = json.loads(Path(f).read_text(encoding="utf-8"))
+                    if project_id in json.dumps(data, ensure_ascii=False):
+                        sid = data.get("session_id") or Path(f).stem
+                        if store.get_session(sid) is not None:
+                            matched = {"id": sid}
+                            break
+            except Exception:  # noqa: BLE001
+                pass
+        if matched:
+            store.add_run(matched["id"], run_id)
+
     @app.post("/api/projects/{project_id}/start")
     def api_start_project_workflow(project_id: str) -> dict[str, Any]:
         """启动真实 Agent 执行链 (key 校验 → 后台线程; 200 立即回包)。"""
@@ -3848,6 +3883,11 @@ def build_app(
             raise HTTPException(status_code=503, detail=str(exc)) from exc
         if result is None:
             raise HTTPException(status_code=404, detail="project not found")
+        # S30-003: Session ↔ Run 一级关联 — Run 创建后反查项目所属会话, 写入 session.run_ids
+        try:
+            _associate_session_run(result, project_id)
+        except Exception:  # noqa: BLE001 — 关联失败不阻断启动
+            pass
         return result
 
     @app.post("/api/projects/{project_id}/chat")

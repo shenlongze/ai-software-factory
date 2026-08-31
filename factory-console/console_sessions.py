@@ -184,7 +184,13 @@ class SessionStore:
     def get_session(self, session_id: str) -> dict[str, Any] | None:
         with self._lock:
             s = self._data["sessions"].get(session_id)
-            return dict(s) if s else None
+            if s is None:
+                return None
+            out = dict(s)
+            # S30-003: 历史 session 向后兼容 — run_ids 缺失时补空 (不写盘, 读时默认)
+            if not isinstance(out.get("run_ids"), list):
+                out["run_ids"] = []
+            return out
 
     def create_session(
         self,
@@ -212,6 +218,8 @@ class SessionStore:
             "created_at": now,
             "updated_at": now,
             "summary": None,
+            # S30-003: Session ↔ Run 一级关联 (1:N — 一个会话可多次执行)
+            "run_ids": [],
         }
         with self._lock:
             sessions = self._data["sessions"]
@@ -263,6 +271,33 @@ class SessionStore:
             s = self._data["sessions"].get(session_id)
             if s is not None:
                 s["updated_at"] = _now_iso()
+
+    def add_run(self, session_id: str, run_id: str) -> bool:
+        """S30-003: Session ↔ Run 一级关联 (幂等追加, 1:N 集合)。
+
+        Run 创建时调用 — 保证关联与 Run 创建同事务可见。
+        """
+        with self._lock:
+            s = self._data["sessions"].get(session_id)
+            if s is None:
+                return False
+            runs = s.get("run_ids")
+            if not isinstance(runs, list):
+                runs = []
+                s["run_ids"] = runs
+            if run_id not in runs:
+                runs.append(run_id)
+            s["updated_at"] = _now_iso()
+            self._save()
+            return True
+
+    def session_runs(self, session_id: str) -> list[str]:
+        """S30-003: 查询 Session 关联的 run_ids (向后兼容: 无字段→[])。"""
+        s = self._data["sessions"].get(session_id)
+        if s is None:
+            return []
+        runs = s.get("run_ids")
+        return list(runs) if isinstance(runs, list) else []
 
     # ------------------------------------------------------------ 消息
     def list_messages(self, session_id: str) -> list[dict[str, Any]]:

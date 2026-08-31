@@ -76,3 +76,37 @@ def test_reply_carries_card_status(tmp_path):
     r = send_message(str(tmp_path), conv["id"], "现在什么进展")
     assert r["intent"] == "ASK_STATUS"
     assert r["reply"].get("card", {}).get("type") == "task_tree"
+
+
+# ─── 用户实测回归: "我有哪些项目" 必须走 ASK_STATUS (非 DISCUSS) ───
+
+def test_query_projects_is_ask_status(tmp_path):
+    from factory_console.conversation_os import create_conversation, send_message
+    conv = create_conversation(str(tmp_path), title="查询")
+    r = send_message(str(tmp_path), conv["id"], "我有哪些项目")
+    assert r["intent"] == "ASK_STATUS", f"应为 ASK_STATUS, 实得 {r['intent']}"
+    assert "项目" in r["reply"]["text"]
+
+
+def test_query_projects_returns_real_list(tmp_path):
+    from factory_console.conversation_os import create_conversation, send_message
+    from factory_console.project_os import create_project
+    conv = create_conversation(str(tmp_path), title="查询2")
+    create_project(str(tmp_path), title="台球计分", source_conv_id=conv["id"])
+    r = send_message(str(tmp_path), conv["id"], "我有哪些项目")
+    assert r["intent"] == "ASK_STATUS"
+    assert "台球计分" in r["reply"]["text"]
+
+
+def test_greeting_still_discuss(tmp_path):
+    from factory_console.conversation_os import create_conversation, send_message
+    conv = create_conversation(str(tmp_path), title="问候")
+    r = send_message(str(tmp_path), conv["id"], "你好")
+    assert r["intent"] == "DISCUSS"
+
+
+def test_execute_still_works(tmp_path):
+    from factory_console.conversation_os import create_conversation, send_message
+    conv = create_conversation(str(tmp_path), title="执行")
+    r = send_message(str(tmp_path), conv["id"], "帮我做计算器")
+    assert r["intent"] == "EXECUTE"

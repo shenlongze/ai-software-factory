@@ -39,7 +39,7 @@ INTENTS = ("DISCUSS", "DECIDE", "APPROVE", "EXECUTE", "ASK_STATUS", "CLARIFY")
 INTENT_PATTERNS = {
     "APPROVE": (r"确认|同意|可以|approve|yes|ok|就这么办|开始吧|批准", "DISCUSS"),
     "EXECUTE": (r"帮我(做|创建|写|实现|开发|执行|跑)|开始(做|开发|执行|写)|直接(做|建)|动手", "DISCUSS"),
-    "ASK_STATUS": (r"进展|状态|进度|怎么样了|完成了吗|为什么(失败|报错)|测试(结果|为什么)|做到哪里|做到哪了|在做什么", "DISCUSS"),
+    "ASK_STATUS": (r"进展|状态|进度|怎么样了|完成了吗|为什么(失败|报错)|测试(结果|为什么)|做到哪里|做到哪了|在做什么|有哪些|有什么|哪些(项目|任务|会话|工作)|(项目|任务|会话|工作)(列表|清单)?$|给我(看|展示|列)|看看(现在|当前)", "DISCUSS"),
     "DECIDE": (r"决定|改成|改为|用(这个|那个)|选|目标(是|为)|用户(是|为)|定位", "DISCUSS"),
     "CLARIFY": (r"什么意思|不明白|解释|举例|具体(一点|来说)|能再说", "DISCUSS"),
 }
@@ -201,7 +201,7 @@ def _make_reply(root: Path | str, conv: dict[str, Any], message: str,
                 "status": "WILL_EXECUTE",
                 "card": _make_card("execution", message, goal, confirmed)}
     if intent == "ASK_STATUS":
-        return {"text": _status_reply(root, conv), "status": "STATUS",
+        return {"text": _status_reply(root, conv, message), "status": "STATUS",
                 "card": _make_card("task_tree", message, goal, confirmed)}
     if intent == "CLARIFY":
         return {"text": f"简单说: 我们在做「{goal or '还没定目标'}」。"
@@ -241,10 +241,26 @@ def _make_card(card_type: str, message: str, goal: str,
     return {"type": card_type, "title": "通知", "summary": topic}
 
 
-def _status_reply(root: Path | str, conv: dict[str, Any]) -> str:
-    """状态回复 (基于真实 evidence, 非猜测)。"""
+def _status_reply(root: Path | str, conv: dict[str, Any], message: str = "") -> str:
+    """状态回复 (基于真实 evidence, 非猜测)。
+
+    - 查询项目 (有哪些/什么项目) → 公司级项目列表 (project_os SSOT)
+    - 其他 → 会话内 work_items 状态
+    """
     state = conv.get("state", {})
     work_items = state.get("work_items", [])
+    if re.search(r"项目", message):
+        try:
+            from factory_console import project_os as _po
+            projects = _po.projects(root)
+            if not projects:
+                return "当前还没有项目。想开始的话, 告诉我你想做什么就行。"
+            lines = [f"当前项目 ({len(projects)}):"]
+            for p in projects[:8]:
+                lines.append(f"  - {p.get('title', p['id'])} [{p.get('status', 'ACTIVE')}]")
+            return "\n".join(lines)
+        except Exception:
+            return f"当前还没有执行中的工作。目标: {state.get('goal') or '未定'}。要开始吗?"
     if not work_items:
         return f"当前还没有执行中的工作。目标: {state.get('goal') or '未定'}。要开始吗?"
     lines = [f"当前工作: {state.get('goal', '')}"]

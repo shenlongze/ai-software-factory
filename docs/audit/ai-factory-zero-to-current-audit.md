@@ -1,362 +1,285 @@
-# AI Factory — Zero-to-Current Full Reality Audit
+# AI Factory — Zero-to-Current 验尸级全面现实审计
 
-> 审计时间: 2026-08-29 | HEAD: 2b5eafba (v1.1.306) | 审计方式: Inspect/Run/Observe/Measure/Compare/Report (零代码修改)
+> 日期: 2026-08-31 | 方法: production-reality-audit skill (Zero-to-Current 协议)
+> 原则: 不信任任何历史结论 (Sprint 报告/测试绿/文档/模块名), 只信证据。零代码修改。
+> 证据优先级: 真实运行 > 真实代码 > 真实测试 > 真实产物 > Git history > 配置 > 文档 > 推测
 
 ---
 
 ## 1. Executive Summary
 
-**基于当前代码与运行态,AI Factory 实际是: 一个"以事件为事实源 + 外部 AI 执行器委派 + 会话式管理"的 AI 劳动力编排框架——规划/文档/审查/委派真实可用,但"从想法到可运行代码"的生产闭环尚未闭合(代码生成真实发生,却从未落到任何可运行的工作区)。**
+**当前真实产品 = "一个能启动、能显示页面、但核心业务从未发生过的系统"。**
+1340 提交 / 68 模块 / 349 API / 828 文档,但生产数据里: 会话 0、任务 0、需求 0。
+这不是"差一点",是**核心闭环从未被真实走通过一次**。
 
-一句话: **它是"AI 员工管理系统",还不是"AI 软件工厂"。**
+## 2. Original Vision (最初想做什么, 2026-08-05)
 
----
+原始设计 (docs/design/agent-model.md + architecture.md, 第一个提交 c8661109):
+- **AI Software Factory**: 多 Agent 协作执行软件项目, 真实交付代码
+- 核心原则: Orchestrator 不写代码(只委派)/ 一切以事件为中心 / 自报告不可信验证独立 / KISS 最小模块集(9 模块)
+- Agent 实例 = Role + Skill + Delegation
 
-## 2. Original Vision
+## 3. Current Reality (现在实际是什么)
 
-- 原始愿景(design-principles.md v2.0): **Event is source of truth** — append-only 事件流,状态是投影,CLI 一切行为产生事件
-- 产品愿景演化: AI Software Factory → AI Workforce → AI Enterprise Operating System
-- 核心理念: Idea → Brainstorm → PRD → Task Tree → Execute → Verify → Learn;每个 Node 应是独立完整可验证的 Agent Loop
+- 自述: "AI Workforce Operating System" (Conversation-driven)
+- 实际: 能启动 (5180/8011 活着), 能显示三栏 UI, 能聊模板回复
+- 生产数据 (2026-08-31 实测):
+  ```
+  conv 实体: 0    (会话从未真实创建)
+  task 实体: 0    (任务从未真实创建)
+  req 实体: 0     (需求从未真实创建)
+  project: 2      (仅测试残留)
+  审批: 4
+  workspace 落地代码: 0  (75 个 patch 从未应用)
+  ```
 
-## 3. Current Reality
+## 4. Strategic Drift (战略漂移)
 
-- 1208 commits / 24 天 (2026-08-05 → 08-29) / v1.1.306
-- 代码: factory-console 90K 行 + factory-core 33.8K + 前端 35K + 测试 159K (534 文件)
-- 运行态: CLI 40+ 命令真实可用;WebUI 前端 bundle 可加载 + API 真实返回;服务可启停
-- 12 个项目(8 个任务:0/产出物 v0);94 条执行记录(external_ai.invoke 委派审查器真实发生)
-- **workspace/projects 代码文件总数 = 0**(补丁生成了,从未应用到工作区)
-
-## 4. Strategic Drift
-
-**判定: 明显跑偏 (从"软件工厂"到"AI 员工运营")**
-
-| 维度 | 原始 | 现在 |
-|------|------|------|
-| 核心 | 事件溯源软件工厂 | AI Workforce OS (管理 AI 员工) |
-| 交付物 | 可运行软件 | patch + 审查报告 |
-| 主入口 | CLI 执行链 | 会话 (WebUI) |
-| 验证 | L4 Change Validation | 外部审查器 (claude.*) |
-
-- 何时开始: v1.1.200+ (8/26 起) 会话系统爆发式增长,AgentLoop v1→v2→v3,重心从"执行链"转向"会话体验"
-- 未推送: 本地领先远程 194 提交
+| 维度 | 原始 (08-05) | 现在 (08-31) | 漂移 |
+|------|------------|------------|------|
+| 目标 | 交付真实软件 (代码落地) | 运营对话 (AI 员工聊天) | 🔴 核心目标丢失 |
+| Agent | 多 Agent 协作, 每 Agent 委派干活 | 角色定义存在但执行链断 | 🔴 |
+| 交付物 | 代码/产物/验证 | 对话/卡片/状态 | 🔴 |
+| 演化 | 9 模块 KISS | 68 模块/1340 提交 27 天 | 🔴 膨胀 |
 
 ## 5. Architecture Reality
 
-```
-factory-core (33.8K)   — 事件/验证/审计原语 (REAL)
-factory-console (90K)  — service(4911行) + cli(4896行) + session/* (51K)
-factory-org (18文件)   — 组织模型 (REAL 但小)
-external_executor      — 外部 AI 委派网关 (REAL, subprocess 调 codex/claude/hermes)
-web (前端 35K)         — React + TS, API 同源
-```
+- 分层存在 (unified_contract 底座 ← conversation/task/project ← operational_state/tower)
+- 但: 349 API 前端只用 27; 核心链路 (对话→执行→结果) 前端未接
+- 死代码: orchestrator/actions/discovery/replanning/decomposer 等 (14K+ 行, 早期 v3 重构遗留, 引用近乎为零)
 
 ## 6. Codebase Audit
 
-| 模块 | 标记 | 证据 |
-|------|------|------|
-| service.py (4911行) | PARTIAL-God | CLI 12处/API 43处引用, 165方法, 职责过重 |
-| cli_factory.py (4896行) | PARTIAL-God | 40+ 命令, 含 6 个自述"骨架/只读" |
-| session/orchestrator.py (4133行) | **DEAD** | agent_loop 零引用, 被 v3 替换 |
-| session/actions.py (4121行) | **DEAD** | agent_loop 零引用 |
-| session/conversation.py (1668) / discovery.py (1285) / product_intelligence.py (1264) / replanning.py (1005) / decomposer.py (816) | **DEAD/UNUSED** | 主循环零引用 (合计 ~14K 死代码) |
-| session/agent_loop.py (1823行) | REAL | v3 主循环, WebUI 流式/同步均走此 |
-| session/session_hooks.py | REAL | 5 生命周期 hooks 全注册 |
-| memory_core.py (125行) | REAL | Letta 风格 self-editing |
-
-**Architecture Drift: AgentLoop v1 (意图硬路由) → v2 (原生FC+审批) → v3 (agentic 自主循环) — v1/v2 的 orchestrator/actions 成为死代码但未删除 (~14K 行)。**
+```
+factory-console: 264 py / 110,199 行
+factory-core:    138 py / 33,814 行
+factory-exec:     52 py / 22,154 行
+factory-org:      18 py / 11,885 行
+前端: 183 文件
+God Objects: cli_factory.py 8145 行 / service.py 4911 行 / workflow_runner 1181 行
+```
 
 ## 7. Agent Audit
 
-**判定: 单 LLM 主循环 + 外部进程委派,非"多 Agent 实体"**
-
-| Agent | 真实? | 证据 |
-|-------|-------|------|
-| 本机会话 Agent (run_agent_native) | **REAL** | 单 LLM 自主循环, 28 工具, 动态工具面 |
-| local-codex/claude/hermes | **REAL** | subprocess 真调二进制 (executor.py: subprocess.run) |
-| codex.*/claude.* 20+ 角色 (architecture-examiner 等) | **REAL-PARTIAL** | 外部委派真实发生 (94 记录), 但只是"换 prompt 调外部 CLI" |
-| PM/Market/UX/Architect 角色 | **PARTIAL** | 是 skill/prompt 装配, 非独立 agent 实体 |
+- workforce_os 定义角色: product_manager/market_analyst/ux_designer/software_architect/software_developer/qa_engineer/release_engineer
+- 能力映射: software_developer → [llm, codex]; qa → [llm, pytest]
+- **但**: 角色定义 ≠ 角色干活。执行链 (role → execute → result → apply) 断
 
 ## 8. Multi-Agent Audit
 
-**判定: PARTIAL — 外部执行器是真正的多进程委派,但内部"多 Agent"是单 LLM 换 prompt。**
+**多个 Agent 协作 vs 一个 LLM 切换 prompt?**
+- exec 层有真实运行时 (professional_workflow: 真实 codex 执行器)
+- 但 factory 层多角色 = 定义/状态, 无真实协作总线
+- **结论: 实质是"单 LLM + 状态机", 不是多 Agent 公司**
 
-- 真多进程: executor.py subprocess → codex/claude/hermes (外部二进制, 真工具)
-- 非真 Agent 实体: 无独立上下文/生命周期/消息传递的 AgentEntity;agent 注册表只是 JSON 元数据
-- 委派链路: external_ai.invoke 事件 85+ 次 (org.execution.started 86 → completed 75, 11 次未完成)
-
-## 9. Business Workflow Audit (Idea → Software)
+## 9. Business Workflow Audit (Idea→Product→Software→Release)
 
 ```
-Idea → 会话 (WebUI) → Product Definition (product.json) → PRD (真实) 
-→ Engineering (engineering.json) → Task Tree (tasks.json) 
-→ Execution (patch 生成, 真实但模板化) → ⛔ 代码从未应用到工作区 → Verification (语法检查) 
-→ ⛔ 无 Release/Operation
+Idea → Discovery → PRD → Architecture → Engineering → Development → QA → Release
+  ❌      ❌        ❌        ❌             ❌           ❌        ❌    ❌
+(生产数据 0 会话/0 任务/0 需求; 75 patch 0 落地 — 全链从未真实发生)
 ```
-
-**断裂点: Execution → Code 之间。patch 生成后停在"待批准"状态 (report 明示 "human review required before apply"), 项目工作区零代码。**
 
 ## 10. CLI Audit
 
-| 命令 | 状态 | 真实执行 |
-|------|------|---------|
-| doctor | REAL | 3 PASS/2 WARN 真实诊断 |
-| status / start / stop | REAL | 真实管理进程 |
-| router / config / tools | REAL | 真实读配置 (router L4 缺失, model 名不一致) |
-| agent / skill | REAL-WRITE | 支持 add/remove (help 文案过时称只读) |
-| task / rag / audit | PARTIAL | 自述"骨架, 只读" |
-| demo run | REAL | E2E 成功但模板化 (2秒, 1152 tokens, structured operations) |
+- cli_factory.py 8145 行 (God Object), 17+ 命令
+- 有真实命令 (start/stop/doctor/config/project/run)
+- 未逐个真实验证 (审计期间不运行破坏性命令)
 
 ## 11. API Audit
 
-**CLI 与 API 共享 service 层 (CLI 12处 + API 43处引用) — 同源成立, 无重复实现。**
-
-- openapi: 124 路径, 200 (T17 已修)
-- /api/projects (12) /sessions (33) /audit /monitor /approvals 全真实返回
+- 后端 349 端点 (fastapi_adapter.py)
+- 前端三栏只用 27: conversations(4) + ops(3) + projects-os(3) + artifacts(1) + approval(1)
+- **主链 API (runtime/execute, task-tree, decompose, trigger_work) 前端未调用** → 闭环断
 
 ## 12. Web UI Audit
 
-- 前端 bundle 可加载 (347KB), CSS 正常, index.html 标准
-- API 数据全真实 (dashboard/projects/sessions/audit/monitor)
-- 浏览器交互审计受阻: browser daemon 超时 (环境问题, 非产品), 但 HTML/JS/API 层证据完整
-- 页面代码: 173 个 ts/tsx 文件, 34.9K 行, 会话/审计/监控页均有真实组件
+- 三栏 (Context/Conversation/Workspace) 能渲染
+- 会话: 关键词正则 (INTENT_PATTERNS) + 模板回复 — 非 LLM 理解
+- 旧系统并存: AfConversationPanel(旧 /api/sessions) vs AfConversationCenter(新 /api/conversations)
+- 死组件: AfSidebar/BrowserWorkspace/AfCompanyHome/AfMonitorPage (半死)
+- 29 页面文件, 路由 16 条, 死页面占一半
 
 ## 13. Real E2E Audit
 
-**`factory demo run '给 main.py 加 add 函数'` 实测:**
-- ✅ workspace 创建 → 项目目录 → 执行 → patch → test → report 全链跑通 (2 秒)
-- ✅ patch 含真实代码 (add 函数 + test_main.py + 语法验证 PASS)
-- ⚠️ patch 是 "2 structured operations" (模板化), 非 LLM 自由生成
-- ⚠️ report 明示 "human review required before apply" — 代码不自动落地
-- ⚠️ 临时目录被清理, 代码未保留
-- **结论: E2E 链路真实但"演示级", 非生产级代码交付**
+- 今天 (08-31) 我在浏览器实测: 发送"我有哪些项目" → 模板回复"聊聊「」目标用户是谁" (错误)
+- 生产数据 0 会话: 从未有任何用户 (含创始人) 真实走通一次完整会话
 
 ## 14. Production Truth Matrix
 
 | Claim | Reality | Evidence | Gap |
 |-------|---------|----------|-----|
-| Real Execution | PARTIAL | 94 记录 + 75 patches 真实 | 补丁不应用, workspace 0 代码 |
-| Real Agent | PARTIAL | 单 LLM 循环真实 | 无多 Agent 实体 |
-| Real Tool Calling | YES | 28 工具 + 动态工具面 | 会话工具真实 |
-| Real Code Generation | YES | 46/75 patches 含代码 (97行 Python 等) | 从不落地 |
-| Real Patch Delivery | PARTIAL | patch 生成 | 停在待批准, 不应用 |
-| Real Testing | PARTIAL | 614 passed | 38% mock, 真实 LLM 测试=0 |
-| Real Multi-Agent | PARTIAL | external subprocess 真实 | 内部非多 Agent |
-| Real Web UI / API / CLI | YES | bundle+124 API+40命令 | — |
-| Real Memory | YES | memory_core + project_memory + Spine | — |
-| Real Learning | PARTIAL | feedback.learned 事件 85 次 | 事件记录, 无闭环学习 |
+| "K9 Human Workspace 完成" | UI 能显示, 业务未发生 | conv=0, task=0 | 壳 vs 魂 |
+| "会话可用" | 模板回复, 非真实理解 | "我有哪些项目"→DISCUSS | LLM 未接 |
+| "真实 LLM E2E 通过" | 测试环境 codex 执行, 非产品数据 | 生产 0 会话 | 测试≠产品 |
+| "AI Workforce OS" | 角色定义存在, 执行链断 | 75 patch 0 落地 | 定义≠干活 |
+| "1108 测试通过" | 测试绿, 产品不转 | 生产 0 实体 | 测试≠可用 |
 
 ## 15. Testing Audit
 
-- 534 测试文件, 202 用 mock (38%)
-- 核心层 614 passed (workspace/events/metrics/cli/llm)
-- tests/console: 5721 passed + 12 过时断言失败 (锁 1.1.206/锁动态工具面)
-- 前端: 711/749 (38 既有失败, 项目入口类)
-- **真实 LLM 调用测试: 0** (test_real_execution_binding.py 自述 "不调真实 API")
-- s9_pilot sandbox: 有真实执行痕迹 (DevToolBox 代码) — 但那是历史产物, 非测试
+- 586 测试文件, 208 含 mock (35%)
+- 测试验证"零件在测试台转得动", 不验证"用户能开着车上班"
+- 真实 LLM 测试: 测试环境 codex 执行, 生产数据 0
 
 ## 16. Observability Audit
 
-- events 表 4831+ 行, console.viewed 3952 次 (读操作也记录 — 符合原愿景)
-- 审计: audit_events.json + events 双写, event_hash 防篡改
-- WebUI: 审计页 + 监控页真实 (T8/T13 已交付)
-- **缺口: 无请求级 tracing (Langfuse 式), 无成本/延迟面板**
+- execution_records 94 条, 字段: action/agent/error/intent/result/result_id/task/timestamp
+- **无 tokens/llm_calls/model/cost** — 动作摘要, 非 LLM 调用日志
 
 ## 17. Governance Audit
 
-- PreToolUse 权限门 (DANGEROUS_TOOLS + governance_rules.json 可配置红线) — REAL
-- 批准门 (APR approvals) — REAL (E2E 报告明示 human review gate)
-- 权限模式 (plan/acceptEdits/auto/normal) — REAL
-- **缺口: 审计有, 但无"治理策略下发/审计回查"闭环 UI**
+- governance_service (334 行): 审批单链路存在
+- 生产: 4 个审批 (测试残留)
 
-## 18. Memory / Learning Audit
+## 18. Memory/Learning Audit
 
-- memory_core.json (persona+human self-editing) — REAL (Letta 风格)
-- project_memory (5 类 kind + 5 级 authority + 语义召回) — REAL
-- ProjectSpine (handoff/resume/closure) — REAL
-- **Learning: 只有事件记录 (feedback.learned 85 次), 无"从错误中改进系统"闭环**
+- learning_engine_v2 (369 行): 存在
+- 无真实会话/任务 → 学习闭环无数据可学
 
 ## 19. Architecture Debt
 
-1. **~14K 行死代码** (orchestrator/actions/conversation/discovery/product_intelligence/replanning/decomposer)
-2. **God Objects**: service.py 4911 + cli_factory.py 4896
-3. 双轨残留: 同步/流式两分支 (业务同源但代码分叉)
-4. 版本历史: 曾 5 个版本号不一致 (v1.1.224-261 时期, 已修)
-5. 前端 38 个过时测试未清 (红灯残留)
+- God Object: cli_factory 8145 行 / service 4911 行
+- 双会话系统: 旧 /api/sessions + 新 /api/conversations
+- 双包名: factory_console (别名) vs factory-console (源码), editable finder 复杂
+- factory start 后端加载旧代码 (幽灵进程/路径解析)
+- 文档 828 份全过期 (文档是过程记录, 非产品描述)
 
-## 20. Dead / Stub / Fake / Template Inventory
+## 20. Dead/Stub/Fake/Template Inventory
 
-| 项 | 类型 | 证据 |
-|----|------|------|
-| orchestrator.py 4133行 | DEAD | agent_loop 零引用 |
-| actions.py 4121行 | DEAD | 同上 |
-| conversation/discovery/product_intelligence/replanning/decomposer | DEAD/UNUSED | 合计 7K+ |
-| agent/skill/task/router/rag/audit 6 命令 | STUB-SELF-ADMITTED | CLI help 自述"骨架, 只读" |
-| demo run | TEMPLATE | "2 structured operations" 模板化 |
-| test_real_execution_binding | FAKE-ADMITTED | 自述"不调真实 API" |
-| models.json 缺失 | WARN | doctor 报告 |
+```
+死代码: orchestrator(4133) actions(4121) conversation(1668) discovery(1285) ... ≈ 14K+ 行
+stub:   workspace 0 代码落地 (75 patch 未应用)
+template: 会话模板回复 (INTENT_PATTERNS + _make_reply 模板)
+fake:   "能聊" 实际是关键词匹配
+```
 
-## 21. Capability Reality Matrix (摘要)
+## 21. Capability Reality Matrix
 
-| Capability | 接入 | 真实运行 | 状态 |
-|-----------|------|---------|------|
-| Agent (会话) | ✅ | ✅ | L4 Integrated |
-| Multi-Agent | 外部✅ 内部❌ | 外部✅ | L3 |
-| Workflow | ✅ | ✅ | L4 |
-| Task Tree | ✅ | ⚠️ 生成但未执行 | L3 |
-| Execution | ✅ | ⚠️ patch 不落地 | L3 |
-| Verification | ✅ | ✅ 语法级 | L4 |
-| Repair | ⚠️ | ❌ | L1 |
-| Memory | ✅ | ✅ | L4 |
-| Skills | ✅ | ✅ 147+ | L4 |
-| MCP | ✅ | ⚠️ 2 server 可接入 | L3 |
-| Provider | ✅ | ✅ 3 类适配器 | L5 |
-| Model Router | ⚠️ | ⚠️ L4 缺失 | L3 |
-| Event Sourcing | ✅ | ✅ 4831+ 事件 | L5 |
-| Observability | ✅ | ⚠️ 无 tracing | L4 |
-| Governance | ✅ | ✅ | L4 |
-| Human Approval | ✅ | ✅ | L5 |
-| Learning | ⚠️ | ❌ 闭环缺失 | L1 |
-| Product Mgmt | ✅ | ⚠️ 12 项目停滞 | L3 |
-| Market/Competitive | ✅ | ⚠️ 外部审查器 | L3 |
-| PRD | ✅ | ✅ 真实生成 | L4 |
-| UX/Arch/Eng/QA | ⚠️ | ⚠️ skill 装配 | L2-L3 |
-| Release | ❌ | ❌ | L0 |
-| Operation | ❌ | ❌ | L0 |
+| 能力 | 级 | 证据 |
+|------|-----|------|
+| 会话 (conversation_os) | C Placeholder | 关键词+模板, 生产 0 会话 |
+| 任务 (task_tree) | C | 生产 0 任务 |
+| 项目 (project_os) | B Partial | 2 测试残留 |
+| 执行 (professional_workflow) | B | 测试环境真实 codex, 生产未接 |
+| 运营 (operational_state) | B | 有状态机, 无数据 |
+| 治理 (governance) | B | 4 审批残留 |
+| 前端三栏 | B | 能渲染, 业务未发生 |
 
 ## 22. Maturity Matrix
 
 ```
-Engineering Agent = L3 | Market Agent = L3 | PRD = L4 | Task Tree = L3
-Execution = L3 | Verification = L4 | Repair = L1 | Multi-Agent = L3(外)/L1(内)
-Learning = L1 | Web UI = L4 | Memory = L4 | Governance = L4
+L0 Missing  ← 生产业务闭环
+L3 Implemented ← 模块存在 (unified_contract/conversation_os/...)
+L5 Real Production ← 从未达到 (生产 0 实体)
 ```
 
-## 23. Strengths (真实证据支持)
+## 23. Strengths (真实证据)
 
-1. **Event-sourcing 原则贯彻最彻底** (events 4831+ 行, 读操作也记事件, CLI 全部发事件)
-2. **外部执行器委派真实** (subprocess 调 codex/claude/hermes, 85+ 次真实调用)
-3. **CLI/API 同源** (共享 service 层, 无重复实现)
-4. **会话系统深度** (28 工具/动态工具面/思考链/证据链/审计 — 已超过多数自研)
-5. **治理完整** (权限门/批准门/审计链/红线可配置)
-6. **记忆系统扎实** (3 层: core memory/project memory/Spine)
-7. **诚实自述** (能力矩阵反虚标, 命令标注"骨架")
+- unified_contract 底座设计干净 (0 依赖, 事件/实体/版本化)
+- 测试体系真实存在 (586 文件, 零件在测试台转得动)
+- 执行器真实 (codex 在测试环境真干活, 生成过代码)
 
-## 24. Weaknesses (Top 20)
+## 24. Weaknesses
 
-| # | 弱点 | 影响 |
-|---|------|------|
-| 1 | **代码从不落地** (workspace 0 代码) | 致命 — 无生产交付 |
-| 2 | 14K 死代码 (旧架构) | 高 — 维护负担 |
-| 3 | 真实 LLM 测试 = 0 | 高 — 无法证明生产链路 |
-| 4 | demo 模板化 (2秒 structured ops) | 高 — 演示≠生产 |
-| 5 | Repair/Learning 闭环缺失 | 高 — 无自改进 |
-| 6 | 12 项目停滞 (8 个 0 任务 0 产物) | 中高 |
-| 7 | God Objects (service/cli 各 5K) | 中 |
-| 8 | 前端 38 + 后端 12 过时测试红灯 | 中 |
-| 9 | Router L4 缺失 + model 名不一致 | 中 |
-| 10 | 194 提交未推送 | 中 (风险) |
-| 11 | 双轨分支 (同步/流式) | 中 |
-| 12 | 无成本/延迟可观测 | 中 |
-| 13 | Release/Operation 能力 L0 | 中 |
-| 14 | MCP 仅 2 可接入未深用 | 低中 |
-| 15 | 6 CLI 命令自认骨架 | 低中 |
-| 16 | 并发会话污染 git (3 文件被卷走) | 低 |
-| 17 | 版本历史混乱 (曾 5 号不一致) | 低 (已修) |
-| 18 | 无请求级 tracing | 低 |
-| 19 | 外部审查器 11 次未完成 | 低 |
-| 20 | Web UI 交互未完整验证 (浏览器受限) | 低 |
+- 产品闭环从未真实发生 (生产 0 实体)
+- 代码生成但不落地 (75 patch 0 应用)
+- 会话理解是关键词 (用户已否定)
+- 文档全面过期 (828 份误导)
+- 膨胀失控 (27 天 68 模块 1340 提交)
 
 ## 25. Competitive Comparison
 
-**AI Factory 弱于:**
-- Claude Code/Codex/Trae: 代码落地闭环、IDE 集成、真实生产使用
-- OpenHands: 沙箱执行、代码应用
-- LangGraph/CrewAI: 图编排、多 Agent 生态
-- Hermes: 生产级 CLI、跨平台网关、插件生态
-- OpenClaw: 多平台接入、工具注册表规模
+| 维度 | AI Factory 现实 | 主流 (Claude Code/Trae/Cursor) |
+|------|----------------|-------------------------------|
+| 对话理解 | 关键词正则 | LLM 语义理解 |
+| 代码落地 | 0 (patch 不应用) | 直接改文件 |
+| 执行闭环 | 断 | 完整 |
+| 结果回对话 | 无 | 有 |
 
-**AI Factory 设计方向更有潜力:**
-- Event-sourcing 作为事实源 (多数工具不做)
-- 外部 AI 执行器委派 (借力 codex/claude/hermes, 不重复造 LLM)
-- 会话+工具+记忆+审计一体化 (多数工具拆散)
-- 治理/审批门内置 (多数工具缺)
+## 26. Strategic Drift (重复强调)
 
-## 26. Strategic Drift 详情
+**最大漂移: 从"交付真实软件"漂到"运营对话界面"。** 08-05 目标是 Factory 交付代码; 08-31 是"AI 员工聊天"。核心目标丢失。
 
-```
-Original: Event-sourced Software Factory (代码交付)
-    ↓ v1.1.200+ (8/26) 会话系统爆发
-Current: AI Workforce OS (员工管理)
-    ↓
-Drift 判定: 明显跑偏 — 从"产出软件"转向"管理 AI 员工"
-```
+## 27. Top 20 Gaps
 
-- 是否值得继续: **值得**, 但需把"代码落地"补回主链路
-- 如何纠正: 见 Proposal (审计后单独输出)
+1. 会话理解 = 关键词 (非 LLM)
+2. 生产数据 0 会话/0 任务/0 需求
+3. 代码生成不落地 (patch 不应用)
+4. 前端三栏不接执行链
+5. 结果不回对话
+6. 文档 828 份全过期
+7. 死代码 14K 行
+8. 双会话系统并存
+9. factory start 加载旧代码
+10. 双包名混乱
+11. God Object (cli_factory 8145 行)
+12. 角色定义 ≠ 角色干活
+13. LLM 痕迹缺失 (无 token/cost)
+14. 测试测零件不测产品
+15. 会话模板回复
+16. 旧壳组件半死
+17. 326 提交未推送
+18. 前端只用 27/349 API
+19. 学习闭环无数据
+20. 商业可演示性为零
 
-## 27. Top 20 Gaps → P0/P1/P2
+## 28. P0/P1/P2
 
-**P0 (致命, 先修):**
-1. 补丁应用闭环 (patch → 应用到 workspace → 可运行代码)
-2. 真实 LLM E2E 测试 (至少 1 条全链路真调 LLM)
-3. 删 14K 死代码 (orchestrator/actions 等)
-4. 项目执行推进 (12 项目从规划到代码)
+| 级 | 项 |
+|----|-----|
+| P0 | 会话 LLM 化 (用户已拍板方向) |
+| P0 | 执行闭环: 对话→建项目→拆任务→执行→结果回对话 |
+| P0 | 代码落地 (patch 应用) |
+| P1 | 生产数据为 0 → 需真实跑通一次 |
+| P1 | 前端接执行链 |
+| P1 | 文档以代码为准重建 |
+| P2 | 死代码清理 / 旧壳摘除 / 双会话统一 |
 
-**P1 (重要):**
-5. Repair 闭环 (失败 → 自动修复)
-6. Learning 闭环 (feedback → 系统改进)
-7. 过时测试清理 (50 个)
-8. Router L4 + 模型名统一
-9. God Object 拆分 (service/cli)
-10. 推送 194 提交
-11. 成本/延迟面板
-12. Release/Operation 能力
+## 29. The Next 5 Highest-Leverage Moves
 
-**P2 (提升):**
-13. MCP 深用
-14. 请求级 tracing
-15. 双轨合并
-16. 前端测试修复
-17. 骨架命令补全
-18. 浏览器 UI 完整验证
-19. 并发 git 隔离
-20. 多 Agent 实体化 (可选探索)
+1. **M1: 会话 LLM 化** — conversation_os 理解/回复改 LLM (真实语义 + 说人话), 保留规则 fallback
+2. **M2: 最小执行闭环** — 用户一句话 → 真实建项目/拆任务/执行 (trigger_work + runtime/execute 接前端)
+3. **M3: 代码落地** — 执行结果真实写盘 (patch apply 闭环)
+4. **M4: 结果回对话** — 执行完成 → LLM 说人话汇报 + 真实产物链接
+5. **M5: 真实 E2E 验收** — 创始人浏览器走通一次: 说一句话 → 看到真实项目/代码/结果
 
-## 28. 如果只能做 5 件事
+## 30. Recommended Architecture Direction
 
-1. **补丁应用闭环** — 让代码真正落到 workspace (从 L3 → L5 的关键一跳)
-2. **真实 LLM E2E 测试** — 证明生产链路 (消除"测试都是 mock"的质疑)
-3. **删死代码 + God Object 拆分** — 让架构可信 (14K + 10K 减负)
-4. **Repair/Learning 闭环** — 让系统自改进 (兑现"工厂"之名)
-5. **推送 + 过时测试清零** — 让仓库可信 (194 提交 + 50 红灯)
+**冻结外围, 立主干。** 只做一条链: 对话(LLM) → 理解 → 真实执行 → 结果回对话。其余 60+ 模块冻结 (代码不删, 不进用户路径)。
 
-## 29. Recommended Architecture Direction
+---
+
+## 31. Final Verdict
 
 ```
-保持: event-sourcing + 会话 + 外部委派 + 治理
-加强: patch 应用流水线 (生成→评审→应用→验证→提交) — 这是工厂的核心
-删除: orchestrator/actions 等 14K 死代码
-合并: 同步/流式双轨 → 单一路径
-新增: Repair/Retry 状态机 + Learning 反馈环
-聚焦: 从"管理 AI 员工"回到"产出可运行软件"
-```
+Current Product: 一个能启动/能显示 UI/但核心业务从未发生过的系统
+Current Maturity: L2-Skeleton (模块存在) → 产品层 L0 (业务从未发生)
+Overall Score: 15/100 (产品层: 会话 5, 执行 5, 落地 0, 结果回对话 0, 文档 -, 商业 0)
 
-## 30. Final Verdict
+Is it actually an AI Software Factory? NO
+Is it actually Multi-Agent? NO (单 LLM + 状态机)
+Is it production-capable? NO
+Is the current architecture worth continuing? YES BUT REFACTOR (unified_contract 底座值得保留)
 
-```
-Current Product:  AI 劳动力编排框架 (会话 + 外部委派 + 事件溯源)
-Current Maturity: L3 (Implemented-Integrated, 局部 L5)
-Overall Score: 62/100
-Is it actually an AI Software Factory? PARTIAL
-Is it actually Multi-Agent? PARTIAL (外部真, 内部假)
-Is it production-capable? PARTIAL (CLI/API/UI 真, 代码交付断)
-Is the current architecture worth continuing? YES BUT REFACTOR
-Biggest Strength:  Event-sourcing 原则贯彻 + 外部执行器委派真实
-Biggest Weakness:  代码生成但从不落地 (workspace 0 代码)
-Biggest Strategic Drift: 从"软件工厂(交付代码)"漂到"AI 员工运营(管理对话)"
-Single Most Important Next Move: 补丁应用闭环 — 让 AI Factory 真正产出可运行代码
+Biggest Strength: unified_contract 底座 + 测试体系 + 真实 codex 执行器
+Biggest Weakness: 生产数据 0 实体 — 核心闭环从未真实发生
+Biggest Strategic Drift: 从"交付真实软件"漂到"运营对话界面"
+Single Most Important Next Move: M1 会话 LLM 化 + M2 最小执行闭环 — 让用户说一句话, 看到真实代码/结果落地
 ```
 
 ---
 
-*本审计全程零代码修改。证据: 1208 commits / 12 项目 / 94 执行记录 / 75 patches / 614+5721 测试 / demo E2E 实测 / 40+ CLI 命令实测 / 124 API 路径。*
+## Rebuild/Refocus Proposal (审计后不直接拆 Sprint)
+
+| 项 | 决定 | 理由 |
+|----|------|------|
+| unified_contract | KEEP | 干净底座, 唯一值得保留的架构 |
+| conversation_os | REBUILD (LLM 化) | 关键词→LLM, 核心 |
+| project_os/task_tree | KEEP + 接前端 | 零件好, 没接线 |
+| professional_workflow | KEEP (测试环境已证) | 真实 codex 执行器 |
+| 前端三栏 | REFACTOR (接执行链) | 壳好, 魂没接 |
+| 旧会话系统/旧壳 | DELETE (藏) | 双系统混乱 |
+| 60+ 外围模块 | DEFER (冻结) | 不进 v0.1 |
+| 828 文档 | REWRITE (以代码为准) | 全面过期 |
+| 死代码 14K 行 | DELETE (后置) | 不挡主干 |
+| 326 未推送 | PUSH (后置) | 仓库卫生 |

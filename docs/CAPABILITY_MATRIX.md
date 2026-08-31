@@ -784,3 +784,24 @@ AI Factory
 - Control Tower = REAL (全从真实 Entities/Runs/Approvals/Events 投影, 可重建非第二事实源)
 - 复用 S3 list_production_runs + S17 approvals + S43 entities (不建第二套状态系统)
 - 无伪实时: 每次查询实时计算
+
+## K3 更新 (Real Project Operating Loop, v1.1.355)
+
+### Reality Status
+| 能力 | Status | 证据 |
+|------|--------|------|
+| Project Entity (从 Requirement, 绑定 conv) | REAL | test_project_os 8/8 |
+| Sprint Entity (parent=project, tasks[]) | REAL | test_project_chain |
+| Project→Sprint→Task 层级 + Lineage | REAL | test_project_chain |
+| 执行回写 + 状态投影 (实时计算) | REAL | test_status_projection |
+| Requirement v2 → Replan | REAL | test_replan |
+| Approval gate (阻塞/恢复) | REAL | test_approval_gate |
+| 20+ 轮长对话 (不跑题/不遗忘) | REAL | test_long_conversation |
+| Conversation 续接 (真实 Project State) | REAL | test_conversation_continuation |
+| CLI/API | REAL | test_cli / test_api (openapi 312) |
+| 真实 LLM E2E (codex 5/5) | REAL | k3-real-e2e 记录 |
+
+### 诚实声明
+- Project OS = REAL (持续运营闭环: 讨论→执行→查询→改需求→审批→继续)
+- 无第二套 SSOT (全从真实 entities/runs/approvals 投影)
+- Governance 唯一扩展: request_approval 支持 task 主体

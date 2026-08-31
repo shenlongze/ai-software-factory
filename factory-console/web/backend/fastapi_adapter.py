@@ -5846,6 +5846,84 @@ def build_app(
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    @app.post("/api/projects-os")
+    def api_os_create_project(body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """创建 Project (K3, 从 Requirement, 绑定 conv)。"""
+        from factory_console import project_os as _po
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _po.create_project(root, title=body.get("title", "项目"),
+                                      description=body.get("description", ""),
+                                      source_conv_id=body.get("source_conversation_id", ""),
+                                      source_req_id=body.get("source_requirement_id", ""))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/projects-os/{project_id}/sprints")
+    def api_os_create_sprint(project_id: str,
+                             body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """创建 Sprint (K3)。"""
+        from factory_console import project_os as _po
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _po.create_sprint(root, project_id, title=body.get("title", "Sprint"),
+                                     goal=body.get("goal", ""))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/projects-os/{project_id}/status")
+    def api_os_project_status(project_id: str) -> dict[str, Any]:
+        """Project 状态投影 (K3, Project→Sprint→Task 全层实时计算)。"""
+        from factory_console import project_os as _po
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _po.project_status(root, project_id)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/api/projects-os/{project_id}/replan")
+    def api_replan(project_id: str,
+                   body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """Requirement 变更 → Replan (K3)。"""
+        from factory_console import project_os as _po
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _po.replan(root, project_id,
+                              new_req_id=body.get("new_requirement_id", ""),
+                              new_task_title=body.get("new_task_title", "新任务"))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/tasks/{task_id}/approval")
+    def api_task_approval(task_id: str,
+                          body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """高风险 task Approval gate (K3)。"""
+        from factory_console import project_os as _po
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _po.approve_task_execution(root, task_id, risk=body.get("risk", "HIGH"))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/approvals/{approval_id}/decide")
+    def api_decide_approval(approval_id: str,
+                            body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """批准/拒绝 Approval (K3, 阻塞/恢复 Work)。"""
+        from factory_console import project_os as _po
+
+        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
+        try:
+            return _po.decide_task_approval(root, approval_id,
+                                            decision=body.get("decision", "approve"),
+                                            decided_by=body.get("decided_by", "human"))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     @app.get("/api/control-tower")
     def api_control_tower() -> dict[str, Any]:
         """Control Tower 总览 (K2, 全真实投影)。"""

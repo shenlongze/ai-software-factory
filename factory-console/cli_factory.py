@@ -1019,6 +1019,8 @@ class FactoryCLI:
             return self.production_cmd(args)
         if args.command == "workflow":
             return self.workflow_cmd(args)
+        if args.command == "projectos":
+            return self.projectos_cmd(args)
         if args.command == "tower":
             return self.tower_cmd(args)
         if args.command == "tasktree":
@@ -4158,6 +4160,84 @@ class FactoryCLI:
         for r_ in sorted(runs, key=lambda x: x.get("created_at", ""), reverse=True):
             print(f"  {r_.get('run_id')} | {r_.get('workflow_id')} | {r_.get('state')} | {r_.get('created_at')}")
         return 0
+
+    def projectos_cmd(self, args: argparse.Namespace) -> int:
+        """factory projectos — ProjectOS (K3): Real Project Operating Loop。
+
+        薄代理 → project_os (CLI 与 API 共享同一 Service)。
+        """
+        from factory_console.project_os import (
+            create_project as _cp, create_sprint as _cs, project_status as _ps,
+            projects as _list, replan as _rp,
+            approve_task_execution as _ap, decide_task_approval as _decide,
+            task_approval_status as _tas,
+        )
+
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        action = getattr(args, "action", "list") or "list"
+        target = getattr(args, "target", None)
+
+        if action == "create":
+            try:
+                p = _cp(str(root), title=getattr(args, "title", "项目"),
+                        source_conv_id=getattr(args, "conv", ""))
+            except Exception as exc:  # noqa: BLE001
+                print(f"[E4300] 错误: {exc}", file=sys.stderr)
+                return 1
+            print(f"project: {p['id']} | {p['title']} | req: {p['source_requirement_id'][:12]}")
+            return 0
+
+        if action == "sprint":
+            if not getattr(args, "project", ""):
+                print("[E4301] 错误: --project 必填", file=sys.stderr)
+                return 2
+            try:
+                s = _cs(str(root), getattr(args, "project"), title=getattr(args, "title", "Sprint"),
+                        goal=getattr(args, "goal", ""))
+            except Exception as exc:  # noqa: BLE001
+                print(f"[E4302] 错误: {exc}", file=sys.stderr)
+                return 1
+            print(f"sprint: {s['id']} | {s['title']}")
+            return 0
+
+        if action == "status":
+            if not target:
+                print("[E4303] 错误: project_id 必填", file=sys.stderr)
+                return 2
+            ps = _ps(str(root), target)
+            print(f"project: {ps['title']} | progress {ps['progress']['percentage']}% "
+                  f"({ps['progress']['completed']}/{ps['progress']['total']})")
+            for s in ps["sprints"]:
+                print(f"  sprint {s['title']}: {s['progress']['percentage']}% "
+                      f"({s['progress']['completed']}/{s['progress']['total']})")
+            return 0
+
+        if action == "replan":
+            if not getattr(args, "project", "") or not getattr(args, "req", ""):
+                print("[E4304] 错误: --project + --req 必填", file=sys.stderr)
+                return 2
+            rp = _rp(str(root), getattr(args, "project"), new_req_id=getattr(args, "req"),
+                     new_task_title=getattr(args, "title", "新任务"))
+            print(f"replan: affected {len(rp['affected_tasks'])} | new {rp['new_task_id'][:12]}")
+            return 0
+
+        if action == "approve":
+            if not target:
+                print("[E4305] 错误: task_id 必填", file=sys.stderr)
+                return 2
+            st = _tas(str(root), target)
+            if st == "NO_APPROVAL_REQUIRED":
+                print(f"approval: {target} 无需审批")
+                return 0
+            print(f"approval: {target} | 当前 {st} (通过 API 指定 approval_id 决策)")
+            return 1
+
+        if action == "list":
+            for p in _list(str(root)):
+                print(f"  {p['id']} | {p['title']} | {p['status']}")
+            return 0
+
+        return 1
 
     def tower_cmd(self, args: argparse.Namespace) -> int:
         """factory tower — Tower (K2): Control Tower。
@@ -7341,6 +7421,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_prod.add_argument("--input", default="{}", help="输入 JSON (run 用, 如 {'prompt': '...'})")
     p_prod.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     sub.add_parser("workflow", help="Workflow 列表 (S10): factory workflow list — 专业生产线")
+    # K3: Project OS CLI
+    p_proj = sub.add_parser("projectos", help="ProjectOS (K3): create/sprint/status/replan/approve — Real Project Operating Loop")
+    p_proj.add_argument("action", nargs="?", default="list",
+                        choices=["create", "sprint", "status", "replan", "approve", "list"])
+    p_proj.add_argument("target", nargs="?", help="project_id / sprint_id / task_id")
+    p_proj.add_argument("--title", default="项目", help="项目/迭代标题 (create/sprint 用)")
+    p_proj.add_argument("--conv", default="", help="conversation_id (create 用)")
+    p_proj.add_argument("--project", default="", help="project_id (sprint/replan 用)")
+    p_proj.add_argument("--goal", default="", help="迭代目标 (sprint 用)")
+    p_proj.add_argument("--req", default="", help="新 requirement_id (replan 用)")
+    p_proj.add_argument("--decision", default="approve", help="approve/reject (approve 用)")
+    p_proj.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+
     # K2: Control Tower CLI
     p_ct = sub.add_parser("tower", help="Tower (K2): overview/workforce/governance/realtime — Control Tower")
     p_ct.add_argument("action", nargs="?", default="overview",

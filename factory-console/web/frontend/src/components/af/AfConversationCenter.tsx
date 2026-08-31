@@ -558,7 +558,8 @@ function ToolCallList({ toolCalls, usage }: { toolCalls: Array<{ name?: string; 
             const name = tc.name ?? tc.tool ?? `Tool ${i + 1}`;
             const status = tc.status ?? 'ok';
             const params = tc.params ?? tc.args;
-            const paramsText = params != null ? (typeof params === 'string' ? params : JSON.stringify(params)) : '';
+            const paramsText = params != null ? (typeof params === 'string' ? params : JSON.stringify(params)) : '—';
+            const outText = tc.output != null && tc.output !== '' ? tc.output : '—';
             return (
               <div key={i} className="ai-tool-call">
                 <div className="ai-tool-call-head">
@@ -566,24 +567,20 @@ function ToolCallList({ toolCalls, usage }: { toolCalls: Array<{ name?: string; 
                   <span className="ai-tool-name">{name}</span>
                   <span className="ai-tool-status">{status === 'ok' ? '✓' : status === 'fail' ? '✕' : '…'}</span>
                 </div>
-                {(paramsText !== '' || (tc.output != null && tc.output !== '')) && (
-                  <table className="ai-tool-call-table">
-                    <tbody>
-                      {paramsText !== '' && (
-                        <tr>
-                          <td className="ai-tool-call-label">输入</td>
-                          <td className="ai-tool-call-val" title={paramsText}>{clip(paramsText)}</td>
-                        </tr>
-                      )}
-                      {tc.output != null && tc.output !== '' && (
-                        <tr>
-                          <td className="ai-tool-call-label">输出</td>
-                          <td className="ai-tool-call-val" title={tc.output}>{clip(tc.output)}</td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                )}
+                <table className="ai-tool-call-table">
+                  <thead>
+                    <tr>
+                      <th className="ai-tool-call-th">输入</th>
+                      <th className="ai-tool-call-th">输出</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td className="ai-tool-call-td" title={paramsText !== '—' ? paramsText : undefined}>{clip(paramsText)}</td>
+                      <td className="ai-tool-call-td" title={outText !== '—' ? outText : undefined}>{clip(outText)}</td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
             );
           })}

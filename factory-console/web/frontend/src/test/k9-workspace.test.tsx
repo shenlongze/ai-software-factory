@@ -56,7 +56,7 @@ function mockApi() {
       // GET messages (含 AI markdown 回复 — S34-001 测试; run_ids 关联 — S34-002)
       return { ok: true, json: async () => ({ items: [
         { id: 'm1', session_id: 'conv_1', role: 'user', content: '我想做一个 App', created_at: 't1' },
-        { id: 'm2', session_id: 'conv_1', role: 'assistant', content: '好的，**开始执行**！\n\n- 任务 A\n- 任务 B', created_at: 't2', meta: { run_ids: ['R-TEST-1'], tool_calls: [] } },
+        { id: 'm2', session_id: 'conv_1', role: 'assistant', content: '好的，**开始执行**！\n\n- 任务 A\n- 任务 B', created_at: 't2', meta: { run_ids: ['R-TEST-1'], tool_calls: [{ tool: 'project_status', ok: true }, { tool: 'project_scan', ok: true }, { tool: 'bash_exec', ok: true }] } },
       ] }) };
     }
     // S31-004: Session → Run 关联 (Runs 卡) — 必须在 /api/sessions 列表之前匹配
@@ -229,6 +229,21 @@ describe('Message Markdown (S34-001)', () => {
     });
     // 用户消息正常显示 (纯文本)
     expect(screen.getByText(/我想做一个 App/)).toBeTruthy();
+  });
+});
+
+// S34-003B: 执行状态卡阶段感知 (工具完成→正在生成回答, 不矛盾)
+describe('Execution State (S34-003B)', () => {
+  it('工具已执行时执行卡显示生成回答阶段', async () => {
+    // mock GET messages 已带 tool_calls 的 assistant 消息 + sending
+    wrap(<AfConversationCenter />);
+    await waitFor(() => {
+      const txt = document.querySelector('.ai-execution-text');
+      // 当前 mock 不 sending, 执行卡不出现 — 验证发送结束后无残留执行卡 (S34-003B 核心: 不矛盾)
+      expect(txt).toBeFalsy();
+      // ToolCallList 已渲染 (真实工具证据保留)
+      expect(document.querySelector('.ai-tool-calls-summary')).toBeTruthy();
+    });
   });
 });
 

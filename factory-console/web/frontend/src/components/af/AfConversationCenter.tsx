@@ -96,12 +96,18 @@ export function AfConversationCenter(): JSX.Element {
     }
   }, [ctx.activeId, ctx.sessions, ctx.selectSession]);
 
-  // 推导当前执行阶段文案 (优先从 thinking_steps, 否则用通用 sending)
+  // 推导当前执行阶段文案 — S34-003B: 感知工具完成阶段, 不显示矛盾状态
   const executionLabel = useMemo(() => {
     if (!ctx.sending) return null;
-    // 通用 (真实 phase 后端没返回时用这个) — S34-001 P0-3: 自然中文
+    // 有 thinking 步骤 → 正在分析; 否则通用
+    const last = ctx.messages[ctx.messages.length - 1];
+    const tc = (last?.meta as { tool_calls?: unknown[] } | undefined)?.tool_calls;
+    if (tc && tc.length > 0) {
+      // 工具已执行 → 正在生成最终回答 (不与 "已完成 N 个操作" 矛盾)
+      return '正在基于执行结果生成回答…';
+    }
     return '正在分析并执行你的请求…';
-  }, [ctx.sending]);
+  }, [ctx.sending, ctx.messages]);
 
   const handleSend = async () => {
     const text = input.trim();
@@ -198,21 +204,17 @@ export function AfConversationCenter(): JSX.Element {
               />
             ))}
 
-            {/* 发送中 — S34-001 P0-3: 自然 Working 状态 (非永久消息) */}
+            {/* 发送中 — S34-001 P0-3: 自然 Working 状态 (非永久消息, 轻量不抢视觉) */}
             {ctx.sending && (
               <div className="ai-msg ai-msg--ai" data-testid="af-execution-state">
                 <div className="ai-msg-avatar ai-msg-avatar--ai" aria-hidden="true">◆</div>
                 <div className="ai-msg-body">
                   <div className="ai-execution-card">
-                    <div className="ai-execution-head">
-                      <span className="ai-execution-title">AI Factory</span>
-                      <span className="ai-execution-status ai-execution-status--working">正在工作…</span>
-                    </div>
                     <div className="ai-execution-body">
-                      <span className="ai-execution-text">{executionLabel}</span>
                       <span className="ai-execution-dots" aria-hidden="true">
                         <span /><span /><span />
                       </span>
+                      <span className="ai-execution-text">{executionLabel}</span>
                     </div>
                   </div>
                 </div>

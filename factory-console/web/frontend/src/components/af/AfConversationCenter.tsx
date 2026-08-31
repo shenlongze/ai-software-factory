@@ -15,6 +15,7 @@ import { useConversation } from './ConversationContext';
 import { useI18n } from '../../i18n';
 import { api } from '../../api/client';
 import type { SessionRunSummary } from '../../models/types';
+import { renderMarkdown } from './markdown';
 import './af.css';
 
 // 执行阶段人话映射 (用于 "AI 正在做什么")
@@ -362,7 +363,8 @@ function MessageBubble({ role, content, meta }: MessageBubbleProps): JSX.Element
         {/* 角色标签 — 用户: "You", AI: "AI Factory" */}
         <div className="ai-msg-role">{isUser ? 'You' : 'AI Factory'}</div>
         <div className={`ai-msg-bubble ai-msg-bubble--${isUser ? 'user' : 'ai'}`}>
-          <div className="ai-msg-text">{content}</div>
+          {/* S34-001: AI 回复 + 用户输入都支持 Markdown (安全渲染, 零依赖) */}
+          <div className="ai-msg-text">{renderMarkdown(content)}</div>
 
           {/* AI 消息: 如果有 tool_calls, 渲染结构化执行卡片 */}
           {!isUser && meta?.tool_calls && meta.tool_calls.length > 0 && (

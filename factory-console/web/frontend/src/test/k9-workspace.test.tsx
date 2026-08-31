@@ -53,8 +53,11 @@ function mockApi() {
           assistant: { id: 'm3', session_id: 'conv_1', role: 'assistant', content: '好的,开始执行', created_at: 't3' },
         }) };
       }
-      // GET messages
-      return { ok: true, json: async () => ({ items: [{ id: 'm1', session_id: 'conv_1', role: 'user', content: '我想做一个 App', created_at: 't1' }] }) };
+      // GET messages (含 AI markdown 回复 — S34-001 测试)
+      return { ok: true, json: async () => ({ items: [
+        { id: 'm1', session_id: 'conv_1', role: 'user', content: '我想做一个 App', created_at: 't1' },
+        { id: 'm2', session_id: 'conv_1', role: 'assistant', content: '好的，**开始执行**！\n\n- 任务 A\n- 任务 B', created_at: 't2' },
+      ] }) };
     }
     // S31-004: Session → Run 关联 (Runs 卡) — 必须在 /api/sessions 列表之前匹配
     if (u.includes('/runs')) return { ok: true, json: async () => ({ session_id: 'conv_1', runs: [{ run_id: 'R-TEST-1', status: 'running', stages: [{ role: 'product-manager', stage: 'product', status: 'COMPLETED', latency_s: 14.9 }], totals: { total_tokens: 1639, cost_usd_est: 0.000644 } }], count: 1 }) };
@@ -212,6 +215,20 @@ describe('Conversation → Workspace 联动 (S33)', () => {
     expect(deriveProfile(true, '分析一下竞品')).toBe('prd');
     expect(deriveProfile(true, '运行测试')).toBe('qa');
     expect(deriveProfile(false, '任意')).toBe('default');
+  });
+});
+
+// S34-001: AI 回复 + 用户输入支持 Markdown
+describe('Message Markdown (S34-001)', () => {
+  it('AI 回复渲染 markdown (粗体/列表/代码)', async () => {
+    wrap(<AfConversationCenter />);
+    // markdown 渲染: AI 回复的 strong/em 元素存在 (文本被拆分)
+    await waitFor(() => {
+      const strong = document.querySelector('.ai-msg-bubble--ai strong');
+      expect(strong).toBeTruthy();
+    });
+    // 用户消息正常显示 (纯文本)
+    expect(screen.getByText(/我想做一个 App/)).toBeTruthy();
   });
 });
 

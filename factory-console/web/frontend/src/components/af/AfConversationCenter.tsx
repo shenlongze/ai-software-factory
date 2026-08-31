@@ -44,6 +44,8 @@ export function AfConversationCenter(): JSX.Element {
   const [input, setInput] = useState('');
   const [runs, setRuns] = useState<SessionRunSummary[]>([]);
   const [expandedRun, setExpandedRun] = useState<string | null>(null);
+  // S34-001 P0-5: Run 卡默认展开但可折叠 (执行上下文, 非消息)
+  const [runsCollapsed, setRunsCollapsed] = useState(false);
   // S31-006: Command Center — Active Work + Recent Results (真实 opsOverview)
   const [overview, setOverview] = useState<{ projects?: { running?: number; total?: number }; recent_activity?: Array<{ event_type?: string; timestamp?: string; trace_id?: string }> } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -96,8 +98,8 @@ export function AfConversationCenter(): JSX.Element {
   // 推导当前执行阶段文案 (优先从 thinking_steps, 否则用通用 sending)
   const executionLabel = useMemo(() => {
     if (!ctx.sending) return null;
-    // 通用 (真实 phase 后端没返回时用这个)
-    return 'AI Factory is working…';
+    // 通用 (真实 phase 后端没返回时用这个) — S34-001 P0-3: 自然中文
+    return '正在分析并执行你的请求…';
   }, [ctx.sending]);
 
   const handleSend = async () => {
@@ -185,15 +187,15 @@ export function AfConversationCenter(): JSX.Element {
               <MessageBubble key={m.id ?? idx} role={m.role} content={m.content} meta={m.meta ?? undefined} />
             ))}
 
-            {/* 发送中 — 显示具体执行状态, 不要 "Thinking..." */}
-            {ctx.sending && executionLabel && (
+            {/* 发送中 — S34-001 P0-3: 自然 Working 状态 (非永久消息) */}
+            {ctx.sending && (
               <div className="ai-msg ai-msg--ai" data-testid="af-execution-state">
                 <div className="ai-msg-avatar ai-msg-avatar--ai" aria-hidden="true">◆</div>
                 <div className="ai-msg-body">
                   <div className="ai-execution-card">
                     <div className="ai-execution-head">
                       <span className="ai-execution-title">AI Factory</span>
-                      <span className="ai-execution-status">Working</span>
+                      <span className="ai-execution-status ai-execution-status--working">正在工作…</span>
                     </div>
                     <div className="ai-execution-body">
                       <span className="ai-execution-text">{executionLabel}</span>
@@ -206,16 +208,17 @@ export function AfConversationCenter(): JSX.Element {
               </div>
             )}
 
-            {/* S30-004 P0-2: 真实 Run 状态卡 (来自 /api/sessions/{id}/runs, 非前端模拟) */}
+            {/* S30-004 P0-2 + S34-001 P0-5: 真实 Run 状态卡 — 执行上下文 (非第二条 AI 消息) */}
             {!ctx.sending && runs.length > 0 && (
-              <div className="ai-msg ai-msg--ai" data-testid="af-runs-card">
-                <div className="ai-msg-avatar ai-msg-avatar--ai" aria-hidden="true">◆</div>
-                <div className="ai-msg-body">
-                  <div className="ai-runs-card">
-                    <div className="ai-execution-head">
-                      <span className="ai-execution-title">Runs</span>
-                      <span className="ai-execution-status">{runs.length} 次执行</span>
-                    </div>
+              <div className="ai-run-context" data-testid="af-runs-card">
+                <div className="ai-run-context-head">
+                  <span className="ai-run-context-label">执行中 · {runs.length} 个 Run</span>
+                  <span className="ai-run-context-toggle" role="button" aria-label="折叠/展开执行" onClick={() => setRunsCollapsed(!runsCollapsed)}>
+                    {runsCollapsed ? '展开 ▾' : '收起 ▴'}
+                  </span>
+                </div>
+                {!runsCollapsed && (
+                  <div className="ai-run-context-body">
                     {runs.map((r) => (
                       <div key={r.run_id}>
                         <button
@@ -262,7 +265,7 @@ export function AfConversationCenter(): JSX.Element {
                       </div>
                     ))}
                   </div>
-                </div>
+                )}
               </div>
             )}
             <div ref={bottomRef} />
@@ -372,25 +375,34 @@ function MessageBubble({ role, content, meta }: MessageBubbleProps): JSX.Element
 }
 
 function ToolCallList({ toolCalls }: { toolCalls: Array<{ name?: string; tool?: string; args?: Record<string, unknown>; status?: string }> }): JSX.Element {
-  // 只显示前 4 个 (避免信息过载)
-  const visible = toolCalls.slice(0, 4);
+  // S34-001 P0-4: 默认 compact — 执行证据融入对话, 不抢占主视觉
+  const [open, setOpen] = useState(false);
+  const okCount = toolCalls.filter((tc) => (tc.status ?? 'ok') === 'ok').length;
   const count = toolCalls.length;
+  const visible = open ? toolCalls : toolCalls.slice(0, 4);
 
   return (
     <div className="ai-tool-calls">
-      <div className="ai-tool-calls-title">Workforce executed {count} actions</div>
-      {visible.map((tc, i) => {
-        const name = tc.name ?? tc.tool ?? `Tool ${i + 1}`;
-        const status = tc.status ?? 'ok';
-        return (
-          <div key={i} className="ai-tool-call">
-            <span className={`ai-tool-dot ai-tool-dot--${status}`} aria-hidden="true" />
-            <span className="ai-tool-name">{name}</span>
-            <span className="ai-tool-status">{status === 'ok' ? '✓' : status === 'fail' ? '✕' : '…'}</span>
-          </div>
-        );
-      })}
-      {count > 4 && <div className="ai-tool-more">+ {count - 4} more…</div>}
+      <button type="button" className="ai-tool-calls-summary" onClick={() => setOpen(!open)}>
+        <span className="ai-tool-calls-title">✓ 已完成 {okCount} 个操作</span>
+        <span className="ai-tool-calls-toggle">{open ? '收起 ▴' : '展开 ▾'}</span>
+      </button>
+      {open && (
+        <div className="ai-tool-calls-detail">
+          {visible.map((tc, i) => {
+            const name = tc.name ?? tc.tool ?? `Tool ${i + 1}`;
+            const status = tc.status ?? 'ok';
+            return (
+              <div key={i} className="ai-tool-call">
+                <span className={`ai-tool-dot ai-tool-dot--${status}`} aria-hidden="true" />
+                <span className="ai-tool-name">{name}</span>
+                <span className="ai-tool-status">{status === 'ok' ? '✓' : status === 'fail' ? '✕' : '…'}</span>
+              </div>
+            );
+          })}
+          {count > 4 && <div className="ai-tool-more">+ {count - 4} more…</div>}
+        </div>
+      )}
     </div>
   );
 }

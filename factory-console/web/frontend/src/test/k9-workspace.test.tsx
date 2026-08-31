@@ -91,7 +91,7 @@ describe('AfWorkspace (K9 右栏)', () => {
     wrap(<AfWorkspace />);
     await waitFor(() => expect(screen.getByRole('tab', { name: /预览/ })).toBeTruthy());
     fireEvent.click(screen.getByRole('tab', { name: /预览/ }));
-    expect(screen.getByText(/产物预览会在这里显示/)).toBeTruthy();
+    expect(screen.getByText(/暂无可预览产物/)).toBeTruthy();
   });
 });
 

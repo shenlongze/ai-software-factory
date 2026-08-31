@@ -21,6 +21,13 @@
 - BrowserWorkspace 保留 (Tab 骨架来源, 未来扩展 Code/Preview 数据)
 - 后端 OS 零改动 (全复用现有 API)
 
+## 2b. Workspace 数据接入 (v1.1.361 后续补强)
+- **CodePanel**: 接真实 /api/artifacts + /api/artifacts/{id}/content (文件列表 + 代码内容)
+- **PreviewPanel**: 接真实产物 (web/markdown/html/doc 类型过滤 + content)
+- **DiffPanel**: 接真实产物 (diff/code/patch 类型过滤)
+- **EvidencePanel**: 接真实 /api/ops/drill (task 验证状态投影)
+- 全部 UI 零业务状态 (API 驱动, 失败安全空态)
+
 ## 3. 测试
 ```
 K9 新组件: k9-workspace 6/6 (中栏/右栏/左栏 + 联动)

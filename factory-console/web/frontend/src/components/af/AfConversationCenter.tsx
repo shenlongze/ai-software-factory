@@ -19,6 +19,16 @@ import './af.css';
 
 // 执行阶段人话映射 (用于 "AI 正在做什么")
 
+// S31-004: 角色人话标签 (不暴露内部角色名给普通用户)
+const ROLE_LABELS: Record<string, string> = {
+  'product-manager': '产品经理',
+  'uxui': 'UX/UI 设计',
+  'architect': '架构设计',
+  'developer': '开发',
+  'tester': '测试',
+  'release': '发布',
+};
+
 const SUGGESTED_PROMPTS: ReadonlyArray<string> = [
   'Build a ScorePocket app',
   'Analyze competitors and write PRD',
@@ -33,6 +43,7 @@ export function AfConversationCenter(): JSX.Element {
   const ctx = useConversation();
   const [input, setInput] = useState('');
   const [runs, setRuns] = useState<SessionRunSummary[]>([]);
+  const [expandedRun, setExpandedRun] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const hasMessages = ctx.messages.length > 0;
@@ -163,14 +174,47 @@ export function AfConversationCenter(): JSX.Element {
                       <span className="ai-execution-status">{runs.length} 次执行</span>
                     </div>
                     {runs.map((r) => (
-                      <div key={r.run_id} className="ai-run-item">
-                        <span className={`ai-run-status ai-run-status--${r.status}`}>
-                          {r.status === 'running' ? '●' : r.status === 'completed' ? '✓' : '✗'}
-                        </span>
-                        <span className="ai-run-id">{r.run_id}</span>
-                        <span className="ai-run-state">{r.status}</span>
-                        {r.totals && Object.keys(r.totals).length > 0 && (
-                          <span className="ai-run-totals">{JSON.stringify(r.totals)}</span>
+                      <div key={r.run_id}>
+                        <button
+                          type="button"
+                          className="ai-run-item"
+                          data-testid="af-run-item"
+                          onClick={() => setExpandedRun(expandedRun === r.run_id ? null : r.run_id)}
+                        >
+                          <span className={`ai-run-status ai-run-status--${r.status}`}>
+                            {r.status === 'running' ? '●' : r.status === 'completed' ? '✓' : '✗'}
+                          </span>
+                          <span className="ai-run-id">{r.run_id}</span>
+                          <span className="ai-run-state">{r.status}</span>
+                          <span className="ai-run-expand">{expandedRun === r.run_id ? '▾' : '▸'}</span>
+                        </button>
+                        {/* S31-004: Execution Detail (progressive disclosure, 真实 stages) */}
+                        {expandedRun === r.run_id && (
+                          <div className="ai-run-detail" data-testid="af-run-detail">
+                            {Array.isArray(r.stages) && r.stages.length > 0 ? (
+                              r.stages.map((s, i) => {
+                                const stage = s as { role?: string; stage?: string; status?: string; latency_s?: number };
+                                return (
+                                  <div key={i} className="ai-run-stage">
+                                    <span className={`ai-run-stage-state ai-run-stage-state--${(stage.status ?? '').toLowerCase()}`}>
+                                      {stage.status === 'COMPLETED' ? '✓' : stage.status === 'RUNNING' || stage.status === 'running' ? '●' : '○'}
+                                    </span>
+                                    <span className="ai-run-stage-role">{ROLE_LABELS[stage.role ?? ''] ?? stage.role ?? stage.stage ?? 'stage'}</span>
+                                    {stage.latency_s != null && (
+                                      <span className="ai-run-stage-latency">{stage.latency_s.toFixed(1)}s</span>
+                                    )}
+                                  </div>
+                                );
+                              })
+                            ) : (
+                              <div className="ai-run-detail-empty">暂无执行阶段</div>
+                            )}
+                            {r.totals && Object.keys(r.totals).length > 0 && (
+                              <div className="ai-run-totals-line">
+                                tokens {r.totals.total_tokens ?? '-'} · cost ${(r.totals.cost_usd_est ?? 0).toFixed(4)}
+                              </div>
+                            )}
+                          </div>
                         )}
                       </div>
                     ))}

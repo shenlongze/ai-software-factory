@@ -55,7 +55,9 @@ function mockApi() {
       // GET messages
       return { ok: true, json: async () => ({ items: [{ id: 'm1', session_id: 'conv_1', role: 'user', content: '我想做一个 App', created_at: 't1' }] }) };
     }
-    if (u.includes('/api/sessions')) return { ok: true, json: async () => ({ items: [{ id: 'conv_1', scope: 'company', project_id: null, title: '测试会话', status: 'active', created_at: 't0', updated_at: 't1', summary: null }], count: 1 }) };
+    // S31-004: Session → Run 关联 (Runs 卡) — 必须在 /api/sessions 列表之前匹配
+    if (u.includes('/runs')) return { ok: true, json: async () => ({ session_id: 'conv_1', runs: [{ run_id: 'R-TEST-1', status: 'running', stages: [{ role: 'product-manager', stage: 'product', status: 'COMPLETED', latency_s: 14.9 }], totals: { total_tokens: 1639, cost_usd_est: 0.000644 } }], count: 1 }) };
+    if (u.includes('/api/sessions')) return { ok: true, json: async () => ({ items: [{ id: 'conv_1', scope: 'company', project_id: null, title: '测试会话', status: 'active', created_at: 't0', updated_at: 't1', summary: null, run_ids: ['R-TEST-1'] }], count: 1 }) };
     return { ok: true, json: async () => ({}) };
   }));
 }
@@ -119,5 +121,23 @@ describe('AfContextNav (K9 左栏)', () => {
     await waitFor(() => expect(screen.getByText(/测试项目/)).toBeTruthy());
     // S31-002: Module 菜单 (待审批) 不进入一级导航
     expect(screen.queryByText(/待审批/)).toBeNull();
+  });
+});
+
+// S31-004: Run 卡 Execution Detail 展开 (真实 stages)
+describe('Run 卡 Execution Detail (S31-004)', () => {
+  it('渲染 Run 卡, 点击展开真实 stages (人话角色)', async () => {
+    wrap(<AfConversationCenter />);
+    // Run 卡出现 (activeId 自动选 conv_1 → runs 加载)
+    const item = await waitFor(() => screen.getByTestId('af-run-item'));
+    expect(item.textContent).toContain('R-TEST-1');
+    expect(item.textContent).toContain('running');
+    // 点击展开 → stages + tokens
+    fireEvent.click(item);
+    await waitFor(() => {
+      const detail = screen.getByTestId('af-run-detail');
+      expect(detail.textContent).toContain('产品经理'); // ROLE_LABELS 人话
+      expect(detail.textContent).toContain('tokens');
+    });
   });
 });

@@ -108,12 +108,13 @@ export function AfWorkspaceFrame({
   const conversation = useConversation();
 
   // 拖拽分隔条调整 A/C 列宽 (B 列中间 flex:1 自适应 — Founder: 中间可调整大小)
+  // S35-UI: pointer events + setPointerCapture (根治 mouse 事件丢失 — 拖拽不丢, 支持触屏)
   const dragRef = useRef<{ side: 'left' | 'right'; startX: number; startW: number } | null>(null);
   const widthRef = useRef({ sidebar: sidebarWidth, chat: chatWidth });
   widthRef.current = { sidebar: sidebarWidth, chat: chatWidth };
 
   useEffect(() => {
-    const onMove = (e: MouseEvent) => {
+    const onMove = (e: PointerEvent) => {
       const drag = dragRef.current;
       if (drag == null) return;
       const delta = e.clientX - drag.startX;
@@ -131,16 +132,22 @@ export function AfWorkspaceFrame({
       if (side === 'left') writeNum(SIDEBAR_WIDTH_KEY, widthRef.current.sidebar);
       if (side === 'right') writeNum(CHAT_WIDTH_KEY, widthRef.current.chat);
     };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
     return () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
     };
   }, []);
 
-  const startDrag = (side: 'left' | 'right') => (e: React.MouseEvent) => {
+  const startDrag = (side: 'left' | 'right') => (e: React.PointerEvent) => {
     e.preventDefault();
+    // S35-UI: setPointerCapture — 拖拽期间指针事件持续送达 (不丢事件)
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      /* 捕获失败 → 退化为 window 监听 (仍可用) */
+    }
     dragRef.current = {
       side,
       startX: e.clientX,
@@ -202,7 +209,7 @@ export function AfWorkspaceFrame({
             data-testid="af-resizer-left"
             role="separator"
             aria-label="调整侧栏宽度"
-            onMouseDown={startDrag('left')}
+            onPointerDown={startDrag('left')}
             onDoubleClick={() => {
               setSidebarWidth(SIDEBAR_WIDTH_DEFAULT);
               writeNum(SIDEBAR_WIDTH_KEY, SIDEBAR_WIDTH_DEFAULT);
@@ -220,7 +227,7 @@ export function AfWorkspaceFrame({
           data-testid="af-resizer-right"
           role="separator"
           aria-label="调整工作台宽度"
-          onMouseDown={startDrag('right')}
+          onPointerDown={startDrag('right')}
           onDoubleClick={() => {
             setChatWidth(CHAT_WIDTH_DEFAULT);
             writeNum(CHAT_WIDTH_KEY, CHAT_WIDTH_DEFAULT);

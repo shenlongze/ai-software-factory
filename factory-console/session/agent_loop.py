@@ -587,14 +587,45 @@ def dispatch(
                 save_from_plan(root, (ctx or {}).get("session_id") or "", plan)
             except Exception:  # noqa: BLE001 — 落卡失败不阻断
                 pass
+            # S34-CORE-C5: Requirement 真实落盘 (idea → Requirement Record)
+            try:
+                from factory_console.conversation_os import extract_requirement
+
+                _req = extract_requirement(
+                    root, (ctx or {}).get("session_id") or "",
+                    title=str(plan.get("goal") or "")[:80],
+                    description=str(args.get("detail") or "")[:500],
+                )
+                ctx["requirement_id"] = _req.get("id", "")
+            except Exception:  # noqa: BLE001 — 需求落盘失败不阻断
+                pass
+            # S34-CORE-C3: 真实 Approval Request (持久化 PENDING → 可批准/拒绝)
+            _approval_id = ""
+            try:
+                from factory_console.governance_service import request_approval
+
+                _ar = request_approval(
+                    root, production_run_id="", artifact_ids=[],
+                    requested_by="agent", subject_type="conversation",
+                    subject_id=(ctx or {}).get("session_id") or "",
+                )
+                _approval_id = str(_ar.get("approval_id") or _ar.get("id") or "")
+                ctx["pending_approval_id"] = _approval_id
+            except Exception:  # noqa: BLE001 — 审批创建失败不阻断 (诚实标注)
+                pass
             lines = [f"📋 开发计划 (请审批):\n目标: {plan.get('goal')}"]
             lines.append("任务:")
             for i, t in enumerate(plan.get("tasks") or [], 1):
                 lines.append(f"  {i}. [{t.get('priority')}] {t.get('title')} — {t.get('description') or ''}")
             lines.append("顺序: " + " → ".join(plan.get("order") or []))
             lines.append("验收: " + "；".join(plan.get("acceptance") or []))
+            if _approval_id:
+                lines.append(f"\n审批请求: {_approval_id} (PENDING — 说『同意/批准』进入执行)")
+            else:
+                lines.append("\n(审批系统不可用 — 计划已落卡, 说『同意/开始』继续)")
             lines.append("\n同意就回复『可以/开始』; 要改就告诉我改哪里。")
-            return {"ok": True, "output": "\n".join(lines), "pending_plan": True, "plan": plan}
+            return {"ok": True, "output": "\n".join(lines), "pending_plan": True,
+                    "plan": plan, "approval_id": _approval_id}
         # execute_plan
         plan = ctx.get("pending_plan") or {}
         if not plan:
@@ -639,37 +670,27 @@ def dispatch(
             files = search_code(root, project_id, kw)
             return {"ok": True, "output": "命中:\n" + "\n".join(f"- {f['file']}" for f in files) if files else "未命中"}
         if tool_id == "create_project":
-            # S34-P0-F2: 创建项目 (company 会话可用) — 真实注册 + 返回 project_id
+            # S34-P0-F2 + CORE-C2: 创建项目 (company 会话可用) — 统一走 ConsoleService Core
             _name = str(args.get("name") or "").strip()
             _goal = str(args.get("goal") or "").strip()
             if not _name:
                 return {"ok": False, "output": "创建项目需要 name (项目名称)。请向用户确认项目名称后重试。"}
-            _repo = str(args.get("repo_path") or str(root))
             try:
-                import sys as _sys
+                from factory_console.api.projects import create_project as _core_create
 
-                _org_path = str(Path(root).parent / "factory-org")
-                if _org_path not in _sys.path:
-                    _sys.path.insert(0, _org_path)
-                from org.cli import cmd_project_register
-                from types import SimpleNamespace as _NS
-
-                _r = cmd_project_register(
-                    Path(root),
-                    _NS(repo_path=_repo, name=_name, language=None, framework=None,
-                        build_command=None, test_command=None, project_type=None,
-                        goal=_goal or None, id=None, company="", departments=None),
+                _r = _core_create(
+                    service, idea=_goal or _name, name=_name,
+                    project_type=str(args.get("project_type") or ""),
+                    tech=str(args.get("tech") or ""),
                 )
             except Exception as exc:  # noqa: BLE001
                 return {"ok": False, "output": f"项目创建失败: {exc}"}
-            _proj = _r.get("project") or {}
-            _pid = _proj.get("id") or _proj.get("project_id") or ""
-            if not _r.get("ok") or not _pid:
-                return {"ok": False, "output": f"项目创建失败: {_r.get('error') or '未知原因'}"}
+            if _r is None:
+                return {"ok": False, "output": "项目创建失败 (Core 未返回项目)。"}
+            _pid = getattr(_r, "project_id", "") or str(_r.get("project_id") or "")
             return {"ok": True, "output": (
-                f"项目已创建: {_pid} | 名称: {_proj.get('name') or _name} | "
-                f"goal: {_goal or _proj.get('goal') or '—'}。"
-                f"项目 ID 为 {_pid}, 后续可用 project_status 查看进度。"
+                f"项目已创建: {_pid} | 名称: {getattr(_r, 'name', '') or _name} | "
+                f"goal: {_goal or '—'}。项目 ID 为 {_pid}, 后续可用 project_status 查看进度。"
             ), "project_id": _pid}
 
         if tool_id == "project_list":

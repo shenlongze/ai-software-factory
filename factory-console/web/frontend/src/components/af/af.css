@@ -8142,3 +8142,20 @@ body[data-bg='1'] .af-shell {
 .ai-tool-usage-bar { color: #4c8dff; letter-spacing: -1px; }
 .ai-tool-usage-tokens, .ai-tool-usage-time { color: #6b7280; }
 .ai-tool-usage-cost { color: #6b7280; font-weight: 600; }
+
+/* S34-CORE-C4: 计划/执行进度卡 */
+.ai-progress-card { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px 16px; margin: 8px 0 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+.ai-progress-card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.ai-progress-card-title { font-weight: 600; color: #1d232e; font-size: 13px; }
+.ai-progress-card-status { font-size: 11px; font-weight: 600; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; }
+.ai-progress-card-status--planning { background: #fef3c7; color: #92400e; }
+.ai-progress-card-status--running { background: #fef3c7; color: #92400e; }
+.ai-progress-card-status--completed { background: #d1fae5; color: #065f46; }
+.ai-progress-card-status--failed, .ai-progress-card-status--stale { background: #fee2e2; color: #991b1b; }
+.ai-progress-card-text { white-space: pre-wrap; font-size: 12px; color: #4b5563; margin: 0; font-family: ui-monospace, monospace; }
+.ai-progress-card-tasks { display: flex; flex-direction: column; gap: 4px; }
+.ai-progress-card-task { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #374151; }
+.ai-progress-card-task-dot { width: 8px; height: 8px; border-radius: 50%; background: #d1d5db; flex-shrink: 0; }
+.ai-progress-card-task-dot--done, .ai-progress-card-task-dot--completed { background: #34c759; }
+.ai-progress-card-task-dot--running { background: #f5a623; }
+.ai-progress-card-task-priority { margin-left: auto; font-size: 10px; color: #9ca3af; }

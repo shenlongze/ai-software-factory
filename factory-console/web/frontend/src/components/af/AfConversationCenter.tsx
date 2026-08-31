@@ -49,6 +49,8 @@ export function AfConversationCenter(): JSX.Element {
   const [runsCollapsed, setRunsCollapsed] = useState(false);
   // S31-006: Command Center — Active Work + Recent Results (真实 opsOverview)
   const [overview, setOverview] = useState<{ projects?: { running?: number; total?: number }; recent_activity?: Array<{ event_type?: string; timestamp?: string; trace_id?: string }> } | null>(null);
+  // S34-CORE-C4: Session 进度卡 (计划/执行持久化状态 — 后端 Source of Truth)
+  const [progressCard, setProgressCard] = useState<{ card: Record<string, unknown>; text: string; has_card: boolean } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const hasMessages = ctx.messages.length > 0;
@@ -78,6 +80,26 @@ export function AfConversationCenter(): JSX.Element {
       })
       .catch(() => {
         if (!cancelled) setRuns([]); // 失败静默 — 不伪造状态
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [ctx.activeId, ctx.sending]);
+
+  // S34-CORE-C4: 加载 Session 进度卡 (计划/执行状态 — 后端 Source of Truth)
+  useEffect(() => {
+    let cancelled = false;
+    if (ctx.activeId == null) {
+      setProgressCard(null);
+      return;
+    }
+    api
+      .sessionProgressCard(ctx.activeId)
+      .then((d) => {
+        if (!cancelled) setProgressCard(d);
+      })
+      .catch(() => {
+        if (!cancelled) setProgressCard(null); // 失败静默 — 不伪造
       });
     return () => {
       cancelled = true;
@@ -196,6 +218,30 @@ export function AfConversationCenter(): JSX.Element {
         ) : (
           // ========== 消息流 ==========
           <div className="ai-msg-stream">
+            {/* S34-CORE-C4: 计划/执行进度卡 (后端 Source of Truth — 不伪造) */}
+            {progressCard && progressCard.has_card && (
+              <div className="ai-progress-card" data-testid="af-progress-card">
+                <div className="ai-progress-card-head">
+                  <span className="ai-progress-card-title">📋 计划进度</span>
+                  <span className={`ai-progress-card-status ai-progress-card-status--${String((progressCard.card as { status?: string })?.status ?? 'planning').toLowerCase()}`}>
+                    {String((progressCard.card as { status?: string })?.status ?? 'planning')}
+                  </span>
+                </div>
+                {progressCard.text ? (
+                  <pre className="ai-progress-card-text">{progressCard.text}</pre>
+                ) : (
+                  <div className="ai-progress-card-tasks">
+                    {((progressCard.card as { tasks?: Array<{ title?: string; status?: string; priority?: string }> })?.tasks ?? []).map((t, i) => (
+                      <div key={i} className="ai-progress-card-task">
+                        <span className={`ai-progress-card-task-dot ai-progress-card-task-dot--${String(t.status ?? 'todo').toLowerCase()}`} />
+                        <span className="ai-progress-card-task-title">{t.title ?? ''}</span>
+                        <span className="ai-progress-card-task-priority">{t.priority ?? ''}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             {ctx.messages.map((m, idx) => (
               <MessageBubble
                 key={m.id ?? idx}

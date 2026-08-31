@@ -60,6 +60,7 @@ function mockApi() {
       ] }) };
     }
     // S31-004: Session → Run 关联 (Runs 卡) — 必须在 /api/sessions 列表之前匹配
+    if (u.includes('/api/sessions/') && u.includes('/progress-card')) return { ok: true, json: async () => ({ card: { status: 'planning', tasks: [{ title: '任务A', status: 'todo', priority: 'P0' }, { title: '任务B', status: 'done', priority: 'P1' }] }, text: '', has_card: true }) };
     if (u.includes('/runs')) return { ok: true, json: async () => ({ session_id: 'conv_1', runs: [{ run_id: 'R-TEST-1', status: 'running', stages: [{ role: 'product-manager', stage: 'product', status: 'COMPLETED', latency_s: 14.9 }], totals: { total_tokens: 1639, cost_usd_est: 0.000644 } }], count: 1 }) };
     if (u.includes('/api/sessions')) return { ok: true, json: async () => ({ items: [{ id: 'conv_1', scope: 'company', project_id: null, title: '测试会话', status: 'active', created_at: 't0', updated_at: 't1', summary: null, run_ids: ['R-TEST-1'] }], count: 1 }) };
     return { ok: true, json: async () => ({}) };
@@ -278,5 +279,20 @@ describe('Command Center (S31-006)', () => {
     expect(screen.getByText(/1 个任务运行中/)).toBeTruthy();
     expect(screen.getByText(/TOOL_CALL/)).toBeTruthy();
     globalThis.fetch = originalFetch;
+  });
+});
+
+// S34-CORE-C4: 进度卡渲染 (真实后端状态)
+describe('Progress Card (S34-CORE-C4)', () => {
+  it('消息流顶部渲染计划进度卡 (真实后端数据)', async () => {
+    await wrap(<AfConversationCenter />);
+    await waitFor(() => {
+      const card = document.querySelector('[data-testid="af-progress-card"]');
+      expect(card).toBeTruthy();
+      expect(card?.textContent).toContain('计划进度');
+      expect(card?.textContent).toContain('planning');
+      expect(card?.textContent).toContain('任务A');
+      expect(card?.textContent).toContain('任务B');
+    });
   });
 });

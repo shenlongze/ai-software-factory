@@ -153,6 +153,11 @@ export const api = {
   // S30-004 P0-2: Session → Run 真实关联查询 (production_run 状态)
   sessionRuns: (sessionId: string) =>
     getJson<{ session_id: string; runs: SessionRunSummary[]; count: number }>(`/api/sessions/${sessionId}/runs`),
+  // S34-CORE-C4: Session → 进度卡 (计划/执行持久化状态)
+  sessionProgressCard: (sessionId: string) =>
+    getJson<{ card: Record<string, unknown>; text: string; has_card: boolean }>(
+      `/api/sessions/${encodeURIComponent(sessionId)}/progress-card`
+    ),
   conversationQuality: (conversationId: string) =>
     getJson<ConversationQuality>(`/api/quality/${conversationId}`),
 
@@ -410,10 +415,6 @@ export const api = {
     (await getJson<{ items: RuntimeSessionPayload[] }>(
       `/api/runtime-sessions${status ? '?status=running' : ''}`,
     )).items,
-  runtimeSessionDetail: (sessionId: string) =>
-    getJson<RuntimeSessionPayload>(
-      `/api/runtime-sessions/${encodeURIComponent(sessionId)}`,
-    ),
   taskRuntimeSessions: async (taskId: string) =>
     (await getJson<{ items: RuntimeSessionPayload[] }>(`/api/tasks/${encodeURIComponent(taskId)}/runtime`)).items,
   // S10-016 Task 002: Agent Executor — 让 AI Employee 真正执行任务 (POST /api/runtime/execute)

@@ -588,15 +588,33 @@ def dispatch(
             except Exception:  # noqa: BLE001 — 落卡失败不阻断
                 pass
             # S34-CORE-C5: Requirement 真实落盘 (idea → Requirement Record)
+            # 注: extract_requirement 依赖 conv 实体 (conv_ 体系); Web 会话是
+            # console_sessions (sess- 体系) → 独立落盘 requirements.json (不依赖 conv)
             try:
-                from factory_console.conversation_os import extract_requirement
+                import json as _json
+                import uuid as _uuid
+                from datetime import datetime, timezone as _tz
 
-                _req = extract_requirement(
-                    root, (ctx or {}).get("session_id") or "",
-                    title=str(plan.get("goal") or "")[:80],
-                    description=str(args.get("detail") or "")[:500],
-                )
-                ctx["requirement_id"] = _req.get("id", "")
+                _req_dir = Path(root) / "requirements"
+                _req_dir.mkdir(parents=True, exist_ok=True)
+                _req_file = _req_dir / "requirements.json"
+                _reqs = []
+                if _req_file.is_file():
+                    _reqs = _json.loads(_req_file.read_text(encoding="utf-8"))
+                if not isinstance(_reqs, list):
+                    _reqs = []
+                _rid = f"req_{_uuid.uuid4().hex[:12]}"
+                _reqs.append({
+                    "id": _rid,
+                    "session_id": (ctx or {}).get("session_id") or "",
+                    "project_id": project_id,
+                    "title": str(plan.get("goal") or "")[:80],
+                    "description": str(args.get("detail") or "")[:500],
+                    "status": "VALIDATED",
+                    "created_at": datetime.now(_tz.utc).isoformat(),
+                })
+                _req_file.write_text(_json.dumps(_reqs, ensure_ascii=False, indent=2), encoding="utf-8")
+                ctx["requirement_id"] = _rid
             except Exception:  # noqa: BLE001 — 需求落盘失败不阻断
                 pass
             # S34-CORE-C3: 真实 Approval Request (持久化 PENDING → 可批准/拒绝)

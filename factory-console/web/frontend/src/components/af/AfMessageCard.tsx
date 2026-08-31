@@ -10,24 +10,12 @@ import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { useConversation } from './ConversationContext';
 import { api } from '../../api/client';
+import type { MessageCardPayload } from '../../models/types';
 import './af.css';
 
-export type CardType = 'analysis' | 'prd' | 'task_tree' | 'execution' | 'diagnosis' | 'approval';
+export type CardType = MessageCardPayload['type'];
 
-export interface MessageCard {
-  type: CardType;
-  title: string;
-  /** 确认项 (✓) 列表 */
-  done?: string[];
-  /** 待确认/警告项 (⚠) 列表 */
-  pending?: string[];
-  /** 摘要文本 */
-  summary?: string;
-  /** 关联实体 id (task/project/approval/artifact) */
-  refId?: string;
-  /** 风险等级 (审批卡) */
-  risk?: string;
-}
+export type MessageCard = MessageCardPayload;
 
 function CardShell({ icon, title, children }: { icon: string; title: string; children: ReactNode }): JSX.Element {
   return (

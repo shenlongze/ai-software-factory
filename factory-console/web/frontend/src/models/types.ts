@@ -873,6 +873,19 @@ export interface ConversationReply {
   intent: string;
   reply: { text: string; status: string };
   conversation_version: number;
+  /** K9: 消息卡片 payload (MessageCardView 消费; 缺省=纯文本)。 */
+  card?: MessageCardPayload;
+}
+
+/** K9: 消息卡片 payload 类型 (与后端 _make_card 契约一致)。 */
+export interface MessageCardPayload {
+  type: 'analysis' | 'prd' | 'task_tree' | 'execution' | 'diagnosis' | 'approval' | string;
+  title: string;
+  done?: string[];
+  pending?: string[];
+  summary?: string;
+  refId?: string;
+  risk?: string;
 }
 
 export interface ConversationDetail extends ConversationSummary {}

@@ -11,7 +11,8 @@ import { useEffect, useRef, useState } from 'react';
 import { api } from '../../api/client';
 import { useI18n } from '../../i18n';
 import type { ConversationSummary, ConversationReply } from '../../models/types';
-import { MessageCardView, type MessageCard } from './AfMessageCard';
+import { MessageCardView } from './AfMessageCard';
+import type { MessageCardPayload } from '../../models/types';
 import { useConversation } from './ConversationContext';
 import { tabForIntent } from './AfWorkspace';
 import './af.css';
@@ -20,7 +21,7 @@ interface UiMessage {
   content: string;
   intent: string;
   actor: string;
-  card?: MessageCard;
+  card?: MessageCardPayload;
 }
 
 export function AfConversationCenter(): JSX.Element {
@@ -91,7 +92,10 @@ export function AfConversationCenter(): JSX.Element {
     setMessages((m) => [...m, { content: text, intent: 'user', actor: 'human' }]);
     try {
       const r: ConversationReply = await api.sendConversationMessage(activeId, text);
-      setMessages((m) => [...m, { content: r.reply.text, intent: r.intent, actor: 'system' }]);
+      setMessages((m) => [
+        ...m,
+        { content: r.reply.text, intent: r.intent, actor: 'system', card: r.card },
+      ]);
       // K9 联动: reply intent → 右栏 Workspace Tab
       setWorkspaceTab(tabForIntent(r.intent));
       // 刷新 work 状态 (真实投影)

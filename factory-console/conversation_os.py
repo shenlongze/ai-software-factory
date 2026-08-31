@@ -181,27 +181,64 @@ def _make_reply(root: Path | str, conv: dict[str, Any], message: str,
     if intent == "DISCUSS":
         if not goal:
             return {"text": f"好的,我们聊聊「{_topic_of(message)}」。能告诉我它的目标用户是谁、要解决什么问题吗?",
-                    "status": "CLARIFYING"}
+                    "status": "CLARIFYING",
+                    "card": _make_card("analysis", message, goal, confirmed)}
         return {"text": f"收到。我们正在做「{goal}」,当前已确认: {len(confirmed)} 条决策。"
-                        f"关于「{_topic_of(message)}」,你希望怎么处理?", "status": "DISCUSSING"}
+                        f"关于「{_topic_of(message)}」,你希望怎么处理?", "status": "DISCUSSING",
+                "card": _make_card("analysis", message, goal, confirmed)}
     if intent == "DECIDE":
         return {"text": f"好的,已记录决策: 「{message}」。需要我基于这个开始执行吗?",
-                "status": "DECISION_RECORDED"}
+                "status": "DECISION_RECORDED",
+                "card": _make_card("prd", message, goal, confirmed)}
     if intent == "APPROVE":
         if last_intent in ("DECIDE", "DISCUSS") and not confirmed:
             return {"text": "我还没看到待确认的提案。你希望我做什么?", "status": "NEED_PROPOSAL"}
         return {"text": "已确认。我可以开始执行了——回复「帮我做」或「开始」即可。",
-                "status": "APPROVED"}
+                "status": "APPROVED",
+                "card": _make_card("task_tree", message, goal, confirmed)}
     if intent == "EXECUTE":
         return {"text": f"明白,目标是「{goal or _extract_goal(message)}」。我会组织执行并返回真实结果。",
-                "status": "WILL_EXECUTE"}
+                "status": "WILL_EXECUTE",
+                "card": _make_card("execution", message, goal, confirmed)}
     if intent == "ASK_STATUS":
-        return {"text": _status_reply(root, conv), "status": "STATUS"}
+        return {"text": _status_reply(root, conv), "status": "STATUS",
+                "card": _make_card("task_tree", message, goal, confirmed)}
     if intent == "CLARIFY":
         return {"text": f"简单说: 我们在做「{goal or '还没定目标'}」。"
                         f"已确认决策: {confirmed if confirmed else '暂无'}。你想澄清哪部分?",
-                "status": "CLARIFYING"}
+                "status": "CLARIFYING",
+                "card": _make_card("analysis", message, goal, confirmed)}
     return {"text": f"收到: {message[:60]}{'…' if len(message) > 60 else ''}", "status": "RECEIVED"}
+
+
+def _make_card(card_type: str, message: str, goal: str,
+               confirmed: list[str]) -> dict[str, Any]:
+    """消息卡片 payload (K9 Human Workspace: 前端 MessageCardView 消费)。
+
+    6 种: analysis/prd/task_tree/execution/diagnosis/approval — 全部真实状态派生。
+    """
+    topic = _topic_of(message)
+    if card_type == "analysis":
+        return {"type": "analysis", "title": "需求分析",
+                "done": [f"核心话题: {goal or topic}"],
+                "pending": ["目标用户是谁?", "要解决什么问题?"],
+                "summary": f"正在讨论「{goal or topic}」"}
+    if card_type == "prd":
+        return {"type": "prd", "title": "Product Requirement",
+                "summary": f"已确认: {confirmed[-1] if confirmed else topic}"}
+    if card_type == "task_tree":
+        return {"type": "task_tree", "title": "任务树",
+                "summary": f"目标: {goal or topic}"}
+    if card_type == "execution":
+        return {"type": "execution", "title": "执行中",
+                "summary": f"准备执行: {goal or topic}"}
+    if card_type == "diagnosis":
+        return {"type": "diagnosis", "title": "执行遇到问题",
+                "summary": f"{goal or topic}"}
+    if card_type == "approval":
+        return {"type": "approval", "title": "需要你的批准",
+                "summary": f"操作: {topic}", "risk": "HIGH"}
+    return {"type": card_type, "title": "通知", "summary": topic}
 
 
 def _status_reply(root: Path | str, conv: dict[str, Any]) -> str:

@@ -612,7 +612,13 @@ export const api = {
       const res = await fetch(`/api/sessions/${encodeURIComponent(id)}/messages?stream=1`, {
         method: 'POST',
         headers: { Accept: 'text/event-stream', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message }),
+        body: JSON.stringify({
+          message,
+          // P0-05: correlation id — 前端生成, 后端幂等去重 (防重试/双击重复)
+          client_msg_id: typeof crypto !== 'undefined' && crypto.randomUUID
+            ? crypto.randomUUID()
+            : `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        }),
       });
       if (!res.ok || !res.body) return false;
       const reader = res.body.getReader();

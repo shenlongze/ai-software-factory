@@ -126,6 +126,11 @@ class SessionStore:
         self._lock = threading.RLock()
         self._data: dict[str, Any] = {"sessions": {}, "messages": {}}
         self._load()
+        # P0-03: 启动 migration — 清洗历史 Tool Protocol 泄漏 (幂等)
+        try:
+            self._migrate_clean_protocol()
+        except Exception:  # noqa: BLE001 — migration 失败不阻塞
+            pass
 
     # ------------------------------------------------------------ 持久化
     def _load(self) -> None:
@@ -155,6 +160,38 @@ class SessionStore:
             return True
         except OSError:
             return False  # 不可写 → 静默 (会话记录尽力而为)
+
+    # ------------------------------------------------------------ migration
+    def _migrate_clean_protocol(self) -> int:
+        """P0-03: 启动时清洗历史 Tool Protocol 泄漏 (幂等)。
+
+        解决: 磁盘清理被内存 _data + _save 写回覆盖 — 加载时就清洗内存,
+        下次 _save 自然写干净盘。只动 assistant content 里的协议残留,
+        不损坏真实用户内容; 无协议 → 不写盘。
+        """
+        try:
+            from .session.agent_loop import _strip_fake_toolcalls
+
+            cleaned = 0
+            for msgs in self._data.get("messages", {}).values():
+                if not isinstance(msgs, list):
+                    continue
+                for m in msgs:
+                    if not isinstance(m, dict):
+                        continue
+                    if m.get("role") != "assistant" or not m.get("content"):
+                        continue
+                    c = str(m["content"])
+                    if "<tool_calls>" in c or "<invoke" in c or "DSML" in c:
+                        cleaned_c = _strip_fake_toolcalls(c)
+                        if cleaned_c != c:
+                            m["content"] = cleaned_c
+                            cleaned += 1
+            if cleaned:
+                self._save()
+            return cleaned
+        except Exception:  # noqa: BLE001 — migration 失败不阻塞加载
+            return 0
 
     # ------------------------------------------------------------ 会话
     def list_sessions(
@@ -324,6 +361,15 @@ class SessionStore:
             s = self._data["sessions"].get(session_id)
             if s is None:
                 return None
+            # P0-05: client_msg_id 幂等去重 — 同 id 重试返回已有消息 (防重复)
+            if meta and meta.get("client_msg_id"):
+                existing = next(
+                    (m for m in self._data["messages"].get(session_id, [])
+                     if (m.get("meta") or {}).get("client_msg_id") == meta["client_msg_id"]),
+                    None,
+                )
+                if existing is not None:
+                    return existing
             record = {
                 "id": _new_id("msg"),
                 "session_id": session_id,
@@ -359,8 +405,11 @@ def send_message(
     llm_fn: Callable[[str], str | None] | None = None,
     max_chars: int = DEFAULT_MAX_CHARS,
     assistant_meta: dict[str, Any] | None = None,
+    client_msg_id: str | None = None,
 ) -> dict[str, Any]:
     """追加用户消息 + 生成 assistant 回复 (真实 LLM / 诚实降级)。
+
+    client_msg_id (P0-05): 幂等去重 — 同 id 重试返回已有消息, 不重复执行。
 
     返回 {user, assistant}; 会话不存在 → raise ValueError (404 语义)。
     llm_fn 可注入 (测试确定性); None → 真实 LLM (不可用 → 诚实引导)。
@@ -371,7 +420,24 @@ def send_message(
     session = store.get_session(session_id)
     if session is None:
         raise ValueError("会话不存在")
-    user_msg = store.append_message(session_id, "user", text)
+    # P0-05: client_msg_id 幂等 — 已处理过则返回已有消息 (不重复执行 LLM)
+    if client_msg_id:
+        existing = next(
+            (m for m in store.list_messages(session_id)
+             if (m.get("meta") or {}).get("client_msg_id") == client_msg_id),
+            None,
+        )
+        if existing is not None:
+            # 找到同 id 的 user 消息 → 返回缓存结果 (用户消息 + 后续 assistant)
+            msgs = store.list_messages(session_id)
+            idx = next((i for i, m in enumerate(msgs) if m["id"] == existing["id"]), -1)
+            if idx >= 0 and idx + 1 < len(msgs):
+                return {"user": existing, "assistant": msgs[idx + 1],
+                        "session": store.get_session(session_id), "idempotent": True}
+    user_msg = store.append_message(
+        session_id, "user", text,
+        meta={"client_msg_id": client_msg_id} if client_msg_id else None,
+    )
     if user_msg is None:
         raise ValueError("会话不存在")
 

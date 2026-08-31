@@ -8019,6 +8019,8 @@ body[data-bg='1'] .af-shell {
 .ai-run-status--running { color: #f5a623; }
 .ai-run-status--completed { color: #34c759; }
 .ai-run-status--failed, .ai-run-status--error, .ai-run-status--missing { color: #ff3b30; }
+.ai-run-status--cancelled { color: #8e8e93; }
+.ai-run-status--stale { color: #ff9500; }
 .ai-run-id { font-family: ui-monospace, monospace; color: #374151; } /* S34-001 P0-2: #555→#374151 */
 .ai-run-state { text-transform: uppercase; font-size: 11px; font-weight: 600; color: #6b7280; } /* #888→#6b7280 */
 .ai-run-totals { color: #6b7280; font-size: 11px; } /* #999→#6b7280 */

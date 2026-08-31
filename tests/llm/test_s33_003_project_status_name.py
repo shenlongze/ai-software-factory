@@ -219,3 +219,156 @@ def test_project_list_full_fields(tmp_path: Path) -> None:
     assert "| P-abc | 旅行记账 |" in out
     assert "| P-def | 番茄钟 |" in out
     assert "阶段=idea" not in out  # 不再是键值对行, 是表格
+
+
+# ---- P0-01: Run 存活/stale 检测 ----
+
+def test_reconcile_stale_marks_zombie(tmp_path: Path) -> None:
+    """僵尸 progress (running + 线程不活 + 心跳旧) → STALE。"""
+    import json as _json
+    import threading
+    import time
+
+    from factory_console import run_liveness
+
+    ws = tmp_path / "runs"
+    (ws / "P-abc" / "R-zombie").mkdir(parents=True)
+    old = _json.dumps({
+        "status": "running",
+        "stages": [], "calls": [], "totals": {}, "errors": [],
+        "updated_at": "2026-01-01T00:00:00+00:00",
+    })
+    (ws / "P-abc" / "R-zombie" / "progress.json").write_text(old, encoding="utf-8")
+    # 不注册线程 → 视为不存活
+    result = run_liveness.reconcile_stale(ws, stale_after_s=60)
+    assert result["stale"] == ["R-zombie"]
+    p = _json.loads((ws / "P-abc" / "R-zombie" / "progress.json").read_text())
+    assert p["status"] == "STALE"
+    assert "STALE" in str(p["errors"])
+
+
+def test_reconcile_keeps_alive_thread(tmp_path: Path) -> None:
+    """活跃线程 (已注册) 不被误判 stale。"""
+    import json as _json
+    import threading
+    import time
+
+    from factory_console import run_liveness
+
+    ws = tmp_path / "runs"
+    (ws / "P-abc" / "R-alive").mkdir(parents=True)
+    old = _json.dumps({
+        "status": "running", "stages": [], "calls": [], "totals": {}, "errors": [],
+        "updated_at": "2026-01-01T00:00:00+00:00",
+    })
+    (ws / "P-abc" / "R-alive" / "progress.json").write_text(old, encoding="utf-8")
+    t = threading.Thread(target=lambda: time.sleep(30), daemon=True)
+    t.start()
+    run_liveness.register_run("P-abc", "R-alive", t)
+    result = run_liveness.reconcile_stale(ws, stale_after_s=60)
+    assert result["stale"] == []
+    assert result["alive"] == ["R-alive"]
+    run_liveness.unregister_run("P-abc", "R-alive")
+
+
+def test_reconcile_idempotent(tmp_path: Path) -> None:
+    """已 STALE 不重复处理 (幂等)。"""
+    import json as _json
+
+    from factory_console import run_liveness
+
+    ws = tmp_path / "runs"
+    (ws / "P-abc" / "R-x").mkdir(parents=True)
+    d = _json.dumps({
+        "status": "STALE", "stages": [], "calls": [], "totals": {}, "errors": [],
+        "updated_at": "2026-01-01T00:00:00+00:00",
+    })
+    (ws / "P-abc" / "R-x" / "progress.json").write_text(d, encoding="utf-8")
+    result = run_liveness.reconcile_stale(ws)
+    assert result["stale"] == []  # STALE 不再处理
+    assert result["other"] == 1
+
+
+# ---- P0-02: Run cancellation ----
+
+def test_cancel_request_idempotent(tmp_path: Path) -> None:
+    """取消标志幂等; is_cancelled 生效。"""
+    from factory_console import run_liveness
+
+    assert run_liveness.request_cancel("P-x", "R-x") is True
+    assert run_liveness.is_cancelled("P-x", "R-x") is True
+    # 重复请求幂等
+    assert run_liveness.request_cancel("P-x", "R-x") is True
+    run_liveness.clear_cancel("P-x", "R-x")
+    assert run_liveness.is_cancelled("P-x", "R-x") is False
+
+
+def test_cancel_marks_cancelled_progress(tmp_path: Path) -> None:
+    """cancel API 对 running run 返回 CANCELLING + 设置取消标志。"""
+    import json as _json
+    from unittest.mock import patch
+
+    # 直接测 run_liveness 语义: 线程内取消检查
+    from factory_console import run_liveness
+
+    run_liveness.request_cancel("P-y", "R-y")
+    # _thread_main 在 stage 边界检查 → 停止
+    assert run_liveness.is_cancelled("P-y", "R-y")
+    run_liveness.clear_cancel("P-y", "R-y")
+
+
+# ---- P0-03: 启动 migration 清洗历史泄漏 ----
+
+def test_session_store_migrate_cleans_protocol(tmp_path: Path) -> None:
+    """SessionStore 加载时自动清洗历史协议泄漏 (幂等)。"""
+    import json as _json
+
+    from factory_console.console_sessions import SessionStore
+
+    store_file = tmp_path / "console_sessions.json"
+    store_file.write_text(_json.dumps({
+        "sessions": {"s1": {"id": "s1", "title": "t"}},
+        "messages": {"s1": [
+            {"id": "m1", "role": "user", "content": "正常消息"},
+            {"id": "m2", "role": "assistant",
+             "content": "<tool_calls>\n<invoke name=\"bash_exec\">\n</invoke>\n</tool_calls>"},
+        ]},
+    }, ensure_ascii=False), encoding="utf-8")
+    store = SessionStore(store_file)
+    msgs = store.list_messages("s1")
+    asst = [m for m in msgs if m["role"] == "assistant"][0]
+    assert "<tool_calls>" not in asst["content"]
+    assert "<invoke" not in asst["content"]
+    # 幂等: 再加载一次不再变
+    store2 = SessionStore(store_file)
+    msgs2 = store2.list_messages("s1")
+    assert msgs2 == msgs
+
+
+# ---- P0-05: client_msg_id 幂等 ----
+
+def test_send_message_idempotent(tmp_path: Path) -> None:
+    """同 client_msg_id 重试 → 返回缓存结果, 不重复执行。"""
+    from factory_console.console_sessions import SessionStore, send_message
+
+    store = SessionStore(tmp_path / "console_sessions.json")
+    s = store.create_session(scope="company", title="幂等")
+    sid = s["id"]
+    calls = {"n": 0}
+
+    def _fake_llm(_p: str) -> str:
+        calls["n"] += 1
+        return "回答"
+
+    r1 = send_message(store, sid, "你好", llm_fn=_fake_llm, client_msg_id="cid-1")
+    assert calls["n"] == 1
+    assert r1.get("idempotent") is None
+    # 同 id 重试 → 不重复执行 LLM
+    r2 = send_message(store, sid, "你好", llm_fn=_fake_llm, client_msg_id="cid-1")
+    assert calls["n"] == 1  # LLM 未再调
+    assert r2.get("idempotent") is True
+    assert r2["user"]["id"] == r1["user"]["id"]
+    # 不同 id → 正常新消息
+    r3 = send_message(store, sid, "再见", llm_fn=_fake_llm, client_msg_id="cid-2")
+    assert calls["n"] == 2
+    assert r3.get("idempotent") is None

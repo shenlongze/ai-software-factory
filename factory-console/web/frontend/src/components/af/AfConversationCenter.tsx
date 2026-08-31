@@ -362,7 +362,7 @@ function MessageBubble({ role, content, meta, runs = [], expandedRunId, onToggle
                         onClick={() => onToggleRun?.(r.run_id)}
                       >
                         <span className={`ai-run-status ai-run-status--${r.status}`}>
-                          {r.status === 'running' ? '●' : r.status === 'completed' ? '✓' : '✗'}
+                          {r.status === 'running' ? '●' : r.status === 'completed' ? '✓' : r.status === 'cancelled' ? '⏹' : r.status === 'stale' ? '⚠' : '✗'}
                         </span>
                         <span className="ai-run-id">{r.run_id}</span>
                         <span className="ai-run-state">{r.status}</span>

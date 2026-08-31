@@ -226,6 +226,13 @@ def start_project_workflow(
             daemon=True,
             name=f"wf-{project_id}-{run_id}",
         )
+        # P0-01: 注册线程存活 (stale 检测用)
+        try:
+            import run_liveness as _liveness_mod  # 顶层 (同 console_sessions 体系)
+
+            _liveness_mod.register_run(project_id, run_id, thread)
+        except Exception:  # noqa: BLE001
+            pass
         thread.start()
     else:
         _thread_main(**kwargs)
@@ -238,14 +245,37 @@ def start_project_workflow(
 
 
 def _thread_main(**kwargs: Any) -> None:
-    """后台线程主体: 执行链 + 报告落盘 (异常 → 失败报告, 不拖垮进程)。"""
+    """后台线程主体: 执行链 + 报告落盘 (异常 → 失败报告, 不拖垮进程)。
+
+    P0-02: 取消支持 — 每 stage 边界检查 is_cancelled → 停止后续 + 标 CANCELLED。
+    """
     project_id: str = kwargs["project_id"]
     run_id: str = kwargs["run_id"]
     runs_dir: Path = kwargs["runs_dir"]
     report_path = _run_dirs(runs_dir, project_id, run_id)["report"]
+
+    def _check_cancel() -> bool:
+        try:
+            import run_liveness as _lv
+
+            return _lv.is_cancelled(project_id, run_id)
+        except Exception:  # noqa: BLE001
+            return False
+
     try:
-        report = run_project_chain(**kwargs)
-        report["status"] = "completed"
+        if _check_cancel():
+            _write_json(
+                report_path,
+                {"status": "cancelled", "project_id": project_id, "run_id": run_id,
+                 "error": "cancelled by user", "finished_at": _now()},
+            )
+            return
+        report = run_project_chain(**kwargs, check_cancel=_check_cancel)
+        if _check_cancel():
+            report["status"] = "cancelled"
+            report["error"] = "cancelled by user"
+        else:
+            report["status"] = "completed"
         report["finished_at"] = _now()  # run-status updated_at 数据源
         _write_json(report_path, report)
     except Exception as exc:  # noqa: BLE001 — 诚实失败报告
@@ -262,6 +292,13 @@ def _thread_main(**kwargs: Any) -> None:
     finally:
         with _RUNNING_LOCK:
             _RUNNING.discard(project_id)
+        # P0-01: 线程结束注销 (stale 检测不再视为存活)
+        try:
+            import run_liveness as _liveness_mod2
+
+            _liveness_mod2.unregister_run(project_id, run_id)
+        except Exception:  # noqa: BLE001
+            pass
 
 
 # ------------------------------------------------------------------ 执行链
@@ -276,6 +313,7 @@ def run_project_chain(
     events_db_path: Path,
     runs_dir: Path,
     chain_factory: Callable[..., dict[str, Any]] | None = None,
+    check_cancel: Callable[[], bool] | None = None,
 ) -> dict[str, Any]:
     """执行链 (生产 = 真实 LLM; 测试 = chain_factory 注入假链)。"""
     _setup_sys_path()
@@ -297,6 +335,7 @@ def run_project_chain(
                 idea=idea,
                 run_id=run_id,
                 runs_dir=runs_dir,
+                check_cancel=check_cancel,
             )
         return _real_chain(
             project_id=project_id,
@@ -307,6 +346,7 @@ def run_project_chain(
             logger=logger,
             wf_lifecycle=wf_lifecycle,
             runs_dir=runs_dir,
+            check_cancel=check_cancel,
         )
     finally:
         event_store.close()
@@ -322,6 +362,7 @@ def _real_chain(
     logger: Any,
     wf_lifecycle: Any,
     runs_dir: Path,
+    check_cancel: Callable[[], bool] | None = None,
 ) -> dict[str, Any]:
     """真实 6 阶段链 (S8-005 demo_full_chain 复用, 只参数化不重写)。"""
     from org.workflow import DevTestLoopRunner, WorkflowRunner, WorkflowStatus
@@ -354,6 +395,12 @@ def _real_chain(
         )
         return _finalize(
             recorder, started, wf1.status.value, wf_lifecycle, event_store, ids, project_dir
+        )
+    # P0-02: 设计链完成后取消检查 (用户取消 → 不再进入开发链)
+    if check_cancel is not None and check_cancel():
+        recorder.add_error("WF-DESIGN", "cancelled by user after design")
+        return _finalize(
+            recorder, started, "CANCELLED", wf_lifecycle, event_store, ids, project_dir
         )
 
     # 2) 开发测试发布链 WF-APP: development → testing → release (≤2 修复轮)

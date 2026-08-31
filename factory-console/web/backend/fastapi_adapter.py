@@ -230,6 +230,8 @@ class _ChatBody(BaseModel):
     """
 
     message: str
+    # P0-05: correlation id — 幂等去重 (防重试/双击重复)
+    client_msg_id: str | None = None
 
 
 class _SessionBody(BaseModel):
@@ -6353,6 +6355,57 @@ def build_app(
             pass
         return ok_list(msgs)
 
+    @app.post("/api/runs/{project_id}/{run_id}/cancel")
+    def api_run_cancel(project_id: str, run_id: str) -> dict[str, Any]:
+        """P0-02: 取消真实 Run。
+
+        - 请求取消标志 → 线程在 stage 边界停止 → 标 CANCELLED
+        - 幂等: 重复 cancel 返回当前状态 (不报错)
+        - 已 completed/failed/STALE: 诚实返回 already finished
+        - 不存在: 404
+        """
+        import run_liveness as _liveness
+
+        root = Path(str(factory_root if factory_root is not None else DEFAULT_ROOT))
+        progress_path = root / "workflow_runs" / project_id / run_id / "progress.json"
+        if not progress_path.is_file():
+            raise HTTPException(status_code=404, detail=f"run {run_id} not found")
+        try:
+            import json as _json
+
+            progress = _json.loads(progress_path.read_text(encoding="utf-8"))
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=500, detail=f"progress unreadable: {exc}") from exc
+        status = str(progress.get("status") or "").upper()
+        # 已终态 → 幂等返回
+        if status in ("COMPLETED", "FAILED", "CANCELLED", "STALE"):
+            return {"ok": False, "run_id": run_id, "status": status,
+                    "detail": f"already {status.lower()} (cancel 幂等)"}
+        # running → 请求取消
+        if status == "RUNNING":
+            _liveness.request_cancel(project_id, run_id)
+            return {"ok": True, "run_id": run_id, "status": "CANCELLING",
+                    "detail": "cancel requested — run 将在 stage 边界停止"}
+        # 其他状态 (queued 等) → 也请求取消
+        _liveness.request_cancel(project_id, run_id)
+        return {"ok": True, "run_id": run_id, "status": status,
+                "detail": "cancel requested"}
+
+    @app.post("/api/runs/reconcile")
+    def api_runs_reconcile() -> dict[str, Any]:
+        """P0-01: 僵尸 Run reconciliation — running + 线程死 + 心跳超时 → STALE。
+
+        幂等; 只动真实僵死 (不误判活跃线程); 启动时/定期调用。
+        """
+        try:
+            import run_liveness as _liveness  # factory-console 顶层 (同 console_sessions 体系)
+
+            root = Path(str(factory_root if factory_root is not None else DEFAULT_ROOT))
+            result = _liveness.reconcile_stale(root / "workflow_runs")
+            return {"ok": True, **result}
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=500, detail=f"reconcile failed: {exc}") from exc
+
     @app.get("/api/sessions/{session_id}/runs")
     def api_session_runs(session_id: str) -> dict[str, Any]:
         """S30-004 P0-2: Session → Run 真实关联查询。
@@ -6606,6 +6659,7 @@ def build_app(
                                 sessions_store, session_id, body.message, facts=facts,
                                 reply_extra="回答必须引用上面【工具执行证据】; 工具没提供的不要编造; 分 结论/证据/数据/建议。",
                                 llm_fn=lambda _p, _a=agent_result.get("answer", ""): _a,
+                                client_msg_id=body.client_msg_id,
                                 assistant_meta={
                                     "tool_calls": [
                                         {"tool": c["tool"], "ok": c.get("ok")} for c in calls

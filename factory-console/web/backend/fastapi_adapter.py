@@ -6311,6 +6311,40 @@ def build_app(
             raise HTTPException(status_code=404, detail="session not found")
         return ok_list(sessions_store.list_messages(session_id))
 
+    @app.get("/api/sessions/{session_id}/runs")
+    def api_session_runs(session_id: str) -> dict[str, Any]:
+        """S30-004 P0-2: Session → Run 真实关联查询。
+
+        返回 session.run_ids 对应的真实 ProductionRun 状态 (production_service.status)。
+        全部来自真实事实 — 前端不生成 run_id, 不 mock。
+        """
+        if sessions_store.get_session(session_id) is None:
+            raise HTTPException(status_code=404, detail="session not found")
+        run_ids = sessions_store.session_runs(session_id)
+        runs = []
+        root = Path(str(factory_root if factory_root is not None else DEFAULT_ROOT))
+        for rid in run_ids:
+            try:
+                # 真实执行状态: workflow_runs/{project_id}/{run_id}/progress.json
+                from factory_console.production_service import status as _prun_status
+                run = _prun_status(str(root), rid)
+                if run.get("status") in (None, "missing"):
+                    raise ValueError("no production_run entity")
+                runs.append(run)
+            except Exception:  # noqa: BLE001
+                # fallback: workflow_runs progress (真实执行, 无实体)
+                found = None
+                for wf_dir in (root / "workflow_runs").glob(f"*/{rid}/progress.json"):
+                    try:
+                        p = json.loads(wf_dir.read_text(encoding="utf-8"))
+                        found = {"run_id": rid, "status": p.get("status", "unknown"),
+                                 "stages": p.get("stages", {}), "totals": p.get("totals", {}),
+                                 "updated_at": p.get("updated_at")}
+                    except (OSError, ValueError):
+                        continue
+                runs.append(found or {"run_id": rid, "status": "missing"})
+        return {"session_id": session_id, "runs": runs, "count": len(runs)}
+
     @app.get("/api/sessions/{session_id}/snapshots")
     def api_session_snapshots(session_id: str) -> dict[str, Any]:
         """T13: 会话时间旅行 — 列出所有快照轮次 (只读)。"""

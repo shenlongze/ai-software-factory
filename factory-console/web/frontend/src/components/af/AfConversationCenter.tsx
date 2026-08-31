@@ -13,6 +13,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useConversation } from './ConversationContext';
 import { useI18n } from '../../i18n';
+import { api } from '../../api/client';
+import type { SessionRunSummary } from '../../models/types';
 import './af.css';
 
 // 执行阶段人话映射 (用于 "AI 正在做什么")
@@ -30,9 +32,29 @@ export function AfConversationCenter(): JSX.Element {
   const { t } = useI18n();
   const ctx = useConversation();
   const [input, setInput] = useState('');
+  const [runs, setRuns] = useState<SessionRunSummary[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const hasMessages = ctx.messages.length > 0;
+
+  // S30-004 P0-2: 加载 Session 关联的真实 Run (activeId 变化时拉取, 后端 Source of Truth)
+  useEffect(() => {
+    let cancelled = false;
+    if (ctx.activeId == null) {
+      setRuns([]);
+      return;
+    }
+    api.sessionRuns(ctx.activeId)
+      .then((d) => {
+        if (!cancelled) setRuns(d.runs ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setRuns([]); // 失败静默 — 不伪造状态
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [ctx.activeId, ctx.sending]);
 
   // 自动滚动到底
   useEffect(() => {
@@ -125,6 +147,33 @@ export function AfConversationCenter(): JSX.Element {
                         <span /><span /><span />
                       </span>
                     </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* S30-004 P0-2: 真实 Run 状态卡 (来自 /api/sessions/{id}/runs, 非前端模拟) */}
+            {!ctx.sending && runs.length > 0 && (
+              <div className="ai-msg ai-msg--ai" data-testid="af-runs-card">
+                <div className="ai-msg-avatar ai-msg-avatar--ai" aria-hidden="true">◆</div>
+                <div className="ai-msg-body">
+                  <div className="ai-runs-card">
+                    <div className="ai-execution-head">
+                      <span className="ai-execution-title">Runs</span>
+                      <span className="ai-execution-status">{runs.length} 次执行</span>
+                    </div>
+                    {runs.map((r) => (
+                      <div key={r.run_id} className="ai-run-item">
+                        <span className={`ai-run-status ai-run-status--${r.status}`}>
+                          {r.status === 'running' ? '●' : r.status === 'completed' ? '✓' : '✗'}
+                        </span>
+                        <span className="ai-run-id">{r.run_id}</span>
+                        <span className="ai-run-state">{r.status}</span>
+                        {r.totals && Object.keys(r.totals).length > 0 && (
+                          <span className="ai-run-totals">{JSON.stringify(r.totals)}</span>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 </div>
               </div>

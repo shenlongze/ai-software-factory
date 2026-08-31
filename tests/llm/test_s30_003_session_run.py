@@ -94,3 +94,20 @@ def test_e_legacy_session_compat(tmp_path: Path) -> None:
     # add_run 到历史 session 仍工作 (写回 run_ids)
     assert store.add_run("sess-legacy-1", "R-LEGACY-1") is True
     assert store.session_runs("sess-legacy-1") == ["R-LEGACY-1"]
+
+
+# ---- S30-004 P0-2: Session → Run 端点数据契约 ----
+
+def test_session_runs_endpoint_contract(tmp_path: Path) -> None:
+    """SessionStore.session_runs 返回 run_ids; get_session 含 run_ids (API 契约层)。"""
+    store = _store(tmp_path)
+    s = store.create_session(scope="company", title="S30-004 端点契约")
+    sid = s["id"]
+    store.add_run(sid, "R-API-1")
+    store.add_run(sid, "R-API-2")
+    # API 层契约: get_session.run_ids + session_runs
+    assert store.get_session(sid)["run_ids"] == ["R-API-1", "R-API-2"]
+    assert store.session_runs(sid) == ["R-API-1", "R-API-2"]
+    # 列表 API 含 run_ids
+    listed = [x for x in store.list_sessions() if x["id"] == sid][0]
+    assert listed["run_ids"] == ["R-API-1", "R-API-2"]

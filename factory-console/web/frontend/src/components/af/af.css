@@ -8011,3 +8011,14 @@ body[data-bg='1'] .af-shell {
   background: rgba(76, 141, 255, 0.14);
   box-shadow: inset 0 0 0 1px rgba(76, 141, 255, 0.3);
 }
+
+/* S30-004 P0-2: Session → Run 真实状态卡 */
+.ai-runs-card { display: flex; flex-direction: column; gap: 6px; min-width: 260px; }
+.ai-run-item { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.ai-run-status { width: 14px; text-align: center; }
+.ai-run-status--running { color: #f5a623; }
+.ai-run-status--completed { color: #34c759; }
+.ai-run-status--failed, .ai-run-status--error, .ai-run-status--missing { color: #ff3b30; }
+.ai-run-id { font-family: ui-monospace, monospace; color: #555; }
+.ai-run-state { text-transform: uppercase; font-size: 11px; color: #888; }
+.ai-run-totals { color: #999; font-size: 11px; }

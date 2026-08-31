@@ -728,6 +728,18 @@ export interface SessionSummary {
   created_at: string;
   updated_at: string;
   summary: string | null;
+  /** S30-003: Session ↔ Run 一级关联 (1:N) */
+  run_ids?: string[];
+}
+
+/** S30-004: Session 关联的真实 Run 摘要 (来自 production_run / workflow progress)。 */
+export interface SessionRunSummary {
+  run_id: string;
+  status: string;
+  stages?: unknown[];
+  totals?: Record<string, number>;
+  updated_at?: string;
+  node_runs?: unknown[];
 }
 
 /** K-7e: Web 会话栏 — 消息 (user/assistant, append-only)。 */

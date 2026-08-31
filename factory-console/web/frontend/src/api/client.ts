@@ -56,6 +56,7 @@ import {
   type MCPTool,
   type RunStatusResponse,
   type SessionMessage,
+  type SessionRunSummary,
   type SessionSummary,
   type StageRunSummary,
   type TimelineEventSummary,
@@ -148,6 +149,9 @@ export const api = {
     sendJson<ConversationReply>(`/api/conversations/${conversationId}/messages`, { message }),
   getConversation: (conversationId: string) =>
     getJson<ConversationDetail>(`/api/conversations/${conversationId}`),
+  // S30-004 P0-2: Session → Run 真实关联查询 (production_run 状态)
+  sessionRuns: (sessionId: string) =>
+    getJson<{ session_id: string; runs: SessionRunSummary[]; count: number }>(`/api/sessions/${sessionId}/runs`),
   conversationQuality: (conversationId: string) =>
     getJson<ConversationQuality>(`/api/quality/${conversationId}`),
 

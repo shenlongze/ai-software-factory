@@ -1455,7 +1455,14 @@ def run_agent_native(
                 except Exception:  # noqa: BLE001
                     pass
                 return {"answer": _answer, "calls": calls, "intent": intent,
-                        "evidence": [{"tool": c["tool"], "ok": c["ok"], "output": str(c.get("output") or c.get("error") or "")[:300]} for c in calls]}
+                        "evidence": [{"tool": c["tool"], "ok": c["ok"], "output": str(c.get("output") or c.get("error") or "")[:300]} for c in calls],
+                        # S34-003B: 执行详情 — 模型/上下文/tokens 真实用量 (前端 ToolCallList 展示)
+                        "usage": {"model": str(_mconf.get("model") or ""),
+                                  "context_window": int(_mconf.get("context_window") or 0),
+                                  "prompt_tokens": _usage_prompt,
+                                  "completion_tokens": _usage_completion,
+                                  "total_tokens": _usage_prompt + _usage_completion,
+                                  "elapsed_s": round((_time.monotonic() * 1000 - _start_ms) / 1000, 1)}}
             if _guard["force_converge"]:
                 break
             # 中间 assistant 消息入历史前也清洗文本模拟 <tool_calls> (模型可能同时输出真实调用+文本噪音)

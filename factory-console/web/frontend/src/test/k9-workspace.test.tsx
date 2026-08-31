@@ -56,7 +56,7 @@ function mockApi() {
       // GET messages (含 AI markdown 回复 — S34-001 测试; run_ids 关联 — S34-002)
       return { ok: true, json: async () => ({ items: [
         { id: 'm1', session_id: 'conv_1', role: 'user', content: '我想做一个 App', created_at: 't1' },
-        { id: 'm2', session_id: 'conv_1', role: 'assistant', content: '好的，**开始执行**！\n\n- 任务 A\n- 任务 B', created_at: 't2', meta: { run_ids: ['R-TEST-1'], tool_calls: [{ tool: 'project_status', ok: true }, { tool: 'project_scan', ok: true }, { tool: 'bash_exec', ok: true }] } },
+        { id: 'm2', session_id: 'conv_1', role: 'assistant', content: '好的，**开始执行**！\n\n- 任务 A\n- 任务 B', created_at: 't2', meta: { run_ids: ['R-TEST-1'], tool_calls: [{ tool: 'project_status', ok: true }, { tool: 'project_scan', ok: true }, { tool: 'bash_exec', ok: true }], usage: { model: 'deepseek-v4-flash', context_window: 1048576, prompt_tokens: 248000, completion_tokens: 12000, total_tokens: 260000, elapsed_s: 113 } } },
       ] }) };
     }
     // S31-004: Session → Run 关联 (Runs 卡) — 必须在 /api/sessions 列表之前匹配
@@ -243,6 +243,13 @@ describe('Execution State (S34-003B)', () => {
       expect(txt).toBeFalsy();
       // ToolCallList 已渲染 (真实工具证据保留)
       expect(document.querySelector('.ai-tool-calls-summary')).toBeTruthy();
+    });
+    // S34-003B: 执行详情 (模型/上下文/tokens) 展开可见
+    const summary = document.querySelector('.ai-tool-calls-summary') as HTMLButtonElement | null;
+    if (summary) summary.click();
+    await waitFor(() => {
+      expect(document.querySelector('[data-testid="af-tool-usage"]')).toBeTruthy();
+      expect(document.querySelector('.ai-tool-usage-model')?.textContent).toContain('deepseek-v4-flash');
     });
   });
 });

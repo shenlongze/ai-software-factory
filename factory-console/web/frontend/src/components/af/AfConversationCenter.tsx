@@ -306,7 +306,7 @@ export function AfConversationCenter(): JSX.Element {
 interface MessageBubbleProps {
   role: string;
   content: string;
-  meta?: { thinking_steps?: unknown[]; tool_calls?: unknown[]; run_ids?: string[] };
+  meta?: { thinking_steps?: unknown[]; tool_calls?: unknown[]; run_ids?: string[]; usage?: { model?: string; context_window?: number; prompt_tokens?: number; completion_tokens?: number; total_tokens?: number; elapsed_s?: number } };
   /** S34-002: 本会话真实 Runs (按消息 meta.run_ids 过滤归属) */
   runs?: SessionRunSummary[];
   /** S34-002: Run 展开/折叠状态 (消息级) */
@@ -339,7 +339,7 @@ function MessageBubble({ role, content, meta, runs = [], expandedRunId, onToggle
 
           {/* AI 消息: 如果有 tool_calls, 渲染结构化执行卡片 */}
           {!isUser && meta?.tool_calls && meta.tool_calls.length > 0 && (
-            <ToolCallList toolCalls={meta.tool_calls as Array<{ name?: string; tool?: string; args?: Record<string, unknown>; status?: string }>} />
+            <ToolCallList toolCalls={meta.tool_calls as Array<{ name?: string; tool?: string; args?: Record<string, unknown>; status?: string }>} usage={meta.usage} />
           )}
 
           {/* S34-002: 本条回复触发的 Run — 执行证据属于这条 AI 回复, 不是全局 */}
@@ -407,7 +407,7 @@ function MessageBubble({ role, content, meta, runs = [], expandedRunId, onToggle
   );
 }
 
-function ToolCallList({ toolCalls }: { toolCalls: Array<{ name?: string; tool?: string; args?: Record<string, unknown>; status?: string }> }): JSX.Element {
+function ToolCallList({ toolCalls, usage }: { toolCalls: Array<{ name?: string; tool?: string; args?: Record<string, unknown>; status?: string }>; usage?: { model?: string; context_window?: number; prompt_tokens?: number; completion_tokens?: number; total_tokens?: number; elapsed_s?: number } }): JSX.Element {
   // S34-001 P0-4: 默认 compact — 执行证据融入对话, 不抢占主视觉
   const [open, setOpen] = useState(false);
   const okCount = toolCalls.filter((tc) => (tc.status ?? 'ok') === 'ok').length;
@@ -434,6 +434,26 @@ function ToolCallList({ toolCalls }: { toolCalls: Array<{ name?: string; tool?: 
             );
           })}
           {count > 4 && <div className="ai-tool-more">+ {count - 4} more…</div>}
+          {/* S34-003B: 执行详情 — 模型/上下文/tokens/耗时 (真实用量) */}
+          {usage && (usage.model || usage.total_tokens) && (
+            <div className="ai-tool-usage" data-testid="af-tool-usage">
+              {usage.model && <span className="ai-tool-usage-model">{usage.model}</span>}
+              {usage.context_window && usage.prompt_tokens != null && (
+                <span className="ai-tool-usage-ctx">
+                  {usage.prompt_tokens.toLocaleString()}/{usage.context_window.toLocaleString()}
+                  {' '}
+                  <span className="ai-tool-usage-bar" aria-hidden="true">
+                    {'█'.repeat(Math.min(10, Math.max(1, Math.round((usage.prompt_tokens / usage.context_window) * 10))))}
+                    {'░'.repeat(Math.max(0, 10 - Math.min(10, Math.max(1, Math.round((usage.prompt_tokens / usage.context_window) * 10)))))}
+                  </span>
+                  {' '}
+                  {Math.round((usage.prompt_tokens / usage.context_window) * 100)}%
+                </span>
+              )}
+              {usage.total_tokens != null && <span className="ai-tool-usage-tokens">🧠 {usage.total_tokens.toLocaleString()}</span>}
+              {usage.elapsed_s != null && <span className="ai-tool-usage-time">⏲ {usage.elapsed_s}s</span>}
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -6620,6 +6620,8 @@ def build_app(
                                     ],
                                     # S34-002: 本条消息触发的 Run (差集 = 本轮新增) — UI 归属 AI 回复
                                     "run_ids": sorted(set(sessions_store.session_runs(session_id)) - _before_run_ids),
+                                    # S34-003B: 执行详情 — 模型/上下文/tokens (agent_result.usage 透传)
+                                    "usage": agent_result.get("usage") or {},
                                 },
                             )
                             result["meta"] = {

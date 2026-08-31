@@ -379,7 +379,19 @@ export function ConversationProvider({ children, initialProjectId }: { children:
           } else if (e.type === 'done' && e.result) {
             streamed = true;
             setMessages((prev) =>
-              prev.map((m) => (m.id === assistantId ? (e.result?.assistant ?? m) : m)),
+              prev.map((m) => {
+                if (m.id !== assistantId) return m;
+                const done = (e.result?.assistant ?? m) as typeof m & { meta?: Record<string, unknown> };
+                // S34-003B: 保持流式工具证据 — done 的 assistant 若缺 tool_calls/usage,
+                // 保留 optimistic 已收集的 (避免 "两次回答" 闪动)
+                const om = (m.meta ?? {}) as Record<string, unknown>;
+                const dm = (done.meta ?? {}) as Record<string, unknown>;
+                if ((!dm.tool_calls || (dm.tool_calls as unknown[]).length === 0) && om.tool_calls) {
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  (done as any).meta = { ...dm, tool_calls: om.tool_calls, usage: dm.usage ?? om.usage };
+                }
+                return done;
+              }),
             );
             // S33-006/007/008: 自动联动 Workspace Context — 后端 meta.project 真实关联
             // (项目创建/任务执行后右栏自动跟随, 中央 Conversation 不离开)

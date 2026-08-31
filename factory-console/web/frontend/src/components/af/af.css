@@ -8132,3 +8132,10 @@ body[data-bg='1'] .af-shell {
 .ai-tool-calls-toggle { color: #6b7280; }
 .ai-tool-calls-detail { padding-top: 4px; }
 .ai-execution-status--working { color: #4b5563; font-weight: 500; }
+
+/* S34-003B: 执行详情 — 模型/上下文/tokens/耗时 */
+.ai-tool-usage { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed #e5e7eb; font-size: 11px; color: #4b5563; }
+.ai-tool-usage-model { font-family: ui-monospace, monospace; font-weight: 600; color: #374151; }
+.ai-tool-usage-ctx { font-family: ui-monospace, monospace; color: #6b7280; }
+.ai-tool-usage-bar { color: #4c8dff; letter-spacing: -1px; }
+.ai-tool-usage-tokens, .ai-tool-usage-time { color: #6b7280; }

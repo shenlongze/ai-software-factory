@@ -1678,11 +1678,22 @@ def _extract_fake_invokes(text: str) -> list[dict[str, Any]]:
 
 
 def _strip_fake_toolcalls(text: str) -> str:
-    """清洗最终回答里的文本模拟工具调用 (模型把 <tool_calls> 写进回答 → 删除, 防"假装调用")。"""
+    """清洗最终回答里的文本模拟工具调用 (模型把 <tool_calls> 写进回答 → 删除, 防"假装调用")。
+
+    S34-003B 强化: 覆盖 <tool_calls> 块、<invoke> 调用、<parameter> 参数标签,
+    无论是否配对/带属性 — 内部 Tool Protocol 绝不进入用户正文。
+    """
     t = str(text or "")
     t = re.sub(r"```tool_calls[\s\S]*?```", "", t)
+    t = re.sub(r"```tool_call[\s\S]*?```", "", t)
+    # 整块优先 (含嵌套 <parameter>): 先删完整块, 再删残留散标签
     t = re.sub(r"<tool_calls>[\s\S]*?</tool_calls>", "", t)
-    t = re.sub(r"<invoke name=\"[^\"]*\"[\s\S]*?</invoke>", "", t)
+    t = re.sub(r"<invoke[^>]*name=\"[^\"]*\"[\s\S]*?</invoke>", "", t)
+    t = re.sub(r"<invoke[^>]*>[\s\S]*?</invoke>", "", t)
+    t = re.sub(r"<parameter[^>]*>[\s\S]*?</parameter>", "", t)
+    t = re.sub(r"</?tool_calls>", "", t)
+    t = re.sub(r"</?invoke[^>]*>", "", t)
+    t = re.sub(r"</?parameter[^>]*>", "", t)
     return re.sub(r"\n{3,}", "\n\n", t).strip()
 
 

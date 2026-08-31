@@ -66,3 +66,42 @@ def test_assistant_meta_run_ids_binding(tmp_path: Path) -> None:
     msgs = store.list_messages(sid)
     asst = [m for m in msgs if m.get("role") == "assistant"][0]
     assert asst["meta"]["run_ids"] == ["R-S34-002"]
+
+
+# ---- S34-003B: Tool Protocol 泄漏清洗 ----
+
+def test_strip_fake_toolcalls_removes_protocol() -> None:
+    """内部 Tool Protocol (<tool_calls>/<invoke>/<parameter>) 绝不进入用户正文。"""
+    from factory_console.session.agent_loop import _strip_fake_toolcalls
+
+    leaky = (
+        "我已经定位到了核心逻辑文件。\n\n"
+        "<tool_calls>\n<invoke name=\"read_file\">\n"
+        "<parameter name=\"file_path\">/Users/x/agent_loop.py</parameter>\n"
+        "</invoke>\n</tool_calls>"
+    )
+    cleaned = _strip_fake_toolcalls(leaky)
+    assert "<tool_calls>" not in cleaned
+    assert "<invoke" not in cleaned
+    assert "<parameter" not in cleaned
+    # 自然语言保留
+    assert "我已经定位到了核心逻辑文件" in cleaned
+
+
+def test_strip_fake_toolcalls_keeps_normal_text() -> None:
+    """正常文本不受影响 (粗体/列表保留)。"""
+    from factory_console.session.agent_loop import _strip_fake_toolcalls
+
+    normal = "正常回答。**粗体** 和列表:\n- 项目 A\n- 项目 B"
+    cleaned = _strip_fake_toolcalls(normal)
+    assert cleaned == normal
+
+
+def test_strip_fake_toolcalls_unpaired_tags() -> None:
+    """散标签/未配对也清理。"""
+    from factory_console.session.agent_loop import _strip_fake_toolcalls
+
+    unpaired = "回答。</tool_calls><invoke name=\"bash_exec\">"
+    cleaned = _strip_fake_toolcalls(unpaired)
+    assert "<tool_calls>" not in cleaned
+    assert "<invoke" not in cleaned

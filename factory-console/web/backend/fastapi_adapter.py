@@ -6336,10 +6336,22 @@ def build_app(
 
     @app.get("/api/sessions/{session_id}/messages")
     def api_session_messages(session_id: str) -> dict[str, Any]:
-        """会话消息列表 (K-7e); 会话不存在 → 404。"""
+        """会话消息列表 (K-7e); 会话不存在 → 404。
+
+        S34-003B: 出口统一清洗 — 任何历史/其他路径残留的内部 Tool Protocol
+        (<tool_calls>/<invoke>) 绝不进入用户可见 content。真实工具调用在 meta 结构化保留。
+        """
         if sessions_store.get_session(session_id) is None:
             raise HTTPException(status_code=404, detail="session not found")
-        return ok_list(sessions_store.list_messages(session_id))
+        msgs = sessions_store.list_messages(session_id)
+        try:
+            _agmod = _console_import("session.agent_loop")
+            for m in msgs:
+                if isinstance(m, dict) and m.get("role") == "assistant" and m.get("content"):
+                    m["content"] = _agmod._strip_fake_toolcalls(str(m["content"]))
+        except Exception:  # noqa: BLE001 — 清洗失败不阻断 (保持原样)
+            pass
+        return ok_list(msgs)
 
     @app.get("/api/sessions/{session_id}/runs")
     def api_session_runs(session_id: str) -> dict[str, Any]:
@@ -6737,6 +6749,10 @@ def build_app(
             except Exception:  # noqa: BLE001 — Agent 循环异常 → 回退旧路由
                 agent_result = None
             if agent_result is not None and agent_result.get("answer"):
+                # S34-003B: v1 路径也清洗 (防文本模拟 <tool_calls> 泄漏 — 与 v3 native 一致)
+                _v1_answer = _agmod._strip_fake_toolcalls(str(agent_result.get("answer") or ""))
+                if _v1_answer:
+                    agent_result["answer"] = _v1_answer
                 calls = agent_result.get("calls") or []
                 # AI 回答也进话题账本 (保持块内对话完整)
                 if _ctx_view:

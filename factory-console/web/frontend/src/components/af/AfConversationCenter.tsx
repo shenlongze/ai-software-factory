@@ -109,6 +109,12 @@ export function AfConversationCenter(): JSX.Element {
     return '正在分析并执行你的请求…';
   }, [ctx.sending, ctx.messages]);
 
+  // S34-003B: 最后一条消息已有 tool_calls → ToolCallList 已展示执行,
+  // 不再叠加独立执行卡 (避免 "已完成 N 个操作" + "正在…" 双展示)
+  const lastMsg = ctx.messages[ctx.messages.length - 1];
+  const lastHasTools = !!(lastMsg?.meta && (lastMsg.meta as { tool_calls?: unknown[] }).tool_calls?.length);
+  const showExecCard = ctx.sending && !lastHasTools;
+
   const handleSend = async () => {
     const text = input.trim();
     if (!text) return;
@@ -204,8 +210,8 @@ export function AfConversationCenter(): JSX.Element {
               />
             ))}
 
-            {/* 发送中 — S34-001 P0-3: 自然 Working 状态 (非永久消息, 轻量不抢视觉) */}
-            {ctx.sending && (
+            {/* 发送中 — 执行状态卡 (仅在无执行证据时显示, 有 tool_calls 时 ToolCallList 已展示) */}
+            {showExecCard && (
               <div className="ai-msg ai-msg--ai" data-testid="af-execution-state">
                 <div className="ai-msg-avatar ai-msg-avatar--ai" aria-hidden="true">◆</div>
                 <div className="ai-msg-body">

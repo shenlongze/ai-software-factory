@@ -19,6 +19,7 @@ interface LifecycleData {
 interface WorkspaceData {
   name?: string;
   lifecycle_status?: string;
+  root_path?: string;
   stages?: { id: string; label: string; done: boolean }[];
   done_stages?: string[];
   progress?: number;
@@ -31,6 +32,26 @@ interface TaskItem {
   title?: string;
   priority?: string | null;
   status?: string;
+}
+
+// S35: 项目详情 API 返回 (统一数据源 — /api/projects/{id})
+interface ProjectDetailData {
+  project?: {
+    id?: string;
+    name?: string;
+    status?: string;
+    lifecycle_stage?: string;
+    goal?: string;
+    project_type?: string;
+    framework?: string;
+    repo_path?: string;
+    created_at?: string;
+    updated_at?: string;
+  };
+  counts?: { requirements?: number; plans?: number; tasks?: number; runs?: number };
+  repository?: { enabled?: boolean; status?: string; path?: string; branch?: string; remote?: string };
+  requirements?: { id?: string; title?: string; status?: string }[];
+  plans?: { plan_id?: string; status?: string; goal?: string; approval_id?: string }[];
 }
 
 const STAGES = ['发现', '确认', 'PRD', '工程', '开发', '测试', '验收', '交付', '部署', '运维', '更新'];
@@ -60,8 +81,14 @@ export function AfProjectHome({
   const base = `/api/projects/${encodeURIComponent(projectId)}`;
 
   const [wsData, setWsData] = useState<WorkspaceData | null>(null);
+  // S35: 项目详情 (统一数据源)
+  const [detail, setDetail] = useState<ProjectDetailData | null>(null);
 
   const loadAll = () => {
+    // S35: 项目详情 — Identity/Git/Requirement/Plan 摘要 (统一后端)
+    getJson<ProjectDetailData>(`${base}`)
+      .then(setDetail)
+      .catch(() => setDetail(null));
     // 真实数据优先: workspace 资产汇总 (Founder 2026-08-26); org 端点回退
     getJson<WorkspaceData>(`${base}/workspace`)
       .then((w) => {
@@ -183,6 +210,82 @@ export function AfProjectHome({
             ⚠️ 失败 {failedCount}
           </a>
         </div>
+      </section>
+      {/* S35: 项目信息卡 — Identity/Workspace/Git/Requirement/Plan (统一后端数据) */}
+      <section className="af-home-card" data-testid="af-home-detail">
+        <div className="af-home-card-head">
+          <h3>📁 项目管理</h3>
+        </div>
+        <div className="af-detail-grid">
+          <div className="af-detail-col">
+            <div className="af-detail-row">
+              <span className="af-detail-label">项目 ID</span>
+              <code className="af-detail-value">{detail?.project?.id ?? projectId}</code>
+            </div>
+            <div className="af-detail-row">
+              <span className="af-detail-label">状态 / 阶段</span>
+              <span className="af-detail-value">
+                {detail?.project?.status ?? '—'} / {detail?.project?.lifecycle_stage ?? '—'}
+              </span>
+            </div>
+            <div className="af-detail-row">
+              <span className="af-detail-label">类型 / 框架</span>
+              <span className="af-detail-value">
+                {detail?.project?.project_type || '未指定'} / {detail?.project?.framework || '—'}
+              </span>
+            </div>
+            <div className="af-detail-row">
+              <span className="af-detail-label">创建时间</span>
+              <span className="af-detail-value">{detail?.project?.created_at ?? '—'}</span>
+            </div>
+            {detail?.project?.goal ? (
+              <div className="af-detail-row">
+                <span className="af-detail-label">目标</span>
+                <span className="af-detail-value">{String(detail.project.goal).slice(0, 60)}</span>
+              </div>
+            ) : null}
+          </div>
+          <div className="af-detail-col">
+            <div className="af-detail-row">
+              <span className="af-detail-label">Workspace</span>
+              <code className="af-detail-value af-detail-path">{wsData?.root_path ?? '—'}</code>
+            </div>
+            <div className="af-detail-row">
+              <span className="af-detail-label">Git</span>
+              <span className="af-detail-value">
+                {detail?.repository?.enabled ? '已启用' : '未初始化'}
+                {detail?.repository?.branch ? ` · ${detail.repository.branch}` : ''}
+              </span>
+            </div>
+            {detail?.repository?.remote ? (
+              <div className="af-detail-row">
+                <span className="af-detail-label">Remote</span>
+                <code className="af-detail-value af-detail-path">{detail.repository.remote}</code>
+              </div>
+            ) : null}
+            <div className="af-detail-row">
+              <span className="af-detail-label">Requirement</span>
+              <span className="af-detail-value">{detail?.counts?.requirements ?? 0} 条</span>
+            </div>
+            <div className="af-detail-row">
+              <span className="af-detail-label">Plan</span>
+              <span className="af-detail-value">{detail?.counts?.plans ?? 0} 份</span>
+            </div>
+          </div>
+        </div>
+        {detail && detail.requirements && detail.requirements.length > 0 ? (
+          <div className="af-detail-sub">
+            <span className="af-detail-label">最近需求</span>
+            <ul className="af-detail-list">
+              {detail.requirements.slice(0, 3).map((rq) => (
+                <li key={rq.id ?? rq.title}>
+                  <code className="af-run-code">{rq.id ?? ''}</code>{' '}
+                  <span>{String(rq.title ?? '').slice(0, 40)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
       </section>
       {/* S32-004: 真实 Run 列表 (来自 /api/projects/{id}/runs, 非前端模拟) */}
       <section className="af-home-card" data-testid="af-home-runs">

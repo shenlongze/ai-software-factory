@@ -8159,3 +8159,14 @@ body[data-bg='1'] .af-shell {
 .ai-progress-card-task-dot--done, .ai-progress-card-task-dot--completed { background: #34c759; }
 .ai-progress-card-task-dot--running { background: #f5a623; }
 .ai-progress-card-task-priority { margin-left: auto; font-size: 10px; color: #9ca3af; }
+
+/* S35: 项目管理信息卡 (项目首页) */
+.af-detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.af-detail-col { display: flex; flex-direction: column; gap: 8px; }
+.af-detail-row { display: flex; align-items: baseline; gap: 8px; font-size: 13px; }
+.af-detail-label { color: #86868b; min-width: 72px; flex-shrink: 0; }
+.af-detail-value { color: #1d1d1f; }
+.af-detail-path { font-size: 11px; word-break: break-all; color: #6e6e73; }
+.af-detail-sub { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.af-detail-list { margin: 0; padding-left: 16px; display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #1d1d1f; }
+@media (max-width: 720px) { .af-detail-grid { grid-template-columns: 1fr; } }

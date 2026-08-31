@@ -124,6 +124,19 @@ def project_status(workspace: Path, project_dir: Path) -> dict:
     if project_json.is_file():
         data = _load_json(project_json)
         lifecycle = str(data.get("status") or data.get("lifecycle") or "")
+    # S34-001: name 解析 — project.json 的 name 可能是 ID 占位 (P-xxx),
+    # 真实名称在 org/projects.json (org 是项目名 SSOT)。优先用 org 名称。
+    try:
+        org_projects = workspace / "org" / "projects.json"
+        if org_projects.is_file():
+            org = _load_json(org_projects)
+            projs = org.get("projects") or {}
+            org_entry = projs.get(name) or {}
+            org_name = str(org_entry.get("name") or "").strip()
+            if org_name:
+                name = org_name
+    except Exception:  # noqa: BLE001 — org 缺失不阻塞
+        pass
     # tasks
     tasks: list[dict] = []
     state_file = project_dir / "execution_state.json"

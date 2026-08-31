@@ -6364,7 +6364,7 @@ def build_app(
         - 已 completed/failed/STALE: 诚实返回 already finished
         - 不存在: 404
         """
-        import run_liveness as _liveness
+        from factory_console import run_liveness as _liveness
 
         root = Path(str(factory_root if factory_root is not None else DEFAULT_ROOT))
         progress_path = root / "workflow_runs" / project_id / run_id / "progress.json"
@@ -6398,7 +6398,7 @@ def build_app(
         幂等; 只动真实僵死 (不误判活跃线程); 启动时/定期调用。
         """
         try:
-            import run_liveness as _liveness  # factory-console 顶层 (同 console_sessions 体系)
+            from factory_console import run_liveness as _liveness  # 顶层 (同 console_sessions 体系)
 
             root = Path(str(factory_root if factory_root is not None else DEFAULT_ROOT))
             result = _liveness.reconcile_stale(root / "workflow_runs")

@@ -9,9 +9,12 @@
 - **/api/board**: 不再作为新 WebUI 数据源 (新页全走 ops/projects-os)
 
 ## 2. 前端修复 (K9)
+- **P1 真实 bug (K9 补强)**: AfWorkspaceFrame 忽略 main prop (硬编码 BrowserWorkspace) → Conversation/Work/Tower 页面**从未真正显示**; 修复渲染传入的 main (Human Console 三入口现在真实挂载)
+- **P2 UX bug (K9 补强)**: 三入口导航缺 i18n zh/en 翻译 (WebUI 显示 key) — 补翻译
 - api.artifacts 空 filters 尾随 ? bug (真实 bug, 测试发现)
 - api.client.test 接口清单断言更新 (87→106 方法, K6 新增)
-- af-workspace-shell 导航测试更新 (默认 conversation + 三入口 + i18n key)
+- af-workspace-shell/i18n/router-app/api-live 测试更新 (新 IA + 去硬编码)
+- 前端测试: 基线 34 失败 → **1 失败** (剩余 af-todo-tree 多维筛选 = S10-015 结构重构后历史漂移, DEFERRED)
 
 ## 3. 真实 LLM E2E — PASS
 ```

@@ -894,5 +894,6 @@ AI Factory
 
 ### 诚实声明
 - K9 = 收敛 Sprint (无新 Core 能力)
-- 前端既有 34 测试失败 = 历史漂移 (旧页面数据测试, DEFERRED)
+- **补强**: B 列 P1 修复 (Frame 忽略 main → 三入口真实挂载) + i18n 翻译
+- 前端测试: 基线 34 失败 → 1 失败 (af-todo-tree 历史漂移, DEFERRED)
 - SSE 推送未实现 (P3)

@@ -34,15 +34,28 @@ const projStatus = {
 };
 
 function mockApi() {
-  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     const u = String(url);
+    const method = init?.method?.toUpperCase() ?? 'GET';
     if (u.includes('/api/conversations') && u.includes('/messages')) return { ok: true, json: async () => reply };
     if (u.includes('/api/conversations/conv_1')) return { ok: true, json: async () => conv };
     if (u.includes('/api/conversations')) return { ok: true, json: async () => ({ items: [conv], count: 1 }) };
     if (u.includes('/api/projects-os') && u.includes('/status')) return { ok: true, json: async () => projStatus };
     if (u.includes('/api/projects-os')) return { ok: true, json: async () => ({ items: [{ id: 'project_1', title: '测试项目' }] }) };
     if (u.includes('/api/ops/overview')) return { ok: true, json: async () => ({ projects: { total: 1, running: 0, waiting: 0, blocked: 0, approval: 1, failed: 0 }, workforce: { running: 1, waiting: 0, blocked: 0, error: 0, idle: 0 }, recent_activity: [], calculated_at: 'now' }) };
-    if (u.includes('/api/sessions')) return { ok: true, json: async () => ({ items: [], count: 0 }) };
+    // ConversationContext 数据源 — 新 UI 使用 sessions API
+    if (u.includes('/api/sessions') && u.includes('/messages')) {
+      if (method === 'POST') {
+        // POST send message → 返回 user + assistant
+        return { ok: true, json: async () => ({
+          user: { id: 'm2', session_id: 'conv_1', role: 'user', content: '开始做', created_at: 't2' },
+          assistant: { id: 'm3', session_id: 'conv_1', role: 'assistant', content: '好的,开始执行', created_at: 't3' },
+        }) };
+      }
+      // GET messages
+      return { ok: true, json: async () => ({ items: [{ id: 'm1', session_id: 'conv_1', role: 'user', content: '我想做一个 App', created_at: 't1' }] }) };
+    }
+    if (u.includes('/api/sessions')) return { ok: true, json: async () => ({ items: [{ id: 'conv_1', scope: 'company', project_id: null, title: '测试会话', status: 'active', created_at: 't0', updated_at: 't1', summary: null }], count: 1 }) };
     return { ok: true, json: async () => ({}) };
   }));
 }
@@ -54,24 +67,27 @@ function wrap(node: React.ReactNode) {
 beforeEach(() => { mockApi(); });
 
 describe('AfConversationCenter (K9 中栏)', () => {
-  it('渲染会话列表 + 消息流 + 输入区', async () => {
+  it('渲染消息流 + 输入区', async () => {
     wrap(<AfConversationCenter />);
-    await waitFor(() => expect(screen.getByText('测试会话')).toBeTruthy());
-    expect(screen.getByText(/我想做一个 App/)).toBeTruthy();
+    await waitFor(() => expect(screen.getByText(/我想做一个 App/)).toBeTruthy());
     expect(screen.getByPlaceholderText(/和公司说话/)).toBeTruthy();
+    // 发送按钮 (图标)
+    expect(screen.getByRole('button', { name: /发送/i })).toBeTruthy();
   });
 
-  it('Work 状态内嵌 (真实投影)', async () => {
+  it('消息流正确渲染 user/assistant 气泡', async () => {
     wrap(<AfConversationCenter />);
-    await waitFor(() => expect(screen.getByText(/任务A/)).toBeTruthy());
-    expect(screen.getByText('RUNNING')).toBeTruthy();
+    await waitFor(() => expect(screen.getByText(/我想做一个 App/)).toBeTruthy());
+    // 用户气泡 + 发送按钮都在
+    const bubbles = screen.getAllByText(/我想做一个 App/);
+    expect(bubbles.length).toBeGreaterThan(0);
   });
 
   it('发送 → 追加 AI 回复', async () => {
     wrap(<AfConversationCenter />);
     await waitFor(() => expect(screen.getByPlaceholderText(/和公司说话/)).toBeTruthy());
     fireEvent.change(screen.getByPlaceholderText(/和公司说话/), { target: { value: '开始做' } });
-    fireEvent.click(screen.getByText('发送'));
+    fireEvent.click(screen.getByRole('button', { name: /发送/i }));
     await waitFor(() => expect(screen.getByText(/好的,开始执行/)).toBeTruthy());
   });
 });

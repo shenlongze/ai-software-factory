@@ -2053,6 +2053,17 @@ class ConsoleService:
                 update["archived"] = archived
             updated = project.model_copy(update=update)
             store.save_project(updated)
+            # G3: PATCH 变更追加不可变 history (name/idea/starred/archived)
+            try:
+                _action = (
+                    "rename" if cleaned_name else
+                    ("goal" if cleaned_idea else
+                     ("star" if starred is not None else "archive"))
+                )
+                store.append_history(project_id, "console", _action,
+                                     f"{_action}={updated.name}")
+            except Exception:  # noqa: BLE001 — history 追加失败不阻断主流程
+                pass
             # B4 治理 (S10-010 Task 5): 目录镜像同步 — name 变化 → rename 目录;
             # idea 变化 → 镜像 goal 同步 (信源不陈旧)
             if self._project_space is not None:
@@ -3398,25 +3409,15 @@ class ConsoleService:
             return None, None
 
     def _project_backlog_stats(self, project_id: str) -> dict[str, int]:
-        """项目 backlog 任务统计 {total, done, pending}: 读 management/backlog/task.json (与 WebUI 任务树同源)。"""
+        """项目 backlog 任务统计 {total, done, pending}: G8 经 org.management 门面
+        (与 WebUI 任务树同源; 失败安全 → 全 0)。"""
         try:
-            pdir = self._project_dir(project_id)
-            tf = pdir / "management" / "backlog" / "task.json"
-            if not tf.is_file():
-                # 兜底: 项目目录内任意 task.json
-                for cand in pdir.rglob("task.json"):
-                    if "backlog" in str(cand):
-                        tf = cand
-                        break
-            if not tf.is_file():
-                return {"total": 0, "done": 0, "pending": 0}
-            import json as _json
+            from org.management import ManagementStore
 
-            data = _json.loads(tf.read_text(encoding="utf-8")) or {}
-            tasks_map = data.get("tasks") or {}
-            done = sum(1 for t in tasks_map.values() if str(t.get("status") or "") == "done")
-            total = len(tasks_map)
-            return {"total": total, "done": done, "pending": total - done}
+            pdir = self._project_dir(project_id)
+            tasks = ManagementStore(pdir / "management").list_tasks()
+            done = sum(1 for t in tasks if t.status.value == "done")
+            return {"total": len(tasks), "done": done, "pending": len(tasks) - done}
         except Exception:  # noqa: BLE001 — 失败安全
             return {"total": 0, "done": 0, "pending": 0}
 
@@ -4026,6 +4027,16 @@ class ConsoleService:
             # 想法→细化→待办链路: Feature 下出现 Task → idea 自动转 refined
             self._refine_feature_if_idea(mgmt, story)
         mgmt.save_task(task)
+        # G5: 任务创建审计事件 (TASK_CREATED — audit emitter, 失败安全零侵入)
+        try:
+            from .audit.audit_emitter import AuditEmitter
+
+            AuditEmitter().emit(
+                "TASK_CREATED", project_id=project_id, task_id=task_id,
+                actor_type="system", actor_id="console", title=cleaned_title,
+            )
+        except Exception:  # noqa: BLE001 — 审计失败不阻断生产链
+            pass
         result = task.to_dict()
         result["story_id"] = bound_story
         return result

@@ -16,7 +16,6 @@ from __future__ import annotations
 import json
 import os
 import threading
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -96,7 +95,10 @@ def _now_iso() -> str:
 
 
 def _new_id(prefix: str) -> str:
-    return f"{prefix}-{uuid.uuid4().hex[:10]}"
+    """G7: 统一 ID 入口 (格式不变: {prefix}-{uuid hex[:10]} — 向后兼容)。"""
+    from factory_console.ids import new_id as _gen
+
+    return _gen(prefix)
 
 
 def llm_raw(prompt: str) -> str | None:

@@ -61,15 +61,16 @@ def _task_tree_stats(root: Path, project_id: str) -> dict[str, Any] | None:
     seen: set[str] = set()
     tasks: list[dict[str, Any]] = []
     try:
-        tf = (
-            Path(root) / "workspace" / "projects" / Path(project_id).name
-            / "management" / "backlog" / "task.json"
+        # G8: 经 org.management 门面 (与 WebUI 任务树同源)
+        from org.management import ManagementStore
+
+        _mgmt = ManagementStore(
+            Path(root) / "workspace" / "projects" / Path(project_id).name / "management"
         )
-        data = _read_json_map(tf)
-        for t in (data.get("tasks") or {}).values():
-            if isinstance(t, dict) and t.get("id") not in seen:
-                seen.add(str(t["id"]))
-                tasks.append(t)
+        for _t in _mgmt.list_tasks():
+            if _t.id not in seen:
+                seen.add(str(_t.id))
+                tasks.append(_t.to_dict())
     except Exception:  # noqa: BLE001
         pass
     try:

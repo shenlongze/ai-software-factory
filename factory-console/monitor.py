@@ -100,13 +100,18 @@ def collect_project(
         if isinstance(d, dict) and isinstance(d.get("score"), (int, float)):
             q = d["score"]
             break
-    # 任务统计 (management/backlog/task.json)
+    # 任务统计 (G8: 经 org.management 门面 — 与 WebUI 任务树同源)
     tasks = {}
     for pdir in pdirs:
-        data = _read_json(pdir / "management" / "backlog" / "task.json")
-        if isinstance(data, dict) and isinstance(data.get("tasks"), dict):
-            tasks = data["tasks"]
-            break
+        try:
+            from org.management import ManagementStore
+
+            ts = ManagementStore(pdir / "management").list_tasks()
+            if ts:
+                tasks = {t.id: t.to_dict() for t in ts}
+                break
+        except Exception:  # noqa: BLE001 — 失败安全
+            continue
     # 产出物契约版本 (artifacts.manifest.json)
     artifacts_version = 0
     for pdir in pdirs:

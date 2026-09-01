@@ -27,28 +27,25 @@ def list_tasks(root: Path | str | None, project_id: str, *, priority: str = "") 
     if root is None:
         return []
     try:
-        import json
+        # G8: 经 org.management 门面 (与 WebUI 任务树同源)
+        from org.management import ManagementStore
 
-        tf = (
-            Path(root) / "workspace" / "projects" / Path(project_id).name
-            / "management" / "backlog" / "task.json"
+        _mgmt = ManagementStore(
+            Path(root) / "workspace" / "projects" / Path(project_id).name / "management"
         )
-        data = json.loads(tf.read_text(encoding="utf-8")) or {}
         out = []
-        for t in (data.get("tasks") or {}).values():
-            if not isinstance(t, dict):
-                continue
-            if priority and str(t.get("priority") or "").upper() != priority.upper():
+        for t in _mgmt.list_tasks():
+            if priority and str(t.priority.value).upper() != priority.upper():
                 continue
             out.append({
-                "id": t.get("id", ""),
-                "title": t.get("title", ""),
-                "status": t.get("status", "todo"),
-                "priority": t.get("priority", ""),
-                "description": str(t.get("description") or "")[:80],
+                "id": t.id,
+                "title": t.title,
+                "priority": t.priority.value,
+                "status": t.status.value,
+                "description": str(t.description or "")[:80],
             })
         return out
-    except Exception:  # noqa: BLE001 — 失败安全
+    except Exception:  # noqa: BLE001 — 失败 → [] 诚实
         return []
 
 

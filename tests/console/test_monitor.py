@@ -54,7 +54,8 @@ class TestMonitor:
         (pdir / "quality.json").write_text(json.dumps({"score": 0.72}), encoding="utf-8")
         (pdir / "management" / "backlog" / "task.json").parent.mkdir(parents=True, exist_ok=True)
         (pdir / "management" / "backlog" / "task.json").write_text(
-            json.dumps({"tasks": {"T-1": {"status": "todo"}, "T-2": {"status": "done"}}}), encoding="utf-8"
+            json.dumps({"tasks": {"T-1": {"id": "T-1", "title": "t1", "status": "todo"},
+                                  "T-2": {"id": "T-2", "title": "t2", "status": "done"}}}), encoding="utf-8"
         )
         pm = _monitor.collect_project(tmp_path, "P-1", name="测试", lifecycle="development")
         assert pm["quality"] == 0.72

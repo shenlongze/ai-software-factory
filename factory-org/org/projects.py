@@ -34,9 +34,9 @@ from pathlib import Path
 from typing import Any
 
 from pydantic import Field, field_validator, model_validator
-
 from . import events as org_events
 from .lifecycle import DuplicateError, NotFoundError
+from .management import HistoryEntry
 from .models import _OrgModel, _norm_list, new_id, utcnow
 from .store import _SectionStore
 
@@ -312,6 +312,8 @@ class Project(_OrgModel):
     git_working_tree: str = ""                # clean/dirty/untracked
     created_at: datetime = Field(default_factory=utcnow)
     updated_at: datetime = Field(default_factory=utcnow)
+    # G3: Project history (不可变审计链, 与 Task.history 同构 — 谁/何时/做什么/结果)
+    history: list[HistoryEntry] = Field(default_factory=list)
 
     # S10-081: 历史数据兼容 — 显式 null 字符串字段 → 默认值 (Pydantic v2 严格
     # 模式拒绝 None; 旧 projects.json 可能含 "build_command": null 等)
@@ -531,6 +533,28 @@ class ProjectStore:
     def save_project(self, project: Project) -> None:
         self._projects.save(project)
 
+    def append_history(
+        self, project_id: str, actor: str, action: str, result: str
+    ) -> Project | None:
+        """G3: 不可变 Project history 追加 (锁内 update, 并发安全)。
+
+        history 与 Event/Audit 可追溯: 事件 org.project.lifecycle_changed 等
+        由 ProjectLifecycle 独立发出; history 是项目内聚合视图 (谁/何时/动作/结果)。
+        幂等: 不存在 → None。
+        """
+        return self._projects.update(
+            project_id,
+            lambda p: p.model_copy(
+                update={
+                    "history": p.history + [
+                        HistoryEntry(time=utcnow().isoformat(), actor=actor,
+                                     action=action, result=result)
+                    ],
+                    "updated_at": utcnow(),
+                }
+            ),
+        )
+
     def get_project(self, project_id: str) -> Project | None:
         return self._projects.get(project_id)
 
@@ -665,6 +689,8 @@ class ProjectLifecycle:
         if self._store.get_project(project_id) is not None:
             raise DuplicateError(f"project already exists: {project_id}")
         project = Project(id=project_id, name=name, user_id=user_id, goal=goal)
+        project.history.append(HistoryEntry(time=utcnow().isoformat(), actor="system",
+                                            action="created", result=name))
         self._store.save_project(project)
         org_events.record_project_created(self._logger, project=project)
         return project
@@ -687,6 +713,9 @@ class ProjectLifecycle:
         跳过 (同 console record_runtime_* 模式; 扩枚举后自动恢复)。
         """
         project = self.get_project(project_id)  # NotFoundError: 不存在
+        # G3: 删除前追加 history (不可变审计链 — 删除后仍可追溯最后状态)
+        self._store.append_history(project_id, "system", "deleted",
+                                   f"lifecycle={project.lifecycle.value}")
         self._store.delete_project(project_id)
         _record_fail_safe(
             self._logger,
@@ -725,7 +754,14 @@ class ProjectLifecycle:
             )
         from_value = project.lifecycle.value
         updated = project.model_copy(
-            update={"lifecycle": target, "updated_at": utcnow()}
+            update={
+                "lifecycle": target, "updated_at": utcnow(),
+                # G3: lifecycle 变更追加不可变 history (与 org.project.lifecycle_changed 事件同源)
+                "history": project.history + [
+                    HistoryEntry(time=utcnow().isoformat(), actor="system",
+                                 action="lifecycle", result=f"{from_value}→{target.value}")
+                ],
+            }
         )
         self._store.save_project(updated)
         org_events.record_project_lifecycle_changed(

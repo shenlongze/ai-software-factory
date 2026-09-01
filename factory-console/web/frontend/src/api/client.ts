@@ -634,6 +634,7 @@ export const api = {
         };
       };
     }) => void,
+    signal?: AbortSignal,  // F-01: 取消支持 — Stop 时 abort 流
   ): Promise<boolean> => {
     try {
       const res = await fetch(`/api/sessions/${encodeURIComponent(id)}/messages?stream=1`, {
@@ -646,6 +647,7 @@ export const api = {
             ? crypto.randomUUID()
             : `msg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         }),
+        signal,
       });
       if (!res.ok || !res.body) return false;
       const reader = res.body.getReader();

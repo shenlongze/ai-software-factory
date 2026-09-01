@@ -72,6 +72,39 @@ def clear_cancel(project_id: str, run_id: str) -> None:
         pass
 
 
+# ---------------------------------------------------------------- Session 取消 (F-01)
+#: 会话消息执行取消 (run_agent_native 循环边界轮询) — key 前缀 session/ 区分 workflow run。
+#: 语义: RUNNING → CANCELLING (request) → CANCELLED (循环检查到, 停止后续轮次)。
+#: 幂等: 重复 request 无害; clear 在消息执行结束时调用 (新消息重新开始)。
+
+def request_session_cancel(session_id: str) -> bool:
+    """请求取消会话消息执行。幂等。"""
+    try:
+        with _CANCEL_LOCK:
+            _CANCEL[f"session/{session_id}"] = True
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def session_cancelled(session_id: str) -> bool:
+    """run_agent_native 循环边界检查是否被请求取消。"""
+    try:
+        with _CANCEL_LOCK:
+            return bool(_CANCEL.get(f"session/{session_id}"))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def clear_session_cancel(session_id: str) -> None:
+    """会话消息执行结束时清除取消标志 (幂等)。"""
+    try:
+        with _CANCEL_LOCK:
+            _CANCEL.pop(f"session/{session_id}", None)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def register_run(project_id: str, run_id: str, thread: threading.Thread) -> None:
     """线程启动时注册 (供 stale 检测判断线程是否存活)。"""
     try:

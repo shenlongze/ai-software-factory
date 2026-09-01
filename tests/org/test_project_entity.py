@@ -210,7 +210,7 @@ class TestProjectTransitions:
             "development": ("release", "archived"),
             "release": ("maintain", "archived"),
             "maintain": ("archived",),
-            "idea": ("active", "archived"),        # 旧值兼容
+            "idea": ("confirmed", "active", "archived"),  # 旧值兼容; confirmed=任务拆解完成 (S35-P0)
             "active": ("maintained", "archived"),  # 旧值兼容
             "maintained": ("archived",),           # 旧值兼容
             "archived": (),

@@ -229,3 +229,61 @@ class TestSystemStatus:
     def test_system_status_target(self):
         t = _qe.intent_target("system_status", project_id="p1")
         assert t == {"url": "#/workspace", "label": "返回工作台"}
+
+
+class TestProjectStatsPriorityAndDocs:
+    """S35: _project_task_stats 任务分类计数 P0-P3 + _project_docs 文档扫描。"""
+
+    def test_task_stats_priority_counts(self, tmp_path):
+        pdir = tmp_path / "workspace" / "projects" / "P-1" / "management" / "backlog"
+        pdir.mkdir(parents=True)
+        (pdir / "task.json").write_text(json.dumps({"tasks": {
+            "T1": {"id": "T1", "priority": "P0", "status": "done"},
+            "T2": {"id": "T2", "priority": "P1", "status": "todo"},
+            "T3": {"id": "T3", "priority": "p2", "status": "todo"},
+            "T4": {"id": "T4", "priority": "P3", "status": "todo"},
+        }}), encoding="utf-8")
+        st = _qe._project_task_stats(tmp_path, "P-1")
+        assert st["total"] == 4
+        assert st["p0"] == 1 and st["p1"] == 1 and st["p2"] == 1 and st["p3"] == 1
+
+    def test_task_stats_legacy_merge_priority(self, tmp_path):
+        """mgmt + legacy tasks.json 合并后按 priority 计数 (去重)。"""
+        pdir = tmp_path / "workspace" / "projects" / "P-1" / "management" / "backlog"
+        pdir.mkdir(parents=True)
+        (pdir / "task.json").write_text(json.dumps({"tasks": {
+            "T1": {"id": "T1", "priority": "P0", "status": "todo"},
+            "T2": {"id": "T2", "priority": "P1", "status": "todo"},
+        }}), encoding="utf-8")
+        (tmp_path / "projects" / "P-1").mkdir(parents=True)
+        (tmp_path / "projects" / "P-1" / "tasks.json").write_text(json.dumps({"tasks": [
+            {"id": "T1", "priority": "P0", "status": "todo"},   # 重复 → 去重
+            {"id": "T3", "priority": "P2", "status": "done"},
+        ]}), encoding="utf-8")
+        st = _qe._project_task_stats(tmp_path, "P-1")
+        assert st["total"] == 3
+        assert st["p0"] == 1 and st["p1"] == 1 and st["p2"] == 1 and st["p3"] == 0
+
+    def test_project_docs_scan_skip_deps(self, tmp_path):
+        base = tmp_path / "projects" / "P-1"
+        (base / "docs").mkdir(parents=True)
+        (base / "README.md").write_text("x", encoding="utf-8")
+        (base / "docs" / "API.md").write_text("y", encoding="utf-8")
+        (base / "node_modules" / "pkg").mkdir(parents=True)
+        (base / "node_modules" / "pkg" / "skip.md").write_text("z", encoding="utf-8")
+        (base / ".venv" / "lib").mkdir(parents=True)
+        (base / ".venv" / "lib" / "skip2.md").write_text("w", encoding="utf-8")
+        (base / "build" / "skip3.md").parent.mkdir(parents=True)
+        (base / "build" / "skip3.md").write_text("v", encoding="utf-8")
+        names = _qe._project_docs(tmp_path, "P-1")
+        assert "README.md" in names and "API.md" in names
+        assert not any(n in ("skip.md", "skip2.md", "skip3.md") for n in names)
+
+    def test_project_docs_limit_and_workspace_path(self, tmp_path):
+        base = tmp_path / "workspace" / "projects" / "P-1"
+        base.mkdir(parents=True)
+        for i in range(8):
+            (base / f"doc{i}.md").write_text("x", encoding="utf-8")
+        names = _qe._project_docs(tmp_path, "P-1")
+        assert len(names) == 5          # 最多 5 个
+        assert names[0] == "doc0.md"    # 排序稳定

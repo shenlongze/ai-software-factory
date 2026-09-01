@@ -211,10 +211,24 @@ export function AfConversationCenter(): JSX.Element {
   const lastHasTools = !!(lastMsg?.meta && (lastMsg.meta as { tool_calls?: unknown[] }).tool_calls?.length);
   const showExecCard = ctx.sending && !lastHasTools;
 
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // S35-P0: 输入框自动撑高 — Shift+Enter 换行可见 (原 rows=1 + overflow hidden 隐藏换行)
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInput(e.target.value);
+    const el = inputRef.current;
+    if (el) {
+      el.style.height = 'auto';
+      el.style.height = `${Math.min(el.scrollHeight, 220)}px`;
+    }
+  };
+
   const handleSend = async () => {
     const text = input.trim();
     if (!text) return;
     setInput('');
+    const el = inputRef.current;
+    if (el) el.style.height = 'auto';
     if (ctx.activeId == null) {
       await ctx.createSession();
     }
@@ -222,7 +236,10 @@ export function AfConversationCenter(): JSX.Element {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    // F-02: 中文 IME 候选状态 Enter 不发送 — isComposing 保护
+    // (拼音候选确认时 keydown Enter, isComposing=true → 不触发发送, 候选词正常上屏)
+    const composing = e.nativeEvent.isComposing === true;
+    if (e.key === 'Enter' && !e.shiftKey && !composing) {
       e.preventDefault();
       void handleSend();
     }
@@ -358,9 +375,10 @@ export function AfConversationCenter(): JSX.Element {
           <textarea
             className="ai-input"
             rows={1}
+            ref={inputRef}
             placeholder={t('chat.inputPlaceholder') || '和公司说话… (讨论需求 / 开始工作 / 查询状态)'}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={handleInputChange}
             onKeyDown={handleKeyDown}
             disabled={ctx.sending}
           />
@@ -388,6 +406,19 @@ export function AfConversationCenter(): JSX.Element {
             </div>
 
             <div className="ai-tb-mid" />
+
+            {ctx.sending && (
+              <button
+                type="button"
+                className="ai-send-btn ai-send-btn--stop"
+                onClick={() => void ctx.cancelSend()}
+                data-testid="af-conv-stop"
+                aria-label="停止生成"
+                title="停止生成"
+              >
+                ⏹
+              </button>
+            )}
 
             <button
               type="button"

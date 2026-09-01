@@ -1198,3 +1198,82 @@ class TestAnswerAlignment:
         joined = "\n".join(seen["sys"])
         assert "强制对齐" in joined
         assert "项目进度" in joined  # 用户问题锚点注入
+
+
+class TestProjectListFormat:
+    """S35: project_list 输出 markdown 无序列表 (字段完整), project_status 复用同一格式。"""
+
+    def _seed(self, tmp_path):
+        (tmp_path / "org").mkdir(parents=True)
+        (tmp_path / "org" / "projects.json").write_text(json.dumps({"projects": {
+            "P-1": {"id": "P-1", "name": "飞机大战", "lifecycle": "idea",
+                    "language": "python", "framework": "", "repo_path": "/tmp/fallback"},
+            "P-2": {"id": "P-2", "name": "旅行记账", "lifecycle": "development",
+                    "language": "dart", "framework": "flutter",
+                    "git_url": "https://github.com/x/trip.git"},
+        }}, ensure_ascii=False), encoding="utf-8")
+        (tmp_path / "projects" / "P-1").mkdir(parents=True)
+        (tmp_path / "projects" / "P-1" / "README.md").write_text("# x", encoding="utf-8")
+        (tmp_path / "projects" / "P-1" / "docs").mkdir()
+        (tmp_path / "projects" / "P-1" / "docs" / "API.md").write_text("# y", encoding="utf-8")
+        b = tmp_path / "workspace" / "projects" / "P-1" / "management" / "backlog"
+        b.mkdir(parents=True)
+        (b / "task.json").write_text(json.dumps({"tasks": {
+            "T1": {"id": "T1", "title": "a", "status": "done", "priority": "P2"},
+            "T2": {"id": "T2", "title": "b", "status": "todo", "priority": "P2"},
+            "T3": {"id": "T3", "title": "c", "status": "running", "priority": "P1"},
+        }}), encoding="utf-8")
+
+    def test_project_list_unordered_list_full_fields(self, tmp_path):
+        """project_list: 无序列表 + 字段完整 (ID/名称/本地地址/Git/阶段/语言/任务分类/完成度/文档) + 回答模板。"""
+        self._seed(tmp_path)
+        r = _ag.dispatch("project_list", {}, root=tmp_path, project_id="P-1")
+        assert r["ok"] is True
+        out = r["output"]
+        assert "共 2 个项目:" in out
+        assert "| 项目ID |" not in out            # 不再是表格
+        assert "- 项目ID: P-1" in out
+        assert "  名称: 飞机大战" in out
+        assert f"  本地地址: {(tmp_path / 'projects' / 'P-1').resolve()}" in out
+        assert "  Git地址: —" in out
+        assert "  阶段: idea | 语言: python" in out
+        assert "  任务: 3 个 (P0: 0 · P1: 1 · P2: 2 · P3: 0)" in out
+        assert "  完成度: 33% (待办 1 · 执行中 1 · 完成 1 · 阻塞 0)" in out
+        assert "  文档: README.md, API.md" in out
+        # 第二个项目: git_url + framework 拼接 + 无任务 (零值兜底)
+        assert "- 项目ID: P-2" in out
+        assert "  阶段: development | 语言: dart + flutter" in out
+        assert "  Git地址: https://github.com/x/trip.git" in out
+        assert "  任务: 0 个 (P0: 0 · P1: 0 · P2: 0 · P3: 0)" in out
+        # 回答模板强制
+        assert "【回答模板" in out
+        assert "禁止改写为散文或表格" in out
+        assert "禁止添加数据中没有的字段" in out
+
+    def test_project_status_same_unordered_list_format(self, tmp_path):
+        """project_status 单项目: 复用同一无序列表字段格式。"""
+        self._seed(tmp_path)
+        r = _ag.dispatch("project_status", {}, root=tmp_path, project_id="P-1")
+        assert r["ok"] is True
+        out = r["output"]
+        assert "- 项目ID: P-1" in out
+        assert "  名称: 飞机大战" in out
+        assert f"  本地地址: {(tmp_path / 'projects' / 'P-1').resolve()}" in out
+        assert "  阶段: idea | 语言: python" in out
+        assert "  任务: 3 个 (P0: 0 · P1: 1 · P2: 2 · P3: 0)" in out
+        assert "  完成度: 33% (待办 1 · 执行中 1 · 完成 1 · 阻塞 0)" in out
+        assert "  文档: README.md, API.md" in out
+
+    def test_project_list_repo_path_fallback_when_dir_missing(self, tmp_path):
+        """真实目录不存在 → 回落 repo_path 字段; 两者皆空 → —。"""
+        (tmp_path / "org").mkdir(parents=True)
+        (tmp_path / "org" / "projects.json").write_text(json.dumps({"projects": {
+            "P-9": {"id": "P-9", "name": "无目录", "repo_path": "/custom/repo"},
+            "P-10": {"id": "P-10", "name": "全空", "repo_path": ""},
+        }}, ensure_ascii=False), encoding="utf-8")
+        r = _ag.dispatch("project_list", {}, root=tmp_path, project_id="P-9")
+        out = r["output"]
+        assert "共 2 个项目:" in out
+        assert "  本地地址: /custom/repo" in out
+        assert "- 项目ID: P-10" in out
+        assert "  本地地址: —" in out

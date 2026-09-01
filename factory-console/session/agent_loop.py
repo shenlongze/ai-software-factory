@@ -199,7 +199,7 @@ def tool_schemas(data_dir: str | Path | None = None) -> list[dict[str, Any]]:
             {"path": {"type": "string", "description": "可选: 路径子串过滤 (如 factory-console/session)"},
              "max_items": {"type": "integer"}}),
         _fc("project_scan", "扫描项目", "扫描项目整体: 任务树/版本线/战役线/质量/风险建议", {}),
-        _fc("project_list", "项目列表", "列出所有项目, 用 markdown 表格呈现 (列: 项目ID/名称/进度/阶段/描述; 用户问'项目列表/有哪些项目/项目清单'时用)", {}),
+        _fc("project_list", "项目列表", "列出所有项目, 用 markdown 无序列表呈现; 每个项目字段齐全: 项目ID/名称/本地地址/Git地址/阶段/语言/任务分类统计(P0-P3)/完成度/文档; 用户问'项目列表/有哪些项目/项目清单'时用", {}),
         _fc("create_project", "创建项目", "创建新项目 (用户明确要'新建/创建/做一个XXX项目'且当前无匹配项目时用; 先确认名称与需求再调用; 参数: name 项目名, goal 项目目标描述)", {"name": {"type": "string", "description": "项目名称"}, "goal": {"type": "string", "description": "项目目标/描述"}}),
         _fc("project_structure", "项目结构", "查看项目真实结构: 仓库顶层目录树/模块划分/文件分布/入口文件 (用户说'了解项目结构/有哪些模块/目录'时用)", {}),
         _fc("read_code", "读取代码", "读取指定文件的代码内容(带行号, 支持分页), 用于理解代码逻辑/实现/调用链。"
@@ -386,6 +386,25 @@ def plan_development(goal: str, detail: str, *, llm_fn: Callable[[str], str]) ->
                 "fallback": True}
 
 
+def _try_promote_lifecycle(service: Any, project_id: str, target: str) -> None:
+    """任务拆解完成 → 项目 lifecycle 自动推进 (S35-P0 数据同步)。
+
+    建任务成功后调用: idea→confirmed (任务拆解=需求明确)。
+    安全: org store 缺失/非法流转/异常 → 静默跳过, 不阻断执行 (幂等: 同状态无事件)。
+    """
+    if service is None or not project_id:
+        return
+    try:
+        store = getattr(service, "_project_store", None)
+        if store is None:
+            return
+        from org.projects import ProjectLifecycle
+
+        ProjectLifecycle(store).transition_lifecycle(project_id, target)
+    except Exception:  # noqa: BLE001 — 流转失败不阻断任务执行
+        pass
+
+
 def execute_plan(
     plan: dict[str, Any],
     *,
@@ -407,6 +426,7 @@ def execute_plan(
             _existing = (service.list_backlog(project_id) or {}).get("tasks") or []
             _same_plan = [t for t in _existing if str(t.get("plan_id") or "") == _plan_id]
             if _same_plan:
+                _try_promote_lifecycle(service, project_id, "confirmed")
                 return {
                     "ok": True, "idempotent": True,
                     "output": f"计划 {_plan_id} 已执行过 (任务已存在 {len(_same_plan)} 个, 不重复创建)。",
@@ -444,6 +464,9 @@ def execute_plan(
         ))
     if delegate and created:
         lines.append("下一步可委派外部AI(如 codex/claude)执行 — 说『开始执行』或我用外部AI逐任务推进。")
+    # S35-P0: 任务拆解完成 → 项目 lifecycle 自动推进 (idea→confirmed, 数据同步)
+    if created:
+        _try_promote_lifecycle(service, project_id, "confirmed")
     return {"ok": True, "output": "\n".join(lines), "created": created, "plan_id": _plan_id}
 
 
@@ -574,6 +597,61 @@ def _get_hooks():
 
         _hooks_instance = build_default_hooks()
     return _hooks_instance
+
+
+# S35: 项目信息 markdown 无序列表格式化 — project_list / project_status 共用。
+# 字段: ID/名称/本地地址(真实检测优先)/Git地址/阶段/语言/任务分类统计/完成度/文档。
+_PROJECT_LIST_ANSWER_TEMPLATE = (
+    "【回答模板 — 必须严格按此格式输出, 不要输出本说明】\n"
+    "请直接基于以上真实数据, 用无序列表向用户呈现项目, 每个项目字段齐全 "
+    "(项目ID/名称/本地地址/Git地址/阶段/语言/任务分类统计/完成度/文档); "
+    "禁止改写为散文或表格, 禁止添加数据中没有的字段。"
+)
+
+
+def _format_project_entry(root: Any, project_id: str, proj: dict[str, Any]) -> str:
+    """单个项目 → 无序列表块 (project_list 多项目 / project_status 单项目复用)。"""
+    from .query_engine import _project_docs, _project_task_stats
+
+    pid = str(project_id or "")
+    name = str(proj.get("name") or pid or "—")
+    life = str(proj.get("lifecycle") or proj.get("status") or "")
+    lang = " + ".join(x for x in (
+        str(proj.get("language") or ""), str(proj.get("framework") or "")) if x) or "—"
+    # 本地地址: 真实检测优先 (root/projects/<id> 目录存在 → 绝对路径);
+    # 否则 repo_path 非空用它; 再否则 —
+    local = "—"
+    if root is not None:
+        real_dir = Path(root) / "projects" / Path(pid).name
+        if real_dir.is_dir():
+            try:
+                local = str(real_dir.resolve())
+            except Exception:  # noqa: BLE001
+                local = str(real_dir)
+    if local == "—":
+        repo_path = str(proj.get("repo_path") or "")
+        local = repo_path or "—"
+    git = str(proj.get("git_repo_url") or proj.get("git_url") or "") or "—"
+    stats = _project_task_stats(root, pid) or {}
+    total = stats.get("total", 0)
+    p0, p1, p2, p3 = stats.get("p0", 0), stats.get("p1", 0), stats.get("p2", 0), stats.get("p3", 0)
+    pct = stats.get("pct", 0)
+    todo, running, done, blocked = (
+        stats.get("todo", 0), stats.get("running", 0),
+        stats.get("done", 0), stats.get("blocked", 0),
+    )
+    docs = _project_docs(root, pid)
+    docs_str = ", ".join(docs) if docs else "—"
+    return "\n".join([
+        f"- 项目ID: {pid}",
+        f"  名称: {name}",
+        f"  本地地址: {local}",
+        f"  Git地址: {git}",
+        f"  阶段: {life or '—'} | 语言: {lang}",
+        f"  任务: {total} 个 (P0: {p0} · P1: {p1} · P2: {p2} · P3: {p3})",
+        f"  完成度: {pct}% (待办 {todo} · 执行中 {running} · 完成 {done} · 阻塞 {blocked})",
+        f"  文档: {docs_str}",
+    ])
 
 
 def dispatch(
@@ -823,9 +901,7 @@ def dispatch(
             ), "project_id": _pid}
 
         if tool_id == "project_list":
-            # 项目清单 — 完整字段: ID/名称/进度/阶段/描述 (org 数据 + 任务统计)
-            from .query_engine import _project_task_stats
-
+            # 项目清单 — markdown 无序列表, 字段完整 (ID/名称/本地地址/Git地址/阶段/语言/任务分类/完成度/文档)
             try:
                 import json as _json
 
@@ -833,34 +909,32 @@ def dispatch(
                 _projs = _org.get("projects") if isinstance(_org, dict) else {}
             except Exception:  # noqa: BLE001
                 _projs = {}
-            _rows = []
+            _blocks = []
             for _pid, _p in _projs.items():
                 if not isinstance(_p, dict):
                     continue
-                _name = str(_p.get("name") or _pid)
-                _life = str(_p.get("lifecycle") or _p.get("status") or "")
-                _goal = str(_p.get("goal") or "")
-                _stats = _project_task_stats(root, _pid) or {}
-                _pct = _stats.get("pct") if _stats else None
-                _stage = _life or "unknown"
-                _prog = f"{_pct}%" if _pct is not None else "—"
-                _rows.append((_pid, _name, _prog, _stage, _goal))
-            lines = [
-                f"共 {len(_rows)} 个项目:",
-                "",
-                "| 项目ID | 名称 | 进度 | 阶段 | 描述 |",
-                "|--------|------|------|------|------|",
-            ]
-            for _pid, _name, _prog, _stage, _goal in _rows:
-                lines.append(f"| {_pid} | {_name} | {_prog} | {_stage} | {_goal} |")
+                _blocks.append(_format_project_entry(root, _pid, _p))
+            lines = [f"共 {len(_blocks)} 个项目:", ""]
+            if _blocks:
+                lines.append("\n\n".join(_blocks))
             lines.append("")
-            lines.append("(表格输出 — 直接基于以上真实数据向用户展示, 保持表格形式; 描述为空则写—)")
+            lines.append(_PROJECT_LIST_ANSWER_TEMPLATE)
             return {"ok": True, "output": "\n".join(lines)}
         if tool_id == "project_status":
-            from .query_engine import _project_task_stats
+            # 单项目 — 与 project_list 复用同一无序列表字段格式
+            _proj: dict[str, Any] = {}
+            if root is not None:
+                try:
+                    import json as _json
 
-            st = _project_task_stats(root, project_id)
-            return {"ok": True, "output": (f"项目 {project_id} 进度 {st['pct']}% (任务 {st['total']}: 完成 {st['done']} · 执行中 {st['running']} · 阻塞 {st['blocked']} · 待办 {st['todo']})") if st else "暂无任务数据"}
+                    _org = _json.loads((Path(root) / "org" / "projects.json").read_text(encoding="utf-8"))
+                    _projs = _org.get("projects") if isinstance(_org, dict) else {}
+                    _proj = _projs.get(project_id) if isinstance(_projs, dict) else {}
+                except Exception:  # noqa: BLE001
+                    _proj = {}
+            if not isinstance(_proj, dict):
+                _proj = {}
+            return {"ok": True, "output": _format_project_entry(root, project_id, _proj)}
         if tool_id == "project_tasks":
             from .query_engine import _priority_tasks, _project_task_stats
 
@@ -1515,6 +1589,14 @@ def run_agent_native(
     模型在循环里自主决策 (调工具/直接答/追问), 每轮工具后 Reflection 自评主动收敛,
     硬收敛 (上限 + 强制收敛轮 + 3-loop 追问) 保留为最后兜底。
     返回 {answer, calls, evidence, intent, rejected?} — LLM 不可用 → rejected 回退。"""
+    # F-01: 新消息执行开始前清除会话取消标志 (幂等; 避免上一轮残留影响本轮)
+    if session_id:
+        try:
+            from factory_console import run_liveness as _rl
+
+            _rl.clear_session_cancel(session_id)
+        except Exception:  # noqa: BLE001
+            pass
     intent = understand_intent(
         question, llm_fn=lambda p: _simple_llm(p, data_dir=data_dir), history=history,
     )
@@ -1662,6 +1744,8 @@ def run_agent_native(
         "warned_fail": set(),       # 已注入换策略提示的工具
         "warned_no_progress": False,
         "empty_retries": 0,         # S35-BUGFIX: 空回答连续重试次数 (上限防死循环)
+        "claim_retries": 0,         # P0-001: 执行声称校验失败重试次数 (软收敛)
+        "claim_retries_hard": 0,    # P0-001: 硬收敛轮声称校验重试次数
         "force_converge": False,    # 超时 → 强制收敛
         "max_turn_ms": 240_000,     # 整轮超时上限 240s (OpenClaw 硬超时思路)
     }
@@ -1691,6 +1775,31 @@ def run_agent_native(
 
     try:
         for _ in range(max_rounds):
+            # F-01: 会话取消检查 — 用户 Stop → 真实停止后续轮次 (循环边界, 幂等)
+            if session_id:
+                try:
+                    from factory_console import run_liveness as _rl
+
+                    if _rl.session_cancelled(session_id):
+                        _cancel_answer = "（已停止）"
+                        _audit_sess(data_dir, session_id, question, intent, calls,
+                                    total_calls, max_rounds, _start_ms, "cancelled",
+                                    _cancel_answer, _usage_prompt, _usage_completion)
+                        try:
+                            _finish_session_hooks(data_dir, project_id, session_id,
+                                                  question, messages, _cancel_answer)
+                        except Exception:  # noqa: BLE001
+                            pass
+                        return {
+                            "answer": _cancel_answer, "calls": calls, "intent": intent,
+                            "cancelled": True,
+                            "evidence": [{"tool": c["tool"], "ok": c["ok"],
+                                          "output": str(c.get("output") or c.get("error") or "")[:300]}
+                                         for c in calls],
+                            "usage": {"model": str(_mconf.get("model") or ""), "cancelled": True},
+                        }
+                except Exception:  # noqa: BLE001 — 取消检查失败不阻断
+                    pass
             # U1: 思考过程事件 (前端显示"思考中…"; 模型有 reasoning → 带思考内容)
             if on_event is not None:
                 try:
@@ -1799,6 +1908,21 @@ def run_agent_native(
                             "不要编造具体色值/路径/数字。"
                         )})
                         continue
+                # P0-001: Execution Claim Validator — 执行声称必须有真实工具记录
+                # (LLM output is not execution evidence; 零工具调用的声称 = 负证据)
+                from .execution_truth import (
+                    execution_claim_block_prompt, sanitize_hard_converge,
+                    validate_execution_claims)
+                _claim_v = validate_execution_claims(_answer, calls)
+                if not _claim_v["ok"]:
+                    if _guard["claim_retries"] < 2:
+                        _guard["claim_retries"] += 1
+                        messages.append({"role": "system", "content": (
+                            execution_claim_block_prompt(
+                                _claim_v["missing"], _claim_v["reason"]))})
+                        continue
+                    # 重试用尽仍声称无据 → 追加诚实标注, 不裸放行 (Final Response Sanitization)
+                    _answer = sanitize_hard_converge(_answer, calls)
                 # 模型自主收敛 (直接回答/追问) — agentic: 不强制拦截
                 if total_calls == 0:
                     _converge = "autonomous"
@@ -1978,6 +2102,21 @@ def run_agent_native(
         messages.append({"role": "system", "content": self_check_prompt()})
         resp = call_with_tools(messages, None, data_dir=data_dir)  # 不给工具 → 必收敛
         content = resp.get("content") or ""
+        # P0-001: 硬收敛轮同样校验执行声称 — 一次重试机会, 用尽则追加诚实标注
+        from .execution_truth import (
+            execution_claim_block_prompt, sanitize_hard_converge,
+            validate_execution_claims)
+        _claim_h = validate_execution_claims(content, calls)
+        if not _claim_h["ok"]:
+            if _guard["claim_retries_hard"] < 1:
+                _guard["claim_retries_hard"] += 1
+                messages.append({"role": "system", "content": (
+                    execution_claim_block_prompt(
+                        _claim_h["missing"], _claim_h["reason"]))})
+                resp = call_with_tools(messages, None, data_dir=data_dir)
+                content = resp.get("content") or ""
+            else:
+                content = sanitize_hard_converge(content, calls)
         # S34-003B: 反射轮 usage 也累加 (工具调用循环后必走此路径)
         _u2 = resp.get("usage") or {}
         if _u2:

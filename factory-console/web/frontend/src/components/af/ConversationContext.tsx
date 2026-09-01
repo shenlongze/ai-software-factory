@@ -74,6 +74,8 @@ export interface ConversationContextValue {
   renameSession: (id: string, title: string) => void;
   archiveSession: (id: string) => void;
   send: (content: string) => Promise<void>;
+  /** F-01: 停止当前发送 (AbortController + 后端 cancel API) */
+  cancelSend: () => Promise<void>;
   /** T16: 截断到前 keep_n 条消息 (回滚/编辑前置) */
   truncate: (keepN: number) => Promise<void>;
   refresh: () => void;
@@ -110,6 +112,7 @@ const DEFAULT_CONTEXT: ConversationContextValue = {
   renameSession: () => {},
   archiveSession: () => {},
   send: async () => {},
+  cancelSend: async () => {},
   truncate: async () => {},
   refresh: () => {},
 };
@@ -337,6 +340,21 @@ export function ConversationProvider({ children, initialProjectId }: { children:
     [refresh],
   );
 
+  // F-01: 停止当前发送 — AbortController 断开前端流 + 后端 cancel API (真实停止)
+  const abortRef = useRef<AbortController | null>(null);
+  const cancelSend = useCallback(async (): Promise<void> => {
+    abortRef.current?.abort();
+    if (activeId) {
+      try {
+        await fetch(`/api/sessions/${encodeURIComponent(activeId)}/cancel`, {
+          method: 'POST',
+        });
+      } catch {
+        /* 后端不可达 — abort 已断开前端流 */
+      }
+    }
+  }, [activeId]);
+
   const send = useCallback(
     async (content: string): Promise<void> => {
       const text = content.trim();
@@ -348,6 +366,9 @@ export function ConversationProvider({ children, initialProjectId }: { children:
         target = created.id;
       }
       setSending(true);
+      // F-01: 创建 AbortController — Stop 时断开流
+      const ac = new AbortController();
+      abortRef.current = ac;
       // 乐观追加用户消息
       setMessages((prev) => [
         ...prev,
@@ -450,7 +471,7 @@ export function ConversationProvider({ children, initialProjectId }: { children:
               setProjectIdState(rmeta.project);
             }
           }
-        });
+        }, ac.signal);  // F-01: 传 AbortController — Stop 时断开流
         if (!ok || !streamed) {
           // 回退同步
           setMessages((prev) => prev.filter((m) => m.id !== assistantId));
@@ -475,6 +496,7 @@ export function ConversationProvider({ children, initialProjectId }: { children:
           },
         ]);
       } finally {
+        abortRef.current = null;  // F-01: 发送结束清 AbortController
         setSending(false);
       }
     },
@@ -528,6 +550,7 @@ export function ConversationProvider({ children, initialProjectId }: { children:
       renameSession,
       archiveSession,
       send,
+      cancelSend,
       truncate,
       refresh,
     }),
@@ -560,6 +583,7 @@ export function ConversationProvider({ children, initialProjectId }: { children:
       renameSession,
       archiveSession,
       send,
+      cancelSend,
       truncate,
       refresh,
     ],

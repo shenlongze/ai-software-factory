@@ -213,12 +213,13 @@ def test_project_list_full_fields(tmp_path: Path) -> None:
     r = dispatch("project_list", {}, root=ws, project_id="P-abc")
     assert r["ok"] is True
     out = str(r["output"])
-    # markdown 表格: 表头 + 分隔行 + 数据行
-    assert "| 项目ID | 名称 | 进度 | 阶段 | 描述 |" in out
-    assert "|--------|" in out
-    assert "| P-abc | 旅行记账 |" in out
-    assert "| P-def | 番茄钟 |" in out
-    assert "阶段=idea" not in out  # 不再是键值对行, 是表格
+    # markdown 无序列表: 每项目一组, 字段齐全 (S35-P0 从表格改为无序列表)
+    assert "- 项目ID: P-abc" in out
+    assert "名称: 旅行记账" in out
+    assert "- 项目ID: P-def" in out
+    assert "名称: 番茄钟" in out
+    assert "阶段: idea" in out
+    assert "阶段: development" in out
 
 
 # ---- P0-01: Run 存活/stale 检测 ----

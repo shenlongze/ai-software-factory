@@ -6639,6 +6639,26 @@ def build_app(
             raise HTTPException(status_code=404, detail="session not found")
         return {"ok": True, "session_id": session_id, "deleted": True}
 
+    @app.post("/api/sessions/{session_id}/cancel")
+    def api_cancel_session_message(session_id: str) -> dict[str, Any]:
+        """F-01: 取消会话消息执行 (run_agent_native 循环边界停止)。
+
+        语义: RUNNING → CANCELLING (设置标志) → 循环检查到 → CANCELLED。
+        幂等: 重复 cancel 返回当前状态; 已无执行 → 也幂等返回。
+        session 不存在 → 404 (保持与消息端点一致)。
+        """
+        if sessions_store.get_session(session_id) is None:
+            raise HTTPException(status_code=404, detail="session not found")
+        from factory_console import run_liveness as _rl
+
+        _rl.request_session_cancel(session_id)
+        return {
+            "ok": True,
+            "session_id": session_id,
+            "status": "CANCELLING",
+            "detail": "cancel requested — 会话消息执行将在当前轮结束后停止",
+        }
+
     @app.get("/api/sessions/{session_id}/messages")
     def api_session_messages(session_id: str) -> dict[str, Any]:
         """会话消息列表 (K-7e); 会话不存在 → 404。
@@ -7169,6 +7189,8 @@ def build_app(
                     _ctx_view = _tl.build_view(skip_last=1)
                 except Exception:  # noqa: BLE001 — 账本不可用 → 回退固定历史
                     _ctx_view = ""
+                # P0-001: v1 出口同样过 Execution Claim Validator (兜底 sanitize,
+                # 不裸放行无据执行声称; v1 计划流程保持不动避免回归)
                 agent_result = _agmod.run_agent(
                     _agent_message,
                     root=workspace_root or DEFAULT_ROOT,
@@ -7186,6 +7208,16 @@ def build_app(
             if agent_result is not None and agent_result.get("answer"):
                 # S34-003B: v1 路径也清洗 (防文本模拟 <tool_calls> 泄漏 — 与 v3 native 一致)
                 _v1_answer = _agmod._strip_fake_toolcalls(str(agent_result.get("answer") or ""))
+                # P0-001: v1 出口过 Execution Claim Validator — 无据执行声称追加诚实标注
+                try:
+                    _et = _console_import("session.execution_truth")
+                    _cv1 = _et.validate_execution_claims(
+                        _v1_answer, agent_result.get("calls") or [])
+                    if not _cv1["ok"]:
+                        _v1_answer = _et.sanitize_hard_converge(
+                            _v1_answer, agent_result.get("calls") or [])
+                except Exception:  # noqa: BLE001 — validator 失败不阻断
+                    pass
                 if _v1_answer:
                     agent_result["answer"] = _v1_answer
                 calls = agent_result.get("calls") or []
@@ -7698,6 +7730,69 @@ def build_app(
                     facts = f"{facts}\n\n【当前细化模块】\n{module_facts}"
             except Exception:  # noqa: BLE001 — 模块事实失败 → 不注入 (诚实降级)
                 pass
+        # P0-001: company 会话兜底统一走 v3 agent loop — 必须经过 Execution Claim
+        # Validator (原: chat/未分类意图直接 send_message → LLM 自由声称执行无校验,
+        # 这是 P0-001 "AI 伪造工具执行" 的根因出口 C)
+        _agmod = _console_import("session.agent_loop")
+        try:
+            _hist2 = sessions_store.list_messages(session_id)
+        except Exception:  # noqa: BLE001 — 历史不可用 → 不阻塞
+            _hist2 = []
+        try:
+            agent_result = _agmod.run_agent_native(
+                body.message,
+                data_dir=workspace_root or DEFAULT_ROOT,
+                project_id=str(session.get("project_id") or ""),
+                service=service,
+                max_rounds=3,
+                session_store=sessions_store,
+                session_id=session_id,
+                history=_hist2,
+            )
+        except Exception:  # noqa: BLE001 — agent 不可用 → 回退原兜底
+            agent_result = None
+        if agent_result is not None and agent_result.get("answer"):
+            calls = agent_result.get("calls") or []
+            evidence_lines = [
+                f"- 工具 {c['tool']}: {'✅' if c.get('ok') else '❌'} "
+                f"{str(c.get('output') or c.get('error') or '')[:300]}" for c in calls
+            ]
+            facts = (
+                "【工具执行证据】\n" + ("\n".join(evidence_lines) if evidence_lines else "（未调用工具）")
+                + "\n\n请基于工具证据输出最终回答; 引用来源, 不编造。"
+            )
+            try:
+                result = _sessions_mod.send_message(
+                    sessions_store, session_id, body.message, facts=facts,
+                    reply_extra="回答必须引用上面【工具执行证据】; 工具没提供的不要编造; 分 结论/证据/数据/建议。",
+                    llm_fn=lambda _p, _a=agent_result.get("answer", ""): _a,
+                    assistant_meta={
+                        "tool_calls": [
+                            {"tool": c["tool"], "ok": c.get("ok"), "params": c.get("params"),
+                             "output": str(c.get("output") or c.get("error") or "")[:500]} for c in calls
+                        ],
+                        "evidence": [
+                            {"tool": c["tool"], "ok": c.get("ok"),
+                             "output": str(c.get("output") or c.get("error") or "")[:300]} for c in calls
+                        ],
+                    },
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            result["meta"] = {
+                "intent": intent.get("intent"),
+                "project": hint_project,
+                "data_source": "tools" if calls else "agent",
+                "target": _qmod.intent_target(
+                    intent.get("intent"),
+                    project_id=session.get("project_id") or (
+                        next((pp.id for pp in projects if pp.name == hint_project), None) if hint_project else None
+                    ),
+                    project_name=hint_project,
+                ),
+            }
+            return result
+        # agent 不可用 → 原兜底 (facts + 直接 send_message)
         if intent.get("intent") == "system_status":
             reply_extra = _qmod.SYSTEM_STATUS_OUTPUT_PROMPT
         else:

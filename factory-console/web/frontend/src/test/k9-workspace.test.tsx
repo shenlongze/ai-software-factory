@@ -84,6 +84,31 @@ describe('AfConversationCenter (K9 中栏)', () => {
     fireEvent.click(screen.getByRole('button', { name: /发送/i }));
     await waitFor(() => expect(screen.getByText(/好的,开始执行/)).toBeTruthy());
   });
+
+  it('IME 候选状态 Enter 不发送 (F-02)', async () => {
+    wrap(<AfConversationCenter />);
+    await waitFor(() => expect(screen.getByPlaceholderText(/和公司说话/)).toBeTruthy());
+    const input = screen.getByPlaceholderText(/和公司说话/) as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: 'nihao' } });
+    // 模拟中文输入法候选确认: keydown Enter + isComposing=true
+    const ev = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    Object.defineProperty(ev, 'isComposing', { value: true });
+    fireEvent(input, ev);
+    // 不应发送: 输入框文字保留, 无 AI 回复追加
+    expect(input.value).toBe('nihao');
+    await waitFor(() => expect(screen.queryByText(/好的,开始执行/)).toBeFalsy());
+  });
+
+  it('Shift+Enter 换行不发送 (F-03)', async () => {
+    wrap(<AfConversationCenter />);
+    await waitFor(() => expect(screen.getByPlaceholderText(/和公司说话/)).toBeTruthy());
+    const input = screen.getByPlaceholderText(/和公司说话/) as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: '第一行' } });
+    fireEvent.keyDown(input, { key: 'Enter', shiftKey: true });
+    // 不发送 (文字保留), 允许继续输入多行
+    expect(input.value).toBe('第一行');
+    await waitFor(() => expect(screen.queryByText(/好的,开始执行/)).toBeFalsy());
+  });
 });
 
 describe('AfWorkspace (K9 右栏)', () => {

@@ -114,8 +114,8 @@ DEFAULT_TRAITS: dict[str, Any] = {
 
 #: provider 前缀 → traits (deepseek 系列特化; 其余用默认)
 _PROVIDER_TRAITS: dict[str, dict[str, Any]] = {
-    "deepseek": {"anti_fake_toolcall": True, "no_verbal_confirm": True, "needs_enforcement": True},
-    "deepseek-reasoner": {"anti_fake_toolcall": True, "no_verbal_confirm": True, "needs_enforcement": True},
+    "deepseek": {"anti_fake_toolcall": True, "no_verbal_confirm": True, "needs_enforcement": True, "no_fabricated_execution": True},
+    "deepseek-reasoner": {"anti_fake_toolcall": True, "no_verbal_confirm": True, "needs_enforcement": True, "no_fabricated_execution": True},
 }
 
 
@@ -144,4 +144,14 @@ def pick_prompt(
         "tier": "strong" if strong else "light",
     }
     base["traits"] = traits_for_provider(provider_id)
+    # P0-001: 执行真实性 runtime contract (辅助防线 — 真正的 enforcement 在
+    # agent_loop Execution Claim Validator; 此处仅约束模型表述习惯)
+    if (base["traits"] or {}).get("no_fabricated_execution"):
+        base["system"] = (
+            base["system"]
+            + "\n\n【执行真实性契约 (P0-001)】你声称的任何执行事实 (命令执行/文件操作/"
+            "测试/构建/部署/任务完成) 必须由当前会话中真实、成功的工具执行记录支撑。"
+            "当前执行上下文没有对应成功工具记录时, 禁止声称『已执行/已创建/执行成功』等结果; "
+            "只能如实说『我还没有实际执行该操作』或通过真实函数调用通道执行后再陈述。"
+        )
     return base

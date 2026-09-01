@@ -15,6 +15,7 @@ project_docs / model / chat (默认对话, 无查询)。
 from __future__ import annotations
 
 import json
+import os
 import re
 from pathlib import Path
 from typing import Any
@@ -168,6 +169,12 @@ def _project_task_stats(root: Path | None, project_id: str) -> dict[str, int] | 
     blocked = sum(1 for s in statuses if s in ("blocked", "failed"))
     todo = len(statuses) - done - running - blocked
     total = len(statuses)
+    # S35: 任务分类计数 — 合并任务列表按 priority 统计 P0/P1/P2/P3
+    prios = [str(t.get("priority") or "").upper() for t in tasks if isinstance(t, dict)]
+    p0 = sum(1 for p in prios if p == "P0")
+    p1 = sum(1 for p in prios if p == "P1")
+    p2 = sum(1 for p in prios if p == "P2")
+    p3 = sum(1 for p in prios if p == "P3")
     return {
         "total": total,
         "done": done,
@@ -175,7 +182,41 @@ def _project_task_stats(root: Path | None, project_id: str) -> dict[str, int] | 
         "blocked": blocked,
         "todo": todo,
         "pct": round(done / total * 100) if total else 0,
+        "p0": p0,
+        "p1": p1,
+        "p2": p2,
+        "p3": p3,
     }
+
+
+def _project_docs(root: Path | None, project_id: str, limit: int = 5) -> list[str]:
+    """项目文档文件名扫描 (projects/<id> + workspace/projects/<id> 下 *.md, 最多 limit 个)。
+
+    排除 node_modules/.venv/build 等依赖/构建目录 (os.walk 剪枝, 避免扫大目录);
+    返回去重后的文件名列表 (逗号分隔展示由调用方做)。
+    """
+    if root is None:
+        return []
+    skip = {"node_modules", ".venv", "venv", "build", "dist", ".git", "__pycache__", ".next", ".factory"}
+    names: list[str] = []
+    seen: set[str] = set()
+    for base in (
+        Path(root) / "projects" / Path(project_id).name,
+        Path(root) / "workspace" / "projects" / Path(project_id).name,
+    ):
+        if not base.is_dir():
+            continue
+        for dirpath, dirnames, filenames in os.walk(base):
+            dirnames[:] = [d for d in dirnames if d not in skip]
+            for fn in sorted(filenames):
+                if not fn.lower().endswith(".md"):
+                    continue
+                if fn not in seen:
+                    seen.add(fn)
+                    names.append(fn)
+                if len(names) >= limit:
+                    return names
+    return names[:limit]
 
 
 def _project_epic_names(root: Path | None, project_id: str) -> dict[str, Any] | None:

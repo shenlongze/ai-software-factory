@@ -215,7 +215,7 @@ PROJECT_TRANSITIONS: dict[str, tuple[str, ...]] = {
     "development": ("release", "archived"),
     "release": ("maintain", "archived"),
     "maintain": ("archived",),
-    "idea": ("active", "archived"),        # 旧值兼容
+    "idea": ("confirmed", "active", "archived"),  # 旧值兼容; confirmed=任务拆解完成 (S35-P0 数据同步)
     "active": ("maintained", "archived"),  # 旧值兼容
     "maintained": ("archived",),           # 旧值兼容
     "archived": (),
@@ -733,6 +733,25 @@ class ProjectLifecycle:
             to_lifecycle=target.value,
         )
         return updated
+
+    def reconcile_stale_ideas(self, task_counts: dict[str, int]) -> list[str]:
+        """存量校正: 已拆任务但停在 idea 的项目 → confirmed (S35-P0 数据同步)。
+
+        任务拆解完成 = 需求已明确 → 项目自动从 idea 推进到 confirmed。
+        幂等: 非 idea 或任务数=0 的项目不动; 返回实际校正的 project_id 列表。
+        """
+        moved: list[str] = []
+        for project in self.list_projects():
+            if project.lifecycle != ProjectState.IDEA:
+                continue
+            if int(task_counts.get(project.id, 0) or 0) <= 0:
+                continue
+            try:
+                self.transition_lifecycle(project.id, ProjectState.CONFIRMED)
+                moved.append(project.id)
+            except Exception:  # noqa: BLE001 — 单项目校正失败不阻断
+                continue
+        return moved
 
     def link_task(
         self, project_id: str, task_id: str, *, link_id: str | None = None

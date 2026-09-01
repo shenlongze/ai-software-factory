@@ -235,11 +235,25 @@ export function AfConversationCenter(): JSX.Element {
     await ctx.send(text);
   };
 
+  // F-02: 完整 IME composition guard —
+  // compositionstart → composingRef=true; compositionend → false。
+  // keydown 组合检查: composingRef || nativeEvent.isComposing || keyCode===229。
+  // keyCode 229 是 W3C 标准"IME 处理中"标志, 覆盖部分浏览器 compositionend
+  // 先触发导致 isComposing 已 false、但该 Enter 仍属候选确认的场景。
+  const composingRef = useRef(false);
+  const handleCompositionStart = () => {
+    composingRef.current = true;
+  };
+  const handleCompositionEnd = () => {
+    composingRef.current = false;
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    // F-02: 中文 IME 候选状态 Enter 不发送 — isComposing 保护
-    // (拼音候选确认时 keydown Enter, isComposing=true → 不触发发送, 候选词正常上屏)
-    const composing = e.nativeEvent.isComposing === true;
-    if (e.key === 'Enter' && !e.shiftKey && !composing) {
+    const imeActive =
+      composingRef.current ||
+      e.nativeEvent.isComposing === true ||
+      e.keyCode === 229;
+    if (e.key === 'Enter' && !e.shiftKey && !imeActive) {
       e.preventDefault();
       void handleSend();
     }
@@ -380,6 +394,8 @@ export function AfConversationCenter(): JSX.Element {
             value={input}
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
+            onCompositionStart={handleCompositionStart}
+            onCompositionEnd={handleCompositionEnd}
             disabled={ctx.sending}
           />
 

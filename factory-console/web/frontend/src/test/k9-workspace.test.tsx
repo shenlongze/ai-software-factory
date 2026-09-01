@@ -90,13 +90,44 @@ describe('AfConversationCenter (K9 中栏)', () => {
     await waitFor(() => expect(screen.getByPlaceholderText(/和公司说话/)).toBeTruthy());
     const input = screen.getByPlaceholderText(/和公司说话/) as HTMLTextAreaElement;
     fireEvent.change(input, { target: { value: 'nihao' } });
-    // 模拟中文输入法候选确认: keydown Enter + isComposing=true
+    // compositionstart → 候选状态
+    fireEvent.compositionStart(input);
+    // 候选确认 Enter: nativeEvent.isComposing=true (Case A)
     const ev = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
     Object.defineProperty(ev, 'isComposing', { value: true });
     fireEvent(input, ev);
-    // 不应发送: 输入框文字保留, 无 AI 回复追加
     expect(input.value).toBe('nihao');
     await waitFor(() => expect(screen.queryByText(/好的,开始执行/)).toBeFalsy());
+  });
+
+  it('compositionend 后候选 Enter (keyCode 229) 不发送 (F-02 edge)', async () => {
+    wrap(<AfConversationCenter />);
+    await waitFor(() => expect(screen.getByPlaceholderText(/和公司说话/)).toBeTruthy());
+    const input = screen.getByPlaceholderText(/和公司说话/) as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: 'nihao' } });
+    // 部分浏览器: compositionend 先触发 (isComposing 已 false), 但 Enter 仍属候选确认
+    // → keyCode 229 (W3C IME 处理中) 兜底拦截
+    fireEvent.compositionStart(input);
+    fireEvent.compositionEnd(input);
+    const ev = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    Object.defineProperty(ev, 'keyCode', { value: 229 });
+    Object.defineProperty(ev, 'isComposing', { value: false });
+    fireEvent(input, ev);
+    expect(input.value).toBe('nihao');
+    await waitFor(() => expect(screen.queryByText(/好的,开始执行/)).toBeFalsy());
+  });
+
+  it('composition 结束后 Enter 发送 (F-02 Case B)', async () => {
+    wrap(<AfConversationCenter />);
+    await waitFor(() => expect(screen.getByPlaceholderText(/和公司说话/)).toBeTruthy());
+    const input = screen.getByPlaceholderText(/和公司说话/) as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: '开始做' } });
+    // 输入法确认候选: start → end (composingRef=false)
+    fireEvent.compositionStart(input);
+    fireEvent.compositionEnd(input);
+    // 再次 Enter (正常 keyCode 13) → 发送
+    fireEvent.keyDown(input, { key: 'Enter', keyCode: 13 });
+    await waitFor(() => expect(screen.getByText(/好的,开始执行/)).toBeTruthy());
   });
 
   it('Shift+Enter 换行不发送 (F-03)', async () => {

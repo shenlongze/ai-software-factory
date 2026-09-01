@@ -57,16 +57,28 @@ CLAIM_PATTERNS: dict[str, list[str]] = {
         # P0-FIX: 数量型/组合型任务声称 (覆盖 "拆解成 6 个任务并创建到任务列表")
         r"(已|已经)?(拆解|拆分|分解)(成|为)?[^。；\n]{0,24}(任务|任务列表)",
         r"(已|已经)?(创建|生成)(了)?[^。；\n]{0,24}(任务|任务列表)",
-        r"(已|已经)?(创建|生成)(了)?\s*\d+\s*个任务",
+        r"(已|已经)?(添加|加入)(了)?[^。；\n]{0,24}(任务|任务列表)",
+        r"(已|已经)?(落到|写入|进入)(了)?[^。；\n]{0,16}(任务|任务列表)",
+        r"(已|已经)?(标记为|进入)(了)?(待办|待办树)",
+        r"(已|已经)?(创建|生成|添加|加入)(了)?\s*\d+\s*个任务",
+        r"\d+\s*个任务[^。；\n]{0,10}?(已|已经)?(添加|创建|生成|加入)(了)?(成功|完成)?",
         r"(已|已经)?创建(了)?[^。；\n]{0,16}到任务列表",
         r"创建了?\s*\d+\s*个(任务|功能|模块)",
     ],
 }
 
-#: 声称片段前导的条件/建议/祈使/计划语境 — 这些不是事实声称 (INTENT/PLAN 允许)
-_NON_CLAIM_PREFIX = ("如果", "若", "建议", "可以", "请", "假设", "可能", "需要",
-                     "例如", "比如", "计划", "准备", "打算", "将", "要", "想",
-                     "应该", "最好", "试着", "下一步", "未来", "希望")
+#: 条件/假设前缀 — 永远 INTENT (无论完成态): "如果你刚才执行成功" 不是声称
+_CONDITION_PREFIX = ("如果", "若", "假如", "假设", "要是", "只要", "除非", "万一",
+                     "即便", "即使", "虽然", "尽管")
+
+#: 意图/未来前缀 — 仅无完成态时豁免 (我计划/准备/打算/将 → INTENT)
+_INTENT_PREFIX = ("计划", "准备", "打算", "将", "建议", "请", "要", "想", "希望",
+                  "试着", "应该", "最好", "可以", "可能", "需要", "例如", "比如",
+                  "下一步", "未来", "试着", "尝试")
+
+#: 完成态标记 — 匹配文本内出现任一 → 完成态执行声称, 跳过意图前缀豁免
+#: (Rule 1: 完成态优先; "开发计划已创建完成" 的 "计划" 是业务名词, 非意图)
+_COMPLETION_MARKERS = ("已", "已经", "了", "完成", "成功", "好了", "完毕")
 
 #: 数量型声称提取 (创建/拆解 N 个任务/功能/模块 — 允许 "N 个具体任务" 类修饰)
 _COUNT_RE = re.compile(r"(\d+)\s*个[^。；\n]{0,8}?(任务|功能|模块|子任务)")
@@ -80,20 +92,41 @@ _SUCCESS_MARKERS = ("成功", "完成", "已创建", "已执行", "已写入", "
                     "已部署", "已上线", "通过", "已生成")
 
 
+#: 完成态标记 — 匹配文本内出现任一 → 完成态执行声称, 不做前缀 INTENT 豁免
+#: (Rule 1: 完成态优先; "开发计划已创建完成" 的 "计划" 是业务名词, 非意图)
+_COMPLETION_MARKERS = ("已", "已经", "了", "完成", "成功", "好了", "完毕")
+
+
 def extract_execution_claims(text: str) -> list[dict[str, str]]:
-    """提取文本中的执行事实声称 → [{type, text}] (结构化, 去重)。"""
+    """提取文本中的执行事实声称 → [{type, text}] (结构化, 去重)。
+
+    Claim/Intent 优先级 (P1-FIX):
+    - 匹配文本含完成态标记 (已/已经/了/完成/成功/好了) → EXECUTION CLAIM
+      (前缀即使含 "计划/准备/将" 等业务名词/引导词也不豁免 — "开发计划已创建完成")
+    - 无完成态标记 + 前缀含意图引导 (我计划/准备/打算/将/建议) → INTENT, 跳过
+      ("我计划创建 7 个任务" 不拦截)
+    """
     claims: list[dict[str, str]] = []
     if not text:
         return claims
     for ctype, pats in _COMPILED.items():
         for pat in pats:
             for m in pat.finditer(text):
-                # 声称片段前导语境检查: 条件/建议/祈使前缀 → 非事实声称
+                mtext = m.group(0)
                 start = max(0, m.start() - 6)
                 prefix = text[start:m.start()]
-                if any(p in prefix for p in _NON_CLAIM_PREFIX):
+                # 条件/假设前缀 → 永远 INTENT ("如果你刚才执行成功" 不是声称)
+                if any(p in prefix for p in _CONDITION_PREFIX):
                     continue
-                claims.append({"type": ctype, "text": m.group(0).strip()})
+                completed = any(k in mtext for k in _COMPLETION_MARKERS)
+                if completed:
+                    # Rule 1: 完成态执行声称优先 — 业务名词 (开发计划) 不豁免
+                    claims.append({"type": ctype, "text": mtext.strip()})
+                    continue
+                # 无完成态: 前导意图语境 → INTENT (我计划/准备/建议/将)
+                if any(p in prefix for p in _INTENT_PREFIX):
+                    continue
+                claims.append({"type": ctype, "text": mtext.strip()})
     seen: set[tuple[str, str]] = set()
     out: list[dict[str, str]] = []
     for c in claims:

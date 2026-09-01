@@ -14,11 +14,14 @@ LLM 不可用/调用失败 → 诚实引导 (不假装 AI 回答, 与 REPL ChatS
 from __future__ import annotations
 
 import json
+import os
 import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
+
+from org.store import file_lock  # G2: 跨进程文件锁 (org 数据空间共享工具)
 
 #: 合法作用域
 VALID_SCOPES = ("company", "project")
@@ -154,9 +157,12 @@ class SessionStore:
     def _save(self) -> bool:
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
-            self._path.write_text(
+            # G2: 原子写 (临时文件 + os.replace) — 进程崩溃不产生半写文件
+            tmp = self._path.parent / f".{self._path.name}.{os.getpid()}.tmp"
+            tmp.write_text(
                 json.dumps(self._data, ensure_ascii=False, indent=2), encoding="utf-8"
             )
+            os.replace(tmp, self._path)
             return True
         except OSError:
             return False  # 不可写 → 静默 (会话记录尽力而为)
@@ -219,15 +225,18 @@ class SessionStore:
             return out
 
     def get_session(self, session_id: str) -> dict[str, Any] | None:
-        with self._lock:
-            s = self._data["sessions"].get(session_id)
-            if s is None:
-                return None
-            out = dict(s)
-            # S30-003: 历史 session 向后兼容 — run_ids 缺失时补空 (不写盘, 读时默认)
-            if not isinstance(out.get("run_ids"), list):
-                out["run_ids"] = []
-            return out
+        """G2: 跨进程读一致性 — 锁内刷新。"""
+        with file_lock(self._path):
+            with self._lock:
+                self._load()
+                s = self._data["sessions"].get(session_id)
+                if s is None:
+                    return None
+                out = dict(s)
+                # S30-003: 历史 session 向后兼容 — run_ids 缺失时补空 (不写盘, 读时默认)
+                if not isinstance(out.get("run_ids"), list):
+                    out["run_ids"] = []
+                return out
 
     def create_session(
         self,
@@ -258,19 +267,21 @@ class SessionStore:
             # S30-003: Session ↔ Run 一级关联 (1:N — 一个会话可多次执行)
             "run_ids": [],
         }
-        with self._lock:
-            sessions = self._data["sessions"]
-            if len(sessions) >= MAX_SESSIONS:
-                # 丢最旧 inactive (active 保留 — 防误删进行中)
-                oldest = sorted(
-                    (s for s in sessions.values() if s.get("status") != "active"),
-                    key=lambda s: s.get("updated_at") or "",
-                )
-                if oldest:
-                    del sessions[oldest[0]["id"]]
-                    self._data["messages"].pop(oldest[0]["id"], None)
-            sessions[sid] = session
-            self._save()
+        with file_lock(self._path):  # G2: 跨进程锁 (RLock 内锁内刷新)
+            with self._lock:
+                self._load()  # 锁内刷新到最新 (防跨进程覆盖)
+                sessions = self._data["sessions"]
+                if len(sessions) >= MAX_SESSIONS:
+                    # 丢最旧 inactive (active 保留 — 防误删进行中)
+                    oldest = sorted(
+                        (s for s in sessions.values() if s.get("status") != "active"),
+                        key=lambda s: s.get("updated_at") or "",
+                    )
+                    if oldest:
+                        del sessions[oldest[0]["id"]]
+                        self._data["messages"].pop(oldest[0]["id"], None)
+                sessions[sid] = session
+                self._save()
         return dict(session)
 
     def update_session(
@@ -283,25 +294,27 @@ class SessionStore:
         feature_id: str | None = None,
         task_id: str | None = None,
     ) -> dict[str, Any] | None:
-        with self._lock:
-            s = self._data["sessions"].get(session_id)
-            if s is None:
-                return None
-            if title is not None:
-                s["title"] = title.strip() or s["title"]
-            if status is not None:
-                if status not in ("active", "archived"):
-                    raise ValueError("非法状态: active|archived")
-                s["status"] = status
-            if summary is not None:
-                s["summary"] = summary
-            if feature_id is not None:
-                s["feature_id"] = feature_id or None
-            if task_id is not None:
-                s["task_id"] = task_id or None
-            s["updated_at"] = _now_iso()
-            self._save()
-            return dict(s)
+        with file_lock(self._path):  # G2
+            with self._lock:
+                self._load()
+                s = self._data["sessions"].get(session_id)
+                if s is None:
+                    return None
+                if title is not None:
+                    s["title"] = title.strip() or s["title"]
+                if status is not None:
+                    if status not in ("active", "archived"):
+                        raise ValueError("非法状态: active|archived")
+                    s["status"] = status
+                if summary is not None:
+                    s["summary"] = summary
+                if feature_id is not None:
+                    s["feature_id"] = feature_id or None
+                if task_id is not None:
+                    s["task_id"] = task_id or None
+                s["updated_at"] = _now_iso()
+                self._save()
+                return dict(s)
 
     def touch(self, session_id: str) -> None:
         with self._lock:
@@ -311,32 +324,37 @@ class SessionStore:
 
     def delete_session(self, session_id: str) -> bool:
         """S35-UI: 删除会话 (本体 + 消息; 不存在 → False)。"""
-        with self._lock:
-            s = self._data["sessions"].get(session_id)
-            if s is None:
-                return False
-            del self._data["sessions"][session_id]
-            self._data.get("messages", {}).pop(session_id, None)
-            return True
+        with file_lock(self._path):  # G2
+            with self._lock:
+                self._load()
+                s = self._data["sessions"].get(session_id)
+                if s is None:
+                    return False
+                del self._data["sessions"][session_id]
+                self._data.get("messages", {}).pop(session_id, None)
+                self._save()  # 删除必须落盘 (否则重启后恢复)
+                return True
 
     def add_run(self, session_id: str, run_id: str) -> bool:
         """S30-003: Session ↔ Run 一级关联 (幂等追加, 1:N 集合)。
 
         Run 创建时调用 — 保证关联与 Run 创建同事务可见。
         """
-        with self._lock:
-            s = self._data["sessions"].get(session_id)
-            if s is None:
-                return False
-            runs = s.get("run_ids")
-            if not isinstance(runs, list):
-                runs = []
-                s["run_ids"] = runs
-            if run_id not in runs:
-                runs.append(run_id)
-            s["updated_at"] = _now_iso()
-            self._save()
-            return True
+        with file_lock(self._path):  # G2
+            with self._lock:
+                self._load()
+                s = self._data["sessions"].get(session_id)
+                if s is None:
+                    return False
+                runs = s.get("run_ids")
+                if not isinstance(runs, list):
+                    runs = []
+                    s["run_ids"] = runs
+                if run_id not in runs:
+                    runs.append(run_id)
+                s["updated_at"] = _now_iso()
+                self._save()
+                return True
 
     def session_runs(self, session_id: str) -> list[str]:
         """S30-003: 查询 Session 关联的 run_ids (向后兼容: 无字段→[])。"""
@@ -348,57 +366,64 @@ class SessionStore:
 
     # ------------------------------------------------------------ 消息
     def list_messages(self, session_id: str) -> list[dict[str, Any]]:
-        with self._lock:
-            return list(self._data["messages"].get(session_id, []))
+        """G2: 跨进程读一致性 — 锁内刷新到最新 (防读陈旧)。"""
+        with file_lock(self._path):
+            with self._lock:
+                self._load()
+                return list(self._data["messages"].get(session_id, []))
 
     def delete_messages_after(self, session_id: str, keep_n: int) -> list[dict[str, Any]]:
         """T16: 截断消息到前 keep_n 条 (编辑/回滚: 删后续轮次)。返回剩余。"""
-        with self._lock:
-            msgs = self._data["messages"].get(session_id, [])
-            if keep_n < 0:
-                keep_n = 0
-            if len(msgs) > keep_n:
-                self._data["messages"][session_id] = msgs[:keep_n]
-                self._save()
-            return list(self._data["messages"].get(session_id, []))
+        with file_lock(self._path):  # G2
+            with self._lock:
+                self._load()
+                msgs = self._data["messages"].get(session_id, [])
+                if keep_n < 0:
+                    keep_n = 0
+                if len(msgs) > keep_n:
+                    self._data["messages"][session_id] = msgs[:keep_n]
+                    self._save()
+                return list(self._data["messages"].get(session_id, []))
 
     def append_message(
         self, session_id: str, role: str, content: str, *, meta: dict[str, Any] | None = None
     ) -> dict[str, Any] | None:
         if role not in ("user", "assistant"):
             raise ValueError("非法角色: user|assistant")
-        with self._lock:
-            s = self._data["sessions"].get(session_id)
-            if s is None:
-                return None
-            # P0-05: client_msg_id 幂等去重 — 同 id 重试返回已有消息 (防重复)
-            if meta and meta.get("client_msg_id"):
-                existing = next(
-                    (m for m in self._data["messages"].get(session_id, [])
-                     if (m.get("meta") or {}).get("client_msg_id") == meta["client_msg_id"]),
-                    None,
-                )
-                if existing is not None:
-                    return existing
-            record = {
-                "id": _new_id("msg"),
-                "session_id": session_id,
-                "role": role,
-                "content": content,
-                "created_at": _now_iso(),
-            }
-            if meta:
-                record["meta"] = meta
-            messages = self._data["messages"].setdefault(session_id, [])
-            messages.append(record)
-            if len(messages) > MAX_MESSAGES_PER_SESSION:
-                del messages[: len(messages) - MAX_MESSAGES_PER_SESSION]
-            s["updated_at"] = record["created_at"]
-            # 首条用户消息 → 自动标题 (前 24 字)
-            if s.get("title") in (None, "", "新会话") and role == "user":
-                s["title"] = content.strip()[:24] or "新会话"
-            self._save()
-            return dict(record)
+        with file_lock(self._path):  # G2: 跨进程锁 + 锁内刷新
+            with self._lock:
+                self._load()
+                s = self._data["sessions"].get(session_id)
+                if s is None:
+                    return None
+                # P0-05: client_msg_id 幂等去重 — 同 id 重试返回已有消息 (防重复)
+                if meta and meta.get("client_msg_id"):
+                    existing = next(
+                        (m for m in self._data["messages"].get(session_id, [])
+                         if (m.get("meta") or {}).get("client_msg_id") == meta["client_msg_id"]),
+                        None,
+                    )
+                    if existing is not None:
+                        return existing
+                record = {
+                    "id": _new_id("msg"),
+                    "session_id": session_id,
+                    "role": role,
+                    "content": content,
+                    "created_at": _now_iso(),
+                }
+                if meta:
+                    record["meta"] = meta
+                messages = self._data["messages"].setdefault(session_id, [])
+                messages.append(record)
+                if len(messages) > MAX_MESSAGES_PER_SESSION:
+                    del messages[: len(messages) - MAX_MESSAGES_PER_SESSION]
+                s["updated_at"] = record["created_at"]
+                # 首条用户消息 → 自动标题 (前 24 字)
+                if s.get("title") in (None, "", "新会话") and role == "user":
+                    s["title"] = content.strip()[:24] or "新会话"
+                self._save()
+                return dict(record)
 
     def message_count(self, session_id: str) -> int:
         with self._lock:

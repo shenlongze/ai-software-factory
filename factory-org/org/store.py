@@ -28,10 +28,19 @@ pydantic + 本层 models。
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 from pathlib import Path
-from typing import Any, Generic, TypeVar
+from typing import Any, Callable, Generic, Iterator, TypeVar
+
+try:
+    import fcntl
+
+    _HAS_FCNTL = True
+except ImportError:  # pragma: no cover — Windows 无 fcntl → 锁降级
+    fcntl = None  # type: ignore[assignment]
+    _HAS_FCNTL = False
 
 from pydantic import BaseModel, ValidationError
 
@@ -115,10 +124,15 @@ class _SectionStore(Generic[T]):
     # ------------------------------------------------------------------ 通用 API
 
     def save(self, record: T) -> None:
-        """upsert 记录 (同 id 覆盖 = 状态流转经 model_copy 新实例后落库)。"""
-        records = self._read_all()
-        records[record.id] = record.to_dict()  # type: ignore[attr-defined]
-        self._write(records)
+        """upsert 记录 (同 id 覆盖 = 状态流转经 model_copy 新实例后落库)。
+
+        G2: 跨进程文件锁保护完整 read-modify-write (flock; 原子写防损坏,
+        锁防并发覆盖 — 两个进程同时 save 不同记录不再丢更新)。
+        """
+        with file_lock(self._path()):
+            records = self._read_all()
+            records[record.id] = record.to_dict()  # type: ignore[attr-defined]
+            self._write(records)
 
     def get(self, record_id: str) -> T | None:
         """按 id 取记录; 不存在返回 None。"""
@@ -126,6 +140,25 @@ class _SectionStore(Generic[T]):
         if data is None:
             return None
         return self._load(data)
+
+    def update(self, record_id: str, mutator: Callable[[T], T]) -> T | None:
+        """G2: 事务性 update — 锁内 READ → mutator → WRITE (并发安全)。
+
+        调用方必须用此接口做 get→modify→save (自行 get 再 save 会覆盖
+        并发修改 — 静默丢更新)。record 不存在 → None。
+        """
+        with file_lock(self._path()):
+            data = self._read_all().get(record_id)
+            if data is None:
+                return None
+            loaded = self._load(data)
+            if loaded is None:
+                return None
+            updated = mutator(loaded)
+            records = self._read_all()
+            records[record_id] = updated.to_dict()  # type: ignore[attr-defined]
+            self._write(records)
+            return updated
 
     def list_all(self) -> list[T]:
         """全部记录 (按 id 排序, 审计友好)。"""
@@ -139,13 +172,49 @@ class _SectionStore(Generic[T]):
         return len(self._read_all())
 
     def delete(self, record_id: str) -> bool:
-        """删除记录; 不存在返回 False (幂等)。"""
-        records = self._read_all()
-        if record_id not in records:
-            return False
-        del records[record_id]
-        self._write(records)
-        return True
+        """删除记录; 不存在返回 False (幂等)。G2: 同 save 跨进程锁。"""
+        with file_lock(self._path()):
+            records = self._read_all()
+            if record_id not in records:
+                return False
+            del records[record_id]
+            self._write(records)
+            return True
+
+
+@contextlib.contextmanager
+def file_lock(path: Path) -> Iterator[None]:
+    """跨进程文件锁 (fcntl.flock 阻塞; 锁文件 <path>.lock)。
+
+    保护完整 read-modify-write: 调用方在 with file_lock(...) 内执行
+    READ → MODIFY → WRITE (原子 replace)。锁文件独立于数据文件, replace
+    不破坏锁 (锁 fd 指向 .lock, 非数据文件)。
+
+    无 fcntl 平台 (Windows) → no-op (仍保证原子写, 跨进程一致性降级)。
+    锁文件残留 (崩溃) → flock 自动释放 (内核级), 无害。
+    """
+    lock_path = Path(str(path) + ".lock")
+    try:
+        # 目录不存在 → 无锁 (不预建目录/锁文件 — 保持"零破坏"契约,
+        # 旧项目无 management/ 时 list/delete 不创建任何文件)
+        if not lock_path.parent.exists():
+            yield
+            return
+        fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o644)
+    except OSError:
+        yield  # 锁不可用 → 不阻塞 (仍原子写)
+        return
+    try:
+        if _HAS_FCNTL:
+            fcntl.flock(fd, fcntl.LOCK_EX)  # type: ignore[attr-defined]
+        yield
+    finally:
+        if _HAS_FCNTL:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_UN)  # type: ignore[attr-defined]
+            except OSError:
+                pass
+        os.close(fd)
 
 
 class CompanyStore(_SectionStore[Company]):

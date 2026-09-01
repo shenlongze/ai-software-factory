@@ -138,17 +138,17 @@ def _project_task_stats(root: Path | None, project_id: str) -> dict[str, int] | 
         return None
     seen: set[str] = set()
     tasks: list[dict[str, Any]] = []
-    # mgmt store (workspace/projects/<id>/management/backlog/task.json)
+    # G1: 经 org.management 门面读取 (业务代码不直接碰 JSON 路径/结构)
     try:
-        tf = (
-            Path(root) / "workspace" / "projects" / Path(project_id).name
-            / "management" / "backlog" / "task.json"
+        from org.management import ManagementStore
+
+        _mgmt = ManagementStore(
+            Path(root) / "workspace" / "projects" / Path(project_id).name / "management"
         )
-        data = json.loads(tf.read_text(encoding="utf-8")) or {}
-        for t in (data.get("tasks") or {}).values():
-            if isinstance(t, dict) and (t.get("id") not in seen):
-                seen.add(str(t.get("id")))
-                tasks.append(t)
+        for _t in _mgmt.list_tasks():
+            if _t.id not in seen:
+                seen.add(str(_t.id))
+                tasks.append(_t.to_dict())
     except Exception:  # noqa: BLE001 — mgmt 读取失败 → 继续 legacy
         pass
     # legacy tasks.json (M2..P0 里程碑树; 按 id 去重合并)

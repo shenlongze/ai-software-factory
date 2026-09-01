@@ -238,10 +238,10 @@ class TestProjectStatsPriorityAndDocs:
         pdir = tmp_path / "workspace" / "projects" / "P-1" / "management" / "backlog"
         pdir.mkdir(parents=True)
         (pdir / "task.json").write_text(json.dumps({"tasks": {
-            "T1": {"id": "T1", "priority": "P0", "status": "done"},
-            "T2": {"id": "T2", "priority": "P1", "status": "todo"},
-            "T3": {"id": "T3", "priority": "p2", "status": "todo"},
-            "T4": {"id": "T4", "priority": "P3", "status": "todo"},
+            "T1": {"id": "T1", "title": "t1", "priority": "P0", "status": "done"},
+            "T2": {"id": "T2", "title": "t2", "priority": "P1", "status": "todo"},
+            "T3": {"id": "T3", "title": "t3", "priority": "p2", "status": "todo"},
+            "T4": {"id": "T4", "title": "t4", "priority": "P3", "status": "todo"},
         }}), encoding="utf-8")
         st = _qe._project_task_stats(tmp_path, "P-1")
         assert st["total"] == 4
@@ -252,13 +252,13 @@ class TestProjectStatsPriorityAndDocs:
         pdir = tmp_path / "workspace" / "projects" / "P-1" / "management" / "backlog"
         pdir.mkdir(parents=True)
         (pdir / "task.json").write_text(json.dumps({"tasks": {
-            "T1": {"id": "T1", "priority": "P0", "status": "todo"},
-            "T2": {"id": "T2", "priority": "P1", "status": "todo"},
+            "T1": {"id": "T1", "title": "t1", "priority": "P0", "status": "todo"},
+            "T2": {"id": "T2", "title": "t2", "priority": "P1", "status": "todo"},
         }}), encoding="utf-8")
         (tmp_path / "projects" / "P-1").mkdir(parents=True)
         (tmp_path / "projects" / "P-1" / "tasks.json").write_text(json.dumps({"tasks": [
-            {"id": "T1", "priority": "P0", "status": "todo"},   # 重复 → 去重
-            {"id": "T3", "priority": "P2", "status": "done"},
+            {"id": "T1", "title": "t1", "priority": "P0", "status": "todo"},   # 重复 → 去重
+            {"id": "T3", "title": "t3", "priority": "P2", "status": "done"},
         ]}), encoding="utf-8")
         st = _qe._project_task_stats(tmp_path, "P-1")
         assert st["total"] == 3

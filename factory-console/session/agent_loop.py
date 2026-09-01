@@ -902,11 +902,14 @@ def dispatch(
 
         if tool_id == "project_list":
             # 项目清单 — markdown 无序列表, 字段完整 (ID/名称/本地地址/Git地址/阶段/语言/任务分类/完成度/文档)
+            # G1: 经 org ProjectStore 门面读取 (业务代码不直接碰 JSON 路径/结构)
             try:
-                import json as _json
+                from org.projects import ProjectStore
 
-                _org = _json.loads((Path(root) / "org" / "projects.json").read_text(encoding="utf-8"))
-                _projs = _org.get("projects") if isinstance(_org, dict) else {}
+                _projs = {
+                    p.id: p.to_dict()
+                    for p in ProjectStore(Path(root) / "org").list_projects()
+                }
             except Exception:  # noqa: BLE001
                 _projs = {}
             _blocks = []
@@ -925,11 +928,10 @@ def dispatch(
             _proj: dict[str, Any] = {}
             if root is not None:
                 try:
-                    import json as _json
+                    from org.projects import ProjectStore
 
-                    _org = _json.loads((Path(root) / "org" / "projects.json").read_text(encoding="utf-8"))
-                    _projs = _org.get("projects") if isinstance(_org, dict) else {}
-                    _proj = _projs.get(project_id) if isinstance(_projs, dict) else {}
+                    _p = ProjectStore(Path(root) / "org").get_project(project_id)
+                    _proj = _p.to_dict() if _p is not None else {}
                 except Exception:  # noqa: BLE001
                     _proj = {}
             if not isinstance(_proj, dict):

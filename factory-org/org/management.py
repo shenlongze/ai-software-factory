@@ -40,11 +40,12 @@ import re
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Generic, TypeVar
+from typing import Any, Callable, Generic, TypeVar
 
 from pydantic import Field, ValidationError, field_serializer, field_validator
 
 from .models import _OrgModel, _norm_list, utcnow
+from .store import file_lock
 
 T = TypeVar("T", bound="_OrgModel")
 
@@ -555,9 +556,30 @@ class _Section(Generic[T]):
             return None  # 损坏记录 → None (失败安全, 不拖垮整库)
 
     def save(self, record: T) -> None:
-        records = _read_json_map(self._path(), self._section)
-        records[record.id] = record.to_dict()  # type: ignore[attr-defined]
-        _write_json_map(self._path(), self._section, records)
+        """G2: 跨进程锁保护 read-modify-write (防多 Agent/多进程丢更新)。"""
+        with file_lock(self._path()):
+            records = _read_json_map(self._path(), self._section)
+            records[record.id] = record.to_dict()  # type: ignore[attr-defined]
+            _write_json_map(self._path(), self._section, records)
+
+    def update(self, record_id: str, mutator: Callable[[T], T]) -> T | None:
+        """G2: 事务性 update — 锁内 READ → mutator → WRITE (并发安全)。
+
+        调用方必须用此接口做 get→modify→save (自行 get 再 save 会覆盖
+        并发修改 — 静默丢更新)。record 不存在 → None。
+        """
+        with file_lock(self._path()):
+            data = _read_json_map(self._path(), self._section).get(record_id)
+            if data is None:
+                return None
+            loaded = self._load(data)
+            if loaded is None:
+                return None
+            updated = mutator(loaded)
+            records = _read_json_map(self._path(), self._section)
+            records[record_id] = updated.to_dict()  # type: ignore[attr-defined]
+            _write_json_map(self._path(), self._section, records)
+            return updated
 
     def get(self, record_id: str) -> T | None:
         data = _read_json_map(self._path(), self._section).get(record_id)
@@ -576,12 +598,14 @@ class _Section(Generic[T]):
         )
 
     def delete(self, record_id: str) -> bool:
-        records = _read_json_map(self._path(), self._section)
-        if record_id not in records:
-            return False
-        del records[record_id]
-        _write_json_map(self._path(), self._section, records)
-        return True
+        """G2: 同 save 跨进程锁。"""
+        with file_lock(self._path()):
+            records = _read_json_map(self._path(), self._section)
+            if record_id not in records:
+                return False
+            del records[record_id]
+            _write_json_map(self._path(), self._section, records)
+            return True
 
 
 _ROADMAP_RE = re.compile(r"<!-- management-json: (\{.*?\}) -->", re.DOTALL)
@@ -622,6 +646,10 @@ class ManagementStore:
 
     def get_task(self, task_id: str) -> Task | None:
         return self._tasks.get(task_id)
+
+    def update_task(self, task_id: str, mutator: Callable[[Task], Task]) -> Task | None:
+        """G2: 事务性任务更新 (锁内 get→mutate→save, 并发安全不丢 history)。"""
+        return self._tasks.update(task_id, mutator)
 
     def list_tasks(self) -> list[Task]:
         return self._tasks.list_all()

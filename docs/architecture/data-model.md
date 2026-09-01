@@ -204,17 +204,24 @@ User Intent → Agent (run_agent_native) → Plan → Task → Run (R{ts})
 - 所有读者经 API→Service→Store 或直接 store 读; 投影读者 (统计/摘要) 知道自己读的是派生数据。
 - 前端只经 `/api/*` (无直连 JSON); localStorage 仅 UI 偏好。
 
-## 20. Concurrency (真实评估)
+## 20. Concurrency (真实评估 — G2 修复后 2026-09-01)
 
 | 维度 | 级别 | 说明 |
 | --- | --- | --- |
 | 单线程 | ✅ 安全 | 顺序执行 |
-| 多线程 (进程内) | ✅ 基本安全 | SessionStore RLock 覆盖 read-modify-write; org store 无锁但单进程内 GIL 序列化; management 原子写 |
-| 多进程 | ⚠️ 部分安全 | 原子写 (临时文件+os.replace) 防损坏; **无跨进程锁** → 两进程同时 read-modify-write 同一文件可能丢更新 (uvicorn 单 worker + CLI 并发场景) |
-| 多 Agent | ⚠️ 同多进程 | 不同 agent 进程写同一 task.json → 最后写覆盖 (无乐观锁/版本检查) |
-| 跨文件原子性 | ❌ 无 | confirm/rename 用手工快照回滚补偿; 无 ACID |
+| 多线程 (进程内) | ✅ 安全 | SessionStore RLock 覆盖 read-modify-write; org store/management 原子写 |
+| 多进程 | ✅ 基本安全 | **G2 修复**: org store / management / console_sessions 写操作均加 `file_lock` (fcntl.flock, per-file) 保护完整 read-modify-write; 原子写 (临时文件+os.replace) 防损坏; `update(record_id, mutator)` 事务接口防 get→save 丢更新; console_sessions 锁内 `_load()` 刷新防读陈旧 |
+| 多 Agent | ✅ 基本安全 | 不同 Task/Project 并发写经 flock 串行化 (test_concurrency A/C 验证); 同一 Task 并发修改须用 `update_task` (B 验证); **业务层 get→save 模式未全量迁移至 update — 待逐步替换** |
+| 跨文件原子性 | ❌ 无 ACID | confirm/rename 用手工快照回滚补偿; 无跨文件事务 (SQLite 阶段解决) |
 
-**如实结论**: 不能因 RLock 声称高并发安全。实际风险场景: CLI 与 Web 后端同时写 org/projects.json 或 task.json。P1 (当前使用频率低, 但契约必须承认)。
+**真实测试** (tests/org/test_concurrency.py, 多进程实测):
+- A: 两进程 save 不同 Project → 无丢更新 ✅
+- B: 两进程 update_task 同 Task 追加 history → 两条都在 ✅
+- C: 4 进程不同 Task → 全保留 ✅
+- D: 写中途 SIGKILL → JSON 仍有效 (原子写) ✅
+- E: 两进程会话 append 消息 → 全保留 ✅
+
+**诚实边界**: flock 是"串行化"不是"ACID"; 锁粒度 per-file (同一文件全部记录共享锁, 高频写有轻微串行); Windows 无 fcntl → 锁降级 (仅原子写)。
 
 ## 21. Schema Contract (核心 Schema)
 
@@ -291,8 +298,8 @@ UI → API → Service/Domain → Store (Repository) → JSON Persistence
 
 | ID | 类别 | 说明 | 级别 |
 | --- | --- | --- | --- |
-| G1 | Repository 边界 | agent_loop.py:908/930 直接读 org/projects.json; 多处直接拼路径读 task.json (service/monitor/query_engine/project_scan/analysis_tools) — 只读, 未统一 | P1 |
-| G2 | 并发 | 多进程无跨进程锁; 多 Agent 写同一 task.json 可能覆盖; console_sessions write_text 非原子 | P1 |
+| G1 | Repository 边界 | **已修复 (2026-09-01)**: agent_loop.py:908/930 → org ProjectStore 门面; query_engine task.json → org ManagementStore 门面。残余: service/monitor/project_scan/analysis_tools 直接拼路径读 task.json (只读, 待逐步收敛); actions.py 用 read_projects 助手 (统一口径, 可接受) | P2 |
+| G2 | 并发 | **部分修复 (2026-09-01)**: org store/management/console_sessions 写操作加 flock + 事务 update 接口 (test_concurrency 5 场景验证)。残余: 业务层 get→save 模式 (agent_loop 状态流转等) 未全量迁移至 update; 跨文件 ACID 仍无 (SQLite 阶段) | P2 |
 | G3 | Project history | Project 无独立 history 链 (有 lifecycle 事件) | P2 |
 | G4 | Provenance | actor_id/actor_type/trace_id 未全量贯穿 | P2 |
 | G5 | Delete | 项目删除不级联会话/记忆 (保留=符合审计要求, 但删除语义需显式文档) | P2 (已文档化) |

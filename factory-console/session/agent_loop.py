@@ -1534,6 +1534,36 @@ def dispatch(
             if st.state.get("status") != "running":
                 return {"ok": False, "error": "没有运行中的执行链 (先 chain_start)"}
 
+            # P2-②: Recovery — stale running 先恢复 (Run 证据同步 or UNKNOWN 重排队),
+            # 再进入 Ready 计算 (不永久卡死)
+            try:
+                from ..external_executor.task_registry import ExternalTaskRegistry
+
+                _reg = ExternalTaskRegistry.load(root)
+
+                def _run_status(ref: str) -> str | None:
+                    _r = _reg.get(ref)
+                    return str(_r.get("status") or "") if _r else None
+
+                _rec = st.recover(_run_status)
+                if _rec.get("count"):
+                    st.save(root)
+                    for _t in _rec.get("recovered") or []:
+                        try:
+                            from .progress_card import log_chain_event
+
+                            log_chain_event(root, (ctx or {}).get("session_id") or "",
+                                            f"recovery: {_t}")
+                        except Exception:  # noqa: BLE001
+                            pass
+            except Exception:  # noqa: BLE001 — registry 不可用 → 无证据重排队
+                try:
+                    _rec = st.recover(None)
+                    if _rec.get("count"):
+                        st.save(root)
+                except Exception:  # noqa: BLE001
+                    pass
+
             def _exec_fn(task):
                 # 委派外部 AI 执行 (真实): 走执行器网关 (G1-G4: 选执行器/注册/验证/回填/审计)
                 from ..external_executor.gateway import gateway_execute
@@ -1550,7 +1580,7 @@ def dispatch(
                         "verify": dict(r.get("verify") or {}),
                         "exec_ref": str(r.get("task_id") or "")}
 
-            r = st.next(_exec_fn)
+            r = st.next(_exec_fn, on_started=lambda: st.save(root))
             st.save(root)
             # P0-B: 执行链推进 → 同步 progress_card
             try:
@@ -1569,10 +1599,14 @@ def dispatch(
                     try:
                         _v = _cur.get("verify") or {}
                         _cur_ok = _cur.get("status") == "done"
+                        _cur_cancelled = _cur.get("status") == "cancelled"
+                        # P2-②: exec_ref 用 ExecState 任务持久化的 Run ID (非 backlog id)
+                        _exec_ref = str(_cur.get("exec_ref") or "") or str(_v.get("exec_ref") or "") or _bid
                         service.finish_task_exec(
                             project_id, _bid,
                             success=_cur_ok,
-                            exec_ref=str(_v.get("exec_ref") or "") or _bid,
+                            cancelled=_cur_cancelled,  # P2-①: cancelled 不得回写 FAILED
+                            exec_ref=_exec_ref,
                             exec_result=(
                                 f"{str(_cur.get('result') or '')[:300]}"
                                 + (f" · 验证 {_v.get('result') or 'unknown'}" if _v else "")
@@ -1581,6 +1615,13 @@ def dispatch(
                         )
                     except Exception:  # noqa: BLE001 — 回写失败不阻断执行链
                         pass
+            # P2-④: Plan 终态聚合 (Task SSOT 幂等; 基于真实 Task 事实)
+            try:
+                _plan_id_r = str((st.state.get("plan_id") or ""))
+                if _plan_id_r:
+                    reconcile_plan(root, _plan_id_r)
+            except Exception:  # noqa: BLE001 — 聚合失败不阻断执行链
+                pass
             if r.get("finished"):
                 # 全部完成 → 交付汇报
                 d = st.deliver()
@@ -2544,6 +2585,105 @@ def run_agent(question, *, root, project_id, llm_fn, service=None, max_rounds=3,
 
 
 # ---------------------------------------------------------------- 计划审批跨消息状态
+
+def reconcile_plan(root: str | Path, plan_id: str) -> dict[str, Any]:
+    """P2-④: Plan 终态聚合 — 基于 Task SSOT (plan_id 反查 backlog), 幂等。
+
+    Case A: 无关联 Task (空 Plan) → completed
+    Case B: 全 DONE → completed
+    Case C: 存在非终态 (todo/ready/in_progress/review) → 保持 executing
+            (独立任务可继续 / FAILED 可 retry)
+    Case D: 全终态 且含 FAILED → failed
+    Case E: 全终态 含 CANCELLED (无 FAILED) → 保持 executing + aggregate_note
+            (PlanStatus 无 cancelled 契约 — 不擅自扩展, finding 记录)
+    幂等: 聚合结果 ≠ 当前 status 才更新; 终态 (completed/failed) 不回落。
+    禁止: 不新建 Task/Run; 不读 ExecState/WebUI。
+    """
+    import json as _json
+    from datetime import datetime, timezone as _tz
+    from pathlib import Path as _P
+
+    _spf = _P(root) / "session_plans.json"
+    if not _spf.is_file():
+        return {"ok": False, "reason": "no plans"}
+    try:
+        _sp = _json.loads(_spf.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 — 损坏 → 不聚合
+        return {"ok": False, "reason": "plans corrupt"}
+    _sid, _plan = None, None
+    for _k, _v in _sp.items():
+        if str(_v.get("plan_id") or "") == plan_id:
+            _sid, _plan = _k, _v
+            break
+    if _plan is None:
+        return {"ok": False, "reason": f"plan not found: {plan_id}"}
+    _cur = str(_plan.get("status") or "pending")
+    if _cur == "completed":
+        # completed 天然终态 (Task 不可从 done 回退) → 早退
+        return {"ok": True, "plan_id": plan_id, "status": _cur, "changed": False,
+                "task_count": -1, "note": "terminal — no change"}
+    # failed 不早退: 允许 retry 恢复 (Case F: FAILED→retry→DONE → completed)
+    _proj_id = str(_plan.get("project_id") or "")
+    if not _proj_id:
+        return {"ok": True, "plan_id": plan_id, "status": _cur, "changed": False,
+                "task_count": -1, "reason": "no project_id — cannot aggregate"}
+    # 按 plan_id 过滤 backlog Task (Task SSOT)
+    _tasks: list = []
+    try:
+        from org.management import ManagementStore
+
+        for _cand in (_P(root) / "workspace" / "projects").iterdir():
+            _pj = _cand / "project.json"
+            if not _pj.is_file():
+                continue
+            try:
+                if str(_json.loads(_pj.read_text(encoding="utf-8")).get("id") or "") != _proj_id:
+                    continue
+            except Exception:  # noqa: BLE001
+                continue
+            _tasks = [t for t in ManagementStore(_cand / "management").list_tasks()
+                      if str(getattr(t, "plan_id", "") or "") == plan_id]
+            break
+    except Exception:  # noqa: BLE001 — store 异常 → 无法聚合
+        return {"ok": True, "plan_id": plan_id, "status": _cur, "changed": False,
+                "task_count": -1, "reason": "store unavailable"}
+    _TERMINAL = {"done", "failed", "cancelled"}
+    _note = ""
+    if not _tasks:
+        _new_st = "completed"  # Case A: 空 Plan
+    else:
+        _sts: set[str] = set()
+        for _t in _tasks:
+            _sv = getattr(_t, "status", "")
+            _sts.add(str(getattr(_sv, "value", "") or _sv).lower())
+        if _sts <= {"done"}:
+            _new_st = "completed"  # Case B
+        elif _sts <= _TERMINAL:
+            if "failed" in _sts:
+                _new_st = "failed"  # Case D
+            else:
+                _new_st = _cur  # Case E: cancelled 无 failed — 保持, finding
+                _note = ("tasks terminal with cancelled (no failed) — "
+                         "PlanStatus lacks cancelled contract (P2 finding)")
+        else:
+            _new_st = _cur  # Case C: 非终态 → 保持 executing
+    _changed = _new_st != _cur
+    if _changed:
+        _plan["status"] = _new_st
+        _plan["completed_at"] = (
+            datetime.now(_tz.utc).isoformat()
+            if _new_st in ("completed", "failed")
+            else _plan.get("completed_at", ""))
+        if _note:
+            _plan["aggregate_note"] = _note
+        _sp[_sid] = _plan
+        try:
+            _spf.write_text(_json.dumps(_sp, ensure_ascii=False, indent=2), encoding="utf-8")
+        except OSError:  # noqa: BLE001 — 写失败不阻断
+            pass
+    return {"ok": True, "plan_id": plan_id, "status": _new_st, "changed": _changed,
+            "task_count": len(_tasks), "note": _note or ""}
+
 
 class PendingPlanStore:
     """待审批计划持久化 (<data_dir>/session_plans.json, key=session_id)。"""

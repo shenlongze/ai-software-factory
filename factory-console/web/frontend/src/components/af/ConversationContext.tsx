@@ -342,7 +342,10 @@ export function ConversationProvider({ children, initialProjectId }: { children:
 
   // F-01: 停止当前发送 — AbortController 断开前端流 + 后端 cancel API (真实停止)
   const abortRef = useRef<AbortController | null>(null);
+  // F-01-FIX: 用户取消意图 — Stop 后禁止任何 fallback 重新执行 (第二次 execution)
+  const cancelledRef = useRef(false);
   const cancelSend = useCallback(async (): Promise<void> => {
+    cancelledRef.current = true;  // 先标记取消意图 (abort 触发 AbortError 前)
     abortRef.current?.abort();
     if (activeId) {
       try {
@@ -366,6 +369,8 @@ export function ConversationProvider({ children, initialProjectId }: { children:
         target = created.id;
       }
       setSending(true);
+      // F-01: 新发送清除上次取消意图 (Stop 不污染下一次正常发送)
+      cancelledRef.current = false;
       // F-01: 创建 AbortController — Stop 时断开流
       const ac = new AbortController();
       abortRef.current = ac;
@@ -473,28 +478,39 @@ export function ConversationProvider({ children, initialProjectId }: { children:
           }
         }, ac.signal);  // F-01: 传 AbortController — Stop 时断开流
         if (!ok || !streamed) {
-          // 回退同步
-          setMessages((prev) => prev.filter((m) => m.id !== assistantId));
-          const result = await api.sendSessionMessage(target as string, text);
-          setMessages((prev) => [
-            ...prev.filter((m) => !m.id.startsWith('tmp-')),
-            result.user,
-            { ...result.assistant, target: result.meta?.target ?? null },
-          ]);
+          if (cancelledRef.current) {
+            // F-01-FIX: 用户取消 — 绝不 fallback 重新执行 (第二次 execution 禁止);
+            // 移除临时 assistant 占位, refresh 拉取后端 "（已停止）" 真实消息
+            setMessages((prev) => prev.filter((m) => m.id !== assistantId));
+          } else {
+            // 回退同步 (仅网络/传输失败 — 非用户取消)
+            setMessages((prev) => prev.filter((m) => m.id !== assistantId));
+            const result = await api.sendSessionMessage(target as string, text);
+            setMessages((prev) => [
+              ...prev.filter((m) => !m.id.startsWith('tmp-')),
+              result.user,
+              { ...result.assistant, target: result.meta?.target ?? null },
+            ]);
+          }
         }
         await refresh();
       } catch {
-        // 失败 → 保留用户消息, 追加诚实提示
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `err-${Date.now()}`,
-            session_id: target as string,
-            role: 'assistant',
-            content: '（发送失败 — 后端不可达，请稍后重试）',
-            created_at: new Date().toISOString(),
-          },
-        ]);
+        if (cancelledRef.current) {
+          // F-01-FIX: 用户取消 (异常路径) — 移除临时 assistant, 不显示"发送失败"
+          setMessages((prev) => prev.filter((m) => !m.id.startsWith('tmp-ai-')));
+        } else {
+          // 失败 → 保留用户消息, 追加诚实提示
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: `err-${Date.now()}`,
+              session_id: target as string,
+              role: 'assistant',
+              content: '（发送失败 — 后端不可达，请稍后重试）',
+              created_at: new Date().toISOString(),
+            },
+          ]);
+        }
       } finally {
         abortRef.current = null;  // F-01: 发送结束清 AbortController
         setSending(false);

@@ -878,6 +878,15 @@ def dispatch(
                 plan = {}
         if not plan:
             return {"ok": False, "error": "没有待审批的计划 (先 plan_development)"}
+        # P2-①: 幂等消费 — 已消费计划 (executing/completed/failed) 不得重复创建任务
+        _plan_st = str(plan.get("status") or "pending")
+        if _plan_st in ("executing", "completed", "failed"):
+            return {
+                "ok": False,
+                "error": f"计划已消费 (status={_plan_st}), 不重复执行",
+                "plan_id": plan.get("plan_id"),
+                "plan_status": _plan_st,
+            }
         tasks = args.get("tasks") or plan.get("tasks") or []
         if tasks:
             plan["tasks"] = tasks
@@ -894,6 +903,13 @@ def dispatch(
                 r["approval"] = "approved"
             except Exception as exc:  # noqa: BLE001 — 批准失败诚实标注
                 r["approval_error"] = str(exc)
+        # P2-①: Plan 生命周期 — 消费后持久化状态 (防重复批准重复创建任务)
+        try:
+            PendingPlanStore(root).update_status(
+                str((ctx or {}).get("session_id") or ""),
+                "executing" if r.get("ok") else "failed")
+        except Exception:  # noqa: BLE001 — 状态更新失败不阻断执行
+            pass
         ctx["pending_plan"] = None
         return r
     try:
@@ -2465,6 +2481,20 @@ class PendingPlanStore:
             d = self._load()
             d.pop(session_id, None)
             self._path.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
+        except OSError:
+            pass
+
+    def update_status(self, session_id: str, status: str) -> None:
+        """P2-①: Plan 生命周期状态更新 (pending → executing/completed/failed)。
+
+        幂等消费关键: 持久化 plan status, 防重复批准重复创建任务。
+        """
+        try:
+            d = self._load()
+            p = d.get(session_id)
+            if isinstance(p, dict) and p.get("plan_id"):
+                p["status"] = status
+                self._path.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
         except OSError:
             pass
 

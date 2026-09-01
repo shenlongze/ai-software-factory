@@ -497,10 +497,17 @@ def execute_plan(
             _cid = _id_by_title.get(_title)
             if not _cid:
                 continue
-            _resolved = [
-                _id_by_title[d] for d in _deps
-                if d in _id_by_title and _id_by_title[d] != _cid
-            ]
+            _resolved: list[str] = []
+            for _d in _deps:
+                _did = _id_by_title.get(_d)
+                if not _did:
+                    _did = next(
+                        (v for k, v in _id_by_title.items()
+                         if _d and (_d in k or k in _d)),
+                        "",
+                    )
+                if _did and _did != _cid:
+                    _resolved.append(_did)
             if not _resolved:
                 continue
             try:
@@ -910,6 +917,34 @@ def dispatch(
                 "executing" if r.get("ok") else "failed")
         except Exception:  # noqa: BLE001 — 状态更新失败不阻断执行
             pass
+        # P1-FIX: 建任务成功后自动初始化执行链 (ExecState, 依赖来自 backlog SSOT)
+        # → 用户后续 "开始执行/继续" 由 chain_next 依赖感知逐任务推进
+        if r.get("ok"):
+            try:
+                from .exec_state import ExecState
+
+                _btasks = ((service.list_backlog(_exec_project_id) or {}).get("tasks") or []) if service else []
+                _plan_tasks = []
+                for _pt in (plan.get("tasks") or []):
+                    _ttl = str(_pt.get("title") or "").strip()
+                    _m = next((b for b in _btasks if str(b.get("title") or "").strip() == _ttl), None)
+                    _bid = str(_m.get("id") or "") if _m else ""
+                    _deps = [str(d) for d in (_m.get("dependency") or [])] if _m else []
+                    _plan_tasks.append(dict(_pt, backlog_id=_bid, dependency=_deps))
+                _st = ExecState.load(root, str((ctx or {}).get("session_id") or ""))
+                _st.start({
+                    "goal": plan.get("goal") or "执行链",
+                    "tasks": _plan_tasks,
+                    "acceptance": plan.get("acceptance") or [],
+                })
+                _st.state["run_id"] = f"R{int(__import__('time').time() * 1000)}"
+                _st.state["project_id"] = _exec_project_id
+                _st.state["plan_id"] = plan.get("plan_id") or ""
+                _st.state["session_id"] = str((ctx or {}).get("session_id") or "")
+                _st.save(root)
+                r["exec_chain"] = "ready"
+            except Exception:  # noqa: BLE001 — 执行链初始化失败不阻断 (可 chain_start 重建)
+                pass
         ctx["pending_plan"] = None
         return r
     try:
@@ -1359,6 +1394,7 @@ def dispatch(
             # P0-A (v1.1.244): 执行链 ↔ backlog 打通 — 启动时真实建任务, 映射 backlog_id
             _enriched: list[dict[str, Any]] = []
             _created_n = 0
+            _id_by_title: dict[str, str] = {}
             for _t in tasks:
                 _t2 = dict(_t)
                 _bid = ""
@@ -1372,10 +1408,44 @@ def dispatch(
                         if _c:
                             _bid = str(_c.get("id") or "")
                             _created_n += 1
+                            _id_by_title[str(_t.get("title") or "").strip()] = _bid
                     except Exception:  # noqa: BLE001 — 建任务失败不阻断执行链
                         _bid = ""
                 _t2["backlog_id"] = _bid
                 _enriched.append(_t2)
+            # P1-FIX: plan.order 顺序链 → 真实 dependency (title → backlog id resolve,
+            # 写回 backlog Task SSOT + ExecState 任务 — 执行链依赖感知依据)
+            _order = plan.get("order") or []
+            for _t in _enriched:
+                _bid = str(_t.get("backlog_id") or "")
+                _ttl = str(_t.get("title") or "").strip()
+                if not _bid:
+                    continue
+                _deps: list[str] = []
+                if _order:
+                    _pos = next(
+                        (i for i, o in enumerate(_order)
+                         if o == _ttl or (_ttl and o and (_ttl in o or o in _ttl))),
+                        -1,
+                    )
+                    if _pos > 0:
+                        _prev_title = str(_order[_pos - 1]).strip()
+                        _prev_id = _id_by_title.get(_prev_title, "")
+                        if not _prev_id:
+                            _prev_id = next(
+                                (v for k, v in _id_by_title.items()
+                                 if _prev_title and (_prev_title in k or k in _prev_title)),
+                                "",
+                            )
+                        if _prev_id and _prev_id != _bid:
+                            _deps = [_prev_id]
+                            try:
+                                if service is not None and _cs_project_id:
+                                    service.update_task(
+                                        _cs_project_id, _bid, dependency=_deps)
+                            except Exception:  # noqa: BLE001 — 依赖回写失败不阻断
+                                pass
+                _t["dependency"] = _deps
             st = ExecState.load(root, (ctx or {}).get("session_id") or "")
             r = st.start({"goal": goal or "执行链", "tasks": _enriched,
                           "acceptance": plan.get("acceptance") or []})

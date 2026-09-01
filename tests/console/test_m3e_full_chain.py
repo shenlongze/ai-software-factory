@@ -219,8 +219,10 @@ class TestSoloPathUnchanged:
         state = orch._load_state(pdir)
         assert state.m3 == {}
         assert state.schedule == {}
-        # 无 M3 产物副作用
-        assert not (pdir / "schedule.json").is_file()
+        # 无 M3 产物副作用 (P1-R2 起: schedule.json 是合法 Projection, 可重建非事实源)
+        if (pdir / "schedule.json").is_file():
+            _sched = json.loads((pdir / "schedule.json").read_text(encoding="utf-8"))
+            assert _sched.get("order") == ["legacy-t1", "legacy-t2"]
 
 
 class TestSingleTaskFailureIsolation:

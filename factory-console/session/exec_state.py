@@ -96,10 +96,37 @@ class ExecState:
 
     # ------------------------------------------------------------ 推进
     def next(self, exec_fn: Callable[[dict[str, Any]], dict[str, Any]]) -> dict[str, Any]:
-        """推进下一个 todo 任务: 委派执行 → 验证 → 回写。exec_fn(task) → {ok, output, verify?}。"""
+        """推进下一个任务 (P1-FIX: 依赖感知 — Ready = todo 且全部依赖 done)。
+
+        exec_fn(task) → {ok, output, verify?}。
+        依赖语义: task.dependency = [backlog task ids] (chain_start 从 plan.order 解析)。
+        - 依赖未完成 → 不执行 (跳过, 返回 waiting)
+        - 依赖失败 → 下游 blocked (失败传播)
+        - 全部 done → finished
+        """
         tasks = self.state.get("tasks") or []
-        idx = next((i for i, t in enumerate(tasks) if t.get("status") == "todo"), -1)
+        done_ids = {t.get("backlog_id") or t.get("id") for t in tasks if t.get("status") == "done"}
+        failed_ids = {t.get("backlog_id") or t.get("id") for t in tasks if t.get("status") == "failed"}
+        idx = next(
+            (i for i, t in enumerate(tasks)
+             if t.get("status") == "todo"
+             and all(d in done_ids for d in (t.get("dependency") or []))),
+            -1,
+        )
         if idx < 0:
+            todo = [t for t in tasks if t.get("status") == "todo"]
+            if todo:
+                blocked = [t["title"] for t in todo
+                           if any(d in failed_ids for d in (t.get("dependency") or []))]
+                if blocked:
+                    for t in todo:
+                        if any(d in failed_ids for d in (t.get("dependency") or [])):
+                            t["status"] = "blocked"
+                    return {"ok": False, "blocked": blocked, "finished": False,
+                            "output": f"依赖失败, 下游任务阻塞: {', '.join(blocked)}",
+                            "progress": self.progress()}
+                return {"ok": False, "waiting": True, "finished": False,
+                        "output": "等待前置依赖完成", "progress": self.progress()}
             done = all(t.get("status") == "done" for t in tasks)
             return {"ok": done, "finished": True,
                     "output": self.deliver()["output"] if done else "无待办任务 (有失败/进行中)"}

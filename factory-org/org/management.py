@@ -79,13 +79,17 @@ class TaskPriority(str, Enum):
 
 
 class TaskStatus(str, Enum):
-    """任务状态 (本 Task 约定六态; 异常路径 BLOCKED 显式枚举)。"""
+    """任务状态 (本 Task 约定七态; 异常路径 BLOCKED 显式枚举)。
+
+    P1-FIX: FAILED = 任务自身真实执行失败 (≠ BLOCKED 依赖失败传播)。
+    """
 
     TODO = "todo"
     READY = "ready"
     IN_PROGRESS = "in_progress"
     BLOCKED = "blocked"
     REVIEW = "review"
+    FAILED = "failed"
     DONE = "done"
 
     @classmethod
@@ -334,9 +338,10 @@ class Roadmap(_OrgModel):
 TASK_TRANSITIONS: dict[TaskStatus, tuple[TaskStatus, ...]] = {
     TaskStatus.TODO: (TaskStatus.READY, TaskStatus.BLOCKED),
     TaskStatus.READY: (TaskStatus.IN_PROGRESS, TaskStatus.BLOCKED),
-    TaskStatus.IN_PROGRESS: (TaskStatus.BLOCKED, TaskStatus.REVIEW),
+    TaskStatus.IN_PROGRESS: (TaskStatus.BLOCKED, TaskStatus.REVIEW, TaskStatus.FAILED),
     TaskStatus.BLOCKED: (TaskStatus.READY, TaskStatus.IN_PROGRESS),
-    TaskStatus.REVIEW: (TaskStatus.IN_PROGRESS, TaskStatus.DONE),
+    TaskStatus.REVIEW: (TaskStatus.IN_PROGRESS, TaskStatus.DONE, TaskStatus.FAILED),
+    TaskStatus.FAILED: (TaskStatus.READY, TaskStatus.BLOCKED),  # 重试: failed→ready; 依赖场景人工
     TaskStatus.DONE: (),
 }
 

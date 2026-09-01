@@ -88,7 +88,8 @@ class ExecState:
             "tasks": [{"title": str(t.get("title") or "")[:80],
                        "priority": str(t.get("priority") or "P2"),
                        "status": "todo", "result": "", "verify": {},
-                       "backlog_id": str(t.get("backlog_id") or "")} for t in tasks],
+                       "backlog_id": str(t.get("backlog_id") or ""),
+                       "dependency": [str(d) for d in (t.get("dependency") or [])]} for t in tasks],
             "current_index": -1,
             "created_at": _now_iso(), "updated_at": _now_iso(),
         }

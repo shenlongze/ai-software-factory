@@ -124,12 +124,14 @@ class TestFinishTaskExec:
         assert "exec:completed" in actions
         assert "exec:progress" in actions  # in_progress→review 中间步不跳级
 
-    def test_finish_failure_to_blocked(self, tmp_path):
+    def test_finish_failure_to_failed(self, tmp_path):
+        """P1-FIX: 自身执行失败 → FAILED (非 blocked)。"""
         svc = _build_service(tmp_path)
         pid, tid = _new_task(svc, tmp_path)
         svc.start_task_exec(pid, tid)
         t = svc.finish_task_exec(pid, tid, success=False, error="provider 5xx")
-        assert t["status"] == "blocked"
+        assert t["status"] == "failed"
+        assert t["status"] != "blocked", "FAILED ≠ BLOCKED"
         assert any("provider 5xx" in (h.get("result") or "") for h in t["history"])
         assert any(h["action"] == "exec:failed" for h in t["history"])
 
@@ -365,7 +367,8 @@ class TestCliTaskRunWriteback:
         notes = [h.get("result") or "" for h in task["history"]]
         assert any("续跑" in n for n in notes), notes
 
-    def test_run_failure_writes_back_blocked(self, tmp_path):
+    def test_run_failure_writes_back_failed(self, tmp_path):
+        """P1-FIX: CLI 任务执行失败 → FAILED 落库 (非 blocked)。"""
         cli = _make_cli(tmp_path)
         pid, _slug, tid, _title = _seed_project_and_task(cli)
         cli._proxy_exec_cli = lambda: _FakeExec(
@@ -376,6 +379,6 @@ class TestCliTaskRunWriteback:
         assert rc == 1
         svc = _build_service(cli.data_dir)
         task = svc.get_task(pid, tid)
-        assert task["status"] == "blocked"
+        assert task["status"] == "failed"
         assert task["exec_ref"] == "EXR-99"
         assert any("provider 5xx" in (h.get("result") or "") for h in task["history"])

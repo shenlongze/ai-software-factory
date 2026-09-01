@@ -121,9 +121,9 @@ class TestTaskModel:
         assert [p.value for p in TaskPriority] == ["P0", "P1", "P2", "P3"]
 
     def test_task_status_enum_values(self):
-        """Status 枚举: TODO/READY/IN_PROGRESS/BLOCKED/REVIEW/DONE。"""
+        """Status 枚举: TODO/READY/IN_PROGRESS/BLOCKED/REVIEW/FAILED/DONE (P1-FIX)。"""
         assert [s.value for s in TaskStatus] == [
-            "todo", "ready", "in_progress", "blocked", "review", "done",
+            "todo", "ready", "in_progress", "blocked", "review", "failed", "done",
         ]
         assert TaskStatus.parse("READY") == TaskStatus.READY
         assert TaskStatus.parse("DONE") == TaskStatus.DONE

@@ -922,14 +922,39 @@ def dispatch(
         if r.get("ok"):
             try:
                 from .exec_state import ExecState
+                from org.management import ManagementStore
+                from pathlib import Path as _Path
 
-                _btasks = ((service.list_backlog(_exec_project_id) or {}).get("tasks") or []) if service else []
+                # 依赖/backlog_id 从 backlog SSOT 读 (ManagementStore Task 对象,
+                # list_backlog dict 可能缺 dependency — 直接读真实字段)
+                _btasks: list = []
+                try:
+                    _pd = None
+                    for _cand in (_Path(root) / "workspace" / "projects").iterdir():
+                        _pj = _cand / "project.json"
+                        if _pj.is_file():
+                            try:
+                                import json as _json
+
+                                if str(_json.loads(_pj.read_text(encoding="utf-8")).get("id") or "") == _exec_project_id:
+                                    _pd = _cand
+                                    break
+                            except Exception:  # noqa: BLE001
+                                continue
+                    if _pd is None:
+                        _cand = _Path(root) / "workspace" / "projects" / _exec_project_id
+                        if _cand.is_dir():
+                            _pd = _cand
+                    if _pd is not None:
+                        _btasks = ManagementStore(_pd / "management").list_tasks()
+                except Exception:  # noqa: BLE001 — 目录定位失败 → 空 (可 chain_start 重建)
+                    _btasks = []
                 _plan_tasks = []
                 for _pt in (plan.get("tasks") or []):
                     _ttl = str(_pt.get("title") or "").strip()
-                    _m = next((b for b in _btasks if str(b.get("title") or "").strip() == _ttl), None)
-                    _bid = str(_m.get("id") or "") if _m else ""
-                    _deps = [str(d) for d in (_m.get("dependency") or [])] if _m else []
+                    _m = next((b for b in _btasks if str(getattr(b, "title", "") or "").strip() == _ttl), None)
+                    _bid = str(getattr(_m, "id", "") or "") if _m else ""
+                    _deps = [str(x) for x in (getattr(_m, "dependency", None) or [])] if _m else []
                     _plan_tasks.append(dict(_pt, backlog_id=_bid, dependency=_deps))
                 _st = ExecState.load(root, str((ctx or {}).get("session_id") or ""))
                 _st.start({

@@ -519,6 +519,18 @@ def send_message(
         reply = _strip_fake_toolcalls(reply)
     except Exception:  # noqa: BLE001 — 清洗失败不阻断
         pass
+    # P0-FIX: Execution Truth — 意图路由出口统一校验 (facts 为证据; LLM 声称
+    # 不得超越 facts — 防止 "未创建却声称已创建 N 个任务")
+    try:
+        from .session.execution_truth import (
+            sanitize_hard_converge, validate_execution_claims)
+
+        _vv = validate_execution_claims(reply, [], evidence_text=facts)
+        if not _vv["ok"]:
+            reply = sanitize_hard_converge(
+                reply, [], actual_count=_vv.get("actual_count"))
+    except Exception:  # noqa: BLE001 — 校验失败不阻断 (保守)
+        pass
     # AI 回答也进话题账本 (保持块内对话完整)
     if _ledger is not None:
         try:

@@ -54,11 +54,22 @@ CLAIM_PATTERNS: dict[str, list[str]] = {
         r"(任务|开发|功能|工作)已(完成|全部完成)",
         r"已(完成|交付)(开发|任务|功能)",
         r"全部完成",
+        # P0-FIX: 数量型/组合型任务声称 (覆盖 "拆解成 6 个任务并创建到任务列表")
+        r"(已|已经)?(拆解|拆分|分解)(成|为)?[^。；\n]{0,24}(任务|任务列表)",
+        r"(已|已经)?(创建|生成)(了)?[^。；\n]{0,24}(任务|任务列表)",
+        r"(已|已经)?(创建|生成)(了)?\s*\d+\s*个任务",
+        r"(已|已经)?创建(了)?[^。；\n]{0,16}到任务列表",
+        r"创建了?\s*\d+\s*个(任务|功能|模块)",
     ],
 }
 
-#: 声称片段前导的条件/建议/祈使语境 — 这些不是事实声称 (建议/条件表达允许)
-_NON_CLAIM_PREFIX = ("如果", "若", "建议", "可以", "请", "假设", "可能", "需要", "例如", "比如")
+#: 声称片段前导的条件/建议/祈使/计划语境 — 这些不是事实声称 (INTENT/PLAN 允许)
+_NON_CLAIM_PREFIX = ("如果", "若", "建议", "可以", "请", "假设", "可能", "需要",
+                     "例如", "比如", "计划", "准备", "打算", "将", "要", "想",
+                     "应该", "最好", "试着", "下一步", "未来", "希望")
+
+#: 数量型声称提取 (创建/拆解 N 个任务/功能/模块 — 允许 "N 个具体任务" 类修饰)
+_COUNT_RE = re.compile(r"(\d+)\s*个[^。；\n]{0,8}?(任务|功能|模块|子任务)")
 
 _COMPILED: dict[str, list[re.Pattern[str]]] = {
     t: [re.compile(p) for p in pats] for t, pats in CLAIM_PATTERNS.items()
@@ -99,44 +110,109 @@ def has_success_semantics(claims: list[dict[str, str]]) -> bool:
     return any(k in c["text"] for c in claims for k in _SUCCESS_MARKERS)
 
 
+def extract_claimed_count(text: str) -> int | None:
+    """提取数量型声称中的数字 (创建/拆解 N 个任务)。多数字 → 取最大 (保守)。"""
+    m = _COUNT_RE.search(text or "")
+    if not m:
+        return None
+    return max(int(x) for x, _ in _COUNT_RE.findall(text))
+
+
+def _evidence_task_count(evidence_text: str | None) -> int:
+    """从事实文本提取任务 id 数 (意图路由 facts 驱动回复的证据计数)。"""
+    if not evidence_text:
+        return 0
+    return len(set(re.findall(r"\bTASK-[\w-]+", evidence_text)))
+
+
 def validate_execution_claims(
-    text: str, calls: list[dict[str, Any]] | None
+    text: str,
+    calls: list[dict[str, Any]] | None,
+    *,
+    actual_count: int | None = None,
+    evidence_text: str | None = None,
 ) -> dict[str, Any]:
-    """Execution Claim Validator — 最终响应边界校验。
+    """Execution Claim Validator — 最终响应边界校验 (P0-FIX: 数量型事实比对)。
 
-    规则 (结构化 Claim → Evidence Lookup):
-    1. 无执行声称 → ALLOW (普通回答/建议/条件表达)
-    2. 有声称 + 本轮零真实工具调用 (calls 无 tool 记录) → BLOCK
-       (负证据: 声称没有任何执行记录支撑)
-    3. 有声称 + calls 全部失败 + 声称含成功/完成语义 → BLOCK
-       (声称成功但无成功执行记录)
-    4. 其余 → ALLOW (有真实执行记录支撑; 细节数字由 W8 verify_details 兜底)
+    规则 (结构化 Claim → Evidence Lookup → Outcome):
+    1. 无执行声称 → ALLOW (普通回答/建议/条件/计划表达), outcome=informational
+    2. 有声称 + 本轮零真实工具调用 + 无 facts 证据 → BLOCK, outcome=not_executed
+    3. 有声称 + calls 全部失败 + 声称含成功/完成语义 → BLOCK, outcome=failed
+    4. 数量型声称 + actual_count 提供 (calls 或 evidence_text 推导):
+       - actual >= claimed → ALLOW (success)
+       - 0 < actual < claimed → BLOCK 成功语义, outcome=partial (事实降级)
+       - actual == 0 → BLOCK, outcome=not_executed
+    5. evidence_text (意图路由 facts 驱动回复): 声称需能在 facts 找到依据 —
+       数量型用 facts 中任务 id 数; 非数量型若 facts 无任何任务 id → not_executed
 
-    返回 {ok, has_claims, missing: [claim...], reason: zero_tool_call |
-    no_success_evidence | ""}
+    返回 {ok, has_claims, missing, reason, outcome, claimed_count, actual_count}
+    outcome ∈ informational | success | partial | not_executed | failed
     """
     claims = extract_execution_claims(text or "")
     if not claims:
-        return {"ok": True, "has_claims": False, "missing": [], "reason": ""}
+        return {"ok": True, "has_claims": False, "missing": [], "reason": "",
+                "outcome": "informational", "claimed_count": None,
+                "actual_count": actual_count}
+    claimed = extract_claimed_count(text or "")
     real_calls = [c for c in (calls or []) if c.get("tool")]
-    if not real_calls:
+    # 事实数量: 显式 actual_count > calls 成功数 > evidence 任务 id 数
+    ev_count = _evidence_task_count(evidence_text)
+    if actual_count is None and real_calls:
+        actual_count = len([
+            c for c in real_calls
+            if c.get("tool") in ("create_task", "task_action", "execute_plan")
+            and c.get("ok")
+        ])
+    if actual_count is None and evidence_text:
+        actual_count = ev_count
+    if not real_calls and not evidence_text:
         return {
             "ok": False, "has_claims": True,
             "missing": claims, "reason": "zero_tool_call",
+            "outcome": "not_executed", "claimed_count": claimed,
+            "actual_count": actual_count,
         }
-    if not any(c.get("ok") for c in real_calls) and has_success_semantics(claims):
+    if not any(c.get("ok") for c in real_calls) and has_success_semantics(claims) \
+            and not evidence_text:
         return {
             "ok": False, "has_claims": True,
             "missing": claims, "reason": "no_success_evidence",
+            "outcome": "failed", "claimed_count": claimed,
+            "actual_count": actual_count,
         }
-    return {"ok": True, "has_claims": True, "missing": [], "reason": ""}
+    # 数量型声称事实比对
+    if claimed is not None and actual_count is not None:
+        if actual_count == 0:
+            return {
+                "ok": False, "has_claims": True, "missing": claims,
+                "reason": "count_zero", "outcome": "not_executed",
+                "claimed_count": claimed, "actual_count": actual_count,
+            }
+        if actual_count < claimed:
+            return {
+                "ok": False, "has_claims": True, "missing": claims,
+                "reason": "count_mismatch", "outcome": "partial",
+                "claimed_count": claimed, "actual_count": actual_count,
+            }
+    return {"ok": True, "has_claims": True, "missing": [], "reason": "",
+            "outcome": "success", "claimed_count": claimed,
+            "actual_count": actual_count}
 
 
 def execution_claim_block_prompt(
-    missing: list[dict[str, str]], reason: str
+    missing: list[dict[str, str]], reason: str,
+    *, outcome: str = "", claimed_count: int | None = None,
+    actual_count: int | None = None,
 ) -> str:
     """Strategy B — 撤回提示: 声称执行但无真实证据 → 要求模型撤回/如实改写。"""
     items = "；".join(f"「{c['text']}」({c['type']})" for c in (missing or [])[:5])
+    if outcome == "partial":
+        return (
+            f"【执行事实校验未通过 (P0-001)】你声称创建 {claimed_count} 个任务, "
+            f"但实际成功创建 {actual_count} 个 — 数量不一致。\n"
+            "禁止输出『已创建 N 个任务』等成功语义。请如实改写为: "
+            f"『已创建 {actual_count} 个任务, 其余尚未创建』, 以实际执行为准。"
+        )
     if reason == "zero_tool_call":
         return (
             "【执行事实校验未通过 (P0-001)】你声称了执行事实, 但本轮没有产生任何真实工具调用: "
@@ -156,14 +232,24 @@ def execution_claim_block_prompt(
     )
 
 
-def sanitize_hard_converge(content: str, calls: list[dict[str, Any]] | None) -> str:
+def sanitize_hard_converge(
+    content: str, calls: list[dict[str, Any]] | None,
+    *, actual_count: int | None = None,
+) -> str:
     """硬收敛兜底: 无法再循环时, 对未通过校验的声称追加诚实标注 (不直接放行)。"""
-    v = validate_execution_claims(content, calls)
+    v = validate_execution_claims(content, calls, actual_count=actual_count)
     if v["ok"]:
         return content
+    if v.get("outcome") == "partial" and v.get("claimed_count") and v.get("actual_count") is not None:
+        return (
+            f"⚠️ 【执行真实性提示】声称创建 {v['claimed_count']} 个任务, 实际成功 "
+            f"{v['actual_count']} 个 — 以实际执行为准, 未创建部分不得视为成功: "
+            + "；".join(c["text"] for c in (v.get("missing") or [])[:3])
+            + "\n\n" + content
+        )
     return (
         "⚠️ 【执行真实性提示】以下内容中声称的执行操作本轮没有真实工具执行记录, "
-        "实际执行状态以工具记录为准, 请勿视为已执行: " +
-        "；".join(c["text"] for c in (v.get("missing") or [])[:5]) +
-        "\n\n" + content
+        "实际执行状态以工具记录为准, 请勿视为已执行: "
+        + "；".join(c["text"] for c in (v.get("missing") or [])[:5])
+        + "\n\n" + content
     )

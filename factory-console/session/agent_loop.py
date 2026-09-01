@@ -1967,16 +1967,26 @@ def run_agent_native(
                 from .execution_truth import (
                     execution_claim_block_prompt, sanitize_hard_converge,
                     validate_execution_claims)
-                _claim_v = validate_execution_claims(_answer, calls)
+                # P0-FIX: 数量型事实比对 — actual_count 来自本轮真实 create_task 成功数
+                _created_n = len([
+                    c for c in calls
+                    if c.get("tool") == "create_task" and c.get("ok") and c.get("output")
+                ])
+                _claim_v = validate_execution_claims(
+                    _answer, calls, actual_count=_created_n)
                 if not _claim_v["ok"]:
                     if _guard["claim_retries"] < 2:
                         _guard["claim_retries"] += 1
                         messages.append({"role": "system", "content": (
                             execution_claim_block_prompt(
-                                _claim_v["missing"], _claim_v["reason"]))})
+                                _claim_v["missing"], _claim_v["reason"],
+                                outcome=_claim_v.get("outcome") or "",
+                                claimed_count=_claim_v.get("claimed_count"),
+                                actual_count=_claim_v.get("actual_count")))})
                         continue
                     # 重试用尽仍声称无据 → 追加诚实标注, 不裸放行 (Final Response Sanitization)
-                    _answer = sanitize_hard_converge(_answer, calls)
+                    _answer = sanitize_hard_converge(
+                        _answer, calls, actual_count=_created_n)
                 # 模型自主收敛 (直接回答/追问) — agentic: 不强制拦截
                 if total_calls == 0:
                     _converge = "autonomous"
@@ -2160,17 +2170,26 @@ def run_agent_native(
         from .execution_truth import (
             execution_claim_block_prompt, sanitize_hard_converge,
             validate_execution_claims)
-        _claim_h = validate_execution_claims(content, calls)
+        _created_n_h = len([
+            c for c in calls
+            if c.get("tool") == "create_task" and c.get("ok") and c.get("output")
+        ])
+        _claim_h = validate_execution_claims(
+            content, calls, actual_count=_created_n_h)
         if not _claim_h["ok"]:
             if _guard["claim_retries_hard"] < 1:
                 _guard["claim_retries_hard"] += 1
                 messages.append({"role": "system", "content": (
                     execution_claim_block_prompt(
-                        _claim_h["missing"], _claim_h["reason"]))})
+                        _claim_h["missing"], _claim_h["reason"],
+                        outcome=_claim_h.get("outcome") or "",
+                        claimed_count=_claim_h.get("claimed_count"),
+                        actual_count=_claim_h.get("actual_count")))})
                 resp = call_with_tools(messages, None, data_dir=data_dir)
                 content = resp.get("content") or ""
             else:
-                content = sanitize_hard_converge(content, calls)
+                content = sanitize_hard_converge(
+                    content, calls, actual_count=_created_n_h)
         # S34-003B: 反射轮 usage 也累加 (工具调用循环后必走此路径)
         _u2 = resp.get("usage") or {}
         if _u2:

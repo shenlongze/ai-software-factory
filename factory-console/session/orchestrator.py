@@ -2502,6 +2502,44 @@ class ExecutionOrchestrator:
         validation_result.json 落盘 (验收 I)。
         """
         runner: ExecuteFn = execute_fn if execute_fn is not None else _default_execute_fn
+        # P1-R2: 依赖感知执行 — 从 plan tasks.depends_on / plan.edges 构建内存
+        # 依赖图 + 拓扑序重排 (依赖在前) + 执行期依赖门控 (未满足跳过 /
+        # 依赖失败 → blocked 传播)。无依赖/图缺失 → 原数组顺序 (旧行为零变化)。
+        dep_graph: TaskDependencyGraph = TaskDependencyGraph()
+        try:
+            for _t in (plan or {}).get("tasks") or []:
+                if not isinstance(_t, dict):
+                    continue
+                _tid = str(_t.get("id") or "")
+                if not _tid:
+                    continue
+                for _d in (_t.get("depends_on") or []):
+                    if isinstance(_d, dict):
+                        continue
+                    dep_graph.add_task(_tid)
+                    dep_graph.add_dependency(_tid, str(_d))
+            for _e in (plan or {}).get("edges") or []:
+                if not isinstance(_e, dict):
+                    continue
+                _src = str(_e.get("from_task") or "").strip()
+                _dst = str(_e.get("to_task") or "").strip()
+                if _src and _dst:
+                    dep_graph.add_task(_dst)
+                    dep_graph.add_dependency(_dst, _src)
+        except Exception:  # noqa: BLE001 — 图构建失败 → 空图 (失败安全)
+            dep_graph = TaskDependencyGraph()
+        _done: set[str] = set()
+        _failed: set[str] = set()
+        try:
+            if dep_graph.to_dict():
+                _order = dep_graph.topological_order(
+                    [str(t.get("id") or "") for t in state.tasks]
+                )
+                if _order:
+                    _by_id = {str(t.get("id") or ""): t for t in state.tasks}
+                    state.tasks = [_by_id[i] for i in _order if i in _by_id]
+        except Exception:  # noqa: BLE001 — 拓扑失败 → 原序 (失败安全)
+            pass
         completed = failed = 0
         artifacts: list[str] = []
         errors: list[str] = []
@@ -2529,6 +2567,26 @@ class ExecutionOrchestrator:
                 # S10-060: 计划级决策产物 (SKIP_TASK/BLOCK_TASK/SPLIT_TASK) —
                 # 不再执行 (决策已记录 replanning_decisions.json, 可解释; resume 不重跑)
                 continue
+            # P1-R2: 依赖门控 — 依赖未完成 → 本轮跳过; 依赖失败 → blocked (失败传播)
+            _tid = str(task.get("id") or "")
+            _deps = dep_graph.get(_tid) or [] if dep_graph.to_dict() else []
+            if _deps:
+                _unsat = [d for d in _deps if d not in _done]
+                if _unsat:
+                    _failed_deps = [d for d in _unsat if d in _failed]
+                    if _failed_deps:
+                        task["status"] = "blocked"
+                        task["error"] = f"依赖失败: {_failed_deps}"
+                        task.setdefault("history", []).append(
+                            {"time": datetime.now(timezone.utc).isoformat(),
+                             "actor": "orchestrator", "action": "blocked",
+                             "result": f"依赖 {_failed_deps} 失败"}
+                        )
+                        self._save_state(project_dir, state)
+                        blocked_stop = True
+                        continue
+                    # 依赖未完成 (前序任务本轮稍后执行) → 跳过, 保留 pending
+                    continue
             if team_run is not None:
                 # S10-056 批次 B + S10-059: 团队模式冲突检测 + 自主决策 + 文件锁
                 # (SERIALIZE/BLOCK → acquire; 锁未释放 → BLOCK 暂缓)
@@ -2580,6 +2638,7 @@ class ExecutionOrchestrator:
             self._save_state(project_dir, state)
             if task.get("status") == "completed" and validation.success:
                 completed += 1
+                _done.add(_tid)  # P1-R2: 依赖解锁 (后继任务 ready)
                 if task.get("artifact"):
                     artifacts.append(str(task["artifact"]))
                 if team_run is not None:
@@ -2591,6 +2650,7 @@ class ExecutionOrchestrator:
                     team_run.update_team_state(project_dir, task, "completed")
             else:
                 failed += 1
+                _failed.add(_tid)  # P1-R2: 依赖失败传播 (后继 blocked)
                 if task.get("status") == "completed":
                     # 执行成功但验证失败 → 同样视为失败 (质量门: 无 success 禁止交付)
                     task["status"] = "failed"
@@ -2703,6 +2763,22 @@ class ExecutionOrchestrator:
                     err,
                     retry_count=0,
                 )
+        # P1-R2/Phase 6: schedule projection 落盘 (可重建, 非事实源 — 从 Task
+        # dependency 可重新计算; 测试证明删除后重建一致)
+        try:
+            _sched = {
+                "project_id": slug,
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "max_concurrency": 1,
+                "order": [str(t.get("id") or "") for t in state.tasks],
+                "rounds": [[str(t.get("id") or "") for t in state.tasks]],
+                "dependency_snapshot": dep_graph.to_dict() if dep_graph.to_dict() else {},
+            }
+            (project_dir / "schedule.json").write_text(
+                json.dumps(_sched, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+        except Exception:  # noqa: BLE001 — 投影失败不阻断 (失败安全)
+            pass
         result = ExecutionResult(
             project=slug,
             status=(

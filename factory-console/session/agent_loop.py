@@ -405,6 +405,32 @@ def _try_promote_lifecycle(service: Any, project_id: str, target: str) -> None:
         pass
 
 
+def _plan_dependency_map(plan: dict[str, Any]) -> dict[str, list[str]]:
+    """P1-R1: 从 Plan 提取任务依赖 {title: [dep_titles]}。
+
+    优先: task.dependency / task.depends_on (显式);
+    兜底: plan.order 顺序链 (LLM 表达的执行顺序 → 相邻成链: 后者依赖前者)。
+    仅当显式依赖缺失时用 order — 不覆盖 LLM 明确声明的依赖。
+    """
+    dep: dict[str, list[str]] = {}
+    for t in (plan.get("tasks") or []):
+        if not isinstance(t, dict):
+            continue
+        title = str(t.get("title") or "").strip()
+        if not title:
+            continue
+        d = t.get("dependency") or t.get("depends_on") or []
+        if d:
+            dep[title] = [str(x).strip() for x in d if str(x).strip()]
+    order = plan.get("order") or []
+    if order and not any(dep.values()):
+        for i in range(1, len(order)):
+            prev, cur = str(order[i - 1]).strip(), str(order[i]).strip()
+            if prev and cur:
+                dep.setdefault(cur, []).append(prev)
+    return dep
+
+
 def execute_plan(
     plan: dict[str, Any],
     *,
@@ -437,6 +463,10 @@ def execute_plan(
                 }
         except Exception:  # noqa: BLE001 — 幂等检查失败 → 继续 (保守)
             pass
+    # P1-R1: 依赖提取 (显式 dependency/depends_on; 兜底 plan.order 链)
+    _dep_map = _plan_dependency_map(plan)
+    created: list[dict[str, Any]] = []
+    _id_by_title: dict[str, str] = {}
     for t in (plan.get("tasks") or [])[:20]:
         try:
             c = service.create_task(
@@ -448,12 +478,34 @@ def execute_plan(
             if c:
                 created.append({"id": c.get("id"), "title": c.get("title"),
                                 "priority": c.get("priority"), "plan_id": _plan_id})
+                _tid = str(c.get("id") or "")
+                _ttl = str(c.get("title") or "").strip()
+                if _tid and _ttl:
+                    _id_by_title[_ttl] = _tid
         except Exception as exc:  # noqa: BLE001 — 单条失败跳过 (诚实标注)
             try:
                 created.append({"id": "", "title": str(t.get("title") or "")[:40],
                                 "priority": str(t.get("priority") or "P2"),
                                 "error": f"{type(exc).__name__}: {exc}"})
             except Exception:  # noqa: BLE001
+                pass
+    # P1-R1: dependency resolve (plan task title → created Task ID) + 校验更新
+    # (自引用/环/未知依赖由 service.update_task → validate_dependency 真实检查;
+    #  解析失败的任务依赖保持 [] — 失败安全, 不阻断任务创建)
+    if _dep_map and _id_by_title:
+        for _title, _deps in _dep_map.items():
+            _cid = _id_by_title.get(_title)
+            if not _cid:
+                continue
+            _resolved = [
+                _id_by_title[d] for d in _deps
+                if d in _id_by_title and _id_by_title[d] != _cid
+            ]
+            if not _resolved:
+                continue
+            try:
+                service.update_task(project_id, _cid, dependency=_resolved)
+            except Exception:  # noqa: BLE001 — 依赖更新失败保持原状 (诚实)
                 pass
     lines = [f"已建任务 {len(created)} 个进 backlog:"]
     lines += [f"- [{t['priority']}] {t['title']} ({t['id']})" for t in created[:15] if t.get("id")]

@@ -96,10 +96,16 @@ class ExecState:
         return {"ok": True, "goal": self.state["plan"]["goal"], "total": len(self.state["tasks"])}
 
     # ------------------------------------------------------------ 推进
-    def next(self, exec_fn: Callable[[dict[str, Any]], dict[str, Any]]) -> dict[str, Any]:
+    def next(
+        self,
+        exec_fn: Callable[[dict[str, Any]], dict[str, Any]],
+        *,
+        on_started: Callable[[], None] | None = None,
+    ) -> dict[str, Any]:
         """推进下一个任务 (P1-FIX: 依赖感知 — Ready = todo 且全部依赖 done)。
 
-        exec_fn(task) → {ok, output, verify?}。
+        exec_fn(task) → {ok, output, verify?, exec_ref?}。
+        on_started: 任务置 running 后调用 (调用方 save — crash 恢复落盘依据)。
         依赖语义: task.dependency = [backlog task ids] (chain_start 从 plan.order 解析)。
         - 依赖未完成 → 不执行 (跳过, 返回 waiting)
         - 依赖失败 → 下游 blocked (失败传播)
@@ -133,7 +139,13 @@ class ExecState:
                     "output": self.deliver()["output"] if done else "无待办任务 (有失败/进行中)"}
         task = tasks[idx]
         task["status"] = "running"
+        task["exec_ref"] = ""  # P2-②: Run ID 执行后回填; 先落盘 running (crash 可恢复)
         self.state["current_index"] = idx
+        if on_started is not None:
+            try:
+                on_started()  # 调用方 save — running + current_index 落盘 (crash 恢复依据)
+            except Exception:  # noqa: BLE001 — 落盘失败不阻断执行
+                pass
         # 持久化由调用方 (dispatch) 在 next 后 save(data_dir) 统一落盘
         result = {}
         try:
@@ -144,6 +156,8 @@ class ExecState:
         task["status"] = "done" if result.get("ok") else "failed"
         task["result"] = str(result.get("output") or result.get("error") or "")[:1000]
         task["verify"] = dict(result.get("verify") or {})
+        # P2-②: 持久化 Run 关联键 (exec_ref = Run registry 真实 ID, 供 recovery 查询)
+        task["exec_ref"] = str(result.get("exec_ref") or "")
         if not result.get("ok"):
             task["verify"] = {"method": "exec", "result": "failed",
                               "reason": str(result.get("error") or "")[:300]}
@@ -153,6 +167,48 @@ class ExecState:
         return {"ok": bool(result.get("ok")), "task": task["title"], "status": task["status"],
                 "output": task["result"], "progress": self.progress(),
                 "finished": _all_done}
+
+    # ------------------------------------------------------------ 恢复
+    def recover(self, run_status_fn: Callable[[str], str | None] | None = None) -> dict[str, Any]:
+        """P2-②: crash/restart 恢复 — stale running 不再永久卡死。
+
+        Recovery Contract (orchestration-recovery-contract.md):
+        - Run 证据 done → 任务 done (不重跑)
+        - Run 证据 failed → 任务 failed (不重跑)
+        - Run running/missing/exec_ref 缺失 → UNKNOWN → todo 重排队
+          (verify.recovery 标注; 不伪造 DONE/FAILED)
+        - 幂等: 只处理 status==running; 连续调用一致
+        - CANCELLED/FAILED/DONE/BLOCKED/todo 不动
+        """
+        recovered: list[str] = []
+        for t in self.state.get("tasks") or []:
+            if t.get("status") != "running":
+                continue
+            _ref = str(t.get("exec_ref") or "")
+            _rs: str | None = None
+            if _ref and run_status_fn is not None:
+                try:
+                    _rs = run_status_fn(_ref)
+                except Exception:  # noqa: BLE001 — registry 异常 → UNKNOWN
+                    _rs = None
+            if _rs == "done":
+                t["status"] = "done"
+                t["verify"] = {"method": "recovery", "result": "done",
+                               "reason": "run registry confirmed done"}
+            elif _rs == "failed":
+                t["status"] = "failed"
+                t["verify"] = {"method": "recovery", "result": "failed",
+                               "reason": "run registry confirmed failed"}
+            else:
+                # UNKNOWN (Run running/missing/exec_ref 缺失) → 重排队, 不伪造结果
+                t["status"] = "todo"
+                t["verify"] = {"method": "recovery", "result": "unknown",
+                               "reason": "stale running after restart — outcome unknown, requeued"}
+            recovered.append(str(t.get("title") or ""))
+        if recovered:
+            self.state["updated_at"] = _now_iso()
+        return {"ok": True, "recovered": recovered,
+                "count": len(recovered)}
 
     # ------------------------------------------------------------ 状态/交付
     def progress(self) -> str:

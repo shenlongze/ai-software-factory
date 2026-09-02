@@ -11835,3 +11835,58 @@ major/商业化: S2/L2/U2/C2/T2（+ 认证 S3/L3/U3/C3/T3）
 
 **每波验收**: 五维对应等级实测表 + 全量回归 + 用户实测——"可靠"从感觉变成每波可证明的跃迁。
 24h 长跑 + 并发脚本 · 安全 8 威胁实测核对 · 发布门自动化。待办清单 P0-1~P0-5。
+
+
+---
+
+## 二十三、真实状态勘误(2026-09-02, STEP1-11 Forensic)
+
+> **勘误性质**: 本附录由 2026-09-02 全仓库 forensic 审计 (STEP1-11: 事实→证据→关系→
+> 能力→GAP→原则→成熟度→基线冻结) 生成。不改写上文 22 章原文, 只对照本方案书
+> L115-135 完成度表与真实代码/运行时, 记录差异。
+>
+> 图例沿用: ✅ 声明已实现 · 🚧 声明部分 · 📐 声明仅设计
+> 对照结论: MATCH (声明与当前事实一致) / OVERSTATED (声明高于事实) /
+>           OUTDATED (当时属实, 现已演进) / UNVERIFIABLE (无法证明)
+
+| 章 | 方案书声明 (v3.0/2026-08-21) | 2026-09-02 真实状态 | 结论 |
+|----|------------------------------|--------------------|------|
+| 基线 | v1.1.10 · 11981+ tests | 实际 pyproject 1.1.364; 测试口径 = org 892 + console 关键 1049 (console 全量 5700+ 慢, 11981 旧口径不可复现) | OVERSTATED/OUTDATED |
+| 一 产品定位 | ✅ 愿景对齐 | 定位方向成立; 但"9 项已实现"总体结论过时 — 真实 = 执行内核 M4, 产品智能/控制面未闭环 (STEP8) | OUTDATED |
+| 二 模块化 | 🚧 | MATCH (exec/mcp 真实; 插件规范未定) | MATCH |
+| 三 任务拆解 | 🚧 | 双路径: M3 orchestrator/execution_plan (本方案书所指) = 历史冻结; 会话链新链 (plan_development→backlog→ExecState) 真实 M4 — 方案书未描述新链 | OUTDATED |
+| 四 多 Agent 编排 | ✅ 7 专家真干活 | **OVERSTATED**: AgentEntity/ExpertFactory/agents.json 注册真实; execution_records 100 条 (backend-1/flutter-dev/pm/architect/qa 真实执行) = 部分真实; 但 LLMRouter 消费 0, 角色 Agent (developer/pm/architect 类) 生产触发入口 UNKNOWN; "统一员工模型" (方案书 L3555) 未成 OS 级编排 | OVERSTATED |
+| 五 审计 | ✅ 50 事件 | audit_events 5160 真实 (追加不可变); 事件模型经 data-governance 重建 — 50 事件旧清单过时 | MATCH 主体 |
+| 六 治理 | ✅ 分级审批 | approval 真实 (M3, governance/approvals); 分级审批细节经 forensic 未全验证 | PARTIAL |
+| 七 学习 | 🚧 M4 | MATCH (经验 84 条写无读, 闭环 FUTURE M4) | MATCH |
+| 八 RAG | 🚧 | MATCH (retrieval 存在, runtime UNKNOWN) | MATCH |
+| 九 工具生态 | 🚧 | MCP/tool/skill 真实 (console 集成); skills 生产消费 UNKNOWN | MATCH 主体 |
+| 十 行业工厂 | 🚧 | IT 工厂 (会话链) 真实; 第二行业 FUTURE | MATCH |
+| 十一 交互 | 🚧 React 📐 | **OUTDATED**: Web 已真实 (vite 5180, 会话/任务/执行 E2E) — 不再 📐 | OUTDATED |
+| 十二 演进路线 | ✅ | MASTER-PLAN-2026-08 为历史文档 | OUTDATED |
+| 十五 竞品对比 | ✅ | 文档存在, 历史 | MATCH (历史) |
+| 十七 自我进化 | 自修复✅ replan✅ | **OVERSTATED**: 自修复 (recovery) 真实 M3; "replan" 在 M3 orchestrator 侧, 会话链 replan ABSENT (FUTURE M3 承诺) | OVERSTATED |
+| 十九 知识图谱 | 📐 | 无生产证据 | MATCH (设计) |
+
+### 勘误要点 (最需要纠正的 5 条)
+
+1. **方案书没有描述当前真实主执行链**: 本方案书写于 M3 orchestrator 时代
+   (execution_plan/AgentEntity 链)。2026-08-25 之后建立的会话链
+   (会话→plan_development→backlog Task→ExecState 依赖门控→gateway 执行→回写→聚合)
+   是当前生产主链 (M4, E2E 验证) — 见 docs/00-index/CURRENT_SYSTEM_TRUTH.md。
+2. **"7 专家真干活 ✅" 表述过强**: 注册与历史执行记录真实 (records 100),
+   但 OS 级统一员工编排与角色 Agent 生产触发入口 = UNKNOWN/IMPLEMENTED (STEP7 Agent Reality)。
+3. **"LLM Router ✅" (本方案书正文多处)**: 当前 LLMRouter 生产消费 = 0;
+   真实模型选择 = provider 默认 (llm_fn 统一注入)。见 STEP10 09_MODEL_SELECTION_CONTRACT。
+4. **"并行调度 ✅"**: 生产为单任务串行 (依赖感知顺序调度); 真并行未实现。
+   Ready-set (逻辑) ≠ 并行 (生产)。见 orchestration-contract。
+5. **"Web 📐" 已过时**: WebUI 已真实运行 (5180), 核心流程浏览器 E2E 验证过。
+
+### 本方案书的历史价值与使用规则
+
+- 保留价值: 产品愿景 (AI Enterprise OS 方向)、22 章完整设计、27 条产品原则来源、
+  治理/安全/行业化蓝图 (STEP6 据此提取 P-* 原则)。
+- 使用规则: 引用本方案书 = **愿景/原则源 (T5)**, 不得作为当前系统事实依据。
+  当前事实以 docs/00-index/CURRENT_SYSTEM_TRUTH.md 与
+  docs/audit/product-system-baseline/STEP10_DOMAIN_FREEZE.md 为准。
+- 本勘误不改写上文, 只提供对照; 愿景目标仍属 M3-M7 里程碑。

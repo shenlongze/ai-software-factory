@@ -1,0 +1,19 @@
+# GAP RECLASSIFICATION — STEP 6 (2026-09-02)
+
+| GAP | STEP5 | STEP6 分类 | 说明 |
+|-----|-------|-----------|------|
+| G-TRUTH-01 | CRITICAL | CONTRACT_GAP | 域边界契约缺失 (SSOT vs 模块独立冲突) |
+| G-REQ-01 | CRITICAL | TRUE_GAP | 违反 P-REQ-01 |
+| G-PRD-01 | CRITICAL | CONTRACT_GAP | M3 承诺未实现 (审批门已实现) |
+| G-OS-01 | HIGH | DESIGN_CHOICE | 原则支撑模块独立 |
+| G-ART-01 | HIGH | TRUE_GAP | 审计/evidence 链断裂 (P-GOV/DG-06) |
+| G-LLM-01 | HIGH | TRUE_GAP | 违反 P-LLM-01/02 |
+| G-CORE-01 | HIGH | DESIGN_CHOICE | 意图独立产品 |
+| G-AGENT-01 | HIGH | CONTRACT_GAP | M2 深度承诺部分未实现 |
+| G-REQ-02 | MEDIUM | CONTRACT_GAP | 审计承诺 |
+| G-REQ-03 | MEDIUM | TRUE_GAP | 版本化承诺 (并入 G-REQ-01) |
+| G-VER-01 | MEDIUM | UNPROVEN | — |
+| G-EXP-01 | MEDIUM | FUTURE_CAPABILITY | M4 |
+| G-LEARN-01 | MEDIUM | FUTURE_CAPABILITY | M4 |
+| G-REPLAN-01 | MEDIUM | FUTURE_CAPABILITY | M3 |
+| G-OBS-01 | LOW | IMPLEMENTATION_GAP | — |

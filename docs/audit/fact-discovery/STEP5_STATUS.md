@@ -1,0 +1,31 @@
+# STEP 5 STATUS — (2026-09-02)
+
+## GAP 数量: 15
+- CRITICAL: 3 (G-REQ-01, G-PRD-01, G-TRUTH-01)
+- HIGH: 4 (G-ART-01, G-LLM-01, G-CORE-01, G-OS-01, G-AGENT-01 = 5)
+- MEDIUM: 6 (G-REQ-02, G-REQ-03, G-EXP-01, G-LEARN-01, G-VER-01, G-REPLAN-01)
+- LOW: 1 (G-OBS-01)
+
+## 类别统计
+- TRACEABILITY_GAP: 3 (G-REQ-01, G-ART-01, G-VER-01)
+- SSOT_GAP: 2 (G-TRUTH-01, G-OS-01)
+- DOMAIN_GAP: 1 (G-PRD-01)
+- CONTROL_PLANE_GAP: 2 (G-LLM-01, G-AGENT-01)
+- INTEGRATION_GAP: 1 (G-CORE-01)
+- PERSISTENCE_GAP: 1 (G-REQ-02)
+- DATA_GAP: 1 (G-REQ-03)
+- RUNTIME_GAP: 2 (G-EXP-01, G-LEARN-01)
+- ORCHESTRATION_GAP: 1 (G-REPLAN-01)
+- OBSERVABILITY_GAP: 1 (G-OBS-01)
+
+## 最重要 GAP
+1. G-TRUTH-01 (三套 execution truth — 事实分裂)
+2. G-REQ-01 (需求不可追踪到执行)
+3. G-PRD-01 (PRD 域缺失)
+4. G-OS-01 (非统一 OS)
+
+## UNKNOWN
+- factory-core/runtime 承担 OS 核心职责的证据
+- Learning/Release 生产闭环
+- Auth/身份治理
+- exec 角色 Agent 触发入口

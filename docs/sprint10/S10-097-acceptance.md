@@ -1,3 +1,11 @@
+> **Documentation Status:** HISTORICAL
+>
+> This document records the system state/design at the time it was created.
+> It is NOT the current system truth.
+>
+> Current truth: `docs/00-index/CURRENT_SYSTEM_TRUTH.md`
+> Frozen contracts: `docs/audit/product-system-baseline/STEP10_DOMAIN_FREEZE.md`
+
 # S10-097 — M3e 调度器接管执行: 验收通过
 
 > 日期: 2026-08-24 | 版本: v1.1.15 | 状态: ✅ 完成（验收落盘, board Sprint 计数用）

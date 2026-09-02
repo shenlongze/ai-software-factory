@@ -1,3 +1,11 @@
+> **Documentation Status:** HISTORICAL
+>
+> This document records the system state/design at the time it was created.
+> It is NOT the current system truth.
+>
+> Current truth: `docs/00-index/CURRENT_SYSTEM_TRUTH.md`
+> Frozen contracts: `docs/audit/product-system-baseline/STEP10_DOMAIN_FREEZE.md`
+
 # Production Reality Report — 真实生产闭环审计
 
 > 日期: 2026-08-19 | 首席架构审查 | 仅代码路径 + CLI 实测, 不看设计文档

@@ -1,10 +1,25 @@
 # AI Factory
 
-> **AI Workforce Operating System — 创建、管理、运行和进化 AI 公司的操作系统。**
+> **AI Software Factory — 已拥有真实生产执行内核的 AI 软件开发平台。**
 >
-> 让 AI 像软件公司员工一样工作: 理解需求 → 拆解 → 规划 → 受治理执行 → 证据交付 → 经验沉淀。
+> 方向: AI Software Factory → AI Organization Factory → AI Enterprise OS
+> 当前 (2026-09, STEP1-11 forensic): 执行内核真实闭环 (M4); 产品智能层/模型控制层未完全闭环。
 
-`v1.1.79` · M3 全链完成 · CLI First · 本地部署 · 全事件审计 · Apache-2.0
+`v1.1.364` · 本地部署 · CLI + Web(8011/5180) · 全事件审计 · Apache-2.0
+
+---
+
+## READ FIRST(进入项目的 AI 必须阅读)
+
+```
+docs/00-index/README.md                — 文档导航
+docs/00-index/CURRENT_SYSTEM_TRUTH.md  — 当前系统事实 (权威=代码+运行时+STEP10 Contract)
+docs/audit/product-system-baseline/STEP10_DOMAIN_FREEZE.md — 架构冻结 (人工批准)
+docs/audit/project-reality/PROJECT_PROGRESS_SNAPSHOT.md    — 1 页状态
+```
+
+⚠️ 历史文档 (docs/sprint*/design/adr/audit 大部分) = 历史证据, 不代表当前系统。
+版本以 pyproject.toml (1.1.364) 为准; 旧 README 表述 (v1.1.79 / M3 全链完成) 已过时。
 
 ---
 

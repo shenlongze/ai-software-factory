@@ -14,3 +14,9 @@
 
 > 注: 这些文件多为未跟踪（S10-034 审计已标记"根目录未跟踪中文 md 应清理"）；
 > 归档后如确需保留版本历史，可随时 git mv 回主目录。
+
+---
+> STEP11.0 增补 (2026-09-02): docs/archive 已有归档清单, 本文件保留原文。
+> 补充规则: docs/sprint7-10 / design / adr / audit (STEP1-5 与 S10 系列) 约 800+
+> 历史文档保持原位置不批量移动 (目录级 Truth Level 标记, 见 docs/00-index/
+> DOCUMENTATION_MATRIX.md)。历史 ≠ 删除 / 历史 ≠ 当前 / 引用时标注 Historical。

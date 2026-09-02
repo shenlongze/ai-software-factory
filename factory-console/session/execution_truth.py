@@ -152,10 +152,23 @@ def extract_claimed_count(text: str) -> int | None:
 
 
 def _evidence_task_count(evidence_text: str | None) -> int:
-    """从事实文本提取任务 id 数 (意图路由 facts 驱动回复的证据计数)。"""
+    """从事实文本提取任务/计划 id 数 (facts 驱动回复的证据计数)。
+
+    P1-FIX: 支持 PLAN- (plan_development facts) 与 TASK- (create_task facts)。
+    """
     if not evidence_text:
         return 0
-    return len(set(re.findall(r"\bTASK-[\w-]+", evidence_text)))
+    return len(set(re.findall(r"\b(?:TASK|PLAN)-[\w-]+", evidence_text)))
+
+
+def _facts_declared_count(evidence_text: str | None) -> int | None:
+    """facts 明确声明的任务数 ("共 N 个任务" — plan_development 场景)。
+
+    facts 声明数量优先于 id 计数 (plan facts 含 plan_id 但任务尚未创建,
+    "共 7 个任务" 是计划契约的一部分)。
+    """
+    m = re.search(r"共\s*(\d+)\s*个任务", evidence_text or "")
+    return int(m.group(1)) if m else None
 
 
 def validate_execution_claims(
@@ -198,6 +211,10 @@ def validate_execution_claims(
         ])
     if actual_count is None and evidence_text:
         actual_count = ev_count
+        # P1-FIX: facts 明确声明数量 (plan_development "共 N 个任务") 优先
+        _fdecl = _facts_declared_count(evidence_text)
+        if _fdecl is not None:
+            actual_count = _fdecl
     if not real_calls and not evidence_text:
         return {
             "ok": False, "has_claims": True,

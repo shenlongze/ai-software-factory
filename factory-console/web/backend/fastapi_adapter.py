@@ -7330,10 +7330,89 @@ def build_app(
 
         # 完整链路 (Founder 设计): LLM 转标准意图 → 查询/执行 → 标准输出 (Agent 不可用/非 agent 模式时兜底)
         _qmod = _console_import("session.query_engine")
-        intent = _qmod.parse_intent_llm(body.message, _sessions_mod.llm_raw)
+        # P1-FIX: pending_plan 审批注入 (company 会话; project 分支 7163 已有同类注入)
+        _agmod2 = _console_import("session.agent_loop")
+        _pend2 = None
+        try:
+            _pend2 = _agmod2.PendingPlanStore(workspace_root or DEFAULT_ROOT).get(session_id)
+        except Exception:  # noqa: BLE001 — 计划读取失败 → 不注入
+            _pend2 = None
+        _route_msg = body.message
+        if _pend2:
+            _route_msg = (
+                f"【当前有待审批的开发计划】\n{_agmod2.plan_to_text(_pend2)}\n\n"
+                f"用户最新消息: {body.message}\n\n"
+                "请语义判断: 如果用户同意(可以/开始/同意/没问题等语气) → 调 execute_plan 执行该计划; "
+                "如果用户提出修改/不满意 → 用 plan_development 重写计划; 如果意图不明 → 先追问。"
+            )
+        intent = _qmod.parse_intent_llm(_route_msg, _sessions_mod.llm_raw)
+        # P1-FIX: 待审批计划 + 批准语气 → 强制走 company 兜底 (run_agent_native),
+        # 让 LLM 基于注入的计划上下文调 execute_plan (防止 task_action/create_task 拦截批准)
+        if _pend2 is not None and any(k in body.message for k in ("批准", "同意", "没问题", "开始执行", "执行这个计划")):
+            intent = {"intent": "chat"}
         hint_project = intent.get("project") if intent.get("intent") != "chat" else None
 
         # ---- 动作意图 (会话控制操作软件 — 真实执行) ----
+        # P1-FIX: plan_development — 自然语言 Planning → 真实 Plan 持久化 (pending)
+        # (Idea → Plan 生产链; Plan ≠ Task, 审批前不创建 backlog Task)
+        if intent.get("intent") == "plan_development":
+            _approve_hint = any(k in body.message for k in ("批准", "同意", "可以", "没问题", "开始", "执行"))
+            if _pend2 is not None and _approve_hint:
+                # 已有待审批计划 + 用户批准 → 不重新生成, 交 company 兜底 (run_agent_native → execute_plan)
+                pass
+            else:
+                tgt = None
+                if hint_project:
+                    tgt = next((pp for pp in projects if hint_project in str(getattr(pp, "name", "") or "")), None)
+                if tgt is None:
+                    tgt = _qmod.resolve_project(body.message, projects)
+                if tgt is None and session.get("project_id"):
+                    tgt = next((pp for pp in projects if pp.id == session.get("project_id")), None)
+                if tgt is None:
+                    facts = (
+                        "未定位到目标项目 — 请说项目名 (如: 给 记账App 制定开发计划)。"
+                        f"\n项目列表: {', '.join(pp.name for pp in projects) if projects else '暂无项目'}"
+                    )
+                    action_target = {"url": "#/workspace/projects", "label": "查看项目列表"}
+                else:
+                    try:
+                        _agmod = _console_import("session.agent_loop")
+                        _plan = _agmod.plan_development(
+                            str(body.message), str(body.message),
+                            llm_fn=_sessions_mod.llm_raw)
+                        import uuid as _uuid
+
+                        _plan_id = "PLAN-" + _uuid.uuid4().hex[:8]
+                        _plan["plan_id"] = _plan_id
+                        _plan["project_id"] = str(tgt.id)
+                        _plan["session_id"] = session_id
+                        _plan["status"] = "pending"
+                        from datetime import datetime, timezone as _tz
+
+                        _plan["created_at"] = datetime.now(_tz.utc).isoformat()
+                        _agmod.PendingPlanStore(workspace_root or DEFAULT_ROOT).save(
+                            session_id, _plan)
+                        _n = len(_plan.get("tasks") or [])
+                        facts = (
+                            f"开发计划已真实生成并持久化: Plan ID {_plan_id}, "
+                            f"项目 {tgt.name}, 共 {_n} 个任务, 状态待审批。\n"
+                            + _agmod.plan_to_text(_plan)
+                        )
+                        action_target = {"url": f"#/project/{tgt.id}/todo", "label": f"查看{tgt.name}任务"}
+                    except Exception as exc:  # noqa: BLE001 — 计划失败 → 诚实降级
+                        facts = f"计划生成失败, 未产生可执行的持久化计划: {exc}"
+                        action_target = {"url": f"#/project/{tgt.id}", "label": "查看项目"}
+                result = _sessions_mod.send_message(
+                    sessions_store, session_id, body.message, facts=facts,
+                    reply_extra=_qmod.STANDARD_OUTPUT_PROMPT,
+                )
+                result["meta"] = {
+                    "intent": "plan_development",
+                    "project": getattr(tgt, "name", None) if tgt is not None else None,
+                    "data_source": "live",
+                }
+                return result
+
         if intent.get("intent") == "create_task":
             task = intent.get("task") or body.message
             # 定位目标项目: LLM 提取的项目名 → 会话项目
@@ -7769,7 +7848,7 @@ def build_app(
             _hist2 = []
         try:
             agent_result = _agmod.run_agent_native(
-                body.message,
+                _route_msg if _pend2 else body.message,
                 data_dir=workspace_root or DEFAULT_ROOT,
                 project_id=str(session.get("project_id") or ""),
                 service=service,

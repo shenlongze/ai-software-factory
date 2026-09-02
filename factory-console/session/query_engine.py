@@ -594,10 +594,10 @@ def build_facts(
 VALID_INTENTS = {"list_projects", "project_status", "project_scan", "code_scan", "project_structure", "project_quality", "project_tasks",
                  "project_docs", "project_doc", "doc_search",
                  "deep_analyze", "task_action", "create_idea", "project_artifacts", "monitor", "settings", "project_action", "tools_list", "task_continue",
-                 "model", "system_status", "create_project", "create_task", "git_push", "chat"}
+                 "model", "system_status", "create_project", "create_task", "plan_development", "git_push", "chat"}
 
 _INTENT_LLM_PROMPT = """把用户的提问转成标准查询意图 (只输出 JSON, 不要别的):
-{{"intent": "list_projects|project_status|project_scan|project_quality|project_tasks|project_docs|project_doc|doc_search|deep_analyze|task_action|create_idea|project_artifacts|monitor|settings|project_action|model|create_project|create_task|git_push|chat",
+{{"intent": "list_projects|project_status|project_scan|project_quality|project_tasks|project_docs|project_doc|doc_search|deep_analyze|task_action|create_idea|project_artifacts|monitor|settings|project_action|model|create_project|create_task|plan_development|git_push|chat",
  "project": "用户提到的项目名 (没提到 → null)",
  "task": "用户要做的开发任务描述 (create_task 时填; 否则 null)}}
 规则:
@@ -619,6 +619,7 @@ _INTENT_LLM_PROMPT = """把用户的提问转成标准查询意图 (只输出 JS
 - 问在文档里检索/搜索关键词 (如 '文档里检索 错误码' / '哪些文档提到 X') → doc_search
 - 问用什么模型 → model
 - 完善/优化/修复/加功能/细化/拆解想法 → create_task (task=要做的事, project=目标项目)
+- 制定/生成/规划开发计划、开发计划卡片、把需求规划成开发任务、待审批计划 → plan_development (project=目标项目; 注意: 即使短语含'任务'也是 plan_development, 不是 create_task)
 - 推送代码到 github/远程 → git_push
 - 标记任务完成/开始/改优先级/归档 → task_action (task=任务描述)
 - 记录/新增想法 → create_idea (task=想法内容)

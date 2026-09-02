@@ -90,6 +90,7 @@ class TaskStatus(str, Enum):
     BLOCKED = "blocked"
     REVIEW = "review"
     FAILED = "failed"
+    CANCELLED = "cancelled"
     DONE = "done"
 
     @classmethod
@@ -336,12 +337,13 @@ class Roadmap(_OrgModel):
 #: 受控状态转换表 (PRD 4.3 六态约定; 异常路径 BLOCKED 显式枚举;
 #: done 为终态 — 无任何合法去向)。key=当前态, value=合法目标态元组。
 TASK_TRANSITIONS: dict[TaskStatus, tuple[TaskStatus, ...]] = {
-    TaskStatus.TODO: (TaskStatus.READY, TaskStatus.BLOCKED),
-    TaskStatus.READY: (TaskStatus.IN_PROGRESS, TaskStatus.BLOCKED),
-    TaskStatus.IN_PROGRESS: (TaskStatus.BLOCKED, TaskStatus.REVIEW, TaskStatus.FAILED),
+    TaskStatus.TODO: (TaskStatus.READY, TaskStatus.BLOCKED, TaskStatus.CANCELLED),
+    TaskStatus.READY: (TaskStatus.IN_PROGRESS, TaskStatus.BLOCKED, TaskStatus.CANCELLED),
+    TaskStatus.IN_PROGRESS: (TaskStatus.BLOCKED, TaskStatus.REVIEW, TaskStatus.FAILED, TaskStatus.CANCELLED),
     TaskStatus.BLOCKED: (TaskStatus.READY, TaskStatus.IN_PROGRESS),
     TaskStatus.REVIEW: (TaskStatus.IN_PROGRESS, TaskStatus.DONE, TaskStatus.FAILED),
     TaskStatus.FAILED: (TaskStatus.READY, TaskStatus.BLOCKED),  # 重试: failed→ready; 依赖场景人工
+    TaskStatus.CANCELLED: (TaskStatus.READY,),  # 取消后可重试 (人工)
     TaskStatus.DONE: (),
 }
 

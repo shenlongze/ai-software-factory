@@ -123,7 +123,7 @@ class TestTaskModel:
     def test_task_status_enum_values(self):
         """Status 枚举: TODO/READY/IN_PROGRESS/BLOCKED/REVIEW/FAILED/DONE (P1-FIX)。"""
         assert [s.value for s in TaskStatus] == [
-            "todo", "ready", "in_progress", "blocked", "review", "failed", "done",
+            "todo", "ready", "in_progress", "blocked", "review", "failed", "cancelled", "done",
         ]
         assert TaskStatus.parse("READY") == TaskStatus.READY
         assert TaskStatus.parse("DONE") == TaskStatus.DONE

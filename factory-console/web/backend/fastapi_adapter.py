@@ -6652,6 +6652,35 @@ def build_app(
         from factory_console import run_liveness as _rl
 
         _rl.request_session_cancel(session_id)
+        # P2-①: Stop → 执行链当前任务标记 cancelled (ExecState 投影 + Task SSOT 回写;
+        # 幂等: 仅 running 任务 → cancelled; 重复 Stop 无二次副作用)
+        try:
+            from factory_console.session.agent_loop import PendingPlanStore  # noqa: F401
+            from factory_console.session.exec_state import ExecState
+
+            _st = ExecState.load(workspace_root or DEFAULT_ROOT, session_id)
+            if _st.state.get("status") == "running":
+                _idx = _st.state.get("current_index", -1)
+                _cur = _st.state.get("tasks") or []
+                if 0 <= _idx < len(_cur):
+                    _t = _cur[_idx]
+                    if _t.get("status") == "running":
+                        _t["status"] = "cancelled"
+                        _t["result"] = "cancelled by user stop"
+                        _t["verify"] = {"method": "exec", "result": "cancelled",
+                                        "reason": "user stop"}
+                        _st.save(workspace_root or DEFAULT_ROOT)
+                        _bid = str(_t.get("backlog_id") or "")
+                        _pid = str(_st.state.get("project_id") or "")
+                        if _bid and _pid:
+                            try:
+                                service.finish_task_exec(
+                                    _pid, _bid, success=False, cancelled=True,
+                                    actor="user-stop", exec_result="cancelled by user stop")
+                            except Exception:  # noqa: BLE001 — 回写失败不阻断 cancel
+                                pass
+        except Exception:  # noqa: BLE001 — 执行链不存在/异常 → cancel 本身仍成功
+            pass
         return {
             "ok": True,
             "session_id": session_id,

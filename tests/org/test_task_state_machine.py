@@ -58,12 +58,13 @@ class TestTransitionTable:
     def test_transition_table_matches_spec(self):
         """受控转换表: 七态合法去向 (P1-FIX: FAILED 独立, BLOCKED 仅依赖传播)。"""
         assert TASK_TRANSITIONS == {
-            TaskStatus.TODO: (TaskStatus.READY, TaskStatus.BLOCKED),
-            TaskStatus.READY: (TaskStatus.IN_PROGRESS, TaskStatus.BLOCKED),
-            TaskStatus.IN_PROGRESS: (TaskStatus.BLOCKED, TaskStatus.REVIEW, TaskStatus.FAILED),
+            TaskStatus.TODO: (TaskStatus.READY, TaskStatus.BLOCKED, TaskStatus.CANCELLED),
+            TaskStatus.READY: (TaskStatus.IN_PROGRESS, TaskStatus.BLOCKED, TaskStatus.CANCELLED),
+            TaskStatus.IN_PROGRESS: (TaskStatus.BLOCKED, TaskStatus.REVIEW, TaskStatus.FAILED, TaskStatus.CANCELLED),
             TaskStatus.BLOCKED: (TaskStatus.READY, TaskStatus.IN_PROGRESS),
             TaskStatus.REVIEW: (TaskStatus.IN_PROGRESS, TaskStatus.DONE, TaskStatus.FAILED),
             TaskStatus.FAILED: (TaskStatus.READY, TaskStatus.BLOCKED),
+            TaskStatus.CANCELLED: (TaskStatus.READY,),
             TaskStatus.DONE: (),
         }
 

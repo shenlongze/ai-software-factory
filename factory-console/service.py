@@ -4476,12 +4476,14 @@ class ConsoleService:
         exec_result: str = "",
         error: str = "",
         actor: str = "exec-bridge",
+        cancelled: bool = False,
     ) -> dict[str, Any] | None:
-        """执行回写: 成功 → done (in_progress→review→done); 失败 → failed (P1-FIX)。
+        """执行回写: 成功 → done (in_progress→review→done); 失败 → failed (P1-FIX);
+        取消 → cancelled (P2-①, 用户 Stop — 非失败非依赖阻塞)。
 
-        幂等: 已是 done/failed/blocked → 仅更新 exec_ref/exec_result + 审计 (不重复
+        幂等: 已是 done/failed/blocked/cancelled → 仅更新 exec_ref/exec_result + 审计 (不重复
         转换); todo/ready 未启动过 → 先走到 in_progress 再回写 (合法路径)。
-        FAILED = 任务自身真实执行失败; BLOCKED 仅表示依赖失败传播 (不再由执行失败产生)。
+        FAILED = 任务自身真实执行失败; BLOCKED 仅表示依赖失败传播; CANCELLED = 用户主动取消。
         """
         resolved = self._resolve_project_id(project_id)
         if resolved is None:
@@ -4496,12 +4498,12 @@ class ConsoleService:
         from org.management import TASK_TRANSITIONS, TaskStatus, transition_task
         from org.models import utcnow
 
-        target = TaskStatus.DONE if success else TaskStatus.FAILED
-        action = "exec:completed" if success else "exec:failed"
+        target = TaskStatus.DONE if success else (TaskStatus.CANCELLED if cancelled else TaskStatus.FAILED)
+        action = "exec:completed" if success else ("exec:cancelled" if cancelled else "exec:failed")
         result = (
             f"done (result={exec_result or '-'})"
             if success
-            else f"failed{(': ' + error) if error else ''}"
+            else (f"cancelled" if cancelled else f"failed{(': ' + error) if error else ''}")
         )
         if task.status != target:
             # 未启动过 → 先合法走到 in_progress (依赖满足才可推进)

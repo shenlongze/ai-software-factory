@@ -580,27 +580,81 @@ AUDIT_METHOD_PROMPT = """【深度审计方法 (Project Audit)】这是结构性
 数据必须来自工具输出; 版本号/行数/路径/色值不许编造, 查不到就说"未查到"。"""
 
 
+def _chain_task_run(root: Any, task: dict[str, Any], project_id: str) -> str:
+    """P0-F1: 为 backlog 任务创建 TaskRun (NodeRun) 锚 — 返回 run-* id。
+
+    - 共享 Node "task-execution" (首次自动注册; Node=模板, 多 TaskRun 同 Node 合法)
+    - run.task_id = backlog TASK-* (F0: TaskRun.task_id → Task)
+    - 失败安全: 无 backlog_id/异常 → "" (不锚, 不阻断委派 — F1 不改变既有行为)
+    """
+    bid = str(task.get("backlog_id") or "").strip()
+    if not bid or not root:
+        return ""
+    try:
+        from ..node_runtime import create_node_run, get_node, register_node
+
+        node_id = "task-execution"
+        if get_node(root, node_id) is None:
+            register_node(root, node_id=node_id, name="Backlog Task Execution",
+                          node_type="task-execution")
+        nr = create_node_run(
+            root, node_id, task_id=bid,
+            input_data={"project_id": str(project_id or ""),
+                        "title": str(task.get("title") or "")[:200]},
+            trigger="chain",
+        )
+        return str(nr.get("run_id") or "")
+    except Exception:  # noqa: BLE001 — TaskRun 锚失败不阻断委派
+        return ""
+
+
 def _chain_auto_worker(root: Any, project_id: str, session_id: str, service: Any, st: Any) -> None:
     """W1 (v1.1.248): Promised Work (OpenClaw) — 后台自动逐任务执行到完成.
 
     每步: 委派外部AI → 验证 → 回写 backlog → 同步进度卡;
     全部完成: deliver 交付汇报 → 追加会话消息 (主动回报, 用户不用手动"继续")。
     失败安全: 任何异常吞掉不阻断执行链。
+    P0-F1: 每任务先建 TaskRun 锚 (run-*), gateway 透传 task_id/task_run_id → EXS 锚;
+           exec_ref = EXS-* (F0 语义)。
     """
     try:
         from ..external_executor.gateway import gateway_execute
 
         def _exec_fn(task):
             title = str(task.get("title") or "")
-            r = gateway_execute(title, data_dir=root, project_id=project_id, max_retry=1)
+            run_id = _chain_task_run(root, task, project_id)  # P0-F1: run-* 锚
+            r = gateway_execute(
+                title, data_dir=root, project_id=project_id, max_retry=1,
+                task_id=str(task.get("backlog_id") or ""),  # P0-F1
+                task_run_id=run_id,  # P0-F1
+            )
+            _exs = str(r.get("result_id") or "")  # P0-F2: EXS (成功/失败均已写入)
+            # P0-F2: TaskRun finalize — 吸收外部执行结果 (零二次执行, 幂等)
+            if run_id:
+                try:
+                    from ..node_runtime import finalize_node_run
+
+                    finalize_node_run(
+                        root, run_id,
+                        success=bool(r.get("ok")),
+                        verification=dict(r.get("verify") or {}),
+                        failure_reason=str(r.get("error") or ""),
+                        actor="session-chain-auto",
+                        note=f"gateway result absorbed (EXS {_exs})",
+                    )
+                except Exception:  # noqa: BLE001 — finalize 失败不阻断委派链
+                    pass
             if not r.get("ok"):
-                return {"ok": False, "error": r.get("error") or "外部执行失败"}
+                return {"ok": False, "error": r.get("error") or "外部执行失败",
+                        # P0-F2: 失败也回传 EXS (Task.exec_ref=EXS 在失败路径成立)
+                        "exec_ref": _exs}
             return {"ok": True,
                     "output": (f"{r.get('executor')} 完成 (任务 {r.get('task_id')}) · "
                                f"验证 {r.get('verify', {}).get('result') or 'unknown'} · "
                                f"{str(r.get('output') or '')[:300]}"),
                     "verify": dict(r.get("verify") or {}),
-                    "exec_ref": str(r.get("task_id") or "")}
+                    # P0-F1: exec_ref = EXS-* (result_id), 非 TASK-GW (task_id)
+                    "exec_ref": _exs or str(r.get("task_id") or "")}
 
         from .progress_card import sync_from_exec
 
@@ -619,7 +673,8 @@ def _chain_auto_worker(root: Any, project_id: str, session_id: str, service: Any
                         service.finish_task_exec(
                             project_id, _bid,
                             success=_cur.get("status") == "done",
-                            exec_ref=str(_v.get("exec_ref") or "") or _bid,
+                            # P0-F1: exec_ref = Task 副本持久化的 EXS-* (st.next 已写入); 兜底 _bid
+                            exec_ref=str(_cur.get("exec_ref") or "") or _bid,
                             exec_result=(f"{str(_cur.get('result') or '')[:300]}"
                                          + (f" · 验证 {_v.get('result') or 'unknown'}" if _v else "")),
                             actor="session-chain-auto",
@@ -1534,16 +1589,41 @@ def dispatch(
             if st.state.get("status") != "running":
                 return {"ok": False, "error": "没有运行中的执行链 (先 chain_start)"}
 
-            # P2-②: Recovery — stale running 先恢复 (Run 证据同步 or UNKNOWN 重排队),
-            # 再进入 Ready 计算 (不永久卡死)
+            # P2-② + P0-F2: Recovery — stale running 先恢复。exec_ref = EXS-* (F1),
+            # canonical TaskRun 证据优先: NodeRun (run-*) → EXS result → TASK-GW registry
+            # (TASK-GW 仅作 legacy 兼容, 非 canonical)。UNKNOWN → 重排队 (不伪造)。
             try:
+                from ..node_runtime import get_node_run
                 from ..external_executor.task_registry import ExternalTaskRegistry
+                from .audit import load_records
 
                 _reg = ExternalTaskRegistry.load(root)
 
                 def _run_status(ref: str) -> str | None:
-                    _r = _reg.get(ref)
-                    return str(_r.get("status") or "") if _r else None
+                    _ref = str(ref or "").strip()
+                    if not _ref:
+                        return None
+                    # 1) TaskRun (NodeRun run-*) — canonical (EXS.task_run_id → run-*)
+                    if _ref.startswith("run-"):
+                        _nr = get_node_run(root, _ref)
+                        if _nr:
+                            return {"COMPLETED": "done", "FAILED": "failed"}.get(
+                                _nr.get("state")) or None
+                    # 2) EXS result (canonical execution result) — result=success/failed
+                    if _ref.startswith("EXS-"):
+                        try:
+                            for _rec in load_records(Path(root) / "exec" / "execution_records.json"):
+                                if str(_rec.get("result_id") or "") == _ref:
+                                    return {"success": "done", "failed": "failed"}.get(
+                                        _rec.get("result")) or None
+                        except Exception:  # noqa: BLE001 — 记录不可读 → 继续
+                            pass
+                    # 3) TASK-GW (legacy registry 兼容 — 旧 exec_ref 数据)
+                    _r = _reg.get(_ref)
+                    if _r:
+                        _s = str(_r.get("status") or "")
+                        return _s if _s in ("done", "failed") else None
+                    return None
 
                 _rec = st.recover(_run_status)
                 if _rec.get("count"):
@@ -1569,16 +1649,41 @@ def dispatch(
                 from ..external_executor.gateway import gateway_execute
 
                 title = str(task.get("title") or "")
-                r = gateway_execute(title, data_dir=root, project_id=project_id, max_retry=1)
+                # P0-F1: 先建 TaskRun 锚 (run-*), gateway 透传 task_id/task_run_id → EXS 锚
+                run_id = _chain_task_run(root, task, project_id)
+                r = gateway_execute(
+                    title, data_dir=root, project_id=project_id, max_retry=1,
+                    task_id=str(task.get("backlog_id") or ""),  # P0-F1
+                    task_run_id=run_id,  # P0-F1
+                )
+                _exs = str(r.get("result_id") or "")  # P0-F2: EXS (成功/失败均已写入)
+                # P0-F2: TaskRun finalize — 吸收外部执行结果 (零二次执行, 幂等)
+                if run_id:
+                    try:
+                        from ..node_runtime import finalize_node_run
+
+                        finalize_node_run(
+                            root, run_id,
+                            success=bool(r.get("ok")),
+                            verification=dict(r.get("verify") or {}),
+                            failure_reason=str(r.get("error") or ""),
+                            actor="session-chain",
+                            note=f"gateway result absorbed (EXS {_exs})",
+                        )
+                    except Exception:  # noqa: BLE001 — finalize 失败不阻断委派链
+                        pass
                 if not r.get("ok"):
-                    return {"ok": False, "error": r.get("error") or "外部执行失败"}
+                    return {"ok": False, "error": r.get("error") or "外部执行失败",
+                            # P0-F2: 失败也回传 EXS (Task.exec_ref=EXS 在失败路径成立)
+                            "exec_ref": _exs}
                 return {"ok": True,
                         "output": (
                             f"{r.get('executor')} 完成 (任务 {r.get('task_id')}) · "
                             f"验证 {r.get('verify', {}).get('result') or 'unknown'} · "
                             f"{str(r.get('output') or '')[:300]}"),
                         "verify": dict(r.get("verify") or {}),
-                        "exec_ref": str(r.get("task_id") or "")}
+                        # P0-F1: exec_ref = EXS-* (result_id), 非 TASK-GW (task_id)
+                        "exec_ref": _exs or str(r.get("task_id") or "")}
 
             r = st.next(_exec_fn, on_started=lambda: st.save(root))
             st.save(root)
@@ -1600,7 +1705,7 @@ def dispatch(
                         _v = _cur.get("verify") or {}
                         _cur_ok = _cur.get("status") == "done"
                         _cur_cancelled = _cur.get("status") == "cancelled"
-                        # P2-②: exec_ref 用 ExecState 任务持久化的 Run ID (非 backlog id)
+                        # P0-F1: exec_ref = EXS-* (Task 副本持久化; st.next 写入 result_id)
                         _exec_ref = str(_cur.get("exec_ref") or "") or str(_v.get("exec_ref") or "") or _bid
                         service.finish_task_exec(
                             project_id, _bid,

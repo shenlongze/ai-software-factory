@@ -896,17 +896,22 @@ def _exec_results_map(root: Path) -> dict[str, Any]:
     except Exception:  # noqa: BLE001 — 失败安全铁律
         return {}
 
-
 def _task_exec_trace(root: Path | None, task: dict[str, Any]) -> dict[str, Any]:
-    """T-9 (v1.1.185): 任务执行溯源 — exec_ref → EXR request → EXS result → 证据包。
+    """T-9 (v1.1.185, P0-F1): 任务执行溯源 — exec_ref → EXS result (canonical) → 证据包。
 
-    失败安全: 无 exec_ref / 记录缺失 → 各段 None/[] (不编造); 只读真实文件。"""
+    P0-F1 语义: exec_ref = EXS-* (execution result)。溯源先按 EXS 直查
+    execution_records.json (canonical); 命中 → 直接返回结果/证据。
+    Legacy 兼容: exec_ref 若为 EXR-* (旧数据/旧 CLI bridge) → 回退 requests.json 查询
+    (EXR → output_refs → EXS), 标记 legacy 路径 — 不迁移不改写历史。
+    失败安全: 无 exec_ref / 记录缺失 → 各段 None/[] (不编造); 只读真实文件。
+    """
     trace: dict[str, Any] = {
         "exec_ref": task.get("exec_ref"),
         "exec_result": task.get("exec_result"),
         "request": None,
         "results": [],
         "evidence": [],
+        "trace_mode": "exs",  # P0-F1: canonical = EXS 直查
     }
     if root is None:
         return trace
@@ -914,10 +919,41 @@ def _task_exec_trace(root: Path | None, task: dict[str, Any]) -> dict[str, Any]:
     if not exec_ref:
         return trace
     try:
+        recs = _exec_results_map(root)  # execution_records.json → {EXS: record}
+        rec = recs.get(exec_ref)
+        if rec is not None:
+            # P0-F1 canonical: exec_ref == EXS → 直接出结果/证据
+            trace["results"].append(
+                {
+                    "result_id": str(rec.get("result_id") or ""),
+                    "result": str(rec.get("result") or ""),
+                    "intent": str(rec.get("intent") or ""),
+                    "agent": str(rec.get("agent") or ""),
+                    "task": str(rec.get("task") or "")[:120],
+                    "timestamp": rec.get("timestamp"),
+                    "error": str(rec.get("error") or ""),
+                }
+            )
+            rid = str(rec.get("result_id") or exec_ref)
+            report = root / "exec" / f"{rid}.report.md"
+            test = root / "exec" / f"{rid}.test.txt"
+            ev: dict[str, Any] = {"id": rid}
+            if report.is_file():
+                ev["report"] = report.name
+            if test.is_file():
+                ev["test"] = test.name
+            if ev.get("report") or ev.get("test"):
+                trace["evidence"].append(ev)
+            return trace
+    except Exception:  # noqa: BLE001 — 失败安全铁律
+        return trace
+    # ---- Legacy: EXR-* (旧 exec_ref 语义; 只读兼容, 不改写) ----
+    try:
         reqs = _exec_request_map(root)
         req = reqs.get(exec_ref)
         if req is None:
             return trace
+        trace["trace_mode"] = "legacy-exr"  # P0-F1: 旧数据回退路径
         trace["request"] = {
             "id": str(req.get("id") or ""),
             "task_id": req.get("task_id"),
@@ -960,9 +996,9 @@ def _task_exec_trace(root: Path | None, task: dict[str, Any]) -> dict[str, Any]:
                 ev["test"] = test.name
             if ev.get("report") or ev.get("test"):
                 trace["evidence"].append(ev)
-    except Exception:  # noqa: BLE001 — 溯源失败 → 保持空 (不阻断详情)
-        pass
-    return trace
+        return trace
+    except Exception:  # noqa: BLE001 — 失败安全铁律
+        return trace
 
 
 def _external_ai_from_body(body: Any) -> Any:

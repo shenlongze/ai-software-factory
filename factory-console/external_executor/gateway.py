@@ -98,10 +98,13 @@ def gateway_execute(
     max_retry: int = 1,
     verify_hook: dict[str, Any] | None = None,
     timeout: int | None = None,
+    task_id: str = "",        # P0-F1: canonical backlog Task (TASK-*); 空 = 未锚
+    task_run_id: str = "",    # P0-F1: canonical TaskRun (run-*); 空 = 未锚 (旧/独立执行)
 ) -> dict[str, Any]:
     """网关编排: 选执行器 → 注册 → 执行 → 验证 → 重试 → 回写。
 
     返回 {ok, task_id, result_id, verify, retry_count, output, error, executor}。
+    P0-F1: task_id/task_run_id 显式透传到 EXS 记录 (Task→TaskRun→EXS canonical 链)。
     """
     data_dir = str(data_dir or "")
     if not data_dir:
@@ -178,6 +181,7 @@ def gateway_execute(
                 host_agent=host_agent, prompt=prompt[:200], project_dir=project_dir,
                 exit_code=exit_code, output=output, error=error,
                 command=str(r.get("command") or ""), duration_ms=duration_ms,
+                task_id=task_id, task_run_id=task_run_id,  # P0-F1: canonical 锚定透传
             )
             result_id = str(rec.get("result_id") or "")
         except Exception:  # noqa: BLE001 — 记录失败不阻断

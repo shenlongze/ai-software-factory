@@ -128,8 +128,13 @@ def create_node_run(
     *,
     input_data: dict[str, Any] | None = None,
     trigger: str = "user",
+    task_id: str = "",  # P0-F1: TaskRun 锚定 backlog Task (TASK-*); 空 = 未锚 (冒烟/独立)
 ) -> dict[str, Any]:
-    """实例化 NodeRun: PENDING。NodeRun 是事实记录 (不可变: state 转换 append 而非覆写)。"""
+    """实例化 NodeRun: PENDING。NodeRun 是事实记录 (不可变: state 转换 append 而非覆写)。
+
+    task_id: 本 TaskRun 对应的 canonical backlog Task (TASK-*)。默认空 — 兼容
+    既有 S2/S3 workflow 调用 (不锚 backlog 的独立执行); F0 契约: TaskRun.task_id → Task。
+    """
     node = get_node(root, node_id)
     if node is None:
         raise NodeError(f"Node 不存在: {node_id} (请先 register_node)")
@@ -137,6 +142,7 @@ def create_node_run(
     run: dict[str, Any] = {
         "run_id": run_id,
         "node_id": node_id,
+        "task_id": str(task_id or ""),  # P0-F1: TaskRun → Task 锚 (显式持久化, 非派生)
         "state": "PENDING",
         "input": input_data or {},
         "trigger": trigger,
@@ -239,6 +245,55 @@ def transition_node_run(
         if to_state not in NODERUN_TRANSITIONS.get(frm, ()):
             raise NodeError(f"非法 NodeRun 转换: {frm} → {to_state}")
         _record(root, run, to_state, actor=actor, note=note)
+        return run
+
+
+def finalize_node_run(
+    root: Path | str,
+    run_id: str,
+    *,
+    success: bool,
+    verification: dict[str, Any] | None = None,
+    failure_reason: str = "",
+    note: str = "",
+    actor: str = "execution",
+) -> dict[str, Any]:
+    """P0-F2: 外部执行完成后推进 NodeRun (TaskRun) 到终态 — 幂等, 零二次执行。
+
+    与 execute_node_run 的区别: execute_node_run 是完整执行循环 (会调用 executor_fn
+    触发真实执行); 本函数只做**已发生执行的结果吸收** (EXS 已由 gateway/外部执行器
+    产生), 绝不调用 executor_fn — 满足 P0-F1 STOP 条件 (NodeRun 不得触发第二次执行)。
+
+    合法转换 (NODERUN_TRANSITIONS):
+      PENDING → RUNNING → VERIFYING → COMPLETED (success)
+      PENDING → RUNNING → FAILED                (failure; RUNNING→FAILED 合法)
+      已在 COMPLETED/FAILED (终态) → 幂等返回现状, 不重复转换。
+    verification: 外部执行的 verify 元数据 (gateway verify dict) — 记录为 run 字段,
+      不构成 F3 Verification SSOT (仅 metadata)。
+    """
+    with _lock:
+        run = get_node_run(root, run_id)
+        if run is None:
+            raise NodeError(f"NodeRun 不存在: {run_id}")
+        cur = run.get("state")
+        # 幂等: 终态已定 → 返回现状 (重复 writeback 不逆转/不重复转换)
+        if cur in ("COMPLETED", "FAILED"):
+            return run
+        if cur == "PENDING":
+            _record(root, run, "RUNNING", actor=actor, note="external execution finished, absorbing result")
+        if success:
+            # PENDING→RUNNING→VERIFYING→COMPLETED (无 repair 最小路径)
+            if run.get("state") == "RUNNING":
+                _record(root, run, "VERIFYING", actor=actor,
+                        note=note or "absorbing external result (success)")
+            run["verification"] = verification or {"result": "PASS", "source": "external"}
+            run["completed_at"] = _now_iso()
+            _record(root, run, "COMPLETED", actor=actor, note=note or "external execution success")
+        else:
+            run["verification"] = verification or {"result": "FAIL", "source": "external"}
+            run["failure_reason"] = str(failure_reason or "")[:300]
+            # 当前态必为 RUNNING (PENDING 已在上面推为 RUNNING); RUNNING→FAILED 合法
+            _record(root, run, "FAILED", actor=actor, note=note or "external execution failure")
         return run
 
 

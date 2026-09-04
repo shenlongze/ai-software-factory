@@ -145,10 +145,9 @@ class Task(_OrgModel):
     review/done (默认 todo); dependency: 前置任务 id 列表; history: 审计链
     [{time, actor, action, result}]。
 
-    S10 方案A (执行绑定+回写): exec_ref = 执行绑定 (exec request id EXR-* /
-    引擎任务 id; 空 = 未绑定); exec_result = 最近执行结果 id (EXS-*)。exec
-    启动/完成时由桥自动回写状态与审计 (exec:started / exec:completed /
-    exec:failed)。
+    S10 方案A (执行绑定+回写, P0-F1 语义冻结): exec_ref = 最近执行结果 id (EXS-*,
+    canonical Execution Result); exec_result = 结果摘要文本。Task → TaskRun (run-*)
+    经 EXS.task_run_id 可达 (F0: 禁止 exec_ref 指向 TASK-GW-*/EXR-*/run-*)。
     """
 
     id: str

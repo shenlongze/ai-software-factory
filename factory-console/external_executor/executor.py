@@ -190,11 +190,15 @@ def record_invocation(
     duration_ms: int,
     trace_id: str = "",
     cost_usd: float | None = None,
+    task_id: str = "",        # P0-F1: canonical backlog Task (TASK-*); 空 = 未锚
+    task_run_id: str = "",    # P0-F1: canonical TaskRun (run-*); 空 = 未锚 (旧/独立执行)
 ) -> dict[str, Any]:
     """追加统一执行记录 (execution_records.json, EXS-* result_id) + report.md 证据。
 
     设计文档 §7: EXS 扩展字段 executor_id/mode/host_agent/duration_ms/first_pass/
-    verify/rework — 监控/路由/审计统一消费, 不区分内部/外部执行器。"""
+    verify/rework — 监控/路由/审计统一消费, 不区分内部/外部执行器。
+    P0-F1: task_id/task_run_id — EXS 锚定 Task/TaskRun (显式持久化; 非字符串推断)。
+    """
     from datetime import datetime, timezone
 
     from factory_console.session.audit import record_execution
@@ -207,6 +211,9 @@ def record_invocation(
         "task": str(prompt or "")[:200],
         "result": "success" if exit_code == 0 else "failed",
         "result_id": rid,
+        # P0-F1: canonical 锚定 (Task→TaskRun→EXS; 空 = 未锚, 兼容旧数据)
+        "task_id": str(task_id or ""),
+        "task_run_id": str(task_run_id or ""),
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "trace_id": str(trace_id or ""),
         # M3 扩展字段 (设计文档 §7)

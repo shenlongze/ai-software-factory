@@ -181,6 +181,10 @@ class ExecutionResult(_ExecModel):
 
     id: str
     request_id: str
+    # P0-F1: Execution 结果锚定 — task_id → backlog Task (TASK-*), task_run_id → TaskRun (run-*)
+    # 默认空: 兼容旧数据/独立执行; 非空时必须是 canonical ID (禁 TASK-GW/EXR/session_exec)
+    task_id: str = ""
+    task_run_id: str = ""
     status: ExecutionStatus = ExecutionStatus.SUCCESS
     artifacts: list[Artifact] = Field(default_factory=list)
     usage: dict[str, Any] = Field(default_factory=dict)

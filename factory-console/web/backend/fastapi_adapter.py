@@ -7445,6 +7445,26 @@ def build_app(
                         _plan["created_at"] = datetime.now(_tz.utc).isoformat()
                         _agmod.PendingPlanStore(workspace_root or DEFAULT_ROOT).save(
                             session_id, _plan)
+                        # P1 (D9): 同步产生 canonical PLAN-* (plans store —
+                        # Product Truth; session_plans = orchestration 兼容保留)
+                        try:
+                            from factory_console.product_truth import (
+                                create_plan as _pt_create_plan,
+                            )
+
+                            _pt_create_plan(
+                                workspace_root or DEFAULT_ROOT,
+                                project_id=str(tgt.id),
+                                goal=str(_plan.get("goal") or body.message)[:300],
+                                tasks=_plan.get("tasks") or [],
+                                order=_plan.get("order") or [],
+                                acceptance=_plan.get("acceptance") or [],
+                                ask_approval=True,
+                                idempotency_key=f"session:{session_id}:plan",
+                                actor="web-plan",
+                            )
+                        except Exception:  # noqa: BLE001 — PLAN-* 写失败不阻断
+                            pass
                         _n = len(_plan.get("tasks") or [])
                         facts = (
                             f"开发计划已真实生成并持久化: Plan ID {_plan_id}, "

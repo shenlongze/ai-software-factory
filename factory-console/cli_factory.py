@@ -1025,6 +1025,10 @@ class FactoryCLI:
             return self.artifact_cmd(args)
         if args.command == "evd":
             return self.evd_cmd(args)
+        if args.command == "product":
+            return self.product_cmd(args)
+        if args.command == "ptrace":
+            return self.ptrace_cmd(args)
         if args.command == "quality":
             return self.quality_cmd(args)
         if args.command == "ct":
@@ -6751,6 +6755,65 @@ class FactoryCLI:
                   f"ver={e.get('verification_refs') or []}")
         return 0
 
+    def _pt(self, data_root: Path):
+        from factory_console import product_truth
+
+        return product_truth
+
+    def product_cmd(self, args: argparse.Namespace) -> int:
+        """factory product — Product Truth (P1): list/get <domain>。"""
+        pt = self._pt(Path(args.data_dir or self.data_dir))
+        kind = args.domain
+        table = {"idea": ("ideas", "list_ideas", "get_idea"),
+                 "discovery": ("discoveries", "list_discoveries", "get_discovery"),
+                 "requirement": ("requirements", "list_requirements", "get_requirement"),
+                 "prd": ("prds", "list_prds", "get_prd"),
+                 "plan": ("plans", "list_plans", "get_plan")}
+        if kind not in table:
+            print(f"未知 domain: {kind} (可用: {'/'.join(table)})")
+            return 1
+        if args.action == "get":
+            rec = getattr(pt, table[kind][2])(Path(args.data_dir or self.data_dir),
+                                              args.entity_id or "")
+            if rec is None:
+                print(f"{kind} not found: {args.entity_id}")
+                return 1
+            import json as _json
+
+            print(_json.dumps(rec, ensure_ascii=False, indent=2)[:2000])
+            return 0
+        recs = getattr(pt, table[kind][1])(Path(args.data_dir or self.data_dir))
+        print(f"{kind} ({len(recs)}):")
+        for r in recs:
+            print(f"  {r.get('id')}  {str(r.get('status')):<10} "
+                  f"{str(r.get('title') or r.get('goal') or '')[:40]}")
+        return 0
+
+    def ptrace_cmd(self, args: argparse.Namespace) -> int:
+        """factory ptrace — Product Truth reverse trace (P1): TASK 反查上游。"""
+        pt = self._pt(Path(args.data_dir or self.data_dir))
+        tr = pt.reverse_trace(Path(args.data_dir or self.data_dir), args.task_id)
+        if tr["task"] is None:
+            print(f"task not found: {args.task_id}")
+            return 1
+        print(f"TASK {args.task_id}: {str(tr['task'].get('title') or '')[:50]}")
+        if not tr["chain"] or len(tr["chain"]) == 1:
+            print("  (LEGACY 任务 — 无 plan_id, 无上游 provenance)")
+            return 0
+        for k, v in tr["chain"]:
+            label = {"task": "TASK", "plan": "PLAN", "prd": "PRD",
+                     "requirement": "REQ", "discovery": "DISC",
+                     "idea": "IDEA"}.get(k, k)
+            extra = ""
+            if k == "prd":
+                extra = f" @v{tr['prd_version']}"
+            elif k == "plan" and tr["plan"]:
+                extra = f" {str(tr['plan'].get('goal') or '')[:30]}"
+            elif k in ("task", "requirement", "idea") and tr.get(k):
+                extra = f" {str(tr[k].get('title') or tr[k].get('goal') or '')[:30]}"
+            print(f"  {label}={v if isinstance(v, str) else v}{extra}")
+        return 0
+
     def workflow_cmd(self, args: argparse.Namespace) -> int:
         """factory workflow — Workflow 列表 (S10)。"""
         from factory_console.professional_workflow import (
@@ -7628,6 +7691,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_evd.add_argument("evidence_id", nargs="?", help="EVD-* id (get 用)")
     p_evd.add_argument("--verification", default="", help="按 verification_id (ver-*) 过滤")
     p_evd.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+    p_prod = sub.add_parser("product", help="Product Truth (P1): list/get — canonical product domain")
+    p_prod.add_argument("domain", choices=["idea", "discovery", "requirement", "prd", "plan"],
+                        help="domain 实体")
+    p_prod.add_argument("action", nargs="?", default="list", choices=["list", "get"],
+                        help="动作: list / get")
+    p_prod.add_argument("entity_id", nargs="?", help="entity id (get 用)")
+    p_prod.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+    p_trace = sub.add_parser("ptrace", help="Product Truth reverse trace (P1): TASK 反查上游链")
+    p_trace.add_argument("task_id", help="TASK-* id")
+    p_trace.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     # K5: Conversation Quality CLI
     p_q = sub.add_parser("quality", help="Quality (K5): report/suite — Conversation Quality & Golden Suite")
     p_q.add_argument("action", nargs="?", default="suite",

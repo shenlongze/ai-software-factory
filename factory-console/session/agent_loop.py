@@ -879,6 +879,23 @@ def dispatch(
                 plan["requirement_id"] = _rid
             except Exception:  # noqa: BLE001 — 需求落盘失败不阻断
                 pass
+            # P1 (D2/D13): 同步产生 canonical REQ-* (Product Truth domain;
+            # 旧 req_* = legacy 兼容保留; REQ-* 进 product_truth store 供 trace)
+            try:
+                from factory_console.product_truth import create_requirement
+
+                _c_req = create_requirement(
+                    root, title=str(plan.get("goal") or "")[:80],
+                    description=str(args.get("detail") or "")[:500],
+                    priority="P0",
+                    source=f"session:{str((ctx or {}).get('session_id') or '')}",
+                    idempotency_key=f"session:{str((ctx or {}).get('session_id') or '')}:plan",
+                    actor="session-chain",
+                )
+                if _c_req:
+                    plan["req_canonical_id"] = _c_req.get("id")  # REQ-* (provenance)
+            except Exception:  # noqa: BLE001 — REQ-* 写失败不阻断 (失败安全)
+                pass
             # S34-CORE-C3: 真实 Approval Request (持久化 PENDING → 可批准/拒绝)
             _approval_id = ""
             try:

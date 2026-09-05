@@ -80,7 +80,9 @@ def test_verification_failure_detection(tmp_path):
     done = execute_node_run(str(tmp_path), run["run_id"], executor_fn=_buggy_executor,
                             executor_name="exec", artifact_root=str(tmp_path))
     assert done["state"] == "FAILED"
-    assert done["verification"]["result"] == "FAIL"
+    # P0-F3: run.verification = ver-* 引用
+    assert done["verification"]["status"] == "FAIL"
+    assert done["verification"]["verification_id"].startswith("ver-")
 
 
 # --- 2. retry vs repair 区分 ---
@@ -162,7 +164,9 @@ def test_verification_after_repair(tmp_path):
                             executor_name="exec", artifact_root=str(tmp_path),
                             max_attempts=2, repair_fn=_repair_fn)
     assert done["state"] == "COMPLETED"
-    assert done["verification"]["result"] == "PASS"
+    # P0-F3: run.verification = ver-* 引用 (终态 PASS)
+    assert done["verification"]["status"] == "PASS"
+    assert done["verification"]["verification_id"].startswith("ver-")
     assert done["attempts"][-1]["verification"]["status"] == "PASS"
 
 

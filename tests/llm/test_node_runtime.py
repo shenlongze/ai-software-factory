@@ -154,7 +154,14 @@ def test_verification_pass_completes(tmp_path):
     done = execute_node_run(str(tmp_path), run["run_id"], executor_fn=_ok_executor,
                             executor_name="exec", artifact_root=str(tmp_path))
     assert done["state"] == "COMPLETED"
-    assert done["verification"]["result"] == "PASS"
+    # P0-F3: run.verification = ver-* 引用 (canonical 在 verification store)
+    assert done["verification"]["status"] == "PASS"
+    assert done["verification"]["verification_id"].startswith("ver-")
+    from factory_console.verification_domain import get_verification
+
+    rec = get_verification(str(tmp_path), done["verification"]["verification_id"])
+    assert rec is not None and rec["status"] == "PASS"
+    assert rec["task_run_id"] == run["run_id"]
 
 
 def test_verification_fail_fails_run(tmp_path):
@@ -163,7 +170,13 @@ def test_verification_fail_fails_run(tmp_path):
     done = execute_node_run(str(tmp_path), run["run_id"], executor_fn=_verify_fail_executor,
                             executor_name="exec", artifact_root=str(tmp_path))
     assert done["state"] == "FAILED"
-    assert done["verification"]["result"] == "FAIL"
+    # P0-F3: ver-* 引用 + store canonical FAIL
+    assert done["verification"]["status"] == "FAIL"
+    assert done["verification"]["verification_id"].startswith("ver-")
+    from factory_console.verification_domain import get_verification
+
+    rec = get_verification(str(tmp_path), done["verification"]["verification_id"])
+    assert rec is not None and rec["status"] == "FAIL"
     assert "tests failed" in done["failure_reason"]
 
 

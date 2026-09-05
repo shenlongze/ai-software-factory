@@ -132,6 +132,8 @@ def test_verification_fail_stops_before_apply(tmp_path):
     done = execute_node_run(str(tmp_path), run["run_id"], executor_fn=bad_executor,
                             executor_name="bad-exec", artifact_root=str(tmp_path))
     assert done["state"] == "FAILED"
-    assert done["verification"]["result"] == "FAIL"
+    # P0-F3: run.verification = ver-* 引用 (status FAIL)
+    assert done["verification"]["status"] == "FAIL"
+    assert done["verification"]["verification_id"].startswith("ver-")
     # workspace 未动
     assert (ws / "main.py").read_text() == "x = 1\n"

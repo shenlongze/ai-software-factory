@@ -55,7 +55,9 @@ class TestFinalizeNodeRun:
         out = finalize_node_run(workroot, run["run_id"], success=True,
                                 verification={"result": "PASS"})
         assert out["state"] == "COMPLETED"
-        assert out["verification"]["result"] == "PASS"
+        # P0-F3: run.verification = ver-* 引用; canonical 在 verification store
+        assert out["verification"]["status"] == "PASS"
+        assert out["verification"]["verification_id"].startswith("ver-")
         assert out["completed_at"]
         # 持久化
         assert get_node_run(workroot, run["run_id"])["state"] == "COMPLETED"
@@ -70,6 +72,9 @@ class TestFinalizeNodeRun:
         out = finalize_node_run(workroot, run["run_id"], success=False,
                                 failure_reason="boom", verification={"result": "FAIL"})
         assert out["state"] == "FAILED"
+        # P0-F3: ver-* 引用 FAIL
+        assert out["verification"]["status"] == "FAIL"
+        assert out["verification"]["verification_id"].startswith("ver-")
         assert out["failure_reason"] == "boom"
         states = [h["to"] for h in out["history"]]
         assert states == ["PENDING", "RUNNING", "FAILED"]

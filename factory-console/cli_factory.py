@@ -1019,6 +1019,8 @@ class FactoryCLI:
             return self.production_cmd(args)
         if args.command == "workflow":
             return self.workflow_cmd(args)
+        if args.command == "verification":
+            return self.verification_cmd(args)
         if args.command == "quality":
             return self.quality_cmd(args)
         if args.command == "ct":
@@ -6652,6 +6654,40 @@ class FactoryCLI:
 
         return 1
 
+    def verification_cmd(self, args: argparse.Namespace) -> int:
+        """factory verification — Verification SSOT (P0-F3): list/get ver-* 事实。"""
+        data_root = Path(args.data_dir or self.data_dir)
+        try:
+            from factory_console.verification_domain import (
+                get_verification, list_verifications,
+            )
+        except ImportError:
+            from verification_domain import (  # type: ignore
+                get_verification, list_verifications,
+            )
+
+        if args.action == "get":
+            rec = get_verification(data_root, args.verification_id or "")
+            if rec is None:
+                print(f"verification not found: {args.verification_id}")
+                return 1
+            print(f"verification_id: {rec.get('verification_id')}")
+            print(f"  status:           {rec.get('status')}")
+            print(f"  task_run_id:      {rec.get('task_run_id')}")
+            print(f"  exs_id:           {rec.get('exs_id')}")
+            print(f"  type:             {rec.get('verification_type')}")
+            print(f"  method:           {rec.get('method')}")
+            print(f"  attempt:          {rec.get('attempt')}")
+            print(f"  created_at:       {rec.get('created_at')}")
+            print(f"  completed_at:     {rec.get('completed_at')}")
+            return 0
+        recs = list_verifications(data_root, task_run_id=args.task_run, exs_id=args.exs)
+        print(f"Verifications ({len(recs)}):")
+        for r in recs:
+            print(f"  {r.get('verification_id')}  {r.get('status'):<10} "
+                  f"run={r.get('task_run_id') or '-'}  {r.get('method') or r.get('verification_type') or ''}")
+        return 0
+
     def workflow_cmd(self, args: argparse.Namespace) -> int:
         """factory workflow — Workflow 列表 (S10)。"""
         from factory_console.professional_workflow import (
@@ -7509,6 +7545,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_prod.add_argument("--input", default="{}", help="输入 JSON (run 用, 如 {'prompt': '...'})")
     p_prod.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     sub.add_parser("workflow", help="Workflow 列表 (S10): factory workflow list — 专业生产线")
+    p_ver = sub.add_parser("verification", help="Verification SSOT (P0-F3): list/get — ver-* 事实查询")
+    p_ver.add_argument("action", nargs="?", default="list", choices=["list", "get"],
+                       help="动作: list 全部(可过滤) / get 单条")
+    p_ver.add_argument("verification_id", nargs="?", help="ver-* id (get 用)")
+    p_ver.add_argument("--task-run", default="", help="按 task_run_id (run-*) 过滤")
+    p_ver.add_argument("--exs", default="", help="按 exs_id (EXS-*) 过滤")
+    p_ver.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     # K5: Conversation Quality CLI
     p_q = sub.add_parser("quality", help="Quality (K5): report/suite — Conversation Quality & Golden Suite")
     p_q.add_argument("action", nargs="?", default="suite",

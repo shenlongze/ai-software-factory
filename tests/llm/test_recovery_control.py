@@ -239,6 +239,8 @@ def test_status_timeline(tmp_path):
     st = _psvc.status(str(tmp_path), run["run_id"])
     assert len(st["node_runs"]) == 3
     for nr in st["node_runs"]:
-        assert nr["verification"]["result"] == "PASS"
+        # P0-F3: 投影 = ver-* 引用 (status)
+        assert nr["verification"]["status"] == "PASS"
+        assert nr["verification"]["verification_id"].startswith("ver-")
         assert nr["attempts"] >= 1
         assert len(nr["timeline"]) >= 2  # RUNNING → VERIFYING → COMPLETED

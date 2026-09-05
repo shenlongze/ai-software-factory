@@ -248,6 +248,68 @@ def transition_node_run(
         return run
 
 
+def _materialize_verify(
+    root: Path | str,
+    run_id: str,
+    verify_meta: dict[str, Any],
+    *,
+    ok: bool,
+    actor: str = "verification",
+    exs_id: str = "",
+    attempt: int = 0,
+) -> dict[str, Any]:
+    """P0-F3: verify metadata → ver-* SSOT 物化 (方案 1 — run 存引用, canonical 在 store)。
+
+    输入 verify_meta: gateway/executor 返回的 {method, result: pass|fail|unknown|PASS|FAIL, ...}。
+    映射:
+      result in (pass, PASS)       → status PASS
+      result in (fail, FAIL)       → status FAIL
+      result in (unknown, ...)     → status UNKNOWN (诚实 — 无验证 ≠ PASS)
+      ok=True + 无 verify_meta     → UNKNOWN (不可把缺省当 PASS)
+      ok=False                     → FAIL (执行失败 = 验证失败语义, 与 run 终态一致)
+    返回 run.verification 引用 dict {verification_id, status, method} (精简快照 +
+    canonical id — 完整事实在 verifications store; 禁止第二事实源)。
+    """
+    try:
+        try:
+            from .verification_domain import materialize_verification  # 包内
+        except ImportError:  # 兼容直接 import (sys.path 模式)
+            from verification_domain import materialize_verification  # type: ignore
+
+        raw_result = str((verify_meta or {}).get("result")
+                         or (verify_meta or {}).get("status") or "").strip().lower()
+        method = str((verify_meta or {}).get("method") or "")
+        if not ok:
+            status = "FAIL"
+        elif raw_result in ("pass",):
+            status = "PASS"
+        elif raw_result in ("fail",):
+            status = "FAIL"
+        elif raw_result in ("unknown", "inconclusive", "blocked", "none"):
+            status = "UNKNOWN"
+        else:
+            status = "UNKNOWN"  # 缺省/无验证 → UNKNOWN (禁止默认 PASS)
+        rec = materialize_verification(
+            root,
+            task_run_id=run_id,
+            exs_id=exs_id,
+            status=status,
+            verification_type="task_run_execution",
+            method=method,
+            result=str((verify_meta or {}).get("reason") or ""),
+            detail={"source_meta": {k: v for k, v in (verify_meta or {}).items()
+                                    if k in ("score", "reason", "source")}},
+            attempt=attempt,
+            actor=actor,
+            note="materialized from execution verify metadata",
+        )
+        return {"verification_id": str(rec.get("verification_id") or ""),
+                "status": str(rec.get("status") or ""),
+                "method": method}
+    except Exception:  # noqa: BLE001 — 物化失败 → 失败安全返回空引用 (不阻断 run 终态)
+        return {"verification_id": "", "status": "UNKNOWN" if ok else "FAIL", "method": ""}
+
+
 def finalize_node_run(
     root: Path | str,
     run_id: str,
@@ -286,11 +348,16 @@ def finalize_node_run(
             if run.get("state") == "RUNNING":
                 _record(root, run, "VERIFYING", actor=actor,
                         note=note or "absorbing external result (success)")
-            run["verification"] = verification or {"result": "PASS", "source": "external"}
+            # P0-F3: verify metadata → ver-* SSOT 物化 (唯一 canonical); run 存引用
+            run["verification"] = _materialize_verify(
+                root, run_id, verification or {},
+                ok=True, actor=actor)
             run["completed_at"] = _now_iso()
             _record(root, run, "COMPLETED", actor=actor, note=note or "external execution success")
         else:
-            run["verification"] = verification or {"result": "FAIL", "source": "external"}
+            run["verification"] = _materialize_verify(
+                root, run_id, verification or {},
+                ok=False, actor=actor)
             run["failure_reason"] = str(failure_reason or "")[:300]
             # 当前态必为 RUNNING (PENDING 已在上面推为 RUNNING); RUNNING→FAILED 合法
             _record(root, run, "FAILED", actor=actor, note=note or "external execution failure")
@@ -394,15 +461,23 @@ def execute_node_run(
         if v_result not in VERIFY_RESULTS:
             v_result = "INCONCLUSIVE"
 
-        # 记录 attempt
+        # 记录 attempt (P0-F3: verification → ver-* SSOT 物化; run 存引用)
+        v_ref = _materialize_verify(
+            root, run_id, verification,
+            ok=(v_result == "PASS"),
+            actor=str(executor_name or "node-exec"),
+            exs_id="",
+            attempt=attempts_used,
+        )
         with _lock:
             run = get_node_run(root, run_id)
-            run["verification"] = verification
+            run["verification"] = v_ref
             run["attempts"].append({
                 "attempt": attempts_used,
                 "state": "VERIFIED",
                 "artifact_id": artifact["artifact_id"],
-                "verification": {"status": v_result, **verification},
+                "verification": {"status": v_result, **verification,
+                                 "verification_id": v_ref.get("verification_id")},
             })
             _write_run(root, run)
 

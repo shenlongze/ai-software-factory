@@ -67,7 +67,9 @@ def test_service_create_start_status_history(tmp_path):
     st = _psvc.status(str(tmp_path), run["run_id"])
     assert st["state"] == "COMPLETED"
     assert len(st["node_runs"]) == 1
-    assert st["node_runs"][0]["verification"]["result"] == "PASS"
+    # P0-F3: 投影 = ver-* 引用 (status)
+    assert st["node_runs"][0]["verification"]["status"] == "PASS"
+    assert st["node_runs"][0]["verification"]["verification_id"].startswith("ver-")
     # history
     h = _psvc.history(str(tmp_path), run["run_id"])
     assert len(h["history"]) >= 3  # PENDING + RUNNING + COMPLETED

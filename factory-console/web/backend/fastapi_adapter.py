@@ -944,6 +944,23 @@ def _task_exec_trace(root: Path | None, task: dict[str, Any]) -> dict[str, Any]:
                 ev["test"] = test.name
             if ev.get("report") or ev.get("test"):
                 trace["evidence"].append(ev)
+            # P0-F3: EXS 带 task_run_id → 挂 ver-* (Verification SSOT 只读投影)
+            _run_id = str(rec.get("task_run_id") or "")
+            if _run_id:
+                try:
+                    from factory_console.verification_domain import list_verifications
+
+                    trace["verifications"] = [
+                        {"verification_id": v.get("verification_id"),
+                         "status": v.get("status"),
+                         "verification_type": v.get("verification_type"),
+                         "method": v.get("method"),
+                         "attempt": v.get("attempt"),
+                         "created_at": v.get("created_at")}
+                        for v in list_verifications(root, task_run_id=_run_id)
+                    ]
+                except Exception:  # noqa: BLE001
+                    trace["verifications"] = []
             return trace
     except Exception:  # noqa: BLE001 — 失败安全铁律
         return trace

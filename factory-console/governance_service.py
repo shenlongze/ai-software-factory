@@ -122,7 +122,8 @@ def request_approval(root: Path | str, *, production_run_id: str,
     # S24/S25: 非 production_run 主体 (experiment/workforce_variant) 不强制绑定 run
     # K1: conversation 主体 (对话触发的工作审批)
     # K3: task 主体 (高风险 task 执行 gate)
-    if subject_type in ("experiment", "workforce_variant", "conversation", "task"):
+    if subject_type in ("experiment", "workforce_variant", "conversation", "task",
+                        "release"):  # P2-A: Release 主体 (RELEASE-*, 不绑 M3 run)
         pass
     else:
         run = get_production_run(root, production_run_id)

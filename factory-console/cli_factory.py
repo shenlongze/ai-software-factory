@@ -1029,6 +1029,8 @@ class FactoryCLI:
             return self.product_cmd(args)
         if args.command == "ptrace":
             return self.ptrace_cmd(args)
+        if args.command == "release-truth":
+            return self.rtrace_cmd(args)
         if args.command == "quality":
             return self.quality_cmd(args)
         if args.command == "ct":
@@ -6814,6 +6816,52 @@ class FactoryCLI:
             print(f"  {label}={v if isinstance(v, str) else v}{extra}")
         return 0
 
+    def rtrace_cmd(self, args: argparse.Namespace) -> int:
+        """factory release-truth — Release Truth (P2-A): create/gate/list/trace。"""
+        root = Path(args.data_dir or self.data_dir)
+        from factory_console import release_truth as rt
+
+        if args.action == "create":
+            rel = rt.create_release(root, task_run_id=args.task_run or "",
+                                    exs_id=args.exs or "", reason=args.reason or "",
+                                    actor="user")
+            print(f"created {rel['release_id']} status={rel['status']}")
+            print(f"  artifacts={len(rel.get('artifact_ids') or [])} "
+                  f"verifications={len(rel.get('verification_ids') or [])} "
+                  f"evidence={len(rel.get('evidence_ids') or [])}")
+            return 0
+        if args.action == "gate":
+            r = rt.get_release(root, args.release_id or "")
+            if r is None:
+                print(f"release not found: {args.release_id}")
+                return 1
+            g = rt.gate_release(root, r["release_id"])
+            print(f"{r['release_id']} → {g['status']}")
+            if g.get("gate") and g["gate"].get("missing"):
+                print(f"  missing: {', '.join(g['gate']['missing'])}")
+            return 0
+        if args.action == "trace":
+            tr = rt.trace_release(root, args.release_id or "")
+            if tr["release"] is None:
+                print(f"release not found: {args.release_id}")
+                return 1
+            print(f"RELEASE {args.release_id}: {tr['release'].get('status')}")
+            for k, v in tr["chain"]:
+                print(f"  {k}: {v if isinstance(v, str) else v}")
+            for label, obj in (("TASK", tr.get("task")), ("PLAN", tr.get("plan")),
+                               ("PRD", tr.get("prd")), ("REQ", tr.get("requirement")),
+                               ("DISC", tr.get("discovery")), ("IDEA", tr.get("idea"))):
+                if obj:
+                    print(f"  {label}: {obj.get('id')}")
+            return 0
+        # list
+        rels = rt.list_releases(root, status=args.status or "", task_id=args.task_id or "")
+        print(f"Releases ({len(rels)}):")
+        for r in rels:
+            print(f"  {r.get('release_id')}  {str(r.get('status')):<10} "
+                  f"task={r.get('task_id') or '-'} run={r.get('task_run_id') or '-'}")
+        return 0
+
     def workflow_cmd(self, args: argparse.Namespace) -> int:
         """factory workflow — Workflow 列表 (S10)。"""
         from factory_console.professional_workflow import (
@@ -7701,6 +7749,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_trace = sub.add_parser("ptrace", help="Product Truth reverse trace (P1): TASK 反查上游链")
     p_trace.add_argument("task_id", help="TASK-* id")
     p_trace.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+    p_rt = sub.add_parser("release-truth", help="Release Truth (P2-A): create/gate/list/trace — canonical RELEASE-*")
+    p_rt.add_argument("action", choices=["create", "gate", "trace", "list"],
+                      help="动作: create (新 release) / gate (门检查) / trace (反查) / list")
+    p_rt.add_argument("release_id", nargs="?", help="RELEASE-* id (gate/trace 用)")
+    p_rt.add_argument("--task-run", default="", help="task_run_id (run-*, create 用)")
+    p_rt.add_argument("--exs", default="", help="exs_id (EXS-*, create 用)")
+    p_rt.add_argument("--reason", default="", help="发布原因")
+    p_rt.add_argument("--status", default="", help="按状态过滤 (list)")
+    p_rt.add_argument("--task-id", default="", help="按 task 过滤 (list)")
+    p_rt.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     # K5: Conversation Quality CLI
     p_q = sub.add_parser("quality", help="Quality (K5): report/suite — Conversation Quality & Golden Suite")
     p_q.add_argument("action", nargs="?", default="suite",

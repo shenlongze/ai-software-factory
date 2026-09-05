@@ -641,6 +641,9 @@ def _chain_auto_worker(root: Any, project_id: str, session_id: str, service: Any
                         failure_reason=str(r.get("error") or ""),
                         actor="session-chain-auto",
                         note=f"gateway result absorbed (EXS {_exs})",
+                        exs_id=_exs,                      # P0-F4 (I8)
+                        output=str(r.get("output") or ""),
+                        artifact_root=root,
                     )
                 except Exception:  # noqa: BLE001 — finalize 失败不阻断委派链
                     pass
@@ -1669,6 +1672,9 @@ def dispatch(
                             failure_reason=str(r.get("error") or ""),
                             actor="session-chain",
                             note=f"gateway result absorbed (EXS {_exs})",
+                            exs_id=_exs,                      # P0-F4 (I8)
+                            output=str(r.get("output") or ""),
+                            artifact_root=root,
                         )
                     except Exception:  # noqa: BLE001 — finalize 失败不阻断委派链
                         pass

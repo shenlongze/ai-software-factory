@@ -248,6 +248,44 @@ def transition_node_run(
         return run
 
 
+def _absorb_execution_artifact(
+    root: Path | str,
+    run_id: str,
+    *,
+    exs_id: str,
+    output: str = "",
+    artifact_root: Path | str,
+    actor: str = "execution",
+) -> dict[str, Any] | None:
+    """P0-F4 (I8): 执行成功 → 收纳产物为 canonical art-* (生产 contract 内)。
+
+    产物形态: EXS 执行输出 (output 文本) → artifact type="report" (execution
+    output snapshot; 真实产物内容, 非伪造)。挂 node_run_id + exs_id。
+    幂等: create_artifact 的 exs_id 幂等键保证同 EXS+type → 同 art-*。
+    失败安全: 收纳失败 → 返回 None (不阻断 run 终态); 绝不事后补登记。
+    """
+    try:
+        try:
+            from .artifact_lifecycle import create_artifact  # 包内
+        except ImportError:  # 兼容直接 import (sys.path 模式)
+            from artifact_lifecycle import create_artifact  # type: ignore
+
+        if not exs_id:
+            return None  # 无 EXS → 无 I8 收纳 (workflow 域走 execute_node_run 路径)
+        return create_artifact(
+            artifact_root,
+            artifact_type="report",
+            payload={"source": "external_execution", "run_id": run_id,
+                     "exs_id": exs_id, "output_tail": str(output or "")[-2000:]},
+            project_id=None,
+            node_run_id=run_id,
+            exs_id=exs_id,
+            producer=str(actor or "execution"),
+        )
+    except Exception:  # noqa: BLE001 — 失败安全: 收纳失败不阻断 run 终态
+        return None
+
+
 def _materialize_verify(
     root: Path | str,
     run_id: str,
@@ -257,6 +295,7 @@ def _materialize_verify(
     actor: str = "verification",
     exs_id: str = "",
     attempt: int = 0,
+    artifact_ids: list[str] | None = None,  # P0-F4: 被本验证检查的 canonical art-*
 ) -> dict[str, Any]:
     """P0-F3: verify metadata → ver-* SSOT 物化 (方案 1 — run 存引用, canonical 在 store)。
 
@@ -302,12 +341,58 @@ def _materialize_verify(
             attempt=attempt,
             actor=actor,
             note="materialized from execution verify metadata",
+            artifact_ids=artifact_ids or [],
         )
         return {"verification_id": str(rec.get("verification_id") or ""),
                 "status": str(rec.get("status") or ""),
                 "method": method}
     except Exception:  # noqa: BLE001 — 物化失败 → 失败安全返回空引用 (不阻断 run 终态)
         return {"verification_id": "", "status": "UNKNOWN" if ok else "FAIL", "method": ""}
+
+
+def _attach_verify_evidence(
+    root: Path | str,
+    verification_id: str,
+    *,
+    verify_meta: dict[str, Any],
+    actor: str = "verification",
+) -> dict[str, Any] | None:
+    """P0-F4: 真实 verifier 输出 → EVD-* Evidence (支撑 Verification 结论)。
+
+    仅当 verify_meta 含真实证据 (method + 输出/错误/reason) 时物化 —
+    禁止 "verification passed" 无内容伪造 EVD。失败安全 (不阻断)。
+    """
+    try:
+        try:
+            from .evidence_domain import materialize_evidence  # 包内
+        except ImportError:  # 兼容直接 import (sys.path 模式)
+            from evidence_domain import materialize_evidence  # type: ignore
+
+        if not verification_id:
+            return None
+        method = str((verify_meta or {}).get("method") or "").strip()
+        # 真实证据候选: verifier 输出字段 (stdout/stderr/error/reason/detail)
+        ev_content = str(
+            (verify_meta or {}).get("stdout")
+            or (verify_meta or {}).get("stderr")
+            or (verify_meta or {}).get("error")
+            or (verify_meta or {}).get("reason")
+            or ""
+        ).strip()
+        if not method and not ev_content:
+            return None  # 无真实 verifier 证据 → 不伪造 EVD
+        return materialize_evidence(
+            root,
+            verification_id=verification_id,
+            evidence_type="verifier_output",
+            source_ref=method or "external-verifier",
+            content=ev_content[:20000],
+            metadata={"verifier_meta": {k: v for k, v in (verify_meta or {}).items()
+                                        if k in ("score", "tests", "exit_code", "source")}},
+            actor=actor,
+        )
+    except Exception:  # noqa: BLE001 — 失败安全
+        return None
 
 
 def finalize_node_run(
@@ -319,6 +404,9 @@ def finalize_node_run(
     failure_reason: str = "",
     note: str = "",
     actor: str = "execution",
+    exs_id: str = "",        # P0-F4: canonical EXS-* (I8 收纳产物 + ver 关联)
+    output: str = "",        # P0-F4: 执行输出 (收纳为 report artifact 候选)
+    artifact_root: Path | str | None = None,  # P0-F4: 产物收纳目标 (缺省 root)
 ) -> dict[str, Any]:
     """P0-F2: 外部执行完成后推进 NodeRun (TaskRun) 到终态 — 幂等, 零二次执行。
 
@@ -348,16 +436,31 @@ def finalize_node_run(
             if run.get("state") == "RUNNING":
                 _record(root, run, "VERIFYING", actor=actor,
                         note=note or "absorbing external result (success)")
+            # P0-F4 (I8): 执行成功 → 收纳产物为 canonical art-* (生产 contract 内,
+            # 非事后补登记; 幂等: 同 EXS+type → 同 art-*)
+            _art = _absorb_execution_artifact(
+                root, run_id, exs_id=exs_id, output=output,
+                artifact_root=artifact_root or root, actor=actor)
             # P0-F3: verify metadata → ver-* SSOT 物化 (唯一 canonical); run 存引用
             run["verification"] = _materialize_verify(
                 root, run_id, verification or {},
-                ok=True, actor=actor)
+                ok=True, actor=actor, exs_id=exs_id,
+                artifact_ids=[_art["artifact_id"]] if _art else [],
+            )
+            # P0-F4: 真实 verifier 输出 → EVD-* (支撑 ver 结论; 无内容不伪造)
+            _attach_verify_evidence(
+                root, str(run["verification"].get("verification_id") or ""),
+                verify_meta=verification or {}, actor=actor)
+            run["artifact_id"] = _art["artifact_id"] if _art else run.get("artifact_id")
             run["completed_at"] = _now_iso()
             _record(root, run, "COMPLETED", actor=actor, note=note or "external execution success")
         else:
             run["verification"] = _materialize_verify(
                 root, run_id, verification or {},
-                ok=False, actor=actor)
+                ok=False, actor=actor, exs_id=exs_id)
+            _attach_verify_evidence(
+                root, str(run["verification"].get("verification_id") or ""),
+                verify_meta=verification or {}, actor=actor)
             run["failure_reason"] = str(failure_reason or "")[:300]
             # 当前态必为 RUNNING (PENDING 已在上面推为 RUNNING); RUNNING→FAILED 合法
             _record(root, run, "FAILED", actor=actor, note=note or "external execution failure")
@@ -468,7 +571,12 @@ def execute_node_run(
             actor=str(executor_name or "node-exec"),
             exs_id="",
             attempt=attempts_used,
+            artifact_ids=[artifact["artifact_id"]],  # P0-F4 (D3): ver ↔ art
         )
+        # P0-F4: 真实 verifier 输出 → EVD-* (有内容才物化, 不伪造)
+        _attach_verify_evidence(
+            root, str(v_ref.get("verification_id") or ""),
+            verify_meta=verification, actor=str(executor_name or "node-exec"))
         with _lock:
             run = get_node_run(root, run_id)
             run["verification"] = v_ref

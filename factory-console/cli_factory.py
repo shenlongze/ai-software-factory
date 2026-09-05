@@ -1021,6 +1021,10 @@ class FactoryCLI:
             return self.workflow_cmd(args)
         if args.command == "verification":
             return self.verification_cmd(args)
+        if args.command == "artifact":
+            return self.artifact_cmd(args)
+        if args.command == "evd":
+            return self.evd_cmd(args)
         if args.command == "quality":
             return self.quality_cmd(args)
         if args.command == "ct":
@@ -6688,6 +6692,65 @@ class FactoryCLI:
                   f"run={r.get('task_run_id') or '-'}  {r.get('method') or r.get('verification_type') or ''}")
         return 0
 
+    def artifact_cmd(self, args: argparse.Namespace) -> int:
+        """factory artifact — Artifact SSOT (P0-F4): list/get canonical art-*。"""
+        data_root = Path(args.data_dir or self.data_dir)
+        try:
+            from factory_console.artifact_lifecycle import get_artifact, list_artifacts
+        except ImportError:
+            from artifact_lifecycle import (  # type: ignore
+                get_artifact, list_artifacts,
+            )
+
+        if args.action == "get":
+            art = get_artifact(data_root, args.artifact_id or "")
+            if art is None:
+                print(f"artifact not found: {args.artifact_id}")
+                return 1
+            print(f"artifact_id: {art.get('artifact_id')}")
+            print(f"  type:     {art.get('type')}")
+            print(f"  state:    {art.get('state')}")
+            print(f"  run:      {art.get('node_run_id') or '-'}")
+            print(f"  exs:      {art.get('exs_id') or '-'}")
+            print(f"  created:  {art.get('created_at')}")
+            return 0
+        arts = list_artifacts(data_root)
+        arts = [a for a in arts
+                if (not args.task_run or a.get("node_run_id") == args.task_run)
+                and (not args.exs or a.get("exs_id") == args.exs)]
+        print(f"Artifacts ({len(arts)}):")
+        for a in arts:
+            print(f"  {a.get('artifact_id')}  {str(a.get('state')):<10} "
+                  f"type={a.get('type')}  exs={a.get('exs_id') or '-'}")
+        return 0
+
+    def evd_cmd(self, args: argparse.Namespace) -> int:
+        """factory evd — Evidence SSOT (P0-F4): list/get canonical EVD-*。"""
+        data_root = Path(args.data_dir or self.data_dir)
+        try:
+            from factory_console.evidence_domain import get_evidence, list_evidence
+        except ImportError:
+            from evidence_domain import get_evidence, list_evidence  # type: ignore
+
+        if args.action == "get":
+            ev = get_evidence(data_root, args.evidence_id or "")
+            if ev is None:
+                print(f"evidence not found: {args.evidence_id}")
+                return 1
+            print(f"evidence_id: {ev.get('evidence_id')}")
+            print(f"  type:        {ev.get('evidence_type')}")
+            print(f"  ver_refs:    {', '.join(ev.get('verification_refs') or []) or '-'}")
+            print(f"  source:      {ev.get('source_ref')}")
+            print(f"  created:     {ev.get('created_at')}")
+            print(f"  content:     {str(ev.get('content') or '')[:200]}")
+            return 0
+        evs = list_evidence(data_root, verification_id=args.verification)
+        print(f"Evidence ({len(evs)}):")
+        for e in evs:
+            print(f"  {e.get('evidence_id')}  {e.get('evidence_type')}  "
+                  f"ver={e.get('verification_refs') or []}")
+        return 0
+
     def workflow_cmd(self, args: argparse.Namespace) -> int:
         """factory workflow — Workflow 列表 (S10)。"""
         from factory_console.professional_workflow import (
@@ -7552,6 +7615,19 @@ def build_parser() -> argparse.ArgumentParser:
     p_ver.add_argument("--task-run", default="", help="按 task_run_id (run-*) 过滤")
     p_ver.add_argument("--exs", default="", help="按 exs_id (EXS-*) 过滤")
     p_ver.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+    p_art = sub.add_parser("artifact", help="Artifact SSOT (P0-F4): list/get — canonical art-*")
+    p_art.add_argument("action", nargs="?", default="list", choices=["list", "get"],
+                       help="动作: list 全部(可过滤) / get 单条")
+    p_art.add_argument("artifact_id", nargs="?", help="art-* id (get 用)")
+    p_art.add_argument("--task-run", default="", help="按 node_run_id (run-*) 过滤")
+    p_art.add_argument("--exs", default="", help="按 exs_id (EXS-*) 过滤")
+    p_art.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+    p_evd = sub.add_parser("evd", help="Evidence (P0-F4): list/get — canonical EVD-*")
+    p_evd.add_argument("action", nargs="?", default="list", choices=["list", "get"],
+                       help="动作: list 全部 / get 单条")
+    p_evd.add_argument("evidence_id", nargs="?", help="EVD-* id (get 用)")
+    p_evd.add_argument("--verification", default="", help="按 verification_id (ver-*) 过滤")
+    p_evd.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     # K5: Conversation Quality CLI
     p_q = sub.add_parser("quality", help="Quality (K5): report/suite — Conversation Quality & Golden Suite")
     p_q.add_argument("action", nargs="?", default="suite",

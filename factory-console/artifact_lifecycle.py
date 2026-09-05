@@ -111,33 +111,87 @@ def create_artifact(
     patch_text: str | None = None,
     project_id: str | None = None,
     node_run_id: str | None = None,
+    exs_id: str = "",          # P0-F4: canonical EXS-* 关联 (I8; 空 = workflow 域兼容)
     producer: str = "unknown",
 ) -> dict[str, Any]:
-    """创建 Artifact, 状态 = GENERATED。返回完整 artifact dict (含 artifact_id)。"""
-    artifact_id = f"art-{uuid.uuid4().hex[:12]}"
-    now = _now_iso()
-    art: dict[str, Any] = {
-        "artifact_id": artifact_id,
-        "version": 1,
-        "type": artifact_type,
-        "state": "GENERATED",
-        "payload": payload or {},
-        "patch_text": patch_text,
-        "project_id": project_id,
-        "node_run_id": node_run_id,
-        "producer": producer,
-        "evidence_ids": [],
-        "approval_ids": [],
-        "workspace": None,          # Apply 目标 (Destination, 非 Artifact 一部分)
-        "commit_hash": None,
-        "created_at": now,
-        "updated_at": now,
-        "history": [],              # 状态变更历史 (不可变记录)
-    }
+    """创建 Artifact, 状态 = GENERATED。返回完整 artifact dict (含 artifact_id)。
+
+    P0-F4 幂等 (I8): 仅当 exs_id 提供时启用 — 同 (node_run_id, exs_id,
+    artifact_type) 已存在 → 返回已有 art-* (gateway 产物收纳幂等; 重复
+    callback/retry 不产生第二 canonical)。原子: 锁内查+写。
+    node_run_id-only (workflow 域 execute_node_run): 保持 I10 语义 —
+    每次尝试产新 Artifact (repair/attempt 历史不可变)。
+    """
     with _lock:
+        if exs_id:
+            existing = _find_artifact(
+                root,
+                node_run_id=node_run_id or "",
+                exs_id=exs_id,
+                artifact_type=artifact_type,
+            )
+            if existing is not None:
+                return existing
+        artifact_id = f"art-{uuid.uuid4().hex[:12]}"
+        now = _now_iso()
+        art: dict[str, Any] = {
+            "artifact_id": artifact_id,
+            "version": 1,
+            "type": artifact_type,
+            "state": "GENERATED",
+            "payload": payload or {},
+            "patch_text": patch_text,
+            "project_id": project_id,
+            "node_run_id": node_run_id,
+            "exs_id": str(exs_id or ""),  # P0-F4: canonical EXS 关联
+            "producer": producer,
+            "evidence_ids": [],
+            "approval_ids": [],
+            "workspace": None,          # Apply 目标 (Destination, 非 Artifact 一部分)
+            "commit_hash": None,
+            "created_at": now,
+            "updated_at": now,
+            "history": [],              # 状态变更历史 (不可变记录)
+        }
         _write_artifact(root, art)
     _record_transition(root, art, "CREATED", actor=producer, evidence={})
     return art
+
+
+def _find_artifact(
+    root: Path | str,
+    *,
+    node_run_id: str = "",
+    exs_id: str = "",
+    artifact_type: str = "",
+) -> dict[str, Any] | None:
+    """锁内查找已存在的幂等 Artifact。
+
+    精确语义: 提供的键 (node_run_id/exs_id) 必须与记录一致; type 一致。
+    - 只给 node_run_id: 同 run 同 type 唯一 (execute_node_run 每 attempt 一 artifact)
+    - 只给 exs_id: 同 EXS 同 type 唯一 (I8 chain: gateway 产物收纳)
+    - 两者都给: 同 run + 同 EXS 同 type 唯一
+    """
+    arts_dir = _artifacts_dir(root)
+    if not arts_dir.is_dir():
+        return None
+    for p in arts_dir.glob("*/*.json"):
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        if node_run_id and data.get("node_run_id") != node_run_id:
+            continue
+        if exs_id and data.get("exs_id") != exs_id:
+            continue
+        if artifact_type and data.get("type") != artifact_type:
+            continue
+        if not node_run_id and not exs_id:
+            continue
+        return data
+    return None
 
 
 def get_artifact(root: Path | str, artifact_id: str) -> dict[str, Any] | None:

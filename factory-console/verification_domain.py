@@ -106,6 +106,7 @@ def materialize_verification(
     detail: dict[str, Any] | None = None,
     actor: str = "verification",
     note: str = "",
+    artifact_ids: list[str] | None = None,  # P0-F4 (D3): 本验证检查的 canonical art-*
 ) -> dict[str, Any]:
     """P0-F3 唯一写入口: verify metadata → ver-* SSOT 物化 (幂等)。
 
@@ -143,6 +144,7 @@ def materialize_verification(
             "method": str(method or ""),
             "result": str(result or "")[:500],
             "evidence_ref": [str(x) for x in (evidence_ref or [])],
+            "artifact_ids": [str(x) for x in (artifact_ids or [])],  # P0-F4 (D3)
             "attempt": int(attempt or 0),
             "detail": detail or {},
             "actor": str(actor or "verification"),

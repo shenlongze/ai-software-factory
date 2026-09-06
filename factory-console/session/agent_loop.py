@@ -2113,12 +2113,37 @@ def run_agent_native(
         messages.append({"role": "system", "content": (
             f"【最近对话】(保持上下文连贯, 引用前文时注明; 与本次问题矛盾处以后者为准)\n{hist_block}"
         )})
-    # ---- S47-E2: 语义 continuation 引导 (LLM 判定回合关系; 词表降级保护) ----
-    cont_guide = _continuation_guide_semantic(
-        question, history,
-        (lambda p: _simple_llm(p, data_dir=data_dir)) if data_dir else None)
-    if cont_guide:
-        messages.append({"role": "system", "content": cont_guide})
+    # ---- S47-E2: Semantic Governor + Conversation State (主语义控制) ----
+    _gov_guide = ""
+    try:
+        _cstate = _conv_state_load(data_dir, session_id) if (data_dir and session_id) else {}
+        _gov = _govern_turn(
+            question, _cstate, history,
+            (lambda p: _simple_llm(p, data_dir=data_dir)) if data_dir else None)
+        if _gov.get("relation") != "unknown":
+            _gov_guide = _governance_guide(
+                _gov.get("relation", ""), _gov.get("domain", ""),
+                bool(_gov.get("needs_tool")), _cstate, question)
+            # 更新会话状态 (供下一轮)
+            if data_dir and session_id:
+                _cstate.update({
+                    "topic": _gov.get("topic") or _cstate.get("topic") or "",
+                    "domain": _gov.get("domain") or _cstate.get("domain") or "",
+                    "relation": _gov.get("relation") or "",
+                })
+                _conv_state_save(data_dir, session_id, _cstate)
+    except Exception:  # noqa: BLE001 — governor 失败不阻断
+        _gov_guide = ""
+    if _gov_guide:
+        messages.append({"role": "system", "content": _gov_guide})
+
+    # ---- E1/E2 降级: 语义 guide 未触发且上轮提议句尾匹配 → 词表/文本 guide ----
+    if not _gov_guide:
+        cont_guide = _continuation_guide_semantic(
+            question, history,
+            (lambda p: _simple_llm(p, data_dir=data_dir)) if data_dir else None)
+        if cont_guide:
+            messages.append({"role": "system", "content": cont_guide})
     if session_store is not None and session_id and service is not None:
         try:
             _s = session_store.get_session(session_id) if hasattr(session_store, "get_session") else None
@@ -2916,6 +2941,174 @@ def _continuation_guide_semantic(question: str, history: list[dict[str, Any]] | 
         return ""
     return text + "\n严禁把短回复说成『消息不完整/只发来几个字』；高置信执行, 中置信最小澄清, 低置信不猜。"
 
+
+
+# =====================================================================
+# S47-E2: Conversation Semantic Control Plane
+# - governor: LLM 语义判定回合关系 + 域 + 是否需工具 (零关键词行为)
+# - conv state: 轻量会话级状态 (topic/domain/pending/last_assistant)
+# =====================================================================
+_GOVERN_RELATIONS = ("new_goal", "continue", "confirm", "decline", "modify",
+                     "reference", "complaint", "correction", "clarify",
+                     "question", "opinion", "unknown")
+_GOVERN_DOMAINS = ("product_lifecycle", "project", "task", "execution",
+                   "acceptance", "release", "conversation", "general")
+
+_GOVERN_PROMPT = """理解用户当前这句话在整个对话中的语义 (只输出 JSON):
+{"relation": "new_goal|continue|confirm|decline|modify|reference|complaint|correction|clarify|question|opinion|unknown",
+ "domain": "product_lifecycle|project|task|execution|acceptance|release|conversation|general",
+ "needs_tool": true|false,
+ "topic": "一句话当前主题"}
+
+语义规则 (基于对话上下文判断, 勿按字面词):
+- 用户反馈 AI 答错/跑题/混乱/不是这个意思 → complaint 或 correction
+  (needs_tool=false — 这是对话恢复, 不是项目查询)
+- 继续上一轮工作/话题 (继续/接着/继续刚才/继续分析需求…) → continue
+- 回应 AI 提议: 同意/接受/确认 (需要/可以/好/接受建议/就按这个来/继续吧…) → confirm;
+  同意但带修改约束 (可以不过先…/继续但先别…) → modify;
+  拒绝/暂停 (不用/算了/先别…) → decline
+- 指代上轮内容提问 (刚才那个方案呢/你提到的 PRD…) → reference
+- 用户提出新目标/换方向 → new_goal
+- 纠正自己上句/澄清 (不是这个意思，我说的是…) → correction
+- 事实/状态查询: 需求/PRD/方案/计划 完成度 → question + domain=product_lifecycle;
+  项目进度/状态 → question + domain=project; 任务数/任务列表 → question + domain=task;
+  执行/运行/验收/发布 → 对应 domain; 观点/评价/是否合理/你觉得 → opinion (needs_tool=false)
+- 无法可靠判断 → unknown (宁可不猜; needs_tool=false)
+
+对话状态: 上轮主题 {topic}; 上轮域 {domain}; 待确认提议: {pending}
+
+最近对话:
+{history}
+
+用户消息: {message}"""
+
+
+def _govern_turn(message: str, state: dict[str, Any],
+                 history: list[dict[str, Any]] | None,
+                 llm_fn: Callable[[str], str] | None) -> dict[str, Any]:
+    """LLM 语义判定 (relation/domain/needs_tool/topic)。失败 → 保守默认
+    (unknown/general/needs_tool=false — 不主动引导诊断工具)。"""
+    default = {"relation": "unknown", "domain": "general",
+               "needs_tool": False, "topic": state.get("topic") or ""}
+    try:
+        if llm_fn is None:
+            return default
+        hist_text = ""
+        if history:
+            lines = []
+            for h in history[-6:]:
+                if isinstance(h, dict) and h.get("role") in ("user", "assistant"):
+                    who = "用户" if h.get("role") == "user" else "AI"
+                    lines.append(f"{who}: {str(h.get('content') or '')[:220]}")
+            hist_text = "\n".join(lines[-6:])
+        prompt = (_GOVERN_PROMPT
+                  .replace("{topic}", str(state.get("topic") or "无"))
+                  .replace("{domain}", str(state.get("domain") or "无"))
+                  .replace("{pending}", str(state.get("pending") or "无")[:300])
+                  .replace("{history}", hist_text[-1800:])
+                  .replace("{message}", str(message)[:400]))
+        raw = str(llm_fn(prompt) or "").strip()
+        m = re.search(r"\{[\s\S]*\}", raw)
+        if not m:
+            return default
+        parsed = json.loads(m.group(0))
+        rel = str(parsed.get("relation") or "unknown")
+        if rel not in _GOVERN_RELATIONS:
+            rel = "unknown"
+        dom = str(parsed.get("domain") or "general")
+        if dom not in _GOVERN_DOMAINS:
+            dom = "general"
+        return {
+            "relation": rel,
+            "domain": dom,
+            "needs_tool": bool(parsed.get("needs_tool", False)),
+            "topic": str(parsed.get("topic") or state.get("topic") or "")[:80],
+        }
+    except Exception:  # noqa: BLE001 — governor 失败不阻断 (保守)
+        return default
+
+
+def _conv_state_path(root: Any) -> Path | None:
+    try:
+        if root is None:
+            return None
+        return Path(str(root)) / "conv_state.json"
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _conv_state_load(root: Any, session_id: str) -> dict[str, Any]:
+    try:
+        p = _conv_state_path(root)
+        if p is None or not p.is_file() or not session_id:
+            return {}
+        data = json.loads(p.read_text(encoding="utf-8"))
+        s = data.get(session_id) or {}
+        return s if isinstance(s, dict) else {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _conv_state_save(root: Any, session_id: str, state: dict[str, Any]) -> None:
+    try:
+        p = _conv_state_path(root)
+        if p is None or not session_id:
+            return
+        data = {}
+        if p.is_file():
+            data = json.loads(p.read_text(encoding="utf-8"))
+        data[session_id] = {k: v for k, v in state.items() if v}
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+    except Exception:  # noqa: BLE001 — state 写失败不阻断会话
+        pass
+
+
+def _governance_guide(relation: str, domain: str, needs_tool: bool,
+                      state: dict[str, Any], message: str) -> str:
+    """按 governor 语义判定注入引导 (无关键词行为; 决定 是否/哪些 域工具)。"""
+    topic = str(state.get("topic") or "当前话题")
+    pending = str(state.get("pending") or "")
+    g: list[str] = []
+    if relation in ("complaint", "correction", "clarify"):
+        g.append(
+            f"【对话恢复】用户正在反馈/纠正/澄清 ({relation}) — 先回到主题「{topic}」"
+            f"解释或修正上一轮回答; 不要调用项目诊断工具 (project_status/project_scan/"
+            f"code_scan/bash_exec) 自证; 确需事实再针对性查一个工具。")
+    elif relation == "confirm":
+        if pending:
+            g.append(f"【确认执行】用户确认了待执行提议 → 立即执行该提议: {pending[:400]}")
+        else:
+            g.append("【确认执行】用户表示同意/确认 → 执行对话中刚提出的下一步 (若无明确动作, 先简短确认并列出可执行项)。")
+    elif relation == "modify":
+        g.append(f"【确认+修改】用户同意但带约束 → 以用户新消息为准执行 (约束优先); 先做用户指定部分。"
+                 f"原提议: {pending[:300]}")
+    elif relation == "decline":
+        g.append("【拒绝】用户拒绝上一轮提议 → 不执行; 简短确认后询问新方向。")
+    elif relation in ("continue", "reference"):
+        g.append(f"【延续】用户继续/指代上文 → 保持主题「{topic}」; 结合上文作答, 不要跳题或另起炉灶。")
+    elif relation == "new_goal":
+        g.append("【新目标】用户提出新目标/换方向 → 以新消息为准, 放弃旧提议。")
+    elif relation == "opinion":
+        g.append("【观点/评价】用户在征求判断 → 基于已知信息推理回答即可; 无需调用工具。")
+    if relation == "question" and domain != "general":
+        _tool_hint = {
+            "product_lifecycle": "project_lifecycle (需求/PRD/方案完成度 — 勿用 project_tasks)",
+            "project": "project_status",
+            "task": "project_tasks",
+            "execution": "运行/执行状态工具",
+            "acceptance": "验收 (ACC) 数据",
+            "release": "发布/交付 (RELEASE) 数据",
+        }.get(domain, "对应域查询工具")
+        g.append(f"【事实查询】域 = {domain} → 查询工具: {_tool_hint}; 用真实事实再答, "
+                 f"不要用其他域统计回答本域问题。")
+    if not needs_tool:
+        g.append("【工具克制】本轮无需调用工具即可回答/处理 — 不要为了'回答点什么'而调用"
+                 "项目诊断工具; 信息不足就基于对话说明或提出最小澄清。")
+    if not g:
+        return ""
+    head = f"【语义引导】relation={relation} · domain={domain}"
+    return head + "\n" + "\n".join(g) + "\n严禁把用户短回复说成『消息不完整/只发来几个字』。"
 
 
 def _audit_sess(data_dir, session_id, question, intent, calls, total_calls, rounds,

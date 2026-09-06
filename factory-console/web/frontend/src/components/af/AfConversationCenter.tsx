@@ -503,8 +503,7 @@ function MessageBubble({ role, content, meta, runs = [], expandedRunId, onToggle
     const target = cmd === '查看具体任务列表' ? '查看任务列表' : cmd;
     void ctx.send(target);
   };
-  // S35-UI: project_tasks 回答固定模板 — 第一行总数, 无序列表各状态, 引导句
-  // (工具 output 已有统计数据; AI 自由文本不可靠 → 前端用模板渲染标准回答)
+  // S35-UI: project_tasks 工具结果 → supporting card (S47-E2: 不覆盖 AI 文本)
   const taskStatsText = (() => {
     const tc = meta?.tool_calls as Array<{ tool?: string; output?: string }> | undefined;
     const pt = tc?.find((t) => t.tool === 'project_tasks');
@@ -513,12 +512,15 @@ function MessageBubble({ role, content, meta, runs = [], expandedRunId, onToggle
     if (!m) return null;
     const [, total, todo, done, running, blocked, p0, p1] = m;
     const prioLine = p0 != null
-      ? `\n- P0: ${p0} 个\n- P1: ${p1 ?? 0} 个`
+      ? ` · P0: ${p0} · P1: ${p1 ?? 0}`
       : '';
-    return `当前项目共有 ${total} 个任务\n\n- 待办: ${todo} 个\n- 完成: ${done} 个\n- 执行中: ${running} 个\n- 阻塞: ${blocked} 个${prioLine}\n\n需要我[查看具体任务列表](#action:查看具体任务列表)，或者帮你启动某个任务吗？`;
+    return `📋 任务统计: ${total} 个 (待办 ${todo} · 完成 ${done} · 执行中 ${running} · 阻塞 ${blocked}${prioLine})`;
   })();
-  // S35-UI: 有 project_tasks 工具结果 → 用固定模板回答 (替换 AI 自由文本)
-  const displayContent = taskStatsText ?? (isUser ? content : actionText(content));
+  // AI 回复永远作为主语义输出 (S47-E2); 任务统计仅作辅助卡片
+  const displayContent = isUser ? content : actionText(content);
+  const showStatsCard = !!taskStatsText && !isUser &&
+    // AI 文本未覆盖同一统计时才附卡 (避免重复)
+    !displayContent.includes('任务统计') && !/共有 \d+ 个任务/.test(displayContent);
   // S34-001: 空内容 + 无工具调用 + 无 Run → 不渲染 (执行状态卡负责提示)
   if (!isUser && !content.trim() && !(meta?.tool_calls && meta.tool_calls.length > 0) && !(meta?.run_ids && meta.run_ids.length > 0)) {
     return <></>;
@@ -624,6 +626,10 @@ function MessageBubble({ role, content, meta, runs = [], expandedRunId, onToggle
         <div className={`ai-msg-bubble ai-msg-bubble--${isUser ? 'user' : 'ai'}`}>
           {/* S34-001: AI 回复 + 用户输入都支持 Markdown (安全渲染, 零依赖) */}
           {content && <div className="ai-msg-text">{renderMarkdown(displayContent, onSendQuick)}</div>}
+          {/* S47-E2: project_tasks 统计 → 辅助卡片 (不覆盖 AI 主文本) */}
+          {showStatsCard && taskStatsText != null && (
+            <div className="ai-msg-toolcard" data-testid="task-stats-card">{taskStatsText}</div>
+          )}
 
           {/* S35-UI: 建议任务操作 — AI 分析回答里的 P0/P1/P2 建议 → 加入任务清单 */}
           {!isUser && suggestedTasks.length > 0 && (

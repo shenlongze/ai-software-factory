@@ -542,3 +542,10 @@ export interface RunDetail {
     total_tokens?: number; cost_usd_est?: number; wall_s?: number };
   updated_at?: string;
 }
+
+// ================= S47-D1: Delivery (RELEASED 产物清单 — 真实文件投影) =========
+export interface DeliveryFile {
+  filename: string;
+  size_bytes: number;
+  type: string;
+}

@@ -2077,6 +2077,81 @@ def build_app(
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
+    # ============================================== S47-D1: Delivery (取物闭环)
+    @app.get("/api/projects/{project_id}/releases/{release_id}/delivery")
+    def api_release_delivery(project_id: str, release_id: str) -> dict[str, Any]:
+        """Release Delivery 文件清单 (GET — 真实 RELEASED 产物只读投影)。
+
+        Provenance: RELEASE-* → task_id "TASK-workflow-{R...}" → workflow_runs/
+        {project_id}/{R}/dist/*.zip (真实交付文件)。project isolation = 路径
+        含 project_id (他项目 → 404); 仅 RELEASED 可交付。不暴露绝对路径。
+        """
+        from factory_console import release_truth as _rtt
+        if workspace_root is None:
+            raise HTTPException(status_code=503, detail="workspace unavailable")
+        rel = _rtt.get_release(workspace_root, release_id)
+        if rel is None:
+            raise HTTPException(status_code=404, detail=f"Release 不存在: {release_id}")
+        if str(rel.get("status") or "") != "RELEASED":
+            raise HTTPException(status_code=409, detail="仅 RELEASED Release 可交付")
+        task_id = str(rel.get("task_id") or "")
+        m = re.match(r"^TASK-workflow-(R\d+)$", task_id)
+        if not m:
+            raise HTTPException(status_code=409,
+                                detail="Release 无 workflow 交付物 (非 workflow 生产链)")
+        run_id = m.group(1)
+        dist_dir = (Path(str(factory_root if factory_root is not None else DEFAULT_ROOT))
+                    / "workflow_runs" / project_id / run_id / "dist")
+        if not dist_dir.is_dir():
+            raise HTTPException(status_code=404, detail="交付物不存在 (dist 缺失)")
+        files = []
+        for f in sorted(dist_dir.iterdir()):
+            if f.is_file():
+                files.append({
+                    "filename": f.name,
+                    "size_bytes": f.stat().st_size,
+                    "type": "zip" if f.suffix.lower() == ".zip" else (f.suffix or "file"),
+                })
+        if not files:
+            raise HTTPException(status_code=404, detail="交付物目录为空")
+        return {"ok": True, "release_id": release_id, "run_id": run_id,
+                "files": files}
+
+    @app.get("/api/projects/{project_id}/releases/{release_id}/delivery/download")
+    def api_release_delivery_download(project_id: str, release_id: str,
+                                      filename: str) -> Any:
+        """下载 RELEASED 交付文件 (真实 bytes; FileResponse)。
+
+        安全: filename 仅取 basename 且必须在 dist 目录内 (防 traversal);
+        project_id 内嵌路径 (isolation); 仅 RELEASED。
+        """
+        from fastapi.responses import FileResponse
+        from factory_console import release_truth as _rtt
+        if workspace_root is None:
+            raise HTTPException(status_code=503, detail="workspace unavailable")
+        rel = _rtt.get_release(workspace_root, release_id)
+        if rel is None:
+            raise HTTPException(status_code=404, detail=f"Release 不存在: {release_id}")
+        if str(rel.get("status") or "") != "RELEASED":
+            raise HTTPException(status_code=409, detail="仅 RELEASED Release 可交付")
+        task_id = str(rel.get("task_id") or "")
+        m = re.match(r"^TASK-workflow-(R\d+)$", task_id)
+        if not m:
+            raise HTTPException(status_code=409, detail="Release 无 workflow 交付物")
+        run_id = m.group(1)
+        dist_dir = (Path(str(factory_root if factory_root is not None else DEFAULT_ROOT))
+                    / "workflow_runs" / project_id / run_id / "dist")
+        safe_name = os.path.basename(filename)
+        if safe_name != filename:
+            raise HTTPException(status_code=400, detail="非法文件名")
+        target = dist_dir / safe_name
+        if not target.is_file():
+            raise HTTPException(status_code=404, detail="交付文件不存在")
+        return FileResponse(str(target), filename=safe_name,
+                            media_type="application/zip"
+                            if safe_name.endswith(".zip") else
+                            "application/octet-stream")
+
     @app.get("/api/projects/{project_id}/docs")
     def api_project_docs_list(project_id: str) -> dict[str, Any]:
         """项目文档清单 (GET — 核心资产 + 可配多目录扫描; 未装配 → 空)。"""

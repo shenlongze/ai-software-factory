@@ -6,11 +6,47 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../api/client';
-import type { AcceptanceReview, ReleaseTruth } from '../../models/domain';
+import type { AcceptanceReview, DeliveryFile, ReleaseTruth } from '../../models/domain';
 import { StatusBadge } from '../../components/ds/StatusBadge';
 
 interface Props {
   projectId: string;
+}
+
+/** S47-D1: RELEASED 交付文件下载区。数据 = releaseDelivery (真实清单);
+ * Download = 真 href (后端 FileResponse)。无本地文件伪造。 */
+function DeliveryFiles({ projectId, releaseId }: { projectId: string; releaseId: string }): JSX.Element | null {
+  const [files, setFiles] = useState<DeliveryFile[] | null>(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    api.releaseDelivery(projectId, releaseId)
+      .then((f) => { if (!cancelled) setFiles(f); })
+      .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : String(e)); });
+    return () => { cancelled = true; };
+  }, [projectId, releaseId]);
+
+  if (error) return <p className="ai-review-error" role="alert">{error}</p>;
+  if (files == null) return <p className="ai-muted">Preparing download…</p>;
+  return (
+    <ul className="ai-muted">
+      {files.map((f) => (
+        <li key={f.filename} className="ai-delivery-file" data-testid={`delivery-file-${f.filename}`}>
+          {f.filename} · {(f.size_bytes / 1024).toFixed(1)} KB
+          {' '}
+          <a
+            className="ai-btn ai-btn--primary"
+            data-testid={`download-${f.filename}`}
+            href={api.releaseDeliveryUrl(projectId, releaseId, f.filename)}
+            download={f.filename}
+          >
+            Download
+          </a>
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 interface Loaded {
@@ -212,12 +248,8 @@ export function AfReviewPage({ projectId }: Props) {
             )}
             {r.status === 'RELEASED' && (
               <div className="ai-review-delivery" data-testid={`delivery-${r.release_id}`}>
-                <strong>Delivered ✓</strong>
-                <ul className="ai-muted">
-                  {r.artifact_ids?.map((aid) => (
-                    <li key={aid}>artifact {aid}</li>
-                  ))}
-                </ul>
+                <strong>Product Ready ✓</strong>
+                <DeliveryFiles projectId={projectId} releaseId={r.release_id} />
               </div>
             )}
           </div>

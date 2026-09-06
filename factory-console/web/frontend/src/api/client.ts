@@ -77,7 +77,7 @@ import {
   type OsApproval,
   type OsApprovalDecision,
 } from '../models/types';
-import type { AcceptanceReview, BacklogFeature, BacklogTask, MonitorDetail, ReleaseTruth, RunDetail, TaskExecTrace, TaskSessionRef } from '../models/domain';
+import type { AcceptanceReview, BacklogFeature, BacklogTask, DeliveryFile, MonitorDetail, ReleaseTruth, RunDetail, TaskExecTrace, TaskSessionRef } from '../models/domain';
 import type { RegistryTool } from '../models/types';
 
 export class ApiError extends Error {
@@ -701,6 +701,13 @@ export const api = {
   executeRelease: async (releaseId: string): Promise<{ release: ReleaseTruth }> =>
     (await sendJson<{ release: ReleaseTruth }>(
       `/api/releases/${encodeURIComponent(releaseId)}/release`, {})) as { release: ReleaseTruth },
+  releaseDelivery: async (projectId: string, releaseId: string): Promise<DeliveryFile[]> => {
+    const res = await getJson<{ files: DeliveryFile[] }>(
+      `/api/projects/${encodeURIComponent(projectId)}/releases/${encodeURIComponent(releaseId)}/delivery`);
+    return res.files;
+  },
+  releaseDeliveryUrl: (projectId: string, releaseId: string, filename: string): string =>
+    `/api/projects/${encodeURIComponent(projectId)}/releases/${encodeURIComponent(releaseId)}/delivery/download?filename=${encodeURIComponent(filename)}`,
 
 } as const;
 

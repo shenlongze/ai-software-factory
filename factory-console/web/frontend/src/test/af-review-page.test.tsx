@@ -26,6 +26,8 @@ const REL_RELEASED: ReleaseTruth = { ...REL_GATED, status: 'RELEASED' };
 describe('AfReviewPage (acceptance/release projection)', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.spyOn(api, 'releaseDelivery').mockResolvedValue(
+      [{ filename: 'app-1.0.0.zip', size_bytes: 5385, type: 'zip' }]);
   });
 
   it('renders PENDING acceptance with Approve + Request Changes', async () => {
@@ -86,7 +88,8 @@ describe('AfReviewPage (acceptance/release projection)', () => {
     expect(await screen.findByText('RELEASE-r1')).toBeTruthy();
     fireEvent.click(screen.getByTestId('release-RELEASE-r1'));
     await waitFor(() => expect(ex).toHaveBeenCalledWith('RELEASE-r1'));
-    expect(await screen.findByText(/Delivered/)).toBeTruthy();
+    expect(await screen.findByText(/Product Ready/)).toBeTruthy();
+    expect(await screen.findByTestId('download-app-1.0.0.zip')).toBeTruthy();
   });
 
   it('release backend error surfaces real message (no fake released)', async () => {
@@ -97,7 +100,7 @@ describe('AfReviewPage (acceptance/release projection)', () => {
     await screen.findByText('RELEASE-r1');
     fireEvent.click(screen.getByTestId('release-RELEASE-r1'));
     expect(await screen.findByText(/gate failed/)).toBeTruthy();
-    expect(screen.queryByText(/Delivered/)).toBeNull();
+    expect(screen.queryByText(/Product Ready/)).toBeNull();
   });
 
   it('project isolation: releases joined by this project run only', async () => {

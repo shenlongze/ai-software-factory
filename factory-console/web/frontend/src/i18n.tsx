@@ -52,6 +52,7 @@ export const MESSAGES: Record<Locale, Record<string, string>> = {
     'nav.project.workflow': '执行',
     'nav.project.runtime': '运行时',
     'nav.project.quality': '质量',
+    'nav.project.review': '验收发布',
     'nav.project.ops': '运维',
     // 顶栏/状态栏
     'header.backWorkspace': '← 返回工作台',

@@ -209,6 +209,11 @@ def tool_schemas(data_dir: str | Path | None = None) -> list[dict[str, Any]]:
             {"path": {"type": "string"}, "keyword": {"type": "string"}, "offset": {"type": "integer"}}),
         _fc("search_code", "代码检索", "在仓库中检索关键词, 返回命中文件", {"keyword": {"type": "string"}}, ["keyword"]),
         _fc("project_status", "项目状态", "查询项目实时状态: 生命周期/进度(真实任务完成率)/当前阶段/工作流", {}),
+        _fc("project_lifecycle", "产品生命周期状态",
+            "查询项目 产品链 各阶段真实状态 (需求/PRD/产品方案/计划/任务拆解 是否建立与状态)。"
+            "用户问 需求分析/需求整理/理解程度、PRD/方案/原型 是否完成、任务拆解/计划到哪一步 → 用本工具,"
+            " 不用 project_tasks (任务统计不能回答产品链完成度)。返回各阶段存在/状态/ID/缺失, 如实回答未建立。",
+            {}),
         _fc("project_tasks", "任务清单", "查询项目任务: 默认返回统计; 用户要求'查看任务列表/具体任务'时传 detail=true 返回任务明细表格 (任务/模块/优先级/类型/状态)", {"priority": {"type": "string", "enum": ["P0", "P1", "P2", "P3"]}, "detail": {"type": "string", "enum": ["true", "false"]}}),
         _fc("task_action", "任务操作(执行)", "对任务执行动作: start/done/priority (需任务标题)",
             {"title": {"type": "string"}, "action": {"type": "string", "enum": ["start", "done", "priority"]},
@@ -742,6 +747,92 @@ _PROJECT_LIST_ANSWER_TEMPLATE = (
 )
 
 
+def _project_lifecycle(root: Any, project_id: str) -> dict[str, Any]:
+    """S47-E1: 产品链各阶段真实状态 (通用查询, 零硬编码)。
+
+    数据源 (SSOT): canonical product_truth (IDEA/DISC/REQ/PRD/PLAN) +
+    org 需求资产 (requirements/requirements.json) + 会话计划
+    (session_plans.json, 按 project_id)。各阶段独立报告存在/状态/ID;
+    缺失如实说"未建立", 绝不凭任务数量推断产品链完成度。
+    """
+    from pathlib import Path as _P
+    import json as _json
+
+    root_p = _P(str(root)) if root is not None else None
+    rows: list[tuple[str, str, str, str]] = []  # (阶段, 状态, id, 摘要)
+
+    def _canon(loader_name: str, key: str, label: str) -> None:
+        try:
+            import importlib
+            pt = importlib.import_module("product_truth")
+            fn = getattr(pt, loader_name, None)
+            recs = fn(root) if fn is not None else []
+            hit = [r for r in recs
+                   if r and r.get("project_id") == project_id]
+            if hit:
+                h = hit[-1]
+                rows.append((label, str(h.get("status") or "存在"),
+                             str(h.get(key) or ""), str(h.get("title") or "")[:60]))
+            else:
+                rows.append((label, "未建立(canonical)", "", ""))
+        except Exception:  # noqa: BLE001 — 域缺失/异常 → 诚实标注
+            rows.append((label, "未建立(canonical)", "", ""))
+
+    _canon("list_ideas", "idea_id", "Idea 想法")
+    _canon("list_discoveries", "discovery_id", "Discovery 需求理解")
+    _canon("list_requirements", "req_id", "Requirement 需求")
+    _canon("list_prds", "prd_id", "PRD 产品方案")
+    _canon("list_plans", "plan_id", "Plan 计划")
+
+    # org 需求资产 (requirements.json — M3 会话需求)
+    org_req = None
+    if root_p is not None:
+        try:
+            _f = root_p / "requirements" / "requirements.json"
+            if _f.is_file():
+                _d = _json.loads(_f.read_text(encoding="utf-8"))
+                _items = _d if isinstance(_d, list) else _d.get("requirements", [])
+                for _r in _items:
+                    if isinstance(_r, dict) and _r.get("project_id") == project_id:
+                        org_req = _r
+                        break
+        except Exception:  # noqa: BLE001
+            pass
+    if org_req is not None:
+        rows.append(("org 需求", str(org_req.get("status") or "存在"),
+                     str(org_req.get("id") or ""), str(org_req.get("title") or "")[:60]))
+
+    # 会话计划 (session_plans.json, project 绑定)
+    plan_hit = None
+    if root_p is not None:
+        try:
+            _f = root_p / "session_plans.json"
+            if _f.is_file():
+                _d = _json.loads(_f.read_text(encoding="utf-8"))
+                _items = _d if isinstance(_d, list) else list(_d.values())
+                for _pl in _items:
+                    if isinstance(_pl, dict) and (_pl.get("project_id") == project_id
+                                                  or str(_pl.get("project") or "") == project_id):
+                        plan_hit = _pl
+                        break
+        except Exception:  # noqa: BLE001
+            pass
+    if plan_hit is not None:
+        rows.append(("会话计划", str(plan_hit.get("status") or "存在"),
+                     str(plan_hit.get("plan_id") or plan_hit.get("id") or ""),
+                     str(plan_hit.get("goal") or plan_hit.get("title") or "")[:60]))
+
+    lines = [f"项目 {project_id} 产品链各阶段状态:"]
+    for label, status, rid, title in rows:
+        _extra = f" · {title}" if title else ""
+        _rid = f" [{rid}]" if rid else ""
+        lines.append(f"- {label}: {status}{_rid}{_extra}")
+    if not rows:
+        lines.append("- 未发现任何产品链记录 (canonical 与 org 均为空)")
+    lines.append("说明: 各阶段独立存在/缺失如实列出; 不能仅凭任务数量推断需求/PRD 是否完成。")
+    return {"ok": True, "output": "\n".join(lines)}
+
+
 def _format_project_entry(root: Any, project_id: str, proj: dict[str, Any]) -> str:
     """单个项目 → 无序列表块 (project_list 多项目 / project_status 单项目复用)。"""
     from .query_engine import _project_docs, _project_task_stats
@@ -1142,6 +1233,10 @@ def dispatch(
             lines.append("")
             lines.append(_PROJECT_LIST_ANSWER_TEMPLATE)
             return {"ok": True, "output": "\n".join(lines)}
+        if tool_id == "project_lifecycle":
+            # S47-E1: 产品链各阶段真实状态 (canonical product_truth + org 资产)
+            return _project_lifecycle(root, project_id)
+
         if tool_id == "project_status":
             # 单项目 — 与 project_list 复用同一无序列表字段格式
             _proj: dict[str, Any] = {}

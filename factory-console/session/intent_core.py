@@ -64,7 +64,8 @@ mode 判定 (用户主要想要什么产出):
 
 #: 意图 → 专业能力线 (Router 表, 设计文档 §2.2)
 _ROUTE_GUIDE = {
-    "question": "若用户要查询/扫描: 应调用对应数据工具 (project_status/project_tasks/project_scan/code_scan/project_structure/search_code/project_docs/git_status/monitor) 拿真实数据再答, 不凭空答。区分: '扫描代码/代码结构' → code_scan; '扫描项目/整体情况' → project_scan; '项目结构/目录树/有哪些模块' → project_structure。",
+    "product_lifecycle": "产品链状态查询: 调用 project_lifecycle 工具读取 需求/PRD/方案/计划/任务拆解 各阶段真实状态 (canonical+org), 按各阶段存在/缺失如实回答, 不凭任务数量推断。",
+    "question": "若用户要查询/扫描: 应调用对应数据工具 (project_status/project_tasks/product_lifecycle/project_scan/code_scan/project_structure/search_code/project_docs/git_status/monitor) 拿真实数据再答, 不凭空答。区分: '扫描代码/代码结构' → code_scan; '扫描项目/整体情况' → project_scan; '项目结构/目录树/有哪些模块' → project_structure。",
     "challenge": "若用户质疑/纠错: 先【重新查询真实数据验证】, 再诚实承认错误或给出修正; 绝不对着干/嘴硬/糊弄。",
     "chat": "若只是聊天/打招呼: 自然对话即可, 除非用户要实时数据否则不必调工具。",
     "delegate": "若用户派活/开发: 先快速了解现状 (最多 2-3 个了解工具), 然后调 plan_development 出计划 (目标/任务/顺序/验收) 请求用户审批; 不要无限探索。",

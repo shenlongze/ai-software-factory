@@ -27,6 +27,15 @@ _INTENT_RULES: list[tuple[str, tuple[str, ...]]] = [
     ("deep_analyze", ("详细分析", "深度分析", "分析一下", "全面分析", "分析过程", "深度看", "详细看", "分析下")),
     ("create_project", ("做一个", "创建一个", "开发一个", "帮我做个", "帮我做", "新建一个项目", "做个app", "做个 App", "做个app")),
     ("task_action", ("标记完成", "标为完成", "标记开始", "开始任务", "改优先级", "改成p0", "改成p1", "改成p2", "改成p3", "归档任务", "完成任务", "完成这个任务")),
+    # S47-E1: 产品理解/生命周期状态问题 → product_lifecycle (与 project_status 区分:
+    # 需求/PRD/方案/计划/拆解 的完成度 = 产品链状态; 项目整体进度 = project_status)
+    ("product_lifecycle", (
+        "需求分析完成了吗", "需求整理到哪", "需求理解了吗", "需求分析", "需求整理", "需求收集",
+        "需求是什么", "需求目前", "需求到什么", "需求做完了吗", "需求整理完",
+        "prd 做完了吗", "prd 完成", "prd 到哪", "prd 怎么样", "prd 做好", "prd 做了吗",
+        "产品方案完成了吗", "产品方案", "产品设计完成了吗", "方案完成了吗", "方案到哪", "方案怎么样",
+        "原型做了吗", "原型完成", "任务拆解完成了吗", "拆解完成了吗", "任务拆解到哪",
+        "需求阶段", "产品阶段到哪", "理解到哪一步", "plan 做完了吗", "计划做完了吗", "规划完成了吗")),
     ("create_task", ("完善", "优化", "改进", "修复", "修一下", "加个", "增加", "做一下",
                      "细化", "拆解", "拆任务", "拆成", "整理成任务", "转成任务", "落地成任务")),
     ("system_status", ("webui状态", "webui 状态", "系统状态", "运行状态", "服务状态", "服务情况", "现在webui", "系统运行", "前端状态")),
@@ -591,13 +600,13 @@ def build_facts(
 
 
 #: 合法意图集合 (校验 LLM 输出)
-VALID_INTENTS = {"list_projects", "project_status", "project_scan", "code_scan", "project_structure", "project_quality", "project_tasks",
+VALID_INTENTS = {"list_projects", "project_status", "product_lifecycle", "project_scan", "code_scan", "project_structure", "project_quality", "project_tasks",
                  "project_docs", "project_doc", "doc_search",
                  "deep_analyze", "task_action", "create_idea", "project_artifacts", "monitor", "settings", "project_action", "tools_list", "task_continue",
                  "model", "system_status", "create_project", "create_task", "plan_development", "git_push", "chat"}
 
 _INTENT_LLM_PROMPT = """把用户的提问转成标准查询意图 (只输出 JSON, 不要别的):
-{{"intent": "list_projects|project_status|project_scan|project_quality|project_tasks|project_docs|project_doc|doc_search|deep_analyze|task_action|create_idea|project_artifacts|monitor|settings|project_action|model|create_project|create_task|plan_development|git_push|chat",
+{{"intent": "list_projects|project_status|product_lifecycle|project_scan|project_quality|project_tasks|project_docs|project_doc|doc_search|deep_analyze|task_action|create_idea|project_artifacts|monitor|settings|project_action|model|create_project|create_task|plan_development|git_push|chat",
  "project": "用户提到的项目名 (没提到 → null)",
  "task": "用户要做的开发任务描述 (create_task 时填; 否则 null)}}
 规则:

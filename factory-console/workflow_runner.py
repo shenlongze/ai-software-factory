@@ -298,7 +298,11 @@ def _thread_main(**kwargs: Any) -> None:
                  "error": "cancelled by user", "finished_at": _now()},
             )
             return
-        report = run_project_chain(**kwargs, check_cancel=_check_cancel)
+        # S34-P0-5 关联键 (task_id/plan_id/session_id) 仅用于 progress 关联,
+        # 不传给 run_project_chain (签名无此三参 — S46 修复透传 TypeError)
+        chain_kwargs = {_k: _v for _k, _v in kwargs.items()
+                        if _k not in ("task_id", "plan_id", "session_id")}
+        report = run_project_chain(**chain_kwargs, check_cancel=_check_cancel)
         if _check_cancel():
             report["status"] = "cancelled"
             report["error"] = "cancelled by user"
@@ -846,10 +850,16 @@ def _make_dev_executor(
     idea: str,
     project_dir: Path,
 ) -> Callable[[Any, dict[str, Any]], dict[str, Any]]:
-    """Developer executor: 真实 v4-pro 生成代码 → git apply → code artifact。"""
+    """Developer executor: 真实 v4-pro 生成代码 → git apply → code artifact。
+
+    S46 (P1): greenfield 全站单次生成对 deepseek 不稳定 (长输出断连 /
+    裸文件输出不守 <patch> 协议)。改为按文件顺序生成, 每文件一次小调用
+    (单文件 diff 格式稳定; 后续文件 source_files 内联前文件保证 class/id
+    一致); max_tokens 8192 防 API 长流断连。bugs 分支 (修复轮) 不变。
+    """
     from exec.developer import DeveloperAgent
 
-    dev = DeveloperAgent(provider=provider)
+    dev = DeveloperAgent(provider=provider, max_tokens=8192)
     REQ = (
         "1. 纯前端 HTML/CSS/JS, 零外部依赖 (不引 CDN/框架);\n"
         "2. 打开 index.html 即可使用 (浏览器本地存储 localStorage 持久化);\n"
@@ -874,6 +884,17 @@ def _make_dev_executor(
                     "按缺陷报告修复对应文件 (可修改 index.html/style.css/app.js), "
                     "保持其余功能不变; 确保 JS 语法正确。"
                 )
+                output = dev.work(
+                    request=SimpleNamespace(
+                        id=f"T-{project_id}-{name}", task_id=f"T-{project_id}-{name}",
+                        objective=objective, requirement=REQ,
+                    ),
+                    project_context=f"greenfield Web App (纯前端) — {idea}",
+                    sandbox_path=str(project_dir),
+                    source_files=[f for f in ("index.html", "style.css", "app.js")
+                                  if (project_dir / f).is_file()],
+                    extra_instruction=extra,
+                )
             else:
                 design = next(
                     (i for i in context.get("inputs", []) if i.get("type") == "design"), {}
@@ -884,8 +905,7 @@ def _make_dev_executor(
                 product = next(
                     (i for i in context.get("inputs", []) if i.get("type") == "product"), {}
                 )
-                objective = (
-                    "从零实现一个 Web App (纯前端 HTML/CSS/JS)。\n\n"
+                ctx_docs = (
                     "## 用户需求\n" + idea
                     + "\n\n## 产品需求摘要 (Product Artifact)\n"
                     + json.dumps(product.get("metadata") or {}, ensure_ascii=False, indent=1)[:4000]
@@ -894,19 +914,56 @@ def _make_dev_executor(
                     + "\n\n## 技术设计摘要 (design Artifact)\n"
                     + json.dumps(design.get("metadata") or {}, ensure_ascii=False, indent=1)[:5000]
                 )
-                extra = (
-                    "项目为空目录 (greenfield): 请直接创建 index.html / style.css / app.js "
-                    "三个文件 (结构合理即可), 严格遵循验收标准。"
+                # S46: 分文件顺序生成 (每次小调用 — 格式稳定 / 防断连)
+                files_spec = [
+                    ("index.html",
+                     "生成完整的 index.html (HTML5 语义结构, 元素使用清晰的 class/id 命名, "
+                     "需 <link rel=\"stylesheet\" href=\"style.css\"> 与 <script src=\"app.js\">), "
+                     "页面包含需求与设计里的全部 UI 区块。"),
+                    ("style.css",
+                     "基于现有 index.html 的结构写 style.css (全部 UI 样式, 视觉贴合 UX/UI 设计), "
+                     "不修改 HTML。"),
+                    ("app.js",
+                     "基于现有 index.html/style.css 的 DOM 结构写 app.js (全部交互逻辑: 计时/任务/"
+                     "提示音/localStorage), 语法须通过 node --check, 不修改 HTML/CSS。"),
+                ]
+                patch_parts: list[str] = []
+                for fname, spec in files_spec:
+                    existing = sorted(
+                        str(p.relative_to(project_dir)) for p in project_dir.rglob("*")
+                        if p.is_file() and ".git" not in str(p)
+                    )
+                    fobj = (
+                        f"从零实现一个 Web App (纯前端 HTML/CSS/JS)。\n\n{ctx_docs}\n\n"
+                        f"## 本步任务\n只生成文件 {fname}。{spec}\n\n"
+                        f"## 当前已有文件\n{json.dumps(existing, ensure_ascii=False)}"
+                    )
+                    out = dev.work(
+                        request=SimpleNamespace(
+                            id=f"T-{project_id}-{name}-{fname}",
+                            task_id=f"T-{project_id}-{name}-{fname}",
+                            objective=fobj, requirement=REQ,
+                        ),
+                        project_context=f"greenfield Web App (纯前端) — {idea}",
+                        sandbox_path=str(project_dir),
+                        source_files=[f for f in existing
+                                      if f in ("index.html", "style.css", "app.js")],
+                        extra_instruction=(
+                            f"只输出针对 {fname} 的 <patch> (unified diff 格式), 不要输出完整"
+                            "项目多文件, 不要解释。"
+                        ),
+                    )
+                    if out.failure_reason:
+                        recorder.add_error(f"dev/{name}-{fname}", out.failure_reason)
+                        raise RuntimeError(f"developer failed on {fname}: {out.failure_reason}")
+                    if not _apply_patch(project_dir, out.patch_text):
+                        recorder.add_error(f"dev/{name}-{fname}", "patch apply failed")
+                        raise RuntimeError(f"patch apply failed on {fname}")
+                    patch_parts.append(out.patch_text or "")
+                output = SimpleNamespace(
+                    failure_reason="", patch_text="\n".join(patch_parts),
+                    report="greenfield 分文件生成: " + ", ".join(f[0] for f in files_spec),
                 )
-            output = dev.work(
-                request=SimpleNamespace(
-                    id=f"T-{project_id}-{name}", task_id=f"T-{project_id}-{name}",
-                    objective=objective, requirement=REQ,
-                ),
-                project_context=f"greenfield Web App (纯前端) — {idea}",
-                sandbox_path=str(project_dir),
-                extra_instruction=extra,
-            )
             if output.failure_reason:
                 recorder.add_error(f"dev/{name}", output.failure_reason)
                 recorder.stage_done("FAILED", output.failure_reason)
@@ -1242,7 +1299,7 @@ def _finalize(
         checks["artifact_chain_all_validated"]
         and checks["stages_all_completed"]
         and all(checks["code_files_exist"].values())
-        and final_status == "COMPLETED"
+        and str(final_status).upper() == "COMPLETED"  # S46: 状态值大小写归一
     )
     for type_, count in sorted(event_store.count_by_type().items()):
         recorder.events[type_] = count

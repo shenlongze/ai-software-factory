@@ -54,11 +54,20 @@ def _verification_result(report: dict[str, Any]) -> tuple[str, str, str]:
     - failed/cancelled → FAIL (execution 未成功)
     """
     status = str(report.get("final_workflow_status") or report.get("status") or "")
-    if status != "COMPLETED":
+    if status.upper() != "COMPLETED":  # S46: 真实 workflow 写小写 completed
         return "fail", "workflow_execution", f"workflow status={status}"
     acc = report.get("acceptance") or {}
+    # 真实成功判定 (组合细项 — 容忍历史 report 的 all_pass 大小写 bug):
+    # final completed + artifact 链全 VALIDATED + stages 全 COMPLETED + 代码文件齐
     if acc.get("all_pass"):
         return "pass", "workflow_acceptance", "workflow acceptance all_pass"
+    chain_ok = bool(acc.get("artifact_chain_all_validated"))
+    stages_ok = bool(acc.get("stages_all_completed"))
+    code_ok = bool(acc.get("code_files_exist")) and all(
+        (acc.get("code_files_exist") or {}).values())
+    if chain_ok and stages_ok and code_ok:
+        return "pass", "workflow_acceptance", (
+            "workflow completed: artifact chain validated + stages completed + files exist")
     # 诚实 FAIL: 列出缺项 (不伪造 successful completion — S44 AC6)
     missing = [k for k, v in acc.items() if v is False]
     fails = [k for k, v in acc.items()
@@ -95,7 +104,7 @@ def absorb_workflow_to_canonical(
     root = Path(org_dir).parent
     pdir = Path(project_dir) if project_dir else None
     ok = bool(status == "completed" and
-              str(report.get("final_workflow_status") or "") == "COMPLETED")
+              str(report.get("final_workflow_status") or "").upper() == "COMPLETED")
     # 确定性 task_id (workflow run 作 TASK FK — 幂等键基础; backlog 同步
     # 由 workflow 既有机制负责, 吸收层不建第二套 task)
     task_id = f"TASK-workflow-{workflow_run_id}"

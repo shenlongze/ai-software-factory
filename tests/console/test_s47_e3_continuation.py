@@ -54,7 +54,7 @@ class TestActiveWorkResolver:
         st = {"topic": "需求分析", "domain": "product_lifecycle", "relation": "continue"}
         g = _work_recovery_guide("继续分析", st, H,
                                  _llm(need_input=True, question="技术栈用纯前端还是 Python?"))
-        assert "问用户" in g and "技术栈" in g
+        assert "真正阻塞" in g and "技术栈" in g
 
     def test_non_continue_relation_no_recovery(self):
         st = {"topic": "需求分析", "domain": "product_lifecycle", "relation": "question"}
@@ -79,3 +79,19 @@ class TestActiveWorkResolver:
             st = {"topic": "需求分析", "domain": "product_lifecycle", "relation": rel}
             g = _work_recovery_guide("可以，不过先完善登录", st, H, _llm())
             assert "恢复工作" in g
+
+
+class TestTruthAwareResolver:
+    def test_truth_passed_into_resolver(self):
+        from factory_console.session.agent_loop import _ACTIVE_WORK_PROMPT
+        assert "{truth}" in _ACTIVE_WORK_PROMPT  # truth 注入占位存在
+
+    def test_guide_mentions_truth(self):
+        st = {"topic": "需求分析", "domain": "product_lifecycle", "relation": "continue"}
+        seen = {}
+        def llm(prompt):
+            seen["truth_in"] = "Truth" in prompt and "org 需求" in prompt or "未读取" not in prompt
+            return ('{"active_work": "需求分析", "current_stage": "整理", '
+                    '"next_action": "整理需求清单并建立 Requirement", "need_user_input": false, "question": null}')
+        g = _work_recovery_guide("继续帮忙分析需求", st, H, llm, truth_summary="Requirement 未建立; org 需求 VALIDATED")
+        assert "先做后问" in g and "直接执行" in g

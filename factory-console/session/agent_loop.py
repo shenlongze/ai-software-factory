@@ -2185,18 +2185,28 @@ def run_agent_native(
     if _gov_guide:
         messages.append({"role": "system", "content": _gov_guide})
 
-    # ---- S47-E3: Active Work 恢复 (continue/confirm/modify/reference) ----
+    # ---- S47-E3.1: Active Work 锚定 (Truth-aware + state 持久化) ----
     try:
         if _gov_guide and session_id and data_dir:
             _wstate = _conv_state_load(data_dir, session_id)
             _wstate.update({"relation": _gov.get("relation", ""),
                             "topic": _gov.get("topic") or _wstate.get("topic") or "",
                             "domain": _gov.get("domain") or _wstate.get("domain") or ""})
-            _recovery = _work_recovery_guide(question, _wstate, history,
-                                             (lambda p: _simple_llm(p, data_dir=data_dir)) if data_dir else None)
+            # 读真实 Truth 摘要 (product_lifecycle 同源, 供 resolver 判缺口)
+            _truth = ""
+            try:
+                _tl = _project_lifecycle(data_dir, project_id)
+                if _tl.get("ok"):
+                    _truth = str(_tl.get("output") or "")[:1500]
+            except Exception:  # noqa: BLE001
+                pass
+            _recovery = _work_recovery_guide(
+                question, _wstate, history,
+                (lambda p: _simple_llm(p, data_dir=data_dir)) if data_dir else None,
+                truth_summary=_truth)
             if _recovery:
                 messages.append({"role": "system", "content": _recovery})
-                # 持久化 active_work 引用 (会话 projection, 非业务 truth)
+                # E3.1: 锚定 active_work 输出回 state (供下轮从新位置继续)
                 _wstate.setdefault("active_work", "")
                 _conv_state_save(data_dir, session_id, _wstate)
     except Exception:  # noqa: BLE001 — recovery 失败不阻断
@@ -3179,20 +3189,28 @@ def _governance_guide(relation: str, domain: str, needs_tool: bool,
 # =====================================================================
 # S47-E3: Active Work Resolver (continue/confirm/modify/reference → 工作恢复)
 # =====================================================================
-_ACTIVE_WORK_PROMPT = """用户正在继续一段进行中的工作。基于对话状态判断工作恢复上下文 (只输出 JSON):
+_ACTIVE_WORK_PROMPT = """用户正在继续一段进行中的工作。基于对话状态 + 真实 Truth 判断工作恢复上下文 (只输出 JSON):
 {"active_work": "当前进行中的工作名 (如 需求分析/PRD/任务拆解; 无 → null)",
  "current_stage": "当前阶段 (需求分析: 收集→整理→确认; PRD: 草稿→评审; 无 → null)",
  "next_action": "下一步具体生产动作一句话 (无 → null)",
  "need_user_input": true|false,
- "question": "必须问用户的问题 (若 need_user_input=true 且无法从现有信息推断; 否则 null)",
+ "question": "必须问用户的问题 (仅当 need_user_input=true 且存在真正阻塞性缺口; 否则 null)",
  "reason": "判断依据一句话 (引用已知信息)"}
 
-规则:
-- 用户说"继续/接着做/继续刚才的/把…做完整"等 → 恢复上轮工作: active_work 取
-  上轮主题/域对应工作, next_action = 推进该工作到下一产出 (不要重问范围/技术
-  形态 — 除非已有信息真不足)
-- 对话状态: topic={topic} domain={domain} relation={relation}
-  上轮提议: {pending}
+规则 (先做后问):
+- 用户说"继续/接着做/继续刚才的/把…做完整"等 → 恢复上轮工作
+- **先做后问**: 基于下方 Truth — 缺什么就补什么; 能从现有信息整理的直接
+  整理 (可标注待确认); 只有真正阻塞产出且无法从现有信息推断的关键决策
+  才 need_user_input=true。不要因为"问一遍更稳妥"就提问。
+- next_action 必须是可执行动作: 整理需求清单/建立 Requirement/推进下一
+  阶段 — 不是"重新分析/重新看项目"。
+
+对话状态: topic={topic} domain={domain} relation={relation}
+上轮提议: {pending}
+
+当前真实 Truth (该工作相关):
+{truth}
+
 最近对话:
 {history}
 用户消息: {message}"""
@@ -3200,7 +3218,8 @@ _ACTIVE_WORK_PROMPT = """用户正在继续一段进行中的工作。基于对�
 
 def _resolve_active_work(message: str, state: dict[str, Any],
                          history: list[dict[str, Any]] | None,
-                         llm_fn: Callable[[str], str] | None) -> dict[str, Any]:
+                         llm_fn: Callable[[str], str] | None,
+                         truth_summary: str = "") -> dict[str, Any]:
     """LLM 恢复 Active Work (工作名/阶段/下一步/是否需问)。失败 → 空 (不阻断)。"""
     try:
         if llm_fn is None:
@@ -3218,7 +3237,8 @@ def _resolve_active_work(message: str, state: dict[str, Any],
                   .replace("{domain}", str(state.get("domain") or "无"))
                   .replace("{relation}", str(state.get("relation") or "无"))
                   .replace("{pending}", str(state.get("pending") or "无")[:300])
-                  .replace("{history}", hist_text[-1600:])
+                  .replace("{truth}", str(truth_summary or "无 (未读取)")[-1500:])
+                  .replace("{history}", hist_text[-1400:])
                   .replace("{message}", str(message)[:400]))
         raw = str(llm_fn(prompt) or "").strip()
         m = re.search(r"\{[\s\S]*\}", raw)
@@ -3241,7 +3261,8 @@ def _resolve_active_work(message: str, state: dict[str, Any],
 
 def _work_recovery_guide(msg: str, state: dict[str, Any],
                          history: list[dict[str, Any]] | None,
-                         llm_fn: Callable[[str], str] | None) -> str:
+                         llm_fn: Callable[[str], str] | None,
+                         truth_summary: str = "") -> str:
     """S47-E3: continue/confirm/modify/reference → 工作恢复引导。
 
     把 语义 continue 转成 具体生产上下文 (active_work + next_action),
@@ -3250,7 +3271,7 @@ def _work_recovery_guide(msg: str, state: dict[str, Any],
     rel = str(state.get("relation") or "")
     if rel not in ("continue", "confirm", "modify", "reference"):
         return ""
-    w = _resolve_active_work(msg, state, history, llm_fn)
+    w = _resolve_active_work(msg, state, history, llm_fn, truth_summary)
     if not w:
         return ""
     aw = w.get("active_work") or ""
@@ -3263,12 +3284,13 @@ def _work_recovery_guide(msg: str, state: dict[str, Any],
         lines.append(f"- 阶段: {st}")
     if na:
         lines.append(f"- 下一步 (执行方向): {na}")
-    lines.append("- 先读取该工作相关真实 Truth (product_lifecycle / 项目记录), 判断已有哪些、缺什么;")
+    lines.append("- 基于上面给出的真实 Truth 判断缺口: 缺什么补什么 (先做后问);")
     if need_q and q:
-        lines.append(f"- 存在影响产出的未知信息 → 问用户: {q}")
+        lines.append(f"- 只有真正阻塞产出的未知信息才问 → 问: {q}")
     else:
-        lines.append("- 已有信息足以推进 → 直接执行 next_action, 产出真实记录; 不要重新做项目诊断/任务统计, 不要重问已覆盖的范围。")
-    lines.append("- 产出如需落盘 → 用 save_product_record 写 canonical 记录。")
+        lines.append("- 能从已知信息推进 → 直接执行 next_action 产出真实记录; 不要重新做"
+                     "项目诊断/任务统计, 不要重问已覆盖范围。")
+    lines.append("- 产出如需落盘 → 用 save_product_record 写 canonical 记录, 完成后简短告诉用户实际完成了什么。")
     return "\n".join(lines)
 
 

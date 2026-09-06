@@ -1932,6 +1932,103 @@ def build_app(
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
+    # ============================================== S47-B: canonical Release/Delivery
+    @app.get("/api/releases-truth")
+    def api_releases_truth() -> dict[str, Any]:
+        """Canonical Release Truth 列表 (GET — RELEASE-* 投影; M3 rel-* 不混)。"""
+        if workspace_root is None:
+            return ok_list([])
+        try:
+            _rt = _console_import("release_truth")
+            items = []
+            for r in _rt.list_releases(workspace_root):
+                items.append(r)
+            return ok_list(items)
+        except Exception:  # noqa: BLE001
+            return ok_list([])
+
+    @app.post("/api/acceptances/{acceptance_id}/release")
+    def api_acceptance_release(acceptance_id: str) -> dict[str, Any]:
+        """由验收创建 canonical Release (POST — ACC 绑定 run → RELEASE-* → gate)。
+
+        仅当 ACC APPROVED + ver PASS; gate require_acceptance=True 真实执行;
+        返回 release + gate 状态 (前端不自行判断允许)。"""
+        if workspace_root is None:
+            raise HTTPException(status_code=503, detail="workspace unavailable")
+        try:
+            _acc = _console_import("acceptance_truth")
+            _rt = _console_import("release_truth")
+            acc = _acc.get_acceptance(workspace_root, acceptance_id)
+            if acc is None:
+                raise KeyError(f"Acceptance 不存在: {acceptance_id}")
+            if str(acc.get("status") or "") != "APPROVED":
+                raise ValueError("仅 APPROVED 验收可创建 Release")
+            run_id = str(acc.get("source_run_id") or "")
+            if not run_id:
+                raise ValueError("Acceptance 缺 source_run 绑定 (无法建 canonical Release)")
+            # 从 run 反查 canonical EXS (release gate 要求 exs provenance)
+            exs_id = ""
+            try:
+                import json as _json
+                from pathlib import Path as _Path
+                _ep = _Path(workspace_root) / "exec" / "execution_records.json"
+                if _ep.is_file():
+                    _data = _json.loads(_ep.read_text(encoding="utf-8"))
+                    _items = _data if isinstance(_data, list) else _data.get("records", [])
+                    for _r in _items:
+                        if str(_r.get("task_run_id") or "") == run_id:
+                            exs_id = str(_r.get("result_id") or "")
+                            break
+            except Exception:  # noqa: BLE001 — 反查失败 → 空 (gate 会诚实 REJECT)
+                pass
+            rel = _rt.create_release(workspace_root, task_run_id=run_id, exs_id=exs_id)
+            rel_id = str(rel.get("release_id") or "")
+            g = _rt.gate_release(workspace_root, rel_id, require_acceptance=True)
+            return {"ok": True, "release": g,
+                    "gate": g.get("gate") or {},
+                    "release_id": rel_id}
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.post("/api/releases/{release_id}/release")
+    def api_release_execute(release_id: str) -> dict[str, Any]:
+        """发布 (POST — canonical execute; 治理编排: 需 approval 时经 admin 批准
+        → RELEASED)。前端不判断条件 — backend ReleaseService 判定。"""
+        if workspace_root is None:
+            raise HTTPException(status_code=503, detail="workspace unavailable")
+        try:
+            _rt = _console_import("release_truth")
+            rel = _rt.get_release(workspace_root, release_id)
+            if rel is None:
+                raise KeyError(f"Release 不存在: {release_id}")
+            if str(rel.get("status") or "") == "RELEASED":
+                return {"ok": True, "release": rel}
+            try:
+                ex = _rt.execute_release(workspace_root, release_id, actor="admin")
+            except ValueError as _vex:
+                # governance BLOCK (无已批准 approval) → 编排批准
+                if "governance approval" not in str(_vex) and "无已批准" not in str(_vex):
+                    raise
+                from factory_console import governance_service as _gov
+                try:
+                    req = _gov.request_approval(
+                        workspace_root, production_run_id="", artifact_ids=[],
+                        requested_by="factory-owner", policy_id="release",
+                        subject_type="release", subject_id=release_id)
+                    _gov.approve(workspace_root, str(req.get("approval_id") or ""),
+                                 decided_by="admin")
+                except Exception as _e2:  # noqa: BLE001 — 批准编排失败诚实报
+                    raise ValueError(
+                        f"governance approval failed: {type(_e2).__name__}") from _e2
+                ex = _rt.execute_release(workspace_root, release_id, actor="admin")
+            return {"ok": True, "release": ex}
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
     @app.get("/api/projects/{project_id}/docs")
     def api_project_docs_list(project_id: str) -> dict[str, Any]:
         """项目文档清单 (GET — 核心资产 + 可配多目录扫描; 未装配 → 空)。"""

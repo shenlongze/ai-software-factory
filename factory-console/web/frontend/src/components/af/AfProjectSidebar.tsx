@@ -19,6 +19,7 @@ export const PROJECT_NAV_ITEMS: readonly { page: string; label: string; icon: st
   { page: 'workflow', label: '执行', icon: '⚙️' },
   { page: 'runtime', label: '运行时', icon: '📈' },
   { page: 'quality', label: '质量', icon: '✅' },
+  { page: 'review', label: '验收发布', icon: '🚀' },
   { page: 'ops', label: '运维', icon: '🛰' },
 ];
 

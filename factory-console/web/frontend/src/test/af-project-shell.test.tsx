@@ -48,7 +48,7 @@ describe('AfProjectShell (AI OS 项目层壳)', () => {
     }
   });
 
-  it('PROJECT_NAV_ITEMS 与路由表对齐: 7 项 (Founder 精简 + 运维)', () => {
+  it('PROJECT_NAV_ITEMS 与路由表对齐: 8 项 (Founder 精简 + 运维 + review)', () => {
     expect(PROJECT_NAV_ITEMS.map((item) => item.page)).toEqual([
       'overview',
       'docs',
@@ -56,6 +56,7 @@ describe('AfProjectShell (AI OS 项目层壳)', () => {
       'workflow',
       'runtime',
       'quality',
+      'review',
       'ops',
     ]);
   });

@@ -77,7 +77,7 @@ import {
   type OsApproval,
   type OsApprovalDecision,
 } from '../models/types';
-import type { BacklogFeature, BacklogTask, MonitorDetail, TaskExecTrace, TaskSessionRef } from '../models/domain';
+import type { AcceptanceReview, BacklogFeature, BacklogTask, MonitorDetail, ReleaseTruth, TaskExecTrace, TaskSessionRef } from '../models/domain';
 import type { RegistryTool } from '../models/types';
 
 export class ApiError extends Error {
@@ -674,6 +674,31 @@ export const api = {
       return false;
     }
   },
+
+  // ============================================== S47-B: Acceptance / Release
+  projectAcceptances: async (projectId: string): Promise<AcceptanceReview[]> => {
+    const res = await getJson<{ items: AcceptanceReview[] }>(
+      `/api/projects/${encodeURIComponent(projectId)}/acceptances`);
+    return res.items;
+  },
+  approveAcceptance: async (acceptanceId: string): Promise<AcceptanceReview> =>
+    (await sendJson<AcceptanceReview>(`/api/acceptances/${encodeURIComponent(acceptanceId)}/approve`, {
+      reviewer: 'user',
+    })) as AcceptanceReview,
+  requestAcceptanceChange: async (acceptanceId: string, comment: string): Promise<AcceptanceReview> =>
+    (await sendJson<AcceptanceReview>(
+      `/api/acceptances/${encodeURIComponent(acceptanceId)}/request-change`,
+      { reviewer: 'user', comment })) as AcceptanceReview,
+  releasesTruth: async (): Promise<ReleaseTruth[]> => {
+    const res = await getJson<{ items: ReleaseTruth[] }>('/api/releases-truth');
+    return res.items;
+  },
+  createReleaseFromAcceptance: async (acceptanceId: string): Promise<{ release_id: string; release: ReleaseTruth }> =>
+    (await sendJson<{ release_id: string; release: ReleaseTruth }>(
+      `/api/acceptances/${encodeURIComponent(acceptanceId)}/release`, {})) as { release_id: string; release: ReleaseTruth },
+  executeRelease: async (releaseId: string): Promise<{ release: ReleaseTruth }> =>
+    (await sendJson<{ release: ReleaseTruth }>(
+      `/api/releases/${encodeURIComponent(releaseId)}/release`, {})) as { release: ReleaseTruth },
 
 } as const;
 

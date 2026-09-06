@@ -23,8 +23,8 @@ describe('S10-014 路由常量表 (§2.3)', () => {
     ]);
   });
 
-  it('Project 级 7 条路由 (Founder 精简 + 运维)', () => {
-    expect(PROJECT_ROUTES).toHaveLength(7);
+  it('Project 级 8 条路由 (Founder 精简 + 运维 + S47-B review)', () => {
+    expect(PROJECT_ROUTES).toHaveLength(8);
     expect(PROJECT_ROUTES.map((r) => r.path)).toEqual([
       '#/project/:id',
       '#/project/:id/docs',
@@ -32,6 +32,7 @@ describe('S10-014 路由常量表 (§2.3)', () => {
       '#/project/:id/workflow',
       '#/project/:id/runtime',
       '#/project/:id/quality',
+      '#/project/:id/review',
       '#/project/:id/ops',
     ]);
     expect(PROJECT_ROUTES.map((r) => r.page)).toEqual([
@@ -41,6 +42,7 @@ describe('S10-014 路由常量表 (§2.3)', () => {
       'workflow',
       'runtime',
       'quality',
+      'review',
       'ops',
     ]);
   });

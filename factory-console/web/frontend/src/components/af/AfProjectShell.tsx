@@ -27,6 +27,7 @@ import { AfTodoTreePage } from '../../pages/project/AfTodoTreePage';
 import { AfWorkflowPage } from '../../pages/project/AfWorkflowPage';
 import { AfRuntimePage } from '../../pages/project/AfRuntimePage';
 import { AfQualityGatePage } from '../../pages/project/AfQualityGatePage';
+import { AfReviewPage } from '../../pages/project/AfReviewPage';
 import { AfProjectDocs } from '../../pages/project/AfProjectDocs';
 import { AfProjectOps } from '../../pages/project/AfProjectOps';
 import { ErrorState, LoadingState } from '../State';
@@ -218,6 +219,9 @@ function AfProjectSubPage({
   }
   if (page === 'quality' && projectId != null) {
     return <AfQualityGatePage projectId={projectId} />;
+  }
+  if (page === 'review' && projectId != null) {
+    return <AfReviewPage projectId={projectId} />;
   }
   if (page === 'docs' && projectId != null) {
     return <AfProjectDocs projectId={projectId} projectName={projectName ?? ''} />;

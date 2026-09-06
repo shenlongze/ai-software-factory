@@ -464,3 +464,41 @@ export interface MonitorDetail {
   recent: MonitorRecent[];
   alerts: MonitorAlert[];
 }
+
+// ================= S47-B: Acceptance / Release / Delivery 投影类型 =================
+// (canonical ACC-*/RELEASE-* 只读投影; ViewModel = projection, 非 domain truth)
+
+export type AcceptanceStatus = 'PENDING' | 'APPROVED' | 'CHANGE_REQUESTED' | 'SUPERSEDED';
+
+export interface AcceptanceReview {
+  acceptance_id: string;
+  project_id?: string;
+  artifact_id: string;
+  version: number;
+  verification_id: string;
+  source_run_id?: string;
+  status: AcceptanceStatus;
+  reviewer?: string;
+  decision?: { decision: string; comment?: string; at?: string } | null;
+  created_at?: string;
+  updated_at?: string;
+  /** 投影富化 (backend canonical 反查, 非独立 truth) */
+  verification_status?: string;
+  artifact_title?: string;
+}
+
+export type ReleaseStatus = 'CREATED' | 'CANDIDATE' | 'GATED' | 'RELEASED'
+  | 'SUPERSEDED' | 'REJECTED' | 'REVOKED';
+
+export interface ReleaseTruth {
+  release_id: string;
+  status: ReleaseStatus;
+  task_run_id?: string;
+  exs_id?: string;
+  artifact_ids?: string[];
+  verification_ids?: string[];
+  version?: string | null;
+  gate?: { allowed?: boolean; missing?: string[]; checked_at?: string; actor?: string };
+  created_at?: string;
+  updated_at?: string;
+}

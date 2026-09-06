@@ -502,3 +502,43 @@ export interface ReleaseTruth {
   created_at?: string;
   updated_at?: string;
 }
+
+// ================= S47-C2: Run Detail (只读投影 — progress/report 真实) =========
+export interface RunStageDetail {
+  workflow?: string;
+  stage: string;
+  role?: string;
+  calls?: number[];
+  cost_usd_est?: number | null;
+  latency_s?: number | null;
+  status?: string;
+  note?: string;
+}
+
+export interface RunCallUsage {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+  estimated_cost_usd?: number;
+}
+
+export interface RunCallDetail {
+  model?: string;
+  max_tokens?: number;
+  usage?: RunCallUsage;
+  latency_s?: number | null;
+  ok?: boolean;
+  error?: string | null;
+}
+
+export interface RunDetail {
+  project_id: string;
+  run_id: string;
+  status?: string;
+  stages: RunStageDetail[];
+  calls: RunCallDetail[];
+  errors: Array<{ where?: string; message?: string }>;
+  totals?: { calls?: number; prompt_tokens?: number; completion_tokens?: number;
+    total_tokens?: number; cost_usd_est?: number; wall_s?: number };
+  updated_at?: string;
+}

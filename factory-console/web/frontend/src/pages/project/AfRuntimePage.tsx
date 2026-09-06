@@ -20,6 +20,7 @@ import { useState } from 'react';
 import { toRuntimeActivity, toWorkflowPipeline } from '../../api/domain';
 import { api } from '../../api/client';
 import { ActiveRuntimePanel } from '../../components/af/ActiveRuntimePanel';
+import { AfRunDetail } from '../../components/af/AfRunDetail';
 import { AfRuntimeTimeline } from '../../components/af/AfRuntimeTimeline';
 import { AfEmptyState, AfErrorState, AfLoadingState } from '../../components/af/AfState';
 import { useAsync } from '../../hooks/useAsync';
@@ -48,6 +49,7 @@ export interface AfRuntimePageProps {
 
 export function AfRuntimePage({ projectId, projectName }: AfRuntimePageProps): JSX.Element {
   const [retryTick, setRetryTick] = useState(0);
+  const [selectedRun, setSelectedRun] = useState<string | null>(null);
 
   const { data, error, loading } = useAsync(
     async () => {
@@ -81,12 +83,21 @@ export function AfRuntimePage({ projectId, projectName }: AfRuntimePageProps): J
             projectId={projectId}
             runs={data.runs}
             workflowStages={data.pipeline.stages}
+            onSelectRun={setSelectedRun}
           />
-          <AfRuntimeTimeline
-            pipeline={data.pipeline}
-            events={data.events}
-            projectName={projectName}
-          />
+          {selectedRun != null ? (
+            <AfRunDetail
+              projectId={projectId}
+              runId={selectedRun}
+              onClose={() => setSelectedRun(null)}
+            />
+          ) : (
+            <AfRuntimeTimeline
+              pipeline={data.pipeline}
+              events={data.events}
+              projectName={projectName}
+            />
+          )}
         </>
       ) : (
         <AfEmptyState

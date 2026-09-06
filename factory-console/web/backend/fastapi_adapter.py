@@ -1829,9 +1829,20 @@ def build_app(
                     continue
                 try:
                     p = json.loads(progress.read_text(encoding="utf-8"))
+                    # 终态在 report.json (progress.status 恒 running); 合并 report
+                    # → 真实 run status (S47-C2: active-run 判断依赖它)。
+                    status = p.get("status", "unknown")
+                    report_f = run_dir / "report.json"
+                    if report_f.is_file():
+                        try:
+                            rp = json.loads(report_f.read_text(encoding="utf-8"))
+                            status = (rp.get("final_workflow_status")
+                                      or rp.get("status") or status)
+                        except (OSError, ValueError):
+                            pass
                     runs.append({
                         "run_id": run_dir.name,
-                        "status": p.get("status", "unknown"),
+                        "status": status,
                         "updated_at": p.get("updated_at"),
                         "stages": p.get("stages", []),
                         "totals": p.get("totals", {}),
@@ -1839,6 +1850,43 @@ def build_app(
                 except (OSError, ValueError):
                     continue
         return {"project_id": project_id, "runs": runs, "count": len(runs)}
+
+    @app.get("/api/projects/{project_id}/runs/{run_id}")
+    def api_project_run_detail(project_id: str, run_id: str) -> dict[str, Any]:
+        """Run 详情 (S47-C2 — progress.json 只读投影; stages/calls/errors/totals)。
+
+        run detail 真实下钻数据源: workflow_runs/{project_id}/{run_id}/progress.json
+        (workflow_runner 真实执行事实; calls 含 usage metadata — 无 secret)。
+        """
+        root = Path(str(factory_root if factory_root is not None else DEFAULT_ROOT))
+        run_dir = root / "workflow_runs" / project_id / run_id
+        progress = run_dir / "progress.json"
+        if not progress.is_file():
+            raise HTTPException(status_code=404, detail=f"Run 不存在: {run_id}")
+        try:
+            p = json.loads(progress.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise HTTPException(status_code=500, detail="progress 读取失败") from exc
+        # 终态合并 report (progress.status 恒 running)
+        status = p.get("status")
+        report_f = run_dir / "report.json"
+        if report_f.is_file():
+            try:
+                rp = json.loads(report_f.read_text(encoding="utf-8"))
+                status = (rp.get("final_workflow_status")
+                          or rp.get("status") or status)
+            except (OSError, ValueError):
+                pass
+        return {
+            "project_id": project_id,
+            "run_id": run_id,
+            "status": status,
+            "stages": p.get("stages", []),
+            "calls": p.get("calls", []),
+            "errors": p.get("errors", []),
+            "totals": p.get("totals", {}),
+            "updated_at": p.get("updated_at"),
+        }
 
     @app.get("/api/projects/{project_id}/artifacts/version")
     def api_project_artifacts_version(project_id: str) -> dict[str, Any]:

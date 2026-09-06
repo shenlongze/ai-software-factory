@@ -77,7 +77,7 @@ import {
   type OsApproval,
   type OsApprovalDecision,
 } from '../models/types';
-import type { AcceptanceReview, BacklogFeature, BacklogTask, MonitorDetail, ReleaseTruth, TaskExecTrace, TaskSessionRef } from '../models/domain';
+import type { AcceptanceReview, BacklogFeature, BacklogTask, MonitorDetail, ReleaseTruth, RunDetail, TaskExecTrace, TaskSessionRef } from '../models/domain';
 import type { RegistryTool } from '../models/types';
 
 export class ApiError extends Error {
@@ -230,6 +230,8 @@ export const api = {
   // S32-004: 项目真实 Run 列表 (workflow_runs 真实 progress)
   projectRuns: (projectId: string) =>
     getJson<{ project_id: string; runs: ProjectRunSummary[]; count: number }>(`/api/projects/${encodeURIComponent(projectId)}/runs`),
+  projectRunDetail: (projectId: string, runId: string): Promise<RunDetail> =>
+    getJson<RunDetail>(`/api/projects/${encodeURIComponent(projectId)}/runs/${encodeURIComponent(runId)}`),
   // S10-006.5 收尾: 项目管理 — 删除 (DELETE → {deleted: true, project_id};
   // 运行中 → 409 由后端拒绝, 前端提示"正在开发中")
   deleteProject: (projectId: string) =>

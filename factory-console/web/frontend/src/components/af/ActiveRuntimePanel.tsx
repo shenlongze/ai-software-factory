@@ -18,6 +18,8 @@ interface Props {
   runs: RunSummary[];
   workflowStages?: { name: string; status: string }[];
   loading?: boolean;
+  /** S47-C2: 点 Run → 下钻 Run Detail。 */
+  onSelectRun?: (runId: string) => void;
 }
 
 function connectionLabel(c: ConnectionState): { text: string; cls: string } {
@@ -43,10 +45,11 @@ function eventLabel(name: string): string {
   }
 }
 
-export function ActiveRuntimePanel({ projectId, runs, workflowStages = [], loading }: Props) {
+export function ActiveRuntimePanel({ projectId, runs, workflowStages = [], loading, onSelectRun }: Props) {
   const live = useRuntimeProjection(projectId);
   const conn = connectionLabel(live.connection);
   const activeRun = runs.find((r) => /running|in_progress/i.test(r.status)) ?? null;
+  const latestRun = !activeRun ? runs[0] ?? null : null;
 
   return (
     <section className="af-live-panel" data-testid="active-runtime-panel">
@@ -84,6 +87,35 @@ export function ActiveRuntimePanel({ projectId, runs, workflowStages = [], loadi
                 <dd className="af-error" data-testid="af-last-error">{live.lastError}</dd>
               </>
             )}
+            {onSelectRun && (
+              <dd>
+                <button
+                  type="button"
+                  className="ai-btn"
+                  data-testid="af-open-run-detail"
+                  onClick={() => onSelectRun(activeRun.run_id)}
+                >
+                  Run 详情
+                </button>
+              </dd>
+            )}
+          </dl>
+        ) : latestRun != null && onSelectRun ? (
+          <dl className="af-live-run">
+            <dt>Latest Run</dt>
+            <dd data-testid="af-latest-run-id">{latestRun.run_id}</dd>
+            <dt>Status</dt>
+            <dd>{latestRun.status}</dd>
+            <dd>
+              <button
+                type="button"
+                className="ai-btn"
+                data-testid="af-open-latest-detail"
+                onClick={() => onSelectRun(latestRun.run_id)}
+              >
+                Run 详情
+              </button>
+            </dd>
           </dl>
         ) : (
           <p className="ai-muted">No active run.</p>

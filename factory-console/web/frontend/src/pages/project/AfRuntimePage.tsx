@@ -19,21 +19,24 @@
 import { useState } from 'react';
 import { toRuntimeActivity, toWorkflowPipeline } from '../../api/domain';
 import { api } from '../../api/client';
+import { ActiveRuntimePanel } from '../../components/af/ActiveRuntimePanel';
 import { AfRuntimeTimeline } from '../../components/af/AfRuntimeTimeline';
 import { AfEmptyState, AfErrorState, AfLoadingState } from '../../components/af/AfState';
 import { useAsync } from '../../hooks/useAsync';
-import type { TimelineEventSummary, WorkflowDetail } from '../../models/types';
+import type { ProjectRunSummary, TimelineEventSummary, WorkflowDetail } from '../../models/types';
 
-/** GET workflow + timeline 并行 (任一失败 → ApiError; 页面级真实数据源)。 */
+/** GET workflow + timeline + runs 并行 (任一失败 → ApiError; 页面级真实数据源)。 */
 export async function fetchRuntimeView(projectId: string): Promise<{
   workflow: WorkflowDetail;
   timeline: TimelineEventSummary[];
+  runs: ProjectRunSummary[];
 }> {
-  const [workflow, timeline] = await Promise.all([
+  const [workflow, timeline, runResp] = await Promise.all([
     api.projectWorkflow(projectId),
     api.projectTimeline(projectId, 200),
+    api.projectRuns(projectId),
   ]);
-  return { workflow, timeline };
+  return { workflow, timeline, runs: runResp.runs ?? [] };
 }
 
 export interface AfRuntimePageProps {
@@ -52,6 +55,7 @@ export function AfRuntimePage({ projectId, projectName }: AfRuntimePageProps): J
       return {
         pipeline: toWorkflowPipeline(undefined, view.workflow),
         events: toRuntimeActivity(view.timeline, projectName),
+        runs: view.runs,
       };
     },
     [projectId, projectName, retryTick],
@@ -72,11 +76,18 @@ export function AfRuntimePage({ projectId, projectName }: AfRuntimePageProps): J
   return (
     <div className="af-runtime-page" data-testid="af-runtime-page">
       {data != null ? (
-        <AfRuntimeTimeline
-          pipeline={data.pipeline}
-          events={data.events}
-          projectName={projectName}
-        />
+        <>
+          <ActiveRuntimePanel
+            projectId={projectId}
+            runs={data.runs}
+            workflowStages={data.pipeline.stages}
+          />
+          <AfRuntimeTimeline
+            pipeline={data.pipeline}
+            events={data.events}
+            projectName={projectName}
+          />
+        </>
       ) : (
         <AfEmptyState
           message="暂无运行活动"

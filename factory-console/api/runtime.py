@@ -190,6 +190,10 @@ def iter_sse_events(
         for event in events:
             mapped = _sse_event(event, store)
             if mapped is not None:
+                # S47-C1 (additive, 非 breaking): data 附 seq — 前端 since_seq
+                # 断点续推前提 (现有消费者忽略未知字段, 契约形状不变)。
+                if isinstance(mapped[1], dict) and event.seq is not None:
+                    mapped = (mapped[0], {**mapped[1], "seq": int(event.seq)})
                 yield mapped[0], mapped[1]
             if event.seq > since_seq:
                 since_seq = event.seq

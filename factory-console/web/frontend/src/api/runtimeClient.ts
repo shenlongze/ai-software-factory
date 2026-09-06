@@ -64,6 +64,8 @@ export const RUNTIME_POLL_MS = 2000;
 export interface RuntimeEventHandlers {
   onEvent: (name: RuntimeEventName, data: Record<string, unknown>) => void;
   onError?: (event: Event | null) => void;
+  /** S47-C1: SSE 连接建立 (connectionState → connected)。 */
+  onOpen?: () => void;
   /** S10-006.5: 收到 mock 哨兵 (后端不可达) → 演示模式徽章 (非业务事件)。 */
   onMock?: () => void;
 }
@@ -124,7 +126,8 @@ export const runtimeClient = {
   subscribeEvents: (
     projectId: string,
     handlers: RuntimeEventHandlers,
-  ): RuntimeEventSubscription => subscribeEvents(projectId, handlers),
+    sinceSeq = 0,
+  ): RuntimeEventSubscription => subscribeEvents(projectId, handlers, sinceSeq),
 
   // ------------------------------------------------ S10-004 Runtime Panel
 
@@ -218,12 +221,14 @@ export function buildReviewQueue(
     }));
 }
 
-/** SSE 事件流订阅 (见 runtimeClient.subscribeEvents 说明)。 */
+/** SSE 事件流订阅 (见 runtimeClient.subscribeEvents 说明)。
+ * sinceSeq: 断线/刷新后续推断点 (0 = 全量; 事件 data 携带 seq 供记录)。 */
 export function subscribeEvents(
   projectId: string,
   handlers: RuntimeEventHandlers,
+  sinceSeq = 0,
 ): RuntimeEventSubscription {
-  const url = `/api/events/stream?project_id=${encodeURIComponent(projectId)}`;
+  const url = `/api/events/stream?project_id=${encodeURIComponent(projectId)}&since_seq=${sinceSeq}`;
   let source: EventSource | null = null;
   let closed = false;
   let mockMode = false;
@@ -243,6 +248,9 @@ export function subscribeEvents(
   const connect = (): void => {
     if (closed || mockMode) return;
     source = new EventSource(url);
+    source.onopen = () => {
+      if (!closed && !mockMode) handlers.onOpen?.();
+    };
     for (const name of RUNTIME_EVENT_NAMES) {
       source.addEventListener(name, (ev: Event) => {
         const message = ev as MessageEvent<string>;

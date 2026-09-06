@@ -136,7 +136,7 @@ describe('runtimeClient — subscribeEvents (SSE 断线重连 + isMock)', () => 
   it('订阅全部 RUNTIME_EVENT_NAMES (含 runtime.created / runtime.status.changed)', () => {
     runtimeClient.subscribeEvents('demo', { onEvent: () => {} });
     const source = lastSource();
-    expect(source.url).toBe('/api/events/stream?project_id=demo');
+    expect(source.url).toBe('/api/events/stream?project_id=demo&since_seq=0');
     expect(Object.keys(source.listeners).sort()).toEqual([...RUNTIME_EVENT_NAMES].sort());
   });
 

@@ -151,10 +151,13 @@ describe('AfProjectShell (AI OS 项目层壳)', () => {
   });
 
   it('runtime 页 → 真实 Runtime Timeline (AfRuntimePage, workflow+timeline 驱动, 失败展示)', async () => {
+    class FakeEventSource { url: string; constructor(url: string) { this.url = url; } close() {} addEventListener() {} }
+    vi.stubGlobal('EventSource', FakeEventSource);
     stubFetch({
       '/api/projects': [sampleProject({ id: 'demo' })],
       '/api/projects/demo/workflow': sampleFailedWorkflow(),
       '/api/projects/demo/timeline?limit=200': sampleFailedTimeline(),
+      '/api/projects/demo/runs': { project_id: 'demo', runs: [], count: 0 },
     });
     render(<AfProjectShell route={projectRoute('runtime')} />);
     expect(await screen.findByTestId('af-runtime-timeline')).toBeInTheDocument();

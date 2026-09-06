@@ -11,7 +11,7 @@
 
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AfRuntimePage } from '../pages/project/AfRuntimePage';
 import {
   sampleFailedTimeline,
@@ -41,6 +41,20 @@ afterEach(() => {
 
 const WORKFLOW_PATH = '/api/projects/demo/workflow';
 const TIMELINE_PATH = '/api/projects/demo/timeline?limit=200';
+const RUNS_PATH = '/api/projects/demo/runs';
+
+/** jsdom 无 EventSource — 最小桩 (ActiveRuntimePanel SSE 订阅; 不断言内部)。 */
+class FakeEventSource {
+  url: string;
+  constructor(url: string) { this.url = url; }
+  close() {}
+  addEventListener() {}
+  onopen: (() => void) | null = null;
+  onerror: ((e: Event) => void) | null = null;
+}
+beforeEach(() => {
+  vi.stubGlobal('EventSource', FakeEventSource);
+});
 
 describe('AfRuntimePage (Runtime 页面 — 真实 workflow+timeline 并行驱动)', () => {
   it('加载中 → AfLoadingState', () => {
@@ -54,6 +68,7 @@ describe('AfRuntimePage (Runtime 页面 — 真实 workflow+timeline 并行驱�
     const fn = stubFetch({
       [WORKFLOW_PATH]: sampleFailedWorkflow(),
       [TIMELINE_PATH]: sampleFailedTimeline(),
+      [RUNS_PATH]: { project_id: 'demo', runs: [], count: 0 },
     });
     render(<AfRuntimePage projectId="demo" projectName="ScorePocket" />);
     expect(await screen.findByTestId('af-runtime-timeline')).toBeInTheDocument();
@@ -75,6 +90,7 @@ describe('AfRuntimePage (Runtime 页面 — 真实 workflow+timeline 并行驱�
     stubFetch({
       [WORKFLOW_PATH]: sampleFailedWorkflow({ stages: [] }),
       [TIMELINE_PATH]: [],
+      [RUNS_PATH]: { project_id: 'demo', runs: [], count: 0 },
     });
     render(<AfRuntimePage projectId="demo" projectName="ScorePocket" />);
     expect(await screen.findByTestId('af-empty-state')).toBeInTheDocument();
@@ -83,7 +99,8 @@ describe('AfRuntimePage (Runtime 页面 — 真实 workflow+timeline 并行驱�
 
   it('失败 (HTTP 500) → AfErrorState + 明确文案; 点 [重试] → 重新拉取成功', async () => {
     const fn = fetchFailThen(
-      { [WORKFLOW_PATH]: sampleFailedWorkflow(), [TIMELINE_PATH]: sampleFailedTimeline() },
+      { [WORKFLOW_PATH]: sampleFailedWorkflow(), [TIMELINE_PATH]: sampleFailedTimeline(),
+        [RUNS_PATH]: { project_id: 'demo', runs: [], count: 0 } },
       1,
     );
     const user = userEvent.setup();
@@ -96,7 +113,7 @@ describe('AfRuntimePage (Runtime 页面 — 真实 workflow+timeline 并行驱�
     expect(screen.getByTestId('af-runtime-failed')).toHaveTextContent(
       'DeveloperError: provider response contains no parseable patch or operations (after 1 retry)',
     );
-    expect(fn).toHaveBeenCalledTimes(4); // 首次 2 请求 + 重试 2 请求
+    expect(fn).toHaveBeenCalledTimes(6); // 首次 3 请求 + 重试 3 请求
   });
 
   it('网络异常 (fetch reject) → AfErrorState + 重试按钮存在', async () => {

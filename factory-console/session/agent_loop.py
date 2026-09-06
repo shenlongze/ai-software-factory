@@ -2113,8 +2113,10 @@ def run_agent_native(
         messages.append({"role": "system", "content": (
             f"【最近对话】(保持上下文连贯, 引用前文时注明; 与本次问题矛盾处以后者为准)\n{hist_block}"
         )})
-    # ---- S47-E1: continuation 引导 (短确认/否定回应上一轮提议, 通用语义) ----
-    cont_guide = _continuation_guide(question, history)
+    # ---- S47-E2: 语义 continuation 引导 (LLM 判定回合关系; 词表降级保护) ----
+    cont_guide = _continuation_guide_semantic(
+        question, history,
+        (lambda p: _simple_llm(p, data_dir=data_dir)) if data_dir else None)
     if cont_guide:
         messages.append({"role": "system", "content": cont_guide})
     if session_store is not None and session_id and service is not None:
@@ -2825,6 +2827,94 @@ def _continuation_guide(question: str, history: list[dict[str, Any]] | None) -> 
         f"用户给出新指示 → 以新指示为准 (可视为在上轮提议基础上收窄/修改)。"
         f"严禁把短确认回复说成『消息不完整/只发来几个字』。"
     )
+
+
+# =====================================================================
+# S47-E2: LLM 语义回合分类 (Semantic Turn Relation)
+# 词表只作候选检测与降级; 判定交给 LLM — 自然语言多种表达 → 同语义。
+# =====================================================================
+_TURN_RELATION_PROMPT = """判定用户对 AI 上一条提议/陈述的回应关系 (只输出 JSON):
+{"relation": "confirm|confirm_modify|decline|reference|redirect|ambiguous",
+ "summary": "一句话概括用户意图 (含修改约束时写明)"}
+
+规则 (语义判断, 勿按字面词匹配):
+- 确认/同意继续上轮提议 (需要/好/可以/行/继续吧/你继续/就按这个来/没问题…) → confirm
+- 确认但附加修改/约束/顺序要求 (可以，不过先…/继续，但先别…/好，先完善…/那就按你说的先做…)
+  → confirm_modify (summary 必须含约束内容)
+- 拒绝/暂停上轮提议 (不用/算了/先别/暂时不做/先放一下/这个先缓一缓…) → decline
+- 指代上轮内容提问 (刚才那个方案呢/你提到的 PRD/继续刚才的工作/接着上面的…) → reference
+- 改变方向/新目标/纠正 (先别做 PRD 重新梳理需求/我想改目标/先做登录不做支付…) → redirect
+- 无法可靠判断 → ambiguous (宁可不猜)
+
+上一条 AI 提议: {proposal}
+用户消息: {message}"""
+
+def _classify_turn_relation(message: str, last_assistant: str,
+                            llm_fn: Callable[[str], str] | None) -> tuple[str, str]:
+    """LLM 语义分类回合关系 (confirm/decline/modify/…)。失败 → ("", "") 走降级。"""
+    try:
+        if llm_fn is None:
+            return "", ""
+        prompt = (_TURN_RELATION_PROMPT
+                  .replace("{proposal}", str(last_assistant)[-900:])
+                  .replace("{message}", str(message)[:400]))
+        raw = str(llm_fn(prompt) or "").strip()
+        m = re.search(r"\{[\s\S]*\}", raw)
+        if not m:
+            return "", ""
+        parsed = json.loads(m.group(0))
+        rel = str(parsed.get("relation") or "").strip()
+        if rel not in ("confirm", "confirm_modify", "decline",
+                       "reference", "redirect", "ambiguous"):
+            return "", ""
+        return rel, str(parsed.get("summary") or "")
+    except Exception:  # noqa: BLE001 — 分类失败 → 降级 (不阻断)
+        return "", ""
+
+
+def _continuation_guide_semantic(question: str, history: list[dict[str, Any]] | None,
+                                 llm_fn: Callable[[str], str] | None) -> str:
+    """S47-E2: 语义 continuation 引导 — LLM 判定回合关系 (非词表行为)。
+
+    词表仅做候选检测 (上轮是否含待回应提议 + 消息是否疑似回应);
+    关系与约束由 LLM 语义判断 → 注入对应引导。任何表达方式 (确认/修改/
+    拒绝/指代/转向) 同一机制。
+    """
+    q = (question or "").strip()
+    if not q or not history:
+        return ""
+    last = None
+    for h in reversed(history):
+        if isinstance(h, dict) and h.get("role") == "assistant":
+            last = str(h.get("content") or "").strip()
+            break
+    if not last or not _PROPOSAL_PATTERN.search(last[-200:]):
+        return ""
+    rel, summary = _classify_turn_relation(q, last, llm_fn)
+    if not rel:
+        # LLM 不可用 → 降级词表 (仅保护路径, 非主机制)
+        return _continuation_guide(q, history)
+    proposal = last[-600:]
+    guide = {
+        "confirm": (f"【上下文延续】用户确认上一轮提议 → 立即用工具执行该提议。"
+                    f"上一轮提议: {proposal}"),
+        "confirm_modify": (f"【上下文延续】用户确认上一轮提议, 但带修改/约束: {summary} → "
+                           f"执行该提议时以用户约束为准 (先做约束内容, 或在约束范围内执行)。"
+                           f"上一轮提议: {proposal}"),
+        "decline": (f"【上下文延续】用户拒绝上一轮提议 ({summary}) → 不执行该提议,"
+                    f" 简短确认后询问/等待新方向。上一轮提议: {proposal}"),
+        "reference": (f"【上下文延续】用户在指代上轮内容提问 ({summary}) → 结合上一轮"
+                      f" 提议/陈述作答, 不要另起炉灶或跳题。上一轮内容: {proposal}"),
+        "redirect": (f"【上下文延续】用户改变方向/给出新目标 ({summary}) → 以新目标为准,"
+                     f" 不执行旧提议。上一轮提议已放弃: {proposal}"),
+        "ambiguous": (f"【上下文延续】用户回复含糊 ({summary}), 但正在回应上一轮提议。"
+                      f" 若意图不明 → 提出最小澄清问题 (列出可能选项), 不要猜工具执行,"
+                      f" 严禁说『消息不完整/只发来几个字』。上一轮提议: {proposal}"),
+    }
+    text = guide.get(rel) or ""
+    if not text:
+        return ""
+    return text + "\n严禁把短回复说成『消息不完整/只发来几个字』；高置信执行, 中置信最小澄清, 低置信不猜。"
 
 
 

@@ -2113,6 +2113,10 @@ def run_agent_native(
         messages.append({"role": "system", "content": (
             f"【最近对话】(保持上下文连贯, 引用前文时注明; 与本次问题矛盾处以后者为准)\n{hist_block}"
         )})
+    # ---- S47-E1: continuation 引导 (短确认/否定回应上一轮提议, 通用语义) ----
+    cont_guide = _continuation_guide(question, history)
+    if cont_guide:
+        messages.append({"role": "system", "content": cont_guide})
     if session_store is not None and session_id and service is not None:
         try:
             _s = session_store.get_session(session_id) if hasattr(session_store, "get_session") else None
@@ -2776,13 +2780,51 @@ def _history_text(history: list[dict[str, Any]] | None, max_turns: int = 4) -> s
 
 
 def _last_assistant_text(history: list[dict[str, Any]] | None) -> str:
-    """最近一条 assistant 消息内容 (质疑自查注入用)。"""
     if not history:
         return ""
     for h in reversed(history):
         if isinstance(h, dict) and h.get("role") == "assistant" and str(h.get("content") or "").strip():
             return str(h["content"])
     return ""
+
+
+#: 短确认/否定/收窄 语义词 (S47-E1 continuation — 语言层通用, 非场景硬编码)
+_CONFIRM_WORDS: tuple[str, ...] = ("需要", "好", "好的", "可以", "行", "要", "嗯", "ok", "yes", "对", "就这么办", "继续")
+_REJECT_WORDS: tuple[str, ...] = ("不用", "不需要", "不必", "不要", "算了", "先不用", "no", "不了")
+#: 上一轮 assistant 提议性问句 (结尾问用户是否要执行某动作)
+_PROPOSAL_PATTERN = re.compile(r"(需要吗|要我|要不要|是否|怎么样|可以吗|如何|想不想|好不好|行吗|吗[?？]?)$")
+
+def _continuation_guide(question: str, history: list[dict[str, Any]] | None) -> str:
+    """S47-E1: 通用 continuation 引导 — 用户短确认/否定/收窄 回应上一轮 AI 提议。
+
+    零场景硬编码: 只做 (短确认语义) + (上一轮 assistant 含提议问句) 两条件,
+    任何「AI 提议 → 用户 需要/好/不用/先做X」都走同一引导。无提议 → 空。
+    """
+    q = (question or "").strip()
+    if not q or not history:
+        return ""
+    last = None
+    for h in reversed(history):
+        if isinstance(h, dict) and h.get("role") == "assistant":
+            last = str(h.get("content") or "").strip()
+            break
+    if not last or not _PROPOSAL_PATTERN.search(last[-200:]):
+        return ""
+    lowered = q.lower()
+    is_confirm = any(w in lowered for w in _CONFIRM_WORDS) and len(q) <= 12
+    is_reject = any(w in lowered for w in _REJECT_WORDS)
+    if not (is_confirm or is_reject):
+        return ""
+    proposal = last[-600:]
+    tone = ("确认并执行上一轮提议" if is_confirm and not is_reject
+            else "拒绝上一轮提议" if is_reject else "按用户新指示调整")
+    return (
+        f"【上下文延续】上一轮你提议: {proposal}\n"
+        f"用户本次回复是对该提议的回应 → 判定为「{tone}」。"
+        f"确认 → 立即用工具执行该提议动作; 拒绝 → 不执行并简短说明; "
+        f"用户给出新指示 → 以新指示为准 (可视为在上轮提议基础上收窄/修改)。"
+        f"严禁把短确认回复说成『消息不完整/只发来几个字』。"
+    )
 
 
 

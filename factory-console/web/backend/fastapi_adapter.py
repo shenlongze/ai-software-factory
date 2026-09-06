@@ -1879,6 +1879,59 @@ def build_app(
             raise HTTPException(status_code=404, detail="artifact version not found")
         return result
 
+    # ============================================== S45: User Acceptance (ACC-*)
+    @app.get("/api/projects/{project_id}/acceptances")
+    def api_project_acceptances(project_id: str,
+                                artifact_id: str = "", status: str = "") -> dict[str, Any]:
+        """项目验收清单 (GET — canonical ACC-* 投影; 无独立业务状态)。"""
+        if workspace_root is None:
+            return ok_list([])
+        try:
+            _acc = _console_import("acceptance_truth")
+            items = _acc.list_acceptances(workspace_root, artifact_id=artifact_id,
+                                          status=status)
+            return ok_list(items)
+        except Exception:  # noqa: BLE001 — 失败安全
+            return ok_list([])
+
+    @app.post("/api/acceptances/{acceptance_id}/approve")
+    def api_acceptance_approve(acceptance_id: str,
+                               body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """用户 Approve (POST — backend canonical; reviewer 必需)。"""
+        if workspace_root is None:
+            raise HTTPException(status_code=503, detail="workspace unavailable")
+        try:
+            _acc = _console_import("acceptance_truth")
+            reviewer = str((body or {}).get("reviewer") or "user")
+            comment = str((body or {}).get("comment") or "")
+            result = _acc.approve(workspace_root, acceptance_id, reviewer=reviewer,
+                                  comment=comment)
+            return {"ok": True, **result}
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/api/acceptances/{acceptance_id}/request-change")
+    def api_acceptance_request_change(
+        acceptance_id: str, body: dict[str, Any] = Body(default={}),
+    ) -> dict[str, Any]:
+        """用户 Request Change (POST — 置 CHANGE_REQUESTED + 记录 comment;
+        新 production 经 workflow start 触发 — backend 真实执行)。"""
+        if workspace_root is None:
+            raise HTTPException(status_code=503, detail="workspace unavailable")
+        try:
+            _acc = _console_import("acceptance_truth")
+            reviewer = str((body or {}).get("reviewer") or "user")
+            comment = str((body or {}).get("comment") or "")
+            result = _acc.request_change(workspace_root, acceptance_id,
+                                         reviewer=reviewer, comment=comment)
+            return {"ok": True, **result}
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
     @app.get("/api/projects/{project_id}/docs")
     def api_project_docs_list(project_id: str) -> dict[str, Any]:
         """项目文档清单 (GET — 核心资产 + 可配多目录扫描; 未装配 → 空)。"""

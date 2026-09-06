@@ -255,11 +255,13 @@ def _has_evidence(root: Path | str, ver_id: str) -> bool:
 
 def gate_release(root: Path | str, release_id: str, *,
                  require_approval: bool = False,
+                 require_acceptance: bool = False,
                  actor: str = "release_engineer") -> dict[str, Any]:
-    """Release Gate (契约 04): 消费 canonical art-*/ver-*/EVD-*。
+    """Release Gate (契约 04 + S45): 消费 canonical art-*/ver-*/EVD-*。
 
     MUST: artifact ≥1 / verification ≥1 且全 PASS / evidence completeness /
-          run+exs provenance / (approval 若 require_approval — execute 时查)
+          run+exs provenance / (approval 若 require_approval — execute 时查) /
+          (acceptance APPROVED 若 require_acceptance — S45 用户验收门)
     全过 → GATED; 否则 → REJECTED (诚实, 可修复后 CANDIDATE 重试)。
     """
     r = get_release(root, release_id)
@@ -287,6 +289,18 @@ def gate_release(root: Path | str, release_id: str, *,
         missing.append("task_run")
     if not r.get("exs_id"):
         missing.append("exs")
+    # 5. S45: 用户 Acceptance APPROVED (require_acceptance=True 时 — 发布前门)
+    if require_acceptance and arts:
+        try:
+            from factory_console.acceptance_truth import (
+                acceptance_status_for_release,
+            )
+
+            acc = acceptance_status_for_release(root, arts)
+            if not acc.get("allowed"):
+                missing.extend(acc.get("missing") or [])
+        except Exception:  # noqa: BLE001 — 域不可用 → 诚实 fail (禁无验收发布)
+            missing.append("acceptance_unavailable")
     allowed = len(missing) == 0
     r["gate"] = {"allowed": allowed, "missing": missing,
                  "checked_at": _now_iso(), "actor": actor}

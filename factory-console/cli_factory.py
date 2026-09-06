@@ -1031,6 +1031,8 @@ class FactoryCLI:
             return self.ptrace_cmd(args)
         if args.command == "release-truth":
             return self.rtrace_cmd(args)
+        if args.command == "learning":
+            return self.learning_cmd(args)
         if args.command == "quality":
             return self.quality_cmd(args)
         if args.command == "ct":
@@ -6883,6 +6885,59 @@ class FactoryCLI:
                   f"task={r.get('task_id') or '-'} run={r.get('task_run_id') or '-'}")
         return 0
 
+    def learning_cmd(self, args: argparse.Namespace) -> int:
+        """factory learning — Learning Consumption (P2-D): obs/cand/prom/profile/decision。"""
+        root = Path(args.data_dir or self.data_dir)
+        from factory_console import learning_truth as lt
+
+        ent = args.entity
+        if ent == "observation":
+            obs = lt.list_observations(root, agent=args.agent or "",
+                                       capability=args.capability or "",
+                                       signal=args.signal or "")
+            print(f"Observations ({len(obs)}):")
+            for o in obs:
+                print(f"  {o.get('observation_id')}  {str(o.get('signal')):<8} "
+                      f"agent={o.get('agent_id') or '-'} cap={o.get('capability') or '-'} "
+                      f"exp={o.get('source_experience_id') or '-'}")
+            return 0
+        if ent == "candidate":
+            cands = lt.list_candidates(root, agent=args.agent or "", status=args.status or "")
+            print(f"Candidates ({len(cands)}):")
+            for c in cands:
+                print(f"  {c.get('candidate_id')}  {str(c.get('status')):<9} "
+                      f"agent={c.get('agent_id') or '-'} cap={c.get('capability') or '-'} "
+                      f"evidence={c.get('evidence_count')}")
+            return 0
+        if ent == "promotion":
+            proms = lt.list_promotions(root, status=args.status or "")
+            print(f"Promotions ({len(proms)}):")
+            for p in proms:
+                print(f"  {p.get('promotion_id')}  {str(p.get('status')):<9} "
+                      f"agent={p.get('agent_id') or '-'} cap={p.get('capability') or '-'} "
+                      f"evidence={p.get('evidence_count')} "
+                      f"auto={str(p.get('auto_allowed'))}")
+            return 0
+        if ent == "profile":
+            profs = lt.list_profiles(root, agent_id=args.agent or "")
+            print(f"Profiles ({len(profs)}):")
+            for p in profs:
+                cur = " (current)" if p.get("is_current") else ""
+                print(f"  {p.get('profile_id')}  success_rate={p.get('success_rate')} "
+                      f"evid={p.get('evidence_count')} prom={p.get('promotion_id')}{cur}")
+            return 0
+        if ent == "decision":
+            rds = lt.list_routing_decisions(root)
+            print(f"RoutingDecisions ({len(rds)}):")
+            for d in rds:
+                print(f"  {d.get('decision_id')}  run={d.get('task_run_id') or '-'} "
+                      f"sel={d.get('selected_resource') or '-'} "
+                      f"profile={d.get('profile_id') or '-'}v{d.get('profile_version') or '-'} "
+                      f"fallback={str(d.get('fallback'))}")
+            return 0
+        print(f"unknown entity: {ent}")
+        return 1
+
     def workflow_cmd(self, args: argparse.Namespace) -> int:
         """factory workflow — Workflow 列表 (S10)。"""
         from factory_console.professional_workflow import (
@@ -7773,6 +7828,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_rt = sub.add_parser("release-truth", help="Release Truth (P2-A): create/gate/list/trace — canonical RELEASE-*")
     p_rt.add_argument("action", choices=["create", "gate", "execute", "trace", "list"],
                       help="动作: create (新 release) / gate (门检查) / execute (发布, 需审批) / trace (反查) / list")
+    p_lt = sub.add_parser("learning", help="Learning Consumption (P2-D): observation/candidate/promotion/profile/decision list")
+    p_lt.add_argument("entity", choices=["observation", "candidate", "promotion", "profile", "decision"],
+                      help="learning 实体 (list 视图)")
+    p_lt.add_argument("--agent", default="", help="按 agent 过滤")
+    p_lt.add_argument("--capability", default="", help="按 capability 过滤")
+    p_lt.add_argument("--signal", default="", help="按 signal 过滤 (observation)")
+    p_lt.add_argument("--status", default="", help="按 status 过滤")
+    p_lt.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     p_rt.add_argument("release_id", nargs="?", help="RELEASE-* id (gate/trace 用)")
     p_rt.add_argument("--task-run", default="", help="task_run_id (run-*, create 用)")
     p_rt.add_argument("--exs", default="", help="exs_id (EXS-*, create 用)")

@@ -1178,13 +1178,25 @@ def _route_agent_by_capability(
         objective=objective, capabilities=derive_capabilities(objective)
     )
     try:
-        # S10-119 M4-5: 画像分来源 agent_profiles (失败安全无画像 → 中性;
-        # 高画像/低负载 Agent 优先 — 排序键扩展, K-1 基本逻辑不变)
-        from ..memory.learning_loop import load_agent_profiles
+        # S10-119 M4-5 / P2-D: 画像分来源 = governed profile (learning_truth)
+        # 优先; 失败/无 → legacy agent_profiles (失败安全中性)。
+        # P2-D: governed profile {agent_id: {success_rate}} 经 governance
+        # promotion 产生 — router 只消费数据 (零算法修改, 契约 D5/D7)。
+        workspace = getattr(context, "workspace", None) if context is not None else None
+        agent_profiles: dict[str, dict] = {}
+        try:
+            from ..learning_truth import router_profiles
 
-        agent_profiles = load_agent_profiles(
-            getattr(context, "workspace", None) if context is not None else None
-        )
+            agent_profiles = router_profiles(workspace) if workspace else {}
+        except Exception:  # noqa: BLE001 — governed 不可用 → legacy/中性
+            agent_profiles = {}
+        if not agent_profiles and workspace:
+            try:
+                from ..memory.learning_loop import load_agent_profiles
+
+                agent_profiles = load_agent_profiles(workspace)
+            except Exception:  # noqa: BLE001
+                agent_profiles = {}
         decision = CapabilityRouter(
             build_agent_resources(agents, agent_profiles=agent_profiles)
         ).route(request)

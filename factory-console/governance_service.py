@@ -47,6 +47,9 @@ POLICIES: dict[str, dict[str, Any]] = {
     "release": {"risk_level": "high", "approval_required": True,
                 "allowed_approvers": ["human"], "required_verification": True,
                 "required_evaluation": True},
+    "learning_promotion": {"risk_level": "medium", "approval_required": True,
+                           "allowed_approvers": ["human"],
+                           "required_verification": False},
 }
 
 #: Agent 不能批准 (approver 必须是 human; Agent 只可 request)
@@ -123,7 +126,7 @@ def request_approval(root: Path | str, *, production_run_id: str,
     # K1: conversation 主体 (对话触发的工作审批)
     # K3: task 主体 (高风险 task 执行 gate)
     if subject_type in ("experiment", "workforce_variant", "conversation", "task",
-                        "release"):  # P2-A: Release 主体 (RELEASE-*, 不绑 M3 run)
+                        "release", "learning_promotion"):  # P2-D: 学习晋升审批主体
         pass
     else:
         run = get_production_run(root, production_run_id)

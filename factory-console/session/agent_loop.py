@@ -219,8 +219,16 @@ def tool_schemas(data_dir: str | Path | None = None) -> list[dict[str, Any]]:
             {"title": {"type": "string"}, "action": {"type": "string", "enum": ["start", "done", "priority"]},
              "priority": {"type": "string", "enum": ["P0", "P1", "P2", "P3"]}}, ["title", "action"]),
         _fc("create_task", "创建任务(执行)", "在当前项目创建新任务",
-            {"title": {"type": "string"}, "description": {"type": "string"},
-             "priority": {"type": "string", "enum": ["P0", "P1", "P2", "P3"]}}, ["title"]),
+            {"title": {"type": "string"}, "description": {"type": "string"}, "priority": {"type": "string", "enum": ["P0", "P1", "P2", "P3"]}}, ["title"]),
+        _fc("save_product_record", "保存产品链记录 (canonical)",
+            "把需求分析/PRD 等真实产出写入 canonical Product Truth。kind: "
+            "discovery(需求理解) / requirement(需求) / prd(产品方案) / plan(计划)。"
+            "用户确认的分析结果/需求/PRD 内容用本工具落盘 (title+content)。"
+            "只写用户认可的正式产出, 不写会话猜测。",
+            {"kind": {"type": "string", "enum": ["discovery", "requirement", "prd", "plan"]},
+             "title": {"type": "string"}, "content": {"type": "string"},
+             "idea_id": {"type": "string", "description": "kind=discovery 时必填 (IDEA-*)"}},
+            ["kind", "title", "content"]),
         _fc("project_docs", "文档清单", "列出项目文档/产出物", {}),
         _fc("git_status", "仓库状态", "查询 git 仓库: 远程/分支/领先提交", {}),
         _fc("monitor", "系统监控", "查询系统/服务运行状态", {}),
@@ -1233,6 +1241,45 @@ def dispatch(
             lines.append("")
             lines.append(_PROJECT_LIST_ANSWER_TEMPLATE)
             return {"ok": True, "output": "\n".join(lines)}
+        if tool_id == "save_product_record":
+            # S47-E3: 会话真实产出 → canonical Product Truth (暴露既有写 API)
+            try:
+                import importlib
+                pt = importlib.import_module("product_truth")
+                kind = str(args.get("kind") or "").strip().lower()
+                title = str(args.get("title") or "").strip()
+                content = str(args.get("content") or "").strip()
+                if kind not in ("discovery", "requirement", "prd", "plan"):
+                    return {"ok": False, "error": "kind 必须是 discovery/requirement/prd/plan"}
+                if not title:
+                    return {"ok": False, "error": "title 必填"}
+                fn = {
+                    "discovery": pt.create_discovery,
+                    "requirement": pt.create_requirement,
+                    "prd": pt.create_prd,
+                    "plan": pt.create_plan,
+                }[kind]
+                if kind == "prd":
+                    return {"ok": False,
+                            "error": "PRD 请用 plan_development / 生产工作流生成 (有完整评审链); 本工具只落需求分析产出"}
+                if kind == "plan":
+                    return {"ok": False,
+                            "error": "计划请用 plan_development 生成 (结构化任务+审批); 本工具只落需求分析产出"}
+                if kind == "discovery":
+                    idea_id = str(args.get("idea_id") or "").strip()
+                    if not idea_id:
+                        return {"ok": False, "error": "discovery 需要 idea_id (先建/查 Idea)"}
+                    rec = fn(root, idea_id=idea_id, title=title,
+                             input_ref=str(content)[:2000], actor="human")
+                else:  # requirement → canonical REQ-* (product_truth)
+                    rec = fn(root, title=title,
+                             description=str(content)[:8000], source="conversation",
+                             actor="human")
+                rid = rec.get("discovery_id") or rec.get("req_id") or rec.get("prd_id") or rec.get("plan_id") or str(rec.get("id") or "")
+                return {"ok": True, "record": f"{kind} {rid} 已写入 canonical (project {project_id})", "id": rid}
+            except Exception as exc:  # noqa: BLE001
+                return {"ok": False, "error": f"保存失败: {type(exc).__name__}: {exc}"}
+
         if tool_id == "project_lifecycle":
             # S47-E1: 产品链各阶段真实状态 (canonical product_truth + org 资产)
             return _project_lifecycle(root, project_id)
@@ -2115,6 +2162,7 @@ def run_agent_native(
         )})
     # ---- S47-E2: Semantic Governor + Conversation State (主语义控制) ----
     _gov_guide = ""
+    _gov: dict[str, Any] = {}
     try:
         _cstate = _conv_state_load(data_dir, session_id) if (data_dir and session_id) else {}
         _gov = _govern_turn(
@@ -2136,6 +2184,23 @@ def run_agent_native(
         _gov_guide = ""
     if _gov_guide:
         messages.append({"role": "system", "content": _gov_guide})
+
+    # ---- S47-E3: Active Work 恢复 (continue/confirm/modify/reference) ----
+    try:
+        if _gov_guide and session_id and data_dir:
+            _wstate = _conv_state_load(data_dir, session_id)
+            _wstate.update({"relation": _gov.get("relation", ""),
+                            "topic": _gov.get("topic") or _wstate.get("topic") or "",
+                            "domain": _gov.get("domain") or _wstate.get("domain") or ""})
+            _recovery = _work_recovery_guide(question, _wstate, history,
+                                             (lambda p: _simple_llm(p, data_dir=data_dir)) if data_dir else None)
+            if _recovery:
+                messages.append({"role": "system", "content": _recovery})
+                # 持久化 active_work 引用 (会话 projection, 非业务 truth)
+                _wstate.setdefault("active_work", "")
+                _conv_state_save(data_dir, session_id, _wstate)
+    except Exception:  # noqa: BLE001 — recovery 失败不阻断
+        pass
 
     # ---- E1/E2 降级: 语义 guide 未触发且上轮提议句尾匹配 → 词表/文本 guide ----
     if not _gov_guide:
@@ -3109,6 +3174,102 @@ def _governance_guide(relation: str, domain: str, needs_tool: bool,
         return ""
     head = f"【语义引导】relation={relation} · domain={domain}"
     return head + "\n" + "\n".join(g) + "\n严禁把用户短回复说成『消息不完整/只发来几个字』。"
+
+
+# =====================================================================
+# S47-E3: Active Work Resolver (continue/confirm/modify/reference → 工作恢复)
+# =====================================================================
+_ACTIVE_WORK_PROMPT = """用户正在继续一段进行中的工作。基于对话状态判断工作恢复上下文 (只输出 JSON):
+{"active_work": "当前进行中的工作名 (如 需求分析/PRD/任务拆解; 无 → null)",
+ "current_stage": "当前阶段 (需求分析: 收集→整理→确认; PRD: 草稿→评审; 无 → null)",
+ "next_action": "下一步具体生产动作一句话 (无 → null)",
+ "need_user_input": true|false,
+ "question": "必须问用户的问题 (若 need_user_input=true 且无法从现有信息推断; 否则 null)",
+ "reason": "判断依据一句话 (引用已知信息)"}
+
+规则:
+- 用户说"继续/接着做/继续刚才的/把…做完整"等 → 恢复上轮工作: active_work 取
+  上轮主题/域对应工作, next_action = 推进该工作到下一产出 (不要重问范围/技术
+  形态 — 除非已有信息真不足)
+- 对话状态: topic={topic} domain={domain} relation={relation}
+  上轮提议: {pending}
+最近对话:
+{history}
+用户消息: {message}"""
+
+
+def _resolve_active_work(message: str, state: dict[str, Any],
+                         history: list[dict[str, Any]] | None,
+                         llm_fn: Callable[[str], str] | None) -> dict[str, Any]:
+    """LLM 恢复 Active Work (工作名/阶段/下一步/是否需问)。失败 → 空 (不阻断)。"""
+    try:
+        if llm_fn is None:
+            return {}
+        hist_text = ""
+        if history:
+            lines = []
+            for h in history[-6:]:
+                if isinstance(h, dict) and h.get("role") in ("user", "assistant"):
+                    who = "用户" if h.get("role") == "user" else "AI"
+                    lines.append(f"{who}: {str(h.get('content') or '')[:220]}")
+            hist_text = "\n".join(lines[-6:])
+        prompt = (_ACTIVE_WORK_PROMPT
+                  .replace("{topic}", str(state.get("topic") or "无"))
+                  .replace("{domain}", str(state.get("domain") or "无"))
+                  .replace("{relation}", str(state.get("relation") or "无"))
+                  .replace("{pending}", str(state.get("pending") or "无")[:300])
+                  .replace("{history}", hist_text[-1600:])
+                  .replace("{message}", str(message)[:400]))
+        raw = str(llm_fn(prompt) or "").strip()
+        m = re.search(r"\{[\s\S]*\}", raw)
+        if not m:
+            return {}
+        parsed = json.loads(m.group(0))
+        out = {
+            "active_work": str(parsed.get("active_work") or "")[:80],
+            "current_stage": str(parsed.get("current_stage") or "")[:80],
+            "next_action": str(parsed.get("next_action") or "")[:300],
+            "need_user_input": bool(parsed.get("need_user_input", False)),
+            "question": str(parsed.get("question") or "")[:200],
+        }
+        if out["active_work"]:
+            return out
+        return {}
+    except Exception:  # noqa: BLE001 — resolver 失败不阻断
+        return {}
+
+
+def _work_recovery_guide(msg: str, state: dict[str, Any],
+                         history: list[dict[str, Any]] | None,
+                         llm_fn: Callable[[str], str] | None) -> str:
+    """S47-E3: continue/confirm/modify/reference → 工作恢复引导。
+
+    把 语义 continue 转成 具体生产上下文 (active_work + next_action),
+    让 LLM 真正接着干, 而不是重新诊断/澄清。
+    """
+    rel = str(state.get("relation") or "")
+    if rel not in ("continue", "confirm", "modify", "reference"):
+        return ""
+    w = _resolve_active_work(msg, state, history, llm_fn)
+    if not w:
+        return ""
+    aw = w.get("active_work") or ""
+    na = w.get("next_action") or ""
+    st = w.get("current_stage") or ""
+    need_q = bool(w.get("need_user_input"))
+    q = w.get("question") or ""
+    lines = [f"【恢复工作】relation={rel} · active_work={aw or '未知'}"]
+    if st:
+        lines.append(f"- 阶段: {st}")
+    if na:
+        lines.append(f"- 下一步 (执行方向): {na}")
+    lines.append("- 先读取该工作相关真实 Truth (product_lifecycle / 项目记录), 判断已有哪些、缺什么;")
+    if need_q and q:
+        lines.append(f"- 存在影响产出的未知信息 → 问用户: {q}")
+    else:
+        lines.append("- 已有信息足以推进 → 直接执行 next_action, 产出真实记录; 不要重新做项目诊断/任务统计, 不要重问已覆盖的范围。")
+    lines.append("- 产出如需落盘 → 用 save_product_record 写 canonical 记录。")
+    return "\n".join(lines)
 
 
 def _audit_sess(data_dir, session_id, question, intent, calls, total_calls, rounds,

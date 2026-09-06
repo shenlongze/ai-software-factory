@@ -516,10 +516,16 @@ function MessageBubble({ role, content, meta, runs = [], expandedRunId, onToggle
       : '';
     return `📋 任务统计: ${total} 个 (待办 ${todo} · 完成 ${done} · 执行中 ${running} · 阻塞 ${blocked}${prioLine})`;
   })();
-  // AI 回复永远作为主语义输出 (S47-E2); 任务统计仅作辅助卡片
+  // S47-E2/E3: AI 回复永远是主语义输出; 任务统计仅作辅助卡片
   const displayContent = isUser ? content : actionText(content);
-  const showStatsCard = !!taskStatsText && !isUser &&
-    // AI 文本未覆盖同一统计时才附卡 (避免重复)
+  // 卡片只在"纯任务统计查询轮"出现 (tool_calls 仅 project_tasks 或其同类
+  // 任务工具); 混有其他业务工具 (lifecycle/status/scan/bash…) 的调查/分析
+  // 轮 → 不显示统计 (避免无关信息污染会话)
+  const tcTools = (meta?.tool_calls as Array<{ tool?: string }> | undefined)
+    ?.map((t) => t.tool ?? '') ?? [];
+  const pureTaskQuery = tcTools.length > 0 &&
+    tcTools.every((t) => t === 'project_tasks');
+  const showStatsCard = !!taskStatsText && !isUser && pureTaskQuery &&
     !displayContent.includes('任务统计') && !/共有 \d+ 个任务/.test(displayContent);
   // S34-001: 空内容 + 无工具调用 + 无 Run → 不渲染 (执行状态卡负责提示)
   if (!isUser && !content.trim() && !(meta?.tool_calls && meta.tool_calls.length > 0) && !(meta?.run_ids && meta.run_ids.length > 0)) {

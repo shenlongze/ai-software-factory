@@ -6817,7 +6817,7 @@ class FactoryCLI:
         return 0
 
     def rtrace_cmd(self, args: argparse.Namespace) -> int:
-        """factory release-truth — Release Truth (P2-A): create/gate/list/trace。"""
+        """factory release-truth — Release Truth (P2-A): create/gate/execute/trace/list。"""
         root = Path(args.data_dir or self.data_dir)
         from factory_console import release_truth as rt
 
@@ -6829,6 +6829,27 @@ class FactoryCLI:
             print(f"  artifacts={len(rel.get('artifact_ids') or [])} "
                   f"verifications={len(rel.get('verification_ids') or [])} "
                   f"evidence={len(rel.get('evidence_ids') or [])}")
+            return 0
+        if args.action == "execute":
+            # P2-A execute (需 governance approval — FAIL→BLOCK)
+            try:
+                ex = rt.execute_release(root, args.release_id or "", actor="user")
+            except ValueError as e:
+                print(f"execute blocked: {e}")
+                return 1
+            print(f"{args.release_id} → {ex['status']}")
+            # P2-C (Experience Bridge): RELEASE 终态 → canonical exp-*
+            try:
+                from factory_console.experience_bridge import record_release
+
+                record_release(root, ex.get("release_id") or "",
+                               outcome=str(ex.get("status") or "RELEASED"),
+                               gate_missing=(ex.get("gate") or {}).get("missing")
+                               if isinstance(ex.get("gate"), dict) else None,
+                               actor="user")
+                print(f"  experience recorded (release → exp-*)")
+            except Exception:  # noqa: BLE001
+                pass
             return 0
         if args.action == "gate":
             r = rt.get_release(root, args.release_id or "")
@@ -7750,8 +7771,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_trace.add_argument("task_id", help="TASK-* id")
     p_trace.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     p_rt = sub.add_parser("release-truth", help="Release Truth (P2-A): create/gate/list/trace — canonical RELEASE-*")
-    p_rt.add_argument("action", choices=["create", "gate", "trace", "list"],
-                      help="动作: create (新 release) / gate (门检查) / trace (反查) / list")
+    p_rt.add_argument("action", choices=["create", "gate", "execute", "trace", "list"],
+                      help="动作: create (新 release) / gate (门检查) / execute (发布, 需审批) / trace (反查) / list")
     p_rt.add_argument("release_id", nargs="?", help="RELEASE-* id (gate/trace 用)")
     p_rt.add_argument("--task-run", default="", help="task_run_id (run-*, create 用)")
     p_rt.add_argument("--exs", default="", help="exs_id (EXS-*, create 用)")

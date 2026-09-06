@@ -73,6 +73,13 @@ class ExperienceRecord:
     source:      数据源 (execution_records/repair_task/replanning_decisions/
                  gap_analysis/...)
     created_at:  创建时间 ISO (UTC)
+    # P2-C (Experience Bridge): canonical provenance anchors (Model B —
+    # 只存锚点 FK, 其余经 canonical reverse_trace 获取; 不复制事实)。
+    # 空 = legacy/手动经验 (既有 84 条无 FK, 保持不迁移)。
+    task_run_id:  run-* anchor (P0 TaskRun)
+    exs_id:       EXS-* anchor (P0 执行结果)
+    release_id:   RELEASE-* anchor (P2-A; 执行经验可空, release 决策经验必有)
+    source_id:    确定性来源引用 (幂等键 (source, source_id) 基础)
     """
 
     id: str = field(default_factory=lambda: f"exp-{uuid.uuid4().hex[:12]}")
@@ -89,6 +96,11 @@ class ExperienceRecord:
     confidence: float = 0.5
     source: str = ""
     created_at: str = field(default_factory=_now_iso)
+    # P2-C anchors (向后兼容: 旧记录 from_dict 缺省空)
+    task_run_id: str = ""
+    exs_id: str = ""
+    release_id: str = ""
+    source_id: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         """序列化 (JSON 落盘/API 响应口径)。"""
@@ -124,6 +136,10 @@ class ExperienceRecord:
             confidence=_coerce_float(data.get("confidence"), 0.5),
             source=str(data.get("source") or ""),
             created_at=str(data.get("created_at") or _now_iso()),
+            task_run_id=str(data.get("task_run_id") or ""),
+            exs_id=str(data.get("exs_id") or ""),
+            release_id=str(data.get("release_id") or ""),
+            source_id=str(data.get("source_id") or ""),
         )
 
 

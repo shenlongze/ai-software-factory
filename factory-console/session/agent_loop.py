@@ -647,6 +647,22 @@ def _chain_auto_worker(root: Any, project_id: str, session_id: str, service: Any
                     )
                 except Exception:  # noqa: BLE001 — finalize 失败不阻断委派链
                     pass
+            # P2-C (Experience Bridge): finalize 终态 → canonical exp-*
+            # (单向派生; (source, source_id) 幂等; 失败安全 — 不阻断委派链)
+            try:
+                if run_id and _exs:
+                    from ..experience_bridge import record_execution
+
+                    record_execution(
+                        root, task_run_id=run_id, exs_id=_exs,
+                        success=bool(r.get("ok")),
+                        ver_status=str((r.get("verify") or {}).get("result") or ""),
+                        project=project_id,
+                        task=str(task.get("title") or "")[:80],
+                        actor="session-chain-auto",
+                    )
+            except Exception:  # noqa: BLE001 — bridge 失败不阻断
+                pass
             if not r.get("ok"):
                 return {"ok": False, "error": r.get("error") or "外部执行失败",
                         # P0-F2: 失败也回传 EXS (Task.exec_ref=EXS 在失败路径成立)
@@ -1695,6 +1711,21 @@ def dispatch(
                         )
                     except Exception:  # noqa: BLE001 — finalize 失败不阻断委派链
                         pass
+                # P2-C (Experience Bridge): finalize 终态 → canonical exp-*
+                try:
+                    if run_id and _exs:
+                        from ..experience_bridge import record_execution
+
+                        record_execution(
+                            root, task_run_id=run_id, exs_id=_exs,
+                            success=bool(r.get("ok")),
+                            ver_status=str((r.get("verify") or {}).get("result") or ""),
+                            project=project_id,
+                            task=str(task.get("title") or "")[:80],
+                            actor="session-chain",
+                        )
+                except Exception:  # noqa: BLE001 — bridge 失败不阻断
+                    pass
                 if not r.get("ok"):
                     return {"ok": False, "error": r.get("error") or "外部执行失败",
                             # P0-F2: 失败也回传 EXS (Task.exec_ref=EXS 在失败路径成立)

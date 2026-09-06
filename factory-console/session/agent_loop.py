@@ -223,8 +223,9 @@ def tool_schemas(data_dir: str | Path | None = None) -> list[dict[str, Any]]:
         _fc("save_product_record", "保存产品链记录 (canonical)",
             "把需求分析/PRD 等真实产出写入 canonical Product Truth。kind: "
             "discovery(需求理解) / requirement(需求) / prd(产品方案) / plan(计划)。"
-            "用户确认的分析结果/需求/PRD 内容用本工具落盘 (title+content)。"
-            "只写用户认可的正式产出, 不写会话猜测。",
+            "用户要求 继续/整理/分析/接受建议 → 即授权产出, 把整理结果写入 "
+            "(requirement 以 draft 状态落盘, 后续可完善); 不要在回答里只输出"
+            "文本而不落盘。仅凭猜测无依据的内容不写。",
             {"kind": {"type": "string", "enum": ["discovery", "requirement", "prd", "plan"]},
              "title": {"type": "string"}, "content": {"type": "string"},
              "idea_id": {"type": "string", "description": "kind=discovery 时必填 (IDEA-*)"}},
@@ -771,8 +772,7 @@ def _project_lifecycle(root: Any, project_id: str) -> dict[str, Any]:
 
     def _canon(loader_name: str, key: str, label: str) -> None:
         try:
-            import importlib
-            pt = importlib.import_module("product_truth")
+            from factory_console import product_truth as pt
             fn = getattr(pt, loader_name, None)
             recs = fn(root) if fn is not None else []
             hit = [r for r in recs
@@ -1244,8 +1244,7 @@ def dispatch(
         if tool_id == "save_product_record":
             # S47-E3: 会话真实产出 → canonical Product Truth (暴露既有写 API)
             try:
-                import importlib
-                pt = importlib.import_module("product_truth")
+                from factory_console import product_truth as pt
                 kind = str(args.get("kind") or "").strip().lower()
                 title = str(args.get("title") or "").strip()
                 content = str(args.get("content") or "").strip()
@@ -2200,14 +2199,18 @@ def run_agent_native(
                     _truth = str(_tl.get("output") or "")[:1500]
             except Exception:  # noqa: BLE001
                 pass
-            _recovery = _work_recovery_guide(
+            _recovery, _aw = _work_recovery_guide(
                 question, _wstate, history,
                 (lambda p: _simple_llm(p, data_dir=data_dir)) if data_dir else None,
                 truth_summary=_truth)
             if _recovery:
                 messages.append({"role": "system", "content": _recovery})
-                # E3.1: 锚定 active_work 输出回 state (供下轮从新位置继续)
-                _wstate.setdefault("active_work", "")
+                # E3.2: resolver 结构化输出真写回 state (跨轮锚定, replace 语义)
+                if _aw:
+                    _wstate["active_work"] = _aw.get("goal") or _wstate.get("active_work") or ""
+                    _wstate["next_action"] = _aw.get("next_action") or ""
+                    _wstate["current_stage"] = _aw.get("current_stage") or ""
+                    _wstate["need_user_input"] = bool(_aw.get("need_user_input"))
                 _conv_state_save(data_dir, session_id, _wstate)
     except Exception:  # noqa: BLE001 — recovery 失败不阻断
         pass
@@ -3177,7 +3180,7 @@ def _governance_guide(relation: str, domain: str, needs_tool: bool,
         }.get(domain, "对应域查询工具")
         g.append(f"【事实查询】域 = {domain} → 查询工具: {_tool_hint}; 用真实事实再答, "
                  f"不要用其他域统计回答本域问题。")
-    if not needs_tool:
+    if not needs_tool and relation not in ("continue", "confirm", "modify", "reference"):
         g.append("【工具克制】本轮无需调用工具即可回答/处理 — 不要为了'回答点什么'而调用"
                  "项目诊断工具; 信息不足就基于对话说明或提出最小澄清。")
     if not g:
@@ -3207,6 +3210,7 @@ _ACTIVE_WORK_PROMPT = """用户正在继续一段进行中的工作。基于对�
 
 对话状态: topic={topic} domain={domain} relation={relation}
 上轮提议: {pending}
+已锚定 Active Work: {work} | 上一轮 Next Action: {prev_next}
 
 当前真实 Truth (该工作相关):
 {truth}
@@ -3237,8 +3241,10 @@ def _resolve_active_work(message: str, state: dict[str, Any],
                   .replace("{domain}", str(state.get("domain") or "无"))
                   .replace("{relation}", str(state.get("relation") or "无"))
                   .replace("{pending}", str(state.get("pending") or "无")[:300])
+                  .replace("{work}", str(state.get("active_work") or "无")[:80])
+                  .replace("{prev_next}", str(state.get("next_action") or "无")[:200])
                   .replace("{truth}", str(truth_summary or "无 (未读取)")[-1500:])
-                  .replace("{history}", hist_text[-1400:])
+                  .replace("{history}", hist_text[-1300:])
                   .replace("{message}", str(message)[:400]))
         raw = str(llm_fn(prompt) or "").strip()
         m = re.search(r"\{[\s\S]*\}", raw)
@@ -3262,36 +3268,51 @@ def _resolve_active_work(message: str, state: dict[str, Any],
 def _work_recovery_guide(msg: str, state: dict[str, Any],
                          history: list[dict[str, Any]] | None,
                          llm_fn: Callable[[str], str] | None,
-                         truth_summary: str = "") -> str:
-    """S47-E3: continue/confirm/modify/reference → 工作恢复引导。
+                         truth_summary: str = "") -> tuple[str, dict[str, Any]]:
+    """S47-E3.2: continue/confirm/modify/reference → (执行引导, 更新后 state)。
 
-    把 语义 continue 转成 具体生产上下文 (active_work + next_action),
-    让 LLM 真正接着干, 而不是重新诊断/澄清。
+    返回 (guide_text, updated_active_work) — resolver 结构化输出由调用方
+    写回 conv_state (跨轮锚定); guide 含强执行约束 (need_user_input=False
+    → 禁诊断/禁 ask, 必须执行 next_action 并落 canonical)。
     """
     rel = str(state.get("relation") or "")
     if rel not in ("continue", "confirm", "modify", "reference"):
-        return ""
+        return "", {}
     w = _resolve_active_work(msg, state, history, llm_fn, truth_summary)
     if not w:
-        return ""
+        return "", {}
     aw = w.get("active_work") or ""
     na = w.get("next_action") or ""
     st = w.get("current_stage") or ""
     need_q = bool(w.get("need_user_input"))
     q = w.get("question") or ""
-    lines = [f"【恢复工作】relation={rel} · active_work={aw or '未知'}"]
-    if st:
-        lines.append(f"- 阶段: {st}")
-    if na:
-        lines.append(f"- 下一步 (执行方向): {na}")
-    lines.append("- 基于上面给出的真实 Truth 判断缺口: 缺什么补什么 (先做后问);")
-    if need_q and q:
-        lines.append(f"- 只有真正阻塞产出的未知信息才问 → 问: {q}")
-    else:
-        lines.append("- 能从已知信息推进 → 直接执行 next_action 产出真实记录; 不要重新做"
-                     "项目诊断/任务统计, 不要重问已覆盖范围。")
-    lines.append("- 产出如需落盘 → 用 save_product_record 写 canonical 记录, 完成后简短告诉用户实际完成了什么。")
-    return "\n".join(lines)
+    active_work = {
+        "goal": aw,
+        "current_stage": st,
+        "next_action": na,
+        "need_user_input": need_q,
+        "question": q or "",
+        "blocked": need_q,
+    }
+    if not need_q:
+        # 执行约束: 强指令 + 禁诊断/禁 ask
+        lines = [
+            f"【本轮执行指令 · 最高优先级】relation={rel}",
+            f"- Active Work: {aw or '未知'} (阶段: {st or '推进中'})",
+            f"- 必须执行 Next Action: {na}",
+            "- 禁止: 调用 project_status/project_scan/code_scan/bash_exec 重新诊断项目;",
+            "- 禁止: 重复询问已确认的信息 (技术栈/范围/目标); 禁止回复『需要确认/你想分析什么』这类空问;",
+            "- 执行方式: 基于上方真实 Truth 组织产出 → 用 save_product_record 写入 canonical (requirement → REQ-*);",
+            "- 完成后: 简短告诉用户本轮实际完成了什么 (产出记录 ID + 当前还缺什么 + 下一步)。",
+        ]
+        return "\n".join(lines), active_work
+    # need_user_input=True → 只问最小阻塞问题 (不执行)
+    lines = [
+        f"【等待关键信息】Active Work: {aw or '未知'} (阶段: {st or '推进中'})",
+        f"- 仅存在一个真正阻塞产出的未知信息 → 向用户提问: {q or '请补充关键决策'}",
+        "- 不要调用项目诊断工具; 不要展开多问题列表; 只问最小问题。",
+    ]
+    return "\n".join(lines), active_work
 
 
 def _audit_sess(data_dir, session_id, question, intent, calls, total_calls, rounds,

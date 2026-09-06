@@ -306,6 +306,23 @@ def _thread_main(**kwargs: Any) -> None:
             report["status"] = "completed"
         report["finished_at"] = _now()  # run-status updated_at 数据源
         _write_json(report_path, report)
+        # S44 (PB-1): workflow finalize → canonical P0 吸收 (幂等, 失败安全)
+        try:
+            from factory_console.workflow_canonical_bridge import (
+                absorb_workflow_to_canonical,
+            )
+
+            run_paths = _run_dirs(kwargs["runs_dir"], kwargs["project_id"], run_id)
+            absorb_workflow_to_canonical(
+                org_dir=kwargs.get("org_dir") or (kwargs["runs_dir"].parent / "org"),
+                project_id=kwargs["project_id"],
+                workflow_run_id=run_id,
+                status=str(report.get("status") or "completed"),
+                report=report,
+                project_dir=run_paths["project_dir"],
+            )
+        except Exception:  # noqa: BLE001 — 吸收失败不拖垮线程 (report 已落盘诚实)
+            pass
     except Exception as exc:  # noqa: BLE001 — 诚实失败报告
         _write_json(
             report_path,

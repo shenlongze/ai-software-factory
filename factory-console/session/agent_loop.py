@@ -780,9 +780,20 @@ def _project_lifecycle(root: Any, project_id: str) -> dict[str, Any]:
             if hit:
                 h = hit[-1]
                 rows.append((label, str(h.get("status") or "存在"),
-                             str(h.get(key) or ""), str(h.get("title") or "")[:60]))
+                             str(h.get("id") or h.get(key) or ""),
+                             str(h.get("title") or "")[:60]))
             else:
-                rows.append((label, "未建立(canonical)", "", ""))
+                # canonical 记录无 project_id (经 idea/discovery 链归属) —
+                # project filter 空不代表不存在: 诚实显示全局最近记录待归属
+                unbound = [r for r in recs if r and not r.get("project_id")
+                           and (r.get("id") or r.get(key))]
+                if unbound:
+                    h = unbound[-1]
+                    rows.append((label, "存在·未绑定项目",
+                                 str(h.get("id") or h.get(key) or ""),
+                                 str(h.get("title") or "")[:60]))
+                else:
+                    rows.append((label, "未建立(canonical)", "", ""))
         except Exception:  # noqa: BLE001 — 域缺失/异常 → 诚实标注
             rows.append((label, "未建立(canonical)", "", ""))
 
@@ -3300,9 +3311,11 @@ def _work_recovery_guide(msg: str, state: dict[str, Any],
             f"【本轮执行指令 · 最高优先级】relation={rel}",
             f"- Active Work: {aw or '未知'} (阶段: {st or '推进中'})",
             f"- 必须执行 Next Action: {na}",
+            "  → 若上方 Truth 已含该工作产出 (REQ-*/DISC-* 等): 引用原记录 ID 深化/完善,"
+            " 禁止为同一工作重复新建记录 (幂等);",
+            "  → 若无产出记录: 用 save_product_record 新建并落 canonical;",
             "- 禁止: 调用 project_status/project_scan/code_scan/bash_exec 重新诊断项目;",
             "- 禁止: 重复询问已确认的信息 (技术栈/范围/目标); 禁止回复『需要确认/你想分析什么』这类空问;",
-            "- 执行方式: 基于上方真实 Truth 组织产出 → 用 save_product_record 写入 canonical (requirement → REQ-*);",
             "- 完成后: 简短告诉用户本轮实际完成了什么 (产出记录 ID + 当前还缺什么 + 下一步)。",
         ]
         return "\n".join(lines), active_work

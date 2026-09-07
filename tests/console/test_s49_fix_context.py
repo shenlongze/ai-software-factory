@@ -33,3 +33,16 @@ class TestHistoryToolResultVisibility:
     def test_fact_marker_text(self):
         # 回答纪律说明引用 [工具 X 结果] 为事实 — 此处验证标记约定一致性
         assert "结果" in "[工具 X 结果]"
+
+
+class TestToolResultText:
+    def test_always_injected_even_with_context_view(self):
+        from factory_console.session.agent_loop import _tool_result_text
+        H2 = [
+            {"role": "user", "content": "q"},
+            {"role": "assistant", "content": "查了",
+             "meta": {"tool_calls": [{"tool": "project_status", "ok": True,
+                                      "output": "阶段 confirmed"}]}},
+        ]
+        t = _tool_result_text(H2)
+        assert "project_status" in t and "confirmed" in t

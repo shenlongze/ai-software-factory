@@ -2279,8 +2279,13 @@ def run_agent_native(
     hist_block = context_view if (context_view or "").strip() else _history_text(history)
     if hist_block:
         messages.append({"role": "system", "content": (
-            f"【最近对话】(保持上下文连贯, 引用前文时注明; 与本次问题矛盾处以后者为准; "
-            f"其中 [工具 X 结果] 是已获得的真实事实, 可直接引用回答)\n{hist_block}"
+            f"【最近对话】(保持上下文连贯, 引用前文时注明; 与本次问题矛盾处以后者为准)\n{hist_block}"
+        )})
+    # S49-FIX: 无论账本/文本, 最近工具执行结果必须可见 (跨轮复用, 防重查)
+    _tool_hist = _tool_result_text(history, max_turns=3)
+    if _tool_hist:
+        messages.append({"role": "system", "content": (
+            "【最近已查到的真实事实 (工具结果, 可直接引用, 勿重复调查)】\n" + _tool_hist
         )})
     # ---- S49-FIX: 回答合成纪律 (结论先行/复用已有事实/禁空转) ----
     messages.append({"role": "system", "content": (
@@ -2998,6 +3003,27 @@ def _core_render(data_dir: str | Path | None) -> str:
         return render(data_dir)
     except Exception:  # noqa: BLE001
         return ""
+
+
+def _tool_result_text(history: list[dict[str, Any]] | None, max_turns: int = 3) -> str:
+    """S49-FIX: 最近 N 轮 assistant 消息携带的工具执行结果 → 摘要文本。
+
+    无论上下文走账本视图还是 _history_text, 工具结果都单独注入,
+    保证下一轮 LLM 直接可见 (跨轮复用 — '结果呢?' 不重查的根因修复)。
+    """
+    if not history:
+        return ""
+    lines = []
+    for h in history[-(max_turns * 2):]:
+        if not isinstance(h, dict) or h.get("role") != "assistant":
+            continue
+        tcs = ((h.get("meta") or {}).get("tool_calls")) or []
+        for c in tcs[:4]:
+            tname = str(c.get("tool") or "")
+            out = str(c.get("output") or c.get("error") or "")
+            if tname and out:
+                lines.append(f"- {tname}: {out[:280]}")
+    return "\n".join(lines)
 
 
 def _history_text(history: list[dict[str, Any]] | None, max_turns: int = 8) -> str:

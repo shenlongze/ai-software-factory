@@ -150,16 +150,57 @@ PRD→Plan 链跨 session; provenance version 稳定。
 
 ---
 
-## 5. 最终判断
+## 5. 收口记录 (2026-09-08 最终)
+
+### Git 状态
+- HEAD: `4ef6208b`; remote origin/main 同步 (0 ahead / 0 behind); tracked clean。
+- 本轮 commit (9): 09adb755→4ef6208b, 每 Phase 独立, 全部 push。
+- `unused/teams/teams.json` 时间戳噪音曾误入 922db280 (git add -u),
+  已在 4ef6208b 恢复原始内容并 push — 不再属于 Golden Path 变更集。
+
+### 自动化最终证据 (第 4 项)
+6 个 Golden Path 验收测试文件: **70 passed** (e2e 3 / gates 15 /
+session_restart 4 / confirmation 20 / semantic_proposal 20 / API 8)。
+改动波及全部测试: **139 passed** (含 S49 回归、conversation_os、product_truth、
+node_loop、requirement_node)。ruff 全过。
+
+### 全量回归归因 (第 3 项)
+- 全量收集: 14290 tests collected。Golden Path 3 文件曾有 collection error
+  (tests.console.* 包路径 import 在全量收集不可解析) → **本轮 regression,
+  已修复** (0fc408b7: interpreter 移入 factory_console 包)。修复后 0 collection errors。
+- tests/project/test_loader.py 在跨目录组合收集时报 conftest 命名冲突
+  (tests/project vs tests/runtimes 的 `from conftest import`) — **pre-existing
+  仓库结构问题**, 与 Golden Path 零关联 (2 目录组合即复现, 不引用任何本阶段模块)。
+- console 全量含 AtlasCore (6518) 网络依赖测试, 本机无外部服务时无法一次跑完 —
+  pre-existing 环境限制 (多轮验证)。
+- **本轮 attributable regression: 0** (collection error 已修复, 其余全 pre-existing)。
+
+### 真实 LLM
+`REAL_LLM_SMOKE = BLOCKED / NOT_AVAILABLE` — providers.json 引用
+`env:DEEPSEEK_API_KEY`, 该变量未设置, llm_raw 返回 None。未伪造成功、未改测试绕过。
+
+---
+
+## 6. 最终判断
 
 > 本阶段验收标准 (Golden Path §28): 一个完全不了解 AI Factory OS 内部架构的
 > 普通人, 可以只通过自然语言从模糊想法一路走到确认后的 PRD、Development Plan,
 > 并真正进入现有 Production Runtime 完成交付。
 
-**自动化验证 COMPLETE**: 全链真实执行 (NodeRun COMPLETED + verification PASS +
-Artifact + Delivery); 用户可见理解 + 自然修正; Session restart 连续; 语义等价
-表达 (非关键词覆盖); Production Gate 强制 (未确认绝不进生产); 未创建第二套
-Task/Plan/Production Truth; Intent 不在 Golden Path 主链。
+### AUTOMATED COMPLETE ✅
+自然语言语义提案 → Domain Validation → Product Understanding → PRD →
+PRD Approval → Development Plan → Plan Approval → Production Gate →
+Production Runtime → NodeRun → Artifact → Verification — 全部有自动化证据
+(139 passed, 含 21 步完整 E2E 真实执行: NodeRun COMPLETED + verification PASS
++ Artifact + Delivery)。
 
-**人工验收待用户**: 真实 LLM (DeepSeek) 中文自然语言会话 + WebUI/CLI 实机走查 —
-自动化通过 ≠ 人工验收通过 (用户铁律)。建议按 E2E 步骤人工复现一次。
+### REAL LLM ACCEPTANCE ⏳ PENDING USER MANUAL ACCEPTANCE
+真实 DeepSeek 中文自然语言**未实际跑通** (无 API Key)。
+不得将 fake-LLM 测试通过描述为真实 LLM 已验证。
+
+**剩余唯一阻塞**: 真实 LLM (DeepSeek) 中文自然语言人工验收。
+**下一步建议**: 配置 DEEPSEEK_API_KEY 后进行产品人工验收 (用户用自然语言走一遍
+Golden Path), 而非继续开发。
+
+> Implementation Complete ≠ Product Accepted。只有真实用户用自然语言跑通
+> Golden Path 后, 才能宣布 Cognitive Golden Path 的产品级验收完成。

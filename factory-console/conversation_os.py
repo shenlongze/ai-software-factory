@@ -200,6 +200,27 @@ def _make_reply(root: Path | str, conv: dict[str, Any], message: str,
                 "status": "APPROVED",
                 "card": _make_card("task_tree", message, goal, confirmed)}
     if intent == "EXECUTE":
+        # ⚠️ LEGACY PATH (conversation_os, 第四阶段裁决 RETIRE):
+        # Golden Path 生产入口 = golden_path.execute_approved (Approved PRD → Plan →
+        # User Confirmation → production_runtime)。本分支保留仅为旧 conv_* WebUI
+        # 兼容 — 新 Conversation Domain (conv-*, product_understanding) 的生成
+        # 必须走 golden_path gate, 不经过这里。
+        #
+        # RED-2 保护: 若 conversation 在新域存在 (conv-* 有 Product Understanding),
+        # 拒绝无条件执行 — 引导走确认链; 旧 conv_* legacy 会话维持原行为
+        # (其生产触发靠显式 trigger_work, 不经 send_message EXECUTE 主链)。
+        try:
+            from factory_console import product_understanding as _pu
+            if _pu.get_conversation(root, str(conv.get("id") or "")) is not None:
+                return {
+                    "text": ("这条会话已接入产品认知链。生产执行需先确认: "
+                             "生成 PRD → 用户确认 → Development Plan → 用户确认, "
+                             "然后系统才会进入生产 (不是一句「帮我做」就执行)。"),
+                    "status": "NEED_GOLDEN_PATH_APPROVAL",
+                    "card": _make_card("task_tree", message, goal, confirmed),
+                }
+        except Exception:  # noqa: BLE001 — legacy 域检查失败 → 维持原行为
+            pass
         # KERNEL INVERSION: 触发 Production Runtime 而非返回模板
         target = goal or _extract_goal(message)
         task_id = f"task-{_now_iso().replace(':', '').replace('-', '')}"

@@ -178,16 +178,36 @@ def finalize_if_done(root, run_id: str) -> dict[str, Any] | None:
     if run is None or run.get("state") not in ("RUNNING",):
         return None
     cp = run.get("checkpoint") or {}
-    resolved_q = {str(d.get("question") or "").strip()
-                  for d in (run.get("decisions") or [])
-                  if d.get("status") == "RESOLVED" and str(d.get("question") or "").strip()}
-    open_q = [q for q in (cp.get("open_questions") or [])
-              if str(q).strip() not in resolved_q]
+    findings = {str(f.get("id") or ""): str(f.get("question") or "").strip()
+                for f in (cp.get("findings") or []) if isinstance(f, dict)}
+    # 结构关联优先: decision.finding_refs → finding.question (权威)
+    decided_q = set()
+    for d in (run.get("decisions") or []):
+        if d.get("status") != "RESOLVED":
+            continue
+        refs = d.get("finding_refs") or []
+        qs = str(d.get("question") or "").strip()
+        for ref in refs:
+            fq = findings.get(str(ref))
+            if fq:
+                decided_q.add(fq)
+        if qs:
+            decided_q.add(qs)
+    # 兜底: 子串匹配 (变体措辞)
+    def _decided(q: str) -> bool:
+        qs = str(q).strip()
+        return any(qs == dq or (dq and (dq in qs or qs in dq)) for dq in decided_q)
+    open_q = [q for q in (cp.get("open_questions") or []) if not _decided(q)]
+    # Phase 3.5-FIX3: 收敛判据 = 全维覆盖 + 无 PENDING 决策。
+    # 无决策卡对应的残余 open (纯歧义/建议) 不阻塞 — 它们是 assumption
+    # 记录 (写入 REQ 时标"待确认建议", 不冒充已确认)。PENDING decision
+    # 才是真阻塞 (Human Gate 不可绕过)。
+    pend = [d for d in (run.get("decisions") or []) if d.get("status") == "PENDING"]
     if open_q != (cp.get("open_questions") or []):
         nr.update_checkpoint(root, run_id, patch={"open_questions": open_q})
         cp["open_questions"] = open_q
     if (set(cp.get("completed_dimensions") or []) >= set(ANALYSIS_DIMENSIONS)
-            and not open_q):
+            and not pend):
         nr.transition_node_run(root, run_id, "VERIFYING", actor="analysis", note="converged")
         nr.transition_node_run(root, run_id, "COMPLETED", actor="analysis", note="requirement analysis complete")
         return nr.get_node_run(root, run_id)

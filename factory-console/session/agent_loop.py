@@ -1991,6 +1991,7 @@ def dispatch(
                     return {"ok": False, "error": "无活动 requirement-analysis NodeRun (先 requirement_analysis_round)"}
                 if did and chosen:
                     nr.record_decision(root, run["run_id"], did, chosen=chosen, actor="human")
+                    run = nr.get_node_run(root, run["run_id"]) or run  # 刷新 (record 后快照)
                 pend = [d for d in (run.get("decisions") or []) if d.get("status") == "PENDING"]
                 if pend:
                     return {"ok": True, "need_user": True,

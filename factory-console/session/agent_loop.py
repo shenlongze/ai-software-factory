@@ -861,7 +861,8 @@ def _project_lifecycle(root: Any, project_id: str) -> dict[str, Any]:
     return {"ok": True, "output": "\n".join(lines)}
 
 
-def _format_project_entry(root: Any, project_id: str, proj: dict[str, Any]) -> str:
+def _format_project_entry(root: Any, project_id: str, proj: dict[str, Any],
+                          service: Any = None) -> str:
     """单个项目 → 无序列表块 (project_list 多项目 / project_status 单项目复用)。"""
     from .query_engine import _project_docs, _project_task_stats
 
@@ -884,7 +885,28 @@ def _format_project_entry(root: Any, project_id: str, proj: dict[str, Any]) -> s
         repo_path = str(proj.get("repo_path") or "")
         local = repo_path or "—"
     git = str(proj.get("git_repo_url") or proj.get("git_url") or "") or "—"
-    stats = _project_task_stats(root, pid) or {}
+    # S50-P0-FIX: 任务统计经 service (slug 正确解析) — 勿拼 project_id 目录
+    stats: dict[str, Any] = {}
+    if service is not None:
+        try:
+            bl = service.list_backlog(pid) or {}
+            _tl = [t for t in (bl.get("tasks") or []) if t]
+            stats = {
+                "total": len(_tl),
+                "p0": sum(1 for t in _tl if str(t.get("priority") or "") == "P0"),
+                "p1": sum(1 for t in _tl if str(t.get("priority") or "") == "P1"),
+                "p2": sum(1 for t in _tl if str(t.get("priority") or "") == "P2"),
+                "p3": sum(1 for t in _tl if str(t.get("priority") or "") == "P3"),
+                "todo": sum(1 for t in _tl if str(t.get("status") or "") == "todo"),
+                "running": sum(1 for t in _tl if str(t.get("status") or "") in ("running", "in_progress", "verifying")),
+                "done": sum(1 for t in _tl if str(t.get("status") or "") in ("done", "completed")),
+                "blocked": sum(1 for t in _tl if str(t.get("status") or "") == "blocked"),
+                "pct": round(100 * sum(1 for t in _tl if str(t.get("status") or "") in ("done", "completed")) / len(_tl)) if _tl else 0,
+            }
+        except Exception:  # noqa: BLE001 — service 失败 → fallback query_engine
+            stats = _project_task_stats(root, pid) or {}
+    else:
+        stats = _project_task_stats(root, pid) or {}
     total = stats.get("total", 0)
     p0, p1, p2, p3 = stats.get("p0", 0), stats.get("p1", 0), stats.get("p2", 0), stats.get("p3", 0)
     pct = stats.get("pct", 0)
@@ -1274,7 +1296,7 @@ def dispatch(
             for _pid, _p in _projs.items():
                 if not isinstance(_p, dict):
                     continue
-                _blocks.append(_format_project_entry(root, _pid, _p))
+                _blocks.append(_format_project_entry(root, _pid, _p, service=service))
             lines = [f"共 {len(_blocks)} 个项目:", ""]
             if _blocks:
                 lines.append("\n\n".join(_blocks))
@@ -1471,22 +1493,20 @@ def dispatch(
                     _proj = {}
             if not isinstance(_proj, dict):
                 _proj = {}
-            return {"ok": True, "output": _format_project_entry(root, project_id, _proj)}
+            return {"ok": True, "output": _format_project_entry(root, project_id, _proj, service=service)}
         if tool_id == "project_tasks":
             from .query_engine import _priority_tasks, _project_task_stats
 
             prio = str(args.get("priority") or "").upper()
-            if prio in ("P0", "P1", "P2", "P3"):
-                tasks = _priority_tasks(root, project_id, prio)
-                lines = [f"{prio} 任务 ({len(tasks)}):"] + [f"- {str(t.get('title') or '')[:50]} [{t.get('status')}]" for t in tasks[:12]]
-                return {"ok": True, "output": "\n".join(lines) if tasks else f"{prio} 任务: 暂无"}
-            st = _project_task_stats(root, project_id)
-            if not st:
-                return {"ok": True, "output": "暂无任务数据"}
-            # S35-UI: detail=true → 返回任务明细 markdown 表格 (查看具体任务列表)
-            if str(args.get("detail") or "").lower() in ("1", "true", "yes"):
-                _tasks: list[dict[str, Any]] = []
-                _seen: set[str] = set()
+            # S50-P0-FIX: 统一经 service (slug 正确解析) — 勿拼 project_id 目录
+            _all_tasks: list[dict[str, Any]] = []
+            if service is not None:
+                try:
+                    _bl = service.list_backlog(project_id) or {}
+                    _all_tasks = [t for t in (_bl.get("tasks") or []) if isinstance(t, dict)]
+                except Exception:  # noqa: BLE001 — service 失败 → legacy 路径
+                    pass
+            if not _all_tasks:
                 for _tf in (
                     Path(root) / "workspace" / "projects" / Path(project_id).name
                     / "management" / "backlog" / "task.json",
@@ -1496,16 +1516,24 @@ def dispatch(
                         _data = json.loads(_tf.read_text(encoding="utf-8")) or {}
                         _list = (_data.get("tasks") or {})
                         _list = _list.values() if isinstance(_list, dict) else _list
-                        for t in _list:
-                            if isinstance(t, dict) and str(t.get("id")) not in _seen:
-                                _seen.add(str(t.get("id")))
-                                _tasks.append(t)
+                        _all_tasks = [t for t in _list if isinstance(t, dict)]
+                        if _all_tasks:
+                            break
                     except Exception:  # noqa: BLE001
                         continue
-                if not _tasks:
+            if prio in ("P0", "P1", "P2", "P3"):
+                tasks = [t for t in _all_tasks if str(t.get("priority") or "").upper() == prio]
+                lines = [f"{prio} 任务 ({len(tasks)}):"] + [f"- {str(t.get('title') or '')[:50]} [{t.get('status')}]" for t in tasks[:12]]
+                return {"ok": True, "output": "\n".join(lines) if tasks else f"{prio} 任务: 暂无"}
+            st = _project_task_stats(root, project_id)
+            if not _all_tasks and not st:
+                return {"ok": True, "output": "暂无任务数据"}
+            # S35-UI: detail=true → 返回任务明细 markdown 表格 (查看具体任务列表)
+            if str(args.get("detail") or "").lower() in ("1", "true", "yes"):
+                if not _all_tasks:
                     return {"ok": True, "output": "暂无任务数据"}
                 lines = ["| 任务 | 模块 | 优先级 | 类型 | 状态 |", "| --- | --- | --- | --- | --- |"]
-                for t in _tasks[:50]:
+                for t in _all_tasks[:50]:
                     _name = str(t.get("name") or t.get("title") or t.get("id") or "")
                     _mod = str(t.get("feature") or t.get("epic") or "—")
                     _prio = str(t.get("priority") or "—")

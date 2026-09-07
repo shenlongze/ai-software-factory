@@ -1282,26 +1282,54 @@ def dispatch(
             lines.append(_PROJECT_LIST_ANSWER_TEMPLATE)
             return {"ok": True, "output": "\n".join(lines)}
         if tool_id == "get_product_record":
-            # S47-E4/E5: 读 canonical 完整内容 (record_id 或 kind 最近)
+            # S47-E4/E5 + S49-FIX.1: 读 canonical; scope 强制 — 绝不跨项目
             try:
                 from factory_console import product_truth as pt
                 kind = str(args.get("kind") or "requirement").strip().lower()
                 record_id = str(args.get("record_id") or "").strip()
+                kind_plural = {"idea": "ideas", "discovery": "discoveries",
+                               "requirement": "requirements",
+                               "prd": "prds", "plan": "plans"}.get(kind)
                 getter = {"idea": pt.get_idea, "discovery": pt.get_discovery,
                           "requirement": pt.get_requirement,
                           "prd": pt.get_prd, "plan": pt.get_plan}.get(kind)
                 lister = {"idea": pt.list_ideas, "discovery": pt.list_discoveries,
                           "requirement": pt.list_requirements,
                           "prd": pt.list_prds, "plan": pt.list_plans}.get(kind)
-                if getter is None or lister is None:
+                if getter is None or lister is None or not kind_plural:
                     return {"ok": False, "error": "kind 必须是 idea/discovery/requirement/prd/plan"}
                 rec = None
                 if record_id:
                     rec = getter(root, record_id)
+                    if rec is None:
+                        return {"ok": True, "output": f"{kind} {record_id}: 不存在"}
+                    # S49-FIX.1 scope: 他项目记录 → 拒绝
+                    (st, val) = pt.resolve_record_scope(root, kind_plural, record_id) or ("", "")
+                    if st == "project" and project_id and val != project_id:
+                        return {"ok": False, "scope_denied": True,
+                                "error": f"{record_id} 属于项目 {val}, 当前项目 {project_id} — "
+                                         f"禁止跨项目读取 (Tool Boundary)"}
+                    if st == "unbound" and project_id:
+                        return {"ok": True, "output": (
+                            f"{kind} {record_id} · {rec.get('status')} · {rec.get('title') or ''}\n"
+                            f"归属: 未绑定项目 (存在, 但不属于当前项目可确认的 Truth — "
+                            f"如需本项目 Truth 请先经 idea/discovery 建链)")}
                 else:
-                    items = lister(root)
-                    if items:
-                        rec = items[-1]
+                    # recent: 只返回当前项目 scope 内记录 (经链解析)
+                    scoped = pt.scoped_recent(root, kind_plural, project_id or "", max_n=1)
+                    if scoped:
+                        rec = scoped[0]
+                    else:
+                        unbound = [r for r in lister(root)
+                                   if pt.resolve_record_scope(root, kind_plural,
+                                                              str(r.get("id") or ""))[0] == "unbound"]
+                        if unbound:
+                            u = unbound[-1]
+                            return {"ok": True, "output": (
+                                f"{kind} 记录: 当前项目无绑定记录; 存在未绑定记录 "
+                                f"{u.get('id')} ({str(u.get('title'))[:40]}) — 不冒充本项目 Truth; "
+                                f"如需引用请先建立 idea/discovery 归属链")}
+                        return {"ok": True, "output": f"{kind} 记录: 无 (当前项目未建立)"}
                 if rec is None:
                     return {"ok": True, "output": f"{kind} 记录: 无 (尚未建立)"}
                 body = (str(rec.get("description") or rec.get("input_ref") or
@@ -1330,17 +1358,37 @@ def dispatch(
                 record_id = str(args.get("record_id") or "").strip()
                 if kind not in ("discovery", "requirement", "prd", "plan", "idea"):
                     return {"ok": False, "error": "kind 必须是 idea/discovery/requirement/prd/plan"}
-                if not title:
-                    return {"ok": False, "error": "title 必填"}
+                kind_plural = {"idea": "ideas", "discovery": "discoveries",
+                               "requirement": "requirements", "prd": "prds",
+                               "plan": "plans"}.get(kind)
                 if record_id:
-                    # 迭代: 深化已有记录 (draft/草稿态)
+                    # 迭代: 深化已有记录 — S49-FIX.1: scope 强制
+                    (st, val) = pt.resolve_record_scope(root, kind_plural, record_id) or ("", "")
+                    if st == "project" and project_id and val != project_id:
+                        return {"ok": False, "scope_denied": True,
+                                "error": f"{record_id} 属于项目 {val}, 当前项目 {project_id} — "
+                                         f"禁止跨项目修改 (Tool Boundary)"}
                     getter = {"idea": pt.get_idea, "discovery": pt.get_discovery,
                               "requirement": pt.get_requirement,
                               "prd": pt.get_prd, "plan": pt.get_plan}.get(kind)
                     existing = getter(root, record_id) if getter else None
                     if existing is None:
-                        return {"ok": False, "error": f"{kind} {record_id} 不存在, 无法更新 (省略 record_id 新建)"}
+                        return {"ok": False, "not_found": True,
+                                "error": f"{kind} {record_id} 不存在, 无法更新 (省略 record_id 新建)"}
+                    # P1b: title 可省略 → 保留原标题 (REFINE 语义)
+                    if not title:
+                        title = str(existing.get("title") or "").strip()
+                        if not title and kind != "prd":
+                            return {"ok": False, "validation": {
+                                "missing": ["title"], "repairable": False,
+                                "reason": "原记录无 title 且未提供 — 需要向用户询问标题",
+                                "required": ["title"]}}
                     if kind == "prd":
+                        if not content:
+                            return {"ok": False, "validation": {
+                                "missing": ["content"], "repairable": False,
+                                "reason": "PRD 深化需要 content (正文) — 需要用户提供新内容",
+                                "required": ["content"]}}
                         upd = pt.update_prd_content(root, record_id, str(content)[:20000], actor="human")
                     elif kind == "discovery":
                         upd = pt.update_discovery(root, record_id, title=title,
@@ -1378,6 +1426,11 @@ def dispatch(
                             "target_kind": _gate.get("target_kind"),
                             "target_id": _gate.get("target_id"),
                             "reason": _gate.get("reason")}}
+                if not title:
+                    return {"ok": False, "validation": {
+                        "missing": ["title"], "repairable": False,
+                        "reason": "CREATE 需要 title — 无法从上下文安全推断, 应向用户询问标题或让用户确认后重试",
+                        "required": ["title"]}}
                 if kind == "idea":
                     rec = pt.create_idea(root, project_id=project_id, title=title,
                                          description=str(content)[:8000],

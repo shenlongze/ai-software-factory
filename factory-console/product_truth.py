@@ -453,6 +453,65 @@ def update_requirement(root: Path | str, req_id: str, *,
 # ---------------------------------------------------------------------------
 
 
+def resolve_record_scope(root: Path | str, kind: str, rid: str) -> tuple[str, str] | None:
+    """S49-FIX.1: 解析 canonical 记录的 Project 归属。
+
+    返回 ("project", project_id) 归属明确 | ("unbound", 说明) 无归属 |
+    None 不存在。链解析: idea/prd/plan 自带 project_id; discovery 经
+    idea_id → idea.project_id; requirement 经 discovery_id → idea。
+    LLM 不拥有跨项目访问权 — Tool 层用此强制 scope。
+    """
+    try:
+        rec = _load(root, kind).get(rid)
+        if rec is None:
+            return None
+        if kind in ("ideas", "prds", "plans"):
+            pid = str(rec.get("project_id") or "").strip()
+            return ("project", pid) if pid else ("unbound", "记录无 project_id")
+        if kind == "discoveries":
+            iid = str(rec.get("idea_id") or "").strip()
+            if iid:
+                idea = _load(root, "ideas").get(iid) or {}
+                pid = str(idea.get("project_id") or "").strip()
+                if pid:
+                    return ("project", pid)
+            return ("unbound", "无 idea 归属或 idea 无 project")
+        if kind == "requirements":
+            did = str(rec.get("discovery_id") or "").strip()
+            if did:
+                disc = _load(root, "discoveries").get(did) or {}
+                iid = str(disc.get("idea_id") or "").strip()
+                if iid:
+                    idea = _load(root, "ideas").get(iid) or {}
+                    pid = str(idea.get("project_id") or "").strip()
+                    if pid:
+                        return ("project", pid)
+            return ("unbound", "游离 requirement (无 discovery 归属)")
+        return ("unbound", f"未知 kind {kind}")
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def scoped_recent(root: Path | str, kind: str, project_id: str,
+                  max_n: int = 3) -> list[dict[str, Any]]:
+    """S49-FIX.1: 本项目 scope 内最近记录 (经链解析); 绝不含他项目。
+
+    返回归属本项目的最新记录 (按 created_at); unbound 不冒充项目记录。
+    """
+    try:
+        items = [r for r in _load(root, kind).values() if r]
+        out = []
+        for r in sorted(items, key=lambda x: str(x.get("created_at") or ""), reverse=True):
+            (st, val) = resolve_record_scope(root, kind, str(r.get("id") or "")) or ("", "")
+            if st == "project" and val == project_id:
+                out.append(r)
+                if len(out) >= max_n:
+                    break
+        return out
+    except Exception:  # noqa: BLE001
+        return []
+
+
 def lifecycle_gate(root: Path | str, project_id: str, kind: str, *,
                    idea_id: str = "", discovery_id: str = "",
                    since: str = "") -> dict[str, Any]:

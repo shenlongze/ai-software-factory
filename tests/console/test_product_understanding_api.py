@@ -112,3 +112,23 @@ class TestPRDAPI:
                                            conv: dict) -> None:
         r = client.post(f"/api/conversations/{conv['id']}/prd")
         assert r.status_code == 400  # 无 Understanding → 拒绝派生 (诚实)
+
+
+class TestUnderstandingStatementAPI:
+    def test_statement_endpoint(self, client: TestClient, conv: dict) -> None:
+        """Golden Path §12: 用户可见理解通过 API 暴露 (Confirmation Loop)。"""
+        _feed(client, conv["id"], ["我想做一个飞机大战小游戏。", "手机端。"])
+        r = client.get(
+            f"/api/conversations/{conv['id']}/product-understanding/statement")
+        assert r.status_code == 200
+        stmt = r.json()["statement"]
+        assert "我目前理解的是" in stmt
+        assert "飞机大战" in stmt
+
+    def test_gaps_endpoint(self, client: TestClient, conv: dict) -> None:
+        """Golden Path §11: 主动缺口分析通过 API 暴露。"""
+        _feed(client, conv["id"], ["我想做一个飞机大战小游戏。", "手机端。"])
+        r = client.get(
+            f"/api/conversations/{conv['id']}/product-understanding/gaps")
+        assert r.status_code == 200
+        assert isinstance(r.json()["gaps"], list)

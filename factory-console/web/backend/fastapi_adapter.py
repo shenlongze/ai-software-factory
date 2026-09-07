@@ -6671,6 +6671,35 @@ def build_app(
                                 detail=f"conversation 不在 Product Understanding 域: {conversation_id}")
         return ProductUnderstandingService(root).snapshot(conversation_id)
 
+    @app.get("/api/conversations/{conversation_id}/product-understanding/statement")
+    def api_pu_statement(conversation_id: str) -> dict[str, Any]:
+        """用户可见理解陈述 (Golden Path §12: '我目前理解的是……')。
+
+        文本形式 — 用户可自然回答 (对 / 不是, 改成…), 不是强制表单。
+        """
+        from factory_console.conversation_app import (  # noqa: F401 — 延迟 import
+            ConversationApplicationService, ProductUnderstandingService)
+        root = _s49_root()
+        if ConversationApplicationService(root).get(conversation_id) is None:
+            raise HTTPException(status_code=404,
+                                detail=f"conversation 不在 Product Understanding 域: {conversation_id}")
+        return {"conversation_id": conversation_id,
+                "statement": ProductUnderstandingService(root)
+                .understanding_statement(conversation_id)}
+
+    @app.get("/api/conversations/{conversation_id}/product-understanding/gaps")
+    def api_pu_gaps(conversation_id: str) -> dict[str, Any]:
+        """主动缺口分析 (Golden Path §11: 用户问'你觉得还有什么问题')。"""
+        from factory_console.conversation_app import (  # noqa: F401 — 延迟 import
+            ConversationApplicationService, ProductUnderstandingService)
+        root = _s49_root()
+        if ConversationApplicationService(root).get(conversation_id) is None:
+            raise HTTPException(status_code=404,
+                                detail=f"conversation 不在 Product Understanding 域: {conversation_id}")
+        svc = ProductUnderstandingService(root)
+        return {"conversation_id": conversation_id,
+                "gaps": svc.analysis_gaps(conversation_id)}
+
     @app.get("/api/conversations/{conversation_id}/messages")
     def api_conversation_messages(conversation_id: str) -> dict[str, Any]:
         """Conversation 消息列表 (Application Layer; 新 Conversation Domain)。"""

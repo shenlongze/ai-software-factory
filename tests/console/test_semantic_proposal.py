@@ -29,7 +29,7 @@ import pytest  # noqa: E402
 from factory_console import product_understanding as pu  # noqa: E402
 from factory_console.semantic_proposal import (  # noqa: E402
     ProposalValidationError,
-    apply_operations, build_proposal, validate_proposal,
+    apply_operations, build_proposal,
 )
 
 

@@ -236,7 +236,6 @@ def apply_operations(root, conversation_id: str,
             continue
         ftype = op["fact_type"]
         content = op["content"]
-        target_id = op.get("target_id", "")
         # 2) 目标解析 (NEGATE/REJECT/DEFER/CONFIRM/UPDATE/REPLACE 需要已存在对象)
         target = None
         if o in ("NEGATE", "REJECT", "DEFER", "CONFIRM", "UPDATE", "REPLACE"):

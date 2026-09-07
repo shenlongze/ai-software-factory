@@ -35,7 +35,7 @@ from typing import Any, Callable
 
 from factory_console import product_understanding as pu
 from factory_console.semantic_proposal import (
-    ProposalValidationError, apply_operations, validate_proposal,
+    apply_operations, validate_proposal,
 )
 
 # 延迟 import (避免顶层循环): llm_semantic_interpreter / build_llm_prompt 供默认语义解释

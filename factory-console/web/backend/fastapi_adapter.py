@@ -3510,7 +3510,8 @@ def build_app(
                         if x.get("status") == "PENDING"]
                 if pend:
                     break
-                out = ran.run_round(DEFAULT_ROOT, run["run_id"], llm_fn=_llm)
+                out = ran.run_round(DEFAULT_ROOT, run["run_id"], llm_fn=_llm,
+                                     truth_snippet=ran.project_truth_snippet(str(DEFAULT_ROOT), project_id))
                 if out is None:
                     break
                 if out.get("need_user"):
@@ -3570,7 +3571,8 @@ def build_app(
                 done = ran.finalize_if_done(DEFAULT_ROOT, run["run_id"])
                 if done:
                     break
-                out = ran.run_round(DEFAULT_ROOT, run["run_id"], llm_fn=_llm)
+                out = ran.run_round(DEFAULT_ROOT, run["run_id"], llm_fn=_llm,
+                                     truth_snippet=ran.project_truth_snippet(str(DEFAULT_ROOT), project_id))
                 if out is None:
                     break
                 if out.get("need_user") is False and not out.get("pending_questions"):

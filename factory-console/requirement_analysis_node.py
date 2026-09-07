@@ -92,6 +92,59 @@ def parse_findings(text: str) -> dict[str, Any]:
 
 # ------------------------------------------------------------------ Round executor (结构化分析回合)
 
+def project_truth_snippet(root, project_id: str, limit: int = 1800) -> str:
+    """项目真实上下文 (防分析盲猜 — 飞机大战被问'下单支付'类根因)。
+
+    组装: org 项目 name/goal + canonical REQ (scoped 优先, 游离按
+    标题含项目名关键词兜底)。
+    """
+    import json as _json
+    from pathlib import Path as _P
+    parts = []
+    try:
+        pf = _P(str(root)) / "org" / "projects.json"
+        if pf.is_file():
+            d = _json.loads(pf.read_text(encoding="utf-8")) or {}
+            rec = (d.get("projects") or {}).get(project_id) or {}
+            nm = str(rec.get("name") or "")
+            gl = str(rec.get("goal") or "")
+            if nm:
+                parts.append(f"项目名称: {nm}")
+            if gl:
+                parts.append(f"项目目标: {gl[:500]}")
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from factory_console import product_truth as pt
+        sc = pt.scoped_recent(root, "requirements", project_id, max_n=1)
+        if sc:
+            r0 = sc[0]
+            parts.append(f"已有需求记录 ({r0.get('id')}): "
+                         f"{r0.get('title')}: {str(r0.get('description') or '')[:1200]}")
+        else:
+            # 游离 REQ: 标题含项目名 (中文名/关键词) 的最新年份兜底
+            items = pt.list_requirements(root) or []
+            nm = ""
+            try:
+                pf = _P(str(root)) / "org" / "projects.json"
+                if pf.is_file():
+                    d = _json.loads(pf.read_text(encoding="utf-8")) or {}
+                    nm = str(((d.get("projects") or {}).get(project_id) or {}).get("name") or "")
+            except Exception:  # noqa: BLE001
+                pass
+            kw = [x for x in (nm or project_id) if '\u4e00' <= x <= '\u9fff']
+            if kw:
+                hit = [r for r in items
+                       if any(k in str(r.get("title") or "") for k in kw[:4])]
+                if hit:
+                    r0 = hit[-1]
+                    parts.append(f"已有需求记录 ({r0.get('id')}, 未绑定): "
+                                 f"{r0.get('title')}: {str(r0.get('description') or '')[:1200]}")
+    except Exception:  # noqa: BLE001
+        pass
+    return "\n".join(parts)[:limit]
+
+
 def run_round(root, run_id: str, llm_fn, *, truth_snippet: str = "") -> dict[str, Any]:
     """执行一个分析回合: 下一维度 → LLM 分析 → findings 处理。
 

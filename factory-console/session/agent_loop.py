@@ -1732,7 +1732,8 @@ def dispatch(
                     done = ran.finalize_if_done(root, run["run_id"])
                     if done:
                         break
-                    out = ran.run_round(root, run["run_id"], llm_fn=_llm)
+                    out = ran.run_round(root, run["run_id"], llm_fn=_llm,
+                                         truth_snippet=ran.project_truth_snippet(root, project_id))
                     if out is None:
                         break
                 run = nr.get_active_run(root, "requirement-analysis", project_id=project_id)
@@ -1949,16 +1950,8 @@ def dispatch(
                             "node_run": run["run_id"], "state": "WAITING_FOR_USER",
                             "pending_questions": pend,
                             "output": "分析等待你的决策: " + json.dumps(pend, ensure_ascii=False)}
-                # 读本项目 REQ 事实 (scoped; 无则空)
-                truth = ""
-                try:
-                    from factory_console import product_truth as pt
-                    sc = pt.scoped_recent(root, "requirements", project_id, max_n=1)
-                    if sc:
-                        r0 = sc[0]
-                        truth = f"{r0.get('title')}: {str(r0.get('description') or '')[:1200]}"
-                except Exception:  # noqa: BLE001
-                    pass
+                # 项目真实上下文 (org goal + 已有 REQ — 防盲猜)
+                truth = ran.project_truth_snippet(root, project_id)
                 out = ran.run_round(root, run["run_id"],
                                     llm_fn=lambda pr: _simple_llm(pr, data_dir=str(root)),
                                     truth_snippet=truth)

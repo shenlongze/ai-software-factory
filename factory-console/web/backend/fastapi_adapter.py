@@ -3494,8 +3494,32 @@ def build_app(
                 DEFAULT_ROOT, run["run_id"],
                 str(body.get("decision_id") or ""),
                 chosen=str(body.get("chosen") or ""), actor="human")
-            return {"ok": True, "decision": dec,
-                    "run_id": run["run_id"], "state": nr.get_node_run(DEFAULT_ROOT, run["run_id"]).get("state")}
+            # Phase 3.5-FIX: 点击后自动续分析 (resume → 下一 WAIT/收敛) —
+            # 用户无需再说"需求分析"; 每回合一个决策, 其余 pending 保留
+            from factory_console import requirement_analysis_node as ran
+            from factory_console.session import agent_loop as _al
+            _llm = lambda pr: _al._simple_llm(pr, data_dir=str(DEFAULT_ROOT))
+            for _ in range(3):
+                pend = [x for x in (nr.get_node_run(DEFAULT_ROOT, run["run_id"]).get("decisions") or [])
+                        if x.get("status") == "PENDING"]
+                if pend:
+                    break
+                out = ran.run_round(DEFAULT_ROOT, run["run_id"], llm_fn=_llm)
+                if out is None:
+                    break
+                if out.get("need_user"):
+                    break
+                if ran.finalize_if_done(DEFAULT_ROOT, run["run_id"]):
+                    break
+            cur = nr.get_node_run(DEFAULT_ROOT, run["run_id"])
+            cp = (cur or {}).get("checkpoint") or {}
+            pend2 = [{"decision_id": x["decision_id"], "question": x["question"],
+                      "options": x["options"]}
+                     for x in (cur or {}).get("decisions", []) if x.get("status") == "PENDING"]
+            return {"ok": True, "decision": dec, "run_id": run["run_id"],
+                    "state": (cur or {}).get("state"),
+                    "completed_dimensions": cp.get("completed_dimensions") or [],
+                    "pending_decisions": pend2}
         except Exception as exc:  # noqa: BLE001
             if isinstance(exc, HTTPException):
                 raise

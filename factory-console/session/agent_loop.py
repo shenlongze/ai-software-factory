@@ -882,6 +882,12 @@ def _node_run_context(data_dir: Any, project_id: str) -> str:
         lines = [f"- NodeRun: {run.get('run_id')} · state={run.get('state')}",
                  f"- 已覆盖维度: {'、'.join(cp.get('completed_dimensions') or []) or '(无)'}",
                  f"- 迭代: {cp.get('iteration') or 0}"]
+        # Phase 3.5-FIX: 已确认决策必须可见 (agent 不再重问已答问题)
+        resolved = [d for d in (run.get("decisions") or []) if d.get("status") == "RESOLVED"]
+        if resolved:
+            lines.append("- 已确认决策:")
+            for d in resolved:
+                lines.append(f"  · {d.get('question')} → {d.get('chosen')} (human)")
         pend = [d for d in (run.get("decisions") or []) if d.get("status") == "PENDING"]
         if pend:
             lines.append("- 待你决策:")

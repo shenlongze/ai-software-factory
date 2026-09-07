@@ -44,6 +44,25 @@ class TestAnalysisRound:
         assert got["state"] == "WAITING_FOR_USER"
         dec = got["decisions"][0]
         assert dec["status"] == "PENDING" and dec["options"] == ["PC", "移动端", "都支持"]
+        # Phase 2.1: 决策等待前维度进度已持久化 (不丢)
+        cp = got["checkpoint"]
+        assert cp["completed_dimensions"] == ["范围与目标"]
+        assert "PC 还是移动端?" in cp["open_questions"]
+
+    def test_multiple_decisions_one_per_round(self, tmp_path):
+        """多个 needs_decision finding → 每回合仅一个 (其余保留下回合)。"""
+        r = str(tmp_path)
+        run = _mkrun(r)
+        llm = _llm_with([{"dimension": "范围", "type": "ambiguity", "question": "Q1",
+                          "needs_decision": True, "decision_options": ["a"]},
+                         {"dimension": "范围", "type": "ambiguity", "question": "Q2",
+                          "needs_decision": True, "decision_options": ["b"]}])
+        out = ran.run_round(r, run["run_id"], llm)
+        assert out["need_user"] is True and len(out["pending_questions"]) == 1
+        got = nr.get_node_run(r, run["run_id"])
+        cp = got["checkpoint"]
+        assert cp["completed_dimensions"] == ["范围与目标"]  # 进度已落
+        assert len([d for d in got["decisions"] if d["status"] == "PENDING"]) == 1
 
     def test_human_answer_resumes_and_continues(self, tmp_path):
         r = str(tmp_path)

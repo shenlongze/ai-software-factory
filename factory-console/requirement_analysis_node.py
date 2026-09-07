@@ -135,6 +135,7 @@ def run_round(root, run_id: str, llm_fn, *, truth_snippet: str = "") -> dict[str
     cp["findings"] = cp.get("findings") or []
     need_user = False
     pending = []
+    # Phase 2.1-FIX: 先持久化维度进度 (checkpoint 先落盘 — 异常/WAIT 不丢)
     for f in findings:
         f["id"] = f"f-{abs(hash(str(f)) ) % 10**8:08d}"
         f["status"] = "open"
@@ -143,6 +144,9 @@ def run_round(root, run_id: str, llm_fn, *, truth_snippet: str = "") -> dict[str
             q = str(f.get("question") or "").strip()
             if q and q not in cp["open_questions"]:
                 cp["open_questions"].append(q)
+    nr.update_checkpoint(root, run_id, patch=cp)
+    # 决策: 每回合至多注册一个 (首个 needs_decision) — WAIT 后由下回合继续
+    for f in findings:
         if f.get("needs_decision"):
             d = nr.request_decision(
                 root, run_id, question=str(f.get("question") or f.get("detail") or "决策点"),
@@ -151,7 +155,7 @@ def run_round(root, run_id: str, llm_fn, *, truth_snippet: str = "") -> dict[str
                             "question": d["question"], "options": d["options"]})
             need_user = True
             f["decision_ref"] = d["decision_id"]
-    nr.update_checkpoint(root, run_id, patch=cp)
+            break
     if need_user:
         return {"state": "WAITING_FOR_USER", "need_user": True,
                 "pending_questions": pending,

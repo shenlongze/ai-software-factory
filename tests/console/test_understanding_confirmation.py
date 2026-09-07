@@ -123,6 +123,20 @@ def _nlp_semantic_interp(root: str, conversation_id: str, text: str,
         return {"operations": ops, "reply": reply, "question": "",
                 "show_understanding": False}
 
+    # ---- 功能需求 (需要/还要/支持 X 的暂停/横屏 等) ----
+    for name in ("暂停", "横屏", "竖屏", "存档", "音效", "音乐", "难度", "计分",
+                 "分数", "关卡", "血条", "分享", "通知", "主题"):
+        if name in raw and any(k in raw for k in ("需要", "还要", "支持", "要加",
+                                                  "加上", "做", "加个", "要有",
+                                                  "要有", "能")):
+            label = {"暂停": "支持暂停功能", "横屏": "横屏方向",
+                     "竖屏": "竖屏方向"}.get(name, name)
+            _add("REQUIREMENT", f"{label}" if name in ("暂停", "横屏", "竖屏")
+                 else f"支持{name}功能")
+            reply = f"好, 记下: {name}。"
+            return {"operations": ops, "reply": reply, "question": "",
+                    "show_understanding": False}
+
     # ---- 平台 (语义等价: 手机端/手机上/移动/安卓) ----
     if not has_platform and any(k in raw for k in ("手机", "移动", "安卓",
                                                    "手机上", "app", "ios")):

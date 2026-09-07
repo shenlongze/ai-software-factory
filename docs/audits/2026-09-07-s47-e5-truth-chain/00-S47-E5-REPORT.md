@@ -45,3 +45,12 @@ Continue/Transition — 证明"产品主链可连续生产"(非补 4 个 API)。
 基础设施层 ACCEPT: 全域 Read/Write/Refine/Continue/Transition 契约成立,
 跨阶段 (REQ→PRD) 连续生产实证。真实验收受旧数据 + LLM 判断残余影响 —
 建议用户在干净项目会话实测全链后定 final。
+
+## S47 收口 (2026-09-07)
+S47 = Conversation Production Entry 里程碑: Semantic intent / Active Work /
+Continuation / Truth retrieval / Refinement / Canonical write / Idempotent
+update / Cross-stage transition / Conversation→Product Truth。
+残余 → LLM orchestration/context governance backlog (不阻塞主链):
+  1. Idea 链头自动创建不稳定 (new_goal 首轮应建 Idea)
+  2. LLM 偶尔误判已有 Truth 不存在 (grounding/工具结果强化)
+  3. 旧数据 / memory 污染治理 (W4 human 会话流水注入策略)

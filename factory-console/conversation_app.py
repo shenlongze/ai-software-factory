@@ -34,6 +34,11 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from factory_console import product_understanding as pu
+from factory_console.semantic_proposal import (
+    ProposalValidationError, apply_operations, validate_proposal,
+)
+
+# 延迟 import (避免顶层循环): llm_semantic_interpreter / build_llm_prompt 供默认语义解释
 
 
 # ------------------------------------------------------------------ 解释协议
@@ -243,6 +248,34 @@ def _extract_decision(text: str) -> str:
     return ""
 
 
+def _legacy_to_proposal(legacy_interp: Callable[..., Any]) -> Callable[..., dict[str, Any]]:
+    """把旧 Interpreter (返回 InterpretationResult) 适配为 semantic proposal 协议。
+
+    供无 LLM 环境的确定性兜底/旧测试兼容: 旧规则抽取的 facts → ADD operations,
+    经与生产完全相同的 validate_proposal/apply_operations 管道落 Truth (Golden Path
+    §8: 测试可注入 deterministic, 但必须经过同一 Domain Validation / Mutation)。
+    本适配**不扩张规则**: 只转译旧规则已有输出; 语义理解主路径是 LLM。
+    """
+
+    def _adapter(root: str, conversation_id: str, text: str,
+                 snapshot: dict[str, Any]) -> dict[str, Any]:
+        interp = legacy_interp(root, conversation_id, text, snapshot)
+        ops = []
+        for f in interp.facts:
+            ops.append({"op": "ADD", "fact_type": f["type"],
+                        "content": f["content"],
+                        "confidence": float(f.get("confidence") or 1.0)})
+        return {
+            "operations": ops,
+            "reply": interp.reply or "",
+            "question": interp.question or "",
+            "summary": interp.summary or "",
+            "show_understanding": False,
+        }
+
+    return _adapter
+
+
 def _continuity_reply(snapshot: dict[str, Any], text: str) -> str:
     """无新 fact 时的连续性回复: 引用已有 Understanding, 不假装知道。
 
@@ -290,40 +323,87 @@ class ProductUnderstandingService:
     """Product Understanding 应用服务 (唯一解释入口 + sufficiency/adaptive)。"""
 
     def __init__(self, root: str | Any, *,
-                 interpreter: Interpreter | None = None) -> None:
+                 interpreter: Callable[..., Any] | None = None,
+                 semantic: bool = False) -> None:
+        """root: workspace root; semantic=True → 默认 LLM Semantic Interpreter。
+
+        interpreter 注入 (协议: (root, conv_id, text, snapshot) -> proposal dict,
+        其中 proposal 含 operations 列表 — 见 semantic_proposal.validate_proposal):
+        - None + semantic=True  → llm_semantic_interpreter (生产; LLM 不可用自动降级)
+        - None + semantic=False → deterministic default_interpreter (测试/无 LLM,
+          输出自动转 proposal 经同一 validate/apply 管道)
+        - 显式注入          → 测试注入 (deterministic semantic interpreter)
+        """
         self.root = str(root)
-        self._interpreter = interpreter or default_interpreter
+        if interpreter is not None:
+            self._interpreter = interpreter
+        elif semantic:
+            try:
+                from factory_console.llm_semantic_interpreter import (
+                    llm_semantic_interpreter as _llm)
+                self._interpreter = _llm
+            except Exception:  # noqa: BLE001 — import 失败 → 确定性兜底
+                self._interpreter = _legacy_to_proposal(default_interpreter)
+        else:
+            self._interpreter = _legacy_to_proposal(default_interpreter)
 
-    # ---- 自然语言增量更新 (S49 §四) ----
+    # ---- 自然语言增量更新 (Golden Path: Semantic Proposal 管道) ----
     def process_user_message(self, conversation_id: str, text: str) -> dict[str, Any]:
-        """用户自然语言 → message 落盘 → interpreter → facts upsert → 回复。
+        """用户自然语言 → message 落盘 → Semantic Proposal → Domain Validation → Truth。
 
-        返回 {message, reply, facts_added, understanding_version, question}
+        管道 (Golden Path §7):
+          User Message → Context Assembly (persistent Understanding)
+          → interpreter (LLM 或 deterministic) → Semantic Proposal
+          → validate_proposal (Domain Validation) → apply_operations (唯一写路径)
+          → reply/question
+
+        返回 {message, reply, question, proposal, operations_applied,
+              understanding_version, show_understanding}
         """
         if pu.get_conversation(self.root, conversation_id) is None:
             raise ValueError(f"conversation 不存在: {conversation_id}")
         msg = pu.append_message(self.root, conversation_id,
                                 role="human", content=text)
         snap = pu.understanding_snapshot(self.root, conversation_id)
-        interp = self._interpreter(self.root, conversation_id, text, snap)
-        added = []
-        for f in interp.facts:
-            added.append(pu.upsert_fact(
-                self.root, conversation_id,
-                fact_type=f["type"], content=f["content"],
-                source_message_id=msg["id"],
-                confidence=float(f.get("confidence") or 1.0),
-                provenance=str(f.get("provenance") or "ai")))
-        if interp.reply:
+        # 1) interpreter → proposal (LLM 语义理解, 或注入 deterministic)
+        proposal = self._interpreter(self.root, conversation_id, text, snap)
+        # 2) Domain Validation (proposal 未通过 → 拒绝, 不写 Truth)
+        validated = validate_proposal(proposal)
+        ops = validated["operations"]
+        # 3) 唯一 Truth 写路径
+        applied = apply_operations(
+            self.root, conversation_id, ops,
+            source_message_id=msg["id"], fallback_actor="human")
+        # 4) 落 assistant 消息 + 回复
+        reply = validated.get("reply") or self._fallback_reply(snap, text, applied)
+        if reply:
             pu.append_message(self.root, conversation_id,
-                              role="assistant", content=interp.reply)
+                              role="assistant", content=reply)
         return {
             "message": msg,
-            "reply": interp.reply,
-            "question": interp.question,
-            "facts_added": added,
+            "reply": reply,
+            "question": validated.get("question", ""),
+            "summary": validated.get("summary", ""),
+            "proposal": validated,
+            "operations_applied": applied,
+            "show_understanding": bool(validated.get("show_understanding")),
             "understanding_version": pu.understanding_version(self.root, conversation_id),
         }
+
+    @staticmethod
+    def _fallback_reply(snapshot: dict[str, Any], text: str,
+                        applied: list[dict[str, Any]]) -> str:
+        if applied:
+            parts = []
+            for r in applied:
+                f = r.get("fact") or {}
+                label = {"IDEA": "记下想法", "REQUIREMENT": "平台/需求",
+                         "CONSTRAINT": "约束", "DECISION": "决定",
+                         "FUTURE_IDEA": "未来考虑", "QUESTION": "问题"}.get(
+                    f.get("type", ""), f.get("type", ""))
+                parts.append(f"{label}: {f.get('content')}")
+            return "；".join(parts) + "。" if parts else "已更新产品理解。"
+        return _continuity_reply(snapshot, text)
 
     # ---- 只读 (context/PRD 输入) ----
     def snapshot(self, conversation_id: str) -> dict[str, Any]:
@@ -369,4 +449,5 @@ class ProductUnderstandingService:
 __all__ = [
     "ConversationApplicationService", "ProductUnderstandingService",
     "InterpretationResult", "Interpreter", "default_interpreter",
+    "_legacy_to_proposal",
 ]

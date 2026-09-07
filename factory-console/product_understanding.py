@@ -60,14 +60,19 @@ FACT_TYPES: tuple[str, ...] = (
     "IDEA", "REQUIREMENT", "CONSTRAINT", "DECISION", "QUESTION", "FUTURE_IDEA",
 )
 
-#: Fact 状态注册表
-FACT_STATUSES: tuple[str, ...] = ("PROPOSED", "CONFIRMED", "SUPERSEDED", "REJECTED")
+#: Fact 状态注册表 (Golden Path: DEFERRED = 延后但非拒绝, 可恢复/被 supersede)
+FACT_STATUSES: tuple[str, ...] = (
+    "PROPOSED", "CONFIRMED", "SUPERSEDED", "REJECTED", "DEFERRED",
+)
 
 #: Conversation 状态
 CONV_STATUSES: tuple[str, ...] = ("OPEN", "ARCHIVED")
 
-#: 有效事实状态 (参与 understanding snapshot)
+#: 有效事实状态 (参与 understanding snapshot; DEFERRED/REJECTED/SUPERSEDED 不参与)
 ACTIVE_STATUSES: tuple[str, ...] = ("PROPOSED", "CONFIRMED")
+
+#: 非终态 (可被后续语义操作改变; SUPERSEDED 终态不可逆转)
+MUTABLE_STATUSES: tuple[str, ...] = ("PROPOSED", "CONFIRMED", "DEFERRED", "REJECTED")
 
 #: 消息角色
 MESSAGE_ROLES: tuple[str, ...] = ("human", "assistant", "system")
@@ -345,6 +350,19 @@ def upsert_fact(root: Path | str, conv_id: str, *, fact_type: str,
                 f["updated_at"] = _now_iso()
                 _bump_understanding_version(doc)
                 return
+        # 1b) 精确同 key 的 DEFERRED/REJECTED 旧事实 → 用户重新提出 (恢复/顶替):
+        #     旧 fact 标 SUPERSEDED, 新 fact 继承身份 — 不新增冲突重复。
+        superseded_old = []
+        for fid, f in list(facts.items()):
+            if f.get("status") not in ("DEFERRED", "REJECTED"):
+                continue
+            if identity_key(f) == key:
+                facts[fid]["status"] = "SUPERSEDED"
+                facts[fid]["superseded_by"] = new_fact["id"]
+                facts[fid]["updated_at"] = _now_iso()
+                superseded_old.append(fid)
+        if superseded_old:
+            new_fact["supersedes"] = superseded_old
         # 2) 同语义槽不同值 → supersede (修改维度, 不新增重复)
         superseded = []
         for fid, f in list(facts.items()):
@@ -356,7 +374,8 @@ def upsert_fact(root: Path | str, conv_id: str, *, fact_type: str,
                 facts[fid]["updated_at"] = _now_iso()
                 superseded.append(fid)
         if superseded:
-            new_fact["supersedes"] = superseded
+            new_fact["supersedes"] = list(
+                dict.fromkeys(list(superseded_old) + list(superseded)))
         # 3) 落盘新 fact
         facts[new_fact["id"]] = new_fact
         _bump_understanding_version(doc)
@@ -366,14 +385,20 @@ def upsert_fact(root: Path | str, conv_id: str, *, fact_type: str,
 
 def transition_fact(root: Path | str, conv_id: str, fact_id: str, *,
                     to: str, actor: str = "") -> dict[str, Any]:
-    """Fact 状态转换 (PROPOSED → CONFIRMED/REJECTED; 终态不可逆转)。
+    """Fact 状态转换 (PROPOSED → CONFIRMED/REJECTED/DEFERRED/SUPERSEDED)。
 
-    - CONFIRMED: 用户明确确认 (S49 §18.2 高优先级事实)。
-    - SUPERSEDED/REJECTED 为终态; 已 SUPERSEDED 不可再转换。
+    - CONFIRMED: 用户明确确认。
+    - REJECTED: 用户明确拒绝/否定 (终态)。
+    - DEFERRED: 用户延后 (非终态 — 可从 DEFERRED 恢复为 PROPOSED/CONFIRMED)。
+    - SUPERSEDED: 被新事实顶替 (终态 — 语义操作 UPDATE/REPLACE 经此显式置位)。
+    - 已 SUPERSEDED 不可再转换 (走新 fact supersede)。
     """
     target = _norm_status(to)
-    if target not in ("CONFIRMED", "REJECTED"):
-        raise ValueError(f"非法目标状态: {to!r} (仅支持 CONFIRMED/REJECTED)")
+    if target not in ("CONFIRMED", "REJECTED", "DEFERRED", "PROPOSED",
+                      "SUPERSEDED"):
+        raise ValueError(
+            f"非法目标状态: {to!r} "
+            f"(仅支持 PROPOSED/CONFIRMED/REJECTED/DEFERRED/SUPERSEDED)")
     result: dict[str, Any] = {}
 
     def _fn(doc: dict[str, Any]) -> None:
@@ -381,7 +406,7 @@ def transition_fact(root: Path | str, conv_id: str, fact_id: str, *,
         f = facts.get(fact_id)
         if f is None:
             raise KeyError(f"fact 不存在: {fact_id}")
-        if f.get("status") in ("SUPERSEDED",):
+        if f.get("status") == "SUPERSEDED":
             raise ValueError(f"fact {fact_id} 已 SUPERSEDED — 不可转换")
         if f.get("status") == target:
             result.update(f)  # 幂等
@@ -389,7 +414,7 @@ def transition_fact(root: Path | str, conv_id: str, fact_id: str, *,
         f["status"] = target
         f["updated_at"] = _now_iso()
         if actor:
-            f["provenance"] = f"{f.get('provenance') or ''} confirmed_by={actor}".strip()
+            f["provenance"] = f"{f.get('provenance') or ''} {to.lower()}_by={actor}".strip()
         result.update(f)
         _bump_understanding_version(doc)
     _mutate(root, conv_id, _fn)
@@ -410,6 +435,13 @@ def list_facts(root: Path | str, conv_id: str, *, fact_type: str = "",
     return sorted(out, key=lambda x: str(x.get("created_at") or ""))
 
 
+def get_fact(root: Path | str, conv_id: str, fact_id: str) -> dict[str, Any] | None:
+    """按 id 取单个 fact (含非有效状态 — 供确认/审计读全量)。"""
+    doc = _ensure_conv_doc(root, conv_id)
+    f = _facts(doc).get(fact_id)
+    return dict(f) if f is not None else None
+
+
 def understanding_version(root: Path | str, conv_id: str) -> int:
     doc = _ensure_conv_doc(root, conv_id)
     return int((doc.get("understanding") or {}).get("version") or 0)
@@ -418,7 +450,9 @@ def understanding_version(root: Path | str, conv_id: str) -> int:
 def understanding_snapshot(root: Path | str, conv_id: str) -> dict[str, Any]:
     """当前理解快照 (context/PRD 构建输入; 同 key CONFIRMED 优先于 PROPOSED)。
 
-    返回: {version, conversation_id, by_type: {TYPE: [fact...]}, facts: [全部有效]}
+    返回: {version, conversation_id, by_type: {TYPE: [fact...]}, facts: [全部有效],
+           deferred: [DEFERRED facts], rejected: [REJECTED facts]} — Golden Path
+    用户可见 Confirmation Loop 需展示延后/否决项 (用户可恢复/重提)。
     """
     doc = _ensure_conv_doc(root, conv_id)
     version = int((doc.get("understanding") or {}).get("version") or 0)
@@ -427,8 +461,17 @@ def understanding_snapshot(root: Path | str, conv_id: str) -> dict[str, Any]:
     seen_keys: set[tuple[str, str]] = set()
     ordered = sorted(_facts(doc).values(),
                      key=lambda f: str(f.get("created_at") or ""))
+    deferred: list[dict[str, Any]] = []
+    rejected: list[dict[str, Any]] = []
     for f in ordered:
-        if f.get("status") not in ACTIVE_STATUSES:
+        status = f.get("status")
+        if status == "DEFERRED":
+            deferred.append(dict(f))
+            continue
+        if status == "REJECTED":
+            rejected.append(dict(f))
+            continue
+        if status not in ACTIVE_STATUSES:
             continue
         k = identity_key(f)
         has_confirmed = any(
@@ -442,7 +485,8 @@ def understanding_snapshot(root: Path | str, conv_id: str) -> dict[str, Any]:
         by_type.setdefault(str(f.get("type")), []).append(dict(f))
     facts_flat = [f for lst in by_type.values() for f in lst]
     return {"conversation_id": conv_id, "version": version,
-            "by_type": by_type, "facts": facts_flat}
+            "by_type": by_type, "facts": facts_flat,
+            "deferred": deferred, "rejected": rejected}
 
 
 def close_conversation(root: Path | str, conv_id: str) -> dict[str, Any]:
@@ -478,9 +522,10 @@ def build_context(root: Path | str, conv_id: str, *, recent_messages: int = 8,
 
 __all__ = [
     "FACT_TYPES", "FACT_STATUSES", "CONV_STATUSES", "ACTIVE_STATUSES",
+    "MUTABLE_STATUSES",
     "build_fact", "identity_key", "normalize_content",
     "create_conversation", "get_conversation", "conversations",
     "append_message", "messages", "close_conversation",
-    "upsert_fact", "transition_fact", "list_facts",
+    "upsert_fact", "transition_fact", "list_facts", "get_fact",
     "understanding_version", "understanding_snapshot", "build_context",
 ]

@@ -102,34 +102,38 @@ class TestAnalysisRound:
         done = ran.finalize_if_done(r, run["run_id"])
         assert done is not None and done["state"] == "COMPLETED"
 
-    def test_open_question_blocks_completion(self, tmp_path):
+    def test_pending_decision_blocks_completion(self, tmp_path):
+        """PENDING 决策是唯一收敛阻塞 (Human Gate 不可绕过);
+        无卡残余 open (assumption) 不阻塞。"""
         r = str(tmp_path)
         run = _mkrun(r)
         nr.transition_node_run(r, run["run_id"], "RUNNING")
         nr.update_checkpoint(r, run["run_id"], patch={
             "completed_dimensions": ran.ANALYSIS_DIMENSIONS,
             "open_questions": ["音效?"]})
-        assert ran.finalize_if_done(r, run["run_id"]) is None
+        # 无 PENDING decision + 全维 → 完成 (open 降 assumption)
+        done = ran.finalize_if_done(r, run["run_id"])
+        assert done is not None and done["state"] == "COMPLETED"
+        # 有 PENDING decision → 阻塞
+        run2 = _mkrun(r + "2")
+        nr.transition_node_run(r + "2", run2["run_id"], "RUNNING")
+        nr.request_decision(r + "2", run2["run_id"], question="Q?")
+        nr.update_checkpoint(r + "2", run2["run_id"], patch={
+            "completed_dimensions": ran.ANALYSIS_DIMENSIONS})
+        assert ran.finalize_if_done(r + "2", run2["run_id"]) is None
 
 
 class TestConvergenceAfterDecisions:
     def test_resolved_decisions_unblock_completion(self, tmp_path):
-        """决策已 RESOLVED 的问题不阻塞收敛 (open_questions 假性累积修复)。"""
+        """决策 RESOLVED 后 (无 PENDING) + 全维 → 收敛完成 (open 记录保留)。"""
         r = str(tmp_path)
         run = _mkrun(r)
         nr.transition_node_run(r, run["run_id"], "RUNNING")
-        # 全维度覆盖 + open 含已决策问题
-        nr.request_decision(r, run["run_id"], question="平台?",
-                            options=["PC"])  # → WAITING
+        nr.request_decision(r, run["run_id"], question="平台?", options=["PC"])
         nr.update_checkpoint(r, run["run_id"], patch={
             "completed_dimensions": ran.ANALYSIS_DIMENSIONS,
-            "open_questions": ["平台?", "真未决?"]})
-        # 答决策 (resume)
+            "open_questions": ["平台?"]})
         dec = nr.get_node_run(r, run["run_id"])["decisions"][0]
         nr.record_decision(r, run["run_id"], dec["decision_id"], chosen="PC", actor="human")
-        # 未决仍有 "真未决?" → 不收敛
-        assert ran.finalize_if_done(r, run["run_id"]) is None
-        # 清未决 → 收敛 (resolved 决策问题已过滤)
-        nr.update_checkpoint(r, run["run_id"], patch={"open_questions": []})
         done = ran.finalize_if_done(r, run["run_id"])
         assert done is not None and done["state"] == "COMPLETED"

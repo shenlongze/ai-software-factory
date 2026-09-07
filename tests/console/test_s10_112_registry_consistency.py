@@ -439,6 +439,14 @@ class TestApiRegistryConsistency:
             is_skill_scan = method == "POST" and path == "/api/skills/scan"
             # v1.1.191 M1: 外部执行器适配器管理 (POST/DELETE /api/external-ai*)
             is_external_ai = path.startswith("/api/external-ai")
+            # S49 Phase 5: Conversation Application Layer (Product Understanding) —
+            # 新 Conversation Domain (conv-*) 经 Application Service 暴露 (写面收窄:
+            # 仅 NL 消息更新 + PRD 派生, 状态转换留 Application Service/后续 Phase)
+            is_pu_message = (
+                method == "POST"
+                and path.endswith("/product-understanding/messages")
+            )
+            is_pu_prd = method == "POST" and path.endswith("/prd")
             assert (
                 is_approval or is_runtime or is_tool_execute or is_mcp_connect
                 or is_review_feedback or is_project_create or is_project_suggest
@@ -449,7 +457,7 @@ class TestApiRegistryConsistency:
                 or is_mcp_remove or is_llm_config
                 or is_agent_write or is_skill_write
                 or is_local_ai_write or is_skill_scan
-                or is_external_ai
+                or is_external_ai or is_pu_message or is_pu_prd
             ), f"写路由超出白名单: {method} {path}"
 
     def test_capability_matrix_api_claims_backed(self):

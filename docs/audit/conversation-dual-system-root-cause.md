@@ -2401,11 +2401,249 @@ K1 只想补全 "对话理解层"，但错误地认为需要全新创建。
 | session/context.py | ~500 | SessionContext |
 | session/product.py | 171 | ProductIntent |
 
+## 四十九、Product Understanding Implementation
+
+**日期**: 2026-09-08 | **阶段**: S49 / Phase 5 (第四阶段审计后首次实施) | **状态**: ✅ Implemented + Tested
+
+### 实施目标 (S49 §一)
+
+> 先建立真正持久化的 Product Understanding SSOT, 让自然语言 Conversation 可以连续积累产品认知。
+
+### 落地文件 (全部新增, 零 legacy 修改于 conversation_os/session/production_runtime)
+
+| 文件 | 职责 | 状态 |
+|------|------|------|
+| `factory-console/product_understanding.py` | Conversation+Message+Fact domain + 原子 JSON store | ✅ Verified (单测覆盖) |
+| `factory-console/conversation_app.py` | ConversationApplicationService / ProductUnderstandingService / 确定性 NL 解释器 / sufficiency | ✅ Verified |
+| `factory-console/application_formalization.py` | PRD Domain (从 Understanding 派生, versioned, provenance) | ✅ Verified |
+| `factory-console/web/backend/fastapi_adapter.py` | 新 Conversation Domain API 端点 (legacy 不动) | ✅ Verified (6 API tests) |
+| `tests/console/test_product_understanding_ssot.py` | Test A–F + P0/P1 (17 tests) | ✅ 17 passed |
+| `tests/console/test_product_understanding_api.py` | Application Layer API (6 tests) | ✅ 6 passed |
+
+### 概念冻结 (S49 §一)
+
+- **Conversation ≠ Session**: Conversation = 长期业务/认知空间 (持久化); Session = 交互生命周期 (可结束/重建)。
+- **Product Understanding ≠ Intent**: Intent 只描述"这句话想干什么", 绝不作为 Product 状态机 SSOT。
+  本域代码零 INTENT 引用 (测试断言无 `INTENT_` 依赖)。
+
 ---
 
-**审计完成**
+## 五十、Product Understanding Persistence
 
-本次审计已完成，生成报告于：
-`docs/audit/conversation-dual-system-root-cause.md`
+### 存储模型
 
-**核心结论**: 存在两套并行 Conversation 系统是历史并行开发的结果，System B (session/) 能力完整应保留，System A (conversation_os) 缺乏 Product Intelligence 应退役。
+```
+<root>/conversations/{conv-id}.json    ← 单文件原子一致 (RLock + tmp + os.replace)
+├── id / title / status (OPEN|ARCHIVED) / created_by / created_at / updated_at
+├── messages: [{id, role, content, created_at}]   ← append-only
+├── understanding: {version: int, facts: {fact_id: Fact}}
+│     Fact: id / conversation_id / type / content / status
+│           / source_message_id / confidence / provenance
+│           / supersedes[] / superseded_by / created_at / updated_at
+└── prds: [PRD records] (versioned, §五十四)
+```
+
+### Fact 类型与状态 (S49 §二)
+
+- **type** ∈ `IDEA | REQUIREMENT | CONSTRAINT | DECISION | QUESTION | FUTURE_IDEA` (可扩展注册表)
+- **status** ∈ `PROPOSED | CONFIRMED | SUPERSEDED | REJECTED`; 有效 = PROPOSED/CONFIRMED
+- 每 Fact 至少含 `id/conversation_id/type/content/status/source_message_id/created_at/updated_at/confidence/provenance` — 与 S49 §二字段清单一致
+
+### 持久化语义
+
+- conversation/messages/facts/version 单文件原子写 — 重启后一次读全恢复 (Test B ✅)
+- `understanding.version` 单调递增 — PRD provenance 锚点 (Test F ✅)
+
+---
+
+## 五十一、Conversation Domain Implementation
+
+### Application Layer (S49 §十三/§十四 唯一入口)
+
+```
+ConversationApplicationService   — conversation 生命周期 (create/get/list/messages/close)
+ProductUnderstandingService      — process_user_message(NL → facts) / snapshot / context
+                                   / facts / sufficiency_gaps / adaptive_question
+```
+
+- CLI/API/WebUI 未来统一经 **Application Service** → Domain; 禁止直达 session internals / conversation_os / AgentLoop。
+- 本阶段 conversation 创建经 ApplicationService (domain 直建); HTTP 端点挂载于 `/api/conversations/{id}/product-understanding*` — 与 legacy `conv_*` (conversation_os) 路径共存不冲突 (S49 §十三: API 只建 Boundary, 不一次性迁移; legacy 端点未动)。
+
+### API 端点 (新增, 全部读面或白名单写面)
+
+```
+POST /api/conversations/{id}/product-understanding/messages   NL → Understanding 增量更新
+GET  /api/conversations/{id}/product-understanding            Understanding 快照
+GET  /api/conversations/{id}/product-understanding/context    Context (持久化 Understanding 构建)
+GET  /api/conversations/{id}/messages                         消息列表 (Application Layer)
+POST /api/conversations/{id}/prd                              PRD 派生 (需已有 Understanding)
+GET  /api/conversations/{id}/prd                              PRD 列表 (provenance 可见)
+```
+
+- 写路由白名单已同步 (tests/console/test_s10_112_registry_consistency.py +2 豁免)。
+- 未知 conversation → 404; 空 Understanding 派生 PRD → 400 (诚实拒绝, 无假成功)。
+
+---
+
+## 五十二、Adaptive Clarification Implementation
+
+### 从固定问卷 → Sufficiency-based (S49 §五)
+
+- **旧**: `_PRODUCT_FIELD_ORDER = (problem → user → core_features)` 固定顺序问卷。
+- **新**: `ProductUnderstandingService.sufficiency_gaps(conv)` — 从**当前快照**发现真正缺失:
+  - 无 IDEA → "先确定核心想法"
+  - 无 REQUIREMENT 且内容无平台信息 → "运行平台还没定"
+  - 无 DECISION 且无交互描述 → "交互方式还没定"
+  - `adaptive_question(conv, asked)` — 只问尚未答过的缺口, 不问完所有字段 (测试: 回答后不再重复同一问题 ✅)
+
+### 测试证据
+
+- `TestAdaptiveClarification` 2 tests: gap 检测非固定问卷 + 已回答不重复 ✅
+- 注意: 本阶段**不实现完整 Requirement Analysis Node 轮询** (requirement_analysis_node 已存在并
+  有 Human Decision 门 — 那是 production 前深潜分析); S49 的 sufficiency 是 conversation 层的轻量澄清。
+
+---
+
+## 五十三、Context Continuity Implementation
+
+### Context 构建 (S49 §六)
+
+`ProductUnderstandingService.context(conv)` → `product_understanding.build_context`:
+
+```
+Conversation (title/status)
+  + recent_messages (窗口, 缺省 8)
+  + understanding version
+  + effective facts (by_type 分组 + 扁平, budget 截断)
+```
+
+- **禁止**: 重读最近 N 条消息 → 猜产品是什么。Context 明确从持久化 Understanding 构建。
+- 测试: `TestContextFromUnderstanding` ✅ — close 后 context 仍含 facts + recent messages。
+
+### Session Restart 连续性 (S49 §七, 核心验收)
+
+- Session1: NL 4–5 句 → facts 累积 → `close_conversation` (ARCHIVED)
+- Session2: 新 service 实例 (同 root) → `get_conversation` 完整恢复 → 继续自然对话
+- 测试: `TestSessionRestart` 3 tests ✅ (恢复 facts / 追问知道产品 / 不重问"请描述产品")
+
+---
+
+## 五十四、PRD Domain Foundation
+
+### PRD 模型 (S49 §八)
+
+```
+PRD-{id}  (record 存于 conversation 文档 prds[])
+├── conversation_id
+├── version: int (1, 2, ...)
+├── status: draft → approved (→ archived 边界, 未实现完整 workflow — 属后续 Phase)
+├── source_product_understanding_version   ← provenance (Test F)
+├── content: {overview, functional_requirements, constraints, decisions,
+│            future_considerations, open_questions, provenance{facts[]}}
+├── structured_content                     ← section → 内容映射 (结构化对象, 非文件)
+├── created_at / updated_at / actor / history[]
+└── 渲染: render_prd_markdown(prd)        ← 保留文件 Artifact 能力 (只读派生)
+```
+
+### 关键语义
+
+- **PRD 从 Understanding 派生** (create_prd 读 snapshot → derive_prd_sections), 不是独立创建/反向猜测文件。
+- 空 Understanding → `ValueError` (拒绝无源 PRD)。
+- 修改 = `update_prd` 从**最新** Understanding 重新派生 → 新 version (draft only)。
+- approved → 不可原地改 (走新 PRD/版本化)。
+- **不破坏现有 `PRD.md` Artifact**: 结构化 PRD Domain Object → `render_prd_markdown` 渲染投影 (未来接 workspace 输出)。
+
+---
+
+## 五十五、Application Layer Boundary
+
+### 状态所有权冻结 (S49 §十二)
+
+| Domain | SSOT | 本阶段落点 |
+|--------|------|-----------|
+| Conversation | Conversation Domain | `product_understanding.py` conversation 文档 |
+| Message | Conversation | 同上 messages[] |
+| Product Understanding | Conversation/Product Domain | `product_understanding.py` facts[] |
+| Requirement/Constraint/Decision/Question/Future Idea | Product Understanding | facts (type 区分) |
+| PRD | PRD Domain/Artifact | conversation 文档 prds[] (versioned) |
+| Development Plan | Plan Domain | ⏳ 未实现 (S49 §九: 只建边界不实现) |
+| Session | Session Runtime | ⏳ legacy session/ 未动 (后续迁移) |
+| Task/Node/NodeRun/Artifact/Evidence | Production Runtime | ✅ 未触碰 (保持现状) |
+
+- 单一 writer 原则: Fact 唯一 writer = `upsert_fact`; PRD 唯一 writer = `create_prd/update_prd/approve_prd`。
+- 不存在 Frontend + Session memory + JSON + Intent 共同拥有同一状态。
+
+---
+
+## 五十六、E2E Natural Language Validation
+
+### Test A–F 结果 (tests/console/test_product_understanding_ssot.py — 17 passed)
+
+| Test | 内容 | 结果 |
+|------|------|------|
+| Test A | NL 连续理解: 飞机大战 → 手机端 → 不要登录 → 排行榜(future) → 虚拟摇杆(decision) | ✅ 全类型 fact 累积 |
+| Test B | Session Restart: S1 写入+close → S2 加载完整恢复 | ✅ facts+version 恢复 |
+| Test C | 无 keyword: 输入全是普通中文, 禁内部命令 | ✅ banned 词扫描为 0 |
+| Test D | 修改非新增重复: 重申约束不产生冲突 fact (supersession) | ✅ 1 effective + SUPERSEDED 历史 |
+| Test E | Context Continuity: S2 追问基于 PU 回答, 不"请描述产品" | ✅ |
+| Test F | PRD 从 Understanding 派生: source_product_understanding_version 可追踪 | ✅ v1→v2 单调 |
+
+### API 层 (test_product_understanding_api.py — 6 passed)
+
+NL → messages → understanding 快照 / 404 / messages roundtrip / context / PRD create+list / 空 Understanding 拒绝。
+
+---
+
+## 五十七、Session Restart Validation
+
+### 复验链 (S49 §十七, 真实执行)
+
+```
+User NL ×5 → Understanding (5 facts, ver 5) → sufficiency (信息足够)
+  → PRD v1 (src_uv 5) → 修改 ("不要内购") → PRD v2 (src_uv 6, version 2)
+  → close → Session Restart → facts 恢复 (6, ver 6) → 继续 NL 对话 → 回答引用持久化理解
+```
+
+- ✅ 自动化测试: TestSessionRestart (3) + TestContextFromUnderstanding (1) + 完整链脚本复验。
+- ⚠️ **限制声明** (S49 验收纪律 — 自动化 ≠ 人工): 以上为**自动化验证** (确定性规则解释器);
+  真实 LLM 解释 + WebUI 人工会话验收 (中文 IME) 属用户实测环节, 未在本阶段自动化内冒充完成。
+
+---
+
+## 五十八、Remaining Migration Gaps
+
+### 已实现 vs 未迁移 (诚实清单)
+
+| 项 | 状态 | 说明 |
+|----|------|------|
+| Product Understanding 持久化 SSOT | ✅ Implemented | conversation-scoped facts + version |
+| Session Restart 连续性 | ✅ Verified (自动化) | 真实 WebUI 人工验收待用户 |
+| Intent → Workflow State Machine 残留 | ⚠️ legacy 存在 | session/conversation.py + conversation_os.py 内旧路径**未删除** (S49 §十禁令); 新域无此模式 |
+| Product Intent 仅内存存储 | ⚠️ legacy 存在 | session/ConversationManager.product_intent 仍内存; 新域已持久化, 未接替旧路径 (Phase 3 统一 Conversation Service 迁移) |
+| conversation_os / session/ 双轨 API | ⚠️ 未统一 | legacy /api/conversations (conv_*) 与 /api/sessions 保留; 新域端点共存 |
+| CLI → session/ | ⚠️ 未迁移 | factory CLI 仍走 InteractiveSession (Phase 6) |
+| WebUI 依赖两套 API | ⚠️ 未迁移 | 前端仍调 conversation_os + session (Phase 7) |
+| Development Plan 域 | ⏳ 未开始 | 仅声明边界 (PRD → Plan → Production 链留后续 Phase) |
+| requirement_analysis_node 固定倾向 | ✅ 未新增 | S49 用 sufficiency 轻量澄清; RA Node 7 维已有 Human Decision 门 (此前阶段) |
+| 历史数据迁移 | ⏳ 未开始 | 无历史 conversation understanding (新域为空起步) |
+
+### 架构裁决复核
+
+- ✅ 未引入第二套平行事实系统: 新域为第四阶段 §29 裁决的 conversation_os → RETIRE 替代本体
+  (目标架构), 非平行另一套; product_truth (正式资产层) 与新域 (认知层) 语义分离, 未来
+  formalize 时衔接。
+- ✅ Context 从持久化 Understanding 构建, 不再猜。
+- ✅ 用户只自然说话: 内部结构化 (domain/fact/supersession/provenance), 外部无 keyword/round 感。
+
+---
+
+**S49 / Phase 5 实施完成** (2026-09-08)
+
+实现报告并入本审计文档 (四十九~五十八); 计划文档: `docs/audits/2026-09-08-s49-plan.md`。
+
+**核心结论**: Product Understanding 已从内存/固定问卷变为持久化、conversation-scoped、可 supersede 的事实 SSOT;
+Conversation Domain + Application Layer 边界已建立; Session Restart 连续性已验证 (自动化);
+legacy (conversation_os/session) 按 S49 §十禁令保留未删, 迁移路径按第四阶段 Migration Sequence 顺延。
+
+---
+

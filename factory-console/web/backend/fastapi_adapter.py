@@ -6631,6 +6631,99 @@ def build_app(
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    # ---- S49 Phase 5: Conversation Application Layer (Product Understanding) ----
+    # 新 Conversation Domain (conv-* id) 经 ConversationApplicationService /
+    # ProductUnderstandingService 暴露; 与 legacy /api/conversations (conv_*,
+    # conversation_os) 路径共存 — legacy 端点未动 (S49 §13: API 只建立正确
+    # Boundary, 不一次性迁移)。conversation 不在新域 → 404 (诚实, 标注迁移 gap)。
+
+    def _s49_root() -> Path:
+        return Path(str(factory_root if factory_root is not None else DEFAULT_ROOT))
+
+    @app.post("/api/conversations/{conversation_id}/product-understanding/messages")
+    def api_pu_send_message(conversation_id: str,
+                            body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """自然语言消息 → Product Understanding 增量更新 (Application Layer)。
+
+        输入必须是普通自然语言 (无 keyword); 返回 {message, reply, facts_added,
+        understanding_version}。conversation 不存在 → 404。
+        """
+        from factory_console.conversation_app import (  # noqa: F401 — 延迟 import
+            ConversationApplicationService, ProductUnderstandingService)
+        root = _s49_root()
+        if ConversationApplicationService(root).get(conversation_id) is None:
+            raise HTTPException(status_code=404,
+                                detail=f"conversation 不在 Product Understanding 域: {conversation_id}")
+        try:
+            return ProductUnderstandingService(root).process_user_message(
+                conversation_id, str(body.get("message", "")))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/conversations/{conversation_id}/product-understanding")
+    def api_pu_get(conversation_id: str) -> dict[str, Any]:
+        """当前 Product Understanding 快照 (by_type + version + facts)。"""
+        from factory_console.conversation_app import (  # noqa: F401 — 延迟 import
+            ConversationApplicationService, ProductUnderstandingService)
+        root = _s49_root()
+        if ConversationApplicationService(root).get(conversation_id) is None:
+            raise HTTPException(status_code=404,
+                                detail=f"conversation 不在 Product Understanding 域: {conversation_id}")
+        return ProductUnderstandingService(root).snapshot(conversation_id)
+
+    @app.get("/api/conversations/{conversation_id}/messages")
+    def api_conversation_messages(conversation_id: str) -> dict[str, Any]:
+        """Conversation 消息列表 (Application Layer; 新 Conversation Domain)。"""
+        from factory_console.conversation_app import (  # noqa: F401 — 延迟 import
+            ConversationApplicationService)
+        root = _s49_root()
+        if ConversationApplicationService(root).get(conversation_id) is None:
+            raise HTTPException(status_code=404,
+                                detail=f"conversation 不在 Product Understanding 域: {conversation_id}")
+        items = ConversationApplicationService(root).messages(conversation_id)
+        return {"items": items, "count": len(items)}
+
+    @app.get("/api/conversations/{conversation_id}/product-understanding/context")
+    def api_pu_context(conversation_id: str) -> dict[str, Any]:
+        """Context (从持久化 Understanding 构建 — recent messages + facts)。"""
+        from factory_console.conversation_app import (  # noqa: F401 — 延迟 import
+            ConversationApplicationService, ProductUnderstandingService)
+        root = _s49_root()
+        if ConversationApplicationService(root).get(conversation_id) is None:
+            raise HTTPException(status_code=404,
+                                detail=f"conversation 不在 Product Understanding 域: {conversation_id}")
+        return ProductUnderstandingService(root).context(conversation_id)
+
+    @app.post("/api/conversations/{conversation_id}/prd")
+    def api_prd_create(conversation_id: str,
+                       body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """从 Product Understanding 派生 PRD v1 (PRD Domain 边界; 版本化/可追踪)。"""
+        from factory_console.conversation_app import (  # noqa: F401 — 延迟 import
+            ConversationApplicationService)
+        from factory_console.application_formalization import create_prd
+        root = _s49_root()
+        if ConversationApplicationService(root).get(conversation_id) is None:
+            raise HTTPException(status_code=404,
+                                detail=f"conversation 不在 Product Understanding 域: {conversation_id}")
+        try:
+            return create_prd(root, conversation_id,
+                              actor=str(body.get("actor") or "api"))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/conversations/{conversation_id}/prd")
+    def api_prd_list(conversation_id: str) -> dict[str, Any]:
+        """PRD 版本列表 (provenance: source_product_understanding_version)。"""
+        from factory_console.conversation_app import (  # noqa: F401 — 延迟 import
+            ConversationApplicationService)
+        from factory_console.application_formalization import list_prds
+        root = _s49_root()
+        if ConversationApplicationService(root).get(conversation_id) is None:
+            raise HTTPException(status_code=404,
+                                detail=f"conversation 不在 Product Understanding 域: {conversation_id}")
+        items = list_prds(root, conversation_id)
+        return {"items": items, "count": len(items)}
+
     @app.post("/api/task-trees")
     def api_decompose_task_tree(body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
         """Task Tree 分解 (K2, 需求 → 任务树)。"""

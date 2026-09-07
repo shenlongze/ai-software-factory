@@ -2641,19 +2641,22 @@ def run_agent_native(
                     _truth = str(_tl.get("output") or "")[:1500]
             except Exception:  # noqa: BLE001
                 pass
-            _recovery, _aw = _work_recovery_guide(
-                question, _wstate, history,
-                (lambda p: _simple_llm(p, data_dir=data_dir)) if data_dir else None,
-                truth_summary=_truth)
-            if _recovery:
-                messages.append({"role": "system", "content": _recovery})
-                # E3.2: resolver 结构化输出真写回 state (跨轮锚定, replace 语义)
-                if _aw:
-                    _wstate["active_work"] = _aw.get("goal") or _wstate.get("active_work") or ""
-                    _wstate["next_action"] = _aw.get("next_action") or ""
-                    _wstate["current_stage"] = _aw.get("current_stage") or ""
-                    _wstate["need_user_input"] = bool(_aw.get("need_user_input"))
-                _conv_state_save(data_dir, session_id, _wstate)
+            # KERNEL INVERSION: 禁用 _ACTIVE_WORK_PROMPT
+            # 旧 Agent Kernel 让 LLM 猜测 active_work/next_action，导致状态不一致
+            # 新 Kernel 应该从 NodeRun / NodeRuntime 读取真实状态，不再猜测
+            # _recovery, _aw = _work_recovery_guide(
+            #     question, _wstate, history,
+            #     (lambda p: _simple_llm(p, data_dir=data_dir)) if data_dir else None,
+            #     truth_summary=_truth)
+            # if _recovery:
+            #     messages.append({"role": "system", "content": _recovery})
+            # if _aw:
+            #     _wstate["active_work"] = _aw.get("goal") or _wstate.get("active_work") or ""
+            #     _wstate["next_action"] = _aw.get("next_action") or ""
+            #     _wstate["current_stage"] = _aw.get("current_stage") or ""
+            #     _wstate["need_user_input"] = bool(_aw.get("need_user_input"))
+            # _conv_state_save(data_dir, session_id, _wstate)
+            pass  # KERNEL INVERSION: removed LLM guessing state
     except Exception:  # noqa: BLE001 — recovery 失败不阻断
         pass
 

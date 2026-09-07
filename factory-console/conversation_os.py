@@ -118,9 +118,12 @@ def send_message(root: Path | str, conv_id: str, message: str, *,
     """用户消息 → Intent → State 更新 → 回复 (多轮, 不跑题)。
 
     全链路: msg_ entity + S43 Event + 状态更新 (决策保留/纠正不覆盖)。
+    KERNEL INVERSION: EXECUTE intent 现在触发 Production Runtime，而非直接调用 agent_loop。
     """
     conv = get_conversation(root, conv_id)
     state = conv.get("state", {})
+    project_id = conv.get("project_id") or conv.get("metadata", {}).get("project_id", "")
+    
     last_msg = conv["messages"][-1] if conv.get("messages") else {}
     last_intent = last_msg.get("intent", "DISCUSS") if last_msg else "DISCUSS"
     intent = detect_intent(message, last_intent=last_intent)
@@ -197,9 +200,47 @@ def _make_reply(root: Path | str, conv: dict[str, Any], message: str,
                 "status": "APPROVED",
                 "card": _make_card("task_tree", message, goal, confirmed)}
     if intent == "EXECUTE":
-        return {"text": f"明白,目标是「{goal or _extract_goal(message)}」。我会组织执行并返回真实结果。",
+        # KERNEL INVERSION: 触发 Production Runtime 而非返回模板
+        target = goal or _extract_goal(message)
+        task_id = f"task-{_now_iso().replace(':', '').replace('-', '')}"
+        
+        # 调用 Production Runtime (如果存在)
+        execution_result = None
+        run_id = None
+        error_msg = None
+        try:
+            from factory_console.production_runtime import execute_task
+            execution_result = execute_task(
+                root,
+                task_id,
+                project_id=project_id or "default",
+                input_data={"goal": target, "message": message},
+                actor=actor,
+            )
+            run_id = execution_result.get("run_id")
+        except ImportError:
+            # Production Runtime 还未集成，返回模板 (临时回退)
+            pass
+        except Exception as e:
+            error_msg = str(e)
+        
+        if run_id:
+            return {
+                "text": f"明白,目标是「{target}」。已启动生产执行 (NodeRun: {run_id})。",
+                "status": "EXECUTING",
+                "run_id": run_id,
+                "task_id": task_id,
+                "verification": execution_result.get("verification", "PENDING"),
+                "card": _make_card("execution", message, target, confirmed)
+            }
+        else:
+            # 回退到模板 (Production Runtime 尚未完全集成)
+            return {
+                "text": f"明白,目标是「{target}」。{error_msg or '我会组织执行并返回真实结果。'}",
                 "status": "WILL_EXECUTE",
-                "card": _make_card("execution", message, goal, confirmed)}
+                "error": error_msg,
+                "card": _make_card("execution", message, target, confirmed)
+            }
     if intent == "ASK_STATUS":
         return {"text": _status_reply(root, conv, message), "status": "STATUS",
                 "card": _make_card("task_tree", message, goal, confirmed)}

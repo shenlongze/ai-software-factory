@@ -156,13 +156,17 @@ def run_round(root, run_id: str, llm_fn, *, truth_snippet: str = "") -> dict[str
             need_user = True
             f["decision_ref"] = d["decision_id"]
             break
+    _sum = parsed.get("summary") or f"{dim} 分析完成"
+    cp["last_summary"] = _sum
+    cp["last_dimension"] = dim
+    nr.update_checkpoint(root, run_id, patch=cp)
     if need_user:
         return {"state": "WAITING_FOR_USER", "need_user": True,
                 "pending_questions": pending,
-                "summary": parsed.get("summary") or f"{dim} 分析发现需用户决策",
+                "summary": _sum,
                 "dimension": dim, "findings_count": len(findings)}
     return {"state": "RUNNING", "need_user": False,
-            "summary": parsed.get("summary") or f"{dim} 分析完成",
+            "summary": _sum,
             "dimension": dim, "findings_count": len(findings),
             "open_questions": cp["open_questions"]}
 

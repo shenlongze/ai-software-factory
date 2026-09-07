@@ -3467,12 +3467,18 @@ def build_app(
             pend = [{"decision_id": d["decision_id"], "question": d["question"],
                      "options": d["options"]}
                     for d in (run.get("decisions") or []) if d.get("status") == "PENDING"]
+            resolved = [{"question": d.get("question"), "chosen": d.get("chosen")}
+                        for d in (run.get("decisions") or []) if d.get("status") == "RESOLVED"]
             cp = run.get("checkpoint") or {}
             return {"ok": True, "run": {
                 "run_id": run.get("run_id"), "state": run.get("state"),
                 "node_id": run.get("node_id"),
                 "iteration": cp.get("iteration") or 0,
                 "completed_dimensions": cp.get("completed_dimensions") or [],
+                "last_dimension": cp.get("last_dimension"),
+                "last_summary": cp.get("last_summary"),
+                "open_question_count": len(cp.get("open_questions") or []),
+                "resolved_decisions": resolved,
                 "pending_decisions": pend,
             }}
         except Exception as exc:  # noqa: BLE001

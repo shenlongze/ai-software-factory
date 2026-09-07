@@ -25,9 +25,7 @@ import pytest  # noqa: E402
 
 from factory_console import conversation_app as ca  # noqa: E402
 from factory_console import golden_path as gp  # noqa: E402
-from tests.console.test_understanding_confirmation import (  # noqa: E402
-    _nlp_semantic_interp,
-)
+from factory_console.testing_semantic_interp import nlp_semantic_interp  # noqa: E402
 
 
 @pytest.fixture()
@@ -37,7 +35,7 @@ def root(tmp_path: Path) -> str:
 
 def _session(root: str) -> ca.ProductUnderstandingService:
     """新 Session = 新 service 实例 (同 root 持久化)。"""
-    return ca.ProductUnderstandingService(root, interpreter=_nlp_semantic_interp)
+    return ca.ProductUnderstandingService(root, interpreter=nlp_semantic_interp)
 
 
 def _open_conversation(root: str, title: str = "飞机大战") -> str:

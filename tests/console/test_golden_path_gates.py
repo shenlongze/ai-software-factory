@@ -24,9 +24,7 @@ from factory_console import conversation_app as ca  # noqa: E402
 from factory_console import golden_path as gp  # noqa: E402
 from factory_console import product_truth as pt  # noqa: E402
 from factory_console import product_understanding as pu  # noqa: E402
-from tests.console.test_understanding_confirmation import (  # noqa: E402
-    _nlp_semantic_interp,
-)
+from factory_console.testing_semantic_interp import nlp_semantic_interp  # noqa: E402
 
 
 @pytest.fixture()
@@ -41,7 +39,7 @@ def conv(root: str) -> dict:
 
 @pytest.fixture()
 def svc(root: str):
-    return ca.ProductUnderstandingService(root, interpreter=_nlp_semantic_interp)
+    return ca.ProductUnderstandingService(root, interpreter=nlp_semantic_interp)
 
 
 def _build_understanding(root: str, conv_id: str,

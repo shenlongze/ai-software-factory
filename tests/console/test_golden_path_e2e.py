@@ -39,9 +39,7 @@ import pytest  # noqa: E402
 
 from factory_console import conversation_app as ca  # noqa: E402
 from factory_console import golden_path as gp  # noqa: E402
-from tests.console.test_understanding_confirmation import (  # noqa: E402
-    _nlp_semantic_interp,
-)
+from factory_console.testing_semantic_interp import nlp_semantic_interp  # noqa: E402
 
 
 @pytest.fixture()
@@ -62,7 +60,7 @@ class TestGoldenPathE2E:
         # 1. 创建/进入 Conversation (Session A)
         app_a = ca.ConversationApplicationService(root)
         cid = app_a.create(title="飞机大战小游戏")["id"]
-        svc_a = ca.ProductUnderstandingService(root, interpreter=_nlp_semantic_interp)
+        svc_a = ca.ProductUnderstandingService(root, interpreter=nlp_semantic_interp)
 
         # 2. 模糊 Idea → 3. 自然讨论 → 4. Understanding 增长
         svc_a.process_user_message(cid, "我想做一个飞机大战小游戏。")
@@ -108,7 +106,7 @@ class TestGoldenPathE2E:
 
         # 12. 新 Session 恢复同一 Product Understanding
         app_b = ca.ConversationApplicationService(root)
-        svc_b = ca.ProductUnderstandingService(root, interpreter=_nlp_semantic_interp)
+        svc_b = ca.ProductUnderstandingService(root, interpreter=nlp_semantic_interp)
         conv_b = app_b.get(cid)
         assert conv_b is not None
         snap_b = svc_b.snapshot(cid)
@@ -169,7 +167,7 @@ class TestGoldenPathE2E:
     def test_gate_blocks_premature_execution(self, root: str) -> None:
         """未确认(PRD/Plan) → 任何时点不能提前进生产 (Golden Path §20/§24)。"""
         cid = ca.ConversationApplicationService(root).create(title="t")["id"]
-        svc = ca.ProductUnderstandingService(root, interpreter=_nlp_semantic_interp)
+        svc = ca.ProductUnderstandingService(root, interpreter=nlp_semantic_interp)
         svc.process_user_message(cid, "我想做一个飞机大战小游戏。")
         # 无 PRD → 拒绝
         with pytest.raises(gp.GoldenPathError):

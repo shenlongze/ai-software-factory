@@ -2275,12 +2275,23 @@ def run_agent_native(
             "【用户要文档类产出】: 优先 project_docs / 文档检索; 如需要可配合 code_scan 佐证, "
             "但不要用大量代码文件内容替代文档说明。"
         )})
-    # ---- 上下文连贯性: 话题账本视图优先, fallback 最近4轮 ----
+    # ---- 上下文连贯性: 话题账本视图优先, fallback 最近 N 轮 (含工具结果) ----
     hist_block = context_view if (context_view or "").strip() else _history_text(history)
     if hist_block:
         messages.append({"role": "system", "content": (
-            f"【最近对话】(保持上下文连贯, 引用前文时注明; 与本次问题矛盾处以后者为准)\n{hist_block}"
+            f"【最近对话】(保持上下文连贯, 引用前文时注明; 与本次问题矛盾处以后者为准; "
+            f"其中 [工具 X 结果] 是已获得的真实事实, 可直接引用回答)\n{hist_block}"
         )})
+    # ---- S49-FIX: 回答合成纪律 (结论先行/复用已有事实/禁空转) ----
+    messages.append({"role": "system", "content": (
+        "【回答纪律】先直接回答用户当前这句, 再给依据 (已确认事实/证据来源); "
+        "不确定处明说『不确定/推断/待确认』, 不把推断说成事实。"
+        "若上文 [工具 X 结果] 或 AI 上轮已给出足够信息 → 直接基于它综合回答, "
+        "不要重复调查/重复调用同批工具 (除非用户明确要新事实)。"
+        "禁止『让我再看看/我再查一下/需要重新读取』式无结论空转 — "
+        "每轮回答须给出判断、结论或明确的下一步。若确实需要补充一个关键新事实, "
+        "最多调用一个针对性工具。"
+    )})
     # ---- S47-E2: Semantic Governor + Conversation State (主语义控制) ----
     _gov_guide = ""
     _gov: dict[str, Any] = {}
@@ -2989,8 +3000,13 @@ def _core_render(data_dir: str | Path | None) -> str:
         return ""
 
 
-def _history_text(history: list[dict[str, Any]] | None, max_turns: int = 4) -> str:
-    """最近 N 轮对话 → 文本块 (注入 Agent 主循环, 保持上下文连贯)。"""
+def _history_text(history: list[dict[str, Any]] | None, max_turns: int = 8) -> str:
+    """S49-FIX: 最近 N 轮对话 + 每轮工具执行结果 → 文本块。
+
+    Tool Result 必须成为下轮 LLM 可见上下文 (跨轮复用, 防重查):
+    assistant 消息 meta.tool_calls[].output (持久化于会话) 一并注入。
+    max_turns 默认 8 (Correctness first — 过薄丢事实)。
+    """
     if not history:
         return ""
     lines = []
@@ -3002,7 +3018,14 @@ def _history_text(history: list[dict[str, Any]] | None, max_turns: int = 4) -> s
         if role not in ("user", "assistant") or not content:
             continue
         who = "用户" if role == "user" else "AI"
-        lines.append(f"{who}: {content[:300]}")
+        lines.append(f"{who}: {content[:600]}")
+        if role == "assistant":
+            tcs = ((h.get("meta") or {}).get("tool_calls")) or []
+            for c in tcs[:4]:
+                tname = str(c.get("tool") or "")
+                out = str(c.get("output") or c.get("error") or "")
+                if tname and out:
+                    lines.append(f"  [工具 {tname} 结果] {out[:260]}")
     return "\n".join(lines)
 
 

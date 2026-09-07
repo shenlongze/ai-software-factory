@@ -155,6 +155,40 @@ def _get(root: Path | str, kind: str, rid: str) -> dict[str, Any] | None:
     return _load(root, kind).get(rid)
 
 
+def _update_content(root: Path | str, kind: str, rid: str, *,
+                    title: str | None = None, description: str | None = None,
+                    actor: str = "") -> dict[str, Any]:
+    """S47-E4: 通用内容更新 (仅 draft/pending 草稿状态; 已批准语义不可原地改)。
+    锁内读-改-写; 返回更新后 rec; 不存在 → KeyError; 非草稿状态 → ValueError。"""
+    import copy as _copy
+
+    with _lock:
+        data = _load(root, kind)
+        rec = data.get(rid)
+        if rec is None:
+            raise KeyError(f"{kind} {rid} 不存在")
+        editable = {"ideas": ("created", "refined"),
+                    "discoveries": ("pending", "running"),
+                    "requirements": ("draft",),
+                    "prds": ("draft",),
+                    "plans": ("pending",)}.get(kind, ())
+        if str(rec.get("status") or "") not in editable:
+            raise ValueError(
+                f"{kind} {rid} 状态 {rec.get('status')} 不可原地改 — 已进入审批链, 请走版本化")
+        upd = _copy.deepcopy(rec)
+        if title is not None:
+            upd["title"] = str(title)[:200]
+        if description is not None:
+            upd["description"] = str(description)[:8000]
+        upd["updated_at"] = _now_iso()
+        upd.setdefault("history", []).append({"to": str(upd.get("status")),
+                                              "at": _now_iso(), "actor": actor or "",
+                                              "note": "content-updated"})
+        data[rid] = upd
+        _save(root, kind, data)
+        return upd
+
+
 def _list(root: Path | str, kind: str,
           **filters: Any) -> list[dict[str, Any]]:
     out = []
@@ -320,6 +354,16 @@ def list_requirements(root: Path | str, **filters: Any) -> list[dict[str, Any]]:
 def transition_requirement(root: Path | str, req_id: str, to: str, *,
                            actor: str = "") -> dict[str, Any]:
     return _transition(root, "requirements", req_id, to, actor=actor)
+
+
+def update_requirement(root: Path | str, req_id: str, *,
+                       title: str | None = None, description: str | None = None,
+                       actor: str = "") -> dict[str, Any]:
+    """Requirement 内容更新 (S47-E4): 仅 draft 状态可原地完善内容;
+    已 validated/approved 的记录 → 拒绝 (需走版本化, 见 create_prd 禁则)。
+    返回更新后 rec; 不存在 → KeyError。"""
+    return _update_content(root, "requirements", req_id,
+                           title=title, description=description, actor=actor)
 
 
 # ---------------------------------------------------------------------------

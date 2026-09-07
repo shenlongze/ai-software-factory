@@ -220,16 +220,25 @@ def tool_schemas(data_dir: str | Path | None = None) -> list[dict[str, Any]]:
              "priority": {"type": "string", "enum": ["P0", "P1", "P2", "P3"]}}, ["title", "action"]),
         _fc("create_task", "创建任务(执行)", "在当前项目创建新任务",
             {"title": {"type": "string"}, "description": {"type": "string"}, "priority": {"type": "string", "enum": ["P0", "P1", "P2", "P3"]}}, ["title"]),
-        _fc("save_product_record", "保存产品链记录 (canonical)",
+        _fc("save_product_record", "保存/更新产品链记录 (canonical)",
             "把需求分析/PRD 等真实产出写入 canonical Product Truth。kind: "
             "discovery(需求理解) / requirement(需求) / prd(产品方案) / plan(计划)。"
-            "用户要求 继续/整理/分析/接受建议 → 即授权产出, 把整理结果写入 "
-            "(requirement 以 draft 状态落盘, 后续可完善); 不要在回答里只输出"
-            "文本而不落盘。仅凭猜测无依据的内容不写。",
+            "用户要求 继续/整理/分析/接受建议/更具体/深化 → 即授权产出。"
+            "迭代规则: 若该工作已有记录且仍是 draft (record_id 已知或先用 "
+            "get_product_record 查到) → 传 record_id 更新其内容 (深化, 不重复"
+            "新建); 无记录 → 新建。不要在回答里只输出文本而不落盘。",
             {"kind": {"type": "string", "enum": ["discovery", "requirement", "prd", "plan"]},
              "title": {"type": "string"}, "content": {"type": "string"},
-             "idea_id": {"type": "string", "description": "kind=discovery 时必填 (IDEA-*)"}},
+             "record_id": {"type": "string", "description": "可选: 更新已有 draft 记录 (深化) — 省略则新建"},
+             "idea_id": {"type": "string", "description": "kind=discovery 且新建时必填 (IDEA-*)"}},
             ["kind", "title", "content"]),
+        _fc("get_product_record", "读取产品链记录 (canonical)",
+            "读取 canonical Product Truth 记录的完整内容。record_id 已知 (如 "
+            "REQ-xxx) 传之; 未知则传 kind (requirement/discovery/prd/plan) 返回"
+            "该类型最近一条含完整内容。用于继续深化/查看已确定的产出/回答"
+            "'目前确定了什么'。",
+            {"kind": {"type": "string", "enum": ["discovery", "requirement", "prd", "plan"]},
+             "record_id": {"type": "string"}}, ["kind"]),
         _fc("project_docs", "文档清单", "列出项目文档/产出物", {}),
         _fc("git_status", "仓库状态", "查询 git 仓库: 远程/分支/领先提交", {}),
         _fc("monitor", "系统监控", "查询系统/服务运行状态", {}),
@@ -1252,41 +1261,84 @@ def dispatch(
             lines.append("")
             lines.append(_PROJECT_LIST_ANSWER_TEMPLATE)
             return {"ok": True, "output": "\n".join(lines)}
+        if tool_id == "get_product_record":
+            # S47-E4: 读 canonical 完整内容 (record_id 或 kind 最近)
+            try:
+                from factory_console import product_truth as pt
+                kind = str(args.get("kind") or "requirement").strip().lower()
+                record_id = str(args.get("record_id") or "").strip()
+                getter = {"discovery": pt.get_discovery, "requirement": pt.get_requirement,
+                          "prd": pt.get_prd, "plan": pt.get_plan}.get(kind)
+                lister = {"discovery": pt.list_discoveries, "requirement": pt.list_requirements,
+                          "prd": pt.list_prds, "plan": pt.list_plans}.get(kind)
+                if getter is None or lister is None:
+                    return {"ok": False, "error": "kind 必须是 discovery/requirement/prd/plan"}
+                rec = None
+                if record_id:
+                    rec = getter(root, record_id)
+                else:
+                    items = lister(root)
+                    if items:
+                        rec = items[-1]
+                if rec is None:
+                    return {"ok": True, "output": f"{kind} 记录: 无 (尚未建立)"}
+                return {"ok": True, "output": (
+                    f"{kind} {rec.get('id')} · {rec.get('status')} · {rec.get('title') or ''}\n"
+                    f"内容:\n{str(rec.get('description') or rec.get('input_ref') or rec.get('goal') or '')[:6000]}")}
+            except Exception as exc:  # noqa: BLE001
+                return {"ok": False, "error": f"读取失败: {type(exc).__name__}: {exc}"}
+
         if tool_id == "save_product_record":
-            # S47-E3: 会话真实产出 → canonical Product Truth (暴露既有写 API)
+            # S47-E3/E4: 会话真实产出 → canonical (新建 或 record_id 迭代 draft)
             try:
                 from factory_console import product_truth as pt
                 kind = str(args.get("kind") or "").strip().lower()
                 title = str(args.get("title") or "").strip()
                 content = str(args.get("content") or "").strip()
+                record_id = str(args.get("record_id") or "").strip()
                 if kind not in ("discovery", "requirement", "prd", "plan"):
                     return {"ok": False, "error": "kind 必须是 discovery/requirement/prd/plan"}
                 if not title:
                     return {"ok": False, "error": "title 必填"}
-                fn = {
-                    "discovery": pt.create_discovery,
-                    "requirement": pt.create_requirement,
-                    "prd": pt.create_prd,
-                    "plan": pt.create_plan,
-                }[kind]
                 if kind == "prd":
                     return {"ok": False,
                             "error": "PRD 请用 plan_development / 生产工作流生成 (有完整评审链); 本工具只落需求分析产出"}
                 if kind == "plan":
                     return {"ok": False,
                             "error": "计划请用 plan_development 生成 (结构化任务+审批); 本工具只落需求分析产出"}
+                if record_id:
+                    # 迭代: 深化已有 draft
+                    getter = {"discovery": pt.get_discovery, "requirement": pt.get_requirement,
+                              "prd": pt.get_prd, "plan": pt.get_plan}.get(kind)
+                    existing = getter(root, record_id) if getter else None
+                    if existing is None:
+                        return {"ok": False, "error": f"{kind} {record_id} 不存在, 无法更新 (省略 record_id 新建)"}
+                    if kind == "discovery":
+                        upd = pt._update_content(root, "discoveries", record_id,
+                                                 title=title,
+                                                 description=str(content)[:8000],
+                                                 actor="human") if hasattr(pt, "_update_content") else None
+                    else:
+                        upd = pt.update_requirement(root, record_id,
+                                                    title=title,
+                                                    description=str(content)[:8000],
+                                                    actor="human")
+                    rid = record_id
+                    return {"ok": True,
+                            "record": f"{kind} {rid} 已深化更新 (draft)",
+                            "id": rid}
                 if kind == "discovery":
                     idea_id = str(args.get("idea_id") or "").strip()
                     if not idea_id:
                         return {"ok": False, "error": "discovery 需要 idea_id (先建/查 Idea)"}
-                    rec = fn(root, idea_id=idea_id, title=title,
-                             input_ref=str(content)[:2000], actor="human")
+                    rec = pt.create_discovery(root, idea_id=idea_id, title=title,
+                                              input_ref=str(content)[:2000], actor="human")
                 else:  # requirement → canonical REQ-* (product_truth)
-                    rec = fn(root, title=title,
-                             description=str(content)[:8000], source="conversation",
-                             actor="human")
+                    rec = pt.create_requirement(root, title=title,
+                                                description=str(content)[:8000], source="conversation",
+                                                actor="human")
                 rid = rec.get("discovery_id") or rec.get("req_id") or rec.get("prd_id") or rec.get("plan_id") or str(rec.get("id") or "")
-                return {"ok": True, "record": f"{kind} {rid} 已写入 canonical (project {project_id})", "id": rid}
+                return {"ok": True, "record": f"{kind} {rid} 已写入 canonical", "id": rid}
             except Exception as exc:  # noqa: BLE001
                 return {"ok": False, "error": f"保存失败: {type(exc).__name__}: {exc}"}
 
@@ -3039,7 +3091,7 @@ def _continuation_guide_semantic(question: str, history: list[dict[str, Any]] | 
 # =====================================================================
 _GOVERN_RELATIONS = ("new_goal", "continue", "confirm", "decline", "modify",
                      "reference", "complaint", "correction", "clarify",
-                     "question", "opinion", "unknown")
+                     "question", "opinion", "refinement", "unknown")
 _GOVERN_DOMAINS = ("product_lifecycle", "project", "task", "execution",
                    "acceptance", "release", "conversation", "general")
 
@@ -3052,6 +3104,9 @@ _GOVERN_PROMPT = """理解用户当前这句话在整个对话中的语义 (只�
 语义规则 (基于对话上下文判断, 勿按字面词):
 - 用户反馈 AI 答错/跑题/混乱/不是这个意思 → complaint 或 correction
   (needs_tool=false — 这是对话恢复, 不是项目查询)
+- 用户在评价上一轮产出质量/要求更具体 (太模糊了/不够具体/再具体一点/
+  展开细化/把功能拆开说) → refinement (needs_tool=true — 需读已有产出
+  并深化, 不是解释现状)
 - 继续上一轮工作/话题 (继续/接着/继续刚才/继续分析需求…) → continue
 - 回应 AI 提议: 同意/接受/确认 (需要/可以/好/接受建议/就按这个来/继续吧…) → confirm;
   同意但带修改约束 (可以不过先…/继续但先别…) → modify;
@@ -3164,6 +3219,12 @@ def _governance_guide(relation: str, domain: str, needs_tool: bool,
             f"【对话恢复】用户正在反馈/纠正/澄清 ({relation}) — 先回到主题「{topic}」"
             f"解释或修正上一轮回答; 不要调用项目诊断工具 (project_status/project_scan/"
             f"code_scan/bash_exec) 自证; 确需事实再针对性查一个工具。")
+    elif relation == "refinement":
+        g.append(
+            f"【产出深化】用户在评价上一轮产出并要求更具体 ({relation}) — 保持主题"
+            f"「{topic}」: 先用 get_product_record 读取最近真实产出 → 找出不够具体处"
+            f" → 直接深化成更详细版本 (数值/条目/方案) → 用 save_product_record "
+            f"(record_id) 更新同一条 draft; 不要解释现状/复述, 不要抛选择题。")
     elif relation == "confirm":
         if pending:
             g.append(f"【确认执行】用户确认了待执行提议 → 立即执行该提议: {pending[:400]}")
@@ -3287,7 +3348,7 @@ def _work_recovery_guide(msg: str, state: dict[str, Any],
     → 禁诊断/禁 ask, 必须执行 next_action 并落 canonical)。
     """
     rel = str(state.get("relation") or "")
-    if rel not in ("continue", "confirm", "modify", "reference"):
+    if rel not in ("continue", "confirm", "modify", "reference", "refinement"):
         return "", {}
     w = _resolve_active_work(msg, state, history, llm_fn, truth_summary)
     if not w:

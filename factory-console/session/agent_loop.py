@@ -1355,6 +1355,19 @@ def dispatch(
                         upd = pt.update_requirement(root, record_id, title=title,
                                                     description=str(content)[:8000], actor="human")
                     return {"ok": True, "record": f"{kind} {record_id} 已深化更新", "id": record_id}
+                # ---- S48-FIX: Lifecycle Gate enforcement (CREATE 合法性) ----
+                if kind in ("requirement", "prd", "discovery", "plan", "idea"):
+                    _gate = pt.lifecycle_gate(
+                        root, project_id or "", kind,
+                        idea_id=str(args.get("idea_id") or ""),
+                        discovery_id=str(args.get("discovery_id") or ""))
+                    if not _gate.get("allowed"):
+                        return {"ok": False, "governance": {
+                            "denied": True,
+                            "required_action": _gate.get("action"),
+                            "target_kind": _gate.get("target_kind"),
+                            "target_id": _gate.get("target_id"),
+                            "reason": _gate.get("reason")}}
                 if kind == "idea":
                     rec = pt.create_idea(root, project_id=project_id, title=title,
                                          description=str(content)[:8000],
@@ -3274,7 +3287,11 @@ def _governance_guide(relation: str, domain: str, needs_tool: bool,
     elif relation in ("continue", "reference"):
         g.append(f"【延续】用户继续/指代上文 → 保持主题「{topic}」; 结合上文作答, 不要跳题或另起炉灶。")
     elif relation == "new_goal":
-        g.append("【新目标】用户提出新目标/换方向 → 以新消息为准, 放弃旧提议。")
+        g.append("【新目标】用户提出新目标/换方向 → 以新消息为准, 放弃旧提议。"
+                 "若属于新产品/新功能想法: 产品链从 Idea 开始 — 先检查项目"
+                 " canonical (project_lifecycle); 无 Idea 记录 → 用 "
+                 "save_product_record(kind=idea) 建立链头, 再按 想法→需求理解"
+                 "→需求 推进; 不要空诊断/空查询项目状态。")
     elif relation == "opinion":
         g.append("【观点/评价】用户在征求判断 → 基于已知信息推理回答即可; 无需调用工具。")
     if relation == "question" and domain != "general":

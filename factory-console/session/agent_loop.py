@@ -216,7 +216,7 @@ def tool_schemas(data_dir: str | Path | None = None) -> list[dict[str, Any]]:
             {}),
         _fc("project_tasks", "任务清单", "查询项目任务: 默认返回统计; 用户要求'查看任务列表/具体任务'时传 detail=true 返回任务明细表格 (任务/模块/优先级/类型/状态)", {"priority": {"type": "string", "enum": ["P0", "P1", "P2", "P3"]}, "detail": {"type": "string", "enum": ["true", "false"]}}),
         _fc("requirement_analysis_round", "需求分析回合(Node)", "产品链需求分析节点: 创建/恢复当前项目 requirement-analysis NodeRun 并推进一个分析回合。有决策点→返回 pending_questions 需向用户提问; 全维度覆盖+决策齐→COMPLETED。用户说'分析需求/继续分析/分析更多/找需求漏洞'时用它。", {"request": {"type": "string", "description": "首轮用户原始需求 (可省, 已从会话取)"}}, []),
-        _fc("requirement_analysis_answer", "需求分析决策回答(Node)", "用户对需求分析 pending 决策的答复: decision_id + chosen (用户明确选择)。记录为 human decision 事实后自动续推进。用户回答选项/拍板时用。", {"decision_id": {"type": "string", "description": "待决策 ID"}, "chosen": {"type": "string", "description": "用户选择/回答内容"}}, ["decision_id", "chosen"]),
+        _fc("requirement_analysis_answer", "需求分析决策回答(Node)", "用户对需求分析 pending 决策的答复: decision_id + chosen 参数 (注意参数名是 chosen, 不是 choice)。记录为 human decision 事实后自动续推进。用户回答选项/拍板时用。", {"decision_id": {"type": "string", "description": "待决策 ID"}, "chosen": {"type": "string", "description": "用户选择/回答内容 (参数名必须为 chosen)"}}, ["decision_id", "chosen"]),
         _fc("task_action", "任务操作(执行)", "对任务执行动作: start/done/priority (需任务标题)",
             {"title": {"type": "string"}, "action": {"type": "string", "enum": ["start", "done", "priority"]},
              "priority": {"type": "string", "enum": ["P0", "P1", "P2", "P3"]}}, ["title", "action"]),
@@ -1951,7 +1951,7 @@ def dispatch(
                 from factory_console import requirement_analysis_node as ran
                 from factory_console import node_runtime as nr
                 did = str(args.get("decision_id") or "").strip()
-                chosen = str(args.get("chosen") or "").strip()
+                chosen = str(args.get("chosen") or args.get("choice") or "").strip()
                 run = nr.get_active_run(root, "requirement-analysis", project_id=project_id)
                 if run is None:
                     return {"ok": False, "error": "无活动 requirement-analysis NodeRun (先 requirement_analysis_round)"}

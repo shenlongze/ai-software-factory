@@ -43,3 +43,14 @@ retrieval | NO PUSH
 ## Verdict
 缺陷 A (Truth Retrieval) + B (Refinement) 已修复并实证。Conversation 主链
 「理解→工作→产出→读取→反馈→深化→再产出」闭环成立 — 接近可收口。
+
+## Governance Items (记录, 不在此 Sprint 修)
+1. FACT / INFERENCE / PROPOSAL / TO_CONFIRM 分层 — 产出与回答需显式区分
+   用户确认事实 vs AI 推断/建议/待确认 (防推断渐变假需求); 建议在
+   save_product_record 内容结构与回答模板层治理 (后续 PRD→Plan 前必做)
+2. project_scan/project_status 冗余调用 — 归 Execution Optimization /
+   Capability Router (工具面收敛), 非 Conversation 语义缺陷; 后续统一处理
+
+## Status
+S47-E4 收口 (Conversation 主线)。下一阶段: IDEA→Discovery→Requirement
+→PRD→Plan 产品主链 全链路 Truth Read/Write/Refine/Continue 审计。

@@ -46,3 +46,22 @@ class TestLifecycleGate:
         pt.update_requirement(str(tmp_path), r1["id"], description="v2")
         recs = pt.list_requirements(str(tmp_path))
         assert len(recs) == 1 and recs[0]["description"].startswith("v2")
+
+
+class TestGateSinceWindow:
+    def test_historical_free_req_not_blocking(self, tmp_path):
+        from factory_console import product_truth as pt
+        pt.create_requirement(str(tmp_path), title="历史游离", source="conversation")
+        # 会话起始时间晚于历史记录 (未来窗口) → 放行 (历史不误伤新项目)
+        g = pt.lifecycle_gate(str(tmp_path), "P-1", "requirement",
+                              since="2099-01-01T00:00:00")
+        assert g["allowed"] is True
+
+    def test_session_window_req_blocking(self, tmp_path):
+        import datetime
+        from factory_console import product_truth as pt
+        start = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        rec = pt.create_requirement(str(tmp_path), title="会话内", source="conversation")
+        g = pt.lifecycle_gate(str(tmp_path), "P-1", "requirement", since=start)
+        assert g["allowed"] is False and g["action"] == "REFINE"
+        assert g["target_id"] == rec["id"]

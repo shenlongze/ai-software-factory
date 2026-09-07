@@ -454,12 +454,14 @@ def update_requirement(root: Path | str, req_id: str, *,
 
 
 def lifecycle_gate(root: Path | str, project_id: str, kind: str, *,
-                   idea_id: str = "", discovery_id: str = "") -> dict[str, Any]:
+                   idea_id: str = "", discovery_id: str = "",
+                   since: str = "") -> dict[str, Any]:
     """S48-FIX: Canonical Product Lifecycle Gate (enforcement 层)。
 
     决定某 kind 的 CREATE 是否合法 (基于 canonical 现状 + cardinality):
-    - requirement CREATE: 已存在游离 req (无 discovery 归属, conversation
-      直建) → DENIED (REFINE 最新); 已存在同链 req → DENIED
+    - requirement CREATE: 本链/本会话窗口内已存在游离 req (无 discovery
+      归属) → DENIED (REFINE 最新); since 可选 = 会话起始时间, 只约束
+      会话内新建的游离 req (历史游离不误伤新项目)
     - prd CREATE: 项目已有非 superseded PRD → DENIED (REFINE 最新 draft)
     - discovery CREATE: 同 idea 已有 running/pending → DENIED (REFINE)
     - idea CREATE: allowed (1:N 候选想法)
@@ -490,11 +492,14 @@ def lifecycle_gate(root: Path | str, project_id: str, kind: str, *,
         if kind == "requirement":
             # 游离 req (无 discovery 归属, conversation 直建) — S48 失控源
             free = [r for r in data["requirements"].values() if not r.get("discovery_id")]
+            if since:
+                free = [r for r in free
+                        if str(r.get("created_at") or "")[:19] >= str(since)[:19]]
             if free:
                 t = max(free, key=lambda r: str(r.get("created_at") or ""))
                 return {"allowed": False, "action": "REFINE", "target_kind": "requirement",
                         "target_id": str(t.get("id") or ""),
-                        "reason": f"已存在游离 requirement {t.get('id')} (未绑定 discovery) — "
+                        "reason": f"本会话已存在游离 requirement {t.get('id')} (未绑定 discovery) — "
                                   f"深化该记录 (record_id) 或先建 idea/discovery 归属链; 禁止重复 CREATE"}
             # 同链 req (经 discovery→idea 归属到本项目)
             if discovery_id:
@@ -506,7 +511,7 @@ def lifecycle_gate(root: Path | str, project_id: str, kind: str, *,
                             "target_id": str(t.get("id") or ""),
                             "reason": f"该 discovery 已有 requirement {t.get('id')} — 深化而非新建"}
             return {"allowed": True, "action": "CREATE", "target_kind": "requirement",
-                    "target_id": "", "reason": "requirement CREATE (无游离/无同链)"}
+                    "target_id": "", "reason": "requirement CREATE (窗口内无游离/无同链)"}
         if kind == "prd":
             alive = [r for r in data["prds"].values()
                      if r.get("project_id") == project_id

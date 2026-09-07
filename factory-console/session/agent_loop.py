@@ -1357,10 +1357,20 @@ def dispatch(
                     return {"ok": True, "record": f"{kind} {record_id} 已深化更新", "id": record_id}
                 # ---- S48-FIX: Lifecycle Gate enforcement (CREATE 合法性) ----
                 if kind in ("requirement", "prd", "discovery", "plan", "idea"):
+                    _since = ""
+                    try:
+                        from factory_console.console_sessions import SessionStore
+                        _sid = str((ctx or {}).get("session_id") or "")
+                        if _sid:
+                            _sess = SessionStore(str(Path(root) / "console_sessions.json")).get_session(_sid)
+                            _since = str((_sess or {}).get("created_at") or "")
+                    except Exception:  # noqa: BLE001 — since 缺失退化为全局
+                        pass
                     _gate = pt.lifecycle_gate(
                         root, project_id or "", kind,
                         idea_id=str(args.get("idea_id") or ""),
-                        discovery_id=str(args.get("discovery_id") or ""))
+                        discovery_id=str(args.get("discovery_id") or ""),
+                        since=_since)
                     if not _gate.get("allowed"):
                         return {"ok": False, "governance": {
                             "denied": True,

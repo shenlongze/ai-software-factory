@@ -9,6 +9,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useConversation } from './ConversationContext';
+import { AfNodeRunDecision } from './AfNodeRunDecision';
 import { useI18n } from '../../i18n';
 import { renderMarkdown } from './markdown';
 import type { SessionSummary } from '../../models/types';
@@ -313,6 +314,7 @@ export function AfConversationPanel({ projectId, projectName }: AfConversationPa
           ))
         )}
         {ctx.sending ? <p className="af-chat-note">{t('chat.sending')}</p> : null}
+        <AfNodeRunDecision projectId={projectId ?? undefined} />
       </div>
 
       <div className="af-chat-input-row">

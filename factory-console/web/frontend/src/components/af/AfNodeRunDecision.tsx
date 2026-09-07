@@ -16,14 +16,15 @@ interface RunStatus {
 }
 
 /** Phase 3.5: NodeRun Human Decision 卡 — 真实用户点击 → canonical API (actor=human)。 */
-export function AfNodeRunDecision({ projectId }: { projectId: string }): JSX.Element | null {
+export function AfNodeRunDecision({ projectId }: { projectId?: string | null }): JSX.Element | null {
   const [run, setRun] = useState<RunStatus | null>(null);
   const [busy, setBusy] = useState<string>('');
 
   const load = useCallback(async () => {
+    if (!projectId) { setRun(null); return; }
     try {
       const r = await fetch(
-        `/api/projects/${encodeURIComponent(projectId)}/requirement-analysis`);
+        `/api/projects/${encodeURIComponent(String(projectId))}/requirement-analysis`);
       const d = await r.json();
       setRun(d?.run ?? null);
     } catch {
@@ -41,7 +42,7 @@ export function AfNodeRunDecision({ projectId }: { projectId: string }): JSX.Ele
     setBusy(decisionId);
     try {
       await fetch(
-        `/api/projects/${encodeURIComponent(projectId)}/requirement-analysis/decisions`,
+        `/api/projects/${encodeURIComponent(String(projectId))}/requirement-analysis/decisions`,
         { method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ decision_id: decisionId, chosen }) });
     } finally {

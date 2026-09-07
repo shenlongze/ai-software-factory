@@ -3451,6 +3451,57 @@ def build_app(
             raise HTTPException(status_code=404, detail="decision not found")
         return summary.to_dict()
 
+    # ---- Phase 3.5: NodeRun Human Decision (requirement-analysis) ----
+    @app.get("/api/projects/{project_id}/requirement-analysis")
+    def api_ra_run_status(project_id: str) -> dict[str, Any]:
+        """当前项目 active requirement-analysis NodeRun 状态 (含 pending decisions)。
+
+        WebUI Decision 卡数据源 (canonical NodeRun — 非 UI 猜测)。
+        """
+        try:
+            from factory_console import node_runtime as nr
+            run = nr.get_active_run(DEFAULT_ROOT, "requirement-analysis",
+                                    project_id=project_id)
+            if run is None:
+                return {"ok": True, "run": None}
+            pend = [{"decision_id": d["decision_id"], "question": d["question"],
+                     "options": d["options"]}
+                    for d in (run.get("decisions") or []) if d.get("status") == "PENDING"]
+            cp = run.get("checkpoint") or {}
+            return {"ok": True, "run": {
+                "run_id": run.get("run_id"), "state": run.get("state"),
+                "node_id": run.get("node_id"),
+                "iteration": cp.get("iteration") or 0,
+                "completed_dimensions": cp.get("completed_dimensions") or [],
+                "pending_decisions": pend,
+            }}
+        except Exception as exc:  # noqa: BLE001
+            return {"ok": False, "error": str(exc)}
+
+    @app.post("/api/projects/{project_id}/requirement-analysis/decisions")
+    def api_ra_decision(project_id: str, body: dict[str, Any]) -> dict[str, Any]:
+        """真实用户点击 → record_decision (actor=human 强制后端校验)。
+
+        WebUI 按钮直连 — 不经 LLM; LLM/脚本 actor 会被 NodeRun 拒绝。
+        """
+        try:
+            from factory_console import node_runtime as nr
+            run = nr.get_active_run(DEFAULT_ROOT, "requirement-analysis",
+                                    project_id=project_id)
+            if run is None:
+                raise HTTPException(status_code=404, detail="no active requirement-analysis run")
+            dec = nr.record_decision(
+                DEFAULT_ROOT, run["run_id"],
+                str(body.get("decision_id") or ""),
+                chosen=str(body.get("chosen") or ""), actor="human")
+            return {"ok": True, "decision": dec,
+                    "run_id": run["run_id"], "state": nr.get_node_run(DEFAULT_ROOT, run["run_id"]).get("state")}
+        except Exception as exc:  # noqa: BLE001
+            if isinstance(exc, HTTPException):
+                raise
+            from fastapi import HTTPException as _HE
+            raise _HE(status_code=400, detail=f"decision failed: {exc}") from exc
+
     @app.get("/api/recommendations")
     def api_recommendations(
         limit: int = Query(default=10, ge=1, le=100),

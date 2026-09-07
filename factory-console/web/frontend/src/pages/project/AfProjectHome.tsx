@@ -7,6 +7,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import { AfNodeRunDecision } from '../../components/af/AfNodeRunDecision';
 import { renderInline } from '../../components/af/markdown';
 
 interface LifecycleData {
@@ -196,6 +197,7 @@ export function AfProjectHome({
           </button>
         </div>
       </div>
+      <AfNodeRunDecision projectId={projectId} />
       {lifecycleBar}
       <section className="af-home-card" data-testid="af-home-health">
         <div className="af-health-row">

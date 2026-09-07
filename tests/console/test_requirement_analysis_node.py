@@ -137,3 +137,29 @@ class TestConvergenceAfterDecisions:
         nr.record_decision(r, run["run_id"], dec["decision_id"], chosen="PC", actor="human")
         done = ran.finalize_if_done(r, run["run_id"])
         assert done is not None and done["state"] == "COMPLETED"
+
+
+class TestAutoDelegate:
+    def test_auto_delegate_resolves_to_completed(self, tmp_path):
+        """用户预授权委托 → pending 按推荐连续 resolve → COMPLETED (mock LLM 无新决策)。"""
+        r = str(tmp_path)
+        run = _mkrun(r)
+        nr.transition_node_run(r, run["run_id"], "RUNNING")
+        nr.request_decision(r, run["run_id"], question="平台?", options=["PC", "移动端"])
+        nr.update_checkpoint(r, run["run_id"], patch={
+            "completed_dimensions": ran.ANALYSIS_DIMENSIONS,
+            "open_questions": []})
+        # 模拟 dispatch 委托循环 (选项首项)
+        for _ in range(10):
+            cur = nr.get_node_run(r, run["run_id"])
+            pend = [d for d in cur["decisions"] if d["status"] == "PENDING"]
+            if pend:
+                d0 = pend[0]
+                nr.record_decision(r, run["run_id"], d0["decision_id"],
+                                   chosen=d0["options"][0], actor="human")
+            if ran.finalize_if_done(r, run["run_id"]):
+                break
+        done = nr.get_node_run(r, run["run_id"])
+        assert done["state"] == "COMPLETED"
+        assert done["decisions"][0]["status"] == "RESOLVED"
+        assert done["decisions"][0]["chosen"] == "PC"

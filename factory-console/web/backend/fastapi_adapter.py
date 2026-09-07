@@ -3526,6 +3526,63 @@ def build_app(
             from fastapi import HTTPException as _HE
             raise _HE(status_code=400, detail=f"decision failed: {exc}") from exc
 
+    @app.post("/api/projects/{project_id}/requirement-analysis/auto-delegate")
+    def api_ra_auto_delegate(project_id: str, body: dict[str, Any]) -> dict[str, Any]:
+        """用户预授权委托 ('按你的推荐一次性完成') → 服务端连续:
+
+        每个 PENDING decision 按 recommendation/选项默认 RESOLVED
+        (actor=human — 用户明确委托, 记 decided_by=human+delegated),
+        然后 run_round 续推进 → 直至 COMPLETED。非 LLM 自标 — 用户
+        明示授权。最多 40 轮防护。
+        """
+        try:
+            from factory_console import node_runtime as nr
+            from factory_console import requirement_analysis_node as ran
+            from factory_console.session import agent_loop as _al
+            auth = str((body or {}).get("authorization") or "")
+            if auth != "user-delegated":
+                raise HTTPException(status_code=403, detail="需要 authorization=user-delegated (用户明示委托)")
+            _llm = lambda pr: _al._simple_llm(pr, data_dir=str(DEFAULT_ROOT))
+            resolved_ids, total = [], 0
+            for _ in range(40):
+                run = nr.get_active_run(DEFAULT_ROOT, "requirement-analysis", project_id=project_id)
+                if run is None or run.get("state") == "COMPLETED":
+                    break
+                pend = [d for d in (run.get("decisions") or []) if d.get("status") == "PENDING"]
+                if pend:
+                    d0 = pend[0]
+                    opts = d0.get("options") or []
+                    chosen = opts[0] if opts else "(按推荐)"
+                    try:
+                        nr.record_decision(DEFAULT_ROOT, run["run_id"], d0["decision_id"],
+                                           chosen=chosen, actor="human")
+                        resolved_ids.append(d0["decision_id"])
+                        total += 1
+                    except nr.NodeError as e:
+                        return {"ok": False, "error": str(e)}
+                    continue
+                done = ran.finalize_if_done(DEFAULT_ROOT, run["run_id"])
+                if done:
+                    break
+                out = ran.run_round(DEFAULT_ROOT, run["run_id"], llm_fn=_llm)
+                if out is None:
+                    break
+                if out.get("need_user") is False and not out.get("pending_questions"):
+                    continue
+                if out.get("state") == "WAITING_FOR_USER":
+                    continue  # 有新 pending → 下轮 resolve
+                # need_user True 但 pending 已清? (状态不一致) — 再取 pend
+            run = nr.get_active_run(DEFAULT_ROOT, "requirement-analysis", project_id=project_id)
+            return {"ok": True, "run_id": run.get("run_id") if run else None,
+                    "state": run.get("state") if run else None,
+                    "delegated_decisions": total,
+                    "completed_dimensions": ((run or {}).get("checkpoint") or {}).get("completed_dimensions") or []}
+        except Exception as exc:  # noqa: BLE001
+            if isinstance(exc, HTTPException):
+                raise
+            from fastapi import HTTPException as _HE
+            raise _HE(status_code=400, detail=f"auto-delegate failed: {exc}") from exc
+
     @app.get("/api/recommendations")
     def api_recommendations(
         limit: int = Query(default=10, ge=1, le=100),

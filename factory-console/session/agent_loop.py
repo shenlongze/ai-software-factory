@@ -216,6 +216,7 @@ def tool_schemas(data_dir: str | Path | None = None) -> list[dict[str, Any]]:
             {}),
         _fc("project_tasks", "任务清单", "查询项目任务: 默认返回统计; 用户要求'查看任务列表/具体任务'时传 detail=true 返回任务明细表格 (任务/模块/优先级/类型/状态)", {"priority": {"type": "string", "enum": ["P0", "P1", "P2", "P3"]}, "detail": {"type": "string", "enum": ["true", "false"]}}),
         _fc("requirement_analysis_round", "需求分析回合(Node)", "产品链需求分析节点: 创建/恢复当前项目 requirement-analysis NodeRun 并推进一个分析回合。有决策点→返回 pending_questions 需向用户提问; 全维度覆盖+决策齐→COMPLETED。用户说'分析需求/继续分析/分析更多/找需求漏洞'时用它。", {"request": {"type": "string", "description": "首轮用户原始需求 (可省, 已从会话取)"}}, []),
+                _fc("requirement_analysis_auto_delegate", "需求分析委托完成(Node)", "用户预授权'按你的推荐一次性完成/你看着办/都按推荐'时调用: 服务端把所有 pending/后续决策按推荐(选项首项)记为 human 委托决策并连续分析到收敛(COMPLETED)。仅在用户明确委托时用 — 不得自行调用。", {}, []),
         _fc("requirement_analysis_answer", "需求分析决策回答(Node)", "用户对需求分析 pending 决策的答复: decision_id + chosen 参数 (注意参数名是 chosen, 不是 choice)。记录为 human decision 事实后自动续推进。用户回答选项/拍板时用。", {"decision_id": {"type": "string", "description": "待决策 ID"}, "chosen": {"type": "string", "description": "用户选择/回答内容 (参数名必须为 chosen)"}}, ["decision_id", "chosen"]),
         _fc("task_action", "任务操作(执行)", "对任务执行动作: start/done/priority (需任务标题)",
             {"title": {"type": "string"}, "action": {"type": "string", "enum": ["start", "done", "priority"]},
@@ -1454,7 +1455,7 @@ def dispatch(
             # S47-E3/E4: 会话真实产出 → canonical (新建 或 record_id 迭代 draft)
             try:
                 from factory_console import product_truth as pt
-                kind = str(args.get("kind") or "").strip().lower()
+                kind = str(args.get("kind") or args.get("record_type") or args.get("type") or "").strip().lower()
                 title = str(args.get("title") or "").strip()
                 content = str(args.get("content") or "").strip()
                 record_id = str(args.get("record_id") or "").strip()
@@ -1709,6 +1710,39 @@ def dispatch(
 
             info = gs(root, project_id)
             return {"ok": True, "output": f"仓库: {info.get('remote') or '无远程'} · 分支 {info.get('branch')} · 领先 {info.get('ahead')}"} if info and info.get("dir") else {"ok": False, "error": "未检测到 git 仓库"}
+        if tool_id == "requirement_analysis_auto_delegate":
+            # 用户预授权委托: 连续 resolve (选项首项=推荐) + 分析 → COMPLETED
+            try:
+                from factory_console import requirement_analysis_node as ran
+                from factory_console import node_runtime as nr
+                _llm = lambda pr: _simple_llm(pr, data_dir=str(root))
+                total = 0
+                for _ in range(40):
+                    run = nr.get_active_run(root, "requirement-analysis", project_id=project_id)
+                    if run is None or (run or {}).get("state") == "COMPLETED":
+                        break
+                    pend = [d for d in (run.get("decisions") or []) if d.get("status") == "PENDING"]
+                    if pend:
+                        d0 = pend[0]
+                        chosen = (d0.get("options") or ["(按推荐)"])[0]
+                        nr.record_decision(root, run["run_id"], d0["decision_id"],
+                                           chosen=chosen, actor="human")
+                        total += 1
+                        continue
+                    done = ran.finalize_if_done(root, run["run_id"])
+                    if done:
+                        break
+                    out = ran.run_round(root, run["run_id"], llm_fn=_llm)
+                    if out is None:
+                        break
+                run = nr.get_active_run(root, "requirement-analysis", project_id=project_id)
+                st = (run or {}).get("state")
+                dims = ((run or {}).get("checkpoint") or {}).get("completed_dimensions") or []
+                msg = f"委托完成: {total} 个决策已按推荐确认" + (f" · NodeRun {st} (维度 {len(dims)}/7)" if st else "")
+                return {"ok": True, "output": msg, "state": st,
+                        "completed_dimensions": dims}
+            except Exception as exc:  # noqa: BLE001
+                return {"ok": False, "error": f"auto_delegate: {exc}"}
         if tool_id == "monitor":
             from ..tools.adapters import monitor as mo
 

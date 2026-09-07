@@ -215,6 +215,8 @@ def tool_schemas(data_dir: str | Path | None = None) -> list[dict[str, Any]]:
             " 不用 project_tasks (任务统计不能回答产品链完成度)。返回各阶段存在/状态/ID/缺失, 如实回答未建立。",
             {}),
         _fc("project_tasks", "任务清单", "查询项目任务: 默认返回统计; 用户要求'查看任务列表/具体任务'时传 detail=true 返回任务明细表格 (任务/模块/优先级/类型/状态)", {"priority": {"type": "string", "enum": ["P0", "P1", "P2", "P3"]}, "detail": {"type": "string", "enum": ["true", "false"]}}),
+        _fc("requirement_analysis_round", "需求分析回合(Node)", "产品链需求分析节点: 创建/恢复当前项目 requirement-analysis NodeRun 并推进一个分析回合。有决策点→返回 pending_questions 需向用户提问; 全维度覆盖+决策齐→COMPLETED。用户说'分析需求/继续分析/分析更多/找需求漏洞'时用它。", {"request": {"type": "string", "description": "首轮用户原始需求 (可省, 已从会话取)"}}, []),
+        _fc("requirement_analysis_answer", "需求分析决策回答(Node)", "用户对需求分析 pending 决策的答复: decision_id + chosen (用户明确选择)。记录为 human decision 事实后自动续推进。用户回答选项/拍板时用。", {"decision_id": {"type": "string", "description": "待决策 ID"}, "chosen": {"type": "string", "description": "用户选择/回答内容"}}, ["decision_id", "chosen"]),
         _fc("task_action", "任务操作(执行)", "对任务执行动作: start/done/priority (需任务标题)",
             {"title": {"type": "string"}, "action": {"type": "string", "enum": ["start", "done", "priority"]},
              "priority": {"type": "string", "enum": ["P0", "P1", "P2", "P3"]}}, ["title", "action"]),
@@ -1843,7 +1845,106 @@ def dispatch(
 
             return list_skills(root, str(args.get("query") or ""),
                                top_k=int(args.get("max_results") or 10))
-        # ---- W4 (v1.1.250): Core Memory 自编辑 ----
+        # ---- Node Loop: Requirement Analysis (试点) ----
+        if tool_id == "requirement_analysis_round":
+            # 创建/恢复当前项目 active requirement-analysis NodeRun 并推进一回合
+            try:
+                from factory_console import requirement_analysis_node as ran
+                from factory_console import node_runtime as nr
+                node_id = "requirement-analysis"
+                if nr.get_node(root, node_id) is None:
+                    nr.register_node(root, node_id=node_id, name="requirement-analysis",
+                                     node_type="requirement-analysis")
+                run = nr.get_active_run(root, node_id, project_id=project_id)
+                if run is None:
+                    # 首轮: 收集输入 (用户原始请求来自 args.request 或会话 topic)
+                    req = str(args.get("request") or
+                              (ctx or {}).get("last_user") or "")[:2000]
+                    run = nr.create_node_run(root, node_id,
+                                             project_id=project_id,
+                                             input_data={"request": req,
+                                                         "project_id": project_id},
+                                             trigger="user")
+                    nr.bump_iteration(root, run["run_id"])
+                elif run.get("state") == "WAITING_FOR_USER":
+                    pend = [{"decision_id": d["decision_id"], "question": d["question"],
+                             "options": d["options"]}
+                            for d in (run.get("decisions") or [])
+                            if d.get("status") == "PENDING"]
+                    return {"ok": True, "need_user": True,
+                            "node_run": run["run_id"], "state": "WAITING_FOR_USER",
+                            "pending_questions": pend,
+                            "output": "分析等待你的决策: " + json.dumps(pend, ensure_ascii=False)}
+                # 读本项目 REQ 事实 (scoped; 无则空)
+                truth = ""
+                try:
+                    from factory_console import product_truth as pt
+                    sc = pt.scoped_recent(root, "requirements", project_id, max_n=1)
+                    if sc:
+                        r0 = sc[0]
+                        truth = f"{r0.get('title')}: {str(r0.get('description') or '')[:1200]}"
+                except Exception:  # noqa: BLE001
+                    pass
+                out = ran.run_round(root, run["run_id"],
+                                    llm_fn=lambda pr: _simple_llm(pr, data_dir=str(root)),
+                                    truth_snippet=truth)
+                if out.get("state") == "WAITING_FOR_USER":
+                    return {"ok": True, "need_user": True,
+                            "node_run": run["run_id"], "state": "WAITING_FOR_USER",
+                            "pending_questions": out.get("pending_questions"),
+                            "output": f"[{out.get('dimension')}] {out.get('summary')} — 需要你决策: " +
+                                      json.dumps(out.get("pending_questions"), ensure_ascii=False)}
+                done = ran.finalize_if_done(root, run["run_id"])
+                return {"ok": True, "need_user": False,
+                        "node_run": run["run_id"],
+                        "state": (done or {}).get("state") or out.get("state"),
+                        "dimension": out.get("dimension"),
+                        "completed": (done or {}).get("checkpoint", {}).get("completed_dimensions") if done else None,
+                        "output": f"[{out.get('dimension')}] {out.get('summary')} "
+                                  + ("· 需求分析完成" if done else
+                                     f" · 未决问题: {json.dumps(out.get('open_questions') or [], ensure_ascii=False)}")}
+            except Exception as exc:  # noqa: BLE001
+                return {"ok": False, "error": f"requirement_analysis_round: {exc}"}
+        if tool_id == "requirement_analysis_answer":
+            # 用户决策/回答 → record_decision (human) → 继续回合直至需用户或收敛
+            try:
+                from factory_console import requirement_analysis_node as ran
+                from factory_console import node_runtime as nr
+                did = str(args.get("decision_id") or "").strip()
+                chosen = str(args.get("chosen") or "").strip()
+                run = nr.get_active_run(root, "requirement-analysis", project_id=project_id)
+                if run is None:
+                    return {"ok": False, "error": "无活动 requirement-analysis NodeRun (先 requirement_analysis_round)"}
+                if did and chosen:
+                    nr.record_decision(root, run["run_id"], did, chosen=chosen, actor="human")
+                pend = [d for d in (run.get("decisions") or []) if d.get("status") == "PENDING"]
+                if pend:
+                    return {"ok": True, "need_user": True,
+                            "node_run": run["run_id"], "state": "WAITING_FOR_USER",
+                            "pending_questions": [{"decision_id": d["decision_id"],
+                                                   "question": d["question"],
+                                                   "options": d["options"]} for d in pend],
+                            "output": "仍有待决策: " + json.dumps([p["question"] for p in pend], ensure_ascii=False)}
+                # 决策已清 → 续推进 (最多 3 回合防单次调用过长)
+                for _ in range(3):
+                    out = ran.run_round(root, run["run_id"],
+                                    llm_fn=lambda pr: _simple_llm(pr, data_dir=str(root)))
+                    if out.get("need_user"):
+                        return {"ok": True, "need_user": True,
+                                "node_run": run["run_id"], "state": "WAITING_FOR_USER",
+                                "pending_questions": out.get("pending_questions"),
+                                "output": f"[{out.get('dimension')}] {out.get('summary')} — 需要你决策: " +
+                                          json.dumps(out.get("pending_questions"), ensure_ascii=False)}
+                    done = ran.finalize_if_done(root, run["run_id"])
+                    if done:
+                        return {"ok": True, "node_run": run["run_id"], "state": "COMPLETED",
+                                "output": "需求分析完成 (NodeRun COMPLETED): " +
+                                          json.dumps({"dimensions": (done.get("checkpoint") or {}).get("completed_dimensions")}, ensure_ascii=False)}
+                return {"ok": True, "node_run": run["run_id"], "state": "RUNNING",
+                        "output": "分析回合推进中 (维度未全部覆盖)"}
+            except Exception as exc:  # noqa: BLE001
+                return {"ok": False, "error": f"requirement_analysis_answer: {exc}"}
+        # ---- memory_update ----
         if tool_id == "memory_update":
             from .memory_core import update_human
 

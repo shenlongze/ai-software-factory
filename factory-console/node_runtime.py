@@ -25,14 +25,17 @@ from typing import Any, Callable
 
 # ------------------------------------------------------------------ 状态
 
-#: NodeRun 生命周期 (S2 最小: 无 Repair)
-NODERUN_STATES = ("PENDING", "RUNNING", "VERIFYING", "COMPLETED", "FAILED")
+#: NodeRun 生命周期 (含 E1 WAITING_FOR_USER / REPAIRING)
+NODERUN_STATES = ("PENDING", "RUNNING", "VERIFYING", "REPAIRING",
+                  "WAITING_FOR_USER", "COMPLETED", "FAILED")
 
 #: 合法转换
 NODERUN_TRANSITIONS: dict[str, tuple[str, ...]] = {
-    "PENDING": ("RUNNING",),
-    "RUNNING": ("VERIFYING", "FAILED"),
-    "VERIFYING": ("COMPLETED", "FAILED"),
+    "PENDING": ("RUNNING", "FAILED"),
+    "RUNNING": ("VERIFYING", "FAILED", "WAITING_FOR_USER", "REPAIRING"),
+    "VERIFYING": ("COMPLETED", "FAILED", "RUNNING"),  # INCONCLUSIVE → 续跑
+    "REPAIRING": ("RUNNING", "FAILED"),
+    "WAITING_FOR_USER": ("RUNNING", "FAILED"),  # 人类决策/输入到达 → resume
     "COMPLETED": (),
     "FAILED": (),
 }
@@ -129,6 +132,7 @@ def create_node_run(
     input_data: dict[str, Any] | None = None,
     trigger: str = "user",
     task_id: str = "",  # P0-F1: TaskRun 锚定 backlog Task (TASK-*); 空 = 未锚 (冒烟/独立)
+    project_id: str = "",  # Node Loop 泛化: 产品节点锚定项目 (active_run 过滤)
 ) -> dict[str, Any]:
     """实例化 NodeRun: PENDING。NodeRun 是事实记录 (不可变: state 转换 append 而非覆写)。
 
@@ -143,6 +147,7 @@ def create_node_run(
         "run_id": run_id,
         "node_id": node_id,
         "task_id": str(task_id or ""),  # P0-F1: TaskRun → Task 锚 (显式持久化, 非派生)
+        "project_id": str(project_id or ""),  # Node Loop 泛化
         "state": "PENDING",
         "input": input_data or {},
         "trigger": trigger,
@@ -156,6 +161,8 @@ def create_node_run(
         "completed_at": None,
         "created_at": _now_iso(),
         "history": [],   # 状态变更事实 (append-only)
+        "decisions": [],  # E1: Human Decision 事实
+        "checkpoint": None,  # E2: 进度事实 (resume)
     }
     with _lock:
         _write_run(root, run)
@@ -652,3 +659,114 @@ def adapt_external_executor(adapter: Any, prompt_builder: Callable[[dict[str, An
         }
 
     return _fn
+
+
+# ------------------------------------------------------------------ E1: Human Decision / WAITING_FOR_USER (Node Loop 泛化)
+
+def request_decision(root: Path | str, run_id: str, *, question: str,
+                     options: list[str] | None = None, finding_refs: list[str] | None = None,
+                     actor: str = "system") -> dict[str, Any]:
+    """NodeRun → WAITING_FOR_USER + 决策请求 (事实化 Ask User)。
+
+    Decision 是 NodeRun 事实 (run['decisions'] append + audit), 非聊天文本。
+    LLM 不能自行 RESOLVED (需 human actor) — 防伪确认。
+    """
+    with _lock:
+        run = get_node_run(root, run_id)
+        if run is None:
+            raise NodeError(f"NodeRun 不存在: {run_id}")
+        if run.get("state") not in ("RUNNING", "PENDING", "VERIFYING"):
+            raise NodeError(f"状态 {run.get('state')} 不能请求决策")
+        decision = {
+            "decision_id": f"dec-{uuid.uuid4().hex[:10]}",
+            "question": question,
+            "options": list(options or []),
+            "finding_refs": list(finding_refs or []),
+            "status": "PENDING",
+            "chosen": None,
+            "requested_by": actor,
+            "requested_at": _now_iso(),
+            "decided_at": None,
+            "decided_by": None,
+        }
+        run.setdefault("decisions", []).append(decision)
+        _record(root, run, "WAITING_FOR_USER", actor=actor,
+                note=f"decision requested: {decision['decision_id']}")
+        return decision
+
+
+def record_decision(root: Path | str, run_id: str, decision_id: str, *,
+                    chosen: str, actor: str = "human") -> dict[str, Any]:
+    """人类决策写入 NodeRun 事实。actor != human → 拒绝 (防 LLM 伪确认)。
+
+    记录后状态 WAITING_FOR_USER → RUNNING (可 resume)。
+    """
+    if str(actor or "") != "human":
+        raise NodeError("decision 必须由 human 确认 (LLM 不能自标 confirmed)")
+    with _lock:
+        run = get_node_run(root, run_id)
+        if run is None:
+            raise NodeError(f"NodeRun 不存在: {run_id}")
+        decs = run.get("decisions") or []
+        dec = next((d for d in decs if d.get("decision_id") == decision_id), None)
+        if dec is None:
+            raise NodeError(f"decision 不存在: {decision_id}")
+        if dec.get("status") == "RESOLVED":
+            return dec  # 幂等
+        dec["status"] = "RESOLVED"
+        dec["chosen"] = chosen
+        dec["decided_at"] = _now_iso()
+        dec["decided_by"] = actor
+        if run.get("state") == "WAITING_FOR_USER":
+            _record(root, run, "RUNNING", actor=actor,
+                    note=f"decision resolved: {decision_id} → {chosen}")
+        else:
+            _write_run(root, run)
+        return dec
+
+
+# ------------------------------------------------------------------ E2: Checkpoint / Resume
+
+def update_checkpoint(root: Path | str, run_id: str, *, patch: dict[str, Any]) -> dict[str, Any]:
+    """NodeRun 进度事实 (迭代/已完成维度/findings 引用/open/next_work)。
+
+    checkpoint 属于 NodeRun (非 conv_state) — '继续' = 读此续跑。
+    """
+    with _lock:
+        run = get_node_run(root, run_id)
+        if run is None:
+            raise NodeError(f"NodeRun 不存在: {run_id}")
+        cp = dict(run.get("checkpoint") or {})
+        for k, v in (patch or {}).items():
+            cp[k] = v
+        cp["updated_at"] = _now_iso()
+        run["checkpoint"] = cp
+        _write_run(root, run)
+        return run
+
+
+def bump_iteration(root: Path | str, run_id: str) -> int:
+    """迭代计数 +1 (真实新工作才调)。"""
+    with _lock:
+        run = get_node_run(root, run_id)
+        if run is None:
+            raise NodeError(f"NodeRun 不存在: {run_id}")
+        cp = dict(run.get("checkpoint") or {})
+        cp["iteration"] = int(cp.get("iteration") or 0) + 1
+        cp["updated_at"] = _now_iso()
+        run["checkpoint"] = cp
+        _write_run(root, run)
+        return int(cp["iteration"])
+
+
+def get_active_run(root: Path | str, node_id: str,
+                   project_id: str = "") -> dict[str, Any] | None:
+    """项目当前活动 NodeRun (RUNNING/WAITING_FOR_USER/PENDING — 未终态)。"""
+    best = None
+    for r in list_node_runs(root, node_id):
+        if r.get("state") in ("RUNNING", "WAITING_FOR_USER", "PENDING", "VERIFYING", "REPAIRING"):
+            if project_id and r.get("project_id") != project_id:
+                continue
+            if best is None or str(r.get("created_at") or "") > str(best.get("created_at") or ""):
+                best = r
+    return best

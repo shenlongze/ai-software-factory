@@ -145,10 +145,7 @@ class TestServiceSemanticMode:
         res = svc.process_user_message(conv["id"], "你好, 我想做个产品")
         assert "reply" in res
         assert "understanding_version" in res
-        # 无 LLM 时降级: 不写任何假事实 (不猜)
-        facts = pu.list_facts(root, conv["id"])
-        # "你好, 我想做个产品" 若 LLM 不可用 → CLARIFY, 无 fact; 但含"产品" hint
-        # 且真实环境无 LLM → operations=[] (降级)。不断言 facts 数, 只断言不崩。
+        # "你好, 我想做个产品" 若 LLM 不可用 → CLARIFY/空 ops (降级, 不写假事实)
         assert isinstance(res["proposal"]["operations"], list)
 
 

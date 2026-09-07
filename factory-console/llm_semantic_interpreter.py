@@ -23,7 +23,6 @@ import json
 import re
 from typing import Any, Callable
 
-from factory_console import product_understanding as pu
 from factory_console.semantic_proposal import (
     ProposalValidationError, build_proposal, validate_proposal,
 )

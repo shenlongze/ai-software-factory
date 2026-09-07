@@ -188,8 +188,8 @@ class TestApplyDefer:
 
 class TestApplyConfirm:
     def test_confirm_existing(self, root: str, conv: dict) -> None:
-        f = _run(root, conv["id"], [{"op": "ADD", "fact_type": "REQUIREMENT",
-                                     "content": "手机端"}])[0]["fact"]
+        _run(root, conv["id"], [{"op": "ADD", "fact_type": "REQUIREMENT",
+                                 "content": "手机端"}])
         r = _run(root, conv["id"], [{"op": "CONFIRM", "fact_type": "REQUIREMENT",
                                      "content": "手机端"}])
         got = pu.get_fact(root, conv["id"], r[0]["fact"]["id"])

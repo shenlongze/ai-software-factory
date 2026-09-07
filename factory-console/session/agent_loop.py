@@ -861,6 +861,44 @@ def _project_lifecycle(root: Any, project_id: str) -> dict[str, Any]:
     return {"ok": True, "output": "\n".join(lines)}
 
 
+def _production_entry_gate(root: Any, project_id: str,
+                           ctx: dict[str, Any] | None = None) -> dict[str, Any]:
+    """S50-P1A: Production Entry Gate — create_task 前置。
+
+    允许条件: 项目已有合法 canonical PLAN (approved/executing) 或
+    本会话计划已批准 (PendingPlanStore status ∈ approved/executing)。
+    否则 blocked: 必须先走 IDEA→DISC→REQ→PRD→PLAN 产品链。
+    结构化返回, 供 Conversation 继续推进; 不产生副作用。
+    """
+    reason_default = "生产 TASK 需先有合法 PLAN — 当前产品链尚未形成计划; " \
+                     "请先推进 需求→PRD→开发计划(plan_development)并审批"
+    try:
+        if root is not None and project_id:
+            from factory_console import product_truth as pt
+            plans = pt.list_plans(root) or []
+            for p in plans:
+                if (p.get("project_id") == project_id
+                        and str(p.get("status") or "") in ("approved", "executing")):
+                    return {"allowed": True, "plan_id": p.get("id")}
+        # 会话级 pending plan 已批准/执行中
+        try:
+            if root is not None:
+                from pathlib import Path as _P
+                import json as _json
+                _spf = _P(str(root)) / "session_plans.json"
+                _sid = str((ctx or {}).get("session_id") or "")
+                if _spf.is_file() and _sid:
+                    _d = _json.loads(_spf.read_text(encoding="utf-8")) or {}
+                    _cand = _d.get(_sid) or {}
+                    if str(_cand.get("status") or "") in ("approved", "executing"):
+                        return {"allowed": True, "plan_id": _cand.get("plan_id")}
+        except Exception:  # noqa: BLE001
+            pass
+    except Exception:  # noqa: BLE001
+        pass
+    return {"allowed": False, "reason": reason_default, "required_next": "PLAN"}
+
+
 def _format_project_entry(root: Any, project_id: str, proj: dict[str, Any],
                           service: Any = None) -> str:
     """单个项目 → 无序列表块 (project_list 多项目 / project_status 单项目复用)。"""
@@ -1603,8 +1641,16 @@ def dispatch(
                 return {"ok": True, "output": f"✅ 优先级已改: {match['title']} → {prio}"}
             return {"ok": False, "error": f"未知动作: {action}"}
         if tool_id == "create_task":
+            # S50-P1A: Production Entry Gate — 无合法 PLAN 禁止生产 TASK
             if service is None:
                 return {"ok": False, "error": "服务不可用"}
+            _pg = _production_entry_gate(root, project_id, ctx)
+            if not _pg.get("allowed"):
+                return {"ok": False, "blocked": True,
+                        "governance": {
+                            "denied": True,
+                            "reason": _pg.get("reason"),
+                            "required_next": _pg.get("required_next")}}
             title = str(args.get("title") or "").strip()
             if not title:
                 return {"ok": False, "error": "需要任务标题"}

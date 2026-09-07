@@ -211,6 +211,16 @@ def _has_idea(snapshot: dict[str, Any]) -> bool:
     return any(f.get("type") == "IDEA" for f in snapshot.get("facts", []))
 
 
+def _has_platform(contents: str) -> bool:
+    """是否已确定平台 (内容里含平台/端词, 或已有运行平台 REQUIREMENT)。"""
+    return bool(re.search(r"平台|手机|网页|桌面|运行平台", contents or ""))
+
+
+def _has_interaction(contents: str) -> bool:
+    """是否已确定交互/操作方式。"""
+    return bool(re.search(r"操作|摇杆|点击|拖动|交互|按键|触屏", contents or ""))
+
+
 def _extract_idea(text: str) -> str:
     for pat, _ in _IDEA_PATTERNS:
         m = re.search(pat, text)
@@ -375,7 +385,14 @@ class ProductUnderstandingService:
             self.root, conversation_id, ops,
             source_message_id=msg["id"], fallback_actor="human")
         # 4) 落 assistant 消息 + 回复
-        reply = validated.get("reply") or self._fallback_reply(snap, text, applied)
+        show_u = bool(validated.get("show_understanding"))
+        statement = self.understanding_statement(conversation_id) if show_u else ""
+        reply = validated.get("reply") or ""
+        if not reply and not show_u:
+            reply = self._fallback_reply(snap, text, applied)
+        if show_u:
+            # Golden Path §12: 用户可见理解 — 结构化陈述 (非表单)
+            reply = statement if not reply else f"{reply}\n\n{statement}"
         if reply:
             pu.append_message(self.root, conversation_id,
                               role="assistant", content=reply)
@@ -418,9 +435,13 @@ class ProductUnderstandingService:
         return pu.list_facts(self.root, conversation_id, fact_type=fact_type,
                              include_inactive=include_inactive)
 
-    # ---- Sufficiency / Adaptive Clarification (S49 §五) ----
+    # ---- Sufficiency / Adaptive Clarification (S49 §五 + Golden Path §10/§11) ----
     def sufficiency_gaps(self, conversation_id: str) -> list[str]:
-        """当前产品定义下真正缺失且影响决策的维度 (非固定问卷)。"""
+        """当前产品定义下真正缺失且影响决策的维度 (非固定问卷)。
+
+        Golden Path §10: 动态缺口库按已记录事实判断, 不是固定 problem→user→
+        core_features 问卷。缺失且影响产品决策才问。
+        """
         snap = self.snapshot(conversation_id)
         facts = snap.get("facts", [])
         types = {f.get("type") for f in facts}
@@ -430,10 +451,19 @@ class ProductUnderstandingService:
         gaps = []
         if "IDEA" not in types:
             gaps.append("先确定核心想法: 你想做什么?")
-        if "REQUIREMENT" not in types and not re.search(r"平台|手机|网页|桌面", contents):
+        if not _has_platform(contents):
             gaps.append("运行平台还没定 (手机 / 网页 / 桌面?)。")
-        if "DECISION" not in types and not re.search(r"操作|摇杆|点击|拖动", contents):
-            gaps.append("交互方式还没定 (例如操作方式会影响后续设计)。")
+        if not _has_interaction(contents):
+            gaps.append("交互方式还没定 (会影响后续设计; 例如点按 / 拖动 / 摇杆)。")
+        # Golden Path §11: 主动发现问题 — 按当前理解判断真正缺口
+        if "REQUIREMENT" in types and not re.search(
+                r"结束|胜利|失败|关卡|难度|计分|分数|血量", contents):
+            gaps.append("游戏结束条件或胜负判定还没定。")
+        if "IDEA" in types and not re.search(
+                r"横屏|竖屏|屏幕", contents):
+            # 只有移动端才问屏幕方向 (网页/桌面不问)
+            if re.search(r"手机|移动|安卓|ios|平板", contents):
+                gaps.append("横屏还是竖屏? (影响布局与操作设计)")
         return gaps
 
     def adaptive_question(self, conversation_id: str,
@@ -444,6 +474,88 @@ class ProductUnderstandingService:
             if gap not in asked:
                 return gap
         return ""
+
+    def understanding_statement(self, conversation_id: str) -> str:
+        """用户可见的当前理解陈述 (Golden Path §12 Confirmation Loop)。
+
+        文本形式 (非表单): 用户可以自然回答 \"对 / 不是, 改成… / 排行榜还是保留…\"。
+        含: 核心想法 + 事实分组 + 延后/否决项 + 待确认缺口。
+        """
+        snap = self.snapshot(conversation_id)
+        facts = snap.get("facts", [])
+        if not facts and not snap.get("deferred") and not snap.get("rejected"):
+            return "我目前还没有形成产品理解 —— 你可以先说说想法, 例如「我想做一个飞机大战小游戏」。"
+        lines = ["我目前理解的是:\n"]
+        # 核心想法
+        idea = next((f for f in facts if f.get("type") == "IDEA"), None)
+        if idea:
+            lines.append(f"做一个{idea['content'].lstrip('做款个一款')}\n")
+        non_idea = [f for f in facts if f.get("type") != "IDEA"]
+        # 已确认项 (优先级最高)
+        confirmed = [f for f in non_idea if f.get("status") == "CONFIRMED"]
+        proposed = [f for f in non_idea if f.get("status") == "PROPOSED"]
+        if confirmed:
+            lines.append("已确认:")
+            for f in confirmed:
+                lines.append(f"- {f['content']}")
+        if proposed:
+            lines.append("待你确认:")
+            for f in proposed:
+                lines.append(f"- {f['content']}")
+        # 分组标签 (REQUIREMENT/CONSTRAINT/DECISION 无状态展示为子项)
+        for label, ftype in (("需求", "REQUIREMENT"), ("约束", "CONSTRAINT"),
+                             ("决定", "DECISION"), ("未来考虑", "FUTURE_IDEA")):
+            items = [f for f in proposed + confirmed if f.get("type") == ftype]
+            if items and not confirmed:
+                lines.append(f"{label}:")
+                for f in items:
+                    lines.append(f"- {f['content']}")
+        if snap.get("deferred"):
+            lines.append("\n暂缓 (以后可做):")
+            for f in snap["deferred"]:
+                lines.append(f"- {f['content']}")
+        if snap.get("rejected"):
+            lines.append("\n已否决:")
+            for f in snap["rejected"]:
+                lines.append(f"- {f['content']}")
+        # 缺口
+        gaps = self.sufficiency_gaps(conversation_id)
+        if gaps:
+            lines.append("\n还有一个问题: " + gaps[0])
+        lines.append("\n你可以直接告诉我哪里不对, 或继续补充。")
+        return "\n".join(lines)
+
+    def analysis_gaps(self, conversation_id: str) -> list[str]:
+        """主动缺口分析 (Golden Path §11: 用户问\"你觉得还有什么问题?\")。
+
+        返回真正影响产品定义、尚未被当前事实覆盖的缺口问题 (动态, 非模板)。
+        """
+        snap = self.snapshot(conversation_id)
+        facts = snap.get("facts", [])
+        if not facts:
+            return ["先说说你想做什么? 这样我才能帮你发现问题。"]
+        contents = " ".join(str(f.get("content", "")) for f in facts)
+        idea = next((f["content"] for f in facts if f.get("type") == "IDEA"),
+                    None)
+        # 动态领域问题库 (按类型启用 — 不是对每个产品问全部)
+        checks: list[tuple[str, str, str]] = [
+            ("单局怎么玩 / 一局大概多久", r"单局|一局|回合|关卡", "REQUIREMENT"),
+            ("结束条件: 什么算赢/输", r"结束|胜利|失败|game over", "REQUIREMENT"),
+            ("难度是否递增", r"难度", "DECISION"),
+            ("是否需要暂停功能", r"暂停", "REQUIREMENT"),
+            ("本地最高分是否保留", r"最高分|历史.*分|记录", "REQUIREMENT"),
+            ("横屏还是竖屏", r"横屏|竖屏", "REQUIREMENT"),
+            ("是否需要音效/音乐", r"音效|音乐|声音", "REQUIREMENT"),
+            ("是否要分享/截图传播", r"分享|截图", "FUTURE_IDEA"),
+        ]
+        if idea:
+            qs = []
+            for question, hit_pat, _ftype in checks:
+                if not re.search(hit_pat, contents):
+                    qs.append(question)
+            # 限 3 个最影响定义的 (不一次问十几个 — Golden Path §11)
+            return qs[:3]
+        return ["先确定核心想法吧——你想做什么?"]
 
 
 __all__ = [

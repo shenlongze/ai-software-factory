@@ -143,8 +143,7 @@ def llm_semantic_interpreter(root: str, conversation_id: str, text: str,
         # "我目前的理解是?" / "你理解了什么" → show_understanding (无 fact 变更)
         if re.search(r"理解|你(现在|目前)?(觉得|认为|怎么看)|总结", stripped):
             return build_proposal(
-                operations=[], reply="我目前的理解是…… (见上方/侧栏结构化卡片)",
-                summary="", show_understanding=True)
+                operations=[], reply="", summary="", show_understanding=True)
         return build_proposal(operations=[], reply="嗯, 我在。想做什么产品? 说说你的想法。")
 
     # 2) LLM 调用 (注入或默认)

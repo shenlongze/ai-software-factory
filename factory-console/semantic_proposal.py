@@ -242,6 +242,7 @@ def apply_operations(root, conversation_id: str,
             target = _resolve_target(root, conversation_id, op)
         # 3) 分派
         if o in ("ADD", "SUGGEST"):
+            _supersede_related_deferred(root, conversation_id, ftype, content)
             res = pu.upsert_fact(
                 root, conversation_id, fact_type=ftype, content=content,
                 source_message_id=source_message_id,
@@ -253,6 +254,7 @@ def apply_operations(root, conversation_id: str,
             if target is not None:
                 pu.transition_fact(root, conversation_id, target["id"],
                                    to="SUPERSEDED", actor=actor)
+            _supersede_related_deferred(root, conversation_id, ftype, content)
             res = pu.upsert_fact(
                 root, conversation_id, fact_type=ftype, content=content,
                 source_message_id=source_message_id,
@@ -319,6 +321,36 @@ def _resolve_target(root, conversation_id: str,
     return _find_active_fact(
         doc, fact_type=op.get("fact_type", ""),
         content=op.get("content", ""), fact_id=op.get("target_id", ""))
+
+
+def _supersede_related_deferred(root, conversation_id: str,
+                                fact_type: str, content: str) -> list[str]:
+    """ADD/恢复前: 顶替同主题的 DEFERRED/REJECTED 项 (内容含共同主题词)。
+
+    例: deferred「排行榜」+ 用户「排行榜还是保留(本地最高分)」→ 新 REQUIREMENT
+    顶替 deferred, deferred 不再残留 (可审计历史保留)。返回被顶替的 fact id。
+    """
+    from . import product_understanding as pu
+
+    doc = pu._ensure_conv_doc(root, conversation_id)  # noqa: SLF001
+    facts = (doc.setdefault("understanding", {})
+             .setdefault("facts", {}))
+    new_norm = pu.normalize_content(content)
+    superseded_ids: list[str] = []
+    for f in facts.values():
+        if f.get("status") not in ("DEFERRED", "REJECTED"):
+            continue
+        old_norm = pu.normalize_content(f.get("content", ""))
+        # 同 key → 必定顶替; 不同 key 但共享主题词 (排行榜) → 恢复语义顶替
+        share = (old_norm == new_norm) or (
+            len(old_norm) >= 2 and len(new_norm) >= 2
+            and (old_norm in new_norm or new_norm in old_norm))
+        if not share:
+            continue
+        pu.transition_fact(root, conversation_id, f["id"],
+                           to="SUPERSEDED", actor="reactivate")
+        superseded_ids.append(f["id"])
+    return superseded_ids
 
 
 __all__ = [

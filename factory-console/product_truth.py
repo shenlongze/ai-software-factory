@@ -263,6 +263,88 @@ def transition_idea(root: Path | str, idea_id: str, to: str, *,
     return _transition(root, "ideas", idea_id, to, actor=actor)
 
 
+def update_idea(root: Path | str, idea_id: str, *,
+                title: str | None = None, description: str | None = None,
+                actor: str = "") -> dict[str, Any]:
+    """S47-E5: Idea 草稿期内容更新 (created/refined 可改; 已 validated 拒绝)。"""
+    return _update_content(root, "ideas", idea_id,
+                           title=title, description=description, actor=actor)
+
+
+def transition_discovery(root: Path | str, discovery_id: str, to: str, *,
+                         actor: str = "") -> dict[str, Any]:
+    return _transition(root, "discoveries", discovery_id, to, actor=actor)
+
+
+def update_discovery(root: Path | str, discovery_id: str, *,
+                     title: str | None = None, input_ref: str | None = None,
+                     actor: str = "") -> dict[str, Any]:
+    """S47-E5: Discovery 内容更新 (pending/running 可改)。input_ref 承载正文。"""
+    with _lock:
+        data = _load(root, "discoveries")
+        rec = data.get(discovery_id)
+        if rec is None:
+            raise KeyError(f"discoveries {discovery_id} 不存在")
+        if str(rec.get("status") or "") not in ("pending", "running"):
+            raise ValueError(f"discoveries {discovery_id} 状态 {rec.get('status')} 不可原地改")
+        import copy as _copy
+        upd = _copy.deepcopy(rec)
+        if title is not None:
+            upd["title"] = str(title)[:200]
+        if input_ref is not None:
+            upd["input_ref"] = str(input_ref)[:8000]
+        upd["updated_at"] = _now_iso()
+        upd.setdefault("history", []).append({"to": str(upd.get("status")),
+                                              "at": _now_iso(), "actor": actor or "",
+                                              "note": "content-updated"})
+        data[discovery_id] = upd
+        _save(root, "discoveries", data)
+        return upd
+
+
+def transition_prd(root: Path | str, prd_id: str, to: str, *,
+                   actor: str = "") -> dict[str, Any]:
+    return _transition(root, "prds", prd_id, to, actor=actor)
+
+
+def transition_plan(root: Path | str, plan_id: str, to: str, *,
+                    actor: str = "") -> dict[str, Any]:
+    return _transition(root, "plans", plan_id, to, actor=actor)
+
+
+def update_prd_content(root: Path | str, prd_id: str, body: str, *,
+                       actor: str = "") -> dict[str, Any]:
+    """S47-E5: PRD 正文写入 (版本化 — draft 阶段追加 version content.body)。
+    返回更新后 rec; 不存在 → KeyError; 非 draft → ValueError (已批准走
+    supersede + 新 PRD)。"""
+    if not body:
+        raise ValueError("prd body required")
+    with _lock:
+        data = _load(root, "prds")
+        rec = data.get(prd_id)
+        if rec is None:
+            raise KeyError(f"prds {prd_id} 不存在")
+        if str(rec.get("status") or "") != "draft":
+            raise ValueError(f"prds {prd_id} 状态 {rec.get('status')} — 已批准走版本化 (新 PRD)")
+        import copy as _copy
+        upd = _copy.deepcopy(rec)
+        ver = int(upd.get("current_version") or 1) + 1
+        upd["current_version"] = ver
+        upd.setdefault("versions", []).append({
+            "version": ver,
+            "content": {"title": str(upd.get("title") or ""),
+                        "requirement_ids": list(upd.get("requirement_ids") or []),
+                        "body": str(body)[:20000]},
+            "created_at": _now_iso(), "actor": actor,
+        })
+        upd["updated_at"] = _now_iso()
+        upd.setdefault("history", []).append({"to": "draft", "at": _now_iso(),
+                                              "actor": actor or "", "note": f"v{ver} body"})
+        data[prd_id] = upd
+        _save(root, "prds", data)
+        return upd
+
+
 # ---------------------------------------------------------------------------
 # Discovery (DISC-*)
 # ---------------------------------------------------------------------------

@@ -221,13 +221,13 @@ def tool_schemas(data_dir: str | Path | None = None) -> list[dict[str, Any]]:
         _fc("create_task", "创建任务(执行)", "在当前项目创建新任务",
             {"title": {"type": "string"}, "description": {"type": "string"}, "priority": {"type": "string", "enum": ["P0", "P1", "P2", "P3"]}}, ["title"]),
         _fc("save_product_record", "保存/更新产品链记录 (canonical)",
-            "把需求分析/PRD 等真实产出写入 canonical Product Truth。kind: "
-            "discovery(需求理解) / requirement(需求) / prd(产品方案) / plan(计划)。"
+            "把产品链真实产出写入 canonical Product Truth。kind: "
+            "idea(想法) / discovery(需求理解) / requirement(需求) / prd(产品方案)。"
             "用户要求 继续/整理/分析/接受建议/更具体/深化 → 即授权产出。"
             "迭代规则: 若该工作已有记录且仍是 draft (record_id 已知或先用 "
             "get_product_record 查到) → 传 record_id 更新其内容 (深化, 不重复"
             "新建); 无记录 → 新建。不要在回答里只输出文本而不落盘。",
-            {"kind": {"type": "string", "enum": ["discovery", "requirement", "prd", "plan"]},
+            {"kind": {"type": "string", "enum": ["idea", "discovery", "requirement", "prd", "plan"]},
              "title": {"type": "string"}, "content": {"type": "string"},
              "record_id": {"type": "string", "description": "可选: 更新已有 draft 记录 (深化) — 省略则新建"},
              "idea_id": {"type": "string", "description": "kind=discovery 且新建时必填 (IDEA-*)"}},
@@ -237,7 +237,7 @@ def tool_schemas(data_dir: str | Path | None = None) -> list[dict[str, Any]]:
             "REQ-xxx) 传之; 未知则传 kind (requirement/discovery/prd/plan) 返回"
             "该类型最近一条含完整内容。用于继续深化/查看已确定的产出/回答"
             "'目前确定了什么'。",
-            {"kind": {"type": "string", "enum": ["discovery", "requirement", "prd", "plan"]},
+            {"kind": {"type": "string", "enum": ["idea", "discovery", "requirement", "prd", "plan"]},
              "record_id": {"type": "string"}}, ["kind"]),
         _fc("project_docs", "文档清单", "列出项目文档/产出物", {}),
         _fc("git_status", "仓库状态", "查询 git 仓库: 远程/分支/领先提交", {}),
@@ -1127,6 +1127,26 @@ def dispatch(
                 "executing" if r.get("ok") else "failed")
         except Exception:  # noqa: BLE001 — 状态更新失败不阻断执行
             pass
+        # S47-E5: 旁路消除 — 批准执行后落 canonical PLAN-* (session_plans 仅工作态)
+        if r.get("ok"):
+            try:
+                from factory_console import product_truth as pt
+                _cplan = pt.create_plan(
+                    root, project_id=_exec_project_id,
+                    prd_id=str(plan.get("prd_id") or ""),
+                    goal=str(plan.get("goal") or plan.get("title") or "")[:300],
+                    tasks=[dict(t) for t in (plan.get("tasks") or [])][:50],
+                    order=[str(x) for x in (plan.get("order") or [])][:50],
+                    acceptance=[str(x) for x in (plan.get("acceptance") or [])][:20],
+                    ask_approval=False, idempotency_key=f"plan-exec-{_exec_project_id}",
+                    actor="human")
+                try:
+                    pt.transition_plan(root, _cplan["id"], "approved", actor="human")
+                except Exception:  # noqa: BLE001 — 已是 approved/pending 均可
+                    pass
+                r["canonical_plan_id"] = _cplan["id"]
+            except Exception as exc:  # noqa: BLE001 — canonical 落盘失败诚实标注
+                r["canonical_plan_error"] = f"{type(exc).__name__}: {exc}"
         # P1-FIX: 建任务成功后自动初始化执行链 (ExecState, 依赖来自 backlog SSOT)
         # → 用户后续 "开始执行/继续" 由 chain_next 依赖感知逐任务推进
         if r.get("ok"):
@@ -1262,17 +1282,19 @@ def dispatch(
             lines.append(_PROJECT_LIST_ANSWER_TEMPLATE)
             return {"ok": True, "output": "\n".join(lines)}
         if tool_id == "get_product_record":
-            # S47-E4: 读 canonical 完整内容 (record_id 或 kind 最近)
+            # S47-E4/E5: 读 canonical 完整内容 (record_id 或 kind 最近)
             try:
                 from factory_console import product_truth as pt
                 kind = str(args.get("kind") or "requirement").strip().lower()
                 record_id = str(args.get("record_id") or "").strip()
-                getter = {"discovery": pt.get_discovery, "requirement": pt.get_requirement,
+                getter = {"idea": pt.get_idea, "discovery": pt.get_discovery,
+                          "requirement": pt.get_requirement,
                           "prd": pt.get_prd, "plan": pt.get_plan}.get(kind)
-                lister = {"discovery": pt.list_discoveries, "requirement": pt.list_requirements,
+                lister = {"idea": pt.list_ideas, "discovery": pt.list_discoveries,
+                          "requirement": pt.list_requirements,
                           "prd": pt.list_prds, "plan": pt.list_plans}.get(kind)
                 if getter is None or lister is None:
-                    return {"ok": False, "error": "kind 必须是 discovery/requirement/prd/plan"}
+                    return {"ok": False, "error": "kind 必须是 idea/discovery/requirement/prd/plan"}
                 rec = None
                 if record_id:
                     rec = getter(root, record_id)
@@ -1282,9 +1304,19 @@ def dispatch(
                         rec = items[-1]
                 if rec is None:
                     return {"ok": True, "output": f"{kind} 记录: 无 (尚未建立)"}
+                body = (str(rec.get("description") or rec.get("input_ref") or
+                            rec.get("goal") or "")[:6000])
+                if kind == "prd":
+                    vers = rec.get("versions") or []
+                    if vers:
+                        body = str(vers[-1].get("content", {}).get("body") or body)[:6000]
+                if kind == "plan":
+                    _tasks = rec.get("tasks") or []
+                    body = (f"{body}\n任务: {len(_tasks)} 个 " +
+                            " · ".join(str(t.get("title") or "")[:40] for t in _tasks[:10]))
                 return {"ok": True, "output": (
                     f"{kind} {rec.get('id')} · {rec.get('status')} · {rec.get('title') or ''}\n"
-                    f"内容:\n{str(rec.get('description') or rec.get('input_ref') or rec.get('goal') or '')[:6000]}")}
+                    f"内容:\n{body}")}
             except Exception as exc:  # noqa: BLE001
                 return {"ok": False, "error": f"读取失败: {type(exc).__name__}: {exc}"}
 
@@ -1296,43 +1328,47 @@ def dispatch(
                 title = str(args.get("title") or "").strip()
                 content = str(args.get("content") or "").strip()
                 record_id = str(args.get("record_id") or "").strip()
-                if kind not in ("discovery", "requirement", "prd", "plan"):
-                    return {"ok": False, "error": "kind 必须是 discovery/requirement/prd/plan"}
+                if kind not in ("discovery", "requirement", "prd", "plan", "idea"):
+                    return {"ok": False, "error": "kind 必须是 idea/discovery/requirement/prd/plan"}
                 if not title:
                     return {"ok": False, "error": "title 必填"}
-                if kind == "prd":
-                    return {"ok": False,
-                            "error": "PRD 请用 plan_development / 生产工作流生成 (有完整评审链); 本工具只落需求分析产出"}
-                if kind == "plan":
-                    return {"ok": False,
-                            "error": "计划请用 plan_development 生成 (结构化任务+审批); 本工具只落需求分析产出"}
                 if record_id:
-                    # 迭代: 深化已有 draft
-                    getter = {"discovery": pt.get_discovery, "requirement": pt.get_requirement,
+                    # 迭代: 深化已有记录 (draft/草稿态)
+                    getter = {"idea": pt.get_idea, "discovery": pt.get_discovery,
+                              "requirement": pt.get_requirement,
                               "prd": pt.get_prd, "plan": pt.get_plan}.get(kind)
                     existing = getter(root, record_id) if getter else None
                     if existing is None:
                         return {"ok": False, "error": f"{kind} {record_id} 不存在, 无法更新 (省略 record_id 新建)"}
-                    if kind == "discovery":
-                        upd = pt._update_content(root, "discoveries", record_id,
-                                                 title=title,
-                                                 description=str(content)[:8000],
-                                                 actor="human") if hasattr(pt, "_update_content") else None
+                    if kind == "prd":
+                        upd = pt.update_prd_content(root, record_id, str(content)[:20000], actor="human")
+                    elif kind == "discovery":
+                        upd = pt.update_discovery(root, record_id, title=title,
+                                                  input_ref=str(content)[:8000], actor="human")
+                    elif kind == "idea":
+                        upd = pt.update_idea(root, record_id, title=title,
+                                             description=str(content)[:8000], actor="human")
+                    elif kind == "plan":
+                        return {"ok": False,
+                                "error": "Plan 是不可变快照 (契约) — 修改请新建 PLAN; 若仍在 pending 可用 plan_development 重新生成"}
                     else:
-                        upd = pt.update_requirement(root, record_id,
-                                                    title=title,
-                                                    description=str(content)[:8000],
-                                                    actor="human")
-                    rid = record_id
-                    return {"ok": True,
-                            "record": f"{kind} {rid} 已深化更新 (draft)",
-                            "id": rid}
-                if kind == "discovery":
+                        upd = pt.update_requirement(root, record_id, title=title,
+                                                    description=str(content)[:8000], actor="human")
+                    return {"ok": True, "record": f"{kind} {record_id} 已深化更新", "id": record_id}
+                if kind == "idea":
+                    rec = pt.create_idea(root, project_id=project_id, title=title,
+                                         description=str(content)[:8000],
+                                         source="conversation", actor="human")
+                elif kind == "discovery":
                     idea_id = str(args.get("idea_id") or "").strip()
                     if not idea_id:
                         return {"ok": False, "error": "discovery 需要 idea_id (先建/查 Idea)"}
                     rec = pt.create_discovery(root, idea_id=idea_id, title=title,
                                               input_ref=str(content)[:2000], actor="human")
+                elif kind == "prd":
+                    rec = pt.create_prd(root, project_id=project_id, title=title, actor="human")
+                    if content:
+                        pt.update_prd_content(root, rec["id"], str(content)[:20000], actor="human")
                 else:  # requirement → canonical REQ-* (product_truth)
                     rec = pt.create_requirement(root, title=title,
                                                 description=str(content)[:8000], source="conversation",

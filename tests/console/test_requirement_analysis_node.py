@@ -110,3 +110,26 @@ class TestAnalysisRound:
             "completed_dimensions": ran.ANALYSIS_DIMENSIONS,
             "open_questions": ["音效?"]})
         assert ran.finalize_if_done(r, run["run_id"]) is None
+
+
+class TestConvergenceAfterDecisions:
+    def test_resolved_decisions_unblock_completion(self, tmp_path):
+        """决策已 RESOLVED 的问题不阻塞收敛 (open_questions 假性累积修复)。"""
+        r = str(tmp_path)
+        run = _mkrun(r)
+        nr.transition_node_run(r, run["run_id"], "RUNNING")
+        # 全维度覆盖 + open 含已决策问题
+        nr.request_decision(r, run["run_id"], question="平台?",
+                            options=["PC"])  # → WAITING
+        nr.update_checkpoint(r, run["run_id"], patch={
+            "completed_dimensions": ran.ANALYSIS_DIMENSIONS,
+            "open_questions": ["平台?", "真未决?"]})
+        # 答决策 (resume)
+        dec = nr.get_node_run(r, run["run_id"])["decisions"][0]
+        nr.record_decision(r, run["run_id"], dec["decision_id"], chosen="PC", actor="human")
+        # 未决仍有 "真未决?" → 不收敛
+        assert ran.finalize_if_done(r, run["run_id"]) is None
+        # 清未决 → 收敛 (resolved 决策问题已过滤)
+        nr.update_checkpoint(r, run["run_id"], patch={"open_questions": []})
+        done = ran.finalize_if_done(r, run["run_id"])
+        assert done is not None and done["state"] == "COMPLETED"

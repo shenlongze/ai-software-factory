@@ -168,14 +168,26 @@ def run_round(root, run_id: str, llm_fn, *, truth_snippet: str = "") -> dict[str
 
 
 def finalize_if_done(root, run_id: str) -> dict[str, Any] | None:
-    """收敛判定: 全维度覆盖 + 无 open_questions → VERIFYING→COMPLETED。"""
+    """收敛判定: 全维度覆盖 + 无未决 open_questions → VERIFYING→COMPLETED。
+
+    已 RESOLVED 决策对应的问题不计为阻塞 (open_questions 中已由 human
+    拍板的移除 — 避免假性不收敛)。
+    """
     from factory_console import node_runtime as nr
     run = nr.get_node_run(root, run_id)
     if run is None or run.get("state") not in ("RUNNING",):
         return None
     cp = run.get("checkpoint") or {}
+    resolved_q = {str(d.get("question") or "").strip()
+                  for d in (run.get("decisions") or [])
+                  if d.get("status") == "RESOLVED" and str(d.get("question") or "").strip()}
+    open_q = [q for q in (cp.get("open_questions") or [])
+              if str(q).strip() not in resolved_q]
+    if open_q != (cp.get("open_questions") or []):
+        nr.update_checkpoint(root, run_id, patch={"open_questions": open_q})
+        cp["open_questions"] = open_q
     if (set(cp.get("completed_dimensions") or []) >= set(ANALYSIS_DIMENSIONS)
-            and not (cp.get("open_questions") or [])):
+            and not open_q):
         nr.transition_node_run(root, run_id, "VERIFYING", actor="analysis", note="converged")
         nr.transition_node_run(root, run_id, "COMPLETED", actor="analysis", note="requirement analysis complete")
         return nr.get_node_run(root, run_id)

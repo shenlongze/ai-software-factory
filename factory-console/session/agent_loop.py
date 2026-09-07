@@ -863,6 +863,40 @@ def _project_lifecycle(root: Any, project_id: str) -> dict[str, Any]:
     return {"ok": True, "output": "\n".join(lines)}
 
 
+def _node_run_context(data_dir: Any, project_id: str) -> str:
+    """Phase 3: 当前项目 active 产品链 NodeRun → 事实文本 (注入 LLM)。
+
+    仅当存在未终态 requirement-analysis NodeRun 时返回 (执行事实 SSOT —
+    Conversation 据此定位当前 Work, resume SAME run; 不猜不另起)。
+    无 active run → "" (Conversation 正常处理新意图)。
+    """
+    if not data_dir or not project_id:
+        return ""
+    try:
+        from factory_console import node_runtime as nr
+        run = nr.get_active_run(str(data_dir), "requirement-analysis",
+                                project_id=project_id)
+        if run is None:
+            return ""
+        cp = run.get("checkpoint") or {}
+        lines = [f"- NodeRun: {run.get('run_id')} · state={run.get('state')}",
+                 f"- 已覆盖维度: {'、'.join(cp.get('completed_dimensions') or []) or '(无)'}",
+                 f"- 迭代: {cp.get('iteration') or 0}"]
+        pend = [d for d in (run.get("decisions") or []) if d.get("status") == "PENDING"]
+        if pend:
+            lines.append("- 待你决策:")
+            for d in pend:
+                opt = " / ".join(d.get("options") or []) or "(自由回答)"
+                lines.append(f"  · [{d.get('decision_id')}] {d.get('question')} — 选项: {opt}")
+        if cp.get("open_questions"):
+            lines.append("- 未决问题: " + "；".join(cp["open_questions"][:4]))
+        lines.append("- 下一步: 继续分析 → 调 requirement_analysis_round; 回答决策 → "
+                     "调 requirement_analysis_answer (decision_id + 你的选择)")
+        return "\n".join(lines)
+    except Exception:  # noqa: BLE001 — 注入失败不阻断
+        return ""
+
+
 def _production_entry_gate(root: Any, project_id: str,
                            ctx: dict[str, Any] | None = None) -> dict[str, Any]:
     """S50-P1A: Production Entry Gate — create_task 前置。
@@ -2508,6 +2542,14 @@ def run_agent_native(
     if hist_block:
         messages.append({"role": "system", "content": (
             f"【最近对话】(保持上下文连贯, 引用前文时注明; 与本次问题矛盾处以后者为准)\n{hist_block}"
+        )})
+    # Phase 3: 当前产品链 NodeRun 锚 — 若项目有 active NodeRun, 确定性注入
+    # (Conversation 定位当前 Work → 交 Node; '继续/分析' = resume SAME run)
+    _nr_ctx = _node_run_context(data_dir, project_id)
+    if _nr_ctx:
+        messages.append({"role": "system", "content": (
+            "【当前产品链 NodeRun】(执行事实 SSOT — 据此继续工作, 勿另起炉灶)"
+            f"\n{_nr_ctx}"
         )})
     # S49-FIX: 无论账本/文本, 最近工具执行结果必须可见 (跨轮复用, 防重查)
     _tool_hist = _tool_result_text(history, max_turns=3)

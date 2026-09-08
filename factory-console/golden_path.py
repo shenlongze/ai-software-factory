@@ -471,10 +471,18 @@ def execute_approved(root: str, conversation_id: str, *,
     if hasattr(executor_factory, "set_leaves"):
         executor_factory.set_leaves(leaves)  # type: ignore[attr-defined]
 
-    # workflow 图 (叶顺序 = plan.order 拓扑; 依赖边来自叶)
+    # workflow 图 (叶顺序 = plan.order 拓扑; 依赖边来自叶; 叶上下文入 input_static)
     nodes = [{"node_id": n["id"],
               "depends_on": [d for d in (n.get("depends_on") or [])
-                             if d in by_id]}
+                             if d in by_id],
+              "input_static": {
+                  "task": {k: n.get(k) for k in
+                           ("id", "title", "kind", "scope", "change_type",
+                            "expected_files", "prd_ref", "depends_on")},
+                  "goal": plan.get("goal", ""),
+                  "approved_prd_id": _prd.get("id"),
+                  "approved_plan_id": plan.get("id"),
+              }}
              for n in leaves_ordered]
     register_workflow(root, workflow_id=plan["id"],
                       name=f"plan {plan['id']}", project_id=conversation_id,

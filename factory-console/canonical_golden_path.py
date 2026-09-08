@@ -251,28 +251,20 @@ class CanonicalGoldenPath:
         raise AssertionError(f"未知 lifecycle action: {action}")  # 防御: 枚举封闭
 
     def plan_tree(self, conversation_id: str) -> dict[str, Any]:
-        """当前 Plan 的任务树视图 (approved plan 的 tasks 投影; 无 → {})。"""
-        from factory_console import product_truth as _pt
+        """当前会话的任务树视图 (最新 pending 或 approved Plan; 无 → exists=False)。
+
+        C1 (post-cut3): 返回 tree_summary 格式 (exists/leaf_count/domains/degraded),
+        供 canonical_shell._plan 直接展示。取"最新计划"而非仅 approved —
+        pending (已生成未确认) 也可见, 不改变 Gate/status 语义。
+        """
         from factory_console import golden_path as _gp
         st = _gp.path_status(self.root, conversation_id)
-        for plan in st.get("plans", []):
-            if plan.get("status") == "approved":
-                full = _pt.get_plan(self.root, plan["id"]) or {}
-                return {
-                    "plan_id": plan["id"],
-                    "goal": plan.get("goal", ""),
-                    "tasks": list(full.get("tasks") or []),
-                }
-        pending = st.get("plans", [])
-        if pending:
-            full = _pt.get_plan(self.root, pending[-1]["id"]) or {}
-            return {
-                "plan_id": pending[-1]["id"],
-                "goal": pending[-1].get("goal", ""),
-                "tasks": list(full.get("tasks") or []),
-                "status": pending[-1].get("status"),
-            }
-        return {}
+        plans = st.get("plans") or []
+        if not plans:
+            return {"exists": False}
+        # 最新计划 (path_status 已按创建序; 取最后一个 — pending 或 approved 均可)
+        plan = plans[-1]
+        return _gp.plan_tree(self.root, plan["id"])
 
     def _approve_current_prd(self, conversation_id: str) -> dict[str, Any]:
         st = gp.path_status(self.root, conversation_id)

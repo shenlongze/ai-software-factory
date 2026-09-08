@@ -502,14 +502,6 @@ class ProductUnderstandingService:
             lines.append("待你确认:")
             for f in proposed:
                 lines.append(f"- {f['content']}")
-        # 分组标签 (REQUIREMENT/CONSTRAINT/DECISION 无状态展示为子项)
-        for label, ftype in (("需求", "REQUIREMENT"), ("约束", "CONSTRAINT"),
-                             ("决定", "DECISION"), ("未来考虑", "FUTURE_IDEA")):
-            items = [f for f in proposed + confirmed if f.get("type") == ftype]
-            if items and not confirmed:
-                lines.append(f"{label}:")
-                for f in items:
-                    lines.append(f"- {f['content']}")
         if snap.get("deferred"):
             lines.append("\n暂缓 (以后可做):")
             for f in snap["deferred"]:
@@ -518,8 +510,15 @@ class ProductUnderstandingService:
             lines.append("\n已否决:")
             for f in snap["rejected"]:
                 lines.append(f"- {f['content']}")
-        # 缺口
-        gaps = self.sufficiency_gaps(conversation_id)
+        # 缺口 (C3 post-cut3: 产品定义已确认 — approved PRD/Plan 存在 — 不再在
+        # statement 末尾追问缺口; 已确认的东西不反复"待确认")
+        try:
+            from factory_console import golden_path as _gp
+            _st = _gp.path_status(self.root, conversation_id)
+            _confirmed_prd = bool(_st.get("approved_prd"))
+        except Exception:  # noqa: BLE001 — 阶段读取失败 → 保守继续展示缺口
+            _confirmed_prd = False
+        gaps = self.sufficiency_gaps(conversation_id) if not _confirmed_prd else []
         if gaps:
             lines.append("\n还有一个问题: " + gaps[0])
         lines.append("\n你可以直接告诉我哪里不对, 或继续补充。")

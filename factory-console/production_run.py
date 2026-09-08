@@ -247,7 +247,6 @@ def _to_patch(executor_name: str, output: str, input_data: dict[str, Any]) -> st
       用 git diff 生成 patch (临时 git 仓库)。
     返回 patch 文本 (空 = 无变更)。
     """
-    import re
     import subprocess as _sp
 
     text = str(output or "")
@@ -370,7 +369,7 @@ def execute_production_run(
     每个 Node 产出 Artifact → binding 到下游 Node 输入。
     """
     from .node_runtime import (
-        register_node, create_node_run, execute_node_run, get_node_run, NodeError,
+        register_node, create_node_run, execute_node_run, NodeError,
     )
 
     with _lock:
@@ -438,6 +437,11 @@ def execute_production_run(
 
         # 构建 Node 输入: 显式 binding (input_binding: {field: "artifact:<node_id>"})
         node_input = dict(run.get("input") or {})
+        # C2 (post-cut3): 静态叶上下文 (node_spec.input_static) 合入 NodeRun input
+        # — 使磁盘 run.input 可追溯叶 (title/scope/change_type/expected_files), 非 None
+        static_ctx = node_spec.get("input_static") or {}
+        if isinstance(static_ctx, dict):
+            node_input.update(static_ctx)
         binding = node_spec.get("input_binding") or {}
         for field, src in binding.items():
             if isinstance(src, str) and src.startswith("artifact:"):

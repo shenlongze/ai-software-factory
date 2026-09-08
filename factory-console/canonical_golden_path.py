@@ -81,13 +81,25 @@ class CanonicalGoldenPath:
     def __init__(self, root: str | Any, *, actor: str = "human",
                  semantic: bool = False,
                  interpreter: Callable[..., Any] | None = None,
-                 real_executor: bool = False) -> None:
+                 real_executor: bool = False,
+                 decomposer: Callable[..., Any] | None = None) -> None:
         self.root = str(root)
         self.actor = actor
+        self.semantic = bool(semantic)
         self.real_executor = bool(real_executor)
+        self._decomposer = decomposer
         self.conversations = ConversationApplicationService(self.root)
         self.understanding = ProductUnderstandingService(
             self.root, semantic=semantic, interpreter=interpreter)
+
+    def _resolve_decomposer(self) -> Any:
+        """拆解器: 注入优先 → semantic=True 时 LLM → None (模板兜底)。"""
+        if self._decomposer is not None:
+            return self._decomposer
+        if self.semantic:
+            from factory_console.task_decomposition import build_llm_decomposer
+            return build_llm_decomposer()
+        return None
 
     # ------------------------------------------------------------- 生命周期查询
     def create_conversation(self, *, title: str = "新会话") -> dict[str, Any]:
@@ -197,7 +209,10 @@ class CanonicalGoldenPath:
                     "detail": obj,
                 }
             if action == "generate_plan":
-                obj = gp.generate_plan(self.root, conversation_id, actor=self.actor)
+                obj = gp.generate_plan(self.root, conversation_id,
+                                       actor=self.actor,
+                                       decompose=True,
+                                       decomposer=self._resolve_decomposer())
                 n_tasks = len(obj.get("tasks") or [])
                 return {
                     "kind": "lifecycle", "action": action,

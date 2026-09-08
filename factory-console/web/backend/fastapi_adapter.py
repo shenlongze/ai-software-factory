@@ -6776,7 +6776,8 @@ def build_app(
 
     @app.post("/api/task-trees")
     def api_decompose_task_tree(body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
-        """Task Tree 分解 (K2, 需求 → 任务树)。"""
+        """⚠️ LEGACY (K2, S1 FROZEN): 任务组织层 canonical = task_decomposition /
+        golden_path.generate_plan。本端点保留兼容旧调用方, 不接新流量。"""
         from factory_console import task_tree as _tt
 
         root = str(factory_root if factory_root is not None else DEFAULT_ROOT)

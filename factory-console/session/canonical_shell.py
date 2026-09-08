@@ -22,7 +22,7 @@ HELP = (
     "  「我想做一个飞机大战小游戏, 可以在浏览器运行」\n"
     "系统会持续理解 → 澄清 → 形成 Product Understanding → PRD → 计划 → 生产。\n"
     "生命周期自然语言: 整理成 PRD / 就按这个做 / 生成计划 / 确认计划 / 开始做\n"
-    "斜杠命令: /status 当前阶段 · /new 新会话 · /exit 退出"
+    "斜杠命令: /help /status /plan /new /exit"
 )
 
 
@@ -74,6 +74,9 @@ class CanonicalShell:
             if cmd == "/status":
                 self._status()
                 continue
+            if cmd == "/plan":
+                self._plan()
+                continue
             self._handle(cmd)
         return 0
 
@@ -90,6 +93,27 @@ class CanonicalShell:
         st = self.orchestrator.status(self.conversation_id)
         print(st["understanding"])
         print(f"\n当前阶段: {st['stage']}")
+
+    def _plan(self) -> None:
+        """/plan — 当前 Plan 多级任务树摘要 (层/叶/关键路径/degraded)。"""
+        if self.conversation_id is None:
+            print("还没有会话 — 先描述你想做什么。")
+            return
+        tree = self.orchestrator.plan_tree(self.conversation_id)
+        if not tree or not tree.get("exists", False):
+            print("还没有任务树 — 确认 PRD 并「生成计划」后可见。")
+            return
+        print("任务树:")
+        print(f"  goal: {tree.get('goal', '')[:80]}")
+        print(f"  节点 {tree.get('node_count', 0)} · 叶 {tree.get('leaf_count', 0)}"
+              f" · 层 {tree.get('depth', 0)}"
+              f"{' · ⚠️ 模板降级' if tree.get('degraded') else ''}")
+        for d in tree.get("domains", []):
+            print(f"  - {d}")
+        cp = tree.get("critical_path") or []
+        if cp:
+            print(f"  关键路径: {len(cp)} 叶")
+        print("输入「就按这个做」确认 PRD /「确认计划」确认 Plan 后开始执行。")
 
     def _handle(self, text: str) -> None:
         try:

@@ -1,5 +1,10 @@
 """factory-console/task_tree.py — K2 Task Tree (Real Complex Work 最小实现).
 
+⚠️ FROZEN / LEGACY (S1 第 2 刀, 2026-09-08):
+- 任务组织层 canonical = task_decomposition (多级树域, task_trees/{plan_id}.json)。
+- 本模块保留供既有调用方 (conv_*/project_os 旧链) 兼容; 不扩展、不接新流量。
+- 新 Golden Path 一律走 golden_path.generate_plan → task_decomposition。
+
 多任务分解 + 依赖 + 进度投影 (Task 是 What, Node 是 How):
 - TaskTree: 从 Conversation Requirement 分解为 task 树 (确定性规则)
 - Task 层级: parent_id/children (S43 task_ 实体扩展)
@@ -14,13 +19,12 @@ from __future__ import annotations
 import json
 import os
 import tempfile
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from .unified_contract import (
-    new_id, create_entity, store_entity, get_entity, entities, bump_version,
+    create_entity, store_entity, get_entity, bump_version,
 )
 from .conversation_os import extract_requirement
 

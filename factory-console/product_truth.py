@@ -27,7 +27,7 @@ import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 _lock = threading.RLock()
 
@@ -696,9 +696,9 @@ def create_plan(root: Path | str, *, project_id: str = "", prd_id: str = "",
                               "requirement_id": requirement_id,
                               "requirement_ids": [requirement_id] if requirement_id else [],
                               "goal": str(goal)[:300],
-                              "tasks": [dict(t) for t in (tasks or [])][:50],
-                              "order": [str(x) for x in (order or [])][:50],
-                              "acceptance": [str(x) for x in (acceptance or [])][:20],
+                              "tasks": [dict(t) for t in (tasks or [])][:200],
+                              "order": [str(x) for x in (order or [])][:200],
+                              "acceptance": [str(x) for x in (acceptance or [])][:200],
                               "ask_approval": bool(ask_approval),
                               "status": "pending", "metadata": {}},
                         idempotency_key=idempotency_key, actor=actor)

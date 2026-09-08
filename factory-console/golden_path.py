@@ -1,30 +1,38 @@
-"""factory-console/golden_path.py — Golden Path 编排域 (Cognitive Golden Path Phase 4/5)。
+"""factory-console/golden_path.py — Golden Path 编排域 (S1 第 2 刀: 执行收敛)。
 
-打通真链 (Golden Path §4/§16-§20):
+打通真链 (Golden Path §4/§16-§20, CT 断层 F1/F2 收敛):
 ```
 Product Understanding (conversation-scoped)
   → PRD (application_formalization — structured, versioned, provenance)
   → User Approval ("就按这个做" → approve_prd)
-  → Development Plan (product_truth PLAN-* — prd_id/prd_version provenance)
+  → Multi-level Task Tree (task_decomposition — canonical 树域)
+  → Development Plan (product_truth PLAN-* — 叶级任务, prd provenance)
   → User Approval (approve_plan)
-  → Production Runtime (production_runtime.execute_task, 逐 task 经 approved plan)
+  → Production (production_run 图编排 → node_runtime.execute_node_run → 真实 executor)
 ```
 
-边界 (Golden Path §3/§20/§25):
-- 复用现有 product_truth (正式资产层 PLAN-*) / production_runtime (唯一生产入口),
-  **不创建第二套 Task/Plan/Production Truth**。
+边界 (Golden Path §3/§20/§25 + S1-G9):
+- 计划级执行统一收敛到 production_run 图编排 (register_workflow →
+  create_production_run → execute_production_run); 单节点内核 =
+  node_runtime.execute_node_run (事件唯一发射点)。不建第二套
+  Plan/Task/Production Truth。
+- Task Tree 是工作组织结构; Loop 是执行语义 (node_runtime.execute_node_run)。
+- 拆解: 生产接 LLM decomposer (注入), 失败/非法 → 确定性模板兜底
+  (degraded 诚实标注)。
 - **Production Gate**: execute 前必须存在 user-approved PRD + user-approved Plan。
-  任何未确认路径被拒 — 返回明确错误, 绝不放行。
-- Intent 不是产品生命周期 Truth: 本模块无 Intent; 生产触发 = approved Plan。
-- PRD 内容 → plan tasks 生成 (deterministic 映射, 供验收; 生产可接 LLM 细化)。
+- Intent 不是产品生命周期 Truth: 本模块无 Intent。
 """
 from __future__ import annotations
 
-from typing import Any
+from pathlib import Path
+from typing import Any, Callable
 
 from factory_console import product_truth as pt
 from factory_console import product_understanding as pu
 from factory_console import application_formalization as fmt
+from factory_console import task_decomposition as td
+
+MAX_PLAN_TASKS = 200
 
 
 class GoldenPathError(ValueError):
@@ -37,6 +45,15 @@ def path_status(root: str, conversation_id: str) -> dict[str, Any]:
     """当前 Golden Path 阶段总览 (供 UI/CLI/测试断言 Truth)。"""
     prds = fmt.list_prds(root, conversation_id)
     snap = pu.understanding_snapshot(root, conversation_id)
+    approved_prd = next((p for p in prds if p.get("status") == "approved"),
+                        None)
+    plans = (pt.list_plans(root, prd_id=approved_prd["id"])
+             if approved_prd else [])
+    approved_plans = [p for p in plans if p.get("status") == "approved"]
+    tree_summary = None
+    if approved_plans:
+        tree_summary = td.tree_summary(
+            td.load_task_tree(root, approved_plans[-1]["id"]))
     return {
         "conversation_id": conversation_id,
         "understanding_version": snap["version"],
@@ -48,17 +65,21 @@ def path_status(root: str, conversation_id: str) -> dict[str, Any]:
             for p in prds
         ],
         "prd_count": len(prds),
-        "approved_prd": next((p for p in prds if p.get("status") == "approved"),
-                             None),
+        "approved_prd": approved_prd,
         "plans": [
             {"id": p["id"], "status": p["status"], "goal": p.get("goal", "")}
-            for p in pt.list_plans(root, prd_id=next(
-                (x["id"] for x in prds if x.get("status") == "approved"), ""))
-        ] if any(p.get("status") == "approved" for p in prds) else [],
+            for p in plans
+        ],
+        "tree": tree_summary,
     }
 
 
-# ------------------------------------------------------------------ PRD → approval → Plan
+def plan_tree(root: str, plan_id: str) -> dict[str, Any]:
+    """只读: 某 Plan 的多级任务树 (缺失 → exists=False, 不抛)。"""
+    return td.tree_summary(td.load_task_tree(root, plan_id))
+
+
+# ------------------------------------------------------------------ PRD → approval
 
 def generate_prd(root: str, conversation_id: str, *, actor: str = "") -> dict[str, Any]:
     """Understanding → PRD v1 (须已有 Understanding; 已有 draft 则更新为新 version)。
@@ -84,23 +105,89 @@ def approve_prd(root: str, conversation_id: str, prd_id: str, *,
     return fmt.approve_prd(root, conversation_id, prd_id, actor=actor)
 
 
-def _derive_plan_tasks(prd: dict[str, Any]) -> list[dict[str, Any]]:
-    """PRD content → Development Plan task 列表 (deterministic 映射)。
+def _prd_goal(prd: dict[str, Any]) -> str:
+    content = prd.get("content", {}) if isinstance(prd.get("content"), dict) else {}
+    overview = content.get("overview", {}) if isinstance(content, dict) else {}
+    return str(overview.get("problem") or overview.get("name")
+               or prd.get("id"))[:300]
 
-    每个功能需求/约束/决定 → 一条 task; 结构化 {id, title, kind}。
+
+# ------------------------------------------------------------------ PRD → Task Tree → Plan
+
+def generate_plan(root: str, conversation_id: str, *, actor: str = "",
+                  decompose: bool = True,
+                  decomposer: Callable[[dict[str, Any]], dict[str, Any]]
+                  | None = None) -> dict[str, Any]:
+    """Approved PRD → 多级任务树 → Development Plan (product_truth PLAN-*, 叶级)。
+
+    decompose=True: task_decomposition.decompose_prd (interpreter=decomposer,
+    None → 确定性模板); 树落盘 task_trees/{plan_id}.json, PLAN.tasks = 叶摘要。
+    decompose=False: 兼容旧单层路径 (不落树; 主要供无 PRD content 的退化场景)。
     """
-    content = prd.get("content", {})
-    tasks: list[dict[str, Any]] = []
-    seq = 0
+    prds = fmt.list_prds(root, conversation_id)
+    approved = [p for p in prds if p.get("status") == "approved"]
+    if not approved:
+        raise GoldenPathError(
+            "尚无 approved PRD — 用户确认 PRD 后才能生成 Development Plan")
+    prd = approved[-1]
+
+    if decompose:
+        tree = td.decompose_prd(prd, interpreter=decomposer)
+        tasks, order = td.tree_to_plan(tree)
+        if not tasks:
+            raise GoldenPathError(
+                "任务拆解未产生可执行叶任务 — 无法生成 Plan")
+        if len(tasks) > MAX_PLAN_TASKS:
+            raise GoldenPathError(
+                f"任务树叶数 {len(tasks)} 超过上限 {MAX_PLAN_TASKS} — 拆解过细")
+        goal = _prd_goal(prd)
+        plan = pt.create_plan(
+            root,
+            prd_id=prd["id"],
+            prd_version=int(prd.get("version") or 1),
+            goal=goal,
+            tasks=tasks,
+            order=order,
+            acceptance=[str(t.get("title") or t.get("id"))[:200] for t in tasks],
+            ask_approval=True,
+            actor=actor or "human",
+            idempotency_key=f"gp-plan:{conversation_id}:{prd['id']}:v{prd.get('version')}",
+        )
+        tree["plan_id"] = plan["id"]
+        td.save_task_tree(root, plan["id"], tree)
+        return plan
+
+    # 兼容: 旧单层平铺 (decompose=False, 不落树)
+    tasks = _derive_plan_tasks(prd)
+    if not tasks:
+        raise GoldenPathError("PRD 无可派生任务 — 无法生成 Plan")
+    return pt.create_plan(
+        root,
+        prd_id=prd["id"],
+        prd_version=int(prd.get("version") or 1),
+        goal=_prd_goal(prd),
+        tasks=tasks,
+        order=[t["id"] for t in tasks],
+        acceptance=[str(t.get("title") or t.get("id"))[:200] for t in tasks],
+        ask_approval=True,
+        actor=actor or "human",
+        idempotency_key=f"gp-plan:{conversation_id}:{prd['id']}:v{prd.get('version')}",
+    )
+
+
+def _derive_plan_tasks(prd: dict[str, Any]) -> list[dict[str, Any]]:
+    """PRD content → 单层 task 列表 (兼容路径; 新主链走 task_decomposition)。"""
+    content = prd.get("content", {}) if isinstance(prd.get("content"), dict) else {}
     overview = content.get("overview", {}) if isinstance(content, dict) else {}
     goal = str(overview.get("name") or overview.get("problem") or "")[:120]
+    tasks: list[dict[str, Any]] = []
+    seq = 0
 
     def _task(title: str, kind: str) -> None:
         nonlocal seq
         seq += 1
         tasks.append({"id": f"T{seq}", "title": str(title)[:200], "kind": kind})
 
-    # 骨架
     _task(f"项目搭建: {goal}" if goal else "项目搭建", "setup")
     for f in content.get("functional_requirements", []) if isinstance(
             content, dict) else []:
@@ -113,35 +200,8 @@ def _derive_plan_tasks(prd: dict[str, Any]) -> list[dict[str, Any]]:
     return tasks
 
 
-def generate_plan(root: str, conversation_id: str, *, actor: str = "") -> dict[str, Any]:
-    """Approved PRD → Development Plan (product_truth PLAN-*, provenance 保留)。
-
-    前置: 必须有 approved PRD (Golden Path: PRD 确认后才能形成 Plan)。
-    """
-    prds = fmt.list_prds(root, conversation_id)
-    approved = [p for p in prds if p.get("status") == "approved"]
-    if not approved:
-        raise GoldenPathError("尚无 approved PRD — 用户确认 PRD 后才能生成 Development Plan")
-    prd = approved[-1]
-    tasks = _derive_plan_tasks(prd)
-    plan = pt.create_plan(
-        root,
-        prd_id=prd["id"],
-        prd_version=int(prd.get("version") or 1),
-        goal=str((prd.get("content") or {}).get("overview", {}).get("problem")
-                 or prd["id"]),
-        tasks=tasks,
-        order=[t["id"] for t in tasks],
-        acceptance=[str(x) for x in tasks],
-        ask_approval=True,
-        actor=actor or "human",
-        idempotency_key=f"gp-plan:{conversation_id}:{prd['id']}:v{prd.get('version')}",
-    )
-    return plan
-
-
 def approve_plan(root: str, plan_id: str, *, actor: str = "") -> dict[str, Any]:
-    """用户确认 Development Plan (Golden Path §20: Plan approval 后进生产)。"""
+    """用户确认 Development Plan (叶级; Golden Path §20)。"""
     plan = pt.get_plan(root, plan_id)
     if plan is None:
         raise GoldenPathError(f"Plan 不存在: {plan_id}")
@@ -172,88 +232,306 @@ def _require_gates(root: str, conversation_id: str) -> tuple[dict[str, Any],
     return prd, approved_plans[-1]
 
 
+# ------------------------------------------------------------------ 执行 (production_run 收敛)
+
+def _noop_guard(leaf: dict[str, Any], workspace_dir: Path,
+                result: dict[str, Any]) -> dict[str, Any]:
+    """NO_OP/完成态识别: executor exit 0 但无变更, 且 expected_files 已存在
+    → COMPLETED + evidence (防 2/7 复发: 重叠/已完成任务不得伪装成失败)。"""
+    if result.get("ok"):
+        return result
+    err = str(result.get("error") or "")
+    if "未产生新文件" not in err:
+        return result
+    expected = [str(x) for x in (leaf.get("expected_files") or [])]
+    if not expected:
+        return result
+    missing = [f for f in expected
+               if not (workspace_dir / f).exists()]
+    if missing:
+        return result
+    return {
+        "ok": True,
+        "output": result.get("output") or "",
+        "error": "",
+        "artifact_type": str(result.get("artifact_type") or "code_change"),
+        "verification": {
+            "result": "PASS",
+            "source": "no-change: already satisfied (expected files present)",
+            "error": "",
+            "new_files": [],
+        },
+    }
+
+
+def _capability_executor(leaf: dict[str, Any], capability_fn: Any,
+                         workspace_dir: Path | None = None
+                         ) -> Callable[[dict[str, Any]], dict[str, Any]]:
+    """测试/宿主注入 capability → executor_fn 契约 (叶上下文注入 input.task)。
+
+    含 NO_OP guard: capability 报"未产生新文件"但 expected_files 已存在 →
+    COMPLETED (与默认真实 executor 同语义, 防 2/7 复发)。
+    """
+    ws = Path(workspace_dir or ".")
+
+    def _fn(input_data: dict[str, Any]) -> dict[str, Any]:
+        inp = dict(input_data or {})
+        inp["task"] = dict(leaf)
+        r = capability_fn(inp) or {}
+        ok = bool(r.get("ok"))
+        wrapped = {
+            "ok": ok,
+            "output": r.get("output") or {},
+            "error": r.get("error") or "",
+            "artifact_type": str(r.get("artifact_type")
+                                 or inp.get("artifact_type") or "code_change"),
+            "verification": r.get("verification") or {
+                "result": "PASS" if ok else "FAIL",
+                "source": "capability_fn",
+                "error": "" if ok else (r.get("error")
+                                        or "capability returned ok=False"),
+            },
+        }
+        if not ok and "未产生新文件" in str(wrapped.get("error") or ""):
+            expected = [str(x) for x in (leaf.get("expected_files") or [])]
+            missing = [f for f in expected if not (ws / f).exists()]
+            if expected and not missing:
+                return {
+                    "ok": True,
+                    "output": wrapped.get("output") or "",
+                    "error": "",
+                    "artifact_type": wrapped.get("artifact_type") or "code_change",
+                    "verification": {
+                        "result": "PASS",
+                        "source": "no-change: already satisfied "
+                                  "(expected files present)",
+                        "error": "",
+                        "new_files": [],
+                    },
+                }
+        return wrapped
+
+    return _fn
+
+
+def _default_executor_factory(root: str, conversation_id: str,
+                              executor_name: str = ""
+                              ) -> Callable[[str],
+                                            Callable[[dict[str, Any]],
+                                                     dict[str, Any]]] | None:
+    """默认真实 executor factory: 每叶 build_real_executor + NO_OP guard。
+
+    无可用外部 executor → None (执行层按叶诚实 FAILED)。
+    """
+    from factory_console.production_runtime import build_real_executor
+
+    workspace = Path(root) / "golden_path_workspace" / str(conversation_id)
+    base = build_real_executor(root, executor_name=executor_name,
+                               workspace_dir=str(workspace))
+    if base is None:
+        return None
+    leaf_by_id: dict[str, dict[str, Any]] = {}
+
+    def _factory(node_id: str) -> Callable[[dict[str, Any]], dict[str, Any]]:
+        leaf = leaf_by_id.get(node_id, {})
+
+        def _fn(input_data: dict[str, Any]) -> dict[str, Any]:
+            inp = dict(input_data or {})
+            if leaf:
+                inp["task"] = dict(leaf)
+            return _noop_guard(leaf, workspace, base(inp))
+
+        return _fn
+
+    _factory.set_leaves = lambda leaves: leaf_by_id.update(  # type: ignore[attr-defined]
+        {n.get("id"): n for n in leaves if n.get("id")})
+    return _factory
+
+
+def _run_result_from_fn(root: str, executor_fn: Any, leaf: dict[str, Any],
+                        conversation_id: str, plan: dict[str, Any],
+                        prd: dict[str, Any]) -> dict[str, Any]:
+    """单叶定向: 直接跑 executor_fn (不经 execute_task, 供定向重试)。"""
+    from factory_console.node_runtime import (  # noqa: PLC0415
+        create_node_run, execute_node_run, register_node,
+    )
+
+    try:
+        register_node(root, node_id=leaf["id"],
+                      name=str(leaf.get("title") or leaf["id"])[:120],
+                      node_type="plan_task",
+                      input_contract={"goal": plan.get("goal", "")},
+                      output_contract={"deliverable": "verified"},
+                      execution_policy={"actor": "human",
+                                        "source": "golden-path"})
+    except Exception:  # noqa: BLE001 — 幂等 upsert 已存在可复用
+        pass
+    try:
+        nr = create_node_run(str(root), node_id=leaf["id"],
+                             input_data={"task": dict(leaf),
+                                         "goal": plan.get("goal", ""),
+                                         "approved_plan_id": plan.get("id")},
+                             trigger="golden-path:leaf")
+        run = execute_node_run(root, nr["run_id"], executor_fn=executor_fn,
+                               executor_name="leaf",
+                               artifact_root=str(root), max_attempts=1)
+    except Exception as exc:  # noqa: BLE001 — 内核异常 → 诚实 FAILED
+        return {"state": "FAILED", "run_id": None, "artifact_id": None,
+                "evidence": {}, "verification": "FAIL",
+                "error": f"execute_node_run exception: {exc}", "output": None}
+    vref = run.get("verification")
+    verification_status = "FAIL"
+    evidence = {}
+    if isinstance(vref, dict):
+        verification_status = vref.get("status") or "FAIL"
+        if vref.get("verification_id"):
+            evidence["verification_id"] = vref["verification_id"]
+    if run.get("run_id"):
+        evidence["node_run_id"] = run["run_id"]
+    return {"run_id": run.get("run_id"), "state": run.get("state"),
+            "artifact_id": run.get("artifact_id"), "evidence": evidence,
+            "verification": verification_status,
+            "error": run.get("failure_reason"), "output": None}
+
+
 def execute_approved(root: str, conversation_id: str, *,
                      actor: str = "human", capability_fn: Any = None,
                      task_id: str = "",
                      executor_fn: Any = None,
                      real_executor: bool = False,
-                     executor_name: str = "") -> dict[str, Any]:
-    """Approved Plan → Production Runtime (唯一 Golden Path 生产入口)。
+                     executor_name: str = "",
+                     executor_factory: Any = None) -> dict[str, Any]:
+    """Approved Plan → Production (唯一 Golden Path 生产入口, S1 收敛)。
 
-    逐 task 执行 (或指定 task_id)。前置: user-approved PRD + approved Plan —
-    无确认绝不进生产 (RED-2 修复: 切断 Intent→Production 无条件路径)。
+    统一到 production_run 图编排: tree 叶 → register_workflow(workflow_id=plan_id)
+    → create_production_run → execute_production_run (串行、依赖感知、BLOCKED)。
+    执行能力解析: executor_factory(node_id)->fn > capability_fn (全叶注入)
+    > 默认真实 executor (codex/claude/hermes); 无可用 → 叶诚实 FAILED。
+    task_id 指定 → 单叶执行 (兼容/定向, 走 execute_task 单节点内核)。
 
-    执行前确保 plan task 已注册为 node (node_runtime.register_node 幂等) —
-    NodeRun 事实锚定 node 定义, 复用现有 Node/NodeRun 生产链, 不建第二套。
-
-    R0 P0 (真实执行内核): 执行能力解析优先级
-      capability_fn (测试/宿主注入) > executor_fn (显式真实 executor)
-      > real_executor=True → build_real_executor (接线现有 external executor)。
-    三者皆无 → 每个 task 诚实 FAILED (禁止占位假成功)。
+    返回 {plan_id, prd_id, executed[], production_run_id, state}
     """
-    from factory_console.node_runtime import register_node
-    from factory_console.production_runtime import build_real_executor
-    from factory_console.production_runtime import execute_task
+    from factory_console.node_runtime import get_node_run  # noqa: PLC0415
+    from factory_console.production_run import (  # noqa: PLC0415
+        create_production_run, execute_production_run, register_workflow,
+    )
 
     _prd, plan = _require_gates(root, conversation_id)
-    tasks = list(plan.get("tasks") or [])
-    if not tasks:
-        raise GoldenPathError("Approved Plan 无 tasks — 无法执行")
+    tree = td.load_task_tree(root, plan["id"])
+    leaves = (td.tree_leaves(tree) if tree else list(plan.get("tasks") or []))
+    if not leaves:
+        raise GoldenPathError("Approved Plan 无任务叶 — 无法执行")
+    order = list(plan.get("order") or [n.get("id") for n in leaves])
+    by_id = {n.get("id"): n for n in leaves}
+    leaves_ordered = [by_id[i] for i in order if i in by_id]
 
-    # R0 P0: 真实 executor 预解析 (每个 task 同一 closure; workspace 按 conversation 隔离)
-    if capability_fn is None and executor_fn is None and real_executor:
-        from pathlib import Path as _Path
+    # 单叶定向 (task_id)
+    if task_id:
+        leaf = by_id.get(task_id)
+        if leaf is None:
+            raise GoldenPathError(f"任务叶不存在: {task_id}")
+        from factory_console.production_runtime import execute_task  # noqa: PLC0415
 
-        executor_fn = build_real_executor(
-            root, executor_name=executor_name,
-            workspace_dir=str(_Path(root) / "golden_path_workspace"
-                              / str(conversation_id)))
-
-    results = []
-    for t in tasks:
-        if task_id and t.get("id") != task_id:
-            continue
-        node_id = t.get("id") or f"task-{t.get('title', '')[:20]}"
-        # node 注册 (幂等 upsert) — 失败如实记录该 task FAILED, 不静默吞
-        try:
-            register_node(
-                root, node_id=node_id,
-                name=str(t.get("title") or t.get("id") or "")[:120],
-                node_type="plan_task",
-                input_contract={"goal": plan.get("goal", "")},
-                output_contract={"deliverable": "verified"},
-                execution_policy={"actor": actor, "source": "golden-path"},
-            )
-        except Exception as exc:  # noqa: BLE001 — 注册失败 → 该 task 诚实 FAILED
-            results.append({
-                "task": t,
-                "result": {"state": "FAILED", "run_id": None,
-                           "artifact_id": None, "evidence": {},
-                           "verification": "FAIL",
-                           "error": f"node registration failed: {exc}",
-                           "output": None},
-            })
-            continue
-        try:
-            res = execute_task(
-                root, node_id, project_id=conversation_id,
-                input_data={"goal": plan.get("goal", ""), "task": t,
+        if executor_factory is not None:
+            fn = executor_factory(task_id)
+            return {
+                "plan_id": plan["id"], "prd_id": _prd["id"],
+                "production_run_id": None, "state": None,
+                "executed": [{"task": leaf, "result": _run_result_from_fn(
+                    root, fn, leaf, conversation_id, plan, _prd)}],
+            }
+        return {
+            "plan_id": plan["id"], "prd_id": _prd["id"],
+            "production_run_id": None, "state": None,
+            "executed": [{"task": leaf, "result": execute_task(
+                root, leaf["id"], project_id=conversation_id,
+                input_data={"goal": plan.get("goal", ""), "task": leaf,
                             "approved_prd_id": _prd.get("id"),
                             "approved_plan_id": plan.get("id")},
-                actor=actor, capability_fn=capability_fn,
-                executor_fn=executor_fn, executor_name=executor_name,
-            )
-        except Exception as exc:  # noqa: BLE001 — 内核异常 → 该 task 诚实 FAILED
-            res = {"state": "FAILED", "run_id": None, "artifact_id": None,
-                   "evidence": {}, "verification": "FAIL",
-                   "error": f"execute_task exception: {exc}", "output": None}
-        results.append({"task": t, "result": res})
+                actor=actor, capability_fn=capability_fn)}],
+        }
+
+    # 执行能力 factory
+    if executor_factory is None and capability_fn is not None:
+        cap = capability_fn
+        leaves_map = {n.get("id"): n for n in leaves}
+        ws_dir = Path(root) / "golden_path_workspace" / str(conversation_id)
+
+        def _cap_factory(node_id: str):
+            return _capability_executor(leaves_map.get(node_id, {}), cap,
+                                        workspace_dir=ws_dir)
+
+        executor_factory = _cap_factory
+    elif executor_factory is None:
+        executor_factory = _default_executor_factory(root, conversation_id,
+                                                     executor_name=executor_name)
+    if executor_factory is None:
+        raise GoldenPathError(
+            "无可用执行能力 (capability/executor_factory/真实 executor 均不可用) — 禁止占位假成功")
+    if hasattr(executor_factory, "set_leaves"):
+        executor_factory.set_leaves(leaves)  # type: ignore[attr-defined]
+
+    # workflow 图 (叶顺序 = plan.order 拓扑; 依赖边来自叶)
+    nodes = [{"node_id": n["id"],
+              "depends_on": [d for d in (n.get("depends_on") or [])
+                             if d in by_id]}
+             for n in leaves_ordered]
+    register_workflow(root, workflow_id=plan["id"],
+                      name=f"plan {plan['id']}", project_id=conversation_id,
+                      nodes=nodes)
+    prun = create_production_run(
+        root, plan["id"],
+        input_data={"conversation_id": conversation_id,
+                    "prd_id": _prd["id"], "plan_id": plan["id"],
+                    "goal": plan.get("goal", "")},
+        trigger=f"golden-path:{actor}")
+    run = execute_production_run(root, prun["run_id"],
+                                 executor_factory=executor_factory,
+                                 artifact_root=str(root), actor=actor)
+
+    executed = []
+    for nr in run.get("node_runs", []):
+        nid = nr.get("node_id")
+        leaf = by_id.get(nid, {})
+        result = {"run_id": nr.get("run_id"), "state": nr.get("state"),
+                  "artifact_id": nr.get("artifact_id"), "evidence": {},
+                  "verification": "FAIL", "error": None, "output": None}
+        if nr.get("run_id"):
+            try:
+                nrun = get_node_run(root, nr["run_id"]) or {}
+                result["state"] = nrun.get("state") or result["state"]
+                result["error"] = nrun.get("failure_reason")
+                vref = nrun.get("verification")
+                if isinstance(vref, dict):
+                    result["verification"] = vref.get("status") or "FAIL"
+                    if vref.get("verification_id"):
+                        result["evidence"]["verification_id"] = vref["verification_id"]
+                result["evidence"]["node_run_id"] = nr["run_id"]
+                if nrun.get("artifact_id"):
+                    result["artifact_id"] = nrun["artifact_id"]
+                # output 回填 (artifact payload.output — 与 execute_task 语义一致)
+                if nrun.get("artifact_id"):
+                    try:
+                        from factory_console.artifact_lifecycle import get_artifact
+                        art = get_artifact(root, nrun["artifact_id"]) or {}
+                        payload = art.get("payload")
+                        if isinstance(payload, dict):
+                            result["output"] = payload.get("output", payload)
+                        else:
+                            result["output"] = payload
+                    except Exception:  # noqa: BLE001 — output 读取失败不影响状态
+                        pass
+            except Exception:  # noqa: BLE001 — 证据读取失败不阻断 (状态以 run 记录为准)
+                pass
+        executed.append({"task": leaf, "result": result})
+
     return {"plan_id": plan["id"], "prd_id": _prd["id"],
-            "executed": results}
+            "production_run_id": prun["run_id"], "state": run.get("state"),
+            "executed": executed}
 
 
 __all__ = [
     "GoldenPathError",
-    "path_status", "generate_prd", "approve_prd", "generate_plan",
+    "path_status", "plan_tree", "generate_prd", "approve_prd", "generate_plan",
     "approve_plan", "execute_approved", "_derive_plan_tasks",
 ]

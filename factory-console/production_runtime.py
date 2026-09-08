@@ -245,11 +245,7 @@ def execute_task(
     if _executor_fn is None:
         reason = ("未配置执行能力 (capability_fn/executor_fn 均未提供) — "
                   "禁止占位假成功")
-        _emit_event(root, "NODE_RUN_FAILED", {
-            "run_id": node_run_id, "task_id": task_id,
-            "project_id": project_id, "actor": actor,
-            "state": STATE_FAILED, "error": reason,
-        })
+        # 事件由 transition_node_run → node_runtime._record 唯一发射 (S1: 事件单点)
         try:
             transition_node_run(str(root), node_run_id, STATE_FAILED,
                                 actor=actor, note=reason[:120])
@@ -259,7 +255,7 @@ def execute_task(
                 "artifact_id": None, "evidence": {}, "verification": VERIFY_FAIL,
                 "error": reason, "output": None}
 
-    # 3. started event (真实 lifecycle)
+    # 3. started event (补充语义: node_runtime 发射 RUNNING, STARTED 为 kernel 视图)
     _emit_event(root, "NODE_RUN_STARTED", {
         "run_id": node_run_id, "task_id": task_id,
         "project_id": project_id, "actor": actor,
@@ -279,11 +275,6 @@ def execute_task(
         )
     except Exception as exc:  # noqa: BLE001 — 内核异常 → 诚实 FAILED (不吞)
         reason = f"execute_node_run exception: {exc}"
-        _emit_event(root, "NODE_RUN_FAILED", {
-            "run_id": node_run_id, "task_id": task_id,
-            "project_id": project_id, "actor": actor,
-            "state": STATE_FAILED, "error": reason,
-        })
         try:
             transition_node_run(str(root), node_run_id, STATE_FAILED,
                                 actor=actor, note=reason[:120])
@@ -306,22 +297,8 @@ def execute_task(
         if verification_ref.get("status"):
             verification_status = verification_ref["status"]
 
-    # 5. completion/failure event
-    if state == STATE_COMPLETED:
-        _emit_event(root, "NODE_RUN_COMPLETED", {
-            "run_id": node_run_id, "task_id": task_id,
-            "project_id": project_id, "actor": actor,
-            "state": state, "artifact_id": artifact_id,
-            "verification": verification_status,
-            "executor": executor_label,
-        })
-    else:
-        _emit_event(root, "NODE_RUN_FAILED", {
-            "run_id": node_run_id, "task_id": task_id,
-            "project_id": project_id, "actor": actor,
-            "state": state, "artifact_id": artifact_id,
-            "error": failure_reason, "executor": executor_label,
-        })
+    # 5. completion/failure event — 已由 execute_node_run → node_runtime._record
+    #    唯一发射 (NODE_RUN_COMPLETED/FAILED; S1: 事件单点)。此处不重复。
 
     # 6. output (COMPLETED + artifact payload)
     output = None

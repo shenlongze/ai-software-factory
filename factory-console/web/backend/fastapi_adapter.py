@@ -6559,86 +6559,76 @@ def build_app(
                 "lifecycle": _uc.LIFECYCLE_STATES, "error_codes": _uc.ERROR_CODES,
                 "entity_fields": list(_uc.ENTITY_FIELDS)}
 
+    def _canonical_root() -> str:
+        return str(factory_root if factory_root is not None else DEFAULT_ROOT)
+
+    def _canonical_orch() -> Any:
+        from factory_console.canonical_golden_path import CanonicalGoldenPath
+
+        semantic = os.environ.get("FACTORY_API_SEMANTIC", "1") != "0"
+        return CanonicalGoldenPath(_canonical_root(), semantic=semantic)
+
+    def _require_canonical_conv(conversation_id: str) -> None:
+        from factory_console.conversation_app import ConversationApplicationService
+
+        if ConversationApplicationService(_canonical_root()).get(conversation_id) is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"conversation 不在 canonical 域: {conversation_id}")
+
     @app.post("/api/conversations")
     def api_create_conversation(body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
-        """创建 Conversation (K1, S43 Entity)。"""
-        from factory_console import conversation_os as _co
-
-        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
-        return _co.create_conversation(root, title=body.get("title", "新会话"),
-                                       created_by=body.get("created_by", "human"))
+        """创建 Conversation (canonical conv-*; CLI/API 同一后端链)。"""
+        orch = _canonical_orch()
+        return orch.conversations.create(
+            title=str(body.get("title") or "新会话")[:200],
+            created_by=str(body.get("created_by") or "api"))
 
     @app.post("/api/conversations/{conversation_id}/messages")
     def api_send_message(conversation_id: str,
                          body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
-        """发送用户消息 (K1, Intent 理解 + 多轮 + 回复)。"""
-        from factory_console import conversation_os as _co
-
-        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
-        try:
-            return _co.send_message(root, conversation_id,
-                                    body.get("message", ""), actor=body.get("actor", "human"))
-        except Exception as exc:  # noqa: BLE001
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        """发送用户消息 (canonical handle: 自然语言→理解/生命周期, 同 CLI)。"""
+        _require_canonical_conv(conversation_id)
+        orch = _canonical_orch()
+        res = orch.handle(conversation_id, str(body.get("message") or ""))
+        return {"conversation_id": conversation_id, **res}
 
     @app.get("/api/conversations")
     def api_conversations() -> dict[str, Any]:
-        """Conversations 列表 (K1)。"""
-        from factory_console import conversation_os as _co
-
-        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
-        items = _co.conversations(root)
+        """Conversations 列表 (canonical)。"""
+        items = _canonical_orch().conversations.list()
         return {"items": items, "count": len(items)}
 
     @app.get("/api/conversations/{conversation_id}")
     def api_get_conversation(conversation_id: str) -> dict[str, Any]:
-        """Conversation 详情 (K1)。"""
-        from factory_console import conversation_os as _co
+        """Conversation 详情 (canonical)。"""
+        conv = _canonical_orch().conversations.get(conversation_id)
+        if conv is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"conversation 不在 canonical 域: {conversation_id}")
+        return conv
 
-        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
-        try:
-            return _co.get_conversation(root, conversation_id)
-        except Exception as exc:  # noqa: BLE001
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-
+    # ---- Legacy conversation_os API (FROZEN, S1): 明确废弃指引 ----
     @app.post("/api/conversations/{conversation_id}/requirements")
     def api_extract_requirement(conversation_id: str,
                                 body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
-        """提取 Requirement (K1, req_ 实体)。"""
-        from factory_console import conversation_os as _co
-
-        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
-        try:
-            return _co.extract_requirement(root, conversation_id,
-                                           title=body.get("title", "需求"),
-                                           description=body.get("description", ""),
-                                           acceptance=body.get("acceptance_criteria", ""))
-        except Exception as exc:  # noqa: BLE001
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=410,
+            detail=("legacy conversation_os API 已废弃 (FROZEN)。"
+                    "新链: 自然语言经 POST /api/conversations/{id}/messages 进入"
+                    " Product Understanding; 正式资产走 PRD/Plan 端点。"))
 
     @app.post("/api/conversations/{conversation_id}/decisions")
     def api_create_decision(conversation_id: str,
                             body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
-        """创建 Decision (K1, decision_ 实体, 不可覆盖)。"""
-        from factory_console import conversation_os as _co
+        raise HTTPException(status_code=410,
+                            detail="legacy conversation_os API 已废弃 (FROZEN)。")
 
-        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
-        try:
-            return _co.create_decision(root, conversation_id,
-                                       statement=body.get("statement", ""),
-                                       proposed_by=body.get("proposed_by", "ai"),
-                                       decision=body.get("decision", "ACCEPT"))
-        except Exception as exc:  # noqa: BLE001
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    # ---- S49 Phase 5: Conversation Application Layer (Product Understanding) ----
-    # 新 Conversation Domain (conv-* id) 经 ConversationApplicationService /
-    # ProductUnderstandingService 暴露; 与 legacy /api/conversations (conv_*,
-    # conversation_os) 路径共存 — legacy 端点未动 (S49 §13: API 只建立正确
-    # Boundary, 不一次性迁移)。conversation 不在新域 → 404 (诚实, 标注迁移 gap)。
 
-    def _s49_root() -> Path:
-        return Path(str(factory_root if factory_root is not None else DEFAULT_ROOT))
+
+
 
     @app.post("/api/conversations/{conversation_id}/product-understanding/messages")
     def api_pu_send_message(conversation_id: str,
@@ -6650,7 +6640,7 @@ def build_app(
         """
         from factory_console.conversation_app import (  # noqa: F401 — 延迟 import
             ConversationApplicationService, ProductUnderstandingService)
-        root = _s49_root()
+        root = _canonical_root()
         if ConversationApplicationService(root).get(conversation_id) is None:
             raise HTTPException(status_code=404,
                                 detail=f"conversation 不在 Product Understanding 域: {conversation_id}")
@@ -6665,7 +6655,7 @@ def build_app(
         """当前 Product Understanding 快照 (by_type + version + facts)。"""
         from factory_console.conversation_app import (  # noqa: F401 — 延迟 import
             ConversationApplicationService, ProductUnderstandingService)
-        root = _s49_root()
+        root = _canonical_root()
         if ConversationApplicationService(root).get(conversation_id) is None:
             raise HTTPException(status_code=404,
                                 detail=f"conversation 不在 Product Understanding 域: {conversation_id}")
@@ -6679,7 +6669,7 @@ def build_app(
         """
         from factory_console.conversation_app import (  # noqa: F401 — 延迟 import
             ConversationApplicationService, ProductUnderstandingService)
-        root = _s49_root()
+        root = _canonical_root()
         if ConversationApplicationService(root).get(conversation_id) is None:
             raise HTTPException(status_code=404,
                                 detail=f"conversation 不在 Product Understanding 域: {conversation_id}")
@@ -6692,7 +6682,7 @@ def build_app(
         """主动缺口分析 (Golden Path §11: 用户问'你觉得还有什么问题')。"""
         from factory_console.conversation_app import (  # noqa: F401 — 延迟 import
             ConversationApplicationService, ProductUnderstandingService)
-        root = _s49_root()
+        root = _canonical_root()
         if ConversationApplicationService(root).get(conversation_id) is None:
             raise HTTPException(status_code=404,
                                 detail=f"conversation 不在 Product Understanding 域: {conversation_id}")
@@ -6705,7 +6695,7 @@ def build_app(
         """Conversation 消息列表 (Application Layer; 新 Conversation Domain)。"""
         from factory_console.conversation_app import (  # noqa: F401 — 延迟 import
             ConversationApplicationService)
-        root = _s49_root()
+        root = _canonical_root()
         if ConversationApplicationService(root).get(conversation_id) is None:
             raise HTTPException(status_code=404,
                                 detail=f"conversation 不在 Product Understanding 域: {conversation_id}")
@@ -6717,28 +6707,18 @@ def build_app(
         """Context (从持久化 Understanding 构建 — recent messages + facts)。"""
         from factory_console.conversation_app import (  # noqa: F401 — 延迟 import
             ConversationApplicationService, ProductUnderstandingService)
-        root = _s49_root()
+        root = _canonical_root()
         if ConversationApplicationService(root).get(conversation_id) is None:
             raise HTTPException(status_code=404,
                                 detail=f"conversation 不在 Product Understanding 域: {conversation_id}")
         return ProductUnderstandingService(root).context(conversation_id)
-
     @app.post("/api/conversations/{conversation_id}/prd")
     def api_prd_create(conversation_id: str,
                        body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
-        """从 Product Understanding 派生 PRD v1 (PRD Domain 边界; 版本化/可追踪)。"""
-        from factory_console.conversation_app import (  # noqa: F401 — 延迟 import
-            ConversationApplicationService)
-        from factory_console.application_formalization import create_prd
-        root = _s49_root()
-        if ConversationApplicationService(root).get(conversation_id) is None:
-            raise HTTPException(status_code=404,
-                                detail=f"conversation 不在 Product Understanding 域: {conversation_id}")
-        try:
-            return create_prd(root, conversation_id,
-                              actor=str(body.get("actor") or "api"))
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        """生成 PRD (canonical run_lifecycle; 版本化/可追踪, Gate 由域强制)。"""
+        _require_canonical_conv(conversation_id)
+        res = _canonical_orch().run_lifecycle(conversation_id, "generate_prd")
+        return {"conversation_id": conversation_id, **res}
 
     @app.get("/api/conversations/{conversation_id}/prd")
     def api_prd_list(conversation_id: str) -> dict[str, Any]:
@@ -6746,12 +6726,53 @@ def build_app(
         from factory_console.conversation_app import (  # noqa: F401 — 延迟 import
             ConversationApplicationService)
         from factory_console.application_formalization import list_prds
-        root = _s49_root()
+        root = _canonical_root()
         if ConversationApplicationService(root).get(conversation_id) is None:
             raise HTTPException(status_code=404,
                                 detail=f"conversation 不在 Product Understanding 域: {conversation_id}")
         items = list_prds(root, conversation_id)
         return {"items": items, "count": len(items)}
+
+    @app.post("/api/conversations/{conversation_id}/prd/approve")
+    def api_prd_approve(conversation_id: str,
+                        body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """确认 PRD (Golden Gate: 仅 draft 可确认)。"""
+        _require_canonical_conv(conversation_id)
+        res = _canonical_orch().run_lifecycle(conversation_id, "approve_prd")
+        return {"conversation_id": conversation_id, **res}
+
+    @app.post("/api/conversations/{conversation_id}/plan")
+    def api_plan_generate(conversation_id: str,
+                          body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """生成 Development Plan (approved PRD → 多级任务树 → PLAN-*)。"""
+        _require_canonical_conv(conversation_id)
+        res = _canonical_orch().run_lifecycle(conversation_id, "generate_plan")
+        return {"conversation_id": conversation_id, **res}
+
+    @app.post("/api/conversations/{conversation_id}/plan/approve")
+    def api_plan_approve(conversation_id: str,
+                         body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """确认 Development Plan (Golden Gate)。"""
+        _require_canonical_conv(conversation_id)
+        res = _canonical_orch().run_lifecycle(conversation_id, "approve_plan")
+        return {"conversation_id": conversation_id, **res}
+
+    @app.post("/api/conversations/{conversation_id}/execute")
+    def api_execute(conversation_id: str,
+                    body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+        """生产执行 (Production Gate: 须 approved PRD + approved Plan)。"""
+        _require_canonical_conv(conversation_id)
+        res = _canonical_orch().run_lifecycle(conversation_id, "execute")
+        return {"conversation_id": conversation_id, **res}
+
+    @app.get("/api/conversations/{conversation_id}/status")
+    def api_status(conversation_id: str) -> dict[str, Any]:
+        """阶段总览 (理解/PRD/Plan/树 + 下一步)。"""
+        _require_canonical_conv(conversation_id)
+        orch = _canonical_orch()
+        st = orch.status(conversation_id)
+        st["tree"] = orch.plan_tree(conversation_id)
+        return {"conversation_id": conversation_id, **st}
 
     @app.post("/api/task-trees")
     def api_decompose_task_tree(body: dict[str, Any] = Body(default={})) -> dict[str, Any]:

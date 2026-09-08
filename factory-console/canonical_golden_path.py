@@ -158,6 +158,23 @@ class CanonicalGoldenPath:
                                    capability_fn=capability_fn, task_id=task_id)
 
     # ------------------------------------------------------------- 生命周期执行
+    def run_lifecycle(self, conversation_id: str, action: str, *,
+                     capability_fn: Callable[[dict[str, Any]], dict[str, Any]]
+                     | None = None,
+                     task_id: str = "") -> dict[str, Any]:
+        """公开生命周期入口 (CLI handle 与 API 端点共用同一 Application 逻辑)。
+
+        action ∈ _LIFECYCLE_PHRASES (generate_prd/approve_prd/generate_plan/
+        approve_plan/execute/status)。未知 action → ValueError。
+        """
+        if action not in _LIFECYCLE_PHRASES:
+            raise ValueError(
+                f"未知生命周期动作: {action} (可用: {sorted(_LIFECYCLE_PHRASES)})")
+        if action == "status":
+            return self.handle(conversation_id, "状态")
+        return self._run_lifecycle(conversation_id, action,
+                                   capability_fn=capability_fn, task_id=task_id)
+
     def _run_lifecycle(self, conversation_id: str, action: str, *,
                        capability_fn: Callable[[dict[str, Any]], dict[str, Any]]
                        | None = None,
@@ -217,6 +234,30 @@ class CanonicalGoldenPath:
                 "error": str(exc),
             }
         raise AssertionError(f"未知 lifecycle action: {action}")  # 防御: 枚举封闭
+
+    def plan_tree(self, conversation_id: str) -> dict[str, Any]:
+        """当前 Plan 的任务树视图 (approved plan 的 tasks 投影; 无 → {})。"""
+        from factory_console import product_truth as _pt
+        from factory_console import golden_path as _gp
+        st = _gp.path_status(self.root, conversation_id)
+        for plan in st.get("plans", []):
+            if plan.get("status") == "approved":
+                full = _pt.get_plan(self.root, plan["id"]) or {}
+                return {
+                    "plan_id": plan["id"],
+                    "goal": plan.get("goal", ""),
+                    "tasks": list(full.get("tasks") or []),
+                }
+        pending = st.get("plans", [])
+        if pending:
+            full = _pt.get_plan(self.root, pending[-1]["id"]) or {}
+            return {
+                "plan_id": pending[-1]["id"],
+                "goal": pending[-1].get("goal", ""),
+                "tasks": list(full.get("tasks") or []),
+                "status": pending[-1].get("status"),
+            }
+        return {}
 
     def _approve_current_prd(self, conversation_id: str) -> dict[str, Any]:
         st = gp.path_status(self.root, conversation_id)

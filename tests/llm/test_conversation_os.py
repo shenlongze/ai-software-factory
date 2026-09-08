@@ -22,15 +22,13 @@ for _p in (_ROOT, _ROOT / "factory-core"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
-import pytest  # noqa: E402
 
 from factory_console.conversation_os import (  # noqa: E402
-    create_conversation, send_message, get_conversation, conversations,
-    extract_requirement, create_decision, trigger_work, explain_failure,
+    create_conversation, send_message, get_conversation, extract_requirement, create_decision, trigger_work, explain_failure,
     repair_from_conversation, detect_intent,
 )
 from factory_console.unified_contract import (  # noqa: E402
-    get_entity, trace_lineage, entities,
+    get_entity, trace_lineage,
 )
 
 
@@ -173,9 +171,9 @@ def test_golden_scenario(tmp_path):
     send_message(str(tmp_path), conv["id"], "先和我讨论需求")
     send_message(str(tmp_path), conv["id"], "目标用户是个人用户, MVP 做记账")
     send_message(str(tmp_path), conv["id"], "确认, 就这么办")
-    req = extract_requirement(str(tmp_path), conv["id"], title="ScorePocket MVP",
-                              description="个人记账", acceptance="能记账")
-    dec = create_decision(str(tmp_path), conv["id"], statement="个人记账 MVP")
+    extract_requirement(str(tmp_path), conv["id"], title="ScorePocket MVP",
+                        description="个人记账", acceptance="能记账")
+    create_decision(str(tmp_path), conv["id"], statement="个人记账 MVP")
     w = trigger_work(str(tmp_path), conv["id"], executor_factory=_good_factory,
                      artifact_root=str(tmp_path), objective="ScorePocket MVP")
     assert w["state"] == "COMPLETED"
@@ -199,26 +197,36 @@ def test_cli_chat(tmp_path):
 # --- API ---
 
 def test_api_chat(tmp_path):
-    from fastapi.testclient import TestClient
-    from factory_console.web.backend.fastapi_adapter import build_app
-    client = TestClient(build_app(None, factory_root=str(tmp_path)))
-    resp = client.post("/api/conversations", json={"title": "API 测试"})
-    assert resp.status_code == 200
-    conv = resp.json()
-    assert conv["id"].startswith("conv_")
-    resp = client.post(f"/api/conversations/{conv['id']}/messages",
-                       json={"message": "我想做一个产品"})
-    assert resp.status_code == 200
-    assert resp.json()["intent"] == "DISCUSS"
-    resp = client.post(f"/api/conversations/{conv['id']}/messages",
-                       json={"message": "确认, 就这么办"})
-    assert resp.status_code == 200
-    assert resp.json()["intent"] == "APPROVE"
-    resp = client.get(f"/api/conversations/{conv['id']}")
-    assert resp.status_code == 200
-    resp = client.get("/api/conversations")
-    assert resp.status_code == 200
-    resp = client.post(f"/api/conversations/{conv['id']}/requirements",
-                       json={"title": "需求 A"})
-    assert resp.status_code == 200
-    assert resp.json()["id"].startswith("req_")
+    """S1: /api/conversations* → canonical (conv-*, handle 同 CLI, 410 legacy)。"""
+    import os
+    os.environ["FACTORY_API_SEMANTIC"] = "0"  # deterministic (无 LLM 依赖)
+    try:
+        from fastapi.testclient import TestClient
+        from factory_console.web.backend.fastapi_adapter import build_app
+        client = TestClient(build_app(None, factory_root=str(tmp_path)))
+        resp = client.post("/api/conversations", json={"title": "API 测试"})
+        assert resp.status_code == 200
+        conv = resp.json()
+        # A: 只能创建 conv-* (不再 conv_*)
+        assert conv["id"].startswith("conv-"), conv["id"]
+        # B: messages = CanonicalGoldenPath.handle (自然语言 → chat kind)
+        resp = client.post(f"/api/conversations/{conv['id']}/messages",
+                           json={"message": "我想做一个产品"})
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["kind"] == "chat"
+        assert "reply" in body
+        # C: requirements → 410 (legacy FROZEN)
+        resp = client.post(f"/api/conversations/{conv['id']}/requirements",
+                           json={"title": "需求 A"})
+        assert resp.status_code == 410
+        resp = client.post(f"/api/conversations/{conv['id']}/decisions",
+                           json={"statement": "x"})
+        assert resp.status_code == 410
+        resp = client.get(f"/api/conversations/{conv['id']}")
+        assert resp.status_code == 200
+        resp = client.get("/api/conversations")
+        assert resp.status_code == 200
+        assert resp.json()["count"] >= 1
+    finally:
+        os.environ.pop("FACTORY_API_SEMANTIC", None)

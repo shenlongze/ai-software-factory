@@ -8,9 +8,8 @@
 - POST /api/conversations/{id}/prd (PRD 派生)
 - GET  /api/conversations/{id}/prd (PRD 列表/provenance)
 
-conversation 创建经 ConversationApplicationService (domain 直建) — 与 legacy
-POST /api/conversations (conversation_os conv_*) 并存不冲突 (S49 §13: API 只建
-Boundary, 不一次性迁移; legacy 路由保持不动, 此处不测 legacy)。
+conversation 创建经 ConversationApplicationService (domain 直建) — S1 后
+POST /api/conversations 已切 canonical (conv-*), 本文件不测 legacy。
 """
 from __future__ import annotations
 
@@ -100,7 +99,9 @@ class TestPRDAPI:
         r = client.post(f"/api/conversations/{conv['id']}/prd",
                         json={"actor": "test"})
         assert r.status_code == 200, r.text
-        prd = r.json()
+        body = r.json()
+        assert body["kind"] == "lifecycle" and body["action"] == "generate_prd"
+        prd = body["detail"]  # PRD 记录在 detail (run_lifecycle 包装结构)
         assert prd["version"] == 1
         assert prd["status"] == "draft"
         assert prd["source_product_understanding_version"] >= 1
@@ -108,10 +109,14 @@ class TestPRDAPI:
         assert r2.status_code == 200
         assert r2.json()["count"] == 1
 
-    def test_prd_without_understanding_400(self, client: TestClient,
-                                           conv: dict) -> None:
+    def test_prd_without_understanding_gate(self, client: TestClient,
+                                            conv: dict) -> None:
+        """无 Understanding → Gate 拒绝 (HTTP 200 + kind=gate, 非绕过)。"""
         r = client.post(f"/api/conversations/{conv['id']}/prd")
-        assert r.status_code == 400  # 无 Understanding → 拒绝派生 (诚实)
+        assert r.status_code == 200
+        body = r.json()
+        assert body["kind"] == "gate"
+        assert "理解" in body["reply"] or "Gate" in body["reply"]
 
 
 class TestUnderstandingStatementAPI:

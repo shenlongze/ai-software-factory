@@ -421,6 +421,14 @@ class TestPermissionBoundary:
                     and path.endswith("/product-understanding/messages")
                 )
                 is_pu_prd = route_method == "POST" and path.endswith("/prd")
+                # S1 第 1 刀: canonical Golden Gate 生命周期端点 (approved-gated)
+                _gp_path = path.split("?")[0]
+                _gp_write = route_method == "POST" and (
+                    _gp_path.endswith("/prd/approve")
+                    or _gp_path.endswith("/plan")
+                    or _gp_path.endswith("/plan/approve")
+                    or _gp_path.endswith("/execute")
+                )
                 assert (
                     is_approval
                     or is_runtime_lifecycle
@@ -451,6 +459,7 @@ class TestPermissionBoundary:
                     or is_external_ai
                     or is_pu_message
                     or is_pu_prd
+                    or _gp_write
                 ), (
                     f"写路由超出白名单 (审批决定 + Runtime + 反馈 + 创建 + 启动 + "
                     f"项目管理 + Backlog + Sprint/Milestone/Roadmap + Tool + MCP + RAG): "

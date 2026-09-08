@@ -447,6 +447,14 @@ class TestApiRegistryConsistency:
                 and path.endswith("/product-understanding/messages")
             )
             is_pu_prd = method == "POST" and path.endswith("/prd")
+            # S1 第 1 刀: canonical Golden Gate 生命周期端点 (approved-gated)
+            _gp_path = path.split("?")[0]
+            _gp_write = method == "POST" and (
+                _gp_path.endswith("/prd/approve")
+                or _gp_path.endswith("/plan")
+                or _gp_path.endswith("/plan/approve")
+                or _gp_path.endswith("/execute")
+            )
             assert (
                 is_approval or is_runtime or is_tool_execute or is_mcp_connect
                 or is_review_feedback or is_project_create or is_project_suggest
@@ -457,7 +465,7 @@ class TestApiRegistryConsistency:
                 or is_mcp_remove or is_llm_config
                 or is_agent_write or is_skill_write
                 or is_local_ai_write or is_skill_scan
-                or is_external_ai or is_pu_message or is_pu_prd
+                or is_external_ai or is_pu_message or is_pu_prd or _gp_write
             ), f"写路由超出白名单: {method} {path}"
 
     def test_capability_matrix_api_claims_backed(self):

@@ -1,166 +1,206 @@
-# AI Software Factory — 产品说明书（全产品线）
+# AI Factory OS — 产品说明书（全产品线）
 
-> 版本: v1.0 | 日期: 2026-08-24 | 依据: 方案书 §2.9 模块即产品
-> **主文档《AI Software Factory — 完整产品方案书（终极版）》保留不动**；本说明书按**产品维度**拆出全部可独立成产品的模块，供独立立项/商业化评估。
-> 每个产品已深化为**可立项完整规格**（docs/products/ 目录, 共 8 份）——产品定位/功能范围/架构/验收/商业/里程碑/风险/团队全齐。
-> 统一设计铁律: 每个独立产品相对 AI Factory 都是统一设计（字段/接口/返回值/错误码 §2.11），零摩擦集成。
+> 版本: v2.0 | 日期: 2026-09-08 | 依据: 方案书 §24 战略校准 + Cognitive Golden Path 实现
+> **主文档《AI Software Factory — 完整产品方案书（终极版）》是愿景/原则源**；本说明书按
+> 产品维度拆出能力模块，供独立立项/商业化评估。
+> 产品定位已收敛: **AI Factory OS**（AI Enterprise Operating System）— 软件开发是
+> **第一个完整生产场景**，不是能力边界。
 
 ---
 
-## 产品线总览（8 个可独立成产品）
+## 0. 产品定位与主链（v2.0 校准）
 
-| # | 产品 | 来源章节 | 目标客户 | 商业模式 | 优先级 | 当前状态 | 规格文档 |
-|---|---|---|---|---|---|---|---|
-| 1 | **AI 治理平台** | §6 治理与合规 | 企业 CTO/合规/审计 | SaaS / 私有化 | **P0（信任层）** | 🚧 核心已实现（审批/预算/审计） | [governance-platform-spec](docs/products/governance-platform-product-spec.md) |
-| 2 | **AI 变更审计与证据链** | §5 审计与可观测 | 审计/合规/研发管理 | 订阅 | **P0** | ✅ 审计链/证据包已实现 | [audit-evidence-chain-spec](docs/products/audit-evidence-chain-product-spec.md) |
-| 3 | **存量代码清理服务（积压清道夫）** | M1b + §10.5.1 | 企业研发 | 按件 / 订阅 | **P0（首个 wedge）** | ✅ 已实现（分诊→修复→证据→审批） | [backlog-sweeper-spec](docs/products/backlog-sweeper-product-spec.md) |
-| 4 | **AI 工作流编排** | §4 多 Agent 编排 | 开发者 / ISV | 开源 + 云 | P1 | 🚧 内核已实现（M2/M3） | [agent-orchestration-spec](docs/products/agent-orchestration-product-spec.md) |
-| 5 | **企业知识库** | §8 RAG + §19 知识图谱 | 知识密集企业 | 订阅 | P1 | 🚧 经验检索✅ 三级 RAG 📐 | [knowledge-base-spec](docs/products/knowledge-base-product-spec.md) |
-| 6 | **AI 员工渠道平台** | §9.5 消息平台与社区 | 运营 / 客服 | 按渠道 | P2 | 📐 设计（P0 5 渠道待做） | [channel-platform-spec](docs/products/channel-platform-product-spec.md) |
-| 7 | **AI 经验学习平台** | §7 学习 + §17 自我进化 | AI 平台团队 | 订阅 | P2 | 🚧 记忆雏形✅ 闭环 📐 M4 | [learning-platform-spec](docs/products/learning-platform-product-spec.md) |
-| 8 | **行业工厂产品线** | §10 行业工厂 | 行业客户 | 按行业 | P1+ | 🚧 IT 工厂✅ 多行业 📐 | [industry-factory-spec](docs/products/industry-factory-product-spec.md) |
-|---|---|---|---|---|---|---|
-| 1 | **AI 治理平台** | §6 治理与合规 | 企业 CTO/合规/审计 | SaaS / 私有化 | **P0（信任层）** | 🚧 核心已实现（审批/预算/审计） |
-| 2 | **AI 变更审计与证据链** | §5 审计与可观测 | 审计/合规/研发管理 | 订阅 | **P0** | ✅ 审计链/证据包已实现 |
-| 3 | **存量代码清理服务（积压清道夫）** | M1b + §10.5.1 | 企业研发 | 按件 / 订阅 | **P0（首个 wedge）** | ✅ 已实现（分诊→修复→证据→审批） |
-| 4 | **AI 工作流编排** | §4 多 Agent 编排 | 开发者 / ISV | 开源 + 云 | P1 | 🚧 内核已实现（M2/M3） |
-| 5 | **企业知识库** | §8 RAG + §19 知识图谱 | 知识密集企业 | 订阅 | P1 | 🚧 经验检索✅ 三级 RAG 📐 |
-| 6 | **AI 员工渠道平台** | §9.5 消息平台与社区 | 运营 / 客服 | 按渠道 | P2 | 📐 设计（P0 5 渠道待做） |
-| 7 | **AI 经验学习平台** | §7 学习 + §17 自我进化 | AI 平台团队 | 订阅 | P2 | 🚧 记忆雏形✅ 闭环 📐 M4 |
-| 8 | **行业工厂产品线** | §10 行业工厂 | 行业客户 | 按行业 | P1+ | 🚧 IT 工厂✅ 多行业 📐 |
+### 0.1 产品身份三层
+
+```
+AI Factory OS            ← 统一操作系统/平台（产品身份）
+├── AI Software Factory  ← 第一个完整生产场景（软件开发, CURRENT）
+├── AI Product Factory   ← 产品设计/市场/运营场景（EXPANSION）
+├── AI Operations Factory← 企业运营场景（EXPANSION）
+└── Enterprise Custom Workforce（EXPANSION）
+```
+
+- **当前产品身份**: AI Factory OS — 让人通过自然语言直接组织复杂工作的 AI 操作系统。
+- **当前完整场景**: AI Software Factory — 软件开发是今天最完整、最深的生产场景。
+- **扩展方向**: 产品设计/市场/数据分析/招聘/企业运营等（**Future / Expansion,
+  未写成已实现**）。
+
+### 0.2 用户主链（External Natural）
+
+```
+我想做什么
+  → 和 AI 讨论（Conversation）
+  → AI 持续理解我的目标（Product Understanding）
+  → 我看到并确认/修改（Understanding Confirmation）
+  → 形成正式方案（PRD）
+  → 我确认（PRD Approval）
+  → 生成执行计划（Development Plan）
+  → 我确认（Plan Approval）
+  → AI 执行（Production Runtime）
+  → AI 验证（Verification）
+  → AI 修复（Recovery）
+  → 交付结果（Delivery）
+```
+
+> **没有用户确认，不允许进入生产。** 这是产品原则，不是实现细节。
+
+### 0.3 两个 Plane
+
+- **Cognitive Plane**（What / Why）: Conversation · Product Understanding ·
+  PRD / Plan · Decision · Context — 解决"系统理解用户要做什么"。
+- **Production Plane**（How / Execute / Verify）: Task/Node · Production
+  Runtime · Verification · Evidence · Recovery — 解决"可靠地做出来"。
+- **Governance** 贯穿两者（Approval / Audit / Budget）。
+
+### 0.4 模块属性分类
+
+| 属性 | 含义 | 例 |
+|------|------|----|
+| **Platform Capability** | 平台内部能力（不单独卖, 但可被外部消费） | Understanding · PRD/Plan 域 · Runtime 内核 |
+| **Commercial Product** | 可独立立项/销售的解决方案 | 治理平台 · 审计证据链 · 存量清理服务 |
+| **Application Product** | 面向一类用户交付价值的应用 | 行业工厂线 · 渠道平台 |
+
+> 模块即产品 ≠ 烟囱: 各能力模块共享统一身份/数据/契约/治理/审计，是同一 OS 的
+> 能力切面，不是 8 个互相独立的小产品。
+
+---
+
+## 产品线总览（CURRENT / PARTIAL / FUTURE 标注）
+
+| # | 产品 | 属性 | 目标客户 | 商业模式 | 优先级 | 当前状态（代码事实） | 规格 |
+|---|------|------|---------|---------|--------|---------------------|------|
+| 1 | **AI 治理平台** | Commercial | 企业 CTO/合规/审计 | SaaS/私有化 | P0 信任层 | ✅ PARTIAL 核心实现（审批/预算/审计） | governance-platform-spec |
+| 2 | **AI 变更审计与证据链** | Commercial | 审计/合规/研发管理 | 订阅 | P0 | ✅ 审计链/证据真实（audit_events 5160+） | audit-evidence-chain-spec |
+| 3 | **存量代码清理（积压清道夫）** | Commercial | 企业研发 | 按件/订阅 | P0 wedge | ✅ 分诊→修复→证据→审批真实 | backlog-sweeper-spec |
+| 4 | **AI 工作流编排** | Platform Capability | 开发者/ISV | 开源+云 | P1 | 🚧 执行内核真实（Node/NodeRun/Verification） | agent-orchestration-spec |
+| 5 | **企业知识库** | Commercial | 知识密集企业 | 订阅 | P1 | 🚧 经验检索 ✅ · 三级 RAG 📐 | knowledge-base-spec |
+| 6 | **AI 员工渠道平台** | Application | 运营/客服 | 按渠道 | P2 | 📐 FUTURE（渠道未实现） | channel-platform-spec |
+| 7 | **AI 经验学习平台** | Platform Capability | AI 平台团队 | 订阅 | P2 | 🚧 记忆雏形 ✅ · 闭环 📐 FUTURE | learning-platform-spec |
+| 8 | **行业工厂产品线** | Application | 行业客户 | 按行业 | P1+ | 🚧 IT 工厂 ✅（软件场景）· 多行业 FUTURE | industry-factory-spec |
+
+> 状态图例（与代码事实对齐）: ✅ = 真实存在并有测试/运行时证据 · 🚧 = 部分实现 ·
+> 📐 = 设计/未来（不得写成当前能力）。
 
 ---
 
 ## 产品 1: AI 治理平台
 
-**定位**: 管理组织里**所有 AI**（不论用 Claude/Codex/自建），提供审批门、预算护栏、审计证据链、合规报告——AI 进生产的"信任层"。
+**定位**: 组织里所有 AI 的信任层（审批门/预算/审计/合规），不管底层用哪个执行引擎。
 
-**核心能力**（来源 §6）:
-- 分级审批门（low/medium/high → developer/tech_lead/compliance）✅
-- 成本治理（预算四级 + 熔断 + 告警闭环）✅/🚧
-- 权限模型（RBAC 设计，三道门实现）✅/📐
-- 治理闭环（决策记忆回流 E5）📐 M4
-- 合规报告（§5.9 审计报告）📐
+**核心能力**（来源 §6 + Governance）:
+- 分级审批门（approval, 真实 M3）✅
+- 成本治理（预算护栏, PARTIAL）🚧
+- 权限/合规报告 📐 FUTURE
 
-**对外接口**: 审批/预算/审计 API（§22.4 部分有）；CLI 全有
-**部署**: 内嵌 + 独立部署（管理外部 AI）
-**商业模式**: SaaS / 私有化，按组织规模
-**与平台关系**: 内嵌为平台治理内核，独立为"管理所有 AI"的治理平台
+**对外接口**: 审批/预算/审计 API（部分）；CLI 有
+**部署**: 内嵌为平台治理内核 + 独立为"管理所有 AI"治理平台
+**商业模式**: SaaS / 私有化
+**属性**: Commercial Product（也可作为平台 Platform Capability 被外部消费）
 
 ## 产品 2: AI 变更审计与证据链
 
-**定位**: AI 每次变更的完整证据链（diff+test+决策+审计），让"看完证据敢签字"。
+**定位**: AI 每次变更的完整证据链（diff+test+决策+审计）——"看完证据敢签字"。
 
-**核心能力**（来源 §5）:
-- 证据包 EvidenceBundle（diff+test+决策链）✅ M1a
-- 审计链（52 事件 + hash 防篡改 + 血缘）✅
-- 可追溯与回放（§5.6 L1-L4）🚧/📐
-- 审计报告（§5.9）📐
+**核心能力**:
+- 证据链/审计事件（audit_events 真实, 追加不可变, 5000+）✅
+- Artifact + Verification 证据（Production Runtime 产出真实）✅
+- 审计报告/回放 📐 FUTURE
 
-**对外接口**: 审计查询 API（audit_* 10 能力缺 API，§22.4.1）；CLI 有
-**部署**: 内嵌 + 独立（接入外部 AI 的变更审计）
-**商业模式**: 订阅（审计/合规场景）
-**与平台关系**: 内嵌证据+审计；独立为"AI 变更审计平台"
+**属性**: Commercial Product。审计是 OS 治理面的一部分，独立产品化面向合规场景。
 
 ## 产品 3: 存量代码清理服务（积压清道夫）
 
-**定位**: 自动处理存量 issue 队列（分诊→修复→证据→审批→报告）——首个可独立交付的 wedge 产品。
+**定位**: 自动处理存量 issue 队列（分诊→修复→证据→审批→报告），首个可独立交付的 wedge。
 
-**核心能力**（来源 M1b）:
-- BacklogSweeper（分诊/执行/证据/审批/报告）✅ 730 行
-- 确定性真实修复（dependency 修复）✅
-- 分级审批默认不自动应用 patch ✅
+**核心能力**:
+- BacklogSweeper（分诊/执行/证据/审批/报告）✅
+- 确定性真实修复（dependency）✅ · 分级审批默认不自动应用 patch ✅
 
-**对外接口**: backlog API（§22.4 有 8 函数/端点部分）
-**部署**: 独立产品（对接企业 issue 系统）
-**商业模式**: 按件 / 订阅
-**与平台关系**: 独立产品（首个 wedge，验证商业闭环）
+**属性**: Commercial Product（首个 wedge，验证商业闭环）。
 
 ## 产品 4: AI 工作流编排
 
-**定位**: 多 Agent 协作编排引擎（对标 LangGraph）——自有 Node Runtime + 递归拆解 + 调度。
+**定位**: 复杂工作的执行编排内核——Node/NodeRun 状态机 + 验证 + 恢复 + 证据。
+（注意: 这是 **Platform Capability**, 不是与平台平行的独立产品——它是 OS 的
+Production Plane 执行核。）
 
-**核心能力**（来源 §4 + M3）:
-- 7 角色 AgentEntity + 专家装配 + HandoffBus ✅ M2
-- 递归原子拆解（M3a）✅ · 关键路径（M3b）✅ · 并行调度（M3c）✅ · 质量评估（M3d）✅
-- 上下文管理（§4.11）🚧/📐
+**核心能力**（来源 §4 + Golden Path Production Plane）:
+- Node/NodeRun 执行事实（create_node_run/execute_task 真实）✅
+- 递归任务树 / 依赖调度（真实 M3c/M4）✅
+- Verification + Artifact + Evidence（真实）✅
+- 恢复（Recovery, 真实 M3）✅
+- 角色 Agent（developer/pm/architect 等）: 注册真实; 生产触发 PARTIAL 🚧
 
-**对外接口**: runtime/execute/tasks API（部分有）；CLI 有
-**部署**: 开源内核 + 云托管
-**商业模式**: 开源 + 云（对标 LangGraph + LangSmith）
-**与平台关系**: 平台执行内核，可独立作为编排引擎
+**属性**: Platform Capability。可独立开源/托管（对标 LangGraph），但首先是 OS 的执行内核。
 
 ## 产品 5: 企业知识库
 
-**定位**: 企业知识管理与 RAG 检索（经验 + 文档 + 知识图谱三级）。
+**定位**: 企业知识管理与 RAG 检索（经验 + 文档 + 知识图谱）。
 
-**核心能力**（来源 §8 + §19）:
-- 经验检索（experience_store）✅
-- 四档 RAG 配置 + 自建/外挂所有权（§8.5）📐
-- 知识图谱（§19）📐
-- 经验五维标签 + 跨项目共享（§7.2.1）📐
+**核心能力**:
+- 经验检索（experience_store）✅ 雏形
+- 三级 RAG / 知识图谱 📐 FUTURE
 
-**对外接口**: memory/experience API（memory_* 5 能力缺 API）
-**部署**: 内嵌 + 独立（企业知识密集场景）
-**商业模式**: 订阅
-**与平台关系**: 内嵌记忆；独立为企业知识库
+**属性**: Commercial Product（企业知识密集场景）。
 
 ## 产品 6: AI 员工渠道平台
 
-**定位**: AI 员工出现在用户日常渠道（WhatsApp/Telegram/Slack/Discord/微信 50+），渠道内派活+证据推送+审批。
+**定位**: AI 员工出现在用户日常渠道（WhatsApp/Telegram/Slack/微信…），渠道内交互。
 
-**核心能力**（来源 §9.5）:
-- 平台矩阵（50+ 渠道）📐
-- 渠道内派活/证据推送/审批 📐
-- 安全与治理铁律（凭证/审计）设计 📐
+**核心能力**:
+- 渠道矩阵 📐 FUTURE（未实现）
+- 渠道内派活/审批/证据 📐 FUTURE
 
-**对外接口**: channels API（0 实现）
-**部署**: 独立（云渠道适配）
-**商业模式**: 按渠道
-**与平台关系**: 独立产品（消息入口扩展）
+**属性**: Application Product（消息入口扩展）。**注意**: 渠道是 Conversation 主入口的
+接入面，不能成为第二套用户主链——所有渠道最终都指向同一 Conversation/理解/生产链。
 
 ## 产品 7: AI 经验学习平台
 
-**定位**: 让 AI 越用越好（学习/画像/评价回写），且可控（护栏）。
+**定位**: 让 AI 越用越好（经验/画像/评价回写），且可控。
 
-**核心能力**（来源 §7 + §17）:
-- 经验模型 + 检索 ✅ 雏形
-- 学习闭环（经验→画像→决策引用→评价回写）📐 M4
-- 学习护栏（样本可信度/预算/回滚）📐
-- 五维自我进化（学习/监控/完善/发现/修复）📐
+**核心能力**:
+- 经验模型 + 检索 ✅ 雏形（写有读少）
+- 学习闭环（经验→决策→评价回写）📐 FUTURE（未闭环）
+- 学习护栏 📐 FUTURE
 
-**对外接口**: memory/experience API（部分）
-**部署**: 内嵌 + 独立
-**商业模式**: 订阅
-**与平台关系**: 内嵌学习；独立为"AI 经验平台"
+**属性**: Platform Capability。记忆的价值是复用已验证知识/经验/事实，不是保存聊天记录。
+学习闭环当前为 **Future**（诚实标注）。
 
 ## 产品 8: 行业工厂产品线
 
-**定位**: 每行业一条产品线（IT/Ops/电商/自媒体/数据/办公自动化），同一底座复制。
+**定位**: 每行业一条产品线（IT/产品/市场/运营…），同一底座复制。
 
-**核心能力**（来源 §10）:
-- FactorySpec 声明式规格（employees/capabilities/workflows/governance）📐
-- 6 类行业工厂场景（§10.2）✅ 设计
-- IT 工厂（软件工厂专项细化 §10.5）✅ 实现中
+**核心能力**:
+- FactorySpec 声明式规格 📐 PARTIAL
+- IT 工厂（软件开发）✅ CURRENT（Golden Path 全链真实）
+- 多行业（产品/市场/运营）📐 FUTURE EXPANSION
 
-**对外接口**: factories API（0 实现）
-**部署**: 按行业独立产品线
-**商业模式**: 按行业订阅/定制
-**与平台关系**: 行业实例 = 平台复制
+**属性**: Application Product。行业实例 = AI Factory OS 在具体领域的复制；
+**软件开发是当前最完整的行业实例**，其它行业是平台扩展方向（未实现不写成已实现）。
 
 ---
 
-## 统一设计铁律（所有产品通用）
+## 统一契约（所有模块通用）
 
 ```
-1. 统一契约: 字段/接口/返回值/错误码全对齐（§2.11, 契约测试门槛）
-2. 统一身份: agt- 前缀 / TaskEntity schema / 审计事件注册表
-3. 可回平台: 独立产品回集成跑契约测试套件（§2.10.4）
-4. 模块=产品 ≠ 烟囱: 独立部署但统一设计，零摩擦集成
+1. 统一身份/数据/契约: 字段/接口/错误码/审计事件注册表
+2. Conversation 是用户表达目标的唯一主入口; 其它入口（CLI/API/管理台/渠道）是
+   专业/治理/系统入口, 不是第二套用户主链
+3. Cognitive Plane 与 Production Plane 通过统一 Understanding→PRD→Plan→Production
+   链连接; 两个 Approval Gate（PRD / Plan）由 Governance 强制
+4. 模块=产品 ≠ 烟囱: 独立部署但共享统一 OS 身份, 零摩擦集成
 ```
 
-## 商业化路径（§22.5）
+---
+
+## 商业化路径（校准）
 
 ```
-P0 三件套先行: 治理平台 + 审计证据链 + 积压清道夫（信任层 + 首个 wedge）
-验证路径: 积压清道夫先卖（按件）→ 1 客户跑通 → 治理/审计订阅 → 再扩 P1/P2
+当前可验证（CURRENT）:
+  AI Software Factory（软件场景, Golden Path 全链自动化已验证）
+  → 积压清道夫 wedge（按件）→ 治理/审计订阅（信任层）
+
+扩展方向（EXPANSION/FUTURE, 未实现不写成当前）:
+  AI Product Factory · AI Marketing Factory · AI Operations Factory
+  · Enterprise Custom Workforce
+```

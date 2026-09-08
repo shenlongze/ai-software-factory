@@ -1,6 +1,9 @@
 # AI Software Factory — 完整产品方案书（终极版）
 
-> 版本: v3.0 | 状态: 战略设计完成 | 更新: 2026-08-21
+> 版本: v3.1 | 状态: 战略设计完成 + 2026-09-08 校准 | 更新: 2026-09-08
+> 校准: 产品定位收敛为 **AI Factory OS**（软件开发 = 第一个完整生产场景）;
+> 新增 §24 战略校准（Cognitive Golden Path / 两 Plane / Conversation 唯一主入口 /
+> Current-Future 边界）。第 1-23 章保留为愿景/设计/原则源。
 
 ---
 
@@ -11890,3 +11893,151 @@ major/商业化: S2/L2/U2/C2/T2（+ 认证 S3/L3/U3/C3/T3）
   当前事实以 docs/00-index/CURRENT_SYSTEM_TRUTH.md 与
   docs/audit/product-system-baseline/STEP10_DOMAIN_FREEZE.md 为准。
 - 本勘误不改写上文, 只提供对照; 愿景目标仍属 M3-M7 里程碑。
+
+---
+
+## 二十四、战略校准（2026-09-08, Cognitive Golden Path 后）
+
+> 性质: 本附录把 v3.0/v3.1 战略文档校准到 2026-09-08 真实系统与最终产品定位。
+> 不改写上文 23 章原文（保留历史价值）; 只声明**当前定位 + 当前主链 + Current/Future 边界**。
+> 图例: ✅ CURRENT（真实实现, 代码+测试证据） · 🚧 PARTIAL · 📐 FUTURE/EXPANSION
+
+### 24.1 产品身份校准
+
+- **当前产品身份 = AI Factory OS（AI Enterprise Operating System）**:
+  一个让人通过自然语言直接组织复杂工作的 AI 操作系统。用户负责表达目标/提供
+  上下文/判断与关键确认; 系统负责理解、组织能力、形成工作定义、规划、执行、
+  验证、恢复、交付、记录证据并积累经验。
+- **AI Software Factory = 第一个完整生产场景**（软件开发, ✅ CURRENT）——
+  不是能力边界, 是当前最深、最完整的落地区域。
+- **扩展方向**（📐 FUTURE/EXPANSION, 不写成已实现）: 产品设计 / 市场方案 /
+  数据分析 / 招聘 / 企业运营 / 内容生产 / 企业系统建设等复杂知识工作。
+- **不是**: Coding Agent / AI 编程助手 / Agent 平台 / Workflow 平台 /
+  单纯的软件工厂。这些是本产品**执行层的一部分能力**, 不是产品定义。
+
+> 历史表述如"AI Software Factory 是造专家的工厂 / AI 公司操作系统"保留为**愿景源**;
+> 当前对外定义收敛为上方 AI Factory OS 表述。
+
+### 24.2 两个 Plane（Cognitive + Production）
+
+```
+                    AI FACTORY OS
+                           │
+             ┌─────────────┴─────────────┐
+             │                           │
+       Cognitive Plane             Production Plane
+             │                           │
+       Conversation              Production Runtime
+       Understanding             Task / Node
+       Product Truth             Execute
+       PRD / Plan                Verify
+       Decision                  Evidence
+       Context / Memory          Recovery
+             │                           │
+             └─────────────┬─────────────┘
+                           │
+                      Governance
+```
+
+- **Cognitive Plane** 回答 *What / Why*: 系统理解用户要做什么（持续理解,
+  非单轮 Intent）。
+- **Production Plane** 回答 *How / Execute / Verify*: 可靠地把定义做出来。
+- **Governance** 贯穿两者（Approval / Audit / Budget / Evidence）。
+
+### 24.3 唯一用户主入口 = Conversation
+
+- 用户表达目标的主入口是 **Conversation（自然语言）**。
+- 其它入口按角色保留, **不与 Conversation 形成第二套用户主链**:
+  1. CLI / API —— 系统/专业入口（同业务事实, 同一 Application Layer）
+  2. 管理/治理控制台 —— 管理入口
+  3. 专业工作台 / 渠道 —— 接入面（渠道内交互仍指向同一理解/生产链）
+
+> 禁止: 入口 A → 一套生命周期, 入口 B → 另一套生命周期。所有入口共享
+> Conversation/Understanding/PRD/Plan/Production/审计 统一事实。
+
+### 24.4 Cognitive Golden Path（当前产品核心, ✅ AUTOMATED COMPLETE）
+
+```
+Idea
+ → Conversation（自然语言讨论）
+ → Continuous Understanding（Product/Work Understanding, 持久化）
+ → Understanding Confirmation（用户看到"我目前理解的是…", 自然修正）
+ → PRD（结构化, 版本化, 从理解派生）
+ → PRD Approval（用户确认"就按这个做"）
+ → Development Plan（正式 PLAN 域, 溯源 PRD）
+ → Plan Approval（用户确认）
+ → Workforce / Task Tree
+ → Production（Node / NodeRun / Production Runtime）
+ → Verification（独立验证）
+ → Recovery（如失败）
+ → Evidence / Artifact
+ → Delivery
+```
+
+**两个 Approval Gate（产品原则, 非实现细节）**:
+- PRD Approval 之后才生成 Plan
+- Plan Approval 之后才进入 Production
+
+> **没有用户确认, 不允许进入生产。**
+
+### 24.5 Product / Work Understanding（中间认知层）
+
+- 连接自然语言 Conversation 与正式 PRD/Plan 的**中间认知层**（不是 Memory,
+  不是聊天历史, 不是 PRD）:
+  > "系统现在到底理解用户要做什么?"
+- 表达 Ideas / Requirements / Constraints / Decisions / Questions /
+  Future Ideas / Rejected / Deferred; 带 provenance / confidence / version /
+  supersession。
+- 持续更新（ADD/UPDATE/NEGATE/DEFER/REPLACE/CONFIRM/REJECT）, 可跨 Session
+  恢复（Conversation 是长期业务空间, Session 是运行生命周期）。
+
+### 24.6 用户体验原则（Internal Structured, External Natural）
+
+- 用户不需要知道 Intent / Session / Product Understanding / Agent /
+  Workforce / Node / NodeRun / Workflow / Artifact / Production Runtime。
+- 用户看到的是:
+  ```
+  我想做什么 → 和 AI 讨论 → AI 理解我的目标 → 我确认/修改
+  → 形成正式方案 → 我确认 → AI 执行 → AI 验证 → AI 修复 → 交付结果
+  ```
+- 系统内部结构化（Domain / Fact / Event / Evidence / Gate）; 外部只要求用户
+  自然说话, 不要求 keyword / 表单 / 固定流程。
+
+### 24.7 持续理解 vs 单轮意图
+
+- 历史叙事"用户说一句话 → 判断 Intent"保留为**瞬时语义信号**（理解的一个输入）,
+  但**不再是产品生命周期 Truth**。
+- 当前产品核心是**持续理解**: 用户多轮表达 → 系统持续形成/更新结构化理解 →
+  确认/修正 → 形成可执行工作定义。例:
+  ```
+  我想做一个飞机大战 → 手机端 → 不要登录 → 以后可以加排行榜
+  → 简单一点 → 先别做排行榜 → 你觉得还有什么问题? → 就按这个做
+  ```
+  系统理解这些消息之间的关系（修改/否定/延后/替换/确认）, 不是关键词分类。
+
+### 24.8 Current / Partial / Future 边界（代码事实）
+
+| 能力 | 状态 | 证据 |
+|------|------|------|
+| Conversation Application Layer | ✅ CURRENT | conversation_app / ProductUnderstandingService |
+| Product Understanding 持久化 | ✅ CURRENT | product_understanding (conversations/*.json) |
+| Semantic Proposal + Domain Validation | ✅ CURRENT | semantic_proposal (validate→apply) |
+| LLM Semantic Interpreter | ✅ CURRENT（需 API Key） | llm_semantic_interpreter → DeepSeek |
+| Understanding Confirmation Loop | ✅ CURRENT | understanding_statement + API |
+| Golden Path 编排 + 双 Gate | ✅ CURRENT | golden_path (PRD→Plan→execute_approved) |
+| PRD 结构化/版本化/provenance | ✅ CURRENT | application_formalization |
+| Production Runtime（Node/NodeRun/Verify/Evidence） | ✅ CURRENT | production_runtime / node_runtime |
+| 真实 LLM 中文端到端验收 | 🚧 待人工（无 API Key 环境） | REAL_LLM_SMOKE = NOT_AVAILABLE |
+| Workforce（角色 Agent 生产触发） | 🚧 PARTIAL | 注册真实; 统一员工编排后续 |
+| Learning 闭环 / 经验→决策回流 | 📐 FUTURE | 经验雏形; 闭环未实现 |
+| 多行业（Product/Marketing/Operations Factory） | 📐 EXPANSION | 软件开发 = 当前完整场景 |
+| 渠道平台 / 知识图谱 / 合规报告 | 📐 FUTURE | 设计 |
+
+### 24.9 对历史章节的指引
+
+- 第 1-22 章: **愿景/设计/原则源**, 部分实现表述过时（详见 §23 勘误）。
+- 第 23 章勘误: 保留; 本附录在其后补充 Golden Path 时代（09-08）的状态。
+- 引用顺序: 当前事实 = 代码 + §24 + CURRENT_SYSTEM_TRUTH + STEP10 Contract
+  > 历史文档 > §23/§24 对照。
+- 商业化: AI Software Factory（软件场景）为 CURRENT; AI Factory OS 平台 +
+  多 Application Factory 为 EXPANSION（不写成已实现）。

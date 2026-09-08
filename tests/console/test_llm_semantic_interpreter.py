@@ -70,8 +70,17 @@ class TestParseSemanticJson:
 
 
 class TestLlmInterpreterDegrade:
-    def test_no_llm_fn_returns_clarify(self, root: str, conv: dict) -> None:
-        """LLM 不可用 (fn=None) → 不猜, 返回 CLARIFY proposal。"""
+    def test_no_llm_fn_returns_clarify(self, root: str, conv: dict,
+                                       monkeypatch: pytest.MonkeyPatch) -> None:
+        """LLM 不可用 (llm_raw=None) → 不猜, 返回 CLARIFY proposal。
+
+        R0 A2 (2026-09-08): 真实 LLM 环境 (DEEPSEEK_API_KEY 在场) 下,
+        fn=None 会走默认 llm_raw 并真实调用 — 本测试显式把 llm_raw 置 None,
+        与真实环境解耦, 恢复"LLM 不可用 → 降级"的本意。
+        """
+        import factory_console.console_sessions as _cs
+
+        monkeypatch.setattr(_cs, "llm_raw", lambda prompt: None)
         snap = pu.understanding_snapshot(root, conv["id"])
         # 强制走"产品语义但无 LLM"分支: 用会命中 hint 的文本 + fn=None
         p = llm_semantic_interpreter(root, conv["id"], "我们要做手机端应用",

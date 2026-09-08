@@ -4473,6 +4473,10 @@ class FactoryCLI:
         target = getattr(args, "target", None)
 
         if action == "new":
+            # R0 P0: LEGACY 标记 — factory chat = conversation_os (旧 Conversation
+            # Runtime, 待 RETIRE); 新用户入口 = 裸 factory (Canonical OS Shell)。
+            print("⚠️ LEGACY: factory chat = conversation_os (旧 Conversation Runtime); "
+                  "新入口 = 裸 factory (Canonical AI Factory OS Shell)")
             conv = _new(str(root), title=getattr(args, "title", "新会话"))
             print(f"chat: {conv['id']} | {conv['metadata'].get('title')} | OPEN")
             print("  回复: factory chat send <conv> --message '...'")
@@ -8445,10 +8449,11 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     """CLI 入口 (bin/factory 经 importlib 调用; sys.argv[1:] 默认)。
 
-    S10-047: 无参数 (factory) 或 --interactive → Interactive Session
-    (session shell, 见 docs/sprint10/S10-047-session-design.md); 有命令
-    → 原逻辑完全不变。无参数时 argparse 会因 required subparser 抛
-    SystemExit(2) — 此处先于 parse 判断, 不误吞未知命令错误 (rc 2)。
+    R0 P0 (2026-09-08): 无参数 (factory) 或 --interactive → Canonical AI Factory
+    OS Shell (canonical_shell → CanonicalGoldenPath, 见
+    docs/audits/2026-09-08-r0-entry-audit); 有命令 → 原逻辑完全不变。
+    无参数时 argparse 会因 required subparser 抛 SystemExit(2) — 此处先于
+    parse 判断, 不误吞未知命令错误 (rc 2)。
     """
     argv_list = list(sys.argv[1:]) if argv is None else list(argv)
     # 常见拼写别名: --doctor → doctor (用户易把子命令当 flag 输入)
@@ -8461,10 +8466,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     if argv_list == ["--doctor"]:
         argv_list = ["doctor"]
     if not argv_list or argv_list == ["--interactive"]:
-        from .session.session import InteractiveSession  # 延迟导入 (Removal Isolation)
+        # R0 P0: 裸 factory = Canonical AI Factory OS Shell → CanonicalGoldenPath
+        # (Application Orchestrator) → Conversation Application → Product
+        # Understanding → Golden Path → Production Runtime。
+        # Legacy InteractiveSession 仍可显式 import/实例化, 不再是默认业务入口。
+        from .session.canonical_shell import CanonicalShell  # 延迟导入 (Removal Isolation)
 
-        # 交互会话: 每用户输入由 session._dispatch 生成独立 trace_id (S10-120)
-        return InteractiveSession().run()
+        return CanonicalShell().run()
     parser = build_parser()
     args = parser.parse_args(argv_list)
     # S10-120 K-4: CLI 命令执行入口包 trace_context — 单条命令全程同一

@@ -80,9 +80,11 @@ class CanonicalGoldenPath:
 
     def __init__(self, root: str | Any, *, actor: str = "human",
                  semantic: bool = False,
-                 interpreter: Callable[..., Any] | None = None) -> None:
+                 interpreter: Callable[..., Any] | None = None,
+                 real_executor: bool = False) -> None:
         self.root = str(root)
         self.actor = actor
+        self.real_executor = bool(real_executor)
         self.conversations = ConversationApplicationService(self.root)
         self.understanding = ProductUnderstandingService(
             self.root, semantic=semantic, interpreter=interpreter)
@@ -198,7 +200,8 @@ class CanonicalGoldenPath:
             if action == "execute":
                 res = gp.execute_approved(
                     self.root, conversation_id, actor=self.actor,
-                    capability_fn=capability_fn, task_id=task_id)
+                    capability_fn=capability_fn, task_id=task_id,
+                    real_executor=self.real_executor)
                 executed = res.get("executed") or []
                 done = sum(1 for e in executed
                            if (e.get("result") or {}).get("state") == "COMPLETED")

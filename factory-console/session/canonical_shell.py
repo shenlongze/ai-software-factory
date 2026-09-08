@@ -43,7 +43,8 @@ class CanonicalShell:
         self.root = Path(root) if root is not None else _default_root()
         self.orchestrator = (
             orchestrator if orchestrator is not None
-            else CanonicalGoldenPath(self.root, semantic=True)
+            else CanonicalGoldenPath(self.root, semantic=True,
+                                     real_executor=True)
         )
         self.conversation_id: str | None = None
         self.running = False

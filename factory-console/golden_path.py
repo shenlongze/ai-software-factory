@@ -174,7 +174,10 @@ def _require_gates(root: str, conversation_id: str) -> tuple[dict[str, Any],
 
 def execute_approved(root: str, conversation_id: str, *,
                      actor: str = "human", capability_fn: Any = None,
-                     task_id: str = "") -> dict[str, Any]:
+                     task_id: str = "",
+                     executor_fn: Any = None,
+                     real_executor: bool = False,
+                     executor_name: str = "") -> dict[str, Any]:
     """Approved Plan → Production Runtime (唯一 Golden Path 生产入口)。
 
     逐 task 执行 (或指定 task_id)。前置: user-approved PRD + approved Plan —
@@ -182,39 +185,68 @@ def execute_approved(root: str, conversation_id: str, *,
 
     执行前确保 plan task 已注册为 node (node_runtime.register_node 幂等) —
     NodeRun 事实锚定 node 定义, 复用现有 Node/NodeRun 生产链, 不建第二套。
+
+    R0 P0 (真实执行内核): 执行能力解析优先级
+      capability_fn (测试/宿主注入) > executor_fn (显式真实 executor)
+      > real_executor=True → build_real_executor (接线现有 external executor)。
+    三者皆无 → 每个 task 诚实 FAILED (禁止占位假成功)。
     """
     from factory_console.node_runtime import register_node
+    from factory_console.production_runtime import build_real_executor
     from factory_console.production_runtime import execute_task
 
     _prd, plan = _require_gates(root, conversation_id)
     tasks = list(plan.get("tasks") or [])
     if not tasks:
         raise GoldenPathError("Approved Plan 无 tasks — 无法执行")
+
+    # R0 P0: 真实 executor 预解析 (每个 task 同一 closure; workspace 按 conversation 隔离)
+    if capability_fn is None and executor_fn is None and real_executor:
+        from pathlib import Path as _Path
+
+        executor_fn = build_real_executor(
+            root, executor_name=executor_name,
+            workspace_dir=str(_Path(root) / "golden_path_workspace"
+                              / str(conversation_id)))
+
     results = []
     for t in tasks:
         if task_id and t.get("id") != task_id:
             continue
-        # node 注册 (幂等 upsert) — plan task → Node 定义
+        node_id = t.get("id") or f"task-{t.get('title', '')[:20]}"
+        # node 注册 (幂等 upsert) — 失败如实记录该 task FAILED, 不静默吞
         try:
             register_node(
-                root, node_id=t.get("id") or f"task-{t.get('title', '')[:20]}",
+                root, node_id=node_id,
                 name=str(t.get("title") or t.get("id") or "")[:120],
                 node_type="plan_task",
                 input_contract={"goal": plan.get("goal", "")},
                 output_contract={"deliverable": "verified"},
                 execution_policy={"actor": actor, "source": "golden-path"},
             )
-        except Exception:  # noqa: BLE001 — node 已存在/等价 → 继续
-            pass
-        res = execute_task(
-            root, t.get("id") or f"task-{t.get('title', '')[:20]}",
-            project_id=conversation_id,
-            input_data={"goal": plan.get("goal", ""), "task": t,
-                        "approved_prd_id": _prd.get("id"),
-                        "approved_plan_id": plan.get("id")},
-            actor=actor,
-            capability_fn=capability_fn,
-        )
+        except Exception as exc:  # noqa: BLE001 — 注册失败 → 该 task 诚实 FAILED
+            results.append({
+                "task": t,
+                "result": {"state": "FAILED", "run_id": None,
+                           "artifact_id": None, "evidence": {},
+                           "verification": "FAIL",
+                           "error": f"node registration failed: {exc}",
+                           "output": None},
+            })
+            continue
+        try:
+            res = execute_task(
+                root, node_id, project_id=conversation_id,
+                input_data={"goal": plan.get("goal", ""), "task": t,
+                            "approved_prd_id": _prd.get("id"),
+                            "approved_plan_id": plan.get("id")},
+                actor=actor, capability_fn=capability_fn,
+                executor_fn=executor_fn, executor_name=executor_name,
+            )
+        except Exception as exc:  # noqa: BLE001 — 内核异常 → 该 task 诚实 FAILED
+            res = {"state": "FAILED", "run_id": None, "artifact_id": None,
+                   "evidence": {}, "verification": "FAIL",
+                   "error": f"execute_task exception: {exc}", "output": None}
         results.append({"task": t, "result": res})
     return {"plan_id": plan["id"], "prd_id": _prd["id"],
             "executed": results}

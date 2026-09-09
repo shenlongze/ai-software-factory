@@ -97,11 +97,15 @@ def _emit_cognitive(root: str, event_type: str, *, conversation_id: str,
         store = AuditStore(workspace=str(root))
         # evidence 参数是 list 语义 (AuditEvent); dict 详情存 metadata
         detail = dict(evidence or {})
-        ev_ids = [str(v) for v in (detail.get("prd_id")
-                                   or detail.get("plan_id")
-                                   or detail.get("id")
-                                   or [])]
-        ev_list = [{"type": str(event_type), "id": v} for v in ev_ids]
+        # 取首个存在的业务 id (prd_id/plan_id/id) 包成单元素列表 — 防按字符迭代
+        first_id = None
+        for k in ("prd_id", "plan_id", "id"):
+            v = detail.get(k)
+            if v:
+                first_id = str(v)
+                break
+        ev_list = ([{"type": str(event_type), "id": first_id}]
+                   if first_id else [])
         event = AuditEvent.create(
             str(event_type),
             trace_id=str(conversation_id),

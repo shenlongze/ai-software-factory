@@ -77,6 +77,10 @@ class TestM2aCognitiveAudit:
         ev = prd_ev.get("metadata") or {}
         assert ev.get("prd_id") and ev.get("version") == 1
         assert "source_understanding_version" in ev
+        # evidence list 语义: 单元素且 id 为完整 prd_id (防按字符迭代 bug)
+        ev_list = prd_ev.get("evidence") or []
+        assert len(ev_list) == 1, ev_list
+        assert ev_list[0]["id"] == ev.get("prd_id"), ev_list
 
     def test_audit_failure_does_not_break(self, root: str, monkeypatch) -> None:
         """M2a 失败安全: 审计不可写不中断 generate_prd。"""

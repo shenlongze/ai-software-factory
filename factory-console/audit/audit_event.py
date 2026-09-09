@@ -22,7 +22,7 @@ import json
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 
 #: 标准事件类型注册表 (S10-069 设计 §2 + S10-123 RAG_QUERY, 验收: 30+)
 EVENT_TYPES: tuple[str, ...] = (
@@ -76,6 +76,9 @@ EVENT_TYPES: tuple[str, ...] = (
     "PRODUCTION_RUN_COMPLETED",
     "PRODUCTION_RUN_FAILED",
     "PRODUCTION_RUN_BLOCKED",
+    # S1-5 (S1 第 5 刀, M2a): 认知段 (PRD/理解) 审计事件 — PRD 生命周期
+    "PRD_CREATED",
+    "PRD_APPROVED",
     # S7: Recovery 事件
     "PRODUCTION_RUN_RECOVERY_STARTED",
     "PRODUCTION_RUN_RECOVERY_COMPLETED",

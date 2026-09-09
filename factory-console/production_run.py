@@ -390,10 +390,16 @@ def execute_production_run(
         _write(root, run)
 
     nodes = wf["nodes"]
-    # 拓扑: 串行, 按依赖解析 (依赖先执行)
+    # 拓扑: 串行, 按依赖解析 (依赖先执行 — workflow nodes 已按拓扑序注册)
+    # M1 (S1-5): 依赖驱动继续 — 单叶失败不丢弃剩余独立叶:
+    #   · 叶 FAILED → 如实记录; 传递依赖它的下游 → BLOCKED (有记录, 非 NOT_ATTEMPTED)
+    #   · 不依赖失败叶的剩余叶 → 继续串行执行
+    #   · run 终态: 有 FAILED/BLOCKED → FAILED (含 failure 摘要); 全 COMPLETED → COMPLETED
     executed: dict[str, dict[str, Any]] = {}  # node_id -> {run_id, artifact_id, state}
     artifacts: dict[str, str] = {}            # node_id -> artifact_id
     ar = Path(artifact_root or root)
+    any_failed_blocked = False
+    blocked_reasons: list[str] = []
 
     # resume 模式: 预载已完成的 NodeRun (跳过, 禁止重复执行 — S7)
     if resume:
@@ -411,7 +417,7 @@ def execute_production_run(
         # 已完成 → 跳过 (不重建 NodeRun)
         if node_id in executed and executed[node_id]["state"] == "COMPLETED":
             continue
-        # 依赖检查
+        # 依赖检查: 任一依赖 FAILED/BLOCKED → 本叶 BLOCKED (有记录), 继续后续叶
         dep_failed = None
         for dep in deps:
             dep_rec = executed.get(dep)
@@ -422,18 +428,20 @@ def execute_production_run(
                 dep_failed = f"依赖 {dep} 未成功 (state={dep_rec['state']})"
                 break
         if dep_failed:
+            reason = f"{dep_failed} → BLOCKED"
             with _lock:
                 run = get_production_run(root, run_id)
+                run["node_runs"] = [n for n in run.get("node_runs", [])
+                                    if n.get("node_id") != node_id]
                 run["node_runs"].append({"node_id": node_id, "run_id": None,
                                          "state": "BLOCKED", "artifact_id": None,
-                                         "reason": dep_failed})
-                run["failure"] = f"Node {node_id} BLOCKED: {dep_failed}"
+                                         "reason": reason})
                 _write(root, run)
-            # BLOCKED → 整个 ProductionRun BLOCKED
-            with _lock:
-                run = get_production_run(root, run_id)
-                _record(root, run, "BLOCKED", actor=actor, note=dep_failed)
-            return run
+            executed[node_id] = {"run_id": None, "artifact_id": None,
+                                 "state": "BLOCKED"}
+            any_failed_blocked = True
+            blocked_reasons.append(f"{node_id}: {reason}")
+            continue  # M1: 不 return — 继续后续独立叶
 
         # 构建 Node 输入: 显式 binding (input_binding: {field: "artifact:<node_id>"})
         node_input = dict(run.get("input") or {})
@@ -443,18 +451,32 @@ def execute_production_run(
         if isinstance(static_ctx, dict):
             node_input.update(static_ctx)
         binding = node_spec.get("input_binding") or {}
+        binding_missing = False
         for field, src in binding.items():
             if isinstance(src, str) and src.startswith("artifact:"):
                 src_node = src.split(":", 1)[1]
                 if src_node not in artifacts:
+                    binding_missing = True
+                    reason = f"Node {node_id}: binding {field} 引用 {src_node} 无 artifact"
                     with _lock:
                         run = get_production_run(root, run_id)
-                        run["failure"] = f"Node {node_id}: binding {field} 引用 {src_node} 无 artifact"
-                        _record(root, run, "FAILED", actor=actor, note="binding missing")
-                    return run
+                        if run is not None:
+                            run["node_runs"] = [n for n in run.get("node_runs", [])
+                                                if n.get("node_id") != node_id]
+                            run["node_runs"].append({"node_id": node_id, "run_id": None,
+                                                     "state": "BLOCKED", "artifact_id": None,
+                                                     "reason": reason})
+                            _write(root, run)
+                    executed[node_id] = {"run_id": None, "artifact_id": None,
+                                         "state": "BLOCKED"}
+                    any_failed_blocked = True
+                    blocked_reasons.append(f"{node_id}: {reason}")
+                    break
                 node_input[field] = artifacts[src_node]
             else:
                 node_input[field] = src
+        if binding_missing:
+            continue  # M1: 不 return — 继续后续独立叶
 
         # 注册 Node 定义 (若不存在)
         try:
@@ -467,11 +489,21 @@ def execute_production_run(
         try:
             nr = create_node_run(ar, node_id, input_data=node_input, trigger="production")
         except NodeError as exc:
+            reason = f"Node {node_id}: {exc}"
             with _lock:
                 run = get_production_run(root, run_id)
-                run["failure"] = f"Node {node_id}: {exc}"
-                _record(root, run, "FAILED", actor=actor, note=str(exc)[:120])
-            return run
+                if run is not None:
+                    run["node_runs"] = [n for n in run.get("node_runs", [])
+                                        if n.get("node_id") != node_id]
+                    run["node_runs"].append({"node_id": node_id, "run_id": None,
+                                             "state": "FAILED", "artifact_id": None,
+                                             "reason": reason})
+                    _write(root, run)
+            executed[node_id] = {"run_id": None, "artifact_id": None,
+                                 "state": "FAILED"}
+            any_failed_blocked = True
+            blocked_reasons.append(f"{node_id}: {reason}")
+            continue  # M1: 不 return — 继续后续独立叶
 
         # 执行
         executor_fn = executor_factory(node_id)
@@ -484,29 +516,37 @@ def execute_production_run(
         with _lock:
             run = get_production_run(root, run_id)
             # S7: resume 时替换该 node 的旧记录 (旧 RUNNING 无完成证据, 重跑)
-            run["node_runs"] = [n for n in run.get("node_runs", []) if n.get("node_id") != node_id]
-            run["node_runs"].append({
-                "node_id": node_id, "run_id": nr["run_id"],
-                "state": done["state"], "artifact_id": done.get("artifact_id"),
-            })
-            if done.get("artifact_id"):
-                artifacts[node_id] = done["artifact_id"]
-                run["artifacts"].append(done["artifact_id"])
-            _write(root, run)
+            if run is not None:
+                run["node_runs"] = [n for n in run.get("node_runs", []) if n.get("node_id") != node_id]
+                run["node_runs"].append({
+                    "node_id": node_id, "run_id": nr["run_id"],
+                    "state": done["state"], "artifact_id": done.get("artifact_id"),
+                })
+                if done.get("artifact_id"):
+                    artifacts[node_id] = done["artifact_id"]
+                    run["artifacts"].append(done["artifact_id"])
+                _write(root, run)
 
         executed[node_id] = {"run_id": nr["run_id"], "artifact_id": done.get("artifact_id"),
                              "state": done["state"]}
 
         if done["state"] != "COMPLETED":
-            with _lock:
-                run = get_production_run(root, run_id)
-                run["failure"] = f"Node {node_id} {done['state']}: {done.get('failure_reason') or ''}"
-                _record(root, run, "FAILED", actor=actor, note=f"node {node_id} {done['state']}")
-            return run
+            any_failed_blocked = True
+            blocked_reasons.append(
+                f"{node_id}: {done.get('failure_reason') or done['state']}")
+            # M1: 记录 FAILED 后继续 — 不 return, 后续独立叶仍执行
 
-    # 全部成功
+    # M1 终态: 有 FAILED/BLOCKED → run FAILED (含摘要); 全 COMPLETED → COMPLETED
     with _lock:
         run = get_production_run(root, run_id)
-        run["completed_at"] = _now_iso()
-        _record(root, run, "COMPLETED", actor=actor, note="all nodes completed")
+        if run is not None:
+            if any_failed_blocked:
+                run["failure"] = ("部分叶未成功: " + "; ".join(blocked_reasons))
+                _record(root, run, "FAILED", actor=actor,
+                        note="; ".join(blocked_reasons)[:200])
+                _write(root, run)
+            else:
+                run["completed_at"] = _now_iso()
+                _record(root, run, "COMPLETED", actor=actor, note="all nodes completed")
+                _write(root, run)
     return run

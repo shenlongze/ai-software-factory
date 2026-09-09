@@ -81,6 +81,46 @@ def plan_tree(root: str, plan_id: str) -> dict[str, Any]:
 
 # ------------------------------------------------------------------ PRD → approval
 
+# ------------------------------------------------------------------ 认知段审计 (M2a, S1-5)
+
+def _emit_cognitive(root: str, event_type: str, *, conversation_id: str,
+                    actor: str, evidence: dict[str, Any]) -> None:
+    """认知段审计事件 (PRD/Plan/理解) — 失败安全, 复用 AuditStore。
+
+    trace_id = conversation_id (全链可关联); 审计故障不中断业务。
+    """
+    try:
+        from .audit.audit_event import EVENT_TYPES, AuditEvent
+        from .audit.audit_store import AuditStore
+        if str(event_type) not in EVENT_TYPES:
+            return
+        store = AuditStore(workspace=str(root))
+        # evidence 参数是 list 语义 (AuditEvent); dict 详情存 metadata
+        detail = dict(evidence or {})
+        ev_ids = [str(v) for v in (detail.get("prd_id")
+                                   or detail.get("plan_id")
+                                   or detail.get("id")
+                                   or [])]
+        ev_list = [{"type": str(event_type), "id": v} for v in ev_ids]
+        event = AuditEvent.create(
+            str(event_type),
+            trace_id=str(conversation_id),
+            project_id=str(conversation_id),
+            actor_id=str(actor or "human"),
+            actor_type="human",
+            action="cognitive",
+            source="golden_path",
+            decision="allow",
+            decision_reason="golden_path_cognitive",
+            evidence=ev_list,
+            metadata=detail,
+            result={"ok": True},
+        )
+        store.append(event)
+    except Exception:  # noqa: BLE001 — 审计故障不中断业务 (同 AuditEmitter 纪律)
+        pass
+
+
 def generate_prd(root: str, conversation_id: str, *, actor: str = "") -> dict[str, Any]:
     """Understanding → PRD v1 (须已有 Understanding; 已有 draft 则更新为新 version)。
 
@@ -89,8 +129,17 @@ def generate_prd(root: str, conversation_id: str, *, actor: str = "") -> dict[st
     prds = fmt.list_prds(root, conversation_id)
     drafts = [p for p in prds if p.get("status") == "draft"]
     if drafts:
-        return fmt.update_prd(root, conversation_id, drafts[-1]["id"], actor=actor)
-    return fmt.create_prd(root, conversation_id, actor=actor)
+        obj = fmt.update_prd(root, conversation_id, drafts[-1]["id"], actor=actor)
+    else:
+        obj = fmt.create_prd(root, conversation_id, actor=actor)
+    # M2a: PRD_CREATED 审计事件 (成功路径)
+    _emit_cognitive(root, "PRD_CREATED", conversation_id=conversation_id,
+                    actor=actor,
+                    evidence={"prd_id": obj.get("id"), "version": obj.get("version"),
+                              "status": obj.get("status"),
+                              "source_understanding_version":
+                                  obj.get("source_product_understanding_version")})
+    return obj
 
 
 def approve_prd(root: str, conversation_id: str, prd_id: str, *,
@@ -102,7 +151,13 @@ def approve_prd(root: str, conversation_id: str, prd_id: str, *,
     if prd.get("status") != "draft":
         raise GoldenPathError(
             f"PRD {prd_id} 当前 status={prd.get('status')} — 仅 draft 可确认")
-    return fmt.approve_prd(root, conversation_id, prd_id, actor=actor)
+    obj = fmt.approve_prd(root, conversation_id, prd_id, actor=actor)
+    # M2a: PRD_APPROVED 审计事件
+    _emit_cognitive(root, "PRD_APPROVED", conversation_id=conversation_id,
+                    actor=actor,
+                    evidence={"prd_id": obj.get("id"), "version": obj.get("version"),
+                              "status": obj.get("status")})
+    return obj
 
 
 def _prd_goal(prd: dict[str, Any]) -> str:
@@ -143,6 +198,7 @@ def generate_plan(root: str, conversation_id: str, *, actor: str = "",
         goal = _prd_goal(prd)
         plan = pt.create_plan(
             root,
+            project_id=conversation_id,
             prd_id=prd["id"],
             prd_version=int(prd.get("version") or 1),
             goal=goal,
@@ -155,14 +211,23 @@ def generate_plan(root: str, conversation_id: str, *, actor: str = "",
         )
         tree["plan_id"] = plan["id"]
         td.save_task_tree(root, plan["id"], tree)
+        # M2a: PLAN_CREATED 审计事件
+        _emit_cognitive(root, "PLAN_CREATED", conversation_id=conversation_id,
+                        actor=actor,
+                        evidence={"plan_id": plan.get("id"),
+                                  "tasks": len(plan.get("tasks") or []),
+                                  "tree_id": plan.get("id"),
+                                  "decomposer": tree.get("decomposer"),
+                                  "degraded": bool(tree.get("degraded"))})
         return plan
 
     # 兼容: 旧单层平铺 (decompose=False, 不落树)
     tasks = _derive_plan_tasks(prd)
     if not tasks:
         raise GoldenPathError("PRD 无可派生任务 — 无法生成 Plan")
-    return pt.create_plan(
+    plan = pt.create_plan(
         root,
+        project_id=conversation_id,
         prd_id=prd["id"],
         prd_version=int(prd.get("version") or 1),
         goal=_prd_goal(prd),
@@ -173,6 +238,13 @@ def generate_plan(root: str, conversation_id: str, *, actor: str = "",
         actor=actor or "human",
         idempotency_key=f"gp-plan:{conversation_id}:{prd['id']}:v{prd.get('version')}",
     )
+    # M2a: PLAN_CREATED 审计事件 (单层兼容路径)
+    _emit_cognitive(root, "PLAN_CREATED", conversation_id=conversation_id,
+                    actor=actor,
+                    evidence={"plan_id": plan.get("id"),
+                              "tasks": len(plan.get("tasks") or []),
+                              "decomposer": "flat", "degraded": False})
+    return plan
 
 
 def _derive_plan_tasks(prd: dict[str, Any]) -> list[dict[str, Any]]:
@@ -208,7 +280,16 @@ def approve_plan(root: str, plan_id: str, *, actor: str = "") -> dict[str, Any]:
     if plan.get("status") != "pending":
         raise GoldenPathError(
             f"Plan {plan_id} 当前 status={plan.get('status')} — 仅 pending 可确认")
-    return pt.approve_plan(root, plan_id, actor=actor)
+    obj = pt.approve_plan(root, plan_id, actor=actor)
+    # M2a: APPROVAL_DECIDED (decision=approve, plan_id) — trace 用 plan.project_id
+    # (canonical 链 = conversation_id; legacy 空则不关联 trace)
+    conv_id = str(plan.get("project_id") or "")
+    _emit_cognitive(root, "APPROVAL_DECIDED",
+                    conversation_id=conv_id or plan_id, actor=actor,
+                    evidence={"decision": "approve", "plan_id": plan_id,
+                              "prd_id": plan.get("prd_id"),
+                              "status": obj.get("status")})
+    return obj
 
 
 # ------------------------------------------------------------------ Production Gate

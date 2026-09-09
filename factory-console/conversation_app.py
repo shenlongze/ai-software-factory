@@ -384,6 +384,31 @@ class ProductUnderstandingService:
         applied = apply_operations(
             self.root, conversation_id, ops,
             source_message_id=msg["id"], fallback_actor="human")
+        # M2a: 理解事实变更审计事件 (PRODUCT_INTELLIGENCE — 语义理解写入后)
+        # 选型理由: DISCOVERY_CONFIRMED 语义为"发现确认"; 此处为通用理解变更
+        # (含 ADD/UPDATE/NEGATE/DEFER), PRODUCT_INTELLIGENCE 更贴切。
+        if applied:
+            try:
+                from .audit.audit_event import EVENT_TYPES, AuditEvent
+                from .audit.audit_store import AuditStore
+                if "PRODUCT_INTELLIGENCE" in EVENT_TYPES:
+                    store = AuditStore(workspace=self.root)
+                    store.append(AuditEvent.create(
+                        "PRODUCT_INTELLIGENCE",
+                        trace_id=str(conversation_id),
+                        project_id=str(conversation_id),
+                        actor_id="human", actor_type="human",
+                        action="cognitive", source="conversation_app",
+                        decision="allow",
+                        decision_reason="understanding_updated",
+                        # evidence 是 list 语义; dict 详情存 metadata
+                        metadata={"message_id": msg.get("id"),
+                                  "ops_applied": len(applied),
+                                  "fact_types": sorted(
+                                      {str(o.get("type", "")) for o in applied})},
+                        result={"ok": True}))
+            except Exception:  # noqa: BLE001 — 审计故障不中断业务
+                pass
         # 4) 落 assistant 消息 + 回复
         show_u = bool(validated.get("show_understanding"))
         statement = self.understanding_statement(conversation_id) if show_u else ""

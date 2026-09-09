@@ -1039,6 +1039,8 @@ class FactoryCLI:
             return self.ct_cmd(args)
         if args.command == "projectos":
             return self.projectos_cmd(args)
+        if args.command == "trace":
+            return self.gp_trace_cmd(args)
         if args.command == "tower":
             return self.tower_cmd(args)
         if args.command == "tasktree":
@@ -6822,6 +6824,20 @@ class FactoryCLI:
             print(f"  {label}={v if isinstance(v, str) else v}{extra}")
         return 0
 
+    def gp_trace_cmd(self, args: argparse.Namespace) -> int:
+        """factory trace — Golden Path 全链 trace (S1-5/M2b, 只读)。
+
+        回答: 会话从哪来 → 理解 → PRD → Plan → 树 → 执行 → 审计。
+        """
+        root = Path(args.data_dir or self.data_dir)
+        from factory_console.trace_query import build_trace, render_trace
+        tr = build_trace(str(root), args.conversation_id)
+        if tr.get("conversation") == "MISSING":
+            print(f"conversation not found: {args.conversation_id}")
+            return 1
+        print(render_trace(tr))
+        return 0
+
     def rtrace_cmd(self, args: argparse.Namespace) -> int:
         """factory release-truth — Release Truth (P2-A): create/gate/execute/trace/list。"""
         root = Path(args.data_dir or self.data_dir)
@@ -7829,6 +7845,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_trace = sub.add_parser("ptrace", help="Product Truth reverse trace (P1): TASK 反查上游链")
     p_trace.add_argument("task_id", help="TASK-* id")
     p_trace.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+    p_gp_trace = sub.add_parser(
+        "trace", help="Golden Path 全链 trace (S1-5/M2b): 理解→PRD→Plan→树→执行→审计")
+    p_gp_trace.add_argument("conversation_id", help="conv-* 会话 id")
+    p_gp_trace.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     p_rt = sub.add_parser("release-truth", help="Release Truth (P2-A): create/gate/list/trace — canonical RELEASE-*")
     p_rt.add_argument("action", choices=["create", "gate", "execute", "trace", "list"],
                       help="动作: create (新 release) / gate (门检查) / execute (发布, 需审批) / trace (反查) / list")

@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .workforce import ROLE_CAPABILITIES, PERMISSION_MATRIX, enforce_permission, list_agents
+from .workforce import ROLE_CAPABILITIES, PERMISSION_MATRIX, list_agents
 
 #: Lifecycle 状态机
 WFL_STATES = ("DRAFT", "ACTIVE", "SUSPENDED", "RETIRED")
@@ -104,28 +104,46 @@ def _next_state(current: str, target: str) -> str:
 
 def create_organization(root: Path | str, *, name: str = "AI Factory",
                         created_by: str = "system") -> dict[str, Any]:
-    org = {"org_id": f"org-{uuid.uuid4().hex[:8]}", "name": name,
-           "departments": [], "created_at": _now_iso()}
-    _save(root, "organizations", _load(root, "organizations") + [org])
-    _audit(root, "WORKFORCE_ORGANIZATION_CREATED", {"entity_id": org["org_id"], "name": name})
+    """MU-CORE-01: 委托 OS Core Boundary 创建 Company (org SSOT)。
+
+    本函数不再持有 Organization Truth (不落 ops/workforce_os/organizations.json);
+    返回兼容形状 (org_id=company id), 供既有 Web/CLI 消费者平滑迁移。
+    """
+    from .os_core_company_organization import create_company
+
+    company = create_company(root, name=name)
+    org = {"org_id": company["id"], "name": company.get("name", name),
+           "departments": [], "created_at": company.get("created_at")}
+    _audit(root, "WORKFORCE_ORGANIZATION_CREATED",
+           {"entity_id": org["org_id"], "name": name, "ssot": "org"})
     return org
 
 
 def list_organizations(root: Path | str) -> list[dict[str, Any]]:
-    return _load(root, "organizations")
+    """MU-CORE-01: 从 org SSOT 投影 (只读视图), 不再读第二组织真相。"""
+    from .os_core_company_organization import list_companies, list_departments
+
+    out: list[dict[str, Any]] = []
+    for c in list_companies(root):
+        depts = [d["id"] for d in list_departments(root, company_id=c["id"])]
+        out.append({"org_id": c["id"], "name": c.get("name", ""),
+                    "departments": depts, "created_at": c.get("created_at")})
+    return out
 
 
 def create_department(root: Path | str, *, org_id: str, name: str) -> dict[str, Any]:
-    dept = {"dept_id": f"dept-{uuid.uuid4().hex[:8]}", "org_id": org_id, "name": name,
-            "workforces": [], "created_at": _now_iso()}
-    data = _load(root, "organizations")
-    for o in data:
-        if o["org_id"] == org_id:
-            o["departments"].append(dept["dept_id"])
-            _save(root, "organizations", data)
-            _save(root, "departments", _load(root, "departments") + [dept])
-            return dept
-    raise ValueError(f"Organization 不存在: {org_id}")
+    """MU-CORE-01: 委托 OS Core Boundary 创建 Department (org SSOT)。"""
+    from .os_core_company_organization import create_department as _create_dept
+    from .os_core_company_organization import get_company
+
+    if get_company(root, org_id) is None:
+        raise ValueError(f"Organization 不存在: {org_id}")
+    dept = _create_dept(root, company_id=org_id, name=name)
+    compat = {"dept_id": dept["id"], "org_id": org_id, "name": dept.get("name", name),
+              "workforces": [], "created_at": dept.get("created_at")}
+    _audit(root, "WORKFORCE_DEPARTMENT_CREATED",
+           {"entity_id": compat["dept_id"], "name": name, "ssot": "org"})
+    return compat
 
 
 # ------------------------------------------------------------------ Workforce
@@ -329,7 +347,7 @@ def select_agent_deterministic(root: Path | str, *, required_capability: str,
             if a.get("role") == role:
                 return {"selected": True, "agent_id": a.get("agent_id") or a.get("id", ""),
                         "role": role, "capability": required_capability,
-                        "reason": f"capability match + permission + agent 可用"}
+                        "reason": "capability match + permission + agent 可用"}
     # 4. 无注册 agent → AgentProfile 兜底
     for role in pool:
         profile = _get_or_create_agent_profile(root, role)
@@ -344,9 +362,14 @@ def select_agent_deterministic(root: Path | str, *, required_capability: str,
 def workforce_os_lineage(root: Path | str, agent_id: str = "",
                          workforce_id: str = "") -> dict[str, Any]:
     """全链 lineage: org → dept → workforce → agent → tasks → runs。"""
-    out = {"organizations": [o for o in _load(root, "organizations")],
-           "departments": [d for d in _load(root, "departments")],
-           "workforces": []}
+    from .os_core_company_organization import list_companies, list_departments
+
+    orgs = [{"org_id": c["id"], "name": c.get("name", ""),
+             "departments": [d["id"] for d in list_departments(root, company_id=c["id"])],
+             "created_at": c.get("created_at")} for c in list_companies(root)]
+    depts = [{"dept_id": d["id"], "org_id": d["company_id"], "name": d.get("name", ""),
+              "created_at": d.get("created_at")} for d in list_departments(root)]
+    out = {"organizations": orgs, "departments": depts, "workforces": []}
     for w in _load(root, "workforces"):
         if workforce_id and w["workforce_id"] != workforce_id:
             continue

@@ -156,7 +156,11 @@ def test_api_workforce_os(tmp_path):
     resp = client.post("/api/organizations", json={"name": "AI Factory"})
     assert resp.status_code == 200
     org = resp.json()
-    assert org["org_id"].startswith("org-")
+    # MU-CORE-01: org_id 现为 org SSOT Company.id (不再是第二真相的 org-* 前缀)
+    assert org["org_id"]
+    import json as _json
+    _companies = _json.loads((tmp_path / "org" / "companies.json").read_text(encoding="utf-8"))
+    assert org["org_id"] in _companies["companies"]
     resp = client.get("/api/organizations")
     assert resp.status_code == 200
     resp = client.post("/api/workforces", json={"name": "production"})

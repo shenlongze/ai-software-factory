@@ -98,4 +98,111 @@ def run_execution(root: str | Path, execution_id: str, *, command: str,
             "returncode": returncode, "stdout": stdout, "stderr": stderr}
 
 
-__all__ = ["RUNTIMES", "run_execution"]
+__all__ = ["RUNTIMES", "resolve_node_run_execution", "run_execution",
+           "run_execution_via_node_runtime"]
+
+
+# ================================================================ Runtime Integration (MU-CORE-11)
+
+def _provider_adapter(provider: str) -> Any:
+    """从 external_executor 内置模板取 adapter (codex/claude); 未注册 -> ValueError。"""
+    from .external_executor.registry import BUILTIN_ADAPTERS
+    from .external_executor.schema import ExternalExecutorAdapter
+
+    spec = BUILTIN_ADAPTERS.get(str(provider))
+    if not spec:
+        raise ValueError(f"未知 provider: {provider} (可用: {sorted(BUILTIN_ADAPTERS)})")
+    return ExternalExecutorAdapter(**spec)
+
+
+def _provider_executor_fn(provider: str, prompt: str, project_dir: str,
+                          timeout: int) -> Callable[[dict[str, Any]], dict[str, Any]]:
+    adapter = _provider_adapter(provider)
+
+    def _fn(_input: dict[str, Any]) -> dict[str, Any]:
+        from .external_executor.executor import run as _ext_run
+
+        res = _ext_run(adapter, prompt, project_dir or "", timeout=timeout)
+        return {"ok": int(res.get("exit_code", 1)) == 0,
+                "output": str(res.get("output") or ""),
+                "error": str(res.get("error") or ""),
+                "artifact_type": "report",
+                "provider_command": str(res.get("command") or ""),
+                "provider_exit_code": int(res.get("exit_code", 1))}
+
+    return _fn
+
+
+def run_execution_via_node_runtime(root: str | Path, execution_id: str, *, prompt: str,
+                                   project_dir: str = "", provider: str = "codex",
+                                   timeout: int = 300,
+                                   executor_fn: Callable[[dict[str, Any]], dict[str, Any]]
+                                   | None = None) -> dict[str, Any]:
+    """Runtime Integration: OS Execution -> node_runtime.NodeRun -> executor/provider -> 回写。
+
+    - Execution 必须 queued 且已有 TaskNode/Resolution 因果链 (MU-CORE-09/10 校验);
+    - 每个 Execution 注册独立 node + NodeRun (retry = 新 Execution + 新 NodeRun);
+    - provider in {codex, claude} 经 external_executor.run 真实调用; 也可注入 executor_fn;
+    - 回写: node_run_id / provider / runtime_ref / output_refs / 最终状态。
+    """
+    from .os_core_execution import get_execution, set_execution_status
+    from .os_core_task import resolve_task
+    from .os_core_task_node import get_task_node
+    from .node_runtime import create_node_run, execute_node_run, get_node_run, register_node
+
+    rec = get_execution(root, execution_id)
+    if rec is None:
+        raise ValueError(f"Execution 不存在: {execution_id}")
+    if rec["status"] != "queued":
+        raise ValueError(f"Execution 非 queued 状态 ({rec['status']}) — 不可执行")
+    node_def = get_task_node(root, rec["task_node_id"])
+    if node_def is None:
+        raise ValueError(f"TaskNode 不存在: {rec['task_node_id']}")
+    chain = resolve_task(root, node_def["task_id"])
+    project_id = str(chain["project"]["id"])
+    set_execution_status(root, execution_id, "running")
+    os_node_id = f"osnode-{execution_id}"
+    register_node(root, node_id=os_node_id, name=f"OS {node_def['name']}",
+                  node_type="task",
+                  input_contract={"prompt": "str"}, output_contract={"output": "str"})
+    node_run = create_node_run(root, os_node_id, input_data={"prompt": prompt},
+                               trigger="os-execution",
+                               task_id=str(node_def["task_id"]), project_id=project_id)
+    fn = executor_fn or _provider_executor_fn(provider, prompt, project_dir, timeout)
+    executed = execute_node_run(root, node_run["run_id"], executor_fn=fn,
+                                executor_name=f"provider:{provider}" if executor_fn is None
+                                else "executor_fn:custom",
+                                artifact_root=root)
+    state = str(executed.get("state") or "")
+    ok = state == "COMPLETED"
+    output_ref = _write_output(root, execution_id, {
+        "execution_id": execution_id, "node_run_id": node_run["run_id"],
+        "provider": provider if executor_fn is None else "custom",
+        "node_run_state": state, "artifact_id": executed.get("artifact_id"),
+        "verification": executed.get("verification"),
+        "failure_reason": executed.get("failure_reason"),
+        "elapsed_ms": None, "at": _now_iso()})
+    runtime_ref = f"node_run:{node_run['run_id']}:{provider if executor_fn is None else 'custom'}"
+    if ok:
+        set_execution_status(root, execution_id, "succeeded", output_refs=[output_ref],
+                             runtime_ref=runtime_ref, node_run_id=node_run["run_id"],
+                             provider=provider if executor_fn is None else "custom")
+    else:
+        set_execution_status(root, execution_id, "failed",
+                             error=str(executed.get("failure_reason") or state)[:500],
+                             output_refs=[output_ref], runtime_ref=runtime_ref,
+                             node_run_id=node_run["run_id"],
+                             provider=provider if executor_fn is None else "custom")
+    return {"execution": get_execution(root, execution_id),
+            "node_run": get_node_run(root, node_run["run_id"]), "ok": ok,
+            "runtime_ref": runtime_ref, "output_ref": output_ref, "provider": provider}
+
+
+def resolve_node_run_execution(root: str | Path, node_run_id: str) -> dict[str, Any] | None:
+    """NodeRun -> OS Execution 反向映射 (Execution.node_run_id == node_run_id)。"""
+    from .os_core_execution import list_executions
+
+    for ex in list_executions(root):
+        if ex.get("node_run_id") == str(node_run_id):
+            return ex
+    return None

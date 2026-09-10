@@ -110,7 +110,8 @@ def create_execution(root: str | Path, *, task_node_id: str, resolution_id: str 
     rec = {"execution_id": eid, "task_node_id": str(task_node_id),
            "resolution_id": resolution_id, "status": "queued",
            "actor_identity_id": actor_identity_id, "workforce_id": workforce_id,
-           "runtime_ref": "", "started_at": "", "completed_at": "",
+           "runtime_ref": "", "node_run_id": "", "provider": "",
+           "started_at": "", "completed_at": "",
            "input_refs": [str(x) for x in (input_refs or [])],
            "output_refs": [], "error": "",
            "verification_refs": [], "evidence_refs": [],
@@ -136,7 +137,8 @@ def list_executions(root: str | Path, *, task_node_id: str = "",
 
 def set_execution_status(root: str | Path, execution_id: str, target: str, *,
                          error: str = "", output_refs: list[str] | None = None,
-                         runtime_ref: str = "") -> dict[str, Any]:
+                         runtime_ref: str = "", node_run_id: str = "",
+                         provider: str = "") -> dict[str, Any]:
     """Execution 生命周期 (queued→running→succeeded/failed/cancelled)。"""
     if target not in EXECUTION_STATES:
         raise ValueError(f"未知状态: {target}")
@@ -160,6 +162,10 @@ def set_execution_status(root: str | Path, execution_id: str, target: str, *,
         rec["output_refs"] = [str(x) for x in output_refs]
     if runtime_ref:
         rec["runtime_ref"] = str(runtime_ref)
+    if node_run_id:
+        rec["node_run_id"] = str(node_run_id)
+    if provider:
+        rec["provider"] = str(provider)
     rec["updated_at"] = _now_iso()
     _save(root, data)
     return rec

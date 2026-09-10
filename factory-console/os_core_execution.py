@@ -112,6 +112,9 @@ def create_execution(root: str | Path, *, task_node_id: str, resolution_id: str 
            "actor_identity_id": actor_identity_id, "workforce_id": workforce_id,
            "runtime_ref": "", "node_run_id": "", "provider": "",
            "plugin_id": "", "implementation_ref": "",
+           "termination_reason": "", "duration_ms": None, "pid": None,
+           "exit_code": None, "signal": None, "timeout_seconds": None,
+           "usage_refs": [],
            "started_at": "", "completed_at": "",
            "input_refs": [str(x) for x in (input_refs or [])],
            "output_refs": [], "error": "",
@@ -140,7 +143,11 @@ def set_execution_status(root: str | Path, execution_id: str, target: str, *,
                          error: str = "", output_refs: list[str] | None = None,
                          runtime_ref: str = "", node_run_id: str = "",
                          provider: str = "", plugin_id: str = "",
-                         implementation_ref: str = "") -> dict[str, Any]:
+                         implementation_ref: str = "", termination_reason: str = "",
+                         duration_ms: int | None = None, pid: int | None = None,
+                         exit_code: int | None = None, signal: int | None = None,
+                         timeout_seconds: int | None = None,
+                         usage_refs: list[str] | None = None) -> dict[str, Any]:
     """Execution 生命周期 (queued→running→succeeded/failed/cancelled)。"""
     if target not in EXECUTION_STATES:
         raise ValueError(f"未知状态: {target}")
@@ -172,10 +179,51 @@ def set_execution_status(root: str | Path, execution_id: str, target: str, *,
         rec["plugin_id"] = str(plugin_id)
     if implementation_ref:
         rec["implementation_ref"] = str(implementation_ref)
+    for _k, _v in (("termination_reason", termination_reason), ("duration_ms", duration_ms),
+                   ("pid", pid), ("exit_code", exit_code), ("signal", signal),
+                   ("timeout_seconds", timeout_seconds)):
+        if _v not in ("", None):
+            rec[_k] = _v
+    if usage_refs is not None:
+        rec["usage_refs"] = [str(u) for u in usage_refs]
     rec["updated_at"] = _now_iso()
     _save(root, data)
     return rec
 
+
+def cancel_execution(root: str | Path, execution_id: str, *,
+                     reason: str = "user_cancelled") -> dict[str, Any]:
+    """取消 Execution (terminal 不可变: 已终态 → NO-OP)。
+
+    queued → cancelled; running → 先经 Runtime 真实终止进程, 再 cancelled。
+    """
+    from .os_core_runtime import mark_cancelling, terminate_running_process
+
+    rec = get_execution(root, execution_id)
+    if rec is None:
+        raise ValueError(f"Execution 不存在: {execution_id}")
+    if rec["status"] in ("succeeded", "failed", "cancelled"):
+        return {**rec, "already_terminal": True, "terminated": False}
+    if rec["status"] == "running":
+        mark_cancelling(execution_id)
+        term = terminate_running_process(root, execution_id)
+        duration_ms = None
+        if rec.get("started_at"):
+            try:
+                from datetime import datetime, timezone
+
+                t0 = datetime.fromisoformat(str(rec["started_at"]))
+                duration_ms = int((datetime.now(timezone.utc) - t0).total_seconds() * 1000)
+            except Exception:  # noqa: BLE001 — 时间解析失败 → 不伪造
+                duration_ms = None
+        rec = set_execution_status(root, execution_id, "cancelled",
+                                   error=str(reason), termination_reason=str(reason),
+                                   pid=term.get("pid"), exit_code=term.get("exit_code"),
+                                   signal=term.get("signal"), duration_ms=duration_ms)
+        return {**rec, "already_terminal": False, "terminated": bool(term.get("terminated"))}
+    rec = set_execution_status(root, execution_id, "cancelled", error=str(reason),
+                               termination_reason=str(reason))
+    return {**rec, "already_terminal": False, "terminated": False}
 
 __all__ = ["EXECUTION_STATES", "EXECUTION_TRANSITIONS", "create_execution", "get_execution",
            "list_executions", "set_execution_status"]

@@ -75,6 +75,7 @@ def _require_project(root: str | Path, project_id: str) -> dict[str, Any]:
 
 def create_work(root: str | Path, *, project_id: str, name: str, description: str = "",
                 work_type: str = "", owner_identity_id: str = "",
+                required_capability_refs: list[str] | None = None,
                 status: str = "draft", work_id: str | None = None) -> dict[str, Any]:
     """创建 Work (Project 下一层; project 必须存在于 MU-CORE-05 SSOT)。"""
     if status not in WORK_STATES:
@@ -86,6 +87,10 @@ def create_work(root: str | Path, *, project_id: str, name: str, description: st
 
         if get_identity(root, owner_identity_id) is None:
             raise ValueError(f"Identity 不存在: {owner_identity_id}")
+    # MU-CORE-08: Work -> Capability 的**引用** (validate 到 Capability SSOT; 不复制定义)
+    from .os_core_capability import validate_capability_ref
+
+    req_caps = [validate_capability_ref(root, c) for c in (required_capability_refs or [])]
     data = _load(root)
     wid = work_id or f"W-{uuid.uuid4().hex[:10]}"
     if wid in data["works"]:
@@ -94,6 +99,7 @@ def create_work(root: str | Path, *, project_id: str, name: str, description: st
     rec = {"work_id": wid, "project_id": str(project["id"]), "name": name,
            "description": description, "work_type": work_type, "status": status,
            "owner_identity_id": owner_identity_id,
+           "required_capability_refs": req_caps,
            "created_at": now, "updated_at": now}
     data["works"][wid] = rec
     _save(root, data)
@@ -115,7 +121,8 @@ def list_works(root: str | Path, *, project_id: str = "", status: str = "") -> l
 
 def update_work(root: str | Path, work_id: str, *, name: str | None = None,
                 description: str | None = None, work_type: str | None = None,
-                owner_identity_id: str | None = None) -> dict[str, Any]:
+                owner_identity_id: str | None = None,
+                required_capability_refs: list[str] | None = None) -> dict[str, Any]:
     data = _load(root)
     rec = data["works"].get(str(work_id))
     if rec is None:
@@ -133,6 +140,11 @@ def update_work(root: str | Path, work_id: str, *, name: str | None = None,
             if get_identity(root, owner_identity_id) is None:
                 raise ValueError(f"Identity 不存在: {owner_identity_id}")
         rec["owner_identity_id"] = str(owner_identity_id)
+    if required_capability_refs is not None:
+        from .os_core_capability import validate_capability_ref
+
+        rec["required_capability_refs"] = [validate_capability_ref(root, c)
+                                           for c in required_capability_refs]
     rec["updated_at"] = _now_iso()
     _save(root, data)
     return rec

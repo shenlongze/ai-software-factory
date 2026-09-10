@@ -102,6 +102,29 @@ __all__ = ["RUNTIMES", "resolve_node_run_execution", "run_execution",
            "run_execution_via_node_runtime"]
 
 
+def _plugin_runtime_provider(root: str | Path, plugin_id: str, task_node_id: str,
+                            company_id: str) -> tuple[str, dict[str, Any]]:
+    """Plugin governance + implementation 解析 (不执行): 必须 ENABLED + capability 匹配 + scope 合法。"""
+    from .os_core_plugin import get_plugin_contract
+    from .os_core_task_node import get_task_node
+
+    contract = get_plugin_contract(root, plugin_id)
+    if contract is None:
+        raise ValueError(f"Plugin 不存在: {plugin_id}")
+    if contract["status"] != "ENABLED":
+        raise ValueError(f"Plugin 非 ENABLED: {plugin_id} ({contract['status']})")
+    node = get_task_node(root, task_node_id) or {}
+    required = set(node.get("required_capability_refs") or [])
+    if required and not (set(contract["capability_refs"]) & required):
+        raise ValueError(f"Plugin {plugin_id} capability 与 TaskNode {task_node_id} 不匹配")
+    if contract["scope"] == "company" and contract["company_id"] != str(company_id):
+        raise ValueError(f"Plugin {plugin_id} 属于 company {contract['company_id']}, 与 {company_id} 不匹配")
+    impl = contract["implementation_ref"]
+    if not impl.startswith("provider:"):
+        raise ValueError(f"Plugin implementation 暂只支持 provider: (got {impl!r})")
+    return impl.split(":", 1)[1], contract
+
+
 # ================================================================ Runtime Integration (MU-CORE-11)
 
 def _provider_adapter(provider: str) -> Any:
@@ -135,7 +158,7 @@ def _provider_executor_fn(provider: str, prompt: str, project_dir: str,
 
 def run_execution_via_node_runtime(root: str | Path, execution_id: str, *, prompt: str,
                                    project_dir: str = "", provider: str = "codex",
-                                   timeout: int = 300,
+                                   timeout: int = 300, plugin_id: str = "",
                                    executor_fn: Callable[[dict[str, Any]], dict[str, Any]]
                                    | None = None) -> dict[str, Any]:
     """Runtime Integration: OS Execution -> node_runtime.NodeRun -> executor/provider -> 回写。
@@ -160,6 +183,11 @@ def run_execution_via_node_runtime(root: str | Path, execution_id: str, *, promp
         raise ValueError(f"TaskNode 不存在: {rec['task_node_id']}")
     chain = resolve_task(root, node_def["task_id"])
     project_id = str(chain["project"]["id"])
+    company_id = str(chain["project"].get("company_id") or "")
+    plugin_contract: dict[str, Any] | None = None
+    if plugin_id:
+        provider, plugin_contract = _plugin_runtime_provider(root, plugin_id,
+                                                             rec["task_node_id"], company_id)
     set_execution_status(root, execution_id, "running")
     os_node_id = f"osnode-{execution_id}"
     register_node(root, node_id=os_node_id, name=f"OS {node_def['name']}",
@@ -183,16 +211,19 @@ def run_execution_via_node_runtime(root: str | Path, execution_id: str, *, promp
         "failure_reason": executed.get("failure_reason"),
         "elapsed_ms": None, "at": _now_iso()})
     runtime_ref = f"node_run:{node_run['run_id']}:{provider if executor_fn is None else 'custom'}"
+    eff_provider = provider if executor_fn is None else "custom"
+    plugin_trace = {"plugin_id": plugin_id if plugin_contract else "",
+                    "implementation_ref": (plugin_contract or {}).get("implementation_ref", "")}
     if ok:
         set_execution_status(root, execution_id, "succeeded", output_refs=[output_ref],
                              runtime_ref=runtime_ref, node_run_id=node_run["run_id"],
-                             provider=provider if executor_fn is None else "custom")
+                             provider=eff_provider, **plugin_trace)
     else:
         set_execution_status(root, execution_id, "failed",
                              error=str(executed.get("failure_reason") or state)[:500],
                              output_refs=[output_ref], runtime_ref=runtime_ref,
-                             node_run_id=node_run["run_id"],
-                             provider=provider if executor_fn is None else "custom")
+                             node_run_id=node_run["run_id"], provider=eff_provider,
+                             **plugin_trace)
     return {"execution": get_execution(root, execution_id),
             "node_run": get_node_run(root, node_run["run_id"]), "ok": ok,
             "runtime_ref": runtime_ref, "output_ref": output_ref, "provider": provider}

@@ -340,8 +340,10 @@ def build_executor_factory(
                 "patch_text": patch_text,
                 "error": r.get("error") or "",
                 "artifact_type": input_data.get("artifact_type", "code_change"),
-                "verification": {"result": "PASS" if ok else "FAIL",
-                                 "source": f"executor {executor_name} exit_code={r.get('exit_code')}",
+                # MU-08: 执行成功 (exit_code==0) ≠ 验证通过 — 禁止隐式推导 PASS。
+                # 验证结论必须来自显式 verify (method+result+evidence); 此处只报 UNKNOWN。
+                "verification": {"result": "UNKNOWN" if ok else "FAIL",
+                                 "source": f"executor {executor_name} exit_code={r.get('exit_code')} (execution success != verification)",
                                  "command": r.get("command") or ""},
             }
         return _fn

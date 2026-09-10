@@ -41,7 +41,7 @@ NODERUN_TRANSITIONS: dict[str, tuple[str, ...]] = {
 }
 
 #: Verification 四态 (S0.5 Contract)
-VERIFY_RESULTS = ("PASS", "FAIL", "INCONCLUSIVE", "BLOCKED")
+VERIFY_RESULTS = ("PASS", "FAIL", "UNKNOWN", "INCONCLUSIVE", "BLOCKED")
 
 
 class NodeError(Exception):
@@ -572,7 +572,9 @@ def execute_node_run(
             _record(root, run, "VERIFYING", actor="system", note=f"artifact produced (attempt {attempts_used})")
 
         # Verification
-        verification = result.get("verification") or {"result": "PASS", "source": "default"}
+        # MU-08: 缺省不得为 PASS (执行成功 ≠ 验证通过) — 诚实缺省 UNKNOWN。
+        verification = result.get("verification") or {
+            "result": "UNKNOWN", "source": "default (no verification; execution success != verification)"}
         v_result = verification.get("result")
         if v_result is None:
             v_result = verification.get("status")  # S11: pytest 结果用 status 字段
@@ -580,9 +582,11 @@ def execute_node_run(
             v_result = "INCONCLUSIVE"
 
         # 记录 attempt (P0-F3: verification → ver-* SSOT 物化; run 存引用)
+        # MU-08: ok 表示"执行已产出可验证输入", 验证状态完全由 verification.result 决定;
+        # 禁止 ok=(v_result=="PASS") 把 UNKNOWN/INCONCLUSIVE 误判为 FAIL (隐式 PASS 的对偶错误)。
         v_ref = _materialize_verify(
             root, run_id, verification,
-            ok=(v_result == "PASS"),
+            ok=True,
             actor=str(executor_name or "node-exec"),
             exs_id="",
             attempt=attempts_used,
@@ -662,8 +666,9 @@ def adapt_external_executor(adapter: Any, prompt_builder: Callable[[dict[str, An
             "patch_text": r.get("output") or "",
             "error": r.get("error") or "",
             "artifact_type": input_data.get("artifact_type", "code_change"),
-            "verification": {"result": "PASS" if ok else "FAIL",
-                             "source": f"executor exit_code={r.get('exit_code')}"},
+            # MU-08: 执行成功 (exit_code==0) ≠ 验证通过 (同 production_run._fn) — 禁止隐式 PASS。
+            "verification": {"result": "UNKNOWN" if ok else "FAIL",
+                             "source": f"executor exit_code={r.get('exit_code')} (execution success != verification)"},
         }
 
     return _fn

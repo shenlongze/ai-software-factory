@@ -78,7 +78,9 @@ def _ok_fn(command: str):
     def _fn(_input):
         p = subprocess.run(command, shell=True, capture_output=True, text=True)
         return {"ok": p.returncode == 0, "output": p.stdout, "error": p.stderr,
-                "artifact_type": "report"}
+                "artifact_type": "report",
+                "verification": {"result": "PASS" if p.returncode == 0 else "FAIL",
+                                 "source": f"executor exit_code={p.returncode}"}}
     return _fn
 
 

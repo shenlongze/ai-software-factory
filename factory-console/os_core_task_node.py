@@ -61,6 +61,7 @@ def _save(root: str | Path, data: dict[str, dict[str, Any]]) -> None:
 def create_task_node(root: str | Path, *, task_id: str, name: str, parent_node_id: str = "",
                      description: str = "", node_type: str = "", sequence: int = 0,
                      required_capability_refs: list[str] | None = None,
+                     depends_on: list[str] | None = None,
                      status: str = "pending",
                      task_node_id: str | None = None) -> dict[str, Any]:
     from .os_core_capability import validate_capability_ref
@@ -80,17 +81,49 @@ def create_task_node(root: str | Path, *, task_id: str, name: str, parent_node_i
     caps = [validate_capability_ref(root, c) for c in (required_capability_refs or [])]
     data = _load(root)
     nid = task_node_id or f"TN-{uuid.uuid4().hex[:10]}"
+    deps = _validate_depends_on(data, str(task_id), nid, depends_on or [])
     if nid in data:
         raise ValueError(f"TaskNode 已存在: {nid}")
     now = _now_iso()
     rec = {"task_node_id": nid, "task_id": str(task_id), "parent_node_id": parent_node_id,
            "name": name, "description": description, "node_type": node_type,
            "status": status, "sequence": int(sequence),
-           "required_capability_refs": caps,
+           "required_capability_refs": caps, "depends_on": deps,
            "created_at": now, "updated_at": now}
     data[nid] = rec
     _save(root, data)
     return rec
+
+
+def _validate_depends_on(data: dict[str, dict[str, Any]], task_id: str, node_id: str,
+                         depends_on: list[str]) -> list[str]:
+    """依赖只能指向**同一 Task** 的 TaskNode; 禁止自依赖/环。"""
+    deps: list[str] = []
+    for dep in depends_on:
+        dep = str(dep)
+        if dep == node_id:
+            raise ValueError(f"TaskNode 不能依赖自身: {dep}")
+        target = data.get(dep)
+        if target is None:
+            raise ValueError(f"依赖的 TaskNode 不存在: {dep}")
+        if target["task_id"] != str(task_id):
+            raise ValueError(f"依赖 {dep} 不属于 Task {task_id}")
+        if dep in deps:
+            continue
+        deps.append(dep)
+    # 环检测: 从每个 dep 出发能否回到 node_id
+    def _reaches(target: str, seen: set[str]) -> bool:
+        if target == node_id:
+            return True
+        if target in seen:
+            return False
+        seen.add(target)
+        rec = data.get(target) or {}
+        return any(_reaches(str(d), seen) for d in rec.get("depends_on", []))
+    for dep in deps:
+        if _reaches(dep, set()):
+            raise ValueError(f"检测到依赖环: {node_id} -> {dep}")
+    return deps
 
 
 def get_task_node(root: str | Path, task_node_id: str) -> dict[str, Any] | None:
@@ -127,7 +160,8 @@ def task_node_tree(root: str | Path, task_id: str) -> list[dict[str, Any]]:
 def update_task_node(root: str | Path, task_node_id: str, *, name: str | None = None,
                      description: str | None = None, node_type: str | None = None,
                      sequence: int | None = None,
-                     required_capability_refs: list[str] | None = None) -> dict[str, Any]:
+                     required_capability_refs: list[str] | None = None,
+                     depends_on: list[str] | None = None) -> dict[str, Any]:
     from .os_core_capability import validate_capability_ref
 
     data = _load(root)
@@ -145,6 +179,9 @@ def update_task_node(root: str | Path, task_node_id: str, *, name: str | None = 
     if required_capability_refs is not None:
         rec["required_capability_refs"] = [validate_capability_ref(root, c)
                                            for c in required_capability_refs]
+    if depends_on is not None:
+        rec["depends_on"] = _validate_depends_on(data, rec["task_id"],
+                                                 rec["task_node_id"], depends_on)
     rec["updated_at"] = _now_iso()
     _save(root, data)
     return rec

@@ -87,6 +87,7 @@ def _company_eligible(company_id: str, workforce_company: str) -> bool:
 
 def _resolve(root: str | Path, *, required_capability_refs: list[str],
              company_id: str = "", project_id: str = "", work_id: str = "",
+             task_node_id: str = "",
              requested_professional_role_refs: list[str] | None = None,
              requested_workforce_refs: list[str] | None = None,
              requested_identity_refs: list[str] | None = None,
@@ -157,6 +158,7 @@ def _resolve(root: str | Path, *, required_capability_refs: list[str],
         "resolution_id": f"RS-{uuid.uuid4().hex[:10]}",
         "status": status,
         "request": {"company_id": company_id, "project_id": project_id, "work_id": work_id,
+                    "task_node_id": task_node_id,
                     "required_capability_refs": [str(c) for c in required_capability_refs],
                     "requested_professional_role_refs": sorted(requested_pr),
                     "requested_workforce_refs": sorted(requested_wf),
@@ -222,15 +224,24 @@ def resolve_task_node(root: str | Path, task_node_id: str, *,
                     company_id=str(project.get("company_id") or ""),
                     project_id=str(project["id"]),
                     work_id=str(chain["work"]["work_id"]),
+                    task_node_id=str(task_node_id),
                     requested_professional_role_refs=requested_professional_role_refs,
                     requested_workforce_refs=requested_workforce_refs,
                     requested_identity_refs=requested_identity_refs,
                     constraints=constraints)
 
+def find_resolution_for_task_node(root: str | Path, task_node_id: str) -> dict[str, Any] | None:
+    """复用已有 resolved Resolution (避免每次 evaluate 新建 RS / 保证决策确定性)。"""
+    for rec in reversed(list_resolutions(root, status="resolved")):
+        if str((rec.get("request") or {}).get("task_node_id") or "") == str(task_node_id):
+            return rec
+    return None
+
 __all__ = [
     "RESOLUTION_STATUSES",
     "get_resolution",
     "list_resolutions",
+    "find_resolution_for_task_node",
     "resolve_capability",
     "resolve_task_node",
     "resolve_work",

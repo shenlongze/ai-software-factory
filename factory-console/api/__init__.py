@@ -53,6 +53,7 @@ from .debug import (
     debug_stats,
     debug_validate,
 )
+from .flow import flow_route
 from .intelligence import list_experience, list_recommendations
 from .lifecycle import get_project_lifecycle
 from .mcp_api import (
@@ -178,6 +179,7 @@ __all__ = [
     "debug_validate",
     "execute_runtime_task",
     "execute_tool",
+    "flow_route",
     "get_artifact",
     "get_artifact_content",
     "get_decision",

@@ -71,6 +71,28 @@ def build_trace(root: str | Path, conversation_id: str) -> dict[str, Any]:
     # 4. 各叶 NodeRun + artifact (从 approved plan 的 workflow/production run 找)
     out["node_runs"] = _collect_node_runs(root_s, conversation_id, st)
     out["audit"] = _collect_audit(root_s, conversation_id)
+
+    # 5. S1-6: 项目敏捷上下文 (conversation attach 项目 → backlog/sprint)
+    try:
+        from factory_console.project_agile import (
+            get_project_by_conversation, project_agile_view)
+        proj = get_project_by_conversation(root_s, conversation_id)
+        if proj:
+            view = project_agile_view(root_s, proj["project_id"])
+            out["project"] = {
+                "project_id": proj["project_id"],
+                "title": proj.get("title", ""),
+                "backlog_count": view.get("backlog_count", 0),
+                "sprint": ({"sprint_id": view["active_sprint"]["sprint_id"],
+                            "title": view["active_sprint"].get("title"),
+                            "status": view["active_sprint"].get("status"),
+                            "stats": view["active_sprint"].get("stats")}
+                           if view.get("active_sprint") else None),
+            }
+        else:
+            out["project"] = None
+    except Exception:  # noqa: BLE001
+        out["project"] = None
     return out
 
 
@@ -132,6 +154,16 @@ def render_trace(trace: dict[str, Any]) -> str:
         for e in audit:
             L.append(f"  audit {e.get('event_type')} "
                      f"trace={e.get('trace_id') or '-'} actor={e.get('actor_id') or '-'}")
+
+    proj = trace.get("project")
+    if isinstance(proj, dict):
+        L.append(f"  project: {proj.get('title')} ({proj.get('project_id')})"
+                 f" · backlog={proj.get('backlog_count')}")
+        sp = proj.get("sprint")
+        if sp:
+            st = sp.get("stats") or {}
+            L.append(f"  sprint: {sp.get('title')} [{sp.get('status')}]"
+                     f" · 叶 {st.get('completed', 0)}/{st.get('total_leaves', 0)}")
     return "\n".join(L)
 
 

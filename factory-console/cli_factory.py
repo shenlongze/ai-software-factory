@@ -1041,6 +1041,8 @@ class FactoryCLI:
             return self.projectos_cmd(args)
         if args.command == "trace":
             return self.gp_trace_cmd(args)
+        if args.command == "flow":
+            return self.flow_cmd(args)
         if args.command == "tower":
             return self.tower_cmd(args)
         if args.command == "tasktree":
@@ -6838,6 +6840,38 @@ class FactoryCLI:
         print(render_trace(tr))
         return 0
 
+    def flow_cmd(self, args: argparse.Namespace) -> int:
+        """factory flow — Flow Views 视图层 (S1-9, 只读)。
+
+        factory flow <conversation_id|--project <pid>>
+            [--format md|todo|mermaid:<kind>|echarts:<kind>|html]
+            [--out <file>] [--json]
+        """
+        root = Path(args.data_dir or self.data_dir)
+        from factory_console.flow_views import build_flow_for
+        scope = "project" if args.project else "conversation"
+        flow_id = args.project or args.conversation_id
+        if not flow_id:
+            print("需要 conversation_id 或 --project <pid>")
+            return 1
+        fmt = args.format or "md"
+        res = build_flow_for(str(root), scope, flow_id, fmt)
+        if not res.get("ok"):
+            print(f"flow failed: {res.get('error')}")
+            return 1
+        if args.json:
+            import json as _json
+            print(_json.dumps(
+                {"ok": True, "format": fmt, "content": res["content"],
+                 "scope": scope, "id": flow_id}, ensure_ascii=False, indent=2))
+            return 0
+        if args.out:
+            Path(args.out).write_text(res["content"], encoding="utf-8")
+            print(f"written: {args.out} (format={fmt})")
+            return 0
+        print(res["content"])
+        return 0
+
     def rtrace_cmd(self, args: argparse.Namespace) -> int:
         """factory release-truth — Release Truth (P2-A): create/gate/execute/trace/list。"""
         root = Path(args.data_dir or self.data_dir)
@@ -7849,6 +7883,17 @@ def build_parser() -> argparse.ArgumentParser:
         "trace", help="Golden Path 全链 trace (S1-5/M2b): 理解→PRD→Plan→树→执行→审计")
     p_gp_trace.add_argument("conversation_id", help="conv-* 会话 id")
     p_gp_trace.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+    p_flow = sub.add_parser(
+        "flow", help="Flow Views (S1-9): 单会话 9 阶段 flow / 项目聚合 + md/todo/mermaid/echarts/html")
+    p_flow.add_argument("conversation_id", nargs="?", help="conv-* 会话 id")
+    p_flow.add_argument("--project", default="", help="project_id (项目聚合视图)")
+    p_flow.add_argument("--format", default="md",
+                        help="md|todo|mermaid:<kind>|echarts:<kind>|html "
+                        "(mermaid: mindmap/gantt/flow/dataflow/sequence/state/dag; "
+                        "echarts: graph/sankey)")
+    p_flow.add_argument("--out", default="", help="写出文件 (如 .html; 否则 stdout)")
+    p_flow.add_argument("--json", action="store_true", help="输出 JSON 包 {ok,format,content}")
+    p_flow.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     p_rt = sub.add_parser("release-truth", help="Release Truth (P2-A): create/gate/list/trace — canonical RELEASE-*")
     p_rt.add_argument("action", choices=["create", "gate", "execute", "trace", "list"],
                       help="动作: create (新 release) / gate (门检查) / execute (发布, 需审批) / trace (反查) / list")

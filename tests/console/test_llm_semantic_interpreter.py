@@ -167,3 +167,40 @@ class TestDeterministicGoesThroughPipeline:
             assert op["op"] in ("ADD", "CLARIFY", "QUESTION")
         facts = pu.list_facts(root, conv["id"])
         assert any(f["type"] == "IDEA" for f in facts)
+
+
+class TestProductHintRegex:
+    """S1-6: 委婉业务需求不被预筛误判为寒暄 (llm 预筛漏词修复)。"""
+
+    def _interp_with(self, llm_out: str):
+        from factory_console.llm_semantic_interpreter import (
+            llm_semantic_interpreter)
+        calls = []
+
+        def fake_llm(prompt: str) -> str:
+            calls.append(prompt)
+            return llm_out
+        return llm_semantic_interpreter, fake_llm, calls
+
+    def test_business_wording_reaches_llm(self, root: str, conv: dict) -> None:
+        """'给电商系统加会员积分: 下单得积分抵现' → 应触达 LLM (非'嗯我在'降级)。"""
+        llm_semantic_interpreter, fake_llm, calls = self._interp_with(
+            '{"operations":[],"reply":"已记录","show_understanding":false}')
+        from factory_console import product_understanding as pu
+        snap = pu.understanding_snapshot(root, conv["id"])
+        res = llm_semantic_interpreter(
+            root, conv["id"],
+            "给电商系统加会员积分：下单得积分，积分可抵现金。", snap,
+            llm_fn=fake_llm)
+        assert calls, "业务需求未触达 LLM (被预筛误判寒暄)"
+        assert res["reply"] == "已记录"
+
+    def test_greeting_still_skips_llm(self, root: str, conv: dict) -> None:
+        """寒暄 '你好' → 不触达 LLM (预筛仍挡纯闲聊)。"""
+        llm_semantic_interpreter, fake_llm, calls = self._interp_with(
+            '{"operations":[],"reply":"x","show_understanding":false}')
+        from factory_console import product_understanding as pu
+        snap = pu.understanding_snapshot(root, conv["id"])
+        llm_semantic_interpreter(root, conv["id"], "你好", snap,
+                                 llm_fn=fake_llm)
+        assert not calls, "寒暄不应调 LLM"

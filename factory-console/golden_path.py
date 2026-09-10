@@ -125,6 +125,20 @@ def _emit_cognitive(root: str, event_type: str, *, conversation_id: str,
         pass
 
 
+def _bind_plan_to_active_sprint(root: str, conversation_id: str,
+                                prd: dict[str, Any],
+                                plan: dict[str, Any]) -> None:
+    """S1-6 (D): conversation attach 项目且有 active sprint → approved Plan 绑定。"""
+    try:
+        from factory_console.project_agile import (
+            conversation_project_id, bind_plan_to_sprint)
+        pid = conversation_project_id(root, conversation_id)
+        if pid:
+            bind_plan_to_sprint(root, pid, plan["id"], prd["id"])
+    except Exception:  # noqa: BLE001 — sprint 绑定失败不阻断 golden path
+        pass
+
+
 def generate_prd(root: str, conversation_id: str, *, actor: str = "") -> dict[str, Any]:
     """Understanding → PRD v1 (须已有 Understanding; 已有 draft 则更新为新 version)。
 
@@ -161,6 +175,15 @@ def approve_prd(root: str, conversation_id: str, prd_id: str, *,
                     actor=actor,
                     evidence={"prd_id": obj.get("id"), "version": obj.get("version"),
                               "status": obj.get("status")})
+    # S1-6 (B): conversation 已 attach 项目 → PRD 自动入 backlog (幂等)
+    try:
+        from factory_console.project_agile import (
+            conversation_project_id, add_prd_to_backlog)
+        pid = conversation_project_id(root, conversation_id)
+        if pid:
+            add_prd_to_backlog(root, pid, obj["id"], conversation_id)
+    except Exception:  # noqa: BLE001 — 项目挂接失败不阻断 golden path
+        pass
     return obj
 
 
@@ -223,6 +246,8 @@ def generate_plan(root: str, conversation_id: str, *, actor: str = "",
                                   "tree_id": plan.get("id"),
                                   "decomposer": tree.get("decomposer"),
                                   "degraded": bool(tree.get("degraded"))})
+        # S1-6 (D): conversation attach 项目且有 active sprint → 绑 plan
+        _bind_plan_to_active_sprint(root, conversation_id, prd, plan)
         return plan
 
     # 兼容: 旧单层平铺 (decompose=False, 不落树)
@@ -248,6 +273,8 @@ def generate_plan(root: str, conversation_id: str, *, actor: str = "",
                     evidence={"plan_id": plan.get("id"),
                               "tasks": len(plan.get("tasks") or []),
                               "decomposer": "flat", "degraded": False})
+    # S1-6 (D): 绑 active sprint (单层路径同)
+    _bind_plan_to_active_sprint(root, conversation_id, prd, plan)
     return plan
 
 
@@ -617,6 +644,17 @@ def execute_approved(root: str, conversation_id: str, *,
             except Exception:  # noqa: BLE001 — 证据读取失败不阻断 (状态以 run 记录为准)
                 pass
         executed.append({"task": leaf, "result": result})
+
+    # S1-6 (D): execute 结果回写 active sprint 叶统计
+    try:
+        from factory_console.project_agile import (
+            conversation_project_id, update_sprint_leaf_stats)
+        pid = conversation_project_id(root, conversation_id)
+        if pid:
+            update_sprint_leaf_stats(root, pid, plan["id"], _prd["id"],
+                                     executed=executed)
+    except Exception:  # noqa: BLE001 — sprint 统计失败不阻断交付
+        pass
 
     return {"plan_id": plan["id"], "prd_id": _prd["id"],
             "production_run_id": prun["run_id"], "state": run.get("state"),

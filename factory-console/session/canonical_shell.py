@@ -22,7 +22,7 @@ HELP = (
     "  「我想做一个飞机大战小游戏, 可以在浏览器运行」\n"
     "系统会持续理解 → 澄清 → 形成 Product Understanding → PRD → 计划 → 生产。\n"
     "生命周期自然语言: 整理成 PRD / 就按这个做 / 生成计划 / 确认计划 / 开始做\n"
-    "斜杠命令: /help /status /plan /new /exit"
+    "斜杠命令: /help /status /plan /project /sprint /flow [格式] /new /exit"
 )
 
 
@@ -77,6 +77,15 @@ class CanonicalShell:
             if cmd == "/plan":
                 self._plan()
                 continue
+            if cmd == "/project":
+                self._project()
+                continue
+            if cmd == "/sprint":
+                self._sprint()
+                continue
+            if cmd == "/flow" or cmd.startswith("/flow "):
+                self._flow(cmd[5:].strip())
+                continue
             self._handle(cmd)
         return 0
 
@@ -93,6 +102,68 @@ class CanonicalShell:
         st = self.orchestrator.status(self.conversation_id)
         print(st["understanding"])
         print(f"\n当前阶段: {st['stage']}")
+
+    def _project(self) -> None:
+        """/project — 当前会话关联项目的 backlog/sprint 摘要。"""
+        if self.conversation_id is None:
+            print("还没有会话 — 先描述你想做什么。")
+            return
+        v = self.orchestrator.project_view(self.conversation_id)
+        if not v.get("attached"):
+            print("当前会话未关联项目 — 单会话 Golden Path 仍可走。")
+            return
+        print(f"项目: {v.get('title')} ({v.get('project_id')})")
+        print(f"Backlog: {v.get('backlog_count')} 待办")
+        for b in v.get("backlog", [])[:8]:
+            print(f"  - {b.get('prd_id')} ({b.get('status')})")
+        for sp in v.get("sprints", [])[-3:]:
+            st = sp.get("stats") or {}
+            print(f"Sprint {sp.get('title')} [{sp.get('status')}]"
+                  f" 叶 {st.get('completed', 0)}/{st.get('total_leaves', 0)}")
+
+    def _sprint(self) -> None:
+        """/sprint — 当前 active sprint 状态。"""
+        if self.conversation_id is None:
+            print("还没有会话。")
+            return
+        s = self.orchestrator.sprint_view(self.conversation_id)
+        if not s.get("attached"):
+            print("当前会话未关联项目。")
+            return
+        if not s.get("sprint_id"):
+            print("项目无 active/review sprint — 先 create_sprint + start。")
+            return
+        st = s.get("stats") or {}
+        print(f"Sprint {s.get('title')} [{s.get('status')}] {s.get('sprint_id')}")
+        print(f"  PRD: {len(s.get('prd_ids') or [])} | Plan: {len(s.get('plan_ids') or [])}")
+        print(f"  叶: COMPLETED {st.get('completed', 0)} / FAILED {st.get('failed', 0)}"
+              f" / BLOCKED {st.get('blocked', 0)} / total {st.get('total_leaves', 0)}")
+
+    def _flow(self, arg: str) -> None:
+        """/flow [格式] — 当前会话 Flow Views (默认 md 阶段表)。
+
+        格式: md | todo | mermaid:<kind> | echarts:<kind>。
+        html 在 shell 内禁用 → 提示走 `factory flow <cid> --format html --out`。
+        """
+        if self.conversation_id is None:
+            print("还没有会话 — 先描述你想做什么。")
+            return
+        fmt = arg or "md"
+        if fmt == "html" or fmt.startswith("html "):
+            print("shell 内 html 禁用 — 请用 `factory flow <会话id> "
+                  "--format html --out flow.html` 导出。")
+            return
+        try:
+            from factory_console.flow_views import build_flow_for
+            res = build_flow_for(str(self.root), "conversation",
+                                 self.conversation_id, fmt)
+        except Exception as exc:  # noqa: BLE001 — REPL 不崩溃
+            print(f"⚠️ /flow 失败: {exc}")
+            return
+        if not res.get("ok"):
+            print(f"⚠️ {res.get('error')}")
+            return
+        print(res["content"])
 
     def _plan(self) -> None:
         """/plan — 当前 Plan 多级任务树摘要 (层/叶/关键路径/degraded)。"""

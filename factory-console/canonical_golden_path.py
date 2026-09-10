@@ -101,9 +101,47 @@ class CanonicalGoldenPath:
             return build_llm_decomposer()
         return None
 
+    # ------------------------------------------------------------- 项目敏捷 (S1-6)
+    def attach_project(self, conversation_id: str, project_id: str
+                       ) -> dict[str, Any]:
+        """conversation 关联项目 (F3 锚点)。"""
+        from factory_console.project_agile import attach_project as _ap
+        return _ap(self.root, conversation_id, project_id)
+
+    def project_view(self, conversation_id: str) -> dict[str, Any]:
+        """当前 conversation 关联项目的敏捷视图 (无项目 → project_id="")。"""
+        from factory_console.project_agile import (
+            get_project_by_conversation, project_agile_view)
+        proj = get_project_by_conversation(self.root, conversation_id)
+        if proj is None:
+            return {"project_id": "", "attached": False}
+        view = project_agile_view(self.root, proj["project_id"])
+        view["title"] = proj.get("title", "")
+        view["attached"] = True
+        return view
+
+    def sprint_view(self, conversation_id: str) -> dict[str, Any]:
+        """当前 active/review sprint (无 → None)。"""
+        v = self.project_view(conversation_id)
+        if not v.get("attached"):
+            return {"sprint_id": None, "attached": False}
+        from factory_console.project_agile import get_active_sprint
+        sp = get_active_sprint(self.root, v["project_id"])
+        return {"sprint_id": sp.get("sprint_id") if sp else None,
+                "attached": True,
+                **({"project_id": v["project_id"], "title": sp.get("title"),
+                    "status": sp.get("status"), "prd_ids": sp.get("prd_ids"),
+                    "plan_ids": sp.get("plan_ids"), "stats": sp.get("stats")}
+                   if sp else {"project_id": v["project_id"],
+                               "title": "", "status": None})}
+
     # ------------------------------------------------------------- 生命周期查询
-    def create_conversation(self, *, title: str = "新会话") -> dict[str, Any]:
-        return self.conversations.create(title=title, created_by=self.actor)
+    def create_conversation(self, *, title: str = "新会话",
+                            project_id: str = "") -> dict[str, Any]:
+        conv = self.conversations.create(title=title, created_by=self.actor)
+        if project_id:
+            self.attach_project(conv["id"], project_id)
+        return conv
 
     def describe(self, conversation_id: str) -> str:
         """当前 Golden Path 阶段 → 用户可见下一步提示 (只读派生, 非 Truth)。"""

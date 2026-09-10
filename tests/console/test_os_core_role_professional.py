@@ -23,6 +23,17 @@ from factory_console import os_core_company_organization as osco  # noqa: E402
 from factory_console import os_core_identity as ident  # noqa: E402
 from factory_console import os_core_professional as prof  # noqa: E402
 from factory_console import os_core_role as role  # noqa: E402
+from factory_console import os_core_capability as cap  # noqa: E402
+
+def _caps(root: str, *names: str) -> list[str]:
+    """MU-CORE-07: capability_refs 必须指向 Capability SSOT (按 name 幂等)。"""
+
+    out = []
+    for n in names:
+        existing = next((c for c in cap.list_capabilities(root) if c["name"] == n), None)
+        out.append((existing or cap.create_capability(root, name=n))["capability_id"])
+    return out
+
 
 
 def _company_and_identities(root: str) -> tuple[str, str, str]:
@@ -102,12 +113,12 @@ def test_professional_domain_and_role(tmp_path: Path) -> None:
 
     pr = prof.create_professional_role(root, professional_domain_id=dom["domain_id"],
                                        name="Backend Engineer", role_ref="developer",
-                                       capability_refs=["implement_code"])
+                                       capability_refs=_caps(root, "implement_code"))
     assert (tmp_path / "professional" / "roles.json").is_file()
     stored = prof.get_professional_role(root, pr["professional_role_id"])
     assert stored["professional_domain_id"] == dom["domain_id"]          # -> Domain
     assert stored["role_ref"] == "developer"                            # -> Role Definition
-    assert stored["capability_refs"] == ["implement_code"]              # Capability 契约
+    assert stored["capability_refs"] and stored["capability_refs"][0].startswith("CAP-")  # -> Capability SSOT
     assert len(prof.list_professional_roles(root, professional_domain_id=dom["domain_id"])) == 1
 
 
@@ -125,9 +136,9 @@ def test_capability_not_implemented(tmp_path: Path) -> None:
     root = str(tmp_path)
     dom = prof.create_professional_domain(root, name="Data")
     prof.create_professional_role(root, professional_domain_id=dom["domain_id"],
-                                  name="Data Engineer", capability_refs=["etl"])
-    # 本 MU 不实现 Capability Registry / Plugin Kernel: 不得产生能力存储
-    assert not (tmp_path / "capability").exists()
+                                  name="Data Engineer", capability_refs=_caps(root, "etl"))
+    # MU-CORE-07: Capability SSOT 落地; 但不实现 Plugin/Execution (无 ops/plugins)
+    assert (tmp_path / "capability" / "capabilities.json").is_file()
     assert not (tmp_path / "ops" / "plugins").exists()
 
 
@@ -171,7 +182,7 @@ def test_runtime_chain_company_identity_role_professional(tmp_path: Path) -> Non
     dom = prof.create_professional_domain(root, name="Software Engineering")
     prole = prof.create_professional_role(root, professional_domain_id=dom["domain_id"],
                                           name="Product Manager", role_ref="product-manager",
-                                          capability_refs=["requirement", "planning"])
+                                          capability_refs=_caps(root, "requirement", "planning"))
     resolved = role.resolve_identity_roles(root, human["identity_id"])
     assert assignment["role_id"] == "product-manager"
     assert resolved[0]["role"]["role_id"] == "product-manager"

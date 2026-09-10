@@ -21,7 +21,18 @@ from factory_console import os_core_company_organization as osco  # noqa: E402
 from factory_console import os_core_identity as ident  # noqa: E402
 from factory_console import os_core_professional as prof  # noqa: E402
 from factory_console import os_core_workforce as wf  # noqa: E402
+from factory_console import os_core_capability as cap  # noqa: E402
 from factory_console import workforce_os as wfos  # noqa: E402
+
+
+def _caps(root: str, *names: str) -> list[str]:
+    """MU-CORE-07: capability_refs 必须指向 Capability SSOT (按 name 幂等)。"""
+
+    out = []
+    for n in names:
+        existing = next((c for c in cap.list_capabilities(root) if c["name"] == n), None)
+        out.append((existing or cap.create_capability(root, name=n))["capability_id"])
+    return out
 
 
 def _setup(root: str) -> dict:
@@ -32,7 +43,7 @@ def _setup(root: str) -> dict:
     dom = prof.create_professional_domain(root, name="Software Engineering")
     prole = prof.create_professional_role(root, professional_domain_id=dom["domain_id"],
                                           name="Backend Engineer", role_ref="developer",
-                                          capability_refs=["implement_code"])
+                                          capability_refs=_caps(root, "implement_code"))
     return {"company": company, "dept": dept, "human": human,
             "domain": dom, "prole": prole}
 
@@ -44,9 +55,9 @@ def test_workforce_crud_and_lifecycle(tmp_path: Path) -> None:
     ctx = _setup(root)
     rec = wf.create_workforce(root, name="Eng WF", company_id=ctx["company"]["id"],
                               scope_type="department", scope_id=ctx["dept"]["id"],
-                              capability_refs=["implement_code"])
+                              capability_refs=_caps(root, "implement_code"))
     assert rec["workforce_id"].startswith("WF-") and rec["status"] == "draft"
-    assert rec["capability_refs"] == ["implement_code"]        # contract only
+    assert rec["capability_refs"] and rec["capability_refs"][0].startswith("CAP-")   # -> Capability SSOT
     assert wf.get_workforce(root, rec["workforce_id"])["name"] == "Eng WF"
     assert len(wf.list_workforces(root)) == 1
 
@@ -152,11 +163,11 @@ def test_runtime_chain_company_identity_professional_workforce(tmp_path: Path) -
                                   company_id=company["id"], display_name="Data Lead")
     dom = prof.create_professional_domain(root, name="Data")
     prole = prof.create_professional_role(root, professional_domain_id=dom["domain_id"],
-                                          name="Data Engineer", capability_refs=["etl"])
+                                          name="Data Engineer", capability_refs=_caps(root, "etl"))
     rec = wf.create_workforce(root, name="Data WF", company_id=company["id"],
                               scope_type="department", scope_id=dept["id"],
                               professional_role_refs=[prole["professional_role_id"]],
-                              capability_refs=["etl"])
+                              capability_refs=_caps(root, "etl"))
     wf.add_member(root, rec["workforce_id"], human["identity_id"])
     resolved = wf.resolve_workforce(root, rec["workforce_id"])
     assert resolved["workforce"]["company_id"] == company["id"]
@@ -170,7 +181,7 @@ def test_no_second_truth_and_capability_contract(tmp_path: Path) -> None:
     root = str(tmp_path)
     ctx = _setup(root)
     wf.create_workforce(root, name="W", company_id=ctx["company"]["id"],
-                        capability_refs=["implement_code"])
+                        capability_refs=_caps(root, "implement_code"))
     assert not (tmp_path / "ops" / "workforce_os" / "workforces.json").exists()
-    assert not (tmp_path / "capability").exists()          # 不实现 Capability
+    assert (tmp_path / "capability" / "capabilities.json").is_file()   # Capability SSOT (MU-07)
     assert not (tmp_path / "workforce" / "roles.json").exists()  # 不建第二套 Role

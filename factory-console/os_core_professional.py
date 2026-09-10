@@ -105,6 +105,10 @@ def create_professional_role(root: str | Path, *, professional_domain_id: str, n
         from .os_core_role import resolve_role_definition
 
         canonical_ref = resolve_role_definition(role_ref)["role_id"]
+    # MU-CORE-07: capability_refs 必须指向 Capability SSOT (不再是无校验字符串)
+    from .os_core_capability import validate_capability_ref
+
+    canonical_caps = [validate_capability_ref(root, c) for c in (capability_refs or [])]
     data = _load(root, "roles")
     rid = role_id or f"PR-{uuid.uuid4().hex[:10]}"
     if rid in data:
@@ -116,7 +120,7 @@ def create_professional_role(root: str | Path, *, professional_domain_id: str, n
            "professional_domain_id": str(professional_domain_id),
            "name": name, "description": description,
            "role_ref": canonical_ref,
-           "capability_refs": [str(c) for c in (capability_refs or [])],
+           "capability_refs": canonical_caps,
            "status": status, "created_at": _now_iso(), "updated_at": _now_iso()}
     data[rid] = rec
     _save(root, "roles", data)
@@ -147,6 +151,18 @@ def resolve_professional_role(root: str | Path, ref: str) -> dict[str, Any] | No
     return None
 
 
+def resolve_professional_role_capabilities(root: str | Path,
+                                           professional_role_id: str) -> dict[str, Any]:
+    """ProfessionalRole -> capability_refs -> Capability SSOT 解析 (MU-CORE-07)。"""
+    from .os_core_capability import resolve_capability
+
+    rec = get_professional_role(root, professional_role_id)
+    if rec is None:
+        raise ValueError(f"Professional Role 不存在: {professional_role_id}")
+    caps = [resolve_capability(root, c) for c in rec.get("capability_refs", [])]
+    return {"professional_role": rec, "capabilities": caps}
+
+
 __all__ = [
     "PROFESSIONAL_STATUSES",
     "create_professional_domain",
@@ -156,4 +172,5 @@ __all__ = [
     "list_professional_domains",
     "list_professional_roles",
     "resolve_professional_role",
+    "resolve_professional_role_capabilities",
 ]

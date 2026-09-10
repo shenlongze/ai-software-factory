@@ -119,6 +119,8 @@ def create_workforce(root: str | Path, *, name: str, company_id: str = "",
     elif scope_id:
         raise ValueError("scope_type=global 不接受 scope_id")
 
+    from .os_core_capability import validate_capability_ref
+
     pr_refs = list(professional_role_refs or [])
     for prid in pr_refs:
         _require_professional_role(root, prid)
@@ -136,7 +138,8 @@ def create_workforce(root: str | Path, *, name: str, company_id: str = "",
     rec = {"workforce_id": wid, "name": name, "description": description,
            "company_id": company_id, "scope_type": scope_type, "scope_id": scope_id,
            "status": status, "member_refs": [], "professional_role_refs": pr_refs,
-           "capability_refs": [str(c) for c in (capability_refs or [])],
+           "capability_refs": [validate_capability_ref(root, c)
+                               for c in (capability_refs or [])],
            "governance_refs": [str(g) for g in (governance_refs or [])],
            "legacy_role_refs": [str(r) for r in (legacy_role_refs or [])],
            "history": [{"from": "", "to": status, "at": now, "note": "created"}],
@@ -178,7 +181,9 @@ def update_workforce(root: str | Path, workforce_id: str, *, name: str | None = 
             _require_professional_role(root, prid)
         rec["professional_role_refs"] = list(professional_role_refs)
     if capability_refs is not None:
-        rec["capability_refs"] = [str(c) for c in capability_refs]
+        from .os_core_capability import validate_capability_ref
+
+        rec["capability_refs"] = [validate_capability_ref(root, c) for c in capability_refs]
     if governance_refs is not None:
         rec["governance_refs"] = [str(g) for g in governance_refs]
     rec["updated_at"] = _now_iso()
@@ -269,6 +274,17 @@ def resolve_workforce(root: str | Path, workforce_id: str) -> dict[str, Any]:
     return {"workforce": rec, "members": members, "professional_roles": roles}
 
 
+def resolve_workforce_capabilities(root: str | Path, workforce_id: str) -> dict[str, Any]:
+    """Workforce -> capability_refs -> Capability SSOT 解析 (MU-CORE-07)。"""
+    from .os_core_capability import resolve_capability
+
+    rec = get_workforce(root, workforce_id)
+    if rec is None:
+        raise ValueError(f"Workforce 不存在: {workforce_id}")
+    caps = [resolve_capability(root, c) for c in rec.get("capability_refs", [])]
+    return {"workforce": rec, "capabilities": caps}
+
+
 __all__ = [
     "SCOPE_TYPES",
     "WORKFORCE_STATES",
@@ -279,6 +295,7 @@ __all__ = [
     "get_workforce",
     "list_workforces",
     "remove_member",
+    "resolve_workforce_capabilities",
     "resolve_workforce",
     "set_workforce_status",
     "update_workforce",

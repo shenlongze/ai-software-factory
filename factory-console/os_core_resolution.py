@@ -201,10 +201,37 @@ def resolve_capability(root: str | Path, capability_id: str, *, company_id: str 
                     project_id=project_id, work_id=work_id)
 
 
+def resolve_task_node(root: str | Path, task_node_id: str, *,
+                      requested_professional_role_refs: list[str] | None = None,
+                      requested_workforce_refs: list[str] | None = None,
+                      requested_identity_refs: list[str] | None = None,
+                      constraints: dict[str, Any] | None = None) -> dict[str, Any]:
+    """TaskNode.required_capability_refs -> Resolution (MU-CORE-09 接入)。
+
+    company/project/work 作用域经 Task -> Work -> Project 推导 (不复制上游数据)。
+    """
+    from .os_core_task import resolve_task
+    from .os_core_task_node import get_task_node
+
+    node = get_task_node(root, task_node_id)
+    if node is None:
+        raise ValueError(f"TaskNode 不存在: {task_node_id}")
+    chain = resolve_task(root, node["task_id"])
+    project = chain["project"]
+    return _resolve(root, required_capability_refs=list(node.get("required_capability_refs") or []),
+                    company_id=str(project.get("company_id") or ""),
+                    project_id=str(project["id"]),
+                    work_id=str(chain["work"]["work_id"]),
+                    requested_professional_role_refs=requested_professional_role_refs,
+                    requested_workforce_refs=requested_workforce_refs,
+                    requested_identity_refs=requested_identity_refs,
+                    constraints=constraints)
+
 __all__ = [
     "RESOLUTION_STATUSES",
     "get_resolution",
     "list_resolutions",
     "resolve_capability",
+    "resolve_task_node",
     "resolve_work",
 ]

@@ -202,13 +202,21 @@ def _write_run(root: Path | str, run: dict[str, Any]) -> None:
 
 def _record(root: Path | str, run: dict[str, Any], to_state: str, *, actor: str, note: str) -> None:
     """状态变更事实 (append-only history + audit event)。"""
-    run["history"].append({
+    entry = {
         "from": run.get("state"),
         "to": to_state,
         "actor": actor,
         "at": _now_iso(),
         "note": note,
-    })
+    }
+    # MU-CORE-02: actor identity reference (resolve-only; 未登记 -> "", 不创建/不阻断)
+    try:
+        from .os_core_identity import resolve_actor_identity
+
+        entry["actor_identity_id"] = resolve_actor_identity(root, actor)
+    except Exception:  # noqa: BLE001 — Identity 解析尽力而为
+        entry["actor_identity_id"] = ""
+    run["history"].append(entry)
     run["state"] = to_state
     _write_run(root, run)
     try:

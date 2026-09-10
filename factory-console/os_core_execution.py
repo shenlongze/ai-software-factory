@@ -81,6 +81,19 @@ def create_execution(root: str | Path, *, task_node_id: str, resolution_id: str 
     workforce_id = str(workforce_id or "")
     if workforce_id and get_workforce(root, workforce_id) is None:
         raise ValueError(f"Workforce 不存在: {workforce_id}")
+    # 因果一致性: 若指定 resolution, 则 company 上下文必须一致 (T3/T26)
+    if resolution is not None:
+        from .os_core_task import resolve_task
+        from .os_core_task_node import get_task_node as _get_node
+
+        _node = _get_node(root, task_node_id)
+        _chain = resolve_task(root, _node["task_id"])
+        _node_company = str(_chain["project"].get("company_id") or "")
+        _res_company = str((resolution.get("request") or {}).get("company_id") or "")
+        if _node_company != _res_company:
+            raise ValueError(
+                f"Resolution {resolution_id} 属于 company {_res_company!r}, "
+                f"TaskNode 属于 {_node_company!r} — 跨 company 拒绝")
     # 因果一致性: 若指定 resolution, 则 actor/workforce 必须来自该 resolution 的 match
     if resolution is not None:
         m_wf = {m["workforce_id"] for m in resolution.get("matches", []) if m.get("workforce_id")}
@@ -97,7 +110,7 @@ def create_execution(root: str | Path, *, task_node_id: str, resolution_id: str 
     rec = {"execution_id": eid, "task_node_id": str(task_node_id),
            "resolution_id": resolution_id, "status": "queued",
            "actor_identity_id": actor_identity_id, "workforce_id": workforce_id,
-           "started_at": "", "completed_at": "",
+           "runtime_ref": "", "started_at": "", "completed_at": "",
            "input_refs": [str(x) for x in (input_refs or [])],
            "output_refs": [], "error": "",
            "verification_refs": [], "evidence_refs": [],
@@ -122,7 +135,8 @@ def list_executions(root: str | Path, *, task_node_id: str = "",
 
 
 def set_execution_status(root: str | Path, execution_id: str, target: str, *,
-                         error: str = "", output_refs: list[str] | None = None) -> dict[str, Any]:
+                         error: str = "", output_refs: list[str] | None = None,
+                         runtime_ref: str = "") -> dict[str, Any]:
     """Execution 生命周期 (queued→running→succeeded/failed/cancelled)。"""
     if target not in EXECUTION_STATES:
         raise ValueError(f"未知状态: {target}")
@@ -144,6 +158,8 @@ def set_execution_status(root: str | Path, execution_id: str, target: str, *,
         rec["error"] = error
     if output_refs is not None:
         rec["output_refs"] = [str(x) for x in output_refs]
+    if runtime_ref:
+        rec["runtime_ref"] = str(runtime_ref)
     rec["updated_at"] = _now_iso()
     _save(root, data)
     return rec

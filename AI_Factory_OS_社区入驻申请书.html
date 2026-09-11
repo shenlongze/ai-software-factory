@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Factory OS — 中关村北纬社区入驻申请书</title>
+<style>
+  :root{
+    --bg:#ffffff; --ink:#0f172a; --muted:#475569; --line:#e2e8f0;
+    --card:#f8fafc; --brand:#1d4ed8; --brand-soft:#eff6ff;
+    --ok:#047857; --ok-soft:#ecfdf5; --warn:#b45309; --warn-soft:#fffbeb;
+    --code:#0f172a;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+       background:var(--bg);color:var(--ink);line-height:1.75;padding:2rem 1rem}
+  .container{max-width:880px;margin:0 auto}
+
+  /* 封面 */
+  .cover{border-bottom:3px solid var(--brand);padding-bottom:1.8rem;margin-bottom:2.2rem}
+  .kicker{font-size:.8rem;letter-spacing:.18em;color:var(--brand);font-weight:600;margin-bottom:.6rem}
+  h1{font-size:2.6rem;letter-spacing:-1px;color:var(--ink);margin-bottom:.4rem}
+  .tagline{font-size:1.12rem;color:var(--muted);font-weight:500;margin-bottom:1.4rem}
+  .meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:.7rem;
+        background:var(--card);border:1px solid var(--line);border-radius:10px;padding:1rem 1.2rem}
+  .meta div{font-size:.92rem;color:var(--muted)}
+  .meta b{color:var(--ink);font-weight:600;margin-left:.35rem}
+
+  section{margin-bottom:2.1rem}
+  h2{font-size:1.35rem;color:var(--ink);border-left:5px solid var(--brand);
+     padding-left:.7rem;margin-bottom:1.1rem;display:flex;align-items:center;gap:.5rem}
+  h2 .en{font-size:.72rem;color:#94a3b8;font-weight:500;letter-spacing:.05em}
+  h3{font-size:1.05rem;color:var(--ink);margin:1.2rem 0 .5rem}
+  p{color:#1e293b;margin-bottom:.7rem}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:1.2rem 1.3rem;margin-bottom:1rem}
+  .lead{font-size:1.02rem;color:#1e293b}
+  ul,ol{padding-left:1.3rem;margin:.3rem 0 .8rem}
+  li{margin-bottom:.45rem;color:#334155}
+  li b{color:var(--ink)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+  @media(max-width:720px){.grid2{grid-template-columns:1fr}}
+
+  .num{display:inline-flex;align-items:center;justify-content:center;min-width:1.6rem;height:1.6rem;
+       background:var(--brand-soft);color:var(--brand);border-radius:999px;font-size:.85rem;font-weight:700;margin-right:.5rem}
+
+  .tag{display:inline-block;font-size:.75rem;font-weight:600;border-radius:5px;padding:.05rem .5rem;margin-right:.3rem}
+  .tag-ok{background:var(--ok-soft);color:var(--ok)}
+  .tag-warn{background:var(--warn-soft);color:var(--warn)}
+  .tag-brand{background:var(--brand-soft);color:var(--brand)}
+
+  .statline{display:flex;flex-wrap:wrap;gap:1rem;align-items:center;margin-bottom:.6rem}
+  .stat{background:#fff;border:1px solid var(--line);border-radius:10px;padding:.7rem 1.1rem;min-width:180px}
+  .stat b{display:block;font-size:1.5rem;color:var(--brand);line-height:1.2}
+  .stat span{font-size:.82rem;color:var(--muted)}
+
+  table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--line);border-radius:10px;overflow:hidden;font-size:.9rem}
+  th{background:#f1f5f9;color:#1e293b;text-align:left;padding:.6rem .7rem;border-bottom:2px solid var(--line);font-weight:600}
+  td{padding:.6rem .7rem;border-bottom:1px solid var(--line);color:#334155;vertical-align:top}
+  td:first-child{font-weight:600;color:var(--ink);white-space:nowrap}
+  tr:last-child td{border-bottom:none}
+  .yes{color:var(--ok);font-weight:600}
+  .no{color:#94a3b8}
+  .hl{color:var(--brand);font-weight:600}
+
+  .flow{background:#fff;border:1px solid var(--line);border-left:4px solid var(--brand);
+        border-radius:8px;padding:.9rem 1.1rem;font-size:.98rem;color:#1e293b;margin:.6rem 0 1rem}
+  .flow b{color:var(--brand)}
+
+  .timeline{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:.8rem}
+  .q{background:#fff;border:1px solid var(--line);border-top:3px solid var(--brand);border-radius:10px;padding:.9rem 1rem}
+  .q b{display:block;color:var(--brand);margin-bottom:.25rem;font-size:.95rem}
+  .q span{font-size:.88rem;color:#334155}
+
+  .copybox{border:1.5px dashed #94a3b8;background:#f8fafc;border-radius:10px;padding:1.2rem 1.4rem}
+  .copybox p{margin-bottom:.6rem}
+  .footnote{font-size:.85rem;color:#64748b;margin-top:.4rem}
+  .footer{border-top:1px solid var(--line);margin-top:2.4rem;padding-top:1.2rem;
+          font-size:.9rem;color:var(--muted);display:flex;justify-content:space-between;flex-wrap:wrap;gap:.5rem}
+
+  @media print{
+    @page{size:A4;margin:13mm 12mm}
+    body{background:#fff;padding:0}
+    section{page-break-inside:avoid}
+    .cover{page-break-after:avoid}
+    h2{page-break-after:avoid}
+    .card,table,.copybox,.q{page-break-inside:avoid}
+    a{color:inherit;text-decoration:none}
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- 封面 -->
+  <header class="cover">
+    <div class="kicker">中关村北纬社区入驻申请书 · 2026-09-03</div>
+    <h1>AI Factory OS</h1>
+    <div class="tagline">多 Agent 编排治理基座 ｜ 面向 OPC 单人创业者及中小企业私有化</div>
+    <div class="meta">
+      <div>申报人<b>申震</b></div>
+      <div>邮箱<b>shenlongze@126.com</b></div>
+      <div>GitHub<b>https://github.com/shenlongze/ai-software-factory.git</b></div>
+      <div>协议<b>Apache-2.0 开源</b></div>
+    </div>
+  </header>
+
+  <!-- 01 行业痛点 -->
+  <section>
+    <h2>01 行业痛点 <span class="en">PROBLEM</span></h2>
+    <div class="card">
+      <p style="margin-top:0"><b>专业能力已经很多——Skill、MCP、Agent 百花齐放，但只有零件，没有机器。</b></p>
+      <ol>
+        <li><b>生态割裂、没有链路</b>：Cursor、TraeWork、Codex、Hermes 等各有专业 Skill 与 MCP，却彼此独立，串不成"从想法到交付"的一条完整链路。</li>
+        <li><b>没有统一管理</b>：异构 Agent / Skill / MCP 无法统一调度、监控与治理，能力散落、责任不清。</li>
+        <li><b>编排门槛高</b>：要让多个 Agent 协同，只能手写 / 硬编码 Workflow——配置复杂度高，业务一改就要重配，维护成本极高。</li>
+        <li><b>Agent 执行黑盒</b>：过程不可视、不可审计、不可治理，企业落地存在风险。</li>
+        <li><b>缺项目级管理与私有化能力</b>：没有原生敏捷项目管理与分层测试；缺少标准接口，难以对接企业存量老旧业务系统。</li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- 02 解决方案 -->
+  <section>
+    <h2>02 解决方案 <span class="en">SOLUTION</span></h2>
+    <p class="lead">设计灵感来自 <b>PI Agent 极简基石</b>、<b>OpenClaw Skill 生态</b>；采用 <b>Create-Building 地基 + 可插拔插件架构</b>。
+    定位：<span class="hl">编排治理基座，不自研各类专业 Agent，复用市面成熟 Agent 能力</span>。</p>
+    <h3>核心能力</h3>
+    <div class="card">
+      <ol>
+        <li><b>Agent 遴选调度</b>：可接入 Hermes、OpenClaw、Cursor、Codex 等第三方 Agent；根据任务自动择优调度，支持人工干预；不硬编码 Workflow，动态生成业务流程。</li>
+        <li><b>内置完整敏捷项目体系</b>：想法 → 产品分析 &amp; 商业评估 → 输出 PRD；拆解为 Sprint-Story-Task；Task 单测、Sprint 迭代测试、项目全量测试三层测试，附带项目边界监控。</li>
+        <li><b>运行时审计治理</b>：对所有接入 Agent 统一监控、留痕、可追溯，解决 AI 黑盒问题。</li>
+        <li><b>部署与集成</b>：兼容公有大模型，支持 Llama 本地私有化部署；全部能力输出标准化 API，支持企业二开对接老业务系统。</li>
+      </ol>
+    </div>
+    <p>交付形态：<b>CLI 底层服务 + 轻量化 WebUI</b>。</p>
+  </section>
+
+  <!-- 03 项目现状 -->
+  <section>
+    <h2>03 项目现状（如实填写，评审重点看） <span class="en">STATUS</span></h2>
+    <div class="statline">
+      <div class="stat"><b>20 万行</b><span>自研代码 · 整体进度 30%–40%</span></div>
+      <div class="stat"><b>可运行</b><span>小型项目 Demo</span></div>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0"><span class="tag tag-ok">✅ 已实现</span></h3>
+      <ul>
+        <li>Agent 调度遴选框架、运行时监控审计底层、标准化 API 层</li>
+        <li>敏捷全链路：想法 - 产品分析 - PRD 输出 - Sprint/Story/Task 拆解</li>
+        <li>Task / Sprint / 全项目三层测试框架、项目边界监控</li>
+        <li>简易 WebUI（存在缺陷）</li>
+      </ul>
+      <div class="flow">✅ <b>已跑通链路：</b>Idea → 产品分析 → PRD 输出 → 敏捷任务拆解 → 任务执行</div>
+      <h3><span class="tag tag-warn">⏳ 待完成</span></h3>
+      <ul>
+        <li>第三方 Agent 适配层（架构已设计）</li>
+        <li>部署运维链路：服务器对接、日志监控、自动打包发布、自动修复</li>
+        <li>会话、任务分配卡点优化</li>
+        <li>上层行业插件仅完成架构，尚未开发</li>
+      </ul>
+      <p class="footnote">开源：Apache-2.0，代码托管 GitHub。说明：可跑小型 Demo，暂未达到生产级完整闭环。</p>
+    </div>
+  </section>
+
+  <!-- 04 目标用户 -->
+  <section>
+    <h2>04 目标用户 <span class="en">TARGET</span></h2>
+    <div class="grid2">
+      <div class="card">
+        <h3 style="margin-top:0">核心种子用户</h3>
+        <p><b>OPC 单人公司、独立开发者</b></p>
+        <p class="footnote">一人承担产品、项目管理、开发、测试全流程，需要基座整合外部 AI 能力完成完整项目。</p>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">延伸用户</h3>
+        <p><b>中小企业</b></p>
+        <p class="footnote">有私有化部署需求，希望对接存量业务系统，低成本实现业务智能化。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 05 竞品对比 -->
+  <section>
+    <h2>05 竞品对比 <span class="en">COMPARISON</span></h2>
+    <table>
+      <thead>
+        <tr><th style="width:150px">对比项</th><th>Cursor</th><th>字节 TraeWork</th><th>OpenAI-Codex</th><th>AI Factory OS</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>定位</td><td>IDE 编码工具</td><td>AI 开发工作台</td><td>OpenAI 生态编码 Agent</td><td class="hl">多 Agent 编排治理基座</td></tr>
+        <tr><td>接入异构第三方 Agent</td><td class="no">有限插件，不支持完整外部 Agent</td><td>以自有 Agent 为主</td><td class="no">仅限 OpenAI 生态</td><td class="yes">✅ 接入 Hermes、OpenClaw、Cursor、Codex 等，择优调度</td></tr>
+        <tr><td>内置敏捷项目 + 三层测试</td><td class="no">❌ 无</td><td>仅简单任务拆解</td><td class="no">❌ 无</td><td class="yes">✅ 完整敏捷链路，Task-Sprint-全项目三级测试</td></tr>
+        <tr><td>第三方 Agent 统一审计治理</td><td>仅 IDE 内日志</td><td>仅自有 Agent 审计</td><td>仅限自家 Agent Trace</td><td class="yes">✅ 全部接入 Agent 统一运行时监控审计</td></tr>
+        <tr><td>工作流</td><td>固化逻辑</td><td>固化任务模式</td><td>固化模式</td><td class="hl">不硬编码，Agent 动态生成流程，上层可插拔</td></tr>
+        <tr><td>私有化 + 对接老系统</td><td>私有化门槛高</td><td>对接老系统弱</td><td>生态绑定、私有化受限</td><td class="yes">✅ 支持本地 Llama；全量标准 API，支持二开对接存量系统</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- 06 商业模式 -->
+  <section>
+    <h2>06 商业模式（早期原型，不虚构收入） <span class="en">BUSINESS MODEL</span></h2>
+    <div class="card">
+      <p>项目处于原型阶段，商业模式计划在北纬加速营导师辅导下打磨论证。可选探索方向：</p>
+      <ol>
+        <li>基座主体完全开源；企业高级能力增值服务</li>
+        <li>私有化部署授权</li>
+        <li>API 计量调用收费</li>
+      </ol>
+      <p class="footnote" style="margin-bottom:0">当前不产生营收。</p>
+    </div>
+  </section>
+
+  <!-- 07 12个月迭代规划 -->
+  <section>
+    <h2>07 12 个月迭代规划 <span class="en">ROADMAP</span></h2>
+    <div class="timeline">
+      <div class="q"><b>1–3 月</b><span>修复会话、任务分配卡点；优化 Demo 稳定性，打磨敏捷 &amp; 测试体系</span></div>
+      <div class="q"><b>4–6 月</b><span>完成主流第三方 Agent 适配层开发</span></div>
+      <div class="q"><b>7–9 月</b><span>打通部署运维全链路；面向 OPC 用户小规模内测</span></div>
+      <div class="q"><b>10–12 月</b><span>基于内测反馈迭代；完成商业模式论证；建设开源社区</span></div>
+    </div>
+  </section>
+
+  <!-- 08 入营诉求与社区贡献 -->
+  <section>
+    <h2>08 入营诉求 &amp; 社区贡献 <span class="en">ASK &amp; GIVE</span></h2>
+    <div class="grid2">
+      <div class="card">
+        <h3 style="margin-top:0">希望从社区获取</h3>
+        <ol>
+          <li>AI 算力资源，用于基座联调、原型验证</li>
+          <li>导师指导：产品定位、架构优化、商业模式打磨</li>
+          <li>免费工位、OPC 创业者社群交流</li>
+          <li>产业资源对接</li>
+        </ol>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">可回馈社区</h3>
+        <ol>
+          <li>20 万行 Apache-2.0 开源项目，丰富社区 AI 开源生态</li>
+          <li>输出 Agent 编排、运行时审计治理工程实践，参与社区技术分享</li>
+          <li>项目成熟后带动更多独立开发者参与共建</li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <!-- 封底 -->
+  <section>
+    <h2>联系方式 <span class="en">CONTACT</span></h2>
+    <div class="card">
+      <p style="margin-bottom:.3rem">申报人：申震</p>
+      <p style="margin-bottom:.3rem">邮箱：shenlongze@126.com</p>
+      <p style="margin-bottom:0">GitHub：<i>https://github.com/shenlongze/ai-software-factory.git</i></p>
+    </div>
+  </section>
+
+  <!-- 附录 300字简版 -->
+  <section>
+    <h2>附录：申报表单项目描述（300 字简版，可直接复制） <span class="en">APPENDIX</span></h2>
+    <div class="copybox">
+      <p>AI Factory OS 是一款面向 OPC 单人创业者与中小企业的多 Agent 编排治理开源基座，基于 Apache-2.0 开源协议，累计 20 万行自研代码，整体进度 30%-40%，已可运行小型项目 Demo。</p>
+      <p>市面 Cursor、TraeWork、Codex 等工具仅聚焦代码辅助，功能单一、生态割裂、Agent 执行黑盒不可审计，缺少完整项目管理体系。</p>
+      <p>本项目借鉴 PI Agent 极简基座与 OpenClaw 技能生态思想，采用"地基 + 可插拔"架构，不重复研发专业 Agent，可接入 Cursor、Hermes、OpenClaw 等市面主流 AI 工具，通过智能遴选机制动态择优调度、自动生成业务流程，适配多变业务场景。</p>
+      <p>系统内置完整敏捷项目体系，支持从想法分析、商业评估、自动产出 PRD，到 Sprint、Story、Task 分层拆解，并配套三级分层测试与项目管控机制。底层实现 Agent 全流程运行监控、可观测、可审计治理，解决行业黑盒痛点。支持公有模型与 Llama 本地化私有化部署，全能力开放标准化 API，可对接企业存量业务系统。产品提供 CLI 底层能力与轻量化 WebUI，适配单人创业全流程作业与企业私有化智能化改造场景。</p>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <span>AI Factory OS · 中关村北纬社区入驻申请 · 2026-09-03</span>
+    <span>Apache-2.0 · 数据如实申报</span>
+  </footer>
+
+</div>
+</body>
+</html>

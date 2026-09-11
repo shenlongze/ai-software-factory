@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Factory OS — 商业计划书 (Business Plan)</title>
+<style>
+  :root {
+    --bg-page: #0f172a;
+    --bg-card: #1e293b;
+    --border-color: #334155;
+    --text-main: #f8fafc;
+    --text-muted: #94a3b8;
+    --accent-blue: #38bdf8;
+    --accent-green: #34d399;
+    --accent-amber: #fbbf24;
+    --accent-purple: #c084fc;
+    --accent-rose: #f43f5e;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    background-color: var(--bg-page);
+    color: var(--text-main);
+    line-height: 1.6;
+    padding: 2rem 1rem;
+  }
+
+  .container {
+    max-width: 960px;
+    margin: 0 auto;
+  }
+
+  /* 顶部控制栏 */
+  .toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border-color);
+  }
+  .toolbar-title {
+    font-size: 0.9rem;
+    color: var(--accent-blue);
+    font-weight: 600;
+    letter-spacing: 0.05em;
+  }
+  .btn-print {
+    padding: 0.5rem 1rem;
+    background: var(--accent-blue);
+    color: #0f172a;
+    border: none;
+    border-radius: 6px;
+    font-weight: 700;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .btn-print:hover { opacity: 0.9; transform: translateY(-1px); }
+
+  /* 幻灯片卡片样式 */
+  .page-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 2.2rem;
+    margin-bottom: 2rem;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .page-card::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 4px;
+    background: linear-gradient(90deg, var(--accent-blue), var(--accent-green));
+  }
+
+  .page-num {
+    position: absolute;
+    top: 1.5rem;
+    right: 1.8rem;
+    font-size: 0.85rem;
+    font-family: Monaco, Consolas, monospace;
+    color: var(--accent-blue);
+    background: rgba(56, 189, 248, 0.1);
+    padding: 0.2rem 0.6rem;
+    border-radius: 4px;
+    border: 1px solid rgba(56, 189, 248, 0.2);
+  }
+
+  h2 {
+    font-size: 1.6rem;
+    color: var(--text-main);
+    margin-bottom: 0.4rem;
+    letter-spacing: -0.5px;
+  }
+
+  .page-subtitle {
+    font-size: 0.98rem;
+    color: var(--accent-blue);
+    margin-bottom: 1.5rem;
+    font-weight: 500;
+  }
+
+  p {
+    color: #cbd5e1;
+    font-size: 0.95rem;
+    margin-bottom: 1rem;
+  }
+
+  /* 封面专有样式 P1 */
+  .cover-card {
+    text-align: center;
+    padding: 4rem 2rem;
+    background: radial-gradient(circle at center, #1e293b 0%, #0f172a 100%);
+  }
+  .cover-title {
+    font-size: 3rem;
+    font-weight: 800;
+    color: #fff;
+    margin-bottom: 0.5rem;
+    background: linear-gradient(135deg, #38bdf8 0%, #34d399 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .cover-tag {
+    font-size: 1.3rem;
+    color: var(--text-main);
+    font-weight: 600;
+    margin-bottom: 1.5rem;
+  }
+  .cover-desc {
+    font-size: 1.1rem;
+    color: var(--text-muted);
+    max-width: 600px;
+    margin: 0 auto 2.5rem;
+  }
+  .cover-meta {
+    display: inline-flex;
+    gap: 1.5rem;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    border-top: 1px solid var(--border-color);
+    padding-top: 1.5rem;
+  }
+
+  /* 通用网格与对比组件 */
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; }
+  .grid4 { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; }
+  
+  .box {
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1.2rem;
+  }
+  .box-title {
+    font-size: 1rem;
+    font-weight: 700;
+    margin-bottom: 0.6rem;
+    color: var(--text-main);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .compare-vs {
+    display: grid;
+    grid-template-columns: 1fr 40px 1fr;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 1.2rem 0;
+  }
+  .vs-circle {
+    width: 40px; height: 40px;
+    background: var(--border-color);
+    color: var(--accent-amber);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 0.9rem; margin: 0 auto;
+  }
+
+  /* 流程与节点图解 */
+  .flow-steps {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+    margin: 1.2rem 0;
+  }
+  .flow-node {
+    background: rgba(56, 189, 248, 0.1);
+    border: 1px solid rgba(56, 189, 248, 0.3);
+    color: var(--accent-blue);
+    padding: 0.4rem 0.8rem;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+  .flow-arrow { color: var(--text-muted); font-weight: bold; }
+  .flow-node-fail {
+    background: rgba(244, 63, 94, 0.1);
+    border-color: rgba(244, 63, 94, 0.3);
+    color: var(--accent-rose);
+  }
+
+  /* 表格样式 */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0;
+    font-size: 0.88rem;
+  }
+  th, td {
+    padding: 0.75rem 0.9rem;
+    border: 1px solid var(--border-color);
+    text-align: left;
+  }
+  th { background: rgba(255, 255, 255, 0.03); color: var(--accent-blue); font-weight: 600; }
+  td { color: #cbd5e1; }
+  .hl-row { background: rgba(56, 189, 248, 0.05); }
+
+  /* 高亮文本与标签 */
+  .hl { color: var(--accent-blue); font-weight: 600; }
+  .hl-green { color: var(--accent-green); font-weight: 600; }
+  .hl-amber { color: var(--accent-amber); font-weight: 600; }
+
+  ul, ol { padding-left: 1.2rem; margin-bottom: 0.8rem; }
+  li { margin-bottom: 0.4rem; font-size: 0.92rem; color: #cbd5e1; }
+
+  .stat-badge {
+    display: inline-block;
+    background: rgba(52, 211, 153, 0.12);
+    border: 1px solid rgba(52, 211, 153, 0.3);
+    color: var(--accent-green);
+    font-size: 0.8rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    margin-right: 0.4rem;
+  }
+
+  @media print {
+    body { background: #fff; color: #000; padding: 0; }
+    .toolbar { display: none; }
+    .page-card {
+      background: #fff;
+      color: #000;
+      border: 1px solid #ccc;
+      box-shadow: none;
+      page-break-after: always;
+      margin-bottom: 0;
+      padding: 1.5rem;
+    }
+    .page-card::before { display: none; }
+    .box { background: #f8fafc; border-color: #cbd5e1; }
+    h2, .page-subtitle, .hl, .box-title { color: #0f172a !important; }
+    p, li, td { color: #334155 !important; }
+    .page-num { background: #f1f5f9; color: #0f172a; border-color: #cbd5e1; }
+    .cover-title { -webkit-text-fill-color: #0d172a; }
+  }
+
+  @media (max-width: 650px) {
+    .grid2, .compare-vs { grid-template-columns: 1fr; }
+    .vs-circle { margin: 0.5rem auto; }
+    .cover-title { font-size: 2.2rem; }
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+
+  <!-- 顶部控制 -->
+  <div class="toolbar">
+    <div class="toolbar-title">AI FACTORY OS — BUSINESS PLAN (12 SLIDES)</div>
+    <button class="btn-print" onclick="window.print()">🖨️ 导出 PDF / 打印</button>
+  </div>
+
+  <!-- P1｜封面 -->
+  <div class="page-card cover-card">
+    <div class="page-num">P01 / 12</div>
+    <div class="cover-title">AI Factory OS</div>
+    <div class="cover-tag">AI 原生生产操作系统</div>
+    <div class="cover-desc">让一个创业者拥有一支可以真正工作的 AI 团队</div>
+    <div class="cover-meta">
+      <div>汇报人：<b>申震 (Solo Founder)</b></div>
+      <div>代码库状态：<b>v1.1.364 (1,449 Commits)</b></div>
+      <div>入驻申请：<b>中关村北纬社区</b></div>
+    </div>
+  </div>
+
+  <!-- P2｜为什么现在需要 AI Factory -->
+  <div class="page-card">
+    <div class="page-num">P02 / 12</div>
+    <h2>为什么现在需要 AI Factory</h2>
+    <div class="page-subtitle">从“人使用 AI 工具”走向“AI 进入生产体系”</div>
+    <div class="grid2">
+      <div class="box">
+        <div class="box-title" style="color: var(--accent-green);">1. 供给侧：LLM 与 Agent 爆发</div>
+        <ul>
+          <li>单点 LLM 推理能力已达到软件工程及产品分析门槛。</li>
+          <li>各类 Coding Agent、Search Agent 具备了强悍的局部执行力。</li>
+          <li><b>但生产仍然极度碎片化：</b>能力有了，却没有协同组织。</li>
+        </ul>
+      </div>
+      <div class="box">
+        <div class="box-title" style="color: var(--accent-rose);">2. 需求侧：创作者的粘合剂痛点</div>
+        <ul>
+          <li>一个独立创业者（OPC）仍需要自己扮演“调度员”。</li>
+          <li>在大量 AI 工具、代码库、文档、任务和验证套件之间手工搬运 context。</li>
+          <li><b>缺乏真正的生产环境：</b>没有状态恢复、没有过程审计、没有自动对账。</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- P3｜我们解决什么问题 -->
+  <div class="page-card">
+    <div class="page-num">P03 / 12</div>
+    <h2>我们解决什么问题</h2>
+    <div class="page-subtitle">核心不是“AI 不够聪明”，而是缺少一个真正的生产系统</div>
+    
+    <div class="compare-vs">
+      <div class="box" style="border-color: rgba(244, 63, 94, 0.4);">
+        <div class="box-title" style="color: var(--accent-rose);">传统模式：全靠手工搬运</div>
+        <p style="font-size:0.85rem;">Founder → ChatGPT (写思路) → Cursor (写代码) → GitHub → Notion (整理) → 手工对账 → 手工验证</p>
+        <p style="font-size:0.82rem; color:var(--text-muted); margin-bottom:0;">👎 结果：人成了 AI 工具的高频保姆，容易丢上下文，出了错无从追溯。</p>
+      </div>
+      <div class="vs-circle">VS</div>
+      <div class="box" style="border-color: rgba(52, 211, 153, 0.4);">
+        <div class="box-title" style="color: var(--accent-green);">AI Factory OS：组织化流水线</div>
+        <p style="font-size:0.85rem;"><span class="hl">Founder (输入意图)</span> → <b>AI Factory OS</b> (自动规划、分配、沙箱执行、自动化校验、不可变存证) → <b>交付产物</b></p>
+        <p style="font-size:0.82rem; color:var(--text-muted); margin-bottom:0;">👍 结果：将 Agent 转化为标准化工业流水线上的生产节点。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- P4｜产品：AI Factory OS -->
+  <div class="page-card">
+    <div class="page-num">P04 / 12</div>
+    <h2>产品：AI Factory OS 架构</h2>
+    <div class="page-subtitle">定义：组织 AI 能力进入真实生产过程的基础设施</div>
+    <div class="grid4">
+      <div class="box">
+        <div class="box-title" style="color:var(--accent-blue);">1. Workforce</div>
+        <p style="font-size:0.82rem;">AI 劳动力层</p>
+        <ul style="font-size:0.8rem; padding-left:1rem;">
+          <li>Agent 接入</li>
+          <li>Model 适配</li>
+          <li>Skill / Tool 注册</li>
+        </ul>
+      </div>
+      <div class="box">
+        <div class="box-title" style="color:var(--accent-green);">2. Production</div>
+        <p style="font-size:0.82rem;">生产主干层</p>
+        <ul style="font-size:0.8rem; padding-left:1rem;">
+          <li>Idea → PRD</li>
+          <li>Task Tree 拆解</li>
+          <li>Execute & Verify</li>
+        </ul>
+      </div>
+      <div class="box">
+        <div class="box-title" style="color:var(--accent-amber);">3. Operations</div>
+        <p style="font-size:0.82rem;">运行时与恢复层</p>
+        <ul style="font-size:0.8rem; padding-left:1rem;">
+          <li>Runtime State</li>
+          <li>Crash Recovery</li>
+          <li>Observability</li>
+        </ul>
+      </div>
+      <div class="box">
+        <div class="box-title" style="color:var(--accent-purple);">4. Governance</div>
+        <p style="font-size:0.82rem;">合规与存证层</p>
+        <ul style="font-size:0.8rem; padding-left:1rem;">
+          <li>Evidence 存证</li>
+          <li>Event Audit 审计</li>
+          <li>Approval / Policy</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- P5｜核心生产闭环 -->
+  <div class="page-card">
+    <div class="page-num">P05 / 12</div>
+    <h2>核心生产闭环 (Node Loop)</h2>
+    <div class="page-subtitle">每一个生产节点都是独立、完整、可验证、可恢复的 Loop</div>
+    
+    <div class="flow-steps">
+      <div class="flow-node">Idea</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node">Brainstorm</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node">PRD</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node">Task Tree</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node">Execute</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node">Artifact</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node">Verify</div>
+    </div>
+
+    <div class="flow-steps" style="margin-top:0.5rem;">
+      <div class="flow-arrow" style="margin-left: 2rem;">└──▶</div>
+      <div class="flow-node flow-node-fail">Fail / Diagnose</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node flow-node-fail">Auto Repair</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node flow-node-fail">Re-verify</div>
+      <div class="flow-arrow">──(Passed)──▶</div>
+      <div class="flow-node" style="background: rgba(52, 211, 153, 0.2); border-color: var(--accent-green); color: var(--accent-green);">Commit / Delivery</div>
+    </div>
+
+    <div class="box" style="margin-top: 1rem;">
+      <p style="font-size:0.88rem; margin-bottom:0;"><b>关键特征：</b>严格剥离模型的“盲目自信”。改动是否有效，统一交由系统层编译与 Pytest 测试返回值判定。未通过测试自动触发 Diagnose Loop 重试。</p>
+    </div>
+  </div>
+
+  <!-- P6｜AI Factory OS ≠ Agent -->
+  <div class="page-card">
+    <div class="page-num">P06 / 12</div>
+    <h2>AI Factory OS ≠ Agent</h2>
+    <div class="page-subtitle">体系级定位：Agent 是能力，Workflow 是流程，AI Factory OS 是生产系统</div>
+    <table>
+      <thead>
+        <tr>
+          <th>层级</th>
+          <th>典型产品</th>
+          <th>解决的问题</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><b>Model</b></td>
+          <td>GPT-4, Claude 3.5, DeepSeek-R1</td>
+          <td>基础智能与推理能力</td>
+        </tr>
+        <tr>
+          <td><b>Coding Agent</b></td>
+          <td>Cursor, Devin, AutoCode</td>
+          <td>单点执行某类具体代码任务</td>
+        </tr>
+        <tr>
+          <td><b>Agent Framework</b></td>
+          <td>LangGraph, AutoGen, Agents SDK</td>
+          <td>开发者编排多 Agent 的底层代码库</td>
+        </tr>
+        <tr class="hl-row">
+          <td><b>AI Factory OS</b></td>
+          <td><span class="hl">AI Factory OS</span></td>
+          <td><span class="hl">组织 AI 能力进入真实、闭环、可对账的完整生产体系</span></td>
+        </tr>
+        <tr>
+          <td><b>Enterprise OS</b></td>
+          <td>SAP, ERP, 企业综合平台</td>
+          <td>企业级生产与经营资源调度</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- P7｜真实产品进展 -->
+  <div class="page-card">
+    <div class="page-num">P07 / 12</div>
+    <h2>真实产品进展 (不吹嘘，凭证据说话)</h2>
+    <div class="page-subtitle">开源底层完全自持，真实 Execution Kernel 已实现闭环</div>
+    <div class="grid2">
+      <div class="box">
+        <div class="box-title" style="color:var(--accent-green);">已实现的核心资产 (v1.1.364)</div>
+        <ul>
+          <li><span class="stat-badge">Code</span> 1,449 Commits，开源协议 Apache-2.0</li>
+          <li><span class="stat-badge">Kernel</span> Session → Plan → Task → Recovery → Audit</li>
+          <li><span class="stat-badge">Records</span> 100+ 真实 Agent 运行日志 & 5,000+ 审计事件</li>
+          <li><span class="stat-badge">Deploy</span> 支持 CLI + Web，完全支持本地私有部署</li>
+        </ul>
+      </div>
+      <div class="box">
+        <div class="box-title" style="color:var(--accent-amber);">坦诚列出：当前尚未完备部分</div>
+        <ul>
+          <li>PRD 产品的完全智能生成链还在迭代</li>
+          <li>模型动态择优的成本控制策略需优化</li>
+          <li>Artifact & Verification 主链的 UI 交互需增强</li>
+          <li>Learning Loop (从历史修复中学习) 尚未上线</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- P8｜竞争格局 -->
+  <div class="page-card">
+    <div class="page-num">P08 / 12</div>
+    <h2>竞争格局：从 AI 工具到 AI 生产系统</h2>
+    <div class="page-subtitle">明确切入点与演进路径，避开单点 IDE 的红海同质化竞争</div>
+    <div class="box" style="margin-bottom:1rem;">
+      <div style="font-size:0.85rem; color:var(--text-muted); margin-bottom:0.5rem;">行业演进四层模型：</div>
+      <div class="flow-steps">
+        <div class="flow-node" style="opacity:0.6;">1. AI Coding / Vibe Coding (IDE层)</div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-node" style="opacity:0.8;">2. Agent Orchestration (编排层)</div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-node" style="border-width:2px; background:rgba(56,189,248,0.2);">3. AI Production System (我们的切入点)</div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-node" style="opacity:0.6;">4. Enterprise AI OS (远景)</div>
+      </div>
+    </div>
+    <ul>
+      <li><b>避开红海：</b>不与 Cursor/Trae 等 IDE 争夺“代码补全”入口。</li>
+      <li><b>聚焦生产：</b>切入第 3 层 <span class="hl">AI Software Production</span>，把软件工程变成自动化流水线。</li>
+      <li><b>长期演进：</b>从 AI 软件生产向 <span class="hl-green">AI 组织生产 (AI Organization)</span> 延伸。</li>
+    </ul>
+  </div>
+
+  <!-- P9｜第一个市场：OPC -->
+  <div class="page-card">
+    <div class="page-num">P09 / 12</div>
+    <h2>第一个切入市场：OPC (One-Person Company)</h2>
+    <div class="page-subtitle">一个人创业，但不想只有一个人的生产能力</div>
+    <div class="box" style="margin-bottom: 1rem;">
+      <div class="box-title" style="color:var(--accent-blue);">AI Factory OS 赋能下的 Founder 架构：</div>
+      <div class="grid4" style="margin-top:0.8rem;">
+        <div class="box" style="text-align:center; padding:0.6rem;"><span class="hl">Founder (决策)</span></div>
+        <div class="box" style="text-align:center; padding:0.6rem;">AI Product</div>
+        <div class="box" style="text-align:center; padding:0.6rem;">AI Engineering</div>
+        <div class="box" style="text-align:center; padding:0.6rem;">AI QA & Ops</div>
+      </div>
+    </div>
+    <ul>
+      <li>不是简单地“雇佣几个 Agent 聊天”。</li>
+      <li>而是将一个人的创业构想，扩展成一个<b>可自动化运行、可自动测试校验的 AI 生产组织</b>。</li>
+      <li><b>北纬社区契机：</b>社区内聚集大量的独立开发者与 OPC 团队，是最佳的原生测试床。</li>
+    </ul>
+  </div>
+
+  <!-- P10｜商业模式 -->
+  <div class="page-card">
+    <div class="page-num">P10 / 12</div>
+    <h2>商业模式 (分阶段递进，不虚构早期收入)</h2>
+    <div class="page-subtitle">当前重点：证明用户愿意为“真实可运行、可治理的 AI 生产系统”付费</div>
+    <div class="grid3" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:1rem;">
+      <div class="box">
+        <div class="box-title" style="color:var(--accent-blue);">第一阶段：开源 + 社区</div>
+        <p style="font-size:0.82rem;">开源 CLI/核心内核，在 OPC 与开发者社区积累口碑，验证真实生产需求。</p>
+      </div>
+      <div class="box">
+        <div class="box-title" style="color:var(--accent-green);">第二阶段：专业版 / 私有部署</div>
+        <p style="font-size:0.82rem;">提供 Web 控制台、多 Agent 治理、企业私有化部署与标准化 API 对接服务。</p>
+      </div>
+      <div class="box">
+        <div class="box-title" style="color:var(--accent-purple);">第三阶段：生态 Marketplace</div>
+        <p style="font-size:0.82rem;">开放 Skill / Tool / Agent 市场，按照能力调用分成与软件流水线抽佣。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- P11｜为什么是我们 -->
+  <div class="page-card">
+    <div class="page-num">P11 / 12</div>
+    <h2>核心壁垒：Production Kernel</h2>
+    <div class="page-subtitle">我们建立的不是几句 Prompt，而是工程底座的硬核壁垒</div>
+    <div class="grid2">
+      <div class="box">
+        <ul>
+          <li><b>Event-sourced SSOT：</b>基于事件溯源的单一事实源，过程不可篡改。</li>
+          <li><b>Production Graph：</b>支持复杂依赖拆解与失败隔离传播。</li>
+          <li><b>Independent Node Loop：</b>节点自愈、崩溃恢复（Recovery）机制。</li>
+        </ul>
+      </div>
+      <div class="box">
+        <ul>
+          <li><b>Evidence + Verification：</b>系统级测试凭证，告别 AI 幻觉。</li>
+          <li><b>Governance & Audit：</b>合规可追溯，企业敢于让 AI 碰生产环境。</li>
+          <li><b>多模型与工具解耦：</b>不绑定任何单一 LLM 厂商，保持基础设施中立。</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- P12｜路线图 & 北纬社区 -->
+  <div class="page-card">
+    <div class="page-num">P12 / 12</div>
+    <h2>路线图与北纬社区合作展望</h2>
+    <div class="page-subtitle">北纬社区不是我们寻找办公场地的地方，而是验证 AI 原生创业形态的第一生产基地</div>
+    
+    <div class="grid3" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:1rem; margin-bottom:1.2rem;">
+      <div class="box">
+        <div class="box-title" style="color:var(--accent-blue);">2026：AI Software Factory</div>
+        <p style="font-size:0.82rem;">完成软件全流程真实生产闭环，打磨开源社区版。</p>
+      </div>
+      <div class="box">
+        <div class="box-title" style="color:var(--accent-green);">2027：AI Organization</div>
+        <p style="font-size:0.82rem;">引入 Product / Research / QA 等多专业 AI Workforce 节点。</p>
+      </div>
+      <div class="box">
+        <div class="box-title" style="color:var(--accent-purple);">未来：AI Enterprise OS</div>
+        <p style="font-size:0.82rem;">成为企业级 AI 生产与经营资源调度的标准操作系统。</p>
+      </div>
+    </div>
+
+    <div class="box" style="background: rgba(56, 189, 248, 0.08); border-color: rgba(56, 189, 248, 0.3); text-align: center;">
+      <p style="font-size:0.98rem; color: var(--accent-blue); font-weight:600; margin-bottom:0;">
+        “期待在北纬社区的孵化下，将 AI Factory OS 打造成 OPC 与 AI 原生团队的标准基础设施。”
+      </p>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

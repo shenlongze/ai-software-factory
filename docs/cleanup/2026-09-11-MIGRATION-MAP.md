@@ -17,7 +17,7 @@
 | `factory-console/acceptance_truth.py` | extensions.factories | `extensions/factories/software/acceptance_truth.py` | Factory 领域逻辑(Golden Path 等) | ok | 2026-09-06 |
 | `factory-console/adaptive_workforce.py` | services.organization | `services/organization/adaptive_workforce.py` | 组织模型(公司/部门/员工/角色) | ok | 2026-08-30 |
 | `factory-console/agent_kernel.py` | services.organization | `services/organization/agent_kernel.py` | 组织模型(公司/部门/员工/角色) | ok | 2026-08-29 |
-| `factory-console/agent_policy.py` | kernel.governance | `kernel/governance/agent_policy.py` | 审批/预算/审计挂点 | ok | 2026-08-14 |
+| `factory-console/agent_policy.py` | kernel.governance | `kernel/governance/agent_policy.py` | 审批/预算/审计挂点 | ok | 2026-08-14 契约 |
 | `factory-console/api/__init__.py` | projections.gateway | `projections/gateway/__init__.py` | API 网关 | ok | 2026-08-26 |
 | `factory-console/api/agent_executor.py` | projections.gateway | `projections/gateway/agent_executor.py` | API 网关 | ok | 2026-08-12 |
 | `factory-console/api/approvals.py` | services.approval_runtime | `services/approval_runtime/approvals.py` | 审批流程服务 | ok | 2026-08-09 |
@@ -34,7 +34,7 @@
 | `factory-console/api/product_intelligence.py` | projections.gateway | `projections/gateway/product_intelligence.py` | API 网关 | ok | 2026-08-17 |
 | `factory-console/api/projects.py` | projections.gateway | `projections/gateway/projects.py` | API 网关 | ok | 2026-09-01 |
 | `factory-console/api/providers.py` | projections.gateway | `projections/gateway/providers.py` | API 网关 | ok | 2026-08-06 |
-| `factory-console/api/review_feedback.py` | kernel.governance | `kernel/governance/review_feedback.py` | 审批/预算/审计挂点 | ok | 2026-08-10 |
+| `factory-console/api/review_feedback.py` | kernel.governance | `kernel/governance/review_feedback.py` | 审批/预算/审计挂点 | ok | 2026-08-10 误归 |
 | `factory-console/api/runtime.py` | projections.gateway | `projections/gateway/runtime.py` | API 网关 | ok | 2026-09-07 |
 | `factory-console/api/runtime_session.py` | projections.gateway | `projections/gateway/runtime_session.py` | API 网关 | ok | 2026-08-12 |
 | `factory-console/api/skill_api.py` | projections.gateway | `projections/gateway/skill_api.py` | API 网关 | ok | 2026-08-13 |
@@ -45,34 +45,34 @@
 | `factory-console/application_formalization.py` | extensions.factories | `extensions/factories/software/application_formalization.py` | Factory 领域逻辑(Golden Path 等) | ok | 2026-09-08 |
 | `factory-console/artifact_contract.py` | extensions.factories | `extensions/factories/software/artifact_contract.py` | Factory 领域逻辑(Golden Path 等) | ok | 2026-08-26 |
 | `factory-console/artifact_lifecycle.py` | extensions.factories | `extensions/factories/software/artifact_lifecycle.py` | Factory 领域逻辑(Golden Path 等) | ok | 2026-09-05 |
-| `factory-console/audit/__init__.py` | kernel.events | `kernel/events/__init__.py` | 唯一事实源(append-only) | ok | 2026-08-17 |
-| `factory-console/audit/audit_chain.py` | kernel.events | `kernel/events/audit_chain.py` | 唯一事实源(append-only) | ok | 2026-08-17 |
-| `factory-console/audit/audit_context.py` | kernel.events | `kernel/events/audit_context.py` | 唯一事实源(append-only) | ok | 2026-08-17 |
-| `factory-console/audit/audit_emitter.py` | kernel.events | `kernel/events/audit_emitter.py` | 唯一事实源(append-only) | ok | 2026-08-25 |
-| `factory-console/audit/audit_event.py` | kernel.events | `kernel/events/audit_event.py` | 唯一事实源(append-only) | ok | 2026-09-09 |
-| `factory-console/audit/audit_explain.py` | kernel.events | `kernel/events/audit_explain.py` | 唯一事实源(append-only) | ok | 2026-08-17 |
-| `factory-console/audit/audit_integrity.py` | kernel.events | `kernel/events/audit_integrity.py` | 唯一事实源(append-only) | ok | 2026-08-17 |
-| `factory-console/audit/audit_query.py` | kernel.events | `kernel/events/audit_query.py` | 唯一事实源(append-only) | ok | 2026-08-17 |
-| `factory-console/audit/audit_store.py` | kernel.events | `kernel/events/audit_store.py` | 唯一事实源(append-only) | ok | 2026-08-17 |
-| `factory-console/audit/trace_context.py` | kernel.events | `kernel/events/trace_context.py` | 唯一事实源(append-only) | ok | 2026-08-25 |
+| `factory-console/audit/__init__.py` | kernel.events | `kernel/events/__init__.py` | 唯一事实源(append-only) | ok | 2026-08-17 契约 |
+| `factory-console/audit/audit_chain.py` | kernel.events | `kernel/events/audit_chain.py` | 唯一事实源(append-only) | ok | 2026-08-17 契约 |
+| `factory-console/audit/audit_context.py` | kernel.events | `kernel/events/audit_context.py` | 唯一事实源(append-only) | ok | 2026-08-17 契约 |
+| `factory-console/audit/audit_emitter.py` | kernel.events | `kernel/events/audit_emitter.py` | 唯一事实源(append-only) | ok | 2026-08-25 契约 |
+| `factory-console/audit/audit_event.py` | kernel.events | `kernel/events/audit_event.py` | 唯一事实源(append-only) | ok | 2026-09-09 契约 |
+| `factory-console/audit/audit_explain.py` | kernel.events | `kernel/events/audit_explain.py` | 唯一事实源(append-only) | ok | 2026-08-17 降级(无契约) |
+| `factory-console/audit/audit_integrity.py` | kernel.events | `kernel/events/audit_integrity.py` | 唯一事实源(append-only) | ok | 2026-08-17 契约 |
+| `factory-console/audit/audit_query.py` | kernel.events | `kernel/events/audit_query.py` | 唯一事实源(append-only) | ok | 2026-08-17 契约 |
+| `factory-console/audit/audit_store.py` | kernel.events | `kernel/events/audit_store.py` | 唯一事实源(append-only) | ok | 2026-08-17 契约 |
+| `factory-console/audit/trace_context.py` | kernel.events | `kernel/events/trace_context.py` | 唯一事实源(append-only) | ok | 2026-08-25 契约 |
 | `factory-console/backup.py` | delete | `—` | 无匹配规则(孤儿候选) | — | 2026-08-27 |
 | `factory-console/canonical_golden_path.py` | extensions.factories | `extensions/factories/software/canonical_golden_path.py` | Factory 领域逻辑(Golden Path 等) | ok | 2026-09-09 |
-| `factory-console/chat_store.py` | kernel.conversation | `kernel/conversation/chat_store.py` | 会话=唯一业务入口 | ok | 2026-08-10 |
+| `factory-console/chat_store.py` | kernel.conversation | `kernel/conversation/chat_store.py` | 会话=唯一业务入口 | ok | 2026-08-10 契约 |
 | `factory-console/cli_doctor.py` | projections.cli | `projections/cli/cli_doctor.py` | 人类控制台 | ok | 2026-08-19 |
 | `factory-console/cli_factory.py` | projections.cli | `projections/cli/cli_factory.py` | 人类控制台 | ok | 2026-09-09 |
 | `factory-console/cli_services.py` | projections.cli | `projections/cli/cli_services.py` | 人类控制台 | ok | 2026-08-24 |
-| `factory-console/config.py` | kernel.governance | `kernel/governance/config.py` | 审批/预算/审计挂点 | ok | 2026-08-10 |
-| `factory-console/console_sessions.py` | kernel.conversation | `kernel/conversation/console_sessions.py` | 会话=唯一业务入口 | ok | 2026-09-02 |
+| `factory-console/config.py` | kernel.governance | `kernel/governance/config.py` | 审批/预算/审计挂点 | ok | 2026-08-10 误归 |
+| `factory-console/console_sessions.py` | kernel.conversation | `kernel/conversation/console_sessions.py` | 会话=唯一业务入口 | ok | 2026-09-02 契约 |
 | `factory-console/context_intelligence.py` | delete | `—` | 无匹配规则(孤儿候选) | — | 2026-08-31 |
 | `factory-console/context_runtime.py` | delete | `—` | 无匹配规则(孤儿候选) | — | 2026-08-31 |
 | `factory-console/control_tower.py` | projections.web | `projections/web/control_tower.py` | 控制台服务/视图 | ok | 2026-08-31 |
-| `factory-console/conversation_app.py` | kernel.conversation | `kernel/conversation/conversation_app.py` | 会话=唯一业务入口 | ok | 2026-09-09 |
-| `factory-console/conversation_os.py` | kernel.conversation | `kernel/conversation/conversation_os.py` | 会话=唯一业务入口 | ok | 2026-09-08 |
-| `factory-console/conversation_quality.py` | kernel.conversation | `kernel/conversation/conversation_quality.py` | 会话=唯一业务入口 | ok | 2026-08-31 |
+| `factory-console/conversation_app.py` | kernel.conversation | `kernel/conversation/conversation_app.py` | 会话=唯一业务入口 | ok | 2026-09-09 契约 |
+| `factory-console/conversation_os.py` | kernel.conversation | `kernel/conversation/conversation_os.py` | 会话=唯一业务入口 | ok | 2026-09-08 降级(无契约) |
+| `factory-console/conversation_quality.py` | kernel.conversation | `kernel/conversation/conversation_quality.py` | 会话=唯一业务入口 | ok | 2026-08-31 降级(无契约) |
 | `factory-console/effectiveness_service.py` | extensions.factories | `extensions/factories/software/effectiveness_service.py` | Factory 领域逻辑(Golden Path 等) | ok | 2026-08-30 |
-| `factory-console/events.py` | kernel.events | `kernel/events/events.py` | 唯一事实源(append-only) | ok | 2026-08-10 |
-| `factory-console/evidence_domain.py` | kernel.events | `kernel/events/evidence_domain.py` | 唯一事实源(append-only) | ok | 2026-09-05 |
-| `factory-console/exec_checkpoint.py` | kernel.node | `kernel/node/exec_checkpoint.py` | 执行节点原语 | ok | 2026-08-27 |
+| `factory-console/events.py` | kernel.events | `kernel/events/events.py` | 唯一事实源(append-only) | ok | 2026-08-10 契约 |
+| `factory-console/evidence_domain.py` | kernel.events | `kernel/events/evidence_domain.py` | 唯一事实源(append-only) | ok | 2026-09-05 契约 |
+| `factory-console/exec_checkpoint.py` | kernel.node | `kernel/node/exec_checkpoint.py` | 执行节点原语 | ok | 2026-08-27 契约 |
 | `factory-console/experience_bridge.py` | services.memory | `services/memory/experience_bridge.py` | 记忆/学习服务 | ok | 2026-09-06 |
 | `factory-console/experiment_reliability.py` | extensions.factories | `extensions/factories/software/experiment_reliability.py` | Factory 领域逻辑(Golden Path 等) | ok | 2026-08-30 |
 | `factory-console/external_executor/__init__.py` | extensions.models | `extensions/models/__init__.py` | Model/Provider 插件 | ok | 2026-08-27 |
@@ -86,21 +86,21 @@
 | `factory-console/external_executor/router.py` | extensions.models | `extensions/models/router.py` | Model/Provider 插件 | ok | 2026-08-27 |
 | `factory-console/external_executor/schema.py` | extensions.models | `extensions/models/schema.py` | Model/Provider 插件 | ok | 2026-08-28 |
 | `factory-console/external_executor/task_registry.py` | extensions.models | `extensions/models/task_registry.py` | Model/Provider 插件 | ok | 2026-08-28 |
-| `factory-console/external_skills.py` | kernel.capability | `kernel/capability/external_skills.py` | 能力注册与解析(找谁做) | ok | 2026-08-27 |
+| `factory-console/external_skills.py` | kernel.capability | `kernel/capability/external_skills.py` | 能力注册与解析(找谁做) | ok | 2026-08-27 契约 |
 | `factory-console/flow_views.py` | projections.web | `projections/web/flow_views.py` | 控制台服务/视图 | ok | 2026-09-11 |
 | `factory-console/golden_path.py` | extensions.factories | `extensions/factories/software/golden_path.py` | Factory 领域逻辑(Golden Path 等) | ok | 2026-09-09 |
 | `factory-console/golden_suite.py` | projections.web | `projections/web/golden_suite.py` | 控制台服务/视图 | ok | 2026-08-31 |
-| `factory-console/governance_service.py` | kernel.governance | `kernel/governance/governance_service.py` | 审批/预算/审计挂点 | ok | 2026-09-06 |
+| `factory-console/governance_service.py` | kernel.governance | `kernel/governance/governance_service.py` | 审批/预算/审计挂点 | ok | 2026-09-06 契约 |
 | `factory-console/health_service.py` | projections.web | `projections/web/health_service.py` | 控制台服务/视图 | ok | 2026-08-30 |
-| `factory-console/ids.py` | kernel.events | `kernel/events/ids.py` | 唯一事实源(append-only) | ok | 2026-09-01 |
-| `factory-console/integrity_lock.py` | kernel.governance | `kernel/governance/integrity_lock.py` | 审批/预算/审计挂点 | ok | 2026-08-30 |
+| `factory-console/ids.py` | kernel.events | `kernel/events/ids.py` | 唯一事实源(append-only) | ok | 2026-09-01 契约 |
+| `factory-console/integrity_lock.py` | kernel.governance | `kernel/governance/integrity_lock.py` | 审批/预算/审计挂点 | ok | 2026-08-30 降级(无契约) |
 | `factory-console/intelligence_strategy.py` | extensions.factories | `extensions/factories/software/intelligence_strategy.py` | Factory 领域逻辑(Golden Path 等) | ok | 2026-08-31 |
 | `factory-console/learning_engine_v2.py` | services.memory | `services/memory/learning_engine_v2.py` | 记忆/学习服务 | ok | 2026-08-31 |
 | `factory-console/learning_truth.py` | services.memory | `services/memory/learning_truth.py` | 记忆/学习服务 | ok | 2026-09-06 |
-| `factory-console/llm_control.py` | kernel.governance | `kernel/governance/llm_control.py` | 审批/预算/审计挂点 | ok | 2026-08-13 |
+| `factory-console/llm_control.py` | kernel.governance | `kernel/governance/llm_control.py` | 审批/预算/审计挂点 | ok | 2026-08-13 契约 |
 | `factory-console/llm_experiment_service.py` | extensions.factories | `extensions/factories/software/llm_experiment_service.py` | Factory 领域逻辑(Golden Path 等) | ok | 2026-08-30 |
 | `factory-console/llm_router.py` | extensions.models | `extensions/models/llm_router.py` | Model/Provider 插件 | ok | 2026-08-14 |
-| `factory-console/llm_semantic_interpreter.py` | kernel.conversation | `kernel/conversation/llm_semantic_interpreter.py` | 会话=唯一业务入口 | ok | 2026-09-08 |
+| `factory-console/llm_semantic_interpreter.py` | kernel.conversation | `kernel/conversation/llm_semantic_interpreter.py` | 会话=唯一业务入口 | ok | 2026-09-08 契约 |
 | `factory-console/local_ai.py` | extensions.models | `extensions/models/local_ai.py` | Model/Provider 插件 | ok | 2026-08-27 |
 | `factory-console/memory/__init__.py` | services.memory | `services/memory/__init__.py` | 记忆/学习服务 | ok | 2026-08-25 |
 | `factory-console/memory/auto_learn.py` | services.memory | `services/memory/auto_learn.py` | 记忆/学习服务 | ok | 2026-08-17 |
@@ -117,41 +117,41 @@
 | `factory-console/model_catalog.py` | extensions.models | `extensions/models/model_catalog.py` | Model/Provider 插件 | ok | 2026-08-13 |
 | `factory-console/models.py` | extensions.models | `extensions/models/models.py` | Model/Provider 插件 | ok | 2026-08-29 |
 | `factory-console/monitor.py` | projections.web | `projections/web/monitor.py` | 控制台服务/视图 | ok | 2026-09-01 |
-| `factory-console/node_runtime.py` | kernel.node | `kernel/node/node_runtime.py` | 执行节点原语 | ok | 2026-09-11 |
+| `factory-console/node_runtime.py` | kernel.node | `kernel/node/node_runtime.py` | 执行节点原语 | ok | 2026-09-11 契约 |
 | `factory-console/operational_state.py` | projections.web | `projections/web/operational_state.py` | 控制台服务/视图 | ok | 2026-08-31 |
 | `factory-console/ops_projection.py` | extensions.workloads | `extensions/workloads/ops_projection.py` | Workload 插件 | ok | 2026-08-30 |
-| `factory-console/ops_scheduler.py` | kernel.scheduler | `kernel/scheduler/ops_scheduler.py` | 调度契约 | ok | 2026-08-30 |
+| `factory-console/ops_scheduler.py` | kernel.scheduler | `kernel/scheduler/ops_scheduler.py` | 调度契约 | ok | 2026-08-30 降级(无契约) |
 | `factory-console/optimization_engine.py` | extensions.factories | `extensions/factories/software/optimization_engine.py` | Factory 领域逻辑(Golden Path 等) | ok | 2026-08-31 |
 | `factory-console/optimization_service.py` | extensions.factories | `extensions/factories/software/optimization_service.py` | Factory 领域逻辑(Golden Path 等) | ok | 2026-08-30 |
-| `factory-console/os_core_capability.py` | kernel.capability | `kernel/capability/os_core_capability.py` | 能力注册与解析(找谁做) | ok | 2026-09-10 |
+| `factory-console/os_core_capability.py` | kernel.capability | `kernel/capability/os_core_capability.py` | 能力注册与解析(找谁做) | ok | 2026-09-10 契约 |
 | `factory-console/os_core_company_organization.py` | services.organization | `services/organization/os_core_company_organization.py` | 组织模型(公司/部门/员工/角色) | ok | 2026-09-10 |
-| `factory-console/os_core_evidence.py` | kernel.events | `kernel/events/os_core_evidence.py` | 唯一事实源(append-only) | ok | 2026-09-10 |
-| `factory-console/os_core_execution.py` | kernel.node | `kernel/node/os_core_execution.py` | 执行节点原语 | ok | 2026-09-10 |
+| `factory-console/os_core_evidence.py` | kernel.events | `kernel/events/os_core_evidence.py` | 唯一事实源(append-only) | ok | 2026-09-10 契约 |
+| `factory-console/os_core_execution.py` | kernel.node | `kernel/node/os_core_execution.py` | 执行节点原语 | ok | 2026-09-10 契约 |
 | `factory-console/os_core_identity.py` | services.organization | `services/organization/os_core_identity.py` | 组织模型(公司/部门/员工/角色) | ok | 2026-09-10 |
-| `factory-console/os_core_outcome.py` | kernel.events | `kernel/events/os_core_outcome.py` | 唯一事实源(append-only) | ok | 2026-09-10 |
-| `factory-console/os_core_plugin.py` | kernel.capability | `kernel/capability/os_core_plugin.py` | 能力注册与解析(找谁做) | ok | 2026-09-10 |
+| `factory-console/os_core_outcome.py` | kernel.events | `kernel/events/os_core_outcome.py` | 唯一事实源(append-only) | ok | 2026-09-10 契约 |
+| `factory-console/os_core_plugin.py` | kernel.capability | `kernel/capability/os_core_plugin.py` | 能力注册与解析(找谁做) | ok | 2026-09-10 契约 |
 | `factory-console/os_core_professional.py` | services.organization | `services/organization/os_core_professional.py` | 组织模型(公司/部门/员工/角色) | ok | 2026-09-10 |
 | `factory-console/os_core_project.py` | services.work | `services/work/os_core_project.py` | 项目/工作域 | ok | 2026-09-10 |
-| `factory-console/os_core_resolution.py` | kernel.capability | `kernel/capability/os_core_resolution.py` | 能力注册与解析(找谁做) | ok | 2026-09-10 |
+| `factory-console/os_core_resolution.py` | kernel.capability | `kernel/capability/os_core_resolution.py` | 能力注册与解析(找谁做) | ok | 2026-09-10 契约 |
 | `factory-console/os_core_role.py` | services.organization | `services/organization/os_core_role.py` | 组织模型(公司/部门/员工/角色) | ok | 2026-09-10 |
-| `factory-console/os_core_runtime.py` | kernel.node | `kernel/node/os_core_runtime.py` | 执行节点原语 | ok | 2026-09-10 |
-| `factory-console/os_core_scheduler.py` | kernel.scheduler | `kernel/scheduler/os_core_scheduler.py` | 调度契约 | ok | 2026-09-10 |
-| `factory-console/os_core_task.py` | kernel.node | `kernel/node/os_core_task.py` | 执行节点原语 | ok | 2026-09-10 |
-| `factory-console/os_core_task_node.py` | kernel.node | `kernel/node/os_core_task_node.py` | 执行节点原语 | ok | 2026-09-10 |
-| `factory-console/os_core_usage.py` | kernel.events | `kernel/events/os_core_usage.py` | 唯一事实源(append-only) | ok | 2026-09-10 |
-| `factory-console/os_core_verification.py` | kernel.events | `kernel/events/os_core_verification.py` | 唯一事实源(append-only) | ok | 2026-09-10 |
+| `factory-console/os_core_runtime.py` | kernel.node | `kernel/node/os_core_runtime.py` | 执行节点原语 | ok | 2026-09-10 契约 |
+| `factory-console/os_core_scheduler.py` | kernel.scheduler | `kernel/scheduler/os_core_scheduler.py` | 调度契约 | ok | 2026-09-10 契约 |
+| `factory-console/os_core_task.py` | kernel.node | `kernel/node/os_core_task.py` | 执行节点原语 | ok | 2026-09-10 契约 |
+| `factory-console/os_core_task_node.py` | kernel.node | `kernel/node/os_core_task_node.py` | 执行节点原语 | ok | 2026-09-10 契约 |
+| `factory-console/os_core_usage.py` | kernel.events | `kernel/events/os_core_usage.py` | 唯一事实源(append-only) | ok | 2026-09-10 契约 |
+| `factory-console/os_core_verification.py` | kernel.events | `kernel/events/os_core_verification.py` | 唯一事实源(append-only) | ok | 2026-09-10 契约 |
 | `factory-console/os_core_work.py` | services.work | `services/work/os_core_work.py` | 项目/工作域 | ok | 2026-09-10 |
 | `factory-console/os_core_workforce.py` | services.organization | `services/organization/os_core_workforce.py` | 组织模型(公司/部门/员工/角色) | ok | 2026-09-10 |
 | `factory-console/performance_selection.py` | services.organization | `services/organization/performance_selection.py` | 组织模型(公司/部门/员工/角色) | ok | 2026-08-31 |
-| `factory-console/plugin_kernel.py` | kernel.capability | `kernel/capability/plugin_kernel.py` | 能力注册与解析(找谁做) | ok | 2026-08-31 |
+| `factory-console/plugin_kernel.py` | kernel.capability | `kernel/capability/plugin_kernel.py` | 能力注册与解析(找谁做) | ok | 2026-08-31 契约 |
 | `factory-console/product_truth.py` | extensions.factories | `extensions/factories/software/product_truth.py` | Factory 领域逻辑(Golden Path 等) | ok | 2026-09-09 |
-| `factory-console/product_understanding.py` | kernel.conversation | `kernel/conversation/product_understanding.py` | 会话=唯一业务入口 | ok | 2026-09-08 |
+| `factory-console/product_understanding.py` | kernel.conversation | `kernel/conversation/product_understanding.py` | 会话=唯一业务入口 | ok | 2026-09-08 契约 |
 | `factory-console/production_evaluation.py` | extensions.factories | `extensions/factories/software/production_evaluation.py` | Factory 领域逻辑(Golden Path 等) | ok | 2026-08-30 |
 | `factory-console/production_experience.py` | services.memory | `services/memory/production_experience.py` | 记忆/学习服务 | ok | 2026-08-30 |
 | `factory-console/production_guidance.py` | extensions.factories | `extensions/factories/software/production_guidance.py` | Factory 领域逻辑(Golden Path 等) | ok | 2026-08-30 |
 | `factory-console/production_intelligence.py` | extensions.factories | `extensions/factories/software/production_intelligence.py` | Factory 领域逻辑(Golden Path 等) | ok | 2026-08-30 |
 | `factory-console/production_run.py` | extensions.factories | `extensions/factories/software/production_run.py` | Factory 领域逻辑(Golden Path 等) | ok | 2026-09-11 |
-| `factory-console/production_runtime.py` | kernel.node | `kernel/node/production_runtime.py` | 执行节点原语 | ok | 2026-09-09 |
+| `factory-console/production_runtime.py` | kernel.node | `kernel/node/production_runtime.py` | 执行节点原语 | ok | 2026-09-09 降级(无契约) |
 | `factory-console/production_service.py` | extensions.factories | `extensions/factories/software/production_service.py` | Factory 领域逻辑(Golden Path 等) | ok | 2026-08-29 |
 | `factory-console/professional_workflow.py` | extensions.factories | `extensions/factories/software/professional_workflow.py` | Factory 领域逻辑(Golden Path 等) | ok | 2026-08-31 |
 | `factory-console/project_agile.py` | services.work | `services/work/project_agile.py` | 项目/工作域 | ok | 2026-09-11 |
@@ -170,13 +170,13 @@
 | `factory-console/retrieval/orchestrator.py` | services.knowledge | `services/knowledge/orchestrator.py` | RAG/知识服务 | ok | 2026-08-17 |
 | `factory-console/retrieval/retriever.py` | services.knowledge | `services/knowledge/retriever.py` | RAG/知识服务 | ok | 2026-08-17 |
 | `factory-console/retrieval/unified.py` | services.knowledge | `services/knowledge/unified.py` | RAG/知识服务 | ok | 2026-08-17 |
-| `factory-console/retry_policy.py` | kernel.node | `kernel/node/retry_policy.py` | 执行节点原语 | ok | 2026-08-30 |
-| `factory-console/review_feedback.py` | kernel.governance | `kernel/governance/review_feedback.py` | 审批/预算/审计挂点 | ok | 2026-08-10 |
+| `factory-console/retry_policy.py` | kernel.node | `kernel/node/retry_policy.py` | 执行节点原语 | ok | 2026-08-30 契约 |
+| `factory-console/review_feedback.py` | kernel.governance | `kernel/governance/review_feedback.py` | 审批/预算/审计挂点 | ok | 2026-08-10 契约 |
 | `factory-console/rollback_service.py` | extensions.factories | `extensions/factories/software/rollback_service.py` | Factory 领域逻辑(Golden Path 等) | ok | 2026-08-30 |
-| `factory-console/run_liveness.py` | kernel.node | `kernel/node/run_liveness.py` | 执行节点原语 | ok | 2026-09-01 |
-| `factory-console/runtime_store.py` | kernel.node | `kernel/node/runtime_store.py` | 执行节点原语 | ok | 2026-08-10 |
+| `factory-console/run_liveness.py` | kernel.node | `kernel/node/run_liveness.py` | 执行节点原语 | ok | 2026-09-01 契约 |
+| `factory-console/runtime_store.py` | kernel.node | `kernel/node/runtime_store.py` | 执行节点原语 | ok | 2026-08-10 契约 |
 | `factory-console/self_healing.py` | extensions.factories | `extensions/factories/software/self_healing.py` | Factory 领域逻辑(Golden Path 等) | ok | 2026-08-31 |
-| `factory-console/semantic_proposal.py` | kernel.conversation | `kernel/conversation/semantic_proposal.py` | 会话=唯一业务入口 | ok | 2026-09-08 |
+| `factory-console/semantic_proposal.py` | kernel.conversation | `kernel/conversation/semantic_proposal.py` | 会话=唯一业务入口 | ok | 2026-09-08 契约 |
 | `factory-console/service.py` | projections.web | `projections/web/service.py` | 控制台服务/视图 | ok | 2026-09-02 |
 | `factory-console/session/__init__.py` | archive | `archive/session-m3/__init__.py` | M3 旧链(CODE-REALITY 已证 dead 为主) | ok | 2026-08-15 |
 | `factory-console/session/action.py` | archive | `archive/session-m3/action.py` | M3 旧链(CODE-REALITY 已证 dead 为主) | ok | 2026-08-15 |
@@ -189,14 +189,14 @@
 | `factory-console/session/agent_registry.py` | services.organization | `services/organization/agent_registry.py` | 组织模型(公司/部门/员工/角色) | ok | 2026-08-22 |
 | `factory-console/session/agents.py` | services.organization | `services/organization/agents.py` | 组织模型(公司/部门/员工/角色) | ok | 2026-08-25 |
 | `factory-console/session/analysis_tools.py` | archive | `archive/session-m3/analysis_tools.py` | M3 旧链(CODE-REALITY 已证 dead 为主) | ok | 2026-09-01 |
-| `factory-console/session/answer_verify.py` | kernel.conversation | `kernel/conversation/answer_verify.py` | 会话=唯一业务入口 | ok | 2026-09-01 |
+| `factory-console/session/answer_verify.py` | kernel.conversation | `kernel/conversation/answer_verify.py` | 会话=唯一业务入口 | ok | 2026-09-01 降级(无契约) |
 | `factory-console/session/approval_store.py` | services.approval_runtime | `services/approval_runtime/approval_store.py` | 审批流程服务 | ok | 2026-08-28 |
 | `factory-console/session/artifact_registry.py` | archive | `archive/session-m3/artifact_registry.py` | M3 旧链(CODE-REALITY 已证 dead 为主) | ok | 2026-08-22 |
 | `factory-console/session/audit.py` | archive | `archive/session-m3/audit.py` | M3 旧链(CODE-REALITY 已证 dead 为主) | ok | 2026-08-15 |
 | `factory-console/session/board.py` | projections.cli | `projections/cli/board.py` | 人类控制台 | ok | 2026-08-26 |
 | `factory-console/session/budget.py` | archive | `archive/session-m3/budget.py` | M3 旧链(CODE-REALITY 已证 dead 为主) | ok | 2026-08-25 |
 | `factory-console/session/canonical_shell.py` | projections.cli | `projections/cli/canonical_shell.py` | 人类控制台 | ok | 2026-09-09 |
-| `factory-console/session/capability_router.py` | kernel.capability | `kernel/capability/capability_router.py` | 能力注册与解析(找谁做) | ok | 2026-08-25 |
+| `factory-console/session/capability_router.py` | kernel.capability | `kernel/capability/capability_router.py` | 能力注册与解析(找谁做) | ok | 2026-08-25 契约 |
 | `factory-console/session/change_control.py` | archive | `archive/session-m3/change_control.py` | M3 旧链(CODE-REALITY 已证 dead 为主) | ok | 2026-08-26 |
 | `factory-console/session/chat.py` | archive | `archive/session-m3/chat.py` | M3 旧链(CODE-REALITY 已证 dead 为主) | ok | 2026-08-27 |
 | `factory-console/session/code_scan.py` | archive | `archive/session-m3/code_scan.py` | M3 旧链(CODE-REALITY 已证 dead 为主) | ok | 2026-08-28 |
@@ -208,7 +208,7 @@
 | `factory-console/session/context_builder.py` | services.memory | `services/memory/context_builder.py` | 记忆/学习服务 | ok | 2026-08-16 |
 | `factory-console/session/context_layers.py` | services.memory | `services/memory/context_layers.py` | 记忆/学习服务 | ok | 2026-08-29 |
 | `factory-console/session/context_ledger.py` | services.memory | `services/memory/context_ledger.py` | 记忆/学习服务 | ok | 2026-08-17 |
-| `factory-console/session/conversation.py` | kernel.conversation | `kernel/conversation/conversation.py` | 会话=唯一业务入口 | ok | 2026-08-25 |
+| `factory-console/session/conversation.py` | kernel.conversation | `kernel/conversation/conversation.py` | 会话=唯一业务入口 | ok | 2026-08-25 误归 |
 | `factory-console/session/core_loader.py` | archive | `archive/session-m3/core_loader.py` | M3 旧链(CODE-REALITY 已证 dead 为主) | ok | 2026-08-22 |
 | `factory-console/session/cost_ledger.py` | archive | `archive/session-m3/cost_ledger.py` | M3 旧链(CODE-REALITY 已证 dead 为主) | ok | 2026-08-25 |
 | `factory-console/session/critical_path.py` | archive | `archive/session-m3/critical_path.py` | M3 旧链(CODE-REALITY 已证 dead 为主) | ok | 2026-08-23 |
@@ -231,7 +231,7 @@
 | `factory-console/session/decomposition_evaluator.py` | archive | `archive/session-m3/decomposition_evaluator.py` | M3 旧链(CODE-REALITY 已证 dead 为主) | ok | 2026-08-24 |
 | `factory-console/session/delivery.py` | archive | `archive/session-m3/delivery.py` | M3 旧链(CODE-REALITY 已证 dead 为主) | ok | 2026-08-29 |
 | `factory-console/session/dependencies.py` | archive | `archive/session-m3/dependencies.py` | M3 旧链(CODE-REALITY 已证 dead 为主) | ok | 2026-08-16 |
-| `factory-console/session/dialog_style.py` | kernel.conversation | `kernel/conversation/dialog_style.py` | 会话=唯一业务入口 | ok | 2026-08-27 |
+| `factory-console/session/dialog_style.py` | kernel.conversation | `kernel/conversation/dialog_style.py` | 会话=唯一业务入口 | ok | 2026-08-27 降级(无契约) |
 | `factory-console/session/discovery.py` | archive | `archive/session-m3/discovery.py` | M3 旧链(CODE-REALITY 已证 dead 为主) | ok | 2026-08-24 |
 | `factory-console/session/discovery_guide.py` | archive | `archive/session-m3/discovery_guide.py` | M3 旧链(CODE-REALITY 已证 dead 为主) | ok | 2026-08-25 |
 | `factory-console/session/discovery_intelligence.py` | archive | `archive/session-m3/discovery_intelligence.py` | M3 旧链(CODE-REALITY 已证 dead 为主) | ok | 2026-08-25 |
@@ -249,8 +249,8 @@
 | `factory-console/session/gap_analyzer.py` | archive | `archive/session-m3/gap_analyzer.py` | M3 旧链(CODE-REALITY 已证 dead 为主) | ok | 2026-08-16 |
 | `factory-console/session/handoff.py` | archive | `archive/session-m3/handoff.py` | M3 旧链(CODE-REALITY 已证 dead 为主) | ok | 2026-08-28 |
 | `factory-console/session/handoff_bus.py` | archive | `archive/session-m3/handoff_bus.py` | M3 旧链(CODE-REALITY 已证 dead 为主) | ok | 2026-08-22 |
-| `factory-console/session/intent.py` | kernel.conversation | `kernel/conversation/intent.py` | 会话=唯一业务入口 | ok | 2026-08-25 |
-| `factory-console/session/intent_core.py` | kernel.conversation | `kernel/conversation/intent_core.py` | 会话=唯一业务入口 | ok | 2026-09-07 |
+| `factory-console/session/intent.py` | kernel.conversation | `kernel/conversation/intent.py` | 会话=唯一业务入口 | ok | 2026-08-25 契约 |
+| `factory-console/session/intent_core.py` | kernel.conversation | `kernel/conversation/intent_core.py` | 会话=唯一业务入口 | ok | 2026-09-07 契约 |
 | `factory-console/session/lifecycle_store.py` | archive | `archive/session-m3/lifecycle_store.py` | M3 旧链(CODE-REALITY 已证 dead 为主) | ok | 2026-08-25 |
 | `factory-console/session/llm_gap.py` | archive | `archive/session-m3/llm_gap.py` | M3 旧链(CODE-REALITY 已证 dead 为主) | ok | 2026-08-16 |
 | `factory-console/session/llm_gateway.py` | extensions.models | `extensions/models/llm_gateway.py` | Model/Provider 插件 | ok | 2026-08-31 |
@@ -260,7 +260,7 @@
 | `factory-console/session/mcp_client.py` | extensions.mcp | `extensions/mcp/mcp_client.py` | MCP 插件 | ok | 2026-08-31 |
 | `factory-console/session/mcp_tools.py` | extensions.mcp | `extensions/mcp/mcp_tools.py` | MCP 插件 | ok | 2026-08-28 |
 | `factory-console/session/memory_core.py` | services.memory | `services/memory/memory_core.py` | 记忆/学习服务 | ok | 2026-08-28 |
-| `factory-console/session/messages.py` | kernel.conversation | `kernel/conversation/messages.py` | 会话=唯一业务入口 | ok | 2026-08-15 |
+| `factory-console/session/messages.py` | kernel.conversation | `kernel/conversation/messages.py` | 会话=唯一业务入口 | ok | 2026-08-15 契约 |
 | `factory-console/session/model_prompt.py` | extensions.models | `extensions/models/model_prompt.py` | Model/Provider 插件 | ok | 2026-09-01 |
 | `factory-console/session/naming.py` | archive | `archive/session-m3/naming.py` | M3 旧链(CODE-REALITY 已证 dead 为主) | ok | 2026-08-19 |
 | `factory-console/session/observability.py` | projections.cli | `projections/cli/observability.py` | 人类控制台 | ok | 2026-08-31 |
@@ -283,7 +283,7 @@
 | `factory-console/session/replanning.py` | archive | `archive/session-m3/replanning.py` | M3 旧链(CODE-REALITY 已证 dead 为主) | ok | 2026-08-16 |
 | `factory-console/session/repo_map.py` | services.work | `services/work/repo_map.py` | 项目/工作域 | ok | 2026-08-28 |
 | `factory-console/session/repo_mode.py` | services.work | `services/work/repo_mode.py` | 项目/工作域 | ok | 2026-08-20 |
-| `factory-console/session/review_gate.py` | kernel.governance | `kernel/governance/review_gate.py` | 审批/预算/审计挂点 | ok | 2026-08-16 |
+| `factory-console/session/review_gate.py` | kernel.governance | `kernel/governance/review_gate.py` | 审批/预算/审计挂点 | ok | 2026-08-16 契约 |
 | `factory-console/session/review_view.py` | projections.cli | `projections/cli/review_view.py` | 人类控制台 | ok | 2026-08-16 |
 | `factory-console/session/roles.py` | services.organization | `services/organization/roles.py` | 组织模型(公司/部门/员工/角色) | ok | 2026-08-15 |
 | `factory-console/session/router.py` | archive | `archive/session-m3/router.py` | M3 旧链(CODE-REALITY 已证 dead 为主) | ok | 2026-08-25 |
@@ -312,10 +312,10 @@
 | `factory-console/tools/adapters.py` | extensions.tools | `extensions/tools/adapters.py` | Tool 插件 | ok | 2026-08-27 |
 | `factory-console/tools/executor.py` | extensions.tools | `extensions/tools/executor.py` | Tool 插件 | ok | 2026-08-27 |
 | `factory-console/tools/registry.py` | extensions.tools | `extensions/tools/registry.py` | Tool 插件 | ok | 2026-08-27 |
-| `factory-console/trace_query.py` | kernel.events | `kernel/events/trace_query.py` | 唯一事实源(append-only) | ok | 2026-09-09 |
-| `factory-console/unified_contract.py` | kernel.events | `kernel/events/unified_contract.py` | 唯一事实源(append-only) | ok | 2026-08-31 |
-| `factory-console/verification.py` | kernel.events | `kernel/events/verification.py` | 唯一事实源(append-only) | ok | 2026-08-29 |
-| `factory-console/verification_domain.py` | kernel.events | `kernel/events/verification_domain.py` | 唯一事实源(append-only) | ok | 2026-09-05 |
+| `factory-console/trace_query.py` | kernel.events | `kernel/events/trace_query.py` | 唯一事实源(append-only) | ok | 2026-09-09 契约 |
+| `factory-console/unified_contract.py` | kernel.events | `kernel/events/unified_contract.py` | 唯一事实源(append-only) | ok | 2026-08-31 契约 |
+| `factory-console/verification.py` | kernel.events | `kernel/events/verification.py` | 唯一事实源(append-only) | ok | 2026-08-29 契约 |
+| `factory-console/verification_domain.py` | kernel.events | `kernel/events/verification_domain.py` | 唯一事实源(append-only) | ok | 2026-09-05 契约 |
 | `factory-console/web/__init__.py` | projections.web | `projections/web/__init__.py` | Web 控制台 | ok | 2026-08-06 |
 | `factory-console/web/backend/__init__.py` | projections.web | `projections/web/__init__.py` | Web 控制台 | ok | 2026-08-06 |
 | `factory-console/web/backend/fastapi_adapter.py` | projections.web | `projections/web/fastapi_adapter.py` | Web 控制台 | ok | 2026-09-09 |
@@ -336,13 +336,13 @@
 | `factory-core/assignment/store.py` | archive | `archive/factory-core/store.py` | L4 旧数据层(宪法未覆盖) | ok | 2026-08-05 |
 | `factory-core/change/__init__.py` | archive | `archive/factory-core/__init__.py` | L4 旧数据层(宪法未覆盖) | ok | 2026-08-06 |
 | `factory-core/change/analyzer.py` | archive | `archive/factory-core/analyzer.py` | L4 旧数据层(宪法未覆盖) | ok | 2026-08-06 |
-| `factory-core/change/events.py` | kernel.events | `kernel/events/events.py` | 唯一事实源(append-only) | ok | 2026-08-06 |
+| `factory-core/change/events.py` | kernel.events | `kernel/events/events.py` | 唯一事实源(append-only) | ok | 2026-08-06 误归-archive/services |
 | `factory-core/change/linker.py` | archive | `archive/factory-core/linker.py` | L4 旧数据层(宪法未覆盖) | ok | 2026-08-06 |
 | `factory-core/change/models.py` | archive | `archive/factory-core/models.py` | L4 旧数据层(宪法未覆盖) | ok | 2026-08-06 |
 | `factory-core/change/service.py` | archive | `archive/factory-core/service.py` | L4 旧数据层(宪法未覆盖) | ok | 2026-08-06 |
 | `factory-core/changeflow/__init__.py` | archive | `archive/factory-core/__init__.py` | L4 旧数据层(宪法未覆盖) | ok | 2026-08-06 |
 | `factory-core/changeflow/engine.py` | archive | `archive/factory-core/engine.py` | L4 旧数据层(宪法未覆盖) | ok | 2026-08-06 |
-| `factory-core/changeflow/events.py` | kernel.events | `kernel/events/events.py` | 唯一事实源(append-only) | ok | 2026-08-06 |
+| `factory-core/changeflow/events.py` | kernel.events | `kernel/events/events.py` | 唯一事实源(append-only) | ok | 2026-08-06 误归-archive/services |
 | `factory-core/changeflow/models.py` | archive | `archive/factory-core/models.py` | L4 旧数据层(宪法未覆盖) | ok | 2026-08-06 |
 | `factory-core/changeflow/rules.py` | archive | `archive/factory-core/rules.py` | L4 旧数据层(宪法未覆盖) | ok | 2026-08-06 |
 | `factory-core/changeflow/triggers.py` | archive | `archive/factory-core/triggers.py` | L4 旧数据层(宪法未覆盖) | ok | 2026-08-06 |
@@ -368,13 +368,13 @@
 | `factory-core/execution/service.py` | archive | `archive/factory-core/service.py` | L4 旧数据层(宪法未覆盖) | ok | 2026-08-05 |
 | `factory-core/git/__init__.py` | archive | `archive/factory-core/__init__.py` | L4 旧数据层(宪法未覆盖) | ok | 2026-08-06 |
 | `factory-core/git/client.py` | archive | `archive/factory-core/client.py` | L4 旧数据层(宪法未覆盖) | ok | 2026-08-06 |
-| `factory-core/git/events.py` | kernel.events | `kernel/events/events.py` | 唯一事实源(append-only) | ok | 2026-08-06 |
+| `factory-core/git/events.py` | kernel.events | `kernel/events/events.py` | 唯一事实源(append-only) | ok | 2026-08-06 误归-archive/services |
 | `factory-core/git/models.py` | archive | `archive/factory-core/models.py` | L4 旧数据层(宪法未覆盖) | ok | 2026-08-06 |
 | `factory-core/git/service.py` | archive | `archive/factory-core/service.py` | L4 旧数据层(宪法未覆盖) | ok | 2026-08-06 |
 | `factory-core/intelligence/__init__.py` | archive | `archive/factory-core/__init__.py` | L4 旧数据层(宪法未覆盖) | ok | 2026-08-06 |
 | `factory-core/intelligence/decision.py` | archive | `archive/factory-core/decision.py` | L4 旧数据层(宪法未覆盖) | ok | 2026-08-06 |
 | `factory-core/intelligence/evaluate.py` | archive | `archive/factory-core/evaluate.py` | L4 旧数据层(宪法未覆盖) | ok | 2026-08-06 |
-| `factory-core/intelligence/events.py` | kernel.events | `kernel/events/events.py` | 唯一事实源(append-only) | ok | 2026-08-06 |
+| `factory-core/intelligence/events.py` | kernel.events | `kernel/events/events.py` | 唯一事实源(append-only) | ok | 2026-08-06 误归-archive/services |
 | `factory-core/intelligence/experience.py` | archive | `archive/factory-core/experience.py` | L4 旧数据层(宪法未覆盖) | ok | 2026-08-06 |
 | `factory-core/intelligence/models.py` | archive | `archive/factory-core/models.py` | L4 旧数据层(宪法未覆盖) | ok | 2026-08-06 |
 | `factory-core/intelligence/recommend.py` | archive | `archive/factory-core/recommend.py` | L4 旧数据层(宪法未覆盖) | ok | 2026-08-06 |
@@ -388,10 +388,10 @@
 | `factory-core/metrics/workspace.py` | archive | `archive/factory-core/workspace.py` | L4 旧数据层(宪法未覆盖) | ok | 2026-08-06 |
 | `factory-core/orchestration/__init__.py` | archive | `archive/factory-core/__init__.py` | L4 旧数据层(宪法未覆盖) | ok | 2026-08-06 |
 | `factory-core/orchestration/engine.py` | archive | `archive/factory-core/engine.py` | L4 旧数据层(宪法未覆盖) | ok | 2026-08-06 |
-| `factory-core/orchestration/events.py` | kernel.events | `kernel/events/events.py` | 唯一事实源(append-only) | ok | 2026-08-06 |
+| `factory-core/orchestration/events.py` | kernel.events | `kernel/events/events.py` | 唯一事实源(append-only) | ok | 2026-08-06 误归-archive/services |
 | `factory-core/orchestration/pipeline.py` | archive | `archive/factory-core/pipeline.py` | L4 旧数据层(宪法未覆盖) | ok | 2026-08-06 |
 | `factory-core/product/__init__.py` | archive | `archive/factory-core/__init__.py` | L4 旧数据层(宪法未覆盖) | ok | 2026-08-06 |
-| `factory-core/product/events.py` | kernel.events | `kernel/events/events.py` | 唯一事实源(append-only) | ok | 2026-08-06 |
+| `factory-core/product/events.py` | kernel.events | `kernel/events/events.py` | 唯一事实源(append-only) | ok | 2026-08-06 误归-archive/services |
 | `factory-core/product/experience.py` | archive | `archive/factory-core/experience.py` | L4 旧数据层(宪法未覆盖) | ok | 2026-08-06 |
 | `factory-core/product/generation.py` | archive | `archive/factory-core/generation.py` | L4 旧数据层(宪法未覆盖) | ok | 2026-08-06 |
 | `factory-core/product/lifecycle.py` | archive | `archive/factory-core/lifecycle.py` | L4 旧数据层(宪法未覆盖) | ok | 2026-08-06 |
@@ -408,7 +408,7 @@
 | `factory-core/providers/config.py` | archive | `archive/factory-core/config.py` | L4 旧数据层(宪法未覆盖) | ok | 2026-08-06 |
 | `factory-core/providers/costs.py` | archive | `archive/factory-core/costs.py` | L4 旧数据层(宪法未覆盖) | ok | 2026-08-06 |
 | `factory-core/providers/definitions.py` | archive | `archive/factory-core/definitions.py` | L4 旧数据层(宪法未覆盖) | ok | 2026-08-06 |
-| `factory-core/providers/events.py` | kernel.events | `kernel/events/events.py` | 唯一事实源(append-only) | ok | 2026-08-06 |
+| `factory-core/providers/events.py` | kernel.events | `kernel/events/events.py` | 唯一事实源(append-only) | ok | 2026-08-06 误归-archive/services |
 | `factory-core/providers/feedback.py` | archive | `archive/factory-core/feedback.py` | L4 旧数据层(宪法未覆盖) | ok | 2026-08-06 |
 | `factory-core/providers/integration.py` | archive | `archive/factory-core/integration.py` | L4 旧数据层(宪法未覆盖) | ok | 2026-08-06 |
 | `factory-core/providers/models.py` | archive | `archive/factory-core/models.py` | L4 旧数据层(宪法未覆盖) | ok | 2026-08-06 |
@@ -443,7 +443,7 @@
 | `factory-core/understanding/analyzers/artifact_detector.py` | archive | `archive/factory-core/artifact_detector.py` | L4 旧数据层(宪法未覆盖) | ok | 2026-08-06 |
 | `factory-core/understanding/analyzers/document_analyzer.py` | archive | `archive/factory-core/document_analyzer.py` | L4 旧数据层(宪法未覆盖) | ok | 2026-08-06 |
 | `factory-core/understanding/analyzers/project_analyzer.py` | archive | `archive/factory-core/project_analyzer.py` | L4 旧数据层(宪法未覆盖) | ok | 2026-08-06 |
-| `factory-core/understanding/events.py` | kernel.events | `kernel/events/events.py` | 唯一事实源(append-only) | ok | 2026-08-06 |
+| `factory-core/understanding/events.py` | kernel.events | `kernel/events/events.py` | 唯一事实源(append-only) | ok | 2026-08-06 误归-archive/services |
 | `factory-core/understanding/models.py` | archive | `archive/factory-core/models.py` | L4 旧数据层(宪法未覆盖) | ok | 2026-08-06 |
 | `factory-core/understanding/service.py` | archive | `archive/factory-core/service.py` | L4 旧数据层(宪法未覆盖) | ok | 2026-08-06 |
 | `factory-core/validation/__init__.py` | archive | `archive/factory-core/__init__.py` | L4 旧数据层(宪法未覆盖) | ok | 2026-08-05 |
@@ -483,7 +483,7 @@
 | `factory-exec/exec/developer.py` | archive | `archive/factory-exec/developer.py` | M3 旧执行链 | ok | 2026-08-25 |
 | `factory-exec/exec/employee_executor.py` | services.organization | `services/organization/employee_executor.py` | 执行角色(组织模型) | ok | 2026-08-08 |
 | `factory-exec/exec/evaluator.py` | archive | `archive/factory-exec/evaluator.py` | M3 旧执行链 | ok | 2026-08-08 |
-| `factory-exec/exec/events.py` | kernel.events | `kernel/events/events.py` | 唯一事实源(append-only) | ok | 2026-08-07 |
+| `factory-exec/exec/events.py` | kernel.events | `kernel/events/events.py` | 唯一事实源(append-only) | ok | 2026-08-07 误归-archive/services |
 | `factory-exec/exec/execution_loop.py` | archive | `archive/factory-exec/execution_loop.py` | M3 旧执行链 | ok | 2026-08-13 |
 | `factory-exec/exec/experience.py` | archive | `archive/factory-exec/experience.py` | M3 旧执行链 | ok | 2026-08-07 |
 | `factory-exec/exec/experience_ctx.py` | archive | `archive/factory-exec/experience_ctx.py` | M3 旧执行链 | ok | 2026-08-07 |
@@ -520,7 +520,7 @@
 | `factory-org/org/capabilities.py` | services.organization | `services/organization/capabilities.py` | 组织模型(公司/部门/员工/角色) | ok | 2026-08-11 |
 | `factory-org/org/cli.py` | services.organization | `services/organization/cli.py` | 组织模型(公司/部门/员工/角色) | ok | 2026-08-24 |
 | `factory-org/org/demo.py` | services.organization | `services/organization/demo.py` | 组织模型(公司/部门/员工/角色) | ok | 2026-08-09 |
-| `factory-org/org/events.py` | kernel.events | `kernel/events/events.py` | 唯一事实源(append-only) | ok | 2026-08-09 |
+| `factory-org/org/events.py` | kernel.events | `kernel/events/events.py` | 唯一事实源(append-only) | ok | 2026-08-09 误归-archive/services |
 | `factory-org/org/execution.py` | services.organization | `services/organization/execution.py` | 组织模型(公司/部门/员工/角色) | ok | 2026-08-11 |
 | `factory-org/org/lifecycle.py` | services.organization | `services/organization/lifecycle.py` | 组织模型(公司/部门/员工/角色) | ok | 2026-08-08 |
 | `factory-org/org/management.py` | services.organization | `services/organization/management.py` | 组织模型(公司/部门/员工/角色) | ok | 2026-09-04 |
@@ -532,18 +532,18 @@
 | `factory-org/org/store.py` | services.organization | `services/organization/store.py` | 组织模型(公司/部门/员工/角色) | ok | 2026-09-01 |
 | `factory-org/org/templates.py` | services.organization | `services/organization/templates.py` | 组织模型(公司/部门/员工/角色) | ok | 2026-08-08 |
 | `factory-org/org/workflow.py` | services.organization | `services/organization/workflow.py` | 组织模型(公司/部门/员工/角色) | ok | 2026-08-09 |
-| `factory-runtime/bundle/factory_runtime_entry.py` | kernel.node | `kernel/node/factory_runtime_entry.py` | runtime 执行 | ok | 2026-08-07 |
-| `factory-runtime/runtime/__init__.py` | kernel.node | `kernel/node/__init__.py` | runtime 执行 | ok | 2026-08-07 |
-| `factory-runtime/runtime/bundle.py` | kernel.node | `kernel/node/bundle.py` | runtime 执行 | ok | 2026-08-07 |
-| `factory-runtime/runtime/cli.py` | kernel.node | `kernel/node/cli.py` | runtime 执行 | ok | 2026-08-07 |
-| `factory-runtime/runtime/errors.py` | kernel.node | `kernel/node/errors.py` | runtime 执行 | ok | 2026-08-07 |
-| `factory-runtime/runtime/health.py` | kernel.node | `kernel/node/health.py` | runtime 执行 | ok | 2026-08-07 |
-| `factory-runtime/runtime/logging.py` | kernel.node | `kernel/node/logging.py` | runtime 执行 | ok | 2026-08-07 |
-| `factory-runtime/runtime/manager.py` | kernel.node | `kernel/node/manager.py` | runtime 执行 | ok | 2026-08-07 |
-| `factory-runtime/runtime/paths.py` | kernel.node | `kernel/node/paths.py` | runtime 执行 | ok | 2026-08-07 |
-| `factory-runtime/runtime/state.py` | kernel.node | `kernel/node/state.py` | runtime 执行 | ok | 2026-08-07 |
-| `factory-runtime/runtime/watchdog.py` | kernel.node | `kernel/node/watchdog.py` | runtime 执行 | ok | 2026-08-07 |
-| `factory-runtime/tests/test_bundle_contract.py` | kernel.node | `kernel/node/test_bundle_contract.py` | runtime 执行 | ok | 2026-08-07 |
+| `factory-runtime/bundle/factory_runtime_entry.py` | kernel.node | `kernel/node/factory_runtime_entry.py` | runtime 执行 | ok | 2026-08-07 误归-archive/services |
+| `factory-runtime/runtime/__init__.py` | kernel.node | `kernel/node/__init__.py` | runtime 执行 | ok | 2026-08-07 误归-archive/services |
+| `factory-runtime/runtime/bundle.py` | kernel.node | `kernel/node/bundle.py` | runtime 执行 | ok | 2026-08-07 误归-archive/services |
+| `factory-runtime/runtime/cli.py` | kernel.node | `kernel/node/cli.py` | runtime 执行 | ok | 2026-08-07 误归-archive/services |
+| `factory-runtime/runtime/errors.py` | kernel.node | `kernel/node/errors.py` | runtime 执行 | ok | 2026-08-07 误归-archive/services |
+| `factory-runtime/runtime/health.py` | kernel.node | `kernel/node/health.py` | runtime 执行 | ok | 2026-08-07 误归-archive/services |
+| `factory-runtime/runtime/logging.py` | kernel.node | `kernel/node/logging.py` | runtime 执行 | ok | 2026-08-07 误归-archive/services |
+| `factory-runtime/runtime/manager.py` | kernel.node | `kernel/node/manager.py` | runtime 执行 | ok | 2026-08-07 误归-archive/services |
+| `factory-runtime/runtime/paths.py` | kernel.node | `kernel/node/paths.py` | runtime 执行 | ok | 2026-08-07 误归-archive/services |
+| `factory-runtime/runtime/state.py` | kernel.node | `kernel/node/state.py` | runtime 执行 | ok | 2026-08-07 误归-archive/services |
+| `factory-runtime/runtime/watchdog.py` | kernel.node | `kernel/node/watchdog.py` | runtime 执行 | ok | 2026-08-07 误归-archive/services |
+| `factory-runtime/tests/test_bundle_contract.py` | kernel.node | `kernel/node/test_bundle_contract.py` | runtime 执行 | ok | 2026-08-07 误归-archive/services |
 | `factory_console/__init__.py` | bootstrap | `bootstrap/__init__.py` | 装配/入口脚本 | ok | 2026-08-14 |
 | `factory_console/cli_factory.py` | projections.cli | `projections/cli/cli_factory.py` | 人类控制台 | ok | 2026-08-14 |
 | `scripts/coverage_report.py` | bootstrap | `bootstrap/coverage_report.py` | 装配/入口脚本 | ok | 2026-08-26 |

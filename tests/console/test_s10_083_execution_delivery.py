@@ -16,7 +16,10 @@ from pathlib import Path
 
 from importlib import import_module
 
-PF = import_module("factory-exec.exec.patch_filter")
+try:
+    PF = import_module("kernel.node.patch_filter")
+except ModuleNotFoundError:
+    PF = import_module("factory-exec.exec.patch_filter")
 DELIVERY = import_module("factory-console.session.delivery")
 OBS = import_module("factory-console.session.observability")
 

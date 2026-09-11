@@ -125,15 +125,15 @@ def deliver_patch(project_dir: Path, patch_text: str, *, emit=None) -> dict:
     import importlib
     import sys as _sys
 
-    # 同 actions._load_exec_cli: sys.path 挂 factory-exec (源码态连字符目录)
+    # MU phase-1: patch_filter 已迁 kernel.node（保留 factory-exec 兼容路径）
     root = Path(__file__).resolve().parents[2]
-    path = str(root / "factory-exec")
-    if path not in _sys.path:
-        _sys.path.insert(0, path)
+    for _p in (root, root / "factory-exec"):
+        if str(_p) not in _sys.path:
+            _sys.path.insert(0, str(_p))
     try:
-        _pf = importlib.import_module("exec.patch_filter")
+        _pf = importlib.import_module("kernel.node.patch_filter")
     except ModuleNotFoundError:
-        _pf = importlib.import_module("factory-exec.exec.patch_filter")
+        _pf = importlib.import_module("exec.patch_filter")
     filter_patch = _pf.filter_patch
 
     clean, blocked = filter_patch(patch_text)

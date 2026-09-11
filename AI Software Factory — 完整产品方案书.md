@@ -1,3 +1,6 @@
+<!-- DEPRECATED: 本文档不再是事实源 -->
+<!-- 事实源见: docs/ssot/product.md · architecture.md · reality/ -->
+<!-- 保留原因: 历史输入/愿景参考 -->
 # AI Software Factory — 完整产品方案书（终极版）
 
 > 版本: v3.1 | 状态: 战略设计完成 + 2026-09-08 校准 | 更新: 2026-09-08

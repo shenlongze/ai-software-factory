@@ -1,3 +1,6 @@
+<!-- DEPRECATED: 本文档不再是事实源 -->
+<!-- 事实源见: docs/ssot/product.md · architecture.md · reality/ -->
+<!-- 保留原因: 历史输入/愿景参考 -->
 # AI Factory 外部执行器网关设计（OpenClaw 研究借鉴）
 
 > 日期: 2026-08-28 | 类型: 研究设计文档 (S10-127 P2.4)

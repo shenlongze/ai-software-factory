@@ -1,3 +1,6 @@
+<!-- DEPRECATED: 本文档不再是事实源 -->
+<!-- 事实源见: docs/ssot/product.md · architecture.md · reality/ -->
+<!-- 保留原因: 历史输入/愿景参考 -->
 # AI Factory OS — 产品说明书（全产品线）
 
 > 版本: v2.0 | 日期: 2026-09-08 | 依据: 方案书 §24 战略校准 + Cognitive Golden Path 实现

@@ -1,3 +1,6 @@
+<!-- DEPRECATED: 本文档不再是事实源 -->
+<!-- 事实源见: docs/ssot/product.md · architecture.md · reality/ -->
+<!-- 保留原因: 历史输入/愿景参考 -->
 # AI Software Factory vs 主流 AI 编码工具 — 竞品对比
 
 > 日期: 2026-08-27 | 版本: v1.1.199 | 类型: 竞品分析

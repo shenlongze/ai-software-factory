@@ -107,3 +107,21 @@
 Phase 0.6 曾报 factory-core contract=9 / factory-exec contract=11。本次能力唯一性判据下**未找到独立 contract 文件**（那 20 个"contract"实为包内 dataclass，随包归属，非独立契约文件）→ **C=0**。
 
 > 如 Founder 认为该 20 处 dataclass 应单独抽为契约，请指示（当前判定：随包归档/捞取）。
+
+---
+
+# 八、挂账清单（changeflow 6 个，本批不做）
+
+> 原因：能力唯一性判据对 changeflow 无效（`grep changeflow factory-console/ factory-org/` = 0 命中，但会话链 `ChangeControl` 可能已实现等价能力）→ 挂起，待判。
+
+| 文件 | 挂起原因 | 待判问题 | 判定方法 | 当前处置 |
+|------|----------|----------|----------|---------|
+| `factory-core/changeflow/engine.py` | 判据无效 | 会话链 ChangeControl 是否有等价能力？ | 读 `conversation/plan_development` + `session/change_control.py` 实现，对比能力 | 留原位 |
+| `factory-core/changeflow/models.py` | 同上 | 同上 | 同上 | 留原位 |
+| `factory-core/changeflow/rules.py` | 同上 | 同上 | 同上 | 留原位 |
+| `factory-core/changeflow/triggers.py` | 同上 | 同上 | 同上 | 留原位 |
+| `factory-core/changeflow/events.py` | 同上 | 同上 | 同上 | 留原位 |
+| `factory-core/changeflow/__init__.py` | 同上 | 同上 | 同上 | 留原位 |
+
+**状态**：6 个文件**仍在工作树原位**（未归档、未搬），待批次 A 后单独处理。
+

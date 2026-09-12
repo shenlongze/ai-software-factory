@@ -2039,25 +2039,61 @@ class FactoryCLI:
         return int(result.get("exit_code", 0) or 0)
 
     def _approval_via_runtime(self, args: argparse.Namespace) -> dict:
-        """绞杀新实现 (S1.3): services.approval_runtime — 本轮仅 list (只读)。
+        """绞杀新实现 (S1.3/S1.5): list + decide (只读/状态机)；apply 抛错 → 走旧。
 
-        decide/apply 抛错 → fallback 旧实现（apply 含 git 写入, 非本轮绞杀范围）。
+        decide 审计经 on_approved 回调 best-effort 发旧 exec_events（挂点一致）。
         """
         cmd = getattr(args, "approval_command", None)
-        if cmd != "list":
+        if cmd not in ("list", "decide"):
             raise NotImplementedError(f"绞杀范围外: approval {cmd} (暂走旧实现)")
         _root = Path(__file__).resolve().parents[1]
         if str(_root) not in sys.path:
             sys.path.insert(0, str(_root))
         from services.approval_runtime import ApprovalGate, ApprovalStore
+        from services.approval_runtime.decide import decide as _decide
 
         store = ApprovalStore(Path(self.data_dir) / "exec")
-        recs = ApprovalGate(store).list(status=getattr(args, "status", None) or None)
-        result = {"ok": True, "command": "approval list", "count": len(recs),
-                  "approvals": [r.to_dict() for r in recs], "exit_code": 0}
-        if getattr(args, "project", None):
-            self._filter_approvals_by_project(result, args.project, self.data_dir)
-        return result
+
+        if cmd == "list":
+            recs = ApprovalGate(store).list(status=getattr(args, "status", None) or None)
+            result = {"ok": True, "command": "approval list", "count": len(recs),
+                      "approvals": [r.to_dict() for r in recs], "exit_code": 0}
+            if getattr(args, "project", None):
+                self._filter_approvals_by_project(result, args.project, self.data_dir)
+            return result
+
+        # decide (approve|reject)
+        if not args.approval_id or not args.decision:
+            return {"ok": False, "exit_code": 2,
+                    "error": "用法: factory approval decide <id> approve|reject"}
+
+        def _on_approved(rec: object) -> None:
+            """审计挂点：approve 时发 org.execution.approved（用旧事件库，best-effort）。"""
+            try:
+                from events.logger import EventLogger
+                from events.store import EventStore
+                from exec import events as exec_events
+                from exec.store import ExecStore
+
+                ev_store = EventStore(Path(self.data_dir) / "factory.db")
+                try:
+                    old_rec = ExecStore(Path(self.data_dir) / "exec").get_approval(
+                        getattr(rec, "id", ""))
+                    if old_rec is not None:
+                        exec_events.record_execution_approved(
+                            EventLogger(ev_store), approval=old_rec)
+                finally:
+                    ev_store.close()
+            except Exception:  # noqa: BLE001 — 事件失败不影响决定落库
+                pass
+
+        rec = _decide(store, args.approval_id, args.decision,
+                      decided_by=args.by or "cli", comment=args.comment or "",
+                      on_approved=_on_approved)
+        _cmd = ("approval approve" if str(args.decision).lower() == "approve"
+                else "approval deny")
+        return {"ok": True, "command": _cmd,
+                "approval": rec.to_dict(), "exit_code": 0}
 
     @staticmethod
     def _filter_approvals_by_project(result: dict, project: str, data_dir: Any) -> None:

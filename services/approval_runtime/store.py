@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +32,8 @@ class ApprovalRecord:
     comment: str = ""
     applied: bool = False
     applied_at: str | None = None
+    created_at: str = ""
+    decided_at: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -47,6 +50,8 @@ class ApprovalRecord:
             comment=str(d.get("comment", "")),
             applied=bool(d.get("applied", False)),
             applied_at=d.get("applied_at"),
+            created_at=str(d.get("created_at") or ""),
+            decided_at=d.get("decided_at"),
         )
 
 
@@ -91,6 +96,8 @@ class ApprovalStore:
     # ------------------------------------------------------------------ API
 
     def save(self, record: ApprovalRecord) -> None:
+        if not record.created_at:  # 兼容旧 pydantic 模型（created_at 必填 datetime）
+            record.created_at = datetime.now(timezone.utc).isoformat()
         records = self._read_all()
         records[record.id] = record.to_dict()
         self._write(records)

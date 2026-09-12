@@ -1987,6 +1987,19 @@ class FactoryCLI:
         目标硬拒绝 (不绕过门禁)。
         """
         self._ensure_data_dir()
+        # 绞杀者模式 (S1.3): 默认走新实现 services.approval_runtime; 异常 fallback 旧。
+        # FACTORY_APPROVAL_OLD=1 → 强制旧 (对比用); FACTORY_APPROVAL_NEW=1 → 强制新 (不 fallback)。
+        import os as _os
+        if _os.environ.get("FACTORY_APPROVAL_OLD") != "1":
+            try:
+                result = self._approval_via_runtime(args)
+                self._print_approval_result(args, result)
+                return int(result.get("exit_code", 0) or 0)
+            except Exception as _exc:  # noqa: BLE001 — 新实现失败 → fallback/明确报错
+                if _os.environ.get("FACTORY_APPROVAL_NEW") == "1":
+                    print(f"错误: 审批命令失败 — {_exc}", file=sys.stderr)
+                    return 1
+                # 否则静默 fallback 旧实现
         try:
             exec_cli = self._proxy_exec_cli()
             if args.approval_command == "list":
@@ -2024,6 +2037,27 @@ class FactoryCLI:
             return 1
         self._print_approval_result(args, result)
         return int(result.get("exit_code", 0) or 0)
+
+    def _approval_via_runtime(self, args: argparse.Namespace) -> dict:
+        """绞杀新实现 (S1.3): services.approval_runtime — 本轮仅 list (只读)。
+
+        decide/apply 抛错 → fallback 旧实现（apply 含 git 写入, 非本轮绞杀范围）。
+        """
+        cmd = getattr(args, "approval_command", None)
+        if cmd != "list":
+            raise NotImplementedError(f"绞杀范围外: approval {cmd} (暂走旧实现)")
+        _root = Path(__file__).resolve().parents[1]
+        if str(_root) not in sys.path:
+            sys.path.insert(0, str(_root))
+        from services.approval_runtime import ApprovalGate, ApprovalStore
+
+        store = ApprovalStore(Path(self.data_dir) / "exec")
+        recs = ApprovalGate(store).list(status=getattr(args, "status", None) or None)
+        result = {"ok": True, "command": "approval list", "count": len(recs),
+                  "approvals": [r.to_dict() for r in recs], "exit_code": 0}
+        if getattr(args, "project", None):
+            self._filter_approvals_by_project(result, args.project, self.data_dir)
+        return result
 
     @staticmethod
     def _filter_approvals_by_project(result: dict, project: str, data_dir: Any) -> None:

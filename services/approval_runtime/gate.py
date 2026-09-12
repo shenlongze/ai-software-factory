@@ -11,7 +11,6 @@ factory-exec/exec/approval.py 的 request/decide/apply/list。
 """
 from __future__ import annotations
 
-import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any

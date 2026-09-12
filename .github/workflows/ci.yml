@@ -26,6 +26,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e '.[dev]'
 
+      - name: Architecture layer dependencies (R1-R8)
+        run: python -m pytest tests/architecture/ -q
+
       - name: Run tests
         run: python -m pytest -q
         timeout-minutes: 15

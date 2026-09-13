@@ -16,6 +16,11 @@ node_modules/
 factory-console/web/frontend/node_modules/
 factory-console/web/frontend/dist/
 
+# 运行时残留目录 —— 测试/产品运行时会自动创建，非源码（刀11）
+/projects/
+/workspace/
+/exec/
+
 # IDE
 .idea/
 

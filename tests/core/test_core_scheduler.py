@@ -160,6 +160,20 @@ def test_dependency_requires_accepted_outcome() -> None:
     _ready(w.ports)
 
 
+def test_accepted_outcome_marks_node_complete() -> None:
+    """完成由 accepted Outcome 定义 —— 已有验收结果的节点不得被重复调度。
+
+    回归：第一次真实运行（apps/cli/run_demo.py）时发现漏了这条，
+    导致干完的节点被无限重复调度。
+    """
+    w = World().node(NODE).hire().resolves(NODE, MEMBER)
+    _ready(w.ports)
+    w.accepted.add(NODE)
+    decision = evaluate(w.ports, NODE)
+    assert decision.kind is DecisionKind.COMPLETED
+    assert decision.failed_conditions == ("status_actionable",)
+
+
 def test_no_declared_capability_is_unresolved() -> None:
     assert evaluate(World().node(NODE, caps=()).ports, NODE).failed_conditions == \
         ("capability_available",)

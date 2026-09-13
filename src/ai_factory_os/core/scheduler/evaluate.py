@@ -25,6 +25,10 @@ def evaluate(ports: Ports, node_id: str) -> Decision:
     if node.status == "running":
         return _no(node_id, DecisionKind.BLOCKED, "status_actionable", "节点正在运行")
 
+    if ports.work.has_accepted_outcome(node_id):
+        return _no(node_id, DecisionKind.COMPLETED, "status_actionable",
+                   "已有 accepted Outcome（不重复调度，完成由验收定义）")
+
     unmet = [f"前驱 {d} 未验收" for d in node.depends_on if not ports.work.has_accepted_outcome(d)]
     if unmet:
         return _no(node_id, DecisionKind.BLOCKED, "dependencies_satisfied", *unmet)

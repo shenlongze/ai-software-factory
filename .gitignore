@@ -11,6 +11,15 @@ build/
 *.sqlite3
 *.db
 
+# 工具缓存（刀14：补齐，防止误提交）
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+.coverage.*
+htmlcov/
+
 # Node (Phase 11B Web UI)
 node_modules/
 factory-console/web/frontend/node_modules/

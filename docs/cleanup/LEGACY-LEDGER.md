@@ -3,7 +3,7 @@
 
 # 旧代码台账（LEGACY LEDGER）
 
-> 生成时间: 2026-09-13T18:27:17+00:00 | 生成器: `scripts/legacy_inventory.py`
+> 生成时间: 2026-09-13T18:44:50+00:00 | 生成器: `scripts/legacy_inventory.py`
 > 规则：**只减不增** —— 由 `tests/architecture/test_legacy_fence.py` 强制
 
 ## 一、分区总览

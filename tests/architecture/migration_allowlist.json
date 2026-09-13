@@ -1,0 +1,5 @@
+{
+  "_note": "R13 迁移预算：新地基允许 import 旧代码的【全部】边都在这里。只减不增 —— 由 tests/architecture/test_legacy_fence.py::test_r13 强制。解耦一条就从这里删一条；禁止新增。",
+  "budget": 0,
+  "edges": []
+}

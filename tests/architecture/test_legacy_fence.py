@@ -71,11 +71,35 @@ def _current() -> dict:
 
 
 def test_r13_new_ground_never_imports_legacy() -> None:
-    """R13: 新地基不得 import 旧代码。"""
+    """R13: 新地基不得 import 旧代码 —— 迁移期只允许走「只减不增」的预算清单。
+
+    背景：搬迁必然让新层临时代码指向旧代码（例：api 层搬入后仍延迟 import org/exec）。
+    彻底禁止 = 搬迁没法开工；完全放开 = 围栏失效。
+    所以改成预算制：全部允许的边都在 migration_allowlist.json 里，
+      ① 实际边必须 ⊆ 清单（禁止新增长）
+      ② 实际边数必须 ≤ budget（只减不增的棘轮）
+    解耦一条就删一条，budget 只许调小。
+    """
     root_names = {r.replace("-", "_") for r in LEGACY_ROOTS}
+    found: set[str] = set()
     for path in sorted(NEW.rglob("*.py")):
         for mod in _imports_of(path):
-            assert mod not in root_names, f"[R13] {path.relative_to(ROOT)} -> {mod}"
+            if mod in root_names:
+                found.add(f"{path.relative_to(ROOT)} -> {mod}")
+
+    allow = json.loads((Path(__file__).with_name("migration_allowlist.json"))
+                       .read_text(encoding="utf-8"))
+    allowed = set(allow["edges"])
+    budget = int(allow["budget"])
+
+    unexpected = sorted(found - allowed)
+    assert not unexpected, (
+        f"[R13] 新地基新增了对旧代码的依赖（禁止）: {unexpected}\n"
+        "  若属搬迁必需，须显式登记进 migration_allowlist.json 并在提交信息里说明理由。"
+    )
+    assert len(found) <= budget, (
+        f"[R13] 迁移预算超支：实际 {len(found)} 条 > budget {budget}（只减不增）"
+    )
 
 
 def test_r14_legacy_files_only_shrink() -> None:

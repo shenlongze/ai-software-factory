@@ -29,8 +29,8 @@
    21
   ],
   "kernel": [
-   7,
-   302
+   2,
+   127
   ],
   "services": [
    5,
@@ -577,18 +577,13 @@
   "factory-runtime/runtime/watchdog.py",
   "factory_console/__init__.py",
   "factory_console/cli_factory.py",
-  "kernel/capability/contracts.py",
-  "kernel/conversation/contracts.py",
-  "kernel/events/contracts.py",
   "kernel/governance/contracts.py",
-  "kernel/node/contracts.py",
   "kernel/node/patch_filter.py",
-  "kernel/scheduler/contracts.py",
   "services/approval_runtime/__init__.py",
   "services/approval_runtime/decide.py",
   "services/approval_runtime/gate.py",
   "services/approval_runtime/rules.py",
   "services/approval_runtime/store.py"
  ],
- "lines": 198498
+ "lines": 198323
 }

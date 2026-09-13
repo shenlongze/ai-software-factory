@@ -3,7 +3,7 @@
 
 # 旧代码台账（LEGACY LEDGER）
 
-> 生成时间: 2026-09-13T18:00:31+00:00 | 生成器: `scripts/legacy_inventory.py`
+> 生成时间: 2026-09-13T18:02:06+00:00 | 生成器: `scripts/legacy_inventory.py`
 > 规则：**只减不增** —— 由 `tests/architecture/test_legacy_fence.py` 强制
 
 ## 一、分区总览
@@ -17,9 +17,9 @@
 | `factory-org` | 18 | 12052 | 组织领域模型（最完整） | services/organization | 待绞杀 |
 | `factory-runtime` | 11 | 1528 | 旧 runtime bundle | core/node 或 infrastructure | 待判定 |
 | `factory_console` | 2 | 21 | 打包胶水（连字符目录名的转发层） | 保留 | 合法，非冗余 |
-| `kernel` | 7 | 302 | v0.2 遗留契约（契约已并入 src/…/contracts） | 删除 | 待删 |
+| `kernel` | 2 | 127 | v0.2 遗留契约（契约已并入 src/…/contracts） | 删除 | 待删 |
 | `services` | 5 | 348 | 绞杀示范 approval_runtime | src/…/services | 示范保留 |
-| **合计** | **545** | **198498** | | | |
+| **合计** | **540** | **198323** | | | |
 
 ## 二、跨分区依赖边（只减不增）
 

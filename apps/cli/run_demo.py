@@ -27,6 +27,10 @@ from ai_factory_os.core.scheduler.ports import Ports  # noqa: E402
 from ai_factory_os.plugins.factories.software.capabilities import CAPABILITY_BY_ID  # noqa: E402
 from ai_factory_os.plugins.factories.software.bindings import BINDINGS  # noqa: E402
 from ai_factory_os.plugins.factories.software.template import instantiate  # noqa: E402
+from ai_factory_os.plugins.tools.local_actions import check_artifact, write_artifact  # noqa: E402
+
+WORKSPACE = Path("/tmp/ai-factory-demo")
+ARTIFACT = WORKSPACE / "deliverable.md"
 
 # --------------------------------------------------------------------- 角色
 
@@ -167,6 +171,19 @@ def _cost(cap) -> str:
     return "成本 0"
 
 
+def _execute(cap) -> tuple[bool, str]:
+    """执行一个动作。被标注为「真实」的两项会真的落盘 / 真的读盘校验。"""
+    if cap.id == "CAP-EXECUTE":
+        result = write_artifact(ARTIFACT, f"# 交付物\n\n由调度器驱动产生：{cap.name}\n")
+        return True, f"[真实] 写入 {result['path']}（{result['bytes']} 字节）"
+    if cap.id == "CAP-VERIFY":
+        result = check_artifact(ARTIFACT, expect="由调度器驱动产生")
+        return bool(result["ok"]), f"[真实] 校验 {ARTIFACT.name} → {result['reason']}"
+    if cap.id in ("CAP-CONFIRM-PRD", "CAP-CONFIRM-PLAN"):
+        return True, "[模拟] 人工确认"
+    return True, "[模拟] 产出（未接真实实现）"
+
+
 def main() -> int:
     graph = instantiate(project_id="DEMO-1", company_id="C-1", name="做一个待办清单应用",
                         goal="用户能新建/完成/删除待办")
@@ -182,9 +199,11 @@ def main() -> int:
     print("审批门     交付节点需产品负责人批准（来自能力声明，不是写死的流程）")
     _line("─")
     print("⚠️ 诚实标注：")
-    print("   真实的 —— 调度判定、排序、容量约束、依赖解锁、审批门拦截")
-    print("   模拟的 —— 执行与验收结果（本脚本只验证调度逻辑，不真干活）")
-    print("   真实系统里：执行由 plugins 提供，验收由证据判定")
+    print("   真实的 —— 调度判定、排序、容量约束、依赖解锁、审批门拦截；")
+    print("             「执行生产」与「验证结果」两步：真的写文件、真的读盘校验")
+    print("   模拟的 —— 其余节点（理解/方案/计划/确认/交付）尚未接真实实现")
+    print("   真实系统里：全部执行由 plugins 提供，验收由证据判定")
+    print(f"   工作目录 {WORKSPACE}")
     _line("═")
 
     for round_no in range(1, 20):
@@ -228,13 +247,18 @@ def main() -> int:
             cap = CAPABILITY_BY_ID[node.required_capability_refs[0]]
             print(f"  分配 → {node.name} 交给 {member.name}({member.id})  执行 {execution.id}"
                   f"  {_cost(cap)}")
-            world.finish(execution, accepted=True)
-            print(f"  完成 → {execution.id} 产出 → 验收 accepted → 解锁后继")
+            ok, detail = _execute(cap)
+            world.finish(execution, accepted=ok)
+            print(f"  执行 → {detail}")
+            print(f"  完成 → {execution.id} → 验收 "
+                  f"{'accepted → 解锁后继' if ok else 'rejected → 后继保持阻塞'}")
 
     print()
     _line("═")
     print(f"最终：{len(world.accepted)}/{len(graph.nodes)} 个节点通过验收")
     print(f"      {len(world.created)} 次执行 · {len(world.outcomes)} 个验收结果")
+    if ARTIFACT.exists():
+        print(f"      真实产物 {ARTIFACT}（{ARTIFACT.stat().st_size} 字节）")
     _line("═")
     print()
     return 0

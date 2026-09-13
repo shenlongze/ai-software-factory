@@ -204,7 +204,7 @@ class TestWritePointEnumeration:
     """验收 1: 全写点枚举 — 直接写 status/lifecycle 的调用全部在显式白名单。"""
 
     def test_actions_status_writes_in_whitelist(self):
-        src = (_ROOT / "factory-console" / "session" / "actions.py").read_text(encoding="utf-8")
+        src = (_ROOT / "src" / "legacy" / "factory-console" / "session" / "actions.py").read_text(encoding="utf-8")
         hits = _status_touch_functions(src)
         assert hits, "静态扫描未命中任何写点 (扫描失效?)"
         assert hits <= STATUS_WRITE_WHITELIST["actions"], (
@@ -212,14 +212,14 @@ class TestWritePointEnumeration:
         )
 
     def test_orchestrator_status_writes_in_whitelist(self):
-        src = (_ROOT / "factory-console" / "session" / "orchestrator.py").read_text(encoding="utf-8")
+        src = (_ROOT / "src" / "legacy" / "factory-console" / "session" / "orchestrator.py").read_text(encoding="utf-8")
         hits = _status_touch_functions(src)
         assert hits <= STATUS_WRITE_WHITELIST["orchestrator"], (
             f"orchestrator 直接写 status/lifecycle 未进白名单: {hits - STATUS_WRITE_WHITELIST['orchestrator']}"
         )
 
     def test_service_status_writes_in_whitelist(self):
-        src = (_ROOT / "factory-console" / "service.py").read_text(encoding="utf-8")
+        src = (_ROOT / "src" / "legacy" / "factory-console" / "service.py").read_text(encoding="utf-8")
         hits = _status_touch_functions(src)
         assert hits <= STATUS_WRITE_WHITELIST["service"], (
             f"service 直接写 status/lifecycle 未进白名单: {hits - STATUS_WRITE_WHITELIST['service']}"

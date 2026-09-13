@@ -20,7 +20,7 @@ import pytest
 _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
-_FACTORY_EXEC = _ROOT / "factory-exec"
+_FACTORY_EXEC = _ROOT / "src" / "legacy" / "factory-exec"
 if str(_FACTORY_EXEC) not in sys.path:  # 审批装配需 exec 包 (同 tests/exec/conftest)
     sys.path.insert(0, str(_FACTORY_EXEC))
 

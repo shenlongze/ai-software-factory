@@ -23,7 +23,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 VENV_PY = ROOT / ".venv" / "bin" / "python"
-FACTORY_CORE = ROOT / "factory-core"
+FACTORY_CORE = ROOT / "src" / "legacy" / "factory-core"
+LEGACY_ROOT = ROOT / "src" / "legacy"
 
 if not VENV_PY.is_file():
     print(f"错误: 未找到虚拟环境解释器: {VENV_PY}", file=sys.stderr)
@@ -33,7 +34,8 @@ if not VENV_PY.is_file():
     sys.exit(1)
 
 os.environ["PYTHONPATH"] = os.pathsep.join(
-    [str(ROOT), str(FACTORY_CORE), str(ROOT / "src"), os.environ.get("PYTHONPATH", "")]
+    [str(ROOT), str(LEGACY_ROOT), str(FACTORY_CORE), str(ROOT / "src"),
+     os.environ.get("PYTHONPATH", "")]
 ).rstrip(os.pathsep)
 
 _BOOT = (

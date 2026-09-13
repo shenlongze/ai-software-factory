@@ -17,9 +17,9 @@ from pathlib import Path
 import pytest
 
 _ROOT = Path(__file__).resolve().parents[2]
-_SH = _ROOT / "factory-console" / "session" / "session_hooks.py"
+_SH = _ROOT / "src" / "legacy" / "factory-console" / "session" / "session_hooks.py"
 
-for _p in (_ROOT, _ROOT / "factory-core"):
+for _p in (_ROOT, _ROOT / "src" / "legacy" / "factory-core"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 

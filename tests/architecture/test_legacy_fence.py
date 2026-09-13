@@ -6,7 +6,7 @@ R15  旧代码跨分区依赖边只减不增
 R16  不得出现新的顶层代码目录（防新增堆放场）
 
 基线由 scripts/legacy_inventory.py --write 生成。
-被绞杀对象 = LEGACY_ROOTS；工具/文档/入口不计入围栏。
+被绞杀对象 = `src/legacy/` 下的各分区；工具/文档/入口不计入围栏。
 """
 from __future__ import annotations
 
@@ -24,7 +24,9 @@ SKIP = {".git", ".venv", "__pycache__", ".pytest_cache", ".ruff_cache",
 
 # 单一来源：与工具/台账共用，禁止在此再拷贝一份（刀22 因两份拷贝漂移踩过坑）
 sys.path.insert(0, str(ROOT / "scripts"))
-from legacy_roots import ALLOWED_TOP, LEGACY_ROOTS  # noqa: E402
+from legacy_roots import (  # noqa: E402
+    ALLOWED_TOP, ALLOWED_UNDER_SRC, LEGACY_PARTS, LEGACY_TOP_NAMES, PARTITIONS,
+)
 
 
 def _baseline() -> dict:
@@ -36,7 +38,7 @@ def _legacy_files() -> list[Path]:
     for path in ROOT.rglob("*.py"):
         if any(part in SKIP for part in path.parts) or "tests" in path.parts:
             continue
-        if NEW in path.parents or path.relative_to(ROOT).parts[0] not in LEGACY_ROOTS:
+        if NEW in path.parents or path.relative_to(ROOT).parts[:2] != LEGACY_PARTS:
             continue
         found.append(path)
     return sorted(found)
@@ -61,9 +63,9 @@ def _current() -> dict:
     lines = {f: len(f.read_text(encoding="utf-8", errors="replace").splitlines()) for f in files}
     edges: dict[str, int] = {}
     for f in files:
-        src = f.relative_to(ROOT).parts[0]
+        src = f.relative_to(ROOT).parts[2]
         for mod in _imports_of(f):
-            for target in LEGACY_ROOTS:
+            for target in PARTITIONS:
                 if mod in (target, target.replace("-", "_")) and src != target:
                     key = f"{src}->{target}"
                     edges[key] = edges.get(key, 0) + 1
@@ -81,7 +83,7 @@ def test_r13_new_ground_never_imports_legacy() -> None:
       ② 实际边数必须 ≤ budget（只减不增的棘轮）
     解耦一条就删一条，budget 只许调小。
     """
-    root_names = {r.replace("-", "_") for r in LEGACY_ROOTS}
+    root_names = set(LEGACY_TOP_NAMES)
     found: set[str] = set()
     for path in sorted(NEW.rglob("*.py")):
         for mod in _imports_of(path):
@@ -130,3 +132,15 @@ def test_r16_no_new_top_level_code_dirs() -> None:
             if not any(part in SKIP for part in p.parts)}
     unexpected = sorted(tops - ALLOWED_TOP)
     assert not unexpected, f"[R16] 新的顶层代码目录: {unexpected}"
+
+
+def test_r18_src_holds_only_new_ground_and_legacy() -> None:
+    """R18: src/ 下只允许 ai_factory_os（新地基）与 legacy（隔离区）。
+
+    防再长出第三个 —— 那说明有人又把新代码塞进 src 却不在新地基里。
+    """
+    src = ROOT / "src"
+    found = sorted(p.name for p in src.iterdir()
+                   if p.is_dir() and p.name != "__pycache__")
+    unexpected = sorted(set(found) - ALLOWED_UNDER_SRC)
+    assert not unexpected, f"[R18] src/ 下出现未授权目录: {unexpected}（只许 {sorted(ALLOWED_UNDER_SRC)}）"

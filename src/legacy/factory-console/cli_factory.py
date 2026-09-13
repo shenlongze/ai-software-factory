@@ -126,6 +126,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from .config import DEFAULT_PROVIDER, PROVIDER_DEFAULTS, ConfigProvider
+from repo_paths import REPO_ROOT  # 仓库根唯一计算器
 
 # ------------------------------------------------------------------ 常量
 
@@ -155,7 +156,7 @@ def _pkg_version() -> str:
     """轻量读版本（update 命令显示, 失败 → dev）。"""
     try:
         import tomllib
-        _pp = Path(__file__).resolve().parent.parent / "pyproject.toml"
+        _pp = REPO_ROOT / "pyproject.toml"
         return tomllib.loads(_pp.read_text(encoding="utf-8"))["project"]["version"]
     except Exception:  # noqa: BLE001
         return "dev"
@@ -170,7 +171,7 @@ def _check_update_hint() -> str:
     """
     import subprocess
 
-    root = Path(__file__).resolve().parent.parent
+    root = REPO_ROOT
     try:
         local = subprocess.run(
             ["git", "-C", str(root), "rev-parse", "HEAD"],
@@ -358,9 +359,9 @@ def _dep_problems(root: Path) -> list[str]:
             f"未找到虚拟环境: {venv_py}\n"
             "  请先安装依赖: python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'"
         )
-    frontend = root / "factory-console" / "web" / "frontend"
+    frontend = root / "src" / "legacy" / "factory-console" / "web" / "frontend"
     if not frontend.is_dir():
-        frontend = root / "factory_console" / "web" / "frontend"  # S10-074 部署态
+        frontend = root / "src" / "legacy" / "factory_console" / "web" / "frontend"  # S10-074 部署态
     if not (frontend / "node_modules").is_dir():
         problems.append(
             f"前端依赖缺失: {frontend / 'node_modules'}\n  请先安装: cd {frontend} && npm install"
@@ -954,7 +955,7 @@ class FactoryCLI:
     def __init__(self, config: ConfigProvider, *, root: Path | None = None) -> None:
         self.config = config
         # cli_factory.py 位于 <root>/factory-console/ 下 → parents[1] 即仓库根
-        self.root = (root or Path(__file__).resolve().parents[1]).resolve()
+        self.root = (root or REPO_ROOT).resolve()
         self.data_dir = config.get_data_dir()
         self.run_dir = self.data_dir / RUN_SUBDIR
         self.backend_pid = self.run_dir / "backend.pid"
@@ -1415,9 +1416,9 @@ class FactoryCLI:
             print(f"  前端已在运行 (PID {_read_pid(self.frontend_pid)})")
             return True
         # S10-074: 部署态前端在 factory_console (下划线) 包内; 源码态连字符目录
-        frontend = self.root / "factory-console" / "web" / "frontend"
+        frontend = self.root / "src" / "legacy" / "factory-console" / "web" / "frontend"
         if not frontend.is_dir():
-            frontend = self.root / "factory_console" / "web" / "frontend"
+            frontend = self.root / "src" / "legacy" / "factory_console" / "web" / "frontend"
         dist = frontend / "dist"
         if dev or not dist.is_dir():
             if not dev:
@@ -2046,7 +2047,7 @@ class FactoryCLI:
         cmd = getattr(args, "approval_command", None)
         if cmd not in ("list", "decide"):
             raise NotImplementedError(f"绞杀范围外: approval {cmd} (暂走旧实现)")
-        _root = Path(__file__).resolve().parents[1]
+        _root = REPO_ROOT
         if str(_root) not in sys.path:
             sys.path.insert(0, str(_root))
         from ai_factory_os.services.governance import ApprovalGate, ApprovalStore
@@ -3963,7 +3964,7 @@ class FactoryCLI:
     def _proxy_exec_cli(self) -> Any:
         """延迟 import exec.cli (PYTHONPATH 挂 factory-exec — 设计注 D1; 失败 → 明确错误)。"""
         try:
-            path = str(self.root / "factory-exec")
+            path = str(self.root / "src" / "legacy" / "factory-exec")
             if path not in sys.path:
                 sys.path.insert(0, path)
             import exec.cli as exec_cli
@@ -3977,7 +3978,7 @@ class FactoryCLI:
     def _proxy_org_cli(self) -> Any:
         """延迟 import org.cli (PYTHONPATH 挂 factory-org; 失败 → 明确错误)。"""
         try:
-            path = str(self.root / "factory-org")
+            path = str(self.root / "src" / "legacy" / "factory-org")
             if path not in sys.path:
                 sys.path.insert(0, path)
             import org.cli as org_cli

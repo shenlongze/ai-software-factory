@@ -71,6 +71,7 @@ from .models import (
     WorkflowDetail,
     WorkflowSummary,
 )
+from repo_paths import REPO_ROOT  # 仓库根唯一计算器
 
 #: 默认最近决策/活动条数 (KISS: Dashboard 不无限增长, CLI --limit 可覆盖)
 DEFAULT_RECENT_LIMIT = 10
@@ -2941,7 +2942,7 @@ class ConsoleService:
         import sys
         from pathlib import Path
 
-        org_dir = Path(__file__).resolve().parents[1] / "factory-org"
+        org_dir = REPO_ROOT / "src" / "legacy" / "factory-org"
         if org_dir.is_dir() and str(org_dir) not in sys.path:
             sys.path.insert(0, str(org_dir))
 

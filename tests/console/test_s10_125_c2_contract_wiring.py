@@ -26,7 +26,7 @@ import pytest
 _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
-_FACTORY_CORE = _ROOT / "factory-core"
+_FACTORY_CORE = _ROOT / "src" / "legacy" / "factory-core"
 if str(_FACTORY_CORE) not in sys.path:
     sys.path.insert(0, str(_FACTORY_CORE))
 
@@ -535,10 +535,10 @@ class TestNoDirectWrites:
     """4 个改造文件无残留直写标准产出物文件名 (读/引用除外)。"""
 
     _FILES = [
-        "factory-console/session/actions.py",
-        "factory-console/session/orchestrator.py",
-        "factory-console/session/change_control.py",
-        "factory-console/service.py",
+        "src/legacy/factory-console/session/actions.py",
+        "src/legacy/factory-console/session/orchestrator.py",
+        "src/legacy/factory-console/session/change_control.py",
+        "src/legacy/factory-console/service.py",
     ]
     _STANDARD = [
         "product.json",

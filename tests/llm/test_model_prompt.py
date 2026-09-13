@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 _ROOT = Path(__file__).resolve().parents[2]
-_MP = _ROOT / "factory-console" / "session" / "model_prompt.py"
+_MP = _ROOT / "src" / "legacy" / "factory-console" / "session" / "model_prompt.py"
 
 
 @pytest.fixture(scope="module")

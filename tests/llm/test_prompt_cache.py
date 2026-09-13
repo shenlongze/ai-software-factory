@@ -16,8 +16,8 @@ from pathlib import Path
 import pytest
 
 _ROOT = Path(__file__).resolve().parents[2]
-_LG = _ROOT / "factory-console" / "session" / "llm_gateway.py"
-for _p in (_ROOT, _ROOT / "factory-core"):
+_LG = _ROOT / "src" / "legacy" / "factory-console" / "session" / "llm_gateway.py"
+for _p in (_ROOT, _ROOT / "src" / "legacy" / "factory-core"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 

@@ -24,11 +24,11 @@ SKIP = SKIP_HARD
 
 # 目录 → 包名前缀（对齐运行时：bin/factory 的 PYTHONPATH + pyproject package-dir）
 ROOTS: tuple[tuple[Path, str], ...] = (
-    (ROOT / "factory-console", "factory_console"),
-    (ROOT / "factory-core", ""),
-    (ROOT / "factory-exec", ""),
-    (ROOT / "factory-org", ""),
-    (ROOT / "factory-runtime", ""),
+    (ROOT / "src" / "legacy" / "factory-console", "factory_console"),
+    (ROOT / "src" / "legacy" / "factory-core", ""),
+    (ROOT / "src" / "legacy" / "factory-exec", ""),
+    (ROOT / "src" / "legacy" / "factory-org", ""),
+    (ROOT / "src" / "legacy" / "factory-runtime", ""),
     (ROOT, ""),
 )
 

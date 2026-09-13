@@ -22,8 +22,8 @@ CLI = import_module("exec.cli")
 import sys
 from pathlib import Path as _P
 _ROOT = _P(__file__).resolve().parents[2]
-if str(_ROOT / "factory-exec") not in sys.path:
-    sys.path.insert(0, str(_ROOT / "factory-exec"))
+if str(_ROOT / "src" / "legacy" / "factory-exec") not in sys.path:
+    sys.path.insert(0, str(_ROOT / "src" / "legacy" / "factory-exec"))
 
 
 class _FakeProvider:

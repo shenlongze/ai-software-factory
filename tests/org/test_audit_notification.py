@@ -37,7 +37,7 @@ from typing import Any
 import pytest
 
 _ROOT = Path(__file__).resolve().parents[2]
-for _p in (_ROOT, _ROOT / "factory-core", _ROOT / "factory-org"):
+for _p in (_ROOT, _ROOT / "src" / "legacy" / "factory-core", _ROOT / "src" / "legacy" / "factory-org"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 

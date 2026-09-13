@@ -43,13 +43,13 @@ class TestVersionContract:
         """CLI --version 输出含版本 (build_parser 描述单源)。"""
         # 源码态直接 import cli_factory 有相对导入限制 → 验证 argparse 描述含版本
         import argparse
-        c = (BASE / "factory-console/cli_factory.py").read_text(encoding="utf-8")
+        c = (BASE / "src/legacy/factory-console/cli_factory.py").read_text(encoding="utf-8")
         assert "--version" in c
         assert "AI Factory v{" in c  # f-string 版本单源 (build_parser)
 
     def test_health_endpoints_defined(self):
         """/health /ready /version 端点已定义。"""
-        c = (BASE / "factory-console/web/backend/fastapi_adapter.py").read_text(encoding="utf-8")
+        c = (BASE / "src/legacy/factory-console/web/backend/fastapi_adapter.py").read_text(encoding="utf-8")
         for ep in ('"/health"', '"/ready"', '"/version"'):
             assert ep in c
 
@@ -75,10 +75,10 @@ class TestPackageCompleteness:
             assert wheels
             import zipfile
             names = zipfile.ZipFile(wheels[0]).namelist()
-            for pkg in ("factory_console/audit/__init__.py",
-                        "factory_console/memory/__init__.py",
-                        "factory_console/retrieval/__init__.py",
-                        "factory_console/session/debug/__init__.py"):
+            for pkg in ("src/legacy/factory_console/audit/__init__.py",
+                        "src/legacy/factory_console/memory/__init__.py",
+                        "src/legacy/factory_console/retrieval/__init__.py",
+                        "src/legacy/factory_console/session/debug/__init__.py"):
                 assert pkg in names, f"wheel 缺 {pkg}"
 
 

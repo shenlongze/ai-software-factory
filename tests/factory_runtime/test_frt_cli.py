@@ -256,7 +256,7 @@ def test_python_m_entrypoint(cli_root):
 
     repo_root = Path(__file__).resolve().parents[2]
     env = dict(os.environ)
-    env["PYTHONPATH"] = str(repo_root / "factory-runtime")
+    env["PYTHONPATH"] = str(repo_root / "src" / "legacy" / "factory-runtime")
     result = subprocess.run(
         [sys.executable, "-m", "runtime.cli", "--root", str(cli_root), "init"],
         capture_output=True,

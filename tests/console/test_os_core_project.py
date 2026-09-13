@@ -11,8 +11,8 @@ import sys
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[2]
-for _p in (str(_ROOT), str(_ROOT / "factory-core"), str(_ROOT / "factory-org"),
-           str(_ROOT / "factory-exec")):
+for _p in (str(_ROOT), str(_ROOT / "src" / "legacy" / "factory-core"), str(_ROOT / "src" / "legacy" / "factory-org"),
+           str(_ROOT / "src" / "legacy" / "factory-exec")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
@@ -37,7 +37,7 @@ def test_project_ssot_create_get_persist(tmp_path: Path) -> None:
     assert p["company_id"] == cid
     assert (tmp_path / "org" / "projects.json").is_file()  # SSOT = org store
     assert proj.get_project(root, p["id"])["name"] == "Plane Game"
-    assert proj.OS_PROJECT_SSOT == "factory-org/org/projects.py"
+    assert proj.OS_PROJECT_SSOT == "src/legacy/factory-org/org/projects.py"
 
 
 def test_project_id_stable_and_unique(tmp_path: Path) -> None:

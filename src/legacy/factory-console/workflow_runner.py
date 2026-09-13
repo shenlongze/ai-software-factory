@@ -48,13 +48,14 @@ from types import SimpleNamespace
 from typing import Any, Callable
 
 from .config import get_config
+from repo_paths import REPO_ROOT  # 仓库根唯一计算器
 
 #: LLM provider 配置已移入 factory-console/config.py (PROVIDER_DEFAULTS 映射表)
 #: — MODEL/BASE_URL/费率不再硬编码 (S10-007 阶段一: 多 Provider 支持,
 #: 不写死 DeepSeek)。消费方一律经 get_config().get_llm() 读取。
 
 #: 仓库根 (sys.path 挂载 factory-core/factory-org/factory-exec)
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = REPO_ROOT
 
 _RUNNING_LOCK = threading.Lock()
 _RUNNING: set[str] = set()
@@ -168,7 +169,7 @@ def _run_dirs(runs_dir: Path, project_id: str, run_id: str) -> dict[str, Path]:
 
 
 def _setup_sys_path() -> None:
-    for p in ("factory-core", "factory-org", "factory-exec"):
+    for p in ("src/legacy/factory-core", "src/legacy/factory-org", "src/legacy/factory-exec"):
         path = ROOT / p
         if path.is_dir() and str(path) not in sys.path:
             sys.path.insert(0, str(path))
@@ -1201,7 +1202,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-root = Path(__file__).resolve().parent.parent
+root = REPO_ROOT
 failures: list[str] = []
 
 

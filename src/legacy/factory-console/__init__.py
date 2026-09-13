@@ -46,6 +46,7 @@ from .models import (
     RecommendationSummary,
 )
 from .service import ConsoleService
+from repo_paths import REPO_ROOT  # 仓库根唯一计算器
 
 __all__ = [
     # service
@@ -77,7 +78,7 @@ try:
 except Exception:  # noqa: BLE001 — 非安装态 (源码运行) → 读 pyproject
     import tomllib
     from pathlib import Path as _P
-    _pp = _P(__file__).resolve().parent.parent / "pyproject.toml"
+    _pp = REPO_ROOT / "pyproject.toml"
     try:
         __version__ = tomllib.loads(_pp.read_text(encoding="utf-8"))["project"]["version"]
     except Exception:  # noqa: BLE001

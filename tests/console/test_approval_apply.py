@@ -18,7 +18,7 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:  # factory-console/ 父目录 (importlib 加载)
     sys.path.insert(0, str(_ROOT))
-_FACTORY_EXEC = _ROOT / "factory-exec"
+_FACTORY_EXEC = _ROOT / "src" / "legacy" / "factory-exec"
 if str(_FACTORY_EXEC) not in sys.path:  # exec 包父目录
     sys.path.insert(0, str(_FACTORY_EXEC))
 

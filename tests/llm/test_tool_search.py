@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 _ROOT = Path(__file__).resolve().parents[2]
-_TS = _ROOT / "factory-console" / "session" / "tool_search.py"
+_TS = _ROOT / "src" / "legacy" / "factory-console" / "session" / "tool_search.py"
 
 
 @pytest.fixture(scope="module")

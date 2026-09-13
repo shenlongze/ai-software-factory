@@ -14,8 +14,8 @@ from pathlib import Path
 import pytest
 
 _ROOT = Path(__file__).resolve().parents[2]
-_HD = _ROOT / "factory-console" / "session" / "handoff.py"
-_MEM = _ROOT / "factory-console" / "session" / "project_memory.py"
+_HD = _ROOT / "src" / "legacy" / "factory-console" / "session" / "handoff.py"
+_MEM = _ROOT / "src" / "legacy" / "factory-console" / "session" / "project_memory.py"
 
 
 @pytest.fixture(scope="module")

@@ -20,10 +20,10 @@ import sys
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[2]
-_FACTORY_CORE = _ROOT / "factory-core"
+_FACTORY_CORE = _ROOT / "src" / "legacy" / "factory-core"
 if str(_FACTORY_CORE) not in sys.path:
     sys.path.insert(0, str(_FACTORY_CORE))
-_FACTORY_ORG = _ROOT / "factory-org"
+_FACTORY_ORG = _ROOT / "src" / "legacy" / "factory-org"
 if str(_FACTORY_ORG) not in sys.path:  # org 包父目录 (factory-org/org/)
     sys.path.insert(0, str(_FACTORY_ORG))
 

@@ -35,10 +35,10 @@ from typing import Any, Callable
 # ------------------------------------------------------------------ 环境
 
 ROOT = Path("/Users/Shared/work/ai-software-factory")
-for p in ("factory-core", "factory-org", "factory-exec"):
+for p in ("src/legacy/factory-core", "src/legacy/factory-org", "src/legacy/factory-exec"):
     sys.path.insert(0, str(ROOT / p))
 
-BASE = ROOT / "factory-exec" / "benchmark_s8_demo"
+BASE = ROOT / "src" / "legacy" / "factory-exec" / "benchmark_s8_demo"
 ORG_DIR = BASE / "org"
 DB_PATH = BASE / "events.db"
 PROJECT_DIR = BASE / "app_project"

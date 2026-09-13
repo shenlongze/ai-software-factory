@@ -23,7 +23,7 @@ from typing import Any
 
 import pytest
 
-_RUNTIME_DIR = Path(__file__).resolve().parents[2] / "factory-runtime" / "runtime"
+_RUNTIME_DIR = Path(__file__).resolve().parents[2] / "src" / "legacy" / "factory-runtime" / "runtime"
 
 
 def _load_runtime_pkg():

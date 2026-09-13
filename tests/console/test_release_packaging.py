@@ -36,7 +36,7 @@ if str(_ROOT) not in sys.path:  # factory-console/ 与 factory_console/ 的父�
     sys.path.insert(0, str(_ROOT))
 
 PYPROJECT = _ROOT / "pyproject.toml"
-CONSOLE_DIR = _ROOT / "factory-console"
+CONSOLE_DIR = _ROOT / "src" / "legacy" / "factory-console"
 
 
 @pytest.fixture(scope="module")
@@ -59,7 +59,7 @@ def _console_sibling_names() -> set[str]:
 
 def _factory_core_top_packages() -> set[str]:
     """factory-core 顶层包名 (wheel 中作为独立顶层包存在, 可被绝对导入)。"""
-    core_root = _ROOT / "factory-core"
+    core_root = _ROOT / "src" / "legacy" / "factory-core"
     return {d.name for d in core_root.iterdir() if (d / "__init__.py").is_file()}
 
 
@@ -95,15 +95,15 @@ class TestPackageDirMapping:
     def test_packages_cover_all_factory_core_subpackages(self, setuptools_cfg):
         """packages ⊇ factory-core 全部子包 + exec/org 映射包 (S10-031)。"""
         packages = set(setuptools_cfg["packages"])
-        core_root = _ROOT / "factory-core"
+        core_root = _ROOT / "src" / "legacy" / "factory-core"
         discovered = {
             ".".join(init.parent.relative_to(core_root).parts)
             for init in core_root.rglob("__init__.py")
             if "__pycache__" not in init.parts
         }
         # S10-031: exec/org 映射包 (package_dir 指向 factory-exec/exec, factory-org/org)
-        for src, prefix in ((_ROOT / "factory-exec" / "exec", "exec"),
-                            (_ROOT / "factory-org" / "org", "org")):
+        for src, prefix in ((_ROOT / "src" / "legacy" / "factory-exec" / "exec", "exec"),
+                            (_ROOT / "src" / "legacy" / "factory-org" / "org", "org")):
             for init in src.rglob("__init__.py"):
                 if "__pycache__" in init.parts:
                     continue
@@ -152,7 +152,7 @@ class TestMappedPackageSource:
         """映射源 factory-console/cli_factory.py 存在且暴露 callable main (安装后
         factory_console.cli_factory 即此文件)。"""
         entry = CONSOLE_DIR / "cli_factory.py"
-        assert entry.is_file(), "factory-console/cli_factory.py 缺失"
+        assert entry.is_file(), "src/legacy/factory-console/cli_factory.py 缺失"
         mod = importlib.import_module("factory-console.cli_factory")
         assert callable(mod.main)
 

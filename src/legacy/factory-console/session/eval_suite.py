@@ -430,7 +430,7 @@ def _check_bad_input(ws: Path, repo_root: Optional[Path]) -> EvalItemResult:
 
 def _check_registry(ws: Path, repo_root: Optional[Path]) -> EvalItemResult:
     """一致性·注册表 (P0-10): build_parser 子命令 == 测试期望集合 (含 eval)。"""
-    if repo_root is None or not (repo_root / "factory-console" / "cli_factory.py").is_file():
+    if repo_root is None or not (repo_root / "src" / "legacy" / "factory-console" / "cli_factory.py").is_file():
         return _not_covered(
             CONSISTENCY + ".registry",
             "CLI 注册表一致 (P0-10)",

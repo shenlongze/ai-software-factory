@@ -29,12 +29,12 @@ import pytest
 _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
-_FACTORY_CORE = _ROOT / "factory-core"
+_FACTORY_CORE = _ROOT / "src" / "legacy" / "factory-core"
 if str(_FACTORY_CORE) not in sys.path:
     sys.path.insert(0, str(_FACTORY_CORE))
 # _suggest_via_llm 真实路径 import exec.provider (ProviderRequest) — 测试注入
 # fake provider 时仍会执行该 import; 挂 factory-exec 保持路径一致
-_FACTORY_EXEC = _ROOT / "factory-exec"
+_FACTORY_EXEC = _ROOT / "src" / "legacy" / "factory-exec"
 if str(_FACTORY_EXEC) not in sys.path:
     sys.path.insert(0, str(_FACTORY_EXEC))
 

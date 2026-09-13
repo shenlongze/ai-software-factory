@@ -33,10 +33,10 @@ import pytest
 _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
-if str(_ROOT / "factory-core") not in sys.path:
-    sys.path.insert(0, str(_ROOT / "factory-core"))
-if str(_ROOT / "factory-exec") not in sys.path:
-    sys.path.insert(0, str(_ROOT / "factory-exec"))
+if str(_ROOT / "src" / "legacy" / "factory-core") not in sys.path:
+    sys.path.insert(0, str(_ROOT / "src" / "legacy" / "factory-core"))
+if str(_ROOT / "src" / "legacy" / "factory-exec") not in sys.path:
+    sys.path.insert(0, str(_ROOT / "src" / "legacy" / "factory-exec"))
 if str(_ROOT / "tests" / "exec") not in sys.path:
     sys.path.insert(0, str(_ROOT / "tests" / "exec"))
 

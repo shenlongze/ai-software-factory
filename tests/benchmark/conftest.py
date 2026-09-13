@@ -16,10 +16,10 @@ import sys
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[2]
-_FACTORY_CORE = _ROOT / "factory-core"
+_FACTORY_CORE = _ROOT / "src" / "legacy" / "factory-core"
 if str(_FACTORY_CORE) not in sys.path:
     sys.path.insert(0, str(_FACTORY_CORE))
-_FACTORY_EXEC = _ROOT / "factory-exec"
+_FACTORY_EXEC = _ROOT / "src" / "legacy" / "factory-exec"
 if str(_FACTORY_EXEC) not in sys.path:  # exec 包父目录 (factory-exec/exec/)
     sys.path.insert(0, str(_FACTORY_EXEC))
 

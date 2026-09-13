@@ -1,15 +1,26 @@
-"""旧代码围栏的**单一来源**：分区名单与允许的顶层目录。
+"""旧代码隔离区与围栏的**单一来源**。
 
-为什么单独一个文件：这份常量原先在「工具」与「围栏测试」里各有一份拷贝，
-改了一处忘另一处 → 测试算出的跨分区边与基线对不上（刀22 实际踩到）。
-围栏这类东西的两份定义必然漂移，所以抽出来共用。
+刀23 后布局（ADR-0037 方案 C 的收尾）：
+    src/ai_factory_os/     新地基（受 R1–R17 约束）
+    src/legacy/            隔离区（受"只减不增"约束）
+      ├── factory-console/ ← 包名 factory_console（PYTHONPATH 提供）
+      ├── factory-core/    ← sys.path 根: tasks / runtime / events / store / models ...
+      ├── factory-exec/    ← 包名 exec
+      ├── factory-org/     ← 包名 org
+      ├── factory-runtime/ ← 独立可发布包（出厂组件，桌面用）
+      ├── factory_console/ ← 连字符目录名的转发壳
+      └── repo_paths.py    ← 仓库根唯一计算器（被 legacy 代码共用）
+
+常量原先在「工具」与「围栏测试」各有一份拷贝，改一处忘另一处就漂移（刀22 踩过）。
+故集中在此，工具与围栏测试共用。
 """
 from __future__ import annotations
 
-#: 被绞杀对象（旧代码分区）。已归零并移出的：
-#:   kernel（刀13）· services（刀20）· demo（刀22，迁入 examples/demo/）
-#: 移出后若有人重建，R16 会直接拦下（ADR-0037：根下不应存在它们）。
-LEGACY_ROOTS = (
+#: 隔离区位置（相对仓库根）
+LEGACY_PARTS: tuple[str, ...] = ("src", "legacy")
+
+#: 隔离区内的分区（= src/legacy/ 下的一级目录名，用于跨分区边统计）
+PARTITIONS: tuple[str, ...] = (
     "factory-console",
     "factory-core",
     "factory-exec",
@@ -18,8 +29,21 @@ LEGACY_ROOTS = (
     "factory_console",
 )
 
-#: 允许出现在根下的顶层代码目录（其余一律 R16 拦下）。
-#: examples/ 允许有代码：它既放工厂定义（project.yaml），也放示例仓库（demo/repo）。
-ALLOWED_TOP: set[str] = set(LEGACY_ROOTS) | {
-    "src", "tests", "scripts", "docs", "bin", "apps", "examples",
-}
+#: 允许出现在根下的顶层目录。**根下不得出现任何 factory-***（ADR-0037 判定标准）。
+ALLOWED_TOP: set[str] = {"src", "tests", "scripts", "docs", "bin", "apps", "examples"}
+
+#: src/ 下只允许这两个：新地基 + 隔离区（防再长出第三个）
+ALLOWED_UNDER_SRC: set[str] = {"ai_factory_os", "legacy"}
+
+#: legacy 代码对外暴露的顶层包名（新地基 R13 不得 import 它们）。
+#: tasks/runtime/events/... 来自 src/legacy/factory-core（sys.path 根）；
+#: exec/org 来自 package-dir 映射；factory_console 来自连字符目录转发壳。
+LEGACY_TOP_NAMES: frozenset[str] = frozenset({
+    # factory-core 顶层子包（sys.path 根暴露）
+    "agents", "assignment", "change", "changeflow", "cli", "dashboard", "demo",
+    "events", "execution", "git", "intelligence", "metrics", "orchestration",
+    "product", "providers", "recovery", "runtime", "runtimes", "tasks",
+    "understanding", "validation", "workflows", "workspace",
+    # 映射包
+    "exec", "org", "factory_console",
+})

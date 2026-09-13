@@ -17,7 +17,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-_FACTORY_CORE = ROOT / "factory-core"
+_FACTORY_CORE = ROOT / "src" / "legacy" / "factory-core"
 if str(_FACTORY_CORE) not in sys.path:
     sys.path.insert(0, str(_FACTORY_CORE))
 

@@ -21,7 +21,8 @@ from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
-from legacy_reach import LEGACY_ROOTS, ROOT, analyze as reach_analyze
+from legacy_roots import LEGACY_PARTS, PARTITIONS
+from legacy_reach import ROOT, analyze as reach_analyze
 
 SKIP = {".git", ".venv", "__pycache__", ".pytest_cache", ".ruff_cache",
         "node_modules", "build", "dist", "target", ".mypy_cache"}
@@ -49,7 +50,7 @@ def legacy_files() -> list[Path]:
     for p in ROOT.rglob("*.py"):
         if any(s in p.parts for s in SKIP) or "tests" in p.parts or NEW in p.parents:
             continue
-        if p.relative_to(ROOT).parts[0] in LEGACY_ROOTS:
+        if p.relative_to(ROOT).parts[:2] == LEGACY_PARTS and "tests" not in p.parts:
             out.append(p)
     return sorted(out)
 
@@ -72,11 +73,11 @@ def scan() -> dict:
     files = legacy_files()
     by_root: dict[str, list[Path]] = defaultdict(list)
     for f in files:
-        by_root[f.relative_to(ROOT).parts[0]].append(f)
+        by_root[f.relative_to(ROOT).parts[2]].append(f)
     line_counts = {f: len(f.read_text(encoding="utf-8", errors="replace").splitlines()) for f in files}
     edges: Counter = Counter()
     for f in files:
-        src = f.relative_to(ROOT).parts[0]
+        src = f.relative_to(ROOT).parts[2]
         for mod in imports_of(f):
             for target in by_root:
                 if mod in (target, target.replace("-", "_")) and src != target:
@@ -175,7 +176,7 @@ def report(data: dict, reach: dict) -> str:
         "",
         "## 四、说明",
         "",
-        "- 被绞杀对象：`" + "`, `".join(LEGACY_ROOTS) + "`",
+        "- 被绞杀对象（`src/legacy/` 下）：`" + "`, `".join(PARTITIONS) + "`",
         "- 不计入围栏：`scripts/`（工具）、`docs/`、`bin/`、`apps/`、`tests/`、`src/`（新地基）",
         "- 本台账是**派生视图**，不属 SSoT；手写修改将在下次生成时被覆盖。",
         "",

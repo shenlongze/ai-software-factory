@@ -120,7 +120,7 @@ from pathlib import Path as _PathLib
 
 try:
     _factory_version = tomllib.loads(
-        (_PathLib(__file__).resolve().parents[3] / "pyproject.toml").read_text(encoding="utf-8")
+        (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     )["project"]["version"]
 except Exception:  # noqa: BLE001 — 版本读取失败 → dev 标记（不阻断）
     _factory_version = "0.0.0-dev"
@@ -131,6 +131,7 @@ from pathlib import Path
 from typing import Any, Iterator, NoReturn
 
 from pydantic import BaseModel
+from repo_paths import REPO_ROOT  # 仓库根唯一计算器
 
 __all__ = ["DEFAULT_ROOT", "DEFAULT_PORT", "build_app", "build_console_service", "create_app"]
 
@@ -683,7 +684,7 @@ def build_console_service(
     """
     root = Path(factory_root)
     root.mkdir(parents=True, exist_ok=True)
-    repo_root = Path(__file__).resolve().parents[3]  # .../ai-software-factory/
+    repo_root = REPO_ROOT  # .../ai-software-factory/
     if str(repo_root) not in sys.path:
         sys.path.insert(0, str(repo_root))
     try:
@@ -712,7 +713,7 @@ def build_console_service(
     workflow_lifecycle = None
     project_space = None
     try:
-        org_dir = repo_root / "factory-org"
+        org_dir = repo_root / "src" / "legacy" / "factory-org"
         if org_dir.is_dir() and str(org_dir) not in sys.path:
             sys.path.insert(0, str(org_dir))
         from org.projects import ProjectStore
@@ -767,7 +768,7 @@ def build_console_service(
     # None, session 操作按空/404 处理)
     session_store = None
     try:
-        exec_dir = repo_root / "factory-exec"
+        exec_dir = repo_root / "src" / "legacy" / "factory-exec"
         if exec_dir.is_dir() and str(exec_dir) not in sys.path:
             sys.path.insert(0, str(exec_dir))
         _session_module = importlib.import_module("exec.runtime_session")
@@ -824,10 +825,10 @@ def _git_status() -> dict:
     """git 状态（只读: 版本/分支/脏标记）。"""
     import subprocess
     try:
-        r = subprocess.run(["git", "-C", str(Path(__file__).resolve().parents[3]),
+        r = subprocess.run(["git", "-C", str(REPO_ROOT),
                             "log", "-1", "--oneline"], capture_output=True, text=True, timeout=10)
         head = r.stdout.strip() if r.returncode == 0 else ""
-        r2 = subprocess.run(["git", "-C", str(Path(__file__).resolve().parents[3]),
+        r2 = subprocess.run(["git", "-C", str(REPO_ROOT),
                              "status", "--porcelain"], capture_output=True, text=True, timeout=10)
         return {"head": head, "dirty": bool(r2.stdout.strip())}
     except Exception:  # noqa: BLE001
@@ -1293,7 +1294,7 @@ def build_app(
         import sys as _sys
 
         # 仓库根（git/pip 在代码仓库运行, 非数据目录）
-        root = Path(__file__).resolve().parents[3]
+        root = REPO_ROOT
         # 更新逻辑（同 factory update: git pull + pip install -e .）
         results = {"steps": []}
         # 1) git pull
@@ -1451,7 +1452,7 @@ def build_app(
     def _version_summary(version: str) -> str:
         """CHANGELOG 对应版本首行摘要 (版本说明; 失败 → '')。"""
         try:
-            ch = Path(__file__).resolve().parents[3] / "CHANGELOG.md"
+            ch = REPO_ROOT / "CHANGELOG.md"
             lines = ch.read_text(encoding="utf-8").splitlines()
             in_section = False
             for ln in lines:
@@ -7373,7 +7374,7 @@ def build_app(
         try:
             import sys as _sys
 
-            _org_path = str(root.parent / "factory-org")
+            _org_path = str(root.parent / "src" / "legacy" / "factory-org")
             if _org_path not in _sys.path:
                 _sys.path.insert(0, _org_path)
             from org.cli import cmd_project_register

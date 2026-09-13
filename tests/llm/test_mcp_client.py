@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 _ROOT = Path(__file__).resolve().parents[2]
-_MCP = _ROOT / "factory-console" / "session" / "mcp_client.py"
+_MCP = _ROOT / "src" / "legacy" / "factory-console" / "session" / "mcp_client.py"
 
 FAKE_SERVER = r'''import sys, json
 

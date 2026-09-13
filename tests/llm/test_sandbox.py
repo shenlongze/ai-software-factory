@@ -15,8 +15,8 @@ from pathlib import Path
 import pytest
 
 _ROOT = Path(__file__).resolve().parents[2]
-_SB = _ROOT / "factory-console" / "session" / "sandbox.py"
-for _p in (_ROOT, _ROOT / "factory-core"):
+_SB = _ROOT / "src" / "legacy" / "factory-console" / "session" / "sandbox.py"
+for _p in (_ROOT, _ROOT / "src" / "legacy" / "factory-core"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 

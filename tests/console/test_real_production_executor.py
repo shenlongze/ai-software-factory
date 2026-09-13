@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 _ROOT = Path(__file__).resolve().parents[2]
-for _p in (str(_ROOT), str(_ROOT / "factory-core")):
+for _p in (str(_ROOT), str(_ROOT / "src" / "legacy" / "factory-core")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
@@ -181,7 +181,7 @@ def test_no_capability_no_executor_is_honest_failure(tmp_path: Path) -> None:
 
 def test_fake_default_capability_removed() -> None:
     """占位假成功 (_default_capability / 'Default capability executed') 已从内核移除。"""
-    src = Path(_ROOT / "factory-console" / "production_runtime.py").read_text(
+    src = Path(_ROOT / "src" / "legacy" / "factory-console" / "production_runtime.py").read_text(
         encoding="utf-8")
     assert "_default_capability" not in src
     assert "Default capability executed" not in src

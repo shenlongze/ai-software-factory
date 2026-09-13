@@ -30,7 +30,7 @@ import sys
 from collections import deque
 from pathlib import Path
 
-from legacy_roots import LEGACY_ROOTS  # 单一来源（scripts/legacy_roots.py）
+from legacy_roots import LEGACY_PARTS, PARTITIONS  # 单一来源（scripts/legacy_roots.py）
 
 ROOT = Path(__file__).resolve().parents[1]
 NEW = ROOT / "src" / "ai_factory_os"
@@ -38,19 +38,21 @@ SKIP = {".git", ".venv", "__pycache__", ".pytest_cache", ".ruff_cache",
         "node_modules", "build", "dist", "target", ".mypy_cache"}
 
 # (根目录, 该根下文件的模块名前缀) —— 顺序即优先级
+LEGACY_DIR = ROOT.joinpath(*LEGACY_PARTS)
+
 ROOTS: tuple[tuple[Path, str], ...] = (
-    (ROOT / "factory-console", "factory_console"),
-    (ROOT / "factory-core", ""),
-    (ROOT / "factory-exec", ""),
-    (ROOT / "factory-org", ""),
-    (ROOT / "factory-runtime", ""),
-    (ROOT, ""),
+    (LEGACY_DIR / "factory-console", "factory_console"),
+    (LEGACY_DIR / "factory-core", ""),
+    (LEGACY_DIR / "factory-exec", ""),
+    (LEGACY_DIR / "factory-org", ""),
+    (LEGACY_DIR / "factory-runtime", ""),
+    (LEGACY_DIR, ""),
 )
 
 PROD_ENTRIES = (
     "bin/factory",
-    "factory-console/cli_factory.py",
-    "factory-console/web/backend/fastapi_adapter.py",
+    "src/legacy/factory-console/cli_factory.py",
+    "src/legacy/factory-console/web/backend/fastapi_adapter.py",
 )
 
 # ⚠️ 已知盲区 —— 本工具**只扫 Python 的加载行为**，下列消费方式它看不见：
@@ -256,7 +258,7 @@ def _is_legacy(path: Path) -> bool:
         rel = path.relative_to(ROOT)
     except ValueError:
         return False
-    return rel.parts[0] in LEGACY_ROOTS and "tests" not in rel.parts
+    return rel.parts[:2] == LEGACY_PARTS and "tests" not in rel.parts
 
 
 def _lines(files) -> int:
@@ -269,8 +271,8 @@ def external_references() -> dict[str, list[str]]:
     能在 desktop/src-tauri/tauri.conf.json 这类打包配置里发现「被当组件消费」的目录 ——
     factory-runtime 就是这样被发现的（它是桌面应用的运行时后端，从不被 Python import）。
     """
-    pattern = {name: re.compile(rf"(?<![\w-]){re.escape(name)}(?![\w-])") for name in LEGACY_ROOTS}
-    hits: dict[str, list[str]] = {name: [] for name in LEGACY_ROOTS}
+    pattern = {name: re.compile(rf"(?<![\w-]){re.escape(name)}(?![\w-])") for name in PARTITIONS}
+    hits: dict[str, list[str]] = {name: [] for name in PARTITIONS}
     for path in ROOT.rglob("*"):
         if not path.is_file() or path.suffix.lower() not in SCAN_SUFFIXES:
             continue
@@ -336,7 +338,7 @@ def analyze() -> dict:
                 "test_only": sum(1 for p in test_only if p.relative_to(ROOT).parts[0] == name),
                 "unverified": sum(1 for p in unverified if p.relative_to(ROOT).parts[0] == name),
             }
-            for name in LEGACY_ROOTS
+            for name in PARTITIONS
         },
         "dynamic_calls": dynamic_calls,
         "dynamic_prefixes": sorted(prefixes),

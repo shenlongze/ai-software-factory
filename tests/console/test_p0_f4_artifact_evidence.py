@@ -18,7 +18,7 @@ from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[2]
 # 依赖 tests/console/conftest.py 的 sys.path (仓库根 + factory-core), 不自插 factory-console
-for _p in (str(_ROOT), str(_ROOT / "factory-core")):
+for _p in (str(_ROOT), str(_ROOT / "src" / "legacy" / "factory-core")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 

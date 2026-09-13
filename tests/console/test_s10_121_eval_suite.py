@@ -32,7 +32,7 @@ import pytest
 _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
-_FACTORY_CORE = _ROOT / "factory-core"
+_FACTORY_CORE = _ROOT / "src" / "legacy" / "factory-core"
 if str(_FACTORY_CORE) not in sys.path:
     sys.path.insert(0, str(_FACTORY_CORE))
 
@@ -746,7 +746,7 @@ class TestErrorCodes:
 
     def test_main_error_paths_have_codes(self):
         """契约 8b: 主要错误路径源码有码 (E4xx/E5xx 统一), 且均已登记。"""
-        cli_src = (_ROOT / "factory-console" / "cli_factory.py").read_text(encoding="utf-8")
+        cli_src = (_ROOT / "src" / "legacy" / "factory-console" / "cli_factory.py").read_text(encoding="utf-8")
         for code in ("E4001", "E4002", "E4003", "E4101", "E4102"):
             assert f"[{code}]" in cli_src, f"cli_factory 缺 {code}"
         longrun_src = (_ROOT / "scripts" / "smoke_longrun.py").read_text(encoding="utf-8")
@@ -799,7 +799,7 @@ class TestRegistry:
             if isinstance(a, __import__("argparse")._SubParsersAction)  # noqa: SLF001
         }
         assert "eval" in sub_actions["command"].choices
-        cli_src = (_ROOT / "factory-console" / "cli_factory.py").read_text(encoding="utf-8")
+        cli_src = (_ROOT / "src" / "legacy" / "factory-console" / "cli_factory.py").read_text(encoding="utf-8")
         assert 'args.command == "eval"' in cli_src
         # P0-10 同步: test_console_cli 期望集合也含 eval (注册表测试红则本测试红)
         tcc_src = (_ROOT / "tests" / "console" / "test_console_cli.py").read_text(encoding="utf-8")

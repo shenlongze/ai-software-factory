@@ -28,10 +28,10 @@ CATEGORIES = ("live", "test_only", "unverified")
 
 # 已知真活（被生产入口间接使用）。任一条被归入"未证实"即视为回归。
 KNOWN_LIVE = (
-    "factory-console/cli_factory.py",                   # CLI 入口
-    "factory-console/web/backend/fastapi_adapter.py",   # Web 入口
-    "factory-console/session/delivery.py",              # 经相对 import 被拉起（回归点①）
-    "factory-core/agents/models.py",                    # 经 sys.path 根解析
+    "src/legacy/factory-console/cli_factory.py",                   # CLI 入口
+    "src/legacy/factory-console/web/backend/fastapi_adapter.py",   # Web 入口
+    "src/legacy/factory-console/session/delivery.py",              # 经相对 import 被拉起（回归点①）
+    "src/legacy/factory-core/agents/models.py",                    # 经 sys.path 根解析
 )
 # 历史回归点（文件已按计划迁出，留作记录）：
 #   kernel/node/patch_filter.py    → 经字符串动态加载（回归点②）→ 刀13 迁入

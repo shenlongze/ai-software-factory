@@ -33,12 +33,13 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from repo_paths import REPO_ROOT  # 仓库根唯一计算器
 
 IDENTITY_TYPES: tuple[str, ...] = ("human", "agent")
 IDENTITY_STATUSES: tuple[str, ...] = ("active", "retired")
 
-_REPO_ROOT = Path(__file__).resolve().parents[1]
-_ORG_SRC = _REPO_ROOT / "factory-org"
+_REPO_ROOT = REPO_ROOT
+_ORG_SRC = REPO_ROOT / "src" / "legacy" / "factory-org"
 
 
 def _now_iso() -> str:

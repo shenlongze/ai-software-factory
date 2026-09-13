@@ -23,9 +23,10 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 from typing import Any
+from repo_paths import REPO_ROOT  # 仓库根唯一计算器
 
-_REPO_ROOT = Path(__file__).resolve().parents[1]
-_ORG_SRC = _REPO_ROOT / "factory-org"
+_REPO_ROOT = REPO_ROOT
+_ORG_SRC = REPO_ROOT / "src" / "legacy" / "factory-org"
 
 OS_PROJECT_SSOT = "factory-org/org/projects.py"
 

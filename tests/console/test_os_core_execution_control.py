@@ -10,8 +10,8 @@ from pathlib import Path
 import sys
 
 _ROOT = Path(__file__).resolve().parents[2]
-for _p in (str(_ROOT), str(_ROOT / "factory-core"), str(_ROOT / "factory-org"),
-           str(_ROOT / "factory-exec")):
+for _p in (str(_ROOT), str(_ROOT / "src" / "legacy" / "factory-core"), str(_ROOT / "src" / "legacy" / "factory-org"),
+           str(_ROOT / "src" / "legacy" / "factory-exec")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 

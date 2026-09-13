@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any
 
 _ROOT = Path(__file__).resolve().parents[2]
-for _pkg in ("factory-core", "factory-org", "factory-exec"):
+for _pkg in ("src/legacy/factory-core", "src/legacy/factory-org", "src/legacy/factory-exec"):
     _dir = _ROOT / _pkg
     if str(_dir) not in sys.path:
         sys.path.insert(0, str(_dir))

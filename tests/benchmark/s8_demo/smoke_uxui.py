@@ -16,10 +16,10 @@ import sys
 from pathlib import Path
 
 ROOT = Path("/Users/Shared/work/ai-software-factory")
-for p in ("factory-core", "factory-org", "factory-exec"):
+for p in ("src/legacy/factory-core", "src/legacy/factory-org", "src/legacy/factory-exec"):
     sys.path.insert(0, str(ROOT / p))
 
-BASE = ROOT / "factory-exec" / "benchmark_s8_demo"
+BASE = ROOT / "src" / "legacy" / "factory-exec" / "benchmark_s8_demo"
 sys.path.insert(0, str(BASE))
 
 from demo_full_chain import Recorder, build_provider  # noqa: E402

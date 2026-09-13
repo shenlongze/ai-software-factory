@@ -379,7 +379,7 @@ class TestExecRuntimeTrace:
 
     @pytest.fixture(autouse=True)
     def _exec_path(self):
-        _FACTORY_EXEC = _REPO_ROOT / "factory-exec"
+        _FACTORY_EXEC = _REPO_ROOT / "src" / "legacy" / "factory-exec"
         if str(_FACTORY_EXEC) not in sys.path:
             sys.path.insert(0, str(_FACTORY_EXEC))
         yield

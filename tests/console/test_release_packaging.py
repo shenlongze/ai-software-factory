@@ -153,12 +153,12 @@ class TestMappedPackageSource:
         factory_console.cli_factory 即此文件)。"""
         entry = CONSOLE_DIR / "cli_factory.py"
         assert entry.is_file(), "src/legacy/factory-console/cli_factory.py 缺失"
-        mod = importlib.import_module("factory-console.cli_factory")
+        mod = importlib.import_module("factory_console.cli_factory")
         assert callable(mod.main)
 
     def test_unified_entry_has_unified_commands(self):
         """统一入口的 parser 含 init/doctor/config/start/project/run (17+ 命令)。"""
-        cli_factory = importlib.import_module("factory-console.cli_factory")
+        cli_factory = importlib.import_module("factory_console.cli_factory")
         parser = cli_factory.build_parser()
         sub_actions = [a for a in parser._actions if getattr(a, "choices", None)]
         assert sub_actions, "parser 无子命令"

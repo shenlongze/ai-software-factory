@@ -13,7 +13,7 @@ import pytest
 
 from importlib import import_module
 
-LG = import_module("factory-console.session.loop_guard")
+LG = import_module("factory_console.session.loop_guard")
 
 
 def _guard(**kwargs) -> LG.LoopGuard:

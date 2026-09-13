@@ -11,12 +11,12 @@ from pathlib import Path
 
 from importlib import import_module
 
-UNI = import_module("factory-console.retrieval.unified")
+UNI = import_module("factory_console.retrieval.unified")
 
 
 def _store_with(tmp_path: Path, problems: list[str], project: str = "demo"):
     from importlib import import_module as _im
-    MEM = _im("factory-console.memory")
+    MEM = _im("factory_console.memory")
     ws = tmp_path / "ws"
     ws.mkdir(parents=True, exist_ok=True)
     store = MEM.ExperienceStore(ws / "memory" / "experience_store.json")
@@ -47,7 +47,7 @@ class TestUnifiedRetrieve:
     def test_project_filter(self, tmp_path):
         ws, store = _store_with(tmp_path, ["计分"], project="demo")
         store.add(store.__class__ if False else
-                  __import__("factory-console.memory", fromlist=["ExperienceRecord"]).ExperienceRecord(
+                  __import__("factory_console.memory", fromlist=["ExperienceRecord"]).ExperienceRecord(
                       type="DEBUG_EXPERIENCE", problem="其他项目经验", action="fix",
                       success=True, confidence=0.9, source="test", project="other"))
         hits, _ = UNI.retrieve_experience("", store=store, top_k=10, project="demo")
@@ -55,7 +55,7 @@ class TestUnifiedRetrieve:
 
     def test_records_source(self, tmp_path):
         from importlib import import_module as _im
-        MEM = _im("factory-console.memory")
+        MEM = _im("factory_console.memory")
         recs = [MEM.ExperienceRecord(type="DEBUG_EXPERIENCE", problem="登录失败",
                                      action="补配置", success=True, confidence=0.9,
                                      source="test", project="demo")]
@@ -114,7 +114,7 @@ class TestRetrievalE2E:
     def test_real_request_flow(self, tmp_path):
         """真实 Request → Source Selection → Retriever → Rank → Dedup → Budget。"""
         from importlib import import_module as _im
-        RO = _im("factory-console.retrieval")
+        RO = _im("factory_console.retrieval")
         ws, store = _store_with(tmp_path, ["计分 API 失败", "计分 超时", "登录"])
         orch = RO.RetrievalOrchestrator()
         orch.register(RO.RetrievalSource.EXPERIENCE, RO.ExperienceRetriever(memory_store=store))

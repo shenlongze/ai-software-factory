@@ -15,8 +15,8 @@ import importlib
 
 import pytest
 
-CONV_MOD = importlib.import_module("factory-console.session.conversation")
-INTENT_MOD = importlib.import_module("factory-console.session.intent")
+CONV_MOD = importlib.import_module("factory_console.session.conversation")
+INTENT_MOD = importlib.import_module("factory_console.session.intent")
 
 
 def _manager(**kw):

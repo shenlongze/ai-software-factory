@@ -38,8 +38,8 @@ _FACTORY_EXEC = _ROOT / "src" / "legacy" / "factory-exec"  # exec 包父目录 (
 if str(_FACTORY_EXEC) not in sys.path:
     sys.path.insert(0, str(_FACTORY_EXEC))
 
-_config = importlib.import_module("factory-console.config")
-_runner = importlib.import_module("factory-console.workflow_runner")
+_config = importlib.import_module("factory_console.config")
+_runner = importlib.import_module("factory_console.workflow_runner")
 
 #: 可能干扰的进程环境变量 (hermetic 测试前清空)
 _ENV_KEYS = (
@@ -306,7 +306,7 @@ class TestSelfAssembleSmoke:
         monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-smoke-1")
         patch_runner_config(monkeypatch, make_config(tmp_path))
 
-        service = importlib.import_module("factory-console.service")
+        service = importlib.import_module("factory_console.service")
         runtime = service.ConsoleService()._self_assemble_runtime()
         assert runtime is not None  # 装配成功 — 不再恒 None (reality-check 缺口 3 关闭)
         assert runtime._developer is not None
@@ -316,5 +316,5 @@ class TestSelfAssembleSmoke:
     ) -> None:
         """无已配置 key → None (诚实 FAILED 依据 — 不伪造 LLM 结果)。"""
         patch_runner_config(monkeypatch, make_config(tmp_path))
-        service = importlib.import_module("factory-console.service")
+        service = importlib.import_module("factory_console.service")
         assert service.ConsoleService()._self_assemble_runtime() is None

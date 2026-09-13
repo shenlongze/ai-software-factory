@@ -17,10 +17,10 @@ import contextlib
 
 from importlib import import_module
 
-S = import_module("factory-console.session.session")
-CONV = import_module("factory-console.session.conversation")
-INT = import_module("factory-console.session.intent")
-NAMING = import_module("factory-console.session.naming")
+S = import_module("factory_console.session.session")
+CONV = import_module("factory_console.session.conversation")
+INT = import_module("factory_console.session.intent")
+NAMING = import_module("factory_console.session.naming")
 
 
 class _FakeChat:
@@ -148,7 +148,7 @@ class TestProviderFallback:
     def test_provider_unavailable_friendly(self):
         """LLM 不可用: Chat 失败 → 友好 Provider 提示 (非 UnknownIntent)。"""
         from importlib import import_module
-        CHAT = import_module("factory-console.session.chat")
+        CHAT = import_module("factory_console.session.chat")
 
         class _Broken:
             def _default_llm_fn(self):

@@ -29,18 +29,18 @@ from typing import Any
 
 import pytest
 
-ACT_MOD = importlib.import_module("factory-console.session.action")
-ACTIONS_MOD = importlib.import_module("factory-console.session.actions")
-CONF_MOD = importlib.import_module("factory-console.session.conflicts")
-CTX_MOD = importlib.import_module("factory-console.session.context")
-DEPS_MOD = importlib.import_module("factory-console.session.dependencies")
-INTENT_MOD = importlib.import_module("factory-console.session.intent")
-ORCH_MOD = importlib.import_module("factory-console.session.orchestrator")
-PIPE_MOD = importlib.import_module("factory-console.session.pipeline")
-QUAL_MOD = importlib.import_module("factory-console.session.quality")
-ROUTER_MOD = importlib.import_module("factory-console.session.router")
-TEAMS_MOD = importlib.import_module("factory-console.session.teams")
-WS_MOD = importlib.import_module("factory-console.session.workspace")
+ACT_MOD = importlib.import_module("factory_console.session.action")
+ACTIONS_MOD = importlib.import_module("factory_console.session.actions")
+CONF_MOD = importlib.import_module("factory_console.session.conflicts")
+CTX_MOD = importlib.import_module("factory_console.session.context")
+DEPS_MOD = importlib.import_module("factory_console.session.dependencies")
+INTENT_MOD = importlib.import_module("factory_console.session.intent")
+ORCH_MOD = importlib.import_module("factory_console.session.orchestrator")
+PIPE_MOD = importlib.import_module("factory_console.session.pipeline")
+QUAL_MOD = importlib.import_module("factory_console.session.quality")
+ROUTER_MOD = importlib.import_module("factory_console.session.router")
+TEAMS_MOD = importlib.import_module("factory_console.session.teams")
+WS_MOD = importlib.import_module("factory_console.session.workspace")
 
 Lifecycle = PIPE_MOD.Lifecycle
 ConflictDetector = CONF_MOD.ConflictDetector
@@ -1115,7 +1115,7 @@ def test_messages_not_sent_for_failed_task(tmp_path):
 
 def test_messages_store_reload(tmp_path):
     _run_team(tmp_path, enable_messages=True)
-    store = importlib.import_module("factory-console.session.messages").AgentMessageStore(
+    store = importlib.import_module("factory_console.session.messages").AgentMessageStore(
         file=tmp_path / "teams" / "agent_messages.json"
     )
     assert len(store.list()) == 3

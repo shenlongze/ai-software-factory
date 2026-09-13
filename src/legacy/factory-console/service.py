@@ -2942,7 +2942,7 @@ class ConsoleService:
         import sys
         from pathlib import Path
 
-        org_dir = REPO_ROOT / "src" / "legacy" / "factory-org"
+        org_dir = REPO_ROOT / "@@ALREADY@@" / "src" / "legacy" / "factory-org"
         if org_dir.is_dir() and str(org_dir) not in sys.path:
             sys.path.insert(0, str(org_dir))
 

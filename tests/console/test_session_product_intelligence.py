@@ -12,7 +12,7 @@ from pathlib import Path
 
 from importlib import import_module
 
-PI = import_module("factory-console.session.product_intelligence")
+PI = import_module("factory_console.session.product_intelligence")
 
 
 def _intent(**kw):
@@ -196,21 +196,21 @@ def _llm_report_fn(prompt, operation=""):
 class TestLlmMode:
     def test_llm_analyze(self):
         from importlib import import_module as _im
-        R = _im("factory-console.session.reasoning")
+        R = _im("factory_console.session.reasoning")
         prov = R.ReasoningProvider(llm_fn=_llm_report_fn)
         r = PI.ProductIntelligenceEngine().analyze(_intent(), llm_provider=prov)
         assert r.industry_analysis.industry == "LLM行业"
 
     def test_llm_score(self):
         from importlib import import_module as _im
-        R = _im("factory-console.session.reasoning")
+        R = _im("factory_console.session.reasoning")
         prov = R.ReasoningProvider(llm_fn=_llm_report_fn)
         r = PI.ProductIntelligenceEngine().analyze(_intent(), llm_provider=prov)
         assert r.product_value_score.score == 88
 
     def test_llm_mvp(self):
         from importlib import import_module as _im
-        R = _im("factory-console.session.reasoning")
+        R = _im("factory_console.session.reasoning")
         prov = R.ReasoningProvider(llm_fn=_llm_report_fn)
         r = PI.ProductIntelligenceEngine().analyze(_intent(), llm_provider=prov)
         assert r.mvp_plan.mvp == ["m1"]
@@ -220,7 +220,7 @@ class TestFallback:
     def test_llm_fail_deterministic(self):
         """LLM 失败 → deterministic fallback。"""
         from importlib import import_module as _im
-        R = _im("factory-console.session.reasoning")
+        R = _im("factory_console.session.reasoning")
 
         def bad_fn(prompt, operation=""):
             raise R.ReasoningError("down")
@@ -231,7 +231,7 @@ class TestFallback:
 
     def test_llm_invalid_deterministic(self):
         from importlib import import_module as _im
-        R = _im("factory-console.session.reasoning")
+        R = _im("factory_console.session.reasoning")
 
         def bad_fn(prompt, operation=""):
             return "not json"
@@ -312,7 +312,7 @@ class TestLlmDefaultProvider:
     def test_default_provider_llm_fn(self, monkeypatch):
         """_llm_fn 识别 ReasoningProvider 默认 (注入固定 fn, 不依赖真实 key)。"""
         from importlib import import_module as _im
-        R = _im("factory-console.session.reasoning")
+        R = _im("factory_console.session.reasoning")
         prov = R.ReasoningProvider(llm_fn=None)
 
         def _fake_default(self):

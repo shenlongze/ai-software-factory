@@ -29,17 +29,17 @@ from pathlib import Path
 _REPO = Path(__file__).resolve().parents[2]
 if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
-_FACTORY_CORE = _REPO / "factory-core"
+_FACTORY_CORE = _REPO / "src" / "legacy" / "factory-core"
 if str(_FACTORY_CORE) not in sys.path:
     sys.path.insert(0, str(_FACTORY_CORE))
 
-CONV_MOD = importlib.import_module("factory-console.session.conversation")
-DIS_MOD = importlib.import_module("factory-console.session.discovery")
-CLI_MOD = importlib.import_module("factory-console.cli_factory")
-ADAPTER_MOD = importlib.import_module("factory-console.web.backend.fastapi_adapter")
-COMMANDS_MOD = importlib.import_module("factory-console.session.commands")
-CONTEXT_MOD = importlib.import_module("factory-console.session.context")
-BOARD_MOD = importlib.import_module("factory-console.session.board")
+CONV_MOD = importlib.import_module("factory_console.session.conversation")
+DIS_MOD = importlib.import_module("factory_console.session.discovery")
+CLI_MOD = importlib.import_module("factory_console.cli_factory")
+ADAPTER_MOD = importlib.import_module("factory_console.web.backend.fastapi_adapter")
+COMMANDS_MOD = importlib.import_module("factory_console.session.commands")
+CONTEXT_MOD = importlib.import_module("factory_console.session.context")
+BOARD_MOD = importlib.import_module("factory_console.session.board")
 
 from fastapi.testclient import TestClient  # noqa: E402  (console venv 必装)
 
@@ -283,7 +283,7 @@ class TestCliApiSymmetry:
         assert ".md, .json" in out
 
         # 3) 命令宣称的子动作全部实现 (文档宣称的命令存在 — 用法串在实现源码)
-        cmds_src = (_REPO / "factory-console" / "session" / "commands.py").read_text(
+        cmds_src = (_REPO / "src" / "legacy" / "factory-console" / "session" / "commands.py").read_text(
             encoding="utf-8"
         )
         for sub_action in ("list", "add-dir", "add-ext", "rm-dir"):

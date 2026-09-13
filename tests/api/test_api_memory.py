@@ -14,10 +14,10 @@ from pathlib import Path
 
 from importlib import import_module
 
-MEM_API = import_module("factory-console.api.memory")
-API_INIT = import_module("factory-console.api")
-EXP = import_module("factory-console.memory.experience")
-EXTR = import_module("factory-console.memory.extraction")
+MEM_API = import_module("factory_console.api.memory")
+API_INIT = import_module("factory_console.api")
+EXP = import_module("factory_console.memory.experience")
+EXTR = import_module("factory_console.memory.extraction")
 
 
 def _workspace(tmp_path: Path) -> Path:

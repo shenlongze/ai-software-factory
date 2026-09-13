@@ -15,13 +15,13 @@ import pytest
 
 from importlib import import_module
 
-ORCH = import_module("factory-console.session.orchestrator")
-R = import_module("factory-console.session.reasoning")
-LG = import_module("factory-console.session.llm_gap")
-LP = import_module("factory-console.session.llm_task_proposal")
-PC = import_module("factory-console.session.plan_critic")
-CB = import_module("factory-console.session.context_builder")
-PT = import_module("factory-console.session.planning_trace")
+ORCH = import_module("factory_console.session.orchestrator")
+R = import_module("factory_console.session.reasoning")
+LG = import_module("factory_console.session.llm_gap")
+LP = import_module("factory_console.session.llm_task_proposal")
+PC = import_module("factory_console.session.plan_critic")
+CB = import_module("factory_console.session.context_builder")
+PT = import_module("factory_console.session.planning_trace")
 
 
 def _make_project(tmp_path: Path, tasks: list | None = None) -> Path:
@@ -103,7 +103,7 @@ class TestHybridLlm:
         prov = R.ReasoningProvider(llm_fn=_valid_gap_fn)
         trace = PT.PlanningTrace(file=pd / "planning_trace.json")
         calls = []
-        replanner = import_module("factory-console.session.replanning").ReplanningEngine(
+        replanner = import_module("factory_console.session.replanning").ReplanningEngine(
             file=pd / "replanning_decisions.json")
         orch = ORCH.ExecutionOrchestrator(tmp_path)
         orch.execute_project("demo", execute_fn=_fail_fn(calls),
@@ -118,7 +118,7 @@ class TestHybridLlm:
         pd = _make_project(tmp_path)
         prov = R.ReasoningProvider(llm_fn=_valid_proposal_fn)
         calls = []
-        replanner = import_module("factory-console.session.replanning").ReplanningEngine(
+        replanner = import_module("factory_console.session.replanning").ReplanningEngine(
             file=pd / "replanning_decisions.json")
         orch = ORCH.ExecutionOrchestrator(tmp_path)
         orch.execute_project("demo", execute_fn=_fail_fn(calls),
@@ -135,12 +135,12 @@ class TestHybridLlm:
 
         prov = R.ReasoningProvider(llm_fn=bad_fn)
         calls = []
-        replanner = import_module("factory-console.session.replanning").ReplanningEngine(
+        replanner = import_module("factory_console.session.replanning").ReplanningEngine(
             file=pd / "replanning_decisions.json")
         orch = ORCH.ExecutionOrchestrator(tmp_path)
         orch.execute_project("demo", execute_fn=_fail_fn(calls),
                              planning_mode="hybrid", llm_reasoning=prov,
-                             gap_analyzer=import_module("factory-console.session.gap_analyzer").GapAnalyzer(
+                             gap_analyzer=import_module("factory_console.session.gap_analyzer").GapAnalyzer(
                                  file=pd / "gap_analysis.json"),
                              replanner=replanner)
         assert calls  # 执行未崩
@@ -170,7 +170,7 @@ class TestLlmModeNoProvider:
 
         prov = R.ReasoningProvider(llm_fn=bad_fn)
         calls = []
-        replanner = import_module("factory-console.session.replanning").ReplanningEngine(
+        replanner = import_module("factory_console.session.replanning").ReplanningEngine(
             file=pd / "replanning_decisions.json")
         orch = ORCH.ExecutionOrchestrator(tmp_path)
         orch.execute_project("demo", execute_fn=_fail_fn(calls),
@@ -251,10 +251,10 @@ class TestRegression:
     def test_s10_061_chain_still_works(self, tmp_path):
         """deterministic 自动提案 (S10-061) 仍工作 (hybrid 默认无 LLM → deterministic)。"""
         pd = _make_project(tmp_path)
-        ga = import_module("factory-console.session.gap_analyzer").GapAnalyzer(
+        ga = import_module("factory_console.session.gap_analyzer").GapAnalyzer(
             file=pd / "gap_analysis.json")
         calls = []
-        replanner = import_module("factory-console.session.replanning").ReplanningEngine(
+        replanner = import_module("factory_console.session.replanning").ReplanningEngine(
             file=pd / "replanning_decisions.json")
         orch = ORCH.ExecutionOrchestrator(tmp_path)
         orch.execute_project("demo", execute_fn=_fail_fn(calls), gap_analyzer=ga,
@@ -273,13 +273,13 @@ class TestRegression:
         assert res.completed_tasks == 1
 
     def test_import_all(self):
-        import_module("factory-console.session.context_builder")
-        import_module("factory-console.session.planning_trace")
-        import_module("factory-console.session.plan_critic")
-        import_module("factory-console.session.reasoning")
-        import_module("factory-console.session.llm_gap")
-        import_module("factory-console.session.llm_task_proposal")
-        import_module("factory-console.session.orchestrator")
+        import_module("factory_console.session.context_builder")
+        import_module("factory_console.session.planning_trace")
+        import_module("factory_console.session.plan_critic")
+        import_module("factory_console.session.reasoning")
+        import_module("factory_console.session.llm_gap")
+        import_module("factory_console.session.llm_task_proposal")
+        import_module("factory_console.session.orchestrator")
 
 
 # ================================================================== 补充 (达 >=30)
@@ -332,7 +332,7 @@ class TestFill:
 
         prov = R.ReasoningProvider(llm_fn=bad_fn)
         calls = []
-        replanner = import_module("factory-console.session.replanning").ReplanningEngine(
+        replanner = import_module("factory_console.session.replanning").ReplanningEngine(
             file=pd / "replanning_decisions.json")
         orch = ORCH.ExecutionOrchestrator(tmp_path)
         orch.execute_project("demo", execute_fn=_fail_fn(calls),
@@ -404,7 +404,7 @@ class TestFill:
         pd = _make_project(tmp_path)
         prov = R.ReasoningProvider(llm_fn=_valid_proposal_fn)
         calls = []
-        replanner = import_module("factory-console.session.replanning").ReplanningEngine(
+        replanner = import_module("factory_console.session.replanning").ReplanningEngine(
             file=pd / "replanning_decisions.json")
         orch = ORCH.ExecutionOrchestrator(tmp_path)
         orch.execute_project("demo", execute_fn=_fail_fn(calls),

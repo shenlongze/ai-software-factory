@@ -15,10 +15,10 @@ from pathlib import Path
 
 from importlib import import_module
 
-ACT = import_module("factory-console.session.actions")
-INT = import_module("factory-console.session.intent")
-EXP = import_module("factory-console.memory.experience")
-EXTR = import_module("factory-console.memory.extraction")
+ACT = import_module("factory_console.session.actions")
+INT = import_module("factory_console.session.intent")
+EXP = import_module("factory_console.memory.experience")
+EXTR = import_module("factory_console.memory.extraction")
 
 
 def _ctx(ws: Path, params: dict | None = None, intent=None) -> object:

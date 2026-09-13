@@ -11,9 +11,9 @@ from pathlib import Path
 
 from importlib import import_module
 
-ACT = import_module("factory-console.session.actions")
-INT = import_module("factory-console.session.intent")
-API = import_module("factory-console.api.debug")
+ACT = import_module("factory_console.session.actions")
+INT = import_module("factory_console.session.intent")
+API = import_module("factory_console.api.debug")
 
 
 def _ws(tmp_path: Path) -> Path:
@@ -121,7 +121,7 @@ class TestApi:
 
     def test_registered(self, tmp_path):
         from importlib import import_module as _im
-        init = _im("factory-console.api")
+        init = _im("factory_console.api")
         assert hasattr(init, "debug_analyze") or "debug_analyze" in getattr(init, "__all__", [])
 
 
@@ -129,8 +129,8 @@ class TestIntegration:
     def test_full_debug_loop(self, tmp_path):
         """错误 → analyze → Memory 检索 → 策略 → feedback → Memory 沉淀。"""
         from importlib import import_module as _im
-        MEM = _im("factory-console.memory")
-        DE = _im("factory-console.session.debug.debug_engine")
+        MEM = _im("factory_console.memory")
+        DE = _im("factory_console.session.debug.debug_engine")
         ws = _ws(tmp_path)
         # 预填历史经验 (同类型错误)
         store = MEM.ExperienceStore(ws / "memory" / "experience_store.json")
@@ -140,14 +140,14 @@ class TestIntegration:
             source="test", project="demo"))
         # 1. 失败 → DebugEngine
         engine = DE.DebugEngine()
-        case = _im("factory-console.session.debug").DebugCase(
+        case = _im("factory_console.session.debug").DebugCase(
             error_message="jwt refresh token missing", task_id="T001")
         decision = engine.analyze(case, workspace=ws)
         assert decision.strategy is not None
         # 2. 修复 → feedback → Memory 沉淀
         engine.feedback(case, decision, {"success": True}, ws)
         # 3. 再次检索 → 新经验可用
-        hits = _im("factory-console.session.debug.debug_memory").DebugExperienceRetriever().retrieve(
+        hits = _im("factory_console.session.debug.debug_memory").DebugExperienceRetriever().retrieve(
             case, top_k=5, memory_store=store)
         assert hits
 

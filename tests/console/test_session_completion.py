@@ -19,10 +19,10 @@ import importlib
 
 import pytest
 
-SLASH_MOD = importlib.import_module("factory-console.session.slash")
-CMDS_MOD = importlib.import_module("factory-console.session.commands")
-COMP_MOD = importlib.import_module("factory-console.session.completion")
-CTX_MOD = importlib.import_module("factory-console.session.context")
+SLASH_MOD = importlib.import_module("factory_console.session.slash")
+CMDS_MOD = importlib.import_module("factory_console.session.commands")
+COMP_MOD = importlib.import_module("factory_console.session.completion")
+CTX_MOD = importlib.import_module("factory_console.session.context")
 
 
 # ------------------------------------------------------------------ helpers

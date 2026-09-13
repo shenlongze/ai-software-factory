@@ -10,7 +10,7 @@ import json
 
 from importlib import import_module
 
-EV = import_module("factory-console.session.evidence")
+EV = import_module("factory_console.session.evidence")
 
 
 class _RepoResult:

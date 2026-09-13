@@ -28,10 +28,10 @@ _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:  # factory-console/ 的父目录 (含连字符包名)
     sys.path.insert(0, str(_ROOT))
 
-_doc = importlib.import_module("factory-console.cli_doctor")
-_cli = importlib.import_module("factory-console.cli_factory")
-_cfg = importlib.import_module("factory-console.config")
-_mc = importlib.import_module("factory-console.model_catalog")
+_doc = importlib.import_module("factory_console.cli_doctor")
+_cli = importlib.import_module("factory_console.cli_factory")
+_cfg = importlib.import_module("factory_console.config")
+_mc = importlib.import_module("factory_console.model_catalog")
 
 BUILTIN_IDS = ["environment", "provider", "model", "runtime", "router"]
 
@@ -188,7 +188,7 @@ class TestEnvironment:
         venv_py = ctx.root / ".venv" / "bin" / "python"
         venv_py.parent.mkdir(parents=True)
         venv_py.write_text("", encoding="utf-8")
-        (ctx.root / "factory-console" / "web" / "frontend" / "node_modules").mkdir(
+        (ctx.root / "src" / "legacy" / "factory-console" / "web" / "frontend" / "node_modules").mkdir(
             parents=True
         )
         for name in _doc.WORKSPACE_DIRS:

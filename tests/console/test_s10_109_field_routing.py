@@ -26,8 +26,8 @@ import importlib
 
 import pytest
 
-CONV = importlib.import_module("factory-console.session.conversation")
-DI = importlib.import_module("factory-console.session.discovery_intelligence")
+CONV = importlib.import_module("factory_console.session.conversation")
+DI = importlib.import_module("factory_console.session.discovery_intelligence")
 
 STATES = CONV.ConversationState
 
@@ -40,7 +40,7 @@ def _no_provider(monkeypatch):
 
     注入 scripted analyzer 的测试不受影响 (不走默认装配)。
     """
-    REASON = importlib.import_module("factory-console.session.reasoning")
+    REASON = importlib.import_module("factory_console.session.reasoning")
 
     class _BrokenProvider:
         def _default_llm_fn(self):

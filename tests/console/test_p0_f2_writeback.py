@@ -171,7 +171,7 @@ class TestChainWriteback:
     def test_exec_ref_failure_path_returns_exs(self, workroot: Path) -> None:
         """F2 Gap-2: 失败时 _exec_fn 也回传 exec_ref=EXS。"""
         # 源码级断言: 两处 _exec_fn 失败 return 均带 exec_ref
-        src = (Path(_ROOT) / "factory-console" / "session" / "agent_loop.py").read_text()
+        src = (Path(_ROOT) / "src" / "legacy" / "factory-console" / "session" / "agent_loop.py").read_text()
         assert src.count('"exec_ref": _exs}') == 2
 
 
@@ -183,7 +183,7 @@ class TestRecoverSemantics:
 
     def test_run_status_node_run_evidence(self, workroot: Path) -> None:
         """源码级: _run_status 先查 NodeRun (run-*), 次查 EXS, TASK-GW 仅 legacy。"""
-        src = (Path(_ROOT) / "factory-console" / "session" / "agent_loop.py").read_text()
+        src = (Path(_ROOT) / "src" / "legacy" / "factory-console" / "session" / "agent_loop.py").read_text()
         assert 'if _ref.startswith("run-"):' in src
         assert '"COMPLETED": "done", "FAILED": "failed"' in src
         assert 'if _ref.startswith("EXS-"):' in src

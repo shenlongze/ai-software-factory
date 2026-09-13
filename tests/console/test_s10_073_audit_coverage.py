@@ -64,7 +64,7 @@ class TestAuditCoverage:
             assert any(e in emitted for e in evs), f"{stage} 未自动"
 
     def test_event_types_registered(self):
-        AE = import_module("factory-console.audit.audit_event")
+        AE = import_module("factory_console.audit.audit_event")
         for evt in ("DISCOVERY_CONFIRMED", "TASK_STARTED", "TASK_FAILED",
                     "AGENT_ASSIGNED", "ARTIFACT_CREATED", "TEST_PASSED", "TEST_FAILED"):
             assert evt in AE.EVENT_TYPES
@@ -73,7 +73,7 @@ class TestAuditCoverage:
 class TestDecisionChainE2E:
     def _run_debug_chain(self, tmp_path):
         """真实 Debug 链 → Audit 事件自动 → Decision Chain 可查询。"""
-        DP = import_module("factory-console.session.debug.debug_pipeline")
+        DP = import_module("factory_console.session.debug.debug_pipeline")
         ws = tmp_path / "proj"
         ws.mkdir(exist_ok=True)
         (ws / "scoring.py").write_text("def score(shots):\n    return 4  # BUG\n", encoding="utf-8")
@@ -94,7 +94,7 @@ class TestDecisionChainE2E:
         assert "VALIDATION_PASSED" in types
 
     def test_chain_queryable(self, tmp_path):
-        AS = import_module("factory-console.audit.audit_store")
+        AS = import_module("factory_console.audit.audit_store")
         ws = self._run_debug_chain(tmp_path)
         store = AS.AuditStore(workspace=ws)
         events = store.events()
@@ -105,7 +105,7 @@ class TestDecisionChainE2E:
 
     def test_failure_path_events(self, tmp_path):
         """失败路径也有事件 (任务失败 → TASK_FAILED)。"""
-        AE = import_module("factory-console.audit.audit_emitter")
+        AE = import_module("factory_console.audit.audit_emitter")
         ws = tmp_path / "ws"
         ws.mkdir(exist_ok=True)
         emitter = AE.AuditEmitter(workspace=ws)
@@ -118,8 +118,8 @@ class TestDecisionChainE2E:
 
     def test_production_actions_auto_audit(self, tmp_path):
         """生产 action (create_product) 自动 Audit — 非人工。"""
-        ACT = import_module("factory-console.session.actions")
-        PR = import_module("factory-console.session.product")
+        ACT = import_module("factory_console.session.actions")
+        PR = import_module("factory_console.session.product")
         ws = tmp_path / "ws"
         ws.mkdir(exist_ok=True)
 

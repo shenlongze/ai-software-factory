@@ -14,7 +14,7 @@ import json
 from importlib import import_module
 from pathlib import Path
 
-EF = import_module("factory-console.session.expert_factory")
+EF = import_module("factory_console.session.expert_factory")
 DEV = import_module("exec.developer")
 MODELS = import_module("exec.models")
 CLI = import_module("exec.cli")

@@ -32,13 +32,13 @@ from typing import Any
 
 import pytest
 
-AGENTS_MOD = importlib.import_module("factory-console.session.agents")
-CONF_MOD = importlib.import_module("factory-console.session.conflicts")
-DEPS_MOD = importlib.import_module("factory-console.session.dependencies")
-MSGS_MOD = importlib.import_module("factory-console.session.messages")
-ROLES_MOD = importlib.import_module("factory-console.session.roles")
-TEAMS_MOD = importlib.import_module("factory-console.session.teams")
-WS_MOD = importlib.import_module("factory-console.session.workspace")
+AGENTS_MOD = importlib.import_module("factory_console.session.agents")
+CONF_MOD = importlib.import_module("factory_console.session.conflicts")
+DEPS_MOD = importlib.import_module("factory_console.session.dependencies")
+MSGS_MOD = importlib.import_module("factory_console.session.messages")
+ROLES_MOD = importlib.import_module("factory_console.session.roles")
+TEAMS_MOD = importlib.import_module("factory_console.session.teams")
+WS_MOD = importlib.import_module("factory_console.session.workspace")
 
 AgentTeam = TEAMS_MOD.AgentTeam
 TeamRegistry = TEAMS_MOD.TeamRegistry
@@ -1246,7 +1246,7 @@ def test_regression_new_modules_importable():
         MSGS_MOD,
         CONF_MOD,
     ):
-        assert mod.__name__.startswith("factory-console.session.")
+        assert mod.__name__.startswith("factory_console.session.")
 
 
 def test_regression_agent_registry_unchanged(tmp_path):

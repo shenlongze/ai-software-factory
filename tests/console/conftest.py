@@ -35,7 +35,7 @@ from events.store import EventStore
 @pytest.fixture(scope="session")
 def console_mod():
     """factory-console 包 (importlib — 目录名含连字符, 无法用 import 语句)。"""
-    return importlib.import_module("factory-console")
+    return importlib.import_module("factory_console")
 
 
 @pytest.fixture

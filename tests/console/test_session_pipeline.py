@@ -28,16 +28,16 @@ from pathlib import Path
 
 import pytest
 
-ACT_MOD = importlib.import_module("factory-console.session.action")
-ACTIONS_MOD = importlib.import_module("factory-console.session.actions")
-CONF_MOD = importlib.import_module("factory-console.session.confirm")
-CONV_MOD = importlib.import_module("factory-console.session.conversation")
-CTX_MOD = importlib.import_module("factory-console.session.context")
-INTENT_MOD = importlib.import_module("factory-console.session.intent")
-PIPE_MOD = importlib.import_module("factory-console.session.pipeline")
-PROD_MOD = importlib.import_module("factory-console.session.product")
-ROUTER_MOD = importlib.import_module("factory-console.session.router")
-SESS_MOD = importlib.import_module("factory-console.session.session")
+ACT_MOD = importlib.import_module("factory_console.session.action")
+ACTIONS_MOD = importlib.import_module("factory_console.session.actions")
+CONF_MOD = importlib.import_module("factory_console.session.confirm")
+CONV_MOD = importlib.import_module("factory_console.session.conversation")
+CTX_MOD = importlib.import_module("factory_console.session.context")
+INTENT_MOD = importlib.import_module("factory_console.session.intent")
+PIPE_MOD = importlib.import_module("factory_console.session.pipeline")
+PROD_MOD = importlib.import_module("factory_console.session.product")
+ROUTER_MOD = importlib.import_module("factory_console.session.router")
+SESS_MOD = importlib.import_module("factory_console.session.session")
 
 STATES = CONV_MOD.ConversationState
 

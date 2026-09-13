@@ -17,7 +17,7 @@ import pytest
 
 from importlib import import_module
 
-CL = import_module("factory-console.session.cost_ledger")
+CL = import_module("factory_console.session.cost_ledger")
 
 
 def _ledger(tmp_path: Path) -> CL.CostLedger:

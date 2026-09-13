@@ -12,8 +12,8 @@ import json
 from importlib import import_module
 from pathlib import Path
 
-EV = import_module("factory-console.session.evidence")
-ORCH = import_module("factory-console.session.orchestrator")
+EV = import_module("factory_console.session.evidence")
+ORCH = import_module("factory_console.session.orchestrator")
 
 PLAN_TASKS: list[dict] = [
     {"id": "T001", "name": "数据库 Schema 设计", "agent_type": "backend", "agent": "backend-1"},

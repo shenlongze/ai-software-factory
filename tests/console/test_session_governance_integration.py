@@ -14,13 +14,13 @@ from pathlib import Path
 
 from importlib import import_module
 
-ORCH = import_module("factory-console.session.orchestrator")
-B = import_module("factory-console.session.budget")
-CL = import_module("factory-console.session.cost_ledger")
-RG = import_module("factory-console.session.review_gate")
-EP = import_module("factory-console.session.execution_policy")
-LG = import_module("factory-console.session.loop_guard")
-PT = import_module("factory-console.session.planning_trace")
+ORCH = import_module("factory_console.session.orchestrator")
+B = import_module("factory_console.session.budget")
+CL = import_module("factory_console.session.cost_ledger")
+RG = import_module("factory_console.session.review_gate")
+EP = import_module("factory_console.session.execution_policy")
+LG = import_module("factory_console.session.loop_guard")
+PT = import_module("factory_console.session.planning_trace")
 
 
 def _make_project(tmp_path: Path, tasks: list | None = None) -> Path:
@@ -273,10 +273,10 @@ class TestRegression:
 
     def test_s10_061_chain(self, tmp_path):
         pd = _make_project(tmp_path)
-        ga = import_module("factory-console.session.gap_analyzer").GapAnalyzer(
+        ga = import_module("factory_console.session.gap_analyzer").GapAnalyzer(
             file=pd / "gap_analysis.json")
         calls = []
-        replanner = import_module("factory-console.session.replanning").ReplanningEngine(
+        replanner = import_module("factory_console.session.replanning").ReplanningEngine(
             file=pd / "replanning_decisions.json")
         orch = ORCH.ExecutionOrchestrator(tmp_path)
         orch.execute_project("demo", execute_fn=_fail_fn(calls), gap_analyzer=ga,
@@ -285,8 +285,8 @@ class TestRegression:
 
     def test_hybrid_llm(self, tmp_path):
         pd = _make_project(tmp_path)
-        R = import_module("factory-console.session.reasoning")
-        LP = import_module("factory-console.session.llm_task_proposal")
+        R = import_module("factory_console.session.reasoning")
+        LP = import_module("factory_console.session.llm_task_proposal")
 
         def valid_fn(prompt, operation=""):
             return json.dumps({"task_id": "", "title": "持久化", "description": "d",
@@ -297,7 +297,7 @@ class TestRegression:
                                "source_gap": "g"}, ensure_ascii=False)
 
         prov = R.ReasoningProvider(llm_fn=valid_fn)
-        replanner = import_module("factory-console.session.replanning").ReplanningEngine(
+        replanner = import_module("factory_console.session.replanning").ReplanningEngine(
             file=pd / "replanning_decisions.json")
         calls = []
         orch = ORCH.ExecutionOrchestrator(tmp_path)
@@ -357,8 +357,8 @@ class TestMore:
         assert gate.status("demo") in ("none", "waiting", "approved", "rejected")
 
     def test_import_all(self, tmp_path):
-        import_module("factory-console.session.budget")
-        import_module("factory-console.session.cost_ledger")
-        import_module("factory-console.session.review_gate")
-        import_module("factory-console.session.execution_policy")
-        import_module("factory-console.session.loop_guard")
+        import_module("factory_console.session.budget")
+        import_module("factory_console.session.cost_ledger")
+        import_module("factory_console.session.review_gate")
+        import_module("factory_console.session.execution_policy")
+        import_module("factory_console.session.loop_guard")

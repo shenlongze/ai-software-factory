@@ -21,10 +21,10 @@ from types import SimpleNamespace
 
 from importlib import import_module
 
-CL = import_module("factory-console.session.cost_ledger")
-ORCH = import_module("factory-console.session.orchestrator")
-R = import_module("factory-console.session.reasoning")
-PT = import_module("factory-console.session.planning_trace")
+CL = import_module("factory_console.session.cost_ledger")
+ORCH = import_module("factory_console.session.orchestrator")
+R = import_module("factory_console.session.reasoning")
+PT = import_module("factory_console.session.planning_trace")
 
 
 def _ledger(tmp_path: Path) -> CL.CostLedger:
@@ -286,7 +286,7 @@ class TestOrchestratorSync:
         ledger = CL.CostLedger(file=pd / "cost_records.json")
         trace = PT.PlanningTrace(file=pd / "planning_trace.json")
         calls = []
-        replanner = import_module("factory-console.session.replanning").ReplanningEngine(
+        replanner = import_module("factory_console.session.replanning").ReplanningEngine(
             file=pd / "replanning_decisions.json")
         orch = ORCH.ExecutionOrchestrator(tmp_path)
         orch.execute_project(
@@ -306,7 +306,7 @@ class TestOrchestratorSync:
         ledger = CL.CostLedger(file=pd / "cost_records.json")
         trace = PT.PlanningTrace(file=pd / "planning_trace.json")
         calls = []
-        replanner = import_module("factory-console.session.replanning").ReplanningEngine(
+        replanner = import_module("factory_console.session.replanning").ReplanningEngine(
             file=pd / "replanning_decisions.json")
         orch = ORCH.ExecutionOrchestrator(tmp_path)
         orch.execute_project(
@@ -326,7 +326,7 @@ class TestOrchestratorSync:
         pd = _make_project(tmp_path)
         trace = PT.PlanningTrace(file=pd / "planning_trace.json")
         calls = []
-        replanner = import_module("factory-console.session.replanning").ReplanningEngine(
+        replanner = import_module("factory_console.session.replanning").ReplanningEngine(
             file=pd / "replanning_decisions.json")
         orch = ORCH.ExecutionOrchestrator(tmp_path)
         res = orch.execute_project(
@@ -342,7 +342,7 @@ class TestOrchestratorSync:
         pd = _make_project(tmp_path)
         trace = PT.PlanningTrace(file=pd / "planning_trace.json")
         calls = []
-        replanner = import_module("factory-console.session.replanning").ReplanningEngine(
+        replanner = import_module("factory_console.session.replanning").ReplanningEngine(
             file=pd / "replanning_decisions.json")
         orch = ORCH.ExecutionOrchestrator(tmp_path)
 

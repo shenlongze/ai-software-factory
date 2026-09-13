@@ -29,8 +29,8 @@ _FACTORY_EXEC = _ROOT / "src" / "legacy" / "factory-exec"  # exec 包父目录 (
 if str(_FACTORY_EXEC) not in sys.path:
     sys.path.insert(0, str(_FACTORY_EXEC))
 
-_config = importlib.import_module("factory-console.config")
-_runner = importlib.import_module("factory-console.workflow_runner")
+_config = importlib.import_module("factory_console.config")
+_runner = importlib.import_module("factory_console.workflow_runner")
 
 _ENV_KEYS = (
     "LLM_PROVIDER",

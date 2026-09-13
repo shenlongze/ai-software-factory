@@ -13,7 +13,7 @@ import pytest
 
 from importlib import import_module
 
-EP = import_module("factory-console.session.execution_policy")
+EP = import_module("factory_console.session.execution_policy")
 
 
 def _policy(mode: str = "AUTO") -> EP.ExecutionPolicy:

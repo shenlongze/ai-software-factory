@@ -267,8 +267,8 @@ class TestCliReadOnly:
 
 
 def _factory_cli_mod():
-    """factory-console.cli_factory 模块 (连字符包, importlib 唯一加载方式)。"""
-    return importlib.import_module("factory-console.cli_factory")
+    """factory_console.cli_factory 模块 (连字符包, importlib 唯一加载方式)。"""
+    return importlib.import_module("factory_console.cli_factory")
 
 
 def _make_cli(tmp_path, **environ):
@@ -397,7 +397,7 @@ class TestFactoryCliEnvironment:
         fake_root = tmp_path / "fake"
         fake_root.mkdir(exist_ok=True)
         (fake_root / "pyproject.toml").write_text("", encoding="utf-8")
-        (fake_root / "factory-console" / "web" / "frontend").mkdir(parents=True)
+        (fake_root / "src" / "legacy" / "factory-console" / "web" / "frontend").mkdir(parents=True)
         problems = mod._dep_problems(fake_root)
         text = "\n".join(problems)
         assert "python3 -m venv .venv" in text

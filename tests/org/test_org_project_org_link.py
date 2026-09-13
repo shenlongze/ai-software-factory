@@ -19,8 +19,8 @@ _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-ORG = import_module("factory-org.org.cli")
-PROJECTS = import_module("factory-org.org.projects")
+ORG = import_module("org.cli")
+PROJECTS = import_module("org.projects")
 
 
 def _ws(tmp_path: Path) -> Path:

@@ -15,7 +15,7 @@ import pytest
 
 from importlib import import_module
 
-RG = import_module("factory-console.session.review_gate")
+RG = import_module("factory_console.session.review_gate")
 
 
 def _gate(tmp_path: Path) -> RG.ReviewGate:

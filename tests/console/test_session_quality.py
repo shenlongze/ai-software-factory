@@ -16,11 +16,11 @@ import pytest
 
 from importlib import import_module
 
-QUALITY = import_module("factory-console.session.quality")
-PIPE = import_module("factory-console.session.pipeline")
-ORCH = import_module("factory-console.session.orchestrator")
-ACTIONS = import_module("factory-console.session.actions")
-ACTION_MOD = import_module("factory-console.session.action")
+QUALITY = import_module("factory_console.session.quality")
+PIPE = import_module("factory_console.session.pipeline")
+ORCH = import_module("factory_console.session.orchestrator")
+ACTIONS = import_module("factory_console.session.actions")
+ACTION_MOD = import_module("factory_console.session.action")
 
 
 # ================================================================== fixtures
@@ -321,13 +321,13 @@ class TestRepairAction:
         assert res.ok is True
 
     def test_intent_keyword(self):
-        parser = import_module("factory-console.session.intent").KeywordIntentParser()
+        parser = import_module("factory_console.session.intent").KeywordIntentParser()
         intent = parser.parse("修复失败任务")
         assert intent is not None
         assert intent.intent_type == "repair_task"
 
     def test_router_mapping(self):
-        router = import_module("factory-console.session.router").IntentRouter()
+        router = import_module("factory_console.session.router").IntentRouter()
         intent = ACTION_MOD.IntentObject(intent_type="repair_task", params={}, raw="x")
         action = router.route(intent, ACTIONS.build_default_actions())
         assert action.name == "repair_task"
@@ -535,7 +535,7 @@ class TestRegression:
             assert s in PIPE.Lifecycle.STATUSES
 
     def test_import_all_modules(self):
-        for m in ("factory-console.session.quality", "factory-console.session.orchestrator"):
+        for m in ("factory_console.session.quality", "factory_console.session.orchestrator"):
             import_module(m)
 
 
@@ -676,11 +676,11 @@ class TestRepairActionExtra:
         assert "修复" in reg.get("repair_task").description
 
     def test_router_has_repair_route(self):
-        router = import_module("factory-console.session.router").IntentRouter()
+        router = import_module("factory_console.session.router").IntentRouter()
         assert router.routes().get("repair_task") == "repair_task"
 
     def test_intent_variants(self):
-        parser = import_module("factory-console.session.intent").KeywordIntentParser()
+        parser = import_module("factory_console.session.intent").KeywordIntentParser()
         for text in ("修复失败任务", "修复任务", "重试失败任务"):
             intent = parser.parse(text)
             assert intent is not None, text
@@ -688,7 +688,7 @@ class TestRepairActionExtra:
 
     def test_repair_not_confused_with_run_task(self):
         # "修复" 单独 → run_task; "修复失败任务" → repair_task (优先级)
-        parser = import_module("factory-console.session.intent").KeywordIntentParser()
+        parser = import_module("factory_console.session.intent").KeywordIntentParser()
         assert parser.parse("修复这个bug").intent_type == "run_task"
         assert parser.parse("修复失败任务").intent_type == "repair_task"
 

@@ -20,10 +20,10 @@ import importlib
 import json
 from pathlib import Path
 
-AUDIT = importlib.import_module("factory-console.audit.audit_event")
-AUDIT_STORE = importlib.import_module("factory-console.audit.audit_store")
-DEC = importlib.import_module("factory-console.session.decomposer")
-ORCH = importlib.import_module("factory-console.session.orchestrator")
+AUDIT = importlib.import_module("factory_console.audit.audit_event")
+AUDIT_STORE = importlib.import_module("factory_console.audit.audit_store")
+DEC = importlib.import_module("factory_console.session.decomposer")
+ORCH = importlib.import_module("factory_console.session.orchestrator")
 
 #: M3 动态分配用 Agent 注册表 (skill 对齐技术层 agent_type → 匹配必命中)
 AGENTS = {

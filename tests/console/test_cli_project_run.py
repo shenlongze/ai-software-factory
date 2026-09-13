@@ -35,8 +35,8 @@ _FACTORY_CORE = _ROOT / "src" / "legacy" / "factory-core"
 if str(_FACTORY_CORE) not in sys.path:
     sys.path.insert(0, str(_FACTORY_CORE))
 
-_cli = importlib.import_module("factory-console.cli_factory")
-_cfg = importlib.import_module("factory-console.config")
+_cli = importlib.import_module("factory_console.cli_factory")
+_cfg = importlib.import_module("factory_console.config")
 
 
 def make_cli(tmp_path: Path, *, real_root: bool = False):

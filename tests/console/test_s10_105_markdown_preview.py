@@ -31,10 +31,10 @@ _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:  # factory-console/ 的父目录 (含连字符包名)
     sys.path.insert(0, str(_ROOT))
 
-CMDS = importlib.import_module("factory-console.session.commands")
-CTX = importlib.import_module("factory-console.session.context")
-RENDER = importlib.import_module("factory-console.session.renderer")
-SESS = importlib.import_module("factory-console.session.session")
+CMDS = importlib.import_module("factory_console.session.commands")
+CTX = importlib.import_module("factory_console.session.context")
+RENDER = importlib.import_module("factory_console.session.renderer")
+SESS = importlib.import_module("factory_console.session.session")
 
 
 # ------------------------------------------------------------------ 1: looks_like_markdown (契约 1)

@@ -30,7 +30,7 @@ from pathlib import Path
 _REPO = Path(__file__).resolve().parents[2]
 if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
-_FACTORY_CORE = _REPO / "factory-core"
+_FACTORY_CORE = _REPO / "src" / "legacy" / "factory-core"
 if str(_FACTORY_CORE) not in sys.path:
     sys.path.insert(0, str(_FACTORY_CORE))
 
@@ -43,13 +43,13 @@ SESSION_INTERCEPTED_INTENTS = frozenset({"current_project", "show_cost"})
 #: 不经 router/会话确认门 — 与 DEFAULT_ROUTES/create_product action 语义一致
 SESSION_INTERCEPTED_SENSITIVE = frozenset({"create_product"})
 
-INTENT_MOD = importlib.import_module("factory-console.session.intent")
-ROUTER_MOD = importlib.import_module("factory-console.session.router")
-ACTIONS_MOD = importlib.import_module("factory-console.session.actions")
-SESSION_MOD = importlib.import_module("factory-console.session.session")
-AUDIT_EVENT_MOD = importlib.import_module("factory-console.audit.audit_event")
-CONFIRM_MOD = importlib.import_module("factory-console.session.confirm")
-ADAPTER_MOD = importlib.import_module("factory-console.web.backend.fastapi_adapter")
+INTENT_MOD = importlib.import_module("factory_console.session.intent")
+ROUTER_MOD = importlib.import_module("factory_console.session.router")
+ACTIONS_MOD = importlib.import_module("factory_console.session.actions")
+SESSION_MOD = importlib.import_module("factory_console.session.session")
+AUDIT_EVENT_MOD = importlib.import_module("factory_console.audit.audit_event")
+CONFIRM_MOD = importlib.import_module("factory_console.session.confirm")
+ADAPTER_MOD = importlib.import_module("factory_console.web.backend.fastapi_adapter")
 
 
 def _registry_action_names() -> set[str]:
@@ -96,7 +96,7 @@ class TestCliRegistryConsistency:
         """
         import argparse
 
-        cli_mod = importlib.import_module("factory-console.cli_factory")
+        cli_mod = importlib.import_module("factory_console.cli_factory")
         parser = cli_mod.build_parser()
         sub_actions = {
             a.dest: a
@@ -129,7 +129,7 @@ class TestIntentRegistryConsistency:
         unrouted = rules_intents - set(ROUTER_MOD.DEFAULT_ROUTES) - set(SESSION_INTERCEPTED_INTENTS)
         assert not unrouted, f"关键词意图无路由: {sorted(unrouted)}"
         # 会话特判例外必须真实被 session 特判 (防例外名漂移成死名单)
-        sess_src = (_REPO / "factory-console" / "session" / "session.py").read_text(
+        sess_src = (_REPO / "src" / "legacy" / "factory-console" / "session" / "session.py").read_text(
             encoding="utf-8"
         )
         assert "INTENT_CURRENT_PROJECT" in sess_src, "current_project 例外失效 (session 特判不存在)"
@@ -227,7 +227,7 @@ def _emitted_event_types() -> set[str]:
     """factory-console 实现中实际发射的事件类型字面量 (动态扫描, 排除注册表自身)。"""
     emitted: set[str] = set()
     pattern = re.compile(r'\bemit\(\s*"([A-Z][A-Z0-9_]{2,})"')
-    for path in (_REPO / "factory-console").rglob("*.py"):
+    for path in (_REPO / "src" / "legacy" / "factory-console").rglob("*.py"):
         if path.name == "audit_event.py":
             continue
         emitted.update(pattern.findall(path.read_text(encoding="utf-8")))
@@ -237,7 +237,7 @@ def _emitted_event_types() -> set[str]:
 def _event_referenced_or_documented(name: str) -> bool:
     """事件类型被实现引用或审计相关文档/测试引用 (防死条目)。"""
     needles = (f'"{name}"', f"'{name}'")
-    for path in (_REPO / "factory-console").rglob("*.py"):
+    for path in (_REPO / "src" / "legacy" / "factory-console").rglob("*.py"):
         if path.name == "audit_event.py":
             continue
         text = path.read_text(encoding="utf-8")

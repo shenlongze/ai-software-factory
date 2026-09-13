@@ -53,7 +53,7 @@ from org.management import (  # noqa: E402
 
 #: factory-console 包名含连字符 → importlib 加载 (同 tests/console 模式;
 #: service.py 顶层零 Core 依赖, 延迟导入 — Removal Isolation)
-_console_mod = importlib.import_module("factory-console.service")
+_console_mod = importlib.import_module("factory_console.service")
 
 
 def _mgmt_dir(tmp_path: Path) -> Path:

@@ -17,14 +17,14 @@ from importlib import import_module
 
 import pytest
 
-ACT = import_module("factory-console.session.actions")
-ART = import_module("factory-console.session.artifact_registry")
-CTX = import_module("factory-console.session.context")
-INT = import_module("factory-console.session.intent")
-PIPE = import_module("factory-console.session.pipeline_runner")
-PROD = import_module("factory-console.session.product")
-SESS = import_module("factory-console.session.session")
-CONV_MOD = import_module("factory-console.session.conversation")
+ACT = import_module("factory_console.session.actions")
+ART = import_module("factory_console.session.artifact_registry")
+CTX = import_module("factory_console.session.context")
+INT = import_module("factory_console.session.intent")
+PIPE = import_module("factory_console.session.pipeline_runner")
+PROD = import_module("factory_console.session.product")
+SESS = import_module("factory_console.session.session")
+CONV_MOD = import_module("factory_console.session.conversation")
 
 
 class FakeOrgCli:

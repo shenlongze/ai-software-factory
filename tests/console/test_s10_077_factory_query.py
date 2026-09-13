@@ -15,8 +15,8 @@ import contextlib
 
 from importlib import import_module
 
-S = import_module("factory-console.session.session")
-INT = import_module("factory-console.session.intent")
+S = import_module("factory_console.session.session")
+INT = import_module("factory_console.session.intent")
 
 
 class _FakeChat:
@@ -108,7 +108,7 @@ class TestProviderIndependence:
     def test_chat_reports_provider_error(self):
         """LLM 不可用: General Chat → 明确 Provider Error。"""
         from importlib import import_module
-        CHAT = import_module("factory-console.session.chat")
+        CHAT = import_module("factory_console.session.chat")
 
         class _Broken:
             def _default_llm_fn(self):

@@ -16,7 +16,7 @@ import pytest
 
 from importlib import import_module
 
-B = import_module("factory-console.session.budget")
+B = import_module("factory_console.session.budget")
 
 ENFORCE_ACTIONS = ("llm", "execute", "retry", "repair", "replan", "new_task")
 

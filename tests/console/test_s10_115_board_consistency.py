@@ -16,7 +16,7 @@ import json
 from importlib import import_module
 from pathlib import Path
 
-BOARD = import_module("factory-console.session.board")
+BOARD = import_module("factory_console.session.board")
 
 
 def _mk(root: Path, slug: str, *, project: str | None = None,

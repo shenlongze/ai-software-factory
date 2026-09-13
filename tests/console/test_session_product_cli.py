@@ -11,8 +11,8 @@ from pathlib import Path
 
 from importlib import import_module
 
-ACT = import_module("factory-console.session.actions")
-INT = import_module("factory-console.session.intent")
+ACT = import_module("factory_console.session.actions")
+INT = import_module("factory_console.session.intent")
 
 
 def _intent():

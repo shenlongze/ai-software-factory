@@ -24,10 +24,10 @@ from pathlib import Path
 
 import pytest
 
-R = import_module("factory-console.session.reasoning")
-G = import_module("factory-console.session.llm_gap")
-GA = import_module("factory-console.session.gap_analyzer")
-PT = import_module("factory-console.session.planning_trace")
+R = import_module("factory_console.session.reasoning")
+G = import_module("factory_console.session.llm_gap")
+GA = import_module("factory_console.session.gap_analyzer")
+PT = import_module("factory_console.session.planning_trace")
 
 VALID_GAP = {
     "detected": True,

@@ -31,7 +31,7 @@ from intelligence_helpers import make_decision, make_experience, make_recommenda
 
 def _core_py_files() -> list[Path]:
     """factory-core 下除 intelligence/ 外的全部 .py 文件。"""
-    root = Path(__file__).resolve().parents[2] / "factory-core"
+    root = Path(__file__).resolve().parents[2] / "src" / "legacy" / "factory-core"
     return [
         p
         for p in root.rglob("*.py")
@@ -61,7 +61,7 @@ class TestCoreDoesNotImportIntelligence:
         `_open_intelligence_engine` 延迟导入 — 删除 intelligence/ 不影响 CLI
         模块加载 (命令调用时响亮失败, 装配点不静默降级)。
         """
-        root = Path(__file__).resolve().parents[2] / "factory-core" / "cli"
+        root = Path(__file__).resolve().parents[2] / "src" / "legacy" / "factory-core" / "cli"
         pattern = re.compile(r"(?m)^(?:import intelligence\b|from intelligence\b)")
         for p in root.rglob("*.py"):
             assert not pattern.search(p.read_text(encoding="utf-8")), p

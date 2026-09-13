@@ -26,7 +26,7 @@ from events.store import EventStore
 
 from console_helpers import event_sequence, payload_of
 
-console_events = __import__("importlib").import_module("factory-console.events")
+console_events = __import__("importlib").import_module("factory_console.events")
 SOURCE = console_events.SOURCE
 
 

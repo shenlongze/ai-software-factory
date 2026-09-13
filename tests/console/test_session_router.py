@@ -16,9 +16,9 @@ import importlib
 
 import pytest
 
-ROUTER_MOD = importlib.import_module("factory-console.session.router")
-ACT_MOD = importlib.import_module("factory-console.session.action")
-INTENT_MOD = importlib.import_module("factory-console.session.intent")
+ROUTER_MOD = importlib.import_module("factory_console.session.router")
+ACT_MOD = importlib.import_module("factory_console.session.action")
+INTENT_MOD = importlib.import_module("factory_console.session.intent")
 
 
 def _registry_with(names):

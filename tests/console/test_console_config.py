@@ -33,8 +33,8 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 # factory-console 包名含连字符 → importlib 加载 (同 tests/console 其余测试模式)
-_config = importlib.import_module("factory-console.config")
-_runner = importlib.import_module("factory-console.workflow_runner")
+_config = importlib.import_module("factory_console.config")
+_runner = importlib.import_module("factory_console.workflow_runner")
 
 #: 可能干扰的进程环境变量 (hermetic 测试前清空)
 _ENV_KEYS = (

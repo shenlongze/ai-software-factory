@@ -16,7 +16,7 @@ if str(_ROOT) not in sys.path:
 
 import pytest
 
-LLM_INTENT = import_module("factory-console.session.llm_intent")
+LLM_INTENT = import_module("factory_console.session.llm_intent")
 
 
 def _llm(payload):

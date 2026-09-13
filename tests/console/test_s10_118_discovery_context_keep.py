@@ -28,10 +28,10 @@ import importlib
 
 import pytest
 
-CONV = importlib.import_module("factory-console.session.conversation")
-DI = importlib.import_module("factory-console.session.discovery_intelligence")
-GUIDE = importlib.import_module("factory-console.session.discovery_guide")
-REASON = importlib.import_module("factory-console.session.reasoning")
+CONV = importlib.import_module("factory_console.session.conversation")
+DI = importlib.import_module("factory_console.session.discovery_intelligence")
+GUIDE = importlib.import_module("factory_console.session.discovery_guide")
+REASON = importlib.import_module("factory_console.session.reasoning")
 
 STATES = CONV.ConversationState
 

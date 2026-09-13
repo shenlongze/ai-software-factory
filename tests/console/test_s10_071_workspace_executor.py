@@ -11,8 +11,8 @@ from pathlib import Path
 
 from importlib import import_module
 
-WE = import_module("factory-console.session.debug.workspace_executor")
-DP = import_module("factory-console.session.debug.debug_pipeline")
+WE = import_module("factory_console.session.debug.workspace_executor")
+DP = import_module("factory_console.session.debug.debug_pipeline")
 
 
 def _buggy_project(tmp_path: Path) -> Path:
@@ -29,7 +29,7 @@ def _buggy_project(tmp_path: Path) -> Path:
 
 def _session(ws: Path, error: str = "FAILED test_scoring.py::test_score - assert 4 == 6: expected 6 got 4"):
     from importlib import import_module as _im
-    DS = _im("factory-console.session.debug.debug_session")
+    DS = _im("factory_console.session.debug.debug_session")
     s = DS.DebugSessionStore().create(DS.DebugSession(
         debug_id="", project_id="demo", task_id="T1", agent_id="backend-1",
         error_summary=error, status=DS.SESSION_ANALYZING,

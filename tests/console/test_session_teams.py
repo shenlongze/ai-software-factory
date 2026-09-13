@@ -27,13 +27,13 @@ from pathlib import Path
 
 import pytest
 
-ACT_MOD = importlib.import_module("factory-console.session.action")
-ACTIONS_MOD = importlib.import_module("factory-console.session.actions")
-AGENTS_MOD = importlib.import_module("factory-console.session.agents")
-CTX_MOD = importlib.import_module("factory-console.session.context")
-INTENT_MOD = importlib.import_module("factory-console.session.intent")
-ROUTER_MOD = importlib.import_module("factory-console.session.router")
-TEAMS_MOD = importlib.import_module("factory-console.session.teams")
+ACT_MOD = importlib.import_module("factory_console.session.action")
+ACTIONS_MOD = importlib.import_module("factory_console.session.actions")
+AGENTS_MOD = importlib.import_module("factory_console.session.agents")
+CTX_MOD = importlib.import_module("factory_console.session.context")
+INTENT_MOD = importlib.import_module("factory_console.session.intent")
+ROUTER_MOD = importlib.import_module("factory_console.session.router")
+TEAMS_MOD = importlib.import_module("factory_console.session.teams")
 
 AgentTeam = TEAMS_MOD.AgentTeam
 TeamRegistry = TEAMS_MOD.TeamRegistry

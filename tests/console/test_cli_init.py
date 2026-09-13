@@ -31,8 +31,8 @@ _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:  # factory-console/ 的父目录 (含连字符包名)
     sys.path.insert(0, str(_ROOT))
 
-_cli = importlib.import_module("factory-console.cli_factory")
-_cfg = importlib.import_module("factory-console.config")
+_cli = importlib.import_module("factory_console.cli_factory")
+_cfg = importlib.import_module("factory_console.config")
 
 #: workspace 初始目录 (验收 C 断言用)
 WORKSPACE_DIRS = ("agents", "skills", "projects", "providers", "workspace")
@@ -60,7 +60,7 @@ def make_cli(tmp_path: Path, environ: dict[str, str] | None = None):
     root = tmp_path / "repo"
     (root / ".venv" / "bin").mkdir(parents=True, exist_ok=True)
     (root / ".venv" / "bin" / "python").touch()
-    (root / "factory-console" / "web" / "frontend" / "node_modules").mkdir(
+    (root / "src" / "legacy" / "factory-console" / "web" / "frontend" / "node_modules").mkdir(
         parents=True, exist_ok=True
     )
     return _cli.FactoryCLI(config, root=root)

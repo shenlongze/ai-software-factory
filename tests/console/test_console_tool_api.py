@@ -43,9 +43,9 @@ if str(_FACTORY_EXEC) not in sys.path:
     sys.path.insert(0, str(_FACTORY_EXEC))
 
 #: factory-console 包名含连字符 → importlib 加载 (同 tests/console 其余测试模式)
-_api = importlib.import_module("factory-console.api")
-_adapter = importlib.import_module("factory-console.web.backend.fastapi_adapter")
-_service_mod = importlib.import_module("factory-console.service")
+_api = importlib.import_module("factory_console.api")
+_adapter = importlib.import_module("factory_console.web.backend.fastapi_adapter")
+_service_mod = importlib.import_module("factory_console.service")
 
 try:
     from fastapi.testclient import TestClient  # noqa: E402

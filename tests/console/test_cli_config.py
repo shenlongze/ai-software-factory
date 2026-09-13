@@ -30,8 +30,8 @@ _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:  # factory-console/ 的父目录 (含连字符包名)
     sys.path.insert(0, str(_ROOT))
 
-_cli = importlib.import_module("factory-console.cli_factory")
-_cfg = importlib.import_module("factory-console.config")
+_cli = importlib.import_module("factory_console.cli_factory")
+_cfg = importlib.import_module("factory_console.config")
 
 
 def subcommand_names(parser) -> set[str]:

@@ -19,7 +19,7 @@ import importlib
 import pytest
 from pydantic import ValidationError
 
-_MODELS = importlib.import_module("factory-console.models")
+_MODELS = importlib.import_module("factory_console.models")
 
 ProjectSummary = _MODELS.ProjectSummary
 LifecycleSummary = _MODELS.LifecycleSummary

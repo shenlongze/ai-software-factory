@@ -15,15 +15,15 @@ from __future__ import annotations
 import importlib
 from pathlib import Path
 
-ACT = importlib.import_module("factory-console.session.actions")
-ART = importlib.import_module("factory-console.session.artifact_registry")
-ENTITY = importlib.import_module("factory-console.session.agent_entity")
-REG = importlib.import_module("factory-console.session.agent_registry")
-FACTORY = importlib.import_module("factory-console.session.expert_factory")
-BUS = importlib.import_module("factory-console.session.handoff_bus")
-PIPE = importlib.import_module("factory-console.session.pipeline_runner")
-PROD = importlib.import_module("factory-console.session.product")
-REVIEW = importlib.import_module("factory-console.session.review_gate")
+ACT = importlib.import_module("factory_console.session.actions")
+ART = importlib.import_module("factory_console.session.artifact_registry")
+ENTITY = importlib.import_module("factory_console.session.agent_entity")
+REG = importlib.import_module("factory_console.session.agent_registry")
+FACTORY = importlib.import_module("factory_console.session.expert_factory")
+BUS = importlib.import_module("factory_console.session.handoff_bus")
+PIPE = importlib.import_module("factory_console.session.pipeline_runner")
+PROD = importlib.import_module("factory_console.session.product")
+REVIEW = importlib.import_module("factory_console.session.review_gate")
 
 
 def _product(**kw):

@@ -17,13 +17,13 @@ import pytest
 
 from importlib import import_module
 
-AGENTS = import_module("factory-console.session.agents")
-TEAMS = import_module("factory-console.session.teams")
-MESSAGES = import_module("factory-console.session.messages")
-QUALITY = import_module("factory-console.session.quality")
-ORCH = import_module("factory-console.session.orchestrator")
-ROLES = import_module("factory-console.session.roles")
-ACTION_MOD = import_module("factory-console.session.action")
+AGENTS = import_module("factory_console.session.agents")
+TEAMS = import_module("factory_console.session.teams")
+MESSAGES = import_module("factory_console.session.messages")
+QUALITY = import_module("factory_console.session.quality")
+ORCH = import_module("factory_console.session.orchestrator")
+ROLES = import_module("factory_console.session.roles")
+ACTION_MOD = import_module("factory_console.session.action")
 
 
 # ================================================================== fixtures
@@ -677,8 +677,8 @@ class TestExtraBatch:
         assert len(snap["members"]) == 7
 
     def test_import_all(self):
-        import_module("factory-console.session.messages")
-        import_module("factory-console.session.quality")
+        import_module("factory_console.session.messages")
+        import_module("factory_console.session.quality")
 
     def test_decision_injection_empty(self, tmp_path):
         """无决策文件 → previous_decisions 空 (失败安全)。"""

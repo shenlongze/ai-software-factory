@@ -12,9 +12,9 @@ from __future__ import annotations
 
 from importlib import import_module
 
-ACT = import_module("factory-console.session.actions")
-INT = import_module("factory-console.session.intent")
-API = import_module("factory-console.api")
+ACT = import_module("factory_console.session.actions")
+INT = import_module("factory_console.session.intent")
+API = import_module("factory_console.api")
 
 
 def _cli_names() -> set[str]:

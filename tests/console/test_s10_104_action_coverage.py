@@ -32,13 +32,13 @@ _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:  # factory-console/ 的父目录 (含连字符包名)
     sys.path.insert(0, str(_ROOT))
 
-ACT = importlib.import_module("factory-console.session.action")
-ACTIONS = importlib.import_module("factory-console.session.actions")
-CONV = importlib.import_module("factory-console.session.conversation")
-CTX = importlib.import_module("factory-console.session.context")
-DI = importlib.import_module("factory-console.session.discovery_intelligence")
-GUIDE = importlib.import_module("factory-console.session.discovery_guide")
-SESS = importlib.import_module("factory-console.session.session")
+ACT = importlib.import_module("factory_console.session.action")
+ACTIONS = importlib.import_module("factory_console.session.actions")
+CONV = importlib.import_module("factory_console.session.conversation")
+CTX = importlib.import_module("factory_console.session.context")
+DI = importlib.import_module("factory_console.session.discovery_intelligence")
+GUIDE = importlib.import_module("factory_console.session.discovery_guide")
+SESS = importlib.import_module("factory_console.session.session")
 
 STATES = CONV.ConversationState
 
@@ -52,7 +52,7 @@ def _no_provider(monkeypatch):
     使 "无 LLM" 类测试不依赖外部环境 (有无 DEEPSEEK_API_KEY 均确定);
     注入 mock llm_fn 的 analyzer 测试不受影响 (不走默认装配)。
     """
-    REASON = importlib.import_module("factory-console.session.reasoning")
+    REASON = importlib.import_module("factory_console.session.reasoning")
 
     class _BrokenProvider:
         def _default_llm_fn(self):

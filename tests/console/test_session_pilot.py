@@ -18,11 +18,11 @@ import pytest
 
 from importlib import import_module
 
-QUALITY = import_module("factory-console.session.quality")
-PIPE = import_module("factory-console.session.pipeline")
-ORCH = import_module("factory-console.session.orchestrator")
-ACTIONS = import_module("factory-console.session.actions")
-ACTION_MOD = import_module("factory-console.session.action")
+QUALITY = import_module("factory_console.session.quality")
+PIPE = import_module("factory_console.session.pipeline")
+ORCH = import_module("factory_console.session.orchestrator")
+ACTIONS = import_module("factory_console.session.actions")
+ACTION_MOD = import_module("factory_console.session.action")
 
 
 # ================================================================== fixtures
@@ -68,18 +68,18 @@ def _fail_fn():
 
 class TestProductFlow:
     def test_intent_to_product(self):
-        parser = import_module("factory-console.session.intent").KeywordIntentParser()
+        parser = import_module("factory_console.session.intent").KeywordIntentParser()
         intent = parser.parse("我想开发一个台球计分APP")
         assert intent is not None
         assert intent.intent_type == "create_product"
 
     def test_product_intent_model(self):
-        PRODUCT = import_module("factory-console.session.product")
+        PRODUCT = import_module("factory_console.session.product")
         p = PRODUCT.ProductIntent(name="ScorePocket", problem="记录困难", user="爱好者", core_features=["计分"])
         assert p.is_complete() is True
 
     def test_product_missing_fields(self):
-        PRODUCT = import_module("factory-console.session.product")
+        PRODUCT = import_module("factory_console.session.product")
         p = PRODUCT.ProductIntent(name="X")
         missing = p.missing_fields()
         assert "产品解决什么问题" in missing
@@ -89,7 +89,7 @@ class TestProductFlow:
         assert reg.get("create_product") is not None
 
     def test_product_json_written(self, tmp_path):
-        PRODUCT = import_module("factory-console.session.product")
+        PRODUCT = import_module("factory_console.session.product")
         pd = tmp_path / "projects" / "p1"
         pd.mkdir(parents=True)
         (pd / "product.json").write_text(
@@ -109,7 +109,7 @@ class TestPipelineFlow:
         assert reg.get("prepare_project") is not None
 
     def test_engineering_plan(self):
-        PRODUCT = import_module("factory-console.session.product")
+        PRODUCT = import_module("factory_console.session.product")
         p = PRODUCT.ProductIntent(name="P", problem="x", user="y", core_features=["a", "b"], platform="mobile")
         e = PIPE.EngineeringPlan.from_prd(p)
         assert e["architecture"] == "Flutter + Backend API"
@@ -336,11 +336,11 @@ class TestRegression:
         assert PIPE.Lifecycle.next_status(PIPE.Lifecycle.USER_ACCEPTANCE) == PIPE.Lifecycle.DELIVERED
 
     def test_quality_modules_import(self):
-        import_module("factory-console.session.quality")
-        import_module("factory-console.session.orchestrator")
+        import_module("factory_console.session.quality")
+        import_module("factory_console.session.orchestrator")
 
     def test_intent_routing(self):
-        router = import_module("factory-console.session.router").IntentRouter()
+        router = import_module("factory_console.session.router").IntentRouter()
         assert router.routes().get("repair_task") == "repair_task"
 
 

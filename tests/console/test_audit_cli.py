@@ -11,11 +11,11 @@ from pathlib import Path
 
 from importlib import import_module
 
-ACT = import_module("factory-console.session.actions")
-INT = import_module("factory-console.session.intent")
-API = import_module("factory-console.api.audit")
-AE = import_module("factory-console.audit.audit_event")
-ST = import_module("factory-console.audit.audit_store")
+ACT = import_module("factory_console.session.actions")
+INT = import_module("factory_console.session.intent")
+API = import_module("factory_console.api.audit")
+AE = import_module("factory_console.audit.audit_event")
+ST = import_module("factory_console.audit.audit_store")
 
 
 def _ws(tmp_path: Path) -> Path:
@@ -240,7 +240,7 @@ class TestApi:
 
     def test_registered(self, tmp_path):
         from importlib import import_module as _im
-        init = _im("factory-console.api")
+        init = _im("factory_console.api")
         for n in ("audit_events", "audit_trace", "audit_chain", "audit_task",
                   "audit_agent", "audit_decisions", "audit_explain", "audit_cost",
                   "audit_stats", "audit_export"):
@@ -254,7 +254,7 @@ class TestE2E:
     def test_case_a_full_chain(self, tmp_path):
         """CASE A: 完整生产链事件 → audit chain 可重建。"""
         from importlib import import_module as _im
-        CH = _im("factory-console.audit.audit_chain")
+        CH = _im("factory_console.audit.audit_chain")
         ws = _ws(tmp_path)
         store = ST.AuditStore(workspace=ws)
         # 全链事件 (同 correlation_id)
@@ -276,7 +276,7 @@ class TestE2E:
     def test_case_b_debug_chain(self, tmp_path):
         """CASE B: Debug 事件链 → explain 回答"为什么修/用了什么经验"。"""
         from importlib import import_module as _im
-        EX = _im("factory-console.audit.audit_explain")
+        EX = _im("factory_console.audit.audit_explain")
         ws = _ws(tmp_path)
         store = ST.AuditStore(workspace=ws)
         store.append(AE.AuditEvent(
@@ -304,7 +304,7 @@ class TestE2E:
     def test_case_c_governance(self, tmp_path):
         """CASE C: Governance 事件 → who_approved。"""
         from importlib import import_module as _im
-        EX = _im("factory-console.audit.audit_explain")
+        EX = _im("factory_console.audit.audit_explain")
         ws = _ws(tmp_path)
         store = ST.AuditStore(workspace=ws)
         store.append(AE.AuditEvent(
@@ -350,7 +350,7 @@ class TestE2E:
     def test_case_e_hash_integrity(self, tmp_path):
         """Audit Integrity: 篡改检测。"""
         from importlib import import_module as _im
-        INT = _im("factory-console.audit.audit_integrity")
+        INT = _im("factory_console.audit.audit_integrity")
         ws = _ws(tmp_path)
         store = ST.AuditStore(workspace=ws)
         store.append(AE.AuditEvent(event_type="TASK_CREATED", project_id="demo"))

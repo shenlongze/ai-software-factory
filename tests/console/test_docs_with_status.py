@@ -21,8 +21,8 @@ _FACTORY_CORE = _ROOT / "src" / "legacy" / "factory-core"
 if str(_FACTORY_CORE) not in sys.path:
     sys.path.insert(0, str(_FACTORY_CORE))
 
-_board = importlib.import_module("factory-console.session.board")
-_qe = importlib.import_module("factory-console.session.query_engine")
+_board = importlib.import_module("factory_console.session.board")
+_qe = importlib.import_module("factory_console.session.query_engine")
 
 DOCS_ROOT_HEADER = "> 版本: 0.1 (可立项) | 日期: 2026-08-24 | 状态: {status}\n"
 

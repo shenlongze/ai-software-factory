@@ -26,7 +26,7 @@ class TestVersionContract:
         pp = tomllib.loads((BASE / "pyproject.toml").read_text(encoding="utf-8"))
         pyproject_version = pp["project"]["version"]
 
-        sys.path.insert(0, str(BASE / "factory-console"))
+        sys.path.insert(0, str(BASE / "src" / "legacy" / "factory-console"))
         import importlib
         fc = importlib.import_module("__init__") if False else None
         # 直接读版本逻辑 (importlib.metadata 或 pyproject 兜底)
@@ -101,7 +101,7 @@ class TestPersistenceContract:
     def test_restart_preserves_state(self, tmp_path):
         """Run A 产生状态 → stop → start → 状态保留 (模拟)。"""
         from importlib import import_module
-        MEM = import_module("factory-console.memory")
+        MEM = import_module("factory_console.memory")
         ws = tmp_path / "ws"
         ws.mkdir(parents=True, exist_ok=True)
         store = MEM.ExperienceStore(ws / "memory" / "experience_store.json")

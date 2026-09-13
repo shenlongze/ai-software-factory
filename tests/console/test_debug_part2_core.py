@@ -13,14 +13,14 @@ from pathlib import Path
 
 from importlib import import_module
 
-D = import_module("factory-console.session.debug")
-DS = import_module("factory-console.session.debug.debug_session")
-AD = import_module("factory-console.session.debug.strategy_adaptation")
-RS = import_module("factory-console.session.debug.repair_safety")
-RP = import_module("factory-console.session.debug.retrieval_policy")
-CB = import_module("factory-console.session.debug.context_budget")
-TR = import_module("factory-console.session.debug.debug_trace")
-DP = import_module("factory-console.session.debug.debug_pipeline")
+D = import_module("factory_console.session.debug")
+DS = import_module("factory_console.session.debug.debug_session")
+AD = import_module("factory_console.session.debug.strategy_adaptation")
+RS = import_module("factory_console.session.debug.repair_safety")
+RP = import_module("factory_console.session.debug.retrieval_policy")
+CB = import_module("factory_console.session.debug.context_budget")
+TR = import_module("factory_console.session.debug.debug_trace")
+DP = import_module("factory_console.session.debug.debug_pipeline")
 
 
 
@@ -124,7 +124,7 @@ class TestSafety:
 
     def test_blocked_budget(self):
         from importlib import import_module as _im
-        B = _im("factory-console.session.budget")
+        B = _im("factory_console.session.budget")
         budget = B.ProjectBudget(max_total_tokens=100)
         usage = B.BudgetUsage(total_tokens=100)
         safety = RS.RepairSafety()
@@ -233,7 +233,7 @@ class TestPipeline:
     def test_repair_review(self, tmp_path):
         """Governance 约束 → REVIEW (budget 耗尽)。"""
         from importlib import import_module as _im
-        B = _im("factory-console.session.budget")
+        B = _im("factory_console.session.budget")
         ws = _ws(tmp_path)
         p = _pipeline(ws)
         s = p.start(project_id="demo", task_id="T001", error_message="timeout")
@@ -264,7 +264,7 @@ class TestPipeline:
 
     def test_learn_writes_memory(self, tmp_path):
         from importlib import import_module as _im
-        MEM = _im("factory-console.memory")
+        MEM = _im("factory_console.memory")
         ws = _ws(tmp_path)
         p = _pipeline(ws)
         s = p.start(project_id="demo", task_id="T001", error_message="timeout")
@@ -288,7 +288,7 @@ class TestPipeline:
 class TestRootCauseTypes:
     def test_types(self):
         from importlib import import_module as _im
-        RC = _im("factory-console.session.debug.root_cause")
+        RC = _im("factory_console.session.debug.root_cause")
         for t in ("CODE_DEFECT", "TEST_DEFECT", "REQUIREMENT_MISMATCH",
                   "ENVIRONMENT_FAILURE", "DEPENDENCY_FAILURE",
                   "CONFIGURATION_FAILURE", "DATA_FAILURE",
@@ -297,16 +297,16 @@ class TestRootCauseTypes:
 
     def test_environment_timeout(self, tmp_path):
         from importlib import import_module as _im
-        RC = _im("factory-console.session.debug.root_cause")
+        RC = _im("factory_console.session.debug.root_cause")
         c = D.DebugCase(error_message="connection timed out")
         r = RC.RootCauseAnalyzer().analyze(c)
         from importlib import import_module as _im
-        RC = _im("factory-console.session.debug.root_cause")
+        RC = _im("factory_console.session.debug.root_cause")
         assert r.root_cause_type in RC.ROOT_CAUSE_TYPES
 
     def test_reasoning_summary(self):
         from importlib import import_module as _im
-        RC = _im("factory-console.session.debug.root_cause")
+        RC = _im("factory_console.session.debug.root_cause")
         c = D.DebugCase(error_message="assert 10 == 9")
         r = RC.RootCauseAnalyzer().analyze(c)
         assert r.reasoning_summary or r.cause
@@ -319,7 +319,7 @@ class TestPipelineDeep:
     def test_run_loop_success(self, tmp_path):
         """run: 完整自动闭环 (最多 max_attempts 次) → SUCCESS。"""
         from importlib import import_module as _im
-        DP2 = _im("factory-console.session.debug.debug_pipeline")
+        DP2 = _im("factory_console.session.debug.debug_pipeline")
         ws = _ws(tmp_path)
         p = DP2.DebugPipeline(workspace=ws)
         s = p.start(project_id="demo", task_id="T1", error_message="timeout")
@@ -330,7 +330,7 @@ class TestPipelineDeep:
 
     def test_run_respects_max_attempts(self, tmp_path):
         from importlib import import_module as _im
-        DP2 = _im("factory-console.session.debug.debug_pipeline")
+        DP2 = _im("factory_console.session.debug.debug_pipeline")
         ws = _ws(tmp_path)
         p = DP2.DebugPipeline(workspace=ws)
         s = p.start(project_id="demo", task_id="T1", error_message="timeout")
@@ -341,8 +341,8 @@ class TestPipelineDeep:
 
     def test_learn_failure_writes_memory(self, tmp_path):
         from importlib import import_module as _im
-        MEM = _im("factory-console.memory")
-        DP2 = _im("factory-console.session.debug.debug_pipeline")
+        MEM = _im("factory_console.memory")
+        DP2 = _im("factory_console.session.debug.debug_pipeline")
         ws = _ws(tmp_path)
         p = DP2.DebugPipeline(workspace=ws)
         s = p.start(project_id="demo", task_id="T1", error_message="timeout")
@@ -354,7 +354,7 @@ class TestPipelineDeep:
 
     def test_strategy_history_recorded(self, tmp_path):
         from importlib import import_module as _im
-        DP2 = _im("factory-console.session.debug.debug_pipeline")
+        DP2 = _im("factory_console.session.debug.debug_pipeline")
         ws = _ws(tmp_path)
         p = DP2.DebugPipeline(workspace=ws)
         s = p.start(project_id="demo", task_id="T1", error_message="timeout")
@@ -384,8 +384,8 @@ class TestRetrievalDeep:
 
     def test_retrieve_with_store(self, tmp_path):
         from importlib import import_module as _im
-        MEM = _im("factory-console.memory")
-        DP2 = _im("factory-console.session.debug.debug_pipeline")
+        MEM = _im("factory_console.memory")
+        DP2 = _im("factory_console.session.debug.debug_pipeline")
         ws = _ws(tmp_path)
         store = MEM.ExperienceStore(ws / "memory" / "experience_store.json")
         store.add(MEM.ExperienceRecord(type="DEBUG_EXPERIENCE", problem="计分 API 失败",

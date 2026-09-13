@@ -18,9 +18,9 @@ import time
 from importlib import import_module
 from pathlib import Path
 
-BOARD = import_module("factory-console.session.board")
-CTX = import_module("factory-console.session.context")
-SESS = import_module("factory-console.session.session")
+BOARD = import_module("factory_console.session.board")
+CTX = import_module("factory_console.session.context")
+SESS = import_module("factory_console.session.session")
 
 
 def _mk_project(root: Path, slug: str, *, name: str = "测试产品", status: str = "prd_ready",
@@ -1264,7 +1264,7 @@ class TestProjectBrief:
                     files=("PRD.md", "engineering.json", "tasks.json"),
                     task_statuses=("done", "failed"))
         from importlib import import_module
-        CMDS = import_module("factory-console.session.commands")
+        CMDS = import_module("factory_console.session.commands")
         pc = CMDS.ProjectCommand(workspace=tmp_path)
         prd, lifecycle, task, update = pc._project_brief("a")
         assert prd == "✅"
@@ -1279,7 +1279,7 @@ class TestAgentSkillManage:
     def _cli(self, tmp_path):
         from importlib import import_module
         import json as _json
-        CF = import_module("factory-console.cli_factory")
+        CF = import_module("factory_console.cli_factory")
         cfg_file = tmp_path / "cfg.json"
         # data_dir 注入 tmp_path — 隔离, 不污染用户 ~/.factory
         cfg_file.write_text(_json.dumps({"core": {"data_dir": str(tmp_path)}}), encoding="utf-8")
@@ -1290,7 +1290,7 @@ class TestAgentSkillManage:
 
     def _parse(self, *argv):
         from importlib import import_module
-        CF = import_module("factory-console.cli_factory")
+        CF = import_module("factory_console.cli_factory")
         return CF.build_parser().parse_args(list(argv))
 
     def test_agent_add_list_remove(self, tmp_path, capsys):

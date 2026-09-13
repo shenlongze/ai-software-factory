@@ -13,7 +13,7 @@ import json
 from copy import deepcopy
 from importlib import import_module
 
-PC = import_module("factory-console.session.plan_critic")
+PC = import_module("factory_console.session.plan_critic")
 
 #: 角色缺口检查会用到的合法角色 (ROLES 8 键 — 与实现同源)
 VALID_ROLES = tuple(PC.ROLES.keys())

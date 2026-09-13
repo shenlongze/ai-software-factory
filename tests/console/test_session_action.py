@@ -18,8 +18,8 @@ from pathlib import Path
 
 import pytest
 
-ACT_MOD = importlib.import_module("factory-console.session.action")
-CTX_MOD = importlib.import_module("factory-console.session.context")
+ACT_MOD = importlib.import_module("factory_console.session.action")
+CTX_MOD = importlib.import_module("factory_console.session.context")
 
 
 def _ctx(workspace="tmp/ws", **kw):

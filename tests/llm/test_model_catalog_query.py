@@ -26,8 +26,8 @@ _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:  # factory-console/ 的父目录
     sys.path.insert(0, str(_ROOT))
 
-_model_catalog = importlib.import_module("factory-console.model_catalog")
-_llm_control = importlib.import_module("factory-console.llm_control")
+_model_catalog = importlib.import_module("factory_console.model_catalog")
+_llm_control = importlib.import_module("factory_console.llm_control")
 
 ModelCatalog = _model_catalog.ModelCatalog
 ModelInfo = _model_catalog.ModelInfo

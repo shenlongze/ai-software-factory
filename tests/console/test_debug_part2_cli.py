@@ -11,11 +11,11 @@ from pathlib import Path
 
 from importlib import import_module
 
-ACT = import_module("factory-console.session.actions")
-INT = import_module("factory-console.session.intent")
-API = import_module("factory-console.api.debug")
-DP = import_module("factory-console.session.debug.debug_pipeline")
-DS = import_module("factory-console.session.debug.debug_session")
+ACT = import_module("factory_console.session.actions")
+INT = import_module("factory_console.session.intent")
+API = import_module("factory_console.api.debug")
+DP = import_module("factory_console.session.debug.debug_pipeline")
+DS = import_module("factory_console.session.debug.debug_session")
 
 
 def _ws(tmp_path: Path) -> Path:
@@ -152,7 +152,7 @@ class TestApi:
 
     def test_registered(self, tmp_path):
         from importlib import import_module as _im
-        init = _im("factory-console.api")
+        init = _im("factory_console.api")
         for n in ("debug_session", "debug_root_cause", "debug_repair",
                   "debug_validate", "debug_resume"):
             assert hasattr(init, n) or n in getattr(init, "__all__", [])
@@ -213,7 +213,7 @@ class TestE2E:
     def test_full_e2e_with_memory(self, tmp_path):
         """完整闭环: 失败→Debug→修复→成功→Memory 沉淀。"""
         from importlib import import_module as _im
-        MEM = _im("factory-console.memory")
+        MEM = _im("factory_console.memory")
         ws = _ws(tmp_path)
         p = DP.DebugPipeline(workspace=ws)
         s = p.start(project_id="demo", task_id="T005", agent_id="backend-1",
@@ -237,9 +237,9 @@ class TestE2EDeep:
     def test_case_b_strategy_switch(self, tmp_path):
         """CASE B 完整: 策略 A (FIX_TEST) 失败 → adaptation → 策略 B (FIX_CODE) → PASS。"""
         from importlib import import_module as _im
-        DP2 = _im("factory-console.session.debug.debug_pipeline")
-        AD2 = _im("factory-console.session.debug.strategy_adaptation")
-        D2 = _im("factory-console.session.debug")
+        DP2 = _im("factory_console.session.debug.debug_pipeline")
+        AD2 = _im("factory_console.session.debug.strategy_adaptation")
+        D2 = _im("factory_console.session.debug")
         ws = _ws(tmp_path)
         p = DP2.DebugPipeline(workspace=ws)
         s = p.start(project_id="demo", task_id="T010",
@@ -256,8 +256,8 @@ class TestE2EDeep:
     def test_case_c_review_gate(self, tmp_path):
         """CASE C: repair 遇到 Governance 约束 → WAITING_FOR_REVIEW。"""
         from importlib import import_module as _im
-        B = _im("factory-console.session.budget")
-        DP2 = _im("factory-console.session.debug.debug_pipeline")
+        B = _im("factory_console.session.budget")
+        DP2 = _im("factory_console.session.debug.debug_pipeline")
         ws = _ws(tmp_path)
         p = DP2.DebugPipeline(workspace=ws)
         s = p.start(project_id="demo", task_id="T011", error_message="timeout")

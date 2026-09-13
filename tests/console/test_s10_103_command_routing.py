@@ -32,10 +32,10 @@ _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:  # factory-console/ 的父目录 (含连字符包名)
     sys.path.insert(0, str(_ROOT))
 
-CF = importlib.import_module("factory-console.cli_factory")
-CONV = importlib.import_module("factory-console.session.conversation")
-CTX = importlib.import_module("factory-console.session.context")
-SESS = importlib.import_module("factory-console.session.session")
+CF = importlib.import_module("factory_console.cli_factory")
+CONV = importlib.import_module("factory_console.session.conversation")
+CTX = importlib.import_module("factory_console.session.context")
+SESS = importlib.import_module("factory_console.session.session")
 
 STATES = CONV.ConversationState
 

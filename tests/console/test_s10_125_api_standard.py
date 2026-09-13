@@ -24,7 +24,7 @@ def _adapter():
     if _ADAPTER is None:
         import importlib
 
-        _ADAPTER = importlib.import_module("factory-console.web.backend.fastapi_adapter")
+        _ADAPTER = importlib.import_module("factory_console.web.backend.fastapi_adapter")
     return _ADAPTER
 
 

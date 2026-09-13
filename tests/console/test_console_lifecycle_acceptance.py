@@ -41,9 +41,9 @@ if str(_FACTORY_ORG) not in sys.path:
     sys.path.insert(0, str(_FACTORY_ORG))
 
 #: factory-console 包名含连字符 → importlib 加载 (同 tests/console 其余测试模式)
-_adapter = importlib.import_module("factory-console.web.backend.fastapi_adapter")
-_ws = importlib.import_module("factory-console.api.workflow_start")
-_runner = importlib.import_module("factory-console.workflow_runner")
+_adapter = importlib.import_module("factory_console.web.backend.fastapi_adapter")
+_ws = importlib.import_module("factory_console.api.workflow_start")
+_runner = importlib.import_module("factory_console.workflow_runner")
 
 try:
     from fastapi.testclient import TestClient  # noqa: E402

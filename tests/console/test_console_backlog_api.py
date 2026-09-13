@@ -48,9 +48,9 @@ if str(_FACTORY_ORG) not in sys.path:
     sys.path.insert(0, str(_FACTORY_ORG))
 
 #: factory-console 包名含连字符 → importlib 加载 (同 tests/console 其余测试模式)
-_adapter = importlib.import_module("factory-console.web.backend.fastapi_adapter")
-_api = importlib.import_module("factory-console.api")
-_service = importlib.import_module("factory-console.service")
+_adapter = importlib.import_module("factory_console.web.backend.fastapi_adapter")
+_api = importlib.import_module("factory_console.api")
+_service = importlib.import_module("factory_console.service")
 
 try:  # fastapi/httpx 未安装 (仅 console 侧 venv) → HTTP 类跳过, 路由函数测试仍运行
     from fastapi.testclient import TestClient  # noqa: E402

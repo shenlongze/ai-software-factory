@@ -10,7 +10,7 @@ from pathlib import Path
 
 from importlib import import_module
 
-API = import_module("factory-console.api.debug")
+API = import_module("factory_console.api.debug")
 
 
 def _ws(tmp_path: Path) -> Path:
@@ -107,20 +107,20 @@ class TestStatsEndpoint:
 class TestRegistration:
     def test_analyze_registered(self):
         from importlib import import_module as _im
-        init = _im("factory-console.api")
+        init = _im("factory_console.api")
         assert hasattr(init, "debug_analyze") or "debug_analyze" in getattr(init, "__all__", [])
 
     def test_recommend_registered(self):
         from importlib import import_module as _im
-        init = _im("factory-console.api")
+        init = _im("factory_console.api")
         assert hasattr(init, "debug_recommend") or "debug_recommend" in getattr(init, "__all__", [])
 
     def test_history_registered(self):
         from importlib import import_module as _im
-        init = _im("factory-console.api")
+        init = _im("factory_console.api")
         assert hasattr(init, "debug_history") or "debug_history" in getattr(init, "__all__", [])
 
     def test_stats_registered(self):
         from importlib import import_module as _im
-        init = _im("factory-console.api")
+        init = _im("factory_console.api")
         assert hasattr(init, "debug_stats") or "debug_stats" in getattr(init, "__all__", [])

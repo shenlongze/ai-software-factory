@@ -38,9 +38,9 @@ from org.artifact import ArtifactType
 from org.projects import Project, ProjectStore
 from org.workflow import WorkflowLifecycle, WorkflowRunner, WorkflowStatus
 
-_console = importlib.import_module("factory-console")
-_models = importlib.import_module("factory-console.models")
-_adapter = importlib.import_module("factory-console.web.backend.fastapi_adapter")
+_console = importlib.import_module("factory_console")
+_models = importlib.import_module("factory_console.models")
+_adapter = importlib.import_module("factory_console.web.backend.fastapi_adapter")
 
 try:
     from fastapi.testclient import TestClient

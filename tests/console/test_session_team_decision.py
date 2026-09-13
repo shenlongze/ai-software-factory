@@ -16,10 +16,10 @@ import pytest
 
 from importlib import import_module
 
-DEC = import_module("factory-console.session.decision")
-WS = import_module("factory-console.session.workspace")
-CONF = import_module("factory-console.session.conflicts")
-ORCH = import_module("factory-console.session.orchestrator")
+DEC = import_module("factory_console.session.decision")
+WS = import_module("factory_console.session.workspace")
+CONF = import_module("factory_console.session.conflicts")
+ORCH = import_module("factory_console.session.orchestrator")
 
 
 # ================================================================== fixtures
@@ -632,10 +632,10 @@ class TestMore:
         assert isinstance(r.classify([]), str)
 
     def test_import_all(self):
-        import_module("factory-console.session.decision")
-        import_module("factory-console.session.workspace")
-        import_module("factory-console.session.conflicts")
-        import_module("factory-console.session.orchestrator")
+        import_module("factory_console.session.decision")
+        import_module("factory_console.session.workspace")
+        import_module("factory_console.session.conflicts")
+        import_module("factory_console.session.orchestrator")
 
 
 class TestFill:

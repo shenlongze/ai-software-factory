@@ -16,10 +16,10 @@ import pytest
 
 from importlib import import_module
 
-ORCH = import_module("factory-console.session.orchestrator")
-GAP = import_module("factory-console.session.gap_analyzer")
-TP = import_module("factory-console.session.task_proposal")
-RP = import_module("factory-console.session.replanning")
+ORCH = import_module("factory_console.session.orchestrator")
+GAP = import_module("factory_console.session.gap_analyzer")
+TP = import_module("factory_console.session.task_proposal")
+RP = import_module("factory_console.session.replanning")
 
 
 def _make_project(tmp_path: Path, tasks: list | None = None) -> Path:
@@ -374,10 +374,10 @@ class TestMore:
         assert not result["valid"]
 
     def test_import_all(self):
-        import_module("factory-console.session.gap_analyzer")
-        import_module("factory-console.session.task_proposal")
-        import_module("factory-console.session.replanning")
-        import_module("factory-console.session.orchestrator")
+        import_module("factory_console.session.gap_analyzer")
+        import_module("factory_console.session.task_proposal")
+        import_module("factory_console.session.replanning")
+        import_module("factory_console.session.orchestrator")
 
 
 class TestFill2:

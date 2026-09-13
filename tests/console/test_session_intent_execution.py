@@ -43,13 +43,13 @@ class _FakeChat:
     def is_fallback(self, a):
         return False
 
-ACT_MOD = importlib.import_module("factory-console.session.action")
-ACTIONS_MOD = importlib.import_module("factory-console.session.actions")
-ROUTER_MOD = importlib.import_module("factory-console.session.router")
-INTENT_MOD = importlib.import_module("factory-console.session.intent")
-SESS_MOD = importlib.import_module("factory-console.session.session")
-CTX_MOD = importlib.import_module("factory-console.session.context")
-RENDER_MOD = importlib.import_module("factory-console.session.renderer")
+ACT_MOD = importlib.import_module("factory_console.session.action")
+ACTIONS_MOD = importlib.import_module("factory_console.session.actions")
+ROUTER_MOD = importlib.import_module("factory_console.session.router")
+INTENT_MOD = importlib.import_module("factory_console.session.intent")
+SESS_MOD = importlib.import_module("factory_console.session.session")
+CTX_MOD = importlib.import_module("factory_console.session.context")
+RENDER_MOD = importlib.import_module("factory_console.session.renderer")
 
 
 def _write_projects(root: Path, projects: dict) -> Path:

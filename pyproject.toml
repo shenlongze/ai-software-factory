@@ -83,7 +83,7 @@ packages = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # 使 tests/ 可直接 `from events import ...` (editable install 之外的双保险)
-pythonpath = ["src/legacy", "src/legacy/factory-core", "src"]
+pythonpath = ["src/legacy/factory-core", "src"]
 
 [tool.ruff]
 line-length = 100

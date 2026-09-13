@@ -39,11 +39,11 @@ if str(_FACTORY_EXEC) not in sys.path:
     sys.path.insert(0, str(_FACTORY_EXEC))
 
 #: factory-console 包名含连字符 → importlib 加载 (同 tests/console 其余测试模式)
-_adapter = importlib.import_module("factory-console.web.backend.fastapi_adapter")
-_api = importlib.import_module("factory-console.api")
-_projects_api = importlib.import_module("factory-console.api.projects")
-_wf_runner = importlib.import_module("factory-console.workflow_runner")
-_models = importlib.import_module("factory-console.models")
+_adapter = importlib.import_module("factory_console.web.backend.fastapi_adapter")
+_api = importlib.import_module("factory_console.api")
+_projects_api = importlib.import_module("factory_console.api.projects")
+_wf_runner = importlib.import_module("factory_console.workflow_runner")
+_models = importlib.import_module("factory_console.models")
 
 
 # ------------------------------------------------------------------ 测试桩

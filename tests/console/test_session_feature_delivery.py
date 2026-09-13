@@ -16,11 +16,11 @@ import pytest
 
 from importlib import import_module
 
-PIPE = import_module("factory-console.session.pipeline")
-PROG = import_module("factory-console.session.progress")
-ORCH = import_module("factory-console.session.orchestrator")
-ACTIONS = import_module("factory-console.session.actions")
-ACTION_MOD = import_module("factory-console.session.action")
+PIPE = import_module("factory_console.session.pipeline")
+PROG = import_module("factory_console.session.progress")
+ORCH = import_module("factory_console.session.orchestrator")
+ACTIONS = import_module("factory_console.session.actions")
+ACTION_MOD = import_module("factory_console.session.action")
 
 
 # ================================================================== fixtures
@@ -63,7 +63,7 @@ def _fail_fn():
 
 
 def _product():
-    PRODUCT = import_module("factory-console.session.product")
+    PRODUCT = import_module("factory_console.session.product")
     return PRODUCT.ProductIntent(
         name="ScorePocket", problem="记录困难", user="爱好者",
         core_features=["计分", "比赛记录", "排行榜"], platform="mobile",
@@ -102,7 +102,7 @@ class TestFeatureTaskGenerator:
         assert any("界面" in n or "交互" in n or "flutter" in n.lower() for n in names)
 
     def test_platform_web(self):
-        PRODUCT = import_module("factory-console.session.product")
+        PRODUCT = import_module("factory_console.session.product")
         p = PRODUCT.ProductIntent(name="P", problem="x", user="y", core_features=["计分"], platform="web")
         g = PIPE.FeatureTaskGenerator()
         result = g.from_product(p)
@@ -325,13 +325,13 @@ class TestAcceptAction:
         assert reg.get("accept_project").metadata.get("sensitive") is True
 
     def test_intent_keyword(self):
-        parser = import_module("factory-console.session.intent").KeywordIntentParser()
+        parser = import_module("factory_console.session.intent").KeywordIntentParser()
         intent = parser.parse("通过验收")
         assert intent is not None
         assert intent.intent_type == "accept_project"
 
     def test_router_mapping(self):
-        router = import_module("factory-console.session.router").IntentRouter()
+        router = import_module("factory_console.session.router").IntentRouter()
         assert router.routes().get("accept_project") == "accept_project"
 
     def test_action_flow(self, tmp_path):
@@ -359,7 +359,7 @@ class TestRegression:
             assert reg.get(name) is not None
 
     def test_validator_unchanged(self):
-        QUALITY = import_module("factory-console.session.quality")
+        QUALITY = import_module("factory_console.session.quality")
         r = QUALITY.Validator().validate({"id": "T1"}, {"success": True})
         assert r.success is True
 
@@ -377,7 +377,7 @@ class TestRegression:
 
 class TestExtra:
     def test_feature_generator_no_platform_default(self):
-        PRODUCT = import_module("factory-console.session.product")
+        PRODUCT = import_module("factory_console.session.product")
         p = PRODUCT.ProductIntent(name="P", problem="x", user="y", core_features=["计分"])
         g = PIPE.FeatureTaskGenerator()
         result = g.from_product(p)
@@ -433,7 +433,7 @@ class TestExtra:
 
 def _create_product_on_disk(root: Path):
     """创建 product.json 到磁盘 (复用 create_product action)。"""
-    PRODUCT = import_module("factory-console.session.product")
+    PRODUCT = import_module("factory_console.session.product")
     product = PRODUCT.ProductIntent(
         name="ScorePocket", problem="记录困难", user="爱好者",
         core_features=["计分", "比赛记录"], platform="mobile",
@@ -441,7 +441,7 @@ def _create_product_on_disk(root: Path):
     intent = ACTION_MOD.IntentObject(
         intent_type="create_product", params={"name": "ScorePocket"}, raw="做一个产品"
     )
-    session = import_module("factory-console.session.context").SessionContext(
+    session = import_module("factory_console.session.context").SessionContext(
         workspace=str(root / "ws")
     )
     session.product_intent = product
@@ -465,7 +465,7 @@ class TestMore:
         assert len(ids) == len(set(ids))
 
     def test_generator_user_system(self):
-        PRODUCT = import_module("factory-console.session.product")
+        PRODUCT = import_module("factory_console.session.product")
         p = PRODUCT.ProductIntent(name="P", problem="x", user="y", core_features=["用户系统", "登录注册"])
         g = PIPE.FeatureTaskGenerator()
         r = g.from_product(p)
@@ -520,21 +520,21 @@ class TestMore:
         assert all(f["status"] == "completed" for f in fp["features"])
 
     def test_generator_empty_features(self):
-        PRODUCT = import_module("factory-console.session.product")
+        PRODUCT = import_module("factory_console.session.product")
         p = PRODUCT.ProductIntent(name="P", problem="x", user="y", core_features=[])
         g = PIPE.FeatureTaskGenerator()
         r = g.from_product(p)
         assert r["tasks"] or r["epics"]  # 不崩溃, 有默认任务
 
     def test_accept_intent_variants(self):
-        parser = import_module("factory-console.session.intent").KeywordIntentParser()
+        parser = import_module("factory_console.session.intent").KeywordIntentParser()
         for text in ("通过验收", "验收通过", "确认交付"):
             intent = parser.parse(text)
             assert intent is not None, text
             assert intent.intent_type == "accept_project", text
 
     def test_accept_not_confused(self):
-        parser = import_module("factory-console.session.intent").KeywordIntentParser()
+        parser = import_module("factory_console.session.intent").KeywordIntentParser()
         assert parser.parse("通过验收").intent_type == "accept_project"
 
     def test_progress_after_acceptance_state(self, tmp_path):

@@ -27,7 +27,7 @@ from typing import Any
 from legacy_paths import REPO_ROOT  # 仓库根唯一计算器
 
 _REPO_ROOT = REPO_ROOT
-_ORG_SRC = REPO_ROOT / "src" / "legacy" / "factory-org"
+_ORG_SRC = REPO_ROOT / "@@ALREADY@@" / "src" / "legacy" / "factory-org"
 
 
 def _org_modules() -> tuple[Any, Any]:

@@ -20,7 +20,7 @@ _FACTORY_CORE = _ROOT / "src" / "legacy" / "factory-core"
 if str(_FACTORY_CORE) not in sys.path:
     sys.path.insert(0, str(_FACTORY_CORE))
 
-_adapter = importlib.import_module("factory-console.web.backend.fastapi_adapter")
+_adapter = importlib.import_module("factory_console.web.backend.fastapi_adapter")
 
 
 def _build_service(root: Path):
@@ -103,6 +103,6 @@ class TestLegacyMerge:
         base = [{"id": "a"}, {"id": "b"}]
         extra = [{"id": "b"}, {"id": "c"}]
         merged = _adapter.build_console_service  # noqa: B018 (占位避免未用)
-        svc = object.__new__(importlib.import_module("factory-console.service").ConsoleService)
+        svc = object.__new__(importlib.import_module("factory_console.service").ConsoleService)
         out = svc._merge_by_id(base, extra)
         assert [x["id"] for x in out] == ["a", "b", "c"]

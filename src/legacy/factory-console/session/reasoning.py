@@ -518,7 +518,7 @@ class ReasoningProvider:
         返回选中 provider Adapter (registry.get(provider_id)); 选中 id 无
         Adapter → 回退注册表首个; 无注册 → None (调用方判不可用)。"""
         root = REPO_ROOT  # 仓库根 (factory-exec 父目录)
-        exec_path = root / "src" / "legacy" / "factory-exec"
+        exec_path = root / "@@ALREADY@@" / "src" / "legacy" / "factory-exec"
         if str(exec_path) not in sys.path:
             sys.path.insert(0, str(exec_path))
         from exec.cli import _provider_registry  # 延迟 import (同 actions.py)

@@ -13,10 +13,10 @@ import contextlib
 
 from importlib import import_module
 
-S = import_module("factory-console.session.session")
-CONV = import_module("factory-console.session.conversation")
-INT = import_module("factory-console.session.intent")
-NAMING = import_module("factory-console.session.naming")
+S = import_module("factory_console.session.session")
+CONV = import_module("factory_console.session.conversation")
+INT = import_module("factory_console.session.intent")
+NAMING = import_module("factory_console.session.naming")
 
 
 class _FakeChat:

@@ -44,7 +44,7 @@ from console_helpers import (
     make_usage,
 )
 
-console_mod = __import__("importlib").import_module("factory-console")
+console_mod = __import__("importlib").import_module("factory_console")
 ConsoleService = console_mod.ConsoleService
 
 

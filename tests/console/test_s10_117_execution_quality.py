@@ -42,16 +42,16 @@ if str(_ROOT / "tests" / "exec") not in sys.path:
 
 from exec_helpers import FakeProvider, git_diff_text, make_request, write_files  # noqa: E402
 
-ACTIONS = importlib.import_module("factory-console.session.actions")
-ACT = importlib.import_module("factory-console.session.action")
-AUDIT = importlib.import_module("factory-console.session.audit")
-BOARD = importlib.import_module("factory-console.session.board")
-CMD = importlib.import_module("factory-console.session.commands")
-CR = importlib.import_module("factory-console.session.capability_router")
-CTX = importlib.import_module("factory-console.session.context")
-EQ = importlib.import_module("factory-console.session.execution_quality")
-INTENT = importlib.import_module("factory-console.session.intent")
-ORCH = importlib.import_module("factory-console.session.orchestrator")
+ACTIONS = importlib.import_module("factory_console.session.actions")
+ACT = importlib.import_module("factory_console.session.action")
+AUDIT = importlib.import_module("factory_console.session.audit")
+BOARD = importlib.import_module("factory_console.session.board")
+CMD = importlib.import_module("factory_console.session.commands")
+CR = importlib.import_module("factory_console.session.capability_router")
+CTX = importlib.import_module("factory_console.session.context")
+EQ = importlib.import_module("factory_console.session.execution_quality")
+INTENT = importlib.import_module("factory_console.session.intent")
+ORCH = importlib.import_module("factory_console.session.orchestrator")
 RT = importlib.import_module("exec.agent_runtime")
 
 #: 最小 Python 项目 (沙箱源)

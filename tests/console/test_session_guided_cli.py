@@ -11,8 +11,8 @@ from pathlib import Path
 
 from importlib import import_module
 
-ACT = import_module("factory-console.session.actions")
-INT = import_module("factory-console.session.intent")
+ACT = import_module("factory_console.session.actions")
+INT = import_module("factory_console.session.intent")
 
 
 class TestIntentRules:
@@ -181,7 +181,7 @@ class TestFill:
         """review_view 详情输出含选项。"""
         ws = _ws(tmp_path)
         from importlib import import_module
-        RG = import_module("factory-console.session.review_gate")
+        RG = import_module("factory_console.session.review_gate")
         gate = RG.ReviewGate(file=ws / "cost" / "review_records.json")
         rec = gate.request(reason="预算已使用 90%", trigger="budget",
                            context={}, affected_tasks=[], estimated_cost=0,

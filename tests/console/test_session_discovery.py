@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-DIS = import_module("factory-console.session.discovery")
+DIS = import_module("factory_console.session.discovery")
 
 FIELD_ORDER = ("problem", "user", "core_features", "usage_scenarios", "mvp_scope",
                "non_functional_requirements")

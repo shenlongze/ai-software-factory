@@ -22,10 +22,10 @@ import json
 from importlib import import_module
 from pathlib import Path
 
-EV = import_module("factory-console.session.decomposition_evaluator")
-DEC = import_module("factory-console.session.decomposer")
-AUDIT = import_module("factory-console.audit.audit_event")
-EVIDENCE = import_module("factory-console.session.evidence")
+EV = import_module("factory_console.session.decomposition_evaluator")
+DEC = import_module("factory_console.session.decomposer")
+AUDIT = import_module("factory_console.audit.audit_event")
+EVIDENCE = import_module("factory_console.session.evidence")
 
 STRONG_CAPS = {"database": 1, "backend": 1, "frontend": 1, "qa": 1}
 FEATURES = ["登录", "注册"]

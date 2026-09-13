@@ -23,9 +23,9 @@ for _p in (_ROOT, _ROOT / "src" / "legacy" / "factory-core", _ROOT / "src" / "le
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
-_router = importlib.import_module("factory-console.external_executor.router")
-_adapter = importlib.import_module("factory-console.web.backend.fastapi_adapter")
-_schema = importlib.import_module("factory-console.external_executor.schema")
+_router = importlib.import_module("factory_console.external_executor.router")
+_adapter = importlib.import_module("factory_console.web.backend.fastapi_adapter")
+_schema = importlib.import_module("factory_console.external_executor.schema")
 
 try:
     from fastapi.testclient import TestClient  # noqa: E402

@@ -24,8 +24,8 @@ _FACTORY_EXEC = _ROOT / "src" / "legacy" / "factory-exec"
 if str(_FACTORY_EXEC) not in sys.path:  # 审批装配需 exec 包 (同 tests/exec/conftest)
     sys.path.insert(0, str(_FACTORY_EXEC))
 
-SW = import_module("factory-console.session.workloads.backlog_sweeper")
-EV = import_module("factory-console.session.evidence")
+SW = import_module("factory_console.session.workloads.backlog_sweeper")
+EV = import_module("factory_console.session.evidence")
 
 
 def _make_repo(root: Path, *, issues: list[dict] | None = None) -> Path:
@@ -270,8 +270,8 @@ class TestBacklogSweeper:
         import importlib as _il
         import json as _json
 
-        _cli = _il.import_module("factory-console.cli_factory")
-        _cfg = _il.import_module("factory-console.config")
+        _cli = _il.import_module("factory_console.cli_factory")
+        _cfg = _il.import_module("factory_console.config")
         cfg_file = tmp_path / "config.json"
         cfg_file.write_text(
             _json.dumps({"core": {"data_dir": str(ws)}}), encoding="utf-8"
@@ -358,7 +358,7 @@ class TestCliRegistration:
     """factory workload 命令组注册 (M1b/E3 CLI 验收)。"""
 
     def test_workload_and_approval_registered(self):
-        _CLI = import_module("factory-console.cli_factory")
+        _CLI = import_module("factory_console.cli_factory")
         parser = _CLI.build_parser()
         names = set()
         for action in parser._actions:
@@ -368,7 +368,7 @@ class TestCliRegistration:
         assert "approval" in names
 
     def test_workload_backlog_help(self, capsys):
-        _CLI = import_module("factory-console.cli_factory")
+        _CLI = import_module("factory_console.cli_factory")
         with pytest.raises(SystemExit) as exc:
             _CLI.build_parser().parse_args(["workload", "backlog", "--help"])
         assert exc.value.code == 0

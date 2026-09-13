@@ -31,10 +31,10 @@ if str(_FACTORY_CORE) not in sys.path:
 from console_helpers import event_types_of  # noqa: E402
 
 #: factory-console 包名含连字符 → importlib 加载 (同 tests/console 其余测试模式)
-_adapter = importlib.import_module("factory-console.web.backend.fastapi_adapter")
-_api = importlib.import_module("factory-console.api")
-_projects_api = importlib.import_module("factory-console.api.projects")
-_service = importlib.import_module("factory-console.service")
+_adapter = importlib.import_module("factory_console.web.backend.fastapi_adapter")
+_api = importlib.import_module("factory_console.api")
+_projects_api = importlib.import_module("factory_console.api.projects")
+_service = importlib.import_module("factory_console.service")
 
 
 # ------------------------------------------------------------------ 项目名提取 (纯函数)

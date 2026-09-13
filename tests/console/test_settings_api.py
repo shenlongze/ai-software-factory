@@ -22,7 +22,7 @@ _FACTORY_CORE = _ROOT / "src" / "legacy" / "factory-core"
 if str(_FACTORY_CORE) not in sys.path:
     sys.path.insert(0, str(_FACTORY_CORE))
 
-_adapter = importlib.import_module("factory-console.web.backend.fastapi_adapter")
+_adapter = importlib.import_module("factory_console.web.backend.fastapi_adapter")
 
 try:
     from fastapi.testclient import TestClient

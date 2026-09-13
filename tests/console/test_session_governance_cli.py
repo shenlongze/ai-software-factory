@@ -11,10 +11,10 @@ from pathlib import Path
 
 from importlib import import_module
 
-ORCH = import_module("factory-console.session.orchestrator")
-ACT = import_module("factory-console.session.actions")
-RG = import_module("factory-console.session.review_gate")
-CL = import_module("factory-console.session.cost_ledger")
+ORCH = import_module("factory_console.session.orchestrator")
+ACT = import_module("factory_console.session.actions")
+RG = import_module("factory_console.session.review_gate")
+CL = import_module("factory_console.session.cost_ledger")
 
 
 def _make_workspace(tmp_path: Path, with_project: bool = True) -> Path:
@@ -203,14 +203,14 @@ class TestCostLedgerModel:
 
 class TestBudgetModel:
     def test_from_dict_roundtrip(self, tmp_path):
-        b = __import__("factory-console.session.budget", fromlist=["ProjectBudget"]).ProjectBudget(
+        b = __import__("factory_console.session.budget", fromlist=["ProjectBudget"]).ProjectBudget(
             max_total_tokens=1000)
         d = b.to_dict()
-        b2 = __import__("factory-console.session.budget", fromlist=["ProjectBudget"]).ProjectBudget.from_dict(d)
+        b2 = __import__("factory_console.session.budget", fromlist=["ProjectBudget"]).ProjectBudget.from_dict(d)
         assert b2.max_total_tokens == 1000
 
     def test_usage_from_records(self, tmp_path):
-        B = __import__("factory-console.session.budget", fromlist=["ProjectBudget", "BudgetUsage"])
+        B = __import__("factory_console.session.budget", fromlist=["ProjectBudget", "BudgetUsage"])
         records = [{"total_tokens": 100, "estimated_cost": 0.001},
                    {"total_tokens": 50, "estimated_cost": 0.0005}]
         usage = B.BudgetUsage.from_records(records)
@@ -218,7 +218,7 @@ class TestBudgetModel:
         assert usage.total_cost == 0.0015
 
     def test_enforcer_levels(self, tmp_path):
-        B = __import__("factory-console.session.budget", fromlist=["ProjectBudget", "BudgetUsage", "BudgetEnforcer"])
+        B = __import__("factory_console.session.budget", fromlist=["ProjectBudget", "BudgetUsage", "BudgetEnforcer"])
         budget = B.ProjectBudget(max_total_tokens=100)
         assert B.BudgetEnforcer.check(budget, B.BudgetUsage(total_tokens=79))["level"] == "ok"
         assert B.BudgetEnforcer.check(budget, B.BudgetUsage(total_tokens=85))["level"] == "warn"
@@ -228,24 +228,24 @@ class TestBudgetModel:
 
 class TestLoopGuardModel:
     def test_same_failure(self, tmp_path):
-        LG = import_module("factory-console.session.loop_guard")
+        LG = import_module("factory_console.session.loop_guard")
         guard = LG.LoopGuard(max_same_failure=3)
         history = [{"task_id": "T1", "failure": "x"}] * 3
         assert guard.same_failure_count("T1", "x", history) == 3
 
     def test_same_decision(self, tmp_path):
-        LG = import_module("factory-console.session.loop_guard")
+        LG = import_module("factory_console.session.loop_guard")
         guard = LG.LoopGuard(max_same_decision=5)
         history = [{"decision": "INSERT_TASK"}] * 5
         assert guard.same_decision_count("INSERT_TASK", history) == 5
 
     def test_total_execution(self, tmp_path):
-        LG = import_module("factory-console.session.loop_guard")
+        LG = import_module("factory_console.session.loop_guard")
         guard = LG.LoopGuard()
         assert guard.total_execution_count([{"task_id": "T1"}, {"task_id": "T2"}]) == 2
 
     def test_check_allowed(self, tmp_path):
-        LG = import_module("factory-console.session.loop_guard")
+        LG = import_module("factory_console.session.loop_guard")
         guard = LG.LoopGuard(max_same_failure=3)
         res = guard.check_failure("T1", "x", [])
         assert res["allowed"]
@@ -253,19 +253,19 @@ class TestLoopGuardModel:
 
 class TestPolicyModel:
     def test_auto_allows(self, tmp_path):
-        EP = import_module("factory-console.session.execution_policy")
+        EP = import_module("factory_console.session.execution_policy")
         pol = EP.ExecutionPolicy(mode=EP.ExecutionPolicy.MODE_AUTO)
         ok, _ = pol.can_execute({"risk": "high"})
         assert ok  # AUTO 全允许
 
     def test_manual_blocks(self, tmp_path):
-        EP = import_module("factory-console.session.execution_policy")
+        EP = import_module("factory_console.session.execution_policy")
         pol = EP.ExecutionPolicy(mode=EP.ExecutionPolicy.MODE_MANUAL)
         ok, _ = pol.can_execute({})
         assert not ok
 
     def test_risk_high(self, tmp_path):
-        EP = import_module("factory-console.session.execution_policy")
+        EP = import_module("factory_console.session.execution_policy")
         pol = EP.ExecutionPolicy(mode=EP.ExecutionPolicy.MODE_SAFE_AUTO)
         assert pol.risk({"destructive": True}) == "high"
 

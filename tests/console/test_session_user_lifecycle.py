@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from importlib import import_module
 
-UL = import_module("factory-console.session.user_lifecycle")
+UL = import_module("factory_console.session.user_lifecycle")
 
 
 class TestMapping:
@@ -88,5 +88,5 @@ class TestConstants:
     def test_no_internal_break(self):
         """映射层不破坏内部 Lifecycle (惰性 import)。"""
         from importlib import import_module
-        P = import_module("factory-console.session.pipeline")
+        P = import_module("factory_console.session.pipeline")
         assert P.Lifecycle.DEVELOPMENT == "development"

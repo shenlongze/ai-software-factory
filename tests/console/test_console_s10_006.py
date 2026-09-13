@@ -31,10 +31,10 @@ for _pkg in ("factory-org",):
 
 import pytest
 
-_console = importlib.import_module("factory-console")
-_models = importlib.import_module("factory-console.models")
-_feedback = importlib.import_module("factory-console.review_feedback")
-_adapter = importlib.import_module("factory-console.web.backend.fastapi_adapter")
+_console = importlib.import_module("factory_console")
+_models = importlib.import_module("factory_console.models")
+_feedback = importlib.import_module("factory_console.review_feedback")
+_adapter = importlib.import_module("factory_console.web.backend.fastapi_adapter")
 
 try:
     from fastapi.testclient import TestClient

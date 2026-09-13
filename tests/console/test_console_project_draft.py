@@ -47,9 +47,9 @@ if str(_FACTORY_ORG) not in sys.path:
 from console_helpers import event_types_of  # noqa: E402
 
 #: factory-console 包名含连字符 → importlib 加载 (同 tests/console 其余测试模式)
-_adapter = importlib.import_module("factory-console.web.backend.fastapi_adapter")
-_api = importlib.import_module("factory-console.api")
-_projects_api = importlib.import_module("factory-console.api.projects")
+_adapter = importlib.import_module("factory_console.web.backend.fastapi_adapter")
+_api = importlib.import_module("factory_console.api")
+_projects_api = importlib.import_module("factory_console.api.projects")
 
 
 def _space_dir(factory_root: Path, project_id: str) -> Path:
@@ -366,7 +366,7 @@ class TestDraftService:
         """缺 store → None (HTTP 层 503)。"""
         import importlib as _il
 
-        _service_mod = _il.import_module("factory-console.service")
+        _service_mod = _il.import_module("factory_console.service")
         service = _service_mod.ConsoleService()
         assert service.create_draft_project("开发一个记账 App") is None
 

@@ -30,16 +30,16 @@ _FACTORY_CORE = _ROOT / "src" / "legacy" / "factory-core"
 if str(_FACTORY_CORE) not in sys.path:
     sys.path.insert(0, str(_FACTORY_CORE))
 
-_ac = importlib.import_module("factory-console.artifact_contract")
-_act = importlib.import_module("factory-console.session.action")
-_actions = importlib.import_module("factory-console.session.actions")
-_ctx = importlib.import_module("factory-console.session.context")
-_cc = importlib.import_module("factory-console.session.change_control")
-_orch = importlib.import_module("factory-console.session.orchestrator")
-_pipe = importlib.import_module("factory-console.session.pipeline")
-_prod = importlib.import_module("factory-console.session.product")
-_replan = importlib.import_module("factory-console.session.replanning")
-_trace = importlib.import_module("factory-console.audit.trace_context")
+_ac = importlib.import_module("factory_console.artifact_contract")
+_act = importlib.import_module("factory_console.session.action")
+_actions = importlib.import_module("factory_console.session.actions")
+_ctx = importlib.import_module("factory_console.session.context")
+_cc = importlib.import_module("factory_console.session.change_control")
+_orch = importlib.import_module("factory_console.session.orchestrator")
+_pipe = importlib.import_module("factory_console.session.pipeline")
+_prod = importlib.import_module("factory_console.session.product")
+_replan = importlib.import_module("factory_console.session.replanning")
+_trace = importlib.import_module("factory_console.audit.trace_context")
 
 
 # ------------------------------------------------------------------ 工具

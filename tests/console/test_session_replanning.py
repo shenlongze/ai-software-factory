@@ -16,9 +16,9 @@ import pytest
 
 from importlib import import_module
 
-RP = import_module("factory-console.session.replanning")
-DEP = import_module("factory-console.session.dependencies")
-ORCH = import_module("factory-console.session.orchestrator")
+RP = import_module("factory_console.session.replanning")
+DEP = import_module("factory_console.session.dependencies")
+ORCH = import_module("factory_console.session.orchestrator")
 
 
 def _engine(tmp_path: Path) -> RP.ReplanningEngine:
@@ -531,8 +531,8 @@ class TestMore:
         assert "replanning" in str(eng._file)
 
     def test_import_all(self):
-        import_module("factory-console.session.replanning")
-        import_module("factory-console.session.dependencies")
+        import_module("factory_console.session.replanning")
+        import_module("factory_console.session.dependencies")
 
     def test_dag_load_save(self, tmp_path):
         g = DEP.TaskDependencyGraph()
@@ -711,7 +711,7 @@ class TestFill:
 
     def test_team_execution_plan_version_sync(self, tmp_path):
         """TeamExecutionState 同步 plan_version。"""
-        ts = import_module("factory-console.session.team_state")
+        ts = import_module("factory_console.session.team_state")
         d = ts.TeamExecutionState.init("demo", "software-team", [])
         assert "plan_version" in d or True
 

@@ -188,7 +188,7 @@ class TestExecRefSemantics:
         """
         import re
 
-        src = (Path(_ROOT) / "factory-console" / "session" / "agent_loop.py").read_text()
+        src = (Path(_ROOT) / "src" / "legacy" / "factory-console" / "session" / "agent_loop.py").read_text()
         # 两处 _exec_fn 均定义 _exs = result_id 且成功路径 exec_ref 用 _exs
         assert src.count('_exs = str(r.get("result_id") or "")') == 2
         matches = re.findall(r'"exec_ref": _exs or str\(r\.get\("task_id"\) or ""\)', src)
@@ -302,7 +302,7 @@ class TestLegacyIsolation:
         """management.Task 注释 = EXS (F0); 用 AST 确认生产注释不再宣传 EXR 语义。"""
         import ast
 
-        src = (Path(_ROOT) / "factory-org" / "org" / "management.py").read_text()
+        src = (Path(_ROOT) / "src" / "legacy" / "factory-org" / "org" / "management.py").read_text()
         tree = ast.parse(src)
         found = False
         for node in ast.walk(tree):

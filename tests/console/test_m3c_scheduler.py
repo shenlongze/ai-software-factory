@@ -22,9 +22,9 @@ import importlib
 import json
 from pathlib import Path
 
-C_MOD = importlib.import_module("factory-console.session.conflicts")
-ORCH_MOD = importlib.import_module("factory-console.session.orchestrator")
-SCH_MOD = importlib.import_module("factory-console.session.scheduler")
+C_MOD = importlib.import_module("factory_console.session.conflicts")
+ORCH_MOD = importlib.import_module("factory_console.session.orchestrator")
+SCH_MOD = importlib.import_module("factory_console.session.scheduler")
 
 TaskScheduler = SCH_MOD.TaskScheduler
 ScheduleResult = SCH_MOD.ScheduleResult

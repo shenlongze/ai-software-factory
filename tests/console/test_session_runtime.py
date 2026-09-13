@@ -29,8 +29,8 @@ class _FakeChat075:
     def is_fallback(self, a):
         return False
 
-SESSION_MOD = importlib.import_module("factory-console.session.session")
-CLI_MOD = importlib.import_module("factory-console.cli_factory")
+SESSION_MOD = importlib.import_module("factory_console.session.session")
+CLI_MOD = importlib.import_module("factory_console.cli_factory")
 
 
 def _feed_inputs(monkeypatch, inputs):

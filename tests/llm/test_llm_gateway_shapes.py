@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-_GATEWAY = Path(__file__).resolve().parents[2] / "factory-console" / "session" / "llm_gateway.py"
+_GATEWAY = Path(__file__).resolve().parents[2] / "src" / "legacy" / "factory-console" / "session" / "llm_gateway.py"
 
 
 @pytest.fixture(scope="module")

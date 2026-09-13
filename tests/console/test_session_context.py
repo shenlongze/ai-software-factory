@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import importlib
 
-CONTEXT_MOD = importlib.import_module("factory-console.session.context")
+CONTEXT_MOD = importlib.import_module("factory_console.session.context")
 
 
 def test_create_defaults():

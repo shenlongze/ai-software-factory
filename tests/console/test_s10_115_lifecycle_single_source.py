@@ -32,15 +32,15 @@ _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-ACT = importlib.import_module("factory-console.session.action")
-ACTIONS = importlib.import_module("factory-console.session.actions")
-BOARD = importlib.import_module("factory-console.session.board")
-CTX = importlib.import_module("factory-console.session.context")
-INT = importlib.import_module("factory-console.session.intent")
-LS = importlib.import_module("factory-console.session.lifecycle_store")
-ORCH = importlib.import_module("factory-console.session.orchestrator")
-PIPE = importlib.import_module("factory-console.session.pipeline")
-PROD = importlib.import_module("factory-console.session.product")
+ACT = importlib.import_module("factory_console.session.action")
+ACTIONS = importlib.import_module("factory_console.session.actions")
+BOARD = importlib.import_module("factory_console.session.board")
+CTX = importlib.import_module("factory_console.session.context")
+INT = importlib.import_module("factory_console.session.intent")
+LS = importlib.import_module("factory_console.session.lifecycle_store")
+ORCH = importlib.import_module("factory_console.session.orchestrator")
+PIPE = importlib.import_module("factory_console.session.pipeline")
+PROD = importlib.import_module("factory_console.session.product")
 
 Lifecycle = LS.Lifecycle
 

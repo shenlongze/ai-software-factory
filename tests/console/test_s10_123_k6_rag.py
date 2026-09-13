@@ -34,13 +34,13 @@ _FACTORY_CORE = _ROOT / "src" / "legacy" / "factory-core"
 if str(_FACTORY_CORE) not in sys.path:
     sys.path.insert(0, str(_FACTORY_CORE))
 
-KS = importlib.import_module("factory-console.retrieval.knowledge_store")
-EXT = importlib.import_module("factory-console.retrieval.external_source")
-TRACE = importlib.import_module("factory-console.audit.trace_context")
-EMITTER = importlib.import_module("factory-console.audit.audit_emitter")
-EVENT = importlib.import_module("factory-console.audit.audit_event")
-CLI = importlib.import_module("factory-console.cli_factory")
-CFG = importlib.import_module("factory-console.config")
+KS = importlib.import_module("factory_console.retrieval.knowledge_store")
+EXT = importlib.import_module("factory_console.retrieval.external_source")
+TRACE = importlib.import_module("factory_console.audit.trace_context")
+EMITTER = importlib.import_module("factory_console.audit.audit_emitter")
+EVENT = importlib.import_module("factory_console.audit.audit_event")
+CLI = importlib.import_module("factory_console.cli_factory")
+CFG = importlib.import_module("factory_console.config")
 
 try:
     from fastapi.testclient import TestClient  # noqa: E402
@@ -440,7 +440,7 @@ class TestRegistry:
     @requires_fastapi
     def test_api_rag_routes_registered(self, tmp_path):
         """契约 9b: API 路由 /api/rag/query + /api/rag/sources 存在。"""
-        adapter = importlib.import_module("factory-console.web.backend.fastapi_adapter")
+        adapter = importlib.import_module("factory_console.web.backend.fastapi_adapter")
         root = tmp_path / "factory"
         root.mkdir()
         from events.logger import EventLogger
@@ -484,7 +484,7 @@ class TestDeterminism:
 @requires_fastapi
 class TestApiEndpoints:
     def _client(self, tmp_path):
-        adapter = importlib.import_module("factory-console.web.backend.fastapi_adapter")
+        adapter = importlib.import_module("factory_console.web.backend.fastapi_adapter")
         root = tmp_path / "factory"
         make_project(root)
         from events.logger import EventLogger
@@ -500,7 +500,7 @@ class TestApiEndpoints:
         with self._client(tmp_path) as client:
             # 先入库
             from importlib import import_module as _im
-            KS2 = _im("factory-console.retrieval.knowledge_store")
+            KS2 = _im("factory_console.retrieval.knowledge_store")
             KS2.KnowledgeStore(tmp_path / "factory", "demo").ingest()
             resp = client.post("/api/rag/query", json={
                 "project": "demo", "question": "支付网关", "top_k": 3})

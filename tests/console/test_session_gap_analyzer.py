@@ -13,7 +13,7 @@ import json
 from importlib import import_module
 from pathlib import Path
 
-GA = import_module("factory-console.session.gap_analyzer")
+GA = import_module("factory_console.session.gap_analyzer")
 
 
 def _analyzer(tmp_path: Path) -> "GA.GapAnalyzer":

@@ -20,7 +20,7 @@ import json
 
 import pytest
 
-RENDER_MOD = importlib.import_module("factory-console.session.renderer")
+RENDER_MOD = importlib.import_module("factory_console.session.renderer")
 
 
 # ------------------------------------------------------------------ 接口 (Renderer ABC)

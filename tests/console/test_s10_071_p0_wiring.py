@@ -10,8 +10,8 @@ from pathlib import Path
 
 from importlib import import_module
 
-CL = import_module("factory-console.session.context_ledger")
-RS = import_module("factory-console.session.reasoning")
+CL = import_module("factory_console.session.context_ledger")
+RS = import_module("factory_console.session.reasoning")
 
 
 def _ws(tmp_path: Path) -> Path:
@@ -51,9 +51,9 @@ class TestContextGate:
 class TestUnifiedRetrieval:
     def test_debug_retrieval_via_orchestrator(self, tmp_path):
         from importlib import import_module as _im
-        D = _im("factory-console.session.debug")
-        DM = _im("factory-console.session.debug.debug_memory")
-        MEM = _im("factory-console.memory")
+        D = _im("factory_console.session.debug")
+        DM = _im("factory_console.session.debug.debug_memory")
+        MEM = _im("factory_console.memory")
         ws = _ws(tmp_path)
         store = MEM.ExperienceStore(ws / "memory" / "experience_store.json")
         store.add(MEM.ExperienceRecord(
@@ -67,8 +67,8 @@ class TestUnifiedRetrieval:
 
     def test_fallback_when_orchestrator_fails(self, tmp_path):
         from importlib import import_module as _im
-        D = _im("factory-console.session.debug")
-        DM = _im("factory-console.session.debug.debug_memory")
+        D = _im("factory_console.session.debug")
+        DM = _im("factory_console.session.debug.debug_memory")
         ws = _ws(tmp_path)
         retriever = DM.DebugExperienceRetriever(workspace=ws)
         case = D.DebugCase(error_message="unknown error")
@@ -97,10 +97,10 @@ class TestProductionWiring:
     def test_audit_auto_events(self, tmp_path):
         """actions 薄接: 生产 action 自动产生 Audit (非手工 append)。"""
         from importlib import import_module as _im
-        ACT = _im("factory-console.session.actions")
+        ACT = _im("factory_console.session.actions")
         ws = _ws(tmp_path)
         from importlib import import_module as _im2
-        PR = _im2("factory-console.session.product")
+        PR = _im2("factory_console.session.product")
 
         class Session:
             def __init__(self):

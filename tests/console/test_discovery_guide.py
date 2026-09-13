@@ -27,10 +27,10 @@ import importlib
 
 import pytest
 
-DI = importlib.import_module("factory-console.session.discovery_intelligence")
-DIS = importlib.import_module("factory-console.session.discovery")
-CONV = importlib.import_module("factory-console.session.conversation")
-GUIDE = importlib.import_module("factory-console.session.discovery_guide")
+DI = importlib.import_module("factory_console.session.discovery_intelligence")
+DIS = importlib.import_module("factory_console.session.discovery")
+CONV = importlib.import_module("factory_console.session.conversation")
+GUIDE = importlib.import_module("factory_console.session.discovery_guide")
 
 STATES = CONV.ConversationState
 DS_STATES = DIS.DiscoveryState
@@ -45,7 +45,7 @@ def _no_provider(monkeypatch):
     使 "无 LLM" 类测试不依赖外部环境 (有无 DEEPSEEK_API_KEY 均确定)。
     注入 mock analyzer 的测试不受影响 (不走默认装配)。
     """
-    REASON = importlib.import_module("factory-console.session.reasoning")
+    REASON = importlib.import_module("factory_console.session.reasoning")
 
     class _BrokenProvider:
         def _default_llm_fn(self):

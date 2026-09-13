@@ -12,7 +12,7 @@ from __future__ import annotations
 from importlib import import_module
 from pathlib import Path
 
-BOARD = import_module("factory-console.session.board")
+BOARD = import_module("factory_console.session.board")
 
 ROOT = Path(__file__).resolve().parents[2]
 BACKLOG = ROOT / "docs" / "sprint10" / "待办清单-已发现未落地.md"

@@ -31,7 +31,7 @@ import traceback
 from pathlib import Path
 
 REPO = Path("/Users/Shared/work/ai-software-factory")
-sys.path.insert(0, str(REPO / "factory-exec"))
+sys.path.insert(0, str(REPO / "src" / "legacy" / "factory-exec"))
 
 from exec.employee_executor import EmployeeExecutor  # noqa: E402
 from exec.experience_ctx import ContextExperienceStore  # noqa: E402

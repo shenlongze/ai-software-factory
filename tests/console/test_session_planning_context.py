@@ -22,8 +22,8 @@ import json
 from importlib import import_module
 from pathlib import Path
 
-CB = import_module("factory-console.session.context_builder")
-PT = import_module("factory-console.session.planning_trace")
+CB = import_module("factory_console.session.context_builder")
+PT = import_module("factory_console.session.planning_trace")
 
 PRD_TEXT = """# ScorePocket
 

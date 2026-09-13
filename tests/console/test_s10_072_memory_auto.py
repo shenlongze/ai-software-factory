@@ -9,8 +9,8 @@ from pathlib import Path
 
 from importlib import import_module
 
-DP = import_module("factory-console.session.debug.debug_pipeline")
-MEM = import_module("factory-console.memory")
+DP = import_module("factory_console.session.debug.debug_pipeline")
+MEM = import_module("factory_console.memory")
 
 
 def _buggy(ws: Path):
@@ -39,7 +39,7 @@ class TestAutoLearn:
         _buggy(ws)
         p = DP.DebugPipeline(workspace=ws)
         from importlib import import_module as _im
-        B = _im("factory-console.session.budget")
+        B = _im("factory_console.session.budget")
         # 已耗尽预算 → BLOCKED
         budget = B.ProjectBudget(max_total_cost=10.0, max_total_tokens=100,
                                  max_llm_calls=1)
@@ -67,7 +67,7 @@ class TestAutoLearn:
 class TestLearningLoop:
     def test_run_a_to_run_b(self, tmp_path):
         """Run A 产生经验 → Run B 检索到 → 影响策略 → 成功。"""
-        UNI = import_module("factory-console.retrieval.unified")
+        UNI = import_module("factory_console.retrieval.unified")
         # Run A
         wa = tmp_path / "a"
         wa.mkdir(exist_ok=True)

@@ -53,10 +53,10 @@ from events.models import Event, EventType
 from org.projects import Project, ProjectStore
 from org.workflow import WorkflowLifecycle
 
-_console = importlib.import_module("factory-console")
-_api = importlib.import_module("factory-console.api")
-_adapter = importlib.import_module("factory-console.web.backend.fastapi_adapter")
-_models = importlib.import_module("factory-console.models")
+_console = importlib.import_module("factory_console")
+_api = importlib.import_module("factory_console.api")
+_adapter = importlib.import_module("factory_console.web.backend.fastapi_adapter")
+_models = importlib.import_module("factory_console.models")
 
 try:
     from fastapi.testclient import TestClient
@@ -100,7 +100,7 @@ def project_id(project_store: ProjectStore) -> str:
 def service(wlife: WorkflowLifecycle, project_store: ProjectStore, tmp_path: Path) -> Any:
     """ConsoleService (注入真实 org 装配 + S10-004 runtime stores — S10-002
     走真实数据空间; runtime 数据空间独立于 org, 同根目录 <root>/runtimes)。"""
-    _runtime_store_mod = importlib.import_module("factory-console.runtime_store")
+    _runtime_store_mod = importlib.import_module("factory_console.runtime_store")
     runtime_dir = tmp_path / "factory" / "runtimes"
     return _console.ConsoleService(
         project_store=project_store,
@@ -1161,7 +1161,7 @@ class TestRuntimeWorkspaceApi:
         self, tmp_path: Path, project_store, project_id
     ):
         """持久化: 原子写落盘 — 新 store 实例读同目录 → 实例/截图仍在。"""
-        _runtime_store_mod = importlib.import_module("factory-console.runtime_store")
+        _runtime_store_mod = importlib.import_module("factory_console.runtime_store")
 
         def build_svc():
             return _console.ConsoleService(
@@ -1190,7 +1190,7 @@ class TestRuntimeWorkspaceApi:
 
     def test_runtime_store_corrupt_raises(self, tmp_path: Path):
         """损坏存储文件 → CorruptRuntimeStoreError (响亮, 绝不静默返回空)。"""
-        _runtime_store_mod = importlib.import_module("factory-console.runtime_store")
+        _runtime_store_mod = importlib.import_module("factory_console.runtime_store")
         store = _runtime_store_mod.RuntimeInstanceStore(tmp_path / "runtimes")
         (tmp_path / "runtimes").mkdir(parents=True, exist_ok=True)
         (tmp_path / "runtimes" / "runtimes.json").write_text(

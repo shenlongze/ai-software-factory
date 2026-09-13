@@ -12,10 +12,10 @@ from pathlib import Path
 
 from importlib import import_module
 
-MEM = import_module("factory-console.memory")
-EXTR = import_module("factory-console.memory.extraction")
-ENG = import_module("factory-console.memory.learning_engine")
-API = import_module("factory-console.api.memory")
+MEM = import_module("factory_console.memory")
+EXTR = import_module("factory_console.memory.extraction")
+ENG = import_module("factory_console.memory.learning_engine")
+API = import_module("factory_console.api.memory")
 
 
 def _workspace(tmp_path: Path) -> Path:

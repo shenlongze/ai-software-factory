@@ -27,7 +27,7 @@ for _p in (_ROOT, _ROOT / "src" / "legacy" / "factory-core"):
 
 # 端点相对导入用下划线包名 (factory_console.*); 连字符与下划线同文件但不同模块实例
 _ag = importlib.import_module("factory_console.session.agent_loop")
-_adapter = importlib.import_module("factory-console.web.backend.fastapi_adapter")
+_adapter = importlib.import_module("factory_console.web.backend.fastapi_adapter")
 
 try:
     from fastapi.testclient import TestClient
@@ -116,7 +116,7 @@ class TestPlanApprovalHttp:
         """计划 → 用户「可以」→ 模型语义判断批准 → 真实建任务进 backlog。"""
         import importlib as _il
         AG = _il.import_module("factory_console.session.agent_loop")
-        _AGH = _il.import_module("factory-console.session.agent_loop")  # 连字符实例 (端点可能用)
+        _AGH = _il.import_module("factory_console.session.agent_loop")  # 连字符实例 (端点可能用)
 
         svc = _service(tmp_path)
         proj = svc.create_project("plan demo", name="PlanDemo")

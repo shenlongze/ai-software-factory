@@ -11,7 +11,7 @@ from pathlib import Path
 
 from importlib import import_module
 
-RM = import_module("factory-console.session.repo_mode")
+RM = import_module("factory_console.session.repo_mode")
 
 
 def _make_repo(root: Path) -> Path:

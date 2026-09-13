@@ -19,7 +19,7 @@ import json
 
 import pytest
 
-CF = import_module("factory-console.cli_factory")
+CF = import_module("factory_console.cli_factory")
 
 
 @pytest.fixture

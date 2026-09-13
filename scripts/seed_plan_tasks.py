@@ -23,7 +23,7 @@ if str(_FACTORY_CORE) not in sys.path:
 
 import importlib  # noqa: E402
 
-_adapter = importlib.import_module("factory-console.web.backend.fastapi_adapter")
+_adapter = importlib.import_module("factory_console.web.backend.fastapi_adapter")
 
 PROJECT = "ai-factory-self"
 

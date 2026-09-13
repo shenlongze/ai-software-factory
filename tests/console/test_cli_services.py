@@ -33,9 +33,9 @@ _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:  # factory-console/ 的父目录 (含连字符包名)
     sys.path.insert(0, str(_ROOT))
 
-_svc = importlib.import_module("factory-console.cli_services")
-_cli = importlib.import_module("factory-console.cli_factory")
-_cfg = importlib.import_module("factory-console.config")
+_svc = importlib.import_module("factory_console.cli_services")
+_cli = importlib.import_module("factory_console.cli_factory")
+_cfg = importlib.import_module("factory_console.config")
 
 BUILTIN_IDS = ["backend", "frontend", "runtime", "board"]  # board: v1.1.28 懒加载服务
 
@@ -430,7 +430,7 @@ class TestFrontendMode:
         """默认 (无 --dev): dist 存在 → uvicorn + create_app(static_dir=dist)。"""
         cli = make_cli(tmp_path)
         (cli.data_dir / "run").mkdir(parents=True, exist_ok=True)
-        dist = cli.root / "factory-console" / "web" / "frontend" / "dist"
+        dist = cli.root / "src" / "legacy" / "factory-console" / "web" / "frontend" / "dist"
         dist.mkdir(parents=True)
         (dist / "index.html").write_text("<html></html>", encoding="utf-8")
         monkeypatch.setattr(_cli.subprocess, "Popen", FakePopen)

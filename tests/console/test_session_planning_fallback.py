@@ -15,9 +15,9 @@ import pytest
 
 from importlib import import_module
 
-R = import_module("factory-console.session.reasoning")
-LG = import_module("factory-console.session.llm_gap")
-LP = import_module("factory-console.session.llm_task_proposal")
+R = import_module("factory_console.session.reasoning")
+LG = import_module("factory_console.session.llm_gap")
+LP = import_module("factory_console.session.llm_task_proposal")
 
 
 def _gap_ctx():
@@ -307,6 +307,6 @@ class TestMore:
         assert "WHY" in seen["prompt"] or "rationale" in seen["prompt"]
 
     def test_import_all(self):
-        import_module("factory-console.session.reasoning")
-        import_module("factory-console.session.llm_gap")
-        import_module("factory-console.session.llm_task_proposal")
+        import_module("factory_console.session.reasoning")
+        import_module("factory_console.session.llm_gap")
+        import_module("factory_console.session.llm_task_proposal")

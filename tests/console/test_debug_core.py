@@ -13,12 +13,12 @@ from pathlib import Path
 
 from importlib import import_module
 
-D = import_module("factory-console.session.debug")
-DE = import_module("factory-console.session.debug.debug_engine")
-EA = import_module("factory-console.session.debug.error_analysis")
-RC = import_module("factory-console.session.debug.root_cause")
-DM = import_module("factory-console.session.debug.debug_memory")
-DS = import_module("factory-console.session.debug.debug_strategy")
+D = import_module("factory_console.session.debug")
+DE = import_module("factory_console.session.debug.debug_engine")
+EA = import_module("factory_console.session.debug.error_analysis")
+RC = import_module("factory_console.session.debug.root_cause")
+DM = import_module("factory_console.session.debug.debug_memory")
+DS = import_module("factory_console.session.debug.debug_strategy")
 
 
 def _case(**kw):
@@ -129,7 +129,7 @@ class TestRootCause:
 class TestRetriever:
     def _memory_ws(self, tmp_path) -> Path:
         from importlib import import_module as _im
-        MEM = _im("factory-console.memory")
+        MEM = _im("factory_console.memory")
         ws = tmp_path / "ws"
         (ws / "memory").mkdir(parents=True)
         store = MEM.ExperienceStore(ws / "memory" / "experience_store.json")
@@ -149,7 +149,7 @@ class TestRetriever:
         ws = self._memory_ws(tmp_path)
         c = _case(error_message="jwt refresh token missing")
         from importlib import import_module as _im
-        MEM = _im("factory-console.memory")
+        MEM = _im("factory_console.memory")
         store = MEM.ExperienceStore(ws / "memory" / "experience_store.json")
         hits = DM.DebugExperienceRetriever().retrieve(c, top_k=3, memory_store=store)
         assert hits
@@ -158,7 +158,7 @@ class TestRetriever:
         ws = self._memory_ws(tmp_path)
         c = _case(error_message="jwt refresh")
         from importlib import import_module as _im
-        MEM = _im("factory-console.memory")
+        MEM = _im("factory_console.memory")
         store = MEM.ExperienceStore(ws / "memory" / "experience_store.json")
         hits = DM.DebugExperienceRetriever().retrieve(c, top_k=2, memory_store=store)
         assert len(hits) <= 2
@@ -167,7 +167,7 @@ class TestRetriever:
         ws = self._memory_ws(tmp_path)
         c = _case(error_message="jwt refresh")
         from importlib import import_module as _im
-        MEM = _im("factory-console.memory")
+        MEM = _im("factory_console.memory")
         store = MEM.ExperienceStore(ws / "memory" / "experience_store.json")
         hits = DM.DebugExperienceRetriever().retrieve(c, top_k=3, memory_store=store)
         confs = [h.get("confidence", 0) if isinstance(h, dict) else getattr(h, "confidence", 0)
@@ -179,7 +179,7 @@ class TestRetriever:
         ws.mkdir(exist_ok=True)
         c = _case(error_message="x")
         from importlib import import_module as _im
-        MEM = _im("factory-console.memory")
+        MEM = _im("factory_console.memory")
         store = MEM.ExperienceStore(ws / "memory" / "experience_store.json")
         hits = DM.DebugExperienceRetriever().retrieve(c, memory_store=store)
         assert hits == []  # 失败安全
@@ -197,7 +197,7 @@ class TestStrategy:
 
     def test_success_exp_fix_code(self):
         from importlib import import_module as _im
-        MEM = _im("factory-console.memory")
+        MEM = _im("factory_console.memory")
         exp = [MEM.ExperienceRecord(type="DEBUG_EXPERIENCE", problem="same issue",
                                     action="fix", success=True, confidence=0.9)]
         c = _case(error_message="connection timed out")
@@ -306,7 +306,7 @@ class TestFeedbackLoop:
 
     def test_feedback_writes_success_pattern(self, tmp_path):
         from importlib import import_module as _im
-        MEM = _im("factory-console.memory")
+        MEM = _im("factory_console.memory")
         ws = tmp_path / "ws"
         ws.mkdir(exist_ok=True)
         engine = DE.DebugEngine()
@@ -318,7 +318,7 @@ class TestFeedbackLoop:
 
     def test_feedback_writes_failure_pattern(self, tmp_path):
         from importlib import import_module as _im
-        MEM = _im("factory-console.memory")
+        MEM = _im("factory_console.memory")
         ws = tmp_path / "ws"
         ws.mkdir(exist_ok=True)
         engine = DE.DebugEngine()
@@ -330,7 +330,7 @@ class TestFeedbackLoop:
 
     def test_retrieve_after_feedback(self, tmp_path):
         from importlib import import_module as _im
-        MEM = _im("factory-console.memory")
+        MEM = _im("factory_console.memory")
         ws = tmp_path / "ws"
         ws.mkdir(exist_ok=True)
         engine = DE.DebugEngine()

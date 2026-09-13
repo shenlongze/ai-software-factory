@@ -28,7 +28,7 @@ _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:  # factory-console/ 的父目录
     sys.path.insert(0, str(_ROOT))
 
-_llm = importlib.import_module("factory-console.llm_control")
+_llm = importlib.import_module("factory_console.llm_control")
 
 
 def make_plane(tmp_path: Path, environ: dict[str, str] | None = None) -> Any:

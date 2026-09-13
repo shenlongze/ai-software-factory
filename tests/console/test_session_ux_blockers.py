@@ -14,12 +14,12 @@ from types import SimpleNamespace
 
 from importlib import import_module
 
-ACT = import_module("factory-console.session.actions")
-CTX = import_module("factory-console.session.context")
-ORCH = import_module("factory-console.session.orchestrator")
-SESS = import_module("factory-console.session.session")
-CONV_MOD = import_module("factory-console.session.conversation")
-INT = import_module("factory-console.session.intent")
+ACT = import_module("factory_console.session.actions")
+CTX = import_module("factory_console.session.context")
+ORCH = import_module("factory_console.session.orchestrator")
+SESS = import_module("factory_console.session.session")
+CONV_MOD = import_module("factory_console.session.conversation")
+INT = import_module("factory_console.session.intent")
 
 
 class _FakeChat:
@@ -214,7 +214,7 @@ def test_project_docs_intent_and_real_data(monkeypatch, capsys, tmp_path):
 
 def test_chat_persona_honesty_constraints():
     """人设 prompt 禁止虚构未实现能力 / 禁止猜项目状态。"""
-    chat = import_module("factory-console.session.chat")
+    chat = import_module("factory_console.session.chat")
     prompt = chat._CHAT_PROMPT
     assert "不要虚构未实现能力" in prompt
     assert "不要代替系统查询项目/文档状态" in prompt

@@ -13,10 +13,10 @@ from pathlib import Path
 
 from importlib import import_module
 
-PS = import_module("factory-console.session.production_session")
-CL = import_module("factory-console.session.cost_ledger")
-RG = import_module("factory-console.session.review_gate")
-B = import_module("factory-console.session.budget")
+PS = import_module("factory_console.session.production_session")
+CL = import_module("factory_console.session.cost_ledger")
+RG = import_module("factory_console.session.review_gate")
+B = import_module("factory_console.session.budget")
 
 
 def _project(tmp_path: Path, slug: str = "scorepocket",

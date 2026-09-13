@@ -33,12 +33,12 @@ class _FakeChat075:
     def is_fallback(self, a):
         return False
 
-SLASH_MOD = importlib.import_module("factory-console.session.slash")
-CMDS_MOD = importlib.import_module("factory-console.session.commands")
-SESS_MOD = importlib.import_module("factory-console.session.session")
-CTX_MOD = importlib.import_module("factory-console.session.context")
-CFG_MOD = importlib.import_module("factory-console.config")
-CLI_MOD = importlib.import_module("factory-console.cli_factory")
+SLASH_MOD = importlib.import_module("factory_console.session.slash")
+CMDS_MOD = importlib.import_module("factory_console.session.commands")
+SESS_MOD = importlib.import_module("factory_console.session.session")
+CTX_MOD = importlib.import_module("factory_console.session.context")
+CFG_MOD = importlib.import_module("factory_console.config")
+CLI_MOD = importlib.import_module("factory_console.cli_factory")
 
 
 # ------------------------------------------------------------------ helpers

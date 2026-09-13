@@ -15,14 +15,14 @@ from pathlib import Path
 
 from importlib import import_module
 
-MEM = import_module("factory-console.memory")
-EXP = import_module("factory-console.memory.experience")
-STORE = import_module("factory-console.memory.experience_store")
-EXTR = import_module("factory-console.memory.extraction")
-LE = import_module("factory-console.memory.learning_engine")
-RET = import_module("factory-console.memory.retrieval")
-REC = import_module("factory-console.memory.recommendation")
-TRACE = import_module("factory-console.memory.learning_trace")
+MEM = import_module("factory_console.memory")
+EXP = import_module("factory_console.memory.experience")
+STORE = import_module("factory_console.memory.experience_store")
+EXTR = import_module("factory_console.memory.extraction")
+LE = import_module("factory_console.memory.learning_engine")
+RET = import_module("factory_console.memory.retrieval")
+REC = import_module("factory_console.memory.recommendation")
+TRACE = import_module("factory_console.memory.learning_trace")
 
 
 def _record(**kw):

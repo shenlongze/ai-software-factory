@@ -13,7 +13,7 @@ from __future__ import annotations
 from importlib import import_module
 from pathlib import Path
 
-TP = import_module("factory-console.session.task_proposal")
+TP = import_module("factory_console.session.task_proposal")
 
 
 def TP_Gap(**kw) -> object:
@@ -624,7 +624,7 @@ class TestConstants:
     def test_valid_roles_match_roles_module(self):
         from importlib import import_module as _im
 
-        roles = _im("factory-console.session.roles")
+        roles = _im("factory_console.session.roles")
         assert set(TP.VALID_ROLES) == set(roles.ROLES.keys())
 
     def test_valid_commands(self):

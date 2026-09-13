@@ -18,8 +18,8 @@ import json
 from importlib import import_module
 from pathlib import Path
 
-CP = import_module("factory-console.session.critical_path")
-DEC = import_module("factory-console.session.decomposer")
+CP = import_module("factory_console.session.critical_path")
+DEC = import_module("factory_console.session.decomposer")
 
 #: 强能力表 (M3a 兼容用例 — 单候选 → 全原子 verified)
 STRONG_CAPS = {"database": 1, "backend": 1, "frontend": 1, "qa": 1}

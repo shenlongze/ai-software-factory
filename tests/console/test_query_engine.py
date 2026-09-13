@@ -22,8 +22,8 @@ _FACTORY_CORE = _ROOT / "src" / "legacy" / "factory-core"
 if str(_FACTORY_CORE) not in sys.path:
     sys.path.insert(0, str(_FACTORY_CORE))
 
-_qe = importlib.import_module("factory-console.session.query_engine")
-_sessions = importlib.import_module("factory-console.console_sessions")
+_qe = importlib.import_module("factory_console.session.query_engine")
+_sessions = importlib.import_module("factory_console.console_sessions")
 
 
 class _P:

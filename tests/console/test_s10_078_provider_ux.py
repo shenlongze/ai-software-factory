@@ -17,8 +17,8 @@ import contextlib
 
 from importlib import import_module
 
-S = import_module("factory-console.session.session")
-CHAT = import_module("factory-console.session.chat")
+S = import_module("factory_console.session.session")
+CHAT = import_module("factory_console.session.chat")
 
 
 class _FakeChat:
@@ -75,7 +75,7 @@ class TestErrorSanitization:
         s = S.InteractiveSession(chat_service=_FakeChat())
         # 替换为 broken chat 验证 REPL 层不泄漏
         from importlib import import_module
-        CH = import_module("factory-console.session.chat")
+        CH = import_module("factory_console.session.chat")
         s.chat_service = CH.ChatService(reasoning_provider=_BrokenProvider())
         out = _dispatch(s, "你好")
         assert "AI 对话服务当前不可用" in out
@@ -116,7 +116,7 @@ class TestQueryIndependence:
     def test_project_query_no_llm_with_broken_chat(self):
         """Provider 缺失: Factory Query 仍正常 (零 LLM)。"""
         from importlib import import_module
-        CH = import_module("factory-console.session.chat")
+        CH = import_module("factory_console.session.chat")
         s = S.InteractiveSession(
             chat_service=CH.ChatService(reasoning_provider=_BrokenProvider())
         )
@@ -126,7 +126,7 @@ class TestQueryIndependence:
 
     def test_context_query_no_llm_with_broken_chat(self):
         from importlib import import_module
-        CH = import_module("factory-console.session.chat")
+        CH = import_module("factory_console.session.chat")
         s = S.InteractiveSession(
             chat_service=CH.ChatService(reasoning_provider=_BrokenProvider())
         )

@@ -400,7 +400,7 @@ def test_send_message_strips_protocol_on_store(tmp_path: Path) -> None:
 def test_repo_fact_company_no_project() -> None:
     """company scope (project_id 空) → 绝不注入当前项目源码, 不兜底工作区。"""
     import sys
-    sys.path.insert(0, 'factory-console')
+    sys.path.insert(0, 'src/legacy/factory-console')
     from factory_console.session.agent_loop import _repo_fact
 
     fact = _repo_fact(None, "")

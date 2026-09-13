@@ -29,16 +29,16 @@ from types import SimpleNamespace
 
 import pytest
 
-AUDIT = import_module("factory-console.audit")
-ACT = import_module("factory-console.session.action")
-ACTIONS = import_module("factory-console.session.actions")
-COST = import_module("factory-console.session.cost_ledger")
-CTX = import_module("factory-console.session.context")
-EM = import_module("factory-console.audit.audit_emitter")
-INTENT = import_module("factory-console.session.intent")
-ROUTER = import_module("factory-console.session.router")
-S = import_module("factory-console.session.session")
-TC = import_module("factory-console.audit.trace_context")
+AUDIT = import_module("factory_console.audit")
+ACT = import_module("factory_console.session.action")
+ACTIONS = import_module("factory_console.session.actions")
+COST = import_module("factory_console.session.cost_ledger")
+CTX = import_module("factory_console.session.context")
+EM = import_module("factory_console.audit.audit_emitter")
+INTENT = import_module("factory_console.session.intent")
+ROUTER = import_module("factory_console.session.router")
+S = import_module("factory_console.session.session")
+TC = import_module("factory_console.audit.trace_context")
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -146,7 +146,7 @@ class TestCliTraceConsistent:
 
 class TestApiTraceConsistent:
     def _app(self, tmp_path: Path, store_ws: Path):
-        adapter = import_module("factory-console.web.backend.fastapi_adapter")
+        adapter = import_module("factory_console.web.backend.fastapi_adapter")
         app = adapter.build_app(SimpleNamespace(), factory_root=tmp_path)
 
         @app.get("/api/_test_trace")

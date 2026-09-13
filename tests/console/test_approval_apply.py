@@ -33,8 +33,8 @@ from exec.models import (  # noqa: E402
 )
 from exec.store import ExecStore  # noqa: E402
 
-_cli = importlib.import_module("factory-console.cli_factory")
-_cfg = importlib.import_module("factory-console.config")
+_cli = importlib.import_module("factory_console.cli_factory")
+_cfg = importlib.import_module("factory_console.config")
 
 BEFORE = {"calc.py": "def add(a, b):\n    return a + b\n\n"}
 AFTER = {"calc.py": "def add(a, b):\n    return a * b\n\n"}

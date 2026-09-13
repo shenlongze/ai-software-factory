@@ -199,7 +199,7 @@ def test_shared_pipeline_not_duplicated(tmp_path):
     # 每服务只 import promotion_service 一次 (共享管道)
     counts = {}
     for m in mods:
-        src = (Path(_ROOT) / "factory-console" / f"{m}.py").read_text(encoding="utf-8")
+        src = (Path(_ROOT) / "src" / "legacy" / "factory-console" / f"{m}.py").read_text(encoding="utf-8")
         counts[m] = src.count("from .promotion_service import")
     assert counts["promotion_service"] == 0  # 自身
     assert counts["learning_engine_v2"] == 0  # Learning [STOP] 不 Promotion (设计)

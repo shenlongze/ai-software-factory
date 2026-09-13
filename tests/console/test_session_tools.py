@@ -10,7 +10,7 @@ from pathlib import Path
 
 from importlib import import_module
 
-TOOLS = import_module("factory-console.session.tools")
+TOOLS = import_module("factory_console.session.tools")
 
 
 def _write(path: Path, content: str) -> None:

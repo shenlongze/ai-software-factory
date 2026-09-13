@@ -17,12 +17,12 @@ from typing import Any
 
 import pytest
 
-CONF_MOD = importlib.import_module("factory-console.session.confirm")
-ACT_MOD = importlib.import_module("factory-console.session.action")
-ACTIONS_MOD = importlib.import_module("factory-console.session.actions")
-INTENT_MOD = importlib.import_module("factory-console.session.intent")
-SESS_MOD = importlib.import_module("factory-console.session.session")
-CTX_MOD = importlib.import_module("factory-console.session.context")
+CONF_MOD = importlib.import_module("factory_console.session.confirm")
+ACT_MOD = importlib.import_module("factory_console.session.action")
+ACTIONS_MOD = importlib.import_module("factory_console.session.actions")
+INTENT_MOD = importlib.import_module("factory_console.session.intent")
+SESS_MOD = importlib.import_module("factory_console.session.session")
+CTX_MOD = importlib.import_module("factory_console.session.context")
 
 
 def _gate():

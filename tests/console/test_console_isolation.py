@@ -46,7 +46,7 @@ from console_helpers import (
     snapshot_domain_files,
 )
 
-console_mod = __import__("importlib").import_module("factory-console")
+console_mod = __import__("importlib").import_module("factory_console")
 ConsoleService = console_mod.ConsoleService
 
 

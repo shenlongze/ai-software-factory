@@ -13,7 +13,7 @@ import tomllib
 from importlib import import_module
 from pathlib import Path
 
-SESSION = import_module("factory-console.session.session")
+SESSION = import_module("factory_console.session.session")
 ROOT = Path(__file__).resolve().parents[2]
 
 

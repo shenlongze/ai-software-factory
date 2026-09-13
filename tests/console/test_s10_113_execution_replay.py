@@ -33,13 +33,13 @@ _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:  # factory-console/ 的父目录 (含连字符包名)
     sys.path.insert(0, str(_ROOT))
 
-REPLAY = importlib.import_module("factory-console.session.execution_replay")
-ACTIONS = importlib.import_module("factory-console.session.actions")
-INTENT = importlib.import_module("factory-console.session.intent")
-ROUTER = importlib.import_module("factory-console.session.router")
-AUDIT = importlib.import_module("factory-console.session.audit")
-SESS = importlib.import_module("factory-console.session.session")
-CTX = importlib.import_module("factory-console.session.context")
+REPLAY = importlib.import_module("factory_console.session.execution_replay")
+ACTIONS = importlib.import_module("factory_console.session.actions")
+INTENT = importlib.import_module("factory_console.session.intent")
+ROUTER = importlib.import_module("factory_console.session.router")
+AUDIT = importlib.import_module("factory_console.session.audit")
+SESS = importlib.import_module("factory_console.session.session")
+CTX = importlib.import_module("factory_console.session.context")
 
 
 # ------------------------------------------------------------------ 工具

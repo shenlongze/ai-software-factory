@@ -36,16 +36,16 @@ _FACTORY_CORE = _ROOT / "src" / "legacy" / "factory-core"
 if str(_FACTORY_CORE) not in sys.path:
     sys.path.insert(0, str(_FACTORY_CORE))
 
-CLI = importlib.import_module("factory-console.cli_factory")
-CFG = importlib.import_module("factory-console.config")
-EVAL = importlib.import_module("factory-console.session.eval_suite")
-ORCH = importlib.import_module("factory-console.session.orchestrator")
-EQ = importlib.import_module("factory-console.session.execution_quality")
-LS = importlib.import_module("factory-console.session.lifecycle_store")
-TC = importlib.import_module("factory-console.audit.trace_context")
-AUDIT_EM = importlib.import_module("factory-console.audit.audit_emitter")
-AUDIT_STORE = importlib.import_module("factory-console.audit.audit_store")
-EVAL_LOOP = importlib.import_module("factory-console.session.eval_loop")
+CLI = importlib.import_module("factory_console.cli_factory")
+CFG = importlib.import_module("factory_console.config")
+EVAL = importlib.import_module("factory_console.session.eval_suite")
+ORCH = importlib.import_module("factory_console.session.orchestrator")
+EQ = importlib.import_module("factory_console.session.execution_quality")
+LS = importlib.import_module("factory_console.session.lifecycle_store")
+TC = importlib.import_module("factory_console.audit.trace_context")
+AUDIT_EM = importlib.import_module("factory_console.audit.audit_emitter")
+AUDIT_STORE = importlib.import_module("factory_console.audit.audit_store")
+EVAL_LOOP = importlib.import_module("factory_console.session.eval_loop")
 
 Lifecycle = LS.Lifecycle
 

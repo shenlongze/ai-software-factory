@@ -12,10 +12,10 @@ from pathlib import Path
 
 from importlib import import_module
 
-AE = import_module("factory-console.audit.audit_emitter")
-AL = import_module("factory-console.memory.auto_learn")
-CL = import_module("factory-console.session.context_ledger")
-RO = import_module("factory-console.retrieval")
+AE = import_module("factory_console.audit.audit_emitter")
+AL = import_module("factory_console.memory.auto_learn")
+CL = import_module("factory_console.session.context_ledger")
+RO = import_module("factory_console.retrieval")
 
 
 def _ws(tmp_path: Path) -> Path:
@@ -69,11 +69,11 @@ class TestAuditEmitter:
     def test_actions_wire(self, tmp_path):
         """actions 薄接: create_product → PRODUCT_CREATED 自动产生。"""
         from importlib import import_module as _im
-        ACT = _im("factory-console.session.actions")
+        ACT = _im("factory_console.session.actions")
         ws = _ws(tmp_path)
 
         from importlib import import_module as _im
-        PR = _im("factory-console.session.product")
+        PR = _im("factory_console.session.product")
 
         class Session:
             def __init__(self):
@@ -196,7 +196,7 @@ class TestRetrievalModels:
 class TestRetrievers:
     def _memory_store(self, tmp_path):
         from importlib import import_module as _im
-        MEM = _im("factory-console.memory")
+        MEM = _im("factory_console.memory")
         ws = _ws(tmp_path)
         store = MEM.ExperienceStore(ws / "memory" / "experience_store.json")
         store.add(MEM.ExperienceRecord(
@@ -218,8 +218,8 @@ class TestRetrievers:
 
     def test_audit_retriever(self, tmp_path):
         from importlib import import_module as _im
-        AS = _im("factory-console.audit.audit_store")
-        AE2 = _im("factory-console.audit.audit_event")
+        AS = _im("factory_console.audit.audit_store")
+        AE2 = _im("factory_console.audit.audit_event")
         ws = _ws(tmp_path)
         store = AS.AuditStore(workspace=ws)
         store.append(AE2.AuditEvent(event_type="TASK_BLOCKED", project_id="demo",
@@ -242,7 +242,7 @@ class TestRetrievers:
 class TestOrchestrator:
     def _orchestrator(self, tmp_path):
         from importlib import import_module as _im
-        MEM = _im("factory-console.memory")
+        MEM = _im("factory_console.memory")
         ws = _ws(tmp_path)
         mem_store = MEM.ExperienceStore(ws / "memory" / "experience_store.json")
         mem_store.add(MEM.ExperienceRecord(
@@ -263,7 +263,7 @@ class TestOrchestrator:
         ws = _ws(tmp_path)
         orch = RO.RetrievalOrchestrator()
         from importlib import import_module as _im
-        MEM = _im("factory-console.memory")
+        MEM = _im("factory_console.memory")
         store = MEM.ExperienceStore(ws / "memory" / "experience_store.json")
         store.add(MEM.ExperienceRecord(
             type="DEBUG_EXPERIENCE", problem="计分", success=True, confidence=0.8,

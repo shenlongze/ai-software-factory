@@ -21,11 +21,11 @@ from pathlib import Path
 
 import pytest
 
-R = import_module("factory-console.session.reasoning")
-P = import_module("factory-console.session.llm_task_proposal")
-TP = import_module("factory-console.session.task_proposal")
-GA = import_module("factory-console.session.gap_analyzer")
-PT = import_module("factory-console.session.planning_trace")
+R = import_module("factory_console.session.reasoning")
+P = import_module("factory_console.session.llm_task_proposal")
+TP = import_module("factory_console.session.task_proposal")
+GA = import_module("factory_console.session.gap_analyzer")
+PT = import_module("factory_console.session.planning_trace")
 
 VALID_PROPOSAL = {
     "task_id": "",

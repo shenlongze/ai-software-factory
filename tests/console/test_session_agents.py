@@ -32,16 +32,16 @@ from pathlib import Path
 
 import pytest
 
-ACT_MOD = importlib.import_module("factory-console.session.action")
-ACTIONS_MOD = importlib.import_module("factory-console.session.actions")
-AGENTS_MOD = importlib.import_module("factory-console.session.agents")
-AUDIT_MOD = importlib.import_module("factory-console.session.audit")
-CONF_MOD = importlib.import_module("factory-console.session.confirm")
-CTX_MOD = importlib.import_module("factory-console.session.context")
-INTENT_MOD = importlib.import_module("factory-console.session.intent")
-ORCH_MOD = importlib.import_module("factory-console.session.orchestrator")
-PIPE_MOD = importlib.import_module("factory-console.session.pipeline")
-ROUTER_MOD = importlib.import_module("factory-console.session.router")
+ACT_MOD = importlib.import_module("factory_console.session.action")
+ACTIONS_MOD = importlib.import_module("factory_console.session.actions")
+AGENTS_MOD = importlib.import_module("factory_console.session.agents")
+AUDIT_MOD = importlib.import_module("factory_console.session.audit")
+CONF_MOD = importlib.import_module("factory_console.session.confirm")
+CTX_MOD = importlib.import_module("factory_console.session.context")
+INTENT_MOD = importlib.import_module("factory_console.session.intent")
+ORCH_MOD = importlib.import_module("factory_console.session.orchestrator")
+PIPE_MOD = importlib.import_module("factory_console.session.pipeline")
+ROUTER_MOD = importlib.import_module("factory_console.session.router")
 
 AgentRegistry = AGENTS_MOD.AgentRegistry
 AgentMatcher = AGENTS_MOD.AgentMatcher
@@ -200,7 +200,7 @@ def fake_org(monkeypatch):
 
 
 def _product(**kw):
-    prod = importlib.import_module("factory-console.session.product")
+    prod = importlib.import_module("factory_console.session.product")
     data = dict(
         name="ScorePocket",
         problem="台球比赛计分麻烦",

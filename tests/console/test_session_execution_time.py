@@ -20,10 +20,10 @@ from pathlib import Path
 
 from importlib import import_module
 
-ORCH = import_module("factory-console.session.orchestrator")
-B = import_module("factory-console.session.budget")
-CL = import_module("factory-console.session.cost_ledger")
-RG = import_module("factory-console.session.review_gate")
+ORCH = import_module("factory_console.session.orchestrator")
+B = import_module("factory_console.session.budget")
+CL = import_module("factory_console.session.cost_ledger")
+RG = import_module("factory_console.session.review_gate")
 
 
 def _make_project(tmp_path: Path, tasks: list | None = None) -> Path:

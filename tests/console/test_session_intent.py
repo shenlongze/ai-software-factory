@@ -20,7 +20,7 @@ import inspect
 
 import pytest
 
-INTENT_MOD = importlib.import_module("factory-console.session.intent")
+INTENT_MOD = importlib.import_module("factory_console.session.intent")
 
 P = INTENT_MOD.KeywordIntentParser
 

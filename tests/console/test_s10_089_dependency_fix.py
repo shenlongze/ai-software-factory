@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from importlib import import_module
 
-BS = import_module("factory-console.session.workloads.backlog_sweeper")
+BS = import_module("factory_console.session.workloads.backlog_sweeper")
 
 
 def _sweep(requirements: str, title: str, issue_type: str = "dependency"):

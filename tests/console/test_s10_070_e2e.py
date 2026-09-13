@@ -16,9 +16,9 @@ from pathlib import Path
 
 from importlib import import_module
 
-ACT = import_module("factory-console.session.actions")
-INT = import_module("factory-console.session.intent")
-API = import_module("factory-console.api")
+ACT = import_module("factory_console.session.actions")
+INT = import_module("factory_console.session.intent")
+API = import_module("factory_console.api")
 
 
 def _ws(tmp_path: Path) -> Path:
@@ -138,7 +138,7 @@ class TestCaseE:
 
     def test_governance_review(self, tmp_path):
         from importlib import import_module as _im
-        B = _im("factory-console.session.budget")
+        B = _im("factory_console.session.budget")
         ws = _ws(tmp_path)
         # 预算耗尽 → repair → REVIEW/BLOCKED
         r = ACT.debug_analyze(_ctx(ws, {"error_message": "timeout"}))
@@ -153,7 +153,7 @@ class TestCaseF:
 
     def test_memory_loop(self, tmp_path):
         from importlib import import_module as _im
-        MEM = _im("factory-console.memory")
+        MEM = _im("factory_console.memory")
         ws = _ws(tmp_path)
         # 1. 失败 → Debug → Repair → 成功
         r = ACT.debug_analyze(_ctx(ws, {"error_message": "计分 API 失败"}))

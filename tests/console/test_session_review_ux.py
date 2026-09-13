@@ -10,9 +10,9 @@ from pathlib import Path
 
 from importlib import import_module
 
-ACT = import_module("factory-console.session.actions")
-RV = import_module("factory-console.session.review_view")
-RG = import_module("factory-console.session.review_gate")
+ACT = import_module("factory_console.session.actions")
+RV = import_module("factory_console.session.review_view")
+RG = import_module("factory_console.session.review_gate")
 
 
 def _gate(ws: Path) -> RG.ReviewGate:

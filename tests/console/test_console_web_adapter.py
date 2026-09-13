@@ -36,8 +36,8 @@ if str(_FACTORY_CORE) not in sys.path:
 from console_helpers import event_types_of  # noqa: E402
 
 #: factory-console 包名含连字符 → importlib 加载 (同 tests/console 其余测试模式)
-_adapter = importlib.import_module("factory-console.web.backend.fastapi_adapter")
-_models = importlib.import_module("factory-console.models")
+_adapter = importlib.import_module("factory_console.web.backend.fastapi_adapter")
+_models = importlib.import_module("factory_console.models")
 
 
 # ------------------------------------------------------------------ 装配 (无 fastapi 依赖)
@@ -285,7 +285,7 @@ class TestProjectManagementEndpoints:
         """运行中项目删除 → 409 (ProjectConflictError 映射, 诚实拒绝)。"""
         import importlib
 
-        _service = importlib.import_module("factory-console.service")
+        _service = importlib.import_module("factory_console.service")
 
         class _RunningService(_StubService):
             def delete_project(self, project_id):
@@ -469,7 +469,7 @@ class TestPermissionBoundary:
     def test_client_write_surface_limited_to_approval_decisions(self):
         """前端 api client 写面仅审批决定 + Runtime + 创建 + 启动/对话 POST
         + 项目管理 PATCH/DELETE (updateProject/deleteProject; 无 put)。"""
-        src = (Path(__file__).parents[2] / "factory-console" / "web" / "frontend"
+        src = (Path(__file__).parents[2] / "src" / "legacy" / "factory-console" / "web" / "frontend"
                / "src" / "api" / "client.ts").read_text(encoding="utf-8")
         # 写 helper 存在但唯一 (sendJson → POST 写面)
         assert "sendJson" in src

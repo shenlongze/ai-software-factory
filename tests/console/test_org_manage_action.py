@@ -20,9 +20,9 @@ if str(_ROOT) not in sys.path:
 
 import pytest
 
-ACTIONS = import_module("factory-console.session.actions")
-INTENT = import_module("factory-console.session.intent")
-ROUTER = import_module("factory-console.session.router")
+ACTIONS = import_module("factory_console.session.actions")
+INTENT = import_module("factory_console.session.intent")
+ROUTER = import_module("factory_console.session.router")
 
 
 @pytest.fixture

@@ -166,17 +166,17 @@ class TestWriterOwnership:
         """NodeRun finalize/execute 均经 _materialize_verify → materialize_verification。"""
         import re
 
-        src = (Path(_ROOT) / "factory-console" / "node_runtime.py").read_text()
+        src = (Path(_ROOT) / "src" / "legacy" / "factory-console" / "node_runtime.py").read_text()
         # node_runtime 只通过 _materialize_verify 写 verification (无直接 json 写)
         assert src.count("_materialize_verify(") >= 3  # finalize×2 + execute×1
         assert src.count("verification_id") >= 1
         # verification_domain 是唯一定义 materialize 的地方
-        vd = (Path(_ROOT) / "factory-console" / "verification_domain.py").read_text()
+        vd = (Path(_ROOT) / "src" / "legacy" / "factory-console" / "verification_domain.py").read_text()
         assert vd.count("def materialize_verification") == 1
 
     def test_audit_is_observation_not_ssot(self, workroot: Path) -> None:
         """Audit 非 SSOT: 不从 audit 推断 verification。"""
-        src = (Path(_ROOT) / "factory-console" / "verification_domain.py").read_text()
+        src = (Path(_ROOT) / "src" / "legacy" / "factory-console" / "verification_domain.py").read_text()
         assert "audit_events.json" not in src.replace("emit_audit", "").split("def ")[0] \
             or True  # emit_audit 只写观察事件
         assert "emit_audit" in src  # 审计观察存在

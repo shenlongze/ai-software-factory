@@ -16,9 +16,9 @@ import contextlib
 
 from importlib import import_module
 
-S = import_module("factory-console.session.session")
-INT = import_module("factory-console.session.intent")
-ROUTER = import_module("factory-console.session.router")
+S = import_module("factory_console.session.session")
+INT = import_module("factory_console.session.intent")
+ROUTER = import_module("factory_console.session.router")
 
 
 class _FakeChat:

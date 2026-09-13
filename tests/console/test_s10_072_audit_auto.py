@@ -11,7 +11,7 @@ from pathlib import Path
 
 from importlib import import_module
 
-DP = import_module("factory-console.session.debug.debug_pipeline")
+DP = import_module("factory_console.session.debug.debug_pipeline")
 
 
 def _buggy(tmp_path: Path) -> Path:
@@ -83,13 +83,13 @@ class TestAuditAuto:
 
 class TestEventTypes:
     def test_validation_types_registered(self):
-        AE = import_module("factory-console.audit.audit_event")
+        AE = import_module("factory_console.audit.audit_event")
         for t in ("VALIDATION_PASSED", "VALIDATION_FAILED", "REPAIR_FAILED",
                   "GOVERNANCE_CHECK", "REPAIR_COMPLETED"):
             assert t in AE.EVENT_TYPES
 
     def test_emit_validation_event(self, tmp_path):
-        AE = import_module("factory-console.audit.audit_emitter")
+        AE = import_module("factory_console.audit.audit_emitter")
         ws = tmp_path / "ws"
         ws.mkdir(exist_ok=True)
         ev = AE.AuditEmitter(workspace=ws).emit("VALIDATION_PASSED", project_id="p")

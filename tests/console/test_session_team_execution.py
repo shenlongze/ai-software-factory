@@ -36,14 +36,14 @@ from typing import Any
 
 import pytest
 
-CONF_MOD = importlib.import_module("factory-console.session.conflicts")
-MSG_MOD = importlib.import_module("factory-console.session.messages")
-ORCH_MOD = importlib.import_module("factory-console.session.orchestrator")
-PIPE_MOD = importlib.import_module("factory-console.session.pipeline")
-QUAL_MOD = importlib.import_module("factory-console.session.quality")
-TEAMS_MOD = importlib.import_module("factory-console.session.teams")
-TS_MOD = importlib.import_module("factory-console.session.team_state")
-WS_MOD = importlib.import_module("factory-console.session.workspace")
+CONF_MOD = importlib.import_module("factory_console.session.conflicts")
+MSG_MOD = importlib.import_module("factory_console.session.messages")
+ORCH_MOD = importlib.import_module("factory_console.session.orchestrator")
+PIPE_MOD = importlib.import_module("factory_console.session.pipeline")
+QUAL_MOD = importlib.import_module("factory_console.session.quality")
+TEAMS_MOD = importlib.import_module("factory_console.session.teams")
+TS_MOD = importlib.import_module("factory_console.session.team_state")
+WS_MOD = importlib.import_module("factory_console.session.workspace")
 
 Lifecycle = PIPE_MOD.Lifecycle
 ConflictResolver = CONF_MOD.ConflictResolver

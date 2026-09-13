@@ -17,9 +17,9 @@ from __future__ import annotations
 from importlib import import_module
 from pathlib import Path
 
-DEC = import_module("factory-console.session.decomposer")
-PIPELINE = import_module("factory-console.session.pipeline")
-PRODUCT = import_module("factory-console.session.product")
+DEC = import_module("factory_console.session.decomposer")
+PIPELINE = import_module("factory_console.session.pipeline")
+PRODUCT = import_module("factory_console.session.product")
 
 #: 复合任务样例（"一步一个坑"典型: 实现一个功能 = 数据/接口/页面/测试）
 COMPOSITE = {

@@ -23,8 +23,8 @@ import json
 
 import pytest
 
-DI = importlib.import_module("factory-console.session.discovery_intelligence")
-CONV = importlib.import_module("factory-console.session.conversation")
+DI = importlib.import_module("factory_console.session.discovery_intelligence")
+CONV = importlib.import_module("factory_console.session.conversation")
 
 STATES = CONV.ConversationState
 
@@ -234,7 +234,7 @@ class TestNoLlmZeroChange:
 
     def test_analyzer_assembly_failure_zero_change(self, monkeypatch):
         """计划 §5-3: LLM 装配失败 (无 provider/key) → 规则兜底逐字段问。"""
-        REASON = importlib.import_module("factory-console.session.reasoning")
+        REASON = importlib.import_module("factory_console.session.reasoning")
 
         class _BrokenProvider:
             def _default_llm_fn(self):
@@ -480,7 +480,7 @@ class TestAnalyzerUnit:
 
     def test_default_llm_unavailable_raises(self, monkeypatch):
         """llm_fn=None 且装配失败 → DiscoveryLLMUnavailable (上层规则兜底)。"""
-        REASON = importlib.import_module("factory-console.session.reasoning")
+        REASON = importlib.import_module("factory_console.session.reasoning")
 
         class _BrokenProvider:
             def _default_llm_fn(self):

@@ -28,15 +28,15 @@ from typing import Any
 
 import pytest
 
-ACT_MOD = importlib.import_module("factory-console.session.action")
-ACTIONS_MOD = importlib.import_module("factory-console.session.actions")
-ROUTER_MOD = importlib.import_module("factory-console.session.router")
-INTENT_MOD = importlib.import_module("factory-console.session.intent")
-CONF_MOD = importlib.import_module("factory-console.session.confirm")
-CONV_MOD = importlib.import_module("factory-console.session.conversation")
-AUDIT_MOD = importlib.import_module("factory-console.session.audit")
-SESS_MOD = importlib.import_module("factory-console.session.session")
-CTX_MOD = importlib.import_module("factory-console.session.context")
+ACT_MOD = importlib.import_module("factory_console.session.action")
+ACTIONS_MOD = importlib.import_module("factory_console.session.actions")
+ROUTER_MOD = importlib.import_module("factory_console.session.router")
+INTENT_MOD = importlib.import_module("factory_console.session.intent")
+CONF_MOD = importlib.import_module("factory_console.session.confirm")
+CONV_MOD = importlib.import_module("factory_console.session.conversation")
+AUDIT_MOD = importlib.import_module("factory_console.session.audit")
+SESS_MOD = importlib.import_module("factory_console.session.session")
+CTX_MOD = importlib.import_module("factory_console.session.context")
 
 
 # ------------------------------------------------------------------ helpers

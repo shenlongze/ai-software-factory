@@ -21,9 +21,9 @@ for _p in (_ROOT, _ROOT / "src" / "legacy" / "factory-core", _ROOT / "src" / "le
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
-_adapter = importlib.import_module("factory-console.web.backend.fastapi_adapter")
-_qe = importlib.import_module("factory-console.session.query_engine")
-_at = importlib.import_module("factory-console.session.analysis_tools")
+_adapter = importlib.import_module("factory_console.web.backend.fastapi_adapter")
+_qe = importlib.import_module("factory_console.session.query_engine")
+_at = importlib.import_module("factory_console.session.analysis_tools")
 
 
 def _seed(root: Path):

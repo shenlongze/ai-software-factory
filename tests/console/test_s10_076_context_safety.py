@@ -16,9 +16,9 @@ from pathlib import Path
 
 from importlib import import_module
 
-S = import_module("factory-console.session.session")
-INT = import_module("factory-console.session.intent")
-CHAT = import_module("factory-console.session.chat")
+S = import_module("factory_console.session.session")
+INT = import_module("factory_console.session.intent")
+CHAT = import_module("factory_console.session.chat")
 
 
 class _FakeChat:

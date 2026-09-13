@@ -23,9 +23,9 @@ from events.store import EventStore
 
 from console_helpers import payload_of
 
-_console = __import__("importlib").import_module("factory-console")
-_api = __import__("importlib").import_module("factory-console.api")
-_models = __import__("importlib").import_module("factory-console.models")
+_console = __import__("importlib").import_module("factory_console")
+_api = __import__("importlib").import_module("factory_console.api")
+_models = __import__("importlib").import_module("factory_console.models")
 
 ProjectSummary = _models.ProjectSummary
 LifecycleSummary = _models.LifecycleSummary
@@ -648,7 +648,7 @@ class TestReadOnlyIronRule:
         import re
         from pathlib import Path
 
-        root = Path(__file__).resolve().parents[2] / "factory-console"
+        root = Path(__file__).resolve().parents[2] / "src" / "legacy" / "factory-console"
         pattern = re.compile(
             r"(?m)^(?:import (fastapi|starlette|flask|django)\b|from (fastapi|starlette|flask|django)\b)"
         )

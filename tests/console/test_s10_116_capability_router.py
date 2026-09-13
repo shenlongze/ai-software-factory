@@ -33,13 +33,13 @@ if str(_ROOT / "src" / "legacy" / "factory-core") not in sys.path:
 if str(_ROOT / "src" / "legacy" / "factory-exec") not in sys.path:
     sys.path.insert(0, str(_ROOT / "src" / "legacy" / "factory-exec"))
 
-CR = importlib.import_module("factory-console.session.capability_router")
-ACTIONS = importlib.import_module("factory-console.session.actions")
-BOARD = importlib.import_module("factory-console.session.board")
-EF = importlib.import_module("factory-console.session.expert_factory")
-CLI = importlib.import_module("factory-console.cli_factory")
-SERVICE = importlib.import_module("factory-console.service")
-INTENT = importlib.import_module("factory-console.session.intent")
+CR = importlib.import_module("factory_console.session.capability_router")
+ACTIONS = importlib.import_module("factory_console.session.actions")
+BOARD = importlib.import_module("factory_console.session.board")
+EF = importlib.import_module("factory_console.session.expert_factory")
+CLI = importlib.import_module("factory_console.cli_factory")
+SERVICE = importlib.import_module("factory_console.service")
+INTENT = importlib.import_module("factory_console.session.intent")
 DEV = importlib.import_module("exec.developer")
 
 #: 统一 fixture: 6 资源 (2 skill + 2 agent + 2 mcp) 全含 frontend_ui capability

@@ -24,10 +24,10 @@ _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:  # factory-console/ 的父目录
     sys.path.insert(0, str(_ROOT))
 
-_llm_control = importlib.import_module("factory-console.llm_control")
-_llm_router = importlib.import_module("factory-console.llm_router")
-_model_catalog = importlib.import_module("factory-console.model_catalog")
-_agent_policy = importlib.import_module("factory-console.agent_policy")
+_llm_control = importlib.import_module("factory_console.llm_control")
+_llm_router = importlib.import_module("factory_console.llm_router")
+_model_catalog = importlib.import_module("factory_console.model_catalog")
+_agent_policy = importlib.import_module("factory_console.agent_policy")
 
 LLMRouter = _llm_router.LLMRouter
 AgentPolicyStore = _agent_policy.AgentPolicyStore

@@ -11,8 +11,8 @@ import pytest
 
 from importlib import import_module
 
-API = import_module("factory-console.api.product_intelligence")
-API_INIT = import_module("factory-console.api")
+API = import_module("factory_console.api.product_intelligence")
+API_INIT = import_module("factory_console.api")
 
 
 def _intent():

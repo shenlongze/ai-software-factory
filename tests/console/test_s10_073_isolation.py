@@ -11,11 +11,11 @@ from pathlib import Path
 
 from importlib import import_module
 
-MEM = import_module("factory-console.memory")
-UNI = import_module("factory-console.retrieval.unified")
-DP = import_module("factory-console.session.debug.debug_pipeline")
-DM = import_module("factory-console.session.debug.debug_memory")
-D = import_module("factory-console.session.debug")
+MEM = import_module("factory_console.memory")
+UNI = import_module("factory_console.retrieval.unified")
+DP = import_module("factory_console.session.debug.debug_pipeline")
+DM = import_module("factory_console.session.debug.debug_memory")
+D = import_module("factory_console.session.debug")
 
 
 def _store(ws: Path):
@@ -107,8 +107,8 @@ class TestDebugIsolation:
 class TestAuditIsolation:
     def test_audit_events_project_scoped(self, tmp_path):
         from importlib import import_module as _im
-        AE = _im("factory-console.audit.audit_emitter")
-        AS = _im("factory-console.audit.audit_store")
+        AE = _im("factory_console.audit.audit_emitter")
+        AS = _im("factory_console.audit.audit_store")
         ws = tmp_path / "ws"
         emitter = AE.AuditEmitter(workspace=ws)
         emitter.emit("PRODUCT_CREATED", project_id="proj-a", decision_reason="A")
@@ -120,8 +120,8 @@ class TestAuditIsolation:
 
     def test_audit_chain_correlation(self, tmp_path):
         from importlib import import_module as _im
-        AE = _im("factory-console.audit.audit_emitter")
-        AS = _im("factory-console.audit.audit_store")
+        AE = _im("factory_console.audit.audit_emitter")
+        AS = _im("factory_console.audit.audit_store")
         ws = tmp_path / "ws"
         emitter = AE.AuditEmitter(workspace=ws)
         ev1 = emitter.emit("PLAN_CREATED", project_id="proj-a", decision_reason="计划",

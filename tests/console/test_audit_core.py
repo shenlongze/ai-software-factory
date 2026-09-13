@@ -21,14 +21,14 @@ from pathlib import Path
 
 from importlib import import_module
 
-AUDIT = import_module("factory-console.audit")
-EV = import_module("factory-console.audit.audit_event")
-ST = import_module("factory-console.audit.audit_store")
-QY = import_module("factory-console.audit.audit_query")
-CH = import_module("factory-console.audit.audit_chain")
-EX = import_module("factory-console.audit.audit_explain")
-CT = import_module("factory-console.audit.audit_context")
-IG = import_module("factory-console.audit.audit_integrity")
+AUDIT = import_module("factory_console.audit")
+EV = import_module("factory_console.audit.audit_event")
+ST = import_module("factory_console.audit.audit_store")
+QY = import_module("factory_console.audit.audit_query")
+CH = import_module("factory_console.audit.audit_chain")
+EX = import_module("factory_console.audit.audit_explain")
+CT = import_module("factory_console.audit.audit_context")
+IG = import_module("factory_console.audit.audit_integrity")
 
 
 def _ws(tmp_path: Path) -> Path:

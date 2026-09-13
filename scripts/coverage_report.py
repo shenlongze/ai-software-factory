@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import linecache
 import sys
 import trace
 from datetime import datetime, timezone

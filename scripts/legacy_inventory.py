@@ -6,7 +6,10 @@
     python scripts/legacy_inventory.py --write    # 写台账 md + 基线 json
     python scripts/legacy_inventory.py --check    # 对照基线，超基线则退出码 1
 
-被绞杀对象（旧代码分区）：见 LEGACY_ROOTS。
+台账含两栏：
+    规模（文件/行）        结构是否在增长
+    可达性（活/测试/死）    哪些真死、哪些还连着线 —— 由 scripts/legacy_reach.py 提供
+
 不计入围栏：scripts/（工具）、docs/、bin/、apps/、tests/、src/（新地基）。
 """
 from __future__ import annotations
@@ -18,23 +21,21 @@ from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+from legacy_reach import LEGACY_ROOTS, ROOT, analyze as reach_analyze
+
 SKIP = {".git", ".venv", "__pycache__", ".pytest_cache", ".ruff_cache",
         "node_modules", "build", "dist", "target", ".mypy_cache"}
 NEW = ROOT / "src" / "ai_factory_os"
 
-LEGACY_ROOTS = ("demo", "factory-console", "factory-core", "factory-exec",
-                "factory-org", "factory-runtime", "factory_console", "kernel", "services")
-
-# 人工判定（判据来自 docs/cleanup/2026-09-11-*，机器只负责复述）
+# 人工判定（判据来源见 docs/cleanup/2026-09-11-* ；机器只负责复述）
 VERDICTS: dict[str, tuple[str, str, str]] = {
     "factory-console": ("混合：新 OS 内核 + 旧会话链 + Web + API", "拆分 → services / core / api / apps", "待绞杀"),
-    "factory-core": ("L4 旧数据层，24 包互引", "逐包复核后归档", "已判 132/138 可归档"),
-    "factory-exec": ("旧执行域（roles/skill/tool/provider/approval）", "同左，逐项判定", "已判 51/52 可归档"),
+    "factory-core": ("L4 旧数据层，24 包互引", "逐包复核后归档", "已判 132/138 可归档（实测待复核）"),
+    "factory-exec": ("旧执行域（roles/skill/tool/provider/approval）", "同左，逐项判定", "已判 51/52 可归档（实测待复核）"),
     "factory-org": ("组织领域模型（最完整）", "services/organization", "待绞杀"),
     "factory-runtime": ("旧 runtime bundle", "core/node 或 infrastructure", "待判定"),
     "factory_console": ("打包胶水（连字符目录名的转发层）", "保留", "合法，非冗余"),
-    "kernel": ("v0.2 遗留契约（契约已并入 src/…/contracts）", "删除", "待删"),
+    "kernel": ("v0.2 遗留契约（大部分已删，剩 governance/patch_filter）", "删除 / 迁入新地基", "绞杀中"),
     "services": ("绞杀示范 approval_runtime", "src/…/services", "示范保留"),
     "demo": ("演示代码", "archive", "待处理"),
 }
@@ -46,9 +47,7 @@ LEDGER = ROOT / "docs" / "cleanup" / "LEGACY-LEDGER.md"
 def legacy_files() -> list[Path]:
     out = []
     for p in ROOT.rglob("*.py"):
-        if any(s in p.parts for s in SKIP) or "tests" in p.parts:
-            continue
-        if NEW in p.parents:
+        if any(s in p.parts for s in SKIP) or "tests" in p.parts or NEW in p.parents:
             continue
         if p.relative_to(ROOT).parts[0] in LEGACY_ROOTS:
             out.append(p)
@@ -78,9 +77,9 @@ def scan() -> dict:
     edges: Counter = Counter()
     for f in files:
         src = f.relative_to(ROOT).parts[0]
-        for m in imports_of(f):
+        for mod in imports_of(f):
             for target in by_root:
-                if m in (target, target.replace("-", "_")) and src != target:
+                if mod in (target, target.replace("-", "_")) and src != target:
                     edges[(src, target)] += 1
     return {
         "files": sorted(str(f.relative_to(ROOT)) for f in files),
@@ -90,7 +89,7 @@ def scan() -> dict:
     }
 
 
-def report(data: dict) -> str:
+def report(data: dict, reach: dict) -> str:
     stamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
     out = [
         "<!-- AUTO-GENERATED: DO NOT EDIT -->",
@@ -103,16 +102,43 @@ def report(data: dict) -> str:
         "",
         "## 一、分区总览",
         "",
-        "| 分区 | 文件 | 行数 | 定性 | 目标 | 状态 |",
-        "|---|---:|---:|---|---|---|",
+        "| 分区 | 文件 | 行数 | 活 | 仅测试 | 未证实 | 定性 | 目标 | 状态 |",
+        "|---|---:|---:|---:|---:|---:|---|---|---|",
     ]
+    by_root_reach = reach["by_root"]
     for name, (count, line_count) in data["by_root"].items():
         verdict, target, status = VERDICTS.get(name, ("—", "—", "—"))
-        out.append(f"| `{name}` | {count} | {line_count} | {verdict} | {target} | {status} |")
+        r = by_root_reach.get(name, {"live": 0, "test_only": 0, "unverified": 0})
+        out.append(f"| `{name}` | {count} | {line_count} | {r['live']} | {r['test_only']} | "
+                   f"{r['unverified']} | {verdict} | {target} | {status} |")
+    t = reach["totals"]
     out += [
-        f"| **合计** | **{len(data['files'])}** | **{data['lines']}** | | | |",
+        f"| **合计** | **{len(data['files'])}** | **{data['lines']}** | "
+        f"**{reach['live']['files']}** | **{reach['test_only']['files']}** | "
+        f"**{reach['unverified']['files']}** | | | |",
         "",
-        "## 二、跨分区依赖边（只减不增）",
+        "## 二、可达性（从活入口 BFS import 图）",
+        "",
+        "> ⚠️ **本栏不产出「可删」结论。** 静态可达性无法证明代码是死的 ——",
+        "> 项目存在多种静态解析不到的加载方式（字符串动态加载、拼接式加载、经本地辅助函数转发）。",
+        "> 第三类一律标「未证实」，需人工确认后才可考虑处置。",
+        "",
+        f"入口：{', '.join('`' + e + '`' for e in reach['entries'])}",
+        "",
+        "| 类别 | 文件 | 行数 | 含义 |",
+        "|---|---:|---:|---|",
+        f"| 可达 | {reach['live']['files']} | {reach['live']['lines']} | 生产入口能走到（主链） |",
+        f"| 仅测试可达 | {reach['test_only']['files']} | {reach['test_only']['lines']} | 只有测试能走到 |",
+        f"| 未证实使用 | {reach['unverified']['files']} | {reach['unverified']['lines']} | 静态走不到 —— **不得当作可删** |",
+        f"| **合计** | **{t['files']}** | **{t['lines']}** | |",
+        "",
+        f"> 其中 **{reach['unverified_shadowed']['files']} 文件 / "
+        f"{reach['unverified_shadowed']['lines']} 行**受已知动态加载前缀影响"
+        f"（前缀 {', '.join('`' + p + '`' for p in reach['dynamic_prefixes']) or '无'}），"
+        "**尤其不可当作可删**。",
+        f"> 动态调用 {reach['dynamic_calls']} 处；未解析字面量 {len(reach['unresolved_dynamic'])} 条。",
+        "",
+        "## 三、跨分区依赖边（只减不增）",
         "",
     ]
     if data["edges"]:
@@ -124,7 +150,7 @@ def report(data: dict) -> str:
         out.append("（无）")
     out += [
         "",
-        "## 三、说明",
+        "## 四、说明",
         "",
         "- 被绞杀对象：`" + "`, `".join(LEGACY_ROOTS) + "`",
         "- 不计入围栏：`scripts/`（工具）、`docs/`、`bin/`、`apps/`、`tests/`、`src/`（新地基）",
@@ -137,16 +163,6 @@ def report(data: dict) -> str:
 def main() -> int:
     args = sys.argv[1:]
     data = scan()
-    if "--write" in args:
-        BASELINE.parent.mkdir(parents=True, exist_ok=True)
-        BASELINE.write_text(json.dumps(data, ensure_ascii=False, indent=1, sort_keys=True) + "\n",
-                            encoding="utf-8")
-        LEDGER.parent.mkdir(parents=True, exist_ok=True)
-        LEDGER.write_text(report(data), encoding="utf-8")
-        print(f"已写 {BASELINE.relative_to(ROOT)}")
-        print(f"已写 {LEDGER.relative_to(ROOT)}")
-        print(f"基线: {len(data['files'])} 文件 / {data['lines']} 行 / {len(data['edges'])} 条边")
-        return 0
     if "--check" in args:
         base = json.loads(BASELINE.read_text(encoding="utf-8"))
         added = sorted(set(data["files"]) - set(base["files"]))
@@ -160,7 +176,21 @@ def main() -> int:
             print(f"  边增长: {k} {base['edges'].get(k, 0)} -> {v}")
         print(f"超基线: {'是' if (added or grew or new_edges) else '否'}")
         return 1 if (added or grew or new_edges) else 0
-    print(report(data))
+
+    reach = reach_analyze()
+    if "--write" in args:
+        BASELINE.parent.mkdir(parents=True, exist_ok=True)
+        BASELINE.write_text(json.dumps(data, ensure_ascii=False, indent=1, sort_keys=True) + "\n",
+                            encoding="utf-8")
+        LEDGER.parent.mkdir(parents=True, exist_ok=True)
+        LEDGER.write_text(report(data, reach), encoding="utf-8")
+        print(f"已写 {BASELINE.relative_to(ROOT)}")
+        print(f"已写 {LEDGER.relative_to(ROOT)}")
+        print(f"基线: {len(data['files'])} 文件 / {data['lines']} 行 / {len(data['edges'])} 条边")
+        print(f"可达性: 活 {reach['live']['files']} / 仅测试 {reach['test_only']['files']} / "
+              f"未证实 {reach['unverified']['files']}")
+        return 0
+    print(report(data, reach))
     return 0
 
 

@@ -1,4 +1,4 @@
-"""factory-console/session/product.py — ProductIntent 模型 (S10-050 P0)。
+"""src/legacy/factory-console/session/product.py — ProductIntent 模型 (S10-050 P0)。
 
 产品级意图模型: 回答 "用户想创造什么" (vs IntentObject 回答 "用户想执行什么")。
 生命周期: draft → confirmed → project_created (产品确认后经 create_product action

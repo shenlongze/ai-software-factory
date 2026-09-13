@@ -1,4 +1,4 @@
-"""factory-org/org/workflow.py — 组织级 Workflow 编排壳 (Sprint 7 S7-003)。
+"""src/legacy/factory-org/org/workflow.py — 组织级 Workflow 编排壳 (Sprint 7 S7-003)。
 
 设计依据 (sprint7-architecture.md §3 任务级 → 组织级):
 - 本模块是 **组织级编排壳** (org 侧): 编排 Project→Workflow→Stage→Artifact

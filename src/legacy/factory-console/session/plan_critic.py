@@ -1,4 +1,4 @@
-"""factory-console/session/plan_critic.py — PlanCritic (S10-062 批次 A)。
+"""src/legacy/factory-console/session/plan_critic.py — PlanCritic (S10-062 批次 A)。
 
 LLM Planning 基础设施 (GAP G5, 设计 §6): 执行前检查计划缺口 — 输入
 plan + product + engineering + capabilities → 输出 GapAnalysis 列表

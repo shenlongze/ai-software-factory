@@ -1,4 +1,4 @@
-"""factory-console/session/session.py — InteractiveSession 交互会话主循环 (S10-047 Task 001 + S10-048 P1)。
+"""src/legacy/factory-console/session/session.py — InteractiveSession 交互会话主循环 (S10-047 Task 001 + S10-048 P1)。
 
 设计: docs/sprint10/S10-047-session-design.md §2 Session Loop
      + docs/sprint10/S10-048-intent-kernel-design.md §2.1 数据流

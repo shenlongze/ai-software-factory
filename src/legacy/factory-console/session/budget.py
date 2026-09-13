@@ -1,4 +1,4 @@
-"""factory-console/session/budget.py — ProjectBudget + BudgetUsage + BudgetEnforcer (S10-063 批次 A + S10-065 批次 C)。
+"""src/legacy/factory-console/session/budget.py — ProjectBudget + BudgetUsage + BudgetEnforcer (S10-063 批次 A + S10-065 批次 C)。
 
 Production Governance (GAP G1/G2, 设计 §2-§3): 项目级总预算模型 + 执行闸。
 - ProjectBudget — 总预算 (token/cost/calls/replans/retries/repairs/task_count/

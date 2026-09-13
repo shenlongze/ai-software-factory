@@ -1,4 +1,4 @@
-"""factory-console/performance_selection.py — S33 Performance-aware Workforce Selection.
+"""src/legacy/factory-console/performance_selection.py — S33 Performance-aware Workforce Selection.
 
 Evidence → Performance → Deterministic Selection:
 - Ranking Contract: score = w1*success + w2*verification + w3*recovery + w4*evaluation; confidence = n/(n+K)

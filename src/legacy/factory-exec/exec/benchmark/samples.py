@@ -1,4 +1,4 @@
-"""factory-exec/exec/benchmark/samples.py — 样本集注册表 (5 Bug + 3 Feature + 1 Greenfield)。
+"""src/legacy/factory-exec/exec/benchmark/samples.py — 样本集注册表 (5 Bug + 3 Feature + 1 Greenfield)。
 
 汇总 bugs.py / features.py / greenfield.py 为单一注册表, 供 runner / 报告 / 测试
 统一引用。完整性约束 (唯一 id / 5-3-1 配比 / verifier 已注册) 由

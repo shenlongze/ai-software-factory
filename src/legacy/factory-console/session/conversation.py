@@ -1,4 +1,4 @@
-"""factory-console/session/conversation.py — Conversation State + Manager (S10-048 P3 + S10-050 P4)。
+"""src/legacy/factory-console/session/conversation.py — Conversation State + Manager (S10-048 P3 + S10-050 P4)。
 
 会话状态模型 (基础 flow + S10-050 产品发现, 不过度开发 — 设计 §2.6 + §2.4):
 - ConversationState(Enum) — DISCOVERY/CLARIFICATION/PRODUCT_CONFIRMATION/

@@ -1,4 +1,4 @@
-"""factory-console/session/planning_trace.py — PlanningTrace (S10-062 批次 A)。
+"""src/legacy/factory-console/session/planning_trace.py — PlanningTrace (S10-062 批次 A)。
 
 LLM Planning 基础设施 (GAP G6, 设计 §9): 每次 LLM planning 调用的可审计
 轨迹 — provider/model/operation/input_hash/output/parsed_result/confidence/

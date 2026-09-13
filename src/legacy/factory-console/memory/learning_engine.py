@@ -1,4 +1,4 @@
-"""factory-console/memory/learning_engine.py — PatternLearner + LearningEngine (S10-067 G4/G6)。
+"""src/legacy/factory-console/memory/learning_engine.py — PatternLearner + LearningEngine (S10-067 G4/G6)。
 
 模式学习 + Agent 画像 (G4/G6):
 - PatternLearner.learn(records)      → 成功/失败模式 (topic 分组 + success_rate +

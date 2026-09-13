@@ -1,4 +1,4 @@
-"""factory-console/production_intelligence.py — S23 Production Intelligence & RCA.
+"""src/legacy/factory-console/production_intelligence.py — S23 Production Intelligence & RCA.
 
 从真实 Production Facts (Incident/HealthCheck/Release/Verification/Experience) 提取 Signals、
 时间相关性、Root Cause Candidates (deterministic evidence weighting + 反证)、

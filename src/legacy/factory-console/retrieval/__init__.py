@@ -1,4 +1,4 @@
-"""factory-console/retrieval/ — 统一检索抽象 (S10-070)。
+"""src/legacy/factory-console/retrieval/ — 统一检索抽象 (S10-070)。
 
 多 RAG / 多 Memory 来源统一入口:
   RetrievalRequest → RetrievalOrchestrator (注册/去重/排序/Top-K/Budget)

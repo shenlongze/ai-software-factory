@@ -1,4 +1,4 @@
-"""factory-console/session/workloads/backlog_sweeper.py — 积压清道夫 (M1b · E3)。
+"""src/legacy/factory-console/session/workloads/backlog_sweeper.py — 积压清道夫 (M1b · E3)。
 
 Claude 战略 E3: 第一个可售卖工作负载 — 「AI 干完一件看得见的活」(本地 repo 模式)。
 

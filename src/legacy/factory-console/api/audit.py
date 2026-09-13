@@ -1,4 +1,4 @@
-"""factory-console/api/audit.py — S10-069 Audit Intelligence API 路由函数。
+"""src/legacy/factory-console/api/audit.py — S10-069 Audit Intelligence API 路由函数。
 
 纯函数路由 (无 Web 依赖, 同 debug.py/memory.py 模式 — 未来 FastAPI 薄层
 做 HTTP 绑定):

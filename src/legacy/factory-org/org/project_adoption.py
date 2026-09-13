@@ -1,4 +1,4 @@
-"""factory-org/org/project_adoption.py — Existing Project Adoption (S9-004)。
+"""src/legacy/factory-org/org/project_adoption.py — Existing Project Adoption (S9-004)。
 
 已有项目接入编排 (org 侧, 只消费 — 不修改 Workflow/Artifact/Approval):
 

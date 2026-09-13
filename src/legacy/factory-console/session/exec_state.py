@@ -1,4 +1,4 @@
-"""factory-console/session/exec_state.py — 会话执行状态机 (S-5, v1.1.217; P0-A v1.1.244 backlog 回写).
+"""src/legacy/factory-console/session/exec_state.py — 会话执行状态机 (S-5, v1.1.217; P0-A v1.1.244 backlog 回写).
 
 Founder 2026-08-27: "做人事" — 会话真把事办了:
 说"把 X 做完" → 出计划 → 审批 → 逐任务执行(委派+验证) → 交付汇报 → 进度可查。

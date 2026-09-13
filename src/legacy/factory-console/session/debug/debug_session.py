@@ -1,4 +1,4 @@
-"""factory-console/session/debug/debug_session.py — DebugSession/DebugAttempt + DebugSessionStore (S10-068 Part 2, G1)。
+"""src/legacy/factory-console/session/debug/debug_session.py — DebugSession/DebugAttempt + DebugSessionStore (S10-068 Part 2, G1)。
 
 统一 Pipeline 状态机: ANALYZING → ROOT_CAUSE_IDENTIFIED → STRATEGY_SELECTED →
 REPAIRING → VALIDATING → RETRYING → SUCCESS / BLOCKED / WAITING_FOR_REVIEW。

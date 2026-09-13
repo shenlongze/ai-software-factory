@@ -1,4 +1,4 @@
-"""factory-console/session/context.py — SessionContext + ContextManager (S10-047 Task 002)。
+"""src/legacy/factory-console/session/context.py — SessionContext + ContextManager (S10-047 Task 002)。
 
 会话上下文 (内存实现, 不引入数据库): 会话 ID / 工作区 / 当前项目 / 当前
 Agent / 元数据 / 历史。ContextManager 单会话持有, 进程退出即丢弃 (后续

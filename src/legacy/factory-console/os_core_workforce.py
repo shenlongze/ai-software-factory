@@ -1,4 +1,4 @@
-"""factory-console/os_core_workforce.py — OS Core Boundary: Workforce (MU-CORE-04).
+"""src/legacy/factory-console/os_core_workforce.py — OS Core Boundary: Workforce (MU-CORE-04).
 
 Workforce = 为完成某类专业工作而组织起来的一组可治理主体及其专业角色/能力引用/范围/生命周期。
 **Workforce ≠ Agent List**；成员引用 Identity (MU-CORE-02)，专业角色引用 ProfessionalRole (MU-CORE-03)。

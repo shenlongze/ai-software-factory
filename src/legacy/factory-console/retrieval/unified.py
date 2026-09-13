@@ -1,4 +1,4 @@
-"""factory-console/retrieval/unified.py — 生产统一检索助手 (S10-072 P0-A/B/C)。
+"""src/legacy/factory-console/retrieval/unified.py — 生产统一检索助手 (S10-072 P0-A/B/C)。
 
 所有生产检索入口经 RetrievalOrchestrator (统一 Policy/Dedup/Rank/Top-K/Budget),
 并保持 ExperienceRecord 语义 (兼容现有调用方)。

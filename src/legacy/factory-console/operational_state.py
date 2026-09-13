@@ -1,4 +1,4 @@
-"""factory-console/operational_state.py — K4 Unified Operational State.
+"""src/legacy/factory-console/operational_state.py — K4 Unified Operational State.
 
 Control Tower 核心: 从真实 SSOT 投影 Operational State (非第二事实源)。
 

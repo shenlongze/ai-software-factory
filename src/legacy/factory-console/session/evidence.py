@@ -1,4 +1,4 @@
-"""factory-console/session/evidence.py — EvidenceBundle 证据包 (M1a · E1)。
+"""src/legacy/factory-console/session/evidence.py — EvidenceBundle 证据包 (M1a · E1)。
 
 Claude 产品战略 E1 + Hermes 架构: 把「AI 改了什么 + 为什么 + 测试/日志证据」
 打包成可审计的证据包 — 信任优先的交付基础。

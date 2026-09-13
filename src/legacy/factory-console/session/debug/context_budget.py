@@ -1,4 +1,4 @@
-"""factory-console/session/debug/context_budget.py — ContextBudget (S10-068 Part 2, G7)。
+"""src/legacy/factory-console/session/debug/context_budget.py — ContextBudget (S10-068 Part 2, G7)。
 
 Context Budget: 不让 Memory 检索结果全量进 LLM — estimate_tokens 估算 +
 fit (Top-K + 截断保 max_tokens) + stats (审计口径)。

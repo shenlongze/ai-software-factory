@@ -1,4 +1,4 @@
-"""factory-console/session/delivery.py — Patch Delivery Pipeline (S10-083 P0)。
+"""src/legacy/factory-console/session/delivery.py — Patch Delivery Pipeline (S10-083 P0)。
 
 任务成功 → patch 白名单过滤 → git apply 回真实项目目录 → 真实产物验证。
 

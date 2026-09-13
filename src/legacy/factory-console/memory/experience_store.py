@@ -1,4 +1,4 @@
-"""factory-console/memory/experience_store.py — ExperienceStore (S10-067 G2)。
+"""src/legacy/factory-console/memory/experience_store.py — ExperienceStore (S10-067 G2)。
 
 经验持久化: experience_store.json (workspace/memory/) + 失败安全读写。
 

@@ -1,4 +1,4 @@
-"""factory-console/os_core_resolution.py — OS Core Service: Resolution (MU-CORE-08).
+"""src/legacy/factory-console/os_core_resolution.py — OS Core Service: Resolution (MU-CORE-08).
 
 Resolution = 确定性解析服务: 根据工作需求解析"需要什么专业能力, 以及哪些合法的
 ProfessionalRole / Workforce / Identity 能提供该能力"。

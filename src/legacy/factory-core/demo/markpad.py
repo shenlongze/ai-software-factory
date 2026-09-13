@@ -1,4 +1,4 @@
-"""factory-core/demo/markpad.py — `factory demo markpad` 演示编排 (Phase 13A)。
+"""src/legacy/factory-core/demo/markpad.py — `factory demo markpad` 演示编排 (Phase 13A)。
 
 设计 (KISS, Core 零修改):
 - 演示 = 调用链, 不是新架构: 复用 ProductService / ProductGenerator /

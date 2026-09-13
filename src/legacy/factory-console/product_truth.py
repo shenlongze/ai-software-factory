@@ -1,4 +1,4 @@
-"""factory-console/product_truth.py — P1 Product Truth domain (IDEA-*/DISC-*/REQ-*/PRD-*/PLAN-*)。
+"""src/legacy/factory-console/product_truth.py — P1 Product Truth domain (IDEA-*/DISC-*/REQ-*/PRD-*/PLAN-*)。
 
 契约 (docs/audits/2026-09-05-product-truth-p1-contract/):
 - D1: 六层 Product Domain (Idea/Discovery/Requirement/PRD/Plan; Task=P0 canonical)

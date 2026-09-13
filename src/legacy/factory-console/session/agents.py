@@ -1,4 +1,4 @@
-"""factory-console/session/agents.py — Agent Workforce Intelligence (S10-055 Task 001-003)。
+"""src/legacy/factory-console/session/agents.py — Agent Workforce Intelligence (S10-055 Task 001-003)。
 
 AgentRegistry 2.0 + AgentMatcher + AgentMetrics:
 - AgentRegistry — agents.json 读取 (失败安全 → 默认注册表) + Registry 2.0 扩展字段

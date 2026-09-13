@@ -1,4 +1,4 @@
-"""factory-console/os_core_plugin.py — OS Core Boundary: Plugin (MU-CORE-13).
+"""src/legacy/factory-console/os_core_plugin.py — OS Core Boundary: Plugin (MU-CORE-13).
 
 Plugin = 提供某种可治理能力实现的可注册扩展单元 (Extension Layer)。
 

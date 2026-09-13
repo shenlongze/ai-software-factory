@@ -1,4 +1,4 @@
-"""factory-console/session/capability_router.py — K-1 B-4 统一能力路由层 (S10-116)。
+"""src/legacy/factory-console/session/capability_router.py — K-1 B-4 统一能力路由层 (S10-116)。
 
 设计: docs/sprint10/S10-116-k1-capability-router-plan.md §1.1-§1.4 (CTO 权威)。
 

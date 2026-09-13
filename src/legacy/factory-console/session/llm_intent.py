@@ -1,4 +1,4 @@
-"""factory-console/session/llm_intent.py — LLMIntentParser (意图解析 LLM 主路径)。
+"""src/legacy/factory-console/session/llm_intent.py — LLMIntentParser (意图解析 LLM 主路径)。
 
 把普通对话的意图解析从"规则关键词"升级为"LLM 理解 + 规则兜底"（S10-046 §3 Q1
 预留的 LLM 扩展点落地）——"建个公司""查一下项目"这类自然语言不再依赖关键词命中。

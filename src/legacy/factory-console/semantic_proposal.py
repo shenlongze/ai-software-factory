@@ -1,4 +1,4 @@
-"""factory-console/semantic_proposal.py — Semantic Proposal Domain (Cognitive Golden Path)。
+"""src/legacy/factory-console/semantic_proposal.py — Semantic Proposal Domain (Cognitive Golden Path)。
 
 S49 interpreter 只输出 "抽取的 facts"; Golden Path 需要**完整语义操作**:
 LLM 理解用户语言 → 产出 Structured Semantic Proposal (一组 SemanticOperation) →

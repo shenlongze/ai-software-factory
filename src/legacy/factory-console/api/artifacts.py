@@ -1,4 +1,4 @@
-"""factory-console/api/artifacts.py — GET /artifacts 路由函数 (S9-002 只读)。"""
+"""src/legacy/factory-console/api/artifacts.py — GET /artifacts 路由函数 (S9-002 只读)。"""
 
 from __future__ import annotations
 

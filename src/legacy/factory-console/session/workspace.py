@@ -1,4 +1,4 @@
-"""factory-console/session/workspace.py — WorkspaceContext (S10-056 批次 A + S10-059 P2)。
+"""src/legacy/factory-console/session/workspace.py — WorkspaceContext (S10-056 批次 A + S10-059 P2)。
 
 共享项目上下文 (设计 §2.5): 让 Agent 知道 之前谁做过什么 —
 {project, files[], completed_tasks[], artifacts[], agent_history[]},

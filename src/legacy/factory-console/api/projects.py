@@ -1,4 +1,4 @@
-"""factory-console/api/projects.py — 项目路由函数 (GET 只读 + POST 创建/建议)。
+"""src/legacy/factory-console/api/projects.py — 项目路由函数 (GET 只读 + POST 创建/建议)。
 
 GET /projects: 全部项目只读投影 (ProjectSummary): id/name/lifecycle
 stage/status/last activity。无项目 → 空列表。

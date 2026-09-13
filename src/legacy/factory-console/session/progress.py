@@ -1,4 +1,4 @@
-"""factory-console/session/progress.py — ProductProgressTracker (S10-055 Task 003)。
+"""src/legacy/factory-console/session/progress.py — ProductProgressTracker (S10-055 Task 003)。
 
 功能级进度: product_progress.json — 回答 "做到哪里" (功能粒度, 非任务粒度)。
 G2 缺口: product_progress.json 不存在 → 无法回答 "做到哪里"。

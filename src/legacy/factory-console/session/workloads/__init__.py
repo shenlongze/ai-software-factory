@@ -1,4 +1,4 @@
-"""factory-console/session/workloads — 可售卖工作负载 (M1b · E3)。
+"""src/legacy/factory-console/session/workloads — 可售卖工作负载 (M1b · E3)。
 
 第一个工作负载: BacklogSweeper 积压清道夫 (workloads/backlog_sweeper.py)。
 """

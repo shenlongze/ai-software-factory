@@ -1,4 +1,4 @@
-"""factory-console/chat_store.py — S10-006.5 P1-A 对话记录存储 (最小版)。
+"""src/legacy/factory-console/chat_store.py — S10-006.5 P1-A 对话记录存储 (最小版)。
 
 轻量 JSON 存储 (KISS, 不重设计): 项目 → 消息列表 (append-only)。
 - 文件: <root>/chat.json (root = 工厂根; 与 org/runtimes 平级)

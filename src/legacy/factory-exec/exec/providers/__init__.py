@@ -1,4 +1,4 @@
-"""factory-exec/exec/providers/__init__.py — Provider Adapter 包 (真实实现放本目录)。"""
+"""src/legacy/factory-exec/exec/providers/__init__.py — Provider Adapter 包 (真实实现放本目录)。"""
 
 from __future__ import annotations
 

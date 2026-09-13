@@ -1,4 +1,4 @@
-"""factory-org/org/lifecycle.py — OrgLifecycle 组织生命周期编排 (事件驱动)。
+"""src/legacy/factory-org/org/lifecycle.py — OrgLifecycle 组织生命周期编排 (事件驱动)。
 
 设计依据 (ai-company-operating-model.md §1/§2/§3):
 - create_company: 模板实例化 (Company + Department + Role + Authority 物化)

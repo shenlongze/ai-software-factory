@@ -1,4 +1,4 @@
-"""factory-console/session/project_memory.py — 项目级记忆 (S-4, v1.1.219; S10-127 M3.2 升级).
+"""src/legacy/factory-console/session/project_memory.py — 项目级记忆 (S-4, v1.1.219; S10-127 M3.2 升级).
 
 Founder 2026-08-27: "新会话断链" — 跨会话记忆 + 项目知识进上下文。
 S10-127 M3.2: 记忆类型化 (decision/learning/error/pattern/observation) + 权威等级

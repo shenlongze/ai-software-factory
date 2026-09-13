@@ -1,4 +1,4 @@
-"""factory-console/os_core_project.py — OS Core Boundary: Project (MU-CORE-05).
+"""src/legacy/factory-console/os_core_project.py — OS Core Boundary: Project (MU-CORE-05).
 
 Project = AI Factory OS Core 的 **Work Anchor**。
 
@@ -28,7 +28,7 @@ from legacy_paths import REPO_ROOT  # 仓库根唯一计算器
 _REPO_ROOT = REPO_ROOT
 _ORG_SRC = REPO_ROOT / "@@ALREADY@@" / "src" / "legacy" / "factory-org"
 
-OS_PROJECT_SSOT = "factory-org/org/projects.py"
+OS_PROJECT_SSOT = "src/legacy/factory-org/org/projects.py"
 
 
 def _org_modules() -> tuple[Any, Any]:

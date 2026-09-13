@@ -1,4 +1,4 @@
-"""factory-console/session/mcp_tools.py — MCP 工具接入会话工具面 (S10-127 P2.3).
+"""src/legacy/factory-console/session/mcp_tools.py — MCP 工具接入会话工具面 (S10-127 P2.3).
 
 把 MCP server 的工具暴露为 OpenAI 形状 schema (mcp__<server>__<tool>):
 - mcp_tool_schemas(data_dir): 全部 MCP 工具 schema (懒启动 server, 失败跳过)

@@ -1,4 +1,4 @@
-"""factory-console/experience_bridge.py — P2-C Experience Bridge (唯一 writer)。
+"""src/legacy/factory-console/experience_bridge.py — P2-C Experience Bridge (唯一 writer)。
 
 契约 (docs/audits/2026-09-06-p2c-experience-bridge-contract/, 21 份含勘误):
 - Canonical Experience = exp-* (memory/experience_store.json) — 唯一 SSOT

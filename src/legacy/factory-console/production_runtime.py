@@ -1,4 +1,4 @@
-"""factory-console/production_runtime.py — AI Factory OS Production Runtime Kernel
+"""src/legacy/factory-console/production_runtime.py — AI Factory OS Production Runtime Kernel
 
 KERNEL INVERSION: 这是 AI Factory OS 的唯一生产执行 Kernel。
 

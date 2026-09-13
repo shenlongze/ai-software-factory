@@ -1,4 +1,4 @@
-"""factory-org/org/templates.py — company 模板 + Role 冲突规则。
+"""src/legacy/factory-org/org/templates.py — company 模板 + Role 冲突规则。
 
 设计依据 (ai-company-operating-model.md §1/§2):
 - Company Template → 实例化: 模板 = Organization + Role + Policy (声明式)

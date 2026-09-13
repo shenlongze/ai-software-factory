@@ -1,4 +1,4 @@
-"""factory-console/recovery.py — S7 Recovery & Resume Engine.
+"""src/legacy/factory-console/recovery.py — S7 Recovery & Resume Engine.
 
 进程崩溃后从持久化 ProductionRun 状态恢复:
 - analyze(run_id): 基于真实事实 (state/artifact/verification/history) 分类每个 Node

@@ -1,4 +1,4 @@
-"""factory-console/api/sprint.py — Sprint/Milestone/Roadmap API 路由函数 (S10-010 Task 004)。
+"""src/legacy/factory-console/api/sprint.py — Sprint/Milestone/Roadmap API 路由函数 (S10-010 Task 004)。
 
 设计依据:
 - AF-PRD-v1.md 4.4/4.5 (Sprint 执行窗口 + Milestone/Roadmap 路线) +

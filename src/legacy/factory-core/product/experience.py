@@ -1,4 +1,4 @@
-"""factory-core/product/experience.py — 生成经验记录接口 (GenerationExperience + ExperienceStore)。
+"""src/legacy/factory-core/product/experience.py — 生成经验记录接口 (GenerationExperience + ExperienceStore)。
 
 设计依据:
 - phase9b-status.md 任务范围 §2: GenerationExperience (artifact_type/provider_id/

@@ -1,4 +1,4 @@
-"""factory-console/session/llm_task_proposal.py — LLMTaskProposalEngine (S10-062 批次 B)。
+"""src/legacy/factory-console/session/llm_task_proposal.py — LLMTaskProposalEngine (S10-062 批次 B)。
 
 LLM 任务提案引擎 (GAP G2, 设计 §5): LLM 优先 — GapAnalysis + 项目上下文 →
 ReasoningProvider.propose_task → 结构化 TaskProposal; 过 TaskProposalValidator

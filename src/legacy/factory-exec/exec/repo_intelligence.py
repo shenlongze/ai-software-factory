@@ -1,4 +1,4 @@
-"""factory-exec/exec/repo_intelligence.py — Repository Intelligence v1 (Phase A++++++-2a)。
+"""src/legacy/factory-exec/exec/repo_intelligence.py — Repository Intelligence v1 (Phase A++++++-2a)。
 
 设计依据: docs/architecture/ai-developer-capability-engine-model.md §1
 (Repository Intelligence 7 层: L1 文件结构 / L2 模块 / L3 依赖 / L4 符号 /

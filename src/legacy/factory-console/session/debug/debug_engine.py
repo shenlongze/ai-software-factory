@@ -1,4 +1,4 @@
-"""factory-console/session/debug/debug_engine.py — DebugEngine (S10-068 G6/G8)。
+"""src/legacy/factory-console/session/debug/debug_engine.py — DebugEngine (S10-068 G6/G8)。
 
 Debug Intelligence 主入口: DebugCase → DebugDecision (完整流程) + feedback 循环
 + 历史/统计 + 持久化 (workspace/debug_cases.json, 失败安全)。

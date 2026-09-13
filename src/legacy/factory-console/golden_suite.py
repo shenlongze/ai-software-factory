@@ -1,4 +1,4 @@
-"""factory-console/golden_suite.py — K5 Golden Conversation Suite (G1-G20).
+"""src/legacy/factory-console/golden_suite.py — K5 Golden Conversation Suite (G1-G20).
 
 20 个场景验证套件 (deterministic contract tests + real LLM E2E 挂钩):
 G1 普通闲聊 / G2 新需求讨论 / G3 多轮需求澄清 / G4 需求修改 /

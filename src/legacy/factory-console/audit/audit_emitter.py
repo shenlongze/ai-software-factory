@@ -1,4 +1,4 @@
-"""factory-console/audit/audit_emitter.py — AuditEmitter (S10-070 G2 自动接入)。
+"""src/legacy/factory-console/audit/audit_emitter.py — AuditEmitter (S10-070 G2 自动接入)。
 
 审计自动接入生产链: 生产决策/事件 → 统一 AuditStore 落盘 (脱敏 + hash 链),
 零侵入 — 调用方 (session/actions 薄接 / orchestrator 关键点) 只需一行 emit。

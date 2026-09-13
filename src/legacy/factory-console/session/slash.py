@@ -1,4 +1,4 @@
-"""factory-console/session/slash.py — Slash Command 框架 (S10-047 Task 003)。
+"""src/legacy/factory-console/session/slash.py — Slash Command 框架 (S10-047 Task 003)。
 
 注册式命令分发: 命令 = SlashCommand 子类 (name / description / execute), 注册进
 SlashCommandRegistry 后即被 "/name args" 路由 — 零硬编码 if, 新增命令只需 register。

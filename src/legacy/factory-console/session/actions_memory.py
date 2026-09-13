@@ -1,4 +1,4 @@
-"""factory-console/session/actions_memory.py — 记忆动作 (R1, v1.1.254).
+"""src/legacy/factory-console/session/actions_memory.py — 记忆动作 (R1, v1.1.254).
 
 从 actions.py 拆出: 记忆检索/学习/统计/分析/导出 (自包含)。
 """

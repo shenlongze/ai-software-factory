@@ -1,4 +1,4 @@
-"""factory-console/session/session_hooks.py — 会话级 Hooks 生命周期 (S10-127 M4).
+"""src/legacy/factory-console/session/session_hooks.py — 会话级 Hooks 生命周期 (S10-127 M4).
 
 事件模型 (参考 Claude Hooks + passbaton 5 hooks 设计, 非代码复用):
 - SessionStart     会话开始 → 注入 Spine 交接 + 最近 decision/error→solution

@@ -1,4 +1,4 @@
-"""factory-console/session/analysis_tools.py — 会话分析工具集 (v1.1.166)。
+"""src/legacy/factory-console/session/analysis_tools.py — 会话分析工具集 (v1.1.166)。
 
 Founder 2026-08-26: 会话"详细分析"不能靠 LLM 脑补 — 必须调用专业工具,
 结论可溯源 (每个判断对应工具输出 + 来源)。

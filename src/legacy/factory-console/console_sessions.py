@@ -1,4 +1,4 @@
-"""factory-console/console_sessions.py — Web 会话栏存储与回复 (K-7e)。
+"""src/legacy/factory-console/console_sessions.py — Web 会话栏存储与回复 (K-7e)。
 
 会话 (session): scope ∈ {company, project}; project 会话带 project_id。
 消息 (message): role ∈ {user, assistant}; append-only, 按会话隔离。

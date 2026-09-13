@@ -1,4 +1,4 @@
-"""factory-exec/exec/developer.py — Developer Agent MVP (第一个 AI Employee)。
+"""src/legacy/factory-exec/exec/developer.py — Developer Agent MVP (第一个 AI Employee)。
 
 设计依据 (docs/architecture/phase-a-execution-mvp-design.md §4 +
 docs/architecture/developer-agent-reliability-model.md §2/§5):

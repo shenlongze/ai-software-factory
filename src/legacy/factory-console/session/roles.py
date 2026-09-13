@@ -1,4 +1,4 @@
-"""factory-console/session/roles.py — Agent Role System (S10-056 批次 A)。
+"""src/legacy/factory-console/session/roles.py — Agent Role System (S10-056 批次 A)。
 
 角色 → capabilities 推导 (设计 §2.2): 8 角色固定编制
 (product_manager/architect/backend/frontend/qa/reviewer/devops/tester),

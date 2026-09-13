@@ -1,4 +1,4 @@
-"""factory-console/session/conflicts.py — FileOwnership + ConflictDetector + ConflictResolver (S10-056/S10-057)。
+"""src/legacy/factory-console/session/conflicts.py — FileOwnership + ConflictDetector + ConflictResolver (S10-056/S10-057)。
 
 文件冲突检测 (设计 §2.7): FileOwnership 记录 task → files 归属;
 ConflictDetector 检测同文件多任务修改 → ConflictRecord (status "open" 保留,

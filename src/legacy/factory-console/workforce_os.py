@@ -1,4 +1,4 @@
-"""factory-console/workforce_os.py — S30 Workforce Intelligence & Organization Foundation.
+"""src/legacy/factory-console/workforce_os.py — S30 Workforce Intelligence & Organization Foundation.
 
 把 S16 Multi-Agent Workforce 升级为 Workforce OS:
 - Organization → Department → Workforce → AgentProfile (层级 + lineage)

@@ -1,4 +1,4 @@
-"""factory-console/session/action.py — Action + ActionRegistry + ExecutionContext + ActionResult (S10-048 P0)。
+"""src/legacy/factory-console/session/action.py — Action + ActionRegistry + ExecutionContext + ActionResult (S10-048 P0)。
 
 Intent Execution Kernel 的执行单元: Intent 路由到 Action, Action 持有 handler
 (调 Service Layer, 不复制业务), 经 ExecutionContext (workspace/session/user/

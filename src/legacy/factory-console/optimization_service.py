@@ -1,4 +1,4 @@
-"""factory-console/optimization_service.py — S24 Workforce Optimization & Production Optimization.
+"""src/legacy/factory-console/optimization_service.py — S24 Workforce Optimization & Production Optimization.
 
 从真实 Production Evidence 发现低效模式 → Hypothesis → Baseline → Controlled Experiment
 → Measurement → Comparison → Outcome (经 Governance) → Experience。

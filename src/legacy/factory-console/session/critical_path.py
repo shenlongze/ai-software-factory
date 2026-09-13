@@ -1,4 +1,4 @@
-"""factory-console/session/critical_path.py — 关键路径标注引擎 (M3b, S10-090 M3-2)。
+"""src/legacy/factory-console/session/critical_path.py — 关键路径标注引擎 (M3b, S10-090 M3-2)。
 
 把 M3a DecomposeEngine 的原子叶子（只有树关系, 无横向依赖边）补上**横向依赖边
 (DAG)** 并计算**关键路径**（计划层标注）— "拆到不能拆" 之后告诉执行层: 哪些任务

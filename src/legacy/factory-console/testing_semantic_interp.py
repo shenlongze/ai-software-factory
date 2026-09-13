@@ -1,4 +1,4 @@
-"""factory-console/testing_semantic_interp.py — 测试用 deterministic 语义解释器。
+"""src/legacy/factory-console/testing_semantic_interp.py — 测试用 deterministic 语义解释器。
 
 Cognitive Golden Path 测试辅助 (非生产): 注入 deterministic semantic interpreter,
 模拟 LLM 产出 Semantic Proposal — 经与生产完全相同的 validate/apply 管道

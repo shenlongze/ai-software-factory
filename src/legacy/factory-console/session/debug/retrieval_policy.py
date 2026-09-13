@@ -1,4 +1,4 @@
-"""factory-console/session/debug/retrieval_policy.py — DebugRetrievalPolicy (S10-068 Part 2, G6)。
+"""src/legacy/factory-console/session/debug/retrieval_policy.py — DebugRetrievalPolicy (S10-068 Part 2, G6)。
 
 检索策略: 查询构建/来源选择/Top-K/重排/去重/Context Budget — 未来多 RAG 来源
 扩展点 (select_sources 可扩展; 不引入 Vector DB)。

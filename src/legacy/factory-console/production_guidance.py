@@ -1,4 +1,4 @@
-"""factory-console/production_guidance.py — S15 Experience-Guided Autonomous Production.
+"""src/legacy/factory-console/production_guidance.py — S15 Experience-Guided Autonomous Production.
 
 让真实生产中积累的 Experience 成为 Agent 的可追溯决策依据 (Guidance, 非指令)。
 

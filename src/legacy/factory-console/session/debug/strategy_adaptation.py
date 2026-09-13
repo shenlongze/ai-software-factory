@@ -1,4 +1,4 @@
-"""factory-console/session/debug/strategy_adaptation.py — StrategyAdapter (S10-068 Part 2, G2)。
+"""src/legacy/factory-console/session/debug/strategy_adaptation.py — StrategyAdapter (S10-068 Part 2, G2)。
 
 Strategy Adaptation: strategy_history 排除已失败策略; Memory 替代经验 → 新策略;
 全部策略失败 → REQUEST_REVIEW (不无限重复同一策略)。

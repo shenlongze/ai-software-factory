@@ -1,4 +1,4 @@
-"""factory-console/memory/decision_memory.py — K-3 M4-3 决策记忆回流 (E5, S10-119)。
+"""src/legacy/factory-console/memory/decision_memory.py — K-3 M4-3 决策记忆回流 (E5, S10-119)。
 
 审批决策 → 审计 DECISION_LEARNED → 组织记忆落盘 decision_memory.json →
 下次同类审批带历史 ("历史同类决策: N 次, 批准率 X%") + 少审提示。

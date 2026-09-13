@@ -1,4 +1,4 @@
-"""factory-exec/exec/cli.py — 执行 CLI (`factory-exec` console script + 主 CLI 共享命令)。
+"""src/legacy/factory-exec/exec/cli.py — 执行 CLI (`factory-exec` console script + 主 CLI 共享命令)。
 
 命令 (Phase A 任务清单):
 ```

@@ -1,4 +1,4 @@
-"""factory-console/verification_domain.py — P0-F3 Verification SSOT (ver-*)。
+"""src/legacy/factory-console/verification_domain.py — P0-F3 Verification SSOT (ver-*)。
 
 设计 (方案 1 — 语义 A 升级为 SSOT):
 - Verification 是独立、持久、可追踪的质量事实对象 (ver-*)。

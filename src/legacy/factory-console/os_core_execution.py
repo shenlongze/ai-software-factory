@@ -1,4 +1,4 @@
-"""factory-console/os_core_execution.py — OS Core: Execution (MU-CORE-09).
+"""src/legacy/factory-console/os_core_execution.py — OS Core: Execution (MU-CORE-09).
 
 Execution = TaskNode 的一次实际执行事实 (一个 TaskNode 可有多次 Execution)。
 

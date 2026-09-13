@@ -1,4 +1,4 @@
-"""factory-console/api/mcp_api.py — S10-020 Task 001 MCP API 路由函数。
+"""src/legacy/factory-console/api/mcp_api.py — S10-020 Task 001 MCP API 路由函数。
 
 AI Employee 工具能力外部扩展 (MCP Adapter Foundation): MCP 连接清单 +
 注册 + MCP Tool 清单 — GET /api/mcp/connections (MCPRegistry 当前连接)

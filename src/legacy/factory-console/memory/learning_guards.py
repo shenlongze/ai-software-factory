@@ -1,4 +1,4 @@
-"""factory-console/memory/learning_guards.py — K-3 M4-2 学习护栏 (S10-119, 最高优先级)。
+"""src/legacy/factory-console/memory/learning_guards.py — K-3 M4-2 学习护栏 (S10-119, 最高优先级)。
 
 护栏 = 让 Agent 变强且可控的第一道闸: 任何学习路径 (入库/引用/画像/快照)
 都挂在 LearningGuards 之下, 可开关、可回退、有预算上限。

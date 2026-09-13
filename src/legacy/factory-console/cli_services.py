@@ -1,4 +1,4 @@
-"""factory-console/cli_services.py — S10-026 P3: Runtime Manager (factory start 服务注册表)。
+"""src/legacy/factory-console/cli_services.py — S10-026 P3: Runtime Manager (factory start 服务注册表)。
 
 用户需求 (S10-026 §2.4): `factory start` 从硬编码 backend/frontend 重构为
 Services Registry — start/stop/status 改调注册表, 新增 `factory service list`。

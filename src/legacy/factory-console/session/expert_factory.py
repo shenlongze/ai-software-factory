@@ -1,4 +1,4 @@
-"""factory-console/session/expert_factory.py — 专家装配器 (M2 A3, S10-087, 核心)。
+"""src/legacy/factory-console/session/expert_factory.py — 专家装配器 (M2 A3, S10-087, 核心)。
 
 "造专家": ExpertFactory.assemble(role, industry, skills, knowledge_ref,
 workflow_ref, provider) → AgentEntity; 校验 skill 存在 / workflow 可执行 /

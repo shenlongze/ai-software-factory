@@ -1,4 +1,4 @@
-"""factory-console/session/pipeline.py — AI Software Factory Pipeline 规则生成器 (S10-051 P0-P4)。
+"""src/legacy/factory-console/session/pipeline.py — AI Software Factory Pipeline 规则生成器 (S10-051 P0-P4)。
 
 ProductIntent → PRD → EngineeringPlan → TaskTree → AgentAssignment → Lifecycle
 的纯规则管线: 全部确定性规则生成, 不调 LLM、零新依赖 (纯标准库)。

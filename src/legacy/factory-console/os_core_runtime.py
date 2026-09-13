@@ -1,4 +1,4 @@
-"""factory-console/os_core_runtime.py — OS Execution Adapter (MU-CORE-10).
+"""src/legacy/factory-console/os_core_runtime.py — OS Execution Adapter (MU-CORE-10).
 
 把 OS Execution Record 接入真实执行机制 (最薄 adapter; 不重写 node_runtime/production_run)。
 

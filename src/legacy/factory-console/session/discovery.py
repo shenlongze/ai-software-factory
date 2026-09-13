@@ -1,4 +1,4 @@
-"""factory-console/session/discovery.py — DiscoverySession (S10-065 P0-1)。
+"""src/legacy/factory-console/session/discovery.py — DiscoverySession (S10-065 P0-1)。
 
 Interactive Discovery 模型层: idea → 多轮澄清 → summary → confirm → create_product,
 独立可持久化 (discovery_sessions.json), 进程退出不丢失 (resume)。

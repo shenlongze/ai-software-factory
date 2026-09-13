@@ -1,4 +1,4 @@
-"""factory-org/org/approval.py — Approval Gate 人工审批门 (Sprint 9 S9-001)。
+"""src/legacy/factory-org/org/approval.py — Approval Gate 人工审批门 (Sprint 9 S9-001)。
 
 设计依据 (sprint9-architecture.md §2 Human Approval Gate):
 ```

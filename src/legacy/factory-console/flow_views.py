@@ -1,4 +1,4 @@
-"""factory-console/flow_views.py — Flow Views 视图层 v0 (S1 第 9 刀)。
+"""src/legacy/factory-console/flow_views.py — Flow Views 视图层 v0 (S1 第 9 刀)。
 
 单会话 flow + 项目聚合 + 图型全集。只读现有文件, 不落第二份 Truth。
 

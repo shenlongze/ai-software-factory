@@ -1,4 +1,4 @@
-"""factory-org/org/store.py — 组织独立数据空间 (原子写, 损坏失败安全)。
+"""src/legacy/factory-org/org/store.py — 组织独立数据空间 (原子写, 损坏失败安全)。
 
 设计依据 (phase16-organization-model-review.md §6):
 ```

@@ -1,4 +1,4 @@
-"""factory-console/experiment_reliability.py — S27 Production Experiment Reliability.
+"""src/legacy/factory-console/experiment_reliability.py — S27 Production Experiment Reliability.
 
 可靠地区分 Agent/Production/Verification/Evaluation/Infrastructure 失败,
 判断 Production Run 是否有资格成为 Optimization Experiment 有效样本。

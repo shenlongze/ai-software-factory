@@ -1,4 +1,4 @@
-"""factory-console/memory/experience.py — ExperienceRecord 模型 (S10-067 G1)。
+"""src/legacy/factory-console/memory/experience.py — ExperienceRecord 模型 (S10-067 G1)。
 
 统一经验模型: id/type/project/task/agent/role/context/problem/action/result/
 success/confidence/source/created_at + 6 类型 (SUCCESS_PATTERN/FAILURE_PATTERN/

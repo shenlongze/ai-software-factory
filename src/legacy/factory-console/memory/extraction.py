@@ -1,4 +1,4 @@
-"""factory-console/memory/extraction.py — ExperienceExtractor (S10-067 G3)。
+"""src/legacy/factory-console/memory/extraction.py — ExperienceExtractor (S10-067 G3)。
 
 自动提取: 现有数据资产 (execution_records/repair_task/replanning_decisions/
 gap_analysis/validation_result) → ExperienceRecord。核心学习循环第一环:

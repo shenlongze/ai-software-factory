@@ -1,4 +1,4 @@
-"""factory-console/session/sandbox.py — 系统级沙箱最小版 (S10-127 P2.2).
+"""src/legacy/factory-console/session/sandbox.py — 系统级沙箱最小版 (S10-127 P2.2).
 
 背景: 外部执行器 (codex/claude/hermes CLI) 与本地命令执行缺少隔离护栏。
 参考 OpenAI SandboxAgent/UnixLocalSandboxClient + agent-guard 思路 (MIT), 本地最小版:

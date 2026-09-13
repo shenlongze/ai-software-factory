@@ -1,4 +1,4 @@
-"""factory-console/llm_semantic_interpreter.py — LLM Semantic Understanding (Golden Path)。
+"""src/legacy/factory-console/llm_semantic_interpreter.py — LLM Semantic Understanding (Golden Path)。
 
 RED-1 修复: regex keyword interpreter → LLM Semantic Understanding。
 

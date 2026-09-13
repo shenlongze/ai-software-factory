@@ -1,4 +1,4 @@
-"""factory-console/workforce.py — S16 Multi-Agent Professional Workforce。
+"""src/legacy/factory-console/workforce.py — S16 Multi-Agent Professional Workforce。
 
 把多个专业 Agent 组织成可执行、可验证、可追溯的 Workforce。
 

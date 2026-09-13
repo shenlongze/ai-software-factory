@@ -1,4 +1,4 @@
-"""factory-console/api/backlog.py — Backlog API 路由函数 (S10-010 Task 003)。
+"""src/legacy/factory-console/api/backlog.py — Backlog API 路由函数 (S10-010 Task 003)。
 
 设计依据:
 - AF-PRD-v1.md 4.3 (Requirement Management: Backlog 层级 Epic→Feature→

@@ -1,4 +1,4 @@
-"""factory-console/self_healing.py — S39 Autonomous Recovery & Self-Healing.
+"""src/legacy/factory-console/self_healing.py — S39 Autonomous Recovery & Self-Healing.
 
 Self-Healing Loop (复用 S21/S28/S37/S38, 不建第二套):
 Production Failure → Verification FAIL → Incident (evidence-driven, 非 LLM)

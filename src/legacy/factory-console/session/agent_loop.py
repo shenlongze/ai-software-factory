@@ -1,4 +1,4 @@
-"""factory-console/session/agent_loop.py — 会话 Agent 循环 v2 (v1.1.207).
+"""src/legacy/factory-console/session/agent_loop.py — 会话 Agent 循环 v2 (v1.1.207).
 
 Founder 2026-08-27: 会话 = 原生 function calling 的持久 Agent + 计划→审批→执行→验证→交付闭环。
 

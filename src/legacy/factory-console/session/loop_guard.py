@@ -1,4 +1,4 @@
-"""factory-console/session/loop_guard.py — LoopGuard (S10-063 批次 A)。
+"""src/legacy/factory-console/session/loop_guard.py — LoopGuard (S10-063 批次 A)。
 
 Production Governance (GAP G7, 设计 §7): 组合总闸 — 防 retry/repair/replan/
 task proposal 乘法爆炸 + 反复失败/反复决策/总执行上限。

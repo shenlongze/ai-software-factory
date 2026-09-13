@@ -1,4 +1,4 @@
-"""factory-console/external_executor — 外部执行器通用适配层 (M1, 设计文档 §3-§5)。
+"""src/legacy/factory-console/external_executor — 外部执行器通用适配层 (M1, 设计文档 §3-§5)。
 
 声明式适配器 + 通用引擎: 新增外部 AI CLI = 写一个 yaml, 不改代码。
 - schema.py: 适配器 Schema (Pydantic, 严谨校验)

@@ -1,4 +1,4 @@
-"""factory-console/local_ai.py — U-6 (v1.1.188): 本机 AI 工具发现与调度。
+"""src/legacy/factory-console/local_ai.py — U-6 (v1.1.188): 本机 AI 工具发现与调度。
 
 Founder 2026-08-27: "我电脑上安装了 codex / Claude / Hermes, 怎么没有被发现?"
 → 扫描本机安装的 AI CLI (codex/claude/hermes) → 自动注册为 Agent →

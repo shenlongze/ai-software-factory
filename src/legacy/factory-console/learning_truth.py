@@ -1,4 +1,4 @@
-"""factory-console/learning_truth.py — P2-D Learning Consumption canonical domain。
+"""src/legacy/factory-console/learning_truth.py — P2-D Learning Consumption canonical domain。
 
 契约 (docs/audits/2026-09-06-learning-consumption-p2-contract/, 22 份):
 - 链: Experience → OBS-* → CAND-* → PROM-* → PROFILE-vN → Router → RD-*

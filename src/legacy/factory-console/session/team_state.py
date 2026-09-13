@@ -1,4 +1,4 @@
-"""factory-console/session/team_state.py — TeamExecutionState (S10-057 P1)。
+"""src/legacy/factory-console/session/team_state.py — TeamExecutionState (S10-057 P1)。
 
 团队执行状态 (设计 §P1): team_execution_state.json 落盘 projects/<slug>/ —
 {team, status, started_at, updated_at, tasks: {task_id: {agent, status, artifact}},

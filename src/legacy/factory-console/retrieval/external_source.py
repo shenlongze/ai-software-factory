@@ -1,4 +1,4 @@
-"""factory-console/retrieval/external_source.py — M5-3 外挂适配器接口
+"""src/legacy/factory-console/retrieval/external_source.py — M5-3 外挂适配器接口
 (S10-123)。
 
 ExternalKnowledgeSource Protocol + MockExternalSource (确定性) + 注册表 +

@@ -1,4 +1,4 @@
-"""factory-org/org/execution.py — Execution Domain Model (S10-011 Task 001)。
+"""src/legacy/factory-org/org/execution.py — Execution Domain Model (S10-011 Task 001)。
 
 设计依据 (唯一):
 - docs/sprint10/S10-011-architecture-design.md §二 4/5/6/7 (7 项确认)

@@ -1,4 +1,4 @@
-"""factory-console/session/review_gate.py — ReviewRecord + ReviewGate (S10-063 批次 A)。
+"""src/legacy/factory-console/session/review_gate.py — ReviewRecord + ReviewGate (S10-063 批次 A)。
 
 Production Governance (GAP G5, 设计 §5): 人工评审闸 — REQUEST_REVIEW →
 WAITING_FOR_REVIEW → APPROVED/REJECTED/CANCELLED → CONTINUE/BLOCK。

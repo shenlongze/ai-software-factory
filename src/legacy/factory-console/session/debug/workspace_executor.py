@@ -1,4 +1,4 @@
-"""factory-console/session/debug/workspace_executor.py — 真实 Workspace 修复执行器 (S10-071 P0-1/P0-2)。
+"""src/legacy/factory-console/session/debug/workspace_executor.py — 真实 Workspace 修复执行器 (S10-071 P0-1/P0-2)。
 
 WorkspaceRepairExecutor: 对真实 Workspace 做真实文件修改 (snapshot/diff/rollback)。
 PytestValidator: 真实 subprocess pytest 验证 (复用 quality.Validator.validate_command)。

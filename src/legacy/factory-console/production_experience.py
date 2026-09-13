@@ -1,4 +1,4 @@
-"""factory-console/production_experience.py — S14 Evidence-backed Production Experience.
+"""src/legacy/factory-console/production_experience.py — S14 Evidence-backed Production Experience.
 
 从真实 Production Evidence + Evaluation 确定性提取生产经验 (非 LLM)。
 

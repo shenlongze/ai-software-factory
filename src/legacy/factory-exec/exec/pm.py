@@ -1,4 +1,4 @@
-"""factory-exec/exec/pm.py — PM Agent 执行 (Sprint 8 S8-001)。
+"""src/legacy/factory-exec/exec/pm.py — PM Agent 执行 (Sprint 8 S8-001)。
 
 设计依据 (sprint8-architecture.md §2 ① PM Agent / §4 Workflow 接入):
 ```

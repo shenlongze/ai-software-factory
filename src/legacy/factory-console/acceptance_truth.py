@@ -1,4 +1,4 @@
-"""factory-console/acceptance_truth.py — S45 User Acceptance canonical domain.
+"""src/legacy/factory-console/acceptance_truth.py — S45 User Acceptance canonical domain.
 
 语义边界 (S45 §6): Verification (机器可验证 PASS) ≠ Acceptance (用户认可)。
 本域只回答: 用户是否认可某个具体 artifact/version。

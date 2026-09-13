@@ -1,4 +1,4 @@
-"""factory-console/audit/audit_context.py — AuditContextBudget (S10-069 G10)。
+"""src/legacy/factory-console/audit/audit_context.py — AuditContextBudget (S10-069 G10)。
 
 Context Budget: 审计查询结果不无限膨胀 LLM Context — 估算 token + fit
 (Top-K + 截断保 max_tokens) + stats (candidates/selected/discarded/

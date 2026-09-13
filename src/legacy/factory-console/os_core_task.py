@@ -1,4 +1,4 @@
-"""factory-console/os_core_task.py — OS Core: Task (MU-CORE-09).
+"""src/legacy/factory-console/os_core_task.py — OS Core: Task (MU-CORE-09).
 
 Task = Work/Workstream 下可管理、可追踪的工作单元 (定义"要完成什么")。
 

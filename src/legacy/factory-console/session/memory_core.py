@@ -1,4 +1,4 @@
-"""factory-console/session/memory_core.py — Core Memory (W4, v1.1.250).
+"""src/legacy/factory-console/session/memory_core.py — Core Memory (W4, v1.1.250).
 
 抄 Letta core memory: 两块"永远在上下文"的可编辑文本 — persona(agent身份, 固定)
 + human(用户画像/当前上下文, 可自编辑, 有上限)。模型可用 memory_update 工具自编辑

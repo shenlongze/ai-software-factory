@@ -1,4 +1,4 @@
-"""factory-console/session/agent_registry.py — 工厂层专家注册表 (M2 A2, S10-087)。
+"""src/legacy/factory-console/session/agent_registry.py — 工厂层专家注册表 (M2 A2, S10-087)。
 
 薄包装 (复用 session/agents.py AgentRegistry.load 模式 + core/agents/registry.py
 口径): 工厂层 AgentEntity 注册表 — add/get/list/remove + 行业命名空间

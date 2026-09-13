@@ -1,4 +1,4 @@
-"""factory-console/session/tool_search.py — BM25 风格动态工具检索 (S10-127 M2).
+"""src/legacy/factory-console/session/tool_search.py — BM25 风格动态工具检索 (S10-127 M2).
 
 背景: 21 个静态工具每次全量塞给弱模型 → 选择压力大 → "扫代码返回文档"。
 方案 (参考 Eino ToolSearch + tool-search-oss MIT):

@@ -1,4 +1,4 @@
-"""factory-exec/exec/benchmark/runner.py — Benchmark 执行框架 (Phase A+++++)。
+"""src/legacy/factory-exec/exec/benchmark/runner.py — Benchmark 执行框架 (Phase A+++++)。
 
 样本 → factory-exec 执行链 → 记录 7 指标 + 五维评分:
 

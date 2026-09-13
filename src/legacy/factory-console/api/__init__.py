@@ -1,4 +1,4 @@
-"""factory-console/api/ — Human Console 只读 API 路由函数 (无 Web 依赖)。
+"""src/legacy/factory-console/api/ — Human Console 只读 API 路由函数 (无 Web 依赖)。
 
 设计依据 (phase11a-status.md):
 - 6 个路由函数模块: projects/lifecycle/approvals/decisions/intelligence/

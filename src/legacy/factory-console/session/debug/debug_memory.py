@@ -1,4 +1,4 @@
-"""factory-console/session/debug/debug_memory.py — DebugExperienceRetriever (S10-068 G5)。
+"""src/legacy/factory-console/session/debug/debug_memory.py — DebugExperienceRetriever (S10-068 G5)。
 
 历史经验检索: DebugCase → Memory Top-K (S10-067 ExperienceRetriever 复用)。
 

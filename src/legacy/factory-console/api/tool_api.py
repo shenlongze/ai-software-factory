@@ -1,4 +1,4 @@
-"""factory-console/api/tool_api.py — S10-018 Task 001 Tool API 路由函数。
+"""src/legacy/factory-console/api/tool_api.py — S10-018 Task 001 Tool API 路由函数。
 
 AI Employee Tool Runtime Foundation: Tool 清单 + 执行入口 — GET /api/tools
 (ToolRegistry 当前可用 Tool) + POST /api/tools/{tool_id}/execute (直调

@@ -1,4 +1,4 @@
-"""factory-console/session/context_ledger.py — ContextLedger (S10-070 G4 统一预算)。
+"""src/legacy/factory-console/session/context_ledger.py — ContextLedger (S10-070 G4 统一预算)。
 
 统一 Context Budget 总约束: 各模块 (system/task/project/memory/audit/debug/
 retrieval) 独立估算 context token 的现状 → 组合可无限叠加 (G4)。ContextLedger

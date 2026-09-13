@@ -1,4 +1,4 @@
-"""factory-console/session/debug/debug_strategy.py — DebugStrategySelector (S10-068 G4)。
+"""src/legacy/factory-console/session/debug/debug_strategy.py — DebugStrategySelector (S10-068 G4)。
 
 修复策略选择: RootCause + 历史经验 + DebugCase → DebugDecision。
 

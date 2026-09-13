@@ -1,4 +1,4 @@
-"""factory-console/events.py — Human Console 事件辅助 (console.*, 经 EventLogger)。
+"""src/legacy/factory-console/events.py — Human Console 事件辅助 (console.*, 经 EventLogger)。
 
 设计依据:
 - phase11a-status.md §Event 集成: console.viewed / console.approval.opened /

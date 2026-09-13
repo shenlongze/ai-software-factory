@@ -1,4 +1,4 @@
-"""factory-console/session/commands.py — 基础 Slash 命令 (S10-047 Task 004)。
+"""src/legacy/factory-console/session/commands.py — 基础 Slash 命令 (S10-047 Task 004)。
 
 /help     列出可用命令 (name + description)
 /status   显示会话状态 (session/workspace/当前项目/当前 Agent — 来自 SessionContext)

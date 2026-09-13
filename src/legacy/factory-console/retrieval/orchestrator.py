@@ -1,4 +1,4 @@
-"""factory-console/retrieval/orchestrator.py — 统一检索编排器 (S10-070)。
+"""src/legacy/factory-console/retrieval/orchestrator.py — 统一检索编排器 (S10-070)。
 
 多来源注册 → 并发/顺序检索 → 去重 → 排序 → Top-K → Context Budget。
 避免每个 Agent 各查一遍 RAG (设计 §9)。

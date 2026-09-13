@@ -1,4 +1,4 @@
-"""factory-console/audit/audit_store.py — AuditStore 统一审计存储 (S10-069 G2)。
+"""src/legacy/factory-console/audit/audit_store.py — AuditStore 统一审计存储 (S10-069 G2)。
 
 append/get/query/get_chain/export/stats/verify — 落盘 audit_events.json
 (workspace/audit/audit_events.json, 缺省 ~/.factory/audit/audit_events.json)。

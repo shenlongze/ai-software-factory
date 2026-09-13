@@ -1,4 +1,4 @@
-"""factory-org/org/projects.py — 统一生命周期模型 (Sprint 7 S7-001)。
+"""src/legacy/factory-org/org/projects.py — 统一生命周期模型 (Sprint 7 S7-001)。
 
 模型层级 (sprint7-architecture.md §3):
 ```

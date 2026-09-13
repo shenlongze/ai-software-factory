@@ -1,4 +1,4 @@
-"""factory-exec/exec/benchmark/__init__.py — Benchmark 包 (Phase A+++++)。
+"""src/legacy/factory-exec/exec/benchmark/__init__.py — Benchmark 包 (Phase A+++++)。
 
 样本集: 5 Bug + 3 Feature + 1 Greenfield (bugs.py / features.py / greenfield.py),
 每个样本含 verifier 验收 (纯 Python 静态/行为检查, 不依赖 LLM)。

@@ -1,4 +1,4 @@
-"""factory-console/audit/audit_integrity.py — AuditIntegrity 防篡改校验 (S10-069 G12)。
+"""src/legacy/factory-console/audit/audit_integrity.py — AuditIntegrity 防篡改校验 (S10-069 G12)。
 
 event_hash + previous_event_hash → tamper-evident 审计链:
 - hash_event(event) — sha256 重算 (同 AuditEvent.hash_event 口径)

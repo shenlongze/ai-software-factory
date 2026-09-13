@@ -1,4 +1,4 @@
-"""factory-console/session/pipeline_runner.py — Product Intelligence Pipeline (S10-084/M2 A5)。
+"""src/legacy/factory-console/session/pipeline_runner.py — Product Intelligence Pipeline (S10-084/M2 A5)。
 
 Idea → PRD 多角色资产链 (M2 员工内核接线): "让PM分析" → 7 个真实 Agent 实体
 (ExpertFactory.assemble) 经 HandoffBus 依次交接产出版本化 Artifact —

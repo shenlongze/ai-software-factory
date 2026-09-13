@@ -110,7 +110,7 @@ class TestPackageDirMapping:
                 rel = init.parent.relative_to(src).parts
                 discovered.add(".".join((prefix, *rel)))
         missing = discovered - packages
-        assert not missing, f"factory-core/exec/org 子包未列入 packages: {sorted(missing)}"
+        assert not missing, f"src/legacy/factory-core/exec/org 子包未列入 packages: {sorted(missing)}"
         only_mapped = {p for p in packages if p.startswith("factory_console")}
         assert packages - discovered - only_mapped == set(), "packages 含未知包名"
 

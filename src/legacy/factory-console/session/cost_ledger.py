@@ -1,4 +1,4 @@
-"""factory-console/session/cost_ledger.py — CostRecord + CostLedger (S10-063 批次 A + S10-065 批次 C)。
+"""src/legacy/factory-console/session/cost_ledger.py — CostRecord + CostLedger (S10-063 批次 A + S10-065 批次 C)。
 
 Production Governance (GAP G3/G4, 设计 §4): 统一 Cost/Usage 记录 — 关联
 project/sprint/task/agent/role/purpose/provider/model/tokens/cost/latency/

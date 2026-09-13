@@ -1,4 +1,4 @@
-"""factory-console/intelligence_strategy.py — S42 Intelligence Strategy Kernel.
+"""src/legacy/factory-console/intelligence_strategy.py — S42 Intelligence Strategy Kernel.
 
 Learning / Healing / Optimization 统一为 IntelligenceStrategy Contract:
 - strategy_id/strategy_type/version/capabilities/input_contract/output_contract/

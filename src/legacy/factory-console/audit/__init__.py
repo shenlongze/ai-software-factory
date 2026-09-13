@@ -1,4 +1,4 @@
-"""factory-console/audit/ — Audit Intelligence (S10-069)。
+"""src/legacy/factory-console/audit/ — Audit Intelligence (S10-069)。
 
 统一审计模型 + 存储 + 查询 + 决策链重建 + 结构化"为什么" + Context Budget
 + 防篡改 — Product→Plan→Task→Agent→Debug→Memory→Cost→Review→Delivery

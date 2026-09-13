@@ -1,4 +1,4 @@
-"""factory-console/ops_projection.py — S22 Production Health Projection + Control Plane.
+"""src/legacy/factory-console/ops_projection.py — S22 Production Health Projection + Control Plane.
 
 Health State 是 Projection (由 facts 计算, 可重建, 非第二事实源):
 - facts: HealthCheck / Incident / Recovery / Release / Verification

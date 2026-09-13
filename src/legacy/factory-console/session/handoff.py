@@ -1,4 +1,4 @@
-"""factory-console/session/handoff.py — 跨会话交接协议 ProjectSpine (S10-127 M3.1).
+"""src/legacy/factory-console/session/handoff.py — 跨会话交接协议 ProjectSpine (S10-127 M3.1).
 
 对标 Project Continuity (MIT 设计借鉴, 非代码复用): Spine + 权威分层 + Closure over replay。
 

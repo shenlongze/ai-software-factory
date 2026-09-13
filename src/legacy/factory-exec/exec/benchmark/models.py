@@ -1,4 +1,4 @@
-"""factory-exec/exec/benchmark/models.py — Benchmark 样本/结果/报告模型 (Pydantic v2)。
+"""src/legacy/factory-exec/exec/benchmark/models.py — Benchmark 样本/结果/报告模型 (Pydantic v2)。
 
 Phase A+++++ Real Product Proof: 样本集 (5 Bug / 3 Feature / 1 Greenfield) +
 执行记录 (success/token/cost/latency/patch_quality/human_intervention) +

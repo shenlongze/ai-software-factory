@@ -1,4 +1,4 @@
-"""factory-console/task_tree.py — K2 Task Tree (Real Complex Work 最小实现).
+"""src/legacy/factory-console/task_tree.py — K2 Task Tree (Real Complex Work 最小实现).
 
 ⚠️ FROZEN / LEGACY (S1 第 2 刀, 2026-09-08):
 - 任务组织层 canonical = task_decomposition (多级树域, task_trees/{plan_id}.json)。

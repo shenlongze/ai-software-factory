@@ -1,4 +1,4 @@
-"""factory-console/session/intent_core.py — 会话意图理解层 (IntentCore v1, v1.1.208; S3 v1.1.243 加 correction/mode 语义字段).
+"""src/legacy/factory-console/session/intent_core.py — 会话意图理解层 (IntentCore v1, v1.1.208; S3 v1.1.243 加 correction/mode 语义字段).
 
 Founder 2026-08-27: 不能一味用关键词, 一定要真正 get 到用户的意图; 不行就 loop,
 3 次 loop 后还不清醒就追问。

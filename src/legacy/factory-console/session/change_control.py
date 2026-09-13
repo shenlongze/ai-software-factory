@@ -1,4 +1,4 @@
-"""factory-console/session/change_control.py — 需求变更回流 ChangeControl (S10-111 M3-6)。
+"""src/legacy/factory-console/session/change_control.py — 需求变更回流 ChangeControl (S10-111 M3-6)。
 
 propose → impact → approve → PRD v2 → replan: 执行中 "加导出" → PRD.md 追加
 变更记录 v2 + 新任务合并 tasks.json + plan.json (复用 M3a DecomposeEngine 拆解,

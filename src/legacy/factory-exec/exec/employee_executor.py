@@ -1,4 +1,4 @@
-"""factory-exec/exec/employee_executor.py — Employee-Execution 连接 (Sprint 6)。
+"""src/legacy/factory-exec/exec/employee_executor.py — Employee-Execution 连接 (Sprint 6)。
 
 目标模型 (任务要求):
 ```

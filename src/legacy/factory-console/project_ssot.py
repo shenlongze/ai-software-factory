@@ -1,4 +1,4 @@
-"""factory-console/project_ssot.py — Project 数据真相 (SSOT) 对齐 (S34-P0-F3)。
+"""src/legacy/factory-console/project_ssot.py — Project 数据真相 (SSOT) 对齐 (S34-P0-F3)。
 
 原则: org/projects.json = 唯一可变真相 (name/status/stage/goal/description)。
       projects/{id}/project.json 的 name/status 是历史遗留缓存, 不得作为真相。

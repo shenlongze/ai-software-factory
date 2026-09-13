@@ -1,4 +1,4 @@
-"""factory-console/session/eval_loop.py — K-3 E-2/E-3 评估驱动修复/优化闭环 (S10-119)。
+"""src/legacy/factory-console/session/eval_loop.py — K-3 E-2/E-3 评估驱动修复/优化闭环 (S10-119)。
 
 低分任务 → 失败分类 → 修复建议 → 应用 (repair_task 机制) → 复评 → 分数提升断言:
 - analyze(record, quality)     低分执行记录 → {classification, suggestion,

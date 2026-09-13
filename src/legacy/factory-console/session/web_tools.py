@@ -1,4 +1,4 @@
-"""factory-console/session/web_tools.py — 通用搜索/执行工具 (S8, v1.1.246).
+"""src/legacy/factory-console/session/web_tools.py — 通用搜索/执行工具 (S8, v1.1.246).
 
 一劳永逸: 不预置天气/股价/航班等专用工具 — 给会话"搜索 + 执行"两条腿,
 任意一般问题先搜再做, 现场解决。工具使用阶梯: 本地优先, 网络兜底。

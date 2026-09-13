@@ -1,4 +1,4 @@
-"""factory-console/session/quality.py — Quality & Repair Loop (S10-053 P0-P6)。
+"""src/legacy/factory-console/session/quality.py — Quality & Repair Loop (S10-053 P0-P6)。
 
 Validation System + Repair Loop:
 - ValidationResult — 任务验证结果模型 (success/tests_total/tests_passed/tests_failed/

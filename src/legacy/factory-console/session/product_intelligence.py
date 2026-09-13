@@ -1,4 +1,4 @@
-"""factory-console/session/product_intelligence.py — ProductIntelligenceEngine (S10-066)。
+"""src/legacy/factory-console/session/product_intelligence.py — ProductIntelligenceEngine (S10-066)。
 
 产品智能分析引擎: ProductIntent → 8 模块结构化分析 (GAP G1-G8):
   industry_analysis (G1 行业理解) / competitor_analysis (G2 竞品分析) /

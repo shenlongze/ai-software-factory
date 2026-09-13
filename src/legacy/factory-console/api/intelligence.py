@@ -1,4 +1,4 @@
-"""factory-console/api/intelligence.py — GET /recommendations + GET /experience 路由函数。
+"""src/legacy/factory-console/api/intelligence.py — GET /recommendations + GET /experience 路由函数。
 
 - GET /recommendations: 推荐产物只读投影 (RecommendationSummary):
   candidate/score/factors/explanation — 只推荐不执行 (执行决策权在人,

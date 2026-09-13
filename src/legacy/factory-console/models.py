@@ -1,4 +1,4 @@
-"""factory-console/models.py — Human Console 领域模型 (Pydantic v2)。
+"""src/legacy/factory-console/models.py — Human Console 领域模型 (Pydantic v2)。
 
 设计依据:
 - phase11a-status.md: Console = Human Layer 产品入口 — 统一只读 API (为未来

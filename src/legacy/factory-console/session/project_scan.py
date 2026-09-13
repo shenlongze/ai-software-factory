@@ -1,4 +1,4 @@
-"""factory-console/session/project_scan.py — 项目扫描器 (v1.1.161)。
+"""src/legacy/factory-console/session/project_scan.py — 项目扫描器 (v1.1.161)。
 
 Founder 2026-08-26: "扫描项目看进度计划必须完整、强壮、实事求是"。
 

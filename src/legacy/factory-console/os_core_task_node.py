@@ -1,4 +1,4 @@
-"""factory-console/os_core_task_node.py — OS Core: TaskNode (MU-CORE-09).
+"""src/legacy/factory-console/os_core_task_node.py — OS Core: TaskNode (MU-CORE-09).
 
 TaskNode = Task 内最小、可独立执行与验证的工作节点 (任务执行树中的语义节点)。
 

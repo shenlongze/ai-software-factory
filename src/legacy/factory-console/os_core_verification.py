@@ -1,4 +1,4 @@
-"""factory-console/os_core_verification.py — OS Core: Verification (MU-CORE-10).
+"""src/legacy/factory-console/os_core_verification.py — OS Core: Verification (MU-CORE-10).
 
 Verification = 针对**一次真实 Execution** 判断结果是否满足要求 (不针对 TaskNode, 不自动由 succeeded 推导)。
 

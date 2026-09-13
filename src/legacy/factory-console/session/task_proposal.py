@@ -1,4 +1,4 @@
-"""factory-console/session/task_proposal.py — TaskProposalEngine (S10-061 批次 A)。
+"""src/legacy/factory-console/session/task_proposal.py — TaskProposalEngine (S10-061 批次 A)。
 
 Autonomous Gap Resolution 模型层 (GAP G2/G3/G4, 设计 §3-§5):
 - TaskProposal — 自动生成的任务提案数据模型 {task_id, title, description,

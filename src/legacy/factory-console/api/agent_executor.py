@@ -1,4 +1,4 @@
-"""factory-console/api/agent_executor.py — S10-016 Task 002 Agent Executor API 路由函数。
+"""src/legacy/factory-console/api/agent_executor.py — S10-016 Task 002 Agent Executor API 路由函数。
 
 AI Employee Runtime Foundation (Task 002): Agent 全链路执行入口 — Task/Agent
 校验 → Runtime Session → LLM (复用 AgentRuntime/Provider) → 事件链 →

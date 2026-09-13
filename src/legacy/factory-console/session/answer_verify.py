@@ -1,4 +1,4 @@
-"""factory-console/session/answer_verify.py — 回答验证闭环 (S-2, v1.1.218).
+"""src/legacy/factory-console/session/answer_verify.py — 回答验证闭环 (S-2, v1.1.218).
 
 Founder 2026-08-27: "数据真不真靠自觉" — 回答要能复核:
 - verify_numbers: 回答中的关键数字 (百分比/数量+单位) 必须在 reference (查询结果/事实卡) 中能找到,

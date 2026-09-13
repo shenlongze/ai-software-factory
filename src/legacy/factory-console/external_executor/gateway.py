@@ -1,4 +1,4 @@
-"""factory-console/external_executor/gateway.py — 执行器网关编排 (S10-127 网关 G1+G4).
+"""src/legacy/factory-console/external_executor/gateway.py — 执行器网关编排 (S10-127 网关 G1+G4).
 
 把外部委派串成状态机: 选执行器 → 建任务注册 → 执行 → 记录 → 验证 → 重试 → 回写。
 复用: registry(适配器) / router.route(选执行器) / executor.run / record_invocation /

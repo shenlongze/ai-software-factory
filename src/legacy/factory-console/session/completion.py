@@ -1,4 +1,4 @@
-"""factory-console/session/completion.py — Completion Framework (S10-047 Task 007)。
+"""src/legacy/factory-console/session/completion.py — Completion Framework (S10-047 Task 007)。
 
 TAB 补全候选生成 — 只读, 无副作用 (S10-046 设计 §7 边界)。
 设计: docs/sprint10/S10-046-completion-design.md (§2 数据源分层 / §3 实现架构 / §7 边界)

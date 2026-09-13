@@ -1,4 +1,4 @@
-"""factory-console/session/dialog_style.py — 对话风格引擎 (S-6, v1.1.217).
+"""src/legacy/factory-console/session/dialog_style.py — 对话风格引擎 (S-6, v1.1.217).
 
 Founder 2026-08-27: "能说人话么" — 会话要像人说话:
 - 风格分级: 闲聊简短 / 查询清晰带数字 / 分析深入 / 质疑先共情 / 动作确认

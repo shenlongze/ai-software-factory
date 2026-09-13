@@ -1,4 +1,4 @@
-"""factory-org/org/demo.py — S7-005 Full Chain Demo 定义 (标准, 可复现)。
+"""src/legacy/factory-org/org/demo.py — S7-005 Full Chain Demo 定义 (标准, 可复现)。
 
 设计依据 (sprint7-architecture.md §1/§3 任务级 → 组织级):
 ```

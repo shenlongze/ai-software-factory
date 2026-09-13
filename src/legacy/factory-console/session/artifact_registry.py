@@ -1,4 +1,4 @@
-"""factory-console/session/artifact_registry.py — 版本化资产注册表 (S10-084 P0)。
+"""src/legacy/factory-console/session/artifact_registry.py — 版本化资产注册表 (S10-084 P0)。
 
 产品管线每角色产出 = 版本化 Artifact (artifact.md + artifact.json, v1..n),
 供 PM/Market/Competitive/UX/Architect/QA/PRD 及后续 PRD/工程/审批消费。

@@ -1,4 +1,4 @@
-"""factory-console/trace_query.py — factory trace 只读全链查询 (S1 第 5 刀 M2b)。
+"""src/legacy/factory-console/trace_query.py — factory trace 只读全链查询 (S1 第 5 刀 M2b)。
 
 一条命令回答: 会话从哪来 → 理解 → PRD → Plan → 树 → 各叶执行 → 产物 → 审计。
 只读; 不建新存储; 不改 Domain 语义; 缺环如实标 MISSING。

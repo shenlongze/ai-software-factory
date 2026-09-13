@@ -1,4 +1,4 @@
-"""factory-console/monitor.py — 统一监控运维 (D 系列, Founder 2026-08-26)。
+"""src/legacy/factory-console/monitor.py — 统一监控运维 (D 系列, Founder 2026-08-26)。
 
 单一采集器 → 统一 snapshot → 多处消费 (会话 system_status / 概览健康条 /
 运维页 / CLI factory monitor)。全部真实数据, 失败安全。

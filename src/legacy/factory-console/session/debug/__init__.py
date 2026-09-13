@@ -1,4 +1,4 @@
-"""factory-console/session/debug — Debug Intelligence (S10-068 Part 1)。
+"""src/legacy/factory-console/session/debug — Debug Intelligence (S10-068 Part 1)。
 
 DebugEngine 五模块 (DebugCase → DebugDecision):
 - error_analysis.py   — ErrorAnalyzer: 错误理解 (error → error_type + DebugCase)

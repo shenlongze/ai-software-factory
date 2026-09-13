@@ -1,4 +1,4 @@
-"""factory-console/api/workflow_start.py — Workflow 启动/对话路由函数 (S10-006.5 P1-A)。
+"""src/legacy/factory-console/api/workflow_start.py — Workflow 启动/对话路由函数 (S10-006.5 P1-A)。
 
 POST /projects/{id}/start       → 启动真实 Agent 执行链 (后台线程)
 POST /projects/{id}/chat        → 持续开发对话 (已启动 → 记录消息;

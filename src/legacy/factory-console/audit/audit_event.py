@@ -1,4 +1,4 @@
-"""factory-console/audit/audit_event.py — AuditEvent 统一审计事件模型 (S10-069)。
+"""src/legacy/factory-console/audit/audit_event.py — AuditEvent 统一审计事件模型 (S10-069)。
 
 统一事件模型 (GAP G1/G3/G4/G11/G12): Product→Plan→Task→Agent→Debug→Memory→
 Cost→Review→Delivery 全生命周期事件, 单一结构落盘 audit_events.json。

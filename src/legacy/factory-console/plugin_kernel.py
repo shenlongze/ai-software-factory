@@ -1,4 +1,4 @@
-"""factory-console/plugin_kernel.py — S31 Everything-is-a-Plugin Foundation.
+"""src/legacy/factory-console/plugin_kernel.py — S31 Everything-is-a-Plugin Foundation.
 
 统一 Plugin Kernel:
 - PluginRecord: plugin_id/name/version/type/vendor/capabilities/dependencies/permissions/status/health

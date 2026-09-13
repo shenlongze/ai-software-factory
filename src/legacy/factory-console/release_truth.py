@@ -1,4 +1,4 @@
-"""factory-console/release_truth.py — P2-A Release Truth (RELEASE-*)。
+"""src/legacy/factory-console/release_truth.py — P2-A Release Truth (RELEASE-*)。
 
 契约 (docs/audits/2026-09-06-release-truth-p2-contract/):
 - Canonical Release = RELEASE-{hex8}; rel-* (M3) = LEGACY 隔离

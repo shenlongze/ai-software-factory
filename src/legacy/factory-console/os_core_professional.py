@@ -1,4 +1,4 @@
-"""factory-console/os_core_professional.py — OS Core: Professional Domain / Professional Role (MU-CORE-03).
+"""src/legacy/factory-console/os_core_professional.py — OS Core: Professional Domain / Professional Role (MU-CORE-03).
 
 语义 (Constitution v2 Art.36/42):
 - Professional Domain = 专业领域 (如 Software Engineering / Finance / Marketing);

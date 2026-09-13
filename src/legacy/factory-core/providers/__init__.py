@@ -1,4 +1,4 @@
-"""factory-core/providers/ — LLM Provider Abstraction (Phase 8A, ADR-0022)。
+"""src/legacy/factory-core/providers/ — LLM Provider Abstraction (Phase 8A, ADR-0022)。
 
 智能来源层 (Extension, 与 runtime/ 执行机制平级分离, phase8-plan §Q1):
 - models.py: ProviderDefinition + ProviderRequest/Response (统一 I/O, 不绑 OpenAI 格式)

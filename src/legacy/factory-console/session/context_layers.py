@@ -1,4 +1,4 @@
-"""factory-console/session/context_layers.py — L0/L1/L2 分层上下文加载 (S10-127 P1.3).
+"""src/legacy/factory-console/session/context_layers.py — L0/L1/L2 分层上下文加载 (S10-127 P1.3).
 
 参考 OpenViking (AGPL, 只借鉴设计): 摘要 → 概览 → 详情按需取, 不一次全塞。
 - L0 (Abstract): 项目一句话 — 当前目标 + 最近归档任务标题 (快速判断相关性, ~100 token)

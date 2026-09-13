@@ -1,4 +1,4 @@
-"""factory-console/session/discovery_guide.py — 产品发现引导体验共享模块 (S10-101 + S10-102)。
+"""src/legacy/factory-console/session/discovery_guide.py — 产品发现引导体验共享模块 (S10-101 + S10-102)。
 
 两路径 (conversation.py + discovery.py) 同步的唯一来源:
 - LIFECYCLE_LINE / lifecycle_line — 生命周期引导文案 (发现→确认→创建→PRD→工程→开发,

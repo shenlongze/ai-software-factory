@@ -1,4 +1,4 @@
-"""factory-console/session/core_loader.py — 延迟加载 factory-core / factory-exec (M1)。
+"""src/legacy/factory-console/session/core_loader.py — 延迟加载 factory-core / factory-exec (M1)。
 
 与 actions._load_org_cli/_load_exec_cli 同模式: 运行时 sys.path 挂载对应仓库
 目录后 importlib 导入 (包目录名含连字符, 无法直接 import 语句)。

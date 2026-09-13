@@ -1,4 +1,4 @@
-"""factory-console/api/memory.py — S10-067 Memory Learning API 路由函数。
+"""src/legacy/factory-console/api/memory.py — S10-067 Memory Learning API 路由函数。
 
 纯函数路由 (无 Web 依赖, 同 product_intelligence.py 模式 — 未来 FastAPI
 薄层做 HTTP 绑定):

@@ -1,4 +1,4 @@
-"""factory-console/session/chat.py — 普通自然语言问答 (S10-075 L2)。
+"""src/legacy/factory-console/session/chat.py — 普通自然语言问答 (S10-075 L2)。
 
 复用 ReasoningProvider 的 LLM 装配链 (exec.cli provider registry), 不重建
 Chat Runtime。无 LLM / 失败 → 自然语言引导 (诚实, 不假装 AI 回答)。

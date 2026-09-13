@@ -1,4 +1,4 @@
-"""factory-console/session/naming.py — 产品命名智能 (S10-081 P0)。
+"""src/legacy/factory-console/session/naming.py — 产品命名智能 (S10-081 P0)。
 
 流程: Discovery 字段齐全 → 生成产品名候选 → 用户确认/修改。
 

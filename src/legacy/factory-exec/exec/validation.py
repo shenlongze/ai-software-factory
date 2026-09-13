@@ -1,4 +1,4 @@
-"""factory-exec/exec/validation.py — Validation 最小 (语法检查/简单测试命令)。
+"""src/legacy/factory-exec/exec/validation.py — Validation 最小 (语法检查/简单测试命令)。
 
 设计依据 (docs/architecture/phase-a-execution-mvp-design.md §4/§6):
 - 允许范围: ✅ 沙箱内测试执行 / 分析 / 报告生成 (不改外部状态) — 可自动。

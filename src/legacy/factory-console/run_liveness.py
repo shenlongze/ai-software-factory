@@ -1,4 +1,4 @@
-"""factory-console/run_liveness.py — Run 存活注册表 + stale 检测 (P0-01)。
+"""src/legacy/factory-console/run_liveness.py — Run 存活注册表 + stale 检测 (P0-01)。
 
 解决: Run 线程死亡但 progress.json 永久 RUNNING (僵尸 Run)。
 

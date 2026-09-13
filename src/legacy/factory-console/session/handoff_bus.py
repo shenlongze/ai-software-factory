@@ -1,4 +1,4 @@
-"""factory-console/session/handoff_bus.py — 交接总线 (M2 A4, S10-087, 多 Agent 协作)。
+"""src/legacy/factory-console/session/handoff_bus.py — 交接总线 (M2 A4, S10-087, 多 Agent 协作)。
 
 "我要做CRM" → 7 个真实 Agent 实体交接产出: HandoffBus.route(role_graph) +
 send(producer→consumer); 消息 {from, to, artifacts[], decisions[], constraints[]};

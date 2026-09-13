@@ -1,4 +1,4 @@
-"""factory-console/session/repo_mode.py — 存量仓库模式 (M1 内核切片)。
+"""src/legacy/factory-console/session/repo_mode.py — 存量仓库模式 (M1 内核切片)。
 
 `factory repo <path> "<目标>"`: 对**现有仓库**干活 — 理解 → 计划 → 修改 → 测试 → 修复。
 

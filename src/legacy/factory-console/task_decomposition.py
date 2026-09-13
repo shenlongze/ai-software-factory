@@ -1,4 +1,4 @@
-"""factory-console/task_decomposition.py — Multi-level Task Tree 域 (S1 第 2 刀, canonical)。
+"""src/legacy/factory-console/task_decomposition.py — Multi-level Task Tree 域 (S1 第 2 刀, canonical)。
 
 把 approved PRD → 多级任务树 (Project → Domain → Leaf Task) 的 canonical 域。
 

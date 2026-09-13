@@ -1,4 +1,4 @@
-"""factory-console/web/backend/fastapi_adapter.py — Phase 11B 最薄 FastAPI Adapter (ADR-0035)。
+"""src/legacy/factory-console/web/backend/fastapi_adapter.py — Phase 11B 最薄 FastAPI Adapter (ADR-0035)。
 
 把 Phase 11A 路由函数 (factory-console/api/*) 挂为 HTTP 端点 + 托管前端
 build 静态文件 (SPA)。只做 HTTP 绑定 (参数解析 / JSON 序列化 / 静态托管),

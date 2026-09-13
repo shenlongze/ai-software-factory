@@ -1,4 +1,4 @@
-"""factory-console/agent_kernel.py — S9 Agent Kernel (AI Workforce Kernel).
+"""src/legacy/factory-console/agent_kernel.py — S9 Agent Kernel (AI Workforce Kernel).
 
 Agent = 专业员工定义 (复用 session/agent_entity.AgentEntity + AgentRegistry)
 AgentRun = 一次工作事实 (agent_run_id/agent_id/production_run_id/state/refs/history)

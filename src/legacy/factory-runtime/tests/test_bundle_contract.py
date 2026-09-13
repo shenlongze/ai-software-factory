@@ -1,4 +1,4 @@
-"""factory-runtime/tests/test_bundle_contract.py — Phase 15A-3c-3 dmg 契约测试 (少量)。
+"""src/legacy/factory-runtime/tests/test_bundle_contract.py — Phase 15A-3c-3 dmg 契约测试 (少量)。
 
 验证**真实打包产物** (dist/factory-runtime-bundle, PyInstaller onedir) 的契约:
   1. bundle init → 7 子目录 + runtime_state.json + runtime_token (600)

@@ -1,4 +1,4 @@
-"""factory-console/external_executor/monitor_detail.py — M4.2 监控中心详细聚合。
+"""src/legacy/factory-console/external_executor/monitor_detail.py — M4.2 监控中心详细聚合。
 
 Founder 2026-08-27: 监控太简单, 维度不全 → 补:
 - 趋势 (近 N 天执行次数/成功率)

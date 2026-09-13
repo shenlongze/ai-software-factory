@@ -1,4 +1,4 @@
-"""factory-console/session/debug/debug_trace.py — DebugTrace (S10-068 Part 2, G8)。
+"""src/legacy/factory-console/session/debug/debug_trace.py — DebugTrace (S10-068 Part 2, G8)。
 
 Audit-ready 记录: 为什么修 (root_cause/evidence) / 谁修 (agent_id) / 用了什么
 经验 (retrieved_experiences) / 为什么换策略 (strategy_history) / 花了多少钱

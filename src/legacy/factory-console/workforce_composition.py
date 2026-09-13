@@ -1,4 +1,4 @@
-"""factory-console/workforce_composition.py — S32 Composable Workforce & Capability.
+"""src/legacy/factory-console/workforce_composition.py — S32 Composable Workforce & Capability.
 
 AgentProfile = Plugin references + policy (非实现):
   agent_plugin_id / skill_plugin_ids[] / tool_plugin_ids[] /

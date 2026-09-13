@@ -1,4 +1,4 @@
-"""factory-console/session — Workforce Terminal 交互会话包 (S10-047)。
+"""src/legacy/factory-console/session — Workforce Terminal 交互会话包 (S10-047)。
 
 设计: docs/sprint10/S10-047-session-design.md
 纯标准库交互 shell (零依赖, 不接真实 LLM); 本包独立, 不侵入现有

@@ -1,4 +1,4 @@
-"""factory-console/retrieval/knowledge_store.py — K-6 项目级 RAG KnowledgeStore (S10-123)。
+"""src/legacy/factory-console/retrieval/knowledge_store.py — K-6 项目级 RAG KnowledgeStore (S10-123)。
 
 M5-2/B-8 核心: 项目文档入库 (README/docs/PRD/工程/质量/经验 → 片段+
 元数据索引)

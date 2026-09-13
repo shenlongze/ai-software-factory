@@ -1,4 +1,4 @@
-"""factory-console/memory/auto_learn.py — AutoLearner (S10-070 G3 自动沉淀)。
+"""src/legacy/factory-console/memory/auto_learn.py — AutoLearner (S10-070 G3 自动沉淀)。
 
 生产链完成后自动沉淀经验 (零手动): 提取 → 存储 → 模式/Agent 画像 →
 learning_trace 审计 — 复用 S10-067 LearningEngine 全循环, 薄封装

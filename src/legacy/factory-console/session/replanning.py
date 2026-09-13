@@ -1,4 +1,4 @@
-"""factory-console/session/replanning.py — ReplanningEngine (S10-060 P1)。
+"""src/legacy/factory-console/session/replanning.py — ReplanningEngine (S10-060 P1)。
 
 Autonomous Replanning (设计 §2 P1): AI Team 观察/发现计划偏差 → 自己重新规划 →
 修改任务图 → 继续生产。ReplanningEngine 消费 执行状态 / 计划 / 失败上下文 /

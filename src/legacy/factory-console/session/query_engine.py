@@ -1,4 +1,4 @@
-"""factory-console/session/query_engine.py — 会话意图 → 本地真实数据查询 (v1.1.119)。
+"""src/legacy/factory-console/session/query_engine.py — 会话意图 → 本地真实数据查询 (v1.1.119)。
 
 Founder 设计: 用户输入 → (LLM) 转标准需求/意图 → 本地化查询真实项目情况 → 回答。
 

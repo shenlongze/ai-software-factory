@@ -1,4 +1,4 @@
-"""factory-exec/exec/runtime_session.py — S10-016 Runtime Session Domain (最小 Agent Runtime)。
+"""src/legacy/factory-exec/exec/runtime_session.py — S10-016 Runtime Session Domain (最小 Agent Runtime)。
 
 设计依据 (S10-016-task001 用户约束 + 现有 Domain 侦察):
 ```

@@ -1,4 +1,4 @@
-"""factory-console/session/progress_card.py — Durable 进度卡 (P0-B, v1.1.244).
+"""src/legacy/factory-console/session/progress_card.py — Durable 进度卡 (P0-B, v1.1.244).
 
 抄 OpenClaw progress_card (原 update_plan) 思路: 计划/执行进度持久化为
 "可查询的卡片", 不是 prompt 里的一句话 — 跨轮次、跨会话可查可展示。

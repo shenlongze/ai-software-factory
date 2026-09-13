@@ -1,4 +1,4 @@
-"""factory-console/runtime_store.py — S10-004 Runtime Instance 持久化 (原子写)。
+"""src/legacy/factory-console/runtime_store.py — S10-004 Runtime Instance 持久化 (原子写)。
 
 设计依据 (docs/sprint10/workspace-architecture.md §4 + api-data-model.md §1;
 仿 org store 模式 — 独立数据空间, 原子写, 损坏失败安全):

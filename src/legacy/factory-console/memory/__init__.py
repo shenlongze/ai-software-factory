@@ -1,4 +1,4 @@
-"""factory-console/memory/ — Memory Learning & Experience Intelligence (S10-067)。
+"""src/legacy/factory-console/memory/ — Memory Learning & Experience Intelligence (S10-067)。
 
 完整学习循环: Execution → Observation → Learning → Pattern Extraction →
 Future Recommendation。

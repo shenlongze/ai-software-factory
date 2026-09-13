@@ -1,4 +1,4 @@
-"""factory-console/optimization_engine.py — S40 Governed Self-Optimization.
+"""src/legacy/factory-console/optimization_engine.py — S40 Governed Self-Optimization.
 
 Production Evidence → OptimizationOpportunity (evidence-driven, 非 LLM)
 → OptimizationCandidate(s) (multi: Proposal 非 Change)

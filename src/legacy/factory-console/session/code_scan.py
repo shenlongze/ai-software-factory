@@ -1,4 +1,4 @@
-"""factory-console/session/code_scan.py — 真实代码扫描 (v1.1.207)。
+"""src/legacy/factory-console/session/code_scan.py — 真实代码扫描 (v1.1.207)。
 
 Founder 2026-08-27: "扫描代码" 原来路由到 project_scan (扫项目元数据), 答"未查询到代码扫描结果"
 → 加真代码扫描: 仓库文件树/LOC/语言/测试/TODO/大文件/最近改动/git (确定性读盘, 不编造)。

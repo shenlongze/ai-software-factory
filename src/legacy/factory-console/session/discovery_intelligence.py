@@ -1,4 +1,4 @@
-"""factory-console/session/discovery_intelligence.py — 发现阶段 LLM 深度介入 (S10-099 + S10-102)。
+"""src/legacy/factory-console/session/discovery_intelligence.py — 发现阶段 LLM 深度介入 (S10-099 + S10-102)。
 
 产品发现 = LLM 理解主路径 + 规则状态机兜底:
 - DiscoveryIntentAnalyzer: 意图理解 (优先级: 控制指令 > 查询 > 求助 >

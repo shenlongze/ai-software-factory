@@ -1,4 +1,4 @@
-"""factory-console/session/scheduler.py — M3c 并行调度执行 (S10-090 M3-3)。
+"""src/legacy/factory-console/session/scheduler.py — M3c 并行调度执行 (S10-090 M3-3)。
 
 并行调度器 (M3-3): 消费 plan.json (M3b 产出 tasks/edges/critical_path/order)
 + execution_state (已完成任务) → 依赖驱动调度:

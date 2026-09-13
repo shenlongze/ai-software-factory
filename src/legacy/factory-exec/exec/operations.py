@@ -1,4 +1,4 @@
-"""factory-exec/exec/operations.py — File Operation API (确定性 diff 生成)。
+"""src/legacy/factory-exec/exec/operations.py — File Operation API (确定性 diff 生成)。
 
 设计依据 (docs/architecture/developer-agent-reliability-model.md §2):
 ```

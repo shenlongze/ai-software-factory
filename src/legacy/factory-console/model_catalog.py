@@ -1,4 +1,4 @@
-"""factory-console/model_catalog.py — Model Catalog v1 (S10-022 Phase 2A)。
+"""src/legacy/factory-console/model_catalog.py — Model Catalog v1 (S10-022 Phase 2A)。
 
 模型级元数据管理面: models.json 持久化 (~/.factory/models.json) + Provider→Model
 两级结构 + 能力过滤 + suggest() 确定性候选生成器 (Router 兼容预留)。

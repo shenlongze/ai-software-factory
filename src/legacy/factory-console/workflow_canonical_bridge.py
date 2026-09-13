@@ -1,4 +1,4 @@
-"""factory-console/workflow_canonical_bridge.py — S44 Workflow → Canonical Production Truth 吸收。
+"""src/legacy/factory-console/workflow_canonical_bridge.py — S44 Workflow → Canonical Production Truth 吸收。
 
 断链修复: workflow_runner (真实生产链: WF-DESIGN/WF-APP → factory-exec agents →
 dist zip) 完成后, 其成功/失败从未进入 frozen canonical P0 chain

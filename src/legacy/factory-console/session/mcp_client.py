@@ -1,4 +1,4 @@
-"""factory-console/session/mcp_client.py — MCP stdio client 最小实现 (S10-127 P2.3).
+"""src/legacy/factory-console/session/mcp_client.py — MCP stdio client 最小实现 (S10-127 P2.3).
 
 MCP (Model Context Protocol): 外部工具统一协议接入 (三方标准)。
 零依赖 stdio 客户端 (JSON-RPC 2.0 over stdio, Content-Length 帧):

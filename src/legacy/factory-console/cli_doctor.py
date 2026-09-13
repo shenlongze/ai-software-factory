@@ -1,4 +1,4 @@
-"""factory-console/cli_doctor.py — S10-026 P1: factory doctor 可扩展诊断框架。
+"""src/legacy/factory-console/cli_doctor.py — S10-026 P1: factory doctor 可扩展诊断框架。
 
 用户需求 (S10-026 §2.2): `factory doctor` 一键诊断环境/Provider/模型/运行时/
 Router, 输出人类可读表格或 --json 结构化结果 (不新增 AI 能力, 零新依赖)。

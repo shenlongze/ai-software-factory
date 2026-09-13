@@ -1,4 +1,4 @@
-"""factory-console/session/agent_entity.py — AgentEntity 专家身份模型 (M2 A1, S10-087)。
+"""src/legacy/factory-console/session/agent_entity.py — AgentEntity 专家身份模型 (M2 A1, S10-087)。
 
 M2 员工内核: "我要做CRM" → 7 个真实 Agent 实体交接产出 (parent_artifact 互引)。
 

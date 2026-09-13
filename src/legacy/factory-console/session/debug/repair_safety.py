@@ -1,4 +1,4 @@
-"""factory-console/session/debug/repair_safety.py — RepairSafety (S10-068 Part 2, G3)。
+"""src/legacy/factory-console/session/debug/repair_safety.py — RepairSafety (S10-068 Part 2, G3)。
 
 Governance 接入: Budget/Cost/Retry limit/LoopGuard/Policy/ReviewGate 约束 Debug 执行
 → 决策 AUTO / SAFE_AUTO / REVIEW / BLOCKED (缺省安全: 组件缺失 → 对应维度

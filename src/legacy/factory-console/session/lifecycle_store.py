@@ -1,4 +1,4 @@
-"""factory-console/session/lifecycle_store.py — J-1 生命周期状态单一来源 (S10-115)。
+"""src/legacy/factory-console/session/lifecycle_store.py — J-1 生命周期状态单一来源 (S10-115)。
 
 三处状态落点单一事实源:
 - **project.json.status** = canonical (Lifecycle 词汇; 确认后即存在)

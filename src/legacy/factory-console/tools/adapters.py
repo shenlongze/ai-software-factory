@@ -1,4 +1,4 @@
-"""factory-console/tools/adapters.py — 工具执行适配器 (U-2)。
+"""src/legacy/factory-console/tools/adapters.py — 工具执行适配器 (U-2)。
 
 统一签名: fn(root, project_id, params) -> result
 把注册表工具接到真实能力 (失败安全, 诚实错误)。

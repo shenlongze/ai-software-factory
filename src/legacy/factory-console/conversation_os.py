@@ -1,4 +1,4 @@
-"""factory-console/conversation_os.py — K1 Conversation OS Reality.
+"""src/legacy/factory-console/conversation_os.py — K1 Conversation OS Reality.
 
 普通用户唯一入口: 和公司说话 → 讨论 → 决策 → 执行 → 结果 → 继续。
 

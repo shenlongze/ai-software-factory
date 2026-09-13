@@ -1,4 +1,4 @@
-"""factory-exec/exec/agent_executor.py — AgentExecutor (S10-016 Task 002 编排层
+"""src/legacy/factory-exec/exec/agent_executor.py — AgentExecutor (S10-016 Task 002 编排层
 + S10-017 Task 001 Execution Loop 重构)。
 
 设计依据 (S10-016-task002 用户约束 + S10-017-task001 Execution Loop):

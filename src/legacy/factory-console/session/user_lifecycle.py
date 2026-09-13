@@ -1,4 +1,4 @@
-"""factory-console/session/user_lifecycle.py — UserLifecycle (S10-065 P1-1)。
+"""src/legacy/factory-console/session/user_lifecycle.py — UserLifecycle (S10-065 P1-1)。
 
 统一用户视角生命周期 (GAP G4): 内部状态分散在 pipeline.Lifecycle /
 orchestrator.ExecutionState (status/governance_status) / discovery.DiscoveryState —

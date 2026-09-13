@@ -1,4 +1,4 @@
-"""factory-console/audit/trace_context.py — trace_id/correlation_id 上下文贯穿 (S10-120 K-4)。
+"""src/legacy/factory-console/audit/trace_context.py — trace_id/correlation_id 上下文贯穿 (S10-120 K-4)。
 
 一次请求从入口到执行全程同一 trace_id (审计/执行/成本可追踪):
 - ContextVar (线程安全, with 块退出自动恢复 — 不跨请求泄漏)

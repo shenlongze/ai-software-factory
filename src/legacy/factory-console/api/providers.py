@@ -1,4 +1,4 @@
-"""factory-console/api/providers.py — GET /providers 路由函数 (只读)。
+"""src/legacy/factory-console/api/providers.py — GET /providers 路由函数 (只读)。
 
 返回 Provider 目录只读投影 (ProviderSummary): capability/cost/performance/
 experience — 能力来自 catalog 定义, cost/performance/experience 来自 usage

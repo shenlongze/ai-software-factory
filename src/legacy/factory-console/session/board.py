@@ -1,4 +1,4 @@
-"""factory-console/session/board.py — 任务监控面板 (S10-106+).
+"""src/legacy/factory-console/session/board.py — 任务监控面板 (S10-106+).
 
 监控 AI Factory 项目进展:
 - render_board: 主线 todolist + 进度条 + 标签（读待办清单）
@@ -750,10 +750,10 @@ def save_report(path: Path = DEFAULT_BACKLOG, out_dir: Path | None = None) -> st
 
 #: 代码证据 → 主线项映射（自动 sync 只标证据强=代码存在的项, 诚实不误标）
 MAINLINE_CODE_EVIDENCE: dict[str, str] = {
-    "M3-1": "factory-console/session/decomposer.py",       # M3a 递归原子拆解
-    "M3-2": "factory-console/session/critical_path.py",    # M3b 关键路径
-    "M3-3": "factory-console/session/scheduler.py",        # M3c 并行调度
-    "M3-4": "factory-console/session/scheduler.py",        # M3e 动态分配(全链)
+    "M3-1": "src/legacy/factory-console/session/decomposer.py",       # M3a 递归原子拆解
+    "M3-2": "src/legacy/factory-console/session/critical_path.py",    # M3b 关键路径
+    "M3-3": "src/legacy/factory-console/session/scheduler.py",        # M3c 并行调度
+    "M3-4": "src/legacy/factory-console/session/scheduler.py",        # M3e 动态分配(全链)
 }
 
 

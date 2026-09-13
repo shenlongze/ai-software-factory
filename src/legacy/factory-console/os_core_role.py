@@ -1,4 +1,4 @@
-"""factory-console/os_core_role.py — OS Core Boundary: Role Definition + Role Assignment (MU-CORE-03).
+"""src/legacy/factory-console/os_core_role.py — OS Core Boundary: Role Definition + Role Assignment (MU-CORE-03).
 
 语义分离 (Constitution v2 Art.09/42):
 - **Role Definition** = "这个角色是什么" (职责/能力/执行语义)。SSOT = `exec/roles.py`

@@ -1,4 +1,4 @@
-"""factory-exec/exec/execution_loop.py — S10-017 Task 001 Agent Execution Loop。
+"""src/legacy/factory-exec/exec/execution_loop.py — S10-017 Task 001 Agent Execution Loop。
 
 设计依据 (S10-017-task001 用户约束 + Task 001/002 RuntimeSession Domain 侦察):
 ```

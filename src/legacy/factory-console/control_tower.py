@@ -1,4 +1,4 @@
-"""factory-console/control_tower.py — K2 Control Tower 基础 (实时状态投影).
+"""src/legacy/factory-console/control_tower.py — K2 Control Tower 基础 (实时状态投影).
 
 从真实 Entities/Events 投影 (可重建, 非第二事实源):
 - Work 概览: conversations/tasks/executions 状态分布

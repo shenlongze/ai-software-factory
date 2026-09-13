@@ -1,4 +1,4 @@
-"""factory-console/os_core_outcome.py — OS Core: Outcome (MU-CORE-10).
+"""src/legacy/factory-console/os_core_outcome.py — OS Core: Outcome (MU-CORE-10).
 
 Outcome = 该次工作最终业务结果 (绑定 Execution, 引用 Verification/Evidence)。
 

@@ -1,4 +1,4 @@
-"""factory-console/session/review_view.py — ReviewView (S10-065 P0-3)。
+"""src/legacy/factory-console/session/review_view.py — ReviewView (S10-065 P0-3)。
 
 Human Review UX (GAP G3): ReviewGate 已有 (S10-063) 但无用户友好视图 —
 本模块只做 UX/View 包装: ReviewRecord + 项目上下文 → 用户可读审批界面。

@@ -1,4 +1,4 @@
-"""factory-console/api/approvals.py — GET /approvals + POST 决定路由函数。
+"""src/legacy/factory-console/api/approvals.py — GET /approvals + POST 决定路由函数。
 
 GET /approvals: 全部审批请求只读投影 (ApprovalSummary)。**只读不决定** —
 打开审批 ≠ 决定审批。

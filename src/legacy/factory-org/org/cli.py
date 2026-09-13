@@ -1,4 +1,4 @@
-"""factory-org/org/cli.py — 组织 CLI (`factory-org` console script + 主 CLI 共享命令)。
+"""src/legacy/factory-org/org/cli.py — 组织 CLI (`factory-org` console script + 主 CLI 共享命令)。
 
 命令 (Phase 16A 任务清单):
 ```

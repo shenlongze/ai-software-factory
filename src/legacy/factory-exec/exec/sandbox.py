@@ -1,4 +1,4 @@
-"""factory-exec/exec/sandbox.py — Sandbox MVP (临时目录项目副本 + git 追踪 + patch 导出)。
+"""src/legacy/factory-exec/exec/sandbox.py — Sandbox MVP (临时目录项目副本 + git 追踪 + patch 导出)。
 
 设计依据 (docs/architecture/phase-a-execution-mvp-design.md §5):
 ```

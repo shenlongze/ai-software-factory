@@ -1,4 +1,4 @@
-"""factory-console/session/llm_gap.py — LLMGapAnalyzer (S10-062 批次 B)。
+"""src/legacy/factory-console/session/llm_gap.py — LLMGapAnalyzer (S10-062 批次 B)。
 
 LLM Gap 分析器 (GAP G1, 设计 §4): LLM 优先 — 上下文 + 任务上下文证据 →
 ReasoningProvider.analyze_gap → 结构化 GapAnalysis; 失败 (API error /

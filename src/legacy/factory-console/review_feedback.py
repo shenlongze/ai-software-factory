@@ -1,4 +1,4 @@
-"""factory-console/review_feedback.py — S10-006 审核反馈记录持久化 (原子写)。
+"""src/legacy/factory-console/review_feedback.py — S10-006 审核反馈记录持久化 (原子写)。
 
 设计依据 (docs/sprint10/api-data-model.md §1 ReviewComment + workspace-architecture.md
 §3 Panel Review): Reject 决定的驳回意见除落 gate.comment (S9-001 org 审计) 外,

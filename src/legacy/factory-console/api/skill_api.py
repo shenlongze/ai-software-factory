@@ -1,4 +1,4 @@
-"""factory-console/api/skill_api.py — S10-019 Task 001 Skill API 路由函数。
+"""src/legacy/factory-console/api/skill_api.py — S10-019 Task 001 Skill API 路由函数。
 
 AI Employee Skill System Foundation: Skill 清单 + Agent 技能分配 —
 GET /api/skills (SkillRegistry 当前可用 Skill) + GET /api/agents/{id}/skills

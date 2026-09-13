@@ -1,4 +1,4 @@
-"""factory-console/session/orchestrator.py — Autonomous Production Loop 执行编排 (S10-052 P0-P6 + S10-065 批次 C)。
+"""src/legacy/factory-console/session/orchestrator.py — Autonomous Production Loop 执行编排 (S10-052 P0-P6 + S10-065 批次 C)。
 
 读取 execution_plan.json → 任务队列 (顺序执行) → 状态持久化 (execution_state.json)
 → 失败处理 (retry/max_retry, 不无限重试) → Lifecycle 自动推进

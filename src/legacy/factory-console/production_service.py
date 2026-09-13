@@ -1,4 +1,4 @@
-"""factory-console/production_service.py — S6 ProductionRun Service.
+"""src/legacy/factory-console/production_service.py — S6 ProductionRun Service.
 
 CLI 与 API 共享的统一 ProductionRun 入口 (S6 架构: 禁止两套 orchestration)。
 

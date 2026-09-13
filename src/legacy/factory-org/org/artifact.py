@@ -1,4 +1,4 @@
-"""factory-org/org/artifact.py — Artifact System (Sprint 7 S7-002)。
+"""src/legacy/factory-org/org/artifact.py — Artifact System (Sprint 7 S7-002)。
 
 设计依据 (sprint7-architecture.md §1/§3/§6):
 - 每阶段产物 = 下一阶段输入: PRD → Design → Code → Test → Release

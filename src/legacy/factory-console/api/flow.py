@@ -1,4 +1,4 @@
-"""factory-console/api/flow.py — Flow Views 纯函数 API 路由 (S1 第 9 刀)。
+"""src/legacy/factory-console/api/flow.py — Flow Views 纯函数 API 路由 (S1 第 9 刀)。
 
 仿 api/audit.py 风格: 无 Web 依赖纯函数, 未来 FastAPI 薄层做 HTTP 绑定。
 与 CLI/shell 同一 build_flow_for (同源, 渲染结果一致 — 验收 K)。

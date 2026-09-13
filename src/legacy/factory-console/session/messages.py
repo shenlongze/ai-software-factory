@@ -1,4 +1,4 @@
-"""factory-console/session/messages.py — AgentMessageStore + HandoffStore (S10-056/S10-057)。
+"""src/legacy/factory-console/session/messages.py — AgentMessageStore + HandoffStore (S10-056/S10-057)。
 
 Agent 基础消息模型 (设计 §2.6): architect → backend 指令模型 —
 {from, to, type, content, timestamp}, 落盘 agent_messages.json (~/.factory/teams/)。

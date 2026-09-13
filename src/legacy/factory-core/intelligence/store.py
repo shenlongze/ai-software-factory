@@ -1,4 +1,4 @@
-"""factory-core/intelligence/store.py — Intelligence 独立数据空间 JSON 持久化 (原子写)。
+"""src/legacy/factory-core/intelligence/store.py — Intelligence 独立数据空间 JSON 持久化 (原子写)。
 
 设计依据:
 - phase10a1-status.md 冻结约束 (Extension 独立): `.factory/intelligence/` 独立

@@ -1,4 +1,4 @@
-"""factory-console/adaptive_workforce.py — S25 Adaptive Workforce & Optimization Validation.
+"""src/legacy/factory-console/adaptive_workforce.py — S25 Adaptive Workforce & Optimization Validation.
 
 WorkforceVariant: 真实可执行的 Workforce 差异 (不同 executor_factory/节点集)。
 - control: developer only

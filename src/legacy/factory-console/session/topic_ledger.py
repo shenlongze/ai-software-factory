@@ -1,4 +1,4 @@
-"""factory-console/session/topic_ledger.py — 会话话题账本 (TopicLedger v2, v1.1.211).
+"""src/legacy/factory-console/session/topic_ledger.py — 会话话题账本 (TopicLedger v2, v1.1.211).
 
 Founder 2026-08-27 (重构: 上一版碎片化/摘要烂/切换靠每轮多分类):
 - 会话级上下文, 要取舍/要压缩/要分块 — 聊 B 时不带 A 细节, 回 A 时 A 的摘要+最近细节都在

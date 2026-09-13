@@ -1,4 +1,4 @@
-"""factory-console/canonical_golden_path.py — Canonical Conversation Application Orchestrator.
+"""src/legacy/factory-console/canonical_golden_path.py — Canonical Conversation Application Orchestrator.
 
 R0 P0 (2026-09-08): 让 CLI (随后 API/WebUI) 通过同一个 Application Orchestrator
 进入 Conversation Application → Product Understanding → Golden Path → Production Runtime。

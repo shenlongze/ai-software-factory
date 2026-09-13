@@ -1,4 +1,4 @@
-"""factory-console/session/debug/root_cause.py — RootCauseAnalyzer (S10-068 G2 + Part 2 G9)。
+"""src/legacy/factory-console/session/debug/root_cause.py — RootCauseAnalyzer (S10-068 G2 + Part 2 G9)。
 
 根因分析: DebugCase (error_type + message) → RootCause 假设 + evidence + confidence。
 Part 2 (G9): 根因类型 9 类增强 (CODE_DEFECT/TEST_DEFECT/REQUIREMENT_MISMATCH/

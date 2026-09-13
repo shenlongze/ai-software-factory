@@ -1,4 +1,4 @@
-"""factory-console/context_intelligence.py — S36 Context Intelligence & Memory Optimization.
+"""src/legacy/factory-console/context_intelligence.py — S36 Context Intelligence & Memory Optimization.
 
 - ContextUtility Contract: relevance/evidence/freshness/confidence/scope/cost → score
 - Budget-aware Selection: utility desc → 最优组合 (非全读)

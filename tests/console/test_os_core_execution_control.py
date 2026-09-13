@@ -218,7 +218,7 @@ def test_t41_t45_architecture_boundaries(tmp_path: Path) -> None:
     from factory_console import os_core_scheduler as sch
     r = sch.schedule_node(root, f["task_node"])
     # T41: Scheduler 不终止 provider (它只创建 Execution)
-    sched_src = (Path("factory-console") / "os_core_scheduler.py").read_text()
+    sched_src = (Path("src/legacy/factory-console") / "os_core_scheduler.py").read_text()
     assert "terminate" not in sched_src and "SIGKILL" not in sched_src
     # T43: 无第二 Execution store
     assert (tmp_path / "execution" / "executions.json").is_file()

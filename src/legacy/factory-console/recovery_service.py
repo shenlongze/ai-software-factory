@@ -1,4 +1,4 @@
-"""factory-console/recovery_service.py — S28 Production Quality Recovery & Verification Closure.
+"""src/legacy/factory-console/recovery_service.py — S28 Production Quality Recovery & Verification Closure.
 
 真实 Verification Failure → S27 Classification → Recovery Policy (bounded)
 → repair_fn (真实 failed artifact + pytest evidence) → re-production → new artifact

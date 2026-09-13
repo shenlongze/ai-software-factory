@@ -1,4 +1,4 @@
-"""factory-console/session/eval_judge.py — 会话质量评估 (S-3, v1.1.218).
+"""src/legacy/factory-console/session/eval_judge.py — 会话质量评估 (S-3, v1.1.218).
 
 Founder 2026-08-27: 会话质量要可量化 — 数据集 + LLM-judge + 通过率进发布门。
 

@@ -1,4 +1,4 @@
-"""factory-org/org/models.py — 组织领域模型 (Pydantic v2)。
+"""src/legacy/factory-org/org/models.py — 组织领域模型 (Pydantic v2)。
 
 设计依据 (phase16-organization-model-review.md §2 统一组织模型):
 ```

@@ -1,4 +1,4 @@
-"""factory-console/api/decisions.py — GET /decisions/{id} 路由函数 (只读)。
+"""src/legacy/factory-console/api/decisions.py — GET /decisions/{id} 路由函数 (只读)。
 
 返回单决策只读投影 (DecisionSummary): options/recommendation/score/
 reasoning/evidence/risk。不存在 → None (11B 映射 404)。决策状态流转

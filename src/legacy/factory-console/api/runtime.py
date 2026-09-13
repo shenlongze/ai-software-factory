@@ -1,4 +1,4 @@
-"""factory-console/api/runtime.py — S10-002 Runtime API 路由函数 (Sprint 10)。
+"""src/legacy/factory-console/api/runtime.py — S10-002 Runtime API 路由函数 (Sprint 10)。
 
 设计依据 (docs/sprint10/api-data-model.md §3-4 + workspace-architecture.md §6):
 CLI 与 UI 共用同一 Runtime API; Adapter 层只消费 org.* 查询 + events 流

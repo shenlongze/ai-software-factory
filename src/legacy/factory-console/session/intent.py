@@ -1,4 +1,4 @@
-"""factory-console/session/intent.py — Intent Layer 基础 (S10-047 Task 005)。
+"""src/legacy/factory-console/session/intent.py — Intent Layer 基础 (S10-047 Task 005)。
 
 自然语言入口: 解析为结构化 Intent (绝不生成/执行 shell 命令)。
 设计: docs/sprint10/S10-046-intent-layer-design.md (§2 Intent Object / §4 注册表 / §6 边界)

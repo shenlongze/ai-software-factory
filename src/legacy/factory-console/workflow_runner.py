@@ -1,4 +1,4 @@
-"""factory-console/workflow_runner.py — S10-006.5 P1-A Workflow 启动执行器。
+"""src/legacy/factory-console/workflow_runner.py — S10-006.5 P1-A Workflow 启动执行器。
 
 真实 Agent 执行链 (禁 mock): 创建项目后, POST /api/projects/{id}/start 触发
 本模块在**后台线程**执行完整链:
@@ -201,7 +201,7 @@ def start_project_workflow(
     if not has_llm_key():
         raise WorkflowStartError(
             "LLM API key unavailable (LLM_API_KEY not configured — 见 "
-            "factory-console/.env.example: LLM_PROVIDER/LLM_API_KEY) "
+            "src/legacy/factory-console/.env.example: LLM_PROVIDER/LLM_API_KEY) "
             "— 无法启动真实 Agent 执行"
         )
     # 解析配置 key 并注入 provider 专属环境变量 (仅检查不注入 → 干净环境 provider 读不到)

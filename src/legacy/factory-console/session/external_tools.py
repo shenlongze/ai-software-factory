@@ -1,4 +1,4 @@
-"""factory-console/session/external_tools.py — 外部能力动态工具面 (v1.1.209).
+"""src/legacy/factory-console/session/external_tools.py — 外部能力动态工具面 (v1.1.209).
 
 Founder 2026-08-27: 外部 codex/claude/hermes 的 agent/skill 应像内置工具一样可被会话 Agent
 调用; 设计必须通用 — 新增外部 agent/执行器无需改代码, 工具面自动更新。

@@ -1,4 +1,4 @@
-"""factory-console/session/actions_audit.py — 审计动作 (R1, v1.1.254).
+"""src/legacy/factory-console/session/actions_audit.py — 审计动作 (R1, v1.1.254).
 
 从 actions.py (4991 行巨兽) 拆出: 审计/追溯/决策/成本/导出/统计 (自包含, 仅用自身 _audit_* helper)。
 """

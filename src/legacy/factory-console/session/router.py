@@ -1,4 +1,4 @@
-"""factory-console/session/router.py — IntentRouter: intent_type → Action 声明式路由 (S10-048 P0)。
+"""src/legacy/factory-console/session/router.py — IntentRouter: intent_type → Action 声明式路由 (S10-048 P0)。
 
 设计: docs/sprint10/S10-048-intent-kernel-design.md §2.4
 - 映射表: intent_type → action_name (声明式 dict, 无 if/else 分派)

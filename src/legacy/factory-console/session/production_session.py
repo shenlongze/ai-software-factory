@@ -1,4 +1,4 @@
-"""factory-console/session/production_session.py — ProductionSession (S10-065 P0-2)。
+"""src/legacy/factory-console/session/production_session.py — ProductionSession (S10-065 P0-2)。
 
 统一生产过程视图: 聚合 ExecutionState (execution_state.json) + TeamExecutionState
 (team_execution_state.json) + CostLedger (cost_records.json) + ReviewGate

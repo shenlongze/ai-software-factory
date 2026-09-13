@@ -1,4 +1,4 @@
-"""factory-console/application_formalization.py — PRD Domain Foundation (S49/Phase 5 §八)。
+"""src/legacy/factory-console/application_formalization.py — PRD Domain Foundation (S49/Phase 5 §八)。
 
 PRD 从 Product Understanding 派生 (不是独立创建/不是简单 PRD.md 文件):
 ```

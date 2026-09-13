@@ -1,4 +1,4 @@
-"""factory-console/config.py — AI Factory 配置 Provider (S10-007 阶段一, 配置独立化)。
+"""src/legacy/factory-console/config.py — AI Factory 配置 Provider (S10-007 阶段一, 配置独立化)。
 
 用户要求 (S10-007): 禁止 Runtime 直接读 Hermes 路径; Config Provider 抽象;
 未来支持 DeepSeek/OpenAI/Anthropic/本地模型 — 不写死 DeepSeek。

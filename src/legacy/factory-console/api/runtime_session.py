@@ -1,4 +1,4 @@
-"""factory-console/api/runtime_session.py — S10-016 Runtime Session API 路由函数。
+"""src/legacy/factory-console/api/runtime_session.py — S10-016 Runtime Session API 路由函数。
 
 AI Employee Runtime Foundation (Task 001b): Agent 执行会话可见性底座 — 谁在跑/
 跑哪个任务/跑到哪一步/产出什么事件。Domain (exec.runtime_session) 已 GREEN

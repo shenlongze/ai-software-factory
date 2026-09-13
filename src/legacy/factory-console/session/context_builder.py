@@ -1,4 +1,4 @@
-"""factory-console/session/context_builder.py — ContextBuilder (S10-062 批次 A)。
+"""src/legacy/factory-console/session/context_builder.py — ContextBuilder (S10-062 批次 A)。
 
 LLM Planning 基础设施 (GAP G3, 设计 §2): 把项目资产 (PRD.md /
 engineering.json / execution_state.json / execution_plan.json /

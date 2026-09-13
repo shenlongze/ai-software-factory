@@ -1,4 +1,4 @@
-"""factory-console/session/confirm.py — ConfirmationGate: 敏感 Action 确认流 (S10-048 P4)。
+"""src/legacy/factory-console/session/confirm.py — ConfirmationGate: 敏感 Action 确认流 (S10-048 P4)。
 
 最小治理 (设计 §2.5):
 - sensitive_actions: 需要用户确认后才执行的 Action 集合

@@ -1,4 +1,4 @@
-"""factory-console/ops_scheduler.py — S22 Continuous Production Operations Scheduler.
+"""src/legacy/factory-console/ops_scheduler.py — S22 Continuous Production Operations Scheduler.
 
 Schedule Contract + 持久化 + 执行循环 + 幂等/并发/missed schedule。
 

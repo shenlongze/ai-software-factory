@@ -1,4 +1,4 @@
-"""factory-console/session/model_prompt.py — 分模型 prompt 模板 (S10-127 P1.1; S1 v1.1.243 加执行纪律).
+"""src/legacy/factory-console/session/model_prompt.py — 分模型 prompt 模板 (S10-127 P1.1; S1 v1.1.243 加执行纪律).
 
 背景: 同一套超长系统提示 (8 条铁律 + Reflection + style) 对弱模型指令遵循压力大。
 方案: 按模型 capabilities/上下文窗口选择模板 —

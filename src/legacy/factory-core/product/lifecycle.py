@@ -1,4 +1,4 @@
-"""factory-core/product/lifecycle.py — Phase 9d 产品生命周期编排引擎。
+"""src/legacy/factory-core/product/lifecycle.py — Phase 9d 产品生命周期编排引擎。
 
 设计依据:
 - phase9d-status.md: Stage Registry (ProductStageRegistry, 多 lifecycle 类型) +

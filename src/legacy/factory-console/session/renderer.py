@@ -1,4 +1,4 @@
-"""factory-console/session/renderer.py — Renderer 输出层 (S10-047 Task 006)。
+"""src/legacy/factory-console/session/renderer.py — Renderer 输出层 (S10-047 Task 006)。
 
 设计: docs/sprint10/S10-046-renderer-design.md (§4 渲染层架构 / §5 --json / §6 边界)
 - Service Layer 返回结构化 dict, Renderer 负责展示 — 输出与逻辑解耦

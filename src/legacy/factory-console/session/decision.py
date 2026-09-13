@@ -1,4 +1,4 @@
-"""factory-console/session/decision.py — HandoffDecisionEngine (S10-059 P1)。
+"""src/legacy/factory-console/session/decision.py — HandoffDecisionEngine (S10-059 P1)。
 
 Autonomous Team Decision (设计 §2 P1): Agent 团队从\"顺序执行\"升级为\"决策驱动\" —
 HandoffDecisionEngine 消费 已完成任务 / 依赖 / 冲突 / Agent 角色 → 输出执行决策

@@ -1,4 +1,4 @@
-"""factory-console/os_core_company_organization.py — OS Core Boundary: Company / Organization / Department.
+"""src/legacy/factory-console/os_core_company_organization.py — OS Core Boundary: Company / Organization / Department.
 
 MU-CORE-01: 本模块是 AI Factory OS 对 Company / Organization / Department Domain 的正式入口
 (port/service)。职责边界:

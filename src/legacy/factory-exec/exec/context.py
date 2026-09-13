@@ -1,4 +1,4 @@
-"""factory-exec/exec/context.py — Context Assembly Engine v1 (Phase A++++++-2b)。
+"""src/legacy/factory-exec/exec/context.py — Context Assembly Engine v1 (Phase A++++++-2b)。
 
 设计依据 (docs/architecture/ai-developer-capability-engine-model.md §2):
 ```text

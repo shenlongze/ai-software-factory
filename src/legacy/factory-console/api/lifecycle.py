@@ -1,4 +1,4 @@
-"""factory-console/api/lifecycle.py — GET /projects/{id}/lifecycle 路由函数 (只读)。
+"""src/legacy/factory-console/api/lifecycle.py — GET /projects/{id}/lifecycle 路由函数 (只读)。
 
 返回单项目生命周期只读快照 (LifecycleSummary): current stage/completed
 stages/pending approval/next actions。无生命周期 → None (11B 映射 404)。

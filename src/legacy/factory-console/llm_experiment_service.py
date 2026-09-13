@@ -1,4 +1,4 @@
-"""factory-console/llm_experiment_service.py — S26 Real LLM Optimization Experiment.
+"""src/legacy/factory-console/llm_experiment_service.py — S26 Real LLM Optimization Experiment.
 
 用真实 LLM Production Evidence 判定 Workforce Optimization 是否有效。
 

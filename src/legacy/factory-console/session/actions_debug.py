@@ -1,4 +1,4 @@
-"""factory-console/session/actions_debug.py — 调试/诊断动作 (R1, v1.1.254).
+"""src/legacy/factory-console/session/actions_debug.py — 调试/诊断动作 (R1, v1.1.254).
 
 从 actions.py 拆出: 失败分析/历史/推荐/会话/根因/修复/校验/恢复 (自包含)。
 """

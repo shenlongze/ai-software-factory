@@ -1,4 +1,4 @@
-"""factory-console/product_understanding.py — Product Understanding SSOT (S49/Phase 5)。
+"""src/legacy/factory-console/product_understanding.py — Product Understanding SSOT (S49/Phase 5)。
 
 Conversation-scoped 产品认知事实层 (目标架构本体, 第四阶段 §29 裁决 conversation_os
 → RETIRE 的替代域; legacy conversation_os/session 本阶段不动)。

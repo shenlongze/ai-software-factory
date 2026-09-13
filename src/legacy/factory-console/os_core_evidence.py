@@ -1,4 +1,4 @@
-"""factory-console/os_core_evidence.py — OS Core: Evidence (MU-CORE-10).
+"""src/legacy/factory-console/os_core_evidence.py — OS Core: Evidence (MU-CORE-10).
 
 Evidence = 可定位、可追溯、可解析的事实引用 (绑定 Execution)。
 

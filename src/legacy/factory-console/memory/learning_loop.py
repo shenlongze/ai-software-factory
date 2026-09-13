@@ -1,4 +1,4 @@
-"""factory-console/memory/learning_loop.py — K-3 M4-1 经验闭环 (S10-119, 核心)。
+"""src/legacy/factory-console/memory/learning_loop.py — K-3 M4-1 经验闭环 (S10-119, 核心)。
 
 执行完成后自动经验入库 → 下次同类任务路由/执行引用 (带可解释 reason):
 - on_execution_complete(record, quality, workspace) -> str

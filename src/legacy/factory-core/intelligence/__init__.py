@@ -1,4 +1,4 @@
-"""factory-core/intelligence — Intelligence Layer (Phase 10A-1/10A-2/10A-3, ADR-0030/0031/0032)。
+"""src/legacy/factory-core/intelligence — Intelligence Layer (Phase 10A-1/10A-2/10A-3, ADR-0030/0031/0032)。
 
 认知层: 模型 (Decision/DecisionOption/DecisionContext/DecisionAnalysis/
 DecisionResult/RiskAssessment/Recommendation/ExperienceRecord/Evidence +

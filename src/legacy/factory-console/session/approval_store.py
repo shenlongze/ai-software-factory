@@ -1,4 +1,4 @@
-"""factory-console/session/approval_store.py — bash 写操作批准门 (S8-4, v1.1.247).
+"""src/legacy/factory-console/session/approval_store.py — bash 写操作批准门 (S8-4, v1.1.247).
 
 Hermes "⚠ Approval" 机制: bash_exec 遇到写/敏感命令 → 不直接执行,
 登记为 pending 批准请求 → WebUI/会话显示 → 用户批准 → 执行 → 结果回写。

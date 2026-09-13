@@ -1,4 +1,4 @@
-"""factory-console/unified_contract.py — S43 Unified Entity/Data Contract (Master Plan S42).
+"""src/legacy/factory-console/unified_contract.py — S43 Unified Entity/Data Contract (Master Plan S42).
 
 冻结统一数据与接口基础:
 - ID Contract: 统一前缀 (org_/dept_/workforce_/agent_/plugin_/conv_/msg_/req_/analysis_/

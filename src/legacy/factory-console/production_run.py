@@ -1,4 +1,4 @@
-"""factory-console/production_run.py — S3 ProductionRun / Workflow Orchestration.
+"""src/legacy/factory-console/production_run.py — S3 ProductionRun / Workflow Orchestration.
 
 AI Factory 2.0 第三个 Production Primitive: 多个 Node 组成真实生产流程。
 

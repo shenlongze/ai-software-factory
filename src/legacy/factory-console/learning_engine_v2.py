@@ -1,4 +1,4 @@
-"""factory-console/learning_engine_v2.py — S37 Evidence-driven Workforce Learning.
+"""src/legacy/factory-console/learning_engine_v2.py — S37 Evidence-driven Workforce Learning.
 
 Production Evidence → LearningObservation → LearningHypothesis → LearningCandidate
 → Evidence Evaluation → VALIDATED/REJECTED/CONFLICT → [STOP]

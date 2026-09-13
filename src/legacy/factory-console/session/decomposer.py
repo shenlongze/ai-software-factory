@@ -1,4 +1,4 @@
-"""factory-console/session/decomposer.py — 递归原子拆解引擎 (M3a, S10-090)。
+"""src/legacy/factory-console/session/decomposer.py — 递归原子拆解引擎 (M3a, S10-090)。
 
 把复合任务递归拆解到**原子叶子任务**（单 Agent / 单文件单工具 / 可验证 /
 ≤10min）——"拆到不能拆" = 直接提高执行成功率（§3.7.4: "一步一个坑"根因

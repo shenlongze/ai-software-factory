@@ -1,4 +1,4 @@
-"""factory-console/session/teams.py — Agent Team Collaboration (S10-056)。
+"""src/legacy/factory-console/session/teams.py — Agent Team Collaboration (S10-056)。
 
 从"单 Agent 自动开发"升级为"多 Agent 软件生产团队"的扩展层 (不重构主链路):
 

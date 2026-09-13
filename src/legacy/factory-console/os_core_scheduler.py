@@ -1,4 +1,4 @@
-"""factory-console/os_core_scheduler.py — OS Core Service: Scheduler (MU-CORE-12).
+"""src/legacy/factory-console/os_core_scheduler.py — OS Core Service: Scheduler (MU-CORE-12).
 
 Scheduler 决定"哪个 TaskNode 现在可以被调度", 并创建 OS Execution (不执行)。
 

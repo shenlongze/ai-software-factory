@@ -1,4 +1,4 @@
-"""factory-console/rollback_service.py — S19 Release Rollback.
+"""src/legacy/factory-console/rollback_service.py — S19 Release Rollback.
 
 正式 Rollback: 从历史 Release Evidence 恢复到目标 Release (经 Artifact Lifecycle)。
 

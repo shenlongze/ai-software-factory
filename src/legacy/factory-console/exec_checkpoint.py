@@ -1,4 +1,4 @@
-"""factory-console/exec_checkpoint.py — T-6 (v1.1.187): 执行中断 checkpoint 落盘与恢复。
+"""src/legacy/factory-console/exec_checkpoint.py — T-6 (v1.1.187): 执行中断 checkpoint 落盘与恢复。
 
 Founder 2026-08-27 (D-2/T-6): 执行中断 checkpoint 恢复实测 —
 进程被杀/断电后, 进行中执行有 checkpoint 可查、可恢复 (续跑), 不丢状态。

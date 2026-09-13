@@ -1,4 +1,4 @@
-"""factory-console/session/observability.py — Execution Observability (S10-083 P0)。
+"""src/legacy/factory-console/session/observability.py — Execution Observability (S10-083 P0)。
 
 Execution Timeline / Project Status 视图。
 数据全部来自真实执行事件存储:

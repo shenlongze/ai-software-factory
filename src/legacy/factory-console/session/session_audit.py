@@ -1,4 +1,4 @@
-"""factory-console/session/session_audit.py — 会话可观测 (S-1, v1.1.217).
+"""src/legacy/factory-console/session/session_audit.py — 会话可观测 (S-1, v1.1.217).
 
 Founder 2026-08-27: 会话问题不能靠用户发现 — 每轮落审计, 指标进监控。
 

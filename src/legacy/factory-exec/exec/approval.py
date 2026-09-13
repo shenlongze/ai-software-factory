@@ -1,4 +1,4 @@
-"""factory-exec/exec/approval.py — ApprovalGate (Human 门禁; 应用 patch 前必批)。
+"""src/legacy/factory-exec/exec/approval.py — ApprovalGate (Human 门禁; 应用 patch 前必批)。
 
 设计依据 (docs/architecture/phase-a-execution-mvp-design.md §2/§6):
 - 铁律: 执行权 != 审核权 (Runtime 执行, Human 批准)。

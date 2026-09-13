@@ -1,4 +1,4 @@
-"""factory-console/os_core_usage.py — OS Core: Provider Usage / Metrics / Cost (MU-CORE-14).
+"""src/legacy/factory-console/os_core_usage.py — OS Core: Provider Usage / Metrics / Cost (MU-CORE-14).
 
 Usage 是 Execution 的**附属运行事实** (不是 Execution Truth, 不拥有任务状态)。
 

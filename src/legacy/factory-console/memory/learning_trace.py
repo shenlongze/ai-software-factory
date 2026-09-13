@@ -1,4 +1,4 @@
-"""factory-console/memory/learning_trace.py — LearningTrace (S10-067 G8)。
+"""src/legacy/factory-console/memory/learning_trace.py — LearningTrace (S10-067 G8)。
 
 学习过程审计: 学习来源/提取内容/confidence/影响范围 → learning_trace.json
 (workspace/memory/) — 可解释性资产 (S10-069 审计基础)。

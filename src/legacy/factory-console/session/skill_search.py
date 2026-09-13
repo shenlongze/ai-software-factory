@@ -1,4 +1,4 @@
-"""factory-console/session/skill_search.py — Skills 索引按需检索 (W5, v1.1.251).
+"""src/legacy/factory-console/session/skill_search.py — Skills 索引按需检索 (W5, v1.1.251).
 
 抄 OpenClaw <available_skills>: 不把 147 个 skill 全量塞 system (省 token),
 而是提供 skill_search 工具按需检索 (名字/关键词/分类) → 返回 {id, name, category, path};

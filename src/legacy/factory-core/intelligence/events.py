@@ -1,4 +1,4 @@
-"""factory-core/intelligence/events.py — intelligence.* 事件辅助 (经 EventLogger)。
+"""src/legacy/factory-core/intelligence/events.py — intelligence.* 事件辅助 (经 EventLogger)。
 
 设计依据:
 - phase10a1-status.md §范围 (4 事件): intelligence.decision.created /

@@ -1,4 +1,4 @@
-"""factory-console/session/reasoning.py — ReasoningProvider (S10-062 批次 B)。
+"""src/legacy/factory-console/session/reasoning.py — ReasoningProvider (S10-062 批次 B)。
 
 LLM Planning 抽象层 (GAP G4, 设计 §3): 统一 LLM 接口 — analyze_gap /
 propose_task / evaluate_plan 三操作, 每个操作: prompt 组装 (JSON 指令 +

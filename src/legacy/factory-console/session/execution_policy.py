@@ -1,4 +1,4 @@
-"""factory-console/session/execution_policy.py — ExecutionPolicy (S10-063 批次 A)。
+"""src/legacy/factory-console/session/execution_policy.py — ExecutionPolicy (S10-063 批次 A)。
 
 Production Governance (GAP G6, 设计 §6): 统一策略层 — 不在 orchestrator 散落
 if/else。4 模式:

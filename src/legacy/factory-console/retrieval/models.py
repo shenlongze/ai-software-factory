@@ -1,4 +1,4 @@
-"""factory-console/retrieval/models.py — Retrieval abstraction 数据模型 (S10-070 G5)。
+"""src/legacy/factory-console/retrieval/models.py — Retrieval abstraction 数据模型 (S10-070 G5)。
 
 统一检索模型: RetrievalRequest (请求契约) / RetrievalCandidate (候选结果) /
 RetrievalScore (评分视图) / RetrievalSource (来源枚举) — 多来源 (经验/审计/

@@ -1,4 +1,4 @@
-"""factory-console/session/dependencies.py — TaskDependencyGraph (S10-056 批次 A)。
+"""src/legacy/factory-console/session/dependencies.py — TaskDependencyGraph (S10-056 批次 A)。
 
 任务依赖 DAG 数据结构 (设计 §2.4): task → [depends_on] 有向边,
 落盘 task_dependencies.json (~/.factory/teams/)。保留顺序执行兼容

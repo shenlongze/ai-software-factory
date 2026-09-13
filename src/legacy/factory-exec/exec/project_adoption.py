@@ -1,4 +1,4 @@
-"""factory-exec/exec/project_adoption.py — Existing Project Adoption (S9-004)。
+"""src/legacy/factory-exec/exec/project_adoption.py — Existing Project Adoption (S9-004)。
 
 已有项目接入三件套 (复用 repo_intelligence L2-L7, 零 LLM / 零数据库 /
 零第三方静态分析库, 全部确定性启发式):

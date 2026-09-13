@@ -1,4 +1,4 @@
-"""factory-console/session/llm_gateway.py — 模型无关网关 (S10-127 M1.1/M1.3).
+"""src/legacy/factory-console/session/llm_gateway.py — 模型无关网关 (S10-127 M1.1/M1.3).
 
 统一内部形状 (OpenAI 为标准):
 - messages: [{"role": "system"|"user"|"assistant"|"tool", "content": str, ...}]

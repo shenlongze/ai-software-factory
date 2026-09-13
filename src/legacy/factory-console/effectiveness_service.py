@@ -1,4 +1,4 @@
-"""factory-console/effectiveness_service.py — S29 Production Optimization Effectiveness.
+"""src/legacy/factory-console/effectiveness_service.py — S29 Production Optimization Effectiveness.
 
 Recovery-aware Controlled Workforce Experiment:
 - Recovery-aware Sample (initial/final/recovery_attempts/time_to_recovery)

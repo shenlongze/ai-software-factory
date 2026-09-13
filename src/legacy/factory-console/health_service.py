@@ -1,4 +1,4 @@
-"""factory-console/health_service.py — S21 Production Health Monitor & Automatic Rollback.
+"""src/legacy/factory-console/health_service.py — S21 Production Health Monitor & Automatic Rollback.
 
 HealthMonitor(观察) → HealthCheck(事实) → HealthPolicy(判定) → HealthIncident(记录)
 → Recovery(经 rollback_service 复用 Governance/Lifecycle/Verification)

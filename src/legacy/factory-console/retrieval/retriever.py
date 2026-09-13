@@ -1,4 +1,4 @@
-"""factory-console/retrieval/retriever.py — 统一检索器抽象 (S10-070)。
+"""src/legacy/factory-console/retrieval/retriever.py — 统一检索器抽象 (S10-070)。
 
 Retriever Protocol + 具体实现: ExperienceRetriever (Memory) /
 AuditRetriever (Audit) / ProjectRetriever (项目资产)。

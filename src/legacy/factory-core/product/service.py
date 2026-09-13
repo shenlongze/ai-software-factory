@@ -1,4 +1,4 @@
-"""factory-core/product/service.py — ProductService: 产品智能层编排 (Idea/Artifact/Approval/Workflow)。
+"""src/legacy/factory-core/product/service.py — ProductService: 产品智能层编排 (Idea/Artifact/Approval/Workflow)。
 
 设计依据:
 - phase9-plan.md §2/§4/§5 (数据模型 + Approval Gate 流程 + Extension 边界):

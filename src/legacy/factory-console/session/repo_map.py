@@ -1,4 +1,4 @@
-"""factory-console/session/repo_map.py — 代码库符号地图 (W7, v1.1.253).
+"""src/legacy/factory-console/session/repo_map.py — 代码库符号地图 (W7, v1.1.253).
 
 抄 Aider repo map: 不把整个代码库塞上下文, 而是按 token 预算注入"最相关符号地图" —
 提取 Python 文件 def/class 符号, 按用户问题关键词 + 符号密度排名, 输出紧凑地图

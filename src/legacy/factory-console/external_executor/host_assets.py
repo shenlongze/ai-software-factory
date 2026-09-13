@@ -1,4 +1,4 @@
-"""factory-console/external_executor/host_assets.py — 宿主资产发现与导入 (M2)。
+"""src/legacy/factory-console/external_executor/host_assets.py — 宿主资产发现与导入 (M2)。
 
 设计依据: 设计文档 §4.3 + Founder 2026-08-27 (标签/冲突/分组):
 - 标签: source (⚡codex/🔶claude/🜲hermes) + kind (agent/skill/plugin/persona) + role (能力)

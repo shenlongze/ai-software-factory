@@ -260,7 +260,7 @@ def test_t34_t38_architecture_boundaries(tmp_path: Path) -> None:
     r = sch.schedule_node(root, f["task_node"])
     assert r["scheduled"] is True
     # T35/T36: plugin boundary 不 import Scheduler/Execution Runtime/Provider
-    src = (Path("factory-console") / "os_core_plugin.py").read_text()
+    src = (Path("src/legacy/factory-console") / "os_core_plugin.py").read_text()
     assert "os_core_scheduler" not in src and "external_executor" not in src and "subprocess" not in src
     # T37: plugin store 无 execution
     plug.register_capability_plugin(root, plugin_id="p.local", name="Local",

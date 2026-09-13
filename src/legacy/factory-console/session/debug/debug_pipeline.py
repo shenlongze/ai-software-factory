@@ -1,4 +1,4 @@
-"""factory-console/session/debug/debug_pipeline.py — DebugPipeline (S10-068 Part 2, G1/G3/G5/G10)。
+"""src/legacy/factory-console/session/debug/debug_pipeline.py — DebugPipeline (S10-068 Part 2, G1/G3/G5/G10)。
 
 完整闭环: start → analyze (classify→root_cause→retrieve→strategy) →
 repair (RepairSafety 治理闸 → 执行) → validate (PASS→SUCCESS / FAIL→RETRYING)

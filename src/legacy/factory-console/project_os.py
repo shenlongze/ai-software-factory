@@ -1,4 +1,4 @@
-"""factory-console/project_os.py — K3 Real Project Operating Loop.
+"""src/legacy/factory-console/project_os.py — K3 Real Project Operating Loop.
 
 Project 持续运营: 普通用户通过 Conversation 创建/跟踪/推进真实 Project。
 

@@ -1,4 +1,4 @@
-"""factory-exec/exec/evaluator.py — CandidateEvaluator 结果评估引擎 (Sprint 5 T5.3)。
+"""src/legacy/factory-exec/exec/evaluator.py — CandidateEvaluator 结果评估引擎 (Sprint 5 T5.3)。
 
 设计依据: docs/validation/sprint5-t51-execution-strategy-design.md §3/§4 (T5.1 冻结)
 + 用户确认的 5 层评分模型 (确定性规则 — 禁 LLM 决定 / 禁人工选择 / 禁随机):

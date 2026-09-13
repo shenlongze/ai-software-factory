@@ -1,4 +1,4 @@
-"""factory-exec/exec/providers/anthropic.py — Anthropic 真实 Provider Adapter (httpx)。
+"""src/legacy/factory-exec/exec/providers/anthropic.py — Anthropic 真实 Provider Adapter (httpx)。
 
 设计依据 (docs/architecture/phase-a-execution-mvp-design.md §3):
 - 真实 HTTP 调用 (Anthropic Messages API), 不是 mock; 无 API key → 清晰

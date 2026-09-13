@@ -1,4 +1,4 @@
-"""factory-console/conversation_quality.py — K5 User Language Quality.
+"""src/legacy/factory-console/conversation_quality.py — K5 User Language Quality.
 
 验证 Conversation 是否"说人话" (8 项质量维度, deterministic + evidence-backed):
 A. 清晰: 回复可理解, 不含内部术语

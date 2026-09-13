@@ -1,4 +1,4 @@
-"""factory-console/session/debug/error_analysis.py — ErrorAnalyzer (S10-068 G1)。
+"""src/legacy/factory-console/session/debug/error_analysis.py — ErrorAnalyzer (S10-068 G1)。
 
 错误理解: 原始 error_message/stack_trace → 结构化 DebugCase + error_type 分类。
 

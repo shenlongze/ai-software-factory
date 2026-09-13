@@ -1,4 +1,4 @@
-"""factory-console/os_core_capability.py — OS Core: Capability (MU-CORE-07).
+"""src/legacy/factory-console/os_core_capability.py — OS Core: Capability (MU-CORE-07).
 
 Capability = Professional Role 可被授权/解析/组合/执行/验证的专业能力契约（"能做什么"）。
 

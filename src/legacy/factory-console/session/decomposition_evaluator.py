@@ -1,4 +1,4 @@
-"""factory-console/session/decomposition_evaluator.py — 拆解质量评估 + 四档行动 (M3d, S10-095)。
+"""src/legacy/factory-console/session/decomposition_evaluator.py — 拆解质量评估 + 四档行动 (M3d, S10-095)。
 
 把 DecomposeEngine 产出的叶子（或 LLM 深度拆解的结构化 {tasks[]}）做**质量门控**:
 六维确定性评分（完整性/粒度/依赖/可行性/可测性/风险）+ 四档行动

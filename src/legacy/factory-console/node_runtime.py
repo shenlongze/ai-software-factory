@@ -1,4 +1,4 @@
-"""factory-console/node_runtime.py — S2 Node Runtime (Production Primitive #2).
+"""src/legacy/factory-console/node_runtime.py — S2 Node Runtime (Production Primitive #2).
 
 AI Factory 2.0 第二个 Production Primitive: Node 定义 + NodeRun 执行事实。
 

@@ -1,4 +1,4 @@
-"""factory-console/cli_factory.py — S10-007 阶段二: factory CLI MVP (start/stop/status)。
+"""src/legacy/factory-console/cli_factory.py — S10-007 阶段二: factory CLI MVP (start/stop/status)。
 
 用户需求 (S10-007): 一条 `./bin/factory` 命令即可启动本地开发环境, 不要求
 用户懂 uvicorn/vite/PYTHONPATH/npm:

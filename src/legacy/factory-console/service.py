@@ -1,4 +1,4 @@
-"""factory-console/service.py — ConsoleService: Human Console 只读聚合服务。
+"""src/legacy/factory-console/service.py — ConsoleService: Human Console 只读聚合服务。
 
 设计依据:
 - phase11a-status.md: Console 只读聚合各域 — workspace projects → lifecycle

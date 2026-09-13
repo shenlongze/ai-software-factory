@@ -1,4 +1,4 @@
-"""factory-console/evidence_domain.py — P0-F4 Evidence SSOT (EVD-*)。
+"""src/legacy/factory-console/evidence_domain.py — P0-F4 Evidence SSOT (EVD-*)。
 
 D2 冻结: canonical Evidence = EVD-* 独立域 (支撑 Verification 结论的事实材料)。
 - 旧 ev-* EvidenceBundle (M3 approval package) = LEGACY, 不升级不迁移。

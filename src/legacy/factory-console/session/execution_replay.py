@@ -1,4 +1,4 @@
-"""factory-console/session/execution_replay.py — M5-1 执行重放引擎 (S10-113)。
+"""src/legacy/factory-console/session/execution_replay.py — M5-1 执行重放引擎 (S10-113)。
 
 设计: docs/sprint10/S10-113-execution-replay-plan.md §1
 规格: M5-1 (§5.6.3 L3/L4) — dry-run 时间线重建 / re-exec 同输入重跑 /

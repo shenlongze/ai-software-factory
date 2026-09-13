@@ -1,4 +1,4 @@
-"""factory-console/session/eval_suite.py — K-5 七维评测体系 (S10-121 P0-1/C-1 + P0-5/C-6 发布门)。
+"""src/legacy/factory-console/session/eval_suite.py — K-5 七维评测体系 (S10-121 P0-1/C-1 + P0-5/C-6 发布门)。
 
 评测 = 跑 + 出报告 (只读, 不改业务逻辑, 不调 LLM, 零第三方依赖):
 - EVAL_DIMENSIONS: 7 维定义 — correctness(正确性)/robustness(鲁棒性)/
@@ -328,13 +328,13 @@ def _check_quality_score(ws: Path, repo_root: Optional[Path]) -> EvalItemResult:
     if lows:
         return _result(
             STATUS_FAIL, CORRECTNESS + ".quality_score", "执行质量分 >= 阈值 (K-2)",
-            evidence="factory-console/session/execution_quality.py::score_execution → exec/execution_records.json",
+            evidence="src/legacy/factory-console/session/execution_quality.py::score_execution → exec/execution_records.json",
             detail=f"最近执行记录存在低分: {', '.join(lows)} (阈值 {LOW_SCORE_THRESHOLD:g})",
         )
     return _result(
         STATUS_PASS, CORRECTNESS + ".quality_score", "执行质量分 >= 阈值 (K-2)",
         evidence=(
-            "factory-console/session/execution_quality.py::score_execution"
+            "src/legacy/factory-console/session/execution_quality.py::score_execution"
             f" + tests/console/test_s10_119_learning_loop.py → {f}"
         ),
         detail=f"{checked} 个项目最近执行记录质量分全部 >= {LOW_SCORE_THRESHOLD:g}",
@@ -375,7 +375,7 @@ def _check_fail_safe_quality(ws: Path, repo_root: Optional[Path]) -> EvalItemRes
     if violations:
         return _result(
             STATUS_FAIL, ROBUSTNESS + ".fail_safe_quality", "评分失败安全 (K-2)",
-            evidence="factory-console/session/execution_quality.py (失败安全 → score=None + reason)",
+            evidence="src/legacy/factory-console/session/execution_quality.py (失败安全 → score=None + reason)",
             detail=f"评分器失败记录缺 reason: {', '.join(violations[:5])}",
         )
     if with_reason or any(
@@ -385,7 +385,7 @@ def _check_fail_safe_quality(ws: Path, repo_root: Optional[Path]) -> EvalItemRes
         return _result(
             STATUS_PASS, ROBUSTNESS + ".fail_safe_quality", "评分失败安全 (K-2)",
             evidence=(
-                "factory-console/session/execution_quality.py + "
+                "src/legacy/factory-console/session/execution_quality.py + "
                 "tests/console/test_s10_119_learning_loop.py (失败安全断言)"
             ),
             detail="执行质量评分失败安全路径存在: score=None 均带 reason 诚实标注",
@@ -557,7 +557,7 @@ def _check_state_projection(ws: Path, repo_root: Optional[Path]) -> EvalItemResu
         return _result(
             STATUS_FAIL, CONSISTENCY + ".state_projection", "状态单一来源投影 (J-1)",
             evidence=(
-                "factory-console/session/lifecycle_store.py::set_project_lifecycle"
+                "src/legacy/factory-console/session/lifecycle_store.py::set_project_lifecycle"
                 " + tests/console/test_s10_115_lifecycle_single_source.py"
             ),
             detail="状态漂移: " + "; ".join(drift[:5]),
@@ -565,7 +565,7 @@ def _check_state_projection(ws: Path, repo_root: Optional[Path]) -> EvalItemResu
     return _result(
         STATUS_PASS, CONSISTENCY + ".state_projection", "状态单一来源投影 (J-1)",
         evidence=(
-            "factory-console/session/lifecycle_store.py + "
+            "src/legacy/factory-console/session/lifecycle_store.py + "
             "tests/console/test_s10_115_lifecycle_single_source.py (a-h)"
         ),
         detail=f"{checked} 个项目 project.json.status 与 product/state 镜像一致",
@@ -599,7 +599,7 @@ def _check_perf_key_ops(ws: Path, repo_root: Optional[Path]) -> EvalItemResult:
     if elapsed <= PERF_KEY_OPS_LIMIT_S:
         return _result(
             STATUS_PASS, PERFORMANCE + ".key_ops", "关键操作耗时上限 (宽松)",
-            evidence="factory-console/session/eval_suite.py::_check_perf_key_ops (实测)",
+            evidence="src/legacy/factory-console/session/eval_suite.py::_check_perf_key_ops (实测)",
             detail=(
                 f"加载 {len(files)} 个 JSON 状态文件耗时 {elapsed:.3f}s "
                 f"(上限 {PERF_KEY_OPS_LIMIT_S:g}s, 数据量 {total} bytes)"
@@ -607,7 +607,7 @@ def _check_perf_key_ops(ws: Path, repo_root: Optional[Path]) -> EvalItemResult:
         )
     return _result(
         STATUS_FAIL, PERFORMANCE + ".key_ops", "关键操作耗时上限 (宽松)",
-        evidence="factory-console/session/eval_suite.py::_check_perf_key_ops (实测)",
+        evidence="src/legacy/factory-console/session/eval_suite.py::_check_perf_key_ops (实测)",
         detail=f"加载 {len(files)} 个 JSON 状态文件耗时 {elapsed:.3f}s — 超过上限 {PERF_KEY_OPS_LIMIT_S:g}s",
     )
 
@@ -628,7 +628,7 @@ def _check_audit_trace(ws: Path, repo_root: Optional[Path]) -> EvalItemResult:
     except Exception as exc:  # noqa: BLE001 — 失败安全
         return _result(
             STATUS_FAIL, SECURITY + ".audit_trace", "审计封存/trace 贯穿 (K-4)",
-            evidence="factory-console/audit/audit_store.py",
+            evidence="src/legacy/factory-console/audit/audit_store.py",
             detail=f"审计读取异常: {exc}",
         )
     if not events:
@@ -650,7 +650,7 @@ def _check_audit_trace(ws: Path, repo_root: Optional[Path]) -> EvalItemResult:
     return _result(
         STATUS_PASS, SECURITY + ".audit_trace", "审计封存/trace 贯穿 (K-4)",
         evidence=(
-            "factory-console/audit/trace_context.py + audit_store.py (封存 hash 链) + "
+            "src/legacy/factory-console/audit/trace_context.py + audit_store.py (封存 hash 链) + "
             "tests/console/test_s10_120_trace_chain.py"
         ),
         detail=f"{with_trace}/{len(events)} 个审计事件带 trace_id (K-4 机制生效; 无上下文路径的空 trace_id 属设计允许)",
@@ -704,7 +704,7 @@ def _check_secret_scan(ws: Path, repo_root: Optional[Path]) -> EvalItemResult:
     if hits:
         return _result(
             STATUS_FAIL, SECURITY + ".secret_scan", "密钥只存引用不落明文",
-            evidence="factory-console/llm_control.py (api_key_ref 铁律) + config.py",
+            evidence="src/legacy/factory-console/llm_control.py (api_key_ref 铁律) + config.py",
             detail=f"发现明文密钥字段: {', '.join(hits[:5])} (只允许 env:VAR 引用)",
         )
     if scanned == 0:
@@ -716,7 +716,7 @@ def _check_secret_scan(ws: Path, repo_root: Optional[Path]) -> EvalItemResult:
     return _result(
         STATUS_PASS, SECURITY + ".secret_scan", "密钥只存引用不落明文",
         evidence=(
-            "factory-console/llm_control.py (D3 api_key_ref=env:VAR) + "
+            "src/legacy/factory-console/llm_control.py (D3 api_key_ref=env:VAR) + "
             "tests/console/test_cli_doctor.py (seed_provider 只存引用)"
         ),
         detail=f"扫描 {scanned} 个 JSON 配置: 未发现明文 api_key (只存 env: 引用)",
@@ -816,7 +816,7 @@ def _check_learning_loop(ws: Path, repo_root: Optional[Path]) -> EvalItemResult:
     return _result(
         STATUS_PASS, USER_VALUE + ".learning_loop", "学习闭环引用 (K-3)",
         evidence=(
-            "factory-console/session/eval_loop.py (E-2/E-3) + "
+            "src/legacy/factory-console/session/eval_loop.py (E-2/E-3) + "
             "tests/console/test_s10_121_eval_suite.py::run_learning_loop_fixture"
             f" → {f}"
         ),

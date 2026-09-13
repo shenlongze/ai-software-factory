@@ -1,4 +1,4 @@
-"""factory-console/memory/recommendation.py — Recommender (S10-067 G7)。
+"""src/legacy/factory-console/memory/recommendation.py — Recommender (S10-067 G7)。
 
 经验影响未来: planning/debug 提醒 — 基于历史经验 (检索 → 提醒), 不执行动作。
 - recommend_for_planning(features) → 规划提醒 ("类似项目曾因...失败, 建议...")

@@ -1,4 +1,4 @@
-"""factory-exec/exec/benchmark/verifiers.py — 样本验证器注册表 (不依赖 LLM)。
+"""src/legacy/factory-exec/exec/benchmark/verifiers.py — 样本验证器注册表 (不依赖 LLM)。
 
 设计 (Phase A+++++ Benchmark): 每个样本配 verifier = 纯 Python 静态/行为检查,
 零 LLM 调用:

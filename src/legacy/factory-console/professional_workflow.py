@@ -1,4 +1,4 @@
-"""factory-console/professional_workflow.py — S10 Professional Workflow Assembly.
+"""src/legacy/factory-console/professional_workflow.py — S10 Professional Workflow Assembly.
 
 PM → Architect → Developer → QA 专业 AI 员工生产线。
 

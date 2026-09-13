@@ -1,4 +1,4 @@
-"""factory-console/os_core_work.py — OS Core: Work / Workstream (MU-CORE-06).
+"""src/legacy/factory-console/os_core_work.py — OS Core: Work / Workstream (MU-CORE-06).
 
 语义 (Constitution v2 Art.14/15):
     Project ≠ Work ≠ Workstream ≠ Task ≠ TaskNode ≠ Execution

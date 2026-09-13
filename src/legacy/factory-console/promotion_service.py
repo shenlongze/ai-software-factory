@@ -1,4 +1,4 @@
-"""factory-console/promotion_service.py — S38 Learning Evaluation & Governed Promotion.
+"""src/legacy/factory-console/promotion_service.py — S38 Learning Evaluation & Governed Promotion.
 
 LearningCandidate (S37 VALIDATED) → PromotionCandidate
 → Evaluation (baseline vs candidate, evidence-based, cost-aware)

@@ -1,4 +1,4 @@
-"""factory-console/session/canonical_shell.py — AI Factory OS Shell (Canonical Entry).
+"""src/legacy/factory-console/session/canonical_shell.py — AI Factory OS Shell (Canonical Entry).
 
 R0 P0: 裸 `factory` 默认进入本 Shell → CanonicalGoldenPath (Application Orchestrator)
 → Conversation Application → Product Understanding → Golden Path → Production Runtime。

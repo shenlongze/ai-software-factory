@@ -1,4 +1,4 @@
-"""factory-console/session/gap_analyzer.py — GapAnalyzer (S10-061 批次 A)。
+"""src/legacy/factory-console/session/gap_analyzer.py — GapAnalyzer (S10-061 批次 A)。
 
 Autonomous Gap Resolution 模型层: 观察执行上下文 → 结构化 Gap 分析
 (GAP G1/G9, 设计 §2)。GapAnalyzer 消费 项目上下文 / 工作区 / 当前任务 /

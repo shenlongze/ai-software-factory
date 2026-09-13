@@ -1,4 +1,4 @@
-"""factory-console/external_executor/task_registry.py — 外部任务控制面 (网关 G2).
+"""src/legacy/factory-console/external_executor/task_registry.py — 外部任务控制面 (网关 G2).
 
 对标 OpenClaw tasks 控制面 (SQLite 注册表): 外部执行任务的统一持久化注册表。
 落盘 <data_dir>/exec/external_tasks.json:

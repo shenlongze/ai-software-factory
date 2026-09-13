@@ -1,4 +1,4 @@
-"""factory-core/intelligence/experience.py — ExperienceAnalyzer 经验分析器 (Phase 10A-4, ADR-0033)。
+"""src/legacy/factory-core/intelligence/experience.py — ExperienceAnalyzer 经验分析器 (Phase 10A-4, ADR-0033)。
 
 经验闭环 (phase10a4-status.md §范围 + phase10a-plan.md §Q3/Q4):
 

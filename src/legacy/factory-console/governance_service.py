@@ -1,4 +1,4 @@
-"""factory-console/governance_service.py — S17 Workforce Governance & Human Approval.
+"""src/legacy/factory-console/governance_service.py — S17 Workforce Governance & Human Approval.
 
 正式 Governance: ApprovalRequest 持久化 + Policy + Gate + Release。
 

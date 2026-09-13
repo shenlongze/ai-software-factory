@@ -1,4 +1,4 @@
-"""factory-console/golden_path.py — Golden Path 编排域 (S1 第 2 刀: 执行收敛)。
+"""src/legacy/factory-console/golden_path.py — Golden Path 编排域 (S1 第 2 刀: 执行收敛)。
 
 打通真链 (Golden Path §4/§16-§20, CT 断层 F1/F2 收敛):
 ```

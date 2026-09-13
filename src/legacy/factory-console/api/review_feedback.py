@@ -1,4 +1,4 @@
-"""factory-console/api/review_feedback.py — S10-006 审核反馈路由函数。
+"""src/legacy/factory-console/api/review_feedback.py — S10-006 审核反馈路由函数。
 
 Feedback Loop (workspace-architecture.md §3 Panel Review + api-data-model.md
 §1 ReviewComment): Reject 决定 → 前端同时 POST /api/review-feedback 保存

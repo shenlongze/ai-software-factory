@@ -1,4 +1,4 @@
-"""factory-console/session/session_snapshots.py — T13 会话时间旅行 (轻量快照)。
+"""src/legacy/factory-console/session/session_snapshots.py — T13 会话时间旅行 (轻量快照)。
 
 会话级快照: 每轮消息后存 {round, ts, messages_slice, context_hash} 到
 <data_dir>/session_snapshots/<session_id>.json (追加, 只读恢复不破坏源数据)。

@@ -1,4 +1,4 @@
-"""factory-console/project_agile.py — 项目级敏捷管理域 (S1 第 6 刀, canonical)。
+"""src/legacy/factory-console/project_agile.py — 项目级敏捷管理域 (S1 第 6 刀, canonical)。
 
 把 Golden Path 认知链 (PRD/Plan/执行) 挂到真实项目:
 ```

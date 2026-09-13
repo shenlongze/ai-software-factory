@@ -1,4 +1,4 @@
-"""factory-console/memory/retrieval.py — ExperienceRetriever (S10-067 G5)。
+"""src/legacy/factory-console/memory/retrieval.py — ExperienceRetriever (S10-067 G5)。
 
 经验检索: 关键词匹配 (project/problem/context/result) + 类型/项目过滤 +
 confidence 排序; similar_projects(特征) → 相似项目经验。

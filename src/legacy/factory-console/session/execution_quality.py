@@ -1,4 +1,4 @@
-"""factory-console/session/execution_quality.py — K-2 执行质量分 (S10-117 C-2/B-6)。
+"""src/legacy/factory-console/session/execution_quality.py — K-2 执行质量分 (S10-117 C-2/B-6)。
 
 确定性评分器 (纯规则, 不调 LLM — LLM 可选路径必须标注且规则分始终存在):
 - score_execution(record, evidence): 执行结果质量 — 复用 T5.3 五层思路

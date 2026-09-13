@@ -138,6 +138,29 @@ def report(data: dict, reach: dict) -> str:
         "**尤其不可当作可删**。",
         f"> 动态调用 {reach['dynamic_calls']} 处；未解析字面量 {len(reach['unresolved_dynamic'])} 条。",
         "",
+        "### 本栏的已知盲区（工具只扫 Python 的加载行为）",
+        "",
+        "| 盲区 | 说明 | 实例 |",
+        "|---|---|---|",
+        "| `subprocess-cli` | 被当命令跑，不被 import | `desktop` 调 `factory-runtime` CLI |",
+        "| `path-reference` | 按文件系统路径引用 | 测试夹具指向 `demo/` |",
+        "| `non-python-consumer` | Rust / TS / JSON 里写死名字 | `tauri.conf.json` 打包 `factory-runtime-bundle` |",
+        "| `computed-dynamic` | 非字面量拼接的动态加载 | `f\"{prefix}{name}\"` |",
+        "",
+        "### 非 Python 载体引用（弱信号：可能含文档性提及，但被点名者绝不可当作可删）",
+        "",
+    ]
+    ext = reach["external_references"]
+    if ext:
+        out += ["| 分区 | 引用文件数 | 例 |", "|---|---:|---|"]
+        for name, files in sorted(ext.items()):
+            example = next((f for f in files if Path(f).suffix.lower() in
+                            (".toml", ".json", ".rs", ".spec")), files[0])
+            out.append(f"| `{name}` | {len(files)} | `{example}` |")
+    else:
+        out.append("（无）")
+    out += [
+        "",
         "## 三、跨分区依赖边（只减不增）",
         "",
     ]

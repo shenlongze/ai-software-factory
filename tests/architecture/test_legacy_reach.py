@@ -107,7 +107,31 @@ def test_tools_agree_on_legacy_file_count() -> None:
 
 
 def test_blind_spot_is_reported_not_hidden() -> None:
-    """未解析的动态目标必须被报出来 —— 宁可承认盲区，不假装精确。"""
+    """未解析的动态目标与已知盲区必须被报出来 —— 宁可承认盲区，不假装精确。"""
     data = _analyse()
     assert isinstance(data["unresolved_dynamic"], list)
     assert isinstance(data["dynamic_calls"], int)
+    assert len(data["blind_spots"]) == 4
+
+
+def test_non_python_consumers_are_detected() -> None:
+    """非 Python 载体的引用必须被发现。
+
+    回归：factory-runtime 只被 Python 当【子进程 CLI】调用（消费者是 Rust 桌面应用），
+    任何基于 import 的分析都看不见它 —— 我曾据此判它「0 活引用、可删」。
+    现在靠名称引用扫描兜住：desktop/package.json 等必须被点名。
+    """
+    data = _analyse()
+    ext = data["external_references"]
+    assert "factory-runtime" in ext, "factory-runtime 未被点名（回归）"
+    assert any("desktop" in f for f in ext["factory-runtime"]), \
+        f"未发现 desktop 的引用: {ext['factory-runtime']}"
+
+
+def test_self_references_are_not_reported() -> None:
+    """本工具自己的产物不算「被消费」（否则 kernel/services 会被自家基线文件误报）。"""
+    ext = _analyse()["external_references"]
+    for name, files in ext.items():
+        for f in files:
+            assert not f.startswith("tests/architecture/"), f"{name} 被自家基线文件误报: {f}"
+            assert not f.startswith("scripts/"), f"{name} 被自家脚本误报: {f}"

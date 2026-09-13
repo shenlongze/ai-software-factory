@@ -54,6 +54,28 @@ PROD_ENTRIES = (
     "factory-console/web/backend/fastapi_adapter.py",
 )
 
+# ⚠️ 已知盲区 —— 本工具**只扫 Python 的加载行为**，下列消费方式它看不见：
+#   ① 子进程调用 CLI：Rust/JS/Shell 把它当命令跑（如 desktop 调 factory-runtime CLI）
+#   ② 路径引用：测试夹具 / 打包配置按文件系统路径引用目录
+#   ③ 非 Python 消费者：Rust / TypeScript / JSON 配置里写死名字
+#   ④ 未覆盖的动态加载：非字面量拼接（如 f"{prefix}{name}" 的形式）
+# 为降低 ①③ 的漏判，本文件额外做一次**名称引用扫描**（见 external_references）。
+KNOWN_BLIND_SPOTS = (
+    "subprocess-cli",       # 被当命令跑，不被 import
+    "path-reference",       # 按文件系统路径引用
+    "non-python-consumer",  # Rust / TS / JSON 里写死名字
+    "computed-dynamic",     # 非字面量拼接的动态加载
+)
+
+# 名称引用扫描范围（非 Python 载体）
+SCAN_SUFFIXES = (".rs", ".ts", ".tsx", ".js", ".jsx", ".json", ".toml",
+                 ".yaml", ".yml", ".sh", ".cfg", ".ini", ".spec", ".nix", ".dockerfile")
+SKIP_DIR_FOR_SCAN = {"node_modules", "docs", "build", "dist", "target"}
+# 自引用：本工具自己的产物不算「被消费」
+SKIP_SELF_PREFIXES = ("tests/architecture/", "scripts/")
+# 强信号载体（清单/打包/桥接）优先作为示例 —— 文档性提及会排在后面
+STRONG_SUFFIXES = (".toml", ".json", ".rs", ".spec", ".yaml", ".yml", ".cfg", ".ini")
+
 _DYN_LITERAL = re.compile(r"""(?:import_module|__import__)\(\s*["']([\w.\-]+)["']""")
 _DYN_ANY = re.compile(r"(?:import_module|__import__)\(")
 _IMPORT_FUNCS = ("__import__", "import_module")
@@ -242,6 +264,34 @@ def _lines(files) -> int:
     return sum(len(f.read_text(encoding="utf-8", errors="replace").splitlines()) for f in files)
 
 
+def external_references() -> dict[str, list[str]]:
+    """名称引用扫描：非 Python 载体里写死旧分区名的文件（降低盲区 ①③ 的漏判）。
+
+    能在 desktop/src-tauri/tauri.conf.json 这类打包配置里发现「被当组件消费」的目录 ——
+    factory-runtime 就是这样被发现的（它是桌面应用的运行时后端，从不被 Python import）。
+    """
+    pattern = {name: re.compile(rf"(?<![\w-]){re.escape(name)}(?![\w-])") for name in LEGACY_ROOTS}
+    hits: dict[str, list[str]] = {name: [] for name in LEGACY_ROOTS}
+    for path in ROOT.rglob("*"):
+        if not path.is_file() or path.suffix.lower() not in SCAN_SUFFIXES:
+            continue
+        if any(part in SKIP_DIR_FOR_SCAN or part in SKIP for part in path.parts):
+            continue
+        rel = str(path.relative_to(ROOT))
+        if rel.startswith(SKIP_SELF_PREFIXES):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for name, rx in pattern.items():
+            if rx.search(text):
+                hits[name].append(rel)
+    # 强信号（清单/打包/桥接）排前，文档性提及排后
+    return {name: sorted(files, key=lambda f: (Path(f).suffix.lower() not in STRONG_SUFFIXES, f))
+            for name, files in hits.items() if files}
+
+
 def analyze() -> dict:
     by_module, module_by_path = build_index()
     unresolved: list[str] = []
@@ -293,6 +343,8 @@ def analyze() -> dict:
         "dynamic_prefixes": sorted(prefixes),
         "dynamic_targets": sorted(dyn_targets),
         "unresolved_dynamic": sorted(set(unresolved)),
+        "blind_spots": list(KNOWN_BLIND_SPOTS),
+        "external_references": external_references(),
         "entries": list(PROD_ENTRIES),
         "paths": {
             "live": sorted(str(p.relative_to(ROOT)) for p in live),
@@ -318,6 +370,18 @@ def main() -> int:
     print(f"     其中受动态加载前缀影响       {s['files']:4d} 文件 / {s['lines']:7d} 行")
     print(f"  动态调用 {data['dynamic_calls']} 处 · 拼接前缀 {len(data['dynamic_prefixes'])} 个 "
           f"· 未解析字面量 {len(data['unresolved_dynamic'])} 条")
+    ext = data["external_references"]
+    if ext:
+        print()
+        print("  ⚠️ 非 Python 载体引用（子进程 / 打包配置 / 路径）—— 弱信号，可能含文档性提及，")
+        print("     但被点名的分区绝不可当作可删：")
+        for name, files in sorted(ext.items()):
+            strong = [f for f in files if Path(f).suffix.lower() in STRONG_SUFFIXES]
+            example = strong[0] if strong else files[0]
+            tag = "" if strong else "（仅文档性提及）"
+            print(f"     {name:16s} {len(files):2d} 个文件，例: {example} {tag}")
+    print()
+    print("  已知盲区（工具只扫 Python 加载行为）: " + ", ".join(data["blind_spots"]))
     return 0
 
 

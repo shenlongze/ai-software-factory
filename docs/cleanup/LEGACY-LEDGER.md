@@ -3,7 +3,7 @@
 
 # 旧代码台账（LEGACY LEDGER）
 
-> 生成时间: 2026-09-13T18:13:33+00:00 | 生成器: `scripts/legacy_inventory.py`
+> 生成时间: 2026-09-13T18:24:36+00:00 | 生成器: `scripts/legacy_inventory.py`
 > 规则：**只减不增** —— 由 `tests/architecture/test_legacy_fence.py` 强制
 
 ## 一、分区总览
@@ -38,6 +38,28 @@
 
 > 其中 **45 文件 / 7720 行**受已知动态加载前缀影响（前缀 `factory_console.`），**尤其不可当作可删**。
 > 动态调用 45 处；未解析字面量 9 条。
+
+### 本栏的已知盲区（工具只扫 Python 的加载行为）
+
+| 盲区 | 说明 | 实例 |
+|---|---|---|
+| `subprocess-cli` | 被当命令跑，不被 import | `desktop` 调 `factory-runtime` CLI |
+| `path-reference` | 按文件系统路径引用 | 测试夹具指向 `demo/` |
+| `non-python-consumer` | Rust / TS / JSON 里写死名字 | `tauri.conf.json` 打包 `factory-runtime-bundle` |
+| `computed-dynamic` | 非字面量拼接的动态加载 | `f"{prefix}{name}"` |
+
+### 非 Python 载体引用（弱信号：可能含文档性提及，但被点名者绝不可当作可删）
+
+| 分区 | 引用文件数 | 例 |
+|---|---:|---|
+| `demo` | 14 | `factory-runtime/bundle/factory_runtime_bundle.spec` |
+| `factory-console` | 5 | `factory-runtime/bundle/factory_runtime_bundle.spec` |
+| `factory-core` | 6 | `factory-exec/pyproject.toml` |
+| `factory-exec` | 6 | `factory-exec/pyproject.toml` |
+| `factory-org` | 3 | `factory-org/pyproject.toml` |
+| `factory-runtime` | 7 | `desktop/package.json` |
+| `factory_console` | 1 | `pyproject.toml` |
+| `services` | 1 | `tests/benchmark/s8_demo/org/artifacts.json` |
 
 ## 三、跨分区依赖边（只减不增）
 

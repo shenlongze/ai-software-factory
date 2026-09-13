@@ -1,10 +1,10 @@
-"""project/models.py — 项目配置模型 (Phase 5A Example Layer, ADR-0013)。
+"""plugins.factories.spec — 工厂定义的数据形状（只读声明层）。
 
-只读声明层: 解析 examples/<project>/ 下的 YAML 配置 (project/agents/skills/workflows),
-不写任何工厂状态。模型风格参照 tasks/models.py / workflows/models.py:
-Pydantic v2 + to_dict() (model_dump(mode="json")) + id 即引用键校验。
+沿革：factory-core/project/models.py → 此处（刀21 重写替换）。
+
+只读声明层：解析 examples/<name>/ 下的 YAML 配置（project/agents/skills/workflows），
+不写任何工厂状态。Pydantic v2 + to_dict() + id 即引用键校验。
 """
-
 from __future__ import annotations
 
 from typing import Any
@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field, field_validator
 
 
 def _id_sane(value: str) -> str:
-    """id 即引用键: 拒绝空值、路径分隔符与相对路径 (同 tasks/workflows 模式)。"""
+    """id 即引用键：拒绝空值、路径分隔符与相对路径。"""
     v = value.strip()
     if not v or v in {".", ".."} or "/" in v or "\\" in v:
         raise ValueError(f"invalid id: {value!r}")
@@ -21,15 +21,15 @@ def _id_sane(value: str) -> str:
 
 
 class ProjectDef(BaseModel):
-    """project.yaml — 项目定义 (名称/语言/仓库/技术栈 + Phase 6A 增强字段)。"""
+    """project.yaml — 项目定义（名称/语言/仓库/技术栈 + 增强字段）。"""
 
     name: str
     language: str
     repository: str = ""
     description: str = ""
     tech_stack: list[str] = Field(default_factory=list)
-    runtime_preferences: dict[str, Any] = Field(default_factory=dict)  # 运行偏好 (可选, Phase 6A)
-    status: str = "active"  # 项目状态: active/archived/... (可选, Phase 6A)
+    runtime_preferences: dict[str, Any] = Field(default_factory=dict)
+    status: str = "active"
 
     @field_validator("name")
     @classmethod
@@ -47,7 +47,7 @@ class ProjectDef(BaseModel):
 
 
 class AgentMapping(BaseModel):
-    """agents.yaml 单个 agent 映射: id + role + skills (Skill.id 引用)。"""
+    """agents.yaml 单个 agent 映射：id + role + skills（Skill.id 引用）。"""
 
     id: str
     name: str = ""
@@ -63,7 +63,7 @@ class AgentMapping(BaseModel):
     @field_validator("skills")
     @classmethod
     def _skills_clean(cls, v: list[str]) -> list[str]:
-        """过滤空白项 + 保序去重 (与 Agent.skills 语义一致)。"""
+        """过滤空白项 + 保序去重。"""
         return list(dict.fromkeys(s for s in v if s))
 
     def to_dict(self) -> dict[str, Any]:
@@ -71,7 +71,7 @@ class AgentMapping(BaseModel):
 
 
 class SkillDef(BaseModel):
-    """skills.yaml 单个技能定义 (能力目录, 字段与 agents.Skill 对齐)。"""
+    """skills.yaml 单个技能定义（能力目录）。"""
 
     id: str
     name: str = ""
@@ -90,7 +90,7 @@ class SkillDef(BaseModel):
 
 
 class WorkflowStepMapping(BaseModel):
-    """workflows.yaml 步骤映射 (字段与 workflows.WorkflowStep 对齐, 含 role/skill 元数据)。"""
+    """workflows.yaml 步骤映射（含 role/skill 元数据）。"""
 
     id: str
     name: str = ""
@@ -107,7 +107,7 @@ class WorkflowStepMapping(BaseModel):
 
 
 class WorkflowMapping(BaseModel):
-    """workflows.yaml 单个工作流映射 (步骤含 required_role/required_skill)。"""
+    """workflows.yaml 单个工作流映射。"""
 
     id: str
     name: str = ""
@@ -124,7 +124,7 @@ class WorkflowMapping(BaseModel):
 
 
 class ProjectConfig(BaseModel):
-    """一个项目的完整配置聚合 (project.yaml + agents + skills + workflows)。"""
+    """一个工厂定义的完整聚合（project.yaml + agents + skills + workflows）。"""
 
     project: ProjectDef
     agents: list[AgentMapping] = Field(default_factory=list)

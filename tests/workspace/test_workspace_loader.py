@@ -21,7 +21,7 @@ from workspace.loader import (
     resolve_projects_root,
 )
 
-from project.loader import load_project
+from ai_factory_os.plugins.factories.loader import load_project
 
 
 class TestManagedProjectsDir:
@@ -88,7 +88,7 @@ class TestDefinitionFromConfig:
         assert d.workflows == ["bug-fix", "feature", "release"]
 
     def _cfg(self, **project_kw):
-        from project.models import ProjectConfig, ProjectDef
+        from ai_factory_os.plugins.factories.spec import ProjectConfig, ProjectDef
         return ProjectConfig(project=ProjectDef(name="x", language="go", **project_kw))
 
     def test_passes_runtime_preferences(self):

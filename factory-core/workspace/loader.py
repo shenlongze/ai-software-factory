@@ -21,12 +21,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from project.loader import (
+from ai_factory_os.plugins.factories.loader import (
     ProjectLoadError,
     default_examples_dir,
     load_project,
 )
-from project.models import ProjectConfig
+from ai_factory_os.plugins.factories.spec import ProjectConfig
 
 from .config import WorkspaceConfigError
 from .models import ProjectDefinition

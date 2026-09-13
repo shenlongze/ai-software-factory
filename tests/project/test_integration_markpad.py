@@ -16,7 +16,7 @@ from pathlib import Path
 from agents.registry import AgentRegistry
 from agents.store import AgentStore
 from assignment.store import AssignmentStore
-from project.loader import load_project
+from ai_factory_os.plugins.factories.loader import load_project
 from runtime.store import RuntimeStore
 from tasks.store import TaskStore
 from workflows.engine import WorkflowEngine

@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from project.loader import (
+from ai_factory_os.plugins.factories.loader import (
     ProjectLoadError,
     default_examples_dir,
     discover_projects,

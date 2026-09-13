@@ -9,8 +9,8 @@
    128341
   ],
   "factory-core": [
-   138,
-   33814
+   135,
+   33478
   ],
   "factory-exec": [
    51,
@@ -421,9 +421,6 @@
   "factory-core/product/models.py",
   "factory-core/product/service.py",
   "factory-core/product/store.py",
-  "factory-core/project/__init__.py",
-  "factory-core/project/loader.py",
-  "factory-core/project/models.py",
   "factory-core/providers/__init__.py",
   "factory-core/providers/adapters/__init__.py",
   "factory-core/providers/adapters/hermes.py",
@@ -568,5 +565,5 @@
   "factory_console/__init__.py",
   "factory_console/cli_factory.py"
  ],
- "lines": 197837
+ "lines": 197501
 }

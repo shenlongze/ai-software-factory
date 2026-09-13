@@ -1202,7 +1202,7 @@ class ConsoleService:
         # 示例目录 (examples/) 的定义 (如 markpad) 不冒充用户项目 — 只过滤示例, 不动普通定义
         example_ids: set[str] = set()
         try:
-            from project.loader import default_examples_dir as _default_ex
+            from ai_factory_os.plugins.factories.loader import default_examples_dir as _default_ex
             ex = Path(_default_ex())
             if ex.is_dir():
                 for d in ex.iterdir():

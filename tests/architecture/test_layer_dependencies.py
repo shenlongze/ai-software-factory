@@ -16,6 +16,7 @@
     R10 新结构内禁用文件名
     R11 services 域内文件 ⊆ 五件套
     R12 core 无业务词 且 总行数 ≤ 上限
+    R17 core 只允许 scheduler / events 两个子模块（补：防 core 形状漂移）
 """
 from __future__ import annotations
 
@@ -41,6 +42,9 @@ CORE_FORBIDDEN_WORDS = (
 )
 
 CORE_LINE_LIMIT = 3000
+
+# R17：core 只允许这两个子模块（平台本体 = 决定下一步 + 记录发生了什么）
+CORE_SUBMODULES = ("scheduler", "events")
 
 
 # ------------------------------------------------------------------ helpers
@@ -192,3 +196,15 @@ def test_r12_core_thin_and_pure() -> None:
             assert word not in low, f"[R12] core 出现业务词 {word!r}: {f}"
     total = sum(len(t.splitlines()) for t in texts.values())
     assert total <= CORE_LINE_LIMIT, f"[R12] core 行数 {total} > {CORE_LINE_LIMIT}"
+
+
+def test_r17_core_shape_is_only_scheduler_and_events() -> None:
+    """R17: core 只允许 scheduler / events 两个子模块。
+
+    补这条的原因：core 下曾长出 capability / conversation / gate / node 四个空目录
+    —— R12 只管行数与业务词，管不住 core 的「形状」，漂移就是这么发生的。
+    这四个概念的正确归属：contracts（数据+协议）+ services（业务）。
+    """
+    subdirs = {d.name for d in (SRC / "core").iterdir() if d.is_dir() and d.name != "__pycache__"}
+    assert subdirs <= set(CORE_SUBMODULES), \
+        f"[R17] core 出现不该有的子模块: {sorted(subdirs - set(CORE_SUBMODULES))}"

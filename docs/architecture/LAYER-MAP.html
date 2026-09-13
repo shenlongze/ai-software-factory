@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Factory OS — 层级结构图</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'JetBrains Mono', monospace;
+      background: #020617; min-height: 100vh; padding: 2rem; color: white;
+    }
+    .container { max-width: 1240px; margin: 0 auto; }
+    .header { margin-bottom: 1.5rem; }
+    .header-row { display: flex; align-items: center; gap: 1rem; margin-bottom: 0.5rem; }
+    .pulse-dot { width: 12px; height: 12px; background: #22d3ee; border-radius: 50%; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+    h1 { font-size: 1.4rem; font-weight: 700; letter-spacing: -0.025em; }
+    .subtitle { color: #94a3b8; font-size: 0.8rem; margin-left: 1.75rem; }
+    .diagram-container {
+      background: rgba(15,23,42,0.5); border-radius: 1rem;
+      border: 1px solid #1e293b; padding: 1.5rem; overflow-x: auto;
+    }
+    svg { width: 100%; min-width: 1000px; display: block; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin-top: 1.5rem; }
+    .card { background: rgba(15,23,42,0.5); border-radius: 0.75rem; border: 1px solid #1e293b; padding: 1.1rem; }
+    .card-header { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.7rem; }
+    .card-dot { width: 8px; height: 8px; border-radius: 50%; }
+    .card-dot.cyan{background:#22d3ee} .card-dot.emerald{background:#34d399}
+    .card-dot.violet{background:#a78bfa} .card-dot.amber{background:#fbbf24}
+    .card-dot.rose{background:#fb7185}
+    .card h3 { font-size: 0.82rem; font-weight: 600; }
+    .card ul { list-style: none; color: #94a3b8; font-size: 0.72rem; line-height: 1.55; }
+    .card li { margin-bottom: 0.3rem; }
+    .footer { text-align: center; margin-top: 1.5rem; color: #475569; font-size: 0.72rem; }
+    code { color: #22d3ee; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="header-row">
+        <div class="pulse-dot"></div>
+        <h1>AI Factory OS — 层级结构图</h1>
+      </div>
+      <p class="subtitle">src/ai_factory_os 七层 · 真实测量数据 · 依赖方向由 17 条铁律机器强制 · 2026-09-14</p>
+    </div>
+
+    <div class="diagram-container">
+      <svg viewBox="0 0 1180 790">
+        <defs>
+          <marker id="ar" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#34d399"/>
+          </marker>
+          <marker id="arGrey" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#64748b"/>
+          </marker>
+          <marker id="arRose" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#fb7185"/>
+          </marker>
+          <marker id="arAmber" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#fbbf24"/>
+          </marker>
+          <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="0.5"/>
+          </pattern>
+        </defs>
+        <rect width="100%" height="100%" fill="url(#grid)"/>
+
+        <!-- ============ 依赖方向轴 ============ -->
+        <text x="30" y="52" fill="#34d399" font-size="11" font-weight="600">依赖方向：只能向下</text>
+        <line x1="200" y1="48" x2="330" y2="48" stroke="#34d399" stroke-width="1.5" marker-end="url(#ar)"/>
+        <text x="340" y="52" fill="#94a3b8" font-size="9">上层依赖下层 · 下层不知道上层存在</text>
+
+        <!-- ============ 主干五层 ============ -->
+        <!-- apps -->
+        <rect x="30" y="80" width="620" height="74" rx="8" fill="#0f172a"/>
+        <rect x="30" y="80" width="620" height="74" rx="8" fill="rgba(8,51,68,0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+        <text x="48" y="106" fill="white" font-size="13" font-weight="700">apps/</text>
+        <text x="48" y="124" fill="#94a3b8" font-size="9.5">投影层 · 只做界面与输入输出 · 位于 src 之外</text>
+        <text x="48" y="141" fill="#22d3ee" font-size="9">已落：apps/cli/run_demo.py（一条命令跑通完整调度）</text>
+        <text x="596" y="106" fill="#22d3ee" font-size="10" text-anchor="end">1 文件</text>
+        <text x="596" y="122" fill="#475569" font-size="8.5" text-anchor="end">CLI / WebUI / Desktop</text>
+
+        <!-- api -->
+        <rect x="30" y="196" width="620" height="74" rx="8" fill="#0f172a"/>
+        <rect x="30" y="196" width="620" height="74" rx="8" fill="rgba(120,53,15,0.3)" stroke="#fbbf24" stroke-width="1.5"/>
+        <text x="48" y="222" fill="white" font-size="13" font-weight="700">api/</text>
+        <text x="48" y="240" fill="#94a3b8" font-size="9.5">接口层 · 路由 + 契约转换 · 不碰具体实现（铁律 R6）</text>
+        <text x="48" y="257" fill="#fbbf24" font-size="9">⏳ 尚未落地（空占位）—— 现有 API 仍在 factory-console</text>
+        <text x="596" y="222" fill="#fbbf24" font-size="10" text-anchor="end">1 文件 / 0 行</text>
+        <text x="596" y="238" fill="#475569" font-size="8.5" text-anchor="end">骨架</text>
+
+        <!-- services -->
+        <rect x="30" y="312" width="620" height="74" rx="8" fill="#0f172a"/>
+        <rect x="30" y="312" width="620" height="74" rx="8" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="48" y="338" fill="white" font-size="13" font-weight="700">services/ 七域</text>
+        <text x="48" y="356" fill="#94a3b8" font-size="9.5">organization · work · resource · execution · governance · learning · conversation</text>
+        <text x="48" y="373" fill="#34d399" font-size="9">域内五件套（R11）· 域间不许互相 import 实现（R3）</text>
+        <text x="596" y="338" fill="#34d399" font-size="10" text-anchor="end">9 文件 / 152 行</text>
+        <text x="596" y="354" fill="#475569" font-size="8.5" text-anchor="end">七域骨架</text>
+
+        <!-- core -->
+        <rect x="30" y="428" width="620" height="74" rx="8" fill="#0f172a"/>
+        <rect x="30" y="428" width="620" height="74" rx="8" fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="1.5"/>
+        <text x="48" y="454" fill="white" font-size="13" font-weight="700">core/ 平台本体</text>
+        <text x="48" y="472" fill="#94a3b8" font-size="9.5">只有两段：scheduler（决定下一步是谁）+ events（记录发生了什么）</text>
+        <text x="48" y="489" fill="#a78bfa" font-size="9">零 IO · 零业务词 · ≤3000 行（R12）· 靠 ports 注入（R2）</text>
+        <text x="596" y="454" fill="#a78bfa" font-size="10" text-anchor="end">10 文件 / 388 行</text>
+        <text x="596" y="470" fill="#475569" font-size="8.5" text-anchor="end">384 / 3000 行额度</text>
+
+        <!-- core 漂移：已修 -->
+        <rect x="30" y="504" width="620" height="30" rx="6" fill="rgba(6,78,59,0.35)" stroke="#34d399" stroke-width="1" stroke-dasharray="4,3"/>
+        <text x="46" y="523" fill="#34d399" font-size="9">✓ 已修：core/ 曾挂 4 个空目录（capability/ conversation/ gate/ node/）→ 已删，并加铁律 R17 守住形状</text>
+
+        <!-- contracts -->
+        <rect x="30" y="556" width="620" height="74" rx="8" fill="#0f172a"/>
+        <rect x="30" y="556" width="620" height="74" rx="8" fill="rgba(30,41,59,0.6)" stroke="#94a3b8" stroke-width="1.5"/>
+        <text x="48" y="582" fill="white" font-size="13" font-weight="700">contracts/ 契约层</text>
+        <text x="48" y="600" fill="#94a3b8" font-size="9.5">11 域：identity organization work resource execution governance learning conversation scheduling events errors</text>
+        <text x="48" y="617" fill="#94a3b8" font-size="9">零依赖 · 不许有任何逻辑 if/for/while/try/with（R9）· 不许 import 其它顶层包（R1）</text>
+        <text x="596" y="582" fill="#94a3b8" font-size="10" text-anchor="end">12 文件 / 716 行</text>
+        <text x="596" y="598" fill="#475569" font-size="8.5" text-anchor="end">最厚的一层（47% 行数）</text>
+
+        <!-- ============ 主干依赖箭头 ============ -->
+        <line x1="340" y1="154" x2="340" y2="194" stroke="#34d399" stroke-width="1.6" marker-end="url(#ar)"/>
+        <line x1="340" y1="270" x2="340" y2="310" stroke="#34d399" stroke-width="1.6" marker-end="url(#ar)"/>
+        <line x1="340" y1="386" x2="340" y2="426" stroke="#34d399" stroke-width="1.6" marker-end="url(#ar)"/>
+        <line x1="340" y1="502" x2="340" y2="554" stroke="#34d399" stroke-width="1.6" marker-end="url(#ar)"/>
+
+        <!-- ============ 侧列三层 ============ -->
+        <rect x="700" y="80" width="450" height="74" rx="8" fill="#0f172a"/>
+        <rect x="700" y="80" width="450" height="74" rx="8" fill="rgba(8,51,68,0.35)" stroke="#22d3ee" stroke-width="1.5"/>
+        <text x="718" y="106" fill="white" font-size="13" font-weight="700">plugins/ 实现绑定</text>
+        <text x="718" y="124" fill="#94a3b8" font-size="9.5">平台不认识任何具体能力；能力全部由插件声明与实现</text>
+        <text x="718" y="141" fill="#22d3ee" font-size="9">只 import contracts（R4）· 工厂/Agent/技能/工具/MCP/模型/连接器/控制器/修复/通知/触发器/存储</text>
+        <text x="1130" y="106" fill="#22d3ee" font-size="10" text-anchor="end">22 文件 / 263 行</text>
+        <text x="1130" y="122" fill="#475569" font-size="8.5" text-anchor="end">含第一个工厂 software（纯数据）</text>
+
+        <rect x="700" y="196" width="450" height="74" rx="8" fill="#0f172a"/>
+        <rect x="700" y="196" width="450" height="74" rx="8" fill="rgba(120,53,15,0.3)" stroke="#fbbf24" stroke-width="1.5"/>
+        <text x="718" y="222" fill="white" font-size="13" font-weight="700">infrastructure/ 技术设施</text>
+        <text x="718" y="240" fill="#94a3b8" font-size="9.5">llm · storage · messaging · process · sandbox</text>
+        <text x="718" y="257" fill="#fbbf24" font-size="9">只 import contracts（R5）· ⏳ 尚未落地（空占位）</text>
+        <text x="1130" y="222" fill="#fbbf24" font-size="10" text-anchor="end">6 文件 / 0 行</text>
+        <text x="1130" y="238" fill="#475569" font-size="8.5" text-anchor="end">骨架</text>
+
+        <rect x="700" y="312" width="450" height="74" rx="8" fill="#0f172a"/>
+        <rect x="700" y="312" width="450" height="74" rx="8" fill="rgba(136,19,55,0.35)" stroke="#fb7185" stroke-width="1.5"/>
+        <text x="718" y="338" fill="white" font-size="13" font-weight="700">bootstrap/ 装配</text>
+        <text x="718" y="356" fill="#94a3b8" font-size="9.5">唯一允许组装全部层的例外（R8）—— 把 ports 接到 services 上</text>
+        <text x="718" y="373" fill="#fb7185" font-size="9">⏳ 尚未落地 —— 现在由 apps/cli/run_demo.py 用手写内存世界代替</text>
+        <text x="1130" y="338" fill="#fb7185" font-size="10" text-anchor="end">1 文件 / 0 行</text>
+        <text x="1130" y="354" fill="#475569" font-size="8.5" text-anchor="end">缺口</text>
+
+        <!-- ============ 旧代码区 ============ -->
+        <rect x="700" y="428" width="450" height="202" rx="10" fill="rgba(2,6,23,0.7)" stroke="#64748b" stroke-width="1" stroke-dasharray="8,4"/>
+        <text x="718" y="454" fill="#94a3b8" font-size="12" font-weight="700">旧代码（待绞杀）</text>
+        <text x="718" y="476" fill="#64748b" font-size="9.5">在 src/ 之外 · 仍然是产品本体，正在服役</text>
+        <text x="718" y="500" fill="white" font-size="10">537 文件 / 198,188 行</text>
+        <line x1="718" y1="512" x2="1130" y2="512" stroke="#1e293b" stroke-width="1"/>
+        <text x="718" y="532" fill="#94a3b8" font-size="8.5">可达 335 · 仅测试可达 117 · 未证实 86</text>
+        <text x="718" y="552" fill="#94a3b8" font-size="8.5">factory-console 128K ← 产品本体（CLI 84 命令 + Web + API）</text>
+        <text x="718" y="570" fill="#94a3b8" font-size="8.5">factory-core 33K · factory-exec 22K · factory-org 12K · factory-runtime 1.5K</text>
+        <text x="718" y="594" fill="#fb7185" font-size="8.5">围栏：只减不增（R13-R16）· 已归零：kernel/</text>
+        <text x="718" y="614" fill="#64748b" font-size="8.5">绞杀方向：一条线一条线迁进上面各层 →</text>
+
+        <!-- 绞杀箭头 -->
+        <path d="M 700 560 L 660 560 L 660 375 L 652 375" fill="none" stroke="#fbbf24" stroke-width="1.3" stroke-dasharray="5,4" marker-end="url(#arAmber)"/>
+        <text x="668" y="470" fill="#fbbf24" font-size="8" transform="rotate(-90 668 470)">绞杀迁入</text>
+
+        <!-- 侧列依赖箭头（指向 contracts） -->
+        <path d="M 700 150 L 668 150 L 668 580 L 656 580" fill="none" stroke="#22d3ee" stroke-width="1.2" stroke-dasharray="4,3" marker-end="url(#arGrey)"/>
+        <text x="676" y="240" fill="#22d3ee" font-size="8" transform="rotate(-90 676 240)">只依赖 contracts</text>
+
+        <!-- ============ 图例 ============ -->
+        <text x="30" y="672" fill="white" font-size="10" font-weight="600">Legend</text>
+        <rect x="30" y="684" width="16" height="10" rx="2" fill="rgba(8,51,68,0.4)" stroke="#22d3ee" stroke-width="1"/>
+        <text x="52" y="693" fill="#94a3b8" font-size="8.5">投影 / 实现（最外层）</text>
+        <rect x="240" y="684" width="16" height="10" rx="2" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1"/>
+        <text x="262" y="693" fill="#94a3b8" font-size="8.5">业务域</text>
+        <rect x="370" y="684" width="16" height="10" rx="2" fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="1"/>
+        <text x="392" y="693" fill="#94a3b8" font-size="8.5">平台本体（内核）</text>
+        <rect x="530" y="684" width="16" height="10" rx="2" fill="rgba(30,41,59,0.6)" stroke="#94a3b8" stroke-width="1"/>
+        <text x="552" y="693" fill="#94a3b8" font-size="8.5">契约（最底层）</text>
+        <rect x="690" y="684" width="16" height="10" rx="2" fill="rgba(136,19,55,0.35)" stroke="#fb7185" stroke-width="1"/>
+        <text x="712" y="693" fill="#94a3b8" font-size="8.5">警告 / 漂移</text>
+        <line x1="840" y1="689" x2="856" y2="689" stroke="#fbbf24" stroke-width="1.2" stroke-dasharray="5,4"/>
+        <text x="864" y="693" fill="#94a3b8" font-size="8.5">绞杀迁入方向</text>
+
+        <!-- 底部统计 -->
+        <rect x="30" y="712" width="1120" height="58" rx="8" fill="rgba(15,23,42,0.8)" stroke="#1e293b" stroke-width="1"/>
+        <text x="48" y="734" fill="white" font-size="10" font-weight="600">新地基合计</text>
+        <text x="140" y="734" fill="#22d3ee" font-size="10">62 文件 / 1,519 行</text>
+        <text x="300" y="734" fill="#94a3b8" font-size="9.5">= 旧代码的 0.77% 行数</text>
+        <text x="48" y="756" fill="#94a3b8" font-size="9">强制手段：17 条铁律（R1–R12 层级边界 / R13–R16 旧代码围栏 / R17 core 形状）· 每次提交全跑 · 违反即红</text>
+        <text x="1120" y="756" fill="#475569" font-size="8.5" text-anchor="end">生成自真实测量 · 14 刀提交于 cleanup/os-core-restructure-2026-09-11</text>
+      </svg>
+    </div>
+
+    <div class="cards">
+      <div class="card">
+        <div class="card-header"><div class="card-dot emerald"></div><h3>层与层怎么约束（机器强制）</h3></div>
+        <ul>
+          <li>• R1 contracts 不 import 其它顶层包</li>
+          <li>• R2 core 只 import contracts</li>
+          <li>• R3 services 域间不 import 实现</li>
+          <li>• R4 plugins 只 import contracts</li>
+          <li>• R5 infrastructure 只 import contracts</li>
+          <li>• R6 api 不 import infrastructure 实现</li>
+          <li>• R7 apps 不许出现在 src 内</li>
+          <li>• R8 bootstrap 是唯一装配例外</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><div class="card-dot rose"></div><h3>防止退回乱局（R9–R17）</h3></div>
+        <ul>
+          <li>• R9 契约层不许有 if/for/while/try/with</li>
+          <li>• R10 11 个禁用文件名（防再长出 25 个 models.py）</li>
+          <li>• R11 服务域内只许五件套</li>
+          <li>• R12 core 无业务词 且 ≤3000 行</li>
+          <li>• R17 core 只许 scheduler / events</li>
+          <li>• R13 新地基不许 import 旧代码</li>
+          <li>• R14 旧代码文件只减不增</li>
+          <li>• R15 旧代码跨分区边只减不增</li>
+          <li>• R16 不许新增顶层代码目录</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><div class="card-dot amber"></div><h3>现在的真实状态（不美化）</h3></div>
+        <ul>
+          <li>• 已落地：contracts（11 域）· core（调度器+事实）· plugins 工厂</li>
+          <li>• 骨架：services 七域（仅 execution/rules 接真活）</li>
+          <li>• 空占位：api / infrastructure / bootstrap</li>
+          <li>• 漂移已修：core/ 4 个空目录 → 删除 + R17 守住</li>
+          <li>• 旧代码 537 文件 198,188 行 未动，仍是产品本体</li>
+          <li>• 绞杀完成 1 条（kernel/ 归零）+ 首条真链已接（审批门/补丁过滤走新地基）</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><div class="card-dot violet"></div><h3>怎么自己验证（不用信我）</h3></div>
+        <ul>
+          <li>• 看层级：<code>find src/ai_factory_os -maxdepth 2 -type d</code></li>
+          <li>• 看铁律：<code>pytest tests/architecture/ -v</code>（17 条）</li>
+          <li>• 看一条真链：<code>.venv/bin/python apps/cli/run_demo.py</code></li>
+          <li>• 看旧代码台账：<code>docs/cleanup/LEGACY-LEDGER.md</code></li>
+          <li>• 看活/未证实：<code>python scripts/legacy_reach.py</code></li>
+          <li>• 验证围栏有牙：往旧分区放个文件 → 测试立刻红</li>
+        </ul>
+      </div>
+    </div>
+
+    <p class="footer">AI Factory OS · 层级结构图 · 数据来源 = 仓库真实测量 · 非事实源，结构变更后应重新生成</p>
+  </div>
+</body>
+</html>

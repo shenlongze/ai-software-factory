@@ -110,6 +110,7 @@ from workspace.manager import (
 )
 
 from .context import FactoryContext
+from legacy_paths import REPO_ROOT  # 仓库根唯一计算器
 
 SOURCE = "cli"
 
@@ -3404,7 +3405,7 @@ def _open_console_service(ctx: FactoryContext) -> Any:
     import sys
     from pathlib import Path
 
-    console_dir = Path(__file__).resolve().parents[2] / "factory-console"
+    console_dir = REPO_ROOT / "factory-console"
     if not console_dir.is_dir():
         return None
     root = console_dir.parent
@@ -3563,7 +3564,7 @@ def _factory_org_pkg_dir() -> Any:
     """factory-org 包目录 (factory-org/); 不存在 → None (Removal Isolation)。"""
     from pathlib import Path
 
-    d = Path(__file__).resolve().parents[2] / "factory-org"
+    d = REPO_ROOT / "factory-org"
     return d if d.is_dir() else None
 
 
@@ -3643,7 +3644,7 @@ def _factory_exec_pkg_dir() -> Any:
     """factory-exec 包目录 (factory-exec/); 不存在 → None (Removal Isolation)。"""
     from pathlib import Path
 
-    d = Path(__file__).resolve().parents[2] / "factory-exec"
+    d = REPO_ROOT / "factory-exec"
     return d if d.is_dir() else None
 
 

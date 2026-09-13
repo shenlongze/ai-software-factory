@@ -23,7 +23,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 from typing import Any
-from repo_paths import REPO_ROOT  # 仓库根唯一计算器
+from legacy_paths import REPO_ROOT  # 仓库根唯一计算器
 
 _REPO_ROOT = REPO_ROOT
 _ORG_SRC = REPO_ROOT / "src" / "legacy" / "factory-org"

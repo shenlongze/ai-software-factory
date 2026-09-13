@@ -50,7 +50,9 @@ def legacy_files() -> list[Path]:
     for p in ROOT.rglob("*.py"):
         if any(s in p.parts for s in SKIP) or "tests" in p.parts or NEW in p.parents:
             continue
-        if p.relative_to(ROOT).parts[:2] == LEGACY_PARTS and "tests" not in p.parts:
+        if (p.relative_to(ROOT).parts[:2] == LEGACY_PARTS
+                and p.relative_to(ROOT).parts[2] in PARTITIONS
+                and "tests" not in p.parts):
             out.append(p)
     return sorted(out)
 

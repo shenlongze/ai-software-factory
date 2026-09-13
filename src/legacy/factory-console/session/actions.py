@@ -106,6 +106,7 @@ logger = logging.getLogger("factory.session.actions")
 from .quality import RepairManager
 from .teams import DEFAULT_TEAM_MEMBERS, TeamRegistry, TeamService
 from .workspace import WorkspaceContext
+from legacy_paths import REPO_ROOT  # 仓库根唯一计算器
 
 #: 会话工作区缺省 (与 commands.DEFAULT_PROJECTS_FILE 同口径: ~/.factory)
 DEFAULT_WORKSPACE = Path.home() / ".factory"
@@ -182,7 +183,7 @@ def _load_org_cli() -> Any:
 
     返回模块对象 (测试可 monkeypatch 其 cmd_project_register 验证调用链)。
     """
-    root = Path(__file__).resolve().parents[2]  # session/ → factory-console/ → 仓库根
+    root = REPO_ROOT  # session/ → factory-console/ → 仓库根
     path = str(root / "src" / "legacy" / "factory-org")
     if path not in sys.path:
         sys.path.insert(0, path)
@@ -195,7 +196,7 @@ def _load_exec_cli() -> Any:
     cmd_exec_run(root, args) — 真实 Agent Runtime 链 (LLM → 沙箱 → patch → 产物)。
     args: project(目录, 必填)/task/objective/agent/employee/provider/test_cmd/json。
     """
-    root = Path(__file__).resolve().parents[2]  # session/ → factory-console/ → 仓库根
+    root = REPO_ROOT  # session/ → factory-console/ → 仓库根
     path = str(root / "src" / "legacy" / "factory-exec")
     if path not in sys.path:
         sys.path.insert(0, path)

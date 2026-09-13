@@ -4,9 +4,9 @@
 把「文件放在第几层」当成了契约。刀23 把代码整体移入 src/legacy/ 后，所有 N 全部错位
 （症状：`factory --version` 从 v1.1.364 变成 vdev）。这类推算每搬一次就坏一次。
 
-本模块向上寻找同时含 `pyproject.toml` 与 `src/` 的目录 —— 与文件位置无关。
+本包向上寻找同时含 `pyproject.toml` 与 `src/` 的目录 —— 与文件位置无关。
 放在 src/legacy/ 下（该目录在 PYTHONPATH 上），legacy 代码统一
-`from repo_paths import REPO_ROOT` 即可。
+`from legacy_paths import REPO_ROOT` 即可。
 """
 from __future__ import annotations
 

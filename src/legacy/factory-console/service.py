@@ -71,7 +71,7 @@ from .models import (
     WorkflowDetail,
     WorkflowSummary,
 )
-from repo_paths import REPO_ROOT  # 仓库根唯一计算器
+from legacy_paths import REPO_ROOT  # 仓库根唯一计算器
 
 #: 默认最近决策/活动条数 (KISS: Dashboard 不无限增长, CLI --limit 可覆盖)
 DEFAULT_RECENT_LIMIT = 10

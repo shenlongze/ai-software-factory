@@ -72,7 +72,7 @@ def _session_version() -> str:
     try:
         import tomllib
         from pathlib import Path as _P
-        _pp = _P(__file__).resolve().parent.parent.parent / "pyproject.toml"
+        _pp = REPO_ROOT / "pyproject.toml"
         if _pp.is_file():
             return tomllib.loads(_pp.read_text(encoding="utf-8"))["project"]["version"]
     except Exception:  # noqa: BLE001
@@ -92,6 +92,7 @@ BANNER = (
 #: 退出命令集合 (匹配即优雅退出) — S10-103: 单一来源 discovery_guide.EXIT_COMMANDS
 #: (conversation 不能 import session — 循环依赖; 集合内容不变)
 from .discovery_guide import EXIT_COMMANDS  # noqa: E402
+from legacy_paths import REPO_ROOT  # 仓库根唯一计算器
 
 #: 未知输入提示前缀 (slash 未知 + Intent 未识别共用)
 UNKNOWN_PREFIX = "未知命令: "

@@ -24,7 +24,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from repo_paths import REPO_ROOT  # 仓库根唯一计算器
+from legacy_paths import REPO_ROOT  # 仓库根唯一计算器
 
 SCOPE_TYPES: tuple[str, ...] = ("global", "company")
 ASSIGNMENT_STATUSES: tuple[str, ...] = ("active", "revoked")

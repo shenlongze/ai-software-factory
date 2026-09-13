@@ -22,6 +22,7 @@ from typing import Any, Optional
 from .context import SessionContext
 from .renderer import render_message
 from .slash import SlashCommand, SlashCommandRegistry
+from legacy_paths import REPO_ROOT  # 仓库根唯一计算器
 
 #: 项目清单数据文件默认路径 (与 ConfigProvider.get_data_dir() 默认 ~/.factory 同口径)
 DEFAULT_PROJECTS_FILE = Path.home() / ".factory" / "org" / "projects.json"
@@ -616,13 +617,13 @@ class BoardCommand(SlashCommand):
                     print("用法: /board docs list|add-dir|add-ext|rm-dir <项目> [值]")
             elif view == "sync":
                 marked = sync_mainline(
-                    Path(__file__).resolve().parents[1] / ".." / "docs" / "sprint10" / "待办清单-已发现未落地.md")
+                    REPO_ROOT / "docs" / "sprint10" / "待办清单-已发现未落地.md")
                 print(("✅ 自动同步主线: " + ", ".join(marked)) if marked else "主线已同步（无需新标记）")
             elif view in ("done", "unmark"):
                 if len(sub) < 2:
                     print("用法: /board done <任务ID>  例: /board done M3-1")
                     return 2
-                print(mark_backlog_item(Path(__file__).resolve().parents[1] / ".." / "docs" / "sprint10" / "待办清单-已发现未落地.md", sub[1], done=(view == "done")))
+                print(mark_backlog_item(REPO_ROOT / "docs" / "sprint10" / "待办清单-已发现未落地.md", sub[1], done=(view == "done")))
             elif view == "project":
                 # S10-110: 单项目管理视图 (只读) — 无参=项目列表(select), 有参=生命周期视图
                 if workspace is None:
@@ -674,7 +675,7 @@ class BoardCommand(SlashCommand):
                         save_path = None
                         if save:
                             save_path = (
-                                Path(__file__).resolve().parents[1] / ".." / "docs" / "sprint10"
+                                REPO_ROOT / "docs" / "sprint10"
                             )
                         report = engine.compare(exec_id, compare_with, save_to=save_path)
                         print(report)

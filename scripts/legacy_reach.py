@@ -258,7 +258,9 @@ def _is_legacy(path: Path) -> bool:
         rel = path.relative_to(ROOT)
     except ValueError:
         return False
-    return rel.parts[:2] == LEGACY_PARTS and "tests" not in rel.parts
+    return (rel.parts[:2] == LEGACY_PARTS
+            and rel.parts[2] in PARTITIONS      # 排除 legacy_paths（我加的基础设施）
+            and "tests" not in rel.parts)
 
 
 def _lines(files) -> int:

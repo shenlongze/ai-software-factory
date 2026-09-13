@@ -39,7 +39,7 @@ dev = ["pytest>=8", "ruff>=0.6"]
 # "" → "factory-core" 使 factory-core 下 27 个顶层子包源码根保持 factory-core/ 前缀
 # (等价旧 find where=["factory-core"])。映射后 factory_console 即真实代码包
 # (cli_factory/config/llm_control/...), 不再需要 importlib 胶水转发。
-package-dir = { "" = "src/legacy/factory-core", "factory_console" = "src/legacy/factory-console", "exec" = "src/legacy/factory-exec/exec", "org" = "src/legacy/factory-org/org" }
+package-dir = { "" = "src/legacy/factory-core", "factory_console" = "src/legacy/factory-console", "exec" = "src/legacy/factory-exec/exec", "org" = "src/legacy/factory-org/org", "legacy_paths" = "src/legacy/legacy_paths" }
 # 显式列出全部包: find 无法发现映射包的子包 (物理位于 factory-console/ 下),
 # 故 factory_console* 显式列出; factory-core 子包为 find_packages("factory-core")
 # 展开 (新增子包须同步本列表)。
@@ -67,6 +67,8 @@ packages = [
     "exec.providers",
     "exec.tools",
     "org",
+    # 仓库根唯一计算器（隔离区共用）
+    "legacy_paths",
 ]
 
 [tool.setuptools.package-data]

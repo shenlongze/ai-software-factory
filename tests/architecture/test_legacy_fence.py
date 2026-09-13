@@ -40,6 +40,8 @@ def _legacy_files() -> list[Path]:
             continue
         if NEW in path.parents or path.relative_to(ROOT).parts[:2] != LEGACY_PARTS:
             continue
+        if path.relative_to(ROOT).parts[2] not in PARTITIONS:   # legacy_paths 是我加的基础设施，非旧代码
+            continue
         found.append(path)
     return sorted(found)
 

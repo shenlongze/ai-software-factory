@@ -131,7 +131,7 @@ from pathlib import Path
 from typing import Any, Iterator, NoReturn
 
 from pydantic import BaseModel
-from repo_paths import REPO_ROOT  # 仓库根唯一计算器
+from legacy_paths import REPO_ROOT  # 仓库根唯一计算器
 
 __all__ = ["DEFAULT_ROOT", "DEFAULT_PORT", "build_app", "build_console_service", "create_app"]
 

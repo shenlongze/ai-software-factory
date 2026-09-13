@@ -18,9 +18,10 @@ import json
 import re
 from pathlib import Path
 from typing import Any, Optional
+from legacy_paths import REPO_ROOT  # 仓库根唯一计算器
 
 #: 待办清单默认路径（主线任务源）
-DEFAULT_BACKLOG = Path(__file__).resolve().parents[2] / "docs" / "sprint10" / "待办清单-已发现未落地.md"
+DEFAULT_BACKLOG = REPO_ROOT / "docs" / "sprint10" / "待办清单-已发现未落地.md"
 
 #: 主线分组（M 里程碑 + P0）vs 周边（长期）
 MAIN_GROUPS = ("M2", "M3", "M4", "M5", "M6", "M7", "P0")
@@ -526,7 +527,7 @@ def _pkg_version_lite() -> str:
     """轻量读版本（HTML 面板底部显示, 失败 → dev）。"""
     try:
         import tomllib
-        p = Path(__file__).resolve().parents[2] / "pyproject.toml"
+        p = REPO_ROOT / "pyproject.toml"
         return tomllib.loads(p.read_text(encoding="utf-8"))["project"]["version"]
     except Exception:  # noqa: BLE001
         return "dev"
@@ -733,7 +734,7 @@ def save_report(path: Path = DEFAULT_BACKLOG, out_dir: Path | None = None) -> st
     """--report --save: 生成汇报并落盘到 docs/sprint10/（自动同步 Hermes 的素材）。"""
     report = render_report(path)
     if out_dir is None:
-        out_dir = Path(__file__).resolve().parents[2] / "docs" / "sprint10"
+        out_dir = REPO_ROOT / "docs" / "sprint10"
     out_dir.mkdir(parents=True, exist_ok=True)
     from datetime import datetime, timezone
     ts = datetime.now(timezone.utc).strftime("%Y%m%d")
@@ -762,7 +763,7 @@ def sync_mainline(path: Path = DEFAULT_BACKLOG) -> list[str]:
     只标"代码证据存在"的项（真实现了才有代码）; 其余保持手动维护
     （诚实不误标, M3-5/6/7 等需人工判断）。返回本次新标记的 id 列表。
     """
-    root = Path(__file__).resolve().parents[2]
+    root = REPO_ROOT
     marked: list[str] = []
     for item_id, rel in MAINLINE_CODE_EVIDENCE.items():
         if (root / rel).exists():
@@ -787,7 +788,7 @@ def _parse_sprints(sprint_dir: Path | None = None) -> list[dict[str, Any]]:
     完成判断: 该 S10 有 *-acceptance*.md（Hermes 验收报告 = 完成的可靠证据）。
     """
     if sprint_dir is None:
-        sprint_dir = Path(__file__).resolve().parents[2] / "docs" / "sprint10"
+        sprint_dir = REPO_ROOT / "docs" / "sprint10"
     if not sprint_dir.is_dir():
         return []
     sprints: dict[str, dict[str, Any]] = {}
@@ -824,7 +825,7 @@ def _parse_sprints(sprint_dir: Path | None = None) -> list[dict[str, Any]]:
 def _parse_s14(doc_path: Path | None = None) -> list[dict[str, Any]]:
     """§1.4 状态表（方案书章节级任务）: {id, title, status, todo}。"""
     if doc_path is None:
-        doc_path = Path(__file__).resolve().parents[2] / "AI Software Factory — 完整产品方案书.md"
+        doc_path = REPO_ROOT / "AI Software Factory — 完整产品方案书.md"
     if not doc_path.is_file():
         return []
     try:
@@ -1514,7 +1515,7 @@ def _parse_sdk_tasks(doc_path: Path | None = None) -> list[dict[str, Any]]:
     依赖 M3 收尾, 其余未开始)。
     """
     if doc_path is None:
-        doc_path = Path(__file__).resolve().parents[2] / "AI Software Factory — 完整产品方案书.md"
+        doc_path = REPO_ROOT / "AI Software Factory — 完整产品方案书.md"
     if not doc_path.is_file():
         return []
     try:

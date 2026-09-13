@@ -33,6 +33,7 @@ from product.lifecycle import ProductLifecycleEngine
 from product.service import ProductService
 from product.store import ProductStore
 from tasks.store import TaskStore
+from legacy_paths import REPO_ROOT  # 仓库根唯一计算器
 
 #: 演示名 (CLI --json 出口与测试断言共用)
 DEMO_NAME = "markpad"
@@ -56,7 +57,7 @@ class DemoError(Exception):
 
 def default_demo_dir() -> Path:
     """examples/markpad-demo 默认目录 (editable install 下源码布局可解析)。"""
-    repo_root = Path(__file__).resolve().parents[2]
+    repo_root = REPO_ROOT
     return repo_root / "examples" / "markpad-demo"
 
 

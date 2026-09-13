@@ -126,7 +126,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from .config import DEFAULT_PROVIDER, PROVIDER_DEFAULTS, ConfigProvider
-from repo_paths import REPO_ROOT  # 仓库根唯一计算器
+from legacy_paths import REPO_ROOT  # 仓库根唯一计算器
 
 # ------------------------------------------------------------------ 常量
 

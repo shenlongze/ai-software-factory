@@ -48,7 +48,7 @@ from types import SimpleNamespace
 from typing import Any, Callable
 
 from .config import get_config
-from repo_paths import REPO_ROOT  # 仓库根唯一计算器
+from legacy_paths import REPO_ROOT  # 仓库根唯一计算器
 
 #: LLM provider 配置已移入 factory-console/config.py (PROVIDER_DEFAULTS 映射表)
 #: — MODEL/BASE_URL/费率不再硬编码 (S10-007 阶段一: 多 Provider 支持,

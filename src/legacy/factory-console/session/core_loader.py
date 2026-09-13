@@ -10,8 +10,9 @@ import importlib
 import sys
 from pathlib import Path
 from typing import Any
+from legacy_paths import REPO_ROOT  # 仓库根唯一计算器
 
-_ROOT = Path(__file__).resolve().parents[2]  # session/ → factory-console/ → 仓库根
+_ROOT = REPO_ROOT  # session/ → factory-console/ → 仓库根
 
 
 def _ensure(path: str) -> None:

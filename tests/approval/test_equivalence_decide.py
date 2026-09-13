@@ -1,4 +1,4 @@
-"""S1.5 等价性验证：decide（新 services.approval_runtime vs 旧 exec.ApprovalGate）。"""
+"""S1.5 等价性验证：decide（新 ai_factory_os.services.governance vs 旧 exec.ApprovalGate）。"""
 from __future__ import annotations
 
 import sys
@@ -14,9 +14,9 @@ import pytest  # noqa: E402
 from exec.approval import ApprovalError, ApprovalGate as OldGate  # noqa: E402
 from exec.models import ApprovalDecision, ApprovalRecord as OldRecord  # noqa: E402
 from exec.store import ExecStore  # noqa: E402
-from services.approval_runtime.decide import ApprovalDecideError  # noqa: E402
-from services.approval_runtime.decide import decide as new_decide  # noqa: E402
-from services.approval_runtime.store import ApprovalStore  # noqa: E402
+from ai_factory_os.services.governance import ApprovalDecideError  # noqa: E402
+from ai_factory_os.services.governance import decide as new_decide  # noqa: E402
+from ai_factory_os.services.governance.store import ApprovalStore  # noqa: E402
 
 
 def _seed_old(tmp: Path) -> tuple[OldGate, str]:
@@ -28,7 +28,7 @@ def _seed_old(tmp: Path) -> tuple[OldGate, str]:
 
 def _seed_new(tmp: Path) -> tuple[ApprovalStore, str]:
     store = ApprovalStore(tmp / "exec")
-    from services.approval_runtime.store import ApprovalRecord as NewRecord
+    from ai_factory_os.services.governance.store import ApprovalRecord as NewRecord
     store.save(NewRecord(id="APR-1", request_id="REQ-1", risk_level="low", required_roles=["developer"]))
     return store, "APR-1"
 

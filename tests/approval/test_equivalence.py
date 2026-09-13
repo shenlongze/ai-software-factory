@@ -1,4 +1,4 @@
-"""S1.4 等价性验证：services.approval_runtime（新） vs factory-exec（旧）。
+"""S1.4 等价性验证：ai_factory_os.services.governance（新） vs factory-exec（旧）。
 
 断言：规则一致 / 存储格式一致 / 决策状态机一致。
 """
@@ -14,8 +14,8 @@ for _p in (str(_ROOT), str(_ROOT / "factory-core"), str(_ROOT / "factory-exec"))
 
 import pytest  # noqa: E402
 
-from services.approval_runtime import ApprovalGate, ApprovalStore  # noqa: E402
-from services.approval_runtime import classify_risk as new_risk  # noqa: E402
+from ai_factory_os.services.governance import ApprovalGate, ApprovalStore  # noqa: E402
+from ai_factory_os.services.governance import classify_risk as new_risk  # noqa: E402
 from exec.approval import classify_risk as old_risk  # noqa: E402
 
 # 3 组输入：低 / 中 / 高风险

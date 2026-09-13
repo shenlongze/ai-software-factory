@@ -1987,7 +1987,7 @@ class FactoryCLI:
         目标硬拒绝 (不绕过门禁)。
         """
         self._ensure_data_dir()
-        # 绞杀者模式 (S1.3): 默认走新实现 services.approval_runtime; 异常 fallback 旧。
+        # 绞杀者模式 (S1.3): 默认走新实现 ai_factory_os.services.governance; 异常 fallback 旧。
         # FACTORY_APPROVAL_OLD=1 → 强制旧 (对比用); FACTORY_APPROVAL_NEW=1 → 强制新 (不 fallback)。
         import os as _os
         if _os.environ.get("FACTORY_APPROVAL_OLD") != "1":
@@ -2049,8 +2049,8 @@ class FactoryCLI:
         _root = Path(__file__).resolve().parents[1]
         if str(_root) not in sys.path:
             sys.path.insert(0, str(_root))
-        from services.approval_runtime import ApprovalGate, ApprovalStore
-        from services.approval_runtime.decide import decide as _decide
+        from ai_factory_os.services.governance import ApprovalGate, ApprovalStore
+        from ai_factory_os.services.governance import decide as _decide
 
         store = ApprovalStore(Path(self.data_dir) / "exec")
 

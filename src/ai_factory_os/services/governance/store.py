@@ -1,9 +1,8 @@
-"""services/approval_runtime/store.py — 审批存储（沿用原格式）。
+"""services.governance.store — 审批记录持久化（无业务规则，只读写）。
 
-复现 factory-exec/exec/store.py 的 ApprovalStore：
-- 文件: <exec_dir>/approvals.json
-- 结构: {"approvals": {id: record}}
-- 原子写: tmp + os.replace；id 排序
+沿革：factory-exec/exec/store.py → services/approval_runtime/store.py → 此处（刀20）。
+格式不变：`<exec_dir>/approvals.json`，结构 `{"approvals": {id: record}}`。
+原子写（tmp + os.replace），id 排序。
 """
 from __future__ import annotations
 
@@ -21,7 +20,7 @@ class ApprovalStoreError(Exception):
 
 @dataclass
 class ApprovalRecord:
-    """审批记录（字段与原 exec.models.ApprovalRecord 一致）。"""
+    """审批记录。"""
 
     id: str
     request_id: str
@@ -39,7 +38,7 @@ class ApprovalRecord:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "ApprovalRecord":
+    def from_dict(cls, d: dict[str, Any]) -> ApprovalRecord:
         return cls(
             id=str(d.get("id", "")),
             request_id=str(d.get("request_id", "")),
@@ -56,7 +55,7 @@ class ApprovalRecord:
 
 
 class ApprovalStore:
-    """审批记录持久化（approvals.json；与原格式一致）。"""
+    """审批记录持久化（approvals.json）。"""
 
     _filename = "approvals.json"
     _section = "approvals"
@@ -92,8 +91,6 @@ class ApprovalStore:
         tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
                        encoding="utf-8")
         os.replace(tmp, path)
-
-    # ------------------------------------------------------------------ API
 
     def save(self, record: ApprovalRecord) -> None:
         if not record.created_at:  # 兼容旧 pydantic 模型（created_at 必填 datetime）

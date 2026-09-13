@@ -3,7 +3,7 @@
 
 # 旧代码台账（LEGACY LEDGER）
 
-> 生成时间: 2026-09-13T18:44:50+00:00 | 生成器: `scripts/legacy_inventory.py`
+> 生成时间: 2026-09-13T19:05:04+00:00 | 生成器: `scripts/legacy_inventory.py`
 > 规则：**只减不增** —— 由 `tests/architecture/test_legacy_fence.py` 强制
 
 ## 一、分区总览
@@ -17,8 +17,7 @@
 | `factory-org` | 18 | 12052 | 14 | 2 | 2 | 组织领域模型（最完整） | services/organization | 待绞杀 |
 | `factory-runtime` | 11 | 1528 | 0 | 0 | 11 | 旧 runtime bundle | core/node 或 infrastructure | 待判定 |
 | `factory_console` | 2 | 21 | 1 | 0 | 1 | 打包胶水（连字符目录名的转发层） | 保留 | 合法，非冗余 |
-| `services` | 5 | 351 | 5 | 0 | 0 | 绞杀示范 approval_runtime | src/…/services | 示范保留 |
-| **合计** | **538** | **198188** | **335** | **117** | **86** | | | |
+| **合计** | **533** | **197837** | **330** | **117** | **86** | | | |
 
 ## 二、可达性（从活入口 BFS import 图）
 
@@ -30,10 +29,10 @@
 
 | 类别 | 文件 | 行数 | 含义 |
 |---|---:|---:|---|
-| 可达 | 335 | 151138 | 生产入口能走到（主链） |
+| 可达 | 330 | 150787 | 生产入口能走到（主链） |
 | 仅测试可达 | 117 | 34936 | 只有测试能走到 |
 | 未证实使用 | 86 | 12114 | 静态走不到 —— **不得当作可删** |
-| **合计** | **538** | **198188** | |
+| **合计** | **533** | **197837** | |
 
 > 其中 **45 文件 / 7720 行**受已知动态加载前缀影响（前缀 `factory_console.`），**尤其不可当作可删**。
 > 动态调用 43 处；未解析字面量 9 条。
@@ -56,20 +55,18 @@
 | `factory-core` | 6 | `factory-exec/pyproject.toml` |
 | `factory-exec` | 6 | `factory-exec/pyproject.toml` |
 | `factory-org` | 3 | `factory-org/pyproject.toml` |
-| `factory-runtime` | 7 | `desktop/package.json` |
+| `factory-runtime` | 7 | `apps/desktop/package.json` |
 | `factory_console` | 1 | `pyproject.toml` |
-| `services` | 1 | `tests/benchmark/s8_demo/org/artifacts.json` |
 
 ## 三、跨分区依赖边（只减不增）
 
 | 从 | 到 | 次数 |
 |---|---|---:|
 | `factory-console` | `factory_console` | 26 |
-| `factory-console` | `services` | 1 |
 | `factory-core` | `demo` | 1 |
 
 ## 四、说明
 
-- 被绞杀对象：`demo`, `factory-console`, `factory-core`, `factory-exec`, `factory-org`, `factory-runtime`, `factory_console`, `kernel`, `services`
+- 被绞杀对象：`demo`, `factory-console`, `factory-core`, `factory-exec`, `factory-org`, `factory-runtime`, `factory_console`
 - 不计入围栏：`scripts/`（工具）、`docs/`、`bin/`、`apps/`、`tests/`、`src/`（新地基）
 - 本台账是**派生视图**，不属 SSoT；手写修改将在下次生成时被覆盖。

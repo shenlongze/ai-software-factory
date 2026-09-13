@@ -46,7 +46,9 @@ ROOTS: tuple[tuple[Path, str], ...] = (
 )
 
 LEGACY_ROOTS = ("demo", "factory-console", "factory-core", "factory-exec",
-                "factory-org", "factory-runtime", "factory_console", "kernel", "services")
+                "factory-org", "factory-runtime", "factory_console")
+# 已归零并移出：kernel（刀13）· services（刀20）—— 二者已从根目录消失。
+# 移出后若有人重建，R16 会直接拦下（ADR-0037：根下不应存在它们）。
 
 PROD_ENTRIES = (
     "bin/factory",

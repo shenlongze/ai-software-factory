@@ -1,29 +1,33 @@
-"""services/approval_runtime/gate.py — 审批门实现（绞杀新实现）。
+"""services.governance.service — 审批门（治理域服务）。
 
-实现 ai_factory_os.contracts.governance.GovernanceGate 契约 + 等价于原
-factory-exec/exec/approval.py 的 request/decide/apply/list。
+契约：`ai_factory_os.contracts.governance.GovernanceGate`
+沿革：factory-exec/exec/approval.py → services/approval_runtime/{gate,decide}.py → 此处（刀20）
 
-- request(request_id, patch_text) → ApprovalRecord(pending)
-- decide(id, decision, by, comment) → 状态机（二次决定 → 报错）
-- apply(id, target) → 仅 APPROVED 可 git apply
-- list(status) → 列表
-- check(action) → Verdict（GovernanceGate 契约）
+- check(action)                        → Verdict（治理判定）
+- request(request_id, patch_text)      → ApprovalRecord(pending)
+- decide(id, decision, by, comment)    → 状态机（二次决定 → 报错）
+- apply(id, target)                    → 仅 approved 可应用
+- list(status)                         → 列表
 """
 from __future__ import annotations
 
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from uuid import uuid4
 
 from ai_factory_os.contracts.governance import Verdict, VerdictKind
 
-from .rules import classify_risk
+from .rules import classify_risk, normalize_decision
 from .store import ApprovalRecord, ApprovalStore
 
 
 class ApprovalRuntimeError(Exception):
-    """审批运行时错误（同原 ApprovalError 语义）。"""
+    """审批运行时错误。"""
+
+
+class ApprovalDecideError(Exception):
+    """审批决定失败（不存在 / 非法值 / 已终态）。"""
 
 
 def _new_id(prefix: str = "APR") -> str:
@@ -87,11 +91,13 @@ class ApprovalGate:
     # ------------------------------------------------------------------ decide
 
     def decide(self, approval_id: str, decision: str, *, decided_by: str = "",
-               comment: str = "") -> ApprovalRecord:
-        """approve|approve 终态落库；二次决定 → 报错。"""
-        d = {"approve": "approved", "approved": "approved",
-             "reject": "rejected", "rejected": "rejected",
-             "deny": "rejected"}.get(str(decision).lower())
+               comment: str = "", on_approved: Callable[[ApprovalRecord], None] | None = None,
+               ) -> ApprovalRecord:
+        """approve / reject 终态落库；二次决定 → 报错。
+
+        on_approved: 审批通过时的审计回调（调用方注入；默认不发）。
+        """
+        d = normalize_decision(decision)
         if d is None:
             raise ApprovalRuntimeError(f"非法决定: {decision}")
         rec = self._store.get(approval_id)
@@ -102,13 +108,16 @@ class ApprovalGate:
         rec.decision = d
         rec.decided_by = decided_by
         rec.comment = comment
+        rec.decided_at = _now_iso()
         self._store.save(rec)
+        if d == "approved" and on_approved is not None:
+            on_approved(rec)
         return rec
 
     # ------------------------------------------------------------------ apply
 
     def apply(self, approval_id: str, *, target: str = "") -> dict[str, Any]:
-        """仅 APPROVED 可应用（非 git 目标硬拒绝；已应用幂等拒绝）。"""
+        """仅 approved 可应用（非 git 目标硬拒绝；已应用幂等拒绝）。"""
         rec = self._store.get(approval_id)
         if rec is None:
             raise ApprovalRuntimeError(f"审批不存在: {approval_id}")
@@ -131,3 +140,16 @@ class ApprovalGate:
         if status:
             recs = [r for r in recs if r.decision == status]
         return recs
+
+
+def decide(store: ApprovalStore, approval_id: str, decision: str, *,
+           decided_by: str = "", comment: str = "",
+           on_approved: Callable[[ApprovalRecord], None] | None = None,
+           ) -> ApprovalRecord:
+    """独立函数形式的决定（兼容原 services.approval_runtime.decide 调用点）。"""
+    gate = ApprovalGate(store)
+    try:
+        return gate.decide(approval_id, decision, decided_by=decided_by,
+                           comment=comment, on_approved=on_approved)
+    except ApprovalRuntimeError as exc:
+        raise ApprovalDecideError(str(exc)) from exc

@@ -18,12 +18,13 @@ class DecisionKind(str, Enum):
     UNRESOLVED = "unresolved"
 
 
-# 就绪七条件（全部满足才 READY）
+# 就绪八条件（全部满足才 READY）
 READY_CONDITIONS: tuple[str, ...] = (
     "status_actionable",          # 节点状态可调
     "dependencies_satisfied",     # 前驱均有 accepted Outcome
     "no_active_execution",        # 无活跃执行（幂等）
     "capability_available",       # 解析成功且有匹配
+    "approval_granted",           # 需审批的能力已获批
     "capacity_available",         # 成员有空闲容量
     "budget_available",           # 预算够
     "deadline_feasible",          # 未过期
@@ -56,6 +57,8 @@ class Decision:
     resolution_id: str = ""
     member_id: str = ""
     identity_id: str = ""
+    cost_estimate: float = 0.0
+    sequence: int = 0
 
 
 @dataclass(frozen=True)

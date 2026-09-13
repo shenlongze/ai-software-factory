@@ -28,11 +28,13 @@ class FakeWork:
     def list_nodes(self, task_id: str = ""): return []
     def has_accepted_outcome(self, node_id: str) -> bool: return False
     def deadline_of(self, node_id: str) -> str: return ""
+    def priority_of(self, node_id: str) -> str: return "P2"
 
 
 class FakeResource:
     def resolution_for(self, node_id: str): return None
     def member(self, member_id: str): return None
+    def capability(self, capability_id: str): return None
 
 
 class FakeLoad:

@@ -12,7 +12,7 @@ from typing import Protocol, Sequence, runtime_checkable
 from ai_factory_os.contracts.execution import Execution
 from ai_factory_os.contracts.governance import GateKind
 from ai_factory_os.contracts.organization import Member
-from ai_factory_os.contracts.resource import Resolution
+from ai_factory_os.contracts.resource import Capability, Resolution
 from ai_factory_os.contracts.work import TaskNode
 
 
@@ -35,14 +35,18 @@ class WorkPort(Protocol):
 
     def deadline_of(self, node_id: str) -> str: ...
 
+    def priority_of(self, node_id: str) -> str: ...
+
 
 @runtime_checkable
 class ResourcePort(Protocol):
-    """资源世界：解析结果与成员。"""
+    """资源世界：解析结果、成员与能力声明。"""
 
     def resolution_for(self, node_id: str) -> Resolution | None: ...
 
     def member(self, member_id: str) -> Member | None: ...
+
+    def capability(self, capability_id: str) -> Capability | None: ...
 
 
 @runtime_checkable

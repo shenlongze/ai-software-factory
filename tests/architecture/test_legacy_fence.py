@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import ast
 import json
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -21,9 +22,9 @@ BASELINE_PATH = Path(__file__).with_name("legacy_baseline.json")
 SKIP = {".git", ".venv", "__pycache__", ".pytest_cache", ".ruff_cache",
         "node_modules", "build", "dist", "target", ".mypy_cache"}
 
-LEGACY_ROOTS = ("demo", "factory-console", "factory-core", "factory-exec",
-                "factory-org", "factory-runtime", "factory_console", "kernel", "services")
-ALLOWED_TOP = set(LEGACY_ROOTS) | {"src", "tests", "scripts", "docs", "bin", "apps"}
+# 单一来源：与工具/台账共用，禁止在此再拷贝一份（刀22 因两份拷贝漂移踩过坑）
+sys.path.insert(0, str(ROOT / "scripts"))
+from legacy_roots import ALLOWED_TOP, LEGACY_ROOTS  # noqa: E402
 
 
 def _baseline() -> dict:

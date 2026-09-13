@@ -3,21 +3,20 @@
 
 # 旧代码台账（LEGACY LEDGER）
 
-> 生成时间: 2026-09-13T19:09:26+00:00 | 生成器: `scripts/legacy_inventory.py`
+> 生成时间: 2026-09-13T19:14:22+00:00 | 生成器: `scripts/legacy_inventory.py`
 > 规则：**只减不增** —— 由 `tests/architecture/test_legacy_fence.py` 强制
 
 ## 一、分区总览
 
 | 分区 | 文件 | 行数 | 活 | 仅测试 | 未证实 | 定性 | 目标 | 状态 |
 |---|---:|---:|---:|---:|---:|---|---|---|
-| `demo` | 2 | 23 | 0 | 0 | 2 | 演示代码 | archive | 待处理 |
 | `factory-console` | 311 | 128341 | 251 | 16 | 44 | 混合：新 OS 内核 + 旧会话链 + Web + API | 拆分 → services / core / api / apps | 待绞杀 |
 | `factory-core` | 135 | 33478 | 30 | 86 | 19 | L4 旧数据层，24 包互引 | 逐包复核后归档 | 已判 132/138 可归档（实测待复核） |
 | `factory-exec` | 51 | 22058 | 32 | 13 | 6 | 旧执行域（roles/skill/tool/provider/approval） | 同左，逐项判定 | 已判 51/52 可归档（实测待复核） |
 | `factory-org` | 18 | 12052 | 14 | 2 | 2 | 组织领域模型（最完整） | services/organization | 待绞杀 |
 | `factory-runtime` | 11 | 1528 | 0 | 0 | 11 | 旧 runtime bundle | core/node 或 infrastructure | 待判定 |
 | `factory_console` | 2 | 21 | 1 | 0 | 1 | 打包胶水（连字符目录名的转发层） | 保留 | 合法，非冗余 |
-| **合计** | **530** | **197501** | **328** | **117** | **85** | | | |
+| **合计** | **528** | **197478** | **328** | **117** | **83** | | | |
 
 ## 二、可达性（从活入口 BFS import 图）
 
@@ -31,8 +30,8 @@
 |---|---:|---:|---|
 | 可达 | 328 | 150480 | 生产入口能走到（主链） |
 | 仅测试可达 | 117 | 34936 | 只有测试能走到 |
-| 未证实使用 | 85 | 12085 | 静态走不到 —— **不得当作可删** |
-| **合计** | **530** | **197501** | |
+| 未证实使用 | 83 | 12062 | 静态走不到 —— **不得当作可删** |
+| **合计** | **528** | **197478** | |
 
 > 其中 **45 文件 / 7720 行**受已知动态加载前缀影响（前缀 `factory_console.`），**尤其不可当作可删**。
 > 动态调用 43 处；未解析字面量 9 条。
@@ -50,7 +49,6 @@
 
 | 分区 | 引用文件数 | 例 |
 |---|---:|---|
-| `demo` | 14 | `factory-runtime/bundle/factory_runtime_bundle.spec` |
 | `factory-console` | 5 | `factory-runtime/bundle/factory_runtime_bundle.spec` |
 | `factory-core` | 6 | `factory-exec/pyproject.toml` |
 | `factory-exec` | 6 | `factory-exec/pyproject.toml` |
@@ -63,10 +61,9 @@
 | 从 | 到 | 次数 |
 |---|---|---:|
 | `factory-console` | `factory_console` | 26 |
-| `factory-core` | `demo` | 1 |
 
 ## 四、说明
 
-- 被绞杀对象：`demo`, `factory-console`, `factory-core`, `factory-exec`, `factory-org`, `factory-runtime`, `factory_console`
+- 被绞杀对象：`factory-console`, `factory-core`, `factory-exec`, `factory-org`, `factory-runtime`, `factory_console`
 - 不计入围栏：`scripts/`（工具）、`docs/`、`bin/`、`apps/`、`tests/`、`src/`（新地基）
 - 本台账是**派生视图**，不属 SSoT；手写修改将在下次生成时被覆盖。

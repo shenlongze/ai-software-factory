@@ -220,7 +220,7 @@ class TestBacklogSweeper:
         """T2: demo/repo/issues.json 默认全 dependency (演示 3/3 无 LLM 修完)。"""
         import json as _json
         demo_issues = _json.loads(
-            (_ROOT / "demo" / "repo" / "issues.json").read_text(encoding="utf-8")
+            (_ROOT / "examples" / "demo" / "repo" / "issues.json").read_text(encoding="utf-8")
         )
         assert len(demo_issues) == 3
         assert all(isinstance(i, dict) and i.get("type") == "dependency" for i in demo_issues)

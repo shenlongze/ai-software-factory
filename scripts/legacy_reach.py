@@ -30,6 +30,8 @@ import sys
 from collections import deque
 from pathlib import Path
 
+from legacy_roots import LEGACY_ROOTS  # 单一来源（scripts/legacy_roots.py）
+
 ROOT = Path(__file__).resolve().parents[1]
 NEW = ROOT / "src" / "ai_factory_os"
 SKIP = {".git", ".venv", "__pycache__", ".pytest_cache", ".ruff_cache",
@@ -44,11 +46,6 @@ ROOTS: tuple[tuple[Path, str], ...] = (
     (ROOT / "factory-runtime", ""),
     (ROOT, ""),
 )
-
-LEGACY_ROOTS = ("demo", "factory-console", "factory-core", "factory-exec",
-                "factory-org", "factory-runtime", "factory_console")
-# 已归零并移出：kernel（刀13）· services（刀20）—— 二者已从根目录消失。
-# 移出后若有人重建，R16 会直接拦下（ADR-0037：根下不应存在它们）。
 
 PROD_ENTRIES = (
     "bin/factory",

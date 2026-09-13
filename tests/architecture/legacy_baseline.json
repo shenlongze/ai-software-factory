@@ -1,9 +1,5 @@
 {
  "by_root": {
-  "demo": [
-   2,
-   23
-  ],
   "factory-console": [
    311,
    128341
@@ -30,12 +26,9 @@
   ]
  },
  "edges": {
-  "factory-console->factory_console": 26,
-  "factory-core->demo": 1
+  "factory-console->factory_console": 26
  },
  "files": [
-  "demo/repo/main.py",
-  "demo/repo/test_main.py",
   "factory-console/__init__.py",
   "factory-console/acceptance_truth.py",
   "factory-console/adaptive_workforce.py",
@@ -565,5 +558,5 @@
   "factory_console/__init__.py",
   "factory_console/cli_factory.py"
  ],
- "lines": 197501
+ "lines": 197478
 }

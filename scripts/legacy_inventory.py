@@ -37,7 +37,7 @@ VERDICTS: dict[str, tuple[str, str, str]] = {
     "factory_console": ("打包胶水（连字符目录名的转发层）", "保留", "合法，非冗余"),
     "kernel": ("已归零 —— 全部迁出或删除", "—", "完成（刀13）"),
     "services": ("已归零 —— approval_runtime 迁入 src/…/services/governance", "—", "完成（刀20）"),
-    "demo": ("演示代码", "archive", "待处理"),
+    "demo": ("已归零 —— 演示仓库迁入 examples/demo/repo/", "—", "完成（刀22）"),
 }
 
 BASELINE = ROOT / "tests" / "architecture" / "legacy_baseline.json"

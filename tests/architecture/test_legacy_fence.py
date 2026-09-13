@@ -120,7 +120,11 @@ def test_r15_legacy_edges_only_shrink() -> None:
 
 
 def test_r16_no_new_top_level_code_dirs() -> None:
-    """R16: 不得出现新的顶层代码目录（防新增堆放场）。"""
+    """R16: 不得出现新的顶层代码目录（防新增堆放场）。
+
+    根布局已定案：docs/adr/0037-root-layout-decision.md（方案 C，src/ai_factory_os/）。
+    要加顶层代码目录 = 推翻 ADR-0037，须先裁决，不得由实现侧顺手加。
+    """
     tops = {p.relative_to(ROOT).parts[0] for p in ROOT.rglob("*.py")
             if not any(part in SKIP for part in p.parts)}
     unexpected = sorted(tops - ALLOWED_TOP)

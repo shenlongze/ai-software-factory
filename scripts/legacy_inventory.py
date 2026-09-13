@@ -35,7 +35,7 @@ VERDICTS: dict[str, tuple[str, str, str]] = {
     "factory-org": ("组织领域模型（最完整）", "services/organization", "待绞杀"),
     "factory-runtime": ("旧 runtime bundle", "core/node 或 infrastructure", "待判定"),
     "factory_console": ("打包胶水（连字符目录名的转发层）", "保留", "合法，非冗余"),
-    "kernel": ("v0.2 遗留契约（大部分已删，剩 governance/patch_filter）", "删除 / 迁入新地基", "绞杀中"),
+    "kernel": ("已归零 —— 6 个遗留契约 + patch_filter 全部迁出或删除", "—", "完成（刀13）"),
     "services": ("绞杀示范 approval_runtime", "src/…/services", "示范保留"),
     "demo": ("演示代码", "archive", "待处理"),
 }

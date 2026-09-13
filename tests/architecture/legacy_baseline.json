@@ -6,7 +6,7 @@
   ],
   "factory-console": [
    311,
-   128352
+   128341
   ],
   "factory-core": [
    138,
@@ -28,20 +28,15 @@
    2,
    21
   ],
-  "kernel": [
-   2,
-   127
-  ],
   "services": [
    5,
-   348
+   351
   ]
  },
  "edges": {
   "factory-console->factory_console": 26,
   "factory-console->services": 1,
-  "factory-core->demo": 1,
-  "services->kernel": 1
+  "factory-core->demo": 1
  },
  "files": [
   "demo/repo/main.py",
@@ -577,13 +572,11 @@
   "factory-runtime/runtime/watchdog.py",
   "factory_console/__init__.py",
   "factory_console/cli_factory.py",
-  "kernel/governance/contracts.py",
-  "kernel/node/patch_filter.py",
   "services/approval_runtime/__init__.py",
   "services/approval_runtime/decide.py",
   "services/approval_runtime/gate.py",
   "services/approval_runtime/rules.py",
   "services/approval_runtime/store.py"
  ],
- "lines": 198323
+ "lines": 198188
 }

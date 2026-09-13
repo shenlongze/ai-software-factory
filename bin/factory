@@ -33,7 +33,7 @@ if not VENV_PY.is_file():
     sys.exit(1)
 
 os.environ["PYTHONPATH"] = os.pathsep.join(
-    [str(ROOT), str(FACTORY_CORE), os.environ.get("PYTHONPATH", "")]
+    [str(ROOT), str(FACTORY_CORE), str(ROOT / "src"), os.environ.get("PYTHONPATH", "")]
 ).rstrip(os.pathsep)
 
 _BOOT = (

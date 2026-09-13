@@ -16,10 +16,7 @@ from pathlib import Path
 
 from importlib import import_module
 
-try:
-    PF = import_module("kernel.node.patch_filter")
-except ModuleNotFoundError:
-    PF = import_module("factory-exec.exec.patch_filter")
+PF = import_module("ai_factory_os.services.execution.rules")  # 绞杀刀13: 已迁入新地基
 DELIVERY = import_module("factory-console.session.delivery")
 OBS = import_module("factory-console.session.observability")
 

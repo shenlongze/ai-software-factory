@@ -31,10 +31,15 @@ KNOWN_LIVE = (
     "factory-console/cli_factory.py",                   # CLI 入口
     "factory-console/web/backend/fastapi_adapter.py",   # Web 入口
     "factory-console/session/delivery.py",              # 经相对 import 被拉起（回归点①）
-    "kernel/node/patch_filter.py",                      # 经字符串动态加载（回归点②）
-    "kernel/governance/contracts.py",                   # 被 services/approval_runtime 使用
     "factory-core/agents/models.py",                    # 经 sys.path 根解析
 )
+# 历史回归点（文件已按计划迁出，留作记录）：
+#   kernel/node/patch_filter.py    → 经字符串动态加载（回归点②）→ 刀13 迁入
+#                                    src/ai_factory_os/services/execution/rules.py
+#   kernel/governance/contracts.py → 刀13 迁入 src/ai_factory_os/contracts/governance
+# 已知残留缺口（保守方向，不影响安全）：
+#   factory-console/api/__init__.py 实际被 _console_import("api") 加载，但该辅助函数是
+#   跨文件导入的，工具追不到 → 归入"未证实"。方向安全（未证实 ≠ 可删），暂不硬修。
 
 
 @lru_cache(maxsize=1)

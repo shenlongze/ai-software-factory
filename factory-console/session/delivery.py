@@ -122,19 +122,8 @@ def deliver_patch(project_dir: Path, patch_text: str, *, emit=None) -> dict:
 
     emit: 审计事件发射器 (workspace) — 缺省不发射 (失败安全)。
     """
-    import importlib
-    import sys as _sys
-
-    # MU phase-1: patch_filter 已迁 kernel.node（保留 factory-exec 兼容路径）
-    root = Path(__file__).resolve().parents[2]
-    for _p in (root, root / "factory-exec"):
-        if str(_p) not in _sys.path:
-            _sys.path.insert(0, str(_p))
-    try:
-        _pf = importlib.import_module("kernel.node.patch_filter")
-    except ModuleNotFoundError:
-        _pf = importlib.import_module("exec.patch_filter")
-    filter_patch = _pf.filter_patch
+    # 绞杀刀13: patch_filter 已迁入新地基 services/execution/rules.py
+    from ai_factory_os.services.execution.rules import filter_patch
 
     clean, blocked = filter_patch(patch_text)
     result: dict = {"blocked_files": blocked, "applied": False, "code_files": 0, "ok": False}

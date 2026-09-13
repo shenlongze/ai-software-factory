@@ -60,10 +60,15 @@ def test_decide_state_machine_equivalence(tmp_path: Path) -> None:
 
 
 def test_governance_gate_contract(tmp_path: Path) -> None:
-    """契约：ApprovalGate 实现 kernel GovernanceGate.check(action)。"""
+    """契约：ApprovalGate 实现 ai_factory_os GovernanceGate.check(action)。
+
+    绞杀刀13：契约由 kernel.governance.contracts.Decision 改为
+    ai_factory_os.contracts.governance.Verdict；字段 verdict → kind，
+    取值不变（仍为 "approval"/"allow"/"deny"），故断言逐字等价。
+    """
     gate = ApprovalGate(ApprovalStore(tmp_path / "exec"))
     rec = gate.request("REQ-3", patch_text=CASES[0][1], risk_level="low", required_roles=["developer"])
     d = gate.check({"approval_id": rec.id})
-    assert d.verdict == "approval" and not d.allowed  # pending → approval
+    assert d.kind.value == "approval" and not d.allowed  # pending → approval
     gate.decide(rec.id, "approve", decided_by="ceo")
     assert gate.check({"approval_id": rec.id}).allowed  # approved → allow

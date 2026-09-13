@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from typing import Any, Protocol, runtime_checkable
 
 
 class ApprovalMode(str, Enum):
@@ -90,3 +91,34 @@ class Policy:
     scope: str
     rule: str
     effect: PolicyEffect = PolicyEffect.ALLOW
+
+
+class VerdictKind(str, Enum):
+    """治理判定结论。"""
+
+    ALLOW = "allow"
+    DENY = "deny"
+    APPROVAL = "approval"
+
+
+@dataclass(frozen=True)
+class Verdict:
+    """治理判定结果 —— 某个动作是否被允许。
+
+    meta 用「不可变的键值对元组」而非 dict，与契约层不可变约定一致。
+    """
+
+    allowed: bool = False
+    kind: VerdictKind = VerdictKind.DENY
+    reason: str = ""
+    subject_ref: str = ""
+    meta: tuple[tuple[str, str], ...] = ()
+
+
+@runtime_checkable
+class GovernanceGate(Protocol):
+    """治理门契约：对某个动作做判定。"""
+
+    def check(self, action: dict[str, Any]) -> Verdict:
+        """判定动作是否被允许（allow / deny / 需审批）。"""
+        ...

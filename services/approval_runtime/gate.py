@@ -1,13 +1,13 @@
 """services/approval_runtime/gate.py — 审批门实现（绞杀新实现）。
 
-实现 kernel.governance.contracts.GovernanceGate 契约 + 等价于原
+实现 ai_factory_os.contracts.governance.GovernanceGate 契约 + 等价于原
 factory-exec/exec/approval.py 的 request/decide/apply/list。
 
 - request(request_id, patch_text) → ApprovalRecord(pending)
 - decide(id, decision, by, comment) → 状态机（二次决定 → 报错）
 - apply(id, target) → 仅 APPROVED 可 git apply
 - list(status) → 列表
-- check(action) → Decision（GovernanceGate 契约）
+- check(action) → Verdict（GovernanceGate 契约）
 """
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from kernel.governance.contracts import Decision
+from ai_factory_os.contracts.governance import Verdict, VerdictKind
 
 from .rules import classify_risk
 from .store import ApprovalRecord, ApprovalStore
@@ -48,19 +48,22 @@ class ApprovalGate:
 
     # ---------------------------------------------------------- GovernanceGate
 
-    def check(self, action: dict[str, Any]) -> Decision:
+    def check(self, action: dict[str, Any]) -> Verdict:
         """治理判定：pending 审批存在 → approval；否则 allow。"""
         aid = str(action.get("approval_id") or "")
         if aid:
             rec = self._store.get(aid)
             if rec is None:
-                return Decision(allowed=False, verdict="deny", reason=f"审批不存在: {aid}")
+                return Verdict(allowed=False, kind=VerdictKind.DENY,
+                               reason=f"审批不存在: {aid}", subject_ref=aid)
             if rec.decision == "pending":
-                return Decision(allowed=False, verdict="approval",
-                                reason="待人工审批", meta={"risk_level": rec.risk_level})
+                return Verdict(allowed=False, kind=VerdictKind.APPROVAL,
+                               reason="待人工审批", subject_ref=aid,
+                               meta=(("risk_level", rec.risk_level),))
             if rec.decision == "rejected":
-                return Decision(allowed=False, verdict="deny", reason="已拒绝")
-        return Decision(allowed=True, verdict="allow", reason="")
+                return Verdict(allowed=False, kind=VerdictKind.DENY,
+                               reason="已拒绝", subject_ref=aid)
+        return Verdict(allowed=True, kind=VerdictKind.ALLOW, subject_ref=aid)
 
     # ------------------------------------------------------------------ request
 

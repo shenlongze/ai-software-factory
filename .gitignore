@@ -30,6 +30,9 @@ factory-console/web/frontend/dist/
 /workspace/
 /exec/
 
+# 派生视图 —— 由 scripts/tree.py 生成，不手改、不进版本库（刀19）
+/docs/project-tree.md
+
 # IDE
 .idea/
 

@@ -51,8 +51,8 @@ from typing import Any, Callable, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.ai_factory_os.services.execution.types import utcnow
-from src.ai_factory_os.plugins.tools.tool import Tool, ToolPermissionPolicy, ToolRegistry
+from ai_factory_os.services.execution.types import utcnow
+from ai_factory_os.plugins.tools.tool import Tool, ToolPermissionPolicy, ToolRegistry
 
 
 def new_mcp_connection_id() -> str:

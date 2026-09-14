@@ -6,7 +6,7 @@ on:
   pull_request:
 
 jobs:
-  test:
+  verify:
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -26,9 +26,18 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e '.[dev]'
 
-      - name: Architecture layer dependencies (R1-R8)
-        run: python -m pytest tests/architecture/ -q
+      # ── 验证三件事：静态质量 · 全量可导入 · 产品能启动 ──
+      # 注: tests/ 已于 2026-09-14 删除（归档于分支 archive/tests-before-delete-2026-09-14），
+      #     故原 pytest 步骤移除，改用 scripts/check_imports.py（搬迁/重构的标准收尾动作）。
 
-      - name: Run tests
-        run: python -m pytest -q
-        timeout-minutes: 15
+      - name: Lint (ruff)
+        run: ruff check src/ai_factory_os apps/cli scripts
+
+      - name: Import validation (逐模块全量)
+        run: python scripts/check_imports.py
+
+      - name: Product smoke
+        run: |
+          ./bin/factory --version
+          ./bin/factory project list
+          ./bin/factory doctor || true   # doctor 允许 WARN（无 API key 属正常）

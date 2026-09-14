@@ -1009,8 +1009,20 @@ class FactoryCLI:
         import io as _io
     
         _buf = _io.StringIO()
-        with _cl.redirect_stdout(_buf):
-            rc = self._dispatch(args)
+        try:
+            with _cl.redirect_stdout(_buf):
+                rc = self._dispatch(args)
+        except ValueError as _exc:
+            # ★ 业务错误 → 干净输出 ✓ 不吐裸 Traceback ✗（2026-09-14 补 ✓）
+            #   实测发现: release check / rollback check 传错 id 时【直接 Traceback ✗】
+            #   → 用户看到栈 ✗ 而其它命令都是 [E4xxx] 风格 ✓ → 统一在此兜住 ✓
+            sys.stdout.write(_buf.getvalue())
+            print(f"[E4400] {_exc}", file=sys.stderr)
+            return 1
+        except KeyboardInterrupt:
+            sys.stdout.write(_buf.getvalue())
+            print("\n（已中断 ✓）", file=sys.stderr)
+            return 130
         _out = _buf.getvalue()
         sys.stdout.write(_out)
         if not _out.strip():
@@ -1175,6 +1187,8 @@ class FactoryCLI:
             return self.governance_cmd(args)
         if args.command == "approval-request":
             return self.approval_cmd(args)
+        if args.command == "workforce-os":
+            return self.workforce_os_cmd(args)
         if args.command == "workforce":
             return self.workforce_cmd(args)
         if args.command == "experience":
@@ -7300,6 +7314,95 @@ class FactoryCLI:
             return 0
 
         return 1
+
+    def workforce_os_cmd(self, args: argparse.Namespace) -> int:
+        """factory workforce-os — Workforce OS (S30): 组织/部门/劳动力/成员（薄代理 ✓）。
+
+        ★ 2026-09-14 补: parser 声明了 9 个动作 ✗ 但【handler 不存在 ✗】——
+        实测 `factory workforce-os` 完全静默 ✓（审计发现的唯一真缺口 ✓）
+        服务模块 workforce_os.py【函数俱全 ✓】→ 本刀只做接线 ✓ 不重写逻辑 ✓
+        """
+        from factory_console import workforce_os as wos
+
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        action = getattr(args, "action", "list") or "list"
+        target = str(getattr(args, "target", None) or "")
+
+        if action in ("list", "agents", "capabilities", "select", "perf", "lineage"):
+            orgs = wos.list_organizations(root)
+            if action == "list":
+                print(f"=== Workforce OS（{len(orgs)} 个组织）===")
+                for o in orgs:
+                    print(f"  {o.get('org_id')} | {o.get('name')} | {o.get('state') or o.get('status')}")
+                return 0
+            if not target and orgs:
+                target = str(orgs[0].get("org_id") or "")
+            # ★ 用【模块里的真实函数名】✗（我先猜的名字全对不上 ✓ 照 list_agent_profiles 等 ✓）
+            fn = {
+                "agents": getattr(wos, "list_agent_profiles", None),
+                "capabilities": getattr(wos, "capabilities_list", None),
+                "select": getattr(wos, "select_agent_deterministic", None),
+                "perf": getattr(wos, "agent_performance", None),
+                "lineage": getattr(wos, "workforce_os_lineage", None),
+            }.get(action)
+            if action == "select":
+                try:
+                    _cap = str(getattr(args, "capability", "") or "")
+                    _role = str(getattr(args, "role", "") or "")
+                    # ★ 真实签名: (root, *, required_capability, workforce_id="") ✓
+                    #   （我上一版改成 capability 是错的 ✗ —— 没先读签名就动手 ✓ 自伤一步）
+                    rows = wos.select_agent_deterministic(
+                        root, required_capability=_cap or _role)
+                    print(f"=== 能力匹配选人（capability={getattr(args, 'capability', '') or '-'}）===")
+                    for x in (rows if isinstance(rows, list) else [rows]):
+                        print(f"  {json.dumps(x, ensure_ascii=False)[:160] if isinstance(x, dict) else x}")
+                    return 0
+                except Exception as exc:  # noqa: BLE001
+                    print(f"（select 失败: {exc}）")
+                    return 1
+            if fn is None:
+                print(f"（factory workforce-os {action}: 该动作的服务函数尚未实现 ✗）")
+                return 0
+            try:
+                import inspect as _ins
+                _kw = {}
+                for _pname in _ins.signature(fn).parameters:
+                    if _pname == "root":
+                        continue
+                    _kw[_pname] = (target if _pname in ("workforce_id", "target", "org_id")
+                                   else (getattr(args, "role", "") or getattr(args, "capability", "")
+                                         if _pname in ("role", "capability") else None))
+                    if _kw[_pname] is None:
+                        _kw.pop(_pname)
+                rows = fn(root, **_kw) if _kw else fn(root)
+            except Exception as exc:  # noqa: BLE001 — 参数不合 → 说清楚 ✓ 不静默 ✗
+                print(f"（factory workforce-os {action} 调用失败: {exc}）")
+                return 1
+            items = rows if isinstance(rows, list) else ([rows] if rows else [])
+            print(f"=== workforce-os {action}（{len(items)} 条）===")
+            for x in items[:20]:
+                print(f"  {x if not isinstance(x, dict) else json.dumps(x, ensure_ascii=False)[:150]}")
+            return 0
+
+        if action == "create":
+            org = wos.create_organization(root, name=target or "AI Factory")
+            print(f"✓ 组织已建: {org.get('org_id')} | {org.get('name')}")
+            return 0
+        if action in ("status", "attach"):
+            if not target:
+                print(f"[E4420] 错误: workforce_id 必填 (factory workforce-os {action} <wf_id>)",
+                      file=sys.stderr)
+                return 2
+            if action == "status":
+                st = wos.workforce_status(root, target, target=str(getattr(args, "status", "ACTIVE")))
+                print(f"  {json.dumps(st, ensure_ascii=False)[:220]}")
+                return 0
+            rec = wos.attach_agent(root, workforce_id=target,
+                                   role=str(getattr(args, "role", "") or ""))
+            print(f"  {json.dumps(rec, ensure_ascii=False)[:220]}")
+            return 0
+        print(f"（未知动作: {action}）")
+        return 2
 
     def release_cmd(self, args: argparse.Namespace) -> int:
         """factory release — Release (S18): list/status/check/create/execute/history。

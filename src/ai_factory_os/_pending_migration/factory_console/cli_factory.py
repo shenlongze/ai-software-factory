@@ -1009,8 +1009,12 @@ class FactoryCLI:
         import io as _io
     
         _buf = _io.StringIO()
+        _ebuf = _io.StringIO()
         try:
-            with _cl.redirect_stdout(_buf):
+            # ★ 同时捕获 stderr ✗（2026-09-14 修 ✓）:
+            #   原守卫【只看 stdout ✗】→ 命令已在 stderr 给了明确错误时 ✓
+            #   还会再叠一句通用猜测 ✓ = 噪音 ✓（用户: "cli 的 -h 好用了么" 引出的 ✓）
+            with _cl.redirect_stdout(_buf), _cl.redirect_stderr(_ebuf):
                 rc = self._dispatch(args)
         except ValueError as _exc:
             # ★ 业务错误 → 干净输出 ✓ 不吐裸 Traceback ✗（2026-09-14 补 ✓）
@@ -1024,8 +1028,11 @@ class FactoryCLI:
             print("\n（已中断 ✓）", file=sys.stderr)
             return 130
         _out = _buf.getvalue()
+        _err = _ebuf.getvalue()
         sys.stdout.write(_out)
-        if not _out.strip():
+        sys.stderr.write(_err)
+        # ★ 只有【两端都空】才补通用提示 ✓（有明确错误就别叠 ✗）
+        if not _out.strip() and not _err.strip():
             _cmd = str(getattr(args, "command", "") or "")
             print(f"（factory {_cmd} 没有输出 ✓）")
             print("  · 可能: 没数据 ✓ / 需要子动作（如 list|show）✓ / 需要参数 ✓")

@@ -4838,6 +4838,37 @@ class FactoryCLI:
         action = getattr(args, "action", "list") or "list"
         target = getattr(args, "target", None)
 
+        if action == "policy":
+            # ★ 实体级策略（Founder: 粒度从"整项目一刀切"降到"逐实体"✓）
+            #   policy: 超预算时的行为 BLOCK(拦住)/WARN(只告警)/APPROVE(转人工) ✓
+            from ai_factory_os.contracts.governance import BudgetPolicy
+            if not target:
+                print("[E4271] 用法: factory entity policy <entity_id> [--policy BLOCK|WARN|APPROVE]",
+                      file=sys.stderr)
+                return 2
+            e = _get(str(root), str(target))
+            if e is None:
+                print(f"[E4272] 实体不存在: {target}", file=sys.stderr)
+                return 1
+            want = getattr(args, "policy", None)
+            if want:
+                try:
+                    e["policy"] = BudgetPolicy(str(want).strip().lower()).value
+                except ValueError:
+                    valid = " | ".join(p.value for p in BudgetPolicy)
+                    print(f"[E4273] 非法策略: {want}（可选: {valid}）", file=sys.stderr)
+                    return 2
+                _store(str(root), e)
+                print(f"  OK  实体 {target} 策略已设为 {e['policy']} ✓")
+                return 0
+            cur = e.get("policy") or "(未设置 → 用默认 BLOCK ✓)"
+            print(f"=== 实体策略 · {target} ===")
+            print(f"  类型: {e.get('type')} · 状态: {e.get('status')}")
+            print(f"  policy: {cur}")
+            print("  可选: BLOCK(超预算拦住) | WARN(只告警) | APPROVE(转人工审批)")
+            print(f"  设置: factory entity policy {target} --policy WARN")
+            return 0
+
         if action == "create":
             try:
                 e = _create(getattr(args, "type", "task"),
@@ -8452,11 +8483,14 @@ def build_parser() -> argparse.ArgumentParser:
     # S43: Unified Contract CLI
     p_uc = sub.add_parser("entity", help="Entity (S43): create/show/list/trace — Unified Entity/Data Contract")
     p_uc.add_argument("action", nargs="?", default="list",
-                      choices=["create", "show", "list", "trace", "contracts"])
+                      choices=["create", "show", "list", "trace", "contracts",
+                                 "policy"])
     p_uc.add_argument("target", nargs="?", help="entity_id")
     p_uc.add_argument("--type", default="task", help="entity type (create 用)")
     p_uc.add_argument("--parent", default="", help="parent_id (create 用)")
     p_uc.add_argument("--by", default="human", help="created_by (create 用)")
+    p_uc.add_argument("--policy", default=None,
+                      help="policy 动作: BLOCK|WARN|APPROVE (entity policy 用)")
     p_uc.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
 
     # S42: Intelligence Strategy CLI

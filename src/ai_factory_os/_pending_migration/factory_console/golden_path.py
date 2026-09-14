@@ -493,6 +493,51 @@ def _capability_executor(leaf: dict[str, Any], capability_fn: Any,
     return _fn
 
 
+def merge_node_workspace(node_dir: Path, project_ws: Path, node_id: str,
+                         *, log_path: Path | None = None) -> dict[str, Any]:
+    """节点工作区 → 项目工作区 合并（刀2 ✓ 冲突必须可见 ✗ 不静默覆盖 ✓）。
+
+    为什么必须做（方案 §6.4 ✓）:
+      只隔离不合并 → 各节点产出散在 nodes/<id>/ ✗ → 项目工作区看不到成果 ✗
+      = "跑完了但东西不见了"✗（比串行更糟 ✗）
+
+    规则:
+      · 项目工作区没有该文件 → 直接放入 ✓
+      · 已有且内容相同 → 跳过 ✓（幂等 ✓）
+      · 已有且内容不同 → ★【不覆盖 ✗】写为 <name>.conflict-<node_id> ✓
+        + 记入 conflicts ✓（调用方可见 ✓）
+    """
+    import shutil
+    res: dict[str, Any] = {"node_id": node_id, "copied": [], "same": [], "conflicts": []}
+    if not node_dir.is_dir():
+        return res
+    project_ws.mkdir(parents=True, exist_ok=True)
+    for src in sorted(node_dir.rglob("*")):
+        if not src.is_file():
+            continue
+        rel = src.relative_to(node_dir)
+        dst = project_ws / rel
+        if not dst.exists():
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst)
+            res["copied"].append(str(rel))
+        elif dst.read_bytes() == src.read_bytes():
+            res["same"].append(str(rel))
+        else:
+            alt = dst.with_name(f"{dst.name}.conflict-{node_id}")
+            shutil.copy2(src, alt)
+            res["conflicts"].append({"file": str(rel), "kept": str(alt)})
+    if res["conflicts"] and log_path is not None:
+        try:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            with log_path.open("a", encoding="utf-8") as fh:
+                for c in res["conflicts"]:
+                    fh.write(f"{node_id}\t{c['file']}\t{c['kept']}\n")
+        except OSError:
+            pass
+    return res
+
+
 def _default_executor_factory(root: str, conversation_id: str,
                               executor_name: str = ""
                               ) -> Callable[[str],
@@ -513,12 +558,31 @@ def _default_executor_factory(root: str, conversation_id: str,
 
     def _factory(node_id: str) -> Callable[[dict[str, Any]], dict[str, Any]]:
         leaf = leaf_by_id.get(node_id, {})
+        # ★ 刀2: 每节点独立工作区 ✓（并行前提 ✗ —— 共用目录会互相覆盖 ✓）
+        #   隔离点唯一: 传给执行器的 workspace_dir（registry 模板里的 {project_dir} ✓）
+        node_ws = Path(workspace) / ".nodes" / str(node_id)
+        try:
+            node_ws.mkdir(parents=True, exist_ok=True)
+            node_base = build_real_executor(
+                root, executor_name=executor_name, workspace_dir=str(node_ws)) or base
+        except Exception:  # noqa: BLE001 — 失败安全: 退回共用目录 ✓（不阻断 ✓）
+            node_base = base
 
         def _fn(input_data: dict[str, Any]) -> dict[str, Any]:
             inp = dict(input_data or {})
             if leaf:
                 inp["task"] = dict(leaf)
-            return _noop_guard(leaf, workspace, base(inp))
+            out = _noop_guard(leaf, workspace, node_base(inp))
+            # ★ 执行完 → 合并回项目工作区 ✓（冲突可见 ✓ 不静默覆盖 ✗）
+            try:
+                m = merge_node_workspace(
+                    node_ws, Path(workspace), str(node_id),
+                    log_path=Path(root) / "projects" / "workspace-conflicts.tsv")
+                if isinstance(out, dict):
+                    out["workspace_merge"] = {k: m[k] for k in ("copied", "same", "conflicts")}
+            except Exception:  # noqa: BLE001 — 失败安全 ✓ 不影响节点结果 ✓
+                pass
+            return out
 
         return _fn
 

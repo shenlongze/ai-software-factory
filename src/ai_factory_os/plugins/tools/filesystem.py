@@ -27,7 +27,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from ai_factory_os.plugins.tools.tool import Tool, ToolHandler, ToolPermissionPolicy
+from ai_factory_os.plugins.tools.tool import Tool, ToolPermissionPolicy
 
 #: 绝对路径前缀 (POSIX "/" / Windows 盘符 "C:" / 用户主目录 "~" — 全部拒绝)。
 _ABSOLUTE_RE = re.compile(r"^(?:[A-Za-z]:[\\/]|[/~])")

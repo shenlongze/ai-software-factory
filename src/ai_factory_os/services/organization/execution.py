@@ -68,7 +68,7 @@ from .types import _OrgModel, _norm_list, new_id, utcnow
 from .management import Task, TaskStatus, _PRIORITY_RANK, transition_task
 
 if TYPE_CHECKING:  # 仅类型标注 (运行时 duck-type registry.get_capability, 零耦合)
-    from .capabilities import CapabilityRegistry
+    pass
 
 _LOGGER = logging.getLogger(__name__)
 

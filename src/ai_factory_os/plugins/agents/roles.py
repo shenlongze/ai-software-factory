@@ -35,7 +35,7 @@ Tester / DevOps — 统一 RoleDefinition 声明式注册, 零 Agent 复制。
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 

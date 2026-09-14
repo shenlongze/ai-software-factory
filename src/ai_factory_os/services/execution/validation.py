@@ -111,7 +111,7 @@ class Validation:
                 text=True,
                 timeout=self._timeout,
             )
-        except subprocess.TimeoutExpired as exc:
+        except subprocess.TimeoutExpired:
             return ValidationCheck(
                 name=f"command: {command}",
                 passed=False,

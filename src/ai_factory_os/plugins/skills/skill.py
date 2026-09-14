@@ -44,7 +44,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from ai_factory_os.plugins.tools.tool import Tool, ToolPermissionPolicy, ToolRegistry
+from ai_factory_os.plugins.tools.tool import ToolRegistry
 
 #: Skill 行为约束 (SkillContext.constraints — 职业能力边界, 透传 Planner)。
 SKILL_CONSTRAINTS: tuple[str, ...] = (

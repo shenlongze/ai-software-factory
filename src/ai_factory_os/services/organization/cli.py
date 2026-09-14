@@ -41,15 +41,12 @@ from ai_factory_os.infrastructure.events.types import EventType
 from ai_factory_os.infrastructure.events.store import EventStore
 
 from . import events as org_events
-from .approval import ApprovalError, ApprovalStateError, ApprovalStatus
+from .approval import ApprovalError, ApprovalStatus
 from .artifact import ArtifactRegistry, ArtifactStateError
 from .lifecycle import (
-    CompanyMismatchError,
-    DuplicateError,
     NotFoundError,
     OrgLifecycle,
     OrgLifecycleError,
-    RoleConflictError,
 )
 from .types import new_id
 from .project_adoption import ProjectAdoption
@@ -58,12 +55,7 @@ from .store import OrgStore
 from .workflow import (
     WorkflowLifecycle,
     WorkflowRunner,
-    WorkflowStatus,
     WorkflowError,
-    WorkflowStateError,
-    WorkflowCycleError,
-    WorkflowDependencyError,
-    WorkflowExecutionError,
 )
 
 DEFAULT_ROOT = Path.home() / ".factory"

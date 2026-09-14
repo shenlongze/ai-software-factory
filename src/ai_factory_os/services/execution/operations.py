@@ -46,7 +46,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 #: 支持符号扫描的语言定义模式 (行首; 正则级, 多语言启发式 — 非 AST)
 _DEF_START = re.compile(

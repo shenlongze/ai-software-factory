@@ -33,7 +33,6 @@ Tool 基础设施, 未来兼容 Internal/MCP/Skill/API Tool。
 
 from __future__ import annotations
 
-import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Literal

@@ -1055,6 +1055,8 @@ class FactoryCLI:
             return self.llm_trace_cmd(args)
         if args.command == "arch":
             return self.arch_cmd(args)
+        if args.command == "kanban":
+            return self.kanban(args)
         if args.command == "sync":
             return self.sync_cmd(args)
         if args.command == "provider":
@@ -2962,6 +2964,49 @@ class FactoryCLI:
                 return Path(wd)
             return pdir
         return None
+
+    def kanban(self, args: argparse.Namespace) -> int:
+        """factory kanban —— 按状态分列的看板视图 ✓。
+
+        为什么（Founder 直接敲了 kanban ✓）:
+          零件早已齐: 任务有 status ✓（8 态: todo/ready/in_progress/review/
+          blocked/failed/done/cancelled ✓）+ _task_rows 可读 ✓
+          但【没有按状态分列的视图 ✗】—— 只能看一长串平铺列表 ✗（看不出卡在哪 ✓）
+        本命令 = 把平铺列表按状态分组 ✓（招牌形状: 零件齐、缺视图 ✗ → 补视图 ✓）
+        """
+        rows = _task_rows(self.data_dir)
+        pid = str(getattr(args, "project", "") or "").strip()
+        if pid:
+            rows = [r for r in rows if pid in str(r.get("project") or "")]
+
+        COLS = [("todo", "待办"), ("ready", "就绪"), ("in_progress", "进行中"),
+                ("review", "待评审"), ("blocked", "受阻"), ("failed", "失败"),
+                ("done", "完成"), ("cancelled", "取消")]
+        buckets: dict[str, list[dict]] = {k: [] for k, _ in COLS}
+        other: list[dict] = []
+        for r in rows:
+            st = str(r.get("status") or "").strip().lower()
+            (buckets[st] if st in buckets else other).append(r)
+
+        print(f"=== 看板（{'项目含 ' + pid if pid else '全部'} · 共 {len(rows)} 个任务）===")
+        print()
+        show_all = bool(getattr(args, "all", False))
+        for key, label in COLS:
+            items = buckets[key]
+            if not items and key not in ("todo", "in_progress"):
+                continue                       # 空列不刷屏 ✓（todo/进行中 恒显示 ✓）
+            print(f"  ┌─ {label}（{len(items)}）")
+            for r in (items if show_all else items[:5]):
+                print(f"  │  {str(r.get('id'))[:20]:22s} {str(r.get('title'))[:38]:40s}"
+                      f" {str(r.get('project') or '')[:16]}")
+            if len(items) > 5 and not show_all:
+                print(f"  │  … 另 {len(items) - 5} 条（--all 看全部）")
+            print("  └" + "─" * 40)
+        if other:
+            print(f"  （另有 {len(other)} 条状态未识别）")
+        print()
+        print("  数据源: 与 `factory task list` 同一份 ✓ · 列 = 任务实际流转顺序 ✓")
+        return 0
 
     def task(self, args: argparse.Namespace) -> int:
         """Task 管理: list — 列出; prompt — 生成执行指令; run — 执行任务 (走 exec CLI)。
@@ -8745,6 +8790,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_arch.add_argument("--choice", default="", help="一项已定决策（可重复用 ; 分隔）")
     p_arch.add_argument("--why", default="", help="该项决策的理由")
     p_arch.add_argument("--data-dir", default=None)
+
+    p_kb = sub.add_parser("kanban", help="看板: 按状态分列显示任务（复用 task 数据 ✓）")
+    p_kb.add_argument("--project", default="", help="只看某个项目 (可选)")
+    p_kb.add_argument("--all", action="store_true", help="每列不限条数")
+    p_kb.add_argument("--data-dir", default=None)
 
     p_sync = sub.add_parser(
         "sync",

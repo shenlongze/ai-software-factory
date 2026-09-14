@@ -4137,6 +4137,25 @@ class FactoryCLI:
         print("  ✓ 环境检查通过 (Python/Node/依赖)")
 
         # 2. workspace 初始化 (幂等)
+        # ★ 交互补问（2026-09-14 ✓ Founder: "没有配置项么? 项目/公司目录/工作路径 ·
+        #   没有是否进行 scan" ✓）—— 原 init 只显示目录 ✗ 不询问 ✓ 也不问是否扫 ✓
+        # ★ 只在【真 TTY】时问 ✗（2026-09-14 修 ✓）:
+        #   实测喂管道时 init 会【自动降级非交互】✓ 而我的问题仍会读 EOF ✓
+        #   （无害但混乱 ✗）→ 用 isatty 判定 ✓ 与 argparse 的降级语义对齐 ✓
+        import sys as _sys
+        _ni = bool(getattr(args, "non_interactive", False)) or not _sys.stdin.isatty()
+        _scanned = False
+        if not _ni:
+            _cur = str(self.data_dir)
+            _raw = _ask(f"  数据目录 (公司/工作路径, 回车默认 {_cur}): ").strip()
+            if _raw and _raw != _cur:
+                _new = Path(_raw).expanduser()
+                print(f"    ⚠ 数据目录由环境变量/配置决定 ✗ —— 本次仅提示 ✓")
+                print(f"      永久修改: factory config set core.data_dir {_new} ✓")
+                print(f"      或本次:   FACTORY_DATA_DIR={_new} factory init ✓")
+            _ans = _ask("  是否扫描本机 AI / agent / skill / MCP? [Y/n]: ").strip().lower()
+            _scanned = _ans in ("", "y", "yes")
+
         created = _ensure_workspace(self.data_dir)
         if created:
             print("  ✓ 已创建 workspace 目录: " + ", ".join(created))
@@ -4154,8 +4173,11 @@ class FactoryCLI:
             print(f"  ⚠ 模型目录种子写入失败 (首次使用模型时会自动补齐): {exc}")
 
         # 3. LLM 配置引导 (providers.json — 经 LLMControlPlane, 只写引用)
-        # ★ ④ 扫本机能力（2026-09-14 补 ✓ Founder 指出 init 不扫 agent/skill/mcp ✓）
-        self._init_scan(args)
+        # ★ ④ 扫本机能力（2026-09-14 补 ✓）—— 非交互=恒扫 ✓ 交互=按上面的询问 ✓
+        if _ni or _scanned:
+            self._init_scan(args)
+        else:
+            print("  本机能力扫描: 已跳过 ✓（随时可跑: factory local-ai scan ✓）")
 
         rc = self._init_llm_guide(args)
         if rc != 0:

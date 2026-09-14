@@ -109,10 +109,21 @@ def _load_agents(agents_file: str | Path) -> dict[str, Any]:
 
 
 def _save_agents(agents_file: str | Path, data: dict[str, Any]) -> None:
+    """写 agents.json —— ★ 必须用【扁平格式】{id: {...}} 与本仓权威 store 对齐。
+
+    为什么（2026-09-14 实测事故 ✓）:
+      本模块内部以 {"agents": {...}} 包装使用 ✓，但此前【原样写回磁盘】✗
+      → 与 plugins/agents/store.py（AgentStore ✓ 权威 ✓ 写扁平 ✓）格式冲突 ✗
+      → 谁最后写谁说了算 → agents.json 变成{"agents":{41 个}, 外层又 12 个} ✗✗
+      → AgentStore.load_all() 严格校验失败 → 【编排读不出员工 → 派发不了】✗
+      修复: 落盘一律取内层扁平字典 ✓（本模块的包装只是内存表示 ✓）
+    """
     try:
         p = Path(agents_file)
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        flat = data.get("agents") if isinstance(data, dict) and isinstance(
+            data.get("agents"), dict) else data
+        p.write_text(json.dumps(flat, ensure_ascii=False, indent=2), encoding="utf-8")
     except OSError:  # 写失败 → 静默 (注册尽力而为)
         pass
 

@@ -41,6 +41,24 @@ class GoldenPathError(ValueError):
 
 # ------------------------------------------------------------------ 阶段查询
 
+def resolve_project_id(root: str | Path, conversation_id: str) -> str:
+    """会话 → 项目 id 的【唯一权威解析】✓（失败安全 ✓ 解析不出返回空 ✓）。
+
+    ★ 为什么需要（2026-09-14 端到端实测 ✗）:
+      此前多处直接 `project_id=conversation_id` ✗ —— 把【会话 id 当项目 id】✗
+      → production_run.project_id 存成 "conv-xxxx" ✗ →
+        【交付 / UAT / 排期全部按 project_id 找 → 全都看不见这次运行 ✗】
+    ★ 为什么要抽函数: 第一版我在 execute_approved 里加了局部变量 ✗，
+      但 create_plan 在【另一个函数】里 ✗ → NameError（作用域没算清 ✗）。
+      模块级唯一解析点 ✓ 才能覆盖所有调用方 ✓。
+    """
+    try:
+        from factory_console.canonical_golden_path import ensure_project_binding
+        return ensure_project_binding(root, conversation_id) or ""
+    except Exception:  # noqa: BLE001 — 失败安全 ✓ 不阻断主链 ✓
+        return ""
+
+
 def path_status(root: str, conversation_id: str) -> dict[str, Any]:
     """当前 Golden Path 阶段总览 (供 UI/CLI/测试断言 Truth)。"""
     prds = fmt.list_prds(root, conversation_id)
@@ -205,7 +223,7 @@ def generate_plan(root: str, conversation_id: str, *, actor: str = "",
         goal = _prd_goal(prd)
         plan = pt.create_plan(
             root,
-            project_id=conversation_id,
+            project_id=(resolve_project_id(root, conversation_id) or conversation_id),
             prd_id=prd["id"],
             prd_version=int(prd.get("version") or 1),
             goal=goal,
@@ -234,7 +252,7 @@ def generate_plan(root: str, conversation_id: str, *, actor: str = "",
         raise GoldenPathError("PRD 无可派生任务 — 无法生成 Plan")
     plan = pt.create_plan(
         root,
-        project_id=conversation_id,
+        project_id=(resolve_project_id(root, conversation_id) or conversation_id),
         prd_id=prd["id"],
         prd_version=int(prd.get("version") or 1),
         goal=_prd_goal(prd),
@@ -589,7 +607,7 @@ def execute_approved(root: str, conversation_id: str, *,
             "plan_id": plan["id"], "prd_id": _prd["id"],
             "production_run_id": None, "state": None,
             "executed": [{"task": leaf, "result": execute_task(
-                root, leaf["id"], project_id=conversation_id,
+                project_id=(resolve_project_id(root, conversation_id) or conversation_id),
                 input_data={"goal": plan.get("goal", ""), "task": leaf,
                             "approved_prd_id": _prd.get("id"),
                             "approved_plan_id": plan.get("id")},
@@ -630,7 +648,7 @@ def execute_approved(root: str, conversation_id: str, *,
               }}
              for n in leaves_ordered]
     register_workflow(root, workflow_id=plan["id"],
-                      name=f"plan {plan['id']}", project_id=conversation_id,
+                      project_id=(resolve_project_id(root, conversation_id) or conversation_id),
                       nodes=nodes)
     prun = create_production_run(
         root, plan["id"],

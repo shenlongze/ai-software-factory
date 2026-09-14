@@ -225,6 +225,61 @@ def _template_decompose(prd: dict[str, Any]) -> dict[str, Any]:
 # ------------------------------------------------------------------ LLM 注入
 
 
+def available_roles() -> list[str]:
+    """真实【员工角色池】—— 供分解器 prompt 注入（根治"两套角色词表"✗）。
+
+    为什么（2026-09-14 实测根因 ✓）:
+      LLM 分解产出的 required_role 是 前端/后端/测试/架构 ✗，
+      而 AgentStore 里的员工 role 是 developer/architect/tester/product/designer ✓
+      → matcher 是【role 精确相等】✓ → 0 候选 → 编排必然失败 ✗✗
+    修法: 把【真实池子】喂给 LLM ✓ → 它从可用角色里选 → 天然可匹配 ✓
+    失败安全: 读不到 → 返回通用兜底池 ✓（不阻断分解 ✓）。
+    """
+    try:
+        import os as _os
+
+        from ai_factory_os.plugins.agents.store import AgentStore
+
+        root = Path(_os.environ.get("FACTORY_DATA_DIR") or (Path.home() / ".factory"))
+        store = AgentStore(root / "agents")
+        roles = sorted({str(getattr(a, "role", "") or "").strip()
+                        for a in store.load_all().values()})
+        roles = [r for r in roles if r]
+        if roles:
+            return roles
+    except Exception:  # noqa: BLE001 — 失败安全 ✓
+        pass
+    return ["developer", "architect", "tester", "product", "designer",
+            "reviewer", "writer"]
+
+
+def available_skills() -> list[str]:
+    """真实【技能池】（员工 skills 的并集）—— 与 available_roles 同因同治 ✓。
+
+    为什么（2026-09-14 实测 ✓）: 员工池里是 flutter/coding/development/agent ✗，
+    LLM 却按任务自由生成 'python' ✗ → matcher 的 skill 交集为 0 → 全被过滤 ✗✗
+    → 注入真实技能池，让 LLM 从【可用技能】里选 ✓。
+    """
+    try:
+        import os as _os
+
+        from ai_factory_os.plugins.agents.store import AgentStore
+
+        root = Path(_os.environ.get("FACTORY_DATA_DIR") or (Path.home() / ".factory"))
+        store = AgentStore(root / "agents")
+        out: set[str] = set()
+        for a in store.load_all().values():
+            for sk in (getattr(a, "skills", None) or []):
+                s = str(sk).strip()
+                if s:
+                    out.add(s)
+        if out:
+            return sorted(out)
+    except Exception:  # noqa: BLE001 — 失败安全 ✓
+        pass
+    return ["development", "coding", "python", "api", "testing"]
+
+
 def build_llm_decomposer(
     llm_fn: Callable[[str], str | None] | None = None,
 ) -> Callable[[dict[str, Any]], dict[str, Any]]:
@@ -251,8 +306,10 @@ def build_llm_decomposer(
             "层数不限，按需求实际复杂度决定。只输出 JSON:\n"
             '{"nodes":[{"title":"...","kind":"domain|task",'
             '"change_type":"NEW_FILE|MODIFY","expected_files":[...],'
-            '"required_role":"前端|后端|测试|架构或空",'
-            '"required_skill":"具体技能点或空",'
+            f'"required_role":"从这些角色里选（务必用原词）: '
+            f'{", ".join(available_roles())} 或空",'
+            f'"required_skill":"从这些技能里选（务必用原词）: '
+            f'{", ".join(available_skills())} 或空",'
             '"depends_on":["必须先完成的其它任务的 title"],'
             '"children":[{与父节点同构, 可再嵌 children, 不限层数}]}]}  '
             '"（也可写成 {"nodes":[{...}]} 一行，但必须闭合完整）\\n'

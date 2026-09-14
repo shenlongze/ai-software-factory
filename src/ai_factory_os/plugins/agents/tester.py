@@ -37,7 +37,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from ai_factory_os.infrastructure.llm.provider import ProviderRequest
-from .validation import Validation
+from ai_factory_os.services.execution.validation import Validation
 
 #: 缺省测试命令 (确定性执行; 调用方可显式注入, 如 sys.executable 前缀)
 DEFAULT_TEST_COMMAND = "python -m pytest -q"

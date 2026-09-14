@@ -40,7 +40,7 @@ from typing import Any, Optional
 
 from . import events as exec_events
 from .candidate import SequentialRunner
-from .developer import DeveloperAgent, DeveloperError
+from ai_factory_os.plugins.agents.developer import DeveloperAgent, DeveloperError
 from .experience import ExperienceRecorder
 from .models import (
     AgentInstance,
@@ -55,7 +55,7 @@ from .models import (
 from ai_factory_os.infrastructure.llm.provider import ProviderInterface
 from .sandbox import Sandbox
 from .store import ExecStore
-from .validation import Validation, ValidationResult
+from ai_factory_os.services.execution.validation import Validation, ValidationResult
 
 logger = logging.getLogger("factory.exec.agent_runtime")
 
@@ -699,6 +699,6 @@ class AgentRuntime:
 
 def _default_conventions() -> str:
     """默认工程规范 (延迟引用避免 import 环 — DeveloperAgent 模块级常量)。"""
-    from .developer import DEFAULT_CONVENTIONS
+    from ai_factory_os.plugins.agents.developer import DEFAULT_CONVENTIONS
 
     return DEFAULT_CONVENTIONS

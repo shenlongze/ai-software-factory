@@ -650,7 +650,7 @@ class ProjectStore:
 def _validate_exec_role(role_id: str) -> None:
     """Stage.role_id 校验 (exec 注册表单一事实源; 未安装 → 跳过, 不假装)。"""
     try:
-        import exec.roles  # type: ignore[import-not-found]
+        import ai_factory_os.plugins.agents.roles  # type: ignore[import-not-found]
 
         exec.roles.require_role(role_id)
     except ImportError:

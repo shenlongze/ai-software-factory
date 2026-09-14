@@ -45,9 +45,9 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from .operations import OperationEngine, OperationError, StructuredCodeOperation
+from ai_factory_os.services.execution.operations import OperationEngine, OperationError, StructuredCodeOperation
 from ai_factory_os.infrastructure.llm.provider import ProviderError, ProviderInterface, ProviderRequest
-from .validation import ValidationResult
+from ai_factory_os.services.execution.validation import ValidationResult
 
 #: 默认工程规范 (Developer 提示词; 可构造参数覆盖 — 不绑死项目约定)
 DEFAULT_CONVENTIONS = (
@@ -547,7 +547,7 @@ class DeveloperAgent:
     @staticmethod
     def _long_file_preview(rel: str, lines: list[str]) -> list[str]:
         """超长文件 → symbol 索引 + 前段预览 (防撑爆上下文; 确定性)。"""
-        from .repo_index import RepositoryIndexer
+        from ai_factory_os.services.execution.repo_index import RepositoryIndexer
 
         total = len(lines)
         symbols = RepositoryIndexer.scan_symbols("\n".join(lines))

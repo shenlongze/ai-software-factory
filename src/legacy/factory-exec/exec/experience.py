@@ -104,7 +104,7 @@ class ExperienceRecorder:
                 )
             )
         if not success:
-            from .developer import classify_failure
+            from ai_factory_os.plugins.agents.developer import classify_failure
 
             reason = failure_reason or classify_failure(result.error)
             evidence.append(

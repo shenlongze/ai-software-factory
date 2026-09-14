@@ -29,14 +29,14 @@ sys.path.insert(0, "/Users/Shared/work/ai-software-factory/factory-exec")
 import httpx  # noqa: E402
 
 from exec.benchmark.samples import SAMPLES_BY_ID  # noqa: E402
-from exec.developer import DeveloperAgent  # noqa: E402
+from ai_factory_os.plugins.agents.developer import DeveloperAgent  # noqa: E402
 
 BASE = "https://api.deepseek.com/v1/chat/completions"
 MODEL = "deepseek-v4-flash"
 
 sample = SAMPLES_BY_ID["BUG-MKP-001"]
 _agent = DeveloperAgent.__new__(DeveloperAgent)  # 仅用 build_prompt, 不需要 provider
-from exec.developer import DEFAULT_CONVENTIONS as _DC  # noqa: E402
+from ai_factory_os.plugins.agents.developer import DEFAULT_CONVENTIONS as _DC  # noqa: E402
 
 _agent._conventions = _DC  # type: ignore[attr-defined]
 prompt = _agent.build_prompt(

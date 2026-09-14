@@ -36,7 +36,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from .repo_index import RepositoryIndex, RepositoryIndexer, SymbolKind, module_of
+from ai_factory_os.services.execution.repo_index import RepositoryIndex, RepositoryIndexer, SymbolKind, module_of
 
 # ================================================================ 常量
 
@@ -946,7 +946,7 @@ class RepositoryIntelligence:
 
 def _filtered_index(root: Path, project_files: list[str]) -> RepositoryIndex:
     """选择性复制场景: 只索引 project_files 覆盖的文件 (沙箱副本同源)。"""
-    from .repo_index import index_sandbox
+    from ai_factory_os.services.execution.repo_index import index_sandbox
 
     return index_sandbox(root, project_files)
 

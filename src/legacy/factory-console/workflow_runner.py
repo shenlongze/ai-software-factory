@@ -416,7 +416,7 @@ def _real_chain(
 ) -> dict[str, Any]:
     """真实 6 阶段链 (S8-005 demo_full_chain 复用, 只参数化不重写)。"""
     from ai_factory_os.services.organization.workflow import DevTestLoopRunner, WorkflowRunner, WorkflowStatus
-    from exec.tester import make_workflow_executor
+    from ai_factory_os.plugins.agents.tester import make_workflow_executor
 
     dirs = _run_dirs(runs_dir, project_id, run_id)
     project_dir = dirs["project_dir"]
@@ -798,9 +798,9 @@ def _make_design_executors(
     provider: Any, recorder: Recorder, ids: dict[str, str]
 ) -> dict[str, Callable[[Any, dict[str, Any]], dict[str, Any]]]:
     """PM / UXUI / Architect executor (真实 v4-pro; 固定产物 id)。"""
-    from exec.architect import ArchitectAgent, build_arch_executor
-    from exec.pm import PMAgent, build_pm_executor
-    from exec.uxui import UXUIDesignerAgent, build_uxui_executor
+    from ai_factory_os.plugins.agents.architect import ArchitectAgent, build_arch_executor
+    from ai_factory_os.plugins.agents.pm import PMAgent, build_pm_executor
+    from ai_factory_os.plugins.agents.uxui import UXUIDesignerAgent, build_uxui_executor
 
     pm = PMAgent(provider=provider)
     uxui = UXUIDesignerAgent(provider=provider)
@@ -858,7 +858,7 @@ def _make_dev_executor(
     (单文件 diff 格式稳定; 后续文件 source_files 内联前文件保证 class/id
     一致); max_tokens 8192 防 API 长流断连。bugs 分支 (修复轮) 不变。
     """
-    from exec.developer import DeveloperAgent
+    from ai_factory_os.plugins.agents.developer import DeveloperAgent
 
     dev = DeveloperAgent(provider=provider, max_tokens=8192)
     REQ = (
@@ -1000,7 +1000,7 @@ def _make_tester_executor(
     provider: Any, recorder: Recorder, ids: dict[str, str]
 ) -> Callable[[Any, dict[str, Any]], dict[str, Any]]:
     """Tester executor: 真实确定性测试 + LLM 失败分析 (v4-pro)。"""
-    from exec.tester import TesterAgent, build_tester_executor
+    from ai_factory_os.plugins.agents.tester import TesterAgent, build_tester_executor
 
     tester = TesterAgent(
         provider=provider,

@@ -68,7 +68,7 @@ from .quality import RepairManager, ValidationResult, Validator
 from .reasoning import ReasoningProvider
 from .replanning import ReplanDecision, ReplanningEngine
 from .review_gate import ReviewGate
-from .roles import RoleSystem
+from ai_factory_os.plugins.agents.roles import RoleSystem
 from .task_proposal import TaskProposalEngine, TaskProposalValidator
 from .team_state import TeamExecutionState
 from .teams import DEFAULT_TEAM_ID, TeamRegistry

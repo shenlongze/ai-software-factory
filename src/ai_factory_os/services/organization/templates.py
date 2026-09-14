@@ -244,7 +244,7 @@ def list_templates() -> list[dict[str, Any]]:
 def _load_exec_roles() -> Any:
     """惰性加载 exec/roles.py 注册表; 未安装 → None (Removal Isolation)。"""
     try:
-        import exec.roles  # type: ignore[import-not-found]
+        import ai_factory_os.plugins.agents.roles  # type: ignore[import-not-found]
 
         return exec.roles
     except ImportError:

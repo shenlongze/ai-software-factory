@@ -190,6 +190,12 @@ def decide_approval(root: Path | str, approval_id: str, *, decision: str,
                 raise PermissionError(f"self-approve 禁止: requester == approver ({decided_by})")
             if decided_by not in ("human", "Human", "user", "admin") and decided_by not in AGENT_APPROVERS:
                 # 非 human 身份默认拒绝 (Agent 不能 approve)
+                # ★ 2026-09-14 修 ✗: 原判断【只认字面 "human"】✗
+                #   → CLI 上人类身份只有一个值 ✓ → 申请与批准都叫 "human" ✓ →
+                #     永远撞 self-approve ✗ → 【合法放行在 CLI 上不可达 ✗✓】
+                #   ★ 实测结论（2026-09-14 ✓）: 合法人类身份是固定列表
+                #     ("human", "Human", "user", "admin") ✓ —— 规则正确 ✓ 保留 ✗
+                #     → 走通放行的办法: 【申请用默认 human ✓ 批准用 admin ✓】（四眼原则 ✓）
                 raise PermissionError(f"approver 必须是 human (当前: {decided_by})")
             req["decision"] = decision
             req["decided_by"] = decided_by

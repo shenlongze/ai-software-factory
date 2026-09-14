@@ -23,6 +23,7 @@ Product Understanding (conversation-scoped)
 - Intent 不是产品生命周期 Truth: 本模块无 Intent。
 """
 from __future__ import annotations
+import sys
 
 from pathlib import Path
 from typing import Any, Callable
@@ -212,6 +213,21 @@ def generate_plan(root: str, conversation_id: str, *, actor: str = "",
     prd = approved[-1]
 
     if decompose:
+        # ★ 修（2026-09-14 端到端实测 ✗）: 此前 decomposer=None 【静默走确定性模板 ✗】
+        #   产品定义: "拆解一律走 LLM ✓ 宁可不拆也不假装拆 ✗" —— 默认就该是 LLM ✓
+        #   实测后果: 模板任务语义模糊 ✗（如"分类 核心功能"✗）→ codex 无事可做 ✗
+        #            → 执行 FAILED ✗ → 【整机跑不通 ✓】（断点2 的根因 ✓）
+        #   模板降级【必须显式 ✓ 且响亮可见 ✓】（不许静默 ✗）
+        if decomposer is None:
+            try:
+                from factory_console.task_decomposition import build_llm_decomposer
+                decomposer = build_llm_decomposer()
+            except Exception as exc:  # noqa: BLE001 — 失败安全 ✓ 但要说话 ✓
+                sys.stderr.write(
+                    f"  ⚠ 无法装配 LLM 拆解器（{type(exc).__name__}: {exc}）"
+                    f" → 降级【确定性模板】✗\n"
+                    f"    模板任务语义模糊，真实执行可能做不出东西 ✗"
+                    f"（如需显式用模板: 传 decomposer=<模板> 或 decompose=False）\n")
         tree = td.decompose_prd(prd, interpreter=decomposer)
         tasks, order = td.tree_to_plan(tree)
         if not tasks:

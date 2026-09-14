@@ -38,6 +38,7 @@ ALIAS_PREFIXES: dict[str, str] = {
     "execution": "ai_factory_os.services.execution",
     # ── 原 factory-console 的独立块（刀55 起按功能绞杀）──
     "audit": "ai_factory_os.services.governance.audit",
+    "retrieval": "ai_factory_os.infrastructure.retrieval",
     # ── 原 factory-console（刀51 整块迁入，legacy/ 由此清空）──
     "factory_console": "ai_factory_os._pending_migration.factory_console",
     "legacy_paths": "ai_factory_os.infrastructure.legacy_paths",
@@ -107,6 +108,8 @@ ALIAS_DOTTED: dict[str, str] = {
     # → 必须同时登记该前缀，否则 from .audit import X 会找不到
     "ai_factory_os._pending_migration.factory_console.audit":
         "ai_factory_os.services.governance.audit",
+    "ai_factory_os._pending_migration.factory_console.retrieval":
+        "ai_factory_os.infrastructure.retrieval",
 }
 
 _SEP = "."  # 便于替换分隔符

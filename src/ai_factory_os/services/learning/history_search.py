@@ -1,0 +1,296 @@
+"""history_search — 历史检索（FTS5）: 把"记得住"变成"找得回"。
+
+背景（审计结论）: 我们有 1030 条 learning_trace / 8995 条事件 / 85 条经验，
+但没有任何"翻回去用"的能力 —— 记得住但找不回 = 等于没记。
+
+设计（借鉴 Hermes 的 session_search 思路，落在本仓库的数据形态上）:
+  · 独立 search.db（FTS5 虚拟表）—— 不碰事件库 factory.db 的 schema（零风险）
+  · 索引三类历史: events（发生了什么）/ traces（怎么做的）/ experiences（做成了没）
+  · 检索: FTS5 全文 + 按来源/时间过滤，返回带来源与时间的命中
+  · 幂等: 以 (source, ref) 为唯一键 upsert —— 重复索引不产生重复行
+
+本模块只做【索引与检索】；"检索结果注入 LLM 上下文"属调用方（session 层）。
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import sqlite3
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Iterable
+
+SOURCES: tuple[str, ...] = ("event", "trace", "experience")
+DEFAULT_DB_NAME = "search.db"
+
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS docs (
+    id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    source  TEXT NOT NULL,           -- event / trace / experience
+    ref     TEXT NOT NULL,           -- 来源内唯一键（事件 seq / trace id / 经验 id）
+    ts      TEXT NOT NULL DEFAULT '',-- ISO 时间（排序/展示用）
+    title   TEXT NOT NULL DEFAULT '',
+    body    TEXT NOT NULL DEFAULT '',
+    UNIQUE(source, ref)
+);
+-- CJK 检索: FTS5 默认 unicode61 把整段中文当一个 token（"截图"搜不到），
+-- 而 trigram 要求查询 ≥3 字符（"截图"这类 2 字词仍搜不到）。
+-- 解法: 索引与查询都做【CJK 逐字切分】（见 _cjk_split）→ unicode61 下按字成词，
+-- 2 字词以短语形式命中（"截 图"）。英文不受影响。
+CREATE VIRTUAL TABLE IF NOT EXISTS docs_fts USING fts5(
+    title, body, content='docs', content_rowid='id'
+);
+CREATE TRIGGER IF NOT EXISTS docs_ai AFTER INSERT ON docs BEGIN
+    INSERT INTO docs_fts(rowid, title, body) VALUES (new.id, new.title, new.body);
+END;
+CREATE TRIGGER IF NOT EXISTS docs_ad AFTER DELETE ON docs BEGIN
+    INSERT INTO docs_fts(docs_fts, rowid, title, body)
+    VALUES('delete', old.id, old.title, old.body);
+END;
+"""
+
+
+@dataclass(frozen=True)
+class Hit:
+    """一条命中 —— 带来源与时间，便于人判断"这条靠不靠谱"。"""
+
+    source: str
+    ref: str
+    ts: str
+    title: str
+    snippet: str
+
+    def to_dict(self) -> dict[str, str]:
+        return {"source": self.source, "ref": self.ref, "ts": self.ts,
+                "title": self.title, "snippet": self.snippet}
+
+    def render(self) -> str:
+        when = self.ts[:19].replace("T", " ") if self.ts else "—"
+        return f"[{self.source}] {when} {self.title}\n    {self.snippet}"
+
+
+class HistoryIndex:
+    """历史检索索引（FTS5）。失败安全: 任何异常都不阻断调用方。"""
+
+    def __init__(self, db_path: Path | str) -> None:
+        self.db_path = Path(db_path)
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._conn = sqlite3.connect(str(self.db_path))
+        self._conn.executescript(_SCHEMA)
+        self._conn.commit()
+
+    # ---------------------------------------------------------------- 写入
+
+    def index_docs(self, docs: Iterable[tuple[str, str, str, str, str]]) -> int:
+        """批量 upsert: (source, ref, ts, title, body) → 新增/更新条数。"""
+        n = 0
+        for source, ref, ts, title, body in docs:
+            if not (title or body):
+                continue
+            cur = self._conn.execute(
+                "INSERT INTO docs(source, ref, ts, title, body) VALUES(?,?,?,?,?) "
+                "ON CONFLICT(source, ref) DO UPDATE SET "
+                "ts=excluded.ts, title=excluded.title, body=excluded.body",
+                (source, ref, ts, title, body))
+            if cur.rowcount:
+                # FTS 表存【归一化文本】（CJK 逐字切分），docs 表存原文供展示
+                self._conn.execute("DELETE FROM docs_fts WHERE rowid=?", (cur.lastrowid,))
+                self._conn.execute(
+                    "INSERT INTO docs_fts(rowid, title, body) VALUES(?,?,?)",
+                    (cur.lastrowid, _cjk_split(f"{title} {body}")))
+            n += 1
+        self._conn.commit()
+        return n
+
+    def sync_from_data_dir(self, data_dir: Path | str) -> dict[str, int]:
+        """从数据根索引三类历史。幂等（UNIQUE 键）。"""
+        root = Path(data_dir)
+        counts = {s: 0 for s in SOURCES}
+        counts["event"] = self._index_events(root)
+        counts["trace"] = self._index_traces(root)
+        counts["experience"] = self._index_experiences(root)
+        self._conn.commit()
+        self._rebuild_fts()          # 统一重建 FTS（归一化文本）
+        return counts
+
+    def _rebuild_fts(self) -> None:
+        """用 docs 表原文重建 FTS 内容（归一化: CJK 逐字切分）。幂等。"""
+        try:
+            self._conn.execute("DELETE FROM docs_fts")
+            for rowid, title, body in self._conn.execute("SELECT id, title, body FROM docs"):
+                self._conn.execute(
+                    "INSERT INTO docs_fts(rowid, title, body) VALUES(?,?,?)",
+                    (rowid, _cjk_split(title), _cjk_split(body)))
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _index_events(self, root: Path) -> int:
+        """事件库: 只读打开 factory.db（绝不写它）。"""
+        db = root / "factory.db"
+        if not db.exists():
+            return 0
+        n = 0
+        try:
+            src = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+            cols = [r[1] for r in src.execute("PRAGMA table_info(events)")]
+            tcol = "ts" if "ts" in cols else ("created_at" if "created_at" in cols else None)
+            seq = "seq" if "seq" in cols else None
+            ts_expr = tcol or "''"
+            sel = f"select {seq or 'rowid'}, {ts_expr}, * from events"
+            for row in src.execute(sel):
+                ref = str(row[0])
+                ts = str(row[1] or "")
+                rest = " ".join(str(x) for x in row[2:] if x is not None)
+                self._conn.execute(
+                    "INSERT INTO docs(source, ref, ts, title, body) VALUES(?,?,?,?,?) "
+                    "ON CONFLICT(source, ref) DO UPDATE SET ts=excluded.ts, body=excluded.body",
+                    ("event", ref, ts, f"event#{ref}", rest[:6000]))
+                n += 1
+            src.close()
+        except Exception:  # noqa: BLE001 — 事件库不可读 → 跳过（不阻断）
+            return n
+        return n
+
+    def _index_traces(self, root: Path) -> int:
+        f = root / "memory" / "learning_trace.json"
+        if not f.exists():
+            return 0
+        n = 0
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            items = data if isinstance(data, list) else data.get("traces", [])
+            for i, it in enumerate(items):
+                if not isinstance(it, dict):
+                    continue
+                ref = str(it.get("trace_id") or it.get("id") or f"trace-{i}")
+                ts = str(it.get("ts") or it.get("timestamp") or "")
+                title = str(it.get("kind") or it.get("type") or it.get("event") or "trace")
+                body = json.dumps(it, ensure_ascii=False)
+                self._conn.execute(
+                    "INSERT INTO docs(source, ref, ts, title, body) VALUES(?,?,?,?,?) "
+                    "ON CONFLICT(source, ref) DO UPDATE SET ts=excluded.ts, body=excluded.body",
+                    ("trace", ref, ts, title, body[:6000]))
+                n += 1
+        except Exception:  # noqa: BLE001
+            return n
+        return n
+
+    def _index_experiences(self, root: Path) -> int:
+        f = root / "memory" / "experience_store.json"
+        if not f.exists():
+            return 0
+        n = 0
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            items = data if isinstance(data, list) else data.get("experiences", [])
+            for i, it in enumerate(items):
+                if not isinstance(it, dict):
+                    continue
+                ref = str(it.get("id") or it.get("experience_id") or f"exp-{i}")
+                ts = str(it.get("ts") or it.get("created_at") or "")
+                title = str(it.get("task") or it.get("objective") or it.get("kind") or "experience")
+                body = json.dumps(it, ensure_ascii=False)
+                self._conn.execute(
+                    "INSERT INTO docs(source, ref, ts, title, body) VALUES(?,?,?,?,?) "
+                    "ON CONFLICT(source, ref) DO UPDATE SET ts=excluded.ts, body=excluded.body",
+                    ("experience", ref, ts, title, body[:6000]))
+                n += 1
+        except Exception:  # noqa: BLE001
+            return n
+        return n
+
+    # ---------------------------------------------------------------- 检索
+
+    def search(self, query: str, *, limit: int = 8,
+               sources: tuple[str, ...] | None = None) -> list[Hit]:
+        """FTS5 全文检索。空查询/无命中 → 空列表（不抛）。"""
+        terms = _fts_terms(query)
+        if not terms:
+            return []
+        where = ""
+        params: list[Any] = []
+        if sources:
+            where = f" AND d.source IN ({','.join('?' * len(sources))})"
+            params.extend(sources)
+        sql = (
+            "SELECT d.source, d.ref, d.ts, d.title, d.body "
+            "FROM docs_fts f JOIN docs d ON d.id = f.rowid "
+            f"WHERE docs_fts MATCH ?{where} ORDER BY rank LIMIT ?"
+        )
+        try:
+            rows = self._conn.execute(sql, [terms, *params, limit]).fetchall()
+        except Exception:  # noqa: BLE001 — 语法/库异常 → 空结果（失败安全）
+            return []
+        return [Hit(source=r[0], ref=r[1], ts=r[2] or "", title=r[3] or "",
+                    snippet=_snippet(r[4] or "", terms)) for r in rows]
+
+    def stats(self) -> dict[str, int]:
+        """各类历史已索引条数。"""
+        out = {s: 0 for s in SOURCES}
+        out["total"] = 0
+        try:
+            for src, n in self._conn.execute("SELECT source, count(*) FROM docs GROUP BY source"):
+                out[src] = n
+                out["total"] += n
+        except Exception:  # noqa: BLE001
+            pass
+        return out
+
+    def close(self) -> None:
+        try:
+            self._conn.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+#: CJK 区间（汉字 + 常用中文标点/全角）—— 这些字符在索引与查询时逐字切分。
+_CJK = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
+
+
+def _cjk_split(text: str) -> str:
+    """CJK 逐字切分: "这是记账" → "这 是 记 账"（非 CJK 原样保留）。
+
+    unicode61 因此按【字】成词 → 2 字词（"截图"/"记账"）能以短语命中 ✓
+    """
+    return _CJK.sub(lambda m: f" {m.group(0)} ", text or "")
+
+
+def _fts_terms(query: str) -> str:
+    """查询 → FTS5 表达式。
+
+    中文词逐字切成短语（"截图" → "\"截 图\""）；英文词按原样。
+    多词之间 AND。剔除 FTS 语法字符，防注入/语法错。
+    """
+    parts: list[str] = []
+    for raw in re.split(r"[\s,，。；;、]+", query or ""):
+        raw = raw.strip()
+        if not raw:
+            continue
+        if _CJK.search(raw):
+            split = _cjk_split(raw).split()
+            if split:
+                parts.append('"' + " ".join(split) + '"')
+        elif len(raw) >= 2:
+            parts.append('"' + raw.replace('"', "") + '"')
+    return " AND ".join(parts[:8])
+
+
+def _snippet(body: str, terms: str, *, width: int = 160) -> str:
+    """从【原文】取命中上下文（FTS 存的是归一化文本，展示要用原文）。"""
+    flat = " ".join((body or "").split())
+    probe = [w.strip('"') for w in terms.split(" AND ")]
+    at = -1
+    for p in probe:
+        token = p.replace(" ", "")
+        if not token:
+            continue
+        at = flat.find(token) if len(token) > 1 else flat.find(token)
+        if at < 0 and " " in p:
+            at = flat.find(p.replace(" ", ""))
+        if at >= 0:
+            break
+    if at < 0:
+        return flat[:width]
+    lo = max(0, at - width // 3)
+    return ("…" if lo else "") + flat[lo:lo + width] + "…"

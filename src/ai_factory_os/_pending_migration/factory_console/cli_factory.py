@@ -4495,13 +4495,24 @@ class FactoryCLI:
                 #     症状: factory tasktree decompose "<目标>" 生成的树全叫「任务」✗）
                 _title = (getattr(args, "title", "") or "").strip() \
                     or (getattr(args, "target", "") or "").strip() or "任务"
-                t = _decomp(str(root), title=_title,
-                            domain=getattr(args, "domain", "default"),
-                            source_conv_id=getattr(args, "conv", ""))
+                # ★ 分解一律走 LLM（Founder: 真实需求分析 + 拆分；无层数限制）
+                #   原实现走 task_tree.decompose = 纯模板 ✗（CLI 与会话两套不一致 ✗）
+                from factory_console.task_decomposition import build_llm_decomposer
+                from factory_console.task_tree import materialize_tree as _mat
+                _tree = build_llm_decomposer()(
+                    {"id": "", "goal": _title,
+                     "content": {"overview": {"problem": _title, "name": _title}}})
+                if not _tree or _tree.get("degraded"):
+                    _err = (_tree or {}).get("error", "空结果")
+                    print(f"[E4291] LLM 分解失败: {_err}", file=sys.stderr)
+                    return 1
+                t = _mat(str(root), _tree, title=_title,
+                         domain=getattr(args, "domain", "default"))
+                _src = _tree.get("decomposer", "llm")
             except Exception as exc:  # noqa: BLE001
                 print(f"[E4290] 错误: {exc}", file=sys.stderr)
                 return 1
-            print(f"tasktree: {t['task_tree_id']} | {t['count']} 子任务 | req: {t['requirement_id'][:12]}")
+            print(f"tasktree: {t['task_tree_id']} | {t['count']} 子任务 | 来源: {_src}")
             return 0
 
         if action == "status":

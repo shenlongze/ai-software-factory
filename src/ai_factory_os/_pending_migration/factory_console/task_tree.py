@@ -208,3 +208,59 @@ def execute_tree(root: Path | str, task_tree_id: str, *,
     return {"task_tree_id": task_tree_id, "results": results,
             "progress": task_progress(root, task_tree_id),
             "summary": f"{len([r for r in results if r['state'] == 'COMPLETED'])}/{len(tree['subtasks'])} 子任务完成"}
+
+
+def materialize_tree(root: Path | str, tree: dict[str, Any], *,
+                     title: str = "", domain: str = "llm") -> dict[str, Any]:
+    """把 LLM 分解出的【树 dict】物化成 task 实体（方案 A）。
+
+    为什么: LLM 分解器产出的是 nodes/leaves 结构（用于 PLAN），
+    而 CLI/编排/证据链都按 task 实体（parent_id/children）走 →
+    必须在同一处把它落成实体，否则两套模型永远对不上。
+
+    返回与 decompose() 同构的 tree 记录（task_tree_id/title/subtasks/count），
+    因此 tasktree list/status/progress 无需改动即可看到它 ✓
+    """
+    nodes = tree.get("nodes") or []
+    if not nodes:
+        raise ValueError("materialize_tree: 空树（LLM 未产出节点）")
+    root_title = (title or tree.get("goal") or "任务")[:120]
+    root_task = create_entity("task", created_by="system")
+    root_task["title"] = root_title
+    root_task["status"] = "READY"
+    root_task["domain"] = domain
+    store_entity(root, root_task)
+
+    # nodes 由 _build_nested_nodes 按【父先于子】顺序产出 → 单趟即可映射
+    id_map: dict[str, str] = {}
+    subtasks: list[str] = []
+    for n in nodes:
+        if not isinstance(n, dict):
+            continue
+        kind = str(n.get("kind") or "task")
+        if kind == "project":
+            continue
+        parent_src = str(n.get("parent_id") or "")
+        parent_id = id_map.get(parent_src, root_task["id"])
+        e = create_entity("task", created_by="system", parent_id=parent_id)
+        e["title"] = str(n.get("title") or "任务")[:200]
+        e["status"] = "DRAFT"
+        if n.get("change_type"):
+            e["change_type"] = n["change_type"]
+        if n.get("expected_files"):
+            e["expected_files"] = list(n["expected_files"])
+        e["tree_kind"] = kind
+        store_entity(root, e)
+        id_map[str(n.get("id") or "")] = e["id"]
+        if kind == "task":
+            subtasks.append(e["id"])
+
+    root_task["children"] = list(subtasks)
+    store_entity(root, root_task)
+    record = {"task_tree_id": root_task["id"], "title": root_title, "domain": domain,
+              "root_task": root_task["id"], "subtasks": subtasks,
+              "count": len(subtasks), "source": "llm_tree",
+              "tree_id": tree.get("tree_id", ""),
+              "truncated": bool(tree.get("truncated"))}
+    _save(root, "trees", _load(root, "trees") + [record])
+    return record

@@ -195,9 +195,28 @@ def list_node_runs(root: Path | str, node_id: str | None = None) -> list[dict[st
 
 
 def _write_run(root: Path | str, run: dict[str, Any]) -> None:
+    # ★ 刀3（2026-09-14）: 原来用【裸 write_text ✗】—— 非原子 ✓
+    #   并行/崩溃 → 可能留【半截 JSON ✗】（NodeRun 是执行记录的载体 ✓ 不能半写）
+    #   改为同库内既有模式: tempfile.mkstemp（自带唯一名 ✓）+ fsync + os.replace ✓
+    #   （对照 production_run._write ✓ 用的是同一套 ✓ —— 统一 ✓）
     p = _run_path(root, run["run_id"])
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(run, ensure_ascii=False, indent=2), encoding="utf-8")
+    import os
+    import tempfile
+
+    fd, tmp = tempfile.mkstemp(dir=str(p.parent), prefix=".tmp-", suffix=".json")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(run, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, p)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def _record(root: Path | str, run: dict[str, Any], to_state: str, *, actor: str, note: str) -> None:

@@ -47,13 +47,17 @@ def render() -> str:
 def main() -> int:
     arg = sys.argv[1] if len(sys.argv) > 1 else str(DEFAULT_OUT)
     text = render()
-    if arg == "-":
+    if arg in ("-", "--stdout"):
         sys.stdout.write(text)
         return 0
-    target = Path(arg)
+    target = Path(arg).resolve()
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(text, encoding="utf-8")
-    print(f"已写入 {target.relative_to(ROOT)}（{len(text.splitlines())} 行）")
+    try:
+        shown: object = target.relative_to(ROOT)
+    except ValueError:          # 仓库外路径（如 /tmp/x.md）也能写
+        shown = target
+    print(f"已写入 {shown}（{len(text.splitlines())} 行）")
     return 0
 
 

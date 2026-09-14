@@ -36,6 +36,9 @@ ALIAS_PREFIXES: dict[str, str] = {
     "intelligence": "ai_factory_os.services.learning",
     "change": "ai_factory_os.services.work.change",
     "execution": "ai_factory_os.services.execution",
+    # ── 原 factory-console（刀51 整块迁入，legacy/ 由此清空）──
+    "factory_console": "ai_factory_os._pending_migration.factory_console",
+    "legacy_paths": "ai_factory_os.infrastructure.legacy_paths",
     # ── 原 factory-core / factory-exec 剩余包（刀50 整块迁入 _pending_migration）──
     "assignment": "ai_factory_os._pending_migration.assignment",
     "changeflow": "ai_factory_os._pending_migration.changeflow",

@@ -226,7 +226,12 @@ class EnvironmentCheck:
                     f"未找到虚拟环境: {venv_py} — 请运行 python3 -m venv .venv "
                     "&& .venv/bin/pip install -e '.[dev]'"
                 )
-            node_modules = ctx.root / "src" / "legacy" / "factory-console" / "web" / "frontend" / "node_modules"
+            # 前端目录: 迁移后位于 src/ai_factory_os/_pending_migration/factory_console/
+            _fe = (ctx.root / "src" / "ai_factory_os" / "_pending_migration"
+                   / "factory_console" / "web" / "frontend")
+            if not _fe.is_dir():
+                _fe = ctx.root / "src" / "legacy" / "factory-console" / "web" / "frontend"
+            node_modules = _fe / "node_modules"
             if not node_modules.is_dir():
                 problems.append(
                     f"前端依赖缺失: {node_modules} — 请运行 cd {node_modules.parent} && npm install"

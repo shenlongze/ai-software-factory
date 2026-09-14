@@ -359,9 +359,16 @@ def _dep_problems(root: Path) -> list[str]:
             f"未找到虚拟环境: {venv_py}\n"
             "  请先安装依赖: python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'"
         )
-    frontend = root / "src" / "legacy" / "factory-console" / "web" / "frontend"
+    # 前端目录: 迁移后位于 src/ai_factory_os/_pending_migration/factory_console/；
+    # 旧 legacy 布局仅作兜底（便于过渡期与老 checkout）。
+    frontend = (
+        root / "src" / "ai_factory_os" / "_pending_migration"
+        / "factory_console" / "web" / "frontend"
+    )
     if not frontend.is_dir():
-        frontend = root / "src" / "legacy" / "factory_console" / "web" / "frontend"  # S10-074 部署态
+        frontend = root / "src" / "legacy" / "factory-console" / "web" / "frontend"
+    if not frontend.is_dir():
+        frontend = root / "src" / "legacy" / "factory_console" / "web" / "frontend"
     if not (frontend / "node_modules").is_dir():
         problems.append(
             f"前端依赖缺失: {frontend / 'node_modules'}\n  请先安装: cd {frontend} && npm install"

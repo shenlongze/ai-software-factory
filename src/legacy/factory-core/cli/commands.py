@@ -30,7 +30,7 @@ from assignment.allocator import (
 )
 from assignment.models import AssignmentStatus
 from assignment.store import AssignmentStore
-from events.models import EventType
+from ai_factory_os.infrastructure.events.types import EventType
 from execution.dispatcher import (
     ExecutionDispatchError,
     ExecutionDispatcherError,
@@ -3447,7 +3447,7 @@ def cmd_console_dashboard(ctx: FactoryContext, args: Any) -> dict:
     一次装配只读快照。只读铁律: 本命令唯一的副作用是审计事件, 不自动
     执行/不自动批准 (决策权永远在 9c Approval 状态机)。
     """
-    from events.models import EventType
+    from ai_factory_os.infrastructure.events.types import EventType
 
     with ctx.logger_scope() as logger:
         service = _open_console_service(ctx)
@@ -3488,7 +3488,7 @@ def cmd_console_approvals(ctx: FactoryContext, args: Any) -> dict:
     changes_requested/delegated 决策权永远在 9c Approval 状态机
     (product approval decide), 本命令零写操作。
     """
-    from events.models import EventType
+    from ai_factory_os.infrastructure.events.types import EventType
 
     with ctx.logger_scope() as logger:
         service = _open_console_service(ctx)

@@ -2614,7 +2614,7 @@ class ConsoleService:
         if store is None:
             return started_at, completed_at
         try:
-            from events.models import EventType
+            from ai_factory_os.infrastructure.events.types import EventType
 
             started_events = store.query(
                 project_id=project_id, event_type=EventType.ORG_WORKFLOW_STAGE_STARTED
@@ -3461,7 +3461,7 @@ class ConsoleService:
             try:
                 events = store.query(project_id=project_id, limit=1)
                 if events:
-                    from events.models import format_timestamp
+                    from ai_factory_os.infrastructure.events.types import format_timestamp
 
                     return format_timestamp(events[-1].timestamp)
             except Exception:  # noqa: BLE001 — 事件查询失败 → 兜底
@@ -3666,7 +3666,7 @@ class ConsoleService:
             return []
         out: list[EventSummary] = []
         for event in events:
-            from events.models import format_timestamp
+            from ai_factory_os.infrastructure.events.types import format_timestamp
 
             out.append(
                 EventSummary(

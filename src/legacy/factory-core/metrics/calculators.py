@@ -16,7 +16,7 @@ from collections import Counter
 from typing import Sequence
 
 from agents.models import Agent
-from events.models import Event, EventType
+from ai_factory_os.infrastructure.events.types import Event, EventType
 from runtime.models import ExecutionRequest, ExecutionStatus
 from tasks.models import Task, TaskStatus
 from workflows.models import Workflow, WorkflowRun, WorkflowStatus

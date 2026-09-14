@@ -27,7 +27,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from events.models import format_timestamp
+from ai_factory_os.infrastructure.events.types import format_timestamp
 
 # ------------------------------------------------------------------ 注册表
 

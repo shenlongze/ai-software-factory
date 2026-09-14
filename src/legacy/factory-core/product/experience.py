@@ -26,7 +26,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator
 
-from events.models import format_timestamp
+from ai_factory_os.infrastructure.events.types import format_timestamp
 
 
 def _now() -> str:

@@ -811,8 +811,8 @@ def build_console_service(
 
 def _open_event_logger(factory_root: str | Path) -> Any:
     """按工厂根打开 EventLogger (<root>/factory.db, CLI 同路径; 失败安全 → None)。"""
-    from events.logger import EventLogger
-    from events.store import EventStore
+    from ai_factory_os.infrastructure.events.logger import EventLogger
+    from ai_factory_os.infrastructure.events.store import EventStore
 
     try:
         return EventLogger(EventStore(Path(factory_root) / "factory.db"))
@@ -3738,8 +3738,8 @@ def build_app(
             pass
         # 2) events 库 (tool.call, task_id=session)
         try:
-            from events.logger import EventLogger
-            from events.store import EventStore
+            from ai_factory_os.infrastructure.events.logger import EventLogger
+            from ai_factory_os.infrastructure.events.store import EventStore
 
             db = Path(workspace_root or DEFAULT_ROOT) / "factory.db"
             if db.exists():

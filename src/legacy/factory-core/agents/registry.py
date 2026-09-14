@@ -15,8 +15,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from events.logger import EventLogger
-from events.models import Event, EventType
+from ai_factory_os.infrastructure.events.logger import EventLogger
+from ai_factory_os.infrastructure.events.types import Event, EventType
 
 from .models import Agent, AgentStatus, Skill
 from .store import AgentStore, SkillStore

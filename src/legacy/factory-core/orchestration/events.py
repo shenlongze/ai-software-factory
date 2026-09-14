@@ -18,8 +18,8 @@
 
 from __future__ import annotations
 
-from events.logger import EventLogger
-from events.models import Event, EventType
+from ai_factory_os.infrastructure.events.logger import EventLogger
+from ai_factory_os.infrastructure.events.types import Event, EventType
 
 SOURCE = "orchestration_engine"  # event-model §2.1 source 取值
 

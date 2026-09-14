@@ -34,9 +34,9 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 
-from events.logger import EventLogger
-from events.models import EventType
-from events.store import EventStore
+from ai_factory_os.infrastructure.events.logger import EventLogger
+from ai_factory_os.infrastructure.events.types import EventType
+from ai_factory_os.infrastructure.events.store import EventStore
 
 from . import events as exec_events
 from .agent_runtime import AgentRuntime

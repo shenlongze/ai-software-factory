@@ -32,9 +32,9 @@ from typing import Any
 from agents.registry import AgentNotFoundError, AgentRegistry
 from assignment.models import AssignmentStatus
 from assignment.store import AssignmentStore
-from events.logger import EventLogger
-from events.models import Event, EventType
-from events.store import EventStore
+from ai_factory_os.infrastructure.events.logger import EventLogger
+from ai_factory_os.infrastructure.events.types import Event, EventType
+from ai_factory_os.infrastructure.events.store import EventStore
 from runtime.models import ExecutionStatus
 from runtime.store import RuntimeStore
 from tasks.store import TaskStore

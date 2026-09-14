@@ -32,8 +32,8 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from change.service import ChangeService
-from events.logger import EventLogger
-from events.models import Event
+from ai_factory_os.infrastructure.events.logger import EventLogger
+from ai_factory_os.infrastructure.events.types import Event
 from runtime.registry import RuntimeRegistry
 from tasks.models import Task
 from tasks.store import TaskStore

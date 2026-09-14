@@ -34,7 +34,7 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, Field, field_validator
 
-from events.models import parse_timestamp
+from ai_factory_os.infrastructure.events.types import parse_timestamp
 
 from providers.models import ProviderRequest, ProviderResponse, TaskRequirement  # noqa: F401  (复用 Phase 8 I/O 契约)
 from providers.usage import ProviderUsage  # noqa: F401  (经验积累计量, 失败安全)

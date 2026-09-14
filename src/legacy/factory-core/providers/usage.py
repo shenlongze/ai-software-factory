@@ -32,7 +32,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from events.models import format_timestamp, parse_timestamp
+from ai_factory_os.infrastructure.events.types import format_timestamp, parse_timestamp
 
 from .models import _id_sane
 

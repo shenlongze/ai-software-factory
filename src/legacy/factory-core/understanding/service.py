@@ -30,7 +30,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from events.models import format_timestamp
+from ai_factory_os.infrastructure.events.types import format_timestamp
 
 from .analyzers.artifact_detector import (
     ArtifactDetector,

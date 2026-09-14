@@ -20,7 +20,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterator
 
-from .models import Event, EventType, format_timestamp, parse_timestamp
+from .types import Event, EventType, format_timestamp, parse_timestamp
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS events (

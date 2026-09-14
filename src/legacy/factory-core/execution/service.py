@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Mapping
 
-from events.logger import EventLogger
+from ai_factory_os.infrastructure.events.logger import EventLogger
 from runtime.adapter import RuntimeAdapter
 from runtime.models import ExecutionRequest, ExecutionResult
 from runtime.registry import RuntimeRegistry

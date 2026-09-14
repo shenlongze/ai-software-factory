@@ -42,7 +42,7 @@ from pydantic import BaseModel, Field, field_validator
 
 def _now_str() -> str:
     """统一 UTC 时间戳 (与 Event 存储格式一致, 字符串排序 == 时间排序)。"""
-    from events.models import format_timestamp
+    from ai_factory_os.infrastructure.events.types import format_timestamp
     from datetime import datetime, timezone
 
     return format_timestamp(datetime.now(timezone.utc))

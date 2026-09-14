@@ -22,8 +22,8 @@ from collections import Counter
 from typing import Any
 
 from agents.registry import AgentRegistry
-from events.models import EventType
-from events.store import EventStore
+from ai_factory_os.infrastructure.events.types import EventType
+from ai_factory_os.infrastructure.events.store import EventStore
 from metrics.collectors import MetricsCollector
 from metrics.models import AgentUtilizationSummary, FactoryMetrics, RuntimeUsageSummary
 from metrics.workspace import WorkspaceCollector

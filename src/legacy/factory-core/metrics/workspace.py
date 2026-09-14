@@ -26,8 +26,8 @@ from collections import Counter, defaultdict
 
 from agents.models import Agent
 from agents.registry import AgentRegistry
-from events.models import Event, EventType
-from events.store import EventStore
+from ai_factory_os.infrastructure.events.types import Event, EventType
+from ai_factory_os.infrastructure.events.store import EventStore
 from runtime.models import ExecutionRequest, ExecutionStatus
 from runtime.store import RuntimeStore
 from tasks.models import Task

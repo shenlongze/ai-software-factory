@@ -283,7 +283,7 @@ def _stage_duration_s(store: Any, completed_event: Any, stage_id: Any) -> float 
     if not stage_id or completed_event.project_id is None:
         return None
     try:
-        from events.models import EventType
+        from ai_factory_os.infrastructure.events.types import EventType
 
         started = store.query(
             project_id=completed_event.project_id,

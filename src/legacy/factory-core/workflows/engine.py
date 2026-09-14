@@ -31,8 +31,8 @@ from datetime import datetime, timezone
 from typing import Any
 
 from agents.registry import AgentRegistry
-from events.logger import EventLogger
-from events.models import Event, EventType
+from ai_factory_os.infrastructure.events.logger import EventLogger
+from ai_factory_os.infrastructure.events.types import Event, EventType
 from runtime.models import ExecutionRequest
 from runtime.store import RuntimeStore
 from tasks.models import Task

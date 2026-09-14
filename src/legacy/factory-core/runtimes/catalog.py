@@ -20,8 +20,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from events.logger import EventLogger
-from events.models import Event, EventType
+from ai_factory_os.infrastructure.events.logger import EventLogger
+from ai_factory_os.infrastructure.events.types import Event, EventType
 
 from .definitions import DEFAULT_DEFINITIONS
 from .models import CatalogStatus, RuntimeDefinition

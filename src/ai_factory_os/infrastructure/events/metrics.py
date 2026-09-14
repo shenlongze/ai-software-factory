@@ -25,7 +25,7 @@ from typing import Iterable, Sequence
 
 from pydantic import BaseModel, Field
 
-from .models import Event, EventType
+from .types import Event, EventType
 
 
 class Metrics(BaseModel):

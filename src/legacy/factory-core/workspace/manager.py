@@ -18,8 +18,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from events.logger import EventLogger
-from events.models import EventType
+from ai_factory_os.infrastructure.events.logger import EventLogger
+from ai_factory_os.infrastructure.events.types import EventType
 
 from .config import (
     WorkspaceConfig,

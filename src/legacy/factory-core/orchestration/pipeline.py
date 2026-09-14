@@ -21,7 +21,7 @@ from agents.store import AgentStore
 from assignment.allocator import AgentAllocator
 from assignment.matcher import AgentMatcher
 from assignment.store import AssignmentStore
-from events.logger import EventLogger
+from ai_factory_os.infrastructure.events.logger import EventLogger
 from execution.service import ExecutionService
 from runtime.adapter import RuntimeAdapter
 from runtime.adapters import BUILTIN_ADAPTERS

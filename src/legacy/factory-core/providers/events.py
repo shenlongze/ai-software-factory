@@ -31,7 +31,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from events.models import Event, EventType
+from ai_factory_os.infrastructure.events.types import Event, EventType
 
 
 def record_provider_registered(

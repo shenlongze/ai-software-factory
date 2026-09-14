@@ -401,8 +401,8 @@ def post_tool_use_hook(ctx: dict[str, Any]) -> None:
         logger.warning("post_tool_use_hook audit failed: %s", exc_info=True)
     # T12: 统一事件库 — events 表 (factory.db; 失败安全)
     try:
-        from events.logger import EventLogger
-        from events.store import EventStore
+        from ai_factory_os.infrastructure.events.logger import EventLogger
+        from ai_factory_os.infrastructure.events.store import EventStore
 
         db = Path(data_dir) / "factory.db"
         if db.exists():

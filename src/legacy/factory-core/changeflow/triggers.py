@@ -21,7 +21,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from events.models import Event
+from ai_factory_os.infrastructure.events.types import Event
 
 from .events import record_change_trigger_created
 from .models import ChangeTrigger

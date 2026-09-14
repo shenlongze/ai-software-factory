@@ -9,7 +9,7 @@ from __future__ import annotations
 import threading
 from typing import Any
 
-from .models import Event, EventType
+from .types import Event, EventType
 from .store import EventStore
 
 

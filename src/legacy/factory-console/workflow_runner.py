@@ -367,8 +367,8 @@ def run_project_chain(
 ) -> dict[str, Any]:
     """执行链 (生产 = 真实 LLM; 测试 = chain_factory 注入假链)。"""
     _setup_sys_path()
-    from events.logger import EventLogger
-    from events.store import EventStore
+    from ai_factory_os.infrastructure.events.logger import EventLogger
+    from ai_factory_os.infrastructure.events.store import EventStore
     from ai_factory_os.services.organization.projects import ProjectStore
     from ai_factory_os.services.organization.workflow import WorkflowLifecycle
 

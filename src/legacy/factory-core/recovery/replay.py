@@ -27,7 +27,7 @@ from typing import Any
 
 from agents.models import AgentStatus
 from assignment.models import AssignmentStatus
-from events.models import Event, EventType
+from ai_factory_os.infrastructure.events.types import Event, EventType
 from runtime.models import ExecutionStatus
 from workflows.models import StepStatus, WorkflowStatus
 

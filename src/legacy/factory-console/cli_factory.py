@@ -2071,8 +2071,8 @@ class FactoryCLI:
         def _on_approved(rec: object) -> None:
             """审计挂点：approve 时发 org.execution.approved（用旧事件库，best-effort）。"""
             try:
-                from events.logger import EventLogger
-                from events.store import EventStore
+                from ai_factory_os.infrastructure.events.logger import EventLogger
+                from ai_factory_os.infrastructure.events.store import EventStore
                 from exec import events as exec_events
                 from exec.store import ExecStore
 

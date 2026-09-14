@@ -88,6 +88,32 @@ def save_agent_profiles(
     return path
 
 
+
+#: 学习失败日志（诊断用；失败安全路径的"黑匣子"）
+LEARNING_FAILURE_LOG = "learning_failures.log"
+
+
+def _note_learning_failure(
+    loop: Any, stage: str, exc: BaseException, workspace: Any = None
+) -> None:
+    """记录学习链路的静默失败 —— 不抛、不阻断，但留下可查的痕迹。"""
+    try:
+        from datetime import datetime, timezone
+
+        ws = workspace if workspace is not None else getattr(loop, "workspace", None)
+        base = Path(ws) if ws is not None else Path.home() / ".factory"
+        mem = base / "memory"
+        mem.mkdir(parents=True, exist_ok=True)
+        line = (
+            f"{datetime.now(timezone.utc).isoformat()}\t{stage}\t"
+            f"{type(exc).__name__}: {exc}\n"
+        )
+        with (mem / LEARNING_FAILURE_LOG).open("a", encoding="utf-8") as fh:
+            fh.write(line)
+    except Exception:  # noqa: BLE001 — 记录失败也不能抛
+        pass
+
+
 def refresh_agent_profiles(
     workspace: Any = None, store: Optional[ExperienceStore] = None
 ) -> list[dict[str, Any]]:
@@ -107,7 +133,8 @@ def refresh_agent_profiles(
         profile_dicts = [p.to_dict() for p in profiles]
         save_agent_profiles(profile_dicts, ws)
         return profile_dicts
-    except Exception:  # noqa: BLE001 — 失败安全: 画像刷新故障不抛
+    except Exception as exc:  # noqa: BLE001 — 失败安全: 画像刷新故障不抛
+        _note_learning_failure(None, "refresh_agent_profiles", exc, ws)
         return []
 
 
@@ -186,7 +213,10 @@ class LearningLoop:
             # M4-5: 画像随经验刷新 (护栏内, 失败安全)
             refresh_agent_profiles(self.workspace, store=self.store)
             return str(item.id)
-        except Exception:  # noqa: BLE001 — 失败安全: 入库故障不阻断执行链
+        except Exception as exc:  # noqa: BLE001 — 失败安全: 不阻断执行链
+            # 失败安全 ≠ 静默: 记下原因，否则"学习哑掉"无人可查
+            # （2026-09-14 审计: 85 条经验却零画像，根因就是这里吞掉了异常）
+            _note_learning_failure(self, "on_execution_complete", exc)
             return ""
 
     def _extract(

@@ -4703,6 +4703,37 @@ class FactoryCLI:
 
         # ★ Founder 模型: 按 project_id 查项目【全部】信息
         #   物理位置即索引 ✓ —— 直接读 projects/<P-id>/ 目录 ✓
+        if getattr(args, "action", "") in ("plan", "schedule"):
+            from . import scheduling as _sch
+
+            pid = str(target or "").strip()
+            if not pid:
+                print("[E4430] 用法: factory projectos plan <project_id>", file=sys.stderr)
+                return 2
+            s = _sch.build_schedule(root, pid)
+            rows = s["tasks"]
+            print(f"=== 排期 / 估算（项目 {pid}）===")
+            if not rows:
+                print("  该项目下没有可排期的任务 ✗")
+                print("  （任务来自 LLM 拆解 ✓ 先生成计划: factory plan <conv-id> ✓）")
+                return 0
+            print(f"  {'任务':<34}{'角色':<12}{'工时h':>6}{'关键路径h':>10}")
+            for r in rows[:14]:
+                print(f"  {r['title'][:32]:<34}{r['role'][:10]:<12}"
+                      f"{r['hours']:>6.1f}{r['critical_hours']:>10.1f}")
+            if len(rows) > 14:
+                print(f"  … 另 {len(rows) - 14} 条")
+            print(f"  ── 总工时 {s['sum_hours']}h · 【关键路径 {s['critical_path_hours']}h】"
+                  f" · 并行度 {s['parallelism']}×")
+            if s.get("milestones"):
+                print("  里程碑: " + " · ".join(
+                    f"{m['name']}({m['tasks']})" for m in s["milestones"][:8]))
+            if s.get("skipped_no_project"):
+                print(f"  ⚠ 另有 {s['skipped_no_project']} 个任务【无 project_id ✓】未纳入"
+                      f"（归属未知 → 宁可不排 ✗ 不硬塞 ✓）")
+            print(f"  ⚠ {s['note']}")
+            return 0
+
         if getattr(args, "action", "") == "uat":
             from . import delivery as _dlv
 
@@ -8734,7 +8765,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_proj = sub.add_parser("projectos", help="ProjectOS (K3): create/sprint/status/replan/approve — Real Project Operating Loop")
     p_proj.add_argument("action", nargs="?", default="list",
                         choices=["create", "sprint", "status", "replan", "approve", "list",
-                                 "show", "deliver", "accept", "deliveries", "uat"])
+                                 "show", "deliver", "accept", "deliveries", "uat", "plan", "schedule"])
     p_proj.add_argument("target", nargs="?", help="project_id / sprint_id / task_id")
     p_proj.add_argument("--title", default="项目", help="项目/迭代标题 (create/sprint 用)")
     p_proj.add_argument("--conv", default="", help="conversation_id (create 用)")

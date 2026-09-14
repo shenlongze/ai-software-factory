@@ -31,14 +31,14 @@ from assignment.allocator import (
 from assignment.models import AssignmentStatus
 from assignment.store import AssignmentStore
 from ai_factory_os.infrastructure.events.types import EventType
-from execution.dispatcher import (
+from ai_factory_os.services.execution.dispatcher import (
     ExecutionDispatchError,
     ExecutionDispatcherError,
     NoAvailableRuntimeError,
     RuntimeAdapterNotFoundError,
 )
-from execution.runner import ExecutionNotFoundError, ExecutionRunnerError, ExecutionStateError
-from execution.service import ExecutionService
+from ai_factory_os.services.execution.runner import ExecutionNotFoundError, ExecutionRunnerError, ExecutionStateError
+from ai_factory_os.services.execution.service import ExecutionService
 from ai_factory_os.services.execution.runtime.adapters import BUILTIN_ADAPTERS
 from ai_factory_os.services.execution.runtime.types import ExecutionRequest, ExecutionStatus, RuntimeInfo, RuntimeStatus
 from ai_factory_os.services.execution.runtime.registry import RuntimeExistsError, RuntimeNotFoundError, RuntimeRegistry

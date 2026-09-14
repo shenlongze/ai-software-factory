@@ -35,9 +35,9 @@ from assignment.allocator import AgentAllocator, AgentAllocatorError
 from assignment.matcher import AgentMatcher
 from ai_factory_os.infrastructure.events.logger import EventLogger
 from ai_factory_os.infrastructure.events.types import Event
-from execution.dispatcher import ExecutionDispatcherError
-from execution.runner import ExecutionRunnerError
-from execution.service import ExecutionService
+from ai_factory_os.services.execution.dispatcher import ExecutionDispatcherError
+from ai_factory_os.services.execution.runner import ExecutionRunnerError
+from ai_factory_os.services.execution.service import ExecutionService
 from ai_factory_os.services.execution.runtime.types import ExecutionStatus
 from ai_factory_os.services.execution.runtime.registry import RuntimeNotFoundError
 from workflows.engine import WorkflowEngine, WorkflowEngineError

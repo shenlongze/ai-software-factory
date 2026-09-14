@@ -109,7 +109,7 @@ def production_outcome(root: Path | str, production_run_id: str) -> dict[str, An
     """Production Outcome 投影 (facts → outcome)。"""
     run = get_production_run(root, production_run_id)
     if run is None:
-        return {"outcome": OC_UNKNOWN if False else "UNKNOWN_RUN",
+        return {"outcome": "UNKNOWN_RUN",     # F821: 原为 `OC_UNKNOWN if False else …` 死代码 ✗
                 "production_run_id": production_run_id, "evidence_refs": [],
                 "explain": "ProductionRun 不存在"}
     state = run.get("state", "")

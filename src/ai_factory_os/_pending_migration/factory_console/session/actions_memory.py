@@ -4,6 +4,7 @@
 """
 
 from __future__ import annotations
+from ..memory.experience_store import DEFAULT_WORKSPACE  # F821 修复
 
 from pathlib import Path
 

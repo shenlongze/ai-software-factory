@@ -2039,7 +2039,7 @@ def governance_status(context: ExecutionContext) -> ActionResult:
                 # S10-070: Audit 自动接入 (失败安全)
         try:
             from ..audit.audit_emitter import AuditEmitter
-            AuditEmitter(workspace=ws).emit(
+            AuditEmitter(workspace=workspace).emit(   # F821: 原写 ws ✗ 函数内是 workspace ✓
                 "MEMORY_LEARNED", project_id=context.project or "",
                 actor_type="user", actor_id=str(getattr(context, "user", "") or ""),
                 decision_reason=f"经验学习: 提取 {result.extracted_count} 条",

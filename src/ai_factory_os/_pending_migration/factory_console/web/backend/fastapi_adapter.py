@@ -118,8 +118,10 @@ def _console_import(name: str):
 import tomllib
 
 try:
+    from legacy_paths import REPO_ROOT as _REPO_ROOT  # F821: 原用 REPO_ROOT ✗ 其 import 在 133 行 ✗
+
     _factory_version = tomllib.loads(
-        (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        (_REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     )["project"]["version"]
 except Exception:  # noqa: BLE001 — 版本读取失败 → dev 标记（不阻断）
     _factory_version = "0.0.0-dev"

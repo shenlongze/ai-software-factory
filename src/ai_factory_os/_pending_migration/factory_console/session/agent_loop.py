@@ -2430,7 +2430,7 @@ def dispatch(
                         pass
                 # 3) 返回压缩后上下文 (聚焦相关)
                 try:
-                    _mp2 = _model_profile(dd) if "_model_profile" in dir() else {}
+                    _mp2 = _model_profile(dd) if "_model_profile" in dir() else {}  # noqa: F821 (有 dir() 守卫 ✓)
                     _depth = pick_depth(_mp2.get("tier"), _mp2.get("context_window"))
                     block = build_context(dd, project_id, depth=_depth, query=focus)
                     if block:

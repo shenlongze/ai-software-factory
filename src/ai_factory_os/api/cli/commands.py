@@ -3577,9 +3577,9 @@ def _open_org_cli() -> Any:
     if str(pkg_dir) not in sys.path:
         sys.path.insert(0, str(pkg_dir))
     try:
-        import ai_factory_os.services.organization.cli  # noqa: F401
+        from ai_factory_os.services.organization import cli as _org_cli
 
-        return org.cli
+        return _org_cli     # F821: 原写 org.cli ✗ 名字不存在 ✓
     except ImportError:
         return None
 

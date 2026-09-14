@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from ..memory.experience_store import DEFAULT_WORKSPACE  # F821 修复
 from .action import (
     STATUS_ERROR,
     STATUS_OK,

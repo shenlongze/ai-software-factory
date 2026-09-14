@@ -174,11 +174,15 @@ class HistoryIndex:
             for row in src.execute(sel):
                 ref = str(row[0])
                 ts = str(row[1] or "")
+                kv = dict(zip(cols, row[2:])) if len(row) >= len(cols) else {}
+                etype = str(kv.get("type") or "")
+                esource = str(kv.get("source") or "")
+                title_txt = f"{etype} ({esource})" if etype else f"event#{ref}"
                 rest = " ".join(str(x) for x in row[2:] if x is not None)
                 self._conn.execute(
                     "INSERT INTO docs(source, ref, ts, title, body) VALUES(?,?,?,?,?) "
                     "ON CONFLICT(source, ref) DO UPDATE SET ts=excluded.ts, body=excluded.body",
-                    ("event", ref, ts, f"event#{ref}", rest[:6000]))
+                    ("event", ref, ts, title_txt, rest[:6000]))
                 n += 1
             src.close()
         except Exception:  # noqa: BLE001 — 事件库不可读 → 跳过（不阻断）
@@ -335,20 +339,70 @@ def _fts_terms(query: str) -> str:
     return parts[0] if len(parts) == 1 else "(" + " OR ".join(parts[:12]) + ")"
 
 
-def _snippet(body: str, terms: str, *, width: int = 160) -> str:
-    """从【原文】取命中上下文（FTS 存的是归一化文本，展示要用原文）。"""
-    flat = " ".join((body or "").split())
-    probe = [w.strip('"') for w in terms.split(" AND ")]
-    at = -1
-    for p in probe:
-        token = p.replace(" ", "")
-        if not token:
+#: 从 payload JSON 里提炼可读摘要时优先取的键（按语义重要性排序）。
+_SUMMARY_KEYS = ("name", "goal", "title", "task", "objective", "description", "problem",
+                 "action", "result", "summary", "message", "reason", "phase", "status",
+                 "project_id", "task_id", "agent_id", "model", "verdict", "decision")
+
+
+def _extract_json_obj(body: str) -> dict | None:
+    """从事件 body（"seq id ts type source ... {json}"）里取出 JSON 对象。"""
+    at = body.find("{")
+    while at >= 0:
+        try:
+            obj = json.loads(body[at:])
+            if isinstance(obj, dict):
+                return obj
+        except Exception:  # noqa: BLE001 — 不是完整 JSON → 继续找下一个 {
+            pass
+        at = body.find("{", at + 1)
+    return None
+
+
+def _summarize_payload(body: str, *, width: int = 150) -> str:
+    """把 payload JSON 提炼成人能读的一行摘要（不吐原始 JSON）。
+
+    例: {"project_id":"P-2f622bdf","name":"旅行记账","goal":"旅行支出乱"}
+      → P-2f622bdf · 旅行记账 · 旅行支出乱
+    """
+    obj = _extract_json_obj(body)
+    if not obj:
+        return ""
+    bits: list[str] = []
+    for k in _SUMMARY_KEYS:
+        v = obj.get(k)
+        if v in (None, "", [], {}):
             continue
-        at = flat.find(token) if len(token) > 1 else flat.find(token)
-        if at < 0 and " " in p:
-            at = flat.find(p.replace(" ", ""))
-        if at >= 0:
+        if isinstance(v, (str, int, float)):
+            s = str(v)
+        elif isinstance(v, list):
+            s = ", ".join(str(x) for x in v[:3] if isinstance(x, (str, int, float)))
+        else:
+            continue
+        if s:
+            bits.append(s)
+        if len(" · ".join(bits)) >= width:
             break
+    return " · ".join(bits)[:width]
+
+
+def _snippet(body: str, terms: str, *, width: int = 180) -> str:
+    """命中片段 = 【可读摘要】优先，其次命中位置上下文，最后开头。
+
+    为什么: 事件 body 是 "seq id ts type source {json}" 这样的原始文本，
+    直接吐出来对 LLM/人都没用（实测注入内容全是 7720 f07098... ✗）。
+    """
+    summary = _summarize_payload(body, width=width)
+    if summary:
+        return summary
+    flat = " ".join((body or "").split())
+    probe = [w.strip('"').replace(" ", "") for w in terms.split(" AND ")]
+    at = -1
+    for pw in probe:
+        if pw:
+            at = flat.find(pw)
+            if at >= 0:
+                break
     if at < 0:
         return flat[:width]
     lo = max(0, at - width // 3)

@@ -637,13 +637,112 @@ def _run_result_from_fn(root: str, executor_fn: Any, leaf: dict[str, Any],
             "error": run.get("failure_reason"), "output": None}
 
 
+def _execute_run_parallel(
+    root: str, run_id: str, nodes: list[dict[str, Any]], *,
+    leaves: list[dict[str, Any]], executor_factory: Any,
+    actor: str = "human", max_workers: int | None = None,
+) -> dict[str, Any]:
+    """按 DAG 层并行执行（刀4b ✓）—— ★ 返回与串行内核【同形状】的 run 记录 ✓。
+
+    为什么必须同形状: 调用方随后从 run["node_runs"] 读 ✓（形状变了会炸 ✗）
+    失败语义【与串行一致 ✓ 不许变 ✗】:
+      · 依赖未成功 → 本节点 BLOCKED ✓（不是跳过 ✓ 不是假装 ✓）
+      · 单节点异常 → 该节点 FAILED ✓ 同层其它节点照常跑完 ✓（它们不依赖它 ✓）
+    默认不开 ✓: 只有显式 parallel=True 才走这里 ✓（不传 → 与今天行为相同 ✓）
+    """
+    from factory_console import parallel_run as pr
+    from factory_console.node_runtime import (
+        create_node_run, execute_node_run, register_node,
+    )
+    # ★ 用【与串行内核同一套】的锁/写/记录函数 ✓（不另造 ✓ 否则语义会分叉 ✗）
+    from factory_console.production_run import (
+        _lock, _record, _write, get_production_run,
+    )
+
+    by_leaf = {str(l.get("id")): l for l in leaves if isinstance(l, dict)}
+    results: dict[str, dict[str, Any]] = {}
+
+    def _one(node_id: str) -> dict[str, Any]:
+        spec = next((n for n in nodes if str(n.get("node_id")) == node_id), {})
+        for dep in (spec.get("depends_on") or []):          # 依赖检查（同串行 ✓）
+            rec = results.get(str(dep))
+            if not rec or rec.get("state") != "COMPLETED":
+                return {"node_id": node_id, "run_id": None, "artifact_id": None,
+                        "state": "BLOCKED",
+                        "reason": f"依赖 {dep} 未成功 (state={(rec or {}).get('state')}) → BLOCKED"}
+        leaf = by_leaf.get(node_id, {})
+        try:
+            fn = executor_factory(node_id)
+        except Exception as exc:  # noqa: BLE001 — 装配失败 → 诚实 FAILED ✓
+            return {"node_id": node_id, "run_id": None, "artifact_id": None,
+                    "state": "FAILED", "reason": f"executor 装配失败: {exc}"}
+        # ★ 必须先 register_node（幂等 upsert ✓）——
+        #   串行内核自己做这步 ✗ 我第一版漏了 → "Node 不存在: n3"（负例测试抓到 ✓）
+        try:
+            register_node(str(root), node_id=node_id,
+                          name=str(leaf.get("title") or node_id)[:120],
+                          node_type="plan_task",
+                          input_contract={}, output_contract={"deliverable": "verified"},
+                          execution_policy={"actor": actor, "source": "golden-path:parallel"})
+        except Exception:  # noqa: BLE001 — 已存在可复用 ✓ 不阻断 ✓
+            pass
+        try:
+            nr = create_node_run(str(root), node_id=node_id,
+                                 input_data={"task": dict(leaf),
+                                             "project_dir": str(spec.get("project_dir") or "")},
+                                 trigger="golden-path:parallel")
+            r = execute_node_run(root, nr["run_id"], executor_fn=fn,
+                                 executor_name="parallel", artifact_root=str(root),
+                                 max_attempts=1)
+            return {"node_id": node_id, "run_id": nr["run_id"],
+                    "state": (r or {}).get("state"),
+                    "artifact_id": (r or {}).get("artifact_id"),
+                    "reason": (r or {}).get("error")}
+        except Exception as exc:  # noqa: BLE001 — 内核异常 → 诚实 FAILED ✓
+            return {"node_id": node_id, "run_id": None, "artifact_id": None,
+                    "state": "FAILED", "reason": f"execute_node_run exception: {exc}"}
+
+    def _done(node_id: str, res: Any) -> None:
+        rec = res if isinstance(res, dict) else {
+            "node_id": node_id, "run_id": None, "artifact_id": None,
+            "state": "FAILED", "reason": f"{type(res).__name__}: {res}"}
+        results[node_id] = rec
+        with _lock:                                         # 与串行内核同一把锁 ✓
+            cur = get_production_run(root, run_id)
+            if cur is None:
+                return
+            cur["node_runs"] = [n for n in cur.get("node_runs", [])
+                                if n.get("node_id") != node_id]
+            cur["node_runs"].append(rec)
+            _write(root, cur)
+
+    pr.run_layers(nodes, _one, max_workers=max_workers, on_done=_done)
+
+    with _lock:
+        cur = get_production_run(root, run_id) or {}
+        cur["node_runs"] = [n for n in cur.get("node_runs", [])
+                            if n.get("node_id") in results]
+        bad = [n for n in cur["node_runs"] if n.get("state") != "COMPLETED"]
+        cur["state"] = ("COMPLETED" if not bad else
+                        "FAILED" if any(n.get("state") == "FAILED" for n in bad) else "BLOCKED")
+        if bad:
+            cur["failure"] = "部分节点未成功: " + "; ".join(
+                f"{n.get('node_id')}: {str(n.get('reason') or n.get('state'))[:80]}"
+                for n in bad[:5])
+        _record(root, cur, cur["state"], actor=actor,
+                note=f"parallel(mw={pr.resolve_max_workers(max_workers)})")
+    return cur
+
+
 def execute_approved(root: str, conversation_id: str, *,
                      actor: str = "human", capability_fn: Any = None,
                      task_id: str = "",
                      executor_fn: Any = None,
                      real_executor: bool = False,
                      executor_name: str = "",
-                     executor_factory: Any = None) -> dict[str, Any]:
+                     executor_factory: Any = None,
+                     parallel: bool = False,
+                     max_workers: int | None = None) -> dict[str, Any]:
     """Approved Plan → Production (唯一 Golden Path 生产入口, S1 收敛)。
 
     统一到 production_run 图编排: tree 叶 → register_workflow(workflow_id=plan_id)
@@ -742,9 +841,15 @@ def execute_approved(root: str, conversation_id: str, *,
                     "prd_id": _prd["id"], "plan_id": plan["id"],
                     "goal": plan.get("goal", "")},
         trigger=f"golden-path:{actor}")
-    run = execute_production_run(root, prun["run_id"],
-                                 executor_factory=executor_factory,
-                                 artifact_root=str(root), actor=actor)
+    # ★ 刀4b: 显式 parallel=True 才走按层并行 ✓（不传 → 与今天逐字节相同 ✓）
+    if parallel:
+        run = _execute_run_parallel(root, prun["run_id"], nodes, leaves=leaves,
+                                    executor_factory=executor_factory, actor=actor,
+                                    max_workers=max_workers)
+    else:
+        run = execute_production_run(root, prun["run_id"],
+                                     executor_factory=executor_factory,
+                                     artifact_root=str(root), actor=actor)
 
     executed = []
     for nr in run.get("node_runs", []):

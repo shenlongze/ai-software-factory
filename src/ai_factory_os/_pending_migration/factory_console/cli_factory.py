@@ -7648,7 +7648,7 @@ class FactoryCLI:
             if action == "stats":
                 st = idx.stats()
                 print("=== 历史索引 ===")
-                for s in ("event", "trace", "experience"):
+                for s in ("event", "trace", "experience", "message"):
                     print(f"  {s:12s} {st.get(s, 0):6d} 条")
                 print(f"  {'合计':12s} {st.get('total', 0):6d} 条")
                 return 0

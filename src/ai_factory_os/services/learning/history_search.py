@@ -5,7 +5,8 @@
 
 设计（借鉴 Hermes 的 session_search 思路，落在本仓库的数据形态上）:
   · 独立 search.db（FTS5 虚拟表）—— 不碰事件库 factory.db 的 schema（零风险）
-  · 索引三类历史: events（发生了什么）/ traces（怎么做的）/ experiences（做成了没）
+  · 索引四类历史: events（发生了什么）/ traces（怎么做的）/ experiences（做成了没）
+  / conversations（说过什么 —— 语义最丰富的一类）
   · 检索: FTS5 全文 + 按来源/时间过滤，返回带来源与时间的命中
   · 幂等: 以 (source, ref) 为唯一键 upsert —— 重复索引不产生重复行
 
@@ -22,7 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
-SOURCES: tuple[str, ...] = ("event", "trace", "experience")
+SOURCES: tuple[str, ...] = ("event", "trace", "experience", "message")
 DEFAULT_DB_NAME = "search.db"
 
 _SCHEMA_VERSION = 2   # 1=external-content+触发器(错) → 2=独立表+代码侧切分
@@ -143,6 +144,7 @@ class HistoryIndex:
         counts["event"] = self._index_events(root)
         counts["trace"] = self._index_traces(root)
         counts["experience"] = self._index_experiences(root)
+        counts["message"] = self._index_conversations(root)
         self._conn.commit()
         self._rebuild_fts()          # 统一重建 FTS（归一化文本）
         return counts
@@ -235,6 +237,40 @@ class HistoryIndex:
                 n += 1
         except Exception:  # noqa: BLE001
             return n
+        return n
+
+    def _index_conversations(self, root: Path) -> int:
+        """会话消息（每条消息一个文档，粒度到"说过的那句话"）。
+
+        为什么值得索引: 对话是最有语义的历史 —— 用户说过什么、AI 答过什么，
+        是"想起过去"最有用的材料（Hermes 的 session_search 搜的正是它）。
+        """
+        d = root / "conversations"
+        if not d.exists():
+            return 0
+        n = 0
+        for f in sorted(d.glob("conv-*.json")):
+            try:
+                conv = json.loads(f.read_text(encoding="utf-8"))
+            except Exception:  # noqa: BLE001 — 单个坏文件跳过
+                continue
+            if not isinstance(conv, dict):
+                continue
+            ctitle = str(conv.get("title") or conv.get("id") or f.stem)
+            for m in conv.get("messages") or []:
+                if not isinstance(m, dict):
+                    continue
+                content = str(m.get("content") or "").strip()
+                if not content:
+                    continue
+                ref = str(m.get("id") or f"{f.stem}-{n}")
+                ts = str(m.get("created_at") or conv.get("created_at") or "")
+                role = str(m.get("role") or "?")
+                self._conn.execute(
+                    "INSERT INTO docs(source, ref, ts, title, body) VALUES(?,?,?,?,?) "
+                    "ON CONFLICT(source, ref) DO UPDATE SET ts=excluded.ts, body=excluded.body",
+                    ("message", ref, ts, f"{ctitle} · {role}", content[:6000]))
+                n += 1
         return n
 
     # ---------------------------------------------------------------- 检索

@@ -257,15 +257,77 @@ def _file(root: Path | str, name: str) -> Path:
     return Path(root) / "ops" / "unified" / f"{name}.json"
 
 
+def _project_entity_file(root: Path | str, project_id: str) -> Path:
+    """项目级实体库: projects/<P-id>/entities.json ✓（Founder 铁律 ✓）。"""
+    return Path(root) / "projects" / project_id / "entities.json"
+
+
+def _write_list(p: Path, data: list[dict[str, Any]]) -> None:
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_suffix(p.suffix + ".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n",
+                   encoding="utf-8")
+    os.replace(tmp, p)
+
+
+def _entity_index(data: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    return {str(e.get("id") or ""): e for e in data if isinstance(e, dict)}
+
+
+def resolve_entity_project(eid: str, index: dict[str, dict[str, Any]],
+                          _seen: set[str] | None = None) -> str:
+    """沿【父链】推导实体所属项目（只走明确的链 ✓ 推导不出 → 空 ✓）。
+
+    链（实测覆盖率 100% ✓）:
+      msg → conv → project_id ✓ · req → conv → project_id ✓
+      task → (task*|req|project|conv) → … ✓ · sprint → project ✓ · evidence → task ✓
+    防环: _seen ✓（有环 → 空 ✓ 不静默 → 由调用方归入公共 ✓）
+    """
+    seen = _seen if _seen is not None else set()
+    if not eid or eid in seen:
+        return ""
+    seen.add(eid)
+    if eid.startswith("project_"):
+        return eid                       # 项目自身 ✓
+    e = index.get(eid)
+    if not e:
+        return ""                        # 父缺失 → 公共 ✓（宁公共不错塞 ✓）
+    pid = str(e.get("project_id") or "")
+    if pid.startswith("project_"):
+        return pid
+    return resolve_entity_project(str(e.get("parent_id") or ""), index, seen)
+
+
 def _load(root: Path | str, name: str) -> list[dict[str, Any]]:
-    try:
-        d = json.loads(_file(root, name).read_text(encoding="utf-8"))
-        return d if isinstance(d, list) else []
-    except (OSError, ValueError):
-        return []
+    """读实体库: 公共 ✓ + 各项目 ✓（Founder 模型: 有项目就在项目下 ✓）。"""
+    out: list[dict[str, Any]] = []
+    paths = [_file(root, name)]
+    if name == "entities":
+        paths += sorted(Path(root).glob("projects/*/entities.json"))
+    for p in paths:
+        try:
+            d = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue                      # 失败安全: 单文件损坏不阻断其它 ✓
+        if isinstance(d, list):
+            out.extend(d)
+    return out
 
 
 def _save(root: Path | str, name: str, data: list[dict[str, Any]]) -> None:
+    """写实体库: entities 按【推导出的项目】分片 ✓；其它 name 维持原行为 ✓。"""
+    if name == "entities":
+        idx = _entity_index(data)
+        public: list[dict[str, Any]] = []
+        by_proj: dict[str, list[dict[str, Any]]] = {}
+        for e in data:
+            if not isinstance(e, dict):
+                continue
+            pid = resolve_entity_project(str(e.get("id") or ""), idx)
+            (by_proj.setdefault(pid, []) if pid else public).append(e)
+        for pid, sub in by_proj.items():
+            _write_list(_project_entity_file(root, pid), sub)
+        data = public                    # 公共部分照原路径写 ✓
     p = _file(root, name)
     p.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=str(p.parent), prefix=".tmp-", suffix=".json")

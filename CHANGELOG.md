@@ -1,4 +1,39 @@
 # Changelog
+## [v1.2.1] — 2026-09-14
+
+**结构收口 + 学习闭环接线（Founder: 根目录绝对干净 / 该去哪就去哪；随后问「功能是否完成」引发审计）**。
+
+### Changed
+
+- **根目录 33 → 15 项**：全部代码收进 `src/`；根下 0 个散落 `.py`；无 `factory-*`。
+- **`src/legacy/` 彻底消失**：538 文件全部迁入 `src/ai_factory_os/`（51 刀，每刀均经
+  全量导入验证 + 产品冒烟）。进度区 `_pending_migration/` 承接尚未按域归位的包。
+- **新增别名桥 `ai_factory_os/compat_aliases.py`**（搬迁过渡层）：旧顶层名（tasks/events/org/
+  exec/factory_console…）在运行时解析到新路径，**消费方零修改**。
+  关键实现：`create_module` 返回 `import_module(目标)` → 新旧名指向【同一模块对象】
+  （否则 isinstance / 类身份会静默失效）。已 PoC 验证 7 项 + 真实仓库 31 条别名逐条验证。
+
+### Fixed
+
+- **CLI 执行入口未接学习闭环**（审计发现：3 个执行入口只接了 1 个）→ `exec/cli.py::cmd_exec_run`
+  收尾补学习钩子（与会话入口同语义、失败安全）。实测：`factory run` 真 LLM 执行后
+  项目工作区产出经验 + 画像刷新。
+- **学习链路的静默失败**：`except Exception: return ""` 连日志都没有 → 补 `learning_failures.log`
+  （失败安全不变，但留下可查痕迹）。
+- **CI 修复**：原 ci.yml 仍在跑已删除的 `tests/` → 改为 ruff + 全量导入验证 + 产品冒烟。
+- bump 脚本目标路径随搬迁同步（原指向 `factory-console/session/mcp_client.py`）。
+
+### Added
+
+- `scripts/check_imports.py` —— 逐模块全量导入验证（503 模块）。首次运行即抓出
+  7 处潜伏 6 刀的 `from src.ai_factory_os...` 多余前缀。
+- 全层语法自检（`ast.parse` 每个 `.py`）纳入搬迁收尾动作。
+
+### Notes
+
+- 版本口径四源一致：pyproject / mcp_client / CHANGELOG / CLI `--version`。
+- 本轮为结构收口与缺陷修复，无新功能。
+
 ## [v1.1.364] — 2026-08-28
 
 **执行过程可视化 + 代码优先偏好 (Founder: 看不到执行过程 / 要代码却读文档)**。

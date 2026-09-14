@@ -15,7 +15,7 @@ fi
 sed -i '' "s/^version = \".*\"/version = \"$NEW_VERSION\"/" pyproject.toml
 
 # 2. mcp_client.py 硬编码版本
-sed -i '' "s/\"version\": \"[0-9]*\.[0-9]*\.[0-9]*\"/\"version\": \"$NEW_VERSION\"/" factory-console/session/mcp_client.py
+sed -i '' "s/\"version\": \"[0-9]*\.[0-9]*\.[0-9]*\"/\"version\": \"$NEW_VERSION\"/" src/ai_factory_os/_pending_migration/factory_console/session/mcp_client.py
 
 # 3. CHANGELOG.md 头部版本号 (仅更新最新条目标题)
 # macOS BSD sed 不支持 "0,/re/" 地址范围, 用 head/tail 拼接等价替换 (跨 Linux/macOS 可移植)
@@ -30,5 +30,5 @@ sed -i '' -E 's/^> 版本: \*\*v[0-9]+\.[0-9]+\.[0-9]+\*\*/> 版本: **v'"$NEW_V
 
 echo "✅ 版本已统一为 $NEW_VERSION:"
 echo "  pyproject.toml:            $(grep '^version' pyproject.toml)"
-echo "  mcp_client.py:             $(grep -o '\"version\": \"[0-9.]*\"' factory-console/session/mcp_client.py)"
+echo "  mcp_client.py:             $(grep -o '\"version\": \"[0-9.]*\"' src/ai_factory_os/_pending_migration/factory_console/session/mcp_client.py)"
 echo "  CHANGELOG.md 头部:          $(head -2 CHANGELOG.md | tail -1)"

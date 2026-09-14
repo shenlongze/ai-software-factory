@@ -1057,6 +1057,8 @@ class FactoryCLI:
             return self.arch_cmd(args)
         if args.command == "sync":
             return self.sync_cmd(args)
+        if args.command == "provider":
+            return self.provider_cmd(args)
         if args.command == "runtime":
             return self.runtime_cmd(args)
         if args.command == "tasktree":
@@ -2604,6 +2606,86 @@ class FactoryCLI:
             print(f"  合计: agent {tot_a} · skill {tot_s} ✓（幂等 ✓ 合并 ✓ 不覆盖）")
             print("  查看: factory agent list · factory skill list")
         return 0
+
+    def provider_cmd(self, args: argparse.Namespace) -> int:
+        """LLM Provider 管理: list / show / test ✓（主 CLI 暴露 —— 此前只在第二套 CLI ✗）。
+
+        为什么补（2026-09-14 ✓）:
+          providers 包 10 文件 ✓ + 7 类 provider.* 事件 ✓ + hermes adapter ✓
+          但主 CLI 无入口 ✗（`factory provider` → invalid choice ✗）——
+          与当初 runtime 同一个缺口 ✓（那次补了 runtime ✓ 漏了 provider ✗）
+          而实测历史失败根因正是 provider（"hermes command timed out" ✗ 7 次 ✓）
+          → 无入口就看不出 provider 是否可用 ✗
+        数据空间: <root>/providers/catalog.json ✓（与 runtime 完全分离 ✓）
+        """
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        action = getattr(args, "pv_action", "list") or "list"
+        target = str(getattr(args, "pv_id", "") or "").strip()
+        try:
+            from providers.registry import ProviderRegistry
+            from providers.store import ProviderStore
+        except ImportError as exc:                     # Removal Isolation ✓
+            print(f"[E4450] Provider 层不可用: {exc}", file=sys.stderr)
+            return 1
+        try:
+            reg = ProviderRegistry(ProviderStore(root / "providers"))
+        except Exception as exc:                       # noqa: BLE001 — 失败安全 ✓
+            print(f"[E4451] Provider 目录加载失败: {exc}", file=sys.stderr)
+            return 1
+
+        if action == "list":
+            items = reg.list()
+            default = reg.default()
+            print(f"=== Provider 目录（{len(items)} 个 · 默认 {default or '-'}）===")
+            for pv in items:
+                mark = "★" if getattr(pv, "id", "") == default else " "
+                ty = getattr(getattr(pv, "type", ""), "value", getattr(pv, "type", ""))
+                stt = getattr(getattr(pv, "status", ""), "value", getattr(pv, "status", ""))
+                print(f"  {mark} {str(getattr(pv, 'id', '')):<14} type={str(ty):<7}"
+                      f" status={str(stt):<8} {str(getattr(pv, 'description', '') or '')[:34]}")
+            print("  详情: factory provider show <id> · 实测: factory provider test <id>")
+            return 0
+
+        if not target:
+            print(f"[E4452] 用法: factory provider {action} <provider_id>", file=sys.stderr)
+            return 2
+        pv = reg.get(target) if hasattr(reg, "get") else None
+        if pv is None:
+            print(f"[E4453] Provider 不存在: {target}", file=sys.stderr)
+            return 1
+
+        if action == "show":
+            print(f"=== Provider {target} ===")
+            for f in ("id", "name", "type", "status", "version", "description"):
+                v = getattr(pv, f, None)
+                if v not in (None, ""):
+                    print(f"  {f}: {getattr(v, 'value', v)}")
+            caps = getattr(pv, "capabilities", None)
+            if caps:
+                print(f"  capabilities: {', '.join(map(str, caps))}")
+            if getattr(pv, "models", None):
+                print(f"  models: {', '.join(map(str, pv.models))}")
+            return 0
+
+        print(f"=== 实测 {target}（会真实调用，可能慢 ✓）===")
+        try:
+            from providers.adapters.hermes import HermesProviderAdapter
+            ad = HermesProviderAdapter() if target == "hermes" else None
+            if ad is None:
+                print("  ⚠ 无内置适配器实现可用（仅 hermes ✓）")
+                return 1
+            from providers.models import ProviderRequest
+            # 契约: generate(request: ProviderRequest) ✓ 不是 generate(prompt=…) ✗
+            resp = ad.generate(ProviderRequest(provider_id=target,
+                                               prompt="只回复两个字: 收到"))
+            ok = bool(getattr(resp, "ok", False)) or not getattr(resp, "error", None)
+            print(f"  {'✓ SUCCESS' if ok else '✗ FAILED'} · "
+                  f"output={str(getattr(resp, 'content', ''))[:60]!r} "
+                  f"error={getattr(resp, 'error', None)}")
+            return 0 if ok else 1
+        except Exception as exc:                       # noqa: BLE001 — 失败安全 ✓
+            print(f"  ✗ 异常: {type(exc).__name__}: {exc}", file=sys.stderr)
+            return 1
 
     def runtime_cmd(self, args: argparse.Namespace) -> int:
         """Runtime 管理: list / add —— 执行环境登记（编排派发的前提 ✓）。
@@ -8646,6 +8728,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_rt.add_argument("--id", default="", help="Runtime id (add) — 须用内置 adapter 的 id")
     p_rt.add_argument("--type", default="agent", help="Runtime 类型 (add, 默认 agent)")
     p_rt.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+
+    p_pv = sub.add_parser("provider", help="LLM Provider 管理 (list/show/test) — 主 CLI 暴露 ✓")
+    p_pv.add_argument("pv_action", nargs="?", choices=["list", "show", "test"],
+                      default="list", metavar="list|show|test")
+    p_pv.add_argument("pv_id", nargs="?", default="", help="provider id (show/test)")
+    p_pv.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
 
     p_arch = sub.add_parser(
         "arch", help="架构选择（Founder: 软件开发的一等环节 ✓）")

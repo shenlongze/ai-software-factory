@@ -4150,9 +4150,12 @@ class FactoryCLI:
             _raw = _ask(f"  数据目录 (公司/工作路径, 回车默认 {_cur}): ").strip()
             if _raw and _raw != _cur:
                 _new = Path(_raw).expanduser()
-                print(f"    ⚠ 数据目录由环境变量/配置决定 ✗ —— 本次仅提示 ✓")
-                print(f"      永久修改: factory config set core.data_dir {_new} ✓")
-                print(f"      或本次:   FACTORY_DATA_DIR={_new} factory init ✓")
+                # ★ 订正（2026-09-14 ✓）: 我第一版写了 FACTORY_DATA_DIR=… ✗
+                #   实测【无效 ✗】—— config.get_data_dir() 只读 config.json 的 core.data_dir ✓
+                #   （给用户的命令必须先自验 ✓ 这条我踩了自己记的纪律 ✗）
+                print("    ⚠ 数据目录由配置决定（config.json 的 core.data_dir ✓）")
+                print(f"      改它: factory config set core.data_dir {_new} ✓")
+                print("      然后重跑 factory init ✓（init 自己不写 config ✗ 不越权 ✓）")
             _ans = _ask("  是否扫描本机 AI / agent / skill / MCP? [Y/n]: ").strip().lower()
             _scanned = _ans in ("", "y", "yes")
 
@@ -4173,6 +4176,28 @@ class FactoryCLI:
             print(f"  ⚠ 模型目录种子写入失败 (首次使用模型时会自动补齐): {exc}")
 
         # 3. LLM 配置引导 (providers.json — 经 LLMControlPlane, 只写引用)
+        # ★ ④b 公司/组织名（2026-09-14 补 ✓ Founder: "比如项目/公司目录/工作路径" ✓）
+        #   为什么: factory org 有 create/list ✓ 但 init 【从不问 ✗】
+        #     → 新用户装完没有公司实体 ✓ 而公司是 SSOT 顶层（os_core_company_organization ✓）
+        #   ★ 非幂等 ✗（create_company 直接建 ✓）→ 先查后建 ✓ 不重复 ✗
+        try:
+            from .workforce_os import create_organization as _co, list_organizations as _lo
+            _orgs = _lo(self.data_dir)
+            if _orgs:
+                _names = ", ".join(str(o.get("name")) for o in _orgs[:3])
+                print(f"  ✓ 公司/组织: 已有 {len(_orgs)} 个 — {_names} ✓")
+            elif _ni:
+                print("  · 公司/组织: 无（非交互跳过 ✓ 之后: factory org create <名字> ✓）")
+            else:
+                _nm = _ask("  公司/组织名 (回车=AI Factory ✓ 也可留空跳过): ").strip()
+                if _nm:
+                    _org = _co(self.data_dir, name=_nm)
+                    print(f"  ✓ 公司/组织已建: {_org.get('org_id')} | {_org.get('name')} ✓")
+                else:
+                    print("  · 公司/组织: 已跳过 ✓（之后: factory org create <名字> ✓）")
+        except Exception as exc:  # noqa: BLE001 — 失败安全 ✓ 不阻断 init ✓
+            print(f"  ⚠ 公司/组织步骤失败: {type(exc).__name__}: {exc}")
+
         # ★ ④ 扫本机能力（2026-09-14 补 ✓）—— 非交互=恒扫 ✓ 交互=按上面的询问 ✓
         if _ni or _scanned:
             self._init_scan(args)

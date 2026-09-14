@@ -271,11 +271,33 @@ class ConfigProvider:
             )
             provider = DEFAULT_PROVIDER
             defaults = PROVIDER_DEFAULTS[provider]
-        model = str(self.get("llm", "model", defaults["model"])).strip() or defaults["model"]
-        base_url = (
-            str(self.get("llm", "base_url", defaults["base_url"])).strip()
-            or defaults["base_url"]
-        )
+        # ★ L1（2026-09-14 ✓ Founder 定的原则）:
+        #   「底层 OS 应该只有一套配置 ✓ 上层的应该是【加载过去的 ✓】
+        #    用户不能、也不用单独配置 ✗」
+        #   原: model 取【硬编码默认 ✗】PROVIDER_DEFAULTS[...]["model"] ——
+        #       于是 config show 报 v4-pro ✗ 而实际发请求用 providers.json 的 models[0] ✓
+        #       = 同一件事两处可配 ✗（用户不知道在哪配 ✓）
+        #   改: 【权威 = providers.json ✓】优先读它 ✓；env/.env/config.json 仍是覆盖层 ✓
+        #       （覆盖层是运维手段 ✓ 不是"第二套配置"✗）
+        _auth_model, _auth_base = "", ""
+        try:
+            from .llm_control import LLMControlPlane as _Plane  # 延迟导入 ✓ 避免环 ✓
+            _plane = _Plane(providers_file=self.get_data_dir() / "providers.json",
+                            environ=os.environ)
+            _pc = _plane.get_provider(provider)
+            if _pc is not None and getattr(_pc, "models", None):
+                _auth_model = str(_pc.models[0])
+                _auth_base = str(getattr(_pc, "base_url", "") or "")
+        except Exception:  # noqa: BLE001 — 权威不可用 → 回落默认 ✓ 失败安全 ✓
+            _auth_model, _auth_base = "", ""
+
+        model = (str(self.get("llm", "model", "")).strip() or _auth_model
+                 or defaults["model"])
+        base_url = (str(self.get("llm", "base_url", "")).strip() or _auth_base
+                    or defaults["base_url"])
+        # ★ L2: 一致性校验（权威里的模型必须在【模型目录】里 ✓ 否则响亮警告 ✗ 不静默）
+        self._warn_model_not_in_catalog(model)
+
         return {
             "provider": provider,
             "model": model,
@@ -287,6 +309,44 @@ class ConfigProvider:
         }
 
     # ------------------------------------------------------------------ 其他
+
+    def _warn_model_not_in_catalog(self, model: str) -> None:
+        """L2 一致性校验 ✓: 当前模型必须存在于模型目录（models.json ✓）。
+
+        为什么（Founder: 同一件事不该两处可配 ✗）: 目录是【模型元数据权威 ✓】
+        而"当前选哪个"来自 providers.json ✓ —— 两者必须【互相认得 ✓】
+        不认得 → 【响亮警告 ✗ 不静默】（v4-pro 就是这么被发现 ✓）
+        失败安全: 目录读不到 → 不报警 ✓（避免误报 ✓）
+        """
+        if not model:
+            return
+        try:
+            import json as _json
+            f = self.get_data_dir() / "models.json"
+            if not f.is_file():
+                return
+            d = _json.loads(f.read_text(encoding="utf-8"))
+            inner = d.get("models", d) if isinstance(d, dict) else d
+            if isinstance(inner, dict):
+                ids = set(inner.keys())
+                for v in inner.values():
+                    if isinstance(v, dict) and v.get("model_id"):
+                        ids.add(str(v["model_id"]))
+            elif isinstance(inner, list):
+                ids = {str(x.get("id") or x.get("model_id"))
+                       for x in inner if isinstance(x, dict)}
+            else:
+                return
+            ids = {i for i in ids if i}
+            if ids and model not in ids:
+                logger.warning(
+                    "config: 当前模型 %r 不在模型目录 models.json 中（目录有: %s）"
+                    " —— 权威(providers.json)与目录(元数据)不一致 ✗ "
+                    "请登记该模型或改选已有模型 ✓",
+                    model, ", ".join(sorted(ids)[:6]),
+                )
+        except Exception:  # noqa: BLE001 — 失败安全 ✓ 不误报 ✓
+            return
 
     def get_data_dir(self) -> Path:
         """数据目录 (默认 ~/.factory; ~ 展开)。"""

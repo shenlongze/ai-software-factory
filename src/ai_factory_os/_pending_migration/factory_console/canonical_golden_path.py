@@ -149,6 +149,8 @@ class CanonicalGoldenPath:
         action = detect_lifecycle(text)
         if action is None:
             res = self.understanding.process_user_message(conversation_id, text)
+            # ★ 项目属性: 首次理解成功后把会话绑到项目（幂等，失败不阻断 ✓）
+            ensure_project_binding(self.root, conversation_id)
             reply = res.get("reply") or ""
             if res.get("question"):
                 reply = f"{reply}\n{res['question']}" if reply else res["question"]
@@ -381,3 +383,52 @@ def _prd_summary(prd: dict[str, Any], limit: int = 5) -> str:
         if len(fr) > limit:
             bits.append(f"    … 另有 {len(fr) - limit} 条（见文档）")
     return "\n".join(bits)
+
+
+# ------------------------------------------------------------------ 项目归属
+def ensure_project_binding(root: str | Path, conversation_id: str) -> str:
+    """把会话绑到项目（幂等）: 有 project_id 直接返回；无则按理解出的目标建项目并回写。
+
+    为什么（Founder 指出）: 会话/需求/文档/沙箱都该有【项目属性】✓，
+    此前会话记录里连 project_id 字段都没有 ✗ → 换个会话就找不到同一个项目的东西。
+    失败安全: 任何异常只打 stderr，不阻断会话主链 ✓。
+    """
+    try:
+        from factory_console import product_understanding as pu
+
+        # ★ 必须用 _load_conv（原始记录含 understanding）；
+        #   get_conversation 是过滤后的公开视图，不含 facts ✗（我第一版踩过）
+        conv = pu._load_conv(root, conversation_id)
+        if not conv:
+            return ""
+        pid = str(conv.get("project_id") or "")
+        if pid:
+            return pid
+        und = conv.get("understanding") or {}
+        facts = und.get("facts") if isinstance(und, dict) else {}
+        seq = list(facts.values()) if isinstance(facts, dict) else list(facts or [])
+        goal = ""
+        for f in seq:
+            if isinstance(f, dict) and str(f.get("type", "")).upper() in ("IDEA", "REQUIREMENT"):
+                goal = str(f.get("content") or "").strip()[:80]
+                if goal:
+                    break
+        if not goal:
+            return ""                       # 还没理解出目标 → 下次再说 ✓
+        # ★ 不走 po.create_project(source_conv_id=…) —— 它内部 extract_requirement
+        #   会把 conv 当【实体】查 ✗，而会话存在 conversations/ 不在实体库
+        #   → NOT_FOUND: entity conv-xxx ✗（实测踩到）。这里直接用实体 API ✓
+        from factory_console.unified_contract import create_entity, store_entity
+        proj = create_entity("project", created_by="system", parent_id="")
+        proj["title"] = goal
+        proj["source_conversation_id"] = conversation_id
+        proj["status"] = "ACTIVE"
+        store_entity(root, proj)
+        doc = pu._load_conv(root, conversation_id) or {}
+        doc["project_id"] = str(proj.get("id") or "")
+        pu._save_conv(root, conversation_id, doc)
+        return str(doc["project_id"])
+    except Exception as exc:  # noqa: BLE001 — 失败不阻断会话 ✓ 但必须可见
+        import sys as _s
+        print(f"[project] 会话→项目绑定失败: {exc}", file=_s.stderr)
+        return ""

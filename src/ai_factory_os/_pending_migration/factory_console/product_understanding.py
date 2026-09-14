@@ -233,6 +233,9 @@ def create_conversation(root: Path | str, *, title: str = "新会话",
         "understanding": {"version": 0, "facts": {}},
         "created_at": now,
         "updated_at": now,
+        # ★ 项目归属（Founder: 会话/需求/文档都该有项目属性 ✓）
+        #   首次理解成功后由 ensure_project_binding 绑定（幂等）
+        "project_id": "",
     }
     with _lock:
         if _load_conv(root, conv_id) is not None:  # 天文概率碰撞 — 防御

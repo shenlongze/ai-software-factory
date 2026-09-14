@@ -75,19 +75,31 @@ class _SectionStore(Generic[T]):
     def _project_files(self) -> list[Path]:
         return sorted(self._root().glob(f"projects/*/exec/{self._filename}"))
 
-    def _resolve_project(self, record: dict[str, Any]) -> str:
-        """记录 → 项目 id（失败安全: 任何异常 → 空 → 归公共 ✓）。"""
+    def _entity_index_cached(self) -> dict[str, dict[str, Any]]:
+        """实体索引（每次 _write 只建一次 ✓ —— 每条记录重建会 O(n²) 卡死 ✗）。"""
+        try:
+            from ai_factory_os._pending_migration.factory_console.unified_contract import (
+                _entity_index, _load as _uc_load,
+            )
+            return _entity_index(_uc_load(self._root(), "entities"))
+        except Exception:  # noqa: BLE001 — 失败安全 ✓
+            return {}
+
+    def _resolve_project(self, record: dict[str, Any],
+                         index: dict[str, dict[str, Any]] | None = None) -> str:
+        """记录 → 项目 id（失败安全: 任何异常 → 空 → 归公共 ✓）。
+
+        index 由调用方传入（_write 内建一次 ✓）；缺省自建（单条调用场景 ✓）。
+        """
         try:
             tid = str(record.get("task_id") or "")
             if not tid:
                 return ""
             from ai_factory_os._pending_migration.factory_console.unified_contract import (
-                _load as _uc_load,
-                _entity_index,
                 resolve_entity_project,
             )
-            ents = _uc_load(self._root(), "entities")
-            return resolve_entity_project(tid, _entity_index(ents))
+            idx = index if index is not None else self._entity_index_cached()
+            return resolve_entity_project(tid, idx)
         except Exception:  # noqa: BLE001 — 解析失败 → 公共 ✓ 不影响落库 ✓
             return ""
 
@@ -135,8 +147,15 @@ class _SectionStore(Generic[T]):
         """
         public: dict[str, dict[str, Any]] = {}
         by_proj: dict[str, dict[str, Any]] = {}
+        # ★ 索引只建一次 ✓（此前每记录重建 → 10k+ 实体 × n 条 = O(n²) 卡死 ✗）
+        _idx: dict[str, dict[str, Any]] | None = None
         for rid, rec in records.items():
-            pid = self._resolve_project(rec) if isinstance(rec, dict) else ""
+            if isinstance(rec, dict) and rec.get("task_id"):
+                if _idx is None:
+                    _idx = self._entity_index_cached()
+                pid = self._resolve_project(rec, _idx)
+            else:
+                pid = ""
             (by_proj.setdefault(pid, {}) if pid else public)[rid] = rec
         self._write_one(self._dir, public)
         for pid, sub in by_proj.items():

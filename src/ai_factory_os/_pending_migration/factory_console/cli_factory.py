@@ -2971,6 +2971,7 @@ class FactoryCLI:
                 except ValueError:
                     print("--score 必须是数字")
                     return 2
+            from .external_executor import executor as _ee_exec  # F821: 本分支原用未定义名 ✗
             updated = _ee_exec.verify_invocation(
                 self.data_dir, rid,
                 method=str(getattr(args, "method", "") or "manual"),
@@ -3334,6 +3335,7 @@ class FactoryCLI:
                 except ValueError:
                     print("--score 必须是数字")
                     return 2
+            from .external_executor import executor as _ee_exec  # F821: 本分支原用未定义名 ✗
             updated = _ee_exec.verify_invocation(
                 self.data_dir, rid,
                 method=str(getattr(args, "method", "") or "manual"),
@@ -4528,7 +4530,16 @@ class FactoryCLI:
 
         if action == "suite":
             from factory_console.golden_suite import run_suite
-            r = run_suite(str(root))
+            # ★ 默认用【临时数据根】✓（与 run_suite 的设计一致: root or mkdtemp ✓）
+            #   为什么（2026-09-14 实测 ✓）: 此前传真实根 ✗ → 套件在累积数据上
+            #   越跑越慢（本会话真实根实体已 13,188 条）→ 45s+ 不完成，
+            #   看起来像卡死 ✗✓。套件是【确定性回归】✓ 不该依赖真实数据量 ✓。
+            #   需要真实根时显式 --data-dir 或 --real ✓。
+            use_real = bool(getattr(args, "real", False))
+            suite_root = root if use_real else None
+            r = run_suite(suite_root if suite_root is None else str(suite_root))
+            if not use_real:
+                print("  （在临时数据根上跑 ✓ 确定性回归；要对真实根跑加 --real）")
             print(f"Golden Suite: {r['passed']}/{r['total']}")
             for s in r["scenarios"]:
                 mark = "✅" if s["passed"] else "❌"

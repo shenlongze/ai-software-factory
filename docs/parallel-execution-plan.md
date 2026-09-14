@@ -101,3 +101,43 @@
 2. **外部 agent 是资源瓶颈** ✗：同机 3 个 codex 会争 CPU/网络 ✓；上限默认给 2 更稳 ✓。
 3. **本轮实测只到"10/17 完成"** ✗ —— 并行后能否在同样窗口跑完 17 个，**必须实测** ✓ 不能推断 ✓。
 4. **不承诺"并行一定更快"** ✗：若任务间实际依赖很重，加速有限 ✓ —— 所以刀1 先把 DAG 算清楚 ✓ 用数据说话 ✓。
+
+---
+
+## 6. 刀2 的隔离点地图（2026-09-14 追查完成 ✓）
+
+### 6.1 唯一隔离点 = `project_dir` 的取值 ✓
+
+外部执行器（codex/claude/hermes）的调用模板在
+`external_executor/registry.py:30`：
+
+```python
+"exec", "-C", "{project_dir}", "--skip-git-repo-check",     # codex
+"--sandbox", "workspace-write", "{prompt}"
+```
+
+adapter 声明的入参名：`"project_dir": "flag:-C"`（codex）/ `"cwd"`（claude、hermes）。
+
+⇒ **隔离点只有一个：`project_dir` 传给执行器的是什么目录。**
+
+### 6.2 现状：所有节点共用同一个项目工作区 ✗
+
+```
+golden_path.py:747   → Path(root) / "projects" / pid / "workspace"     # 项目级 ✓
+artifact_lifecycle.py:505 → ws = art.get("workspace")                  # 产物也带 workspace ✓
+```
+
+⇒ 17 个节点并行时会**全部在这个目录里跑 codex** ✗ → 互相覆盖 ✗
+
+### 6.3 处置（刀2）
+
+1. **节点级目录**：`projects/<P>/nodes/<node_id>/`（由 `project_dir` 指向它 ✓）
+2. **执行完合并**：节点完成后把产物合并回 `projects/<P>/workspace/` ✓
+   - **冲突必须可见** ✗（同名文件被两个节点改 → 记录冲突 ✓ 不静默覆盖 ✗）
+3. **产物链路不变** ✓：`art["workspace"]` 仍指向项目工作区（对外语义不变 ✓）
+4. **负例必测** ✓：两个节点同时改同一文件 → 必须**留下冲突记录** ✓ 而不是随机取胜 ✗
+
+### 6.4 为什么不能"只改 project_dir"就完事 ✗
+
+只改目录 → 各节点产出散在 `nodes/<id>/` ✗ 项目工作区**看不到成果** ✗
+⇒ **必须同时做合并** ✓ 否则等于"跑完了但东西不见了"✗（比串行更糟 ✗）

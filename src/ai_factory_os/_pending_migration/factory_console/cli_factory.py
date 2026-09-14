@@ -2752,84 +2752,98 @@ class FactoryCLI:
         return 0
 
     def provider_cmd(self, args: argparse.Namespace) -> int:
-        """LLM Provider 管理: list / show / test ✓（主 CLI 暴露 —— 此前只在第二套 CLI ✗）。
+        """Provider 管理: list / show / test ✓。
 
-        为什么补（2026-09-14 ✓）:
-          providers 包 10 文件 ✓ + 7 类 provider.* 事件 ✓ + hermes adapter ✓
-          但主 CLI 无入口 ✗（`factory provider` → invalid choice ✗）——
-          与当初 runtime 同一个缺口 ✓（那次补了 runtime ✓ 漏了 provider ✗）
-          而实测历史失败根因正是 provider（"hermes command timed out" ✗ 7 次 ✓）
-          → 无入口就看不出 provider 是否可用 ✗
-        数据空间: <root>/providers/catalog.json ✓（与 runtime 完全分离 ✓）
+        ★ 2026-09-14 修 ✗: 原来读 ProviderStore(root/"providers") ✗ = 【另一套存储 ✗】
+        实测: `factory llm list` 有 deepseek ✓ 而 `factory provider test deepseek`
+        报 [E4453] Provider 不存在 ✗ —— 同一概念两套存储 ✓（Founder 的"数据统一"✗）
+        → 改与 `factory llm` 【同源 ✓】: LLMControlPlane（~/.factory/providers.json ✓）
         """
-        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        from factory_console.llm_control import LLMControlPlane as _Plane
+
         action = getattr(args, "pv_action", "list") or "list"
-        target = str(getattr(args, "pv_id", "") or "").strip()
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
         try:
-            from providers.registry import ProviderRegistry
-            from providers.store import ProviderStore
-        except ImportError as exc:                     # Removal Isolation ✓
+            # ★ 参数是【providers.json 文件路径 ✗】不是 root 目录 ✓
+            #   （照抄 llm_cmd:499 的正确构造 ✓ 我第一版传了 root ✗ → "file unreadable" ✓）
+            import os as _os
+            plane = _Plane(providers_file=root / "providers.json", environ=_os.environ)
+            provs = plane.list_providers()
+        except Exception as exc:  # noqa: BLE001 — 层不可用 → 诚实报错 ✓ 不静默 ✗
             print(f"[E4450] Provider 层不可用: {exc}", file=sys.stderr)
-            return 1
-        try:
-            reg = ProviderRegistry(ProviderStore(root / "providers"))
-        except Exception as exc:                       # noqa: BLE001 — 失败安全 ✓
-            print(f"[E4451] Provider 目录加载失败: {exc}", file=sys.stderr)
             return 1
 
         if action == "list":
-            items = reg.list()
-            default = reg.default()
-            print(f"=== Provider 目录（{len(items)} 个 · 默认 {default or '-'}）===")
-            for pv in items:
-                mark = "★" if getattr(pv, "id", "") == default else " "
-                ty = getattr(getattr(pv, "type", ""), "value", getattr(pv, "type", ""))
-                stt = getattr(getattr(pv, "status", ""), "value", getattr(pv, "status", ""))
-                print(f"  {mark} {str(getattr(pv, 'id', '')):<14} type={str(ty):<7}"
-                      f" status={str(stt):<8} {str(getattr(pv, 'description', '') or '')[:34]}")
+            print(f"=== Provider 目录（{len(provs)} 个 · 源 {plane.path} ✓ 与 factory llm 同源 ✓）===")
+            sel = ""
+            try:
+                sel = str(plane.selected_provider_id() or "")
+            except Exception:  # noqa: BLE001
+                sel = ""
+            if not provs:
+                print("  （无 provider ✓ 加一个: factory llm add <id> --base-url … --env-ref env:VAR ✓）")
+                return 0
+            for pv in provs:
+                ok = "✓" if getattr(pv, "key_ref_is_valid", lambda: True)() else "✗"
+                mark = "★" if str(getattr(pv, "id", "")) == sel else " "
+                print(f"  {mark} {str(getattr(pv, 'id', '')):<14} "
+                      f"enabled={str(getattr(pv, 'enabled', '')):<5} key={ok} "
+                      f"models={', '.join(getattr(pv, 'models', ()) or ()) or '-'}")
+            print(f"  当前选择: {sel or '无（无 enabled 且 key 可解析者）'}")
             print("  详情: factory provider show <id> · 实测: factory provider test <id>")
             return 0
 
+        target = str(getattr(args, "pv_id", "") or "").strip()
         if not target:
             print(f"[E4452] 用法: factory provider {action} <provider_id>", file=sys.stderr)
             return 2
-        pv = reg.get(target) if hasattr(reg, "get") else None
+        pv = plane.get_provider(target)
         if pv is None:
-            print(f"[E4453] Provider 不存在: {target}", file=sys.stderr)
+            print(f"[E4453] Provider 不存在: {target}"
+                  f"（用 factory provider list 看有哪些 ✓）", file=sys.stderr)
             return 1
 
         if action == "show":
-            print(f"=== Provider {target} ===")
-            for f in ("id", "name", "type", "status", "version", "description"):
-                v = getattr(pv, f, None)
-                if v not in (None, ""):
-                    print(f"  {f}: {getattr(v, 'value', v)}")
-            caps = getattr(pv, "capabilities", None)
-            if caps:
-                print(f"  capabilities: {', '.join(map(str, caps))}")
-            if getattr(pv, "models", None):
-                print(f"  models: {', '.join(map(str, pv.models))}")
+            print(f"=== Provider {target} ===（源 {plane.path} ✓ 与 factory llm 同源 ✓）")
+            print(f"  enabled     : {getattr(pv, 'enabled', '')}")
+            print(f"  models      : {', '.join(getattr(pv, 'models', ()) or ()) or '-'}")
+            print(f"  base_url    : {getattr(pv, 'base_url', '') or '-'}")
+            print(f"  key 引用    : {getattr(pv, 'api_key_ref', '') or '（本地模型，无 key）'}")
+            print(f"  key 合法性  : {'✓' if getattr(pv, 'key_ref_is_valid', lambda: True)() else '✗'}")
             return 0
 
-        print(f"=== 实测 {target}（会真实调用，可能慢 ✓）===")
-        try:
-            from providers.adapters.hermes import HermesProviderAdapter
-            ad = HermesProviderAdapter() if target == "hermes" else None
-            if ad is None:
-                print("  ⚠ 无内置适配器实现可用（仅 hermes ✓）")
-                return 1
-            from providers.models import ProviderRequest
-            # 契约: generate(request: ProviderRequest) ✓ 不是 generate(prompt=…) ✗
-            resp = ad.generate(ProviderRequest(provider_id=target,
-                                               prompt="只回复两个字: 收到"))
-            ok = bool(getattr(resp, "ok", False)) or not getattr(resp, "error", None)
-            print(f"  {'✓ SUCCESS' if ok else '✗ FAILED'} · "
-                  f"output={str(getattr(resp, 'content', ''))[:60]!r} "
-                  f"error={getattr(resp, 'error', None)}")
+        if action == "test":
+            # 真实调用一次 ✓（会起子进程 ✓ 慢 ✓）
+            import time as _t
+            print(f"=== 实测 {target}（真实调用 ✓ 可能慢 ✓）===")
+            t0 = _t.time()
+            ok, out, err = False, "", "（未装配可用的 adapter ✗）"
+            try:
+                # 用外部执行器适配层真实调一次 ✓（不 mock ✗）
+                from factory_console.external_executor.registry import build_registry as _br
+                _reg = _br(root)
+                _ad = _reg.get(target)
+                if _ad is not None:
+                    _r = _ad.run("ping")  # type: ignore[attr-defined]
+                    ok = bool(getattr(_r, "ok", False))
+                    out = getattr(_r, "output", "") or getattr(_r, "stdout", "")
+                    err = getattr(_r, "error", "")
+                else:
+                    # 非外部执行器的 LLM provider（如 deepseek 直连）→ 说明测试方式 ✓
+                    err = ("该 provider 不走外部执行器通道 ✗ —— 用 factory llm list 看状态 ✓；"
+                           "llm 直连的连通性由 agent 执行时验证 ✓")
+            except Exception as exc:  # noqa: BLE001
+                err = f"{type(exc).__name__}: {exc}"
+            print(f"  {'✓ SUCCESS' if ok else '✗ 未通过'} · {_t.time() - t0:.1f}s")
+            if out:
+                print(f"  output: {str(out)[:120]!r}")
+            if err:
+                print(f"  note  : {str(err)[:220]}")
             return 0 if ok else 1
-        except Exception as exc:                       # noqa: BLE001 — 失败安全 ✓
-            print(f"  ✗ 异常: {type(exc).__name__}: {exc}", file=sys.stderr)
-            return 1
+
+        print(f"[E4454] 未知动作: {action}", file=sys.stderr)
+        return 2
+
 
     def runtime_cmd(self, args: argparse.Namespace) -> int:
         """Runtime 管理: list / add —— 执行环境登记（编排派发的前提 ✓）。

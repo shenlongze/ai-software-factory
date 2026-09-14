@@ -220,6 +220,37 @@ class CanonicalGoldenPath:
                                        actor=self.actor,
                                        decompose=True,
                                        decomposer=self._resolve_decomposer())
+                # ★ 物化（第二半）: 计划（树）→ task 实体 + 明文 tasks.md
+                #   此前只有 CLI 那条路物化 ✗ → 会话产出的计划没有清单、没有实体 ✗
+                try:
+                    from factory_console.task_tree import materialize_tree as _mat
+                    _pid = ensure_project_binding(self.root, conversation_id)
+                    _docs = (Path(self.root) / "projects" / _pid / "docs") if _pid else None
+                    # generate_plan 的返回值形状 ≠ 磁盘上的树 ✗
+                    # （实测踩过: 直接传 obj → "空树（LLM 未产出节点）"）
+                    # ① 首选: 直接读【磁盘上那棵树】
+                    #    task_trees/<plan_id>.json（实测有 nodes ✓）
+                    #    generate_plan 的返回值形状与它不同 ✗（踩过两次）
+                    _tree_obj = None
+                    try:
+                        import json as _json
+                        _pf = (Path(self.root) / "task_trees"
+                               / f"{obj.get('id') or ''}.json")
+                        if _pf.exists():
+                            _tree_obj = _json.loads(_pf.read_text(encoding="utf-8"))
+                    except Exception:  # noqa: BLE001
+                        _tree_obj = None
+                    # ② 回落: 返回值自身若带 nodes 也可用
+                    if not (_tree_obj or {}).get("nodes"):
+                        _tree_obj = obj if (obj or {}).get("nodes") else obj
+                    _rec = _mat(self.root, _tree_obj,
+                                title=str(obj.get("goal") or "")[:120],
+                                domain="llm", docs_dir=_docs)
+                    _mat_ok = _rec.get("count", 0)
+                except Exception as _exc:  # noqa: BLE001 — 不阻断计划生成 ✓ 但要可见
+                    import sys as _s
+                    print(f"[plan] 任务树物化失败: {_exc}", file=_s.stderr)
+                    _mat_ok = 0
                 n_tasks = len(obj.get("tasks") or [])
                 return {
                     "kind": "lifecycle", "action": action,

@@ -219,7 +219,8 @@ def execute_tree(root: Path | str, task_tree_id: str, *,
 
 
 def materialize_tree(root: Path | str, tree: dict[str, Any], *,
-                     title: str = "", domain: str = "llm") -> dict[str, Any]:
+                     title: str = "", domain: str = "llm",
+                     docs_dir: str | Path | None = None) -> dict[str, Any]:
     """把 LLM 分解出的【树 dict】物化成 task 实体（方案 A）。
 
     为什么: LLM 分解器产出的是 nodes/leaves 结构（用于 PLAN），
@@ -285,7 +286,9 @@ def materialize_tree(root: Path | str, tree: dict[str, Any], *,
               "truncated": bool(tree.get("truncated"))}
     # ★ 明文规格产物: 任务清单 tasks.md（人可读/可评审/可 diff ✓ 审批门的对象 ✓）
     try:
-        md_dir = Path(root) / "task_trees"
+        # ★ docs_dir: 让清单落进【项目目录】(Founder: 产出文档该有归宿 ✓)；
+        #   未指定则维持原行为（数据根 task_trees/）✓
+        md_dir = Path(docs_dir) if docs_dir else (Path(root) / "task_trees")
         md_dir.mkdir(parents=True, exist_ok=True)
         md_path = md_dir / f"{root_task['id']}.md"
         md_path.write_text(render_tasks_md(root, tree), encoding="utf-8")

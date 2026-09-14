@@ -175,7 +175,6 @@ def workforce_lineage(root: Path | str, production_run_id: str) -> dict[str, Any
     """Multi-Agent 全链 Lineage: task → agent → decision → artifact → verification → handoff。"""
     from .production_run import get_production_run
     from .node_runtime import get_node_run
-    from .artifact_lifecycle import get_artifact
     from .production_guidance import production_lineage
 
     run = get_production_run(root, production_run_id)

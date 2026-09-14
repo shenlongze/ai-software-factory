@@ -13,11 +13,10 @@ Audit-ready 记录: 为什么修 (root_cause/evidence) / 谁修 (agent_id) / 用
 from __future__ import annotations
 
 import json
-import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from ...memory.experience_store import DEFAULT_WORKSPACE
 

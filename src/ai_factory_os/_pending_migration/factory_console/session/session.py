@@ -71,7 +71,6 @@ def _session_version() -> str:
     # 源码态 (仓库根有 pyproject) → pyproject 优先; 安装态 → metadata
     try:
         import tomllib
-        from pathlib import Path as _P
         _pp = REPO_ROOT / "pyproject.toml"
         if _pp.is_file():
             return tomllib.loads(_pp.read_text(encoding="utf-8"))["project"]["version"]

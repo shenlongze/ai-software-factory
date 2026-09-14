@@ -43,7 +43,6 @@ base_url/model/费率均可配, provider_id 仍为 openai (适配器身份), mod
 from __future__ import annotations
 
 import os
-import re
 import sys
 import tempfile
 import time

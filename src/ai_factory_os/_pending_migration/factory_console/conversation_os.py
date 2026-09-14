@@ -21,15 +21,13 @@ import json
 import os
 import re
 import tempfile
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from .unified_contract import (
-    new_id, create_entity, store_entity, get_entity, entities,
-    lifecycle_transition, bump_version, check_version, ConcurrencyError,
-    make_event, make_command, make_response, trace_lineage,
+    create_entity, store_entity, get_entity, entities,
+    bump_version,
 )
 
 #: Intents (deterministic 规则)

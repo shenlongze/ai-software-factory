@@ -12,13 +12,11 @@
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .unified_contract import entities, get_entity
+from .unified_contract import entities
 
 
 def _now_iso() -> str:

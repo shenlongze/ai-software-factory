@@ -33,8 +33,7 @@ from typing import Any, Optional
 from pydantic import BaseModel, Field
 
 from ..memory.experience_store import DEFAULT_WORKSPACE
-from ..session.debug import DebugCase, DebugEngine, DebugPipeline
-from ..session.debug.error_analysis import ErrorAnalyzer
+from ..session.debug import DebugEngine, DebugPipeline
 
 __all__ = [
     "DebugAnalyzeRequest",

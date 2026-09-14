@@ -21,9 +21,7 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import urllib.request
-from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger("factory.llm_gateway")

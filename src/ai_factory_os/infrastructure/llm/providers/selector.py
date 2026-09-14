@@ -158,7 +158,7 @@ class ProviderSelector:
 from .capability import ProviderCapabilityProfile  # noqa: E402
 from .costs import ProviderCostModel, estimate_call_cost  # noqa: E402
 from .models import TaskRequirement  # noqa: E402
-from .usage import ProviderPerformanceStats, performance_score_from_stats  # noqa: E402
+from .usage import performance_score_from_stats  # noqa: E402
 
 #: provider.selected (source=recommendation) 的 payload source 取值 —
 #: 推荐语义 (只推荐不自动切换) 与选择链 source (explicit|project|agent|

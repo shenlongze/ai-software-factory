@@ -27,7 +27,7 @@ history 记录约定 (dict): {task_id, failure|failure_key, action: "retry"|
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 # ---------------------------------------------------------------- action 常量
 

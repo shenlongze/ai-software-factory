@@ -32,12 +32,9 @@ from assignment.models import AssignmentStatus
 from assignment.store import AssignmentStore
 from ai_factory_os.infrastructure.events.types import EventType
 from ai_factory_os.services.execution.dispatcher import (
-    ExecutionDispatchError,
     ExecutionDispatcherError,
-    NoAvailableRuntimeError,
-    RuntimeAdapterNotFoundError,
 )
-from ai_factory_os.services.execution.runner import ExecutionNotFoundError, ExecutionRunnerError, ExecutionStateError
+from ai_factory_os.services.execution.runner import ExecutionNotFoundError, ExecutionRunnerError
 from ai_factory_os.services.execution.service import ExecutionService
 from ai_factory_os.services.execution.runtime.adapters import BUILTIN_ADAPTERS
 from ai_factory_os.services.execution.runtime.types import ExecutionRequest, ExecutionStatus, RuntimeInfo, RuntimeStatus
@@ -3403,7 +3400,6 @@ def _open_console_service(ctx: FactoryContext) -> Any:
     """
     import importlib
     import sys
-    from pathlib import Path
 
     console_dir = REPO_ROOT / "factory-console"
     if not console_dir.is_dir():
@@ -3562,7 +3558,6 @@ def cmd_demo_markpad(ctx: FactoryContext, args: Any) -> dict:
 
 def _factory_org_pkg_dir() -> Any:
     """factory-org 包目录 (factory-org/); 不存在 → None (Removal Isolation)。"""
-    from pathlib import Path
 
     d = REPO_ROOT / "factory-org"
     return d if d.is_dir() else None
@@ -3642,7 +3637,6 @@ def cmd_org_knowledge_list(ctx: FactoryContext, args: Any) -> dict:
 
 def _factory_exec_pkg_dir() -> Any:
     """factory-exec 包目录 (factory-exec/); 不存在 → None (Removal Isolation)。"""
-    from pathlib import Path
 
     d = REPO_ROOT / "factory-exec"
     return d if d.is_dir() else None

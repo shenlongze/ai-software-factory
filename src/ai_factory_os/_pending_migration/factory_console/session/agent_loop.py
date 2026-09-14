@@ -16,7 +16,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import urllib.request
 from pathlib import Path
 from typing import Any, Callable
 
@@ -332,7 +331,7 @@ def _initial_tools(
 
     全量 25 工具不塞给弱模型 — 首轮 ≤9 个, 选择压力骤降; 其他走 tool_search 按需。
     """
-    from .tool_search import TOOL_SEARCH_ID, discover_tools, tool_search_schema
+    from .tool_search import discover_tools, tool_search_schema
 
     want = {t: None for t in CORE_TOOL_IDS}  # 保序
     for t in all_tools:
@@ -1576,7 +1575,7 @@ def dispatch(
                 _proj = {}
             return {"ok": True, "output": _format_project_entry(root, project_id, _proj, service=service)}
         if tool_id == "project_tasks":
-            from .query_engine import _priority_tasks, _project_task_stats
+            from .query_engine import _project_task_stats
 
             prio = str(args.get("priority") or "").upper()
             # S50-P0-FIX: 统一经 service (slug 正确解析) — 勿拼 project_id 目录

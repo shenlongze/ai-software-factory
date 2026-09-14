@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from .production_run import get_production_run
-from .governance_service import check_governance, release as _gate_release
+from .governance_service import check_governance
 
 #: 状态机
 ST_PENDING = "PENDING"

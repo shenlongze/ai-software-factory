@@ -297,7 +297,6 @@ class ProjectCommand(SlashCommand):
         # 执行: 复用 actions.delete_project
         from .actions import delete_project as _delete_action
         from .action import ExecutionContext, IntentObject
-        import sys as _sys
         from pathlib import Path as _Path
         scope = "全部未命名" if target in ("全部未命名", "所有未命名", "all-unnamed") else ""
         pid = "" if scope else target

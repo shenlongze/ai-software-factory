@@ -16,10 +16,7 @@ PM → Architect → Developer → QA 专业 AI 员工生产线。
 """
 from __future__ import annotations
 
-import json
 import re
-import sys
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -27,9 +24,8 @@ from typing import Any, Callable
 from .session.agent_entity import AgentEntity
 from .session.agent_registry import AgentRegistry
 from .agent_kernel import (
-    create_agent_run, run_agent, get_agent_run, create_handoff, AgentKernelError,
+    create_agent_run, run_agent, create_handoff,
 )
-from .artifact_lifecycle import create_artifact
 
 #: 专业 workflow id
 PROFESSIONAL_WORKFLOW_ID = "software-product-production"
@@ -281,12 +277,8 @@ def build_developer_repair_fn(root: Path | str, *, idea: str, arch: str):
 
     输入显式: failed_artifact + verification (pytest evidence), 无 hidden state。
     """
-    from .workflow_runner import load_llm_key, has_llm_key
-    from .config import get_config
-    from .session.llm_gateway import complete as _llm_complete
     from .external_executor.registry import build_registry
     from .external_executor.executor import run as ext_run
-    import re
 
     reg = build_registry(str(root))
 
@@ -577,7 +569,6 @@ def run_real_workforce_e2e(
     PM → (LLM) PRD → Architect → (LLM) Architecture → Developer → (Codex) Code
     → QA → (LLM test + real pytest) → PASS/FAIL → 必要时 Repair → Apply 准备。
     """
-    import shutil
 
     result = run_professional_workflow(
         root, idea=idea,

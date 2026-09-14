@@ -19,13 +19,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from .optimization_service import (
-    create_experiment as _s24_create_exp, approve_experiment as _s24_approve,
-    get_experiment as _s24_get, run_experiment as _s24_run,
-    compare as _s24_compare, outcome as _s24_outcome,
-)
 from .adaptive_workforce import (
-    create_variant, approve_variant, run_with_variant, get_variant,
+    create_variant, approve_variant, run_with_variant,
 )
 
 #: 默认 Budget Guard

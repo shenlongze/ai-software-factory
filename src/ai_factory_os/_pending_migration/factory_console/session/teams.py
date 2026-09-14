@@ -25,7 +25,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-from .agents import AgentMetrics, AgentRegistry
 
 #: 默认团队注册表文件 (~/.factory/teams/teams.json — 与 agents.json 同数据空间)
 DEFAULT_TEAMS_FILE = Path.home() / ".factory" / "teams" / "teams.json"

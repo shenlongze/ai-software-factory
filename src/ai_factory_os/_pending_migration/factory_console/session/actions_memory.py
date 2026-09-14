@@ -6,10 +6,8 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Optional
 
 from .action import (
-    STATUS_CANCELLED,
     STATUS_ERROR,
     STATUS_OK,
     ActionResult,
@@ -123,7 +121,6 @@ def memory_analyze_agent(context: ExecutionContext) -> ActionResult:
     params = _memory_params(context)
     agent_id = str(params.get("agent_id") or "").strip()
     try:
-        from ..memory.experience_store import ExperienceStore
         from ..memory.extraction import ExperienceExtractor
         from ..memory.learning_engine import PatternLearner
         ws = _memory_workspace(context)

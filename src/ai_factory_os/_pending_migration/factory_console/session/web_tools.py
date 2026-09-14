@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import html as _html
 import re
-import shlex
 import subprocess
 import time
 import urllib.parse

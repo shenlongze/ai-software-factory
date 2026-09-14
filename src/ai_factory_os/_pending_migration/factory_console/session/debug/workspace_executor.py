@@ -13,7 +13,6 @@ PytestValidator: 真实 subprocess pytest 验证 (复用 quality.Validator.valid
 from __future__ import annotations
 
 import difflib
-import json
 import re
 import time
 from dataclasses import dataclass, field

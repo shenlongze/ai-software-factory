@@ -26,7 +26,7 @@ GAP: docs/sprint10/S10-065-gap-analysis.md G4
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Optional
 
 #: 发现会话内部状态 (DiscoveryState 值) — 用户视角统一归 DISCOVERY。
 #: 注意: "cancelled" 是 discovery 终态, 但执行层 cancelled 同样归 CANCELLED,

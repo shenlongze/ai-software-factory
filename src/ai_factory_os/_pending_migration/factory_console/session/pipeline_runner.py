@@ -23,7 +23,7 @@ from typing import Any, Callable, Optional
 
 from .agent_entity import AgentEntity
 from .artifact_registry import ArtifactRecord, ArtifactRegistry
-from .expert_factory import ExpertFactory, PIPELINE_ROLES
+from .expert_factory import ExpertFactory
 from .handoff_bus import HandoffBlocked, HandoffBus
 from .product import ProductIntent
 

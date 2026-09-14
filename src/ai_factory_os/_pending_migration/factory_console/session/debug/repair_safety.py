@@ -20,7 +20,7 @@ session/review_gate.py ReviewGate。
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from ..budget import BudgetEnforcer, BudgetUsage
 from ..execution_policy import MODE_AUTO, MODE_SAFE_AUTO

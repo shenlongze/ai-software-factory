@@ -190,7 +190,6 @@ def load_mcp_servers(data_dir: str | None) -> dict[str, McpClient]:
     out: dict[str, McpClient] = {}
     if data_dir:
         try:
-            import os
             from pathlib import Path
 
             p = Path(data_dir) / "mcp_servers.json"

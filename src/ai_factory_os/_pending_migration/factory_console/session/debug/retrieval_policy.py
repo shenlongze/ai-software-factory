@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from ...memory.experience import (
     DEBUG_EXPERIENCE,
@@ -26,7 +26,6 @@ from ...memory.experience import (
     SUCCESS_PATTERN,
 )
 from ...memory.experience_store import DEFAULT_WORKSPACE, ExperienceStore
-from ...memory.retrieval import ExperienceRetriever
 from .context_budget import ContextBudget
 
 #: 检索经验类型 (调试经验 + 失败模式 + 成功模式 — Feedback Loop 闭环)

@@ -19,7 +19,6 @@ from pathlib import Path
 from typing import Any
 
 from .conversation_os import get_conversation
-from .unified_contract import entities
 
 #: 内部术语 (用户不应被强制理解; 出现则清晰度扣分)
 INTERNAL_TERMS = (

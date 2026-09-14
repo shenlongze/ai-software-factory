@@ -25,7 +25,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ValidationError
+from pydantic import ValidationError
 
 from .models import ReviewFeedback
 

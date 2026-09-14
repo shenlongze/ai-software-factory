@@ -595,7 +595,6 @@ class ProductLifecycleEngine:
         可追溯); project 从 idea.context 推导 (缺省 default)。
         """
         from ai_factory_os.services.work.types import Task
-        from ai_factory_os.services.work.store import TaskStore
 
         task_store = self._task_store
         assert task_store is not None  # _check_stage_prereq 已保证装配 (配置缺口响亮)

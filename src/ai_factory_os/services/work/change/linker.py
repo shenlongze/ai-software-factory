@@ -18,7 +18,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Iterable
+from typing import Iterable
 
 from ai_factory_os.infrastructure.git.client import GitClient
 from ai_factory_os.infrastructure.git.types import GitCommit

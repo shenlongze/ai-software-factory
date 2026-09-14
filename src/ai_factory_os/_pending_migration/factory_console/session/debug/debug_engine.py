@@ -24,7 +24,7 @@ import json
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from ...memory.experience import (
     DEBUG_EXPERIENCE,  # noqa: F401 — 类型再导出 (兼容导入)

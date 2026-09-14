@@ -21,7 +21,6 @@ from typing import Any
 
 from .health_service import list_incidents, list_health_checks, get_incident
 from .release_service import list_releases, get_release
-from .ops_projection import release_health_history
 
 #: Analysis 状态
 ST_REQUESTED = "REQUESTED"

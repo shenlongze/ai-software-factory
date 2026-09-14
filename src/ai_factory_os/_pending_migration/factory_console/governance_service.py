@@ -23,7 +23,6 @@ from typing import Any
 
 from .artifact_lifecycle import get_artifact
 from .production_run import get_production_run
-from .node_runtime import get_node_run
 
 APPROVAL_PENDING = "PENDING"
 APPROVAL_APPROVED = "APPROVED"

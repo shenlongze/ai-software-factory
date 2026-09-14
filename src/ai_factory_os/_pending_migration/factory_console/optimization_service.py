@@ -19,7 +19,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .production_evaluation import evaluate as _evaluate
 from .production_run import list_production_runs  # noqa: F401  (复用)
 from .governance_service import request_approval, approve
 
@@ -127,7 +126,6 @@ def _run_metrics(root: Path | str, run_id: str) -> dict[str, Any]:
 
 def _collect_runs(root: Path | str, scope: str = "") -> list[dict[str, Any]]:
     """收集 scope 内 COMPLETED production runs 的真实指标。"""
-    from .production_run import list_production_runs
 
     runs = list_production_runs(root)
     out = []
@@ -409,7 +407,7 @@ def outcome(root: Path | str, experiment_id: str, *, decided_by: str = "human") 
 def _write_optimization_experience(root: Path | str, exp: dict[str, Any], cmp: dict[str, Any]) -> None:
     """仅真实 IMPROVED → Optimization Experience (S14/S15 体系)。"""
     try:
-        from .production_experience import extract, _store as _exp_store
+        from .production_experience import _store as _exp_store
         from .memory.experience import ExperienceRecord
 
         rec = ExperienceRecord(

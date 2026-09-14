@@ -116,7 +116,6 @@ def _console_import(name: str):
 # 版本单源: 直接读 pyproject.toml（S10-1xx: 相对导入 from ... 会解析到仓库根
 # factory_console 别名包 — 其无 __version__, 导致 ImportError; 改为读 pyproject 独立于包）
 import tomllib
-from pathlib import Path as _PathLib
 
 try:
     _factory_version = tomllib.loads(
@@ -1430,7 +1429,7 @@ def build_app(
     @app.get("/api/board/doc")
     def api_board_doc(project: str = "", doc: str = ""):
         """项目文档查看: markdown 渲染 / JSON 格式化 (只读, 路径白名单)。"""
-        from fastapi.responses import HTMLResponse, PlainTextResponse
+        from fastapi.responses import HTMLResponse
 
         board_mod = _console_import("session.board")
         try:
@@ -3738,7 +3737,6 @@ def build_app(
             pass
         # 2) events 库 (tool.call, task_id=session)
         try:
-            from ai_factory_os.infrastructure.events.logger import EventLogger
             from ai_factory_os.infrastructure.events.store import EventStore
 
             db = Path(workspace_root or DEFAULT_ROOT) / "factory.db"
@@ -7361,7 +7359,6 @@ def build_app(
         复用 Core cmd_project_register (注册 + 分析 + 基线 + 快照);
         repo_path 必填且必须存在 (目录或 .git); 失败 → 4xx 明确错误。
         """
-        import json as _json
 
         root = Path(str(factory_root if factory_root is not None else DEFAULT_ROOT))
         _repo = str(body.get("repo_path") or "").strip()
@@ -8119,7 +8116,7 @@ def build_app(
             idea = body.message
             try:
                 created = service.create_project(idea, name=hint_project)
-            except Exception as exc:  # noqa: BLE001 — 创建失败 → 诚实反馈
+            except Exception:  # noqa: BLE001 — 创建失败 → 诚实反馈
                 created = None
             if created is not None:
                 facts = (

@@ -11,12 +11,11 @@
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 from typing import Any
 
 from .asset_parsers import parse_asset_file
-from .schema import ExternalExecutorAdapter, HostAssetsSpec
+from .schema import ExternalExecutorAdapter
 
 #: agent 名 → 能力角色 (路由用; 未命中 → assistant)
 _ROLE_KEYWORDS: list[tuple[str, str]] = [

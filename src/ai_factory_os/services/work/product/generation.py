@@ -48,10 +48,10 @@ from .events import (
 )
 from .experience import ApprovalExperience, ExperienceStore, GenerationExperience
 from .models import ApprovalRequest, Artifact, ProductIdea, _now
-from .service import ProductError, ProductNotFoundError, ProductService
+from .service import ProductError, ProductService
 
 if TYPE_CHECKING:  # 类型标注专用 (运行时惰性 — 删除 providers 不影响模块加载)
-    from providers.selector import CostAwareSelector  # pragma: no cover
+    pass  # pragma: no cover
 
 #: 生成类型 → 生成需求模板 (领域映射, 非 Provider 硬编码):
 #: task_type = TaskRequirement.task_type (与 runtime_preferences.<task_type> 键同构);

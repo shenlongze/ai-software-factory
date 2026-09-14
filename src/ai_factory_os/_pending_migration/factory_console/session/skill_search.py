@@ -10,7 +10,6 @@ skills.json 结构 (external_skills 写入): {skills: {id: {id,name,category,ver
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 from typing import Any
 

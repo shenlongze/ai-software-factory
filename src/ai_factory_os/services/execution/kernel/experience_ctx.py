@@ -46,7 +46,6 @@ from typing import Any, Iterable
 
 from pydantic import BaseModel, Field, field_validator
 
-from .budget import BUDGET_RECOMMEND_SPAN  # 预算推荐偏差上限 (单一事实源, 无环)
 
 #: 相似度阈值 (find_similar 最低命中分; 冷启动保守)
 SIMILARITY_THRESHOLD = 0.3

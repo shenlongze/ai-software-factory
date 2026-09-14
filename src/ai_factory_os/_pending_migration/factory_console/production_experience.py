@@ -24,10 +24,10 @@ from pathlib import Path
 from typing import Any
 
 from .memory.experience import (
-    ExperienceRecord, make_record_id, SUCCESS_PATTERN, FAILURE_PATTERN, DEBUG_EXPERIENCE,
+    ExperienceRecord, SUCCESS_PATTERN, FAILURE_PATTERN, DEBUG_EXPERIENCE,
 )
 from .memory.experience_store import ExperienceStore
-from .production_evaluation import evaluate as _evaluate, get_evaluation
+from .production_evaluation import evaluate as _evaluate
 
 #: 经验来源类型 (S14 只允许 PRODUCTION_DERIVED 自动进入 ACTIVE)
 SOURCE_PRODUCTION_DERIVED = "PRODUCTION_DERIVED"
@@ -87,7 +87,6 @@ def extract(root: Path | str, production_run_id: str, *, force: bool = False) ->
     """
     from .production_run import get_production_run
     from .node_runtime import get_node_run
-    from .artifact_lifecycle import get_artifact
 
     run = get_production_run(root, production_run_id)
     if run is None:

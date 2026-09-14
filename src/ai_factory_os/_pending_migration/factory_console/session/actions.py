@@ -93,7 +93,6 @@ from .pipeline import (
     FeatureTaskGenerator,
     Lifecycle,
     ProductDocument,
-    TaskTree,
 )
 from .product import (
     ProductIntent,
@@ -105,7 +104,6 @@ from .progress import ProductProgressTracker
 logger = logging.getLogger("factory.session.actions")
 from .quality import RepairManager
 from .teams import DEFAULT_TEAM_MEMBERS, TeamRegistry, TeamService
-from .workspace import WorkspaceContext
 from legacy_paths import REPO_ROOT  # 仓库根唯一计算器
 
 #: 会话工作区缺省 (与 commands.DEFAULT_PROJECTS_FILE 同口径: ~/.factory)

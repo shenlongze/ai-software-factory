@@ -52,10 +52,8 @@ from .debug_session import (
 )
 from .debug_trace import DebugTrace
 from .repair_safety import (
-    DECISION_AUTO,
     DECISION_BLOCKED,
     DECISION_REVIEW,
-    DECISION_SAFE_AUTO,
     RepairSafety,
 )
 from .retrieval_policy import DebugRetrievalPolicy

@@ -36,7 +36,6 @@ from .experience import ExperienceRecorder
 from ai_factory_os.services.execution.types import ExecutionRequest, ExecutionResult, new_id
 from ai_factory_os.infrastructure.llm.provider import ProviderInterface
 from ai_factory_os.plugins.agents.roles import (
-    RoleError,
     get_role,
     list_roles,
     merge_capabilities,

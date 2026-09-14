@@ -18,17 +18,14 @@ from __future__ import annotations
 import json
 import os
 import tempfile
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from .unified_contract import (
-    new_id, create_entity, store_entity, get_entity, entities, bump_version,
-    lifecycle_transition, trace_lineage,
+    create_entity, store_entity, get_entity, entities, bump_version,
 )
 from .conversation_os import extract_requirement
-from .task_tree import decompose, update_task_status, task_progress
 
 
 def _now_iso() -> str:
@@ -237,7 +234,7 @@ def replan(root: Path | str, project_id: str, *, new_req_id: str,
 def approve_task_execution(root: Path | str, task_id: str, *,
                            risk: str = "HIGH") -> dict[str, Any]:
     """高风险 task 执行前 Approval gate (S17 governance; 不批准 → 不执行)。"""
-    from .governance_service import request_approval, decide_approval
+    from .governance_service import request_approval
     task = get_entity(root, task_id)
     appr = request_approval(root, production_run_id="", artifact_ids=[],
                             requested_by="project_os",

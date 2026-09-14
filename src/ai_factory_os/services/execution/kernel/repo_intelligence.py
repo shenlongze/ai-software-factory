@@ -36,7 +36,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from ai_factory_os.services.execution.repo_index import RepositoryIndex, RepositoryIndexer, SymbolKind, module_of
+from ai_factory_os.services.execution.repo_index import RepositoryIndex, RepositoryIndexer, module_of
 
 # ================================================================ 常量
 

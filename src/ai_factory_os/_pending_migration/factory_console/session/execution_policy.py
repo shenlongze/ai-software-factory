@@ -22,7 +22,7 @@ scope ("large"/"大"), confidence (0-1), approved (人工批准)。
 
 from __future__ import annotations
 
-from typing import Any, Optional, Tuple
+from typing import Any, Tuple
 
 # ---------------------------------------------------------------- 模式常量
 

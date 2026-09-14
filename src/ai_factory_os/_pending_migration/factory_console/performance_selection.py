@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from .plugin_kernel import bootstrap, get_plugin, list_plugins
-from .workforce_os import agent_performance, _get_or_create_agent_profile
+from .workforce_os import agent_performance
 
 #: Evidence-aware ranking 权重 (冻结)
 W_SUCCESS = 0.4

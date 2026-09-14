@@ -489,7 +489,6 @@ def reviewer_verify(
     - 审查委派本身也记一条 EXS (可审计 + 贡献该 reviewer 的历史效果分)
     - 解析: 输出含 FAIL → fail; 含 PASS → pass; 否则 unknown (不编造)"""
     from .registry import ExternalExecutorRegistry
-    from . import router as _router
 
     # 候选 reviewer: role=reviewer 的 agent (external), 同家族优先
     reviewers: list[dict[str, Any]] = []

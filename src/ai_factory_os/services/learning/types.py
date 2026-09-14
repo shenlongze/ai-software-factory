@@ -32,7 +32,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from ai_factory_os.infrastructure.events.types import TS_FORMAT, format_timestamp, parse_timestamp
+from ai_factory_os.infrastructure.events.types import format_timestamp, parse_timestamp
 
 #: 指数衰减半衰期缺省 (30 天): 经验在 30 天后新鲜度降为 0.5
 DEFAULT_HALF_LIFE_DAYS = 30.0

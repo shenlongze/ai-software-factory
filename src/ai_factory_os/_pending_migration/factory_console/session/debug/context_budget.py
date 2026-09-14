@@ -12,7 +12,6 @@ fit (Top-K + 截断保 max_tokens) + stats (审计口径)。
 from __future__ import annotations
 
 import json
-import time
 from typing import Any, Optional
 
 #: 启发式: 每 token 约 4 字符 (中文/英文混合近似; 无 tokenizer 依赖)

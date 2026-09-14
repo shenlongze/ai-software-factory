@@ -19,7 +19,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from ai_factory_os.infrastructure.git.types import GitChange, GitCommit
+from ai_factory_os.infrastructure.git.types import GitChange
 
 from .types import ChangeAnalysis, ChangeContext
 

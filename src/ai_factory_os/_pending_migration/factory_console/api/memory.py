@@ -20,7 +20,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from ..memory.experience import TYPES, ExperienceRecord
 from ..memory.experience_store import (
@@ -30,7 +30,6 @@ from ..memory.experience_store import (
 )
 from ..memory.extraction import ExperienceExtractor
 from ..memory.learning_engine import LearningEngine, PatternLearner
-from ..memory.retrieval import ExperienceRetriever
 
 __all__ = [
     "MemoryAgentRequest",

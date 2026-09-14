@@ -31,7 +31,6 @@ from pathlib import Path
 from typing import Any
 
 from ..workflow_runner import (
-    WorkflowConflictError,
     WorkflowStartError,
     is_project_running,
     start_project_workflow,

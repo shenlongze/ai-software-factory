@@ -17,12 +17,11 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .conversation_os import (
-    create_conversation, send_message, get_conversation, extract_requirement,
-    trigger_work,
+    create_conversation, send_message, get_conversation, trigger_work,
 )
 from .conversation_quality import quality_report
 from .project_os import create_project, create_sprint, add_task_to_sprint
-from .task_tree import decompose, execute_subtask, task_progress
+from .task_tree import decompose, execute_subtask
 from .operational_state import drill_down, who_is_working
 
 

@@ -19,7 +19,6 @@ from pathlib import Path
 from typing import Any
 
 from .release_service import get_release, list_releases
-from .production_run import get_production_run
 
 #: Health 状态
 HC_PENDING = "PENDING"
@@ -110,7 +109,7 @@ def _audit(root: Path | str, event_type: str, payload: dict[str, Any]) -> None:
 
 def _run_checks(root: Path | str, release: dict[str, Any]) -> list[dict[str, Any]]:
     """确定性 health checks (真实 subprocess, 无 LLM)。"""
-    from .verification import verify_pytest, verify_python_syntax
+    from .verification import verify_pytest
     from .retry_policy import is_retryable_verification
 
     ws = Path(root) / "workspace"

@@ -124,7 +124,6 @@ def _provider_registry() -> ProviderRegistry:
        装配异常 → 一律回退不抛。
     """
     try:
-        import importlib
 
         llm_control = _import_llm_control_module()
         plane = llm_control.LLMControlPlane()

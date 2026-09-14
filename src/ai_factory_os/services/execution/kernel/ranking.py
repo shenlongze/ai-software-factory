@@ -38,7 +38,6 @@ from pydantic import BaseModel, Field, field_validator
 from .budget import (  # T4.3: 通用 Context Budget 模型 (声明式; 本模块单向依赖, 无环)
     BUDGET_POLICIES,
     BudgetPolicy,
-    BudgetTrace,
     DEFAULT_DEGRADATION_STEPS,
     apply_budget_recommendation,
     build_budget_trace,

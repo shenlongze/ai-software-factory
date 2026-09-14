@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Any
 
 from .action import (
-    STATUS_CANCELLED,
     STATUS_ERROR,
     STATUS_OK,
     ActionResult,

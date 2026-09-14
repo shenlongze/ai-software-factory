@@ -102,7 +102,6 @@ class ChatService:
         """S10-076: LLM 不可用的明确原因 (诚实, 不伪装)。"""
         try:
             from .reasoning import ReasoningProvider
-            from ..config import ConfigProvider
 
             rp = ReasoningProvider()
             pid, _model = rp._resolve_identity()  # noqa: SLF001 — 同包读取

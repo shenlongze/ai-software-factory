@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from .governance_service import request_approval, approve, get_approval
+from .governance_service import request_approval, approve
 
 
 def _now_iso() -> str:
@@ -218,7 +218,7 @@ def run_with_variant(root: Path | str, *, variant_id: str, workflow_id: str,
 
     Returns: {production_run_id, assignment_id, variant_id, variant_type, result}
     """
-    from .production_run import register_workflow, create_production_run, execute_production_run, get_production_run
+    from .production_run import create_production_run, execute_production_run
 
     v = get_variant(root, variant_id)
     if v is None:

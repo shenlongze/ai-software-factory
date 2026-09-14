@@ -14,16 +14,14 @@
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 import uuid
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
 from .context_runtime import (
-    _file, _load, _save, _audit, estimate_tokens, estimate_cost,
-    _init_local_memory, _memory_call, SCOPES, LocalMemoryPlugin,
+    _load, _save, _audit, estimate_tokens, estimate_cost,
+    _init_local_memory, _memory_call, LocalMemoryPlugin,
 )
 
 #: Utility 权重 (冻结)

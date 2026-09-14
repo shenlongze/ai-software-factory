@@ -188,7 +188,6 @@ def run_agent(
     from .production_run import (
         register_workflow, create_production_run, execute_production_run,
     )
-    from .production_service import status as _prun_status
 
     with _lock:
         run = get_agent_run(root, run_id)

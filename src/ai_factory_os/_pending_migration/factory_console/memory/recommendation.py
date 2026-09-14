@@ -18,7 +18,6 @@ from .experience import (
     DEBUG_EXPERIENCE,
     FAILURE_PATTERN,
     PLANNING_EXPERIENCE,
-    ExperienceRecord,
 )
 from .retrieval import ExperienceRetriever
 

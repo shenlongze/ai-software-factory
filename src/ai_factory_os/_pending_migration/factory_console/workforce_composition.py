@@ -16,13 +16,12 @@ from __future__ import annotations
 import json
 import os
 import tempfile
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .plugin_kernel import (bootstrap, get_plugin, resolve_plugin, list_plugins)
-from .workforce_os import _get_or_create_agent_profile, list_agent_profiles
+from .plugin_kernel import (get_plugin, list_plugins)
+from .workforce_os import list_agent_profiles
 from .workforce import ROLE_CAPABILITIES
 
 #: Capability → plugin capability 映射 (统一 S30/S31 语义)
@@ -148,7 +147,7 @@ def bind_agent_profile(root: Path | str, *, agent_profile_id: str,
     """给 AgentProfile 绑定 Plugin Composition (Plugin references, 非实现)。"""
     _ensure_composition_plugins(root)
     # 复用 S30 AgentProfile 存储 (SSOT)
-    from .workforce_os import list_agent_profiles as _list_profiles, _file as _wfos_file
+    from .workforce_os import _file as _wfos_file
     import json as _json
     profs_path = _wfos_file(root, "agent_profiles")
     try:
@@ -175,7 +174,6 @@ def bind_agent_profile(root: Path | str, *, agent_profile_id: str,
 
 
 def _get_profile(root: Path | str, agent_profile_id: str) -> dict[str, Any]:
-    from .workforce_os import list_agent_profiles
     for p in list_agent_profiles(root):
         if p["agent_id"] == agent_profile_id:
             return p

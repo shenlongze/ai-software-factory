@@ -17,7 +17,7 @@ import hashlib
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 
 #: 经验类型注册表 (S10-067 G1 — 6 类型)
 SUCCESS_PATTERN = "SUCCESS_PATTERN"        # 成功方案 (execution_records 成功)

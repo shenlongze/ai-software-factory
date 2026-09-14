@@ -17,8 +17,7 @@ from typing import Any
 
 from .health_service import (
     HR_HEALTHY, HR_DEGRADED, HR_UNHEALTHY, HR_UNKNOWN,
-    INC_OPEN, INC_ACKNOWLEDGED, INC_RECOVERING, INC_RESOLVED, INC_FAILED,
-    list_health_checks, list_incidents,
+    INC_OPEN, INC_ACKNOWLEDGED, INC_RECOVERING, INC_RESOLVED, list_health_checks, list_incidents,
 )
 from .release_service import list_releases, get_release
 from .ops_scheduler import list_schedules

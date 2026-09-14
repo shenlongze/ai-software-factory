@@ -1160,7 +1160,6 @@ class FactoryCLI:
                 scan = scan_project(root, project)
                 self._print_artifact_scan(scan)
             else:
-                import factory_console.artifact_contract as _ac
 
                 for pdir in sorted((root / "projects").iterdir()) if (root / "projects").is_dir() else []:
                     if not pdir.is_dir():
@@ -1719,7 +1718,7 @@ class FactoryCLI:
     def evidence(self, args: argparse.Namespace) -> int:
         """证据包视图 (M1a): list — 各项目证据包清单; show <id> — 单包详情。"""
         try:
-            from .session.evidence import EvidenceStore
+            pass
         except Exception as exc:  # noqa: BLE001
             print(f"证据包加载失败: {exc}", file=sys.stderr)
             return 1
@@ -4353,7 +4352,6 @@ class FactoryCLI:
         from factory_console.project_os import (
             create_project as _cp, create_sprint as _cs, project_status as _ps,
             projects as _list, replan as _rp,
-            approve_task_execution as _ap, decide_task_approval as _decide,
             task_approval_status as _tas,
         )
 
@@ -4429,8 +4427,7 @@ class FactoryCLI:
         薄代理 → control_tower (CLI 与 API 共享同一 Service)。
         """
         from factory_console.control_tower import (
-            control_tower as _ct, work_overview as _wo,
-            workforce_status as _ws, governance_pending as _gp,
+            control_tower as _ct, workforce_status as _ws, governance_pending as _gp,
             realtime_stream as _rt,
         )
 
@@ -4479,7 +4476,7 @@ class FactoryCLI:
         薄代理 → task_tree (CLI 与 API 共享同一 Service)。
         """
         from factory_console.task_tree import (
-            decompose as _decomp, get_tree as _get, task_progress as _prog,
+            task_progress as _prog,
             tree_status as _status, update_task_status as _update,
             task_trees as _list,
         )
@@ -4690,8 +4687,7 @@ class FactoryCLI:
         薄代理 → intelligence_strategy (CLI 与 API 共享同一 Service)。
         """
         from factory_console.intelligence_strategy import (
-            register_strategy as _reg, strategies as _strats,
-            execute_strategy as _exec, executions as _execs,
+            register_strategy as _reg, execute_strategy as _exec, executions as _execs,
             strategy_lineage as _lineage, _default_adapters,
         )
 
@@ -5199,7 +5195,7 @@ class FactoryCLI:
         薄代理 → context_runtime (CLI 与 API 共享同一 Service)。
         """
         from factory_console.context_runtime import (
-            memory_query as _query, create_memory_candidate as _candidate,
+            create_memory_candidate as _candidate,
             promote_memory_candidate as _promote, memory_candidates as _cands,
             _init_local_memory,
         )
@@ -5758,7 +5754,7 @@ class FactoryCLI:
         薄代理 → experiment_reliability (CLI 与 API 共享同一 Service)。
         """
         from factory_console.experiment_reliability import (
-            production_outcome as _oc, classify_failure as _cls,
+            classify_failure as _cls,
             sample_eligibility as _elig, experiment_reliability as _rel,
             inspect_sample as _inspect,
         )
@@ -6081,8 +6077,7 @@ class FactoryCLI:
         """
         from factory_console.production_intelligence import (
             analyze_incident as _analyze, get_analysis as _get, list_analyses as _list,
-            analysis_evidence as _evidence, list_recommendations as _recs,
-            intelligence_metrics as _metrics,
+            analysis_evidence as _evidence, intelligence_metrics as _metrics,
         )
 
         root = Path(getattr(args, "data_dir", None) or self.data_dir)
@@ -6158,8 +6153,7 @@ class FactoryCLI:
         薄代理 → ops_projection (CLI 与 API 共享同一 Service)。
         """
         from factory_console.ops_projection import (
-            overview as _ov, project_health as _ph, release_health as _rh,
-            release_health_history as _hist,
+            overview as _ov, project_health as _ph, release_health_history as _hist,
         )
         from factory_console.health_service import list_incidents
         from factory_console.ops_scheduler import list_schedules
@@ -6280,9 +6274,7 @@ class FactoryCLI:
         薄代理 → health_service (CLI 与 API 共享同一 Service)。
         """
         from factory_console.health_service import (
-            health_check as _check, create_incident as _mk_incident,
-            get_incident as _get_inc, list_incidents as _list_inc, recover as _recover,
-            run_health as _run_health,
+            health_check as _check, get_incident as _get_inc, list_incidents as _list_inc, recover as _recover,
         )
 
         root = Path(getattr(args, "data_dir", None) or self.data_dir)
@@ -6539,7 +6531,7 @@ class FactoryCLI:
         薄代理 → governance_service (CLI 与 API 共享同一 Service)。
         """
         from factory_console.governance_service import (
-            check_governance, list_approvals, POLICIES,
+            check_governance, list_approvals,
         )
 
         root = Path(getattr(args, "data_dir", None) or self.data_dir)
@@ -7080,7 +7072,7 @@ class FactoryCLI:
 
         from factory_console.agent_kernel import (
             create_agent_run, run_agent, get_agent_run, list_agent_runs,
-            create_handoff, get_handoff, list_handoffs, AgentKernelError,
+            create_handoff, list_handoffs, AgentKernelError,
         )
 
         root = Path(getattr(args, "data_dir", None) or self.data_dir)

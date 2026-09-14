@@ -2940,7 +2940,6 @@ class ConsoleService:
         在 sys.path (Removal Isolation: 删除 factory-org 不影响 Console)。
         """
         import sys
-        from pathlib import Path
 
         org_dir = REPO_ROOT / "src" / "ai_factory_os" / "services" / "organization"
         if org_dir.is_dir() and str(org_dir) not in sys.path:
@@ -3899,7 +3898,6 @@ class ConsoleService:
         if feature is None:
             raise BacklogNotFoundError(f"feature not found: {feature_id}")
         self._mount_org()
-        from ai_factory_os.services.organization.management import Feature
         from ai_factory_os.services.organization.models import utcnow
 
         updates: dict[str, Any] = {}

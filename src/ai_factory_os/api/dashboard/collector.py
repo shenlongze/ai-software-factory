@@ -654,7 +654,7 @@ class DashboardCollector:
         if self._usage_store is None:
             return
         try:
-            from providers.usage import stats_from_usage, stats_by_provider
+            from providers.usage import stats_from_usage
 
             stats = stats_from_usage(self._usage_store.list(), period="all")
         except Exception:

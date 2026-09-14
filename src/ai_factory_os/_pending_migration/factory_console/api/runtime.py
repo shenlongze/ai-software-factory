@@ -51,7 +51,6 @@ from ..models import (
     TimelineEventSummary,
     WorkflowDetail,
 )
-from ..service import RuntimeStateError
 
 #: SSE 事件映射 (org 事件类型 → SSE 事件名; 只推送七类)。
 SSE_EVENT_MAP: dict[str, str] = {

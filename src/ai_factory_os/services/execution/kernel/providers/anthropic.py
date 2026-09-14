@@ -31,7 +31,7 @@ from typing import Any, cast
 
 import httpx
 
-from ai_factory_os.infrastructure.llm.provider import ProviderError, ProviderInterface, ProviderRequest, ProviderResponse
+from ai_factory_os.infrastructure.llm.provider import ProviderError, ProviderRequest, ProviderResponse
 
 #: Anthropic Messages API 端点 (官方, 2026-08 稳定)
 DEFAULT_BASE_URL = "https://api.anthropic.com/v1/messages"

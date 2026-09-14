@@ -50,13 +50,12 @@ KISS 边界: 本模块只依赖 stdlib + pydantic + 本层 models/experience_ctx
 from __future__ import annotations
 
 import time
-import uuid
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any, Callable
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import Field, field_validator
 
 from .capability import capability_snapshot
 from .experience_ctx import (

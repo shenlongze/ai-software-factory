@@ -41,7 +41,41 @@ def _tree_dir(root: str | Path) -> Path:
 
 
 def _tree_file(root: str | Path, plan_id: str) -> Path:
+    """任务树文件路径: 优先【项目目录】(projects/<P>/tasks/) ✓ → 回落全局 task_trees/ ✓。
+
+    ★ Founder 铁律: 属于项目的文件必须在项目目录下 ✓。
+    读优先 + 写回落: 新树的写入方不知道项目 ✗ → 由调用方在生成计划后搬迁 ✓
+    （与会话同一模式: move_tree_to_project ✓）。
+    """
+    base = Path(root)
+    for f in base.glob(f"projects/*/tasks/{plan_id}.json"):
+        if f.is_file():
+            return f
     return _tree_dir(root) / f"{plan_id}.json"
+
+
+def move_tree_to_project(root: str | Path, plan_id: str,
+                         project_id: str) -> bool:
+    """把任务树文件搬进 projects/<P-id>/tasks/（幂等 + 原子 + 失败安全 ✓）。"""
+    if not project_id:
+        return False
+    src = _tree_dir(root) / f"{plan_id}.json"
+    dst = Path(root) / "projects" / project_id / "tasks" / f"{plan_id}.json"
+    if not src.is_file() or dst.exists():
+        return False
+    try:
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        import os as _os
+        _os.replace(src, dst)
+        # 同名 .md（清单）一并跟着走 ✓
+        src_md = src.with_suffix(".md")
+        if src_md.is_file():
+            _os.replace(src_md, dst.with_suffix(".md"))
+        return True
+    except OSError as exc:
+        import sys as _s
+        print(f"[project] 任务树迁移失败: {exc}", file=_s.stderr)
+        return False
 
 
 def _now_iso() -> str:

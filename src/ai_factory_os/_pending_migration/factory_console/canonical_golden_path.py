@@ -243,6 +243,12 @@ class CanonicalGoldenPath:
                     # ② 回落: 返回值自身若带 nodes 也可用
                     if not (_tree_obj or {}).get("nodes"):
                         _tree_obj = obj if (obj or {}).get("nodes") else obj
+                    # ★ 铁律: 任务树搬进项目 tasks/ ✓（与会话同一模式）
+                    if _pid:
+                        from factory_console.task_decomposition import (
+                            move_tree_to_project as _mvt,
+                        )
+                        _mvt(self.root, str(obj.get("id") or ""), _pid)
                     _rec = _mat(self.root, _tree_obj,
                                 title=str(obj.get("goal") or "")[:120],
                                 domain="llm", docs_dir=_docs)

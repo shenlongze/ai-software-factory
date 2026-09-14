@@ -145,6 +145,18 @@ _DEVOPS_PROMPT = (
     "输出格式: 严格 JSON 对象, 5 节字段齐全, 仅输出 JSON, 不要任何多余文字。"
 )
 
+_REVIEW_PROMPT = (
+    "你是一名代码评审工程师 (Code Reviewer)。职责: 消费代码产物 (Code Artifact) "
+    "与需求/架构产物, 产出结构化评审产物 (Review Report), 覆盖 3 节: "
+    "结论 (verdict, 取值 approved 或 changes_requested) / 问题清单 (findings, "
+    "每项含 severity/location/issue/suggestion) / 总评 (summary)。\n"
+    "评审要点: 是否符合架构决策 / 是否满足需求 / 可维护性 / 边界与错误处理 / "
+    "安全隐患 (敏感路径、密钥、权限、删除操作)。\n"
+    "有阻塞项必须 verdict=changes_requested —— 不要为了放行而放行; "
+    "无阻塞项才 approved。\n"
+    "输出格式: 严格 JSON 对象, 3 节字段齐全, 仅输出 JSON, 不要任何多余文字。"
+)
+
 ROLE_REGISTRY: dict[str, RoleDefinition] = {
     "product-manager": RoleDefinition(
         role_id="product-manager",
@@ -152,6 +164,14 @@ ROLE_REGISTRY: dict[str, RoleDefinition] = {
         capabilities=("requirement", "planning", "product_analysis"),
         prompt_template=_PM_PROMPT,
         workflow_stages=("product",),
+        execution_kind="executable",
+    ),
+    "reviewer": RoleDefinition(
+        role_id="reviewer",
+        name="Code Reviewer",
+        capabilities=("review", "quality", "security"),
+        prompt_template=_REVIEW_PROMPT,
+        workflow_stages=("review",),
         execution_kind="executable",
     ),
     "ui-designer": RoleDefinition(

@@ -128,7 +128,8 @@ class ArtifactType(str, Enum):
     DESIGN = "design"
     CODE = "code"
     TEST = "test"
-    BUG_REPORT = "bug_report"   # S7-004: 结构化缺陷报告
+    BUG_REPORT = "bug_report"
+    REVIEW_REPORT = "review_report"   # ★ 代码评审产物（2026-09-14 补 ✓）   # S7-004: 结构化缺陷报告
     RELEASE = "release"
     PROJECT_ANALYSIS = "project_analysis"  # S9-004: 仓库分析 (已有项目接入)
     BASELINE = "baseline"                  # S9-004: 基线验证 (build/test 结果)

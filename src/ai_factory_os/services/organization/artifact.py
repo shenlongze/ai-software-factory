@@ -181,6 +181,18 @@ CONTRACTS: dict[str, dict[str, Any]] = {
             "bugs": {"type": "list"},
         },
     },
+    # ★ 代码评审产物（2026-09-14 补: 正常交付流程的标准节点 ✓）
+    #   此前: 38 个 reviewer agent 已注册 ✓ 但【工作流阶段里没有 review ✗】
+    #   → 评审不会自动卡在测试/发布前 ✓（零件齐、缺节点 ✓）
+    #   语义: verdict=approved → 放行 ✓ · changes_requested → 返工 ✓（复用修复环 ✓）
+    "review_report": {
+        "required_fields": ("verdict", "findings", "summary"),
+        "validation_rules": {
+            "verdict": {"type": "str", "min_length": 1},
+            "findings": {"type": "list"},
+            "summary": {"type": "str", "min_length": 1},
+        },
+    },
     "bug_report": {
         "required_fields": ("location", "repro", "expected", "actual", "root_cause", "severity"),
         "validation_rules": {

@@ -163,6 +163,7 @@ ROLE_OUTPUT_TYPES: dict[str, str] = {
     "product-manager": "prd",
     "architect": "design",
     "ui-designer": "design",
+    "reviewer": "review_report",   # ★ 代码评审（2026-09-14 补 ✓）
     "developer": "code",
     "tester": "test",
     "devops": "release",
@@ -1052,6 +1053,27 @@ class WorkflowRunner:
 
 #: 自动修复轮数上限 (架构 §4: ≤2 轮防无限; 测试轮数上限 = 该值 + 1)
 DEFAULT_MAX_REPAIR_ROUNDS = 2
+
+
+def build_dev_review_test_workflow(
+    lifecycle: WorkflowLifecycle,
+    project_id: str,
+    name: str,
+    *,
+    workflow_id: str | None = None,
+) -> Workflow:
+    """Dev → Review → Test 环（2026-09-14 补: 代码评审为独立节点 ✓）。
+
+    与 build_dev_test_workflow 同构，只多插 reviewer 阶段 ✓
+    （review 在 test 之前 = 早发现早返工 ✓ 标准实践 ✓）。
+    既有 build_dev_test_workflow【保持不变 ✓】不破坏既有套件 ✓。
+    """
+    workflow = lifecycle.create_workflow(project_id, name, workflow_id=workflow_id)
+    dev = lifecycle.create_stage(workflow.id, "developer", name="develop")
+    rev = lifecycle.create_stage(workflow.id, "reviewer", name="review",
+                                depends_on=[dev.id])
+    lifecycle.create_stage(workflow.id, "tester", name="test", depends_on=[rev.id])
+    return workflow
 
 
 def build_dev_test_workflow(

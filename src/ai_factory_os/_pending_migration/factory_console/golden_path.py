@@ -663,7 +663,13 @@ def execute_approved(root: str, conversation_id: str, *,
                   "approved_plan_id": plan.get("id"),
               }}
              for n in leaves_ordered]
+    # ★ 修（2026-09-14 端到端实测 ✗）: register_workflow 的 name 是【必需关键字参数 ✗】
+    #   此前只走单叶路径 ✗ 碰不到这里 ✓；真 LLM 拆解出 17 个任务后走多叶路径 ✓
+    #   → 第一次执行到这里 → TypeError（断点3 ✓）
+    #   name 语义 = 这个 workflow 的显示名 ✓ 用计划目标最贴切 ✓
     register_workflow(root, workflow_id=plan["id"],
+                      name=str(plan.get("goal") or plan.get("title")
+                               or plan["id"])[:120],
                       project_id=(resolve_project_id(root, conversation_id) or conversation_id),
                       nodes=nodes)
     prun = create_production_run(

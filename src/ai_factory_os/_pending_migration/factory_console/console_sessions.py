@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -101,8 +102,19 @@ def _new_id(prefix: str) -> str:
     return _gen(prefix)
 
 
+def _trace(prompt: str, response: str | None, *,
+           duration_s: float | None = None, error: str = "") -> None:
+    """LLM 调用留痕（延迟导入 ✓ 失败安全 ✓ —— 绝不影响主链 ✓）。"""
+    try:
+        from .llm_trace import record_llm_call
+        record_llm_call(prompt, response, duration_s=duration_s, error=error)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def llm_raw(prompt: str) -> str | None:
     """真实 LLM 原始输出 (供意图解析等结构化调用); 不可用/失败 → None。"""
+    _t0 = time.time()
     try:
         from .session.reasoning import ReasoningProvider
 
@@ -110,8 +122,12 @@ def llm_raw(prompt: str) -> str | None:
         llm_fn = provider._default_llm_fn()  # noqa: SLF001 — 同包复用装配链
         text = llm_fn(prompt, "chat")
         text = str(text or "").strip()
+        # ★ 思考留痕: 记录原始 prompt/输出（截断 ✓ 失败安全 ✓ 不影响主链 ✓）
+        _trace(prompt, text or None, duration_s=time.time() - _t0)
         return text or None
-    except Exception:  # noqa: BLE001 — LLM 挂 → None (调用方 fallback)
+    except Exception as exc:  # noqa: BLE001 — LLM 挂 → None (调用方 fallback)
+        _trace(prompt, None, duration_s=time.time() - _t0,
+               error=f"{type(exc).__name__}: {exc}")
         return None
 
 

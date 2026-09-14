@@ -584,6 +584,18 @@ class DeveloperAgent:
         validation_attempts: 验证循环尝试次数 (1 = 一次通过; >1 = 自动修复轮)。
         """
         summary = DeveloperAgent._summary_of(raw_content)
+        if not summary:
+            # ★ 摘要为空时【从结构化操作派生】(Founder: 报告不该是 "(no summary)" ✗)
+            _files = sorted({str(o.get("file") or o.get("path") or "")
+                             for o in (operations or []) if (o or {}).get("file")
+                             or (o or {}).get("path")})
+            if _files:
+                summary = (f"通过 {len(operations)} 个结构化操作修改了 "
+                           f"{len(_files)} 个文件: " + ", ".join(_files[:6])
+                           + ("…" if len(_files) > 6 else ""))
+            elif patch_text.strip():
+                summary = (f"生成了 {len(patch_text.splitlines())} 行补丁"
+                           f"（{len(operations)} 个结构化操作）")
         lines = [
             f"# Execution Report — {request.id}",
             f"- task_id: {request.task_id or '-'}",

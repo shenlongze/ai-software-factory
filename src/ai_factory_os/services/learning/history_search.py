@@ -24,31 +24,35 @@ from typing import Any, Iterable
 SOURCES: tuple[str, ...] = ("event", "trace", "experience")
 DEFAULT_DB_NAME = "search.db"
 
+_SCHEMA_VERSION = 2   # 1=external-content+触发器(错) → 2=独立表+代码侧切分
+
 _SCHEMA = """
+CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS docs (
     id      INTEGER PRIMARY KEY AUTOINCREMENT,
-    source  TEXT NOT NULL,           -- event / trace / experience
-    ref     TEXT NOT NULL,           -- 来源内唯一键（事件 seq / trace id / 经验 id）
-    ts      TEXT NOT NULL DEFAULT '',-- ISO 时间（排序/展示用）
+    source  TEXT NOT NULL,
+    ref     TEXT NOT NULL,
+    ts      TEXT NOT NULL DEFAULT '',
     title   TEXT NOT NULL DEFAULT '',
     body    TEXT NOT NULL DEFAULT '',
     UNIQUE(source, ref)
 );
--- CJK 检索: FTS5 默认 unicode61 把整段中文当一个 token（"截图"搜不到），
--- 而 trigram 要求查询 ≥3 字符（"截图"这类 2 字词仍搜不到）。
--- 解法: 索引与查询都做【CJK 逐字切分】（见 _cjk_split）→ unicode61 下按字成词，
--- 2 字词以短语形式命中（"截 图"）。英文不受影响。
-CREATE VIRTUAL TABLE IF NOT EXISTS docs_fts USING fts5(
-    title, body, content='docs', content_rowid='id'
-);
-CREATE TRIGGER IF NOT EXISTS docs_ai AFTER INSERT ON docs BEGIN
-    INSERT INTO docs_fts(rowid, title, body) VALUES (new.id, new.title, new.body);
-END;
-CREATE TRIGGER IF NOT EXISTS docs_ad AFTER DELETE ON docs BEGIN
-    INSERT INTO docs_fts(docs_fts, rowid, title, body)
-    VALUES('delete', old.id, old.title, old.body);
-END;
+-- 独立 FTS5 表（【不】用 content='docs'）: external-content 表不接受直接 INSERT ✗
+-- 内容由代码写入【CJK 逐字切分后】的文本（SQL 做不到切分）
+-- ★ 为什么必须切分: 本仓库的数据是密集 JSON，"旅行记账"/"非变更证据" 这类
+--   连续 CJK 串在默认分词器下是【一个 token】→ 子串永远搜不到 ✗
+--   （Hermes 能搜到是因为它的中文有标点/空格式分隔，我们不假设这一点）
+CREATE VIRTUAL TABLE IF NOT EXISTS docs_fts USING fts5(title, body);
 """
+
+#: CJK 区间 —— 索引与查询【两侧都逐字切分】
+_CJK = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
+
+
+def _cjk_split(text: str) -> str:
+    """CJK 逐字切分: "非变更证据" → " 非 变 更 证 据 "（非 CJK 原样保留）。"""
+    return _CJK.sub(lambda m: f" {m.group(0)} ", text or "")
+
 
 
 @dataclass(frozen=True)
@@ -79,8 +83,36 @@ class HistoryIndex:
         self._conn = sqlite3.connect(str(self.db_path))
         self._conn.executescript(_SCHEMA)
         self._conn.commit()
+        self._ensure_schema()
 
     # ---------------------------------------------------------------- 写入
+
+    def _ensure_schema(self) -> None:
+        """版本守卫 + 自愈。
+
+        ★ 这里踩过两次坑（都真发生过）:
+          ① 旧 schema 的库用 CREATE TABLE IF NOT EXISTS 建过 → 永远不修正 ✗
+          ② 曾用 external-content 表 → 直接 INSERT 无效 → docs_fts 恒为 0 行 ✗
+        处理: 版本不符 或 docs 有内容而 fts 为空 → 重建 FTS 表并重新填充。
+        """
+        try:
+            row = self._conn.execute(
+                "SELECT value FROM meta WHERE key='schema_version'").fetchone()
+            ver = int(row[0]) if row else 0
+            n_docs = self._conn.execute("SELECT count(*) FROM docs").fetchone()[0]
+            n_fts = self._conn.execute("SELECT count(*) FROM docs_fts").fetchone()[0]
+            stale = ver != _SCHEMA_VERSION or (n_docs and not n_fts)
+            if stale and n_docs:
+                self._conn.execute("DROP TABLE IF EXISTS docs_fts")
+                self._conn.executescript(_SCHEMA)
+                self._rebuild_fts()
+            self._conn.execute(
+                "INSERT INTO meta(key, value) VALUES('schema_version', ?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (str(_SCHEMA_VERSION),))
+            self._conn.commit()
+        except Exception as exc:  # noqa: BLE001 — 不静默
+            print(f"[history_search] schema 自愈失败: {exc}", file=sys.stderr)
 
     def index_docs(self, docs: Iterable[tuple[str, str, str, str, str]]) -> int:
         """批量 upsert: (source, ref, ts, title, body) → 新增/更新条数。"""
@@ -224,6 +256,18 @@ class HistoryIndex:
             return []
         return [Hit(source=r[0], ref=r[1], ts=r[2] or "", title=r[3] or "",
                     snippet=_snippet(r[4] or "", terms)) for r in rows]
+
+    def _rebuild_fts(self) -> None:
+        """按 CJK 切分重建 FTS（幂等）。"""
+        try:
+            self._conn.execute("DELETE FROM docs_fts")
+            for rowid, title, body in self._conn.execute("SELECT id, title, body FROM docs"):
+                self._conn.execute(
+                    "INSERT INTO docs_fts(rowid, title, body) VALUES(?,?,?)",
+                    (rowid, _cjk_split(title), _cjk_split(body)))
+            self._conn.commit()
+        except Exception as exc:  # noqa: BLE001 — 不静默
+            print(f"[history_search] FTS 重建失败: {exc}", file=sys.stderr)
 
     def stats(self) -> dict[str, int]:
         """各类历史已索引条数。"""

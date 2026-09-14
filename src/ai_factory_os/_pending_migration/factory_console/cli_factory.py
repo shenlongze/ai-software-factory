@@ -1135,6 +1135,8 @@ class FactoryCLI:
             return self.update_cmd(args)
         if args.command == "llm":
             return self.llm_cmd(args)
+        if args.command == "history":
+            return self.history_cmd(args)
         if args.command == "todo":
             return self.todo_cmd(args)
         if args.command in STUB_COMMANDS:
@@ -7631,6 +7633,47 @@ class FactoryCLI:
         print(f"  当前选择: {plane.selected_provider_id() or '无'}")
         return 0
 
+    def history_cmd(self, args: argparse.Namespace) -> int:
+        """factory history search|index|stats — 历史检索（FTS5，中英文皆可搜）。"""
+        from ai_factory_os.services.learning.history_search import HistoryIndex
+
+        action = getattr(args, "history_action", "search") or "search"
+        idx = HistoryIndex(self.data_dir / "search.db")
+        try:
+            if action == "index":
+                counts = idx.sync_from_data_dir(self.data_dir)
+                print("  ✓ 已索引 " + str(sum(counts.values())) + " 条: "
+                      + " · ".join(f"{k}={v}" for k, v in counts.items()))
+                return 0
+            if action == "stats":
+                st = idx.stats()
+                print("=== 历史索引 ===")
+                for s in ("event", "trace", "experience"):
+                    print(f"  {s:12s} {st.get(s, 0):6d} 条")
+                print(f"  {'合计':12s} {st.get('total', 0):6d} 条")
+                return 0
+            query = (getattr(args, "history_query", "") or "").strip()
+            if not query:
+                print("错误: history search 需要检索词", file=sys.stderr)
+                return 2
+            if not idx.stats().get("total"):
+                print("  （索引为空，首次建立中…）")
+                idx.sync_from_data_dir(self.data_dir)
+            src_raw = (getattr(args, "source", "") or "").strip()
+            sources = tuple(s.strip() for s in src_raw.split(",") if s.strip()) or None
+            hits = idx.search(query, limit=max(1, int(getattr(args, "limit", 8) or 8)),
+                              sources=sources)
+            if not hits:
+                print(f"未找到与「{query}」相关的历史（索引 {idx.stats().get('total', 0)} 条）")
+                return 1
+            print(f"=== 「{query}」找到 {len(hits)} 条 ===")
+            for h in hits:
+                print(f"  [{h.source}] {h.ts[:19].replace('T', ' ') or '—'}  {h.title[:56]}")
+                print(f"    {h.snippet[:170]}")
+            return 0
+        finally:
+            idx.close()
+
     def todo_cmd(self, args: argparse.Namespace) -> int:
         """factory todo list — 主线任务清单（待办清单, 命令体系 数据域）。"""
         action = getattr(args, "todo_command", None)
@@ -8668,6 +8711,13 @@ def build_parser() -> argparse.ArgumentParser:
                        help="add: key 引用 (只接受 env:VAR)")
     p_llm.add_argument("--fallback-action", choices=["list", "add", "remove"],
                        default="list", help="fallback 动作 (默认 list)")
+    p_hist = sub.add_parser(
+        "history", help="历史检索 (search/index/stats) — FTS5, 中文可搜; 知识域")
+    p_hist.add_argument("history_action", choices=["search", "index", "stats"],
+                        nargs="?", default="search", help="动作 (默认 search)")
+    p_hist.add_argument("history_query", nargs="?", default="", help="检索词")
+    p_hist.add_argument("--limit", type=int, default=8, help="返回条数 (默认 8)")
+    p_hist.add_argument("--source", default="", help="限定来源: event/trace/experience")
     p_todo = sub.add_parser("todo", help="主线任务清单 (list — 待办清单, 命令体系 数据域)")
     p_todo.add_argument("todo_command", choices=["list"], nargs="?", default=None, help="list — 主线任务")
     sub.add_parser("help", help="命令总览（按域分类, §11.6）")

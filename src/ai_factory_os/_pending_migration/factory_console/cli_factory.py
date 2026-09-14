@@ -1051,6 +1051,8 @@ class FactoryCLI:
             return self.gp_trace_cmd(args)
         if args.command == "tower":
             return self.tower_cmd(args)
+        if args.command == "llm-trace":
+            return self.llm_trace_cmd(args)
         if args.command == "runtime":
             return self.runtime_cmd(args)
         if args.command == "tasktree":
@@ -2417,6 +2419,54 @@ class FactoryCLI:
                 f"| skills=[{row['skills']}]"
             )
         print(f"  共 {len(rows)} 个 agent")
+        return 0
+
+    def llm_trace_cmd(self, args: argparse.Namespace) -> int:
+        """查看 LLM 调用留痕（system 的"思考过程"✓ 可审计 ✓）。
+
+        为什么: 系统此前只记录"做了什么"(execution report ✓)，
+        没记录"当时想了什么"✗ → 本轮补了 traces/llm.jsonl ✓，此处补【可视入口】✓。
+        """
+        import json as _json
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        p = root / "traces" / "llm.jsonl"
+        if not p.is_file():
+            print("=== LLM 调用留痕 ===")
+            print(f"  暂无记录（{p} 不存在）")
+            print("  产生: 任何走 LLM 的操作都会自动留痕 ✓（FACTORY_LLM_TRACE=0 可关）")
+            return 0
+        rows: list[dict] = []
+        try:
+            for line in p.read_text(encoding="utf-8").splitlines():
+                if line.strip():
+                    rows.append(_json.loads(line))
+        except (OSError, ValueError) as exc:
+            print(f"  ✗ 读取失败: {exc}")
+            return 1
+        total = len(rows)
+        if getattr(args, "stats", False):
+            print("=== LLM 调用留痕 · 统计 ===")
+            print(f"  调用次数: {total}")
+            print(f"  文件: {p}（{p.stat().st_size / 1024:.1f} KB）")
+            if rows:
+                print(f"  最近一次: {rows[-1].get('ts')}")
+            return 0
+        n = max(1, int(getattr(args, "limit", 8) or 8))
+        full = bool(getattr(args, "full", False))
+        print(f"=== LLM 调用留痕 · 最近 {min(n, total)}/{total} 条 ===")
+        for r in rows[-n:]:
+            dur = r.get("duration_s")
+            head = (f"  [{r.get('ts', '?')}] {r.get('kind', '?')} "
+                    f"· {r.get('duration_s') if dur is None else f'{dur}s'}"
+                    f" · in {r.get('prompt_chars', 0)} / out {r.get('response_chars', 0)}")
+            print(head)
+            lim = 4000 if full else 160
+            pr = str(r.get("prompt") or "").replace("\n", " ⏎ ")
+            rs = str(r.get("response") or "").replace("\n", " ⏎ ")
+            print(f"      prompt: {pr[:lim]}")
+            print(f"      resp  : {rs[:lim]}")
+            if r.get("error"):
+                print(f"      ✗ error: {str(r['error'])[:160]}")
         return 0
 
     def runtime_cmd(self, args: argparse.Namespace) -> int:
@@ -8133,6 +8183,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_agent.add_argument("--id", default="", help="Agent id (add/remove)")
     p_agent.add_argument("--role", default="", help="角色 (add)")
     p_agent.add_argument("--skills", default="", help="技能逗号分隔 (add)")
+    p_lt = sub.add_parser("llm-trace", help="查看 LLM 调用留痕（思考过程 ✓）")
+    p_lt.add_argument("--limit", type=int, default=8, help="显示最近 N 条 (默认 8)")
+    p_lt.add_argument("--full", action="store_true", help="显示完整 prompt/response")
+    p_lt.add_argument("--stats", action="store_true", help="只看统计")
+    p_lt.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+
     p_rt = sub.add_parser("runtime", help="Runtime 管理 (list/add) — 执行环境登记")
     p_rt.add_argument("runtime_action", nargs="?", choices=["list", "add"],
                       default="list", metavar="list|add")

@@ -39,7 +39,7 @@ IDENTITY_TYPES: tuple[str, ...] = ("human", "agent")
 IDENTITY_STATUSES: tuple[str, ...] = ("active", "retired")
 
 _REPO_ROOT = REPO_ROOT
-_ORG_SRC = REPO_ROOT / "ai_factory_os.services.organization" / "src" / "legacy" / "factory-org"
+_ORG_SRC = REPO_ROOT / "src" / "ai_factory_os" / "services" / "organization"
 
 
 def _now_iso() -> str:

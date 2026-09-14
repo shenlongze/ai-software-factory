@@ -30,7 +30,7 @@ SCOPE_TYPES: tuple[str, ...] = ("global", "company")
 ASSIGNMENT_STATUSES: tuple[str, ...] = ("active", "revoked")
 
 _REPO_ROOT = REPO_ROOT
-_EXEC_SRC = REPO_ROOT / "ai_factory_os.services.organization" / "src" / "legacy" / "factory-exec"
+_EXEC_SRC = REPO_ROOT / "src" / "legacy" / "factory-exec"
 
 
 def _now_iso() -> str:

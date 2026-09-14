@@ -359,7 +359,7 @@ def _dep_problems(root: Path) -> list[str]:
             f"未找到虚拟环境: {venv_py}\n"
             "  请先安装依赖: python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'"
         )
-    frontend = root / "ai_factory_os.services.organization" / "src" / "legacy" / "factory-console" / "web" / "frontend"
+    frontend = root / "src" / "legacy" / "factory-console" / "web" / "frontend"
     if not frontend.is_dir():
         frontend = root / "src" / "legacy" / "factory_console" / "web" / "frontend"  # S10-074 部署态
     if not (frontend / "node_modules").is_dir():
@@ -1416,7 +1416,7 @@ class FactoryCLI:
             print(f"  前端已在运行 (PID {_read_pid(self.frontend_pid)})")
             return True
         # S10-074: 部署态前端在 factory_console (下划线) 包内; 源码态连字符目录
-        frontend = self.root / "ai_factory_os.services.organization" / "src" / "legacy" / "factory-console" / "web" / "frontend"
+        frontend = self.root / "src" / "legacy" / "factory-console" / "web" / "frontend"
         if not frontend.is_dir():
             frontend = self.root / "src" / "legacy" / "factory_console" / "web" / "frontend"
         dist = frontend / "dist"
@@ -3964,7 +3964,7 @@ class FactoryCLI:
     def _proxy_exec_cli(self) -> Any:
         """延迟 import exec.cli (PYTHONPATH 挂 factory-exec — 设计注 D1; 失败 → 明确错误)。"""
         try:
-            path = str(self.root / "ai_factory_os.services.organization" / "src" / "legacy" / "factory-exec")
+            path = str(self.root / "src" / "legacy" / "factory-exec")
             if path not in sys.path:
                 sys.path.insert(0, path)
             import exec.cli as exec_cli
@@ -3978,7 +3978,7 @@ class FactoryCLI:
     def _proxy_org_cli(self) -> Any:
         """延迟 import org.cli (PYTHONPATH 挂 factory-org; 失败 → 明确错误)。"""
         try:
-            path = str(self.root / "ai_factory_os.services.organization" / "src" / "legacy" / "factory-org")
+            path = str(self.root / "src" / "ai_factory_os" / "services" / "organization")
             if path not in sys.path:
                 sys.path.insert(0, path)
             import ai_factory_os.services.organization.cli as org_cli

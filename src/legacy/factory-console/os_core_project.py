@@ -26,7 +26,7 @@ from typing import Any
 from legacy_paths import REPO_ROOT  # 仓库根唯一计算器
 
 _REPO_ROOT = REPO_ROOT
-_ORG_SRC = REPO_ROOT / "ai_factory_os.services.organization" / "src" / "legacy" / "factory-org"
+_ORG_SRC = REPO_ROOT / "src" / "ai_factory_os" / "services" / "organization"
 
 OS_PROJECT_SSOT = "src/legacy/factory-org/org/projects.py"
 

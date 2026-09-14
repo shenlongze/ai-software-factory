@@ -713,7 +713,7 @@ def build_console_service(
     workflow_lifecycle = None
     project_space = None
     try:
-        org_dir = repo_root / "ai_factory_os.services.organization" / "src" / "legacy" / "factory-org"
+        org_dir = repo_root / "src" / "ai_factory_os" / "services" / "organization"
         if org_dir.is_dir() and str(org_dir) not in sys.path:
             sys.path.insert(0, str(org_dir))
         from ai_factory_os.services.organization.projects import ProjectStore
@@ -768,7 +768,7 @@ def build_console_service(
     # None, session 操作按空/404 处理)
     session_store = None
     try:
-        exec_dir = repo_root / "ai_factory_os.services.organization" / "src" / "legacy" / "factory-exec"
+        exec_dir = repo_root / "src" / "legacy" / "factory-exec"
         if exec_dir.is_dir() and str(exec_dir) not in sys.path:
             sys.path.insert(0, str(exec_dir))
         _session_module = importlib.import_module("exec.runtime_session")
@@ -7374,7 +7374,7 @@ def build_app(
         try:
             import sys as _sys
 
-            _org_path = str(root.parent / "ai_factory_os.services.organization" / "src" / "legacy" / "factory-org")
+            _org_path = str(root.parent / "src" / "ai_factory_os" / "services" / "organization")
             if _org_path not in _sys.path:
                 _sys.path.insert(0, _org_path)
             from ai_factory_os.services.organization.cli import cmd_project_register

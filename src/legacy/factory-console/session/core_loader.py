@@ -29,13 +29,13 @@ def _ensure(path: str) -> None:
 
 def load_core(module: str, attr: str = "") -> Any:
     """加载 factory-core 子模块 (如 understanding.service); attr 非空 → 取属性。"""
-    _ensure(str(_ROOT / "@@ALREADY@@" / "src" / "legacy" / "factory-core"))
+    _ensure(str(_ROOT / "src" / "src" / "legacy" / "factory-core"))
     mod = importlib.import_module(module)
     return getattr(mod, attr) if attr else mod
 
 
 def load_exec(module: str, attr: str = "") -> Any:
     """加载 factory-exec 子模块 (如 exec.sandbox); attr 非空 → 取属性。"""
-    _ensure(str(_ROOT / "@@ALREADY@@" / "src" / "legacy" / "factory-exec"))
+    _ensure(str(_ROOT / "src" / "src" / "legacy" / "factory-exec"))
     mod = importlib.import_module(module)
     return getattr(mod, attr) if attr else mod

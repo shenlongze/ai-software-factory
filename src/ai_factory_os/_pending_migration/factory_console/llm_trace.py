@@ -38,7 +38,8 @@ def trace_path() -> Path:
 
 def record_llm_call(prompt: str, response: str | None, *,
                     duration_s: float | None = None,
-                    error: str = "", kind: str = "llm_raw") -> None:
+                    error: str = "", kind: str = "llm_raw",
+                    model: str = "", provider: str = "") -> None:
     """追加一条 LLM 调用记录（失败安全 ✓ 绝不影响调用方 ✓）。"""
     if os.environ.get("FACTORY_LLM_TRACE", "1") == "0":
         return
@@ -49,6 +50,11 @@ def record_llm_call(prompt: str, response: str | None, *,
             "prompt_chars": len(prompt or ""),
             "response_chars": len(response or ""),
             "duration_s": round(duration_s, 3) if duration_s is not None else None,
+            # ★ 记"这次用了哪个模型/供应商"（2026-09-14 ✓ Founder 问"真的好了么/正常使用么"）
+            #   原留痕只记 prompt/resp/耗时 ✗ → "底层改了配置实际用的是不是它"【无法自证 ✗】
+            #   → 记上后【一眼可验 ✓】+ 可按模型统计用量/成本 ✓
+            "model": model,
+            "provider": provider,
             "prompt": (prompt or "")[:_MAX_FIELD],
             "response": (response or "")[:_MAX_FIELD],
         }

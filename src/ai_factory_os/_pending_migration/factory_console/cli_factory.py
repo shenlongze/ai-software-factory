@@ -2626,6 +2626,10 @@ class FactoryCLI:
             head = (f"  [{r.get('ts', '?')}] {r.get('kind', '?')} "
                     f"· {r.get('duration_s') if dur is None else f'{dur}s'}"
                     f" · in {r.get('prompt_chars', 0)} / out {r.get('response_chars', 0)}")
+            # ★ 显示"这次用了哪个模型/供应商"（2026-09-14 ✓）
+            #   → 用户可【一眼验证"底层配的有没有真生效"】✓（此前做不到 ✗）
+            if r.get("model"):
+                head += f" · {r.get('provider') or '?'}/{r['model']}"
             print(head)
             lim = 4000 if full else 160
             pr = str(r.get("prompt") or "").replace("\n", " ⏎ ")

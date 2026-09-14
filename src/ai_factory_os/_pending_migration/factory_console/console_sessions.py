@@ -103,13 +103,24 @@ def _new_id(prefix: str) -> str:
 
 
 def _trace(prompt: str, response: str | None, *,
-           duration_s: float | None = None, error: str = "") -> None:
+           duration_s: float | None = None, error: str = "",
+           model: str = "", provider: str = "") -> None:
     """LLM 调用留痕（延迟导入 ✓ 失败安全 ✓ —— 绝不影响主链 ✓）。"""
     try:
         from .llm_trace import record_llm_call
-        record_llm_call(prompt, response, duration_s=duration_s, error=error)
+        record_llm_call(prompt, response, duration_s=duration_s, model=model, provider=provider, error=error)
     except Exception:  # noqa: BLE001
         pass
+
+
+def _llm_identity() -> tuple[str, str]:
+    """当前 LLM 身份 (model, provider) —— 供留痕 ✓（失败安全 ✓ 空串 ✓）。"""
+    try:
+        from factory_console.config import get_config
+        _l = get_config().get_llm()
+        return str(_l.get("model") or ""), str(_l.get("provider") or "")
+    except Exception:  # noqa: BLE001 — 留痕绝不因取身份失败而中断 ✓
+        return "", ""
 
 
 def llm_raw(prompt: str) -> str | None:
@@ -123,10 +134,14 @@ def llm_raw(prompt: str) -> str | None:
         text = llm_fn(prompt, "chat")
         text = str(text or "").strip()
         # ★ 思考留痕: 记录原始 prompt/输出（截断 ✓ 失败安全 ✓ 不影响主链 ✓）
-        _trace(prompt, text or None, duration_s=time.time() - _t0)
+        _m1, _p1 = _llm_identity()
+        _trace(prompt, text or None, duration_s=time.time() - _t0,
+               model=_m1, provider=_p1)
         return text or None
     except Exception as exc:  # noqa: BLE001 — LLM 挂 → None (调用方 fallback)
+        _m2, _p2 = _llm_identity()
         _trace(prompt, None, duration_s=time.time() - _t0,
+               model=_m2, provider=_p2,
                error=f"{type(exc).__name__}: {exc}")
         return None
 

@@ -8650,6 +8650,18 @@ class FactoryCLI:
             return 0
 
         if action == "add":
+            # ★ 参数校验（2026-09-14 补 ✓ Founder: "llm 配置管理有么" 引出 ✓）
+            #   原行为: 不给 id 也"✓ provider 已加入: （空）"✗ = 静默接受空值 ✓
+            #   （与"空输出静默"同类 ✓ —— 错误不响 ✓ 用户以为成功了 ✗）
+            if not target:
+                print("[E4410] 错误: provider id 必填 "
+                      "(factory llm add <provider_id> [--base-url URL] "
+                      "[--models m1,m2] [--env-ref ENV_VAR])", file=sys.stderr)
+                return 2
+            if not (getattr(args, "llm_env_ref", "") or "").strip() and \
+                    not (getattr(args, "llm_base_url", "") or "").strip():
+                print(f"[E4411] 提示: 未给 --env-ref 也未给 --base-url → "
+                      f"将加入一个【本地/无凭据】provider: {target}", file=sys.stderr)
             env_ref = (getattr(args, "llm_env_ref", "") or "").strip()
             models = [m.strip() for m in (getattr(args, "models", "") or "").split(",") if m.strip()]
             try:

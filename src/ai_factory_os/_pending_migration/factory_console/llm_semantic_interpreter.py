@@ -129,11 +129,26 @@ def _history_section(root: Any, user_message: str, *, limit: int = 3) -> list[st
 
         idx = HistoryIndex(Path(str(root)) / "search.db")
         try:
-            hits = idx.search(user_message, limit=limit)
+            # 只取 event/trace/experience —— 排除 message 源:
+            # 当前会话自身的消息（我的提问 + AI 上轮的回答）会以字面完全匹配
+            # 排在最前，既占位又误导（上轮回答可能正是"没找到" ✗）。
+            # 而"做过哪些项目"这类事实记录本就在 event 源里 ✓
+            hits = idx.search(user_message, limit=max(limit * 4, 12),
+                              sources=("event", "trace", "experience"))
         finally:
             idx.close()
         if not hits:
             return []
+        # ★ 排除"提问回声": 用户刚打的那句话字面存在于历史里（就是当前这轮对话），
+        #   它会以完全匹配排在最前，把真正的相关记录（如"记账项目"）挤出 3 条窗口 ✗
+        probe = " ".join(user_message.split())
+        kept = []
+        for h in hits:
+            body = " ".join((h.title + " " + h.snippet).split())
+            if len(probe) >= 8 and (probe[:40] in body or body[:40] in probe):
+                continue
+            kept.append(h)
+        hits = (kept or hits)[:limit]
         out = [
             "",
             "# 相关历史 (可供参考的真实记录)",

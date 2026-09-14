@@ -1251,7 +1251,7 @@ class FactoryCLI:
         if pid:
             runs = [r for r in runs if str(r.get("project_id") or "") == pid]
         if not runs:
-            print("=== 实时执行监控 ===")
+            print("=== 执行节点进度 ===")
             print("  当前没有 run 记录 ✓（没跑过 或 记录已清 ✓）")
             print("  跑一次: factory projectos deliver / 端到端流程 ✓")
             return 0
@@ -1267,7 +1267,8 @@ class FactoryCLI:
                 out += ((" " * pad + str(c)) if i in right else (str(c) + " " * pad)) + " │ "
             return out.rstrip()
 
-        print(f"=== 实时执行监控 ===（{len(runs)} 个 run）")
+        print(f"=== 执行节点进度（{len(runs)} 个 run）===")
+        print("   （宏观链路看: factory progress <项目> ✓ · 系统状态看: factory monitor ✓）")
         for r in runs:
             rid = str(r.get("run_id") or "")
             nrs = [n for n in (r.get("node_runs") or []) if isinstance(n, dict)]
@@ -3060,6 +3061,12 @@ class FactoryCLI:
         return None
 
     def progress(self, args: argparse.Namespace) -> int:
+       # ★ --run: 执行节点级进度 ✓（收拢自 monitor --live ✓ 命名统一 ✓）
+        if getattr(args, "run", False):
+            _a = argparse.Namespace(live=True,
+                                    project=str(getattr(args, "project_id", "") or ""),
+                                    limit=int(getattr(args, "limit", 5) or 5))
+            return self.monitor_live_cmd(_a)
         """项目进度视图 ✓（Founder: "监控，cli 中需要可以查看" ✓）。
 
         只读 ✓: 数据全部来自产品自身记录（会话/PRD/计划/ProductionRun/交付/验收 ✓）
@@ -8954,8 +8961,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_arch.add_argument("--why", default="", help="该项决策的理由")
     p_arch.add_argument("--data-dir", default=None)
 
-    p_pg = sub.add_parser("progress", help="项目进度: 链路 + 任务级 + 执行器（只读 ✓）")
+    # ★ 命名收拢（Founder: "命名统一" ✓ 2026-09-14）:
+    #   progress = 【进度】家族 ✓（宏观: 项目链路 / 微观: 执行节点 ✓）
+    #   monitor  = 【状态】家族 ✓（系统 + 项目快照 ✓ 只管"现在什么样"✓）
+    p_pg = sub.add_parser("progress", help="进度: 项目链路（默认）/ 执行节点（--run ✓）")
     p_pg.add_argument("project_id", nargs="?", default="", help="项目 id（省略=最近活跃 ✓）")
+    p_pg.add_argument("--run", action="store_true",
+                      help="看【执行节点】级进度: run 列表 + 每个任务的执行者/耗时/产物 ✓")
+    p_pg.add_argument("--limit", type=int, default=5, help="--run 时显示最近 N 个 run (默认 5)")
     p_pg.add_argument("--watch", action="store_true", help="循环刷新（默认打一次 ✓）")
     p_pg.add_argument("--interval", type=int, default=10, help="刷新间隔秒 (--watch ✓)")
     p_pg.add_argument("--data-dir", default=None)

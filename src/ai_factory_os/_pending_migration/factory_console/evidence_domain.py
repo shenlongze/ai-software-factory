@@ -35,11 +35,14 @@ def _evidence_file(root: Path | str, evidence_id: str) -> Path:
 
 
 def _load_all(root: Path | str) -> dict[str, dict[str, Any]]:
-    d = Path(root) / "evidence"
-    if not d.is_dir():
-        return {}
+    """读全部证据 —— 【全局 ✓ + 各项目 ✓】合并（铁律: 按归属分片 ✓）。"""
+    base = Path(root)
     out: dict[str, dict[str, Any]] = {}
-    for p in sorted(d.glob("EVD-*.json")):
+    _files: list[Path] = []
+    for d in [base / "evidence", *sorted(base.glob("projects/*/evidence"))]:
+        if d.is_dir():
+            _files.extend(sorted(d.glob("EVD-*.json")))
+    for p in _files:
         try:
             data = json.loads(p.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):

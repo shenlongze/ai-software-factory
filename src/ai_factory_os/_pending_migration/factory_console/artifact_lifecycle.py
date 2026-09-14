@@ -87,6 +87,16 @@ def _artifacts_dir(root: Path | str) -> Path:
     return Path(root) / "artifacts"
 
 
+def _artifacts_dirs(root: Path | str) -> list[Path]:
+    """读侧目录集: 【全局 ✓ + 各项目 ✓】（Founder 铁律: 按归属分片 ✓）。
+
+    写侧仍走 _artifact_path → _artifacts_dir（全局 ✓）；
+    读侧合并两处 ✓ → 项目内为真身 ✓（与 exec/会话/任务树 同一套路 ✓）。
+    """
+    base = Path(root)
+    return [base / "artifacts", *sorted(base.glob("projects/*/artifacts"))]
+
+
 def _artifact_path(root: Path | str, artifact_id: str) -> Path:
     # 按 artifact_id 前缀分片 (避免单目录文件过多)
     return _artifacts_dir(root) / artifact_id[:2] / f"{artifact_id}.json"
@@ -208,10 +218,11 @@ def _find_artifact(
     - 只给 exs_id: 同 EXS 同 type 唯一 (I8 chain: gateway 产物收纳)
     - 两者都给: 同 run + 同 EXS 同 type 唯一
     """
-    arts_dir = _artifacts_dir(root)
-    if not arts_dir.is_dir():
-        return None
-    for p in arts_dir.glob("*/*.json"):
+    _files: list[Path] = []
+    for _d in _artifacts_dirs(root):
+        if _d.is_dir():
+            _files.extend(sorted(_d.glob("*/*.json")))
+    for p in _files:
         try:
             data = json.loads(p.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
@@ -241,10 +252,11 @@ def get_artifact(root: Path | str, artifact_id: str) -> dict[str, Any] | None:
 
 def list_artifacts(root: Path | str, project_id: str | None = None) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
-    base = _artifacts_dir(root)
-    if not base.is_dir():
-        return out
-    for sub in sorted(base.iterdir()):
+    _subs: list[Path] = []
+    for base in _artifacts_dirs(root):
+        if base.is_dir():
+            _subs.extend(sorted(s for s in base.iterdir() if s.is_dir()))
+    for sub in _subs:
         if not sub.is_dir():
             continue
         for f in sorted(sub.glob("*.json")):

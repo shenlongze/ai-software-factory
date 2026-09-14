@@ -21,7 +21,7 @@ import os
 import subprocess
 from pathlib import Path
 
-from .models import GitChange, GitCommit, GitContext
+from .types import GitChange, GitCommit, GitContext
 
 # git 输出稳定性: 强制 C locale (Phase 6D 修复, ADR-0019 决策 5) — 系统 locale
 # (如 zh_CN.UTF-8) 会让 git 错误信息中文化 ("致命错误：不是 Git 仓库"), 破坏

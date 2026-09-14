@@ -73,8 +73,8 @@ from orchestration.pipeline import execute_workflow as run_orchestration
 from dashboard.collector import DashboardCollector
 from dashboard.renderer import VIEWS as DASHBOARD_VIEWS
 
-from git.client import GitClient
-from git.service import GitChangeStore, GitService
+from ai_factory_os.infrastructure.git.client import GitClient
+from ai_factory_os.infrastructure.git.service import GitChangeStore, GitService
 
 from change.service import ChangeService, ChangeStore  # Phase 6D (ADR-0019)
 

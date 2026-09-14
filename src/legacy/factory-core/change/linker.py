@@ -20,8 +20,8 @@ from __future__ import annotations
 import re
 from typing import Any, Iterable
 
-from git.client import GitClient
-from git.models import GitCommit
+from ai_factory_os.infrastructure.git.client import GitClient
+from ai_factory_os.infrastructure.git.types import GitCommit
 
 from .models import GitBranchContext
 

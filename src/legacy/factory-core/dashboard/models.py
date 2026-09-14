@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 
 from metrics.models import AgentUtilizationSummary, FactoryMetrics, RuntimeUsageSummary
 
-from git.models import GitChange, GitCommit, GitContext
+from ai_factory_os.infrastructure.git.types import GitChange, GitCommit, GitContext
 
 
 class TaskSnapshot(BaseModel):

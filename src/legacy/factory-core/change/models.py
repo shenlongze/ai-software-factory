@@ -24,7 +24,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
-from git.models import GitCommit
+from ai_factory_os.infrastructure.git.types import GitCommit
 
 # 分支任务上下文状态 (linker.bind_branch 判定)
 _BRANCH_STATUSES = frozenset({"bound", "unbound", "error"})

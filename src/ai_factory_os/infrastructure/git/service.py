@@ -28,7 +28,7 @@ from typing import Any
 
 from .client import GitClient
 from .events import record_git_change_detected
-from .models import GitChange, GitCommit, GitContext
+from .types import GitChange, GitCommit, GitContext
 
 class GitTaskNotFoundError(Exception):
     """bind_task_change 引用不存在的任务 (仅装配 task_store 时校验)。"""

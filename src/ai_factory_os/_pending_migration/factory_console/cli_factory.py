@@ -783,6 +783,26 @@ def _task_rows(data_dir: Path) -> list[dict[str, Any]]:
     2. backlog management/task.json (会话/WebUI 创建, workspace/projects/*/)
     """
     rows: list[dict[str, Any]] = []
+    # ★ 补 role / agent 两列（Founder: 想看"按角色/按人"✓）—— 失败安全 ✓
+    _role_by_task: dict[str, str] = {}
+    _agent_by_task: dict[str, str] = {}
+    try:
+        import json as _json
+        for _f in [data_dir / "ops" / "unified" / "entities.json"]:
+            if _f.is_file():
+                for _e in _json.loads(_f.read_text(encoding="utf-8")):
+                    if isinstance(_e, dict) and _e.get("type") == "task":
+                        _r = str(_e.get("required_role") or "").strip()
+                        if _r:
+                            _role_by_task[str(_e.get("id"))] = _r
+        _af = data_dir / "assignments" / "assignments.json"
+        if _af.is_file():
+            _d = _json.loads(_af.read_text(encoding="utf-8"))
+            for _a in (list(_d.values()) if isinstance(_d, dict) else _d):
+                if isinstance(_a, dict) and _a.get("task_id"):
+                    _agent_by_task[str(_a["task_id"])] = str(_a.get("agent_id") or "")
+    except Exception:  # noqa: BLE001 — 失败安全 ✓ 补不上就不补 ✓
+        pass
     for path in sorted((data_dir / "tasks").glob("*.json")):
         row = _load_json_safe(path)
         if not isinstance(row, dict) or not row.get("id"):
@@ -793,6 +813,8 @@ def _task_rows(data_dir: Path) -> list[dict[str, Any]]:
                 "title": row.get("title", ""),
                 "status": row.get("status", ""),
                 "project": row.get("project", ""),
+                "role": _role_by_task.get(str(row.get("id", "")), ""),
+                "agent": _agent_by_task.get(str(row.get("id", "")), ""),
             }
         )
     for pdir in sorted((data_dir / "workspace" / "projects").glob("*")):
@@ -2979,6 +3001,44 @@ class FactoryCLI:
         if pid:
             rows = [r for r in rows if pid in str(r.get("project") or "")]
 
+        group = str(getattr(args, "group", "status") or "status")
+        show_all = bool(getattr(args, "all", False))
+
+        # ── 非 status 维度（Founder: 想看"按项目/按人"✓）────────────────
+        if group in ("project", "role", "agent"):
+            key_fn = {
+                "project": lambda r: str(r.get("project") or "(无项目)"),
+                "role": lambda r: str(r.get("role") or "(无角色)"),
+                "agent": lambda r: str(r.get("agent") or "(未分配)"),
+            }[group]
+            buckets_p: dict[str, list[dict]] = {}
+            for r in rows:
+                buckets_p.setdefault(key_fn(r), []).append(r)
+            order = sorted(buckets_p, key=lambda k: (-len(buckets_p[k]), k))
+            print(f"=== 看板 · 按{ {'project': '项目', 'role': '角色', 'agent': '执行人'}[group] }"
+                  f"分列（共 {len(rows)} 个任务 · {len(order)} 列）===")
+            print()
+            for k in (order if show_all else order[:12]):
+                items = buckets_p[k]
+                done = sum(1 for i in items if str(i.get("status")) == "done")
+                print(f"  ┌─ {k[:34]}（{len(items)} 个 · 完成 {done}）")
+                for r in (items if show_all else items[:3]):
+                    print(f"  │  {str(r.get('id'))[:20]:22s} {str(r.get('title'))[:38]:40s}"
+                          f" [{str(r.get('status'))[:11]}]")
+                if len(items) > 3 and not show_all:
+                    print(f"  │  … 另 {len(items) - 3} 条")
+                print("  └" + "─" * 40)
+            if len(order) > 12 and not show_all:
+                print(f"  … 另 {len(order) - 12} 列（--all 看全部）")
+            print()
+            print("  数据源: ①tasks/*.json ②backlog task.json ③分配记录（agent 维度 ✓）")
+            if group == "role":
+                print("  ⚠ 多数任务无 required_role ✗ → 会集中在「(无角色)」列"
+                      "（数据现状 ✓ 不是显示 bug ✗）")
+            if group == "agent":
+                print("  ⚠ 分配记录仅 4 条 ✗ → 「(未分配)」会很大 ✓（数据现状 ✓）")
+            return 0
+
         COLS = [("todo", "待办"), ("ready", "就绪"), ("in_progress", "进行中"),
                 ("review", "待评审"), ("blocked", "受阻"), ("failed", "失败"),
                 ("done", "完成"), ("cancelled", "取消")]
@@ -2990,7 +3050,6 @@ class FactoryCLI:
 
         print(f"=== 看板（{'项目含 ' + pid if pid else '全部'} · 共 {len(rows)} 个任务）===")
         print()
-        show_all = bool(getattr(args, "all", False))
         for key, label in COLS:
             items = buckets[key]
             if not items and key not in ("todo", "in_progress"):
@@ -8794,6 +8853,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_kb = sub.add_parser("kanban", help="看板: 按状态分列显示任务（复用 task 数据 ✓）")
     p_kb.add_argument("--project", default="", help="只看某个项目 (可选)")
     p_kb.add_argument("--all", action="store_true", help="每列不限条数")
+    p_kb.add_argument("--group", default="status",
+                      choices=["status", "project", "role", "agent"],
+                      help="分列维度: status(默认)/project/role/agent")
     p_kb.add_argument("--data-dir", default=None)
 
     p_sync = sub.add_parser(

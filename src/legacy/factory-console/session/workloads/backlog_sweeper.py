@@ -753,7 +753,7 @@ class BacklogSweeper:
         try:
             from exec.store import ExecStore
             from exec.approval import ApprovalGate
-            from exec.models import (
+            from ai_factory_os.services.execution.types import (
                 Artifact, ArtifactType, ExecutionRequest, ExecutionResult,
                 ExecutionStatus, new_id,
             )

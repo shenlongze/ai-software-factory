@@ -28,7 +28,7 @@ from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
-from .models import (
+from ai_factory_os.services.execution.types import (
     ApprovalRecord,
     Artifact,
     ExecutionRequest,

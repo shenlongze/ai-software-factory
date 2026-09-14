@@ -35,7 +35,7 @@ from typing import Any, cast
 
 import httpx
 
-from ..provider import ProviderError, ProviderInterface, ProviderRequest, ProviderResponse
+from ai_factory_os.infrastructure.llm.provider import ProviderError, ProviderInterface, ProviderRequest, ProviderResponse
 
 #: OpenAI Chat Completions API 端点 (官方, 2026-08 稳定)
 DEFAULT_BASE_URL = "https://api.openai.com/v1/chat/completions"

@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .models import ExecutionResult
+from ai_factory_os.services.execution.types import ExecutionResult
 
 #: 成功/失败表现分 (经验记录事实分, ADR-0033: 经验是背书不是替代)
 SCORE_SUCCESS = 0.8

@@ -33,7 +33,7 @@ from typing import Any
 
 from .agent_runtime import AgentRuntime
 from .experience import ExperienceRecorder
-from .models import ExecutionRequest, ExecutionResult, new_id
+from ai_factory_os.services.execution.types import ExecutionRequest, ExecutionResult, new_id
 from ai_factory_os.infrastructure.llm.provider import ProviderInterface
 from ai_factory_os.plugins.agents.roles import (
     RoleError,

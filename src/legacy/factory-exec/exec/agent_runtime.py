@@ -42,7 +42,7 @@ from . import events as exec_events
 from .candidate import SequentialRunner
 from ai_factory_os.plugins.agents.developer import DeveloperAgent, DeveloperError
 from .experience import ExperienceRecorder
-from .models import (
+from ai_factory_os.services.execution.types import (
     AgentInstance,
     Artifact,
     ArtifactType,

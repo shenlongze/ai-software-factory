@@ -66,7 +66,7 @@ from .experience_ctx import (
     FAILURE_VALIDATION,
     FAILURE_TYPES,
 )
-from .models import _ExecModel, new_id, utcnow
+from ai_factory_os.services.execution.types import _ExecModel, new_id, utcnow
 
 #: 成功/失败候选质量分 (0-100; 保守基线: 验证通过 80 / 失败 0 — 诚实不臆造
 #: 精细评分; 精细排名由 T5.3 CandidateEvaluator 5 层确定性评分承担)。
@@ -295,7 +295,7 @@ def candidate_from_result(
     patch = ""
     for artifact in getattr(result, "artifacts", []) or []:
         if getattr(artifact, "type", None) is not None:
-            from .models import ArtifactType
+            from ai_factory_os.services.execution.types import ArtifactType
 
             if getattr(artifact, "type", None) == ArtifactType.PATCH:
                 path = getattr(artifact, "path", "") or ""

@@ -42,7 +42,7 @@ from typing import Any, Protocol
 
 from pydantic import BaseModel, Field
 
-from .models import ExecutionRequest, new_id
+from src.ai_factory_os.services.execution.types import ExecutionRequest, new_id
 from ai_factory_os.infrastructure.llm.provider import ProviderInterface, ProviderRequest
 from .runtime_session import (
     AgentStepType,
@@ -50,7 +50,7 @@ from .runtime_session import (
     RuntimeSession,
     RuntimeSessionStatus,
 )
-from .skill import resolve_agent_skills, skill_context_for
+from src.ai_factory_os.plugins.skills.skill import resolve_agent_skills, skill_context_for
 
 #: ACTION_REQUIRED 轮次上限 (超限 → 诚实 FAILED — 禁无限循环)。
 MAX_ROUNDS = 4

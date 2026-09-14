@@ -40,7 +40,7 @@ from typing import Any, Callable, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from .models import utcnow
+from src.ai_factory_os.services.execution.types import utcnow
 
 #: Tool handler 签名: (input: dict, context: dict) -> Any (输出任意可 JSON 序列化值)。
 ToolHandler = Callable[[dict[str, Any], dict[str, Any]], Any]
@@ -283,7 +283,7 @@ class ToolRegistry:
     def with_system_tools(cls) -> "ToolRegistry":
         """启动加载系统 Tool (本 Task: filesystem.read — workspace 沙箱读)。"""
         registry = cls()
-        from .tools.filesystem import build_filesystem_read_tool
+        from src.ai_factory_os.plugins.tools.filesystem import build_filesystem_read_tool
 
         registry.register(build_filesystem_read_tool())
         return registry

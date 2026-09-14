@@ -51,7 +51,7 @@ from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from .models import utcnow
+from ai_factory_os.services.execution.types import utcnow
 
 
 def new_session_id() -> str:

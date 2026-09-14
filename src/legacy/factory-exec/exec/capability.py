@@ -39,7 +39,7 @@ from typing import Any, Iterable
 
 from pydantic import Field, field_validator
 
-from .models import _ExecModel
+from ai_factory_os.services.execution.types import _ExecModel
 
 #: 七项能力评分 (0-1 声明式; 顺序固定 — 审计/序列化/校验共用单一事实源)。
 CAPABILITY_SCORES: tuple[str, ...] = (

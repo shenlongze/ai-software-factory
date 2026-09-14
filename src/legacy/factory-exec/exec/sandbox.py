@@ -35,7 +35,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from .models import SandboxSession, new_id, utcnow
+from ai_factory_os.services.execution.types import SandboxSession, new_id, utcnow
 
 #: 副本拷贝忽略项 (依赖/构建产物/vcs 元数据 — 沙箱只追踪源码变更)。
 #: 构建产物 (build/.dart_tool/dist 等) 即使全量拷贝也默认忽略 — 沙箱语义是

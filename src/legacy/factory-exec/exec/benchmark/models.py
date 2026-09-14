@@ -23,7 +23,7 @@ from typing import Any, Callable
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from ..models import new_id, utcnow
+from ai_factory_os.services.execution.types import new_id, utcnow
 
 
 class SampleKind(str, Enum):

@@ -30,7 +30,7 @@ from typing import Any
 import re
 
 from . import events as exec_events
-from .models import ApprovalDecision, ApprovalRecord, ExecutionResult, new_id, utcnow
+from ai_factory_os.services.execution.types import ApprovalDecision, ApprovalRecord, ExecutionResult, new_id, utcnow
 from .store import ExecStore
 
 #: 高风险信号 (爆炸半径大 → 必须 tech_lead/compliance 批准)

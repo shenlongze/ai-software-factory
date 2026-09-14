@@ -42,7 +42,7 @@ from . import events as exec_events
 from .agent_runtime import AgentRuntime
 from .approval import ApprovalError, ApprovalGate
 from .experience import ExperienceRecorder
-from .models import AgentInstance, ExecutionRequest, new_id
+from ai_factory_os.services.execution.types import AgentInstance, ExecutionRequest, new_id
 from ai_factory_os.infrastructure.llm.provider import ProviderRegistry
 from .store import ExecStore
 

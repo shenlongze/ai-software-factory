@@ -50,8 +50,8 @@ import time
 from pathlib import Path
 from typing import Any
 
-from ..developer import DeveloperAgent, DeveloperError, FailureReason, classify_failure
-from ..provider import ProviderConfigChecker, ProviderInterface
+from ai_factory_os.plugins.agents.developer import DeveloperAgent, DeveloperError, FailureReason, classify_failure
+from ai_factory_os.infrastructure.llm.provider import ProviderConfigChecker, ProviderInterface
 from ..sandbox import Sandbox
 from . import verifiers as benchmark_verifiers
 from .models import (

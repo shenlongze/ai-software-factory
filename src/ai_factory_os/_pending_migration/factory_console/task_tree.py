@@ -67,7 +67,15 @@ DECOMPOSE_TEMPLATES: dict[str, list[str]] = {
 def decompose(root: Path | str, *, title: str, description: str = "",
               domain: str = "default",
               source_conv_id: str = "", source_req_id: str = "") -> dict[str, Any]:
-    """确定性任务分解: 需求 → task 树 (S43 task_ 实体, parent/children 层级)。"""
+    """确定性【回归夹具】分解: 需求 → task 树 (S43 task_ 实体)。
+
+    ★ 生产路径【不】经过这里 —— 一律走 LLM 分解器
+      (task_decomposition.build_llm_decomposer: 真实需求分析 + 不限层数
+       + 任务带 required_role/required_skill + 依赖 DAG)。
+    本函数用【固定模板】(DECOMPOSE_TEMPLATES) 产出稳定结果，专供
+    golden_suite 回归断言（要确定性 + 快，不能调 LLM）。
+    CLI 曾误用它做真实拆解（产出永远那六个通用任务 ✗）→ 已改正。
+    """
     # 1. Requirement 实体 (若未建)
     req = None
     if source_conv_id:

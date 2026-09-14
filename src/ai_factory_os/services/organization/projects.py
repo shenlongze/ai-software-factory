@@ -649,13 +649,18 @@ class ProjectStore:
 
 def _validate_exec_role(role_id: str) -> None:
     """Stage.role_id 校验 (exec 注册表单一事实源; 未安装 → 跳过, 不假装)。"""
+    # ★ 修 F821/内建遮蔽真 bug ✗（2026-09-14 实测崩溃 ✓）:
+    #   原写 `exec.roles.require_role(role_id)` ✗ —— 此处的 exec 是【Python 内建 exec() ✗】
+    #   不是那个模块 ✗ → AttributeError（≠ ImportError → 不被捕获 → 直接抛 ✗）
+    #   → 任何【建 stage】都会崩 ✗（核心路径 ✗）
+    #   异常类 `except exec.roles.RoleError` ✗ 同样崩（求值异常类时 AttributeError ✗）
     try:
-        import ai_factory_os.plugins.agents.roles  # type: ignore[import-not-found]
-
-        exec.roles.require_role(role_id)
+        from ai_factory_os.plugins.agents.roles import RoleError, require_role
     except ImportError:
-        return
-    except exec.roles.RoleError as exc:  # type: ignore[attr-defined]
+        return                      # 角色注册表未安装 → 跳过校验 ✓ 不假装 ✓
+    try:
+        require_role(role_id)
+    except RoleError as exc:
         raise ValueError(str(exc)) from exc
 
 

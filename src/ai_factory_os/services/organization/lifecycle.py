@@ -22,6 +22,7 @@
 """
 
 from __future__ import annotations
+from ai_factory_os.plugins.agents.roles import RoleError  # ★ F821 修复 ✓
 
 from typing import Any
 
@@ -252,7 +253,7 @@ class OrgLifecycle:
 
             try:
                 return exec.roles.resolve_role(role_ref).role_id
-            except exec.roles.RoleError:
+            except RoleError:   # ★ 原写 exec.roles.RoleError ✗（见 projects.py 同修 ✓）
                 return None
         except ImportError:
             return None

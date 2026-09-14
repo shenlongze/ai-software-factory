@@ -76,7 +76,7 @@ from dashboard.renderer import VIEWS as DASHBOARD_VIEWS
 from ai_factory_os.infrastructure.git.client import GitClient
 from ai_factory_os.infrastructure.git.service import GitChangeStore, GitService
 
-from change.service import ChangeService, ChangeStore  # Phase 6D (ADR-0019)
+from ai_factory_os.services.work.change.service import ChangeService, ChangeStore  # Phase 6D (ADR-0019)
 
 from changeflow.engine import ChangeWorkflowEngine  # Phase 6E (ADR-0020)
 from changeflow.events import record_change_trigger_viewed  # Phase 6E (ADR-0020)

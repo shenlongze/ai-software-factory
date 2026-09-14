@@ -23,7 +23,7 @@ from typing import Any
 
 from ai_factory_os.infrastructure.events.types import Event, EventType
 
-from .models import ChangeAnalysis, ChangeContext, ChangeValidationResult, GitBranchContext
+from .types import ChangeAnalysis, ChangeContext, ChangeValidationResult, GitBranchContext
 
 
 def record_git_task_bound(

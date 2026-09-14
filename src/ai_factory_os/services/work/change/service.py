@@ -38,7 +38,7 @@ from .events import (
     record_git_task_bound,
 )
 from .linker import CommitLinker, bind_branch
-from .models import (
+from .types import (
     ChangeAnalysis,
     ChangeContext,
     ChangeValidationResult,

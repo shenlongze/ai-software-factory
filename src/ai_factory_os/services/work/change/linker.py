@@ -23,7 +23,7 @@ from typing import Any, Iterable
 from ai_factory_os.infrastructure.git.client import GitClient
 from ai_factory_os.infrastructure.git.types import GitCommit
 
-from .models import GitBranchContext
+from .types import GitBranchContext
 
 # 任务 ID 类型段 (MP-<TYPE>-<NUM> 的 TYPE 词汇)
 _TASK_TYPES = ("BUG", "FEATURE", "TASK", "EPIC", "STORY", "CHORE")

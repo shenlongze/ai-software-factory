@@ -166,7 +166,7 @@ def rule_change(ctx: Any) -> ValidationResult:
     - 有证据但无关联提交且标题与路径无重叠 → FAIL。
     - 关联提交命中或标题与路径/模块重叠 → PASS。
     """
-    from change.analyzer import l4_checks, l4_verdict  # 延迟导入: 避免模块加载环
+    from ai_factory_os.services.work.change.analyzer import l4_checks, l4_verdict  # 延迟导入: 避免模块加载环
 
     checks = l4_checks(ctx)
     verdict = l4_verdict(checks)

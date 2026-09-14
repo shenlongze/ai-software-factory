@@ -21,7 +21,7 @@ from typing import Any
 
 from ai_factory_os.infrastructure.git.types import GitChange, GitCommit
 
-from .models import ChangeAnalysis, ChangeContext
+from .types import ChangeAnalysis, ChangeContext
 
 # 模块推断噪声目录 (路径分段过滤, 不产生模块名)
 _NOISE_DIRS = frozenset({"__pycache__", ".git", "node_modules", "dist", "build", ".venv", "venv"})

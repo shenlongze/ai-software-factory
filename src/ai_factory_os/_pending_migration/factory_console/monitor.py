@@ -233,3 +233,64 @@ def read_snapshots(root: Path | str, limit: int = 10, offset: int = 0) -> list[d
 
 
 __all__ = ["collect_system", "collect_project", "save_snapshot", "read_snapshots", "snapshot_count", "port_up", "check_alerts", "QUALITY_ALERT_THRESHOLD", "FRONTEND_PORT", "BACKEND_PORT"]
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 实时执行监控（2026-09-14 补 ✓ Founder: "监控，cli 中需要可以查看"）
+#
+# 为什么补（Founder 指出 ✓）: factory monitor 只给【静态项目清单】✗
+#   （阶段:— 任务:0 未评测 ✓ 看不出"现在在跑什么"✗）
+#   → 而执行过程【只有个人脚本能看 ✗】= 有数据无入口 ✓（Founder 的可视性铁律 ✗）
+# 数据源（全部产品侧 ✓ 不 grep 进程 ✗）:
+#   ProductionRun.node_runs（状态 ✓）+ NodeRun 记录（started/completed ✓）
+#   + 任务树（标题 ✓）+ 交付记录（是否已交付 ✓）
+# ══════════════════════════════════════════════════════════════════════════
+
+
+def live_runs(root: Path | str, *, limit: int = 5) -> list[dict[str, Any]]:
+    """列出 run（运行中优先 ✓ 然后按时间倒序 ✓）。"""
+    from factory_console.production_run import list_production_runs
+
+    runs = [r for r in (list_production_runs(root) or []) if isinstance(r, dict)]
+    runs.sort(key=lambda r: (str(r.get("state")) != "RUNNING",
+                             str(r.get("run_id") or "")), reverse=False)
+    running = [r for r in runs if str(r.get("state")) == "RUNNING"]
+    others = [r for r in runs if str(r.get("state")) != "RUNNING"]
+    return (running + others)[:limit]
+
+
+def node_titles(root: Path | str, plan_id: str) -> dict[str, str]:
+    """从任务树取节点标题 ✓（按 plan_id 内容匹配 ✓ 不按文件名猜 ✗）。"""
+    import json as _json
+
+    for f in sorted((Path(root) / "task_trees").glob("*.json"),
+                    key=lambda p: p.stat().st_mtime, reverse=True)[:20]:
+        try:
+            d = _json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if d.get("plan_id") == plan_id or d.get("id") == plan_id:
+            return {str(n.get("id")): str(n.get("title") or "")[:30]
+                    for n in (d.get("nodes") or []) if isinstance(n, dict)}
+    return {}
+
+
+def node_duration(root: Path | str, run_id: str) -> str:
+    """单节点耗时 ✓（读 NodeRun 记录 ✓ 缺字段就返回 — ✗ 不编 ✓）。"""
+    import json as _json
+    from datetime import datetime
+
+    for f in [Path(root) / "nodes" / "runs" / f"{run_id}.json"]:
+        if not f.is_file():
+            continue
+        try:
+            d = _json.loads(f.read_text(encoding="utf-8"))
+            a, b = str(d.get("started_at") or ""), str(d.get("completed_at") or "")
+            if a and b:
+                fa = datetime.fromisoformat(a.replace("Z", "+00:00"))
+                fb = datetime.fromisoformat(b.replace("Z", "+00:00"))
+                s = int((fb - fa).total_seconds())
+                return f"{s}s" if s < 60 else f"{s // 60}m{s % 60:02d}s"
+        except (OSError, ValueError):
+            pass
+    return "—"

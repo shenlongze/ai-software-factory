@@ -1165,6 +1165,8 @@ class FactoryCLI:
             return self.eval_cmd(args)
         if args.command == "artifacts":
             return self.artifacts_cmd(args)
+        if args.command == "monitor" and getattr(args, "live", False):
+            return self.monitor_live_cmd(args)
         if args.command == "monitor":
             return self.monitor_cmd(args)
         if args.command == "update":
@@ -1233,6 +1235,74 @@ class FactoryCLI:
         print(f"[{label}] {status}")
         for p in report.get("problems", []):
             print(f"  - {p['issue']}: {p['detail']}")
+
+    def monitor_live_cmd(self, args: argparse.Namespace) -> int:
+        """实时执行监控 ✓（Founder: "监控，cli 中需要可以查看" ✓）。
+
+        与 monitor（静态项目清单 ✗）互补: 这里看【正在跑什么 ✓ 谁在做 ✓ 到哪了 ✓】。
+        数据全来自产品记录（ProductionRun / NodeRun / 任务树 ✓）不 grep 进程 ✗。
+        """
+        from . import monitor as _mon
+        from .production_run import get_production_run
+
+        root = Path(self.data_dir)
+        pid = str(getattr(args, "project", "") or "").strip()
+        runs = _mon.live_runs(root, limit=int(getattr(args, "limit", 5) or 5))
+        if pid:
+            runs = [r for r in runs if str(r.get("project_id") or "") == pid]
+        if not runs:
+            print("=== 实时执行监控 ===")
+            print("  当前没有 run 记录 ✓（没跑过 或 记录已清 ✓）")
+            print("  跑一次: factory projectos deliver / 端到端流程 ✓")
+            return 0
+
+        def _w(s: str) -> int:                      # 显示宽度（中文=2 ✓）
+            import unicodedata as _u
+            return sum(2 if _u.east_asian_width(c) in ("W", "F") else 1 for c in str(s))
+
+        def _row(cells: list[str], widths: list[int], right: set[int] = set()) -> str:
+            out = "│ "
+            for i, c in enumerate(cells):
+                pad = max(0, widths[i] - _w(c))
+                out += ((" " * pad + str(c)) if i in right else (str(c) + " " * pad)) + " │ "
+            return out.rstrip()
+
+        print(f"=== 实时执行监控 ===（{len(runs)} 个 run）")
+        for r in runs:
+            rid = str(r.get("run_id") or "")
+            nrs = [n for n in (r.get("node_runs") or []) if isinstance(n, dict)]
+            done = sum(1 for n in nrs if n.get("state") == "COMPLETED")
+            bad = sum(1 for n in nrs if n.get("state") in ("FAILED", "BLOCKED"))
+            mark = {"RUNNING": "🔄 运行中", "COMPLETED": "✅ 已完成",
+                    "FAILED": "❌ 失败", "BLOCKED": "⛔ 受阻"}.get(str(r.get("state")), str(r.get("state")))
+            print()
+            print(f"📦 {rid}  {mark}  · 项目 {r.get('project_id') or '-'}  · 计划 {r.get('workflow_id') or '-'}")
+            if not nrs:
+                print("   （还没开始执行任何节点 ✓）")
+                continue
+            print(f"   进度: {done}/{len(nrs)} 完成" + (f" · {bad} 个失败/受阻 ✗" if bad else " ✓"))
+            titles = _mon.node_titles(root, str(r.get("workflow_id") or ""))
+            rows = []
+            for n in nrs:
+                nid = str(n.get("node_id") or "")
+                st = {"COMPLETED": "✅ 完成", "FAILED": "❌ 失败",
+                      "BLOCKED": "⛔ 受阻", "RUNNING": "🔄 进行中"}.get(str(n.get("state")), "⏳ 待做")
+                rows.append([titles.get(nid, nid[-16:]), st,
+                             "codex" if n.get("run_id") else "-",
+                             _mon.node_duration(root, str(n.get("run_id") or "")),
+                             "✓" if n.get("artifact_id") else ""])
+            heads = ["任务", "状态", "执行者", "耗时", "产物"]
+            widths = [max(_w(heads[i]), *(_w(x[i]) for x in rows)) for i in range(5)]
+            line = "┌" + "┬".join("─" * (w + 2) for w in widths) + "┐"
+            print("   " + line)
+            print("   " + _row(heads, widths))
+            print("   " + "├" + "┼".join("─" * (w + 2) for w in widths) + "┤")
+            for x in rows[:10]:
+                print("   " + _row(x, widths))
+            if len(rows) > 10:
+                print(f"   （另 {len(rows) - 10} 条 ✓ 用 --limit 调整 run 数 ✓）")
+            print("   " + "└" + "┴".join("─" * (w + 2) for w in widths) + "┘")
+        return 0
 
     def monitor_cmd(self, args: argparse.Namespace) -> int:
         """factory monitor — 统一监控运维: 系统 + 全部项目 状态快照。
@@ -9397,9 +9467,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="list — 项目产出物清单 (存在/缺失/版本); validate — 对照标准报漂移",
     )
     p_artifacts.add_argument("project", nargs="?", default="", help="项目 id (缺省: 全部)")
-    sub.add_parser(
+    p_mon = sub.add_parser(
         "monitor", help="统一监控运维 (D 系列): 系统+全部项目 状态快照 (端口/质量/任务/产出物)"
     )
+    p_mon.add_argument("--live", action="store_true",
+                           help="实时执行进度: 正在跑的 run + 节点级（谁做的/耗时/产物 ✓）")
+    p_mon.add_argument("--project", default="", help="只看某个项目")
+    p_mon.add_argument("--limit", type=int, default=5, help="显示最近 N 个 run (默认 5)")
     p_task = sub.add_parser(
         "task", help="Task 管理: list — 列出; prompt — 生成执行指令; run — 执行任务 (走 exec CLI)"
     )

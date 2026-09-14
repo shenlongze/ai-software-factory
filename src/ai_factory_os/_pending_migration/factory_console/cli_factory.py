@@ -6780,7 +6780,10 @@ class FactoryCLI:
                 print(f"[E4033] 用法: factory governance {action} <project_id>",
                       file=sys.stderr)
                 return 2
-            bfile = root / "projects" / str(target) / "budget.json"
+            # ★ 文件名必须与【读取方】一致 ✗：
+            #   board.py:3225 读 <ws>/projects/<slug>/project_budget.json ✓
+            #   production_session.py:48 PROJECT_BUDGET_FILE_NAME = "project_budget.json" ✓
+            bfile = root / "projects" / str(target) / "project_budget.json"
             if action == "set":
                 b = ProjectBudget.load_or_default(bfile)
                 mapping = {"max_tokens": "max_total_tokens",

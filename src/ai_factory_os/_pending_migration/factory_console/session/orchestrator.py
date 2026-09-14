@@ -731,6 +731,30 @@ class _GovernanceContext:
             None,
         )
 
+    def _entity_policy(self, task: Optional[dict[str, Any]]) -> str:
+        """取该任务的【实体级策略】(BLOCK/WARN/APPROVE)；取不到 → 空（走默认 ✓）。
+
+        来源顺序:
+          ① task 字典自带 policy ✓（编排层已带则最快 ✓）
+          ② 实体库 ops/unified/entities.json 按 task id 查 ✓（含项目分片 ✓）
+        失败安全: 任何异常 → 返回空 ✓（绝不因查策略中断执行 ✓）。
+        """
+        try:
+            if isinstance(task, dict) and task.get("policy"):
+                return str(task["policy"]).strip().lower()
+            tid = ""
+            if isinstance(task, dict):
+                tid = str(task.get("id") or task.get("entity_id") or "")
+            if not tid:
+                return ""
+            from ..unified_contract import _load as _uc_load
+            for e in _uc_load(self.workspace, "entities"):
+                if isinstance(e, dict) and str(e.get("id")) == tid:
+                    return str(e.get("policy") or "").strip().lower()
+        except Exception:  # noqa: BLE001 — 失败安全 ✓
+            pass
+        return ""
+
     def check_budget(
         self, action: str, task: Optional[dict[str, Any]] = None
     ) -> Optional[dict[str, Any]]:
@@ -739,6 +763,26 @@ class _GovernanceContext:
             return None
         result = BudgetEnforcer.enforce(self.budget, self._usage(), action)
         level = str(result.get("level") or "ok")
+        # ★ 实体级策略生效（Founder: "要做" —— 设了就得算数 ✓）
+        #   policy: BLOCK(默认 拦住) / WARN(只告警) / APPROVE(转人工审批)
+        #   取值顺序: task 字典里的 policy → 实体库按 task id 查 → 缺省 BLOCK ✓
+        #   失败安全: 任何异常 → 按原 level 走 ✓（绝不因查策略而中断 ✓）
+        ent_policy = self._entity_policy(task)
+        if ent_policy == "warn" and level in (BudgetEnforcer.LEVEL_BLOCK,
+                                              BudgetEnforcer.LEVEL_REVIEW):
+            result = dict(result)
+            result["reason"] = (
+                f"[实体策略 WARN] 降级为告警（原 {level}）: {result.get('reason') or ''}"
+            )
+            result["level"] = BudgetEnforcer.LEVEL_WARN
+            level = BudgetEnforcer.LEVEL_WARN
+        elif ent_policy == "approve" and level == BudgetEnforcer.LEVEL_BLOCK:
+            result = dict(result)
+            result["reason"] = (
+                f"[实体策略 APPROVE] 转人工审批（原 block）: {result.get('reason') or ''}"
+            )
+            result["level"] = BudgetEnforcer.LEVEL_REVIEW
+            level = BudgetEnforcer.LEVEL_REVIEW
         # S10-119 M4-4: 超预算告警闭环 (audit + 消息) — warn/block 发射审计事件;
         # 阻断判定语义不变 (block → stop, review → waiting_for_review, warn → 继续)
         if level in (BudgetEnforcer.LEVEL_WARN, BudgetEnforcer.LEVEL_BLOCK):

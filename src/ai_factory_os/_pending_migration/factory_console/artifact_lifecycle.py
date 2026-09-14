@@ -103,6 +103,35 @@ class ArtifactConflict(Exception):
     """Contract 冲突 — 需要人工裁决 (S0.5: 不自行修改 Contract)。"""
 
 
+def _norm_project_id(v: Any) -> str:
+    """project_id 归一化: None / "None" / "" → ""（坑: 历史数据写成字符串 "None" ✗）。"""
+    s = str(v).strip() if v is not None else ""
+    return "" if s in ("", "None", "none", "null") else s
+
+
+def _resolve_project_by_exs(root: Path | str, exs_id: str) -> str:
+    """兜底: artifact.exs_id → exec 记录 → task_id → 实体库父链 → project。
+
+    失败安全: 任何异常/查不到 → ""（→ 归公共 ✓ 符合 Founder 模型 ✓）。
+    """
+    try:
+        from ai_factory_os.services.execution.kernel.store import ResultStore
+
+        rs = ResultStore(Path(root) / "exec")
+        rec = rs.get(exs_id) or rs.get(f"EXR-{exs_id}")
+        if rec is None:
+            return ""
+        tid = str(getattr(rec, "task_id", "") or "")
+        if not tid:
+            return ""
+        from .unified_contract import (
+            _entity_index, _load as _uc_load, resolve_entity_project,
+        )
+        return resolve_entity_project(tid, _entity_index(_uc_load(root, "entities")))
+    except Exception:  # noqa: BLE001 — 失败安全 ✓
+        return ""
+
+
 def create_artifact(
     root: Path | str,
     *,
@@ -132,6 +161,13 @@ def create_artifact(
             )
             if existing is not None:
                 return existing
+        # ★ project_id 归一化 + 兜底解析（Founder 铁律: 归属必须填对 ✓）
+        #   为什么（2026-09-14 实测 ✓）: 老数据里 project_id 是【字符串 "None"】✗
+        #   且 7 个调用方多数不传 ✗ → 288 条 artifact 无归属 ✗
+        #   兜底链: artifact.exs_id → exec 记录 → task_id → 实体库父链 → project ✓
+        pid = _norm_project_id(project_id)
+        if not pid and exs_id:
+            pid = _resolve_project_by_exs(root, str(exs_id))
         artifact_id = f"art-{uuid.uuid4().hex[:12]}"
         now = _now_iso()
         art: dict[str, Any] = {
@@ -141,7 +177,7 @@ def create_artifact(
             "state": "GENERATED",
             "payload": payload or {},
             "patch_text": patch_text,
-            "project_id": project_id,
+            "project_id": pid or None,
             "node_run_id": node_run_id,
             "exs_id": str(exs_id or ""),  # P0-F4: canonical EXS 关联
             "producer": producer,

@@ -2,7 +2,7 @@
 
 Verification = 针对**一次真实 Execution** 判断结果是否满足要求 (不针对 TaskNode, 不自动由 succeeded 推导)。
 
-SSOT: <root>/verification/verifications.json (V-*)。
+SSOT: <root>/verifications/verifications.json (V-*)  # ★ 修: 原写单数 verification ✗ 实际是复数 ✓（2026-09-14 实测核对）。
 """
 from __future__ import annotations
 
@@ -30,7 +30,11 @@ def _load(root: str | Path) -> dict[str, dict[str, Any]]:
         data = json.loads(_file(root).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
-    items = data.get("verifications") if isinstance(data, dict) else None
+    # ★ 兼容两格式（2026-09-14 扁平化后 ✓）: 包装（历史 ✗）/ 扁平（现行 ✓）都认 ✓
+    items = None
+    if isinstance(data, dict):
+        wrapped = data.get("verifications")
+        items = wrapped if isinstance(wrapped, dict) else data
     return items if isinstance(items, dict) else {}
 
 

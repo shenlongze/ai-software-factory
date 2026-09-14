@@ -50,7 +50,14 @@ def _load_all(root: Path | str) -> dict[str, dict[str, Any]]:
         raise ValueError(f"corrupt verifications store: {p}: {exc}") from exc
     if not isinstance(raw, dict):
         raise ValueError(f"corrupt verifications store: {p}: not object")
-    sec = raw.get("verifications")
+    # ★ 兼容两格式（2026-09-14 扁平化后必须 ✓）:
+    #   包装 {verifications: {...}}（历史 ✗） 与 扁平 {...}（现行 ✓）都要认 ✓
+    #   否则【读空 → 从空开始 → 覆盖丢数据 ✗】（本项目踩过三次 ✗ 我自己又踩一次 ✓）
+    if isinstance(raw, dict) and "verifications" in raw and isinstance(raw["verifications"], dict) \
+            and raw.get("verifications") and not str(next(iter(raw))).startswith("V-"):
+        sec = raw["verifications"]
+    else:
+        sec = raw
     if not isinstance(sec, dict):
         return {}
     return {k: v for k, v in sec.items() if isinstance(v, dict)}

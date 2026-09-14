@@ -6745,7 +6745,17 @@ class FactoryCLI:
             return 0
 
         if action == "incidents":
-            for inc in _list_inc(root):
+            # ★ 空态必须说话 ✓（此前列表为空 → 0 字节输出 ✗ 用户分不清
+            #   "没事故" 与 "命令坏了" ✓ 同"降级必须可见"一个原则 ✓）
+            incs = _list_inc(root)
+            if not incs:
+                print("=== 事故（Incidents）===")
+                print("  当前 0 条事故 ✓（无 release 健康检查失败）")
+                print("  产生方式: factory health check <release_id> → 失败时自动建事故 ✓")
+                print("  恢复方式: factory health recover <incident_id> ✓")
+                return 0
+            print(f"=== 事故 {len(incs)} 条 ===")
+            for inc in incs:
                 print(f"  {inc['incident_id']} | {inc['status']} | release={inc['release_id']} "
                       f"| sev={inc['severity']} | action={inc['recommended_action']}")
             return 0

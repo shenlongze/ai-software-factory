@@ -704,7 +704,7 @@ def build_console_service(
     from providers.store import ProviderStore
     from providers.usage import UsageStore
 
-    from tasks.store import TaskStore
+    from ai_factory_os.services.work.store import TaskStore
 
     from workspace.manager import WorkspaceManager
 

@@ -24,7 +24,7 @@ from typing import Iterator
 from agents.store import AgentStore, SkillStore
 from ai_factory_os.infrastructure.events.logger import EventLogger
 from ai_factory_os.infrastructure.events.store import EventStore
-from tasks.store import TaskStore
+from ai_factory_os.services.work.store import TaskStore
 
 DEFAULT_ROOT = Path.home() / ".factory"
 

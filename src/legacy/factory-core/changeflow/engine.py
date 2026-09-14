@@ -35,8 +35,8 @@ from change.service import ChangeService
 from ai_factory_os.infrastructure.events.logger import EventLogger
 from ai_factory_os.infrastructure.events.types import Event
 from runtime.registry import RuntimeRegistry
-from tasks.models import Task
-from tasks.store import TaskStore
+from ai_factory_os.services.work.types import Task
+from ai_factory_os.services.work.store import TaskStore
 from workflows.engine import WorkflowEngine, WorkflowEngineError
 from workflows.models import StepStatus, WorkflowRun, WorkflowStatus
 from workflows.store import WorkflowStore

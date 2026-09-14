@@ -594,8 +594,8 @@ class ProductLifecycleEngine:
         不复制 Workflow Core 逻辑。Task 标题含 task_plan 锚点 (任务 → 决策链
         可追溯); project 从 idea.context 推导 (缺省 default)。
         """
-        from tasks.models import Task
-        from tasks.store import TaskStore
+        from ai_factory_os.services.work.types import Task
+        from ai_factory_os.services.work.store import TaskStore
 
         task_store = self._task_store
         assert task_store is not None  # _check_stage_prereq 已保证装配 (配置缺口响亮)

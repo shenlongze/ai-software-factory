@@ -17,7 +17,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from ai_factory_os.infrastructure.events.types import Event, EventType
-from tasks.models import Task, TaskStatus
+from ai_factory_os.services.work.types import Task, TaskStatus
 
 from .models import ValidationResult, ValidationStatus
 

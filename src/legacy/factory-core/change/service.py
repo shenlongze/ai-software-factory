@@ -28,7 +28,7 @@ from typing import Any
 from git.client import GitClient
 from git.models import GitChange, GitCommit
 from git.service import GitChangeStore, GitService
-from tasks.store import TaskStore
+from ai_factory_os.services.work.store import TaskStore
 
 from .analyzer import ChangeAnalyzer, l4_checks, l4_verdict
 from .events import (

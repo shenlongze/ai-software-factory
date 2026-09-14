@@ -32,7 +32,7 @@ from product.generation import ProductGenerator
 from product.lifecycle import ProductLifecycleEngine
 from product.service import ProductService
 from product.store import ProductStore
-from tasks.store import TaskStore
+from ai_factory_os.services.work.store import TaskStore
 from legacy_paths import REPO_ROOT  # 仓库根唯一计算器
 
 #: 演示名 (CLI --json 出口与测试断言共用)

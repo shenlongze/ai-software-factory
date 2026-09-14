@@ -37,7 +37,7 @@ from ai_factory_os.infrastructure.events.types import Event, EventType
 from ai_factory_os.infrastructure.events.store import EventStore
 from runtime.models import ExecutionStatus
 from runtime.store import RuntimeStore
-from tasks.store import TaskStore
+from ai_factory_os.services.work.store import TaskStore
 from workflows.models import WorkflowStatus
 from workflows.store import WorkflowStore
 

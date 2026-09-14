@@ -18,8 +18,8 @@ from typing import Any
 
 from ai_factory_os.infrastructure.events.logger import EventLogger
 from ai_factory_os.infrastructure.events.types import EventType
-from tasks.models import TaskStatus
-from tasks.store import TaskStore
+from ai_factory_os.services.work.types import TaskStatus
+from ai_factory_os.services.work.store import TaskStore
 
 from . import rules
 from .models import ValidationResult, ValidationStatus

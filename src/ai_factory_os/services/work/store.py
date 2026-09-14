@@ -20,7 +20,7 @@ from typing import Any, Iterable
 
 from pydantic import ValidationError
 
-from .models import Task, TaskStatus
+from .types import Task, TaskStatus
 
 
 class TaskStoreError(Exception):

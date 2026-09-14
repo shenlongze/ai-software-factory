@@ -20,7 +20,7 @@ from __future__ import annotations
 from agents.registry import AgentRegistry
 from ai_factory_os.infrastructure.events.store import EventStore
 from runtime.store import RuntimeStore
-from tasks.store import TaskStore
+from ai_factory_os.services.work.store import TaskStore
 from workflows.store import WorkflowStore
 
 from .calculators import (

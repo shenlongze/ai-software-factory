@@ -31,7 +31,7 @@ from recovery.checkpoint import CheckpointStore
 from runtime.store import RuntimeStore
 from runtimes.catalog import RuntimeCatalog
 from runtimes.store import CatalogStore
-from tasks.store import TaskStore
+from ai_factory_os.services.work.store import TaskStore
 from workflows.store import WorkflowStore
 
 from .models import (

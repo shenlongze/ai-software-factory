@@ -27,7 +27,7 @@ from runtime.adapter import RuntimeAdapter
 from runtime.adapters import BUILTIN_ADAPTERS
 from runtime.registry import RuntimeRegistry
 from runtime.store import RuntimeStore
-from tasks.store import TaskStore
+from ai_factory_os.services.work.store import TaskStore
 from workflows.engine import WorkflowEngine
 from workflows.store import WorkflowStore
 

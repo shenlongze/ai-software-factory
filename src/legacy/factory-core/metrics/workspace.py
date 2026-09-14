@@ -30,8 +30,8 @@ from ai_factory_os.infrastructure.events.types import Event, EventType
 from ai_factory_os.infrastructure.events.store import EventStore
 from runtime.models import ExecutionRequest, ExecutionStatus
 from runtime.store import RuntimeStore
-from tasks.models import Task
-from tasks.store import TaskStore
+from ai_factory_os.services.work.types import Task
+from ai_factory_os.services.work.store import TaskStore
 from workflows.store import WorkflowStore
 
 from .collectors import MetricsCollector

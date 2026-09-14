@@ -45,8 +45,8 @@ from runtime.registry import RuntimeExistsError, RuntimeNotFoundError, RuntimeRe
 from runtime.store import RuntimeStore
 from runtimes.catalog import RuntimeCatalog
 from runtimes.store import CatalogStore
-from tasks.models import Task, TaskStatus
-from tasks.store import TaskExistsError, TaskStore
+from ai_factory_os.services.work.types import Task, TaskStatus
+from ai_factory_os.services.work.store import TaskExistsError, TaskStore
 from validation.engine import ValidationEngine
 from validation.models import ValidationStatus
 from validation.reports import render_checks

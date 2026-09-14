@@ -28,7 +28,7 @@ def list_tasks(root: Path | str | None, project_id: str, *, priority: str = "") 
         return []
     try:
         # G8: 经 org.management 门面 (与 WebUI 任务树同源)
-        from org.management import ManagementStore
+        from ai_factory_os.services.organization.management import ManagementStore
 
         _mgmt = ManagementStore(
             Path(root) / "workspace" / "projects" / Path(project_id).name / "management"

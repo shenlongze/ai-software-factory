@@ -62,7 +62,7 @@ def _task_tree_stats(root: Path, project_id: str) -> dict[str, Any] | None:
     tasks: list[dict[str, Any]] = []
     try:
         # G8: 经 org.management 门面 (与 WebUI 任务树同源)
-        from org.management import ManagementStore
+        from ai_factory_os.services.organization.management import ManagementStore
 
         _mgmt = ManagementStore(
             Path(root) / "workspace" / "projects" / Path(project_id).name / "management"

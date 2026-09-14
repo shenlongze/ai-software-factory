@@ -26,21 +26,21 @@ from typing import Any
 from legacy_paths import REPO_ROOT  # 仓库根唯一计算器
 
 _REPO_ROOT = REPO_ROOT
-_ORG_SRC = REPO_ROOT / "@@ALREADY@@" / "src" / "legacy" / "factory-org"
+_ORG_SRC = REPO_ROOT / "ai_factory_os.services.organization" / "src" / "legacy" / "factory-org"
 
 OS_PROJECT_SSOT = "src/legacy/factory-org/org/projects.py"
 
 
 def _org_modules() -> tuple[Any, Any]:
     try:
-        from org import models as org_models
-        from org import projects as org_projects
+        from ai_factory_os.services.organization import models as org_models
+        from ai_factory_os.services.organization import projects as org_projects
     except ModuleNotFoundError:
         src = str(_ORG_SRC)
         if src not in sys.path:
             sys.path.insert(0, src)
-        from org import models as org_models
-        from org import projects as org_projects
+        from ai_factory_os.services.organization import models as org_models
+        from ai_factory_os.services.organization import projects as org_projects
     return org_models, org_projects
 
 

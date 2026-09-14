@@ -369,8 +369,8 @@ def run_project_chain(
     _setup_sys_path()
     from events.logger import EventLogger
     from events.store import EventStore
-    from org.projects import ProjectStore
-    from org.workflow import WorkflowLifecycle
+    from ai_factory_os.services.organization.projects import ProjectStore
+    from ai_factory_os.services.organization.workflow import WorkflowLifecycle
 
     store = ProjectStore(org_dir)
     event_store = EventStore(events_db_path)
@@ -415,7 +415,7 @@ def _real_chain(
     check_cancel: Callable[[], bool] | None = None,
 ) -> dict[str, Any]:
     """真实 6 阶段链 (S8-005 demo_full_chain 复用, 只参数化不重写)。"""
-    from org.workflow import DevTestLoopRunner, WorkflowRunner, WorkflowStatus
+    from ai_factory_os.services.organization.workflow import DevTestLoopRunner, WorkflowRunner, WorkflowStatus
     from exec.tester import make_workflow_executor
 
     dirs = _run_dirs(runs_dir, project_id, run_id)

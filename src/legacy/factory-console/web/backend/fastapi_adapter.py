@@ -713,12 +713,12 @@ def build_console_service(
     workflow_lifecycle = None
     project_space = None
     try:
-        org_dir = repo_root / "@@ALREADY@@" / "src" / "legacy" / "factory-org"
+        org_dir = repo_root / "ai_factory_os.services.organization" / "src" / "legacy" / "factory-org"
         if org_dir.is_dir() and str(org_dir) not in sys.path:
             sys.path.insert(0, str(org_dir))
-        from org.projects import ProjectStore
-        from org.space import ProjectSpaceStore
-        from org.workflow import WorkflowLifecycle
+        from ai_factory_os.services.organization.projects import ProjectStore
+        from ai_factory_os.services.organization.space import ProjectSpaceStore
+        from ai_factory_os.services.organization.workflow import WorkflowLifecycle
 
         project_store = ProjectStore(root / "org")
         workflow_lifecycle = WorkflowLifecycle(project_store, logger=event_logger)
@@ -768,7 +768,7 @@ def build_console_service(
     # None, session 操作按空/404 处理)
     session_store = None
     try:
-        exec_dir = repo_root / "@@ALREADY@@" / "src" / "legacy" / "factory-exec"
+        exec_dir = repo_root / "ai_factory_os.services.organization" / "src" / "legacy" / "factory-exec"
         if exec_dir.is_dir() and str(exec_dir) not in sys.path:
             sys.path.insert(0, str(exec_dir))
         _session_module = importlib.import_module("exec.runtime_session")
@@ -1046,7 +1046,7 @@ def _external_ai_from_body(body: Any) -> Any:
 def _task_to(service: Any, project_id: str, task_id: str, target: str) -> dict[str, Any] | None:
     """任务逐步状态机推进 (S-1: 会话操作任务 — todo→done 多步, 每步审计)。"""
     try:
-        from org.management import TASK_TRANSITIONS
+        from ai_factory_os.services.organization.management import TASK_TRANSITIONS
     except Exception:  # noqa: BLE001 — org 缺失
         return None
     task = service.get_task(project_id, task_id)
@@ -3366,7 +3366,7 @@ def build_app(
         _pid = _Path(str(project_id)).name
         _slug = _pid
         try:
-            from org.space import ProjectSpaceStore as _PSS
+            from ai_factory_os.services.organization.space import ProjectSpaceStore as _PSS
 
             _pss = _PSS(ws_root)
             _slug = _pss.get_slug(_pid) or _pid
@@ -7374,10 +7374,10 @@ def build_app(
         try:
             import sys as _sys
 
-            _org_path = str(root.parent / "@@ALREADY@@" / "src" / "legacy" / "factory-org")
+            _org_path = str(root.parent / "ai_factory_os.services.organization" / "src" / "legacy" / "factory-org")
             if _org_path not in _sys.path:
                 _sys.path.insert(0, _org_path)
-            from org.cli import cmd_project_register
+            from ai_factory_os.services.organization.cli import cmd_project_register
             from types import SimpleNamespace as _NS
 
             _r = cmd_project_register(

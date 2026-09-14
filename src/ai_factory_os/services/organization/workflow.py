@@ -103,7 +103,7 @@ from .approval import (
 )
 from .artifact import ArtifactRegistry
 from .lifecycle import DuplicateError, NotFoundError
-from .models import _OrgModel, _norm_list, new_id, utcnow
+from .types import _OrgModel, _norm_list, new_id, utcnow
 from .projects import (
     STAGE_TRANSITIONS,
     ArtifactStatus,

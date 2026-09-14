@@ -149,7 +149,7 @@ def _project_task_stats(root: Path | None, project_id: str) -> dict[str, int] | 
     tasks: list[dict[str, Any]] = []
     # G1: 经 org.management 门面读取 (业务代码不直接碰 JSON 路径/结构)
     try:
-        from org.management import ManagementStore
+        from ai_factory_os.services.organization.management import ManagementStore
 
         _mgmt = ManagementStore(
             Path(root) / "workspace" / "projects" / Path(project_id).name / "management"

@@ -51,7 +51,7 @@ from .lifecycle import (
     OrgLifecycleError,
     RoleConflictError,
 )
-from .models import new_id
+from .types import new_id
 from .project_adoption import ProjectAdoption
 from .projects import ArtifactStatus, ArtifactType, ProjectStore
 from .store import OrgStore

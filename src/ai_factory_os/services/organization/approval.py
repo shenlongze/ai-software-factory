@@ -36,7 +36,7 @@ from typing import Any
 
 from pydantic import Field, field_validator
 
-from .models import _OrgModel, utcnow
+from .types import _OrgModel, utcnow
 from .store import _SectionStore
 
 

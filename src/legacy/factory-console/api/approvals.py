@@ -95,8 +95,8 @@ def _org_exceptions() -> tuple[type[BaseException], type[BaseException]]:
     """
     ConsoleService._mount_org()
     try:
-        from org.approval import ApprovalStateError  # type: ignore[import-not-found]
-        from org.lifecycle import NotFoundError  # type: ignore[import-not-found]
+        from ai_factory_os.services.organization.approval import ApprovalStateError  # type: ignore[import-not-found]
+        from ai_factory_os.services.organization.lifecycle import NotFoundError  # type: ignore[import-not-found]
     except Exception:
         return (), ()
     return NotFoundError, ApprovalStateError  # type: ignore[return-value]

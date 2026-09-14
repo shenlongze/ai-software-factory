@@ -104,7 +104,7 @@ def collect_project(
     tasks = {}
     for pdir in pdirs:
         try:
-            from org.management import ManagementStore
+            from ai_factory_os.services.organization.management import ManagementStore
 
             ts = ManagementStore(pdir / "management").list_tasks()
             if ts:

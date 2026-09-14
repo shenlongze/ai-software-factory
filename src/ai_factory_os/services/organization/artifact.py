@@ -49,7 +49,7 @@ from typing import Any
 
 from . import events as org_events
 from .lifecycle import DuplicateError, NotFoundError
-from .models import new_id, utcnow
+from .types import new_id, utcnow
 from .projects import (
     ARTIFACT_TRANSITIONS,
     Artifact,

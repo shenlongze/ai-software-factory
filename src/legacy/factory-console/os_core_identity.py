@@ -39,7 +39,7 @@ IDENTITY_TYPES: tuple[str, ...] = ("human", "agent")
 IDENTITY_STATUSES: tuple[str, ...] = ("active", "retired")
 
 _REPO_ROOT = REPO_ROOT
-_ORG_SRC = REPO_ROOT / "@@ALREADY@@" / "src" / "legacy" / "factory-org"
+_ORG_SRC = REPO_ROOT / "ai_factory_os.services.organization" / "src" / "legacy" / "factory-org"
 
 
 def _now_iso() -> str:
@@ -77,12 +77,12 @@ def _save(root: str | Path, data: dict[str, dict[str, Any]]) -> None:
 
 def _org_store(root: str | Path) -> Any:
     try:
-        from org import store as org_store
+        from ai_factory_os.services.organization import store as org_store
     except ModuleNotFoundError:  # 源码态
         src = str(_ORG_SRC)
         if src not in sys.path:
             sys.path.insert(0, src)
-        from org import store as org_store
+        from ai_factory_os.services.organization import store as org_store
     return org_store.OrgStore(Path(root) / "org")
 
 

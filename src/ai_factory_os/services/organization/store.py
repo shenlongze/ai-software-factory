@@ -44,7 +44,7 @@ except ImportError:  # pragma: no cover — Windows 无 fcntl → 锁降级
 
 from pydantic import BaseModel, ValidationError
 
-from .models import Authority, Company, Department, Employee, KnowledgeItem, Role
+from .types import Authority, Company, Department, Employee, KnowledgeItem, Role
 
 T = TypeVar("T", bound=BaseModel)
 

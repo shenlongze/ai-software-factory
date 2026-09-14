@@ -35,7 +35,7 @@ from pydantic import Field, field_validator
 
 from . import events as org_events
 from .artifact import ArtifactType, validate_artifact
-from .models import _OrgModel, _norm_list, new_id, utcnow
+from .types import _OrgModel, _norm_list, new_id, utcnow
 from .projects import Project, ProjectLifecycle, ProjectStore
 from .store import _SectionStore
 

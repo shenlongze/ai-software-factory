@@ -64,7 +64,7 @@ from typing import TYPE_CHECKING, Any, Callable, Iterator
 
 from pydantic import Field, ValidationError, field_validator
 
-from .models import _OrgModel, _norm_list, new_id, utcnow
+from .types import _OrgModel, _norm_list, new_id, utcnow
 from .management import Task, TaskStatus, _PRIORITY_RANK, transition_task
 
 if TYPE_CHECKING:  # 仅类型标注 (运行时 duck-type registry.get_capability, 零耦合)

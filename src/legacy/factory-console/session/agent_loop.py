@@ -424,7 +424,7 @@ def _try_promote_lifecycle(service: Any, project_id: str, target: str) -> None:
         store = getattr(service, "_project_store", None)
         if store is None:
             return
-        from org.projects import ProjectLifecycle
+        from ai_factory_os.services.organization.projects import ProjectLifecycle
 
         ProjectLifecycle(store).transition_lifecycle(project_id, target)
     except Exception:  # noqa: BLE001 — 流转失败不阻断任务执行
@@ -1255,7 +1255,7 @@ def dispatch(
         if r.get("ok"):
             try:
                 from .exec_state import ExecState
-                from org.management import ManagementStore
+                from ai_factory_os.services.organization.management import ManagementStore
                 from pathlib import Path as _Path
 
                 # 依赖/backlog_id 从 backlog SSOT 读 (ManagementStore Task 对象,
@@ -1365,7 +1365,7 @@ def dispatch(
             # 项目清单 — markdown 无序列表, 字段完整 (ID/名称/本地地址/Git地址/阶段/语言/任务分类/完成度/文档)
             # G1: 经 org ProjectStore 门面读取 (业务代码不直接碰 JSON 路径/结构)
             try:
-                from org.projects import ProjectStore
+                from ai_factory_os.services.organization.projects import ProjectStore
 
                 _projs = {
                     p.id: p.to_dict()
@@ -1566,7 +1566,7 @@ def dispatch(
             _proj: dict[str, Any] = {}
             if root is not None:
                 try:
-                    from org.projects import ProjectStore
+                    from ai_factory_os.services.organization.projects import ProjectStore
 
                     _p = ProjectStore(Path(root) / "org").get_project(project_id)
                     _proj = _p.to_dict() if _p is not None else {}
@@ -1668,7 +1668,7 @@ def dispatch(
             if match is None:
                 return {"ok": False, "error": f"未找到任务: {title}"}
             tid = str(match["id"])
-            from org.management import TASK_TRANSITIONS
+            from ai_factory_os.services.organization.management import TASK_TRANSITIONS
 
             if action == "start":
                 for st in service._status_path(TASK_TRANSITIONS, match.get("status") or "todo", "in_progress"):
@@ -3906,7 +3906,7 @@ def reconcile_plan(root: str | Path, plan_id: str) -> dict[str, Any]:
     # 按 plan_id 过滤 backlog Task (Task SSOT)
     _tasks: list = []
     try:
-        from org.management import ManagementStore
+        from ai_factory_os.services.organization.management import ManagementStore
 
         for _cand in (_P(root) / "workspace" / "projects").iterdir():
             _pj = _cand / "project.json"

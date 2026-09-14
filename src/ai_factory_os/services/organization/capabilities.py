@@ -50,7 +50,7 @@ from typing import Any, Protocol
 
 from pydantic import Field, field_validator
 
-from .models import _OrgModel, _norm_list
+from .types import _OrgModel, _norm_list
 
 # ------------------------------------------------------------------ 枚举
 

@@ -1346,8 +1346,8 @@ class ConsoleService:
             return None
         self._mount_org()
         try:
-            from org.projects import ProjectLifecycle
-            from org.models import utcnow
+            from ai_factory_os.services.organization.projects import ProjectLifecycle
+            from ai_factory_os.services.organization.models import utcnow
 
             # logger: 生产装配注入带 EventLogger 的 WorkflowLifecycle —
             # 提取其 logger 供 ProjectLifecycle 复用 (org.project.created
@@ -1425,9 +1425,9 @@ class ConsoleService:
             return None
         self._mount_org()
         try:
-            from org import events as org_events
-            from org.models import new_id, utcnow
-            from org.projects import Project, ProjectState
+            from ai_factory_os.services.organization import events as org_events
+            from ai_factory_os.services.organization.models import new_id, utcnow
+            from ai_factory_os.services.organization.projects import Project, ProjectState
 
             logger = self._org_logger()
             project_id = new_id("P")
@@ -1517,7 +1517,7 @@ class ConsoleService:
             return None
         self._mount_org()
         try:
-            from org.models import utcnow
+            from ai_factory_os.services.organization.models import utcnow
 
             project = store.get_project(project_id)
             if project is None:
@@ -1574,7 +1574,7 @@ class ConsoleService:
         失败 → 静默 (主体操作已完成, 不撤销)。
         """
         try:
-            from org.models import utcnow
+            from ai_factory_os.services.organization.models import utcnow
 
             conversation = data.get("conversation")
             answered_count = len(conversation) if isinstance(conversation, list) else 0
@@ -1613,8 +1613,8 @@ class ConsoleService:
             return None
         self._mount_org()
         try:
-            from org.models import utcnow
-            from org.projects import ProjectLifecycle, ProjectState
+            from ai_factory_os.services.organization.models import utcnow
+            from ai_factory_os.services.organization.projects import ProjectLifecycle, ProjectState
 
             logger = self._org_logger()
             project = store.get_project(project_id)
@@ -1725,8 +1725,8 @@ class ConsoleService:
             return None
         self._mount_org()
         try:
-            from org.models import utcnow
-            from org.projects import ProjectState
+            from ai_factory_os.services.organization.models import utcnow
+            from ai_factory_os.services.organization.projects import ProjectState
 
             logger = self._org_logger()
             project = store.get_project(project_id)
@@ -1825,7 +1825,7 @@ class ConsoleService:
                 pass
             # 审计 (失败安全: 审计事件失败不撤销已提交事务)
             try:
-                from org import events as org_events
+                from ai_factory_os.services.organization import events as org_events
 
                 org_events.record_project_lifecycle_changed(
                     logger,
@@ -1940,7 +1940,7 @@ class ConsoleService:
         if self._project_store is None:
             return False
         try:
-            from org.models import utcnow
+            from ai_factory_os.services.organization.models import utcnow
 
             project = self._project_store.get_project(project_id)
             if project is None:
@@ -1976,7 +1976,7 @@ class ConsoleService:
             except Exception:  # noqa: BLE001
                 meta = {}
         try:
-            from org.projects import Project, ProjectState
+            from ai_factory_os.services.organization.projects import Project, ProjectState
         except Exception:  # noqa: BLE001 — org 缺失 → 不注册
             return None
         lifecycle = ProjectState.IDEA
@@ -2032,7 +2032,7 @@ class ConsoleService:
             return None
         self._mount_org()
         try:
-            from org.models import utcnow
+            from ai_factory_os.services.organization.models import utcnow
 
             project = store.get_project(project_id)
             if project is None:
@@ -2113,7 +2113,7 @@ class ConsoleService:
             )
         self._mount_org()
         try:
-            from org.projects import NotFoundError, ProjectLifecycle
+            from ai_factory_os.services.organization.projects import NotFoundError, ProjectLifecycle
 
             logger = (
                 getattr(self._workflow, "_logger", None)
@@ -2926,7 +2926,7 @@ class ConsoleService:
             return None
         self._mount_org()
         try:
-            from org.workflow import WorkflowLifecycle
+            from ai_factory_os.services.organization.workflow import WorkflowLifecycle
 
             return WorkflowLifecycle(self._project_store, logger=None)
         except Exception:
@@ -2942,7 +2942,7 @@ class ConsoleService:
         import sys
         from pathlib import Path
 
-        org_dir = REPO_ROOT / "@@ALREADY@@" / "src" / "legacy" / "factory-org"
+        org_dir = REPO_ROOT / "ai_factory_os.services.organization" / "src" / "legacy" / "factory-org"
         if org_dir.is_dir() and str(org_dir) not in sys.path:
             sys.path.insert(0, str(org_dir))
 
@@ -3413,7 +3413,7 @@ class ConsoleService:
         """项目 backlog 任务统计 {total, done, pending}: G8 经 org.management 门面
         (与 WebUI 任务树同源; 失败安全 → 全 0)。"""
         try:
-            from org.management import ManagementStore
+            from ai_factory_os.services.organization.management import ManagementStore
 
             pdir = self._project_dir(project_id)
             tasks = ManagementStore(pdir / "management").list_tasks()
@@ -3788,7 +3788,7 @@ class ConsoleService:
             return None
         space_dir = space.ensure_space(project)
         self._mount_org()  # factory-org 挂载 (幂等; Removal Isolation)
-        from org.management import ManagementStore
+        from ai_factory_os.services.organization.management import ManagementStore
 
         return ManagementStore(space_dir / "management")
 
@@ -3813,8 +3813,8 @@ class ConsoleService:
         if not cleaned:
             raise ValueError("name is required (空名字不创建)")
         self._mount_org()
-        from org.management import Epic
-        from org.models import new_id
+        from ai_factory_os.services.organization.management import Epic
+        from ai_factory_os.services.organization.models import new_id
 
         epic = Epic(
             id=new_id("EPIC"),
@@ -3845,8 +3845,8 @@ class ConsoleService:
         if not cleaned:
             raise ValueError("name is required (空名字不创建)")
         self._mount_org()
-        from org.management import Feature
-        from org.models import new_id, utcnow
+        from ai_factory_os.services.organization.management import Feature
+        from ai_factory_os.services.organization.models import new_id, utcnow
 
         feature = Feature(
             id=new_id("FEAT"),
@@ -3899,8 +3899,8 @@ class ConsoleService:
         if feature is None:
             raise BacklogNotFoundError(f"feature not found: {feature_id}")
         self._mount_org()
-        from org.management import Feature
-        from org.models import utcnow
+        from ai_factory_os.services.organization.management import Feature
+        from ai_factory_os.services.organization.models import utcnow
 
         updates: dict[str, Any] = {}
         if name is not None:
@@ -3939,8 +3939,8 @@ class ConsoleService:
         if not cleaned:
             raise ValueError("name is required (空名字不创建)")
         self._mount_org()
-        from org.management import Story
-        from org.models import new_id, utcnow
+        from ai_factory_os.services.organization.management import Story
+        from ai_factory_os.services.organization.models import new_id, utcnow
 
         story = Story(
             id=new_id("STORY"),
@@ -3990,8 +3990,8 @@ class ConsoleService:
         if not cleaned_title:
             raise ValueError("title is required (空标题不创建)")
         self._mount_org()
-        from org.management import Task, TaskPriority, validate_dependency
-        from org.models import new_id, utcnow
+        from ai_factory_os.services.organization.management import Task, TaskPriority, validate_dependency
+        from ai_factory_os.services.organization.models import new_id, utcnow
 
         task_id = new_id("TASK")
         deps = validate_dependency(
@@ -4056,7 +4056,7 @@ class ConsoleService:
         feature = mgmt.get_feature(fid)
         if feature is None or feature.maturity != "idea":
             return
-        from org.models import utcnow
+        from ai_factory_os.services.organization.models import utcnow
 
         mgmt.save_feature(
             feature.model_copy(update={"maturity": "refined", "updated_at": utcnow()})
@@ -4261,14 +4261,14 @@ class ConsoleService:
         if task is None:
             raise BacklogNotFoundError(f"task not found: {task_id}")
         self._mount_org()
-        from org.management import (
+        from ai_factory_os.services.organization.management import (
             TASK_TRANSITIONS,
             TaskPriority,
             TaskStatus,
             transition_task,
             validate_dependency,
         )
-        from org.models import utcnow
+        from ai_factory_os.services.organization.models import utcnow
 
         updates: dict[str, Any] = {}
         if title is not None:
@@ -4401,8 +4401,8 @@ class ConsoleService:
         if task is None:
             raise BacklogNotFoundError(f"task not found: {task_id}")
         self._mount_org()
-        from org.management import TASK_TRANSITIONS, TaskStatus, transition_task
-        from org.models import utcnow
+        from ai_factory_os.services.organization.management import TASK_TRANSITIONS, TaskStatus, transition_task
+        from ai_factory_os.services.organization.models import utcnow
 
         target = TaskStatus.IN_PROGRESS
         if task.status != target:
@@ -4431,7 +4431,7 @@ class ConsoleService:
             if task.status == target and note:
                 # T-8 (v1.1.185): 幂等续跑 — 已在 in_progress → 追加 exec:resume 审计
                 # (不重复状态转换; 上次中断后重跑可追溯)
-                from org.management import HistoryEntry
+                from ai_factory_os.services.organization.management import HistoryEntry
 
                 task = task.model_copy(
                     update={
@@ -4496,8 +4496,8 @@ class ConsoleService:
         if task is None:
             raise BacklogNotFoundError(f"task not found: {task_id}")
         self._mount_org()
-        from org.management import TASK_TRANSITIONS, TaskStatus, transition_task
-        from org.models import utcnow
+        from ai_factory_os.services.organization.management import TASK_TRANSITIONS, TaskStatus, transition_task
+        from ai_factory_os.services.organization.models import utcnow
 
         target = TaskStatus.DONE if success else (TaskStatus.CANCELLED if cancelled else TaskStatus.FAILED)
         action = "exec:completed" if success else ("exec:cancelled" if cancelled else "exec:failed")
@@ -4546,7 +4546,7 @@ class ConsoleService:
                 mgmt.save_task(task)
         else:
             # 已是目标态 → 追加审计 (重跑/回写幂等), 不重复转换
-            from org.management import HistoryEntry
+            from ai_factory_os.services.organization.management import HistoryEntry
 
             task = task.model_copy(
                 update={
@@ -4625,8 +4625,8 @@ class ConsoleService:
             raise ValueError("name is required (空名字不创建)")
         refs = self._norm_task_refs(mgmt, task_refs)
         self._mount_org()
-        from org.management import Sprint
-        from org.models import new_id
+        from ai_factory_os.services.organization.management import Sprint
+        from ai_factory_os.services.organization.models import new_id
 
         sprint = Sprint(
             id=new_id("SPRINT"),
@@ -4685,8 +4685,8 @@ class ConsoleService:
         if sprint is None:
             raise BacklogNotFoundError(f"sprint not found: {sprint_id}")
         self._mount_org()
-        from org.management import SprintStatus, transition_sprint
-        from org.models import utcnow
+        from ai_factory_os.services.organization.management import SprintStatus, transition_sprint
+        from ai_factory_os.services.organization.models import utcnow
 
         updates: dict[str, Any] = {}
         if goal is not None:
@@ -4750,7 +4750,7 @@ class ConsoleService:
         if sprint is None:
             raise BacklogNotFoundError(f"sprint not found: {sprint_id}")
         self._mount_org()
-        from org.management import TaskStatus, sort_tasks
+        from ai_factory_os.services.organization.management import TaskStatus, sort_tasks
 
         tasks = mgmt.list_tasks()
         if sprint.task_refs:
@@ -4796,8 +4796,8 @@ class ConsoleService:
             raise ValueError("name is required (空名字不创建)")
         refs = self._norm_task_refs(mgmt, task_refs)
         self._mount_org()
-        from org.management import Milestone
-        from org.models import new_id
+        from ai_factory_os.services.organization.management import Milestone
+        from ai_factory_os.services.organization.models import new_id
 
         milestone = Milestone(
             id=new_id("MS"),
@@ -4850,7 +4850,7 @@ class ConsoleService:
         if milestone is None:
             raise BacklogNotFoundError(f"milestone not found: {milestone_id}")
         self._mount_org()
-        from org.models import utcnow
+        from ai_factory_os.services.organization.models import utcnow
 
         updates: dict[str, Any] = {}
         if name is not None:
@@ -4910,7 +4910,7 @@ class ConsoleService:
         if mgmt.get_milestone(ref_id) is None:
             raise ValueError(f"milestone not found: {ref_id}")
         self._mount_org()
-        from org.models import utcnow
+        from ai_factory_os.services.organization.models import utcnow
 
         roadmap = mgmt.get_roadmap()
         refs = list(roadmap.milestone_refs)

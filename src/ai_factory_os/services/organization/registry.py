@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .models import Employee
+from .types import Employee
 from .store import OrgStore
 
 

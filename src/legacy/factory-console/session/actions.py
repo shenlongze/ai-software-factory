@@ -184,10 +184,10 @@ def _load_org_cli() -> Any:
     返回模块对象 (测试可 monkeypatch 其 cmd_project_register 验证调用链)。
     """
     root = REPO_ROOT  # session/ → factory-console/ → 仓库根
-    path = str(root / "@@ALREADY@@" / "src" / "legacy" / "factory-org")
+    path = str(root / "ai_factory_os.services.organization" / "src" / "legacy" / "factory-org")
     if path not in sys.path:
         sys.path.insert(0, path)
-    return importlib.import_module("org.cli")
+    return importlib.import_module("ai_factory_os.services.organization.cli")
 
 
 def _load_exec_cli() -> Any:
@@ -197,7 +197,7 @@ def _load_exec_cli() -> Any:
     args: project(目录, 必填)/task/objective/agent/employee/provider/test_cmd/json。
     """
     root = REPO_ROOT  # session/ → factory-console/ → 仓库根
-    path = str(root / "@@ALREADY@@" / "src" / "legacy" / "factory-exec")
+    path = str(root / "ai_factory_os.services.organization" / "src" / "legacy" / "factory-exec")
     if path not in sys.path:
         sys.path.insert(0, path)
     return importlib.import_module("exec.cli")

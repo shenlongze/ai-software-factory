@@ -26,7 +26,7 @@ from __future__ import annotations
 from typing import Any
 
 from . import events as org_events
-from .models import (
+from .types import (
     Authority,
     Company,
     Department,

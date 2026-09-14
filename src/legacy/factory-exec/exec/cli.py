@@ -188,7 +188,7 @@ def _open_experience_analyzer(root: Path, logger: Any) -> Any:
 def _resolve_employee(root: Path, employee_ref: str) -> Any:
     """员工解析 (org store; factory-org 缺失/员工不存在 → ExecCliError 7)。"""
     try:
-        from org.store import OrgStore
+        from ai_factory_os.services.organization.store import OrgStore
     except ImportError:
         raise ExecCliError("factory-org 未安装 (缺 factory-org/ 包)", exit_code=7)
     employee = OrgStore(root / "org").get_employee(employee_ref)

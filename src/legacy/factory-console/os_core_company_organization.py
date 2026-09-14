@@ -27,20 +27,20 @@ from typing import Any
 from legacy_paths import REPO_ROOT  # 仓库根唯一计算器
 
 _REPO_ROOT = REPO_ROOT
-_ORG_SRC = REPO_ROOT / "@@ALREADY@@" / "src" / "legacy" / "factory-org"
+_ORG_SRC = REPO_ROOT / "ai_factory_os.services.organization" / "src" / "legacy" / "factory-org"
 
 
 def _org_modules() -> tuple[Any, Any]:
     """导入 factory-org/org (源码态需挂 sys.path; 安装态可直接 import org)。"""
     try:
-        from org import lifecycle as org_lifecycle
-        from org import store as org_store
+        from ai_factory_os.services.organization import lifecycle as org_lifecycle
+        from ai_factory_os.services.organization import store as org_store
     except ModuleNotFoundError:  # 源码态 (仓库内直接运行)
         src = str(_ORG_SRC)
         if src not in sys.path:
             sys.path.insert(0, src)
-        from org import lifecycle as org_lifecycle
-        from org import store as org_store
+        from ai_factory_os.services.organization import lifecycle as org_lifecycle
+        from ai_factory_os.services.organization import store as org_store
     return org_lifecycle, org_store
 
 

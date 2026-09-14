@@ -44,7 +44,7 @@ from typing import Any, Callable, Generic, TypeVar
 
 from pydantic import Field, ValidationError, field_serializer, field_validator
 
-from .models import _OrgModel, _norm_list, utcnow
+from .types import _OrgModel, _norm_list, utcnow
 from .store import file_lock
 
 T = TypeVar("T", bound="_OrgModel")

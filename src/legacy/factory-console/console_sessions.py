@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from org.store import file_lock  # G2: 跨进程文件锁 (org 数据空间共享工具)
+from ai_factory_os.services.organization.store import file_lock  # G2: 跨进程文件锁 (org 数据空间共享工具)
 
 #: 合法作用域
 VALID_SCOPES = ("company", "project")

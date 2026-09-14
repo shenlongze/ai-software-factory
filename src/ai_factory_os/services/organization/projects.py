@@ -37,7 +37,7 @@ from pydantic import Field, field_validator, model_validator
 from . import events as org_events
 from .lifecycle import DuplicateError, NotFoundError
 from .management import HistoryEntry
-from .models import _OrgModel, _norm_list, new_id, utcnow
+from .types import _OrgModel, _norm_list, new_id, utcnow
 from .store import _SectionStore
 
 

@@ -4206,7 +4206,56 @@ class FactoryCLI:
         except Exception as exc:  # noqa: BLE001 — 失败安全: 底层异常 → 明确错误, 不吞不裸抛
             print(f"错误: exec CLI 查询失败 — {exc}", file=sys.stderr)
             return 1
+        # ★ 可读化: 从 exec/<id>.report.md 补出【目标 / 做了什么】
+        #   （数据本来就有 ✓ 只是 CLI 不展示 ✗ —— Founder: "这些都是可视的么" ✓）
+        if isinstance(result, dict) and result.get("results"):
+            self._print_exec_readable(Path(self.data_dir), result)
+            return 0
         return self._emit_proxy_result(exec_cli, args, result)
+
+    @staticmethod
+    def _print_exec_readable(root: Path, result: dict) -> None:
+        """把执行结果清单渲染成【看得懂做了什么】的列表（不改变数据 ✓ 纯展示 ✓）。"""
+        import re as _re
+        rows = result.get("results") or []
+        print(f"执行结果 {len(rows)} 条 (审批 {result.get('approval_count', 0)} 条)")
+        for r in rows:
+            rid = str(r.get("id") or "?")
+            status = str(r.get("status") or "?")
+            mark = "✓" if status.lower().startswith("success") else "✗"
+            objective = summary = ""
+            rep = root / "exec" / f"{rid}.report.md"
+            if rep.is_file():
+                try:
+                    txt = rep.read_text(encoding="utf-8")
+                    m = _re.search(r"^- objective: (.+)$", txt, _re.M)
+                    objective = (m.group(1).strip() if m else "")
+                    m2 = _re.search(r"## What the agent did\n(.+?)(?:\n\n|$)", txt,
+                                    _re.S)
+                    summary = (m2.group(1).strip() if m2 else "")
+                    if summary.startswith("("):        # "(no summary…)" → 用目标 ✓
+                        summary = ""
+                except OSError:
+                    pass
+            what = (summary or objective or "(报告缺失)")[:64]
+            extra = ""
+            if rep.is_file():
+                try:
+                    txt = rep.read_text(encoding="utf-8")
+                    m3 = _re.search(r"diff lines: (\d+)", txt)
+                    m4 = _re.search(r"result: (\w+)", txt)
+                    bits = []
+                    if m3:
+                        bits.append(f"{m3.group(1)} 行补丁")
+                    if m4:
+                        bits.append(f"验证 {m4.group(1)}")
+                    m5 = _re.search(r"duration: ([\d.]+s)", txt)
+                    if m5:
+                        bits.append(m5.group(1))
+                    extra = ("  (" + " · ".join(bits) + ")") if bits else ""
+                except OSError:
+                    pass
+            print(f"  {rid}  {mark}{status:<8} {what}{extra}")
 
     def production_cmd(self, args: argparse.Namespace) -> int:
         """factory production — Production Kernel 入口 (S6): run/status/history/list。

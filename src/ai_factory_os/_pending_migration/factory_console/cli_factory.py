@@ -1051,6 +1051,8 @@ class FactoryCLI:
             return self.gp_trace_cmd(args)
         if args.command == "tower":
             return self.tower_cmd(args)
+        if args.command == "runtime":
+            return self.runtime_cmd(args)
         if args.command == "tasktree":
             return self.tasktree_cmd(args)
         if args.command == "chat":
@@ -2398,6 +2400,8 @@ class FactoryCLI:
     def agent(self, args: argparse.Namespace) -> int:
         """Agent 管理 (list/add/remove): 列表 / 注册 / 移除 (agents.json)。"""
         action = getattr(args, "agent_action", "list") or "list"
+        if action == "seed":
+            return self._agent_seed()
         if action == "add":
             return self._agent_add(args)
         if action == "remove":
@@ -2413,6 +2417,91 @@ class FactoryCLI:
                 f"| skills=[{row['skills']}]"
             )
         print(f"  共 {len(rows)} 个 agent")
+        return 0
+
+    def runtime_cmd(self, args: argparse.Namespace) -> int:
+        """Runtime 管理: list / add —— 执行环境登记（编排派发的前提 ✓）。
+
+        ★ 关键: --id 必须用【内置 adapter 的 id】（hermes-runtime ✓ / echo ✓），
+          否则派发时报 "no adapter implementation for runtime: <id>" ✗
+          （这正是刀C 2/2 实测踩到的那一步 ✓）
+        """
+        from ai_factory_os.services.execution.runtime.store import RuntimeStore
+        from ai_factory_os.services.execution.runtime.types import RuntimeInfo
+
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        store = RuntimeStore(root / "runtimes")
+        action = getattr(args, "runtime_action", "list") or "list"
+        if action == "add":
+            rid = str(getattr(args, "id", "") or "").strip()
+            if not rid:
+                print("用法: factory runtime add --id hermes-runtime --type agent")
+                print("  内置可用 id: hermes-runtime (真实 Agent Runtime ✓) · echo (mock ✓)")
+                return 1
+            store.save_runtime(RuntimeInfo(id=rid, name=rid,
+                                           type=str(getattr(args, "type", "agent"))))
+            print(f"  OK  已注册 runtime: {rid} (type={getattr(args,'type','agent')})")
+            if rid not in ("hermes-runtime", "echo"):
+                print(f"  ⚠ 警告: {rid} 没有内置 adapter → 派发会失败 ✗")
+                print("    内置 id: hermes-runtime · echo")
+            return 0
+        import json as _json
+        entries: list[dict] = []
+        for f in sorted((root / "runtimes").glob("*.json")):
+            try:
+                d = _json.loads(f.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            entries.extend(d.values() if isinstance(d, dict) else d)
+        print("=== Runtime 清单（执行环境登记）===")
+        if not entries:
+            print("  （无 → 编排无法派发 ✗）")
+            print("  注册: factory runtime add --id hermes-runtime --type agent")
+            return 0
+        builtin = {"hermes-runtime", "echo"}
+        for e in entries:
+            if not isinstance(e, dict):
+                continue
+            rid = str(e.get("id") or "?")
+            mark = "✓ 有内置 adapter" if rid in builtin else "⚠ 无内置 adapter（派发会失败 ✗）"
+            print(f"  - {rid} | type={e.get('type', '?')} | {e.get('status', '?')} | {mark}")
+        return 0
+
+    def _agent_seed(self) -> int:
+        """注册内置【AI 员工角色池】—— 对齐任务树产出的 required_role ✓。
+
+        为什么（实测驱动）: 真实数据根 AgentStore 曾是 0 个 ✗ →
+        matcher 选不出 agent → 编排必然失败 ✗（刀C 2/2 就是这么撞出来的 ✓）。
+        角色取值对齐 task_decomposition 产出的 role（后端/前端/架构/测试/执行 ✓）。
+        幂等: 已存在则跳过 ✓。
+        """
+        try:
+            from ai_factory_os.plugins.agents.store import AgentStore
+            from ai_factory_os.plugins.agents.types import Agent
+        except Exception as exc:  # noqa: BLE001
+            print(f"  ✗ 无法加载 agent 模块: {exc}")
+            return 1
+        store = AgentStore(Path(self.data_dir) / "agents")
+        pool = [
+            ("agent-backend", "后端执行员工", "backend", ["python", "api", "database"]),
+            ("agent-frontend", "前端执行员工", "frontend",
+             ["html", "css", "javascript"]),
+            ("agent-architect", "架构设计员工", "architecture",
+             ["design", "architecture"]),
+            ("agent-tester", "测试验证员工", "testing", ["test", "verification"]),
+            ("agent-executor", "通用执行员工", "executor", ["general"]),
+        ]
+        added = 0
+        print("=== 注册 AI 员工角色池 ===")
+        for aid, name, role, skills in pool:
+            if store.load(aid) is not None:
+                print(f"  = {aid} 已存在（跳过 ✓）")
+                continue
+            store.save(Agent(id=aid, name=name, role=role, skills=skills))
+            print(f"  + {aid} | {name} | role={role} | skills={','.join(skills)}")
+            added += 1
+        print(f"  新增 {added} 个 · 共 {len(pool)} 个角色（幂等 ✓）")
+        print("  提示: 执行还需注册 runtime —— factory runtime add --id hermes-runtime --type agent")
         return 0
 
     def _agent_add(self, args: argparse.Namespace) -> int:
@@ -8031,12 +8120,19 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_agent = sub.add_parser("agent", help="Agent 管理 (list/add/remove)")
     p_agent.add_argument(
-        "agent_action", nargs="?", choices=["list", "add", "remove"], default="list",
+        "agent_action", nargs="?", choices=["list", "add", "remove", "seed"], default="list",
         metavar="list|add|remove", help="list — 列表; add — 注册 (--id --role --skills); remove — 移除 (--id)",
     )
     p_agent.add_argument("--id", default="", help="Agent id (add/remove)")
     p_agent.add_argument("--role", default="", help="角色 (add)")
     p_agent.add_argument("--skills", default="", help="技能逗号分隔 (add)")
+    p_rt = sub.add_parser("runtime", help="Runtime 管理 (list/add) — 执行环境登记")
+    p_rt.add_argument("runtime_action", nargs="?", choices=["list", "add"],
+                      default="list", metavar="list|add")
+    p_rt.add_argument("--id", default="", help="Runtime id (add) — 须用内置 adapter 的 id")
+    p_rt.add_argument("--type", default="agent", help="Runtime 类型 (add, 默认 agent)")
+    p_rt.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+
     p_local_ai = sub.add_parser(
         "local-ai", help="本机 AI 发现与调度 (U-6): scan — 扫描; register — 注册为 Agent; run — 委派执行"
     )

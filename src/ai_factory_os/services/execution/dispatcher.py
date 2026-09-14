@@ -80,7 +80,7 @@ class ExecutionDispatcher:
         if runtime_id is None:
             raise NoAvailableRuntimeError(
                 f"no available runtime for execution {request.id}; "
-                f"register a runtime first (factory runtime add)"
+                f"register a runtime first (factory runtime add --id hermes-runtime --type agent) — 内置 adapter id: hermes-runtime / echo"
             )
         return runtime_id
 

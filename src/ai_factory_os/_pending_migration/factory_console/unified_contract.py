@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import tempfile
 import uuid
 from datetime import datetime, timezone
@@ -263,8 +264,16 @@ def _project_entity_file(root: Path | str, project_id: str) -> Path:
 
 
 def _write_list(p: Path, data: list[dict[str, Any]]) -> None:
+    """原子写 json 列表 ✓ —— 临时名必须【唯一】✗。
+
+    为什么（2026-09-14 实测崩溃 ✓）:
+      原用固定 `entities.json.tmp` ✗ → 并发写入方互相抢同一 tmp:
+        P1 写完 → os.replace 移走 tmp ✓ → P2 的 replace → FileNotFoundError ✗
+      （真实根上跑套件时实测: No such file or directory: entities.json.tmp ✗）
+    修法: 临时名带 pid + 线程 id ✓（与 execution/kernel/store 的写法一致 ✓）
+    """
     p.parent.mkdir(parents=True, exist_ok=True)
-    tmp = p.with_suffix(p.suffix + ".tmp")
+    tmp = p.with_name(f".{p.name}.{os.getpid()}.{threading.get_ident()}.tmp")
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n",
                    encoding="utf-8")
     os.replace(tmp, p)

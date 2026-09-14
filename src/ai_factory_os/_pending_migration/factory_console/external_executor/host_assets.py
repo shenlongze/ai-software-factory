@@ -183,13 +183,24 @@ def import_assets(
     - plugin/persona → 只返回 catalog, 不注册 (不可执行)
     返回 {imported_agents, imported_skills, skipped, catalog}。
     """
+    # ★ 读侧必须【两种格式都认】✓ —— 否则读扁平文件得到空 ✗
+    #   → 导入变成"从空开始装" → 全量覆盖 ✗✗（会冲掉别的适配器导入的资产 ✗）
+    #   为什么（2026-09-14 实测 ✓，与写侧同一个根因）:
+    #     权威 store 写的是【扁平】{id: {...}} ✓；本模块内部曾用包装 ✓
+    #     → 只认包装的读法在扁平文件上返回空 ✗ → 每次 import 都覆盖 ✗
     agents_data = _load_json_map(agents_file)
-    agents_map = agents_data.get("agents") if isinstance(agents_data.get("agents"), dict) else {}
-    if not isinstance(agents_map, dict):
+    if isinstance(agents_data, dict) and isinstance(agents_data.get("agents"), dict):
+        agents_map = agents_data["agents"]     # 兼容旧包装 ✓
+    elif isinstance(agents_data, dict):
+        agents_map = agents_data               # 扁平（权威格式 ✓）
+    else:
         agents_map = {}
     skills_data = _load_json_map(skills_file)
-    skills_map = skills_data.get("skills") if isinstance(skills_data.get("skills"), dict) else {}
-    if not isinstance(skills_map, dict):
+    if isinstance(skills_data, dict) and isinstance(skills_data.get("skills"), dict):
+        skills_map = skills_data["skills"]     # 兼容旧包装 ✓
+    elif isinstance(skills_data, dict):
+        skills_map = skills_data               # 扁平（权威格式 ✓）
+    else:
         skills_map = {}
 
     imported_agents: list[str] = []
@@ -252,10 +263,15 @@ def import_assets(
         else:
             catalog.append({k: asset.get(k) for k in ("id", "name", "kind", "source", "host")})
 
-    agents_data["agents"] = agents_map
-    skills_data["skills"] = skills_map
-    _save_json_map(agents_file, agents_data)
-    _save_json_map(skills_file, skills_data)
+    # ★ 落盘必须【扁平】{id: {...}} 与权威 AgentStore/SkillStore 对齐 ✓
+    #   为什么（2026-09-14 实测事故 ✓，与 local_ai / external_skills 同一类）:
+    #     此前写成 {"agents": {...}} / {"skills": {...}} ✗ → 与权威 store 的扁平格式冲突 ✗
+    #     → 读取方各按各解析（_skill_rows 甚至会把 'skills' 当包装展开 ✗）
+    #     → agents.json / skills.json 掺杂、CLI 显示丢条目 ✗✗
+    #   修复: 包装只是本模块的内存表示 ✓ 不外泄到磁盘 ✓
+    #   注: agents_map/skills_map 已是完整全量 ✓（下面 _save 直接写它 ✓）
+    _save_json_map(agents_file, agents_map)
+    _save_json_map(skills_file, skills_map)
     return {
         "imported_agents": imported_agents,
         "imported_skills": imported_skills,

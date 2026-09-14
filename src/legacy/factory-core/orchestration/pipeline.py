@@ -16,8 +16,8 @@ from __future__ import annotations
 
 from typing import Mapping
 
-from agents.registry import AgentRegistry
-from agents.store import AgentStore
+from ai_factory_os.plugins.agents.registry import AgentRegistry
+from ai_factory_os.plugins.agents.store import AgentStore
 from assignment.allocator import AgentAllocator
 from assignment.matcher import AgentMatcher
 from assignment.store import AssignmentStore

@@ -18,7 +18,7 @@ from typing import Any
 from ai_factory_os.infrastructure.events.logger import EventLogger
 from ai_factory_os.infrastructure.events.types import Event, EventType
 
-from .models import Agent, AgentStatus, Skill
+from .types import Agent, AgentStatus, Skill
 from .store import AgentStore, SkillStore
 
 

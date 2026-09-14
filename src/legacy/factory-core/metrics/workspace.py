@@ -24,8 +24,8 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 
-from agents.models import Agent
-from agents.registry import AgentRegistry
+from ai_factory_os.plugins.agents.types import Agent
+from ai_factory_os.plugins.agents.registry import AgentRegistry
 from ai_factory_os.infrastructure.events.types import Event, EventType
 from ai_factory_os.infrastructure.events.store import EventStore
 from runtime.models import ExecutionRequest, ExecutionStatus

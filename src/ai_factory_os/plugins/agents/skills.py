@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from .models import Skill
+from .types import Skill
 
 BUILTIN_SKILLS: dict[str, dict] = {
     "flutter": {

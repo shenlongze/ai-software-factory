@@ -29,7 +29,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from agents.registry import AgentNotFoundError, AgentRegistry
+from ai_factory_os.plugins.agents.registry import AgentNotFoundError, AgentRegistry
 from assignment.models import AssignmentStatus
 from assignment.store import AssignmentStore
 from ai_factory_os.infrastructure.events.logger import EventLogger

@@ -25,7 +25,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from agents.models import AgentStatus
+from ai_factory_os.plugins.agents.types import AgentStatus
 from assignment.models import AssignmentStatus
 from ai_factory_os.infrastructure.events.types import Event, EventType
 from runtime.models import ExecutionStatus

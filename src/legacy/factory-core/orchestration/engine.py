@@ -30,7 +30,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from agents.models import Agent
+from ai_factory_os.plugins.agents.types import Agent
 from assignment.allocator import AgentAllocator, AgentAllocatorError
 from assignment.matcher import AgentMatcher
 from ai_factory_os.infrastructure.events.logger import EventLogger

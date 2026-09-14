@@ -15,8 +15,8 @@ from collections import Counter
 from functools import partial
 from typing import Any
 
-from agents.models import Agent, AgentStatus, Skill
-from agents.registry import (
+from ai_factory_os.plugins.agents.types import Agent, AgentStatus, Skill
+from ai_factory_os.plugins.agents.registry import (
     AgentExistsError,
     AgentNotFoundError,
     AgentRegistry,
@@ -3417,7 +3417,7 @@ def _open_console_service(ctx: FactoryContext) -> Any:
         return None
     # 只读聚合装配 (全部可选; 延迟导入 Core 包保 Removal Isolation: 删除
     # 任一 Core 包不影响 Console 加载 — 与 service.py 内部延迟导入同模式)。
-    from agents.registry import AgentRegistry
+    from ai_factory_os.plugins.agents.registry import AgentRegistry
 
     from intelligence.store import DecisionStore, ExperienceStore, RecommendationStore
 

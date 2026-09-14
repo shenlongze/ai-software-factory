@@ -24,8 +24,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from agents.models import AgentStatus
-from agents.registry import AgentNotFoundError, AgentRegistry
+from ai_factory_os.plugins.agents.types import AgentStatus
+from ai_factory_os.plugins.agents.registry import AgentNotFoundError, AgentRegistry
 from ai_factory_os.infrastructure.events.logger import EventLogger
 from ai_factory_os.infrastructure.events.types import Event, EventType
 from runtime.store import RuntimeStore

@@ -15,7 +15,7 @@ from __future__ import annotations
 from collections import Counter
 from typing import Sequence
 
-from agents.models import Agent
+from ai_factory_os.plugins.agents.types import Agent
 from ai_factory_os.infrastructure.events.types import Event, EventType
 from runtime.models import ExecutionRequest, ExecutionStatus
 from ai_factory_os.services.work.types import Task, TaskStatus

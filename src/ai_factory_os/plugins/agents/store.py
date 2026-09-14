@@ -17,7 +17,7 @@ from typing import Any, Generic, TypeVar, cast
 
 from pydantic import BaseModel, ValidationError
 
-from .models import Agent, Skill
+from .types import Agent, Skill
 
 T = TypeVar("T", bound=BaseModel)
 

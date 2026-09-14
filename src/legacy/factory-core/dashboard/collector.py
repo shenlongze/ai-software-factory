@@ -21,7 +21,7 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any
 
-from agents.registry import AgentRegistry
+from ai_factory_os.plugins.agents.registry import AgentRegistry
 from ai_factory_os.infrastructure.events.types import EventType
 from ai_factory_os.infrastructure.events.store import EventStore
 from metrics.collectors import MetricsCollector

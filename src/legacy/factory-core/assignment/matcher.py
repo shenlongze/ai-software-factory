@@ -18,8 +18,8 @@ from __future__ import annotations
 
 from typing import Iterable
 
-from agents.models import Agent, AgentStatus
-from agents.registry import AgentRegistry
+from ai_factory_os.plugins.agents.types import Agent, AgentStatus
+from ai_factory_os.plugins.agents.registry import AgentRegistry
 from workflows.models import WorkflowStep
 
 

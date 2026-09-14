@@ -17,7 +17,7 @@ Workflow 定义无项目维度, 恒为全局 (agents_total/definitions 为全局
 
 from __future__ import annotations
 
-from agents.registry import AgentRegistry
+from ai_factory_os.plugins.agents.registry import AgentRegistry
 from ai_factory_os.infrastructure.events.store import EventStore
 from runtime.store import RuntimeStore
 from ai_factory_os.services.work.store import TaskStore

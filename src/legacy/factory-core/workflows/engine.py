@@ -30,7 +30,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from agents.registry import AgentRegistry
+from ai_factory_os.plugins.agents.registry import AgentRegistry
 from ai_factory_os.infrastructure.events.logger import EventLogger
 from ai_factory_os.infrastructure.events.types import Event, EventType
 from runtime.models import ExecutionRequest

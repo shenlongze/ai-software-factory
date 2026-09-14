@@ -693,8 +693,8 @@ def build_console_service(
     except Exception as exc:  # 缺装/损坏 → 装配失败 (调用方决定兜底)
         raise RuntimeError("factory-console 未安装 (缺 factory-console/ 包)") from exc
 
-    from agents.registry import AgentRegistry
-    from agents.store import AgentStore
+    from ai_factory_os.plugins.agents.registry import AgentRegistry
+    from ai_factory_os.plugins.agents.store import AgentStore
 
     from intelligence.store import DecisionStore, ExperienceStore, RecommendationStore
 

@@ -2428,10 +2428,27 @@ class FactoryCLI:
         """
         print("=== Factory 运行时配置 ===")
         print(f"配置文件: {self._config_file()}")
+        # ★ 显示【生效值】+ 标注默认（2026-09-14 补 ✓）
+        #   为什么（Founder: "是不是 init 的时候，都有默认配置" ✓）:
+        #     原输出"未配置"✗ 让人以为【没配就不能用 ✗】——
+        #     其实代码有 fallback ✓ 照样能跑 ✓（config.py:47-53 ✓: ~/.factory · 8011 · 5180 ✓）
+        #   → 改为: 未配置时【也打印生效值 + (默认) 标注 ✓】= 用户看得见 ✓
+        _eff_getter = {
+            "core.data_dir": lambda: str(self.config.get_data_dir()),
+            "core.port": lambda: str(self.config.get_port()),
+            "core.frontend_port": lambda: str(self.config.get_frontend_port()),
+        }
         for key in CONFIG_KEYS:
             section, _, sub = key.partition(".")
-            configured = self.config.get(section, sub, None) is not None
-            print(f"  {key:<22} {'已配置' if configured else '未配置'}")
+            raw = self.config.get(section, sub, None)
+            if raw is not None:
+                print(f"  {key:<22} 已配置 = {raw}")
+            else:
+                try:
+                    eff = _eff_getter.get(key, lambda: "?")()
+                except Exception:  # noqa: BLE001
+                    eff = "?"
+                print(f"  {key:<22} 默认 {eff}  ← 未显式配置也能用 ✓")
         llm = self.config.get_llm()
         print(
             f"LLM (只读状态): provider={llm['provider']} model={llm['model']} "

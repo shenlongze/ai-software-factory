@@ -65,6 +65,22 @@ fact_type 只能是: IDEA, REQUIREMENT, CONSTRAINT, DECISION, QUESTION, FUTURE_I
 """
 
 #: 产品相关词 (LLM 判定"这消息有没有产品语义"用 — 非事实抽取规则)
+#: 确认类短消息（"对/是/好的/就是这样"）—— 多轮澄清时用户最常说的
+_CONFIRM_RE = re.compile(
+    r"^(对|是|是的|对的|嗯|嗯嗯|好的|好|可以|行|没错|就是这样|就这样|ok|OK|OK的)[。.!！~、 ]*$",
+    re.IGNORECASE,
+)
+#: 寒暄
+_GREETING_RE = re.compile(r"^(你好|您好|hi|hello|嗨|在吗|早上好|下午好|晚上好)[。.!！~ ]*$", re.IGNORECASE)
+#: 与产品无关的闲聊
+_CHITCHAT_RE = re.compile(r"天气|吃饭|累了|休息|周末|心情|无聊|睡觉")
+
+
+def _has_understanding(snapshot: dict[str, Any]) -> bool:
+    """当前会话是否已有产品理解（有 fact）—— 决定兜底回应是"推进"还是"引导"。"""
+    return bool(snapshot.get("facts"))
+
+
 _PRODUCT_HINT_RE = re.compile(
     r"做|开发|产品|app|应用|端|平台|登录|排行|摇杆|按键|操作|游戏|界面|用户|"
     r"功能|需求|版本|设计|横屏|竖屏|声音|广告|内购|账号|同步|离线|"
@@ -144,7 +160,24 @@ def llm_semantic_interpreter(root: str, conversation_id: str, text: str,
         if re.search(r"理解|你(现在|目前)?(觉得|认为|怎么看)|总结", stripped):
             return build_proposal(
                 operations=[], reply="", summary="", show_understanding=True)
-        return build_proposal(operations=[], reply="嗯, 我在。想做什么产品? 说说你的想法。")
+        # 兜底不再用同一句模板（Founder 实测: 对"对，就是这样/你好/今天天气不错"
+        # 三类输入回复完全相同 → 暴露"没接住"）。改为分场景的、有状态的回应；
+        # 仍不调 LLM（保持省成本 + 防幻觉的设计意图）。
+        if _CONFIRM_RE.match(stripped):
+            if _has_understanding(snapshot):
+                return build_proposal(
+                    operations=[], summary="", show_understanding=True,
+                    reply="收到，就按这个理解继续。需要我「整理成 PRD」吗？")
+            return build_proposal(operations=[], reply="好的。你想做什么？直接说一句就行。")
+        if _GREETING_RE.match(stripped):
+            return build_proposal(operations=[], reply="你好。想做点什么，直接说就行。")
+        if _CHITCHAT_RE.search(stripped):
+            return build_proposal(
+                operations=[], reply="我主要帮你把想法做成产品 —— 有想做的直接说，或问我要怎么开始。")
+        if _has_understanding(snapshot):
+            return build_proposal(operations=[], summary="", show_understanding=True, reply="")
+        return build_proposal(
+            operations=[], reply="我在。说说你想做什么产品，或者问我要怎么开始。")
 
     # 2) LLM 调用 (注入或默认)
     if llm_fn is None:

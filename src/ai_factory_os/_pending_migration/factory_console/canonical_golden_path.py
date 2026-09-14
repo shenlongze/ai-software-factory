@@ -468,6 +468,8 @@ def ensure_project_binding(root: str | Path, conversation_id: str) -> str:
         doc = pu._load_conv(root, conversation_id) or {}
         doc["project_id"] = str(proj.get("id") or "")
         pu._save_conv(root, conversation_id, doc)
+        # ★ 铁律: 属于项目的文件必须在项目目录下 ✓ → 会话文件搬进项目 ✓
+        pu.move_conv_to_project(root, conversation_id, str(doc["project_id"]))
         return str(doc["project_id"])
     except Exception as exc:  # noqa: BLE001 — 失败不阻断会话 ✓ 但必须可见
         import sys as _s

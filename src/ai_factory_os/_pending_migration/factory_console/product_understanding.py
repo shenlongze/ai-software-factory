@@ -89,7 +89,15 @@ def _new_id(prefix: str) -> str:
 
 
 def _conv_file(root: Path | str, conv_id: str) -> Path:
-    return Path(root) / "conversations" / f"{conv_id}.json"
+    # ★ 属于项目的文件必须在项目目录下（Founder 铁律 ✓）
+    #   优先级: projects/<P-id>/conversations/ ✓ → 回落全局 conversations/ ✓
+    #   （未绑项目的会话仍在全局 ✓ —— 创建时还没项目，绑定后由
+    #     move_conv_to_project 搬进项目 ✓）
+    base = Path(root)
+    for f in base.glob(f"projects/*/conversations/{conv_id}.json"):
+        if f.is_file():
+            return f
+    return base / "conversations" / f"{conv_id}.json"
 
 
 def _load_conv(root: Path | str, conv_id: str) -> dict[str, Any] | None:
@@ -264,14 +272,18 @@ def _public_conv(doc: dict[str, Any]) -> dict[str, Any]:
 
 
 def conversations(root: Path | str) -> list[dict[str, Any]]:
-    d = Path(root) / "conversations"
+    # ★ 会话可能在【项目目录】里（绑项目的会话）✓ → 两处都扫 ✓
+    # ★ 会话可能在【项目目录】里（已绑项目的）✓ → 全局 + 各项目 两处都扫 ✓
+    dirs = [Path(root) / "conversations"]
+    dirs += sorted(Path(root).glob("projects/*/conversations"))
     out = []
-    if not d.is_dir():
-        return out
-    for p in sorted(d.glob("conv-*.json")):
-        doc = _load_conv(root, p.stem)
-        if doc is not None:
-            out.append(_public_conv(doc))
+    for d in dirs:
+        if not d.is_dir():
+            continue
+        for p in sorted(d.glob("conv-*.json")):
+            doc = _load_conv(root, p.stem)
+            if doc is not None:
+                out.append(_public_conv(doc))
     return sorted(out, key=lambda c: str(c.get("created_at") or ""))
 
 
@@ -532,3 +544,27 @@ __all__ = [
     "upsert_fact", "transition_fact", "list_facts", "get_fact",
     "understanding_version", "understanding_snapshot", "build_context",
 ]
+
+
+def move_conv_to_project(root: Path | str, conv_id: str,
+                         project_id: str) -> bool:
+    """把会话文件搬进 projects/<P-id>/conversations/（幂等 + 失败安全 ✓）。
+
+    为什么: Founder 铁律「属于这个项目的文件，一定需要在这个目录下」✓。
+    幂等: 已在项目目录 / 源不存在 → 直接返回 False，不报错 ✓。
+    原子: os.replace 同盘原子替换 ✓（不会出现半个文件 ✗）。
+    """
+    if not project_id:
+        return False
+    src = Path(root) / "conversations" / f"{conv_id}.json"
+    dst = Path(root) / "projects" / project_id / "conversations" / f"{conv_id}.json"
+    if not src.is_file() or dst.exists():
+        return False
+    try:
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        os.replace(src, dst)
+        return True
+    except OSError as exc:
+        import sys as _s
+        print(f"[project] 会话迁移失败: {exc}", file=_s.stderr)
+        return False

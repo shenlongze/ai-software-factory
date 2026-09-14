@@ -4960,8 +4960,16 @@ class FactoryCLI:
                     return 1
                 st = _dlv.uat_status(root, str(target))
             rec = _dlv.uat_get(root, str(target))
-            if not rec:
-                rec = _dlv.build_uat_checklist(root, str(target))
+            # ★ 2026-09-14 修 ✗: 原来【只在 uat.json 不存在时生成】✗
+            #   → 早期生成的空清单会【一直粘住 ✗】（我踩到: PRD 补齐后仍显示 0 条 ✓）
+            #   → 改为: 空清单 + 有 PRD 数据 → 自动重建 ✓（自愈 ✓）
+            _need_rebuild = (not rec) or not (rec.get("criteria") or [])
+            if _need_rebuild:
+                _fresh = _dlv.build_uat_checklist(root, str(target))
+                if _fresh.get("criteria"):
+                    rec = _fresh
+                elif not rec:
+                    rec = _fresh
                 st = _dlv.uat_status(root, str(target))
             print(f"=== 用户验收 UAT（项目 {target}）===")
             if rec.get("hint"):

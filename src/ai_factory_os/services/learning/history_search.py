@@ -26,7 +26,7 @@ from typing import Any, Iterable
 SOURCES: tuple[str, ...] = ("event", "trace", "experience", "message")
 DEFAULT_DB_NAME = "search.db"
 
-_SCHEMA_VERSION = 2   # 1=external-content+触发器(错) → 2=独立表+代码侧切分
+_SCHEMA_VERSION = 3   # 1=external-content+触发器(错) → 2=独立表+代码侧切分
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -45,6 +45,17 @@ CREATE TABLE IF NOT EXISTS docs (
 --   连续 CJK 串在默认分词器下是【一个 token】→ 子串永远搜不到 ✗
 --   （Hermes 能搜到是因为它的中文有标点/空格式分隔，我们不假设这一点）
 CREATE VIRTUAL TABLE IF NOT EXISTS docs_fts USING fts5(title, body);
+-- 语义打分的倒排表（tf-idf）: 全库打分，不受 FTS 候选集限制 ✓
+-- 借鉴 Hermes 的 Hybrid retrieval（向量打分 + 词的统计权重）:
+--   它的病灶对照 —— 纯 FTS 时，长句的通用词占满候选，
+--   真正的关键词（"记账"）连候选都进不来 ✗ → 必须【全库打分】才能解决 ✓
+CREATE TABLE IF NOT EXISTS terms (
+    doc_id INTEGER NOT NULL,
+    term   TEXT    NOT NULL,
+    tf     INTEGER NOT NULL DEFAULT 1,
+    PRIMARY KEY (doc_id, term)
+);
+CREATE INDEX IF NOT EXISTS idx_terms_term ON terms(term);
 """
 
 #: CJK 区间 —— 索引与查询【两侧都逐字切分】
@@ -320,6 +331,13 @@ class HistoryIndex:
     def search(self, query: str, *, limit: int = 8,
                sources: tuple[str, ...] | None = None) -> list[Hit]:
         """FTS5 全文检索。空查询/无命中 → 空列表（不抛）。"""
+        # ★ 语义打分优先（学 Hermes 的 Hybrid retrieval）:
+        #   纯 FTS 时长句的通用词会占满候选，关键词连候选都进不来 ✗ →
+        #   改为【全库 tf-idf 打分】，不受候选集限制 ✓
+        semantic = self._semantic_rank(query, limit=limit, sources=sources)
+        if semantic:
+            return semantic
+
         terms = _fts_terms(query)
         if not terms:
             return []
@@ -344,13 +362,76 @@ class HistoryIndex:
         """按 CJK 切分重建 FTS（幂等）。"""
         try:
             self._conn.execute("DELETE FROM docs_fts")
+            self._conn.execute("DELETE FROM terms")
             for rowid, title, body in self._conn.execute("SELECT id, title, body FROM docs"):
                 self._conn.execute(
                     "INSERT INTO docs_fts(rowid, title, body) VALUES(?,?,?)",
                     (rowid, _cjk_split(title), _cjk_split(body)))
+                for term, tf in _features(f"{title} {body}").items():
+                    self._conn.execute(
+                        "INSERT INTO terms(doc_id, term, tf) VALUES(?,?,?)", (rowid, term, tf))
             self._conn.commit()
         except Exception as exc:  # noqa: BLE001 — 不静默
             print(f"[history_search] FTS 重建失败: {exc}", file=sys.stderr)
+
+    def _semantic_rank(self, query: str, *, limit: int = 8,
+                       sources: tuple[str, ...] | None = None) -> list[Hit]:
+        """全库 tf-idf 打分（CJK bigram + ASCII 词），不依赖 FTS 候选集。
+
+        学 Hermes 的 Hybrid retrieval: 它靠【向量打分】解决了长句召回；
+        这里是同一思路的轻量实现（纯本地、无外部服务）。
+        打分: Σ (1+log tf_doc) × idf_term × tf_query
+        """
+        import math
+
+        feats = _features(query)
+        if not feats:
+            return []
+        try:
+            total = self._conn.execute("SELECT count(*) FROM docs").fetchone()[0]
+            if not total:
+                return []
+            keys = list(feats)
+            ph = ",".join("?" * len(keys))
+            dfs = {r[0]: r[1] for r in self._conn.execute(
+                f"SELECT term, count(*) FROM terms WHERE term IN ({ph}) GROUP BY term", keys)}
+            if not dfs:
+                return []
+            scores: dict[int, float] = {}
+            for term in keys:
+                df = dfs.get(term)
+                if not df:
+                    continue
+                idf = math.log(total / df) + 1.0
+                qtf = feats[term]
+                for doc_id, tf in self._conn.execute(
+                        "SELECT doc_id, tf FROM terms WHERE term = ?", (term,)):
+                    scores[doc_id] = scores.get(doc_id, 0.0) + (1.0 + math.log(tf)) * idf * qtf
+            if not scores:
+                return []
+            top = sorted(scores.items(), key=lambda x: -x[1])[: limit * 2]
+            ids = [d for d, _ in top]
+            ph2 = ",".join("?" * len(ids))
+            where = f" AND source IN ({','.join('?' * len(sources))})" if sources else ""
+            params: list = [*ids]
+            if sources:
+                params.extend(sources)
+            rows = self._conn.execute(
+                f"SELECT id, source, ref, ts, title, body FROM docs "
+                f"WHERE id IN ({ph2}){where}", params).fetchall()
+            byid = {r[0]: r for r in rows}
+            out: list[Hit] = []
+            for doc_id, _score in top:
+                r = byid.get(doc_id)
+                if r is None:
+                    continue
+                out.append(Hit(source=r[1], ref=r[2], ts=r[3] or "", title=r[4] or "",
+                               snippet=_snippet(r[5] or "", query)))
+                if len(out) >= limit:
+                    break
+            return out
+        except Exception:  # noqa: BLE001 — 打分不可用 → 回落 FTS（失败安全）
+            return []
 
     def stats(self) -> dict[str, int]:
         """各类历史已索引条数。"""
@@ -502,3 +583,23 @@ def _snippet(body: str, terms: str, *, width: int = 180) -> str:
         return flat[:width]
     lo = max(0, at - width // 3)
     return ("…" if lo else "") + flat[lo:lo + width] + "…"
+
+
+def _features(text: str) -> dict[str, int]:
+    """文档/查询的特征（词频字典）。
+
+    CJK: 字符 bigram（"旅行记账" → 旅行/行记/记账）—— 中文无需词典即可
+         取得接近"词"的粒度 ✓（这是它能救回"记账"的关键 ✓）
+    ASCII: 小写单词。
+    """
+    out: dict[str, int] = {}
+    text = (text or "").lower()
+    for w in re.split(r"[^0-9a-z_]+", text):
+        if len(w) >= 2:
+            out[f"w:{w}"] = out.get(f"w:{w}", 0) + 1
+    cjk_runs = re.findall(r"[\u3400-\u9fff\uf900-\ufaff]+", text)
+    for run in cjk_runs:
+        for k in range(len(run) - 1):
+            g = run[k:k + 2]
+            out[f"c:{g}"] = out.get(f"c:{g}", 0) + 1
+    return out

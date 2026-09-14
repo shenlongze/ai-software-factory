@@ -466,7 +466,7 @@ class ReasoningProvider:
         def call(prompt: str, operation: str = "") -> str:
             """单次调用: ProviderRequest → ProviderResponse (error → 抛)。"""
             try:
-                from exec.provider import ProviderRequest
+                from ai_factory_os.infrastructure.llm.provider import ProviderRequest
 
                 resp = provider.generate(
                     ProviderRequest(

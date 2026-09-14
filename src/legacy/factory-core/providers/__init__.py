@@ -35,7 +35,7 @@ from .models import (
     ProviderResponse,
     ProviderStatus,
 )
-from .provider import ProviderAdapter
+from ai_factory_os.infrastructure.llm.provider import ProviderAdapter
 from .registry import (
     ProviderExistsError,
     ProviderNotFoundError,

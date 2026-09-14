@@ -43,7 +43,7 @@ from .agent_runtime import AgentRuntime
 from .approval import ApprovalError, ApprovalGate
 from .experience import ExperienceRecorder
 from .models import AgentInstance, ExecutionRequest, new_id
-from .provider import ProviderRegistry
+from ai_factory_os.infrastructure.llm.provider import ProviderRegistry
 from .store import ExecStore
 
 DEFAULT_ROOT = Path.home() / ".factory"
@@ -169,7 +169,7 @@ def _provider_registry() -> ProviderRegistry:
                 return registry
     except Exception:  # noqa: BLE001 — 失败安全: ControlPlane 不可用 → 回退不抛
         pass
-    from .provider import default_registry
+    from ai_factory_os.infrastructure.llm.provider import default_registry
 
     return default_registry()
 
@@ -323,7 +323,7 @@ def cmd_exec_providers(root: Path, args: Any) -> dict:
     仅表示 key 已设置, 真实调用仍需 run/Benchmark 验证)。发 org.execution.viewed
     审计 (ADR-0002 只读命令)。
     """
-    from .provider import ProviderConfigChecker
+    from ai_factory_os.infrastructure.llm.provider import ProviderConfigChecker
 
     with _logger_scope(root) as logger:
         checker = ProviderConfigChecker()

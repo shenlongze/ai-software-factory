@@ -52,7 +52,7 @@ from .models import (
     SandboxSession,
     new_id,
 )
-from .provider import ProviderInterface
+from ai_factory_os.infrastructure.llm.provider import ProviderInterface
 from .sandbox import Sandbox
 from .store import ExecStore
 from .validation import Validation, ValidationResult

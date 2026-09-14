@@ -34,7 +34,7 @@ from typing import Any
 from .agent_runtime import AgentRuntime
 from .experience import ExperienceRecorder
 from .models import ExecutionRequest, ExecutionResult, new_id
-from .provider import ProviderInterface
+from ai_factory_os.infrastructure.llm.provider import ProviderInterface
 from .roles import (
     RoleError,
     get_role,

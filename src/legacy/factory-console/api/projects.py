@@ -536,7 +536,7 @@ def _suggest_via_llm(idea: str) -> IdeaSuggestion | None:
         return None  # 无 key → 诚实 fallback (不假装 AI 理解)
     try:
         _setup_sys_path()  # 先挂 factory-core/org/exec (import exec.provider 依赖)
-        from exec.provider import ProviderRequest
+        from ai_factory_os.infrastructure.llm.provider import ProviderRequest
 
         provider = _build_suggest_provider()
         response = provider.generate(

@@ -42,7 +42,7 @@ import re
 from dataclasses import dataclass, field as dc_field
 from typing import Any, Callable
 
-from .provider import ProviderRequest
+from ai_factory_os.infrastructure.llm.provider import ProviderRequest
 
 #: ux_ui 契约字段 (与 org CONTRACTS ux_ui required_fields 同源; 本地
 #: 校验 = exec 侧同规则, Removal Isolation 下与 org 侧保持一致)

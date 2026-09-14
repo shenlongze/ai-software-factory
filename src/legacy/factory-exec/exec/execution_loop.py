@@ -43,7 +43,7 @@ from typing import Any, Protocol
 from pydantic import BaseModel, Field
 
 from .models import ExecutionRequest, new_id
-from .provider import ProviderInterface, ProviderRequest
+from ai_factory_os.infrastructure.llm.provider import ProviderInterface, ProviderRequest
 from .runtime_session import (
     AgentStepType,
     RuntimeEventType,

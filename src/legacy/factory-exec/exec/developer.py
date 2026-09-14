@@ -46,7 +46,7 @@ from pathlib import Path
 from typing import Any
 
 from .operations import OperationEngine, OperationError, StructuredCodeOperation
-from .provider import ProviderError, ProviderInterface, ProviderRequest
+from ai_factory_os.infrastructure.llm.provider import ProviderError, ProviderInterface, ProviderRequest
 from .validation import ValidationResult
 
 #: 默认工程规范 (Developer 提示词; 可构造参数覆盖 — 不绑死项目约定)

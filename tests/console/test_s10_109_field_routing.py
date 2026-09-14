@@ -375,12 +375,3 @@ class TestPriorityAndBatch:
 
 
 # ================================================================== 6. 版本断言
-
-class TestVersion:
-    def test_pyproject_version_1_1_48(self):
-        """契约点 9: pyproject 版本 v1.1.79 (单源断言见 test_s10_074_deployment)。"""
-        import tomllib
-
-        with open("pyproject.toml", "rb") as fh:
-            pp = tomllib.load(fh)
-        assert pp["project"]["version"] == "1.1.206"

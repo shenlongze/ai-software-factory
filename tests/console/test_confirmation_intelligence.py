@@ -652,15 +652,3 @@ class TestSessionWiring:
 
 
 # ================================================================== 11. 版本 (另见 test_s10_074_deployment)
-
-class TestVersion:
-    def test_pyproject_version_bumped(self):
-        """契约点 11: pyproject 版本 v1.1.79 (单源断言见 test_s10_074_deployment)。"""
-        import tomllib
-        from pathlib import Path
-
-        root = Path(__file__).resolve().parents[2]
-        ver = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))[
-            "project"
-        ]["version"]
-        assert ver == "1.1.206"

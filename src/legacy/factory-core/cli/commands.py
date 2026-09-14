@@ -43,8 +43,8 @@ from runtime.adapters import BUILTIN_ADAPTERS
 from runtime.models import ExecutionRequest, ExecutionStatus, RuntimeInfo, RuntimeStatus
 from runtime.registry import RuntimeExistsError, RuntimeNotFoundError, RuntimeRegistry
 from runtime.store import RuntimeStore
-from runtimes.catalog import RuntimeCatalog
-from runtimes.store import CatalogStore
+from ai_factory_os.services.execution.catalog import RuntimeCatalog
+from ai_factory_os.services.execution.store import CatalogStore
 from ai_factory_os.services.work.types import Task, TaskStatus
 from ai_factory_os.services.work.store import TaskExistsError, TaskStore
 from validation.engine import ValidationEngine

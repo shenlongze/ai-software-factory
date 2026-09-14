@@ -14,7 +14,7 @@ Catalog 默认定义 id 为 "hermes" (能力描述命名空间独立于实现注
 
 from __future__ import annotations
 
-from .models import CatalogStatus, RuntimeDefinition
+from .runtime_types import CatalogStatus, RuntimeDefinition
 
 DEFAULT_DEFINITIONS: list[RuntimeDefinition] = [
     RuntimeDefinition(

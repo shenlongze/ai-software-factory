@@ -24,7 +24,7 @@ from ai_factory_os.infrastructure.events.logger import EventLogger
 from ai_factory_os.infrastructure.events.types import Event, EventType
 
 from .definitions import DEFAULT_DEFINITIONS
-from .models import CatalogStatus, RuntimeDefinition
+from .runtime_types import CatalogStatus, RuntimeDefinition
 from .store import CatalogStore
 
 

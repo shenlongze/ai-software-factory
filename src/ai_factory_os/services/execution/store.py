@@ -24,7 +24,7 @@ from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
-from .models import RuntimeDefinition
+from .runtime_types import RuntimeDefinition
 
 
 class CatalogStoreError(Exception):

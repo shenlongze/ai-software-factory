@@ -263,6 +263,25 @@ def cmd_exec_run(root: Path, args: Any) -> dict:
             experience=experience,
         )
         result = runtime.execute(request, employee=employee, agent_instance=agent)
+
+        # 学习钩子 (执行收尾, 失败安全): 经验入库 + 画像刷新 —— 与会话入口对齐。
+        # 审计 2026-09-14: 本条路径(factory run)此前未接学习, 导致 CLI 跑任务零学习产出。
+        try:
+            from factory_console.memory.learning_loop import LearningLoop
+            _ok = bool(result.is_success)
+            _rec = {
+                "task": getattr(request, "task_id", "") or getattr(request, "objective", ""),
+                "agent": str(getattr(args, "agent", "") or ""),
+                "result": "success" if _ok else "failure",
+                "error": "" if _ok else str(getattr(result, "error", "") or ""),
+                "project": str(project_dir),
+                "intent": "",
+            }
+            LearningLoop(workspace=project_dir).on_execution_complete(
+                _rec, {"score": 1.0 if _ok else 0.5}, project_dir
+            )
+        except Exception:  # noqa: BLE001 — 失败安全: 学习故障不阻断执行
+            pass
         terminal = (
             EventType.ORG_EXECUTION_COMPLETED
             if result.is_success

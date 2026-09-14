@@ -1479,6 +1479,38 @@ def cmd_execution_run(ctx: FactoryContext, args: Any) -> dict:
         )
     except Exception:
         snapshot = None  # 失败安全: 快照是审计增强, 不因 git 问题破坏 run
+    # 学习钩子 (CLI 层, 执行核心零改动): 执行完成 → 经验入库 + 画像刷新。
+    # 与会话路径 (factory_console/session/actions.py:1497) 对齐 —— 补齐 CLI 入口的
+    # 学习闭环（审计 2026-09-14: 此前学习只挂在会话入口，CLI 跑任务不产生任何学习）。
+    # 失败安全: 学习是增强不是主链依赖, 任何异常 → experience_id=None, run 结果不变。
+    learning: dict[str, Any] = {"experience_id": None}
+    try:
+        from pathlib import Path
+
+        from factory_console.memory.learning_loop import LearningLoop
+
+        _ws = Path(getattr(args, "project", "") or ".").expanduser().resolve()
+        _succeeded = str(outcome.request.status.value).lower() == "success"
+        _record = {
+            "task": outcome.request.task_id,
+            "agent": getattr(outcome.request, "runtime_id", "") or "",
+            "result": "success" if _succeeded else "failure",
+            "error": "" if _succeeded else (outcome.workflow_error or ""),
+            "project": str(_ws),
+            "intent": "",
+        }
+        # 质量分: 成功 1.0 / 失败 0.5（保住"失败模式"的学习价值，不被质量护栏挡掉）
+        _exp = LearningLoop(workspace=_ws).on_execution_complete(
+            _record, {"score": 1.0 if _succeeded else 0.5}, _ws
+        )
+        learning["experience_id"] = _exp or None
+    except Exception as _exc:  # noqa: BLE001 — 失败安全: 学习故障不阻断 run
+        try:  # 失败安全 ≠ 静默: 记下原因便于诊断
+            from factory_console.memory.learning_loop import _note_learning_failure
+
+            _note_learning_failure(None, "cli_execution_run", _exc, _ws)
+        except Exception:  # noqa: BLE001
+            pass
     return {
         "ok": True,
         "execution_id": args.execution_id,
@@ -1494,6 +1526,7 @@ def cmd_execution_run(ctx: FactoryContext, args: Any) -> dict:
         "events": [e.type.value for e in outcome.events],
         "event_seq": outcome.events[-1].seq if outcome.events else None,
         "snapshot": snapshot.to_dict() if snapshot is not None else None,
+        "learning": learning,
     }
 
 

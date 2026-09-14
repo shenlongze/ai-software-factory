@@ -2447,18 +2447,25 @@ class FactoryCLI:
             return 0
         import json as _json
         entries: list[dict] = []
+        n_exec = [0]
         for f in sorted((root / "runtimes").glob("*.json")):
             try:
                 d = _json.loads(f.read_text(encoding="utf-8"))
             except (OSError, ValueError):
                 continue
-            entries.extend(d.values() if isinstance(d, dict) else d)
+            if isinstance(d, dict):
+                entries.extend((d.get("runtimes") or {}).values())
+                _ex = d.get("executions") or {}
+                if _ex:
+                    n_exec[0] += len(_ex)
         print("=== Runtime 清单（执行环境登记）===")
         if not entries:
             print("  （无 → 编排无法派发 ✗）")
             print("  注册: factory runtime add --id hermes-runtime --type agent")
             return 0
         builtin = {"hermes-runtime", "echo"}
+        if n_exec[0]:
+            print(f"  （历史执行记录 {n_exec[0]} 条 ✓ 编排确实派发过）")
         for e in entries:
             if not isinstance(e, dict):
                 continue

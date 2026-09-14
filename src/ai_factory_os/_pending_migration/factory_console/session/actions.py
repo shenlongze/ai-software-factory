@@ -2036,16 +2036,10 @@ def governance_status(context: ExecutionContext) -> ActionResult:
         if not rows:
             return ActionResult(ok=True, status=STATUS_OK, message="暂无生产项目。")
         lines = ["项目 | 状态 | 计划版本 | 治理状态"] + [" | ".join(r) for r in rows]
-                # S10-070: Audit 自动接入 (失败安全)
-        try:
-            from ..audit.audit_emitter import AuditEmitter
-            AuditEmitter(workspace=workspace).emit(   # F821: 原写 ws ✗ 函数内是 workspace ✓
-                "MEMORY_LEARNED", project_id=context.project or "",
-                actor_type="user", actor_id=str(getattr(context, "user", "") or ""),
-                decision_reason=f"经验学习: 提取 {result.extracted_count} 条",
-            )
-        except Exception:  # noqa: BLE001
-            pass
+        # (删除) 此处原有一段 "MEMORY_LEARNED" 审计块 ✗ —— 判定为【错位粘贴】:
+        #   本函数是 governance_status（治理状态查询）✓ 却发"记忆学习"事件 ✗
+        #   且引用 result.extracted_count ✗（本函数无 result ✓ → 恒 NameError → except 吞 ✓）
+        #   ⇒ 它【从未生效】✓ 删除 = 零行为变化 ✓（若确需治理查询发审计，按 governance 语义重写 ✓）
         return ActionResult(ok=True, status=STATUS_OK, message="\n".join(lines))
     except Exception as exc:  # noqa: BLE001 — 失败安全
         return ActionResult(ok=False, status=STATUS_ERROR, message=f"状态查询失败: {exc}", error=str(exc))

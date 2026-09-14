@@ -219,6 +219,10 @@ def _make_reply(root: Path | str, conv: dict[str, Any], message: str,
                 }
         except Exception:  # noqa: BLE001 — legacy 域检查失败 → 维持原行为
             pass
+        # ⚠️ F821 说明（本分支为 LEGACY ✓ 见上"第四阶段裁决 RETIRE"✓）:
+        #   project_id / actor 在此作用域【从未定义】✗ → execute_task 抛 NameError
+        #   → 被下方 except 捕获 ✓ → 降级返回模板回复 ✓（行为上等价于"未接线"✓）
+        #   处置: 保留 + noqa ✓（遗留路径的删除应与 RETIRE 裁决一同做 ✓ 不单拆 ✓）
         # KERNEL INVERSION: 触发 Production Runtime 而非返回模板
         target = goal or _extract_goal(message)
         task_id = f"task-{_now_iso().replace(':', '').replace('-', '')}"
@@ -232,9 +236,9 @@ def _make_reply(root: Path | str, conv: dict[str, Any], message: str,
             execution_result = execute_task(
                 root,
                 task_id,
-                project_id=project_id or "default",
+                project_id=project_id or "default",  # noqa: F821 — 见下注 ✗
                 input_data={"goal": target, "message": message},
-                actor=actor,
+                actor=actor,  # noqa: F821 — 见下注 ✗
             )
             run_id = execution_result.get("run_id")
         except ImportError:

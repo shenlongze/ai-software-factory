@@ -3102,7 +3102,10 @@ def run_agent_native(
         # 硬收敛轮 (不允许再调工具): 信息不足 → 明确追问 (Founder: 3 loop 后还不清醒就追问)
         from .answer_verify import self_check_prompt
         try:
-            _finish_session_hooks(data_dir, project_id, session_id, question, messages, content)
+            # F821 修: 原写 content ✗ —— content 在本行【之后】(3128/3149) 才赋值 ✗
+            #   而 _answer 在前已定义 (2899/2948) ✓ 语义即"最终回答" ✓
+            _finish_session_hooks(data_dir, project_id, session_id, question,
+                                  messages, _answer)
         except Exception:  # noqa: BLE001
             pass
 

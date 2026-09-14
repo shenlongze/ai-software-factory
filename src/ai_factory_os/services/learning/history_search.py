@@ -376,9 +376,18 @@ def _fts_terms(query: str) -> str:
 
 
 #: 从 payload JSON 里提炼可读摘要时优先取的键（按语义重要性排序）。
-_SUMMARY_KEYS = ("name", "goal", "title", "task", "objective", "description", "problem",
-                 "action", "result", "summary", "message", "reason", "phase", "status",
-                 "project_id", "task_id", "agent_id", "model", "verdict", "decision")
+_SUMMARY_KEYS = (
+    # 产品/任务语义
+    "name", "goal", "title", "task", "objective", "description", "problem",
+    "action", "result", "summary", "message", "reason", "phase", "status",
+    "verdict", "decision",
+    # 工具调用类
+    "tool", "arg_summary", "result_summary", "duration_s", "error",
+    # 身份/归属
+    "project_id", "task_id", "agent_id", "model", "user_id",
+    # 变更/验证类
+    "change_id", "verification_id", "artifact_id", "release_id", "passed",
+)
 
 
 def _extract_json_obj(body: str) -> dict | None:
@@ -413,10 +422,18 @@ def _summarize_payload(body: str, *, width: int = 150) -> str:
             s = str(v)
         elif isinstance(v, list):
             s = ", ".join(str(x) for x in v[:3] if isinstance(x, (str, int, float)))
+        elif isinstance(v, dict):
+            # 嵌套一层: 取其关键键或前 2 个标量值（不再深挖，避免摘要过长）
+            sub = [f"{k}={v[k]}" for k in _SUMMARY_KEYS
+                   if isinstance(v.get(k), (str, int, float))][:2]
+            if not sub:
+                sub = [f"{k}={vv}" for k, vv in list(v.items())[:2]
+                       if isinstance(vv, (str, int, float))]
+            s = "·".join(sub)
         else:
             continue
         if s:
-            bits.append(s)
+            bits.append(s[:70] + ("…" if len(s) > 70 else ""))   # 单字段限长，避免一项挤掉全部
         if len(" · ".join(bits)) >= width:
             break
     return " · ".join(bits)[:width]

@@ -38,7 +38,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 from .events import record_experience_analyzed, record_feedback_learned
-from .models import (
+from .types import (
     DEFAULT_HALF_LIFE_DAYS,
     Evidence,
     ExperienceAggregation,

@@ -30,7 +30,7 @@ from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
-from .models import Decision, ExperienceDomain, ExperienceRecord, Recommendation
+from .types import Decision, ExperienceDomain, ExperienceRecord, Recommendation
 
 T = TypeVar("T", bound=BaseModel)
 

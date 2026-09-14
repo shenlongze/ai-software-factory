@@ -696,7 +696,7 @@ def build_console_service(
     from ai_factory_os.plugins.agents.registry import AgentRegistry
     from ai_factory_os.plugins.agents.store import AgentStore
 
-    from intelligence.store import DecisionStore, ExperienceStore, RecommendationStore
+    from ai_factory_os.services.learning.store import DecisionStore, ExperienceStore, RecommendationStore
 
     from product.store import ProductStore
 

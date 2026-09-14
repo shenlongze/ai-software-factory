@@ -40,7 +40,7 @@ from .experience import (
     RECOMMEND_THRESHOLD,
     ExperienceAnalyzer,
 )
-from .models import (
+from .types import (
     DEFAULT_HALF_LIFE_DAYS,
     TaskEvaluation,
     TaskRequirement,

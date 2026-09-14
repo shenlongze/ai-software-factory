@@ -3754,7 +3754,7 @@ class ConsoleService:
         同 ExperienceAnalyzer 聚合; 无记录 → None 冷启动不臆造)。"""
         if not records:
             return None
-        from intelligence.experience import aggregate_experience_factor
+        from ai_factory_os.services.learning.experience import aggregate_experience_factor
 
         try:
             return round(aggregate_experience_factor(records), 4)

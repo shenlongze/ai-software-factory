@@ -62,7 +62,7 @@ from .events import (
     record_recommendation_created,
 )
 from .experience import aggregate_experience_factor
-from .models import (
+from .types import (
     DEFAULT_HALF_LIFE_DAYS,
     Candidate,
     CandidateEvaluation,

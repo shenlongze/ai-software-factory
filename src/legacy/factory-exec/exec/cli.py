@@ -177,8 +177,8 @@ def _provider_registry() -> ProviderRegistry:
 def _open_experience_analyzer(root: Path, logger: Any) -> Any:
     """10A-4 ExperienceAnalyzer 装配点 (intelligence 缺失 → None, 失败安全)。"""
     try:
-        from intelligence.experience import ExperienceAnalyzer
-        from intelligence.store import ExperienceStore
+        from ai_factory_os.services.learning.experience import ExperienceAnalyzer
+        from ai_factory_os.services.learning.store import ExperienceStore
 
         return ExperienceAnalyzer(ExperienceStore(root / "intelligence"), logger=logger)
     except ImportError:

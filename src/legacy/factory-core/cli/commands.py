@@ -2983,9 +2983,9 @@ def cmd_product_lifecycle_templates(ctx: FactoryContext, args: Any) -> dict:
 def _open_intelligence_engine(ctx: FactoryContext, logger: Any, approval_service: Any = None):
     """装配 DecisionIntelligence (延迟导入 intelligence 包 — Removal Isolation:
     删除 intelligence/ 不影响本模块加载, 同 product/provider 延迟导入模式)。"""
-    from intelligence.decision import DecisionIntelligence
+    from ai_factory_os.services.learning.decision import DecisionIntelligence
 
-    from intelligence.store import DecisionStore
+    from ai_factory_os.services.learning.store import DecisionStore
 
     return DecisionIntelligence(
         DecisionStore(ctx.root / "intelligence"),
@@ -3120,9 +3120,9 @@ def cmd_intelligence_decision_create(ctx: FactoryContext, args: Any) -> dict:
     LLM); 禁无证据: context 无证据 → 拒绝创建。--approval-artifact 指定
     product Artifact id 作为 9c 审批绑定点 (仅高风险决策提交请求)。
     """
-    from intelligence.decision import DecisionIntelligenceError, NoEvidenceError
+    from ai_factory_os.services.learning.decision import DecisionIntelligenceError, NoEvidenceError
 
-    from intelligence.models import DecisionContext
+    from ai_factory_os.services.learning.types import DecisionContext
 
     with ctx.logger_scope() as logger:
         approval_service = None
@@ -3259,13 +3259,13 @@ def cmd_intelligence_recommend(ctx: FactoryContext, args: Any) -> dict:
     - 发 intelligence.recommendation.* 事件链 (started → candidate.evaluated×N
       → explained → completed; 落库时含 recommendation.created)。
     """
-    from intelligence.models import RecommendationContext
+    from ai_factory_os.services.learning.types import RecommendationContext
 
-    from intelligence.recommend import RecommendationEngine, RecommendationEngineError
+    from ai_factory_os.services.learning.recommend import RecommendationEngine, RecommendationEngineError
 
-    from intelligence.decision import DecisionIntelligenceError
+    from ai_factory_os.services.learning.decision import DecisionIntelligenceError
 
-    from intelligence.store import DecisionStore, RecommendationStore
+    from ai_factory_os.services.learning.store import DecisionStore, RecommendationStore
 
     with ctx.logger_scope() as logger:
         approval_service = None
@@ -3313,9 +3313,9 @@ def _open_experience_analyzer(ctx: FactoryContext, logger: Any):
     """装配 ExperienceAnalyzer (延迟导入 intelligence 包 — Removal Isolation:
     删除 intelligence/ 不影响模块加载, 命令调用时响亮失败, 同 product/provider
     模式)。"""
-    from intelligence.experience import ExperienceAnalyzer
+    from ai_factory_os.services.learning.experience import ExperienceAnalyzer
 
-    from intelligence.store import ExperienceStore
+    from ai_factory_os.services.learning.store import ExperienceStore
 
     return ExperienceAnalyzer(
         ExperienceStore(ctx.root / "intelligence"),
@@ -3332,7 +3332,7 @@ def cmd_intelligence_experience_list(ctx: FactoryContext, args: Any) -> dict:
       / --subject-id (经验对象 id, 如 hermes)。
     - 只读不执行: 列表不修改任何状态/权重/配置 (经验分析 ≠ 自我修改)。
     """
-    from intelligence.events import record_intelligence_viewed
+    from ai_factory_os.services.learning.events import record_intelligence_viewed
 
     with ctx.logger_scope() as logger:
         analyzer = _open_experience_analyzer(ctx, logger)
@@ -3363,15 +3363,15 @@ def cmd_intelligence_experience_evaluate(ctx: FactoryContext, args: Any) -> dict
       主导/低置信度)。
     - 只读评估: 不触发任何任务/Provider 切换/执行 (经验分析 ≠ 自我修改)。
     """
-    from intelligence.evaluate import TaskEvaluator
+    from ai_factory_os.services.learning.evaluate import TaskEvaluator
 
-    from intelligence.models import TaskRequirement
+    from ai_factory_os.services.learning.types import TaskRequirement
 
     with ctx.logger_scope() as logger:
         caps = [
             c.strip() for c in (getattr(args, "capability", "") or "").split(",") if c.strip()
         ]
-        from intelligence.store import ExperienceStore
+        from ai_factory_os.services.learning.store import ExperienceStore
 
         store = ExperienceStore(ctx.root / "intelligence")
         evaluator = TaskEvaluator(store, logger=logger)
@@ -3419,7 +3419,7 @@ def _open_console_service(ctx: FactoryContext) -> Any:
     # 任一 Core 包不影响 Console 加载 — 与 service.py 内部延迟导入同模式)。
     from ai_factory_os.plugins.agents.registry import AgentRegistry
 
-    from intelligence.store import DecisionStore, ExperienceStore, RecommendationStore
+    from ai_factory_os.services.learning.store import DecisionStore, ExperienceStore, RecommendationStore
 
     from product.store import ProductStore
 

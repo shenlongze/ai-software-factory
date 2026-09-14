@@ -43,7 +43,7 @@ from .events import (
     record_decision_created,
     record_decision_option_evaluated,
 )
-from .models import (
+from .types import (
     Decision,
     DecisionAnalysis,
     DecisionContext,

@@ -247,14 +247,45 @@ class LLMControlPlane:
 
     # ------------------------------------------------------------------ key 解析 (禁明文日志)
 
+    def pool_for(self, provider_id: str):
+        """该 provider 的凭据池（<data_dir>/credentials/<provider>.json；不存在→空池）。
+
+        池里只存环境变量名，不存 key 本体 —— key 永不落盘（D8 同口径）。
+        """
+        try:
+            from ai_factory_os.infrastructure.llm.credential_pool import CredentialPool
+            return CredentialPool.load(
+                provider_id, Path(self.path).parent / "credentials" / f"{provider_id}.json")
+        except Exception:  # noqa: BLE001 — 池不可用 → 走单条回落（失败安全）
+            return None
+
+    def _resolve_from_pool(self, provider_id: str) -> str:
+        """池优先: 有池且有可用条目 → 用 peek 选中的 env 变量取 key（peek 无副作用）。
+
+        用 peek 而非 select: resolve_api_key 会被 doctor/status 频繁调用，
+        不能让它消耗轮转计数（真正的轮转由调用方显式 acquire）。
+        """
+        pool = self.pool_for(provider_id)
+        if pool is None or not pool.has_credentials():
+            return ""
+        env = {e.env_var: self._resolve_env_ref(f"env:{e.env_var}") for e in pool.entries}
+        picked = pool.peek()
+        return env.get(picked.env_var, "") if picked else ""
+
     def resolve_api_key(self, provider_id: str) -> str:
-        """api_key_ref 解析: "env:VAR" → 进程 env → 项目 .env → 空串。
+        """key 解析（池优先 → 单条回落）: 池有可用条目 → 用它选中的 env 变量；
+        否则 "env:VAR" → 进程 env → 项目 .env → 空串。
 
         ollama / 未配置 ref → 空串 (本地模型无需 key)。任何 logger 只输出
         ref 或 configured=True/False, 绝不输出 key 本体 (D8)。
         """
         pc = self.get_provider(provider_id)
-        if pc is None or not pc.api_key_ref:
+        if pc is None:
+            return ""
+        pooled = self._resolve_from_pool(provider_id)
+        if pooled:
+            return pooled
+        if not pc.api_key_ref:
             return ""
         ref = pc.api_key_ref
         key = self._resolve_env_ref(ref)

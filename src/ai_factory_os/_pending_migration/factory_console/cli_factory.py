@@ -7506,6 +7506,50 @@ class FactoryCLI:
             print(f"  当前选择: {plane.selected_provider_id() or '无（无 enabled 且 key 可解析者）'}")
             return 0
 
+        if action == "pool":
+            pool = plane.pool_for(target)
+            if pool is None:
+                print("错误: 凭据池不可用", file=sys.stderr)
+                return 1
+            pool_action = getattr(args, "pool_action", "show") or "show"
+            env_var = (getattr(args, "env", "") or "").strip()
+            from ai_factory_os.infrastructure.llm.credential_pool import PooledCredential
+
+            if pool_action == "show":
+                entries = pool.status_report()
+                print(f"=== {target} 凭据池 ({len(entries)} 条) ===")
+                if not entries:
+                    print("  （空池）加一条: factory llm pool <provider> "
+                          "--pool-action add --env VAR_NAME")
+                    print("  注: 池条目只存【环境变量名】；key 本体永不落盘 ✓")
+                    return 0
+                for e in entries:
+                    mark = {"ok": "✅", "exhausted": "⏸", "dead": "❌"}.get(e["status"], "?")
+                    cd = f" 冷却{e['cooldown_remaining']}s" if e["cooldown_remaining"] else ""
+                    print(f"  {mark} {e['env_var']}  优先级={e['priority']} "
+                          f"用{e['use_count']}次 失败{e['failure_count']}次{cd}")
+                picked = pool.peek()
+                print(f"  当前会选中: {picked.env_var if picked else '无（全部不可用）'}")
+                return 0
+            if pool_action == "add":
+                if not env_var:
+                    print("错误: pool add 需要 --env <环境变量名>", file=sys.stderr)
+                    return 2
+                prio = len(pool.entries)
+                pool.add(PooledCredential(env_var=env_var, priority=prio))
+                print(f"  ✓ 已加入 {target} 池: {env_var}  (优先级 {prio})")
+                if not plane.resolve_api_key(target):
+                    print(f"  ⚠ 该环境变量当前无值 —— 设置后生效: export {env_var}=...")
+                return 0
+            if pool_action == "remove":
+                if pool.remove(env_var) is None:
+                    print(f"错误: 池中无此条目: {env_var}", file=sys.stderr)
+                    return 1
+                print(f"  ✓ 已移除 {target} 池: {env_var}")
+                return 0
+            print(f"  ✓ 已重置 {target} 池状态: {pool.reset_statuses()} 条 → ok")
+            return 0
+
         if not target:
             print(f"错误: llm {action} 需要 provider id", file=sys.stderr)
             return 2
@@ -8556,11 +8600,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_create.add_argument("--json", action="store_true", help="输出结构化 JSON")
     p_llm = sub.add_parser(
         "llm", help="LLM 配置管理 (list/show/enable/disable — 复用 Control Plane; 资源域)")
-    p_llm.add_argument("llm_command", choices=["list", "show", "enable", "disable"],
+    p_llm.add_argument("llm_command",
+                       choices=["list", "show", "enable", "disable", "pool"],
                        nargs="?", default=None,
-                       help="list 清单 · show 详情 · enable/disable 启停")
+                       help="list 清单 · show 详情 · enable/disable 启停 · pool 凭据池")
     p_llm.add_argument("llm_target", nargs="?", default=None,
-                       help="provider id (show/enable/disable)")
+                       help="provider id (show/enable/disable/pool)")
+    p_llm.add_argument("--pool-action", choices=["show", "add", "remove", "reset"],
+                       default="show", help="pool 动作 (默认 show)")
+    p_llm.add_argument("--env", default="",
+                       help="pool add/remove: 环境变量名 (不是 key 本体)")
     p_todo = sub.add_parser("todo", help="主线任务清单 (list — 待办清单, 命令体系 数据域)")
     p_todo.add_argument("todo_command", choices=["list"], nargs="?", default=None, help="list — 主线任务")
     sub.add_parser("help", help="命令总览（按域分类, §11.6）")

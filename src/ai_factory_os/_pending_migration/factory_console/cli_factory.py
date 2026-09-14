@@ -1053,6 +1053,8 @@ class FactoryCLI:
             return self.tower_cmd(args)
         if args.command == "llm-trace":
             return self.llm_trace_cmd(args)
+        if args.command == "sync":
+            return self.sync_cmd(args)
         if args.command == "runtime":
             return self.runtime_cmd(args)
         if args.command == "tasktree":
@@ -2467,6 +2469,66 @@ class FactoryCLI:
             print(f"      resp  : {rs[:lim]}")
             if r.get("error"):
                 print(f"      ✗ error: {str(r['error'])[:160]}")
+        return 0
+
+    def sync_cmd(self, args: argparse.Namespace) -> int:
+        """factory sync — 同步各宿主 (claude/codex/hermes) 的 agent/skill 进 OS。
+
+        为什么（Founder 实测困惑 ✓）: "我在 Hermes 装的 skills 也没看到" ✗
+          · 扫描入口藏在 `external-ai assets --id <id>` ✗ → 用户想不到 ✓
+          · 注册还要再跑 `import` ✗ → 两步且分散 ✓
+        本命令: 一条命令、遍历全部宿主、扫描+导入(合并 ✓ 幂等 ✓) + 汇总 ✓
+        """
+        from .external_executor import host_assets as _ee_host
+        from .external_executor.registry import build_registry
+
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        only = str(getattr(args, "id", "") or "").strip()
+        dry = bool(getattr(args, "dry_run", False))
+        try:
+            reg = build_registry(root)
+            adapters = list(reg.list()) if hasattr(reg, "list") else []
+        except Exception as exc:  # noqa: BLE001
+            print(f"[E4290] 读取适配器注册表失败: {exc}", file=sys.stderr)
+            return 1
+        if only:
+            adapters = [a for a in adapters if str(getattr(a, "id", "")) == only]
+            if not adapters:
+                print(f"[E4291] 未找到适配器: {only}", file=sys.stderr)
+                return 1
+        print("=== 宿主资产同步（agent + skill）===")
+        tot_a = tot_s = 0
+        for ad in adapters:
+            aid = str(getattr(ad, "id", "?"))
+            name = str(getattr(ad, "name", aid))
+            try:
+                assets = _ee_host.scan_adapter_assets(ad)
+            except Exception as exc:  # noqa: BLE001
+                print(f"  {aid:8s} ✗ 扫描失败: {type(exc).__name__}: {str(exc)[:60]}")
+                continue
+            if not assets:
+                print(f"  {aid:8s} - 无资产（未声明 host_assets 或目录为空）")
+                continue
+            n_a = sum(1 for x in assets if x.get("kind") == "agent")
+            n_s = sum(1 for x in assets if x.get("kind") == "skill")
+            if dry:
+                print(f"  {aid:8s} [{name}] 将同步: agent {n_a} · skill {n_s}（dry-run ✓ 未写入）")
+                continue
+            try:
+                r = _ee_host.import_assets(
+                    ad, assets,
+                    agents_file=root / "agents" / "agents.json",
+                    skills_file=root / "skills" / "skills.json")
+                tot_a += len(r["imported_agents"])
+                tot_s += len(r["imported_skills"])
+                extra = f" · 跳过 {len(r['skipped'])}" if r.get("skipped") else ""
+                print(f"  {aid:8s} ✓ agent {len(r['imported_agents'])} · "
+                      f"skill {len(r['imported_skills'])}{extra}")
+            except Exception as exc:  # noqa: BLE001
+                print(f"  {aid:8s} ✗ 导入失败: {type(exc).__name__}: {str(exc)[:60]}")
+        if not dry:
+            print(f"  合计: agent {tot_a} · skill {tot_s} ✓（幂等 ✓ 合并 ✓ 不覆盖）")
+            print("  查看: factory agent list · factory skill list")
         return 0
 
     def runtime_cmd(self, args: argparse.Namespace) -> int:
@@ -8326,6 +8388,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_rt.add_argument("--id", default="", help="Runtime id (add) — 须用内置 adapter 的 id")
     p_rt.add_argument("--type", default="agent", help="Runtime 类型 (add, 默认 agent)")
     p_rt.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+
+    p_sync = sub.add_parser(
+        "sync",
+        help="一键同步宿主资产 (Founder: 装了 agent/skill 却看不到 → 跑这个 ✓)")
+    p_sync.add_argument("--id", default="",
+                        help="只同步某个宿主 (claude/codex/hermes); 缺省=全部 ✓")
+    p_sync.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+    p_sync.add_argument("--dry-run", action="store_true", help="只看会导入什么, 不写")
 
     p_local_ai = sub.add_parser(
         "local-ai", help="本机 AI 发现与调度 (U-6): scan — 扫描; register — 注册为 Agent; run — 委派执行"

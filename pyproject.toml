@@ -39,18 +39,11 @@ dev = ["pytest>=8", "ruff>=0.6"]
 # "" → "factory-core" 使 factory-core 下 27 个顶层子包源码根保持 factory-core/ 前缀
 # (等价旧 find where=["factory-core"])。映射后 factory_console 即真实代码包
 # (cli_factory/config/llm_control/...), 不再需要 importlib 胶水转发。
-package-dir = { "" = "src/legacy/factory-core", "factory_console" = "src/legacy/factory-console", "exec" = "src/legacy/factory-exec/exec", "legacy_paths" = "src/legacy/legacy_paths" }
+package-dir = { "factory_console" = "src/legacy/factory-console", "exec" = "src/ai_factory_os/_pending_migration/exec", "legacy_paths" = "src/legacy/legacy_paths" }
 # 显式列出全部包: find 无法发现映射包的子包 (物理位于 factory-console/ 下),
 # 故 factory_console* 显式列出; factory-core 子包为 find_packages("factory-core")
 # 展开 (新增子包须同步本列表)。
 packages = [
-    # factory-core 顶层子包
-    "agents", "assignment", "change", "changeflow", "cli", "dashboard", "demo",
-    "events", "execution", "git", "intelligence", "metrics", "orchestration",
-    "product", "providers", "providers.adapters", "recovery",
-    "runtime", "runtime.adapters", "runtimes", "tasks", "understanding",
-    "understanding.analyzers", "validation", "workflows", "workspace",
-    # factory-console → factory_console 映射包及其子包
     "factory_console",
     "factory_console.api",
     "factory_console.audit",
@@ -61,12 +54,7 @@ packages = [
     "factory_console.session.workloads",
     "factory_console.web",
     "factory_console.web.backend",
-    # factory-exec → exec / factory-org → org 映射包 (薄代理 project/run 依赖)
     "exec",
-    "exec.benchmark",
-    "exec.providers",
-    "exec.tools",
-    # 仓库根唯一计算器（隔离区共用）
     "legacy_paths",
 ]
 

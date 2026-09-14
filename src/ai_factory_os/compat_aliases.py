@@ -36,6 +36,20 @@ ALIAS_PREFIXES: dict[str, str] = {
     "intelligence": "ai_factory_os.services.learning",
     "change": "ai_factory_os.services.work.change",
     "execution": "ai_factory_os.services.execution",
+    # ── 原 factory-core / factory-exec 剩余包（刀50 整块迁入 _pending_migration）──
+    "assignment": "ai_factory_os._pending_migration.assignment",
+    "changeflow": "ai_factory_os._pending_migration.changeflow",
+    "cli": "ai_factory_os._pending_migration.cli",
+    "dashboard": "ai_factory_os._pending_migration.dashboard",
+    "demo": "ai_factory_os._pending_migration.demo",
+    "exec": "ai_factory_os._pending_migration.exec",
+    "metrics": "ai_factory_os._pending_migration.metrics",
+    "orchestration": "ai_factory_os._pending_migration.orchestration",
+    "product": "ai_factory_os._pending_migration.product",
+    "providers": "ai_factory_os._pending_migration.providers",
+    "recovery": "ai_factory_os._pending_migration.recovery",
+    "validation": "ai_factory_os._pending_migration.validation",
+    "workflows": "ai_factory_os._pending_migration.workflows",
     # ── 原 factory-org / exec / services ──
     "org": "ai_factory_os.services.organization",
     "skill": "ai_factory_os.plugins.skills.skill",
@@ -61,6 +75,22 @@ ALIAS_RENAMES: dict[str, str] = {
     "intelligence.models": "ai_factory_os.services.learning.types",
     "change.models": "ai_factory_os.services.work.change.types",
     "runtimes.models": "ai_factory_os.services.execution.runtime_types",
+    # exec 子模块的历史改名（早先已搬出 exec/）
+    "exec.skill": "ai_factory_os.plugins.skills.skill",
+    "exec.tool": "ai_factory_os.plugins.tools.tool",
+    "exec.mcp": "ai_factory_os.plugins.mcp.client",
+    "exec.provider": "ai_factory_os.infrastructure.llm.provider",
+    "exec.models": "ai_factory_os.services.execution.types",
+    "exec.operations": "ai_factory_os.services.execution.operations",
+    "exec.validation": "ai_factory_os.services.execution.validation",
+    "exec.repo_index": "ai_factory_os.services.execution.repo_index",
+    "exec.roles": "ai_factory_os.plugins.agents.roles",
+    "exec.architect": "ai_factory_os.plugins.agents.architect",
+    "exec.developer": "ai_factory_os.plugins.agents.developer",
+    "exec.pm": "ai_factory_os.plugins.agents.pm",
+    "exec.tester": "ai_factory_os.plugins.agents.tester",
+    "exec.uxui": "ai_factory_os.plugins.agents.uxui",
+    "exec.tools.filesystem": "ai_factory_os.plugins.tools.filesystem",
 }
 
 _SEP = "."  # 便于替换分隔符

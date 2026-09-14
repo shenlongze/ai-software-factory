@@ -83,3 +83,10 @@ except Exception:  # noqa: BLE001 — 非安装态 (源码运行) → 读 pyproj
         __version__ = tomllib.loads(_pp.read_text(encoding="utf-8"))["project"]["version"]
     except Exception:  # noqa: BLE001
         __version__ = "0.0.0-dev"
+
+# ── 搬迁过渡：装载旧名→新路径的别名桥（详见 src/ai_factory_os/compat_aliases.py）──
+try:  # 桥不可用时不阻断（搬迁完成后本段可删）
+    from ai_factory_os.compat_aliases import install as _install_aliases
+    _install_aliases()
+except Exception:  # noqa: BLE001
+    pass

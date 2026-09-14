@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..models import ArtifactDetection
+from ..types import ArtifactDetection
 from .artifact_detector import (
     ARTIFACT_DETECTORS,
     ArtifactDetectorDef,

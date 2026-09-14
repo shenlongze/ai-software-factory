@@ -86,8 +86,8 @@ from changeflow.triggers import (  # Phase 6E (ADR-0020)
     ChangeTriggerRegistry,
 )
 
-from understanding.events import record_understanding_viewed  # Phase 7 (ADR-0021)
-from understanding.service import UnderstandingError, UnderstandingService  # Phase 7 (ADR-0021)
+from ai_factory_os.services.conversation.events import record_understanding_viewed  # Phase 7 (ADR-0021)
+from ai_factory_os.services.conversation.service import UnderstandingError, UnderstandingService  # Phase 7 (ADR-0021)
 
 from metrics.collectors import MetricsCollector
 from metrics.workspace import WorkspaceCollector

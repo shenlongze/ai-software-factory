@@ -44,7 +44,7 @@ from .events import (
     record_understanding_failed,
     record_understanding_started,
 )
-from .models import (
+from .types import (
     ARTIFACT_KEYS,
     ArtifactDetection,
     MissingAnalysis,

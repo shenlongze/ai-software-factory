@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ..models import ArtifactDetection
+from ..types import ArtifactDetection
 
 # 跳过分析的隐藏/依赖目录 (相对路径组件精确匹配; 大小写不敏感)
 HIDDEN_DIRS = frozenset({

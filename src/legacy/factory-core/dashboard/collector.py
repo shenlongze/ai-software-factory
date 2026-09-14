@@ -586,7 +586,7 @@ class DashboardCollector:
         """
         if not self._include_understanding or not self._understanding_paths:
             return UnderstandingSnapshot()
-        from understanding.service import UnderstandingService  # 延迟导入: 零 Core 依赖
+        from ai_factory_os.services.conversation.service import UnderstandingService  # 延迟导入: 零 Core 依赖
 
         items: list[UnderstandingItem] = []
         for project_id, path in self._understanding_paths:

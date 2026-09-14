@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..models import ProjectBasicInfo
+from ..types import ProjectBasicInfo
 from .artifact_detector import (
     ARTIFACT_DETECTORS,
     ArtifactDetector,

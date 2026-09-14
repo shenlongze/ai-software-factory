@@ -81,7 +81,7 @@ packages = [
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = []  # 刀29: tests/ 已删除（归档于 archive/tests-before-delete-2026-09-14）
 # 使 tests/ 可直接 `from events import ...` (editable install 之外的双保险)
 pythonpath = ["src/legacy/factory-core", "src"]
 

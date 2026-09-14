@@ -3,7 +3,7 @@
 
 # 旧代码台账（LEGACY LEDGER）
 
-> 生成时间: 2026-09-14T03:44:23+00:00 | 生成器: `scripts/legacy_inventory.py`
+> 生成时间: 2026-09-14T04:08:41+00:00 | 生成器: `scripts/legacy_inventory.py`
 > 规则：**只减不增** —— 由 `tests/architecture/test_legacy_fence.py` 强制
 
 ## 一、分区总览
@@ -15,7 +15,7 @@
 | `factory-exec` | 51 | 22058 | 0 | 0 | 0 | 旧执行域（roles/skill/tool/provider/approval） | 同左，逐项判定 | 已判 51/52 可归档（实测待复核） |
 | `factory-org` | 18 | 12052 | 0 | 0 | 0 | 组织领域模型（最完整） | services/organization | 待绞杀 |
 | `factory_console` | 2 | 21 | 0 | 0 | 0 | 打包胶水（连字符目录名的转发层） | 保留 | 合法，非冗余 |
-| **合计** | **517** | **195967** | **328** | **150** | **39** | | | |
+| **合计** | **517** | **195967** | **328** | **0** | **189** | | | |
 
 ## 二、可达性（从活入口 BFS import 图）
 
@@ -28,12 +28,12 @@
 | 类别 | 文件 | 行数 | 含义 |
 |---|---:|---:|---|
 | 可达 | 328 | 150494 | 生产入口能走到（主链） |
-| 仅测试可达 | 150 | 40389 | 只有测试能走到 |
-| 未证实使用 | 39 | 5084 | 静态走不到 —— **不得当作可删** |
+| 仅测试可达 | 0 | 0 | 只有测试能走到 |
+| 未证实使用 | 189 | 45473 | 静态走不到 —— **不得当作可删** |
 | **合计** | **517** | **195967** | |
 
-> 其中 **12 文件 / 2270 行**受已知动态加载前缀影响（前缀 `factory_console.`），**尤其不可当作可删**。
-> 动态调用 43 处；未解析字面量 7 条。
+> 其中 **61 文件 / 11483 行**受已知动态加载前缀影响（前缀 `factory_console.`），**尤其不可当作可删**。
+> 动态调用 43 处；未解析字面量 0 条。
 
 ### 本栏的已知盲区（工具只扫 Python 的加载行为）
 
@@ -50,8 +50,9 @@
 |---|---:|---|
 | `factory-console` | 5 | `apps/desktop/bundle/factory_runtime_bundle.spec` |
 | `factory-core` | 5 | `apps/desktop/bundle/factory_runtime_bundle.spec` |
-| `factory-exec` | 6 | `pyproject.toml` |
+| `factory-exec` | 3 | `pyproject.toml` |
 | `factory-org` | 3 | `pyproject.toml` |
+| `factory-runtime` | 6 | `apps/desktop/bundle/factory_runtime_bundle.spec` |
 | `factory_console` | 1 | `pyproject.toml` |
 
 ## 三、跨分区依赖边（只减不增）

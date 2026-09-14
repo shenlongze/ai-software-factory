@@ -41,7 +41,7 @@ VERDICTS: dict[str, tuple[str, str, str]] = {
     "demo": ("已归零 —— 演示仓库迁入 examples/demo/repo/", "—", "完成（刀22）"),
 }
 
-BASELINE = ROOT / "tests" / "architecture" / "legacy_baseline.json"
+BASELINE = ROOT / "docs" / "cleanup" / "legacy_baseline.json"  # 刀29: tests/ 删除后迁出
 LEDGER = ROOT / "docs" / "cleanup" / "LEGACY-LEDGER.md"
 
 

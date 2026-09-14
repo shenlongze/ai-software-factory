@@ -7478,25 +7478,64 @@ class FactoryCLI:
                 print(f"    {line[:80]}")
 
     def llm_cmd(self, args: argparse.Namespace) -> int:
-        """factory llm list — LLM 清单（provider/models, 命令体系 资源域）。"""
-        action = getattr(args, "llm_command", None)
-        if action != "list":
-            print("错误: llm 需要子命令 (list)", file=sys.stderr)
-            return 2
+        """factory llm list|show|enable|disable — LLM 配置管理。
+
+        复用 Web 端同一套 Control Plane（llm_control.LLMControlPlane）——
+        不新建实现、不各写一套；CLI 与 Web 口径一致（D4 三入口一致）。
+        """
+        action = getattr(args, "llm_command", None) or "list"
+        target = (getattr(args, "llm_target", None) or "").strip()
         try:
-            providers = _load_json_safe(self.data_dir / "providers.json") or {}
-            provs = providers.get("providers") or {}
-        except Exception:  # noqa: BLE001
-            provs = {}
-        if not provs:
-            print("（未配置 LLM provider — 运行 factory init）")
+            from .llm_control import LLMControlPlane
+
+            plane = LLMControlPlane(providers_file=self.data_dir / "providers.json")
+        except Exception as exc:  # noqa: BLE001
+            print(f"错误: LLM 控制面不可用 ({exc})", file=sys.stderr)
             return 1
-        print("=== LLM 清单 ===")
-        for pid, info in provs.items():
-            models = (info.get("models") or []) if isinstance(info, dict) else []
-            enabled = info.get("enabled", True) if isinstance(info, dict) else True
-            mark = "✅" if enabled else "⏸"
-            print(f"  {mark} {pid}: {', '.join(models)}")
+
+        if action == "list":
+            providers = plane.list_providers()
+            if not providers:
+                print("（未配置 LLM provider — 运行 factory init）")
+                return 1
+            print("=== LLM 清单 ===")
+            for pc in providers:
+                mark = "✅" if pc.enabled else "⏸"
+                key = "key✓" if plane.resolve_api_key(pc.id) else "key✗"
+                print(f"  {mark} {pc.id}: {', '.join(pc.models)}  [{key}]")
+            print(f"  当前选择: {plane.selected_provider_id() or '无（无 enabled 且 key 可解析者）'}")
+            return 0
+
+        if not target:
+            print(f"错误: llm {action} 需要 provider id", file=sys.stderr)
+            return 2
+
+        if action == "show":
+            pc = plane.get_provider(target)
+            if pc is None:
+                print(f"错误: provider 不存在: {target}", file=sys.stderr)
+                return 1
+            key_ok = bool(plane.resolve_api_key(target))
+            print(f"=== {pc.id} ===")
+            print(f"  状态      : {'enabled' if pc.enabled else 'disabled'}")
+            print(f"  模型      : {', '.join(pc.models) or '（未声明）'}")
+            print(f"  base_url  : {getattr(pc, 'base_url', '') or '—'}")
+            print(f"  key 引用  : {getattr(pc, 'api_key_ref', '') or '（本地模型，无 key）'}")
+            print(f"  key 可解析: {'✓' if key_ok else '✗'}")
+            selected = plane.selected_provider_id() == pc.id
+            print(f"  是否被选中: {'✓（当前用它）' if selected else '否'}")
+            return 0
+
+        # enable / disable —— 写操作，走 Control Plane 统一校验与落盘
+        try:
+            pc = plane.enable(target) if action == "enable" else plane.disable(target)
+        except Exception as exc:  # noqa: BLE001
+            print(f"错误: {action} {target} 失败: {exc}", file=sys.stderr)
+            return 1
+        print(f"  ✓ {pc.id} → {'enabled' if pc.enabled else 'disabled'}")
+        if action == "enable" and not plane.resolve_api_key(pc.id):
+            print("  ⚠ key 无法解析 —— 该 provider 仍不会被选中（检查环境变量）")
+        print(f"  当前选择: {plane.selected_provider_id() or '无'}")
         return 0
 
     def todo_cmd(self, args: argparse.Namespace) -> int:
@@ -8515,8 +8554,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="代码库路径 (project 可选, 缺省 = 数据目录)",
     )
     p_create.add_argument("--json", action="store_true", help="输出结构化 JSON")
-    p_llm = sub.add_parser("llm", help="LLM 清单 (list — provider/models, 命令体系 资源域)")
-    p_llm.add_argument("llm_command", choices=["list"], nargs="?", default=None, help="list — LLM 清单")
+    p_llm = sub.add_parser(
+        "llm", help="LLM 配置管理 (list/show/enable/disable — 复用 Control Plane; 资源域)")
+    p_llm.add_argument("llm_command", choices=["list", "show", "enable", "disable"],
+                       nargs="?", default=None,
+                       help="list 清单 · show 详情 · enable/disable 启停")
+    p_llm.add_argument("llm_target", nargs="?", default=None,
+                       help="provider id (show/enable/disable)")
     p_todo = sub.add_parser("todo", help="主线任务清单 (list — 待办清单, 命令体系 数据域)")
     p_todo.add_argument("todo_command", choices=["list"], nargs="?", default=None, help="list — 主线任务")
     sub.add_parser("help", help="命令总览（按域分类, §11.6）")

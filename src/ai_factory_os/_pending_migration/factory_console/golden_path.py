@@ -470,7 +470,7 @@ def _default_executor_factory(root: str, conversation_id: str,
     """
     from factory_console.production_runtime import build_real_executor
 
-    workspace = Path(root) / "golden_path_workspace" / str(conversation_id)
+    workspace = project_workspace(root, conversation_id)  # ★ 项目沙箱 ✓
     base = build_real_executor(root, executor_name=executor_name,
                                workspace_dir=str(workspace))
     if base is None:
@@ -600,7 +600,7 @@ def execute_approved(root: str, conversation_id: str, *,
     if executor_factory is None and capability_fn is not None:
         cap = capability_fn
         leaves_map = {n.get("id"): n for n in leaves}
-        ws_dir = Path(root) / "golden_path_workspace" / str(conversation_id)
+        ws_dir = project_workspace(root, conversation_id)  # ★ 项目沙箱 ✓
 
         def _cap_factory(node_id: str):
             return _capability_executor(leaves_map.get(node_id, {}), cap,
@@ -688,3 +688,24 @@ __all__ = [
     "path_status", "plan_tree", "generate_prd", "approve_prd", "generate_plan",
     "approve_plan", "execute_approved", "_derive_plan_tasks",
 ]
+
+
+def project_workspace(root: str | Path, conversation_id: str) -> Path:
+    """项目沙箱目录: <root>/projects/<P-id>/workspace/；无项目则回落旧的按会话路径。
+
+    为什么（Founder: 每个项目都该有自己的环境/沙箱 ✓）:
+      此前工作区绑【会话】(golden_path_workspace/conv-xxx/) ✗ → 同项目的多个会话
+      得到多个互相孤立的工作区 ✗（代码/依赖不共享）、项目整体交不出去 ✗。
+    失败安全: 无项目 / 绑定失败 → 回落 <root>/golden_path_workspace/<conv-id>/ ✓
+      （行为与旧版一致 ✓，不会打断任何进行中的东西 ✓）
+    ★ 延迟导入: canonical_golden_path 反向依赖本模块，模块级导入会成环 ✗（已验证过这类坑）
+    """
+    try:
+        from factory_console.canonical_golden_path import ensure_project_binding
+        pid = ensure_project_binding(root, conversation_id)
+        if pid:
+            return Path(root) / "projects" / pid / "workspace"
+    except Exception as exc:  # noqa: BLE001 — 回落旧路径，但要可见（不静默 ✗）
+        import sys as _s
+        print(f"[workspace] 项目沙箱解析失败，回落按会话路径: {exc}", file=_s.stderr)
+    return Path(root) / "golden_path_workspace" / str(conversation_id)

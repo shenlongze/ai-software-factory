@@ -16,6 +16,8 @@ R0 P0 (2026-09-08): 让 CLI (随后 API/WebUI) 通过同一个 Application Orche
 from __future__ import annotations
 
 import re
+import json
+from pathlib import Path
 from typing import Any, Callable
 
 from factory_console import golden_path as gp
@@ -194,11 +196,14 @@ class CanonicalGoldenPath:
         try:
             if action == "generate_prd":
                 obj = gp.generate_prd(self.root, conversation_id, actor=self.actor)
+                _md = _write_prd_md(self.root, obj)
+                _sum = _prd_summary(obj)
                 return {
                     "kind": "lifecycle", "action": action,
-                    "reply": (f"已生成 PRD {obj['id']} (v{obj.get('version')})。\n"
-                              f"当前阶段: {self.describe(conversation_id)}"),
-                    "detail": obj,
+                    "reply": (f"已生成 PRD {obj['id']} (v{obj.get('version')})。"
+                              + (f"\n📄 可审阅文档: {_md}" if _md else "\n（文档写出失败）")
+                              + ("\n" + _sum if _sum else "")
+                              + f"\n当前阶段: {self.describe(conversation_id)}"),
                 }
             if action == "approve_prd":
                 obj = self._approve_current_prd(conversation_id)
@@ -291,3 +296,88 @@ class CanonicalGoldenPath:
 
 
 __all__ = ["CanonicalGoldenPath", "detect_lifecycle"]
+
+
+# ---------------------------------------------------------------- PRD 可审阅文档
+# 治理缺口（Founder 指出）: 会话让人"审阅后回复「就按这个做」"，
+# 却【不给任何可审阅的内容】✗ —— PRD 只是 product_truth 里一条 JSON 实体。
+# 要人审，就得给人看 ✓（对标 github/spec-kit 的 spec.md）。
+_PRD_LABELS = {
+    "functional_requirements": "功能需求",
+    "non_functional_requirements": "非功能需求",
+    "constraints": "约束",
+    "out_of_scope": "不做的事",
+    "acceptance_criteria": "验收标准",
+    "risks": "风险",
+}
+
+
+def _render_prd_md(prd: dict[str, Any]) -> str:
+    """PRD 实体 → 可审阅的 markdown 文档。"""
+    c = prd.get("content") or {}
+    if not isinstance(c, dict):
+        c = {}
+    ov = c.get("overview") if isinstance(c.get("overview"), dict) else {}
+    title = str(c.get("name") or ov.get("name") or prd.get("goal") or "产品需求文档")
+    out = [f"# {title}",
+           "",
+           f"> PRD {prd.get('id', '')} (v{prd.get('version', 1)})"
+           f" · 由 AI Factory OS 需求分析生成 · 待你审阅确认",
+           ""]
+    if ov:
+        out += ["## 概述", ""]
+        for k, v in ov.items():
+            if v:
+                out.append(f"- **{k}**: {v}")
+        out.append("")
+
+    def _bullets(v: Any) -> list[str]:
+        if isinstance(v, list):
+            return [f"- {x if isinstance(x, str) else json.dumps(x, ensure_ascii=False)}"
+                    for x in v]
+        if isinstance(v, dict):
+            return [f"- **{k}**: {x}" for k, x in v.items()]
+        return [f"- {v}"]
+
+    for key, label in _PRD_LABELS.items():
+        v = c.get(key)
+        if v:
+            out += [f"## {label}", ""] + _bullets(v) + [""]
+    # 其余未列出的键也渲染（不漏信息 ✓）
+    for k, v in c.items():
+        if k in _PRD_LABELS or k == "overview" or not v:
+            continue
+        out += [f"## {k}", ""] + _bullets(v) + [""]
+    out += ["---", "", "_请审阅以上内容。确认无误回复「就按这个做」；"
+            "需要修改请直接说明哪里不对。_", ""]
+    return "\n".join(out)
+
+
+def _write_prd_md(root: str | Path, prd: dict[str, Any]) -> str:
+    """把 PRD 写成 <root>/prd/<id>.md，返回路径（失败返回空串，不阻断主链 ✓）。"""
+    try:
+        d = Path(root) / "prd"
+        d.mkdir(parents=True, exist_ok=True)
+        f = d / f"{prd.get('id', 'PRD')}.md"
+        f.write_text(_render_prd_md(prd), encoding="utf-8")
+        return str(f)
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _prd_summary(prd: dict[str, Any], limit: int = 5) -> str:
+    """给会话回复用的简短摘要（正文在文件里，这里只给要点 ✓）。"""
+    c = prd.get("content") or {}
+    c = c if isinstance(c, dict) else {}
+    ov = c.get("overview") if isinstance(c.get("overview"), dict) else {}
+    bits = []
+    if ov.get("problem"):
+        bits.append(f"  目标: {str(ov['problem'])[:70]}")
+    fr = c.get("functional_requirements")
+    if isinstance(fr, list) and fr:
+        bits.append(f"  功能需求 {len(fr)} 条:")
+        for x in fr[:limit]:
+            bits.append(f"    · {str(x)[:66]}")
+        if len(fr) > limit:
+            bits.append(f"    … 另有 {len(fr) - limit} 条（见文档）")
+    return "\n".join(bits)

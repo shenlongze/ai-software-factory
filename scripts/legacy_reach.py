@@ -30,7 +30,7 @@ import sys
 from collections import deque
 from pathlib import Path
 
-from legacy_roots import LEGACY_PARTS, PARTITIONS  # 单一来源（scripts/legacy_roots.py）
+from legacy_roots import EXTERNAL_ONLY_NAMES, LEGACY_PARTS, PARTITIONS  # 单一来源
 
 ROOT = Path(__file__).resolve().parents[1]
 NEW = ROOT / "src" / "ai_factory_os"
@@ -273,8 +273,8 @@ def external_references() -> dict[str, list[str]]:
     能在 desktop/src-tauri/tauri.conf.json 这类打包配置里发现「被当组件消费」的目录 ——
     factory-runtime 就是这样被发现的（它是桌面应用的运行时后端，从不被 Python import）。
     """
-    pattern = {name: re.compile(rf"(?<![\w-]){re.escape(name)}(?![\w-])") for name in PARTITIONS}
-    hits: dict[str, list[str]] = {name: [] for name in PARTITIONS}
+    pattern = {name: re.compile(rf"(?<![\w-]){re.escape(name)}(?![\w-])") for name in (*PARTITIONS, *EXTERNAL_ONLY_NAMES)}
+    hits: dict[str, list[str]] = {name: [] for name in (*PARTITIONS, *EXTERNAL_ONLY_NAMES)}
     for path in ROOT.rglob("*"):
         if not path.is_file() or path.suffix.lower() not in SCAN_SUFFIXES:
             continue
@@ -340,7 +340,7 @@ def analyze() -> dict:
                 "test_only": sum(1 for p in test_only if p.relative_to(ROOT).parts[0] == name),
                 "unverified": sum(1 for p in unverified if p.relative_to(ROOT).parts[0] == name),
             }
-            for name in PARTITIONS
+            for name in (*PARTITIONS, *EXTERNAL_ONLY_NAMES)
         },
         "dynamic_calls": dynamic_calls,
         "dynamic_prefixes": sorted(prefixes),

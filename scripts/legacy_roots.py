@@ -7,7 +7,7 @@
       ├── factory-core/    ← sys.path 根: tasks / runtime / events / store / models ...
       ├── factory-exec/    ← 包名 exec
       ├── factory-org/     ← 包名 org
-      ├── factory-runtime/ ← 独立可发布包（出厂组件，桌面用）
+      (factory-runtime 已于刀27 迁入 src/ai_factory_os/infrastructure/process/)
       ├── factory_console/ ← 连字符目录名的转发壳
       └── repo_paths.py    ← 仓库根唯一计算器（被 legacy 代码共用）
 
@@ -25,7 +25,6 @@ PARTITIONS: tuple[str, ...] = (
     "factory-core",
     "factory-exec",
     "factory-org",
-    "factory-runtime",
     "factory_console",
 )
 
@@ -34,6 +33,12 @@ ALLOWED_TOP: set[str] = {"src", "tests", "scripts", "docs", "bin", "apps", "exam
 
 #: src/ 下只允许这两个：新地基 + 隔离区（防再长出第三个）
 ALLOWED_UNDER_SRC: set[str] = {"ai_factory_os", "legacy"}
+
+#: 已迁出隔离区、但仍被【非 Python 消费者】按名字引用的标识符。
+#: 例: factory-runtime 刀27 迁入 src/ai_factory_os/infrastructure/process/，
+#: 但桌面仍以 `factory-runtime` 这个 CLI 名调用它（Rust 子进程）——
+#: 纯 import 分析永远看不见这类引用，故单独列出供名称扫描。
+EXTERNAL_ONLY_NAMES: tuple[str, ...] = ("factory-runtime",)
 
 #: legacy 代码对外暴露的顶层包名（新地基 R13 不得 import 它们）。
 #: tasks/runtime/events/... 来自 src/legacy/factory-core（sys.path 根）；
@@ -45,5 +50,5 @@ LEGACY_TOP_NAMES: frozenset[str] = frozenset({
     "product", "providers", "recovery", "runtime", "runtimes", "tasks",
     "understanding", "validation", "workflows", "workspace",
     # 映射包
-    "exec", "org", "factory_console",
+    "exec", "org",
 })

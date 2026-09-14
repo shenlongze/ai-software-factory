@@ -16,10 +16,6 @@
    18,
    12052
   ],
-  "factory-runtime": [
-   11,
-   1528
-  ],
   "factory_console": [
    2,
    21
@@ -544,19 +540,8 @@
   "src/legacy/factory-org/org/store.py",
   "src/legacy/factory-org/org/templates.py",
   "src/legacy/factory-org/org/workflow.py",
-  "src/legacy/factory-runtime/bundle/factory_runtime_entry.py",
-  "src/legacy/factory-runtime/runtime/__init__.py",
-  "src/legacy/factory-runtime/runtime/bundle.py",
-  "src/legacy/factory-runtime/runtime/cli.py",
-  "src/legacy/factory-runtime/runtime/errors.py",
-  "src/legacy/factory-runtime/runtime/health.py",
-  "src/legacy/factory-runtime/runtime/logging.py",
-  "src/legacy/factory-runtime/runtime/manager.py",
-  "src/legacy/factory-runtime/runtime/paths.py",
-  "src/legacy/factory-runtime/runtime/state.py",
-  "src/legacy/factory-runtime/runtime/watchdog.py",
   "src/legacy/factory_console/__init__.py",
   "src/legacy/factory_console/cli_factory.py"
  ],
- "lines": 197495
+ "lines": 195967
 }

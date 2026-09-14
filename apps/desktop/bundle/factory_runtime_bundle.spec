@@ -32,13 +32,13 @@ from pathlib import Path
 from PyInstaller.utils.hooks import collect_submodules
 
 SPEC_DIR = Path(SPECPATH).resolve()
-REPO_ROOT = SPEC_DIR.parents[1]  # factory-runtime/bundle/ → repo 根
-RUNTIME_DIR = REPO_ROOT / "factory-runtime"  # 含顶层 `runtime` 包 (绝对导入 stub 依赖)
-CORE_DIR = REPO_ROOT / "factory-core"
-CONSOLE_DIR = REPO_ROOT / "factory-console"
+REPO_ROOT = SPEC_DIR.parents[3]  # apps/desktop/bundle/ → repo 根
+RUNTIME_DIR = REPO_ROOT / "src"  # 含 ai_factory_os (刀27 起, 进程管理在新层)
+CORE_DIR = REPO_ROOT / "src" / "legacy" / "factory-core"
+CONSOLE_DIR = REPO_ROOT / "src" / "legacy" / "factory-console"
 BACKEND_DIR = CONSOLE_DIR / "web" / "backend"
 FRONTEND_DIST = CONSOLE_DIR / "web" / "frontend" / "dist"
-RUNTIME_ENTRY = REPO_ROOT / "factory-runtime" / "bundle" / "factory_runtime_entry.py"
+RUNTIME_ENTRY = SPEC_DIR / "factory_runtime_entry.py"
 
 # ---------------------------------------------------------------- 收集清单
 

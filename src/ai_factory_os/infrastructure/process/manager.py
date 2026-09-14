@@ -57,7 +57,7 @@ from .health import (
 )
 from .logging import CONSOLE_LOG, log_event, open_child_log, setup_runtime_logger
 from .paths import FILE_MODE, chmod, ensure_data_root
-from .state import RUNNING_STATUSES, RuntimeState, load_state, save_state
+from .state import RUNNING_STATUSES, load_state, save_state
 
 #: 默认 Console 启动命令 (uvicorn + factory-console fastapi_adapter, 127.0.0.1 回环)
 _DEFAULT_CONSOLE_TEMPLATE = (

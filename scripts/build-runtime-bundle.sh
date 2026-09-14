@@ -13,7 +13,7 @@
 # 产物: dist/factory-runtime-bundle/factory-runtime-bundle (macOS/Linux)
 #       dist/factory-runtime-bundle/factory-runtime-bundle.exe (Windows)
 # 依赖: .venv 已装 PyInstaller (pip install pyinstaller) + 全部运行时依赖
-#       (factory-core/factory-console/factory-runtime 均需可 import)。
+#       (src/ai_factory_os + src/legacy/* 均需可 import)。
 
 set -euo pipefail
 
@@ -22,7 +22,7 @@ cd "$REPO_ROOT"
 
 PYTHON="$REPO_ROOT/.venv/bin/python"
 PYINSTALLER="$REPO_ROOT/.venv/bin/pyinstaller"
-SPEC="$REPO_ROOT/factory-runtime/bundle/factory_runtime_bundle.spec"
+SPEC="$REPO_ROOT/apps/desktop/bundle/factory_runtime_bundle.spec"
 BUNDLE_DIR="$REPO_ROOT/dist/factory-runtime-bundle"
 
 SKIP_SMOKE=0

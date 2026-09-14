@@ -170,3 +170,115 @@ def mark(root: Path | str, project_id: str, delivery_id: str,
 def list_deliveries(root: Path | str, project_id: str) -> list[dict[str, Any]]:
     return sorted(_load(root, project_id).values(),
                   key=lambda r: str(r.get("created_at") or ""), reverse=True)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 用户验收测试 (UAT) —— 正常交付流程的标准节点（2026-09-14 补 ✓）
+#
+# 为什么单独有这一环（Founder: "正常交付流程还有什么节点没有" ✓）:
+#   tester 做的是【技术测试 ✓】，验收要的是【用户按验收标准逐条确认 ✓】——
+#   两者不同 ✗（技术全绿 ≠ 用户认为可用 ✓）。
+# 验收标准的自然来源: PRD 的 features / user_stories（契约字段 ✓）
+#   → 不需要用户另填 ✓（有 PRD 就能生成清单 ✓）
+# 门语义: 交付置 ACCEPTED 前【必须每一条都签过 ✓】—— 这是真门 ✗ 不是装饰 ✓
+# 落盘: projects/<P>/delivery/uat.json ✓（铁律: 交付物属项目 ✓）
+# ══════════════════════════════════════════════════════════════════════════
+
+
+def _uat_file(root: Path | str, project_id: str) -> Path:
+    return _delivery_dir(root, project_id) / "uat.json"
+
+
+def build_uat_checklist(root: Path | str, project_id: str) -> dict[str, Any]:
+    """从 PRD 生成验收清单 ✓（无 PRD 也返回空清单 + 提示 ✓ 不报错 ✓）。"""
+    criteria: list[str] = []
+    try:
+        from .product_truth import _load as _pt_load
+        for prd in _pt_load(Path(root), "prds").values():
+            if not isinstance(prd, dict):
+                continue
+            if str(prd.get("project_id") or "") not in ("", project_id):
+                continue
+            c = prd.get("content") or {}
+            if not isinstance(c, dict):
+                continue
+            for key in ("features", "feature_list", "user_stories"):
+                v = c.get(key)
+                if isinstance(v, list):
+                    for item in v:
+                        s = item if isinstance(item, str) else (
+                            str(item.get("title") or item.get("story") or item)
+                            if isinstance(item, dict) else str(item))
+                        if s.strip() and s.strip() not in criteria:
+                            criteria.append(s.strip()[:160])
+    except Exception:  # noqa: BLE001 — 失败安全 ✓
+        pass
+    rec = {
+        "project_id": project_id,
+        "criteria": [{"index": i, "text": c, "result": None, "note": "", "signed_at": None}
+                     for i, c in enumerate(criteria)],
+        "created_at": _now_iso(),
+        "hint": ("" if criteria else
+                 "未从 PRD 取到验收标准（PRD content 为空）→ 可用 "
+                 "factory projectos uat <P> --add \"<一条可验收的标准>\" 手工补 ✓"),
+    }
+    f = _uat_file(root, project_id)
+    f.parent.mkdir(parents=True, exist_ok=True)
+    _save_json_atomic(f, rec)
+    return rec
+
+
+def uat_get(root: Path | str, project_id: str) -> dict[str, Any]:
+    f = _uat_file(root, project_id)
+    if not f.is_file():
+        return {}
+    try:
+        d = json.loads(f.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return d if isinstance(d, dict) else {}
+
+
+def uat_sign(root: Path | str, project_id: str, index: int, *,
+             passed: bool, note: str = "") -> dict[str, Any] | None:
+    """逐条签字 ✓（越界/非法索引 → None ✓ 不静默 ✓）。"""
+    rec = uat_get(root, project_id)
+    items = rec.get("criteria") or []
+    if not (0 <= index < len(items)):
+        return None
+    items[index]["result"] = "passed" if passed else "failed"
+    items[index]["note"] = note
+    items[index]["signed_at"] = _now_iso()
+    _save_json_atomic(_uat_file(root, project_id), rec)
+    return rec
+
+
+def uat_add(root: Path | str, project_id: str, text: str) -> dict[str, Any]:
+    rec = uat_get(root, project_id) or build_uat_checklist(root, project_id)
+    rec.setdefault("criteria", []).append(
+        {"index": len(rec["criteria"]), "text": text[:160],
+         "result": None, "note": "", "signed_at": None})
+    rec["hint"] = ""
+    _save_json_atomic(_uat_file(root, project_id), rec)
+    return rec
+
+
+def uat_status(root: Path | str, project_id: str) -> dict[str, Any]:
+    """验收状态汇总 ✓（门要用它 ✓）。"""
+    items = (uat_get(root, project_id) or {}).get("criteria") or []
+    signed = [i for i in items if i.get("result")]
+    failed = [i for i in items if i.get("result") == "failed"]
+    return {
+        "total": len(items), "signed": len(signed), "failed": len(failed),
+        "complete": bool(items) and len(signed) == len(items) and not failed,
+        "all_signed": bool(items) and len(signed) == len(items),
+    }
+
+
+def _save_json_atomic(path: Path, data: dict[str, Any]) -> None:
+    """原子写 ✓ 临时名带 pid ✓（吸取 _write_list 固定名并发崩溃的教训 ✓）。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n",
+                   encoding="utf-8")
+    os.replace(tmp, path)

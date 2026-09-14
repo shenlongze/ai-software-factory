@@ -4703,6 +4703,43 @@ class FactoryCLI:
 
         # ★ Founder 模型: 按 project_id 查项目【全部】信息
         #   物理位置即索引 ✓ —— 直接读 projects/<P-id>/ 目录 ✓
+        if getattr(args, "action", "") == "uat":
+            from . import delivery as _dlv
+
+            st = _dlv.uat_status(root, str(target or ""))
+            if getattr(args, "add", ""):
+                _dlv.uat_add(root, str(target), args.add)
+                st = _dlv.uat_status(root, str(target))
+            if getattr(args, "uat_pass", None) is not None:
+                if _dlv.uat_sign(root, str(target), args.uat_pass, passed=True,
+                                 note=getattr(args, "note", "")) is None:
+                    print(f"[E4420] 索引越界: {args.uat_pass}", file=sys.stderr)
+                    return 1
+                st = _dlv.uat_status(root, str(target))
+            if getattr(args, "uat_fail", None) is not None:
+                if _dlv.uat_sign(root, str(target), args.uat_fail, passed=False,
+                                 note=getattr(args, "note", "")) is None:
+                    print(f"[E4421] 索引越界: {args.uat_fail}", file=sys.stderr)
+                    return 1
+                st = _dlv.uat_status(root, str(target))
+            rec = _dlv.uat_get(root, str(target))
+            if not rec:
+                rec = _dlv.build_uat_checklist(root, str(target))
+                st = _dlv.uat_status(root, str(target))
+            print(f"=== 用户验收 UAT（项目 {target}）===")
+            if rec.get("hint"):
+                print(f"  ⚠ {rec['hint']}")
+            for it in rec.get("criteria") or []:
+                mark = {"passed": "✓ 通过", "failed": "✗ 不通过"}.get(
+                    str(it.get("result") or ""), "· 未签")
+                note = f"  ← {it['note']}" if it.get("note") else ""
+                print(f"  [{it['index']}] {mark}  {it['text']}{note}")
+            print(f"  ── 共 {st['total']} 条 · 已签 {st['signed']} · 不通过 {st['failed']}"
+                  f" · {'✓ 验收完成' if st['complete'] else '未完成'}")
+            print("  签字: factory projectos uat <P> --pass 0 [--note '…'] | --fail 1 | "
+                  "--add '新标准'")
+            return 0
+
         if getattr(args, "action", "") in ("deliver", "accept", "deliveries"):
             from . import delivery as _dlv
 
@@ -4755,8 +4792,16 @@ class FactoryCLI:
                     print(f"  {r.get('id')} | {r.get('status')} | "
                           f"{str(r.get('created_at'))[:19]} | {r.get('package') or '-'}")
                 return 0
-            # accept: 状态流转 DELIVERED → ACCEPTED ✓
+            # accept: 状态流转 ✓（★ 用户验收未完成则【不许 ACCEPTED】✗ = 真门 ✓）
             recs = _dlv.list_deliveries(root, pid)
+            _st = _dlv.uat_status(root, pid)
+            _cur = str((recs[0] if recs else {}).get("status") or "")
+            if _cur == "DELIVERED" and not _st["complete"]:
+                print(f"[E4422] 用户验收（UAT）未完成 → 不得标记 ACCEPTED ✗")
+                print(f"  当前: 共 {_st['total']} 条 · 已签 {_st['signed']} "
+                      f"· 不通过 {_st['failed']}")
+                print(f"  先验收: factory projectos uat {pid}（逐条 --pass/--fail ✓）")
+                return 1
             if not recs:
                 print(f"[E4411] 未找到交付记录（项目 {pid}）")
                 return 1
@@ -8689,10 +8734,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_proj = sub.add_parser("projectos", help="ProjectOS (K3): create/sprint/status/replan/approve — Real Project Operating Loop")
     p_proj.add_argument("action", nargs="?", default="list",
                         choices=["create", "sprint", "status", "replan", "approve", "list",
-                                 "show", "deliver", "accept", "deliveries"])
+                                 "show", "deliver", "accept", "deliveries", "uat"])
     p_proj.add_argument("target", nargs="?", help="project_id / sprint_id / task_id")
     p_proj.add_argument("--title", default="项目", help="项目/迭代标题 (create/sprint 用)")
     p_proj.add_argument("--conv", default="", help="conversation_id (create 用)")
+    p_proj.add_argument("--add", default="", help="uat: 追加一条验收标准")
+    p_proj.add_argument("--pass", dest="uat_pass", type=int, default=None,
+                        help="uat: 第 N 条验收通过 (0 起)")
+    p_proj.add_argument("--fail", dest="uat_fail", type=int, default=None,
+                        help="uat: 第 N 条验收不通过 (0 起)")
+    p_proj.add_argument("--note", default="", help="uat: 该条备注")
     p_proj.add_argument("--project", default="", help="project_id (sprint/replan 用)")
     p_proj.add_argument("--goal", default="", help="迭代目标 (sprint 用)")
     p_proj.add_argument("--req", default="", help="新 requirement_id (replan 用)")

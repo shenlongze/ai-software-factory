@@ -6741,6 +6741,54 @@ class FactoryCLI:
         action = getattr(args, "action", "check") or "check"
         target = getattr(args, "target", None)
 
+        if action in ("budget", "set"):
+            # ★ 治理可视 + 配置入口（Founder: 治理能不能看见/能不能配 ✓）
+            #   按铁律: 预算属项目 → 落在 projects/<P-id>/budget.json ✓
+            from factory_console.session.budget import ProjectBudget
+            if not target:
+                print(f"[E4033] 用法: factory governance {action} <project_id>",
+                      file=sys.stderr)
+                return 2
+            bfile = root / "projects" / str(target) / "budget.json"
+            if action == "set":
+                b = ProjectBudget.load_or_default(bfile)
+                mapping = {"max_tokens": "max_total_tokens",
+                           "max_cost": "max_total_cost",
+                           "max_llm_calls": "max_llm_calls",
+                           "max_replans": "max_replans",
+                           "max_retries": "max_retries",
+                           "max_repairs": "max_repairs"}
+                changed = []
+                for arg, field in mapping.items():
+                    v = getattr(args, arg, None)
+                    if v is not None and hasattr(b, field):
+                        setattr(b, field, v)
+                        changed.append(f"{field}={v}")
+                if not changed:
+                    print("  未提供任何预算参数 → 未修改 ✓",
+                          file=sys.stderr)
+                    return 2
+                b.save(bfile)
+                print(f"  OK  项目 {target} 预算已更新: {', '.join(changed)} ✓")
+                print(f"  位置: {str(bfile).replace(str(Path.home()), '~')} ✓")
+                return 0
+            b = ProjectBudget.load_or_default(bfile)
+            d = b.to_dict()
+            print(f"=== 治理 · 预算闸门（项目 {target}）===")
+            print("  上限（0 = 不限）:")
+            for k in ("max_total_tokens", "max_total_cost", "max_llm_calls",
+                      "max_replans", "max_retries", "max_repairs",
+                      "max_concurrent_agents"):
+                if k in d:
+                    print(f"    {k:24s} {d[k]}")
+            warn = getattr(b, "warn_ratio", 0.8)
+            rev = getattr(b, "review_ratio", 0.9)
+            print(f"  档位线: 告警 {warn:.0%} → 评审 {rev:.0%} → 阻断 100%")
+            print("  闸门行为: ≥100% → BLOCK（禁止 LLM/retry/repair/replan/new_task ✓）")
+            print(f"  配置: factory governance set {target} --max-tokens N --max-cost X")
+            print(f"  文件: {str(bfile).replace(str(Path.home()), '~')}")
+            return 0
+
         if action == "check":
             if not target:
                 print("[E4032] 错误: production_run_id 必填 (factory governance check <run_id>)",
@@ -8655,9 +8703,15 @@ def build_parser() -> argparse.ArgumentParser:
     # S17: Governance CLI
     p_gov = sub.add_parser("governance", help="Governance (S17): check/status — 审批门")
     p_gov.add_argument("action", nargs="?", default="check",
-                       choices=["check", "status"],
+                       choices=["check", "status", "budget", "set"],
                        help="动作: check 检查门 / status 完整状态")
     p_gov.add_argument("target", nargs="?", help="production_run_id")
+    p_gov.add_argument("--max-tokens", type=int, default=None, help="预算: 总 token 上限 (set)")
+    p_gov.add_argument("--max-cost", type=float, default=None, help="预算: 总成本上限 $ (set)")
+    p_gov.add_argument("--max-llm-calls", type=int, default=None, help="预算: LLM 调用上限 (set)")
+    p_gov.add_argument("--max-replans", type=int, default=None, help="预算: 重规划上限 (set)")
+    p_gov.add_argument("--max-retries", type=int, default=None, help="预算: 重试上限 (set)")
+    p_gov.add_argument("--max-repairs", type=int, default=None, help="预算: 自动修复上限 (set)")
     p_gov.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
     p_appr = sub.add_parser("approval-request", help="Approval (S17): list/show/request/approve/reject — Governance 审批")
     p_appr.add_argument("action", nargs="?", default="list",

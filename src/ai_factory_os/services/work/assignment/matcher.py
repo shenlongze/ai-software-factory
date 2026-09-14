@@ -15,6 +15,7 @@
 """
 
 from __future__ import annotations
+import sys
 
 from typing import Iterable
 
@@ -28,6 +29,11 @@ class AgentMatcher:
 
     def __init__(self, registry: AgentRegistry):
         self._registry = registry
+        # ★ 上次匹配是否降级（角色命中但技能无候选 → 回落仅角色 ✓ 可见 ✓）
+        #   为什么（Founder 定 C ✓）: matcher 原要求【角色 AND 技能在同一 agent】✗
+        #   而小团队覆盖不了技能组合（笛卡尔积 ✗）→ 实测真任务匹配率 18/60 ✗
+        #   双轨: 精确优先 ✓ 无候选回落到仅角色 ✓ 且【降级必须可见】✓（同既定原则 ✓）
+        self.last_match_degraded = False
 
     @property
     def registry(self) -> AgentRegistry:
@@ -39,11 +45,36 @@ class AgentMatcher:
         self,
         step: WorkflowStep,
     ) -> list[tuple[Agent, int]]:
-        """按步骤匹配候选: role/skill/AVAILABLE 过滤 + skill 匹配数量排序。"""
-        return self.match_criteria(
+        """按步骤匹配候选（双轨 ✓）: 精确(角色+技能) → 回落(仅角色, 标记降级 ✓)。"""
+        cands, degraded = self.match_with_fallback(
             required_role=step.required_role,
             required_skill=step.required_skill,
         )
+        self.last_match_degraded = degraded
+        if degraded:
+            print(f"  ⚠ 匹配降级: 步骤「{step.name}」要求 role={step.required_role} "
+                  f"skill={step.required_skill} 无精确候选 → 回落【仅角色】✓"
+                  f"（{len(cands)} 个候选，技能不对口）", file=sys.stderr)
+        return cands
+
+    def match_with_fallback(
+        self,
+        *,
+        required_role: str | None = None,
+        required_skill: str | Iterable[str] | None = None,
+    ) -> tuple[list[tuple[Agent, int]], bool]:
+        """双轨匹配 ✓ 返回 (候选, 是否降级)。
+
+        ① 精确: 角色 + 技能（原语义 ✓ 优先 ✓）
+        ② 无精确候选且有技能要求 → 回落仅角色 ✓（degraded=True ✓ 可见 ✓）
+        ③ 无技能要求 → 原样返回 ✓ 不标降级 ✓
+        """
+        exact = self.match_criteria(required_role=required_role,
+                                    required_skill=required_skill)
+        if exact or not _to_skill_set(required_skill):
+            return exact, False
+        fallback = self.match_criteria(required_role=required_role, required_skill=None)
+        return (fallback, True) if fallback else ([], False)
 
     def match_criteria(
         self,
@@ -71,7 +102,7 @@ class AgentMatcher:
         return candidates
 
     def best(self, step: WorkflowStep) -> Agent | None:
-        """最优候选 (排序首位); 无候选返回 None。"""
+        """最优候选 (排序首位); 无候选返回 None（双轨 ✓ 含降级回落 ✓）。"""
         candidates = self.candidates(step)
         return candidates[0][0] if candidates else None
 

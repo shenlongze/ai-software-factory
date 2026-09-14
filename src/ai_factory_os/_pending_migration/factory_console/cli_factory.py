@@ -4035,6 +4035,66 @@ class FactoryCLI:
 
     # ------------------------------------------------------------- init (S10-026 Task E)
 
+    def _init_scan(self, args: argparse.Namespace) -> None:
+        """init 的第 ④ 步: 扫本机能力（agent/skill/mcp ✓ 2026-09-14 补 ✓）。
+
+        为什么补（Founder: "init 没有是否进行 scan，本机的 agent、skill、mcp 等" ✓）:
+          实测 init 原【不扫 ✗】—— 而扫描能力【早就齐 ✓】
+          （local_ai.detect_local_ais ✓ + host_assets.scan_adapter_assets ✓）
+          = "机制有、接线缺"✗ 又一例 ✓
+          → 首次初始化【正是该发现本机有什么的时候 ✓】（codex/claude/hermes ✓ + skills ✓）
+        """
+        print("  本机能力扫描:")
+        # ① 本机 AI（codex/claude/hermes ✓）
+        try:
+            from .local_ai import detect_local_ais
+            ais = detect_local_ais() or []
+            if ais:
+                names = ", ".join(f"{a.get('id') or a.get('name')}"
+                                  f"({str(a.get('version') or '')[:18]})" for a in ais[:5])
+                print(f"    ✓ 本机 AI: {len(ais)} 个 — {names}")
+            else:
+                print("    · 本机 AI: 无（装好 codex/claude/hermes 后重跑 init ✓）")
+        except Exception as exc:  # noqa: BLE001 — 失败安全 ✓ 不阻断 init ✓
+            print(f"    ⚠ 本机 AI 扫描失败: {type(exc).__name__}: {exc}")
+        # ② agent / skill（各宿主 ✓）
+        try:
+            from .external_executor.host_assets import scan_adapter_assets
+            from .external_executor.registry import build_registry
+            reg = build_registry(self.data_dir)
+            tot = {"agent": 0, "skill": 0, "plugin": 0, "persona": 0}
+            per: list[str] = []
+            for ad in (reg.list() if hasattr(reg, "list") else []):
+                try:
+                    assets = scan_adapter_assets(ad) or []
+                except Exception:  # noqa: BLE001
+                    continue
+                cnt = {}
+                for a in assets:
+                    k = str(a.get("kind") or "?")
+                    cnt[k] = cnt.get(k, 0) + 1
+                    tot[k] = tot.get(k, 0) + 1
+                if cnt:
+                    per.append(f"{getattr(ad, 'id', '?')}: " + " ".join(
+                        f"{k}{v}" for k, v in sorted(cnt.items())))
+            if per:
+                print(f"    ✓ 本机资产: " + " · ".join(per[:4])
+                      + f"（合计 agent{tot.get('agent', 0)}"
+                        f" skill{tot.get('skill', 0)}"
+                        f" plugin{tot.get('plugin', 0)} ✓）")
+            else:
+                print("    · 本机资产: 未扫到 agent/skill（各宿主的 agents/skills 目录为空 ✓）")
+        except Exception as exc:  # noqa: BLE001
+            print(f"    ⚠ 本机资产扫描失败: {type(exc).__name__}: {exc}")
+        # ③ MCP
+        try:
+            from .mcp_registry import list_connections as _mc  # type: ignore
+            _ms = _mc(self.data_dir) if callable(_mc) else []
+            print(f"    · MCP 连接: {len(_ms or [])} 个")
+        except Exception:  # noqa: BLE001 — 无该模块/无连接都正常 ✓
+            print("    · MCP 连接: 0 个（factory mcp 可管理 ✓）")
+        print("    ★ 详细/导入: factory local-ai scan · factory external-ai list ✓")
+
     def init(self, args: argparse.Namespace) -> int:
         """首次运行初始化 (§2.1 P0): 环境检测 → workspace 初始化 → LLM 配置
         引导 → 校验 → 下一步提示 (factory doctor / factory start)。
@@ -4045,6 +4105,13 @@ class FactoryCLI:
         仅 workspace 目录 + providers.json + models.json 种子 (config.json 归 config 命令管)。
         """
         print("=== AI Factory 初始化 ===")
+        # ★ 显示数据目录（2026-09-14 补 ✓ Founder: "没有配置项么? 比如项目/公司目录/工作路径" ✓）
+        #   原 init【不显示 data_dir ✗】→ 用户不知道东西装哪 ✓
+        #   改它: factory config set core.data_dir <路径>（config 命令管 ✓ init 只读显示 ✗）
+        _dd = Path(self.data_dir)
+        print(f"  · 数据目录: {_dd}")
+        print("    （含 agents/skills/projects/providers/workspace ✓"
+              " 改路径: factory config set core.data_dir <路径> ✓）")
 
         # 1. 环境检测 (python/venv/node_modules → 缺失 → 明确提示先装依赖)
         problems = _env_problems()
@@ -4087,6 +4154,9 @@ class FactoryCLI:
             print(f"  ⚠ 模型目录种子写入失败 (首次使用模型时会自动补齐): {exc}")
 
         # 3. LLM 配置引导 (providers.json — 经 LLMControlPlane, 只写引用)
+        # ★ ④ 扫本机能力（2026-09-14 补 ✓ Founder 指出 init 不扫 agent/skill/mcp ✓）
+        self._init_scan(args)
+
         rc = self._init_llm_guide(args)
         if rc != 0:
             return rc
@@ -4149,6 +4219,10 @@ class FactoryCLI:
         引用 (红线: 明文 key 永不落盘)。无效选择回退默认, 不中断向导。
         """
         print("  配置 LLM Provider:")
+        # ★ 说明"这就是系统支持的全部"✗（Founder 问"没有 ollama/deepseek 等可选么" ✓）
+        #   config.py:16 明写支持集就是这 4 个 ✓ → 不是缺 ✗ 是没说明 ✓
+        print("      （系统支持集: deepseek/openai/anthropic/ollama ✓ "
+              "云端 deepseek·openai·anthropic + 本地 ollama ✓）")
         for i, pid in enumerate(INIT_PROVIDERS, 1):
             print(f"    {i}) {pid} (默认模型: {PROVIDER_DEFAULTS[pid]['model']})")
         choice = _parse_choice(_ask("  选择 [1-4, 回车=1]: "), len(INIT_PROVIDERS))

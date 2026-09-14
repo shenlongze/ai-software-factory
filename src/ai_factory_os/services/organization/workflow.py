@@ -164,6 +164,7 @@ ROLE_OUTPUT_TYPES: dict[str, str] = {
     "architect": "design",
     "ui-designer": "design",
     "reviewer": "review_report",   # ★ 代码评审（2026-09-14 补 ✓）
+    "security": "security_report",  # ★ 安全/合规审查（2026-09-14 补 ✓）
     "developer": "code",
     "tester": "test",
     "devops": "release",
@@ -1053,6 +1054,32 @@ class WorkflowRunner:
 
 #: 自动修复轮数上限 (架构 §4: ≤2 轮防无限; 测试轮数上限 = 该值 + 1)
 DEFAULT_MAX_REPAIR_ROUNDS = 2
+
+
+def build_full_delivery_workflow(
+    lifecycle: WorkflowLifecycle,
+    project_id: str,
+    name: str,
+    *,
+    workflow_id: str | None = None,
+) -> Workflow:
+    """Dev → Review → Security → Test 环（2026-09-14 补: 交付前的两个治理节点 ✓）。
+
+    为什么要这两个阶段（Founder: "正常交付流程还有什么节点没有" ✓）:
+      代码评审 ✓ 与 安全/合规审查 ✓ 是标准实践 ✓ 而此前【都不在流程里 ✗】
+      （零件早已存在: 38 个 reviewer agent ✓ 风险分级 ✓ 敏感路径白名单 ✓）
+    顺序: review（质量 ✓）→ security（安全 ✓）→ test（验证 ✓）
+      —— 治理节点放在测试前 = 早发现早返工 ✓；也构成【发布前的天然卡点 ✓】
+    既有 build_dev_test_workflow / build_dev_review_test_workflow 均保持不变 ✓。
+    """
+    workflow = lifecycle.create_workflow(project_id, name, workflow_id=workflow_id)
+    dev = lifecycle.create_stage(workflow.id, "developer", name="develop")
+    rev = lifecycle.create_stage(workflow.id, "reviewer", name="review",
+                                 depends_on=[dev.id])
+    sec = lifecycle.create_stage(workflow.id, "security", name="security",
+                                 depends_on=[rev.id])
+    lifecycle.create_stage(workflow.id, "tester", name="test", depends_on=[sec.id])
+    return workflow
 
 
 def build_dev_review_test_workflow(

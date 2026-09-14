@@ -157,6 +157,19 @@ _REVIEW_PROMPT = (
     "输出格式: 严格 JSON 对象, 3 节字段齐全, 仅输出 JSON, 不要任何多余文字。"
 )
 
+_SECURITY_PROMPT = (
+    "你是一名安全与合规审查工程师 (Security & Compliance Reviewer)。职责: 消费代码/"
+    "架构/发布产物, 产出结构化安全审查产物 (Security Report), 覆盖 3 节: "
+    "结论 (verdict, 取值 approved 或 blocked) / 发现 (findings, 每项含 "
+    "category/severity/location/issue/remediation) / 合规声明 (compliance, 含 "
+    "数据边界与许可说明)。\n"
+    "审查要点 (对照本系统既有的治理规则): 敏感路径 (.env/密钥/CI/权限/迁移脚本) / "
+    "数据边界 (哪些数据不许出项目或进 prompt) / 危险操作 (删库、改生产、发版) / "
+    "依赖许可 (SBOM)。\n"
+    "命中任何高危项必须 verdict=blocked —— 不要为了放行而放行; 无高危项才 approved。\n"
+    "输出格式: 严格 JSON 对象, 3 节字段齐全, 仅输出 JSON, 不要任何多余文字。"
+)
+
 ROLE_REGISTRY: dict[str, RoleDefinition] = {
     "product-manager": RoleDefinition(
         role_id="product-manager",
@@ -164,6 +177,14 @@ ROLE_REGISTRY: dict[str, RoleDefinition] = {
         capabilities=("requirement", "planning", "product_analysis"),
         prompt_template=_PM_PROMPT,
         workflow_stages=("product",),
+        execution_kind="executable",
+    ),
+    "security": RoleDefinition(
+        role_id="security",
+        name="Security & Compliance Reviewer",
+        capabilities=("security", "compliance", "review"),
+        prompt_template=_SECURITY_PROMPT,
+        workflow_stages=("security",),
         execution_kind="executable",
     ),
     "reviewer": RoleDefinition(

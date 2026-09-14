@@ -185,6 +185,16 @@ CONTRACTS: dict[str, dict[str, Any]] = {
     #   此前: 38 个 reviewer agent 已注册 ✓ 但【工作流阶段里没有 review ✗】
     #   → 评审不会自动卡在测试/发布前 ✓（零件齐、缺节点 ✓）
     #   语义: verdict=approved → 放行 ✓ · changes_requested → 返工 ✓（复用修复环 ✓）
+    # ★ 安全/合规审查产物（2026-09-14 补: 发布前的硬卡点 ✓）
+    #   verdict=blocked → 不得进入测试/发布 ✓（安全审查的意见不可被无视 ✓）
+    "security_report": {
+        "required_fields": ("verdict", "findings", "compliance"),
+        "validation_rules": {
+            "verdict": {"type": "str", "min_length": 1},
+            "findings": {"type": "list"},
+            "compliance": {"type": "dict", "min_keys": 1},
+        },
+    },
     "review_report": {
         "required_fields": ("verdict", "findings", "summary"),
         "validation_rules": {

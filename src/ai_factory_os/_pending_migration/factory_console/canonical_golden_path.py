@@ -217,8 +217,14 @@ class CanonicalGoldenPath:
                 return {
                     "kind": "lifecycle", "action": action,
                     "reply": (f"已生成开发计划 {obj.get('id')} "
-                              f"(tasks={n_tasks})。\n"
-                              f"当前阶段: {self.describe(conversation_id)}"),
+                              f"(tasks={n_tasks})。"
+                              # ★ 降级必须可见: LLM 分解 3 次失败会静默回落模板
+                              #   （只有 5~6 个通用任务），用户此前完全看不出来 ✗
+                              + ("" if not obj.get("degraded") else
+                                 "\n⚠ 注意: LLM 任务分解未成功，本计划是【模板降级结果】"
+                                 "（只有几个通用任务，未经真实需求分析），"
+                                 "建议稍后重试「生成计划」。")
+                              + f"\n当前阶段: {self.describe(conversation_id)}"),
                     "detail": obj,
                 }
             if action == "approve_plan":

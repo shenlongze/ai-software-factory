@@ -36,6 +36,8 @@ ALIAS_PREFIXES: dict[str, str] = {
     "intelligence": "ai_factory_os.services.learning",
     "change": "ai_factory_os.services.work.change",
     "execution": "ai_factory_os.services.execution",
+    # ── 原 factory-console 的独立块（刀55 起按功能绞杀）──
+    "audit": "ai_factory_os.services.governance.audit",
     # ── 原 factory-console（刀51 整块迁入，legacy/ 由此清空）──
     "factory_console": "ai_factory_os._pending_migration.factory_console",
     "legacy_paths": "ai_factory_os.infrastructure.legacy_paths",
@@ -96,6 +98,17 @@ ALIAS_RENAMES: dict[str, str] = {
     "exec.tools.filesystem": "ai_factory_os.plugins.tools.filesystem",
 }
 
+#: 点分前缀映射：整块搬走的子目录（长前缀优先匹配）。
+#: 为什么需要它：消费方写的是【全路径】如 factory_console.audit.audit_query，
+#: 只登记顶层名（audit）不够 —— 顶层前缀会把 factory_console.* 全导向旧路径。
+ALIAS_DOTTED: dict[str, str] = {
+    "factory_console.audit": "ai_factory_os.services.governance.audit",
+    # 包内相对 import 解析成全路径（ai_factory_os._pending_migration.factory_console.*）
+    # → 必须同时登记该前缀，否则 from .audit import X 会找不到
+    "ai_factory_os._pending_migration.factory_console.audit":
+        "ai_factory_os.services.governance.audit",
+}
+
 _SEP = "."  # 便于替换分隔符
 
 
@@ -103,6 +116,14 @@ def _target(fullname: str) -> str | None:
     """旧模块名 → 新模块名；无别名则 None。"""
     if fullname in ALIAS_RENAMES:
         return ALIAS_RENAMES[fullname]
+    # 点分前缀：最长匹配优先（整块搬走的子目录）
+    best = ""
+    for pref in ALIAS_DOTTED:
+        if (fullname == pref or fullname.startswith(pref + _SEP)) and len(pref) > len(best):
+            best = pref
+    if best:
+        tail = fullname[len(best):].lstrip(_SEP)
+        return f"{ALIAS_DOTTED[best]}{_SEP}{tail}" if tail else ALIAS_DOTTED[best]
     head, _, rest = fullname.partition(_SEP)
     prefix = ALIAS_PREFIXES.get(head)
     if prefix is None:
@@ -147,4 +168,5 @@ def install() -> None:
 
 def aliases() -> dict[str, dict[str, str]]:
     """当前登记的别名（供工具/报告用）。"""
-    return {"prefixes": dict(ALIAS_PREFIXES), "renames": dict(ALIAS_RENAMES)}
+    return {"prefixes": dict(ALIAS_PREFIXES), "renames": dict(ALIAS_RENAMES),
+            "dotted": dict(ALIAS_DOTTED)}

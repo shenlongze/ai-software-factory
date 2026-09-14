@@ -4359,6 +4359,14 @@ class FactoryCLI:
         action = getattr(args, "action", "list") or "list"
         target = getattr(args, "target", None)
 
+        # ★ Founder 模型: 按 project_id 查项目【全部】信息
+        #   物理位置即索引 ✓ —— 直接读 projects/<P-id>/ 目录 ✓
+        if getattr(args, "action", "") == "show":
+            from factory_console.project_show import render_project
+            print(render_project(str(root), str(getattr(args, "target", "") or "")))
+            return 0
+
+
         if action == "create":
             try:
                 p = _cp(str(root), title=getattr(args, "title", "项目"),
@@ -8147,7 +8155,8 @@ def build_parser() -> argparse.ArgumentParser:
     # K3: Project OS CLI
     p_proj = sub.add_parser("projectos", help="ProjectOS (K3): create/sprint/status/replan/approve — Real Project Operating Loop")
     p_proj.add_argument("action", nargs="?", default="list",
-                        choices=["create", "sprint", "status", "replan", "approve", "list"])
+                        choices=["create", "sprint", "status", "replan", "approve", "list",
+                                 "show"])
     p_proj.add_argument("target", nargs="?", help="project_id / sprint_id / task_id")
     p_proj.add_argument("--title", default="项目", help="项目/迭代标题 (create/sprint 用)")
     p_proj.add_argument("--conv", default="", help="conversation_id (create 用)")

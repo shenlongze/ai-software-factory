@@ -45,28 +45,61 @@ def _new_id(prefix: str) -> str:
 
 
 def _store_file(root: Path | str, kind: str) -> Path:
+    """【公共】（无 project_id）记录的位置。"""
     return Path(root) / "product_truth" / f"{kind}.json"
 
 
+def _project_store_file(root: Path | str, project_id: str, kind: str) -> Path:
+    """【项目级】记录的位置: projects/<P-id>/product_truth/<kind>.json
+
+    ★ Founder 模型: 有 project_id → 属于该项目 → 必须在项目目录下 ✓
+      无 project_id → 公共 ✓（留在数据根 ✓）
+    """
+    return Path(root) / "projects" / project_id / "product_truth" / f"{kind}.json"
+
+
+def _write_json_file(p: Path, data: dict[str, Any]) -> None:
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_suffix(p.suffix + ".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n",
+                   encoding="utf-8")
+    os.replace(tmp, p)
+
+
 def _load(root: Path | str, kind: str) -> dict[str, dict[str, Any]]:
-    p = _store_file(root, kind)
-    if not p.is_file():
-        return {}
-    try:
-        raw = json.loads(p.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}  # 失败安全: 单文件损坏不阻断其它
-    if not isinstance(raw, dict):
-        return {}
-    return raw
+    """读: 公共 ✓ + 各项目 ✓（项目内为真身，同名覆盖 ✓）。"""
+    out: dict[str, dict[str, Any]] = {}
+    paths = [_store_file(root, kind),
+             *sorted(Path(root).glob(f"projects/*/product_truth/{kind}.json"))]
+    for p in paths:
+        if not p.is_file():
+            continue
+        try:
+            raw = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue  # 失败安全: 单文件损坏不阻断其它 ✓
+        if isinstance(raw, dict):
+            out.update(raw)
+    return out
 
 
 def _save(root: Path | str, kind: str, recs: dict[str, dict[str, Any]]) -> None:
-    p = _store_file(root, kind)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    tmp = p.with_suffix(p.suffix + ".tmp")
-    tmp.write_text(json.dumps(recs, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    os.replace(tmp, p)
+    """写: 按 project_id 分片 —— 有项目的进项目目录 ✓，无的进公共 ✓（铁律 ✓）。
+
+    副作用（有意的 ✓）: 任何一次 save 都会把带 project_id 的记录从公共文件
+    搬到项目目录 ✓ → 迁移不需要单独脚本 ✓（幂等 ✓）。
+    """
+    public: dict[str, dict[str, Any]] = {}
+    by_proj: dict[str, dict[str, Any]] = {}
+    for rid, rec in recs.items():
+        pid = str(rec.get("project_id") or "") if isinstance(rec, dict) else ""
+        if pid:
+            by_proj.setdefault(pid, {})[rid] = rec
+        else:
+            public[rid] = rec
+    _write_json_file(_store_file(root, kind), public)
+    for pid, sub in by_proj.items():
+        _write_json_file(_project_store_file(root, pid, kind), sub)
 
 
 def _rec_id(rec: dict[str, Any]) -> str:

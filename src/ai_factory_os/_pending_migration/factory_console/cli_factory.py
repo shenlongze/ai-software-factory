@@ -4490,7 +4490,12 @@ class FactoryCLI:
 
         if action == "decompose":
             try:
-                t = _decomp(str(root), title=getattr(args, "title", "任务"),
+                # ★ 标题取值: --title → 位置参数(用户给的目标) → "任务"
+                #   （原实现只看 --title，默认"任务" → 位置参数被丢弃 ✗
+                #     症状: factory tasktree decompose "<目标>" 生成的树全叫「任务」✗）
+                _title = (getattr(args, "title", "") or "").strip() \
+                    or (getattr(args, "target", "") or "").strip() or "任务"
+                t = _decomp(str(root), title=_title,
                             domain=getattr(args, "domain", "default"),
                             source_conv_id=getattr(args, "conv", ""))
             except Exception as exc:  # noqa: BLE001
@@ -8158,7 +8163,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_tt.add_argument("action", nargs="?", default="list",
                       choices=["decompose", "status", "progress", "update", "execute", "list"])
     p_tt.add_argument("target", nargs="?", help="task_tree_id / task_id")
-    p_tt.add_argument("--title", default="任务", help="任务标题 (decompose 用)")
+    p_tt.add_argument("--title", default="",
+                      help="任务标题 (decompose 用; 缺省用位置参数 target)")
     p_tt.add_argument("--domain", default="default", help="领域 (decompose 用)")
     p_tt.add_argument("--conv", default="", help="conversation_id (decompose 用)")
     p_tt.add_argument("--status", default="COMPLETED", help="目标状态 (update 用)")

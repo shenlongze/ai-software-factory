@@ -38,7 +38,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from .gap_analyzer import GapAnalysis
-from ai_factory_os.plugins.agents.roles import ROLES
+from .roles import ROLES
 
 #: 合法角色 (ROLES 8 角色键 — 角色缺口判定的合法面)
 VALID_ROLES: tuple[str, ...] = tuple(ROLES.keys())

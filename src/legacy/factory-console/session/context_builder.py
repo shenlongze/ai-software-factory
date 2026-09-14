@@ -40,7 +40,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-from ai_factory_os.plugins.agents.roles import ROLES
+from .roles import ROLES
 
 # ---------------------------------------------------------------- 资产文件名
 #: 项目级资产文件名 (projects/<slug>/ — 各来源资产口径)

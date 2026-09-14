@@ -38,8 +38,8 @@ from ai_factory_os.infrastructure.events.types import Event
 from execution.dispatcher import ExecutionDispatcherError
 from execution.runner import ExecutionRunnerError
 from execution.service import ExecutionService
-from runtime.models import ExecutionStatus
-from runtime.registry import RuntimeNotFoundError
+from ai_factory_os.services.execution.runtime.types import ExecutionStatus
+from ai_factory_os.services.execution.runtime.registry import RuntimeNotFoundError
 from workflows.engine import WorkflowEngine, WorkflowEngineError
 from workflows.models import StepState, StepStatus, WorkflowRun, WorkflowStatus, WorkflowStep
 

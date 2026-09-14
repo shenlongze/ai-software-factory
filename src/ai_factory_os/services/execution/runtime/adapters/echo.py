@@ -19,8 +19,8 @@
 
 from __future__ import annotations
 
-from runtime.adapter import RuntimeAdapter
-from runtime.models import ExecutionRequest, ExecutionResult, ExecutionStatus
+from ai_factory_os.services.execution.runtime.adapter import RuntimeAdapter
+from ai_factory_os.services.execution.runtime.types import ExecutionRequest, ExecutionResult, ExecutionStatus
 
 
 class EchoRuntimeAdapter(RuntimeAdapter):

@@ -28,7 +28,7 @@ from ai_factory_os.plugins.agents.types import AgentStatus
 from ai_factory_os.plugins.agents.registry import AgentNotFoundError, AgentRegistry
 from ai_factory_os.infrastructure.events.logger import EventLogger
 from ai_factory_os.infrastructure.events.types import Event, EventType
-from runtime.store import RuntimeStore
+from ai_factory_os.services.execution.runtime.store import RuntimeStore
 from workflows.models import WorkflowStep
 
 from .matcher import AgentMatcher

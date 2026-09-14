@@ -28,7 +28,7 @@ from metrics.collectors import MetricsCollector
 from metrics.models import AgentUtilizationSummary, FactoryMetrics, RuntimeUsageSummary
 from metrics.workspace import WorkspaceCollector
 from recovery.checkpoint import CheckpointStore
-from runtime.store import RuntimeStore
+from ai_factory_os.services.execution.runtime.store import RuntimeStore
 from ai_factory_os.services.execution.catalog import RuntimeCatalog
 from ai_factory_os.services.execution.store import CatalogStore
 from ai_factory_os.services.work.store import TaskStore

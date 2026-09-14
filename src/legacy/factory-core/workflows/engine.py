@@ -33,8 +33,8 @@ from typing import Any
 from ai_factory_os.plugins.agents.registry import AgentRegistry
 from ai_factory_os.infrastructure.events.logger import EventLogger
 from ai_factory_os.infrastructure.events.types import Event, EventType
-from runtime.models import ExecutionRequest
-from runtime.store import RuntimeStore
+from ai_factory_os.services.execution.runtime.types import ExecutionRequest
+from ai_factory_os.services.execution.runtime.store import RuntimeStore
 from ai_factory_os.services.work.types import Task
 from ai_factory_os.services.work.store import TaskStore
 

@@ -39,10 +39,10 @@ from execution.dispatcher import (
 )
 from execution.runner import ExecutionNotFoundError, ExecutionRunnerError, ExecutionStateError
 from execution.service import ExecutionService
-from runtime.adapters import BUILTIN_ADAPTERS
-from runtime.models import ExecutionRequest, ExecutionStatus, RuntimeInfo, RuntimeStatus
-from runtime.registry import RuntimeExistsError, RuntimeNotFoundError, RuntimeRegistry
-from runtime.store import RuntimeStore
+from ai_factory_os.services.execution.runtime.adapters import BUILTIN_ADAPTERS
+from ai_factory_os.services.execution.runtime.types import ExecutionRequest, ExecutionStatus, RuntimeInfo, RuntimeStatus
+from ai_factory_os.services.execution.runtime.registry import RuntimeExistsError, RuntimeNotFoundError, RuntimeRegistry
+from ai_factory_os.services.execution.runtime.store import RuntimeStore
 from ai_factory_os.services.execution.catalog import RuntimeCatalog
 from ai_factory_os.services.execution.store import CatalogStore
 from ai_factory_os.services.work.types import Task, TaskStatus

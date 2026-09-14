@@ -12,7 +12,7 @@ BUILTIN_ADAPTERS: {runtime_id: RuntimeAdapter} 内置实现映射:
 
 from __future__ import annotations
 
-from runtime.adapter import RuntimeAdapter
+from ai_factory_os.services.execution.runtime.adapter import RuntimeAdapter
 
 from .echo import EchoRuntimeAdapter
 from .hermes import HermesRuntimeAdapter

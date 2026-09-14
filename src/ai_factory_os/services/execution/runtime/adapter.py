@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from .models import ExecutionRequest, ExecutionResult
+from .types import ExecutionRequest, ExecutionResult
 
 
 class RuntimeAdapter(ABC):

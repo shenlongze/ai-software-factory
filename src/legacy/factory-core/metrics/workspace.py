@@ -28,8 +28,8 @@ from ai_factory_os.plugins.agents.types import Agent
 from ai_factory_os.plugins.agents.registry import AgentRegistry
 from ai_factory_os.infrastructure.events.types import Event, EventType
 from ai_factory_os.infrastructure.events.store import EventStore
-from runtime.models import ExecutionRequest, ExecutionStatus
-from runtime.store import RuntimeStore
+from ai_factory_os.services.execution.runtime.types import ExecutionRequest, ExecutionStatus
+from ai_factory_os.services.execution.runtime.store import RuntimeStore
 from ai_factory_os.services.work.types import Task
 from ai_factory_os.services.work.store import TaskStore
 from workflows.store import WorkflowStore

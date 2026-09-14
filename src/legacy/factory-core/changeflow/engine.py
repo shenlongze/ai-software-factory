@@ -34,7 +34,7 @@ from typing import Any, Callable
 from change.service import ChangeService
 from ai_factory_os.infrastructure.events.logger import EventLogger
 from ai_factory_os.infrastructure.events.types import Event
-from runtime.registry import RuntimeRegistry
+from ai_factory_os.services.execution.runtime.registry import RuntimeRegistry
 from ai_factory_os.services.work.types import Task
 from ai_factory_os.services.work.store import TaskStore
 from workflows.engine import WorkflowEngine, WorkflowEngineError

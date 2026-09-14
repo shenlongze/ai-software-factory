@@ -17,7 +17,7 @@ from typing import Sequence
 
 from ai_factory_os.plugins.agents.types import Agent
 from ai_factory_os.infrastructure.events.types import Event, EventType
-from runtime.models import ExecutionRequest, ExecutionStatus
+from ai_factory_os.services.execution.runtime.types import ExecutionRequest, ExecutionStatus
 from ai_factory_os.services.work.types import Task, TaskStatus
 from workflows.models import Workflow, WorkflowRun, WorkflowStatus
 

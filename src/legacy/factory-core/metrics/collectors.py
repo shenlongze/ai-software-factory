@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from ai_factory_os.plugins.agents.registry import AgentRegistry
 from ai_factory_os.infrastructure.events.store import EventStore
-from runtime.store import RuntimeStore
+from ai_factory_os.services.execution.runtime.store import RuntimeStore
 from ai_factory_os.services.work.store import TaskStore
 from workflows.store import WorkflowStore
 

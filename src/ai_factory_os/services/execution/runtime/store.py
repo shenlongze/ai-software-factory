@@ -26,7 +26,7 @@ from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
-from .models import ExecutionRequest, ExecutionResult, RuntimeInfo
+from .types import ExecutionRequest, ExecutionResult, RuntimeInfo
 
 _SECTIONS = ("runtimes", "executions", "results")
 

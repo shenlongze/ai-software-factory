@@ -16,7 +16,7 @@ from ai_factory_os.infrastructure.events.logger import EventLogger
 from ai_factory_os.infrastructure.events.types import Event, EventType
 from ai_factory_os.services.execution.catalog import RuntimeCatalog
 
-from .models import RuntimeInfo, RuntimeStatus
+from .types import RuntimeInfo, RuntimeStatus
 from .store import RuntimeStore
 
 

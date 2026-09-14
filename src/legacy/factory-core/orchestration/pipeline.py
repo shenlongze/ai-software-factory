@@ -23,10 +23,10 @@ from assignment.matcher import AgentMatcher
 from assignment.store import AssignmentStore
 from ai_factory_os.infrastructure.events.logger import EventLogger
 from execution.service import ExecutionService
-from runtime.adapter import RuntimeAdapter
-from runtime.adapters import BUILTIN_ADAPTERS
-from runtime.registry import RuntimeRegistry
-from runtime.store import RuntimeStore
+from ai_factory_os.services.execution.runtime.adapter import RuntimeAdapter
+from ai_factory_os.services.execution.runtime.adapters import BUILTIN_ADAPTERS
+from ai_factory_os.services.execution.runtime.registry import RuntimeRegistry
+from ai_factory_os.services.execution.runtime.store import RuntimeStore
 from ai_factory_os.services.work.store import TaskStore
 from workflows.engine import WorkflowEngine
 from workflows.store import WorkflowStore

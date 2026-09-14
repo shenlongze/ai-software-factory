@@ -20,9 +20,9 @@ from __future__ import annotations
 
 from typing import Mapping
 
-from runtime.adapter import RuntimeAdapter
-from runtime.models import ExecutionRequest, ExecutionResult
-from runtime.registry import RuntimeRegistry
+from ai_factory_os.services.execution.runtime.adapter import RuntimeAdapter
+from ai_factory_os.services.execution.runtime.types import ExecutionRequest, ExecutionResult
+from ai_factory_os.services.execution.runtime.registry import RuntimeRegistry
 
 
 class ExecutionDispatcherError(Exception):

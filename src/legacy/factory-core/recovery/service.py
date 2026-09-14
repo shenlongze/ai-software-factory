@@ -35,8 +35,8 @@ from assignment.store import AssignmentStore
 from ai_factory_os.infrastructure.events.logger import EventLogger
 from ai_factory_os.infrastructure.events.types import Event, EventType
 from ai_factory_os.infrastructure.events.store import EventStore
-from runtime.models import ExecutionStatus
-from runtime.store import RuntimeStore
+from ai_factory_os.services.execution.runtime.types import ExecutionStatus
+from ai_factory_os.services.execution.runtime.store import RuntimeStore
 from ai_factory_os.services.work.store import TaskStore
 from workflows.models import WorkflowStatus
 from workflows.store import WorkflowStore

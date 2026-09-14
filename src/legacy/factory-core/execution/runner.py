@@ -29,8 +29,8 @@ from typing import Any
 
 from ai_factory_os.infrastructure.events.logger import EventLogger
 from ai_factory_os.infrastructure.events.types import Event, EventType
-from runtime.models import ExecutionRequest, ExecutionResult, ExecutionStatus
-from runtime.store import RuntimeStore
+from ai_factory_os.services.execution.runtime.types import ExecutionRequest, ExecutionResult, ExecutionStatus
+from ai_factory_os.services.execution.runtime.store import RuntimeStore
 from workflows.engine import WorkflowEngine, WorkflowEngineError
 
 from .dispatcher import (

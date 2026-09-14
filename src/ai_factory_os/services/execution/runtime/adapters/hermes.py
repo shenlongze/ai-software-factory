@@ -28,8 +28,8 @@ from __future__ import annotations
 import os
 import subprocess
 
-from runtime.adapter import RuntimeAdapter
-from runtime.models import ExecutionRequest, ExecutionResult, ExecutionStatus
+from ai_factory_os.services.execution.runtime.adapter import RuntimeAdapter
+from ai_factory_os.services.execution.runtime.types import ExecutionRequest, ExecutionResult, ExecutionStatus
 
 DEFAULT_COMMAND = "hermes"          # 默认 CLI 命令名 (走 PATH 解析)
 DEFAULT_TIMEOUT = 300               # 默认超时 (秒): Hermes 一次 one-shot 调用可达分钟级

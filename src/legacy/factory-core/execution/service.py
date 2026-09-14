@@ -12,10 +12,10 @@ from __future__ import annotations
 from typing import Mapping
 
 from ai_factory_os.infrastructure.events.logger import EventLogger
-from runtime.adapter import RuntimeAdapter
-from runtime.models import ExecutionRequest, ExecutionResult
-from runtime.registry import RuntimeRegistry
-from runtime.store import RuntimeStore
+from ai_factory_os.services.execution.runtime.adapter import RuntimeAdapter
+from ai_factory_os.services.execution.runtime.types import ExecutionRequest, ExecutionResult
+from ai_factory_os.services.execution.runtime.registry import RuntimeRegistry
+from ai_factory_os.services.execution.runtime.store import RuntimeStore
 from workflows.engine import WorkflowEngine
 
 from .dispatcher import ExecutionDispatcher

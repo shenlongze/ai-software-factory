@@ -39,7 +39,9 @@ def trace_path() -> Path:
 def record_llm_call(prompt: str, response: str | None, *,
                     duration_s: float | None = None,
                     error: str = "", kind: str = "llm_raw",
-                    model: str = "", provider: str = "") -> None:
+                    model: str = "", provider: str = "",
+                    prompt_tokens: int = 0, completion_tokens: int = 0,
+                    cost_usd: float | None = None) -> None:
     """追加一条 LLM 调用记录（失败安全 ✓ 绝不影响调用方 ✓）。"""
     if os.environ.get("FACTORY_LLM_TRACE", "1") == "0":
         return
@@ -55,6 +57,13 @@ def record_llm_call(prompt: str, response: str | None, *,
             #   → 记上后【一眼可验 ✓】+ 可按模型统计用量/成本 ✓
             "model": model,
             "provider": provider,
+            # ★ R1（2026-09-14 ✓ Founder: "需要有成本统计、llm 使用监控、log"）
+            #   真 tokens + 成本估算 —— 来源 = gateway 已算好的 usage ✓（不重算 ✗ 不臆造 ✗）
+            #   缺价时 cost_usd=None ✓（诚实缺失 ✓ 不填 0 假账 ✓）
+            "prompt_tokens": int(prompt_tokens or 0),
+            "completion_tokens": int(completion_tokens or 0),
+            "total_tokens": int((prompt_tokens or 0) + (completion_tokens or 0)),
+            "cost_usd": cost_usd,
             "prompt": (prompt or "")[:_MAX_FIELD],
             "response": (response or "")[:_MAX_FIELD],
         }

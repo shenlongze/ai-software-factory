@@ -401,6 +401,20 @@ def complete(
             }
     except Exception:  # noqa: BLE001 — cost 估算失败不阻塞
         pass
+    # ★ R1（2026-09-14 ✓ Founder: "需要有成本统计、llm 使用监控、log"）
+    #   在【唯一汇聚点】留痕 ✓ —— 此刻 tokens 与 estimated_cost_usd 都已算好 ✓
+    #   为什么在此: 不必改任何调用链 ✓ 不 thread usage ✓ 单点 ✓（失败安全 ✓）
+    try:
+        from factory_console.llm_trace import record_llm_call as _rec
+        _u2 = out.get("usage") or {}
+        _last = messages[-1].get("content") if messages else ""
+        _rec(str(_last or ""), str(out.get("content") or ""),
+             kind="llm_complete", model=model, provider=provider_id,
+             prompt_tokens=int(_u2.get("prompt_tokens") or 0),
+             completion_tokens=int(_u2.get("completion_tokens") or 0),
+             cost_usd=_u2.get("estimated_cost_usd"))
+    except Exception:  # noqa: BLE001 — 留痕绝不阻塞调用 ✓
+        pass
     return out
 
 

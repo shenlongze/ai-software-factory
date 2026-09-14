@@ -11,9 +11,12 @@
 
 from __future__ import annotations
 
+import atexit
 import json
+import os
 import shlex
 import shutil
+import signal
 import subprocess
 import uuid
 from pathlib import Path
@@ -23,6 +26,80 @@ from .schema import ExternalExecutorAdapter
 
 PLACEHOLDERS = ("{prompt}", "{project_dir}", "{agent}", "{skills}")
 
+
+# ---------------------------------------------------------------- 受管子进程
+# 问题: subprocess.run 在父进程被 SIGTERM/SIGINT 打断时【不会】杀掉子进程，
+#       而 macOS 没有 pdeathsig → codex/claude 会变成孤儿进程继续烧 token
+#       （实测: 一次 shell 测试被中断后，codex exec 仍在后台跑了数分钟）。
+# 方案: 子进程独立进程组 + atexit/信号处理器统一终止；超时则杀整组。
+
+_ACTIVE: dict[int, subprocess.Popen] = {}
+
+# ★ 导入即安装（signal.signal 仅主线程可用 —— 放在首次调用处会失效）
+_HANDLERS_INSTALLED = False
+
+
+def _terminate_children() -> None:
+    """终止所有在跑的受管子进程（含其进程组）。幂等、失败安全。"""
+    for pid, proc in list(_ACTIVE.items()):
+        try:
+            if proc.poll() is None:
+                os.killpg(os.getpgid(pid), signal.SIGTERM)
+        except Exception:  # noqa: BLE001
+            try:
+                proc.terminate()
+            except Exception:  # noqa: BLE001
+                pass
+        _ACTIVE.pop(pid, None)
+
+
+def _install_child_handlers() -> None:
+    """安装一次: 进程退出/被终止时带走子进程。"""
+    global _HANDLERS_INSTALLED
+    if _HANDLERS_INSTALLED:
+        return
+    _HANDLERS_INSTALLED = True
+    atexit.register(_terminate_children)
+
+    def _make(sig: int, prev: object):
+        def _handler(signum: int, frame: object) -> None:
+            _terminate_children()
+            if callable(prev):
+                prev(signum, frame)  # type: ignore[operator]
+            else:
+                signal.signal(signum, signal.SIG_DFL)
+                os.kill(os.getpid(), signum)
+        return _handler
+
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            signal.signal(sig, _make(sig, signal.getsignal(sig)))
+        except Exception:  # noqa: BLE001 — 非主线程装不了 → 仅靠 atexit
+            pass
+
+
+def _run_managed(cmd: list[str], *, timeout: int | None = None,
+                 cwd: str | None = None) -> subprocess.CompletedProcess:
+    """受管 subprocess.run: 语义等价，但父进程退出/被中断时一并终止子进程。
+
+    TimeoutExpired 行为保持: 超时杀【整个进程组】后照样抛出（调用方已处理）。
+    """
+    proc = subprocess.Popen(
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        cwd=cwd, start_new_session=True)
+    _ACTIVE[proc.pid] = proc
+    try:
+        out, err = proc.communicate(timeout=timeout)
+        return subprocess.CompletedProcess(cmd, proc.returncode, out, err)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except Exception:  # noqa: BLE001
+            proc.kill()
+        proc.communicate()
+        raise
+    finally:
+        _ACTIVE.pop(proc.pid, None)
 
 def discover_binary(adapter: ExternalExecutorAdapter) -> str | None:
     """按 discovery 顺序定位二进制 (PATH + 绝对/家目录路径; 找不到 → None)。"""
@@ -152,10 +229,8 @@ def run(
     cwd = str(project_dir or "").strip() if use_cwd else None
     timeout = timeout or adapter.invocation.timeout
     try:
-        r = subprocess.run(
+        r = _run_managed(          # 受管: 父进程退出/中断时一并终止子 agent
             cmd,
-            capture_output=True,
-            text=True,
             timeout=timeout,
             cwd=cwd if cwd and Path(cwd).is_dir() else None,
         )
@@ -471,3 +546,6 @@ def reviewer_verify(
     return {"method": f"reviewer:{rid}", "result": verdict, "score": score,
             "reason": "" if verdict != "unknown" else "reviewer 未给出 PASS/FAIL (诚实 unknown)",
             "review_output": out[:500]}
+
+
+_install_child_handlers()

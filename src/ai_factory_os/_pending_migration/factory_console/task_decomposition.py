@@ -217,16 +217,28 @@ def build_llm_decomposer(
             "层数不限，按需求实际复杂度决定。只输出 JSON:\n"
             '{"nodes":[{"title":"...","kind":"domain|task",'
             '"change_type":"NEW_FILE|MODIFY","expected_files":[...],'
-            '"children":[{"title":"...","children":[...]}]}]}\n'
+            '"required_role":"前端|后端|测试|架构或空",'
+            '"required_skill":"具体技能点或空",'
+            '"depends_on":["必须先完成的其它任务的 title"],'
+            '"children":[{与父节点同构, 可再嵌 children, 不限层数}]}]}  '
+            '"（也可写成 {"nodes":[{...}]} 一行，但必须闭合完整）\\n'
             "（children 可递归嵌套；无 children 的节点即叶子任务）\n\n"
             f"产品: {goal}\n功能需求: {feats}"
         )
-        raw = None
-        try:
-            raw = llm_fn(prompt)
-        except Exception:  # noqa: BLE001
+        # ★ 重试（实测: 单次约 1/3 成功率 —— LLM 返回非法 JSON 很常见 ✗，
+        #   不重试就等于"分解能力只有三分之一可用"✗）
+        tree = None
+        attempts = _DECOMPOSE_ATTEMPTS
+        for attempt in range(1, attempts + 1):
             raw = None
-        tree = _parse_llm_tree(raw, prd)
+            try:
+                raw = llm_fn(prompt)
+            except Exception:  # noqa: BLE001
+                raw = None
+            tree = _parse_llm_tree(raw, prd)
+            if tree is not None:
+                tree["attempts"] = attempt
+                break
         if tree is None:
             # ★ 不再回落模板（Founder: 分解一律走 LLM，宁可不拆也不假装拆）
             return {
@@ -234,7 +246,8 @@ def build_llm_decomposer(
                 "goal": str(goal)[:200], "tree_id": "", "nodes": [], "leaves": [],
                 "edges": [], "critical_path": [], "parallel_groups": [],
                 "degraded": True, "decomposer": "llm-failed",
-                "error": "LLM 分解失败（未回落到模板）",
+                "attempts": attempts,
+                "error": f"LLM 分解失败（重试 {attempts} 次仍未得到合法 JSON；未回落模板）",
             }
         tree["decomposer"] = "llm"
         tree["degraded"] = False
@@ -245,9 +258,41 @@ def build_llm_decomposer(
 
 #: 递归分解护栏（Founder 要求"层数不限"，但 LLM 输出必须有界 ——
 #: 无界递归会拖垮执行；深度/节点数异常往往就是模型跑偏的信号）。
+#: LLM 分解重试次数（实测单次成功率低 —— 非法 JSON 很常见）
+_DECOMPOSE_ATTEMPTS = 3
+
 MAX_TREE_DEPTH = 32
 MAX_TREE_NODES = 500
 _TRUNCATED = [False]
+
+
+def _break_cycles(nodes: list[dict[str, Any]]) -> int:
+    """断掉依赖环（DFS 找回边），返回断开的边数。
+
+    LLM 给出的 depends_on 可能成环（A→B→A）→ 编排会死锁 ✗。
+    这里做最小处理: 后访问到的回边直接摘除，并在结果里标 truncated（诚实告知）。
+    """
+    by_id = {n["id"]: n for n in nodes if n.get("id")}
+    state: dict[str, int] = {}          # 0=未访问 1=在栈 2=完成
+    broken = 0
+
+    def _dfs(nid: str) -> None:
+        nonlocal broken
+        state[nid] = 1
+        node = by_id.get(nid)
+        for dep in list((node or {}).get("depends_on", [])):
+            st = state.get(dep, 0)
+            if st == 1:                 # 回边 → 断
+                (node or {})["depends_on"] = [d for d in node["depends_on"] if d != dep]
+                broken += 1
+            elif st == 0 and dep in by_id:
+                _dfs(dep)
+        state[nid] = 2
+
+    for nid in list(by_id):
+        if state.get(nid, 0) == 0:
+            _dfs(nid)
+    return broken
 
 
 def _build_nested_nodes(items: list[Any], *, tree_id: str, prd_ref: str,
@@ -282,6 +327,10 @@ def _build_nested_nodes(items: list[Any], *, tree_id: str, prd_ref: str,
                          expected_files=exp if kind == "task" else [],
                          scope=str(it.get("kind") or "feature"))
         node["has_children"] = has_kids
+        # ★ 刀A: 任务带【能力需求】+【依赖声明】—— 编排（能力解析与调度）的输入
+        node["required_skill"] = str(it.get("required_skill") or "").strip()[:60]
+        node["required_role"] = str(it.get("required_role") or "").strip()[:40]
+        node["depends_on_titles"] = [str(x) for x in (it.get("depends_on") or [])][:20]
         out.append(node)
         if has_kids:
             out.extend(_build_nested_nodes(children, tree_id=tree_id, prd_ref=prd_ref,
@@ -333,6 +382,20 @@ def _parse_llm_tree(raw: str | None, prd: dict[str, Any]) -> dict[str, Any] | No
             leaves.extend([n["id"] for n in built if n["id"] not in child_ids])
             for n in nodes:
                 n.pop("has_children", None)
+            # ★ 依赖解析: LLM 用 title 表达依赖 → 映射为 id
+            #   校验: 指向不存在的 → 丢弃；指向自己 → 丢弃；成环 → 断环（诚实标注）
+            _tmap = {n["title"]: n["id"] for n in nodes}
+            for n in nodes:
+                deps: list[str] = []
+                for ttl in n.pop("depends_on_titles", []):
+                    did = _tmap.get(str(ttl).strip())
+                    if did and did != n["id"] and did not in deps:
+                        deps.append(did)
+                if deps:
+                    n["depends_on"] = deps
+            _broken = _break_cycles(nodes)
+            if _broken:
+                _TRUNCATED[0] = True
             if not leaves:
                 return None
             vleaf = _new_node(tree_id, kind="task", title="验证与交付",

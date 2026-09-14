@@ -234,6 +234,7 @@ def materialize_tree(root: Path | str, tree: dict[str, Any], *,
     # nodes 由 _build_nested_nodes 按【父先于子】顺序产出 → 单趟即可映射
     id_map: dict[str, str] = {}
     subtasks: list[str] = []
+    pairs: list[tuple[dict[str, Any], dict[str, Any]]] = []
     for n in nodes:
         if not isinstance(n, dict):
             continue
@@ -250,11 +251,23 @@ def materialize_tree(root: Path | str, tree: dict[str, Any], *,
         if n.get("expected_files"):
             e["expected_files"] = list(n["expected_files"])
         e["tree_kind"] = kind
+        if n.get("required_skill"):
+            e["required_skill"] = str(n["required_skill"])[:60]
+        if n.get("required_role"):
+            e["required_role"] = str(n["required_role"])[:40]
         store_entity(root, e)
         id_map[str(n.get("id") or "")] = e["id"]
+        pairs.append((e, n))
         if kind == "task":
             subtasks.append(e["id"])
 
+    # ★ 依赖映射: 树节点 id → 实体 id（两套 id 空间不同，必须翻译）
+    for ent, node in pairs:
+        deps = [id_map[d] for d in (node.get("depends_on") or []) if d in id_map]
+        deps = [d for d in deps if d != ent["id"]]
+        if deps:
+            ent["depends_on"] = deps
+            store_entity(root, ent)
     root_task["children"] = list(subtasks)
     store_entity(root, root_task)
     record = {"task_tree_id": root_task["id"], "title": root_title, "domain": domain,

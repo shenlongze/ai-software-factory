@@ -1077,6 +1077,8 @@ class FactoryCLI:
             return self.llm_trace_cmd(args)
         if args.command == "arch":
             return self.arch_cmd(args)
+        if args.command == "progress":
+            return self.progress(args)
         if args.command == "kanban":
             return self.kanban(args)
         if args.command == "sync":
@@ -2986,6 +2988,30 @@ class FactoryCLI:
                 return Path(wd)
             return pdir
         return None
+
+    def progress(self, args: argparse.Namespace) -> int:
+        """项目进度视图 ✓（Founder: "监控，cli 中需要可以查看" ✓）。
+
+        只读 ✓: 数据全部来自产品自身记录（会话/PRD/计划/ProductionRun/交付/验收 ✓）
+        不依赖任何临时日志 ✓（我先前把监控做成 home 脚本 + 读 /tmp 日志 ✗ 那不是产品入口 ✓）
+        """
+        from . import progress_view as pv
+
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        pid = str(getattr(args, "project_id", "") or "")
+        if not getattr(args, "watch", False):
+            print(pv.render(root, pid))
+            return 0
+        interval = max(2, int(getattr(args, "interval", 10) or 10))
+        try:
+            while True:
+                print("\033[2J\033[H", end="")          # 清屏 ✓
+                print(pv.render(root, pid))
+                print(f"\n   ── 每 {interval} 秒刷新 · Ctrl+C 退出 ──")
+                time.sleep(interval)
+        except KeyboardInterrupt:
+            print("\n  （已退出 ✓）")
+            return 0
 
     def kanban(self, args: argparse.Namespace) -> int:
         """factory kanban —— 按状态分列的看板视图 ✓。
@@ -8857,6 +8883,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_arch.add_argument("--choice", default="", help="一项已定决策（可重复用 ; 分隔）")
     p_arch.add_argument("--why", default="", help="该项决策的理由")
     p_arch.add_argument("--data-dir", default=None)
+
+    p_pg = sub.add_parser("progress", help="项目进度: 链路 + 任务级 + 执行器（只读 ✓）")
+    p_pg.add_argument("project_id", nargs="?", default="", help="项目 id（省略=最近活跃 ✓）")
+    p_pg.add_argument("--watch", action="store_true", help="循环刷新（默认打一次 ✓）")
+    p_pg.add_argument("--interval", type=int, default=10, help="刷新间隔秒 (--watch ✓)")
+    p_pg.add_argument("--data-dir", default=None)
 
     p_kb = sub.add_parser("kanban", help="看板: 按状态分列显示任务（复用 task 数据 ✓）")
     p_kb.add_argument("--project", default="", help="只看某个项目 (可选)")

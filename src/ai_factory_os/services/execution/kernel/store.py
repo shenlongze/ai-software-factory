@@ -63,26 +63,60 @@ class _SectionStore(Generic[T]):
 
     # ------------------------------------------------------------------ 读
 
+    # ---------------------------------------------------------------- 项目分片
+    # ★ Founder 铁律: 属于项目的文件必须在项目目录下 ✓
+    #   exec 记录属 task → 项目 ✓ → 落在 projects/<P>/exec/<filename> ✓
+    #   无项目/解析不出 → 全局 <root>/exec/<filename> ✓（公共 ✓ 符合模型 ✓）
+
+    def _root(self) -> Path:
+        """数据根（约定 exec_dir = <root>/exec ✓）。"""
+        return self._dir.parent
+
+    def _project_files(self) -> list[Path]:
+        return sorted(self._root().glob(f"projects/*/exec/{self._filename}"))
+
+    def _resolve_project(self, record: dict[str, Any]) -> str:
+        """记录 → 项目 id（失败安全: 任何异常 → 空 → 归公共 ✓）。"""
+        try:
+            tid = str(record.get("task_id") or "")
+            if not tid:
+                return ""
+            from ai_factory_os._pending_migration.factory_console.unified_contract import (
+                _load as _uc_load,
+                _entity_index,
+                resolve_entity_project,
+            )
+            ents = _uc_load(self._root(), "entities")
+            return resolve_entity_project(tid, _entity_index(ents))
+        except Exception:  # noqa: BLE001 — 解析失败 → 公共 ✓ 不影响落库 ✓
+            return ""
+
     def _path(self) -> Path:
         return self._dir / self._filename
 
     def _read_all(self) -> dict[str, dict[str, Any]]:
-        """读整库 {id: dict}; 文件不存在返回空库 (首次写前合法状态)。"""
-        path = self._path()
-        if not path.exists():
-            return {}
-        try:
-            raw = json.loads(path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
-            raise CorruptExecStoreError(
-                f"corrupt exec store: {path}: {exc}"
-            ) from exc
-        if not isinstance(raw, dict) or not isinstance(raw.get(self._section), dict):
-            raise CorruptExecStoreError(
-                f"corrupt exec store: {path}: missing or invalid section "
-                f"{self._section!r}"
-            )
-        return raw[self._section]
+        """读整库 {id: dict} —— 【公共 ✓ + 各项目 ✓】合并 (项目内覆盖同名 ✓)。
+
+        文件不存在 → 空库 (首次写前合法状态 ✓)。
+        """
+        out: dict[str, dict[str, Any]] = {}
+        for path in [self._path(), *self._project_files()]:
+            if not path.exists():
+                continue
+            try:
+                raw = json.loads(path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError as exc:
+                raise CorruptExecStoreError(
+                    f"corrupt exec store: {path}: {exc}"
+                ) from exc
+            if not isinstance(raw, dict) or not isinstance(
+                    raw.get(self._section), dict):
+                raise CorruptExecStoreError(
+                    f"corrupt exec store: {path}: missing or invalid section "
+                    f"{self._section!r}"
+                )
+            out.update(raw[self._section])   # 项目内为真身 ✓ 覆盖公共同名 ✓
+        return out
 
     def _load(self, data: Any) -> T:
         try:
@@ -95,10 +129,24 @@ class _SectionStore(Generic[T]):
     # ------------------------------------------------------------------ 写
 
     def _write(self, records: dict[str, dict[str, Any]]) -> None:
-        """原子写单文件: 临时文件 + os.replace (同目录, 同文件系统原子性)。"""
-        self._dir.mkdir(parents=True, exist_ok=True)
-        path = self._path()
-        tmp = self._dir / f".{self._filename}.{os.getpid()}.tmp"
+        """原子写: 按记录所属项目【分片】✓ 公共部分写全局 ✓（铁律 ✓）。
+
+        兼容: 读侧合并 ✓ 写侧分片 ✓ → 旧数据首次 save 时自动按归属分流 ✓（幂等 ✓）。
+        """
+        public: dict[str, dict[str, Any]] = {}
+        by_proj: dict[str, dict[str, Any]] = {}
+        for rid, rec in records.items():
+            pid = self._resolve_project(rec) if isinstance(rec, dict) else ""
+            (by_proj.setdefault(pid, {}) if pid else public)[rid] = rec
+        self._write_one(self._dir, public)
+        for pid, sub in by_proj.items():
+            self._write_one(self._root() / "projects" / pid / "exec", sub)
+
+    def _write_one(self, directory: Path, records: dict[str, dict[str, Any]]) -> None:
+        """原子写单文件（临时文件 + os.replace ✓ 同目录同文件系统原子性 ✓）。"""
+        directory.mkdir(parents=True, exist_ok=True)
+        path = directory / self._filename
+        tmp = directory / f".{self._filename}.{os.getpid()}.tmp"
         payload = {self._section: dict(sorted(records.items()))}
         tmp.write_text(
             json.dumps(payload, ensure_ascii=False, indent=2) + "\n",

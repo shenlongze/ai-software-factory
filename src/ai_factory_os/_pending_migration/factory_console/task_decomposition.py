@@ -210,10 +210,15 @@ def build_llm_decomposer(
         feats = (content.get("functional_requirements", [])
                  if isinstance(content, dict) else []) or []
         prompt = (
-            "你是 AI Factory OS 的任务分解器。把下面产品拆成多级任务树"
-            " (Project→Domain→Leaf)。只输出 JSON:\n"
-            '{"domains":[{"title":"...","tasks":[{"title":"...",'
-            '"change_type":"NEW_FILE|MODIFY","expected_files":[...]}]}]}\n\n'
+            "你是 AI Factory OS 的任务分解器。\n"
+            "步骤: ① 先做真实需求分析（要交付什么、有哪些模块与依赖）\n"
+            "      ② 再按【阶段 → 模块 → 任务 → 子任务】逐级拆分\n"
+            "      ③ 只在确有必要时继续往下拆（不要把每层都硬拆平）\n"
+            "层数不限，按需求实际复杂度决定。只输出 JSON:\n"
+            '{"nodes":[{"title":"...","kind":"domain|task",'
+            '"change_type":"NEW_FILE|MODIFY","expected_files":[...],'
+            '"children":[{"title":"...","children":[...]}]}]}\n'
+            "（children 可递归嵌套；无 children 的节点即叶子任务）\n\n"
             f"产品: {goal}\n功能需求: {feats}"
         )
         raw = None
@@ -223,15 +228,65 @@ def build_llm_decomposer(
             raw = None
         tree = _parse_llm_tree(raw, prd)
         if tree is None:
-            base = _template_decompose(prd)
-            base["degraded"] = True
-            base["decomposer"] = "template-after-llm-failure"
-            return base
+            # ★ 不再回落模板（Founder: 分解一律走 LLM，宁可不拆也不假装拆）
+            return {
+                "prd_id": prd.get("id", ""), "plan_id": prd.get("plan_id", ""),
+                "goal": str(goal)[:200], "tree_id": "", "nodes": [], "leaves": [],
+                "edges": [], "critical_path": [], "parallel_groups": [],
+                "degraded": True, "decomposer": "llm-failed",
+                "error": "LLM 分解失败（未回落到模板）",
+            }
         tree["decomposer"] = "llm"
         tree["degraded"] = False
         return tree
 
     return _decompose
+
+
+#: 递归分解护栏（Founder 要求"层数不限"，但 LLM 输出必须有界 ——
+#: 无界递归会拖垮执行；深度/节点数异常往往就是模型跑偏的信号）。
+MAX_TREE_DEPTH = 32
+MAX_TREE_NODES = 500
+_TRUNCATED = [False]
+
+
+def _build_nested_nodes(items: list[Any], *, tree_id: str, prd_ref: str,
+                        parent_id: str, depth: int) -> list[dict[str, Any]]:
+    """把 LLM 的嵌套 nodes 递归物化为 tree 节点（parent_id/children 层级）。
+
+    护栏: 深度超 MAX_TREE_DEPTH 或节点数超 MAX_TREE_NODES → 截断并置 _TRUNCATED。
+    有 children 的节点 = domain（容器）；无 = task（叶子，可执行）。
+    """
+    out: list[dict[str, Any]] = []
+    if depth > MAX_TREE_DEPTH:
+        _TRUNCATED[0] = True
+        return out
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        if len(out) >= MAX_TREE_NODES:
+            _TRUNCATED[0] = True
+            break
+        title = str(it.get("title") or "").strip()[:200]
+        if not title:
+            continue
+        children = it.get("children") or []
+        has_kids = isinstance(children, list) and bool(children)
+        ct = str(it.get("change_type") or "")
+        ct = ct if ct in CHANGE_TYPES else ("MODIFY" if has_kids else "NEW_FILE")
+        exp = [str(x) for x in (it.get("expected_files") or [])][:20]
+        kind = "domain" if has_kids else "task"
+        node = _new_node(tree_id, kind=kind, title=title, parent_id=parent_id,
+                         prd_ref=prd_ref,
+                         change_type=ct if kind == "task" else "",
+                         expected_files=exp if kind == "task" else [],
+                         scope=str(it.get("kind") or "feature"))
+        node["has_children"] = has_kids
+        out.append(node)
+        if has_kids:
+            out.extend(_build_nested_nodes(children, tree_id=tree_id, prd_ref=prd_ref,
+                                           parent_id=node["id"], depth=depth + 1))
+    return out
 
 
 def _parse_llm_tree(raw: str | None, prd: dict[str, Any]) -> dict[str, Any] | None:
@@ -243,8 +298,11 @@ def _parse_llm_tree(raw: str | None, prd: dict[str, Any]) -> dict[str, Any] | No
         if not m:
             return None
         data = json.loads(m.group(0))
+        # ★ 两种 schema 都接受（新: nodes 递归嵌套 / 旧: domains+tasks 两层）
+        node_list_pre = data.get("nodes")
+        has_nodes = isinstance(node_list_pre, list) and bool(node_list_pre)
         domains = data.get("domains")
-        if not isinstance(domains, list) or not domains:
+        if not has_nodes and (not isinstance(domains, list) or not domains):
             return None
         tree_id = uuid.uuid4().hex[:6]
         content = prd.get("content", {}) or {}
@@ -257,6 +315,42 @@ def _parse_llm_tree(raw: str | None, prd: dict[str, Any]) -> dict[str, Any] | No
                             title=str(overview.get("name") or goal)[:120],
                             prd_ref=prd.get("id", ""), scope="project")
         nodes.append(project)
+
+        # ★ 新 schema（递归嵌套）: {"nodes":[{title,kind,change_type,expected_files,children:[…]}]}
+        #   支持任意层数（Founder: 层数不限）。护栏见 MAX_TREE_DEPTH / MAX_TREE_NODES。
+        node_list = data.get("nodes")
+        if isinstance(node_list, list) and node_list:
+            built = _build_nested_nodes(node_list, tree_id=tree_id,
+                                        prd_ref=prd.get("id", ""),
+                                        parent_id=project["id"], depth=0)
+            if not built:
+                return None
+            nodes.extend(built)
+            # 叶子按【结构】判定（不是按 has_children 标记）:
+            # 截断后纯链式树每个节点都"有 children"却全被砍掉 →
+            # 按标记判定会得出"零叶子"✗ 而误判为 LLM 失败
+            child_ids = {n["parent_id"] for n in built if n.get("parent_id")}
+            leaves.extend([n["id"] for n in built if n["id"] not in child_ids])
+            for n in nodes:
+                n.pop("has_children", None)
+            if not leaves:
+                return None
+            vleaf = _new_node(tree_id, kind="task", title="验证与交付",
+                              parent_id=project["id"], prd_ref=prd.get("id", ""),
+                              change_type="MODIFY", expected_files=[],
+                              depends_on=list(leaves), scope="verify")
+            nodes.append(vleaf)
+            leaves.append(vleaf["id"])
+            edges = [{"from": n["parent_id"], "to": n["id"]}
+                     for n in nodes if n.get("parent_id")]
+            return {
+                "plan_id": prd.get("plan_id", ""), "prd_id": prd.get("id", ""),
+                "goal": goal, "tree_id": tree_id, "nodes": nodes,
+                "leaves": leaves, "edges": edges,
+                "critical_path": [n["id"] for n in nodes if n["kind"] == "task"],
+                "parallel_groups": [], "degraded": False,
+                "truncated": _TRUNCATED[0],
+            }
         for d in domains:
             dtitle = str(d.get("title") or "交付域")[:120]
             dom = _new_node(tree_id, kind="domain", title=dtitle,

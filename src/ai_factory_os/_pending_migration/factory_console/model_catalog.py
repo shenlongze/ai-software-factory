@@ -109,6 +109,33 @@ def _default_models_file() -> Path:
 
 #: 内置默认模型目录 (设计 §7 真实性铁律 — 首次 load 缺失文件时写入)
 _SEED_MODELS: dict[str, ModelInfo] = {
+    # ★ 2026-09-14 补登记（Founder: "A" ✓ 处理 v4 遗留 ✓）:
+    #   取证（不猜 ✗）: session/llm_gateway.py 的价格表/上下文表里
+    #   一直有 deepseek-v4-pro ✓ 与 deepseek-v4-flash ✓ ——
+    #   而本目录【从没登记它们 ✗】→ 触发 L2 一致性警告 ✓
+    #   证据链: llm_gateway._MODEL_PRICES (0.55,2.19)/(0.27,1.10) per 1M ✓
+    #           _MODEL_CONTEXTS 65536 / 1048576 ✓
+    #           kernel/config/model_capabilities.json:17 ✓
+    #           docs/audits/2026-09-06 "deepseek-v4-pro / API 200 VALID" ✓✓（真调用验证过）
+    #   单价换算: 每 1M 价 ÷ 1000 = 每 1K 价 ✓（与既有条目单位一致 ✓）
+    "deepseek-v4-pro": ModelInfo(
+        model_id="deepseek-v4-pro",
+        provider_id="deepseek",
+        capabilities=["code", "chat", "reasoning"],
+        context_window=65536,
+        cost=ModelCost(input_per_1k=0.00055, output_per_1k=0.00219),
+        metadata={"placeholder": False,
+                  "evidence": "llm_gateway 价格/上下文表 + S46 审计 API 200 VALID"},
+    ),
+    "deepseek-v4-flash": ModelInfo(
+        model_id="deepseek-v4-flash",
+        provider_id="deepseek",
+        capabilities=["code", "chat"],
+        context_window=1048576,
+        cost=ModelCost(input_per_1k=0.00027, output_per_1k=0.00110),
+        metadata={"placeholder": False,
+                  "evidence": "llm_gateway 价格/上下文表 (Flash 档 1M)"},
+    ),
     "deepseek-chat": ModelInfo(
         model_id="deepseek-chat",
         provider_id="deepseek",

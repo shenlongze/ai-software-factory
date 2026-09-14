@@ -7506,6 +7506,55 @@ class FactoryCLI:
             print(f"  当前选择: {plane.selected_provider_id() or '无（无 enabled 且 key 可解析者）'}")
             return 0
 
+        if action == "add":
+            env_ref = (getattr(args, "llm_env_ref", "") or "").strip()
+            models = [m.strip() for m in (getattr(args, "models", "") or "").split(",") if m.strip()]
+            try:
+                pc = plane.add_provider(
+                    target, base_url=(getattr(args, "llm_base_url", "") or "").strip(),
+                    models=models, env_ref=env_ref)
+            except ValueError as exc:
+                print(f"错误: {exc}", file=sys.stderr)
+                return 2
+            print(f"  ✓ provider 已加入: {pc.id}")
+            print(f"    模型    : {', '.join(models) or '（未声明）'}")
+            print(f"    base_url: {getattr(pc, 'base_url', '') or '—'}")
+            print(f"    key 引用: {env_ref or '（本地模型，无 key）'}")
+            if env_ref and not plane.resolve_api_key(pc.id):
+                print(f"  ⚠ {env_ref} 当前无值 —— 设置后生效: export {env_ref[4:]}=...")
+            return 0
+
+        if action == "remove":
+            if not plane.remove_provider(target):
+                print(f"错误: provider 不存在: {target}", file=sys.stderr)
+                return 1
+            print(f"  ✓ provider 已移除: {target}（降级链中已同步摘除）")
+            return 0
+
+        if action == "fallback":
+            fb_action = getattr(args, "fallback_action", "list") or "list"
+            chain = plane.fallback_chain()
+            if fb_action == "list":
+                order = plane.fallback_order()
+                print(f"=== 降级链 ({len(chain)} 条显式) ===")
+                if chain:
+                    for i, pid in enumerate(chain, 1):
+                        mark = "✅" if plane.resolve_api_key(pid) or pid == "ollama" else "⚠无key"
+                        print(f"  {i}. {pid}  [{mark}]")
+                else:
+                    print("  （未设置 —— 按 enabled+key 顺序自动降级）")
+                print(f"  实际候选顺序: {' → '.join(order) or '无可用 provider'}")
+                if order:
+                    print(f"  当前选中: {order[0]}")
+                return 0
+            if fb_action == "add":
+                chain = chain + [target]
+            else:
+                chain = [p for p in chain if p != target]
+            saved = plane.set_fallback_chain(chain)
+            print(f"  ✓ 降级链已更新: {' → '.join(saved) or '（空）'}")
+            return 0
+
         if action == "pool":
             pool = plane.pool_for(target)
             if pool is None:
@@ -8601,15 +8650,24 @@ def build_parser() -> argparse.ArgumentParser:
     p_llm = sub.add_parser(
         "llm", help="LLM 配置管理 (list/show/enable/disable — 复用 Control Plane; 资源域)")
     p_llm.add_argument("llm_command",
-                       choices=["list", "show", "enable", "disable", "pool"],
+                       choices=["list", "show", "enable", "disable", "pool",
+                                "add", "remove", "fallback"],
                        nargs="?", default=None,
-                       help="list 清单 · show 详情 · enable/disable 启停 · pool 凭据池")
+                       help="list 清单 · show 详情 · enable/disable 启停 · pool 凭据池 "
+                            "· add/remove provider · fallback 降级链")
     p_llm.add_argument("llm_target", nargs="?", default=None,
                        help="provider id (show/enable/disable/pool)")
     p_llm.add_argument("--pool-action", choices=["show", "add", "remove", "reset"],
                        default="show", help="pool 动作 (默认 show)")
     p_llm.add_argument("--env", default="",
                        help="pool add/remove: 环境变量名 (不是 key 本体)")
+    p_llm.add_argument("--base-url", dest="llm_base_url", default="",
+                       help="add: provider base_url")
+    p_llm.add_argument("--models", default="", help="add: 逗号分隔的模型清单")
+    p_llm.add_argument("--env-ref", dest="llm_env_ref", default="",
+                       help="add: key 引用 (只接受 env:VAR)")
+    p_llm.add_argument("--fallback-action", choices=["list", "add", "remove"],
+                       default="list", help="fallback 动作 (默认 list)")
     p_todo = sub.add_parser("todo", help="主线任务清单 (list — 待办清单, 命令体系 数据域)")
     p_todo.add_argument("todo_command", choices=["list"], nargs="?", default=None, help="list — 主线任务")
     sub.add_parser("help", help="命令总览（按域分类, §11.6）")

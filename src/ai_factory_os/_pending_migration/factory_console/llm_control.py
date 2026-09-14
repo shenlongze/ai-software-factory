@@ -60,6 +60,9 @@ class ProviderConfigFile(BaseModel):
 
     version: int = CONFIG_FILE_VERSION
     providers: dict[str, ProviderConfig] = Field(default_factory=dict)
+    #: 跨 provider 降级链（显式顺序；空 → 按 enabled+key 顺序自动降级）。
+    #: 只存 provider id —— 不含任何凭据信息（key 永不落盘）。
+    fallback_chain: list[str] = Field(default_factory=list)
 
 
 class ProviderSelection(BaseModel):
@@ -322,6 +325,73 @@ class LLMControlPlane:
                 return values
         return _parse_env_file(Path(__file__).resolve().parent / ".env")
 
+    # ------------------------------------------------------------------ 降级链
+
+    def fallback_chain(self) -> list[str]:
+        """跨 provider 降级链（providers.json 的 fallback_chain；空 → 只有默认顺序）。
+
+        语义: 主 provider 不可用（无 key / 池全耗尽 / 被停用）→ 按链依次尝试下一个。
+        """
+        try:
+            return [str(x) for x in self.load().fallback_chain]
+        except Exception:  # noqa: BLE001 — 读不到 → 空链（回落既有行为）
+            return []
+
+    def set_fallback_chain(self, chain: list[str]) -> list[str]:
+        """写入降级链（只保留真实存在的 provider id；返回实际写入的链）。"""
+        known = {pc.id for pc in self.list_providers()}
+        clean: list[str] = []
+        for pid in chain:
+            pid = str(pid).strip()
+            if pid and pid in known and pid not in clean:
+                clean.append(pid)
+        try:
+            data = self.load()
+            data.fallback_chain = clean          # 改模型字段（不绕 schema）
+            self.save(data)
+        except Exception:  # noqa: BLE001
+            return []
+        return clean
+
+    def fallback_order(self) -> list[str]:
+        """候选顺序: 降级链中可用者优先 → 其余 enabled+key 者补齐（去重）。
+
+        这是"主不可用就下一个"的实际取值来源。
+        """
+        usable = [pc.id for pc in self.enabled_providers()
+                  if pc.id == "ollama" or self.resolve_api_key(pc.id)]
+        chain = [p for p in self.fallback_chain() if p in usable]
+        return chain + [p for p in usable if p not in chain]
+
+    # ------------------------------------------------------------ provider 增删
+
+    def add_provider(self, provider_id: str, *, base_url: str = "",
+                     models: list[str] | None = None, env_ref: str = "",
+                     display: str = "") -> "ProviderConfig":
+        """新增/更新 provider。env_ref 只接受 env: 前缀（明文 key 不入配置）。"""
+        if env_ref and not env_ref.startswith("env:"):
+            raise ValueError("env_ref 只接受 env:VAR 引用（明文 key 不入 providers.json）")
+        overrides: dict[str, Any] = {
+            "models": list(models or []),
+            "base_url": base_url,
+            "api_key_ref": env_ref,
+            "metadata": {"display": display or provider_id},
+        }
+        return self._upsert(provider_id, enabled=True, overrides=overrides)
+
+    def remove_provider(self, provider_id: str) -> bool:
+        """删除 provider（不存在 → False）。同时从降级链里摘掉。"""
+        try:
+            data = self.load()
+            if provider_id not in data.providers:
+                return False
+            data.providers.pop(provider_id)
+            data.fallback_chain = [p for p in data.fallback_chain if p != provider_id]
+            self.save(data)
+            return True
+        except Exception:  # noqa: BLE001
+            return False
+
     # ------------------------------------------------------------------ 装配决策
 
     def any_enabled_with_key(self) -> bool:
@@ -334,11 +404,11 @@ class LLMControlPlane:
         return False
 
     def selected_provider_id(self) -> str | None:
-        """第一个 enabled 且 key 可解析的 provider id (ollama 含; 无 → None)。"""
-        for pc in self.enabled_providers():
-            if pc.id == "ollama" or self.resolve_api_key(pc.id):
-                return pc.id
-        return None
+        """选中的 provider id —— 【降级链优先】: 链中第一个可用者；链空/全不可用
+        → 回落"第一个 enabled 且 key 可解析"(ollama 含; 无 → None)。
+        """
+        order = self.fallback_order()
+        return order[0] if order else None
 
     def select(
         self,

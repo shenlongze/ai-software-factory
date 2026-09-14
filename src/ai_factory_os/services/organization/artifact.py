@@ -187,6 +187,18 @@ CONTRACTS: dict[str, dict[str, Any]] = {
     #   语义: verdict=approved → 放行 ✓ · changes_requested → 返工 ✓（复用修复环 ✓）
     # ★ 安全/合规审查产物（2026-09-14 补: 发布前的硬卡点 ✓）
     #   verdict=blocked → 不得进入测试/发布 ✓（安全审查的意见不可被无视 ✓）
+    # ★ 面向使用者的交付文档（2026-09-14 补 ✓）
+    #   为什么要它: 交付包里的内部文档（PRD/任务清单）不是"怎么用"✗
+    #   硬要求反映在契约里: 四节齐全（缺"快速开始"的文档等于没用 ✓）
+    "user_doc": {
+        "required_fields": ("overview", "quickstart", "usage", "faq"),
+        "validation_rules": {
+            "overview": {"type": "str", "min_length": 1},
+            "quickstart": {"type": "str", "min_length": 1},
+            "usage": {"type": "str", "min_length": 1},
+            "faq": {"type": "list"},
+        },
+    },
     "security_report": {
         "required_fields": ("verdict", "findings", "compliance"),
         "validation_rules": {

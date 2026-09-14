@@ -165,6 +165,7 @@ ROLE_OUTPUT_TYPES: dict[str, str] = {
     "ui-designer": "design",
     "reviewer": "review_report",   # ★ 代码评审（2026-09-14 补 ✓）
     "security": "security_report",  # ★ 安全/合规审查（2026-09-14 补 ✓）
+    "writer": "user_doc",          # ★ 用户文档交付（2026-09-14 补 ✓）
     "developer": "code",
     "tester": "test",
     "devops": "release",
@@ -1054,6 +1055,34 @@ class WorkflowRunner:
 
 #: 自动修复轮数上限 (架构 §4: ≤2 轮防无限; 测试轮数上限 = 该值 + 1)
 DEFAULT_MAX_REPAIR_ROUNDS = 2
+
+
+def build_delivery_with_docs_workflow(
+    lifecycle: WorkflowLifecycle,
+    project_id: str,
+    name: str,
+    *,
+    workflow_id: str | None = None,
+) -> Workflow:
+    """Dev → Review → Security → Test → Docs（2026-09-14 补: 文档交付 ✓）。
+
+    为什么文档要在【测试之后】: 文档写的是【已验证的行为 ✓】——
+    放前面会写出与实现不符的文档 ✗（常见的文档失真根因 ✓）。
+    为什么算交付物 ✓: 用户拿到的包里有【内部文档（PRD/清单）✗ 但不是"怎么用"✗】
+      → 本阶段补的就是【面向使用者的文档 ✓】（非技术语言 ✓ 每个功能带例子 ✓）
+    既有全部 builder 保持不变 ✓。
+    """
+    workflow = lifecycle.create_workflow(project_id, name, workflow_id=workflow_id)
+    dev = lifecycle.create_stage(workflow.id, "developer", name="develop")
+    rev = lifecycle.create_stage(workflow.id, "reviewer", name="review",
+                                 depends_on=[dev.id])
+    sec = lifecycle.create_stage(workflow.id, "security", name="security",
+                                 depends_on=[rev.id])
+    tst = lifecycle.create_stage(workflow.id, "tester", name="test",
+                                 depends_on=[sec.id])
+    lifecycle.create_stage(workflow.id, "writer", name="documentation",
+                           depends_on=[tst.id])
+    return workflow
 
 
 def build_full_delivery_workflow(

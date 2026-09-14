@@ -170,6 +170,16 @@ _SECURITY_PROMPT = (
     "输出格式: 严格 JSON 对象, 3 节字段齐全, 仅输出 JSON, 不要任何多余文字。"
 )
 
+_WRITER_PROMPT = (
+    "你是一名技术文档工程师 (Technical Writer)。职责: 消费代码/架构/测试/评审产物, "
+    "产出【面向使用者的交付文档】(User Doc), 覆盖 4 节: 概述 (overview, 这是什么、"
+    "解决什么问题) / 快速开始 (quickstart, 安装与最小可用示例) / 使用说明 "
+    "(usage, 逐功能说明与参数) / 常见问题 (faq, 含出错怎么办)。\n"
+    "硬要求: 面向【非技术用户】✓ 不出现内部术语与文件路径 ✗；每个功能都要有例子 ✓；"
+    "已知限制与未实现项必须如实写出 (不美化 ✗)。\n"
+    "输出格式: 严格 JSON 对象, 4 节字段齐全, 仅输出 JSON, 不要任何多余文字。"
+)
+
 ROLE_REGISTRY: dict[str, RoleDefinition] = {
     "product-manager": RoleDefinition(
         role_id="product-manager",
@@ -177,6 +187,14 @@ ROLE_REGISTRY: dict[str, RoleDefinition] = {
         capabilities=("requirement", "planning", "product_analysis"),
         prompt_template=_PM_PROMPT,
         workflow_stages=("product",),
+        execution_kind="executable",
+    ),
+    "writer": RoleDefinition(
+        role_id="writer",
+        name="Technical Writer",
+        capabilities=("writing", "documentation"),
+        prompt_template=_WRITER_PROMPT,
+        workflow_stages=("documentation",),
         execution_kind="executable",
     ),
     "security": RoleDefinition(

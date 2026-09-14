@@ -385,6 +385,9 @@ def build_llm_decomposer(
             }
         tree["decomposer"] = "llm"
         tree["degraded"] = False
+        # ★ 刀1: 算出并行层 ✓（只算不执行 ✗ 零风险 ✓；下游 646 行会把它带进 plan ✓）
+        tree["parallel_groups"] = compute_parallel_groups(
+            tree.get("leaves") or [], tree.get("edges") or [])
         return tree
 
     return _decompose
@@ -470,6 +473,71 @@ def _build_nested_nodes(items: list[Any], *, tree_id: str, prd_ref: str,
             out.extend(_build_nested_nodes(children, tree_id=tree_id, prd_ref=prd_ref,
                                            parent_id=node["id"], depth=depth + 1))
     return out
+
+
+def compute_parallel_groups(leaves: list[dict], edges: list | None = None) -> list[list[str]]:
+    """按 DAG 拓扑分层 ✓ —— 同层可并行 ✓ 层间必须串行 ✓（Founder: 并行方案刀1 ✓）。
+
+    为什么必须有它（并行正确性的前提 ✗）:
+      只把串行 for 换成线程池 ✗ → 下游任务在上游产物还没写完时开跑 ✗
+      → 从"确定性失败"变成"随机失败"✗（且难复现 ✗）
+      ⇒ 先算出层级 ✓ 执行器才有正确的并行边界 ✓（只算不执行 ✓ 零风险 ✓）
+
+    实现: Kahn 分层 ✓
+      · 无依赖的叶 → 第 0 层（可立即并行 ✓）
+      · 某层全部完成后 → 其下游才进下一层 ✓
+      · 检测到环 → 环内整体放一层 ✓【不阻塞 ✓ 不静默丢弃 ✓】
+
+    返回: [[本层 id...], ...] 每层已排序 ✓（结果确定 ✓ 便于比对 ✓）
+    """
+    # ★ 实测（2026-09-14）: 树里的 leaves 是【字符串 id 列表 ✗】不是 dict 列表 ✗，
+    #   真正的依赖图在 edges（[{from, to}] ✓）+ nodes 的 depends_on ✓
+    #   → 两种形状都要认 ✓（形状判错 → 算出 0 层 ✗ 静默失效 ✓）
+    leaf_ids: list[str] = []
+    for x in leaves:
+        if isinstance(x, dict):
+            i = str(x.get("id") or "")
+        else:
+            i = str(x or "")
+        if i:
+            leaf_ids.append(i)
+    idset = set(leaf_ids)
+    deps: dict[str, set[str]] = {i: set() for i in leaf_ids}
+    # ① edges: to 依赖 from ✓（只保留叶↔叶 ✓ 忽略 project/domain 节点 ✓）
+    for e in (edges or []):
+        if not isinstance(e, dict):
+            continue
+        f, to = str(e.get("from") or ""), str(e.get("to") or "")
+        if to in deps and f in idset:
+            deps[to].add(f)
+    # ② nodes 的 depends_on 兜底 ✓（title 映射 ✓ 兼容 depends_on 写标题的情形 ✓）
+    by_title = {str(n.get("title") or "").strip(): str(n.get("id") or "")
+                for n in (leaves if isinstance(leaves, list) else [])
+                if isinstance(n, dict)}
+    for l in leaves:
+        if not isinstance(l, dict):
+            continue
+        tid = str(l.get("id") or "")
+        if tid not in deps:
+            continue
+        for d in (l.get("depends_on") or []):
+            k = str(d).strip()
+            if k in idset:
+                deps[tid].add(k)
+            elif k in by_title and by_title[k] in idset:
+                deps[tid].add(by_title[k])
+    levels: list[list[str]] = []
+    remaining = dict(deps)
+    done: set[str] = set()
+    while remaining:
+        layer = [n for n, d in remaining.items() if d <= done]
+        if not layer:                       # 环 → 剩余整体一层 ✓ 不阻塞 ✓
+            layer = sorted(remaining)
+        levels.append(sorted(layer))
+        done |= set(layer)
+        for n in layer:
+            remaining.pop(n, None)
+    return levels
 
 
 def _parse_llm_tree(raw: str | None, prd: dict[str, Any]) -> dict[str, Any] | None:

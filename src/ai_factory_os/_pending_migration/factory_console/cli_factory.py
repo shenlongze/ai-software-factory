@@ -4703,6 +4703,73 @@ class FactoryCLI:
 
         # ★ Founder 模型: 按 project_id 查项目【全部】信息
         #   物理位置即索引 ✓ —— 直接读 projects/<P-id>/ 目录 ✓
+        if getattr(args, "action", "") in ("deliver", "accept", "deliveries"):
+            from . import delivery as _dlv
+
+            def _emit_delivery(did: str, status: str) -> None:
+                """审计挂点: 发 org.delivery.* ✓（best-effort ✓ 失败不阻断交付 ✓）。"""
+                try:
+                    from ai_factory_os.infrastructure.events.logger import EventLogger
+                    from ai_factory_os.infrastructure.events.store import EventStore
+                    from ai_factory_os.infrastructure.events.types import EventType
+
+                    et = {"READY": EventType.ORG_DELIVERY_READY,
+                          "DELIVERED": EventType.ORG_DELIVERY_DELIVERED,
+                          "ACCEPTED": EventType.ORG_DELIVERY_ACCEPTED}.get(status)
+                    if et is None:
+                        return
+                    st = EventStore(Path(self.data_dir) / "factory.db")
+                    try:
+                        EventLogger(st).record(et, source="delivery", stage=status.lower(),
+                                               action=f"delivery {status.lower()}",
+                                               result="OK",
+                                               payload={"delivery_id": did,
+                                                        "project_id": str(target)})
+                    finally:
+                        st.close()
+                except Exception:  # noqa: BLE001 — best-effort ✓
+                    pass
+
+            pid = str(target or "").strip()
+            if not pid:
+                print("[E4410] 用法: factory projectos deliver <project_id> | "
+                      "accept <delivery_id> | deliveries <project_id>")
+                return 2
+            if getattr(args, "action", "") == "deliver":
+                rec = _dlv.deliver(root, pid)
+                m = rec["manifest"]
+                print(f"  ✓ 交付已生成 {rec['id']}（READY）")
+                print(f"    交付包: {rec['package'] or '（未打包）'}")
+                print(f"    清单: 文档 {len(m.get('docs') or [])} 份"
+                      f"（PRD {m.get('prd_count', 0)} · 任务清单 {m.get('task_list_count', 0)}）"
+                      f" · 代码 {m.get('workspace_files', 0)} 个文件"
+                      f" · 执行记录 {m.get('exec_records', 0)}"
+                      f" · 架构决策 {len(m.get('architecture_decisions') or [])} 条")
+                _emit_delivery(rec["id"], "READY")
+                print("    → 交付: factory projectos accept <delivery_id>")
+                return 0
+            if getattr(args, "action", "") == "deliveries":
+                rows = _dlv.list_deliveries(root, pid)
+                print(f"=== 交付记录 {len(rows)} 条（项目 {pid}）===")
+                for r in rows[:10]:
+                    print(f"  {r.get('id')} | {r.get('status')} | "
+                          f"{str(r.get('created_at'))[:19]} | {r.get('package') or '-'}")
+                return 0
+            # accept: 状态流转 DELIVERED → ACCEPTED ✓
+            recs = _dlv.list_deliveries(root, pid)
+            if not recs:
+                print(f"[E4411] 未找到交付记录（项目 {pid}）")
+                return 1
+            cur = recs[0]
+            nxt = "DELIVERED" if str(cur.get("status")) == "READY" else "ACCEPTED"
+            upd = _dlv.mark(root, pid, str(cur.get("id")), nxt)
+            if upd is None:
+                print(f"[E4412] 状态流转失败（{cur.get('status')} → {nxt}）")
+                return 1
+            print(f"  ✓ {upd['id']}: {cur.get('status')} → {upd['status']}")
+            _emit_delivery(str(upd["id"]), str(upd["status"]))
+            return 0
+
         if getattr(args, "action", "") == "show":
             from factory_console.project_show import render_project
             print(render_project(str(root), str(getattr(args, "target", "") or "")))
@@ -8612,7 +8679,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_proj = sub.add_parser("projectos", help="ProjectOS (K3): create/sprint/status/replan/approve — Real Project Operating Loop")
     p_proj.add_argument("action", nargs="?", default="list",
                         choices=["create", "sprint", "status", "replan", "approve", "list",
-                                 "show"])
+                                 "show", "deliver", "accept", "deliveries"])
     p_proj.add_argument("target", nargs="?", help="project_id / sprint_id / task_id")
     p_proj.add_argument("--title", default="项目", help="项目/迭代标题 (create/sprint 用)")
     p_proj.add_argument("--conv", default="", help="conversation_id (create 用)")

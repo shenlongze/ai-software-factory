@@ -520,6 +520,11 @@ class EventType(str, Enum):
     ORG_PROJECT_BASELINE_RECORDED = "org.project.baseline_recorded"  # 基线验证记录 (build/test)
     ORG_PROJECT_CONTEXT_SNAPSHOTTED = "org.project.context_snapshotted"  # 上下文快照生成
 
+    # ── 交付环（Founder: 此前【完全没有交付这一环】✗ 事件流 0 条 ✓）
+    ORG_DELIVERY_READY = "org.delivery.ready"              # 交付包生成 (READY)
+    ORG_DELIVERY_DELIVERED = "org.delivery.delivered"      # 已交付对方 (DELIVERED)
+    ORG_DELIVERY_ACCEPTED = "org.delivery.accepted"        # 对方验收通过 (ACCEPTED)
+
 
 class Event(BaseModel):
     """一条事件。append-only: 写入后永不修改、永不删除。"""

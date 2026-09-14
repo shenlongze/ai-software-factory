@@ -25,6 +25,7 @@ Phase (S49 §八: 不要过早做完整 PRD Workflow; §九: Development Plan �
 """
 
 from __future__ import annotations
+import sys
 
 import json
 import uuid
@@ -108,6 +109,34 @@ def derive_prd_sections(snapshot: dict[str, Any]) -> dict[str, Any]:
 
 # ------------------------------------------------------------------ PRD 生命周期 (最小: draft → approved → archived)
 
+def _sync_prd_to_project(root: str, project_id: str, prd: dict[str, Any]) -> None:
+    """把 PRD 同步进项目 product_truth/prds.json ✓（铁律: 有项目属性进项目 ✓）。
+
+    为什么必须（端到端实测 ✗）: PRD 只存 conversation 内部 ✗ →
+    项目侧读不到 → UAT / 交付清单 / 架构选型 全空 ✓
+    写法: 读项目文件（兼容包装/扁平两格式 ✓）→ upsert by id ✓ → 原子写（pid 临时名 ✓）
+    """
+    import json as _json
+    import os as _os
+    from pathlib import Path as _P
+
+    f = _P(root) / "projects" / project_id / "product_truth" / "prds.json"
+    f.parent.mkdir(parents=True, exist_ok=True)
+    cur: dict[str, Any] = {}
+    if f.is_file():
+        try:
+            d = _json.loads(f.read_text(encoding="utf-8"))
+            if isinstance(d, dict):
+                # ★ 兼容两格式（读侧必须兼容 ✓ 否则读空→覆盖丢数据 ✗）
+                cur = d.get("prds") if isinstance(d.get("prds"), dict) else d
+        except (OSError, ValueError):
+            cur = {}
+    cur[str(prd.get("id"))] = prd
+    tmp = f.with_name(f".{f.name}.{_os.getpid()}.tmp")
+    tmp.write_text(_json.dumps(cur, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    _os.replace(tmp, f)
+
+
 def _prds(doc: dict[str, Any]) -> list[dict[str, Any]]:
     return doc.setdefault("prds", [])
 
@@ -139,6 +168,21 @@ def create_prd(root: str, conversation_id: str, *, actor: str = "",
         "actor": actor,
         "history": [{"version": 1, "at": now, "actor": actor, "note": "created"}],
     }
+    # ★ 2026-09-14 修（端到端实测 ✗）: PRD 原只存在【conversation 文档内】✗
+    #   → 项目 product_truth/prds.json 里没有 ✗
+    #   → 后果: UAT 取不到验收标准 ✗ · 交付清单没有需求文档 ✗ · 架构选型没输入 ✗
+    #   正解（铁律: 有 project_id 的进项目 ✓）: 批准前【同步一份到项目 product_truth】✓
+    #   失败安全: 项目建不出来 → 不阻断 PRD 创建 ✓（但要吵一声 ✓）
+    try:
+        from factory_console.canonical_golden_path import ensure_project_binding
+        _pid = ensure_project_binding(root, conversation_id) or ""
+        if _pid:
+            rec["project_id"] = _pid
+            _sync_prd_to_project(root, _pid, rec)
+    except Exception as exc:  # noqa: BLE001 — 失败安全 ✓ 不阻断 ✓
+        sys.stderr.write(f"  ⚠ PRD 同步到项目失败（{type(exc).__name__}: {exc}）"
+                         f" —— PRD 仍在会话内 ✓ 但 UAT/交付会看不到 ✗\n")
+
     with pu._lock:
         doc2 = pu._load_conv(root, conversation_id)
         if doc2 is None:

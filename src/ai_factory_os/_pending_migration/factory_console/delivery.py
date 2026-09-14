@@ -63,6 +63,22 @@ def _save(root: Path | str, project_id: str,
     os.replace(tmp, p)
 
 
+def _load_project_prds(root: Path, project_id: str) -> list[dict]:
+    """读项目 product_truth/prds.json ✓（兼容包装/扁平两格式 ✓ 失败安全 ✓）。"""
+    f = Path(root) / "projects" / project_id / "product_truth" / "prds.json"
+    if not f.is_file():
+        return []
+    try:
+        d = json.loads(f.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    if isinstance(d, dict):
+        inner = d.get("prds")
+        d = inner if isinstance(inner, dict) else d
+        return [v for v in d.values() if isinstance(v, dict)]
+    return [v for v in d if isinstance(v, dict)] if isinstance(d, list) else []
+
+
 def build_manifest(root: Path | str, project_id: str) -> dict[str, Any]:
     """交付清单: 盘清这个项目【交付了些什么】✓（全部只读 ✓）。"""
     root = Path(root)
@@ -76,7 +92,12 @@ def build_manifest(root: Path | str, project_id: str) -> dict[str, Any]:
         return len(list(root.glob(f"projects/{project_id}/{pattern}")))
 
     m["docs"] = sorted(p.name for p in proj.glob("docs/*")) if proj.is_dir() else []
-    m["prd_count"] = _count("docs/PRD-*.md")
+    # ★ 2026-09-14 修 ✗: PRD 记录在 product_truth/prds.json ✓ 不在 docs/ ✗
+    #   （原来只数 docs/PRD-*.md ✗ → 交付清单永远显示"PRD 0"✗ 即使有 PRD ✓）
+    _pt_prds = _load_project_prds(root, project_id)
+    _md_prds = _count("docs/PRD-*.md")
+    m["prd_count"] = max(_md_prds, len(_pt_prds))
+    m["prd_ids"] = [str(p.get("id")) for p in _pt_prds[:5]]
     m["task_list_count"] = _count("docs/task_*.md")
     m["workspace_files"] = _count("workspace/**/*")
     m["exec_records"] = _count("exec/*.json")
@@ -202,7 +223,12 @@ def build_uat_checklist(root: Path | str, project_id: str) -> dict[str, Any]:
             c = prd.get("content") or {}
             if not isinstance(c, dict):
                 continue
-            for key in ("features", "feature_list", "user_stories"):
+            # ★ 键要对上 PRD 的实际字段 ✗（2026-09-14 实测修正 ✓）
+            #   PRD content 实际是: overview / functional_requirements /
+            #   constraints / decisions / future_considerations ✓
+            #   （我原来读 features/feature_list ✗ → 永远取空 ✗）
+            for key in ("functional_requirements", "features", "feature_list",
+                        "user_stories", "constraints"):
                 v = c.get(key)
                 if isinstance(v, list):
                     for item in v:

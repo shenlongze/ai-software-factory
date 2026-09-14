@@ -167,7 +167,7 @@ class HistoryIndex:
         try:
             src = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
             cols = [r[1] for r in src.execute("PRAGMA table_info(events)")]
-            tcol = "ts" if "ts" in cols else ("created_at" if "created_at" in cols else None)
+            tcol = next((c for c in ("timestamp", "ts", "created_at", "time") if c in cols), None)
             seq = "seq" if "seq" in cols else None
             ts_expr = tcol or "''"
             sel = f"select {seq or 'rowid'}, {ts_expr}, * from events"

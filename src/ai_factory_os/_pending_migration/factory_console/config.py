@@ -92,7 +92,8 @@ PROVIDER_DEFAULTS: dict[str, dict[str, Any]] = {
 }
 
 #: section → 环境变量前缀 (llm.* → LLM_*; core.* → 无前缀: DATA_DIR/PORT/...)
-_ENV_PREFIX: dict[str, str] = {"llm": "LLM_", "core": ""}
+_ENV_PREFIX: dict[str, str] = {"llm": "LLM_", "core": "",
+    "approval": "APPROVAL_",}
 
 
 def _default_env_file() -> Path:

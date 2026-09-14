@@ -183,11 +183,14 @@ def generate_plan(root: str, conversation_id: str, *, actor: str = "",
     None → 确定性模板); 树落盘 task_trees/{plan_id}.json, PLAN.tasks = 叶摘要。
     decompose=False: 兼容旧单层路径 (不落树; 主要供无 PRD content 的退化场景)。
     """
+    if approval_mode() == "full-auto":
+        _auto_approve(root, conversation_id)   # 全自动: 自动批准待确认 PRD
     prds = fmt.list_prds(root, conversation_id)
     approved = [p for p in prds if p.get("status") == "approved"]
     if not approved:
         raise GoldenPathError(
-            "尚无 approved PRD — 用户确认 PRD 后才能生成 Development Plan")
+            "尚无 approved PRD — 用户确认 PRD 后才能生成 Development Plan"
+            "（或设 approval.mode=full-auto 全自动）")
     prd = approved[-1]
 
     if decompose:
@@ -296,11 +299,68 @@ def approve_plan(root: str, plan_id: str, *, actor: str = "") -> dict[str, Any]:
     return obj
 
 
+# ------------------------------------------------------------------ 审批模式
+
+#: 审批模式三档（学 Codex --suggest/--auto-edit/--full-auto 与 Hermes --yolo，
+#: 但保留审计：全自动也会记录"是谁授权的自动"）。
+APPROVAL_MODES = ("suggest", "step", "full-auto")
+
+
+def approval_mode() -> str:
+    """读取审批模式: env APPROVAL_MODE > .env > config.json(approval.mode) > 默认 step。
+
+    suggest   只给建议、不执行（Gate 直接拒绝并说明）
+    step      逐步确认（默认，保持既有行为）: PRD 确认一次 + Plan 确认一次
+    full-auto 全自动: 自动批准待确认的 PRD/Plan 并放行执行，但记录 auto 授权痕迹
+    """
+    try:
+        from .config import get_config
+
+        raw = str(get_config().get("approval", "mode", "step") or "step").strip().lower()
+    except Exception:  # noqa: BLE001 — 配置不可用 → 安全默认
+        return "step"
+    return raw if raw in APPROVAL_MODES else "step"
+
+
+def _auto_approve(root: str, conversation_id: str) -> list[str]:
+    """full-auto: 自动批准该会话下待确认的 PRD / Plan。返回批准记录（审计用）。"""
+    auto_actor = "auto:approval.mode=full-auto"
+    done: list[str] = []
+    for prd in fmt.list_prds(root, conversation_id):
+        if prd.get("status") == "approved":
+            continue
+        try:
+            approve_prd(root, conversation_id, prd["id"], actor=auto_actor)
+            done.append(f"PRD {prd['id']}")
+        except Exception:  # noqa: BLE001
+            pass
+    for prd in fmt.list_prds(root, conversation_id):
+        if prd.get("status") != "approved":
+            continue
+        for plan in pt.list_plans(root, prd_id=prd["id"]):
+            if plan.get("status") == "approved":
+                continue
+            try:
+                approve_plan(root, plan["id"], actor=auto_actor)
+                done.append(f"PLAN {plan['id']}")
+            except Exception:  # noqa: BLE001
+                pass
+    return done
+
+
 # ------------------------------------------------------------------ Production Gate
 
 def _require_gates(root: str, conversation_id: str) -> tuple[dict[str, Any],
                                                              dict[str, Any]]:
     """Production Gate: 必须有 approved PRD + approved Plan (按 conversation 溯源)。"""
+    mode = approval_mode()
+    if mode == "suggest":
+        raise GoldenPathError(
+            "approval.mode=suggest: 当前只给建议、不执行。"
+            "要执行请改为 step（逐步确认）或 full-auto（全自动）："
+            "factory config set approval.mode <step|full-auto>")
+    if mode == "full-auto":
+        _auto_approve(root, conversation_id)
     prds = fmt.list_prds(root, conversation_id)
     approved_prds = [p for p in prds if p.get("status") == "approved"]
     if not approved_prds:

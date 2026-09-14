@@ -7418,6 +7418,99 @@ class FactoryCLI:
         action = getattr(args, "action", "list") or "list"
         target = getattr(args, "target", None)
 
+        if action == "pipeline":
+            # ★ 一条龙（2026-09-14 ✓）—— 治"要自己拼 4 步 ✗ 还容易拼错 ✓"
+            #   实测我拼错 4 次: 命令名(approval ✗ vs approval-request ✓) ·
+            #   人类身份列表 ✗ · 前置四样缺一 ✗ · id 抓成旧的 ✗
+            #   ★ 绝不代批 ✗（四眼原则要【另一个人类身份 ✓】）→ 只走到"等审批"✓
+            #     并给【准确到可复制】的下一步 ✓
+            from .governance_service import (
+                list_approvals as _list_appr, request_approval as _req_appr,
+            )
+            from .production_evaluation import evaluate as _eval, get_evaluation as _get_eval
+
+            rid_p = str(target or "")
+            if not rid_p:
+                print("[E4050] 错误: run_id 必填 (factory release pipeline <run_id>)",
+                      file=sys.stderr)
+                return 2
+            print(f"══ 发布流水线: {rid_p} ══")
+            ev = _get_eval(root, rid_p)
+            if ev is None:
+                ev = _eval(root, rid_p)
+                _sc = ((ev.get("dimensions") or {}).get("completion") or {}).get("score", "?")
+                print(f"  ① 评测 ✓ 已生成（completion {_sc}/100 ✓）")
+            else:
+                print("  ① 评测 ✓ 已存在 ✓")
+
+            rel_p = None
+            for _r in reversed(_list(root)):
+                if (str(_r.get("production_run_id")) == rid_p
+                        and str(_r.get("state")) not in ("BLOCKED",)):
+                    rel_p = _r
+                    break
+            if rel_p is None:
+                rel_p = _create(root, rid_p)
+                print(f"  ② 发布记录 ✓ 新建 {rel_p.get('release_id')} ✓")
+            else:
+                print(f"  ② 发布记录 ✓ 复用 {rel_p.get('release_id')}"
+                      f"（state={rel_p.get('state')} ✓）")
+            rel_id = str(rel_p.get("release_id"))
+
+            approver = str(getattr(args, "approver", "admin") or "admin")
+            requester = str(getattr(args, "by_actor", "human") or "human")
+            _HUMANS = ("human", "Human", "user", "admin")
+            if approver not in _HUMANS:
+                print(f"  ⚠ 审批人 {approver!r} 不在合法列表 {_HUMANS} ✗ → 改用 admin ✓",
+                      file=sys.stderr)
+                approver = "admin"
+            if approver == requester:
+                approver = "admin" if requester != "admin" else "human"
+                print(f"  ⚠ 申请人与审批人相同会撞 self-approve ✗ → 审批人改为 {approver} ✓")
+
+            _appr = [a for a in _list_appr(root, production_run_id=rid_p)
+                     if str(a.get("decision")) == "PENDING"]
+            if _appr:
+                appr_id = str(_appr[-1].get("approval_id"))
+                print(f"  ③ 审批申请 ✓ 已存在 {appr_id}（待批 ✓）")
+            else:
+                # ★ 要 artifact_ids ✗（我第一版漏了 ✓ 跑第二条路径才暴露 ✓）
+                #   → 从 run 的 node_runs 里取【真实产物 id ✓】不编 ✗
+                from .production_run import get_production_run as _get_pr
+                _pr = _get_pr(root, rid_p) or {}
+                _aids = [str(n.get("artifact_id")) for n in (_pr.get("node_runs") or [])
+                         if isinstance(n, dict) and n.get("artifact_id")]
+                _rec = _req_appr(root, production_run_id=rid_p,
+                                 artifact_ids=_aids, requested_by=requester)
+                appr_id = str(_rec.get("approval_id"))
+                print(f"  ③ 审批申请 ✓ {appr_id}（申请人 {requester} ✓）")
+
+            _ok = [a for a in _list_appr(root, production_run_id=rid_p)
+                   if str(a.get("decision")) == "APPROVED"]
+            if not _ok:
+                print()
+                print(f"  ⏸  等人工审批 ✓（四眼原则: 申请({requester}) ≠ 审批({approver}) ✓）")
+                print("     下一步（原样复制 ✓）:")
+                print(f"       factory approval-request approve {appr_id} --by {approver}")
+                print("     然后重跑本命令继续 ✓:")
+                print(f"       factory release pipeline {rid_p}")
+                print()
+                print(f"     ★ 合法审批人只有 {_HUMANS} ✗（其余会被拒 ✓ 这条规则正确 ✓ 别绕 ✗）")
+                return 0
+            print(f"  ④ 审批 ✓ 已通过（by={_ok[-1].get('decided_by')} ✓）")
+            _chk = _check(root, rel_id)
+            print(f"  ⑤ 门检查 → allowed={_chk.get('allowed')} · missing={_chk.get('missing')}")
+            if not _chk.get("allowed"):
+                print(f"     ✗ 未放行: {_chk.get('reason')}", file=sys.stderr)
+                return 1
+            _out = _execute(root, rel_id) or {}
+            _st = _out.get("state") or (_get(root, rel_id) or {}).get("state") or "?"
+            if _st in ("RELEASED", "BLOCKED", "FAILED"):
+                print(f"  ⑥ 发布 ✓ 已是终态 → state=【{_st}】✓（不重复执行 ✓）")
+            else:
+                print(f"  ⑥ 发布 ✓ → state=【{_st}】✓")
+            return 0
+
         if action == "list":
             for r in _list(root):
                 print(f"  {r['release_id']} | {r['state']} | run={r['production_run_id']} "
@@ -9530,9 +9623,12 @@ def build_parser() -> argparse.ArgumentParser:
     # S18: Release CLI
     p_rel = sub.add_parser("release", help="Release (S18/S20): list/status/check/create/execute/history/verify")
     p_rel.add_argument("action", nargs="?", default="list",
-                       choices=["list", "status", "check", "create", "execute", "history", "verify"],
-                       help="动作: list 列表 / status 详情 / check 门检查 / create 创建 / execute 执行 / history 历史 / verify 验证")
+                       choices=["list", "status", "check", "create", "execute", "history", "verify", "pipeline"],
+                       help="动作: list 列表 / status 详情 / check 门检查 / create 创建 / execute 执行 / history 历史 / verify 验证 / pipeline ★ 一条龙 ✓")
     p_rel.add_argument("target", nargs="?", help="release_id 或 production_run_id (create/check)")
+    p_rel.add_argument("--approver", default="admin",
+                       help="审批人（合法值仅 human/Human/user/admin ✗ 且 ≠ 申请人 ✓ 默认 admin ✓）")
+    p_rel.add_argument("--by", dest="by_actor", default="human", help="申请人身份（默认 human ✓）")
     p_rel.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
 
     # S17: Governance CLI

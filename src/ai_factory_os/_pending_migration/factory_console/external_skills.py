@@ -76,10 +76,21 @@ def _load_skills(skills_file: str | Path) -> dict[str, Any]:
 
 
 def _save_skills(skills_file: str | Path, data: dict[str, Any]) -> None:
+    """写 skills.json —— ★ 必须【扁平】{skill_id: {...}} 与权威 SkillStore 对齐 ✓。
+
+    为什么（2026-09-14，与 local_ai/agents.json 同一类事故 ✓）:
+      本模块内部以 {"skills": {...}} 包装使用 ✓，此前却【原样写回磁盘】✗
+      → 与 plugins/agents/store.py 的 SkillStore（写扁平 ✓ 权威 ✓）格式冲突 ✗
+      → skills.json 变成 {'flutter': {...}, 'skills': {40 个}} ✗✗
+      → 读取方各按各的解析 → 技能池与注册表【几乎不相交】✗
+    修复: 落盘一律取内层扁平字典 ✓（包装只是内存表示 ✓ 不外泄 ✓）。
+    """
     try:
         p = Path(skills_file)
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        flat = data.get("skills") if isinstance(data, dict) and isinstance(
+            data.get("skills"), dict) else data
+        p.write_text(json.dumps(flat, ensure_ascii=False, indent=2), encoding="utf-8")
     except OSError:  # 写失败 → 静默 (加载尽力而为)
         pass
 

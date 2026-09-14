@@ -30,7 +30,7 @@ from .loader import (
     discover_project_ids,
     load_project_definition,
 )
-from .models import ProjectDefinition, Workspace
+from .types import ProjectDefinition, Workspace
 from .store import WorkspaceStore
 
 SOURCE = "workspace"

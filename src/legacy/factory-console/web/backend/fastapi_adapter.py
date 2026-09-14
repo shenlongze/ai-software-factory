@@ -706,7 +706,7 @@ def build_console_service(
 
     from ai_factory_os.services.work.store import TaskStore
 
-    from workspace.manager import WorkspaceManager
+    from ai_factory_os.infrastructure.storage.manager import WorkspaceManager
 
     # S9-002: org 数据空间 (root/org — 与 factory-org CLI 同目录口径; 失败安全)
     project_store = None

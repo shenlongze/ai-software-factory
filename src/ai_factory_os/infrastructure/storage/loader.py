@@ -29,7 +29,7 @@ from ai_factory_os.plugins.factories.loader import (
 from ai_factory_os.plugins.factories.spec import ProjectConfig
 
 from .config import WorkspaceConfigError
-from .models import ProjectDefinition
+from .types import ProjectDefinition
 
 
 def managed_projects_dir(root: str | Path) -> Path:

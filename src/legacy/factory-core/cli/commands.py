@@ -99,8 +99,8 @@ from ai_factory_os.plugins.factories.loader import (
     load_project,
 )
 
-from workspace.loader import load_project_definition, resolve_projects_root
-from workspace.manager import (
+from ai_factory_os.infrastructure.storage.loader import load_project_definition, resolve_projects_root
+from ai_factory_os.infrastructure.storage.manager import (
     ProjectExistsError,
     ProjectNotFoundError,
     WorkspaceConfigError,

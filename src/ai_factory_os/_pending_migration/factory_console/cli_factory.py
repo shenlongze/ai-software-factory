@@ -4703,6 +4703,26 @@ class FactoryCLI:
 
         # ★ Founder 模型: 按 project_id 查项目【全部】信息
         #   物理位置即索引 ✓ —— 直接读 projects/<P-id>/ 目录 ✓
+        if getattr(args, "action", "") == "retro":
+            from . import retro as _retro
+
+            pid = str(target or "").strip()
+            if not pid:
+                print("[E4440] 用法: factory projectos retro <project_id>", file=sys.stderr)
+                return 2
+            r = _retro.build_retro(root, pid)
+            s = r["samples"]
+            print(f"=== 项目复盘（{pid}）===")
+            print(f"  样本: 验证 {s['verifications']} 条 · 执行报告 {s['exec_reports']} 份"
+                  f" · 事件 {s['events']} 条（{s['event_types']} 类）")
+            for title, key in (("做得好 ✓", "good"), ("待改进 ✗", "bad"), ("下一步 ✓", "next")):
+                items = r.get(key) or []
+                print(f"  ── {title}")
+                for it in items[:6]:
+                    print(f"     · {it}")
+            print(f"  ⚠ {r['note']}")
+            return 0
+
         if getattr(args, "action", "") in ("plan", "schedule"):
             from . import scheduling as _sch
 
@@ -8765,7 +8785,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_proj = sub.add_parser("projectos", help="ProjectOS (K3): create/sprint/status/replan/approve — Real Project Operating Loop")
     p_proj.add_argument("action", nargs="?", default="list",
                         choices=["create", "sprint", "status", "replan", "approve", "list",
-                                 "show", "deliver", "accept", "deliveries", "uat", "plan", "schedule"])
+                                 "show", "deliver", "accept", "deliveries", "uat", "plan",
+                                 "schedule", "retro"])
     p_proj.add_argument("target", nargs="?", help="project_id / sprint_id / task_id")
     p_proj.add_argument("--title", default="项目", help="项目/迭代标题 (create/sprint 用)")
     p_proj.add_argument("--conv", default="", help="conversation_id (create 用)")

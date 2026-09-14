@@ -134,7 +134,13 @@ def _history_section(root: Any, user_message: str, *, limit: int = 3) -> list[st
             idx.close()
         if not hits:
             return []
-        out = ["", "# 相关历史 (参考, 非事实 — 不要据此改写产品理解)"]
+        out = [
+            "",
+            "# 相关历史 (可供参考的真实记录)",
+            "以下是系统历史里与用户这句话相关的记录，可用于回答"
+            "「以前做过什么」「之前那个怎么样了」这类问题；",
+            "但它们是【历史发生的事】，不要当作当前产品事实写进产品理解。",
+        ]
         for h in hits:
             when = (h.ts[:10] if h.ts else "—")
             out.append(f"- [{h.source} {when}] {h.title[:60]}: {h.snippet[:120]}")

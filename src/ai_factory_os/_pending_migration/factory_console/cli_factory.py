@@ -995,6 +995,32 @@ class FactoryCLI:
     # ------------------------------------------------------------- 入口
 
     def run(self, args: argparse.Namespace) -> int:
+        """入口 ✓ —— ★ 空输出守卫（2026-09-14 ✓）。
+    
+        为什么（Founder: "cli 的命令全了么" → 实测审计 ✓）:
+          92 个命令里【13 个静默空输出 ✗】（agent-run/experience/intelligence/
+          memory/memory-lifecycle/optimize/org/promotion/release/rollback/schedule/
+          variant/workforce-os ✓）—— 用户敲了【什么都看不到 ✗】
+          = "有数据无入口"的变体 ✓（入口在 ✗ 但看不见 ✓）
+        做法: 单点守卫 ✓【不逐个改 13 个 handler ✗】（改了也容易再冒新的 ✓）
+          捕获 stdout → 空则补一句人话（说明可能原因 + 指路 --help ✓）
+        """
+        import contextlib as _cl
+        import io as _io
+    
+        _buf = _io.StringIO()
+        with _cl.redirect_stdout(_buf):
+            rc = self._dispatch(args)
+        _out = _buf.getvalue()
+        sys.stdout.write(_out)
+        if not _out.strip():
+            _cmd = str(getattr(args, "command", "") or "")
+            print(f"（factory {_cmd} 没有输出 ✓）")
+            print("  · 可能: 没数据 ✓ / 需要子动作（如 list|show）✓ / 需要参数 ✓")
+            print(f"  · 看用法: factory {_cmd} --help")
+        return rc
+    
+    def _dispatch(self, args: argparse.Namespace) -> int:
         if args.command == "start":
             return self.start(
                 no_browser=args.no_browser,

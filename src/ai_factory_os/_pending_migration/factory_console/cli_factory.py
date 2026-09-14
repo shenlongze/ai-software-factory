@@ -4513,6 +4513,8 @@ class FactoryCLI:
                 print(f"[E4290] 错误: {exc}", file=sys.stderr)
                 return 1
             print(f"tasktree: {t['task_tree_id']} | {t['count']} 子任务 | 来源: {_src}")
+            if t.get("tasks_md"):
+                print(f"  任务清单(可评审): {t['tasks_md']}")
             return 0
 
         if action == "status":

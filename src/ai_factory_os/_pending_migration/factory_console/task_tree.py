@@ -275,5 +275,101 @@ def materialize_tree(root: Path | str, tree: dict[str, Any], *,
               "count": len(subtasks), "source": "llm_tree",
               "tree_id": tree.get("tree_id", ""),
               "truncated": bool(tree.get("truncated"))}
-    _save(root, "trees", _load(root, "trees") + [record])
+    # ★ 明文规格产物: 任务清单 tasks.md（人可读/可评审/可 diff ✓ 审批门的对象 ✓）
+    try:
+        md_dir = Path(root) / "task_trees"
+        md_dir.mkdir(parents=True, exist_ok=True)
+        md_path = md_dir / f"{root_task['id']}.md"
+        md_path.write_text(render_tasks_md(root, tree), encoding="utf-8")
+        record["tasks_md"] = str(md_path)
+    except Exception as exc:  # noqa: BLE001 — 渲染失败不影响物化（但要可见）
+        import sys as _sys
+        print(f"[task_tree] tasks.md 渲染失败: {exc}", file=_sys.stderr)
+
     return record
+
+
+def render_tasks_md(root: Path | str, tree: dict[str, Any]) -> str:
+    """把任务树渲染成【明文任务清单 tasks.md】（人可读、可评审、可 diff）。
+
+    为什么（Founder 问"该具备它们的哪些能力"→ 判 T2 应该有）:
+      我们的治理承诺是"可审计、可人审"，但产物只有 JSON/实体 ✗ ——
+      明文 markdown 才能评审/diff/给人看，也是审批门的对象 ✓
+      （对标 github/spec-kit 136k★ 的核心做法: spec.md / plan.md / tasks.md）
+    """
+    from datetime import datetime, timezone
+
+    nodes = [n for n in (tree.get("nodes") or []) if isinstance(n, dict)]
+    leaves = [n for n in nodes if n.get("kind") == "task"]
+    by_id = {str(n.get("id")): n for n in nodes}
+    title = str(tree.get("goal") or tree.get("title") or "任务清单")
+
+    def label(nid: str) -> str:
+        n = by_id.get(nid) or {}
+        return str(n.get("title") or nid)[:60]
+
+    # 角色/技能分布（一眼看出"要哪些能力"—— 编排的输入摘要）
+    roles: dict[str, int] = {}
+    skills: dict[str, int] = {}
+    for n in leaves:
+        r = str(n.get("required_role") or "").strip()
+        if r:
+            roles[r] = roles.get(r, 0) + 1
+        for sk in str(n.get("required_skill") or "").split("、"):
+            sk = sk.strip()
+            if sk:
+                skills[sk] = skills.get(sk, 0) + 1
+
+    lines = [
+        f"# 任务清单 · {title}",
+        "",
+        f"> 来源: {tree.get('decomposer', 'llm')} · tree_id `{tree.get('tree_id', '')}`"
+        f" · 生成 {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}",
+    ]
+    flags = []
+    if tree.get("truncated"):
+        flags.append("发生过截断/断环")
+    if tree.get("degraded"):
+        flags.append("LLM 降级")
+    if flags:
+        lines.append(f"> ⚠ {' / '.join(flags)}")
+    lines += [
+        "",
+        "## 概览",
+        f"- 节点 {len(nodes)} 个（叶子任务 {len(leaves)} 个）"
+        f" · 依赖边 {sum(len(n.get('depends_on') or []) for n in leaves)} 条",
+        f"- 角色需求: {' · '.join(f'{k}×{v}' for k, v in sorted(roles.items())) or '（未标注）'}",
+        f"- 技能需求: {' · '.join(f'{k}×{v}' for k, v in sorted(skills.items())[:12]) or '（未标注）'}",
+        "",
+        "## 任务（叶子 = 可执行单元）",
+    ]
+    for i, n in enumerate(leaves, 1):
+        role = str(n.get("required_role") or "").strip()
+        skill = str(n.get("required_skill") or "").strip()
+        meta = " · ".join(x for x in (f"role={role}" if role else "",
+                                      f"skill={skill}" if skill else "") if x)
+        lines.append(f"- [ ] **T{i}** {str(n.get('title') or '')[:120]}"
+                     + (f"  `{meta}`" if meta else ""))
+        deps = [label(d) for d in (n.get("depends_on") or [])]
+        lines.append(f"      - 依赖: {'、'.join(deps) if deps else '无（可立即开始）'}")
+        if n.get("expected_files"):
+            lines.append("      - 产出: " + "、".join(
+                f"`{x}`" for x in list(n["expected_files"])[:8]))
+        if n.get("change_type"):
+            lines.append(f"      - 变更类型: {n['change_type']}")
+
+    lines += ["", "## 层级结构"]
+    tops = [n for n in nodes if not n.get("parent_id")]
+    for top in tops:
+        _walk(top, nodes, lines, 0)
+    return "\n".join(lines) + "\n"
+
+
+def _walk(node: dict[str, Any], nodes: list[dict[str, Any]], out: list[str],
+          depth: int) -> None:
+    """递归渲染层级（缩进树）。"""
+    mark = "▸" if node.get("kind") == "domain" else "•"
+    out.append("  " * depth + f"{mark} {str(node.get('title') or '')[:100]}")
+    kids = [n for n in nodes if n.get("parent_id") == node.get("id")]
+    for k in kids:
+        _walk(k, nodes, out, depth + 1)

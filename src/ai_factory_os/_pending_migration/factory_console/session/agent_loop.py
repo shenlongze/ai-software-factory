@@ -2846,7 +2846,8 @@ def run_agent_native(
                     for _f in _fake[:1]:  # 一次兑现一个, 避免批量误执行
                         _fn = str(_f.get("name") or "")
                         if _fn in {t["function"]["name"] for t in tools} or _fn in _SESSION_TOOL_WHITELIST:
-                            _fr = dispatch(_fn, _f.get("args") or {}, root=root, project_id=project_id,
+                            _fr = dispatch(_fn, _f.get("args") or {},   # F821: 原写 root ✗
+                                           root=data_dir, project_id=project_id,
                                            service=service, ctx=ctx)
                             _real = {"name": _fn, "args": _f.get("args") or {}, "result": _fr}
                             break

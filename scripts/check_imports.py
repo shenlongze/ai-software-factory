@@ -59,6 +59,13 @@ def main() -> int:
         if str(p) not in sys.path:
             sys.path.insert(0, str(p))
 
+    # 装上旧名 → 新路径的别名桥，让验证环境与产品运行时一致
+    try:
+        from ai_factory_os.compat_aliases import install as _install_aliases
+        _install_aliases()
+    except Exception:                                # noqa: BLE001 — 无桥也能验
+        pass
+
     trees = TREES[:1] if args.new else TREES
     all_mods: list[str] = []
     for tree, prefix in trees:

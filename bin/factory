@@ -41,6 +41,8 @@ os.environ["PYTHONPATH"] = os.pathsep.join(
 _BOOT = (
     "import importlib,sys;"
     "sys.argv[0]='factory';"
+    # 装上旧名 → 新路径的别名桥（搬迁过渡层；详见 src/ai_factory_os/compat_aliases.py）
+    "import ai_factory_os.compat_aliases as _ca;_ca.install();"
     "sys.exit(importlib.import_module('factory-console.cli_factory').main())"
 )
 os.execv(str(VENV_PY), [str(VENV_PY), "-c", _BOOT, *sys.argv[1:]])

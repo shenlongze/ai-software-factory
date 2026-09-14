@@ -198,7 +198,7 @@ class CanonicalGoldenPath:
         try:
             if action == "generate_prd":
                 obj = gp.generate_prd(self.root, conversation_id, actor=self.actor)
-                _md = _write_prd_md(self.root, obj)
+                _md = _write_prd_md(self.root, obj, conversation_id)
                 _sum = _prd_summary(obj)
                 return {
                     "kind": "lifecycle", "action": action,
@@ -355,10 +355,20 @@ def _render_prd_md(prd: dict[str, Any]) -> str:
     return "\n".join(out)
 
 
-def _write_prd_md(root: str | Path, prd: dict[str, Any]) -> str:
-    """把 PRD 写成 <root>/prd/<id>.md，返回路径（失败返回空串，不阻断主链 ✓）。"""
+def _write_prd_md(root: str | Path, prd: dict[str, Any],
+                  conversation_id: str = "") -> str:
+    """把 PRD 写进【项目目录】projects/<P-id>/docs/，返回路径。
+
+    为什么（Founder: 产出文档都应该有归宿 ✓）:
+      此前所有 PRD 平铺在 ~/.factory/prd/ ✗ —— 没有"项目"这一层归属，
+      换个会话就找不到同一个项目的东西 ✗。
+    回落: 未能确定项目 → 写回旧的 <root>/prd/（行为不变，不阻断 ✓）。
+    """
     try:
-        d = Path(root) / "prd"
+        project_id = (ensure_project_binding(root, conversation_id)
+                      if conversation_id else "")
+        d = (Path(root) / "projects" / project_id / "docs") if project_id \
+            else (Path(root) / "prd")
         d.mkdir(parents=True, exist_ok=True)
         f = d / f"{prd.get('id', 'PRD')}.md"
         f.write_text(_render_prd_md(prd), encoding="utf-8")

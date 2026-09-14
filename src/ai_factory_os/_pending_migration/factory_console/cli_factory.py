@@ -1053,6 +1053,8 @@ class FactoryCLI:
             return self.tower_cmd(args)
         if args.command == "llm-trace":
             return self.llm_trace_cmd(args)
+        if args.command == "arch":
+            return self.arch_cmd(args)
         if args.command == "sync":
             return self.sync_cmd(args)
         if args.command == "runtime":
@@ -2469,6 +2471,78 @@ class FactoryCLI:
             print(f"      resp  : {rs[:lim]}")
             if r.get("error"):
                 print(f"      ✗ error: {str(r['error'])[:160]}")
+        return 0
+
+    def arch_cmd(self, args: argparse.Namespace) -> int:
+        """factory arch — 架构选择（记录/查看）✓。
+
+        为什么（Founder 指出 ✓）: 此前【没有架构选择这一环】✗ ——
+          拆解直接产出任务 ✓ 不问架构 → 可能拆出与技术栈不符的任务 ✗
+        本命令记录决策 ✓ → 分解器会读取并约束任务 ✓（task_decomposition.architecture_context ✓）
+        """
+        from .product_truth import _load as _pt_load, _save as _pt_save, _now_iso
+
+        action = getattr(args, "action", "show") or "show"
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        recs = _pt_load(root, "decisions")
+
+        if action == "list":
+            print(f"=== 架构决策 {len(recs)} 条 ===")
+            for rid, r in sorted(recs.items())[:30]:
+                if not isinstance(r, dict):
+                    continue
+                stack = ", ".join(map(str, (r.get("tech_stack") or [])[:4]))
+                print(f"  {rid} | {r.get('project_id') or '-'} | "
+                      f"{r.get('form') or '-'} | {stack or '-'}")
+            return 0
+
+        if action == "record":
+            pid = str(getattr(args, "project", "") or "").strip()
+            if not pid:
+                print("[E4400] 用法: factory arch record --project <P-id> "
+                      "--form <形态> --stack <技术栈> [--choice X --why Y]")
+                return 2
+            stack = [s.strip() for s in
+                     str(getattr(args, "stack", "") or "").split(",") if s.strip()]
+            choices = []
+            raw_choice = str(getattr(args, "choice", "") or "")
+            why = str(getattr(args, "why", "") or "")
+            for i, c in enumerate([x.strip() for x in raw_choice.split(";") if x.strip()]):
+                choices.append({"choice": c, "rationale": why if i == 0 else ""})
+            rid = f"ADR-{os.urandom(5).hex()}"
+            recs[rid] = {
+                "id": rid, "project_id": pid,
+                "title": f"架构决策 · {pid}",
+                "form": str(getattr(args, "form", "") or ""),
+                "tech_stack": stack, "decisions": choices,
+                "status": "ACCEPTED", "created_at": _now_iso(),
+            }
+            _pt_save(root, "decisions", recs)
+            print(f"  ✓ 已记录 {rid}: 形态={recs[rid]['form'] or '-'} · "
+                  f"技术栈={', '.join(stack) or '-'} · 决策 {len(choices)} 项")
+            print("  → 下次「生成计划」时，分解器会读取并约束任务 ✓")
+            return 0
+
+        # show
+        pid = str(getattr(args, "project", "") or "").strip()
+        mine = [r for r in recs.values() if isinstance(r, dict)
+                and (not pid or str(r.get("project_id") or "") == pid)]
+        if not mine:
+            print(f"=== 架构决策（{'项目 ' + pid if pid else '全部'}）===")
+            print("  暂无（未定架构 → 拆解不受约束 ✓）")
+            print("  记录: factory arch record --project <P-id> --form 前后端分离 "
+                  "--stack python,fastapi --choice '用 FastAPI' --why '团队熟'")
+            return 0
+        for r in mine[:5]:
+            print(f"=== {r.get('title') or r.get('id')}（{r.get('status')}）===")
+            if r.get("form"):
+                print(f"  形态: {r['form']}")
+            if r.get("tech_stack"):
+                print(f"  技术栈: {', '.join(map(str, r['tech_stack']))}")
+            for d in (r.get("decisions") or []):
+                if isinstance(d, dict):
+                    print(f"  · {d.get('choice')}"
+                          + (f"  ← {d.get('rationale')}" if d.get("rationale") else ""))
         return 0
 
     def sync_cmd(self, args: argparse.Namespace) -> int:
@@ -8399,6 +8473,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_rt.add_argument("--id", default="", help="Runtime id (add) — 须用内置 adapter 的 id")
     p_rt.add_argument("--type", default="agent", help="Runtime 类型 (add, 默认 agent)")
     p_rt.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+
+    p_arch = sub.add_parser(
+        "arch", help="架构选择（Founder: 软件开发的一等环节 ✓）")
+    p_arch.add_argument("action", nargs="?", default="show",
+                        choices=["show", "record", "list"])
+    p_arch.add_argument("--project", default="", help="项目 id（record/list 用）")
+    p_arch.add_argument("--form", default="", help="形态: 单体/前后端分离/微服务 …")
+    p_arch.add_argument("--stack", default="", help="技术栈, 逗号分隔")
+    p_arch.add_argument("--choice", default="", help="一项已定决策（可重复用 ; 分隔）")
+    p_arch.add_argument("--why", default="", help="该项决策的理由")
+    p_arch.add_argument("--data-dir", default=None)
 
     p_sync = sub.add_parser(
         "sync",

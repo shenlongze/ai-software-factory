@@ -225,6 +225,45 @@ def _template_decompose(prd: dict[str, Any]) -> dict[str, Any]:
 # ------------------------------------------------------------------ LLM 注入
 
 
+def architecture_context(prd: dict[str, Any]) -> str:
+    """读取【本项目架构决策】→ 供分解 prompt 注入（Founder: 架构选择是一等环节 ✓）。
+
+    为什么（Founder 指出 ✓）: 此前【没有架构选择这一环】✗ ——
+      拆解直接产出任务 ✓ 不问架构 → 可能拆出与技术栈不符的任务 ✗
+      （如：架构定了 FastAPI，任务却要求 Flask 技能 ✓）
+    数据源: product_truth 的 decisions kind ✓（按项目分片 ✓ 与 PRD 同库 ✓）
+    失败安全: 无决策/读不到 → 空串 ✓（完全不影响原行为 ✓）
+    """
+    try:
+        pid = str(prd.get("project_id") or "")
+        if not pid:
+            return ""
+        from pathlib import Path as _P
+        import os as _os
+        root = _P(_os.environ.get("FACTORY_DATA_DIR") or (_P.home() / ".factory"))
+        from .product_truth import _load as _pt_load
+        recs = _pt_load(root, "decisions")
+        mine = [r for r in recs.values()
+                if isinstance(r, dict) and str(r.get("project_id") or "") == pid]
+        if not mine:
+            return ""
+        lines = []
+        for r in mine[:3]:
+            form = str(r.get("form") or "").strip()
+            stack = r.get("tech_stack") or []
+            if form:
+                lines.append(f"- 形态: {form}")
+            if stack:
+                lines.append(f"- 技术栈（任务必须用它）: {', '.join(map(str, stack))}")
+            for d in (r.get("decisions") or [])[:4]:
+                if isinstance(d, dict) and d.get("choice"):
+                    why = f"（理由: {d.get('rationale')}）" if d.get("rationale") else ""
+                    lines.append(f"- 已定: {d['choice']}{why}")
+        return "\n".join(lines)
+    except Exception:  # noqa: BLE001 — 失败安全 ✓
+        return ""
+
+
 def available_roles() -> list[str]:
     """真实【员工角色池】—— 供分解器 prompt 注入（根治"两套角色词表"✗）。
 
@@ -298,6 +337,7 @@ def build_llm_decomposer(
                    or prd.get("goal") or "")[:300]
         feats = (content.get("functional_requirements", [])
                  if isinstance(content, dict) else []) or []
+        _arch = architecture_context(prd)      # ★ 架构选择 → 喂给分解器 ✓
         prompt = (
             "你是 AI Factory OS 的任务分解器。\n"
             "步骤: ① 先做真实需求分析（要交付什么、有哪些模块与依赖）\n"
@@ -315,6 +355,9 @@ def build_llm_decomposer(
             '"（也可写成 {"nodes":[{...}]} 一行，但必须闭合完整）\\n'
             "（children 可递归嵌套；无 children 的节点即叶子任务）\n\n"
             f"产品: {goal}\n功能需求: {feats}"
+            + (f"\n\n【本项目架构决策（任务必须遵守，技能须落在技术栈内）】\n"
+               f"{_arch}" if _arch else "\n\n（本项目未定架构决策；如需求含技术选型，"
+                                       "请在 required_skill 里如实给出）")
         )
         # ★ 重试（实测: 单次约 1/3 成功率 —— LLM 返回非法 JSON 很常见 ✗，
         #   不重试就等于"分解能力只有三分之一可用"✗）

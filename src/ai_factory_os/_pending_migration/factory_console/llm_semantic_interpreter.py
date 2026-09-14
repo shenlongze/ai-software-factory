@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
 from typing import Any, Callable
 
 from factory_console.semantic_proposal import (
@@ -114,8 +115,44 @@ def parse_semantic_json(raw: str) -> dict[str, Any]:
     return validate_proposal(data)
 
 
-def build_llm_prompt(snapshot: dict[str, Any], user_message: str) -> str:
-    """Context Assembly → LLM prompt (只读, 不猜)。"""
+def _history_section(root: Any, user_message: str, *, limit: int = 3) -> list[str]:
+    """相关历史 → prompt 段落（失败安全: 任何异常 → 空，不影响主链）。
+
+    ★ 标注为【参考非事实】: 历史是"过去发生过什么"，不是当前产品事实，
+      不能进 truth 模型（否则历史会污染 Product Understanding）。
+    ★ 控制 token: 默认 3 条、每条截断 —— 历史是提示不是正文。
+    """
+    if not root:
+        return []
+    try:
+        from ai_factory_os.services.learning.history_search import HistoryIndex
+
+        idx = HistoryIndex(Path(str(root)) / "search.db")
+        try:
+            hits = idx.search(user_message, limit=limit)
+        finally:
+            idx.close()
+        if not hits:
+            return []
+        out = ["", "# 相关历史 (参考, 非事实 — 不要据此改写产品理解)"]
+        for h in hits:
+            when = (h.ts[:10] if h.ts else "—")
+            out.append(f"- [{h.source} {when}] {h.title[:60]}: {h.snippet[:120]}")
+        return out
+    except Exception as exc:  # noqa: BLE001 — 检索不可用 → 无历史段落（不禁用主链）
+        import sys as _sys
+        print(f"[history] 相关历史段落跳过: {type(exc).__name__}: {exc}", file=_sys.stderr)
+        return []
+
+
+def build_llm_prompt(snapshot: dict[str, Any], user_message: str, *,
+                     history_root: Any = None) -> str:
+    """Context Assembly → LLM prompt (只读, 不猜)。
+
+    history_root 提供时附上【相关历史】(检索自 10,110 条历史) —— 让会话能
+    "想起过去"，但明确标注为参考非事实（不污染产品理解）。
+    缺省 None = 不带历史（行为与之前完全一致 ✓ 向后兼容）。
+    """
     facts = snapshot.get("facts", [])
     deferred = snapshot.get("deferred", [])
     rejected = snapshot.get("rejected", [])
@@ -135,6 +172,7 @@ def build_llm_prompt(snapshot: dict[str, Any], user_message: str) -> str:
         lines.append(f"- (延后) {f['type']} {f['content']} (id={f['id']})")
     for f in rejected:
         lines.append(f"- (已否决) {f['type']} {f['content']} (id={f['id']})")
+    lines += _history_section(history_root, user_message)
     lines += [
         "",
         "# 用户消息",
@@ -189,7 +227,7 @@ def llm_semantic_interpreter(root: str, conversation_id: str, text: str,
     if llm_fn is None:
         return _degrade_clarify(text)
 
-    prompt = build_llm_prompt(snapshot, stripped)
+    prompt = build_llm_prompt(snapshot, stripped, history_root=root)
     try:
         raw = llm_fn(prompt)
     except Exception:  # noqa: BLE001 — LLM 挂 → 降级 (不猜)

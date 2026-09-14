@@ -304,21 +304,35 @@ def _cjk_split(text: str) -> str:
 def _fts_terms(query: str) -> str:
     """查询 → FTS5 表达式。
 
-    中文词逐字切成短语（"截图" → "\"截 图\""）；英文词按原样。
-    多词之间 AND。剔除 FTS 语法字符，防注入/语法错。
+    索引侧已把 CJK 逐字切分（"非变更证据" → "非 变 更 证 据"），查询侧必须匹配。
+    分三种情况:
+      · 短中文词（≤4 字）: 整词短语 —— "记账" → "\"记 账\""（精准）
+      · 长中文串/句子: 切 2 字滑窗并【OR】—— 会话里用户说的是句子，
+        整句成一个短语必然 0 命中 ✗，按词窗 OR 才召回得到 ✓（注入场景召回优先）
+      · 非 CJK 词: 原样加引号
     """
+    q = (query or "").strip()
+    if not q:
+        return ""
     parts: list[str] = []
-    for raw in re.split(r"[\s,，。；;、]+", query or ""):
+    for raw in re.split(r"\s+", q):
         raw = raw.strip()
         if not raw:
             continue
-        if _CJK.search(raw):
-            split = _cjk_split(raw).split()
-            if split:
-                parts.append('"' + " ".join(split) + '"')
-        elif len(raw) >= 2:
+        if not _CJK.search(raw):
             parts.append('"' + raw.replace('"', "") + '"')
-    return " AND ".join(parts[:8])
+            continue
+        chars = [c for c in _cjk_split(raw).split()]
+        if len(chars) <= 4:
+            parts.append('"' + " ".join(chars) + '"')
+        else:
+            # 2 字滑窗（中文词的常见长度）→ OR
+            for k in range(len(chars) - 1):
+                parts.append('"' + chars[k] + " " + chars[k + 1] + '"')
+    if not parts:
+        return ""
+    # OR: 长查询按窗口并列（召回优先）；单短语直接用
+    return parts[0] if len(parts) == 1 else "(" + " OR ".join(parts[:12]) + ")"
 
 
 def _snippet(body: str, terms: str, *, width: int = 160) -> str:

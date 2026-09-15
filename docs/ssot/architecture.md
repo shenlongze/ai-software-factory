@@ -48,13 +48,15 @@
 
 ## 三、依赖铁律（22 条）
 
-> **强制载体现状（2026-09-15 实测）**：R1–R17 原由 `tests/architecture/{test_layer_dependencies,test_legacy_fence}.py`
-> 强制，但 **`tests/` 目录已不存在**（刀29 清理）⇒ **R1–R17 当前为"目标态"，无机器强制**。
-> **R18–R22 已建成机器强制**：`scripts/check_classification.py`（退出码 1 = 有红，可直接进 CI）。
-> 验证据组 = `ruff` + `scripts/check_imports.py` + `scripts/check_classification.py` + 目标实跑。
-> R1–R17 的强制载体待重建（下一刀）。
+> **强制载体现状（2026-09-15 实测）**：R1–R17 原载体 `tests/architecture/*.py` 已不存在（刀29 清理）。
+> **已重建**：`scripts/check_architecture.py`（AST 解析 import，含相对导入与 lazy import；
+> 解析器自检 `--selftest` 8/8；实测 **6/15 条通过**）。
+> **R18–R22 已建成**：`scripts/check_classification.py`（自检 `--selftest` 8/8）。
+> 验证据组 = `ruff` + `scripts/check_imports.py` + `scripts/check_architecture.py`
+> + `scripts/check_classification.py` + 目标实跑。
+> R14/R15（旧区"只减不增"）需基线文件 `scripts/legacy_baseline.json`（**未建**，脚本如实报"无基线"）。
 
-**层级边界（R1–R12、R17）** —— 原载体 `tests/architecture/test_layer_dependencies.py`（已不存在）
+**层级边界（R1–R12、R17）** —— 载体 `scripts/check_architecture.py`
 
 | # | 规则 |
 |---|------|
@@ -72,7 +74,7 @@
 | R12 | `core/` 无业务词，且总行数 ≤ 3000 |
 | R17 | `core/` 只允许 `scheduler` / `events` 两个子模块 |
 
-**旧代码围栏（R13–R16）** —— 原载体 `tests/architecture/test_legacy_fence.py`（已不存在）
+**旧代码围栏（R13–R16）** —— 载体 `scripts/check_architecture.py`（R14/R15 待建基线）
 
 | # | 规则 |
 |---|------|

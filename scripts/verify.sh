@@ -57,6 +57,7 @@ run "分类守卫 自检"  "$PY" scripts/check_classification.py --selftest
 echo
 echo "═══ ② 目标实跑（已迁端点的端到端）═══"
 run "validation 端到端" "$PY" scripts/smoke_validation.py
+run "metrics 端到端"    "$PY" scripts/smoke_metrics.py
 
 echo
 echo "═══ ③ 守卫扫仓库（= 当前债务清单，非工具故障）═══"

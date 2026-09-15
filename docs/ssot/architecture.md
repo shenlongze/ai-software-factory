@@ -115,6 +115,8 @@ src/ai_factory_os/
 ├── plugins/       factories/{software} agents skills tools mcp models connectors
 │                  controllers/{browser,computer} healers notifiers triggers storages
 ├── infrastructure/ llm storage messaging process sandbox
+│                  events git retrieval   ← 2026-09-15 补登记（实际在用且被 bootstrap/
+│                                            plugins/services 引用, 原清单漏列）
 ├── api/
 └── bootstrap/
 

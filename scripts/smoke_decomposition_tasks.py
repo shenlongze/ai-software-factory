@@ -81,7 +81,7 @@ def main() -> int:
         r.status_code == 503, f"{r.status_code} {r.text[:110]}")
 
     # ⑤ 接线后应能真读实体（用假实体验证投影计算，不假装端到端）
-    from ai_factory_os.services.decomposition import tasks as T
+    from ai_factory_os.services.work import tasks as T
     fake = {"T-1": {"id": "T-1", "type": "task", "status": "ACTIVE"},
             "T-2": {"id": "T-2", "type": "task", "status": "COMPLETED"},
             "T-3": {"id": "T-3", "type": "task", "status": "BLOCKED"}}

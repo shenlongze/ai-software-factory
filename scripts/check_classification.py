@@ -216,6 +216,17 @@ def rule_r20() -> list[str]:
             out.append(f"{label}: 清单有但目录无 {missing}")
         if extra:
             out.append(f"{label}: 目录有但清单无 {extra}")
+        # ★ 半成品目录检查（2026-09-15 加 — Founder: "位置都校验正确了么"）
+        #   `_domain_dirs` 只认含 __init__.py 的包 ⇒ 建了一半的域目录（有 .py 无 __init__）
+        #   会被当成"不存在", 于是**多出来的域也报不出来**。我建 services/decomposition/
+        #   时正踩这个盲区（同一次 learning 缺 __init__ 是反向症状: 说"目录无"）。
+        for sub in sorted(x for x in d.iterdir() if x.is_dir() and not x.name.startswith("_")):
+            if sub.name == "__pycache__":
+                continue
+            pys = [p for p in sub.rglob("*.py") if "__pycache__" not in p.parts]
+            if pys and not (sub / "__init__.py").is_file():
+                out.append(f"{label}/{sub.name}: 有 {len(pys)} 个 .py 但缺 __init__.py"
+                           f"（半成品目录 —— 伪包, 守卫此前看不见它）")
     return out
 
 

@@ -7,10 +7,16 @@
   · 禁在 router 里直接读写数据文件 ✗（存储只经 services/ 或 infrastructure/）
 
 本域实况: task_decomposition（真拆解）· task_tree（物化）✓
-  ★ 刀2 第三域 —— schedules 5 端点已迁（实现见 services/work/scheduler.py）。
-    归属依据: api-structure §6 映射表「decomposition = task-trees(3) · tasks(3) · schedules(5)」。
-    两层口径: 服务实现落在 services/work/（服务域），HTTP 面归 decomposition（API 域）。
+  ★ 刀2 第三域: schedules 5 端点已迁（实现见 services/work/scheduler.py）。
+    归属依据: api-structure §6 映射表 —— task-trees(3) · tasks(3) · schedules(5) 归 decomposition。
+    ★★ 两层域名不同, 这里说清（2026-09-15 修正一处放错的位置）:
+      · API 面   = `decomposition`（本目录）—— §6 的把端点归到这里的裁决
+      · 服务实现 = `services/work/`（scheduler.py / tasks.py）—— SSoT §四 的服务域清单
+      我一开始把 tasks.py 放进了 services/decomposition/ —— 既不在 SSoT 的服务域清单里,
+      又与同域的 scheduler.py（在 services/work/）不一致; 且因为没建 __init__.py,
+      R20 把那个目录当成"不存在"因而没报红（守卫盲区, 另行修）。
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -18,7 +24,7 @@ from typing import Any
 from fastapi import APIRouter, Body, HTTPException
 
 from ai_factory_os.api.deps import data_root
-from ai_factory_os.services.decomposition import tasks
+from ai_factory_os.services.work import tasks
 from ai_factory_os.services.work import scheduler as sch
 
 router = APIRouter(prefix="/api/decomposition", tags=["任务拆解"])

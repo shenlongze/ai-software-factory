@@ -246,12 +246,71 @@ def rule_r22() -> list[str]:
     return sorted(out, key=lambda s: -int(re.search(r": (\d+)", s).group(1)))  # type: ignore[union-attr]
 
 
+def rule_r23() -> list[str]:
+    """命令登记: CLI 的命令必须全部登记在 api/cli/registry.py（★ 单一事实源）。
+
+    为什么（Founder 2026-09-15 追问「cli 有分类么」）:
+        现有 factory 入口 91 个命令**全部平铺在一个 10,155 行的文件里**, help 里
+        那 4 个"域"只是 8600-8603 行的 dict（只为打印）—— 代码层零分类。
+        新 CLI 的 handler 有命名前缀, 但物理上也是单文件、且前缀 ≠ 架构域。
+        ⇒ 命令 → 域 的归属先落成注册表（api/cli/registry.py）, 本规则守住它:
+        命令面一旦离开表（新增命令没登记 / 表里写了不存在的命令）→ 红。
+
+    判据: 静态解析两套 CLI 的命令面, 与注册表比对。
+      · 现有 factory 入口: cli_factory.py 的 `add_parser("xxx")`
+      · 新 CLI: main.py 里**只挂在主 subparser** 上的 `add_parser`（子命令不参与）
+    """
+    sys.path.insert(0, str(SRC))
+    try:
+        from ai_factory_os.api.cli.registry import API_CLI, FACTORY_CLI
+    except Exception as exc:  # noqa: BLE001 — 表本身坏了 = 最该报的一种红
+        return [f"api/cli/registry.py 导入失败: {type(exc).__name__}: {exc}"]
+
+    out: list[str] = []
+
+    # ① 现有 factory 入口（只算真顶层 —— 接收者 = 主 subparser 容器的那些）
+    #    注: 全文件 94 个 add_parser, 3 个是子命令（rag 的 query/index/sources,
+    #    接收者 p_rag_sub）。★ 顶层有两种写法都要吃:
+    #      p_x = sub.add_parser("x", ...)   /   sub.add_parser("x", ...)（无赋值）
+    #      以及多行写法 sub.add_parser(\n  "x", ...)
+    #    ⇒ 判据只能是**接收者名**, 不能要求有赋值/同一行。
+    f_path = OS / "_pending_migration" / "factory_console" / "cli_factory.py"
+    if f_path.is_file():
+        t = f_path.read_text(encoding="utf-8", errors="replace")
+        mf = re.search(r"(\w+)\s*=\s*p(?:arser)?\.add_subparsers\(", t)
+        f_main = mf.group(1) if mf else "sub"
+        real = set(re.findall(
+            rf'(?<![\w.]){re.escape(f_main)}\.add_parser\(\s*["\']([a-z][a-z0-9-]*)["\']', t))
+        reg = {c for v in FACTORY_CLI.values() for c in v}
+        if real - reg:
+            out.append(f"factory 入口: 未登记命令 {sorted(real - reg)}")
+        if reg - real:
+            out.append(f"factory 入口: 表里有但实际无 {sorted(reg - real)}")
+
+    # ② 新 CLI（同上判据）
+    a_path = OS / "api" / "cli" / "main.py"
+    if a_path.is_file():
+        t = a_path.read_text(encoding="utf-8", errors="replace")
+        m = re.search(r"(\w+)\s*=\s*p\.add_subparsers\(", t)
+        main_v = m.group(1) if m else "sub"
+        real = set(re.findall(
+            rf'(?<![\w.]){re.escape(main_v)}\.add_parser\(\s*["\']([a-z][a-z0-9-]*)["\']', t))
+        reg = {c for v in API_CLI.values() for c in v}
+        if real - reg:
+            out.append(f"新 CLI: 未登记顶层命令 {sorted(real - reg)}")
+        if reg - real:
+            out.append(f"新 CLI: 表里有但实际无 {sorted(reg - real)}")
+
+    return out
+
+
 RULES = {
     "R18": ("一能力一域　同一能力出现在 >1 个服务域", rule_r18),
     "R19": ("一物一名　同一实体两个名字", rule_r19),
     "R20": ("清单单一　SSoT 域清单 vs 实际目录", rule_r20),
     "R21": ("一域一落点　services 与 api/domains 同名同存", rule_r21),
     "R22": ("一层一目录　禁平铺", rule_r22),
+    "R23": ("命令登记　CLI 命令必须在 api/cli/registry.py 有域归属", rule_r23),
 }
 
 

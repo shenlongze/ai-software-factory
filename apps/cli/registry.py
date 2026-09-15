@@ -66,7 +66,7 @@ FACTORY_CLI: dict[str, tuple[str, ...]] = {
 #: 新 CLI（`ai_factory_os/api/cli/`, **真顶层 24 个** —— 子命令不在此列）→ 域。
 #: 注: 它的 handler 已有命名前缀（26 组）, 但与架构域不一一对应; 本表是**按域**的权威。
 API_CLI: dict[str, tuple[str, ...]] = {
-    "conversation": ("console",),          # Human Console: 只读视图（七域汇总）
+    "conversation": ("console", "conversation"),   # console=只读视图; conversation=会话入口（2026-09-15 补, 链路第 1 环）
     "understanding": ("understand", "product"),
     "architecture": (),
     "decomposition": ("task",),

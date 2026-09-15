@@ -109,6 +109,7 @@ from .commands import (
 )
 from .context import DEFAULT_ROOT, FactoryContext
 from .domains import audit as _dom_audit
+from .domains import conversation as _dom_conversation
 from .domains import metrics as _dom_metrics
 from .domains import operations as _dom_operations
 
@@ -179,6 +180,9 @@ def build_parser() -> Any:
     p_update.add_argument("--status", required=True, help="新状态 (BACKLOG/ARCHITECTURE/DEVELOPMENT/TESTING/DONE)")
 
     # factory event <sub>
+    # factory conversation —— 会话域（链路第 1 环; 2026-09-15 新建, 见 ADR-0038 遗留待办）
+    _dom_conversation.register(sub, json_opt)
+
     # factory event —— 审计域（按域拆至 domains/audit.py; 命令面不变 ✓）
     _dom_audit.register(sub, json_opt)
 
@@ -913,6 +917,8 @@ def main(argv: list[str] | None = None) -> int:
             result = cmd_init(ctx)
         elif args.command == "task":
             result = _dispatch_task(ctx, args)
+        elif args.command == "conversation":
+            result = _dom_conversation.run(ctx, args)
         elif args.command == "event":
             result = _dispatch_event(ctx, args)
         elif args.command == "status":
@@ -1273,6 +1279,8 @@ def _print_output(args: Any, result: dict) -> None:
         _print_init(result)
     elif args.command == "task":
         _print_task(args.task_command, result)
+    elif args.command == "conversation":
+        _dom_conversation.render(result)
     elif args.command == "event":
         _print_event_logs(result)
     elif args.command == "status":

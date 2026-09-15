@@ -333,8 +333,16 @@ def rule_r23() -> list[str]:
         if not sp.is_file():
             continue
         t = sp.read_text(encoding="utf-8", errors="replace")
-        m = re.search(r"(\w+)\s*=\s*p\.add_subparsers\(", t)
-        main_v = m.group(1) if m else "sub"
+        if sp.name == "main.py":
+            m = re.search(r"(\w+)\s*=\s*p\.add_subparsers\(", t)
+            main_v = m.group(1) if m else "sub"
+        else:
+            # ★ 域模块的约定是 `register(sub, json_opt)` —— 主容器**固定叫 sub**。
+            #   此前对所有文件都去猜 "xxx = p.add_subparsers(...)", 结果在域模块里被
+            #   **子命令容器**污染（如 `csub = p.add_subparsers(...)` ⇒ main_v="csub"）
+            #   ⇒ 扫出 5 个子命令（new/list/show/say/facts）、反而漏了真顶层 conversation。
+            #   （2026-09-15 由「新建 CLI 会话入口」这刀实测暴露。）
+            main_v = "sub"
         real |= set(re.findall(
             rf'(?<![\w.]){re.escape(main_v)}\.add_parser\(\s*["\']([a-z][a-z0-9-]*)["\']', t))
     if sources and any(sp.is_file() for sp in sources):

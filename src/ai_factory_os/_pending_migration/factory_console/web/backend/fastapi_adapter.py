@@ -6610,21 +6610,10 @@ def build_app(
                 detail=f"conversation 不在 canonical 域: {conversation_id}")
         return conv
 
-    # ---- Legacy conversation_os API (FROZEN, S1): 明确废弃指引 ----
-    @app.post("/api/conversations/{conversation_id}/requirements")
-    def api_extract_requirement(conversation_id: str,
-                                body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
-        raise HTTPException(
-            status_code=410,
-            detail=("legacy conversation_os API 已废弃 (FROZEN)。"
-                    "新链: 自然语言经 POST /api/conversations/{id}/messages 进入"
-                    " Product Understanding; 正式资产走 PRD/Plan 端点。"))
-
-    @app.post("/api/conversations/{conversation_id}/decisions")
-    def api_create_decision(conversation_id: str,
-                            body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
-        raise HTTPException(status_code=410,
-                            detail="legacy conversation_os API 已废弃 (FROZEN)。")
+    # ---- Legacy conversation_os API 已于本轮清理（R0 P0 判 RETIRE）----
+    #   原有两个端点 requirements / decisions 恒返回 410，属【已判退休 ✗ 无消费者】→ 删除 ✓
+    #   新链: 自然语言 POST /api/conversations/{id}/messages → Product Understanding;
+    #         正式资产走 PRD / Plan 端点 ✓
 
 
 

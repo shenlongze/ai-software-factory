@@ -69,6 +69,14 @@ SYNONYM_FAMILIES: tuple[frozenset[str], ...] = (
 )
 
 
+def _rel(p: Path) -> str:
+    """相对仓库根的显示路径（不在仓库下时退回绝对路径 —— 不许崩）。"""
+    try:
+        return str(p.relative_to(ROOT))
+    except ValueError:
+        return str(p)
+
+
 def _py_files(d: Path) -> list[Path]:
     return [f for f in d.rglob("*.py") if not any(p in SKIP_DIRS for p in f.parts)]
 
@@ -234,7 +242,7 @@ def rule_r22() -> list[str]:
             continue
         prefixes = {f.stem.split("_")[0] for f in pys}
         if len(prefixes) >= FLAT_MIN_PREFIXES:
-            out.append(f"{d.relative_to(ROOT)}: {len(pys)} 个 .py 平铺, {len(prefixes)} 种前缀")
+            out.append(f"{_rel(d)}: {len(pys)} 个 .py 平铺, {len(prefixes)} 种前缀")
     return sorted(out, key=lambda s: -int(re.search(r": (\d+)", s).group(1)))  # type: ignore[union-attr]
 
 
@@ -247,14 +255,90 @@ RULES = {
 }
 
 
+def _mk_domains(root: Path, names: list[str]) -> None:
+    for n in names:
+        p = root / n
+        p.mkdir(parents=True, exist_ok=True)
+        (p / "__init__.py").write_text("", encoding="utf-8")
+
+
+def _selftest() -> int:
+    """守卫自检: 证明它会报红、不误报、不自己崩。
+
+    为什么必须自检: 本脚本上线当天就出过两个【静默】bug ——
+      R19 路径切分错 ⇒ 全仓 0 命中却"绿"（最坏的守卫是静默的守卫）;
+      R22 硬用 relative_to(ROOT) ⇒ 扫描根一变就崩。
+    故负例与正例都固化为可重复动作。
+    """
+    import tempfile
+
+    global SSOT, OS, SRC  # noqa: PLW0603 — 自检需在假树上跑, finally 还原
+    saved = SSOT, OS, SRC
+    cases: list[tuple[str, bool]] = []
+    try:
+        tmp = Path(tempfile.mkdtemp())
+        fake_os, fake_src = tmp / "ai_factory_os", tmp / "src"
+        fake_os.mkdir()
+        fake_src.mkdir()
+        _mk_domains(fake_os / "contracts", ["a", "b", "c", "d"])   # d 多出来
+        _mk_domains(fake_os / "services", ["a"])
+        _mk_domains(fake_os / "api" / "domains", ["a"])
+        SSOT = tmp / "architecture.md"
+        SSOT.write_text(
+            "## 二、域清单\n\n**契约域（`contracts/`，3）**\n\n`a` · `b` · `c`\n\n"
+            "**服务域（`services/`，1）**\n\n`a`\n\n"
+            "**API 分组（`api/domains/`，1）**\n\n`a`\n\n"
+            "> 举例提到 `zzz` 不该被算作域\n", encoding="utf-8")
+        OS, SRC = fake_os, fake_src
+
+        r20 = rule_r20()
+        cases.append(("R20 检出清单↔目录不一致", any("清单无" in x for x in r20)))
+        cases.append(("R20 不受引用块举例污染", not any("zzz" in x for x in r20)))
+        cases.append(("R21 一致时不误报", rule_r21() == []))
+        _mk_domains(fake_os / "api" / "domains", ["b"])
+        cases.append(("R21 检出跨层缺分组", rule_r21() != []))
+
+        flat = fake_os / "flat"
+        flat.mkdir()
+        for i in range(FLAT_MIN_FILES + 5):
+            (flat / f"mod{i}_x.py").write_text("", encoding="utf-8")
+        cases.append(("R22 检出平铺且不崩", any("flat" in x for x in rule_r22())))
+        small = fake_os / "small"
+        small.mkdir()
+        for i in range(5):
+            (small / f"m{i}_x.py").write_text("", encoding="utf-8")
+        cases.append(("R22 不误报小目录", not any("small" in x for x in rule_r22())))
+
+        ad = fake_src / "adapter.py"
+        ad.write_text('@app.get("/api/thing")\ndef a(): ...\n'
+                      '@app.get("/api/things")\ndef b(): ...\n', encoding="utf-8")
+        cases.append(("R19 检出单复数变体", any("thing" in x for x in rule_r19())))
+        ad.write_text('@app.get("/api/only")\ndef a(): ...\n', encoding="utf-8")
+        cases.append(("R19 不误报单一名", rule_r19() == []))
+    finally:
+        SSOT, OS, SRC = saved
+
+    print("── 守卫自检（必须报红 · 不误报 · 不自己崩）")
+    ok = sum(1 for _, c in cases if c)
+    for n, c in cases:
+        print(f"   [{'PASS' if c else 'FAIL'}] {n}")
+    print(f"   {ok}/{len(cases)} 通过")
+    return 0 if ok == len(cases) else 1
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="分类守卫 R18–R22")
     ap.add_argument("--rule", choices=sorted(RULES), action="append",
                     help="只查指定规则（可重复）")
+    ap.add_argument("--selftest", action="store_true",
+                    help="跑守卫自检（负例+正例），不扫仓库")
     ap.add_argument("-q", "--quiet", action="store_true", help="只报汇总")
     ap.add_argument("-v", "--verbose", action="store_true", help="明细不截断")
     ap.add_argument("--max", type=int, default=12, help="每条规则明细上限（default 12）")
     args = ap.parse_args()
+
+    if args.selftest:
+        return _selftest()
 
     todo = args.rule or sorted(RULES)
     red = 0

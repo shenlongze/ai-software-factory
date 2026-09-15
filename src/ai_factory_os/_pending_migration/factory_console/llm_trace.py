@@ -79,6 +79,21 @@ def record_llm_call(prompt: str, response: str | None, *,
         pass
 
 
+def is_measured(rec: dict) -> bool:
+    """这条留痕是否【真采集到用量】(R2 ✓ 2026-09-15)。
+
+    ★ 两类写入方不能混 ✗（同文件多写入方 ✓）:
+      · llm_gateway.py:413（kind=llm_complete ✓ 唯一汇聚点）→ 真 tokens + cost ✓
+      · console_sessions.py:111（kind=llm_raw ✗）→ 不传 tokens → 默认 0 ✗
+    默认 0 会被读成「这次调用 0 tokens」= 【假账 ✗】（其实是【没采集】✓）
+    ⇒ 判据: 有 tokens 字段 且（tokens>0 或 成本已记）→ 才算【已计量】✓
+    """
+    if "prompt_tokens" not in rec:
+        return False          # R1 之前的老记录（无 tokens 字段 ✓）
+    return bool(rec.get("prompt_tokens") or rec.get("completion_tokens")
+                or rec.get("cost_usd") is not None)
+
+
 def stats() -> dict[str, Any]:
     """trace 概况（供 CLI 展示 ✓）。"""
     p = trace_path()

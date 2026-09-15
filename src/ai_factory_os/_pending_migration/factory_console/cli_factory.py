@@ -1120,6 +1120,8 @@ class FactoryCLI:
             return self.tower_cmd(args)
         if args.command == "llm-trace":
             return self.llm_trace_cmd(args)
+        if args.command == "llm-cost":
+            return self.llm_cost_cmd(args)
         if args.command == "arch":
             return self.arch_cmd(args)
         if args.command == "progress":
@@ -2620,12 +2622,22 @@ class FactoryCLI:
             return 0
         n = max(1, int(getattr(args, "limit", 8) or 8))
         full = bool(getattr(args, "full", False))
+        from .llm_trace import is_measured          # 格式权威在 store ✓ 读侧不自己判 ✗
         print(f"=== LLM 调用留痕 · 最近 {min(n, total)}/{total} 条 ===")
         for r in rows[-n:]:
             dur = r.get("duration_s")
             head = (f"  [{r.get('ts', '?')}] {r.get('kind', '?')} "
-                    f"· {r.get('duration_s') if dur is None else f'{dur}s'}"
-                    f" · in {r.get('prompt_chars', 0)} / out {r.get('response_chars', 0)}")
+                    f"· {r.get('duration_s') if dur is None else f'{dur}s'}")
+            # ★ R2（2026-09-15 ✓ Founder: "需要有成本统计、llm 使用监控"）—— 让成本【看得见】✓
+            #   此前打的是 chars ✗ 且成本根本没显示 → 数据在留痕里【看不见 = 等于没有 ✗】
+            #   读侧兼容 ✓: 未计量的记录 → 回落 chars ✓（★ 不把"没采集"显示成"0 tokens" ✗）
+            if is_measured(r):
+                _pt, _ct = r.get("prompt_tokens", 0), r.get("completion_tokens", 0)
+                head += f" · in {_pt} / out {_ct} tok"
+            else:
+                head += f" · in {r.get('prompt_chars', 0)} / out {r.get('response_chars', 0)} ch"
+            if r.get("cost_usd") is not None:
+                head += f" · ${r['cost_usd']:.6f}"
             # ★ 显示"这次用了哪个模型/供应商"（2026-09-14 ✓）
             #   → 用户可【一眼验证"底层配的有没有真生效"】✓（此前做不到 ✗）
             if r.get("model"):
@@ -2638,6 +2650,86 @@ class FactoryCLI:
             print(f"      resp  : {rs[:lim]}")
             if r.get("error"):
                 print(f"      ✗ error: {str(r['error'])[:160]}")
+        return 0
+
+    def llm_cost_cmd(self, args: argparse.Namespace) -> int:
+        """factory llm-cost — LLM 成本/用量汇总（R2 ✓ 2026-09-15）。
+
+        为什么（Founder: "需要有成本统计，llm 使用监控，log 等等" ✓）:
+          R1 已把真 tokens + cost_usd 写进留痕 ✓ —— 但【没有任何命令让它显示出来 ✗】
+          ⇒ 数据在、看不见 = 等于没有 ✓（本轮补的是【可视入口】✗ 不是新采集 ✗）
+        计价: 【只汇总留痕里已记的 cost_usd ✗ 不在此处重算 ✗】→ 费率仍单源 ✓ 不复制 ✗
+        """
+        import json as _json
+        root = Path(getattr(args, "data_dir", None) or self.data_dir)
+        p = root / "traces" / "llm.jsonl"
+        if not p.is_file():
+            print("=== LLM 成本 ===")
+            print(f"  暂无记录（{p} 不存在）")
+            print("  产生: 任何走 LLM 的操作都会自动留痕 ✓（FACTORY_LLM_TRACE=0 可关）")
+            return 0
+        rows: list[dict] = []
+        try:
+            for line in p.read_text(encoding="utf-8").splitlines():
+                if line.strip():
+                    rows.append(_json.loads(line))
+        except (OSError, ValueError) as exc:
+            print(f"  ✗ 读取失败: {exc}")
+            return 1
+
+        from .llm_trace import is_measured          # 格式权威在 store ✓ 读侧不自己判 ✗
+        by = str(getattr(args, "by", "model") or "model")
+        groups: dict[str, list[float]] = {}
+        unmetred = unpriced = 0
+        for r in rows:
+            # ★ 未计量 = 【压根没采集到用量 ✗】≠「0 tokens」✗
+            #   同一文件有两类写入方（gateway 有 tokens ✓ / console_sessions 不传 ✗）
+            #   → 判据放 store（is_measured ✓）: 不计入 ✗ 不当作 0 ✗ 否则汇总虚低 = 假账 ✓
+            if not is_measured(r):
+                unmetred += 1
+                continue
+            if r.get("cost_usd") is None:
+                unpriced += 1   # 有 tokens 但缺单价 → 未计价 ✓（不填 0 假账 ✓）
+            if by == "provider":
+                key = f"{r.get('provider') or '?'}/{r.get('model') or '?'}"
+            elif by == "day":
+                key = str(r.get("ts") or "?")[:10]
+            else:
+                key = str(r.get("model") or "?")
+            g = groups.setdefault(key, [0.0, 0.0, 0.0, 0.0])
+            g[0] += 1
+            g[1] += int(r.get("prompt_tokens") or 0)
+            g[2] += int(r.get("completion_tokens") or 0)
+            g[3] += float(r.get("cost_usd") or 0.0)
+
+        def _w(s: str) -> int:                  # 显示宽度（中文=2 ✓）
+            import unicodedata as _u
+            return sum(2 if _u.east_asian_width(c) in ("W", "F") else 1 for c in str(s))
+
+        label = {"model": "模型", "provider": "供应商/模型", "day": "日期"}.get(by, by)
+        ordered = sorted(groups.items(), key=lambda kv: (-kv[1][3], kv[0]))
+        widths = [min(30, max([_w(label)] + [_w(k) for k, _ in ordered])), 6, 10, 10, 12]
+
+        def _row(cells: list[str], right: set[int]) -> str:
+            out = "  "
+            for i, c in enumerate(cells):
+                pad = " " * max(0, widths[i] - _w(c))
+                out += ((pad + str(c)) if i in right else (str(c) + pad)) + "  "
+            return out.rstrip()
+
+        print(f"=== LLM 成本 · 按{label}（{len(rows)} 条留痕 ✓）===")
+        print(_row([label, "调用", "输入tok", "输出tok", "成本USD"], {1, 2, 3, 4}))
+        for key, g in ordered:
+            print(_row([key[:30], f"{int(g[0])}", f"{int(g[1])}", f"{int(g[2])}",
+                        f"{g[3]:.6f}"], {1, 2, 3, 4}))
+        t = [sum(x[i] for x in groups.values()) for i in range(4)]
+        print(_row(["合计", f"{int(t[0])}", f"{int(t[1])}", f"{int(t[2])}",
+                    f"{t[3]:.6f}"], {1, 2, 3, 4}))
+        if unmetred:
+            print(f"  · 未计量 {unmetred} 条（★ 没采集到用量 ≠ 0 tokens ✗ 不计入 ✗ 不当作 0 ✗）")
+        if unpriced:
+            print(f"  · 未计价 {unpriced} 条（有 tokens 但缺单价 → 成本记 None ✓ 不填 0 假账 ✓）")
+        print(f"  · 数据源: {p}（只汇总已记成本 ✓ 费率不在此重算 ✓）")
         return 0
 
     def arch_cmd(self, args: argparse.Namespace) -> int:
@@ -9333,6 +9425,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_lt.add_argument("--full", action="store_true", help="显示完整 prompt/response")
     p_lt.add_argument("--stats", action="store_true", help="只看统计")
     p_lt.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+    p_lc = sub.add_parser("llm-cost", help="LLM 成本/用量汇总（按模型/供应商/日 ✓）")
+    p_lc.add_argument("--by", choices=["model", "provider", "day"], default="model",
+                      help="汇总维度 (默认 model)")
+    p_lc.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
 
     p_rt = sub.add_parser("runtime", help="Runtime 管理 (list/add) — 执行环境登记")
     p_rt.add_argument("runtime_action", nargs="?", choices=["list", "add"],

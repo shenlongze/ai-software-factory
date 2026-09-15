@@ -17,26 +17,42 @@
 
 **`apps/` 独立于 `src/`**（cli / web / desktop / mobile 作为消费者，不进包内）。
 
-## 二、契约（12 域，以实现为准）
+## 二、域清单（单一事实源，以实现为准）
+
+三份清单，各自为唯一权威；`services/` 与 `api/domains/` 的目录必须与本节一致，
+漂移由守卫 `scripts/check_classification.py` 报红（R20/R21）。
+
+**契约域（`contracts/`，12）**
 
 `identity` · `organization` · `work` · `resource` · `execution` · `governance` ·
 `learning` · `conversation` · `scheduling` · `events` · `errors` · `llm`
+
+**服务域（`services/`，9）**
+
+`conversation` · `execution` · `governance` · `learning` · `metrics` ·
+`organization` · `resource` · `validation` · `work`
+
+**API 分组（`api/domains/`，14）**
+
+`conversation` · `understanding` · `architecture` · `decomposition` · `orchestration` ·
+`execution` · `validation` · `delivery` · `operations` · `metrics` · `audit` ·
+`governance` · `organization` · `platform`
 
 > 与 v0.2 的差异：`project` 并入 `work`（同一概念不留两个名字）；
 > 新增 `resource` / `learning` / `conversation` / `scheduling`；
 > 不再使用"8 根 + 5 内核"的分法。
 >
 > **2026-09-15 实测订正（刀0）**：`llm` 已存在且已在使用（`contracts/llm/{provider,routing}.py`，
-> 智能路由 L1/L5 兜底即依赖它），但未登记 ⇒ 11 → **12**。
-> 本清单 = **域清单的单一事实源**；`services/` 目录与 `api/domains/` 必须由它派生，
-> 三方不一致由守卫报红（R20/R21）。
+> 智能路由 L1/L5 兜底即依赖它），但未登记 ⇒ 契约域 11 → **12**；
+> 服务域补 `metrics` / `validation`（实测已存在）⇒ 7 → **9**。
 
 ## 三、依赖铁律（22 条）
 
 > **强制载体现状（2026-09-15 实测）**：R1–R17 原由 `tests/architecture/{test_layer_dependencies,test_legacy_fence}.py`
-> 强制，但 **`tests/` 目录已不存在**（刀29 清理）⇒ **当前无强制载体，铁律实为"目标态"**。
-> 现役验证据组 = `ruff` + `scripts/check_imports.py`（只做全量导入）+ 目标实跑。
-> R18–R22 的守卫将建在 `scripts/`（与现役载体一致）；建成后本节才恢复"机器强制"。
+> 强制，但 **`tests/` 目录已不存在**（刀29 清理）⇒ **R1–R17 当前为"目标态"，无机器强制**。
+> **R18–R22 已建成机器强制**：`scripts/check_classification.py`（退出码 1 = 有红，可直接进 CI）。
+> 验证据组 = `ruff` + `scripts/check_imports.py` + `scripts/check_classification.py` + 目标实跑。
+> R1–R17 的强制载体待重建（下一刀）。
 
 **层级边界（R1–R12、R17）** —— 原载体 `tests/architecture/test_layer_dependencies.py`（已不存在）
 

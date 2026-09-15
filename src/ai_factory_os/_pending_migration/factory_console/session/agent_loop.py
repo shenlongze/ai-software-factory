@@ -2453,14 +2453,9 @@ def _finish_session_hooks(
     try:
         from .memory_core import extract_and_update
 
+        # 原本读 console_sessions 的会话用于记忆提取 —— 该套已删 ⇒ _sess 恒为 None
+        # （extract_and_update 对 None 的语义不变, 与原 try/except 的降级路径一致 ✓）
         _sess = None
-        try:
-            from ..console_sessions import SessionStore
-
-            _store = SessionStore(Path(data_dir) / "console_sessions.json")
-            _sess = _store.get_session(session_id) if _store is not None else None
-        except Exception:  # noqa: BLE001 — 会话读取失败 → 空
-            pass
         extract_and_update(data_dir, _sess, question, answer)
     except Exception:  # noqa: BLE001 — 提取失败不阻断
         pass

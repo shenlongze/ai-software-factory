@@ -1789,7 +1789,7 @@ def _print_provider(sub: str, r: dict) -> None:
             )
             for reason in rec["reasons"]:
                 print(f"  - {reason}")
-        print(f"  事件      provider.viewed"
+        print("  事件      provider.viewed"
               + (" + provider.selected (source=recommendation)" if rec else ""))
 
 

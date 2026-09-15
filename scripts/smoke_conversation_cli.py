@@ -60,8 +60,8 @@ def main() -> int:
     lines = probe.stdout.strip().splitlines()
     top_n = lines[0] if lines else "0"
     subs = lines[1].split(",") if len(lines) > 1 else []
-    chk("① 命令面: 顶层含 conversation 且 5 个子命令齐全",
-        subs == ["facts", "list", "new", "say", "show"], f"顶层={top_n} 子命令={subs}")
+    chk("① 命令面: 顶层含 conversation 且 5 个基础子命令齐全",
+        {"facts", "list", "new", "say", "show"} <= set(subs), f"顶层={top_n} 子命令={subs}")
 
     # ② new
     rc, out = run(tmp, "conversation", "new", "--title", "冒烟会话")

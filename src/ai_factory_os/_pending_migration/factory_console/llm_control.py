@@ -410,6 +410,95 @@ class LLMControlPlane:
         order = self.fallback_order()
         return order[0] if order else None
 
+    # ---------------------------------------------------------------- R4: 契约化兜底
+    def select_decision(self, request: Any = None) -> Any:
+        """核心兜底：按【契约】产出 RouteDecision（R4 ✓ 2026-09-14）。
+
+        为什么（Founder: "我们有 llm 智能路由的设计…这部分我们如何接入" ✓）:
+          · 契约 contracts/llm/routing.py 【已存在 ✓ 但无人消费 ✗】
+          · 本方法是【核心侧的最小兜底 ✓】= 契约里的 L5-fallback ✓
+          · ★ 红线①：核心【只依赖契约 ✗ 不 import 路由实现 ✓】
+          · ★ 红线③（最易漏）：L1 显式指定【核心也必须认 ✓】——
+            provider 不存在/禁用 → 【响亮报错 ✗ 不静默降级 ✓】
+          · ★ 默认行为 = 现状 ✓（首个 enabled + key 可解析 ✓）不加新策略 ✓
+        路由插件接入后：插件命中 → 用插件的决策 ✓；未命中/故障 → 回落本方法 ✓
+        """
+        from ai_factory_os.contracts.llm.routing import (
+            RouteDecision, RouteLayer, RouteRequest,
+        )
+
+        req = request if isinstance(request, RouteRequest) else RouteRequest()
+        # ★ L1 显式指定（核心也必须认 ✓ 红线③）
+        if getattr(req, "explicit_provider", "") or getattr(req, "explicit_model", ""):
+            _ep = str(getattr(req, "explicit_provider", "") or "")
+            _em = str(getattr(req, "explicit_model", "") or "")
+            pc = self.get_provider(_ep) if _ep else None
+            if pc is None:
+                # 响亮报错 ✗ 不静默降级 ✓（显式指定是用户的意图，错了要说）
+                raise ValueError(
+                    f"显式指定的 provider 不存在: {_ep!r}"
+                    f"（可用: {', '.join(p.id for p in self.list_providers()) or '无'}）"
+                )
+            if not getattr(pc, "enabled", False):
+                raise ValueError(f"显式指定的 provider 已禁用: {_ep!r}（factory llm enable 启用 ✓）")
+            _mid = _em or (pc.models[0] if getattr(pc, "models", None) else "")
+            _spec = self._spec_for(pc, _mid)
+            return RouteDecision(
+                provider_id=str(pc.id), model_id=str(_mid),
+                layer=RouteLayer.USER_EXPLICIT,
+                reason=f"用户显式指定 provider={pc.id}" + (f" model={_mid}" if _mid else ""),
+                cost_estimate_usd=self._estimate_cost(_spec, req),
+            )
+        # L5 兜底 = 现状行为 ✓（首个 enabled + key 可解析 ✓）
+        pid = self.selected_provider_id()
+        if pid is None:
+            return None
+        pc = self.get_provider(pid)
+        if pc is None:
+            return None
+        _mid2 = pc.models[0] if getattr(pc, "models", None) else ""
+        _spec2 = self._spec_for(pc, _mid2)
+        return RouteDecision(
+            provider_id=str(pc.id), model_id=str(_mid2),
+            layer=RouteLayer.FALLBACK,
+            reason="first enabled provider with resolvable key (核心兜底, 无路由插件 ✓)",
+            cost_estimate_usd=self._estimate_cost(_spec2, req),
+        )
+
+    def _estimate_cost(self, spec: Any, req: Any) -> float | None:
+        """估 prompt 侧成本 —— ★ 诚实原则: 缺 spec / 未给 token 数 → None。
+
+        为什么不用 0.0（本次真跑发现 ✗）: 0.0 会被读成「免费」，而 None 才是「未知」。
+        """
+        if spec is None:
+            return None
+        ctx = getattr(req, "context_tokens", None)
+        if ctx is None:
+            return None
+        return spec.estimate_cost_usd(int(ctx), 0)
+
+    def _spec_for(self, pc: Any, model_id: str) -> Any:
+        """把 ProviderConfig + model 映射为契约 ModelSpec（含费率 → 可算成本 ✓）。
+
+        ★ 未知模型 / 未知窗口 → 单价与窗口一律 None ✗ 不透传 0（本次真跑发现 ✗）:
+           契约 docstring 承诺「缺单价 → None（不臆造）」，而 _model_prices 对未知模型
+           返回 (0.0, 0.0) —— 直接透传会被契约当成「真单价 0」→ 报「成本 $0」✓✗
+        """
+        try:
+            from ai_factory_os.contracts.llm.provider import ModelSpec
+            from factory_console.session.llm_gateway import _model_prices, model_context_window
+            _p, _c = _model_prices(model_id)
+            _known = bool(_p) or bool(_c)
+            return ModelSpec(
+                id=model_id, provider_id=str(getattr(pc, "id", "")),
+                display=model_id, context_window=(model_context_window(model_id) or None),
+                capabilities=(),
+                input_rate_per_1k=(_p / 1000.0) if _known else None,
+                output_rate_per_1k=(_c / 1000.0) if _known else None,
+            )
+        except Exception:  # noqa: BLE001 — 规格缺失不影响决策 ✓
+            return None
+
     def select(
         self,
         task_type: str | None = None,

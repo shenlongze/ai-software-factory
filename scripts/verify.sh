@@ -63,7 +63,6 @@ echo "═══ ② 目标实跑（服务层端到端）═══"
 #  服务实现 services/ 保留, 但它们的端到端要靠 CLI 面重新接起来后再验）
 run "事实层 端到端"      "$PY" scripts/smoke_conversation_understanding.py
 run "会话链 端到端"      "$PY" scripts/smoke_conversation_chain.py
-run "老区 API 可构建"   "$PY" scripts/smoke_legacy_api.py
 
 echo
 echo "═══ ③ 守卫扫仓库（= 当前债务清单，非工具故障）═══"

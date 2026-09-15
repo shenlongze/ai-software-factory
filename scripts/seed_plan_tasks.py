@@ -21,9 +21,7 @@ _FACTORY_CORE = ROOT / "src" / "legacy" / "factory-core"
 if str(_FACTORY_CORE) not in sys.path:
     sys.path.insert(0, str(_FACTORY_CORE))
 
-import importlib  # noqa: E402
-
-_adapter = importlib.import_module("factory_console.web.backend.fastapi_adapter")
+from factory_console.console_service import build_console_service as _build_console_service  # noqa: E402
 
 PROJECT = "ai-factory-self"
 
@@ -199,7 +197,7 @@ def find_by_name(items: list[dict], name: str) -> dict | None:
 
 
 def main() -> int:
-    svc = _adapter.build_console_service(ROOT / ".." / ".." / ".factory" if False else Path.home() / ".factory", event_logger=None)
+    svc = _build_console_service(ROOT / ".." / ".." / ".factory" if False else Path.home() / ".factory", event_logger=None)
     created = 0
     for epic_name, features in PLAN.items():
         backlog = svc.list_backlog(PROJECT) or {}

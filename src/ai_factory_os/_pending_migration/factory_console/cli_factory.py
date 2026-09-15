@@ -136,7 +136,11 @@ MIN_PYTHON = (3, 10)
 MIN_NODE = (18, 0)
 #: 后端 FastAPI adapter (包名含连字符 — 唯一导入方式是 importlib)
 # S10-074: 部署态包名 factory_console (pyproject package-dir 映射); 源码态兼容连字符
-BACKEND_MODULE = "factory_console.web.backend.fastapi_adapter"
+# ★ 2026-09-15 已删: 手写 HTTP 层（fastapi_adapter, 377 端点）按 Founder 裁决移除
+#   （"api 可以根据 cli 创建接口服务, 现在可以将 api 都删除, 但是 cli 是地基"）。
+#   后端启动因此不可用 —— 待 API 从 CLI 重新生成后填回。设为 None 而非旧模块名,
+#   让"启动后端"这条路显式失败而不是 ImportError 半路炸。
+BACKEND_MODULE = None
 #: 打开浏览器默认路径 (SPA 工作台)
 FRONTEND_PATH = "/#/workspace"
 #: pid/日志子目录 (相对数据目录)
@@ -1524,7 +1528,17 @@ class FactoryCLI:
         return 0
 
     def _start_backend(self, port: int) -> bool:
-        """后台启动 uvicorn (bootstrap 经 base64 传子进程); pid 写文件。"""
+        """后台启动 uvicorn (bootstrap 经 base64 传子进程); pid 写文件。
+
+        ★ 2026-09-15: 手写 HTTP 层（fastapi_adapter, 377 端点）已按 Founder 裁决删除
+          （"api 可以根据 cli 创建接口服务, 现在可以将 api 都删除, 但是 cli 是地基"）
+          ⇒ BACKEND_MODULE = None, 本方法**显式失败** —— 好过让子进程去 import 一个
+            不存在的模块然后在 base64 里炸。
+        """
+        if BACKEND_MODULE is None:
+            print("  ✗ HTTP 后端已删除（2026-09-15 裁决: API 从 CLI 重建）—— 暂不可启动。",
+                  file=sys.stderr)
+            return False
         if self._backend_running():
             print(f"  后端已在运行 (PID {_read_pid(self.backend_pid)})")
             return True
@@ -1603,6 +1617,11 @@ class FactoryCLI:
             ]
         else:
             # dist 托管: uvicorn + create_app(static_dir=dist) — bootstrap 同后端
+            # ★ 2026-09-15: HTTP 层已删（见 _start_backend 注释）⇒ 显式失败
+            if BACKEND_MODULE is None:
+                print("  ✗ HTTP 后端已删除（2026-09-15 裁决: API 从 CLI 重建）—— 暂不可启动。",
+                      file=sys.stderr)
+                return False
             # S10-074: 部署态用 sys.executable (无 .venv), 开发态 fallback 项目 .venv
             import sys as _sys
             python = Path(_sys.executable)
@@ -3398,7 +3417,7 @@ class FactoryCLI:
         # 完成后成功→done / 失败→blocked (exec_ref/exec_result 落库 + 审计)。
         print(f"执行任务 {tid}: {cmd}")
         try:
-            from .web.backend.fastapi_adapter import build_console_service
+            from .console_service import build_console_service
 
             service = build_console_service(self.data_dir)
         except Exception as exc:  # noqa: BLE001 — 装配失败 → 诚实错误
@@ -3570,7 +3589,7 @@ class FactoryCLI:
         if not aid or not prompt:
             print("用法: factory local-ai run --id <agent_id> --prompt <text> [--project <目录>]")
             return 2
-        from .web.backend.fastapi_adapter import _read_json_map
+        from .console_service import _read_json_map
 
         data = _read_json_map(agents_file)
         agents = data.get("agents") if isinstance(data, dict) else None
@@ -8995,7 +9014,7 @@ class FactoryCLI:
         self._ensure_data_dir()
         try:
             # S10-081 P1: 复用生产装配链 build_console_service → confirm_project 事务
-            from .web.backend.fastapi_adapter import build_console_service
+            from .console_service import build_console_service
 
             service = build_console_service(self.data_dir)
             result = service.confirm_project(str(pid), str(name))

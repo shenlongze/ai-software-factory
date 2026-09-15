@@ -65,7 +65,7 @@ def monitor(root: Any, project_id: str, params: dict[str, Any]) -> dict[str, Any
     from ..monitor import collect_system, check_alerts
 
     try:
-        from factory_console.web.backend.fastapi_adapter import _factory_version, DEFAULT_ROOT
+        from factory_console.console_service import _factory_version, DEFAULT_ROOT
     except Exception:  # noqa: BLE001
         _factory_version, DEFAULT_ROOT = "unknown", str(Path.home() / ".factory")
     sys_mon = collect_system(_root(root) or Path(DEFAULT_ROOT), _factory_version, model_line="")

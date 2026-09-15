@@ -36,7 +36,8 @@ for p in (ROOT / "src",
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 #: 老区端点基线（2026-09-15 实测）；只允许增/持平, 减即报红
-ENDPOINT_BASELINE = 389
+#: 389 → 375: 退掉 /api/sessions 那 14 个空壳端点（console_sessions 已删, 端点随之退）
+ENDPOINT_BASELINE = 375
 ADAPTER = (ROOT / "src" / "ai_factory_os" / "_pending_migration" / "factory_console"
            / "web" / "backend" / "fastapi_adapter.py")
 
@@ -50,7 +51,7 @@ def main() -> int:
     cases.append((f"③ 老区 /api 端点数 ≥ {ENDPOINT_BASELINE}",
                   n_ep >= ENDPOINT_BASELINE, f"实测 {n_ep}"))
     n_sess = len(re.findall(r'@app\.(?:get|post|put|delete|patch)\(\s*"/api/sessions', src))
-    cases.append(("④ /api/sessions 14 端点仍在", n_sess == 14, f"实测 {n_sess}"))
+    cases.append(("④ /api/sessions 端点已退（应为 0）", n_sess == 0, f"实测 {n_sess}"))
 
     # ①② 运行时: create_app() 能否构建
     try:

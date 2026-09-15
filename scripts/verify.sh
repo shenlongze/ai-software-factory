@@ -63,6 +63,7 @@ echo "═══ ② 目标实跑（服务层端到端）═══"
 #  服务实现 services/ 保留, 但它们的端到端要靠 CLI 面重新接起来后再验）
 run "会话入口 端到端"    "$PY" scripts/smoke_conversation_cli.py
 run "会话理解 端到端"    "$PY" scripts/smoke_conversation_understand.py
+run "PRD 派生 端到端"    "$PY" scripts/smoke_conversation_prd.py
 run "事实层 端到端"      "$PY" scripts/smoke_conversation_understanding.py
 run "会话链 端到端"      "$PY" scripts/smoke_conversation_chain.py
 

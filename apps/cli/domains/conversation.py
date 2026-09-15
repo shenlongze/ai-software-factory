@@ -30,6 +30,7 @@ from typing import Any, Callable
 from ai_factory_os.services.conversation import understanding as U
 from ai_factory_os.services.conversation import interpreter as _INTERP
 from ai_factory_os.services.conversation import proposal as _PROP
+from ai_factory_os.services.conversation import formalization as _FORM
 
 
 def register(sub: Any, json_opt: Callable[[Any], None]) -> None:
@@ -65,6 +66,14 @@ def register(sub: Any, json_opt: Callable[[Any], None]) -> None:
     p_und.add_argument("conversation_id", help="会话 ID（conv-*）")
     p_und.add_argument("--text", default="", help="要理解的话（缺省 = 最近一条用户消息）")
 
+    p_prd = csub.add_parser(
+        "prd", help="从理解派生 PRD（链路第 2 环; product-manager）")
+    json_opt(p_prd)
+    p_prd.add_argument("conversation_id", help="会话 ID（conv-*）")
+    p_prd.add_argument("--title", default="", help="PRD 标题（缺省 = 会话标题）")
+    p_prd.add_argument("--list", action="store_true", help="只列出 PRD，不派生")
+    p_prd.add_argument("--show", default="", help="显示指定 PRD 的 Markdown（prd-*）")
+
 
 # ─────────────────────────────────────────── handler
 
@@ -84,6 +93,8 @@ def run(ctx: Any, args: Any) -> dict[str, Any]:
         return _facts(root, args)
     if act == "understand":
         return _understand(root, args)
+    if act == "prd":
+        return _prd(root, args)
     raise ValueError(f"未知子命令: {act!r}")
 
 
@@ -202,6 +213,46 @@ def _understand(root: Path, args: Any) -> dict[str, Any]:
     }
 
 
+def _prd(root: Path, args: Any) -> dict[str, Any]:
+    """从理解派生 PRD —— 链路第 2 环（product-manager）。
+
+    语义（formalization 的设计, 不在此重写）:
+      · PRD **从 Understanding 派生**（`create_prd` 内部读 snapshot）
+      · 带 `source_product_understanding_version` 锚点 —— 理解变了, PRD 可版本化重派生
+      · 修改走 `update_prd`（新版）, 不原地改; 已有同名 draft 会抛错（防误解）
+    """
+    cid = str(args.conversation_id)
+    if U.get_conversation(root, cid) is None:
+        return {"conversation_id": cid, "ok": False, "error": f"会话不存在: {cid}"}
+
+    if getattr(args, "show", ""):
+        prd = _FORM.get_prd(root, cid, str(args.show))
+        if prd is None:
+            return {"conversation_id": cid, "ok": False, "error": f"PRD 不存在: {args.show}"}
+        return {"conversation_id": cid, "mode": "show", "prd_id": prd.get("id"),
+                "markdown": _FORM.render_prd_markdown(prd)}
+
+    if getattr(args, "list", False):
+        items = _FORM.list_prds(root, cid)
+        return {"conversation_id": cid, "mode": "list", "items": items, "count": len(items)}
+
+    facts_n = len(U.list_facts(root, cid))
+    try:
+        prd = _FORM.create_prd(root, cid, actor="conversation.cli",
+                               title=str(getattr(args, "title", "") or ""))
+    except Exception as exc:  # noqa: BLE001 — 已有同名 draft 等业务错, 转成可读提示
+        return {"conversation_id": cid, "ok": False,
+                "error": f"派生 PRD 失败: {exc}", "facts": facts_n}
+    return {
+        "conversation_id": cid, "mode": "created", "ok": True,
+        "prd_id": prd.get("id"), "version": prd.get("version"),
+        "title": prd.get("title"), "status": prd.get("status"),
+        "source_understanding_version": prd.get("source_product_understanding_version"),
+        "sections": sorted((prd.get("content") or {}).keys()),
+        "facts": facts_n,
+    }
+
+
 # ─────────────────────────────────────────── 输出
 
 def render(result: dict[str, Any], as_json: bool = False) -> None:
@@ -211,6 +262,17 @@ def render(result: dict[str, Any], as_json: bool = False) -> None:
         return
     if "created" in result:
         print(f"  ✓ 会话已建: {result['created']} — {result.get('title')}")
+    elif result.get("mode") == "created":
+        print(f"  ✓ PRD 已派生: {result['prd_id']} v{result.get('version')} — {result.get('title')}")
+        print(f"    状态 {result.get('status')} · 锚定 understanding v{result.get('source_understanding_version')}"
+              f" · 源事实 {result.get('facts')} 条")
+        print(f"    章节: {', '.join(result.get('sections') or [])}")
+    elif result.get("mode") == "show":
+        print(result.get("markdown") or "")
+    elif result.get("mode") == "list":
+        for it in result.get("items") or []:
+            print(f"    {it.get('id')}  v{it.get('version')}  [{it.get('status')}]  {it.get('title')}")
+        print(f"  共 {result.get('count')} 份")
     elif "understood" in result:
         print(f"  理解: {result['understood']!r}")
         print(f"  LLM: {result['llm']}")

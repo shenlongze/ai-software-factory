@@ -62,6 +62,7 @@ run "validation 端到端" "$PY" scripts/smoke_validation.py
 run "metrics 端到端"    "$PY" scripts/smoke_metrics.py
 run "schedules 端到端"  "$PY" scripts/smoke_schedules.py
 run "任务树 端到端"      "$PY" scripts/smoke_decomposition_tasks.py
+run "事实层 端到端"      "$PY" scripts/smoke_conversation_understanding.py
 run "老区 API 可构建"   "$PY" scripts/smoke_legacy_api.py
 
 echo

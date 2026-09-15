@@ -23,5 +23,12 @@ def create_app(*, title: str = "AI Factory OS API") -> FastAPI:
 
 
 def route_count() -> int:
-    """全部已挂路由数（守卫用: 端点数必须 == registry 里各 router 之和 ✓）。"""
-    return len(create_app().routes)
+    """全部已挂【端点】数（守卫用: 端点数必须 == registry 里各 router 之和 ✓）。
+
+    ★ 不能用 `len(create_app().routes)`: 本版 FastAPI 的 `include_router` 存的是
+      `_IncludedRouter` 延迟对象、子路由不展开 ⇒ 那算出来是"挂载次数 + 4 个自带路由"
+      而不是端点数（2026-09-15 实测: 返回 18, 真实端点数另有其值 —— 这种"看着对、
+      其实算错"的读数最危险, 会让"端点数不变"的验收失去意义）。
+      故直接从 registry 各 router 的 routes 求和 ✓。
+    """
+    return sum(len(router.routes) for _name, _label, router in registry.iter_routers())

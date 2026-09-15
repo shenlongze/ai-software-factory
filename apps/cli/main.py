@@ -912,6 +912,18 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     ctx = FactoryContext(args.root)
     ctx.ensure_dirs()  # ADR-0002 决策 5: 所有命令幂等自建目录与 DB, 不强制先 init
+
+    # ★ 跨域装配（bootstrap/wiring.py —— SSoT §一: bootstrap 是唯一可 import 全部的层）。
+    #   各域用 bind_lookups() 声明"我需要什么跨域能力", 但若没人注入, hook 永远为空:
+    #   实测后果 = 会话派生的 PRD 没进项目 ⇒ `factory progress` 按项目统计全是 0,
+    #   而 `factory trace` 按会话看样样都有（数据在、**关联缺**）。
+    #   失败安全: 装配失败不阻断命令（该项状态会记在 wiring.wired() 里, 可查）。
+    try:
+        from ai_factory_os.bootstrap.wiring import wire as _wire
+        _wire()
+    except Exception:  # noqa: BLE001 — 装配是增强, 不是命令前置条件
+        pass
+
     try:
         if args.command == "init":
             result = cmd_init(ctx)

@@ -108,6 +108,7 @@ from .commands import (
     cmd_workspace_show,
 )
 from .context import DEFAULT_ROOT, FactoryContext
+from .domains import audit as _dom_audit
 
 __all__ = ["main", "build_parser"]
 
@@ -176,16 +177,8 @@ def build_parser() -> Any:
     p_update.add_argument("--status", required=True, help="新状态 (BACKLOG/ARCHITECTURE/DEVELOPMENT/TESTING/DONE)")
 
     # factory event <sub>
-    p_event = sub.add_parser("event", help="事件查询")
-    json_opt(p_event)
-    esub = p_event.add_subparsers(dest="event_command", required=True)
-    p_logs = esub.add_parser("logs", help="事件日志查询, 倒序 (发 system.logs_viewed; --workspace 发 workspace.events.viewed)")
-    json_opt(p_logs)
-    p_logs.add_argument("--limit", type=int, default=20, help="条数上限 (默认 20)")
-    p_logs.add_argument("--project", default=None, help="按项目过滤")
-    p_logs.add_argument("--task", default=None, help="按任务过滤")
-    p_logs.add_argument("--workspace", action="store_true",
-                        help="跨项目事件时间线 (全量最近事件, 含 project 列, 发 workspace.events.viewed)")
+    # factory event —— 审计域（按域拆至 domains/audit.py; 命令面不变 ✓）
+    _dom_audit.register(sub, json_opt)
 
     # factory status
     json_opt(sub.add_parser("status", help="工厂总览: Projects/Tasks/Agents/Events 计数 (发 system.status_viewed)"))

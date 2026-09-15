@@ -287,14 +287,23 @@ def rule_r23() -> list[str]:
         if reg - real:
             out.append(f"factory 入口: 表里有但实际无 {sorted(reg - real)}")
 
-    # ② 新 CLI（同上判据）
-    a_path = OS / "api" / "cli" / "main.py"
-    if a_path.is_file():
-        t = a_path.read_text(encoding="utf-8", errors="replace")
+    # ② 新 CLI（同上判据; ★ 扫描范围 = main.py + domains/*.py ——
+    #    按域拆分后命令定义会逐步搬进 domains/, 守卫必须跟着走, 否则会误报"表里有但实际无"）
+    a_dir = OS / "api" / "cli"
+    dom_dir = a_dir / "domains"
+    sources = [a_dir / "main.py"]
+    if dom_dir.is_dir():
+        sources += sorted(p for p in dom_dir.glob("*.py") if p.name != "__init__.py")
+    real = set()
+    for sp in sources:
+        if not sp.is_file():
+            continue
+        t = sp.read_text(encoding="utf-8", errors="replace")
         m = re.search(r"(\w+)\s*=\s*p\.add_subparsers\(", t)
         main_v = m.group(1) if m else "sub"
-        real = set(re.findall(
+        real |= set(re.findall(
             rf'(?<![\w.]){re.escape(main_v)}\.add_parser\(\s*["\']([a-z][a-z0-9-]*)["\']', t))
+    if sources and any(sp.is_file() for sp in sources):
         reg = {c for v in API_CLI.values() for c in v}
         if real - reg:
             out.append(f"新 CLI: 未登记顶层命令 {sorted(real - reg)}")

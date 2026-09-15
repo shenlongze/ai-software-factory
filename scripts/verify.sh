@@ -50,6 +50,8 @@ debt() {  # debt <标签> <命令...>  —— 存量债务，默认不阻塞
 
 echo "═══ ① 工具健康（必须全绿）═══"
 run "ruff scripts/" ruff check scripts
+# shell 语法门 —— ruff 只吃 .py; scripts/*.sh 此前无任何门(2026-09-15 补)
+run "shell 语法"    bash -c 'for f in scripts/*.sh; do bash -n "$f" || exit 1; done'
 run "导入全量"      "$PY" scripts/check_imports.py -q
 run "架构守卫 自检"  "$PY" scripts/check_architecture.py --selftest
 run "分类守卫 自检"  "$PY" scripts/check_classification.py --selftest

@@ -109,6 +109,7 @@ from .commands import (
 )
 from .context import DEFAULT_ROOT, FactoryContext
 from .domains import audit as _dom_audit
+from .domains import metrics as _dom_metrics
 
 __all__ = ["main", "build_parser"]
 
@@ -336,30 +337,8 @@ def build_parser() -> Any:
     json_opt(p_recover)
     p_recover.add_argument("task_id", help="任务 ID (如 T-001)")
 
-    # factory dashboard
-    p_dashboard = sub.add_parser(
-        "dashboard", help="只读控制台总览: Rich 视图 (发 dashboard.viewed; --workspace 发 workspace.dashboard.viewed)"
-    )
-    json_opt(p_dashboard)
-    p_dashboard.add_argument(
-        "--view", default=None,
-        help="单视图: overview/tasks/agents/workflows/executions/recovery/catalog/metrics/"
-             "workspace/projects/agents_utilization/runtime_usage/workspace_events/git "
-             "(默认 all 同屏; --workspace 默认 workspace 视图组)",
-    )
-    p_dashboard.add_argument("--limit", type=int, default=10, help="最近事件条数上限 (默认 10)")
-    p_dashboard.add_argument("--project", default=None, help="按项目过滤 (任务/事件维度)")
-    p_dashboard.add_argument("--workspace", action="store_true",
-                             help="Workspace Summary: 跨项目运营视图组 (Projects/Agent Utilization/Runtime/Metrics/Events)")
-
-    # factory metrics (Phase 5B, ADR-0015; Phase 6B --workspace, ADR-0017)
-    p_metrics = sub.add_parser(
-        "metrics", help="工厂生产指标: 六域指标 + 失败原因 (只读, 发 metrics.viewed; --workspace 发 workspace.metrics.viewed)"
-    )
-    json_opt(p_metrics)
-    p_metrics.add_argument("--project", default=None, help="按项目过滤 (任务/事件维度)")
-    p_metrics.add_argument("--workspace", action="store_true",
-                           help="Workspace 项目对比表 (复用 MetricsCollector 每项目聚合)")
+    # factory dashboard + factory metrics —— 监控域（按域拆至 domains/metrics.py; 命令面不变 ✓）
+    _dom_metrics.register(sub, json_opt)
 
     # factory project <sub> (Phase 5A: Example Layer, 只读)
     p_project = sub.add_parser("project", help="项目配置 (只读: examples/*/project.yaml)")

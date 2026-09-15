@@ -28,6 +28,8 @@ from pathlib import Path
 from typing import Any, Callable
 
 from ai_factory_os.services.conversation import understanding as U
+from ai_factory_os.services.conversation import interpreter as _INTERP
+from ai_factory_os.services.conversation import proposal as _PROP
 
 
 def register(sub: Any, json_opt: Callable[[Any], None]) -> None:
@@ -57,6 +59,12 @@ def register(sub: Any, json_opt: Callable[[Any], None]) -> None:
     p_facts.add_argument("conversation_id", help="会话 ID（conv-*）")
     p_facts.add_argument("--all", action="store_true", help="含非活动态（SUPERSEDED/REJECTED）")
 
+    p_und = csub.add_parser(
+        "understand", help="把用户的话理解成事实（LLM → proposal → facts; 链路第 2 环）")
+    json_opt(p_und)
+    p_und.add_argument("conversation_id", help="会话 ID（conv-*）")
+    p_und.add_argument("--text", default="", help="要理解的话（缺省 = 最近一条用户消息）")
+
 
 # ─────────────────────────────────────────── handler
 
@@ -74,6 +82,8 @@ def run(ctx: Any, args: Any) -> dict[str, Any]:
         return _say(root, args)
     if act == "facts":
         return _facts(root, args)
+    if act == "understand":
+        return _understand(root, args)
     raise ValueError(f"未知子命令: {act!r}")
 
 
@@ -131,6 +141,67 @@ def _facts(root: Path, args: Any) -> dict[str, Any]:
             "understanding_version": U.understanding_version(root, cid)}
 
 
+def _llm_fn() -> Any:
+    """LLM 原始调用通道（`LLMFn = (prompt) -> str | None`）。
+
+    来源说明（2026-09-15）:
+        新地基 `infrastructure/llm/` 目前只有**契约 + 注册表**（ProviderRequest /
+        ProviderRegistry / ProviderInterface）, 还没有"调一次拿文本"的口;
+        而老区 `session/llm_raw.py` 正是为 interpreter / task_decomposition 摘出来的
+        那个口（走 ReasoningProvider 装配链 + 留痕 + 失败返回 None）。
+        ⇒ 暂借它; 等 infrastructure/llm 补齐调用口后替换（换这里一处即可）。
+
+    不可用 → None ⇒ interpreter 走**诚实降级**（CLARIFY, 不猜产品事实）, 不是静默失败。
+    """
+    try:
+        from factory_console.session.llm_raw import llm_raw
+        return llm_raw
+    except Exception:  # noqa: BLE001 — 通道不可用 = 降级, 不该炸
+        return None
+
+
+def _last_human_message(root: Path, cid: str) -> tuple[str, str]:
+    """最近一条 human 消息 → (文本, message_id)。message_id 用于来源可追溯。"""
+    for m in reversed(U.messages(root, cid)):
+        if m.get("role") == "human":
+            return str(m.get("content") or ""), str(m.get("id") or "")
+    return "", ""
+
+
+def _understand(root: Path, args: Any) -> dict[str, Any]:
+    """把用户的话理解成事实 —— 链路第 2 环。
+
+    管道（Golden Path §7/§8）: LLM 只产 proposal · Domain 决定 Truth
+        text → interpreter(LLM) → validate_proposal → apply_operations → facts
+    唯一写路径 ✓（LLM 不直接写 Truth）
+    """
+    cid = str(args.conversation_id)
+    if U.get_conversation(root, cid) is None:
+        return {"conversation_id": cid, "ok": False, "error": f"会话不存在: {cid}"}
+    text = str(getattr(args, "text", "") or "")
+    mid = ""
+    if not text:
+        text, mid = _last_human_message(root, cid)
+    if not text:
+        return {"conversation_id": cid, "ok": False,
+                "error": "没有可理解的用户消息（先 conversation say 一句，或传 --text）"}
+
+    llm = _llm_fn()
+    snap = U.understanding_snapshot(root, cid)
+    prop = _INTERP.llm_semantic_interpreter(str(root), cid, text, snap, llm_fn=llm)
+    ops = list(prop.get("operations") or [])
+    applied = _PROP.apply_operations(root, cid, ops, source_message_id=mid,
+                                     fallback_actor="conversation.cli") if ops else []
+    return {
+        "conversation_id": cid, "ok": True, "understood": text,
+        "llm": "available" if llm is not None else "unavailable（诚实降级）",
+        "operations": ops, "applied": applied,
+        "reply": prop.get("reply") or "", "question": prop.get("question") or "",
+        "understanding_version": U.understanding_version(root, cid),
+        "facts_count": len(U.list_facts(root, cid)),
+    }
+
+
 # ─────────────────────────────────────────── 输出
 
 def render(result: dict[str, Any], as_json: bool = False) -> None:
@@ -140,6 +211,23 @@ def render(result: dict[str, Any], as_json: bool = False) -> None:
         return
     if "created" in result:
         print(f"  ✓ 会话已建: {result['created']} — {result.get('title')}")
+    elif "understood" in result:
+        print(f"  理解: {result['understood']!r}")
+        print(f"  LLM: {result['llm']}")
+        ops = result.get("operations") or []
+        if not ops:
+            print("  · 无操作（未抽到产品事实 —— 可能话里没有产品语义）")
+        for a in result.get("applied") or []:
+            f = a.get("fact") or {}
+            if f:
+                print(f"    ✓ [{a.get('op')}] [{f.get('type')}/{f.get('status')}] {f.get('content')}")
+            else:
+                print(f"    ✓ [{a.get('op')}] {a.get('content') or ''}")
+        if result.get("reply"):
+            print(f"  回复: {result['reply']}")
+        if result.get("question"):
+            print(f"  追问: {result['question']}")
+        print(f"  事实 {result.get('facts_count')} 条 · 理解版本 v{result.get('understanding_version')}")
     elif "understanding_version" in result and "items" in result:
         # facts（★ 必须先判: 它的返回值也含 count/items, 否则会被下面的 list 分支先吃掉）
         for f in result["items"]:

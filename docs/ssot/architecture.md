@@ -52,8 +52,11 @@
 > **已重建**：`scripts/check_architecture.py`（AST 解析 import，含相对导入与 lazy import；
 > 解析器自检 `--selftest` 8/8；实测 **6/15 条通过**）。
 > **R18–R22 已建成**：`scripts/check_classification.py`（自检 `--selftest` 8/8）。
-> 验证据组 = `ruff` + `scripts/check_imports.py` + `scripts/check_architecture.py`
-> + `scripts/check_classification.py` + 目标实跑。
+> 验证据组 = **`bash scripts/verify.sh`（唯一入口）** = `ruff` + `scripts/check_imports.py`
+> + `scripts/check_architecture.py` + `scripts/check_classification.py` + 目标实跑。
+> 两段式: ①**工具健康**（ruff / 导入 / 两个守卫自检）计入退出码；②守卫扫出的**存量红**作为
+> 债务清单报告, 默认不阻塞（`--strict` 可让债务也阻塞）。
+> 注: `pytest` 在本仓不构成验证（`tests/` 已删 且 R16 禁止新增顶层目录）。
 > R14/R15（旧区"只减不增"）需基线文件 `scripts/legacy_baseline.json`（**未建**，脚本如实报"无基线"）。
 
 **层级边界（R1–R12、R17）** —— 载体 `scripts/check_architecture.py`

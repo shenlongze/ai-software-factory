@@ -32,11 +32,14 @@
 `conversation` · `execution` · `governance` · `learning` · `metrics` ·
 `organization` · `resource` · `validation` · `work`
 
-**API 分组（`api/domains/`，14）**
+**API 分组（`api/domains/`，15）**
 
 `conversation` · `understanding` · `architecture` · `decomposition` · `orchestration` ·
-`execution` · `validation` · `delivery` · `operations` · `metrics` · `audit` ·
+`execution` · `validation` · `delivery` · `learning` · `operations` · `metrics` · `audit` ·
 `governance` · `organization` · `platform`
+
+> `learning` 为 2026-09-15 补入：契约域与服务域都有它、产品核心也认「学习自治」，
+> 唯独 API 面漏了 ⇒ 三层（契约 / 服务 / API）对齐后由 14 增至 15。
 
 > 与 v0.2 的差异：`project` 并入 `work`（同一概念不留两个名字）；
 > 新增 `resource` / `learning` / `conversation` / `scheduling`；

@@ -19,6 +19,11 @@ DOMAINS: tuple[tuple[str, str, str], ...] = (
     ("execution", "执行", "ai_factory_os.api.domains.execution.router"),
     ("validation", "验收", "ai_factory_os.api.domains.validation.router"),
     ("delivery", "交付", "ai_factory_os.api.domains.delivery.router"),
+    # learning —— 主链第 8 环「经验回流」+ 产品核心「学习自治」。
+    # 补记（2026-09-15）: 契约域(12)与服务域(9)都有 learning, 唯独 API 面漏了;
+    # 老 CLI 有一整类命令无归处（learn/learning/promotion/experience/optimization/
+    # optimize/select/strategy）—— 补上这一域, 三层才对齐。
+    ("learning", "学习", "ai_factory_os.api.domains.learning.router"),
     ("operations", "运维", "ai_factory_os.api.domains.operations.router"),
     ("metrics", "监控", "ai_factory_os.api.domains.metrics.router"),
     ("audit", "审计", "ai_factory_os.api.domains.audit.router"),

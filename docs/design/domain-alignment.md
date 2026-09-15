@@ -27,7 +27,7 @@
 |---|---|---|---|---|
 | 契约域 `contracts/` | ssot/architecture.md §二 | 11 | **12** | 多 `llm`（3 文件, 已在使用, 未登记） |
 | 服务域 `services/` | ssot/architecture.md §四 | 7 | **9** | 多 `metrics` · `validation` |
-| API 分组 `api/domains/` | api-structure.md §1 | 14 | **14** | 数一致, 但 **0 接线**（14×3 py, router 各 13 行） |
+| API 分组 `api/domains/` | ssot/architecture.md §二 | 14 | **15** | 2026-09-15 补 `learning`（三层对齐）|
 | 产品环 | 无文档 | — | — | 未落 SSoT |
 | 老区端点 | api-structure.md §6 | 391 端点 | **392 端点 / 71 组** | 端点 +1, 组数未登记 |
 
@@ -36,9 +36,9 @@ contracts 12   conversation errors events execution governance identity
                learning llm organization resource scheduling work
 services   9   conversation execution governance learning metrics
                organization resource validation work
-api/domains 14 conversation understanding architecture decomposition orchestration
-               execution validation delivery operations metrics audit governance
-               organization platform
+api/domains 15 conversation understanding architecture decomposition orchestration
+                execution validation delivery learning operations metrics audit governance
+                organization platform
 ```
 
 ## 2. 服务域 ↔ CLI / API 接线真相（实测 import 点）
@@ -77,7 +77,7 @@ api/domains 14 conversation understanding architecture decomposition orchestrati
 | 12 | 治理 | `governance` | governance | approvals 5 · approval-requests 4 · approval-gates 1 |
 | — | 基座: 组织/人力 | `organization` | organization | workforces 7 · workforce 4 · workforce-os 1 · organizations 2 · agents 8 · skills 4 · agent-profiles 4 · agent-runs 4 · capabilities 2 · mcp 4 · plugins 8 |
 | — | 基座: 平台 | ✗ 无 | platform | config 5 · dashboard 1 · system 2 · providers 1 · tools 2 · local-ai 3 |
-| — | 基座: 学习 | `learning` | ✗ 无（14 域里没有） | intelligence 7 · learning 5 · experiences 4 · experience 1 · promotions 7 · recommendations 2 · selection 1 · review-feedback 2 · rag 2 · experiments 11 · experiment-samples 2 · optimization 23 · optimizations 5 · external-ai 13 |
+| — | 基座: 学习 | `learning` | **`learning` ✓ 已补（2026-09-15）** | intelligence 7 · learning 5 · experiences 4 · experience 1 · promotions 7 · recommendations 2 · selection 1 · review-feedback 2 · rag 2 · experiments 11 · experiment-samples 2 · optimization 23 · optimizations 5 · external-ai 13 |
 | — | 无归属 → 待裁决 | `resource` | — | entities 4 · handoffs 2 · runs 2 · events 1 · exec 1 · contracts 1 · memory 7 · memory-conflicts 2 · context 7 |
 
 统计（每端点唯一归属）:

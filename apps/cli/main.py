@@ -110,6 +110,7 @@ from .commands import (
 from .context import DEFAULT_ROOT, FactoryContext
 from .domains import audit as _dom_audit
 from .domains import metrics as _dom_metrics
+from .domains import operations as _dom_operations
 
 __all__ = ["main", "build_parser"]
 
@@ -318,24 +319,8 @@ def build_parser() -> Any:
     json_opt(p_ex_status)
     p_ex_status.add_argument("execution_id", help="执行请求 ID (如 EX-001)")
 
-    # factory checkpoint <sub>
-    p_checkpoint = sub.add_parser(
-        "checkpoint", help="Checkpoint 管理: 停靠点快照 (发 recovery.* 事件)"
-    )
-    json_opt(p_checkpoint)
-    csub = p_checkpoint.add_subparsers(dest="checkpoint_command", required=True)
-    p_cp_create = csub.add_parser("create", help="创建任务 checkpoint 快照 (发 recovery.started/completed)")
-    json_opt(p_cp_create)
-    p_cp_create.add_argument("task_id", help="任务 ID (如 T-001)")
-    p_cp_list = csub.add_parser("list", help="Checkpoint 列表 (发 recovery.started)")
-    json_opt(p_cp_list)
-
-    # factory recover
-    p_recover = sub.add_parser(
-        "recover", help="恢复中断任务: 事件回放重建 + 状态纠正 (发 recovery.started/completed/failed)"
-    )
-    json_opt(p_recover)
-    p_recover.add_argument("task_id", help="任务 ID (如 T-001)")
+    # factory checkpoint + factory recover —— 运维域（按域拆至 domains/operations.py; 命令面不变 ✓）
+    _dom_operations.register(sub, json_opt)
 
     # factory dashboard + factory metrics —— 监控域（按域拆至 domains/metrics.py; 命令面不变 ✓）
     _dom_metrics.register(sub, json_opt)

@@ -37,7 +37,8 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 #: 老区端点基线（2026-09-15 实测）；只允许增/持平, 减即报红
 #: 389 → 375: 退掉 /api/sessions 那 14 个空壳端点（console_sessions 已删, 端点随之退）
-ENDPOINT_BASELINE = 375
+#: 375 → 374: 删掉 FROZEN 的 POST /api/task-trees（LEGACY·S1 FROZEN, 前端不调）
+ENDPOINT_BASELINE = 374
 ADAPTER = (ROOT / "src" / "ai_factory_os" / "_pending_migration" / "factory_console"
            / "web" / "backend" / "fastapi_adapter.py")
 

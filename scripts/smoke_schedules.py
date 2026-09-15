@@ -63,7 +63,8 @@ def main() -> int:
     c = TestClient(create_app(), raise_server_exceptions=False)
     per = {n: len(r.routes) for n, _l, r in registry.iter_routers() if r.routes}
 
-    chk("① decomposition 域端点 = 5（schedules 归位）", per.get("decomposition") == 5, str(per))
+    chk("① decomposition 域端点 ≥ 5（schedules 5 个在场）",
+        per.get("decomposition", 0) >= 5, str(per))
     chk("① 前域未回退（metrics=4, validation=3）",
         per.get("metrics") == 4 and per.get("validation") == 3, str(per))
 

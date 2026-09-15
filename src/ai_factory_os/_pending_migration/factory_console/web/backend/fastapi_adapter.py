@@ -6774,22 +6774,6 @@ def build_app(
         st["tree"] = orch.plan_tree(conversation_id)
         return {"conversation_id": conversation_id, **st}
 
-    @app.post("/api/task-trees")
-    def api_decompose_task_tree(body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
-        """⚠️ LEGACY (K2, S1 FROZEN): 任务组织层 canonical = task_decomposition /
-        golden_path.generate_plan。本端点保留兼容旧调用方, 不接新流量。"""
-        from factory_console import task_tree as _tt
-
-        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
-        try:
-            return _tt.decompose(root, title=body.get("title", "任务"),
-                                 description=body.get("description", ""),
-                                 domain=body.get("domain", "default"),
-                                 source_conv_id=body.get("source_conversation_id", ""),
-                                 source_req_id=body.get("source_requirement_id", ""))
-        except Exception as exc:  # noqa: BLE001
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-
     @app.get("/api/task-trees/{task_tree_id}/progress")
     def api_task_tree_progress(task_tree_id: str) -> dict[str, Any]:
         """Task Tree 进度投影 (K2)。"""

@@ -18,6 +18,7 @@ from typing import Any
 from fastapi import APIRouter, Body, HTTPException
 
 from ai_factory_os.api.deps import data_root
+from ai_factory_os.services.decomposition import tasks
 from ai_factory_os.services.work import scheduler as sch
 
 router = APIRouter(prefix="/api/decomposition", tags=["任务拆解"])
@@ -67,3 +68,40 @@ def delete_schedule(schedule_id: str) -> dict[str, Any]:
     """删除 Schedule（幂等）。"""
     sch.delete_schedule(data_root(), schedule_id)
     return {"deleted": schedule_id, "id": schedule_id}
+
+
+# ---------------------------------------------------------------- 任务树（task_tree 迁入）
+
+
+@router.get("/task-trees/{task_tree_id}/progress")
+def task_tree_progress(task_tree_id: str) -> dict[str, Any]:
+    """任务树进度投影（可重建）。实体层未接线 → 带 unwired 标注；树不存在 → 404。"""
+    try:
+        return tasks.task_progress(data_root(), task_tree_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/task-trees/{task_tree_id}/status")
+def task_tree_status(task_tree_id: str) -> dict[str, Any]:
+    """任务树状态（每任务 status + 依赖 + 进度）；树不存在 → 404。"""
+    try:
+        return tasks.tree_status(data_root(), task_tree_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/tasks/{task_id}/status")
+def update_task_status(task_id: str, body: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+    """Task 状态更新。
+
+    ★ 写操作 fail-closed: 实体层未接线 → 503 拒绝（绝不静默通过）✓
+    """
+    try:
+        return tasks.update_task_status(
+            data_root(), task_id,
+            status=str(body.get("status", "")), actor=str(body.get("actor", "system")))
+    except RuntimeError as exc:      # 未接线 → 503（能力不可用，不是客户端错）
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ValueError as exc:        # 实体不存在 / 类型不对
+        raise HTTPException(status_code=404, detail=str(exc)) from exc

@@ -1108,8 +1108,6 @@ class FactoryCLI:
             return self.rtrace_cmd(args)
         if args.command == "learning":
             return self.learning_cmd(args)
-        if args.command == "quality":
-            return self.quality_cmd(args)
         if args.command == "ct":
             return self.ct_cmd(args)
         if args.command == "projectos":
@@ -5174,46 +5172,6 @@ class FactoryCLI:
         for r_ in sorted(runs, key=lambda x: x.get("created_at", ""), reverse=True):
             print(f"  {r_.get('run_id')} | {r_.get('workflow_id')} | {r_.get('state')} | {r_.get('created_at')}")
         return 0
-
-    def quality_cmd(self, args: argparse.Namespace) -> int:
-        """factory quality — Quality (K5): Conversation Quality & Golden Suite。
-
-        薄代理 → conversation_quality / golden_suite (CLI 与 API 共享同一 Service)。
-        """
-        root = Path(getattr(args, "data_dir", None) or self.data_dir)
-        action = getattr(args, "action", "suite") or "suite"
-        target = getattr(args, "target", None)
-
-        if action == "suite":
-            from factory_console.golden_suite import run_suite
-            # ★ 默认用【临时数据根】✓（与 run_suite 的设计一致: root or mkdtemp ✓）
-            #   为什么（2026-09-14 实测 ✓）: 此前传真实根 ✗ → 套件在累积数据上
-            #   越跑越慢（本会话真实根实体已 13,188 条）→ 45s+ 不完成，
-            #   看起来像卡死 ✗✓。套件是【确定性回归】✓ 不该依赖真实数据量 ✓。
-            #   需要真实根时显式 --data-dir 或 --real ✓。
-            use_real = bool(getattr(args, "real", False))
-            suite_root = root if use_real else None
-            r = run_suite(suite_root if suite_root is None else str(suite_root))
-            if not use_real:
-                print("  （在临时数据根上跑 ✓ 确定性回归；要对真实根跑加 --real）")
-            print(f"Golden Suite: {r['passed']}/{r['total']}")
-            for s in r["scenarios"]:
-                mark = "✅" if s["passed"] else "❌"
-                print(f"  {mark} {s['scenario']}: {s['evidence']}")
-            return 0
-
-        if action == "report":
-            if not target:
-                print("[E4320] 错误: conversation_id 必填", file=sys.stderr)
-                return 2
-            from factory_console.conversation_quality import quality_report
-            q = quality_report(str(root), target)
-            print(f"quality: {q['quality_score']}/100 ({q['messages']} msgs)")
-            for k, v in q["scores"].items():
-                print(f"  {k}: {v}")
-            return 0
-
-        return 1
 
     def ct_cmd(self, args: argparse.Namespace) -> int:
         """factory ct — CT (K4): Control Tower & Real-time。
@@ -9515,12 +9473,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_rt.add_argument("--status", default="", help="按状态过滤 (list)")
     p_rt.add_argument("--task-id", default="", help="按 task 过滤 (list)")
     p_rt.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
-    # K5: Conversation Quality CLI
-    p_q = sub.add_parser("quality", help="Quality (K5): report/suite — Conversation Quality & Golden Suite")
-    p_q.add_argument("action", nargs="?", default="suite",
-                     choices=["report", "suite"])
-    p_q.add_argument("target", nargs="?", help="conversation_id (report 用)")
-    p_q.add_argument("--data-dir", default=None, help="数据目录 (默认 ~/.factory)")
+    # K5 quality 命令已退休（2026-09-15 ✓）：它的两个 action（suite/report）分别落在
+    #   golden_suite 与 conversation_quality —— 两者都绑死在已判 RETIRE 的 conversation_os 上
+    #   （8 项质量维度读 conversation_os 的 messages.intent / state ✗ canonical 无此形状）
+    #   ⇒ 命令与其实现一并退休 ✓ 质量承诺改由 eval_suite / governance 在 canonical 域承接
 
     # K4: Operational State CLI
     p_ct4 = sub.add_parser("ct", help="CT (K4): overview/whoworking/drill/snapshot — Control Tower & Real-time")

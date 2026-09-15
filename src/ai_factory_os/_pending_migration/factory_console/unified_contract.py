@@ -106,6 +106,25 @@ def validate_entity_id(entity_id: str, entity_type: str | None = None) -> bool:
 
 # ------------------------------------------------------------------ Universal Entity
 
+def create_requirement(root: Path | str, *, title: str, description: str = "",
+                       source_conv_id: str = "") -> dict[str, Any]:
+    """建 req 实体（S43 需求实体 ✓ 归位到实体域）。
+
+    为什么在此（2026-09-15 ✓ conversation_os 退休）:
+      原实现是 conversation_os.extract_requirement —— 它多做一步
+      「把 req id 追加进会话的 state.requirements」✗，而该字段**没有任何读取者**
+      （实测: 全仓只有 conversation_os 自己写它 ✗）⇒ 无消费者语义 → 归位到实体域 ✓
+      不碰会话状态 ✓ 因此不再依赖已退休的 conversation_os ✓
+    """
+    req = create_entity("req", created_by="system", parent_id=source_conv_id, project_id="")
+    req["title"] = title
+    req["description"] = description
+    req["source_conversation_id"] = source_conv_id
+    req["status"] = "VALIDATED"
+    store_entity(root, req)
+    return req
+
+
 def create_entity(entity_type: str, *, created_by: str = "system", owner: str = "",
                   parent_id: str = "", project_id: str = "",
                   policy: str = "", permissions: list[str] | None = None,

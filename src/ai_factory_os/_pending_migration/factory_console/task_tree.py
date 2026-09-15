@@ -11,7 +11,7 @@
 - 依赖: depends_on (串行/并行)
 - Progress: completed_units/total_units/percentage (统一 Projection, 非 UI 状态)
 
-复用: S43 unified_contract + S30 workforce + S3 production + K1 conversation_os
+复用: S43 unified_contract + S30 workforce + S3 production（K1 conversation_os 已于 2026-09-15 退休删除 ✓）
 禁止: 第二套 Task 模型 / 第二套进度 / fake 分解
 """
 from __future__ import annotations
@@ -24,9 +24,8 @@ from pathlib import Path
 from typing import Any
 
 from .unified_contract import (
-    create_entity, store_entity, get_entity, bump_version,
+    create_entity, create_requirement, store_entity, get_entity, bump_version,
 )
-from .conversation_os import extract_requirement
 
 
 def _now_iso() -> str:
@@ -67,20 +66,20 @@ DECOMPOSE_TEMPLATES: dict[str, list[str]] = {
 def decompose(root: Path | str, *, title: str, description: str = "",
               domain: str = "default",
               source_conv_id: str = "", source_req_id: str = "") -> dict[str, Any]:
-    """确定性【回归夹具】分解: 需求 → task 树 (S43 task_ 实体)。
+    """确定性【模板】分解: 需求 → task 树 (S43 task_ 实体)。
 
     ★ 生产路径【不】经过这里 —— 一律走 LLM 分解器
       (task_decomposition.build_llm_decomposer: 真实需求分析 + 不限层数
        + 任务带 required_role/required_skill + 依赖 DAG)。
-    本函数用【固定模板】(DECOMPOSE_TEMPLATES) 产出稳定结果，专供
-    golden_suite 回归断言（要确定性 + 快，不能调 LLM）。
-    CLI 曾误用它做真实拆解（产出永远那六个通用任务 ✗）→ 已改正。
+    本函数用固定模板 (DECOMPOSE_TEMPLATES) 产出稳定结果。
+    原用途是 golden_suite 回归断言 —— 该套件已随 conversation_os 于 2026-09-15 退休 ✓；
+    现仅供 API 的模板路径 (POST /api/task-trees/decompose) 兜底 ✓（要确定性、不调 LLM）。
     """
-    # 1. Requirement 实体 (若未建)
+    # 1. Requirement 实体 (若未建) —— 走实体域 ✓（不再经已退休的 conversation_os ✓）
     req = None
     if source_conv_id:
-        req = extract_requirement(root, source_conv_id, title=title,
-                                  description=description)
+        req = create_requirement(root, title=title, description=description,
+                                 source_conv_id=source_conv_id)
     elif source_req_id:
         req = get_entity(root, source_req_id)
 

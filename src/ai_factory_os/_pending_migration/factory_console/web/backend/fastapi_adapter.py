@@ -6942,24 +6942,11 @@ def build_app(
         root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
         return _os.snapshot(root)
 
-    @app.get("/api/quality/{conversation_id}")
-    def api_quality_report(conversation_id: str) -> dict[str, Any]:
-        """Conversation Quality Report (K5, 8 项维度)。"""
-        from factory_console import conversation_quality as _cq
-
-        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
-        try:
-            return _cq.quality_report(root, conversation_id)
-        except Exception as exc:  # noqa: BLE001
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-    @app.post("/api/quality/suite")
-    def api_quality_suite() -> dict[str, Any]:
-        """Golden Conversation Suite (K5, G1-G20)。"""
-        from factory_console import golden_suite as _gs
-
-        root = str(factory_root if factory_root is not None else DEFAULT_ROOT)
-        return _gs.run_suite(str(root))
+    # ---- /api/quality/* 已退休（2026-09-15 ✓）----
+    #   原两个端点依赖 conversation_quality / golden_suite，二者均绑死在已判 RETIRE 的
+    #   conversation_os 上 ⇒ 端点与实现一并退休 ✓（质量承诺改由 canonical 域承接）
+    #   注意: WebUI 的 ApiClient 里还有 conversationQuality 调用 ✗ 会得到 404
+    #        （WebUI 本轮挂起 ✓ 其收敛在 API 收敛之后）
 
     @app.get("/api/control-tower")
     def api_control_tower() -> dict[str, Any]:

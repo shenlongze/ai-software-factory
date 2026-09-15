@@ -10,7 +10,7 @@ Project 持续运营: 普通用户通过 Conversation 创建/跟踪/推进真实
 - Approval gate: 高风险 task 执行前 request_approval → 用户批准 → 继续
 - project_status: 从真实 task/run/evidence 投影 (Project/Sprint/Task 各层)
 
-复用: S43 unified_contract + K1 conversation_os + K2 task_tree + S17 governance
+复用: S43 unified_contract + K2 task_tree + S17 governance（K1 conversation_os 已于 2026-09-15 退休删除 ✓）
 禁止: 第二套 SSOT / 第二套 Task/Project 模型 / Fake Evidence / LLM 决定 lifecycle
 """
 from __future__ import annotations
@@ -23,9 +23,8 @@ from pathlib import Path
 from typing import Any
 
 from .unified_contract import (
-    create_entity, store_entity, get_entity, entities, bump_version,
+    create_entity, create_requirement, store_entity, get_entity, entities, bump_version,
 )
-from .conversation_os import extract_requirement
 
 
 def _now_iso() -> str:
@@ -63,8 +62,9 @@ def create_project(root: Path | str, *, title: str, description: str = "",
     """从 Requirement 创建 Project (S43 project_ 前缀, 绑定 conv/req)。"""
     req_id = ""
     if source_conv_id:
-        req = extract_requirement(root, source_conv_id, title=title,
-                                  description=description)
+        # ★ 走实体域 ✓（原经 conversation_os.extract_requirement ✗ 已退休 → 归位 ✓）
+        req = create_requirement(root, title=title, description=description,
+                                 source_conv_id=source_conv_id)
         req_id = req["id"]
     elif source_req_id:
         req_id = source_req_id

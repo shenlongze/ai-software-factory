@@ -190,9 +190,25 @@ def rule_r6(mods, edges):
 
 
 def rule_r7(mods, edges):
-    bad = [p for p in (ROOT / "src").iterdir() if p.is_dir() and p.name in
-           ("apps", "web", "desktop", "mobile") and p.name != "ai_factory_os"]
-    return [f"src/{p.name}/ 出现在 src/ 内（apps 类必须独立于 src/）" for p in bad]
+    """apps 类（cli/web/desktop/mobile）必须独立于 src/（SSoT §一）。
+
+    ★ 2026-09-15 修（Founder: "你代码落地位置的问题不是错一次了"）:
+      原实现只查 **src/ 的直接子目录** —— 于是 `src/ai_factory_os/api/cli/` 这种
+      深层嵌套完全扫不到, CLI 就这样在 src 里住了很久, 直到 Founder 追问"位置对么"
+      才查出它违反 SSoT §一。**规矩在, 守卫查的是字面而不是实质。**
+      ⇒ 改为**递归**查任意深度的 cli/web/desktop/mobile 目录。
+    豁免: `_pending_migration/**` —— 老区整块待绞杀, 其存量由 R14/R15 管,
+      不在这里重复报（否则真·消费者和待迁老区混成一片, 报红失去指向性）。
+    """
+    bad = []
+    for p in (ROOT / "src").rglob("*"):
+        if not p.is_dir() or p.name not in ("cli", "web", "desktop", "mobile"):
+            continue
+        if "__pycache__" in p.parts or "_pending_migration" in p.parts:
+            continue
+        bad.append(p)
+    return [f"{p.relative_to(ROOT)}/ 在 src/ 内（apps 类必须独立于 src/ — SSoT §一）"
+            for p in sorted(bad)]
 
 
 def rule_r9(mods, edges):

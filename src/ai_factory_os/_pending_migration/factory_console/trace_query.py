@@ -34,13 +34,13 @@ def build_trace(root: str | Path, conversation_id: str) -> dict[str, Any]:
              "status": f.get("status")}
             for f in (snap.get("facts") or [])[:20]
         ],
-        "messages": len(conv.get("messages") or []),
+        # ★ 2026-09-15 修（端到端实测暴露）: get_conversation 返回的是【公开视图】
+        #   （_public_conv），它提供 `messages_count`，**没有** `messages` / `understanding` 键。
+        #   原实现读 conv["messages"] 再回退 conv["understanding"]["messages"] ——
+        #   两条都拿不到 ⇒ **trace 永远显示 0 messages**（数据明明在, 是读取键写错了）。
+        #   实测证据: 同一会话 `U.messages()` 读到 1 条, 而 `factory trace` 显示 0 条。
+        "messages": int(conv.get("messages_count") or len(conv.get("messages") or [])),
     }
-    if not out["conversation"]["messages"]:
-        # 消息存 conversation.messages (含角色); 兼容空时回退 understanding.messages
-        u = conv.get("understanding") or {}
-        out["conversation"]["messages"] = len(
-            (u.get("messages") if isinstance(u, dict) else None) or [])
 
     # 2. PRD
     st = gp.path_status(root_s, conversation_id)

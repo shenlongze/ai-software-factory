@@ -119,6 +119,9 @@ src/ai_factory_os/
 └── bootstrap/
 
 apps/              cli（web / desktop / mobile 待迁）
+                   └ 2026-09-15: 新 CLI 由 `src/ai_factory_os/api/cli/` 迁入 `apps/cli/`
+                     —— 此前消费者嵌在包内（违 SSoT §一 + R7 的实质）。`factory` 命令
+                     入口仍指向老 CLI（`_pending_migration/.../cli_factory`）, 切换待续。
 tests/             ✗ 已不存在（刀29 清理）—— 验证据组 = ruff + scripts/ + 目标实跑
 docs/              ssot（product/arch/reality）· adr · architecture · design · cleanup
 scripts/           check_imports.py · migration_check.py · legacy_inventory.py · legacy_reach.py

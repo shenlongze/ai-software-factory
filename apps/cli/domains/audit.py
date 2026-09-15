@@ -1,6 +1,6 @@
 """审计 域命令注册（api/cli/domains/audit）—— 样板（第一个拆出来的域）。
 
-本域命令（依据 `api/cli/registry.py`）:
+本域命令（依据 `apps/cli/registry.py`）:
     event  事件查询 → 子命令 logs
 
 为什么挑 audit 做样板: 它是**零冲突**域 —— 新 CLI 里只有 `event` 一个命令,

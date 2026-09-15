@@ -45,7 +45,7 @@ ALIAS_PREFIXES: dict[str, str] = {
     # ── 原 factory-core / factory-exec 剩余包（刀50 整块迁入 _pending_migration）──
     "assignment": "ai_factory_os.services.work.assignment",
     "changeflow": "ai_factory_os.services.work.change.changeflow",
-    "cli": "ai_factory_os.api.cli",
+    "cli": "apps.cli",
     "dashboard": "ai_factory_os.api.dashboard",
     "demo": "ai_factory_os.bootstrap.demo",
     "exec": "ai_factory_os.services.execution.kernel",

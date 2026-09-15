@@ -27,6 +27,9 @@ TREES = (
     (SRC / "legacy" / "factory-core", ""),
     (SRC / "legacy" / "factory-exec", ""),
     (SRC / "legacy" / "factory-console", "factory_console"),
+    # apps/ = 消费者层（cli 等）, 独立于 src/（SSoT §一）—— 2026-09-15 CLI 搬到
+    # apps/cli 后必须一并扫, 否则"全量导入验证"看不见它。
+    (ROOT / "apps", "apps"),
 )
 
 
@@ -58,6 +61,10 @@ def main() -> int:
                        SRC / "legacy" / "factory-console")):
         if str(p) not in sys.path:
             sys.path.insert(0, str(p))
+    # apps/ 在项目根（SSoT §一: 消费者独立于 src/）—— 放**最后**, 不遮蔽 src。
+    # 2026-09-15 CLI 搬到 apps/cli 后, 不加这条就 import 不到（9 个 apps.* 全红）。
+    if str(ROOT) not in sys.path:
+        sys.path.append(str(ROOT))
 
     # 装上旧名 → 新路径的别名桥，让验证环境与产品运行时一致
     try:

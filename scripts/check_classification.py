@@ -247,24 +247,25 @@ def rule_r22() -> list[str]:
 
 
 def rule_r23() -> list[str]:
-    """命令登记: CLI 的命令必须全部登记在 api/cli/registry.py（★ 单一事实源）。
+    """命令登记: CLI 的命令必须全部登记在 apps/cli/registry.py（★ 单一事实源）。
 
     为什么（Founder 2026-09-15 追问「cli 有分类么」）:
         现有 factory 入口 91 个命令**全部平铺在一个 10,155 行的文件里**, help 里
         那 4 个"域"只是 8600-8603 行的 dict（只为打印）—— 代码层零分类。
         新 CLI 的 handler 有命名前缀, 但物理上也是单文件、且前缀 ≠ 架构域。
-        ⇒ 命令 → 域 的归属先落成注册表（api/cli/registry.py）, 本规则守住它:
+        ⇒ 命令 → 域 的归属先落成注册表（apps/cli/registry.py）, 本规则守住它:
         命令面一旦离开表（新增命令没登记 / 表里写了不存在的命令）→ 红。
 
     判据: 静态解析两套 CLI 的命令面, 与注册表比对。
       · 现有 factory 入口: cli_factory.py 的 `add_parser("xxx")`
       · 新 CLI: main.py 里**只挂在主 subparser** 上的 `add_parser`（子命令不参与）
     """
+    sys.path.insert(0, str(ROOT))  # apps/ 在项目根（SSoT §一: 消费者独立于 src/）
     sys.path.insert(0, str(SRC))
     try:
-        from ai_factory_os.api.cli.registry import API_CLI, FACTORY_CLI
+        from apps.cli.registry import API_CLI, FACTORY_CLI
     except Exception as exc:  # noqa: BLE001 — 表本身坏了 = 最该报的一种红
-        return [f"api/cli/registry.py 导入失败: {type(exc).__name__}: {exc}"]
+        return [f"apps/cli/registry.py 导入失败: {type(exc).__name__}: {exc}"]
 
     out: list[str] = []
 
@@ -287,9 +288,11 @@ def rule_r23() -> list[str]:
         if reg - real:
             out.append(f"factory 入口: 表里有但实际无 {sorted(reg - real)}")
 
-    # ② 新 CLI（同上判据; ★ 扫描范围 = main.py + domains/*.py ——
-    #    按域拆分后命令定义会逐步搬进 domains/, 守卫必须跟着走, 否则会误报"表里有但实际无"）
-    a_dir = OS / "api" / "cli"
+    # ② 新 CLI（同上判据; ★ 扫描范围 = apps/cli/main.py + apps/cli/domains/*.py ——
+    #    按域拆分后命令定义会逐步搬进 domains/, 守卫必须跟着走, 否则会误报"表里有但实际无"
+    #    注: 2026-09-15 CLI 由 src/ai_factory_os/api/cli 搬到 apps/cli（SSoT §一: 消费者
+    #    独立于 src/）, 守卫路径同步 —— 位置变了守卫也得跟着, 否则它会"看不见"。）
+    a_dir = ROOT / "apps" / "cli"
     dom_dir = a_dir / "domains"
     sources = [a_dir / "main.py"]
     if dom_dir.is_dir():
@@ -319,7 +322,7 @@ RULES = {
     "R20": ("清单单一　SSoT 域清单 vs 实际目录", rule_r20),
     "R21": ("一域一落点　services 与 api/domains 同名同存", rule_r21),
     "R22": ("一层一目录　禁平铺", rule_r22),
-    "R23": ("命令登记　CLI 命令必须在 api/cli/registry.py 有域归属", rule_r23),
+    "R23": ("命令登记　CLI 命令必须在 apps/cli/registry.py 有域归属", rule_r23),
 }
 
 

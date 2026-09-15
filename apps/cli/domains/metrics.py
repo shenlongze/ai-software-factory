@@ -1,6 +1,6 @@
 """监控 域命令注册（api/cli/domains/metrics）。
 
-本域命令（依据 `api/cli/registry.py`）:
+本域命令（依据 `apps/cli/registry.py`）:
     dashboard  只读控制台总览（Rich 视图; --workspace 跨项目运营视图组）
     metrics    工厂生产指标（六域指标 + 失败原因; --workspace 项目对比表）
 

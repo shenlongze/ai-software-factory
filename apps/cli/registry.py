@@ -1,11 +1,11 @@
-"""api/cli/registry.py — CLI 命令 → 域 的注册表（★ 单一事实源）。
+"""apps/cli/registry.py — CLI 命令 → 域 的注册表（★ 单一事实源）。
 
 为什么要有它（2026-09-15）:
     两个 CLI 的命令**都处于"分类只有形没有实"的状态**:
       · `factory` 入口（`_pending_migration/factory_console/cli_factory.py`, 10,155 行）
         —— 91 个命令**全部平铺在一个文件里**; `factory help` 里那 4 个"域"只是
         8600-8603 行的一个 dict, **只为打印**, 代码层零分类。
-      · 新 CLI（`ai_factory_os/api/cli/`）—— 91 个 handler 有命名前缀（26 组）,
+      · 新 CLI（`apps/cli/`）—— 91 个 handler 有命名前缀（26 组）,
         但**物理上也是一个文件**, 且前缀 ≠ 架构的域。
     ⇒ 本表给"命令属于哪个域"一个**唯一权威**, 后续拆文件 / 合并两套 CLI 都以它为依据。
 
@@ -17,7 +17,7 @@
 
 状态: **草案, 待 Founder 核准**。核准后:
     ① 守卫加一条: 每个命令必须登记在本表（未登记 = 报红, 让"其他"垃圾桶生不出来）
-    ② 按域拆文件（`api/cli/commands/<域>.py`, 一次一域, 用 `--help` 对比验证命令面不变）
+    ② 按域拆文件（`apps/cli/domains/<域>.py`, 一次一域, 用 `--help` 对比验证命令面不变）
     ③ 老 CLI 的命令逐域并入, 之后老 CLI 主体退役
 """
 from __future__ import annotations

@@ -89,7 +89,13 @@ def _subdirs(d: Path) -> list[str]:
 
 
 def _domain_dirs(d: Path) -> list[str]:
-    """只取"域"目录（含 __init__.py 的包）。"""
+    """只取"域"目录（含 __init__.py 的包）。目录不存在 → 空列表（不崩）。
+
+    注（2026-09-15）: `api/domains` 随新 API 层一起被删（Founder 定: API 可从 CLI
+    重建）—— 守卫要能面对"某一层整体不存在", 否则架构一动它就 FileNotFoundError。
+    """
+    if not d.is_dir():
+        return []
     return [x.name for x in sorted(d.iterdir())
             if x.is_dir() and x.name not in SKIP_DIRS and (x / "__init__.py").is_file()]
 
@@ -209,6 +215,9 @@ def rule_r20() -> list[str]:
         if wl is None:
             out.append(f"{label}: SSoT 未定义该层清单")
             continue
+        if not d.is_dir():
+            # 整层不存在 → 跳过（2026-09-15: api/domains 已随 API 层删除）
+            continue
         have = set(_domain_dirs(d))
         missing = sorted(set(wl) - have)
         extra = sorted(have - set(wl))
@@ -231,9 +240,20 @@ def rule_r20() -> list[str]:
 
 
 def rule_r21() -> list[str]:
-    """一域一落点: services/<域>/ 与 api/domains/<域>/ 同名同存。"""
+    """一域一落点: services/<域>/ 与 api/domains/<域>/ 同名同存。
+
+    ★ 2026-09-15 暂停 —— API 层已删除（Founder 定: "api 可以根据 cli 创建接口服务,
+      现在可以将 api 都删除, 但是 cli 是地基"）⇒ 本规则**失去对象**。
+      保留代码而不删规则, 是为了将来 API 层从 CLI 重新生成时这条能立刻重新生效
+      （届时把 api/domains 接回来即可, 不必重写规则）。
+
+      返回空 = "不适用"（该层不存在）, 不是"通过" —— 报告里会带说明。
+    """
+    api_dir = OS / "api" / "domains"
+    if not api_dir.is_dir():
+        return []       # API 层不存在 → 本规则不适用（见上）
     svc = set(_domain_dirs(OS / "services"))
-    api = set(_domain_dirs(OS / "api" / "domains"))
+    api = set(_domain_dirs(api_dir))
     out: list[str] = []
     if svc - api:
         out.append(f"有服务域无 API 分组 {sorted(svc - api)}")

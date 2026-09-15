@@ -57,11 +57,10 @@ run "架构守卫 自检"  "$PY" scripts/check_architecture.py --selftest
 run "分类守卫 自检"  "$PY" scripts/check_classification.py --selftest
 
 echo
-echo "═══ ② 目标实跑（已迁端点的端到端）═══"
-run "validation 端到端" "$PY" scripts/smoke_validation.py
-run "metrics 端到端"    "$PY" scripts/smoke_metrics.py
-run "schedules 端到端"  "$PY" scripts/smoke_schedules.py
-run "任务树 端到端"      "$PY" scripts/smoke_decomposition_tasks.py
+echo "═══ ② 目标实跑（服务层端到端）═══"
+# 注: validation / metrics / schedules / 任务树 四个冒烟随新 API 一并删除
+# （2026-09-15 Founder 定: API 可从 CLI 重建 ⇒ 手写的 HTTP 层删净;
+#  服务实现 services/ 保留, 但它们的端到端要靠 CLI 面重新接起来后再验）
 run "事实层 端到端"      "$PY" scripts/smoke_conversation_understanding.py
 run "会话链 端到端"      "$PY" scripts/smoke_conversation_chain.py
 run "老区 API 可构建"   "$PY" scripts/smoke_legacy_api.py

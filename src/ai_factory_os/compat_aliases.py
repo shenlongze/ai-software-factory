@@ -46,7 +46,10 @@ ALIAS_PREFIXES: dict[str, str] = {
     "assignment": "ai_factory_os.services.work.assignment",
     "changeflow": "ai_factory_os.services.work.change.changeflow",
     "cli": "apps.cli",
-    "dashboard": "ai_factory_os.api.dashboard",
+    # dashboard = CLI 的可视化控制台（Rich 非 Web）—— 2026-09-15 由
+    # ai_factory_os.api.dashboard 挪到 apps.cli.dashboard: 它从来不是 API,
+    # 只是名字挂在 api/ 下（消费者层的东西不该住在包内）。
+    "dashboard": "apps.cli.dashboard",
     "demo": "ai_factory_os.bootstrap.demo",
     "exec": "ai_factory_os.services.execution.kernel",
     "metrics": "ai_factory_os.services.metrics",

@@ -15,6 +15,13 @@
 | `api/` | 对外接口层（路由 / DTO 装配） | `contracts/` + `services/` |
 | `bootstrap/` | 装配与启动（唯一可 import 全部） | 全部 |
 
+> ★ **2026-09-15 裁决（Founder）**：「**api 可以根据 cli 创建接口服务，现在可以将 api 都删除，
+> 但是 cli 是地基**」⇒ 手写的 HTTP 层（`src/ai_factory_os/api/`：app / domains×15 / registry /
+> deps / envelope / errors）**已整体删除**；`services/` 服务实现保留（它不属于 API 层）。
+> 将来 API 从 **CLI 的命令定义**生成 —— 故 `api/` 一行暂记**待重建**，不是现役。
+> 注：`api/dashboard/` 从来不是 API（它自己写着"CLI 可视化控制台, Rich 非 Web"），
+> 已归位到 `apps/cli/dashboard/`。
+
 **`apps/` 独立于 `src/`**（cli / web / desktop / mobile 作为消费者，不进包内）。
 
 ## 二、域清单（单一事实源，以实现为准）
@@ -32,11 +39,14 @@
 `conversation` · `execution` · `governance` · `learning` · `metrics` ·
 `organization` · `resource` · `validation` · `work`
 
-**API 分组（`api/domains/`，15）**
+**API 分组（`api/domains/`，15）** —— ★ 2026-09-15 随 API 层删除（待从 CLI 重建）
 
 `conversation` · `understanding` · `architecture` · `decomposition` · `orchestration` ·
 `execution` · `validation` · `delivery` · `learning` · `operations` · `metrics` · `audit` ·
 `governance` · `organization` · `platform`
+
+> 保留本清单不删的理由：将来 API **从 CLI 的命令域生成**时，这份域划分是重建的依据
+> （`apps/cli/registry.py` 的 15 域即按它登记）。
 
 > `learning` 为 2026-09-15 补入：契约域与服务域都有它、产品核心也认「学习自治」，
 > 唯独 API 面漏了 ⇒ 三层（契约 / 服务 / API）对齐后由 14 增至 15。
@@ -49,12 +59,14 @@
 > 智能路由 L1/L5 兜底即依赖它），但未登记 ⇒ 契约域 11 → **12**；
 > 服务域补 `metrics` / `validation`（实测已存在）⇒ 7 → **9**。
 
-## 三、依赖铁律（22 条）
+## 三、依赖铁律（23 条）
 
 > **强制载体现状（2026-09-15 实测）**：R1–R17 原载体 `tests/architecture/*.py` 已不存在（刀29 清理）。
 > **已重建**：`scripts/check_architecture.py`（AST 解析 import，含相对导入与 lazy import；
 > 解析器自检 `--selftest` 8/8；实测 **6/15 条通过**）。
-> **R18–R22 已建成**：`scripts/check_classification.py`（自检 `--selftest` 8/8）。
+> **R18–R23 已建成**：`scripts/check_classification.py`（自检 `--selftest` 8/8）。
+> （R23「命令登记」2026-09-15 补入 —— 守卫先有、本表后补，这类"机器强制跑在文档前面"
+> 的脱节本身就是 R20「清单单一」要防的东西，所以补登记。）
 > 验证据组 = **`bash scripts/verify.sh`（唯一入口）** = `ruff` + `scripts/check_imports.py`
 > + `scripts/check_architecture.py` + `scripts/check_classification.py` + 目标实跑。
 > 两段式: ①**工具健康**（ruff / 导入 / 两个守卫自检）计入退出码；②守卫扫出的**存量红**作为
@@ -89,15 +101,21 @@
 | R15 | 旧代码跨分区依赖边只减不增 |
 | R16 | 不许新增顶层代码目录 |
 
-**分类铁律（R18–R22）** —— Founder 2026-09-15: **"代码必须严格分类，严格管理，不能东一个西一个"**
+**分类铁律（R18–R23）** —— Founder 2026-09-15: **"代码必须严格分类，严格管理，不能东一个西一个"**
 
 | # | 规则 | 现状 |
 |---|------|------|
 | R18 | **一能力一域**：一个能力的实现全仓只有一处 = `services/<域>/`（同一能力词根不得出现在 >1 个服务域） | 红（待收口） |
 | R19 | **一物一名**：同一实体不得两个名字（禁单复数并存 · 禁 `-os` `-truth` `-sessions` 等变体） | 红（11 词根 / 192 端点） |
-| R20 | **清单单一**：域清单只在 §二 一份；`services/` 与 `api/domains/` 由它派生 | 红（三份不一致） |
+| R20 | **清单单一**：域清单只在 §二 一份；`services/` 与 `api/domains/` 由它派生 | 绿（含半成品目录检查） |
 | R21 | **一域一落点**：`services/<域>/` 与 `api/domains/<域>/` 同名同存 | 红 |
 | R22 | **一层一目录（禁平铺）**：同类东西必须进对应目录，不许把一个层级的文件平铺在同一处（同目录 >30 个 .py 且前缀 ≥20 种即为平铺） | 红（老区顶层 117 个 .py 平铺，57 个前缀各 1 个文件） |
+| R23 | **命令登记**：CLI 的每个命令必须在 `apps/cli/registry.py` 有域归属（未登记 / 表里有但实际无 → 红） | 绿 |
+
+> R23 补登记（2026-09-15）：原先"SSoT 说 22 条、守卫实际 23 条"—— 文档落后于机器强制。
+> 起因是 Founder 追问「cli 有分类么」：现有 `factory` 入口 91 个命令全平铺在一个 10,155 行
+> 文件里，help 里那 4 个"域"只是几行打印用 dict —— 遂把「命令 → 域」落成注册表并加此守卫。
+
 
 > Founder 原话的落点：**R22 = "不放在一起，乱"**；R18–R21 = "严格分类"。
 > 违反清单（实测，含端点级证据）见本刀 commit 与 `docs/design/domain-alignment.md`。
@@ -117,7 +135,10 @@ src/ai_factory_os/
 ├── infrastructure/ llm storage messaging process sandbox
 │                  events git retrieval   ← 2026-09-15 补登记（实际在用且被 bootstrap/
 │                                            plugins/services 引用, 原清单漏列）
-├── api/
+├── api/             ✗ 2026-09-15 已删（Founder: API 可从 CLI 重建, CLI 是地基）
+│                     —— 原 app/domains×15/registry/deps/envelope/errors 整体删除;
+│                        services/ 保留; api-cli 早前已归位到 apps/cli;
+│                        api/dashboard（CLI 的控制台, 名字骗人）→ apps/cli/dashboard
 └── bootstrap/
 
 apps/              cli（web / desktop / mobile 待迁）

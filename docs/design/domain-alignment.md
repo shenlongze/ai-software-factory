@@ -1,15 +1,15 @@
 # 域清单对齐（刀0）
 
 > 日期: 2026-09-15 | 性质: **设计（提案 · 待 Founder 裁决）** | 依据: 全仓实测, commit `c0e04f23`
-> Founder 口径（2026-09-15 原话）:
-> **"我要做的代码必须严格分类，严格管理，不能东一个西一个"**
+> Founder 口径（2026-09-15 原话）: **"我要做的代码必须严格分类，严格管理，不能东一个西一个"**
+> Founder 澄清（同日）: **"东一个西一个 = 不放在一起，乱"**
 > 改动范围: **零代码** —— 只对齐口径, 不动任何 .py
 > 存活期: 裁决后并入 `docs/ssot/`, 本文删除（避免出现第二份事实源）
 
 ## 0. 一句话
 
 域清单现在有**三份且互不相同**, 所以 `api-structure.md` §8 的刀2（"迁 7 个已同源的域"）没有参照系。
-要做的**不是**把 9 / 12 / 14 凑成一个数 —— 它们本来就是四层不同的东西:
+而且代码**位置散落**（Founder 指的"东一个西一个"）: 老区顶层 117 个 .py 平铺 + 一个概念的文件散在最多 11 个分区。
 
 | 层 | 是什么 | 举例 | 该由谁定 |
 |---|---|---|---|
@@ -18,7 +18,7 @@
 | API 分组 | `api/domains/<域>/` HTTP 适配, URL 前缀 | `/api/work` | `api-structure.md` |
 | 产品环 | 生命周期视图（idea→…→自动修复） | "任务拆解" | SSoT · product |
 
-⇒ 缺的东西只有一样: **每层各留一份权威清单 + 三层必须一一对应 + 中间一张映射表**。
+⇒ 要做的是: **一份权威清单 + 三层一一对应 + 每类东西只有一个家 + 守卫自动查**。
 
 ## 1. 四层实测对照（2026-09-15）
 
@@ -29,8 +29,6 @@
 | API 分组 `api/domains/` | api-structure.md §1 | 14 | **14** | 数一致, 但 **0 接线**（14×3 py, router 各 13 行） |
 | 产品环 | 无文档 | — | — | 未落 SSoT |
 | 老区端点 | api-structure.md §6 | 391 端点 | **392 端点 / 71 组** | 端点 +1, 组数未登记 |
-
-实测明细（可复现, 见 §8）:
 
 ```
 contracts 12   conversation errors events execution governance identity
@@ -53,14 +51,11 @@ api/domains 14 conversation understanding architecture decomposition orchestrati
 | `execution` | 1 | 0 | 仅 CLI |
 | `metrics` | 2 | 0 | 仅 CLI |
 | `validation` | 1 | 0 | 仅 CLI |
-| `governance` | 0 | 0 | ✗ 两侧都没接（实现在 services/governance, 消费方仍走老区 governance_service） |
-| `resource` | 0 | 0 | 仅 `__init__.py`（契约声明, 无实现无消费 —— 见 D2） |
+| `governance` | 0 | 0 | ✗ 两侧都没接 |
+| `resource` | 0 | 0 | 仅 `__init__.py`（契约声明, 无实现无消费） |
 
-> 注: **API（新）`api/domains/` 对全部 9 域 = 0** —— 空壳未接线（刀1 只建骨架, 与文档一致）。
-
-★ **顺带解开刀2 的"7 个"**: 实测 CLI 侧有接线的服务域 =
+★ **顺带解开刀2 的"7 个"**: CLI 侧有接线的服务域 =
 `conversation` · `execution` · `learning` · `metrics` · `organization` · `validation` · `work` = **正好 7 个** ✓
-例外 2 个: `governance`（两侧都没接）· `resource`（仅声明）。
 ⇒ 刀2 可精确写成: **给这 7 个域补 API 侧接线**。
 
 ## 3. 映射表（产品环 ↔ 服务域 ↔ API 分组 ↔ 老区组）
@@ -87,34 +82,57 @@ api/domains 14 conversation understanding architecture decomposition orchestrati
 统计（每端点唯一归属）:
 
 ```
-已归环(12 环 + 组织 + 平台)  279      拆解 11 · 编排 85 · 组织 48 · 会话 31 · 执行 28
-                                     交付 21 · 运维 20 · 平台 14 · 治理 9 · 监控 6
+已归环(12 环 + 组织 + 平台)  279      编排 85 · 组织 48 · 会话 31 · 执行 28 · 交付 21
+                                     运维 20 · 平台 14 · 拆解 11 · 治理 9 · 监控 6
                                      验收 4 · 审计 2  （需求分析/架构分析 = 0）
 learning 族（无环归属）        85
 待裁决                         25
 非 API（/health /ready /version）  3
                                ───
-合计                          392  ✓（端点数复核一致）
+合计                          392  ✓（复核一致）
 ```
 
-## 4. ★ 严格分类口径（Founder 2026-09-15）→ 四条铁律 + 机器强制
+## 4. ★ 严格分类 → 五条铁律 + 机器强制（Founder 2026-09-15）
 
-Founder 要求"严格分类、严格管理、不能东一个西一个"。落实为四条**可机器强制**的规则
-（与 SSoT §三 的 R1–R17 同性质, 建议编号 **R18–R21**）:
+| # | 铁律 | 强制方式（守卫） | 现状 |
+|---|---|---|---|
+| **R18** | **一能力一域**: 一个能力的实现全仓只有一处 = `services/<域>/` | 同一能力词根出现在 >1 个 services 子域 → 报红 | 红 |
+| **R19** | **一物一名**: 同一实体不得两个名字（禁单复数 · 禁 `-os` `-truth` `-sessions` 变体） | 扫 API 路径第一段按词根聚类, 一族 >1 组 → 报红 | 红 |
+| **R20** | **清单单一**: 域清单只在 `ssot/architecture.md` 一份, 代码与 api 文档由它派生 | SSoT 清单 vs `contracts/` `services/` `api/domains/` 实际目录比对 | 红 |
+| **R21** | **一域一落点**: `services/<域>/` 与 `api/domains/<域>/` 同名同存 | 目录名集合比对 | 红 |
+| **R22** | **一层一目录（禁平铺）**: 同类东西必须进对应目录, 不许把一个层级的文件平铺在同一处 | 同一目录下 .py > 30 个且前缀分散（≥20 个不同前缀）→ 报红 | 红（见 5.1） |
 
-| # | 铁律 | 强制方式（守卫脚本） |
-|---|---|---|
-| **R18** | **一能力一域**: 一个能力的实现全仓只能有一处 = `services/<域>/` | 同一能力词根出现在 >1 个 services 子域 → 报红 |
-| **R19** | **一物一名**: 同一实体不得有两个名字（禁单复数并存 / 禁 `-os` `-truth` `-sessions` 后缀变体） | 扫 API 路径第一段, 按词根聚类, 一族 >1 组 → 报红（现为红, 见 §5） |
-| **R20** | **清单单一**: 域清单只在 `ssot/architecture.md` 有一份; 代码目录与 `api-structure.md` 必须由它派生 | 解析 SSoT 域清单 vs 实测 `contracts/` `services/` `api/domains/` 目录, 三方不一致 → 报红（现为红） |
-| **R21** | **一域一落点**: 每个域在 `services/<域>/` 与 `api/domains/<域>/` 同名同存 | 目录名集合比对（现为红: 见 §1 三份清单） |
-
-> 这四条只有 R19 是"新增守卫"; R18/R20/R21 可复用已有的目录扫描能力。
+> R18–R21 是"分类"规则, **R22 是 Founder 说的"不放在一起"的直接落点**。
 > **不建守卫 = 口号; 建了守卫 = "严格管理"有据可查。**
 
 ## 5. ★ 违反清单（实测 —— 这就是"东一个西一个"）
 
-### 5.1 同一实体的名字变体（违反 R19）—— 11 个词根 / 192 端点 / 占全仓 48%
+### 5.1 位置散落（Founder 原意所指）
+
+**(a) 老区顶层平铺: `_pending_migration/factory_console/` 顶层 117 个 .py + 6 个子目录**
+
+19 个 `os_core_*.py` · 7 个 `production_*.py` · 5 个 `llm_*.py` · 4 个 `project_*.py` ·
+3 个 `cli_*.py` · 各 2 个的 `agent_*` `artifact_*` `context_*` `learning_*` `ops_*`
+`optimization_*` `product_*` `release_*` `task_*` `workflow_*` `workforce_*` · …
+**其余 57 个前缀各只有 1 个文件 —— 即彼此无关的东西平铺在一起**:
+`backup.py` `retro.py` `ids.py` `models.py` `service.py` `self_healing.py` `run_liveness.py`
+`recovery.py` `recovery_service.py` `delivery.py` `events.py` `monitor.py` `scheduling.py` …
+
+**(b) 一个概念的文件散在多个分区**（越散越难找）:
+
+| 概念 | 文件数 | 散在几个分区 | 分布 |
+|---|---|---|---|
+| `project` | 13 | **11** | 老区顶层 8 处（`project_os/project_agile/project_show/project_ssot/ops_projection/os_core_project`…）· 老区 `api/` · 老区 `session/` ×2 · `services/organization/` ×2 · `services/execution/kernel/` · `services/conversation/` |
+| `llm` | 9 | **6** | 老区顶层 5 处（`llm_control/llm_router/llm_trace/llm_semantic_interpreter/llm_experiment_service`）· 老区 `session/` ×4 |
+| `task` | 7 | **6** | 老区顶层 3 处 · 老区 `session/` ×2 · 老区 `external_executor/` |
+| `artifact` | 6 | **6** | 老区顶层 ×2 · 老区 `api/` · 老区 `session/` · `services/organization/` · `services/conversation/` |
+| `agent` | 9 | **5** | 老区顶层 ×2 · 老区 `session/` ×4 · 老区 `api/` · `services/execution/` ×2 |
+| `memory` | 6 | 3 | 老区 `session/` ×4 · 老区 `memory/` · 老区 `api/` |
+| `evidence` | 3 | 3 | 老区顶层 ×2 · 老区 `session/` |
+| `decision` | 4 | 4 | 老区 `memory/` · 老区 `api/` · 老区 `session/` · `services/learning/` |
+| `approval` | 4 | 4 | 老区 `api/` · 老区 `session/` · `services/organization/` · `services/execution/kernel/` |
+
+### 5.2 一物多名（违反 R19）—— 11 个词根 / 192 端点 / 占全仓 48%
 
 | 词根 | 端点 | 并存的名字 |
 |---|---|---|
@@ -130,9 +148,9 @@ Founder 要求"严格分类、严格管理、不能东一个西一个"。落实�
 | task | 6 | `tasks` 3 · `task-trees` 3 |
 | experience | 5 | `experiences` 4 · `experience` 1 |
 
-### 5.2 语义重复但名字完全不同（R19 也漏掉的）—— 6 处 / 91 端点
+### 5.3 语义重复但名字完全不同（R19 也漏掉）—— 6 处 / 91 端点
 
-| 能力 | 并存实现 | 端点 | 文档是否已定性 |
+| 能力 | 并存实现 | 端点 | 已定性? |
 |---|---|---|---|
 | 会话 | `conversations` 17 · `sessions` 14 | 31 | ✔ api-structure §7 已定"择一留 canonical" |
 | 编排 | `workflows` 3 · `projects` 65 · `projects-os` 5 · `board` 12 | 85 | ✔ §7 已定"主链 golden_path" |
@@ -141,23 +159,44 @@ Founder 要求"严格分类、严格管理、不能东一个西一个"。落实�
 | 事件 | `incidents` 7 · `health-incidents` 3 | 10 | ✗ 待定性 |
 | 运维 | `ops` 4 · `operations` 2 | 6 | ✗ 待定性 |
 
-> 5.1 + 5.2 = **283 / 392 端点（72%）** 处在"同一能力多处并存"状态 —— 这就是 Founder 说的"东一个西一个"的量化。
-> 算式: 192 + 161 − 70（`projects` 70 在 5.1 已计, 此处扣除）= 283。
+> 5.2 + 5.3 = **283 / 392 端点（72%）** 同一能力多处并存。
+> 算式: 192 + 161 − 70（`projects` 70 在 5.2 已计）= 283。
+
+### 5.4 越界文件名（违反 SSoT R10）—— 12 个 `models.py`
+
+SSoT §三 R10 明令禁用 `models.py`（防再长出 25 个），实测仍有 12 个:
+`api/dashboard/` · `infrastructure/llm/providers/` · `infrastructure/retrieval/` ·
+`services/work/{assignment,change/changeflow,product,workflows}/` · `services/execution/{kernel/benchmark,recovery}/` ·
+`services/{metrics,validation}/` · 老区顶层
+
+### 5.5 需要澄清的「不算问题」（免得误判）
+
+同名文件共 47 个名字 / 185 个文件, 其中**大部分是"结构统一"的正常产物, 不是乱**:
+
+| 类别 | 名字 | 文件数 | 判定 |
+|---|---|---|---|
+| 五件套式按域同名 | `router.py` ×16 · `schemas.py` ×14 · `store.py` ×15 · `events.py` ×11 · `types.py` ×11 · `service.py` ×8 · `rules.py` ×4 | 79 | ✔ 正常（每域一套, 与 R21 一致） |
+| 禁用名 | `models.py` ×12 | 12 | ✗ 违反 R10 |
+| **其余散落同名** | `experience` ×4 · `roles` · `provider` · `config` · `lifecycle` · `context` · `cli` · `definitions` ×3 · `engine` ×4 · `runner` ×2 · `approval` ×2 · `project_adoption` ×2 … | 94 | 逐个定性 |
+
+> ★ **同名 ≠ 一定乱**: `router.py` 在 16 个地方是**对的**（结构统一）;
+> 乱的是"同一概念散在不同层"（5.1b）和"同一能力两套实现"（5.2/5.3）。
+> 判据: **看它属于哪个域**（按域同名 = 对; 同域两个实现 = 错）。
 
 ## 6. 要你定的四件事（各一句话）
 
 | # | 问题 | 我的建议 |
 |---|---|---|
-| **D1** | 服务域清单以谁为准? | **以产品环 1:1 为准 = 15 个域**: 12 环 + 组织 + 平台 + 学习。实测只有 9 个 ⇒ **缺 6 个要建**（需求分析 · 架构分析 · 编排 · 交付 · 运维 · 审计）; API 侧 14 个 ⇒ 补 `learning` 一个 |
-| **D2** | `resource` 怎么处置? | **保留**。代码自述定性: "能力声明 / 实现绑定 / 解析", 拥有 `contracts/resource.py`, `core.scheduler.ports.ResourcePort` 读它 ⇒ 是**已声明未实现**, 不是误建。标注状态, 不删 |
+| **D1** | 服务域清单以谁为准? | **以产品环 1:1 为准 = 15 个域**: 12 环 + 组织 + 平台 + 学习。实测只有 9 个 ⇒ **缺 6 个要建**（需求分析 · 架构分析 · 编排 · 交付 · 运维 · 审计）; API 侧 14 个 ⇒ 补 `learning` |
+| **D2** | `resource` 怎么处置? | **保留**。代码自述: "能力声明 / 实现绑定 / 解析", 拥有 `contracts/resource.py`, `core.scheduler.ports.ResourcePort` 读它 ⇒ **已声明未实现**, 标注状态即可 |
 | **D3** | 产品 12 环这个口径? | 落进 `ssot/product.md`（现在只存在于对话里, 不可审计） |
-| **D4** | R18–R21 四条分类铁律? | **批准并进验证据组** —— 不建守卫, "严格分类"就只是口号 |
+| **D4** | R18–R22 五条铁律? | **批准并进验证据组** —— 不建守卫, "严格分类"就只是口号 |
 
 ## 7. 批准后的落地（仍为零代码）
 
 1. `ssot/architecture.md` §二: 契约域 11 → 12（登记 `llm`）
 2. `ssot/architecture.md` §四: services 目录树 7 → 9（补 `metrics` `validation`）
-3. `ssot/architecture.md` §三: 加 R18–R21 四条分类铁律
+3. `ssot/architecture.md` §三: 加 R18–R22 五条分类铁律
 4. `ssot/architecture.md`: 加一句 —— "域清单以本节为**单一事实源**, 改动需显式裁决"
 5. `ssot/product.md`: 落产品环（12 环 + 3 基座）
 6. `api-structure.md` §8 刀2: 写明"7 个" = `conversation` `execution` `learning` `metrics` `organization` `validation` `work`
@@ -166,10 +205,10 @@ Founder 要求"严格分类、严格管理、不能东一个西一个"。落实�
 ## 8. 实测复现命令
 
 ```bash
-# 契约域 / 服务域 / API 分组 清单
 ls -1 src/ai_factory_os/contracts src/ai_factory_os/services src/ai_factory_os/api/domains
-# 老区端点总数
 grep -c '@app\.\(get\|post\|put\|delete\|patch\)' \
   src/ai_factory_os/_pending_migration/factory_console/web/backend/fastapi_adapter.py
-# 名字变体检测（R19 守卫雏形）: 取 /api/<第一段> 按词根聚类, 一族 >1 组即报红
+# 老区顶层平铺:
+ls -1 src/ai_factory_os/_pending_migration/factory_console/*.py | wc -l
+# 同名文件 / 概念散落 / 名字变体: 见本刀 commit 说明中的三个脚本
 ```

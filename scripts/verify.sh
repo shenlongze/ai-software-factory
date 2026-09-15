@@ -55,7 +55,11 @@ run "架构守卫 自检"  "$PY" scripts/check_architecture.py --selftest
 run "分类守卫 自检"  "$PY" scripts/check_classification.py --selftest
 
 echo
-echo "═══ ② 守卫扫仓库（= 当前债务清单，非工具故障）═══"
+echo "═══ ② 目标实跑（已迁端点的端到端）═══"
+run "validation 端到端" "$PY" scripts/smoke_validation.py
+
+echo
+echo "═══ ③ 守卫扫仓库（= 当前债务清单，非工具故障）═══"
 debt "架构 R1–R17"   "$PY" scripts/check_architecture.py -q
 debt "分类 R18–R22"  "$PY" scripts/check_classification.py -q
 debt "ruff src/ 存量" ruff check src

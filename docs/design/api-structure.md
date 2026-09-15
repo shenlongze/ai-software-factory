@@ -127,7 +127,7 @@ api/domains/<域>/router.py  →  services/<域>/      ← 域用例，唯一业
 | 刀 | 内容 | 验证 |
 |---|---|---|
 | **刀1** | 建骨架：`app.py` · `registry.py` · `envelope.py` · `deps.py` · `errors.py` + `domains/` 14 个空壳 | 导入全绿 + 空 app 可构建 |
-| 刀2 | 迁 7 个已同源的域 | 端点数不变 + 文档一致 |
+| **刀2** | 迁 7 个已同源的域 —— 实测 CLI 侧已接线者：`conversation` · `execution` · `learning` · `metrics` · `organization` · `validation` · `work`（另 2 个例外：`governance` 两侧未接 · `resource` 仅声明） | 端点数不变 + 文档一致 |
 | 刀3 | 收敛 2 处多套（conversation · orchestration） | 每个动作只剩一行 |
 | 刀4 | 补 2 处不对齐（audit CLI · validation API） | 两侧都有接线 |
 | 刀5 | 挂守卫三条 + 生成 openapi.json / README.md | 三条守卫全绿 |

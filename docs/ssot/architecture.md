@@ -17,18 +17,28 @@
 
 **`apps/` 独立于 `src/`**（cli / web / desktop / mobile 作为消费者，不进包内）。
 
-## 二、契约（11 域，以实现为准）
+## 二、契约（12 域，以实现为准）
 
 `identity` · `organization` · `work` · `resource` · `execution` · `governance` ·
-`learning` · `conversation` · `scheduling` · `events` · `errors`
+`learning` · `conversation` · `scheduling` · `events` · `errors` · `llm`
 
 > 与 v0.2 的差异：`project` 并入 `work`（同一概念不留两个名字）；
 > 新增 `resource` / `learning` / `conversation` / `scheduling`；
 > 不再使用"8 根 + 5 内核"的分法。
+>
+> **2026-09-15 实测订正（刀0）**：`llm` 已存在且已在使用（`contracts/llm/{provider,routing}.py`，
+> 智能路由 L1/L5 兜底即依赖它），但未登记 ⇒ 11 → **12**。
+> 本清单 = **域清单的单一事实源**；`services/` 目录与 `api/domains/` 必须由它派生，
+> 三方不一致由守卫报红（R20/R21）。
 
-## 三、依赖铁律（17 条，全部机器强制）
+## 三、依赖铁律（22 条）
 
-**层级边界（R1–R12、R17）** —— `tests/architecture/test_layer_dependencies.py`
+> **强制载体现状（2026-09-15 实测）**：R1–R17 原由 `tests/architecture/{test_layer_dependencies,test_legacy_fence}.py`
+> 强制，但 **`tests/` 目录已不存在**（刀29 清理）⇒ **当前无强制载体，铁律实为"目标态"**。
+> 现役验证据组 = `ruff` + `scripts/check_imports.py`（只做全量导入）+ 目标实跑。
+> R18–R22 的守卫将建在 `scripts/`（与现役载体一致）；建成后本节才恢复"机器强制"。
+
+**层级边界（R1–R12、R17）** —— 原载体 `tests/architecture/test_layer_dependencies.py`（已不存在）
 
 | # | 规则 |
 |---|------|
@@ -46,7 +56,7 @@
 | R12 | `core/` 无业务词，且总行数 ≤ 3000 |
 | R17 | `core/` 只允许 `scheduler` / `events` 两个子模块 |
 
-**旧代码围栏（R13–R16）** —— `tests/architecture/test_legacy_fence.py`
+**旧代码围栏（R13–R16）** —— 原载体 `tests/architecture/test_legacy_fence.py`（已不存在）
 
 | # | 规则 |
 |---|------|
@@ -55,14 +65,29 @@
 | R15 | 旧代码跨分区依赖边只减不增 |
 | R16 | 不许新增顶层代码目录 |
 
+**分类铁律（R18–R22）** —— Founder 2026-09-15: **"代码必须严格分类，严格管理，不能东一个西一个"**
+
+| # | 规则 | 现状 |
+|---|------|------|
+| R18 | **一能力一域**：一个能力的实现全仓只有一处 = `services/<域>/`（同一能力词根不得出现在 >1 个服务域） | 红（待收口） |
+| R19 | **一物一名**：同一实体不得两个名字（禁单复数并存 · 禁 `-os` `-truth` `-sessions` 等变体） | 红（11 词根 / 192 端点） |
+| R20 | **清单单一**：域清单只在 §二 一份；`services/` 与 `api/domains/` 由它派生 | 红（三份不一致） |
+| R21 | **一域一落点**：`services/<域>/` 与 `api/domains/<域>/` 同名同存 | 红 |
+| R22 | **一层一目录（禁平铺）**：同类东西必须进对应目录，不许把一个层级的文件平铺在同一处（同目录 >30 个 .py 且前缀 ≥20 种即为平铺） | 红（老区顶层 117 个 .py 平铺，57 个前缀各 1 个文件） |
+
+> Founder 原话的落点：**R22 = "不放在一起，乱"**；R18–R21 = "严格分类"。
+> 违反清单（实测，含端点级证据）见本刀 commit 与 `docs/design/domain-alignment.md`。
+> **这五条只在建成守卫后才有约束力** —— 未建守卫前为"目标态"，不得据此判他人代码违规。
+
 ## 四、目录树（现役）
 
 ```
 src/ai_factory_os/
 ├── contracts/     identity organization work resource execution governance
-│                  learning conversation scheduling events errors
+│                  learning conversation scheduling events errors llm
 ├── core/          scheduler events
-├── services/      organization work resource execution governance learning conversation
+├── services/      conversation execution governance learning metrics
+│                  organization resource validation work
 ├── plugins/       factories/{software} agents skills tools mcp models connectors
 │                  controllers/{browser,computer} healers notifiers triggers storages
 ├── infrastructure/ llm storage messaging process sandbox
@@ -70,9 +95,9 @@ src/ai_factory_os/
 └── bootstrap/
 
 apps/              cli（web / desktop / mobile 待迁）
-tests/             architecture core plugins + <旧测试树，待绞杀>
-docs/              ssot（product/arch/reality）· adr · architecture · cleanup
-scripts/           legacy_inventory.py · legacy_reach.py
+tests/             ✗ 已不存在（刀29 清理）—— 验证据组 = ruff + scripts/ + 目标实跑
+docs/              ssot（product/arch/reality）· adr · architecture · design · cleanup
+scripts/           check_imports.py · migration_check.py · legacy_inventory.py · legacy_reach.py
 bin/               factory
 ```
 

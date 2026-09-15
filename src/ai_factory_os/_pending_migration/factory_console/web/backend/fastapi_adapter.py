@@ -1179,11 +1179,18 @@ def build_app(
     # S10-1xx: 数据根目录（/api/board/graph|chain 读项目 plan.json）
     workspace_root = Path(factory_root) if factory_root is not None else None
 
-    # K-7e: Web 会话栏存储 (root/console_sessions.json; 与 chat.json 平级)
-    _sessions_mod = _console_import("console_sessions")
-    sessions_store = _sessions_mod.SessionStore(
-        Path(factory_root if factory_root is not None else DEFAULT_ROOT) / "console_sessions.json"
-    )
+    # K-7e: Web 会话栏存储 —— console_sessions 整套自 2026-09-07 停用并已删除。
+    # 改为**可选导入**: 缺了就 sessions_store=None, 服务照常起 ✓
+    # （相关端点诚实降级, 而不是让 create_app() 抛 ImportError 拖垮整个 API ✗）
+    # 注: WebUI 处于挂起状态, 不为其恢复该套实现。
+    try:
+        _sessions_mod = _console_import("console_sessions")
+        sessions_store = _sessions_mod.SessionStore(
+            Path(factory_root if factory_root is not None else DEFAULT_ROOT) / "console_sessions.json"
+        )
+    except Exception:  # noqa: BLE001 — 该套已删 → 相关端点降级, 服务不受影响
+        _sessions_mod = None
+        sessions_store = None
     # 设置管理面: LLM Control Plane (providers.json — 启用/停用/默认模型)
     _llm_mod = _console_import("llm_control")
     _llm_plane = _llm_mod.LLMControlPlane(
@@ -3046,7 +3053,8 @@ def build_app(
         if task is None:
             raise HTTPException(status_code=404, detail="project not found")
         try:
-            related = sessions_store.list_sessions(task_id=task_id)
+            # console_sessions 已删 → 相关会话为空（该套数据已归档, 不再有会话可列）
+            related = sessions_store.list_sessions(task_id=task_id) if sessions_store else []
             task = {
                 **task,
                 "sessions": [
@@ -4635,8 +4643,10 @@ def build_app(
         if not run_id:
             return
         root = Path(str(factory_root if factory_root is not None else DEFAULT_ROOT))
-        # 复用 sessions_store (同实例, 避免锁竞争/双写)
-        store = sessions_store if "sessions_store" in globals() else _sessions_mod.SessionStore(str(root / "console_sessions.json"))
+        # 复用 sessions_store (同实例, 避免锁竞争/双写)；该套已删 → 无会话可关联
+        store = sessions_store if "sessions_store" in globals() else None
+        if store is None:
+            return      # 诚实跳过（不伪造关联）
         # 反查: 匹配 project_id 的会话 (company 会话可能无 project_id, 用 topics 匹配)
         sessions = store.list_sessions()
         matched = None

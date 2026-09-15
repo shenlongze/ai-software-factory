@@ -156,7 +156,6 @@ class HistoryIndex:
         counts["trace"] = self._index_traces(root)
         counts["experience"] = self._index_experiences(root)
         counts["message"] = self._index_conversations(root)
-        counts["message"] += self._index_console_sessions(root)
         self._conn.commit()
         self._rebuild_fts()          # 统一重建 FTS（归一化文本）
         return counts
@@ -282,47 +281,6 @@ class HistoryIndex:
                     "INSERT INTO docs(source, ref, ts, title, body) VALUES(?,?,?,?,?) "
                     "ON CONFLICT(source, ref) DO UPDATE SET ts=excluded.ts, body=excluded.body",
                     ("message", ref, ts, f"{ctitle} · {role}", content[:6000]))
-                n += 1
-        return n
-
-    def _index_console_sessions(self, root: Path) -> int:
-        """控制台/Web 会话消息（console_sessions.json: sessions + messages 两个字典）。
-
-        与 conversations/ 的区别: 那是【会话理解】链路的会话，这是【控制台/Web UI】
-        的会话 —— 两者都是真实用户对话，都要能"想起来"。
-        ref 加 cs- 前缀避免与 conversations 的消息 id 撞车。
-        """
-        f = root / "console_sessions.json"
-        if not f.exists():
-            return 0
-        try:
-            data = json.loads(f.read_text(encoding="utf-8"))
-        except Exception:  # noqa: BLE001 — 坏文件 → 跳过
-            return 0
-        if not isinstance(data, dict):
-            return 0
-        sessions = data.get("sessions") or {}
-        messages = data.get("messages") or {}
-        n = 0
-        for sid, arr in messages.items():
-            meta = sessions.get(sid) if isinstance(sessions, dict) else None
-            stitle = ""
-            if isinstance(meta, dict):
-                stitle = str(meta.get("title") or meta.get("scope") or "")
-            stitle = stitle or str(sid)
-            for i, m in enumerate(arr if isinstance(arr, list) else []):
-                if not isinstance(m, dict):
-                    continue
-                content = str(m.get("content") or "").strip()
-                if not content:
-                    continue
-                ref = "cs-" + str(m.get("id") or f"{sid}-{i}")
-                ts = str(m.get("created_at") or "")
-                role = str(m.get("role") or "?")
-                self._conn.execute(
-                    "INSERT INTO docs(source, ref, ts, title, body) VALUES(?,?,?,?,?) "
-                    "ON CONFLICT(source, ref) DO UPDATE SET ts=excluded.ts, body=excluded.body",
-                    ("message", ref, ts, f"{stitle} · {role}", content[:6000]))
                 n += 1
         return n
 

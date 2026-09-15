@@ -241,7 +241,7 @@ def llm_semantic_interpreter(root: str, conversation_id: str, text: str,
     # 2) LLM 调用 (注入或默认)
     if llm_fn is None:
         try:
-            from factory_console.console_sessions import llm_raw as _raw
+            from factory_console.session.llm_raw import llm_raw as _raw
             llm_fn = _raw  # type: ignore[assignment]
         except Exception:  # noqa: BLE001 — 无 LLM 环境 → 降级
             llm_fn = None

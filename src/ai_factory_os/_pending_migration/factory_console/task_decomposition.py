@@ -327,7 +327,7 @@ def build_llm_decomposer(
     失败/非法 → 模板兜底 + degraded=True (诚实降级, 不伪造 LLM 结果)。
     """
     if llm_fn is None:
-        from factory_console.console_sessions import llm_raw as _raw
+        from factory_console.session.llm_raw import llm_raw as _raw
         llm_fn = _raw
 
     def _decompose(prd: dict[str, Any]) -> dict[str, Any]:

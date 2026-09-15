@@ -733,15 +733,11 @@ def _chain_auto_worker(root: Any, project_id: str, session_id: str, service: Any
                 break
         # 完成 → 交付汇报主动推送会话 (Promised Work)
         try:
-            d = st.deliver()
-            if d.get("ok"):
-                from ..console_sessions import SessionStore
-
-                store = SessionStore(Path(root) / "console_sessions.json")
-                if store.get_session(session_id):
-                    store.append_message(session_id, "assistant", d.get("output"),
-                                         meta={"kind": "chain_delivery"})
-        except Exception:  # noqa: BLE001 — 推送失败不阻断
+            st.deliver()
+            # 注: 原「把交付汇报推送进 console_sessions 会话栏」已移除 ——
+            # console_sessions 整套自 2026-09-07 停用并已删除, 该推送无处可推。
+            # deliver() 本身（真实交付动作）保留 ✓
+        except Exception:  # noqa: BLE001 — 交付失败不阻断
             pass
     except Exception:  # noqa: BLE001 — 后台异常不阻断
         pass
@@ -1507,15 +1503,9 @@ def dispatch(
                     return {"ok": True, "record": f"{kind} {record_id} 已深化更新", "id": record_id}
                 # ---- S48-FIX: Lifecycle Gate enforcement (CREATE 合法性) ----
                 if kind in ("requirement", "prd", "discovery", "plan", "idea"):
+                    # 原为读 console_sessions 的 created_at 作为 since —— 该套已删,
+                    # 退化为全局 since（缺失即全局, 与原来 try/except 的退化路径一致）✓
                     _since = ""
-                    try:
-                        from factory_console.console_sessions import SessionStore
-                        _sid = str((ctx or {}).get("session_id") or "")
-                        if _sid:
-                            _sess = SessionStore(str(Path(root) / "console_sessions.json")).get_session(_sid)
-                            _since = str((_sess or {}).get("created_at") or "")
-                    except Exception:  # noqa: BLE001 — since 缺失退化为全局
-                        pass
                     _gate = pt.lifecycle_gate(
                         root, project_id or "", kind,
                         idea_id=str(args.get("idea_id") or ""),
@@ -2136,15 +2126,8 @@ def dispatch(
                 st.state["plan_id"] = plan.get("plan_id") or ""
                 st.state["session_id"] = (ctx or {}).get("session_id") or ""
                 st.save(root)
-                # 关联 session.run_ids (会话 Run 卡可见)
-                try:
-                    if (ctx or {}).get("session_id"):
-                        from factory_console.console_sessions import _sessions_store as _ss  # noqa: F401
-                        sessions_store_mod = __import__("factory_console.console_sessions", fromlist=["SessionStore"])
-                        _st = sessions_store_mod.SessionStore(str(Path(root) / "console_sessions.json"))
-                        _st.add_run((ctx or {}).get("session_id"), _run_id)
-                except Exception:  # noqa: BLE001 — 关联失败不阻断
-                    pass
+                # 原「关联 session.run_ids（会话 Run 卡可见）」已移除 ——
+                # console_sessions 整套已删，该关联无处可写。
             except Exception:  # noqa: BLE001 — run_id 生成失败 → 用时间戳
                 _run_id = f"R{int(__import__('time').time() * 1000)}"
             # P0-B: 执行链启动 → 同步 progress_card

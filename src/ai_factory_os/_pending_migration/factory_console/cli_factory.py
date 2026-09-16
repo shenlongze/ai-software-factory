@@ -3261,7 +3261,10 @@ class FactoryCLI:
         只读 ✓: 数据全部来自产品自身记录（会话/PRD/计划/ProductionRun/交付/验收 ✓）
         不依赖任何临时日志 ✓（我先前把监控做成 home 脚本 + 读 /tmp 日志 ✗ 那不是产品入口 ✓）
         """
-        from . import progress_view as pv
+        # ★ 2026-09-15 归位: progress_view 按其层级（监控/度量 = services/metrics）
+        #   从 _pending_migration/factory_console 迁到 ai_factory_os.services.metrics。
+        #   老区 import 新地基 = 正确方向 ✓（新地基禁止反向依赖老区 ✗）
+        from ai_factory_os.services.metrics import progress_view as pv
 
         root = Path(getattr(args, "data_dir", None) or self.data_dir)
         pid = str(getattr(args, "project_id", "") or "")

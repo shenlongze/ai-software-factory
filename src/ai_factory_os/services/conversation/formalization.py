@@ -273,7 +273,19 @@ def approve_prd(root: Path | str, conversation_id: str, prd_id: str, *,
         if idx is None:
             raise KeyError(f"PRD 不存在: {prd_id}")
         cur = prds[idx]
+        # ★ 同步项目侧副本（2026-09-15 修）: 抽成本地函数, **两条路径都调** ——
+        #   包括"已经是 approved 直接返回"那条, 否则历史上已经批准过、
+        #   但项目侧副本还停在 draft 的 PRD 永远修不回来（幂等 ✓）。
+        def _mirror() -> None:
+            try:
+                _pid = str(doc.get("project_id") or "")
+                if _pid:
+                    _sync_prd_to_project(root, _pid, cur)
+            except Exception:  # noqa: BLE001 — 投影失败不阻断批准 ✓
+                pass
+
         if cur.get("status") == "approved":
+            _mirror()                      # 已是 approved: 补一次同步（幂等）
             return cur
         if cur.get("status") != "draft":
             raise ValueError(f"PRD {prd_id} 状态 {cur.get('status')} 不可批准")
@@ -283,6 +295,12 @@ def approve_prd(root: Path | str, conversation_id: str, prd_id: str, *,
             {"version": cur.get("version"), "at": _now_iso(), "actor": actor,
              "note": "approved"})
         pu._save_conv(root, conversation_id, doc)  # noqa: SLF001
+        # ★ 同步项目侧副本（2026-09-15 修，端到端实测暴露）:
+        #   `_sync_prd_to_project` 此前**只在创建 PRD 时**调用 ⇒ 项目侧
+        #   `product_truth/prds.json` 的副本永远停在 `draft`，而会话侧已 `approved`
+        #   —— **同一个 PRD 两个状态**（实测: project_17daec18072e 项目侧 draft /
+        #   会话侧 approved）。批准也必须同步，否则任何读项目侧的视图都会说谎。
+        _mirror()
         return cur
 
 

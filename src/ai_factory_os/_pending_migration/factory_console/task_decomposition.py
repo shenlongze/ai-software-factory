@@ -615,6 +615,8 @@ def _parse_llm_tree(raw: str | None, prd: dict[str, Any]) -> dict[str, Any] | No
                 "critical_path": [n["id"] for n in nodes if n["kind"] == "task"],
                 "parallel_groups": [], "degraded": False,
                 "truncated": _TRUNCATED[0],
+                # ★ 拆解那一刻就把"多个任务抢同一个文件"说出来（见 detect_file_conflicts）
+                "file_conflicts": detect_file_conflicts({"nodes": nodes}),
             }
         for d in domains:
             dtitle = str(d.get("title") or "交付域")[:120]
@@ -658,6 +660,7 @@ def _parse_llm_tree(raw: str | None, prd: dict[str, Any]) -> dict[str, Any] | No
             "critical_path": [n["id"] for n in nodes if n["kind"] == "task"],
             "parallel_groups": [], "degraded": False,
             "created_at": _now_iso(),
+            "file_conflicts": detect_file_conflicts({"nodes": nodes}),
         }
     except (json.JSONDecodeError, TypeError, ValueError):
         return None
@@ -689,6 +692,37 @@ def decompose_prd(
 
 def tree_leaves(tree: dict[str, Any]) -> list[dict[str, Any]]:
     return [dict(n) for n in (tree.get("nodes") or []) if n.get("kind") == "task"]
+
+
+def detect_file_conflicts(tree: dict[str, Any]) -> list[dict[str, Any]]:
+    """检测【多个任务声明同一产出文件】—— 拆解质量守卫（只报不改）。
+
+    为什么（端到端实测暴露，2026-09-15）:
+        「把 Markdown 转成 PDF」那次拆解, 12 个任务里**有 8 个都产出 index.html**
+        （"搭骨架 / 写样式 / 实时解析 / 预览渲染 / 字体选择 / PDF 导出" 全在改同一个文件）
+        ⇒ 执行时互相覆盖 ⇒ workspace 里留下 **20 个 `.conflict-*` 文件**,
+        而系统自评却是「六环全绿 · 0 失败 0 警告」—— **冲突从头到尾没有任何一处报过**。
+
+    本函数 = 在【拆解那一刻】把这件事说出来 ✓ 输出形如:
+        [{"file": "index.html", "n": 8, "tasks": ["<id> <title>", ...]}, ...]
+    按冲突任务数降序。
+
+    ★ 只报不改: 怎么处理（合并任务 / 串行化 / 接受冲突）是产品决策,
+      守卫的职责是让人**看得见**, 而不是替人决定。
+    """
+    owners: dict[str, list[str]] = {}
+    for n in (tree.get("nodes") or []):
+        if not isinstance(n, dict) or n.get("kind") != "task":
+            continue
+        who = f"{str(n.get('id') or '')} {str(n.get('title') or '')[:40]}"
+        for f in (n.get("expected_files") or []):
+            key = str(f).strip()
+            if key:
+                owners.setdefault(key, []).append(who)
+    out = [{"file": f, "n": len(who), "tasks": who}
+           for f, who in owners.items() if len(who) > 1]
+    out.sort(key=lambda x: (-x["n"], x["file"]))
+    return out
 
 
 def tree_summary(tree: dict[str, Any] | None) -> dict[str, Any]:
@@ -761,4 +795,5 @@ __all__ = [
     "save_task_tree", "load_task_tree",
     "build_llm_decomposer", "decompose_prd",
     "tree_leaves", "tree_summary", "tree_to_plan",
+    "detect_file_conflicts",
 ]

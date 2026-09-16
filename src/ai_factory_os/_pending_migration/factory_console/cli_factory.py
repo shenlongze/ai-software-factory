@@ -5627,6 +5627,11 @@ class FactoryCLI:
                 t = _mat(str(root), _tree, title=_title,
                          domain=getattr(args, "domain", "default"),
                          project_id=_pid, docs_dir=_docs)
+                # ★ 拆解冲突暴露（2026-09-15）: 多个任务声明同一产出文件 → 执行时互相覆盖。
+                #   实测案例: Markdown→PDF 那次 8 个任务都写 index.html ⇒ 20 个冲突文件,
+                #   而当时系统自评"六环全绿 0 失败 0 警告" —— 冲突全程没人报过。
+                #   ⇒ 在拆解这一刻就报出来（只报不改, 怎么处理由人决定）。
+                _fc = _tree.get("file_conflicts") or []
                 # ★★ 计划环写入口（2026-09-15 修）:
                 #   `factory progress` 的「③ 计划」读 projects/<P>/product_truth/plans.json,
                 #   而此前 decompose **从不写 plans** —— 于是拆解产出再多, 计划环也是 0 份,
@@ -5671,6 +5676,15 @@ class FactoryCLI:
             print(f"tasktree: {t['task_tree_id']} | {t['count']} 子任务 | 来源: {_src}"
                   + (f" | 项目: {_pid}" if _pid else " | 项目: （未绑, 传 --conv 可绑）")
                   + (f" | plan: {_plan_id}" if _plan_id else ""))
+            # ★ 冲突暴露（只报不改）—— 执行时会互相覆盖, 必须在拆解这一刻看见
+            if _fc:
+                print(f"  ⚠ 产出文件冲突: {len(_fc)} 个文件被多个任务声明"
+                      f"（执行时会互相覆盖, 建议合并任务或串行化）")
+                for _c in _fc[:5]:
+                    _who = " / ".join(x.split(" ", 1)[-1][:24] for x in (_c.get("tasks") or [])[:3])
+                    print(f"     {_c.get('file')}  ← {_c.get('n')} 个任务: {_who}")
+                if len(_fc) > 5:
+                    print(f"     …（另 {len(_fc) - 5} 个）")
             if t.get("tasks_md"):
                 print(f"  任务清单(可评审): {t['tasks_md']}")
             return 0

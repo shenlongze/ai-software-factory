@@ -21,7 +21,62 @@
 
 ---
 
-## 一、七层：每层放什么（唯一权威）
+## 一、层级 ↔ 真实路径对照（**落地位置**）
+
+> **区分两个维度**（这是最容易混的）:
+> - **层级** = 架构上的第几层（contracts / core / services / plugins / infrastructure / bootstrap）
+> - **落地位置** = 磁盘上的**具体路径**（`src/ai_factory_os/services/conversation/understanding.py`）
+>
+> 两者**一对一映射**，但"说层级"不等于"说清路径"。下表是**实测的当前目录**（2026-09-15）：
+
+```
+/Users/Shared/work/ai-software-factory/
+├── apps/                        ← 消费者层（独立于 src/，递归不许进 src/）
+│   ├── cli/          16 py      ← CLI 入口面（唯一入口候选）
+│   └── desktop/       1 py
+├── src/ai_factory_os/           ← 包内七层
+│   ├── contracts/    15 py      ← 跨层契约
+│   ├── core/         10 py      ← 平台本体（scheduler + events）
+│   ├── services/    169 py      ← 业务域服务（9 域）
+│   ├── plugins/      38 py      ← 实现绑定
+│   ├── infrastructure/ 56 py    ← 技术底座
+│   ├── bootstrap/     4 py      ← 装配与启动
+│   └── _pending_migration/      ← 待绞杀堆场（★ 不是层）
+├── scripts/                     ← 验证脚本 / 守卫
+├── docs/  ssot(规则) · adr(裁决) · design
+└── bin/                         ← 入口脚本
+（tests/ 已清理，不再建）
+```
+
+### 层级 → 路径的落法（域名进路径，不是另起名字）
+
+| 层级 | 路径模板 | **当前真实例子** |
+|---|---|---|
+| 契约 | `src/ai_factory_os/contracts/<域>.py` | `contracts/conversation.py` |
+| 平台本体 | `src/ai_factory_os/core/<能力>/` | `core/scheduler/` `core/events/` |
+| 业务服务 | `src/ai_factory_os/services/<域>/<文件>.py` | `services/conversation/understanding.py` |
+| 实现绑定 | `src/ai_factory_os/plugins/<类>/` | `plugins/agents/` `plugins/factories/` |
+| 技术底座 | `src/ai_factory_os/infrastructure/<能力>/` | `infrastructure/llm/` `infrastructure/retrieval/` |
+| 装配 | `src/ai_factory_os/bootstrap/<文件>.py` | `bootstrap/wiring.py` |
+| 消费者 | `apps/<消费者>/<...>` | `apps/cli/domains/conversation.py` |
+| 验证 | `scripts/smoke_<能力>.py` · `scripts/check_<守卫>.py` | `scripts/smoke_conversation_understand.py` |
+
+### 一个能力的完整分布（照着这个找位置）
+
+以「**会话理解**」为例 —— 同一个能力**横跨五处**，每处放什么、放哪：
+
+```
+服务层   src/ai_factory_os/services/conversation/understanding.py      事实层实现（数据 + 规则）
+服务层   src/ai_factory_os/services/conversation/interpreter.py        LLM 语义解释（调 LLM 产 proposal）
+服务层   src/ai_factory_os/services/conversation/proposal.py           validate/apply（唯一写 Truth 的闸）
+装配层   src/ai_factory_os/bootstrap/wiring.py                         注入跨域 hook（ensure_project_binding）
+入口层   apps/cli/domains/conversation.py                              CLI 命令（参数 + 包络 + 输出）
+验证层   scripts/smoke_conversation_understand.py                      端到端证据
+```
+
+⇒ **判位置的完整动作** = ① 用 §二 的 8 问定**层级** → ② 按本表落到**具体路径**（域名/能力名进路径）。
+
+### 每层放什么 + 判据（怎么认一个文件属于该层）
 
 | 层 | 放什么 | **判据（怎么认）** | 允许依赖 |
 |---|---|---|---|

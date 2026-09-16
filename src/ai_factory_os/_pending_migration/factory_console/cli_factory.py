@@ -5572,24 +5572,91 @@ class FactoryCLI:
                 #     症状: factory tasktree decompose "<目标>" 生成的树全叫「任务」✗）
                 _title = (getattr(args, "title", "") or "").strip() \
                     or (getattr(args, "target", "") or "").strip() or "任务"
+
+                # ★★ 链路 ②→③ 接线（2026-09-15 修）:
+                #   此前 decompose 只把 title 当 goal 传进去 —— **不读 PRD**，
+                #   于是 PRD 的功能需求与架构决策全用不上, 链路上的"计划"与前置环无关,
+                #   且建出的 task 无 project_id ⇒ progress（按项目）永远看不见计划环。
+                #   现在: --conv 给定会话时, 读它的最新 PRD（含 content/架构决策）
+                #         并取其 project_id 作为任务的项目归属 ✓
+                _conv = str(getattr(args, "conv", "") or "").strip()
+                _prd_obj = None
+                _pid = ""
+                if _conv:
+                    try:
+                        from factory_console import product_understanding as _pu
+                        _cdoc = _pu._load_conv(str(root), _conv)
+                        if _cdoc:
+                            _pid = str(_cdoc.get("project_id") or "")
+                            _plist = list(_cdoc.get("prds") or [])
+                            if _plist:
+                                _prd_obj = _plist[-1]      # 最新 PRD
+                    except Exception as _exc:  # noqa: BLE001 — 读不到就退回纯标题（可见）
+                        print(f"[tasktree] 读会话 PRD 失败, 退回 title: {_exc}", file=sys.stderr)
+                if _prd_obj is None:
+                    _prd_obj = {"id": "", "goal": _title,
+                                "content": {"overview": {"problem": _title, "name": _title}}}
+                else:
+                    # ★ 标题兜底: 没显式给 --title/target 时, 用 PRD 的标题/goal
+                    #   （否则树与 Plan 会叫"任务" —— 语义丢失）
+                    if _title in ("", "任务"):
+                        _ov = ((_prd_obj.get("content") or {}).get("overview") or {})
+                        _title = str(_prd_obj.get("title")
+                                     or _ov.get("name") or _ov.get("problem")
+                                     or _title)[:120] or "任务"
+
                 # ★ 分解一律走 LLM（Founder: 真实需求分析 + 拆分；无层数限制）
                 #   原实现走 task_tree.decompose = 纯模板 ✗（CLI 与会话两套不一致 ✗）
                 from factory_console.task_decomposition import build_llm_decomposer
                 from factory_console.task_tree import materialize_tree as _mat
-                _tree = build_llm_decomposer()(
-                    {"id": "", "goal": _title,
-                     "content": {"overview": {"problem": _title, "name": _title}}})
+                _tree = build_llm_decomposer()(_prd_obj)
                 if not _tree or _tree.get("degraded"):
                     _err = (_tree or {}).get("error", "空结果")
                     print(f"[E4291] LLM 分解失败: {_err}", file=sys.stderr)
                     return 1
+                # ★ 任务清单落进项目目录（有项目时）；项目归属写进每个 task 实体
+                _docs = str(Path(root) / "projects" / _pid / "docs") if _pid else None
                 t = _mat(str(root), _tree, title=_title,
-                         domain=getattr(args, "domain", "default"))
+                         domain=getattr(args, "domain", "default"),
+                         project_id=_pid, docs_dir=_docs)
+                # ★★ 计划环写入口（2026-09-15 修）:
+                #   `factory progress` 的「③ 计划」读 projects/<P>/product_truth/plans.json,
+                #   而此前 decompose **从不写 plans** —— 于是拆解产出再多, 计划环也是 0 份,
+                #   链路 ②→③ 表面断开。此处接 `product_truth.create_plan`
+                #   （唯一 canonical Plan writer, 带 prd_id / prd_version 锚点 ✓）,
+                #   让"计划"这一环真正可追溯回它依据的 PRD 版本。
+                _plan_id = ""
+                if _pid:
+                    try:
+                        from factory_console import product_truth as _pt
+                        # ★ tree["leaves"] 是 leaf **id 列表**（不是 dict 列表）——
+                        #   必须经 nodes 建 id→节点 索引才能取到 title（第一版直接 .get 崩过）
+                        _by_id: dict[str, dict] = {}
+                        for _n in (_tree.get("nodes") or []):
+                            if isinstance(_n, dict) and _n.get("id"):
+                                _by_id[str(_n["id"])] = _n
+                        _leaves = [
+                            {"id": str(_lid),
+                             "title": str((_by_id.get(str(_lid)) or {}).get("title") or ""),
+                             "role": str((_by_id.get(str(_lid)) or {}).get("required_role") or ""),
+                             "skill": str((_by_id.get(str(_lid)) or {}).get("required_skill") or "")}
+                            for _lid in (_tree.get("leaves") or [])
+                        ]
+                        _plan = _pt.create_plan(
+                            str(root), project_id=_pid,
+                            prd_id=str((_prd_obj or {}).get("id") or ""),
+                            prd_version=int((_prd_obj or {}).get("version") or 0),
+                            goal=_title, tasks=_leaves, actor="llm-decomposer")
+                        _plan_id = str(_plan.get("id") or "")
+                    except Exception as _exc:  # noqa: BLE001 — 不阻断物化, 但要可见
+                        print(f"[tasktree] 写 Plan 失败: {_exc}", file=sys.stderr)
                 _src = _tree.get("decomposer", "llm")
             except Exception as exc:  # noqa: BLE001
                 print(f"[E4290] 错误: {exc}", file=sys.stderr)
                 return 1
-            print(f"tasktree: {t['task_tree_id']} | {t['count']} 子任务 | 来源: {_src}")
+            print(f"tasktree: {t['task_tree_id']} | {t['count']} 子任务 | 来源: {_src}"
+                  + (f" | 项目: {_pid}" if _pid else " | 项目: （未绑, 传 --conv 可绑）")
+                  + (f" | plan: {_plan_id}" if _plan_id else ""))
             if t.get("tasks_md"):
                 print(f"  任务清单(可评审): {t['tasks_md']}")
             return 0

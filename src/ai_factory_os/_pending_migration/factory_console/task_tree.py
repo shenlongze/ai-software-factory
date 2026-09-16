@@ -219,12 +219,20 @@ def execute_tree(root: Path | str, task_tree_id: str, *,
 
 def materialize_tree(root: Path | str, tree: dict[str, Any], *,
                      title: str = "", domain: str = "llm",
-                     docs_dir: str | Path | None = None) -> dict[str, Any]:
+                     docs_dir: str | Path | None = None,
+                     project_id: str = "") -> dict[str, Any]:
     """把 LLM 分解出的【树 dict】物化成 task 实体（方案 A）。
 
     为什么: LLM 分解器产出的是 nodes/leaves 结构（用于 PLAN），
     而 CLI/编排/证据链都按 task 实体（parent_id/children）走 →
     必须在同一处把它落成实体，否则两套模型永远对不上。
+
+    ★ project_id（2026-09-15 加）:
+        此前建 task 时**不传 project_id** ⇒ 实体没有项目归属 ⇒
+        `factory progress`（按项目聚合）看不见计划环, 而任务级视图 (os_core_work
+        按 `r["project_id"] == project_id` 过滤) 也筛不到。
+        与会话/PRD 同一病因: **数据在, 关联缺**。此处补上归属 ✓
+        （只写字段, 不改存储位置 —— 全局实体库 + project_id 过滤是既有读法。）
 
     返回与 decompose() 同构的 tree 记录（task_tree_id/title/subtasks/count），
     因此 tasktree list/status/progress 无需改动即可看到它 ✓
@@ -233,7 +241,7 @@ def materialize_tree(root: Path | str, tree: dict[str, Any], *,
     if not nodes:
         raise ValueError("materialize_tree: 空树（LLM 未产出节点）")
     root_title = (title or tree.get("goal") or "任务")[:120]
-    root_task = create_entity("task", created_by="system")
+    root_task = create_entity("task", created_by="system", project_id=project_id)
     root_task["title"] = root_title
     root_task["status"] = "READY"
     root_task["domain"] = domain
@@ -251,7 +259,8 @@ def materialize_tree(root: Path | str, tree: dict[str, Any], *,
             continue
         parent_src = str(n.get("parent_id") or "")
         parent_id = id_map.get(parent_src, root_task["id"])
-        e = create_entity("task", created_by="system", parent_id=parent_id)
+        e = create_entity("task", created_by="system", parent_id=parent_id,
+                          project_id=project_id)
         e["title"] = str(n.get("title") or "任务")[:200]
         e["status"] = "DRAFT"
         if n.get("change_type"):

@@ -514,13 +514,13 @@ def compute_parallel_groups(leaves: list[dict], edges: list | None = None) -> li
     by_title = {str(n.get("title") or "").strip(): str(n.get("id") or "")
                 for n in (leaves if isinstance(leaves, list) else [])
                 if isinstance(n, dict)}
-    for l in leaves:
-        if not isinstance(l, dict):
+    for lf in leaves:
+        if not isinstance(lf, dict):
             continue
-        tid = str(l.get("id") or "")
+        tid = str(lf.get("id") or "")
         if tid not in deps:
             continue
-        for d in (l.get("depends_on") or []):
+        for d in (lf.get("depends_on") or []):
             k = str(d).strip()
             if k in idset:
                 deps[tid].add(k)

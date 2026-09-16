@@ -4,12 +4,20 @@
 > 历史文档 (docs/sprint*/design/adr/audit 大部分) = 历史证据, 不代表当前系统。
 > 文档本身不得形成 Parallel Truth (见 docs/00-index/DOCUMENTATION_GOVERNANCE.md)。
 
+> ⚠️ **本文件 §1/§2 的"运行时结构"已过时(2026-09-15 实测)**:
+> 它写的 `factory-console + factory-org + factory-exec + Web 8011` 已不存在 ——
+> 那三块已按 knife-50/51 **整块迁入** `src/ai_factory_os/_pending_migration/factory_console/`;
+> Web/API 层已按 **ADR-0038** 退役, **CLI(`apps/cli/`)是唯一入口面**。
+> ⇒ 当前判断以 `docs/ssot/architecture.md`(v0.3, 生效) 为准, 本文件待重写。
+
 ## 0. 必读顺序
 1. README.md (根)
-2. docs/00-index/README.md
-3. docs/00-index/CURRENT_SYSTEM_TRUTH.md ← 当前系统事实
-4. docs/audit/product-system-baseline/STEP10_DOMAIN_FREEZE.md ← 冻结契约 (最高约束)
-5. docs/audit/project-reality/PROJECT_PROGRESS_SNAPSHOT.md
+2. **docs/ssot/architecture.md ← 当前架构 SSoT (v0.3, 状态: 生效)**
+3. **docs/ssot/code-placement.md ← 代码落地位置规则 (建/删代码前必读)**
+4. **docs/adr/0037-root-layout-decision.md ← 根布局定案 (方案 C)**
+5. **docs/adr/0038-api-layer-retirement.md ← API 层退役 (CLI 是地基)**
+6. docs/audit/product-system-baseline/STEP10_DOMAIN_FREEZE.md ← 冻结契约 (最高约束)
+7. docs/00-index/CURRENT_SYSTEM_TRUTH.md ← ⚠️ 停在 09-02, 已被上列取代, 待重写
 
 ## 1. 系统身份
 AI Software Factory (pyproject 1.1.364) — 已拥有真实生产执行内核的 AI 软件开发平台。

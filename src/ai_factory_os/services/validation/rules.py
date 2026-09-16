@@ -149,9 +149,22 @@ def rule_expect_status(
 # ------------------------------------------------------------------ L3 Artifact Hook
 
 def rule_artifact(task_id: str) -> ValidationResult:
-    """L3 Artifact 验证: Hook 占位 → SKIP (预留 Flutter/Java/Python 验证器接口)。"""
+    """L3 Artifact 验证: Hook 占位 → SKIP (预留 Flutter/Java/Python 验证器接口)。
+
+    ★ 2026-09-15 查证（未修, 已记录）: **这里就是"验收先行"链条的断点所在。**
+      原设计（`use-cases.md:133` / `lifecycle-model.md:155`）::
+        「acceptance 写入任务定义, **成为 L1–L4 验证的输入** ——
+          '验收标准先行'是 Factory 验证体系的天然要求」
+      现状: `plan.acceptance` **确实先行写入**（20/20 个 plan 都带）,
+        但 **8 条验证规则没有任何一条读它** —— L1/L2 判元数据、本规则 SKIP、
+        L4 判 git 变更 ⇒ 验收标准**从未被任何验证消费过**。
+      ⇒ L3 就是设计好的扩展点: 接 `plan.acceptance` 逐条判定即为**实现原设计**。
+      详见: docs/cleanup/2026-09-15-acceptance-chain-gap.md
+    """
     return _res(task_id, "L3", "artifact", ValidationStatus.SKIP,
-                "Artifact 验证 Hook 未实现 (预留 Flutter/Java/Python 验证器)")
+                "Artifact 验证 Hook 未实现 (预留 Flutter/Java/Python 验证器)"
+                " —— 注: 它同时是 'acceptance → L1–L4 验证' 的断点, 见 "
+                "docs/cleanup/2026-09-15-acceptance-chain-gap.md")
 
 
 # ------------------------------------------------------------------ L4 Change Validation (Phase 6D, ADR-0019)

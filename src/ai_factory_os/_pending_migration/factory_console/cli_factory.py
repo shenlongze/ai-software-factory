@@ -9170,9 +9170,17 @@ class FactoryCLI:
         return 0
 
     def _project_list(self, args: argparse.Namespace) -> int:
-        """project list — 只读 projects.json (缺失/损坏 → 空列表, 永不抛)。"""
+        """project list — 项目清单（org 侧 + 实体侧 `projects/<id>/`）。
+
+        ★ 2026-09-15 修（Founder: "打印出来都不知道是什么项目"）:
+          原实现**只读 `org/projects.json`** ⇒ `projects/<id>/entities.json` 里的
+          **349 个实体项目完全看不见**（"系统里有项目, 但 list 显示 0 个"）。
+          现在两套都列, 并标注【来源 / 产物 / 日期】, 人一眼能看出这是什么项目。
+        只读展示; 缺失/损坏 → 空列表, 永不抛（失败安全铁律）。
+        """
+        rows: list[dict[str, Any]] = []
+        # ① org 侧（原有来源）
         projects_file = self.data_dir / "org" / "projects.json"
-        projects: list[dict[str, Any]] = []
         try:
             if projects_file.is_file():
                 raw = json.loads(projects_file.read_text(encoding="utf-8"))
@@ -9180,31 +9188,64 @@ class FactoryCLI:
                 if isinstance(section, dict):
                     for pid, record in sorted(section.items()):
                         record = record if isinstance(record, dict) else {}
-                        projects.append({"id": pid, "name": record.get("name", "")})
-        except Exception:  # noqa: BLE001 — 只读展示, 损坏 → 空列表 (失败安全铁律)
-            projects = []
+                        rows.append({"src": "org", "id": pid,
+                                     "name": str(record.get("name") or ""),
+                                     "goal": str(record.get("goal") or ""),
+                                     "status": "已归档" if record.get("archived") else "ACTIVE",
+                                     "created": "", "has": ""})
+        except Exception:  # noqa: BLE001 — 只读展示, 损坏 → 空 (失败安全)
+            pass
+        # ② ★ 实体侧 `projects/<P-id>/entities.json` —— 运行时建的项目
+        pdir = self.data_dir / "projects"
+        if pdir.is_dir():
+            for d in sorted(pdir.glob("project_*")):
+                ef = d / "entities.json"
+                if not ef.is_file():
+                    continue
+                try:
+                    items = json.loads(ef.read_text(encoding="utf-8"))
+                    items = items if isinstance(items, list) else (items.get("entities") or [])
+                except Exception:  # noqa: BLE001 — 单个损坏不影响其余
+                    continue
+                pj = next((x for x in items
+                           if isinstance(x, dict) and x.get("type") == "project"), None)
+                if not pj:
+                    continue
+                has = []
+                if (d / "workspace").is_dir():
+                    has.append("workspace")
+                if (d / "product_truth" / "prds.json").is_file():
+                    has.append("PRD")
+                rows.append({"src": "proj", "id": str(pj.get("id") or d.name),
+                             "name": str(pj.get("title") or ""),
+                             "goal": str(pj.get("description") or ""),
+                             "status": str(pj.get("status") or ""),
+                             "created": str(pj.get("created_at"))[:10],
+                             "has": ",".join(has)})
+        # 有产物的排前面（人先看到"有东西的"）
+        rows.sort(key=lambda r: (0 if r["has"] else 1, r["created"] or "", r["id"]))
         if getattr(args, "json", False):
             print(
                 json.dumps(
-                    {"ok": True, "count": len(projects), "projects": projects},
+                    {"ok": True, "count": len(rows), "projects": rows},
                     ensure_ascii=False,
                     indent=2,
                 )
             )
             return 0
-        # ★ 打印项目名 + 目标 + 状态（2026-09-15，Founder: "项目都没有中文名称么？
-        #   没有项目描述么？打印出来都不知道是什么项目"）
-        #   原先只有 `id name`，项目目标(goal)和归档/星标都看不见 ✗
-        print(f"项目清单 ({len(projects)} 个)")
-        for p in projects:
-            _g = str(p.get("goal") or "").strip()
+        # ★ 打印项目名 + 目标 + 产物（Founder: "打印出来都不知道是什么项目"）
+        _n_has = sum(1 for r in rows if r["has"])
+        print(f"项目清单 ({len(rows)} 个" + (f" · 其中 {_n_has} 个有产物" if _n_has else "") + ")")
+        for r in rows:
             _tags = []
-            if p.get("archived"):
-                _tags.append("已归档")
-            if p.get("starred"):
-                _tags.append("★")
-            print(f"  {p['id']}  {p['name']}"
-                  + (f"  · {_g[:60]}" if _g else "")
+            if r["created"]:
+                _tags.append(r["created"])
+            if r["status"]:
+                _tags.append(r["status"])
+            if r["has"]:
+                _tags.append(f"✓{r['has']}")
+            print(f"  {r['id']}  {r['name'] or '(未命名)'}"
+                  + (f"  · {r['goal'][:50]}" if r["goal"] else "")
                   + (f"   [{' '.join(_tags)}]" if _tags else ""))
         return 0
 

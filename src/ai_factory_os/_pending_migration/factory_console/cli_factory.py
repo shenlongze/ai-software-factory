@@ -3269,14 +3269,22 @@ class FactoryCLI:
             print(pv.render(root, pid))
             return 0
         interval = max(2, int(getattr(args, "interval", 10) or 10))
+        # ★★ 为什么用 sys.__stdout__ 而不是 print（2026-09-15 修，Founder:
+        #    "为什么我执行后是空白的"）:
+        #   `run()` 用 `redirect_stdout(StringIO)` 捕获命令输出，等 `_dispatch` 返回后
+        #   才把捕获内容 dump 出来（那是给普通命令用的）。而 **watch 是长驻命令，
+        #   while True 永不返回** ⇒ 捕获的内容永远 dump 不出来 ⇒ 屏幕一片空白。
+        #   这不是缓冲/flush 问题（加 flush 无用，我试过）—— 输出根本没到真实终端。
+        #   ⇒ 长驻视图必须**绕过捕获**，直接写 `sys.__stdout__`（原始流）。
+        _out = getattr(sys, "__stdout__", None) or sys.stdout
         try:
             while True:
-                print("\033[2J\033[H", end="")          # 清屏 ✓
-                print(pv.render(root, pid))
-                print(f"\n   ── 每 {interval} 秒刷新 · Ctrl+C 退出 ──")
+                print("\033[2J\033[H", end="", file=_out, flush=True)   # 清屏 ✓
+                print(pv.render(root, pid), file=_out, flush=True)
+                print(f"\n   ── 每 {interval} 秒刷新 · Ctrl+C 退出 ──", file=_out, flush=True)
                 time.sleep(interval)
         except KeyboardInterrupt:
-            print("\n  （已退出 ✓）")
+            print("\n  （已退出 ✓）", file=_out, flush=True)
             return 0
 
     def kanban(self, args: argparse.Namespace) -> int:

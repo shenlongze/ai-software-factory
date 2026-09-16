@@ -572,7 +572,11 @@ def _default_executor_factory(root: str, conversation_id: str,
             inp = dict(input_data or {})
             if leaf:
                 inp["task"] = dict(leaf)
-            out = _noop_guard(leaf, workspace, node_base(inp))
+            # ★ NO_OP guard 必须查【本节点的工作区】(2026-09-15 修):
+            #   此前传的是**项目 workspace**, 但 codex 实际写在 `node_ws`
+            #   （.nodes/<node_id> —— 每节点独立沙箱）⇒ guard 检查的目录不对,
+            #   即使 expected_files 已存在也判不出来 ⇒ 幂等重跑被误报失败。
+            out = _noop_guard(leaf, node_ws, node_base(inp))
             # ★ 执行完 → 合并回项目工作区 ✓（冲突可见 ✓ 不静默覆盖 ✗）
             try:
                 m = merge_node_workspace(

@@ -5647,7 +5647,13 @@ class FactoryCLI:
                             {"id": str(_lid),
                              "title": str((_by_id.get(str(_lid)) or {}).get("title") or ""),
                              "role": str((_by_id.get(str(_lid)) or {}).get("required_role") or ""),
-                             "skill": str((_by_id.get(str(_lid)) or {}).get("required_skill") or "")}
+                             "skill": str((_by_id.get(str(_lid)) or {}).get("required_skill") or ""),
+                             # ★ expected_files 必须带进 Plan（2026-09-15 修）:
+                             #   它是"这个任务该产出什么"的验收物 —— 执行侧靠它判定
+                             #   NO_OP/已完成（_noop_guard: "expected files present ⇒ 完成"）。
+                             #   我接线时漏搬 ⇒ plan task 里为 None ⇒ 幂等重跑被判失败。
+                             "expected_files": list((_by_id.get(str(_lid)) or {}).get("expected_files") or []),
+                             "change_type": str((_by_id.get(str(_lid)) or {}).get("change_type") or "")}
                             for _lid in (_tree.get("leaves") or [])
                         ]
                         _plan = _pt.create_plan(

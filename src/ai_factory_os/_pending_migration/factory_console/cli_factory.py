@@ -9192,9 +9192,20 @@ class FactoryCLI:
                 )
             )
             return 0
+        # ★ 打印项目名 + 目标 + 状态（2026-09-15，Founder: "项目都没有中文名称么？
+        #   没有项目描述么？打印出来都不知道是什么项目"）
+        #   原先只有 `id name`，项目目标(goal)和归档/星标都看不见 ✗
         print(f"项目清单 ({len(projects)} 个)")
         for p in projects:
-            print(f"  {p['id']}  {p['name']}")
+            _g = str(p.get("goal") or "").strip()
+            _tags = []
+            if p.get("archived"):
+                _tags.append("已归档")
+            if p.get("starred"):
+                _tags.append("★")
+            print(f"  {p['id']}  {p['name']}"
+                  + (f"  · {_g[:60]}" if _g else "")
+                  + (f"   [{' '.join(_tags)}]" if _tags else ""))
         return 0
 
     def _project_reconcile(self, args: argparse.Namespace) -> int:

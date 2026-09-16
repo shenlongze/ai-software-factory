@@ -21,7 +21,6 @@
 from __future__ import annotations
 
 import json
-import re
 import subprocess
 import unicodedata
 from datetime import datetime
@@ -92,12 +91,35 @@ def pick_project(root: Path, project_id: str = "") -> str:
     return ds[0].name if ds else ""
 
 
+def _project_meta(root: Path, pid: str) -> tuple[str, str, str]:
+    """读项目实体的 (title, description, status)。
+
+    为什么（2026-09-15，Founder）: "项目都没有中文名称么？没有项目描述么？
+    打印出来都不知道是什么项目" —— 原先 build()/render() 只输出 project_xxx 这种 id，
+    人看不出这项目是干什么的。项目实体里本来就有 title/description ✓，把它读出来 ✓
+    """
+    if not pid:
+        return "", "", ""
+    data = _load_json(root / "projects" / pid / "entities.json")
+    if not data:
+        return "", "", ""
+    items = data if isinstance(data, list) else (data.get("entities") or [])
+    for x in items:
+        if isinstance(x, dict) and x.get("type") == "project":
+            return (str(x.get("title") or ""), str(x.get("description") or ""),
+                    str(x.get("status") or ""))
+    return "", "", ""
+
+
 def build(root: Path | str, project_id: str = "") -> dict[str, Any]:
     """收集进度数据 ✓（只读 ✓ 不写任何东西 ✓）。"""
     root = Path(root)
     pid = pick_project(root, project_id)
     proj = root / "projects" / pid
-    out: dict[str, Any] = {"project_id": pid, "chain": [], "tasks": [], "agents": _agents_running()}
+    _t, _desc, _st = _project_meta(root, pid)
+    out: dict[str, Any] = {"project_id": pid, "project_title": _t,
+                           "project_desc": _desc, "project_status": _st,
+                           "chain": [], "tasks": [], "agents": _agents_running()}
 
     # 会话 / 理解
     convs = sorted((proj / "conversations").glob("*.json"), key=lambda p: p.stat().st_mtime)
@@ -189,7 +211,16 @@ def _titles(root: Path, plan_id: str) -> dict[str, str]:
 def render(root: Path | str, project_id: str = "") -> str:
     """渲染进度视图 ✓（UTF-8 无 emoji 兼容问题 ✓）。"""
     d = build(root, project_id)
-    L = [f"📋 项目进度  {datetime.now():%H:%M:%S}   项目 {d['project_id'] or '(无)'}", ""]
+    # ★ 打印项目名而不是光秃秃的 id（Founder: "打印出来都不知道是什么项目" ✓）
+    _name = str(d.get("project_title") or "").strip() or "(未命名)"
+    _st = str(d.get("project_status") or "").strip()
+    L = [f"📋 项目进度  {datetime.now():%H:%M:%S}   {_name}"
+         + (f"  · {_st}" if _st else "")
+         + f"   [{d['project_id'] or '无项目'}]", ""]
+    _desc = str(d.get("project_desc") or "").strip()
+    if _desc:
+        L.append(f"   {_desc}")
+        L.append("")
     L.append(table([[c[0], c[1], c[2], c[3], c[4]] for c in d["chain"]],
                    ["链路步骤", "状态", "谁做的", "结果", "备注"]))
     L.append("")

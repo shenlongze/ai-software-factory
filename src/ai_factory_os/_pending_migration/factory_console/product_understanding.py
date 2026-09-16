@@ -152,7 +152,19 @@ def normalize_content(content: Any) -> str:
 def build_fact(*, conversation_id: str, fact_type: str, content: str,
                source_message_id: str = "", confidence: float = 1.0,
                provenance: str = "", status: str = "PROPOSED") -> dict[str, Any]:
-    """构造 Fact dict (不落盘; 唯一 writer = upsert_fact)。"""
+    """构造 Fact dict (不落盘; 唯一 writer = upsert_fact)。
+
+    ★ `source_message_id` 是**契约字段**（事实必须可追溯: 它是从哪句话抽出来的）。
+      2026-09-15 查证记录（结论: **历史空缺如实保留, 不回填**）::
+        · 全库 78 条事实里 20 条缺它 —— **全部是 2026-09-14 的数据**
+          （老调用未传参）;
+        · 新代码已正确: `services/conversation/proposal.py` 的 upsert_fact 调用
+          明确传 `source_message_id`, 51 条 `semantic:add` 全带 id ✓
+        · 为何不回填: 回填只能靠"内容相似度猜", 猜错就**污染溯源链** ——
+          而这条链的价值恰恰在于它不能是猜的。20 条缺溯源, 好过 20 条假溯源 ✓
+      ⇒ 下次看到"百分比缺失"时, 先按上面的判据分清【历史数据】与【代码未接线】,
+        别冲进去改代码（本次即为此做了完整查证 ✓）。
+    """
     now = _now_iso()
     return {
         "id": _new_id("fact"),

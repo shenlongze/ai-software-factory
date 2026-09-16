@@ -103,6 +103,32 @@ def build_manifest(root: Path | str, project_id: str) -> dict[str, Any]:
     m["exec_records"] = _count("exec/*.json")
     m["artifacts"] = _count("artifacts/**/*.json")
     m["conversations"] = _count("conversations/*.json")
+    # ★ 冲突文件 + 产物清单 + 健康判定（2026-09-15 修，Founder: "每一个环节都需要优化"）
+    #   病灶实测: 「把 Markdown 转成 PDF」那个项目交付时 workspace 里躺着 **20 个
+    #   `.conflict-*` 文件**（8 个任务都写 index.html 互相覆盖），而交付报告写的是
+    #   「通过 (Ready to ship)」、检查项 3 / 失败 0 / 警告 0 —— 因为交付环节
+    #   **只盘数量、不盘内容、无门槛**。此处补上：冲突必现、产物逐列、健康给结论 ✓
+    _ws = proj / "workspace"
+    _conf = sorted(p.name for p in _ws.rglob("*.conflict-*")) if _ws.is_dir() else []
+    m["conflict_files"] = _conf
+    m["conflict_count"] = len(_conf)
+    # 产物清单（逐文件, 排除依赖目录与冲突残留本身）
+    _skip = {"node_modules", ".git", "__pycache__", ".nodes"}
+    _tree: list[dict[str, Any]] = []
+    if _ws.is_dir():
+        for p in sorted(_ws.rglob("*")):
+            if not p.is_file() or any(s in p.parts for s in _skip):
+                continue
+            if ".conflict-" in p.name:
+                continue
+            try:
+                _tree.append({"path": str(p.relative_to(_ws)), "bytes": p.stat().st_size})
+            except OSError:  # noqa: PERF203 — 单个文件读不到不影响清单
+                continue
+    m["workspace_tree"] = _tree[:200]
+    m["workspace_tree_count"] = len(_tree)
+    m["health"] = ("conflicts" if _conf else
+                   "empty_workspace" if _ws.is_dir() and not _tree else "ok")
     # 架构决策（本轮刚补的环节 ✓ 交付清单里体现 ✓）
     try:
         from .product_truth import _load as _pt_load
@@ -155,13 +181,22 @@ def pack(root: Path | str, project_id: str) -> Path | None:
 
 
 def deliver(root: Path | str, project_id: str, *, pack_now: bool = True) -> dict[str, Any]:
-    """生成交付（READY）: 清单 ✓ + 交付包 ✓ + 记录 ✓。"""
+    """生成交付（READY）: 清单 ✓ + 交付包 ✓ + 记录 ✓。
+
+    ★ 2026-09-15 修（Founder: "每一个环节都需要优化"）: 记录里带上 **health**
+      （ok / conflicts / empty_workspace）与 **conflict_count**。
+      此前清单只盘数量、无健康结论 ⇒ 一个 workspace 里躺着 20 个 `.conflict-*`
+      （任务互相覆盖留下的）的交付, 也能拿「READY」而没人看得见。
+      ★ 状态仍给 READY（是否接受由人决定）, 但**健康结论必须随记录一起走** ✓
+    """
     recs = _load(root, project_id)
     did = f"DLV-{os.urandom(5).hex()}"
     manifest = build_manifest(root, project_id)
     package = str(pack(root, project_id)) if pack_now else ""
     rec = {
         "id": did, "project_id": project_id, "status": "READY",
+        "health": manifest.get("health", "ok"),
+        "conflict_count": int(manifest.get("conflict_count") or 0),
         "manifest": manifest, "package": package,
         "created_at": _now_iso(), "delivered_at": None, "accepted_at": None,
     }

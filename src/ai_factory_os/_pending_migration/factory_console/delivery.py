@@ -246,8 +246,22 @@ def _uat_file(root: Path | str, project_id: str) -> Path:
 
 
 def build_uat_checklist(root: Path | str, project_id: str) -> dict[str, Any]:
-    """从 PRD 生成验收清单 ✓（无 PRD 也返回空清单 + 提示 ✓ 不报错 ✓）。"""
-    criteria: list[str] = []
+    """从 PRD 生成验收清单 + **产物级自动检查** ✓（无 PRD 也返回空清单 + 提示 ✓）。
+
+    ★ 2026-09-15 修（Founder: "每一个环节都需要优化"）:
+      原实现**只从 PRD 文本抽条目** ⇒ 验收 = 人对着需求勾"我觉得行"，
+      **一条都不碰产物**。实测后果:「把 Markdown 转成 PDF」那个项目 3 条全 passed，
+      而同一个 workspace 里躺着 20 个 `.conflict-*`、真正的代码一个都没进交付清单
+      —— **"通过"没有质量含义**。
+
+      ⇒ 清单分两类:
+        · `manual: true`  需求条目（从 PRD 抽, 由人签 ✓ 保留原语义）
+        · `manual: false` **产物级自动检查**（本函数直接判定, 人不必手工核对）:
+            ① 产物存在(workspace 非空)
+            ② 无合并冲突文件
+            ③ 计划里任务声明的产出文件都已落实（expected_files）
+    """
+    criteria: list[dict[str, Any]] = []
     try:
         from .product_truth import _load as _pt_load
         for prd in _pt_load(Path(root), "prds").values():
@@ -270,13 +284,59 @@ def build_uat_checklist(root: Path | str, project_id: str) -> dict[str, Any]:
                         s = item if isinstance(item, str) else (
                             str(item.get("title") or item.get("story") or item)
                             if isinstance(item, dict) else str(item))
-                        if s.strip() and s.strip() not in criteria:
-                            criteria.append(s.strip()[:160])
+                        if s.strip() and s.strip() not in [x["text"] for x in criteria]:
+                            criteria.append({"text": s.strip()[:160], "manual": True})
     except Exception:  # noqa: BLE001 — 失败安全 ✓
         pass
+
+    # ── ★ 产物级自动检查（人不必核对, 直接判定）──────────────────────────
+    try:
+        proj = Path(root) / "projects" / project_id
+        ws = proj / "workspace"
+        _skip = {"node_modules", ".git", "__pycache__", ".nodes"}
+        files, conf = [], []
+        if ws.is_dir():
+            for p in ws.rglob("*"):
+                if not p.is_file() or any(s in p.parts for s in _skip):
+                    continue
+                (conf if ".conflict-" in p.name else files).append(str(p.relative_to(ws)))
+
+        criteria.append({"text": f"产物存在（workspace 有 {len(files)} 个文件）",
+                         "manual": False, "auto_result": "passed" if files else "failed",
+                         "note": "" if files else "workspace 为空或不存在"})
+        criteria.append({"text": f"无合并冲突文件（检出 {len(conf)} 个）",
+                         "manual": False, "auto_result": "passed" if not conf else "failed",
+                         "note": "" if not conf else f"冲突样本: {', '.join(conf[:3])}"})
+        # 计划里任务声明的产出文件是否都落实
+        declared: list[str] = []
+        try:
+            from .product_truth import _load as _pt2
+            for pl in _pt2(Path(root), "plans").values():
+                if not isinstance(pl, dict) or str(pl.get("project_id") or "") != project_id:
+                    continue
+                for t in (pl.get("tasks") or []):
+                    for f in (t.get("expected_files") or []):
+                        k = str(f).strip()
+                        if k and k not in declared:
+                            declared.append(k)
+        except Exception:  # noqa: BLE001
+            pass
+        if declared:
+            missing = [f for f in declared
+                       if not (ws / f).exists() and not any(x.endswith(f) for x in files)]
+            criteria.append({"text": f"任务声明的产出文件已落实（{len(declared) - len(missing)}/{len(declared)}）",
+                             "manual": False,
+                             "auto_result": "passed" if not missing else "failed",
+                             "note": "" if not missing else f"缺: {', '.join(missing[:3])}"})
+    except Exception:  # noqa: BLE001 — 失败安全 ✓
+        pass
+
     rec = {
         "project_id": project_id,
-        "criteria": [{"index": i, "text": c, "result": None, "note": "", "signed_at": None}
+        "criteria": [{"index": i, "text": c["text"],
+                      "result": c.get("auto_result") if not c.get("manual") else None,
+                      "auto": not c.get("manual", True),
+                      "note": c.get("note", ""), "signed_at": None}
                      for i, c in enumerate(criteria)],
         "created_at": _now_iso(),
         "hint": ("" if criteria else
@@ -302,11 +362,19 @@ def uat_get(root: Path | str, project_id: str) -> dict[str, Any]:
 
 def uat_sign(root: Path | str, project_id: str, index: int, *,
              passed: bool, note: str = "") -> dict[str, Any] | None:
-    """逐条签字 ✓（越界/非法索引 → None ✓ 不静默 ✓）。"""
+    """逐条签字 ✓（越界/非法索引 → None ✓ 不静默 ✓）。
+
+    ★ 2026-09-15: **产物级自动检查（`auto: true`）不许手签** ——
+      它的结论由系统按实际产物判定（产物存在 / 无冲突文件 / 声明文件已落实）。
+      否则人可以把"检出 20 个冲突"签成 passed ⇒ 又回到"通过没有质量含义"。
+      要改结论只有一条路: **真把冲突清掉, 重跑 checklist**。
+    """
     rec = uat_get(root, project_id)
     items = rec.get("criteria") or []
     if not (0 <= index < len(items)):
         return None
+    if items[index].get("auto"):
+        return None                              # 自动条目不可手签 ✓
     items[index]["result"] = "passed" if passed else "failed"
     items[index]["note"] = note
     items[index]["signed_at"] = _now_iso()

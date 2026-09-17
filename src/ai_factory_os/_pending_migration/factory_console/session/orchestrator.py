@@ -39,7 +39,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from ..artifact_contract import set_artifact
+from ai_factory_os.services.organization.artifact_contract import set_artifact
 from ..audit.trace_context import get_trace_id
 
 from .agents import AgentMatcher, AgentMetrics, AgentRegistry

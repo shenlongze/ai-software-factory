@@ -1237,7 +1237,7 @@ class FactoryCLI:
         list: 项目产出物统一状态 (存在/缺失/版本); 缺省项目 → 全部。
         validate: 对照 schema 报缺失/漂移/格式不兼容 (任何异常 → 该项目标 error, 不 5xx)。
         """
-        from .artifact_contract import scan_project, validate_all, validate_project
+        from ai_factory_os.services.organization.artifact_contract import scan_project, validate_all, validate_project
 
         action = getattr(args, "artifacts_action", "list") or "list"
         project = str(getattr(args, "project", "") or "").strip()

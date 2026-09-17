@@ -72,7 +72,7 @@ from .actions_debug import (  # noqa: E402,F401
 from .agents import DEFAULT_AGENTS, AgentMatcher, AgentMetrics, AgentRegistry, workforce_snapshot
 from .audit import record_execution
 from ..audit.trace_context import get_trace_id
-from ..artifact_contract import set_artifact
+from ai_factory_os.services.organization.artifact_contract import set_artifact
 from .commands import read_projects
 from .confirm import ConfirmationGate
 from .execution_replay import ReplayError

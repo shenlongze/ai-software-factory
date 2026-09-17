@@ -112,6 +112,7 @@ from .domains import audit as _dom_audit
 from .domains import conversation as _dom_conversation
 from .domains import metrics as _dom_metrics
 from .domains import operations as _dom_operations
+from .domains import platform as _dom_platform
 from .domains import validation as _dom_validation
 
 __all__ = ["main", "build_parser"]
@@ -358,6 +359,10 @@ def build_parser() -> Any:
     # factory verification —— 验收域（按域拆至 domains/validation.py）
     # 底层 verification_store 已在新地基（services/validation/）, 所以本命令零老区依赖 ✓
     _dom_validation.register(sub, json_opt)
+
+    # factory create —— 平台域（按域拆至 domains/platform.py）
+    # 底层 org.cli 已在新地基（services/organization/cli.py）⇒ 零老区依赖 ✓
+    _dom_platform.register(sub, json_opt)
 
     # factory project <sub> (Phase 5A: Example Layer, 只读)
     p_project = sub.add_parser("project", help="项目配置 (只读: examples/*/project.yaml)")
@@ -997,6 +1002,8 @@ def main(argv: list[str] | None = None) -> int:
             result = _dispatch_evd(ctx, args)
         elif args.command == "history":
             result = _dispatch_history(ctx, args)
+        elif args.command == "create":
+            result = _dispatch_create(ctx, args)
         elif args.command == "project":
             result = _dispatch_project(ctx, args)
         elif args.command == "provider":
@@ -1202,6 +1209,61 @@ def _print_evd(sub: str, r: dict) -> None:
     for e in r["items"]:
         print(f"  {e.get('evidence_id')}  {e.get('evidence_type')}  "
               f"ver={e.get('verification_refs') or []}")
+
+
+def _dispatch_create(ctx: FactoryContext, args: Any) -> dict:
+    """factory create <type> —— 统一创建入口（company / department / project）。
+
+    与老 CLI `cli_factory.create_cmd`（L8600）行为一致:
+      · company    → org.cli.cmd_company_create
+      · department → 需 --company（缺 → rc 2）; 转 args.company_id 后 cmd_department_create
+      · project    → 需 --name（缺 → rc 2 [E4003]）; repo_path 缺省 = 数据根; cmd_project_register
+    """
+    ctype = getattr(args, "create_type", "") or ""
+    ctx.root.mkdir(parents=True, exist_ok=True)
+    try:
+        from ai_factory_os.services.organization import cli as org_cli
+    except Exception as exc:  # noqa: BLE001
+        raise CliError(f"错误: {exc}", exit_code=1) from exc
+
+    try:
+        if ctype == "company":
+            result = org_cli.cmd_company_create(ctx.root, args)
+        elif ctype == "department":
+            if not getattr(args, "company", ""):
+                raise CliError("错误: department 需要 --company <id>", exit_code=2)
+            args.company_id = getattr(args, "company", "")  # 对齐 cmd_department_create
+            result = org_cli.cmd_department_create(ctx.root, args)
+        elif ctype == "project":
+            # S10-103: create project 必须显式 --name（不落默认名）
+            if not getattr(args, "project_name", None) and not getattr(args, "name", None):
+                raise CliError("[E4003] 错误: create project 需要 --name <项目名> "
+                               "(建议: 显式传入 --name 后重试)", exit_code=2)
+            if not getattr(args, "repo_path", None):
+                args.repo_path = str(ctx.root)   # 无 repo → 默认数据目录（对话/快捷场景）
+            result = org_cli.cmd_project_register(ctx.root, args)
+        else:
+            raise CliError(f"错误: create 需要类型 (company/department/project), 收到: {ctype!r}",
+                           exit_code=2)
+    except CliError:
+        raise
+    except Exception as exc:  # noqa: BLE001 — 失败安全
+        raise CliError(f"错误: create {ctype} 失败 — {exc}", exit_code=1) from exc
+    # ★ 退出码必须随 result 传回（main 末尾用 result["exit_code"] 决定进程退出码）——
+    #   否则业务失败（如 company already exists）会以 rc=0 静默成功, 与老 CLI 不一致。
+    return {"action": "create", "proxy": org_cli, "args": args, "result": result,
+            "exit_code": int(result.get("exit_code", 0) or 0)}
+
+
+def _print_create(r: dict) -> None:
+    """照老 CLI `_emit_proxy_result`: --json → JSON; 否则交给底层 proxy 的 _print_result。"""
+    proxy, args, result = r["proxy"], r["args"], r["result"]
+    if getattr(args, "json", False) and result.get("ok"):
+        import json as _json
+        print(_json.dumps(result, ensure_ascii=False, indent=2))
+        return
+    if int(result.get("exit_code", 0)) != 2:
+        proxy._print_result(args, result)
 
 
 def _dispatch_history(ctx: FactoryContext, args: Any) -> dict:
@@ -1684,6 +1746,8 @@ def _print_output(args: Any, result: dict) -> None:
         _print_evd(args.action, result)
     elif args.command == "history":
         _print_history(args.history_action, result)
+    elif args.command == "create":
+        _print_create(result)
     elif args.command == "project":
         _print_project(args.project_command, result)
     elif args.command == "provider":

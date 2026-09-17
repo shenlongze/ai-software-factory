@@ -110,7 +110,7 @@ def _audit(root: Path | str, event_type: str, payload: dict[str, Any]) -> None:
 def _run_checks(root: Path | str, release: dict[str, Any]) -> list[dict[str, Any]]:
     """确定性 health checks (真实 subprocess, 无 LLM)。"""
     from ai_factory_os.services.validation.verification import verify_pytest
-    from .retry_policy import is_retryable_verification
+    from ai_factory_os.services.validation.retry_policy import is_retryable_verification
 
     ws = Path(root) / "workspace"
     checks: list[dict[str, Any]] = []

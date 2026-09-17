@@ -34,7 +34,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from ai_factory_os.services.conversation import understanding as pu
-from factory_console.semantic_proposal import (
+from ai_factory_os.services.conversation.proposal import (
     apply_operations, validate_proposal,
 )
 

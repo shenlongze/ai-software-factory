@@ -24,7 +24,7 @@ import re
 from pathlib import Path
 from typing import Any, Callable
 
-from factory_console.semantic_proposal import (
+from ai_factory_os.services.conversation.proposal import (
     ProposalValidationError, build_proposal, validate_proposal,
 )
 

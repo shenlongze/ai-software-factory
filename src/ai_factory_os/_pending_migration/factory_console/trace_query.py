@@ -139,7 +139,7 @@ def render_trace(trace: dict[str, Any]) -> str:
 
 def _get_prd(root: str, conversation_id: str, prd_id: str) -> dict[str, Any] | None:
     try:
-        from factory_console import application_formalization as fmt
+        from ai_factory_os.services.conversation import formalization as fmt
         return fmt.get_prd(root, conversation_id, prd_id)
     except Exception:  # noqa: BLE001
         return None

@@ -947,13 +947,13 @@ def build_lifecycle(snapshot: FactorySnapshot) -> Panel:
     lifecycle_table = Table(show_header=True, header_style="bold", box=box.SIMPLE_HEAVY, expand=True)
     for col in ("Lifecycle", "Idea", "Template", "Status", "Current Stage", "Kind"):
         lifecycle_table.add_column(col)
-    for l in lc.lifecycles:
-        cur = l.get("current_stage") or {}
+    for lc_item in lc.lifecycles:
+        cur = lc_item.get("current_stage") or {}
         lifecycle_table.add_row(
-            _text(l.get("id", "")),
-            _text(l.get("idea_id", "")),
-            _text(l.get("template_name", "")),
-            _text(l.get("status", ""), style=_style_status(l.get("status"))),
+            _text(lc_item.get("id", "")),
+            _text(lc_item.get("idea_id", "")),
+            _text(lc_item.get("template_name", "")),
+            _text(lc_item.get("status", ""), style=_style_status(lc_item.get("status"))),
             _text(cur.get("name") or "-"),
             _text(cur.get("kind") or "-"),
         )

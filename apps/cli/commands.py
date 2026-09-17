@@ -2734,7 +2734,7 @@ def _open_product_generator(ctx: FactoryContext, logger: Any, *, experience_stor
         from providers.definitions import DEFAULT_CAPABILITY_PROFILES, DEFAULT_COST_MODELS
         from providers.registry import ProviderRegistry
         from providers.selector import CostAwareSelector
-        from providers.usage import UsageStore, stats_by_provider
+        from providers.usage import stats_by_provider
 
         registry = ProviderRegistry(_open_provider_store(ctx), logger=logger)
         selector = CostAwareSelector(

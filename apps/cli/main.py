@@ -964,6 +964,8 @@ def main(argv: list[str] | None = None) -> int:
             result = cmd_metrics(ctx, args)
         elif args.command == "verification":
             result = _dispatch_verification(ctx, args)
+        elif args.command == "evd":
+            result = _dispatch_evd(ctx, args)
         elif args.command == "project":
             result = _dispatch_project(ctx, args)
         elif args.command == "provider":
@@ -1131,6 +1133,40 @@ def _print_verification(sub: str, r: dict) -> None:
     for x in r["items"]:
         print(f"  {x.get('verification_id') or x.get('id')}  {str(x.get('status')):<10} "
               f"run={x.get('task_run_id') or '-'}  {x.get('method') or x.get('verification_type') or ''}")
+
+
+def _dispatch_evd(ctx: FactoryContext, args: Any) -> dict:
+    """factory evd [list|get] —— 证据 SSOT（底层已在新地基: services/validation/evidence_store）。
+
+    与老 CLI `cli_factory.evd_cmd`（L8217）行为一致。
+    """
+    from ai_factory_os.services.validation.evidence_store import get_evidence, list_evidence
+
+    root = ctx.root
+    action = getattr(args, "action", "list") or "list"
+    if action == "get":
+        ev = get_evidence(root, getattr(args, "evidence_id", "") or "")
+        if ev is None:
+            raise CliError(f"evidence not found: {args.evidence_id}", exit_code=1)
+        return {"action": "get", "evidence": ev}
+    evs = list_evidence(root, verification_id=getattr(args, "verification", "") or "")
+    return {"action": "list", "count": len(evs), "items": evs}
+
+
+def _print_evd(sub: str, r: dict) -> None:
+    if sub == "get":
+        ev = r["evidence"]
+        print(f"evidence_id: {ev.get('evidence_id')}")
+        print(f"  type:        {ev.get('evidence_type')}")
+        print(f"  ver_refs:    {', '.join(ev.get('verification_refs') or []) or '-'}")
+        print(f"  source:      {ev.get('source_ref')}")
+        print(f"  created:     {ev.get('created_at')}")
+        print(f"  content:     {str(ev.get('content') or '')[:200]}")
+        return
+    print(f"Evidence ({r['count']}):")
+    for e in r["items"]:
+        print(f"  {e.get('evidence_id')}  {e.get('evidence_type')}  "
+              f"ver={e.get('verification_refs') or []}")
 
 
 def _dispatch_backup(ctx: FactoryContext, args: Any) -> dict:
@@ -1418,6 +1454,8 @@ def _print_output(args: Any, result: dict) -> None:
         _print_metrics(result)
     elif args.command == "verification":
         _print_verification(args.action, result)
+    elif args.command == "evd":
+        _print_evd(args.action, result)
     elif args.command == "project":
         _print_project(args.project_command, result)
     elif args.command == "provider":

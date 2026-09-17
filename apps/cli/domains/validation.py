@@ -26,3 +26,13 @@ def register(sub: Any, json_opt: Callable[[Any], None]) -> None:
     p_ver.add_argument("verification_id", nargs="?", help="ver-* id (get 用)")
     p_ver.add_argument("--task-run", default="", help="按 task_run_id (run-*) 过滤")
     p_ver.add_argument("--exs", default="", help="按 exs_id (EXS-*) 过滤")
+
+    # factory evd [list|get] [id] [--verification X] —— Evidence SSOT (P0-F4)
+    # 搬迁来源: 老 CLI p_evd（cli_factory L9607）· handler evd_cmd（L8217）
+    # 底层: 已在新地基 `services/validation/evidence_store.py`（今天从老区迁入）⇒ 零老区依赖 ✓
+    p_evd = sub.add_parser("evd", help="Evidence (P0-F4): list/get — canonical EVD-*")
+    json_opt(p_evd)
+    p_evd.add_argument("action", nargs="?", default="list", choices=["list", "get"],
+                       help="动作: list 全部 / get 单条")
+    p_evd.add_argument("evidence_id", nargs="?", help="EVD-* id (get 用)")
+    p_evd.add_argument("--verification", default="", help="按 verification_id (ver-*) 过滤")

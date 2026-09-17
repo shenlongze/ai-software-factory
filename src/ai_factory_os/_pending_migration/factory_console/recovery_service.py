@@ -133,7 +133,7 @@ def recover_production_run(root: Path | str, production_run_id: str, *,
     executor_factory: 原节点工厂 (首次 FAIL 触发 repair_fn); repair_fn: 真实修复器。
     """
     from .production_run import execute_production_run
-    from .verification import verify_python_syntax, verify_pytest
+    from ai_factory_os.services.validation.verification import verify_python_syntax, verify_pytest
     from .artifact_lifecycle import get_artifact
 
     run = get_production_run(root, production_run_id)

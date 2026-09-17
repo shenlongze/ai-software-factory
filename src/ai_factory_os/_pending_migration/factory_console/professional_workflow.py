@@ -356,7 +356,7 @@ def verify_code_with_pytest(
     """
     import tempfile
 
-    from .verification import verify_pytest
+    from ai_factory_os.services.validation.verification import verify_pytest
 
     with tempfile.TemporaryDirectory() as td:
         ws = Path(td)

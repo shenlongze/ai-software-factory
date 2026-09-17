@@ -109,7 +109,7 @@ def _audit(root: Path | str, event_type: str, payload: dict[str, Any]) -> None:
 
 def _run_checks(root: Path | str, release: dict[str, Any]) -> list[dict[str, Any]]:
     """确定性 health checks (真实 subprocess, 无 LLM)。"""
-    from .verification import verify_pytest
+    from ai_factory_os.services.validation.verification import verify_pytest
     from .retry_policy import is_retryable_verification
 
     ws = Path(root) / "workspace"
@@ -135,7 +135,7 @@ def _run_checks(root: Path | str, release: dict[str, Any]) -> list[dict[str, Any
                    "status": HC_PASSED if art_ok else HC_FAILED,
                    "detail": f"artifacts={len(release.get('artifact_ids', []))}"})
     # Check 4: Workspace syntax integrity (真实 subprocess — 坏语法 = UNHEALTHY)
-    from .verification import verify_python_syntax as _syn
+    from ai_factory_os.services.validation.verification import verify_python_syntax as _syn
     syn = _syn(ws)
     checks.append({"check_type": "workspace_syntax",
                    "status": HC_PASSED if syn.get("status") == "PASS" else HC_FAILED,

@@ -298,7 +298,7 @@ def history(root: Path | str, release_id: str) -> list[dict[str, Any]]:
 
 def _run_verification(root: Path | str, ws: Path, rel: dict[str, Any]) -> tuple[list[dict[str, Any]], bool, str, list[dict[str, Any]]]:
     """Run verification checks with bounded retry. Returns (checks, all_pass, failure_reason, attempts)."""
-    from .verification import verify_pytest, verify_python_syntax
+    from ai_factory_os.services.validation.verification import verify_pytest, verify_python_syntax
     from .retry_policy import is_retryable_verification, MAX_VERIFICATION_ATTEMPTS
 
     attempts: list[dict[str, Any]] = list(rel.get("verification_attempts", []))

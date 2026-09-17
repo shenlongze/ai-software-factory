@@ -112,6 +112,7 @@ from .domains import audit as _dom_audit
 from .domains import conversation as _dom_conversation
 from .domains import metrics as _dom_metrics
 from .domains import operations as _dom_operations
+from .domains import validation as _dom_validation
 
 __all__ = ["main", "build_parser"]
 
@@ -328,6 +329,10 @@ def build_parser() -> Any:
 
     # factory dashboard + factory metrics —— 监控域（按域拆至 domains/metrics.py; 命令面不变 ✓）
     _dom_metrics.register(sub, json_opt)
+
+    # factory verification —— 验收域（按域拆至 domains/validation.py）
+    # 底层 verification_store 已在新地基（services/validation/）, 所以本命令零老区依赖 ✓
+    _dom_validation.register(sub, json_opt)
 
     # factory project <sub> (Phase 5A: Example Layer, 只读)
     p_project = sub.add_parser("project", help="项目配置 (只读: examples/*/project.yaml)")
@@ -955,6 +960,8 @@ def main(argv: list[str] | None = None) -> int:
             result = cmd_dashboard(ctx, args)
         elif args.command == "metrics":
             result = cmd_metrics(ctx, args)
+        elif args.command == "verification":
+            result = _dispatch_verification(ctx, args)
         elif args.command == "project":
             result = _dispatch_project(ctx, args)
         elif args.command == "provider":
@@ -1081,6 +1088,47 @@ def _dispatch_checkpoint(ctx: FactoryContext, args: Any) -> dict:
     if args.checkpoint_command == "list":
         return cmd_checkpoint_list(ctx, args)
     raise CliError(f"unknown checkpoint command: {args.checkpoint_command}", exit_code=2)
+
+
+def _dispatch_verification(ctx: FactoryContext, args: Any) -> dict:
+    """factory verification [list|get] —— 验收域（底层已在新地基: services/validation）。
+
+    与老 CLI `cli_factory.verification_cmd`（L8151）行为一致:
+      list → 全部 ver-*（可按 task_run / exs 过滤）; get → 单条详情。
+    """
+    from ai_factory_os.services.validation.verification_store import (
+        get_verification, list_verifications,
+    )
+
+    root = ctx.root
+    action = getattr(args, "action", "list") or "list"
+    if action == "get":
+        rec = get_verification(root, getattr(args, "verification_id", "") or "")
+        if rec is None:
+            raise CliError(f"verification not found: {args.verification_id}", exit_code=1)
+        return {"action": "get", "verification": rec}
+    recs = list_verifications(root, task_run_id=getattr(args, "task_run", "") or "",
+                              exs_id=getattr(args, "exs", "") or "")
+    return {"action": "list", "count": len(recs), "items": recs}
+
+
+def _print_verification(sub: str, r: dict) -> None:
+    if sub == "get":
+        v = r["verification"]
+        print(f"verification_id: {v.get('verification_id') or v.get('id')}")
+        print(f"  status:           {v.get('status')}")
+        print(f"  task_run_id:      {v.get('task_run_id')}")
+        print(f"  exs_id:           {v.get('exs_id')}")
+        print(f"  type:             {v.get('verification_type')}")
+        print(f"  method:           {v.get('method')}")
+        print(f"  attempt:          {v.get('attempt')}")
+        print(f"  created_at:       {v.get('created_at')}")
+        print(f"  completed_at:     {v.get('completed_at')}")
+        return
+    print(f"Verifications ({r['count']}):")
+    for x in r["items"]:
+        print(f"  {x.get('verification_id') or x.get('id')}  {str(x.get('status')):<10} "
+              f"run={x.get('task_run_id') or '-'}  {x.get('method') or x.get('verification_type') or ''}")
 
 
 def _dispatch_project(ctx: FactoryContext, args: Any) -> dict:
@@ -1317,6 +1365,8 @@ def _print_output(args: Any, result: dict) -> None:
         _print_dashboard(result)
     elif args.command == "metrics":
         _print_metrics(result)
+    elif args.command == "verification":
+        _print_verification(args.action, result)
     elif args.command == "project":
         _print_project(args.project_command, result)
     elif args.command == "provider":

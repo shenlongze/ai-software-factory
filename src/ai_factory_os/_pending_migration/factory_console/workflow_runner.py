@@ -624,7 +624,7 @@ def _router_context() -> dict[str, Any]:
 
 def _make_router(plane: Any) -> Any:
     """LLMRouter 实例 (延迟 import — Removal Isolation: Router 加载失败不拖垮)。"""
-    from .llm_router import LLMRouter
+    from ai_factory_os.infrastructure.llm.providers.router import LLMRouter
 
     return LLMRouter(control_plane=plane)
 

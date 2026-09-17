@@ -3968,7 +3968,7 @@ class FactoryCLI:
         """
         print("=== LLM Router 状态 (骨架, 只读) ===")
         from ai_factory_os.infrastructure.llm.providers.control_plane import LLMControlPlane
-        from .llm_router import LLMRouter
+        from ai_factory_os.infrastructure.llm.providers.router import LLMRouter
         from ai_factory_os.infrastructure.llm.providers.model_catalog import ModelCatalog
 
         agents_dir = self.data_dir / "agents"

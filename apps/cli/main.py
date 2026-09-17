@@ -966,6 +966,8 @@ def main(argv: list[str] | None = None) -> int:
             result = _dispatch_verification(ctx, args)
         elif args.command == "evd":
             result = _dispatch_evd(ctx, args)
+        elif args.command == "history":
+            result = _dispatch_history(ctx, args)
         elif args.command == "project":
             result = _dispatch_project(ctx, args)
         elif args.command == "provider":
@@ -1167,6 +1169,59 @@ def _print_evd(sub: str, r: dict) -> None:
     for e in r["items"]:
         print(f"  {e.get('evidence_id')}  {e.get('evidence_type')}  "
               f"ver={e.get('verification_refs') or []}")
+
+
+def _dispatch_history(ctx: FactoryContext, args: Any) -> dict:
+    """factory history search|index|stats —— 历史检索（底层已在新地基: services/learning/history_search）。
+
+    与老 CLI `cli_factory.history_cmd`（L9044）行为一致。
+    """
+    from ai_factory_os.services.learning.history_search import HistoryIndex
+
+    action = getattr(args, "history_action", "search") or "search"
+    idx = HistoryIndex(ctx.root / "search.db")
+    try:
+        if action == "index":
+            counts = idx.sync_from_data_dir(ctx.root)
+            return {"action": "index", "counts": counts}
+        if action == "stats":
+            return {"action": "stats", "stats": idx.stats()}
+        query = (getattr(args, "history_query", "") or "").strip()
+        if not query:
+            raise CliError("history search 需要检索词", exit_code=2)
+        if not idx.stats().get("total"):
+            idx.sync_from_data_dir(ctx.root)
+        src_raw = (getattr(args, "source", "") or "").strip()
+        sources = tuple(s.strip() for s in src_raw.split(",") if s.strip()) or None
+        hits = idx.search(query, limit=max(1, int(getattr(args, "limit", 8) or 8)), sources=sources)
+        return {"action": "search", "query": query, "hits": hits,
+                "indexed": idx.stats().get("total", 0)}
+    finally:
+        idx.close()
+
+
+def _print_history(sub: str, r: dict) -> None:
+    if sub == "index":
+        counts = r["counts"]
+        print("  ✓ 已索引 " + str(sum(counts.values())) + " 条: "
+              + " · ".join(f"{k}={v}" for k, v in counts.items()))
+        return
+    if sub == "stats":
+        st = r["stats"]
+        print("=== 历史索引 ===")
+        for s in ("event", "trace", "experience", "message"):
+            print(f"  {s:12s} {st.get(s, 0):6d} 条")
+        print(f"  {'合计':12s} {st.get('total', 0):6d} 条")
+        return
+    hits = r["hits"]
+    if not hits:
+        print(f"未找到与「{r['query']}」相关的历史（索引 {r['indexed']} 条）")
+        return
+    print(f"=== 「{r['query']}」找到 {len(hits)} 条 ===")
+    for h in hits:
+        title = getattr(h, "title", "") or ""
+        print(f"  [{h.source}] {h.ts[:19].replace('T', ' ') or '—'}  {title[:56]}")
+        print(f"    {h.snippet[:170]}")
 
 
 def _dispatch_backup(ctx: FactoryContext, args: Any) -> dict:
@@ -1456,6 +1511,8 @@ def _print_output(args: Any, result: dict) -> None:
         _print_verification(args.action, result)
     elif args.command == "evd":
         _print_evd(args.action, result)
+    elif args.command == "history":
+        _print_history(args.history_action, result)
     elif args.command == "project":
         _print_project(args.project_command, result)
     elif args.command == "provider":

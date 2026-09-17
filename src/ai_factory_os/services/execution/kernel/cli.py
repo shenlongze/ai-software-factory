@@ -40,9 +40,16 @@ from ai_factory_os.infrastructure.events.store import EventStore
 
 from . import events as exec_events
 from .agent_runtime import AgentRuntime
-from .approval import ApprovalError, ApprovalGate
 from .experience import ExperienceRecorder
-from ai_factory_os.services.execution.types import AgentInstance, ExecutionRequest, new_id
+from ai_factory_os.services.execution.types import (
+    AgentInstance,
+    ExecutionRequest,
+    ExecutionResult,
+    new_id,
+)
+from ai_factory_os.services.governance import ApprovalRuntimeError
+from ai_factory_os.services.governance.service import ApprovalGate as _GovApprovalGate
+from ai_factory_os.services.governance.store import ApprovalStore
 from ai_factory_os.infrastructure.llm.provider import ProviderRegistry
 from .store import ExecStore
 
@@ -370,8 +377,50 @@ def cmd_exec_providers(root: Path, args: Any) -> dict:
 
 # ------------------------------------------------------------------ exec approval
 
-def _approval_gate(root: Path, logger: Any) -> ApprovalGate:
-    return ApprovalGate(_exec_store(root), logger=logger)
+def _patch_artifact_path(result: ExecutionResult) -> str:
+    """执行结果的 patch Artifact 落盘路径 (缺失 → 响亮错误)。
+
+    ★ 2026-09-15 自 kernel/approval.py 搬入（那套 ApprovalGate 已由 governance 统一）。
+    """
+    for artifact in result.artifacts:
+        if artifact.type.value == "patch" and artifact.path:
+            return artifact.path
+    raise ApprovalRuntimeError(f"execution result has no patch artifact: {result.id}")
+
+
+def _git_apply(target: Path, patch_path: str, *, git_bin: str = "git") -> None:
+    """git apply 写入目标项目 (非 git 仓库 → 响亮错误, 不静默降级)。
+
+    ★ 2026-09-15 自 kernel/approval.py 搬入 —— 这是**执行域职责**
+      （治理域只管"标记已应用", 真应用在 exec 域）。
+    """
+    try:
+        check = subprocess.run(
+            [git_bin, "-C", str(target), "rev-parse", "--git-dir"],
+            capture_output=True, text=True, timeout=60,
+        )
+    except FileNotFoundError as exc:
+        raise ApprovalRuntimeError(f"git command not found: {git_bin}") from exc
+    if check.returncode != 0:
+        raise ApprovalRuntimeError(
+            f"target is not a git repository: {target} — 应用前须可审计")
+    proc = subprocess.run(
+        [git_bin, "-C", str(target), "apply", str(patch_path)],
+        capture_output=True, text=True, timeout=60,
+    )
+    if proc.returncode != 0:
+        raise ApprovalRuntimeError(
+            f"git apply failed (rc {proc.returncode}): {proc.stderr.strip()[:300]}")
+
+
+def _approval_gate(root: Path, logger: Any) -> _GovApprovalGate:
+    """审批门（★ 2026-09-15 合并: 记录统一落 <root>/governance/）。
+
+    原先用 exec 域的 ApprovalStore（落 exec/approvals.json）—— 那是第 4 套审批,
+    与治理域各写各的。现统一到 governance; exec 域只保留"审批 ↔ 执行请求"的关联
+    （request → project_dir / evidence_bundle_id）。
+    """
+    return _GovApprovalGate(ApprovalStore(root / "governance"), logger=logger)
 
 
 def _decide(root: Path, args: Any, decision: str) -> dict:
@@ -384,7 +433,7 @@ def _decide(root: Path, args: Any, decision: str) -> dict:
                 decided_by=getattr(args, "by", "") or "",
                 comment=getattr(args, "comment", "") or "",
             )
-        except ApprovalError as exc:
+        except ApprovalRuntimeError as exc:
             code = 7 if "not found" in str(exc) else 1
             return _error(str(exc), exit_code=code)
         event_type = EventType.ORG_EXECUTION_APPROVED
@@ -409,10 +458,16 @@ def cmd_exec_approval_deny(root: Path, args: Any) -> dict:
 
 
 def cmd_exec_approval_apply(root: Path, args: Any) -> dict:
-    """exec approval apply — 应用已批准 patch (未批 → 硬拒绝; org.execution.applied)。"""
+    """exec approval apply — 应用已批准 patch (未批 → 硬拒绝; org.execution.applied)。
+
+    ★ 2026-09-15 合并后的职责划分:
+       治理域（governance）: 审批记录 + 校验"已批/未应用" + 标记 applied
+       执行域（本函数）:     取执行结果的 patch artifact → **真 git apply** → 发 exec 事件
+    """
     with _logger_scope(root) as logger:
         store = _exec_store(root)
-        approval = store.get_approval(args.id)
+        gate = _approval_gate(root, logger)
+        approval = gate.store.get(args.id)          # ← 审批记录已在 governance/
         if approval is None:
             return _error(f"approval not found: {args.id}", exit_code=7)
         target = getattr(args, "project", None)
@@ -422,11 +477,20 @@ def cmd_exec_approval_apply(root: Path, args: Any) -> dict:
                 target = request.input.get("project_dir", "")
         if not target:
             return _error("target project dir unknown: pass --project", exit_code=1)
+        # 执行域: 取 patch artifact → 真 apply
+        result = store.get_result_by_request(approval.request_id)
+        if result is None:
+            return _error(f"execution result not found for request {approval.request_id}", exit_code=1)
         try:
-            record, patch_text = _approval_gate(root, logger).apply(args.id, target)
-        except ApprovalError as exc:
+            patch_path = _patch_artifact_path(result)
+            if not Path(target).is_dir():
+                return _error(f"target project dir not found: {target}", exit_code=1)
+            _git_apply(Path(target), patch_path)
+            record = gate.apply(args.id, target=target)      # 治理域: 标记 applied
+        except ApprovalRuntimeError as exc:
             code = 7 if "not found" in str(exc) else 1
             return _error(str(exc), exit_code=code)
+        patch_text = Path(patch_path).read_text(encoding="utf-8")
         event_seq = exec_events.last_seq(logger, EventType.ORG_EXECUTION_APPLIED)
     return {
         "ok": True,

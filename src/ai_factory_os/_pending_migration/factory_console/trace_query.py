@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from factory_console import golden_path as gp
-from factory_console import product_understanding as pu
+from ai_factory_os.services.conversation import understanding as pu
 from factory_console import task_decomposition as td
 
 

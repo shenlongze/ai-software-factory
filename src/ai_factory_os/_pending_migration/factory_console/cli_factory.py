@@ -5595,7 +5595,7 @@ class FactoryCLI:
                 _pid = ""
                 if _conv:
                     try:
-                        from factory_console import product_understanding as _pu
+                        from ai_factory_os.services.conversation import understanding as _pu
                         _cdoc = _pu._load_conv(str(root), _conv)
                         if _cdoc:
                             _pid = str(_cdoc.get("project_id") or "")

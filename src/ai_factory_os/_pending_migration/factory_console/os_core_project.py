@@ -117,7 +117,7 @@ def set_project_lifecycle(root: str | Path, project_id: str, target: str) -> dic
 
 def link_conversation(root: str | Path, project_id: str, conversation_id: str) -> dict[str, Any]:
     """Conversation reference -> Project (写 conversation.project_id 引用; conv_id 不是 project_id)。"""
-    from . import product_understanding as pu
+    from ai_factory_os.services.conversation import understanding as pu
 
     if get_project(root, project_id) is None:
         raise ValueError(f"Project 不存在: {project_id}")
@@ -131,7 +131,7 @@ def link_conversation(root: str | Path, project_id: str, conversation_id: str) -
 
 def resolve_project_for_conversation(root: str | Path, conversation_id: str) -> dict[str, Any] | None:
     """Conversation -> project_id (reference) -> OS Project (SSOT 解析)。"""
-    from . import product_understanding as pu
+    from ai_factory_os.services.conversation import understanding as pu
 
     doc = pu._load_conv(root, conversation_id)
     pid = str((doc or {}).get("project_id") or "")
@@ -142,7 +142,7 @@ def resolve_project_for_conversation(root: str | Path, conversation_id: str) -> 
 
 def conversations_for_project(root: str | Path, project_id: str) -> list[dict[str, Any]]:
     """列出引用该 Project 的 conversations (只读投影)。"""
-    from . import product_understanding as pu
+    from ai_factory_os.services.conversation import understanding as pu
 
     out = []
     conv_dir = Path(root) / "conversations"

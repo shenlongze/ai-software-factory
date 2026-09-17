@@ -16,7 +16,7 @@ import json
 from typing import Any, Callable
 
 from factory_console import project_agile as _pa
-from factory_console import product_understanding as _pu
+from ai_factory_os.services.conversation import understanding as _pu
 from factory_console import task_decomposition as _td
 
 #: conv flow 9 阶段 (有序; 前 6 认知/计划, 后 3 生产/治理)

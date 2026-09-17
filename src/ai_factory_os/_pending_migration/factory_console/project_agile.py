@@ -69,7 +69,7 @@ def _save(root: Path | str, data: dict[str, Any]) -> None:
 def attach_project(root: Path | str, conversation_id: str,
                    project_id: str) -> dict[str, Any]:
     """conversation 关联项目 (conversation 元数据 project_id)。"""
-    from factory_console import product_understanding as pu
+    from ai_factory_os.services.conversation import understanding as pu
     doc = pu._load_conv(root, conversation_id)
     if doc is None:
         raise ValueError(f"conversation 不存在: {conversation_id}")
@@ -82,7 +82,7 @@ def attach_project(root: Path | str, conversation_id: str,
 def get_project_by_conversation(root: Path | str,
                                 conversation_id: str) -> dict[str, Any] | None:
     """按 conversation 反查项目 (无关联 → None)。"""
-    from factory_console import product_understanding as pu
+    from ai_factory_os.services.conversation import understanding as pu
     doc = pu._load_conv(root, conversation_id)
     if doc is None:
         return None
@@ -101,7 +101,7 @@ def get_project_by_conversation(root: Path | str,
 
 def conversation_project_id(root: Path | str, conversation_id: str) -> str:
     """conversation 关联的 project_id (无 → "")。"""
-    from factory_console import product_understanding as pu
+    from ai_factory_os.services.conversation import understanding as pu
     doc = pu._load_conv(root, conversation_id)
     return str((doc or {}).get("project_id") or "")
 

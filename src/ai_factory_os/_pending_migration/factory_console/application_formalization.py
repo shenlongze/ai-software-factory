@@ -32,7 +32,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from factory_console import product_understanding as pu
+from ai_factory_os.services.conversation import understanding as pu
 
 PRD_STATUSES: tuple[str, ...] = ("draft", "approved", "archived")
 

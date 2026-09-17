@@ -33,7 +33,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from factory_console import product_understanding as pu
+from ai_factory_os.services.conversation import understanding as pu
 from factory_console.semantic_proposal import (
     apply_operations, validate_proposal,
 )

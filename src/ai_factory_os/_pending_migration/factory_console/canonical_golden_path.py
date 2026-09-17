@@ -25,7 +25,7 @@ from factory_console.conversation_app import (
     ConversationApplicationService,
     ProductUnderstandingService,
 )
-from factory_console.product_understanding import get_conversation
+from ai_factory_os.services.conversation.understanding import get_conversation
 
 # 生命周期命令 (Application 层自然语言映射 → 既有 golden_path 命令)。
 # 保守整句匹配 (去空白/标点/礼貌引导词), 不做贪婪子串业务判断。
@@ -441,7 +441,7 @@ def ensure_project_binding(root: str | Path, conversation_id: str) -> str:
     失败安全: 任何异常只打 stderr，不阻断会话主链 ✓。
     """
     try:
-        from factory_console import product_understanding as pu
+        from ai_factory_os.services.conversation import understanding as pu
 
         # ★ 必须用 _load_conv（原始记录含 understanding）；
         #   get_conversation 是过滤后的公开视图，不含 facts ✗（我第一版踩过）

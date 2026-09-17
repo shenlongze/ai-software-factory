@@ -171,7 +171,7 @@ def build_proposal(*, operations: list[dict[str, Any]], reply: str = "",
 def _find_active_fact(doc: dict[str, Any], *, fact_type: str = "",
                       content: str = "", fact_id: str = "") -> dict[str, Any] | None:
     """在 doc 中找可操作 fact (按 id 优先; 否则 type+content 精确 / 语义槽)。"""
-    from . import product_understanding as pu
+    from ai_factory_os.services.conversation import understanding as pu
     facts = (doc.setdefault("understanding", {})
              .setdefault("facts", {}))
     if fact_id:
@@ -224,7 +224,7 @@ def apply_operations(root, conversation_id: str,
 
     返回: 每次 mutation 的结果 dict 列表 (按序)。空 op 列表 → []。
     """
-    from . import product_understanding as pu
+    from ai_factory_os.services.conversation import understanding as pu
 
     results: list[dict[str, Any]] = []
     actor = fallback_actor or "human"
@@ -315,7 +315,7 @@ def apply_operations(root, conversation_id: str,
 def _resolve_target(root, conversation_id: str,
                     op: dict[str, Any]) -> dict[str, Any] | None:
     """按 op 找目标 fact (id → type+content 精确 → 语义槽)。"""
-    from . import product_understanding as pu
+    from ai_factory_os.services.conversation import understanding as pu
 
     doc = pu._ensure_conv_doc(root, conversation_id)  # noqa: SLF001 — 同包复用
     return _find_active_fact(
@@ -330,7 +330,7 @@ def _supersede_related_deferred(root, conversation_id: str,
     例: deferred「排行榜」+ 用户「排行榜还是保留(本地最高分)」→ 新 REQUIREMENT
     顶替 deferred, deferred 不再残留 (可审计历史保留)。返回被顶替的 fact id。
     """
-    from . import product_understanding as pu
+    from ai_factory_os.services.conversation import understanding as pu
 
     doc = pu._ensure_conv_doc(root, conversation_id)  # noqa: SLF001
     facts = (doc.setdefault("understanding", {})

@@ -9,6 +9,8 @@ event logs / status / validate。
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import json
 import sys
 from typing import Any
@@ -111,6 +113,7 @@ from .context import DEFAULT_ROOT, FactoryContext
 from .domains import audit as _dom_audit
 from .domains import conversation as _dom_conversation
 from .domains import metrics as _dom_metrics
+from .domains import decomposition as _dom_decomposition
 from .domains import operations as _dom_operations
 from .domains import organization as _dom_organization
 from .domains import platform as _dom_platform
@@ -368,6 +371,9 @@ def build_parser() -> Any:
     # factory plugin —— 组织域（按域拆至 domains/organization.py）
     # 底层 plugin_kernel 已在新地基（infrastructure/plugins/kernel.py）⇒ 零老区依赖 ✓
     _dom_organization.register(sub, json_opt)
+
+    # factory kanban —— 任务拆解域（按域拆至 domains/decomposition.py）
+    _dom_decomposition.register(sub, json_opt)
 
     # factory project <sub> (Phase 5A: Example Layer, 只读)
     p_project = sub.add_parser("project", help="项目配置 (只读: examples/*/project.yaml)")
@@ -1011,6 +1017,8 @@ def main(argv: list[str] | None = None) -> int:
             result = _dispatch_create(ctx, args)
         elif args.command == "plugin":
             result = _dispatch_plugin(ctx, args)
+        elif args.command == "kanban":
+            result = _dispatch_kanban(ctx, args)
         elif args.command == "project":
             result = _dispatch_project(ctx, args)
         elif args.command == "provider":
@@ -1216,6 +1224,164 @@ def _print_evd(sub: str, r: dict) -> None:
     for e in r["items"]:
         print(f"  {e.get('evidence_id')}  {e.get('evidence_type')}  "
               f"ver={e.get('verification_refs') or []}")
+
+
+def _load_json_safe(path: Any) -> Any | None:
+    """fail-safe JSON 读取（缺失/损坏 → None; 永不抛）。
+
+    与老 CLI `cli_factory._load_json_safe` 等价 —— 在新 CLI 里**重写**而非搬原文件:
+    老区有 20 处引用它, 搬文件会牵动 20 个调用点（先搬叶子纪律）。
+    """
+    import json as _json
+    try:
+        return _json.loads(Path(path).read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 — 只读展示失败安全
+        return None
+
+
+def _task_rows(data_dir: Any) -> list[dict[str, Any]]:
+    """任务行（id/title/status/project/role/agent）—— 照老 CLI `_task_rows`（L783）逻辑。
+
+    合并三源（WebUI/CLI 同源, P2b 同步）:
+      ① tasks/*.json（每文件一条）
+      ② ops/unified/entities.json 补 required_role
+      ③ assignments/assignments.json 补 agent_id
+      ④ workspace/projects/*/management/backlog/task.json（会话/WebUI 创建）
+    """
+    data_dir = Path(data_dir)
+    rows: list[dict[str, Any]] = []
+    _role_by_task: dict[str, str] = {}
+    _agent_by_task: dict[str, str] = {}
+    try:
+        import json as _json
+        for _f in [data_dir / "ops" / "unified" / "entities.json"]:
+            if _f.is_file():
+                for _e in _json.loads(_f.read_text(encoding="utf-8")):
+                    if isinstance(_e, dict) and _e.get("type") == "task":
+                        _r = str(_e.get("required_role") or "").strip()
+                        if _r:
+                            _role_by_task[str(_e.get("id"))] = _r
+        _af = data_dir / "assignments" / "assignments.json"
+        if _af.is_file():
+            _d = _json.loads(_af.read_text(encoding="utf-8"))
+            for _a in (list(_d.values()) if isinstance(_d, dict) else _d):
+                if isinstance(_a, dict) and _a.get("task_id"):
+                    _agent_by_task[str(_a["task_id"])] = str(_a.get("agent_id") or "")
+    except Exception:  # noqa: BLE001 — 失败安全 ✓ 补不上就不补 ✓
+        pass
+
+    for path in sorted((data_dir / "tasks").glob("*.json")):
+        row = _load_json_safe(path)
+        if not isinstance(row, dict) or not row.get("id"):
+            continue
+        rows.append({
+            "id": row.get("id", ""),
+            "title": row.get("title", ""),
+            "status": row.get("status", ""),
+            "project": row.get("project", ""),
+            "role": _role_by_task.get(str(row.get("id", "")), ""),
+            "agent": _agent_by_task.get(str(row.get("id", "")), ""),
+        })
+    for pdir in sorted((data_dir / "workspace" / "projects").glob("*")):
+        if not pdir.is_dir():
+            continue
+        tf = pdir / "management" / "backlog" / "task.json"
+        data = _load_json_safe(tf) or {}
+        tasks = data.get("tasks") if isinstance(data, dict) else None
+        if not isinstance(tasks, dict):
+            continue
+        for tid, t in tasks.items():
+            if not isinstance(t, dict):
+                continue
+            rows.append({
+                "id": str(t.get("id") or tid),
+                "title": str(t.get("title") or ""),
+                "status": str(t.get("status") or ""),
+                "project": str(t.get("project") or pdir.name),
+            })
+    return rows
+
+
+def _dispatch_kanban(ctx: FactoryContext, args: Any) -> dict:
+    """factory kanban —— 按 status/project/role/agent 分列的看板视图。
+
+    与老 CLI `cli_factory.kanban`（L9538）**逐字一致**（含所有提示语与表格形状）。
+    返回 {lines: [...]} —— print 阶段统一输出。
+    """
+    rows = _task_rows(ctx.root)
+    pid = str(getattr(args, "project", "") or "").strip()
+    if pid:
+        rows = [r for r in rows if pid in str(r.get("project") or "")]
+
+    group = str(getattr(args, "group", "status") or "status")
+    show_all = bool(getattr(args, "all", False))
+    L: list[str] = []
+
+    if group in ("project", "role", "agent"):
+        key_fn = {
+            "project": lambda r: str(r.get("project") or "(无项目)"),
+            "role": lambda r: str(r.get("role") or "(无角色)"),
+            "agent": lambda r: str(r.get("agent") or "(未分配)"),
+        }[group]
+        buckets_p: dict[str, list[dict]] = {}
+        for r in rows:
+            buckets_p.setdefault(key_fn(r), []).append(r)
+        order = sorted(buckets_p, key=lambda k: (-len(buckets_p[k]), k))
+        group_label = {"project": "项目", "role": "角色", "agent": "执行人"}[group]
+        L.append(f"=== 看板 · 按{group_label}分列（共 {len(rows)} 个任务 · {len(order)} 列）===")
+        L.append("")
+        for k in (order if show_all else order[:12]):
+            items = buckets_p[k]
+            done = sum(1 for i in items if str(i.get("status")) == "done")
+            L.append(f"  ┌─ {k[:34]}（{len(items)} 个 · 完成 {done}）")
+            for r in (items if show_all else items[:3]):
+                L.append(f"  │  {str(r.get('id'))[:20]:22s} {str(r.get('title'))[:38]:40s}"
+                         f" [{str(r.get('status'))[:11]}]")
+            if len(items) > 3 and not show_all:
+                L.append(f"  │  … 另 {len(items) - 3} 条")
+            L.append("  └" + "─" * 40)
+        if len(order) > 12 and not show_all:
+            L.append(f"  … 另 {len(order) - 12} 列（--all 看全部）")
+        L.append("")
+        L.append("  数据源: ①tasks/*.json ②backlog task.json ③分配记录（agent 维度 ✓）")
+        if group == "role":
+            L.append("  ⚠ 多数任务无 required_role ✗ → 会集中在「(无角色)」列（数据现状 ✓ 不是显示 bug ✗）")
+        if group == "agent":
+            L.append("  ⚠ 分配记录仅 4 条 ✗ → 「(未分配)」会很大 ✓（数据现状 ✓）")
+        return {"lines": L}
+
+    COLS = [("todo", "待办"), ("ready", "就绪"), ("in_progress", "进行中"),
+            ("review", "待评审"), ("blocked", "受阻"), ("failed", "失败"),
+            ("done", "完成"), ("cancelled", "取消")]
+    buckets: dict[str, list[dict]] = {k: [] for k, _ in COLS}
+    other: list[dict] = []
+    for r in rows:
+        st = str(r.get("status") or "").strip().lower()
+        (buckets[st] if st in buckets else other).append(r)
+
+    L.append(f"=== 看板（{'项目含 ' + pid if pid else '全部'} · 共 {len(rows)} 个任务）===")
+    L.append("")
+    for key, label in COLS:
+        items = buckets[key]
+        if not items and key not in ("todo", "in_progress"):
+            continue                       # 空列不刷屏 ✓（todo/进行中 恒显示 ✓）
+        L.append(f"  ┌─ {label}（{len(items)}）")
+        for r in (items if show_all else items[:5]):
+            L.append(f"  │  {str(r.get('id'))[:20]:22s} {str(r.get('title'))[:38]:40s}"
+                     f" {str(r.get('project') or '')[:16]}")
+        if len(items) > 5 and not show_all:
+            L.append(f"  │  … 另 {len(items) - 5} 条（--all 看全部）")
+        L.append("  └" + "─" * 40)
+    if other:
+        L.append(f"  （另有 {len(other)} 条状态未识别）")
+    L.append("")
+    L.append("  数据源: 与 `factory task list` 同一份 ✓ · 列 = 任务实际流转顺序 ✓")
+    return {"lines": L}
+
+
+def _print_kanban(r: dict) -> None:
+    for line in r["lines"]:
+        print(line)
 
 
 def _dispatch_plugin(ctx: FactoryContext, args: Any) -> dict:
@@ -1855,6 +2021,8 @@ def _print_output(args: Any, result: dict) -> None:
         _print_history(args.history_action, result)
     elif args.command == "create":
         _print_create(result)
+    elif args.command == "kanban":
+        _print_kanban(result)
     elif args.command == "plugin":
         _print_plugin(result)
     elif args.command == "project":

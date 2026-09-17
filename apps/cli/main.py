@@ -324,6 +324,31 @@ def build_parser() -> Any:
     json_opt(p_ex_status)
     p_ex_status.add_argument("execution_id", help="执行请求 ID (如 EX-001)")
 
+    # factory run / run-status —— 执行域（从【目标】创建并执行, 老 CLI 的用户入口）
+    # 搬迁来源: 老 CLI p_run（cli_factory L10147）/ p_status（L10162）
+    # 底层: `exec.cli`（经 compat_aliases 映射到新地基 services/execution/kernel/cli.py）
+    # 与新 CLI 已有的 `execution run`（执行【已存在的】execution_id）语义不同, 不冲突 ✓
+    p_run = sub.add_parser(
+        "run",
+        help="执行任务 → exec CLI (薄代理: --project 必填; --task 或 --objective 之一必填)",
+    )
+    p_run.add_argument("--project", default=None, help="项目目录 (沙箱副本源; 必填)")
+    p_run.add_argument("--task", default=None, help="任务 ID (与 --objective 二选一; 提供则优先)")
+    p_run.add_argument("--objective", default=None,
+                       help="目标描述 (与 --task 二选一; 无 --task 时自动生成任务 ID)")
+    p_run.add_argument("--requirement", default="", help="验收标准/约束")
+    p_run.add_argument("--employee", default=None, help="员工 ID (org store 解析)")
+    p_run.add_argument("--agent", default=None, help="Agent 实例 ID (默认 developer-1)")
+    p_run.add_argument("--provider", default=None, help="Provider id (默认 anthropic)")
+    p_run.add_argument("--test-cmd", default=None, help="沙箱内测试命令 (验证)")
+    p_run.add_argument("--json", action="store_true", help="输出结构化 JSON")
+
+    p_run_status = sub.add_parser(
+        "run-status", help="执行结果查询 → exec CLI (薄代理: --id 结果 ID)"
+    )
+    p_run_status.add_argument("--id", default=None, help="结果 ID (缺省列出全部)")
+    p_run_status.add_argument("--json", action="store_true", help="输出结构化 JSON")
+
     # factory checkpoint + factory recover —— 运维域（按域拆至 domains/operations.py; 命令面不变 ✓）
     _dom_operations.register(sub, json_opt)
 
@@ -952,6 +977,10 @@ def main(argv: list[str] | None = None) -> int:
             result = _dispatch_runtime(ctx, args)
         elif args.command == "execution":
             result = _dispatch_execution(ctx, args)
+        elif args.command == "run":
+            result = _dispatch_run(ctx, args)
+        elif args.command == "run-status":
+            result = _dispatch_run_status(ctx, args)
         elif args.command == "checkpoint":
             result = _dispatch_checkpoint(ctx, args)
         elif args.command == "backup":
@@ -1222,6 +1251,139 @@ def _print_history(sub: str, r: dict) -> None:
         title = getattr(h, "title", "") or ""
         print(f"  [{h.source}] {h.ts[:19].replace('T', ' ') or '—'}  {title[:56]}")
         print(f"    {h.snippet[:170]}")
+
+
+def _format_failure(error: str) -> str:
+    """统一失败输出（S10-044 Task 001）: ❌ Failed + Reason + Solution 到 stdout。
+
+    用户失败时只看 stdout —— 错误必须到 stdout（stderr 常被吞/忽略）。
+    与老 CLI `cli_factory._format_failure` 行为一致。
+    """
+    low = error.lower()
+    if "api key" in low or "未设置" in error:
+        solution = "请设置对应 Provider 的 API Key（环境变量），再重试"
+    elif "provider not found" in low:
+        solution = "factory config check 查看可用 Provider; 或用 --provider 指定已注册的"
+    elif "project dir not found" in low or "项目" in error and "不存在" in error:
+        solution = "factory project create --repo-path <目录> 先创建/接入项目"
+    elif "sandbox" in low:
+        solution = "检查沙箱目录权限与磁盘空间, 或重试"
+    else:
+        solution = "查看上方 Reason; 必要时 factory doctor 做环境诊断"
+    return f"❌ Failed\n\nReason:\n  {error}\n\nSolution:\n  {solution}"
+
+
+def _dispatch_run(ctx: FactoryContext, args: Any) -> dict:
+    """factory run —— 从【目标】创建并执行（薄代理 exec CLI）。
+
+    与老 CLI `cli_factory.run_cmd`（L10147）行为一致:
+      · --task 与 --objective 二选一（都缺 → rc 2）; --project 必填
+      · 仅 --objective（无 task 锚点）→ 自动生成 E2-OBJ-* 后透传
+    """
+    import uuid
+
+    task = getattr(args, "task", None)
+    objective = getattr(args, "objective", None)
+    if not task and not objective:
+        raise CliError("[E4001] 错误: --task 必填 (任务 ID) / --objective 必填 "
+                       "(自然语言目标), 二选一 (建议: 二选一补齐后重试)", exit_code=2)
+    if not getattr(args, "project", None):
+        raise CliError("错误: --project 必填 (项目目录)", exit_code=2)
+    if not task:
+        args.task = f"E2-OBJ-{uuid.uuid4().hex[:8]}"
+    ctx.root.mkdir(parents=True, exist_ok=True)
+
+    try:
+        import exec.cli as exec_cli
+        result = exec_cli.cmd_exec_run(root=ctx.root, args=args)
+    except Exception as exc:  # noqa: BLE001 — 失败安全: 底层异常 → 明确错误, 不吞不裸抛
+        return {"action": "run", "failed": True, "error": f"exec CLI 执行失败 — {exc}",
+                "exit_code": 1}
+    ok = bool(result.get("ok")) and int(result.get("exit_code", 0) or 0) == 0
+    return {"action": "run", "failed": not ok, "proxy": exec_cli, "args": args,
+            "result": result, "exit_code": int(result.get("exit_code", 0) or 0)}
+
+
+def _print_run(r: dict) -> None:
+    if r.get("failed"):
+        error = r.get("error") or (r.get("result") or {}).get("error") \
+            or (r.get("result") or {}).get("status") or "执行失败"
+        print(_format_failure(error))
+        return
+    proxy, args, result = r["proxy"], r["args"], r["result"]
+    if getattr(args, "json", False) and result.get("ok"):
+        import json as _json
+        print(_json.dumps(result, ensure_ascii=False, indent=2))
+    elif int(result.get("exit_code", 0)) != 2:
+        proxy._print_result(args, result)
+
+
+def _dispatch_run_status(ctx: FactoryContext, args: Any) -> dict:
+    """factory run-status —— 执行结果查询（薄代理 exec CLI）。
+
+    与老 CLI `cli_factory.run_status`（L10162 附近）行为一致; 含【可读化】渲染
+    （从 exec/<id>.report.md 补出"目标/做了什么" —— 数据本来就有, 只是 CLI 不展示）。
+    """
+    ctx.root.mkdir(parents=True, exist_ok=True)
+    try:
+        import exec.cli as exec_cli
+        result = exec_cli.cmd_exec_status(root=ctx.root, args=args)
+    except Exception as exc:  # noqa: BLE001 — 失败安全
+        raise CliError(f"exec CLI 查询失败 — {exc}", exit_code=1) from exc
+    return {"action": "run-status", "proxy": exec_cli, "args": args, "result": result,
+            "root": ctx.root}
+
+
+def _print_run_status(r: dict) -> None:
+    """可读化渲染（照老 CLI `_print_exec_readable` 逐字实现）。
+
+    数据本来就有（exec/<id>.report.md）—— 只是 CLI 不展示。
+    """
+    import re as _re
+
+    proxy, args, result = r["proxy"], r["args"], r["result"]
+    if not (isinstance(result, dict) and result.get("results")):
+        proxy._print_result(args, result)
+        return
+    root = r["root"]
+    rows = result.get("results") or []
+    print(f"执行结果 {len(rows)} 条 (审批 {result.get('approval_count', 0)} 条)")
+    for x in rows:
+        rid = str(x.get("id") or "?")
+        status = str(x.get("status") or "?")
+        mark = "✓" if status.lower().startswith("success") else "✗"
+        objective = summary = ""
+        rep = root / "exec" / f"{rid}.report.md"
+        if rep.is_file():
+            try:
+                txt = rep.read_text(encoding="utf-8")
+                m = _re.search(r"^- objective: (.+)$", txt, _re.M)
+                objective = (m.group(1).strip() if m else "")
+                m2 = _re.search(r"## What the agent did\n(.+?)(?:\n\n|$)", txt, _re.S)
+                summary = (m2.group(1).strip() if m2 else "")
+                if summary.startswith("("):
+                    summary = ""
+            except OSError:
+                pass
+        what = (summary or objective or "(报告缺失)")[:64]
+        extra = ""
+        if rep.is_file():
+            try:
+                txt = rep.read_text(encoding="utf-8")
+                m3 = _re.search(r"diff lines: (\d+)", txt)
+                m4 = _re.search(r"result: (\w+)", txt)
+                bits = []
+                if m3:
+                    bits.append(f"{m3.group(1)} 行补丁")
+                if m4:
+                    bits.append(f"验证 {m4.group(1)}")
+                m5 = _re.search(r"duration: ([\d.]+s)", txt)
+                if m5:
+                    bits.append(m5.group(1))
+                extra = ("  (" + " · ".join(bits) + ")") if bits else ""
+            except OSError:
+                pass
+        print(f"  {rid}  {mark}{status:<8} {what}{extra}")
 
 
 def _dispatch_backup(ctx: FactoryContext, args: Any) -> dict:
@@ -1497,6 +1659,10 @@ def _print_output(args: Any, result: dict) -> None:
         _print_runtime(args, result)
     elif args.command == "execution":
         _print_execution(args.execution_command, result)
+    elif args.command == "run":
+        _print_run(result)
+    elif args.command == "run-status":
+        _print_run_status(result)
     elif args.command == "checkpoint":
         _print_checkpoint(args.checkpoint_command, result)
     elif args.command == "backup":

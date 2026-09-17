@@ -20,7 +20,13 @@ class ApprovalStoreError(Exception):
 
 @dataclass
 class ApprovalRecord:
-    """审批记录。"""
+    """审批记录。
+
+    ★ 2026-09-15 合并（Founder: 老区不需要了, 但它的字段语义要留住）:
+      老区 governance_service 独有 4 个字段已补入 —— subject_type / subject_id /
+      artifact_ids / history, 以及 requested_by（用于 requester≠approver 校验）。
+      这样它那 84 条真实数据能无损迁过来（见 docs 记录的合并裁决）。
+    """
 
     id: str
     request_id: str
@@ -33,6 +39,12 @@ class ApprovalRecord:
     applied_at: str | None = None
     created_at: str = ""
     decided_at: str | None = None
+    # ── 自老区合并（审批"针对什么" + 溯源）
+    subject_type: str = ""          # 审批对象类型（conversation / production_run / artifact …）
+    subject_id: str = ""            # 审批对象 ID
+    artifact_ids: list[str] = field(default_factory=list)   # 绑定不可变产物
+    requested_by: str = ""          # 请求者（decide 校验 requester != approver）
+    history: list[dict[str, Any]] = field(default_factory=list)  # append-only 状态变更轨迹
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

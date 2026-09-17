@@ -1573,7 +1573,10 @@ def _dispatch_approval(ctx: FactoryContext, args: Any) -> dict:
 
     ctx.root.mkdir(parents=True, exist_ok=True)
     cmd = getattr(args, "approval_command", None)
-    store = ApprovalStore(ctx.root / "exec")
+    # ★ 2026-09-15 修: 审批数据在 <root>/governance/approvals.json
+    #   （老区 governance_service 落这里, 84 条真实记录也在这里）;
+    #   原先写 ctx.root/"exec" ⇒ 读的是不存在的 exec/approvals.json ⇒ list 永远 0 条 ✗
+    store = ApprovalStore(ctx.root / "governance")
 
     if cmd == "list":
         recs = ApprovalGate(store).list(status=getattr(args, "status", None) or None)

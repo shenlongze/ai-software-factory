@@ -73,17 +73,31 @@ class ApprovalGate:
 
     def request(self, request_id: str, *, patch_text: str = "",
                 approval_id: str | None = None, risk_level: str | None = None,
-                required_roles: list[str] | None = None) -> ApprovalRecord:
-        """创建审批记录（pending）。风险分级：显式传入或按 patch 自动判定。"""
+                required_roles: list[str] | None = None,
+                subject_type: str = "", subject_id: str = "",
+                artifact_ids: list[str] | None = None,
+                requested_by: str = "") -> ApprovalRecord:
+        """创建审批记录（pending）。风险分级：显式传入或按 patch 自动判定。
+
+        ★ 2026-09-15 合并: subject_type/subject_id/artifact_ids/requested_by 自老区并入
+          （回答"审批针对什么" + 供 requester≠approver 校验）。
+        """
         if risk_level is None or required_roles is None:
             level, roles = classify_risk(patch_text)
             risk_level = risk_level or level
             required_roles = required_roles or roles
+        now = _now_iso()
         rec = ApprovalRecord(
             id=approval_id or _new_id("APR"),
             request_id=request_id,
             risk_level=str(risk_level or "low"),
             required_roles=list(required_roles or []),
+            created_at=now,
+            subject_type=subject_type,
+            subject_id=subject_id,
+            artifact_ids=list(artifact_ids or []),
+            requested_by=requested_by,
+            history=[{"from": None, "to": "pending", "actor": requested_by, "at": now, "note": "created"}],
         )
         self._store.save(rec)
         return rec
@@ -105,10 +119,17 @@ class ApprovalGate:
             raise ApprovalRuntimeError(f"审批不存在: {approval_id}")
         if rec.decision != "pending":
             raise ApprovalRuntimeError(f"审批已终态: {approval_id} ({rec.decision})")
+        # ★ 2026-09-15 合并（自老区）: requester ≠ approver —— Agent 不能自批
+        if rec.requested_by and decided_by and rec.requested_by == decided_by:
+            raise ApprovalRuntimeError(
+                f"requester != approver（不可自批）: {decided_by}")
+        now = _now_iso()
         rec.decision = d
         rec.decided_by = decided_by
         rec.comment = comment
-        rec.decided_at = _now_iso()
+        rec.decided_at = now
+        rec.history.append({"from": "pending", "to": d, "actor": decided_by,
+                            "at": now, "note": comment or ""})
         self._store.save(rec)
         if d == "approved" and on_approved is not None:
             on_approved(rec)

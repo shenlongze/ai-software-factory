@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from factory_console import golden_path as gp
-from factory_console.conversation_app import (
+from ai_factory_os.services.conversation.app import (
     ConversationApplicationService,
     ProductUnderstandingService,
 )

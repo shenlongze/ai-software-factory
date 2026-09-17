@@ -538,9 +538,13 @@ class ProductUnderstandingService:
         # 缺口 (C3 post-cut3: 产品定义已确认 — approved PRD/Plan 存在 — 不再在
         # statement 末尾追问缺口; 已确认的东西不反复"待确认")
         try:
-            from factory_console import golden_path as _gp
-            _st = _gp.path_status(self.root, conversation_id)
-            _confirmed_prd = bool(_st.get("approved_prd"))
+            # ★ 2026-09-15 归位: 原走老区 `golden_path.path_status`, 但这里只用它
+            #   **一个字段**（approved PRD 是否存在）⇒ 直接用自己的域查即可,
+            #   去掉对老区的依赖（迁移 conversation_app 的前提）。
+            from ai_factory_os.services.conversation import formalization as _fmt
+            _confirmed_prd = any(
+                str(p.get("status")) == "approved"
+                for p in _fmt.list_prds(self.root, conversation_id))
         except Exception:  # noqa: BLE001 — 阶段读取失败 → 保守继续展示缺口
             _confirmed_prd = False
         gaps = self.sufficiency_gaps(conversation_id) if not _confirmed_prd else []

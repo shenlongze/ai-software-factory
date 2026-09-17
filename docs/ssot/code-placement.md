@@ -155,6 +155,56 @@
 
 **"一域"的判据**：一个**能力**只在一个服务域里实现（R18）。同一能力词根出现在两个服务域 = 违规。
 
+### 三份清单 + 七层：**各管一件事，不要混用**（2026-09-15 定）
+
+```
+七层（architecture.md §一）  contracts / core / services / plugins / infrastructure / bootstrap / apps
+   ⇒ 管【层级】—— 一个文件该落在哪一层（判据见 §一、§二）
+
+契约域（contracts/，12）     identity organization work resource execution governance
+                            learning conversation scheduling events errors llm
+   ⇒ 管【contracts/ 下的子目录】
+
+服务域（services/，10）      conversation execution governance learning metrics operations
+                            organization resource validation work
+   ⇒ 管【services/ 下的子目录】+ 判"同一能力只在一处"（R18）
+
+命令域（15）                 conversation understanding architecture decomposition orchestration
+                            execution validation delivery learning operations metrics audit
+                            governance organization platform
+   ⇒ 只管【apps/cli/domains/ 的文件划分】+ 将来 API 从 CLI 重建的依据
+   ⇒ ★ **不是实现域** —— 绝不拿它判"一个模块该放哪"
+```
+
+**⇒ 判定一个模块的位置，按这个顺序问：**
+
+```
+① 层级（七层判据）：无 IO 无业务 → contracts/ ; 有业务 + 读写 → services/ ;
+                    技术机制（换掉它业务不变）→ infrastructure/ ; 能力实现 → plugins/ ;
+                    面向人的入口 → apps/
+② 域：  有业务语义 → 查**服务域（10）**；纯技术能力 → 直接进 infrastructure/<能力>/（不占服务域名额）
+③ 路径：<层级>/<域>/<能力名>.py
+```
+
+**两份清单不是一一对应（命令域 15 · 服务域 10）—— 差异有两个方向：**
+
+```
+★ 命令域独有（7 个，没有对应的服务域 ⇒ 只是命令分组）:
+   understanding · architecture · decomposition · orchestration · delivery · audit · platform
+★ 服务域独有（2 个，没有对应的命令域）:
+   resource · work   （实现存在, 但 CLI 未按这两个名字分组）
+
+⇒ 命令域独有的那些，其实现各自按七层落到别处，例如：
+   platform 的 config/llm/context → infrastructure/（技术底座）
+   platform 的 tools             → plugins/tools/（实现绑定）
+   platform 的命令注册           → apps/cli/domains/platform.py
+   decomposition 的拆解实现       → services/work/
+   delivery 的发布实现            → services/operations/ 或 services/validation/
+⇒ ★ 实例: 2026-09-15 "platform 域迁移" 15 个模块, 实际落点是
+   infrastructure/（config·llm·context·ids 10 个）+ plugins/tools/（4 个）+ services/organization/（1 个）
+   —— 批次按命令域命名, **落位按七层**。
+```
+
 ### 已知的两层映射例外（不是笔误，是为兼容而记）
 
 ```

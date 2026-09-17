@@ -54,6 +54,15 @@ def wire(*, verbose: bool = False) -> dict[str, str]:
             f"unavailable: {type(exc).__name__}: {exc}"
         )
 
+    # ── organization.artifact_lifecycle: 审批读取（破环2 的注入点）
+    try:
+        from ai_factory_os.services.organization import artifact_lifecycle as _AL
+        from factory_console.governance_service import get_approval as _ga   # ★ 暂借老区, 一行可换
+        _AL.bind_lookups(get_approval=_ga)
+        _wired["organization.artifact_lifecycle.get_approval"] = "ok（借老区实现）"
+    except Exception as exc:  # noqa: BLE001
+        _wired["organization.artifact_lifecycle.get_approval"] = f"unavailable: {type(exc).__name__}: {exc}"
+
     if verbose:
         for k, v in _wired.items():
             print(f"  wire: {k} → {v}")

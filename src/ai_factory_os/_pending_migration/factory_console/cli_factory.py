@@ -8193,7 +8193,7 @@ class FactoryCLI:
         """factory artifact — Artifact SSOT (P0-F4): list/get canonical art-*。"""
         data_root = Path(args.data_dir or self.data_dir)
         try:
-            from factory_console.artifact_lifecycle import get_artifact, list_artifacts
+            from ai_factory_os.services.organization.artifact_lifecycle import get_artifact, list_artifacts
         except ImportError:
             from artifact_lifecycle import (  # type: ignore
                 get_artifact, list_artifacts,

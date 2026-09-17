@@ -134,7 +134,7 @@ def recover_production_run(root: Path | str, production_run_id: str, *,
     """
     from .production_run import execute_production_run
     from ai_factory_os.services.validation.verification import verify_python_syntax, verify_pytest
-    from .artifact_lifecycle import get_artifact
+    from ai_factory_os.services.organization.artifact_lifecycle import get_artifact
 
     run = get_production_run(root, production_run_id)
     if run is None:

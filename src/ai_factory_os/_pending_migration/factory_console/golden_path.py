@@ -878,7 +878,7 @@ def execute_approved(root: str, conversation_id: str, *,
                 # output 回填 (artifact payload.output — 与 execute_task 语义一致)
                 if nrun.get("artifact_id"):
                     try:
-                        from factory_console.artifact_lifecycle import get_artifact
+                        from ai_factory_os.services.organization.artifact_lifecycle import get_artifact
                         art = get_artifact(root, nrun["artifact_id"]) or {}
                         payload = art.get("payload")
                         if isinstance(payload, dict):

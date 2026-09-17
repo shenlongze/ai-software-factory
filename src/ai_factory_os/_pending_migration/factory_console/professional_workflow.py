@@ -686,7 +686,7 @@ def _bind_role(factory: Callable[[str], Callable[[dict[str, Any]], dict[str, Any
 
 def _load_artifact_contexts(root: Path | str, artifact_ids: list[str]) -> dict[str, str]:
     """从 Artifact 加载输入内容 (只通过 artifact refs, 无 hidden state)。"""
-    from .artifact_lifecycle import get_artifact
+    from ai_factory_os.services.organization.artifact_lifecycle import get_artifact
 
     ctx: dict[str, str] = {}
     for aid in artifact_ids:

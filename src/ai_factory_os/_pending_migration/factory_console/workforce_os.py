@@ -311,7 +311,7 @@ def agent_performance(root: Path | str, agent_id: str) -> dict[str, Any]:
     failed = sum(1 for r in runs if r.get("state") == "FAILED")
     # verification pass rate (从 run artifacts 投影)
     ver_pass = 0
-    from .artifact_lifecycle import get_artifact
+    from ai_factory_os.services.organization.artifact_lifecycle import get_artifact
     for r in runs:
         for aid in r.get("artifacts", []) or []:
             art = get_artifact(root, aid)

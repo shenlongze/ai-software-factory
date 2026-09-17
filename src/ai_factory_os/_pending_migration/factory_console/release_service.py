@@ -209,7 +209,7 @@ def execute(root: Path | str, release_id: str, *, actor: str = "release_engineer
         rel = _transition(root, rel, ST_BLOCKED, actor=actor, note=f"gate blocked: {g['reason']}")
         return {"release": rel, "blocked": True, "reason": g["reason"], "missing": g["missing"]}
     # Apply 经 Artifact Lifecycle
-    from .artifact_lifecycle import apply_artifact, get_artifact
+    from ai_factory_os.services.organization.artifact_lifecycle import apply_artifact, get_artifact
 
     rel = _transition(root, rel, ST_APPROVED, actor=actor, note="gate passed")
     _transition(root, rel, ST_RELEASING, actor=actor, note="release started")
@@ -218,7 +218,7 @@ def execute(root: Path | str, release_id: str, *, actor: str = "release_engineer
     evidence = []
     try:
         # workspace: 从 Artifact payload 或默认 workspace 目录
-        from .artifact_lifecycle import apply_artifact, get_artifact, transition_artifact, approve_artifact
+        from ai_factory_os.services.organization.artifact_lifecycle import apply_artifact, get_artifact, transition_artifact, approve_artifact
 
         ws = Path(root) / "workspace"
         ws.mkdir(parents=True, exist_ok=True)

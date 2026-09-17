@@ -268,7 +268,7 @@ def create_handoff(
     if reg.get(to_agent_id) is None:
         raise AgentKernelError(f"接收 Agent 不存在: {to_agent_id}")
     # 校验 artifacts 存在
-    from .artifact_lifecycle import get_artifact
+    from ai_factory_os.services.organization.artifact_lifecycle import get_artifact
 
     for aid in input_artifacts:
         if get_artifact(root, aid) is None:

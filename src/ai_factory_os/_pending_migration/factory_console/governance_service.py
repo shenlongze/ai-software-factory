@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .artifact_lifecycle import get_artifact
+from ai_factory_os.services.organization.artifact_lifecycle import get_artifact
 from .production_run import get_production_run
 
 APPROVAL_PENDING = "PENDING"

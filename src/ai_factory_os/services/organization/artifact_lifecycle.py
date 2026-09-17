@@ -21,6 +21,18 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+#: 跨域注入点（bootstrap 装配时填充; 见 bootstrap/wiring.py）
+#: ★ 2026-09-15 破环2: 本模块原先 `from .governance_service import get_approval` ——
+#:   那是环内依赖（artifact_lifecycle ↔ governance_service）。改为注入后环解开,
+#:   本模块可迁入 services/organization/（服务域不许跨域直连, 见 SSoT R3/R5）。
+_hooks: dict[str, Callable[..., Any]] = {}
+
+
+def bind_lookups(*, get_approval: Callable[..., Any] | None = None) -> None:
+    """注入跨域数据源（bootstrap 装配时调用; None 项保持不变）。"""
+    if get_approval is not None:
+        _hooks["get_approval"] = get_approval
+
 # ------------------------------------------------------------------ 状态定义
 
 #: 生命周期 8 态 (权威顺序)
@@ -437,7 +449,9 @@ def apply_artifact(
         # S18: approval 未传但已有 approval_ids → 从 governance 读取 (I12 满足)
         if not approval and art.get("approval_ids"):
             try:
-                from .governance_service import get_approval as _get_appr
+                _get_appr = _hooks.get("get_approval")
+                if _get_appr is None:
+                    raise RuntimeError("get_approval 未装配（bootstrap.wiring）")
                 for aid_ in art["approval_ids"]:
                     ap_ = _get_appr(root, aid_)
                     if ap_ and ap_.get("decision") == "APPROVED":

@@ -256,7 +256,7 @@ def execute(root: Path | str, rollback_id: str, *, actor: str = "release_enginee
     rb = get_rollback(root, rollback_id)
     evidence = []
     try:
-        from .artifact_lifecycle import (
+        from ai_factory_os.services.organization.artifact_lifecycle import (
             apply_artifact, get_artifact, transition_artifact, approve_artifact,
             create_artifact,
         )

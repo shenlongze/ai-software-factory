@@ -126,7 +126,7 @@ def _run_checks(root: Path | str, release: dict[str, Any]) -> list[dict[str, Any
     # Check 3: Workspace integrity (release artifacts applied → workspace 文件存在)
     art_ok = True
     for aid in release.get("artifact_ids", []):
-        from .artifact_lifecycle import get_artifact
+        from ai_factory_os.services.organization.artifact_lifecycle import get_artifact
         art = get_artifact(root, aid)
         if art is None:
             art_ok = False

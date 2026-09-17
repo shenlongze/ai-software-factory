@@ -300,7 +300,7 @@ def _absorb_execution_artifact(
     """
     try:
         try:
-            from .artifact_lifecycle import create_artifact  # 包内
+            from ai_factory_os.services.organization.artifact_lifecycle import create_artifact  # 包内
         except ImportError:  # 兼容直接 import (sys.path 模式)
             from artifact_lifecycle import create_artifact  # type: ignore
 
@@ -567,7 +567,7 @@ def execute_node_run(
 
         # 产出 Artifact (S1 Lifecycle, GENERATED; 每次尝试新 Artifact — 不可变 I10)
         try:
-            from .artifact_lifecycle import create_artifact
+            from ai_factory_os.services.organization.artifact_lifecycle import create_artifact
 
             artifact = create_artifact(
                 ar,

@@ -27,7 +27,7 @@ from factory_console.node_runtime import (
     create_node_run, get_node_run, transition_node_run,
     execute_node_run, NodeError,
 )
-from factory_console.artifact_lifecycle import create_artifact, get_artifact
+from ai_factory_os.services.organization.artifact_lifecycle import create_artifact, get_artifact
 
 # =============================================================================
 # Kernel Constants

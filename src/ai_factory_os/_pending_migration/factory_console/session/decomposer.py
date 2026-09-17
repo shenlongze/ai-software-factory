@@ -28,7 +28,6 @@ from __future__ import annotations
 
 import json
 import re
-import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -157,7 +156,8 @@ class DecomposeEngine:
         self._evaluation: Optional[Any] = None  # M3d EvalResult（后置评估）
 
     def _new_id(self, prefix: str = "task") -> str:
-        return f"{prefix}-{uuid.uuid4().hex[:8]}"
+        from ai_factory_os.infrastructure.ids import new_id as _canonical_id
+        return _canonical_id(prefix, 8)
 
     # ------------------------------------------------------------ 审计
 

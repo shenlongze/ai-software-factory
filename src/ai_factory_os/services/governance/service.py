@@ -14,7 +14,6 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
-from uuid import uuid4
 
 from ai_factory_os.contracts.governance import Verdict, VerdictKind
 
@@ -31,7 +30,8 @@ class ApprovalDecideError(Exception):
 
 
 def _new_id(prefix: str = "APR") -> str:
-    return f"{prefix}-{uuid4().hex[:8]}"
+    from ai_factory_os.infrastructure.ids import new_id as _canonical_id
+    return _canonical_id(prefix, 8)
 
 
 def _now_iso() -> str:

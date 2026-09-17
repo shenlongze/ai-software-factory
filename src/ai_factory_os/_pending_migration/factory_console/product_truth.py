@@ -24,7 +24,6 @@ from __future__ import annotations
 import json
 import os
 import threading
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -41,7 +40,8 @@ def _now_iso() -> str:
 
 
 def _new_id(prefix: str) -> str:
-    return f"{prefix}-{uuid.uuid4().hex[:8]}"
+    from ai_factory_os.infrastructure.ids import new_id as _canonical_id
+    return _canonical_id(prefix, 8)
 
 
 def _store_file(root: Path | str, kind: str) -> Path:

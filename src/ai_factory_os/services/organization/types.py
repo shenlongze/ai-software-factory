@@ -25,7 +25,6 @@ Pydantic v2 陷阱 (backend-developer 经验):
 
 from __future__ import annotations
 
-import uuid
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
@@ -35,7 +34,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 def new_id(prefix: str) -> str:
     """生成带域前缀的唯一 id (如 C-1a2b3c4d)。"""
-    return f"{prefix}-{uuid.uuid4().hex[:8]}"
+    from ai_factory_os.infrastructure.ids import new_id as _canonical_id
+    return _canonical_id(prefix, 8)
 
 
 def utcnow() -> datetime:

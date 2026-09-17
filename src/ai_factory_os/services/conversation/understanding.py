@@ -36,7 +36,6 @@ import json
 import os
 import tempfile
 import threading
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -73,7 +72,8 @@ def _now_iso() -> str:
 
 
 def _new_id(prefix: str) -> str:
-    return f"{prefix}-{uuid.uuid4().hex[:12]}"
+    from ai_factory_os.infrastructure.ids import new_id as _canonical_id
+    return _canonical_id(prefix, 12)
 
 
 def _conv_file(root: Path | str, conv_id: str) -> Path:

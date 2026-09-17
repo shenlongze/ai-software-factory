@@ -42,3 +42,12 @@ def register(sub: Any, json_opt: Callable[[Any], None]) -> None:
     p_create.add_argument("--repo-path", dest="repo_path", default=None,
                           help="仓库路径 (project; 缺省 = 数据目录)")
     json_opt(p_create)
+
+    # factory update [模块] [--check] —— 整体/模块更新（系统域）
+    # 搬迁来源: 老 CLI p_update（L10280）· 处理 update_cmd（L8870+）
+    p_update = sub.add_parser("update", help="整体/模块更新 (--check 只读检查; [模块] 指定更新)")
+    json_opt(p_update)
+    p_update.add_argument("update_module", nargs="?", default=None,
+                          help="模块 (core/console/exec/org, 可选)")
+    p_update.add_argument("--check", dest="update_check", action="store_true",
+                          help="只检查更新, 不实际更新")

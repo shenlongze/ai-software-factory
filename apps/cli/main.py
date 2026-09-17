@@ -1019,6 +1019,8 @@ def main(argv: list[str] | None = None) -> int:
             result = _dispatch_plugin(ctx, args)
         elif args.command == "kanban":
             result = _dispatch_kanban(ctx, args)
+        elif args.command == "update":
+            result = _dispatch_update(ctx, args)
         elif args.command == "project":
             result = _dispatch_project(ctx, args)
         elif args.command == "provider":
@@ -1382,6 +1384,145 @@ def _dispatch_kanban(ctx: FactoryContext, args: Any) -> dict:
 def _print_kanban(r: dict) -> None:
     for line in r["lines"]:
         print(line)
+
+
+def _pkg_version() -> str:
+    """轻量读版本（update 显示用; 失败 → dev）。与老 CLI 等价。"""
+    try:
+        import tomllib
+        from legacy_paths import REPO_ROOT
+        return tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+    except Exception:  # noqa: BLE001
+        return "dev"
+
+
+def _changelog_lines(ver: str) -> list[str]:
+    """update 后变更 list: 从 CHANGELOG.md 读当前版本条目（照老 CLI `_print_changelog_changes`）。"""
+    from legacy_paths import REPO_ROOT
+    changelog = REPO_ROOT / "CHANGELOG.md"
+    if not changelog.is_file():
+        return []
+    try:
+        text = changelog.read_text(encoding="utf-8")
+    except OSError:
+        return []
+    import re
+    m = re.search(r"## \[v" + re.escape(ver) + r"\].*?(?=## \[v|\Z)", text, re.S)
+    if not m:
+        return []
+    lines = []
+    for line in m.group(0).splitlines():
+        s = line.strip()
+        if s.startswith("## "):
+            continue
+        if s.startswith("- ") or s.startswith("**"):
+            lines.append(s)
+    if not lines:
+        return []
+    out = [f"  📋 本次变更 (v{ver}):"]
+    for line in lines[:12]:
+        out.append(f"    {line[:80]}")
+    return out
+
+
+def _dispatch_update(ctx: FactoryContext, args: Any) -> dict:
+    """factory update [模块] [--check] —— 整体/模块更新（系统域）。
+
+    与老 CLI `cli_factory.update_cmd`（L8870）逐字一致:
+      --check 只读（版本 + git 状态, 区分已跟踪改动 vs 未跟踪文件）
+      无参 → git pull --ff-only + pip install -e .  （★ 有副作用, 测试只跑 --check）
+      <模块> → 合法集 core/console/exec/org; 单体仓库随整体更新
+    """
+    import subprocess
+    import sys as _sys
+    from legacy_paths import REPO_ROOT
+
+    L: list[str] = []
+
+    # ★ 关键: update 操作的对象是【仓库根】(REPO_ROOT), 不是数据根(ctx.root)!
+    #   首版误用 ctx.root（~/.factory）⇒ 检查/拉取都对着数据目录, 报"工作区干净"是假的。
+    # --check: 只读检查
+    if getattr(args, "update_check", False):
+        L.append(f"当前版本: {_pkg_version()}")
+        try:
+            r = subprocess.run(["git", "-C", str(REPO_ROOT), "status", "--porcelain"],
+                               capture_output=True, text=True, timeout=15)
+            dirty = bool(r.stdout.strip())
+            if not dirty:
+                L.append("Git 状态: 工作区干净")
+            else:
+                modified, untracked = [], []
+                for line in r.stdout.splitlines():
+                    _, _, path = line.partition(" ")
+                    path = path.strip()
+                    if not path:
+                        continue
+                    if line.startswith("??"):
+                        untracked.append(path)
+                    else:
+                        modified.append(path)
+                L.append(f"Git 状态: 有未提交改动 ({len(modified)} 改 + {len(untracked)} 未跟踪)")
+                for path in modified:
+                    L.append(f"  M  {path}")
+                for path in untracked:
+                    L.append(f"  ?? {path}")
+                L.append("说明: 未跟踪文件不影响 update (git pull 安全); 已跟踪改动建议先提交")
+        except Exception as exc:  # noqa: BLE001
+            L.append(f"Git 检查失败: {exc}")
+        return {"lines": L}
+
+    module = getattr(args, "update_module", None) or ""
+    if module:
+        valid = {"core", "console", "exec", "org"}
+        if module not in valid:
+            return {"lines": [], "errs": [f"未知模块: {module} (可用: {', '.join(sorted(valid))})"],
+                    "exit_code": 2}
+        L.append(f"⚠️ 更新模块 {module}: 当前为单体仓库（editable 安装）, 模块随整体更新;")
+        L.append("   模块独立版本/更新见方案书 §2.4（独立配置与版本管理, 设计预留）")
+
+    L.append("=== factory update ===")
+    steps = [("拉取最新代码 (git pull)", "git"),
+             ("更新依赖/包 (pip install -e .)", "pip")]
+    results: dict[str, str] = {}
+    for idx, (label, kind) in enumerate(steps, 1):
+        L.append(f"  [{idx}/{len(steps)}] {label} ...")
+        try:
+            if kind == "git":
+                r = subprocess.run(["git", "-C", str(REPO_ROOT), "pull", "--ff-only"],
+                                   capture_output=True, text=True, timeout=60)
+                if r.returncode == 0:
+                    results["git"] = r.stdout.strip() or "已是最新"
+                else:
+                    results["git_error"] = r.stderr.strip()[:200] or r.stdout.strip()[:200]
+            else:
+                r = subprocess.run([_sys.executable, "-m", "pip", "install", "-e", "."],
+                                   cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=120)
+                if r.returncode == 0:
+                    results["pip"] = "ok"
+                else:
+                    results["pip_error"] = r.stderr.strip()[:200]
+        except Exception as exc:  # noqa: BLE001
+            results[f"{kind}_error"] = str(exc)
+
+    L.append(f"  更新完成 — 当前版本: {_pkg_version()}")
+    if results.get("git"):
+        L.append(f"  📦 代码: {results['git']}")
+    if results.get("git_error"):
+        L.append(f"  ⚠️ git: {results['git_error']}")
+    if results.get("pip"):
+        L.append("  📦 依赖/包: 已同步（editable 指向当前仓库）")
+    if results.get("pip_error"):
+        L.append(f"  ⚠️ pip: {results['pip_error']}")
+    L.extend(_changelog_lines(_pkg_version()))
+    return {"lines": L}
+
+
+def _print_update(r: dict) -> None:
+    import sys as _sys
+    for line in r["lines"]:
+        print(line)
+    for e in r.get("errs", []):
+        print(e, file=_sys.stderr)
 
 
 def _dispatch_plugin(ctx: FactoryContext, args: Any) -> dict:
@@ -2023,6 +2164,8 @@ def _print_output(args: Any, result: dict) -> None:
         _print_create(result)
     elif args.command == "kanban":
         _print_kanban(result)
+    elif args.command == "update":
+        _print_update(result)
     elif args.command == "plugin":
         _print_plugin(result)
     elif args.command == "project":

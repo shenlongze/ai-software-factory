@@ -6298,7 +6298,7 @@ class FactoryCLI:
 
         薄代理 → context_runtime (CLI 与 API 共享同一 Service)。
         """
-        from factory_console.context_runtime import (
+        from ai_factory_os.infrastructure.context.runtime import (
             create_context_request as _req, resolve_context as _resolve,
             context_history as _history,
         )
@@ -6337,12 +6337,12 @@ class FactoryCLI:
 
         薄代理 → context_runtime (CLI 与 API 共享同一 Service)。
         """
-        from factory_console.context_runtime import (
+        from ai_factory_os.infrastructure.context.runtime import (
             create_memory_candidate as _candidate,
             promote_memory_candidate as _promote, memory_candidates as _cands,
             _init_local_memory,
         )
-        from factory_console.context_runtime import LocalMemoryPlugin
+        from ai_factory_os.infrastructure.context.runtime import LocalMemoryPlugin
 
         root = Path(getattr(args, "data_dir", None) or self.data_dir)
         action = getattr(args, "action", "list") or "list"

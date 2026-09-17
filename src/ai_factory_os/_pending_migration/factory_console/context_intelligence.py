@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from .context_runtime import (
+from ai_factory_os.infrastructure.context.runtime import (
     _load, _save, _audit, estimate_tokens, estimate_cost,
     _init_local_memory, _memory_call, LocalMemoryPlugin,
 )
@@ -167,7 +167,7 @@ def progressive_context(root: Path | str, *, node_id: str, purpose: str,
                         max_total: int = 8000, rounds: int = 3,
                         project_id: str = "") -> dict[str, Any]:
     """Progressive: 初始 → 不足 → 追加 (受剩余 budget; 总 <= budget; snapshot 记录全部)。"""
-    from .context_runtime import create_context_request, resolve_context
+    from ai_factory_os.infrastructure.context.runtime import create_context_request, resolve_context
     # project/workforce/organization scope 需 project 授权 (S35 governance)
     if not project_id and any(s in ("project", "workforce", "organization") for s in scopes):
         project_id = "proj-auto"

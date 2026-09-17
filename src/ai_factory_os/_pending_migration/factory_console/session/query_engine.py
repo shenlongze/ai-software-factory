@@ -403,7 +403,7 @@ def build_facts(
     intent = parse_intent(question)["intent"]
     if intent == "tools_list":
         try:
-            from ..tools.registry import list_tools, summary
+            from ai_factory_os.plugins.tools.registry import list_tools, summary
 
             s = summary()
             lines = [f"内置工具注册表 (U-1): 共 {s['total']} 个 (已实现 {s['by_status']['implemented']} / 规划 {s['by_status']['planned']})"]

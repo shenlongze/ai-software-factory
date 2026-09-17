@@ -1734,7 +1734,7 @@ def dispatch(
             except Exception as exc:  # noqa: BLE001
                 return {"ok": False, "error": f"auto_delegate: {exc}"}
         if tool_id == "monitor":
-            from ..tools.adapters import monitor as mo
+            from ai_factory_os.plugins.tools.adapters import monitor as mo
 
             r = mo(root, project_id, {})
             return {"ok": True, "output": str(r.get("output") if isinstance(r, dict) else r)[:800]}

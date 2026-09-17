@@ -2332,7 +2332,7 @@ class FactoryCLI:
         doctor — 同上 + 显示可调用状态。只读, 零修改。"""
         action = getattr(args, "tools_action", "list") or "list"
         if action in ("registry", "show"):
-            from .tools.registry import get_tool, list_tools, summary
+            from ai_factory_os.plugins.tools.registry import get_tool, list_tools, summary
 
             if action == "show":
                 tool = get_tool(getattr(args, "tool_id", None) or "")

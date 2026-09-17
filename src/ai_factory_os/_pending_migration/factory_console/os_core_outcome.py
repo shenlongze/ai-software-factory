@@ -53,7 +53,7 @@ def create_outcome(root: str | Path, *, execution_id: str, status: str,
     """创建 Outcome: 必须绑定 Execution 且至少引用一个 Verification 或 Evidence。"""
     from .os_core_evidence import get_evidence
     from .os_core_execution import get_execution
-    from .os_core_verification import get_verification
+    from ai_factory_os.services.validation.verification_store import get_verification
 
     if status not in OUTCOME_STATUSES:
         raise ValueError(f"未知 status: {status} (可选: {OUTCOME_STATUSES})")

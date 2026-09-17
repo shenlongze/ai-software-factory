@@ -70,7 +70,7 @@ def create_evidence(root: str | Path, *, execution_id: str, type: str, source: s
                     locator: str, summary: str = "",
                     verification_id: str = "") -> dict[str, Any]:
     from .os_core_execution import get_execution
-    from .os_core_verification import get_verification
+    from ai_factory_os.services.validation.verification_store import get_verification
 
     if type not in EVIDENCE_TYPES:
         raise ValueError(f"未知 evidence type: {type} (可选: {EVIDENCE_TYPES})")

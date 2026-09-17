@@ -349,7 +349,7 @@ class ProductUnderstandingService:
             self._interpreter = interpreter
         elif semantic:
             try:
-                from factory_console.llm_semantic_interpreter import (
+                from ai_factory_os.services.conversation.interpreter import (
                     llm_semantic_interpreter as _llm)
                 self._interpreter = _llm
             except Exception:  # noqa: BLE001 — import 失败 → 确定性兜底

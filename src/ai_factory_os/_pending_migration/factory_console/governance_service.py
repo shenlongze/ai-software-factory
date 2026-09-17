@@ -159,7 +159,7 @@ def request_approval(root: Path | str, *, production_run_id: str,
     req["expires_at"] = (datetime.fromtimestamp(_now_epoch(), tz=timezone.utc)
                          + timedelta(seconds=APPROVAL_TTL_SECONDS)).isoformat(timespec="seconds")
     # S20.5: 跨进程锁 (read-modify-write 串行化)
-    from .integrity_lock import file_lock
+    from ai_factory_os.infrastructure.locking import file_lock
 
     with file_lock(_approvals_lock(root)):
         data = _load_approvals(root)
@@ -176,7 +176,7 @@ def decide_approval(root: Path | str, approval_id: str, *, decision: str,
     """Approve/Reject (requester != approver, append-only history)。"""
     if decision not in (APPROVAL_APPROVED, APPROVAL_REJECTED):
         raise ValueError(f"未知 decision: {decision}")
-    from .integrity_lock import file_lock
+    from ai_factory_os.infrastructure.locking import file_lock
 
     # S20.5: 跨进程锁 (approve/reject read-modify-write 串行化)
     with file_lock(_approvals_lock(root)):

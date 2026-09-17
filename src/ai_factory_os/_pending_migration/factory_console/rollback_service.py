@@ -88,7 +88,7 @@ def _save(root: Path | str, data: list[dict[str, Any]]) -> None:
 
 
 def _transition(root: Path | str, rb: dict[str, Any], to: str, *, actor: str, note: str) -> dict[str, Any]:
-    from .integrity_lock import file_lock
+    from ai_factory_os.infrastructure.locking import file_lock
 
     with file_lock(_rollbacks_lock(root)):
         if to not in TRANSITIONS.get(rb["state"], ()):
@@ -149,7 +149,7 @@ def create(root: Path | str, target_release_id: str, *, created_by: str = "relea
            reason: str = "") -> dict[str, Any]:
     """创建 Rollback (幂等: 已有非 terminal 的返回现有)。"""
     target = _validate_target(root, target_release_id)
-    from .integrity_lock import file_lock
+    from ai_factory_os.infrastructure.locking import file_lock
 
     # S20.5: 跨进程锁 (幂等检查 + append 串行化)
     with file_lock(_rollbacks_lock(root)):

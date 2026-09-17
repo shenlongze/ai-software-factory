@@ -86,7 +86,7 @@ def _save(root: Path | str, data: list[dict[str, Any]]) -> None:
 
 
 def _transition(root: Path | str, rel: dict[str, Any], to: str, *, actor: str, note: str) -> dict[str, Any]:
-    from .integrity_lock import file_lock
+    from ai_factory_os.infrastructure.locking import file_lock
 
     with file_lock(_releases_lock(root)):
         if to not in TRANSITIONS.get(rel["state"], ()):
@@ -112,7 +112,7 @@ def create(root: Path | str, production_run_id: str, *, created_by: str = "relea
     run = get_production_run(root, production_run_id)
     if run is None:
         raise ValueError(f"ProductionRun 不存在: {production_run_id}")
-    from .integrity_lock import file_lock
+    from ai_factory_os.infrastructure.locking import file_lock
 
     # S20.5: 跨进程锁 (幂等检查 + append 串行化)
     with file_lock(_releases_lock(root)):

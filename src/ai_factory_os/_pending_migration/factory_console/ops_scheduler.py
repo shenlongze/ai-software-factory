@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from .integrity_lock import file_lock
+from ai_factory_os.infrastructure.locking import file_lock
 
 #: bounded catch-up 上限 (missed schedule 最多补 N 次)
 MAX_CATCH_UP = 3

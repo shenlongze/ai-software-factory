@@ -158,7 +158,7 @@ def _run_checks(root: Path | str, release: dict[str, Any]) -> list[dict[str, Any
 
 def health_check(root: Path | str, release_id: str, *, actor: str = "health_monitor") -> dict[str, Any]:
     """执行 Health Check (确定性, 真实 subprocess)。"""
-    from .integrity_lock import file_lock
+    from ai_factory_os.infrastructure.locking import file_lock
 
     release = get_release(root, release_id)
     if release is None:
@@ -236,7 +236,7 @@ def run_health(root: Path | str, run_id: str) -> dict[str, Any]:
 def create_incident(root: Path | str, health_check: dict[str, Any], *,
                     actor: str = "health_monitor") -> dict[str, Any]:
     """创建 Incident (幂等: 同 release 已有 active incident → 返回现有)。"""
-    from .integrity_lock import file_lock
+    from ai_factory_os.infrastructure.locking import file_lock
 
     release_id = health_check["release_id"]
     with file_lock(_lock_path(root, "incidents")):
@@ -276,7 +276,7 @@ def create_incident(root: Path | str, health_check: dict[str, Any], *,
 
 
 def _transition_incident(root: Path | str, inc: dict[str, Any], to: str, *, actor: str, note: str) -> dict[str, Any]:
-    from .integrity_lock import file_lock
+    from ai_factory_os.infrastructure.locking import file_lock
 
     with file_lock(_lock_path(root, "incidents")):
         inc["status"] = to

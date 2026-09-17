@@ -36,7 +36,7 @@ from typing import Any, Mapping
 
 from pydantic import BaseModel, Field, ValidationError
 
-from .config import PROVIDER_DEFAULTS
+from ai_factory_os.infrastructure.config.provider import PROVIDER_DEFAULTS
 
 logger = logging.getLogger("factory.llm_control")
 

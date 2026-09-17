@@ -40,7 +40,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from . import cli_factory as _factory  # 调用时解析模块属性 — monkeypatch 兼容
-from .config import DEFAULT_FRONTEND_PORT, DEFAULT_PORT
+from ai_factory_os.infrastructure.config.provider import DEFAULT_FRONTEND_PORT, DEFAULT_PORT
 
 # ------------------------------------------------------------------ 状态常量
 

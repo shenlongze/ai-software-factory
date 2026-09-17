@@ -79,7 +79,7 @@ def _resolve_model_conf(
     if key in _model_conf_cache:
         return dict(_model_conf_cache[key])
     try:
-        from ..llm_control import LLMControlPlane
+        from ai_factory_os.infrastructure.llm.providers.control_plane import LLMControlPlane
         from ..model_catalog import ModelCatalog
         from ..llm_router import LLMRouter
 

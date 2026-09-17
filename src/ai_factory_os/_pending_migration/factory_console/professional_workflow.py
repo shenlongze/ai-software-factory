@@ -139,7 +139,7 @@ def build_llm_executor_factory(root: Path | str):
     产出内容写入 target 文件 → 生成新文件 patch → Artifact。
     """
     from .workflow_runner import load_llm_key, has_llm_key
-    from .config import get_config
+    from ai_factory_os.infrastructure.config.provider import get_config
     from .session.llm_gateway import complete as _llm_complete
 
     def _factory(agent_id: str) -> Callable[[dict[str, Any]], dict[str, Any]]:
@@ -375,7 +375,7 @@ def build_real_executor_factory(root: Path | str):
     Developer 输出代码 content; QA 输出测试 content (输入含 code 上下文)。
     """
     from .workflow_runner import load_llm_key, has_llm_key
-    from .config import get_config
+    from ai_factory_os.infrastructure.config.provider import get_config
     from .session.llm_gateway import complete as _llm_complete
     from .external_executor.registry import build_registry
     from .external_executor.executor import run as ext_run

@@ -26,7 +26,7 @@ __all__ = [
 
 def _default_root() -> str:
     try:
-        from factory_console.config import ConfigProvider
+        from ai_factory_os.infrastructure.config.provider import ConfigProvider
         return str(ConfigProvider().get_data_dir())
     except Exception:  # noqa: BLE001
         return str(Path.home() / ".factory")

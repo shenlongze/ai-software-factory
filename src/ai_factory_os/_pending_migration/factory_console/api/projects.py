@@ -501,7 +501,7 @@ def _build_suggest_provider() -> Any:
 
     小调用超时: 30s (想法理解秒级任务 — 超时 → 调用方走诚实 fallback)。
     """
-    from ..config import get_config
+    from ai_factory_os.infrastructure.config.provider import get_config
     from ..workflow_runner import _setup_sys_path, load_llm_key
 
     _setup_sys_path()  # 挂 factory-core/factory-org/factory-exec (幂等)

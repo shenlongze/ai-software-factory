@@ -281,7 +281,7 @@ class ConfigProvider:
         #       （覆盖层是运维手段 ✓ 不是"第二套配置"✗）
         _auth_model, _auth_base = "", ""
         try:
-            from .llm_control import LLMControlPlane as _Plane  # 延迟导入 ✓ 避免环 ✓
+            from ai_factory_os.infrastructure.llm.providers.control_plane import LLMControlPlane as _Plane  # 延迟导入 ✓ 避免环 ✓
             _plane = _Plane(providers_file=self.get_data_dir() / "providers.json",
                             environ=os.environ)
             _pc = _plane.get_provider(provider)

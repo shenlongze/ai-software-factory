@@ -39,7 +39,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError
 
-from .llm_control import LLMControlPlane
+from ai_factory_os.infrastructure.llm.providers.control_plane import LLMControlPlane
 
 logger = logging.getLogger("factory.model_catalog")
 

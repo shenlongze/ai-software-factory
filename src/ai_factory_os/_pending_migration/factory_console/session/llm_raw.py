@@ -35,7 +35,7 @@ def _trace(prompt: str, response: str | None, *,
 def _llm_identity() -> tuple[str, str]:
     """当前 LLM 身份 (model, provider) —— 供留痕 ✓（失败安全 ✓ 空串 ✓）。"""
     try:
-        from ..config import get_config
+        from ai_factory_os.infrastructure.config.provider import get_config
         _l = get_config().get_llm()
         return str(_l.get("model") or ""), str(_l.get("provider") or "")
     except Exception:  # noqa: BLE001 — 留痕绝不因取身份失败而中断 ✓

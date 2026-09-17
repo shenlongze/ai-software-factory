@@ -28,7 +28,7 @@ HELP = (
 
 def _default_root() -> Path:
     try:
-        from factory_console.config import ConfigProvider
+        from ai_factory_os.infrastructure.config.provider import ConfigProvider
 
         return Path(str(ConfigProvider().get_data_dir()))
     except Exception:  # noqa: BLE001 — 配置读取失败 → 默认 ~/.factory

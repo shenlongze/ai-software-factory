@@ -46,7 +46,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Callable
 
-from .config import get_config
+from ai_factory_os.infrastructure.config.provider import get_config
 from legacy_paths import REPO_ROOT  # 仓库根唯一计算器
 
 #: LLM provider 配置已移入 factory-console/config.py (PROVIDER_DEFAULTS 映射表)
@@ -79,7 +79,7 @@ def _control_plane() -> Any:
     workflow_runner 现有路径)。providers_file 缺省 ~/.factory/providers.json
     (HOME 重定向即隔离 — 测试/冒烟用)。
     """
-    from .llm_control import LLMControlPlane
+    from ai_factory_os.infrastructure.llm.providers.control_plane import LLMControlPlane
 
     return LLMControlPlane(config=get_config())
 

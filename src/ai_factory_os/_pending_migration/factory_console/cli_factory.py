@@ -125,7 +125,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Sequence
 
-from .config import DEFAULT_PROVIDER, PROVIDER_DEFAULTS, ConfigProvider
+from ai_factory_os.infrastructure.config.provider import DEFAULT_PROVIDER, PROVIDER_DEFAULTS, ConfigProvider
 from legacy_paths import REPO_ROOT  # 仓库根唯一计算器
 
 # ------------------------------------------------------------------ 常量
@@ -444,7 +444,7 @@ def _default_api_key_ref(provider_id: str) -> str | None:
 def _init_validation(data_dir: Path) -> list[str]:
     """校验 LLM 配置 (只读, 零副作用; 复用 LLMControlPlane): providers.json
     存在? enabled? model 列表? key 可解析? 返回问题列表 (空 → 全就绪)。"""
-    from .llm_control import LLMControlPlane, ProviderFileError
+    from ai_factory_os.infrastructure.llm.providers.control_plane import LLMControlPlane, ProviderFileError
 
     providers_file = data_dir / "providers.json"
     try:
@@ -497,7 +497,7 @@ def _demo_write_providers(root: Path) -> None:
     只写 api_key_ref 引用 (env:VAR) — 无明文 key; demo 无 key 也可 (展示
     UI/流程, 执行需要 key 时由 LLM 链路提示)。upsert 语义, 幂等。
     """
-    from .llm_control import LLMControlPlane
+    from ai_factory_os.infrastructure.llm.providers.control_plane import LLMControlPlane
 
     defaults = PROVIDER_DEFAULTS.get(DEMO_PROVIDER, {})
     plane = LLMControlPlane(providers_file=root / "providers.json", environ=os.environ)
@@ -2545,7 +2545,7 @@ class FactoryCLI:
             print(f"  OK   config.json 可读 ({path})")
         # 2. LLM Provider (providers.json — LLMControlPlane 只读查询)
         providers_file = self.data_dir / "providers.json"
-        from .llm_control import LLMControlPlane, ProviderFileError
+        from ai_factory_os.infrastructure.llm.providers.control_plane import LLMControlPlane, ProviderFileError
 
         try:
             plane = LLMControlPlane(providers_file=providers_file, environ=os.environ)
@@ -2887,7 +2887,7 @@ class FactoryCLI:
         报 [E4453] Provider 不存在 ✗ —— 同一概念两套存储 ✓（Founder 的"数据统一"✗）
         → 改与 `factory llm` 【同源 ✓】: LLMControlPlane（~/.factory/providers.json ✓）
         """
-        from factory_console.llm_control import LLMControlPlane as _Plane
+        from ai_factory_os.infrastructure.llm.providers.control_plane import LLMControlPlane as _Plane
 
         action = getattr(args, "pv_action", "list") or "list"
         root = Path(getattr(args, "data_dir", None) or self.data_dir)
@@ -3967,7 +3967,7 @@ class FactoryCLI:
         显示错误但仍 rc 0 (诊断性质, 不修改任何配置)。
         """
         print("=== LLM Router 状态 (骨架, 只读) ===")
-        from .llm_control import LLMControlPlane
+        from ai_factory_os.infrastructure.llm.providers.control_plane import LLMControlPlane
         from .llm_router import LLMRouter
         from .model_catalog import ModelCatalog
 
@@ -4475,7 +4475,7 @@ class FactoryCLI:
 
         只写 api_key_ref 引用; upsert 语义 — 其他既有 provider 条目保留。
         """
-        from .llm_control import LLMControlPlane
+        from ai_factory_os.infrastructure.llm.providers.control_plane import LLMControlPlane
 
         plane = LLMControlPlane(
             providers_file=self.data_dir / "providers.json", environ=os.environ
@@ -4490,7 +4490,7 @@ class FactoryCLI:
 
     def _show_provider_config(self) -> None:
         """展示当前 providers.json 配置 (只读; api_key_ref 是 env: 引用, 非明文)。"""
-        from .llm_control import LLMControlPlane, ProviderFileError
+        from ai_factory_os.infrastructure.llm.providers.control_plane import LLMControlPlane, ProviderFileError
 
         providers_file = self.data_dir / "providers.json"
         print(f"  当前 Provider 配置 ({providers_file}):")
@@ -4594,7 +4594,7 @@ class FactoryCLI:
         )
         providers_file = root / "providers.json"
         if providers_file.is_file():
-            from .llm_control import LLMControlPlane, ProviderFileError
+            from ai_factory_os.infrastructure.llm.providers.control_plane import LLMControlPlane, ProviderFileError
 
             try:
                 plane = LLMControlPlane(
@@ -8884,7 +8884,7 @@ class FactoryCLI:
         action = getattr(args, "llm_command", None) or "list"
         target = (getattr(args, "llm_target", None) or "").strip()
         try:
-            from .llm_control import LLMControlPlane
+            from ai_factory_os.infrastructure.llm.providers.control_plane import LLMControlPlane
 
             plane = LLMControlPlane(providers_file=self.data_dir / "providers.json")
         except Exception as exc:  # noqa: BLE001

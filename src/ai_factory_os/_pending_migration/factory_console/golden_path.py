@@ -348,7 +348,7 @@ def approval_mode() -> str:
     full-auto 全自动: 自动批准待确认的 PRD/Plan 并放行执行，但记录 auto 授权痕迹
     """
     try:
-        from .config import get_config
+        from ai_factory_os.infrastructure.config.provider import get_config
 
         raw = str(get_config().get("approval", "mode", "step") or "step").strip().lower()
     except Exception:  # noqa: BLE001 — 配置不可用 → 安全默认

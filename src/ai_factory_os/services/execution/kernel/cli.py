@@ -85,12 +85,18 @@ def _import_llm_control_module() -> Any:
     """
     import importlib
 
-    for name in ("factory_console.llm_control", "factory-console.llm_control"):
+    # ★ 2026-09-15: llm_control 已迁入新地基（infrastructure/llm/providers/control_plane.py）
+    #   ⇒ 这里改指新位置; 旧路径保留一档兜底（老区若仍在, 不打断）。
+    for name in (
+        "ai_factory_os.infrastructure.llm.providers.control_plane",
+        "factory_console.llm_control",
+        "factory-console.llm_control",
+    ):
         try:
             return importlib.import_module(name)
         except (ImportError, ModuleNotFoundError):
             continue
-    raise ImportError("LLMControlPlane unavailable (factory_console/factory-console)")
+    raise ImportError("LLMControlPlane unavailable (infrastructure.llm.providers.control_plane)")
 
 
 def _default_provider_id() -> str:

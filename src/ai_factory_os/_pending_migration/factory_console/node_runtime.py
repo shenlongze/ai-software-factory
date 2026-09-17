@@ -345,7 +345,7 @@ def _materialize_verify(
     """
     try:
         try:
-            from .verification_domain import materialize_verification  # 包内
+            from ai_factory_os.services.validation.verification_store import materialize_verification  # 包内
         except ImportError:  # 兼容直接 import (sys.path 模式)
             from verification_domain import materialize_verification  # type: ignore
 

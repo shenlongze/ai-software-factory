@@ -8152,7 +8152,7 @@ class FactoryCLI:
         """factory verification — Verification SSOT (P0-F3): list/get ver-* 事实。"""
         data_root = Path(args.data_dir or self.data_dir)
         try:
-            from factory_console.verification_domain import (
+            from ai_factory_os.services.validation.verification_store import (
                 get_verification, list_verifications,
             )
         except ImportError:

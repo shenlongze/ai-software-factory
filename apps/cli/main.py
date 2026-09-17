@@ -1024,7 +1024,11 @@ def main(argv: list[str] | None = None) -> int:
         else:  # pragma: no cover — argparse required=True 已拦截
             raise CliError(f"unknown command: {args.command}", exit_code=2)
     except CliError as exc:
-        print(f"error: {exc.message}", file=sys.stderr)
+        # ★ 2026-09-15 统一: **不再加 "error: " 前缀** —— 与老 CLI（现役入口）
+        #   的错误输出对齐。老 CLI 的前缀是写在消息里的（如 "错误: history search 需要检索词"）,
+        #   框架层再加一层会变成 "error: 错误: …", 两套 CLI 消息不一致。
+        #   命令面（命令名/子命令/参数）与错误消息**逐字一致**才是"替换"的硬验收。
+        print(exc.message, file=sys.stderr)
         return exc.exit_code
     except Exception as exc:  # 兜底: 内部异常 → 退出码 1 (cli-design §5)
         print(f"error: {type(exc).__name__}: {exc}", file=sys.stderr)
@@ -1217,7 +1221,8 @@ def _dispatch_history(ctx: FactoryContext, args: Any) -> dict:
             return {"action": "stats", "stats": idx.stats()}
         query = (getattr(args, "history_query", "") or "").strip()
         if not query:
-            raise CliError("history search 需要检索词", exit_code=2)
+            # 与老 CLI 逐字一致: 消息自带"错误: "前缀（该命令的风格）
+            raise CliError("错误: history search 需要检索词", exit_code=2)
         if not idx.stats().get("total"):
             idx.sync_from_data_dir(ctx.root)
         src_raw = (getattr(args, "source", "") or "").strip()

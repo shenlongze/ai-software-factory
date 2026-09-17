@@ -1984,7 +1984,7 @@ class FactoryCLI:
 
     def backup(self, args: argparse.Namespace) -> int:
         """factory backup — 数据保护 (X-1/D-1): create/list/restore。"""
-        from .backup import create_backup, list_backups, restore_backup
+        from ai_factory_os.services.operations.backup import create_backup, list_backups, restore_backup
 
         action = getattr(args, "backup_command", "list") or "list"
         bdir = getattr(args, "dir", None) or None

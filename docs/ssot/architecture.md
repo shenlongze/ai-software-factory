@@ -37,10 +37,14 @@
 `identity` · `organization` · `work` · `resource` · `execution` · `governance` ·
 `learning` · `conversation` · `scheduling` · `events` · `errors` · `llm`
 
-**服务域（`services/`，9）**
+**服务域（`services/`，10）**
 
 `conversation` · `execution` · `governance` · `learning` · `metrics` ·
-`organization` · `resource` · `validation` · `work`
+`operations` · `organization` · `resource` · `validation` · `work`
+
+> 2026-09-15 新增 `operations`（运维域）—— Founder 裁决: 运维在老系统里是**完整一环**
+> （8 环的第 8 环, `factory ops`/`doctor` 独立命令域, 14 个模块 4,399 行），
+> 不是 execution 或 metrics 的附属 ⇒ 独立成域。
 
 **API 分组（`api/domains/`，15）** —— ★ 2026-09-15 随 API 层删除（待从 CLI 重建）
 

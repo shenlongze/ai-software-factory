@@ -234,7 +234,7 @@ def start_project_workflow(
         )
         # P0-01: 注册线程存活 (stale 检测用)
         try:
-            from factory_console import run_liveness as _liveness_mod  # 顶层 (同 console_sessions 体系)
+            from ai_factory_os.services.operations import run_liveness as _liveness_mod  # 顶层 (同 console_sessions 体系)
 
             _liveness_mod.register_run(project_id, run_id, thread)
         except Exception:  # noqa: BLE001
@@ -284,7 +284,7 @@ def _thread_main(**kwargs: Any) -> None:
 
     def _check_cancel() -> bool:
         try:
-            from factory_console import run_liveness as _lv
+            from ai_factory_os.services.operations import run_liveness as _lv
 
             return _lv.is_cancelled(project_id, run_id)
         except Exception:  # noqa: BLE001
@@ -343,7 +343,7 @@ def _thread_main(**kwargs: Any) -> None:
             _RUNNING.discard(project_id)
         # P0-01: 线程结束注销 (stale 检测不再视为存活)
         try:
-            from factory_console import run_liveness as _liveness_mod2
+            from ai_factory_os.services.operations import run_liveness as _liveness_mod2
 
             _liveness_mod2.unregister_run(project_id, run_id)
         except Exception:  # noqa: BLE001

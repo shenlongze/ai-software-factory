@@ -149,7 +149,7 @@
 ```
 契约域（contracts/，12）   identity organization work resource execution governance
                           learning conversation scheduling events errors llm
-服务域（services/，9）     conversation execution governance learning metrics
+服务域（services/，10）    conversation execution governance learning metrics operations
                           organization resource validation work
 ```
 

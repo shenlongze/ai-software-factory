@@ -2493,7 +2493,7 @@ def run_agent_native(
     # F-01: 新消息执行开始前清除会话取消标志 (幂等; 避免上一轮残留影响本轮)
     if session_id:
         try:
-            from factory_console import run_liveness as _rl
+            from ai_factory_os.services.operations import run_liveness as _rl
 
             _rl.clear_session_cancel(session_id)
         except Exception:  # noqa: BLE001
@@ -2769,7 +2769,7 @@ def run_agent_native(
             # F-01: 会话取消检查 — 用户 Stop → 真实停止后续轮次 (循环边界, 幂等)
             if session_id:
                 try:
-                    from factory_console import run_liveness as _rl
+                    from ai_factory_os.services.operations import run_liveness as _rl
 
                     if _rl.session_cancelled(session_id):
                         _cancel_answer = "（已停止）"

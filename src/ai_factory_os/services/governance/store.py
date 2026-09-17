@@ -63,6 +63,12 @@ class ApprovalRecord:
             applied_at=d.get("applied_at"),
             created_at=str(d.get("created_at") or ""),
             decided_at=d.get("decided_at"),
+            # ★ 2026-09-15 合并时漏改此处 ⇒ 数据"写进去有、读出来丢"（自纠）
+            subject_type=str(d.get("subject_type") or ""),
+            subject_id=str(d.get("subject_id") or ""),
+            artifact_ids=list(d.get("artifact_ids") or []),
+            requested_by=str(d.get("requested_by") or ""),
+            history=list(d.get("history") or []),
         )
 
 

@@ -380,7 +380,7 @@ class ConsoleService:
         """ExecCheckpointStore (懒装配; 失败安全 — 无 workspace/写失败 → None/空)。"""
         if self._exec_checkpoint_store is None:
             try:
-                from .exec_checkpoint import ExecCheckpointStore
+                from ai_factory_os.services.execution.exec_checkpoint import ExecCheckpointStore
 
                 ws_root = Path(getattr(self._workspace, "root", None) or "")
                 self._exec_checkpoint_store = ExecCheckpointStore(ws_root) if ws_root else None

@@ -112,6 +112,7 @@ from .commands import (
 from .context import DEFAULT_ROOT, FactoryContext
 from .domains import audit as _dom_audit
 from .domains import conversation as _dom_conversation
+from .domains import governance as _dom_governance
 from .domains import metrics as _dom_metrics
 from .domains import decomposition as _dom_decomposition
 from .domains import operations as _dom_operations
@@ -374,6 +375,10 @@ def build_parser() -> Any:
 
     # factory kanban —— 任务拆解域（按域拆至 domains/decomposition.py）
     _dom_decomposition.register(sub, json_opt)
+
+    # factory approval —— 治理域（按域拆至 domains/governance.py）
+    # 老 CLI 的该命令已是绞杀者模式（默认走新实现 services/governance）⇒ 本刀取其新实现路径
+    _dom_governance.register(sub, json_opt)
 
     # factory project <sub> (Phase 5A: Example Layer, 只读)
     p_project = sub.add_parser("project", help="项目配置 (只读: examples/*/project.yaml)")
@@ -1021,6 +1026,8 @@ def main(argv: list[str] | None = None) -> int:
             result = _dispatch_kanban(ctx, args)
         elif args.command == "update":
             result = _dispatch_update(ctx, args)
+        elif args.command == "approval":
+            result = _dispatch_approval(ctx, args)
         elif args.command == "project":
             result = _dispatch_project(ctx, args)
         elif args.command == "provider":
@@ -1523,6 +1530,140 @@ def _print_update(r: dict) -> None:
         print(line)
     for e in r.get("errs", []):
         print(e, file=_sys.stderr)
+
+
+def _filter_approvals_by_project(result: dict, project: str, data_dir: Any) -> None:
+    """审批列表按项目目录过滤（请求 input.project_dir 匹配; 失败安全空列表）。
+
+    照老 CLI `_filter_approvals_by_project`（L2279）; `exec.store` 经 compat_aliases → 新地基。
+    """
+    filtered = []
+    try:
+        from exec.store import ExecStore
+
+        store = ExecStore(Path(data_dir) / "exec")
+        target = Path(project).resolve()
+        for ap in result.get("approvals", []):
+            req = store.get_request(str(ap.get("request_id") or ""))
+            proj = ((req.input or {}).get("project_dir", "")) if req is not None else ""
+            if proj and Path(proj).resolve() == target:
+                filtered.append(ap)
+    except Exception:  # noqa: BLE001 — 过滤失败安全 → 空列表
+        filtered = []
+    result["approvals"] = filtered
+    result["count"] = len(filtered)
+
+
+def _dispatch_approval(ctx: FactoryContext, args: Any) -> dict:
+    """factory approval list|decide|apply —— 审批门（复用 ApprovalGate）。
+
+    与老 CLI 行为一致, 但**只走新实现路径**（老 CLI 默认就是这条路; fallback 到老实现
+    的那半边随老代码退役, 不在新 CLI 保留）:
+      list / decide  → ai_factory_os.services.governance（ApprovalGate / ApprovalStore / decide）
+      apply          → exec.cli.cmd_exec_approval_apply（exec 经 compat_aliases → 新地基）
+    """
+    import argparse as _argparse
+    import sys as _sys
+
+    from legacy_paths import REPO_ROOT
+    if str(REPO_ROOT) not in _sys.path:
+        _sys.path.insert(0, str(REPO_ROOT))
+    from ai_factory_os.services.governance import ApprovalGate, ApprovalStore
+    from ai_factory_os.services.governance import decide as _decide
+
+    ctx.root.mkdir(parents=True, exist_ok=True)
+    cmd = getattr(args, "approval_command", None)
+    store = ApprovalStore(ctx.root / "exec")
+
+    if cmd == "list":
+        recs = ApprovalGate(store).list(status=getattr(args, "status", None) or None)
+        result = {"ok": True, "command": "approval list", "count": len(recs),
+                  "approvals": [r.to_dict() for r in recs], "exit_code": 0}
+        if getattr(args, "project", None):
+            _filter_approvals_by_project(result, args.project, ctx.root)
+        return {**result, "args": args}
+
+    if cmd == "decide":
+        if not args.approval_id or not args.decision:
+            # ★ 与老 CLI 逐字一致: 这处是【直接 stderr + rc 2】, 不经 _print_approval_result
+            #   ⇒ 消息里没有 "error: " 前缀, 也不带 [--by]/[--comment] 提示。
+            import sys as _s
+            print("error: 用法: factory approval decide <id> approve|reject", file=_s.stderr)
+            return {"ok": True, "_already_printed": True, "exit_code": 2, "args": args}
+
+        def _on_approved(rec: object) -> None:
+            """审计挂点: approve 时发 execution.approved（best-effort）。"""
+            try:
+                from ai_factory_os.infrastructure.events.logger import EventLogger
+                from ai_factory_os.infrastructure.events.store import EventStore
+                from exec import events as exec_events
+                from exec.store import ExecStore
+
+                ev_store = EventStore(ctx.root / "factory.db")
+                try:
+                    old_rec = ExecStore(ctx.root / "exec").get_approval(getattr(rec, "id", ""))
+                    if old_rec is not None:
+                        exec_events.record_execution_approved(EventLogger(ev_store), approval=old_rec)
+                finally:
+                    ev_store.close()
+            except Exception:  # noqa: BLE001 — 事件失败不影响决定落库
+                pass
+
+        rec = _decide(store, args.approval_id, args.decision,
+                      decided_by=args.by or "cli", comment=args.comment or "",
+                      on_approved=_on_approved)
+        _cmd = ("approval approve" if str(args.decision).lower() == "approve" else "approval deny")
+        return {"result": {"ok": True, "command": _cmd, "approval": rec.to_dict(), "exit_code": 0},
+                "args": args}
+
+    if cmd == "apply":
+        if not args.approval_id:
+            import sys as _s
+            print("用法: factory approval apply <id> [--project <dir>]", file=_s.stderr)
+            return {"ok": True, "_already_printed": True, "exit_code": 2, "args": args}
+        try:
+            import exec.cli as exec_cli
+            sub_args = _argparse.Namespace(id=args.approval_id, project=getattr(args, "project", None))
+            result = exec_cli.cmd_exec_approval_apply(root=ctx.root, args=sub_args)
+        except Exception as exc:  # noqa: BLE001 — 失败安全 → 明确错误
+            return {"ok": False, "exit_code": 1,
+                "error": f"审批命令失败 — {exc}", "args": args}
+        return {**result, "args": args}
+
+    return {"ok": False, "exit_code": 1, "error": f"未知动作: {cmd}", "args": args}
+
+
+def _print_approval(r: dict) -> None:
+    """照老 CLI `_print_approval_result`（L2298）逐字实现。"""
+    import sys as _sys
+
+    result, args = r, r.get("args")
+    if result.get("_already_printed"):        # 用法错误已直接打 stderr（与老 CLI 一致）
+        return
+    if not result.get("ok"):
+        print(f"error: {result.get('error')}", file=_sys.stderr)
+        return
+    if result.get("command") == "approval list":
+        print(f"审批记录 {result.get('count', 0)} 条 (status={getattr(args, 'status', 'pending')})")
+        for ap in result.get("approvals", []):
+            bundle = ap.get("bundle_id") or ""
+            print(f"  {ap['id']}  {ap['decision']:<10} {ap['request_id']}  "
+                  f"risk={ap.get('risk_level', 'low')}  by {ap.get('decided_by', '')}"
+                  + (f"  证据包 {bundle}" if bundle else ""))
+    elif result.get("command") in ("approval approve", "approval deny"):
+        ap = result["approval"]
+        print(f"审批 {ap['decision']}: {ap['id']}")
+        print(f"  request_id  {ap['request_id']}")
+        print(f"  decided_by  {ap['decided_by']}")
+        if ap.get("comment"):
+            print(f"  comment     {ap['comment']}")
+        if result.get("command") == "approval approve":
+            print(f"已批准。下一步: factory approval apply {ap['id']} --project <repo> 可应用")
+    elif result.get("command") == "approval apply":
+        ap = result["approval"]
+        print(f"✔ patch 已应用: {ap['id']} (diff {result.get('patch_lines', 0)} 行)")
+    if result.get("event_seq") is not None:
+        print(f"  event_seq   {result['event_seq']}")
 
 
 def _dispatch_plugin(ctx: FactoryContext, args: Any) -> dict:
@@ -2166,6 +2307,8 @@ def _print_output(args: Any, result: dict) -> None:
         _print_kanban(result)
     elif args.command == "update":
         _print_update(result)
+    elif args.command == "approval":
+        _print_approval(result)
     elif args.command == "plugin":
         _print_plugin(result)
     elif args.command == "project":

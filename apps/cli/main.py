@@ -1242,11 +1242,13 @@ def _dispatch_plugin(ctx: FactoryContext, args: Any) -> dict:
 
     if action == "inspect":
         if not target:
-            err.append("[E4160] 错误: plugin_id 必填 (factory plugin inspect <id>)"); code = 2
+            err.append("[E4160] 错误: plugin_id 必填 (factory plugin inspect <id>)")
+            code = 2
         else:
             x = _get(root, target)
             if x is None:
-                err.append(f"[E4161] Plugin 不存在: {target}"); code = 1
+                err.append(f"[E4161] Plugin 不存在: {target}")
+                code = 1
             else:
                 out.append(f"plugin: {x['plugin_id']} | {x['name']} v{x['version']} | "
                            f"{x['type']} | {x['vendor']}")
@@ -1261,36 +1263,42 @@ def _dispatch_plugin(ctx: FactoryContext, args: Any) -> dict:
             else "[E4164] 错误: plugin_id 必填 (factory plugin disable <id>)"
         xcode = "[E4163] 错误" if action == "enable" else "[E4165] 错误"
         if not target:
-            err.append(ecode); code = 2
+            err.append(ecode)
+            code = 2
         else:
             try:
                 x = _status(root, target, target=want)
                 out.append(f"plugin: {target} | status: {x['status']}")
             except Exception as exc:  # noqa: BLE001
-                err.append(f"{xcode}: {exc}"); code = 1
+                err.append(f"{xcode}: {exc}")
+                code = 1
         return {"lines": out, "errs": err, "exit_code": code}
 
     if action == "status":
         if not target:
-            err.append("[E4166] 错误: plugin_id 必填 (factory plugin status <id>)"); code = 2
+            err.append("[E4166] 错误: plugin_id 必填 (factory plugin status <id>)")
+            code = 2
         else:
             x = _get(root, target)
             if x is None:
-                err.append(f"[E4167] Plugin 不存在: {target}"); code = 1
+                err.append(f"[E4167] Plugin 不存在: {target}")
+                code = 1
             else:
                 out.append(f"plugin: {target} | status: {x['status']}")
         return {"lines": out, "errs": err, "exit_code": code}
 
     if action == "health":
         if not target:
-            err.append("[E4168] 错误: plugin_id 必填 (factory plugin health <id>)"); code = 2
+            err.append("[E4168] 错误: plugin_id 必填 (factory plugin health <id>)")
+            code = 2
         else:
             try:
                 h = _health(root, target)
                 out.append(f"plugin: {target} | health: {h['health']} | "
                            f"deps_ok: {h['dependencies_ok']}")
             except Exception as exc:  # noqa: BLE001
-                err.append(f"[E4169] 错误: {exc}"); code = 1
+                err.append(f"[E4169] 错误: {exc}")
+                code = 1
         return {"lines": out, "errs": err, "exit_code": code}
 
     if action == "resolve":

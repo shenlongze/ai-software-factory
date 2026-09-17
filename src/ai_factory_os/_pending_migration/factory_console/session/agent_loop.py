@@ -1905,7 +1905,7 @@ def dispatch(
                                   max_chars=int(args.get("max_chars") or 1500))
         # ---- W5 (v1.1.251): skills 按需检索 ----
         if tool_id == "skill_search":
-            from .skill_search import list_skills
+            from ai_factory_os.services.organization.skill_search import list_skills
 
             return list_skills(root, str(args.get("query") or ""),
                                top_k=int(args.get("max_results") or 10))
@@ -3219,7 +3219,7 @@ def _repo_fact(data_dir: str | Path | None, project_id: str) -> str:
 def _skills_index(data_dir: str | Path | None) -> str:
     """W5: skills 紧凑索引提示 (OpenClaw <available_skills>)。失败安全 → 空。"""
     try:
-        from .skill_search import index_prompt
+        from ai_factory_os.services.organization.skill_search import index_prompt
 
         return index_prompt(data_dir)
     except Exception:  # noqa: BLE001

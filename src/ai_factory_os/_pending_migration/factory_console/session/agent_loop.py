@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .intent_core import format_intent, route_for, understand_intent
-from . import llm_gateway as _lg  # S10-127 M1: 模型无关网关 (模块级, 测试可 patch)
+from ai_factory_os.infrastructure.llm import gateway as _lg  # S10-127 M1: 模型无关网关 (模块级, 测试可 patch)
 
 # ---------------------------------------------------------------- DeepSeek 原生 FC
 
@@ -2725,7 +2725,7 @@ def run_agent_native(
     _converge = "reflection"
     # S34-003B: 上下文窗口兜底 (providers.json 无 catalog 时按模型名查表)
     try:
-        from .llm_gateway import model_context_window as _lg_model_cw
+        from ai_factory_os.infrastructure.llm.gateway import model_context_window as _lg_model_cw
     except Exception:  # noqa: BLE001
         _lg_model_cw = lambda _m: 0
     # ---- S2 (v1.1.243): 循环护栏 — 无进展检测 / 同工具连续失败 / 整轮超时 ----

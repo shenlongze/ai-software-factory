@@ -486,7 +486,7 @@ class LLMControlPlane:
         """
         try:
             from ai_factory_os.contracts.llm.provider import ModelSpec
-            from factory_console.session.llm_gateway import _model_prices, model_context_window
+            from ai_factory_os.infrastructure.llm.gateway import _model_prices, model_context_window
             _p, _c = _model_prices(model_id)
             _known = bool(_p) or bool(_c)
             return ModelSpec(

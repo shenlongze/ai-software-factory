@@ -2637,7 +2637,7 @@ class FactoryCLI:
             return 0
         n = max(1, int(getattr(args, "limit", 8) or 8))
         full = bool(getattr(args, "full", False))
-        from .llm_trace import is_measured          # 格式权威在 store ✓ 读侧不自己判 ✗
+        from ai_factory_os.infrastructure.llm.trace import is_measured          # 格式权威在 store ✓ 读侧不自己判 ✗
         print(f"=== LLM 调用留痕 · 最近 {min(n, total)}/{total} 条 ===")
         for r in rows[-n:]:
             dur = r.get("duration_s")
@@ -2692,7 +2692,7 @@ class FactoryCLI:
             print(f"  ✗ 读取失败: {exc}")
             return 1
 
-        from .llm_trace import is_measured          # 格式权威在 store ✓ 读侧不自己判 ✗
+        from ai_factory_os.infrastructure.llm.trace import is_measured          # 格式权威在 store ✓ 读侧不自己判 ✗
         by = str(getattr(args, "by", "model") or "model")
         groups: dict[str, list[float]] = {}
         unmetred = unpriced = 0

@@ -25,7 +25,7 @@ def _trace(prompt: str, response: str | None, *,
            model: str = "", provider: str = "") -> None:
     """LLM 调用留痕（延迟导入 ✓ 失败安全 ✓ —— 绝不影响主链 ✓）。"""
     try:
-        from ..llm_trace import record_llm_call
+        from ai_factory_os.infrastructure.llm.trace import record_llm_call
         record_llm_call(prompt, response, duration_s=duration_s,
                         model=model, provider=provider, error=error)
     except Exception:  # noqa: BLE001

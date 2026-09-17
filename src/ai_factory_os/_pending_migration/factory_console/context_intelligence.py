@@ -152,7 +152,7 @@ def register_strategy_plugin(plugin_id: str,
 
 def _get_strategy(root: Path | str):
     """当前启用的 ContextStrategy Plugin (从 Plugin Kernel 查询, 无 → None)。"""
-    from .plugin_kernel import get_plugin
+    from ai_factory_os.infrastructure.plugins.kernel import get_plugin
     for pid in STRATEGY_PLUGINS:
         p = get_plugin(root, pid)
         if p is not None and p["status"] == "ENABLED":

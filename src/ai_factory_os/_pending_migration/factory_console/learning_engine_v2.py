@@ -277,7 +277,7 @@ def register_learning_plugin(plugin_id: str,
 
 
 def _get_learning_plugin(root: Path | str):
-    from .plugin_kernel import get_plugin
+    from ai_factory_os.infrastructure.plugins.kernel import get_plugin
     for pid in LEARNING_PLUGINS:
         p = get_plugin(root, pid)
         if p is not None and p["status"] == "ENABLED":

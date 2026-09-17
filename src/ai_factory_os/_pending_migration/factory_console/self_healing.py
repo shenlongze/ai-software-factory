@@ -210,7 +210,7 @@ def register_repair_plugin(plugin_id: str, fn: RepairHandler) -> None:
 
 def _resolve_repair_plugin(root: Path | str, plugin_id: str):
     """经 Plugin Kernel 解析 (governance: enabled + 权限)。"""
-    from .plugin_kernel import get_plugin
+    from ai_factory_os.infrastructure.plugins.kernel import get_plugin
     p = get_plugin(root, plugin_id)
     if p is None:
         raise ValueError(f"Repair Plugin 不存在: {plugin_id}")

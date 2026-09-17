@@ -6522,7 +6522,7 @@ class FactoryCLI:
 
         薄代理 → plugin_kernel (CLI 与 API 共享同一 Service)。
         """
-        from factory_console.plugin_kernel import (
+        from ai_factory_os.infrastructure.plugins.kernel import (
             list_plugins as _list, get_plugin as _get, plugin_status as _status,
             plugin_health as _health, resolve_plugin as _resolve,
         )

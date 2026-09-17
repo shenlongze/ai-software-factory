@@ -89,7 +89,7 @@ def register_strategy(root: Path | str, *, strategy_id: str, strategy_type: str,
     """注册 IntelligenceStrategy (经 S31 Plugin Kernel type=strategy; 唯一 Registry)。"""
     if strategy_type not in STRATEGY_TYPES:
         raise ValueError(f"非法 strategy_type: {strategy_type}")
-    from .plugin_kernel import bootstrap, get_plugin, register_plugin, plugin_status
+    from ai_factory_os.infrastructure.plugins.kernel import bootstrap, get_plugin, register_plugin, plugin_status
     bootstrap(root)
     if get_plugin(root, strategy_id) is None:
         register_plugin(root, plugin_id=strategy_id, name=strategy_id, version=version,
@@ -201,7 +201,7 @@ def execute_strategy(root: Path | str, *, strategy_id: str,
                      payload: dict[str, Any]) -> dict[str, Any]:
     """统一执行: StrategyRequest → Resolution (Plugin Kernel) → Adapter → Evidence。"""
     # 1. Resolution (经 Plugin Kernel: ENABLED + permission, 非 LLM)
-    from .plugin_kernel import get_plugin
+    from ai_factory_os.infrastructure.plugins.kernel import get_plugin
     p = get_plugin(root, strategy_id)
     if p is None:
         raise ValueError(f"Strategy Plugin 不存在: {strategy_id}")

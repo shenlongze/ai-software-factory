@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .plugin_kernel import bootstrap, get_plugin, list_plugins
+from ai_factory_os.infrastructure.plugins.kernel import bootstrap, get_plugin, list_plugins
 from .workforce_os import agent_performance
 
 #: Evidence-aware ranking 权重 (冻结)

@@ -293,7 +293,7 @@ def resolve_plugin(root: Path | str, *, required_capability: str,
             continue
         return {"resolved": True, "plugin_id": p["plugin_id"], "type": p["type"],
                 "capability": required_capability,
-                "reason": f"deterministic resolution (capability match + ENABLED + permission)"}
+                "reason": "deterministic resolution (capability match + ENABLED + permission)"}
     return {"resolved": False, "reason": "无满足 permission 的 plugin"}
 
 

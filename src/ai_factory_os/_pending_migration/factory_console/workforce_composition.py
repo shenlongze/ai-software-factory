@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .plugin_kernel import (get_plugin, list_plugins)
+from ai_factory_os.infrastructure.plugins.kernel import (get_plugin, list_plugins)
 from .workforce_os import list_agent_profiles
 from .workforce import ROLE_CAPABILITIES
 
@@ -112,7 +112,7 @@ def _audit(root: Path | str, event_type: str, payload: dict[str, Any]) -> None:
 
 def _ensure_composition_plugins(root: Path | str) -> None:
     """注册内置 Agent/Skill/Tool/Model/Runtime Plugins (与 S31 provider 同构, 不改 Core)。"""
-    from .plugin_kernel import register_plugin, plugin_status
+    from ai_factory_os.infrastructure.plugins.kernel import register_plugin, plugin_status
 
     specs = {
         "agent.dev": ("agent", "Developer Agent", ["implement", "repair"], ["execute.code"]),

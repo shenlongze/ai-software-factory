@@ -21,7 +21,7 @@ _IMPLEMENTATION_DEFAULT = "provider:local"
 
 
 def _kernel() -> Any:
-    from . import plugin_kernel
+    from ai_factory_os.infrastructure.plugins import kernel as plugin_kernel
 
     return plugin_kernel
 

@@ -109,7 +109,7 @@ def register_memory_plugin(plugin_id: str,
 
 def _memory_call(root: Path | str, plugin_id: str, action: str, payload: dict[str, Any]) -> dict[str, Any]:
     """经 Plugin Kernel 调用 Memory Plugin (Governance + enabled 检查)。"""
-    from .plugin_kernel import get_plugin
+    from ai_factory_os.infrastructure.plugins.kernel import get_plugin
     p = get_plugin(root, plugin_id)
     if p is None:
         raise ValueError(f"Memory Plugin 不存在: {plugin_id}")
@@ -196,7 +196,7 @@ def _init_local_memory(root: Path | str) -> None:
     """
     plugin = LocalMemoryPlugin(root)
     register_memory_plugin("memory.local", plugin.handle)
-    from .plugin_kernel import bootstrap, get_plugin, register_plugin, plugin_status
+    from ai_factory_os.infrastructure.plugins.kernel import bootstrap, get_plugin, register_plugin, plugin_status
     bootstrap(root)
     if get_plugin(root, "memory.local") is None:
         try:

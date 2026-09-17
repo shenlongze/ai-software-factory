@@ -156,7 +156,7 @@ def register_opt_plugin(plugin_id: str,
 
 
 def _resolve_opt_plugin(root: Path | str, plugin_id: str):
-    from .plugin_kernel import get_plugin
+    from ai_factory_os.infrastructure.plugins.kernel import get_plugin
     p = get_plugin(root, plugin_id)
     if p is None:
         raise ValueError(f"Optimization Plugin 不存在: {plugin_id}")

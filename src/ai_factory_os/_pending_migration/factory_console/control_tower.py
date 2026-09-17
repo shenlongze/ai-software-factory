@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .unified_contract import entities
+from ai_factory_os.infrastructure.storage.entity_store import entities
 
 
 def _now_iso() -> str:

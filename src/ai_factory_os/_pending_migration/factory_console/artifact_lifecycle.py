@@ -134,8 +134,10 @@ def _resolve_project_by_exs(root: Path | str, exs_id: str) -> str:
         tid = str(getattr(rec, "task_id", "") or "")
         if not tid:
             return ""
-        from .unified_contract import (
-            _entity_index, _load as _uc_load, resolve_entity_project,
+        from ai_factory_os.infrastructure.storage.entity_store import (
+            _entity_index,
+            _load as _uc_load,
+            resolve_entity_project,
         )
         return resolve_entity_project(tid, _entity_index(_uc_load(root, "entities")))
     except Exception:  # noqa: BLE001 — 失败安全 ✓

@@ -22,11 +22,29 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .unified_contract import (
-    create_entity, create_requirement, store_entity, get_entity, entities, bump_version,
+from ai_factory_os.contracts.entity.contract import (
+
+    bump_version,
+
+    create_entity,
+
 )
 
+from ai_factory_os.contracts.entity.contract import (
 
+    create_requirement,
+
+)
+
+from ai_factory_os.infrastructure.storage.entity_store import (
+
+    entities,
+
+    get_entity,
+
+    store_entity,
+
+)
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 

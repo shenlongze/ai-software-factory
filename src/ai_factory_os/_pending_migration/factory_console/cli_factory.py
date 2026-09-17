@@ -5737,12 +5737,19 @@ class FactoryCLI:
 
         薄代理 → unified_contract (CLI 与 API 共享同一 Service)。
         """
-        from factory_console.unified_contract import (
-            create_entity as _create, get_entity as _get, entities as _list,
-            trace_lineage as _trace, store_entity as _store, ID_PREFIXES,
-            ENTITY_RELATIONS, LIFECYCLE_STATES, ERROR_CODES,
+        from ai_factory_os.contracts.entity.contract import (
+            ENTITY_RELATIONS,
+            ERROR_CODES,
+            ID_PREFIXES,
+            LIFECYCLE_STATES,
         )
-
+        from ai_factory_os.infrastructure.storage.entity_store import (
+            create_entity as _create,
+            entities as _list,
+            get_entity as _get,
+            store_entity as _store,
+            trace_lineage as _trace,
+        )
         root = Path(getattr(args, "data_dir", None) or self.data_dir)
         action = getattr(args, "action", "list") or "list"
         target = getattr(args, "target", None)

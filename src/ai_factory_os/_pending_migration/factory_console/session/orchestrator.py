@@ -747,7 +747,7 @@ class _GovernanceContext:
                 tid = str(task.get("id") or task.get("entity_id") or "")
             if not tid:
                 return ""
-            from ..unified_contract import _load as _uc_load
+            from ai_factory_os.infrastructure.storage.entity_store import _load as _uc_load
             for e in _uc_load(self.workspace, "entities"):
                 if isinstance(e, dict) and str(e.get("id")) == tid:
                     return str(e.get("policy") or "").strip().lower()

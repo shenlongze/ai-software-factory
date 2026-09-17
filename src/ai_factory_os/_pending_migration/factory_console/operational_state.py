@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .unified_contract import entities, get_entity
+from ai_factory_os.infrastructure.storage.entity_store import entities, get_entity
 
 #: 统一 Operational States (按实体语义)
 TASK_STATES = ("PLANNED", "READY", "RUNNING", "BLOCKED", "WAITING_APPROVAL",

@@ -78,8 +78,9 @@ class _SectionStore(Generic[T]):
     def _entity_index_cached(self) -> dict[str, dict[str, Any]]:
         """实体索引（每次 _write 只建一次 ✓ —— 每条记录重建会 O(n²) 卡死 ✗）。"""
         try:
-            from ai_factory_os._pending_migration.factory_console.unified_contract import (
-                _entity_index, _load as _uc_load,
+            from ai_factory_os.infrastructure.storage.entity_store import (
+                _entity_index,
+                _load as _uc_load,
             )
             return _entity_index(_uc_load(self._root(), "entities"))
         except Exception:  # noqa: BLE001 — 失败安全 ✓
@@ -95,7 +96,7 @@ class _SectionStore(Generic[T]):
             tid = str(record.get("task_id") or "")
             if not tid:
                 return ""
-            from ai_factory_os._pending_migration.factory_console.unified_contract import (
+            from ai_factory_os.infrastructure.storage.entity_store import (
                 resolve_entity_project,
             )
             idx = index if index is not None else self._entity_index_cached()

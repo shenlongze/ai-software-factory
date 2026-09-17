@@ -465,7 +465,12 @@ def ensure_project_binding(root: str | Path, conversation_id: str) -> str:
         # ★ 不走 po.create_project(source_conv_id=…) —— 它内部 extract_requirement
         #   会把 conv 当【实体】查 ✗，而会话存在 conversations/ 不在实体库
         #   → NOT_FOUND: entity conv-xxx ✗（实测踩到）。这里直接用实体 API ✓
-        from factory_console.unified_contract import create_entity, store_entity
+        from ai_factory_os.contracts.entity.contract import (
+            create_entity,
+        )
+        from ai_factory_os.infrastructure.storage.entity_store import (
+            store_entity,
+        )
         proj = create_entity("project", created_by="system", parent_id="")
         proj["title"] = goal
         proj["source_conversation_id"] = conversation_id

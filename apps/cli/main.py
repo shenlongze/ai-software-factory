@@ -954,6 +954,8 @@ def main(argv: list[str] | None = None) -> int:
             result = _dispatch_execution(ctx, args)
         elif args.command == "checkpoint":
             result = _dispatch_checkpoint(ctx, args)
+        elif args.command == "backup":
+            result = _dispatch_backup(ctx, args)
         elif args.command == "recover":
             result = cmd_recover(ctx, args)
         elif args.command == "dashboard":
@@ -1129,6 +1131,53 @@ def _print_verification(sub: str, r: dict) -> None:
     for x in r["items"]:
         print(f"  {x.get('verification_id') or x.get('id')}  {str(x.get('status')):<10} "
               f"run={x.get('task_run_id') or '-'}  {x.get('method') or x.get('verification_type') or ''}")
+
+
+def _dispatch_backup(ctx: FactoryContext, args: Any) -> dict:
+    """factory backup {create|list|restore} —— 运维域（底层已在新地基: services/operations/backup）。
+
+    与老 CLI `cli_factory.backup`（L9400 注册 / 对应 handler）行为一致。
+    """
+    from ai_factory_os.services.operations.backup import (
+        create_backup, list_backups, restore_backup,
+    )
+
+    action = getattr(args, "backup_command", "list") or "list"
+    bdir = getattr(args, "dir", None) or None
+
+    if action == "create":
+        r = create_backup(ctx.root, bdir)
+        if not r.get("ok"):
+            raise CliError(f"备份失败: {r.get('error')}", exit_code=1)
+        return {"action": "create", "result": r}
+    if action == "list":
+        return {"action": "list", "rows": list_backups(bdir)}
+
+    bf = getattr(args, "backup_file", None) or ""
+    if not bf:
+        raise CliError("用法: factory backup restore <备份文件>", exit_code=2)
+    r = restore_backup(ctx.root, bf)
+    if not r.get("ok"):
+        raise CliError(f"恢复失败: {r.get('error')}", exit_code=1)
+    return {"action": "restore", "result": r}
+
+
+def _print_backup(sub: str, r: dict) -> None:
+    if sub == "create":
+        x = r["result"]
+        print(f"✅ 备份完成: {x['file']} ({x['size'] / 1024:.1f} KB, {x['count']} 个文件)")
+        return
+    if sub == "list":
+        rows = r["rows"]
+        if not rows:
+            print("（暂无备份 — 运行 factory backup create）")
+            return
+        print(f"=== 数据备份 ({len(rows)}) ===")
+        for row in rows:
+            print(f"  - {row.get('name', row['file'])} ({row['size'] / 1024:.1f} KB)")
+        return
+    x = r["result"]
+    print(f"✅ 恢复完成: {x['restored']} 个文件 (来自 {x['file']})")
 
 
 def _dispatch_project(ctx: FactoryContext, args: Any) -> dict:
@@ -1359,6 +1408,8 @@ def _print_output(args: Any, result: dict) -> None:
         _print_execution(args.execution_command, result)
     elif args.command == "checkpoint":
         _print_checkpoint(args.checkpoint_command, result)
+    elif args.command == "backup":
+        _print_backup(args.backup_command, result)
     elif args.command == "recover":
         _print_recover(result)
     elif args.command == "dashboard":

@@ -32,3 +32,17 @@ def register(sub: Any, json_opt: Callable[[Any], None]) -> None:
     )
     json_opt(p_recover)
     p_recover.add_argument("task_id", help="任务 ID (如 T-001)")
+
+    # factory backup <动作> [文件] —— 数据保护（X-1/D-1）
+    # 搬迁来源: 老 CLI p_backup（cli_factory L9400）
+    # 底层: 已在新地基 `services/operations/backup.py`（本域今天刚迁入）⇒ 零老区依赖 ✓
+    p_backup = sub.add_parser(
+        "backup", help="数据保护 (X-1/D-1): 备份/清单/恢复 ~/.factory"
+    )
+    json_opt(p_backup)
+    p_backup.add_argument(
+        "backup_command", choices=["create", "list", "restore"], metavar="动作",
+        help="create — 备份数据目录; list — 备份清单; restore <文件> — 恢复",
+    )
+    p_backup.add_argument("backup_file", nargs="?", default=None, help="备份文件 (restore)")
+    p_backup.add_argument("--dir", default=None, help="备份目录 (缺省 ~/.factory-backups)")

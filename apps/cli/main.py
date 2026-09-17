@@ -112,6 +112,7 @@ from .domains import audit as _dom_audit
 from .domains import conversation as _dom_conversation
 from .domains import metrics as _dom_metrics
 from .domains import operations as _dom_operations
+from .domains import organization as _dom_organization
 from .domains import platform as _dom_platform
 from .domains import validation as _dom_validation
 
@@ -363,6 +364,10 @@ def build_parser() -> Any:
     # factory create —— 平台域（按域拆至 domains/platform.py）
     # 底层 org.cli 已在新地基（services/organization/cli.py）⇒ 零老区依赖 ✓
     _dom_platform.register(sub, json_opt)
+
+    # factory plugin —— 组织域（按域拆至 domains/organization.py）
+    # 底层 plugin_kernel 已在新地基（infrastructure/plugins/kernel.py）⇒ 零老区依赖 ✓
+    _dom_organization.register(sub, json_opt)
 
     # factory project <sub> (Phase 5A: Example Layer, 只读)
     p_project = sub.add_parser("project", help="项目配置 (只读: examples/*/project.yaml)")
@@ -1004,6 +1009,8 @@ def main(argv: list[str] | None = None) -> int:
             result = _dispatch_history(ctx, args)
         elif args.command == "create":
             result = _dispatch_create(ctx, args)
+        elif args.command == "plugin":
+            result = _dispatch_plugin(ctx, args)
         elif args.command == "project":
             result = _dispatch_project(ctx, args)
         elif args.command == "provider":
@@ -1209,6 +1216,98 @@ def _print_evd(sub: str, r: dict) -> None:
     for e in r["items"]:
         print(f"  {e.get('evidence_id')}  {e.get('evidence_type')}  "
               f"ver={e.get('verification_refs') or []}")
+
+
+def _dispatch_plugin(ctx: FactoryContext, args: Any) -> dict:
+    """factory plugin —— Plugin 内核（S31）: list/inspect/enable/disable/status/health/resolve。
+
+    与老 CLI `cli_factory.plugin_cmd`（L9830）**逐字一致**（含 [E416x] 错误码）;
+    底层走**新地基** `infrastructure/plugins/kernel`。
+    返回结构: {lines: [...], errs: [...], exit_code: N} —— print 阶段分流出 stdout/stderr。
+    """
+    from ai_factory_os.infrastructure.plugins.kernel import (
+        get_plugin as _get, list_plugins as _list, plugin_health as _health,
+        plugin_status as _status, resolve_plugin as _resolve,
+    )
+
+    root = str(ctx.root)
+    action = getattr(args, "action", "list") or "list"
+    target = getattr(args, "target", None)
+    out, err, code = [], [], 0
+
+    if action == "list":
+        for x in _list(root):
+            out.append(f"  {x['plugin_id']} | {x['type']} | {x['status']} | caps: {x['capabilities']}")
+        return {"lines": out, "errs": err, "exit_code": code}
+
+    if action == "inspect":
+        if not target:
+            err.append("[E4160] 错误: plugin_id 必填 (factory plugin inspect <id>)"); code = 2
+        else:
+            x = _get(root, target)
+            if x is None:
+                err.append(f"[E4161] Plugin 不存在: {target}"); code = 1
+            else:
+                out.append(f"plugin: {x['plugin_id']} | {x['name']} v{x['version']} | "
+                           f"{x['type']} | {x['vendor']}")
+                out.append(f"  caps: {x['capabilities']} | deps: {x['dependencies']} | "
+                           f"perms: {x['permissions']}")
+                out.append(f"  status: {x['status']} | history: {len(x['history'])}")
+        return {"lines": out, "errs": err, "exit_code": code}
+
+    if action in ("enable", "disable"):
+        want = "ENABLED" if action == "enable" else "DISABLED"
+        ecode = "[E4162] 错误: plugin_id 必填 (factory plugin enable <id>)" if action == "enable" \
+            else "[E4164] 错误: plugin_id 必填 (factory plugin disable <id>)"
+        xcode = "[E4163] 错误" if action == "enable" else "[E4165] 错误"
+        if not target:
+            err.append(ecode); code = 2
+        else:
+            try:
+                x = _status(root, target, target=want)
+                out.append(f"plugin: {target} | status: {x['status']}")
+            except Exception as exc:  # noqa: BLE001
+                err.append(f"{xcode}: {exc}"); code = 1
+        return {"lines": out, "errs": err, "exit_code": code}
+
+    if action == "status":
+        if not target:
+            err.append("[E4166] 错误: plugin_id 必填 (factory plugin status <id>)"); code = 2
+        else:
+            x = _get(root, target)
+            if x is None:
+                err.append(f"[E4167] Plugin 不存在: {target}"); code = 1
+            else:
+                out.append(f"plugin: {target} | status: {x['status']}")
+        return {"lines": out, "errs": err, "exit_code": code}
+
+    if action == "health":
+        if not target:
+            err.append("[E4168] 错误: plugin_id 必填 (factory plugin health <id>)"); code = 2
+        else:
+            try:
+                h = _health(root, target)
+                out.append(f"plugin: {target} | health: {h['health']} | "
+                           f"deps_ok: {h['dependencies_ok']}")
+            except Exception as exc:  # noqa: BLE001
+                err.append(f"[E4169] 错误: {exc}"); code = 1
+        return {"lines": out, "errs": err, "exit_code": code}
+
+    if action == "resolve":
+        res = _resolve(root, required_capability=target or "")
+        out.append(f"resolve: {res.get('resolved')} | {res.get('plugin_id', '')} | "
+                   f"{res.get('reason', '')}")
+        return {"lines": out, "errs": err, "exit_code": code}
+
+    return {"lines": out, "errs": err, "exit_code": 1}
+
+
+def _print_plugin(r: dict) -> None:
+    for line in r["lines"]:
+        print(line)
+    import sys as _sys
+    for e in r["errs"]:
+        print(e, file=_sys.stderr)
 
 
 def _dispatch_create(ctx: FactoryContext, args: Any) -> dict:
@@ -1748,6 +1847,8 @@ def _print_output(args: Any, result: dict) -> None:
         _print_history(args.history_action, result)
     elif args.command == "create":
         _print_create(result)
+    elif args.command == "plugin":
+        _print_plugin(result)
     elif args.command == "project":
         _print_project(args.project_command, result)
     elif args.command == "provider":

@@ -128,7 +128,7 @@ def build_retro(root: Path | str, project_id: str) -> dict[str, Any]:
 
     # ── 交付维度
     try:
-        from .delivery import list_deliveries, uat_status
+        from ai_factory_os.services.delivery.ops import list_deliveries, uat_status
         dlv = list_deliveries(root, project_id)
         uat = uat_status(root, project_id)
         if dlv:

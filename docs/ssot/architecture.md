@@ -37,11 +37,18 @@
 `identity` · `organization` · `work` · `resource` · `execution` · `governance` ·
 `learning` · `conversation` · `scheduling` · `events` · `errors` · `llm`
 
-**服务域（`services/`，10）**
+**服务域（`services/`，11）**
 
-`conversation` · `execution` · `governance` · `learning` · `metrics` ·
+`conversation` · `delivery` · `execution` · `governance` · `learning` · `metrics` ·
 `operations` · `organization` · `resource` · `validation` · `work`
 
+> 2026-09-15 新增 `delivery`（交付域）—— Founder 裁决 **B+C**:
+> 「发布 / 交付 / 回滚 / 产出物」是 8 环里的独立一环（交付环），命令域清单里也有它
+> ⇒ 承认 `delivery` 为**独立服务域**（10 → 11）。
+> 同时**四件事按实质拆**（不全塞进 delivery）:
+>   发布（release_truth / release_service）· 交付（delivery）→ `services/delivery/`
+>   回滚（rollback_service）→ `services/operations/`（回滚是运维动作）
+>   产出物（artifact_lifecycle）→ `services/organization/`（该域已有 artifact / artifact_contract）
 > 2026-09-15 新增 `operations`（运维域）—— Founder 裁决: 运维在老系统里是**完整一环**
 > （8 环的第 8 环, `factory ops`/`doctor` 独立命令域, 14 个模块 4,399 行），
 > 不是 execution 或 metrics 的附属 ⇒ 独立成域。

@@ -149,8 +149,8 @@
 ```
 契约域（contracts/，12）   identity organization work resource execution governance
                           learning conversation scheduling events errors llm
-服务域（services/，10）    conversation execution governance learning metrics operations
-                          organization resource validation work
+服务域（services/，11）    conversation delivery execution governance learning metrics
+                          operations organization resource validation work
 ```
 
 **"一域"的判据**：一个**能力**只在一个服务域里实现（R18）。同一能力词根出现在两个服务域 = 违规。
@@ -165,8 +165,8 @@
                             learning conversation scheduling events errors llm
    ⇒ 管【contracts/ 下的子目录】
 
-服务域（services/，10）      conversation execution governance learning metrics operations
-                            organization resource validation work
+服务域（services/，11）      conversation delivery execution governance learning metrics
+                            operations organization resource validation work
    ⇒ 管【services/ 下的子目录】+ 判"同一能力只在一处"（R18）
 
 命令域（15）                 conversation understanding architecture decomposition orchestration

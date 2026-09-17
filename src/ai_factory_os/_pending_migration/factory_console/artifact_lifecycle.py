@@ -422,7 +422,7 @@ def apply_artifact(
     apply_fn 注入 (默认 session.delivery.apply_patch; 测试可注入但 Integration Test 用真实)。
     核心: apply 失败 → 抛 ArtifactError, Artifact 状态不变 (绝不伪装 APPLIED)。
     """
-    from .session.delivery import apply_patch as _real_apply
+    from ai_factory_os.services.delivery.ops import apply_patch as _real_apply
 
     with _lock:
         art = get_artifact(root, artifact_id)

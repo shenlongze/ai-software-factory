@@ -3286,7 +3286,7 @@ class ExecutionOrchestrator:
                 artifact_path = str(outcome.get("artifact") or "")
                 if artifact_path and Path(artifact_path).is_file():
                     try:
-                        from .delivery import deliver_patch
+                        from ai_factory_os.services.delivery.ops import deliver_patch
                         # S10-083: delivery 审计事件独立装配 (不依赖 _emitter 作用域)
                         try:
                             from ..audit.audit_emitter import AuditEmitter

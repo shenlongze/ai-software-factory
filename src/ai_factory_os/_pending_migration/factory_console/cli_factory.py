@@ -8218,7 +8218,7 @@ class FactoryCLI:
         """factory evd — Evidence SSOT (P0-F4): list/get canonical EVD-*。"""
         data_root = Path(args.data_dir or self.data_dir)
         try:
-            from factory_console.evidence_domain import get_evidence, list_evidence
+            from ai_factory_os.services.validation.evidence_store import get_evidence, list_evidence
         except ImportError:
             from evidence_domain import get_evidence, list_evidence  # type: ignore
 

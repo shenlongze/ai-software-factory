@@ -398,7 +398,7 @@ def _attach_verify_evidence(
     """
     try:
         try:
-            from .evidence_domain import materialize_evidence  # 包内
+            from ai_factory_os.services.validation.evidence_store import materialize_evidence  # 包内
         except ImportError:  # 兼容直接 import (sys.path 模式)
             from evidence_domain import materialize_evidence  # type: ignore
 

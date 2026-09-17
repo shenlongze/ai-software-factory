@@ -29,6 +29,7 @@ factory-org (Employee 解析); factory-core 零顶层 imports 本包。
 from __future__ import annotations
 
 import argparse
+import subprocess
 import sys
 from contextlib import contextmanager
 from pathlib import Path

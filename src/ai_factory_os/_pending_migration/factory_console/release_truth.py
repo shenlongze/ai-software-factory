@@ -292,7 +292,10 @@ def gate_release(root: Path | str, release_id: str, *,
     # 5. S45: 用户 Acceptance APPROVED (require_acceptance=True 时 — 发布前门)
     if require_acceptance and arts:
         try:
-            from factory_console.acceptance_truth import (
+            # ★ 2026-09-15 归位: 验收域已在新地基（services/validation/acceptance.py）,
+            #   老区那份 factory_console/acceptance_truth.py 是"搬完没删"的残留 ——
+            #   此处切到新地基, 随即删除老区那份（禁只迁不删 ✓）。
+            from ai_factory_os.services.validation.acceptance import (
                 acceptance_status_for_release,
             )
 

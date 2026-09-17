@@ -80,7 +80,7 @@ def _resolve_model_conf(
         return dict(_model_conf_cache[key])
     try:
         from ai_factory_os.infrastructure.llm.providers.control_plane import LLMControlPlane
-        from ..model_catalog import ModelCatalog
+        from ai_factory_os.infrastructure.llm.providers.model_catalog import ModelCatalog
         from ..llm_router import LLMRouter
 
         plane = LLMControlPlane(providers_file=Path(data_dir) / "providers.json")

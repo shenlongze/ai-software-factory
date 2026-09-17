@@ -39,7 +39,7 @@ from .cli_factory import MIN_NODE, MIN_PYTHON, _node_version, _port_in_use
 from ai_factory_os.infrastructure.config.provider import DEFAULT_FRONTEND_PORT, DEFAULT_PORT
 from ai_factory_os.infrastructure.llm.providers.control_plane import LLMControlPlane, ProviderFileError
 from .llm_router import LLMRouter
-from .model_catalog import ModelCatalog, ModelCatalogError
+from ai_factory_os.infrastructure.llm.providers.model_catalog import ModelCatalog, ModelCatalogError
 
 # ------------------------------------------------------------------ 状态常量
 

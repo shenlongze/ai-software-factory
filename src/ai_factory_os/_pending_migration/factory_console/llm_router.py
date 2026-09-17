@@ -38,7 +38,7 @@ import yaml
 from pydantic import BaseModel, Field, ValidationError
 
 from .agent_policy import AgentPolicyStore, RouterRule
-from .model_catalog import ModelChoice
+from ai_factory_os.infrastructure.llm.providers.model_catalog import ModelChoice
 
 logger = logging.getLogger("factory.llm_router")
 

@@ -511,7 +511,7 @@ def _demo_write_providers(root: Path) -> None:
 
 def _demo_write_models(root: Path) -> None:
     """触发 ModelCatalog 种子写入 models.json (复用 ModelCatalog 构造即自动 seed)。"""
-    from .model_catalog import ModelCatalog
+    from ai_factory_os.infrastructure.llm.providers.model_catalog import ModelCatalog
 
     ModelCatalog(models_file=root / "models.json")
 
@@ -2381,7 +2381,7 @@ class FactoryCLI:
         # --fix: 先修复可自动修复项 (models.json 内置种子; 缺省构造即写入)
         if getattr(args, "fix", False):
             try:
-                from .model_catalog import ModelCatalog
+                from ai_factory_os.infrastructure.llm.providers.model_catalog import ModelCatalog
 
                 catalog = ModelCatalog(models_file=self.data_dir / "models.json")
                 n = len(catalog.list_models(include_disabled=True))
@@ -3969,7 +3969,7 @@ class FactoryCLI:
         print("=== LLM Router 状态 (骨架, 只读) ===")
         from ai_factory_os.infrastructure.llm.providers.control_plane import LLMControlPlane
         from .llm_router import LLMRouter
-        from .model_catalog import ModelCatalog
+        from ai_factory_os.infrastructure.llm.providers.model_catalog import ModelCatalog
 
         agents_dir = self.data_dir / "agents"
         skills_dir = self.data_dir / "skills"
@@ -4306,7 +4306,7 @@ class FactoryCLI:
 
         # 2.5 模型目录种子 (models.json — 缺失时写入内置种子, 幂等)
         try:
-            from .model_catalog import ModelCatalog
+            from ai_factory_os.infrastructure.llm.providers.model_catalog import ModelCatalog
 
             catalog = ModelCatalog(models_file=self.data_dir / "models.json")
             model_count = len(catalog.list_models(include_disabled=True))
@@ -4624,7 +4624,7 @@ class FactoryCLI:
             print("  providers.json: 缺失")
         models_file = root / "models.json"
         if models_file.is_file():
-            from .model_catalog import ModelCatalog, ModelCatalogError
+            from ai_factory_os.infrastructure.llm.providers.model_catalog import ModelCatalog, ModelCatalogError
 
             try:
                 catalog = ModelCatalog(models_file=models_file)

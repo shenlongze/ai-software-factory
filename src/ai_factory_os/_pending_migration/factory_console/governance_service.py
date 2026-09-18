@@ -300,7 +300,7 @@ def release(root: Path | str, production_run_id: str, *, released_by: str = "rel
         missing.append("verification")
     # evaluation (S13)
     try:
-        from .production_evaluation import get_evaluation
+        from ai_factory_os.services.execution.production_evaluation import get_evaluation
         ev = get_evaluation(root, production_run_id)
         if ev is None or ev.get("status") != "COMPLETED":
             missing.append("evaluation")

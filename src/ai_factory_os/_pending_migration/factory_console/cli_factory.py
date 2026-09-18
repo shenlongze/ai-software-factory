@@ -5130,7 +5130,7 @@ class FactoryCLI:
                       file=sys.stderr)
                 return 2
             try:
-                from factory_console.production_evaluation import evaluate as _eval
+                from ai_factory_os.services.execution.production_evaluation import evaluate as _eval
                 ev = _eval(root, run_id)
             except Exception as exc:  # noqa: BLE001
                 print(f"[E4024] 错误: {exc}", file=sys.stderr)
@@ -7696,7 +7696,7 @@ class FactoryCLI:
             from .governance_service import (
                 list_approvals as _list_appr, request_approval as _req_appr,
             )
-            from .production_evaluation import evaluate as _eval, get_evaluation as _get_eval
+            from ai_factory_os.services.execution.production_evaluation import evaluate as _eval, get_evaluation as _get_eval
 
             rid_p = str(target or "")
             if not rid_p:

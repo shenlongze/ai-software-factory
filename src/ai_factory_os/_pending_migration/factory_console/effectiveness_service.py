@@ -185,7 +185,7 @@ def run_effectiveness_sample(root: Path | str, *, experiment_id: str, arm: str,
         else:
             final_pass = False
     # Evaluation
-    from .production_evaluation import evaluate
+    from ai_factory_os.services.execution.production_evaluation import evaluate
     ev = evaluate(root, final_run_id) if final_pass else None
     metric_value = ev.get("overall_score") if ev else None
     eligible = final_pass and metric_value is not None

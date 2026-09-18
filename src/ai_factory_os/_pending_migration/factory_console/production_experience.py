@@ -27,7 +27,7 @@ from .memory.experience import (
     ExperienceRecord, SUCCESS_PATTERN, FAILURE_PATTERN, DEBUG_EXPERIENCE,
 )
 from .memory.experience_store import ExperienceStore
-from .production_evaluation import evaluate as _evaluate
+from ai_factory_os.services.execution.production_evaluation import evaluate as _evaluate
 
 #: 经验来源类型 (S14 只允许 PRODUCTION_DERIVED 自动进入 ACTIVE)
 SOURCE_PRODUCTION_DERIVED = "PRODUCTION_DERIVED"

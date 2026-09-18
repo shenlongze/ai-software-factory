@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from ai_factory_os.services.execution.production_run import get_production_run
-from .production_evaluation import get_evaluation
+from ai_factory_os.services.execution.production_evaluation import get_evaluation
 
 #: Production Outcome
 OC_COMPLETED = "COMPLETED"

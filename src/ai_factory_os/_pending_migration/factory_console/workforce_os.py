@@ -319,7 +319,7 @@ def agent_performance(root: Path | str, agent_id: str) -> dict[str, Any]:
                 ver_pass += 1
     # evaluation score (从 run evaluation 投影)
     scores = []
-    from .production_evaluation import get_evaluation
+    from ai_factory_os.services.execution.production_evaluation import get_evaluation
     for r in runs:
         ev = get_evaluation(root, r.get("run_id", ""))
         if ev is not None and ev.get("overall_score") is not None:

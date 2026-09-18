@@ -106,7 +106,7 @@ def _audit(root: Path | str, event_type: str, payload: dict[str, Any]) -> None:
 def _run_metrics(root: Path | str, run_id: str) -> dict[str, Any]:
     """从真实 ProductionRun + Evaluation 提取指标 (机器可测, 非主观)。"""
     from ai_factory_os.services.execution.production_run import get_production_run
-    from .production_evaluation import get_evaluation
+    from ai_factory_os.services.execution.production_evaluation import get_evaluation
 
     run = get_production_run(root, run_id)
     if run is None:

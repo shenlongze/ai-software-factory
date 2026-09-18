@@ -206,7 +206,7 @@ def llm_run_sample(root: Path | str, *, experiment_id: str, arm: str,
         _record_sample(root, experiment_id, arm, sample)
         return sample
     # S13 Evaluation → metric
-    from .production_evaluation import evaluate
+    from ai_factory_os.services.execution.production_evaluation import evaluate
     ev = evaluate(root, r["production_run_id"])
     metric_name = exp.get("metric", "overall_score")
     metric_value = None

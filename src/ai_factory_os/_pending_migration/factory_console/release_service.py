@@ -170,7 +170,7 @@ def check(root: Path | str, release_id: str) -> dict[str, Any]:
     missing = list(gate.get("missing", []))
     if run.get("state") != "COMPLETED":
         missing.append("verification")
-    from .production_evaluation import get_evaluation
+    from ai_factory_os.services.execution.production_evaluation import get_evaluation
     if get_evaluation(root, rel["production_run_id"]) is None:
         missing.append("evaluation")
     allowed = len(missing) == 0

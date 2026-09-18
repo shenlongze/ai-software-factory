@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from .asset_parsers import parse_asset_file
+from ai_factory_os.plugins.skills.loader import parse_skill_md as _load_ext  # ★ 已切新地基
 from .schema import ExternalExecutorAdapter
 
 #: agent 名 → 能力角色 (路由用; 未命中 → assistant)

@@ -105,7 +105,7 @@ def scan_adapter_assets(adapter: ExternalExecutorAdapter) -> list[dict[str, Any]
 
             seen: set[str] = set()
             for md in sorted(base.rglob("SKILL.md")):
-                parsed = _ext_skills.parse_skill_md(md)
+                parsed = _load_ext(md)
                 if not parsed:
                     continue
                 leaf = str(parsed.get("id") or md.parent.name).strip()

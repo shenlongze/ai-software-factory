@@ -44,11 +44,12 @@ def wire(*, verbose: bool = False) -> dict[str, str]:
     # ── conversation.formalization: 会话 ↔ 项目绑定
     try:
         from ai_factory_os.services.conversation import formalization as _F
-        from factory_console.canonical_golden_path import (
+        # ★ 2026-09-15 已切新地基: services/conversation/binding.py（老区 Orchestrator 那块的做法）
+        from ai_factory_os.services.conversation.binding import (
             ensure_project_binding as _bind,
         )
         _F.bind_lookups(ensure_project_binding=_bind)
-        _wired["conversation.formalization.ensure_project_binding"] = "ok（借老区实现）"
+        _wired["conversation.formalization.ensure_project_binding"] = "ok（新地基 conversation.binding）"
     except Exception as exc:  # noqa: BLE001 — 装配失败不阻断链路, 但要如实记
         _wired["conversation.formalization.ensure_project_binding"] = (
             f"unavailable: {type(exc).__name__}: {exc}"

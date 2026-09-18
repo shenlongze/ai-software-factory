@@ -249,7 +249,7 @@ __all__ = ["collect_system", "collect_project", "save_snapshot", "read_snapshots
 
 def live_runs(root: Path | str, *, limit: int = 5) -> list[dict[str, Any]]:
     """列出 run（运行中优先 ✓ 然后按时间倒序 ✓）。"""
-    from factory_console.production_run import list_production_runs
+    from ai_factory_os.services.execution.production_run import list_production_runs
 
     runs = [r for r in (list_production_runs(root) or []) if isinstance(r, dict)]
     runs.sort(key=lambda r: (str(r.get("state")) != "RUNNING",

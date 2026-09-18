@@ -338,7 +338,7 @@ def _ensure_learning_candidate(root: Path | str, inc: dict[str, Any]) -> str:
 
 def _run_repair_execution(root, inc, plugin, executor_factory, artifact_root) -> dict[str, Any]:
     """Repair 执行: Plugin 生成 patch → 真实 production execution → verification。"""
-    from .production_run import register_workflow, create_production_run, execute_production_run
+    from ai_factory_os.services.execution.production_run import register_workflow, create_production_run, execute_production_run
     # Repair Plugin 生成修复 (真实 patch)
     repair = plugin("repair", {"patch_text": inc.get("detail", ""),
                                "target": inc["node_id"]})

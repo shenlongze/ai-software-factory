@@ -186,7 +186,7 @@ def execute_subtask(root: Path | str, task_id: str, *,
 
     每个子任务独立 NodeRun (Node 独立性保持), 产生 Evidence。
     """
-    from .production_run import register_workflow, create_production_run, execute_production_run
+    from ai_factory_os.services.execution.production_run import register_workflow, create_production_run, execute_production_run
 
     t = get_entity(root, task_id)
     if t["type"] != "task":

@@ -138,7 +138,7 @@ def run_effectiveness_sample(root: Path | str, *, experiment_id: str, arm: str,
 
     Sample 记录 initial_outcome + recovery_attempts + final_outcome + evidence_refs。
     """
-    from .production_run import register_workflow, create_production_run, execute_production_run
+    from ai_factory_os.services.execution.production_run import register_workflow, create_production_run, execute_production_run
     from ai_factory_os.services.validation.verification import verify_python_syntax, verify_pytest
 
     exp = _get_exp(root, experiment_id)

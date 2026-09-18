@@ -38,7 +38,7 @@ def _load(root: Path | str, name: str) -> list[dict[str, Any]]:
 def _runs(root: Path | str) -> list[dict[str, Any]]:
     """从真实 ProductionRun 投影 (复用 S3 list_production_runs, 非猜路径)。"""
     try:
-        from .production_run import list_production_runs
+        from ai_factory_os.services.execution.production_run import list_production_runs
         return list_production_runs(root)
     except Exception:  # noqa: BLE001
         return []

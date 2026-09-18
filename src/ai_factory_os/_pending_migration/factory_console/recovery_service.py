@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from .production_run import get_production_run
+from ai_factory_os.services.execution.production_run import get_production_run
 from .experiment_reliability import (
     classify_failure, FC_VERIFICATION, FC_AGENT, FC_GOV, FC_UNKNOWN,
 )
@@ -132,7 +132,7 @@ def recover_production_run(root: Path | str, production_run_id: str, *,
     真实 Verification Failure → bounded repair → new artifact + new verification → RECOVERED。
     executor_factory: 原节点工厂 (首次 FAIL 触发 repair_fn); repair_fn: 真实修复器。
     """
-    from .production_run import execute_production_run
+    from ai_factory_os.services.execution.production_run import execute_production_run
     from ai_factory_os.services.validation.verification import verify_python_syntax, verify_pytest
     from ai_factory_os.services.organization.artifact_lifecycle import get_artifact
 

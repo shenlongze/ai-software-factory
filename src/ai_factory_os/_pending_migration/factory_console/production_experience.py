@@ -85,7 +85,7 @@ def extract(root: Path | str, production_run_id: str, *, force: bool = False) ->
     成功生产 (COMPLETED + verification PASS + lineage) → ACTIVE
     失败生产 → CANDIDATE (非推荐)
     """
-    from .production_run import get_production_run
+    from ai_factory_os.services.execution.production_run import get_production_run
     from ai_factory_os.services.execution.node_runtime import get_node_run
 
     run = get_production_run(root, production_run_id)

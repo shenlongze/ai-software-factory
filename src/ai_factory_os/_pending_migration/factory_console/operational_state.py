@@ -67,7 +67,7 @@ def _save(root: Path | str, name: str, data: list[dict[str, Any]]) -> None:
 
 def _runs(root: Path | str) -> list[dict[str, Any]]:
     try:
-        from .production_run import list_production_runs
+        from ai_factory_os.services.execution.production_run import list_production_runs
         return list_production_runs(root)
     except Exception:  # noqa: BLE001
         return []

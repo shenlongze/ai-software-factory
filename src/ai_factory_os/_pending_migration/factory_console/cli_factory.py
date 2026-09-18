@@ -1292,7 +1292,7 @@ class FactoryCLI:
         数据全来自产品记录（ProductionRun / NodeRun / 任务树 ✓）不 grep 进程 ✗。
         """
         from . import monitor as _mon
-        from .production_run import get_production_run
+        from ai_factory_os.services.execution.production_run import get_production_run
 
         root = Path(self.data_dir)
         pid = str(getattr(args, "project", "") or "").strip()
@@ -5056,7 +5056,7 @@ class FactoryCLI:
                 print(f"workflow_id: {run['workflow_id']}")
                 print(f"state: {run['state']}")
                 print("启动执行 (真实外部 executor)...")
-                from factory_console.production_run import build_executor_factory
+                from ai_factory_os.services.execution.production_run import build_executor_factory
                 factory = build_executor_factory(root)
                 done = _svc_start(root, run["run_id"], executor_factory=factory,
                                   artifact_root=str(root))
@@ -5110,7 +5110,7 @@ class FactoryCLI:
                 for p in a["plan"]:
                     print(f"  {p['node_id']}: {p.get('node_run_state') or '未执行'} → {p['action']}")
                 print("恢复执行 (真实外部 executor)...")
-                from factory_console.production_run import build_executor_factory
+                from ai_factory_os.services.execution.production_run import build_executor_factory
                 factory = build_executor_factory(root)
                 r = _svc_recover(root, run_id, executor_factory=factory, artifact_root=str(root))
                 print(f"Final State: {r['final_state']}")
@@ -7745,7 +7745,7 @@ class FactoryCLI:
             else:
                 # ★ 要 artifact_ids ✗（我第一版漏了 ✓ 跑第二条路径才暴露 ✓）
                 #   → 从 run 的 node_runs 里取【真实产物 id ✓】不编 ✗
-                from .production_run import get_production_run as _get_pr
+                from ai_factory_os.services.execution.production_run import get_production_run as _get_pr
                 _pr = _get_pr(root, rid_p) or {}
                 _aids = [str(n.get("artifact_id")) for n in (_pr.get("node_runs") or [])
                          if isinstance(n, dict) and n.get("artifact_id")]
@@ -8485,7 +8485,7 @@ class FactoryCLI:
                 return 2
             try:
                 run = create_agent_run(root, agent_id, trigger="cli")
-                from factory_console.production_run import build_executor_factory
+                from ai_factory_os.services.execution.production_run import build_executor_factory
                 done = run_agent(root, run["agent_run_id"], workflow_id=workflow,
                                  executor_factory=build_executor_factory(root),
                                  workflow_input=input_data)

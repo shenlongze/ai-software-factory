@@ -13,7 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Callable
 
-from .production_run import (
+from ai_factory_os.services.execution.production_run import (
     get_workflow, create_production_run, execute_production_run,
     get_production_run, list_production_runs, ProductionRunError,
 )

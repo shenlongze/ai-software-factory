@@ -223,7 +223,7 @@ def _record(root: Path | str, run: dict[str, Any], to_state: str, *, actor: str,
 # ------------------------------------------------------------------ 真实 Executor 接线 (S4)
 
 #: 模块加载时锁定 build_registry 原始引用 (防测试 patch 污染全局 registry)
-from .external_executor import registry as _ext_registry  # noqa: E402
+from ai_factory_os._pending_migration.factory_console.external_executor import registry as _ext_registry  # noqa: E402  ★ 过渡: 整包未迁, 用绝对路径
 
 _BUILD_REGISTRY = _ext_registry.build_registry
 
@@ -293,7 +293,7 @@ def build_executor_factory(
     prompt_builder(executor_name, node_input) → prompt 文本 (默认用 input 的 prompt 字段).
     返回 executor_factory(node_id) → executor_fn(input) 与 S3 execute_production_run 兼容。
     """
-    from .external_executor.executor import run as ext_run
+    from ai_factory_os._pending_migration.factory_console.external_executor.executor import run as ext_run  # ★ 过渡: 整包未迁
 
     reg = _BUILD_REGISTRY(str(root))
 

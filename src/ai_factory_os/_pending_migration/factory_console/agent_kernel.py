@@ -185,7 +185,7 @@ def run_agent(
 
     Agent 不直接执行 — 通过 Production Kernel (ProductionRun → NodeRun → Executor)。
     """
-    from .production_run import (
+    from ai_factory_os.services.execution.production_run import (
         register_workflow, create_production_run, execute_production_run,
     )
 
@@ -201,7 +201,7 @@ def run_agent(
 
     try:
         # 确保 workflow 存在 (复用, 不存在则注册 — Agent 的 workflow 是其专业流程)
-        from .production_run import get_workflow
+        from ai_factory_os.services.execution.production_run import get_workflow
 
         if get_workflow(root, workflow_id) is None:
             register_workflow(root, workflow_id=workflow_id,

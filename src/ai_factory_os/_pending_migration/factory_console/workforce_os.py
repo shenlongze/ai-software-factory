@@ -296,7 +296,7 @@ def agent_performance(root: Path | str, agent_id: str) -> dict[str, Any]:
     # 收集该 agent 相关的 production runs (通过 task → production_run 关联)
     tasks = _load_tasks_by_agent(root, agent_id)
     runs = []
-    from .production_run import get_production_run
+    from ai_factory_os.services.execution.production_run import get_production_run
     for t in tasks:
         pr_id = t.get("production_run_id", "")
         if pr_id:

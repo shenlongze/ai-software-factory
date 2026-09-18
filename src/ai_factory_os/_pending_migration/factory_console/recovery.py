@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .production_run import (
+from ai_factory_os.services.execution.production_run import (
     get_production_run, get_workflow, _write,
 )
 from ai_factory_os.services.execution.node_runtime import get_node_run
@@ -191,7 +191,7 @@ def resume(
 
     返回最终 ProductionRun 状态。
     """
-    from .production_run import execute_production_run
+    from ai_factory_os.services.execution.production_run import execute_production_run
 
     with _recovery_lock:
         run = get_production_run(root, run_id)

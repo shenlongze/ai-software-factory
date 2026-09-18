@@ -659,7 +659,7 @@ def _execute_run_parallel(
         create_node_run, execute_node_run, register_node,
     )
     # ★ 用【与串行内核同一套】的锁/写/记录函数 ✓（不另造 ✓ 否则语义会分叉 ✗）
-    from factory_console.production_run import (
+    from ai_factory_os.services.execution.production_run import (
         _lock, _record, _write, get_production_run,
     )
 
@@ -758,7 +758,7 @@ def execute_approved(root: str, conversation_id: str, *,
     返回 {plan_id, prd_id, executed[], production_run_id, state}
     """
     from ai_factory_os.services.execution.node_runtime import get_node_run  # noqa: PLC0415
-    from factory_console.production_run import (  # noqa: PLC0415
+    from ai_factory_os.services.execution.production_run import (  # noqa: PLC0415
         create_production_run, execute_production_run, register_workflow,
     )
 

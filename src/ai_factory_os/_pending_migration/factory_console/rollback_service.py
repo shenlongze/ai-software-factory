@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .production_run import get_production_run
+from ai_factory_os.services.execution.production_run import get_production_run
 from .release_service import get_release, list_releases
 from .governance_service import (
     check_governance, get_approval,

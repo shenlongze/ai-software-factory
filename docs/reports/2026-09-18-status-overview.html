@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>AI Software Factory — 现状功能与流程</title>
+<style>
+  :root{
+    --bg:#f5f5f7; --card:#fff; --ink:#1d1d1f; --sub:#6e6e73; --line:#e5e5ea;
+    --blue:#0071e3; --green:#30a14e; --amber:#e0a30b; --red:#d93025; --purple:#7d4cdb;
+  }
+  *{box-sizing:border-box; margin:0; padding:0}
+  body{background:var(--bg); color:var(--ink);
+       font:15px/1.6 -apple-system,"SF Pro SC","PingFang SC","Helvetica Neue",Arial,sans-serif;
+       padding:36px 28px 72px}
+  .wrap{max-width:1180px; margin:0 auto}
+  h1{font-size:30px; font-weight:650; letter-spacing:-.02em}
+  .sub{color:var(--sub); margin:6px 0 30px; font-size:14px}
+  h2{font-size:20px; font-weight:600; margin:38px 0 14px; display:flex; align-items:center; gap:9px}
+  h2 .n{background:var(--ink); color:#fff; width:23px; height:23px; border-radius:7px;
+        font-size:13px; display:grid; place-items:center; font-weight:600}
+  .card{background:var(--card); border-radius:18px; padding:22px 24px;
+        box-shadow:0 1px 3px rgba(0,0,0,.05), 0 8px 24px rgba(0,0,0,.04)}
+  table{width:100%; border-collapse:collapse; font-size:14px}
+  th{text-align:left; color:var(--sub); font-weight:500; font-size:12.5px;
+     text-transform:uppercase; letter-spacing:.04em; padding:7px 10px; border-bottom:1px solid var(--line)}
+  td{padding:9px 10px; border-bottom:1px solid var(--line); vertical-align:top}
+  tr:last-child td{border-bottom:none}
+  td.num{font-variant-numeric:tabular-nums; text-align:right; color:var(--sub)}
+  .pill{display:inline-block; padding:2px 9px; border-radius:99px; font-size:12px; font-weight:600}
+  .ok{background:#e7f6ec; color:var(--green)}
+  .warn{background:#fdf5e0; color:var(--amber)}
+  .bad{background:#fdeceb; color:var(--red)}
+  .info{background:#e8f1fd; color:var(--blue)}
+  .muted{background:#f0f0f2; color:var(--sub)}
+  .bar{height:7px; border-radius:99px; background:#f0f0f2; overflow:hidden; min-width:80px}
+  .bar>i{display:block; height:100%; border-radius:99px; background:var(--blue)}
+  /* 脑图 */
+  .map{display:flex; flex-direction:column; gap:0; align-items:center}
+  .node{background:#fff; border:1.5px solid var(--line); border-radius:12px;
+        padding:10px 16px; font-size:13.5px; font-weight:600; white-space:nowrap}
+  .node.hi{background:var(--ink); color:#fff; border-color:var(--ink)}
+  .node.done{border-color:var(--green); background:#e7f6ec; color:#1a6b31}
+  .node.part{border-color:var(--amber); background:#fdf5e0; color:#8a6200}
+  .node.todo{border-color:#d9d9de; background:#fafafb; color:var(--sub); border-style:dashed}
+  .arrow{color:#b0b0b8; font-size:15px; line-height:1; margin:5px 0}
+  .row{display:flex; gap:10px; flex-wrap:wrap; justify-content:center}
+  .stage{display:flex; flex-direction:column; align-items:center}
+  .lbl{font-size:11.5px; color:var(--sub); margin-top:4px}
+  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:18px}
+  .kpi{display:flex; gap:14px; flex-wrap:wrap; margin-bottom:22px}
+  .kpi>div{background:var(--card); border-radius:14px; padding:14px 20px; flex:1; min-width:150px;
+           box-shadow:0 1px 3px rgba(0,0,0,.05)}
+  .kpi b{display:block; font-size:25px; font-weight:650; letter-spacing:-.02em}
+  .kpi span{color:var(--sub); font-size:12.5px}
+  code{background:#f0f0f2; padding:1px 6px; border-radius:5px; font-size:12.5px;
+       font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .note{background:#fbfbfc; border-left:3px solid var(--blue); padding:11px 15px;
+        border-radius:0 9px 9px 0; color:var(--sub); font-size:13.5px; margin-top:14px}
+  @media(max-width:820px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>AI Software Factory — 现状功能与流程</h1>
+  <div class="sub">2026-09-18 · 全部数据为实测（不含猜测）· 新 CLI 38 命令 / 9 服务域 / 老区 248 文件待迁</div>
+
+  <div class="kpi">
+    <div><b>38</b><span>新 CLI 命令（全部可运行）</span></div>
+    <div><b>9</b><span>服务域（resource 空）</span></div>
+    <div><b>259</b><span>新区文件（不含待迁）</span></div>
+    <div><b>77,532</b><span>新区行数</span></div>
+    <div><b>107,043</b><span>老区待迁行数</span></div>
+  </div>
+
+  <!-- ① 七层 -->
+  <h2><span class="n">1</span>架构七层（SSoT 定义 → 实测规模）</h2>
+  <div class="card">
+    <table>
+      <tr><th>层</th><th>职责</th><th class="num">文件</th><th class="num">行数</th><th>状态</th></tr>
+      <tr><td><code>contracts/</code></td><td>契约（无 IO 无业务）</td><td class="num">3</td><td class="num">434</td><td><span class="pill warn">偏薄</span></td></tr>
+      <tr><td><code>core/</code></td><td>平台本体（scheduler + events）</td><td class="num">7</td><td class="num">368</td><td><span class="pill ok">就位</span></td></tr>
+      <tr><td><code>services/</code></td><td>业务域服务（11 个子域）</td><td class="num">164</td><td class="num">57,384</td><td><span class="pill ok">主体</span></td></tr>
+      <tr><td><code>plugins/</code></td><td>一切实现绑定（agents/tools/mcp/skills）</td><td class="num">26</td><td class="num">6,393</td><td><span class="pill ok">就位</span></td></tr>
+      <tr><td><code>infrastructure/</code></td><td>技术底座（llm/storage/events/process…）</td><td class="num">57</td><td class="num">12,448</td><td><span class="pill ok">就位</span></td></tr>
+      <tr><td><code>bootstrap/</code></td><td>装配（唯一可 import 全部）</td><td class="num">2</td><td class="num">506</td><td><span class="pill ok">就位</span></td></tr>
+      <tr><td><code>apps/</code></td><td>入口（cli / web / desktop / mobile）</td><td class="num">20</td><td class="num">10,863</td><td><span class="pill warn">仅 CLI</span></td></tr>
+    </table>
+    <div class="note"><b>规则已定死</b>（<code>docs/ssot/code-placement.md §三</code>）：七层判「层级」· 服务域（10）判 <code>services/</code> 子目录 · 命令域（15）只管 <code>apps/cli/domains/</code> 文件划分 —— 命令域<b>不是实现域</b>。</div>
+  </div>
+
+  <!-- ② 服务域 -->
+  <h2><span class="n">2</span>服务域厚薄（谁实、谁薄）</h2>
+  <div class="card">
+    <table>
+      <tr><th>域</th><th>能力</th><th class="num">文件</th><th class="num">行数</th><th>厚度</th></tr>
+      <tr><td><b>execution</b></td><td>执行内核 · agent runtime · sandbox · recovery · benchmark</td><td class="num">60</td><td class="num">21,936</td><td><div class="bar"><i style="width:100%"></i></div></td></tr>
+      <tr><td><b>organization</b></td><td>公司/部门/角色 · 项目 · 组织级编排 · 产出物 · 身份</td><td class="num">21</td><td class="num">13,396</td><td><div class="bar"><i style="width:61%"></i></div></td></tr>
+      <tr><td><b>work</b></td><td>任务树 · 工作流引擎 · 变更流 · Agent 分配 · 产品</td><td class="num">29</td><td class="num">8,155</td><td><div class="bar"><i style="width:37%"></i></div></td></tr>
+      <tr><td><b>learning</b></td><td>经验/假设/晋升 · 决策 · 推荐</td><td class="num">8</td><td class="num">3,904</td><td><div class="bar"><i style="width:18%"></i></div></td></tr>
+      <tr><td><b>conversation</b></td><td>会话唯一入口 · 产品认知 · 语义提案 · PRD 形式化</td><td class="num">11</td><td class="num">3,260</td><td><div class="bar"><i style="width:15%"></i></div></td></tr>
+      <tr><td><b>governance</b></td><td>审批门 · 治理门 · 发布门 · 审计链（防篡改）</td><td class="num">13</td><td class="num">2,701</td><td><div class="bar"><i style="width:12%"></i></div></td></tr>
+      <tr><td><b>metrics</b></td><td>Control Tower 投影 · 快照</td><td class="num">8</td><td class="num">1,343</td><td><div class="bar"><i style="width:6%"></i></div></td></tr>
+      <tr><td><b>validation</b></td><td>三层验证 · Verification SSOT · Evidence</td><td class="num">9</td><td class="num">1,328</td><td><div class="bar"><i style="width:6%"></i></div></td></tr>
+      <tr><td><b>operations</b></td><td>备份 · 健康 · 回滚</td><td class="num">3</td><td class="num">795</td><td><div class="bar"><i style="width:4%;background:var(--amber)"></i></div></td></tr>
+      <tr><td><b>delivery</b></td><td>交付 pipeline · 发布契约</td><td class="num">2</td><td class="num">566</td><td><div class="bar"><i style="width:3%;background:var(--amber)"></i></div></td></tr>
+      <tr><td><b>resource</b></td><td>（空）</td><td class="num">0</td><td class="num">0</td><td><span class="pill muted">空域</span></td></tr>
+    </table>
+    <div class="note"><b>两个短板</b>：<code>operations</code> 795 行（老区对应 4,399 行未迁）· <code>delivery</code> 566 行（老区 <code>delivery</code>/<code>release_truth</code> 未迁完）。</div>
+  </div>
+
+  <!-- ③ 命令 -->
+  <h2><span class="n">3</span>CLI 命令（38 个 · 实测状态）</h2>
+  <div class="card">
+    <div class="grid2">
+      <div>
+        <table>
+          <tr><th>命令组</th><th>命令</th><th>状态</th></tr>
+          <tr><td><b>会话</b></td><td><code>conversation</code> <code>understand</code> <code>console</code></td><td><span class="pill ok">✓ 实测有数据</span></td></tr>
+          <tr><td><b>工作</b></td><td><code>task</code> <code>workflow</code> <code>run</code> <code>run-status</code> <code>change</code></td><td><span class="pill ok">✓</span></td></tr>
+          <tr><td><b>执行</b></td><td><code>exec</code> <code>execution</code> <code>runtime</code> <code>recover</code></td><td><span class="pill ok">✓ 84 条执行记录</span></td></tr>
+          <tr><td><b>组织</b></td><td><code>org</code> <code>agent</code> <code>skill</code> <code>plugin</code> <code>project</code> <code>create</code></td><td><span class="pill ok">✓</span></td></tr>
+          <tr><td><b>验收</b></td><td><code>validation</code> <code>verification</code> <code>evd</code> <code>validate</code></td><td><span class="pill ok">✓ 401 条</span></td></tr>
+          <tr><td><b>治理</b></td><td><code>approval</code> <code>checkpoint</code></td><td><span class="pill ok">✓ 12 pending</span></td></tr>
+        </table>
+      </div>
+      <div>
+        <table>
+          <tr><th>命令组</th><th>命令</th><th>状态</th></tr>
+          <tr><td><b>度量</b></td><td><code>metrics</code> <code>dashboard</code> <code>kanban</code> <code>intelligence</code></td><td><span class="pill ok">✓ 271 任务</span></td></tr>
+          <tr><td><b>平台</b></td><td><code>init</code> <code>status</code> <code>provider</code> <code>update</code> <code>git</code> <code>history</code></td><td><span class="pill ok">✓</span></td></tr>
+          <tr><td><b>审计</b></td><td><code>event</code> <code>product</code> <code>backup</code></td><td><span class="pill ok">✓</span></td></tr>
+          <tr><td><b>入口</b></td><td><code>demo</code> <code>workspace</code></td><td><span class="pill ok">✓</span></td></tr>
+          <tr><td colspan="2"><b>老 CLI 87 个</b> ⇒ 还剩 49 个未搬（<code>start</code> <code>doctor</code> <code>heal</code> <code>monitor</code> <code>schedule</code> <code>optimize</code> <code>learn</code> <code>tower</code> <code>tasktree</code> <code>release</code> <code>rollback</code> …）</td><td><span class="pill warn">49 待搬</span></td></tr>
+        </table>
+        <div class="note"><b>本轮修好</b>：<code>console</code> / <code>org</code> / <code>exec</code> 三类曾因两个失效的目录检查（找已删除的 <code>factory-org/</code>、<code>factory-exec/</code>）而<b>全部报「未安装」</b>—— 已修。</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ④ 流程脑图 -->
+  <h2><span class="n">4</span>业务链流程（8 环 · Founder 口径）</h2>
+  <div class="card">
+    <div class="map">
+      <div class="node hi">CLI 启动 · 唯一入口（<code>factory</code>）</div>
+      <div class="arrow">▼</div>
+      <div class="row">
+        <div class="stage"><div class="node done">① 会话</div><div class="lbl">conversation ✓</div></div>
+        <div class="stage"><div class="node done">② 需求</div><div class="lbl">understand ✓</div></div>
+        <div class="stage"><div class="node done">③ 分析</div><div class="lbl">产品认知 · 语义提案 ✓</div></div>
+      </div>
+      <div class="arrow">▼</div>
+      <div class="row">
+        <div class="stage"><div class="node part">④ 架构设计</div><div class="lbl">无 CLI 命令 △</div></div>
+        <div class="stage"><div class="node part">⑤ 任务拆解</div><div class="lbl">task/tasktree ○</div></div>
+      </div>
+      <div class="arrow">▼</div>
+      <div class="row">
+        <div class="stage"><div class="node done">⑥ 执行</div><div class="lbl">run / exec ✓</div></div>
+        <div class="stage"><div class="node done">⑦ 监控</div><div class="lbl">metrics / kanban ✓</div></div>
+        <div class="stage"><div class="node part">⑧ 运维</div><div class="lbl">backup/recover ✓ 自愈 ✗</div></div>
+      </div>
+      <div class="arrow">▼</div>
+      <div class="node done">交付 · 发布门 · 审计链（<code>governance/gates.py</code> · <code>delivery/</code>）</div>
+    </div>
+    <div class="note"><b>关键</b>：① ② ③ ⑥ ⑦ 已实测可用；<b>④ 架构设计没有对应命令</b>（老区也无）· ⑤ 拆分命令待搬 · ⑧ 自愈/监控调度未迁。全链<b>端到端从未验证</b>。</div>
+  </div>
+
+  <!-- ⑤ 迁移状态 -->
+  <h2><span class="n">5</span>迁移进度与地形</h2>
+  <div class="grid2">
+    <div class="card">
+      <table>
+        <tr><th>视角</th><th class="num">起始</th><th class="num">现在</th><th class="num">消化</th></tr>
+        <tr><td>老区顶层模块</td><td class="num">115</td><td class="num">82</td><td class="num">33 个</td></tr>
+        <tr><td>老区顶层行数</td><td class="num">51,421</td><td class="num">40,903</td><td class="num">10,518</td></tr>
+        <tr><td>老区全量文件</td><td class="num">272</td><td class="num">248</td><td class="num">24 个</td></tr>
+        <tr><td>老区全量行数</td><td class="num">115,006</td><td class="num">107,043</td><td class="num">7,963</td></tr>
+        <tr><td>新 CLI 命令</td><td class="num">27</td><td class="num">38</td><td class="num">+11</td></tr>
+      </table>
+    </div>
+    <div class="card">
+      <table>
+        <tr><th>老区地形（待迁）</th><th class="num">文件</th><th class="num">行数</th></tr>
+        <tr><td><code>session/</code> 运行时内核</td><td class="num">≈120</td><td class="num">≈55,000</td></tr>
+        <tr><td><code>cli_factory.py</code> CLI 本体</td><td class="num">1</td><td class="num">10,324</td></tr>
+        <tr><td><code>api/</code> 只读查询函数</td><td class="num">23</td><td class="num">3,999</td></tr>
+        <tr><td><code>external_executor/</code></td><td class="num">11</td><td class="num">2,103</td></tr>
+        <tr><td><code>memory/</code> · <code>tools/</code></td><td class="num">14</td><td class="num">2,422</td></tr>
+        <tr><td>其余顶层业务模块</td><td class="num">≈80</td><td class="num">≈40,900</td></tr>
+      </table>
+      <div class="note"><b>环2 已破</b>（关键路径）：<code>artifact_lifecycle</code> · <code>os_core_identity</code> · <code>node_runtime</code> · <code>production_run</code> · <code>production_evaluation</code> · <code>governance_service</code> 全部归位 ⇒ 上层域不再被它挡住。</div>
+    </div>
+  </div>
+
+  <div class="note" style="margin-top:34px; border-left-color:var(--amber)">
+    <b>诚实标注</b>：本页「✓ 实测」= 本轮真跑过该命令并看到真实数据输出；「○/△」= 只验证了不报错、或需参数；「✗」= 已知缺口。<b>链路层（8 环端到端）与页面层未验证</b>。
+  </div>
+
+</div>
+</body>
+</html>

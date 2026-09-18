@@ -457,6 +457,27 @@ def build_parser() -> Any:
     p_pv_recommend.add_argument("--budget", type=float, default=None,
                                 help="估算成本上限 USD (默认不设上限)")
 
+    # factory tasktree <sub> —— 任务拆解（产品环 ⑤: 计划层组织结构）
+    #   从 Design Artifact 的 task_breakdown 物化成多级树; 产出为【候选】, 需 confirm 才进执行。
+    p_tt = sub.add_parser("tasktree", help="任务拆解: list / show / decompose / confirm")
+    json_opt(p_tt)
+    ttsub = p_tt.add_subparsers(dest="tasktree_command", required=True)
+    p_tt_l = ttsub.add_parser("list", help="任务树列表")
+    json_opt(p_tt_l)
+    p_tt_l.add_argument("--project", default=None, help="项目 id（缺省=全部）")
+    p_tt_s = ttsub.add_parser("show", help="任务树详情（多级 + 依赖 + 验收）")
+    json_opt(p_tt_s)
+    p_tt_s.add_argument("plan_id", help="计划 id（如 PLAN-xxxxxxxxxx）")
+    p_tt_s.add_argument("--project", default=None, help="项目 id")
+    p_tt_d = ttsub.add_parser("decompose", help="从 Design Artifact 生成任务树（候选态）")
+    json_opt(p_tt_d)
+    p_tt_d.add_argument("--project", required=True, help="项目 id")
+    p_tt_d.add_argument("--plan", default=None, help="指定 plan_id（缺省自动生成）")
+    p_tt_c = ttsub.add_parser("confirm", help="人工确认（候选 → 已确认, 进入执行的前置门）")
+    json_opt(p_tt_c)
+    p_tt_c.add_argument("plan_id", help="计划 id")
+    p_tt_c.add_argument("--project", default=None, help="项目 id")
+
     # factory product <sub> (Phase 9A, ADR-0026: Product Intelligence 基础)
     p_product = sub.add_parser(
         "product", help="Product Intelligence: Idea/Artifact/Approval/Workflow (独立空间 .factory/product/, 发 idea.*/approval.*/product.* 事件)"
@@ -1069,6 +1090,8 @@ def main(argv: list[str] | None = None) -> int:
             result = _dispatch_change(ctx, args)
         elif args.command == "understand":
             result = cmd_understand(ctx, args)
+        elif args.command == "tasktree":
+            result = _dispatch_tasktree(ctx, args)
         elif args.command == "product":
             result = _dispatch_product(ctx, args)
         elif args.command == "intelligence":
@@ -2186,6 +2209,127 @@ def cmd_product_ux(ctx: FactoryContext, args: Any) -> dict:
             "exit_code": 0, "args": args}
 
 
+# ------------------------------------------------------------------ 任务拆解（产品环 ⑤）
+
+def _dispatch_tasktree(ctx: FactoryContext, args: Any) -> dict:
+    """factory tasktree list|show|decompose|confirm —— 产品环 ⑤「任务拆解」。
+
+    底层: services/work/decomposition.py（服务域 work · 域 decomposition）
+    输入: Design Artifact 的 task_breakdown（环④ 产物）—— 不重跑 LLM 分解,
+          避免"架构说 11 个模块、任务树说 8 个"的不一致。
+    产物: 多级树（Project→Domain→Leaf）+ 每叶（做什么/改哪些文件/验收断言/依赖/归属/change_type）
+          落盘 projects/<P>/tasks/{plan_id}.json（遵守"项目文件在项目目录"铁律）
+    状态: **candidate** —— 需 `tasktree confirm` 才进执行（人工门）
+    """
+    from ai_factory_os.services.work import decomposition as D
+
+    cmd = args.tasktree_command
+    project_id = str(getattr(args, "project", None) or "")
+
+    if cmd == "list":
+        trees = D.list_trees(ctx.root, project_id)
+        rows = []
+        for t in trees:
+            s = D.tree_summary(t)
+            rows.append({"plan_id": t.get("plan_id"), "project": t.get("project_id"),
+                         "status": t.get("status"), "leaves": s["leaves"],
+                         "done": s["done"], "percent": s["percent"],
+                         "created_at": t.get("created_at")})
+        return {"ok": True, "command": "tasktree list", "count": len(rows),
+                "trees": rows, "exit_code": 0, "args": args}
+
+    if cmd == "show":
+        tree = D.load_tree(ctx.root, str(args.plan_id), project_id)
+        if tree is None:
+            raise CliError(f"任务树不存在: {args.plan_id}", exit_code=7)
+        return {"ok": True, "command": "tasktree show", "tree": tree,
+                "summary": D.tree_summary(tree),
+                "order": D.topological_order(tree),
+                "exit_code": 0, "args": args}
+
+    if cmd == "decompose":
+        if not project_id:
+            raise CliError("用法: factory tasktree decompose --project <项目 id>", exit_code=2)
+        from ai_factory_os.services.organization.projects import ProjectStore
+        store = ProjectStore(ctx.root / "org")
+        cands = [a for a in store.list_artifacts()
+                 if getattr(a, "project_id", "") == project_id
+                 and "design" in str(getattr(a, "type", "")).lower()]
+        if not cands:
+            raise CliError(
+                f"项目 {project_id} 内无 design 产物 —— 先跑 arch design（任务拆解需要架构产出作输入）",
+                exit_code=2)
+        design = cands[-1]
+        try:
+            tree = D.decompose_from_design(
+                ctx.root, project_id=project_id,
+                design_metadata=dict(design.metadata or {}),
+                plan_id=str(getattr(args, "plan", None) or ""),
+                prd_ref=str(getattr(design, "id", "")),
+            )
+        except D.DecomposeLimitError as exc:
+            raise CliError(f"拆解超边界: {exc}", exit_code=1) from exc
+        except ValueError as exc:
+            raise CliError(str(exc), exit_code=1) from exc
+        return {"ok": True, "command": "tasktree decompose", "tree": tree,
+                "summary": D.tree_summary(tree),
+                "exit_code": 0, "args": args}
+
+    if cmd == "confirm":
+        try:
+            tree = D.confirm_tree(ctx.root, str(args.plan_id), project_id)
+        except FileNotFoundError as exc:
+            raise CliError(str(exc), exit_code=7) from exc
+        except ValueError as exc:
+            raise CliError(str(exc), exit_code=1) from exc
+        return {"ok": True, "command": "tasktree confirm", "tree": tree,
+                "exit_code": 0, "args": args}
+
+    raise CliError(f"unknown tasktree action: {cmd}", exit_code=2)
+
+
+def _print_tasktree(args: Any, r: dict) -> None:
+    cmd = getattr(args, "tasktree_command", None) or "list"
+    if cmd == "list":
+        rows = r.get("trees", [])
+        print(f"=== 任务树 ({len(rows)}) ===")
+        for x in rows:
+            print(f"  {x['plan_id']}  [{x['status']}]  {x['done']}/{x['leaves']} 叶"
+                  f"  ({x['percent']}%)  project={x['project'] or '-'}")
+        if not rows:
+            print("  （无 — 用 `factory tasktree decompose --project <id>` 生成）")
+    elif cmd == "show":
+        t = r["tree"]
+        s = r["summary"]
+        print(f"任务树 {t.get('plan_id')}  [{t.get('status')}]  project={t.get('project_id')}")
+        print(f"  节点 {s['kinds']}  ·  叶 {s['leaves']}  ·  完成 {s['done']} ({s['percent']}%)")
+        if t.get("status") == "candidate":
+            print("  ⚠ 候选态 —— 需 `factory tasktree confirm "
+                  f"{t.get('plan_id')}` 才进执行")
+        print("  ── 树:")
+        for dom in [n for n in t.get("nodes", []) if n.get("kind") == "domain"]:
+            print(f"    [{dom['kind']}] {dom['title']}")
+            for lf in [n for n in t.get("nodes", []) if n.get("parent_id") == dom["id"]]:
+                hint = f" hint={lf['role_hint']}" if lf.get("role_hint") else ""
+                print(f"       └ [{lf['kind']}] {lf['title'][:56]}")
+                print(f"          role={lf['required_role']}{hint}  change={lf['change_type'] or '-'}"
+                      f"  files={lf['expected_files'] or '[]'}")
+                print(f"          验收: {lf['acceptance'][:88]}")
+                print(f"          依赖: {len(lf.get('depends_on') or [])} 个")
+    elif cmd == "decompose":
+        t = r["tree"]
+        s = r["summary"]
+        print(f"✔ 任务树已生成: {t['plan_id']}  [{t['status']}]")
+        print(f"  节点 {s['kinds']} · 叶 {s['leaves']}")
+        print(f"  落盘: {t.get('_saved_to')}")
+        print(f"  边界纪律: {t.get('limits')}")
+        print(f"  ⚠ 候选态 —— 人工确认后进执行: factory tasktree confirm {t['plan_id']}")
+    elif cmd == "confirm":
+        t = r["tree"]
+        print(f"✔ 任务树已确认: {t['plan_id']}  [{t['status']}]  at {t.get('confirmed_at')}")
+        print("  下一步: 执行层按拓扑序跑叶任务（factory run / exec）")
+
+
 def _format_failure(error: str) -> str:
     """统一失败输出（S10-044 Task 001）: ❌ Failed + Reason + Solution 到 stdout。
 
@@ -2640,6 +2784,8 @@ def _print_output(args: Any, result: dict) -> None:
         _print_change(args.change_command, result)
     elif args.command == "understand":
         _print_understand(args, result)
+    elif args.command == "tasktree":
+        _print_tasktree(args, result)
     elif args.command == "product":
         _print_product(args, result)
     elif args.command == "intelligence":

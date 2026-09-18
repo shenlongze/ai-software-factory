@@ -139,7 +139,7 @@ def _say(root: Path, args: Any) -> dict[str, Any]:
         "ok": True,
         "message_id": msg["id"],
         "role": msg["role"],
-        "note": "消息已追加。要把它理解成事实, 需 LLM 通道（interpreter → proposal）—— 当前未接线。",
+        "note": "消息已追加。下一步: factory conversation understand <会话> —— 经 LLM 理解成事实。",
     }
 
 
@@ -155,18 +155,14 @@ def _facts(root: Path, args: Any) -> dict[str, Any]:
 def _llm_fn() -> Any:
     """LLM 原始调用通道（`LLMFn = (prompt) -> str | None`）。
 
-    来源说明（2026-09-15）:
-        新地基 `infrastructure/llm/` 目前只有**契约 + 注册表**（ProviderRequest /
-        ProviderRegistry / ProviderInterface）, 还没有"调一次拿文本"的口;
-        而老区 `session/llm_raw.py` 正是为 interpreter / task_decomposition 摘出来的
-        那个口（走 ReasoningProvider 装配链 + 留痕 + 失败返回 None）。
-        ⇒ 暂借它; 等 infrastructure/llm 补齐调用口后替换（换这里一处即可）。
+    ★ 2026-09-15 已切新地基: 用 `infrastructure/llm/complete_text.complete_text`
+      （组装自 gateway.complete + control_plane + trace —— 不再借老区 llm_raw/reasoning）。
 
     不可用 → None ⇒ interpreter 走**诚实降级**（CLARIFY, 不猜产品事实）, 不是静默失败。
     """
     try:
-        from factory_console.session.llm_raw import llm_raw
-        return llm_raw
+        from ai_factory_os.infrastructure.llm.complete_text import complete_text
+        return complete_text
     except Exception:  # noqa: BLE001 — 通道不可用 = 降级, 不该炸
         return None
 

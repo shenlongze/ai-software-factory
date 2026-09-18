@@ -107,7 +107,6 @@ from ai_factory_os.infrastructure.storage.manager import (
 )
 
 from .context import FactoryContext
-from legacy_paths import REPO_ROOT  # 仓库根唯一计算器
 
 SOURCE = "cli"
 
@@ -926,7 +925,7 @@ def _parse_provider_status(value: str | None):
 def cmd_provider_list(ctx: FactoryContext, args: Any) -> dict:
     """factory provider list — Provider 目录列表 (默认定义基线 + 注册定义, 可过滤),
     发 provider.viewed; 结果含 default 标记。"""
-    from providers.registry import ProviderRegistry
+    from ai_factory_os.infrastructure.llm.providers.registry import ProviderRegistry
 
     status = _parse_provider_status(args.status)
     with ctx.logger_scope() as logger:
@@ -949,7 +948,7 @@ def cmd_provider_list(ctx: FactoryContext, args: Any) -> dict:
 def cmd_provider_show(ctx: FactoryContext, args: Any) -> dict:
     """factory provider show <id> — Provider 定义详情 (默认定义或已注册定义, 只读),
     发 provider.viewed; 未找到 → 退出码 7。"""
-    from providers.registry import ProviderRegistry
+    from ai_factory_os.infrastructure.llm.providers.registry import ProviderRegistry
 
     with ctx.logger_scope() as logger:
         registry = ProviderRegistry(_open_provider_store(ctx), logger=logger)
@@ -989,7 +988,7 @@ def cmd_provider_test(ctx: FactoryContext, args: Any) -> dict:
     """
     from providers.adapters import BUILTIN_PROVIDER_ADAPTERS
     from providers.models import ProviderRequest, ProviderResponse
-    from providers.registry import ProviderRegistry
+    from ai_factory_os.infrastructure.llm.providers.registry import ProviderRegistry
 
     with ctx.logger_scope() as logger:
         registry = ProviderRegistry(_open_provider_store(ctx), logger=logger)
@@ -1133,7 +1132,7 @@ def cmd_provider_compare(ctx: FactoryContext, args: Any) -> dict:
     """
     from providers.costs import estimate_call_cost
     from providers.definitions import DEFAULT_CAPABILITY_PROFILES, DEFAULT_COST_MODELS
-    from providers.registry import ProviderRegistry
+    from ai_factory_os.infrastructure.llm.providers.registry import ProviderRegistry
 
     with ctx.logger_scope() as logger:
         registry = ProviderRegistry(_open_provider_store(ctx), logger=logger)
@@ -1190,7 +1189,7 @@ def cmd_provider_recommend(ctx: FactoryContext, args: Any) -> dict:
     """
     from providers.definitions import DEFAULT_CAPABILITY_PROFILES, DEFAULT_COST_MODELS
     from providers.models import TaskRequirement
-    from providers.registry import ProviderRegistry
+    from ai_factory_os.infrastructure.llm.providers.registry import ProviderRegistry
     from providers.selector import CostAwareSelector
     from providers.usage import stats_by_provider
 
@@ -1673,7 +1672,7 @@ def cmd_dashboard(ctx: FactoryContext, args: Any) -> dict:
         # — 删除 providers 不影响本模块加载, phase8a-status.md 冻结约束)。
         provider_registry = None
         if view == "provider":
-            from providers.registry import ProviderRegistry
+            from ai_factory_os.infrastructure.llm.providers.registry import ProviderRegistry
 
             provider_registry = ProviderRegistry(_open_provider_store(ctx))
         # Phase 9A Product View: 仅 --view product 聚合 (include_product 默认
@@ -1684,7 +1683,7 @@ def cmd_dashboard(ctx: FactoryContext, args: Any) -> dict:
         # 同 provider 模式; 显式 --view lifecycle 时装配点响亮 rc 1)。
         product_store = None
         if view in ("product", "lifecycle"):
-            from product.store import ProductStore
+            from ai_factory_os.services.work.product.store import ProductStore
 
             product_store = ProductStore(ctx.root / "product")
         collector = DashboardCollector(
@@ -2447,7 +2446,7 @@ def _open_product_service(ctx: FactoryContext, logger: Any):
     product/ 不影响本模块加载, 同 provider 延迟导入模式)。"""
     from product.service import ProductService
 
-    from product.store import ProductStore
+    from ai_factory_os.services.work.product.store import ProductStore
 
     return ProductService(ProductStore(ctx.root / "product"), logger=logger)
 
@@ -2726,13 +2725,13 @@ def _open_product_generator(ctx: FactoryContext, logger: Any, *, experience_stor
     from product.experience import ExperienceStore
     from product.generation import ProductGenerator
     from product.service import ProductService
-    from product.store import ProductStore
+    from ai_factory_os.services.work.product.store import ProductStore
 
     service = ProductService(ProductStore(ctx.root / "product"), logger=logger)
     try:
         from providers.adapters import BUILTIN_PROVIDER_ADAPTERS
         from providers.definitions import DEFAULT_CAPABILITY_PROFILES, DEFAULT_COST_MODELS
-        from providers.registry import ProviderRegistry
+        from ai_factory_os.infrastructure.llm.providers.registry import ProviderRegistry
         from providers.selector import CostAwareSelector
         from providers.usage import stats_by_provider
 
@@ -2854,7 +2853,7 @@ def _open_lifecycle_engine(ctx: FactoryContext, logger: Any, *, task_store: Any 
     """
     from product.lifecycle import ProductLifecycleEngine
     from product.service import ProductService
-    from product.store import ProductStore
+    from ai_factory_os.services.work.product.store import ProductStore
 
     service = ProductService(ProductStore(ctx.root / "product"), logger=logger)
     ts = task_store if task_store is not None else TaskStore(ctx.root / "tasks")
@@ -2919,7 +2918,7 @@ def cmd_product_lifecycle_status(ctx: FactoryContext, args: Any) -> dict:
 
 def _load_lifecycle_for_view(ctx: FactoryContext, logger: Any, idea_id: str):
     """status 读审计的 lifecycle 对象 (从 store 重取, 事件 payload 需领域对象)。"""
-    from product.store import ProductStore
+    from ai_factory_os.services.work.product.store import ProductStore
 
     return ProductStore(ctx.root / "product").get_lifecycle_by_idea(idea_id)
 
@@ -3126,7 +3125,7 @@ def cmd_intelligence_decision_create(ctx: FactoryContext, args: Any) -> dict:
         if getattr(args, "approval_artifact", None):
             from product.service import ProductService
 
-            from product.store import ProductStore
+            from ai_factory_os.services.work.product.store import ProductStore
 
             approval_service = ProductService(
                 ProductStore(ctx.root / "product"), logger=logger
@@ -3269,7 +3268,7 @@ def cmd_intelligence_recommend(ctx: FactoryContext, args: Any) -> dict:
         if getattr(args, "approval_artifact", None):
             from product.service import ProductService
 
-            from product.store import ProductStore
+            from ai_factory_os.services.work.product.store import ProductStore
 
             approval_service = ProductService(
                 ProductStore(ctx.root / "product"), logger=logger
@@ -3399,16 +3398,12 @@ def _open_console_service(ctx: FactoryContext) -> Any:
     处理, Console 永不因数据缺失失败 (phase11a-status.md §架构)。
     """
     import importlib
-    import sys
 
-    console_dir = REPO_ROOT / "factory-console"
-    if not console_dir.is_dir():
-        return None
-    root = console_dir.parent
-    if str(root) not in sys.path:
-        sys.path.insert(0, str(root))
+    # ★ 2026-09-15 修: 旧检查找 REPO_ROOT/"factory-console"（已随迁移删除）⇒ 命令永远报"未安装"。
+    #   现在 factory_console 由 pyproject package-dir 映射到
+    #   src/ai_factory_os/_pending_migration/factory_console ⇒ 直接按包名 import。
     try:
-        module = importlib.import_module("factory-console")
+        module = importlib.import_module("factory_console")
     except Exception:
         return None
     # 只读聚合装配 (全部可选; 延迟导入 Core 包保 Removal Isolation: 删除
@@ -3417,9 +3412,9 @@ def _open_console_service(ctx: FactoryContext) -> Any:
 
     from ai_factory_os.services.learning.store import DecisionStore, ExperienceStore, RecommendationStore
 
-    from product.store import ProductStore
+    from ai_factory_os.services.work.product.store import ProductStore
 
-    from providers.registry import ProviderRegistry
+    from ai_factory_os.infrastructure.llm.providers.registry import ProviderRegistry
 
     return module.ConsoleService(
         workspace_manager=_open_workspace_manager(ctx),
@@ -3557,10 +3552,11 @@ def cmd_demo_markpad(ctx: FactoryContext, args: Any) -> dict:
 
 
 def _factory_org_pkg_dir() -> Any:
-    """factory-org 包目录 (factory-org/); 不存在 → None (Removal Isolation)。"""
-
-    d = REPO_ROOT / "factory-org"
-    return d if d.is_dir() else None
+    """★ 2026-09-15 修: 旧 `factory-org/` 目录已随迁移删除（现由
+    ai_factory_os.services.organization.cli 承担）⇒ 不再做目录检查。
+    原先的 `REPO_ROOT/"factory-org"` 检查恒为 None ⇒ org 类命令全误报"未安装"。
+    """
+    return True
 
 
 def _open_org_cli() -> Any:
@@ -3636,10 +3632,11 @@ def cmd_org_knowledge_list(ctx: FactoryContext, args: Any) -> dict:
 
 
 def _factory_exec_pkg_dir() -> Any:
-    """factory-exec 包目录 (factory-exec/); 不存在 → None (Removal Isolation)。"""
-
-    d = REPO_ROOT / "factory-exec"
-    return d if d.is_dir() else None
+    """★ 2026-09-15 修: 旧 `factory-exec/` 目录已随迁移删除（`exec` 包经
+    compat_aliases 指向 ai_factory_os.services.execution.kernel）⇒ 不再做目录检查。
+    原先的检查恒为 None ⇒ exec 类命令全误报"未安装"。
+    """
+    return True
 
 
 def _open_exec_cli() -> Any:

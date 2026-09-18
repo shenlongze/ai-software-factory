@@ -15,6 +15,14 @@ import json
 import sys
 from typing import Any
 
+# ★ 2026-09-15 修: 装上「旧名 → 新路径」别名桥（compat_aliases）。
+#   它的用法自述要求"在任何 import 之前调用 install()"；此前只有 bin/factory（老 CLI）
+#   和 scripts/check_imports.py 装了, **新 CLI 漏装** ⇒ 于是 `import exec.cli` /
+#   `import org...` 直接 ModuleNotFoundError ⇒ exec/org 类命令误报"未安装"。
+import ai_factory_os.compat_aliases as _compat_aliases
+
+_compat_aliases.install()
+
 from .commands import (
     CliError,
     cmd_agent_add,

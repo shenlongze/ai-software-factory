@@ -370,7 +370,7 @@ def execute_production_run(
     executor_factory(node_id) → executor_fn (Node 的执行器, 统一契约).
     每个 Node 产出 Artifact → binding 到下游 Node 输入。
     """
-    from .node_runtime import (
+    from ai_factory_os.services.execution.node_runtime import (
         register_node, create_node_run, execute_node_run, NodeError,
     )
 

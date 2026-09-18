@@ -616,7 +616,7 @@ def _chain_task_run(root: Any, task: dict[str, Any], project_id: str) -> str:
     if not bid or not root:
         return ""
     try:
-        from ..node_runtime import create_node_run, get_node, register_node
+        from ai_factory_os.services.execution.node_runtime import create_node_run, get_node, register_node
 
         node_id = "task-execution"
         if get_node(root, node_id) is None:
@@ -657,7 +657,7 @@ def _chain_auto_worker(root: Any, project_id: str, session_id: str, service: Any
             # P0-F2: TaskRun finalize — 吸收外部执行结果 (零二次执行, 幂等)
             if run_id:
                 try:
-                    from ..node_runtime import finalize_node_run
+                    from ai_factory_os.services.execution.node_runtime import finalize_node_run
 
                     finalize_node_run(
                         root, run_id,
@@ -2170,7 +2170,7 @@ def dispatch(
             # canonical TaskRun 证据优先: NodeRun (run-*) → EXS result → TASK-GW registry
             # (TASK-GW 仅作 legacy 兼容, 非 canonical)。UNKNOWN → 重排队 (不伪造)。
             try:
-                from ..node_runtime import get_node_run
+                from ai_factory_os.services.execution.node_runtime import get_node_run
                 from ..external_executor.task_registry import ExternalTaskRegistry
                 from .audit import load_records
 
@@ -2237,7 +2237,7 @@ def dispatch(
                 # P0-F2: TaskRun finalize — 吸收外部执行结果 (零二次执行, 幂等)
                 if run_id:
                     try:
-                        from ..node_runtime import finalize_node_run
+                        from ai_factory_os.services.execution.node_runtime import finalize_node_run
 
                         finalize_node_run(
                             root, run_id,

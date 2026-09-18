@@ -671,7 +671,10 @@ def adapt_external_executor(adapter: Any, prompt_builder: Callable[[dict[str, An
 
     返回 fn(input) → {ok, output, patch_text, error, artifact_type}
     """
-    from .external_executor.executor import run as ext_run
+    # ★ 2026-09-15 迁入新地基后, 本文件不再在 factory_console 包内 ⇒ 用绝对路径指向待迁包
+    from ai_factory_os._pending_migration.factory_console.external_executor.executor import (
+        run as ext_run,
+    )
 
     def _fn(input_data: dict[str, Any]) -> dict[str, Any]:
         prompt = prompt_builder(input_data)

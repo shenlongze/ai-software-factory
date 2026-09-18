@@ -26,7 +26,7 @@ from typing import Any
 from .production_run import (
     get_production_run, get_workflow, _write,
 )
-from .node_runtime import get_node_run
+from ai_factory_os.services.execution.node_runtime import get_node_run
 
 
 def _now_iso() -> str:

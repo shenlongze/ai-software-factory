@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 # 使用绝对导入 (factory_console 是包名，来自 pyproject.toml 的 package-dir 映射)
-from factory_console.node_runtime import (
+from ai_factory_os.services.execution.node_runtime import (
     create_node_run, get_node_run, transition_node_run,
     execute_node_run, NodeError,
 )

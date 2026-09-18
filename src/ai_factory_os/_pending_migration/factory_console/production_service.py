@@ -17,7 +17,7 @@ from .production_run import (
     get_workflow, create_production_run, execute_production_run,
     get_production_run, list_production_runs, ProductionRunError,
 )
-from .node_runtime import get_node_run
+from ai_factory_os.services.execution.node_runtime import get_node_run
 
 
 class ProductionServiceError(Exception):

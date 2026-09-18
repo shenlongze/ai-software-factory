@@ -264,7 +264,7 @@ def run_execution_via_node_runtime(root: str | Path, execution_id: str, *, promp
     from .os_core_execution import get_execution, set_execution_status
     from .os_core_task import resolve_task
     from .os_core_task_node import get_task_node
-    from .node_runtime import create_node_run, execute_node_run, get_node_run, register_node
+    from ai_factory_os.services.execution.node_runtime import create_node_run, execute_node_run, get_node_run, register_node
 
     rec = get_execution(root, execution_id)
     if rec is None:

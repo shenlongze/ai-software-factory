@@ -599,7 +599,7 @@ def _run_result_from_fn(root: str, executor_fn: Any, leaf: dict[str, Any],
                         conversation_id: str, plan: dict[str, Any],
                         prd: dict[str, Any]) -> dict[str, Any]:
     """单叶定向: 直接跑 executor_fn (不经 execute_task, 供定向重试)。"""
-    from factory_console.node_runtime import (  # noqa: PLC0415
+    from ai_factory_os.services.execution.node_runtime import (  # noqa: PLC0415
         create_node_run, execute_node_run, register_node,
     )
 
@@ -655,7 +655,7 @@ def _execute_run_parallel(
     默认不开 ✓: 只有显式 parallel=True 才走这里 ✓（不传 → 与今天行为相同 ✓）
     """
     from factory_console import parallel_run as pr
-    from factory_console.node_runtime import (
+    from ai_factory_os.services.execution.node_runtime import (
         create_node_run, execute_node_run, register_node,
     )
     # ★ 用【与串行内核同一套】的锁/写/记录函数 ✓（不另造 ✓ 否则语义会分叉 ✗）
@@ -757,7 +757,7 @@ def execute_approved(root: str, conversation_id: str, *,
 
     返回 {plan_id, prd_id, executed[], production_run_id, state}
     """
-    from factory_console.node_runtime import get_node_run  # noqa: PLC0415
+    from ai_factory_os.services.execution.node_runtime import get_node_run  # noqa: PLC0415
     from factory_console.production_run import (  # noqa: PLC0415
         create_production_run, execute_production_run, register_workflow,
     )

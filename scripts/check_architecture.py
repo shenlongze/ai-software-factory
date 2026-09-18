@@ -46,7 +46,7 @@ ROOT = Path(__file__).resolve().parent.parent
 OS = ROOT / "src" / "ai_factory_os"
 
 LAYERS = ("contracts", "core", "services", "plugins", "infrastructure", "api", "bootstrap")
-LEGACY = "_pending_migration"          # 旧区（待绞杀）
+LEGACY = ""  # ★ 2026-09-15: 旧区(_pending_migration)已整体删除 ⇒ 该层不再存在
 SKIP = {"__pycache__"}
 
 #: R10 SSoT 只列全了 3 个（"11 个"未列全）→ 如实标注，不装作查全
@@ -56,7 +56,7 @@ BANNED_NAMES = {"models.py", "utils.py", "common.py"}
 FIVE_PIECE = {"service", "store", "rules", "events", "contracts", "types", "__init__"}
 
 #: R16 允许的顶层目录
-ALLOWED_TOP = set(LAYERS) | {LEGACY, "compat_aliases.py"}
+ALLOWED_TOP = set(LAYERS) | {"compat_aliases.py"}
 
 #: R12 core 的业务词（"order" 不列 —— rank.py 里是排序顺序, 歧义太大）
 BIZ_WORDS = re.compile(
@@ -83,7 +83,7 @@ class Module:
         self.is_pkg = is_pkg
         parts = self.rel.split("/")
         self.layer: str | None = parts[0] if parts[0] in LAYERS else (
-            LEGACY if parts[0] == LEGACY else None)
+            None)
         self.domain: str | None = parts[1] if self.layer == "services" and len(parts) > 1 else None
         try:
             self.tree: ast.Module | None = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
@@ -128,7 +128,7 @@ def target_layer(mod: str) -> str | None:
         return None
     if len(p) < 2:
         return "_root"
-    return p[1] if p[1] in LAYERS else (LEGACY if p[1] == LEGACY else "_other")
+    return p[1] if p[1] in LAYERS else "_other"
 
 
 def target_domain(mod: str) -> str | None:
@@ -204,7 +204,7 @@ def rule_r7(mods, edges):
     for p in (ROOT / "src").rglob("*"):
         if not p.is_dir() or p.name not in ("cli", "web", "desktop", "mobile"):
             continue
-        if "__pycache__" in p.parts or "_pending_migration" in p.parts:
+        if "__pycache__" in p.parts:
             continue
         bad.append(p)
     return [f"{p.relative_to(ROOT)}/ 在 src/ 内（apps 类必须独立于 src/ — SSoT §一）"
@@ -370,7 +370,7 @@ def _selftest() -> int:
 
     cases.append(("层判定", target_layer("ai_factory_os.services.work.store") == "services", ""))
     cases.append(("域判定", target_domain("ai_factory_os.services.work.store") == "work", ""))
-    cases.append(("旧区判定", target_layer("ai_factory_os._pending_migration.x") == LEGACY, ""))
+    # ★ 2026-09-15: 「旧区判定」自检随老区删除移除（_pending_migration 已不存在）
 
     print("── 解析器自检（相对导入 · 层/域判定）")
     ok = sum(1 for _, c, _ in cases if c)

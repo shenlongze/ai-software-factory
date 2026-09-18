@@ -24,9 +24,7 @@ SRC = ROOT / "src"
 #: (扫描目录, 模块名前缀) —— 与运行时 PYTHONPATH 一致
 TREES = (
     (SRC / "ai_factory_os", "ai_factory_os"),
-    (SRC / "legacy" / "factory-core", ""),
-    (SRC / "legacy" / "factory-exec", ""),
-    (SRC / "legacy" / "factory-console", "factory_console"),
+    # ★ 2026-09-15: src/legacy/factory-* 路径随老区删除（本就不存在, 历史遗留）
     # apps/ = 消费者层（cli 等）, 独立于 src/（SSoT §一）—— 2026-09-15 CLI 搬到
     # apps/cli 后必须一并扫, 否则"全量导入验证"看不见它。
     (ROOT / "apps", "apps"),

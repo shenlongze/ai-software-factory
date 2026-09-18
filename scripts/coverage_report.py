@@ -2,7 +2,7 @@
 """scripts/coverage_report.py — F-10 测试覆盖度 (stdlib trace, 模块级报告; 零第三方依赖)。
 
 用法:
-    python scripts/coverage_report.py [--driver factory_console.session.eval_suite:run_smoke]
+    python scripts/coverage_report.py [--driver <pkg.module:func>]
                                      [--output docs/eval/coverage-report.json] [--verbose]
 
 行为:

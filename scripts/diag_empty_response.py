@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 import time
 from pathlib import Path
 
@@ -24,7 +23,7 @@ key = os.environ.get("DEEPSEEK_API_KEY", "")
 assert key, "DEEPSEEK_API_KEY missing"
 print(f"key loaded: {'yes' if key.startswith('sk-') else 'yes (non-sk prefix)'}, len={len(key)}")
 
-sys.path.insert(0, "/Users/Shared/work/ai-software-factory/factory-exec")
+# ★ 2026-09-15: 原硬编码 .../factory-exec 路径随老区删除; 新地基无需额外 sys.path
 
 import httpx  # noqa: E402
 

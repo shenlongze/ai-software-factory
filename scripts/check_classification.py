@@ -36,8 +36,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "src"
 OS = SRC / "ai_factory_os"
 SSOT = ROOT / "docs" / "ssot" / "architecture.md"
-LEGACY_ADAPTER = (OS / "_pending_migration" / "factory_console" / "web"
-                  / "backend" / "fastapi_adapter.py")
+# ★ 2026-09-15: LEGACY_ADAPTER（老区 fastapi_adapter）随老区整体删除
 
 SKIP_DIRS = {".git", ".venv", "__pycache__", ".pytest_cache", ".ruff_cache",
              "build", "dist", "node_modules", ".mypy_cache", "htmlcov"}
@@ -300,24 +299,8 @@ def rule_r23() -> list[str]:
 
     out: list[str] = []
 
-    # ① 现有 factory 入口（只算真顶层 —— 接收者 = 主 subparser 容器的那些）
-    #    注: 全文件 94 个 add_parser, 3 个是子命令（rag 的 query/index/sources,
-    #    接收者 p_rag_sub）。★ 顶层有两种写法都要吃:
-    #      p_x = sub.add_parser("x", ...)   /   sub.add_parser("x", ...)（无赋值）
-    #      以及多行写法 sub.add_parser(\n  "x", ...)
-    #    ⇒ 判据只能是**接收者名**, 不能要求有赋值/同一行。
-    f_path = OS / "_pending_migration" / "factory_console" / "cli_factory.py"
-    if f_path.is_file():
-        t = f_path.read_text(encoding="utf-8", errors="replace")
-        mf = re.search(r"(\w+)\s*=\s*p(?:arser)?\.add_subparsers\(", t)
-        f_main = mf.group(1) if mf else "sub"
-        real = set(re.findall(
-            rf'(?<![\w.]){re.escape(f_main)}\.add_parser\(\s*["\']([a-z][a-z0-9-]*)["\']', t))
-        reg = {c for v in FACTORY_CLI.values() for c in v}
-        if real - reg:
-            out.append(f"factory 入口: 未登记命令 {sorted(real - reg)}")
-        if reg - real:
-            out.append(f"factory 入口: 表里有但实际无 {sorted(reg - real)}")
+    # ① ★ 2026-09-15: 原「扫老 CLI cli_factory.py 校验命令表」随老区删除
+    #   —— 命令表现由 ② 直接扫新 CLI（apps/cli/main.py + apps/cli/domains/*.py）校验。
 
     # ② 新 CLI（同上判据; ★ 扫描范围 = apps/cli/main.py + apps/cli/domains/*.py ——
     #    按域拆分后命令定义会逐步搬进 domains/, 守卫必须跟着走, 否则会误报"表里有但实际无"

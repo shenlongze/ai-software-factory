@@ -241,10 +241,11 @@ def execute(root: Path | str, release_id: str, *, actor: str = "release_engineer
             gov_approval = None
             if rel.get("approval_ids"):
                 from ai_factory_os.services.governance.store import ApprovalStore as _AS
-                _rec = _AS(__import__("pathlib").Path(root) / "governance").get(aid_)
-                _get_appr = (lambda r, i: (_rec.to_dict() if _rec is not None else None))
+
+                _gov = _AS(Path(root) / "governance")
                 for aid_ in rel["approval_ids"]:
-                    ap_ = _get_appr(root, aid_)
+                    _rec = _gov.get(aid_)
+                    ap_ = _rec.to_dict() if _rec is not None else None
                     if ap_ and ap_.get("decision") == "APPROVED":
                         gov_approval = {"approval_id": aid_, "state": "APPROVED",
                                         "decided_by": ap_.get("decided_by")}
@@ -265,7 +266,7 @@ def execute(root: Path | str, release_id: str, *, actor: str = "release_engineer
                 # 真实失败 → FAILED (不 fake)
                 rel["failure_reason"] = failure_reason or "release verification failed"
                 rel = _transition(root, rel, ST_FAILED, actor=actor,
-                                  note=f"release verification failed")
+                                  note="release verification failed")
                 _audit(root, "RELEASE_VERIFICATION_FAILED",
                        {"release_id": release_id, "checks": checks})
                 return {"release": rel, "failed": True, "error": rel["failure_reason"]}

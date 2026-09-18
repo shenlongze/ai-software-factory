@@ -744,7 +744,7 @@ class ProductLifecycleEngine:
                 ]
             if stage is not None and stage.kind == StageKind.APPROVAL.value:
                 return ["waiting for approval outcome (already decided — lifecycle will advance)"]
-            return [f"resume lifecycle (product lifecycle resume is engine API)"]
+            return ["resume lifecycle (product lifecycle resume is engine API)"]
         if stage is None:
             return ["no current stage"]
         if stage.kind == StageKind.APPROVAL.value:

@@ -13,10 +13,6 @@
 
 from __future__ import annotations
 
-import json
-import os
-import threading
-import tempfile
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -116,6 +112,9 @@ def create_requirement(root: Path | str, *, title: str, description: str = "",
     req["description"] = description
     req["source_conversation_id"] = source_conv_id
     req["status"] = "VALIDATED"
+    # ★ 2026-09-19 修 F821: store_entity 此前未导入（调用即 NameError）
+    #   R1: contracts 不许 import 其他层 ⇒ 函数内延迟导入（entity_store 是统一实体库实现）
+    from ai_factory_os.infrastructure.storage.entity_store import store_entity
     store_entity(root, req)
     return req
 

@@ -3138,7 +3138,7 @@ class FactoryCLI:
     def _skill_scan(self, args: argparse.Namespace) -> int:
         """U-4: factory skill scan [--dir <目录>] — 扫描外部 SKILL.md → 加载进 skills.json。
         缺省目录: <data_dir>/skills/external/*/SKILL.md (Codex 风格 frontmatter+正文)。"""
-        from . import external_skills as _ext
+        from ai_factory_os.plugins.skills.loader import load_external_skills
 
         file = self.data_dir / "skills" / "skills.json"
         dirs: list[str] = []
@@ -3148,7 +3148,7 @@ class FactoryCLI:
         else:
             dirs.append(str(self.data_dir / "skills" / "external"))
         print("=== 外部 Skill 扫描 (SKILL.md) ===")
-        loaded = _ext.load_external_skills(file, dirs)
+        loaded = load_external_skills(file, dirs)
         if not loaded:
             print(f"  未发现 SKILL.md ({'; '.join(dirs)}) — 放 <dir>/<skill-id>/SKILL.md")
             return 0

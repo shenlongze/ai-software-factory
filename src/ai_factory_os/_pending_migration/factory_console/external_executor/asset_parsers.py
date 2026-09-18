@@ -15,7 +15,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from factory_console import external_skills as _ext_skills
+from ai_factory_os.plugins.skills.loader import parse_skill_md as _parse_skill_md_alias
 
 _FRONTMATTER_RE = re.compile(r"\A---\s*\n(.*?)\n---\s*\n?(.*)\Z", re.DOTALL)
 
@@ -60,7 +60,7 @@ def parse_keyvalue(text: str) -> dict[str, Any]:
 
 def parse_skill_md(text: str) -> dict[str, Any] | None:
     """复用 U-4 external_skills.parse_skill_md (SKILL.md → id/name/instructions)。"""
-    return _ext_skills.parse_skill_md(text)
+    return _parse_skill_md_alias(text)
 
 
 def parse_asset_file(path: Path, fmt: str) -> dict[str, Any] | None:

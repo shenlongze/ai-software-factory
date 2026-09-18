@@ -133,7 +133,7 @@ def _resolve_target(root: Path | str, sched: dict[str, Any]) -> str | None:
     """resolve release_id (schedule 未指定 → project 最新 RELEASED release)。"""
     if sched.get("release_id"):
         return sched["release_id"]
-    from .release_service import list_releases
+    from ai_factory_os.services.delivery.release_service import list_releases
     rels = list_releases(root)
     released = [r for r in rels if r["state"] == "RELEASED"]
     if not released:

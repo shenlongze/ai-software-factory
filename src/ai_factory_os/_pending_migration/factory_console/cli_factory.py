@@ -7307,7 +7307,7 @@ class FactoryCLI:
         )
         from factory_console.health_service import list_incidents
         from factory_console.ops_scheduler import list_schedules
-        from factory_console.release_service import list_releases
+        from ai_factory_os.services.delivery.release_service import list_releases
 
         root = Path(getattr(args, "data_dir", None) or self.data_dir)
         action = getattr(args, "action", "status") or "status"
@@ -7503,7 +7503,7 @@ class FactoryCLI:
 
         薄代理 → rollback_service (CLI 与 API 共享同一 Service)。
         """
-        from factory_console.rollback_service import (
+        from ai_factory_os.services.operations.rollback_service import (
             create as _create, get_rollback as _get, list_rollbacks as _list,
             check as _check, execute as _execute, history as _history,
         )
@@ -7678,7 +7678,7 @@ class FactoryCLI:
 
         薄代理 → release_service (CLI 与 API 共享同一 Service)。
         """
-        from factory_console.release_service import (
+        from ai_factory_os.services.delivery.release_service import (
             create as _create, get_release as _get, list_releases as _list,
             check as _check, execute as _execute, history as _history,
         )

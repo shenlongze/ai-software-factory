@@ -24,8 +24,8 @@ from pathlib import Path
 from typing import Any
 
 from ai_factory_os.services.execution.production_run import get_production_run
-from .release_service import get_release, list_releases
-from .governance_service import (
+from ai_factory_os.services.delivery.release_service import get_release, list_releases
+from ai_factory_os._pending_migration.factory_console.governance_service import (
     check_governance, get_approval,
 )
 
@@ -336,7 +336,7 @@ def execute(root: Path | str, rollback_id: str, *, actor: str = "release_enginee
         rb = get_rollback(root, rollback_id)
         rb["evidence"] = evidence
         # S20.5: Rollback Verification — apply 后真实验证 (复用 release pipeline)
-        from .release_service import _run_verification as _run_rel_verification
+        from ai_factory_os.services.delivery.release_service import _run_verification as _run_rel_verification
 
         rb = _transition(root, rb, "VERIFYING", actor=actor, note="rollback verification started")
         try:
@@ -396,7 +396,7 @@ def recover_verifying(root: Path | str, rollback_id: str, *, actor: str = "recov
                              note="recovered: verification PASS evidence found")
             return {"rollback": rb, "recovered": True, "reason": "verification PASS evidence"}
     # 无 PASS evidence → 重新 verification
-    from .release_service import _run_verification as _run_rel_verification
+    from ai_factory_os.services.delivery.release_service import _run_verification as _run_rel_verification
 
     ws = Path(root) / "workspace"
     checks, all_pass, failure_reason, attempts = _run_rel_verification(root, ws, rb)

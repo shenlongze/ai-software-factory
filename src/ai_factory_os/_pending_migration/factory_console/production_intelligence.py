@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from .health_service import list_incidents, list_health_checks, get_incident
-from .release_service import list_releases, get_release
+from ai_factory_os.services.delivery.release_service import list_releases, get_release
 
 #: Analysis 状态
 ST_REQUESTED = "REQUESTED"

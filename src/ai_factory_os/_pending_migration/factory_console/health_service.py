@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .release_service import get_release, list_releases
+from ai_factory_os.services.delivery.release_service import get_release, list_releases
 
 #: Health 状态
 HC_PENDING = "PENDING"
@@ -314,7 +314,7 @@ def recover(root: Path | str, incident_id: str, *, actor: str = "health_monitor"
     - rollback 完成 + verification PASS → RESOLVED
     - rollback 失败 → incident FAILED (真实失败, 不伪造)
     """
-    from .rollback_service import create as rb_create, execute as rb_execute
+    from ai_factory_os.services.operations.rollback_service import create as rb_create, execute as rb_execute
 
     inc = get_incident(root, incident_id)
     if inc is None:

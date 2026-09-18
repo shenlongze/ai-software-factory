@@ -15,13 +15,12 @@ import json
 import sys
 from typing import Any
 
-# ★ 2026-09-15 修: 装上「旧名 → 新路径」别名桥（compat_aliases）。
-#   它的用法自述要求"在任何 import 之前调用 install()"；此前只有 bin/factory（老 CLI）
-#   和 scripts/check_imports.py 装了, **新 CLI 漏装** ⇒ 于是 `import exec.cli` /
-#   `import org...` 直接 ModuleNotFoundError ⇒ exec/org 类命令误报"未安装"。
-import ai_factory_os.compat_aliases as _compat_aliases
-
-_compat_aliases.install()
+# ★ 2026-09-15 修: 装上「旧名 → 新路径」别名桥（compat_aliases）—— 必须在任何 import 之前。
+#   此前只有 bin/factory（老 CLI）和 scripts/check_imports.py 装了, 新 CLI 漏装
+#   ⇒ `import exec.cli` / `import org.cli` 直接 ModuleNotFoundError
+#   ⇒ console/org/exec 三类命令全误报"未安装"。
+#   实现封装在 ._aliases（import 它即完成 install）, 避免在 import 区中间插语句引发 E402。
+from . import _aliases  # noqa: F401  — 导入即 install 别名桥, 无导出符号
 
 from .commands import (
     CliError,

@@ -1,4 +1,10 @@
-"""src/legacy/factory-console/session/sandbox.py — 系统级沙箱最小版 (S10-127 P2.2).
+"""infrastructure/process/command_guard.py — 命令级护栏（系统级沙箱最小版, S10-127 P2.2）。
+
+★ 2026-09-15 自 factory_console/session/sandbox.py 迁入（新区独立化: 摘叶子）。
+名字取 command_guard 而非 sandbox —— 因为 services/execution/kernel/sandbox.py 是
+【工作副本沙箱】（临时目录 + git 追踪 + patch 导出）, 两者互补不重复:
+  · kernel/sandbox.py  = 隔离【目录】（在哪跑）
+  · 本模块            = 拦截【命令】（能不能跑）
 
 背景: 外部执行器 (codex/claude/hermes CLI) 与本地命令执行缺少隔离护栏。
 参考 OpenAI SandboxAgent/UnixLocalSandboxClient + agent-guard 思路 (MIT), 本地最小版:

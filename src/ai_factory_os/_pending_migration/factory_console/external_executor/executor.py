@@ -216,7 +216,7 @@ def run(
     cmd = [path, *build_invocation(adapter, prompt, project_dir, agent=agent, skills=skills)]
     # S10-127 P2.2: 系统级沙箱最小版 — 危险命令校验 (fail-closed)
     try:
-        from factory_console.session.sandbox import validate_command
+        from ai_factory_os.infrastructure.process.command_guard import validate_command
 
         ok_v, reason = validate_command(cmd)
         if not ok_v:

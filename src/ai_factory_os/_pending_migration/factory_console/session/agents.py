@@ -23,7 +23,7 @@ import re
 from pathlib import Path
 from typing import Any, Optional
 
-from .audit import DEFAULT_RECORDS_FILE, load_records
+from ai_factory_os.services.execution.execution_records import DEFAULT_RECORDS_FILE, load_records
 
 #: 默认 Agent 注册表文件 (~/.factory/agents/agents.json — 与既有数据空间同口径)
 DEFAULT_AGENTS_FILE = Path.home() / ".factory" / "agents" / "agents.json"

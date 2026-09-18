@@ -70,7 +70,7 @@ from .actions_debug import (  # noqa: E402,F401
     debug_resume,
 )
 from .agents import DEFAULT_AGENTS, AgentMatcher, AgentMetrics, AgentRegistry, workforce_snapshot
-from .audit import record_execution
+from ai_factory_os.services.execution.execution_records import record_execution
 from ..audit.trace_context import get_trace_id
 from ai_factory_os.services.organization.artifact_contract import set_artifact
 from .commands import read_projects
@@ -2179,7 +2179,7 @@ def task_owner(context: ExecutionContext) -> ActionResult:
             pass
     if agent is None:
         try:
-            from .audit import load_records as _load_records
+            from ai_factory_os.services.execution.execution_records import load_records as _load_records
 
             records = _load_records(
                 Path(context.workspace) / "exec" / "execution_records.json"

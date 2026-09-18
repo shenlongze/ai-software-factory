@@ -42,7 +42,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from .audit import load_records
+from ai_factory_os.services.execution.execution_records import load_records
 
 #: 审计事件类型子集 — 与单次执行相关的步骤事件 (细化时间线; 其余事件不属执行)
 REPLAY_EVENT_TYPES: frozenset[str] = frozenset({

@@ -2172,7 +2172,7 @@ def dispatch(
             try:
                 from ai_factory_os.services.execution.node_runtime import get_node_run
                 from ..external_executor.task_registry import ExternalTaskRegistry
-                from .audit import load_records
+                from ai_factory_os.services.execution.execution_records import load_records
 
                 _reg = ExternalTaskRegistry.load(root)
 

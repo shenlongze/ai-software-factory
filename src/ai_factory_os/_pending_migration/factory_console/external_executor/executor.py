@@ -276,7 +276,7 @@ def record_invocation(
     """
     from datetime import datetime, timezone
 
-    from factory_console.session.audit import record_execution
+    from ai_factory_os.services.execution.execution_records import record_execution
 
     rid = f"EXS-{uuid.uuid4().hex[:8]}"
     record = {
@@ -344,7 +344,7 @@ def verify_invocation(
     """验证回写: 更新执行记录的 verify + rework (设计文档 §8)。
 
     result: pass|fail|unknown; fail → first_pass=False + rework.count+1 + reason。"""
-    from factory_console.session.audit import load_records
+    from ai_factory_os.services.execution.execution_records import load_records
 
     records_file = Path(data_dir) / "exec" / "execution_records.json"
     records = load_records(records_file)
@@ -390,7 +390,7 @@ def record_cost(
     设计: 成本默认 unknown (不编造); 有来源才记录。"""
     import json as _json
 
-    from factory_console.session.audit import load_records
+    from ai_factory_os.services.execution.execution_records import load_records
 
     records_file = Path(data_dir) / "exec" / "execution_records.json"
     records = load_records(records_file)

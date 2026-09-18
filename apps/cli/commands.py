@@ -3416,7 +3416,14 @@ def _open_console_service(ctx: FactoryContext) -> Any:
 
     from ai_factory_os.infrastructure.llm.providers.registry import ProviderRegistry
 
-    return module.ConsoleService(
+    # ★ 2026-09-15 已切新地基: services/metrics/console_view.ConsoleView
+    #   （老区 service.py:264 ConsoleService 4,926 行整体要删, 不兼容）
+    from ai_factory_os.infrastructure.events.store import EventStore
+    from ai_factory_os.services.metrics.console_view import ConsoleView
+    from ai_factory_os.services.organization.projects import ProjectStore
+
+    return ConsoleView(
+        root=ctx.root,
         workspace_manager=_open_workspace_manager(ctx),
         task_store=ctx.open_task_store(),
         agent_registry=AgentRegistry(ctx.open_agent_store()),
@@ -3426,6 +3433,8 @@ def _open_console_service(ctx: FactoryContext) -> Any:
         experience_store=ExperienceStore(ctx.root / "intelligence"),
         usage_store=_open_provider_usage_store(ctx),
         provider_registry=ProviderRegistry(_open_provider_store(ctx)),
+        event_store=EventStore(ctx.root / "factory.db"),
+        project_store=ProjectStore(ctx.root / "org"),
     )
 
 
@@ -3453,20 +3462,23 @@ def cmd_console_dashboard(ctx: FactoryContext, args: Any) -> dict:
             action="view console dashboard",
             result="OK",
             payload={
-                "projects": len(dashboard.projects),
-                "pending_approvals": len(dashboard.pending_approvals),
-                "running_agents": len(dashboard.running_agents),
-                "decisions": len(dashboard.decisions),
-                "total_cost": round(dashboard.cost.total_cost, 6),
-                "experiences": dashboard.experience.total,
-                "events": len(dashboard.activity),
+                # ★ 2026-09-15: dashboard 现为 dict（新区 ConsoleView 只读视图）
+                "projects": len(dashboard["projects"]),
+                "pending_approvals": sum(
+                    1 for a in dashboard["approvals"] if str(a.get("status")) == "pending"),
+                "running_agents": sum(
+                    1 for a in dashboard["agents"] if str(a.get("status")) == "WORKING"),
+                "decisions": len(dashboard["decisions"]),
+                "total_cost": round(float((dashboard["cost"] or {}).get("total_cost", 0.0)), 6),
+                "experiences": int((dashboard["experience"] or {}).get("total", 0)),
+                "events": len(dashboard["activity"]),
             },
         )
         if ev is not None:
             event_seq = ev.seq
     return {
         "ok": True,
-        "dashboard": dashboard.to_dict(),
+        "dashboard": dashboard,   # 新区视图已是 dict
         "event": "console.dashboard.viewed",
         "event_seq": event_seq,
     }
@@ -3488,7 +3500,7 @@ def cmd_console_approvals(ctx: FactoryContext, args: Any) -> dict:
         approvals = service.list_approvals()
         pending_only = bool(getattr(args, "pending", False))
         if pending_only:
-            approvals = [a for a in approvals if a.status == "pending"]
+            approvals = [a for a in approvals if a["status"] == "pending"]
         event_seq = None
         ev = logger.record(
             EventType.CONSOLE_VIEWED,
@@ -3499,7 +3511,7 @@ def cmd_console_approvals(ctx: FactoryContext, args: Any) -> dict:
             payload={
                 "view": "approvals",
                 "count": len(approvals),
-                "pending": sum(1 for a in approvals if a.status == "pending"),
+                "pending": sum(1 for a in approvals if a["status"] == "pending"),
                 "pending_only": pending_only,
             },
         )
@@ -3507,9 +3519,9 @@ def cmd_console_approvals(ctx: FactoryContext, args: Any) -> dict:
             event_seq = ev.seq
     return {
         "ok": True,
-        "approvals": [a.to_dict() for a in approvals],
+        "approvals": approvals,       # 新区 ConsoleView 已是 dict 列表
         "count": len(approvals),
-        "pending": sum(1 for a in approvals if a.status == "pending"),
+        "pending": sum(1 for a in approvals if a["status"] == "pending"),
         "pending_only": pending_only,
         "event": "console.viewed",
         "event_seq": event_seq,

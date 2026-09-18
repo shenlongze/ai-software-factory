@@ -54,19 +54,13 @@ packages = [
     "apps.cli.domains",
 ]
 
-[tool.setuptools.package-data]
-# 前端 dist 打包入 wheel (S10-030 Task 002 / S10-031 Task 2): pip install 后
-# factory start 免 node 托管静态前端。键名随映射改为 factory_console, 模式相对
-# 映射目录 factory-console/。dist/ 为构建产物 (gitignore), 打包时读磁盘。
-"factory_console" = [
-    "web/frontend/dist/index.html",
-    "web/frontend/dist/assets/*",
-]
+# ★ 2026-09-15: [tool.setuptools.package-data] 的 factory_console 前端 dist 随老区删除
+#   （旧 Web 前端已不在仓库; 新 Web 面按 Founder 决定暂缓）
 
 [tool.pytest.ini_options]
 testpaths = []  # 刀29: tests/ 已删除（归档于 archive/tests-before-delete-2026-09-14）
-# 使 tests/ 可直接 `from events import ...` (editable install 之外的双保险)
-pythonpath = ["src/legacy/factory-core", "src"]
+# ★ 2026-09-15: src/legacy/factory-core 随老区删除 ⇒ 只剩 src
+pythonpath = ["src"]
 
 [tool.ruff]
 line-length = 100

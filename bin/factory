@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
-"""bin/factory — AI Software Factory 统一 CLI 入口 (S10-007 阶段二)。
+"""bin/factory — AI Software Factory 统一 CLI 入口（项目内, 零配置）。
 
-薄包装: 定位项目 .venv 解释器 → os.execv 切换为
-factory-console.cli_factory.main() (包名含连字符, 经 importlib 加载;
-PYTHONPATH 指向仓库根 + factory-core)。用户零配置 — 不要求懂
-uvicorn/vite/PYTHONPATH/npm: `./bin/factory start` 即可。
+薄包装: 定位项目 .venv 解释器 → os.execv 切为新 CLI `apps.cli.main:main`。
+用户零配置 —— 不要求懂 PYTHONPATH/npm: `./bin/factory status` 即可。
 
 用法:
-    ./bin/factory start [--no-browser] [--port N] [--frontend-port N]
-    ./bin/factory stop
     ./bin/factory status
-    ./bin/factory init|config|project|run   (预留 stub, 阶段三实现)
+    ./bin/factory conversation list
+    ./bin/factory run --project <目录> --objective "..."
+    ./bin/factory <任意新 CLI 命令>
 
-说明: 与已安装的 `.venv/bin/factory` (org CLI, cli.main) 不同名同形 —
-本项目内入口, 请在仓库根目录用 `./bin/factory` 调用。
+说明: 与已安装的 `.venv/bin/factory` 同源（都是 apps.cli.main）；
+      本包装用于**仓库内直接调用**（不依赖 pip 安装）。
+
+★ 2026-09-15 改写: 原包装切的是老 CLI
+  （factory-console.cli_factory.main, 并把 _pending_migration 挂到 PYTHONPATH）——
+  老区已整体删除 ⇒ 原包装必然 Traceback。现直连新 CLI, 不再需要任何路径拼接。
 """
 from __future__ import annotations
 
@@ -31,26 +33,15 @@ if not VENV_PY.is_file():
     print(f"  {ROOT / '.venv' / 'bin' / 'pip'} install -e '.[dev]'", file=sys.stderr)
     sys.exit(1)
 
-_SRC = ROOT / "src"
-_OS = _SRC / "ai_factory_os"
-# 路径说明（迁移后）:
-#   ROOT            仓库根（读 pyproject 等）
-#   src             新地基 ai_factory_os 的包根
-#   _pending_migration          尚未按域归位的包（tasks/events/... 经别名桥解析）
-#   _pending_migration/factory_console  该目录本身是【顶层模块根】（旧布局遗留）:
-#                 factory_console/*.py 历史上按裸名导入（import evidence_domain 等），
-#                 不把它放上路径会让 110 个模块的裸名导入失效（发布门读证据时会炸）
+# src/ + 仓库根（apps/ 在根下）—— 新地基的唯一两个路径, 无老区残留
 os.environ["PYTHONPATH"] = os.pathsep.join(
-    [str(ROOT), str(_SRC), str(_OS / "_pending_migration"),
-     str(_OS / "_pending_migration" / "factory_console"),
-     os.environ.get("PYTHONPATH", "")]
+    [str(ROOT), str(ROOT / "src"), os.environ.get("PYTHONPATH", "")]
 ).rstrip(os.pathsep)
 
 _BOOT = (
-    "import importlib,sys;"
+    "import sys;"
     "sys.argv[0]='factory';"
-    # 装上旧名 → 新路径的别名桥（搬迁过渡层；详见 src/ai_factory_os/compat_aliases.py）
-    "import ai_factory_os.compat_aliases as _ca;_ca.install();"
-    "sys.exit(importlib.import_module('factory_console.cli_factory').main())"
+    "from apps.cli.main import main;"   # ★ 新 CLI（老 CLI 已删除）
+    "sys.exit(main())"
 )
 os.execv(str(VENV_PY), [str(VENV_PY), "-c", _BOOT, *sys.argv[1:]])

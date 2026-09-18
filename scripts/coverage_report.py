@@ -35,7 +35,7 @@ def _now_iso() -> str:
 
 
 def _module_name(repo: Path, filename: str) -> str:
-    """仓库相对路径 → 模块名 (factory-console/... → factory_console...)。"""
+    """仓库相对路径 → 模块名 (repo path → dotted module)。"""
     try:
         rel = Path(filename).resolve().relative_to(repo.resolve())
     except ValueError:
@@ -47,7 +47,7 @@ def _module_name(repo: Path, filename: str) -> str:
 
 
 def _package_name(repo: Path, filename: str) -> str:
-    """模块名 → 顶层包 (factory_console.session.eval_suite → factory_console)。"""
+    """模块名 → 顶层包 (a.b.c → a)。"""
     return _module_name(repo, filename).split(".")[0]
 
 
@@ -154,7 +154,7 @@ def run_coverage(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="F-10 测试覆盖度 (stdlib trace, 模块级报告)")
     parser.add_argument(
-        "--driver", default="factory_console.session.eval_suite:run_smoke",
+        "--driver", default="<pkg.module:func>",
         help="driver (MODULE:FUNC, 缺省 eval_suite.run_smoke)",
     )
     parser.add_argument("--output", default=None, help="报告落盘路径 (缺省打印到 stdout)")

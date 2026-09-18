@@ -25,7 +25,9 @@ dependencies = [
 # init/doctor/config/start/project/run 等全部命令。目录名 factory-console 含
 # 连字符, 生成式 console script 无法 `from factory-console... import` (语法错误),
 # 故经 [tool.setuptools] package-dir 映射为合法包名 factory_console 后直接可导入。
-factory = "ai_factory_os._pending_migration.factory_console.cli_factory:main"
+# ★ 2026-09-15 入口切换: 老 CLI（_pending_migration）退役 → 新 CLI（apps/cli）。
+#   切换依据: 新区 → 老区依赖已归零（12 → 0）; 老区整体删除。
+factory = "apps.cli.main:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.6"]
@@ -39,21 +41,11 @@ dev = ["pytest>=8", "ruff>=0.6"]
 # "" → "factory-core" 使 factory-core 下 27 个顶层子包源码根保持 factory-core/ 前缀
 # (等价旧 find where=["factory-core"])。映射后 factory_console 即真实代码包
 # (cli_factory/config/llm_control/...), 不再需要 importlib 胶水转发。
-package-dir = { "factory_console" = "src/ai_factory_os/_pending_migration/factory_console", "ai_factory_os" = "src/ai_factory_os", "apps" = "apps" }
+package-dir = { "ai_factory_os" = "src/ai_factory_os", "apps" = "apps" }
 # 显式列出全部包: find 无法发现映射包的子包 (物理位于 factory-console/ 下),
 # 故 factory_console* 显式列出; factory-core 子包为 find_packages("factory-core")
 # 展开 (新增子包须同步本列表)。
 packages = [
-    "factory_console",
-    "factory_console.api",
-    "factory_console.audit",
-    "factory_console.memory",
-    "factory_console.retrieval",
-    "factory_console.session",
-    "factory_console.session.debug",
-    "factory_console.session.workloads",
-    "factory_console.web",
-    "factory_console.web.backend",
     "ai_factory_os",
     # apps/ = 消费者层（SSoT §一: 独立于 src/）。CLI 2026-09-15 由
     # src/ai_factory_os/api/cli 搬来 —— 消费者不该住在包内。

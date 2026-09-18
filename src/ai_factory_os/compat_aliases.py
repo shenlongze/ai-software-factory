@@ -40,7 +40,8 @@ ALIAS_PREFIXES: dict[str, str] = {
     "audit": "ai_factory_os.services.governance.audit",
     "retrieval": "ai_factory_os.infrastructure.retrieval",
     # ── 原 factory-console（刀51 整块迁入，legacy/ 由此清空）──
-    "factory_console": "ai_factory_os._pending_migration.factory_console",
+    # ★ 2026-09-15 已删: "factory_console" → _pending_migration 的映射随老区整体删除。
+    #   （下面按域登记的【旧名 → 新地基】桥保留, 消费方写旧名仍可解析。）
     "legacy_paths": "ai_factory_os.infrastructure.legacy_paths",
     # ── 原 factory-core / factory-exec 剩余包（刀50 整块迁入 _pending_migration）──
     "assignment": "ai_factory_os.services.work.assignment",

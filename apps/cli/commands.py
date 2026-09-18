@@ -3388,39 +3388,21 @@ def cmd_intelligence_experience_evaluate(ctx: FactoryContext, args: Any) -> dict
 
 
 def _open_console_service(ctx: FactoryContext) -> Any:
-    """装配 ConsoleService (延迟 import factory-console — Removal Isolation)。
+    """装配 Human Console 只读视图（新地基 services/metrics/console_view.ConsoleView）。
 
-    factory-console/ 是独立顶层包 (目录名含连字符, 无法用 import 语句导入),
-    经 importlib.import_module 按路径加载: 包所在目录 (仓库根) 动态挂到
-    sys.path。未安装/已删除 → None (调用方报 CliError 7 未找到; Factory
-    其余命令零感知 — 同 provider/product/intelligence 延迟导入模式)。
-    全部 store 依赖可选 (失败安全): 缺任一 store → ConsoleService 按空数据
-    处理, Console 永不因数据缺失失败 (phase11a-status.md §架构)。
+    ★ 2026-09-15: 老区 factory-console 包已整体删除 ⇒ 本函数**不再依赖它**。
+      历史沿革: 原先找 REPO_ROOT/"factory-console" 目录（已删）⇒ 命令永远报"未安装";
+      后改为按包名 import（pyproject 映射）⇒ 现包也没了。
+      现在: 直接用新地基视图, 全部 store 依赖可选（缺任一 → 该域空数据, 失败安全）。
     """
-    import importlib
-
-    # ★ 2026-09-15 修: 旧检查找 REPO_ROOT/"factory-console"（已随迁移删除）⇒ 命令永远报"未安装"。
-    #   现在 factory_console 由 pyproject package-dir 映射到
-    #   src/ai_factory_os/_pending_migration/factory_console ⇒ 直接按包名 import。
-    try:
-        module = importlib.import_module("factory_console")
-    except Exception:
-        return None
-    # 只读聚合装配 (全部可选; 延迟导入 Core 包保 Removal Isolation: 删除
-    # 任一 Core 包不影响 Console 加载 — 与 service.py 内部延迟导入同模式)。
-    from ai_factory_os.plugins.agents.registry import AgentRegistry
-
-    from ai_factory_os.services.learning.store import DecisionStore, ExperienceStore, RecommendationStore
-
-    from ai_factory_os.services.work.product.store import ProductStore
-
-    from ai_factory_os.infrastructure.llm.providers.registry import ProviderRegistry
-
-    # ★ 2026-09-15 已切新地基: services/metrics/console_view.ConsoleView
-    #   （老区 service.py:264 ConsoleService 4,926 行整体要删, 不兼容）
+    # 只读聚合装配（全部可选; 延迟导入 Core 包保 Removal Isolation）。
     from ai_factory_os.infrastructure.events.store import EventStore
+    from ai_factory_os.infrastructure.llm.providers.registry import ProviderRegistry
+    from ai_factory_os.plugins.agents.registry import AgentRegistry
+    from ai_factory_os.services.learning.store import DecisionStore, ExperienceStore, RecommendationStore
     from ai_factory_os.services.metrics.console_view import ConsoleView
     from ai_factory_os.services.organization.projects import ProjectStore
+    from ai_factory_os.services.work.product.store import ProductStore
 
     return ConsoleView(
         root=ctx.root,

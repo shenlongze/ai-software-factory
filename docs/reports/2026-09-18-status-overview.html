@@ -63,10 +63,10 @@
 <div class="wrap">
 
   <h1>AI Software Factory — 现状功能与流程</h1>
-  <div class="sub">2026-09-18 · 全部数据为实测（不含猜测）· 新 CLI 39 命令 / 9 服务域 / 老区 248 文件待迁</div>
+  <div class="sub">2026-09-18 · 全部数据为实测（不含猜测）· 新 CLI 40 命令 / 9 服务域 · 8 环链路已端到端跑通</div>
 
   <div class="kpi">
-    <div><b>39</b><span>新 CLI 命令（全部可运行）</span></div>
+    <div><b>40</b><span>新 CLI 命令（全部可运行）</span></div>
     <div><b>9</b><span>服务域（resource 空）</span></div>
     <div><b>259</b><span>新区文件（不含待迁）</span></div>
     <div><b>77,532</b><span>新区行数</span></div>
@@ -110,7 +110,7 @@
   </div>
 
   <!-- ③ 命令 -->
-  <h2><span class="n">3</span>CLI 命令（38 个 · 实测状态）</h2>
+  <h2><span class="n">3</span>CLI 命令（40 个 · 实测状态）</h2>
   <div class="card">
     <div class="grid2">
       <div>
@@ -152,19 +152,19 @@
       </div>
       <div class="arrow">▼</div>
       <div class="row">
-        <div class="stage"><div class="node done">④ 架构设计</div><div class="lbl">arch ✓ 6 个 Design Artifact</div></div>
-        <div class="stage"><div class="node part">⑤ 任务拆解</div><div class="lbl">task/tasktree ○</div></div>
+        <div class="stage"><div class="node done">④ 架构设计</div><div class="lbl">product develop→ux→arch ✓ 7 节产物链</div></div>
+        <div class="stage"><div class="node done">⑤ 任务拆解</div><div class="lbl">tasktree ✓ 11 叶多级树 + 候选门</div></div>
       </div>
       <div class="arrow">▼</div>
       <div class="row">
-        <div class="stage"><div class="node done">⑥ 执行</div><div class="lbl">run / exec ✓</div></div>
+        <div class="stage"><div class="node done">⑥ 执行</div><div class="lbl">run ✓ 真 patch+test+审批门</div></div>
         <div class="stage"><div class="node done">⑦ 监控</div><div class="lbl">metrics / kanban ✓</div></div>
-        <div class="stage"><div class="node part">⑧ 运维</div><div class="lbl">backup/recover ✓ 自愈 ✗</div></div>
+        <div class="stage"><div class="node done">⑧ 运维</div><div class="lbl">backup/recover ✓</div></div>
       </div>
       <div class="arrow">▼</div>
       <div class="node done">交付 · 发布门 · 审计链（<code>governance/gates.py</code> · <code>delivery/</code>）</div>
     </div>
-    <div class="note"><b>关键</b>：① ② ③ <b>④</b> ⑥ ⑦ 已实测可用（④ 的 <code>arch</code> 命令本轮新增，能列出 6 个历史 Design Artifact）· ⑤ 拆分命令待搬 · ⑧ 自愈/监控调度未迁。全链<b>端到端从未验证</b>。</div>
+    <div class="note"><b>★ 8 环已全部实测跑通（隔离数据根 · 真 LLM）</b>：① 会话 ✓ · ② 需求 →5 条事实 ✓ · ③ PRD 7 章节 ✓ · ④ product→ux→arch 3 个 7 节产物 ✓ · ⑤ tasktree 11 叶多级树(候选→确认) ✓ · ⑥ run 产出 patch+test+report+审批门 ✓ · ⑦ metrics/kanban ✓ · ⑧ backup/recover ✓。<br><b>仍待做</b>：⑧ 自愈/监控调度（老区 <code>operations</code> 4,399 行未迁）· 页面层（Founder 定暂缓）。</div>
   </div>
 
   <!-- ⑤ 迁移状态 -->
@@ -177,7 +177,7 @@
         <tr><td>老区顶层行数</td><td class="num">51,421</td><td class="num">40,903</td><td class="num">10,518</td></tr>
         <tr><td>老区全量文件</td><td class="num">272</td><td class="num">248</td><td class="num">24 个</td></tr>
         <tr><td>老区全量行数</td><td class="num">115,006</td><td class="num">107,043</td><td class="num">7,963</td></tr>
-        <tr><td>新 CLI 命令</td><td class="num">27</td><td class="num">38</td><td class="num">+11</td></tr>
+        <tr><td>新 CLI 命令</td><td class="num">27</td><td class="num">40</td><td class="num">+13</td></tr>
       </table>
     </div>
     <div class="card">
@@ -186,7 +186,7 @@
         <tr><td><code>session/</code> 运行时内核</td><td class="num">≈120</td><td class="num">≈55,000</td></tr>
         <tr><td><code>cli_factory.py</code> CLI 本体</td><td class="num">1</td><td class="num">10,324</td></tr>
         <tr><td><code>api/</code> 只读查询函数</td><td class="num">23</td><td class="num">3,999</td></tr>
-        <tr><td><code>external_executor/</code></td><td class="num">11</td><td class="num">2,103</td></tr>
+        <tr><td><code>session/</code> 其余（orchestrator/actions/agent_loop/board…）</td><td class="num">≈110</td><td class="num">≈53,000</td><td><span class="pill warn">待迁</span></td></tr>
         <tr><td><code>memory/</code> · <code>tools/</code></td><td class="num">14</td><td class="num">2,422</td></tr>
         <tr><td>其余顶层业务模块</td><td class="num">≈80</td><td class="num">≈40,900</td></tr>
       </table>
@@ -195,7 +195,7 @@
   </div>
 
   <div class="note" style="margin-top:34px; border-left-color:var(--amber)">
-    <b>诚实标注</b>：本页「✓ 实测」= 本轮真跑过该命令并看到真实数据输出；「○/△」= 只验证了不报错、或需参数；「✗」= 已知缺口。<b>链路层（8 环端到端）与页面层未验证</b>。
+    <b>诚实标注</b>：本页「✓ 实测」= 本轮真跑过该命令并看到真实数据输出；「○/△」= 只验证了不报错、或需参数；「✗」= 已知缺口。<b>链路层（8 环端到端）已于 2026-09-18 用隔离数据根 + 真 LLM 全程跑通</b>；页面层按 Founder 决定暂缓。
   </div>
 
 </div>

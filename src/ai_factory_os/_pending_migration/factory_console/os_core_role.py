@@ -116,7 +116,7 @@ def create_role_assignment(root: str | Path, *, identity_id: str, role_id: str,
     - role_id 必须能解析到 Role Definition (exec/roles.py SSOT)。
     - scope_type='company' 时 scope_id 必须是存在的 Company (MU-CORE-01 边界)。
     """
-    from .os_core_identity import get_identity
+    from ai_factory_os.services.organization.identity import get_identity
 
     if scope_type not in SCOPE_TYPES:
         raise ValueError(f"未知 scope_type: {scope_type} (可选: {SCOPE_TYPES})")

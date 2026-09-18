@@ -93,7 +93,7 @@ def _resolve(root: str | Path, *, required_capability_refs: list[str],
              requested_identity_refs: list[str] | None = None,
              constraints: dict[str, Any] | None = None) -> dict[str, Any]:
     from .os_core_capability import resolve_capability, validate_capability_ref
-    from .os_core_identity import get_identity
+    from ai_factory_os.services.organization.identity import get_identity
     from .os_core_professional import list_professional_roles
     from .os_core_workforce import list_workforces
 

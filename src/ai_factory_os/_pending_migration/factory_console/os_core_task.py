@@ -62,7 +62,7 @@ def _save(root: str | Path, data: dict[str, dict[str, Any]]) -> None:
 def create_task(root: str | Path, *, work_id: str, name: str, workstream_id: str = "",
                 description: str = "", priority: str = "P2", owner_identity_id: str = "",
                 status: str = "todo", task_id: str | None = None) -> dict[str, Any]:
-    from .os_core_identity import get_identity
+    from ai_factory_os.services.organization.identity import get_identity
     from .os_core_work import get_work, list_workstreams
 
     if status not in TASK_STATES:
@@ -113,7 +113,7 @@ def update_task(root: str | Path, task_id: str, *, name: str | None = None,
                 description: str | None = None, priority: str | None = None,
                 owner_identity_id: str | None = None,
                 workstream_id: str | None = None) -> dict[str, Any]:
-    from .os_core_identity import get_identity
+    from ai_factory_os.services.organization.identity import get_identity
     from .os_core_work import list_workstreams
 
     data = _load(root)

@@ -157,7 +157,7 @@ def _compat_workforce(root: Path | str, rec: dict[str, Any]) -> dict[str, Any]:
     """
     agent_ids: set[str] = set()
     try:
-        from .os_core_identity import get_identity
+        from ai_factory_os.services.organization.identity import get_identity
 
         for mid in rec.get("member_refs", []):
             ident = get_identity(root, mid) or {}
@@ -213,7 +213,7 @@ def workforce_status(root: Path | str, workforce_id: str, *, target: str,
 def attach_agent(root: Path | str, *, workforce_id: str, role: str,
                  agent_id: str = "") -> dict[str, Any]:
     """Attach AgentProfile 到 Workforce: profile 存 AgentProfile; 成员引用 Agent Identity。"""
-    from .os_core_identity import project_agent
+    from ai_factory_os.services.organization.identity import project_agent
     from .os_core_workforce import add_member, get_workforce as _get
 
     rec = _get(root, workforce_id)

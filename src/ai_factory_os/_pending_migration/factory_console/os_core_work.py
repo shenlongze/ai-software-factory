@@ -83,7 +83,7 @@ def create_work(root: str | Path, *, project_id: str, name: str, description: st
     project = _require_project(root, project_id)
     owner_identity_id = str(owner_identity_id or "")
     if owner_identity_id:
-        from .os_core_identity import get_identity
+        from ai_factory_os.services.organization.identity import get_identity
 
         if get_identity(root, owner_identity_id) is None:
             raise ValueError(f"Identity 不存在: {owner_identity_id}")
@@ -135,7 +135,7 @@ def update_work(root: str | Path, work_id: str, *, name: str | None = None,
         rec["work_type"] = work_type
     if owner_identity_id is not None:
         if owner_identity_id:
-            from .os_core_identity import get_identity
+            from ai_factory_os.services.organization.identity import get_identity
 
             if get_identity(root, owner_identity_id) is None:
                 raise ValueError(f"Identity 不存在: {owner_identity_id}")

@@ -33,13 +33,10 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from legacy_paths import REPO_ROOT  # 仓库根唯一计算器
 
 IDENTITY_TYPES: tuple[str, ...] = ("human", "agent")
 IDENTITY_STATUSES: tuple[str, ...] = ("active", "retired")
 
-_REPO_ROOT = REPO_ROOT
-_ORG_SRC = REPO_ROOT / "src" / "ai_factory_os" / "services" / "organization"
 
 
 def _now_iso() -> str:
@@ -76,13 +73,8 @@ def _save(root: str | Path, data: dict[str, dict[str, Any]]) -> None:
 
 
 def _org_store(root: str | Path) -> Any:
-    try:
-        from ai_factory_os.services.organization import store as org_store
-    except ModuleNotFoundError:  # 源码态
-        src = str(_ORG_SRC)
-        if src not in sys.path:
-            sys.path.insert(0, src)
-        from ai_factory_os.services.organization import store as org_store
+    """组织域 store（★ 2026-09-15 迁入新地基: 直接 import, 不再 sys.path 兜底）。"""
+    from ai_factory_os.services.organization import store as org_store
     return org_store.OrgStore(Path(root) / "org")
 
 

@@ -62,7 +62,7 @@ def create_execution(root: str | Path, *, task_node_id: str, resolution_id: str 
                      input_refs: list[str] | None = None,
                      execution_id: str | None = None) -> dict[str, Any]:
     """创建一次 Execution (queued)。校验上下游引用与因果一致性。"""
-    from .os_core_identity import get_identity
+    from ai_factory_os.services.organization.identity import get_identity
     from .os_core_resolution import get_resolution
     from .os_core_task_node import get_task_node
     from .os_core_workforce import get_workforce

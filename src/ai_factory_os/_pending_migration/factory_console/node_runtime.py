@@ -230,7 +230,7 @@ def _record(root: Path | str, run: dict[str, Any], to_state: str, *, actor: str,
     }
     # MU-CORE-02: actor identity reference (resolve-only; 未登记 -> "", 不创建/不阻断)
     try:
-        from .os_core_identity import resolve_actor_identity
+        from ai_factory_os.services.organization.identity import resolve_actor_identity
 
         entry["actor_identity_id"] = resolve_actor_identity(root, actor)
     except Exception:  # noqa: BLE001 — Identity 解析尽力而为

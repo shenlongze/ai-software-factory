@@ -62,7 +62,7 @@ def _save(root: str | Path, data: dict[str, dict[str, Any]]) -> None:
 
 
 def _require_identity(root: str | Path, identity_id: str) -> None:
-    from .os_core_identity import get_identity
+    from ai_factory_os.services.organization.identity import get_identity
 
     if get_identity(root, identity_id) is None:
         raise ValueError(f"Identity 不存在: {identity_id}")
@@ -261,7 +261,7 @@ def assign_professional_role(root: str | Path, workforce_id: str,
 
 def resolve_workforce(root: str | Path, workforce_id: str) -> dict[str, Any]:
     """解析 Workforce -> 成员 Identity / Professional Role (引用解析, 不复制数据)。"""
-    from .os_core_identity import get_identity
+    from ai_factory_os.services.organization.identity import get_identity
     from .os_core_professional import get_professional_role
 
     rec = get_workforce(root, workforce_id)
